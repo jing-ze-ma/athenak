@@ -8,12 +8,13 @@
 //! \file mesh.hpp
 //! \brief defines Mesh class.
 //! The Mesh is the overall grid structure, which is divided into local patches called
-//! MeshBlocks (potentially on different levels) that tile the entire domain.  MeshBlocks
+//! MeshBlocks (potentially on different levels) that tile the entire domain. MeshBlocks
 //! are grouped together into MeshBlockPacks for better performance on GPUs.
 
 #include <cstdint>  // int32_t
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "athena.hpp"
 #include "coordinates/grid_stretch.hpp"
@@ -36,7 +37,7 @@ struct RegionSize {
 
 //! EVERY MEMBER IS ZERO INITIALISED, and that is not cosmetic: restart.cpp STEP 1 writes
 //! `mesh_indcs` and `mb_indcs` to the file as raw structs, while the coarse-cell fields
-//! `cnx1..cke` are only ever assigned on a MULTILEVEL mesh.  On a uniform grid they were
+//! `cnx1..cke` are only ever assigned on a MULTILEVEL mesh. On a uniform grid they were
 //! indeterminate, so every restart file carried ~21 bytes of whatever had been on the
 //! stack and two runs of the same binary wrote DIFFERENT files -- harmless to a restart
 //! (the reader takes the coarse indices from the input) but it put uninitialised memory
@@ -85,7 +86,7 @@ struct EventCounters {
   std::int64_t maxit_c2p;
   // Cells whose tabulated (rho,e) -> T inversion had to be CLAMPED to the table's own
   // lowest or highest tabulated temperature, because the energy handed to it lies
-  // outside the tabulated range at that density (EOSTable::ClampLogT).  Not a floor:
+  // outside the tabulated range at that density (EOSTable::ClampLogT). Not a floor:
   // it says the state has left the EOS, and without the clamp the root find pins on
   // its own bracket three decades outside the table and returns a saturated
   // temperature and sound speed that no longer depend on e at all.
@@ -93,26 +94,23 @@ struct EventCounters {
   // Cells whose FLOORED state was rebuilt from a TEMPERATURE, under
   // <block>/efloor_as_tfloor: e was set to e(rho,T) for the T the floors and the table
   // clamp left, so that re-inverting the cell returns that same T and the cached p,
-  // Gamma_1 and sound speed belong to the energy the cell actually carries.  Counted
+  // Gamma_1 and sound speed belong to the energy the cell actually carries. Counted
   // separately from neos_efloor because it is a repair OF a floor, not a floor.
   std::int64_t neos_tset;
   // Energy density CREATED by the internal-energy/pressure floor since the counters were
   // last reset, summed over cells (code units, not volume weighted -- a cell count's
-  // worth of erg/cm^3).  A floor that fires is only a diagnostic; a floor that fires
+  // worth of erg/cm^3). A floor that fires is only a diagnostic; a floor that fires
   // while donating a large energy is the run being driven by its own repair.
   Real efloor_de;
-  // Kinetic energy density the VELOCITY CEILING clipped since the counters were last
-  // reset, summed over cells the same way efloor_de is.  By default that energy is
-  // DELETED from the conserved total -- an uncounted sink, which is why it is counted
-  // here; under <block>/vceil_thermalise it becomes internal energy instead and the
-  // column measures the dissipation the ceiling is doing.  HYDRO only: the general-MHD
-  // and ideal-MHD inversions have no accumulator to thread it through.
+  // Kinetic energy density the VELOCITY CEILING removed from the conserved total since
+  // the counters were last reset, summed over cells the same way efloor_de is. HYDRO
+  // only: the general-MHD and ideal-MHD inversions have no accumulator for it.
   Real vceil_de;
-  // fixbundle-1009 F4: kinetic energy density <hydro>/dfloor_keep_velocity removed from
+  // F4: kinetic energy density <hydro>/dfloor_keep_velocity removed from
   // the total energy (sum over cells of (1 - fv^3) KE, not volume weighted, general
   // hydro EOS, off the cubed sphere), since the last row
   Real dfloor_ke;
-  // fixbundle-1009 F4: <rad_m1> solver/limiter totals since the start of this run (or
+  // F4: <rad_m1> solver/limiter totals since the start of this run (or
   // restart), filled at each event-log output (RadiationM1::EventTotals)
   static constexpr int kNM1Tot = 13;
   bool m1on;
@@ -131,9 +129,8 @@ struct EventCounters {
 // CoordSphericalPolar, and the two PANEL-TANGENTIAL axes are x2 (xi) and x3 (eta). A
 // panel seam therefore permutes and reflects x2 and x3 only; x1 is never touched by
 // one. The two tangential axes are named `a` (= x2) and `b` (= x3) throughout the
-// panel tables below, deliberately NOT `x1`/`x2`: they used to be, under an earlier
-// convention in which the radius was x3, and reading those names as mesh axes is what
-// silently reversed the radial index across every seam.
+// panel tables below, deliberately NOT `x1`/`x2`, which would read as mesh axes (and
+// reversing the radial index across a seam is the error such a reading produces).
 // Face ordering everywhere in the panel tables: 0:-x2, 1:+x2, 2:-x3, 3:+x3.
 
 struct PanelNeighbors {
@@ -246,17 +243,17 @@ class Mesh;
 //! \struct PanelEdgeMap
 //! \brief How a cubed-sphere EDGE direction looks from the neighbouring panel.
 //!
-//! Everything a mixed-level cross-panel diagonal needs and did not have. Three things
-//! differ across a seam and all three were previously ignored at a level boundary:
+//! Everything a mixed-level cross-panel diagonal needs. Three things differ across a
+//! seam, and all three matter at a level boundary:
 //!
-//!   * the OFFSETS pointing back at this block, which decide which of the neighbour's
-//!     children touch it (`GetLeaf` is indexed in the NEIGHBOUR's axes, not ours);
-//!   * WHICH of the neighbour's axes is the free one along the edge -- a seam can send
-//!     our x2 to their x3, so enumerating their children along the wrong axis picks the
-//!     wrong two blocks entirely. That is what made a coarse block list the two fine
-//!     blocks stacked in x3 when its actual neighbours were the two stacked in x2, and
-//!     it is the reason those slots did not pair;
-//!   * whether that free axis is REVERSED, which swaps the two subblock halves.
+//! * the OFFSETS pointing back at this block, which decide which of the neighbour's
+//! children touch it (`GetLeaf` is indexed in the NEIGHBOUR's axes, not ours);
+//! * WHICH of the neighbour's axes is the free one along the edge -- a seam can send
+//! our x2 to their x3, so enumerating their children along the wrong axis picks the
+//! wrong two blocks entirely. That is what made a coarse block list the two fine
+//! blocks stacked in x3 when its actual neighbours were the two stacked in x2, and
+//! it is the reason those slots did not pair;
+//! * whether that free axis is REVERSED, which swaps the two subblock halves.
 //!
 //! Reduces to the identity when the two panels share a chart, so the same-panel path is
 //! untouched.
@@ -312,10 +309,9 @@ class Mesh {
   RegionIndcs mb_indcs;       // indices of cells in MeshBlocks (same for all MeshBlocks)
   BoundaryFlag mesh_bcs[6];   // physical boundary conditions at 6 faces of mesh
   bool strictly_periodic;     // true if all boundaries are periodic
-    
+
   bool use_cubed_sphere;      // true if using cubed sphere
-  bool cs_vertex_fill;        // true to fill the cube-vertex corner by exchange (FC)
-  bool cs_vertex_fill_cc;     // same for CELL-CENTRED data (see mesh.cpp)
+  bool cs_vertex_fill_cc;     // cube-vertex corner fill for cell-centred data
   bool cs_vertex_3cell = false;   // no operator reads the cube-vertex corner block
   bool cs_seam_fc_nolimit;    // no monotonicity clamp in the FC seam resample (mesh.cpp)
   // <mesh>/layout_invariant: global sums that feed the state use the order-independent
@@ -323,7 +319,6 @@ class Mesh {
   bool layout_invariant = false;
   int cs_seam_fc_order = 2;   // 3 = third-order FC seam ghost fields (mesh.cpp)
   int cs_seam_flux;           // seam flux: 0 average of the two solves, 3 shared states
-  bool cs_seam_flux_named = false;   // <mesh>/cs_seam_flux given in the input
   Real cs_seam_rho_guard;     // seam ghost density guard ratio, 0 = off (mesh.cpp)
   bool cs_seam_resample_linear;  // convex linear along-seam resample (mesh.cpp)
   int npanels;                // 6 if using cubed sphere; 1 otherwise
@@ -332,29 +327,18 @@ class Mesh {
   bool use_grid_stretch_r_poly; // true if using the polynomial radial stretch
   bool use_grid_stretch_theta;  // true if using grid stretching in theta
   Real fStretchR, fStretchTheta;
-  // fullsph-1027 mesh/theta_plateau: uniform core + geometric caps (StretchThetaPlateau);
+  // mesh/theta_plateau: uniform core + geometric caps (StretchThetaPlateau);
   // sets use_grid_stretch_theta too; fStretchThetaPlat[2] = 0 means the sinh map
   bool use_theta_plateau;
   Real fStretchThetaPlat[8];
   // Coefficients of the polynomial radial stretch. See StretchRPoly in coordinates.hpp.
   Real fStretchRPoly[NSTRETCH_R_POLY];
   bool use_polar_boundary;      // true if using polar boundaries
-  // polar_quadratic_recon: in the two polar cell rows reconstruct with the UNLIMITED
-  // quadratic through the mirror ghost, the cell and its neighbour (clamped to their
-  // range).  A limited slope sees every even profile as an extremum at the pole and
-  // flattens the cell, which makes the polar theta-flux first order.
-  bool use_polar_quadratic_recon;
-  // polar_x3_shift: the theta correction applied to the x3-face (phi-face) states in
-  // spherical polar.  0 = off, 1 = rotate (exact basis rotation of the (r,theta) vector
-  // pairs into the face's own basis, a8cfb83e), 2 = shift (unlimited centred-difference
-  // theta shift of EVERY variable, 863e8337 -- bisected to the polar-row radial-field
-  // blow-up, 2026-09-10), 3 = scalar (rotate the vectors, shift the scalars).
-  int polar_x3_shift;
   // SPHERICAL POLAR + RESISTIVITY: the polar azimuthal average of the edge EMF E_r runs
   // at the end of CornerE, but the RESISTIVE EMF is added to the same array afterwards,
   // so the resistive part of E_r at the axis was never averaged and is free to be
-  // multi-valued there.  On the cubed sphere the order is the other way round.  This
-  // re-applies the average after the resistive add.  Default OFF: it changes every
+  // multi-valued there. On the cubed sphere the order is the other way round. This
+  // re-applies the average after the resistive add. Default OFF: it changes every
   // spherical-polar resistive answer, and sp_polavg was launched without it.
   bool use_polar_average_eresist;
 
@@ -374,15 +358,15 @@ class Mesh {
   int nprtcl_thisrank;     // number of particles this rank
   int nprtcl_total;        // total number of particles across all ranks
 
-  // following 3x arrays allocated with length [nmb_total] in BuildTreeFromXXXX()
+  // following 3x arrays allocated with length [nmb_total] in BuildTreeFromXXXX
   float *cost_eachmb;            // cost of each MeshBlock
   int *rank_eachmb;              // rank of each MeshBlock
   LogicalLocation *lloc_eachmb;  // LogicalLocations for each MeshBlock
 
-  // following 2x arrays allocated with length [nranks] in BuildTreeFromXXXX()
+  // following 2x arrays allocated with length [nranks] in BuildTreeFromXXXX
   int *gids_eachrank;      // starting global ID of MeshBlocks in each rank
   int *nmb_eachrank;       // number of MeshBlocks on each rank
-  // following 1x arrays allocated with length [nranks] in AddCoordinatesAndPhysics()
+  // following 1x arrays allocated with length [nranks] in AddCoordinatesAndPhysics
   int *nprtcl_eachrank;    // number of particles on each rank
 
   Real time, dt, dtold, cfl_no;
@@ -408,10 +392,10 @@ class Mesh {
   void AddCoordinatesAndPhysics(ParameterInput *pinput);
   BoundaryFlag GetBoundaryFlag(const std::string& input_string);
   std::string GetBoundaryString(BoundaryFlag input_flag);
-    
+
     KOKKOS_INLINE_FUNCTION
-    int NeighborIndexPanel(int ix, int iy, int iz, int n1, int n2, int panel_start, int panel_end) {
-        
+    int NeighborIndexPanel(int ix, int iy, int iz, int n1, int n2, int panel_start,
+                           int panel_end) {
         // ix is the RADIAL (x1) offset and is passed through untouched: a panel seam
         // never crosses it. Only the tangential pair a = x2 (iy), b = x3 (iz) is
         // remapped.
@@ -420,7 +404,7 @@ class Mesh {
         int iib = (pb.swap_ax == 1) ? iy : iz;
         if (pb.rev_a == 1) iia = -iia;
         if (pb.rev_b == 1) iib = -iib;
-        
+
         return NeighborIndex(ix,iia,iib,n1,n2);
     }
 
@@ -444,8 +428,9 @@ class Mesh {
   // module to detect when its cached communication metadata must be rebuilt.
   void MarkMeshUpdated() { ++amr_lb_seq_; }
   int GetAMRLoadBalanceUpdateSeq() const { return amr_lb_seq_; }
-    
-    /* Cubed sphere. Borrowed from SNAPY https://github.com/chengcli/snapy/blob/main/src/layout/cubed_sphere_layout.cpp
+
+    // github.com/chengcli/snapy/blob/main/src/layout/cubed_sphere_layout.cpp
+    /* Cubed sphere. Borrowed from SNAPY https:
     *                                            z  y
     *                 ___________                | /
     *                 |\        .\               |/---x
@@ -488,7 +473,7 @@ class Mesh {
     *           |-----|
     *
     */
-    
+
     // Face ordering (panel-tangential faces only; a = x2, b = x3):
     // 0:-x2, 1:+x2, 2:-x3, 3:+x3
 
@@ -541,54 +526,54 @@ class Mesh {
         {0, 2, 0, 0}   // T
       }
     };
-    
-//    static constexpr PanelNeighbors panel_neighbors[2][4] = {
-//      // panel 0
-//      {
-//        {0, 1, 0, 0},  // L
-//        {0, 0, 0, 0},  // R
-//        {1, 0, 0, 1},  // B
-//        {1, 1, 0, 1},  // T
-//      },
+
+// static constexpr PanelNeighbors panel_neighbors[2][4] = {
+// // panel 0
+// {
+// {0, 1, 0, 0}, // L
+// {0, 0, 0, 0}, // R
+// {1, 0, 0, 1}, // B
+// {1, 1, 0, 1}, // T
+// },
 //
-//      // panel 1
-//      {
-//        {0, 2, 0, 1}, // L
-//        {0, 3, 0, 1}, // R
-//        {1, 3, 0, 0}, // B
-//        {1, 2, 0, 0}  // T
-//      }
-//    };
+// // panel 1
+// {
+// {0, 2, 0, 1}, // L
+// {0, 3, 0, 1}, // R
+// {1, 3, 0, 0}, // B
+// {1, 2, 0, 0} // T
+// }
+// };
 //
-//    KOKKOS_INLINE_FUNCTION
-//    constexpr PanelBoundaries GetPanelBoundary(int ps, int pe) const {
-//      constexpr PanelBoundaries table[2][2] = {
-//        // … your SAME initializer …
-//          // [i][j]: transforming from i panel to j panel
-//          // panel 0:
-//          {
-//            {0, 0, 0, -1}, // 00
-//            {1, 1, 0, 0},  // 01
-//          },
+// KOKKOS_INLINE_FUNCTION
+// constexpr PanelBoundaries GetPanelBoundary(int ps, int pe) const {
+// constexpr PanelBoundaries table[2][2] = {
+// // … your SAME initializer …
+// // [i][j]: transforming from i panel to j panel
+// // panel 0:
+// {
+// {0, 0, 0, -1}, // 00
+// {1, 1, 0, 0}, // 01
+// },
 //
-//          // panel 1:
-//          {
-//            {1, 0, 1, 0},  // 10
-//            {0, 0, 0, -1}, // 11
-//          }
-//      };
-//      return table[ps][pe];
-//    }
-    
+// // panel 1:
+// {
+// {1, 0, 1, 0}, // 10
+// {0, 0, 0, -1}, // 11
+// }
+// };
+// return table[ps][pe];
+// }
+
 
  private:
   // The panel trees OWN every node. There is one panel for an ordinary mesh and six for a
   // cubed sphere, each with its own root and its own z-ordering.
   std::vector<std::unique_ptr<MeshBlockTree>> panel_trees;
-  // Non-owning pointer to the root of the first panel tree. Most of the code predates the
-  // panel decomposition and reaches the tree through this; it is the whole tree unless
-  // the mesh is a cubed sphere. It MUST be set wherever panel_trees is built -- leaving
-  // it null is what made adaptive refinement segfault in MeshBlockTree::FindMeshBlock.
+  // Non-owning pointer to the root of the first panel tree; most of the code reaches the
+  // tree through this, and it is the whole tree unless the mesh is a cubed sphere. It
+  // MUST be set wherever panel_trees is built (adaptive refinement dereferences it in
+  // MeshBlockTree::FindMeshBlock).
   MeshBlockTree *ptree = nullptr;
   void LoadBalance(float *clist, int *rlist, int *slist, int *nlist, int nb);
   int amr_lb_seq_ = 0;

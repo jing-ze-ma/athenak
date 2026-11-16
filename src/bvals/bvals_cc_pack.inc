@@ -5,15 +5,13 @@
 //========================================================================================
 //! \file bvals_cc_pack.inc
 //! \brief Body of the PackAndSendCC team kernel, including the cubed-sphere seam
-//! transform and along-seam resample. With BVCC_PACK_KSEAM / BVCC_PACK_KWB defined
-//! (CUDA) kseam_ and kwb_ are compile-time constants. Needs BVCC_PACK_NAME defined.
+//! transform and along-seam resample. With BVCC_PACK_KSEAM defined (CUDA) kseam_ is a
+//! compile-time constant. Needs BVCC_PACK_NAME defined.
 #if defined(BVCC_PACK_KSEAM)
   auto BVCC_PACK_NAME = KOKKOS_LAMBDA(const TeamMember_t &tmember) BV_CUDA_INLINE {
     constexpr bool kseam_ = BVCC_PACK_KSEAM;
-    constexpr bool kwb_ = BVCC_PACK_KWB;
 #else
-  auto BVCC_PACK_NAME = KOKKOS_LAMBDA(const TeamMember_t &tmember, const auto kseam_,
-                             const auto kwb_) {
+  auto BVCC_PACK_NAME = KOKKOS_LAMBDA(const TeamMember_t &tmember, const auto kseam_) {
 #endif
     const int lr_ = tmember.league_rank()/nsp_;
     const int sp_ = tmember.league_rank() - lr_*nsp_;
@@ -204,7 +202,7 @@
               ? ((cs_seam == 2) ? cs_indcs.cnx3 : cs_indcs.cnx2)
               : ((cs_seam == 2) ? cs_indcs.nx3 : cs_indcs.nx2);
           if (cs_seam != 0 && seam_extent < 3) { cs_seam = 0; }
-          if (no_rs_cc || nors_) { cs_seam = 0; }
+          if (nors_) { cs_seam = 0; }
           if (cs_fxform || cs_hrquad) { cs_seam = 0; }
         } else if (do_pole) {
           aj = -1;
@@ -239,8 +237,6 @@
           Real wm = 1.0, w0 = 0.0, wp = 0.0;
           // is the stencil interpolating (b is clamped to the source's active range)?
           bool cs_interp = true;
-          Real wpos = 0.0;    // wb_seam: the target's along-seam index position
-          int winw = 0;       // and the inward seam-normal step in the source chart
           if (cs_seam != 0) {
             const Real xi  = 0.25*M_PI*CellCenterX(jj-js_, nx2_, x2mn, x2mx);
             const Real eta = 0.25*M_PI*CellCenterX(kk-ks_, nx3_, x3mn, x3mx);
@@ -275,8 +271,6 @@
                              *((cs_seam == 2) ? nx3_ : nx2_);
             const Real pos = cs_seam::SeamPos(sc, spn_,
                                               (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang);
-            wpos = pos;
-            winw = (nrm > 0.0) ? -1 : 1;
             int b = cs_seam::SeamRound(pos) - 1;   // tie-safe
             b = (b < blo) ? blo : ((b > bhi) ? bhi : b);
             const Real u = pos - static_cast<Real>(b + 1);
@@ -285,7 +279,7 @@
             w0 = 1.0 - u*u;
             wp = 0.5*u*(u + 1.0);
             if (rs_lin && cs_interp) {
-              // <mesh>/cs_seam_resample = linear: the two bracketing donors, weights >= 0
+              // linear resample: the two bracketing donors, weights >= 0
               wm = (u < 0.0) ? -u : 0.0;
               wp = (u > 0.0) ? u : 0.0;
               w0 = 1.0 - wm - wp;
@@ -370,75 +364,8 @@
             cubed_sphere::ApplyMomentumXform(xfc, my_, mz_, m2o, m3o);
             return (v == va_) ? m2o : m3o;
           };
-          // wb_seam: the state of stencil cell s walked to the ghost's potential
-          // (density for v = 0, total energy for v = wbsien_); see bvals.hpp
-          const bool wbsv = static_cast<bool>(kwb_) && wbs_ && (cs_seam != 0) &&
-                            !cs_coar && (v == 0 || v == wbsien_);
-          Real lw5[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
-          int c5 = 0;
-          if (wbsv) {
-            c5 = static_cast<int>(floor(wpos + 0.5));
-            const Real x = wpos - static_cast<Real>(c5);
-            for (int q = 0; q < 5; ++q) {
-              Real l = 1.0;
-              for (int r = 0; r < 5; ++r) {
-                if (r != q) l *= (x - static_cast<Real>(r - 2))/static_cast<Real>(q - r);
-              }
-              lw5[q] = l;
-            }
-          }
-          auto wbval = [&](const int s, const int i) BV_CUDA_INLINE {
-            const int kq = kst[s], jq = jst[s];
-            Real phig = 0.0;
-            const int nA = (cs_seam == 2) ? wbsphi_.extent_int(1) : wbsphi_.extent_int(2);
-            for (int q = 0; q < 5; ++q) {
-              int ix = c5 - 2 + q;
-              ix = (ix < 0) ? 0 : ((ix > nA - 1) ? nA - 1 : ix);
-              phig += lw5[q]*((cs_seam == 2) ? wbsphi_(m,ix,jj,i) : wbsphi_(m,kk,ix,i));
-            }
-            auto prim = [&](const int kc, const int jc, Real &d, Real &e, Real &ke,
-                            Real &ph) {
-              d = a(m,0,kc,jc,i);
-              const Real m1 = a(m,1,kc,jc,i), m2 = a(m,2,kc,jc,i), m3 = a(m,3,kc,jc,i);
-              const Real xs = 0.25*M_PI*CellCenterX(jc-js_, nx2_, x2mn, x2mx);
-              const Real es = 0.25*M_PI*CellCenterX(kc-ks_, nx3_, x3mn, x3mx);
-              const Real cc = -sin(xs)*sin(es);
-              ke = 0.5*(m1*m1 + (m2*m2 - 2.0*cc*m2*m3 + m3*m3)/(1.0 - cc*cc))/d;
-              ph = wbsphi_(m,kc,jc,i);
-              e = a(m,wbsien_,kc,jc,i) - ke - (wbsetg_ ? d*ph : 0.0);
-              if (wbsmhd_) {
-                const Real b1 = wbsbcc_(m,0,kc,jc,i), b2 = wbsbcc_(m,1,kc,jc,i);
-                const Real b3 = wbsbcc_(m,2,kc,jc,i);
-                ke += 0.5*(b1*b1 + b2*b2 + b3*b3);   // carried as part of E like KE
-                e -= 0.5*(b1*b1 + b2*b2 + b3*b3);
-              }
-            };
-            Real d, e, ke, ph;
-            prim(kq, jq, d, e, ke, ph);
-            Real dd = d, ee = e, tt = -1.0;
-            if (wbsopt_ == 3) {
-              const int ki = (cs_seam == 3) ? kq + winw : kq;
-              const int ji = (cs_seam == 2) ? jq + winw : jq;
-              Real di, ei, kei, phi_;
-              prim(ki, ji, di, ei, kei, phi_);
-              const Real ts = wbseos_.Temperature(d, e), ti = wbseos_.Temperature(di, ei);
-              const Real dph = ph - phi_;
-              const Real al = (fabs(dph) > 1.0e-12*(fabs(ph) + 1.0e-300)) ? (ts - ti)/dph : 0.0;
-              WBAdvance(wbseos_, 3, d, e, phig - ph, dd, ee, tt, ts, al, ts);
-            } else {
-              WBAdvance(wbseos_, 1, d, e, phig - ph, dd, ee, tt);
-            }
-            if (v == 0) return dd;
-            return ee + ke + (wbsetg_ ? dd*phig : 0.0);
-          };
           auto seamval = [&](const int i) BV_CUDA_INLINE {
             if (cs_seam == 0) return sval(0,i);
-            if (wbsv) {
-              const Real sv0 = wbval(0,i), sv1 = wbval(1,i), sv2 = wbval(2,i);
-              const Real qq = wm*sv0 + w0*sv1 + wp*sv2;
-              if (!cs_interp) return qq;
-              return fmin(fmax(sv0, fmax(sv1, sv2)), fmax(fmin(sv0, fmin(sv1, sv2)), qq));
-            }
             if (rgon && rgbad(i)) return plainval(i);
             const Real sv0 = sval(0,i);
             const Real sv1 = sval(1,i);

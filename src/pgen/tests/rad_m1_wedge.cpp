@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_m1_wedge.cpp
-//! \brief <problem>/m1_test = sph_wedge (branch m1-wedge, docs/dev/m1_wedge_0926.md):
+//! \brief <problem>/m1_test = sph_wedge (docs/dev/m1_wedge_0926.md):
 //! a GRAVITY-BEARING radiation-hydrodynamics wedge on the spherical-polar mesh with the
 //! implicit M1 module.  Reached from RadiationM1Tests2(); every other m1_test value is
 //! untouched.
@@ -98,7 +98,7 @@ Real wg_rlo_ = 0.0, wg_dr_ = 1.0;
 int wg_nf_ = 0;
 Real wg_gm_ = 0.0, wg_rin_ = 1.0, wg_rint_ = 0.0, wg_fin_ = 0.0;
 // outer x1 wall (wg_bc_top) and the top sponge (wg_sponge_rate, wg_sponge_r0)
-bool wg_top_open_ = false, wg_zflux_ = true, wg_bot_res_ = false;
+bool wg_top_open_ = false, wg_bot_res_ = false;
 Real wg_sp_rate_ = 0.0, wg_sp_r0_ = 0.0, wg_rtop_ = 1.0;
 // m1-mhd: <mhd> mode, split monopole B_r = wg_b0 (r_in/r)^2 (current-free); the x1
 // ghost faces carry the same r^-2 continuation of the edge face
@@ -252,7 +252,7 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
   wg_fin_ = pin->GetOrAddReal("rad_m1","implicit_flux_x1min",0.0);
   const Real fr2 = wg_fin_*wg_rin_*wg_rin_;          // F(r) = fr2/r^2
   const std::string icm = pin->GetOrAddString("problem","wg_ic","grey");
-  const int nf = pin->GetOrAddInteger("problem","wg_nfine",8192);
+  constexpr int nf = 8192;
   const Real tau_int = pin->GetOrAddReal("problem","wg_tau_int",1.0);
   const bool fref = (pm1->force_ref == radm1::M1_FREF_WB_ARAD);
   const bool phieff = pin->GetOrAddBoolean("problem","wg_phi_eff",fref);
@@ -262,7 +262,7 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
       << "true (the well-balanced pair must carry the reference)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // energy_audit_0928 item 3: with wg_phi_eff the WB pair already gives the gas the
+  // With wg_phi_eff the WB pair already gives the gas the
   // reference force rho a_ref; force_reference = none would then apply the FULL force on
   // top of it (counted twice) and its work once
   if (phieff && !fref) {
@@ -291,8 +291,8 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
 
   if (icm.compare("grey") == 0) {
     // on a RESTART the grey column is only the reference state (potential, force
-    // reference): the run may continue under another opacity law (m1-perf-0928: the sp
-    // test of implicit_opac_newton restarts gateA with a powerlaw kappa(T))
+    // reference): the run may continue under another opacity law (e.g. a restart with
+    // a power-law kappa(T))
     if (!eos.is_ideal || (pm1->opacity_type != radm1::M1_OPAC_CONST && !restart)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "sph_wedge: wg_ic = grey needs an ideal EOS and <rad_m1>/"
@@ -548,7 +548,6 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
       std::exit(EXIT_FAILURE);
     }
     wg_top_open_ = (bt == "open");
-    wg_zflux_ = pin->GetOrAddBoolean("problem","wg_wall_zero_flux",true);
     const std::string bb = pin->GetOrAddString("problem","wg_bc_bot","wall");
     if (bb != "wall" && bb != "reservoir") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -557,8 +556,8 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
       std::exit(EXIT_FAILURE);
     }
     wg_bot_res_ = (bb == "reservoir");
-    // DEFAULT ON (user 09-26): the closed outer wall traps a domain acoustic mode that
-    // a dt-dependent anti-damping drives (docs/dev/m1_wedge_0926.md 7.3); 0 = old scheme
+    // DEFAULT ON: the closed outer wall traps a domain acoustic mode that
+    // a dt-dependent anti-damping drives (docs/dev/m1_wedge_0926.md 7.3); 0 = no sponge
     wg_sp_rate_ = pin->GetOrAddReal("problem","wg_sponge_rate",0.02);
     wg_sp_r0_ = pin->GetOrAddReal("problem","wg_sponge_r0",wg_rint_);
     wg_rtop_ = rtop;
@@ -567,7 +566,7 @@ void ProblemGenerator::RadiationM1Wedge(ParameterInput *pin, const bool restart)
   user_bcs_func = RadM1WedgeBC;
   user_hist_func = RadM1WedgeHist;
   pgen_final_func = RadM1WedgeFinal;
-  // mhdfix-1025 <problem>/wg_hist_ebnd (read only when named; default false): user hst
+  // <problem>/wg_hist_ebnd (read only when named; default false): user hst
   // column 17 Ebnd_rad = the radiation energy the scheme put in through the x1 faces,
   // accumulated over the accepted steps (RadiationM1 Ebnd), for an exact energy budget:
   // Etot(t) - Etot(0) - Ebnd_rad(t) is then only the non-conservative sources (sponge,
@@ -746,14 +745,14 @@ void RadM1WedgeGravity(Mesh *pm, const Real bdt) {
     }
     u0(m,IM1,k,j,i) += src;
   });
-  // <rad_m1>/force_reference_work = split (ke-dt-0926): the work of the rho arad_ref part
+  // <rad_m1>/force_reference_work = split: the work of the rho arad_ref part
   // of the WB kick, at the stage-start velocity (a separate kernel: the default one is
   // untouched); the radiation pays it in its solve
   auto *pm1 = pmbp->pradm1;
   if (pm1 != nullptr && pm1->fref_wsplit && wbdyn) {
     auto aref = pm1->arad_ref;
     if (pm1->FrefWaccOn()) {
-      // fref-split-cons-1006 (time_scheme = be): the same increment also goes to the
+      // with time_scheme = be the same increment also goes to the
       // accumulator the be solve makes E pay (acc = gam0 acc + increment)
       auto wacc = pm1->FrefWacc();
       const Real g0 = pm1->FrefWaccGam0(bdt, pm->dt);
@@ -772,34 +771,32 @@ void RadM1WedgeGravity(Mesh *pm, const Real bdt) {
   }
   // x1 walls: the scaled-profile ghosts are not a mirror image of the edge cell, so the
   // Riemann flux through a "closed" wall carries mass (a 17 % loss in 2 500 s at Gamma
-  // 1.1).  wg_wall_zero_flux (default true) takes the wall face's mass, transverse
-  // momentum and energy fluxes back out of the edge cells (u0 was just updated with them,
-  // with this same beta dt); the pressure flux stays.  With wg_bc_top = open the outer
+  // 1.1).  The wall face's mass, transverse momentum and energy fluxes are therefore
+  // taken back out of the edge cells (u0 was just updated with them, with this same
+  // beta dt); the pressure flux stays.  With wg_bc_top = open the outer
   // face keeps outflow and loses only inflow.
-  if (wg_zflux_) {
-    auto flx1 = ph->uflx->x1f;
-    auto &mbbcs = pmbp->pmb->mb_bcs;
-    const bool topen = wg_top_open_;
-    const bool bres = wg_bot_res_;
-    par_for("wg_zflux", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-    KOKKOS_LAMBDA(const int m, const int k, const int j) {
-      if (!bres && mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
-        const Real f = bdt*area1(m,k,j,is)/volume(m,k,j,is);
-        u0(m,IDN,k,j,is) -= f*flx1(m,IDN,k,j,is);
-        u0(m,IM2,k,j,is) -= f*flx1(m,IM2,k,j,is);
-        u0(m,IM3,k,j,is) -= f*flx1(m,IM3,k,j,is);
-        u0(m,IEN,k,j,is) -= f*flx1(m,IEN,k,j,is);
-      }
-      if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user &&
-          !(topen && flx1(m,IDN,k,j,ie+1) > 0.0)) {
-        const Real f = bdt*area1(m,k,j,ie+1)/volume(m,k,j,ie);
-        u0(m,IDN,k,j,ie) += f*flx1(m,IDN,k,j,ie+1);
-        u0(m,IM2,k,j,ie) += f*flx1(m,IM2,k,j,ie+1);
-        u0(m,IM3,k,j,ie) += f*flx1(m,IM3,k,j,ie+1);
-        u0(m,IEN,k,j,ie) += f*flx1(m,IEN,k,j,ie+1);
-      }
-    });
-  }
+  auto flx1 = ph->uflx->x1f;
+  auto &mbbcs = pmbp->pmb->mb_bcs;
+  const bool topen = wg_top_open_;
+  const bool bres = wg_bot_res_;
+  par_for("wg_zflux", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    if (!bres && mbbcs.d_view(m, BoundaryFace::inner_x1) == BoundaryFlag::user) {
+      const Real f = bdt*area1(m,k,j,is)/volume(m,k,j,is);
+      u0(m,IDN,k,j,is) -= f*flx1(m,IDN,k,j,is);
+      u0(m,IM2,k,j,is) -= f*flx1(m,IM2,k,j,is);
+      u0(m,IM3,k,j,is) -= f*flx1(m,IM3,k,j,is);
+      u0(m,IEN,k,j,is) -= f*flx1(m,IEN,k,j,is);
+    }
+    if (mbbcs.d_view(m, BoundaryFace::outer_x1) == BoundaryFlag::user &&
+        !(topen && flx1(m,IDN,k,j,ie+1) > 0.0)) {
+      const Real f = bdt*area1(m,k,j,ie+1)/volume(m,k,j,ie);
+      u0(m,IDN,k,j,ie) += f*flx1(m,IDN,k,j,ie+1);
+      u0(m,IM2,k,j,ie) += f*flx1(m,IM2,k,j,ie+1);
+      u0(m,IM3,k,j,ie) += f*flx1(m,IM3,k,j,ie+1);
+      u0(m,IEN,k,j,ie) += f*flx1(m,IEN,k,j,ie+1);
+    }
+  });
   if (wg_sp_rate_ <= 0.0) return;
   // top sponge: the velocity relaxes to zero at the rate wg_sponge_rate*w,
   // w = ((r - r0)/(r_top - r0))^2 above r0; the kinetic energy removed leaves the
@@ -968,7 +965,7 @@ void RadM1WedgeHist(HistoryData *pdata, Mesh *pm) {
   pdata->label[13] = "M_tot";
   pdata->label[14] = "Mdot_top";
   pdata->label[15] = "Mdot_bot";
-  // mhdfix-1025 <problem>/wg_hist_ebnd: the accumulated x1 boundary radiation energy
+  // <problem>/wg_hist_ebnd: the accumulated x1 boundary radiation energy
   const bool ebnd = (pmbp->pradm1 != nullptr) && pmbp->pradm1->ebnd_on;
   if (ebnd) {
     pdata->nhist = 17;

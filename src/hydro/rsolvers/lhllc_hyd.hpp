@@ -23,7 +23,6 @@
 #include <cmath>      // sqrt()
 
 #include "utils/cb_sensor.hpp"
-#include "utils/divdiss.hpp"
 
 namespace hydro {
 //----------------------------------------------------------------------------------------
@@ -48,14 +47,7 @@ void LHLLC(TeamMember_t const &member, const EOS_Data &eos,
   const Real phi_min = (ivx == IVX) ? eos.x1_phi_min : 0.0;
   // <hydro>/lhllc_cb_sensor (EOS_Data::cb_sensor): odd-even sensor on every face
   const Real cb_sensor = eos.cb_sensor;
-  const bool cb_cont = eos.cb_cont;   // cbcont-1102 <hydro>/lhllc_cb_cont
-  // lowmach2-1102 <hydro>/lhllc_chi_full, <hydro>/lhllc_divdiss (EOS_Data::chi_full,
-  // ::divdiss; utils/divdiss.hpp).  Both off (default) = legacy LHLLC, bitwise.
-  const bool chi_full = eos.chi_full;
-  const int divdiss = eos.divdiss;
-  const bool dd_act2 = (indcs.nx2 > 1), dd_act3 = (indcs.nx3 > 1);
-  const Real dd_dx1 = size.d_view(m).dx1, dd_dx2 = size.d_view(m).dx2,
-             dd_dx3 = size.d_view(m).dx3;
+  const bool cb_cont = eos.cb_cont;   // <hydro>/lhllc_cb_cont
 
   par_for_inner(member, il, iu, [&](const int i) {
     //--- Step 1.  Create local references for L/R states (helps compiler vectorize)
@@ -105,41 +97,11 @@ void LHLLC(TeamMember_t const &member, const EOS_Data &eos,
       er = wr_ipr*igm1 + 0.5*wr_idn*(SQR(wr_ivx) + SQR(wr_ivy) + SQR(wr_ivz));
     }
 
-//      qc = sqrt(SQR(wl_ivx) + SQR(wl_ivy) + SQR(wl_ivz))/qa;
-//      qd = sqrt(SQR(wr_ivx) + SQR(wr_ivy) + SQR(wr_ivz))/qb;
-//      Real chi = fmax(qc,qd);
-//      Real phi = chi*(2.0-chi);
-//
-//    qc = fmin(wl_ivx,wr_ivx);
-//    qd = fmax(wl_ivx,wr_ivx);
-//    qe = fmax(qa,qb);
-//    Real sl = qc - qe;
-//    Real sr = qd - qe;
-//
-//    qc = sl - wl_ivx;
-//    qd = sr - wr_ivx;
-//      qe = wl_idn*qc - wr_idn*qd;
-//      Real ustar = (wr_ipr-wl_ipr+wl_idn*wl_ivx*qc-wr_idn*wr_ivx*qd)/qe;
-//
-//      Real rhobar = 0.5*(wl_idn + wr_idn);
-//      Real abar = 0.5*(qa + qb);
-//      Real pstar = 0.5*(wl_ipr+wr_ipr) - 0.5*phi*(wr_ivx-wl_ivx)*rhobar*abar;
-//
-//      Real ustaralpha;
-//      if ((sl < 0.0) and (ustar >= 0.0)) {
-//          ustaralpha = ustar*wl_idn*qc/(sl-ustar);
-//      }
-
-
     qc = 0.25*(wl_idn + wr_idn)*(qa + qb);  // average density * average sound speed
     qd = 0.5 * (wl_ipr + wr_ipr + (wl_ivx - wr_ivx) * qc);  // P_mid
 
     // coefficients for the low-Mach fix
     qe = fmax(fabs(wl_ivx),fabs(wr_ivx)); // maximum speed
-    if (chi_full) {   // lowmach2-1102: full speed, Minoshima & Miyoshi 2021 eq. (14)
-      qe = sqrt(fmax(SQR(wl_ivx) + (SQR(wl_ivy) + SQR(wl_ivz)),
-                     SQR(wr_ivx) + (SQR(wr_ivy) + SQR(wr_ivz))));
-    }
     qf = fmax(qa,qb); // maximum sound speed
     Real chi = fmin(1.0,qe/qf);
     // odd-even sensor, default 1 (utils/cb_sensor.hpp); 0 when not flagged
@@ -180,14 +142,6 @@ void LHLLC(TeamMember_t const &member, const EOS_Data &eos,
     qc = wl_ipr + phi*qe*wl_idn*wl_ivx;  // tl
     qd = wr_ipr + phi*qf*wr_idn*wr_ivx;  // tr
     Real cp = (ml*qd + mr*qc)/(ml + mr);
-    // lowmach2-1102: (1 - phi) of the acoustic term acting on the multi-D divergence of
-    // rho u (utils/divdiss.hpp); enters the momentum flux and, through cp*am, the
-    // energy flux as the matching contact-pressure work
-    if (divdiss > 0) {
-      const Real jdd = DivDissJ(w0, m, k, j, i, ivx, divdiss, dd_act2, dd_act3,
-                                dd_dx1, dd_dx2, dd_dx3);
-      cp -= (1.0 - phi)*(ml*mr/(ml + mr))*jdd/(0.5*(wl_idn + wr_idn));
-    }
     cp = cp > 0.0 ? cp : 0.0;
 
     //--- Step 6. Compute L/R fluxes along the line bm (qb), bp (qa)

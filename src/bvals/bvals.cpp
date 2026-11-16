@@ -329,7 +329,7 @@ particles::ParticlesBoundaryValues::~ParticlesBoundaryValues() {
 //! depends on the MeshBlock layout at truncation level. extend repeats the exchange once,
 //! after it has completed, with the stencil allowed into the sender's own along-seam
 //! ghosts (same-panel copies), clamped to the PANEL: layout independent to round-off.
-//! prod1103 default (USER 11-03): extend on a FRESH start (recipe::NewDefaults) whenever
+//! Default: extend on a FRESH start (recipe::NewDefaults) whenever
 //! a panel side has more than one MeshBlock and the key is not named; the value is
 //! recorded (GetOrAdd) so the run's restarts carry it. A restart whose input lacks the
 //! key keeps clamp (bitwise); an explicit key always wins. One MeshBlock per panel side:

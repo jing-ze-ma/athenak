@@ -4,8 +4,8 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file ohm_drag.cpp
-//! \brief ohmdrag-1029 (TEST): Ohmic (Lorentz) drag with a steep radial eta(r) on the
-//! cubed sphere and on spherical polar, against a 1-D reference (ohmdrag_1029/ref1d.py).
+//! \brief (TEST): Ohmic (Lorentz) drag with a steep radial eta(r) on the
+//! cubed sphere and on spherical polar, against a 1-D reference.
 //!
 //! Shell r in [1,2] between two perfectly conducting walls at rest: either the
 //! production wall (mesh x1 bc = reflect, default <mhd>/wall_conducting = full) or

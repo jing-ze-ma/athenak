@@ -4,8 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file two_stream_rt_chain_nn.cpp
-//! \brief tusplit-1102: explicit instantiations of TsrtCkChain (and TsrtGreyRt) for part
-//! of the
+//! \brief explicit instantiations of TsrtCkChain (and TsrtGreyRt) for part of the
 //! tag sets picket_fence_two_stream_RT_pass dispatches (generated; the full list is
 //! the union of the two_stream_rt_chain_*.cpp files).  Tags: (SPH, BSP, CCH, FRM,
 //! FOP, JAC); the radial tier NN is 0 for every set.

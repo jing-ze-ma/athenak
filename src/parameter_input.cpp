@@ -265,8 +265,9 @@ void ParameterInput::LoadFromFile(IOWrapper &input, bool single_file_per_rank) {
       header = loc + 10; // store the header length
       break;
     }
-    // rst header limit raised 10 -> 256 buffers (~1 MB): commented decks + FIN5.1/ROL2U keys reached
-    // 45 KB (Caltech 10-15, He giant LARGE restart FATAL); the search is cheap and only runs once.
+    // rst header limit raised 10 -> 256 buffers (~1 MB): commented decks + FIN5.1/ROL2U
+    // keys reached 45 KB (a He giant LARGE restart FATAL); the search is
+    // cheap and only runs once.
     if (header > kBufSize*256) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<par_end> is not found in the first 1 MByte."
@@ -464,7 +465,7 @@ bool ParameterInput::DoesParameterExist(std::string block, std::string name) {
   pb = GetPtrToBlock(block);
   if (pb == nullptr) return 0;
   pl = pb->GetPtrToLine(name);
-  if (pl != nullptr) pl->accessed = true;   // a probe counts as a read (unkkey-1017)
+  if (pl != nullptr) pl->accessed = true;   // a probe counts as a read
   return (pl == nullptr ? false : true);
 }
 
@@ -874,7 +875,7 @@ void ParameterInput::MarkAllAsRestart() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void ParameterInput::ReportUnreadParameters()
-//  \brief unkkey-1017: WARNING (rank 0, once) listing every parameter given in the input
+//  \brief WARNING (rank 0, once) listing every parameter given in the input
 //  file or on the command line that the code never read or probed (Get*, GetOrAdd*,
 //  DoesParameterExist, IsParameterDefaulted, Set*): typos and keys AthenaK does not have
 //  (e.g. the Athena++ mesh/x2rat) are otherwise silently ignored.  Called by the Driver

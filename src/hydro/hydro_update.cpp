@@ -21,9 +21,9 @@
 namespace fluid {
 //----------------------------------------------------------------------------------------
 //! \fn void fluid::RKUpdateCore
-//! \brief share-1104 P6: the explicit RK stage update u0 = gam0 u0 + gam1 u1 - beta dt
+//! \brief the explicit RK stage update u0 = gam0 u0 + gam1 u1 - beta dt
 //! div(F) of the first nvar variables, ONE implementation for Hydro::RKUpdate and
-//! MHD::RKUpdate (which keep their own hooks: eint_ledger + DetTrace / Boris).
+//! MHD::RKUpdate (which keep their own hooks: eint_ledger + DetTrace).
 
 void RKUpdateCore(MeshBlockPack *pmy_pack, Driver *pdriver, const int stage,
                   const int nvar, const DvceFaceFld5D<Real> &uflx,
@@ -46,7 +46,7 @@ void RKUpdateCore(MeshBlockPack *pmy_pack, Driver *pdriver, const int stage,
   auto flx2 = uflx.x2f;
   auto flx3 = uflx.x3f;
   auto &mbsize = pmy_pack->pmb->mb_size;
-    
+
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
   auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
   auto &volume = pmy_pack->pcoord->volume;
@@ -64,12 +64,12 @@ void RKUpdateCore(MeshBlockPack *pmy_pack, Driver *pdriver, const int stage,
   par_for_outer("h_update",DevExeSpace(),scr_size,scr_level,0,nmb1,0,nvar-1,ks,ke,js,je,
   KOKKOS_LAMBDA(TeamMember_t member, const int m, const int n, const int k, const int j) {
     ScrArray1D<Real> divf(member.team_scratch(scr_level), ncells1);
-      
+
     if (use_cubed_sphere || use_spherical_polar) {
-        
         // compute dF1/dx1
         par_for_inner(member, is, ie, [&](const int i) {
-          divf(i) = (flx1(m,n,k,j,i+1)*area1(m,k,j,i+1) - flx1(m,n,k,j,i)*area1(m,k,j,i))/volume(m,k,j,i);
+          divf(i) = (flx1(m,n,k,j,i+1)*area1(m,k,j,i+1)
+                     - flx1(m,n,k,j,i)*area1(m,k,j,i))/volume(m,k,j,i);
         });
         member.team_barrier();
 
@@ -77,7 +77,8 @@ void RKUpdateCore(MeshBlockPack *pmy_pack, Driver *pdriver, const int stage,
         // Fluxes must be summed in pairs to symmetrize round-off error in each dir
         if (multi_d) {
           par_for_inner(member, is, ie, [&](const int i) {
-            divf(i) += (flx2(m,n,k,j+1,i)*area2(m,k,j+1,i) - flx2(m,n,k,j,i)*area2(m,k,j,i))/volume(m,k,j,i);
+            divf(i) += (flx2(m,n,k,j+1,i)*area2(m,k,j+1,i)
+                        - flx2(m,n,k,j,i)*area2(m,k,j,i))/volume(m,k,j,i);
           });
           member.team_barrier();
         }
@@ -86,13 +87,13 @@ void RKUpdateCore(MeshBlockPack *pmy_pack, Driver *pdriver, const int stage,
         // Fluxes must be summed in pairs to symmetrize round-off error in each dir
         if (three_d) {
           par_for_inner(member, is, ie, [&](const int i) {
-            divf(i) += (flx3(m,n,k+1,j,i)*area3(m,k+1,j,i) - flx3(m,n,k,j,i)*area3(m,k,j,i))/volume(m,k,j,i);
+            divf(i) += (flx3(m,n,k+1,j,i)*area3(m,k+1,j,i)
+                        - flx3(m,n,k,j,i)*area3(m,k,j,i))/volume(m,k,j,i);
           });
           member.team_barrier();
         }
-          
-    } else {
 
+    } else {
     // compute dF1/dx1
     par_for_inner(member, is, ie, [&](const int i) {
       divf(i) = (flx1(m,n,k,j,i+1) - flx1(m,n,k,j,i))/mbsize.d_view(m).dx1;
@@ -116,7 +117,6 @@ void RKUpdateCore(MeshBlockPack *pmy_pack, Driver *pdriver, const int stage,
       });
       member.team_barrier();
     }
-          
     }
 
     par_for_inner(member, is, ie, [&](const int i) {
@@ -132,7 +132,7 @@ namespace hydro {
 //  \brief Explicit RK update including flux divergence terms
 
 TaskStatus Hydro::RKUpdate(Driver *pdriver, int stage) {
-  eint_ledger::Mark(pmy_pack->pmesh, "gap_pre");   // floorheat-1029 (no-op unless on)
+  eint_ledger::Mark(pmy_pack->pmesh, "gap_pre");   // (no-op unless on)
   if (pmy_pack->pradm1 != nullptr) {pmy_pack->pradm1->DetTrace("h_preupd");}
   fluid::RKUpdateCore(pmy_pack, pdriver, stage, nhydro + nscalars, uflx, u0, u1);
   return TaskStatus::complete;

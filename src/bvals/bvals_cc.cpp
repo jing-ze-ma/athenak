@@ -23,7 +23,6 @@
 #include "coordinates/cubed_sphere.hpp"
 #include "bvals.hpp"
 #include "bvals/cs_seam_round.hpp"
-#include "utils/wb_background.hpp"
 
 //----------------------------------------------------------------------------------------
 // BValCC constructor:
@@ -55,7 +54,9 @@ void MeshBoundaryValuesCC::SetVectorPairs(const int nvar,
   }
   Kokkos::realloc(vrole_, std::max(nvar, 1));
   auto h = Kokkos::create_mirror_view(vrole_);
-  for (int v=0; v<nvar; ++v) {h(v) = r[v];}
+  for (int v=0; v<nvar; ++v) {
+    h(v) = r[v];
+  }
   Kokkos::deep_copy(vrole_, h);
   vrole_set_ = true;
 }
@@ -69,7 +70,9 @@ static int BvCcSplit() {
   if (s < 0) {
     const char *e = std::getenv("BVALS_CC_SPLIT");
     s = (e != nullptr) ? std::atoi(e) : 1;
-    if (s < 1) {s = 1;}
+    if (s < 1) {
+      s = 1;
+    }
   }
   return s;
 }
@@ -86,7 +89,9 @@ static int BvCcVl() {
 #else
     v = (e != nullptr) ? std::atoi(e) : 16;
 #endif
-    if (v < 1) {v = 1;}
+    if (v < 1) {
+      v = 1;
+    }
   }
   return v;
 }
@@ -106,9 +111,13 @@ static BvCcTeamPolicy BvCcPolicy(const int nleague) {
   if (t < 0) {
     const char *e = std::getenv("BVALS_CC_TS");
     t = (e != nullptr) ? std::atoi(e) : 0;
-    if (t < 0) {t = 0;}
+    if (t < 0) {
+      t = 0;
+    }
   }
-  if (t > 0) {return BvCcTeamPolicy(DevExeSpace(), nleague, t, BvCcVl());}
+  if (t > 0) {
+    return BvCcTeamPolicy(DevExeSpace(), nleague, t, BvCcVl());
+  }
   return BvCcTeamPolicy(DevExeSpace(), nleague, Kokkos::AUTO, BvCcVl());
 }
 
@@ -153,20 +162,9 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   // needed only on the cubed sphere, to give a source cell its (xi,eta)
   auto &mbsize = pmy_pack->pmb->mb_size;
   auto &cs_indcs = pmy_pack->pmesh->mb_indcs;
-  int no_rs_cc = 0;
-  { const char *e_ = std::getenv("CS_NORESAMP_CC");
-    if (e_ != nullptr) { no_rs_cc = std::atoi(e_); } }
   const Real rg_ = cs_rho_guard;
   const bool rs_lin = cs_lin_resample;
   const bool nors_ = cs_noresample;
-  // wb_seam (see bvals.hpp)
-  const bool wbs_ = wb_seam;
-  auto wbsphi_ = wbs_phi;
-  const EOS_Data wbseos_ = wbs_eos;
-  const int wbsopt_ = wbs_opt, wbsien_ = wbs_ien;
-  const bool wbsetg_ = wbs_etg;
-  auto wbsbcc_ = wbs_bcc;
-  const bool wbsmhd_ = (wbs_bcc.extent_int(0) > 0);
   const bool ext_ = cs_ext_pass_;   // second pass, see cs_seam_blockend
   const int ngx_ = pmy_pack->pmesh->mb_indcs.ng;
   const bool cperm_ = cs_perm_pairs;
@@ -191,55 +189,38 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   // the seam/pole branch needs per-thread scratch; the body is compiled twice (with and
   // without it, selected at launch) so ordinary packs do not pay the scratch attach
 #if defined(KOKKOS_ENABLE_CUDA)
-  // nvcc has no generic extended lambda, and the bool flags did not compile
-  // the dead branches out (the CUDA pack had 255 registers + 3 kB stack): three kernels
-  // with kseam_ / kwb_ compile-time constants (bvals_cc_pack.inc), the same arithmetic
-#define BVCC_PACK_NAME pack_tt_
+  // nvcc has no generic extended lambda, and a bool flag did not compile the dead
+  // branches out: two kernels with kseam_ a compile-time constant (bvals_cc_pack.inc),
+  // the same arithmetic
+#define BVCC_PACK_NAME pack_t_
 #define BVCC_PACK_KSEAM true
-#define BVCC_PACK_KWB true
 #include "bvals_cc_pack.inc"
-#undef BVCC_PACK_KWB
-#undef BVCC_PACK_NAME
-#define BVCC_PACK_NAME pack_tf_
-#define BVCC_PACK_KWB false
-#include "bvals_cc_pack.inc"
-#undef BVCC_PACK_KWB
 #undef BVCC_PACK_KSEAM
 #undef BVCC_PACK_NAME
-#define BVCC_PACK_NAME pack_ff_
+#define BVCC_PACK_NAME pack_f_
 #define BVCC_PACK_KSEAM false
-#define BVCC_PACK_KWB false
-#include "bvals_cc_pack.inc"
-#undef BVCC_PACK_KWB
+#include "bvals_cc_pack.inc"  // NOLINT(build/include)
 #undef BVCC_PACK_KSEAM
 #undef BVCC_PACK_NAME
 #else
 #define BVCC_PACK_NAME pack_
-#include "bvals_cc_pack.inc"
+#include "bvals_cc_pack.inc"  // NOLINT(build/include)
 #undef BVCC_PACK_NAME
 #endif
-  if ((use_cs || use_pole) && wbs_) {
+  if (use_cs || use_pole) {
     BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
 #if defined(KOKKOS_ENABLE_CUDA)
-      pack_tt_(tmember);
+      pack_t_(tmember);
 #else
-      pack_(tmember, std::true_type(), std::true_type());
-#endif
-    });
-  } else if (use_cs || use_pole) {
-    BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
-#if defined(KOKKOS_ENABLE_CUDA)
-      pack_tf_(tmember);
-#else
-      pack_(tmember, std::true_type(), std::false_type());
+      pack_(tmember, std::true_type());
 #endif
     });
   } else {
     BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
 #if defined(KOKKOS_ENABLE_CUDA)
-      pack_ff_(tmember);
+      pack_f_(tmember);
 #else
-      pack_(tmember, std::false_type(), std::false_type());
+      pack_(tmember, std::false_type());
 #endif
     });
   }  // end par_for_outer
@@ -362,7 +343,9 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           // variable list: the selected variables are the first nvar chunks
           int ierr = MPI_Isend(send_ptr.data(), data_size, MPI_ATHENA_REAL,
                                drank, tag, comm_vars, &(sendbuf[n].vars_req[m]));
-          if (ierr != MPI_SUCCESS) {no_errors=false;}
+          if (ierr != MPI_SUCCESS) {
+            no_errors=false;
+          }
         }
       }
     }
@@ -420,7 +403,9 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
         if (nghbr.h_view(m,n).rank != global_variable::my_rank) {
           int test;
           int ierr = MPI_Test(&(recvbuf[n].vars_req[m]), &test, MPI_STATUS_IGNORE);
-          if (ierr != MPI_SUCCESS) {no_errors=false;}
+          if (ierr != MPI_SUCCESS) {
+            no_errors=false;
+          }
           if (!(static_cast<bool>(test))) {
             bflag = true;
           }
@@ -436,7 +421,9 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
     std::exit(EXIT_FAILURE);
   }
   // exit if recv boundary buffer communications have not completed
-  if (bflag) {return TaskStatus::incomplete;}
+  if (bflag) {
+    return TaskStatus::incomplete;
+  }
 #endif
 
   //----- STEP 2: buffers have all completed, so unpack
@@ -505,7 +492,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
       }
 
       // Middle loop over k,j
-      Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, q0_, q1_), [&](const int idx) {
+      Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, q0_, q1_),
+                           [&](const int idx) {
         int k = idx / nj;
         int j = (idx - k * nj) + jl;
         k += kl;
@@ -603,7 +591,9 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
   // The COARSE array needs it too -- see the note in bvals_fc.cpp's RecvAndUnpackFC.
   if (pmy_pack->pmesh->use_cubed_sphere) {
     FillPanelCornersCC(a, false, vmask);
-    if (pmy_pack->pmesh->multilevel) { FillPanelCornersCC(ca, true, vmask); }
+    if (pmy_pack->pmesh->multilevel) {
+      FillPanelCornersCC(ca, true, vmask);
+    }
   }
 
   // <mesh>/cs_seam_blockend = extend: a second pass re-packs the seam halo with the

@@ -15,7 +15,6 @@
 //!   schemes for MHD", JCP, 424, 109748 (2021)
 
 namespace mhd {
-
 // The tolerance for treating Bx as zero when deciding whether the rotational
 // discontinuities (the ** states) exist is now the runtime parameter
 // EOS_Data::hlld_bx_zero_tol (<mhd>/hlld_bx_zero_tol, default 1.0e-4, the historical
@@ -39,7 +38,11 @@ void HLLD_UCT(TeamMember_t const &member, const EOS_Data &eos,
      const int m, const int k, const int j, const int il, const int iu, const int ivx,
      const ScrArray2D<Real> &wl, const ScrArray2D<Real> &wr,
      const ScrArray2D<Real> &bl, const ScrArray2D<Real> &br, const DvceArray4D<Real> &bx,
-     DvceArray5D<Real> flx, DvceArray4D<Real> ey, DvceArray4D<Real> ez, DvceArray4D<Real> laml, DvceArray4D<Real> lamr, DvceArray4D<Real> vxl, DvceArray4D<Real> vxr, DvceArray4D<Real> vyl, DvceArray4D<Real> vyr, DvceArray4D<Real> vzl, DvceArray4D<Real> vzr, DvceArray4D<Real> nus, DvceArray4D<Real> dl, DvceArray4D<Real> dr) {
+     DvceArray5D<Real> flx, DvceArray4D<Real> ey, DvceArray4D<Real> ez,
+     DvceArray4D<Real> laml, DvceArray4D<Real> lamr, DvceArray4D<Real> vxl,
+     DvceArray4D<Real> vxr, DvceArray4D<Real> vyl, DvceArray4D<Real> vyr,
+     DvceArray4D<Real> vzl, DvceArray4D<Real> vzr, DvceArray4D<Real> nus,
+     DvceArray4D<Real> dl, DvceArray4D<Real> dr) {
   int ivy = IVX + ((ivx-IVX)+1)%3;
   int ivz = IVX + ((ivx-IVX)+2)%3;
   int iby = ((ivx-IVX) + 1)%3;
@@ -372,8 +375,9 @@ void HLLD_UCT(TeamMember_t const &member, const EOS_Data &eos,
       vyr(m,k,j,i) = wr_ivy;
       vzl(m,k,j,i) = wl_ivz;
       vzr(m,k,j,i) = wr_ivz;
-        
-      Real nustar = (fabs(spd[3]-spd[1]) > 1.0e-9*fabs(spd[4]-spd[0])) ? ((fabs(spd[3])-fabs(spd[1]))/(spd[3]-spd[1])) : 0.0;
+
+      Real nustar = (fabs(spd[3]-spd[1]) > 1.0e-9*fabs(spd[4]-spd[0]))
+          ? ((fabs(spd[3])-fabs(spd[1]))/(spd[3]-spd[1])) : 0.0;
       Real nul = (spd[1]+spd[0])/(fabs(spd[1])+fabs(spd[0]));
       Real nur = (spd[3]+spd[4])/(fabs(spd[3])+fabs(spd[4]));
       Real chitl = (wl_ivx-spd[2])*(spd[0]-spd[2])/(spd[1]+spd[0]-2.0*spd[2]);
@@ -383,8 +387,10 @@ void HLLD_UCT(TeamMember_t const &member, const EOS_Data &eos,
       nus(m,k,j,i) = (fabs(spd[4])-fabs(spd[0]))/(spd[4]-spd[0]); // nustar;
       Real alpr = fmax(0.0,spd[4]);
       Real alpl = -fmin(0.0,spd[0]);
-      dl(m,k,j,i) = alpr*alpl/(alpr+alpl); // 0.5*(nul-nustar)*chitl + 0.5*(fabs(spd[1])-nustar*spd[1]);
-      dr(m,k,j,i) = alpr*alpl/(alpr+alpl); // 0.5*(nur-nustar)*chitr + 0.5*(fabs(spd[3])-nustar*spd[3]);
+      // 0.5*(nul-nustar)*chitl + 0.5*(fabs(spd[1])-nustar*spd[1]);
+      dl(m,k,j,i) = alpr*alpl/(alpr+alpl);
+      // 0.5*(nur-nustar)*chitr + 0.5*(fabs(spd[3])-nustar*spd[3]);
+      dr(m,k,j,i) = alpr*alpl/(alpr+alpl);
     });
 
   //------------------------- ISOTHERMAL HLLD solver -------------------------------------
@@ -587,8 +593,9 @@ void HLLD_UCT(TeamMember_t const &member, const EOS_Data &eos,
       vyr(m,k,j,i) = wr_ivy;
       vzl(m,k,j,i) = wl_ivz;
       vzr(m,k,j,i) = wr_ivz;
-      
-      Real nustar = (fabs(spd[3]-spd[1]) > 1.0e-9*fabs(spd[4]-spd[0])) ? ((fabs(spd[3])-fabs(spd[1]))/(spd[3]-spd[1])) : 0.0;
+
+      Real nustar = (fabs(spd[3]-spd[1]) > 1.0e-9*fabs(spd[4]-spd[0]))
+          ? ((fabs(spd[3])-fabs(spd[1]))/(spd[3]-spd[1])) : 0.0;
       Real nul = (spd[1]+spd[0])/(fabs(spd[1])+fabs(spd[0]));
       Real nur = (spd[3]+spd[4])/(fabs(spd[3])+fabs(spd[4]));
       Real chitl = (wl_ivx-spd[2])*(spd[0]-spd[2])/(spd[1]+spd[0]-2.0*spd[2]);

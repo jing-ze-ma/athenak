@@ -76,7 +76,7 @@ Real GreshoPres(const Real r, const Real p0) {
 
 //----------------------------------------------------------------------------------------
 //! \fn Real GreshoVint(const Real r)
-//! \brief alfmach-1102: integral of GreshoVphi from 0 to r (flux function of b_phi)
+//! \brief integral of GreshoVphi from 0 to r (flux function of b_phi)
 
 KOKKOS_INLINE_FUNCTION
 Real GreshoVint(const Real r) {
@@ -89,14 +89,14 @@ Real GreshoVint(const Real r) {
 }
 
 namespace {
-// lowmachpu-1103: state for the <problem>/user_hist = true history (GreshoPUHistory)
+// state for the <problem>/user_hist = true history (GreshoPUHistory)
 Real gpu_p0_ = 1.0, gpu_d0_ = 1.0, gpu_c0_ = 1.0, gpu_vamp_ = 1.0;
 Real gpu_ubg1_ = 0.0, gpu_ubg2_ = 0.0;
 }  // namespace
 
 //----------------------------------------------------------------------------------------
 //! \fn void GreshoPUHistory(HistoryData *pdata, Mesh *pm)
-//! \brief lowmachpu-1103 (TEST, <problem>/user_hist = true): low-Mach pressure-velocity
+//! \brief (TEST, <problem>/user_hist = true): low-Mach pressure-velocity
 //! coupling diagnostics, all volume integrals over the mesh (domain area 1 = means):
 //!  pcb_ij  = int (p/p0 - 1)(-1)^(gi+gj)      odd-even pressure mode
 //!  pdev    = int (p/p0 - 1)                   mean pressure drift
@@ -104,8 +104,9 @@ Real gpu_ubg1_ = 0.0, gpu_ubg2_ = 0.0;
 //!  uxcb_i  = int (vx - ubg1)(-1)^gi / c0      odd-even x-velocity (divergence) mode
 //!  uycb_j  = int (vy - ubg2)(-1)^gj / c0      odd-even y-velocity (divergence) mode
 //!  ukern   = int (vx - ubg1)(-1)^(gi+gj) / c0
-//!  dpv1/dpv2/dpvm = int |p - p_G|, (p - p_G)^2, (p - p_G) with p_G the (vortex_amp-scaled)
-//!                   exact Gresho pressure (meaningful with the vortex at rest)
+//!  dpv1/dpv2/dpvm = int |p - p_G|, (p - p_G)^2, (p - p_G) with p_G the
+//!                   (vortex_amp-scaled) exact Gresho pressure (meaningful with the
+//!                   vortex at rest)
 //!  fRk/fIk = int (p/p0 - 1) cos/sin(2 pi k x1/L1), k = 1, 2, 4, 8 (acoustic pulse)
 void GreshoPUHistory(HistoryData *pdata, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
@@ -182,7 +183,7 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
   if (restart) return;
 
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
-  // lowmach-noise-1030: also runs in hydro (<hydro> block, no field)
+  // also runs in hydro (<hydro> block, no field)
   const bool is_mhd = (pmbp->pmhd != nullptr);
   if (!is_mhd && pmbp->phydro == nullptr) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
@@ -199,7 +200,7 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
   // peak rotation speed is 1, so M = 1/c_s fixes the background pressure
   Real p0 = d0/(eos.gamma*mach*mach);
   Real b0mag = is_mhd ? std::sqrt(2.0*p0/beta) : 0.0;
-  // lowmach-noise-1030 (TEST keys, read only when set): uniform field at angle b_angle
+  // (TEST keys, read only when set): uniform field at angle b_angle
   // (degrees) from x1 in the x1-x2 plane (default 0 = along x1, as before), and a
   // grid-scale velocity seed vpert_grid*(-1)^(i+j) (in units of the peak speed 1) on
   // both velocity components, or with vpert_rand > 0 a white-noise seed of that rms
@@ -214,7 +215,7 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
   if (pin->DoesParameterExist("problem", "vpert_rand")) {
     vrand = pin->GetReal("problem", "vpert_rand");
   }
-  // lowmach2-1102 (TEST keys, read only when set): vortex_amp scales the vortex
+  // (TEST keys, read only when set): vortex_amp scales the vortex
   // (velocity x a, pressure perturbation x a^2; 0 = no vortex), ubg1/ubg2 add a uniform
   // flow, and three grid-scale seeds with the global cell parity gi, gj:
   //   cb_p:    p  *= 1 + cb_p (-1)^gi        (pressure checkerboard along x1)
@@ -227,15 +228,20 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
   if (pin->DoesParameterExist("problem", "ubg1")) ubg1 = pin->GetReal("problem", "ubg1");
   if (pin->DoesParameterExist("problem", "ubg2")) ubg2 = pin->GetReal("problem", "ubg2");
   if (pin->DoesParameterExist("problem", "cb_p")) cbp = pin->GetReal("problem", "cb_p");
-  if (pin->DoesParameterExist("problem", "cb_un")) cbun = pin->GetReal("problem", "cb_un");
+  if (pin->DoesParameterExist("problem", "cb_un")) {
+    cbun = pin->GetReal("problem", "cb_un");
+  }
   if (pin->DoesParameterExist("problem", "cb_kern")) {
     cbkern = pin->GetReal("problem", "cb_kern");
   }
-  // alfmach-1102 (TEST key, read only when set): cb_ut: vy += cb_ut (-1)^gi, a 2dx
-  // TRANSVERSE-velocity checkerboard along x1 (an Alfvenic 2dx mode when B has an x1 part)
+  // (TEST key, read only when set): cb_ut: vy += cb_ut (-1)^gi, a 2dx
+  // TRANSVERSE-velocity checkerboard along x1 (an Alfvenic 2dx mode when B has an x1
+  // part)
   Real cbut = 0.0;
-  if (pin->DoesParameterExist("problem", "cb_ut")) cbut = pin->GetReal("problem", "cb_ut");
-  // lowmachpu-1103 (TEST keys, read only when set):
+  if (pin->DoesParameterExist("problem", "cb_ut")) {
+    cbut = pin->GetReal("problem", "cb_ut");
+  }
+  // (TEST keys, read only when set):
   //   cb_pij: p  *= 1 + cb_pij (-1)^(gi+gj)  (2-D odd-even pressure checkerboard)
   //   cb_uy:  vy += cb_uy (-1)^gj            (with cb_un: the odd-even divergence mode)
   //   pulse_amp, pulse_w, pulse_x0, pulse_dir: a plane Gaussian sound pulse along x1,
@@ -243,33 +249,23 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
   //     drho = dp/c0^2, and dvx = pulse_dir dp/(d0 c0) (+1/-1 = simple right/left wave,
   //     0 = pure pressure pulse that splits in two)
   Real cbpij = 0.0, cbuy = 0.0, pamp = 0.0, pw = 0.05, px0 = 0.0, pdir = 1.0;
-  if (pin->DoesParameterExist("problem", "cb_pij")) cbpij = pin->GetReal("problem", "cb_pij");
-  if (pin->DoesParameterExist("problem", "cb_uy")) cbuy = pin->GetReal("problem", "cb_uy");
+  if (pin->DoesParameterExist("problem", "cb_pij")) {
+    cbpij = pin->GetReal("problem", "cb_pij");
+  }
+  if (pin->DoesParameterExist("problem", "cb_uy")) {
+    cbuy = pin->GetReal("problem", "cb_uy");
+  }
   if (pin->DoesParameterExist("problem", "pulse_amp")) {
     pamp = pin->GetReal("problem", "pulse_amp");
     pw = pin->GetOrAddReal("problem", "pulse_w", 0.05);
     px0 = pin->GetOrAddReal("problem", "pulse_x0", 0.0);
     pdir = pin->GetOrAddReal("problem", "pulse_dir", 1.0);
   }
-  // lowmachpu-1103 <problem>/pulse_fast (TEST key, read only when named; MHD with the
-  // field along x2, b_angle = 90): the pulse is the exact linear FAST magnetosonic simple
-  // wave along x1 (k perpendicular to B), dp = pulse_amp p0 g, drho = dp/c0^2,
-  // dB2 = B0 drho/d0, dvx = pulse_dir c_f drho/d0, c_f^2 = c0^2 + B0^2/d0
-  bool pfast = false;
-  if (pin->DoesParameterExist("problem", "pulse_fast")) {
-    pfast = pin->GetBoolean("problem", "pulse_fast");
-  }
   const Real c0s = std::sqrt(eos.gamma*p0/d0);
   const Real l1m = pmy_mesh_->mesh_size.x1max - pmy_mesh_->mesh_size.x1min;
   gpu_p0_ = p0; gpu_d0_ = d0; gpu_c0_ = c0s; gpu_vamp_ = 1.0;
-  const Real cfs = std::sqrt(SQR(c0s) + (is_mhd ? b0mag*b0mag/d0 : 0.0));
-  const Real pfb = (pfast && is_mhd) ? b0mag : 0.0;   // dB2 = pfb drho/d0
-  if (pfast && is_mhd && std::fabs(bang - 0.5*M_PI) > 1.0e-12) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-              << "<problem>/pulse_fast needs b_angle = 90 (field along x2)" << std::endl;
-    exit(EXIT_FAILURE);
-  }
-  const bool lm2 = (cbpij != 0.0) || (cbuy != 0.0) || (pamp != 0.0) || (cbut != 0.0) || (vamp != 1.0) || (ubg1 != 0.0) || (ubg2 != 0.0) || (cbp != 0.0) ||
+  const bool lm2 = (cbpij != 0.0) || (cbuy != 0.0) || (pamp != 0.0) || (cbut != 0.0) ||
+                   (vamp != 1.0) || (ubg1 != 0.0) || (ubg2 != 0.0) || (cbp != 0.0) ||
                    (cbun != 0.0) || (cbkern != 0.0);
   Real b1 = b0mag*std::cos(bang), b2 = b0mag*std::sin(bang), b3 = 0.0;
   // ... and with b_incl (degrees from x3) set, a field out of the x1-x2 plane, e.g.
@@ -281,7 +277,7 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
     b3 = b0mag*std::cos(binc);
   }
 
-  // alfmach-1102 <problem>/b_phi (TEST key, read only when named): in place of the
+  // <problem>/b_phi (TEST key, read only when named): in place of the
   // uniform field, an AZIMUTHAL field ALIGNED with the flow, B_phi = B0 u_phi(r) (peak
   // B0 = sqrt(2 p0/beta) at r = 0.2, zero for r > 0.4), so the Alfven Mach number
   // M_A = u_phi/v_A = sqrt(d0)/B0 is the same at every radius of the vortex.  u x B = 0,
@@ -385,13 +381,7 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
         const Real dpp = pamp*p0*std::exp(-SQR(dxp/pw));
         pres += dpp;
         dens += dpp/SQR(c0s);
-        if (pfb != 0.0) {
-          vx += pdir*cfs*dpp/(SQR(c0s)*d0);
-          const Real by = b2 + pfb*dpp/(SQR(c0s)*d0);
-          emag = 0.5*(b1*b1 + by*by + b3*b3);
-        } else {
-          vx += pdir*dpp/(d0*c0s);
-        }
+        vx += pdir*dpp/(d0*c0s);
       }
     }
     u0(m,IDN,k,j,i) = dens;
@@ -416,17 +406,6 @@ void ProblemGenerator::GreshoMHD(ParameterInput *pin, const bool restart) {
     }
     if (j==je) {
       b0.x2f(m,k,j+1,i) = b2;
-    }
-    if (pfb != 0.0) {
-      // x2-face field depends on x1 only: divergence-free; value at the cell centre x1
-      Real &x1min = size.d_view(m).x1min;
-      Real &x1max = size.d_view(m).x1max;
-      const Real x1v = CellCenterX(i-is, indcs.nx1, x1min, x1max);
-      Real dxp = x1v - px0;
-      dxp -= l1m*std::round(dxp/l1m);
-      const Real by = b2 + pfb*pamp*p0*std::exp(-SQR(dxp/pw))/(SQR(c0s)*d0);
-      b0.x2f(m,k,j,i) = by;
-      if (j==je) b0.x2f(m,k,j+1,i) = by;
     }
     if (bphi0 != 0.0) {
       Real &x1min = size.d_view(m).x1min;

@@ -33,7 +33,6 @@
 #include "utils/two_stream_ck_rst.hpp"
 #include "utils/two_stream_column_ck.hpp"
 #include "utils/deep_copy_across.hpp"
-#include "utils/ck_2nd.hpp"   // ck2ndt-1102 ck_cad_cont state (slabs 26..30)
 
 namespace two_stream_rt {
 
@@ -41,7 +40,7 @@ using deep_copy_across::DeepCopyAcross;
 
 void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt);   // two_stream_rt_pass.cpp
 inline void CkRstScalars();
-// problem/flux_hst_rst: the flux history's face-flux cache (two_stream_rt.hpp)
+// rt_fhst_rst: the flux history's face-flux cache (two_stream_rt.hpp)
 inline bool RtFhLive();
 template <typename V> inline void RtFhCollect(const int id, const V &dst);
 
@@ -189,10 +188,8 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
   if (need) {
     ids.push_back(kCkSlabXsW);
     ids.push_back(kCkSlabXsK);
-    // tracer-1101: the GAS variables only (nhydro/nmhd).  The ck pass never reads the
-    // passive scalars, and counting them made the slab list depend on the tracer keys:
-    // a 7th variable dropped the whole VEF section (6 slots) and a tracer switched on at
-    // a restart read the unallocated VEF snapshot (segfault in CkRstCollect)
+    // the GAS variables only (nhydro/nmhd): the ck pass never reads the passive
+    // scalars, so the slab list does not depend on the tracer keys
     const int nv = hyd ? pmbp->phydro->nhydro : pmbp->pmhd->nmhd;
     for (int n=0; n<nv; ++n) ids.push_back(kCkSlabXsU0 + n);
     if (!hyd) {
@@ -212,29 +209,13 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
       for (int n=0; n<3; ++n) ids.push_back(kCkSlabVefB0 + n);
     }
   }
-  // problem/flux_hst_rst: the flux history's face-flux cache (or the staged one, not
+  // rt_fhst_rst: the flux history's face-flux cache (or the staged one, not
   // consumed yet: no full RT call since the restart)
   const bool fh_live = RtFhLive();
   const bool fh_stg = rt_fhst_rst && !fh_live && CkRstStaged(kCkSlabFhFb) &&
                       CkRstStaged(kCkSlabFhQb) && CkRstStaged(kCkSlabFhCol);
   if (fh_live || fh_stg) {
     for (int s=kCkSlabFhFb; s<=kCkSlabFhCol; ++s) ids.push_back(s);
-  }
-  // ck2ndt-1102 problem/ck_cad_cont: the continuous model (live, or still staged)
-  const bool c2_live = ck_cad_cont && ck_cad2_ptr != nullptr &&
-                       ck_cad2_ptr->extent_int(1) >= 8;
-  const bool c2_stg = ck_cad_cont && !c2_live && CkRstStaged(kCkSlabCd2);
-  if (c2_live || c2_stg) {
-    for (int s=kCkSlabCd2; s<=kCkSlabCd2L; ++s) ids.push_back(s);
-  }
-  // ckhesdirk-1102 problem/ck_time_scheme = hesdirk2: the FSAL slope and its validity
-  // (live, or still staged: no stage solve since the restart)
-  const bool t2_live = ck_t2_on && ck_t2_k1_ptr != nullptr && ck_t2_k1_ptr->size() > 0;
-  const bool t2_stg = ck_t2_on && !t2_live && CkRstStaged(kCkSlabT2K1) &&
-                      CkRstStaged(kCkSlabT2Ok);
-  if (t2_live || t2_stg) {
-    ids.push_back(kCkSlabT2K1);
-    ids.push_back(kCkSlabT2Ok);
   }
   const int ns = static_cast<int>(ids.size());
   if (ns > kCkRstMaxSlab) return 0;
@@ -247,14 +228,12 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
     // still staged (not consumed since the restart): copy the staged bytes
     const bool vid = (id >= kCkSlabVefCyc);
     const bool fid = (id >= kCkSlabFhFb && id <= kCkSlabFhCol);
-    const bool tid = (id == kCkSlabT2K1 || id == kCkSlabT2Ok);
-    const bool cid = (id >= kCkSlabCd2 && id <= kCkSlabCd2L);   // ck2ndt-1102
     const bool stg = CkRstStaged(id) &&
         ((id == kCkSlabThk && thk_stg) || (id == kCkSlabCv && ck_cv_ptr == nullptr) ||
          (id >= kCkSlabCad0 && id < kCkSlabCad0 + 4 && cad_stg) ||
-         (id >= kCkSlabXsW && !vid && !fid && !tid && !cid && xs_stg) ||
-         (vid && vs_stg) || (cid && c2_stg) ||
-         (fid && fh_stg) || (tid && t2_stg));
+         (id >= kCkSlabXsW && !vid && !fid && xs_stg) ||
+         (vid && vs_stg) ||
+         (fid && fh_stg));
     if (stg) {
       const std::size_t nd = dst.size();
       if (ck_rst_stage[id].size() == nd) {
@@ -262,20 +241,6 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
       } else {
         Kokkos::deep_copy(dst, 0.0);
       }
-    } else if (cid && c2_live) {
-      if (id == kCkSlabCd2L) {
-        Kokkos::deep_copy(dst, ck_cad_cont_l);
-      } else {
-        const int sl[4] = {0, 1, 6, 7};
-        DeepCopyAcross(dst, Kokkos::subview(*ck_cad2_ptr, nm, sl[id - kCkSlabCd2],
-                                            ALL, ALL, ALL));
-      }
-    } else if (cid) {
-      Kokkos::deep_copy(dst, 0.0);
-    } else if (id == kCkSlabT2K1) {
-      DeepCopyAcross(dst, Kokkos::subview(*ck_t2_k1_ptr, nm, ALL, ALL, ALL));
-    } else if (id == kCkSlabT2Ok) {
-      Kokkos::deep_copy(dst, ck_t2_ok ? 1.0 : 0.0);
     } else if (fid) {
       RtFhCollect(id, dst);
     } else if (id == kCkSlabThk) {
@@ -638,7 +603,7 @@ inline void CkRstBeginCall(Mesh *pm) {
   }
   if (!reuse || !snap) {
     for (int id=kCkSlabXsW; id<kCkRstMaxSlab; ++id) {
-      if (id < kCkSlabCd2 || id > kCkSlabCd2L) CkRstStageFree(id);   // ck2ndt: keep cont
+      CkRstStageFree(id);
     }
   }
   // once the first call has run, nothing staged is wanted any more
@@ -668,21 +633,6 @@ inline void CkRstCadRestore(Mesh *pm) {
   for (int s=0; s<4; ++s) {
     ok = CkRstPut(kCkSlabCad0 + s, Kokkos::subview(*ck_cad_ptr, Kokkos::ALL, s,
                   Kokkos::ALL, Kokkos::ALL, Kokkos::ALL)) && ok;
-  }
-  // ck2ndt-1102 problem/ck_cad_cont: the continuous model's state (slabs 26..30)
-  if (ok && ck_cad_cont && ck_cad_drift && ck_cad2_ptr == nullptr &&
-      CkRstStaged(kCkSlabCd2)) {
-    ck_cad2_ptr = new DvceArray5D<Real>("ck_cad2", pmbp->nmb_thispack, 8, n3, n2, n1);
-    Kokkos::deep_copy(*ck_cad2_ptr, 0.0);
-    const int sl[4] = {0, 1, 6, 7};
-    for (int s=0; s<4; ++s) {
-      CkRstPut(kCkSlabCd2 + s, Kokkos::subview(*ck_cad2_ptr, Kokkos::ALL, sl[s],
-               Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
-    }
-    if (CkRstStaged(kCkSlabCd2L)) {
-      ck_cad_cont_l = ck_rst_stage[kCkSlabCd2L][0];
-      CkRstStageFree(kCkSlabCd2L);
-    }
   }
   if (!ok) {                          // does not fit: back to the forced full call
     delete ck_cad_ptr;

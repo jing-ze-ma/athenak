@@ -20,7 +20,7 @@
 // deficit over problem/mlt_relax_time -- has to store it, or every restart re-seeds that
 // state from scratch and hits the star with an impulse (measured: the radial kinetic
 // energy jumped 2.5-4.6x in the one history interval containing the restart,
-// bench/wt_he4/tests_r6/README.md section 3).  The block is OPTIONAL and MARKED: a pgen
+// in a He-star test).  The block is OPTIONAL and MARKED: a pgen
 // that leaves `pgen_rst_write_func` null writes nothing at all, so every restart file
 // this code has ever written is unchanged and still readable.  The reader peeks eight
 // bytes; when they are not the marker they are the variable data size that follows in
@@ -38,7 +38,7 @@ constexpr char kPgenRstMagic[8] = {'P', 'G', 'E', 'N', 'S', 'T', '0', '1'};
 // Header: int32 number of slabs (hydro, then mhd), int32 pad; the slabs are the LAST
 // ones of the tail.
 constexpr char kEintRstMagic[8] = {'E', 'I', 'N', 'T', 'R', 'S', 'T', '1'};
-// wbtan-rstg-1101: PER-CELL problem-generator slabs, same marked form, behind every other
+// PER-CELL problem-generator slabs, same marked form, behind every other
 // marked header (the LAST slabs of each MeshBlock record): header int32 {1, nslab, 0, 0}.
 // A pgen points pgen_rst_slabs at a full-size (nmb, nslab, n3, n2, n1) device array
 // (ghosts included, as every restart slab) once its contents are valid; the restart
@@ -75,17 +75,18 @@ struct HotJupiterParam {
   // equilibrium of the TOTAL potential), and its radial part leaves the explicit source.
   // The theta part stays an explicit source. See TotPotAt/ZEffFromPot.
   bool rot_potential = false;
-  // roche-dhj-1031: problem/roche (read only when named; default false = bitwise): the
+  // problem/roche (read only when named; default false = bitwise): the
   // host star's full Roche potential (companion + indirect term, roche_common.hpp
-  // TidePot) is added to the rot_potential TotPotAt everywhere the pgen builds a potential
-  // (IC, ghosts, phicc0/phi0 faces, WB); roche_gms = G M_*, roche_a = separation [cm].
+  // TidePot) is added to the rot_potential TotPotAt everywhere the pgen builds a
+  // potential (IC, ghosts, phicc0/phi0 faces, WB); roche_gms = G M_*, roche_a =
+  // separation [cm].
   bool roche = false;
   Real roche_gms = 0.0, roche_a = 0.0;
   // deep_hot_jupiter_rt velocity sponges (problem/sponge_top, problem/sponge_bottom):
   // true = the top Rayleigh sponge (1e-7..1e-6 bar) / the bottom horizontal sponge
   // (50..100 bar) is applied; false switches it off. Defaults: top true, bottom false.
   bool sponge_top = true;
-  bool sponge_bottom = false;  // default changed 09-30 (user), was true
+  bool sponge_bottom = false;
 };
 
 //----------------------------------------------------------------------------------------
@@ -99,7 +100,7 @@ class ProblemGenerator {
   ProblemGenerator(ParameterInput *pin, Mesh *pmesh, IOWrapper resfile,
                    bool single_file_per_rank=false);
   ~ProblemGenerator() = default;
-    
+
   bool hot_jupiter;
   HotJupiterParam hot_jupiter_param;
 
@@ -128,15 +129,6 @@ class ProblemGenerator {
   // when true the split source is applied ONCE per cycle with the FULL dt, in
   // "after_timeintegrator" only -- the "before_timeintegrator" call is skipped.
   bool user_split_once=false;
-  // rkgfuse-1102: which call of a Strang pair the split hook is in (set by the
-  // RTStrangSplit tasks right before the call): 1 = the first half, 2 = the second half,
-  // 0 = the user_split_once full-dt call.  Read by dhj's <problem>/ck_strang cadence.
-  int user_split_half=0;
-  // rkgfuse-1102: the first half is taken by the Driver (MHD only), right before the RK
-  // stages and AFTER the leading RKG super-step, instead of in "before_timeintegrator"
-  // (where it would run before the tracer pass and the leading RKG step).  Set by dhj's
-  // <problem>/ck_strang; false keeps every run bitwise unchanged.
-  bool user_split_pre_late=false;
   UserRefinementFnPtr user_ref_func=nullptr;
   UserHistoryFnPtr user_hist_func=nullptr;
   // the two halves of the optional pgen state block (see kPgenRstMagic).  A pgen enrols
@@ -145,28 +137,28 @@ class ProblemGenerator {
   // from its own restart path.
   PgenRestartStateFnPtr pgen_rst_write_func=nullptr;
   std::vector<char> pgen_rststate;
-  // wbtan-rstg-1101: the per-cell pgen slabs (see kPgenSlabRstMagic)
+  // the per-cell pgen slabs (see kPgenSlabRstMagic)
   DvceArray5D<Real> *pgen_rst_slabs = nullptr;
   DvceArray5D<Real> pgen_rst_slabs_in;
   // called once per cycle after Mesh::NewTimeStep in Driver::Execute
   UserCycleFnPtr user_cycle_func=nullptr;
-  // accretor-bigdom-v4 (10-16): called once per stage by RadiationM1::HydroConToPrim
+  // Called once per stage by RadiationM1::HydroConToPrim
   // right AFTER the M1 implicit coupling wrote the gas u0 and BEFORE the fluid refresh
   // (exchange, BCs, ConToPrim), so a pgen can clean cells the radiation force touched
   // (ry_per_accretor: zero v in the sink cells).  Null = never called (all other pgens).
   UserCycleFnPtr user_m1post_func=nullptr;
-  // accwall-1019: called by Hydro::Fluxes as the LAST step of the hydro flux task (after
-  // FOFC, the diffusive/viscous fluxes, the etotgrav flux and the WB flux removal), so the
-  // RK update, the source terms (incl. the spherical-polar L_z source from the x2 fluxes),
-  // the <hydro>/am_transport module and the pgen's boundary registers all read the fluxes
-  // it leaves.  Null (default): nothing is called, every run unchanged.
+  // called by Hydro::Fluxes as the LAST step of the hydro flux task (after
+  // FOFC, the diffusive/viscous fluxes, the etotgrav flux and the WB flux removal), so
+  // the RK update, the source terms (incl. the spherical-polar L_z source from the x2
+  // fluxes), the <hydro>/am_transport module and the pgen's boundary registers all read
+  // the fluxes it leaves.  Null (default): nothing is called, every run unchanged.
   UserCycleFnPtr user_hydro_flux_func=nullptr;
-  // reatm-1011: called ONCE on a fresh start, in Driver::Initialize right after the
+  // called ONCE on a fresh start, in Driver::Initialize right after the
   // <rad_m1>/ic_rad passes (IcRadRun) and before the boundaries/primitives are rebuilt,
   // so a pgen can adjust its initial state to the relaxed radiation (he_star_m1:
   // he_ic_rad_atm_post).  Left null (every other pgen, ic_rad = none) it is never called.
   UserCycleFnPtr user_icpost_func=nullptr;
-  // dic-1013: while true after user_icpost_func, Driver::Initialize runs the ic_rad
+  // while true after user_icpost_func, Driver::Initialize runs the ic_rad
   // passes and the hook again (the hook clears it; default false = once)
   bool user_icpost_again=false;
   // predefined problem generator functions (default test suite)
@@ -187,8 +179,8 @@ class ProblemGenerator {
   void ShockTube(ParameterInput *pin, const bool restart);
   void Shwave(ParameterInput *pin, const bool restart);
   void WbAtmosphere(ParameterInput *pin, const bool restart);
-  void WbAll(ParameterInput *pin, const bool restart);   // wball-1104
-  void AmWb(ParameterInput *pin, const bool restart);   // amdef-1019 test
+  void WbAll(ParameterInput *pin, const bool restart);
+  void AmWb(ParameterInput *pin, const bool restart);   // test
   void SphericalCollapse(ParameterInput *pin, const bool restart);
   void RadiationLinearWave(ParameterInput *pin, const bool restart);
   void RadiationBeam(ParameterInput *pin, const bool restart);

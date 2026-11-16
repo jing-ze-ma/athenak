@@ -6,41 +6,15 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file eos_table.hpp
-//! \brief tabulated representation of a general equation of state, on a uniform grid in
-//! (log10 rho, log10 T) with cgs units, and the device-side interpolation that every
-//! general-EOS kernel call ultimately goes through.
+//! \brief tabulated general equation of state on a uniform (log10 rho, log10 T) grid in
+//! cgs, and the device interpolation every general-EOS call goes through.
 //!
-//! WHY A TABLE. The physics (dissociation, Saha ionization) is naturally a function of
-//! (rho,T) and costs a nested root find to evaluate directly. Tabulating it collapses
-//! that to a handful of flops per call and, more importantly, removes the inner root find
-//! entirely: the only iteration left anywhere on the hot path is the outer T(rho,e)
-//! inversion, which the code already pays for exactly once per cell per stage.
-//!
-//! WHAT IS TABULATED, AND WHAT IS NOT. Only the GAS contribution is tabulated, as the
-//! specific quantities log10(e_gas/rho) and log10(p_gas/rho). Radiation is added
-//! analytically on top, in Eval() below. Keeping radiation out of the table makes the
-//! runtime radiation switch exact rather than a second table, and keeps the tabulated
-//! surfaces smooth and of modest dynamic range -- an aT^4 term spans sixteen decades
-//! across the grid and would dominate the interpolation error everywhere else.
-//!
-//! INTERPOLATION. Bicubic Hermite, using node values together with node derivatives
-//! d/dx, d/dy and the cross derivative d2/dxdy, all evaluated from the analytic model at
-//! table build time. The point of tabulating the derivatives rather than differencing the
-//! interpolant is CONSISTENCY: chi_rho, chi_T and c_v are returned as the analytic
-//! derivatives OF THE INTERPOLANT, so they are exactly the derivatives of the p and e
-//! that the solver is actually using, and the identity
-//! Gamma_1 = chi_rho + p chi_T^2/(rho T c_v) holds on the interpolated surface and not
-//! merely on the underlying physics. Thermodynamic consistency is what the well-balanced
-//! scheme and the Riemann solvers depend on; agreement with the true EOS to interpolation
-//! accuracy is a separate and weaker requirement.
-//!
-//! OFF-TABLE STATES are handled by LINEAR extrapolation from the nearest edge, using the
-//! edge value and edge derivative. Cubic extrapolation of a Hermite patch diverges
-//! violently, so the local coordinates are clamped to the patch and the offset is carried
-//! by an explicit first-order term. The result is C1 across the table boundary and
-//! preserves both the positivity of p and the monotonicity of e(T) that the root finds
-//! below rely on. It is a numerical safety net, not physics: a run that spends time off
-//! the table is misconfigured, and BuildEOSTable() says so at startup.
+//! Only the gas part is tabulated, as log10(e_gas/rho) and log10(p_gas/rho); radiation is
+//! added analytically in Eval().  Interpolation is bicubic Hermite with node derivatives
+//! from the analytic model, so chi_rho, chi_T and c_v are the derivatives of the
+//! interpolated p and e and Gamma_1 = chi_rho + p chi_T^2/(rho T c_v) holds on the
+//! interpolant.  Off the table the surfaces continue linearly from the edge (C1, keeps p
+//! > 0 and e(T) monotone); BuildEOSTable reports runs that need it.
 
 #include <math.h>
 
@@ -51,22 +25,15 @@
 
 //----------------------------------------------------------------------------------------
 //! \enum EOSTableVar
-//! \brief which slice of the table holds what. Each interpolated surface occupies four
-//! consecutive slices, in the order (value, d/dx, d/dy, d2/dxdy), where
-//! x = log10(rho[cgs]) and y = log10(T[K]). The surfaces are the SPECIFIC quantities
-//! log10(e_gas/rho) and log10(p_gas/rho), the mean molecular weight, and log10 of the
-//! free-electron fraction n_e/n_tot.
-//!
-//! ITXE is deliberately NOT read by Eval(): only the resistivity wants it, and charging
-//! every EOS call for a fourth Hermite patch would be a pure loss. ElectronFraction()
-//! reads it on its own.
+//! \brief table slices: each surface occupies four consecutive slices (value, d/dx, d/dy,
+//! d2/dxdy), x = log10(rho[cgs]), y = log10(T[K]).  Surfaces: log10(e_gas/rho),
+//! log10(p_gas/rho), mu and log10(n_e/n_tot); ITXE is read only by ElectronFractionCgs.
 
 enum EOSTableVar {ITE=0, ITP=4, ITMU=8, ITXE=12, ITNVAR=16};
 
 //----------------------------------------------------------------------------------------
 //! \struct EOSThermoState
-//! \brief everything one table evaluation yields, in cgs. Bundled because callers almost
-//! always want several of these and each is nearly free once the patch has been read.
+//! \brief thermodynamic state of one table evaluation, in cgs
 
 struct EOSThermoState {
   Real e;          // internal energy density, erg/cm^3
@@ -80,9 +47,8 @@ struct EOSThermoState {
 
 //----------------------------------------------------------------------------------------
 //! \struct EOSTable
-//! \brief the table itself, plus the interpolation and the inversions built on it. Held
-//! by value inside EOS_Data and captured into device lambdas; the Kokkos Views are
-//! reference-counted handles, so copying it is cheap.
+//! \brief the table with its interpolation and inversions; held by value in EOS_Data and
+//! captured into device lambdas (the Views are reference-counted handles)
 
 struct EOSTable {
   bool active = false;       // false leaves every EOS accessor on its analytic branch
@@ -92,58 +58,30 @@ struct EOSTable {
   Real xmin = 0.0, xmax = 0.0, ymin = 0.0, ymax = 0.0;
   Real dx = 1.0, dy = 1.0, dxi = 1.0, dyi = 1.0;
 
-  // Unit conversions, code -> cgs. Duplicated from EOS_Data so that the table is
-  // self-contained and can be evaluated without one.
+  // code -> cgs unit factors (as in EOS_Data, so the table is self-contained)
   Real dens_cgs = 1.0, pres_cgs = 1.0, temp_cgs = 1.0;
   Real arad = 7.5657332503e-15;   // radiation constant in cgs
-  //! THIN-REGION TAPER (see utils/rad_taper.hpp). When `rad_taper` is set, the aT^4 and
-  //! aT^4/3 terms below are multiplied by a smoothstep w(log10 rho) that is 1 at and
-  //! below `rad_lrho_hi` in density... i.e. 1 for rho >= 10^rad_lrho_hi (LTE) and 0 for
-  //! rho <= 10^rad_lrho_lo (optically thin, where the two-stream owns the radiation).
-  //! Every branch below is written so that rad_taper = false reproduces the untapered
-  //! arithmetic BIT FOR BIT, which is what keeps existing runs unchanged.
+  // radiation taper (utils/rad_taper.hpp): the aT^4 terms are multiplied by a smoothstep
+  // w(log10 rho), 1 for rho >= 10^rad_lrho_hi and 0 for rho <= 10^rad_lrho_lo
   bool rad_taper = false;
   Real rad_lrho_lo = 0.0, rad_lrho_hi = 0.0;   // log10 of rho_lo, rho_hi, in cgs
-  //! THE TEMPERATURE GATE on that taper (<block>/eos_rad_t_hi, eos_rad_t_lo), which makes
-  //! the weight w = max(w_rho, w_T) so that a HOT cell keeps its radiation in the EOS
-  //! whatever its density does.  See rad_taper::WeightGated() for why this exists and why
-  //! the gate is on temperature rather than on radius or optical depth.  With
-  //! `rad_tgate = false` every branch below reduces to the ungated arithmetic BIT FOR BIT
+  // temperature gate of the taper (<block>/eos_rad_t_lo, eos_rad_t_hi): w = max(w_rho,
+  // w_T), so hot cells keep their radiation (rad_taper::WeightGated)
   bool rad_tgate = false;
   Real rad_lt_lo = 0.0, rad_lt_hi = 0.0;       // log10 of T_lo, T_hi, in Kelvin
-  // composition metadata, so a caller can check its own metallicity against the EOS's.
-  // A problem generator that feeds [M/H] to an opacity fit and an EOS built at a
-  // different [M/H] is opaque at one metallicity and conducting at another, silently.
+  // composition the table was built with, for consistency checks against opacity fits
   bool metal_ion = false;         // were the metal electron donors included?
   Real metal_mh = 0.0;            // [M/H] in dex used for those donors
   Real efmax = 0.0;               // global bound on e(rho,pfloor), CODE units
 
-  //! (ny, nx, ITNVAR) -- the VARIABLE index is fastest, deliberately. A Hermite patch
-  //! reads a surface's value and its three derivatives at one node, which are four
-  //! consecutive entries in this order, and Eval() then wants the pressure group at the
-  //! same node, which is the next four. With the variable index slowest they were
-  //! ny*nx apart -- about a megabyte -- so a single evaluation touched twenty-four cache
-  //! lines and used sixteen bytes of each. Here one node is 128 bytes, the hot ITE and
-  //! ITP groups are the first 64 of them, and the same evaluation touches four.
+  // table (ny, nx, ITNVAR), variable index fastest so that one Hermite node is contiguous
   DvceArray3D<Real> tbl;
   DvceArray1D<Real> efbnd;   // per-x-cell upper bound on e(rho, pfloor), CODE units
-  //! HostSpace mirrors of tbl and efbnd, filled once at build time. Host-side callers
-  //! (problem generators, diagnostics) read these, since on a discrete GPU the device
-  //! Views are not host accessible. Identical values; on a CPU build, the same memory.
+  // HostSpace mirrors of tbl and efbnd for host callers (problem generators)
   DvceArray3D<Real>::HostMirror tbl_h;
   DvceArray1D<Real>::HostMirror efbnd_h;
 
-  //! Largest value of e(rho, T_tablemin)/rho over the table's density range, in CGS.
-  //! This is the cheap gate on the sub-floor continuation below (see EOS_Data::
-  //! SubFloorState): a state whose specific energy exceeds it is certainly above its own
-  //! density's floor, so the common case costs one divide and one compare and never
-  //! touches the table.
-  Real eminspec = 0.0;
-
-  // ln(10), and the log-space convergence tolerance for the root finds below. The
-  // tolerance tracks the working precision: a double-precision run converges to round
-  // off in two or three Newton steps from a warm start, a single-precision one has no
-  // business chasing digits it does not have.
+  // ln(10) and the log-space tolerance of the root finds (tracks the working precision)
   static constexpr Real ln10 = 2.302585092994045684;
   static constexpr Real logtol = (sizeof(Real) == 4) ? 1.0e-6 : 1.0e-13;
 
@@ -155,8 +93,8 @@ struct EOSTable {
 
   //--------------------------------------------------------------------------------------
   //! \fn void GatherPatch
-  //! \brief gather the sixteen corner data of one Hermite patch from table view `t`
-  //! (`tbl` on the device, `tbl_h` on the host; see HermitePatch)
+  //! \brief gathers the sixteen corner data of one Hermite patch from table view t (tbl
+  //! on the device, tbl_h on the host)
   template <class TV>
   KOKKOS_INLINE_FUNCTION
   void GatherPatch(const TV &t, const int iv, const int ix, const int iy,
@@ -175,17 +113,9 @@ struct EOSTable {
 
   //--------------------------------------------------------------------------------------
   //! \fn void HermitePatch
-  //! \brief evaluate one bicubic Hermite surface and its two first derivatives.
-  //!
-  //! `iv` is the value slice; the three derivative slices follow it immediately. `ix`
-  //! and `iy` index the lower corner of the patch and `u`,`v` are the local coordinates
-  //! within it,
-  //! already clamped to [0,1] by the caller.
-  //! `WANT_FX` / `WANT_FY` drop the derivative accumulations a caller does not read.
-  //! Most callers read only one of the two -- Eval() never uses the energy surface's
-  //! density derivative, and the temperature root find never uses either surface's -- and
-  //! the y derivative in particular costs a whole 4x4 pass. `f` is accumulated
-  //! identically either way, so this is bitwise neutral.
+  //! \brief one bicubic Hermite surface and its first derivatives.  iv is the value slice
+  //! (derivative slices follow), (ix, iy) the patch corner, (u, v) in [0, 1] the local
+  //! coordinates; WANT_FX / WANT_FY skip derivatives the caller does not read.
   template <bool WANT_FX, bool WANT_FY>
   KOKKOS_INLINE_FUNCTION
   void HermitePatch(const int iv, const int ix, const int iy, const Real u, const Real v,
@@ -209,12 +139,8 @@ struct EOSTable {
       dv[2] = -6.0*v2 + 6.0*v;  dv[3] = 3.0*v2 - 2.0*v;
     }
 
-    // Gather the sixteen corner data into the Hermite coefficient matrix. The derivative
-    // entries are scaled by the cell size because the basis above is written in the local
-    // coordinates u,v rather than in x,y.
-    // Device code reads `tbl`, host code its HostSpace mirror `tbl_h` (same values; on a
-    // CPU build the same allocation), so host callers such as problem generators work
-    // when the device memory is not host accessible (CUDA).
+    // corner data -> Hermite coefficients; derivatives scaled by the cell size (the basis
+    // is in the local u, v)
     Real cf[4][4];
     KOKKOS_IF_ON_DEVICE((GatherPatch(tbl, iv, ix, iy, cf);))
     KOKKOS_IF_ON_HOST((GatherPatch(tbl_h, iv, ix, iy, cf);))
@@ -253,9 +179,7 @@ struct EOSTable {
     Real v = gy - static_cast<Real>(iy);
     Real uc = (u < 0.0) ? 0.0 : ((u > 1.0) ? 1.0 : u);
     Real vc = (v < 0.0) ? 0.0 : ((v > 1.0) ? 1.0 : v);
-    // The continuation below reads BOTH derivatives whatever the caller asked for, so a
-    // point off the table takes the full patch. It is the rare case; on the table the
-    // restricted patch is what runs.
+    // off the table the linear continuation needs both derivatives
     if (u != uc || v != vc) {
       HermitePatch<true, true>(iv, ix, iy, uc, vc, f, fx, fy);
       // linear continuation outside the table, at the boundary slope
@@ -268,26 +192,18 @@ struct EOSTable {
   }
 
   //--------------------------------------------------------------------------------------
-  //! \fn void Eval
-  //! \brief the full thermodynamic state at a density and temperature given in CGS.
-  //!
-  //! The gas part comes from the table; the radiation part, if enabled, is added
-  //! analytically here. Every derivative returned is the derivative of the value returned
-  //! alongside it, so a caller can build Gamma_1 from the standard identity and get an
-  //! answer consistent with the p it is about to hand to a Riemann solver.
-  //! `WANT_MU` selects whether the mu surface is interpolated. The hot path -- the
-  //! pressure and Gamma_1 that ConsToPrim reconstructs to interfaces -- does not use mu,
-  //! and interpolating it is a third of this function's table reads and Hermite
-  //! arithmetic thrown away on every cell of every stage. Only resistivity and the
-  //! cooling source term want it, and they ask through MeanMolecularWeight().
+  //! \fn void EvalImpl
+  //! \brief thermodynamic state at (rho, T) in cgs: gas from the table, radiation added
+  //! analytically; every derivative is that of the value returned beside it.  WANT_MU
+  //! selects the mu surface (not needed on the hot path).
   template <bool WANT_MU>
   KOKKOS_INLINE_FUNCTION
   void EvalImpl(const Real rho, const Real t, EOSThermoState &s) const {
     EvalFromLogs<WANT_MU>(log10(rho), log10(t), rho, t, s);
   }
 
-  //! The body of EvalImpl(), taking the logarithms and the linear values separately so a
-  //! caller that already holds both does not recompute either.
+  //! \fn void EvalFromLogs
+  //! \brief body of EvalImpl taking both log10 and linear (rho, T)
   template <bool WANT_MU>
   KOKKOS_INLINE_FUNCTION
   void EvalFromLogs(const Real x, const Real y, const Real rho, const Real t,
@@ -297,10 +213,8 @@ struct EOSTable {
     Interpolate<true, true>(ITP, x, y, pv, pvx, pvy);
     if (WANT_MU) Interpolate<false, false>(ITMU, x, y, muv, mux, muy);
 
-    // The tabulated surfaces are the SPECIFIC quantities, so the density factor and the
-    // derivative it contributes are restored here:
-    //   ln p_gas = ln rho + ln10 * P  =>  dln p/dln rho = 1 + dP/dx, dln p/dln T = dP/dy
-    // and likewise for e, whose logarithmic temperature derivative is what sets c_v.
+    // restore the density factor of the specific surfaces:
+    //   ln p_gas = ln rho + ln10 P  =>  dln p/dln rho = 1 + dP/dx, dln p/dln T = dP/dy
     const Real egas = rho*Pow10(ev);
     const Real pgas = rho*Pow10(pv);
     const Real chir_g = 1.0 + pvx;
@@ -321,19 +235,14 @@ struct EOSTable {
       // radiation is independent of density at fixed T, so it dilutes chi_rho and pulls
       // chi_T towards its own value of 4
       s.chi_rho = pgas*chir_g/s.p;
-      // ...unless the taper is on, in which case the radiation term DOES depend on
-      // density, through w, and chi_rho has to carry that derivative or it is no longer
-      // the derivative of the p returned beside it. d(w prad0)/dln rho = prad0 dw/dx/ln10
+      // with the taper, w depends on density: d(w prad0)/dln rho = prad0 dw/dx/ln10
       if (rad_taper) s.chi_rho += (erad0/3.0)*dwdx*M_LOG10E/s.p;
       s.chi_t = (pgas*chit_g + 4.0*prad)/s.p;
       s.cv = cv_g + 4.0*erad/(rho*t);
       s.dlne_dlnt = (egas*evy + 4.0*erad)/s.e;
-      // ...and the TEMPERATURE GATE puts a dw/dlnT into every temperature derivative, for
-      // the same reason: w is a function of T as well now, and chi_T, c_v and dln e/dln T
-      // must be the derivatives of the p and e returned beside them.
-      // d(w erad0)/dlnT = 4 w erad0 + erad0 dw/dy/ln10; the first term is already in.
-      // The chi_T term is written in EvalPOnly()'s form and the c_v / dln e/dln T terms
-      // in EvalEOnly()'s, so the split evaluators still agree with this one BIT FOR BIT.
+      // the temperature gate adds dw/dlnT to the temperature derivatives:
+      // d(w erad0)/dlnT = 4 w erad0 + erad0 dw/dy/ln10 (same arithmetic as EvalPOnly and
+      // EvalEOnly)
       if (dwdy != 0.0) {
         const Real dgt = erad0*dwdy*M_LOG10E;
         s.chi_t += (erad0/3.0)*dwdy*M_LOG10E/s.p;
@@ -353,14 +262,14 @@ struct EOSTable {
   }
 
   //! \fn void Eval
-  //! \brief the full state, mu included.
+  //! \brief the full state, mu included
   KOKKOS_INLINE_FUNCTION
   void Eval(const Real rho, const Real t, EOSThermoState &s) const {
     EvalImpl<true>(rho, t, s);
   }
 
   //! \fn void EvalNoMu
-  //! \brief the same, without the mean molecular weight. `s.mu` is left at zero.
+  //! \brief the full state without mu (s.mu = 0)
   KOKKOS_INLINE_FUNCTION
   void EvalNoMu(const Real rho, const Real t, EOSThermoState &s) const {
     EvalImpl<false>(rho, t, s);
@@ -368,25 +277,13 @@ struct EOSTable {
 
   //--------------------------------------------------------------------------------------
   //! \fn Real SolveLog
-  //! \brief the safeguarded root find that all three inversions below are built from.
-  //!
-  //! Solves log10(q(z)) = ltarget for z, where z is log10 of the unknown and q is one of
-  //! the tabulated quantities, selected by `mode`:
-  //!   0 -- q = e at fixed rho, z = log10 T, derivative dln e/dln T
-  //!   1 -- q = p at fixed rho, z = log10 T, derivative chi_T
-  //!   2 -- q = p at fixed T,   z = log10 rho, derivative chi_rho
-  //! All three targets are monotonically increasing in their unknown, which is what makes
-  //! the bracket update valid.
-  //!
-  //! WHY NOT PLAIN SAFEGUARDED NEWTON. Requiring only that the Newton step stay inside
-  //! the bracket is NOT enough. Across an ionization transition dln e/dln T rises sharply
-  //! and then falls again, and a Newton step taken from either side overshoots to the
-  //! other; both steps land inside the bracket, so a bracket-only guard permits an
-  //! endless ping-pong that never converges and never shrinks the bracket. The test below
-  //! is the classical one: fall back to bisection whenever the Newton step either leaves
-  //! the bracket or fails to at least halve the interval relative to the previous step,
-  //! which bounds the iteration count by the bisection rate in the worst case while
-  //! keeping quadratic convergence in the common one.
+  //! \brief safeguarded Newton solve of log10(q(z)) = ltarget, z = log10 of the unknown:
+  //!   MODE 0: q = e at fixed rho, z = log10 T
+  //!   MODE 1: q = p at fixed rho, z = log10 T
+  //!   MODE 2: q = p at fixed T,   z = log10 rho
+  //! All targets increase monotonically in z.  The step falls back to bisection when
+  //! Newton leaves the bracket or fails to halve the previous step, which stops the
+  //! ping-pong of a bracket-only guard across ionization zones.
   template <int MODE>
   KOKKOS_INLINE_FUNCTION
   Real SolveLog(const Real xfixed, const Real ltarget,
@@ -423,21 +320,10 @@ struct EOSTable {
     return z;
   }
 
-  //! \fn void EvalResidual
-  //! \brief the residual log10(q) - ltarget and its derivative with respect to z, for the
-  //! three inversion modes described on SolveLog()
   //--------------------------------------------------------------------------------------
   //! \fn void EvalEOnly
-  //! \brief internal energy density and dln e/dln T, from the ENERGY patch alone.
-  //!
-  //! Eval() interpolates three surfaces because a caller that wants the full
-  //! thermodynamic state needs all three. The temperature root find does not: the
-  //! residual is built from e and dln e/dln T, both of which come out of ITE, so going
-  //! through Eval() would interpolate ITP and ITMU and throw them away on EVERY
-  //! iteration. At two or three iterations per cell that is most of the EOS cost.
-  //!
-  //! The arithmetic below is Eval()'s, restricted to the energy branch, so the two agree
-  //! bit for bit. Keep them in step.
+  //! \brief e and dln e/dln T from the energy patch alone (Eval's arithmetic, bitwise
+  //! equal)
   KOKKOS_INLINE_FUNCTION
   void EvalEOnly(const Real rho, const Real t, Real &e, Real &dlne_dlnt) const {
     Real ev, evx, evy;
@@ -467,9 +353,8 @@ struct EOSTable {
 
   //--------------------------------------------------------------------------------------
   //! \fn void EvalPOnly
-  //! \brief pressure and its two logarithmic derivatives, from the PRESSURE patch alone.
-  //! The counterpart of EvalEOnly() for the two inversions that are driven by p; same
-  //! reasoning, same bit-for-bit correspondence with Eval().
+  //! \brief p, chi_rho and chi_T from the pressure patch alone (Eval's arithmetic,
+  //! bitwise equal)
   KOKKOS_INLINE_FUNCTION
   void EvalPOnly(const Real rho, const Real t,
                  Real &p, Real &chi_rho, Real &chi_t) const {
@@ -502,20 +387,10 @@ struct EOSTable {
     return;
   }
 
-  //! `xfixed` is the LOG10 of the quantity held fixed, and `z` the log10 of the unknown,
-  //! so that the whole iteration stays in the log space the table is indexed in.
-  //!
-  //! WHY THAT MATTERS. The tabulated surfaces are log10 of the SPECIFIC quantity, so
-  //! log10(e) = log10(rho) + E(x,y) identically, and the residual is a subtraction. The
-  //! obvious formulation -- exponentiate z to get T, take its log again inside
-  //! Interpolate, exponentiate the interpolated value to get e, then take log10(e) --
-  //! computes two exp and three log10 per iteration whose composition is the identity.
-  //! With three iterations that is fifteen transcendentals per cell, on the one kernel
-  //! every cell goes through, to compute nothing. Radiation is the one case that does not
-  //! cancel, because a T^4 is added in linear space; it keeps the exponentials.
-  //! MODE is a template parameter, not an argument: each inversion knows its own mode at
-  //! the call site, and it selects which single Hermite derivative the patch has to
-  //! accumulate as well as removing the branches from the iteration.
+  //! \fn void EvalResidual
+  //! \brief residual g = log10(q) - ltarget and dg/dz of SolveLog, kept in log space
+  //! (xfixed = log10 of the fixed quantity): log10 e = log10 rho + E(x, y); only the
+  //! radiation term needs exponentials
   template <int MODE>
   KOKKOS_INLINE_FUNCTION
   void EvalResidual(const Real xfixed, const Real z, const Real ltarget,
@@ -535,8 +410,7 @@ struct EOSTable {
       dg = (MODE == 2) ? (1.0 + qvx) : qvy;
     }
     if (radiation) {
-      // the radiation term is additive in the linear quantity, so this branch has to
-      // reconstruct it. Kept arithmetically identical to Eval().
+      // radiation is additive in the linear quantity (arithmetic as in Eval)
       const Real t = Pow10(y);
       Real erad = arad*t*t*t*t;
       Real w = 1.0, dwdx = 0.0, dwdy = 0.0;
@@ -558,8 +432,7 @@ struct EOSTable {
         if (rad_taper) dg += (dwdx/3.0)/qtot;
       } else {
         dg = (qgas*qvy + f*qrad)/qtot;
-        // the temperature gate's own dw/dlnT.  It is non-negative, so the target stays
-        // monotonically increasing in T and SolveLog()'s bracket update stays valid.
+        // gate term dw/dlnT >= 0: the target stays monotone in T
         if (dwdy != 0.0) dg += ((MODE == 0) ? dwdy : dwdy/3.0)/qtot;
       }
       g = log10(qtot) - ltarget;
@@ -568,46 +441,13 @@ struct EOSTable {
   }
 
   //--------------------------------------------------------------------------------------
-  //! \fn Real SolveTemperature
-  //! \brief invert e(rho,T) for T. Density and energy density in CGS, temperature
-  //! returned in Kelvin.
-  //!
-  //! This is THE expensive operation of the general EOS and the only iteration left on
-  //! the hot path. It iterates on y = log10 T, which is the right variable: dln e/dln T
-  //! is 3/2 for a monatomic gas and larger inside an ionization zone, but never small, so
-  //! the iteration is well conditioned everywhere and a warm start from the previous
-  //! stage converges in two or three steps.
-  //!
-  //! Monotonicity of e in T is what makes the bracket valid, and it is a property of the
-  //! interpolant, not merely of the physics: the model is monotonic at every node and the
-  //! linear continuation outside the table preserves it.
-  //! \fn Real SolveLogTemperature
-  //! \brief the same inversion, taking and returning LOG10 -- log10 of the density in
-  //! and log10 of the temperature out. The caller usually has log10(rho) already and is
-  //! about to evaluate the table at the temperature this returns, so exponentiating here
-  //! and taking the logarithm again there is another round trip worth not making.
-  //!
-  //! Both are CLAMPED to the tabulated range, and both come in a form that reports the
-  //! clamp to the caller; see ClampLogT() immediately below.
   //--------------------------------------------------------------------------------------
   //! \fn Real ClampLogT
-  //! \brief hold a solved log10 T inside the TABULATED range [ymin, ymax], and say
-  //! whether it had to.
-  //!
-  //! WHY THE INVERSIONS BELOW MUST NOT RETURN WHAT THE ROOT FIND RETURNS.  The bracket
-  //! is [ymin-3, ymax+3], three decades of linear-in-the-logs continuation on either
-  //! side, and the solver is free to PIN on either end: a target outside
-  //! [e(rho,10^(ymin-3)), e(rho,10^(ymax+3))] -- or a non-finite one, which makes the
-  //! residual NaN and sends the bisection fallback marching to the upper end -- comes
-  //! back as the bracket edge itself rather than as a failure.  That is a SATURATED
-  //! state, not a temperature: it no longer depends on e at all, and at the top edge it
-  //! is 10^(ymax+3) K with the sound speed that goes with it, which collapses the
-  //! timestep and kills the run (RG_fofc_long, 2026-09-12).  Clamping to the table's own
-  //! range instead returns the state at the nearest tabulated row -- finite, monotone in
-  //! the right direction, and counted by the caller as an event.
-  //!
-  //! A state INSIDE the table is returned bit for bit unchanged, which is why the clamp
-  //! can sit on the hot path unconditionally.
+  //! \brief holds a solved log10 T in the tabulated range [ymin, ymax] and flags the
+  //! clamp. The root-find bracket extends 3 decades beyond the table, and an out-of-range
+  //! or non-finite target pins at its edge (a saturated state with a huge sound speed);
+  //! the nearest tabulated row is returned instead.  States inside the table are
+  //! unchanged.
   KOKKOS_INLINE_FUNCTION
   Real ClampLogT(const Real z, bool &clamped) const {
     if (!(z >= ymin)) {   // below the table, or NaN
@@ -622,11 +462,8 @@ struct EOSTable {
   }
 
   //! \fn Real ClampedSolveLogT
-  //! \brief the mode-0/mode-1 root find, guarded and clamped.  A non-finite target is
-  //! intercepted BEFORE the solve: log10 of a negative or NaN energy is NaN, and a NaN
-  //! residual does not merely fail to converge -- every comparison in SolveLog() is
-  //! false, so the bisection fallback walks the iterate all the way to the TOP of the
-  //! bracket and returns a plausible-looking 10^(ymax+3) K.
+  //! \brief mode-0/1 root find, clamped; a non-finite target is caught before the solve
+  //! (a NaN residual would walk the bisection to the top of the bracket)
   template <int MODE>
   KOKKOS_INLINE_FUNCTION
   Real ClampedSolveLogT(const Real lfixed, const Real ltarget, const Real zguess,
@@ -639,6 +476,8 @@ struct EOSTable {
                      clamped);
   }
 
+  //! \fn Real SolveLogTemperature
+  //! \brief inverts e(rho, T) for T in log space (log10 rho in, log10 T out), clamped
   KOKKOS_INLINE_FUNCTION
   Real SolveLogTemperature(const Real lrho, const Real letarget, const Real zguess,
                            bool &clamped) const {
@@ -652,6 +491,9 @@ struct EOSTable {
     return ClampedSolveLogT<0>(lrho, letarget, zguess, clamped);
   }
 
+  //! \fn Real SolveTemperature
+  //! \brief inverts e(rho, T) for T in cgs (Kelvin), clamped; iterates on log10 T, a
+  //! well-conditioned variable, from the warm start tguess
   KOKKOS_INLINE_FUNCTION
   Real SolveTemperature(const Real rho, const Real etarget, const Real tguess,
                         bool &clamped) const {
@@ -667,16 +509,8 @@ struct EOSTable {
 
   //--------------------------------------------------------------------------------------
   //! \fn Real SolveTemperatureFromP
-  //! \brief invert p(rho,T) for T, in CGS. Driven by chi_T instead of dln e/dln T. Used
-  //! by the pressure floor and by problem generators.
-  //!
-  //! Clamped exactly as the energy inversion is, and that is what makes the PRESSURE
-  //! FLOOR consistent with the table: at upper-atmosphere densities e(rho,pfloor) lies
-  //! far below the lowest tabulated row, so without the clamp this returned the bracket
-  //! bottom 10^(ymin-3) and the floor put the cell three decades in temperature BELOW
-  //! the table, where every subsequent lookup is pure extrapolation.  With it the floor
-  //! is max(e(rho,pfloor), e(rho,T_tablemin)) -- the floor can never place a cell
-  //! outside the EOS it is being evolved with.
+  //! \brief inverts p(rho, T) for T in cgs (pressure floor, problem generators); clamped
+  //! like the energy inversion, so the floor never puts a cell below the table
   KOKKOS_INLINE_FUNCTION
   Real SolveTemperatureFromP(const Real rho, const Real ptarget, const Real tguess,
                              bool &clamped) const {
@@ -693,13 +527,7 @@ struct EOSTable {
 
   //--------------------------------------------------------------------------------------
   //! \fn Real ElectronFractionCgs
-  //! \brief free electrons per particle, n_e/n_tot, at a density and temperature in CGS.
-  //!
-  //! Kept out of Eval() on purpose: this is a fourth Hermite patch that only the
-  //! resistivity needs, and Eval() runs on every EOS call.
-  //!
-  //! The tabulated surface is log10 of the fraction, because it spans some twenty decades
-  //! across a planetary atmosphere and interpolating it linearly would be meaningless.
+  //! \brief free electrons per particle n_e/n_tot at (rho, T) in cgs (log10 surface)
   KOKKOS_INLINE_FUNCTION
   Real ElectronFractionCgs(const Real rho, const Real t) const {
     Real f, fx, fy;
@@ -709,13 +537,8 @@ struct EOSTable {
 
   //--------------------------------------------------------------------------------------
   //! \fn Real SolveDensity
-  //! \brief invert p(rho,T) for rho at fixed T, in CGS.
-  //!
-  //! Setup-time only. Note that this inversion is ILL POSED when radiation dominates the
-  //! pressure, because chi_rho then tends to zero and p stops depending on density at
-  //! all; the iteration below still returns a value inside its bracket, but a problem
-  //! generator building a background in that regime is asking for something the (p,T)
-  //! pair does not determine.
+  //! \brief inverts p(rho, T) for rho at fixed T in cgs (setup time; ill posed where
+  //! radiation dominates the pressure)
   KOKKOS_INLINE_FUNCTION
   Real SolveDensity(const Real ptarget, const Real t, const Real dguess) const {
     Real zg = (dguess > 0.0) ? log10(dguess) : -1.0e30;
@@ -723,28 +546,9 @@ struct EOSTable {
   }
 
   //--------------------------------------------------------------------------------------
-  //! \fn void EvalTMin
-  //! \brief the thermodynamic state at the table's OWN lowest tabulated temperature,
-  //! 10^ymin, for a density in CGS. This is the anchor of the sub-floor continuation:
-  //! below it the tabulated surfaces are pure extrapolation and, worse, the temperature
-  //! root find below has nothing to converge to once e drops under e(rho, 10^(ymin-3)),
-  //! where it pins on its own bracket and returns a p, c_s and Gamma_1 that no longer
-  //! depend on e at all.
-  KOKKOS_INLINE_FUNCTION
-  void EvalTMin(const Real rho, EOSThermoState &s) const {
-    EvalFromLogs<false>(log10(rho), ymin, rho, Pow10(ymin), s);
-  }
-
-  //--------------------------------------------------------------------------------------
   //! \fn Real EnergyFloorBound
-  //! \brief a cheap upper bound on the internal energy density at the pressure floor, in
-  //! CODE units, for a density given in CODE units.
-  //!
-  //! Precomputed at table build time: for each x cell the maximum of e(rho,pfloor) over
-  //! that cell is stored, so the lookup is one index and one load. A bound rather than
-  //! the value, because its only job is to prove that the common case is above the floor
-  //! without paying for the inversion. Densities off the table fall back to the global
-  //! maximum, which is conservative in the only direction that matters.
+  //! \brief upper bound on e(rho, pfloor) in code units: the per-x-cell maximum stored at
+  //! build time (global maximum off the table)
   KOKKOS_INLINE_FUNCTION
   Real EnergyFloorBound(const Real d) const {
     Real gx = (log10(d*dens_cgs) - xmin)*dxi;

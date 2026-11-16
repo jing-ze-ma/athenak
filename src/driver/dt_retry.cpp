@@ -4,17 +4,19 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file dt_retry.cpp
-//! \brief fin4-dtretry: the cycle checkpoint and the dt cut-and-retry (dt_retry.hpp)
+//! \brief the cycle checkpoint and the dt cut-and-retry (dt_retry.hpp)
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <set>
 #include <sstream>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "athena.hpp"
@@ -52,15 +54,15 @@ const char *kDtrMinimal[] = {
   // Hydro
   "hyd.u0", "hyd.w0", "hyd.wtemp", "hyd.wder", "hyd.eint_rst", "hyd.c2p_acc",
   "hyd.c2p_ref_e", "hyd.c2p_ref_d",
-  // mhdfix-1025: MHD, the hydro set plus the face fields b0 and their cell average bcc0
+  // MHD, the hydro set plus the face fields b0 and their cell average bcc0
   // (both read by stage 1 before written); every clone is the whole View, ghosts
   // included, so the put-back is the cycle-start state with its halos (no exchange)
   "mhd.u0", "mhd.w0", "mhd.b0.x1f", "mhd.b0.x2f", "mhd.b0.x3f", "mhd.bcc0", "mhd.wtemp",
   "mhd.wder", "mhd.eint_rst", "mhd.c2p_acc", "mhd.c2p_ref_e", "mhd.c2p_ref_d",
-  // mhdfix-1025: <mhd> resistivity: eta_b (non-constant eta) is set from w0 by the C2P
+  // <mhd> resistivity: eta_b (non-constant eta) is set from w0 by the C2P
   // (or after the RKG sub-steps) and read by the next cycle's stage 1
   "res.eta_b",
-  // amdtr-1019: <hydro>/am_vector's spin reservoir (hydro::AmModule, persistent across
+  // <hydro>/am_vector's spin reservoir (hydro::AmModule, persistent across
   // cycles) and the radiation's hesdirk2 FSAL spin slope; empty/absent unless am_vector
   "am.am_spin", "m1.amk1",
   // RadiationM1
@@ -68,31 +70,31 @@ const char *kDtrMinimal[] = {
   "m1.vet_prev", "m1.vsc_d0", "m1.vsc_d1", "m1.ctr_mem", "m1.csk1", "m1.csk2",
   "m1.csinc", "m1.vra_d", "m1.opac", "m1.tau_ten", "m1.vet_cell", "m1.vgd_rst",
   "m1.vlat_cs",
-  // facebound-1112 step 1 time2_face_fct: the face E flux of K1 (rotated with it)
+  // step 1 time2_face_fct: the face E flux of K1 (rotated with it)
   "m1.t2pf1",
-  // mhdfix-1025: time2_vet_col = extrap2 (sph fresh-start default since defaults-1025)
+  // time2_vet_col = extrap2 (the sph fresh-start default)
   // keeps the previous closure build (x2_tt, x2_hr, x2_q; x2_t/x2_ok are values) for the
   // next step's extrapolation: a failed attempt that rebuilt it left the retry reading
   // the discarded build (a forced retry at cycle 5 of the hot-spot wedge was not bitwise)
   "m1.x2_tt", "m1.x2_hr", "m1.x2_q",
-  // fin51-r-fix: esrc (the explicit energy source, OLD vector of E in every solve) is
+  // esrc (the explicit energy source, OLD vector of E in every solve) is
   // rewritten by the pgen only when its ramp weight changes, at the first Heun stage; the
   // solves that run before it (time2 start probe / rotation correction) read last cycle's
   "m1.esrc",
-  // fin51-r-fix (linhao-bc branches): the wall flux of the last solve, read by the next
+  // the wall flux of the last solve, read by the next
   // stage-1 solve for the L_in history (lbath_l1); absent elsewhere (no entry matches)
   "m1.lbath_f",
-  // accretor-rhd-1015 (ry_per_accretor S5 per-column outer bath): the advective radiation
+  // (ry_per_accretor S5 per-column outer bath): the advective radiation
   // flux through the outer face of the last solve, read by the pgen's hydro-stage budget
   // accumulator like f0x1; absent (empty) elsewhere
   "m1.ibadv_x1max",
-  // dtretry-1111: implicit_hr_cmem (implied by implicit_physflux / implicit_aphll_mem):
+  // implicit_hr_cmem (implied by implicit_physflux / implicit_aphll_mem):
   // the APPLIED face fluxes of the last solve, read by the next solve as its step-start
   // value (fax*n, implicit_physflux_mom = fa) and kept by implicit_hr_cmem_rst; they were
   // not visited (stale generated visitor), so a retry read the failed attempt's; empty
   // (no entry matches) without cmem
   "m1.fax1", "m1.fax2", "m1.fax3",
-  // dtretry-1111: vet_gd's half-range ratios (vgd_hr; the rotation average's field
+  // vet_gd's half-range ratios (vgd_hr; the rotation average's field
   // array vra_a1 is this View): the closure of a cycle that does not rebuild them
   // reads the last build's.  A forced retry at fac 1 on the R136 production restart
   // (views minimal) was not bitwise the straight run at the next dump; restoring vgd_hr
@@ -100,7 +102,7 @@ const char *kDtrMinimal[] = {
   "m1.vgd_hr",
 };
 
-// dtretry-1111 debug (dt_retry_poison_n / dt_retry_poison_cells): restrict the poison of
+// debug (dt_retry_poison_n / dt_retry_poison_cells): restrict the poison of
 // 5-D Views to a variable range and to the active or ghost cells (ng ghosts)
 int g_pn_lo = -1, g_pn_hi = -1, g_pcells = 0, g_png = 0;
 
@@ -145,7 +147,7 @@ struct ValEntry : public Entry {
   void Restore() override {Assign(*p, c.x);}
 };
 
-// gpumem-1022 <time>/dt_retry_host: a View's clone may live in pinned HOST memory
+// <time>/dt_retry_host: a View's clone may live in pinned HOST memory
 // (Kokkos::SharedHostPinnedSpace): written once per cycle (device -> host), read only by
 // a rejected cycle (host -> device). The same bytes are copied back: bitwise either way.
 // (A host build has SharedHostPinnedSpace = HostSpace: the same path, no memory change.)
@@ -160,9 +162,9 @@ struct ViewEntry : public Entry {
   Clone clone;
   HClone hclone;
   bool deep, have = false;
-  bool host = false;     // gpumem-1022: dt_retry_host
+  bool host = false;     // dt_retry_host
   bool onhost = false;   // this Save's copy is in hclone
-  // gpumem-1022: a View with a write generation counter (every writer bumps it) skips
+  // a View with a write generation counter (every writer bumps it) skips
   // the host copy when nothing wrote it since the copy it holds (same bytes either way)
   const std::int64_t *gen = nullptr;
   std::int64_t gsaved = -1;
@@ -245,7 +247,7 @@ struct ViewEntry : public Entry {
   // every element, the whole View); Poison, after the put-back, writes it.  An element
   // the attempt did not write (e.g. a ghost that no kernel ever fills, constant since the
   // allocation) is not poisoned by 1: it holds the same value in the straight run.
-  // dtretry-1111: dt_retry_poison_n (lo:hi of the variable index) and
+  // dt_retry_poison_n (lo:hi of the variable index) and
   // dt_retry_poison_cells (active | ghost | gx1 | gt2 | gtdeep | gedge | gx1in1 |
   // gx1out1) restrict a 5-D View's poison to a variable range and a region
   using HMirror = typename T::HostMirror;
@@ -329,7 +331,8 @@ struct DualEntry : public Entry {
     nsh = p->need_sync_host(); nsd = p->need_sync_device();
   }
   void Restore() override {
-    if (p->d_view.data() != orig.d_view.data() || p->h_view.data() != orig.h_view.data()) {
+    if (p->d_view.data() != orig.d_view.data() ||
+        p->h_view.data() != orig.h_view.data()) {
       *p = orig;
     }
     d.p = &p->d_view; h.p = &p->h_view;
@@ -348,7 +351,7 @@ struct Binder {
   std::string pre;
   const std::set<std::string> *sel;
   bool all;
-  bool host;   // gpumem-1022 dt_retry_host
+  bool host;   // dt_retry_host
   bool Deep(const std::string &n) const {
     return all || sel->count(pre + n) > 0;
   }
@@ -376,7 +379,7 @@ std::vector<std::unique_ptr<Entry>> &PgenEntries() {
   return v;
 }
 
-// pgrst-1021: the stage-loop copy of the pgen registers (see dt_retry.hpp)
+// the stage-loop copy of the pgen registers (see dt_retry.hpp)
 std::vector<std::unique_ptr<Entry>> &PgenStageEntries() {
   static std::vector<std::unique_ptr<Entry>> v;
   return v;
@@ -409,18 +412,15 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   if (pin->DoesParameterExist("time", "dt_retry")) {
     on = pin->GetBoolean("time", "dt_retry");
   } else {
-    // amdef-1019: the old default (fresh on, restart off) unless <job>/recipe = prod1019,
-    // which also turns it on for a restart whose input lacks the key.
-    // defaults-1114 (USER 11-13 "make some defaults": R136, HG and RSG all name true):
-    // DEFAULT true on a restart whose input lacks the key too; recipe none keeps the old
-    // rule (fresh on, restart off)
+    // DEFAULT true, also on a restart whose input lacks the key; <job>/recipe = none
+    // keeps the rule fresh on, restart off
     const bool nd = recipe::GetMode(pin) != recipe::Mode::none;
     on = pin->GetOrAddBoolean("time", "dt_retry", fresh || nd);
     recipe::Log(std::string("<time>/dt_retry = ") + (on ? "true" : "false") +
                 (on ? " (default)" : " (recipe none, restart: the old default)"));
   }
   if (!on) return;
-  // the wiring covers Hydro or MHD (mhdfix-1025) + RadiationM1 (the implicit scheme);
+  // the wiring covers Hydro or MHD + RadiationM1 (the implicit scheme);
   // anything else: off
   auto *pk = pm->pmb_pack;
   if ((pk->phydro != nullptr && pk->pmhd != nullptr) || pk->prad != nullptr ||
@@ -438,18 +438,17 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   }
   fac_ = pin->GetOrAddReal("time", "dt_retry_fac", 0.5);
   grow_ = pin->GetOrAddReal("time", "dt_retry_grow", 1.25);
-  maxcut_ = pin->GetOrAddInteger("time", "dt_retry_max", 8);
   ngood_req_ = pin->GetOrAddInteger("time", "dt_retry_ngood", 10);
-  // t2retry-1020: <time>/dt_retry_fac_t2 (read only when named): the dt factor of a
+  // <time>/dt_retry_fac_t2 (read only when named): the dt factor of a
   // retry raised by <rad_m1>/time2_reject = retry (default: dt_retry_fac)
   if (pin->DoesParameterExist("time", "dt_retry_fac_t2")) {
     t2_fac_ = pin->GetReal("time", "dt_retry_fac_t2");
   }
-  // t2befb-1020: <time>/dt_retry_t2_be (read only when named; default 0, csfix-1023 USER
-  // 10-23, was 2): a cycle that has taken this many time2_reject cuts redoes a further
-  // non-admissible hesdirk2 stage with backward Euler (as time2_reject = be) instead of
-  // cutting again; < 0 = never.  0 = BE redo at the cycle dt, no cut (RSG E 230 d: 2 cut
-  // dt to the ~2 s stage-2 limit and the cap kept it there)
+  // <time>/dt_retry_t2_be (read only when named; default 0): a cycle that has taken this
+  // many time2_reject cuts redoes a further non-admissible hesdirk2 stage with backward
+  // Euler (as time2_reject = be) instead of cutting again; < 0 = never.  0 = BE redo at
+  // the cycle dt, no cut (RSG E 230 d: 2 cut dt to the ~2 s stage-2 limit and the cap
+  // kept it there)
   if (pin->DoesParameterExist("time", "dt_retry_t2_be")) {
     t2_be_ = pin->GetInteger("time", "dt_retry_t2_be");
   }
@@ -458,11 +457,12 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
     t2streak_ = pin->GetBoolean("time", "dt_retry_t2be_now");
   }
   pk->pradm1->dtr_t2be = (t2_be_ == 0) || (t2_be_ > 0 && t2streak_);
-  pk->pradm1->dtr_maxcut = maxcut_;   // r136e-1107 (vkick_be_retry bookkeeping)
+  pk->pradm1->dtr_maxcut = maxcut_;   // (vkick_be_retry bookkeeping)
   std::string vm = pin->GetOrAddString("time", "dt_retry_views", "minimal");
   all_views_ = (vm == "all");
   if (!all_views_ && vm != "minimal") {
-    std::cout << "### FATAL ERROR: <time>/dt_retry_views must be minimal or all" << std::endl;
+    std::cout << "### FATAL ERROR: <time>/dt_retry_views must be minimal or all"
+              << std::endl;
     std::exit(EXIT_FAILURE);
   }
   if (pin->DoesParameterExist("time", "dt_retry_views_add")) {
@@ -470,7 +470,7 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
     std::string w;
     while (std::getline(ss, w, ',')) {if (!w.empty()) extra_views_.push_back(w);}
   }
-  // gpumem-1022 <time>/dt_retry_host (read only when named; default false = bitwise the
+  // <time>/dt_retry_host (read only when named; default false = bitwise the
   // old layout): the checkpoint clones of device Views live in pinned host memory
   // (SharedHostPinnedSpace) instead of device memory; the same bytes are copied back, so
   // a retried cycle is bitwise the device-clone one. Saves device memory = one copy of
@@ -478,12 +478,6 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   // GPUs). No memory effect on a host-only build.
   if (pin->DoesParameterExist("time", "dt_retry_host")) {
     host_ = pin->GetBoolean("time", "dt_retry_host");
-  }
-  // gpumem-1022 <time>/dt_retry_host_skip_clean (read only when named; default true):
-  // with dt_retry_host, a View that has a write counter (vra_d) is not copied again
-  // while clean
-  if (pin->DoesParameterExist("time", "dt_retry_host_skip_clean")) {
-    skip_clean_ = pin->GetBoolean("time", "dt_retry_host_skip_clean");
   }
   // debug / audit keys, read only when named (the parameter dump is unchanged otherwise)
   if (pin->DoesParameterExist("time", "dt_retry_force_cycle")) {
@@ -549,7 +543,7 @@ void DtRetry::Build(Mesh *pm) {
     Binder b{&ent_, "hyd.", &sel, all_views_, host_};
     pk->phydro->DtRetryVisit(b);
   }
-  // mhdfix-1025: MHD (and its resistivity, when <mhd>/ohmic_resistivity is set)
+  // MHD (and its resistivity, when <mhd>/ohmic_resistivity is set)
   if (pk->pmhd != nullptr) {
     Binder b{&ent_, "mhd.", &sel, all_views_, host_};
     pk->pmhd->DtRetryVisit(b);
@@ -562,20 +556,20 @@ void DtRetry::Build(Mesh *pm) {
     Binder b{&ent_, "m1.", &sel, all_views_, host_};
     pk->pradm1->DtRetryVisit(b);
   }
-  // amdtr-1019: the angular-momentum module (<hydro|mhd>/am_transport, am_vector,
+  // the angular-momentum module (<hydro|mhd>/am_transport, am_vector,
   // frame_omega; exists only when one of its keys is named)
   if (hydro::AmModule *pam = hydro::AmModuleOf(pk)) {
     Binder b{&ent_, "am.", &sel, all_views_, host_};
     pam->DtRetryVisit(b);
   }
-  // gpumem-1022: dt_retry_host skips the host copy of vet_rotate_avg's history vra_d
+  // dt_retry_host skips the host copy of vet_rotate_avg's history vra_d
   // while it is clean (written only at rotation-block boundaries; RadiationM1::vra_gen)
-  if (host_ && skip_clean_) {
+  if (host_) {
     for (auto &e : ent_) {
       if (e->name == "m1.vra_d") {e->SetGen(&(pk->pradm1->vra_gen));}
     }
   }
-  // fin51-r-fix: the problem generator's registered state (PgenEntries)
+  // the problem generator's registered state (PgenEntries)
   for (auto &e : PgenEntries()) {ent_.push_back(std::move(e));}
   PgenEntries().clear();
   {
@@ -590,13 +584,13 @@ void DtRetry::Build(Mesh *pm) {
 void DtRetry::Save(Mesh *pm) {
   if (!on) return;
   if (!built_) {Build(pm);}
-  // t2befb-1020: the cycle's own dt, cap and good-cycle count (the dt_retry_t2_be redo)
+  // the cycle's own dt, cap and good-cycle count (the dt_retry_t2_be redo)
   dt0_ = pm->dt;
   cap0_ = pm->dt_cap;
   ngood0_ = ngood_;
   Kokkos::Timer t;
   pm->pmb_pack->pradm1->DtRetryQuiesce(false);
-  pm->pmb_pack->pradm1->MemArenaSeal();   // memcut-1113: no rebind after a checkpoint
+  pm->pmb_pack->pradm1->MemArenaSeal();   // no rebind after a checkpoint
   for (auto &e : ent_) {e->Save();}
   Kokkos::fence();
   tsave_ += t.seconds();
@@ -648,7 +642,7 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   const int why = m1->dtr_why;
   const Real res = m1->dtr_resid;
   const Real dto = pm->dt;
-  // t2retry-1020: the FIRST cut of a cycle raised by time2_reject (why 5) may take its own,
+  // the FIRST cut of a cycle raised by time2_reject (why 5) may take its own,
   // gentler factor; further cuts of the same cycle take dt_retry_fac (ncut_ is counted
   // below, so ncut_ == 0 here is the first cut)
   const Real f = (why == 9) ? force_fac_
@@ -658,7 +652,7 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   if (ncut_ > maxcut_) {
     if (global_variable::my_rank == 0) {
       std::cout << "### FATAL ERROR: <time> dt_retry: cycle " << pm->ncycle << " failed "
-                << ncut_ << " times (dt_retry_max " << maxcut_ << "), dt " << dto
+                << ncut_ << " times (max " << maxcut_ << "), dt " << dto
                 << std::endl;
     }
     return false;
@@ -687,10 +681,10 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   for (auto &e : ent_) {e->Restore();}
   Kokkos::fence();
   m1->DtRetryAfterRestore();
-  // r136e-1107 (vkick_be_retry bookkeeping); dtretry-1111: set after the put-back, which
+  // (vkick_be_retry bookkeeping); set after the put-back, which
   // (generated visitor) rolls dtr_ncut back to its cycle-start value
   m1->dtr_ncut = ncut_;
-  // prod-retry-1022: once this cycle took the backward-Euler redo, it keeps it: a failed
+  // once this cycle took the backward-Euler redo, it keeps it: a failed
   // redo (NON-CONVERGED) is then cut with the redo still armed, instead of the hesdirk2
   // stage being retried at the cut dt, rejected again and sent back to the cycle dt (the
   // loop run12's stream-on smoke died in: BE at dt0 / stage at dt0/2, dt_retry_max)
@@ -698,7 +692,7 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   m1->dtr_fail = false;
   m1->dtr_why = 0;
   m1->dtr_resid = 0.0;
-  // t2befb-1020: a time2_reject that dt_retry_t2_be cuts did not cure is not a dt problem:
+  // a time2_reject that dt_retry_t2_be cuts did not cure is not a dt problem:
   // the cycle is taken again at its OWN dt (and cap) with the stage rejection armed to
   // take the backward-Euler redo, as time2_reject = be (no dt is lost to it)
   const bool t2fb = (why == 5) && (t2_be_ >= 0) && (nt2cut_ >= t2_be_) && !m1->dtr_t2be;
@@ -725,14 +719,14 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
     // list does NOT checkpoint, the elements the attempt wrote go to NaN after the
     // restore (dt_retry_poison = 2: the whole View); the retried cycle is bitwise the
     // straight one only if each of them is scratch (written before it is read).
-    // dtretry-1111: an element no kernel writes (constant since the allocation) is read
+    // an element no kernel writes (constant since the allocation) is read
     // alike by both
     int np = 0;
     for (auto *e : pois) {e->Poison(); np += 1;}
     Kokkos::fence();
     if (global_variable::my_rank == 0) {
-      std::cout << "<time> dt_retry poison: " << np << " changed Views outside the minimal "
-                << "list set to NaN" << std::endl;
+      std::cout << "<time> dt_retry poison: " << np
+                << " changed Views outside the minimal list set to NaN" << std::endl;
     }
   }
   if (audit_ && global_variable::my_rank == 0) {
@@ -772,8 +766,8 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
 void DtRetry::Accept(Mesh *pm) {
   if (!on) return;
   ncut_ = 0;
-  pm->pmb_pack->pradm1->dtr_ncut = 0;   // r136e-1107
-  // t2befb-1020: a cycle that took the backward-Euler redo of time2_reject = retry arms the
+  pm->pmb_pack->pradm1->dtr_ncut = 0;
+  // a cycle that took the backward-Euler redo of time2_reject = retry arms the
   // next cycle to take it at once (a rejection that persists from cycle to cycle costs as
   // much as time2_reject = be); the first cycle without a rejection disarms it
   auto *m1 = pm->pmb_pack->pradm1;
@@ -806,7 +800,7 @@ void DtRetry::AfterNewDt(Mesh *pm, ParameterInput *pin) {
     pin->SetReal("time", "dt_retry_cap", pm->dt_cap);
     pin->SetInteger("time", "dt_retry_ngood_now", ngood_);
   }
-  // t2befb-1020: the armed state, once a backward-Euler redo of time2_reject = retry was taken
+  // the armed state, once a backward-Euler redo of time2_reject = retry was taken
   if (t2streak_ || pin->DoesParameterExist("time", "dt_retry_t2be_now")) {
     pin->SetBoolean("time", "dt_retry_t2be_now", t2streak_);
   }
@@ -831,7 +825,7 @@ void DtRetry::Report(Mesh *pm) {
 }
 
 //----------------------------------------------------------------------------------------
-// m1ctr-rollback-1017: CounterKeep (dt_retry.hpp)
+// CounterKeep (dt_retry.hpp)
 
 namespace {
 // the integer and the energy-type fields of Mesh::ecounter, in a fixed order

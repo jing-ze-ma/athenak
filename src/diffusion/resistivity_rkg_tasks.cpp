@@ -4,17 +4,13 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file resistivity_rkg_tasks.cpp
-//! \brief functions that control resistivity rkg tasks stored in tasklists in MeshBlockPack
+//! \brief functions that control the tasks of the resistive RKG super-time-stepping
+//! (Runge-Kutta-Gegenbauer, second order) stored in tasklists in MeshBlockPack
 
 #include <map>
 #include <memory>
 #include <string>
-#include <cstdlib>
 #include <iostream>
-
-#if MPI_PARALLEL_ENABLED
-#include <mpi.h>
-#endif
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -33,67 +29,76 @@
 #include "shearing_box/orbital_advection.hpp"
 #include "mhd/mhd.hpp"
 #include "dyn_grmhd/dyn_grmhd.hpp"
-#include "mesh/nghbr_index.hpp"
 
-void Resistivity::AssembleResistRKGTasks(std::map<std::string, std::shared_ptr<TaskList>> tl) {
+//----------------------------------------------------------------------------------------
+//! \fn void Resistivity::AssembleResistRKGTasks
+//! \brief Adds the tasks of one RKG super-stage into the "*_rkg_*" task lists
+
+void Resistivity::AssembleResistRKGTasks(
+    std::map<std::string, std::shared_ptr<TaskList>> tl) {
+  using mhd::MHD;
   TaskID none(0);
-  mhd::MHD *pmhd = pmy_pack->pmhd;
+  MHD *pmhd = pmy_pack->pmhd;
+  auto &bti = tl["before_rkg_timeintegrator"];
+  auto &bst = tl["before_rkg_stagen"];
+  auto &stg = tl["rkg_stagen"];
+  auto &ast = tl["after_rkg_stagen"];
+  auto &ati = tl["after_rkg_timeintegrator"];
 
   // assemble "before_timeintegrator" task list
-  id.res_totstage = tl["before_rkg_timeintegrator"]->AddTask(&Resistivity::TotStage, this, none);
+  id.res_totstage = bti->AddTask(&Resistivity::TotStage, this, none);
 
-  // assemble "before_stagen" task list
-  id.res_coeff = tl["before_rkg_stagen"]->AddTask(&Resistivity::RKGCoeff, this, none);
-  // after RKGCoeff: that is where rkg_lean sets pmhd->rkg_skip_u for this stage
-  id.mhd_irecv = tl["before_rkg_stagen"]->AddTask(&mhd::MHD::InitRecv, pmhd, id.res_coeff);
+  // assemble "before_stagen" task list; InitRecv after RKGCoeff, which sets
+  // pmhd->rkg_skip_u for this stage
+  id.res_coeff = bst->AddTask(&Resistivity::RKGCoeff, this, none);
+  id.mhd_irecv = bst->AddTask(&MHD::InitRecv, pmhd, id.res_coeff);
 
   // assemble "stagen" task list
-  id.res_flux      = tl["rkg_stagen"]->AddTask(&Resistivity::Fluxes, this, none);
-  id.mhd_sendf     = tl["rkg_stagen"]->AddTask(&Resistivity::SendFluxRKG, this, id.res_flux);
-  id.mhd_recvf     = tl["rkg_stagen"]->AddTask(&Resistivity::RecvFluxRKG, this, id.mhd_sendf);
-  id.res_copyiniuf = tl["rkg_stagen"]->AddTask(&Resistivity::CopyIniConsAndFluxes, this, id.mhd_recvf);
-  id.res_rkupdt    = tl["rkg_stagen"]->AddTask(&Resistivity::RKUpdate, this, id.res_copyiniuf);
-  id.mhd_restu     = tl["rkg_stagen"]->AddTask(&mhd::MHD::RestrictU, pmhd, id.res_rkupdt);
-  id.mhd_sendu     = tl["rkg_stagen"]->AddTask(&mhd::MHD::SendU, pmhd, id.mhd_restu);
-  id.mhd_recvu     = tl["rkg_stagen"]->AddTask(&mhd::MHD::RecvU, pmhd, id.mhd_sendu);
-  id.res_efld      = tl["rkg_stagen"]->AddTask(&Resistivity::EField, this, id.mhd_recvu);
-  id.mhd_sende     = tl["rkg_stagen"]->AddTask(&mhd::MHD::SendE, pmhd, id.res_efld);
-  id.mhd_recve     = tl["rkg_stagen"]->AddTask(&mhd::MHD::RecvE, pmhd, id.mhd_sende);
-  id.res_copyinie = tl["rkg_stagen"]->AddTask(&Resistivity::CopyIniE, this, id.mhd_recve);
-  id.res_ct        = tl["rkg_stagen"]->AddTask(&Resistivity::CT, this, id.res_copyinie);
-  id.mhd_restb     = tl["rkg_stagen"]->AddTask(&mhd::MHD::RestrictB, pmhd, id.res_ct);
-  id.mhd_sendb     = tl["rkg_stagen"]->AddTask(&Resistivity::SendBRKG, this, id.mhd_restb);
-  id.mhd_recvb     = tl["rkg_stagen"]->AddTask(&mhd::MHD::RecvB, pmhd, id.mhd_sendb);
-  id.mhd_bcs       = tl["rkg_stagen"]->AddTask(&mhd::MHD::ApplyPhysicalBCs, pmhd, id.mhd_recvb);
-  id.mhd_prol      = tl["rkg_stagen"]->AddTask(&mhd::MHD::Prolongate, pmhd, id.mhd_bcs);
-  id.res_copyu     = tl["rkg_stagen"]->AddTask(&Resistivity::CopyCons, this, id.mhd_prol);
-  id.mhd_c2p       = tl["rkg_stagen"]->AddTask(&Resistivity::ConToPrimRKG, this, id.res_copyu);
-  id.mhd_newdt     = tl["rkg_stagen"]->AddTask(&Resistivity::NewTimeStepRKG, this, id.mhd_c2p);
+  id.res_flux      = stg->AddTask(&Resistivity::Fluxes, this, none);
+  id.mhd_sendf     = stg->AddTask(&Resistivity::SendFluxRKG, this, id.res_flux);
+  id.mhd_recvf     = stg->AddTask(&Resistivity::RecvFluxRKG, this, id.mhd_sendf);
+  id.res_copyiniuf = stg->AddTask(&Resistivity::CopyIniConsAndFluxes, this, id.mhd_recvf);
+  id.res_rkupdt    = stg->AddTask(&Resistivity::RKUpdate, this, id.res_copyiniuf);
+  id.mhd_restu     = stg->AddTask(&MHD::RestrictU, pmhd, id.res_rkupdt);
+  id.mhd_sendu     = stg->AddTask(&MHD::SendU, pmhd, id.mhd_restu);
+  id.mhd_recvu     = stg->AddTask(&MHD::RecvU, pmhd, id.mhd_sendu);
+  id.res_efld      = stg->AddTask(&Resistivity::EField, this, id.mhd_recvu);
+  id.mhd_sende     = stg->AddTask(&MHD::SendE, pmhd, id.res_efld);
+  id.mhd_recve     = stg->AddTask(&MHD::RecvE, pmhd, id.mhd_sende);
+  id.res_copyinie  = stg->AddTask(&Resistivity::CopyIniE, this, id.mhd_recve);
+  id.res_ct        = stg->AddTask(&Resistivity::CT, this, id.res_copyinie);
+  id.mhd_restb     = stg->AddTask(&MHD::RestrictB, pmhd, id.res_ct);
+  id.mhd_sendb     = stg->AddTask(&MHD::SendB, pmhd, id.mhd_restb);
+  id.mhd_recvb     = stg->AddTask(&MHD::RecvB, pmhd, id.mhd_sendb);
+  id.mhd_bcs       = stg->AddTask(&MHD::ApplyPhysicalBCs, pmhd, id.mhd_recvb);
+  id.mhd_prol      = stg->AddTask(&MHD::Prolongate, pmhd, id.mhd_bcs);
+  id.res_copyu     = stg->AddTask(&Resistivity::CopyCons, this, id.mhd_prol);
+  id.mhd_c2p       = stg->AddTask(&Resistivity::ConToPrimRKG, this, id.res_copyu);
+  id.mhd_newdt     = stg->AddTask(&Resistivity::NewTimeStepRKG, this, id.mhd_c2p);
 
   // assemble "after_stagen" task list
-  id.mhd_csend = tl["after_rkg_stagen"]->AddTask(&mhd::MHD::ClearSend, pmhd, none);
+  id.mhd_csend = ast->AddTask(&MHD::ClearSend, pmhd, none);
   // although RecvFlux/U/E/B functions check that all recvs complete, add ClearRecv to
   // task list anyways to catch potential bugs in MPI communication logic
-  id.mhd_crecv = tl["after_rkg_stagen"]->AddTask(&mhd::MHD::ClearRecv, pmhd, id.mhd_csend);
-    
-  id.res_eta = tl["after_rkg_timeintegrator"]->AddTask(&Resistivity::UpdateResistivity, this, none);
-  id.mhd_finalnewdt     = tl["after_rkg_timeintegrator"]->AddTask(&mhd::MHD::NewTimeStep, pmhd, id.res_eta);
+  id.mhd_crecv = ast->AddTask(&MHD::ClearRecv, pmhd, id.mhd_csend);
+
+  // assemble "after_timeintegrator" task list
+  id.res_eta        = ati->AddTask(&Resistivity::UpdateResistivity, this, none);
+  id.mhd_finalnewdt = ati->AddTask(&MHD::NewTimeStep, pmhd, id.res_eta);
 
   return;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn TaskStatus Resistivity::TotStage
+//! \brief Number of RKG super-stages s for this super-step (dt x rkg_dtfac over the
+//! diffusive dt_diff) and the coefficients of the first stages. A Strang half that
+//! starts from the state the RK stages left (rkg_half = 2 or 3) refreshes eta first.
+
 TaskStatus Resistivity::TotStage(Driver *pdrive, int stage) {
-  // rkgdt-1101 <mhd>/rkg_lmax_diag: once, on the state the first super-step starts from
-  if (rkg_lmax_diag > 0 && !rkg_lmax_done) {
-    rkg_lmax_done = true;
-    LmaxDiag();
-  }
-  // rkgstrang-1102: the second half starts from the state the RK stages left; its eta
-  // rkgfuse-1102: so does the leading super-step of a fused cycle (rkg_half = 3), which
-  // starts from the state the previous cycle's RK stages and split work left
-  if (rkg_half == 2 || rkg_half == 3) {RefreshEta();}
+  if (rkg_half == 2 || rkg_half == 3) RefreshEta();
   Real dtp = pmy_pack->pmesh->dt_diff;
-  Real dth = pmy_pack->pmesh->dt*rkg_dtfac;   // rkgstrang-1102: dt/2 per Strang half
+  Real dth = pmy_pack->pmesh->dt*rkg_dtfac;
   tau = dth/dtp;
   alpha = 0.5;
   Real sreal = -alpha + sqrt(SQR(alpha+1.0)+tau*(3.0+2.0*alpha));
@@ -102,15 +107,12 @@ TaskStatus Resistivity::TotStage(Driver *pdrive, int stage) {
   bjm2 = 1.0/3.0;
   bjm1 = 1.0/3.0;
   w1 = (3.0+2.0*alpha)/((s+2.0*alpha+1.0)*(s-1.0));
-//  tau = 1.0/w1;
-//    std::cout << "RKG: dt=" << dth
-//                << " dt_diff=" << dtp
-//                << " taureal=" << (dth/dtp)
-//                << " sreal=" << sreal
-//                << " s=" << s
-//                << std::endl;
   return TaskStatus::complete;
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn TaskStatus Resistivity::RKGCoeff
+//! \brief Recurrence coefficients (b_j, mu, nu, mu~, gamma~) of super-stage `stage`
 
 TaskStatus Resistivity::RKGCoeff(Driver *pdrive, int stage) {
   if (stage > 2) {
@@ -118,7 +120,8 @@ TaskStatus Resistivity::RKGCoeff(Driver *pdrive, int stage) {
     bjm1 = bj;
   }
   if (stage > 1) {
-    bj = (2.0*alpha+1.0)/(3.0+2.0*alpha)*(stage+2.0*alpha+1.0)*(stage-1.0)/(stage*(stage+2.0*alpha));
+    bj = (2.0*alpha+1.0)/(3.0+2.0*alpha)*(stage+2.0*alpha+1.0)*(stage-1.0)
+         /(stage*(stage+2.0*alpha));
     mu = 2.0*(alpha+stage-1.0)/(stage+2.0*alpha-1.0)*bj/bjm1;
     nu = -(stage-1.0)/(stage+2.0*alpha-1.0)*bj/bjm2;
     mut = mu*w1;
@@ -126,35 +129,12 @@ TaskStatus Resistivity::RKGCoeff(Driver *pdrive, int stage) {
     gat = -mut*ajm1;
   }
   pmy_pack->pmhd->rkg_skip_u = rkg_lean && (stage < s);
-  if (rkg_halo_ien_only) {
-    // rkghalo-1101: super-stage 1 exchanges everything (the state left by the RK stages
-    // and the operator-split work before the super-step); stages >= 2 move u0(IEN) and
-    // the slots the previous super-stage's ConToPrim wrote on any rank
-    auto *pm = pmy_pack->pmhd;
-    const int nvar = pm->nmhd + pm->nscalars;
-    int vm = 0;
-    if (stage > 1 && nvar <= 32 && rkg_halo_changed >= 0) {
-      const int all = (nvar == 32) ? -1 : ((1 << nvar) - 1);
-      const int mom = (1 << IM1) | (1 << IM2) | (1 << IM3);
-      // test aid: RKG_HALO_FORCE_MASK (env, a decimal bitmask) adds slots to every list;
-      // a superset of the changed slots is exact, so key on must still be bitwise
-      static const int force_ = std::getenv("RKG_HALO_FORCE_MASK") ?
-                                std::atoi(std::getenv("RKG_HALO_FORCE_MASK")) : 0;
-      vm = rkg_halo_changed | (1 << IEN) | force_;
-      if (vm & mom) {vm |= mom;}
-      if (vm == all) {vm = 0;}
-    }
-    if (stage > 1) {
-      rkg_halo_nstage++;
-      if (vm == 0) {rkg_halo_nfull++;}
-      for (int v=0; v<nvar && v<32; ++v) {
-        if (vm == 0 || ((vm >> v) & 1)) {rkg_halo_nslot[v]++;}
-      }
-    }
-    pm->rkg_u_vmask = vm;
-  }
   return TaskStatus::complete;
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn TaskStatus Resistivity::Fluxes
+//! \brief Resistive energy fluxes (and the resistive edge EMF) of this super-stage
 
 TaskStatus Resistivity::Fluxes(Driver *pdrive, int stage) {
   AddResistiveFluxes(pmy_pack->pmhd->b0, pmy_pack->pmhd->bcc0, pmy_pack->pmhd->uflx);
@@ -162,26 +142,10 @@ TaskStatus Resistivity::Fluxes(Driver *pdrive, int stage) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Resistivity::SendBRKG
-//! \brief MHD::SendB for a super-stage; stages 1..s-2 pack depth 1 with rkg_halo_d1
-//! (see resistivity.hpp).  The depth is reset at once: no other exchange sees it.
-
-TaskStatus Resistivity::SendBRKG(Driver *pdrive, int stage) {
-  auto *pm = pmy_pack->pmhd;
-  // test aid (env RKG_D1_LAST, default 2): depth 1 for stages <= s - RKG_D1_LAST
-  static const int d1l_ = std::getenv("RKG_D1_LAST") ? std::atoi(std::getenv("RKG_D1_LAST")) : 2;
-  pm->pbval_b->pack_depth = (rkg_halo_d1 && stage <= s-d1l_) ? 1 : 0;
-  const TaskStatus st = pm->pbval_b->PackAndSendFC(pm->b0, pm->coarse_b0);
-  pm->pbval_b->pack_depth = 0;
-  return st;
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn Resistivity::SendFluxRKG / RecvFluxRKG
 //! \brief MHD::SendFlux / RecvFlux for a lean super-stage: the cubed-sphere seam flux
-//! reconciliation moves and averages only the energy flux, the one slot RKUpdate reads
-//! (the other slots are rebuilt by the next RK stage's Riemann fluxes).  The variable
-//! filter is set around the call only.
+//! reconciliation moves and averages only the energy flux, the one slot RKUpdate reads.
+//! The variable filter is set around the call only.
 
 TaskStatus Resistivity::SendFluxRKG(Driver *pdrive, int stage) {
   auto *pm = pmy_pack->pmhd;
@@ -198,6 +162,12 @@ TaskStatus Resistivity::RecvFluxRKG(Driver *pdrive, int stage) {
   pm->pbval_u->seam_flux_var = -1;
   return st;
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn TaskStatus Resistivity::CopyIniConsAndFluxes
+//! \brief At super-stage 1, saves the initial state and fluxes (u_ideal, b_ideal,
+//! uflx_ideal) and initializes the fourth register (u2, b2); with rkg_lean only the
+//! energy slot of the conserved variables and fluxes.
 
 TaskStatus Resistivity::CopyIniConsAndFluxes(Driver *pdrive, int stage) {
   if (stage == 1 && rkg_lean) {
@@ -238,18 +208,23 @@ TaskStatus Resistivity::CopyIniConsAndFluxes(Driver *pdrive, int stage) {
   return TaskStatus::complete;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn TaskStatus Resistivity::EField
+//! \brief Resistive corner EMF of this super-stage
+
 TaskStatus Resistivity::EField(Driver *pdrive, int stage) {
-  // Use CT to compute corner E
   AddResistiveEMFs(pmy_pack->pmhd->b0, pmy_pack->pmhd->efld);
-  // spherical polar: the resistive E_r of the pole x1 edge is formed per phi sector, so
-  // the sectors that share the edge disagree and the polar-row div B grows (sp_test
-  // iprob 11 RKG: max |div B| L/b0 1.6e-3 -> 3e-11 with this).  Average it over phi as
-  // the explicit path does (mhd_tasks.cpp, <mesh>/use_polar_average_eresist).
+  // spherical polar: the resistive E_r of the pole x1 edge is formed per phi sector;
+  // average it over phi as the explicit path does (<mesh>/use_polar_average_eresist)
   if (pmy_pack->pmesh->use_polar_boundary && pmy_pack->pmesh->use_polar_average_eresist) {
     pmy_pack->pmhd->PolarAzimuthalAverageEr();
   }
   return TaskStatus::complete;
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn TaskStatus Resistivity::CopyIniE
+//! \brief At super-stage 1, saves the initial corner EMF (efld_ideal)
 
 TaskStatus Resistivity::CopyIniE(Driver *pdrive, int stage) {
   if (stage == 1) {
@@ -260,16 +235,13 @@ TaskStatus Resistivity::CopyIniE(Driver *pdrive, int stage) {
   return TaskStatus::complete;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn TaskStatus Resistivity::CopyCons
+//! \brief Shifts the registers of the recurrence (u1 -> u2, u0 -> u1). b2 is rotated in
+//! place by CT and, with rkg_lean, the energy slot of u2 by RKUpdate; b1 (and with
+//! rkg_lean u1) is read by no RKG task and is refreshed at the last super-stage only.
+
 TaskStatus Resistivity::CopyCons(Driver *pdrive, int stage) {
-  // rkghalo-1103: b2 (Y_{j-1}) is rotated in place by CT, and with rkg_lean the energy
-  // slot of u2 by RKUpdate: each stage saves the value it overwrites, which is exactly
-  // what the u1 -> u2, u0 -> u1 copies below used to deliver at the cells those kernels
-  // read (nothing writes b0 or the active u0(IEN) between this task and the next
-  // stage's CT / RKUpdate).  b1 is read by no RKG task, so it is refreshed only at the
-  // last super-stage, where it ends as before (b0 after the final halo and BCs); u1 too
-  // (lean: the full copy of stage 1 and the energy slot of the last stage, as before).
-  // u2 / b2 are read by nothing after the last super-stage (CopyIniConsAndFluxes
-  // resets them at the next stage 1).  Bitwise; 5-8 fewer copies per super-stage.
   auto *pm = pmy_pack->pmhd;
   if (rkg_lean) {
     // u2 is read only in its energy slot; u1 is fully refreshed at stage 1 (it held the
@@ -284,7 +256,7 @@ TaskStatus Resistivity::CopyCons(Driver *pdrive, int stage) {
     }
   } else {
     // the full u1 -> u2 shift stays: the ConToPrim of an intermediate super-stage
-    // (rkg_c2p_shift, rkg_halo_ien_only) reads u1 and u2 in every cell
+    // (rkg_c2p_shift) reads u1 and u2 in every cell
     if (stage > 1) {
       Kokkos::deep_copy(DevExeSpace(), u2, pm->u1);
     }
@@ -300,10 +272,10 @@ TaskStatus Resistivity::CopyCons(Driver *pdrive, int stage) {
 
 //----------------------------------------------------------------------------------------
 //! \fn Resistivity::ConToPrimRKG / NewTimeStepRKG
-//! \brief Without rkg_lean: MHD::ConToPrim and MHD::NewTimeStep, as before (the latter
-//! then fires at super-stage nexp_stages, i.e. 2, since it gates on that number).
-//! With rkg_lean: the intermediate super-stages rebuild only the cell-centred field; the
-//! last one runs the full inversion and then the timestep, on the final state.
+//! \brief Without rkg_lean: MHD::ConToPrim and MHD::NewTimeStep (the latter fires at
+//! super-stage nexp_stages, since it gates on that number). With rkg_lean: the
+//! intermediate super-stages rebuild only the cell-centred field; the last one runs the
+//! full inversion and then the timestep, on the final state.
 
 TaskStatus Resistivity::ConToPrimRKG(Driver *pdrive, int stage) {
   if (rkg_lean && stage < s) {
@@ -316,16 +288,11 @@ TaskStatus Resistivity::ConToPrimRKG(Driver *pdrive, int stage) {
                                             0, n1m1, 0, n2m1, 0, n3m1);
     return TaskStatus::complete;
   }
-  // stswall-1029: the ConToPrim of an intermediate super-stage (floors, fallbacks)
-  // changes u0(IEN) only, after CopyCons saved u_j to u1.  The recurrence
-  // u_{j+1} = mu u_j + nu u_{j-1} + (1-mu-nu) u_ideal - ... then carried that change with
-  // the weight X_s of a perturbation of the u0 slot alone (14..22 for 34 super-stages:
-  // 5.8e-6 Lsw of floor energy became 8.9e-5 Lsw on the WASP-121b s10 state,
-  // stswall_1029/RESULTS.md).  The change d is now added to every register the
-  // recurrence reads (u1 = u_j, u2 = u_{j-1}, u_ideal = u_0): mu + nu + (1-mu-nu) = 1,
-  // so it survives in the final state with weight exactly 1, as if the floor had been
-  // applied at the start of the super-step, and it is booked with weight 1.  Where no
-  // floor fires d = 0 and nothing changes.  rkg_lean converts only at the last stage.
+  // the ConToPrim of an intermediate super-stage (floors, fallbacks) changes u0(IEN)
+  // only, after CopyCons saved u_j to u1. The change d is added to every register the
+  // recurrence reads (u1 = u_j, u2 = u_{j-1}, u_ideal = u_0); since mu + nu + (1-mu-nu)
+  // = 1 it survives in the final state with weight 1, as if the floor had been applied
+  // at the start of the super-step. rkg_lean converts only at the last stage.
   auto *pmhd = pmy_pack->pmhd;
   pmhd->c2p_wt_rkg = 1.0;
   const TaskStatus st = pmhd->ConToPrim(pdrive, stage);
@@ -349,67 +316,6 @@ TaskStatus Resistivity::ConToPrimRKG(Driver *pdrive, int stage) {
         ui_(m,n,k,j,i) += d;
       }
     });
-    if (rkg_halo_ien_only) {
-      // rkghalo-1101: did this ConToPrim write any slot but IEN anywhere (ghosts too)?
-      // u1 = u0 before it (CopyCons); RKUpdate between two super-stages writes only
-      // IEN, so if nothing else changed the other slots' ghosts from the last full
-      // exchange are still exactly what a full exchange would deliver.
-      // ghosts across a PHYSICAL face (no neighbour) are never written by the exchange
-      // (sends read active cells; the cube-vertex widening is tangential), so what the
-      // ConToPrim does there is the same with or without the key: skip them
-      if (rkg_halo_phys.extent_int(0) != nmb1 + 1) {
-        Kokkos::realloc(rkg_halo_phys, nmb1 + 1);
-        auto ph = Kokkos::create_mirror_view(rkg_halo_phys);
-        auto &ngh = pmy_pack->pmb->nghbr;
-        auto *pmsh = pmy_pack->pmesh;
-        for (int m=0; m<=nmb1; ++m) {
-          int b = 0;
-          for (int f=0; f<6; ++f) {
-            const int ax = f/2, sg = (f%2 == 0) ? -1 : 1;
-            if ((ax == 1 && !pmsh->multi_d) || (ax == 2 && !pmsh->three_d)) continue;
-            const int nb = NeighborIndex((ax == 0) ? sg : 0, (ax == 1) ? sg : 0,
-                                         (ax == 2) ? sg : 0, 0, 0);
-            if (ngh.h_view(m,nb).gid < 0) {b |= (1 << f);}
-          }
-          ph(m) = b;
-        }
-        Kokkos::deep_copy(rkg_halo_phys, ph);
-      }
-      auto phys_ = rkg_halo_phys;
-      auto &mi_ = pmy_pack->pmesh->mb_indcs;
-      const int is_ = mi_.is, ie_ = mi_.ie;
-      const int js_ = mi_.js, je_ = mi_.je, ks_ = mi_.ks, ke_ = mi_.ke;
-      const bool md_ = pmy_pack->pmesh->multi_d, td_ = pmy_pack->pmesh->three_d;
-      const int nv = u0_.extent_int(1);
-      const int64_t nc1 = n1 + 1, nc2 = n2 + 1, nc3 = n3 + 1;
-      const int64_t ncell = nc1*nc2*nc3;
-      const int64_t ntot = static_cast<int64_t>(nmb1 + 1)*nv*ncell;
-      int ndiff = 0;   // bit v: slot v changed somewhere
-      Kokkos::parallel_reduce("rkg_halo_check",
-        Kokkos::RangePolicy<DevExeSpace, Kokkos::IndexType<int64_t>>(DevExeSpace(), 0,
-                                                                     ntot),
-      KOKKOS_LAMBDA(const int64_t idx, int &nd) {
-        const int64_t mv = idx/ncell;
-        int64_t r = idx - mv*ncell;
-        const int m = static_cast<int>(mv/nv);
-        const int v = static_cast<int>(mv - static_cast<int64_t>(m)*nv);
-        const int k = static_cast<int>(r/(nc2*nc1));
-        r -= static_cast<int64_t>(k)*nc2*nc1;
-        const int j = static_cast<int>(r/nc1);
-        const int i = static_cast<int>(r - static_cast<int64_t>(j)*nc1);
-        const int b = phys_(m);
-        const bool skip = ((b & 1) && i < is_) || ((b & 2) && i > ie_) ||
-                          (md_ && (((b & 4) && j < js_) || ((b & 8) && j > je_))) ||
-                          (td_ && (((b & 16) && k < ks_) || ((b & 32) && k > ke_)));
-        if (v != n && v < 32 && !skip && u0_(m,v,k,j,i) != u1_(m,v,k,j,i)) {
-          nd |= (1 << v);
-        }
-      }, Kokkos::BOr<int>(ndiff));
-#if MPI_PARALLEL_ENABLED
-      MPI_Allreduce(MPI_IN_PLACE, &ndiff, 1, MPI_INT, MPI_BOR, MPI_COMM_WORLD);
-#endif
-      rkg_halo_changed = ndiff;
-    }
   }
   return st;
 }
@@ -420,12 +326,15 @@ TaskStatus Resistivity::NewTimeStepRKG(Driver *pdrive, int stage) {
   return pmy_pack->pmhd->NewTimeStep(pdrive, pdrive->nexp_stages);
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn TaskStatus Resistivity::UpdateResistivity
+//! \brief After the super-step: combines the x1-face energy fluxes of the Strang halves
+//! and refreshes eta from the new state
+
 TaskStatus Resistivity::UpdateResistivity(Driver *pdrive, int stage) {
   pmy_pack->pmhd->rkg_skip_u = false;
-  pmy_pack->pmhd->rkg_u_vmask = 0;   // rkghalo-1101: the RK stages exchange everything
-  rkg_halo_changed = -1;
-  // rkgstrang-1102: the x1-face energy flux of the cycle (dhj ledger: energy = dt E A
-  // with the CYCLE dt) is the mean of the two halves' fluxes, each applied over dt/2
+  // the x1-face energy flux of the cycle is the mean of the two halves' fluxes, each
+  // applied over dt/2
   if (track_x1_bflx && rkg_half != 0 && rkg_bflx.extent_int(1) >= 8) {
     auto bf = rkg_bflx;
     const int h = rkg_half;
@@ -434,7 +343,7 @@ TaskStatus Resistivity::UpdateResistivity(Driver *pdrive, int stage) {
     par_for("rkg_bflx_half", DevExeSpace(), 0, nmb1, 0, n3, 0, n2,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       for (int s2=0; s2<2; ++s2) {
-        if (h == 1 || h == 3) {   // rkgfuse-1102: 3 = the leading step of a cycle
+        if (h == 1 || h == 3) {   // 3 = the leading super-step of a fused cycle
           bf(m,6+s2,k,j) = bf(m,4+s2,k,j);
         } else {
           bf(m,4+s2,k,j) = 0.5*(bf(m,6+s2,k,j) + bf(m,4+s2,k,j));
@@ -447,8 +356,8 @@ TaskStatus Resistivity::UpdateResistivity(Driver *pdrive, int stage) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Resistivity::RefreshEta
-//! \brief eta_b (perna/eos) and ad_coef (eos) from w0 over every cell incl. ghosts
+//! \fn void Resistivity::RefreshEta
+//! \brief eta_b (perna/eos) and ad_coef (eos) from w0 in every cell, ghosts included
 
 void Resistivity::RefreshEta() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -457,7 +366,9 @@ void Resistivity::RefreshEta() {
   int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
   int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
   if (OhmicNeedsUpdate()) {
-    SetResistivity(pmy_pack->pmhd->w0, pmy_pack->pmhd->peos->eos_data, pmy_pack->pmesh->pgen->hot_jupiter_param.Rgas, eta_b, 0, n1m1, 0, n2m1, 0, n3m1);
+    SetResistivity(pmy_pack->pmhd->w0, pmy_pack->pmhd->peos->eos_data,
+                   pmy_pack->pmesh->pgen->hot_jupiter_param.Rgas, eta_b,
+                   0, n1m1, 0, n2m1, 0, n3m1);
   }
   if (AmbipolarNeedsUpdate()) {
     SetAmbipolar(pmy_pack->pmhd->w0, pmy_pack->pmhd->peos->eos_data,

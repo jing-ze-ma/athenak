@@ -98,20 +98,17 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
 
   // (2) Initialize scalars, diffusion, source terms
   nscalars = pin->GetOrAddInteger("hydro","nscalars",0);
-  // share-1104 P6: the dt report keys (hydro_newdt.cpp; env ATHENA_DT_REPORT[_NPOL]
-  // aliases), read only when named
+  // the dt report key (hydro_newdt.cpp; env alias ATHENA_DT_REPORT), read only when
+  // named
   {
-    extern int dt_report_key, dt_report_npol_key;
+    extern int dt_report_key;
     if (pin->DoesParameterExist("hydro","dt_report")) {
       dt_report_key = pin->GetInteger("hydro","dt_report");
     }
-    if (pin->DoesParameterExist("hydro","dt_report_npol")) {
-      dt_report_npol_key = pin->GetInteger("hydro","dt_report_npol");
-    }
   }
-  // share-1104 P4: the passive-tracer layout shared with MHD (mhd/mhd_tracers.hpp): the
+  // P4: the passive-tracer layout shared with MHD (mhd/mhd_tracers.hpp): the
   // floor-mass tracer <hydro>/floor_tracer (read only when named; default off) is the
-  // LAST scalar slot.  Off, nscalars and every path are unchanged.  Hydro has no x_e
+  // LAST scalar slot. Off, nscalars and every path are unchanged. Hydro has no x_e
   // tracer (its consumer, the resistivity, is MHD only).
   if (mhd::NamedTrue(pin, "hydro", "xe_tracer")) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -124,7 +121,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   nscalars = tracers.Total();
   floor_tracer = tracers.fl;
   ifltr = tracers.fl ? (nhydro + tracers.FlOff()) : -1;
-  // duale-1112 (hydro/dual_energy.hpp): every key read only when named
+  // (hydro/dual_energy.hpp): every key read only when named
   dual.Read(pin, "hydro", peos->eos_data, nhydro, tracers.DuOff());
   if (floor_tracer) {
     if (nhydro != 5 || pmy_pack->pcoord->is_special_relativistic ||
@@ -204,11 +201,9 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // <hydro>/dfloor_keep_velocity with deferred conserved floors (the cubed sphere):
     // the metric-correct kinetic-energy correction is made by GnomonicEquiangleRaiseVel,
-    // which reads fv from here.  Needed for both EOS flavours, so it sits outside the
+    // which reads fv from here. Needed for both EOS flavours, so it sits outside the
     // general-EOS branch above.
-    if ((peos->eos_data.dfloor_keep_velocity ||
-         peos->eos_data.dfloor_keep_temperature) &&
-        peos->eos_data.defer_cons_floors) {
+    if (peos->eos_data.dfloor_keep_velocity && peos->eos_data.defer_cons_floors) {
       Kokkos::realloc(dfl_fv, nmb, ncells3, ncells2, ncells1);
       Kokkos::deep_copy(dfl_fv, 1.0);
     }
@@ -228,9 +223,9 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   pbval_u = new MeshBoundaryValuesCC(ppack, pin, false);
   pbval_u->cs_rho_guard = ppack->pmesh->cs_seam_rho_guard;
   pbval_u->cs_lin_resample = ppack->pmesh->cs_seam_resample_linear;
-  pbval_u->cs_blockend_ext_ = CsSeamBlockendExtend(ppack, pin);   // layoutbug-1103
+  pbval_u->cs_blockend_ext_ = CsSeamBlockendExtend(ppack, pin);
   pbval_u->InitializeBuffers((nhydro+nscalars));
-  // csedge-1019 <mesh>/cs_seam_flux = shared: the seam face-state exchange (hydro.hpp)
+  // shared cubed-sphere seam flux: the seam face-state exchange (hydro.hpp)
   if (ppack->pmesh->use_cubed_sphere && ppack->pmesh->cs_seam_flux == 3) {
     cs_seam_shared = true;
     const int nfs = nhydro + nscalars + NDERIVED;
@@ -251,9 +246,9 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     porb_u = nullptr;
     psbox_u = nullptr;
   }
-        
+
   // determine if etotgrav and local well-balanced scheme is enabled
-  // amdef-1019: default true where supported (hydro::etotgrav_pgen_default, an energy
+  // default true where supported (hydro::etotgrav_pgen_default, an energy
   // equation, no refinement) under the new default set (utils/recipe.hpp)
   if (!pin->DoesParameterExist("hydro","etotgrav") && etotgrav_pgen_default &&
       pin->GetString("hydro","eos") != "isothermal" &&
@@ -267,26 +262,21 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
           "restart input has no key") + ": the old default)");
     }
   }
-  // wbplm-1103 (read only when named): see hydro.hpp top_ghost_prim_copy
+  // (read only when named): see hydro.hpp top_ghost_prim_copy
   if (pin->DoesParameterExist("hydro","top_ghost_prim_copy")) {
     top_ghost_prim_copy = pin->GetBoolean("hydro","top_ghost_prim_copy");
   }
   use_etotgrav = pin->GetOrAddBoolean("hydro","etotgrav",false);
-  // ckbval-1102: the energy-only ghost refresh after the operator-split source (default
-  // ON after the bitwise gates; <hydro>/split_bval_fast = false restores the full refresh; read
-  // only when named; see Hydro::SplitBvalFastOK).  Not with refinement, shearing box /
-  // orbital advection or the polar grid: their halos are not plain copies or seam
-  // resamples, which is all the check below covers.
+  // the energy-only ghost refresh after the operator-split source (default
+  // ON after the bitwise gates; <hydro>/split_bval_fast = false restores the full
+  // refresh; read only when named; see Hydro::SplitBvalFastOK). Not with refinement,
+  // shearing box / orbital advection or the polar grid: their halos are not plain copies
+  // or seam resamples, which is all the check below covers.
   sbf_on = pin->DoesParameterExist("hydro","split_bval_fast") ?
            pin->GetBoolean("hydro","split_bval_fast") : true;
-  // prod1103 default (USER 11-02/11-03): split_c2p_once = true on a FRESH start
-  // (recipe::NewDefaults; ckbval_1102: gates a/c/d bitwise where they must be, seed-noise
-  // gate b: the change is at the round-off seed-spread level, worst bin 1.26x the 1e-14
-  // and 1.61x the 1e-12 member spread; -11 % hydro ms/cycle).  The value is recorded
-  // (GetOrAdd); a restart whose input lacks the key keeps false (bitwise); an explicit key
-  // wins.  With it on, c2p_idempotent is a no-op (bitwise, ckbval_1102 gates_idem).
-  // prod-1111 (USER 11-08): also true on a restart whose input lacks the key (recorded);
-  // only <job>/recipe = none keeps the old false.  Name false for prod-1110.
+  // Default split_c2p_once = true on a fresh start and on a restart whose input lacks the
+  // key (the value is recorded); <job>/recipe = none keeps false and an explicit key
+  // wins.
   if (!pin->DoesParameterExist("hydro","split_c2p_once")) {
     if (recipe::GetMode(pin) != recipe::Mode::none) {
       pin->GetOrAddBoolean("hydro","split_c2p_once",true);
@@ -295,17 +285,8 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       recipe::Log("<hydro>/split_c2p_once = false (recipe none: the old default)");
     }
   }
-  if (pin->DoesParameterExist("hydro","rst_eint")) {   // t9rst-1113 (hydro.hpp)
-    rst_eint_ideal = pin->GetBoolean("hydro","rst_eint");
-  }
   scp_once = pin->DoesParameterExist("hydro","split_c2p_once") ?
              pin->GetBoolean("hydro","split_c2p_once") : false;
-  // prod1104b default (USER 11-04) WITHDRAWN by defaults-1105 (USER 11-05: GPU timing showed
-  // no gain, RSG -2 %, dhj +2 % = noise; it never acts in dhj hydro): c2p_idempotent is again
-  // read only when named, default false on a fresh start.  A restart whose input names it
-  // (runs started 11-04/05 recorded true) keeps that value; an explicit key wins.
-  c2pi_on = pin->DoesParameterExist("hydro","c2p_idempotent") ?
-            pin->GetBoolean("hydro","c2p_idempotent") : false;
   if (sbf_on && (pmy_pack->pmesh->multilevel ||
                  pin->DoesBlockExist("shearing_box") ||
                  pin->DoesBlockExist("orbital_advection"))) {
@@ -324,17 +305,11 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   use_wellbalance_dynamic = pin->GetOrAddBoolean("hydro","wellbalance_dynamic",false);
   use_wb_x1 = pin->GetOrAddBoolean("hydro","wb_x1",false);
-  // rebuild the well-balanced background cache at stage 1 of every N-th cycle instead
-  // of every stage (0 = every stage).  A balanced state is unaffected; an evolving one
-  // reconstructs against a background up to N cycles old, which is nothing against the
-  // radiative timescale the profile changes on.  N = 1 halves the walk cost, N = 10
-  // removes it.
-  wb_cache_every = pin->GetOrAddInteger("hydro","wb_cache_every",0);
-  // Ideal-gas x1 WB cache (BuildWBCache) safety keys, BSG arm 1 crash (10-02):
-  //  <hydro>/wb_clamp_ideal: polytropic closed form limits the T DECREASE over a
-  //    segment to t0/2, as the general-EOS walk does (getWBerho, clamp_dt);
-  //  <hydro>/wb_guard_ideal: WBGuard flattens a non-finite, non-positive or absurd
-  //    walked stencil to its anchor (backstop).
+  // Ideal-gas x1 WB cache (BuildWBCache) safety keys:
+  // <hydro>/wb_clamp_ideal: polytropic closed form limits the T DECREASE over a
+  // segment to t0/2, as the general-EOS walk does (getWBerho, clamp_dt);
+  // <hydro>/wb_guard_ideal: WBGuard flattens a non-finite, non-positive or absurd
+  // walked stencil to its anchor (backstop).
   // Both DEFAULT true on a fresh run where that path is active (wb_x1 with a
   // non-general EOS); a restart whose input lacks a key keeps the old default (off,
   // one line); an explicit value always wins.
@@ -352,18 +327,13 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
                                         wbi_default("wb_guard_ideal"));
   wb_clamp_ideal = pin->GetOrAddBoolean("hydro","wb_clamp_ideal",
                                         wbi_default("wb_clamp_ideal"));
-  scratch_level = pin->GetOrAddInteger("hydro","scratch_level",0);
-  use_wb_x2 = pin->GetOrAddBoolean("hydro","wb_x2",false);
   use_wb_rho = pin->GetOrAddBoolean("hydro","wb_rho",false);
-  // wallwb-1105 (hydro.hpp, reconstruct/wb_wall.hpp).  USER 11-05: default true on a
-  // FRESH start (recipe::NewDefaults) whenever the x1 dynamic WB scheme is on and the
-  // key is not named (it acts only at closed / reflecting x1 walls); recorded, so the
-  // run's restarts carry it.  A restart whose input lacks the key keeps the old
-  // behaviour (false, bitwise); an explicit key always wins.
+  // <hydro>/wall_wb_onesided (hydro.hpp, reconstruct/wb_wall.hpp): default true whenever
+  // the x1 dynamic WB scheme is on and the key is not named, on a fresh start and on a
+  // restart (recorded); it acts only at closed / reflecting x1 walls.  <job>/recipe =
+  // none keeps false and an explicit key always wins.
   if (!pin->DoesParameterExist("hydro","wall_wb_onesided") &&
       use_wellbalance_dynamic && use_wb_x1) {
-    // prod-1111 (USER 11-08): also on a restart whose input lacks the key (recorded);
-    // only <job>/recipe = none keeps the old wall cell.  Name false for prod-1110.
     if (recipe::GetMode(pin) != recipe::Mode::none) {
       pin->GetOrAddBoolean("hydro","wall_wb_onesided",true);
       recipe::Log("<hydro>/wall_wb_onesided = true (default with wellbalance_dynamic + "
@@ -377,15 +347,12 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     wall_wb_onesided = pin->GetBoolean("hydro","wall_wb_onesided");
   }
   // switch the x1 well-balanced reconstruction off above this radius (0 = never); see
-  // the declaration in hydro.hpp.  Only the position-aware x1 path (spherical polar and
+  // the declaration in hydro.hpp. Only the position-aware x1 path (spherical polar and
   // cubed sphere, where x1v is the radius) honours it -- a Cartesian mesh has no radius
   // to compare against.
   wb_rmax = pin->GetOrAddReal("hydro","wb_rmax",0.0);
-  if (pin->DoesParameterExist("hydro","wb_poison_test")) wb_poison = pin->GetBoolean("hydro","wb_poison_test");
-  // ...and off BELOW this radius (0 = never), same path, same caveat.
-  wb_rmin = pin->GetOrAddReal("hydro","wb_rmin",0.0);
   nan_report = pin->GetOrAddBoolean("problem","nan_report",false);
-  // amdef-1019: am_transport defaults on (cs, multi-D sp, fresh dynamic runs): AmModule
+  // am_transport defaults on (cs, multi-D sp, fresh dynamic runs): AmModule
   {
     // (DefaultOn first: it is false at once when am_transport itself is named)
     const bool amd = hydro::AmModule::DefaultOn(ppack, pin, "hydro");
@@ -397,10 +364,10 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   if (hydro::MergeLat::Named(pin)) {
     pmlat = new hydro::MergeLat(ppack, pin);
   }
-  // layoutaudit-1103 <hydro>/merge_lat_blockend = flat (the old rule: a 'narrow' merged
+  // <hydro>/merge_lat_blockend = flat (the old rule: a 'narrow' merged
   // group at EVERY MeshBlock edge takes a zero slope, so the result depends on the
   // MeshBlock layout) | exchange (internal block faces exchange the one cell the group
-  // PLM needs; layout-independent).  Absent: exchange on a fresh start under the default
+  // PLM needs; layout-independent). Absent: exchange on a fresh start under the default
   // recipe (recorded, so its restarts carry it), flat on a restart (bitwise the old run).
   if (pmlat != nullptr && pmlat->on) {
     std::string mb;
@@ -416,7 +383,8 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       mlat_exch = true;
     } else if (mb != "flat") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<hydro>/merge_lat_blockend = flat | exchange" << std::endl;
+                << std::endl
+                << "<hydro>/merge_lat_blockend = flat | exchange" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     auto &ind = ppack->pmesh->mb_indcs;
@@ -474,10 +442,10 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     pravg = new hydro::RingAvg(ppack, pin);
   }
-  // radiation-modified CFL signal speed (hydro_newdt.cpp).  DEFAULT: on with an
+  // radiation-modified CFL signal speed (hydro_newdt.cpp). DEFAULT: on with an
   // IMPLICIT M1 transport (<rad_m1>/transport = implicit | implicit_x1, any closure),
   // whose time step has no light-speed limit; off without <rad_m1> and with the explicit
-  // transport (dt already set by the light speed).  Read only when named, so the
+  // transport (dt already set by the light speed). Read only when named, so the
   // parameter dump of a run without the key is unchanged.
   if (pin->DoesBlockExist("rad_m1") &&
       pin->DoesParameterExist("rad_m1","transport")) {
@@ -503,13 +471,14 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     }
   }
   // the x1 well-balanced scheme sees the TRUE potential unless a problem generator calls
-  // EnableWBEffectivePotential(): these are shallow copies, the very same allocations
+  // EnableWBEffectivePotential: these are shallow copies, the very same allocations
   if (!use_phi_wb) {
     phicc_wb = phicc0;
     phi_wb_x1f = phi0.x1f;
   }
   if (use_wellbalance_dynamic) {
-    // select well-balanced scheme assumption (no default).  Test for compatibility of options
+    // select well-balanced scheme assumption (no default). Test for compatibility of
+    // options
     std::string wb_opt = pin->GetString("hydro","wb_option");
     if (wb_opt.compare("isothermal") == 0) {
       wb_option = WBOption::isothermal;
@@ -532,7 +501,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "' not implemented for hydro" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-      // wball-1104 <hydro>/wb_dirs = x1 (default) | all (read only when named)
+      // <hydro>/wb_dirs = x1 (default) | all (read only when named)
       if (pin->DoesParameterExist("hydro","wb_dirs")) {
         const std::string wd = pin->GetString("hydro","wb_dirs");
         if (wd.compare("all") == 0) {
@@ -546,7 +515,6 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       if (wb_all) {
         std::string bad = "";
         if (!use_wb_x1) bad = "<hydro>/wb_x1 = true";
-        if (use_wb_x2) bad = "<hydro>/wb_x2 = false (the legacy x2 path)";
         if (pmy_pack->pcoord->is_general_relativistic ||
             pmy_pack->pcoord->is_special_relativistic) {
           bad = "a Newtonian mesh";
@@ -571,43 +539,24 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
         if (c3 > 1) Kokkos::realloc(wbq3, nmb, 15, c3, c2, c1);
         Kokkos::realloc(wbw, nmb, 7, c3, c2, c1);
         Kokkos::deep_copy(wbw, 1.0);
-        // wball-1104 <hydro>/wb_seam (opt-in, read only when named): the WB-aware seam
-        // resample of the density and energy (bvals.hpp, MeshBoundaryValuesCC::wb_seam)
-        if (pin->DoesParameterExist("hydro","wb_seam") && pin->GetBoolean("hydro","wb_seam")) {
-          if (!pmy_pack->pmesh->use_cubed_sphere || pmy_pack->pmesh->multilevel) {
-            std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                      << std::endl << "<hydro>/wb_seam needs a single-level cubed sphere"
-                      << std::endl;
-            std::exit(EXIT_FAILURE);
-          }
-          pbval_u->wb_seam = true;
-          pbval_u->wbs_phi = phicc0;
-          pbval_u->wbs_eos = peos->eos_data;
-          pbval_u->wbs_opt = (wb_option == WBOption::polytropic) ? 3 : 1;
-          pbval_u->wbs_etg = use_etotgrav;
-          pbval_u->wbs_ien = IEN;
-          if (global_variable::my_rank == 0) {
-            std::cout << "hydro: wb_seam = true (seam resample of rho, E walked to the ghost "
-                      << "potential, " << ((pbval_u->wbs_opt == 3) ? "local polytrope" :
-                      "isothermal") << ")" << std::endl;
-          }
-        }
         if (global_variable::my_rank == 0) {
           std::cout << "hydro: wb_dirs = all (x2/x3 dynamic well balance), wb_weight = "
                     << (wb_weight ? "true" : "false") << std::endl;
         }
       }
-      // select well-balanced scheme direction
-      if (!use_wb_x1 && !use_wb_x2) {
+      // the dynamic scheme is built on the x1 background (wb_dirs = all adds x2/x3)
+      if (!use_wb_x1) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<hydro> wb_direction not set!" << std::endl;
+                  << std::endl << "<hydro>/wellbalance_dynamic needs wb_x1 = true"
+                  << std::endl;
         std::exit(EXIT_FAILURE);
       }
   }
-        
+
   // determine if static wellbalance is enabled
   use_wellbalance_static = pin->GetOrAddBoolean("hydro","wellbalance_static",false);
-  use_wellbalance_static_reconst_perturb = pin->GetOrAddBoolean("hydro","wellbalance_static_reconst",false);
+  use_wellbalance_static_reconst_perturb =
+      pin->GetOrAddBoolean("hydro","wellbalance_static_reconst",false);
   // the deviation reconstruction reads the background arrays, which only
   // wellbalance_static allocates -- the pair is one scheme, not two options
   if (use_wellbalance_static_reconst_perturb && !use_wellbalance_static) {
@@ -701,77 +650,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
 
-    // select RADIAL (x1) reconstruction on the cubed sphere / spherical polar (default
-    // PLM, i.e. today's GridPiecewiseLinearX1, bitwise unchanged). `reconstruct` above
-    // never reaches the x1 sweep on those two grids -- see the note on str_r1_ in
-    // hydro_fluxes.cpp -- so this is a SEPARATE knob, not a fallback for it.
-    {
-      bool cs_or_sp = pmy_pack->pmesh->use_cubed_sphere ||
-                      pmy_pack->pmesh->use_spherical_polar;
-      std::string xorder1 = pin->GetOrAddString("hydro","reconstruct_x1","plm");
-      auto &indcs = pmy_pack->pmesh->mb_indcs;
-      if (xorder1.compare("plm") == 0) {
-        recon_method_x1 = ReconstructionMethod::plm;
-      } else if (xorder1.compare("ppmx") == 0) {
-        // See the identical refusal + citation in mhd.cpp: Mignone (2014) [JCP 270,
-        // 784, arXiv:1404.0537] gives no curvilinear Colella-Sekora extremum-preserving
-        // PPM limiter, only the CW84-style one (his Eqs. 45-48); use ppm4 instead.
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-          << std::endl << "<hydro>/reconstruct_x1=ppmx is not implemented: Mignone "
-          << "(2014) gives no curvilinear Colella-Sekora extremum-preserving PPM "
-          << "limiter; use reconstruct_x1=ppm4 (curvilinear CW84 limiter) or plm"
-          << std::endl;
-        std::exit(EXIT_FAILURE);
-      } else if (xorder1.compare("ppm4") == 0 ||
-                 xorder1.compare("wenoz") == 0) {
-        // The published, non-uniform-grid-EXACT reconstruction from A. Mignone, JCP
-        // 270, 784 (2014), arXiv:1404.0537: ppm4 = his curvilinear 4th-order PPM
-        // (Sec. 3.3); wenoz = his curvilinear WENO3 (Sec. 3.2, third order -- a genuine
-        // order reduction from the uniform-grid 5th-order WENO-Z used elsewhere, since
-        // the paper gives no higher-order curvilinear WENO). See
-        // reconstruct/mignone_curvilinear.hpp for the implementation.
-        if (indcs.ng < 3) {
-          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-            << std::endl << "<hydro>/reconstruct_x1=" << xorder1 << " requires at least "
-            << "3 ghost zones, but <mesh>/nghost=" << indcs.ng << std::endl;
-          std::exit(EXIT_FAILURE);
-        }
-        if (use_fofc && indcs.ng < 4) {
-          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-            << std::endl << "FOFC and <hydro>/reconstruct_x1=" << xorder1 << " require "
-            << "at least 4 ghost zones, but <mesh>/nghost=" << indcs.ng << std::endl;
-          std::exit(EXIT_FAILURE);
-        }
-        // The Kappeli & Mishra dynamic radial well-balancing is PLM-specific (see the
-        // identical refusal in mhd.cpp); refuse rather than silently drop it.
-        if (use_wellbalance_dynamic && use_wb_x1) {
-          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-            << std::endl << "<hydro>/reconstruct_x1=" << xorder1 << " is not implemented "
-            << "with <hydro>/wellbalance_dynamic + wb_x1 (the K&M radial well-balancing "
-            << "is PLM-only); use <hydro>/reconstruct_x1=plm or turn wellbalance_dynamic "
-            << "off" << std::endl;
-          std::exit(EXIT_FAILURE);
-        }
-        if (xorder1.compare("ppm4") == 0) {
-          recon_method_x1 = ReconstructionMethod::ppm4;
-        } else {
-          recon_method_x1 = ReconstructionMethod::wenoz;
-        }
-      } else {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<hydro>/reconstruct_x1 = '" << xorder1
-                  << "' not implemented" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      if (cs_or_sp && global_variable::my_rank == 0) {
-        std::cout << "Radial (x1) reconstruction on the "
-                  << (pmy_pack->pmesh->use_cubed_sphere ? "cubed sphere" : "spherical "
-                      "polar") << " grid (<hydro>/reconstruct_x1) = " << xorder1
-                  << std::endl;
-      }
-    }
-
-    // select Riemann solver (no default).  Test for compatibility of options
+    // select Riemann solver (no default). Test for compatibility of options
     std::string rsolver = pin->GetString("hydro","rsolver");
     // Special relativistic dynamic solvers
     if (pmy_pack->pcoord->is_special_relativistic) {
@@ -859,8 +738,6 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
           rsolver_method = Hydro_RSolver::ausmpup;
           peos->eos_data.ausm_mcut = pin->GetOrAddReal("hydro","ausm_mcut",1.0e-13);
           peos->eos_data.ausm_mcut_p = pin->GetOrAddReal("hydro","ausm_mcut_p",1.0);
-          peos->eos_data.ausm_wall_hllc = pin->GetOrAddBoolean("hydro","ausm_wall_hllc",
-                                                                 false);
         } else {
           std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                     << std::endl << "<hydro>/rsolver = ausmpup cannot be used with "
@@ -921,7 +798,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       // allocate array of flags used with FOFC
       if (use_fofc) {
         Kokkos::realloc(fofc,  nmb, ncells3, ncells2, ncells1);
-        // duale-1112: the trial state carries the scalars under <hydro>/dual_energy
+        // the trial state carries the scalars under <hydro>/dual_energy
         Kokkos::realloc(utest, nmb, nhydro + (dual.on ? nscalars : 0), ncells3, ncells2,
                         ncells1);
         // per-cell FOFC flag count for the `hydro_fofc` output variable (hydro.hpp)
@@ -948,10 +825,6 @@ Hydro::~Hydro() {
   if (sbf_on && global_variable::my_rank == 0) {
     std::cout << "<hydro>/split_bval_fast: energy-only refreshes " << sbf_nfast
               << ", full refreshes " << sbf_nfull << " (rank 0)" << std::endl;
-  }
-  if (c2pi_on && global_variable::my_rank == 0) {
-    std::cout << "<hydro>/c2p_idempotent: split conversions skipped " << c2pi_nskip
-              << ", run " << c2pi_nrun << " (rank 0)" << std::endl;
   }
   if (pam != nullptr) {delete pam;}
   if (pmlat != nullptr) {delete pmlat;}

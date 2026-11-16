@@ -100,13 +100,10 @@ class Coordinates {
   DvceArray4D<Real> z_ov_rE;
 
   void CoordSphericalPolar();
-  // accpolar-1103 <mesh>/sp_phi_global (read only when named; default false = bitwise):
-  // the spherical-polar phi faces/centres from the GLOBAL phi index (LeftEdgeX(K, nx3 of
-  // the mesh, mesh x3min, x3max)) instead of the block's own edges: the same coordinates
-  // for every MeshBlock layout (the per-block formula differs in the last bit)
+  // spherical-polar phi (<mesh>/sp_phi_global) and theta (<mesh>/layout_invariant) faces
+  // and centres from the global cell index instead of the block's own edges, so the
+  // coordinates are the same for every MeshBlock layout (default <mesh>/layout_invariant)
   bool sp_phi_global = false;
-  // layinv-1105 <mesh>/sp_theta_global: theta faces/centres from the global index
-  // (default = <mesh>/layout_invariant; coordinates.cpp)
   bool sp_theta_global = false;
   void SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
       const DvceArray4D<Real> &pwb, const DvceFaceFld5D<Real> uflx,
@@ -160,11 +157,6 @@ class Coordinates {
       const DvceArray4D<Real> &pwb,
       const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt,
       DvceArray5D<Real> &u0);
-  // well-balanced (face-sum) geometric source, shared by cubed sphere and spherical polar
-  void SrcTermsCurvilinearWB(const DvceArray5D<Real> &w0,
-       const DvceArray5D<Real> &bcc0, const bool is_mhd,
-       const DvceArray5D<Real> &wder, const EOS_Data &eos_data, const Real bdt,
-       DvceArray5D<Real> &u0, const DvceArray4D<Real> &pwb, const bool use_wb_static);
   void SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
       const DvceArray5D<Real> &bcc0, const bool is_mhd,
       const DvceArray5D<Real> &wder, const DvceArray4D<Real> &pwb,
@@ -184,41 +176,6 @@ class Coordinates {
     }
 
   // functions
-  // WELL-BALANCED geometric source (cs_wellbalanced_src on the cubed sphere,
-  // sp_wellbalanced_src on the spherical-polar grid; read from <mhd>, else <hydro>).
-  // See the long note at SrcTermsCurvilinearWB.
-  bool cs_wellbalanced_src = false;
-  bool sp_wellbalanced_src = false;
-  // CARTESIAN momentum update in the two POLAR cell rows (<mhd>/sp_cart_polar_momentum):
-  // the momentum balance there is formed from the face fluxes rotated to Cartesian
-  // vectors with a vector-area correction, instead of local components plus the
-  // cot(theta) source.  See SrcTermsSphericalPolarCartRows.
-  bool sp_cart_polar_momentum = false;
-  // CARTESIAN momentum update on EVERY spherical-polar cell plus fourth-order face
-  // averages of the x2/x3 fluxes (<mhd>/sp_cart_all_momentum): the only formulation in
-  // which the polar cells can be second order -- no geometric source exists to be
-  // inconsistent with the face averages.  Implies sp_cart_polar_momentum.  See
-  // SphericalPolarFaceAverageFluxes.
-  bool sp_cart_all_momentum = false;
-  // Fourth-order face averages of the x2/x3 fluxes for sp_cart_all_momentum
-  // (<mhd>/sp_face_avg, default OFF: MEASURED to make every test worse, e.g. the
-  // through-pole rotation's polar rows 6.1e-4 -> 8.4e-4 at nx2 = 32; kept as a
-  // diagnostic).  sp_face_avg_terms is a bitmask: 1 = radial terms, 2 = transverse.
-  bool sp_face_avg = false;
-  int sp_face_avg_terms = 3;
-  void SphericalPolarFaceAverageFluxes(DvceFaceFld5D<Real> &uflx, const int nvar);
-  DvceArray5D<Real> sp_favg2, sp_favg3;   // scratch for the face-average corrections
-  void SrcTermsSphericalPolarCartRows(const DvceArray5D<Real> &w0,
-       const DvceArray5D<Real> &bcc0, const bool is_mhd,
-       const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
-       const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0);
-  // Its per-(MeshBlock,k,j) geometry cache: the cell triad and the four tangential faces'
-  // normals and triads depend on the angles alone, so they are built once per mesh (on
-  // every call under AMR) instead of ten panel-map evaluations per cell per stage.
-  static constexpr int NWBGEOM = 60;
-  DvceArray4D<Real> wb_geom;   // (nmb, ncells3, ncells2, NWBGEOM)
-  void BuildWBGeometry();
-
   void CoordSrcTerms(const DvceArray5D<Real> &w0, const EOS_Data &eos, const Real dt,
                      DvceArray5D<Real> &u0);
   void CoordSrcTerms(const DvceArray5D<Real> &w0, const DvceArray5D<Real> &bcc,

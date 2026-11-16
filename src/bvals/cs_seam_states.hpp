@@ -14,7 +14,6 @@
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
 #include "reconstruct/plm.hpp"
-#include "reconstruct/plm_c1.hpp"
 #include "hydro/hydro_mergelat.hpp"
 
 namespace cs_seam {
@@ -27,7 +26,7 @@ namespace cs_seam {
 
 inline void CsSeamPLMFill(MeshBlockPack *pp, const DvceArray5D<Real> &q, const int nv,
                           const int out_off, const int floor_n, const Real pfl,
-                          const bool plm_c1, DvceFaceFld5D<Real> &fs, const bool mlat_,
+                          DvceFaceFld5D<Real> &fs, const bool mlat_,
                           const DvceArray2D<int> &mlfi_, const int ia, const int ib) {
   if (nv <= 0) return;
   auto &indcs = pp->pmesh->mb_indcs;
@@ -68,11 +67,7 @@ inline void CsSeamPLMFill(MeshBlockPack *pp, const DvceArray5D<Real> &q, const i
     } else {
       for (int n=0; n<nv; ++n) {
         Real ql, qr;
-        if (plm_c1) {
-          PLMC1(q_(m,n,k,jc-1,i), q_(m,n,k,jc,i), q_(m,n,k,jc+1,i), ql, qr);
-        } else {
-          PLM(q_(m,n,k,jc-1,i), q_(m,n,k,jc,i), q_(m,n,k,jc+1,i), ql, qr);
-        }
+        PLM(q_(m,n,k,jc-1,i), q_(m,n,k,jc,i), q_(m,n,k,jc+1,i), ql, qr);
         Real qq = lo ? qr : ql;
         if (n == floor_n) qq = fmax(qq, pfl);
         f2(m,out_off+n,k,jf,i) = qq;
@@ -105,11 +100,7 @@ inline void CsSeamPLMFill(MeshBlockPack *pp, const DvceArray5D<Real> &q, const i
     } else {
       for (int n=0; n<nv; ++n) {
         Real ql, qr;
-        if (plm_c1) {
-          PLMC1(q_(m,n,kc-1,j,i), q_(m,n,kc,j,i), q_(m,n,kc+1,j,i), ql, qr);
-        } else {
-          PLM(q_(m,n,kc-1,j,i), q_(m,n,kc,j,i), q_(m,n,kc+1,j,i), ql, qr);
-        }
+        PLM(q_(m,n,kc-1,j,i), q_(m,n,kc,j,i), q_(m,n,kc+1,j,i), ql, qr);
         Real qq = lo ? qr : ql;
         if (n == floor_n) qq = fmax(qq, pfl);
         f3(m,out_off+n,kf,j,i) = qq;
@@ -185,10 +176,18 @@ void CsSeamGhostPrim(const TM &member, const DvceArray5D<Real> &sfs, const int m
     for (int n=0; n<nvars; ++n) {
       Real q = sfs(m,n,k,j,i);
       if (n == ivn) q = (sfs(m,ivn,k,j,i) - cf*sfs(m,ivt,k,j,i))/sf;
-      if (lo) {wl(n,i) = q;} else {wr(n,i) = q;}
+      if (lo) {
+        wl(n,i) = q;
+      } else {
+        wr(n,i) = q;
+      }
     }
     for (int n=0; n<nder; ++n) {
-      if (lo) {dl(n,i) = sfs(m,nvars+n,k,j,i);} else {dr(n,i) = sfs(m,nvars+n,k,j,i);}
+      if (lo) {
+        dl(n,i) = sfs(m,nvars+n,k,j,i);
+      } else {
+        dr(n,i) = sfs(m,nvars+n,k,j,i);
+      }
     }
   });
 }

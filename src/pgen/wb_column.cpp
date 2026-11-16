@@ -373,7 +373,11 @@ void WBColumnBC(Mesh *pm) {
     const Real d = p/t;
     const int iv = (axis == 1) ? IVX : IVZ;
     Real v1 = w0(m,IVX,km,jm,im), v2 = w0(m,IVY,km,jm,im), v3 = w0(m,IVZ,km,jm,im);
-    if (iv == IVX) v1 = -v1; else v3 = -v3;
+    if (iv == IVX) {
+      v1 = -v1;
+    } else {
+      v3 = -v3;
+    }
     w0(m,IDN,k,j,i) = d; w0(m,IEN,k,j,i) = p/gm1;
     w0(m,IVX,k,j,i) = v1; w0(m,IVY,k,j,i) = v2; w0(m,IVZ,k,j,i) = v3;
     u0(m,IDN,k,j,i) = d;

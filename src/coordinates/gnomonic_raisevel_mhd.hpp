@@ -61,11 +61,7 @@ void GnomonicRaiseVelMHDFloors(const Real c, const EOS_Data &eos_, const bool ge
       const Real fs = vceil_/sqrt(vsq);
       m1 *= fs; m2 *= fs; m3 *= fs;
       v1 *= fs; v2 *= fs; v3 *= fs;
-      // vceil_thermalise: keep the clipped kinetic energy as internal energy
-      // <mhd>/vceil_thermalise: leave the conserved total alone instead, so the clipped
-      // kinetic energy lands in `eint` below (see EOS_Data::vceil_thermalise).  Not
-      // accumulated: the MHD inversion has no energy accumulator.
-      if (!eos_.vceil_thermalise) etot -= (1.0 - fs*fs)*ekin;
+      etot -= (1.0 - fs*fs)*ekin;
       ekin *= fs*fs;
       ceil_used = true;
     }
@@ -74,7 +70,7 @@ void GnomonicRaiseVelMHDFloors(const Real c, const EOS_Data &eos_, const bool ge
   // re-apply the floors to the internal energy corrected by the metric kinetic energy
   if (gen_) {
     // general EOS: energy/temperature floors of GeneralMHDFloorsPost (no entropy floor)
-    // share3-1031: the floors of SingleC2P_GeneralMHD (GeneralMHDFloorsPost) on the
+    // the floors of SingleC2P_GeneralMHD (GeneralMHDFloorsPost) on the
     // metric-correct energy; own = true; the entropy floor is not applied on this path
     // (sflr = false, as before); the table clamp is not counted here (as before)
     bool efl_used = false, tfl_used = false, tclamped = false, stale = false;
@@ -86,7 +82,7 @@ void GnomonicRaiseVelMHDFloors(const Real c, const EOS_Data &eos_, const bool ge
     }
   } else {
     // ideal EOS: pressure floor of IdealFloorsPost
-    // share3-1031: the ideal floors of SingleC2P_IdealMHD (IdealFloorsPost); on this path
+    // the ideal floors of SingleC2P_IdealMHD (IdealFloorsPost); on this path
     // only the pressure floor (tflr = sflr = false, as before)
     bool efl_used = false, tfl_used = false;
     IdealFloorsPost<true>(eos_, d, 1.0/d, true, false, false, ekin, emag, eint, etot,

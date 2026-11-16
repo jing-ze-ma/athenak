@@ -339,7 +339,8 @@ void MeshBlockTree::CountMeshBlocks(int& count) {
 //! a new gid based on Z-ordering in the new tree. Thus pglist[n] is a mapping of
 //! (new gid n) --> (old gid). Also returns total number of MBs in tree in third argument.
 
-void MeshBlockTree::CreateZOrderedLLList(const int &startcount, LogicalLocation *list, int *pglist, int& count) {
+void MeshBlockTree::CreateZOrderedLLList(const int &startcount, LogicalLocation *list,
+                                         int *pglist, int& count) {
   if (lloc_.level == 0) {count=startcount;}
 
   if (pleaf_ == nullptr) {
@@ -349,7 +350,8 @@ void MeshBlockTree::CreateZOrderedLLList(const int &startcount, LogicalLocation 
     count++;
   } else {
     for (int n=0; n<nleaf_; n++) {
-      if (pleaf_[n] != nullptr) {pleaf_[n]->CreateZOrderedLLList(startcount, list, pglist, count);}
+      if (pleaf_[n] != nullptr) {pleaf_[n]->CreateZOrderedLLList(startcount, list,
+                                                                 pglist, count);}
     }
   }
   return;
@@ -479,7 +481,6 @@ LogicalLocation MeshBlockTree::TransformToPanel(
     int neighbor_face,
     int rev_ax,
     int swap_ax) {
-
   LogicalLocation newlloc = lloc;
   newlloc.panel = neighbor_panel;
 
@@ -487,22 +488,21 @@ LogicalLocation MeshBlockTree::TransformToPanel(
 
   std::int32_t num_x2 = pmesh_->nmb_rootx2<<(ll - pmesh_->root_level);
   std::int32_t num_x3 = pmesh_->nmb_rootx3<<(ll - pmesh_->root_level);
-    
+
   // x1 is RADIAL on the cubed sphere and a seam never crosses it, so lx1 is carried over
   // unchanged. The tangential pair is a = x2, b = x3.
   // Face ordering: 0:-x2, 1:+x2, 2:-x3, 3:+x3
-    
+
   if (swap_ax) {
     newlloc.lx2 = lloc.lx3;
     newlloc.lx3 = lloc.lx2;
   }
-  if (rev_ax == 1)
-  {
+  if (rev_ax == 1) {
     // entering through an x2 face, the along-edge axis is x3, and vice versa
     if (neighbor_face < 2)  newlloc.lx3 = num_x3-1-newlloc.lx3;
     if (neighbor_face >= 2) newlloc.lx2 = num_x2-1-newlloc.lx2;
   }
-  
+
   if (neighbor_face == 0) newlloc.lx2 = 0;
   if (neighbor_face == 1) newlloc.lx2 = num_x2-1;
   if (neighbor_face == 2) newlloc.lx3 = 0;
@@ -511,17 +511,17 @@ LogicalLocation MeshBlockTree::TransformToPanel(
   return newlloc;
 }
 
-MeshBlockTree* MeshBlockTree::FindNeighborGlobal(LogicalLocation lloc, int ox1, int ox2, int ox3, Mesh *mesh, bool amrflag) {
-    
+MeshBlockTree* MeshBlockTree::FindNeighborGlobal(LogicalLocation lloc, int ox1, int ox2,
+                                                 int ox3, Mesh *mesh, bool amrflag) {
     // 1. Try searching within the local panel first
     MeshBlockTree* nt = this->FindNeighbor(lloc, ox1, ox2, ox3, amrflag);
     if (!mesh->use_cubed_sphere || nt != nullptr) return nt;
-    
+
     // 2. Not within the local panel. Move first in the RADIAL (x1) direction, which no
     //    seam crosses, then in the two panel-tangential axes a = x2 and b = x3.
     MeshBlockTree* nt_r = this->FindNeighbor(lloc, ox1, 0, 0, amrflag);
     if (nt_r == nullptr) return nt_r; // if null -> boundary, else inside the panel
-    
+
     // 3. Try moving in x2 then
     MeshBlockTree* nt_ra = nt_r->FindNeighbor(nt_r->lloc_, 0, ox2, 0, amrflag);
     MeshBlockTree* nt312;
@@ -544,7 +544,7 @@ MeshBlockTree* MeshBlockTree::FindNeighborGlobal(LogicalLocation lloc, int ox1, 
           // 2. Lookup neighbor panel
           int panel = nt_r->lloc_.panel;
           PanelNeighbors pn = mesh->panel_neighbors[panel][face];
-            
+
           int da, db;
           if (pn.swap_ax) {
             da = ox3;
@@ -554,8 +554,7 @@ MeshBlockTree* MeshBlockTree::FindNeighborGlobal(LogicalLocation lloc, int ox1, 
             da = 0;
             db = ox3;
           }
-          if (pn.rev_ax == 1)
-          {
+          if (pn.rev_ax == 1) {
             da = -da;
             db = -db;
           }
@@ -571,20 +570,18 @@ MeshBlockTree* MeshBlockTree::FindNeighborGlobal(LogicalLocation lloc, int ox1, 
         }
     }
     if (nt312 == nullptr) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+            << std::endl
             << "Neighbor search failed in cubed sphere." << std::endl;
         exit(EXIT_FAILURE);
     }
-    
-//    std::cout << lloc.panel << "->" << nt312->lloc_.panel << " " << ox1 << ox2 << std::endl;
-    
     return nt312;
-    
 }
 
 
-MeshBlockTree* MeshBlockTree::FindNeighborCrossPanel(LogicalLocation lloc, int ox1, int ox2, int ox3, Mesh *mesh, bool amrflag) {
-    
+MeshBlockTree* MeshBlockTree::FindNeighborCrossPanel(LogicalLocation lloc, int ox1,
+                                                     int ox2, int ox3, Mesh *mesh,
+                                                     bool amrflag) {
     // 1. Which face to cross the panel. x1 is RADIAL: an ox1-only offset can never leave
     //    the panel, so it is a physical boundary rather than a seam.
     int face = -1;
@@ -599,8 +596,9 @@ MeshBlockTree* MeshBlockTree::FindNeighborCrossPanel(LogicalLocation lloc, int o
     PanelNeighbors pn = mesh->panel_neighbors[panel][face];
 
     // 3. Transform logical location to neighbor panel
-    LogicalLocation lloc_other = TransformToPanel(lloc, pn.nb_panel, pn.nb_face, pn.rev_ax, pn.swap_ax);
-    
+    LogicalLocation lloc_other = TransformToPanel(lloc, pn.nb_panel, pn.nb_face,
+                                                  pn.rev_ax, pn.swap_ax);
+
     // 4. Get block tree in neighbor panel.
     //    DESCEND to the transformed location rather than asking FindNeighbor for a
     //    zero offset: called on the neighbour panel's ROOT, FindNeighbor stops at the

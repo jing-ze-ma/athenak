@@ -31,18 +31,20 @@
 //! static well-balanced scheme is on.
 //!
 //! The same problem also drives the DYNAMIC well-balanced scheme (Kappeli & Mishra,
-//!   <hydro>/wellbalance_dynamic = true, wb_x2 = true, wb_rho = true,
+//!   <hydro>/wellbalance_dynamic = true, wb_x1 = true, wb_dirs = all, wb_rho = true,
 //!   wb_option = isentropic),
 //! which does NOT use u0wb/w0wb at all: it rebuilds a local hydrostatic background from
-//! the current state and the gravitational potential.  What it needs from the pgen is
-//! that potential -- phicc0 and phi0.x{1,2,3}f, filled over the full arrays below -- and
-//! a gravitational source written as the background's own pressure difference (see
+//! the current state and the gravitational potential, in x2 through the wb_dirs = all
+//! cache (hydro_wball.hpp).  What it needs from the pgen is that potential -- phicc0 and
+//! phi0.x{1,2,3}f, filled over the full arrays below -- and the matching gravitational
+//! source, the background's own pressure difference (Hydro::AddWbGravity, see
 //! WbAtmGravity).  The atmosphere here is isentropic, which is exactly the closed-form
 //! background wb_option = isentropic assumes, so the balance is held to round-off.
 
 // C++ headers
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <string>
 #include <iostream>
 
@@ -60,9 +62,9 @@ namespace {
 // parameters of the background, shared by the pgen, the BCs and the source term
 struct WbAtmVars {
   Real g0, p0, rho0, gamma, a0, h0;
-  int strat = 0;      // lowmach2-1102: 0 isentropic (legacy), 1 isothermal, 2 polytropic
+  int strat = 0;      // 0 isentropic (legacy), 1 isothermal, 2 polytropic
   Real nu = 0.0;      // polytropic index of strat 2
-  Real bx = 0.0;      // alfmach-1102: uniform horizontal field (MHD only)
+  Real bx = 0.0;      // uniform horizontal field (MHD only)
 };
 WbAtmVars wbatm;
 
@@ -73,7 +75,7 @@ Real WbAtmPres(const Real y, const Real p0, const Real h0, const Real gdgm1) {
   return p0*std::pow((1.0 - y/h0), gdgm1);
 }
 
-//! \fn WbAtmState (lowmach2-1102)
+//! \fn WbAtmState
 //! \brief background (p, rho) at height y.  strat 0 = the legacy isentropic profile
 //! (same expressions as before, bitwise); 1 = isothermal (Edelmann+ 2021 eq. 74),
 //! 2 = polytropic of index nu (eqs. 76-77), with phi = -g0 y.
@@ -98,7 +100,7 @@ void WbAtmBCs(Mesh *pm);
 void WbAtmGravity(Mesh *pm, const Real bdt);
 
 namespace {
-// alfmach-1102: the field parts of the MHD port (no-ops for hydro)
+// the field parts of the MHD port (no-ops for hydro)
 void WbAtmSetB(hydro::Hydro *ph, Mesh *pm, const Real bx, const bool ghosts) {}
 void WbAtmSetB(mhd::MHD *ph, Mesh *pm, const Real bx, const bool ghosts) {
   auto &indcs = pm->mb_indcs;
@@ -154,7 +156,7 @@ void ProblemGenerator::WbAtmosphere(ParameterInput *pin, const bool restart) {
   Real g0 = pin->GetOrAddReal("problem", "g0", -1.0);
   Real p0 = pin->GetOrAddReal("problem", "p0", 1.0);
   Real rho0 = pin->GetOrAddReal("problem", "rho0", 1.0);
-  // alfmach-1102: also runs in MHD (static well balance only), with an optional uniform
+  // also runs in MHD (static well balance only), with an optional uniform
   // horizontal field B_x = sqrt(2 p(y=0)/bx_beta), <problem>/bx_beta (read when named)
   const bool is_mhd = (pmbp->pmhd != nullptr);
   Real gamma = is_mhd ? pmbp->pmhd->peos->eos_data.gamma
@@ -169,7 +171,7 @@ void ProblemGenerator::WbAtmosphere(ParameterInput *pin, const bool restart) {
   wbatm.h0 = -gdgm1*p0/rho0/g0;
   Real a0 = wbatm.a0;
   Real h0 = wbatm.h0;
-  // lowmach2-1102 TEST keys (read only when set): <problem>/strat = isothermal |
+  // TEST keys (read only when set): <problem>/strat = isothermal |
   // polytropic (with poly_nu) and a cell-hashed white-noise velocity seed vrand (rms
   // per component, absolute units).  Use with the STATIC well-balanced scheme (exact
   // for any stored background); the dynamic scheme assumes the isentropic profile.
@@ -210,7 +212,9 @@ void ProblemGenerator::WbAtmosphere(ParameterInput *pin, const bool restart) {
   Real y0 = pin->GetOrAddReal("problem", "y0", 1.0);
   Real r0 = pin->GetOrAddReal("problem", "r0", 0.2);
   Real vrand = 0.0;
-  if (pin->DoesParameterExist("problem", "vrand")) vrand = pin->GetReal("problem", "vrand");
+  if (pin->DoesParameterExist("problem", "vrand")) {
+    vrand = pin->GetReal("problem", "vrand");
+  }
 
   if (is_mhd) {
     WbAtmFill(pmbp->pmhd, pmy_mesh_, wv, gm1, g0, vamp, x0, y0, r0, vrand);
@@ -287,11 +291,12 @@ void WbAtmBCsT(Mesh *pm, P *ph) {
 //! momentum source must act on the DEVIATION rho - rho_background only.  With the
 //! DYNAMIC scheme on there is no stored background to subtract: the momentum source is
 //! instead the local hydrostatic background's OWN pressure difference across the cell,
-//! (p_{j+1/2} - p_{j-1/2})/dx2, obtained through the same entry point the
-//! reconstruction uses (Hydro::getWBq0) so that the two cancel identically for a
-//! balanced state.  (Handing the dynamic scheme the plain -rho g source would NOT be
-//! well balanced, since the flux it assembles already carries the full background
-//! pressure.)  The energy source is physical and always uses the full density.
+//! (p_{j+1/2} - p_{j-1/2})/dx2 blended with the plain force by the validity weight,
+//! from the same cache the x2 reconstruction reads (AddWbGravity), so that the two
+//! cancel identically for a balanced state.  (Handing the dynamic scheme the plain
+//! -rho g source would NOT be well balanced, since the flux it assembles already carries
+//! the full background pressure.)  The energy source is physical and always uses the
+//! full density.
 
 void WbAtmGravity(Mesh *pm, const Real bdt) {
   if (pm->pmb_pack->pmhd != nullptr) {
@@ -312,14 +317,14 @@ void WbAtmGravityT(Mesh *pm, P *ph, const Real bdt) {
   auto u0 = ph->u0;
   auto w0 = ph->w0;
   auto w0wb = ph->w0wb;
-  auto phicc0 = ph->phicc0;
-  auto phi2 = ph->phi0.x2f;
-  auto &size = pmbp->pmb->mb_size;
   const bool wbstatic = ph->use_wellbalance_static;
   const bool wbdyn = ph->use_wellbalance_dynamic;
-  // by-value copies, capturable in the device lambda (never dereference pmbp there)
-  const auto eos = ph->peos->eos_data;
-  const WBOption wbo = ph->wb_option;
+  if (wbdyn && !ph->wb_all) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "wb_atm: the dynamic well-balanced scheme needs "
+              << "wb_dirs = all (the atmosphere is stratified in x2)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   Real g0 = wbatm.g0;
 
   par_for("wb_atm_grav", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -329,22 +334,16 @@ void WbAtmGravityT(Mesh *pm, P *ph, const Real bdt) {
     if (wbstatic) {
       src = bdt*g0*(w0(m,IDN,k,j,i) - w0wb(m,IDN,k,j,i));
     }
-    if (wbdyn) {
-      Real pl, pr, d1, d2, d3;
-      hydro::Hydro::getWBq0(eos, wbo, WBVar::wb_pres,
-          w0(m,IDN,k,j-1,i), w0(m,IDN,k,j,i), w0(m,IDN,k,j+1,i),
-          w0(m,IEN,k,j-1,i), w0(m,IEN,k,j,i), w0(m,IEN,k,j+1,i),
-          phicc0(m,k,j-1,i), phi2(m,k,j,i), phicc0(m,k,j,i), phi2(m,k,j+1,i),
-          phicc0(m,k,j+1,i), d1, pl, d2, pr, d3);
-      src = bdt*(pr - pl)/size.d_view(m).dx2;
-    }
-    u0(m,IM2,k,j,i) += src;
+    if (!wbdyn) u0(m,IM2,k,j,i) += src;
   });
+  // dynamic scheme: the momentum source of the x2 background cache (x1 has no gravity)
+  if (wbdyn) ph->AddWbGravity(bdt, false);
   return;
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn WbAtmFill (alfmach-1102: the former body of WbAtmosphere, for hydro or MHD)
+//! \fn WbAtmFill
+//! \brief fills the atmosphere state of WbAtmosphere, for hydro or MHD
 
 template <class P>
 void WbAtmFill(P *ph, Mesh *pmesh, const WbAtmVars wv, const Real gm1, const Real g0,
@@ -382,7 +381,7 @@ void WbAtmFill(P *ph, Mesh *pmesh, const WbAtmVars wv, const Real gm1, const Rea
       v1 = vamp*(x1v - x0)/r0;
       v2 = vamp*(x2v - y0)/r0;
     }
-    if (vrand != 0.0) {   // lowmach2-1102: cell-hashed uniform deviates, rms vrand
+    if (vrand != 0.0) {   // cell-hashed uniform deviates, rms vrand
       const uint64_t gi = static_cast<uint64_t>((x1v + 1000.0)/size.d_view(m).dx1);
       const uint64_t gj = static_cast<uint64_t>((x2v + 1000.0)/size.d_view(m).dx2);
       uint64_t h = (gi*0x9E3779B97F4A7C15ULL)

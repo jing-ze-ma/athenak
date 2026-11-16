@@ -4,7 +4,8 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file mhd_etotgrav.cpp
-//! \brief Implements functions for including time-independent gravitational potential energy in the energy conservation.
+//! \brief Implements functions for including time-independent gravitational potential
+//! energy in the energy conservation.
 
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
@@ -17,7 +18,7 @@
 #include "hydro/etotgrav_shared.hpp"
 
 namespace mhd {
-// share-1104 P6: thin wrappers of the shared fluid::EtotGrav* kernels
+// thin wrappers of the shared fluid::EtotGrav* kernels
 void MHD::AddGravFlux(const DvceFaceFld4D<Real> &phi0, DvceFaceFld5D<Real> &flx) {
   fluid::EtotGravFlux(pmy_pack, phi0, flx);
 }

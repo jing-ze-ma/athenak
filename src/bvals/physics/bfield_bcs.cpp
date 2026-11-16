@@ -45,9 +45,13 @@ void MeshBoundaryValues::BFieldBCs(MeshBlockPack *ppack, DualArray2D<Real> b_in,
           for (int i=0; i<ng; ++i) {
             b0.x1f(m,k,j,is-i-1) = -b0.x1f(m,k,j,is+i+1);
             b0.x2f(m,k,j,is-i-1) =  b0.x2f(m,k,j,is+i);
-            if (j == n2-1) {b0.x2f(m,k,j+1,is-i-1) = b0.x2f(m,k,j+1,is+i);}
+            if (j == n2-1) {
+              b0.x2f(m,k,j+1,is-i-1) = b0.x2f(m,k,j+1,is+i);
+            }
             b0.x3f(m,k,j,is-i-1) =  b0.x3f(m,k,j,is+i);
-            if (k == n3-1) {b0.x3f(m,k+1,j,is-i-1) = b0.x3f(m,k+1,j,is+i);}
+            if (k == n3-1) {
+              b0.x3f(m,k+1,j,is-i-1) = b0.x3f(m,k+1,j,is+i);
+            }
           }
           break;
         case BoundaryFlag::outflow:
@@ -56,9 +60,13 @@ void MeshBoundaryValues::BFieldBCs(MeshBlockPack *ppack, DualArray2D<Real> b_in,
           for (int i=0; i<ng; ++i) {
             b0.x1f(m,k,j,is-i-1) = b0.x1f(m,k,j,is);
             b0.x2f(m,k,j,is-i-1) = b0.x2f(m,k,j,is);
-            if (j == n2-1) {b0.x2f(m,k,j+1,is-i-1) = b0.x2f(m,k,j+1,is);}
+            if (j == n2-1) {
+              b0.x2f(m,k,j+1,is-i-1) = b0.x2f(m,k,j+1,is);
+            }
             b0.x3f(m,k,j,is-i-1) = b0.x3f(m,k,j,is);
-            if (k == n3-1) {b0.x3f(m,k+1,j,is-i-1) = b0.x3f(m,k+1,j,is);}
+            if (k == n3-1) {
+              b0.x3f(m,k+1,j,is-i-1) = b0.x3f(m,k+1,j,is);
+            }
           }
           break;
         case BoundaryFlag::inflow:
@@ -84,9 +92,13 @@ void MeshBoundaryValues::BFieldBCs(MeshBlockPack *ppack, DualArray2D<Real> b_in,
           for (int i=0; i<ng; ++i) {
             b0.x1f(m,k,j,ie+i+2) = -b0.x1f(m,k,j,ie-i);
             b0.x2f(m,k,j,ie+i+1) =  b0.x2f(m,k,j,ie-i);
-            if (j == n2-1) {b0.x2f(m,k,j+1,ie+i+1) = b0.x2f(m,k,j+1,ie-i);}
+            if (j == n2-1) {
+              b0.x2f(m,k,j+1,ie+i+1) = b0.x2f(m,k,j+1,ie-i);
+            }
             b0.x3f(m,k,j,ie+i+1) =  b0.x3f(m,k,j,ie-i);
-            if (k == n3-1) {b0.x3f(m,k+1,j,ie+i+1) = b0.x3f(m,k+1,j,ie-i);}
+            if (k == n3-1) {
+              b0.x3f(m,k+1,j,ie+i+1) = b0.x3f(m,k+1,j,ie-i);
+            }
           }
           break;
         case BoundaryFlag::outflow:
@@ -95,9 +107,13 @@ void MeshBoundaryValues::BFieldBCs(MeshBlockPack *ppack, DualArray2D<Real> b_in,
           for (int i=0; i<ng; ++i) {
             b0.x1f(m,k,j,ie+i+2) = b0.x1f(m,k,j,ie+1);
             b0.x2f(m,k,j,ie+i+1) = b0.x2f(m,k,j,ie);
-            if (j == n2-1) {b0.x2f(m,k,j+1,ie+i+1) = b0.x2f(m,k,j+1,ie);}
+            if (j == n2-1) {
+              b0.x2f(m,k,j+1,ie+i+1) = b0.x2f(m,k,j+1,ie);
+            }
             b0.x3f(m,k,j,ie+i+1) = b0.x3f(m,k,j,ie);
-            if (k == n3-1) {b0.x3f(m,k+1,j,ie+i+1) = b0.x3f(m,k+1,j,ie);}
+            if (k == n3-1) {
+              b0.x3f(m,k+1,j,ie+i+1) = b0.x3f(m,k+1,j,ie);
+            }
           }
           break;
         case BoundaryFlag::inflow:
@@ -133,10 +149,14 @@ void MeshBoundaryValues::BFieldBCs(MeshBlockPack *ppack, DualArray2D<Real> b_in,
         case BoundaryFlag::reflect:
           for (int j=0; j<ng; ++j) {
             b0.x1f(m,k,js-j-1,i) =  b0.x1f(m,k,js+j,i);
-            if (i == n1-1) {b0.x1f(m,k,js-j-1,i+1) = b0.x1f(m,k,js+j,i+1);}
+            if (i == n1-1) {
+              b0.x1f(m,k,js-j-1,i+1) = b0.x1f(m,k,js+j,i+1);
+            }
             b0.x2f(m,k,js-j-1,i) = -b0.x2f(m,k,js+j+1,i);
             b0.x3f(m,k,js-j-1,i) =  b0.x3f(m,k,js+j,i);
-            if (k == n3-1) {b0.x3f(m,k+1,js-j-1,i) = b0.x3f(m,k+1,js+j,i);}
+            if (k == n3-1) {
+              b0.x3f(m,k+1,js-j-1,i) = b0.x3f(m,k+1,js+j,i);
+            }
           }
           break;
         case BoundaryFlag::outflow:
@@ -144,10 +164,14 @@ void MeshBoundaryValues::BFieldBCs(MeshBlockPack *ppack, DualArray2D<Real> b_in,
         case BoundaryFlag::vacuum:
           for (int j=0; j<ng; ++j) {
             b0.x1f(m,k,js-j-1,i) = b0.x1f(m,k,js,i);
-            if (i == n1-1) {b0.x1f(m,k,js-j-1,i+1) = b0.x1f(m,k,js,i+1);}
+            if (i == n1-1) {
+              b0.x1f(m,k,js-j-1,i+1) = b0.x1f(m,k,js,i+1);
+            }
             b0.x2f(m,k,js-j-1,i) = b0.x2f(m,k,js,i);
             b0.x3f(m,k,js-j-1,i) = b0.x3f(m,k,js,i);
-            if (k == n3-1) {b0.x3f(m,k+1,js-j-1,i) = b0.x3f(m,k+1,js,i);}
+            if (k == n3-1) {
+              b0.x3f(m,k+1,js-j-1,i) = b0.x3f(m,k+1,js,i);
+            }
           }
           break;
         case BoundaryFlag::inflow:
@@ -164,7 +188,8 @@ void MeshBoundaryValues::BFieldBCs(MeshBlockPack *ppack, DualArray2D<Real> b_in,
           }
           break;
         case BoundaryFlag::polar:
-          b0.x2f(m,k,js,i) = 0.5*(b0.x2f(m,k,js-1,i)+b0.x2f(m,k,js+1,i)); // /cos(x2f_(m,js+1));
+          // /cos(x2f_(m,js+1));
+          b0.x2f(m,k,js,i) = 0.5*(b0.x2f(m,k,js-1,i)+b0.x2f(m,k,js+1,i));
           break;
         default:
           break;
@@ -175,10 +200,14 @@ void MeshBoundaryValues::BFieldBCs(MeshBlockPack *ppack, DualArray2D<Real> b_in,
         case BoundaryFlag::reflect:
           for (int j=0; j<ng; ++j) {
             b0.x1f(m,k,je+j+1,i) =  b0.x1f(m,k,je-j,i);
-            if (i == n1-1) {b0.x1f(m,k,je+j+1,i+1) = b0.x1f(m,k,je-j,i+1);}
+            if (i == n1-1) {
+              b0.x1f(m,k,je+j+1,i+1) = b0.x1f(m,k,je-j,i+1);
+            }
             b0.x2f(m,k,je+j+2,i) = -b0.x2f(m,k,je-j,i);
             b0.x3f(m,k,je+j+1,i) =  b0.x3f(m,k,je-j,i);
-            if (k == n3-1) {b0.x3f(m,k+1,je+j+1,i) = b0.x3f(m,k+1,je-j,i);}
+            if (k == n3-1) {
+              b0.x3f(m,k+1,je+j+1,i) = b0.x3f(m,k+1,je-j,i);
+            }
           }
           break;
         case BoundaryFlag::outflow:
@@ -186,10 +215,14 @@ void MeshBoundaryValues::BFieldBCs(MeshBlockPack *ppack, DualArray2D<Real> b_in,
         case BoundaryFlag::vacuum:
           for (int j=0; j<ng; ++j) {
             b0.x1f(m,k,je+j+1,i) = b0.x1f(m,k,je,i);
-            if (i == n1-1) {b0.x1f(m,k,je+j+1,i+1) = b0.x1f(m,k,je,i+1);}
+            if (i == n1-1) {
+              b0.x1f(m,k,je+j+1,i+1) = b0.x1f(m,k,je,i+1);
+            }
             b0.x2f(m,k,je+j+2,i) = b0.x2f(m,k,je+1,i);
             b0.x3f(m,k,je+j+1,i) = b0.x3f(m,k,je,i);
-            if (k == n3-1) {b0.x3f(m,k+1,je+j+1,i) = b0.x3f(m,k+1,je,i);}
+            if (k == n3-1) {
+              b0.x3f(m,k+1,je+j+1,i) = b0.x3f(m,k+1,je,i);
+            }
           }
           break;
         case BoundaryFlag::inflow:
@@ -206,7 +239,8 @@ void MeshBoundaryValues::BFieldBCs(MeshBlockPack *ppack, DualArray2D<Real> b_in,
           }
           break;
         case BoundaryFlag::polar:
-          b0.x2f(m,k,je+1,i) = 0.5*(b0.x2f(m,k,je,i)+b0.x2f(m,k,je+2,i)); // /(-cos(x2f_(m,je)));
+          // /(-cos(x2f_(m,je)));
+          b0.x2f(m,k,je+1,i) = 0.5*(b0.x2f(m,k,je,i)+b0.x2f(m,k,je+2,i));
           break;
         default:
           break;
@@ -226,9 +260,13 @@ void MeshBoundaryValues::BFieldBCs(MeshBlockPack *ppack, DualArray2D<Real> b_in,
       case BoundaryFlag::reflect:
         for (int k=0; k<ng; ++k) {
           b0.x1f(m,ks-k-1,j,i) =  b0.x1f(m,ks+k,j,i);
-          if (i == n1-1) {b0.x1f(m,ks-k-1,j,i+1) = b0.x1f(m,ks+k,j,i+1);}
+          if (i == n1-1) {
+            b0.x1f(m,ks-k-1,j,i+1) = b0.x1f(m,ks+k,j,i+1);
+          }
           b0.x2f(m,ks-k-1,j,i) =  b0.x2f(m,ks+k,j,i);
-          if (j == n2-1) {b0.x2f(m,ks-k-1,j+1,i) = b0.x2f(m,ks+k,j+1,i);}
+          if (j == n2-1) {
+            b0.x2f(m,ks-k-1,j+1,i) = b0.x2f(m,ks+k,j+1,i);
+          }
           b0.x3f(m,ks-k-1,j,i) = -b0.x3f(m,ks+k+1,j,i);
         }
         break;
@@ -237,9 +275,13 @@ void MeshBoundaryValues::BFieldBCs(MeshBlockPack *ppack, DualArray2D<Real> b_in,
       case BoundaryFlag::vacuum:
         for (int k=0; k<ng; ++k) {
           b0.x1f(m,ks-k-1,j,i) = b0.x1f(m,ks,j,i);
-          if (i == n1-1) {b0.x1f(m,ks-k-1,j,i+1) = b0.x1f(m,ks,j,i+1);}
+          if (i == n1-1) {
+            b0.x1f(m,ks-k-1,j,i+1) = b0.x1f(m,ks,j,i+1);
+          }
           b0.x2f(m,ks-k-1,j,i) = b0.x2f(m,ks,j,i);
-          if (j == n2-1) {b0.x2f(m,ks-k-1,j+1,i) = b0.x2f(m,ks,j+1,i);}
+          if (j == n2-1) {
+            b0.x2f(m,ks-k-1,j+1,i) = b0.x2f(m,ks,j+1,i);
+          }
           b0.x3f(m,ks-k-1,j,i) = b0.x3f(m,ks,j,i);
         }
         break;
@@ -265,9 +307,13 @@ void MeshBoundaryValues::BFieldBCs(MeshBlockPack *ppack, DualArray2D<Real> b_in,
       case BoundaryFlag::reflect:
         for (int k=0; k<ng; ++k) {
           b0.x1f(m,ke+k+1,j,i) =  b0.x1f(m,ke-k,j,i);
-          if (i == n1-1) {b0.x1f(m,ke+k+1,j,i+1) = b0.x1f(m,ke-k,j,i+1);}
+          if (i == n1-1) {
+            b0.x1f(m,ke+k+1,j,i+1) = b0.x1f(m,ke-k,j,i+1);
+          }
           b0.x2f(m,ke+k+1,j,i) =  b0.x2f(m,ke-k,j,i);
-          if (j == n2-1) {b0.x2f(m,ke+k+1,j+1,i) = b0.x2f(m,ke-k,j+1,i);}
+          if (j == n2-1) {
+            b0.x2f(m,ke+k+1,j+1,i) = b0.x2f(m,ke-k,j+1,i);
+          }
           b0.x3f(m,ke+k+2,j,i) = -b0.x3f(m,ke-k,j,i);
         }
         break;
@@ -276,9 +322,13 @@ void MeshBoundaryValues::BFieldBCs(MeshBlockPack *ppack, DualArray2D<Real> b_in,
       case BoundaryFlag::vacuum:
         for (int k=0; k<ng; ++k) {
           b0.x1f(m,ke+k+1,j,i) = b0.x1f(m,ke,j,i);
-          if (i == n1-1) {b0.x1f(m,ke+k+1,j,i+1) = b0.x1f(m,ke,j,i+1);}
+          if (i == n1-1) {
+            b0.x1f(m,ke+k+1,j,i+1) = b0.x1f(m,ke,j,i+1);
+          }
           b0.x2f(m,ke+k+1,j,i) = b0.x2f(m,ke,j,i);
-          if (j == n2-1) {b0.x2f(m,ke+k+1,j+1,i) = b0.x2f(m,ke,j+1,i);}
+          if (j == n2-1) {
+            b0.x2f(m,ke+k+1,j+1,i) = b0.x2f(m,ke,j+1,i);
+          }
           b0.x3f(m,ke+k+2,j,i) = b0.x3f(m,ke+1,j,i);
         }
         break;

@@ -63,7 +63,7 @@ void EventLogOutput::LoadOutputData(Mesh *pm) {
   MPI_Allreduce(MPI_IN_PLACE, &(pm->ecounter.dfloor_ke), 1, MPI_ATHENA_REAL, MPI_SUM,
                 MPI_COMM_WORLD);
 #endif
-  // fixbundle-1009 F4: the <rad_m1> totals (collective: every rank has the module)
+  // the <rad_m1> totals (collective: every rank has the module)
   pm->ecounter.m1on = (pm->pmb_pack->pradm1 != nullptr);
   if (pm->ecounter.m1on) {pm->pmb_pack->pradm1->EventTotals(pm->ecounter.m1tot);}
 
@@ -132,7 +132,7 @@ void EventLogOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       std::fprintf(pfile,"#  cycle eos_dfloor eos_efloor eos_tfloor eos_vceil");
       std::fprintf(pfile," eos_fail c2p_it fofc  efloor_de eos_tclamp   eos_tset");
       std::fprintf(pfile,"   vceil_de");
-      // fixbundle-1009 F4 (APPENDED): dfloor_keep_velocity KE removed; with <rad_m1>
+      // appended columns: dfloor_keep_velocity KE removed; with <rad_m1>
       // the module's totals since the start of the run or restart (EventTotals)
       std::fprintf(pfile,"  dfloor_ke");
       if (pm->ecounter.m1on) {
@@ -161,8 +161,8 @@ void EventLogOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       // <block>/efloor_as_tfloor: cells whose floored e was rebuilt from T.  APPENDED,
       // so every column index an existing reader uses is unchanged.
       std::fprintf(pfile, " %10" PRId64, pm->ecounter.neos_tset);
-      // kinetic energy density the velocity ceiling clipped since the last row: removed
-      // from the total energy, or turned into internal energy under vceil_thermalise.
+      // kinetic energy density the velocity ceiling removed from the total energy since
+      // the last row.
       // APPENDED, so every existing column index is unchanged.
       std::fprintf(pfile, " %11.4e",
                    static_cast<double>(pm->ecounter.vceil_de));

@@ -77,9 +77,8 @@ namespace {
 //! false afterwards, so it is never inherited by the restarts this run writes).
 //!
 //! The list is the union over the pgens that fill phicc0 (dhj, red_giant/He4, box,
-//! convection/solar/cooling, hse_atm, hotbubble, wb_atm, shallow_hot_jupiter): gravity
-//! and potential keys and the unit system they are converted with.  problem/omega counts
-//! only when rot_potential is on.
+//! hse_atm, wb_atm): gravity and potential keys and the unit system they are converted
+//! with.  problem/omega counts only when rot_potential is on.
 //!
 //! RESTART CONSISTENCY OF THE GRID (always, with or without etotgrav).  The restart file
 //! stores the cell data block by block, but the cell POSITIONS are rebuilt from the
@@ -496,8 +495,8 @@ int main(int argc, char *argv[]) {
     // read parameters from restart file
     restartfile.Open(restart_file.c_str(),IOWrapper::FileMode::read,single_file_per_rank);
     pinput->LoadFromFile(restartfile, single_file_per_rank);
-    pinput->MarkAllAsRestart();   // unkkey-1017: not reported as unread input keys
-    // acctrc-1019: the number of passive scalars the file's hydro u0 records carry (its own
+    pinput->MarkAllAsRestart();   // not reported as unread input keys
+    // the number of passive scalars the file's hydro u0 records carry (its own
     // embedded input, BEFORE a -i file can override <hydro>/nscalars): the restart reader
     // (pgen.cpp) compares it with the run's.  Read only (no key is added to the dump).
     if (pinput->DoesParameterExist("hydro", "nscalars")) {
@@ -505,11 +504,11 @@ int main(int argc, char *argv[]) {
     } else if (pinput->DoesBlockExist("hydro")) {
       global_variable::rst_hydro_nscalars = 0;
     }
-    // share-1104 P4: and whether its hydro u0 records carry the floor tracer (last slot)
+    // P4: and whether its hydro u0 records carry the floor tracer (last slot)
     if (pinput->DoesBlockExist("hydro")) {
       global_variable::rst_hydro_tracers = mhd::ReadTracerLayout(pinput, "hydro").Mask();
     }
-    // tracer-1101: the same for <mhd>: the file's user scalars and which passive
+    // the same for <mhd>: the file's user scalars and which passive
     // tracers (x_e, floor mass) its u0 records carry (mhd/mhd_tracers.hpp)
     if (pinput->DoesBlockExist("mhd")) {
       const mhd::TracerLayout ftl = mhd::ReadTracerLayout(pinput);
@@ -557,7 +556,7 @@ int main(int argc, char *argv[]) {
   // a restart may ADD keys its embedded input predates (parameter_input.cpp)
   pinput->ModifyFromCmdline(argc, argv, res_flag);
   if (res_flag) CheckRestartPotentialKeys(pinput, rst_potential_keys);
-  // prod1103c: the problem generator's pre-physics fresh-start defaults (recipe.hpp)
+  // the problem generator's pre-physics fresh-start defaults (recipe.hpp)
   recipe::PgenEarlyDefaults(pinput);
 
   // Dump input parameters and quit if code was run with -n option.
@@ -621,7 +620,7 @@ int main(int argc, char *argv[]) {
   ChangeRunDir(run_dir);
   Driver* pdriver = new Driver(pinput, pmesh, wtlim, &timer);
   Outputs* pout = new Outputs(pinput, pmesh);
-  // amdef-1019: every key a default decided (utils/recipe.hpp), one block (rank 0)
+  // every key a default decided (utils/recipe.hpp), one block (rank 0)
   recipe::GetMode(pinput);   // validates <job>/recipe also when nothing was defaulted
   recipe::PrintLog();
 

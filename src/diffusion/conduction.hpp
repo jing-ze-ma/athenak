@@ -79,12 +79,6 @@ class Conduction {
   // keeps the timestep survivable while the column refills.  The temperature GRADIENT
   // and the flux limiter's sigma T^4 are left at the true temperature.
   Real rad_tmax = 0.0;         // K; <= 0 disables the cap
-  // rad_blend_radial (default true): the blend weight applies to the x1 faces too.
-  // False keeps the radial diffusion at full weight everywhere and applies w only to
-  // the angular faces -- for a SELF-LUMINOUS object with no two-stream above the
-  // blend, where flux-limited radial diffusion is the surface treatment and the
-  // horizontal exchange in the optically thin layers is what is switched off.
-  bool rad_blend_radial = true;
   // rad_blend_transverse (default true): the blend weight also multiplies the x2/x3
   // (TRANSVERSE) face conductances -- of the explicit flux, of the rad_cap_ang cap and
   // of the super-time-stepped operator's coefficients alike, as a cell-centred 4-point
@@ -101,7 +95,7 @@ class Conduction {
   // horizontal radiative exchange of any kind, which is precisely the transport this
   // operator exists to supply.  False decouples the transverse conductance from the
   // vertical blend: the x2/x3 faces use weight 1 while the x1 faces keep w
-  // (rad_blend_radial is untouched, and so is cap_c1 under rad_sts_all).  The flux
+  // (and so does cap_c1 under rad_sts_all).  The flux
   // limiter and the rad_gate_rho density gate still apply on every transverse face.
   bool rad_blend_transverse = true;
 
@@ -223,10 +217,10 @@ class Conduction {
   //     spherical-polar paths included, since those live inside the same two kernels;
   //   * BuildAngularCoeffs returns immediately, so no frozen transverse conductance,
   //     no cap_x/cap_c2/cap_c3 and no rad_cap_ang report are built (this also covers the
-  //     problem generators that call it themselves under problem/rt_split_transverse);
+  //     problem generators that call it themselves under an operator split);
   //   * NewTimeStep drops the transverse conduction limits dt2 and dt3.
   // Everything RADIAL is untouched: the x1 face flux, rad_implicit_x1, the tau blend
-  // (rad_tau_lo/hi, rad_blend_radial), rad_flux_inner and the two-stream hand-over
+  // (rad_tau_lo/hi), rad_flux_inner and the two-stream hand-over
   // (rad_blend_use_2s, rad_f2s).  Ordinary (constant / spitzer) thermal conduction is not
   // affected at all -- the switch is read and acted on only for
   // isotropic_conduction = radiative.
@@ -282,8 +276,7 @@ class Conduction {
   bool rad_implicit_ang = false;
   // rad_tr_split_out (set by a problem generator, not by the input file): the TRANSVERSE
   // operator has been taken OUT of the RK stage and is run by the same operator-split
-  // step that runs the radiation column (red_giant's problem/rt_strang, through
-  // problem/rt_split_transverse; box_convection's problem/rt_col3_sub).  Hydro::/MHD::
+  // step that runs the radiation column (red_giant's problem/rt_strang).  Hydro::/MHD::
   // ImplicitTransverseConduction is then a no-op: solving here as well would apply the
   // operator twice a stage.
   bool rad_tr_split_out = false;
@@ -329,9 +322,8 @@ class Conduction {
   // WHAT IS REFUSED: rad_sts_split (an RKL1 stability construction with no meaning for
   // a direct solve) and rad_sts_all (ADI is the transverse operator only).  A direction
   // decomposed into more than one MeshBlock must be PERIODIC (an open chain of blocks
-  // would need a second gather pass that is not implemented).  rad_tr_halo_every is
-  // IGNORED with a warning: there is no substage recurrence whose ghost skin it could run
-  // down.  rad_sts_once is orthogonal and works unchanged.
+  // would need a second gather pass that is not implemented).  rad_sts_once is
+  // orthogonal and works unchanged.
   bool rad_ang_adi = false;
   // rad_adi_scheme (lod | lod2 | lod2a, "lod" by default): WHICH splitting the two
   // sweeps implement.  See the long note at the schemes in conduction_transverse.cpp.
@@ -348,13 +340,6 @@ class Conduction {
   static constexpr int ADISCM_LOD2 = 2;
   static constexpr int ADISCM_LOD2A = 4;   // lod2 with the half-step order alternated
   int rad_adi_scm = ADISCM_LOD;
-  // rad_adi_cross_iter (cubed sphere only, default 1): outer iterations of the ADI step
-  // in which the EXPLICIT metric cross term is re-evaluated at the current answer
-  // Th = T* + alpha y instead of at T*.  The fixed-point contraction factor is the
-  // cross/diagonal symbol ratio, <= 1/4 in the stiff mid-band and -> 0 at the Nyquist
-  // checkerboard, so 2 iterations remove the mid-band ringing described in the design
-  // note.  1 = the plain lagged cross term.  Ignored off the cubed sphere.
-  int rad_adi_cross_iter = 1;
   // rad_adi_seam_w (cubed sphere + rad_ang_solver = adi, default 0.5): where the
   // pair-implicit PANEL-SEAM sub-step evaluates the temperature, between the state the
   // directional sweeps started from (0) and the one they ended at (1).  0.5 is the
@@ -363,8 +348,6 @@ class Conduction {
   static constexpr int NADIB = 8;      // ceiling on blocks per line (reduced size 2*N)
   DvceArray5D<Real> tr_aw, tr_acp;     // the second spike, and the Thomas scratch
   DvceArray5D<Real> tr_yf;             // lod2 only: the full-step answer for Richardson
-  DvceArray5D<Real> tr_ylg;            // rad_adi_cross_iter > 1: the lagged answer the
-                                       // explicit metric cross term is evaluated at
   DvceArray4D<Real> tr_ared;           // (m, block, line, 6): the interface coefficients
   DvceArray1D<int> tr_aact, tr_ab0;    // per plane: active?  per block: its ring index
   HostArray1D<int> tr_aact_h, tr_ab0_h;
@@ -497,22 +480,6 @@ class Conduction {
   // planes, and the substage count then has to be global.  It is silently ignored there.
   // Needs the whole x1 extent in one MeshBlock, so that a local index i IS a plane.
   bool rad_sts_perplane = false;
-  // rad_tr_window (default true): restrict the three transverse halo exchanges to the
-  // x1 plane bracket that the substage actually reads (see conduction_transverse.cpp).
-  // false = exchange the FULL x1 range every time, which is the pre-window behaviour
-  // and a control for any placement- or window-dependent difference.
-  bool rad_tr_window = true;
-  // ---- COMMUNICATION COST OF THE RKL1 TRANSVERSE OPERATOR.  This switch changes only
-  // WHICH GHOST CELLS ARE EXCHANGED AND WHEN; the arithmetic every ACTIVE cell performs
-  // is untouched, so it is bitwise-inert at its default and meant to stay bitwise when
-  // on.  See the bookkeeping note in conduction_transverse.cpp.
-  //
-  // rad_tr_halo_every (int, default 1 = exchange every substage): exchange the RKL1
-  // increment only every N substages and compute the intermediate substages on a GHOST
-  // SKIN as well, letting the skin shrink by one layer per substage.  N is clamped to
-  // nghost.  N >= 3 also exchanges the SECOND register at each refill (see the note in
-  // conduction_transverse.cpp: the two-iterate recurrence otherwise runs the skin out).
-  int rad_tr_halo_every = 1;
   DvceArray1D<Real> tr_zpl;     // the Gershgorin radius of each x1 plane
   DvceArray1D<int> tr_spl;      // ... its substage count s_i ...
   DvceArray1D<Real> tr_w1pl;    // ... and its RKL1 w1 = 2/(s_i^2 + s_i)
@@ -642,7 +609,11 @@ Real RosselandTable(const DvceArray2D<Real> &tab, const DvceArray1D<Real> &lT,
     int hi = nT-2;
     while (i < hi) {
       const int mid = (i + hi + 1)/2;
-      if (lT(mid) <= x) {i = mid;} else {hi = mid - 1;}
+      if (lT(mid) <= x) {
+        i = mid;
+      } else {
+        hi = mid - 1;
+      }
     }
     fx = (x - lT(i))/(lT(i+1) - lT(i));
   }
@@ -654,7 +625,11 @@ Real RosselandTable(const DvceArray2D<Real> &tab, const DvceArray1D<Real> &lT,
     int hj = nP-2;   // bisection, as for i
     while (j < hj) {
       const int mid = (j + hj + 1)/2;
-      if (lP(mid) <= y) {j = mid;} else {hj = mid - 1;}
+      if (lP(mid) <= y) {
+        j = mid;
+      } else {
+        hj = mid - 1;
+      }
     }
     fy = (y - lP(j))/(lP(j+1) - lP(j));
   }

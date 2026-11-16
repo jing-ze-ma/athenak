@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file async_io.cpp
-//! \brief asyncio-1113: background writing of restart and binary output files (see
+//! \brief background writing of restart and binary output files (see
 //! async_io.hpp).  Opt-in by ATHENA_ASYNC_OUTPUT=1.
 
 #include <fcntl.h>
@@ -33,7 +33,6 @@
 #include "async_io.hpp"
 
 namespace async_io {
-
 using Clock = std::chrono::steady_clock;
 
 struct Op {
@@ -66,7 +65,6 @@ struct Job {
 };
 
 namespace {
-
 // all state on the heap and never freed: a fatal std::exit with the helper running must
 // not destroy a mutex or a joinable std::thread under it
 struct State {
@@ -105,7 +103,8 @@ void HelperLoop() {
       std::uint64_t done = 0;
       while (done < op.n && j->err == 0) {
         std::uint64_t chunk = op.n - done;
-        if (chunk > (std::uint64_t(1) << 30)) chunk = (std::uint64_t(1) << 30);
+        const std::uint64_t cmax = static_cast<std::uint64_t>(1) << 30;
+        if (chunk > cmax) chunk = cmax;
         ssize_t w = pwrite(j->fd, op.p + done, static_cast<size_t>(chunk),
                            static_cast<off_t>(op.off + done));
         if (w < 0) {

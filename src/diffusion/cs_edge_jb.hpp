@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file cs_edge_jb.hpp
-//! \brief seamexact-1103: the current J and field B at a cubed-sphere cell EDGE, the
+//! \brief the current J and field B at a cubed-sphere cell EDGE, the
 //! inputs of the resistive edge EMF, in one place.  Used by the ambipolar edge EMF
 //! (ambipolar.cpp, ad_cs_emf) and by the single-valued seam current of
 //! <mhd>/cs_seam_res = mean_j (MHD::CsSeamResist), so both evaluate J and B at an edge
@@ -32,7 +32,7 @@ struct CsEdgeOps {
   DvceArray3D<Real> cxi, sxi, cet, set, ccl, scl;
   DvceArray4D<Real> etc;   // the cell eta_A (ad_eta_c); unused when has_ad = false
   bool has_ad = true;
-  // cornerfix-1103 <mesh>/cs_vertex_3cell: at a cube-vertex radial edge eta_A and B_r are
+  // <mesh>/cs_vertex_3cell: at a cube-vertex radial edge eta_A and B_r are
   // the means over the THREE real cells (CsVertexAt), not over the made-up corner block
   bool v3 = false;
   DualArray1D<RegionSize> sz;
@@ -68,11 +68,13 @@ struct CsEdgeOps {
     if (v3 && CsVertexAt(sz.d_view(m), k, j, js, je, ks, ke, vx)) {
       s.eta_a = has_ad ? CsVertex3(etc, m, vx, i) : 0.0;
       s.br = CsVertex3n(bc, m, IBX, vx, i);
-      // cornerfix2-1103: the transverse J at the vertex point from the point-reflected
+      // the transverse J at the vertex point from the point-reflected
       // pairs (one in each seam ghost region), not through the corner cell's edges
       const int dj = (vx.jn < vx.jv) ? 1 : -1, dk = (vx.kn < vx.kv) ? 1 : -1;
-      auto p2 = [&](const int ii) {return 0.5*(jn.x2e(m,k-dk,vx.jv,ii) + jn.x2e(m,k+dk,vx.jn,ii));};
-      auto p3 = [&](const int ii) {return 0.5*(jn.x3e(m,vx.kn,j+dj,ii) + jn.x3e(m,vx.kv,j-dj,ii));};
+      auto p2 = [&](const int ii) {return 0.5*(jn.x2e(m,k-dk,vx.jv,ii)
+                                               + jn.x2e(m,k+dk,vx.jn,ii));};
+      auto p3 = [&](const int ii) {return 0.5*(jn.x3e(m,vx.kn,j+dj,ii)
+                                               + jn.x3e(m,vx.kv,j-dj,ii));};
       s.ju1 = 0.5*(p2(i) + p2(i+1))/s.sn;
       s.ju2 = 0.5*(p3(i) + p3(i+1))/s.sn;
     }
@@ -130,10 +132,5 @@ Real CsEdgeAdEmf(const int dir, const CsEdgeJB &s) {
   const Real jd2 = s.c*s.ju1 + s.ju2;
   return s.eta_a*(jd2 - jdb*s.bd2/bsq);
 }
-
-// <mhd>/cs_seam_res = mean_j: the cell-centred field the ambipolar seam current uses
-// (the stage bcc of the caller; nullptr = MHD::bcc0).  Set by AddEMFAmbipolarGnomonic
-// before MHD::CsSeamResist (mhd_cs_seam.cpp).
-void CsSeamResJBcc(const DvceArray5D<Real> *bc);
 
 #endif  // DIFFUSION_CS_EDGE_JB_HPP_

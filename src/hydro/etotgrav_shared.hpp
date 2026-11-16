@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file etotgrav_shared.hpp
-//! \brief share-1104 P6: the <hydro|mhd>/etotgrav kernels, ONE implementation for both
+//! \brief the <hydro|mhd>/etotgrav kernels, ONE implementation for both
 //! fluids (defined in hydro_etotgrav.cpp).  Hydro::AddGravFlux/AddGravEtot/RemoveGravEtot
 //! and MHD::AddGravFlux/AddGravEtot/RemoveGravEtot are thin wrappers.  The MHD energy
 //! carries no extra term here: the gravitational energy is rho*Phi in both.

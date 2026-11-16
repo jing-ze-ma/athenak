@@ -4,11 +4,10 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file am_wb.cpp
-//! \brief amdef-1019 test (pgen_name = am_wb): a spherical shell of gas in a point-mass
+//! \brief test problem (pgen_name = am_wb): a spherical shell of gas in a point-mass
 //! potential, on the cubed sphere or spherical polar (3-D or 2-D sp), for the
-//! angular-momentum transport correction (<hydro>/am_transport) together with every
-//! geometric-source variant (wellbalance_static[_reconst], cs/sp_wellbalanced_src,
-//! sp_cart_polar/all_momentum, sp_face_avg).
+//! angular-momentum transport correction (<hydro>/am_transport) together with the
+//! geometric-source variants wellbalance_static[_reconst].
 //!
 //! Isothermal-profile hydrostatic atmosphere (ideal gas, p = rho cs2):
 //!     rho(r) = rho0 exp[(gm/cs2) (1/r - 1/r_in)],   g = -gm/r^2 rhat (problem/gm, cs2,
@@ -19,9 +18,9 @@
 //! angular momentum may change only through the transport (L_z budget), and a static
 //! hydrostatic state (rot = pert = 0) for the well-balanced property.
 //! With <hydro>/wellbalance_static the same profile is the static background (u0wb, w0wb,
-//! w0facewb; radial faces at x1f, lateral faces at the cell-centre radius) and gravity acts
-//! on rho - rho_background (as wb_atm).  ix1_bc / ox1_bc = user hold the ghosts at the
-//! analytic profile (v = 0).
+//! w0facewb; radial faces at x1f, lateral faces at the cell-centre radius) and gravity
+//! acts on rho - rho_background (as wb_atm).  ix1_bc / ox1_bc = user hold the ghosts at
+//! the analytic profile (v = 0).
 //! History (problem/user_hist = true, hst data_format %.17e): M, E (total incl. the
 //! potential energy sum V rho Phi), Lx, Ly, Lz (sum V r_c x m, arm r_c = x1v rhat_c as
 //! am_transport), KE, and KEin = KE over 1.1 x1min < r < 0.9 x1max (away from the walls).

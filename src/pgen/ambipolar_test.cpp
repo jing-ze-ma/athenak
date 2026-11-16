@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file ambipolar_test.cpp
-//! \brief Cartesian tests of ambipolar diffusion (ambipolar-1101).
+//! \brief Cartesian tests of ambipolar diffusion.
 //! Build with -D PROBLEM=ambipolar_test.
 //!
 //! <problem>/iprob:

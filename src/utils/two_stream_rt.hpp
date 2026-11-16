@@ -77,7 +77,7 @@ inline void par_reduce_clip4(const std::string &name, const int ml, const int mu
                              const Function &function, const bool async = false) {
   const int nk = ku-kl+1, nj = ju-jl+1, ni = iu-il+1;
   const int nkji = nk*nj*ni, nji = nj*ni;
-  // ck-jlin: j FASTEST, not i.  The only caller (rt_apply) reads ~5 nblk-slot sums per
+  // j FASTEST, not i.  The only caller (rt_apply) reads ~5 nblk-slot sums per
   // cell from the chain-block arrays laid out (m, blk, i, k, j), against a dozen
   // (m, k, j, i) reads; with i fastest every lane of a warp hit its own cache line.
   // Each cell's arithmetic is untouched, and the int count is order-free.
@@ -178,7 +178,7 @@ using atm_column::EffGravAt;
 // (rt_chain, rt_ck = false, rt_split = true), a test path that keeps the fixed size,
 // guarded.  The correlated-k kernels (rt_chain_ck, rt_chain_ck_lin, rt_chain_ck_lin1) and
 // the grey chain (rt_chain_grey) no longer use a compile-time column: their whole-column
-// arrays live in the n1-sized global buffer rt_ckscr_ptr (ck-scratch, ck-tiers), so any
+// arrays live in the n1-sized global buffer rt_ckscr_ptr, so any
 // n1 runs with no tier waste and no cap.
 #ifndef RT_NNC
 #define RT_NNC 72
@@ -227,7 +227,7 @@ using RtF = Real;
 #define RT_EXP(x)   exp(x)
 #endif
 
-// THE ck CHAIN KERNEL'S WHOLE-COLUMN ARRAYS LIVE IN GLOBAL MEMORY (ck-scratch).
+// THE ck CHAIN KERNEL'S WHOLE-COLUMN ARRAYS LIVE IN GLOBAL MEMORY.
 // rt_chain_ck keeps up to ten [RT_NB][n1] column arrays per thread (I_down, Cmx, Krs,
 // Kpc, Cc0/Cci/Cco, Js0..2).  As private arrays they were sized by a compile-time column
 // tier and put in the private (scratch) segment: 31 kB per lane for the production
@@ -281,7 +281,7 @@ std::conditional_t<ON, CkScrCol<T>, CkScrOne<T>> CkScrGet(Real *buf, const int g
     return CkScrOne<T>{};
   }
 }
-// ck-store: the chain kernel's groups INTERLEAVED by radial index instead: inside a
+// the chain kernel's groups INTERLEAVED by radial index instead: inside a
 // tile, element (cc, i) of group g of lane l sits at
 //   tile + ((i*S + g)*RT_NB + cc)*CKS_W + l   (in Reals),  S = the kernel's group count,
 // so at a given i every (group, chain) of the thread is a compile-time offset from ONE
@@ -315,7 +315,7 @@ std::conditional_t<ON, CkScrColI<T, S>, CkScrOne<T>> CkScrGetI(Real *buf, const 
     return CkScrOne<T>{};
   }
 }
-// ck-tiers: the same wave-tiled layout for the other column kernels (rt_chain_ck_lin,
+// the same wave-tiled layout for the other column kernels (rt_chain_ck_lin,
 // rt_chain_ck_lin1, rt_chain_grey).  Thread t's tile holds rows of n1 values; row r
 // (one chain or angle of one array) holds element i of lane l at
 //   tile + (r*n1 + i)*CKS_W + l,  tsz = (rows per thread)*n1*CKS_W.
@@ -368,18 +368,17 @@ inline int rt_nchain = 4;
 // problem/rt_split: run the RT as three kernels with the chain-block index promoted to
 // a parallel dimension, instead of one kernel that loops over chains serially. Same
 // arithmetic, same block-summation order -- see the use site.
-// DEFAULT TRUE in deep_hot_jupiter_rt since 2026-09-22; box_convection and red_giant
+// DEFAULT TRUE in deep_hot_jupiter_rt; box_convection and red_giant
 // force it true (the grey kernel lives on the split path).  The monolithic path is
 // therefore reachable only as the grey PICKET FENCE (rt_ck = false) with the flag set
 // false by hand, and is kept for that case: the split grey sweep sizes its column at
 // compile time and fatals when n1 > RT_NNC, which the monolithic one does not.
 //
 // THE "BITWISE IDENTICAL" CLAIM BELOW HOLDS FOR THE CORRELATED-K AND GREY KERNELS, NOT
-// FOR THE PICKET FENCE.  MEASURED 2026-09-22 on inputs/mhd/deep_hot_jupiter_rt_ideal_xe
-// (rt_ck = false, 20 cycles, same binary, deterministic on rerun): the two paths agree
-// on mass and total energy to the printed digits but differ by 7.1 % in the 1-KE
-// history column, so a picket-fence run that relied on the old default answers
-// differently now.  Unexplained; the difference is confined to that path.
+// FOR THE PICKET FENCE.  Measured on inputs/mhd/deep_hot_jupiter_rt_ideal_xe (rt_ck =
+// false, 20 cycles, same binary, deterministic on rerun): the two paths agree on mass
+// and total energy to the printed digits but differ by 7.1 % in the 1-KE history
+// column.  Unexplained; the difference is confined to that path.
 inline bool rt_split = false;
 // PER-CYCLE RT DIAGNOSTIC (deep_hot_jupiter_rt's problem/diag_gid).  Off by default and
 // costing nothing when off: the array is not even allocated.  (m,slot,k,j,i) with
@@ -468,7 +467,7 @@ inline bool rt_dump_done = false;
 inline bool rt_dump_kap = false;
 inline Real rt_ck_pcut = 10.0;                    // bar
 // problem/rt_grey: the GREY two-stream, built on the correlated-k machinery rather than
-// on the old picket-fence path.  One band, one opacity, taken from the conduction
+// on the picket-fence path.  One band, one opacity, taken from the conduction
 // module's own kappa table (<hydro|mhd>/rad_kappa_src) so that the two-stream and the
 // radiative diffusion it blends with cannot disagree about the opacity, and the full
 // Planck function sigma T^4/pi as the source.
@@ -567,7 +566,7 @@ inline bool rt_rad_force = false;
 // hydro still carries -- no (1-w) prefactor, because at tau < 1 the gas does not carry
 // the radiation whatever its density says.  Where s = 0 (tau above the ramp) the old
 // expressions are executed verbatim, so with the gate off, or in any cell with s = 0,
-// the arithmetic is bitwise the old one.  Default OFF.
+// the arithmetic is bitwise unchanged.  Default OFF.
 inline bool rt_force_tau_gate = false;
 inline Real rt_force_tau_lo = 0.3;
 inline Real rt_force_tau_hi = 3.0;
@@ -586,7 +585,7 @@ inline Real rt_force_grav = 0.0;    // |g| used only to normalise that print
 // of a stratification and the cells above it are not part of the problem; more to the
 // point, a box with weak gravity would be handed p/g = a huge column and sealed.  With
 // this flag the downward intensity entering the top face is exactly zero, which is the
-// standard grey-atmosphere boundary and the one solar_convection.cpp's local solver uses.
+// standard grey-atmosphere boundary.
 inline bool rt_top_vacuum = false;
 
 // --- read-only access to the band solver's radial face flux, for diagnostics ---------
@@ -609,7 +608,7 @@ inline DvceArray5D<Real> rt_face_flux() { return *rt_Fb_ptr; }
 inline Real rt_hist_fstar = 0.0;
 inline Real rt_hist_albedo = 0.0;
 
-// --- problem/flux_hst_rst: the face-flux cache across a restart (rthst-1101) ----------
+// --- rt_fhst_rst: the face-flux cache across a restart ---------------------------------
 // rt_Fb, rt_Qb, rt_icut and rt_cf slot 3 are written by the full RT calls only; under
 // the cadence (ck_impl_every) the history rows in between read what the last full call
 // left.  A restart starts with no cache, so until the next full call the flux history
@@ -779,13 +778,13 @@ inline Real rt_de_max = 0.5;
 // so the change is confined to exactly the cells the floor was catching.  It costs one
 // EOS evaluation per COOLING cell and stage.
 inline bool rt_floor_consistent = false;
-// problem/rt_semi_lin: recover the OLD semi-implicit step, which linearized the emission
-// about the current state and relaxed at lambda = 4E/e.  See the long note in rt_apply:
-// that form bounds cooling but leaves heating explicit and unbounded, so a cold optically
-// thin cell overshoots its equilibrium badly.  Kept only to reproduce runs made before
-// the fix.  DEFAULT TRUE, i.e. the old linearization, so that every problem generator
-// sharing this header reproduces its pre-fix runs bit for bit; the red-giant inputs set
-// it false to select the new equilibrium-relaxation step.
+// problem/rt_semi_lin: true = the semi-implicit step that linearizes the emission about
+// the current state and relaxes at lambda = 4E/e.  See the long note in rt_apply: that
+// form bounds cooling but leaves heating explicit and unbounded, so a cold optically thin
+// cell overshoots its equilibrium.  false = the equilibrium-relaxation step, which bounds
+// both.  The namespace value is the default of the problem generators that do not read
+// the key; box_convection defaults to false, red_giant to false with the mode-3 column
+// solve (true otherwise), and the red-giant inputs set it false.
 inline bool rt_semi_lin = true;
 // problem/rt_use_cons: take the cell's internal energy and density from the CONSERVED
 // state u0 instead of from w0.  w0 is the previous stage's ConToPrim output, and by the
@@ -797,9 +796,8 @@ inline bool rt_semi_lin = true;
 // which is how a cell is driven to a negative internal energy, repaired by the floor,
 // and handed to the next Riemann solve as a 0.1 K cell beside a 1e4 K one.  The
 // namespace value below is only the pre-pgen initialiser: every problem generator that
-// uses this header sets it from problem/rt_use_cons, and since 2026-09-22 the default
-// there is TRUE in box_convection and deep_hot_jupiter_rt, and the mode-3 flag in
-// red_giant.
+// uses this header sets it from problem/rt_use_cons, whose default is TRUE in
+// box_convection and deep_hot_jupiter_rt, and the mode-3 flag in red_giant.
 inline bool rt_use_cons = false;
 // problem/rt_test_mu0 and problem/ck_test_kgrey: TEST HOOKS for the well-posed checks
 // of the implicit correlated-k solve (tests_ck_implicit/wellposed).  rt_test_mu0 >= -1
@@ -813,8 +811,8 @@ inline Real ck_test_kgrey = 0.0;
 // problem/rt_bface: the emissivity-weighted far-endpoint Planck source (see BFace).
 // It is a red-giant fix -- it exists because the corona/star join put a cell's emission
 // on a neighbour's Planck function 1e9 times its own -- and this header is shared with
-// solar_convection and the hot-Jupiter problems, which have no such join.  DEFAULT FALSE
-// therefore returns the old endpoint b_far bit for bit at every one of the seven call
+// the hot-Jupiter problems, which have no such join.  DEFAULT FALSE
+// therefore returns the plain endpoint b_far bit for bit at every one of the seven call
 // sites; the red-giant inputs set it true.
 inline bool rt_bface = false;
 // how many cells the Newton loop had to be rescued from a non-positive internal energy
@@ -844,7 +842,7 @@ inline bool rt_newton = false;
 // with A = src + Em the absorption, which in the thin limit is (pi/mu) kappa rho
 // (I_up + I_dn) so that sigma T_eq^4 = pi (I_up + I_dn)/2 up to the diffusivity factor --
 // instead of the unconditional 99.9 % drop.  Floored at that same 99.9 %, so it can only
-// make the rescue less violent.  DEFAULT FALSE = the old 99.9 % policy, so shared pgens
+// make the rescue less violent.  DEFAULT FALSE = the 99.9 % policy, so shared pgens
 // are unchanged; the red-giant inputs set it true.
 inline bool rt_rescue_eq = false;
 // problem/rt_relax_sub: SUB-CYCLE the local relaxation of the two-stream source.  The
@@ -882,8 +880,8 @@ inline bool rt_rescue_eq = false;
 // quadrature.  It goes to 1 as dtau -> infinity, which sends the relaxation rate to zero
 // and the step to the EXACT explicit one, de = src*bdt -- conservative, and stable
 // because a thick cell's net imbalance relaxes on the diffusion time, not the thermal
-// one -- and to 0 as dtau -> 0, where the old stiff relaxation is what is wanted and is
-// recovered bitwise.  rt_ali_diag = false restores the old behaviour exactly.
+// one -- and to 0 as dtau -> 0, where the stiff relaxation is what is wanted and is
+// recovered bitwise.  rt_ali_diag = false restores the plain behaviour exactly.
 inline bool rt_ali_diag = true;
 inline int rt_relax_sub = 1;
 // problem/rt_relax_xcrit: the per-sub-step stiffness the sub-cycle aims for.  nsub is
@@ -917,11 +915,9 @@ inline bool rt_src_direct = false;
 inline bool rt_top_clamp = false;
 // problem/rt_semi_implicit: apply the split two-stream source semi-implicitly, relaxing
 // the cell toward radiative equilibrium instead of stepping explicitly (see the apply
-// kernel).  Default true, which is the behaviour since 048dff30.  The flag exists
-// because the semi-implicit step is NOT answer-preserving in general: on the cubed
-// sphere deep_hot_jupiter 09-07 configuration it moves the kinetic energy by 3 % in 20
-// cycles (A/B 2026-09-09).  Runs that must reproduce pre-048dff30 results set it false,
-// which restores the plain explicit de = src*bdt.
+// kernel).  Default true; false takes the plain explicit step de = src*bdt (the two
+// differ: on the cubed-sphere deep hot Jupiter the kinetic energy moves by 3 % in 20
+// cycles).
 inline bool rt_semi_implicit = true;
 // problem/rt_outer_verbose: print the per-cycle clip/rescue census and the mode-3
 // convergence lines even without problem/rt_cell_report.
@@ -941,7 +937,7 @@ inline int rt_impl_maxit = 5;
 // two_stream_column_implicit.hpp, step 4a'.  Off = bitwise the frozen handover.
 // Read ONLY at the c3.ex_iter assignment below, inside the rt_implicit_column = 3
 // branch, so it is inert in every other mode.  problem/rt_col3_ex_iter defaults TRUE in
-// box_convection and red_giant since 2026-09-22; deep_hot_jupiter_rt never reads it
+// box_convection and red_giant; deep_hot_jupiter_rt never reads it
 // (it refuses rt_implicit_column != 0 outright).
 inline bool rt_col3_ex_iter = false;
 // problem/rt_col3_skip_sweep: under rt_implicit_column = 3 with the tau blend weight w
@@ -965,7 +961,7 @@ inline bool rt_col3_skip_sweep = false;
 // there is no excuse for lagging it: off, the missing term makes the whole Newton a
 // PICARD iteration wherever w is neither 0 nor 1, and the measured convergence is linear
 // at ~0.4 per pass (13-16 passes to 1e-12, bench/bstar_fecz/m3tol).  On, the block rows
-// are the exact derivative.  Off = the old lagged assembly, bitwise.
+// are the exact derivative.  Off = the lagged assembly, bitwise.
 //
 // MEASURED, bench/bstar_fecz/m3acc/sweep, the relaxed 15 Msun B-star column at cycle 0,
 // passes taken to reach a given residual (norm 0, no step-size stop, maxit 30):
@@ -1004,7 +1000,7 @@ inline bool rt_impl_rescheck = false;
 // evaluation and two small matrix-vector products instead of the whole assembly,
 // factorisation and reduced elimination.  1 = reuse with a contraction check (the pass
 // refactorises when the residual failed to fall by a factor 0.3), 2 = reuse always
-// (diagnostic).  0 (the default) is the old code, bitwise.  The converged answer is the
+// (diagnostic).  0 (the default) refactorises every pass.  The converged answer is the
 // same root of the same residual to the same tolerance; only the iterates between the
 // first and the last differ, at O(the frozen de/db).  The
 // PARTITIONED path (rt_impl_solver = pcr) only; thomas is refused.
@@ -1072,7 +1068,7 @@ inline bool rt_impl_redpar = false;
 // system has mixed block sizes.  See two_stream_column_partition.hpp.
 inline Real rt_col3_hybrid_tau = 0.0;
 // problem/rt_impl_warm: WARM-START the mode-3 Newton from the previous call's converged
-// Planck function instead of from the entry state's.  0 = off (bitwise the old code),
+// Planck function instead of from the entry state's.  0 = off (the entry state),
 // 1 = the previous converged b per cell, 2 = linear extrapolation in time from the last
 // two.  Only the ITERATE moves; the residual, the Jacobian, the tolerance and the entry
 // state are untouched, so the converged root is the same one and the answer is equal to
@@ -1110,19 +1106,20 @@ inline bool rt_int_at_cut = true;
 // from <hydro>/rad_flux_inner under <problem>/rt_bottom_flux, and zeroes rad_flux_inner
 // at the same time so the flux is not also injected at the conduction wall face.
 inline Real rt_bot_flux = 0.0;
-// problem/rt_layer_legacy: the STAGGERED layer the grey and correlated-k sweeps used.
+// problem/rt_layer_legacy: true = the STAGGERED whole-cell layer of the grey and
+// correlated-k sweeps; false (DEFAULT) = the centre-to-centre layer described below.
 //
-// Every layer was integrated over a WHOLE cell in optical depth, dtau = kappa rho dz of
-// cell i, but with its source running linearly in tau from that cell's CENTRE Planck
-// function to the NEIGHBOUR CELL'S CENTRE one.  The interval the optical depth measures
-// and the interval the source runs over are then offset by half a cell, and the two
-// endpoints of the source are two cells apart while the layer is one cell thick.  The
-// error is O(dtau^2) and smooth, but it is not small where it matters: MEASURED against
-// an accurate formal solution on the He-star column, the emergent flux came out ~4 % low
-// at dtau/cell of 1-3 and wandered between 0.73 and 1.06 of the true flux at dtau/cell
-// 3-6, which is exactly the handover ramp of the He and B-star boxes.
+// The staggered layer is integrated over a WHOLE cell in optical depth, dtau = kappa rho
+// dz of cell i, but with its source running linearly in tau from that cell's CENTRE
+// Planck function to the NEIGHBOUR CELL'S CENTRE one.  The interval the optical depth
+// measures and the interval the source runs over are then offset by half a cell, and the
+// two endpoints of the source are two cells apart while the layer is one cell thick.  The
+// error is O(dtau^2) and smooth, but it is not small where it matters: against an
+// accurate formal solution on the He-star column the emergent flux comes out ~4 % low at
+// dtau/cell of 1-3 and wanders between 0.73 and 1.06 of the true flux at dtau/cell 3-6,
+// which is exactly the handover ramp of the He and B-star boxes.
 //
-// THE FIX.  The layers now run between cell CENTRES: layer (i, i+1) has
+// The centre-to-centre layers run between cell CENTRES: layer (i, i+1) has
 //     dtau = 0.5 (kappa rho dz)_i + 0.5 (kappa rho dz)_{i+1},
 // each half with its OWN opacity, and a source linear in tau between B_i and B_{i+1} --
 // which is exact for that layer, since the source really is (piecewise) linear there.
@@ -1140,22 +1137,20 @@ inline Real rt_bot_flux = 0.0;
 // two halves.  Em_g, the relaxation rate, becomes the cell's own 4 sigma kappa rho T^4
 // instead of the centre-to-centre average of two Planck functions.
 //
-// Default false, i.e. THE FIX IS ON.  Set true to reproduce a pre-fix run bitwise.
 inline bool rt_layer_legacy = false;
-// problem/ck_spherical: give the CORRELATED-K thermal two-stream the SPHERICAL form of
-// 8bca3dfa, the one the grey centre-to-centre sweep and the mode-3 column solve already
-// carry.  Since 2026-09-22 problem/ck_spherical DEFAULTS TRUE on a spherical-polar or
+// problem/ck_spherical: give the CORRELATED-K thermal two-stream the SPHERICAL form
+// the grey centre-to-centre sweep and the mode-3 column solve carry.  problem/
+// ck_spherical DEFAULTS TRUE on a spherical-polar or
 // cubed-sphere mesh (and only under rt_ck && !rt_layer_legacy, the two things the guard
 // below requires) and is REFUSED on a Cartesian one; false is bitwise the
 // plane-parallel arithmetic the ck kernel used to run.
 //
-// WHY IT IS NEEDED NOW.  8bca3dfa converted the grey path and documented the ck kernel
-// as "not converted", justified by r_out/r_in < 1.3 hot-Jupiter domains.  The deep
-// hot-Jupiter production grid spans x1 = 9.44e9 .. 2.0556e10 cm, r_out/r_in = 2.18 and
-// an AREA RATIO of 4.75, so on that grid the unconverted kernel (a) does not dilute the
-// thermal flux, i.e. L = A F grows like r^2 through a transparent shell, and (b) misses
-// the -2F/r term of the deposit, so the thin upper atmosphere is irradiated from below
-// by an undiluted thermal flux.
+// WHY IT IS NEEDED.  The plane-parallel form is adequate for r_out/r_in < 1.3 only.
+// The deep hot-Jupiter production grid spans x1 = 9.44e9 .. 2.0556e10 cm, r_out/r_in =
+// 2.18 and an AREA RATIO of 4.75, so on that grid the unconverted kernel (a) does not
+// dilute the thermal flux, i.e. L = A F grows like r^2 through a transparent shell, and
+// (b) misses the -2F/r term of the deposit, so the thin upper atmosphere is irradiated
+// from below by an undiluted thermal flux.
 //
 // THE FORM.  Exactly the one derived on RTCol3::Bt in two_stream_column_implicit.hpp and
 // reused by the grey sweep: inside a cell the frame area A_i = V_i/dx_i is constant and
@@ -1194,17 +1189,15 @@ inline bool rt_layer_legacy = false;
 // watt it intercepts.  It must not.  That made every dayside column absorb the power
 // crossing the DOMAIN TOP, i.e. the planet absorbed pi r_top^2 F_star instead of
 // pi r_abs^2 F_star with r_abs the radius where the slant optical depth reaches 1 --
-// an over-heating by (r_top/r_abs)^2, a factor ~3 on the production grid.  The claim in
-// tests_ck_sph/README.md that the plane-parallel form "under-heats the dayside by a
-// factor 2.6" was that error seen from the wrong side, and is retracted there.
+// an over-heating by (r_top/r_abs)^2, a factor ~3 on the production grid.
 //
 // NOT CONVERTED, and refused: rt_layer_legacy (the staggered whole-cell ck layers) and
 // the mode-1/2 nearest-neighbour Jacobian, which the ck path never fills anyway.
 inline bool ck_spherical = false;
-// problem/ck_beam_sph: the PSEUDO-SPHERICAL direct stellar beam.  Since 2026-09-22 it
-// follows the same rule as ck_spherical: DEFAULT TRUE on a spherical-polar or
-// cubed-sphere mesh (under rt_ck && !rt_layer_legacy), REFUSED on a Cartesian one.
-// False is bitwise the plane-parallel slant path the correlated-k kernel used to use.
+// problem/ck_beam_sph: the PSEUDO-SPHERICAL direct stellar beam.  It follows the same
+// rule as ck_spherical: DEFAULT TRUE on a spherical-polar or cubed-sphere mesh (under
+// rt_ck && !rt_layer_legacy), REFUSED on a Cartesian one.  False = the plane-parallel
+// slant path.
 // Independent of ck_spherical (that switch converts the THERMAL two-stream; this one the
 // BEAM), and the two compose.
 //
@@ -1242,7 +1235,7 @@ inline bool ck_spherical = false;
 // plane-parallel construction with no radial extent.
 //
 // THE DEPOSIT IS UNCHANGED IN FORM -- the local absorption rate, no column-power
-// bookkeeping (see the retraction on the beam in 2db7095c).  Written as a flux difference
+// bookkeeping.  Written as a flux difference
 // across the cell so that a thick layer does not under-deposit,
 //     Qb_i = (1-albedo) F_star w_b (kappa rho)_i [e^-tau(r_i) - e^-tau(r_{i+1})]
 //                                               / [tau(r_{i+1}) - tau(r_i)],
@@ -1263,7 +1256,7 @@ inline bool ck_spherical = false;
 // tau_ray(r_i) is not a running sum -- every target has its own chord set.  It is sized
 // to one element when the switch is off: the kernel is templated on the flag.
 inline bool ck_beam_sph = false;
-// problem/ck_beam_par (ck-fast2 lever 3): the pseudo-spherical beam of the tm sweep's
+// problem/ck_beam_par: the pseudo-spherical beam of the tm sweep's
 // STORING pass in its own kernels, a thread per target face instead of a thread per
 // column (the in-kernel block walks O(N^2) chords serially: measured 48 of the storing
 // kernel's 94 ms per call at nx1 256).  Same chords, same order, same deposit arithmetic;
@@ -1272,9 +1265,9 @@ inline bool ck_beam_sph = false;
 // deposits below e^-60 of the incident beam.  Needs ck_impl_lin, lin_thr = 1 (scratch).
 inline bool ck_beam_par = false;
 inline DvceArray4D<int> *ck_bstop_ptr = nullptr;   // (m, beam chain, k, j)
-// ck-next: ck_coef's per-cell inputs xT, xP, rho, dz as (m, q, i, k, j), j fastest
+// ck_coef's per-cell inputs xT, xP, rho, dz as (m, q, i, k, j), j fastest
 inline DvceArray5D<Real> *ck_cin_ptr = nullptr;
-// problem/ck_store_split (ck-store): on the storing pass of the linear re-apply, store the
+// problem/ck_store_split: on the storing pass of the linear re-apply, store the
 // opacity-only operator with a per-(band, g) kernel (ck_coef) and take the pass's fluxes
 // from the linear kernels, instead of running rt_chain_ck (see ckstsp_ in the pass).  The
 // operator is bitwise the chain kernel's; the storing pass's Src and Fb change by
@@ -1423,18 +1416,18 @@ inline int ck_sweep_cache = 2;
 // NOT CONVERTED, and refused at startup: ck_spherical = false (with no face coupling
 // there is nothing to solve and the plane-parallel sweep is already the exact two-pass
 // form), rt_layer_legacy, and ck_implicit with sd (2).  ck_implicit with tm (1) carries
-// its own tridiagonal, the JAC instantiation of the kernel (2026-09-22, phase T1 of
-// tests_ck_implicit/DESIGN_tm.md); ck_impl_frozen_op is instantiated for it (phase T2),
-// and ck_impl_lin re-applies its stored factorisation in a separate kernel (phase T3).
+// its own tridiagonal, the JAC instantiation of the kernel (tests_ck_implicit/
+// DESIGN_tm.md); ck_impl_frozen_op is instantiated for it, and ck_impl_lin re-applies
+// its stored factorisation in a separate kernel.
 //
-// THE DEFAULT.  Since 2026-09-22 deep_hot_jupiter_rt defaults this to 1 (tm) wherever it
-// can run, i.e. under ck_spherical, and to 0 in exactly the cases refused above, so that
-// no working input is turned into a startup fatal by the flip.  The reason is that the
+// THE DEFAULT.  deep_hot_jupiter_rt defaults this to 1 (tm) wherever it can run, i.e.
+// under ck_spherical, and to 0 in exactly the cases refused above, so that no working
+// input is turned into a startup fatal by the default.  The reason is that the
 // four-pass form's probe-lagged mixing constant is only O(beta^2) -- 2.3e-2 of the face
 // flux at the production area ratio 3.45 -- while tm and sd solve the coupled column
 // exactly (they agree to 3.5e-17), and tm is 1.36x faster on the GPU.  The value below
-// remains the flag's own zero-initialisation, i.e. the historical form: it is what any
-// other caller gets, and what the pgen falls back to.  See
+// is the flag's own zero-initialisation, the four-pass form: it is what any other
+// caller gets, and what the pgen falls back to.  See
 // tests_ck_sweep_form/README.md and README_default.md.
 inline int ck_sweep_form = 0;
 // problem/ck_sph_dilute (PROTOTYPE, default false = bitwise the face above): replace the
@@ -1451,10 +1444,10 @@ inline int ck_sweep_form = 0;
 // Face maps (tm): R <- 1 - rho (1 - R), Sc <- rho Sc, rho = A_b/A_a = (1-beta)/(1+beta);
 // solve: u_b = R d_a + Sc, d_b = d_a.  tm (ck_sweep_form = 1) only, explicit or
 // ck_implicit, NOT with ck_impl_lin / ck_impl_jac_lin (their stored-factorisation kernels
-// carry the old face).  tests_ck_sph/closure_0930 (cksph_test_0930).
+// carry the plain face).  See tests_ck_sph/closure_0930.
 inline bool ck_sph_dilute = false;
 // problem/ck_sph_face (default 6 on a fresh spherical ck run whose keys allow it, else 0
-// = bitwise the Eddington face above; f6-default 10-02, see the pgen): the face
+// = bitwise the Eddington face above; see the pgen): the face
 // condition of the tm spherical ck two-stream, one of a one-parameter family that keeps
 // A (u - d) single-valued (so the deposit still telescopes):
 //     e (u_a - u_b) + (d_a - d_b) = 0,   A_a (u_a - d_a) = A_b (u_b - d_b),
@@ -1480,7 +1473,7 @@ inline bool ck_sph_dilute = false;
 // General maps (rho = A_b/A_a, Dc = 1 + e R + e rho (1 - R), al = (1 + e)/Dc,
 // be = e (1 - rho)/Dc):  R <- 1 - rho (1 - R) al,  Sc <- rho al Sc;  solve
 // d_b = al d_a - be Sc_b, u_b = R d_b + Sc_b.  tm (ck_sweep_form = 1) only, explicit or
-// ck_implicit; refused with ck_impl_lin / ck_impl_jac_lin.  cksph_test_0930/VARIANTS.md.
+// ck_implicit; refused with ck_impl_lin / ck_impl_jac_lin.
 inline int ck_sph_face = 0;
 // problem/ck_sph_top (default 1 with ck_sph_face = 6, else 0 = bitwise the historical
 // datum): the down
@@ -1491,13 +1484,13 @@ inline int ck_sph_face = 0;
 // depth still from the ghost pressure).  The stellar beam is unchanged.  Chain kernel
 // only; refused with ck_impl_lin / ck_impl_jac_lin.
 inline int ck_sph_top = 0;
-// problem/ck_wall_flux_exact (wallfix-1002; default true on a fresh run, false on a
+// problem/ck_wall_flux_exact (default true on a fresh run, false on a
 // restart whose input lacks the key): the internal flux of the ck_sph_face = 5 / 6 wall.
 // The Marshak-type wall J + beta H = (B_cut + I_int)(1/2 + beta/4) with the pair at
 // mu = mu_eff = sqrt f gives u = R0 d + (B_cut + I_int)(1 + beta/2)/(1 + beta mu), so
 // the I_int part of the net flux 2 pi mu (u - d) is 2 pi mu (1 + beta/2)/(1 + beta mu)
 // I_int: 4 pi/(2 + sqrt 3) I_int = 1.0718 sigma T_int^4 for the deep field (beta = 2,
-// f = 1/3), against pi I_int = sigma T_int^4 at face 0 (f6default_1002 part B: measured
+// f = 1/3), against pi I_int = sigma T_int^4 at face 0 (measured
 // Etot_bot face 5/6 over face 0 1.07166).  On, I_int in the wall source is scaled by
 //   face 5 (chain kernel, rt_chain_ck_lin1p):  c = (1 + beta mu)/(2 mu (1 + beta/2)),
 //     exact for the actual beta and mu of the wall when nothing comes back from above
@@ -1543,37 +1536,13 @@ inline bool ck_wall_flux_exact = false;
 // With ck_impl_lin (production path) face 5 needs ck_impl_lin_thr = 1 and ck_nquad = 2
 // (ck_coef then stores the triple at mu_eff for a frozen chain kernel that reads it).
 inline int ck_vef_every = 1;
-inline int ck_vef_ncore = 8;          // rays through the bottom wall (p < r_cut)
+constexpr int ck_vef_ncore = 8;       // rays through the bottom wall (p < r_cut)
 inline bool ck_vef_sync = true;
-// problem/ck_vef_report = N > 0 (diagnostic, print only): at every VEF refresh (after
-// the first) rank 0 prints, per pressure decade, the range of f = s^2/3 and of the face
-// factor gamma over all (band, g, cell), the largest relative change of s and gamma
-// against the factors being replaced (the lag of ck_vef_every), and the number of faces
-// whose x = gamma rho' (see the kernel) is outside [1/1.1, 1.1].  Nothing reads it.
-inline int ck_vef_report = 0;
-// problem/ck_f6_report = N > 0 (diagnostic, print only, read only when named): after
-// every ck_sph_face = 6 build rank 0 prints the number of ladder elements (g_s, g_p,
-// K_eq/B, R_c over all cells and (band, g)), how many are negative or not finite, and
-// the smallest ratio row excess / diagonal of the node rows in K (the shunt g_p over
-// g_p + the node's two series conductances; > 0: strictly diagonally dominant).
-inline int ck_f6_report = 0;
-// problem/ck_vef_xlim = X > 1 (default 0 = off, bitwise): limit the VEF face factor
-// x = gamma rho' of every interior face to [1/X, X] (gamma = (Phi f)_a/(Phi f)_b,
-// rho' = (A_b/A_a) s_b/s_a).  The face map of ck_sph_face = 5 has the reflections
-// (1 - x)/(1 + x) and (x - 1)/(1 + x): one of them is NEGATIVE whenever x != 1, and a
-// strong f contrast between two cells makes the frozen operator non-monotone (a cell's
-// net heating can grow with its own temperature).  On the WASP-121b 10x fresh start the
-// factors reach f ~ 0.1 and x = 0.5..1.6 at 1e-5..1e-3 bar within 150 cycles, the
-// runaway spreads down and the hydro dt collapses (ckf5_stab_1001/RESULTS.md).
-// Limiting x bounds the negative reflection by (X - 1)/(X + 1); it changes gamma only
-// where f jumps by a factor ~X^2 between neighbouring cells.  rho' (the flux
-// continuity) is untouched, so the deposit still telescopes.
-inline Real ck_vef_xlim = 0.0;
-// problem/ck_sph_face = 6 (the DEFAULT since f6-default 10-02): the VEF closure of face
+// problem/ck_sph_face = 6 (the DEFAULT): the VEF closure of face
 // 5 (same formal solution,
 // same f, h, beta, same ck_vef_every refresh) discretised as a PASSIVE LADDER NETWORK in
-// K = Phi f J (Phi = q r^2), so that it is monotone by construction and needs no limiter
-// (ckf6_mono_1001/RESULTS.md).  The moment equations
+// K = Phi f J (Phi = q r^2), so that it is monotone by construction and needs no limiter.
+// The moment equations
 //     dK/dr = -kappa rho (Phi/r^2) G,   dG/dr = kappa rho r^2 (B - J),   G = r^2 H,
 // are solved EXACTLY inside each cell for constant coefficients and the cell's own B
 // (the face-5 two-stream at mu_eff = sqrt f is this solution): with
@@ -1587,7 +1556,7 @@ inline Real ck_vef_xlim = 0.0;
 // exchange Delta K/(Z_a + Z_b) instead of the diffusion flux) with a LINEAR source inside
 // the cell, B at the faces interpolated from the neighbours: that makes a cell's
 // emission depend on its neighbours' temperatures and the operator non-monotone (the
-// 10x blow-up, ckf5_stab_1001).  Face 6 keeps the emission cell-local and closes the
+// 10x blow-up).  Face 6 keeps the emission cell-local and closes the
 // staircase with a CONTACT resistance at every interior face,
 //     R_c = w(Lam_b) Z_a phc(Lam_a) + w(Lam_a) Z_b phc(Lam_b),
 //     phc(Lam) = Lam/2 - tanh(Lam/2),   w(Lam) = Lam^2/(1 + Lam^2),
@@ -1659,87 +1628,6 @@ KOKKOS_INLINE_FUNCTION
 Real CkF6Rc(const CkF6Cell &a, const CkF6Cell &b) {
   const Real la2 = a.lam*a.lam, lb2 = b.lam*b.lam;
   return lb2/(1.0 + lb2)*a.z*a.phc + la2/(1.0 + la2)*b.z*b.phc;
-}
-template <typename XF>
-inline void CkVefReport(Mesh *pm, const DvceArray5D<Real> &vs,
-                        const DvceArray5D<Real> &vg,
-                        const DvceArray5D<Real> &vso, const DvceArray5D<Real> &vgo,
-                        const DvceArray4D<Real> &pb, const DvceArray3D<int> &icc,
-                        const XF &X1F,
-                        const int nmb1, const int nc, const int ks, const int ke,
-                        const int js, const int je, const int ie) {
-  constexpr int NBIN = 12;   // decades 1e-9 .. 1e3 bar
-  constexpr int NQ = 9;      // fmin fmax gmin gmax dsmax dgmax nout xmin xmax
-  DvceArray1D<Real> acc("ck_vef_rep", NBIN*NQ);
-  auto acc_ = acc;
-  Kokkos::parallel_for("ck_vef_rep_init", Kokkos::RangePolicy<DevExeSpace>(0, NBIN),
-  KOKKOS_LAMBDA(const int b) {
-    acc_(b*NQ+0) = 1.0e30; acc_(b*NQ+1) = -1.0e30;
-    acc_(b*NQ+2) = 1.0e30; acc_(b*NQ+3) = -1.0e30;
-    acc_(b*NQ+4) = 0.0; acc_(b*NQ+5) = 0.0; acc_(b*NQ+6) = 0.0;
-    acc_(b*NQ+7) = 1.0e30; acc_(b*NQ+8) = -1.0e30;
-  });
-  par_for("ck_vef_rep", DevExeSpace(), 0, nmb1, 0, nc - 1, ks, ke, js, je,
-  KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
-    const int icut = icc(m,k,j);
-    for (int i=icut; i<=ie; ++i) {
-      const Real p = pb(m,k,j,i);
-      int b = static_cast<int>(floor(log10(fmax(p, 1.0e-30)))) + 9;
-      b = (b < 0) ? 0 : ((b >= NBIN) ? NBIN - 1 : b);
-      const Real s = vs(m,c,i+1,k,j);
-      const Real f = s*s/3.0;
-      const Real g = vg(m,c,i,k,j);
-      Kokkos::atomic_min(&acc_(b*NQ+0), f);
-      Kokkos::atomic_max(&acc_(b*NQ+1), f);
-      Kokkos::atomic_min(&acc_(b*NQ+2), g);
-      Kokkos::atomic_max(&acc_(b*NQ+3), g);
-      const Real so = vso(m,c,i+1,k,j), go = vgo(m,c,i,k,j);
-      if (so > 0.0) Kokkos::atomic_max(&acc_(b*NQ+4), fabs(s/so - 1.0));
-      if (go > 0.0) Kokkos::atomic_max(&acc_(b*NQ+5), fabs(g/go - 1.0));
-      // x = gamma rho' of the face below cell i (rho' = (A_b/A_a) s_b/s_a, A = the
-      // frame area r_node^2): the face reflections are (1 - x)/(1 + x) and
-      // (x - 1)/(1 + x), both >= 0 only at x = 1
-      if (i > icut) {
-        const Real rm = X1F(m,i-1), r0 = X1F(m,i), rp = X1F(m,i+1);
-        const Real ab = rm*rm + rm*r0 + r0*r0, aa = r0*r0 + r0*rp + rp*rp;
-        const Real x = g*(ab/aa)*vs(m,c,i,k,j)/s;
-        Kokkos::atomic_min(&acc_(b*NQ+7), x);
-        Kokkos::atomic_max(&acc_(b*NQ+8), x);
-        if (x > 1.1 || x < 1.0/1.1) Kokkos::atomic_add(&acc_(b*NQ+6), 1.0);
-      }
-    }
-  });
-  auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), acc);
-  Real v[NBIN*NQ], r[NBIN*NQ];
-  for (int q=0; q<NBIN*NQ; ++q) v[q] = h(q);
-#if MPI_PARALLEL_ENABLED
-  for (int b=0; b<NBIN; ++b) {
-    v[b*NQ+0] = -v[b*NQ+0]; v[b*NQ+2] = -v[b*NQ+2]; v[b*NQ+7] = -v[b*NQ+7];
-  }
-  Real cnt[NBIN];
-  for (int b=0; b<NBIN; ++b) {
-    cnt[b] = v[b*NQ+6]; v[b*NQ+6] = 0.0;
-  }
-  MPI_Reduce(v, r, NBIN*NQ, MPI_ATHENA_REAL, MPI_MAX, 0, MPI_COMM_WORLD);
-  Real cr[NBIN];
-  MPI_Reduce(cnt, cr, NBIN, MPI_ATHENA_REAL, MPI_SUM, 0, MPI_COMM_WORLD);
-  for (int b=0; b<NBIN; ++b) {
-    r[b*NQ+0] = -r[b*NQ+0]; r[b*NQ+2] = -r[b*NQ+2]; r[b*NQ+6] = cr[b];
-    r[b*NQ+7] = -r[b*NQ+7];
-  }
-#else
-  for (int q=0; q<NBIN*NQ; ++q) r[q] = v[q];
-#endif
-  if (global_variable::my_rank == 0) {
-    for (int b=0; b<NBIN; ++b) {
-      if (r[b*NQ+1] < 0.0) continue;
-      std::printf("### vefrep ncycle=%d p=1e%+d f=[%.4e,%.4e] gam=[%.4e,%.4e] "
-                  "dsmax=%.3e dgmax=%.3e x=[%.4e,%.4e] nx10=%.0f\n",
-                  static_cast<int>(pm->ncycle),
-                  b - 9, r[b*NQ+0], r[b*NQ+1], r[b*NQ+2], r[b*NQ+3], r[b*NQ+4],
-                  r[b*NQ+5], r[b*NQ+7], r[b*NQ+8], r[b*NQ+6]);
-    }
-  }
 }
 inline bool CkVefDue(Mesh *pm, const bool ckfop, const bool ckfst) {
   const bool stp = !ck_vef_sync || !ckfop || ckfst;    // a pass that may refresh
@@ -1866,7 +1754,7 @@ Real RTForceTauGate(const Real tau, const Real lg_lo, const Real lg_hi) {
 //! \brief the optical depth of the unresolved hydrostatic column above the domain,
 //! kappa p / g_eff, with the g_eff = 0 case resolved.
 //!
-//! g_eff > 0 returns the old expression BIT FOR BIT.  Where the effective gravity is
+//! g_eff > 0 returns the plain expression BIT FOR BIT.  Where the effective gravity is
 //! zero (a plane-parallel run that never set one) the old form was kappa*p/0, which is
 //! +inf for an opaque ghost -- an opaque lid, harmless -- but 0/0 = NaN as soon as the
 //! ghost's opacity is zero, which is exactly what the density gate makes it above the
@@ -1874,7 +1762,7 @@ Real RTForceTauGate(const Real tau, const Real lg_lo, const Real lg_hi) {
 KOKKOS_INLINE_FUNCTION
 Real RTTopDtau(const Real kap, const Real pcgs, const Real geff) {
   const Real kp = kap*pcgs;
-  if (geff > 0.0) return kp/geff;           // the old expression, unchanged
+  if (geff > 0.0) return kp/geff;           // the plain expression, unchanged
   return (kp > 0.0) ? 1.0e30 : 0.0;
 }
 
@@ -1885,9 +1773,8 @@ Real RTTopDtau(const Real kap, const Real pcgs, const Real geff) {
 //!
 //! This is called from inside the pass (picket_fence_two_stream_RT_pass), whose number
 //! of calls is RANK-LOCAL under ck_implicit (the Newton loop stops per rank), so it must
-//! not hold a collective: it only accumulates.  The count used to be printed from here
-//! on rank 0 with rank 0's share alone, so a run whose clipping sat on other ranks
-//! showed a clean log.
+//! not hold a collective: it only accumulates (a count printed from here on rank 0
+//! would show rank 0's share alone).
 inline void RTSourceLimiterWarn(const int nclip) {
   if (rt_srclim_warned || nclip <= 0) return;
   rt_srclim_acc += nclip;
@@ -1983,7 +1870,7 @@ inline void RTSourceLimiterReduce() {
 //! RT call and the corona then accreted onto the cold sink.
 //!
 //! WHAT IT DOES.  It is SURGICAL: while the far cell's emissivity kappa*rho is within a
-//! factor RT_BFACE_R of this layer's, the old endpoint B_far is returned unchanged, so
+//! factor RT_BFACE_R of this layer's, the plain endpoint B_far is returned unchanged, so
 //! every column whose opacity varies smoothly is BIT-IDENTICAL to the pre-fix code
 //! (measured on the V7 grey column: all 39 active faces identical).  Below that ratio the
 //! endpoint is blended into the emissivity-weighted face source
@@ -1997,7 +1884,7 @@ Real BFace(const Real k_own, const Real k_far, const Real b_own, const Real b_fa
            const bool on) {
   if (!on) return b_far;                  // problem/rt_bface off: the pre-fix endpoint
   const Real kt = RT_BFACE_R*k_own;
-  if (k_far >= kt) return b_far;          // the old expression, bit for bit
+  if (k_far >= kt) return b_far;          // the plain expression, bit for bit
   if (!(k_own > 0.0)) return b_far;       // this layer does not emit at all
   if (!(k_far > 0.0)) return b_own;       // the far cell is radiatively inert
   const Real w = k_far/kt;                // 1 at the threshold, 0 at k_far = 0
@@ -2023,7 +1910,7 @@ Real BFaceW(const Real k_own, const Real k_far, const bool on) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void CkCinCout
-//! \brief ck-next: the half-layer pair (cin, cout) that ck_coef and the chain kernel's
+//! \brief the half-layer pair (cin, cout) that ck_coef and the chain kernel's
 //! cofs store in ck_ci / ck_co, formed again from the stored e0 and kappa rho, the
 //! cell's dz and the chain's mu -- the same expressions on the same numbers, so the
 //! stored values bitwise.  The linear kernels read two Reals per (cell, chain) less.
@@ -2040,7 +1927,7 @@ void CkCinCout(const Real kro, const Real dz, const Real mu, const Real e0r, Rea
   co = static_cast<Real>(cout);
 }
 //! \fn Real CkIdn
-//! \brief ck-next: lP slot 1, 1/(1 + R beta), from slot 0 and beta by ck_lin_build's
+//! \brief lP slot 1, 1/(1 + R beta), from slot 0 and beta by ck_lin_build's
 //! expression (bitwise the stored value)
 KOKKOS_INLINE_FUNCTION
 Real CkIdn(const Real rj, const Real bt) {
@@ -2048,7 +1935,7 @@ Real CkIdn(const Real rj, const Real bt) {
   return 1.0/static_cast<Real>(dn);
 }
 //! \fn Real CkEmW
-//! \brief ck-next: the emission weight lP slot 5 held, 2 (wfc/mu) kappa rho, from
+//! \brief the emission weight lP slot 5 held, 2 (wfc/mu) kappa rho, from
 //! 2 (wfc/mu) (lC row 2, stored by ck_lin_build) as a lone rounded product (CkMulRn):
 //! the stored value
 KOKKOS_INLINE_FUNCTION
@@ -2056,7 +1943,7 @@ Real CkEmW(const Real emw, const Real kro) {
   return CkMulRn(emw, kro);
 }
 //! \fn Real CkE0
-//! \brief ck-lin2: the half-layer e0 = 1 - e^{-dtau/mu}, dtau = 0.5 kappa rho dz, as
+//! \brief the half-layer e0 = 1 - e^{-dtau/mu}, dtau = 0.5 kappa rho dz, as
 //! ck_coef stores it in ck_c0 (ck_coef forms it by this function): the linear kernels
 //! form it from kappa rho and dz instead of reading ck_c0
 KOKKOS_INLINE_FUNCTION
@@ -2066,7 +1953,7 @@ Real CkE0(const Real kro, const Real dz, const Real mu) {
   return static_cast<Real>(-RT_EXPM1(-x));
 }
 //! \fn void CkLayW
-//! \brief ck-lin2: lP slots 2-4 of the layer joining cells i and i+1 -- dslv/dB_i,
+//! \brief lP slots 2-4 of the layer joining cells i and i+1 -- dslv/dB_i,
 //! dsuu/dB_{i+1} and the face interpolation dt_l/dtc -- from the two cells' kappa rho and
 //! dz by ck_lin_build's expressions (ck_lin_build forms them by this function): the
 //! linear kernels form them instead of reading lP
@@ -2077,7 +1964,7 @@ void CkLayW(const Real kro, const Real kru, const Real dz, const Real dzu, const
   wu = BFaceW(kro, kru, bf);
   const Real dt_l = 0.5*kro*dz;
 #if defined(__CUDA_ARCH__)
-  // ck-lin2-fma: nvcc contracts the sum as fma(0.5 kru, dzu, dt_l) in ck_lin_build,
+  // nvcc contracts the sum as fma(0.5 kru, dzu, dt_l) in ck_lin_build,
   // which stored these weights before; in the kernels that now form them it chose
   // otherwise.  The rounding is spelled out, so every kernel forms the numbers the
   // stored ones were (GPU-bitwise).  Host builds do not contract (a*b + c as written).
@@ -2265,7 +2152,7 @@ void get_Tint(const Real &Teq, Real &Tint) {
   return;
 }
 
-// defined in utils/two_stream_rt_pass.cpp (tusplit-1102)
+// defined in utils/two_stream_rt_pass.cpp
 void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt);
 
 //----------------------------------------------------------------------------------------
@@ -2291,12 +2178,12 @@ void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt);
 //! block's emission Em in the cell it comes from (block 0 where Em = 0).  Only the
 //! REPORTED face fluxes rt_Fb change (Src_g, Em_g and ck_src keep the sweep's values):
 //! no pass, no later call and no state reads rt_Fb before the next sweep rewrites it,
-//! so the solution is bitwise the old one (gate: dhj-ck-conserve 09-29).  Counted
+//! so the solution is bitwise unchanged.  Counted
 //! (problem/ck_impl_verbose, "cons=" / "consde=" on the ck_implicit line): the cells
 //! corrected in the last call and their sum r V [erg], this rank.
 
 void CkConserveFlux(Mesh *pm, const Real bdt);
-// (defined in utils/two_stream_rt_driver.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_driver.cpp)
 
 //----------------------------------------------------------------------------------------
 //! \fn CkNonconvLoc
@@ -2308,7 +2195,7 @@ void CkConserveFlux(Mesh *pm, const Real bdt);
 //! only; nothing is written.
 
 void CkNonconvLoc(Mesh *pm, const Real bdt);
-// (defined in utils/two_stream_rt_driver.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_driver.cpp)
 
 //----------------------------------------------------------------------------------------
 //! \fn CkNcRefSnap / CkNcRefCmp
@@ -2316,29 +2203,29 @@ void CkNonconvLoc(Mesh *pm, const Real bdt);
 //! after pass N, and at the end of the call compare it with the final one.  Print only.
 
 void CkNcRefSnap(Mesh *pm);
-// (defined in utils/two_stream_rt_driver.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_driver.cpp)
 
 void CkNcRefCmp(Mesh *pm, const int nsnap, const int npass, const bool conv);
-// (defined in utils/two_stream_rt_driver.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_driver.cpp)
 
 //----------------------------------------------------------------------------------------
 //! \fn picket_fence_two_stream_RT
 //! \brief the two-stream source step.
 
 void picket_fence_two_stream_RT_body(Mesh *pm, Real bdt);
-// (defined in utils/two_stream_rt_driver.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_driver.cpp)
 
 //----------------------------------------------------------------------------------------
 //! \fn void picket_fence_two_stream_RT
 //! \brief the outer radiative call: the body above, then the rank-uniform once-per-call
 //! point where the source-limiter clip count is reduced (see RTSourceLimiterReduce).
 void picket_fence_two_stream_RT(Mesh *pm, Real bdt);
-// (defined in utils/two_stream_rt_driver.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_driver.cpp)
 
 
 //----------------------------------------------------------------------------------------
 //! \struct TsrtX1F, TsrtEiN, TsrtRhoN, TsrtAFC, TsrtACC, TsrtBTF, TsrtMIXF
-//! \brief tusplit-1102: the seven helpers of picket_fence_two_stream_RT_pass that ride
+//! \brief the seven helpers of picket_fence_two_stream_RT_pass that ride
 //! in the ctx tuples of TsrtCkChain / TsrtGreyRt (X1F, eiN, rhoN, AFC, ACC, BTF, MIXF).
 //! They were KOKKOS_LAMBDAs local to the pass; as named functors (the same bodies, the
 //! same by-value captures as members, auto return type as the lambda's) the tuple types
@@ -2432,7 +2319,7 @@ struct TsrtMIXF {
 //----------------------------------------------------------------------------------------
 //! \fn TsrtCkChain, TsrtGreyRt
 //! \brief the correlated-k chain and grey column launches of
-//! picket_fence_two_stream_RT_pass (DECLARATIONS).  tusplit-1102: the bodies live in
+//! picket_fence_two_stream_RT_pass (DECLARATIONS).  The bodies live in
 //! utils/two_stream_rt_chain.hpp and are explicitly instantiated, for the tag sets the
 //! pass dispatches, in utils/two_stream_rt_chain_*.cpp; the pass itself is
 //! utils/two_stream_rt_pass.cpp.  TsrtCkChainCtx / TsrtGreyRtCtx are the types of the
@@ -2535,7 +2422,7 @@ inline CkCadState CkCadMakeState(Mesh *pm) {
 //! sum dx |Q_new| over the refreshed cells: the linear model's error at the refresh.
 
 void CkCadStore(Mesh *pm, const Real dt, const bool partial, const bool diag);
-// (defined in utils/two_stream_rt_driver.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_driver.cpp)
 
 //----------------------------------------------------------------------------------------
 //! \fn int CkCadLin
@@ -2550,7 +2437,7 @@ void CkCadStore(Mesh *pm, const Real dt, const bool partial, const bool diag);
 //! 4 max deviation, 5 sum dx |Q0| dt.  Returns the columns flagged on this rank.
 
 int CkCadLin(Mesh *pm, const Real dt, const bool diag);
-// (defined in utils/two_stream_rt_driver.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_driver.cpp)
 
 //----------------------------------------------------------------------------------------
 //! \fn void CkCadStep
@@ -2560,7 +2447,7 @@ int CkCadLin(Mesh *pm, const Real dt, const bool diag);
 //! linearised step otherwise, with a full call for the columns the guard flags.
 
 void CkCadStep(Mesh *pm, const Real dt);
-// (defined in utils/two_stream_rt_driver.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_driver.cpp)
 
 }  // namespace two_stream_rt
 

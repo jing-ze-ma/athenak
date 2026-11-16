@@ -71,21 +71,15 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 1; // increment derived variable index
   }
 
-  // PER-CELL FOFC FLAG COUNT.  Copies the running count kept by Hydro::FOFC / MHD::FOFC
-  // (one per stage in which the cell was flagged) into the derived-variable array, then
-  // RESETS the counter to zero: a dump therefore holds the flags accumulated since the
-  // PREVIOUS dump of this variable, exactly as the `fofc` column of the event-log output
-  // holds the count since the previous log line.  The count is not written to, or
-  // restored from, restart files -- a restarted run starts counting from zero.
-  // The full array, ghost zones included, is copied so that <output>/ghost_zones = true
-  // shows the boundary band the flagging loop also covers.
-  if (name.compare("hydro_fofc") == 0 ||
-      name.compare("mhd_fofc") == 0) {
+  // per-cell FOFC flag count (one per stage in which the cell was flagged), including
+  // ghost zones.  The counter is reset after the copy, so each output holds the flags
+  // since the previous output of this variable.  The count is not saved in restarts.
+  if (name.compare("hydro_fofc") == 0 || name.compare("mhd_fofc") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
     auto dv = derived_var;
-    auto fcnt_ = (name.compare("hydro_fofc") == 0)?
-      pm->pmb_pack->phydro->fofc_cnt : pm->pmb_pack->pmhd->fofc_cnt;
+    auto fcnt_ = (name.compare("hydro_fofc") == 0) ? pm->pmb_pack->phydro->fofc_cnt
+                                                   : pm->pmb_pack->pmhd->fofc_cnt;
     par_for("fofc_cnt", DevExeSpace(), 0, (nmb-1), 0, (n3-1), 0, (n2-1), 0, (n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       dv(m,i_dv,k,j,i) = fcnt_(m,k,j,i);
@@ -1000,7 +994,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     });
   }
 
-  // rkgstrang-1102: the cell resistivity eta_b (+ the ambipolar eta_A), ghosts included
+  // Ohmic resistivity eta_b plus the ambipolar eta_A, including ghost zones
   if (name.compare("mhd_eta") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
@@ -1040,13 +1034,8 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
 
     auto dv = derived_var;
     auto b0 = pm->pmb_pack->pmhd->b0;
-    // On a CURVILINEAR grid the difference of face fields over a Cartesian block spacing
-    // is not the divergence of anything -- size.dx1 is the block's uniform x1 extent,
-    // which on a cubed-sphere or spherical-polar mesh bears no relation to the cell.  The
-    // quantity constrained transport actually conserves is the FINITE-VOLUME divergence,
-    // sum(area * B_face) / volume, so that is what is reported there.  Reporting the
-    // Cartesian form on those grids gives a number that is nonzero everywhere by
-    // geometry alone and hides exactly the monopole the diagnostic exists to find.
+    // on cubed-sphere and spherical-polar meshes report the finite-volume divergence
+    // sum(area*B_face)/volume, the quantity constrained transport conserves
     const bool curvi = (pm->use_cubed_sphere || pm->use_spherical_polar);
     auto &area_ = pm->pmb_pack->pcoord->area;
     auto &vol_ = pm->pmb_pack->pcoord->volume;
@@ -1298,7 +1287,8 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
   //   otherwise: chi(|F|/cE) of the current state about n = F/|F| (eddington 1/3);
   //     closure = tau | vet_col before the first solve has no tensor: f_K = -1 is
   //     written and D = 1/3 (isotropic) as a placeholder.
-  if (name.compare("m1_vsc") == 0) {   // blendall-1009: vet_sc J, F/c
+  // m1_vsc: J and F/c of the vet_sc formal solution
+  if (name.compare("m1_vsc") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
     auto dv = derived_var;
@@ -1372,8 +1362,8 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 4;
   }
 
-  // csmetric-1112 m1_comov (implicit multi-D solve, sp / cs; diagnostic): the comoving
-  // residuals of the last solve's iterate with the FULL Eddington tensor (uniaxial chi,n
+  // m1_comov (implicit multi-D solve, sp / cs): the comoving residuals of the last
+  // solve's iterate with the full Eddington tensor (uniaxial chi,n
   // + the lateral / tangential slots wherever the solve has them, M1LatDx), metric
   // products on the cubed sphere, whatever keys the solve itself uses:
   //   m1_cf1..3 = (F_a - (v_a + (D v)_a) E)/(c E)  (work-array components)
@@ -1414,12 +1404,17 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
         const Real c = cs ? ccl(m,k,j) : 0.0, is2 = 1.0/(1.0 - c*c);
         // raise a work-array vector (cs: G^-1 on the face-normal pair)
         auto up = [&](const Real *x, Real *y) {
-          y[0] = x[0]; y[1] = (x[1] + c*x[2])*is2; y[2] = (x[2] + c*x[1])*is2;
+          y[0] = x[0];
+          y[1] = (x[1] + c*x[2])*is2;
+          y[2] = (x[2] + c*x[1])*is2;
         };
         Real nm[3], vr[3];
         up(n, nm);
         const Real nn = sqrt(fmax(n[0]*nm[0] + n[1]*nm[1] + n[2]*nm[2], 1.0e-300));
-        for (int q = 0; q < 3; ++q) {n[q] /= nn; nm[q] /= nn;}
+        for (int q = 0; q < 3; ++q) {
+          n[q] /= nn;
+          nm[q] /= nn;
+        }
         up(v, vr);
         const Real pi = 0.5*(1.0 - chi), pa = 0.5*(3.0*chi - 1.0);
         const Real nv = n[0]*vr[0] + n[1]*vr[1] + n[2]*vr[2];
@@ -1429,16 +1424,22 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
           Real o[3];
           vdv += radm1::M1LatDx(cs, lat, tan, vlk, c0, cn2, cn3, qf, m, k, j, i, v[0],
                                 v[1], v[2], o[0], o[1], o[2]);
-          for (int q = 0; q < 3; ++q) {dvx[q] += o[q];}
+          for (int q = 0; q < 3; ++q) {
+            dvx[q] += o[q];
+          }
         }
-        for (int q = 0; q < 3; ++q) {r[q] = (f[q] - (v[q] + dvx[q])*e)/(cl*e);}
+        for (int q = 0; q < 3; ++q) {
+          r[q] = (f[q] - (v[q] + dvx[q])*e)/(cl*e);
+        }
         const Real b2 = (v[0]*vr[0] + v[1]*vr[1] + v[2]*vr[2])/(cl*cl);
         const Real bf = (f[0]*vr[0] + f[1]*vr[1] + f[2]*vr[2])/(cl*cl);
         const Real e0 = (1.0 + b2)*e - 2.0*bf + vdv*e/(cl*cl);
         const Real tp = iw_(m,radm1::M1_IW_TP,k,j,i);
         r[3] = e0/(ar*tp*tp*tp*tp) - 1.0;
       }
-      for (int q = 0; q < 4; ++q) {dv(m,i_dv+q,k,j,i) = r[q];}
+      for (int q = 0; q < 4; ++q) {
+        dv(m,i_dv+q,k,j,i) = r[q];
+      }
     });
     i_dv += 4;
   }
@@ -1467,7 +1468,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 4;
   }
 
-  // vgdgw-1110 m1_gw: x1-face g_L, g_R and weight AL at the LEFT face of cell i
+  // m1_gw: x1-face g_L, g_R and weight AL at the left face of cell i
   if (name.compare("m1_gw") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
@@ -1476,7 +1477,9 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     const bool hv = (gw.extent_int(0) >= nmb);
     par_for("m1_gw_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
-      for (int c = 0; c < 5; ++c) {dv(m,i_dv+c,k,j,i) = hv ? gw(m,c,k,j,i) : 0.0;}
+      for (int c = 0; c < 5; ++c) {
+        dv(m,i_dv+c,k,j,i) = hv ? gw(m,c,k,j,i) : 0.0;
+      }
     });
     i_dv += 5;
   }
@@ -1520,7 +1523,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 4;
   }
 
-  // tanacc-1107 m1_lat: the handed-over closure tensor slots (basetype_output.cpp)
+  // m1_lat: the handed-over closure tensor slots (basetype_output.cpp)
   if (name.compare("m1_lat") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
@@ -1576,7 +1579,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 12;
   }
 
-  // sptests-1011 P2 m1_gdhr: the vet_gd half-range ratios (basetype_output.cpp)
+  // m1_gdhr: the vet_gd half-range ratios (basetype_output.cpp)
   if (name.compare("m1_gdhr") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
@@ -1593,7 +1596,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 6;
   }
 
-  // gdthin-1011 m1_thsw: the thin switch's cell inputs (basetype_output.cpp)
+  // m1_thsw: the thin switch's cell inputs (basetype_output.cpp)
   if (name.compare("m1_thsw") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
@@ -1618,7 +1621,8 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
       if (hsc) {
         jj = vc_(m,radm1::M1_VET_J,k,j,i);
         if (jj > 0.0) {
-          const Real a = vc_(m,radm1::M1_VET_H1,k,j,i), b = vc_(m,radm1::M1_VET_H1+1,k,j,i);
+          const Real a = vc_(m,radm1::M1_VET_H1,k,j,i);
+          const Real b = vc_(m,radm1::M1_VET_H1+1,k,j,i);
           const Real c = vc_(m,radm1::M1_VET_H1+2,k,j,i);
           fb = fmin(sqrt(a*a + b*b + c*c)/jj, 1.0);
           if (c1v) {
@@ -1628,7 +1632,9 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
         }
       } else if (hgd && gh_(m,0,k,j,i) >= 0.0) {
         Real f2 = 0.0;
-        for (int a = 0; a < 3; ++a) {f2 += SQR(gh_(m,2*a,k,j,i) + gh_(m,2*a+1,k,j,i));}
+        for (int a = 0; a < 3; ++a) {
+          f2 += SQR(gh_(m,2*a,k,j,i) + gh_(m,2*a+1,k,j,i));
+        }
         fb = fmin(sqrt(f2), 1.0);
         if (gx) {
           c1 = gh_(m,radm1::M1_VGD_HRC1,k,j,i);

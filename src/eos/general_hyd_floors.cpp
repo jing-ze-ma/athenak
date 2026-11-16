@@ -4,19 +4,10 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file general_hyd_floors.cpp
-//! \brief GeneralHydro::ConsToPrimFloors(), the conserved-to-primitive inversion used
-//! when any of the floor switches of EOS_Data (dfloor_keep_velocity, vceil,
-//! eos_floor_consistent, efloor_from_ekin) is enabled.
-//!
-//! WHY IT IS A FILE OF ITS OWN.  The default path is GeneralHydro::ConsToPrim() in
-//! general_hyd.cpp, which is kept exactly as it was before these switches existed so
-//! that a build carrying them reproduces an older run bit for bit.  That only works
-//! while the two kernels are compiled APART: with both in one translation unit the
-//! device compiler contracts the arithmetic of the untouched one differently, and the
-//! default answer moves by a unit in the last place -- which on the cubed sphere grows
-//! into a visibly different run within a few thousand cycles.  Keep the two files
-//! separate, and mirror into general_hyd.cpp any change that is meant to apply by
-//! DEFAULT.
+//! \brief GeneralHydro::ConsToPrimFloors(), the inversion used when a floor switch of
+//! EOS_Data (dfloor_keep_velocity, vceil, efloor_from_ekin, efloor_as_tfloor) is on.  It
+//! is compiled apart from general_hyd.cpp so that the default kernel keeps its arithmetic
+//! bitwise (EOS_Data::floors_legacy); changes meant for the default path go into both.
 
 #include <float.h>
 
@@ -32,8 +23,8 @@
 
 //----------------------------------------------------------------------------------------
 //! \fn void ConsToPrimFloors()
-//! \brief Converts conserved into primitive variables with the floor switches active.
-//! Same contract as GeneralHydro::ConsToPrim(); see the note above.
+//! \brief Converts conserved into primitive variables with the floor switches active;
+//! same contract as GeneralHydro::ConsToPrim()
 
 void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
                                     const bool only_testfloors,
@@ -46,8 +37,7 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
   auto &fofc_ = pmy_pack->phydro->fofc;
   auto &wder_ = pmy_pack->phydro->wder;
   auto &wtemp_ = pmy_pack->phydro->wtemp;
-  const bool keepv_defer_ = (eos.dfloor_keep_velocity ||
-                             eos.dfloor_keep_temperature) && eos.defer_cons_floors;
+  const bool keepv_defer_ = eos.dfloor_keep_velocity && eos.defer_cons_floors;
   auto dfl_fv_ = pmy_pack->phydro->dfl_fv;
 
   const int ni   = (iu - il + 1);
@@ -78,8 +68,7 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
     u.mz = cons(m,IM3,k,j,i);
     u.e  = cons(m,IEN,k,j,i);
 
-    // call c2p function, which also returns the derived thermodynamic quantities
-    // (inline function in general_c2p_hyd.hpp file)
+    // call c2p function, which also returns the derived quantities (general_c2p_hyd.hpp)
     HydPrim1D w;
     Real pgas, g1;
     Real temp;
@@ -88,9 +77,8 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
     Real efloor_de=0.0;
     Real vceil_de=0.0;
     Real dfloor_fv=1.0;
-    // The floor-TEST pass (FOFC) must never hand garbage to the tabulated inversion: a
-    // non-finite or non-positive trial state has no temperature to converge to, and the
-    // root find would either spin or return nonsense.  Flag the cell and skip the solve.
+    // floor-test pass (FOFC): a non-finite or non-positive trial state has no
+    // temperature; flag the cell and skip the solve
     if (only_testfloors) {
       if (!Kokkos::isfinite(u.d) || !Kokkos::isfinite(u.mx) ||
           !Kokkos::isfinite(u.my) || !Kokkos::isfinite(u.mz) ||
@@ -100,7 +88,7 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
         return;
       }
     }
-    // F4: the kinetic energy dfloor_keep_velocity will remove (output only)
+    // kinetic energy removed by dfloor_keep_velocity (output only)
     const Real ke_in = (kvtally && u.d > 0.0)
         ? 0.5*(SQR(u.mx) + SQR(u.my) + SQR(u.mz))/u.d : 0.0;
     // the cached temperature in this cell warm starts the T(d,e) root find
@@ -108,10 +96,9 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
                          dfloor_used, efloor_used, tfloor_used, efloor_de, mom_scaled,
                          dfloor_fv, vceil_used, vceil_test, tclamp_used, tset_used,
                          vceil_de);
-    // <hydro>/dfloor_keep_velocity on the cubed sphere: the metric-correct part of the
-    // correction is applied by GnomonicEquiangleRaiseVel, which needs fv per cell.  Not
-    // on the floor-TEST pass (FOFC): that one is handed scratch conserved data and is
-    // followed by no RaiseVel, so the fv it computed must not reach one.
+    // dfloor_keep_velocity on the cubed sphere: GnomonicEquiangleRaiseVel applies the
+    // metric part of the correction with fv per cell (not on the floor-test pass, which
+    // is followed by no RaiseVel)
     if (keepv_defer_ && !only_testfloors) dfl_fv_(m,k,j,i) = dfloor_fv;
     sumde += efloor_de;
     // the energy the velocity ceiling clipped: see EventCounters::vceil_de
@@ -130,8 +117,7 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
     } else {
       // update counter, reset conserved if floor was hit
       if (dfloor_used) {
-        // share-1104 P4 <hydro>/floor_tracer: the floor's mass joins the floor-mass
-        // scalar (as <mhd>/floor_tracer in ideal_mhd.cpp / general_mhd.cpp)
+        // <hydro>/floor_tracer: the floor's mass joins the floor-mass scalar
         if (eos.ifltr >= 0) cons(m,eos.ifltr,k,j,i) += u.d - cons(m,IDN,k,j,i);
         cons(m,IDN,k,j,i) = u.d;
         sumd++;
@@ -140,18 +126,14 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
         cons(m,IEN,k,j,i) = u.e;
         sume++;
       }
-      // <hydro>/efloor_from_ekin (and the density floor under dfloor_keep_velocity)
-      // paid by rescaling the momentum, so the conserved momentum has to follow the
-      // primitive velocity down
+      // efloor_from_ekin (and dfloor_keep_velocity) rescaled the momentum: write it back
       if (mom_scaled) {
         cons(m,IM1,k,j,i) = u.mx;
         cons(m,IM2,k,j,i) = u.my;
         cons(m,IM3,k,j,i) = u.mz;
       }
-      // dfloor_keep_velocity OFF the cubed sphere takes the removed kinetic energy out
-      // of u.e inside the c2p; without this write the energy write above happens only
-      // when a pressure or temperature floor also fired, and the cell would keep the
-      // energy it no longer has any kinetic energy for.
+      // dfloor_keep_velocity off the cubed sphere: write back the energy the c2p removed
+      // with the kinetic energy
       if ((dfloor_fv < 1.0 || vceil_used) && !eos.defer_cons_floors) {
         cons(m,IEN,k,j,i) = u.e;
       }
@@ -162,14 +144,12 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
         cons(m,IEN,k,j,i) = u.e;
         sumt++;
       }
-      // the tabulated inversion had to be held at the table's own lowest or highest
-      // temperature: the state is outside the EOS, not merely at a floor
+      // the inversion was clamped to the table's temperature range
       if (tclamp_used) {
         sumc++;
       }
-      // <hydro>/efloor_as_tfloor rebuilt e from the temperature: the conserved energy
-      // has to follow, exactly as it does for the floors above (off the cubed sphere;
-      // there the write is GnomonicEquiangleRaiseVel's, see defer_cons_floors)
+      // efloor_as_tfloor rebuilt e from the temperature: the conserved energy follows
+      // (off the cubed sphere; there GnomonicEquiangleRaiseVel writes it)
       if (tset_used) {
         if (!eos.defer_cons_floors) cons(m,IEN,k,j,i) = u.e;
         sumts++;
@@ -183,8 +163,7 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
       // store derived thermodynamic variables for reconstruction
       wder_(m,IDPR,k,j,i) = pgas;
       wder_(m,IDG1,k,j,i) = g1;
-      // cache the temperature solved for above; it is both the value other modules read
-      // and the warm start for this cell's inversion at the next stage
+      // cache the temperature for other modules and as next stage's warm start
       wtemp_(m,k,j,i) = temp;
       // convert scalars (if any)
       for (int n=nhyd; n<(nhyd+nscal); ++n) {
@@ -192,7 +171,7 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
         if (cons(m,n,k,j,i) < 0.0) {
           cons(m,n,k,j,i) = 0.0;
         }
-        // share-1104 P4 <hydro>/floor_tracer: the floor mass cannot exceed the cell mass
+        // the floor mass cannot exceed the cell mass
         if (n == eos.ifltr && cons(m,n,k,j,i) > u.d) {
           cons(m,n,k,j,i) = u.d;
         }

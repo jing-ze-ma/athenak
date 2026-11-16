@@ -18,7 +18,7 @@
 # The test script sets, from the command line:
 #   <hydro>/fofc                       true / false
 #   <hydro>/wellbalance_static         true / false   (with wellbalance_static_reconst)
-#   <hydro>/wellbalance_dynamic        true / false   (with wb_x2, wb_rho)
+#   <hydro>/wellbalance_dynamic        true / false   (with wb_x1, wb_dirs = all, wb_rho)
 #   <problem>/vamp                     kick amplitude, 0 = untouched balance
 
 <comment>
@@ -73,12 +73,13 @@ fofc                      = false     # first-order flux correction (set by the 
 wellbalance_static        = true      # static well-balanced scheme (set by the test)
 wellbalance_static_reconst = true     # reconstruct the deviation from the background
 # DYNAMIC well-balanced scheme (Kappeli & Mishra); switched on INSTEAD of the static one
-# by the test, which sets wellbalance_dynamic/wb_x2/wb_rho true and the two static flags
-# false.  wb_option = isentropic is the closed-form isentropic background, which is
+# by the test, which sets wellbalance_dynamic/wb_x1/wb_rho true, wb_dirs = all (the x2
+# background) and the two static flags false.  wb_option = isentropic is the closed-form isentropic background, which is
 # exactly the stratification the pgen builds, so the balance is held to round-off.
 # Harmless when the dynamic scheme is off: wb_option is only read if it is on.
 wellbalance_dynamic       = false     # dynamic well-balanced scheme (set by the test)
-wb_x2                     = false     # the stratified direction (set by the test)
+wb_x1                     = false     # the x1 background (set by the test)
+wb_dirs                   = x1        # all: x2/x3 backgrounds too (set by the test)
 wb_rho                    = false     # well-balance the density channel too (ditto)
 wb_option                 = isentropic  # local background assumed by the dynamic scheme
 

@@ -48,7 +48,9 @@ void MeshBoundaryValuesCC::InitSendIndices(MeshBoundaryBuffer &buf,
   auto &mb_indcs  = pmy_pack->pmesh->mb_indcs;
   int ng  = mb_indcs.ng;
   // the exchange depth of this object (same-level strips only)
-  if (exch_depth > 0 && exch_depth < ng && !pmy_pack->pmesh->multilevel) {ng = exch_depth;}
+  if (exch_depth > 0 && exch_depth < ng && !pmy_pack->pmesh->multilevel) {
+    ng = exch_depth;
+  }
   int ng1 = ng - 1;
   const bool cs_vfill_cc = pmy_pack->pmesh->cs_vertex_fill_cc;
 
@@ -223,7 +225,9 @@ void MeshBoundaryValuesCC::InitRecvIndices(MeshBoundaryBuffer &buf,
   auto &mb_indcs  = pmy_pack->pmesh->mb_indcs;
   int ng = mb_indcs.ng;
   // the exchange depth of this object (same-level strips only)
-  if (exch_depth > 0 && exch_depth < ng && !pmy_pack->pmesh->multilevel) {ng = exch_depth;}
+  if (exch_depth > 0 && exch_depth < ng && !pmy_pack->pmesh->multilevel) {
+    ng = exch_depth;
+  }
   const bool cs_vfill_cc = pmy_pack->pmesh->cs_vertex_fill_cc;
 
   // set indices for receives from neighbors on SAME level

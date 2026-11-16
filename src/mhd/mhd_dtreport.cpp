@@ -4,15 +4,14 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file mhd_dtreport.cpp
-//! \brief dtdiag-1103: opt-in report of WHAT sets the MHD CFL time step.
+//! \brief opt-in report of WHAT sets the MHD CFL time step.
 //!
 //! <mhd>/dt_report = N (default 0 = off; read only when named): every N-th call of
 //! MHD::NewTimeStep (last stage, i.e. once per cycle) one extra pass over all cells
 //! prints, per rank,
 //!   - the fast-magnetosonic dt (the one NewTimeStep uses; the copy here must equal
 //!     dtnew, which is printed alongside as a check), over ALL cells and over cells with
-//!     p >= dt_report_p1 and p >= dt_report_p2 (code pressure; defaults 1 and 1e3 =
-//!     1e-6 and 1e-3 bar in cgs code units);
+//!     p >= 1 and p >= 1e3 (code pressure; 1e-6 and 1e-3 bar in cgs code units);
 //!   - the same with the SOUND speed in place of the fast speed (B ignored) and with the
 //!     FLOW speed alone, so the signal can be named;
 //!   - the number of cells within 1.2x of the minimum in the three pressure bands, and of
@@ -44,16 +43,16 @@ namespace mhd {
 
 namespace {
 int rep_every = 0;
-Real rep_p1 = 1.0, rep_p2 = 1.0e3;
 int rep_calls = 0;
 }  // namespace
 
 void DtReportInit(ParameterInput *pin, MeshBlockPack *pp, const bool rss) {
   if (pin->DoesParameterExist("mhd", "dt_report")) {
     rep_every = pin->GetInteger("mhd", "dt_report");
-    // prod1103: the report reads the curvilinear cell widths (pcoord dx1/dx2/dx3, sin of
-    // the cs cell angle), so it is 3-D cubed sphere / spherical polar only; refuse the key
-    // elsewhere at start-up instead of switching it off silently.  Hydro has no dt_report.
+    // the report reads the curvilinear cell widths (pcoord dx1/dx2/dx3, sin of
+    // the cs cell angle), so it is 3-D cubed sphere / spherical polar only; refuse the
+    // key elsewhere at start-up instead of switching it off silently.  Hydro has no
+    // dt_report.
     if (rep_every > 0 && (!pp->pmesh->three_d || rss ||
         !(pp->pmesh->use_cubed_sphere || pp->pmesh->use_spherical_polar))) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -61,14 +60,11 @@ void DtReportInit(ParameterInput *pin, MeshBlockPack *pp, const bool rss) {
                 << "polar mesh and rad_signal_speed off" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    rep_p1 = pin->GetOrAddReal("mhd", "dt_report_p1", 1.0);
-    rep_p2 = pin->GetOrAddReal("mhd", "dt_report_p2", 1.0e3);
   } else if (std::getenv("ATHENA_DT_REPORT") != nullptr &&
              std::atoi(std::getenv("ATHENA_DT_REPORT")) > 0) {
-    // share-1104 P6: the hydro env ATHENA_DT_REPORT = N is an alias of <mhd>/dt_report
+    // the hydro env ATHENA_DT_REPORT = N is an alias of <mhd>/dt_report
     // when the key is absent (the key wins).  Where the report is unsupported the alias
-    // is ignored with a note (no FATAL: an env must not stop a run); nothing is added to
-    // the input dump (p1/p2 keep their defaults unless named).
+    // is ignored with a note (no FATAL: an env must not stop a run).
     if (!pp->pmesh->three_d || rss ||
         !(pp->pmesh->use_cubed_sphere || pp->pmesh->use_spherical_polar)) {
       if (global_variable::my_rank == 0) {
@@ -78,12 +74,6 @@ void DtReportInit(ParameterInput *pin, MeshBlockPack *pp, const bool rss) {
       }
     } else {
       rep_every = std::atoi(std::getenv("ATHENA_DT_REPORT"));
-      if (pin->DoesParameterExist("mhd", "dt_report_p1")) {
-        rep_p1 = pin->GetReal("mhd", "dt_report_p1");
-      }
-      if (pin->DoesParameterExist("mhd", "dt_report_p2")) {
-        rep_p2 = pin->GetReal("mhd", "dt_report_p2");
-      }
     }
   }
 }
@@ -114,7 +104,7 @@ void DtReport(MHD *pm, MeshBlockPack *pp) {
   if (!curv) { rep_every = 0; return; }
   auto dx1_ = pp->pcoord->dx1, dx2_ = pp->pcoord->dx2, dx3_ = pp->pcoord->dx3;
   auto sn_ = pp->pcoord->sin_cell;
-  const Real p1 = rep_p1, p2 = rep_p2;
+  const Real p1 = 1.0, p2 = 1.0e3;   // the lower edges of the two high-pressure bands
   const Real va2i = eos.va2max_inv;
 
   // per-cell: fast / sound / flow dt (min over the three directions), pressure
@@ -123,8 +113,13 @@ void DtReport(MHD *pm, MeshBlockPack *pp) {
     const Real d = w0_(m,IDN,k,j,i);
     const Real bx = bcc_(m,IBX,k,j,i), by = bcc_(m,IBY,k,j,i), bz = bcc_(m,IBZ,k,j,i);
     Real p, g1;
-    if (gen) { p = wder_(m,IDPR,k,j,i); g1 = wder_(m,IDG1,k,j,i); }
-    else { p = eos.IdealGasPressure(w0_(m,ipr,k,j,i)); g1 = eos.gamma; }
+    if (gen) {
+      p = wder_(m,IDPR,k,j,i);
+      g1 = wder_(m,IDG1,k,j,i);
+    } else {
+      p = eos.IdealGasPressure(w0_(m,ipr,k,j,i));
+      g1 = eos.gamma;
+    }
     pr = p;
     const Real cs = sqrt(g1*p/d);
     const Real sn = cs_ ? sn_(m,k,j) : 1.0;
@@ -174,7 +169,13 @@ void DtReport(MHD *pm, MeshBlockPack *pp) {
     Real dtf, dts, dtv, pr, vab; int dir;
     cell(m, k, j, i, dtf, dts, dtv, pr, dir, vab);
     if (dtf < thr) {
-      if (pr < p1) ++c0; else if (pr < p2) ++c1; else ++c2;
+      if (pr < p1) {
+        ++c0;
+      } else if (pr < p2) {
+        ++c1;
+      } else {
+        ++c2;
+      }
     }
     if (pr >= p1 && dtf < thr1) ++cb1;
     if (va2i > 0.0 && vab*va2i >= 0.99) { ++cc; if (pr < p1) ++cct; }

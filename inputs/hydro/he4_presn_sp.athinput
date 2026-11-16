@@ -266,13 +266,6 @@ dfloor_keep_velocity = true
 # eos_vceil column of the event log says how often it fires; a LARGE count means the
 # ceiling is doing physics rather than catching a numerical runaway, and is a warning.
 vceil   = 1.0e8
-# THE CLIPPED KINETIC ENERGY: deleted (false, the historical behaviour) or turned into
-# internal energy (true).  With it off the ceiling is an uncounted energy SINK -- it took
-# 9.7e40 erg, twice the envelope's internal energy, out of the arms that reached it, and
-# d(tot-E)/dt then no longer matches L_in - L_out.  With it on the total energy is
-# conserved through the ceiling and the clipped energy heats the cell it came from.  The
-# vceil_de column of the event log gives the size of it either way.
-vceil_thermalise = false
 pfloor  = 1.0e-1                 # 1.3e-5 of the initial top-cell pressure; should not fire
 # THE FLOORED STATE MADE CONSISTENT.  See the note on EOS_Data::efloor_as_tfloor.  Arm E'
 # died at 0.78 turnover on a cell at r/R = 0.744 carrying rho = 3.5e-9, code T = 5.246e11

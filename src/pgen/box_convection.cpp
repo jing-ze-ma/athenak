@@ -327,15 +327,14 @@
 #include "pgen.hpp"
 
 void BoxConvSrcs(Mesh *pm, Real bdt);
-void BoxConvRebuildRadWeights(Mesh *pm, Real bdt);
 void BoxConvARadForce(Mesh *pm, Real bdt);
 void BoxConvBC(Mesh *pm);
 void BoxConvFinal(ParameterInput *pin, Mesh *pm);
 void BoxConvHistory(HistoryData *pdata, Mesh *pm);
 
-// defaults-1002: <hydro>/fofc defaults to TRUE for this problem generator (every
+// <hydro>/fofc defaults to TRUE for this problem generator (every
 // stellar/box input ran it explicitly); see hydro::fofc_pgen_default (hydro.hpp).
-// merge-1008: <mhd>/fofc likewise (mhd::fofc_pgen_default, mhd.hpp).
+// <mhd>/fofc likewise (mhd::fofc_pgen_default, mhd.hpp).
 namespace {
 [[maybe_unused]] const bool kFofcPgenDefault = (hydro::fofc_pgen_default = true);
 [[maybe_unused]] const bool kMhdFofcPgenDefault = (mhd::fofc_pgen_default = true);
@@ -452,61 +451,6 @@ int vdb_cells_ = 0;
 Real vdb_time_ = 20.0;
 bool diff_flux_ = false;     // a diffusive flux shares the wall face's energy channel
 bool rt_on_ = false;      // problem/rt_two_stream
-// --- problem/rt_weights_per_stage: RE-CENTRE THE OPACITY/TAU CACHES ON THE STAGE
-// STATE.  Conduction::BuildRadWeights (the column optical depth rad_tauf and the
-// tau-blend weight rad_w) and Conduction::BuildAngularCoeffs (the transverse
-// conductances cap_c2/cap_c3 and the frozen T*, alpha of the ADI operator) are both
-// built inside Hydro::Fluxes, from w0 = the STAGE-START primitives.  The two-stream
-// column and the radiative force, however, run on u0 AFTER the RK flux update and the
-// gravity source.  The caches therefore lag the state they are used with by one
-// sub-step, which is an O(dt) error in phase with rho'/T' -- the numerical-kappa
-// mechanism the surface f-mode is being tested against.  With this on, the primitives
-// are re-formed from the current u0 and both builders are re-run immediately before the
-// two-stream call, so everything the column and the force consume is centred on the
-// state they act on.  Default false and the code path is untouched when off.
-bool rtwps_ = false;
-// the horizontal ADI operator travels WITH the column whenever the column is
-// sub-cycled inside the stage (problem/rt_col3_sub > 1): it then runs inside each
-// sub-step, over the same beta_dt/N, and the separate in-stage transverse task is
-// silenced (Conduction::rad_tr_split_out).
-bool rt_split_tr_ = false;
-// problem/rt_col3_sub (int, default 1 = today's behaviour, bitwise off): SUB-CYCLE the
-// whole radiation column operator inside each RK stage.  The hydro step is untouched --
-// the stage still advances over beta_dt -- but the radiation operator is applied N times
-// with beta_dt/N each.
-//
-// WHY.  Every reordering of the step (rk2/rk3/imex2/imex2+/Strang, force and heating
-// centering, weights, top BC: ARMS 1-9 in plaid/fmode_README.txt) leaves the surface
-// f-mode growing at gamma = 0.615 x dt[s] per turnover.  The favoured reading is that the
-// lid relaxes FULLY within one application of the operator, so the radiative work
-// integral over the mode's cycle is evaluated with an effective thermal time equal to the
-// step over which the operator is applied.  If that is right, gamma must follow that step
-// and not the hydro dt: N = 2 halves it, N = 4 quarters it.  If gamma is unchanged (or
-// doubles with the cost), the reading is refuted.
-//
-// WHAT IS IN A SUB-STEP: the whole operator, in the "column + transverse together"
-// ordering -- the mode-3 column solve (sweep + exact
-// block-tridiagonal solve + the radiative force and its work, i.e. all of
-// picket_fence_two_stream_RT) followed immediately by the horizontal ADI operator over
-// the SAME beta_dt/N.  The in-stage transverse task is therefore made a no-op
-// (Conduction::rad_tr_split_out), exactly as the split switches do.
-//
-// WHAT IS REFRESHED between sub-steps: BoxConvRebuildRadWeights -- one ConsToPrim over
-// the full range, then BuildRadWeights (the tau/blend weights) and BuildAngularCoeffs
-// (the frozen ADI face conductances, over the SUB-step beta_dt/N).  The column itself
-// reads rho and e straight out of u0 (problem/rt_use_cons is required by mode 3), so it
-// needs no refresh for its own state; what the ConsToPrim buys is a consistent wtemp --
-// the general EOS's temperature GUESS -- and consistent weights.  The rebuild runs before
-// EVERY sub-step, the first included, so that all N sub-steps see coefficients formed
-// with the same beta_dt/N.
-//
-// GHOSTS: the column writes active cells only and columns are independent, so it needs no
-// halo exchange between sub-steps.  The ADI operator recomputes T and 1/(rho cv) from the
-// current u0 on the active cells and exchanges THOSE through its own one-variable halo
-// (Conduction::RklConductionUpdate, pbval_tr), so each sub-step's transverse solve sees
-// up-to-date transverse neighbours.  What stays as stale as it is today is the mesh u0
-// ghost ring itself, which only the frozen face conductances on the outermost faces read.
-int rt_col3_sub_ = 1;
 bool cool_on_ = true;     // the Newton cooling layer (off by default once RT is on)
 Real rgas_ = 0.0;         // R/mu in code units; the ideal branch's T = p/(Rgas rho)
 // --- the per-column emergent-flux surface dump (problem/rt_surface_dt) --------------
@@ -536,7 +480,7 @@ bool prof_alloc_ = false;
 //! writes are not the ones an uninterrupted run writes -- an extra record right after
 //! every restart, and the whole series shifted from there on.  Carrying the two numbers
 //! makes the series resume exactly.  Layout: int32 count (= 2), int32 pad, then the two
-//! Reals.  A file written without the block leaves them at -1, i.e. the old behaviour.
+//! Reals.  A file written without the block leaves them at -1, i.e. the plain behaviour.
 
 std::vector<char> BoxConvRestartState() {
   std::vector<char> out;
@@ -1130,13 +1074,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // re-integrate the supplied ic_profile into EXACT hydrostatic balance under whatever
   // EOS is in force, keeping its T(z); needed when the EOS is changed under a profile
   // that was relaxed with a different one
-  const int hse_retune = pin->GetOrAddInteger("problem", "ic_hse_retune", 0);
-  if (hse_retune < 0 || hse_retune > 2) {
-    std::cout << "### FATAL ERROR in box_convection: problem/ic_hse_retune must be 0 "
-              << "(off), 1 (keep T(z), solve p) or 2 (keep rho(z), solve p and T)"
-              << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
   const int nk = pin->GetOrAddInteger("problem", "vpert_nk", 16);
   const int kseed = pin->GetOrAddInteger("problem", "vpert_seed", 1234);
   // --- the horizontal wavenumber band and the vertical window of the random seed, plus
@@ -1338,80 +1275,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << std::endl;
     }
   }
-  // --- problem/ic_hse_retune: RE-INTEGRATE the column into hydrostatic balance.
-  // The march above is hydrostatic by construction, but a profile READ from a file is
-  // only hydrostatic under the EOS it was relaxed with.  Change the EOS -- e.g. move the
-  // LTE radiation taper so that aT^4 is carried at every density -- and the same (rho,e)
-  // column is no longer in balance where the change bites.  This keeps the column's own
-  // T(z) (the thermal structure is what the file is FOR) and re-solves dp/dz = -rho g
-  // downward from the top node, with rho = rho(p,T) from the live EOS at every step:
-  // RK2 midpoint in ln p on the same fine grid the march uses, so the result is
-  // hydrostatic to the same order as the march and no better.
-  if (hse_retune > 0) {
-    auto cd_dv = cd.d_view, ce_dv = ce.d_view, cp_dv = cp.d_view, ct_dv = ct.d_view;
-    const int nf = nfine;
-    const int hmode = hse_retune;
-    par_for("boxconv_hse", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(int) {
-      Real pc = cp_dv(nf-1);
-      if (hmode == 1) {
-        // MODE 1 -- keep T(z), solve for p.  RK2 midpoint in ln p, rho = rho(p,T) from
-        // the live EOS.  Fails by construction wherever the supplied T(z) makes the LTE
-        // aT^4/3 alone exceed the hydrostatic p: there is then no rho >= 0 that fits.
-        for (int i=nf-2; i>=0; --i) {
-          const Real tm = 0.5*(ct_dv(i) + ct_dv(i+1));
-          Real d = pgen_eos::DensFromPT(eos, rgas, pc, ct_dv(i+1));
-          Real dlnp = -d*g0/pc;
-          const Real pm = pc*exp(-0.5*dzf*dlnp);
-          d = pgen_eos::DensFromPT(eos, rgas, pm, tm);
-          dlnp = -d*g0/pm;
-          pc = pc*exp(-dzf*dlnp);
-          cp_dv(i) = pc;
-        }
-        for (int i=0; i<nf; ++i) {
-          const Real d = pgen_eos::DensFromPT(eos, rgas, cp_dv(i), ct_dv(i));
-          cd_dv(i) = d;
-          ce_dv(i) = pgen_eos::EintFromDensT(eos, rgas, igm1, d, ct_dv(i));
-        }
-      } else {
-        // MODE 2 -- keep rho(z), solve for p AND T.  This is the one that always has a
-        // solution: at fixed rho the EOS pressure is strictly increasing in T from 0 to
-        // unbounded, so a bisection in log T always brackets the hydrostatic p.  It also
-        // leaves the DEEP column alone: dp/dz = -rho g is unchanged wherever rho is, so
-        // p moves only by the constant the lid's missing radiative support contributes,
-        // which is negligible against the deep pressure.  The trapezoidal integration is
-        // exact for the piecewise-linear rho the fine grid carries.
-        for (int i=nf-2; i>=0; --i) {
-          pc += 0.5*dzf*g0*(cd_dv(i) + cd_dv(i+1));
-          cp_dv(i) = pc;
-        }
-        for (int i=0; i<nf; ++i) {
-          const Real d = cd_dv(i);
-          Real tlo = 1.0e-3*ct_dv(i), thi = 1.0e3*ct_dv(i);
-          for (int it=0; it<80; ++it) {
-            const Real tmid = sqrt(tlo*thi);
-            const Real em = pgen_eos::EintFromDensT(eos, rgas, igm1, d, tmid);
-            const Real pm = pgen_eos::PresFromEint(eos, gamma - 1.0, d, em);
-            if (pm < cp_dv(i)) { tlo = tmid; } else { thi = tmid; }
-          }
-          const Real tk = sqrt(tlo*thi);
-          ct_dv(i) = tk;
-          ce_dv(i) = pgen_eos::EintFromDensT(eos, rgas, igm1, d, tk);
-          cp_dv(i) = pgen_eos::PresFromEint(eos, gamma - 1.0, d, ce_dv(i));
-        }
-      }
-    });
-    ct.modify_device();  ct.sync_host();
-    cd.modify_device();  cd.sync_host();
-    ce.modify_device();  ce.sync_host();
-    cp.modify_device();  cp.sync_host();
-    if (global_variable::my_rank == 0) {
-      std::cout << "box_convection: problem/ic_hse_retune = true, the column was "
-                << "RE-INTEGRATED into hydrostatic balance under the live EOS at fixed "
-                << ((hse_retune == 1) ? "T(z)" : "rho(z)") << ", downward from p(top) = "
-                << cp.h_view(nfine-1) << "; base (rho,T,p) = " << cd.h_view(i0) << " "
-                << ct.h_view(i0) << " " << cp.h_view(i0) << std::endl;
-    }
-  }
   cd_ = cd.d_view; ce_ = ce.d_view; cp_ = cp.d_view; ct_ = ct.d_view;
 
   // ---- problem/wb_phi_eff: THE WELL-BALANCED SCHEME AGAINST AN EFFECTIVE GRAVITY.
@@ -1438,7 +1301,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   wb_phi_eff_ = pin->GetOrAddBoolean("problem", "wb_phi_eff", false);
   arad_force_ = pin->GetOrAddBoolean("problem", "wb_arad_force", false);
   const std::string aradf = pin->GetOrAddString("problem", "wb_arad_file", "");
-  // ENERGY CONSISTENCY (energy_audit_0928 item 2).  With Phi_eff the WB source gives
+  // ENERGY CONSISTENCY.  With Phi_eff the WB source gives
   // the gas -rho g + rho a_ref in IM1 but NO energy: the work rho a_ref v1 must come
   // from the radiation module, and the module must then apply only the RESIDUAL force.
   // Only <rad_m1> with force_reference = wb_arad does both (work mode split: the WB
@@ -1664,8 +1527,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
 
-  // --- THE GREY M1 MODULE (<rad_m1>), milestone 2a.  docs/dev/rad_m1_design.md and
-  // bench/m1_stage2/PLAN.md.  The module replaces the whole two-stream + radiative
+  // --- THE GREY M1 MODULE (<rad_m1>), milestone 2a.  docs/dev/rad_m1_design.md.
+  // The module replaces the whole two-stream + radiative
   // conduction + rt_rad_force stack, so those are refused outright rather than left to
   // interact; <hydro>/eos_radiation is already refused by the module itself.
   m1_on_ = (pmbp->pradm1 != nullptr);
@@ -1848,16 +1711,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // Everything the solver reads about the geometry and the star goes in here.  The
   // plane-parallel switch is what makes it legal on this mesh: see rt_plane_parallel.
   rt_on_ = pin->GetOrAddBoolean("problem", "rt_two_stream", false);
-  // problem/rt_weights_per_stage (see rtwps_ above): rebuild the tau/blend weights and
-  // the transverse conductances from the CURRENT state at every stage.  Read
-  // unconditionally, so that the parameter always exists and can be set on the command
-  // line.
-  rtwps_ = pin->GetOrAddBoolean("problem", "rt_weights_per_stage", false);
-  if (rtwps_ && rt_on_ && global_variable::my_rank == 0) {
-    std::cout << "### box_convection: problem/rt_weights_per_stage = true -- the "
-              << "column optical depth, the tau-blend weight and the transverse "
-              << "conductances are rebuilt from the stage state" << std::endl;
-  }
   cool_on_ = pin->GetOrAddBoolean("problem", "cool_layer", !rt_on_);
   if (rt_on_) {
     namespace ts = two_stream_rt;
@@ -1933,7 +1786,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     ts::rt_impl_tol = pin->GetOrAddReal("problem", "rt_impl_tol",
                                         (ts::rt_implicit_column == 3) ? 1.0e-8 : 1.0e-6);
-    // DEFAULT TRUE since 2026-09-22: re-form the tau-blend handover from the column's
+    // DEFAULT TRUE: re-form the tau-blend handover from the column's
     // own converged flux, so the applied source is the divergence of one field and
     // telescopes.  Consulted only by the mode-3 column solve, so it is inert under
     // rt_implicit_column = 0.  Both FeCZ productions already state it explicitly.
@@ -2007,56 +1860,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // wder tail and read back into the staging the lazy allocation consumes -- see
     // utils/two_stream_warm_rst.hpp -- so a restart with the warm start on is a bitwise
     // continuation again.  A file written before that carries no history and says so.
-    // ---- problem/rt_col3_sub: sub-cycle the whole column operator in the stage ----
-    rt_col3_sub_ = pin->GetOrAddInteger("problem", "rt_col3_sub", 1);
-    if (rt_col3_sub_ < 1) {
-      std::cout << "### FATAL ERROR in box_convection: problem/rt_col3_sub must be >= 1 "
-                << "(1 = the un-sub-cycled stage source).  Got " << rt_col3_sub_
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    if (rt_col3_sub_ > 1) {
-      if (!rt_on_) {
-        std::cout << "### FATAL ERROR in box_convection: problem/rt_col3_sub > 1 needs "
-                  << "problem/rt_two_stream = true -- there is no column to sub-cycle"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      if (ts::rt_implicit_column != 3) {
-        std::cout << "### FATAL ERROR in box_convection: problem/rt_col3_sub > 1 needs "
-                  << "problem/rt_implicit_column = 3 -- a sub-step must be an EXACT "
-                  << "solve of the whole column, which is what mode 3 is (the per-cell "
-                  << "sub-cycler problem/rt_relax_sub is a different, inert, switch).  "
-                  << "Got rt_implicit_column = " << ts::rt_implicit_column << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      if (global_variable::my_rank == 0) {
-        std::cout << "### box_convection: problem/rt_col3_sub = " << rt_col3_sub_
-                  << ", the WHOLE radiation operator (mode-3 column solve + radiative "
-                  << "force + horizontal ADI) is applied " << rt_col3_sub_
-                  << " times per RK stage with beta_dt/" << rt_col3_sub_
-                  << " each, at the unchanged hydro dt" << std::endl;
-      }
-    }
-    // rt_col3_sub > 1 keeps the column INSIDE the stage but has to move the transverse
-    // operator into the sub-cycle loop, and uses the Conduction flag to silence the
-    // in-stage task.
-    rt_split_tr_ = (rt_col3_sub_ > 1);
-    if (rt_split_tr_ && pfl->on && pfl->pcond != nullptr &&
-        pfl->pcond->rad_implicit_ang) {
-      pfl->pcond->rad_tr_split_out = true;
-      if (global_variable::my_rank == 0) {
-        std::cout << "### box_convection: the IMPLICIT TRANSVERSE radiative operator "
-                  << "is run inside each column SUB-STEP and NOT as its own in-stage "
-                  << "task" << std::endl;
-      }
-    }
     ts::rt_apply_debug = pin->GetOrAddInteger("problem", "rt_apply_debug", 0);
     ts::rt_apply_debug_n = pin->GetOrAddInteger("problem", "rt_apply_debug_n", 8);
     ts::rt_nan_report = pin->GetOrAddBoolean("problem", "nan_report", false);
-    ts::rt_dump_m = pin->GetOrAddInteger("problem", "rt_dump_m", 0);
-    ts::rt_dump_j = pin->GetOrAddInteger("problem", "rt_dump_j", -1);
-    ts::rt_dump_k = pin->GetOrAddInteger("problem", "rt_dump_k", -1);
     // ---- the per-column emergent-flux surface dump (see the header block) ----------
     surf_dt_ = pin->GetOrAddReal("problem", "rt_surface_dt", 0.0);
     {
@@ -2582,7 +2388,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     auto ru0 = pmbp->pradm1->u0;
     const Real zlo_r = zlo, dzf_r = dzf;
     const int nf_r = nfine;
-    // problem/m1_seed_consistent (default false, i.e. bitwise the old behaviour): the
+    // problem/m1_seed_consistent (default false, i.e. bitwise the plain behaviour): the
     // entropy seed scales the gas internal energy by efac at fixed density and leaves
     // the radiation field at its file value, so the seeded cells start OUT of radiative
     // equilibrium by construction.  With this switch the initial E is scaled by the
@@ -2619,54 +2425,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   mce.h_view(0), mce.h_view(nfine-1),
                   mcf.h_view(0), mcf.h_view(nfine-1));
     }
-  }
-  return;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void BoxConvRebuildRadWeights
-//! \brief re-form the primitives from the CURRENT conserved state and rebuild the
-//! radiation caches Conduction holds, immediately before the two-stream source.  Serves
-//! BOTH problem/rt_weights_per_stage (re-centre the caches on the stage state, once per
-//! stage) and a radiation sub-step under problem/rt_col3_sub > 1.  ConsToPrim is run over
-//! the full range (ghosts included) exactly as Hydro::ConToPrim runs it, so wtemp/wder --
-//! the general EOS's temperature guess and derivatives, which BuildRadWeights, the
-//! two-stream and the ADI operator all read -- are consistent with w0.  The ghost cells
-//! carry the last exchanged u0, i.e. the same staleness w0 already had there; nothing is
-//! made worse.  Cost per call: one ConsToPrim, one BuildRadWeights (one serial x1 sweep
-//! per column) and, with the ADI / capped transverse operator on, one BuildAngularCoeffs
-//! -- all small next to the column solve itself.
-
-void BoxConvRebuildRadWeights(Mesh *pm, Real bdt) {
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  // m1-mhd2: <hydro> or <mhd>; under <mhd> the inversion is the MHD one (b0 -> bcc0)
-  if (pmbp->phydro == nullptr && pmbp->pmhd == nullptr) return;
-  Conduction *pc = (pmbp->pmhd != nullptr) ? pmbp->pmhd->pcond : pmbp->phydro->pcond;
-  if (pc == nullptr) return;
-  auto &indcs = pm->mb_indcs;
-  const int ng = indcs.ng;
-  const int n1m1 = indcs.nx1 + 2*ng - 1;
-  const int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
-  const int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
-  if (pmbp->pmhd != nullptr) {
-    mhd::MHD *pmh = pmbp->pmhd;
-    pmh->peos->ConsToPrim(pmh->u0, pmh->b0, pmh->w0, pmh->bcc0, false,
-                          0, n1m1, 0, n2m1, 0, n3m1);
-  } else {
-    pmbp->phydro->peos->ConsToPrim(pmbp->phydro->u0, pmbp->phydro->w0, false,
-                                   0, n1m1, 0, n2m1, 0, n3m1);
-  }
-  auto &w0 = (pmbp->pmhd != nullptr) ? pmbp->pmhd->w0 : pmbp->phydro->w0;
-  auto &eosd = (pmbp->pmhd != nullptr) ? pmbp->pmhd->peos->eos_data
-                                       : pmbp->phydro->peos->eos_data;
-  if (pc->rad_tau_mode) pc->BuildRadWeights(w0, eosd);
-  // the same gate Conduction::AddIsotropicHeatFluxRadiative applies before it calls this
-  // (including its 1-D early return: there are no transverse faces and cap_c2/cap_c3 are
-  // sized for a single layer, so the builder must not run)
-  if (pm->multi_d && (pc->rad_cap_ang > 0.0 || pc->rad_implicit_ang)
-      && !pc->rad_sts_split) {
-    pc->stage_beta_dt = bdt;
-    pc->BuildAngularCoeffs(w0, eosd, bdt);
   }
   return;
 }
@@ -2735,7 +2493,7 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
   // four energy snapshots this call makes.  The window is closed on the FIRST source
   // call of a cycle, which is stage 1, so E is always sampled at the same phase and the
   // accumulators below cover exactly the interval between two samples.
-  // <rad_m1>/force_reference_work = split (ke-dt-0926): the WB source gives the gas the
+  // <rad_m1>/force_reference_work = split: the WB source gives the gas the
   // work of the rho arad_ref part of its kick (the radiation pays it in its solve)
   radm1::RadiationM1 *pm1w = pmbp->pradm1;
   const bool fws = (pm1w != nullptr) && pm1w->fref_wsplit && wbdyn && wb_phi_eff_;
@@ -2816,7 +2574,7 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
     // force_reference_work = split: the work of the rho arad_ref part of the WB kick, at
     // the stage-start velocity (a separate kernel: the default one is untouched)
     if (pm1w->FrefWaccOn()) {
-      // fref-split-cons-1006 (time_scheme = be): the same increment also goes to the
+      // (time_scheme = be): the same increment also goes to the
       // accumulator the be solve makes E pay (acc = gam0 acc + increment)
       auto wacc = pm1w->FrefWacc();
       const Real g0 = pm1w->FrefWaccGam0(bdt, pm->dt);
@@ -3028,40 +2786,15 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
   // --- the grey two-stream, after gravity and the cooling layer, exactly where
   // red_giant.cpp calls it: inside the stage, on the state the last ConToPrim left.
   if (rt_on_) {
-    // problem/rt_col3_sub: N applications of the WHOLE radiation operator per stage with
-    // beta_dt/N each, at the unchanged hydro dt.  N = 1 is one pass of exactly the call
-    // that was here, with no rebuild and no transverse call -- bitwise the old code.
-    const int nsub = rt_col3_sub_;
-    const Real sdt = bdt/static_cast<Real>(nsub);
-    for (int isub=0; isub<nsub; ++isub) {
-      if (nsub > 1 || rtwps_) {
-        BoxConvRebuildRadWeights(pm, sdt);
-      }
-      two_stream_rt::picket_fence_two_stream_RT(pm, sdt);
-      // the horizontal ADI operator travels WITH the column, over the same sub-step and
-      // on the state the column solve has just relaxed.  The in-stage transverse task
-      // is a no-op under rad_tr_split_out.
-      if (nsub > 1 && rt_split_tr_) {
-        // m1-mhd2: the fluid's Conduction (<hydro> or <mhd>, the same call)
-        radm1::FluidRef flt = radm1::FluidRef::Get(pm->pmb_pack);
-        Conduction *pct = flt.pcond;
-        if (flt.on && pct != nullptr && pct->rad_implicit_ang) {
-          if (pct->rad_sts_all) {
-            pct->StsConductionUpdate(flt.u0, flt.peos->eos_data, sdt);
-          } else {
-            pct->ImplicitTransverseUpdate(flt.u0, flt.peos->eos_data, sdt);
-          }
-        }
-      }
-      if (bud_on) {
-        Real e4, r4, ft, fc;
-        BoxConvBoxInt(pm, e4, r4);
-        rtbud_h_[9] += e4 - bud_e;
-        bud_e = e4;
-        BoxConvFtopInt(pm, ft, fc);
-        rtbud_h_[11] += sdt*ft;
-        rtbud_h_[12] += sdt*fc;
-      }
+    two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
+    if (bud_on) {
+      Real e4, r4, ft, fc;
+      BoxConvBoxInt(pm, e4, r4);
+      rtbud_h_[9] += e4 - bud_e;
+      bud_e = e4;
+      BoxConvFtopInt(pm, ft, fc);
+      rtbud_h_[11] += bdt*ft;
+      rtbud_h_[12] += bdt*fc;
     }
     // The per-column surface dump, on the flux that call just wrote.  pm->time is the
     // time at the START of the cycle and does not move between stages, so advancing

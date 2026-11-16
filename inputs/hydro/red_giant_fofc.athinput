@@ -137,7 +137,6 @@ dfloor = 1.0e-18             # V9: the V7 floor is BACK.  The 2e4 K corona is pr
 # it is one of the FOFC triggers (the c2p test pass flags a cell whose trial state
 # exceeds the ceiling), not a floor amendment.
 dfloor_keep_velocity = true   # RG_fofc: ON (floor consistency fix kept)
-dfloor_keep_temperature = false
 fofc                 = true
 vceil = 0.0                # <hydro>/vceil: velocity ceiling [cm/s]
                              # at rho_c = 8.10e-17 and falls to 6.50e-18 at x1max (6.5x the
@@ -152,7 +151,6 @@ pfloor = 1.0e-20
 # the face between them.  So every corona cell is inert and the last stellar cell is not.
 wb_rmax = 3.3e12             # above this the polytropic background is meaningless
 efloor_from_ekin     = true # RG_fofc: ON (floor consistency fix kept)
-eos_floor_consistent = false
 
 <problem>
 rt_use_cons = true

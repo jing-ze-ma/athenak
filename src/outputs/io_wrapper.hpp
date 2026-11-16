@@ -59,7 +59,7 @@ class IOWrapper {
   int Close(bool single_file_per_rank = false);
   int Seek(IOWrapperSizeT offset, bool single_file_per_rank = false);
   IOWrapperSizeT GetPosition(bool single_file_per_rank = false);
-  // asyncio-1113 (async_io.hpp): with ATHENA_ASYNC_OUTPUT=1, SetDeferred(tag) before
+  // (async_io.hpp): with ATHENA_ASYNC_OUTPUT=1, SetDeferred(tag) before
   // Open() makes Open/Write_any_type*/Close record the writes and hand them to the helper
   // thread at Close().  Only Write_any_type, Write_any_type_at, Write_any_type_at_all and
   // Close may follow (no Seek/GetPosition/reads).  Without the env var it is a no-op.

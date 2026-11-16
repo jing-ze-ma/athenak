@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file early_defaults_none.cpp
-//! \brief prod1103c: recipe::PgenEarlyDefaults for every problem generator that has no
+//! \brief recipe::PgenEarlyDefaults for every problem generator that has no
 //! early (pre-physics) fresh-start defaults of its own: a no-op.  deep_hot_jupiter_rt
 //! builds pgen/deep_hot_jupiter_rt_defaults.cpp instead (src/CMakeLists.txt).
 

@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file xe_tracer_test.cpp
-//! \brief tests of <mhd>/xe_tracer (xetracer-1101) on a uniform MHD box with the general
+//! \brief tests of <mhd>/xe_tracer on a uniform MHD box with the general
 //! EOS table (cgs).  B = 0, uniform rho and T, uniform velocity <problem>/vx.
 //!   <problem>/z_fac  : initial z = z_fac x local Saha x_eq (uniform)
 //!   <problem>/z_amp  : plus a Gaussian bump z_amp x x_eq exp(-(x-xc)^2/w^2), xc at the

@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file time_table.hpp
-//! \brief hg262-drive-1113: a host-side table of columns against time, read from a text
+//! \brief a host-side table of columns against time, read from a text
 //! file (whitespace separated, '#' starts a comment, first column = time, strictly
 //! increasing), evaluated piecewise-linearly in t and held at the end values outside its
 //! range.  Integral() is the EXACT integral of that piecewise-linear function, so a

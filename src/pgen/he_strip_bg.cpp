@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file he_strip_bg.cpp
-//! \brief stripbg-1102 (USER 11-02, He giant global): a ONE-SHOT restart-time transform
+//! \brief a ONE-SHOT restart-time transform
 //! of the he_star_m1 problem that removes the gas above the photosphere (lifted gas
 //! falling back, filling the volume to the outer boundary) and replaces it with a
 //! static, optically thin ambient in radiative equilibrium.
@@ -16,25 +16,25 @@
 //!   strip_bg_tau        (2/3)    the cut: per column, the radial Rosseland optical depth
 //!                                tau(r) = int_r^{r_top} (kappa_F + kappa_s) rho dr from
 //!                                the outer mesh edge inward, at the cell centre; cell
-//!                                i_c = the outermost active cell with tau >= strip_bg_tau.
-//!                                Every cell i <= i_c is kept untouched; every cell
+//!                                i_c = the outermost active cell with tau >=
+//! strip_bg_tau. Every cell i <= i_c is kept untouched; every cell
 //!                                i > i_c (and the outer x1 ghosts) is REPLACED.
 //!   strip_bg_rho_fac    (1e-3)   rho_amb(r) = max(dfloor, rho_0 (r_c/r)^2),
 //!   strip_bg_rho_max    (2e-14)  rho_0 = min(fac rho(i_c), rho_max) (code density)
 //!   strip_bg_nblend     (3)      cells i_c+1..i_c+nb: log-linear blend in rho and T from
-//!                                the kept cell's (rho, T) to the ambient (rho_amb(r), T_amb)
-//!                                -- a NEW profile (no old gas above i_c is kept or
+//!                                the kept cell's (rho, T) to the ambient (rho_amb(r),
+//! T_amb) -- a NEW profile (no old gas above i_c is kept or
 //!                                averaged), only so that P has no jump at r_c
 //! Replaced cells: v = 0, T = T_amb = max(tfloor, (E/a_rad)^(1/4)) of the restart's own
 //! M1 E (radiative equilibrium with the star's light; E and F are kept as they are),
-//! e = e(rho, T) from the EOS, IEN = e + rho Phi (etotgrav), passive scalars 0, am spin 0;
-//! the general-EOS restart caches (wtemp, wder p/Gamma_1, eint_rst) of those cells are
+//! e = e(rho, T) from the EOS, IEN = e + rho Phi (etotgrav), passive scalars 0, am spin
+//! 0; the general-EOS restart caches (wtemp, wder p/Gamma_1, eint_rst) of those cells are
 //! set to the new state so the first (frozen) ConToPrim is consistent and the kept
 //! cells stay bitwise the unmodified restart's.
-//! Columns: every (k,j) of each MeshBlock incl. the x2/x3 ghost columns (the restart keeps
-//! ghosts), the corner columns (both ghost) excepted.  A column whose tau never reaches
-//! strip_bg_tau is left untouched (counted).  After the transform the key is set false in
-//! the ParameterInput, so the restart files this run writes do not carry it.
+//! Columns: every (k,j) of each MeshBlock incl. the x2/x3 ghost columns (the restart
+//! keeps ghosts), the corner columns (both ghost) excepted.  A column whose tau never
+//! reaches strip_bg_tau is left untouched (counted).  After the transform the key is set
+//! false in the ParameterInput, so the restart files this run writes do not carry it.
 //========================================================================================
 
 #include <cmath>
@@ -64,7 +64,8 @@
 
 void HsStripBackground(ParameterInput *pin, Mesh *pm) {
   if (!pin->DoesParameterExist("problem", "strip_bg_on_restart") ||
-      !pin->GetBoolean("problem", "strip_bg_on_restart")) return;   // absent: nothing added
+      !pin->GetBoolean("problem", "strip_bg_on_restart")) return;
+      // absent: nothing added
   if (pin->DoesParameterExist("problem", "strip_bg_time")) {
     const Real ts = pin->GetReal("problem", "strip_bg_time");
     if (std::fabs(pm->time - ts) > 1.0e-9*std::max(std::fabs(ts), 1.0)) {
@@ -79,7 +80,7 @@ void HsStripBackground(ParameterInput *pin, Mesh *pm) {
   const Real taucut = pin->GetOrAddReal("problem", "strip_bg_tau", 2.0/3.0);
   const Real rfac = pin->GetOrAddReal("problem", "strip_bg_rho_fac", 1.0e-3);
   const Real rmax = pin->GetOrAddReal("problem", "strip_bg_rho_max", 2.0e-14);
-  const int nb = pin->GetOrAddInteger("problem", "strip_bg_nblend", 3);
+  constexpr int nb = 3;
 
   MeshBlockPack *pmbp = pm->pmb_pack;
   hydro::Hydro *ph = pmbp->phydro;
@@ -249,13 +250,13 @@ void HsStripBackground(ParameterInput *pin, Mesh *pm) {
 }
 
 //----------------------------------------------------------------------------------------
-//! rstpert-1105 (USER 11-05, HG prodG stall at t 4.4232e7): a ONE-SHOT restart-time tiny
+//! a ONE-SHOT restart-time tiny
 //! relative perturbation of the M1 radiation energy E of every active cell,
 //!   E -> E (1 + amp (2 h - 1)),  h = hash(gid, k, j, i) in [0, 1) (layout-independent),
 //! to move the trajectory off a deterministic stall.  Keys (<problem>):
 //!   rst_pert_erad (absent = nothing, bitwise)  the relative amplitude amp (>= 0)
-//!   rst_pert_time (required with it)           apply only when the restart time equals it
-//!                                              (relative 1e-9): an inherited key never re-fires
+//!   rst_pert_time (required with it)           apply only when the restart time equals
+//! it (relative 1e-9): an inherited key never re-fires
 void HsRestartPerturb(ParameterInput *pin, Mesh *pm) {
   if (!pin->DoesParameterExist("problem", "rst_pert_erad")) return;   // absent: bitwise
   const Real amp = pin->GetReal("problem", "rst_pert_erad");
@@ -300,7 +301,7 @@ void HsRestartPerturb(ParameterInput *pin, Mesh *pm) {
 }
 
 //----------------------------------------------------------------------------------------
-//! eosreinit-1112 (USER 11-12, RSG eos_h2 switch at a restart): problem/eos_reinit_from_t
+//! problem/eos_reinit_from_t
 //! (absent or false = nothing, bitwise).  ONE-SHOT, on a restart: re-set the internal
 //! energy from the restart's (rho, T) with THIS run's EOS table, keeping T.  The general
 //! EOS measures e from a composition-dependent zero point (with <hydro>/eos_h2 = true it
@@ -323,16 +324,13 @@ void HsRestartPerturb(ParameterInput *pin, Mesh *pm) {
 void HsEosReinitFromT(ParameterInput *pin, Mesh *pm) {
   if (!pin->DoesParameterExist("problem", "eos_reinit_from_t") ||
       !pin->GetBoolean("problem", "eos_reinit_from_t")) return;   // absent: bitwise
-  // d6int-1113: one-shot ACROSS restarts.  A run script that passes the key on every
+  // one-shot ACROSS restarts.  A run script that passes the key on every
   // restart link (run.cfg KEYS) would re-fire it on a restart file this code wrote after
   // applying it: e(rho, T) -> T -> e is not the identity to the last bit, so 5 + restart
   // + 5 then differs from 10 (real RSG, Raven 32089203).  The applying run records
   // problem/eos_reinit_done = true in the input its restart files carry; seen there, the
   // key is ignored.
-  // problem/eos_reinit_force = true re-applies it anyway.
-  const bool force_ = pin->DoesParameterExist("problem", "eos_reinit_force") &&
-                      pin->GetBoolean("problem", "eos_reinit_force");
-  if (!force_ && pin->DoesParameterExist("problem", "eos_reinit_done") &&
+  if (pin->DoesParameterExist("problem", "eos_reinit_done") &&
       pin->GetBoolean("problem", "eos_reinit_done")) {
     if (global_variable::my_rank == 0) {
       const int c0_ = pin->DoesParameterExist("problem", "eos_reinit_done_cycle") ?
@@ -454,7 +452,6 @@ void HsEosReinitFromT(ParameterInput *pin, Mesh *pm) {
   }
   // one-shot: never inherited by the restart files this run writes
   pin->SetBoolean("problem", "eos_reinit_from_t", false);
-  pin->SetBoolean("problem", "eos_reinit_done", true);   // d6int-1113 (see above)
+  pin->SetBoolean("problem", "eos_reinit_done", true);   // (see above)
   pin->SetInteger("problem", "eos_reinit_done_cycle", pm->ncycle);
-  if (force_) {pin->SetBoolean("problem", "eos_reinit_force", false);}
 }

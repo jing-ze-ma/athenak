@@ -4,14 +4,14 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file deep_hot_jupiter_rt_hse.cpp
-//! \brief deep_hot_jupiter_rt problem generator (tusplit-1102 piece):
-//! HydrostaticEquilibrium, the boundary/HSE hook.  Moved verbatim from deep_hot_jupiter_rt.cpp.
+//! \brief deep_hot_jupiter_rt problem generator (piece):
+//! HydrostaticEquilibrium, the boundary/HSE hook.
 
 #include "deep_hot_jupiter_rt.hpp"
 
 //----------------------------------------------------------------------------------------
 //! \fn HseMaxwellBlockend
-//! \brief seamexact-1103: top_bc = hse with bc_outer_maxwell and cs_seam_blockend =
+//! \brief top_bc = hse with bc_outer_maxwell and cs_seam_blockend =
 //! extend.  The stress divergence of a top ghost cell reads the cell-centred field one
 //! column further out (j+1, k+1); in the OUTERMOST tangential ghost row that column is
 //! not in the block and the difference is one-sided -- next to an interior MeshBlock end
@@ -55,7 +55,8 @@ void HseMaxwellBlockend(MeshBlockPack *pmbp, const F &mxdiv, DvceArray5D<Real> &
   if (hse_mx_pbv_ == nullptr) {
     hse_mx_pbv_ = new MeshBoundaryValuesCC(pmbp, nullptr, false);
     hse_mx_pbv_->InitializeBuffers(ng);
-    hse_mx_pbv_->SetVectorPairs(ng, {});   // plain scalars; only same-panel ghosts are read
+    hse_mx_pbv_->SetVectorPairs(ng, {});
+    // plain scalars; only same-panel ghosts are read
     hse_mx_pbv_->cs_noresample = true;
   }
   while (hse_mx_pbv_->InitRecv(ng) == TaskStatus::incomplete) {}
@@ -92,7 +93,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     Real gamma;
     bool use_etotgrav = false;
     bool use_wellbalance_dynamic = false;
-    
+
     DvceArray4D<Real> phi0_x1f;
     DvceArray4D<Real> phicc0;
     DvceArray5D<Real> bcc0;
@@ -137,14 +138,14 @@ void HydrostaticEquilibrium(Mesh *pm) {
       b0_x3f = pmbp->pmhd->b0.x3f;
     }
     Real bbot = pm->pgen->hot_jupiter_param.bbot;
-    
+
     int nvar = u0_.extent_int(1);
-    
+
     Real igm1 = 1.0/(gamma-1.0);
     Real gigm1 = gamma*igm1;
     Real gm1ig = (gamma-1.0)/gamma;
     Real ig = 1.0/gamma;
-    
+
     // Local copy of the file-scope flag. Reading the global directly from the kernel is
     // a reference to a __host__ variable in device code, which hipcc rejects outright --
     // the switch has to be captured by value like any other host state.
@@ -160,22 +161,13 @@ void HydrostaticEquilibrium(Mesh *pm) {
     // host-pointer dereference (see the note in CLAUDE.md on capturing `this`).
     const bool is_mhd_ = (pmbp->pmhd != nullptr);
 
-    // THE INNER-x1 GHOST MAGNETIC ENERGY IS REMOVED HERE, BEFORE THE FIELD IS REFLECTED.
-    // The inner ghosts keep the internal energy and the momenta the problem generator
-    // gave them; only their MAGNETIC energy follows the reflected field, so every call
-    // swaps one for the other:  E -= e_mag(old ghost field);  reflect;  E += e_mag(new).
-    // The subtraction used to read bcc0, which is NOT restart state -- it is rebuilt by
-    // ConToPrim, and the user boundary is called BEFORE the first ConToPrim of a
-    // restarted run (Driver::InitBoundaryValuesAndPrimitives), where bcc0 is still
-    // exactly zero.  A restart therefore subtracted NOTHING and added the full field
-    // energy, so every inner radial ghost carried a spurious e_mag that the run which
-    // wrote the file never had.
-    // The face field b0 IS in the restart file, ghosts included (restart.cpp writes the
-    // full nx+2*ng arrays), so taking e_mag from the faces -- with the same averaging and
-    // the same cubed-sphere frame rotation the rebuild below uses, which is what
-    // ConToPrim built bcc0 from in the first place -- is the same number in a running
-    // stage and the right one after a restart.  It is also idempotent: a second call in
-    // a row subtracts exactly what the first added.
+    // Inner-x1 ghost magnetic energy, removed before the field is reflected.  The inner
+    // ghosts keep the internal energy and momenta of the problem generator; only their
+    // magnetic energy follows the reflected field:  E -= e_mag(old);  reflect;  E +=
+    // e_mag(new). e_mag is taken from the face field b0 (restart state, ghosts included)
+    // with the same averaging and cubed-sphere frame rotation ConToPrim uses, not from
+    // bcc0, which is still zero at the first boundary call of a restarted run.  The pair
+    // is idempotent.
     if (pmbp->pmhd != nullptr) {
       par_for("usrboundaryx1_demag_inner", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
       KOKKOS_LAMBDA(int m, int k, int j) {
@@ -203,26 +195,23 @@ void HydrostaticEquilibrium(Mesh *pm) {
     }
 
     if (pmbp->pmhd != nullptr) {
-      // stress-free wall on a Cartesian mesh (wallsf-1028): inner ghost B_t odd with unit
-      // ratios (the r^2 / area weights below are spherical, and a Cartesian mesh has no
-      // area arrays; legacy stays bitwise)
-      const bool cart_sf_ = (pmbp->pmhd->wall_stress_free ||
-                             pmbp->pmhd->wall_conducting_ix1) &&
-                            !pm->use_spherical_polar && !pm->use_cubed_sphere;
+      // conducting wall on a Cartesian mesh: inner ghost B_t odd with unit ratios (the
+      // r^2 / area weights below are spherical, and a Cartesian mesh has no area arrays)
+      const bool cart_wall_ = pmbp->pmhd->wall_conducting_ix1 &&
+                              !pm->use_spherical_polar && !pm->use_cubed_sphere;
       par_for("usrboundaryx1_bfield", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
       KOKKOS_LAMBDA(int m, int k, int j) {
           if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
             for (int i=0; i<ng; ++i) {
               int iin = is+i;
               int iex = is-i-1;
-//              Real fac2 = -area2(m,k,j,iin)/area2(m,k,j,iex);
-//              Real fac2p = -area2(m,k,j+1,iin)/area2(m,k,j+1,iex);
-              Real fac2 = -(SQR(x1f_(m,iin+1))-SQR(x1f_(m,iin)))/(SQR(x1f_(m,iex+1))-SQR(x1f_(m,iex)));
+              Real fac2 = -(SQR(x1f_(m,iin+1))-SQR(x1f_(m,iin)))
+                  /(SQR(x1f_(m,iex+1))-SQR(x1f_(m,iex)));
               Real fac2p = fac2;
               // (a Cartesian mesh allocates no area arrays: unit ratios there)
-              Real fac3 = cart_sf_ ? -1.0 : -area3(m,k,j,iin)/area3(m,k,j,iex);
-              Real fac3p = cart_sf_ ? -1.0 : -area3(m,k+1,j,iin)/area3(m,k+1,j,iex);
-              if (cart_sf_) {  // r^2 weights mean nothing on a Cartesian x1: B_t odd
+              Real fac3 = cart_wall_ ? -1.0 : -area3(m,k,j,iin)/area3(m,k,j,iex);
+              Real fac3p = cart_wall_ ? -1.0 : -area3(m,k+1,j,iin)/area3(m,k+1,j,iex);
+              if (cart_wall_) {  // r^2 weights mean nothing on a Cartesian x1: B_t odd
                 fac2 = -1.0;
                 fac2p = -1.0;
               }
@@ -230,20 +219,15 @@ void HydrostaticEquilibrium(Mesh *pm) {
               if (j == n2-1) {b0_x2f(m,k,j+1,iex) = b0_x2f(m,k,j+1,iin)*fac2p;}
               b0_x3f(m,k,j,iex) = b0_x3f(m,k,j,iin)*fac3;
               if (k == n3-1) {b0_x3f(m,k+1,j,iex) = b0_x3f(m,k+1,j,iin)*fac3p;}
-              Real fac1 = cart_sf_ ? 1.0 : area1(m,k,j,iin+1)/area1(m,k,j,iex);
+              Real fac1 = cart_wall_ ? 1.0 : area1(m,k,j,iin+1)/area1(m,k,j,iex);
               b0_x1f(m,k,j,iex) = b0_x1f(m,k,j,iin+1)*fac1;
             }
-//            for (int i=0; i<ng; ++i) {
-//              int iex = is-i-1;
-//              Real div_rest = b0_x1f(m,k,j,iex+1)*area1(m,k,j,iex+1) + (b0_x2f(m,k,j+1,iex)*area2(m,k,j+1,iex)-b0_x2f(m,k,j,iex)*area2(m,k,j,iex)) + (b0_x3f(m,k+1,j,iex)*area3(m,k+1,j,iex)-b0_x3f(m,k,j,iex)*area3(m,k,j,iex));
-//              b0_x1f(m,k,j,iex) = div_rest/area1(m,k,j,iex);
-//            }
           }
           if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user && top_out_) {
             // problem/top_bc = outflow1 | outflow0: TANGENTIAL face field zero-gradient
             // (the last active cell's faces copied into every ghost); the ghost NORMAL
             // faces follow from div B = 0 in usrboundaryx1_bfield_divb below
-            // ssbc-1111, mhd/top_bc_bt = sourcesurface: the tangential faces are ODD
+            // mhd/top_bc_bt = sourcesurface: the tangential faces are ODD
             // about the top face instead (ghost ie+1+i = -cell ie-i), so B_t = 0 on the
             // face to second order and the field leaving the top is radial (potential-
             // field source surface).  The face EMF the Riemann solver builds from the
@@ -273,9 +257,8 @@ void HydrostaticEquilibrium(Mesh *pm) {
             for (int i=0; i<ng; ++i) {
               int iin = ie-i;
               int iex = ie+i+1;
-//              Real fac2 = -area2(m,k,j,iin)/area2(m,k,j,iex);
-//              Real fac2p = -area2(m,k,j+1,iin)/area2(m,k,j+1,iex);
-              Real fac2 = -(SQR(x1f_(m,iin+1))-SQR(x1f_(m,iin)))/(SQR(x1f_(m,iex+1))-SQR(x1f_(m,iex)));
+              Real fac2 = -(SQR(x1f_(m,iin+1))-SQR(x1f_(m,iin)))
+                  /(SQR(x1f_(m,iex+1))-SQR(x1f_(m,iex)));
               Real fac2p = fac2;
               Real fac3 = -area3(m,k,j,iin)/area3(m,k,j,iex);
               Real fac3p = -area3(m,k+1,j,iin)/area3(m,k+1,j,iex);
@@ -286,18 +269,6 @@ void HydrostaticEquilibrium(Mesh *pm) {
               Real fac1 = area1(m,k,j,iin)/area1(m,k,j,iex+1);
               b0_x1f(m,k,j,iex+1) = b0_x1f(m,k,j,iin)*fac1;
             }
-//            for (int i=0; i<ng; ++i) {
-//              int iex = ie+i+1;
-//              Real div_rest = b0_x1f(m,k,j,iex)*area1(m,k,j,iex) - (b0_x2f(m,k,j+1,iex)*area2(m,k,j+1,iex)-b0_x2f(m,k,j,iex)*area2(m,k,j,iex)) - (b0_x3f(m,k+1,j,iex)*area3(m,k+1,j,iex)-b0_x3f(m,k,j,iex)*area3(m,k,j,iex));
-//              b0_x1f(m,k,j,iex+1) = div_rest/area1(m,k,j,iex+1);
-//            }
-//              for (int i=0; i<ng; ++i) {
-//                b0_x1f(m,k,j,ie+i+2) = -b0_x1f(m,k,j,ie-i);
-//                b0_x2f(m,k,j,ie+i+1) =  b0_x2f(m,k,j,ie-i);
-//                if (j == n2-1) {b0_x2f(m,k,j+1,ie+i+1) = b0_x2f(m,k,j+1,ie-i);}
-//                b0_x3f(m,k,j,ie+i+1) =  b0_x3f(m,k,j,ie-i);
-//                if (k == n3-1) {b0_x3f(m,k+1,j,ie+i+1) = b0_x3f(m,k+1,j,ie-i);}
-//              }
         }
       });
       // problem/top_bc = outflow1 | outflow0: the ghost NORMAL faces from div B = 0,
@@ -321,71 +292,23 @@ void HydrostaticEquilibrium(Mesh *pm) {
         });
       }
     }
-    
-//    if (pmbp->phydro != nullptr) {
-//      if (use_etotgrav) {
-//        pmbp->phydro->RemoveGravEtot(phicc0, u0_, 0, is-1, 0, (n2-1), 0, (n3-1));
-//      }
-//      pmbp->phydro->peos->ConsToPrim(u0_, w0_, false, 0, is-1, 0, (n2-1), 0, (n3-1));
-//      if (use_etotgrav) {
-//        pmbp->phydro->AddGravEtot(phicc0, u0_, 0, is-1, 0, (n2-1), 0, (n3-1));
-//      }
-//    }
-//    else if (pmbp->pmhd != nullptr) {
-//      auto b0 = pmbp->pmhd->b0;
-//      if (use_etotgrav) {
-//        pmbp->pmhd->RemoveGravEtot(phicc0, u0_, 0, is-1, 0, (n2-1), 0, (n3-1));
-//      }
-//      pmbp->pmhd->peos->ConsToPrim(u0_, b0, w0_, bcc0, false, 0, is-1, 0, (n2-1), 0, (n3-1));
-//      if (use_etotgrav) {
-//        pmbp->pmhd->AddGravEtot(phicc0, u0_, 0, is-1, 0, (n2-1), 0, (n3-1));
-//      }
-//    }
-    // (The ConsToPrim on the ie column that used to stand here is gone.  It existed only
-    // to refresh w0/wtemp/bcc0 for the outer ghost extrapolation below, which now takes
-    // rho, e and T from u0 and b0 itself.  It could not stay: it is called on an ACTIVE
-    // column, so its floors and -- under etotgrav -- its RemoveGravEtot/AddGravEtot round
-    // trip edited u0(IEN,ie) by a rounding error on EVERY boundary call, and a restarted
-    // run makes one extra call (Driver::InitBoundaryValuesAndPrimitives) that the run
-    // which wrote the file did not, so the two could not agree bit for bit.  Flooring an
-    // active cell is the job of the ConToPrim that follows this boundary in the same task
-    // list, and it still does it.)
 
-//    par_for("usrboundaryx1", DevExeSpace(), 0,(nmb-1),0,(nvar-1),0,(n3-1),0,(n2-1),
-//    KOKKOS_LAMBDA(int m, int n, int k, int j) {
-//        if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
-//          for (int i=0; i<ng; ++i) {
-//            u0_(m,n,k,j,ie+i+1) = u0_(m,n,k,j,ie);
-//          }
-//        }
-//    });
-    
-    // The cell-centred field in the OUTER-x1 ghost zones is built here, in its own kernel,
-    // and not in the extrapolation kernel below.  It used to be computed inline there, in
-    // the same launch that reads bcc0 at (k,j+1) and (k+1,j) for the Maxwell stress -- cells
-    // owned by OTHER threads of that launch.  Whether a thread saw its neighbour's new value
-    // or the previous cycle's stale one depended on how the wavefronts happened to be
-    // scheduled, which made the whole run non-reproducible on a GPU: two runs of the same
-    // binary on one rank diverged within a single cycle, worst in the outer half of the
-    // domain, where the two-stream RT then spread it along each radial column.  On a CPU the
-    // ascending j loop always lost the race the same way, so this was deterministic (and
-    // deterministically wrong) until the problem first ran on an accelerator.
-    //
-    // Splitting the write from the read is the whole fix: every bcc0 the stress term reads
-    // is now a completed write from a previous kernel.
-    //
-    // The INNER-x1 ghosts are deliberately NOT hoisted: that branch subtracts the magnetic
-    // energy using the OLD bcc0 and adds it back with the new one, so moving the update
-    // ahead of it would change what it subtracts.  It has no cross-thread read and was
-    // measured deterministic on its own.
+    // The cell-centred field in the outer-x1 ghost zones is built in its own kernel: the
+    // extrapolation kernel below reads bcc0 at (k,j+1) and (k+1,j) for the Maxwell
+    // stress, and those cells belong to other threads of that launch, so the read must
+    // see a completed write (otherwise the result depends on GPU scheduling).  The
+    // inner-x1 ghosts stay in their kernel: it subtracts the magnetic energy of the old
+    // bcc0 and has no cross-thread read.
     par_for("usrboundaryx1_bcc_outer", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
     KOKKOS_LAMBDA(int m, int k, int j) {
         if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user &&
             is_mhd_) {
           for (int i=0; i<ng; ++i) {
             Real lw, rw;
-            lw = (x1f_(m,(ie+i+1)+1)-x1v_(m,(ie+i+1)))/(x1f_(m,(ie+i+1)+1)-x1f_(m,(ie+i+1)));
-            rw = (x1v_(m,(ie+i+1))-x1f_(m,(ie+i+1)))/(x1f_(m,(ie+i+1)+1)-x1f_(m,(ie+i+1)));
+            lw = (x1f_(m,(ie+i+1)+1)-x1v_(m,(ie+i+1)))
+                /(x1f_(m,(ie+i+1)+1)-x1f_(m,(ie+i+1)));
+            rw = (x1v_(m,(ie+i+1))-x1f_(m,(ie+i+1)))
+                /(x1f_(m,(ie+i+1)+1)-x1f_(m,(ie+i+1)));
             bcc0(m,IBX,k,j,(ie+i+1)) = lw*b0_x1f(m,k,j,(ie+i+1))
                                      + rw*b0_x1f(m,k,j,(ie+i+1)+1);
             lw = (x2f_(m,j+1)-x2v_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
@@ -399,8 +322,8 @@ void HydrostaticEquilibrium(Mesh *pm) {
                                      + rw*b0_x3f(m,k+1,j,(ie+i+1));
             if (cs_bc_) {
               // CUBED SPHERE: bcc is stored in the ORTHONORMAL frame that
-              // GnomonicEquiangleRaiseVelMHD builds (B.e_xi = (b_xi + c b_eta)/s, eta slot
-              // unchanged), and ConsToPrim subtracts 0.5*|bcc|^2 in that frame.  The
+              // GnomonicEquiangleRaiseVelMHD builds (B.e_xi = (b_xi + c b_eta)/s, eta
+              // slot unchanged), and ConsToPrim subtracts 0.5*|bcc|^2 in that frame.  The
               // plain face averages are components on the non-orthogonal tangent pair,
               // whose sum of squares is NOT |B|^2: the two differ by the cross term
               // (c^2 (b2^2 + b3^2) + 2 c b2 b3)/s^2, of order B_tan^2 at a panel corner.
@@ -412,9 +335,10 @@ void HydrostaticEquilibrium(Mesh *pm) {
         }
     });
 
-    // seamexact-1103: the Maxwell-stress divergence of the hse top ghost (i = 0..ng-1),
+    // the Maxwell-stress divergence of the hse top ghost (i = 0..ng-1),
     // shared by the boundary kernel and the block-end exchange below
-    auto mxdiv = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i) {
+    auto mxdiv = [=] KOKKOS_FUNCTION (const int m, const int k, const int j,
+                                      const int i) {
       Real dM1mag;
       // (k,j+1) and (k+1,j) are read here. They belong to other threads, which is
       // why the write had to move to its own kernel -- see the note on that kernel.
@@ -429,18 +353,23 @@ void HydrostaticEquilibrium(Mesh *pm) {
       // centred index ie+i+2 is n1, one beyond the array. The face array b0_x1f has
       // the extra slot and is indexed as before; only bcc0 is held back.
       int ip2 = (ie+i+2 < n1) ? (ie+i+2) : (n1-1);
-      Real pb = 0.5*(SQR(b0_x1f(m,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))+SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
-      Real pbp1 = 0.5*(SQR(b0_x1f(m,k,j,(ie+i+2)))+SQR(bcc0(m,IBY,k,j,ip2))+SQR(bcc0(m,IBZ,k,j,ip2)));
+      Real pb = 0.5*(SQR(b0_x1f(m,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))
+                     +SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
+      Real pbp1 = 0.5*(SQR(b0_x1f(m,k,j,(ie+i+2)))+SQR(bcc0(m,IBY,k,j,ip2))
+                       +SQR(bcc0(m,IBZ,k,j,ip2)));
       Real M11 = pb - SQR(b0_x1f(m,k,j,(ie+i+1)));
       Real M11p1 = pbp1 - SQR(b0_x1f(m,k,j,(ie+i+2)));
       Real M12 = - b0_x2f(m,k,j,(ie+i+1)) * bcc0(m,IBX,k,j,(ie+i+1));
       Real M12p1 = - b0_x2f(m,k,j+1,(ie+i+1)) * bcc0(m,IBX,k,jp1,(ie+i+1));
       Real M13 = - b0_x3f(m,k,j,(ie+i+1)) * bcc0(m,IBX,k,j,(ie+i+1));
       Real M13p1 = - b0_x3f(m,k+1,j,(ie+i+1)) * bcc0(m,IBX,kp1,j,(ie+i+1));
-      dM1mag = -( (M11p1*area1(m,k,j,(ie+i+2))-M11*area1(m,k,j,(ie+i+1))) + (M12p1*area2(m,k,j+1,(ie+i+1))-M12*area2(m,k,j,(ie+i+1))) + (M13p1*area3(m,k+1,j,(ie+i+1))-M13*area3(m,k,j,(ie+i+1))) )/volume(m,k,j,(ie+i+1));
+      dM1mag = -( (M11p1*area1(m,k,j,(ie+i+2))-M11*area1(m,k,j,(ie+i+1)))
+                + (M12p1*area2(m,k,j+1,(ie+i+1))-M12*area2(m,k,j,(ie+i+1)))
+                + (M13p1*area3(m,k+1,j,(ie+i+1))-M13*area3(m,k,j,(ie+i+1))) )
+               /volume(m,k,j,(ie+i+1));
       return dM1mag;
     };
-    // seamexact-1103 (cs_seam_blockend = extend): the outermost tangential ghost row's
+    // (cs_seam_blockend = extend): the outermost tangential ghost row's
     // stress divergence from the same-panel neighbour that owns those columns
     const bool mxe_ = is_mhd_ && bc_outer_maxwell_ && !top_out_ &&
                       pmbp->pmhd->pbval_u->cs_blockend_ext_;
@@ -453,82 +382,57 @@ void HydrostaticEquilibrium(Mesh *pm) {
     KOKKOS_LAMBDA(int m, int k, int j) {
         if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
           Real rho_i = u0_(m,IDN,k,j,is);
-//          Real e_i = w0_(m,IEN,k,j,is);
-//          Real phi_i = phicc0(m,k,j,is);
-//          Real q0_i = log(e_i);
-//          Real factor_i = rho_i/e_i*igm1;
           for (int i=0; i<ng; ++i) {
             if (is_mhd_) {
               // the OLD ghost magnetic energy was removed in usrboundaryx1_demag_inner,
               // before the reflection overwrote the faces it was built from; here only
               // the NEW one is added back.  See the note on that kernel.
               Real lw, rw;
-              lw = (x1f_(m,(is-i-1)+1)-x1v_(m,(is-i-1)))/(x1f_(m,(is-i-1)+1)-x1f_(m,(is-i-1)));
-              rw = (x1v_(m,(is-i-1))-x1f_(m,(is-i-1)))/(x1f_(m,(is-i-1)+1)-x1f_(m,(is-i-1)));
-              bcc0(m,IBX,k,j,(is-i-1)) = lw*b0_x1f(m,k,j,(is-i-1)) + rw*b0_x1f(m,k,j,(is-i-1)+1);
+              lw = (x1f_(m,(is-i-1)+1)-x1v_(m,(is-i-1)))
+                  /(x1f_(m,(is-i-1)+1)-x1f_(m,(is-i-1)));
+              rw = (x1v_(m,(is-i-1))-x1f_(m,(is-i-1)))
+                  /(x1f_(m,(is-i-1)+1)-x1f_(m,(is-i-1)));
+              bcc0(m,IBX,k,j,(is-i-1)) = lw*b0_x1f(m,k,j,(is-i-1))
+                  + rw*b0_x1f(m,k,j,(is-i-1)+1);
               lw = (x2f_(m,j+1)-x2v_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
               rw = (x2v_(m,j)-x2f_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
-              bcc0(m,IBY,k,j,(is-i-1)) = lw*b0_x2f(m,k,j,(is-i-1)) + rw*b0_x2f(m,k,j+1,(is-i-1));
+              bcc0(m,IBY,k,j,(is-i-1)) = lw*b0_x2f(m,k,j,(is-i-1))
+                  + rw*b0_x2f(m,k,j+1,(is-i-1));
               lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
               rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
-              bcc0(m,IBZ,k,j,(is-i-1)) = lw*b0_x3f(m,k,j,(is-i-1)) + rw*b0_x3f(m,k+1,j,(is-i-1));
+              bcc0(m,IBZ,k,j,(is-i-1)) = lw*b0_x3f(m,k,j,(is-i-1))
+                  + rw*b0_x3f(m,k+1,j,(is-i-1));
               if (cs_bc_) {
-                // CUBED SPHERE: same orthonormal-frame rotation as the outer ghosts.  THIS
-                // ONE MATTERED.  The energy update above subtracts 0.5*|bcc0|^2 with the
-                // bcc0 that ConsToPrim left here (orthonormal) and adds it back with the
-                // one built here (plain averages): on cs the two differ by the cross term,
-                // so the ghost TOTAL energy drifted by that mismatch on every call.  The
-                // ghost internal energy, uniform over (j,k) at each depth by construction,
-                // had a spread of 1e-3 at rot 6, 8 % at rot 16 and ranged 3e8-2e9 around
-                // 1.5e9 by rot 26 of cs_prod_mhd_rot -- bottom cells under a low-pressure
-                // ghost drained at 2 km/s into the boundary, the domain lost 1 % of its
-                // mass and the run went NaN at rot 32.  Spherical polar has c = 0.
+                // CUBED SPHERE: same orthonormal-frame rotation as the outer ghosts.
+                // THIS ONE MATTERED.  The energy update above subtracts 0.5*|bcc0|^2 with
+                // the bcc0 that ConsToPrim left here (orthonormal) and adds it back with
+                // the one built here (plain averages): on cs the two differ by the cross
+                // term, so the ghost TOTAL energy drifted by that mismatch on every call.
+                // The ghost internal energy, uniform over (j,k) at each depth by
+                // construction, had a spread of 1e-3 at rot 6, 8 % at rot 16 and ranged
+                // 3e8-2e9 around 1.5e9 by rot 26 of cs_prod_mhd_rot -- bottom cells under
+                // a low-pressure ghost drained at 2 km/s into the boundary, the domain
+                // lost 1 % of its mass and the run went NaN at rot 32.  Spherical polar
+                // has c = 0.
                 const Real cg = ccell_bc_(m,k,j), sg = scell_bc_(m,k,j);
                 bcc0(m,IBY,k,j,(is-i-1)) = (bcc0(m,IBY,k,j,(is-i-1))
                                             + cg*bcc0(m,IBZ,k,j,(is-i-1)))/sg;
               }
-              u0_(m,IEN,k,j,is-i-1) += 0.5*(SQR(bcc0(m,IBX,k,j,is-i-1))+SQR(bcc0(m,IBY,k,j,is-i-1))+SQR(bcc0(m,IBZ,k,j,is-i-1)));
+              u0_(m,IEN,k,j,is-i-1) += 0.5
+                  *(SQR(bcc0(m,IBX,k,j,is-i-1))+SQR(bcc0(m,IBY,k,j,is-i-1))
+                    +SQR(bcc0(m,IBZ,k,j,is-i-1)));
             }
-//              Real rho0_ip = u0_(m,IDN,k,j,(is-i-1));
-//              u0_(m,IM2,k,j,(is-i-1)) = u0_(m,IM2,k,j,is)/rho_i*rho0_ip;
-//              u0_(m,IM3,k,j,(is-i-1)) = u0_(m,IM3,k,j,is)/rho_i*rho0_ip;
-//              u0_(m,IM1,k,j,(is-i-1)) = 0.0;//-u0_(m,IM1,k,j,is)/rho_i*rho0_ip;
-//              u0_(m,IEN,k,j,(is-i-1)) = w0_(m,IEN,k,j,(is-i-1)) + 0.5*(SQR(u0_(m,IM1,k,j,(is-i-1)))+SQR(u0_(m,IM2,k,j,(is-i-1)))+SQR(u0_(m,IM3,k,j,(is-i-1))))/rho0_ip;
-////            Real dphi_i = phicc0(m,k,j,(is-i-1))-phi_i;
-////            Real q0_ip = q0_i - factor_i * dphi_i;
-////            Real e0_ip = exp(q0_ip);
-////            if (e0_ip < 0.0) e0_ip = e_i;
-////            Real rho0_ip = e0_ip/e_i*rho_i;
-////            u0_(m,IDN,k,j,(is-i-1)) = rho0_ip;
-////            u0_(m,IM2,k,j,(is-i-1)) = u0_(m,IM2,k,j,is)/rho_i*rho0_ip;
-////            u0_(m,IM3,k,j,(is-i-1)) = u0_(m,IM3,k,j,is)/rho_i*rho0_ip;
-////            Real mom = u0_(m,IM1,k,j,is)/rho_i*rho0_ip; // fmax(0.0,u0_(m,IM1,k,j,is)/rho_i*rho0_ip); //
-////            u0_(m,IM1,k,j,(is-i-1)) = mom;
-////            u0_(m,IEN,k,j,(is-i-1)) = e0_ip + 0.5*(SQR(u0_(m,IM1,k,j,(is-i-1)))+SQR(u0_(m,IM2,k,j,(is-i-1)))+SQR(u0_(m,IM3,k,j,(is-i-1))))/rho0_ip;
-//            if (use_etotgrav) u0_(m,IEN,k,j,(is-i-1)) += rho0_ip*phicc0(m,k,j,(is-i-1));
-//            if (pmbp->pmhd != nullptr) u0_(m,IEN,k,j,(is-i-1)) +=  0.5*(SQR(bcc0(m,IBX,k,j,(is-i-1)))+SQR(bcc0(m,IBY,k,j,(is-i-1)))+SQR(bcc0(m,IBZ,k,j,(is-i-1))));
           }
         }
-        // AN OPEN GHOST NEEDS AN INTERIOR TO CONTINUE.  This boundary runs twice before
-        // the problem generator has filled anything, with u0 exactly zero; the
-        // hydrostatic continuation of THAT is a division by zero.  It used to produce
-        // inf/NaN ghosts that the generator then overwrote; the gate makes it leave them
-        // alone instead.  Once u0 has a state the continuation is used, and at t = 0 it
-        // reproduces the initial column anyway.
+        // An open ghost needs an interior to continue: before the problem generator has
+        // filled u0 (u0 = 0) the hydrostatic continuation would divide by zero, so those
+        // ghosts are left alone.
         if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user &&
             u0_(m,IDN,k,j,ie) > 0.0) {
-          // rho, e AND T OF THE LAST ACTIVE CELL, FROM THE CONSERVED STATE.  These three
-          // used to come from w0(IDN,ie), w0(IEN,ie) and wtemp(ie), refreshed by a
-          // ConsToPrim on this column a few lines above.  None of the three is restart
-          // state, and the warm start wtemp gave that inversion is not either: the root
-          // find stops at |dz| < logtol, so its answer depends on where it started, and
-          // at the first boundary call of a restarted run wtemp is zero while in a
-          // running stage it is the previous stage's temperature.  Extracting the state
-          // here from u0 and b0 -- both restored bitwise by the restart file -- makes the
-          // whole ghost fill a pure function of the restart state, hence idempotent, and
-          // drops the one-stage lag w0 carried (ApplyPhysicalBCs runs after RKUpdate, the
-          // source terms and the RT).  EintFromCons performs exactly ConsToPrim's
-          // extraction, in the same order, so in a smooth cell nothing moves.
+          // rho, e and T of the last active cell, from the conserved state u0 and b0
+          // (both restart state), so the ghost fill is a pure function of the restart
+          // state and idempotent.  EintFromCons performs ConsToPrim's extraction in the
+          // same order.
           Real rho_i = u0_(m,IDN,k,j,ie);
           if (rho_i < eos.dfloor) rho_i = eos.dfloor;
           Real emag_i = 0.0;
@@ -581,7 +485,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
             const Real m1o = fmax(u0_(m,IM1,k,j,ie), 0.0);
             Real m2o = u0_(m,IM2,k,j,ie);
             Real m3o = u0_(m,IM3,k,j,ie);
-            // mhdtop-1112 <mhd>/top_bc_bt = charout: ghost tangential velocity with ZERO
+            // <mhd>/top_bc_bt = charout: ghost tangential velocity with ZERO
             // incoming Alfven characteristic, z_in = v_t + s B_t/sqrt(rho) = 0, s = sgn
             // of B_r on the top face, B_t the ghost cell's (zerograd) field, all in the
             // orthonormal frame bcc lives in (cubed sphere: e_xi, (e_eta - c e_xi)/s;
@@ -632,7 +536,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
             if (is_mhd_) {
               // bcc0 in these ghost cells was built by usrboundaryx1_bcc_outer above.
               if (bc_outer_maxwell_) {
-              // seamexact-1103: at the OUTERMOST tangential ghost row next to an
+              // at the OUTERMOST tangential ghost row next to an
               // INTERIOR MeshBlock end (cs_seam_blockend = extend) the one-sided
               // difference above is layout dependent -- one block per panel side
               // differences centrally there; the owning neighbour's value, exchanged
@@ -690,12 +594,10 @@ void HydrostaticEquilibrium(Mesh *pm) {
             // the density by the energy's relative shift because the magnetic term was
             // bolted on afterwards
             Real rho0_ip = rho0_hyd;
-//            rho0_ip = rho_i;
-//            e0_ip = e_i;
             u0_(m,IDN,k,j,(ie+i+1)) = rho0_ip;
             u0_(m,IM2,k,j,(ie+i+1)) = u0_(m,IM2,k,j,ie)/rho_i*rho0_ip;
             u0_(m,IM3,k,j,(ie+i+1)) = u0_(m,IM3,k,j,ie)/rho_i*rho0_ip;
-            Real mom = u0_(m,IM1,k,j,ie)/rho_i*rho0_ip; // fmax(0.0,u0_(m,IM1,k,j,ie)/rho_i*rho0_ip); // 
+            Real mom = u0_(m,IM1,k,j,ie)/rho_i*rho0_ip;
             u0_(m,IM1,k,j,(ie+i+1)) = mom;
             // Kinetic energy of the ghost cell.  On the CUBED SPHERE IM2/IM3 are
             // COVARIANT components on a non-orthogonal tangent basis, so
@@ -704,8 +606,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
             // squares (kept, bit for bit, for every other grid) drops the -2c m2 m3
             // cross term, up to 50 % of the tangential KE at a panel corner where
             // |c| = 1/2, and ConsToPrim then reads that error back out of E as
-            // internal energy.  Same bug class as the rotation source that used to
-            // fall through into the beta-plane.
+            // internal energy.
             Real ke_g;
             {
               const Real m1g = u0_(m,IM1,k,j,(ie+i+1));
@@ -721,177 +622,14 @@ void HydrostaticEquilibrium(Mesh *pm) {
             }
             u0_(m,IEN,k,j,(ie+i+1)) = e0_ip + ke_g;
             if (use_etotgrav) u0_(m,IEN,k,j,(ie+i+1)) += rho0_ip*phicc0(m,k,j,(ie+i+1));
-            if (is_mhd_) u0_(m,IEN,k,j,(ie+i+1)) +=  0.5*(SQR(bcc0(m,IBX,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))+SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
+            if (is_mhd_) {
+              u0_(m,IEN,k,j,(ie+i+1)) += 0.5
+                  *(SQR(bcc0(m,IBX,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))
+                    +SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
+            }
           }
         }
     });
 
-////    par_for("usrboundaryx2", DevExeSpace(), 0,(nmb-1),0,(nvar-1),0,(n3-1),0,(n1-1),
-////    KOKKOS_LAMBDA(int m, int n, int k, int i) {
-////        if (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::user) {
-////          for (int j=0; j<ng; ++j) {
-////            if (n==(IVY)) {
-////              u0_(m,n,k,js-j-1,i) = -u0_(m,n,k,js+j,i);
-////            } else {
-////              u0_(m,n,k,js-j-1,i) = u0_(m,n,k,js+j,i);
-////            }
-////          }
-////        }
-////        if (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::user) {
-////          for (int j=0; j<ng; ++j) {
-////            if (n==(IVY)) {
-////              u0_(m,n,k,je+j+1,i) = -u0_(m,n,k,je-j,i);
-////            } else {
-////              u0_(m,n,k,je+j+1,i) = u0_(m,n,k,je-j,i);
-////            }
-////          }
-////        }
-////    });
-//    par_for("usrboundaryx2", DevExeSpace(), 0,(nmb-1),0,(n3-1),0,(n1-1),
-//    KOKKOS_LAMBDA(int m, int k, int i) {
-//        if (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::user) {
-//          for (int j=0; j<ng; ++j) {
-//            u0_(m,IDN,k,js-j-1,i) = u0_(m,IDN,k,js,i);
-//            u0_(m,IM1,k,js-j-1,i) = u0_(m,IM1,k,js,i);
-//            u0_(m,IM3,k,js-j-1,i) = u0_(m,IM3,k,js,i);
-//            u0_(m,IM2,k,js-j-1,i) = fmin(0.0,u0_(m,IM2,k,js,i));
-//            u0_(m,IEN,k,js-j-1,i) = u0_(m,IEN,k,js,i)-0.5*SQR(u0_(m,IM2,k,js,i))+0.5*SQR(u0_(m,IM2,k,js-j-1,i));
-//          }
-//        }
-//        if (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::user) {
-//          for (int j=0; j<ng; ++j) {
-//            u0_(m,IDN,k,je+j+1,i) = u0_(m,IDN,k,je,i);
-//            u0_(m,IM1,k,je+j+1,i) = u0_(m,IM1,k,je,i);
-//            u0_(m,IM3,k,je+j+1,i) = u0_(m,IM3,k,je,i);
-//            u0_(m,IM2,k,je+j+1,i) = fmax(0.0,u0_(m,IM2,k,je,i));
-//            u0_(m,IEN,k,je+j+1,i) = u0_(m,IEN,k,je,i)-0.5*SQR(u0_(m,IM2,k,je,i))+0.5*SQR(u0_(m,IM2,k,je+j+1,i));
-//          }
-//        }
-//    });
-//    if (pmbp->pmhd != nullptr) {
-//      par_for("usrboundaryx2_bfield", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n1-1),
-//      KOKKOS_LAMBDA(int m, int k, int i) {
-//          if (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::user) {
-//              for (int j=0; j<ng; ++j) {
-//                int jin = js+j;
-//                int jex = js-j-1;
-//                Real fac1 = -area1(m,k,jin,i)/area1(m,k,jex,i);
-//                Real fac1p = -area1(m,k,jin,i+1)/area1(m,k,jex,i+1);
-//                Real fac3 = -area3(m,k,jin,i)/area3(m,k,jex,i);
-//                Real fac3p = -area3(m,k+1,jin,i)/area3(m,k+1,jex,i);
-//                b0_x1f(m,k,jex,i) = b0_x1f(m,k,jin,i)*fac1;
-//                if (i == n1-1) {b0_x1f(m,k,jex,i+1) = b0_x1f(m,k,jin,i+1)*fac1p;}
-//                b0_x3f(m,k,jex,i) = b0_x3f(m,k,jin,i)*fac3;
-//                if (k == n3-1) {b0_x3f(m,k+1,jex,i) = b0_x3f(m,k+1,jin,i)*fac3p;}
-//                Real fac2 = area2(m,k,jin+1,i)/area2(m,k,jex,i);
-//                b0_x2f(m,k,jex,i) = b0_x2f(m,k,jin+1,i)*fac2;
-//              }
-////              for (int j=0; j<ng; ++j) {
-////                int jex = js-j-1;
-////                Real div_rest = b0_x2f(m,k,jex+1,i)*area2(m,k,jex+1,i) + (b0_x1f(m,k,jex,i+1)*area1(m,k,jex,i+1)-b0_x1f(m,k,jex,i)*area1(m,k,jex,i)) + (b0_x3f(m,k+1,jex,i)*area3(m,k+1,jex,i)-b0_x3f(m,k,jex,i)*area3(m,k,jex,i));
-////                b0_x2f(m,k,jex,i) = div_rest/area2(m,k,jex,i);
-////              }
-//          }
-//          if (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::user) {
-//              for (int j=0; j<ng; ++j) {
-//                int jin = je-j;
-//                int jex = je+j+1;
-//                Real fac1 = -area1(m,k,jin,i)/area1(m,k,jex,i);
-//                Real fac1p = -area1(m,k,jin,i+1)/area1(m,k,jex,i+1);
-//                Real fac3 = -area3(m,k,jin,i)/area3(m,k,jex,i);
-//                Real fac3p = -area3(m,k+1,jin,i)/area3(m,k+1,jex,i);
-//                b0_x1f(m,k,jex,i) = b0_x1f(m,k,jin,i)*fac1;
-//                if (i == n1-1) {b0_x1f(m,k,jex,i+1) = b0_x1f(m,k,jin,i+1)*fac1p;}
-//                b0_x3f(m,k,jex,i) = b0_x3f(m,k,jin,i)*fac3;
-//                if (k == n3-1) {b0_x3f(m,k+1,jex,i) = b0_x3f(m,k+1,jin,i)*fac3p;}
-//                Real fac2 = area2(m,k,jin,i)/area2(m,k,jex+1,i);
-//                b0_x2f(m,k,jex+1,i) = b0_x2f(m,k,jin,i)*fac2;
-//              }
-////              for (int j=0; j<ng; ++j) {
-////                int jex = je+j+1;
-////                Real div_rest = b0_x2f(m,k,jex,i)*area2(m,k,jex,i) - (b0_x1f(m,k,jex,i+1)*area1(m,k,jex,i+1)-b0_x1f(m,k,jex,i)*area1(m,k,jex,i)) - (b0_x3f(m,k+1,jex,i)*area3(m,k+1,jex,i)-b0_x3f(m,k,jex,i)*area3(m,k,jex,i));
-////                b0_x2f(m,k,jex+1,i) = div_rest/area2(m,k,jex+1,i);
-////              }
-//          }
-//      });
-//        par_for("usrboundaryx2_bfieldc", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n1-1),
-//        KOKKOS_LAMBDA(int m, int k, int i) {
-//            if (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::user) {
-//                Real lw, rw;
-//                lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
-//                rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
-//                bcc0(m,IBX,k,js,i) = lw*b0_x1f(m,k,js,i) + rw*b0_x1f(m,k,js,i+1);
-//                lw = (x2f_(m,js+1)-x2v_(m,js))/(x2f_(m,js+1)-x2f_(m,js));
-//                rw = (x2v_(m,js)-x2f_(m,js))/(x2f_(m,js+1)-x2f_(m,js));
-//                bcc0(m,IBY,k,js,i) = lw*b0_x2f(m,k,js,i) + rw*b0_x2f(m,k,js+1,i);
-//                lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
-//                rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
-//                bcc0(m,IBZ,k,js,i) = lw*b0_x3f(m,k,js,i) + rw*b0_x3f(m,k+1,js,i);
-//
-//                lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
-//                rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
-//                bcc0(m,IBX,k,je,i) = lw*b0_x1f(m,k,je,i) + rw*b0_x1f(m,k,je,i+1);
-//                lw = (x2f_(m,je+1)-x2v_(m,je))/(x2f_(m,je+1)-x2f_(m,je));
-//                rw = (x2v_(m,je)-x2f_(m,je))/(x2f_(m,je+1)-x2f_(m,je));
-//                bcc0(m,IBY,k,je,i) = lw*b0_x2f(m,k,je,i) + rw*b0_x2f(m,k,je+1,i);
-//                lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
-//                rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
-//                bcc0(m,IBZ,k,je,i) = lw*b0_x3f(m,k,je,i) + rw*b0_x3f(m,k+1,je,i);
-//
-//              for (int j=0; j<ng; ++j) {
-////                Real lw, rw;
-////                lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
-////                rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
-////                bcc0(m,IBX,k,js+j,i) = lw*b0_x1f(m,k,js+j,i) + rw*b0_x1f(m,k,js+j,i+1);
-////                lw = (x2f_(m,js+j+1)-x2v_(m,js+j))/(x2f_(m,js+j+1)-x2f_(m,js+j));
-////                rw = (x2v_(m,js+j)-x2f_(m,js+j))/(x2f_(m,js+j+1)-x2f_(m,js+j));
-////                bcc0(m,IBY,k,js+j,i) = lw*b0_x2f(m,k,js+j,i) + rw*b0_x2f(m,k,js+j+1,i);
-////                lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
-////                rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
-////                bcc0(m,IBZ,k,js+j,i) = lw*b0_x3f(m,k,js+j,i) + rw*b0_x3f(m,k+1,js+j,i);
-//                u0_(m,IEN,k,js-j-1,i) -= 0.5*(SQR(bcc0(m,IBX,k,js,i))+SQR(bcc0(m,IBY,k,js,i))+SQR(bcc0(m,IBZ,k,js,i)));
-//
-//                Real lw, rw;
-//                lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
-//                rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
-//                bcc0(m,IBX,k,js-j-1,i) = lw*b0_x1f(m,k,js-j-1,i) + rw*b0_x1f(m,k,js-j-1,i+1);
-//                lw = (x2f_(m,js-j-1+1)-x2v_(m,js-j-1))/(x2f_(m,js-j-1+1)-x2f_(m,js-j-1));
-//                rw = (x2v_(m,js-j-1)-x2f_(m,js-j-1))/(x2f_(m,js-j-1+1)-x2f_(m,js-j-1));
-//                bcc0(m,IBY,k,js-j-1,i) = lw*b0_x2f(m,k,js-j-1,i) + rw*b0_x2f(m,k,js-j-1+1,i);
-//                lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
-//                rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
-//                bcc0(m,IBZ,k,js-j-1,i) = lw*b0_x3f(m,k,js-j-1,i) + rw*b0_x3f(m,k+1,js-j-1,i);
-//                u0_(m,IEN,k,js-j-1,i) += 0.5*(SQR(bcc0(m,IBX,k,js-j-1,i))+SQR(bcc0(m,IBY,k,js-j-1,i))+SQR(bcc0(m,IBZ,k,js-j-1,i)));
-//              }
-//            }
-//            if (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::user) {
-//              for (int j=0; j<ng; ++j) {
-////                  Real lw, rw;
-////                  lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
-////                  rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
-////                  bcc0(m,IBX,k,je-j,i) = lw*b0_x1f(m,k,je-j,i) + rw*b0_x1f(m,k,je-j,i+1);
-////                  lw = (x2f_(m,je-j+1)-x2v_(m,je-j))/(x2f_(m,je-j+1)-x2f_(m,je-j));
-////                  rw = (x2v_(m,je-j)-x2f_(m,je-j))/(x2f_(m,je-j+1)-x2f_(m,je-j));
-////                  bcc0(m,IBY,k,je-j,i) = lw*b0_x2f(m,k,je-j,i) + rw*b0_x2f(m,k,je-j+1,i);
-////                  lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
-////                  rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
-////                  bcc0(m,IBZ,k,je-j,i) = lw*b0_x3f(m,k,je-j,i) + rw*b0_x3f(m,k+1,je-j,i);
-//                  u0_(m,IEN,k,je+j+1,i) -= 0.5*(SQR(bcc0(m,IBX,k,je,i))+SQR(bcc0(m,IBY,k,je,i))+SQR(bcc0(m,IBZ,k,je,i)));
-//
-//                  Real lw, rw;
-//                  lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
-//                  rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
-//                  bcc0(m,IBX,k,je+j+1,i) = lw*b0_x1f(m,k,je+j+1,i) + rw*b0_x1f(m,k,je+j+1,i+1);
-//                  lw = (x2f_(m,je+j+1+1)-x2v_(m,je+j+1))/(x2f_(m,je+j+1+1)-x2f_(m,je+j+1));
-//                  rw = (x2v_(m,je+j+1)-x2f_(m,je+j+1))/(x2f_(m,je+j+1+1)-x2f_(m,je+j+1));
-//                  bcc0(m,IBY,k,je+j+1,i) = lw*b0_x2f(m,k,je+j+1,i) + rw*b0_x2f(m,k,je+j+1+1,i);
-//                  lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
-//                  rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
-//                  bcc0(m,IBZ,k,je+j+1,i) = lw*b0_x3f(m,k,je+j+1,i) + rw*b0_x3f(m,k+1,je+j+1,i);
-//                  u0_(m,IEN,k,je+j+1,i) += 0.5*(SQR(bcc0(m,IBX,k,je+j+1,i))+SQR(bcc0(m,IBY,k,je+j+1,i))+SQR(bcc0(m,IBZ,k,je+j+1,i)));
-//              }
-//            }
-//        });
-//    }
   return;
 }

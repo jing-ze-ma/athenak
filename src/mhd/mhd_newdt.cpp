@@ -28,7 +28,7 @@
 
 namespace mhd {
 
-void DtReport(MHD *pm, MeshBlockPack *pp);   // dtdiag-1103, mhd_dtreport.cpp
+void DtReport(MHD *pm, MeshBlockPack *pp);   // mhd_dtreport.cpp
 
 //----------------------------------------------------------------------------------------
 // \!fn void MHD::NewTimeStep()
@@ -67,7 +67,7 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
   const int nmkji = (pmy_pack->nmb_thispack)*nx3*nx2*nx1;
   const int nkji = nx3*nx2*nx1;
   const int nji  = nx2*nx1;
-    
+
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
   auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
   auto &dx1_ = pmy_pack->pcoord->dx1;
@@ -223,17 +223,6 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
           pg = wder_(m,IDPR,k,j,i);
           g1 = wder_(m,IDG1,k,j,i);
         }
-        // boris-1102 <mhd>/boris_c: the fast speed of the limited system, B -> sqrt(f) B
-        // (an upper bound of it; see EOS_Data::boris_c2inv)
-        if (eos.boris_c2inv > 0.0) {
-          const Real sf = sqrt(eos.BorisF(eos.BorisX(w_d, w_bx*w_bx + w_by*w_by
-                                                     + w_bz*w_bz,
-                                                     eos.IsGeneral() ? pg : p,
-                                                     SQR(w0_(m,IVX,k,j,i))
-                                                     + SQR(w0_(m,IVY,k,j,i))
-                                                     + SQR(w0_(m,IVZ,k,j,i)))));
-          w_bx *= sf; w_by *= sf; w_bz *= sf;
-        }
 
         if (eos.IsGeneral()) {
           cf = eos.FastSpeedFromP(w_d, pg, g1, w_bx, w_by, w_bz);
@@ -349,7 +338,7 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
 
       // NON-FINITE GUARD (the MHD port of hydro_newdt.cpp): a NaN/inf state gives a NaN
       // dx/v, which fmin DROPS, so dt would be set by the finite cells alone and could
-      // keep doubling (BSG production 10-01: the whole domain NaN, dt doubled per step
+      // keep doubling (the whole domain NaN, dt doubled per step
       // to tlim, rc 0).  Flag the cell with a negative dt instead; Mesh::NewTimeStep
       // stops the run on dt <= 0 and reports the cell.
       if (!(max_dv1 + max_dv2 + max_dv3 < 1.0e300)) {
@@ -447,7 +436,7 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
     dt_diag_valid = true;
   }
   dtnew_prev = dtnew;
-  // dtdiag-1103: <mhd>/dt_report (off unless named)
+  // <mhd>/dt_report (off unless named)
   DtReport(this, pmy_pack);
 
   // compute timestep for diffusion

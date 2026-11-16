@@ -89,7 +89,7 @@ namespace two_stream_rt {
 //----------------------------------------------------------------------------------------
 // problem/ck_implicit: the switch.  false = bitwise the semi-implicit per-cell apply.
 // The variable starts false; deep_hot_jupiter_rt defaults the KEY to true on fresh rt_ck
-// runs since defaults2-0927 (false on restarts; see the pgen).
+// runs (false on restarts; see the pgen).
 inline bool ck_implicit = false;
 // problem/ck_impl_tol: the RESIDUAL tolerance, max_i |R_i|/(e_i + eps e_max) over the
 // column set, with eps = ck_impl_norm_eps.  Measuring a thin top cell against its own
@@ -111,7 +111,7 @@ inline Real ck_impl_dtol = 1.0e-8;
 // never reach the threshold, so they are unchanged bit for bit.
 constexpr Real CkDeadE = 1.0e-250;
 // problem/ck_impl_maxit: the pass cap.  Each pass is one full ck sweep.
-inline int ck_impl_maxit = 24;  // default changed 09-30 (user), was 8
+inline int ck_impl_maxit = 24;
 // problem/ck_impl_dtmax: cap on |de|/e per Newton pass.  A belt, not a limiter: it is
 // applied to the STEP, so a capped pass is simply a shorter one and the fixed point is
 // unchanged.  A column that needed it is counted.
@@ -129,11 +129,11 @@ inline Real ck_impl_dtmax = 0.5;
 inline Real ck_impl_demax = 0.5;
 // problem/ck_impl_floorbound: THE NEWTON IS A BOUND-CONSTRAINED SOLVE, e >= e_floor.
 // false = the unconstrained Newton, bit for bit.  deep_hot_jupiter_rt defaults the key
-// (and ck_impl_kkt_demax) to true on fresh fused ck_implicit runs since defaults2-0927.
+// (and ck_impl_kkt_demax) to true on fresh fused ck_implicit runs.
 //
 // e_floor = max(e(rho, tfloor), e(rho, pfloor)) is the state ConsToPrim restores a cell
 // to anyway (problem/rt_floor_consistent applies the same rule to the semi-implicit
-// apply).  In the night-side top slab of a fresh WASP-121b start (SMOKE_DIAG.md, 09-25)
+// apply).  In the night-side top slab of a fresh WASP-121b start
 // the backward-Euler root of the coldest top cells lies below that state: the Newton
 // drives them down, the caps clip the step, the column never converges, and the floors
 // put the energy straight back (eos_efloor ~1e7 events per 400 cycles).  With this on:
@@ -154,16 +154,9 @@ inline bool ck_impl_floorbound = false;
 // the limiter that keeps a dt collapse away; removing it, demax = 0 with dtmax 3,
 // collapsed dt at cycle 22 in smokediag/dtm3d0); only the pass count and the
 // NOT-CONVERGED flag change: the passes a capped cell cannot use are no longer spent.
-// false = bitwise (default true on fresh fused ck_implicit dhj runs since
-// defaults2-0927).  Counted in slot 17 with (b).
+// false = bitwise (default true on fresh fused ck_implicit dhj runs).  Counted in slot 17
+// with (b).
 inline bool ck_impl_kkt_demax = false;
-// problem/ck_impl_stalldbg: diagnosis of columns that stall at a fixed residual.  0 =
-// off (bitwise).  N > 0: on every fused pass with index >= N, each column still active
-// prints its worst cell, that cell's neighbours and every cell whose step was clipped
-// (dtmax / demax / floor), with the unclipped Newton step, the applied step, the KKT
-// flag and the magnitudes that set the round-off floor of the residual.  Nothing reads
-// it.
-inline int ck_impl_stalldbg = 0;
 // problem/ck_impl_negdbg = N > 0 (diagnostic): on every fused pass print up to N Newton
 // rows whose diagonal b = 1 - h J_ii/cv is not positive (they send the whole column to
 // the bounded per-cell fallback), with the three Jacobian entries.  Print only.
@@ -217,14 +210,14 @@ inline bool ck_impl_kkt_row = false;
 // reports are made consistent with the energy it applied in the cells it leaves on a
 // bound (ck_impl_floorbound / ck_impl_kkt_demax KKT cells); 2 = in every cell.  Only the
 // reported arrays change, never the solution.  See CkConserveFlux (two_stream_rt.hpp).
-inline int ck_impl_conserve = 1;  // default changed 09-30 (user), was 0
+inline int ck_impl_conserve = 1;
 inline DvceArray1D<Real> *ck_cons_stat_ptr = nullptr;
 inline DvceArray5D<Real> *ck_cons_buf_ptr = nullptr;   // (m, 2, k, j, i) scratch
 inline int64_t ck_cons_ncell = 0;          // cells corrected, last call (verbose only)
 inline Real ck_cons_de = 0.0;              // their sum r V [erg], last call, this rank
 // problem/ck_impl_osc = N > 0: PER-CELL AITKEN DAMPING of oscillating cells, from pass N
 // of a call on.  0 = off (default, bitwise).  Measured on the 10x WASP-121b production
-// (cknewton_0928/RESULTS.md): the calls that do not converge even with 24 or 60 passes
+// the calls that do not converge even with 24 or 60 passes
 // sit in a period-2/4 limit cycle of the top cells (p ~ 1e-10 bar, T swinging 1700 <->
 // 5300 K): the band Planck emission there rises far faster than its linearisation, so
 // the Newton step of the hot iterate and of the cold one overshoot each other, and the
@@ -270,8 +263,7 @@ inline DvceArray4D<Real> *ck_ncref_ptr = nullptr;
 // more slowly.  Provided because "frozen opacity" is an assumption, not a law.
 inline bool ck_impl_refresh_kappa = false;
 // problem/ck_impl_tau_min: THE TWO-LEVEL SPLIT, ported from the grey mode-3 column's
-// rt_impl_tau_min (deleted in 912ef43c; the design note is in that commit's parent at
-// two_stream_rt.hpp:763).  Only a cell whose OWN optical depth kappa rho dr reaches this
+// rt_impl_tau_min.  Only a cell whose OWN optical depth kappa rho dr reaches this
 // goes into the tridiagonal.  Linearising the emission about the current state gives a
 // row whose diagonal is 1 - bdt dE/de, and as the cell's own emission E -> 0 that
 // diagonal degenerates to 1: the Newton step is then the bare Picard step
@@ -352,11 +344,11 @@ inline bool ck_impl_jreuse_xc = false;
 // problem/ck_impl_jreuse_act: with ck_impl_jreuse, also rebuild on any pass that follows
 // one on which fewer than this fraction of the rank's columns were still active
 inline Real ck_impl_jreuse_act = 0.25;
-// layoutfix-1106 problem/ck_impl_global_ctl (default false, bitwise): the pass loop's
-// control quantities (max residual, max step, active / predicted column counts) reduced over
-// all ranks before the chord-Jacobian rebuild and the stop tests, so every rank takes the
-// same decisions as a single rank would; rank-local otherwise (the rebuild then depends on
-// which columns share a rank: dhj_hyd b1x1 np1 vs np3 r_00 8.6e-5 after 12 cycles)
+// problem/ck_impl_global_ctl (default false): the pass loop's control quantities (max
+// residual, max step, active / predicted column counts) reduced over all ranks before the
+// chord-Jacobian rebuild and the stop tests, so every rank takes the same decisions as a
+// single rank would; rank-local otherwise (the rebuild then depends on which columns
+// share a rank: dhj_hyd b1x1 np1 vs np3 r_00 8.6e-5 after 12 cycles)
 inline bool ck_impl_global_ctl = false;
 inline bool ck_impl_jac_built = false;
 inline Real ck_impl_prev_res = -1.0;
@@ -407,14 +399,6 @@ inline bool ck_impl_cvkeep = false;
 // so a restarted run follows the schedule bitwise; a file without them (older) forces a
 // full call first.
 inline int ck_impl_every = 1;
-// rkgfuse-1102 <problem>/ck_strang: the ck RT is called twice per cycle, dt/2 each
-// (Strang).  The cadence counts CYCLES, not calls: on a cycle with ncycle % N == 0 the
-// FIRST half (ck_cad_half = 1) is the full call -- it stores Q0 = (e - e*)/(dt/2), the
-// heating RATE, and D, T0, rho0 -- and the second half (2) is a linearised step from that
-// operator over its own dt/2, like every half of the other cycles.  So the full calls
-// happen on exactly the cycles they happen on without ck_strang, at the same cost, and
-// every call (full or linearised) covers exactly its own dt/2.  0 = one full-dt call.
-inline int ck_cad_half = 0;
 inline Real ck_impl_every_thr = 0.0;
 inline bool ck_cad_partial = false;          // this call solves the unmasked columns only
 inline DvceArray3D<Real> *ck_cad_mask_ptr = nullptr;   // (m,k,j): 0 solve, 2 masked
@@ -424,14 +408,7 @@ inline int64_t ck_cad_nfull = 0;             // scheduled full calls
 inline int64_t ck_cad_nlin = 0;              // linearised steps
 inline int64_t ck_cad_nguard = 0;            // linearised steps with a guard call
 inline double ck_cad_fref = 0.0;             // sum over linearised steps of nref/ncol
-// ckhesdirk-1102 problem/ck_time_scheme = hesdirk2 (DhjCkT2Stage, deep_hot_jupiter_rt):
-// ck_t2_k1_ptr = the FSAL slope K1 (m,k,j,i) [energy/vol/s] and ck_t2_ok its validity,
-// both carried by the restart block (slabs T2K1, T2OK).  The second SDIRK stage takes
-// the linearised cadence step through rkgfuse-1102's ck_cad_half = 2 (above).
-inline bool ck_t2_on = false;
-inline bool ck_t2_ok = false;
-inline DvceArray4D<Real> *ck_t2_k1_ptr = nullptr;
-// ---- ck-fast2 lever 1: problem/ck_dif_dtau = thr > 0, THE DEEP DIFFUSION HANDOVER.
+// ---- problem/ck_dif_dtau = thr > 0, THE DEEP DIFFUSION HANDOVER.
 // Default 0 (off), and off nothing below is allocated, launched or read (bitwise).
 // Route B only (the ck two-stream owns the whole column down to the inner wall).  Per
 // column, on every pass that builds the opacity, the chain cut ich is moved up to the
@@ -463,7 +440,7 @@ inline double ck_dif_fsum = 0.0;                  // ... and the sum of (ich - i
 
 //! \fn CkDum
 //! \brief a 1-element View for a capture that is never read.  CkDum<V>(label) builds a
-//! fresh one (the old behaviour: an allocation, a zero fill and a free, each with a
+//! fresh one (the plain behaviour: an allocation, a zero fill and a free, each with a
 //! device synchronisation) unless problem/ck_impl_nosync, in which case one cached View
 //! per type is returned (never freed: it is leaked on purpose so that no View outlives
 //! Kokkos::finalize).
@@ -621,7 +598,7 @@ inline bool ck_impl_cvsec = false;
 // item iv).  In the 10x WASP-121b day-side upper layers (T 5000-6500 K, t_rad 1-4 % of
 // the stage) that term makes the true dR_i/de_i larger than the modelled one, so the
 // Newton overshoots: a period-2 limit cycle with the e/T Jacobian, ~1e-6 residual stalls
-// with cvsec (SMOKE_DIAG.md section 6).  With rsec > 0, from pass 1 of a call on, each
+// with cvsec.  With rsec > 0, from pass 1 of a call on, each
 // thick row compares its diagonal b with the secant of its OWN residual over the last
 // pass, (R_p - R_{p-1})/(e_p - e_{p-1}), and takes the secant where it is LARGER, capped
 // at rsec*b.  A larger diagonal keeps the M-matrix and only shortens a step; the
@@ -687,7 +664,7 @@ inline bool ck_impl_jac_again = false;
 // Needs ck_impl_glob = ls_sub.
 inline int ck_impl_esc = 0;
 inline Real ck_impl_esc_rho = 0.9;
-inline int ck_impl_esc_extra = 8;
+constexpr int ck_impl_esc_extra = 8;
 // problem/ck_impl_aa (README_jac.md): ANDERSON (Pulay / DIIS) ACCELERATION of the chord
 // iteration, depth ck_impl_aa (0 = off, default, bitwise; at most CK_AA_MAX).  Each
 // column keeps the last aa differences of its iterates dX and of its backward-Euler
@@ -761,8 +738,8 @@ inline void CkParFor4(const std::string &name, const bool lw, const int nl, cons
     function(n, k, j, i);
   };
 #if defined(KOKKOS_ENABLE_CUDA) && (ATHENA_CUDA_BODY_GLOBAL > 0)
-  // dhjcuda-1112: a large body in device memory, its address the kernel argument
-  // (athena.hpp AthBodyToDevice; bitwise)
+  // a large body in device memory, its address the kernel argument
+  // (athena.hpp AthBodyToDevice)
   if constexpr (sizeof(body) >= ATHENA_CUDA_BODY_GLOBAL) {
     const auto *bp_ = AthBodyToDevice(DevExeSpace(), body);
     Kokkos::parallel_for(name, pol, KOKKOS_LAMBDA(const int &idx) {(*bp_)(idx);});
@@ -819,12 +796,12 @@ inline DvceArray4D<Real> *ck_tpf_ptr = nullptr;
 // captures few Views.  lP (m, q*nch + chain, i, k, j), q = 0..5: R on the below side
 // of face i (i = icut .. ie+1) and, slots 2-4, the layer joining cells i and i+1
 // (i = icut .. ie-1): dslv/dB_i, dsuu/dB_{i+1} and the face interpolation dt_l/dtc.
-// ck-next: slots 1 (1/(1 + R beta_i)) and 5 (2 (wfc/mu) kappa rho, the emission) are
+// slots 1 (1/(1 + R beta_i)) and 5 (2 (wfc/mu) kappa rho, the emission) are
 // no longer stored: the readers form them (CkIdn, CkEmW in two_stream_rt.hpp).
 // lG (m, q, i, k, j), q = 0..4: beta at face i, A_{i-1}/A_i, the flux frame factor,
-// 1/dz and dz (ck-next).  lC (q, chain): the flux weight, the internal-flux datum
-// at the cut and (ck-next) the emission weight 2 (wfc/mu).
-// The half-layer triple (e0, cin, cout; slots 0-2 before ck-store) is not packed: the
+// 1/dz and dz.  lC (q, chain): the flux weight, the internal-flux datum
+// at the cut and the emission weight 2 (wfc/mu).
+// The half-layer triple (e0, cin, cout) is not packed: the
 // kernels read it from ck_c0, ck_ci, ck_co, which hold the same numbers for as long as
 // the factorisation lives.
 inline DvceArray5D<Real> *ck_linP_ptr = nullptr;
@@ -845,7 +822,7 @@ inline DvceArray4D<Real> *ck_cv_ptr = nullptr;
 // ck_impl_jac_lin: the per-chain partial of the third Jacobian entry (the first two go to
 // ck_lpf and ck_lps, free by then), (m, chain, i, k, j)
 inline DvceArray5D<Real> *ck_lpj_ptr = nullptr;
-// ck-jlin: the per-chain Jacobian coefficients of rt_chain_ck_jlin BEFORE the dB_b/dT
+// the per-chain Jacobian coefficients of rt_chain_ck_jlin BEFORE the dB_b/dT
 // factor, (m, chain, i, k, j): dSrc_i/dB_{i-1} (masked to 0 where the row drops it) and
 // dSrc_i/dB_i; dSrc_i/dB_{i+1} (masked) lives in ck_lpj.  They depend on the stored
 // factorisation alone, so rt_chain_ck_jlin runs once per stored operator (ck_jlc_ok)
@@ -1233,7 +1210,7 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
     // 18: ck_impl_osc (cells damped)
     ck_conv_ptr = new DvceArray1D<Real>("ck_conv", 19);
   }
-  // ck-fast2 lever 1 (problem/ck_dif_dtau)
+  // problem/ck_dif_dtau
   if (ck_dif_dtau > 0.0) {
     if (ck_ich_ptr != nullptr) {
       delete ck_ich_ptr;
@@ -1266,7 +1243,7 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
 //! start from zeros, which is a cold start and is correct.
 
 void CkWarmSeed(Mesh *pm, DvceArray5D<Real> u0);
-// (defined in utils/two_stream_rt_driver.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_driver.cpp)
 
 //----------------------------------------------------------------------------------------
 //! \fn int CkImplStep
@@ -1287,7 +1264,7 @@ void CkWarmSeed(Mesh *pm, DvceArray5D<Real> u0);
 //----------------------------------------------------------------------------------------
 //! \fn bool CkKktCell
 //! \brief the KKT test of ck_impl_floorbound / ck_impl_kkt_demax for one cell (the rule
-//! of the fused kernel's kktcell), for ck_impl_kkt_row and ck_impl_stalldbg.
+//! of the fused kernel's kktcell), for ck_impl_kkt_row.
 
 KOKKOS_INLINE_FUNCTION
 bool CkKktCell(const EOS_Data &eos, const bool fb, const bool kd, const Real detot,
@@ -1310,7 +1287,7 @@ bool CkKktCell(const EOS_Data &eos, const bool fb, const bool kd, const Real det
 
 int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
                DvceArray4D<Real> T_, DvceArray4D<Real> dx1_, const Real bdt);
-// (defined in utils/two_stream_rt_driver.cpp, tusplit-1102)
+// (defined in utils/two_stream_rt_driver.cpp)
 
 }  // namespace two_stream_rt
 

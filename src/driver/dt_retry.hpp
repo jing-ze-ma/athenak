@@ -6,10 +6,10 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file dt_retry.hpp
-//! \brief fin4-dtretry: reject a failed cycle and take it again with a smaller dt.
+//! \brief reject a failed cycle and take it again with a smaller dt.
 //!
-//! <time>/dt_retry (DEFAULT true on a fresh run; a restart whose input lacks the key keeps
-//! false, as time2_enth_be): at the top of every cycle the Driver checkpoints the evolving
+//! <time>/dt_retry (DEFAULT true; <job>/recipe = none keeps it off on a restart whose
+//! input lacks the key): at the top of every cycle the Driver checkpoints the evolving
 //! state of the Hydro and the RadiationM1 modules (DtRetry::Save).  A cycle in which a
 //! module raises a failure (RadiationM1::dtr_fail: a Picard solve that ends DIVERGED, or
 //! NON-CONVERGED outside a hesdirk2 stage, whose own redo is the backward-Euler step) is
@@ -18,7 +18,8 @@
 //! dt_retry_grow per cycle and is dropped once the CFL dt is below it.  The cap and the
 //! good-cycle count are kept in <time>/dt_retry_cap, dt_retry_ngood_now (the parameter
 //! dump of a restart file), so a restart takes the step the straight run took.
-//! A run that never triggers it is bitwise the run without it: the checkpoint only copies.
+//! A run that never triggers it is bitwise the run without it (the checkpoint only
+//! copies).
 //!
 //! The checkpoint is the member visitor generated from clang's AST (tools/dtretry_gen.py:
 //! rad_m1/rad_m1_dtretry_visit.hpp, hydro/hydro_dtretry_visit.hpp): every non-View member
@@ -51,15 +52,15 @@ struct Entry {
   virtual void Save() = 0;
   virtual void Restore() = 0;
   virtual std::size_t Bytes() const {return 0;}
-  virtual bool OnHost() const {return false;}   // gpumem-1022: copy in pinned host memory
-  virtual void SetGen(const std::int64_t *g) {(void) g;}   // gpumem-1022: write counter
+  virtual bool OnHost() const {return false;}   // copy in pinned host memory
+  virtual void SetGen(const std::int64_t *g) {(void) g;}   // write counter
   virtual std::int64_t NSkip() const {return 0;}
   virtual bool Differs() {return false;}   // audit: changed since Save (Views only)
   virtual void PoisonPrepare(bool whole) {(void) whole;}   // audit: before the put-back
   virtual void Poison() {}                 // audit: NaN where the attempt wrote
 };
 
-// fin51-r-fix: file-scope state of a problem generator that a cycle reads from the cycle
+// file-scope state of a problem generator that a cycle reads from the cycle
 // before (or that a once-per-cycle update guards with a cycle stamp) joins the
 // checkpoint: the pgen registers it once at setup (RegisterValue / RegisterView, below)
 // and DtRetry::Build adds it as "pgen.<name>" entries (Views always deep-copied).
@@ -67,7 +68,7 @@ struct Entry {
 // frozen-MLT ramp weight hs_mw_ was already at w(t) on the retry, so esrc kept w(t)
 // where the straight run's start-of-cycle solves still saw w(t - dt)).
 std::vector<std::unique_ptr<Entry>> &PgenEntries();
-// pgrst-1021: a second, independent copy of every registered pgen member (the dt_retry
+// a second, independent copy of every registered pgen member (the dt_retry
 // checkpoint above takes the PgenEntries list over at its Build).  The driver saves it
 // at the start of the hesdirk2 stage loop and puts it back with the backward-Euler redo
 // (Time2Restore): the redo reruns the hydro stages from U^n, so the pgen registers that
@@ -79,7 +80,7 @@ std::vector<std::unique_ptr<Entry>> &PgenStageEntries();
 void PgenStageSave();
 void PgenStageRestore();
 void PgenStageClear();   // the Driver drops the copies before Kokkos::finalize
-// pgrst-posfix-1021: a third copy, taken before the stage-1 radiation solve when
+// a third copy, taken before the stage-1 radiation solve when
 // <rad_m1>/time2_posfix is on and put back before each local re-solve (the M1 post hook
 // of the discarded attempt booked into the registers)
 std::vector<std::unique_ptr<Entry>> &PgenSolveEntries();
@@ -133,10 +134,10 @@ void RegisterValue(const char *name, T *p) {
   auto e = std::make_unique<PgenValEntry<T>>(p);
   e->name = std::string("pgen.") + name;
   PgenEntries().push_back(std::move(e));
-  auto f = std::make_unique<PgenValEntry<T>>(p);   // pgrst-1021: stage-loop copy
+  auto f = std::make_unique<PgenValEntry<T>>(p);   // stage-loop copy
   f->name = std::string("pgen.") + name;
   PgenStageEntries().push_back(std::move(f));
-  auto g = std::make_unique<PgenValEntry<T>>(p);   // pgrst-posfix-1021: solve copy
+  auto g = std::make_unique<PgenValEntry<T>>(p);   // solve copy
   g->name = std::string("pgen.") + name;
   PgenSolveEntries().push_back(std::move(g));
 }
@@ -145,10 +146,10 @@ void RegisterView(const char *name, V *p) {
   auto e = std::make_unique<PgenViewEntry<V>>(p);
   e->name = std::string("pgen.") + name;
   PgenEntries().push_back(std::move(e));
-  auto f = std::make_unique<PgenViewEntry<V>>(p);  // pgrst-1021: stage-loop copy
+  auto f = std::make_unique<PgenViewEntry<V>>(p);  // stage-loop copy
   f->name = std::string("pgen.") + name;
   PgenStageEntries().push_back(std::move(f));
-  auto g = std::make_unique<PgenViewEntry<V>>(p);  // pgrst-posfix-1021: solve copy
+  auto g = std::make_unique<PgenViewEntry<V>>(p);  // solve copy
   g->name = std::string("pgen.") + name;
   PgenSolveEntries().push_back(std::move(g));
 }
@@ -176,39 +177,38 @@ class DtRetry {
   bool built_ = false;
   bool all_views_ = false;
   bool audit_ = false;
-  bool host_ = false;      // gpumem-1022 <time>/dt_retry_host: clones in pinned host mem
-  bool skip_clean_ = true;  // gpumem-1022 <time>/dt_retry_host_skip_clean
+  bool host_ = false;      // <time>/dt_retry_host: clones in pinned host mem
   int poison_ = 0;
   Real fac_ = 0.5, grow_ = 1.25;
-  int maxcut_ = 8, ngood_req_ = 10;
+  static constexpr int maxcut_ = 8;   // cuts of one cycle before the run stops
+  int ngood_req_ = 10;
   int ngood_ = 0;        // accepted cycles since the last cut
   int ncut_ = 0;         // cuts of the current cycle
   int force_cycle_ = -1; // debug: raise a failure at this cycle (once)
   Real force_fac_ = 0.5;
-  int t2_be_ = 0;          // t2befb-1020: <time>/dt_retry_t2_be (time2_reject cuts per
-                           // cycle before the backward-Euler redo; < 0 = never;
-                           // csfix-1023 USER default 2 -> 0)
-  int nt2cut_ = 0;         // t2befb-1020: time2_reject cuts of the current cycle
-  long nt2be_ = 0;         // t2befb-1020: cycles that took the backward-Euler redo
-  bool t2streak_ = false;  // t2befb-1020: the last cycle took it (the next one is armed)
-  // prod-retry-1022: this cycle already went to the backward-Euler redo (t2fb): the
+  int t2_be_ = 0;          // <time>/dt_retry_t2_be (time2_reject cuts per
+                           // cycle before the backward-Euler redo; < 0 = never)
+  int nt2cut_ = 0;         // time2_reject cuts of the current cycle
+  std::int64_t nt2be_ = 0;         // cycles that took the backward-Euler redo
+  bool t2streak_ = false;  // the last cycle took it (the next one is armed)
+  // this cycle already went to the backward-Euler redo (t2fb): the
   // restore of a later failed attempt must not disarm it (it resets dtr_t2be)
   bool t2be_cyc_ = false;
-  Real dt0_ = 0.0, cap0_ = -1.0;  // t2befb-1020: the cycle's dt and cap at Save
+  Real dt0_ = 0.0, cap0_ = -1.0;  // the cycle's dt and cap at Save
   int ngood0_ = 0;
-  Real t2_fac_ = -1.0;     // t2retry-1020: <time>/dt_retry_fac_t2 (reason time2_reject; < 0 = fac_)
+  Real t2_fac_ = -1.0;     // <time>/dt_retry_fac_t2 (reason time2_reject; < 0 = fac_)
   bool forced_done_ = false;
   std::vector<std::string> extra_views_;
   std::set<std::string> sel_;
   std::vector<std::string> poison_match_;
   std::vector<std::unique_ptr<Entry>> ent_;
   std::size_t bytes_dev_ = 0;
-  std::size_t bytes_host_ = 0;   // gpumem-1022: of bytes_dev_, the part on the host
+  std::size_t bytes_host_ = 0;   // of bytes_dev_, the part on the host
   double tsave_ = 0.0;
-  long nsave_ = 0, nretry_ = 0;
+  std::int64_t nsave_ = 0, nretry_ = 0;
 };
 
-// m1ctr-rollback-1017: the EVENT COUNTERS of an attempt the code throws away are thrown
+// the EVENT COUNTERS of an attempt the code throws away are thrown
 // away with it, so the event log (and the m1 positivity totals) report what the state
 // kept.  Discarded attempts: a dt_retry cycle (DtRetry::Retry puts the state back, but
 // not Mesh::ecounter nor the <rad_m1> device counters pos_cnt_d / acl_cnt_d /
@@ -234,8 +234,8 @@ class CounterKeep {
     DvceArray1D<Real> pos, acl, opn;
     bool hpos = false, hacl = false, hopn = false;
   };
-  Snap s_[3];   // slot 2: t2pos-1020 the stage-1 start of a time2_posfix re-solve
-  long nrb_[3] = {0, 0, 0};
+  Snap s_[3];   // slot 2: the stage-1 start of a time2_posfix re-solve
+  std::int64_t nrb_[3] = {0, 0, 0};
   double dun_[3] = {0.0, 0.0, 0.0};    // E-floor created energy discarded (m1 pos UN)
   double dvc_[3] = {0.0, 0.0, 0.0};    // vceil_de discarded
 };

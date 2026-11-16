@@ -36,8 +36,8 @@ namespace mhd {
 //----------------------------------------------------------------------------------------
 //! \fn void MHD::AssembleMHDTasks
 //! \brief Adds mhd tasks to appropriate task lists used by time integrators.
-//! Called by MeshBlockPack::AddPhysics() function directly after MHD constructor
-//! See comments Hydro::AssembleHydroTasks() function for more details.
+//! Called by MeshBlockPack::AddPhysics function directly after MHD constructor
+//! See comments Hydro::AssembleHydroTasks function for more details.
 
 void MHD::AssembleMHDTasks(std::map<std::string, std::shared_ptr<TaskList>> tl) {
   TaskID none(0);
@@ -46,11 +46,11 @@ void MHD::AssembleMHDTasks(std::map<std::string, std::shared_ptr<TaskList>> tl) 
   // ---- the operator-split source (ProblemGenerator::user_split_func), the MHD twin of
   // the Hydro::RTStrangSplit pair in AssembleHydroTasks: half the cycle dt before the
   // integrator and half after, or (user_split_once) the full dt once after the last
-  // stage.  Each call is followed by the u0 halo/BC/ConToPrim tail (RTOpSplitBvals).  A
+  // stage. Each call is followed by the u0 halo/BC/ConToPrim tail (RTOpSplitBvals). A
   // null hook returns immediately, so every run that does not enrol one is unchanged.
   id.splitpre = tl["before_timeintegrator"]->AddTask(&MHD::RTStrangSplit, this, none);
   if (tracers.NTracer() > 0) {
-    // tracer-1101: the per-cycle tracer pass (floor drain, x_e recombination over the
+    // the per-cycle tracer pass (floor drain, x_e recombination over the
     // full dt, x1 ghosts; mhd_tracers.cpp), after the RT half step, before the state is
     // saved for a dt retry
     id.trcsrc = tl["before_timeintegrator"]->AddTask(&MHD::TracerSource, this,
@@ -76,7 +76,7 @@ void MHD::AssembleMHDTasks(std::map<std::string, std::shared_ptr<TaskList>> tl) 
   id.srctrms   = tl["stagen"]->AddTask(&MHD::MHDSrcTerms, this, id.rkupdt);
   // the implicit radial radiative diffusion (<mhd>/rad_implicit_x1), in the same slot as
   // the hydro one: after the explicit update and BEFORE the u0 ghost exchange, so what
-  // it writes is what is communicated.  It must NOT be moved after MHD::CT, tempting as
+  // it writes is what is communicated. It must NOT be moved after MHD::CT, tempting as
   // the final face field is -- MHD::EField depends on RecvU_Shr, so u0 has already been
   // sent by then and the neighbours' ghost energies would miss this operator entirely.
   // Here bcc0 is the exact cell-centred form of the b0 that has not yet moved, which is
@@ -134,7 +134,7 @@ TaskStatus MHD::SaveMHDState(Driver *pdrive, int stage) {
 //----------------------------------------------------------------------------------------
 //! \fn TaskStatus MHD::InitRecv
 //! \brief Wrapper task list function to post non-blocking receives (with MPI), and
-//! initialize all boundary receive status flags to waiting (with or without MPI).  Note
+//! initialize all boundary receive status flags to waiting (with or without MPI). Note
 //! this must be done for communication of BOTH conserved (cell-centered) and
 //! face-centered fields AND their fluxes (with SMR/AMR).
 
@@ -144,7 +144,7 @@ TaskStatus MHD::InitRecv(Driver *pdrive, int stage) {
   // skipped on BOTH sides (no Irecv here, no send in SendU): ClearRecv/ClearSend then
   // wait on the previous stage's already completed requests, which return at once
   if (!rkg_skip_u) {
-    tstat = pbval_u->InitRecv(nmhd+nscalars, rkg_u_vmask);
+    tstat = pbval_u->InitRecv(nmhd+nscalars);
     if (tstat != TaskStatus::complete) return tstat;
   }
   // post receives for B
@@ -220,7 +220,7 @@ TaskStatus MHD::CopyCons(Driver *pdrive, int stage) {
 //! of conserved variables
 
 TaskStatus MHD::Fluxes(Driver *pdrive, int stage) {
-  // duale-1112: the next ConToPrim follows an update; a change of this stage's state
+  // the next ConToPrim follows an update; a change of this stage's state
   // reaches the end of the step with the weight prod_{s > stage} gam0[s] (the 2S
   // register update u0 = gam0 u0 + gam1 u1 + ...; u1 is the step-start state)
   if (dual.any) {
@@ -252,7 +252,7 @@ TaskStatus MHD::Fluxes(Driver *pdrive, int stage) {
     CalculateFluxes<MHD_RSolver::hlle_gr>(pdrive, stage);
   }
 
-  // Call FOFC if necessary.  It must run on the RIEMANN fluxes ALONE, before any
+  // Call FOFC if necessary. It must run on the RIEMANN fluxes ALONE, before any
   // additive correction (diffusion, gravity flux, the well-balanced flux removal, and
   // the resistive fluxes in MHD): the published algorithm forms the trial update from
   // the Riemann fluxes only, and the fallback is meant to replace that flux, with the
@@ -270,7 +270,7 @@ TaskStatus MHD::Fluxes(Driver *pdrive, int stage) {
   }
 
   // Restore the FULL primitives before any operator that reads them as a physical
-  // state -- see the same note in Hydro::Fluxes.  The deviation form is for the Riemann
+  // state -- see the same note in Hydro::Fluxes. The deviation form is for the Riemann
   // reconstruction (and for FOFC, which adds the background back itself); conduction,
   // viscosity and resistivity all need the real state.
   if (use_wellbalance_static_reconst_perturb) AddWbVar(w0wb,w0);
@@ -278,7 +278,7 @@ TaskStatus MHD::Fluxes(Driver *pdrive, int stage) {
   // Add diffusive fluxes
   if (pcond != nullptr) {
     // the angular cap (<mhd>/rad_cap_ang) needs the step it is capping, and the angular
-    // fluxes are formed here, before the RK update ever sees beta_dt.  Without this the
+    // fluxes are formed here, before the RK update ever sees beta_dt. Without this the
     // cap reads beta_dt = 0, every face stiffness comes out zero and the cap is silently
     // inert -- while NewTimeStep has already dropped dt2/dt3 on the strength of it.
     pcond->stage_beta_dt = (stage >= 1)
@@ -291,7 +291,7 @@ TaskStatus MHD::Fluxes(Driver *pdrive, int stage) {
   if ((presist != nullptr) && (peos->eos_data.is_ideal)) {
     if (!presist->use_rkg_sts) presist->AddResistiveFluxes(b0, bcc0, uflx);
   }
-    
+
   if (use_etotgrav) {
     AddGravFlux(phi0,uflx);
   }
@@ -358,15 +358,16 @@ TaskStatus MHD::MHDSrcTerms(Driver *pdrive, int stage) {
   // Add shearing box source terms for CC MHD variables
   if (psbox_u != nullptr) psbox_u->SourceTermsCC(w0, bcc0, peos->eos_data, beta_dt, u0);
 
-  // Add coordinate source terms in GR.  Again, must be computed with only primitives.
+  // Add coordinate source terms in GR. Again, must be computed with only primitives.
   if (pmy_pack->pcoord->is_general_relativistic &&
       !pmy_pack->pcoord->is_dynamical_relativistic) {
     pmy_pack->pcoord->CoordSrcTerms(w0, bcc0, peos->eos_data, beta_dt, u0);
   } else if (pmy_pack->pcoord->is_dynamical_relativistic) {
     pmy_pack->pdyngr->AddCoordTerms(w0, bcc0, beta_dt, u0, pmy_pack->pmesh->mb_indcs.ng);
   }
-    
-  // Add coordinate source terms in curvi-linear grid.  Again, must be computed with only primitives.
+
+  // Add coordinate source terms in curvi-linear grid. Again, must be computed with only
+  // primitives.
   if (pmy_pack->pmesh->use_cubed_sphere) {
     pmy_pack->pcoord->SrcTermsGnomonicEquiangleMHD(w0, bcc0, wder, pwb, uflx,
                                                    peos->eos_data, beta_dt, u0);
@@ -375,7 +376,7 @@ TaskStatus MHD::MHDSrcTerms(Driver *pdrive, int stage) {
     pmy_pack->pcoord->SrcTermsSphericalPolarMHD(w0, bcc0, pwb, uflx,
                                                 peos->eos_data, beta_dt, u0);
   }
-  // cs-open-1018 <mhd>/am_transport | am_vector | frame_omega (hydro/hydro_am.cpp): the
+  // <mhd>/am_transport | am_vector | frame_omega (hydro/hydro_am.cpp): the
   // MHD momentum flux carries the Maxwell stress; the CT field update is not touched
   if (pam != nullptr) {
     hydro::AmFluid fl{u0, u1, w0, wder, bcc0, uflx, peos->eos_data, true,
@@ -387,9 +388,6 @@ TaskStatus MHD::MHDSrcTerms(Driver *pdrive, int stage) {
   if (pmy_pack->pmesh->pgen->user_srcs) {
     (pmy_pack->pmesh->pgen->user_srcs_func)(pmy_pack->pmesh, beta_dt);
   }
-  // boris-1102 <mhd>/boris_c: perpendicular-to-B part of the stage's momentum change
-  // (fluxes + every momentum source above) times f (mhd_boris.cpp)
-  if (boris_on) BorisCorrect(pdrive, stage);
 
   return TaskStatus::complete;
 }
@@ -397,9 +395,9 @@ TaskStatus MHD::MHDSrcTerms(Driver *pdrive, int stage) {
 //----------------------------------------------------------------------------------------
 //! \fn TaskList MHD::ImplicitConduction
 //! \brief Wrapper task that applies the implicit radial radiative diffusion
-//! (<mhd>/rad_implicit_x1).  A no-op unless that flag is set; see
+//! (<mhd>/rad_implicit_x1). A no-op unless that flag is set; see
 //! Conduction::ImplicitRadialUpdate for what it solves and why, and MagEnergyCC for how
-//! the magnetic energy is taken out of the conserved state first.  The MHD counterpart
+//! the magnetic energy is taken out of the conserved state first. The MHD counterpart
 //! of Hydro::ImplicitConduction, in the same place in the stage.
 
 TaskStatus MHD::ImplicitConduction(Driver *pdrive, int stage) {
@@ -414,8 +412,8 @@ TaskStatus MHD::ImplicitConduction(Driver *pdrive, int stage) {
 //----------------------------------------------------------------------------------------
 //! \fn TaskList MHD::ImplicitTransverseConduction
 //! \brief Wrapper task that applies the implicit transverse radiative diffusion
-//! (<mhd>/rad_implicit_ang).  A no-op unless that flag is set; see
-//! Conduction::ImplicitTransverseUpdate for what it solves and why.  With
+//! (<mhd>/rad_implicit_ang). A no-op unless that flag is set; see
+//! Conduction::ImplicitTransverseUpdate for what it solves and why. With
 //! <mhd>/rad_sts_all it instead runs the UNIFIED operator over x1, x2 and x3 in one RKL1
 //! loop (Conduction::StsConductionUpdate), and the radial task above does nothing.
 
@@ -425,7 +423,7 @@ TaskStatus MHD::ImplicitTransverseConduction(Driver *pdrive, int stage) {
   if (stage < 1) return TaskStatus::complete;
   Real beta_dt = (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt);
   // <mhd>/rad_sts_once: ONE call per cycle, after the LAST stage and over the
-  // FULL dt, instead of one per stage over beta_dt.  An RKL1 super-step of tau costs
+  // FULL dt, instead of one per stage over beta_dt. An RKL1 super-step of tau costs
   // sqrt(tau) substages, so one call over dt is cheaper than two over dt/2 by ~30 %.
   // The splitting between this operator and the hydro is FIRST ORDER either way -- the
   // operator is not part of the RK right-hand side, so running it every stage does not
@@ -436,7 +434,7 @@ TaskStatus MHD::ImplicitTransverseConduction(Driver *pdrive, int stage) {
   }
   // <mhd>/rad_sts_all replaces BOTH implicit conduction tasks with this one: the radial
   // task above is a no-op (rad_implicit_x1 is refused alongside it) and the RKL1 loop
-  // here runs over all three directions at once.  Same slot in the stage either way.
+  // here runs over all three directions at once. Same slot in the stage either way.
   if (pcond->rad_sts_all) {
     pcond->StsConductionUpdate(u0, peos->eos_data, beta_dt);
   } else {
@@ -495,7 +493,7 @@ TaskStatus MHD::RestrictU(Driver *pdrive, int stage) {
 
 TaskStatus MHD::SendU(Driver *pdrive, int stage) {
   if (rkg_skip_u) return TaskStatus::complete;
-  TaskStatus tstat = pbval_u->PackAndSendCC(u0, coarse_u0, -1, -1, rkg_u_vmask);
+  TaskStatus tstat = pbval_u->PackAndSendCC(u0, coarse_u0);
   return tstat;
 }
 
@@ -505,8 +503,8 @@ TaskStatus MHD::SendU(Driver *pdrive, int stage) {
 
 TaskStatus MHD::RecvU(Driver *pdrive, int stage) {
   if (rkg_skip_u) return TaskStatus::complete;
-  TaskStatus tstat = pbval_u->RecvAndUnpackCC(u0, coarse_u0, -1, -1, rkg_u_vmask);
-  // ckbval-1102: a u0 refresh; the next ConToPrim takes the split_bval_fast snapshot
+  TaskStatus tstat = pbval_u->RecvAndUnpackCC(u0, coarse_u0);
+  // a u0 refresh; the next ConToPrim takes the split_bval_fast snapshot
   if (sbf_on && tstat == TaskStatus::complete) {sbf_want = true; sbf_valid = false;}
   return tstat;
 }
@@ -549,7 +547,7 @@ TaskStatus MHD::RecvU_Shr(Driver *pdrive, int stage) {
 TaskStatus MHD::EField(Driver *pdrive, int stage) {
   // Use CT to compute corner E
   CornerE(pdrive, stage);
-  // conducting walls (condwall-1028): the IDEAL tangential edge EMF on reflect faces
+  // conducting walls : the IDEAL tangential edge EMF on reflect faces
   // (<mhd>/wall_conducting = full) and on the dhj conducting user wall
   if ((wall_conducting == 2 && any_reflect_face) || wall_conducting_ix1) {
     WallEmfZero(efld, wall_conducting == 2 && any_reflect_face, wall_conducting_ix1);
@@ -560,8 +558,8 @@ TaskStatus MHD::EField(Driver *pdrive, int stage) {
     if (!presist->use_rkg_sts) {
       presist->AddResistiveEMFs(b0, efld);
       // CornerE averaged E_r azimuthally at the pole BEFORE the resistive EMF went in, so
-      // the resistive part at the axis is still un-averaged.  Re-apply it (idempotent on
-      // the ideal part it already covered).  See mesh.hpp.
+      // the resistive part at the axis is still un-averaged. Re-apply it (idempotent on
+      // the ideal part it already covered). See mesh.hpp.
       if (pmy_pack->pmesh->use_polar_boundary &&
           pmy_pack->pmesh->use_polar_average_eresist) {
         PolarAzimuthalAverageEr();
@@ -702,7 +700,7 @@ TaskStatus MHD::ApplyPhysicalBCs(Driver *pdrive, int stage) {
   if (pmy_pack->pmesh->pgen->user_bcs) {
     (pmy_pack->pmesh->pgen->user_bcs_func)(pmy_pack->pmesh);
   }
-  // tracer-1101: x_e / floor tracer radial ghosts at physical x1 boundaries (the BCs
+  // x_e / floor tracer radial ghosts at physical x1 boundaries (the BCs
   // above set the MHD variables only); no-op without tracers
   TracerX1Ghosts(false);
 
@@ -735,15 +733,17 @@ TaskStatus MHD::Prolongate(Driver *pdrive, int stage) {
 //! \fn void MHD::RTOpSplitBvals
 //! \brief the MHD twin of Hydro::RTOpSplitBvals: a complete synchronous ghost-zone update
 //! of u0 after an operator that ran outside the stage's own communication window (the
-//! split source of RTStrangSplit), then ConToPrim.  The split source changes u0 only;
-//! b0 is untouched, so only u0 is exchanged.  ApplyPhysicalBCs and Prolongate also
+//! split source of RTStrangSplit), then ConToPrim. The split source changes u0 only;
+//! b0 is untouched, so only u0 is exchanged. ApplyPhysicalBCs and Prolongate also
 //! refill the b0 ghosts from the unchanged b0, which gives the same values again.
 
 void MHD::RTOpSplitBvals() {
-  // ckbval-1102 <mhd>/split_bval_fast: u0(IEN) alone when SplitBvalFastOK proves it exact
+  // <mhd>/split_bval_fast: u0(IEN) alone when SplitBvalFastOK proves it exact
   const bool fast = sbf_on && SplitBvalFastOK();
   const int vm = fast ? (1 << IEN) : 0;
-  if (sbf_on) {if (fast) {++sbf_nfast;} else {++sbf_nfull;}}
+  if (sbf_on) {
+    if (fast) {++sbf_nfast;} else {++sbf_nfull;}
+  }
   while (pbval_u->InitRecv(nmhd+nscalars, vm) != TaskStatus::complete) {}
   if (pmy_pack->pmesh->multilevel) {
     pmy_pack->pmesh->pmr->RestrictCC(u0, coarse_u0);
@@ -762,7 +762,7 @@ void MHD::RTOpSplitBvals() {
 //----------------------------------------------------------------------------------------
 //! \fn void MHD::EnableC2PTrack / C2PTrack
 //! \brief floor bookkeeping of ConToPrim (see c2p_track in mhd.hpp and
-//! utils/c2p_track.hpp).  Enabled by a problem generator; c2p_acc is zeroed by its owner.
+//! utils/c2p_track.hpp). Enabled by a problem generator; c2p_acc is zeroed by its owner.
 
 void MHD::EnableC2PTrack() {
   c2p_track::Enable(pmy_pack, c2p_acc, c2p_ref_e, c2p_ref_d);
@@ -790,8 +790,7 @@ void MHD::C2PTrack(Driver *pdrive, int stage, bool before) {
 //! \brief ProblemGenerator::user_split_func on the MHD task list, with the semantics of
 //! Hydro::RTStrangSplit: Strang halves (dt/2 in "before_timeintegrator", stage 0, and
 //! dt/2 in "after_timeintegrator") or, with user_split_once, ONE call with the full cycle
-//! dt after the last RK stage.  pmesh->dt is the cycle dt in both lists.  rkgfuse-1102:
-//! with user_split_pre_late the first half comes from Driver::Execute (stage = -1).
+//! dt after the last RK stage. pmesh->dt is the cycle dt in both lists.
 
 TaskStatus MHD::RTStrangSplit(Driver *pdrive, int stage) {
   Mesh *pm = pmy_pack->pmesh;
@@ -804,12 +803,7 @@ TaskStatus MHD::RTStrangSplit(Driver *pdrive, int stage) {
     RTOpSplitBvals();
     return TaskStatus::complete;
   }
-  // rkgfuse-1102 user_split_pre_late: the first half is called by the Driver with
-  // stage = -1, after the leading RKG super-step; the task-list call (stage 0) skips
-  if (pm->pgen->user_split_pre_late && stage == 0) return TaskStatus::complete;
-  pm->pgen->user_split_half = (stage <= 0) ? 1 : 2;
   (pm->pgen->user_split_func)(pm, 0.5*(pm->dt));
-  pm->pgen->user_split_half = 0;
   RTOpSplitBvals();
   return TaskStatus::complete;
 }
@@ -819,7 +813,7 @@ TaskStatus MHD::RTStrangSplit(Driver *pdrive, int stage) {
 //! \brief Wrapper task list function to call ConsToPrim over entire mesh (including gz)
 
 TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
-  if (sbf_on && sbf_want) SplitBvalSnap();   // ckbval-1102
+  if (sbf_on && sbf_want) SplitBvalSnap();
   if (c2p_track) C2PTrack(pdrive, stage, true);
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int &ng = indcs.ng;
@@ -828,10 +822,10 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
   int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
   // A restart that carried the internal energy (kEintRstMagic, pgen/pgen.hpp): the
   // frozen first conversion takes w0(IEN) from the file and hands u0(IEN) back exactly
-  // as the file had it.  Re-deriving the internal energy from the file's u0 goes through
+  // as the file had it. Re-deriving the internal energy from the file's u0 goes through
   // (E - rho phi) + rho phi - rho phi with etotgrav, which is not the E - rho phi of the
   // straight run's last inversion; the restart then stopped being bitwise.
-  // t9rst-1113: also the ideal-gas EOS (no derived state to freeze), see RstEint
+  // also the ideal-gas EOS (no derived state to freeze), see RstEint
   const bool eint_fix = c2p_eint_rst &&
                         (c2p_freeze_derived || !peos->eos_data.IsGeneral());
   DvceArray4D<Real> ekeep;
@@ -845,14 +839,14 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
   if (use_etotgrav) {
     RemoveGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
   }
-  if (dual.any) dual.Pre(pmy_pack, u0);   // duale-1112
+  if (dual.any) dual.Pre(pmy_pack, u0);
   // remembered across the branch below because the cubed-sphere half of the inversion,
   // which owns the cache on that grid, has to be frozen by the SAME call
   const bool frozen = c2p_freeze_derived;
   if (c2p_freeze_derived) {
     // the first conversion of a RESTARTED run under a general EOS: the temperature and
     // the derived (p, Gamma_1) came out of the restart file and must survive this call
-    // untouched, or the restart is not a bitwise continuation.  One call only.
+    // untouched, or the restart is not a bitwise continuation. One call only.
     static_cast<GeneralMHD*>(peos)->ConsToPrimFrozen(u0, b0, w0, bcc0,
                                                      0, n1m1, 0, n2m1, 0, n3m1);
     c2p_freeze_derived = false;
@@ -869,7 +863,7 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
     if (frozen) {
       // ...and on this grid THIS routine, not ConsToPrim, is what re-solves wtemp/wder
       // and re-applies the deferred floors, so the frozen conversion has to reach here
-      // too or the cache the restart file restored is overwritten a moment later.  See
+      // too or the cache the restart file restored is overwritten a moment later. See
       // coordinates/gnomonic_raisevel_frozen.cpp.
       pmy_pack->pcoord->GnomonicEquiangleRaiseVelMHDFrozen(u0, b0, bcc0, w0,
                                                            0, n1m1, 0, n2m1, 0, n3m1);
@@ -879,12 +873,12 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
                                                      0, n1m1, 0, n2m1, 0, n3m1);
     }
   }
-  // duale-1112: dual selection, floor audit / payment record, slot resync
+  // dual selection, floor audit / payment record, slot resync
   if (dual.any) dual.Post(pmy_pack, u0, w0, wder, wtemp, peos->eos_data);
   if (use_etotgrav) {
     AddGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
   }
-  // wbplm-1103 <mhd>/top_ghost_prim_copy (bvals/top_ghost_prim_copy.hpp)
+  // <mhd>/top_ghost_prim_copy (bvals/top_ghost_prim_copy.hpp)
   if (top_ghost_prim_copy && diode_ox1) {
     TopGhostPrimCopy(pmy_pack, w0, wder, wtemp, peos->eos_data.IsGeneral());
   }
@@ -898,7 +892,7 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
     c2p_eint_rst = false;
   }
   if (c2p_track) C2PTrack(pdrive, stage, false);
-  // xetracer-1101: z = local Saha on the first conversion of a fresh start or of a
+  // z = local Saha on the first conversion of a fresh start or of a
   // restart whose file has no tracer (wtemp is valid here), before eta reads it
   if (xe_init_pending) {
     XeTracerUpdate(0.0, true);
@@ -907,7 +901,9 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
   }
   if (presist != nullptr) {
     if (presist->OhmicNeedsUpdate() && (!presist->use_rkg_sts || stage == 0)) {
-      presist->SetResistivity(w0, peos->eos_data, pmy_pack->pmesh->pgen->hot_jupiter_param.Rgas, presist->eta_b, 0, n1m1, 0, n2m1, 0, n3m1);
+      presist->SetResistivity(w0, peos->eos_data,
+                              pmy_pack->pmesh->pgen->hot_jupiter_param.Rgas,
+                              presist->eta_b, 0, n1m1, 0, n2m1, 0, n3m1);
     }
     if (presist->AmbipolarNeedsUpdate() && (!presist->use_rkg_sts || stage == 0)) {
       presist->SetAmbipolar(w0, peos->eos_data,
@@ -921,11 +917,11 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
 //----------------------------------------------------------------------------------------
 //! \fn TaskStatus MHD::ClearSend
 //! \brief Wrapper task list function that checks all MPI sends have completed. Used in
-//! TaskList and in Driver::InitBoundaryValuesAndPrimitives()
-//! If stage=(last stage):      clears U, B, Flx_U, Flx_B, U_OA, B_OA, U_Shr, BShr
-//! If (last stage)>stage>=(0): clears U, B, Flx_U, Flx_B,             U_Shr, B_Shr
-//! If stage=(-1):              clears U, B
-//! If stage=(-4):              clears                                 U_Shr, B_Shr
+//! TaskList and in Driver::InitBoundaryValuesAndPrimitives
+//! If stage=(last stage): clears U, B, Flx_U, Flx_B, U_OA, B_OA, U_Shr, BShr
+//! If (last stage)>stage>=(0): clears U, B, Flx_U, Flx_B, U_Shr, B_Shr
+//! If stage=(-1): clears U, B
+//! If stage=(-4): clears U_Shr, B_Shr
 
 TaskStatus MHD::ClearSend(Driver *pdrive, int stage) {
   TaskStatus tstat;
@@ -938,7 +934,7 @@ TaskStatus MHD::ClearSend(Driver *pdrive, int stage) {
     if (tstat != TaskStatus::complete) return tstat;
   }
 
-  // with SMR/AMR check sends for fluxes of U complete.  Always check sends of E complete
+  // with SMR/AMR check sends for fluxes of U complete. Always check sends of E complete
   // do not check flux send for ICs (stage < 0)
   if (stage >= 0) {
     // with SMR/AMR check sends of restricted fluxes of U complete
@@ -982,11 +978,11 @@ TaskStatus MHD::ClearSend(Driver *pdrive, int stage) {
 //----------------------------------------------------------------------------------------
 //! \fn TaskStatus MHD::ClearRecv
 //! \brief Wrapper task list function that checks all MPI receives have completed. Used in
-//! TaskList and in Driver::InitBoundaryValuesAndPrimitives()
-//! If stage=(last stage):      clears U, B, Flx_U, Flx_B, U_OA, B_OA, U_Shr, BShr
-//! If (last stage)>stage>=(0): clears U, B, Flx_U, Flx_B,             U_Shr, B_Shr
-//! If stage=(-1):              clears U, B
-//! If stage=(-4):              clears                                 U_Shr, B_Shr
+//! TaskList and in Driver::InitBoundaryValuesAndPrimitives
+//! If stage=(last stage): clears U, B, Flx_U, Flx_B, U_OA, B_OA, U_Shr, BShr
+//! If (last stage)>stage>=(0): clears U, B, Flx_U, Flx_B, U_Shr, B_Shr
+//! If stage=(-1): clears U, B
+//! If stage=(-4): clears U_Shr, B_Shr
 
 TaskStatus MHD::ClearRecv(Driver *pdrive, int stage) {
   TaskStatus tstat;
@@ -999,7 +995,7 @@ TaskStatus MHD::ClearRecv(Driver *pdrive, int stage) {
     if (tstat != TaskStatus::complete) return tstat;
   }
 
-  // with SMR/AMR check recvs for fluxes of U complete.  Always check recvs of E complete
+  // with SMR/AMR check recvs for fluxes of U complete. Always check recvs of E complete
   // do not check flux receives when stage < 0 (i.e. ICs)
   if (stage >= 0) {
     // with SMR/AMR check receives of restricted fluxes of U complete

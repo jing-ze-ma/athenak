@@ -7,7 +7,7 @@
 //========================================================================================
 //! \file deep_hot_jupiter_rt.hpp
 //! \brief PRIVATE header of the deep_hot_jupiter_rt problem generator
-//! (tusplit-1102): the includes, declarations, file-scope state and the inline
+//! the includes, declarations, file-scope state and the inline
 //! device/IC helpers shared by deep_hot_jupiter_rt.cpp (UserProblem) and its
 //! deep_hot_jupiter_rt_{hse,src,diag}.cpp pieces.  Moved verbatim out of the old
 //! single file; what changed: the file-scope variables are `inline` (still one copy
@@ -44,8 +44,8 @@
 #include "srcterms/srcterms.hpp"
 #include "utils/random.hpp"
 #include "pgen.hpp"
-#include "roche_common.hpp"   // roche-dhj-1031: problem/roche
-#include "wbtan_common.hpp"   // roche-wbtan-1101: problem/roche_wb_tan
+#include "roche_common.hpp"   // problem/roche
+#include "wbtan_common.hpp"   // problem/roche_wb_tan
 #include "utils/rosseland.hpp"
 #include "utils/correlated_k.hpp"
 #include "utils/atm_column.hpp"
@@ -57,7 +57,7 @@
 #include "diffusion/resistivity.hpp"
 #include "coordinates/cubed_sphere.hpp"
 #include "outputs/outputs.hpp"
-#include "utils/recipe.hpp"   // proddef-1101: fresh-start defaults
+#include "utils/recipe.hpp"   // fresh-start defaults
 
 #include <Kokkos_Random.hpp>
 
@@ -126,9 +126,6 @@ using pgen_eos::PresFromEint;
 using pgen_eos::TempKelvin;
 using pgen_eos::PresTempFromEint;
 
-
-
-
 //----------------------------------------------------------------------------------------
 using pgen_eos::DensFromPT;
 using pgen_eos::GradAd;
@@ -140,14 +137,24 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt);
 void double_gray_two_stream_RT(Mesh *pm, Real bdt);
 
 KOKKOS_INLINE_FUNCTION
-void get_picket_fence_Ttau_coeff(const Real &Tint, const Real &Tirr, const Real &met, const Real &grav, const Real &mus, Real &taulim, Real &A, Real &B, Real (&C)[3], Real (&D)[3], Real (&E)[3], Real (&gamvv)[3],
+void get_picket_fence_Ttau_coeff(const Real &Tint, const Real &Tirr, const Real &met,
+                                 const Real &grav, const Real &mus, Real &taulim, Real &A,
+                                 Real &B, Real (&C)[3], Real (&D)[3], Real (&E)[3],
+                                 Real (&gamvv)[3],
                                  const Real albedo_set = -1.0);
 KOKKOS_INLINE_FUNCTION
-void get_picket_fence_Ttau(const Real &Tint, const Real &Tirr, const Real &mus, const Real &taulim, const Real &A, const Real &B, const Real (&C)[3], const Real (&D)[3], const Real (&E)[3], const Real (&gamv)[3], const Real &tau, Real &T);
+void get_picket_fence_Ttau(const Real &Tint, const Real &Tirr, const Real &mus,
+                           const Real &taulim, const Real &A, const Real &B,
+                           const Real (&C)[3], const Real (&D)[3], const Real (&E)[3],
+                           const Real (&gamv)[3], const Real &tau, Real &T);
 template <typename View1D>
-void get_picket_fence_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma, const Real &Tint, const Real &Tirr, const Real &met, const Real &grav, const Real &mus, const int &N, View1D Tarr, View1D lgparr);
+void get_picket_fence_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma,
+                             const Real &Tint, const Real &Tirr, const Real &met,
+                             const Real &grav, const Real &mus, const int &N, View1D Tarr,
+                             View1D lgparr);
 template <typename View1D>
-void adjust_ad_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma, const int &N, View1D Tarr, View1D lgparr);
+void adjust_ad_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma,
+                      const int &N, View1D Tarr, View1D lgparr);
 template <typename View1D>
 void read_ic_profile(const std::string &fname, const int &N, View1D Tarr,
                      View1D lgparr);
@@ -157,32 +164,25 @@ void DhjOlrDump(ParameterInput *pin, Mesh *pm);
 void DhjFinalDumps(ParameterInput *pin, Mesh *pm);
 // problem/flux_hst: the radiative / energy / mass flux history columns
 void DhjFluxHistory(HistoryData *pdata, Mesh *pm);
-// problem/flux_hst_wall: four inner-wall in/out split columns (set in UserProblem)
-inline bool dhj_flux_hst_wall = false;
 // problem/flux_hst_floor: two floor-bookkeeping columns (set in UserProblem)
 inline bool dhj_flux_hst_floor = false;
-// relaxdrag-1101 problem/relax_drag (default true), problem/relax_drag_rot (default 5):
+// problem/relax_drag (default true), problem/relax_drag_rot (default 5):
 // the start-up Rayleigh drag of SourceFunc (tau = P/10 for t < 0.4 R rot, log ramp to
 // tau = P at R rot, off after; R = relax_drag_rot).  Fresh starts default relax_drag to
 // false (recipe::NewDefaults); a restart without the key keeps the drag, bitwise.
 inline bool dhj_relax_drag = true;
 inline Real dhj_relax_drag_rot = 5.0;
 inline Real dhj_floor_t0 = 0.0;   // start of the interval the floor columns average over
-// problem/sponge_top_mode (read without recording): "radial" (DEFAULT since 10-01, user
-// GO after am_coriolis_1001/ext arm D) makes the top velocity sponge damp the RADIAL
-// momentum only (IM1, rhat.m on both grids), so it exerts no axial torque and no drag
-// that reaches the jet below it (Shaw & Shepherd 2007): with it the 1e-5..1e-3 bar jet
-// matches a domain whose top and sponge are 2 decades higher, at the old dt and cost.
-// "all" damps all three components (the behaviour before 10-01, bitwise).
-inline bool dhj_sponge_top_radial = true;
+// The top velocity sponge damps the RADIAL momentum only (IM1, rhat.m on both grids),
+// so it exerts no axial torque and no drag that reaches the jet below it (Shaw &
+// Shepherd 2007).
 // problem/sponge_top_plo_bar, sponge_top_phi_bar, sponge_top_tau (read without recording;
 // defaults 1e-7 bar, 1e-6 bar, 1e3 s): the top sponge ramps from 0 at phi to 1 at plo
 // (linear in log p) with damping rate fdrag/tau
 inline Real dhj_sp_top_plo_bar = 1.0e-7;
 inline Real dhj_sp_top_phi_bar = 1.0e-6;
 inline Real dhj_sp_top_tau = 1.0e3;
-// problem/flux_hst_rkavg (default true; false = the last RK stage, the pre-0929
-// columns): the fluid face fluxes of the flux columns (Etot_top, Etot_bot, Mdot_top,
+// The fluid face fluxes of the flux columns (Etot_top, Etot_bot, Mdot_top,
 // Mdot_bot) are the RK-weighted sums over the stages of the cycle, i.e. the flux the
 // update actually applied (rk1 1; rk2 1/2, 1/2; rk3 1/6, 1/6, 2/3).  Accumulated per
 // column by DhjFluxStage at the top of SourceFunc (uflx then holds the stage's fluxes).
@@ -196,18 +196,18 @@ inline DvceArray4D<Real> *dhj_fhst_ptr = nullptr;
 void DhjFluxStage(Mesh *pm);
 void DhjCycleDiag(Mesh *pm);
 
-// AXIAL ANGULAR MOMENTUM (branch am-coriolis, 10-01).  In the corotating frame the
+// AXIAL ANGULAR MOMENTUM.  In the corotating frame the
 // conserved quantity is L_abs = L_rel + Omega I, I = sum M R^2 (R = distance from the
 // rotation axis), and the Coriolis torque on L_rel, -2 Omega rho R v_R, is exactly
 // -Omega dI/dt by continuity.  The rotating-frame source applies it with the CELL-CENTRE
 // rho v, while I changes by the RIEMANN mass fluxes; the two differ (numerical mass
 // diffusion moves I without moving the cell-centre momentum), and the difference is an
-// angular-momentum source (w121prod_0929/angmom_1001: ~2.5 % of the gross torque, a
+// angular-momentum source (~2.5 % of the gross torque, a
 // monotonic L_abs loss).  Both corrections below are applied by AmFix, a separate kernel
 // after the rotating-frame source, as a force along the zonal direction (-y, x, 0):
 // no radial or meridional part, and the total energy is not touched (the Coriolis force
 // never entered it), so their small work lands in the internal energy.
-//   problem/coriolis_am: take the ZONAL Coriolis torque from the face mass fluxes,
+//   amh::fix: take the ZONAL Coriolis torque from the face mass fluxes,
 //     -Omega Q_c with
 //         Q_c = sum_{faces f of c} Phi_f^out (W_f - W_c),   W = R^2,
 //     Phi^out the outward mass flux (flux x area) the update applies and W_f the face
@@ -229,19 +229,18 @@ void DhjCycleDiag(Mesh *pm);
 //     Rbar_f the face's area-mean R.  sum_c T_cons is the boundary flux alone, so L_rel
 //     changes only by Coriolis, boundaries and sponges, and a uniform pressure (or a
 //     uniform Maxwell stress on the planar faces) exerts no T_cons on a cell.
-//   DEFAULTS (user 10-01): both ON whenever the rotating frame is (user_srcs, omega != 0,
+//   DEFAULTS: both ON whenever the rotating frame is (user_srcs, omega != 0,
 //     cubed sphere or spherical polar), OFF otherwise, so non-rotating runs are bitwise
 //     unchanged.  A rotating run with a source variant am_transport does not
-//     replicate (cs/sp_wellbalanced_src, wellbalance_static, sp_cart_polar_momentum,
-//     sp_face_avg) stops with a FATAL naming it, unless problem/am_transport = false is
-//     set explicitly; a rotating run with either key false prints a WARNING that L_abs
-//     drifts.  Read without recording; the startup log prints the effective values.
-//   problem/am_hst (DIAGNOSTIC, default false; read without recording it): eight more
-//     history columns after the flux columns, see DhjFluxHistory and AmHstStage.
-//   problem/am_hst_split (DIAGNOSTIC, default false, needs am_hst and what am_transport
-//     needs): the last two columns become five: the torques of the x1 (with its r-factor
-//     source), x2 and x3 flux divergences and of the angular metric source (T_code is
-//     their sum), and T_cons; then (condwall-1028) Twall, the inner-wall part of T_cons:
+//     replicate (wellbalance_static) stops with a FATAL naming it, unless
+//     problem/am_transport = false is set explicitly; a rotating run with either key
+//     false prints a WARNING that L_abs drifts.  Read without recording; the startup log
+// prints the effective values. problem/am_hst (DIAGNOSTIC, default false; read without
+// recording it): eight more history columns after the flux columns, see DhjFluxHistory
+// and AmHstStage. problem/am_hst_split (DIAGNOSTIC, default false, needs am_hst and what
+// am_transport needs): the last two columns become five: the torques of the x1 (with its
+// r-factor source), x2 and x3 flux divergences and of the angular metric source (T_code
+// is their sum), and T_cons; then Twall, the inner-wall part of T_cons:
 //     the angular-momentum flux IN through the inner wall (the wall torque, Maxwell
 //     stress included).  The rest, Ttop = Tcons - Twall, comes in through the top, and
 //     the L_z ledger reads dLrel/dt = Tcor + Twall + Ttop.  (Ttop has no column of its
@@ -249,7 +248,7 @@ void DhjCycleDiag(Mesh *pm);
 //     column makes it 25, so am_hst_split + flux_hst_floor + roche is a start-up FATAL.)
 namespace amh {
 inline bool on = false;            // problem/am_hst
-inline bool fix = false;           // problem/coriolis_am
+inline bool fix = false;           // Coriolis fix (on in a rotating frame)
 inline bool split = false;         // problem/am_hst_split
 inline bool trans = false;         // problem/am_transport
 inline Real pdeep = 1.0e8;  // problem/am_hst_pdeep [barye]: the Tdif_deep split (100 bar)
@@ -257,12 +256,12 @@ inline int nst = 0;                // stages per cycle and their weights (as dhj
 inline Real w[3] = {0.0, 0.0, 0.0};
 inline int stage = 0;
 inline int64_t cyc = -1;
-// Tcc Tcont Tbnd Tdif_deep Tdif_rad | Tx1 Tx2 Tx3 Tsrc Tcons Twall | Tdrag (relaxdrag-1101)
+// Tcc Tcont Tbnd Tdif_deep Tdif_rad | Tx1 Tx2 Tx3 Tsrc Tcons Twall | Tdrag
 constexpr int NACC = 12;
 // since last
 inline Real acc[NACC] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 inline Real t0 = 0.0;
-inline Real tdrag_rate = 0.0;      // relaxdrag-1101: Tdrag of the last AmHstColumns call
+inline Real tdrag_rate = 0.0;      // Tdrag of the last AmHstColumns call
 }  // namespace amh
 void AmHstStage(Mesh *pm);
 Real DhjRelaxDragRate(const Real time, const Real omega);
@@ -518,22 +517,7 @@ void AmCell(const AmV &v, const int m, const int k, const int j, const int i, Am
     if (i == v.is) o.twall = fl1*rl*rb1;
   }
 }
-// problem/budget_dt (DIAGNOSTIC, branch dhj-budget-0929; off unless the key exists and
-// is > 0): per-shell energy and mass ledger, see EBudCk
-namespace ebud {
-constexpr int NQ = 20;
-inline bool on = false;
-inline bool started = false;
-inline Real dt_out = 0.0;
-inline Real t_next = 0.0;
-inline DvceArray2D<Real> *acc = nullptr;    // (NQ, nx1+1)
-inline DvceArray2D<Real> *tmp = nullptr;    // (2, nx1+1): shell E and M
-inline DvceArray2D<Real> *fhst = nullptr;  // (4, nx1): floors pending for the hst columns
-// (nmb, 2, n3, n2, n1): u0(IEN) and e_int before ck
-inline DvceArray5D<Real> *cpre = nullptr;
-inline int64_t nfull0 = 0;                  // ck_cad_nfull before the call
-}  // namespace ebud
-// roche-wbtan-1101 problem/roche_wb_tan (default false): the TANGENTIAL (x2/x3) part of
+// problem/roche_wb_tan (default false): the TANGENTIAL (x2/x3) part of
 // the potential force (centrifugal of rot_potential + the Roche tide) as the hydro's OWN
 // discrete tangential momentum residual of the equipotential equilibrium W_eq, instead of
 // the analytic -rho grad_t Phi_tot at the cell centre:
@@ -548,28 +532,14 @@ inline int64_t nfull0 = 0;                  // ck_cad_nfull before the call
 // between rho g_t . v and the flux-form potential work lands in e_int, as before.
 inline wbtan::WbTan dhj_wbt;   // wbtan_common.hpp
 void WbTanProbe(Mesh *pm, const Real bdt);
-void EBudStage(Mesh *pm, const Real bdt);
-void EBudCk(Mesh *pm, const Real dt, const bool before);
-void EBudDrainFloors(Mesh *pm);
 // problem/ck_impl_once: the whole correlated-k radiation, once per hydro step,
 // with the full cycle dt, after the last RK stage
 void DhjCkRtSplit(Mesh *pm, const Real dt);
-// ckhesdirk-1102 problem/ck_time_scheme = hesdirk2: setup, the stage solve (called from
-// SourceFunc in place of the in-stage ck call), the end-of-run counters
-void DhjCkT2Init(ParameterInput *pin, Mesh *pm);
-void DhjCkT2Stage(Mesh *pm, const Real bdt);
-void DhjCkT2Report(Mesh *pm, const bool final);
-void DhjCkCount(const bool full);
-// problem/ck_count_every (read only when named; 0 = off): a cumulative ck counter line
-// (full calls, fallbacks, caps, non-converged, hesdirk2 clamps) every N cycles
-inline int dhj_ck_count_every = 0;
-// problem/ck_t2_freeze (TEST; read only when named, hesdirk2 + hydro only)
-inline bool dhj_ck_t2_freeze = false;
 
 // PER-CYCLE SINGLE-MESHBLOCK DIAGNOSTIC (problem/diag_gid, default -1 = off).  Which
 // global meshblock to dump, and the inclusive cycle window.  File-scope because the
 // per-cycle hook takes only the Mesh.
-namespace dhj_rt_local {   // tusplit-1102: was an anonymous namespace
+namespace dhj_rt_local {
 inline int diag_gid = -1;
 inline int diag_cycle_min = 0;
 inline int diag_cycle_max = 2147483647;
@@ -589,10 +559,13 @@ void get_daynight_Tp(const Real &p, Real &Tn, Real &Td);
 KOKKOS_INLINE_FUNCTION
 void get_wb_Tp(const Real &p, Real &T);
 KOKKOS_INLINE_FUNCTION
-void get_init_Tp(const int &N, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const Real &p, Real &T,
-                 const int &Ne, const DvceArray1D<Real> &Text, const DvceArray1D<Real> &lgpext);
+void get_init_Tp(const int &N, const DvceArray1D<Real> &Tarr,
+                 const DvceArray1D<Real> &lgparr, const Real &p, Real &T,
+                 const int &Ne, const DvceArray1D<Real> &Text,
+                 const DvceArray1D<Real> &lgpext);
 template <typename View1D>
-void get_init_Tp_host(const int &N, const View1D &Tarr, const View1D &lgparr, const Real &p, Real &T,
+void get_init_Tp_host(const int &N, const View1D &Tarr, const View1D &lgparr,
+                      const Real &p, Real &T,
                       const int &Ne, const View1D &Text, const View1D &lgpext);
 template <typename View1D>
 int ic_adiabat_extension(const EOS_Data &eos, const Real &gamma, const Real &Rgas,
@@ -603,7 +576,9 @@ void get_wb_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
                     const Real &ap, const bool &grav_pmass, const int &N,
                     const Real &zmax, View1D zarr, View1D logparr);
 KOKKOS_INLINE_FUNCTION
-void get_wb_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p);
+void get_wb_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
+                const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr,
+                const Real &z, Real &rho, Real &p);
 template <typename View1D>
 void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
                       const Real &ap, const bool &grav_pmass, const View1D &Tarr,
@@ -611,8 +586,12 @@ void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_ac
                       View1D zarr, View1D logparr, const Real zlow,
                       const int &Ne, const View1D &Text, const View1D &lgpext);
 KOKKOS_INLINE_FUNCTION
-void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const int &N, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p,
-                  const int &Ne, const DvceArray1D<Real> &Text, const DvceArray1D<Real> &lgpext);
+void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
+                  const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr,
+                  const int &N, const DvceArray1D<Real> &zarr,
+                  const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p,
+                  const int &Ne, const DvceArray1D<Real> &Text,
+                  const DvceArray1D<Real> &lgpext);
 
 //----------------------------------------------------------------------------------------
 //! \fn GravAccAt / GravPotAt
@@ -653,8 +632,6 @@ void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, c
 
 // ApplyRStretch now lives in coordinates/grid_stretch.hpp, shared with cs_test.
 
-
-
 //! \fn TotPotAt
 //! \brief the gravitational plus centrifugal potential, -Omega^2 (r sin theta)^2 / 2 on
 //! top of GravPotAt (Phi increases outward here, and rotation lowers it at the equator).
@@ -679,7 +656,7 @@ Real ZEffFromPot(const Real grav_acc, const Real ap, const Real phi, const bool 
   return ap/(1.0 - phi/(g*ap)) - ap;
 }
 
-//! \fn TotPotAt (Roche overload, roche-dhj-1031)
+//! \fn TotPotAt (Roche overload)
 //! \brief TotPotAt plus the host star's tidal potential (roche_common.hpp TidePot:
 //! companion + indirect term, 0 at the planet centre), with the substellar direction
 //! cosine mu = sin(theta) cos(phi) -- the convention of the stellar beam (rt_pre_geom
@@ -696,7 +673,6 @@ Real TotPotAt(const Real grav_acc, const Real ap, const Real r, const Real z,
   if (gms == 0.0) return p0;
   return p0 + roche::TidePot(gms, ra, r, sin(theta)*cos(phi));
 }
-
 
 //----------------------------------------------------------------------------------------
 //! \fn TideAccR / TideAccT / TideAccP
@@ -747,9 +723,6 @@ Real TotPotAt(const Real grav_acc, const Real ap, const Real r, const Real z,
 //!     reference weight for a dimensionless ratio; the untided value is the right scale
 //!     there, and theta/phi are not in scope.
 
-
-
-
 //----------------------------------------------------------------------------------------
 //! \fn EffGravAt
 //! \brief inward gravity including the tidal correction, for the radiative transfer's
@@ -759,8 +732,6 @@ Real TotPotAt(const Real grav_acc, const Real ap, const Real r, const Real z,
 //! is outward-positive, so it is subtracted. Clamped at 10% of the untided value so a
 //! domain taken close to L1 cannot divide by zero; at the production top it is
 //! -8.8% substellar and +4.4% at the terminator, nowhere near the clamp.
-
-
 
 // The correlated-k OPACITY layer now lives in utils/correlated_k.hpp so that other
 // problem generators can use the same bands and tables; it was lifted from here
@@ -809,7 +780,6 @@ using correlated_k::ck_selftest;
 using correlated_k::ck_rt_selftest;
 using correlated_k::ck_build_rosseland_table;
 
-
 // problem/bc_outer_maxwell: whether the outer-x1 ghost extrapolation carries the
 // divergence of the Maxwell stress.
 //
@@ -824,13 +794,13 @@ using correlated_k::ck_build_rosseland_table;
 // clamped, so it is bounded at any field strength -- see the use site. DEFAULT ON, since
 // in that form it is the better physics; set false to drop the magnetic force entirely.
 inline bool bc_outer_maxwell = true;
-// problem/top_bc (topbc-1101): the outer-x1 boundary.
+// problem/top_bc: the outer-x1 boundary.
 //   hse      (DEFAULT, bitwise) hydrostatic isothermal extrapolation of rho, e in the
-//            full potential phicc0 (gravity + centrifugal + tide), momenta scaled with rho,
-//            v_r copied from the last active cell (inflow allowed).  The right top when
-//            the WHOLE top shell is inside the planet's Roche lobe (closed equipotentials).
-//   outflow1 ONE-WAY OUTFLOW, for a top on OPEN equipotentials (above Phi(L1), where no
-//            hydrostatic state exists; the start-up line "top shell on OPEN
+//            full potential phicc0 (gravity + centrifugal + tide), momenta scaled with
+// rho, v_r copied from the last active cell (inflow allowed).  The right top when
+//            the WHOLE top shell is inside the planet's Roche lobe (closed
+// equipotentials). outflow1 ONE-WAY OUTFLOW, for a top on OPEN equipotentials (above
+// Phi(L1), where no hydrostatic state exists; the start-up line "top shell on OPEN
 //            equipotentials" gives the fraction).  Two parts:
 //            (a) ghosts: pure zero-gradient copy of rho, e and the tangential momenta of
 //                the last active cell, v_r_ghost = max(v_r_ie, 0); no hydrostatic or
@@ -847,17 +817,17 @@ inline bool bc_outer_maxwell = true;
 //   outflow0 (a) alone -- DIAGNOSTIC ONLY, NOT one-way: the ghost pressure p_ie at the
 //            top face exceeds the hydrostatic face value, pushes the top cell inward
 //            (v_r ~ -900 m/s over the whole shell) and the Riemann solver refills it from
-//            the ghost (C32 WASP-121b smoke, topbc_1101: Mdot_top -7e11 g/s, 12x the hse
+//            the ghost (C32 WASP-121b smoke: Mdot_top -7e11 g/s, 12x the hse
 //            inflow; -2.4e10 g/s even without the tide).
 inline int dhj_top_bc = 0;  // 0 = hse, 1 = outflow1 (ghosts + one-way face), 2 = outflow0
-// ssbc-1111: <mhd>/top_bc_bt, the TANGENTIAL face field in the outer-x1 ghosts of an
+// <mhd>/top_bc_bt, the TANGENTIAL face field in the outer-x1 ghosts of an
 // outflow top (problem/top_bc outflow1 | outflow0): 0 = zerograd (the last cell's faces
-// copied; the default before prod-1114), 1 = sourcesurface (odd: ghost B_t = -mirror, so
+// copied), 1 = sourcesurface (odd: ghost B_t = -mirror, so
 // B_t = 0 on the top face, B_r from div B = 0 as before; potential-field source surface).
-// prod-1114 (user 11-12): sourcesurface is the DEFAULT for MHD runs with an outflow top
-// (GetOrAdd, so the restart input records it); name zerograd for the old behaviour.
+// sourcesurface is the DEFAULT for MHD runs with an outflow top
+// (GetOrAdd, so the restart input records it); name zerograd for the plain behaviour.
 // Hydro runs and the hse top read the key only when it is named (hydro unchanged).
-// mhdtop-1112: 2 = charout, a NON-REFLECTING top for Alfven waves.  The ghost B is the
+// 2 = charout, a NON-REFLECTING top for Alfven waves.  The ghost B is the
 // zerograd one; the ghost TANGENTIAL VELOCITY (orthonormal frame, the one bcc lives in)
 // is set to v_t = -s B_t/sqrt(rho), s = sgn(B_r at the top face), so the incoming
 // Elsasser variable z_in = v_t + s B_t/sqrt(rho) is ZERO in the ghost: the Riemann fan at
@@ -884,7 +854,7 @@ inline int dhj_top_bt = 0;
 //  rt_test_dT, rt_test_nwave   initial perturbation T -> T (1 + dT sin(nwave pi xi)),
 //                  xi = (r - x1min)/(x1max - x1min); nwave = 0 is a uniform dT.
 //  rt_test_out, rt_test_every  per-cycle diagnostic file (serial runs only).
-namespace dhj_rt_local {   // tusplit-1102: was an anonymous namespace
+namespace dhj_rt_local {
 // problem/dtloc_every = N > 0: every N cycles print the cell that set the hydro/MHD dt
 // (gid, i, j, k) with its pressure from the ck sweep.  Print only; 0 (default) = off.
 inline int dtloc_every = 0;
@@ -892,7 +862,6 @@ inline bool rt_test_freeze = false;
 inline Real rt_test_dt = 0.0;
 inline std::string rt_test_out;
 inline int rt_test_every = 1;
-inline int rt_test_col[3] = {0, -1, -1};
 inline DvceArray5D<Real> *rt_frz_ptr = nullptr;
 inline DvceArray4D<Real> *rt_frzT_ptr = nullptr;
 inline std::int64_t rt_test_ncall = 0;
@@ -903,7 +872,6 @@ using dhj_rt_local::rt_test_freeze;
 using dhj_rt_local::rt_test_dt;
 using dhj_rt_local::rt_test_out;
 using dhj_rt_local::rt_test_every;
-using dhj_rt_local::rt_test_col;
 using dhj_rt_local::rt_frz_ptr;
 using dhj_rt_local::rt_frzT_ptr;
 using dhj_rt_local::rt_test_ncall;
@@ -929,108 +897,95 @@ std::uint64_t SplitMix64Mix(std::uint64_t x) {
 //! \fn void ProblemGenerator::UserProblem()
 //  \brief Problem Generator for the shallow hot Jupiter test
 
-
 //----------------------------------------------------------------------------------------
-// tusplit-1102: the device and IC-profile helpers (moved from the end of the old
+// the device and IC-profile helpers (moved from the end of the old
 // single file; every piece that builds an initial or boundary state reads them)
 
 KOKKOS_INLINE_FUNCTION
 void get_daynight_Tp(const Real &p, Real &Tn, Real &Td) {
-    
-    Real bar = 1.0e6;
-    Real pl = 1.0e-3*bar;
-    Real pt = log10(p/bar);
-    Real ptl = log10(pl/bar);
-    
-    Real fn[13];
-    Real fd[14];
-    
-    fn[0] = 1388.77348;
-    fn[1] = 279.575848;
-    fn[2] = -213.835822;
-    fn[3] = 21.0010475;
-    fn[4] = 100.938036;
-    fn[5] = 12.7972336;
-    fn[6] = -13.9266925;
-    fn[7] = -3.70783272;
-    fn[8] = 0.522370269;
-    fn[9] = 0.320837882;
-    fn[10]= 0.0451831612;
-    fn[11]= 2.18195583e-3;
-    fn[12]= 3.98938097e-6;
+  Real bar = 1.0e6;
+  Real pl = 1.0e-3*bar;
+  Real pt = log10(p/bar);
+  Real ptl = log10(pl/bar);
 
-    fd[0] = 2152.06036;
-    fd[1] = 29.3485512;
-    fd[2] = -183.318696;
-    fd[3] = 46.3893130;
-    fd[4] = 19.8116485;
-    fd[5] = -28.5473177;
-    fd[6] = -2.52726545;
-    fd[7] = 8.43627538;
-    fd[8] = 2.62945375;
-    fd[9] = -0.297098168;
-    fd[10]= -0.286871487;
-    fd[11]= -0.0590629443;
-    fd[12]= -5.38679474e-3;
-    fd[13]= -1.89972415e-4;
-    
-    Real Tnstar = 0.0;
-    Real Tdstar = 0.0;
-    Real Tnstar_pl = 0.0;
-    Real Tdstar_pl = 0.0;
-    Real ptn = 1.0;
-    Real ptln = 1.0;
-    for(int ilogp=0; ilogp<13; ilogp++) {
-        Tnstar += fn[ilogp]*ptn;
-        Tnstar_pl += fn[ilogp]*ptln;
-        ptn *= pt;
-        ptln *= ptl;
-    }
-    ptn = 1.0;
-    ptln = 1.0;
-    for(int ilogp=0; ilogp<14; ilogp++) {
-        Tdstar += fd[ilogp]*ptn;
-        Tdstar_pl += fd[ilogp]*ptln;
-        ptn *= pt;
-        ptln *= ptl;
-    }
+  Real fn[13];
+  Real fd[14];
 
-    Tn = Tnstar;
-    Td = Tdstar;
-//    if (p < pl) {
-//        Tn = Tnstar_pl * exp(0.1*log10(p/pl));
-//        if (Tn < 250) {
-//            Tn = 250;
-//        }
-//        Td = Tdstar_pl * exp(0.015*log10(p/pl));
-//        if (Td < 1000) {
-//            Td = 1000;
-//        }
-//    }
-//    if (Td < Tn) {
-//        Td = Tn;
-//    }
-    Real x = log10(p / pl);
+  fn[0] = 1388.77348;
+  fn[1] = 279.575848;
+  fn[2] = -213.835822;
+  fn[3] = 21.0010475;
+  fn[4] = 100.938036;
+  fn[5] = 12.7972336;
+  fn[6] = -13.9266925;
+  fn[7] = -3.70783272;
+  fn[8] = 0.522370269;
+  fn[9] = 0.320837882;
+  fn[10]= 0.0451831612;
+  fn[11]= 2.18195583e-3;
+  fn[12]= 3.98938097e-6;
 
-    Real Tn_new = Tnstar_pl;// * exp(0.1   * x);
-    Real Td_new = Tdstar_pl;// * exp(0.015 * x);
+  fd[0] = 2152.06036;
+  fd[1] = 29.3485512;
+  fd[2] = -183.318696;
+  fd[3] = 46.3893130;
+  fd[4] = 19.8116485;
+  fd[5] = -28.5473177;
+  fd[6] = -2.52726545;
+  fd[7] = 8.43627538;
+  fd[8] = 2.62945375;
+  fd[9] = -0.297098168;
+  fd[10]= -0.286871487;
+  fd[11]= -0.0590629443;
+  fd[12]= -5.38679474e-3;
+  fd[13]= -1.89972415e-4;
 
-    Tn_new = fmax(Tn_new, 250.0);
-    Td_new = fmax(Td_new, 1000.0);
+  Real Tnstar = 0.0;
+  Real Tdstar = 0.0;
+  Real Tnstar_pl = 0.0;
+  Real Tdstar_pl = 0.0;
+  Real ptn = 1.0;
+  Real ptln = 1.0;
+  for(int ilogp=0; ilogp<13; ilogp++) {
+    Tnstar += fn[ilogp]*ptn;
+    Tnstar_pl += fn[ilogp]*ptln;
+    ptn *= pt;
+    ptln *= ptl;
+  }
+  ptn = 1.0;
+  ptln = 1.0;
+  for(int ilogp=0; ilogp<14; ilogp++) {
+    Tdstar += fd[ilogp]*ptn;
+    Tdstar_pl += fd[ilogp]*ptln;
+    ptn *= pt;
+    ptln *= ptl;
+  }
 
-    // blend
-    Tn = (p < pl) ? Tn_new : Tn;
-    Td = (p < pl) ? Td_new : Td;
+  Tn = Tnstar;
+  Td = Tdstar;
+  Real x = log10(p / pl);
 
-    // enforce Td >= Tn
-    Td = fmax(Td, Tn);
+  Real Tn_new = Tnstar_pl;// * exp(0.1   * x);
+  Real Td_new = Tdstar_pl;// * exp(0.015 * x);
 
-    return;
+  Tn_new = fmax(Tn_new, 250.0);
+  Td_new = fmax(Td_new, 1000.0);
+
+  // blend
+  Tn = (p < pl) ? Tn_new : Tn;
+  Td = (p < pl) ? Td_new : Td;
+
+  // enforce Td >= Tn
+  Td = fmax(Td, Tn);
+
+  return;
 }
 
 KOKKOS_INLINE_FUNCTION
-void get_init_Tp(const int &N, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const Real &p, Real &T,
-                 const int &Ne, const DvceArray1D<Real> &Text, const DvceArray1D<Real> &lgpext) {
+void get_init_Tp(const int &N, const DvceArray1D<Real> &Tarr,
+                 const DvceArray1D<Real> &lgparr, const Real &p, Real &T,
+                 const int &Ne, const DvceArray1D<Real> &Text,
+                 const DvceArray1D<Real> &lgpext) {
     // problem/ic_adiabat_ext: below the table bottom, the adiabat (ic_adiabat_extension);
     // Ne = 0 or inside the table: the original lookup below, unchanged
     if (Ne > 1 && log10(p) > lgparr(N-1)) {
@@ -1041,59 +996,20 @@ void get_init_Tp(const int &N, const DvceArray1D<Real> &Tarr, const DvceArray1D<
       T = Text(k) + (Text(k+1) - Text(k))/(lgpext(k+1) - lgpext(k))*(lge - lgpext(k));
       return;
     }
-    
+
     Real lgp = log10(p);
     Real dlgp = (lgparr(N-1)-lgparr(0))/(N-1);
     int Nt = std::floor((lgp - lgparr(0))/dlgp);
     int NN = (Nt < 0) ? 0 : ((Nt > N-2) ? N-2 : Nt);   // never past the table end
-//    for (int it=Nt-2; it<Nt+3; ++it)
-//    {
-//        if (lgp < lgparr(it) && lgp >= lgparr(it-1)) {
-//            NN = it-1;
-//            break;
-//        }
-//    }
     T = Tarr(NN) + (Tarr(NN+1)-Tarr(NN))/(lgparr(NN+1)-lgparr(NN))*(lgp-lgparr(NN));
     T = (Nt < 0) ? Tarr(0) : T;
-    
-//    Real Tn, Td;
-//    get_daynight_Tp(p, Tn, Td);
-//
-////    T = Tn;
-//
-//    Real Tn2 = Tn*Tn;
-//    Real Tn4 = Tn2*Tn2;
-//    Real Td2 = Td*Td;
-//    Real Td4 = Td2*Td2;
-//    Real Tmid4 = 0.75*Tn4 + 0.25*Td4;
-//
-//    Real Tmid = sqrt(sqrt(Tmid4));
-//    T = Tmid;
-//
-////    Real bar = 1.0e6;
-////    Real Teq = 1469.0;
-//////    Real Tirr = Teq*sqrt(2);
-//////    Real Tint = 100.0;
-//////    Real g = 942.0;
-//////    Real mus = cos(50.0/90.0*M_PI/2.0);
-//////    Real fH = 0.5;
-//////    Real fK = 1.0/3.0;
-//////    Real kap_v = 4.0e-3;
-//////    Real kap_ir = 1.0e-2;
-//////    Real gam = kap_v/kap_ir;
-//////    Real tau = p/(g/kap_ir);
-//////    tau = (tau < 0.0) ? 0.0 : tau;
-//////    Real T4 = 0.25*SQR(SQR(Tint))*(1.0/fH+tau/fK) + 0.25*SQR(SQR(Tirr))*(mus/fH+SQR(mus)/gam/fK+(gam-SQR(mus)/gam/fK)*exp(-gam*tau/mus));
-////////    Real T4 = 0.25*SQR(SQR(Tint))*(1.0/fH+tau/fK);
-//////    T = sqrt(sqrt(T4)); //2581.5574;
-////    T = Teq;
-    
-    
+
     return;
 }
 
 template <typename View1D>
-void get_init_Tp_host(const int &N, const View1D &Tarr, const View1D &lgparr, const Real &p, Real &T,
+void get_init_Tp_host(const int &N, const View1D &Tarr, const View1D &lgparr,
+                      const Real &p, Real &T,
                  const int &Ne, const View1D &Text, const View1D &lgpext) {
     // problem/ic_adiabat_ext: below the table bottom, the adiabat (ic_adiabat_extension);
     // Ne = 0 or inside the table: the original lookup below, unchanged
@@ -1105,75 +1021,42 @@ void get_init_Tp_host(const int &N, const View1D &Tarr, const View1D &lgparr, co
       T = Text(k) + (Text(k+1) - Text(k))/(lgpext(k+1) - lgpext(k))*(lge - lgpext(k));
       return;
     }
-    
+
     Real lgp = log10(p);
     Real dlgp = (lgparr(N-1)-lgparr(0))/(N-1);
     int Nt = std::floor((lgp - lgparr(0))/dlgp);
     int NN = (Nt < 0) ? 0 : ((Nt > N-2) ? N-2 : Nt);   // never past the table end
-//    for (int it=Nt-2; it<Nt+3; ++it)
-//    {
-//        if (lgp < lgparr(it) && lgp >= lgparr(it-1)) {
-//            NN = it-1;
-//            break;
-//        }
-//    }
     T = Tarr(NN) + (Tarr(NN+1)-Tarr(NN))/(lgparr(NN+1)-lgparr(NN))*(lgp-lgparr(NN));
     T = (Nt < 0) ? Tarr(0) : T;
-    
+
     return;
 }
 
 KOKKOS_INLINE_FUNCTION
 void get_wb_Tp(const Real &p, Real &T) {
-    
-    Real Tn, Td;
-    get_daynight_Tp(p, Tn, Td);
-    
-//    T = Tn;
-    
-    Real Tn2 = Tn*Tn;
-    Real Tn4 = Tn2*Tn2;
-    Real Td2 = Td*Td;
-    Real Td4 = Td2*Td2;
-    Real Tmid4 = 0.75*Tn4 + 0.25*Td4;
+  Real Tn, Td;
+  get_daynight_Tp(p, Tn, Td);
 
-    Real Tmid = sqrt(sqrt(Tmid4));
-    T = Tmid;
-    
-//    Real bar = 1.0e6;
-//    Real Teq = 1469.0;
-////    Real Tirr = Teq*sqrt(2);
-////    Real Tint = 100.0;
-////    Real g = 942.0;
-////    Real mus = cos(50.0/90.0*M_PI/2.0);
-////    Real fH = 0.5;
-////    Real fK = 1.0/3.0;
-////    Real kap_v = 4.0e-3;
-////    Real kap_ir = 1.0e-2;
-////    Real gam = kap_v/kap_ir;
-////    Real tau = p/(g/kap_ir);
-////    tau = (tau < 0.0) ? 0.0 : tau;
-////    Real T4 = 0.25*SQR(SQR(Tint))*(1.0/fH+tau/fK) + 0.25*SQR(SQR(Tirr))*(mus/fH+SQR(mus)/gam/fK+(gam-SQR(mus)/gam/fK)*exp(-gam*tau/mus));
-//////    Real T4 = 0.25*SQR(SQR(Tint))*(1.0/fH+tau/fK);
-////    T = sqrt(sqrt(T4)); //2581.5574;
-//    T = Teq;
-    
-    return;
+  Real Tn2 = Tn*Tn;
+  Real Tn4 = Tn2*Tn2;
+  Real Td2 = Td*Td;
+  Real Td4 = Td2*Td2;
+  Real Tmid4 = 0.75*Tn4 + 0.25*Td4;
+
+  Real Tmid = sqrt(sqrt(Tmid4));
+  T = Tmid;
+
+  return;
 }
-
 
 template <typename View1D>
 void get_wb_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
                     const Real &ap, const bool &grav_pmass, const int &N,
                     const Real &zmax, View1D zarr, View1D logparr) {
-    
-//    Real Rgas = 4.593e7;
-//    Real grav_acc = -942.0;
     Real bar = 1.0e6;
     Real p0 = 250.0*bar;
 
     Real zmin = 0.0;
-//    Real zmax = 1.2e9;
     Real dz = (zmax-zmin)/N;
     logparr(0) = std::log(p0);
 
@@ -1204,42 +1087,41 @@ void get_wb_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
         }
     }
 
-    
     return;
 }
 
 KOKKOS_INLINE_FUNCTION
-void get_wb_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p) {
-    
-//    Real Rgas = 4.593e7;
-    Real bar = 1.0e6;
-    Real p0 = 250.0*bar;
-    Real dz = zarr(1)-zarr(0);
-    Real T;
+void get_wb_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
+                const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr,
+                const Real &z, Real &rho, Real &p) {
+  Real bar = 1.0e6;
+  Real p0 = 250.0*bar;
+  Real dz = zarr(1)-zarr(0);
+  Real T;
 
-    if (z >= 0.0) {
-        int Nt = std::floor(z/dz);
-        // clamp to the last segment (linear extrapolation beyond it): cells above the
-        // column top (z_eff > 1.1 (r1-r0) under rot_potential) read past the end of
-        // logparr, which faulted on the GPU (ck-hitemp2-gpu). In range: unchanged.
-        const int Nmax = zarr.extent_int(0) - 2;
-        if (Nt > Nmax) Nt = Nmax;
-        Real logp = logparr(Nt) + (logparr(Nt+1)-logparr(Nt))/(zarr(Nt+1)-zarr(Nt))*(z-zarr(Nt));
-        p = std::exp(logp);
-        get_wb_Tp(p,T);
-        rho = DensFromPT(eos, Rgas, p, T);
-    } else {
-        Real T0;
-        get_wb_Tp(p0,T0);
-        Real rho0 = DensFromPT(eos, Rgas, p0, T0);
-//        Real grav_acc = -942.0;
-        Real H0 = -p0/rho0/grav_acc;
-        Real iH0 = 1.0/H0;
-        p = p0 * std::exp(-z*iH0);
-        rho = rho0 * std::exp(-z*iH0);
-    }
+  if (z >= 0.0) {
+    int Nt = std::floor(z/dz);
+    // clamp to the last segment (linear extrapolation beyond it): cells above the
+    // column top (z_eff > 1.1 (r1-r0) under rot_potential) read past the end of
+    // logparr, which faulted on the GPU (ck-hitemp2-gpu). In range: unchanged.
+    const int Nmax = zarr.extent_int(0) - 2;
+    if (Nt > Nmax) Nt = Nmax;
+    Real logp = logparr(Nt)
+        + (logparr(Nt+1)-logparr(Nt))/(zarr(Nt+1)-zarr(Nt))*(z-zarr(Nt));
+    p = std::exp(logp);
+    get_wb_Tp(p,T);
+    rho = DensFromPT(eos, Rgas, p, T);
+  } else {
+    Real T0;
+    get_wb_Tp(p0,T0);
+    Real rho0 = DensFromPT(eos, Rgas, p0, T0);
+    Real H0 = -p0/rho0/grav_acc;
+    Real iH0 = 1.0/H0;
+    p = p0 * std::exp(-z*iH0);
+    rho = rho0 * std::exp(-z*iH0);
+  }
 
-    return;
+  return;
 }
 
 template <typename View1D>
@@ -1276,13 +1158,10 @@ void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_ac
       return;
     }
 
-//    Real Rgas = 4.593e7;
-//    Real grav_acc = -942.0;
     Real bar = 1.0e6;
     Real p0 = 250.0*bar;
 
     Real zmin = 0.0;
-//    Real zmax = 1.2e9;
     Real dz = (zmax-zmin)/N;
     logparr(0) = std::log(p0);
 
@@ -1313,160 +1192,165 @@ void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_ac
         }
     }
 
-
     return;
 }
 
 KOKKOS_INLINE_FUNCTION
-void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const int &N, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p,
-                  const int &Ne, const DvceArray1D<Real> &Text, const DvceArray1D<Real> &lgpext) {
+void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
+                  const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr,
+                  const int &N, const DvceArray1D<Real> &zarr,
+                  const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p,
+                  const int &Ne, const DvceArray1D<Real> &Text,
+                  const DvceArray1D<Real> &lgpext) {
+  Real bar = 1.0e6;
+  Real p0 = 250.0*bar;
+  Real dz = zarr(1)-zarr(0);
+  Real T;
 
-//    Real Rgas = 4.593e7;
-    Real bar = 1.0e6;
-    Real p0 = 250.0*bar;
-    Real dz = zarr(1)-zarr(0);
-    Real T;
+  if (z >= zarr(0)) {   // zarr(0) = 0 unless the ic_profile column reaches below z = 0
+    int Nt = std::floor((z - zarr(0))/dz);
+    if (Nt > N-2) Nt = N-2;   // as in get_wb_eos: never read past the column top
+    Real logp = logparr(Nt)
+        + (logparr(Nt+1)-logparr(Nt))/(zarr(Nt+1)-zarr(Nt))*(z-zarr(Nt));
+    p = std::exp(logp);
+    get_init_Tp(N, Tarr, lgparr, p,T, Ne, Text, lgpext);
+    rho = DensFromPT(eos, Rgas, p, T);
+  } else {
+    Real T0;
+    get_init_Tp(N, Tarr, lgparr, p0,T0, Ne, Text, lgpext);
+    Real rho0 = DensFromPT(eos, Rgas, p0, T0);
+    Real H0 = -p0/rho0/grav_acc;
+    Real iH0 = 1.0/H0;
+    p = p0 * std::exp(-z*iH0);
+    rho = rho0 * std::exp(-z*iH0);
+  }
 
-    if (z >= zarr(0)) {   // zarr(0) = 0 unless the ic_profile column reaches below z = 0
-        int Nt = std::floor((z - zarr(0))/dz);
-        if (Nt > N-2) Nt = N-2;   // as in get_wb_eos: never read past the column top
-        Real logp = logparr(Nt) + (logparr(Nt+1)-logparr(Nt))/(zarr(Nt+1)-zarr(Nt))*(z-zarr(Nt));
-        p = std::exp(logp);
-        get_init_Tp(N, Tarr, lgparr, p,T, Ne, Text, lgpext);
-        rho = DensFromPT(eos, Rgas, p, T);
-    } else {
-        Real T0;
-        get_init_Tp(N, Tarr, lgparr, p0,T0, Ne, Text, lgpext);
-        Real rho0 = DensFromPT(eos, Rgas, p0, T0);
-//        Real grav_acc = -942.0;
-        Real H0 = -p0/rho0/grav_acc;
-        Real iH0 = 1.0/H0;
-        p = p0 * std::exp(-z*iH0);
-        rho = rho0 * std::exp(-z*iH0);
-    }
-
-    return;
-}
-
-
-
-
-
-KOKKOS_INLINE_FUNCTION
-void get_picket_fence_Ttau_coeff(const Real &Tint, const Real &Tirr, const Real &met, const Real &grav, const Real &mus, Real &taulim, Real &A, Real &B, Real (&C)[3], Real (&D)[3], Real (&E)[3], Real (&gamvv)[3], const Real albedo_set) {
-    
-    Real Tirr4 = SQR(SQR(Tirr));
-    Real Tint4 = SQR(SQR(Tint));
-    Real Teq = Tirr/sqrt(2.0);
-    
-    Real Teff0 = sqrt(sqrt(Tint4+Tirr4/sqrt(3.0)));
-    Real albedo;
-    get_albedo(Teff0,grav,albedo);
-    if (albedo_set >= 0.0) albedo = albedo_set;   // problem/albedo (observed Bond albedo)
-    
-    Real Teff = sqrt(sqrt(Tint4+(1.0-albedo)*mus*Tirr4));
-    Real gamv1, gamv2, gamv3, beta, gamir1, gamir2;
-    get_picket_fence_coeff(Teq, Teff, gamv1, gamv2, gamv3, beta, gamir1, gamir2);
-    
-    Real R = gamir1/gamir2;
-    Real gamp = gamir1 + gamir2 - SQR(gamir2)*R;
-    taulim = sqrt(R/3.0)*sqrt(beta*SQR(R-1.0)-SQR(beta*(R-1.0))+R)/SQR(gamir1);
-    Real At1 = SQR(gamir1)*log(1.0+1.0/(taulim*gamir1));
-    Real At2 = SQR(gamir2)*log(1.0+1.0/(taulim*gamir2));
-    
-    Real a0 = 1.0/gamir1 + 1.0/gamir2;
-    Real a1 = -1.0/(3.0*SQR(taulim))*(gamp/(1.0-gamp)*(gamir1+gamir2-2.0)/(gamir1+gamir2) + (gamir1+gamir2)*taulim - (At1+At2)*SQR(taulim));
-    Real b0 = 1.0/(gamir1*gamir2/(gamir1-gamir2)*(At1-At2)/3.0 - SQR(gamir1*gamir2)/sqrt(3.0*gamp) - SQR(gamir1*gamir2)*gamir1*gamir2/(1.0-gamir1)/(1.0-gamir2)/(gamir1+gamir2));
-    A = 1.0/3.0*(a0+a1*b0);
-    B = -1.0/3.0*SQR(gamir1*gamir2)/gamp*b0;
-    
-//    Real T4 = 3.0/4.0*Tint4*(tau + A + B*exp(-tau/taulim));
-    
-    for (int iv=0; iv<3; ++iv) {
-        Real gamv;
-        if (iv==0) gamv = gamv1;
-        if (iv==1) gamv = gamv2;
-        if (iv==2) gamv = gamv3;
-        gamvv[iv] = gamv;
-        
-        Real longf = (3.0*SQR(gamir1)-SQR(gamv))*(3.0*SQR(gamir2)-SQR(gamv))*(gamir1+gamir2) - 3.0*gamv*(6.0*SQR(gamir1*gamir2)-SQR(gamv)*(SQR(gamir1)+SQR(gamir2)));
-        Real a2 = SQR(taulim)/(gamp*SQR(gamv)) * longf/(1.0-SQR(gamv*taulim));
-        Real Av1 = SQR(gamir1)*log(1.0+gamv/gamir1);
-        Real Av2 = SQR(gamir2)*log(1.0+gamv/gamir2);
-        Real a3 = -SQR(taulim) * (3.0*SQR(gamir1)-SQR(gamv))*(3.0*SQR(gamir2)-SQR(gamv))*(Av1+Av2) / (gamp*SQR(gamv)*gamv*(1.0-SQR(gamv*taulim)));
-        Real b1 = gamir1*gamir2*(3.0*SQR(gamir1)-SQR(gamv))*(3.0*SQR(gamir2)-SQR(gamv))*SQR(taulim) / (gamp*SQR(gamv)*(SQR(gamv*taulim)-1.0));
-        Real b2 = 3.0*(gamir1+gamir2)*SQR(gamv)*gamv / ((3.0*SQR(gamir1)-SQR(gamv))*(3.0*SQR(gamir2)-SQR(gamv)));
-        Real b3 = (Av2-Av1) / (gamv*(gamir1-gamir2));
-        
-        C[iv] = -1.0/3.0*(b0*b1*(1.0+b2+b3)*a1 + a2 + a3);
-        D[iv] = -B*b1*(1.0+b2+b3);
-        E[iv] = (3.0-SQR(gamv/gamir1))*(3.0-SQR(gamv/gamir2)) / (9.0*gamv*(SQR(gamv*taulim)-1.0));
-//        T4 += 3.0/4.0*1.0/3.0*Tirr4*mus*(C + D*exp(-tau/taulim) + E*exp(-gamv*tau));
-    }
-    
-//    T = sqrt(sqrt(T4));
-    return;
+  return;
 }
 
 KOKKOS_INLINE_FUNCTION
-void get_picket_fence_Ttau(const Real &Tint, const Real &Tirr, const Real &mus, const Real taulim, const Real &A, const Real &B, const Real (&C)[3], Real (&D)[3], Real (&E)[3], Real (&gamv)[3], const Real &tau, Real &T) {
-    
-    Real Tirr4 = SQR(SQR(Tirr));
-    Real Tint4 = SQR(SQR(Tint));
-    Real T4 = 3.0/4.0*Tint4*(tau + A + B*exp(-tau/taulim));
-    for (int iv=0; iv<3; ++iv) {
-        T4 += 3.0/4.0*1.0/3.0*Tirr4*mus*(C[iv] + D[iv]*exp(-tau/taulim) + E[iv]*exp(-gamv[iv]*tau));
-    }
-    T = sqrt(sqrt(T4));
-    return;
+void get_picket_fence_Ttau_coeff(const Real &Tint, const Real &Tirr, const Real &met,
+                                 const Real &grav, const Real &mus, Real &taulim, Real &A,
+                                 Real &B, Real (&C)[3], Real (&D)[3], Real (&E)[3],
+                                 Real (&gamvv)[3], const Real albedo_set) {
+  Real Tirr4 = SQR(SQR(Tirr));
+  Real Tint4 = SQR(SQR(Tint));
+  Real Teq = Tirr/sqrt(2.0);
+
+  Real Teff0 = sqrt(sqrt(Tint4+Tirr4/sqrt(3.0)));
+  Real albedo;
+  get_albedo(Teff0,grav,albedo);
+  if (albedo_set >= 0.0) albedo = albedo_set;   // problem/albedo (observed Bond albedo)
+
+  Real Teff = sqrt(sqrt(Tint4+(1.0-albedo)*mus*Tirr4));
+  Real gamv1, gamv2, gamv3, beta, gamir1, gamir2;
+  get_picket_fence_coeff(Teq, Teff, gamv1, gamv2, gamv3, beta, gamir1, gamir2);
+
+  Real R = gamir1/gamir2;
+  Real gamp = gamir1 + gamir2 - SQR(gamir2)*R;
+  taulim = sqrt(R/3.0)*sqrt(beta*SQR(R-1.0)-SQR(beta*(R-1.0))+R)/SQR(gamir1);
+  Real At1 = SQR(gamir1)*log(1.0+1.0/(taulim*gamir1));
+  Real At2 = SQR(gamir2)*log(1.0+1.0/(taulim*gamir2));
+
+  Real a0 = 1.0/gamir1 + 1.0/gamir2;
+  Real a1 = -1.0/(3.0*SQR(taulim))
+      *(gamp/(1.0-gamp)*(gamir1+gamir2-2.0)/(gamir1+gamir2) + (gamir1+gamir2)
+        *taulim - (At1+At2)*SQR(taulim));
+  Real b0 = 1.0/(gamir1*gamir2/(gamir1-gamir2)*(At1-At2)/3.0 - SQR(gamir1*gamir2)
+                 /sqrt(3.0*gamp) - SQR(gamir1*gamir2)*gamir1*gamir2/(1.0-gamir1)
+                     /(1.0-gamir2)/(gamir1+gamir2));
+  A = 1.0/3.0*(a0+a1*b0);
+  B = -1.0/3.0*SQR(gamir1*gamir2)/gamp*b0;
+
+  for (int iv=0; iv<3; ++iv) {
+    Real gamv;
+    if (iv==0) gamv = gamv1;
+    if (iv==1) gamv = gamv2;
+    if (iv==2) gamv = gamv3;
+    gamvv[iv] = gamv;
+
+    Real longf = (3.0*SQR(gamir1)-SQR(gamv))*(3.0*SQR(gamir2)-SQR(gamv))
+        *(gamir1+gamir2) - 3.0*gamv
+            *(6.0*SQR(gamir1*gamir2)-SQR(gamv)*(SQR(gamir1)+SQR(gamir2)));
+    Real a2 = SQR(taulim)/(gamp*SQR(gamv)) * longf/(1.0-SQR(gamv*taulim));
+    Real Av1 = SQR(gamir1)*log(1.0+gamv/gamir1);
+    Real Av2 = SQR(gamir2)*log(1.0+gamv/gamir2);
+    Real a3 = -SQR(taulim) * (3.0*SQR(gamir1)-SQR(gamv))*(3.0*SQR(gamir2)-SQR(gamv))
+        *(Av1+Av2) / (gamp*SQR(gamv)*gamv*(1.0-SQR(gamv*taulim)));
+    Real b1 = gamir1*gamir2*(3.0*SQR(gamir1)-SQR(gamv))*(3.0*SQR(gamir2)-SQR(gamv))
+        *SQR(taulim) / (gamp*SQR(gamv)*(SQR(gamv*taulim)-1.0));
+    Real b2 = 3.0*(gamir1+gamir2)*SQR(gamv)
+        *gamv / ((3.0*SQR(gamir1)-SQR(gamv))*(3.0*SQR(gamir2)-SQR(gamv)));
+    Real b3 = (Av2-Av1) / (gamv*(gamir1-gamir2));
+
+    C[iv] = -1.0/3.0*(b0*b1*(1.0+b2+b3)*a1 + a2 + a3);
+    D[iv] = -B*b1*(1.0+b2+b3);
+    E[iv] = (3.0-SQR(gamv/gamir1))
+        *(3.0-SQR(gamv/gamir2)) / (9.0*gamv*(SQR(gamv*taulim)-1.0));
+  }
+
+  return;
+}
+
+KOKKOS_INLINE_FUNCTION
+void get_picket_fence_Ttau(const Real &Tint, const Real &Tirr, const Real &mus,
+                           const Real taulim, const Real &A, const Real &B,
+                               const Real (&C)[3], Real (&D)[3], Real (&E)[3],
+                                   Real (&gamv)[3], const Real &tau, Real &T) {
+  Real Tirr4 = SQR(SQR(Tirr));
+  Real Tint4 = SQR(SQR(Tint));
+  Real T4 = 3.0/4.0*Tint4*(tau + A + B*exp(-tau/taulim));
+  for (int iv=0; iv<3; ++iv) {
+    T4 += 3.0/4.0*1.0/3.0*Tirr4*mus*(C[iv] + D[iv]*exp(-tau/taulim)
+                                     + E[iv]*exp(-gamv[iv]*tau));
+  }
+  T = sqrt(sqrt(T4));
+  return;
 }
 
 template <typename View1D>
-void get_picket_fence_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma, const Real &Tint, const Real &Tirr, const Real &met, const Real &grav, const Real &mus, const int &N, View1D Tarr, View1D lgparr) {
-    Real bar = 1.0e6;
-    Real tautop = 1.0e-6;
-    Real Ttop;
-    Real taulim, A, B, C[3], D[3], E[3], gamv[3];
-    get_picket_fence_Ttau_coeff(Tint, Tirr, met, grav, mus, taulim, A, B, C, D, E, gamv,
-                                two_stream_rt::rt_albedo_set);
-    get_picket_fence_Ttau(Tint, Tirr, mus, taulim, A, B, C, D, E, gamv, tautop, Ttop);
-    Real kapr, ptop;
-    ptop = 2.0; // 2e-6 bar
-    get_kapr(Ttop, ptop, met, kapr);
-    tautop = kapr/grav*ptop;
-    get_picket_fence_Ttau(Tint, Tirr, mus, taulim, A, B, C, D, E, gamv, tautop, Ttop);
-    
-    Real lgptop = log10(ptop);
-    Real pbot = 300.0*bar;
-    Real lgpbot = log10(pbot);
-    Real dlgp = (lgpbot-lgptop)/(N-1);
-    Real lgp = lgptop;
-    Real p = pow(10.0,lgp);
-    Real tau = tautop;
-    Real lgtau = log10(tau);
-    Real T;
-    get_picket_fence_Ttau(Tint, Tirr, mus, taulim, A, B, C, D, E, gamv, tau, T);
-    get_kapr(Ttop, p, met, kapr);
-    for (int ip=0; ip<N; ++ ip) {
-        Tarr(ip) = T;
-        lgparr(ip) = lgp;
-        Real K = p*kapr/grav*log(10.0);
-        tau += K*dlgp;
-        lgp += dlgp;
-        p = pow(10.0,lgp);
-//        lgp += dlgp;
-//        Real pp = pow(10.0,lgp);
-//        Real dp = pp-p;
-//        Real K = kapr/grav;
-//        tau += K*dp;
-//        p = pp;
-        get_picket_fence_Ttau(Tint, Tirr, mus, taulim, A, B, C, D, E, gamv, tau, T);
-        get_kapr(T, p, met, kapr);
-    }
-    
-    adjust_ad_pT_arr(eos, Rgas, gamma, N, Tarr, lgparr);
+void get_picket_fence_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma,
+                             const Real &Tint, const Real &Tirr, const Real &met,
+                             const Real &grav, const Real &mus, const int &N, View1D Tarr,
+                             View1D lgparr) {
+  Real bar = 1.0e6;
+  Real tautop = 1.0e-6;
+  Real Ttop;
+  Real taulim, A, B, C[3], D[3], E[3], gamv[3];
+  get_picket_fence_Ttau_coeff(Tint, Tirr, met, grav, mus, taulim, A, B, C, D, E, gamv,
+                              two_stream_rt::rt_albedo_set);
+  get_picket_fence_Ttau(Tint, Tirr, mus, taulim, A, B, C, D, E, gamv, tautop, Ttop);
+  Real kapr, ptop;
+  ptop = 2.0; // 2e-6 bar
+  get_kapr(Ttop, ptop, met, kapr);
+  tautop = kapr/grav*ptop;
+  get_picket_fence_Ttau(Tint, Tirr, mus, taulim, A, B, C, D, E, gamv, tautop, Ttop);
 
-    return;
+  Real lgptop = log10(ptop);
+  Real pbot = 300.0*bar;
+  Real lgpbot = log10(pbot);
+  Real dlgp = (lgpbot-lgptop)/(N-1);
+  Real lgp = lgptop;
+  Real p = pow(10.0,lgp);
+  Real tau = tautop;
+  Real lgtau = log10(tau);
+  Real T;
+  get_picket_fence_Ttau(Tint, Tirr, mus, taulim, A, B, C, D, E, gamv, tau, T);
+  get_kapr(Ttop, p, met, kapr);
+  for (int ip=0; ip<N; ++ ip) {
+    Tarr(ip) = T;
+    lgparr(ip) = lgp;
+    Real K = p*kapr/grav*log(10.0);
+    tau += K*dlgp;
+    lgp += dlgp;
+    p = pow(10.0,lgp);
+    get_picket_fence_Ttau(Tint, Tirr, mus, taulim, A, B, C, D, E, gamv, tau, T);
+    get_kapr(T, p, met, kapr);
+  }
+
+  adjust_ad_pT_arr(eos, Rgas, gamma, N, Tarr, lgparr);
+
+  return;
 }
 
 //----------------------------------------------------------------------------------------
@@ -1562,7 +1446,8 @@ int ic_adiabat_extension(const EOS_Data &eos, const Real &gamma, const Real &Rga
     const Real gt = (Tarr(N-1) > Tarr(N-2)) ?
         std::log10(Tarr(N-1)/Tarr(N-2))/(lgparr(N-1) - lgparr(N-2)) : 0.0;
     const int k2x = static_cast<int>(std::lround((Ne - 1)*std::log10(2.0)/dex));
-    std::cout << "deep_hot_jupiter_rt: problem/ic_adiabat_ext: below the IC table bottom ("
+    std::cout
+        << "deep_hot_jupiter_rt: problem/ic_adiabat_ext: below the IC table bottom ("
               << std::pow(10.0, lg0)/1.0e6 << " bar, " << Tarr(N-1) << " K; table slope "
               << gt << ", nabla_ad " << gb << ") T follows the adiabat: "
               << std::pow(10.0, lgpext(k2x))/1.0e6 << " bar " << Text(k2x) << " K .. "
@@ -1573,8 +1458,8 @@ int ic_adiabat_extension(const EOS_Data &eos, const Real &gamma, const Real &Rga
 }
 
 template <typename View1D>
-void adjust_ad_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma, const int &N, View1D Tarr, View1D lgparr) {
-
+void adjust_ad_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma,
+                      const int &N, View1D Tarr, View1D lgparr) {
   // --- find convective boundary (search from bottom) ---
   int ic = -1;
 
@@ -1611,7 +1496,7 @@ void adjust_ad_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma, 
       );
     }
   }
-    
+
   return;
 }
 

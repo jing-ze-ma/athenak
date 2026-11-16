@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file mhd_tracers.hpp
-//! \brief the MHD passive-tracer slot layout (tracer-1101), computed in ONE place for the
+//! \brief the MHD passive-tracer slot layout, computed in one place for the
 //! MHD constructor, the RKG registers (Resistivity), the restart reader (pgen.cpp) and
 //! main.cpp (the layout the restart file was written with).
 //!
@@ -15,10 +15,10 @@
 //!   [nmhd, nmhd+nuser)               the user's <mhd>/nscalars
 //!   nmhd+nuser                       <mhd>/xe_tracer: y = n_e/n_H (if on)
 //!   last                             <mhd>/floor_tracer: floor-added mass (if on)
-//! Both tracer keys are read only when named, so an input without them (and its
-//! restarts) has nscalars = <mhd>/nscalars exactly as before.
+//! Both tracer keys are read only when named, so an input without them has
+//! nscalars = <mhd>/nscalars.
 //!
-//! share-1104 P4: the SAME layout serves <hydro> (ReadTracerLayout(pin, "hydro")):
+//! The same layout serves <hydro> (ReadTracerLayout(pin, "hydro")):
 //! [0, nhydro) hydro variables, then <hydro>/nscalars, then <hydro>/floor_tracer (last).
 //! Hydro has no x_e tracer (its consumer, the resistivity, is MHD only: refused there).
 //! The floor-tracer drain and the x1-ghost rule are shared too (fluid:: below,
@@ -37,7 +37,7 @@ struct TracerLayout {
   int nuser = 0;        // <mhd>/nscalars
   bool xe = false;      // <mhd>/xe_tracer
   bool fl = false;      // <mhd>/floor_tracer
-  // duale-1112 <blk>/dual_energy: TWO slots after every other scalar (the internal
+  // <blk>/dual_energy: two slots after every other scalar (the internal
   // energy e, specific value e/rho, and the volume tracer 1, specific value 1/rho; see
   // hydro/dual_energy.hpp).  Resynced from the state by every ConToPrim, so their
   // restart content is never read; NOT counted in NTracer() (no tracer task, no x1-ghost
@@ -74,9 +74,9 @@ inline TracerLayout ReadTracerLayout(ParameterInput *pin,
 }  // namespace mhd
 
 namespace fluid {
-//! share-1104 P4: the floor-tracer drain kernel of MHD::FloorTracerDrain, shared with
+//! the floor-tracer drain kernel of MHD::FloorTracerDrain, shared with
 //! Hydro::FloorTracerDrain.  bcc empty (hydro): the floor density is dfloor alone;
-//! otherwise max(dfloor, B^2 va2i) as before.  phi empty unless etotgrav.  Adds the
+//! otherwise max(dfloor, B^2 va2i).  phi empty unless etotgrav.  Adds the
 //! active-cell drained mass/energy (volume integrated) to dm_sum/de_sum.
 void FloorTracerDrainCore(MeshBlockPack *pp, const DvceArray5D<Real> &u0,
                           const DvceArray5D<Real> &w0, const DvceArray5D<Real> &bcc,

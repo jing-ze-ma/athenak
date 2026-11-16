@@ -4,14 +4,10 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file eos_table.cpp
-//! \brief builds the (log10 rho, log10 T) interpolation table for the general EOS by
-//! sampling the analytic composition model of eos_composition.hpp.
-//!
-//! Everything here runs ONCE, on the host, at problem setup. The node derivatives that
-//! the bicubic Hermite interpolation needs are obtained by central differencing the
-//! analytic model itself, not by differencing the table: differencing the model gives
-//! node derivatives whose accuracy is independent of the grid spacing, which is what
-//! makes the interpolant fourth-order accurate rather than second.
+//! \brief builds the (log10 rho, log10 T) table of the general EOS on the host by
+//! sampling the analytic composition model (eos_composition.hpp).  Node derivatives come
+//! from central differences of the model, not of the table, so the bicubic Hermite
+//! interpolant is fourth-order accurate.
 
 #include <math.h>
 
@@ -46,9 +42,8 @@ void SampleModel(const EOSCompositionModel &m, const double x, const double y,
 
 //----------------------------------------------------------------------------------------
 //! \fn double EnergyAtPressure
-//! \brief total internal energy density (gas plus radiation if enabled) at a given
-//! density and TOTAL pressure, in cgs. Used only to precompute the pressure-floor bound,
-//! so a plain bisection is fast enough and avoids depending on the table being built.
+//! \brief internal energy density (gas + radiation) at a density and total pressure in
+//! cgs, by bisection; used for the pressure-floor bound
 
 double EnergyAtPressure(const EOSCompositionModel &m, const bool rad,
                         const double wrad, const double rho, const double ptarget) {
@@ -74,8 +69,8 @@ double EnergyAtPressure(const EOSCompositionModel &m, const bool rad,
 
 //----------------------------------------------------------------------------------------
 //! \fn void BuildEOSTable
-//! \brief read the table and composition parameters, sample the analytic model onto the
-//! grid, and copy the result to the device.
+//! \brief reads the table and composition parameters, samples the model onto the grid and
+//! copies the table to the device
 
 void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
                    const Real dens_cgs, const Real pres_cgs, const Real temp_cgs,
@@ -86,25 +81,18 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
   model.yhel = pin->GetOrAddReal(block, "eos_yhe", 0.2485);
   model.a_metal = pin->GetOrAddReal(block, "eos_a_metal", 16.0);
   model.include_h2 = pin->GetOrAddBoolean(block, "eos_h2", true);
-  model.include_ion = pin->GetOrAddBoolean(block, "eos_ionization", true);
   model.include_metal_ion = pin->GetOrAddBoolean(block, "eos_metal_ionization", false);
-  // [M/H] in dex for the metal donors. It DEFAULTS to <problem>/met when that exists,
-  // because a problem generator that has a metallicity uses it for its opacity, and an
-  // atmosphere that is opaque at one metallicity and conducting at another is not a
-  // physical configuration -- it is a parameter that was updated in one place only. Set
-  // eos_metal_mh explicitly to override, which a pgen may then reject.
+  // [M/H] of the metal donors, default <problem>/met when present so the EOS and the
+  // opacity use the same metallicity
   Real mh_default = 0.0;
   if (pin->DoesParameterExist("problem", "met")) {
     mh_default = pin->GetReal("problem", "met");
   }
   model.metal_mh = pin->GetOrAddReal(block, "eos_metal_mh", mh_default);
   model.include_metal_cond = pin->GetOrAddBoolean(block, "eos_metal_condensation", false);
-  model.metal_tcond = pin->GetOrAddReal(block, "eos_metal_tcond", 0.0);
   tbl.radiation = pin->GetOrAddBoolean(block, "eos_radiation", false);
 
-  // ------------------------------------------------------ thin-region radiation taper
-  // See utils/rad_taper.hpp.  eos_rad_rho_hi = 0 (the default) leaves the radiation
-  // terms untapered and every expression below on its original branch, bit for bit.
+  // utils/rad_taper.hpp; eos_rad_rho_hi = 0 (default) = no taper
   const Real rad_rho_hi = pin->GetOrAddReal(block, "eos_rad_rho_hi", 0.0);
   const Real rad_rho_lo = pin->GetOrAddReal(block, "eos_rad_rho_lo", 0.0);
   tbl.rad_taper = (rad_rho_hi > 0.0);
@@ -128,13 +116,8 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
     tbl.rad_lrho_hi = log10(static_cast<double>(rad_rho_hi));
   }
 
-  // ------------------------------------------- the TEMPERATURE GATE on that taper
-  // w = max(w_rho(rho), w_T(T)): a cell hotter than eos_rad_t_hi keeps its radiation in
-  // the EOS whatever its density does.  See rad_taper::WeightGated().  Both radii of the
-  // density window are read off two optical depths; so are these two temperatures, and
-  // the pair should come from the SAME two tau levels or the gate and the taper disagree
-  // about where the hand-over is.  eos_rad_t_hi = 0 (the default) leaves the gate off and
-  // every branch on its original arithmetic, bit for bit.
+  // w = max(w_rho, w_T): cells hotter than eos_rad_t_hi keep their radiation
+  // (rad_taper::WeightGated); eos_rad_t_hi = 0 (default) = gate off
   const Real rad_t_hi = pin->GetOrAddReal(block, "eos_rad_t_hi", 0.0);
   const Real rad_t_lo = pin->GetOrAddReal(block, "eos_rad_t_lo", 0.0);
   tbl.rad_tgate = (rad_t_hi > 0.0);
@@ -168,21 +151,14 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
     std::exit(EXIT_FAILURE);
   }
 
-  // ------------------------------------------------------------------------- table grid
-  // Defaults span the conditions this EOS is meant for: from a tenuous irradiated
-  // atmosphere to a gas-giant or stellar envelope interior, and from molecular
-  // temperatures up to fully ionized.
+  // defaults span irradiated atmospheres to stellar envelopes, molecular to fully
+  // ionized
   Real xlo = pin->GetOrAddReal(block, "eos_logd_min", -14.0);
   Real xhi = pin->GetOrAddReal(block, "eos_logd_max", 2.0);
   Real ylo = pin->GetOrAddReal(block, "eos_logt_min", 1.5);
   Real yhi = pin->GetOrAddReal(block, "eos_logt_max", 8.0);
-  // Resolution is specified separately in the two directions, and by default is five
-  // times finer in temperature. That is not a tuning knob but a property of the physics:
-  // an ionization or dissociation front is a factor exp(-chi/kT), so its width in ln T is
-  // kT/chi -- about a hundredth of a decade at the low densities where hydrogen ionizes
-  // near 3000 K -- while nothing in the EOS varies faster than smoothly in density. A
-  // grid that is uniform in the two logs therefore wastes most of its nodes and still
-  // fails to resolve the only feature that is hard.
+  // default resolution is 5x finer in log T: ionization and dissociation fronts are
+  // ~kT/chi wide in ln T, while nothing varies fast in density
   Real dlog = pin->GetOrAddReal(block, "eos_dlog", 0.05);
   Real dlogd = pin->GetOrAddReal(block, "eos_dlogd", dlog);
   Real dlogt = pin->GetOrAddReal(block, "eos_dlogt", 0.2*dlog);
@@ -215,8 +191,7 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
   tbl.pres_cgs = pres_cgs;
   tbl.temp_cgs = temp_cgs;
   tbl.arad = eos_cgs::a_rad;
-  // recorded so that a problem generator can verify its own metallicity matches the one
-  // the EOS was built with; a mismatch is silent otherwise
+  // recorded for metallicity consistency checks in problem generators
   tbl.metal_ion = model.include_metal_ion;
   tbl.metal_mh = model.metal_mh;
 
@@ -226,9 +201,8 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
   auto h_tbl = Kokkos::create_mirror_view(tbl.tbl);
   auto h_efb = Kokkos::create_mirror_view(tbl.efbnd);
 
-  // Central-difference steps for the node derivatives. The first derivatives use the
-  // smaller step, where truncation and round off are both near 1e-10; the cross
-  // derivative needs the larger one because its round-off error scales as 1/h^2.
+  // central-difference steps of the node derivatives; the cross derivative needs the
+  // larger step (round-off ~ 1/h^2)
   const double h1 = 1.0e-5;
   const double h2 = 1.0e-3;
 
@@ -276,15 +250,10 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
     }
   }
 
-  // ------------------------------------------------- pressure-floor bound, in CODE units
-  // For each x cell, the maximum of e(rho, pfloor) over that cell, evaluated from the
-  // ANALYTIC model rather than from the interpolant and then inflated slightly, so that
-  // it bounds the interpolated value too. See EOSTable::EnergyFloorBound().
-  // The floor the run actually applies is e(rho,pfloor) CLAMPED to the table's lowest
-  // tabulated temperature (see EOSTable::SolveTemperatureFromP): at low density a
-  // nominal pfloor implies a temperature far below the table, and the floor is then
-  // e(rho,T_tablemin) instead.  The bound has to bound THAT, or ApplyEnergyFloor()
-  // would skip cells its own floor would have raised.
+  // per x cell, the maximum of the floor energy over the cell from the analytic model,
+  // slightly inflated so it also bounds the interpolant (EOSTable::EnergyFloorBound).
+  // The applied floor is clamped to the lowest tabulated temperature
+  // (EOSTable::SolveTemperatureFromP), so the bound covers that value too.
   const double pfl_cgs = pfloor*pres_cgs;
   const double tmin_cgs = pow(10.0, ylo);
   double efmax = 0.0;
@@ -295,10 +264,7 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
       const double rho = pow(10.0, x);
       const double wr0 = tbl.rad_taper
           ? rad_taper::WeightOnly(x, tbl.rad_lrho_lo, tbl.rad_lrho_hi) : 1.0;
-      // Under the TEMPERATURE GATE the weight at this density is not known here -- it
-      // depends on the T the inversion lands on -- so the bound is taken over BOTH ends
-      // of the gate, w = w_rho and w = 1.  This is a bound, and its only job is to prove
-      // the common case is above the floor; widening it costs nothing but a compare.
+      // with the temperature gate w is unknown here: bound over both w = w_rho and w = 1
       const double wrs[2] = {wr0, tbl.rad_tgate ? 1.0 : wr0};
       for (int q=0; q<(tbl.rad_tgate ? 2 : 1); ++q) {
         const double wr = wrs[q];
@@ -315,43 +281,14 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
   }
   tbl.efmax = efmax;
 
-  // -------------------------------------------------- sub-floor gate, in CGS specific e
-  // The largest e(rho, 10^ymin)/rho anywhere on the table's density range. The j = 0 row
-  // already holds log10(e_gas/rho) there; radiation, which is not tabulated, is added at
-  // the LOWEST density, where its contribution per gram is largest.
-  double emsp = 0.0;
-  for (int i=0; i<nx; ++i) {
-    double es = pow(10.0, static_cast<double>(h_tbl(0,i,ITE)));
-    if (tbl.radiation) {
-      const double xi = xlo + i*tbl.dx;
-      double wr = tbl.rad_taper
-          ? rad_taper::WeightOnly(xi, tbl.rad_lrho_lo, tbl.rad_lrho_hi) : 1.0;
-      // the gate is evaluated at the table's own lowest row, which is where this bound
-      // lives and where EvalTMin() will evaluate it too, so this is exact, not a bound
-      if (tbl.rad_tgate) {
-        wr = std::max(wr, static_cast<double>(
-                 rad_taper::WeightOnly(ylo, tbl.rad_lt_lo, tbl.rad_lt_hi)));
-      }
-      const double tmin = pow(10.0, ylo);
-      es += wr*eos_cgs::a_rad*tmin*tmin*tmin*tmin/pow(10.0, xi);
-    }
-    emsp = std::max(emsp, es);
-  }
-  tbl.eminspec = emsp;
-
   Kokkos::deep_copy(tbl.tbl, h_tbl);
   Kokkos::deep_copy(tbl.efbnd, h_efb);
   tbl.tbl_h = h_tbl;       // host-side copies for host callers (see eos_table.hpp)
   tbl.efbnd_h = h_efb;
   tbl.active = true;
 
-  // ------------------------------------------------------------------- optional dump
-  // <block>/eos_table_dump writes the sampled node values to an ASCII file, so that
-  // post-processing can invert e(rho,T) for T and evaluate p(rho,T) with exactly the
-  // EOS the run used. Only the two surfaces a (rho,e) -> p inversion needs are written;
-  // the Hermite derivatives are not, since bilinear interpolation on this grid is far
-  // more accurate than the plot that consumes it. Writing is rank 0 only and happens
-  // once at setup, so it costs nothing in a production run that leaves it unset.
+  // <block>/eos_table_dump: rank 0 writes the e and p node values to an ASCII file for
+  // post-processing with the run's own EOS
   std::string dumpfile = pin->GetOrAddString(block, "eos_table_dump", "");
   if (!dumpfile.empty() && global_variable::my_rank == 0) {
     std::ofstream f(dumpfile);
@@ -362,8 +299,8 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
       << ylo << " " << tbl.dy << "\n"
       << "# comp: X Y Z H2 ion metal_ion mh\n"
       << "# " << model.xhyd << " " << model.yhel << " " << model.MetalFraction() << " "
-      << model.include_h2 << " " << model.include_ion << " "
-      << model.include_metal_ion << " " << model.metal_mh << "\n"
+      << model.include_h2 << " 1 " << model.include_metal_ion << " " << model.metal_mh
+      << "\n"
       << "# then ny*nx rows, y (T) slowest: log10(e/rho)[cgs] log10(p/rho)[cgs]\n";
     f.precision(12);
     for (int j=0; j<ny; ++j) {
@@ -385,7 +322,6 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
             << "             X = " << model.xhyd << ", Y = " << model.yhel
             << ", Z = " << model.MetalFraction()
             << ", H2 " << (model.include_h2 ? "on" : "off")
-            << ", ionization " << (model.include_ion ? "on" : "off")
             << ", radiation " << (tbl.radiation ? "on" : "off") << std::endl;
   if (tbl.rad_taper) {
     std::cout << "             radiation TAPERED off between rho = " << rad_rho_hi
@@ -402,9 +338,7 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
             << (model.include_metal_ion ? "on" : "off");
   if (model.include_metal_ion) {
     std::cout << " ([M/H] = " << model.metal_mh;
-    if (model.metal_tcond > 0.0) {
-      std::cout << ", rainout below " << model.metal_tcond << " K";
-    } else if (model.include_metal_cond) {
+    if (model.include_metal_cond) {
       std::cout << ", condensation on";
     }
     std::cout << ")";

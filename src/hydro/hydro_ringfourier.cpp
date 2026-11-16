@@ -4,28 +4,30 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file hydro_ringfourier.cpp
-//! \brief ringsmooth-1102 <mesh>/polar_ring_avg_filter = fourier: the conservative Fourier
+//! \brief <mesh>/polar_ring_avg_filter = fourier: the conservative Fourier
 //! truncation of the polar rings that replaces the piecewise-constant group average of
-//! ringavg-1029 (see hydro_ringavg.hpp for the keys and the energy rule).
+//! (see hydro_ringavg.hpp for the keys and the energy rule).
 //!
-//! WHY.  The group average leaves a phi STAIRCASE in every averaged row, while the
+//! WHY. The group average leaves a phi STAIRCASE in every averaged row, while the
 //! well-balanced tangential force g_t (roche_wb_tan: the fine operator's own residual of
 //! the smooth tidal IC) and the radiation keep fine-grid smooth fields: the staircase
 //! state is never the discrete equilibrium, and the polar rows of the sp accretor grow a
-//! v_phi pattern at the tidal m = 1, 2 (accsp_1102 test: lateral KE +41 % at t 0.005,
-//! confined to the averaged rows).  The truncation leaves the low modes exactly alone.
+//! v_phi pattern at the tidal m = 1, 2 (lateral KE +41 % at t 0.005,
+//! confined to the averaged rows). The truncation leaves the low modes exactly alone.
 //!
-//! HOW.  Rings are global: (pole, row from the pole, global i).  For every ring and
+//! HOW. Rings are global: (pole, row from the pole, global i). For every ring and
 //! conserved variable (IEN replaced by the internal energy e = E - KE [- rho Phi]),
 //! a_m = sum_k u_k cos(2 pi m k/nphi), b_m = sum_k u_k sin(...), m = 0..m_c: each rank
 //! sums its own phi blocks in a fixed order (deterministic), then MPI_Allreduce (SUM)
-//! on the host.  u_f,k = (a_0 + 2 sum_{m>=1} (a_m cos + b_m sin))/nphi (m_c < nphi/2).
+//! on the host. u_f,k = (a_0 + 2 sum_{m>=1} (a_m cos + b_m sin))/nphi (m_c < nphi/2).
 //! Then per ring: sum E, sum E_f (E_f = e_f + KE(rho_f, m_f) [+ rho_f Phi]) and
 //! min(rho_f - thr rho), min(e_f - thr e) (second small Allreduce, SUM and MIN); a ring
 //! passes when both mins (the second with the uniform share dE/nphi added when dE is gas
 //! heat) are >= 0, and gets e_f + dE/nphi; else the old group average on that ring.
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <string>
@@ -39,7 +41,6 @@
 #include "hydro/hydro_ringavg.hpp"
 
 namespace hydro {
-
 RingAvg::~RingAvg() {
   if (fourier && global_variable::my_rank == 0 && ncall > 0.0) {
     std::cout << "RINGAVG fourier: " << ncall << " filter calls, " << nfall
@@ -57,8 +58,8 @@ void RingAvg::FourierInit(ParameterInput *pin, const std::vector<int> &vjg) {
   const int nrow = pm->mesh_indcs.nx2;
   nphi = pm->mesh_indcs.nx3;
   nx1g = pm->mesh_indcs.nx1;
-  const Real mfac = pin->GetOrAddReal("mesh", "polar_ring_avg_mfac", 1.0);
-  fthr = pin->GetOrAddReal("mesh", "polar_ring_avg_thr", 0.5);
+  const Real mfac = 1.0;
+  fthr = 0.5;
   // the group size of every global row (identical on all ranks: same rule, same x2v);
   // rings are the rows with N > 1, from the global nfac table rebuilt here
   std::vector<int> ng(nrow, 1);
@@ -102,15 +103,21 @@ void RingAvg::FourierInit(ParameterInput *pin, const std::vector<int> &vjg) {
   std::vector<int> done(nent, 0);
   for (int e = 0; e < nent; ++e) {
     if (done[e]) continue;
-    hsr.push_back(her[e]); hsi.push_back(hi0[e]); hsb.push_back(static_cast<int>(hsl.size()));
+    hsr.push_back(her[e]);
+    hsi.push_back(hi0[e]);
+    hsb.push_back(static_cast<int>(hsl.size()));
     for (int f = e; f < nent; ++f) {
-      if (!done[f] && her[f] == her[e] && hi0[f] == hi0[e]) {hsl.push_back(f); done[f] = 1;}
+      if (!done[f] && her[f] == her[e] && hi0[f] == hi0[e]) {
+        hsl.push_back(f);
+        done[f] = 1;
+      }
     }
   }
   nslot = static_cast<int>(hsr.size());
   hsb.push_back(static_cast<int>(hsl.size()));
   auto up = [](DvceArray1D<int> &d, const std::vector<int> &h, const char *nm) {
-    d = DvceArray1D<int>(std::string(nm), static_cast<int>(std::max<size_t>(h.size(), 1)));
+    d = DvceArray1D<int>(std::string(nm),
+                         static_cast<int>(std::max<size_t>(h.size(), 1)));
     auto hh = Kokkos::create_mirror_view(d);
     for (size_t q = 0; q < h.size(); ++q) hh(q) = h[q];
     Kokkos::deep_copy(d, hh);
@@ -145,7 +152,10 @@ void RingAvg::FourierAlloc(const int nvar) {
   auto hmc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), rmc);
   auto ho = std::vector<int>(nring);
   int off = 0;
-  for (int r = 0; r < nring; ++r) {ho[r] = off; off += nx1g*nvar*(hmc(r) + 1)*2;}
+  for (int r = 0; r < nring; ++r) {
+    ho[r] = off;
+    off += nx1g*nvar*(hmc(r) + 1)*2;
+  }
   nfoff = off;
   roff = DvceArray1D<int>("rf_roff", std::max(nring, 1));
   auto hr = Kokkos::create_mirror_view(roff);
@@ -161,7 +171,7 @@ void RingAvg::FourierAlloc(const int nvar) {
 
 //----------------------------------------------------------------------------------------
 //! \fn RingAvg::Filter
-//! \brief the conservative ring Fourier truncation (file header).  Collective: every rank
+//! \brief the conservative ring Fourier truncation (file header). Collective: every rank
 //! calls it (rings span ranks).
 
 void RingAvg::Filter(DvceArray5D<Real> &u, const int nvar, const DvceArray4D<Real> &phi,
@@ -199,11 +209,12 @@ void RingAvg::Filter(DvceArray5D<Real> &u, const int nvar, const DvceArray4D<Rea
           Real x = u_(m,v,k,j,ii);
           if (v == IEN) {
             const Real d = u_(m,IDN,k,j,ii);
-            const Real m1 = u_(m,IM1,k,j,ii), m2 = u_(m,IM2,k,j,ii), m3 = u_(m,IM3,k,j,ii);
+            const Real m1 = u_(m,IM1,k,j,ii), m2 = u_(m,IM2,k,j,ii);
+            const Real m3 = u_(m,IM3,k,j,ii);
             x -= 0.5*(m1*m1 + m2*m2 + m3*m3)/d;
             if (gr) x -= d*phi_(m,k,j,ii);
           }
-          const int t = static_cast<int>((static_cast<long>(mm)*(k0 + kk)) % np);
+          const int t = static_cast<int>((static_cast<std::int64_t>(mm)*(k0 + kk)) % np);
           a += x*tc_(t);
           b += x*ts_(t);
         }
@@ -239,7 +250,8 @@ void RingAvg::Filter(DvceArray5D<Real> &u, const int nvar, const DvceArray4D<Rea
           const int o = ro_(r) + ((ig*nvar + v)*(mc + 1))*2;
           Real x = cf(o);
           for (int mm = 1; mm <= mc; ++mm) {
-            const int t = static_cast<int>((static_cast<long>(mm)*(k0 + kk)) % np);
+            const int t =
+                static_cast<int>((static_cast<std::int64_t>(mm)*(k0 + kk)) % np);
             x += 2.0*(cf(o + 2*mm)*tc_(t) + cf(o + 2*mm + 1)*ts_(t));
           }
           sc(e*nvar + v, kk, 0, i) = x*rn;
@@ -332,19 +344,25 @@ void RingAvg::Filter(DvceArray5D<Real> &u, const int nvar, const DvceArray4D<Rea
         u_(m,IEN,k,j,ii) = en;
       }
     } else {
-      // the ringavg-1029 group average (hydro::RingAvg::Average), etotgrav included
+      // the group average (hydro::RingAvg::Average), etotgrav included
       const int n = en_(e);
       const Real rn = 1.0/static_cast<Real>(n);
       for (int k = ks; k < ks + nx3; k += n) {
         for (int v = 0; v < nvar; ++v) {
           Real s = 0.0;
-          for (int kk = k; kk < k + n; ++kk) {s += u_(m,v,kk,j,ii);}
+          for (int kk = k; kk < k + n; ++kk) {
+            s += u_(m,v,kk,j,ii);
+          }
           s *= rn;
-          for (int kk = k; kk < k + n; ++kk) {u_(m,v,kk,j,ii) = s;}
+          for (int kk = k; kk < k + n; ++kk) {
+            u_(m,v,kk,j,ii) = s;
+          }
         }
         if (gr) {
           Real pb = 0.0;
-          for (int kk = k; kk < k + n; ++kk) {pb += phi_(m,kk,j,ii);}
+          for (int kk = k; kk < k + n; ++kk) {
+            pb += phi_(m,kk,j,ii);
+          }
           pb *= rn;
           const Real db = u_(m,IDN,k,j,ii);
           for (int kk = k; kk < k + n; ++kk) {

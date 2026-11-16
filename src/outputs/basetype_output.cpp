@@ -650,7 +650,7 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       outvars.emplace_back("fofc_cnt",i_derived,&(derived_var));
     }
 
-    // rkgstrang-1102: cell resistivity (eta_O + eta_A)
+    // cell resistivity (eta_O + eta_A)
     if (variable.compare("mhd_eta") == 0) {
       out_params.contains_derived = true;
       out_params.n_derived += 1;
@@ -736,7 +736,7 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     // diagonal of the Eddington tensor D = P/E in the coordinate basis (D_11 = D_rr on
     // the spherical-polar wedge), so that P_rad,aa = D_aa E is exact in post-processing.
     // Derived (derived_variables.cpp); not part of variable = m1.
-    if (variable.compare("m1_vsc") == 0) {   // blendall-1009
+    if (variable.compare("m1_vsc") == 0) {
       out_params.contains_derived = true;
       outvars.emplace_back("m1_vj",0,&(derived_var));
       outvars.emplace_back("m1_vh1",1,&(derived_var));
@@ -744,13 +744,13 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       outvars.emplace_back("m1_vh3",3,&(derived_var));
       out_params.n_derived += 4;
     }
-    // gdthin-1011: the thin switch's cell inputs of the last formal solution (vet_sc
+    // the thin switch's cell inputs of the last formal solution (vet_sc
     // vet_cell or vet_gd vgd_hr): m1_tfb = |H|/J, m1_tc1 = C1 = sum w |I - S|/J,
     // m1_teps = eps, m1_tw = smoothstep((g - h0)/(h1 - h0)) of the cell thinness g of the
     // run's implicit_thin_switch (fb for hj and none, max(fb, eps C1/1.5) for fse, ...;
     // the face weight is that of the larger g of its two cells), m1_tj = J.  -1 where no
     // formal solution (below the vet_gd cut).  Derived; not part of m1.
-    // sptests-1011 P2: the vet_gd half-range ratios (vgd_hr) the halfrange face flux uses:
+    // P2: the vet_gd half-range ratios (vgd_hr) the halfrange face flux uses:
     // m1_ghp1/ghm1 = H+_r/J, H-_r/J, then theta, phi.  hp < 0 flags no formal solution.
     // Derived; not part of m1.
     if (variable.compare("m1_gdhr") == 0) {
@@ -772,7 +772,7 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       outvars.emplace_back("m1_tj",4,&(derived_var));
       out_params.n_derived += 5;
     }
-    if (variable.compare("m1_comov") == 0) {   // csmetric-1112
+    if (variable.compare("m1_comov") == 0) {
       out_params.contains_derived = true;
       outvars.emplace_back("m1_cf1",0,&(derived_var));
       outvars.emplace_back("m1_cf2",1,&(derived_var));
@@ -809,9 +809,9 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     // the moments of the vet_gd formal solution of the LAST build (closure = vet_col with
     // vet_gd): m1_jfs = sum_d w_d I_d (E units, compare m1_e) and m1_hfs = sum_d w_d
     // (n_d . r_hat) I_d (= F_r/c, compare m1_f1/c).  Zero where vet_gd is off or below
-    // its first shell.  Diagnostic (sp-blend-1008 GATE2); derived, not part of m1.
-    // m1_sfs, m1_cfs: the source S and extinction chi the sweep used (rad-beam-1008).
-    if (variable.compare("m1_gw") == 0) {   // vgdgw-1110 diagnostic
+    // its first shell.  Diagnostic (GATE2); derived, not part of m1.
+    // m1_sfs, m1_cfs: the source S and extinction chi the sweep used.
+    if (variable.compare("m1_gw") == 0) {   // diagnostic
       out_params.contains_derived = true;
       outvars.emplace_back("m1_gl",0,&(derived_var));
       outvars.emplace_back("m1_gr",1,&(derived_var));
@@ -829,7 +829,7 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       out_params.n_derived += 4;
     }
 
-    // tanacc-1107: m1_lat = the closure tensor the implicit operator reads (VlatTT()):
+    // m1_lat = the closure tensor the implicit operator reads (VlatTT()):
     // m1_tt0 = slot 0 (vet_col f_K), m1_lat0..5 = the vet_col_lat slots (sp: D_rr - f_K,
     // D_rt, D_rp, D_tt - (1 - D_rr)/2, D_tp, D_pp - (1 - D_rr)/2; cs: D_rr - f_K, the
     // Cartesian D_r,lat, Q = ((D11 - D22)/2, D12) about the cs_qf frame), the cell unit

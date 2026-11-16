@@ -22,11 +22,9 @@
 
 //----------------------------------------------------------------------------------------
 //! \fn void SingleC2P_IdealHydLegacy()
-//! \brief THE PRE-FLOOR-SWITCH inversion, kept verbatim.  See the note on
-//! EOS_Data::floors_legacy and the matching routine in general_c2p_hyd.hpp: this is a
-//! separate function rather than a branch inside SingleC2P_IdealHyd() so that the legacy
-//! kernel inlines this code and nothing else.  ConsToPrim() selects between the two on
-//! eos.floors_legacy; any change meant to apply by DEFAULT has to be made in both.
+//! \brief the inversion without the floor switches (EOS_Data::floors_legacy), a separate
+//! function so its kernel keeps the original arithmetic bitwise.  Changes meant for the
+//! default path must be made in both functions.
 
 KOKKOS_INLINE_FUNCTION
 void SingleC2P_IdealHydLegacy(HydCons1D &u, const EOS_Data &eos,
@@ -82,21 +80,16 @@ void SingleC2P_IdealHyd(HydCons1D &u, const EOS_Data &eos,
                         Real &dfloor_fv, bool &vceil_used, bool &vceil_test) {
   const Real &dfloor_ = eos.dfloor;
 
-  // THE DENSITY FLOOR: see the note in general_c2p_hyd.hpp.  <block>/dfloor_keep_velocity
-  // scales the momentum by fv = d_old/dfloor so the kinetic energy falls to fv^3 of its
-  // value and the same amount is taken out of the total, leaving e untouched.
+  // density floor; dfloor_keep_velocity scales the momentum by fv = d_old/dfloor and
+  // removes the lost kinetic energy from the total (e unchanged)
   dfloor_fv = 1.0;
   if (u.d < dfloor_) {
-    if (eos.dfloor_keep_velocity || eos.dfloor_keep_temperature) {
+    if (eos.dfloor_keep_velocity) {
       const Real fv = (u.d > 0.0) ? u.d/dfloor_ : 0.0;
       if (!eos.defer_cons_floors) {
         const Real ke_old = (u.d > 0.0)
             ? 0.5*(SQR(u.mx) + SQR(u.my) + SQR(u.mz))/u.d : 0.0;
-        const Real eint_old = u.e - ke_old;
         if (eos.dfloor_keep_velocity) u.e -= (1.0 - fv*fv*fv)*ke_old;
-        // <block>/dfloor_keep_temperature: e -> fv e (see the note in eos.hpp).  Both
-        // corrections are additive on the total, so they compose.
-        if (eos.dfloor_keep_temperature && fv > 0.0) u.e -= (1.0 - fv)*eint_old;
       }
       if (eos.dfloor_keep_velocity) {
         u.mx *= fv;
@@ -118,13 +111,9 @@ void SingleC2P_IdealHyd(HydCons1D &u, const EOS_Data &eos,
 
   // set internal energy, apply floor, correct total energy (if needed)
   Real e_k = 0.5*di*(SQR(u.mx) + SQR(u.my) + SQR(u.mz));
-  // THE VELOCITY CEILING: see the note in eos.hpp.  Scale the momentum by
-  // fs = vceil/|v| and take (1 - fs^2) KE out of the total, which leaves the internal
-  // energy exactly unchanged.  On the cubed sphere (defer_cons_floors) |v| and e_k here
-  // are the ORTHONORMAL ones and are not the real ones, so the ceiling is applied by
-  // GnomonicEquiangleRaiseVel instead, which owns the metric.
-  // `vceil_test` is the DECISION alone, recorded even where the ceiling itself is
-  // deferred, so that the FOFC floor-test pass can flag the cell.  It performs no write.
+  // velocity ceiling (EOS_Data::vceil): scale the momentum by vceil/|v| and remove
+  // (1 - fs^2) KE from the total; deferred to GnomonicEquiangleRaiseVel on the cubed
+  // sphere. vceil_test records the decision alone, for the FOFC floor test
   if (eos.vceil > 0.0) {
     const Real vsq = SQR(w.vx) + SQR(w.vy) + SQR(w.vz);
     if (vsq > SQR(eos.vceil)) {
@@ -133,10 +122,7 @@ void SingleC2P_IdealHyd(HydCons1D &u, const EOS_Data &eos,
         const Real fs = eos.vceil/sqrt(vsq);
         u.mx *= fs; u.my *= fs; u.mz *= fs;
         w.vx *= fs; w.vy *= fs; w.vz *= fs;
-        // <block>/vceil_thermalise: leave the TOTAL energy alone, so that w.e below
-        // picks the clipped kinetic energy up as internal energy.  Not accumulated:
-        // this kernel has no energy accumulator (see EOS_Data::vceil_thermalise).
-        if (!eos.vceil_thermalise) u.e -= (1.0 - fs*fs)*e_k;
+        u.e -= (1.0 - fs*fs)*e_k;
         e_k *= fs*fs;
         vceil_used = true;
       }

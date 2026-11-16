@@ -9,7 +9,7 @@
 # This is inputs/tests/cubed_sphere_mhd_conv.athinput with the three knobs the region
 # gate overrides on the command line DECLARED here, because AthenaK refuses a
 # command-line override of a parameter that the input file never mentions:
-#     <mhd>/cs_wellbalanced_src, <problem>/conv_errors, <problem>/conv_nband.
+#     <problem>/conv_errors, <problem>/conv_nband.
 # Driven by tests_cs_regions/run_regions.sh; see tests_cs_regions/README.md.
 #
 # AXES: x1 is RADIAL, x2 = xi and x3 = eta are the panel-tangential angles.  Must be 3D.
@@ -64,7 +64,6 @@ reconstruct = plm       # plm | ppm4 | ppmx | wenoz.  On the cubed sphere this g
 rsolver     = hlld
 gamma       = 1.666667
 cs_lowbeta_fallback = 0.5
-cs_wellbalanced_src = false   # the face-sum (well-balanced) geometric source term
 
 <problem>
 iprob    = 9

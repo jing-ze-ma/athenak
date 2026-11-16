@@ -163,7 +163,7 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
                        test.compare("marshak") == 0 || test.compare("thick_pulse") == 0 ||
                        test.compare("tophat") == 0 || test.compare("radwave") == 0 ||
                        test.compare("advect_uniform") == 0 ||
-                       test.compare("sph_shell") == 0);   // cs-open-1018
+                       test.compare("sph_shell") == 0);
   if (pmbp->pmhd != nullptr && !mhd_ok) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<problem>/m1_test = '" << test << "' is hydro only; with <mhd> "
@@ -307,7 +307,7 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
     bool md = pmy_mesh_->multi_d && !p1d;
     bool td = pmy_mesh_->three_d && !p1d;
     int nx2 = indcs.nx2, nx3 = indcs.nx3;
-    // littests-1011 gas_vx: a uniform x1 velocity of the (evolved, still uniform) gas, for
+    // gas_vx: a uniform x1 velocity of the (evolved, still uniform) gas, for
     // the dynamic-diffusion test (Jiang 2021 Sect. 4.4 / Ma et al. 2025 Sect. 4.2.1)
     Real gvx = pin->GetOrAddReal("problem","gas_vx",0.0);
     if (restart) return;
@@ -610,11 +610,12 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
       u0(m,radm1::M1_F3,k,j,i) = 0.0;
     });
   } else if (test.compare("hot_blob") == 0) {
-    // precdir-1029 (TEST ONLY, preconditioner orientation study): an optically thick hot
+    // (TEST ONLY, preconditioner orientation study): an optically thick hot
     // region in a thinner, cooler medium, gas at rest, E = arad T^4, F = 0, evolved as
     // rad-hydro.  The region is an ellipsoid with semi-axes blob_a1..a3 about
     // (blob_x1, blob_x2, blob_x3); a semi-axis <= 0 drops that direction, so (a, 0, 0) is
-    // a slab normal to x1 and (a, a, a) a sphere.  Smooth edge: s = (1 - tanh((r-1)/w))/2.
+    // a slab normal to x1 and (a, a, a) a sphere.  Smooth edge: s = (1 -
+    // tanh((r-1)/w))/2.
     m1_test_id = 10;
     Real rc = pin->GetReal("problem","blob_rho");
     Real tc = pin->GetReal("problem","blob_temp");
@@ -661,7 +662,7 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
     Real dgas = pin->GetOrAddReal("problem","gas_rho",1.0e-7);
     Real egas = pin->GetReal("problem","gas_eint");
     Real erad = pin->GetReal("problem","e_rad");
-    Real gvx = pin->GetOrAddReal("problem","gas_vx",0.0);   // littests-1011 (J21 4.1)
+    Real gvx = pin->GetOrAddReal("problem","gas_vx",0.0);   // (J21 4.1)
     if (restart) return;
     M1SetUniformGas(pmbp, dgas, egas);
     if (gvx != 0.0) {

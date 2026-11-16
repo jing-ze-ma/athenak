@@ -4,35 +4,14 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file general_hyd_frozen.cpp
-//! \brief GeneralHydro::ConsToPrimFrozen(), the conserved-to-primitive conversion used
-//! ONCE, by the first ConToPrim of a RESTARTED run.
-//!
-//! WHY IT EXISTS.  A restart is meant to be a bitwise continuation, and for a general
-//! EOS it was not.  The conversion has two halves: the algebraic one (density,
-//! velocities, internal energy), which is a pure function of the conserved variables the
-//! restart file restores exactly, and the THERMODYNAMIC one -- solve e(d,T) for T, then
-//! take p and Gamma_1 at that T -- which is an iterative table inversion warm started
-//! from the cached temperature.  That inversion is NOT idempotent: handed back its own
-//! converged answer it takes another step and lands a few ULP away (measured: 24% of
-//! cells move, by up to 5e-14 relative).  The straight run does not do that conversion
-//! at the start of the cycle it is resuming -- it carries wtemp and wder from the last
-//! stage of the previous cycle -- while Driver::Initialize does, so the two runs enter
-//! the first cycle with different temperatures and different reconstructed pressures.
-//! On the He box that shows up in the first post-restart history row at 1e-11 in the
-//! transverse momentum, and it grows.
-//!
-//! WHAT IT DOES.  Exactly the algebraic half, and nothing else: wtemp and wder are read,
-//! not written, so the state the restart file restored survives into the first Fluxes
-//! call untouched.  Floors are not re-applied: the conserved variables in the file were
-//! written AFTER the conversion that floored them, so every floor test would be false
-//! anyway, and re-running them could only move the answer.  The next ConToPrim, at the
-//! end of the first stage, is the ordinary one again (Hydro::c2p_freeze_derived is
-//! cleared after this call).
-//!
-//! WHY IT IS A FILE OF ITS OWN.  See the note at the top of general_hyd_floors.cpp: with
-//! two kernels in one translation unit the device compiler contracts the arithmetic of
-//! the untouched one differently, and the DEFAULT answer moves by a unit in the last
-//! place.  general_hyd.cpp is not touched by this feature at all.
+//! \brief GeneralHydro::ConsToPrimFrozen(), the conversion of the first ConToPrim after a
+//! restart.  The table inversion of T(d, e) is not idempotent (a converged answer moves
+//! by a few ulp when inverted again), while the straight run carries wtemp and wder into
+//! the cycle it resumes.  This kernel therefore does only the algebraic half (density,
+//! velocities, internal energy) and reads, never writes, wtemp and wder; floors are not
+//! re-applied (the restored state was floored before it was written).
+//! Hydro::c2p_freeze_derived is cleared after the call. Compiled apart from
+//! general_hyd.cpp so the default kernel keeps its arithmetic.
 
 #include <float.h>
 
@@ -46,7 +25,7 @@
 
 //----------------------------------------------------------------------------------------
 //! \fn void GeneralHydro::ConsToPrimFrozen()
-//! \brief the algebraic half of ConsToPrim(), with the thermodynamic cache frozen.
+//! \brief the algebraic half of ConsToPrim() with the thermodynamic cache frozen
 
 void GeneralHydro::ConsToPrimFrozen(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
                                     const int il, const int iu, const int jl,

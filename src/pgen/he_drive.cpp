@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file he_drive.cpp
-//! \brief hg262-drive-1113: the driven inner boundary of he_star_m1 (see he_drive.hpp
+//! \brief the driven inner boundary of he_star_m1 (see he_drive.hpp
 //! for the keys): the inflow table, the live monopole gravity and the RK-exact boundary
 //! ledgers.  State lives in this file; the pgen calls the functions of he_drive.hpp.
 
@@ -45,7 +45,7 @@ timetable::Table itab_, mtab_;
 bool mtab_on_ = false;
 Real t0_ = 0.0;
 SetupArgs a_;
-int every_ = 1, logev_ = 1;
+int every_ = 1;
 char logfn_[1024] = {0};   // <basename>.hsdrive.txt
 // RK stage coefficients of the integrator (driver.cpp), for the stage ledger
 int nst_ = 0;
@@ -54,7 +54,7 @@ Real beta_[4] = {0.0, 0.0, 0.0, 0.0};
 Real led_[kNL] = {0.0, 0.0, 0.0, 0.0, 0.0}, ledn_[kNL] = {0.0, 0.0, 0.0, 0.0, 0.0};
 int led_cyc_ = -1;
 Real erad_ = 0.0, wgrav_ = 0.0, tprev_ = 0.0, ain_ = 0.0;
-// open items 11-13: the radiation energy through the physical x1 faces AS THE SCHEME
+// The radiation energy through the physical x1 faces AS THE SCHEME
 // APPLIES IT (RadiationM1 Ebnd with ebnd_split: the hesdirk2 tableau weights of the
 // slopes' face fluxes, incl. implicit_bc_advect's end-face A E): in at x1min, out at
 // x1max (the Marshak top).  ebd_ = false: the transport cannot book it (columns 0).
@@ -271,8 +271,6 @@ void SetPhi(Mesh *pm, const std::vector<Real> &dpc, const std::vector<Real> &dpf
       if (i == n1m1) {pwf(m,k,j,i+1) = rwf(m,k,j,i+1) + df(i+1);}
     }
   });
-  if (fl.ph != nullptr) {fl.ph->wb_cache_built = false;}
-  if (fl.pm != nullptr) {fl.pm->wb_cache_built = false;}
 }
 
 Real MtabAt(const Real t) {return mtab_on_ ? mtab_.At(0, t - t0_) : 0.0;}
@@ -426,11 +424,11 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
             "he_gm_live (their state travels with the ledger)");
     }
   }
-  // open items 11-13 (item 2): the adaptive MLT closure targets L_in.  const (default):
+  // The adaptive MLT closure targets L_in.  const (default):
   // the deck's constant implicit_flux_x1min (the relaxed state's target); table: the
   // current table flux (the first version; it re-targets the closure flux at EVERY
   // radius to L_in(t) at once, which takes the extra injection out of the base cells
-  // convectively and drops the radiative L_bot, see DRIVE_CODE_1113.md)
+  // convectively and drops the radiative L_bot)
   {
     const bool cln = pin->DoesParameterExist("problem","he_drive_closure_lin");
     const std::string cl = (hftab && cln) ?
@@ -456,9 +454,8 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
   }
   t0_ = pin->GetOrAddReal("problem","he_drive_t0",0.0);
   every_ = pin->GetOrAddInteger("problem","he_gm_live_every",1);
-  logev_ = pin->GetOrAddInteger("problem","he_drive_log_every",1);
-  if (every_ < 1 || logev_ < 1) {
-    Fatal("problem/he_gm_live_every and he_drive_log_every must be >= 1");
+  if (every_ < 1) {
+    Fatal("problem/he_gm_live_every must be >= 1");
   }
   std::snprintf(logfn_, sizeof(logfn_), "%s.hsdrive.txt",
                 pin->GetString("job","basename").c_str());
@@ -507,7 +504,7 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
     }
     live_ = true;
   }
-  // open items 11-13: the scheme's own x1-face radiation energy (Ebnd, split), so the
+  // The scheme's own x1-face radiation energy (Ebnd, split), so the
   // Marshak top loss is in the ledger; only where Ebnd is defined (implicit transport,
   // no multi-rate, no coupling_split)
   ebd_ = (pm1 != nullptr) && (pm1->transport == radm1::M1_TRANSPORT_IMPLICIT) &&
@@ -539,8 +536,8 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
   }
   tprev_ = pm->time;
   if (global_variable::my_rank == 0) {
-    std::cout << "he_drive (hg262-drive-1113): ledger on (log " << logfn_ << " every "
-              << logev_ << " cycles), inflow table " << (inf_ ? "on" : "off")
+    std::cout << "he_drive: ledger on (log " << logfn_ << " every cycle), inflow table "
+              << (inf_ ? "on" : "off")
               << ", live gravity " << (live_ ? "on" : "off");
     if (live_) {
       std::cout << " (every " << every_ << " cycles, M_int table "
@@ -589,8 +586,8 @@ void RestartStrip(std::vector<char> *blk) {
 void RstAppend(std::vector<char> *out) {
   if (!on_) return;
   // payload: nx1, ledgers (kNL), ledgers at the stage-loop start (kNL), their cycle,
-  // erad, wgrav, tprev, ref flag, mref, dmint, rhoref (nx1), ddm (nx1), [open items
-  // 11-13] ebnd_acc_in, ebnd_acc_out, ebnd_acc_src, ebnd_s3
+  // erad, wgrav, tprev, ref flag, mref, dmint, rhoref (nx1), ddm (nx1),
+  // ebnd_acc_in, ebnd_acc_out, ebnd_acc_src, ebnd_s3
   std::vector<Real> p;
   p.push_back(static_cast<Real>(nx1_));
   for (int q = 0; q < kNL; ++q) {p.push_back(led_[q]);}
@@ -714,16 +711,15 @@ void CycleBody(Mesh *pm, const bool log) {
     erad_ += ain_*a_.fconst*(t - tprev_);
   }
   tprev_ = t;
-  const bool logd = log && (pm->ncycle % logev_ == 0);
   const bool refr = live_ && (pm->ncycle % every_ == 0 || !ref_);
-  if (!logd && !refr) return;
+  if (!log && !refr) return;
   std::vector<Real> sh;
   ShellSums(pm, &sh);
   if (refr) {
     wgrav_ += Refresh(pm, sh, true);
-    if (logd) {ShellSums(pm, &sh);}
+    if (log) ShellSums(pm, &sh);
   }
-  if (logd) {WriteLog(pm, sh);}
+  if (log) WriteLog(pm, sh);
 }
 
 void Cycle(Mesh *pm) {

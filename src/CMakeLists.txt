@@ -91,7 +91,6 @@ add_executable(
         hydro/hydro_newdt.cpp
         hydro/hydro_tasks.cpp
         hydro/hydro_splitbval.cpp
-        hydro/hydro_c2p_idem.cpp
         hydro/hydro_am.cpp
         hydro/hydro_mergelat.cpp
         hydro/hydro_ringavg.cpp
@@ -129,7 +128,6 @@ add_executable(
         mhd/mhd_tracers.cpp
         mhd/mhd_update.cpp
         mhd/mhd_etotgrav.cpp
-        mhd/mhd_boris.cpp
         mhd/mhd_wellbalance.cpp
         mhd/mhd_wball.cpp
 
@@ -282,18 +280,18 @@ if (NOT ${PROBLEM} STREQUAL "built_in_pgens")
   )
 endif()
 
-# prod1103c: recipe::PgenEarlyDefaults (utils/recipe.hpp), the pre-physics fresh-start
+# recipe::PgenEarlyDefaults (utils/recipe.hpp), the pre-physics fresh-start
 # defaults of a problem generator; a no-op for every pgen without its own file
 if (${PROBLEM} STREQUAL "deep_hot_jupiter_rt")
   target_sources(athena PRIVATE pgen/deep_hot_jupiter_rt_defaults.cpp)
 elseif (${PROBLEM} STREQUAL "he_star_m1" OR ${PROBLEM} STREQUAL "ry_per_accretor")
-  # defaults-1105 (USER 11-05, P12): the he_star / accretor x1 well-balanced defaults
+  # the he_star / accretor x1 well-balanced defaults
   target_sources(athena PRIVATE pgen/star_wb_defaults.cpp)
 else()
   target_sources(athena PRIVATE pgen/early_defaults_none.cpp)
 endif()
 
-# tusplit-1102: the two-stream RT solver (utils/two_stream_rt.hpp) of the problem
+# The two-stream RT solver (utils/two_stream_rt.hpp) of the problem
 # generators that include it is compiled in its own translation units: the column pass
 # and the explicitly instantiated chain/grey launch templates (the bulk of the device
 # compile).  Only these problem generators build them, so other builds do not grow.
@@ -312,7 +310,7 @@ if (${PROBLEM} STREQUAL "deep_hot_jupiter_rt" OR ${PROBLEM} STREQUAL "box_convec
           utils/two_stream_rt_chain_nn.cpp
   )
 endif()
-# tusplit-1102: the deep_hot_jupiter_rt problem generator is split by topic; its pieces
+# The deep_hot_jupiter_rt problem generator is split by topic; its pieces
 # share the private header pgen/deep_hot_jupiter_rt.hpp
 if (${PROBLEM} STREQUAL "deep_hot_jupiter_rt")
   target_sources(athena
@@ -322,36 +320,36 @@ if (${PROBLEM} STREQUAL "deep_hot_jupiter_rt")
           pgen/deep_hot_jupiter_rt_diag.cpp
   )
 endif()
-# dhjfast-1112: the 4D par_for / ck CkParFor4 with LaunchBounds<256, 1> on HIP for the dhj
+# The 4D par_for / ck CkParFor4 with LaunchBounds<256, 1> on HIP for the dhj
 # build only (athena.hpp ATHENA_HIP_PARFOR_LB; bitwise, 8 % faster on 1 MI300A)
 if (${PROBLEM} STREQUAL "deep_hot_jupiter_rt")
   target_compile_definitions(athena PRIVATE ATHENA_HIP_PARFOR_LB=1)
-  # dhjcuda-1112: CUDA, bodies / functors >= 512 B launched from device memory
+  # CUDA, bodies / functors >= 512 B launched from device memory
   # (athena.hpp AthBodyToDevice; bitwise)
   target_compile_definitions(athena PRIVATE ATHENA_CUDA_BODY_GLOBAL=512)
 endif()
-# stripbg-1102: the he_star_m1 one-shot restart-time background strip (own file)
+# The he_star_m1 one-shot restart-time background strip (own file)
 if (${PROBLEM} STREQUAL "he_star_m1")
   target_sources(athena PRIVATE pgen/he_strip_bg.cpp)
-  # hg262-drive-1113: the driven inner boundary (inflow table, live gravity, ledgers)
+  # The driven inner boundary (inflow table, live gravity, ledgers)
   target_sources(athena PRIVATE pgen/he_drive.cpp)
 endif()
 
-# prodcand-1011: the rad_m1 ic_rad = fs_relax default is for the stellar-envelope pgen only
+# The rad_m1 ic_rad = fs_relax default is for the stellar-envelope pgen only
 # (rad_m1_icrad.cpp IcRadInit); every other problem defaults to ic_rad = none
 if (${PROBLEM} STREQUAL "he_star_m1")
   set_source_files_properties(rad_m1/rad_m1_icrad.cpp PROPERTIES
       COMPILE_DEFINITIONS M1_ICRAD_DEFAULT_FS_RELAX=1)
 endif()
 
-# rotavg-1012: -D Athena_M1_VGD_NMAX=<n> raises the vet_gd direction cap (default 432 in
+# -D Athena_M1_VGD_NMAX=<n> raises the vet_gd direction cap (default 432 in
 # rad_m1.hpp; it sizes a per-thread buffer of VetGdWall, so a large cap is a CPU /
 # diagnostic build: 480 = GL 20x24 needs it)
 if (DEFINED Athena_M1_VGD_NMAX AND NOT "${Athena_M1_VGD_NMAX}" STREQUAL "")
   target_compile_definitions(athena PRIVATE M1_VGD_NMAX_BUILD=${Athena_M1_VGD_NMAX})
 endif()
 
-# csnccl-1031: -D Athena_M1_VGD_NCCL_DIR=<nccl root with include/ lib/> builds the vet_gd
+# -D Athena_M1_VGD_NCCL_DIR=<nccl root with include/ lib/> builds the vet_gd
 # NCCL halo (sp list halo + cs compact exchange; used with env ACC_NCCL=1 only): only the
 # two vet_gd sources get the define and the include path (the rest of the tree unchanged)
 if (DEFINED Athena_M1_VGD_NCCL_DIR AND NOT "${Athena_M1_VGD_NCCL_DIR}" STREQUAL "")
