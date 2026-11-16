@@ -340,9 +340,27 @@ void CleanStagEdgeWeights(const CleanArgs &x, const int dir, const int b, const 
 KOKKOS_INLINE_FUNCTION
 Real CleanDivW(const CleanArgs &x, const int dir, const int m, const int k, const int j,
                const int i, const int side) {
-  if (!x.sph) return x.idx[dir];
+  if (!x.sph && !x.cub) return x.idx[dir];
   return x.area[dir](m,k+side*(dir == 2),j+side*(dir == 1),i+side*(dir == 0))/
          x.vol(m,k,j,i);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanStagDnn
+//! \brief cubed sphere: n.D.n of cell (k,j,i), n the unit normal of face (kf,jf,iff)
+//! normal to dir (D Cartesian), the normal stress of the face-normal momentum
+
+KOKKOS_INLINE_FUNCTION
+Real CleanStagDnn(const CleanArgs &x, const int dir, const int m, const int kf,
+                  const int jf, const int iff, const int k, const int j, const int i) {
+  Real d = 0.0;
+  for (int a = 0; a < 3; ++a) {
+    for (int b = 0; b < 3; ++b) {
+      d += x.g(m,CLG_N+3*dir+a,kf,jf,iff)*x.g(m,CLG_N+3*dir+b,kf,jf,iff)*
+           x.cs(m,CLN_D11+((a == b) ? a : 2 + a + b),k,j,i);
+    }
+  }
+  return d;
 }
 
 //----------------------------------------------------------------------------------------
@@ -384,6 +402,12 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
          w*x.c*x.fc[dir](m,CLF_HP,k,j,i);
     ar = -gs*(id*x.cs(m,CLN_D11+dir,k,j,i) + hr*CleanStagSph(x, 3, dir, m, k, j, i)) +
          w*x.c*x.fc[dir](m,CLF_HM,k,j,i);
+  }
+  if (x.cub) {   // (cubed sphere: the face-normal momentum, n.D.n E over the centroid
+    const Real gs = (1.0 - w)*th*x.h*x.c*x.c/x.dxf[dir](m,k,j,i);   //  distance)
+    al = gs*CleanStagDnn(x, dir, m, k, j, i, kl, jl, il) +
+         w*x.c*x.fc[dir](m,CLF_HP,k,j,i);
+    ar = -gs*CleanStagDnn(x, dir, m, k, j, i, k, j, i) + w*x.c*x.fc[dir](m,CLF_HM,k,j,i);
   }
   if (x.feedback) {
     const Real s = 0.5*(1.0 - w)*(1.0 - th);
@@ -457,6 +481,11 @@ Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m
                      const int k, const int j, const int i, const bool normal) {
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
   Real div = 0.0;
+  if (x.cub) {   // (cubed sphere: the normal stress of the face-normal momentum)
+    return normal ? (CleanStagDnn(x, dir, m, k, j, i, k, j, i)*x.w(m,e,k,j,i) -
+                     CleanStagDnn(x, dir, m, k, j, i, kl, jl, il)*x.w(m,e,kl,jl,il))/
+                    x.dxf[dir](m,k,j,i) : 0.0;
+  }
   if (normal && x.sph) {
     div = CleanStagSph(x, 0, dir, m, k, j, i)*(x.cs(m,CLN_D11+dir,k,j,i)*x.w(m,e,k,j,i) -
           x.cs(m,CLN_D11+dir,kl,jl,il)*x.w(m,e,kl,jl,il)) +
@@ -576,7 +605,7 @@ Real CleanFaceFlux(const CleanArgs &x, const int e, const int dir, const int m,
 KOKKOS_INLINE_FUNCTION
 Real CleanFluxDivergence(const CleanArgs &x, const int e, const int m, const int k,
                          const int j, const int i, const bool with_source) {
-  if (x.sph) {   // (finite volume, sum A_f F_f/V)
+  if (x.sph || x.cub) {   // (finite volume, sum A_f F_f/V)
     Real d = 0.0;
     for (int n = 0; n < x.nf; ++n) {
       const int dk = (n == 2), dj = (n == 1), di = (n == 0);
@@ -606,7 +635,7 @@ Real CleanFluxDivergence(const CleanArgs &x, const int e, const int m, const int
 KOKKOS_INLINE_FUNCTION
 Real CleanSourceDivergence(const CleanArgs &x, const int m, const int k, const int j,
                            const int i) {
-  if (x.sph) {
+  if (x.sph || x.cub) {
     Real d = 0.0;
     for (int n = 0; n < x.nf; ++n) {
       const int dk = (n == 2), dj = (n == 1), di = (n == 0);
