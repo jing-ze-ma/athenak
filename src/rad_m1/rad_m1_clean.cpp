@@ -1627,6 +1627,76 @@ void RadiationM1::CleanStagFSolve(const int e) {
     const int n = (dir == 0) ? ie - is + 1 : ((dir == 1) ? je - js + 1 : ke - ks + 1);
     const int na = (dir == 0) ? je - js + 1 : ie - is + 1;
     const int nb = (dir == 2) ? je - js + 1 : ke - ks + 1;
+    // the lines' coefficients are the same in every pass below, only the other rows' F
+    // (CLW_Z) and the neighbours' F at the line ends change: once, lo (CLW_AM), hi at the
+    // last face (CLW_AP), the Thomas factors den (CLW_A0) and c' (CLW_CP), r without the
+    // transverse term (CLW_R0), the faces with an equation (CLW_P) and its transverse
+    // weights (2 per b: CLW_V, then CLW_WK; scratch slots of the E solve and of the cell
+    // layout)
+    Kokkos::parallel_for("cln_fs2f", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                         (nmb1 + 1)*na*nb),
+    KOKKOS_LAMBDA(const int idx) {
+      const int m = idx/(na*nb), a = idx%na, b = (idx/na)%nb;
+      auto face = [&](const int t, int &k, int &j, int &i) {
+        if (dir == 0) {i = is + t; j = js + a; k = ks + b;}
+        if (dir == 1) {j = js + t; i = is + a; k = ks + b;}
+        if (dir == 2) {k = ks + t; i = is + a; j = js + b;}
+      };
+      Real cp = 0.0;
+      for (int t = 0; t <= n; ++t) {
+        int k, j, i;
+        face(t, k, j, i);
+        Real lo = 0.0, hi = 0.0, dg = 1.0, r = fc(m,CLF_N,k,j,i);
+        const bool bd = CleanBoundaryFace(x, dir, m, k, j, i);
+        const Real all = al(m,0,k-dk,j-dj,i-di), alr = al(m,0,k,j,i);
+        const Real wl = al(m,2,k-dk,j-dj,i-di), wr = al(m,2,k,j,i);
+        // (fkin: the rays' kinetic transport of F along b != dir through the dual faces
+        // of CleanStagEdge, the other rows' F lagged; started from the last F solve's)
+        Real tg = 0.0;
+        for (int b = 0, nt = 0; b < x.nf && fk && !bd; ++b) {
+          Real p[4], q[4], cp, cm;
+          if (b == dir) continue;
+          CleanStagEdge(x, e, dir, b, m, k, j, i, 1, c1lo, c1hi, p);
+          CleanStagEdge(x, e, dir, b, m, k, j, i, -1, c1lo, c1hi, q);
+          CleanStagEdgeWeights(x, dir, b, m, k, j, i, cp, cm);
+          tg += x.h*x.c*(cp*p[0]*p[1] - cm*q[0]*q[2]);
+          const int sw = (nt++ == 0) ? CLW_V : CLW_WK;
+          x.w(m,sw,k,j,i) = cp*p[0]*p[2];
+          x.w(m,sw+1,k,j,i) = cm*q[0]*q[1];
+        }
+        const bool eq = !bd && (all > 0.0 || alr > 0.0 || wl > 0.0 || wr > 0.0 || tg > 0.0);
+        if (eq) {
+          const Real g = 0.5*x.h*x.c/CleanCellFaceDistance(x, dir, m, k, j, i);
+          const Real it_ = 1.0/fc(m,CLF_TH,k,j,i);
+          // (fkin: h c^2 [w P_kin]_L^R/dx, P_kin = (h+ F_lo + h- F_hi)/c of a cell)
+          // (spherical polar: area form, (1/dx -+ s) of cell L, R)
+          const Real q = x.h*x.c*(x.sph ? CleanStagSph(x, 0, dir, m, k, j, i)
+                                        : x.idx[dir]);
+          const Real qs = x.sph ? x.h*x.c*CleanStagSph(x, 4, dir, m, k, j, i) : 0.0;
+          const Real hpl = x.cs(m,CLN_HP+dir,k-dk,j-dj,i-di);
+          const Real hml = x.cs(m,CLN_HM+dir,k-dk,j-dj,i-di);
+          const Real hpr = x.cs(m,CLN_HP+dir,k,j,i), hmr = x.cs(m,CLN_HM+dir,k,j,i);
+          lo = -g*all - q*wl*hpl + qs*wl*hpl;
+          hi = -g*alr + q*wr*hmr + qs*wr*hmr;
+          dg = it_ - lo - hi + q*(wr*(hpr + hmr) - wl*(hpl + hml)) +
+               qs*(wr*(hpr + hmr) + wl*(hpl + hml)) + tg;
+          r = fc(m,CLF_N,k,j,i)*it_ + q*x.c*(al(m,1,k-dk,j-dj,i-di) - al(m,1,k,j,i)) -
+              qs*x.c*(al(m,1,k-dk,j-dj,i-di) + al(m,1,k,j,i)) +
+              x.h*x.c*x.c*fc(m,CLF_N+1,k,j,i);
+        }
+        // (the faces beyond a MeshBlock line end: the neighbours', lagged)
+        x.w(m,CLW_AM,k,j,i) = lo;
+        x.w(m,CLW_AP,k,j,i) = hi;
+        if (eq && t == 0) lo = 0.0;
+        if (eq && t == n) hi = 0.0;
+        const Real den = dg - lo*cp;
+        cp = hi/den;
+        x.w(m,CLW_A0,k,j,i) = den;
+        x.w(m,CLW_CP,k,j,i) = cp;
+        x.w(m,CLW_R0,k,j,i) = r;
+        x.w(m,CLW_P,k,j,i) = eq ? 1.0 : 0.0;
+      }
+    });
     for (int it = 0; it < 64; ++it) {
       Real dmax = 0.0, fmx = 0.0;
       if (fk && x.multi_d) {   // (the other rows' F of the last pass, transverse terms)
@@ -1639,60 +1709,30 @@ void RadiationM1::CleanStagFSolve(const int e) {
                               (nmb1 + 1)*na*nb),
       KOKKOS_LAMBDA(const int idx, Real &d_max, Real &f_max) {
         const int m = idx/(na*nb), a = idx%na, b = (idx/na)%nb;
-        // the line: faces t = 0..n along dir
         auto face = [&](const int t, int &k, int &j, int &i) {
           if (dir == 0) {i = is + t; j = js + a; k = ks + b;}
           if (dir == 1) {j = js + t; i = is + a; k = ks + b;}
           if (dir == 2) {k = ks + t; i = is + a; j = js + b;}
         };
-        Real cp = 0.0, dp = 0.0;
+        Real dp = 0.0;
         for (int t = 0; t <= n; ++t) {
           int k, j, i;
           face(t, k, j, i);
-          Real lo = 0.0, hi = 0.0, dg = 1.0, r = fc(m,CLF_N,k,j,i);
-          const bool bd = CleanBoundaryFace(x, dir, m, k, j, i);
-          const Real all = al(m,0,k-dk,j-dj,i-di), alr = al(m,0,k,j,i);
-          const Real wl = al(m,2,k-dk,j-dj,i-di), wr = al(m,2,k,j,i);
-          // (fkin: the rays' kinetic transport of F along b != dir through the dual faces
-          // of CleanStagEdge, the other rows' F lagged; started from the last F solve's)
-          Real tg = 0.0, tr = 0.0;
-          for (int b = 0; b < x.nf && fk && !bd; ++b) {
-            Real p[4], q[4], cp, cm;
-            if (b == dir) continue;
-            CleanStagEdge(x, e, dir, b, m, k, j, i, 1, c1lo, c1hi, p);
-            CleanStagEdge(x, e, dir, b, m, k, j, i, -1, c1lo, c1hi, q);
-            CleanStagEdgeWeights(x, dir, b, m, k, j, i, cp, cm);
-            const int bk = (b == 2), bj = (b == 1), bi = (b == 0);
-            tg += x.h*x.c*(cp*p[0]*p[1] - cm*q[0]*q[2]);
-            tr -= x.h*x.c*(cp*p[0]*p[2]*x.w(m,CLW_Z,k+bk,j+bj,i+bi) -
-                           cm*q[0]*q[1]*x.w(m,CLW_Z,k-bk,j-bj,i-bi));
+          Real r = x.w(m,CLW_R0,k,j,i);
+          if (x.w(m,CLW_P,k,j,i) > 0.0) {
+            Real tr = 0.0;
+            for (int b = 0, nt = 0; b < x.nf && fk; ++b) {
+              if (b == dir) continue;
+              const int sw = (nt++ == 0) ? CLW_V : CLW_WK;
+              const int bk = (b == 2), bj = (b == 1), bi = (b == 0);
+              tr -= x.h*x.c*(x.w(m,sw,k,j,i)*x.w(m,CLW_Z,k+bk,j+bj,i+bi) -
+                             x.w(m,sw+1,k,j,i)*x.w(m,CLW_Z,k-bk,j-bj,i-bi));
+            }
+            r += tr;
+            if (t == 0) r -= x.w(m,CLW_AM,k,j,i)*x.w(m,CLW_Y,k-dk,j-dj,i-di);
+            if (t == n) r -= x.w(m,CLW_AP,k,j,i)*x.w(m,CLW_Y,k+dk,j+dj,i+di);
           }
-          if (!bd && (all > 0.0 || alr > 0.0 || wl > 0.0 || wr > 0.0 || tg > 0.0)) {
-            const Real g = 0.5*x.h*x.c/CleanCellFaceDistance(x, dir, m, k, j, i);
-            const Real it_ = 1.0/fc(m,CLF_TH,k,j,i);
-            // (fkin: h c^2 [w P_kin]_L^R/dx, P_kin = (h+ F_lo + h- F_hi)/c of a cell)
-            // (spherical polar: area form, (1/dx -+ s) of cell L, R)
-            const Real q = x.h*x.c*(x.sph ? CleanStagSph(x, 0, dir, m, k, j, i)
-                                          : x.idx[dir]);
-            const Real qs = x.sph ? x.h*x.c*CleanStagSph(x, 4, dir, m, k, j, i) : 0.0;
-            const Real hpl = x.cs(m,CLN_HP+dir,k-dk,j-dj,i-di);
-            const Real hml = x.cs(m,CLN_HM+dir,k-dk,j-dj,i-di);
-            const Real hpr = x.cs(m,CLN_HP+dir,k,j,i), hmr = x.cs(m,CLN_HM+dir,k,j,i);
-            lo = -g*all - q*wl*hpl + qs*wl*hpl;
-            hi = -g*alr + q*wr*hmr + qs*wr*hmr;
-            dg = it_ - lo - hi + q*(wr*(hpr + hmr) - wl*(hpl + hml)) +
-                 qs*(wr*(hpr + hmr) + wl*(hpl + hml)) + tg;
-            r = fc(m,CLF_N,k,j,i)*it_ + q*x.c*(al(m,1,k-dk,j-dj,i-di) - al(m,1,k,j,i)) -
-                qs*x.c*(al(m,1,k-dk,j-dj,i-di) + al(m,1,k,j,i)) +
-                x.h*x.c*x.c*fc(m,CLF_N+1,k,j,i) + tr;
-            // (the faces beyond a MeshBlock line end: the neighbours', lagged)
-            if (t == 0) {r -= lo*x.w(m,CLW_Y,k-dk,j-dj,i-di); lo = 0.0;}
-            if (t == n) {r -= hi*x.w(m,CLW_Y,k+dk,j+dj,i+di); hi = 0.0;}
-          }
-          const Real den = dg - lo*cp;
-          cp = hi/den;
-          dp = (r - lo*dp)/den;
-          x.w(m,CLW_CP,k,j,i) = cp;
+          dp = (r - ((t == 0) ? 0.0 : x.w(m,CLW_AM,k,j,i))*dp)/x.w(m,CLW_A0,k,j,i);
           x.w(m,CLW_R,k,j,i) = dp;
         }
         Real fn = 0.0;
