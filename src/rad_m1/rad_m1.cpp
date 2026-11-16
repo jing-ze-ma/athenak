@@ -258,6 +258,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       const std::string ls = pin->GetString("rad_m1","clean_line_solver");
       cln_chunk = (ls == "pcr") ? 1 : ((ls == "thomas") ? (1 << 30) : 32);
     }
+    // clean_line_chunk (read only when named): rows per Thomas system of the line solve
+    // (fewer PCR rounds, a smaller factor store with clean_pc_factor)
+    if (pin->DoesParameterExist("rad_m1","clean_line_chunk")) {
+      cln_chunk = std::max(pin->GetInteger("rad_m1","clean_line_chunk"), 1);
+    }
     // clean_init = given | steady (read only when named: an input without it keeps a
     // byte-identical parameter dump).  A start out of radiative equilibrium takes steady:
     // the rays, a steady solution, run ahead of the given field's front.
