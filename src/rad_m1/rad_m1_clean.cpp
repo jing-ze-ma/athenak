@@ -826,9 +826,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // a write-back that leaves gas eint < 0 (energy for the fluid floor to create) is
   // rejected like a failed solve (the stage is redone by backward Euler, a
   // backward-Euler step by dt_retry)
-  if (cell && cln_feedback && cln_neint > 0 && !t2stage && dtr_on) dtr_fail = true;
+  if (cln_feedback && cln_neint > 0 && !t2stage && dtr_on) dtr_fail = true;
   if (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2) {
-    t2_fail = (nit < 0) || (nneg > 0) || (cell && cln_feedback && cln_neint > 0) ||
+    t2_fail = (nit < 0) || (nneg > 0) || (cln_feedback && cln_neint > 0) ||
               (!cell && cln_poslim && cln_nr2 > 0);
   }
   // (force_reference = clean: the reference is the force of the converged, accepted
@@ -1587,6 +1587,22 @@ void RadiationM1::CleanWriteBack() {
           CleanFaceFlux(x, CLW_X, d, m, k+(d == 2), j+(d == 1), i+(d == 0), true));
     }
   });
+  // cells left with gas eint < 0 (the solve is then not accepted, as in the cell layout)
+  cln_neint = 0;
+  if (!feedback) return;
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int nx1 = id.nx1, nx2 = id.nx2, nx3 = id.nx3, nji = nx2*nx1, nkji = nx3*nji;
+  Real nb = 0.0;
+  Kokkos::parallel_reduce("cln_neint", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          (nmb1 + 1)*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &n) {
+    const int m = idx/nkji, k = (idx - m*nkji)/nji + ks;
+    const int j = (idx%nji)/nx1 + js, i = idx%nx1 + is;
+    const Real ke = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
+                         SQR(uh(m,IM3,k,j,i)))/uh(m,IDN,k,j,i);
+    if (!(uh(m,IEN,k,j,i) - ke > 0.0)) n += 1.0;
+  }, Kokkos::Sum<Real>(nb));
+  cln_neint = static_cast<int>(CleanReduce(nb, false));
 }
 
 }  // namespace radm1
