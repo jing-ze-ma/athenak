@@ -1305,5 +1305,79 @@ void CleanBlockSolve(Real a[4][4], Real b[4][5], const int nb) {
   }
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void CleanBlockFactor
+//! \brief CleanBlockSolve that also keeps its factors: lu the multipliers of each
+//! elimination step below the diagonal and U on and above it, piv the pivot row of each
+//! step (CleanBlockFactorSolve repeats the same operations on a new column)
+
+KOKKOS_INLINE_FUNCTION
+void CleanBlockFactor(Real a[4][4], Real b[4][5], const int nb, Real lu[4][4],
+                      Real piv[4]) {
+  for (int p = 0; p < 4; ++p) {
+    int pr = p;
+    Real amax = fabs(a[p][p]);
+    for (int r = p + 1; r < 4; ++r) {
+      if (fabs(a[r][p]) > amax) {
+        pr = r;
+        amax = fabs(a[r][p]);
+      }
+    }
+    piv[p] = static_cast<Real>(pr);
+    for (int r = p + 1; r < 4; ++r) {
+      if (r != pr) continue;
+      for (int c = 0; c < 4; ++c) {
+        const Real t = a[p][c];
+        a[p][c] = a[r][c];
+        a[r][c] = t;
+      }
+      for (int n = 0; n < nb; ++n) {
+        const Real t = b[p][n];
+        b[p][n] = b[r][n];
+        b[r][n] = t;
+      }
+    }
+    const Real inv = 1.0/a[p][p];
+    for (int r = p + 1; r < 4; ++r) {
+      const Real f = a[r][p]*inv;
+      for (int c = p; c < 4; ++c) a[r][c] -= f*a[p][c];
+      for (int n = 0; n < nb; ++n) b[r][n] -= f*b[p][n];
+      lu[r][p] = f;
+    }
+  }
+  for (int p = 3; p >= 0; --p) {
+    for (int c = p; c < 4; ++c) lu[p][c] = a[p][c];
+    for (int n = 0; n < nb; ++n) {
+      Real s = b[p][n];
+      for (int c = p + 1; c < 4; ++c) s -= a[p][c]*b[c][n];
+      b[p][n] = s/a[p][p];
+    }
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanBlockFactorSolve
+//! \brief solves a x = r in place with the factors of CleanBlockFactor (the operations of
+//! CleanBlockSolve on one column)
+
+KOKKOS_INLINE_FUNCTION
+void CleanBlockFactorSolve(const Real lu[4][4], const Real piv[4], Real r[4]) {
+  for (int p = 0; p < 4; ++p) {
+    const int pr = static_cast<int>(piv[p]);
+    for (int q = p + 1; q < 4; ++q) {
+      if (q != pr) continue;
+      const Real t = r[p];
+      r[p] = r[q];
+      r[q] = t;
+    }
+    for (int q = p + 1; q < 4; ++q) r[q] -= lu[q][p]*r[p];
+  }
+  for (int p = 3; p >= 0; --p) {
+    Real s = r[p];
+    for (int c = p + 1; c < 4; ++c) s -= lu[p][c]*r[c];
+    r[p] = s/lu[p][p];
+  }
+}
+
 }  // namespace radm1
 #endif  // RAD_M1_RAD_M1_CLEAN_CELL_HPP_

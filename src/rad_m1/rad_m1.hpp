@@ -2970,6 +2970,10 @@ class RadiationM1 {
   CleanLevel CleanCellLevel(const int l);
   void CleanCellLineSolve(const CleanLevel &lv, const int dir, const int src,
                           const int dst);
+  template <bool kStore>
+  void CleanCellLineSolveRows(const CleanLevel &lv, const int dir, const int src,
+                              const int dst);
+  void CleanCellLineFactorSolve(const CleanLevel &lv, const int src, const int dst);
   void CleanCellLevelApply(const CleanLevel &lv, const int src, const int dst);
   void CleanCellCoarseSetup();
   void CleanCellSmooth(const int l, const int src, const int dst, const bool first,
@@ -3033,6 +3037,11 @@ class RadiationM1 {
   int cln_maxpos = 3;           // clean_maxpos: low-order face marking rounds per solve
   int cln_pcsweeps = 1;         // clean_pc_sweeps: smoothing sweeps of the multigrid
   int cln_chunk = 32;           // rows per Thomas system of the line solve
+  bool cln_pcfac = false;       // clean_pc_factor: x1line keeps the factors of its lines
+  int cln_pcreuse = 1;          // clean_pc_reuse: preconditioner rebuilt every n passes
+  bool cln_conv_est = false;    // clean_conv_est: stop on the estimated remaining change
+  bool cln_nlprint = false;     // clean_nl_print: the changes of every pass (rank 0)
+  bool cln_lf_ok = false;       // cln_lf holds the factors of the current blocks
   bool cln_steady = false;      // clean_init = steady: radiation relaxed before step 1
   int cln_steady_n = 50;        // clean_init_n: most pre-solve passes
   Real cln_steady_dtfac = 1.0e6, cln_steady_tol = 1.0e-8;  // clean_init_dtfac, _tol
@@ -3087,6 +3096,7 @@ class RadiationM1 {
   Real cln_nguard_sum = 0.0, cln_next_sum = 0.0;   // guard falls, extrapolated closures
   DvceArray5D<Real> cln_w;      // work vectors (CLW_*)
   DvceArray5D<Real> cln_x;      // cell vectors of the cell layout (CLC_*)
+  DvceArray5D<Real> cln_lf;     // factors of the x1-line solve (clean_pc_factor)
   DvceArray5D<Real> cln_ff;     // face fluxes of the operator (CleanCellApply)
   DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)
   DvceArray5D<Real> cln_fref;   // force_reference = clean: reference force (m,3,k,j,i)
