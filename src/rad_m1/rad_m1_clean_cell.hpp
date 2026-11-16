@@ -600,6 +600,19 @@ void CleanCellRhieChow(const CleanArgs &x, const int dir, const bool lo, const i
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanRayShare
+//! \brief causality: the rays, a steady solution, run ahead of the moments' field; with
+//! the FV rays (true face fluxes) their consistency terms fade out where cell (k,j,i)
+//! holds less than half of the rays' J (gone below 0.1 J; the short characteristics'
+//! bracket is defined only up to a divergence-free part and stays)
+
+KOKKOS_INLINE_FUNCTION
+Real CleanRayShare(const CleanArgs &x, const int m, const int k, const int j, const int i) {
+  return x.fvrays ? CleanSmoothStep(2.5*fmax(x.u(m,CLC_O,k,j,i), 0.0)/
+                                    fmax(x.cs(m,CLN_J,k,j,i), 1.0e-300) - 0.25) : 1.0;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanCellSphSource
 //! \brief spherical polar: h times the remaining curvature terms of the stress divergence
 //! of cell (k,j,i) per unit E of the cell, g_b for the rows y_b: -(P_tt + P_pp)/r in y_r
@@ -609,7 +622,8 @@ void CleanCellRhieChow(const CleanArgs &x, const int dir, const bool lo, const i
 //! the faces that carry the rays' flux F_ray (low-order or not) moves only y beyond the
 //! rays' moments: its curvature terms are the rays' own, CLN_G (kin = true, independent
 //! of E, shared by the r faces' w as the area terms), so that the rays' moments (J, J h)
-//! are its steady state; the y_phi row keeps its angular-momentum flux form (no source),
+//! are its steady state, and faded with the bracket where the rays run ahead
+//! (CleanRayShare); the y_phi row keeps its angular-momentum flux form (no source),
 //! so that L_z stays exact.
 
 KOKKOS_INLINE_FUNCTION
@@ -624,7 +638,8 @@ void CleanCellSphSource(const CleanArgs &x, const int m, const int k, const int 
   };
   const Real am = x.area[0](m,k,j,i), ap = x.area[0](m,k,j,i+1);
   if (kin) {
-    const Real w = (wf(0, k, j, i+1)*ap - wf(0, k, j, i)*am)/(ap - am);
+    const Real w = (wf(0, k, j, i+1)*ap - wf(0, k, j, i)*am)/(ap - am)*
+                   CleanRayShare(x, m, k, j, i);
     for (int b = 0; b < 3; ++b) g[b] = (b < 2) ? w*hv*x.cs(m,CLN_G+b,k,j,i) : 0.0;
     return;
   }

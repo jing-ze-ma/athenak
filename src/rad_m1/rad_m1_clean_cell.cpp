@@ -357,17 +357,8 @@ void RadiationM1::CleanCellConsistency() {
       for (int r = 0; r <= x.nf; ++r) {
         fr[r] = x.c*x.cs(m,n+r,up ? kl : k,up ? jl : j,up ? il : i);
       }
-      // causality: the rays, a steady solution, run ahead of the moments' field; with the
-      // FV rays (true face fluxes) the bracket fades out where a cell holds less than
-      // half of the rays' J (gone below 0.1 J; the short characteristics' bracket is
-      // defined only up to a divergence-free part and stays)
-      auto share = [&](const int kk, const int jj, const int ii) {
-        return x.fvrays ? CleanSmoothStep(2.5*fmax(x.u(m,CLC_O,kk,jj,ii), 0.0)/
-                                          fmax(x.cs(m,CLN_J,kk,jj,ii), 1.0e-300) - 0.25)
-                        : 1.0;
-      };
-      const Real q = fmin(bdry && blo ? 1.0 : share(kl, jl, il),
-                          bdry && !blo ? 1.0 : share(k, j, i));
+      const Real q = fmin(bdry && blo ? 1.0 : CleanRayShare(x, m, kl, jl, il),
+                          bdry && !blo ? 1.0 : CleanRayShare(x, m, k, j, i));
       for (int r = 0; r < 4; ++r) x.fc[dir](m,CLF_CB+r,k,j,i) = q*wb*(fr[r] - f[r]);
     });
   }
