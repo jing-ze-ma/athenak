@@ -84,7 +84,8 @@ void CleanFaceVector(const CleanArgs &x, const DvceArray2D<Real> &x3f, const int
     return;
   }
   const Real r1 = x.x1f(m,i), r2 = x.x1f(m,i+1), t1 = x.x2f(m,j), t2 = x.x2f(m,j+1);
-  const Real p1 = x3f(m,k), p2 = x3f(m,k+1);
+  // (a phi face reads only its own phi: the high face of a 2-D cell has no k+1 edge)
+  const Real p1 = x3f(m,k), p2 = (dir == 2) ? p1 : x3f(m,k+1);
   const Real hr = 0.5*(r2*r2 - r1*r1);
   if (dir == 0) {
     const Real s2 = 0.5*(t2 - t1) - 0.25*(sin(2.0*t2) - sin(2.0*t1));
