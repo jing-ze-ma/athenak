@@ -1,0 +1,33 @@
+From 257d2690a9a4727514ecd8de69081fc77b1a458c Mon Sep 17 00:00:00 2001
+From: audit <a@b>
+Date: Mon, 16 Nov 2026 22:25:50 +0100
+Subject: [PATCH 2/2] rad_m1 clean: the cubed sphere's FV-ray default is
+ decided in the constructor
+
+CleanInit set cln_rfv = 1 on the cubed sphere with vet_gd at the first solve, after a
+restart file's channels are counted (Time2RstAccept): a cs run without a named clean_rays
+dropped its whole t2 record on restart.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/rad_m1/rad_m1.cpp | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/rad_m1/rad_m1.cpp b/src/rad_m1/rad_m1.cpp
+index daeda29f2..ed46ba7ce 100644
+--- a/src/rad_m1/rad_m1.cpp
++++ b/src/rad_m1/rad_m1.cpp
+@@ -1422,6 +1422,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
+         vra_k <= M1_RA_NF) {
+       cln_ring = 1;
+     }
++    // the cubed sphere's FV rays (CleanInit) are counted in a restart file's channels
++    if (clean && pmy_pack->pmesh->use_cubed_sphere && vgd_on) {
++      cln_rfv = std::max(cln_rfv, 1);
++    }
+     // vgdbath-1011: the inward rays of the top shell start from the incident bath
+     // implicit_ebath_x1max of a MARSHAK outer x1 (vet_sc's vet_bc_bath, the same key and
+     // default: true on a fresh run; a restart whose file lacks the key keeps the vacuum
+-- 
+2.51.0
+
