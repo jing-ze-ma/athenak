@@ -85,6 +85,8 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.multi_d = pmy_pack->pmesh->multi_d;
   x.three_d = pmy_pack->pmesh->three_d;
   x.sph = pmy_pack->pmesh->use_spherical_polar;
+  auto &ms = pmy_pack->pmesh->mesh_size;
+  x.cseam = 0.5/tan(ms.x2min) + 0.5/tan(ms.x2max);
   x.cub = pmy_pack->pmesh->use_cubed_sphere;
   if (x.sph || (!x.cub && cln_rfv > 0)) {
     auto *pc = pmy_pack->pcoord;
