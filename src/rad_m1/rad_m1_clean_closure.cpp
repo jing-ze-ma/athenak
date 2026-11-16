@@ -2014,7 +2014,8 @@ void RadiationM1::CleanFvSweep() {
   const size_t nf = static_cast<size_t>(nmb)*n*nc;
   if (shf) {
     CleanCellFactorStore();
-    const size_t nb = cln_pcf32 ? cln_lfs.span()*sizeof(float) : cln_lf.span()*sizeof(Real);
+    const size_t nb = cln_pcf32 ? cln_lfs.span()*sizeof(float)
+                                : cln_lf.span()*sizeof(Real);
     shf = (nb >= 2*nf);   // (a store too small for the two flag arrays)
   }
   if (shf) {
