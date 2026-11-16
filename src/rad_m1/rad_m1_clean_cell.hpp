@@ -771,6 +771,26 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
       }
     }
     if (!up) CleanCellDeviationFlux(x, dir, m, k, j, i, kc, jc, ic, false, wo, jj);
+    if (up || x.consist) return;
+    // without the consistency term the moment system's outgoing wave (speed c sqrt(D_nn),
+    // eigenvector (1, -+sqrt(D_nn) n)) carries the deviation R_n = (y - h E).n from the
+    // rays' flux out, (c R_n/2, -+c sqrt(D_nn) R_n n/2): the boundary prescribes only the
+    // incoming wave and a consistent state (R = 0) keeps the kinetic flux
+    Real sh[3], h[3], n[3], hn = 0.0;
+    for (int b = 0; b < 3; ++b) {
+      sh[b] = x.cs(m,CLN_HP+b,kc,jc,ic) + x.cs(m,CLN_HM+b,kc,jc,ic);
+      n[b] = CleanNf(x, b, dir, m, k, j, i);
+    }
+    CleanRayFlux(x, m, kc, jc, ic, sh, h);
+    for (int b = 0; b < 3; ++b) hn += h[b]*n[b];
+    const Real sd = (blo ? -0.5 : 0.5)*x.c*std::sqrt(fmax(CleanDnn(x, dir, m, k, j, i, kc,
+                                                                    jc, ic), 0.0));
+    jj[0][0] -= 0.5*x.c*hn;
+    for (int b = 0; b < x.nf; ++b) {
+      jj[0][1+b] += 0.5*x.c*n[b];
+      jj[1+b][0] -= sd*n[b]*hn;
+      for (int c = 0; c < x.nf; ++c) jj[1+b][1+c] += sd*n[b]*n[c];
+    }
     return;
   }
   Real al, hs;
