@@ -166,7 +166,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                     pin->GetBoolean("rad_m1","vet_gd");
     if (cln_cell && gd && !pin->DoesParameterExist("rad_m1","clean_rays")) cln_rfv = 1;
     // clean_fv_float (read only when named): the fv1 rays' intensities in single
-    // precision (no effect without FV rays)
+    // precision (no effect without FV rays).  It degrades the well-balanced state
+    // (rhse_cs6 vcs_max 1e-9 -> 4e-8) and the exact L_z (3e-14 -> 1e-11): not for
+    // well-balanced or L_z-sensitive runs
     if (pin->DoesParameterExist("rad_m1","clean_fv_float")) {
       cln_fvf32 = pin->GetBoolean("rad_m1","clean_fv_float") && cln_rfv > 0;
       if (cln_fvf32 && cln_rfv != 1) {
