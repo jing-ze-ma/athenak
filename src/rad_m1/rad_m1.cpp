@@ -2140,7 +2140,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
               << " arad=" << arad << std::endl;
     std::cout << "         opacity=" << (opacity_type == M1_OPAC_TABLE ? "table" : "")
               << " force_reference="
-              << (force_ref == M1_FREF_WB_ARAD ? "wb_arad" : "none")
+              << (force_ref == M1_FREF_WB_ARAD ? "wb_arad" :
+                  (force_ref == M1_FREF_CLEAN ? "clean" : "none"))
               << " temp_unit_kelvin=" << otab.tunit
               << " rho_unit_cgs=" << otab.dunit << std::endl;
   }
