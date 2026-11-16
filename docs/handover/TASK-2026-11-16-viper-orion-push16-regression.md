@@ -39,6 +39,11 @@ bsg-files-1009.
   the first backward-Euler step of rhse_cs6 / rhse_cs24 does not converge (CLEAN WARNING +
   dt_retry, MI300A and A100; bisect: off -> clean, gas_exact or fv_joint off -> still warns).
   So for (A) add nothing new (rad_m1/clean_yres=false is now the default); (B) = no keys.
+- UPDATE 3: final candidate head **0678599eb** = 0aee9a208 + your init audit (4cacdae21,
+  8db6f6141) + steady-start predict fix (5e33f056a) + your dt_retry 0001/0002 (d320347b3,
+  4ac0c0e49) + clean_fv_joint back to opt-in (GPU: cs_thin1 +38 % A100 / +62 % MI300A).
+  Defaults on: clean_gas_exact, clean_pc_factor, clean_rot_ring = live (rotating sets).
+  (A) keys: rad_m1/clean_gas_exact=false rad_m1/clean_pc_factor=false rad_m1/clean_rot_ring=off.
 - GPU (MI300A apudev, A100 Raven) gates are running now; results follow in a NOTE.
 
 Reply "A bitwise / not (first deck/file); B table; restart bitwise / not".
