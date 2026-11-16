@@ -3394,6 +3394,7 @@ int RadiationM1::Time2RstNchWant() {
   return nt + ((force_ref == M1_FREF_CLEAN) ? 4 : 0)         // the reference force, set
          + ((clean && cln_extrap > 0) ? 2*CLN_N + 1 : 0)    // extrap history
          + ((clean && cln_ring) ? vra_k*CLN_N + 1 : 0)       // clean_rot_ring
+         + ((clean && cln_fsolve && cln_fkin) ? 3 : 0)       // stag fkin: memory d
          + ((clean && cln_rfv > 0) ? cln_fvb*cln_fvn : 0);   // the conservative rays
 }
 
@@ -3520,6 +3521,16 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
                        ((i == 3) ? v3 : 0.0)));
     });
     c += nr + CLN_N + 1;
+  }
+  // clean_stag_fkin: the energy flux's memory d of the three face families (CLF_N + 3)
+  if (clean && cln_fsolve && cln_fkin) {
+    for (int d = 0; d < 3; ++d) {
+      auto fc = (d == 0) ? cln_fc1 : ((d == 1) ? cln_fc2 : cln_fc3);
+      if (fc.extent_int(0) < m0 + nmb) continue;
+      Kokkos::deep_copy(Kokkos::subview(a, mb, c + d, AL, AL, AL),
+                        Kokkos::subview(fc, ms, CLF_N + 3, AL, AL, AL));
+    }
+    c += 3;
   }
   // rbfast-1021 extrap2: the raw builds of the last step, q at i = 0, time, alpha
   if (h2 && vet_col && t2_vcmode == 4) {
@@ -3653,6 +3664,17 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
       return;
     }
     ch -= nr + CLN_N + 1;
+  }
+  if (clean && cln_fsolve && cln_fkin) {   // (CleanInit copies it to the face arrays)
+    if (ch < 3) {
+      if (cln_rstd.extent_int(0) != nmb) {
+        Kokkos::realloc(cln_rstd, nmb, 3, w.extent_int(1), w.extent_int(2),
+                        w.extent_int(3));
+      }
+      DeepCopyAcross(Kokkos::subview(cln_rstd, mb, ch, AL, AL, AL), w);
+      return;
+    }
+    ch -= 3;
   }
   // rbfast-1021 extrap2 (Time2RstPack)
   if (h2 && vet_col && t2_vcmode == 4) {
