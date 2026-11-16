@@ -3550,6 +3550,7 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
     Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c + cln_fvb*cln_fvn), AL, AL,
                                       AL),
                       Kokkos::subview(cln_fvi, ms, AL, AL, AL, AL));
+    CleanFvRstWrite(a, c, nmb, m0);
   }
 }
 
@@ -3566,6 +3567,7 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
                       w.extent_int(3));
     }
     DeepCopyAcross(Kokkos::subview(cln_fvi, mb, ch - nfv0, AL, AL, AL), w);
+    cln_fvrst = true;
     return;
   }
   if (h2 && ch < M1_T2_NK) {

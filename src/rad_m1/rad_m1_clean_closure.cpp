@@ -1096,6 +1096,7 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
   // clean_fv_lag: the last step swept the same set unless it belongs to another rotation
   // block (a function of tc and dt alone, so that a restart decides as the run would)
   cln_fvfull = (cln_ring != 0);
+  cln_fvtc = tc;
   if (!VgdRotOn()) {
     if (cln_fvn == n) return;
     cln_fvd = vgd_dir;
@@ -1807,7 +1808,11 @@ void RadiationM1::CleanFvSweep() {
   if (std::find(cln_fvdo.begin(), cln_fvdo.end(), true) != cln_fvdo.end()) {
     CleanFvLevels();
   }
-  const bool lag = cln_fvlag && have && !cln_fvfull && !cln_fvjoint;
+  // (the plain fv1 sweep only; extrap: a set new to the history restarts it)
+  const bool lagon = (cln_fvlag > 0) && have && !cln_fvfull && !cln_fvjoint &&
+                     cln_rfv == 1 && !axi;
+  if (!lagon) cln_fvnv = 0;
+  bool lag = lagon && (cln_fvlag == 1);
   auto fi = cln_fvi;
   auto fa = cln_fva;
   auto fc = cln_fvc;
@@ -1923,11 +1928,14 @@ void RadiationM1::CleanFvSweep() {
     CleanGhostFill(cln_fvq, CLQ_C, 3);
     CleanFvPanelSlopes(true);
   }
-  if (lag) {
+  if (lagon) {
+    if (cln_fvrst && cln_fvlag == 2) CleanFvRstRead();
     CleanGhostFill(cln_fvi, 0, cln_fvb*n);
     CleanFvPanelSlopes(false);
     CleanFvSeams();
+    if (cln_fvlag == 2) lag = CleanFvExtrap();
   }
+  cln_fvrst = false;
   // the walls' incoming beams of the intensities the sweep starts from (a restart has
   // no others)
   if (wall[0] || wall[1]) CleanFvWalls();
@@ -2164,9 +2172,213 @@ void RadiationM1::CleanFvSweep() {
     if (wall[0] || wall[1]) CleanFvWalls();
     cln_fvnp[1] += 1;
     cln_fvnp[2] += nlev - l1;
-    if ((jt && cln_fvexact) || lag) break;
+    if (jt && cln_fvexact) break;
+    // (extrap: one pass if the inflow it extrapolated was close to the new one)
+    if (lag && (cln_fvlag == 1 ||
+                CleanFvExtrapMiss() <= cln_fvlagtol*CleanReduce(imax, true))) {
+      break;
+    }
+    if (lag) {
+      lag = false;
+      continue;
+    }
     if (CleanReduce(dmax, true) <= cln_fvtol*CleanReduce(imax, true)) break;
   }
+  // extrap: this build's inflow is the newest of the history (a rebuild at the same time
+  // replaces it)
+  if (cln_fvlag == 2 && (cln_fvnv == 0 || cln_fvtc > cln_fvt1)) {
+    cln_fvt1 = cln_fvtc;
+    cln_fvnv = std::min(cln_fvnv + 1, 2);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn CleanShell CleanFvLayer
+//! \brief clean_fv_lag = extrap: the first ghost layer of a MeshBlock (the cells an fv1
+//! sweep reads across its faces) as the shell of the active cells in the box one larger;
+//! cell q is (k,j,i) + (ks, js, is) - (td, md, 1) of the mesh indices
+
+CleanShell CleanFvLayer(const RegionIndcs &ix, const bool md, const bool td) {
+  return CleanShell(ix.nx3 + (td ? 2 : 0), ix.nx2 + (md ? 2 : 0), ix.nx1 + 2, 0, 1,
+                    ix.nx1, md ? 1 : 0, md ? ix.nx2 : 0, td ? 1 : 0, td ? ix.nx3 : 0, md,
+                    td);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::CleanFvExtrap
+//! \brief clean_fv_lag = extrap, before the pass (the ghosts hold the inflow G1 of the
+//! last build at t1): with the build before (G2 at t2, cln_fvgp) the ghosts take
+//! G1 + (G1 - G2) (tc - t1)/(t1 - t2), at least 0, and G1 becomes the history.  Returns
+//! whether it extrapolated (one pass); the first two builds of a set, a restart without
+//! the record and a step taken back (dt_retry) sweep in full.
+
+bool RadiationM1::CleanFvExtrap() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
+  const CleanShell sh = CleanFvLayer(indcs, md, td);
+  const int nmb = pmy_pack->nmb_thispack, n = cln_fvn;
+  const int oi = indcs.is - 1, oj = indcs.js - (md ? 1 : 0), ok = indcs.ks - (td ? 1 : 0);
+  if (cln_fvgp.extent_int(0) != nmb || cln_fvgp.extent_int(1) != n ||
+      cln_fvgp.extent_int(2) != sh.ncell) {
+    Kokkos::realloc(cln_fvgp, nmb, n, sh.ncell);
+    cln_fvnv = std::min(cln_fvnv, 1);
+  }
+  const Real tc = cln_fvtc;
+  if (tc < cln_fvt1) cln_fvnv = 0;
+  const bool ex = (cln_fvnv >= 2) && (cln_fvt1 > cln_fvt2);
+  const bool rec = (cln_fvnv >= 1) && (tc > cln_fvt1);
+  if (!ex && !rec) return false;
+  const Real w = ex ? (tc - cln_fvt1)/(cln_fvt1 - cln_fvt2) : 0.0;
+  if (ex && (cln_fvgx.extent_int(1) != n || cln_fvgx.extent_int(2) != sh.ncell)) {
+    Kokkos::realloc(cln_fvgx, nmb, n, sh.ncell);
+  }
+  auto fi = cln_fvi;
+  auto gp = cln_fvgp;
+  auto gx = cln_fvgx;
+  par_for("cln_fv_extrap", DevExeSpace(), 0, nmb - 1, 0, n - 1, 0, sh.ncell - 1,
+  KOKKOS_LAMBDA(const int m, const int d, const int q) {
+    int k, j, i;
+    CleanShellCell(sh, q, k, j, i);
+    const Real g1 = fi(m,d,k+ok,j+oj,i+oi);
+    if (ex) {
+      const Real ge = fmax(g1 + w*(g1 - gp(m,d,q)), 0.0);
+      fi(m,d,k+ok,j+oj,i+oi) = ge;
+      gx(m,d,q) = ge;
+    }
+    if (rec) gp(m,d,q) = g1;
+  });
+  if (rec) cln_fvt2 = cln_fvt1;
+  return ex;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::CleanFvExtrapMiss
+//! \brief clean_fv_lag = extrap, after the pass and its ghost exchange: the largest
+//! difference (all ranks) between the new inflow and the extrapolated one the pass took,
+//! over the ghosts beyond MeshBlock faces and periodic seams
+
+Real RadiationM1::CleanFvExtrapMiss() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
+  const CleanShell sh = CleanFvLayer(indcs, md, td);
+  const int nmb = pmy_pack->nmb_thispack, n = cln_fvn;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int oi = is - 1, oj = js - (md ? 1 : 0), ok = ks - (td ? 1 : 0);
+  auto fi = cln_fvi;
+  auto gx = cln_fvgx;
+  auto bc = pmy_pack->pmb->mb_bcs.d_view;
+  auto open = [] KOKKOS_FUNCTION (const BoundaryFlag f) {
+    return f == BoundaryFlag::block || f == BoundaryFlag::periodic ||
+           f == BoundaryFlag::panel;
+  };
+  Real miss = 0.0;
+  const int nq = sh.ncell;
+  Kokkos::parallel_reduce("cln_fv_miss", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          nmb*n*nq),
+  KOKKOS_LAMBDA(const int idx, Real &mx) {
+    const int m = idx/(n*nq), d = (idx/nq)%n, q = idx%nq;
+    int k, j, i;
+    CleanShellCell(sh, q, k, j, i);
+    k += ok;
+    j += oj;
+    i += oi;
+    // (a ghost beyond a physical face is not inflow)
+    if ((i < is && !open(bc(m,BoundaryFace::inner_x1))) ||
+        (i > ie && !open(bc(m,BoundaryFace::outer_x1))) ||
+        (md && j < js && !open(bc(m,BoundaryFace::inner_x2))) ||
+        (md && j > je && !open(bc(m,BoundaryFace::outer_x2))) ||
+        (td && k < ks && !open(bc(m,BoundaryFace::inner_x3))) ||
+        (td && k > ke && !open(bc(m,BoundaryFace::outer_x3)))) {
+      return;
+    }
+    mx = fmax(mx, fabs(fi(m,d,k,j,i) - gx(m,d,q)));
+  }, Kokkos::Max<Real>(miss));
+  return CleanReduce(miss, true);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanFvRstWrite
+//! \brief clean_fv_lag = extrap: the history in the restart's copy a of cln_fvi (channels
+//! c .., MeshBlocks m0 .. m0+nmb-1): each first-layer ghost of cln_fvgp in the second
+//! layer one cell further out (an unused copy of the ghosts a restart refills), and
+//! (magic, t1, t2, nv) in the ghost (ks, js-1, is-2) of the first four channels.  Needs a
+//! multi-D mesh with two ghost layers; else a restart sweeps its first builds in full.
+
+constexpr Real kCleanFvRstMagic = -7.5e7;
+
+void RadiationM1::CleanFvRstWrite(DvceArray5D<Real> &a, const int c, const int nmb,
+                                  const int m0) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
+  const int n = cln_fvn;
+  if (cln_fvlag != 2 || cln_fvnv < 1 || !md || indcs.ng < 2 || n < 4 ||
+      cln_fvgp.extent_int(1) != n) {
+    return;
+  }
+  const CleanShell sh = CleanFvLayer(indcs, md, td);
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int oi = is - 1, oj = js - 1, ok = ks - (td ? 1 : 0);
+  auto gp = cln_fvgp;
+  auto a_ = a;
+  par_for("cln_fv_rstw", DevExeSpace(), 0, nmb - 1, 0, n - 1, 0, sh.ncell - 1,
+  KOKKOS_LAMBDA(const int m, const int d, const int q) {
+    int k, j, i;
+    CleanShellCell(sh, q, k, j, i);
+    k += ok;
+    j += oj;
+    i += oi;
+    k += td ? ((k < ks) ? -1 : ((k > ke) ? 1 : 0)) : 0;
+    j += (j < js) ? -1 : ((j > je) ? 1 : 0);
+    i += (i < is) ? -1 : ((i > ie) ? 1 : 0);
+    a_(m,c+d,k,j,i) = gp(m0+m,d,q);
+  });
+  const Real v[4] = {kCleanFvRstMagic, cln_fvt1, cln_fvt2, static_cast<Real>(cln_fvnv)};
+  for (int e = 0; e < 4; ++e) {
+    const Real ve = v[e];
+    par_for("cln_fv_rsts", DevExeSpace(), 0, nmb - 1, KOKKOS_LAMBDA(const int m) {
+      a_(m,c+e,ks,js-1,is-2) = ve;
+    });
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanFvRstRead
+//! \brief clean_fv_lag = extrap: the history CleanFvRstWrite left in the ghosts of the
+//! intensities a restart read (none: nv = 0, the first builds sweep in full)
+
+void RadiationM1::CleanFvRstRead() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
+  const int n = cln_fvn, nmb = pmy_pack->nmb_thispack;
+  cln_fvnv = 0;
+  if (!md || indcs.ng < 2 || n < 4) return;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  auto v = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+             Kokkos::subview(cln_fvi, 0, std::make_pair(0, 4), ks, js - 1, is - 2));
+  if (!(v(0) == kCleanFvRstMagic)) return;
+  cln_fvt1 = v(1);
+  cln_fvt2 = v(2);
+  cln_fvnv = static_cast<int>(v(3));
+  const CleanShell sh = CleanFvLayer(indcs, md, td);
+  Kokkos::realloc(cln_fvgp, nmb, n, sh.ncell);
+  const int oi = is - 1, oj = js - 1, ok = ks - (td ? 1 : 0);
+  auto gp = cln_fvgp;
+  auto fi = cln_fvi;
+  par_for("cln_fv_rstr", DevExeSpace(), 0, nmb - 1, 0, n - 1, 0, sh.ncell - 1,
+  KOKKOS_LAMBDA(const int m, const int d, const int q) {
+    int k, j, i;
+    CleanShellCell(sh, q, k, j, i);
+    k += ok;
+    j += oj;
+    i += oi;
+    k += td ? ((k < ks) ? -1 : ((k > ke) ? 1 : 0)) : 0;
+    j += (j < js) ? -1 : ((j > je) ? 1 : 0);
+    i += (i < is) ? -1 : ((i > ie) ? 1 : 0);
+    gp(m,d,q) = fi(m,d,k,j,i);
+  });
 }
 
 //----------------------------------------------------------------------------------------

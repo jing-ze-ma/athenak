@@ -3008,7 +3008,7 @@ class RadiationM1 {
   int cln_maxnl = 50;           // clean_maxnl: Newton iterations
   Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: Newton tolerance (relative dE, dT, dv)
   Real cln_fvtol = 1.0e-10;     // clean_fv_tol: pass stop of the FV rays
-  bool cln_fvlag = false;       // clean_fv_lag: one FV pass, inflows across blocks lagged
+  int cln_fvlag = 0;            // clean_fv_lag: 0 off, 1 lag, 2 extrap (CleanFvSweep)
   int cln_pc = 0;               // clean_pc: 0 vcycle or CLN_PC_*
   Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E
   int cln_fillpass = 8;         // clean_fill_passes: closure fill layers
@@ -3079,6 +3079,18 @@ class RadiationM1 {
   bool cln_fvjoint = true;      // clean_fv_joint: fv1 levels over the rank's MeshBlocks
   bool cln_fvexact = false;     // joint: one pass is the exact sweep (all ranks)
   bool cln_fvfull = true;       // clean_fv_lag: a new swept set this step (full sweep)
+  Real cln_fvtc = 0.0;          // clean_fv_lag: the closure time of this build
+  int cln_fvnv = 0;             // extrap: last builds of this set in the history (2)
+  Real cln_fvt1 = 0.0;          // extrap: closure time of the last build
+  Real cln_fvt2 = 0.0;          // extrap: closure time of the inflow in cln_fvgp
+  bool cln_fvrst = false;       // extrap: cln_fvi read from a restart (its record)
+  DvceArray3D<Real> cln_fvgp;   // extrap: the first ghost layer of the build before
+  DvceArray3D<Real> cln_fvgx;   // extrap: the inflow the pass took (extrapolated)
+  Real cln_fvlagtol = 1.0e-4;   // clean_fv_lag_tol: inflow miss of one extrap pass
+  Real CleanFvExtrapMiss();
+  bool CleanFvExtrap();
+  void CleanFvRstRead();
+  void CleanFvRstWrite(DvceArray5D<Real> &a, const int c, const int nmb, const int m0);
   int cln_fvl0 = 0;             // joint: the first level a later pass takes
   int cln_fvjn[2] = {0, 0};     // joint: the dropped inflows, the cells reading ghosts
   bool cln_fvjoint_said = false;   // joint: the first build's counts printed
