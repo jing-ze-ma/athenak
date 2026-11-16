@@ -1716,9 +1716,10 @@ void RadiationM1::CleanWriteBack() {
   auto f1 = f0x1, f2 = f0x2, f3 = f0x3;
   const bool fref = (force_ref == M1_FREF_CLEAN);
   auto fr = cln_fref;
+  const Real arad_ = arad;
   par_for("cln_wbcell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real e = x.w(m,CLW_X,k,j,i);
+    Real e = x.w(m,CLW_X,k,j,i);
     Real dm[3] = {0.0, 0.0, 0.0};
     Real den = 0.0;
     if (feedback) {
@@ -1728,6 +1729,11 @@ void RadiationM1::CleanWriteBack() {
       for (int n = 0; n < 3; ++n) {   // (force_reference = clean, frozen gas momentum)
         if (fref) dm[n] -= h*fr(m,n,k,j,i);
         if (x.vzero) dm[n] = 0.0;
+      }
+      // (the kinetic energy the gas gains, the work W of the E row at convergence)
+      Real wk = 0.0;
+      for (int n = 0; n < 3; ++n) {
+        wk += (uh(m,IM1+n,k,j,i) + 0.5*dm[n])*dm[n]/uh(m,IDN,k,j,i);
       }
       for (int n = 0; n < 3; ++n) uh(m,IM1+n,k,j,i) += dm[n];
       // gas energy: exactly what the radiation gives up besides its flux divergence, so
@@ -1742,6 +1748,15 @@ void RadiationM1::CleanWriteBack() {
         Real ei, p, chi_rho, chi_t, cv;   //  a step h -> infinity, as the cell layout)
         eos.ThermoAt(uh(m,IDN,k,j,i), x.w(m,CLW_T,k,j,i), ei, p, chi_rho, chi_t, cv);
         den = ei - x.w(m,CLW_EI,k,j,i);
+      } else {
+        // the gas takes the exchange of the solution with the iterate's T, the beta terms
+        // and W, E the rest (its fluxes): the linear solve's residual stays in E, not eint
+        const Real t = x.w(m,CLW_T,k,j,i);
+        const Real ex = h*x.c*(x.op(m,M1_OP_P,k,j,i)*x.w(m,CLW_GM,k,j,i)*arad_*SQR(SQR(t)) -
+                               x.op(m,M1_OP_E,k,j,i)*fmax(e, 0.0));
+        const Real dg = x.w(m,CLW_EP,k,j,i) - ex + wk;
+        e += den - dg;
+        den = dg;
       }
       uh(m,IEN,k,j,i) += den;
     }
