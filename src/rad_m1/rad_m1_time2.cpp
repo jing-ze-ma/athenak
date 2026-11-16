@@ -3903,6 +3903,14 @@ void RadiationM1::Time2Report() {
   if (clean && cln_fvnp[0] > 0) {
     std::cout << "<rad_m1> clean FV rays: " << cln_fvnp[0] << " builds, " << cln_fvnp[1]
               << " passes, " << cln_fvnp[2] << " wavefront levels" << std::endl;
+    if (cln_fvlag == 2) {
+      std::cout << "<rad_m1> clean_fv_lag = extrap: " << cln_fvxp[0]
+                << " one-pass builds, "
+                << cln_fvxp[1] << " swept on in full (inflow miss above clean_fv_lag_tol "
+                << cln_fvlagtol << " of the largest intensity and clean_fv_lag_frac "
+                << cln_fvlagfrac << " of its change), largest miss/change " << cln_fvxr
+                << std::endl;
+    }
   }
 }
 

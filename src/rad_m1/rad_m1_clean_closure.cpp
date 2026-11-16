@@ -2427,12 +2427,17 @@ void RadiationM1::CleanFvSweep() {
     cln_fvnp[1] += 1;
     cln_fvnp[2] += nlev - l1;
     if (jt && cln_fvexact) break;
-    // (extrap: one pass if the inflow it extrapolated was close to the new one)
-    if (lag && (cln_fvlag == 1 ||
-                CleanFvExtrapMiss() <= cln_fvlagtol*CleanReduce(imax, true))) {
-      break;
-    }
+    if (lag && cln_fvlag == 1) break;
     if (lag) {
+      // (extrap: one pass if the extrapolated inflow missed by little, or if it took most
+      // of the inflow's change since the last build)
+      Real miss, chg;
+      CleanFvExtrapMiss(miss, chg);
+      const Real imx = CleanReduce(imax, true);
+      const bool ok = (miss <= cln_fvlagtol*imx || miss <= cln_fvlagfrac*chg);
+      cln_fvxr = fmax(cln_fvxr, miss/fmax(chg, 1.0e-300));
+      cln_fvxp[ok ? 0 : 1] += 1;
+      if (ok) break;
       lag = false;
       continue;
     }
@@ -2506,12 +2511,14 @@ bool RadiationM1::CleanFvExtrap() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real RadiationM1::CleanFvExtrapMiss
-//! \brief clean_fv_lag = extrap, after the pass and its ghost exchange: the largest
-//! difference (all ranks) between the new inflow and the extrapolated one the pass took,
-//! over the ghosts beyond MeshBlock faces and periodic seams
+//! \fn void RadiationM1::CleanFvExtrapMiss
+//! \brief clean_fv_lag = extrap, after the pass and its ghost exchange, over the inflow
+//! the sweep read (each ghost beyond one MeshBlock face or periodic seam, the directions
+//! entering the block through that face), all ranks: miss, the largest difference
+//! between the new inflow and the extrapolated one the pass took, and chg, the largest
+//! change of the inflow since the last build (cln_fvgp)
 
-Real RadiationM1::CleanFvExtrapMiss() {
+void RadiationM1::CleanFvExtrapMiss(Real &miss, Real &chg) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
   const CleanShell sh = CleanFvLayer(indcs, md, td);
@@ -2521,34 +2528,46 @@ Real RadiationM1::CleanFvExtrapMiss() {
   const int oi = is - 1, oj = js - (md ? 1 : 0), ok = ks - (td ? 1 : 0);
   const CleanFvI fi = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvf32);
   auto gx = cln_fvgx;
+  auto gp = cln_fvgp;
+  auto fa = cln_fva;
+  auto dir_ = cln_fvd;
   auto bc = pmy_pack->pmb->mb_bcs.d_view;
   auto open = [] KOKKOS_FUNCTION (const BoundaryFlag f) {
     return f == BoundaryFlag::block || f == BoundaryFlag::periodic ||
            f == BoundaryFlag::panel;
   };
-  Real miss = 0.0;
+  miss = 0.0;
+  chg = 0.0;
   const int nq = sh.ncell;
-  Kokkos::parallel_reduce("cln_fv_miss", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                          nmb*n*nq),
-  KOKKOS_LAMBDA(const int idx, Real &mx) {
-    const int m = idx/(n*nq), d = (idx/nq)%n, q = idx%nq;
+  Kokkos::parallel_reduce("cln_fv_miss", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nq),
+  KOKKOS_LAMBDA(const int idx, Real &mx, Real &mc) {
+    const int m = idx/nq, q = idx%nq;
     int k, j, i;
     CleanShellCell(sh, q, k, j, i);
     k += ok;
     j += oj;
     i += oi;
-    // (a ghost beyond a physical face is not inflow)
-    if ((i < is && !open(bc(m,BoundaryFace::inner_x1))) ||
-        (i > ie && !open(bc(m,BoundaryFace::outer_x1))) ||
-        (md && j < js && !open(bc(m,BoundaryFace::inner_x2))) ||
-        (md && j > je && !open(bc(m,BoundaryFace::outer_x2))) ||
-        (td && k < ks && !open(bc(m,BoundaryFace::inner_x3))) ||
-        (td && k > ke && !open(bc(m,BoundaryFace::outer_x3)))) {
-      return;
+    // (the face to the block's cell; the sweep reads no ghost beyond an edge or corner,
+    // nor one beyond a physical face)
+    const int fx = (i < is) ? 0 : ((i > ie) ? 1 : -1);
+    const int fy = (md && j < js) ? 2 : ((md && j > je) ? 3 : -1);
+    const int fz = (td && k < ks) ? 4 : ((td && k > ke) ? 5 : -1);
+    if ((fx >= 0) + (fy >= 0) + (fz >= 0) != 1) return;
+    const int f = (fx >= 0) ? fx : ((fy >= 0) ? fy : fz);
+    if (!open(bc(m,f))) return;
+    const int kb = (f == 4) ? ks : ((f == 5) ? ke : k);
+    const int jb = (f == 2) ? js : ((f == 3) ? je : j);
+    const int ib = (f == 0) ? is : ((f == 1) ? ie : i);
+    for (int d = 0; d < n; ++d) {
+      const Real a = dir_(d,0)*fa(m,3*f,kb,jb,ib) + dir_(d,1)*fa(m,3*f+1,kb,jb,ib) +
+                     dir_(d,2)*fa(m,3*f+2,kb,jb,ib);
+      if (a >= 0.0) continue;
+      mx = fmax(mx, fabs(fi(m,d,k,j,i) - gx(m,d,q)));
+      mc = fmax(mc, fabs(fi(m,d,k,j,i) - gp(m,d,q)));
     }
-    mx = fmax(mx, fabs(fi(m,d,k,j,i) - gx(m,d,q)));
-  }, Kokkos::Max<Real>(miss));
-  return CleanReduce(miss, true);
+  }, Kokkos::Max<Real>(miss), Kokkos::Max<Real>(chg));
+  miss = CleanReduce(miss, true);
+  chg = CleanReduce(chg, true);
 }
 
 //----------------------------------------------------------------------------------------
