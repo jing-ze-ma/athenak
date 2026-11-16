@@ -2348,10 +2348,15 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
       s3 = std::max(s3, dx1*tm/dx3);
     }
   }
-  // scheme = clean: one cell more for the slopes of the second-order foot (VetPlmFoot)
+  // scheme = clean: one cell more for the slopes of the second-order foot (VetPlmFoot);
+  // a reach within round-off of an integer one more (the per-ray band below)
   const int wp = clean ? 1 : 0;
-  st.w2 = static_cast<int>(std::floor(s2)) + 1 + wp;
-  st.w3 = thrd ? (static_cast<int>(std::floor(s3)) + 1 + wp) : 0;
+  auto wband = [wp](const Real s) {
+    return static_cast<int>(std::floor(s)) + 1 + wp +
+           ((std::fabs(s - std::round(s)) < 1.0e-9) ? 1 : 0);
+  };
+  st.w2 = wband(s2);
+  st.w3 = thrd ? wband(s3) : 0;
   // scaling options (read only when given, so that an input without them writes the
   // restart file it always wrote): vet_mb_halo = K exchanges a band K w wide every K
   // layers and recomputes the overlap redundantly (same arithmetic, same numbers);
