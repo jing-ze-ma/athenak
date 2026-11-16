@@ -44,3 +44,15 @@ reply as NOTE-2026-11-17-orion-viper-push17-regression.md on bsg-files-1009.
 - Note: command-line keys must exist in the deck (fresh runs); write them into the deck.
 
 Reply "A bitwise / not (first deck/file); B table; opt-in table; restart bitwise / not".
+
+## UPDATE 1 (2026-11-17 ~00:45): final candidate head **243146188**
+- 243146188 (user decision, your NOTE d1cf8f41f): **clean_yres = local is the default**; false and post stay
+  selectable.  So (A) = `rad_m1/clean_yres=false` written into each deck (all new keys off): bitwise to
+  dd468ab99; (B) = no keys (yres local): your table vs push 16, small differences expected
+  (MI300A yres arm: cs6/cs24 0 warnings 0 retries, rhse vcs_max at push-16 level, maxrel <= 2e-8).
+- 8ad8a260e: clean_fv_lag = extrap restart record read through a contiguous copy (CUDA aborted on the
+  strided device->host copy; host build unaffected).
+- a510c15d0: your O2 barrier in ck_impl_fused (after the ss reduction; reached only with
+  ck_impl_reuse_jac = 2; untested at runtime) + the clean_fv_float note (degrades WB and exact L_z).
+- e5c54306a: dt_retry keeps the clean_fv_lag = extrap inflow history (forced retry with extrap bitwise).
+- ec96434ff: your P3 line chunks (host only).  Please time it on Raven CPU vs push 15 / push 16.
