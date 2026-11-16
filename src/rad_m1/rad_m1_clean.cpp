@@ -865,6 +865,12 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         if (inl % cln_pcreuse == 0) CleanCellPreconditionerSetup();
       } else {
         CleanRightHandSide();
+        // (clean_stag_sbimp: the first iterate's T in exchange with E_k and the beta
+        // terms sb(E_k) the RHS just built, then the RHS of that T)
+        if (inl == 0 && cln_sbimp && cln_feedback) {
+          CleanNewtonUpdate();
+          CleanRightHandSide();
+        }
         CleanPreconditionerSetup();
       }
       nit = CleanBiCGStab();
@@ -1150,7 +1156,9 @@ void RadiationM1::CleanFirstIterate() {
 //! - kE E) = hc kE [(beta^2/2 - beta.a/c) E_k + 2 beta.y_k] (y_k = F/c of the iterate,
 //! mean of the two faces; the gas eint takes its opposite, CLW_EP), with beta = v/c of
 //! the iterate (CLW_BT) and hc kP a T^4 (CLW_RE) for the face fluxes (eq. 57,
-//! CleanFaceWeights)
+//! CleanFaceWeights).  clean_stag_sbimp takes (1 - r) sb(E) into the operator
+//! (CleanApply, CleanStagBetaE) and B the same at E_k: the solution is that of the lagged
+//! terms
 
 void RadiationM1::CleanRightHandSide() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1175,10 +1183,18 @@ void RadiationM1::CleanRightHandSide() {
       }
       x.w(m,CLW_RE,k,j,i) = x.h*x.c*op(m,M1_OP_P,k,j,i)*arad_*
                             SQR(SQR(x.w(m,CLW_T,k,j,i)));
+      if (!x.sbi) return;   // (clean_stag_sbimp: r of the exchange, for the face terms)
+      const Real d = uh(m,IDN,k,j,i), t = x.w(m,CLW_T,k,j,i);
+      Real b2 = 0.0, e, pg, chi_rho, chi_t, cv;
+      for (int n = 0; n < 3; ++n) b2 += SQR(x.w(m,CLW_BT+n,k,j,i));
+      eos.ThermoAt(d, t, e, pg, chi_rho, chi_t, cv);
+      const Real s = 4.0*x.h*x.c*op(m,M1_OP_P,k,j,i)*(1.0 - 0.5*b2)*arad_*t*t*t;
+      x.w(m,CLW_GX,k,j,i) = (s > 0.0) ? s/(d*cv + s) : 0.0;
     });
     CleanGhostFill(cln_w, CLW_BT, 4);
     CleanGhostFill(cln_w, CLW_EK, 1);
     CleanStagCsLateral(CLW_EK);
+    if (x.sbi) CleanGhostFill(cln_w, CLW_GX, 1);
   }
   CleanArgs xh = x;   // (the face momentum state, clean_stag_split)
   xh.hi = cln_split;
@@ -1292,6 +1308,8 @@ void RadiationM1::CleanRightHandSide() {
     x.w(m,CLW_B,k,j,i) = x.w(m,CLW_EO,k,j,i) + hckp*arad_*SQR(SQR(t))
                          - rr*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) - work
                          - CleanSourceDivergence(x, m, k, j, i) + sb;
+    // (clean_stag_sbimp: (1 - r) sb(E) in the operator as the cell layout's, Newton form)
+    if (x.sbi) x.w(m,CLW_B,k,j,i) -= (1.0 - rr)*CleanStagBetaE(xh, CLW_EK, m, k, j, i);
     x.w(m,CLW_X,k,j,i) = x.w(m,CLW_EK,k,j,i);
   });
 }
@@ -1301,7 +1319,8 @@ void RadiationM1::CleanRightHandSide() {
 //! \brief new iterate E_k = X and the gas temperature in exchange equilibrium with it
 //! (the absorption takes max(X, 0); the staggered layout also keeps that as the iterate
 //! without its positivity limiter and clean_stag_gflux, the cell layout keeps X, whose
-//! E < 0 its positivity limiter treats).  The cell layout
+//! E < 0 its positivity limiter treats; clean_stag_sbimp: the gas eint takes -sb(X),
+//! CleanStagBetaE).  The cell layout
 //! takes the gas eint change -A of eq. 56 of Ma et al. (2025) (CLW_GM, CLW_EP of
 //! CleanCellRightHandSide, CleanCellNewtonUpdate).
 //! Returns max |dE|/E, |dT|/T (clean_nl_norm = cell: |dE| over max(|E|, the E scale
@@ -1322,6 +1341,16 @@ Real RadiationM1::CleanNewtonUpdate() {
   auto op = opac;
   auto w = cln_w;
   const bool cell = cln_cell, poslim = cln_poslim || cln_gflux;
+  if (cln_sbimp && cln_feedback) {   // (clean_stag_sbimp: the gas takes -sb of X)
+    CleanGhostFill(cln_w, CLW_X, 1);
+    CleanArgs xh = CleanMakeArgs();
+    xh.hi = cln_split;
+    par_for("cln_sbx", DevExeSpace(), 0, nmb-1, ks, ks+nx3-1, js, js+nx2-1, is, is+nx1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      w(m,CLW_EP,k,j,i) -= CleanStagBetaE(xh, CLW_X, m, k, j, i) -
+                           CleanStagBetaE(xh, CLW_EK, m, k, j, i);
+    });
+  }
 
   Real change = 0.0, femax = 0.0;
   Kokkos::parallel_reduce("cln_newton", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),

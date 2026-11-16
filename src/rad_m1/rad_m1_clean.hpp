@@ -98,7 +98,8 @@ constexpr int CLW_RY = 32;   //   al. 2025, eq. 56, G = CLW_GM): the beta terms 
 constexpr int CLW_GM = 35;   // G = 1 - beta^2/2
 constexpr int CLW_EP = 36;   // -(RE E + RY.y) of the solution (eint of the gas)
 constexpr int CLW_JV = 37;   // (1 - r) dA/dbeta/(c^2 rho), dS_p/dbeta/(c^2 rho) of the
-constexpr int CLW_GX = 40;   //   iterate (3 + 1): implicit gas velocity, CleanCellDrag
+constexpr int CLW_GX = 40;   //   iterate (3 + 1): implicit gas velocity, CleanCellDrag;
+                             //   staggered clean_stag_sbimp: GX = r (CleanRightHandSide)
 constexpr int CLW_TM = 41;   // clean_stag_pc = mg: coefficients of E_{j-1}, E_{j+1},
                              //   E_{k-1}, E_{k+1} (4)
 constexpr int CLW_L = 45;    // staggered, cubed sphere: the lateral stress sums Y of the
@@ -145,6 +146,7 @@ struct CleanArgs {
   bool drag;                   // staggered, clean_stag_vimp: implicit gas velocity
   bool upw;                    // staggered, clean_stag_upwind: donor-cell advective flux
   bool fwc;                    // staggered: al, ar and the cross factor from CLF_QL
+  bool sbi;                    // staggered, clean_stag_sbimp: E-row beta terms implicit
   DvceArray5D<Real> op;        // opacities (M1_OP_*)
   int nf;                      // cell layout: number of flux components (dimensions)
   int is, ie, js, je, ks, ke;
@@ -561,7 +563,9 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
     const Real b = -0.25*(1.0 - w)*t0*(1.0 - qd)*x.c*
                    (CleanStagN(x, CLW_BT, dir, m, k, j, i, kl, jl, il) +
                     CleanStagN(x, CLW_BT, dir, m, k, j, i, k, j, i))*x.h*x.c;
-    const Real bl = b*x.op(m,M1_OP_E,kl,jl,il), br = b*x.op(m,M1_OP_E,k,j,i);
+    // (clean_stag_sbimp: of (1 - r) kE E, the emission's response through the gas T)
+    const Real bl = b*x.op(m,M1_OP_E,kl,jl,il)*(x.sbi ? 1.0 - x.w(m,CLW_GX,kl,jl,il) : 1.0);
+    const Real br = b*x.op(m,M1_OP_E,k,j,i)*(x.sbi ? 1.0 - x.w(m,CLW_GX,k,j,i) : 1.0);
     if (!x.upw) {
       al += (low && sl + sr < 0.0) ? 0.0 : (low ? sl + sr : sl);
       ar += (low && sl + sr >= 0.0) ? 0.0 : (low ? sl + sr : sr);
@@ -741,6 +745,15 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
     s += 0.25*tg*x.c*(CleanStagN(x, CLW_BT, dir, m, k, j, i, kl, jl, il) +
                       CleanStagN(x, CLW_BT, dir, m, k, j, i, k, j, i))*
          (x.w(m,CLW_RE,kl,jl,il) + x.w(m,CLW_RE,k,j,i));
+    // (clean_stag_sbimp: less the emission's linear response at E_k, CleanFaceWeights)
+    if (x.sbi) {
+      auto rk = [&](const int kk, const int jj, const int ii) {
+        return x.w(m,CLW_GX,kk,jj,ii)*x.op(m,M1_OP_E,kk,jj,ii)*x.w(m,CLW_EK,kk,jj,ii);
+      };
+      s -= 0.25*tg*x.c*(CleanStagN(x, CLW_BT, dir, m, k, j, i, kl, jl, il) +
+                        CleanStagN(x, CLW_BT, dir, m, k, j, i, k, j, i))*x.h*x.c*
+           (rk(kl, jl, il) + rk(k, j, i));
+    }
   }
   if (x.drag) s += (1.0 - w)*qd*x.fc[dir](m,CLF_DQ,k,j,i);
   // (the advective share 1 - theta_d, CleanFaceWeights; a low-order face keeps the donor)
@@ -827,6 +840,30 @@ Real CleanSourceDivergence(const CleanArgs &x, const int m, const int k, const i
                      CleanFaceSource(x, 2, m, k, j, i));
   }
   return x.h*div;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanStagBetaE
+//! \brief the E-dependent part of the E-row beta terms (Ma et al. 2025, eq. 56) of cell
+//! (k,j,i), sb(E) = hc kE [(beta^2/2 - beta.a/c) E + 2 beta.y(E)], y the mean of the two
+//! faces' momentum F^H/c without its E-independent part (xh: the face momentum state),
+//! E in work vector e (CleanRightHandSide, clean_stag_sbimp)
+
+KOKKOS_INLINE_FUNCTION
+Real CleanStagBetaE(const CleanArgs &xh, const int e, const int m, const int k,
+                    const int j, const int i) {
+  Real b2 = 0.0, ba = 0.0, by = 0.0;
+  for (int n = 0; n < 3; ++n) {
+    const Real bt = xh.w(m,CLW_BT+n,k,j,i);
+    const int dk = (n == 2), dj = (n == 1), di = (n == 0);
+    if (n < xh.nf) {
+      by += bt*0.5*(CleanFaceFlux(xh, e, n, m, k, j, i, false) +
+                    CleanFaceFlux(xh, e, n, m, k+dk, j+dj, i+di, false))/xh.c;
+    }
+    b2 += SQR(bt);
+    ba += bt*xh.w(m,CLW_A1+n,k,j,i)/xh.c;
+  }
+  return xh.h*xh.c*xh.op(m,M1_OP_E,k,j,i)*((0.5*b2 - ba)*xh.w(m,e,k,j,i) + 2.0*by);
 }
 
 //----------------------------------------------------------------------------------------

@@ -3084,6 +3084,7 @@ class RadiationM1 {
   bool cln_fsk = false;         //   CLF_N holds the F solve's F of the iterate
   bool cln_vimp = false;        // staggered: implicit gas velocity (drag), per face
   bool cln_upw = false;         // staggered: donor-cell advective flux, lagged rest
+  bool cln_sbimp = false;       // staggered: the E-row beta terms (1 - r) sb implicit
   bool cln_split = false;       // staggered: energy flux apart from the face momentum
   int cln_nr1 = 0, cln_nr2 = 0;  // staggered: cells E < 0, faces |F| > c E_donor
   Real cln_fe = 0.0, cln_fv = 0.0;  // round-off levels of the Newton changes dE, dv

@@ -185,7 +185,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // kinetic momentum flux in it, with clean_stag_fwork, the F solve in the Newton loop;
     // clean_stag_gflux, the rays' face flux as flux factors; clean_stag_vimp, the gas
     // velocity implicit in the face momentum; clean_stag_upwind, the donor-cell advective
-    // flux; clean_stag_pc = mg | line, the preconditioner of the E solve
+    // flux; clean_stag_pc = mg | line, the preconditioner of the E solve;
+    // clean_stag_sbimp (default off), the Ma et al. beta terms linearised in E
     auto stag = [&](const char *key, const bool def) {
       return !cln_cell && (pin->DoesParameterExist("rad_m1", key) ?
                            pin->GetBoolean("rad_m1", key) : def);
@@ -196,6 +197,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_gflux = stag("clean_stag_gflux", cln_consist);
     cln_vimp = stag("clean_stag_vimp", cln_split);
     cln_upw = stag("clean_stag_upwind", true);
+    cln_sbimp = stag("clean_stag_sbimp", false) && cln_split;
     // (fkin needs the F solve and the rays' consistent energy flux, and fkin and fwork go
     // together; gflux and vimp need the bracket and the split)
     const bool fk = cln_fkin && cln_fsolve && cln_consist && cln_fwork;

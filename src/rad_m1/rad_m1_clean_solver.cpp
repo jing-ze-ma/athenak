@@ -78,6 +78,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.gf = cln_gflux;
   x.drag = cln_vimp && cln_feedback;
   x.upw = cln_upw;
+  x.sbi = cln_sbimp && cln_feedback;
   x.op = opac;
   x.nf = pmy_pack->pmesh->three_d ? 3 : (pmy_pack->pmesh->multi_d ? 2 : 1);
   x.is = indcs.is;
@@ -359,8 +360,9 @@ void RadiationM1::CleanApply(const int src, const int dst) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   CleanGhostFill(cln_w, src, 1);
   CleanStagCsLateral(src);
-  CleanArgs x = CleanMakeArgs();
+  CleanArgs x = CleanMakeArgs(), xh = x;
   x.fwc = true;
+  xh.hi = cln_split;   // (clean_stag_sbimp: the face momentum, not from CLF_QL)
   auto op = opac;
 
   par_for("cln_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -368,6 +370,8 @@ void RadiationM1::CleanApply(const int src, const int dst) {
     const Real qr = x.feedback ? x.w(m,CLW_RY,k,j,i) : 1.0;   // (1 - r)
     x.w(m,dst,k,j,i) = x.w(m,src,k,j,i)*(1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*qr)
                        + CleanFluxDivergence(x, src, m, k, j, i, false);
+    // (clean_stag_sbimp: - (1 - r) sb(E), CleanRightHandSide)
+    if (x.sbi) x.w(m,dst,k,j,i) -= qr*CleanStagBetaE(xh, src, m, k, j, i);
   });
 }
 
