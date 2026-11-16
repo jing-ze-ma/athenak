@@ -52,8 +52,13 @@ constexpr int CLF_HM = 4;    // h-_f
 constexpr int CLF_RC = 5;    // cell layout: RC coefficient (1 - al) c/chi_f (h-free);
                              // staggered: the consistency bracket (CleanStagBracket)
 constexpr int CLF_N = 6;
-constexpr int CLF_SLO = CLF_N + 4;  // staggered, clean_stag_gflux: 1 on a low-order face
+// staggered face slots after CLF_N (clean_stag_fsolve: CLF_N .. CLF_N + 3 hold its F,
+// the dissipation term, F^H and, with clean_stag_fkin, the energy flux's memory d)
+constexpr int CLF_DS = CLF_N + 4;   // clean_stag_fkin: d of the stage-loop start
+constexpr int CLF_SLO = CLF_N + 5;  // clean_stag_gflux: 1 on a low-order face
                                     // (CleanFaceWeights, CleanStagMemUp), else 0
+constexpr int CLF_DB = CLF_N + 6;   // clean_stag_vimp: drag share b = beta/(1 + beta) and
+constexpr int CLF_DQ = CLF_N + 7;   //   the face momentum Q = G - c^2 dm_f of the iterate
 constexpr Real CLN_MEMUP = 1.0/6.0;  // clean_stag_gflux: a memory outflow above this
                                      // share of the donor's E_old goes upwind
 
@@ -126,6 +131,7 @@ struct CleanArgs {
                                // (CLF_N) with its dissipation term (CLF_N + 1)
   bool hi;                     // staggered, clean_stag_split: the face momentum state
                                // F^H (w = 0), not the energy flux
+  bool drag;                   // staggered, clean_stag_vimp: implicit gas velocity
   DvceArray5D<Real> op;        // opacities (M1_OP_*)
   int nf;                      // cell layout: number of flux components (dimensions)
   int is, ie, js, je, ks, ke;
@@ -395,8 +401,11 @@ Real CleanStagMemUp(const CleanArgs &x, const int dir, const int m, const int k,
                     const int j, const int i) {
   if (!x.gf || x.hi) return 0.0;
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
+  // (clean_stag_vimp: G takes theta (1 - b), CleanFaceSource)
+  const Real qd = x.drag ? x.fc[dir](m,CLF_DB,k,j,i) : 0.0;
   const Real g = (1.0 - x.fc[dir](m,CLF_W,k,j,i))*x.fc[dir](m,CLF_TH,k,j,i)*
-                 (x.fc[dir](m,CLF_G,k,j,i) + (x.fd ? x.fc[dir](m,CLF_N+3,k,j,i) : 0.0));
+                 ((1.0 - qd)*x.fc[dir](m,CLF_G,k,j,i) +
+                  (x.fd ? x.fc[dir](m,CLF_N+3,k,j,i) : 0.0));
   if (g == 0.0) return 0.0;
   const bool up = (g > 0.0);   // (the donor: L for an outflow to R)
   const Real eo = up ? x.w(m,CLW_EO,kl,jl,il) : x.w(m,CLW_EO,k,j,i);
@@ -436,7 +445,10 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
     return;
   }
   const Real w = x.hi ? 0.0 : x.fc[dir](m,CLF_W,k,j,i);
-  const Real th = x.fc[dir](m,CLF_TH,k,j,i);
+  // (clean_stag_vimp: the stress takes theta_d = theta + b (1 - theta), the advective
+  // flux 1 - theta_d and the beta term theta (1 - b), CleanStagDrag)
+  const Real t0 = x.fc[dir](m,CLF_TH,k,j,i);
+  const Real qd = x.drag ? x.fc[dir](m,CLF_DB,k,j,i) : 0.0, th = t0 + qd*(1.0 - t0);
   // (clean_stag_gflux, low-order face: the two-point diffusion of D E without the
   // curvature and cross terms, donor-cell advection, the memory upwind: an M-matrix)
   const bool low = x.gf && !x.hi && x.fc[dir](m,CLF_SLO,k,j,i) > 0.0;
@@ -464,7 +476,7 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
     const Real s = 0.5*(1.0 - w)*(1.0 - th);
     const Real sl = s*x.w(m,CLW_A1+dir,kl,jl,il), sr = s*x.w(m,CLW_A1+dir,k,j,i);
     // the beta term th c beta_f (hc kP a T^4 - hc kE E)_f of eq. 57 (Ma et al. 2025)
-    const Real b = -0.25*(1.0 - w)*th*x.c*(x.w(m,CLW_BT+dir,kl,jl,il) +
+    const Real b = -0.25*(1.0 - w)*t0*(1.0 - qd)*x.c*(x.w(m,CLW_BT+dir,kl,jl,il) +
                                           x.w(m,CLW_BT+dir,k,j,i))*x.h*x.c;
     const Real bl = b*x.op(m,M1_OP_E,kl,jl,il), br = b*x.op(m,M1_OP_E,k,j,i);
     al += (low && sl + sr < 0.0) ? 0.0 : (low ? sl + sr : sl);
@@ -594,7 +606,9 @@ Real CleanFaceCross(const CleanArgs &x, const int e, const int dir, const int m,
   if (!x.multi_d || CleanBoundaryFace(x, dir, m, k, j, i)) return 0.0;
   if (x.gf && !x.hi && x.fc[dir](m,CLF_SLO,k,j,i) > 0.0) return 0.0;   // (low-order face)
   const Real w = x.hi ? 0.0 : x.fc[dir](m,CLF_W,k,j,i);
-  const Real th = x.fc[dir](m,CLF_TH,k,j,i);
+  const Real t0 = x.fc[dir](m,CLF_TH,k,j,i);   // (clean_stag_vimp: theta_d, as
+  const Real qd = x.drag ? x.fc[dir](m,CLF_DB,k,j,i) : 0.0;   //  CleanFaceWeights)
+  const Real th = t0 + qd*(1.0 - t0);
   return -(1.0 - w)*th*x.h*x.c*x.c*CleanFaceStress(x, e, dir, m, k, j, i, false);
 }
 
@@ -625,14 +639,17 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
   const Real w = x.hi ? 0.0 : x.fc[dir](m,CLF_W,k,j,i);
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
   const Real th = (1.0 - w)*x.fc[dir](m,CLF_TH,k,j,i);
-  Real s = th*x.fc[dir](m,CLF_G,k,j,i);
+  // (clean_stag_vimp: G and the beta term take theta (1 - b), and b Q joins them)
+  const Real qd = x.drag ? x.fc[dir](m,CLF_DB,k,j,i) : 0.0, tg = th*(1.0 - qd);
+  Real s = tg*x.fc[dir](m,CLF_G,k,j,i);
   if (x.fd && !x.hi) s += th*x.fc[dir](m,CLF_N+3,k,j,i);   // (fkin: of F^H, the last F^H)
   if (CleanStagMemUp(x, dir, m, k, j, i) != 0.0) s = 0.0;   // (gflux: upwind, implicit)
   if (x.consist && !x.hi) s += x.fc[dir](m,CLF_RC,k,j,i);   // (staggered bracket)
   if (x.feedback) {   // (the emission part of the beta term, CleanFaceWeights)
-    s += 0.25*th*x.c*(x.w(m,CLW_BT+dir,kl,jl,il) + x.w(m,CLW_BT+dir,k,j,i))*
+    s += 0.25*tg*x.c*(x.w(m,CLW_BT+dir,kl,jl,il) + x.w(m,CLW_BT+dir,k,j,i))*
          (x.w(m,CLW_RE,kl,jl,il) + x.w(m,CLW_RE,k,j,i));
   }
+  if (x.drag) s += (1.0 - w)*qd*x.fc[dir](m,CLF_DQ,k,j,i);
   return s;
 }
 
