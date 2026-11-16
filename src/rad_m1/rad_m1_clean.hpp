@@ -73,7 +73,8 @@ constexpr int CLW_S = 21;
 constexpr int CLW_Q = 22;
 constexpr int CLW_Y = 23;
 constexpr int CLW_Z = 24;
-constexpr int CLW_N = 25;
+constexpr int CLW_WK = 25;   // work W of the right-hand side
+constexpr int CLW_N = 26;
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanArgs

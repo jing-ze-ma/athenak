@@ -803,7 +803,7 @@ void RadiationM1::CleanRightHandSide() {
     }
     x.w(m,CLW_RR,k,j,i) = rr;
     x.w(m,CLW_B,k,j,i) = x.w(m,CLW_EO,k,j,i) + hckp*arad_*SQR(SQR(t))
-                         - rr*hcke*x.w(m,CLW_EK,k,j,i) - work
+                         - rr*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) - work
                          - CleanSourceDivergence(x, m, k, j, i);
     x.w(m,CLW_X,k,j,i) = x.w(m,CLW_EK,k,j,i);
   });
@@ -812,8 +812,8 @@ void RadiationM1::CleanRightHandSide() {
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationM1::CleanNewtonUpdate
 //! \brief new iterate E_k = X and the gas temperature in exchange equilibrium with it
-//! (a non-positive X enters the exchange as E_k/10; the staggered layout also keeps that
-//! as the iterate, the cell layout keeps X, whose E < 0 its positivity limiter treats).
+//! (the absorption takes max(X, 0); the staggered layout also keeps that as the iterate,
+//! the cell layout keeps X, whose E < 0 its positivity limiter treats).
 //! Returns max |dE|/E, |dT|/T.
 
 Real RadiationM1::CleanNewtonUpdate() {
@@ -843,7 +843,7 @@ Real RadiationM1::CleanNewtonUpdate() {
     const Real e_old = w(m,CLW_EK,k,j,i);
     const Real t_old = w(m,CLW_T,k,j,i);
     const Real x = w(m,CLW_X,k,j,i);
-    const Real ex = (x > 0.0) ? x : 0.1*e_old;
+    const Real ex = fmax(x, 0.0);
     const Real e = cell ? x : ex;
     const Real t = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
                        hc*op(m,M1_OP_P,k,j,i)*arad_,

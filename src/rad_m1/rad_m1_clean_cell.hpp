@@ -15,15 +15,16 @@
 //!   y_b (1 + h c chi) - h chi a_b E + h div fY_b = y_old,b
 //! with a_b = v_b + D_bc v_c (A = a E the advective flux) and W the work of the radiation
 //! force on the gas.  At a face normal to d between cells L and R:
-//!   fE   = c (y_d,L + y_d,R)/2 - al (s/2) (E_R - E_L) + (1 - al) RC
+//!   fE   = c (y_d,L + y_d,R)/2 - al (s/2) (E_R - E_L) + RC
 //!   fY_b = c (D_bd,L E_L + D_bd,R E_R)/2 - al (s/2) (y_b,R - y_b,L)
-//!   RC   = th h c^2 [(g_L + g_R)/2 - ((D_dd E)_R - (D_dd E)_L)/dx_d]
+//!   RC   = (1 - al) th h c^2 [(g_L + g_R)/2 - ((D_dd E)_R - (D_dd E)_L)/dx_d]
 //! with g_i = ((D_dd E)_{i+1} - (D_dd E)_{i-1})/(x_{i+1} - x_{i-1}), dx_d the distance
 //! between the cell centres across the face, th = 1/(1 + h c chi_f),
 //! s = c sqrt(max(D_dd,L, D_dd,R)) and al the dissipation weight.  RC is the momentum
 //! interpolation of the flux to the face: where h c chi >> 1 it turns fE into the compact
-//! diffusion flux.  With force_reference = clean th h c^2 is c/max(chi_f, 2/dx_d), its
-//! steady value, so that a steady state of the scheme does not depend on h.  The jumps
+//! diffusion flux.  With force_reference = clean (1 - al) th h c^2 is its steady value
+//! (1 - al) c/chi_f (CleanDissipationWeight), so that a steady state of the scheme does
+//! not depend on h.  The jumps
 //! (E_R - E_L, y_R - y_L) are those of the face states: first order, or
 //! (clean_recon = plm) the van Leer reconstruction of src/reconstruct/plm.hpp,
 //! u_L^+ = u_L + dl dr/(dl + dr), whose weights dr/(dl + dr), dl/(dl + dr) are taken
@@ -57,7 +58,7 @@
 
 namespace radm1 {
 
-// face variables of the cell layout (arrays cln_fc1..3; CLF_TH as in the staggered one)
+// face variables of the cell layout (arrays cln_fc1..3; CLF_TH: RC weight (1 - al) th)
 constexpr int CLF_AL = 0;    // dissipation weight al
 constexpr int CLF_AF = 2;    // dissipation speed s = c sqrt(max(D_dd,L, D_dd,R))
 constexpr int CLF_LO = 3;    // 1: low-order face (CleanCellM1Jacobian)
@@ -103,9 +104,9 @@ constexpr int CLC_MB = 215;  // B = kP a T^4/kE of the old vector (clean_face_mo
 constexpr int CLC_N = 216;
 
 // dissipation weight candidates (<rad_m1>/clean_alpha)
-constexpr int CLA_TAU = 0;          // A(tau) = (1 - exp(-tau))/tau
-constexpr int CLA_TAU_SENSOR = 1;   // max(A(tau) psi, s_ray)
-constexpr int CLA_TAU_RAY = 2;      // max(A(tau), s_ray)
+constexpr int CLA_TAU = 0;          // A(tau)^2, A = (1 - exp(-tau))/tau
+constexpr int CLA_TAU_SENSOR = 1;   // max(A(tau)^2 psi, s_ray)
+constexpr int CLA_TAU_RAY = 2;      // max(A(tau)^2, s_ray)
 constexpr int CLA_ONE = 3;          // 1
 constexpr int CLA_ZERO = 4;         // 0
 
@@ -130,20 +131,29 @@ int CleanLineSlotP(const int dir) {
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanDissipationWeight
 //! \brief the weight al of the numerical dissipation at a face, from the cell optical
-//! depth tau = chi_f dx_d, the smoothness sensor psi and the rays' streaming weight sray.
+//! depth tau = chi_f dx_d, the smoothness sensor psi and the rays' streaming weight sray,
+//! and rc = (1 - al)/tau, with which the steady RC coefficient (1 - al) c/chi is c dx rc
+//! (analytic to tau = 0 for clean_alpha = tau).  A^2 makes the dissipation O(1/tau^2)
+//! where the physical diffusion flux is O(1/tau), also where the jumps are first order.
 //! tau enters only here (numerical dissipation), never the closure.
 
 KOKKOS_INLINE_FUNCTION
 Real CleanDissipationWeight(const int mode, const Real tau, const Real psi,
-                            const Real sray) {
-  const Real a = (tau > 1.0e-8) ? -expm1(-tau)/tau : 1.0 - 0.5*tau;
+                            const Real sray, Real &rc) {
+  // A = 1 - b tau
+  const Real b = (tau > 1.0e-4) ? (1.0 + expm1(-tau)/tau)/tau
+                                : 0.5 - tau*(1.0 - 0.25*tau)/6.0;
+  const Real a = (tau > 1.0e-4) ? -expm1(-tau)/tau : 1.0 - b*tau;
+  Real al = 0.0;
   switch (mode) {
-    case CLA_TAU: return a;
-    case CLA_TAU_SENSOR: return fmax(a*psi, sray);
-    case CLA_TAU_RAY: return fmax(a, sray);
-    case CLA_ONE: return 1.0;
-    default: return 0.0;
+    case CLA_TAU: al = a*a; break;
+    case CLA_TAU_SENSOR: al = fmax(a*a*psi, sray); break;
+    case CLA_TAU_RAY: al = fmax(a*a, sray); break;
+    case CLA_ONE: al = 1.0; break;
+    default: break;
   }
+  rc = (mode == CLA_TAU) ? b*(1.0 + a) : (1.0 - al)/fmax(tau, 2.0);
+  return al;
 }
 
 //----------------------------------------------------------------------------------------
@@ -530,14 +540,14 @@ Real CleanCellFaceDistance(const CleanArgs &x, const int dir, const int m, const
 //----------------------------------------------------------------------------------------
 //! \fn void CleanCellRhieChow
 //! \brief coefficients q of (D_dd E) in the cells L-1, L, R, R+1 of the RC term of the
-//! interior face (k,j,i) normal to dir with dissipation weight al.  The cell gradients
+//! interior face (k,j,i) normal to dir (none at a low-order face).  The cell gradients
 //! g_L, g_R are central over the centre distances, the face gradient compact.
 
 KOKKOS_INLINE_FUNCTION
-void CleanCellRhieChow(const CleanArgs &x, const int dir, const Real al, const int m,
+void CleanCellRhieChow(const CleanArgs &x, const int dir, const bool lo, const int m,
                        const int k, const int j, const int i, Real q[4]) {
   const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
-  const Real a = (1.0 - al)*x.fc[dir](m,CLF_TH,k,j,i)*x.h*x.c*x.c;
+  const Real a = lo ? 0.0 : x.fc[dir](m,CLF_TH,k,j,i)*x.h*x.c*x.c;
   const Real d0 = CleanCellFaceDistance(x, dir, m, k, j, i);
   const Real dm = CleanCellFaceDistance(x, dir, m, k-dk, j-dj, i-di);
   const Real dp = CleanCellFaceDistance(x, dir, m, k+dk, j+dj, i+di);
@@ -779,7 +789,7 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
   Real al, hs;
   const bool low = CleanFaceDissipation(x, dir, m, k, j, i, al, hs);
   Real q[4];
-  CleanCellRhieChow(x, dir, al, m, k, j, i, q);
+  CleanCellRhieChow(x, dir, low, m, k, j, i, q);
   Real cj[4] = {0.0, -1.0, 1.0, 0.0};
   if (!low) CleanJumpCoefficients(x, dir, 0, m, k, j, i, cj);
   jl[0][0] = -hs*cj[1] + q[1]*CleanDnn(x, dir, m, k, j, i, kl, jl_, il);
@@ -796,7 +806,7 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
   }
   if (low) {
     const Real a = x.fc[dir](m,CLF_AL,k,j,i);
-    const Real g = (1.0 - a)*x.fc[dir](m,CLF_TH,k,j,i)*x.h*x.c*x.c/
+    const Real g = x.fc[dir](m,CLF_TH,k,j,i)*x.h*x.c*x.c/
                    CleanCellFaceDistance(x, dir, m, k, j, i);
     Real hp, hm;
     CleanCellKinetic(x, dir, m, k, j, i, hp, hm);
@@ -1043,7 +1053,7 @@ void CleanCellFaceFlux(const CleanArgs &x, const int v, const int dir, const int
   const Real s = x.consist ? 1.0 - x.fc[dir](m,CLF_WK,k,j,i) : 1.0;
   const Real mu = x.milne ? x.fc[dir](m,CLF_ML,k,j,i) : 0.0;
   Real q[4];
-  CleanCellRhieChow(x, dir, al, m, k, j, i, q);
+  CleanCellRhieChow(x, dir, lo, m, k, j, i, q);
   hs *= s;
   f[0] += (1.0 - mu)*s*(q[3]*CleanDnn(x, dir, m, k, j, i, kp, jp, ip)*x.u(m,v,kp,jp,ip) +
                         q[0]*CleanDnn(x, dir, m, k, j, i, km, jm, im)*x.u(m,v,km,jm,im));
