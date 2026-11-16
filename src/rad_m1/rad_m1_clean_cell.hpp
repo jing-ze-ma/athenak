@@ -173,8 +173,7 @@ Real CleanDissipationWeight(const int mode, const Real tau, const Real psi,
 KOKKOS_INLINE_FUNCTION
 Real CleanDiag(const CleanArgs &x, const int a, const int b, const int m, const int k,
                const int j, const int i) {
-  const int dab[3][3] = {{0, 3, 4}, {3, 1, 5}, {4, 5, 2}};
-  return x.cs(m,CLN_D11+dab[a][b],k,j,i);
+  return x.cs(m,CLN_D11+((a == b) ? a : 2 + a + b),k,j,i);
 }
 
 //----------------------------------------------------------------------------------------
