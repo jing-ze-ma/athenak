@@ -585,7 +585,12 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
     // (clean_stag_split: shared as the two half cells absorb, chi_c/(chi_L + chi_R))
     const int o = 2*side - 1;
     const Real xc = x.op(m,M1_OP_T,k,j,i), xs = xc + x.op(m,M1_OP_T,k+o*dk,j+o*dj,i+o*di);
-    const Real wt = (x.hi && xs > 0.0) ? xc/xs : 0.5;
+    Real wt = (x.hi && xs > 0.0) ? xc/xs : 0.5;
+    if (x.hi && x.sph) {   // (each half cell its absorption of the face momentum, V_f F)
+      const Real vc = x.vol(m,k,j,i), vo = x.vol(m,k+o*dk,j+o*dj,i+o*di);
+      const Real xv = xc*vc + x.op(m,M1_OP_T,k+o*dk,j+o*dj,i+o*di)*vo;
+      wt = (xv > 0.0) ? 0.5*xc*(vc + vo)/xv : 0.5;
+    }
     if (x.hi && CleanBoundaryFace(x, dir, m, kf, jf, iff)) {
       dm += 0.5*x.h*xc*f/x.c;   // (a boundary flux is no F equation: the inner half cell's
       continue;                 //  absorption of it)
