@@ -2959,6 +2959,7 @@ class RadiationM1 {
   int CleanStagRealizable(const int mark);
   void CleanStagForceDiag();
   void CleanStagBracket();
+  void CleanStagFSolve(const int e);
   void CleanWriteBack();
   CleanArgs CleanMakeArgs();
   void CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
@@ -3060,6 +3061,7 @@ class RadiationM1 {
   std::vector<std::array<int, 3>> cln_mgn;        //   and their cells along x1..x3
   Real cln_psi_eps = 1.0e-12;   // clean_psi_eps: floor of the smoothness sensor
   int cln_nnreal = 0;           // cells with |F| > c E in the last cell-layout solve
+  bool cln_fsolve = false;      // staggered: the face F of a separate F solve
   bool cln_split = false;       // staggered: energy flux apart from the face momentum
   bool cln_diagforce = false;   // staggered: momentum of low-order faces (diagnostic)
   int cln_nr1 = 0, cln_nr2 = 0;  // staggered: cells E < 0, faces |F| > c E_donor

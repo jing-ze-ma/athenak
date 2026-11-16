@@ -115,7 +115,8 @@ void RadiationM1::CleanInit() {
   Kokkos::realloc(cln_w, nmb, CLW_N, n3, n2, n1);
   // the cubed sphere takes the half ranges about the face normals from the FV rays
   cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
-  const int nfc = cln_milne ? CLF_KK + 6 : (cln_hk ? CLF_HK + 2 : CLF_N);
+  const int nfc = std::max(cln_milne ? CLF_KK + 6 : (cln_hk ? CLF_HK + 2 : CLF_N),
+                           cln_fsolve ? CLF_N + 2 : 0);
   // the opacities depend on T: tables, or the T exponent (bump) of powerlaw (user)
   cln_opt = cln_cell && !opac_freeze && !opac_zero && (opacity_type == M1_OPAC_TABLE ||
             (opacity_type != M1_OPAC_CONST && opac_b != 0.0));
@@ -1438,6 +1439,127 @@ void RadiationM1::CleanStagBracket() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagFSolve
+//! \brief clean_stag_fsolve (with clean_stag_split): with E of the solution, the face
+//! momentum F on its own, one unknown per face, from
+//!   (F - G)/h + c^2 [P_R - P_L]/dx_f = -c chi_f (F - A) (+ the beta terms),
+//!   P_i = (D E)_i - alpha_i [F]_i/(2c),  [F]_i the jump of the two faces of cell i,
+//! the cell layout's dissipation (fY = c (D E) - al (c/2) [y]) on the stress: per face
+//!   F (1/theta + h c (al_L + al_R)/(2 dx_f)) - h c (al_L F_{f-1} + al_R F_{f+1})/(2 dx_f)
+//!     = F^H/theta,
+//! al_i = max(A(tau_i)^2, w of its faces), 1 where a face of the cell has
+//! |F^H| > c E_donor.  al = 0 gives F^H (a face with al_L = al_R = 0 keeps it exactly).
+//! The lines along each direction are tridiagonal (Thomas per MeshBlock line; the end
+//! faces next to other MeshBlocks or a periodic wrap take the neighbours' F lagged,
+//! iterated with the ghost exchange).  CLF_N holds F, CLF_N + 1 the dissipation term
+//! (al_R [F]_R - al_L [F]_L)/(2 c dx_f) the gas momentum takes (CleanMomentumChange).
+
+void RadiationM1::CleanStagFSolve(const int e) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanArgs x = CleanMakeArgs(), xh = x;
+  xh.hi = true;
+  auto op = opac;
+  auto al = cln_v;
+  for (int dir = 0; dir < x.nf; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    auto fc = x.fc[dir];
+    // F^H of every face (CLF_N) and al of every cell (cln_v slot 0)
+    par_for("cln_fs0", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      fc(m,CLF_N,k,j,i) = CleanFaceFlux(xh, e, dir, m, k, j, i, true);
+      fc(m,CLF_N+1,k,j,i) = 0.0;
+    });
+    par_for("cln_fs1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real rc;
+      const Real tau = op(m,M1_OP_T,k,j,i)*CleanCellFaceDistance(x, dir, m, k, j, i);
+      Real a = CleanDissipationWeight(CLA_TAU, tau, 0.0, 0.0, rc);
+      for (int s = 0; s < 2; ++s) {
+        const int kf = k + s*dk, jf = j + s*dj, iff = i + s*di;
+        a = fmax(a, fc(m,CLF_W,kf,jf,iff));
+        const Real f = fc(m,CLF_N,kf,jf,iff);
+        const Real ed = (f > 0.0) ? x.w(m,e,kf-dk,jf-dj,iff-di) : x.w(m,e,kf,jf,iff);
+        if (!CleanBoundaryFace(x, dir, m, kf, jf, iff) &&
+            !(fabs(f) <= (1.0 + 1.0e-12)*x.c*fmax(ed, 0.0))) a = 1.0;
+      }
+      al(m,0,k,j,i) = a;
+      x.w(m,CLW_Y,k,j,i) = fc(m,CLF_N,k,j,i);   // (F of the low face, for the exchange)
+    });
+    CleanGhostFill(cln_v, 0, 1);
+    CleanGhostFill(cln_w, CLW_Y, 1);
+    const int n = (dir == 0) ? ie - is + 1 : ((dir == 1) ? je - js + 1 : ke - ks + 1);
+    const int na = (dir == 0) ? je - js + 1 : ie - is + 1;
+    const int nb = (dir == 2) ? je - js + 1 : ke - ks + 1;
+    for (int it = 0; it < 64; ++it) {
+      Real dmax = 0.0, fmx = 0.0;
+      Kokkos::parallel_reduce("cln_fs2", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                              (nmb1 + 1)*na*nb),
+      KOKKOS_LAMBDA(const int idx, Real &d_max, Real &f_max) {
+        const int m = idx/(na*nb), a = idx%na, b = (idx/na)%nb;
+        // the line: faces t = 0..n along dir
+        auto face = [&](const int t, int &k, int &j, int &i) {
+          if (dir == 0) {i = is + t; j = js + a; k = ks + b;}
+          if (dir == 1) {j = js + t; i = is + a; k = ks + b;}
+          if (dir == 2) {k = ks + t; i = is + a; j = js + b;}
+        };
+        Real cp = 0.0, dp = 0.0;
+        for (int t = 0; t <= n; ++t) {
+          int k, j, i;
+          face(t, k, j, i);
+          Real lo = 0.0, hi = 0.0, dg = 1.0, r = fc(m,CLF_N,k,j,i);
+          const bool bd = CleanBoundaryFace(x, dir, m, k, j, i);
+          const Real all = al(m,0,k-dk,j-dj,i-di), alr = al(m,0,k,j,i);
+          if (!bd && (all > 0.0 || alr > 0.0)) {
+            const Real g = 0.5*x.h*x.c/CleanCellFaceDistance(x, dir, m, k, j, i);
+            const Real it_ = 1.0/fc(m,CLF_TH,k,j,i);
+            lo = -g*all;
+            hi = -g*alr;
+            dg = it_ - lo - hi;
+            r = fc(m,CLF_N,k,j,i)*it_;
+            // (the faces beyond a MeshBlock line end: the neighbours', lagged)
+            if (t == 0) {r -= lo*x.w(m,CLW_Y,k-dk,j-dj,i-di); lo = 0.0;}
+            if (t == n) {r -= hi*x.w(m,CLW_Y,k+dk,j+dj,i+di); hi = 0.0;}
+          }
+          const Real den = dg - lo*cp;
+          cp = hi/den;
+          dp = (r - lo*dp)/den;
+          x.w(m,CLW_CP,k,j,i) = cp;
+          x.w(m,CLW_R,k,j,i) = dp;
+        }
+        Real fn = 0.0;
+        for (int t = n; t >= 0; --t) {
+          int k, j, i;
+          face(t, k, j, i);
+          const Real fv = x.w(m,CLW_R,k,j,i) - ((t < n) ? x.w(m,CLW_CP,k,j,i)*fn : 0.0);
+          fn = fv;
+          d_max = fmax(d_max, fabs(fv - x.w(m,CLW_Y,k,j,i)));
+          f_max = fmax(f_max, fabs(fv));
+          x.w(m,CLW_Y,k,j,i) = fv;
+        }
+      }, Kokkos::Max<Real>(dmax), Kokkos::Max<Real>(fmx));
+      CleanGhostFill(cln_w, CLW_Y, 1);
+      if (CleanReduce(dmax, true) <= 1.0e-14*CleanReduce(fmx, true)) break;
+    }
+    // F and the dissipation term of every face
+    par_for("cln_fs3", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real f = x.w(m,CLW_Y,k,j,i);
+      fc(m,CLF_N,k,j,i) = f;
+      if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
+      const Real all = al(m,0,k-dk,j-dj,i-di), alr = al(m,0,k,j,i);
+      if (!(all > 0.0 || alr > 0.0)) return;
+      fc(m,CLF_N+1,k,j,i) = (alr*(x.w(m,CLW_Y,k+dk,j+dj,i+di) - f) -
+                             all*(f - x.w(m,CLW_Y,k-dk,j-dj,i-di)))/
+                            (2.0*x.c*CleanCellFaceDistance(x, dir, m, k, j, i));
+    });
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanStagForceDiag
 //! \brief diagnostic (clean_diag_force, staggered): on the low-order faces (w = 1) the
 //! momentum a face hands to the gas, -[(F - G)/c^2 + h d_n(D E)] (CleanMomentumChange),
@@ -1523,6 +1645,10 @@ void RadiationM1::CleanWriteBack() {
   CleanArgs x = CleanMakeArgs(), xh = x;
   xh.hi = cln_split;   // (clean_stag_split: the faces store the momentum state)
   auto kk = (t2_solve == M1_T2S_STAGE1) ? t2k2 : t2k1;
+  if (cln_fsolve && cln_split) {   // the face F of the F solve and its dissipation
+    CleanStagFSolve(CLW_X);
+    xh.fs = true;
+  }
 
   // face fluxes of the solution
   for (int dir = 0; dir < 3; ++dir) {
@@ -1534,7 +1660,7 @@ void RadiationM1::CleanWriteBack() {
     const int tf = M1_T2_F1 + dir;
     par_for("cln_wbface", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real f = CleanFaceFlux(xh, CLW_X, dir, m, k, j, i, true);
+      const Real f = xh.fs ? fc(m,CLF_N,k,j,i) : CleanFaceFlux(xh, CLW_X, dir, m, k, j, i, true);
       if (slopes) kk(m,tf,k,j,i) = (f - fc(m,CLF_G,k,j,i))/h;
       f0(m,k,j,i) = f;
     });
