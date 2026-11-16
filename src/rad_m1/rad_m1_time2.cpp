@@ -3386,7 +3386,8 @@ void RadiationM1::Time2VetColExtrap2() {
 //! \fn int RadiationM1::CleanRstNq
 //! \brief closure components per record in the restart files of the clean extrap history
 //! and clean_rot_ring: the cell layout writes the first CLN_JR (push 16's files), the
-//! staggered layout all CLN_N (CLN_JR, the rays' J below clean_ray_min, is staggered only)
+//! staggered layout all CLN_N (CLN_JR, the rays' J below clean_ray_min, is staggered
+//! only)
 
 int RadiationM1::CleanRstNq() const {
   return cln_cell ? CLN_JR : CLN_N;

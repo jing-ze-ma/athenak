@@ -1798,9 +1798,9 @@ void RadiationM1::CleanStagFSolve(const int e) {
     // multi-D) they are a block-Jacobi iteration, slow where the rays stream (a beam
     // crosses one row per pass); the change is weighted by max(1 - w, 1 - theta), the
     // share of F the energy flux and the gas take.  With gas coupling they go on to 256
-    // passes, unless the change stalls (less than 10% in 8 passes); without, F enters only
-    // the energy flux's memory, and they stop once the rate of the last 4 passes cannot
-    // reach 1e-14 within 64
+    // passes, unless the change stalls (less than 10% in 8 passes); without, F enters
+    // only the energy flux's memory, and they stop once the rate of the last 4 passes
+    // cannot reach 1e-14 within 64
     const bool wq = fk && x.multi_d, gas = cln_feedback;
     Real q = 0.0, q8[8] = {};
     int it = 0;
