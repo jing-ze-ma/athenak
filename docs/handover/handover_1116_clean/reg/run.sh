@@ -1,5 +1,5 @@
 #!/bin/bash
-# run.sh ARM BIN: the 29 runs of cmds.txt for the athena binary BIN in arm ARM (dirs
+# run.sh ARM BIN: the 30 runs of cmds.txt for the athena binary BIN in arm ARM (dirs
 # named after ARM), NPAR at a time (default 30: one 72+ core node in ~2 min)
 ARM=$1; BIN=$(readlink -f $2)
 export REG=$(cd "$(dirname "$0")" && pwd) ARM BIN

@@ -27,3 +27,4 @@ cd $REG/rst && ./rt.sh ${ARM}_hcyl $BIN $REG/rst/hcyl.athinput 8 mesh/nx1=128 me
 cd $REG/rst && ./rt.sh ${ARM}_sp3mb $BIN $REG/rst/sp3.athinput 8 rad_m1/force_reference=clean problem/rh_seed=1.0e-3 meshblock/nx1=24
 cd $REG/rst && ./rt.sh ${ARM}_feed $BIN $REG/rst/feed.athinput 8 rad_m1/clean_face_model=milne rad_m1/force_reference=clean
 cd $REG/rst && ./rt.sh ${ARM}_thin1 $BIN $REG/rst/thin1.athinput 8
+cd $REG/rst && ./rtn.sh ${ARM}_rot1s $BIN $REG/rst/rot1s.athinput 6 20 10

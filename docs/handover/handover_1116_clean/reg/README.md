@@ -2,7 +2,7 @@
 
 This is the CPU matrix that Orion ran before every clean-cc push (pushes 7-14). It needs
 python3 with numpy and scipy, and it takes about 2 min on one node with 72 or more cores
-(29 runs, 30 at a time).
+(30 runs, 30 at a time).
 
 ## Run
 
@@ -36,13 +36,14 @@ compiler. Set ATHENA_VIS to a vis/python with bin_convert.py; the default is cc/
 | flz q / Q | fb/fb.py flz, chi=1 rotating box, fv1 | L_z(gas+rad) and E drift round-off, iterations |
 | rw x4 | rw/*/rw.athinput, amp +-1e-3, N32 / N64 | odd (linear) and even parts vs baseline (bitwise unless physics changed) |
 | RT hcyl sp3mb feed thin1 | rst/rt.sh: 16 cycles vs 8 + restart + 8 | `hydro_u same m1 same` (bitwise restart; the predictor-increment warning text is stale) |
+| RT rot1s | rst/rtn.sh: rot1s (thin1 with rotating vet_gd fv1 rays, vet_rotate_avg 4 + advance + xfade, so clean_rot_ring = live by default), 20 cycles vs 10 + restart + 10 | `hydro_u same m1 same` (catches the push-16 ring-default restart bug, fixed 0a03129a8) |
 | wb fv1 fv lld cart | wb.sh: rhse at rest, force_reference = clean + hydro WB, t = 4 | max v/c_s at solver tolerance: ~8e-8, 7e-8, 6e-8, 1.9e-7 |
 
 ## Pass criteria
 
 - rc = 0 everywhere, and **zero CLEAN WARNING** in every run (`cmp.sh` total, the `warn`
   column of `ana.sh`, wb.sh).
-- RT: all four `hydro_u same m1 same`.
+- RT: all five (four rt.sh + rot1s) `hydro_u same m1 same`.
 - Pure refactors, scheduling, GPU or initialiser fixes: `cmp.sh NEW OLD` gives `differ 0`
   for every run directory.
 - Physics changes: state which decks change and why. v = 0 decks must stay bitwise unless
@@ -56,4 +57,4 @@ compiler. Set ATHENA_VIS to a vis/python with bin_convert.py; the default is cc/
 run.sh (per-arm deck copies, then cmds.txt with $REG $BIN $ARM), job.sbatch (set partition,
 modules), ana.sh, cmp.sh, wb.sh; gtg.py + geo/gt.py (sp wedge), fb/ (flz), energy.py,
 cs_tests/ct.py, cc/ (run_ladder.sh, score7.py, decks, ana: exact solutions at 128 cells,
-others by `python3 hcyl.py exact` / shd.py's cache), rst/ (rt.sh, cmpbin.py, decks), wb/.
+others by `python3 hcyl.py exact` / shd.py's cache), rst/ (rt.sh, rtn.sh, cmpbin.py, decks), wb/.
