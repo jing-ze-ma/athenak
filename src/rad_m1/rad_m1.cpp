@@ -216,6 +216,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_stagmg = !cln_cell && (pc == "mg");}
+    // (read only when named) staggered: the opacities of the iterate's T in the Newton
+    // loop, as the cell layout; a thin cell keeps them within this relative change
+    if (!cln_cell && pin->DoesParameterExist("rad_m1","clean_stag_opac")) {
+      cln_sopt = pin->GetReal("rad_m1","clean_stag_opac");
+    }
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",false);
     cln_posghost = pin->GetOrAddBoolean("rad_m1","clean_pos_ghost",false);
     {std::string cl = pin->GetOrAddString("rad_m1","clean_closure",

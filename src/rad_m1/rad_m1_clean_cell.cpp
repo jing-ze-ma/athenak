@@ -185,7 +185,10 @@ void RadiationM1::CleanCellFaceSpeeds() {
 //! opacity law that depends on T; the density is that of the stage), with the
 //! derivatives of rho kappa_P and rho kappa_E with T (CLW_DK, one-sided differences) for
 //! the exchange linearisation of CleanCellRightHandSide, so that the converged iterate
-//! solves the stage with the opacities of its own temperature
+//! solves the stage with the opacities of its own temperature.  Staggered
+//! (clean_stag_opac): a thin cell (h c chi < 1) keeps its opacities unless one changes by
+//! more than clean_stag_opac relative, and the faces take the new theta (the rest of
+//! CleanFaceCoefficients, G, h+-, the F solve's start and the bracket, stays)
 
 void RadiationM1::CleanCellOpacity() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -203,6 +206,7 @@ void RadiationM1::CleanCellOpacity() {
   const Real kp = kappa_p, kev = kappa_e, kf = kappa_f, ks_ = kappa_s;
   const Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
   const bool osc = vscat;
+  const Real ftol = cln_cell ? -1.0 : cln_sopt, hc = dt_sub*c_light;
   par_for("clc_opac", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = uh(m,IDN,k,j,i), t = w(m,CLW_T,k,j,i), dt = 1.0e-6*t;
@@ -210,6 +214,15 @@ void RadiationM1::CleanCellOpacity() {
     for (int n = 0; n < 2; ++n) {
       M1CellOpacities(otype, ot, eos, d, t + n*dt, kp, kev, kf, ks_, rref, tref, aa, bb,
                       o[n][0], o[n][1], o[n][2], o[n][3]);
+    }
+    if (ftol >= 0.0 && hc*op(m,M1_OP_T,k,j,i) < 1.0) {   // (staggered: a thin cell)
+      auto small = [&](const Real a, const Real b) {return fabs(a - b) <= ftol*fabs(b);};
+      if (small(d*o[0][0], op(m,M1_OP_P,k,j,i)) &&
+          small(d*o[0][1], op(m,M1_OP_E,k,j,i)) &&
+          small(d*(o[0][2] + o[0][3]), op(m,M1_OP_T,k,j,i))) {
+        for (int n = 0; n < 2; ++n) w(m,CLW_DK+n,k,j,i) = 0.0;   // (frozen)
+        return;
+      }
     }
     op(m,M1_OP_P,k,j,i) = d*o[0][0];
     op(m,M1_OP_E,k,j,i) = d*o[0][1];
@@ -220,6 +233,18 @@ void RadiationM1::CleanCellOpacity() {
     }
   });
   CleanGhostFill(opac, 0, opac.extent_int(1), false);
+  if (cln_cell) return;
+  for (int dir = 0; dir < 3; ++dir) {   // (staggered: theta of the faces)
+    if ((dir == 1 && !pmy_pack->pmesh->multi_d) ||
+        (dir == 2 && !pmy_pack->pmesh->three_d)) continue;
+    auto fc = (dir == 0) ? cln_fc1 : ((dir == 1) ? cln_fc2 : cln_fc3);
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    par_for("cln_sopt_th", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real chi = 0.5*(op(m,M1_OP_T,k,j,i) + op(m,M1_OP_T,k-dk,j-dj,i-di));
+      fc(m,CLF_TH,k,j,i) = 1.0/(1.0 + hc*chi);
+    });
+  }
 }
 
 //----------------------------------------------------------------------------------------

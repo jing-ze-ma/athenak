@@ -120,7 +120,8 @@ void RadiationM1::CleanInit() {
                            (cln_vimp ? CLF_DQ + 1 : (cln_gflux ? CLF_SLO + 1 :
                            ((cln_fsolve && cln_fkin) ? CLF_DS + 1 : CLF_QL + 3))));
   // the opacities depend on T: tables, or the T exponent (bump) of powerlaw (user)
-  cln_opt = cln_cell && !opac_freeze && !opac_zero && (opacity_type == M1_OPAC_TABLE ||
+  cln_opt = (cln_cell || cln_sopt >= 0.0) && !opac_freeze && !opac_zero &&
+            (opacity_type == M1_OPAC_TABLE ||
             (opacity_type != M1_OPAC_CONST && opac_b != 0.0));
   Kokkos::realloc(cln_fc1, nmb, nfc, n3, n2, n1);
   Kokkos::realloc(cln_fc2, nmb, nfc, n3, n2, n1);
@@ -702,7 +703,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     if (cell) CleanCellFirstIterate();
     if (cln_opt && cln_feedback) {
       CleanCellOpacity();
-      CleanCellFaceSpeeds();
+      if (cell) CleanCellFaceSpeeds();
     }
     if (cln_feedback) CleanAdvectiveCoefficients();
     if (cln_vimp && cln_feedback) CleanStagDrag(true);
@@ -724,7 +725,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       }
       if (cln_opt && cln_feedback && inl > 0) {   // the opacities of the iterate's T
         CleanCellOpacity();
-        CleanCellFaceSpeeds();
+        if (cell) CleanCellFaceSpeeds();
       }
       if (cell) {
         if (cln_hk && (inl == 0 || clos || (cln_opt && cln_feedback))) {
@@ -1053,6 +1054,7 @@ void RadiationM1::CleanRightHandSide() {
   CleanArgs xh = x;   // (the face momentum state, clean_stag_split)
   xh.hi = cln_split;
   xh.fs = cln_fsk;
+  const bool opt = cln_opt && cln_feedback;
   par_for("cln_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real t = x.w(m,CLW_T,k,j,i);
@@ -1088,7 +1090,11 @@ void RadiationM1::CleanRightHandSide() {
       const Real d = uh(m,IDN,k,j,i);
       Real e, p, chi_rho, chi_t, cv;
       eos.ThermoAt(d, t, e, p, chi_rho, chi_t, cv);
-      const Real s = 4.0*hckp*arad_*t*t*t;
+      Real s = 4.0*hckp*arad_*t*t*t;
+      if (opt) {   // (clean_stag_opac: with kP(T), kE(T), as CleanCellRightHandSide)
+        s = fmax(s + x.h*x.c*gm*(x.w(m,CLW_DK,k,j,i)*arad_*SQR(SQR(t)) -
+                              x.w(m,CLW_DK+1,k,j,i)*fmax(x.w(m,CLW_EK,k,j,i), 0.0)), 0.0);
+      }
       rr = (s > 0.0) ? s/(d*cv + s) : 0.0;   // (no exchange: none, also where T = 0)
       // (1 - r = d cv/(d cv + s) without cancellation, as implicit_src_stable)
       x.w(m,CLW_RY,k,j,i) = (s > 0.0) ? d*cv/(d*cv + s) : 1.0;
