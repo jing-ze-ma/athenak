@@ -1269,7 +1269,7 @@ void RadiationM1::CleanGdFaceSums() {
           rflux(m, k, j, i + 1, q);
           continue;
         }
-        Real g[3] = {0.0, 0.0, 0.0}, qi[3] = {q[1], q[2], q[3]};
+        Real g[2] = {0.0, 0.0}, qi = q[2];
         // the exchange V chi (S - J, -H_b) and the lateral outflow of the cell
         const Real chi = x.vol(m,k,j,i)*exp(cw_(m,0,k+ok,j+og,i));
         const Real s0 = exp(cw_(m,1,k+ok,j+og,i));
@@ -1290,25 +1290,20 @@ void RadiationM1::CleanGdFaceSums() {
             const int kc = (axi && dir == 2) ? k : kk;
             q[0] += sg*cs(m,nf,kc,jj,i);
             for (int b = 0; b < 3; ++b) {
-              const Real wt = (dir == 2 && axi) ? 0.0 : ((dir == 1 && b == 2) ?
-                              sin(x.x2f(m,jj))/sin(x.x2v(m,j)) : 1.0);
-              g[b] += sg*wt*cs(m,nf+1+b,kc,jj,i);
+              if (b < 2) g[b] += ((dir == 2 && axi) ? 0.0 : sg*cs(m,nf+1+b,kc,jj,i));
               for (int c = 0; c < 3; ++c) {
                 const Real r = sg*cs(m,nf+1+c,kc,jj,i)*(ef[c][0]*e[b][0] +
                                ef[c][1]*e[b][1] + ef[c][2]*e[b][2]);
                 q[1+b] += r;
-                g[b] -= r;
+                if (b < 2) g[b] -= r;
               }
             }
           }
         }
         if (fv) rflux(m, k, j, i + 1, q);
-        // the angular-momentum weights r_f/r of the y_theta, y_phi rows on the r faces
-        for (int b = 1; b < 3; ++b) {
-          g[b] += q[1+b]*(1.0 - x.x1f(m,i+1)/x.x1v(m,i)) -
-                  qi[b]*(1.0 - x.x1f(m,i)/x.x1v(m,i));
-        }
-        for (int b = 0; b < 3; ++b) cs(m,CLN_G+b,k,j,i) = g[b];
+        // the angular-momentum weight r_f/r of the y_theta row on the r faces
+        g[1] += q[2]*(1.0 - x.x1f(m,i+1)/x.x1v(m,i)) - qi*(1.0 - x.x1f(m,i)/x.x1v(m,i));
+        for (int b = 0; b < 2; ++b) cs(m,CLN_G+b,k,j,i) = g[b];
       }
       if (xf_(m) & 4) {
         // a reflecting top: the rays' remainder at the wall (their non-conservation, all
