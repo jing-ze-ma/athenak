@@ -66,9 +66,6 @@ constexpr int CLF_DB = CLF_N + 9;   // clean_stag_vimp: drag share b = beta/(1 +
 constexpr int CLF_DQ = CLF_N + 10;  //   the face momentum Q = G - c^2 dm_f of the iterate
 constexpr Real CLN_MEMUP = 1.0/6.0;  // clean_stag_gflux: a memory outflow above this
                                      // share of the donor's E_old goes upwind
-constexpr int CLF_KS = CLF_N + 11;  // clean_stag_fkin, cubed sphere: the kinetic
-                                    // transport's coefficients between rows (+9,
-                                    // CleanStagCsKin)
 
 // work vectors (array cln_w)
 constexpr int CLW_EO = 0;    // E of the old vector

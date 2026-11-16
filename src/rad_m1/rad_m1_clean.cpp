@@ -16,7 +16,6 @@
 #include <iostream>
 #include <limits>
 #include <string>
-#include <utility>
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -239,16 +238,14 @@ void RadiationM1::CleanInit() {
   Kokkos::realloc(cln_s, nmb, CLN_N, n3, n2, n1);
   // (staggered on the cubed sphere: the cell terms and faces of CleanStagFSolveCs)
   const bool stcs = pmy_pack->pmesh->use_cubed_sphere && !cln_cell;
-  Kokkos::realloc(cln_v, nmb, stcs ? 33 : 3, n3, n2, n1);
+  Kokkos::realloc(cln_v, nmb, stcs ? 15 : 3, n3, n2, n1);
   Kokkos::realloc(cln_w, nmb, CLW_N, n3, n2, n1);
   // the cubed sphere takes the half ranges about the face normals from the FV rays
   cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
   const int nfc = std::max(cln_milne ? CLF_KK + 6 : (cln_hk ? CLF_HK + 2 : CLF_N),
                            cln_cell ? (cln_fsolve ? CLF_N + 4 : 0) :
-                           ((cln_fsolve && cln_fkin && pmy_pack->pmesh->use_cubed_sphere)
-                            ? CLF_KS + 9 :
                            (cln_vimp ? CLF_DQ + 1 : (cln_gflux ? CLF_SLO + 1 :
-                           ((cln_fsolve && cln_fkin) ? CLF_DS + 1 : CLF_QL + 3)))));
+                           ((cln_fsolve && cln_fkin) ? CLF_DS + 1 : CLF_QL + 3))));
   // the opacities depend on T: tables, or the T exponent (bump) of powerlaw (user)
   cln_opt = (cln_cell || cln_sopt >= 0.0) && !opac_freeze && !opac_zero &&
             (opacity_type == M1_OPAC_TABLE ||
@@ -1920,63 +1917,6 @@ void RadiationM1::CleanStagFSolve(const int e) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real CleanStagCsKin
-//! \brief clean_stag_fkin on the cubed sphere: the rays' kinetic transport of the
-//! momentum F_n of face (k,j,i) normal to dir through the lateral faces g of its two half
-//! cells C = L, R (families b != dir), toward the face f' of the next row: per half face
-//! (h F_n + h' F_n')/V_f with h, h' the outgoing and incoming half ranges of g about its
-//! outward normal times w_C A_g/2, which the owner of C stores (cln_v 21 + 2 n, n = 2 q +
-//! hi of g in its axes, CleanCsSlot; none on physical boundaries): the streaming share
-//! of the lateral stress D E (CleanStagCsLateral).  With set, the sum of h (CLF_KS) and
-//! for each f' its h' sum and s (n + 1) of its slot n in the cell of the next row (sign
-//! s, CleanCsSlot) are stored in the face; the return is sum h' F_n', F_n' from the slots
-//! v0 of cln_v.
-
-KOKKOS_INLINE_FUNCTION
-static Real CleanStagCsKin(const CleanArgs &x, const DvceArray5D<Real> &v, const int v0,
-                           const int dir, const int m, const int k, const int j,
-                           const int i, const bool set) {
-  const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
-  const int kl = k - dk, jl = j - dj, il = i - di;
-  const bool lin = (dir == 0) ? (i > x.is) : ((dir == 1) ? (j > x.js) : (k > x.ks));
-  const bool rin = (dir == 0) ? (i <= x.ie) : ((dir == 1) ? (j <= x.je) : (k <= x.ke));
-  // (the next row's F from the cell of an active half cell)
-  const int kc = (rin || !lin) ? k : kl, jc = (rin || !lin) ? j : jl;
-  const int ic = (rin || !lin) ? i : il;
-  auto fc = x.fc[dir];
-  const Real vf = 0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,kl,jl,il));
-  Real t = 0.0, a = 0.0;
-  int nb = 0;
-  for (int b = 0; b < 3; ++b) {
-    if (b == dir) continue;
-    const int bk = (b == 2), bj = (b == 1), bi = (b == 0);
-    for (int o = -1; o <= 1; o += 2, ++nb) {
-      const int ko = kc + o*bk, jo = jc + o*bj, io = ic + o*bi;
-      if (set) {
-        Real s, h = 0.0;
-        const int n = CleanCsSlot(x, dir, m, k+o*bk, j+o*bj, i+o*bi, ko, jo, io, false,
-                                  s);
-        for (int c = 0; c < 2; ++c) {   // (the half cells L, R)
-          const int kk = c ? k : kl, jj = c ? j : jl, ii = c ? i : il;
-          Real sg;
-          const int g = CleanCsSlot(x, b, m, kk+(o > 0)*bk, jj+(o > 0)*bj, ii+(o > 0)*bi,
-                                    kk, jj, ii, false, sg);
-          a += v(m,21+2*g,kk,jj,ii)/vf;
-          h += v(m,22+2*g,kk,jj,ii)/vf;
-        }
-        fc(m,CLF_KS+1+2*nb,k,j,i) = h;
-        fc(m,CLF_KS+2+2*nb,k,j,i) = s*(n + 1);
-      }
-      const Real sn = fc(m,CLF_KS+2+2*nb,k,j,i);
-      const int n = static_cast<int>(fabs(sn)) - 1;
-      t += fc(m,CLF_KS+1+2*nb,k,j,i)*((sn > 0.0) ? 1.0 : -1.0)*v(m,v0+n,ko,jo,io);
-    }
-  }
-  if (set) fc(m,CLF_KS,k,j,i) = a;
-  return t;
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanStagFSolveCs
 //! \brief clean_stag_fsolve on the cubed sphere: the F solve of CleanStagFSolve for the
 //! face-normal momentum F_n.  The cell terms of a line (the dissipation weight al, the
@@ -1987,9 +1927,11 @@ static Real CleanStagCsKin(const CleanArgs &x, const DvceArray5D<Real> &v, const
 //! face of the next cell from that cell's owner, lagged (cln_v, in the owner's axes,
 //! CleanCsSlot: across a seam an x2 line may continue as an x3 line), so the lines of all
 //! directions iterate together.  A face shared by two MeshBlocks then takes the solution
-//! of the one with the lower gid: both see the same F to the bit.  With clean_stag_fkin
-//! the streaming share w of the lateral stress D E is the rays' kinetic transport of F_n
-//! (CleanStagCsKin, the next rows' F lagged from a copy of the slots, cln_v 15..20).
+//! of the one with the lower gid: both see the same F to the bit.  The lateral stress
+//! keeps D E (no transverse kinetic stress of clean_stag_fkin on the cubed sphere: its
+//! lateral Gauss sums are also the non-orthogonal correction of the normal stress, which
+//! a kinetic transport of F does not reproduce, and a static envelope would lose its
+//! balance on the panel-tangent faces).
 
 void RadiationM1::CleanStagFSolveCs(const int e) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1999,9 +1941,7 @@ void RadiationM1::CleanStagFSolveCs(const int e) {
   CleanArgs x = CleanMakeArgs(), xh = x;
   xh.hi = true;
   auto op = opac;
-  // (cln_v: cell terms of family q, 3 q + 0..2; its faces' F, 9 + 2 q + hi, and their
-  // copy, 15 + ...; fkin: its faces' half ranges, 21 + 2 (2 q + hi) + 0, 1)
-  auto v = cln_v;
+  auto v = cln_v;   // (cell terms of family q: 3 q + 0..2; its faces' F: 9 + 2 q + hi)
   const bool fk = cln_fkin, dok = cln_dok;
   const Real c1lo = cln_c0, c1hi = cln_c1;
   for (int dir = 0; dir < 3; ++dir) {
@@ -2011,15 +1951,6 @@ void RadiationM1::CleanStagFSolveCs(const int e) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       fc(m,CLF_N,k,j,i) = CleanFaceFlux(xh, e, dir, m, k, j, i, true);
       fc(m,CLF_N+1,k,j,i) = 0.0;
-      if (!fk || CleanBoundaryFace(x, dir, m, k, j, i)) return;
-      // (fkin: the w share of the lateral stress of F^H, CleanFaceStress)
-      const int kl = k - dk, jl = j - dj, il = i - di;
-      auto wc = [&](const int kk, const int jj, const int ii) {
-        return CleanSmoothStep((x.cs(m,CLN_C1,kk,jj,ii) - c1lo)/(c1hi - c1lo));
-      };
-      fc(m,CLF_N+1,k,j,i) = (wc(kl, jl, il)*CleanStagCsLat(x, dir, m, k, j, i, kl, jl, il)
-                             + wc(k, j, i)*CleanStagCsLat(x, dir, m, k, j, i, k, j, i))/
-                            (0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,kl,jl,il)));
     });
   }
   // the cell terms of every family, started from the last F solve's faces
@@ -2055,32 +1986,9 @@ void RadiationM1::CleanStagFSolveCs(const int e) {
       v(m,3*q+1,k,j,i) = wc*((dd - sr*sr)*fmin(x.cs(m,CLN_J,k,j,i), fmax(ec, 0.0)) -
                              dd*ec);
       v(m,3*q+2,k,j,i) = wc;
-      // (fkin: its faces' outgoing and incoming half ranges about the outward normal,
-      // times w A/2, CleanStagCsKin)
-      for (int s = 0; s < 2; ++s) {
-        const int kf = k + s*dk, jf = j + s*dj, iff = i + s*di;
-        const bool bd = CleanBoundaryFace(x, q, m, kf, jf, iff);
-        const Real wa = bd ? 0.0 : 0.5*wc*x.area[q](m,kf,jf,iff);
-        const Real hp = x.fc[q](m,CLF_HP,kf,jf,iff), hm = x.fc[q](m,CLF_HM,kf,jf,iff);
-        v(m,21+2*(2*q+s),k,j,i) = wa*(s ? hp : -hm);
-        v(m,22+2*(2*q+s),k,j,i) = wa*(s ? hm : -hp);
-      }
     }
   });
   CleanGhostFill(cln_v, 0, 15);
-  if (fk && !cln_ksok) {   // (the kinetic transport's coefficients of every face,
-    cln_ksok = true;         //  CleanStagCsKin: once per CleanFaceCoefficients)
-    CleanGhostFill(cln_v, 21, 12);
-    for (int dir = 0; dir < 3; ++dir) {
-      const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-      par_for("cln_fcsk", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        if (!CleanBoundaryFace(x, dir, m, k, j, i)) {
-          CleanStagCsKin(x, v, 9, dir, m, k, j, i, true);
-        }
-      });
-    }
-  }
   // the cell terms of cell (k,j,i) at its face (kf,jf,iff) normal to dir, along dir: al,
   // the lagged pressure, w and the half ranges h+, h- (of the owner's family, oriented)
   auto cell = KOKKOS_LAMBDA(const int dir, const int m, const int kf, const int jf,
@@ -2103,12 +2011,6 @@ void RadiationM1::CleanStagFSolveCs(const int e) {
   const int nn[3] = {ie - is + 1, je - js + 1, ke - ks + 1};
   for (int it = 0; it < 64; ++it) {
     Real dmax = 0.0, fmx = 0.0;
-    if (fk) {   // (the faces of the last pass, for the kinetic transport between rows)
-      auto AL = Kokkos::ALL;
-      const auto cp = std::make_pair(15, 21), sl = std::make_pair(9, 15);
-      Kokkos::deep_copy(Kokkos::subview(cln_v, AL, cp, AL, AL, AL),
-                        Kokkos::subview(cln_v, AL, sl, AL, AL, AL));
-    }
     for (int dir = 0; dir < 3; ++dir) {
       const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
       const int n = nn[dir], na = (dir == 0) ? nn[1] : nn[0];
@@ -2133,22 +2035,16 @@ void RadiationM1::CleanStagFSolveCs(const int e) {
           Real tl[5], tr[5];
           cell(dir, m, k, j, i, kl, jl, il, tl);
           cell(dir, m, k, j, i, k, j, i, tr);
-          const bool bd = CleanBoundaryFace(x, dir, m, k, j, i);
-          const Real tg = (fk && !bd) ? fc(m,CLF_KS,k,j,i) : 0.0;
-          const Real tn = (fk && !bd) ? CleanStagCsKin(x, v, 15, dir, m, k, j, i, false)
-                                      : 0.0;
-          if (!bd && (tl[0] > 0.0 || tr[0] > 0.0 || tl[2] > 0.0 || tr[2] > 0.0 ||
-                      tg > 0.0)) {
+          if (!CleanBoundaryFace(x, dir, m, k, j, i) &&
+              (tl[0] > 0.0 || tr[0] > 0.0 || tl[2] > 0.0 || tr[2] > 0.0)) {
             const Real g = 0.5*x.h*x.c/CleanCellFaceDistance(x, dir, m, k, j, i);
             const Real it_ = 1.0/fc(m,CLF_TH,k,j,i);
             const Real q = x.h*x.c*x.area[dir](m,k,j,i)/
                            (0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,kl,jl,il)));
             lo = -g*tl[0] - q*tl[2]*tl[3];
             hi = -g*tr[0] + q*tr[2]*tr[4];
-            dg = it_ - lo - hi + q*(tr[2]*(tr[3] + tr[4]) - tl[2]*(tl[3] + tl[4])) +
-                 x.h*x.c*tg;
-            r = fc(m,CLF_N,k,j,i)*it_ + q*x.c*(tl[1] - tr[1]) +
-                x.h*x.c*x.c*fc(m,CLF_N+1,k,j,i) - x.h*x.c*tn;
+            dg = it_ - lo - hi + q*(tr[2]*(tr[3] + tr[4]) - tl[2]*(tl[3] + tl[4]));
+            r = fc(m,CLF_N,k,j,i)*it_ + q*x.c*(tl[1] - tr[1]);
             // (the faces beyond a MeshBlock line end: their owners', lagged)
             if (t == 0) {r -= lo*far(dir, m, k, j, i, kl, jl, il); lo = 0.0;}
             if (t == n) {r -= hi*far(dir, m, k, j, i, k, j, i); hi = 0.0;}
@@ -2225,10 +2121,6 @@ void RadiationM1::CleanStagFSolveCs(const int e) {
                                fc(m,CLF_N+3,k,j,i);
       }
       fc(m,CLF_N,k,j,i) = f;
-      if (fk) {   // (the kinetic transport between rows, of the final F)
-        const Real tn = CleanStagCsKin(x, v, 9, dir, m, k, j, i, false);
-        fc(m,CLF_N+1,k,j,i) -= (fc(m,CLF_KS,k,j,i)*f + tn)/x.c;
-      }
       Real tl[5], tr[5];
       cell(dir, m, k, j, i, kl, jl, il, tl);
       cell(dir, m, k, j, i, k, j, i, tr);
@@ -2237,7 +2129,7 @@ void RadiationM1::CleanStagFSolveCs(const int e) {
       const Real fp = far(dir, m, k, j, i, k, j, i);
       const Real pl = tl[2]*(tl[3]*fm + tl[4]*f)/x.c + tl[1];
       const Real pr = tr[2]*(tr[3]*f + tr[4]*fp)/x.c + tr[1];
-      fc(m,CLF_N+1,k,j,i) += (tr[0]*(fp - f) - tl[0]*(f - fm))/
+      fc(m,CLF_N+1,k,j,i) = (tr[0]*(fp - f) - tl[0]*(f - fm))/
                             (2.0*x.c*CleanCellFaceDistance(x, dir, m, k, j, i)) -
           x.area[dir](m,k,j,i)/(0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,kl,jl,il)))*
           (pr - pl);

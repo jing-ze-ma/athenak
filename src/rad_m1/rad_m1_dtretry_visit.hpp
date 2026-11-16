@@ -1192,7 +1192,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_psi_eps", cln_psi_eps);
   v.value("cln_nnreal", cln_nnreal);
   v.value("cln_fsolve", cln_fsolve);
-  v.value("cln_ksok", cln_ksok);
   v.value("cln_fkin", cln_fkin);
   v.value("cln_dok", cln_dok);
   v.value("cln_fwork", cln_fwork);

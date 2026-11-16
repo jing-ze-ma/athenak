@@ -3077,8 +3077,6 @@ class RadiationM1 {
   Real cln_psi_eps = 1.0e-12;   // clean_psi_eps: floor of the smoothness sensor
   int cln_nnreal = 0;           // cells with |F| > c E in the last cell-layout solve
   bool cln_fsolve = false;      // staggered: the face F of a separate F solve
-  bool cln_ksok = false;        // cubed sphere, fkin: CleanStagCsKin's face coefficients
-                                // are those of the last CleanFaceCoefficients
   bool cln_fkin = false;        // staggered fsolve: streaming share of the rays' kinetic
                                 //   momentum flux
   bool cln_dok = true;          // staggered fkin: the last solve converged (memory d)

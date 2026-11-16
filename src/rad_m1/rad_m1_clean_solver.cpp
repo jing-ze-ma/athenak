@@ -279,7 +279,6 @@ void RadiationM1::CleanFaceCoefficients() {
   auto op = opac;
   auto inc = t2inc;
   const bool fsk = cln_fsolve, gfx = cln_gflux;
-  cln_ksok = false;   // (cubed sphere, fkin: the kinetic coefficients, CleanStagFSolveCs)
   // (cubed sphere: the opacities of seam ghosts are the neighbour's cells, not of the
   // resampled gas ghosts, as CleanCellFaceCoefficients: a seam face is single-valued)
   if (pmy_pack->pmesh->use_cubed_sphere) {
