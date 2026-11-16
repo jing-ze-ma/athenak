@@ -462,7 +462,7 @@ Real CleanSourceDivergence(const CleanArgs &x, const int m, const int k, const i
 
 KOKKOS_INLINE_FUNCTION
 Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const int m,
-                         const int k, const int j, const int i) {
+                         const int k, const int j, const int i, Real *mag = nullptr) {
   const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
   Real dm = 0.0;
   for (int side = 0; side < 2; ++side) {
@@ -470,6 +470,12 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
     const Real f = CleanFaceFlux(x, e, dir, m, kf, jf, iff, true);
     const Real g = x.fc[dir](m,CLF_G,kf,jf,iff);
     dm -= 0.5*((f - g)/(x.c*x.c) + x.h*CleanFaceStress(x, e, dir, m, kf, jf, iff, true));
+    // (mag: the size of its terms, for the round-off level of dm)
+    auto de = [&](const int kk, const int jj, const int ii) {
+      return fabs(x.cs(m,CLN_D11+dir,kk,jj,ii)*x.w(m,e,kk,jj,ii));
+    };
+    if (mag) *mag += 0.5*((fabs(f) + fabs(g))/(x.c*x.c) + x.h*x.idx[dir]*
+                          (de(kf,jf,iff) + de(kf-dk,jf-dj,iff-di)));
   }
   return dm;
 }
