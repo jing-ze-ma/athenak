@@ -147,8 +147,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     const bool gd = sp && pin->DoesParameterExist("rad_m1","vet_gd") &&
                     pin->GetBoolean("rad_m1","vet_gd");
     if (gd && !pin->DoesParameterExist("rad_m1","clean_rays")) cln_rfv = 1;
+    // (staggered: on by default with clean_stag_split, where the rays are not opt-in)
+    cln_split = pin->DoesParameterExist("rad_m1","clean_stag_split") ?
+                pin->GetBoolean("rad_m1","clean_stag_split") : !cln_cell;
     cln_consist = pin->GetOrAddBoolean("rad_m1","clean_consistency",
-                                       cln_cell && !cs && (!sp || gd));
+                                       (cln_cell || cln_split) && !cs && (!sp || gd));
     cln_conswt = pin->GetOrAddBoolean("rad_m1","clean_consistency_weight",cln_cell);
     std::string fm = pin->GetOrAddString("rad_m1","clean_face_model","none");
     cln_milne = (fm.compare("milne") == 0);
@@ -175,56 +178,45 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_psi_eps = pin->GetOrAddReal("rad_m1","clean_psi_eps",1.0e-12);
     cln_maxpic = pin->GetOrAddInteger("rad_m1","clean_maxpic",12);
     cln_poslim = pin->GetOrAddBoolean("rad_m1","clean_pos_limit",true);
-    cln_posgas = !cln_cell && pin->DoesParameterExist("rad_m1","clean_stag_pos_gas") &&
-                 pin->GetBoolean("rad_m1","clean_stag_pos_gas");
-    cln_poslim0 = cln_poslim;
     cln_diagcells = pin->GetOrAddBoolean("rad_m1","clean_diag_cells",false);
-    // (read only when named: output headers list the input)
-    // (default: on for the staggered layout; read only when named)
-    cln_split = pin->DoesParameterExist("rad_m1","clean_stag_split") ?
-                pin->GetBoolean("rad_m1","clean_stag_split") : !cln_cell;
-    if (pin->DoesParameterExist("rad_m1","clean_stag_tau_pos")) {
-      cln_taupos = pin->GetReal("rad_m1","clean_stag_tau_pos");
+    // the staggered scheme (read only when named; the defaults are the recommended set):
+    // clean_stag_fsolve, the face momentum of its own F solve; clean_stag_fkin, the rays'
+    // kinetic momentum flux in it, with clean_stag_fwork, the F solve in the Newton loop;
+    // clean_stag_gflux, the rays' face flux as flux factors; clean_stag_vimp, the gas
+    // velocity implicit in the face momentum; clean_stag_upwind, the donor-cell advective
+    // flux; clean_stag_pc = mg | line, the preconditioner of the E solve
+    auto stag = [&](const char *key, const bool def) {
+      return !cln_cell && (pin->DoesParameterExist("rad_m1", key) ?
+                           pin->GetBoolean("rad_m1", key) : def);
+    };
+    cln_fsolve = stag("clean_stag_fsolve", cln_split);
+    cln_fkin = stag("clean_stag_fkin", cln_fsolve && cln_consist);
+    cln_fwork = stag("clean_stag_fwork", cln_fkin);
+    cln_gflux = stag("clean_stag_gflux", cln_consist);
+    cln_vimp = stag("clean_stag_vimp", cln_split);
+    cln_upw = stag("clean_stag_upwind", true);
+    // (fkin needs the F solve and the rays' consistent energy flux, and fkin and fwork go
+    // together; gflux and vimp need the bracket and the split)
+    const bool fk = cln_fkin && cln_fsolve && cln_consist && cln_fwork;
+    const bool gf = cln_gflux && cln_consist, vi = cln_vimp && cln_split;
+    if ((fk != cln_fkin || fk != cln_fwork || gf != cln_gflux || vi != cln_vimp) &&
+        global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> clean_stag_fkin and clean_stag_fwork need each other, "
+                << "clean_stag_fsolve and clean_consistency; clean_stag_gflux needs "
+                << "clean_consistency, clean_stag_vimp clean_stag_split: ignored"
+                << std::endl;
     }
-    if (pin->DoesParameterExist("rad_m1","clean_stag_bclip")) {
-      cln_bclip = pin->GetInteger("rad_m1","clean_stag_bclip");
+    cln_fkin = cln_fwork = fk;
+    cln_gflux = gf;
+    cln_vimp = vi;
+    {const std::string pc = pin->DoesParameterExist("rad_m1","clean_stag_pc") ?
+                            pin->GetString("rad_m1","clean_stag_pc") : "mg";
+    if (pc != "line" && pc != "mg") {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/clean_stag_pc = mg | line" << std::endl;
+      std::exit(EXIT_FAILURE);
     }
-    // (clean_stag_gflux replaces the bracket of clean_consistency)
-    cln_gflux = cln_consist && pin->DoesParameterExist("rad_m1","clean_stag_gflux") &&
-                pin->GetBoolean("rad_m1","clean_stag_gflux");
-    cln_fsolve = pin->DoesParameterExist("rad_m1","clean_stag_fsolve") &&
-                 pin->GetBoolean("rad_m1","clean_stag_fsolve");
-    cln_fkin = pin->DoesParameterExist("rad_m1","clean_stag_fkin") &&
-               pin->GetBoolean("rad_m1","clean_stag_fkin");
-    cln_fwork = pin->DoesParameterExist("rad_m1","clean_stag_fwork") &&
-                pin->GetBoolean("rad_m1","clean_stag_fwork");
-    // (fkin needs the rays' consistent energy flux, fwork the kinetic momentum)
-    if ((cln_fkin && !(cln_consist && cln_fwork)) || (cln_fwork && !cln_fkin)) {
-      if (global_variable::my_rank == 0) {
-        std::cout << "<rad_m1> clean_stag_fkin needs clean_consistency and "
-                  << "clean_stag_fwork, and fwork fkin: ignored" << std::endl;
-      }
-      cln_fkin = cln_fkin && cln_consist && cln_fwork;
-      cln_fwork = cln_fkin;
-    }
-    cln_vimp = !cln_cell && cln_split &&
-               pin->DoesParameterExist("rad_m1","clean_stag_vimp") &&
-               pin->GetBoolean("rad_m1","clean_stag_vimp");
-    cln_upw = !cln_cell && pin->DoesParameterExist("rad_m1","clean_stag_upwind") &&
-              pin->GetBoolean("rad_m1","clean_stag_upwind");
-    // clean_stag_pc = line | mg (read only when named; staggered): the preconditioner of
-    // the E solve, the x1-line solve or the old production mg (CleanStagVCycle)
-    if (pin->DoesParameterExist("rad_m1","clean_stag_pc")) {
-      const std::string pc = pin->GetString("rad_m1","clean_stag_pc");
-      if (pc != "line" && pc != "mg") {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-          << std::endl << "<rad_m1>/clean_stag_pc = line | mg" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      cln_stagmg = !cln_cell && (pc == "mg");
-    }
-    cln_diagforce = pin->DoesParameterExist("rad_m1","clean_diag_force") &&
-                    pin->GetBoolean("rad_m1","clean_diag_force");
+    cln_stagmg = !cln_cell && (pc == "mg");}
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",false);
     cln_posghost = pin->GetOrAddBoolean("rad_m1","clean_pos_ghost",false);
     {std::string cl = pin->GetOrAddString("rad_m1","clean_closure",

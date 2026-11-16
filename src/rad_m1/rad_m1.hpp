@@ -2962,7 +2962,6 @@ class RadiationM1 {
   void CleanCopyIterate();
   int CleanCountNegative();
   int CleanStagRealizable(const int mark);
-  void CleanStagForceDiag();
   void CleanStagBracket();
   void CleanStagFSolve(const int e);
   void CleanDMem(const bool save);
@@ -3029,8 +3028,6 @@ class RadiationM1 {
   bool cln_recon = true;        // clean_recon: plm (true) | none, cell layout
   int cln_maxpic = 12;          // clean_maxpic: passes that update the lagged slopes
   bool cln_poslim = true;       // clean_pos_limit: a-posteriori low-order face limiter
-  bool cln_poslim0 = true;      //   (as read; staggered clean_stag_pos_gas: only with the
-  bool cln_posgas = false;      //   gas coupled, where E < 0 drives the gas)
   bool cln_gflux = false;       // clean_stag_gflux: rays' face flux as flux factors
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
   bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces
@@ -3081,13 +3078,7 @@ class RadiationM1 {
   bool cln_vimp = false;        // staggered: implicit gas velocity (drag), per face
   bool cln_upw = false;         // staggered: donor-cell advective flux, lagged rest
   bool cln_split = false;       // staggered: energy flux apart from the face momentum
-  bool cln_diagforce = false;   // staggered: momentum of low-order faces (diagnostic)
   int cln_nr1 = 0, cln_nr2 = 0;  // staggered: cells E < 0, faces |F| > c E_donor
-  int cln_nr3 = 0;              // clean_stag_split: faces |F^H| > c E_donor (diagnostic)
-  Real cln_fh = 0.0;            //   and the largest |F^H|/(c E_donor)
-  int cln_bclip = 0, cln_nclip = 0;  // clean_stag_bclip; bracket faces it limited
-  Real cln_taupos = 0.0, cln_emax = 0.0;  // clean_stag_tau_pos; max E of the last check
-  Real cln_eneg[2] = {0.0, 0.0};  // min E/max E, sum min(E,0)/sum |E| of the last check
   Real cln_fe = 0.0, cln_fv = 0.0;  // round-off levels of the Newton changes dE, dv
   bool cln_feedback = false;    // gas coupling active
   bool cln_init = false;        // arrays allocated
