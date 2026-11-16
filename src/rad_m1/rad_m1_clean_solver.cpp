@@ -110,10 +110,11 @@ CleanArgs RadiationM1::CleanMakeArgs() {
 //! cells, without the along-seam resample) by the cell-centred boundary exchange on a
 //! scratch array of nc components (only the ghosts and the ng layers the exchange reads
 //! are copied in, only the ghosts back), then (phys) a copy of the edge cell on physical
-//! boundaries
+//! boundaries.  part = 1 only starts the exchange (nc <= 32), part = 2 finishes it: work
+//! on the cells CleanInner by ng can run in between.
 
 void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
-                                 const bool phys) {
+                                 const bool phys, const int part) {
   if (nc > 32) {   // the exchange moves at most 32 variables at once
     CleanGhostFill(a, c0, 32, phys);
     CleanGhostFill(a, c0 + 32, nc - 32, phys);
@@ -137,24 +138,26 @@ void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc
   }
   auto h = hl.a;
   const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
-  // cell (k,j,i) lies inside the active cells at least (by g) from every block face
-  auto inner = [=] KOKKOS_FUNCTION (const int k, const int j, const int i, const int g) {
-    return i >= is + g && i <= ie - g && (!md || (j >= js + g && j <= je - g)) &&
-           (!td || (k >= ks + g && k <= ke - g));
-  };
-  par_for("cln_hcopy", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, n1-1,
-  KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-    if (!inner(k, j, i, ng)) h(m,n,k,j,i) = a(m,c0+n,k,j,i);
-  });
   MeshBoundaryValuesCC *pb = hl.pb.get();
-  while (pb->InitRecv(nc) == TaskStatus::incomplete) {}
-  while (pb->PackAndSendCC(hl.a, hl.ca) == TaskStatus::incomplete) {}
+  if (part != 2) {
+    par_for("cln_hcopy", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
+      if (!CleanInner(k, j, i, ng, is, ie, js, je, ks, ke, md, td)) {
+        h(m,n,k,j,i) = a(m,c0+n,k,j,i);
+      }
+    });
+    while (pb->InitRecv(nc) == TaskStatus::incomplete) {}
+    while (pb->PackAndSendCC(hl.a, hl.ca) == TaskStatus::incomplete) {}
+    if (part == 1) return;
+  }
   while (pb->RecvAndUnpackCC(hl.a, hl.ca) == TaskStatus::incomplete) {}
   while (pb->ClearSend() == TaskStatus::incomplete) {}
   while (pb->ClearRecv() == TaskStatus::incomplete) {}
   par_for("cln_hback", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-    if (!inner(k, j, i, 0)) a(m,c0+n,k,j,i) = h(m,n,k,j,i);
+    if (!CleanInner(k, j, i, 0, is, ie, js, je, ks, ke, md, td)) {
+      a(m,c0+n,k,j,i) = h(m,n,k,j,i);
+    }
   });
   if (!phys) return;
 

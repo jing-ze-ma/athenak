@@ -495,7 +495,8 @@ void RadiationM1::CleanCellRightHandSide() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellApply
 //! \brief u(dst) = A u(src) over the active cells: the local exchange and flux sources
-//! plus h div of the face fluxes; flux components beyond the mesh dimension are identity
+//! plus h div of the face fluxes; flux components beyond the mesh dimension are identity.
+//! The cells at least ng from the block faces are done while the ghosts are exchanged.
 
 void RadiationM1::CleanCellApply(const int src, const int dst) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -503,13 +504,17 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  CleanGhostFill(cln_x, src, 4);
   CleanArgs x = CleanMakeArgs();
   auto op = opac;
   auto uh = FluidRef::Get(pmy_pack).u0;
+  const int ng = indcs.ng;
+  const bool md = x.multi_d, td = x.three_d;
 
+  for (int part = 1; part <= 2; ++part) {
+  CleanGhostFill(cln_x, src, 4, true, part);
   par_for("clc_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (CleanInner(k, j, i, ng, is, ie, js, je, ks, ke, md, td) != (part == 1)) return;
     Real div[4];
     CleanCellDivergence(x, src, m, k, j, i, false, div);
     const Real rr = x.feedback ? x.w(m,CLW_RR,k,j,i) : 0.0;
@@ -530,6 +535,7 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
       x.u(m,dst+1+b,k,j,i) = y;
     }
   });
+  }
 }
 
 //----------------------------------------------------------------------------------------
