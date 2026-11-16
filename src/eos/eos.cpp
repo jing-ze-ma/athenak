@@ -474,12 +474,37 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
   // See the note on EOS_Data::floors_legacy: with none of the four floor switches above
   // enabled the kernels take the pre-existing code path VERBATIM, so that a build
   // carrying these features reproduces an older run bit for bit.
+  // <block>/tceil_kelvin (read only when named) and <block>/tceil_dmax: gas with
+  // d < tceil_dmax and T > tceil_kelvin is set to e(d, tceil) by the general-EOS hydro
+  // floors.  The floor atmosphere above a stellar photosphere carries ~1e-5 of the
+  // local radiation energy density: any error of an implicit radiation-gas exchange
+  // there is a large temperature error, and once such gas is hot its pressure drives it
+  // to the velocity ceiling and the timestep collapses.  The energy removed is counted
+  // with the energy the floors create (negative).
+  if (pin->DoesParameterExist(bk, "tceil_kelvin")) {
+    const Real tk = pin->GetReal(bk, "tceil_kelvin");
+    eos_data.tceil_dmax = pin->GetReal(bk, "tceil_dmax");
+    if (pin->GetString(bk, "eos").compare("general") != 0 || pp->punit == nullptr ||
+        !(tk > 0.0) || !(eos_data.tceil_dmax > 0.0)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<" << bk << ">/tceil_kelvin needs eos = general, a "
+                << "<units> block, tceil_kelvin > 0 and tceil_dmax > 0" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    eos_data.tceil = tk/(pp->punit->temperature_cgs()/pp->punit->mu());
+    if (global_variable::my_rank == 0) {
+      std::cout << "<" << bk << ">/tceil_kelvin = " << tk << " K -> tceil = "
+                << eos_data.tceil << " in code temperature, for d < "
+                << eos_data.tceil_dmax << std::endl;
+    }
+  }
   eos_data.floors_legacy = !(eos_data.dfloor_keep_velocity ||
                              eos_data.dfloor_keep_temperature ||
                              (eos_data.vceil > 0.0) ||
                              eos_data.floor_consistent ||
                              eos_data.efloor_from_ekin ||
-                             eos_data.efloor_as_tfloor);
+                             eos_data.efloor_as_tfloor ||
+                             (eos_data.tceil > 0.0));
 
   // <block>/tfloor_kelvin -- the SAME floor, stated in kelvin instead of code units.
   //

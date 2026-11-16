@@ -199,6 +199,17 @@ void GeneralHydFloorsPost(const EOS_Data &eos, const Real d, const Real di,
     stale = true;
   }
 
+  // Apply the temperature ceiling of the floor atmosphere (EOS_Data::tceil).  `temp` is
+  // the table's clamped value when e lies above the table, which the ceiling catches too.
+  if (eos.tceil > 0.0 && d < eos.tceil_dmax && temp > eos.tceil) {
+    const Real etc = eos.EnergyFromTemperature(d, eos.tceil);
+    if (own) de += etc - eint;
+    eint = etc;
+    if (own) etot = eint + ekin;
+    temp = eos.tceil;
+    stale = true;
+  }
+
   // Apply the entropy floor. Only meaningful while the general EOS evaluates a gamma law,
   // where it is the ideal-gas floor verbatim; under a tabulated EOS this is a no-op and a
   // run that sets sfloor is refused at startup. See EOS_Data::ApplyEntropyFloor().

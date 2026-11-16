@@ -38,6 +38,9 @@ struct EOS_Data {
   Real iso_cs;       // isothermal sound speed
   bool is_ideal;     // flag to denote ideal gas EOS
   Real dfloor, pfloor, tfloor, sfloor;  // density, pressure, temperature, entropy floors
+  // <block>/tceil_kelvin, tceil_dmax: a temperature CEILING for gas below the density
+  // tceil_dmax (the floor atmosphere).  Off when tceil = 0.
+  Real tceil = 0.0, tceil_dmax = 0.0;
   // CUBED SPHERE: ConsToPrim cannot form the KINETIC or MAGNETIC energy correctly there.
   // The conserved momentum is COVARIANT on a non-orthogonal tangent basis, so |m|^2/d is
   // not the kinetic energy; and for MHD, b0.x*f
