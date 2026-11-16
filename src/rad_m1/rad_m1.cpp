@@ -242,8 +242,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_nl_print")) {
       cln_nlprint = pin->GetBoolean("rad_m1","clean_nl_print");
     }
-    // clean_halo_vars (read only when named, 1..32): at most this many variables per
-    // ghost exchange of the clean solve (its scratch array holds that many)
+    // clean_halo_vars (read only when named, 1..32, default 16): at most this many
+    // variables per ghost exchange of the clean solve (its scratch array holds that many)
     if (pin->DoesParameterExist("rad_m1","clean_halo_vars")) {
       cln_hmax = std::min(std::max(pin->GetInteger("rad_m1","clean_halo_vars"), 1), 32);
     }
@@ -259,7 +259,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_chunk = (ls == "pcr") ? 1 : ((ls == "thomas") ? (1 << 30) : 32);
     }
     // clean_line_chunk (read only when named): rows per Thomas system of the line solve
-    // (fewer PCR rounds, a smaller factor store with clean_pc_factor)
+    // (fewer PCR rounds, a smaller factor store with clean_pc_factor; slower, not
+    // recommended)
     if (pin->DoesParameterExist("rad_m1","clean_line_chunk")) {
       cln_chunk = std::max(pin->GetInteger("rad_m1","clean_line_chunk"), 1);
     }

@@ -136,7 +136,7 @@ void RadiationM1::CleanGhostFill(DvceArray5D<float> a, const int c0, const int n
 template <typename T>
 void RadiationM1::CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc,
                                   const bool phys, const int part) {
-  if (nc > cln_hmax) {   // the exchange moves at most cln_hmax (<= 32) variables at once
+  if (nc > cln_hmax) {   // the exchange moves at most clean_halo_vars variables at once
     CleanGhostFillT(a, c0, cln_hmax, phys, 0);
     CleanGhostFillT(a, c0 + cln_hmax, nc - cln_hmax, phys, 0);
     return;
