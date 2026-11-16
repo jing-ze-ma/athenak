@@ -130,7 +130,8 @@ struct CleanArgs {
   bool consist;                // cell layout: face fluxes carry the consistency bracket
   bool milne;                  // cell layout: sub-cell Eddington face model
   bool fvrays;                 // cell layout: FV rays (clean_rays = fv1 | fv)
-  bool fd;                     // staggered, clean_stag_fkin: the energy flux's G + F^H - F
+  bool fd;                     // staggered, clean_stag_fkin: the energy flux's
+                               // G + F^H - F
   bool gf;                     // staggered, clean_stag_gflux: flux factors, low order
   bool fs;                     // staggered, clean_stag_fsolve: the face F of the F solve
                                // (CLF_N) with its dissipation term (CLF_N + 1)
@@ -323,9 +324,11 @@ Real CleanExchangeTemperature(const EOS_Data &eos, const Real d, const Real a,
 //! the discrete (1/A) d_n(A P)
 
 KOKKOS_INLINE_FUNCTION
-Real CleanStagSph(const CleanArgs &x, const int q, const int dir, const int m, const int k,
-                  const int j, const int i) {
-  if (q == 0) return (dir == 2) ? x.area[2](m,k,j,i)/x.vol(m,k,j,i) : 1.0/x.dxf[dir](m,k,j,i);
+Real CleanStagSph(const CleanArgs &x, const int q, const int dir, const int m,
+                  const int k, const int j, const int i) {
+  if (q == 0) {
+    return (dir == 2) ? x.area[2](m,k,j,i)/x.vol(m,k,j,i) : 1.0/x.dxf[dir](m,k,j,i);
+  }
   if (dir == 2 && q >= 2) return 0.0;   // (phi faces: torque form, CleanFaceStress)
   if (q == 4) return (dir == 0) ? 1.0/x.x1f(m,i) : 0.5/(tan(x.x2f(m,j))*x.x1v(m,i));
   if (q == 1) return 1.0/((dir == 0) ? x.x1f(m,i) : x.x1v(m,i));
@@ -608,7 +611,8 @@ Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m
       return x.cs(m,ab,kk,jj,ii)*x.w(m,e,kk,jj,ii);
     };
     // (spherical polar: d_r on theta faces, (1/r) d_theta on r faces, central)
-    if (x.sph && dir == 2) {   // (torque form: dual r faces i, i+1 and theta faces j, j+1)
+    // (torque form: dual r faces i, i+1 and theta faces j, j+1)
+    if (x.sph && dir == 2) {
       const Real vr = x.vol(m,k,j,i)*x.x1v(m,i)*sin(x.x2v(m,j));
       auto pe = [&](const int jj, const int ii) {   // (D E)_{b,ph} at a dual face
         return 0.25*(de(k,jj,ii) + de(k-1,jj,ii) + de(k,jj-(b == 1),ii-(b == 0)) +
@@ -831,8 +835,9 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
       wt = (xv > 0.0) ? 0.5*xc*(vc + vo)/xv : 0.5;
     }
     if (x.hi && CleanBoundaryFace(x, dir, m, kf, jf, iff)) {
-      dm += 0.5*x.h*xc*f/x.c;   // (a boundary flux is no F equation: the inner half cell's
-      continue;                 //  absorption of it)
+      // (a boundary flux is no F equation: the inner half cell's absorption of it)
+      dm += 0.5*x.h*xc*f/x.c;
+      continue;
     }
     dm -= wt*((f - g)/(x.c*x.c) + x.h*CleanFaceStress(x, e, dir, m, kf, jf, iff, true) -
               (x.fs ? x.h*x.fc[dir](m,CLF_N+1,kf,jf,iff) : 0.0));

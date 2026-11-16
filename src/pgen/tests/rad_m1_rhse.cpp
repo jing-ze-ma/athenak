@@ -119,7 +119,8 @@ void ProblemGenerator::RadiationM1Rhse(ParameterInput *pin, const bool restart) 
   user_srcs_func = RhseGravity;
   user_hist_func = RhseHist;
   // (read only when named) problem/am_hist: the energy / angular-momentum budget instead
-  if (pin->DoesParameterExist("problem","am_hist") && pin->GetBoolean("problem","am_hist")) {
+  if (pin->DoesParameterExist("problem","am_hist") &&
+      pin->GetBoolean("problem","am_hist")) {
     user_hist_func = RadM1AmHistory;
   }
   if (ph->use_wellbalance_static) {

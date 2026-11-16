@@ -393,7 +393,8 @@ void RadiationM1::CleanPreconditionerSetup() {
       CleanFaceWeights(x, 1, m, k, j+1, i, al_p, ar_p);
       CleanFaceWeights(x, 1, m, k, j, i, al_m, ar_m);
       a0 += (x.sph || x.cub) ? x.h*(CleanDivW(x, 1, m, k, j, i, 1)*al_p -
-                         CleanDivW(x, 1, m, k, j, i, 0)*ar_m) : x.h*x.idx[1]*(al_p - ar_m);
+                                    CleanDivW(x, 1, m, k, j, i, 0)*ar_m)
+                             : x.h*x.idx[1]*(al_p - ar_m);
       if (mg) {
         const bool cv = x.sph || x.cub;
         x.w(m,CLW_TM,k,j,i) = -x.h*al_m*(cv ? CleanDivW(x, 1, m, k, j, i, 0) : x.idx[1]);

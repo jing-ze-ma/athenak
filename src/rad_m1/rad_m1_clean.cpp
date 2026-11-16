@@ -158,7 +158,8 @@ void RadiationM1::CleanInit() {
       }
       if (!coarser) break;
       cln_mgn.push_back(nc);
-      cln_mg.emplace_back("cln_mg", nmb, cln_stagmg ? CLS_N : CLM_N, nc[2], nc[1], nc[0]);
+      cln_mg.emplace_back("cln_mg", nmb, cln_stagmg ? CLS_N : CLM_N, nc[2], nc[1],
+                          nc[0]);
     }
   }
   if (cln_extrap > 0) {
@@ -637,7 +638,6 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   }
   FluidRef fl = FluidRef::Get(pmy_pack);
   cln_feedback = gas_feedback && fl.on;
-  cln_poslim = cln_poslim0 && (!cln_posgas || cln_feedback);
   const bool cell = cln_cell;
 
   // 1. starting face fluxes on the first cycle (restarts carry them)
@@ -679,7 +679,6 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   const bool t2stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
   int nit = 0, nit_sum = 0, nsolve = 0, npic = 0, npos = 0, nmark = 0;
   std::array<int, 2> nfirst = {0, 0};
-  cln_nclip = 0;
   bool all_low = false;
   cln_all_low = false;
   Real dpic = 0.0;
@@ -797,7 +796,6 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // 4. positivity of the solution
   const int nneg = cell ? CleanCellCountNegative() : CleanCountNegative();
   if (cell && cln_diagcells && all_low) CleanCellDiagnose();
-  if (!cell && cln_diagforce) CleanStagForceDiag();
   if (nit < 0) cln_nfail += 1.0;
   if (nneg > 0) cln_nneg += 1.0;
   // a backward-Euler solve that did not converge fails the cycle: with <time>/dt_retry
@@ -829,10 +827,6 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
                   "r1 %d r2 %d first %d %d guard %d solves %d\n", pmy_pack->pmesh->ncycle,
                   t2_solve, nit, nit_sum, npos, nmark, all_low ? 1 : 0, nneg, cln_nr1,
                   cln_nr2, nfirst[0], nfirst[1], cln_nguard, nsolve);
-      if (cln_split) std::printf("CLEAN SPLIT cycle %d t2s %d r3 %d max %.3e clip %d "
-                                 "Emin/Emax %.3e Eneg/E %.3e\n", pmy_pack->pmesh->ncycle,
-                                 t2_solve, cln_nr3, cln_fh, cln_nclip, cln_eneg[0],
-                                 cln_eneg[1]);
     }
   }
 
@@ -1039,7 +1033,8 @@ void RadiationM1::CleanRightHandSide() {
         x.w(m,CLW_BT+n,k,j,i) = (uh(m,IM1+n,k,j,i) + x.w(m,CLW_DM+n,k,j,i))/
                                 (uh(m,IDN,k,j,i)*x.c);
       }
-      x.w(m,CLW_RE,k,j,i) = x.h*x.c*op(m,M1_OP_P,k,j,i)*arad_*SQR(SQR(x.w(m,CLW_T,k,j,i)));
+      x.w(m,CLW_RE,k,j,i) = x.h*x.c*op(m,M1_OP_P,k,j,i)*arad_*
+                            SQR(SQR(x.w(m,CLW_T,k,j,i)));
     });
     CleanGhostFill(cln_w, CLW_BT, 4);
     CleanGhostFill(cln_w, CLW_EK, 1);
@@ -1272,8 +1267,6 @@ int RadiationM1::CleanCountNegative() {
   }, Kokkos::Max<Real>(bmax));
 
   const Real zero = 10.0*cln_tol*CleanReduce(bmax, true);
-  // (staggered clean_stag_tau_pos: E < 0 within tau_pos max E is kept, not counted)
-  const Real zt = cln_cell ? 0.0 : cln_taupos*cln_emax;
   Real nneg = 0.0;
   Kokkos::parallel_reduce("cln_neg", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &n) {
@@ -1283,7 +1276,7 @@ int RadiationM1::CleanCountNegative() {
     int i = idx - m*nkji - k*nji - j*nx1;
     Real &e = w(m,CLW_X,k+ks,j+js,i+is);
     if (e < 0.0 && e >= -zero) e = 0.0;
-    if (!(e >= -zt)) n += 1.0;
+    if (!(e >= 0.0)) n += 1.0;
   }, Kokkos::Sum<Real>(nneg));
   return static_cast<int>(CleanReduce(nneg, false));
 }
@@ -1306,64 +1299,23 @@ int RadiationM1::CleanStagRealizable(const int mark) {
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   CleanGhostFill(cln_w, CLW_X, 1);
   CleanArgs x = CleanMakeArgs();
-  Real bmax = 0.0, emax = 0.0, emin = 0.0, eneg = 0.0, esum = 0.0;
+  Real bmax = 0.0;
   Kokkos::parallel_reduce("cln_bmax", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
-  KOKKOS_LAMBDA(const int idx, Real &b_max, Real &e_max, Real &e_min, Real &e_neg,
-                Real &e_sum) {
+  KOKKOS_LAMBDA(const int idx, Real &b_max) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
     int j = (idx - m*nkji - k*nji)/nx1;
     int i = idx - m*nkji - k*nji - j*nx1;
     b_max = fmax(b_max, fabs(x.w(m,CLW_B,k+ks,j+js,i+is)));
-    const Real e = x.w(m,CLW_X,k+ks,j+js,i+is);
-    e_max = fmax(e_max, e);
-    e_min = fmin(e_min, e);
-    e_neg += fmin(e, 0.0);
-    e_sum += fabs(e);
-  }, Kokkos::Max<Real>(bmax), Kokkos::Max<Real>(emax), Kokkos::Min<Real>(emin),
-  Kokkos::Sum<Real>(eneg), Kokkos::Sum<Real>(esum));
-  emax = CleanReduce(emax, true);
-  cln_emax = emax;
-  cln_eneg[0] = -CleanReduce(-emin, true)/fmax(emax, 1.0e-300);   // min E/max E
-  cln_eneg[1] = CleanReduce(eneg, false)/fmax(CleanReduce(esum, false), 1.0e-300);
-  // (clean_stag_tau_pos: R1, R2 within tau_pos max E)
-  const Real zero = fmax(10.0*cln_tol*CleanReduce(bmax, true), cln_taupos*emax);
-  Real n1 = 0.0, n2 = 0.0, n3 = 0.0, n5 = 0.0;
-  cln_fh = 0.0;
-  // clean_stag_bclip: the passes limit the bracket instead of making faces low-order
-  // (1: clip to the donor bound at X; 2: an R1 cell's outgoing bracket scaled to what
-  // it has, E_old + incoming bracket + emission, as CleanCellConsistency's FV rays)
-  const bool clip = (mark == 1) && x.consist && (cln_bclip & 1);
-  const bool fct = (mark == 1) && x.consist && (cln_bclip & 2);
-  const bool keep = (cln_bclip & 4);   // (a low-order face keeps the limited bracket)
-  auto lam = cln_v;
-  if (fct) {
-    const Real arad_ = arad;
-    auto op = opac;
-    par_for("cln_bfct", DevExeSpace(), 0, nmb-1, ks, ks+nx3-1, js, js+nx2-1, is, is+nx1-1,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      Real pout = 0.0, pin = 0.0;
-      for (int d = 0; d < x.nf; ++d) {
-        const Real cl = x.fc[d](m,CLF_RC,k,j,i);
-        const Real ch = x.fc[d](m,CLF_RC,k+(d == 2),j+(d == 1),i+(d == 0));
-        pout += x.h*x.idx[d]*(fmax(-cl, 0.0) + fmax(ch, 0.0));
-        pin += x.h*x.idx[d]*(fmax(cl, 0.0) + fmax(-ch, 0.0));
-      }
-      const Real a = fmax(x.w(m,CLW_EO,k,j,i), 0.0) + pin + x.h*x.c*op(m,M1_OP_P,k,j,i)*
-                     arad_*SQR(SQR(x.w(m,CLW_T,k,j,i)));
-      lam(m,0,k,j,i) = (!(x.w(m,CLW_X,k,j,i) >= -zero) && pout > a) ? a/pout : 1.0;
-    });
-    CleanGhostFill(cln_v, 0, 1);
-  }
-  CleanArgs xh = x;
-  xh.hi = true;
-  const bool split = cln_split;
+  }, Kokkos::Max<Real>(bmax));
+  const Real zero = 10.0*cln_tol*CleanReduce(bmax, true);
+  Real n1 = 0.0, n2 = 0.0;
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     const int f1 = nx1 + di, f2 = nx2 + dj, f3 = nx3 + dk, fji = f2*f1, fkji = f3*fji;
-    Real r1 = 0.0, r2 = 0.0, r3 = 0.0, r4 = 0.0, r5 = 0.0;
+    Real r1 = 0.0, r2 = 0.0;
     Kokkos::parallel_reduce("cln_real", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*fkji),
-    KOKKOS_LAMBDA(const int idx, Real &q1, Real &q2, Real &q3, Real &q4, Real &q5) {
+    KOKKOS_LAMBDA(const int idx, Real &q1, Real &q2) {
       int m = idx/fkji;
       int k = (idx - m*fkji)/fji;
       int j = (idx - m*fkji - k*fji)/f1;
@@ -1379,40 +1331,21 @@ int RadiationM1::CleanStagRealizable(const int mark) {
       const Real ed = (f > 0.0) ? el : er;
       const bool r2 = !(fabs(f) <= (1.0 + 1.0e-12)*x.c*ed + x.c*zero);
       if (r2) q2 += 1.0;
-      if (split) {   // (diagnostic: the momentum state)
-        const Real fh = CleanFaceFlux(xh, CLW_X, dir, m, k, j, i, true);
-        const Real eh = (fh > 0.0) ? el : er;
-        if (!(fabs(fh) <= (1.0 + 1.0e-12)*x.c*eh + x.c*zero)) q3 += 1.0;
-        q4 = fmax(q4, fabs(fh)/(x.c*fmax(eh, 0.0) + x.c*zero + 1.0e-300));
-      }
-      if (clip || fct) {
-        Real &cb = x.fc[dir](m,CLF_RC,k,j,i);
-        const Real c0 = cb, p0 = f - cb;
-        if (fct) cb *= (cb > 0.0) ? lam(m,0,k-dk,j-dj,i-di) : lam(m,0,k,j,i);
-        if (clip) cb = fmin(fmax(cb, -x.c*fmax(er, 0.0) - p0), x.c*fmax(el, 0.0) - p0);
-        if (cb != c0) q5 += 1.0;
-      } else if (mark == 2 || (mark == 1 && (r2 || !(el >= -zero) || !(er >= -zero)))) {
+      if (mark == 2 || (mark == 1 && (r2 || !(el >= -zero) || !(er >= -zero)))) {
         // (gflux: the face keeps w and drops what breaks the M-matrix, CleanStagMemUp)
         if (x.gf) {
           x.fc[dir](m,CLF_SLO,k,j,i) = 1.0;
           return;
         }
         x.fc[dir](m,CLF_W,k,j,i) = 1.0;
-        if (x.consist && !keep) x.fc[dir](m,CLF_RC,k,j,i) = 0.0;   // (no bracket)
+        if (x.consist) x.fc[dir](m,CLF_RC,k,j,i) = 0.0;   // (no bracket)
       }
-    }, Kokkos::Sum<Real>(r1), Kokkos::Sum<Real>(r2), Kokkos::Sum<Real>(r3),
-    Kokkos::Max<Real>(r4), Kokkos::Sum<Real>(r5));
-    n5 += r5;
+    }, Kokkos::Sum<Real>(r1), Kokkos::Sum<Real>(r2));
     n1 += r1;
     n2 += r2;
-    n3 += r3;
-    cln_fh = fmax(cln_fh, r4);
   }
   cln_nr1 = static_cast<int>(CleanReduce(n1, false));
   cln_nr2 = static_cast<int>(CleanReduce(n2, false));
-  cln_nr3 = static_cast<int>(CleanReduce(n3, false));
-  cln_fh = CleanReduce(cln_fh, true);
-  cln_nclip += static_cast<int>(CleanReduce(n5, false));
   return cln_nr1 + cln_nr2;
 }
 
@@ -1476,36 +1409,6 @@ void RadiationM1::CleanStagBracket() {
       if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = ((s > 0.0) ? fr - hp : hr)/jr;
     });
   }
-  if (!(cln_bclip & 4)) return;
-  // clean_stag_bclip & 4: every cell's outgoing bracket at most what it has, E_old +
-  // h c kP a T^4 (FCT, factor of the donor): the right-hand side stays >= 0, so the
-  // all-low-order backward-Euler solve keeps E >= 0 with the bracket
-  const Real arad_ = arad;
-  auto op = opac;
-  auto lam = cln_v;
-  const bool cln8 = (cln_bclip & 8);   // (budget with the incoming bracket)
-  par_for("cln_bfct0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real pout = 0.0, pin = 0.0;
-    for (int d = 0; d < x.nf; ++d) {
-      const Real cl = x.fc[d](m,CLF_RC,k,j,i);
-      const Real ch = x.fc[d](m,CLF_RC,k+(d == 2),j+(d == 1),i+(d == 0));
-      pout += x.h*x.idx[d]*(fmax(-cl, 0.0) + fmax(ch, 0.0));
-      pin += x.h*x.idx[d]*(fmax(cl, 0.0) + fmax(-ch, 0.0));
-    }
-    const Real a = fmax(x.w(m,CLW_EO,k,j,i), 0.0) + x.h*x.c*op(m,M1_OP_P,k,j,i)*arad_*
-                   SQR(SQR(x.w(m,CLW_T,k,j,i))) + ((cln8) ? pin : 0.0);
-    lam(m,0,k,j,i) = (pout > a) ? a/pout : 1.0;
-  });
-  CleanGhostFill(cln_v, 0, 1);
-  for (int dir = 0; dir < x.nf; ++dir) {
-    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    par_for("cln_bfct1", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      Real &cb = x.fc[dir](m,CLF_RC,k,j,i);
-      cb *= (cb > 0.0) ? lam(m,0,k-dk,j-dj,i-di) : lam(m,0,k,j,i);
-    });
-  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -1532,7 +1435,8 @@ void RadiationM1::CleanDMem(const bool save) {
 //!   (F - G)/h + c^2 [P_R - P_L]/dx_f = -c chi_f (F - A) (+ the beta terms),
 //!   P_i = (D E)_i - alpha_i [F]_i/(2c),  [F]_i the jump of the two faces of cell i,
 //! the cell layout's dissipation (fY = c (D E) - al (c/2) [y]) on the stress: per face
-//!   F (1/theta + h c (al_L + al_R)/(2 dx_f)) - h c (al_L F_{f-1} + al_R F_{f+1})/(2 dx_f)
+//!   F (1/theta + h c (al_L + al_R)/(2 dx_f))
+//!     - h c (al_L F_{f-1} + al_R F_{f+1})/(2 dx_f)
 //!     = F^H/theta,
 //! al_i = max(A(tau_i)^2, w of its faces), 1 where a face of the cell has
 //! |F^H| > c E_donor.  al = 0 gives F^H (a face with al_L = al_R = 0 keeps it exactly).
@@ -1665,7 +1569,8 @@ void RadiationM1::CleanStagFSolve(const int e) {
           x.w(m,sw,k,j,i) = cp*p[0]*p[2];
           x.w(m,sw+1,k,j,i) = cm*q[0]*q[1];
         }
-        const bool eq = !bd && (all > 0.0 || alr > 0.0 || wl > 0.0 || wr > 0.0 || tg > 0.0);
+        const bool eq = !bd && (all > 0.0 || alr > 0.0 || wl > 0.0 || wr > 0.0 ||
+                                tg > 0.0);
         if (eq) {
           const Real g = 0.5*x.h*x.c/CleanCellFaceDistance(x, dir, m, k, j, i);
           const Real it_ = 1.0/fc(m,CLF_TH,k,j,i);
@@ -1785,7 +1690,8 @@ void RadiationM1::CleanStagFSolve(const int e) {
       const Real fm = x.w(m,CLW_Y,k-dk,j-dj,i-di);
       const Real fp = CleanBoundaryFace(x, dir, m, k+dk, j+dj, i+di) ?
                       fc(m,CLF_N,k+dk,j+dj,i+di) : x.w(m,CLW_Y,k+dk,j+dj,i+di);
-      auto pk = [&](const int kk, const int jj, const int ii, const Real l, const Real h) {
+      auto pk = [&](const int kk, const int jj, const int ii, const Real l,
+                    const Real h) {
         return al(m,2,kk,jj,ii)*(x.cs(m,CLN_HP+dir,kk,jj,ii)*l +
                x.cs(m,CLN_HM+dir,kk,jj,ii)*h)/x.c + al(m,1,kk,jj,ii);
       };
@@ -1856,71 +1762,6 @@ void RadiationM1::CleanStagDrag(const bool first) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::CleanStagForceDiag
-//! \brief diagnostic (clean_diag_force, staggered): on the low-order faces (w = 1) the
-//! momentum a face hands to the gas, -[(F - G)/c^2 + h d_n(D E)] (CleanMomentumChange),
-//! against the physical one, h chi_f (F - A)/c = (1/theta - 1)(F - A)/c^2 (A the face
-//! advective flux).  Prints sum |mismatch| over those faces, the part with h c chi_f > 1,
-//! both over sum |physical| of all interior faces, the largest |mismatch| over the
-//! largest |physical|, and sum |mismatch| over sum |F|/c^2 of all interior faces.
-
-void RadiationM1::CleanStagForceDiag() {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  int is = indcs.is, js = indcs.js, ks = indcs.ks;
-  int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
-  int nmb = pmy_pack->nmb_thispack;
-  CleanGhostFill(cln_w, CLW_X, 1);
-  CleanArgs x = CleanMakeArgs(), xh = x;
-  xh.hi = cln_split;   // (the flux the gas sees)
-  // phys, mis, thick, n, |F|/c^2, max mis, max phys
-  Real r[7] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-  for (int dir = 0; dir < x.nf; ++dir) {
-    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    const int f1 = nx1 + di, f2 = nx2 + dj, f3 = nx3 + dk, fji = f2*f1, fkji = f3*fji;
-    Real q[7] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-    Kokkos::parallel_reduce("cln_fdiag", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*fkji),
-    KOKKOS_LAMBDA(const int idx, Real &p, Real &mi, Real &th, Real &n, Real &fm,
-                  Real &mm, Real &mp) {
-      int m = idx/fkji;
-      int k = (idx - m*fkji)/fji;
-      int j = (idx - m*fkji - k*fji)/f1;
-      int i = idx - m*fkji - k*fji - j*f1;
-      k += ks;
-      j += js;
-      i += is;
-      if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
-      const Real f = CleanFaceFlux(xh, CLW_X, dir, m, k, j, i, true), c2 = x.c*x.c;
-      const Real t = x.fc[dir](m,CLF_TH,k,j,i);
-      const Real a = x.feedback ? 0.5*(x.w(m,CLW_A1+dir,k-dk,j-dj,i-di)*
-                     x.w(m,CLW_X,k-dk,j-dj,i-di) + x.w(m,CLW_A1+dir,k,j,i)*
-                     x.w(m,CLW_X,k,j,i)) : 0.0;
-      const Real ph = (1.0/t - 1.0)*(f - a)/c2;
-      p += fabs(ph);
-      fm += fabs(f)/c2;
-      mp = fmax(mp, fabs(ph));
-      if (x.fc[dir](m,CLF_W,k,j,i) < 1.0) return;
-      const Real d = fabs(-(f - x.fc[dir](m,CLF_G,k,j,i))/c2 -
-                          x.h*CleanFaceStress(x, CLW_X, dir, m, k, j, i, true) - ph);
-      mi += d;
-      if (t < 0.5) th += d;
-      n += 1.0;
-      mm = fmax(mm, d);
-    }, Kokkos::Sum<Real>(q[0]), Kokkos::Sum<Real>(q[1]), Kokkos::Sum<Real>(q[2]),
-    Kokkos::Sum<Real>(q[3]), Kokkos::Sum<Real>(q[4]), Kokkos::Max<Real>(q[5]),
-    Kokkos::Max<Real>(q[6]));
-    for (int n = 0; n < 5; ++n) r[n] += q[n];
-    for (int n = 5; n < 7; ++n) r[n] = fmax(r[n], q[n]);
-  }
-  for (int n = 0; n < 7; ++n) r[n] = CleanReduce(r[n], n >= 5);
-  if (global_variable::my_rank == 0) {
-    std::printf("CLEAN FORCE cycle %d t2s %d low %d mis %.3e thick %.3e max %.3e "
-                "mom %.3e\n", pmy_pack->pmesh->ncycle, t2_solve, static_cast<int>(r[3]),
-                r[1]/fmax(r[0], 1.0e-300), r[2]/fmax(r[0], 1.0e-300),
-                r[5]/fmax(r[6], 1.0e-300), r[1]/fmax(r[4], 1.0e-300));
-  }
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanWriteBack
 //! \brief stores the solution: face fluxes, E, cell fluxes (face means), the gas momentum
 //! and energy, and the stage slopes K = (U - U_old)/h.  The gas takes exactly the momentum
@@ -1962,7 +1803,8 @@ void RadiationM1::CleanWriteBack() {
     const int tf = M1_T2_F1 + dir;
     par_for("cln_wbface", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real f = xh.fs ? fc(m,CLF_N,k,j,i) : CleanFaceFlux(xh, CLW_X, dir, m, k, j, i, true);
+      const Real f = xh.fs ? fc(m,CLF_N,k,j,i)
+                           : CleanFaceFlux(xh, CLW_X, dir, m, k, j, i, true);
       if (slopes) kk(m,tf,k,j,i) = (f - fc(m,CLF_G,k,j,i))/h;
       f0(m,k,j,i) = f;
     });
@@ -2012,7 +1854,8 @@ void RadiationM1::CleanWriteBack() {
         // the gas takes the exchange of the solution with the iterate's T, the beta terms
         // and W, E the rest (its fluxes): the linear solve's residual goes to E, not eint
         const Real t = x.w(m,CLW_T,k,j,i);
-        const Real ex = h*x.c*(x.op(m,M1_OP_P,k,j,i)*x.w(m,CLW_GM,k,j,i)*arad_*SQR(SQR(t)) -
+        const Real ex = h*x.c*(x.op(m,M1_OP_P,k,j,i)*x.w(m,CLW_GM,k,j,i)*arad_*
+                               SQR(SQR(t)) -
                                x.op(m,M1_OP_E,k,j,i)*fmax(e, 0.0));
         // (the residual over the row's local diagonal: all of it in a scattering cell,
         // little where the exchange is stiff, whose X the solve fixes to tol/diagonal)
@@ -2033,7 +1876,8 @@ void RadiationM1::CleanWriteBack() {
     u0_(m,M1_F1,k,j,i) = 0.5*(f1(m,k,j,i) + f1(m,k,j,i+1));
     u0_(m,M1_F1+1,k,j,i) = multi_d ? 0.5*(f2(m,k,j,i) + f2(m,k,j+1,i)) : 0.0;
     u0_(m,M1_F1+2,k,j,i) = three_d ? 0.5*(f3(m,k,j,i) + f3(m,k+1,j,i)) : 0.0;
-    // (clean_stag_split: the cell flux is that of the energy flux Phi, the faces keep F^H)
+    // (clean_stag_split: the cell flux is that of the energy flux Phi, the faces keep
+    // F^H)
     for (int d = 0; d < 3 && xh.hi; ++d) {
       if ((d == 1 && !multi_d) || (d == 2 && !three_d)) continue;
       u0_(m,M1_F1+d,k,j,i) = 0.5*(CleanFaceFlux(x, CLW_X, d, m, k, j, i, true) +
