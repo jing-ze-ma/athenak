@@ -117,12 +117,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 (al.compare("zero") == 0) ? 4 : -1;
     if ((!cln_cell && ly.compare("staggered") != 0) || cln_alpha < 0 ||
         (!cln_recon && rc.compare("none") != 0) || (cln_consist && !cln_cell) ||
-        (!cln_milne && fm.compare("none") != 0) || (cln_milne && !cln_cell)) {
+        (!cln_milne && fm.compare("none") != 0) || (cln_milne && !cln_consist)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "<rad_m1>/clean_layout = staggered | cell, clean_alpha = tau | "
         << "tau_sensor | tau_ray | one | zero, clean_recon = plm | none; "
-        << "clean_face_model = none | milne; clean_consistency and clean_face_model = "
-        << "milne need clean_layout = cell" << std::endl;
+        << "clean_face_model = none | milne; clean_consistency needs clean_layout = cell "
+        << "and clean_face_model = milne needs clean_consistency" << std::endl;
       std::exit(EXIT_FAILURE);
     }}
     cln_psi_eps = pin->GetOrAddReal("rad_m1","clean_psi_eps",1.0e-12);

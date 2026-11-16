@@ -105,16 +105,13 @@ void RadiationM1::CleanInit() {
   if (pm->use_cubed_sphere) {
     // the rays are vet_gd's directions transported conservatively (CleanFvSweep), or
     // the analytic sphere (eddington: of infinite radius); an even panel resolution
-    // keeps the cell centres off the z axis (the frame of y, CleanCsFrame); the Milne
-    // faces take the rays' half ranges about the face normal (CleanCellConsistency)
+    // keeps the cell centres off the z axis (the frame of y, CleanCsFrame)
     if (!cln_cell || !(cln_sphere || cln_edd || vgd_on) || (cln_consist && !vgd_on) ||
-        (cln_milne && !cln_consist) || vgd_twin || VgdRotOn() || vra_on || vgd_async ||
-        pm->mesh_indcs.nx2 % 2 != 0) {
+        vgd_twin || VgdRotOn() || vra_on || vgd_async || pm->mesh_indcs.nx2 % 2 != 0) {
       CleanFatal("<rad_m1>/scheme = clean on the cubed sphere needs clean_layout = cell, "
                  "clean_closure = sphere | eddington (no clean_consistency) or closure = "
                  "vet_col with vet_gd (clean_rays = fv1 | fv, no twin, rotation or "
-                 "async), clean_face_model = milne only with clean_consistency and an "
-                 "even <mesh>/nx2");
+                 "async) and an even <mesh>/nx2");
     }
     if (vgd_on) {
       cln_rfv = std::max(cln_rfv, 1);
