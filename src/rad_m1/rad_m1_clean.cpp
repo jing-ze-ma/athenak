@@ -127,7 +127,8 @@ void RadiationM1::CleanInit() {
   Kokkos::deep_copy(cln_fc2, 0.0);
   Kokkos::deep_copy(cln_fc3, 0.0);
   if (cln_cell) {
-    const int nc = (cln_pc != CLN_PC_X1LINE) ? CLC_N : (cln_pcfac ? CLC_NF : CLC_NL);
+    const int nf = (cln_hk || cln_milne) ? CLC_NF : CLC_U;
+    const int nc = (cln_pc != CLN_PC_X1LINE) ? CLC_N : (cln_pcfac ? nf : CLC_NL);
     Kokkos::realloc(cln_x, nmb, nc, n3, n2, n1);
     Kokkos::deep_copy(cln_x, 0.0);
   }

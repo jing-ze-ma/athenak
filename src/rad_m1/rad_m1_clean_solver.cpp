@@ -421,7 +421,7 @@ int RadiationM1::CleanBiCGStab() {
   const int sx = cell ? CLC_X : CLW_X, sb = cell ? CLC_B : CLW_B;
   const int sr = cell ? CLC_R : CLW_R, sr0 = cell ? CLC_R0 : CLW_R0;
   const int sp = cell ? CLC_P : CLW_P, sv = cell ? CLC_V : CLW_V;
-  const int ss = cell ? CLC_S : CLW_S, sq = cell ? CLC_Q : CLW_Q;
+  const int ss = cell ? CLC_R : CLW_S, sq = cell ? CLC_Q : CLW_Q;
   const int sy = cell ? CLC_Y : CLW_Y, sz = cell ? CLC_Z : CLW_Z;
 
   // w(dst) = sa w(a) + sb w(b)

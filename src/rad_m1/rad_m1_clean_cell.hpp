@@ -86,32 +86,32 @@ constexpr int CLC_O = 0;     // old vector
 constexpr int CLC_K = 4;     // Newton iterate
 constexpr int CLC_X = 8;     // solution
 constexpr int CLC_B = 12;    // right-hand side
-constexpr int CLC_R = 16;    // BiCGStab vectors
+constexpr int CLC_R = 16;    // BiCGStab vectors (s takes the slot of r)
 constexpr int CLC_R0 = 20;
 constexpr int CLC_P = 24;
 constexpr int CLC_V = 28;
-constexpr int CLC_S = 32;
-constexpr int CLC_Q = 36;
-constexpr int CLC_Y = 40;
-constexpr int CLC_Z = 44;
-constexpr int CLC_PSI = 48;  // smoothness sensor of the old vector along x1, x2, x3
-constexpr int CLC_PL = 51;   // lagged slope weights pl, pr of (dir, component):
-constexpr int CLC_PR = 63;   //   slot + 4 dir + component
-constexpr int CLC_U = 75;    // the rays' cell moments (J, J h)
-constexpr int CLC_MB = 79;   // B = kP a T^4/kE of the old vector (clean_face_model)
-constexpr int CLC_NF = 80;   // (clean_pc = x1line with clean_pc_factor: its blocks are in
-                             // the factor store, CleanCellPreconditionerSetup)
-constexpr int CLC_AM = 80;   // preconditioner: 4x4 block of cell i-1 (row major)
-constexpr int CLC_A0 = 96;   // diagonal block
-constexpr int CLC_AP = 112;  // block of cell i+1
-constexpr int CLC_NL = 128;  // (clean_pc = x1line: no other blocks)
-constexpr int CLC_JM = 128;  // preconditioner blocks of cells j-1, j+1, k-1, k+1
-constexpr int CLC_JP = 144;
-constexpr int CLC_KM = 160;
-constexpr int CLC_KP = 176;
-constexpr int CLC_T1 = 192;  // preconditioner scratch vectors
-constexpr int CLC_T2 = 196;
-constexpr int CLC_N = 200;
+constexpr int CLC_Q = 32;
+constexpr int CLC_Y = 36;
+constexpr int CLC_Z = 40;
+constexpr int CLC_PSI = 44;  // smoothness sensor of the old vector along x1, x2, x3
+constexpr int CLC_PL = 47;   // lagged slope weights pl, pr of (dir, component):
+constexpr int CLC_PR = 59;   //   slot + 4 dir + component
+constexpr int CLC_U = 71;    // the rays' cell moments (J, J h; clean_consistency)
+constexpr int CLC_MB = 75;   // B = kP a T^4/kE of the old vector (clean_face_model)
+constexpr int CLC_NF = 76;   // (clean_pc = x1line with clean_pc_factor: its blocks are in
+                             // the factor store, CleanCellPreconditionerSetup; without
+                             // U and MB: the first CLC_U)
+constexpr int CLC_AM = 76;   // preconditioner: 4x4 block of cell i-1 (row major)
+constexpr int CLC_A0 = 92;   // diagonal block
+constexpr int CLC_AP = 108;  // block of cell i+1
+constexpr int CLC_NL = 124;  // (clean_pc = x1line: no other blocks)
+constexpr int CLC_JM = 124;  // preconditioner blocks of cells j-1, j+1, k-1, k+1
+constexpr int CLC_JP = 140;
+constexpr int CLC_KM = 156;
+constexpr int CLC_KP = 172;
+constexpr int CLC_T1 = 188;  // preconditioner scratch vectors
+constexpr int CLC_T2 = 192;
+constexpr int CLC_N = 196;
 
 // dissipation weight candidates (<rad_m1>/clean_alpha)
 constexpr int CLA_TAU = 0;          // A(tau)^2, A = (1 - exp(-tau))/tau
