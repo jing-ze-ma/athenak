@@ -102,6 +102,13 @@ const char *kDtrMinimal[] = {
   "m1.vgd_hr",
 };
 
+// the Views of kDtrMinimal that <rad_m1>/scheme = clean does not write
+// (dt_retry_views = clean)
+const char *kDtrNotClean[] = {
+  "m1.ipred", "m1.ipred2", "m1.csk1", "m1.csk2", "m1.tau_ten", "m1.x2_tt", "m1.x2_hr",
+  "m1.x2_q",
+};
+
 // debug (dt_retry_poison_n / dt_retry_poison_cells): restrict the poison of
 // 5-D Views to a variable range and to the active or ghost cells (ng ghosts)
 int g_pn_lo = -1, g_pn_hi = -1, g_pcells = 0, g_png = 0;
@@ -459,9 +466,13 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   pk->pradm1->dtr_t2be = (t2_be_ == 0) || (t2_be_ > 0 && t2streak_);
   pk->pradm1->dtr_maxcut = maxcut_;   // (vkick_be_retry bookkeeping)
   std::string vm = pin->GetOrAddString("time", "dt_retry_views", "minimal");
+  // clean: the minimal list without the Views the clean scheme (<rad_m1>/scheme =
+  // clean) does not write (the implicit solve's predictors and sources, the vet_col
+  // closure builds)
   all_views_ = (vm == "all");
-  if (!all_views_ && vm != "minimal") {
-    std::cout << "### FATAL ERROR: <time>/dt_retry_views must be minimal or all"
+  clean_views_ = (vm == "clean");
+  if (!all_views_ && !clean_views_ && vm != "minimal") {
+    std::cout << "### FATAL ERROR: <time>/dt_retry_views must be minimal, all or clean"
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
@@ -528,7 +539,7 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   if (global_variable::my_rank == 0) {
     std::cout << "<time> dt_retry on: fac " << fac_ << " max " << maxcut_ << " ngood "
               << ngood_req_ << " grow " << grow_ << " views "
-              << (all_views_ ? "all" : "minimal") << " cap "
+              << (all_views_ ? "all" : (clean_views_ ? "clean" : "minimal")) << " cap "
               << pm->dt_cap << std::endl;
   }
 }
@@ -537,6 +548,9 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
 void DtRetry::Build(Mesh *pm) {
   std::set<std::string> &sel = sel_;
   for (const char *s : kDtrMinimal) {sel.insert(s);}
+  if (clean_views_) {
+    for (const char *s : kDtrNotClean) {sel.erase(s);}
+  }
   for (auto &s : extra_views_) {sel.insert(s);}
   auto *pk = pm->pmb_pack;
   if (pk->phydro != nullptr) {
