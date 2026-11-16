@@ -3059,8 +3059,11 @@ class RadiationM1 {
   std::vector<std::array<int, 3>> cln_mgn;        //   and their cells along x1..x3
   Real cln_psi_eps = 1.0e-12;   // clean_psi_eps: floor of the smoothness sensor
   int cln_nnreal = 0;           // cells with |F| > c E in the last cell-layout solve
+  bool cln_split = false;       // staggered: energy flux apart from the face momentum
   bool cln_diagforce = false;   // staggered: momentum of low-order faces (diagnostic)
   int cln_nr1 = 0, cln_nr2 = 0;  // staggered: cells E < 0, faces |F| > c E_donor
+  int cln_nr3 = 0;              // clean_stag_split: faces |F^H| > c E_donor (diagnostic)
+  Real cln_fh = 0.0;            //   and the largest |F^H|/(c E_donor)
   Real cln_fe = 0.0, cln_fv = 0.0;  // round-off levels of the Newton changes dE, dv
   bool cln_feedback = false;    // gas coupling active
   bool cln_init = false;        // arrays allocated
