@@ -818,7 +818,8 @@ void RadiationM1::CleanCellLineSolve(const CleanLevel &lv, const int dir, const 
   while (nl > cln_chunk*nsys) nsys *= 2;
   // row n: A x_n-P + B x_n + C x_n+P = r (52 values) in buffer 0 or 1
   const size_t scr = ScrArray1D<Real>::shmem_size(104*nl);
-  Kokkos::TeamPolicy<> policy(DevExeSpace(), (nmb1 + 1)*np*nq, Kokkos::AUTO);
+  Kokkos::TeamPolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>> policy(DevExeSpace(),
+      (nmb1 + 1)*np*nq, Kokkos::AUTO);
   const int lev = TeamScratchLevel(scr, 0);
   Kokkos::parallel_for("clc_line", policy.set_scratch_size(lev, Kokkos::PerTeam(scr)),
   KOKKOS_LAMBDA(TeamMember_t tm) {
