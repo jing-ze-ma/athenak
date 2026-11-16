@@ -1165,7 +1165,8 @@ void RadiationM1::CleanFvLevels() {
 //! sum_out n . A_f I_f + V chi I = sum_in |n . A_f| I_f + V chi S.  A beam keeps its
 //! energy; the cell intensities are those of the transported flux.  The
 //! cells are taken in the order of n . x of their centres (Gauss-Seidel, repeated with
-//! the ghost exchange until the largest change is below 1e-13 of the largest intensity).
+//! the ghost exchange until the largest change is below clean_fv_tol (1e-13) of the
+//! largest intensity).
 //! With fv at most 8 passes per build (the slopes converge over the builds of a run).
 //! The inner face emits the sweep's emission (vet_bc_inner emit) or the S of the first
 //! cell and the boundary beams (implicit_beam), the top its Marshak bath, a reflecting
@@ -1491,7 +1492,7 @@ void RadiationM1::CleanFvSweep() {
     CleanFvPanelSlopes(false);
     CleanFvSeams();
     if (wall[0] || wall[1]) CleanFvWalls();
-    if (CleanReduce(dmax, true) <= 1.0e-13*CleanReduce(imax, true)) break;
+    if (CleanReduce(dmax, true) <= cln_fvtol*CleanReduce(imax, true)) break;
   }
 }
 

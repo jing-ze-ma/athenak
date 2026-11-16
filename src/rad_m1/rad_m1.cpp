@@ -84,6 +84,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_maxit = pin->GetOrAddInteger("rad_m1","clean_maxit",4000);
     cln_maxnl = pin->GetOrAddInteger("rad_m1","clean_maxnl",50);
     cln_tol_nl = pin->GetOrAddReal("rad_m1","clean_tol_nl",1.0e-11);
+    // clean_fv_tol (read only when named): the passes of the FV rays stop at this largest
+    // change over the largest intensity
+    if (pin->DoesParameterExist("rad_m1","clean_fv_tol")) {
+      cln_fvtol = pin->GetReal("rad_m1","clean_fv_tol");
+    }
     cln_raymin = pin->GetOrAddReal("rad_m1","clean_ray_min",1.0e-3);
     // clean_rays = sc | fv1 (sp default) | fv | lld
     if (pin->DoesParameterExist("rad_m1","clean_rays")) {

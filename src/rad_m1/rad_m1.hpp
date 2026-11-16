@@ -2991,6 +2991,7 @@ class RadiationM1 {
   int cln_maxit = 4000;         // clean_maxit: BiCGStab iterations
   int cln_maxnl = 50;           // clean_maxnl: Newton iterations
   Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: Newton tolerance (relative dE, dT, dv)
+  Real cln_fvtol = 1.0e-13;     // clean_fv_tol: pass stop of the FV rays
   Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E
   int cln_fillpass = 8;         // clean_fill_passes: closure fill layers
   bool cln_pred = true;         // clean_predict: closure of the predicted state
