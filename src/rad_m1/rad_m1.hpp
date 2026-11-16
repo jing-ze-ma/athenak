@@ -2925,6 +2925,7 @@ class RadiationM1 {
   void CleanFvSweep();
   void CleanFvSourceAlloc();
   void CleanFvCartSource();
+  void CleanFvPanelSlopes(const bool q);
   void CleanFvSeams();
   bool CleanFvWall(const int side);
   void CleanFvSets(const Real tc, const int cyc);

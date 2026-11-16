@@ -19,6 +19,7 @@
 #include "athena.hpp"
 #include "coordinates/coordinates.hpp"
 #include "mesh/mesh.hpp"
+#include "mesh/nghbr_index.hpp"
 #include "eos/eos.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/m1_fluid.hpp"
@@ -789,6 +790,44 @@ void RadiationM1::CleanFvSeams() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanFvPanelSlopes
+//! \brief cubed sphere, clean_rays = lld: the ghosts beyond a panel seam hold the slopes
+//! (q: the source curvatures) along their own panel's x2, x3; they take them along ours,
+//! swapped and reversed as the seam maps the indices (GetPanelBoundary)
+
+void RadiationM1::CleanFvPanelSlopes(const bool q) {
+  if (!pmy_pack->pmesh->use_cubed_sphere || cln_fvb == 1) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, je = indcs.je, ks = indcs.ks, ke = indcs.ke;
+  const int ng = indcs.ng, nl = q ? 1 : cln_fvn, na = std::max(indcs.nx2, indcs.nx3);
+  const int o2 = q ? CLQ_C + 1 : 2*cln_fvn, o3 = q ? CLQ_C + 2 : 3*cln_fvn;
+  auto a = q ? cln_fvq : cln_fvi;
+  auto nb = pmy_pack->pmb->nghbr.d_view;
+  auto pnl = pmy_pack->pmb->mb_panel.d_view;
+  auto bc = pmy_pack->pmb->mb_bcs.d_view;
+  par_for("cln_fv_panel", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, 0, 3, 0, ng - 1,
+          0, na - 1, is, indcs.ie,
+  KOKKOS_LAMBDA(const int m, const int f, const int g, const int t, const int i) {
+    // f: the -x2, +x2, -x3, +x3 face of the MeshBlock; the ghost layer g, along it t
+    if (bc(m,2+f) != BoundaryFlag::panel) return;
+    const int s = (f%2) ? 1 : -1;
+    const int nn = (f < 2) ? NeighborIndex(0,s,0,0,0) : NeighborIndex(0,0,s,0,0);
+    const int pn = nb(m,nn).panel;
+    if (pn == pnl(m)) return;
+    const int j = (f < 2) ? ((s > 0) ? je + 1 + g : js - 1 - g) : js + t;
+    const int k = (f < 2) ? ks + t : ((s > 0) ? ke + 1 + g : ks - 1 - g);
+    if ((f < 2) ? (k > ke) : (j > je)) return;
+    const PanelBoundaries pb = GetPanelBoundary(pn, pnl(m));
+    for (int d = 0; d < nl; ++d) {
+      Real s2 = a(m,o2+d,k,j,i), s3 = a(m,o3+d,k,j,i);
+      if (pb.swap_ax) {const Real w = s2; s2 = s3; s3 = w;}
+      a(m,o2+d,k,j,i) = (pb.rev_a && !q) ? -s2 : s2;
+      a(m,o3+d,k,j,i) = (pb.rev_b && !q) ? -s3 : s3;
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn bool RadiationM1::CleanFvWall
 //! \brief clean_rays = fv | fv1: whether the low (side 0) or high (side 1) theta face of
 //! the mesh is a reflecting wall (specular: CleanFvWalls, maps in CleanFvTables)
@@ -1199,6 +1238,7 @@ void RadiationM1::CleanFvSweep() {
       }
     });
     CleanGhostFill(cln_fvq, CLQ_C, 3);
+    CleanFvPanelSlopes(true);
   }
   // the walls' incoming beams of the intensities the sweep starts from (a restart has
   // no others)
@@ -1332,6 +1372,7 @@ void RadiationM1::CleanFvSweep() {
       }
     }, Kokkos::Max<Real>(dmax), Kokkos::Max<Real>(imax));
     CleanGhostFill(cln_fvi, 0, cln_fvb*n);
+    CleanFvPanelSlopes(false);
     CleanFvSeams();
     if (wall[0] || wall[1]) CleanFvWalls();
     if (CleanReduce(dmax, true) <= 1.0e-13*CleanReduce(imax, true)) break;
