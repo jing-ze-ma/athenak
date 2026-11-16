@@ -1341,9 +1341,10 @@ void RadiationM1::CleanCellDiagnose() {
 //! totals change only by the fluxes through the boundary and the external source esrc
 //! (the radiation's; the slope of E carries it); with force_reference the reference force
 //! is withheld from the gas momentum (an external source, like gravity), and the
-//! radiation pays only the work of the residual: exactly the kinetic energy the gas
-//! gains.  cln_neint counts the cells left with eint < 0 (the fluid's floor would create
-//! energy there).  On the cubed sphere F is stored in the frame of y (F_r, F_theta,
+//! radiation pays the work of the residual, exactly the kinetic energy the gas gains,
+//! and with wb_arad (force_reference_work = split) also that of the reference force,
+//! which the problem generator gives the gas.  cln_neint counts the cells left with
+//! eint < 0 (the fluid's floor would create energy there).  On the cubed sphere F is stored in the frame of y (F_r, F_theta,
 //! F_phi) and the gas momentum change (and its stage slope) in the hydro's components
 //! (CleanGasChange): E and L_z of gas plus radiation are conserved to round-off.
 
@@ -1404,14 +1405,22 @@ void RadiationM1::CleanCellWriteBack() {
       }
       // the radiation pays exactly the kinetic energy (p + dm/2).dm/rho the gas gains,
       // not the work W of the iterate the solve took
-      Real pg[3], wk = 0.0;
+      // and, with wb_arad, the work of the reference force at the velocity after the
+      // kick, which the problem generator's well-balanced source gives the gas
+      Real pg[3], wk = 0.0, wr = 0.0;
       CleanGasMomentum(x, uh, m, k, j, i, pg);
-      for (int b = 0; b < 3; ++b) wk += (pg[b] + 0.5*dm[b])*dm[b]/uh(m,IDN,k,j,i);
-      e -= wk - x.w(m,CLW_WK,k,j,i);
+      for (int b = 0; b < 3; ++b) {
+        const Real d = uh(m,IDN,k,j,i);
+        wk += (pg[b] + 0.5*dm[b])*dm[b]/d;
+        if (fref == M1_FREF_WB_ARAD) {
+          wr += h*CleanRefForce(fref, fr, aref, d, b, m, k, j, i)*(pg[b] + dm[b])/d;
+        }
+      }
+      e -= wk - x.w(m,CLW_WK,k,j,i) + wr;
       // (the hydro's components; dm.e_a covariant on the cubed sphere)
       CleanGasChange(x, m, k, j, i, dm, dh);
       for (int b = 0; b < x.nf; ++b) uh(m,IM1+b,k,j,i) += dh[b];
-      den = -(e - e_old) - div[0] + (eso ? h*es(m,k,j,i) : 0.0);
+      den = -(e - e_old) - div[0] + (eso ? h*es(m,k,j,i) : 0.0) - wr;
       if (vzero) {
         // steady start: the internal energy of the gas temperature of the iterate, not
         // the residual of a step h -> infinity
