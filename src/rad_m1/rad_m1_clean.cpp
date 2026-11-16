@@ -1399,7 +1399,9 @@ void RadiationM1::CleanStagBracket() {
       const bool bf = CleanBoundaryFace(x, dir, m, k, j, i);
       x.fc[dir](m,CLF_RC,k,j,i) = (bf || gf) ? 0.0 : w*(x.c*x.cs(m,n,k,j,i) - pj);
       if (bf || !gf) return;
-      const Real jl = x.w(m,CLW_Z,k-dk,j-dj,i-di), jr = x.w(m,CLW_Z,k,j,i);
+      // (the rays' J also where it is below clean_ray_min E: their face flux passes
+      // through cells they hold almost nothing in, the side cells of a diagonal beam)
+      const Real jl = x.cs(m,CLN_JR,k-dk,j-dj,i-di), jr = x.cs(m,CLN_JR,k,j,i);
       const Real hl = x.fc[dir](m,CLF_HP,k,j,i)*jl, hr = x.fc[dir](m,CLF_HM,k,j,i)*jr;
       const Real dd = x.cs(m,n,k,j,i) - pj/x.c, fr = hl + hr + dd, s = hl - hr;
       // (H+', and H-' = fr - H+'; without half ranges the cell's h+- stay)
