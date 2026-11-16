@@ -1321,17 +1321,35 @@ void RadiationM1::CleanFvSweep() {
   // no wait)
   const int nlev = static_cast<int>(cln_fvlv.size()) - 1;
   Kokkos::View<Kokkos::MinMaxScalar<Real>*, DevMemSpace> red("cln_fv_red", nlev);
+  // fv1: a pass after the first takes only the cells at the faces of the MeshBlock and
+  // those whose upwind neighbour changed after it took them (due: the pass that must
+  // take a cell, done: the pass that has); the others would repeat their intensity
+  const bool act = !o2 && !ld && !axi;
+  const int ie = indcs.ie, je = indcs.je, ke = indcs.ke, nc = nx1*nx2*indcs.nx3;
+  if (act && cln_fvdue.extent_int(1) != nc) {
+    Kokkos::realloc(cln_fvdue, nmb*n, nc);
+    Kokkos::realloc(cln_fvdone, nmb*n, nc);
+  }
+  auto due = cln_fvdue;
+  auto done = cln_fvdone;
   for (int it = 0; it < 100; ++it) {
     Real dmax = 0.0, imax = 0.0;
     if (axi) Kokkos::deep_copy(cln_fvx, fi);
+    if (act) Kokkos::deep_copy(done, -1);
     for (int l = 0; l < nlev; ++l) {
     Kokkos::parallel_reduce("cln_fv", Kokkos::RangePolicy<>(DevExeSpace(), cln_fvlv[l],
                                                             cln_fvlv[l+1]),
     KOKKOS_LAMBDA(const int q, Kokkos::MinMaxScalar<Real> &mm) {
-      const int m = fl(q,0)/n, d = fl(q,0)%n, c = fl(q,1);
+      const int md = fl(q,0), m = md/n, d = md%n, c = fl(q,1);
       const Real nv[3] = {dir_(d,0), dir_(d,1), dir_(d,2)};
       {
         const int i = is + c%nx1, j = js + (c/nx1)%nx2, k = ks + c/(nx1*nx2);
+        if (act && it > 0 && due(md,c) != it && i != is && i != ie && j != js &&
+            j != je && k != ks && k != ke) {
+          done(md,c) = it;
+          mm.max_val = fmax(mm.max_val, fi(m,d,k,j,i));
+          return;
+        }
         // fv: the outflow faces carry the cell's own minmod slope, I + mm(I - U, D - I)/2
         // (U, D the neighbours up- and downstream), solved with the cell: the residual
         // increases with I (slope >= (out + vc)/2), a few Newton steps on its pieces
@@ -1339,7 +1357,7 @@ void RadiationM1::CleanFvSweep() {
         // the slope equations, outflow sides po (+1, high face; 2, low face)
         Real in = 0.0, out = 0.0, ou[6], ud[6][2], cd[3] = {0.0, 0.0, 0.0};
         Real hd[3] = {0.0, 0.0, 0.0}, rd[3] = {0.0, 0.0, 0.0}, od[3] = {0.0, 0.0, 0.0};
-        int no = 0, po[3] = {0, 0, 0};
+        int no = 0, po[3] = {0, 0, 0}, om = 0;
         for (int f = 0; f < 6; ++f) {
           const int dir = f/2, up = f%2;
           const int kf = k + (up && dir == 2), jf = j + (up && dir == 1);
@@ -1366,6 +1384,7 @@ void RadiationM1::CleanFvSweep() {
             continue;
           }
           if (a >= 0.0) {
+            if (!bdry) om |= 1 << f;
             out += a;
             cd[dir] += sg*a;
             od[dir] += a;
@@ -1446,7 +1465,19 @@ void RadiationM1::CleanFvSweep() {
         iv = fmax(iv, 0.0);
         mm.min_val = fmin(mm.min_val, -fabs(iv - fi(m,d,k,j,i)));
         mm.max_val = fmax(mm.max_val, iv);
+        // (a change: the downstream neighbours are due in this pass, or the next one if
+        // this pass has taken them)
+        const bool chg = act && !(iv == fi(m,d,k,j,i));
         fi(m,d,k,j,i) = iv;
+        if (act) done(md,c) = it;
+        for (int f = 0; f < 6 && chg; ++f) {
+          const int x0 = (f < 2) ? i - is : ((f < 4) ? j - js : k - ks);
+          const int x1 = (f < 2) ? ie - is : ((f < 4) ? je - js : ke - ks);
+          if (!(om & (1 << f)) || x0 == ((f%2) ? x1 : 0)) continue;   // (in the block)
+          const int s = (f%2) ? 1 : -1, st = (f < 2) ? 1 : ((f < 4) ? nx1 : nx1*nx2);
+          const int cn = c + s*st;
+          due(md,cn) = (done(md,cn) == it) ? it + 1 : it;
+        }
         for (int e = 0; e < 3 && ld; ++e) fi(m,(1+e)*n+d,k,j,i) = sl[e];
       }
     }, Kokkos::MinMax<Real, DevMemSpace>(Kokkos::subview(red, l)));

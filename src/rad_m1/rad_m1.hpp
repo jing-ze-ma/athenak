@@ -3043,6 +3043,7 @@ class RadiationM1 {
   DvceArray5D<Real> cln_fvq;    // lld: the source moments (m, CLQ_*, k, j, i)
   DvceArray5D<Real> cln_fvp;    // fv: the intensities of the last build (downwind slopes)
   DvceArray5D<Real> cln_fvx;    // 2-D axisymmetric: the intensities of the last pass
+  DvceArray2D<int8_t> cln_fvdue, cln_fvdone;   // fv1 passes: cells due (CleanFvSweep)
   DvceArray5D<Real> cln_fva;    // the outward vector areas of the six faces of a cell
   DvceArray3D<int> cln_fvo;     // the cell order of each direction (m, d, cell)
   DvceArray2D<int> cln_fvl;     // the sweep's (m n + d, cell) by level (CleanFvLevels)
