@@ -1186,7 +1186,8 @@ void RadiationM1::CleanCellPrecondition(const int src, const int dst) {
 //! \brief new iterate from the solution X: with gas coupling E and T by
 //! CleanNewtonUpdate (eint changes by -A(X), CleanCellRightHandSide), F/c from X.
 //! Returns the largest relative change: that of CleanNewtonUpdate and max |dE|, |dy|
-//! over max E.
+//! over max E; with clean_nl_norm = cell that of CleanNewtonUpdate and max |dE| over
+//! max(|E|, clean_nl_efloor max |E|) per cell (the norm of the implicit solve).
 
 Real RadiationM1::CleanCellNewtonUpdate() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1201,6 +1202,23 @@ Real RadiationM1::CleanCellNewtonUpdate() {
   auto w = cln_w;
   auto u = cln_x;
 
+  const bool ncell = cln_nl_cell;
+  if (ncell) {
+    Real xmax = 0.0;
+    if (cln_nl_efloor > 0.0) {
+      Kokkos::parallel_reduce("clc_xmax", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                              nmb*nkji),
+      KOKKOS_LAMBDA(const int idx, Real &x_max) {
+        int m = idx/nkji;
+        int k = (idx - m*nkji)/nji;
+        int j = (idx - m*nkji - k*nji)/nx1;
+        int i = idx - m*nkji - k*nji - j*nx1;
+        x_max = fmax(x_max, fabs(u(m,CLC_X,k+ks,j+js,i+is)));
+      }, Kokkos::Max<Real>(xmax));
+    }
+    cln_nl_escale = cln_nl_efloor*CleanReduce(xmax, true);
+  }
+  const Real esc = fmax(cln_nl_escale, 1.0e-300);
   Real de_newton = 0.0;
   if (feedback) {
     CleanArgs x = CleanMakeArgs();
@@ -1223,14 +1241,16 @@ Real RadiationM1::CleanCellNewtonUpdate() {
     i += is;
     const Real e = feedback ? w(m,CLW_EK,k,j,i) : u(m,CLC_X,k,j,i);
     Real d = fabs(e - u(m,CLC_K,k,j,i));
+    if (ncell) d /= fmax(fmax(fabs(e), fabs(u(m,CLC_K,k,j,i))), esc);
     u(m,CLC_K,k,j,i) = e;
     for (int b = 1; b < 4; ++b) {
-      d = fmax(d, fabs(u(m,CLC_X+b,k,j,i) - u(m,CLC_K+b,k,j,i)));
+      if (!ncell) d = fmax(d, fabs(u(m,CLC_X+b,k,j,i) - u(m,CLC_K+b,k,j,i)));
       u(m,CLC_K+b,k,j,i) = u(m,CLC_X+b,k,j,i);
     }
     d_max = fmax(d_max, d);
     e_max = fmax(e_max, fabs(e));
   }, Kokkos::Max<Real>(dmax), Kokkos::Max<Real>(emax));
+  if (ncell) return fmax(de_newton, CleanReduce(dmax, true));
   return fmax(de_newton, CleanReduce(dmax, true)/fmax(CleanReduce(emax, true), 1.0e-300));
 }
 
@@ -1257,6 +1277,7 @@ Real RadiationM1::CleanCellVelocityUpdate() {
   const int fref = force_ref;
   const bool vzero = cln_vzero;
   const bool cap = (fref == M1_FREF_CLEAN) && !cln_fref_set && !vzero;
+  const bool yres = cln_yres;
   auto fr = cln_fref;
   auto aref = arad_ref;
 
@@ -1287,7 +1308,9 @@ Real RadiationM1::CleanCellVelocityUpdate() {
     for (int b = 0; b < 3; ++b) {
       Real dm = 0.0;
       if (b < x.nf) {
-        const Real y = x.u(m,CLC_K+1+b,k,j,i), yo = x.u(m,CLC_O+1+b,k,j,i);
+        Real y = x.u(m,CLC_K+1+b,k,j,i);
+        if (yres) y += x.u(m,CLC_R+1+b,k,j,i)/(1.0 + hc*chi);
+        const Real yo = x.u(m,CLC_O+1+b,k,j,i);
         dm = -(y - yo + div[1+b])/x.c;
         if (cap || vzero) {
           if (cap) fr(m,b,k,j,i) = dm/x.h;
@@ -1326,6 +1349,28 @@ void RadiationM1::CleanCellCopyIterate() {
   par_for("clc_copy", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     for (int b = 0; b < 4; ++b) u(m,CLC_X+b,k,j,i) = u(m,CLC_K+b,k,j,i);
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellResidual
+//! \brief clean_yres: the residual B - A X of the solution of the linear solve, in CLC_R
+//! (the vector the next solve starts from), for the cell's y correction of
+//! CleanCellVelocityUpdate and CleanCellWriteBack
+
+void RadiationM1::CleanCellResidual() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanCellApply(CLC_X, CLC_R);
+  auto u = cln_x;
+  par_for("clc_resid", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    for (int b = 0; b < 4; ++b) {
+      u(m,CLC_R+b,k,j,i) = u(m,CLC_B+b,k,j,i) - u(m,CLC_R+b,k,j,i);
+    }
   });
 }
 
@@ -1567,6 +1612,10 @@ void RadiationM1::CleanCellWriteBack() {
   auto aref = arad_ref;
   const bool eso = esrc_on;
   auto es = esrc;
+  const bool gexact = cln_gas_exact;
+  const bool yres = cln_yres;
+  const Real arad_ = arad;
+  auto op = opac;
 
   // face fluxes of E
   for (int dir = 0; dir < 3; ++dir) {
@@ -1598,11 +1647,18 @@ void RadiationM1::CleanCellWriteBack() {
     CleanCellDivergence(x, CLC_X, m, k, j, i, true, div);
     Real e = x.u(m,CLC_X,k,j,i);
     const Real e_old = x.w(m,CLW_EO,k,j,i);
-    Real dm[3] = {0.0, 0.0, 0.0}, dh[3];
+    Real dm[3] = {0.0, 0.0, 0.0}, dh[3], y[3];
+    for (int b = 0; b < 3; ++b) y[b] = x.u(m,CLC_X+1+b,k,j,i);
     Real den = 0.0;
     if (feedback) {
+      if (yres) {
+        // y less its share of the linear residual, the face fluxes kept: the gas takes
+        // the balance of the corrected y, not the residual over rho
+        const Real hcx = h*x.c*op(m,M1_OP_T,k,j,i);
+        for (int b = 0; b < x.nf; ++b) y[b] += x.u(m,CLC_R+1+b,k,j,i)/(1.0 + hcx);
+      }
       for (int b = 0; b < x.nf && !vzero; ++b) {
-        dm[b] = -(x.u(m,CLC_X+1+b,k,j,i) - x.u(m,CLC_O+1+b,k,j,i) + div[1+b])/x.c
+        dm[b] = -(y[b] - x.u(m,CLC_O+1+b,k,j,i) + div[1+b])/x.c
                 - h*CleanRefForce(fref, fr, aref, uh(m,IDN,k,j,i), b, m, k, j, i);
       }
       // the work W of S_E is exactly the kinetic energy (p + dm/2).dm/rho the gas gains,
@@ -1632,20 +1688,44 @@ void RadiationM1::CleanCellWriteBack() {
       } else {
         // the gas eint changes by the exchange of the solve only
         const Real ke = 0.5*(SQR(pg[0]) + SQR(pg[1]) + SQR(pg[2]))/uh(m,IDN,k,j,i);
-        if (CleanGasEint(x, uh, ke + wk, m, k, j, i) + den < 0.0) nb += 1.0;
+        const Real eint = CleanGasEint(x, uh, ke + wk, m, k, j, i) + den;
+        if (gexact) {
+          // the cell's exchange taken exactly with its face fluxes, work and beta terms
+          // fixed: E (1 + h c kE) = E_tr + h c kP G a T^4, E_tr = E_old - h div F - W
+          // + h esrc + RE E + RY.y, and E + eint = C of the balance, so that
+          // e(d,T) + A T^4 = C - E_tr/(1 + h c kE), A = h c kP G a/(1 + h c kE), whose
+          // unique root has eint > 0; E = C - eint keeps the total to round-off
+          const Real d = uh(m,IDN,k,j,i), hcke = h*x.c*op(m,M1_OP_E,k,j,i);
+          const Real a = h*x.c*op(m,M1_OP_P,k,j,i)*x.w(m,CLW_GM,k,j,i)*arad_/(1.0 + hcke);
+          const Real etr = e_old - div[0] + (eso ? h*es(m,k,j,i) : 0.0) - wk - wr
+                           + CleanCellBetaSource(x, CLC_X, m, k, j, i);
+          const Real tk = x.w(m,CLW_T,k,j,i);
+          const Real rhs = e + eint - etr/(1.0 + hcke);
+          if (rhs > 0.0) {
+            const Real t = CleanExchangeTemperature(eos, d, a, rhs, tk);
+            Real ei, p, chi_rho, chi_t, cv;
+            eos.ThermoAt(d, t, ei, p, chi_rho, chi_t, cv);
+            den += ei - eint;
+            e -= ei - eint;
+          } else {
+            nb += 1.0;
+          }
+        } else if (eint < 0.0) {
+          nb += 1.0;
+        }
       }
       uh(m,IEN,k,j,i) += den;
     }
     if (slopes) {
       kk(m,M1_T2_E,k,j,i) = (e - e_old)/h;
       for (int b = 0; b < 3; ++b) {
-        kk(m,M1_T2_F1+b,k,j,i) = x.c*(x.u(m,CLC_X+1+b,k,j,i) - x.u(m,CLC_O+1+b,k,j,i))/h;
+        kk(m,M1_T2_F1+b,k,j,i) = x.c*(y[b] - x.u(m,CLC_O+1+b,k,j,i))/h;
         kk(m,M1_T2_M1+b,k,j,i) = feedback ? dh[b]/h : 0.0;
       }
       kk(m,M1_T2_EN,k,j,i) = den/h;
     }
     u0_(m,M1_E,k,j,i) = e;
-    for (int b = 0; b < 3; ++b) u0_(m,M1_F1+b,k,j,i) = x.c*x.u(m,CLC_X+1+b,k,j,i);
+    for (int b = 0; b < 3; ++b) u0_(m,M1_F1+b,k,j,i) = x.c*y[b];
   }, Kokkos::Sum<Real>(neint));
   cln_neint = static_cast<int>(CleanReduce(neint, false));
 }

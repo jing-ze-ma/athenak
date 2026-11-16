@@ -2981,6 +2981,7 @@ class RadiationM1 {
   Real CleanCellNewtonUpdate();
   Real CleanCellVelocityUpdate();
   void CleanCellCopyIterate();
+  void CleanCellResidual();
   int CleanCellCountNegative();
   void CleanCellWriteBack();
   void CleanCellClosureSlope(const Real sign);
@@ -3022,6 +3023,13 @@ class RadiationM1 {
   bool cln_sphere = false;      // clean_closure = sphere (spherical polar)
   Real cln_sph_r = 0.0;         // clean_sphere_radius
   int cln_vfreeze = 0;          // clean_vfreeze: 1 advective a, 2 work term at v_old
+  bool cln_gas_exact = false;   // clean_gas_exact: gas eint of the write-back by the
+                                // cell's exact local exchange
+  bool cln_yres = false;        // clean_yres: y of a cell less its linear residual over
+                                // the row diagonal before the gas takes its momentum
+  bool cln_nl_cell = false;     // clean_nl_norm = cell: per-cell relative Newton changes
+  Real cln_nl_efloor = 0.0;     // clean_nl_efloor: E scale of that norm over max E
+  Real cln_nl_escale = 0.0;     // that E scale, clean_nl_efloor max E of the iterate
   int cln_maxpos = 3;           // clean_maxpos: low-order face marking rounds per solve
   int cln_pcsweeps = 1;         // clean_pc_sweeps: smoothing sweeps of the multigrid
   int cln_chunk = 32;           // rows per Thomas system of the line solve

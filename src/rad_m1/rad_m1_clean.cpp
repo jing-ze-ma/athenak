@@ -698,6 +698,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         CleanPreconditionerSetup();
       }
       nit = CleanBiCGStab();
+      if (cell && cln_yres && cln_feedback) CleanCellResidual();
       nit_sum += std::abs(nit);
       ++nsolve;
       cln_nsolve += 1.0;
@@ -988,7 +989,8 @@ void RadiationM1::CleanRightHandSide() {
 //! the cell layout keeps X, whose E < 0 its positivity limiter treats).  The cell layout
 //! takes the gas eint change -A of eq. 56 of Ma et al. (2025) (CLW_GM, CLW_EP of
 //! CleanCellRightHandSide, CleanCellNewtonUpdate).
-//! Returns max |dE|/E, |dT|/T.
+//! Returns max |dE|/E, |dT|/T (clean_nl_norm = cell: |dE| over max(|E|, the E scale
+//! cln_nl_escale)).
 
 Real RadiationM1::CleanNewtonUpdate() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -997,6 +999,8 @@ Real RadiationM1::CleanNewtonUpdate() {
   int nmb = pmy_pack->nmb_thispack;
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   const Real hc = dt_sub*c_light, arad_ = arad;
+  const bool ncell = cln_nl_cell;
+  const Real esc = fmax(cln_nl_escale, 1.0e-300);
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
   auto eos = fl.eos;
@@ -1025,7 +1029,8 @@ Real RadiationM1::CleanNewtonUpdate() {
                        + (cell ? w(m,CLW_EP,k,j,i) : 0.0), t_old);
     w(m,CLW_EK,k,j,i) = e;
     w(m,CLW_T,k,j,i) = t;
-    const Real de = fabs(e - e_old)/fmax(fmax(fabs(e), fabs(e_old)), 1.0e-300);
+    const Real de = ncell ? fabs(e - e_old)/fmax(fmax(fabs(e), fabs(e_old)), esc)
+                          : fabs(e - e_old)/fmax(fmax(fabs(e), fabs(e_old)), 1.0e-300);
     const Real dt = fabs(t - t_old)/fmax(fmax(t, t_old), 1.0e-300);
     dmax = fmax(dmax, fmax(de, dt));
   }, Kokkos::Max<Real>(change));
