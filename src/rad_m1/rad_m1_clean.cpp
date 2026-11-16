@@ -698,12 +698,12 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     CleanFirstIterate();
     cln_fsk = false;
     if (cell) CleanCellFirstIterate();
-    if (cln_vimp && cln_feedback) CleanStagDrag(true);
     if (cln_opt && cln_feedback) {
       CleanCellOpacity();
       CleanCellFaceSpeeds();
     }
     if (cln_feedback) CleanAdvectiveCoefficients();
+    if (cln_vimp && cln_feedback) CleanStagDrag(true);
     converged = !iterate;
     npic = 0;
     Real de0 = 1.0e300, dv0 = 1.0e300;
@@ -1772,8 +1772,11 @@ void RadiationM1::CleanStagFSolve(const int e) {
 //!   Q = F^k + h c^2 d_n(D E^k) = G - c^2 dm_f^k (CLF_DB, CLF_DQ; CleanFaceWeights,
 //!   CleanFaceCross, CleanFaceSource)
 //! and the energy flux takes the same increment.  When the loop has converged F = F^H:
-//! the solution is that of the lagged velocity.  first: the first iterate, dm^k = 0 and
-//! Q = G; b = 0 while the gas momentum is frozen and before the reference force is set.
+//! the solution is that of the lagged velocity.  first: the first iterate, whose
+//! velocity is that of the old vector: dm_f^k = 0, Q = G; with force_reference = clean
+//! the gas holds the reference force, which balances the radiation force of the start,
+//! so Q is that of E^k (no drag kick); b = 0 while the gas momentum is frozen and before
+//! the reference force is set.
 
 void RadiationM1::CleanStagDrag(const bool first) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1784,15 +1787,17 @@ void RadiationM1::CleanStagDrag(const bool first) {
   if (first) CleanGhostFill(cln_w, CLW_EK, 1);
   CleanArgs x = CleanMakeArgs(), xh = x;
   xh.hi = true;
+  xh.drag = x.drag && !first;   // (the flux the iterate's velocity came from)
   auto uh = FluidRef::Get(pmy_pack).u0;
   const bool off = cln_vzero || (first && force_ref == M1_FREF_CLEAN && !cln_fref_set);
+  const bool lag = !first || (force_ref == M1_FREF_CLEAN);
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     auto fc = x.fc[dir];
     par_for("cln_drag", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       if (CleanBoundaryFace(x, dir, m, k, j, i)) return;   // (no F equation)
-      const Real q = first ? fc(m,CLF_G,k,j,i) :
+      const Real q = !lag ? fc(m,CLF_G,k,j,i) :
                      CleanFaceFlux(xh, CLW_EK, dir, m, k, j, i, true) +
                      x.h*x.c*x.c*CleanFaceStress(x, CLW_EK, dir, m, k, j, i, true);
       const Real xl = x.op(m,M1_OP_T,k-dk,j-dj,i-di), xs = xl + x.op(m,M1_OP_T,k,j,i);
