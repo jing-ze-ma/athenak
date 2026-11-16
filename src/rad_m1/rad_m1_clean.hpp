@@ -49,7 +49,8 @@ constexpr int CLF_TH = 1;    // theta = 1/(1 + h c chi_f)
 constexpr int CLF_G = 2;     // flux of the old vector G_f
 constexpr int CLF_HP = 3;    // h+_f
 constexpr int CLF_HM = 4;    // h-_f
-constexpr int CLF_RC = 5;    // cell layout: RC coefficient (1 - al) c/chi_f (h-free)
+constexpr int CLF_RC = 5;    // cell layout: RC coefficient (1 - al) c/chi_f (h-free);
+                             // staggered: the consistency bracket (CleanStagBracket)
 constexpr int CLF_N = 6;
 
 // work vectors (array cln_w)
@@ -404,6 +405,7 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
   const Real th = (1.0 - w)*x.fc[dir](m,CLF_TH,k,j,i);
   Real s = th*x.fc[dir](m,CLF_G,k,j,i);
+  if (x.consist && !x.hi) s += x.fc[dir](m,CLF_RC,k,j,i);   // (staggered bracket)
   if (x.feedback) {   // (the emission part of the beta term, CleanFaceWeights)
     s += 0.25*th*x.c*(x.w(m,CLW_BT+dir,kl,jl,il) + x.w(m,CLW_BT+dir,k,j,i))*
          (x.w(m,CLW_RE,kl,jl,il) + x.w(m,CLW_RE,k,j,i));

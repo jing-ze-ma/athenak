@@ -643,6 +643,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     CleanCellFaceCoefficients();
   } else {
     CleanFaceCoefficients();
+    if (cln_consist) CleanStagBracket();
   }
 
   // 3. Newton iteration on the gas coupling and Picard passes on the lagged quantities:
@@ -695,6 +696,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
           CleanCellFaceSpeeds();
         } else {
           CleanFaceCoefficients();
+          if (cln_consist) CleanStagBracket();
         }
         if (cln_feedback) CleanAdvectiveCoefficients();
       }
@@ -1295,6 +1297,7 @@ int RadiationM1::CleanStagRealizable(const int mark) {
       }
       if (mark == 2 || (mark == 1 && (r2 || !(el >= -zero) || !(er >= -zero)))) {
         x.fc[dir](m,CLF_W,k,j,i) = 1.0;
+        if (x.consist) x.fc[dir](m,CLF_RC,k,j,i) = 0.0;   // (no bracket)
       }
     }, Kokkos::Sum<Real>(r1), Kokkos::Sum<Real>(r2), Kokkos::Sum<Real>(r3),
     Kokkos::Max<Real>(r4));
@@ -1308,6 +1311,39 @@ int RadiationM1::CleanStagRealizable(const int mark) {
   cln_nr3 = static_cast<int>(CleanReduce(n3, false));
   cln_fh = CleanReduce(cln_fh, true);
   return cln_nr1 + cln_nr2;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagBracket
+//! \brief staggered clean_consistency (with clean_stag_split, Cartesian): the bracket
+//! C_f = w (F_ray,f - Phi_f(J)) of every interior face (CLF_RC), F_ray the rays' energy
+//! flux through it (CLN_FX, CLN_F2, CLN_F3 of its upper cell) and Phi_f(J) the energy
+//! flux of the rays' own J, so that Phi(J) + C = (1 - w) Phi(J) + w F_ray.  Lagged (fixed
+//! in the solve), energy flux only (CleanFaceSource); a low-order face drops it.
+
+void RadiationM1::CleanStagBracket() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanArgs x = CleanMakeArgs();
+  x.consist = false;
+  par_for("cln_rayj", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    x.w(m,CLW_Z,k,j,i) = x.cs(m,CLN_J,k,j,i);
+  });
+  CleanGhostFill(cln_w, CLW_Z, 1);
+  for (int dir = 0; dir < x.nf; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    const int n = (dir == 0) ? CLN_FX : ((dir == 1) ? CLN_F2 : CLN_F3);
+    par_for("cln_sbracket", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      x.fc[dir](m,CLF_RC,k,j,i) = CleanBoundaryFace(x, dir, m, k, j, i) ? 0.0 :
+          x.fc[dir](m,CLF_W,k,j,i)*(x.c*x.cs(m,n,k,j,i) -
+                                     CleanFaceFlux(x, CLW_Z, dir, m, k, j, i, true));
+    });
+  }
 }
 
 //----------------------------------------------------------------------------------------
