@@ -1843,24 +1843,14 @@ static void VgdMirPick(const std::vector<double> &d, const int n, const double m
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::VgdTabCompute
-//! \brief vgdrot-1011: the host part of VetGdTables for angle alpha (the set rotated by
-//! alpha about z, the wall maps and branch tables) into the persistent pinned host
-//! buffers vgd_tabh (allocated by VgdTabAlloc; non-wall m3 / w3 entries stay 0 as in the
-//! zero-initialised mirrors before).  Touches nothing else: safe on the prefetch thread.
-//! nthr: host threads over the (m, k) columns (the result does not depend on it).
+//! \fn std::vector<double> RadiationM1::VgdRotate
+//! \brief the set of angle (or block key) alpha, packed as vgd_base (x, y, z, w): rotated
+//! about z by alpha, or with vet_gd_rotate_axis = 3d by R_b (VgdRot3)
 
-void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
-  Mesh *pm = pmy_pack->pmesh;
-  auto &indcs = pm->mb_indcs;
-  const int nmb = pmy_pack->nmb_thispack;
-  const int c2 = indcs.nx2 + 2*vgd_w;
-  const int c3 = indcs.nx3 + 2*vgd_w;
+std::vector<double> RadiationM1::VgdRotate(const Real alpha) const {
   const int n = vgd_n;
-  VgdTabHost &H = vgd_tabh;
   std::vector<double> d(vgd_base);
   if (vgd_rot3) {
-    // cs-s3b-1017 vet_gd_rotate_axis = 3d: d = R_b n (alpha is the block key)
     double rm[9];
     VgdRot3(alpha, rm);
     for (int q = 0; q < n; ++q) {
@@ -1878,6 +1868,26 @@ void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
       d[4*q+1] = sa*x + ca*y;
     }
   }
+  return d;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VgdTabCompute
+//! \brief vgdrot-1011: the host part of VetGdTables for angle alpha (the set rotated by
+//! alpha about z, the wall maps and branch tables) into the persistent pinned host
+//! buffers vgd_tabh (allocated by VgdTabAlloc; non-wall m3 / w3 entries stay 0 as in the
+//! zero-initialised mirrors before).  Touches nothing else: safe on the prefetch thread.
+//! nthr: host threads over the (m, k) columns (the result does not depend on it).
+
+void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int c2 = indcs.nx2 + 2*vgd_w;
+  const int c3 = indcs.nx3 + 2*vgd_w;
+  const int n = vgd_n;
+  VgdTabHost &H = vgd_tabh;
+  std::vector<double> d = VgdRotate(alpha);
   auto &d_h = H.dir;
   for (int q = 0; q < n; ++q) {
     for (int c = 0; c < 4; ++c) {d_h(q,c) = d[4*q+c];}

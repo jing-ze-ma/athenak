@@ -2161,6 +2161,12 @@ void RadiationM1::VetRotUpdate() {
 //! \brief the vet_sc set rotation of block blk (VetRotUpdate's formula)
 
 Real RadiationM1::VetRotBeta(const int64_t blk) const {
+  // a mirrored x1 end takes ray r + nray/2 as the x1 mirror of ray r: a turned ring has
+  // no mirror pairs (nor any ray along a mirror image), so it stays unturned there
+  if (vet_ring_n > 0 && !vet_x1per && ((vet_bc_mirror && ibc_x1min == M1_IBC_REFLECT) ||
+      (vet_bc_mirror_hi && ibc_x1max == M1_IBC_REFLECT))) {
+    return 0.0;
+  }
   // rotavg-1012: the stratified phase with vet_rotate_avg (RotPhase); else as before
   const Real q = vra_on ? static_cast<Real>(RotPhase(blk))
                         : VetGdAngleBlk(blk)/(0.5*M_PI);

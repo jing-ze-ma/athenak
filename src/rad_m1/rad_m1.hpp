@@ -2923,7 +2923,9 @@ class RadiationM1 {
   void CleanGdFaceSums();
   void CleanFvSweep();
   void CleanFvSeams();
-  bool CleanFvWallInit(const int side);
+  bool CleanFvWall(const int side);
+  void CleanFvSets(const Real tc, const int cyc);
+  void CleanFvTables(const int d0, const int nd);
   void CleanFvWalls();
   void CleanClosureFill();
   void CleanClosureEddington();
@@ -3038,6 +3040,9 @@ class RadiationM1 {
   DvceArray4D<int> cln_fvwm;    // specular maps of reflecting theta walls (m,side,k,d)
   DvceArray4D<Real> cln_fvwu;   // |n . theta_hat| there
   DvceArray5D<Real> cln_fvw;    // the walls' incoming intensities (m, side, k, i, d)
+  DvceArray2D<Real> cln_fvd;    // the swept directions (x, y, z, weight; CleanFvSets)
+  int cln_fvn = 0;              // their number
+  std::vector<Real> cln_fvkey;  // the set (block key) in each slot of a rotating union
   DvceArray5D<Real> cln_v;      // closure fill flags (m,2,k,j,i)
   DvceArray5D<Real> cln_opb;    // opacities of the stage, kept during the closure build
   // clean_closure = extrap(2): ray moments (CLN_* layout, not normalised by J) of the
@@ -3488,6 +3493,7 @@ class RadiationM1 {
   // angle
   bool vgd_rot3 = false;
   void VgdRot3(const Real key, double r[9]) const;
+  std::vector<double> VgdRotate(const Real alpha) const;
   // rotavg-1012: <rad_m1>/vet_rotate_avg = K >= 2 (read only when named; default 0 = off,
   // bitwise): the closure handed to the moment step is the mean over the LAST K rotated
   // direction sets, not the current set's alone (rad_m1_rotavg.cpp).  Closure-agnostic:

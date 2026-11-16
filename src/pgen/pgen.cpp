@@ -1977,7 +1977,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                  "the "
               << "restart is not bitwise)." << std::endl;
   }
-  if (pradm1 != nullptr && pradm1->vra_on && nra_file == 0 &&
+  if (pradm1 != nullptr && pradm1->vra_on && !pradm1->clean && nra_file == 0 &&
       global_variable::my_rank == 0) {
     std::cout << "<rad_m1> vet_rotate_avg: the restart file has no averaging history; it "
               << "is re-measured at the first build (a restart from a run with a "

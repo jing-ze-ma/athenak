@@ -235,8 +235,8 @@ void RadiationM1::CleanCellConsistency() {
   const bool ml = x.milne;
   x.milne = false;   // the bracket is that of the moment scheme
   auto fi = cln_fvi;
-  auto dir_ = vgd_dir;
-  const int nd = x.cub ? vgd_n : 0;
+  auto dir_ = cln_fvd;
+  const int nd = x.cub ? cln_fvn : 0;
 
   // the rays' cell moments Ur (y in its frame on the cubed sphere)
   par_for("clc_raymom", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,

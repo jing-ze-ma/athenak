@@ -10,8 +10,11 @@
 //! non-locality C1 of every cell.
 
 #include <algorithm>
+#include <limits>
 #include <utility>
 #include <vector>
+
+#include <Kokkos_NestedSort.hpp>
 
 #include "athena.hpp"
 #include "coordinates/coordinates.hpp"
@@ -25,6 +28,7 @@
 #include "utils/imex_sdirk2.hpp"
 
 namespace radm1 {
+extern bool g_vra_adv;   // vet_rotate_advance (rad_m1_vetgd.cpp)
 //----------------------------------------------------------------------------------------
 //! \fn void CleanStoreMoments
 //! \brief the closure of a cell from its ray moments q (CLN_* layout, not normalised):
@@ -148,6 +152,19 @@ Real CleanFvFaceAxi(const DvceArray5D<Real> &fi, const DvceArray5D<Real> &fd,
   const Real a = u - at(fi, o + (pos ? -2 : 1));
   const Real b = at(fd, o - (pos ? 0 : 1)) - u;
   return u + ((a*b > 0.0) ? 0.5*((fabs(a) < fabs(b)) ? a : b) : 0.0);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanFvKey
+//! \brief the sweep key n_d . x of cell c from its factors xc (CleanFvTables)
+
+template <typename X, typename D>
+KOKKOS_INLINE_FUNCTION
+Real CleanFvKey(const X &xc, const D &dir, const bool cub, const int m, const int d,
+                const int c) {
+  if (cub) return dir(d,0)*xc(m,0,c) + dir(d,1)*xc(m,1,c) + dir(d,2)*xc(m,2,c);
+  return xc(m,0,c)*(dir(d,0)*xc(m,1,c)*xc(m,2,c) + dir(d,1)*xc(m,1,c)*xc(m,3,c) +
+                    dir(d,2)*xc(m,4,c));
 }
 
 //----------------------------------------------------------------------------------------
@@ -663,6 +680,7 @@ void RadiationM1::CleanRays() {
   });
   if (cln_rfv > 0) {
     VetGdSource();
+    CleanFvSets(pmy_pack->pmesh->time + pmy_pack->pmesh->dt, pmy_pack->pmesh->ncycle);
     CleanFvSweep();
   } else {
     VetGdBuild();
@@ -680,14 +698,14 @@ void RadiationM1::CleanRays() {
 void RadiationM1::CleanFvSeams() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int js = indcs.js, je = indcs.je, ks = indcs.ks, ke = indcs.ke;
-  const int n = vgd_n;
+  const int n = cln_fvn;
   const Real pp = pmy_pack->pmesh->mesh_size.x3max - pmy_pack->pmesh->mesh_size.x3min;
   const bool circ = std::abs(pp - 2.0*M_PI) < 1.0e-10;
   CleanArgs x = CleanMakeArgs();
   auto fi = cln_fvi;
   auto mp = cln_fvm;
   const int n1 = fi.extent_int(4), n2 = fi.extent_int(3), n3 = fi.extent_int(2);
-  if (cln_fvt.extent_int(1) != n) Kokkos::realloc(cln_fvt, n3, n2, n1, n);
+  if (cln_fvt.extent_int(3) != n) Kokkos::realloc(cln_fvt, n3, n2, n1, n);
   auto t = cln_fvt;
   for (int m = 0; m < pmy_pack->nmb_thispack; ++m) {
   par_for("cln_fv_seam", DevExeSpace(), 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
@@ -705,64 +723,206 @@ void RadiationM1::CleanFvSeams() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn bool RadiationM1::CleanFvWallInit
+//! \fn bool RadiationM1::CleanFvWall
 //! \brief clean_rays = fv | fv1: whether the low (side 0) or high (side 1) theta face of
-//! the mesh is a reflecting wall; at the first call the specular map of its walls
-//! (cln_fvwm, per MeshBlock and column k): each incoming set direction takes the leaving
-//! direction nearest to its mirror image n - 2 (n . t) t about the wall's normal t at
-//! the face; cln_fvwu holds |n . t| (t the face's unit normal, the flux factor of every
-//! beam through it).
+//! the mesh is a reflecting wall (specular: CleanFvWalls, maps in CleanFvTables)
 
-bool RadiationM1::CleanFvWallInit(const int side) {
+bool RadiationM1::CleanFvWall(const int side) {
   Mesh *pm = pmy_pack->pmesh;
-  if (pm->use_polar_boundary || pm->mesh_bcs[side ? BoundaryFace::outer_x2
-                                                  : BoundaryFace::inner_x2] !=
-      BoundaryFlag::reflect) {
-    return false;
+  return !pm->use_polar_boundary &&
+         pm->mesh_bcs[side ? BoundaryFace::outer_x2 : BoundaryFace::inner_x2] ==
+         BoundaryFlag::reflect;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanFvSets
+//! \brief clean_rays = fv | fv1: the swept directions (cln_fvd, cln_fvn) and their tables
+//! for the closure of time tc (of the step of cycle cyc).  A fixed vet_gd set is swept as
+//! it is.  A rotating one (vet_gd_rotate_dt | _every) is
+//! swept as the union of the sets the closure averages, set by set in slots of n
+//! directions with the set's weight folded into the quadrature weights, so that every
+//! moment and face sum is the weighted mean of the sets' (linear in I: single-valued,
+//! conservative and realisable).  With vet_rotate_avg = K these are the last K sets
+//! b-K+1 .. b of block b, 1/K each; vet_gd_rotate_xfade adds the next set b+1 and weights
+//! the oldest (1 - s)/K and the next s/K, s the fraction of block b passed at tc, so that
+//! the closure is continuous in time.  A function of t and the state alone (a
+//! restart rebuilds the same union).  Block blk takes slot blk mod (K + xfade); a slot
+//! whose set changes rebuilds its tables and starts its sweep from the old set's
+//! intensities (time-dependent rays would remap them to the new set here).  Without
+//! vet_rotate_advance the K sets repeat: the union is fixed and has nothing to fade.
+
+void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
+  const int n = vgd_n;
+  if (!VgdRotOn()) {
+    if (cln_fvn == n) return;
+    cln_fvd = vgd_dir;
+    cln_fvn = n;
+    CleanFvTables(0, n);
+    return;
   }
-  if (cln_fvwm.extent_int(0) > 0) return true;
-  auto &indcs = pm->mb_indcs;
-  const int nmb = pmy_pack->nmb_thispack, n = vgd_n, c3 = cln_s.extent_int(2);
-  Kokkos::realloc(cln_fvwm, nmb, 2, c3, n);
-  Kokkos::realloc(cln_fvwu, nmb, 2, c3, n);
-  Kokkos::realloc(cln_fvw, nmb, 2, c3, cln_s.extent_int(4), n);
-  Kokkos::deep_copy(cln_fvw, 0.0);
-  auto m_h = Kokkos::create_mirror_view(cln_fvwm);
-  auto u_h = Kokkos::create_mirror_view(cln_fvwu);
-  auto d_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_dir);
-  auto t_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->xx2f);
-  auto p_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->xx3f);
-  for (int m = 0; m < nmb; ++m) {
-    for (int sd = 0; sd < 2; ++sd) {
-      const Real th = t_h(m, sd ? indcs.je + 1 : indcs.js), sgn = sd ? 1.0 : -1.0;
-      for (int k = indcs.ks; k <= indcs.ke; ++k) {
-        // the unit normal of the wall face (CleanFaceVector: the mean theta_hat over the
-        // face's phi range)
-        const Real p1 = p_h(m,k), p2 = p_h(m,k+1);
-        Real t[3] = {cos(th)*(sin(p2) - sin(p1)), cos(th)*(cos(p1) - cos(p2)),
-                     -sin(th)*(p2 - p1)};
-        const Real tn = std::sqrt(t[0]*t[0] + t[1]*t[1] + t[2]*t[2]);
-        for (int c = 0; c < 3; ++c) t[c] /= tn;
-        for (int d = 0; d < n; ++d) {
-          const Real nt = d_h(d,0)*t[0] + d_h(d,1)*t[1] + d_h(d,2)*t[2];
-          u_h(m,sd,k,d) = std::abs(nt);
-          m_h(m,sd,k,d) = -1;
-          if (!(sgn*nt < 0.0)) continue;
-          const Real v[3] = {d_h(d,0) - 2.0*nt*t[0], d_h(d,1) - 2.0*nt*t[1],
-                             d_h(d,2) - 2.0*nt*t[2]};
-          Real bd = -2.0;
-          for (int e = 0; e < n; ++e) {
-            const Real et = d_h(e,0)*t[0] + d_h(e,1)*t[1] + d_h(e,2)*t[2];
-            const Real dt = v[0]*d_h(e,0) + v[1]*d_h(e,1) + v[2]*d_h(e,2);
-            if (sgn*et > 0.0 && dt > bd) {bd = dt; m_h(m,sd,k,d) = e;}
-          }
+  const Mesh *pm = pmy_pack->pmesh;
+  const int nk = vra_on ? vra_k : 1;
+  const bool xf = vgd_xf && !(vra_on && !g_vra_adv);
+  const int ns = nk + (xf ? 1 : 0);
+  int64_t b = VetGdBlock(cyc);
+  Real s = 0.0;
+  if (vgd_rot_dt > 0.0) {
+    // (without the cross-fade the block of the step's midpoint, as VetGdBlock)
+    const Real dt = (pm->dt < vgd_rot_dt) ? pm->dt : 0.0;
+    const Real tau = (tc - (xf ? 0.0 : 0.5*dt) - vgd_rot_t0)/vgd_rot_dt;
+    b = static_cast<int64_t>(std::floor(tau));
+    if (xf) s = tau - static_cast<Real>(b);
+  }
+  if (cln_fvn != ns*n) {
+    cln_fvn = ns*n;
+    cln_fvd = DvceArray2D<Real>("cln_fvd", ns*n, 4);
+    cln_fvkey.assign(ns, std::numeric_limits<Real>::quiet_NaN());
+  }
+  auto d_h = Kokkos::create_mirror_view(cln_fvd);
+  std::vector<bool> chg(ns, false);
+  for (int64_t blk = b - nk + 1; blk <= b + (xf ? 1 : 0); ++blk) {
+    const int q = static_cast<int>(((blk % ns) + ns) % ns);
+    const Real key = VetGdAngleBlk(blk);
+    const Real w = ((xf && blk == b - nk + 1) ? 1.0 - s : ((blk > b) ? s : 1.0))/nk;
+    const std::vector<double> d = VgdRotate(key);
+    for (int e = 0; e < n; ++e) {
+      for (int c = 0; c < 3; ++c) d_h(q*n+e,c) = d[4*e+c];
+      d_h(q*n+e,3) = w*d[4*e+3];
+    }
+    chg[q] = !(key == cln_fvkey[q]);
+    cln_fvkey[q] = key;
+  }
+  Kokkos::deep_copy(cln_fvd, d_h);
+  for (int q = 0; q < ns; ++q) {
+    if (chg[q]) CleanFvTables(q*n, n);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanFvTables
+//! \brief the tables of the swept directions d0 .. d0+nd-1 (one set; every search stays
+//! in it): the cell order of each direction by n . x of the cell centres (centroids on
+//! the cubed sphere; cln_fvo), the direction maps of the periodic seams of a wedge
+//! (cln_fvm: the ghost's direction in the frame of its image cell, n' = sum_b (n .
+//! e_b(ghost)) e_b(image), the nearest set direction; an exact permutation for a phi
+//! period of the set) and of the reflecting theta walls (cln_fvwm: an incoming direction
+//! takes the leaving one nearest to its mirror image n - 2 (n . t) t about the wall's
+//! unit normal t, the mean theta_hat over the face's phi range; cln_fvwu = |n . t|)
+
+void RadiationM1::CleanFvTables(const int d0, const int nd) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, je = indcs.je, ks = indcs.ks, ke = indcs.ke;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, ncell = nx1*nx2*indcs.nx3;
+  const int nmb = pmy_pack->nmb_thispack, nn = cln_fvn, c3 = cln_s.extent_int(2);
+  if (cln_fvo.extent_int(1) != nn) {
+    Kokkos::realloc(cln_fvo, nmb, nn, ncell);
+    Kokkos::realloc(cln_fvm, nmb, 4, c3, nn);
+  }
+  CleanArgs x = CleanMakeArgs();
+  auto dir_ = cln_fvd;
+  auto x1v = pmy_pack->pcoord->x1v;
+  auto x2v = pmy_pack->pcoord->x2v;
+  auto x3v = pmy_pack->pcoord->x3v;
+  auto g = cln_gn;
+  // the factors of n . x of every cell (r, sin th, cos ph, sin ph, cos th; the centroid)
+  DvceArray3D<Real> xc("cln_fvxc", nmb, 5, ncell);
+  par_for("cln_fv_xc", DevExeSpace(), 0, nmb - 1, 0, ncell - 1,
+  KOKKOS_LAMBDA(const int m, const int c) {
+    const int i = is + c%nx1, j = js + (c/nx1)%nx2, k = ks + c/(nx1*nx2);
+    const Real f[5] = {x1v(m,i), sin(x2v(m,j)), cos(x3v(m,k)), sin(x3v(m,k)),
+                       cos(x2v(m,j))};
+    for (int a = 0; a < 5; ++a) xc(m,a,c) = (x.cub && a < 3) ? g(m,CLG_X+a,k,j,i) : f[a];
+  });
+  auto o_ = cln_fvo;
+  const bool cub = x.cub;
+  if (!VgdRotOn()) {   // (the fixed set: the host sort, whose order of equal keys the
+                       // fv slopes keep bitwise)
+    auto x_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), xc);
+    auto d_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dir_);
+    auto o_h = Kokkos::create_mirror_view(o_);
+    std::vector<Real> key(ncell);
+    std::vector<int> idx(ncell);
+    for (int m = 0; m < nmb; ++m) {
+      for (int d = d0; d < d0 + nd; ++d) {
+        for (int c = 0; c < ncell; ++c) {
+          key[c] = CleanFvKey(x_h, d_h, cub, m, d, c);
+          idx[c] = c;
         }
+        std::sort(idx.begin(), idx.end(), [&](int a, int b) {return key[a] < key[b];});
+        for (int c = 0; c < ncell; ++c) o_h(m,d,c) = idx[c];
       }
     }
+    Kokkos::deep_copy(o_, o_h);
+  } else {
+    Kokkos::parallel_for("cln_fv_order", Kokkos::TeamPolicy<>(DevExeSpace(), nmb*nd,
+                                                              Kokkos::AUTO),
+    KOKKOS_LAMBDA(const TeamMember_t &tm) {
+      const int m = tm.league_rank()/nd, d = d0 + tm.league_rank()%nd;
+      auto ord = Kokkos::subview(o_, m, d, Kokkos::ALL);
+      Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, ncell), [&](const int c) {
+        ord(c) = c;
+      });
+      tm.team_barrier();
+      Kokkos::Experimental::sort_team(tm, ord, [&](const int a, const int b) {
+        const Real ka = CleanFvKey(xc, dir_, cub, m, d, a);
+        const Real kb = CleanFvKey(xc, dir_, cub, m, d, b);
+        return ka < kb || (ka == kb && a < b);
+      });
+    });
   }
-  Kokkos::deep_copy(cln_fvwm, m_h);
-  Kokkos::deep_copy(cln_fvwu, u_h);
-  return true;
+  // the seams (sd: theta low, theta high, phi low, phi high; the ghost one cell outside)
+  const Real pt = pmy_pack->pmesh->mesh_size.x2max - pmy_pack->pmesh->mesh_size.x2min;
+  const Real pp = pmy_pack->pmesh->mesh_size.x3max - pmy_pack->pmesh->mesh_size.x3min;
+  auto fm = cln_fvm;
+  par_for("cln_fv_seammap", DevExeSpace(), 0, nmb - 1, 0, 3, 0, c3 - 1, d0, d0 + nd - 1,
+  KOKKOS_LAMBDA(const int m, const int sd, const int k, const int d) {
+    const bool th = (sd < 2), lo = (sd%2 == 0);
+    const Real tg = th ? (lo ? x2v(m,js) - 1.0e-3 : x2v(m,je) + 1.0e-3) : 0.5*M_PI;
+    const Real pg = th ? x3v(m,k) : 0.0;
+    Real eg[3][3], ei[3][3], v[3] = {0.0, 0.0, 0.0};
+    CleanLocalBasis(tg, pg, eg);
+    CleanLocalBasis(th ? tg + (lo ? pt : -pt) : tg, th ? pg : pg + (lo ? pp : -pp), ei);
+    for (int b = 0; b < 3; ++b) {
+      const Real nb = dir_(d,0)*eg[b][0] + dir_(d,1)*eg[b][1] + dir_(d,2)*eg[b][2];
+      for (int c = 0; c < 3; ++c) v[c] += nb*ei[b][c];
+    }
+    Real bd = -2.0;
+    for (int e = d0; e < d0 + nd; ++e) {
+      const Real dt = v[0]*dir_(e,0) + v[1]*dir_(e,1) + v[2]*dir_(e,2);
+      if (dt > bd) {bd = dt; fm(m,sd,k,d) = e;}
+    }
+  });
+  if (!CleanFvWall(0) && !CleanFvWall(1)) return;
+  if (cln_fvwm.extent_int(3) != nn) {
+    Kokkos::realloc(cln_fvwm, nmb, 2, c3, nn);
+    Kokkos::realloc(cln_fvwu, nmb, 2, c3, nn);
+    Kokkos::realloc(cln_fvw, nmb, 2, c3, cln_s.extent_int(4), nn);
+  }
+  auto x2f = pmy_pack->pcoord->xx2f;
+  auto x3f = pmy_pack->pcoord->xx3f;
+  auto wm = cln_fvwm;
+  auto wu = cln_fvwu;
+  par_for("cln_fv_wallmap", DevExeSpace(), 0, nmb - 1, 0, 1, ks, ke, d0, d0 + nd - 1,
+  KOKKOS_LAMBDA(const int m, const int sd, const int k, const int d) {
+    const Real th = x2f(m, sd ? je + 1 : js), sgn = sd ? 1.0 : -1.0;
+    const Real p1 = x3f(m,k), p2 = x3f(m,k+1);
+    Real t[3] = {cos(th)*(sin(p2) - sin(p1)), cos(th)*(cos(p1) - cos(p2)),
+                 -sin(th)*(p2 - p1)};
+    const Real tn = sqrt(t[0]*t[0] + t[1]*t[1] + t[2]*t[2]);
+    for (int c = 0; c < 3; ++c) t[c] /= tn;
+    const Real nt = dir_(d,0)*t[0] + dir_(d,1)*t[1] + dir_(d,2)*t[2];
+    wu(m,sd,k,d) = fabs(nt);
+    wm(m,sd,k,d) = -1;
+    if (!(sgn*nt < 0.0)) return;
+    const Real v[3] = {dir_(d,0) - 2.0*nt*t[0], dir_(d,1) - 2.0*nt*t[1],
+                       dir_(d,2) - 2.0*nt*t[2]};
+    Real bd = -2.0;
+    for (int e = d0; e < d0 + nd; ++e) {
+      const Real et = dir_(e,0)*t[0] + dir_(e,1)*t[1] + dir_(e,2)*t[2];
+      const Real dt = v[0]*dir_(e,0) + v[1]*dir_(e,1) + v[2]*dir_(e,2);
+      if (sgn*et > 0.0 && dt > bd) {bd = dt; wm(m,sd,k,d) = e;}
+    }
+  });
 }
 
 //----------------------------------------------------------------------------------------
@@ -775,13 +935,13 @@ bool RadiationM1::CleanFvWallInit(const int side) {
 
 void RadiationM1::CleanFvWalls() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int js = indcs.js, je = indcs.je, n = vgd_n;
+  const int js = indcs.js, je = indcs.je, n = cln_fvn;
   CleanArgs x = CleanMakeArgs();
   auto fi = cln_fvi;
   auto fw = cln_fvw;
   auto mp = cln_fvwm;
   auto u = cln_fvwu;
-  auto dir_ = vgd_dir;
+  auto dir_ = cln_fvd;
   par_for("cln_fv_wall", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, 0, 1, indcs.ks,
           indcs.ke, indcs.is, indcs.ie,
   KOKKOS_LAMBDA(const int m, const int sd, const int k, const int i) {
@@ -819,17 +979,16 @@ void RadiationM1::CleanFvSweep() {
   const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
   const int ncell = nx1*nx2*nx3;
   const int nmb = pmy_pack->nmb_thispack;
-  const int n = vgd_n, og = vgd_w - indcs.ng, ok = vgd_w - ks;
+  const int n = cln_fvn, og = vgd_w - indcs.ng, ok = vgd_w - ks;
   const bool axi = !pmy_pack->pmesh->three_d;
   CleanArgs x = CleanMakeArgs();
   auto x3f = pmy_pack->pcoord->xx3f;
-  if (cln_fvo.extent_int(1) != n) {
-    // the intensities (unless a restart has read them), the outward face vectors of
-    // every cell and the cell order of every direction (geometry and directions fixed)
-    if (cln_fvi.extent_int(1) != n) {
-      Kokkos::realloc(cln_fvi, nmb, n, cln_s.extent_int(2), cln_s.extent_int(3),
-                      cln_s.extent_int(4));
-    }
+  if (cln_fvi.extent_int(1) != n) {
+    Kokkos::realloc(cln_fvi, nmb, n, cln_s.extent_int(2), cln_s.extent_int(3),
+                    cln_s.extent_int(4));
+  }
+  if (cln_fva.extent_int(0) != nmb) {
+    // the outward face vectors of every cell (CleanFvSets: the directions and tables)
     Kokkos::realloc(cln_fva, nmb, 18, cln_s.extent_int(2), cln_s.extent_int(3),
                     cln_s.extent_int(4));
     auto fa = cln_fva;
@@ -844,81 +1003,15 @@ void RadiationM1::CleanFvSweep() {
         for (int c = 0; c < 3; ++c) fa(m,3*f+c,k,j,i) = up ? a[c] : -a[c];
       }
     });
-    Kokkos::realloc(cln_fvo, nmb, n, ncell);
-    auto o_h = Kokkos::create_mirror_view(cln_fvo);
-    auto d_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_dir);
-    auto r_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x1v);
-    auto t_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x2v);
-    auto p_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x3v);
-    auto g_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_gn);
-    std::vector<Real> key(ncell);
-    std::vector<int> idx(ncell);
-    for (int m = 0; m < nmb; ++m) {
-      for (int d = 0; d < n; ++d) {
-        for (int c = 0; c < ncell; ++c) {
-          const int i = is + c%nx1, j = js + (c/nx1)%nx2, k = ks + c/(nx1*nx2);
-          const Real st = std::sin(t_h(m,j)), r = r_h(m,i);
-          key[c] = r*(d_h(d,0)*st*std::cos(p_h(m,k)) + d_h(d,1)*st*std::sin(p_h(m,k)) +
-                      d_h(d,2)*std::cos(t_h(m,j)));
-          if (x.cub) {   // the centroids
-            key[c] = d_h(d,0)*g_h(m,CLG_X,k,j,i) + d_h(d,1)*g_h(m,CLG_X+1,k,j,i) +
-                     d_h(d,2)*g_h(m,CLG_X+2,k,j,i);
-          }
-          idx[c] = c;
-        }
-        std::sort(idx.begin(), idx.end(), [&](int a, int b) {return key[a] < key[b];});
-        for (int c = 0; c < ncell; ++c) o_h(m,d,c) = idx[c];
-      }
-    }
-    Kokkos::deep_copy(cln_fvo, o_h);
-    // a periodic theta or phi seam of a wedge: the ghosts' directions in the frame of
-    // their image cell, n' = sum_b (n . e_b(ghost)) e_b(image), the nearest set direction
-    // (an exact permutation for a phi period of the set)
-    const Real pt = pmy_pack->pmesh->mesh_size.x2max - pmy_pack->pmesh->mesh_size.x2min;
-    const Real pp = pmy_pack->pmesh->mesh_size.x3max - pmy_pack->pmesh->mesh_size.x3min;
-    const int c3 = cln_s.extent_int(2);
-    Kokkos::realloc(cln_fvm, nmb, 4, c3, n);
-    auto m_h = Kokkos::create_mirror_view(cln_fvm);
-    for (int m = 0; m < nmb; ++m) {
-      for (int sd = 0; sd < 4; ++sd) {
-        for (int k = 0; k < c3; ++k) {
-          // sd: theta low, theta high, phi low, phi high; the ghost one cell outside
-          const bool th = (sd < 2), lo = (sd%2 == 0);
-          const Real tg = th ? (lo ? t_h(m,js) - 1.0e-3 : t_h(m,indcs.je) + 1.0e-3)
-                             : 0.5*M_PI;
-          const Real pg = th ? p_h(m,k) : 0.0;
-          const Real ti = th ? tg + (lo ? pt : -pt) : tg;
-          const Real pi_ = th ? pg : pg + (lo ? pp : -pp);
-          Real eg[3][3], ei[3][3];
-          CleanLocalBasis(tg, pg, eg);
-          CleanLocalBasis(ti, pi_, ei);
-          for (int d = 0; d < n; ++d) {
-            Real v[3] = {0.0, 0.0, 0.0};
-            for (int b = 0; b < 3; ++b) {
-              const Real nb = d_h(d,0)*eg[b][0] + d_h(d,1)*eg[b][1] + d_h(d,2)*eg[b][2];
-              for (int c = 0; c < 3; ++c) v[c] += nb*ei[b][c];
-            }
-            int best = 0;
-            Real bd = -2.0;
-            for (int e = 0; e < n; ++e) {
-              const Real dt = v[0]*d_h(e,0) + v[1]*d_h(e,1) + v[2]*d_h(e,2);
-              if (dt > bd) {bd = dt; best = e;}
-            }
-            m_h(m,sd,k,d) = best;
-          }
-        }
-      }
-    }
-    Kokkos::deep_copy(cln_fvm, m_h);
   }
   auto fi = cln_fvi;
   auto fa = cln_fva;
   auto o_ = cln_fvo;
   auto fm = cln_fvm;
   const bool o2 = (cln_rfv == 2);
-  const bool wall[2] = {CleanFvWallInit(0), CleanFvWallInit(1)};
+  const bool wall[2] = {CleanFvWall(0), CleanFvWall(1)};
   auto fw = cln_fvw;
-  auto dir_ = vgd_dir;
+  auto dir_ = cln_fvd;
   auto cw_ = vgd_cs;
   const bool emi = VetBcEmit();
   const Real iemit = VetBathLo();
@@ -1024,11 +1117,11 @@ void RadiationM1::CleanClosureFromGd() {
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  const int n = vgd_n, og = vgd_w - indcs.ng, ok = vgd_w - ks;
+  const bool fv = (cln_rfv > 0);
+  const int n = fv ? cln_fvn : vgd_n, og = vgd_w - indcs.ng, ok = vgd_w - ks;
   auto vi_ = vgd_i;
   auto fi_ = cln_fvi;
-  const bool fv = (cln_rfv > 0);
-  auto dir_ = vgd_dir;
+  auto dir_ = fv ? cln_fvd : vgd_dir;
   auto cw_ = vgd_cs;
   auto x2v = pmy_pack->pcoord->x2v;
   auto x3v = pmy_pack->pcoord->x3v;
@@ -1096,12 +1189,12 @@ void RadiationM1::CleanGdFaceSums() {
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  const int n = vgd_n, og = vgd_w - indcs.ng, ok = vgd_w - ks;
+  const bool fv = (cln_rfv > 0), o2 = (cln_rfv == 2);
+  const int n = fv ? cln_fvn : vgd_n, og = vgd_w - indcs.ng, ok = vgd_w - ks;
   auto vi_ = vgd_i;
   auto fi_ = cln_fvi;
   auto fm_ = cln_fvm;
-  const bool fv = (cln_rfv > 0), o2 = (cln_rfv == 2);
-  auto dir_ = vgd_dir;
+  auto dir_ = fv ? cln_fvd : vgd_dir;
   auto cw_ = vgd_cs;
   auto x3f = pmy_pack->pcoord->xx3f;
   auto x3v = pmy_pack->pcoord->x3v;
