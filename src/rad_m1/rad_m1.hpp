@@ -2905,6 +2905,7 @@ class RadiationM1 {
   // (rad_m1_clean*.cpp, docs/dev/rad_clean_scheme_design.md)
   TaskStatus CleanSolve(Driver *d, int stage);
   void CleanInit();
+  void CleanPreflight(ParameterInput *pin);
   void CleanCsGeometry();
   void CleanSteadyStart(Driver *pdrive);
   void CleanInitFaceFluxes();

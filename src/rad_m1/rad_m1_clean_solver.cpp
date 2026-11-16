@@ -44,16 +44,21 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.idx[0] = 1.0/size.h_view(0).dx1;
   x.idx[1] = 1.0/size.h_view(0).dx2;
   x.idx[2] = 1.0/size.h_view(0).dx3;
-  x.bc[0] = ibc_x1min;
-  x.bc[1] = ibc_x1max;
-  x.bc[2] = ibc_x2min;
-  x.bc[3] = ibc_x2max;
-  x.bc[4] = ibc_x3min;
-  x.bc[5] = ibc_x3max;
+  const int bc[6] = {ibc_x1min, ibc_x1max, ibc_x2min, ibc_x2max, ibc_x3min, ibc_x3max};
+  // an outflow face is the open one without an entering bath
+  for (int s = 0; s < 6; ++s) {
+    x.bc[s] = (bc[s] == M1_IBC_X2FLUX) ? M1_IBC_FLUX :
+              ((bc[s] == M1_IBC_OUTFLOW) ? M1_IBC_MARSHAK : bc[s]);
+  }
+  x.iflux[0] = iflux_x1min;
+  x.iflux[1] = iflux_x1max;
+  x.ifx2[0] = ifx2_lo;
+  x.ifx2[1] = ifx2_hi;
   x.mbc = pmy_pack->pmb->mb_bcs.d_view;
   for (int n = 0; n < 6; ++n) x.ebath[n] = 0.0;
   x.ebath[0] = iebath_x1min;
   x.ebath[1] = iebath_x1max;
+  for (int s = 0; s < 2; ++s) x.ebath[s] *= (bc[s] != M1_IBC_OUTFLOW);
   x.marshak_q = marshak_q;
   x.marshak = (cln_bdry_form == 1);
   x.use_beam = (ibm_n > 0);

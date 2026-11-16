@@ -77,6 +77,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   {std::string sc = pin->GetOrAddString("rad_m1","scheme","default");
   if (sc.compare("clean") == 0) {
     clean = true;
+    CleanPreflight(pin);
     cln_c0 = pin->GetOrAddReal("rad_m1","clean_w_c0",0.1);
     cln_c1 = pin->GetOrAddReal("rad_m1","clean_w_c1",0.5);
     cln_tol = pin->GetOrAddReal("rad_m1","clean_tol",1.0e-10);
@@ -92,7 +93,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_pred = pin->GetOrAddBoolean("rad_m1","clean_predict",true);
     {std::string bf = pin->GetOrAddString("rad_m1","clean_bc","halfrange");
     cln_bdry_form = (bf.compare("marshak") == 0) ? 1 : 0;}
-    {std::string ly = pin->GetOrAddString("rad_m1","clean_layout","staggered");
+    {std::string ly = pin->GetOrAddString("rad_m1","clean_layout","cell");
     std::string al = pin->GetOrAddString("rad_m1","clean_alpha","tau");
     std::string rc = pin->GetOrAddString("rad_m1","clean_recon","plm");
     cln_cell = (ly.compare("cell") == 0);
@@ -2477,6 +2478,7 @@ void RadiationM1::VetBcInit(ParameterInput *pin, const bool gd) {
 //! face (emit: a Marshak or flux face; auto: a Marshak face)
 
 bool RadiationM1::VetBcEmit() const {
+  if (ibc_x1min == M1_IBC_OUTFLOW) {return true;}   // (scheme = clean) nothing enters
   if (vet_bc_inner == 1) {
     return (ibc_x1min == M1_IBC_MARSHAK) || (ibc_x1min == M1_IBC_FLUX);
   }
