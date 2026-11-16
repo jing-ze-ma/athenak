@@ -9,12 +9,12 @@ x1min = 1.0
 x1max = 2.0
 ix1_bc = reflect
 ox1_bc = reflect
-nx2 = 128
+nx2 = 64
 x2min = -1.0
 x2max = 1.0
 ix2_bc = panel
 ox2_bc = panel
-nx3 = 128
+nx3 = 64
 x3min = -1.0
 x3max = 1.0
 ix3_bc = panel
@@ -22,8 +22,8 @@ ox3_bc = panel
 use_cubed_sphere = true
 <meshblock>
 nx1 = 548
-nx2 = 64
-nx3 = 64
+nx2 = 32
+nx3 = 32
 <time>
 evolution = dynamic
 integrator = rk2

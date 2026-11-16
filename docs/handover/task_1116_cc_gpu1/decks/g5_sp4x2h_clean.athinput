@@ -9,20 +9,20 @@ x1min = 1.0
 x1max = 2.0
 ix1_bc = reflect
 ox1_bc = reflect
-nx2 = 256
-x2min = 0.7707963267948965
-x2max = 2.3707963267948964
+nx2 = 128
+x2min = 1.0471975511965979
+x2max = 2.0943951023931953
 ix2_bc = reflect
 ox2_bc = reflect
-nx3 = 256
+nx3 = 128
 x3min = 0.0
-x3max = 1.6
+x3max = 1.0471975511965976
 ix3_bc = periodic
 ox3_bc = periodic
 use_spherical_polar = true
 <meshblock>
 nx1 = 548
-nx2 = 64
+nx2 = 32
 nx3 = 64
 <time>
 evolution = dynamic
