@@ -1975,18 +1975,23 @@ void RadiationM1::CleanFvSweep() {
   const int ie = indcs.ie, je = indcs.je, ke = indcs.ke, nc = nx1*nx2*indcs.nx3;
   // (clean_pc = x1line with clean_pc_factor, the factors rebuilt every pass: the flags
   // live in the factor store, which no solve reads before its next rebuild)
-  const bool shf = act && cln_cell && cln_pc == CLN_PC_X1LINE && cln_pcfac &&
-                   cln_pcreuse == 1;
+  bool shf = act && cln_cell && cln_pc == CLN_PC_X1LINE && cln_pcfac &&
+             cln_pcreuse == 1;
+  const size_t nf = static_cast<size_t>(nmb)*n*nc;
   if (shf) {
     CleanCellFactorStore();
+    const size_t nb = cln_pcf32 ? cln_lfs.span()*sizeof(float) : cln_lf.span()*sizeof(Real);
+    shf = (nb >= 2*nf);   // (a store too small for the two flag arrays)
+  }
+  if (shf) {
     int8_t *pf = cln_pcf32 ? reinterpret_cast<int8_t *>(cln_lfs.data())
                            : reinterpret_cast<int8_t *>(cln_lf.data());
-    const size_t nf = static_cast<size_t>(nmb)*n*nc;
     cln_fvdue = DvceArray2D<int8_t>(pf, nmb*n, nc);
     cln_fvdone = DvceArray2D<int8_t>(pf + nf, nmb*n, nc);
     Kokkos::deep_copy(cln_fvdue, -1);
     cln_lf_ok = false;
-  } else if (act && (cln_fvdue.extent_int(0) != nmb*n || cln_fvdue.extent_int(1) != nc)) {
+  } else if (act && (cln_fvdue.extent_int(0) != nmb*n || cln_fvdue.extent_int(1) != nc ||
+                     !cln_fvdue.use_count())) {
     Kokkos::realloc(cln_fvdue, nmb*n, nc);
     Kokkos::realloc(cln_fvdone, nmb*n, nc);
   }
