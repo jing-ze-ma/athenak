@@ -1,391 +1,0 @@
-Athena binary output version=1.1
-  size of preheader=5
-  time=0.470779
-  cycle=64
-  size of location=8
-  size of variable=8
-  number of variables=4
-  variables:  m1_e  m1_f1  m1_f2  m1_f3  
-  header offset=25222
-#------------------------- PAR_DUMP -------------------------
-<comment>
-problem = runs_3r_radwave vetf_impl_x1_P3.33333_t10_N32_nt64_amp-1.00e-03_armCLN_refvetqs_d_rm_clean_layoutcell_rm_schemeclean_rm_vet_gd_rotate_dt0_rm_vet_x1_ptol0_tshesdirk2_vimptrue 
-<job>
-basename = rw 
-<mesh>
-nghost                    = 2        
-nx1                       = 32       
-x1min                     = 0.0      
-x1max                     = 1.0      
-ix1_bc                    = periodic 
-ox1_bc                    = periodic 
-nx2                       = 4        
-x2min                     = 0.0      
-x2max                     = 1.0      
-ix2_bc                    = periodic 
-ox2_bc                    = periodic 
-nx3                       = 1        
-x3min                     = 0.0      
-x3max                     = 1.0      
-ix3_bc                    = periodic 
-ox3_bc                    = periodic 
-use_cubed_sphere          = 0        # Default value added at run time
-layout_invariant          = 1        # Default value added at run time
-layout_invariant_mode     = block    # Default value added at run time
-use_spherical_polar       = 0        # Default value added at run time
-use_grid_stretch_r        = 0        # Default value added at run time
-use_grid_stretch_r_poly   = 0        # Default value added at run time
-use_grid_stretch_theta    = 0        # Default value added at run time
-use_polar_boundary        = 0        # Default value added at run time
-use_polar_average_eresist = 1        # Default value added at run time
-theta_plateau             = 0        # Default value added at run time
-polar_ring_avg            = 0        # Default value added at run time
-<meshblock>
-nx1 = 8 
-nx2 = 4 
-nx3 = 1 
-<time>
-evolution             = dynamic            
-integrator            = rk2                
-cfl_number            = 0.8                
-nlim                  = -1                 
-tlim                  = 0.4707789049422601 
-ndiag                 = 1000000            
-start_time            = 0                  # Default value added at run time
-nan_check_cycles      = 100                # Default value added at run time
-dt_min                = 0                  # Default value added at run time
-dt_retry              = 1                  # Default value added at run time
-dt_retry_fac          = 0.5                # Default value added at run time
-dt_retry_grow         = 1.25               # Default value added at run time
-dt_retry_ngood        = 10                 # Default value added at run time
-dt_retry_views        = minimal            # Default value added at run time
-restart_refill_ghosts = 0                  # Default value added at run time
-<hydro>
-eos                        = ideal                  
-reconstruct                = plm                    
-rsolver                    = hllc                   
-gamma                      = 1.666666666666667      
-sp_x2_periodic_image       = 0                      # Default value added at run time
-dfloor                     = 1.1754943508222875e-38 # Default value added at run time
-dfloor_keep_velocity       = 0                      # Default value added at run time
-vceil                      = 0                      # Default value added at run time
-pfloor                     = 1.1754943508222875e-38 # Default value added at run time
-tfloor                     = 1.1754943508222875e-38 # Default value added at run time
-efloor_from_ekin           = 0                      # Default value added at run time
-efloor_as_tfloor           = 0                      # Default value added at run time
-sfloor                     = 1.1754943508222875e-38 # Default value added at run time
-nscalars                   = 0                      # Default value added at run time
-etotgrav                   = 0                      # Default value added at run time
-split_c2p_once             = 1                      # Default value added at run time
-wellbalance_dynamic        = 0                      # Default value added at run time
-wb_x1                      = 0                      # Default value added at run time
-wb_guard_ideal             = 0                      # Default value added at run time
-wb_clamp_ideal             = 0                      # Default value added at run time
-wb_rho                     = 0                      # Default value added at run time
-wb_rmax                    = 0                      # Default value added at run time
-wellbalance_static         = 0                      # Default value added at run time
-wellbalance_static_reconst = 0                      # Default value added at run time
-fofc                       = 0                      # Default value added at run time
-eos_radiation              = 0                      # Default value added at run time
-<rad_m1>
-c_light                         = 10                 
-chat_over_c                     = 1.0                
-cfl_rad                         = 0.4                
-thick_flux                      = none               
-closure                         = vet_sc             
-e_floor                         = 1.0e-30            
-subcycle                        = true               
-opacity                         = const              
-kappa_p                         = 10                 
-kappa_e                         = 10                 
-kappa_f                         = 10                 
-kappa_s                         = 0.0                
-arad                            = 9.9999900000000004 
-coupling                        = true               
-gas_feedback                    = true               
-transport                       = implicit           
-implicit_cfl                    = 2.3538945247113006 
-implicit_tol                    = 1.0e-11            
-implicit_maxit                  = 200                
-implicit_lin_tol                = 1.0e-13            
-implicit_lin_maxit              = 400                
-implicit_solver                 = bicgstab           
-implicit_offdiag                = operator           
-implicit_closure_lag            = step               
-implicit_recon                  = dc                 
-implicit_vimp                   = true               
-time_scheme                     = hesdirk2           
-clean_layout                    = cell               
-scheme                          = clean              
-vet_gd_rotate_dt                = 0                  
-vet_x1_ptol                     = 0                  
-vet_nmu                         = 4                  
-vet_nphi                        = 8                  
-vet_tensor                      = full               
-vet_x1_periodic                 = true               
-vet_x1_npass                    = 3                  
-clean_w_c0                      = 0.1                
-clean_w_c1                      = 0.5                
-clean_tol                       = 1e-10              
-clean_maxit                     = 4000               
-clean_maxnl                     = 50                 
-clean_tol_nl                    = 1e-11              
-clean_ray_min                   = 0.001              
-clean_fill_passes               = 8                  
-clean_predict                   = true               
-clean_bc                        = halfrange          
-clean_alpha                     = tau                
-clean_recon                     = plm                
-clean_consistency               = true               
-clean_consistency_weight        = true               
-clean_face_model                = none               
-clean_psi_eps                   = 1e-12              
-clean_maxpic                    = 12                 
-clean_pos_limit                 = true               
-clean_diag_cells                = false              
-clean_pos_boundary              = false              
-clean_pos_ghost                 = false              
-clean_closure                   = extrap1            
-clean_vfreeze                   = 0                  
-clean_maxpos                    = 3                  
-clean_pc_sweeps                 = 1                  
-ap_form                         = alpha2             # Default value added at run time
-scaled_prefactor                = 20                 # Default value added at run time
-temp_unit_kelvin                = 1                  # Default value added at run time
-rho_unit_cgs                    = 1                  # Default value added at run time
-kappa_unit                      = 1                  # Default value added at run time
-rho_ref                         = 1                  # Default value added at run time
-t_ref                           = 1                  # Default value added at run time
-opac_a                          = 0                  # Default value added at run time
-opac_b                          = 0                  # Default value added at run time
-advect_split                    = 0                  # Default value added at run time
-split_vel                       = recon              # Default value added at run time
-source_form                     = full               # Default value added at run time
-f_source                        = cell               # Default value added at run time
-opac_freeze                     = 0                  # Default value added at run time
-dbg_gas_force                   = 1                  # Default value added at run time
-dbg_gas_heat                    = 1                  # Default value added at run time
-dbg_gas_force_trans             = 1                  # Default value added at run time
-dbg_trans_memory                = 1                  # Default value added at run time
-dbg_tensor                      = none               # Default value added at run time
-dbg_tensor_tilt                 = 0.3                # Default value added at run time
-force_reference                 = none               # Default value added at run time
-time2_fref_wacc                 = 1                  # Default value added at run time
-rsla_warn                       = 0.1                # Default value added at run time
-rsla_vmax                       = -1                 # Default value added at run time
-rsla_force                      = 0                  # Default value added at run time
-vet_source_noesrc               = 1                  # Default value added at run time
-reconstruct                     = plm                # Default value added at run time
-implicit_tol_rel                = 0                  # Default value added at run time
-implicit_tol_rel_max            = 0.0001             # Default value added at run time
-implicit_closure_relax          = 1                  # Default value added at run time
-implicit_closure_relax_thin     = 0                  # Default value added at run time
-implicit_trans_limit            = none               # Default value added at run time
-implicit_trans_fmax             = 1                  # Default value added at run time
-implicit_accel                  = none               # Default value added at run time
-implicit_gas_newton             = 1                  # Default value added at run time
-implicit_eos_cache              = 0                  # Default value added at run time
-report_newton_fb                = 0                  # Default value added at run time
-dbg_energy_tally                = 0                  # Default value added at run time
-implicit_eos_cache_nt           = 2                  # Default value added at run time
-implicit_eos_cache_check        = 1                  # Default value added at run time
-implicit_line_solver            = pcr                # Default value added at run time
-implicit_pcr_team               = 0                  # Default value added at run time
-implicit_pcr_check              = 0                  # Default value added at run time
-implicit_bcg_sync               = 1                  # Default value added at run time
-implicit_bc_x1min               = auto               # Default value added at run time
-implicit_halo_direct            = 0                  # Default value added at run time
-implicit_od_cache               = 0                  # Default value added at run time
-implicit_krylov_fuse            = 0                  # Default value added at run time
-implicit_op_stencil             = 0                  # Default value added at run time
-implicit_precond_float          = 0                  # Default value added at run time
-implicit_op_team_red            = 0                  # Default value added at run time
-implicit_precond                = line               # Default value added at run time
-implicit_krylov_pipe            = 0                  # Default value added at run time
-implicit_halo_mpi               = 0                  # Default value added at run time
-implicit_halo_ipc               = 0                  # Default value added at run time
-implicit_halo_overlap           = 0                  # Default value added at run time
-implicit_halo_ovl_faces         = 0                  # Default value added at run time
-implicit_picard_log             = 0                  # Default value added at run time
-implicit_tsolve_opac            = 1                  # Default value added at run time
-implicit_tsolve_opac_start      = 20                 # Default value added at run time
-implicit_tsolve_opac_mode       = 1                  # Default value added at run time
-implicit_cs_e0_metric           = 1                  # Default value added at run time
-implicit_thin_freeze            = 0.01               # Default value added at run time
-implicit_resid_fatal            = 0.01               # Default value added at run time
-implicit_lres_test              = 0                  # Default value added at run time
-implicit_conv_est               = 1                  # Default value added at run time
-implicit_src_stable             = 1                  # Default value added at run time
-implicit_lin_ew_max             = 0.01               # Default value added at run time
-implicit_lin_ew_gamma           = 0.9                # Default value added at run time
-implicit_lin_cnorm              = 0                  # Default value added at run time
-implicit_bcg_max_restarts       = 2                  # Default value added at run time
-implicit_bcg_fallback           = line               # Default value added at run time
-implicit_precond_fallback       = none               # Default value added at run time
-implicit_face_opac_n            = 1                  # Default value added at run time
-implicit_det_reduce             = 0                  # Default value added at run time
-implicit_predictor              = step               # Default value added at run time
-implicit_predictor_frozen       = 0                  # Default value added at run time
-implicit_anderson_m             = 5                  # Default value added at run time
-implicit_anderson_beta          = 1                  # Default value added at run time
-implicit_anderson_start         = 1                  # Default value added at run time
-implicit_opac_update            = 0                  # Default value added at run time
-dbg_opac_part                   = 0                  # Default value added at run time
-implicit_opac_newton            = 0                  # Default value added at run time
-implicit_opac_newton_guard      = 0.5                # Default value added at run time
-implicit_gas_newton_u4          = 0                  # Default value added at run time
-implicit_opac_lag               = none               # Default value added at run time
-implicit_opac_lag_passes        = 3                  # Default value added at run time
-implicit_g0_limit               = 1                  # Default value added at run time
-implicit_g0_exchange            = 1                  # Default value added at run time
-implicit_pos_gas                = 1                  # Default value added at run time
-implicit_pos_floor              = 1                  # Default value added at run time
-implicit_pos_floor_solve        = 1                  # Default value added at run time
-implicit_opac_newton_guard_mode = 6                  # Default value added at run time
-implicit_allow_multid           = 0                  # Default value added at run time
-marshak_q                       = 0.5                # Default value added at run time
-implicit_flux                   = central            # Default value added at run time
-implicit_flux_faces             = x1                 # Default value added at run time
-implicit_flux_beam              = closure            # Default value added at run time
-implicit_blend                  = tau_f              # Default value added at run time
-implicit_blend_alpha            = 1                  # Default value added at run time
-implicit_blend_r0               = 1.5                # Default value added at run time
-implicit_blend_xthin            = 0                  # Default value added at run time
-implicit_blend_xthin_mode       = all                # Default value added at run time
-implicit_blend_xthin_wmin       = 0                  # Default value added at run time
-implicit_thin_switch            = none               # Default value added at run time
-implicit_blend_fmode            = max                # Default value added at run time
-implicit_blend_mode             = flux               # Default value added at run time
-implicit_blend_tau0             = 1                  # Default value added at run time
-implicit_blend_flo              = 0.6                # Default value added at run time
-implicit_blend_fhi              = 0.9                # Default value added at run time
-implicit_enthalpy               = plm                # Default value added at run time
-implicit_hold                   = 1                  # Default value added at run time
-implicit_fast_kernels           = 1                  # Default value added at run time
-implicit_vimp_fold              = 0                  # Default value added at run time
-implicit_one_pass               = 0                  # Default value added at run time
-implicit_predictor_order        = 2                  # Default value added at run time
-implicit_partition              = none               # Default value added at run time
-implicit_recon_w                = -1                 # Default value added at run time
-implicit_res_floor              = 0                  # Default value added at run time
-implicit_gas_newton_switch      = 10                 # Default value added at run time
-implicit_gas_newton_switch_min  = 20                 # Default value added at run time
-implicit_stall_fac              = 0.5                # Default value added at run time
-implicit_recon_lag              = picard             # Default value added at run time
-implicit_recon_npass            = -1                 # Default value added at run time
-implicit_bmom_half              = 1                  # Default value added at run time
-implicit_rad_inertia            = 1                  # Default value added at run time
-implicit_nofb_work              = 1                  # Default value added at run time
-implicit_gas_src                = conservative2      # Default value added at run time
-implicit_cs2_dbg                = 0                  # Default value added at run time
-implicit_cs2_vimp               = 1                  # Default value added at run time
-implicit_cs2_vimp_npass         = 3                  # Default value added at run time
-implicit_cs2_shift              = 0                  # Default value added at run time
-implicit_cs2_wbsolve            = 1                  # Default value added at run time
-implicit_cs2_hll                = drag               # Default value added at run time
-implicit_f0_init                = auto               # Default value added at run time
-implicit_bc_x1max               = auto               # Default value added at run time
-implicit_flux_x1min             = 0                  # Default value added at run time
-implicit_flux_x1max             = 0                  # Default value added at run time
-implicit_ebath_x1min            = 0                  # Default value added at run time
-implicit_ebath_x1max            = 0                  # Default value added at run time
-implicit_bc_advect              = 1                  # Default value added at run time
-implicit_vimp_bc                = 1                  # Default value added at run time
-implicit_face_opac              = arith              # Default value added at run time
-vet_milne                       = 0                  # Default value added at run time
-vet_interp                      = auto               # Default value added at run time
-vet_path                        = none               # Default value added at run time
-vet_source                      = relaxed_esc        # Default value added at run time
-vet_bc_inner                    = auto               # Default value added at run time
-vet_bc_reflect                  = auto               # Default value added at run time
-vet_bc_bath                     = 1                  # Default value added at run time
-vet_bc_diff                     = face               # Default value added at run time
-vet_seg                         = jump               # Default value added at run time
-vet_seg_cross                   = 0                  # Default value added at run time
-vet_dump                        = none               # Default value added at run time
-vet_dump_every                  = 0                  # Default value added at run time
-vet_axis                        = flux               # Default value added at run time
-vet_x1_periodic_inflow          = source             # Default value added at run time
-time2_enth_be                   = 1                  # Default value added at run time
-time2_vet                       = predict            # Default value added at run time
-time2_vstage                    = 1                  # Default value added at run time
-time2_vet_source                = state              # Default value added at run time
-time2_pred_cap                  = 0.5                # Default value added at run time
-time2_lin_tol_fac               = 1                  # Default value added at run time
-time2_one_pass_safety           = 30                 # Default value added at run time
-polar_ring_avg                  = 0                  # Default value added at run time
-<problem>
-pgen_name        = rad_m1_beam          
-m1_test          = radwave              
-radwave_dir      = x1                   
-radwave_amp      = -0.001               
-radwave_rho      = 1.0                  
-radwave_t        = 1.0                  
-radwave_eig      = true                 
-radwave_eig_e_im = -0.93719457552033014 
-radwave_eig_e_re = 1.0004079853349557   
-radwave_eig_f_im = -0.26126460466568929 
-radwave_eig_f_re = 0.14257725284963349  
-radwave_eig_t_im = -0.2367053674437937  
-radwave_eig_t_re = 0.25071568899370794  
-radwave_eig_v_im = -0.58260758099122267 
-radwave_eig_v_re = 2.1241393560797968   
-nan_report       = 0                    # Default value added at run time
-hot_jupiter      = 0                    # Default value added at run time
-user_srcs        = 0                    # Default value added at run time
-user_hist        = 0                    # Default value added at run time
-<output1>
-file_type   = tab                  
-variable    = hydro_w              
-data_format = %.16e                
-dt          = 0.029423681558891256 
-slice_x2    = 0.125                
-last_time   = 0.44135522338336874  # Updated during run time
-file_number = 16                   # Updated during run time
-id          = hydro_w              # Default value added at run time
-ghost_zones = 0                    # Default value added at run time
-gid         = -1                   # Default value added at run time
-<output2>
-file_type   = tab                  
-variable    = m1                   
-data_format = %.16e                
-dt          = 0.029423681558891256 
-slice_x2    = 0.125                
-last_time   = 0.44135522338336874  # Updated during run time
-file_number = 16                   # Updated during run time
-id          = m1                   # Default value added at run time
-ghost_zones = 0                    # Default value added at run time
-gid         = -1                   # Default value added at run time
-<output9>
-file_type            = bin    
-variable             = m1     
-dt                   = 1e30   
-bin_double           = true   
-last_time            = 0      # Updated during run time
-file_number          = 1      # Updated during run time
-id                   = m1     # Default value added at run time
-ghost_zones          = 0      # Default value added at run time
-gid                  = -1     # Default value added at run time
-data_format          = %12.5e # Default value added at run time
-single_file_per_rank = 0      # Default value added at run time
-<mesh_refinement>
-refinement = none # Default value added at run time
-<coord>
-special_rel = 0 # Default value added at run time
-general_rel = 0 # Default value added at run time
-#------------------------- PAR_DUMP -------------------------
-<par_end>
-   	                                               Ğ?              ğ?              ğ?¦?uiöş#@µrJÖş#@kÎ9Âş#@5?$dºş#@‰²OÂ½ş#@–½˜xÍş#@È	yéş#@1(:(ÿ#@=Auiöş#@[´rJÖş#@[Ë9Âş#@ƒ;$dºş#@ä´OÂ½ş#@§Â˜xÍş#@&	yéş#@J':(ÿ#@=Auiöş#@\´rJÖş#@TË9Âş#@t;$dºş#@ç´OÂ½ş#@µÂ˜xÍş#@-	yéş#@I':(ÿ#@¦?uiöş#@µrJÖş#@lÎ9Âş#@/?$dºş#@e²OÂ½ş#@³½˜xÍş#@
-yéş#@(:(ÿ#@’<'.j¿D—fïWp¿™‘%´ír¿¯ v–t¿®'ÃŒ€u¿(ÛÄÀïÎu¿´S$i‡Wu¿ÁBr¶øs¿Ü–'.j¿ÑáGfïWp¿ï'%´ír¿<ë
-v–t¿Xt,ÃŒ€u¿¤=‡ÁïÎu¿Ä i‡Wu¿“ºÍq¶øs¿&<•'.j¿¬ÕFfïWp¿\(%´ír¿V9ë
-v–t¿9-ÃŒ€u¿¤ó‡ÁïÎu¿Ò£i‡Wu¿€ÌÌq¶øs¿6Î'.j¿rı—fïWp¿X3‘%´ír¿ˆyv–t¿ß«&ÃŒ€u¿ê‡ÁÀïÎu¿5&i‡Wu¿ÏSEr¶øs¿ ğ¸*c= Æ{Áš}½ Ş¬T‡wL=0oÏÊ€=`rÑqˆ=pkC2MH™½ í©vƒm½#Ro=£=À˜%ÚÚ…T= åV*R½ üÒëéS=ÔÍæ©ÿa= ®+sC½²tÅÔi½ ‘8% K½ rWÑ¿i= ŠùEIM½à’_
-ŒQ= hÏšôU½hCÊçi½À÷cî¬G½`ÄaGc=@tJXËÄc=Àõ×IR÷U½ ÌöŠˆé2½À¹hë{=€mà€Q½ğì:‹½Î.‡½ ¡ª­Ê—=€­9Ğİ7w=b)Nêê¡½                                                                                                                                                                                                                                                                   	                                      Ğ?      à?              ğ?              ğ?·-è¾>ÿ#@0‡ÿuÿ#@şğŸ²ÿ#@Õ‚?òÿ#@Ëqd2 $@x¡¥‰p $@m<´*ª $@¤í…	İ $@c.è¾>ÿ#@C†ÿuÿ#@rığŸ²ÿ#@„‚?òÿ#@qd2 $@´¡¥‰p $@X<´*ª $@Òì…	İ $@[.è¾>ÿ#@:†ÿuÿ#@qığŸ²ÿ#@€‚?òÿ#@‘qd2 $@½¡¥‰p $@\<´*ª $@×ì…	İ $@˜-è¾>ÿ#@0‡ÿuÿ#@)şğŸ²ÿ#@Û‚?òÿ#@Ëqd2 $@x¡¥‰p $@n<´*ª $@í…	İ $@„/³³Íq¿$]j”"àm¿…Äıhöf¿gy¢õH^¿Ã¸¸şàJ¿4“o\”/?0?Oçø,U?ÀKGŒ·Ãb?ÓOì³Íq¿d·o”"àm¿Üõhöf¿åƒõõH^¿nÛ€şàJ¿½ûn\”/?Š1çø,U?Õ…Œ·Ãb?EÄì³Íq¿…5q”"àm¿f+øhöf¿éHûõH^¿&€şàJ¿$³#o\”/?„‘çø,U?Ë„Œ·Ãb?Ğ4²³Íq¿’¿g”"àm¿<Bıhöf¿ôd¨õH^¿k¶ÂşàJ¿5^o\”/?¡âTçø,U?ZÒIŒ·Ãb?4¸ó)Ëª= uªBEB=@#@åÃëb½€Õ”\~½€Ã¸è=M=`{ií|= èmˆgƒ=à¢=-e,‚= e7î+= ¦¤Cç`J=`Õt9ol=½p„¬¨_Ü0½ EuÒÜW=ì°î[vM½`>MòÆa½ÀÎ8{õ‚R½ ~9×Ÿ^3=€–À{´hR½ k¸°í2(=@,Q¯ô80= |§?Ñ=½› ûÂN=€GbSE‰]=Àû•~mnR=äÇiG
-ª½Ğ_ ó­‡½ ÓZ¦ºÜa½ ¤ŞüÄ = ÿI'}¤=½``½6üq~½€V2¨8p„½àÀ÷CZƒ½                                                                                                                                                                                                                                                                   	                                      à?      è?              ğ?              ğ?kzS$@¹ +'$@/†…Ÿ;$@m€š{C$@0“@$@÷Ed0$@¿c›µ$@D‰î $@âxS$@‡¡+'$@M‰…Ÿ;$@.„š{C$@Í“@$@ZòEd0$@Ud›µ$@0Šî $@àxS$@‚¡+'$@S‰…Ÿ;$@;„š{C$@Ê“@$@ZòEd0$@Zd›µ$@4Šî $@YzS$@Á +'$@;†…Ÿ;$@i€š{C$@6“@$@“÷Ed0$@Ãc›µ$@=‰î $@à_Wî†@j?Õá)+@sp?<İ–Ş0
-s?FîÅ Ã³t?ÛÊŞ)u?˜LR“ìu?¸“ßÙÜtu?:D@Ot?~qÔî†@j?QÙ*@sp?7é-Ş0
-s?xo¯ Ã³t?…âŞ)u?B²S“ìu?¸MÓÙÜtu?ÈåÍOt?âéÔî†@j?€Ú*@sp?/ß-Ş0
-s?ü§® Ã³t?XLŞ)u?ÆÏS“ìu?nûÒÙÜtu?d¼ÎOt?ÚßVî†@j?f?)+@sp?<Z˜Ş0
-s?”Ç Ã³t?)—Ş)u?+KR“ìu?¨ÊßÙÜtu?N×@Ot? T‡ñÉ82½`µŠ’ƒ|}=ÀºáÃŞâM½ĞË†„Š­‹½P%”Á‡½PW¸¨Áë—=€Gú÷u=ÂÍ•²¡½€¾ca¨;M½à’­AòW= ¿¡=íu<=ı1(×`½(‹xrÁ0=ÜPàcœUe= øgéJî(= + eÈd½€3iøKaJ= ­ö¬8U½€¼-NA…'=/„-ågc=€n‰·å<7½IO;LˆÊi½ ¼š[¼‹I½@Ÿnó«8f= ÉDõ== èõ)»D{½ÀöY-÷‰S=@p¢ŞMo‹= SÊâ3ô†= öÕÅ˜ù—½ nHÁêu½Z“™§¡=                                                                                                                                                                                                                                                                   	                                      è?      ğ?              ğ?              ğ?ö‡œö¾ $@=~ù¦‡ $@’0qùJ $@÷¡R $@Ù¼+Ëÿ#@ŒÚ
-ÿ#@tSÿ#@”ùb£ ÿ#@U‡œö¾ $@8ù¦‡ $@71qùJ $@M¢R $@Ÿ¼+Ëÿ#@@Ú
-ÿ#@tSÿ#@júb£ ÿ#@Q‡œö¾ $@2ù¦‡ $@71qùJ $@N¢R $@Ÿ¼+Ëÿ#@JÚ
-ÿ#@tSÿ#@fúb£ ÿ#@ò‡œö¾ $@G~ù¦‡ $@’0qùJ $@÷¡R $@Ø¼+Ëÿ#@Ú
-ÿ#@tSÿ#@¢ùb£ ÿ#@\Ş½Féq?ã¯Vdn?e.§½(g?aN†ª^?Òû'¡K?L–eŞö”,¿½ŞòfËT¿µß¡şa‘b¿9¾Féq?İıYdn?9Ì§½(g?Q×ô†ª^?\8mû'¡K?ş¥Şö”,¿.ófËT¿€ÈŞşa‘b¿`¾Féq?óZdn?§§½(g?ÖÉñ†ª^?ımû'¡K?Ü`wŞö”,¿„  ófËT¿ôÀßşa‘b¿¾íİ½Féq?8áUdn?k.§½(g?Éqœ†ª^?Îû'¡K?¯eŞö”,¿bŞòfËT¿°s¡şa‘b¿˜ú£Ş5ª½p¨ì …ˆ½ ãœµÄb½ğ]R¿€=€ ù€w@½pƒ'^^	€½€W<ß\“‚½ÀºÊkhí½  aÔ˜Äõ¼ÀÂué¨øR½€)E»¼%=ÀÀÁnH¼=Xª0õÚ 5½àt­yaÕE=À÷Üºa= [¼Äd%R=€ö%~ù»1=€g‘€5P=€…ÍÂÅ_"½ jÓú±ù<Ro'Á²0=87Aô“;H½p2Ôò`½ Ÿ¸h‘Q½€cÅÕ#ª=°-‡¸bˆ=€Ô2Ètc=ÀğSº½ §olˆ9=@r„ÍP~=`iÁëPuƒ=Ğ±ts–‚=                                                                                                                                                                                                                                                                

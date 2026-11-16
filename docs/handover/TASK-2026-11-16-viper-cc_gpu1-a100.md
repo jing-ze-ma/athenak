@@ -12,21 +12,22 @@ and the memory high-water mark. Every real 3-D production run is on GPUs, so G5 
 clean can replace the production scheme.
 
 ## Code
-Fork `jing-ze-ma/athenak`, **origin/clean-cc = dae5c4133**. That is push 8 (2a8002df6: restyled
-clean code, hybrid PCR-Thomas line solver, fused BiCGStab reductions, ghost copies of the shell
-only, production boundary conditions, esrc, a preflight check of the production keys, and
-clean_layout = cell as the default) plus one CUDA portability fix. The fix: CleanDots copies its
-std::array slot indices into ints before the device lambda (nvcc warning 20013-D on 2a8002df6).
-It changes 1 file, +3/-2 lines, and the CPU outputs are byte-identical. **So the shipped references
-(made on 2a8002df6) are the references of dae5c4133.**
+Fork `jing-ze-ma/athenak`, **origin/clean-cc = 32af6349e** (push 10). It is 4680ce500 plus the
+GPU-parallel wavefront FV ray sweep: one launch per dependency level over all cells x directions,
+instead of one serial thread per block and direction. The regression is bitwise identical to
+4680ce500 on every output file, so the shipped references (made on 4680ce500) are valid for
+32af6349e. 4680ce500 contains push 8 (2a8002df6), the CUDA fix of dae5c4133 (CleanDots copies its std::array
+slot indices into ints before the device lambda), FV-ray rotation, the temporary keys
+clean_dissip_power and clean_line_solver (read only when named), and clean_rays = lld. The defaults
+the decks use are unchanged: hybrid line solver, A^2, sc rays on Cartesian, fv1 on sp/cs. 
 
 Orion compiled 2a8002df6 with Kokkos CUDA (nvcc 12.1, Ampere80, `--fmad=false`): 0 errors. The
-only warning in the clean files was the one this fix removes. The clean code uses no NCCL and no
-atomics. The new line solver is a TeamPolicy kernel ("clc_line") with team scratch of 104 x nl
-Reals per line (~456 KB at nl = 548), so it runs from scratch level 1 (global memory).
+only warning in the clean files was the CleanDots one, which the fix removes. The clean code uses
+no NCCL and no atomics. The line solver is a TeamPolicy kernel ("clc_line") with team scratch of
+104 x nl Reals per line (~456 KB at nl = 548), so it runs from scratch level 1 (global memory).
 
 ## Build (Raven A100, built-in pgens, no PROBLEM)
-Run `./build_cuda_raven.sh <worktree at dae5c4133>` (NMAX 432, the production GPU default). It uses
+Run `./build_cuda_raven.sh <worktree at origin/clean-cc 32af6349e>` (NMAX 432, the production GPU default). It uses
 your Raven A100 production recipe:
 ```
 module purge; module load gcc/13 cuda/12.6 openmpi_gpu/5.0 cmake
@@ -86,7 +87,7 @@ send its numbers as soon as you have them; then do the rest. TIMEOUT stops any r
 at cycle 25 after 30 min, and timing.py still reports the cycles it reached. Please send:
 1. timing.txt: s/cycle per arm and layout, the clean/prod ratio, the initialisation time;
 2. the kernel table per clean run (top 15, summed over ranks) and for a prod run. Kernels of
-   interest: cln_fv (FV ray sweep; timing.py also gives its time and passes per ray build),
+   interest: cln_fv (wavefront FV ray sweep; timing.py also gives its time and launches per ray build),
    clc_line (hybrid PCR-Thomas line solver), clc_pcsetup, clc_apply, cln_dot (fused
    reductions), cln_hcopy / cln_hback / cln_ghost* (ghost copies);
 3. the MPI share, if cheap (nsys gives it);
@@ -102,9 +103,8 @@ python3 compare.py --runs runs_n4096 G1 > gates_n4096.md
 ```
 - **G1, 1 GPU, 1 block:** Cartesian IDORT decks nltek1 x0.5, hcyl x0.5, cb x0.5, shd x0.25, and the
   radiation-wave pair rwp/rwm (+-amp 1e-3, P 3.33, tau 10, N32, scored on the odd part).
-- **G2, 4 GPUs / 4 blocks (x1 split):** nltek1, hcyl, shd, rw. cb is left out: vet_sc refuses cb x0.5
-  on any multi-block layout ("per-ray band wider than the band"). This limitation already
-  exists on 18309ae7a (push 7), so it is not caused by the second-order SC interpolation.
+- **G2, 4 GPUs / 4 blocks (x1 split):** nltek1, hcyl, cb, shd, rw. (cb x0.5 on several blocks runs
+  on 4680ce500; up to 2a8002df6 vet_sc refused it with "per-ray band wider than the band".)
 - **G3, spherical polar:** rhse_sp 2-D and 3-D wedge with well-balancing (force_reference = clean,
   wellbalance_static(+_reconst)), the 3-D wedge on 2x2 lateral blocks (4 GPUs), the thin pulse
   wedge pulsew, and the thin 3-D FV-ray wedge spthin.
@@ -123,35 +123,11 @@ python3 compare.py --runs runs_n4096 G1 > gates_n4096.md
   written out; the explicit decks reproduce the defaults bitwise on Orion.
 
 ## Orion CPU reference (ref/ref.json, final dumps in ref/dumps/)
-Commit 2a8002df6 (CPU outputs of dae5c4133 are byte-identical, so they are the dae5c4133 reference), CPU build (gcc/13, openmpi/4.1, MPI + OpenMP, Release, `-ffp-contract=off`), md5
-e5cc6fa226c993572666ccb79f10dce8, 4 OpenMP threads, ranks as in runs.txt.
+Commit 4680ce500 (outputs bitwise identical to 32af6349e), CPU build (gcc/13, openmpi/4.1, MPI + OpenMP, Release, `-ffp-contract=off`), md5
+(follows with ref/), 4 OpenMP threads, ranks as in runs.txt. All decks have every clean key written out
+(taken from the parameter dump); on Orion the explicit decks reproduce the implicit defaults bitwise.
 
-| run | score | CLEAN lines / sum / pic | CPU conservation, v/c_s | CPU 4-vs-1 maxrel | CPU wall s |
-|---|---|---|---|---|---|
-| g1_nltek1_x0.5 | L1 9.857942e-05 | 59 / 451 / 151 | - | - | 20 |
-| g1_hcyl_x0.5 | metric 1.200974e-02 | 64 / 563 / 169 | - | - | 68 |
-| g1_cb_x0.5 | metric 4.599888e-01 | 14 / 614 / 31 | - | - | 20 |
-| g1_shd_x0.25 | metric 1.180539e-02 | 4 / 134 / 8 | - | - | 13 |
-| g1_rwp | l1_rho 3.648449e-03, l1_E 3.582953e-03 | 127 / 432 / 684 | dE -1.2e-15, dP 2.4e-15 | - | 5 |
-| g1_rwm | - | 127 / 432 / 684 | - | - | 6 |
-| g2_nltek1_x0.5 | L1 9.889859e-05 | 59 / 476 / 150 | - | 4.1e-06 | 18 |
-| g2_hcyl_x0.5 | metric 1.200974e-02 | 64 / 610 / 169 | - | 2.7e-10 | 39 |
-| g2_shd_x0.25 | metric 1.180539e-02 | 4 / 150 / 8 | - | 2.5e-10 | 10 |
-| g2_rwp | l1_rho 3.648450e-03, l1_E 3.582953e-03 | 127 / 432 / 685 | dE 3.1e-16, dP 1.1e-14 | 6.6e-08 | 12 |
-| g2_rwm | - | 127 / 432 / 685 | - | 6.6e-08 | 11 |
-| g3_rhse_sp2 | - | 1319 / 460 / 3317 | dE -1.3e-08, vcs_maxall 1.7e-07 | - | 17 |
-| g3_rhse_sp3 | - | 341 / 200 / 876 | dE -1.1e-08, dLz 2.8e-15, vcs_maxall 1.1e-07 | - | 46 |
-| g3_rhse_sp3_mb4 | - | 341 / 216 / 875 | dE -9.2e-09, dLz -9.5e-15, vcs_maxall 4.0e-07 | 2.7e-08 | 31 |
-| g3_pulsew | - | 179 / 2091 / 1384 | - | - | 10 |
-| g3_spthin | - | 39 / 82 / 87 | - | - | 11 |
-| g4_rhse_cs6 | - | 341 / 159 / 869 | dE 1.4e-08, vcs_maxall 7.7e-08 | - | 206 |
-| g4_rhse_cs24 | - | 341 / 160 / 869 | dE 1.4e-08, vcs_maxall 3.0e-07 | - | 102 |
-| g4_cs_thin1 | - | 199 / 117 / 346 | - | - | 128 |
-| g4_cs_feed1 | - | 19 / 250 / 202 | - | - | 40 |
-
-CPU thread spread (1 and 16 vs 4 OpenMP threads): g1_nltek1_x0.5 score 2.4e-04 field 7.6e-07 dsum 2; g1_hcyl_x0.5 score 0.0e+00 field 7.2e-16 dsum 0; g1_cb_x0.5 score 1.6e-15 field 6.7e-16 dsum 0; g1_shd_x0.25 score 0.0e+00 field 4.1e-16 dsum 0; g1_rwp score 2.5e-11 field 9.7e-11 dsum 0; g1_rwm score 0.0e+00 field 9.0e-11 dsum 0
-
-All CPU runs: rc 0, 0 CLEAN WARNING, 0 DT_RETRY. Running compare.py on Orion against the 16-thread runs gives "all gates passed".
+**The ref/ directory (G1-G4 references) follows in the next commit (the job is running). G5 needs no references: start G5 now.**
 
 ## Rules
 - Fresh starts only. Stop on FATAL, NaN or rc != 0 (G1-G4) and send the last 40 log lines;

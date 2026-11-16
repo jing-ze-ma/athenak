@@ -1,5 +1,5 @@
 #!/bin/bash
-# build_cuda_raven.sh <athenak worktree at dae5c4133> [nmax ...]: Raven A100 binaries
+# build_cuda_raven.sh <athenak worktree at origin/clean-cc 32af6349e> [nmax ...]: Raven A100 binaries
 # Recipe = your Raven A100 production builds (gcc/13 cuda/12.6 openmpi_gpu/5.0, nvcc_wrapper,
 # Kokkos AMPERE80, CUDA malloc async off, MPI, Release) with -ffp-contract=off: the fmad-1031
 # CMake logic then appends --fmad=false for the device code (check flags.make).  Built-in pgens.

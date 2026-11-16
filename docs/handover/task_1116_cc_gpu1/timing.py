@@ -97,7 +97,7 @@ for d in sorted(glob.glob(R + '/g5_*') + glob.glob(R + '/g6_*')):
                                                           100.0*s/max(tot, 1e-300)))
         if 'cln_fv' in k and 'cln_gd_chi' in k:
             nb = max(k['cln_gd_chi'][2], 1)
-            print('FV ray sweep: %d builds, %.3e s per build, %.1f passes per build' % (
+            print('FV ray sweep: %d builds, %.3e s per build, %.1f cln_fv launches per build (passes x wavefront levels)' % (
                 nb, k['cln_fv'][1]/nb, k['cln_fv'][2]/nb))
     for f in [d + '/run.log'] + glob.glob(d + '/mem*.txt'):
         if not os.path.exists(f):

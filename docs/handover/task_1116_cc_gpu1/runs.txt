@@ -7,6 +7,7 @@ G1   g1_rwp             1
 G1   g1_rwm             1
 G2   g2_nltek1_x0.5     4
 G2   g2_hcyl_x0.5       4
+G2   g2_cb_x0.5         4
 G2   g2_shd_x0.25       4
 G2   g2_rwp             4
 G2   g2_rwm             4
