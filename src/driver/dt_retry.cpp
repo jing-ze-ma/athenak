@@ -101,10 +101,11 @@ const char *kDtrMinimal[] = {
   // (or vra_a0/a1/c) alone made it bitwise
   "m1.vgd_hr",
   // scheme = clean (not visited before: a retry read the failed attempt's): the rays'
-  // intensities a clean_rays = fv1 | fv | lld sweep starts from, with cln_fref_set
-  // (force_reference = clean recaptures).  The extrap history is left alone: its flags
-  // go with the handles the attempt swapped and, on a first cycle, with cln_init
-  "m1.cln_fvi",
+  // intensities a clean_rays = fv1 | fv | lld sweep starts from (cln_fvis in single
+  // precision), with cln_fref_set (force_reference = clean recaptures).  The extrap
+  // history is left alone: its flags go with the handles the attempt swapped and, on a
+  // first cycle, with cln_init
+  "m1.cln_fvi", "m1.cln_fvis",
 };
 
 // the Views of kDtrMinimal that <rad_m1>/scheme = clean does not write

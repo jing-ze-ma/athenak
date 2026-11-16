@@ -1133,6 +1133,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("eaud_pd", eaud_pd);
   v.view("acl_cnt_d", acl_cnt_d);
   v.view("cln_fvi", cln_fvi);
+  v.view("cln_fvis", cln_fvis);
   v.value("cln_fref_set", cln_fref_set);
   v.value("tau_closure", tau_closure);
   v.value("tau_ready", tau_ready);
