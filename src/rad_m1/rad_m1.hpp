@@ -3045,11 +3045,13 @@ class RadiationM1 {
   DvceArray5D<Real> cln_fvx;    // 2-D axisymmetric: the intensities of the last pass
   DvceArray2D<int8_t> cln_fvdue, cln_fvdone;   // fv1 passes: cells due (CleanFvSweep)
   DvceArray5D<Real> cln_fva;    // the outward vector areas of the six faces of a cell
-  DvceArray3D<int> cln_fvo;     // the cell order of each direction (m, d, cell)
-  DvceArray2D<int> cln_fvl;     // the sweep's (m n + d, cell) by level (CleanFvLevels)
-  std::vector<int> cln_fvlv;    // the start of each level in cln_fvl
+  DvceArray1D<int> cln_fvc;     // the cells of each m n + d by level (CleanFvLevels)
+  DvceArray2D<int> cln_fvg;     // the start of each m n + d in a level (level, m n + d)
+  DvceArray2D<int64_t> cln_fvo; // its offset in cln_fvc less that start (level, m n + d)
+  std::vector<std::vector<int>> cln_fvls;   // the level starts of each m n + d
+  std::vector<int> cln_fvlv;    // the number of cells of each level
+  std::vector<bool> cln_fvdo;   // the directions whose levels are due (CleanFvTables)
   DvceArray4D<int> cln_fvm;     // the direction maps of the periodic seams (m, side, k, d)
-  DvceArray4D<Real> cln_fvt;    // scratch of CleanFvSeams
   DvceArray4D<int> cln_fvwm;    // specular maps of reflecting theta walls (m,side,k,d)
   DvceArray4D<Real> cln_fvwu;   // |n . theta_hat| there
   DvceArray5D<Real> cln_fvw;    // the walls' incoming intensities (m,side,k,i,b N + d)
@@ -3083,6 +3085,7 @@ class RadiationM1 {
     std::unique_ptr<MeshBoundaryValuesCC> pb;
   };
   std::map<int, CleanHalo> cln_halo;   // by nc
+  DvceArray5D<Real> cln_hbuf;   // the storage of every scratch array (32 components)
   Real cln_nsolve = 0.0, cln_nit = 0.0, cln_nfail = 0.0, cln_nneg = 0.0;
   //! milestone 3b LIMIT 4: build the x1 stack topology of the gathered line solve
   void ImplicitPartitionInit();

@@ -134,7 +134,9 @@ void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc
   const int n1 = a.extent_int(4), n2 = a.extent_int(3), n3 = a.extent_int(2);
   CleanHalo &hl = cln_halo[nc];
   if (!hl.pb) {
-    Kokkos::realloc(hl.a, nmb1 + 1, nc, n3, n2, n1);
+    // (the exchanges run one at a time: their scratch arrays share one allocation)
+    if (cln_hbuf.extent_int(0) == 0) Kokkos::realloc(cln_hbuf, nmb1 + 1, 32, n3, n2, n1);
+    hl.a = DvceArray5D<Real>(cln_hbuf.data(), nmb1 + 1, nc, n3, n2, n1);
     Kokkos::realloc(hl.ca, nmb1 + 1, nc, 1, 1, 1);
     hl.pb.reset(new MeshBoundaryValuesCC(pmy_pack, nullptr, false));
     hl.pb->InitializeBuffers(nc);
