@@ -183,6 +183,25 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_nl_efloor = pin->GetOrAddReal("rad_m1","clean_nl_efloor",0.0);
     cln_maxpos = pin->GetOrAddInteger("rad_m1","clean_maxpos",3);
     cln_pcsweeps = pin->GetOrAddInteger("rad_m1","clean_pc_sweeps",1);
+    // clean_pc_factor, clean_pc_reuse (read only when named): the x1line preconditioner
+    // keeps the factors of its line solves until its blocks are rebuilt, which is done
+    // on every clean_pc_reuse-th Newton/Picard pass of a solve
+    if (pin->DoesParameterExist("rad_m1","clean_pc_factor")) {
+      cln_pcfac = pin->GetBoolean("rad_m1","clean_pc_factor");
+    }
+    if (pin->DoesParameterExist("rad_m1","clean_pc_reuse")) {
+      cln_pcreuse = std::max(pin->GetInteger("rad_m1","clean_pc_reuse"), 1);
+    }
+    // clean_conv_est (read only when named): the Newton/Picard passes also stop once
+    // q/(1-q) times the change of a pass (q < 1/2 its ratio to the change of the pass
+    // before) is below clean_tol_nl; clean_nl_print: rank 0 prints the changes of every
+    // pass
+    if (pin->DoesParameterExist("rad_m1","clean_conv_est")) {
+      cln_conv_est = pin->GetBoolean("rad_m1","clean_conv_est");
+    }
+    if (pin->DoesParameterExist("rad_m1","clean_nl_print")) {
+      cln_nlprint = pin->GetBoolean("rad_m1","clean_nl_print");
+    }
     // clean_line_solver = hybrid | pcr | thomas (TEMPORARY, for GPU timing): rows per
     // Thomas system of the line solve (CleanCellLineSolve)
     if (pin->DoesParameterExist("rad_m1","clean_line_solver")) {

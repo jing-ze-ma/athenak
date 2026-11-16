@@ -773,7 +773,8 @@ void RadiationM1::CleanCellPreconditionerSetup() {
       for (int c = 0; c < 4; ++c) x.u(m,CLC_A0+4*r+c,k,j,i) = a0[r][c];
     }
   });
-  CleanCellCoarseSetup();
+  cln_lf_ok = false;
+  if (cln_pc != CLN_PC_X1LINE) CleanCellCoarseSetup();
 }
 
 //----------------------------------------------------------------------------------------
@@ -820,6 +821,18 @@ CleanLevel RadiationM1::CleanCellLevel(const int l) {
 
 void RadiationM1::CleanCellLineSolve(const CleanLevel &lv, const int dir, const int src,
                                      const int dst) {
+  CleanCellLineSolveRows<false>(lv, dir, src, dst);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellLineSolveRows
+//! \brief the line solve of CleanCellLineSolve; kStore also keeps its factors in cln_lf
+//! (CleanCellLineFactorSolve): per PCR round the multipliers of the two neighbour rows,
+//! per row of the Thomas systems the reduced lower block, D^-1 C and the factors of D
+
+template <bool kStore>
+void RadiationM1::CleanCellLineSolveRows(const CleanLevel &lv, const int dir,
+                                         const int src, const int dst) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const int is = lv.o[0], js = lv.o[1], ks = lv.o[2];
   const int a0 = lv.a0, sm = lv.sm[dir], sp = lv.sp[dir];
@@ -830,6 +843,10 @@ void RadiationM1::CleanCellLineSolve(const CleanLevel &lv, const int dir, const 
   auto u = lv.u;
   int nsys = 1;
   while (nl > cln_chunk*nsys) nsys *= 2;
+  auto lf = cln_lf;
+  int nround = 0;
+  for (int st = 1; st < nsys; st *= 2) ++nround;
+  const int lt = 32*nround;
   // row n: A x_n-P + B x_n + C x_n+P = r (52 values) in buffer 0 or 1
   const size_t scr = ScrArray1D<Real>::shmem_size(104*nl);
   // (the rows in global scratch, teams of 64 threads for lines of up to 64 rows: many
@@ -857,10 +874,12 @@ void RadiationM1::CleanCellLineSolve(const CleanLevel &lv, const int dir, const 
     tm.team_barrier();
     // PCR rounds: row n takes rows n -+ st out, f = -X Bnb^-1 (X = A or C of row n) from
     // Bnb^T f^T = -X^T
-    int o = 0;
+    int o = 0, ir = 0;
     for (int st = 1; st < nsys; st *= 2) {
       const int d = 52*nl - o;
       Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nl), [&](const int n) {
+        int k, j, i;
+        cell(n, k, j, i);
         Real an[4][4], bn[4][4], cn[4][4], rn[4];
         for (int r = 0; r < 4; ++r) {
           for (int c = 0; c < 4; ++c) {
@@ -885,6 +904,9 @@ void RadiationM1::CleanCellLineSolve(const CleanLevel &lv, const int dir, const 
           for (int r = 0; r < 4; ++r) {
             for (int l = 0; l < 4; ++l) {
               const Real g = f[l][r];
+              if constexpr (kStore) {
+                lf(m,32*ir+((sd < 0) ? 0 : 16)+4*r+l,k-ks,j-js,i-is) = g;
+              }
               for (int c = 0; c < 4; ++c) {
                 if (sd < 0) {
                   an[r][c] += g*w(ob + 4*l + c);
@@ -908,6 +930,7 @@ void RadiationM1::CleanCellLineSolve(const CleanLevel &lv, const int dir, const 
       });
       tm.team_barrier();
       o = d;
+      ++ir;
     }
     // block Thomas on each system s (rows s, s + P, ...): forward D = B - A C_n-P,
     // C_n = D^-1 C, d_n = D^-1 (r - A d_n-P) (C_n, d_n in the other buffer); backward
@@ -932,7 +955,22 @@ void RadiationM1::CleanCellLineSolve(const CleanLevel &lv, const int dir, const 
           }
           b[r][4] = rhs;
         }
-        CleanBlockSolve(a, b, 5);
+        if constexpr (kStore) {
+          int k, j, i;
+          cell(n, k, j, i);
+          Real lu[4][4], piv[4];
+          CleanBlockFactor(a, b, 5, lu, piv);
+          for (int r = 0; r < 4; ++r) {
+            for (int c = 0; c < 4; ++c) {
+              lf(m,lt+4*r+c,k-ks,j-js,i-is) = (n >= nsys) ? w(o + 52*n + 4*r + c) : 0.0;
+              lf(m,lt+16+4*r+c,k-ks,j-js,i-is) = b[r][c];
+              lf(m,lt+32+4*r+c,k-ks,j-js,i-is) = lu[r][c];
+            }
+            lf(m,lt+48+r,k-ks,j-js,i-is) = piv[r];
+          }
+        } else {
+          CleanBlockSolve(a, b, 5);
+        }
         for (int r = 0; r < 4; ++r) {
           for (int c = 0; c < 4; ++c) w(t + 52*n + 4*r + c) = b[r][c];
           w(t + 52*n + 48 + r) = b[r][4];
@@ -960,7 +998,102 @@ void RadiationM1::CleanCellLineSolve(const CleanLevel &lv, const int dir, const 
     nt = std::min((nl > 64) ? 256 : 64, Policy(DevExeSpace(), 1, 1).team_size_max(line,
                   Kokkos::ParallelForTag()));
   }
-  Kokkos::parallel_for("clc_line", Policy(DevExeSpace(), (nmb1 + 1)*np*nq, nt)
+  Kokkos::parallel_for(kStore ? "clc_linef" : "clc_line",
+                       Policy(DevExeSpace(), (nmb1 + 1)*np*nq, nt)
+                       .set_scratch_size(lev, Kokkos::PerTeam(scr)), line);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellLineFactorSolve
+//! \brief u(dst) = L^{-1} u(src) along x1 on the mesh level with the factors that
+//! CleanCellLineSolveRows<true> kept in cln_lf: the operations of that solve on the right
+//! hand side only (the same result to the last bit), one team per line
+
+void RadiationM1::CleanCellLineFactorSolve(const CleanLevel &lv, const int src,
+                                           const int dst) {
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int is = lv.o[0], js = lv.o[1], ks = lv.o[2];
+  const int np = lv.n[2], nq = lv.n[1], nl = lv.n[0];
+  auto u = lv.u;
+  auto lf = cln_lf;
+  int nsys = 1;
+  while (nl > cln_chunk*nsys) nsys *= 2;
+  int nround = 0;
+  for (int st = 1; st < nsys; st *= 2) ++nround;
+  const int lt = 32*nround;
+  // the right hand sides of the rows (4 values) in buffer 0 or 1
+  const size_t scr = ScrArray1D<Real>::shmem_size(8*nl);
+  const int lev = 1;
+  auto line = KOKKOS_LAMBDA(TeamMember_t tm) {
+    const int m = tm.league_rank()/(np*nq);
+    const int k = (tm.league_rank() - m*np*nq)/nq, j = tm.league_rank() % nq;
+    ScrArray1D<Real> w(tm.team_scratch(lev), 8*nl);
+    Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nl), [&](const int n) {
+      for (int r = 0; r < 4; ++r) w(4*n + r) = u(m,src+r,ks+k,js+j,is+n);
+    });
+    tm.team_barrier();
+    int o = 0, ir = 0;
+    for (int st = 1; st < nsys; st *= 2) {
+      const int d = 4*nl - o;
+      Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nl), [&](const int n) {
+        Real rn[4];
+        for (int r = 0; r < 4; ++r) rn[r] = w(o + 4*n + r);
+        for (int sd = -1; sd <= 1; sd += 2) {
+          const int nb = n + sd*st;
+          if (nb < 0 || nb >= nl) continue;
+          const int ob = o + 4*nb, og = 32*ir + ((sd < 0) ? 0 : 16);
+          for (int r = 0; r < 4; ++r) {
+            for (int l = 0; l < 4; ++l) rn[r] += lf(m,og+4*r+l,k,j,n)*w(ob + l);
+          }
+        }
+        for (int r = 0; r < 4; ++r) w(d + 4*n + r) = rn[r];
+      });
+      tm.team_barrier();
+      o = d;
+      ++ir;
+    }
+    // block Thomas on each system: forward d_n = D^-1 (r - A d_n-P), backward
+    // x_n = d_n - C_n x_n+P
+    const int t = 4*nl - o;
+    Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nsys), [&](const int sy) {
+      for (int n = sy; n < nl; n += nsys) {
+        Real rhs[4], lu[4][4], piv[4];
+        for (int r = 0; r < 4; ++r) {
+          rhs[r] = w(o + 4*n + r);
+          if (n >= nsys) {
+            for (int l = 0; l < 4; ++l) {
+              const Real aml = lf(m,lt+4*r+l,k,j,n);
+              if (aml == 0.0) continue;
+              rhs[r] -= aml*w(t + 4*(n-nsys) + l);
+            }
+          }
+          for (int c = 0; c < 4; ++c) lu[r][c] = lf(m,lt+32+4*r+c,k,j,n);
+          piv[r] = lf(m,lt+48+r,k,j,n);
+        }
+        CleanBlockFactorSolve(lu, piv, rhs);
+        for (int r = 0; r < 4; ++r) w(t + 4*n + r) = rhs[r];
+      }
+      for (int n = sy + nsys*((nl - 1 - sy)/nsys) - nsys; n >= 0; n -= nsys) {
+        for (int r = 0; r < 4; ++r) {
+          for (int c = 0; c < 4; ++c) {
+            w(t + 4*n + r) -= lf(m,lt+16+4*r+c,k,j,n)*w(t + 4*(n+nsys) + c);
+          }
+        }
+      }
+    });
+    tm.team_barrier();
+    Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nl), [&](const int n) {
+      for (int r = 0; r < 4; ++r) u(m,dst+r,ks+k,js+j,is+n) = w(t + 4*n + r);
+    });
+  };
+  // (on the host one thread per line: a host team holds all the threads)
+  using Policy = Kokkos::TeamPolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
+  int nt = 1;
+  if constexpr (!std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>) {
+    nt = std::min((nl > 64) ? 256 : 64, Policy(DevExeSpace(), 1, 1).team_size_max(line,
+                  Kokkos::ParallelForTag()));
+  }
+  Kokkos::parallel_for("clc_lines", Policy(DevExeSpace(), (nmb1 + 1)*np*nq, nt)
                        .set_scratch_size(lev, Kokkos::PerTeam(scr)), line);
 }
 
@@ -1171,11 +1304,27 @@ void RadiationM1::CleanCellVCycle(const int l, const int src, const int dst) {
 //! \fn void RadiationM1::CleanCellPrecondition
 //! \brief u(dst) = M^{-1} u(src): one multigrid V-cycle from the mesh level (clean_pc =
 //! vcycle; prodmg: the old production mg, x1 kept), or the x1-line solve of the mesh
-//! (x1line)
+//! (x1line; with clean_pc_factor the first solve after a rebuild of the blocks keeps
+//! its factors and the later ones use them)
 
 void RadiationM1::CleanCellPrecondition(const int src, const int dst) {
   if (cln_pc == CLN_PC_X1LINE) {
-    CleanCellLineSolve(CleanCellLevel(0), 0, src, dst);
+    const CleanLevel lv = CleanCellLevel(0);
+    if (!cln_pcfac) {
+      CleanCellLineSolve(lv, 0, src, dst);
+    } else if (cln_lf_ok) {
+      CleanCellLineFactorSolve(lv, src, dst);
+    } else {
+      int nsys = 1, nround = 0;
+      while (lv.n[0] > cln_chunk*nsys) nsys *= 2;
+      for (int st = 1; st < nsys; st *= 2) ++nround;
+      const int nmb = pmy_pack->nmb_thispack, nf = 32*nround + 52;
+      if (cln_lf.extent_int(0) != nmb || cln_lf.extent_int(1) != nf) {
+        Kokkos::realloc(cln_lf, nmb, nf, lv.n[2], lv.n[1], lv.n[0]);
+      }
+      CleanCellLineSolveRows<true>(lv, 0, src, dst);
+      cln_lf_ok = true;
+    }
     return;
   }
   CleanCellVCycle(0, src, dst);

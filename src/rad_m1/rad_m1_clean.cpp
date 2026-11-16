@@ -136,7 +136,7 @@ void RadiationM1::CleanInit() {
   // multigrid levels of the cell layout: halve every direction with an even number
   // (>= 4) of cells, down to the level where no direction can be halved (clean_pc =
   // prodmg: x1 is never halved, two coarse levels)
-  if (cln_cell) {
+  if (cln_cell && cln_pc != CLN_PC_X1LINE) {
     const bool pm = (cln_pc == CLN_PC_PRODMG);
     std::array<int, 3> nc = {indcs.nx1, indcs.nx2, indcs.nx3};
     while (!(pm && cln_mgn.size() == 2)) {
@@ -692,7 +692,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         }
         if (cln_recon && inl < cln_maxpic) CleanCellSlopeWeights(CLC_K);
         CleanCellRightHandSide();
-        CleanCellPreconditionerSetup();
+        if (inl % cln_pcreuse == 0) CleanCellPreconditionerSetup();
       } else {
         CleanRightHandSide();
         CleanPreconditionerSetup();
@@ -708,6 +708,20 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       if (lagged && inl < cln_maxpic) dpic = de;
       Real dv = 0.0;
       if (cln_feedback) dv = cell ? CleanCellVelocityUpdate() : CleanVelocityUpdate();
+      if (cln_nlprint && global_variable::my_rank == 0) {
+        std::printf("CLEAN pass cycle %d t2s %d pos %d pass %d it %d de %.3e dv %.3e\n",
+                    pmy_pack->pmesh->ncycle, t2_solve, ipos, inl, nit, de, dv);
+      }
+      // the remaining change of a contraction q < 1/2 is q/(1-q) times that of the pass
+      auto est = [&](const Real d, const Real d0) {
+        const Real q = d/d0;
+        return (q < 0.5) ? q/(1.0 - q)*d : d;
+      };
+      if (cln_conv_est && inl > 0 && est(de, de0) < tol_nl && est(dv, dv0) < tol_nl &&
+          !(clos1 && inl == 0)) {
+        converged = true;
+        break;
+      }
       if (settled(de, de0, cln_fe) && settled(dv, dv0, cln_fv) && !(clos1 && inl == 0)) {
         converged = true;
         break;
