@@ -1710,6 +1710,7 @@ void RadiationM1::CleanWriteBack() {
   // E, cell fluxes, gas
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
+  auto eos = fl.eos;
   auto u0_ = u0;
   auto f1 = f0x1, f2 = f0x2, f3 = f0x3;
   const bool fref = (force_ref == M1_FREF_CLEAN);
@@ -1736,6 +1737,11 @@ void RadiationM1::CleanWriteBack() {
       // (clean_stag_split: the faces store F^H, E moved by the energy flux)
       den = -(e - x.w(m,CLW_EO,k,j,i)) -
             ((xh.hi || x.sph) ? CleanFluxDivergence(x, CLW_X, m, k, j, i, true) : h*div);
+      if (x.vzero) {   // (steady start: the eint of the iterate's T, not the residual of
+        Real ei, p, chi_rho, chi_t, cv;   //  a step h -> infinity, as the cell layout)
+        eos.ThermoAt(uh(m,IDN,k,j,i), x.w(m,CLW_T,k,j,i), ei, p, chi_rho, chi_t, cv);
+        den = ei - x.w(m,CLW_EI,k,j,i);
+      }
       uh(m,IEN,k,j,i) += den;
     }
     if (slopes) {
