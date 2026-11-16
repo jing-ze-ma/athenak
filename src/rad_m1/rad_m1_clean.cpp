@@ -1485,8 +1485,17 @@ void RadiationM1::CleanStagFSolve(const int e) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       fc(m,CLF_N,k,j,i) = CleanFaceFlux(xh, e, dir, m, k, j, i, true);
       fc(m,CLF_N+1,k,j,i) = 0.0;
-      // (fkin, spherical polar: the w share of the curvature terms of F^H)
-      if (!fk || !x.sph || CleanBoundaryFace(x, dir, m, k, j, i)) return;
+      if (!fk || CleanBoundaryFace(x, dir, m, k, j, i)) return;
+      // (fkin, Cartesian: the w share of the transverse stresses D_{dir,b} E of F^H; on
+      // spherical polar the w share of its curvature terms)
+      for (int b = 0; b < x.nf && !x.sph; ++b) {
+        Real p[4], q[4];
+        if (b == dir) continue;
+        CleanStagEdge(x, e, dir, b, m, k, j, i, 1, c1lo, c1hi, p);
+        CleanStagEdge(x, e, dir, b, m, k, j, i, -1, c1lo, c1hi, q);
+        fc(m,CLF_N+1,k,j,i) += x.idx[b]*(p[0]*p[3] - q[0]*q[3]);
+      }
+      if (!x.sph) return;
       auto wq = [&](const int q, const int kk, const int jj, const int ii) {
         return CleanSmoothStep((x.cs(m,CLN_C1,kk,jj,ii) - c1lo)/(c1hi - c1lo))*
                CleanStagSph(x, q, dir, m, k, j, i)*x.w(m,e,kk,jj,ii);
@@ -1522,6 +1531,12 @@ void RadiationM1::CleanStagFSolve(const int e) {
     const int nb = (dir == 2) ? je - js + 1 : ke - ks + 1;
     for (int it = 0; it < 64; ++it) {
       Real dmax = 0.0, fmx = 0.0;
+      if (fk && !x.sph && x.multi_d) {   // (the last iterate, for the transverse terms)
+        Kokkos::deep_copy(Kokkos::subview(cln_w, Kokkos::ALL, CLW_Z, Kokkos::ALL,
+                                          Kokkos::ALL, Kokkos::ALL),
+                          Kokkos::subview(cln_w, Kokkos::ALL, CLW_Y, Kokkos::ALL,
+                                          Kokkos::ALL, Kokkos::ALL));
+      }
       Kokkos::parallel_reduce("cln_fs2", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                               (nmb1 + 1)*na*nb),
       KOKKOS_LAMBDA(const int idx, Real &d_max, Real &f_max) {
@@ -1540,7 +1555,21 @@ void RadiationM1::CleanStagFSolve(const int e) {
           const bool bd = CleanBoundaryFace(x, dir, m, k, j, i);
           const Real all = al(m,0,k-dk,j-dj,i-di), alr = al(m,0,k,j,i);
           const Real wl = al(m,2,k-dk,j-dj,i-di), wr = al(m,2,k,j,i);
-          if (!bd && (all > 0.0 || alr > 0.0 || wl > 0.0 || wr > 0.0)) {
+          // (fkin, Cartesian: the rays' kinetic transport of F along b != dir through the
+          // dual faces of CleanStagEdge, the other rows' F lagged)
+          Real tg = 0.0, tr = 0.0;
+          for (int b = 0; b < x.nf && fk && !x.sph && !bd; ++b) {
+            Real p[4], q[4];
+            if (b == dir) continue;
+            CleanStagEdge(x, e, dir, b, m, k, j, i, 1, c1lo, c1hi, p);
+            CleanStagEdge(x, e, dir, b, m, k, j, i, -1, c1lo, c1hi, q);
+            const Real qb = x.h*x.c*x.idx[b];
+            const int bk = (b == 2), bj = (b == 1), bi = (b == 0);
+            tg += qb*(p[0]*p[1] - q[0]*q[2]);
+            tr -= qb*(p[0]*p[2]*x.w(m,CLW_Z,k+bk,j+bj,i+bi) -
+                      q[0]*q[1]*x.w(m,CLW_Z,k-bk,j-bj,i-bi));
+          }
+          if (!bd && (all > 0.0 || alr > 0.0 || wl > 0.0 || wr > 0.0 || tg > 0.0)) {
             const Real g = 0.5*x.h*x.c/CleanCellFaceDistance(x, dir, m, k, j, i);
             const Real it_ = 1.0/fc(m,CLF_TH,k,j,i);
             // (fkin: h c^2 [w P_kin]_L^R/dx, P_kin = (h+ F_lo + h- F_hi)/c of a cell)
@@ -1551,9 +1580,9 @@ void RadiationM1::CleanStagFSolve(const int e) {
             const Real hpr = x.cs(m,CLN_HP+dir,k,j,i), hmr = x.cs(m,CLN_HM+dir,k,j,i);
             lo = -g*all - q*wl*hpl;
             hi = -g*alr + q*wr*hmr;
-            dg = it_ - lo - hi + q*(wr*(hpr + hmr) - wl*(hpl + hml));
+            dg = it_ - lo - hi + q*(wr*(hpr + hmr) - wl*(hpl + hml)) + tg;
             r = fc(m,CLF_N,k,j,i)*it_ + q*x.c*(al(m,1,k-dk,j-dj,i-di) - al(m,1,k,j,i)) +
-                x.h*x.c*x.c*fc(m,CLF_N+1,k,j,i);
+                x.h*x.c*x.c*fc(m,CLF_N+1,k,j,i) + tr;
             // (the faces beyond a MeshBlock line end: the neighbours', lagged)
             if (t == 0) {r -= lo*x.w(m,CLW_Y,k-dk,j-dj,i-di); lo = 0.0;}
             if (t == n) {r -= hi*x.w(m,CLW_Y,k+dk,j+dj,i+di); hi = 0.0;}
@@ -1587,6 +1616,17 @@ void RadiationM1::CleanStagFSolve(const int e) {
       fc(m,CLF_N,k,j,i) = f;
       const Real all = al(m,0,k-dk,j-dj,i-di), alr = al(m,0,k,j,i);
       const Real wl = al(m,2,k-dk,j-dj,i-di), wr = al(m,2,k,j,i);
+      Real tk = 0.0;   // (fkin, Cartesian: the transverse kinetic stress)
+      for (int b = 0; b < x.nf && fk && !x.sph; ++b) {
+        Real p[4], q[4];
+        if (b == dir) continue;
+        CleanStagEdge(x, e, dir, b, m, k, j, i, 1, c1lo, c1hi, p);
+        CleanStagEdge(x, e, dir, b, m, k, j, i, -1, c1lo, c1hi, q);
+        const int bk = (b == 2), bj = (b == 1), bi = (b == 0);
+        tk += x.idx[b]*(p[0]*(p[1]*f + p[2]*x.w(m,CLW_Y,k+bk,j+bj,i+bi)) -
+                        q[0]*(q[1]*x.w(m,CLW_Y,k-bk,j-bj,i-bi) + q[2]*f))/x.c;
+      }
+      fc(m,CLF_N+1,k,j,i) -= tk;
       if (!(all > 0.0 || alr > 0.0 || wl > 0.0 || wr > 0.0)) return;
       const Real fm = x.w(m,CLW_Y,k-dk,j-dj,i-di), fp = x.w(m,CLW_Y,k+dk,j+dj,i+di);
       auto pk = [&](const int kk, const int jj, const int ii, const Real l, const Real h) {
