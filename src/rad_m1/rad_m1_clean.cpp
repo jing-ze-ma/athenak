@@ -1511,10 +1511,11 @@ void RadiationM1::CleanStagFSolve(const int e) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real rc;
       const Real tau = op(m,M1_OP_T,k,j,i)*CleanCellFaceDistance(x, dir, m, k, j, i);
-      Real a = CleanDissipationWeight(CLA_TAU, tau, 0.0, 0.0, rc);
+      // (fkin: the streaming share is kinetic, so only the R2 faces need the dissipation)
+      Real a = fk ? 0.0 : CleanDissipationWeight(CLA_TAU, tau, 0.0, 0.0, rc);
       for (int s = 0; s < 2; ++s) {
         const int kf = k + s*dk, jf = j + s*dj, iff = i + s*di;
-        a = fmax(a, fc(m,CLF_W,kf,jf,iff));
+        if (!fk) a = fmax(a, fc(m,CLF_W,kf,jf,iff));
         const Real f = fc(m,CLF_N,kf,jf,iff);
         const Real ed = (f > 0.0) ? x.w(m,e,kf-dk,jf-dj,iff-di) : x.w(m,e,kf,jf,iff);
         if (!CleanBoundaryFace(x, dir, m, kf, jf, iff) &&
