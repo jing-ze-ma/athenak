@@ -957,7 +957,7 @@ void RadiationM1::VetGdInit() {
     xf_h(m) += 8*l.lx1;
     for (int g = 0; g < pm->nmb_total; ++g) {
       const LogicalLocation &o = pm->lloc_eachmb[g];
-      if (o.level == l.level && o.lx2 == l.lx2 && o.lx3 == l.lx3 &&
+      if (o.level == l.level && o.panel == l.panel && o.lx2 == l.lx2 && o.lx3 == l.lx3 &&
           std::abs(o.lx1 - l.lx1) == 1) {
         vgd_x1nb[2*m + (o.lx1 > l.lx1 ? 1 : 0)] = g;
       }
@@ -971,10 +971,12 @@ void RadiationM1::VetGdInit() {
                    [&](const int a, const int b) {return vgd_x1lv[a] < vgd_x1lv[b];});
   Kokkos::deep_copy(vgd_x1mo, mo_h);
   if (vgd_nb1 > 1) {
-    if (vgd_csg || vgd_async || vgd_twin || vgd_upf != 0 || vgd_pol || !vgd_shl_on ||
-        indcs.nx1 < 2) {
-      VgdFatal("several MeshBlocks along x1 need a wedge, MeshBlock nx1 >= 2, "
-               "vet_gd_shell_list and no vet_gd_async / twin / upwind / full sphere");
+    // (the cubed sphere: the clean scheme's FV rays, CleanFvSweep, no sweep levels)
+    if ((vgd_csg && !clean) || vgd_async || vgd_twin || vgd_upf != 0 || vgd_pol ||
+        (!vgd_shl_on && !vgd_csg) || indcs.nx1 < 2) {
+      VgdFatal("several MeshBlocks along x1 need a wedge or (scheme = clean) the cubed "
+               "sphere, MeshBlock nx1 >= 2, vet_gd_shell_list and no vet_gd_async / "
+               "twin / upwind / full sphere");
     }
     vgd_hcomp = 0;   // the dense per-shell halo (the compact lists assume one level)
   }
