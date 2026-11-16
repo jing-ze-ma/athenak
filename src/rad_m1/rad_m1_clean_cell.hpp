@@ -10,11 +10,15 @@
 //! (<rad_m1>/clean_layout = cell).
 //!
 //! The unknowns of every cell are E and y = F/c (all components in energy-density
-//! units).  A stage of step h solves
-//!   E (1 + h c kE) + h div fE = E_old + h c kP a T^4 - W
-//!   y_b (1 + h c chi) - h chi a_b E + h div fY_b = y_old,b
-//! with a_b = v_b + D_bc v_c (A = a E the advective flux) and W the work of the radiation
-//! force on the gas.  At a face normal to d between cells L and R:
+//! units).  A stage of step h solves, with the mixed-frame sources of Ma et al. (2025,
+//! eqs. 56-57), beta = v/c and G = 1 + beta^2/2,
+//!   E + h div fE = E_old + h S_E,  h S_E = h c [(kP a T^4 - kE E) G + kE beta.y
+//!                                   - (chi - kE) beta.(y - a E/c)]
+//!   y_b (1 + h c chi) - h chi a_b E - h c beta_b (kP a T^4 - kE E) + h div fY_b
+//!     = y_old,b
+//! with a_b = v_b + D_bc v_c (A = a E the advective flux; y - a E/c = F'/c the comoving
+//! flux).  The gas takes the opposite momentum and total energy, its eint -h S_E less
+//! the exact kinetic energy it gains.  At a face normal to d between cells L and R:
 //!   fE   = c (y_d,L + y_d,R)/2 - al (s/2) (E_R - E_L) + RC
 //!   fY_b = c (D_bd,L E_L + D_bd,R E_R)/2 - al (s/2) (y_b,R - y_b,L)
 //!   RC   = (1 - al) th h c^2 [(g_L + g_R)/2 - ((D_dd E)_R - (D_dd E)_L)/dx_d]
@@ -443,6 +447,20 @@ Real CleanRefForce(const int fref, const DvceArray5D<Real> &fr,
                    const int k, const int j, const int i) {
   if (fref == M1_FREF_CLEAN) return fr(m,b,k,j,i);
   return (fref == M1_FREF_WB_ARAD && b == 0) ? d*aref(m,k,j,i) : 0.0;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanCellBetaSource
+//! \brief RE E + RY.y of the state at slot v of x.u: the beta terms of h S_E but the
+//! factor G = 1 + beta^2/2 of the emission (CLW_RE, CLW_RY of CleanCellRightHandSide;
+//! RE holds the -kE beta^2/2 of the absorption)
+
+KOKKOS_INLINE_FUNCTION
+Real CleanCellBetaSource(const CleanArgs &x, const int v, const int m, const int k,
+                         const int j, const int i) {
+  Real s = x.w(m,CLW_RE,k,j,i)*x.u(m,v,k,j,i);
+  for (int b = 0; b < x.nf; ++b) s += x.w(m,CLW_RY+b,k,j,i)*x.u(m,v+1+b,k,j,i);
+  return s;
 }
 
 //----------------------------------------------------------------------------------------
