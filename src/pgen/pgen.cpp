@@ -664,7 +664,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       std::memcpy(&(hdr[0]), &(t2_hdr[0]), sizeof(hdr));
       std::memcpy(&(t2_hv[0]), &(t2_hdr[0]) + sizeof(hdr), sizeof(t2_hv));
     }
-    if (!ok || hdr[0] != 1 || hdr[1] < 1 || hdr[1] > 64) {
+    if (!ok || hdr[0] != 1 || hdr[1] < 1 || hdr[1] > 65536) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "the <rad_m1> hesdirk2 header of this restart file is "
                 << "broken." << std::endl;
@@ -1891,12 +1891,13 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // time_scheme = hesdirk2: the stored slope, when this run wants one of that size.  A
   // file without it leaves t2_ok = false: the first step is backward Euler.
   // bematch-1030: a be_only run never uses the slope (each step is backward Euler)
-  const bool t2_want = (pradm1 != nullptr) &&
-                       (pradm1->time_scheme == radm1::M1_TIME_HESDIRK2) &&
-                       !pradm1->t2_beonly;
-  const bool t2_read = t2_want && (nt2_file > 0) &&
-                       (pradm1->Time2RstNchWant() == nt2_file) &&
-                       (static_cast<int>(pradm1->t2k1.extent(0)) >= nmb);
+  // (the same block carries the clean scheme's state, with any time scheme)
+  const bool t2_h2 = (pradm1 != nullptr) &&
+                     (pradm1->time_scheme == radm1::M1_TIME_HESDIRK2);
+  const bool t2_want = t2_h2 && !pradm1->t2_beonly;
+  const bool t2_read = (pradm1 != nullptr) && (nt2_file > 0) &&
+                       pradm1->Time2RstAccept(nt2_file) &&
+                       (!t2_h2 || static_cast<int>(pradm1->t2k1.extent(0)) >= nmb);
   if (t2_want && !t2_read && global_variable::my_rank == 0) {
     std::cout << "### WARNING: restart file has no <rad_m1> hesdirk2 slope; the first "
               << "step is backward Euler and this restart is not bitwise." << std::endl;
@@ -2100,7 +2101,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         read_slab("rad_m1 hesdirk2 slope");
         pradm1->Time2RstSet(n, wtin, nmb);
       }
-      pradm1->t2_ok = true;
+      pradm1->t2_ok = t2_want;
       pradm1->pred2_ok = (t2_hv[0] > 0.0);
       pradm1->pred2_dt = t2_hv[0];
       pradm1->t2_dtprev = t2_hv[1];
