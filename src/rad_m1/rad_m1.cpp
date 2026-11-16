@@ -171,6 +171,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     if (cln_sphere) cln_sph_r = pin->GetReal("rad_m1","clean_sphere_radius");}
     cln_vfreeze = pin->GetOrAddInteger("rad_m1","clean_vfreeze",0);
+    cln_gas_exact = pin->GetOrAddBoolean("rad_m1","clean_gas_exact",false);
+    cln_yres = pin->GetOrAddBoolean("rad_m1","clean_yres",false);
+    {const std::string nn = pin->GetOrAddString("rad_m1","clean_nl_norm","global");
+    if (nn.compare("global") != 0 && nn.compare("cell") != 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1>/clean_nl_norm = global | cell" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    cln_nl_cell = (nn.compare("cell") == 0);}
+    cln_nl_efloor = pin->GetOrAddReal("rad_m1","clean_nl_efloor",0.0);
     cln_maxpos = pin->GetOrAddInteger("rad_m1","clean_maxpos",3);
     cln_pcsweeps = pin->GetOrAddInteger("rad_m1","clean_pc_sweeps",1);
     // clean_line_solver = hybrid | pcr | thomas (TEMPORARY, for GPU timing): rows per
