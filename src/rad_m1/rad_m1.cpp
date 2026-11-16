@@ -140,18 +140,21 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // the consistency term is the cell default on Cartesian meshes and, with the vet_gd
     // rays transported conservatively (clean_rays = fv1 by default), on spherical polar,
     // always with the streaming weight (an optically thick cell keeps the moment flux:
-    // the rays' face sums there are not those of the diffusion limit); opt-in on the
-    // cubed sphere
+    // the rays' face sums there are not those of the diffusion limit); on the cubed
+    // sphere the staggered default with vet_gd (well-balanced only with it), opt-in for
+    // the cell layout
     const bool sp = pmy_pack->pmesh->use_spherical_polar;
     const bool cs = pmy_pack->pmesh->use_cubed_sphere;
-    const bool gd = sp && pin->DoesParameterExist("rad_m1","vet_gd") &&
+    const bool vg = pin->DoesParameterExist("rad_m1","vet_gd") &&
                     pin->GetBoolean("rad_m1","vet_gd");
+    const bool gd = sp && vg;
     if (gd && !pin->DoesParameterExist("rad_m1","clean_rays")) cln_rfv = 1;
     // (staggered: on by default with clean_stag_split, where the rays are not opt-in)
     cln_split = pin->DoesParameterExist("rad_m1","clean_stag_split") ?
                 pin->GetBoolean("rad_m1","clean_stag_split") : !cln_cell;
     cln_consist = pin->GetOrAddBoolean("rad_m1","clean_consistency",
-                                       (cln_cell || cln_split) && !cs && (!sp || gd));
+                                       (cln_cell || cln_split) &&
+                                       (cs ? !cln_cell && vg : !sp || gd));
     cln_conswt = pin->GetOrAddBoolean("rad_m1","clean_consistency_weight",cln_cell);
     std::string fm = pin->GetOrAddString("rad_m1","clean_face_model","none");
     cln_milne = (fm.compare("milne") == 0);
