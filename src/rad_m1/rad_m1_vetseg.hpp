@@ -286,6 +286,37 @@ Real VetUpCorner(int mode, const Real w[4], const Real iq[4], const Real cq[4],
   return VetSegOne(iu, exp(ls), s0, exp(lc), c0, hl, spl, spe, ifc);
 }
 
+// scheme = clean: the second-order foot of the transverse interpolation, the PLM remap
+// of the upwind plane with van Leer slopes s.  The linear interpolation at fraction a
+// between nodes a and b is the donor-cell remap, whose diffusion accumulates along a
+// ray (first order in an optically thin multi-D field); the remap adds
+// a (1 - a)/2 (s_a - s_b) along x2 (rows ka, kb weighted as in the bilinear value) and
+// along x3.  The part a (1 - a)/2 s_a crosses the low face of the cell (fl[0] x2, fl[1]
+// x3), so the update stays in flux form.  ip(dk, dj) = I at (ka + dk, ja + dj).
+template <class IP>
+KOKKOS_INLINE_FUNCTION
+Real VetPlmFoot(const IP &ip, const Real a2, const Real a3, const bool thrd, Real fl[2]) {
+  auto sl = [](const Real m, const Real c, const Real p) {
+    const Real dl = c - m, dr = p - c;
+    return (dl*dr > 0.0) ? 2.0*dl*dr/(dl + dr) : 0.0;
+  };
+  const Real k2 = 0.5*a2*(1.0 - a2), k3 = 0.5*a3*(1.0 - a3);
+  Real dv = 0.0;
+  fl[0] = 0.0;
+  fl[1] = 0.0;
+  for (int b = 0; b < (thrd ? 2 : 1); ++b) {
+    const Real wr = (b == 0) ? 1.0 - a3 : a3, wc = (b == 0) ? 1.0 - a2 : a2;
+    const Real sa = sl(ip(b,-1), ip(b,0), ip(b,1));
+    dv += wr*k2*(sa - sl(ip(b,0), ip(b,1), ip(b,2)));
+    fl[0] += wr*k2*sa;
+    if (!thrd) continue;
+    const Real ta = sl(ip(-1,b), ip(0,b), ip(1,b));
+    dv += wc*k3*(ta - sl(ip(0,b), ip(1,b), ip(2,b)));
+    fl[1] += wc*k3*ta;
+  }
+  return dv;
+}
+
 
 // vet_seg_cross: the fraction of the upwind half-segment inside the cell at the x1 face
 // along one transverse direction (the foot shifted by sh cells over the whole step), and

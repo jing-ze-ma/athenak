@@ -838,6 +838,7 @@ struct VetRayK {
   int spe;                     // VetSegMode(): 0 split, 1 emit, 2 jump
   int vim = 0;                 // unify-sc-gd-1012 vet_interp: 0 lin 1 log 2 corner 3 auto
   bool vpath = false;          // open-od-1013 vet_path = cells
+  bool plm = false;            // scheme = clean: second-order foot (VetPlmFoot)
   DvceArray2D<int> rd;
   DvceArray4D<Real> bw;
   DvceArray5D<Real> cs, ip;
@@ -952,6 +953,16 @@ struct VetRayK {
         iab = ip(m,pr,r,ka,jb);
         iba = ip(m,pr,r,kb,ja);
         ibb = ip(m,pr,r,kb,jb);
+      }
+      if (plm) {
+        Real fl[2];
+        const Real dv = VetPlmFoot([&](const int dk, const int dj) {
+          return DIR ? Up(m, r, pr, ka + dk, ja + dj) : ip(m,pr,r,ka + dk,ja + dj);
+        }, a2, a3, thrd, fl);
+        iaa += dv;
+        iab += dv;
+        iba += dv;
+        ibb += dv;
       }
       const Real iup_v = waa*iaa + wab*iab + wba*iba + wbb*ibb;
       const Real cu = waa*cs(m,li,0,ka,ja) + wab*cs(m,li,0,ka,jb)
@@ -1420,7 +1431,7 @@ void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
                  const int ks, const int nx1, const int nx2, const int nx3,
                  const bool thrd, const bool milne, const Real fmil, const Real bblo,
                  const Real bbhi, const bool bfc, const bool spl, const int spe,
-                 const int vim, const bool vpath, const Real cl,
+                 const int vim, const bool vpath, const bool plm, const Real cl,
                  const Real efl, const DvceArray5D<Real> &iw_,
                  const DvceArray5D<Real> &vc_, const DvceArray2D<Real> &ang_) {
   const int nx1g = st.nx1g, n2g = st.n2g, n3g = st.n3g, nbx2 = st.nbx2;
@@ -1568,16 +1579,23 @@ void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
         }
         const Real waa = (1.0 - a2)*(1.0 - a3), wab = a2*(1.0 - a3);
         const Real wba = (1.0 - a2)*a3, wbb = a2*a3;
+        Real dv = 0.0;
+        if (plm) {
+          Real fl[2];
+          dv = VetPlmFoot([&](const int dk, const int dj) {
+            return gp_(pr,rr,VetWrap(ka + dk, n3g),VetWrap(ja + dj, n2g));
+          }, a2, a3, thrd, fl);
+        }
         const Real iup_v = waa*gp_(pr,rr,ka,ja) + wab*gp_(pr,rr,ka,jb)
-                           + wba*gp_(pr,rr,kb,ja) + wbb*gp_(pr,rr,kb,jb);
+                           + wba*gp_(pr,rr,kb,ja) + wbb*gp_(pr,rr,kb,jb) + dv;
         const Real cu = waa*gc_(iup,0,ka,ja) + wab*gc_(iup,0,ka,jb)
                         + wba*gc_(iup,0,kb,ja) + wbb*gc_(iup,0,kb,jb);
         const Real su = waa*gc_(iup,1,ka,ja) + wab*gc_(iup,1,ka,jb)
                         + wba*gc_(iup,1,kb,ja) + wbb*gc_(iup,1,kb,jb);
         if (vim != 0) {   // unify-sc-gd-1012 (#6) vet_interp: log | corner
           const Real wq[4] = {waa, wab, wba, wbb};
-          const Real iq[4] = {gp_(pr,rr,ka,ja), gp_(pr,rr,ka,jb), gp_(pr,rr,kb,ja),
-                              gp_(pr,rr,kb,jb)};
+          const Real iq[4] = {gp_(pr,rr,ka,ja) + dv, gp_(pr,rr,ka,jb) + dv,
+                              gp_(pr,rr,kb,ja) + dv, gp_(pr,rr,kb,jb) + dv};
           const Real cq[4] = {gc_(iup,0,ka,ja), gc_(iup,0,ka,jb), gc_(iup,0,kb,ja),
                               gc_(iup,0,kb,jb)};
           const Real sq[4] = {gc_(iup,1,ka,ja), gc_(iup,1,ka,jb), gc_(iup,1,kb,ja),
@@ -1604,8 +1622,8 @@ void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
             return true;
           };
           const Real wq[4] = {waa, wab, wba, wbb};
-          const Real iq[4] = {gp_(pr,rr,ka,ja), gp_(pr,rr,ka,jb), gp_(pr,rr,kb,ja),
-                              gp_(pr,rr,kb,jb)};
+          const Real iq[4] = {gp_(pr,rr,ka,ja) + dv, gp_(pr,rr,ka,jb) + dv,
+                              gp_(pr,rr,kb,ja) + dv, gp_(pr,rr,kb,jb) + dv};
           const Real cq[4] = {gc_(iup,0,ka,ja), gc_(iup,0,ka,jb), gc_(iup,0,kb,ja),
                               gc_(iup,0,kb,jb)};
           const Real sq[4] = {gc_(iup,1,ka,ja), gc_(iup,1,ka,jb), gc_(iup,1,kb,ja),
@@ -2321,8 +2339,10 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
       s3 = std::max(s3, dx1*tm/dx3);
     }
   }
-  st.w2 = static_cast<int>(std::floor(s2)) + 1;
-  st.w3 = thrd ? (static_cast<int>(std::floor(s3)) + 1) : 0;
+  // scheme = clean: one cell more for the slopes of the second-order foot (VetPlmFoot)
+  const int wp = clean ? 1 : 0;
+  st.w2 = static_cast<int>(std::floor(s2)) + 1 + wp;
+  st.w3 = thrd ? (static_cast<int>(std::floor(s3)) + 1 + wp) : 0;
   // scaling options (read only when given, so that an input without them writes the
   // restart file it always wrote): vet_mb_halo = K exchanges a band K w wide every K
   // layers and recomputes the overlap redundantly (same arithmetic, same numbers);
@@ -2475,8 +2495,8 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
         const Real sh = -dx1*ah(r,1 + d)/(std::fabs(ah(r,0))*dxp);
         const int o = static_cast<int>(std::floor(sh));
         const int eps = (std::fabs(sh - std::round(sh)) < 1.0e-9) ? 1 : 0;
-        rdh(rl,2*d) = std::max(0, -o) + eps;
-        rdh(rl,2*d + 1) = std::max(0, o + 1) + eps;
+        rdh(rl,2*d) = std::max(0, -o) + eps + wp;
+        rdh(rl,2*d + 1) = std::max(0, o + 1) + eps + wp;
         if (rdh(rl,2*d) > ((d == 0) ? st.w2 : st.w3) ||
             rdh(rl,2*d + 1) > ((d == 0) ? st.w2 : st.w3)) {
           VetFatal("<rad_m1>/closure = vet_sc: per-ray band wider than the band");
@@ -2520,8 +2540,9 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
           const int w = (d == 0) ? st.w2 : st.w3;
           const int olo = static_cast<int>(std::floor(smn[x] - dmax[x] - 1.0e-9));
           const int ohi = static_cast<int>(std::floor(smx[x] + dmax[x] + 1.0e-9));
-          rdh(rl,2*d) = std::min(w, std::max(rdh(rl,2*d), std::max(0, -olo)));
-          rdh(rl,2*d + 1) = std::min(w, std::max(rdh(rl,2*d + 1), std::max(0, ohi + 1)));
+          rdh(rl,2*d) = std::min(w, std::max(rdh(rl,2*d), std::max(0, -olo) + wp));
+          rdh(rl,2*d + 1) = std::min(w, std::max(rdh(rl,2*d + 1),
+                                                 std::max(0, ohi + 1) + wp));
         }
       }
     }
@@ -3063,6 +3084,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
   const int spe = VetSegMode();
   const int vim = vet_interp;   // unify-sc-gd-1012 (#6)
   const bool vpath = (vet_path != 0);   // open-od-1013
+  const bool plm_ = clean;
   auto bw_ = st.bwe;
   const int ncb = nx3*nx2*nx1, npb = nx3*nx2;
 #if MPI_PARALLEL_ENABLED
@@ -3195,6 +3217,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
   rk.spe = VetSegMode();
   rk.vim = vet_interp;
   rk.vpath = (vet_path != 0);
+  rk.plm = clean;
   rk.cl = cl;
   rk.efl = efl;
   rk.rd = rd_;
@@ -3484,6 +3507,12 @@ void RadiationM1::VetSweepMB(bool lagged) {
               ka = kc + o3;
               kb = ka + 1;
             }
+            Real dv = 0.0, fl[2] = {0.0, 0.0};
+            if (plm_) {
+              dv = VetPlmFoot([&](const int dk, const int dj) {
+                return ip_(m,pr,r,ka + dk,ja + dj);
+              }, a2, a3, thrd, fl);
+            }
             if (f2s_) {
               // the upwind plane's intensity carried across the low x2 (x3) face by the
               // shift of the foot interpolation (VetShortCharSweep)
@@ -3503,21 +3532,23 @@ void RadiationM1::VetSweepMB(bool lagged) {
                 for (int q = 0; q < na; ++q) p += g((sg > 0) ? -1 - q : q);
                 return sg*p;
               };
-              add4(up ? fnu : fnd, wr*am1*dx2/dx1*phi(sh2, g2));
-              if (thrd) add4((up ? fnu : fnd) + 12, wr*am1*dx3/dx1*phi(sh3, g3));
+              add4(up ? fnu : fnd, wr*am1*dx2/dx1*(phi(sh2, g2) + fl[0]));
+              if (thrd) {
+                add4((up ? fnu : fnd) + 12, wr*am1*dx3/dx1*(phi(sh3, g3) + fl[1]));
+              }
             }
             const Real waa = (1.0 - a2)*(1.0 - a3), wab = a2*(1.0 - a3);
             const Real wba = (1.0 - a2)*a3, wbb = a2*a3;
             const Real iup_v = waa*ip_(m,pr,r,ka,ja) + wab*ip_(m,pr,r,ka,jb)
-                               + wba*ip_(m,pr,r,kb,ja) + wbb*ip_(m,pr,r,kb,jb);
+                               + wba*ip_(m,pr,r,kb,ja) + wbb*ip_(m,pr,r,kb,jb) + dv;
             const Real cu = waa*cs_(m,li,0,ka,ja) + wab*cs_(m,li,0,ka,jb)
                             + wba*cs_(m,li,0,kb,ja) + wbb*cs_(m,li,0,kb,jb);
             const Real su = waa*cs_(m,li,1,ka,ja) + wab*cs_(m,li,1,ka,jb)
                             + wba*cs_(m,li,1,kb,ja) + wbb*cs_(m,li,1,kb,jb);
             if (vim != 0) {   // unify-sc-gd-1012 (#6) vet_interp: log | corner
               const Real wq[4] = {waa, wab, wba, wbb};
-              const Real iq[4] = {ip_(m,pr,r,ka,ja), ip_(m,pr,r,ka,jb), ip_(m,pr,r,kb,ja),
-                                  ip_(m,pr,r,kb,jb)};
+              const Real iq[4] = {ip_(m,pr,r,ka,ja) + dv, ip_(m,pr,r,ka,jb) + dv,
+                                  ip_(m,pr,r,kb,ja) + dv, ip_(m,pr,r,kb,jb) + dv};
               const Real cq[4] = {cs_(m,li,0,ka,ja), cs_(m,li,0,ka,jb), cs_(m,li,0,kb,ja),
                                   cs_(m,li,0,kb,jb)};
               const Real sq[4] = {cs_(m,li,1,ka,ja), cs_(m,li,1,ka,jb), cs_(m,li,1,kb,ja),
@@ -3560,8 +3591,8 @@ void RadiationM1::VetSweepMB(bool lagged) {
                 return true;
               };
               const Real wq[4] = {waa, wab, wba, wbb};
-              const Real iq[4] = {ip_(m,pr,r,ka,ja), ip_(m,pr,r,ka,jb), ip_(m,pr,r,kb,ja),
-                                  ip_(m,pr,r,kb,jb)};
+              const Real iq[4] = {ip_(m,pr,r,ka,ja) + dv, ip_(m,pr,r,ka,jb) + dv,
+                                  ip_(m,pr,r,kb,ja) + dv, ip_(m,pr,r,kb,jb) + dv};
               const Real cq[4] = {cs_(m,li,0,ka,ja), cs_(m,li,0,ka,jb), cs_(m,li,0,kb,ja),
                                   cs_(m,li,0,kb,jb)};
               const Real sq[4] = {cs_(m,li,1,ka,ja), cs_(m,li,1,ka,jb), cs_(m,li,1,kb,ja),
@@ -3744,8 +3775,7 @@ void RadiationM1::VetMBSweeps() {
     VetSweepAng(st, pmy_pack->nmb_thispack, indcs.is, indcs.js, indcs.ks, indcs.nx1,
                 indcs.nx2, trans_x3 ? indcs.nx3 : 1, trans_x3, vet_milne, iflux_x1min,
                 bblo, bbhi, vet_bc_face, vet_seg_split, VetSegMode(), vet_interp,
-                (vet_path != 0), c_light,
-                e_floor,
+                (vet_path != 0), clean, c_light, e_floor,
                 iw, vet_cell, vet_ang);
     return;
   }
@@ -3934,6 +3964,7 @@ void RadiationM1::VetShortCharSweep() {
   const bool x2o = vet_x2open, x3o = vet_x3open;   // bubbles-1012: vacuum x2 (x3) faces
   const int vim = vet_interp;   // unify-sc-gd-1012 (#6)
   const bool vpath = (vet_path != 0);   // open-od-1013
+  const bool plm_ = clean;
   // littests-1011: the boundary beam rays (ImplBeamInit)
   const int bmn_ = ibm_nr;
   const int bmr0 = ibm_ray[0], bmr1 = ibm_ray[1], bmr2 = ibm_ray[2], bmr3 = ibm_ray[3];
@@ -4233,19 +4264,25 @@ void RadiationM1::VetShortCharSweep() {
               kb = ks + ((qb < 0) ? 0 : ((qb >= nx3) ? (nx3 - 1) : qb));
             }
           }
+          // the upwind plane at offsets (dk, dj) from the cell, 0 beyond a vacuum face
+          auto ipq = [&](const int dk, const int dj) {
+            const int qj = j - js + dj, qk = k - ks + dk;
+            if ((x2o && (qj < 0 || qj >= nx2)) || (x3o && (qk < 0 || qk >= nx3))) {
+              return 0.0;
+            }
+            return ip_(m,pr,rb,thrd ? ks + VetWrap(qk, nx3) : k,js + VetWrap(qj, nx2));
+          };
+          Real dv = 0.0, fl[2] = {0.0, 0.0};
+          if (plm_) {
+            dv = VetPlmFoot([&](const int dk, const int dj) {
+              return ipq(o3 + dk, o2 + dj);
+            }, a2, a3, thrd, fl);
+          }
           if (f2s_) {
             // Phi: the upwind plane's intensity carried across the low x2 (x3) face by
-            // the shift -sh2 (-sh3) cells of the foot interpolation (I = 0 beyond a
-            // vacuum face).  The x2 and x3 parts S2, S3 of the interpolation commute:
-            // the x2 face carries (I + S3 I)/2, the x3 face (I + S2 I)/2, and the cell
-            // balance of the two is S3 S2 I - I.
-            auto ipq = [&](const int dk, const int dj) {
-              const int qj = j - js + dj, qk = k - ks + dk;
-              if ((x2o && (qj < 0 || qj >= nx2)) || (x3o && (qk < 0 || qk >= nx3))) {
-                return 0.0;
-              }
-              return ip_(m,pr,rb,thrd ? ks + VetWrap(qk, nx3) : k,js + VetWrap(qj, nx2));
-            };
+            // the shift -sh2 (-sh3) cells of the foot interpolation.  The x2 and x3 parts
+            // S2, S3 of the interpolation commute: the x2 face carries (I + S3 I)/2, the
+            // x3 face (I + S2 I)/2, and the cell balance of the two is S3 S2 I - I.
             auto g2 = [&](const int d) {
               return thrd ? 0.5*(ipq(0,d) + (1.0 - a3)*ipq(o3,d) + a3*ipq(o3+1,d))
                           : ipq(0,d);
@@ -4261,8 +4298,10 @@ void RadiationM1::VetShortCharSweep() {
               return sg*p;
             };
             if (!mimg) {
-              add4(up ? fnu : fnd, wr*am1*dx2/dx1*phi(sh2, g2));
-              if (thrd) add4((up ? fnu : fnd) + 12, wr*am1*dx3/dx1*phi(sh3, g3));
+              add4(up ? fnu : fnd, wr*am1*dx2/dx1*(phi(sh2, g2) + fl[0]));
+              if (thrd) {
+                add4((up ? fnu : fnd) + 12, wr*am1*dx3/dx1*(phi(sh3, g3) + fl[1]));
+              }
             }
           }
           const Real waa = (1.0 - a2)*(1.0 - a3), wab = a2*(1.0 - a3);
@@ -4278,6 +4317,7 @@ void RadiationM1::VetShortCharSweep() {
             iup_v = waa*ip_(m,pr,rb,ka,ja) + wab*ip_(m,pr,rb,ka,jb)
                     + wba*ip_(m,pr,rb,kb,ja) + wbb*ip_(m,pr,rb,kb,jb);
           }
+          iup_v += dv;
           const Real cu = waa*vc_(m,M1_VET_CHX,ka,ja,iup)
                           + wab*vc_(m,M1_VET_CHX,ka,jb,iup)
                           + wba*vc_(m,M1_VET_CHX,kb,ja,iup)
@@ -4290,8 +4330,8 @@ void RadiationM1::VetShortCharSweep() {
             const Real wq[4] = {waa, wab, wba, wbb};
             // fin3-1012: a corner outside a vacuum face carries I = 0 (gate exactly 1
             // elsewhere, bitwise), its segment the edge cell's chi and S, as lin above
-            const Real iq[4] = {gaa*ip_(m,pr,rb,ka,ja), gab*ip_(m,pr,rb,ka,jb),
-                                gba*ip_(m,pr,rb,kb,ja), gbb*ip_(m,pr,rb,kb,jb)};
+            const Real iq[4] = {gaa*ip_(m,pr,rb,ka,ja) + dv, gab*ip_(m,pr,rb,ka,jb) + dv,
+                                gba*ip_(m,pr,rb,kb,ja) + dv, gbb*ip_(m,pr,rb,kb,jb) + dv};
             const Real cq[4] = {vc_(m,M1_VET_CHX,ka,ja,iup), vc_(m,M1_VET_CHX,ka,jb,iup),
                                 vc_(m,M1_VET_CHX,kb,ja,iup), vc_(m,M1_VET_CHX,kb,jb,iup)};
             const Real sq[4] = {vc_(m,M1_VET_SRC,ka,ja,iup), vc_(m,M1_VET_SRC,ka,jb,iup),
@@ -4355,8 +4395,8 @@ void RadiationM1::VetShortCharSweep() {
               return in;
             };
             const Real wq[4] = {waa, wab, wba, wbb};
-            const Real iq[4] = {gaa*ip_(m,pr,rb,ka,ja), gab*ip_(m,pr,rb,ka,jb),
-                                gba*ip_(m,pr,rb,kb,ja), gbb*ip_(m,pr,rb,kb,jb)};
+            const Real iq[4] = {gaa*ip_(m,pr,rb,ka,ja) + dv, gab*ip_(m,pr,rb,ka,jb) + dv,
+                                gba*ip_(m,pr,rb,kb,ja) + dv, gbb*ip_(m,pr,rb,kb,jb) + dv};
             const Real cq[4] = {vc_(m,M1_VET_CHX,ka,ja,iup), vc_(m,M1_VET_CHX,ka,jb,iup),
                                 vc_(m,M1_VET_CHX,kb,ja,iup), vc_(m,M1_VET_CHX,kb,jb,iup)};
             const Real sq[4] = {vc_(m,M1_VET_SRC,ka,ja,iup), vc_(m,M1_VET_SRC,ka,jb,iup),
