@@ -633,6 +633,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   }
   FluidRef fl = FluidRef::Get(pmy_pack);
   cln_feedback = gas_feedback && fl.on;
+  cln_poslim = cln_poslim0 && (!cln_posgas || cln_feedback);
   const bool cell = cln_cell;
 
   // 1. starting face fluxes on the first cycle (restarts carry them)

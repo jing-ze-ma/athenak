@@ -3022,6 +3022,8 @@ class RadiationM1 {
   bool cln_recon = true;        // clean_recon: plm (true) | none, cell layout
   int cln_maxpic = 12;          // clean_maxpic: passes that update the lagged slopes
   bool cln_poslim = true;       // clean_pos_limit: a-posteriori low-order face limiter
+  bool cln_poslim0 = true;      //   (as read; staggered clean_stag_pos_gas: only with the
+  bool cln_posgas = false;      //   gas coupled, where E < 0 drives the gas)
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
   bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces
   bool cln_posghost = false;    // clean_pos_ghost: marked boundary faces, upwind ghost
