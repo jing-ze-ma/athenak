@@ -527,7 +527,7 @@
                 const Real c = dir_(q,0)*(nx - 2.0*mu*ux) + dir_(q,1)*(ny - 2.0*mu*uy) +
                                dir_(q,2)*(nz - 2.0*mu*uz);
                 const Real mq = dir_(q,0)*ux + dir_(q,1)*uy + dir_(q,2)*uz;
-                if (mq < 0.0 && c > best) {best = c; dm = q;}
+                if (mq < 0.0 && c > best + 1.0e-12) {best = c; dm = q;}
               }
               bool ok[4];
               bool all = true;
