@@ -1511,6 +1511,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // whose file lacks it), _slope (correct on a fresh run since defaults2-1012, keep on a
     // restart whose file lacks it).
     VetRotInit(pin);   // bubbles-1012: shared with vet_sc (rad_m1_vetgd.cpp)
+    // clean staggered sp, fresh, with a rotating set on the time clock: the set
+    // time-averaged by default, vet_rotate_avg = 4 with the cross-fade (clean_rot_ring
+    // live), recorded so that a restart keeps them; a restart file without the keys keeps
+    // the plain rotation
+    if (clean && !cln_cell && sph_geom && !global_variable::restart_run && VgdRotOn() &&
+        (vgd_rot_dt > 0.0 || vgd_rot_auto)) {
+      pin->GetOrAddInteger("rad_m1","vet_rotate_avg",4);
+      pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_xfade",true);
+    }
     RotAvgParse(pin);   // rotavg-1012 (also after vet_sc's VetRotInit)
     // scheme = clean: no slope correction of a rotating set (the closure of CleanFvSets),
     // set before the first VetGdRotStep (a restart on a block boundary acts at once).
