@@ -31,6 +31,11 @@ def ast(header, name):
     p = subprocess.run([CLANG] + open(FLAGS).read().split() + ['-x', 'c++', '-fsyntax-only',
                        '-Xclang', '-ast-dump=json', '-Xclang', '-ast-dump-filter=' + name, '-'],
                        input=tu, capture_output=True, text=True)
+    # a header clang could not parse leaves members of an invalid (recovered) type, which
+    # would be visited as plain values: stop instead
+    if p.returncode != 0 or ' error: ' in p.stderr:
+        raise SystemExit('clang could not parse %s (fix the flags file): %s' %
+                         (header, p.stderr[-2000:]))
     s = p.stdout; dec = json.JSONDecoder(); i = 0
     def find(o):
         if isinstance(o, dict):
@@ -79,6 +84,10 @@ def emit(fields, pre, out, skipped):
             out.append('  for (std::size_t q_ = 0; q_ < %s.size(); ++q_) {v.view("%s[]", %s[q_]);}' % (nm, nm, nm))
             continue
         kind = 'dual' if isdual(base, d) else ('view' if isview(base, d) else 'value')
+        if (kind == 'value' and not base.startswith('std::') and
+                re.search(r'(Dvce|Host|Scr|Dual)Array\d|Kokkos::(Dual)?View', base + ' ' + d)):
+            raise SystemExit('%s : %s (%s) looks like a Kokkos View but was not recognised as '
+                             'one' % (nm, t, d[:200]))
         if dims and kind != 'value':
             idx = ''.join('[q%d_]' % k for k in range(len(dims)))
             loops = ''.join('for (int q%d_ = 0; q%d_ < %s; ++q%d_) ' % (k, k, dims[k], k) for k in range(len(dims)))
