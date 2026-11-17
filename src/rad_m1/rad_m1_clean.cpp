@@ -647,7 +647,10 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
   nsub = 1;
   bool big = true, ok = false;
   int n2 = 0;
-  Real dp = 0.0, fac = cln_steady_dtfac, emax = 0.0;
+  // (icr_fmeas: the large step is reached by a ladder x10 per pass from dt, its smaller
+  // steps the thermal relaxation of the gas, whose solves fail when started at the top)
+  const bool lad = relax && icr_fmeas;
+  Real dp = 0.0, fac = lad ? 1.0 : cln_steady_dtfac, emax = 0.0;
   auto u0_ = u0;
   DvceArray5D<Real> uo("cln_steady_u", nmb1 + 1, 4, u0.extent(2), u0.extent(3),
                        u0.extent(4));
@@ -743,7 +746,8 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
                   n, d);
     }
     if (!big && (d < cln_steady_tol || (++n2 > 2 && d > 0.5*dp))) break;
-    if (d < cln_steady_tol) big = false;
+    if (d < cln_steady_tol && (!lad || fac >= cln_steady_dtfac)) big = false;
+    if (lad) fac = fmin(10.0*fac, cln_steady_dtfac);
     ok = ok || !big;
     dp = d;
   }
