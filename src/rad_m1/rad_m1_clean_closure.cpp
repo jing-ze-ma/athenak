@@ -855,15 +855,16 @@ void RadiationM1::CleanScUnion2() {
 
 KOKKOS_INLINE_FUNCTION
 bool CleanRingMix(const DvceArray5D<Real> &rl, const DvceArray5D<Real> &rr,
-                  const int qn, const int nr, const Real s, const int m, const int k,
-                  const int j, const int i, Real *q) {
+                  const Kokkos::Array<int, CLN_N> &fm, const int nf, const int qn,
+                  const int nr, const Real s, const int m, const int k, const int j,
+                  const int i, Real *q) {
   const Real jb = rl(m,CLN_J,k,j,i);
   if (!(jb > 0.0)) return false;
   Real a[RadiationM1::M1_RA_NF];
   const Real wn = s*rl(m,qn*CLN_N+CLN_J,k,j,i)/jb;
   Real na = 1.0 + s, nw = 1.0 + wn;
   for (int r = 0; r < nr; ++r) {
-    const Real rj = rr(m,r*CLN_N+CLN_J,k,j,i), w = (r == nr - 1) ? 1.0 - s : 1.0;
+    const Real rj = rr(m,r*nf+fm[CLN_J],k,j,i), w = (r == nr - 1) ? 1.0 - s : 1.0;
     a[r] = (rj >= 0.0) ? w*rj : 0.0;
     na += (rj >= 0.0) ? w : 0.0;
     nw += a[r];
@@ -873,10 +874,29 @@ bool CleanRingMix(const DvceArray5D<Real> &rl, const DvceArray5D<Real> &rr,
     if (n == CLN_J) continue;
     const Real gb = rl(m,n,k,j,i);
     Real v = gb + wn*rl(m,qn*CLN_N+n,k,j,i);
-    for (int r = 0; r < nr; ++r) v += a[r]*(gb + rr(m,r*CLN_N+n,k,j,i));
+    for (int r = 0; r < nr; ++r) {
+      v += a[r]*(gb + ((fm[n] >= 0) ? rr(m,r*nf+fm[n],k,j,i) : 0.0));
+    }
     q[n] = v/nw*q[CLN_J];
   }
   return true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn int RadiationM1::CleanRingFields
+//! \brief clean_rot_ring: the fields the offsets and the Delta carry, fm(CLN index) =
+//! their slot or -1, and their number.  The staggered layout leaves out those none of its
+//! solves reads (CLN_KP, and CLN_FH off the cubed sphere; the sp F solve reads CLN_G):
+//! the mixture takes the current set's there
+
+int RadiationM1::CleanRingFields(Kokkos::Array<int, CLN_N> &fm) const {
+  int nf = 0;
+  for (int n = 0; n < CLN_N; ++n) {
+    const bool kp = (n >= CLN_KP && n < CLN_C1);
+    const bool fh = (n >= CLN_FH && n < CLN_G) && !pmy_pack->pmesh->use_cubed_sphere;
+    fm[n] = (cln_cell || !(kp || fh)) ? nf++ : -1;
+  }
+  return nf;
 }
 
 //----------------------------------------------------------------------------------------
@@ -910,16 +930,19 @@ void RadiationM1::CleanRingMoments() {
   const int nmb = pmy_pack->nmb_thispack, nk = vra_k, nr = nk - 1, ns = cln_rns;
   const int64_t b = cln_rbld;
   const Real s = cln_rs;
-  const int c3 = cln_s.extent_int(2), c2 = cln_s.extent_int(3), c1 = cln_s.extent_int(4);
-  // (the swept sets' raw moments: the current set in cln_rl slot 0, the next in slot 1;
-  // the older ones of a fill straight into their offsets' slots of cln_rr)
+  const int c3 = ke - ks + 1, c2 = je - js + 1, c1 = ie - is + 1;
+  // (the swept sets' moments: the current set in cln_rl slot 0, the next in slot 1; the
+  // older ones of a fill straight into their offsets' slots of cln_rr.  All on the
+  // interior cells; the offsets and the Delta only of the fields fm carries)
+  Kokkos::Array<int, CLN_N> fm;
+  const int nf = CleanRingFields(fm);
   if (cln_rl.extent_int(0) != nmb || cln_rl.extent_int(1) != 2*CLN_N) {
     Kokkos::realloc(cln_rl, nmb, 2*CLN_N, c3, c2, c1);
   }
   if (cln_rr.extent_int(0) != nmb) {   // (a restart has read them)
     vra_gen += 1;   // (cln_rr's writers: the dt_retry checkpoint skips a clean copy)
-    Kokkos::realloc(cln_rr, nmb, nr*CLN_N, c3, c2, c1);
-    Kokkos::realloc(cln_rpd, nmb, CLN_N, c3, c2, c1);
+    Kokkos::realloc(cln_rr, nmb, nr*nf, c3, c2, c1);
+    Kokkos::realloc(cln_rpd, nmb, nf, c3, c2, c1);
     cln_rok = false;
   }
   std::vector<int> slot(nk + 2, -1);   // slot of block b - nk + 1 + p
@@ -963,13 +986,15 @@ void RadiationM1::CleanRingMoments() {
     CleanClosureFromGd();
     if (cln_consist || cln_cssc) CleanGdFaceSums();
     if (!keep) continue;
-    const int o = static_cast<int>(older ? nr - 1 - p : ((p == nk) ? 1 : 0))*CLN_N;
+    const int o = static_cast<int>(older ? (nr - 1 - p)*nf : ((p == nk) ? CLN_N : 0));
     auto ra = older ? rr : rl;
     par_for("cln_ring_raw", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real jr = cs(m,CLN_J,k,j,i), ij = (jr > 0.0) ? 1.0/jr : 0.0;
       for (int n = 0; n < CLN_N; ++n) {
-        ra(m,o+n,k,j,i) = (n <= CLN_J) ? cs(m,n,k,j,i) : ij*cs(m,n,k,j,i);
+        if (older && fm[n] < 0) continue;
+        ra(m,o+(older ? fm[n] : n),k-ks,j-js,i-is) = (n <= CLN_J) ? cs(m,n,k,j,i) :
+                                                     ij*cs(m,n,k,j,i);
       }
     });
   }
@@ -986,28 +1011,32 @@ void RadiationM1::CleanRingMoments() {
       if (std::abs(cln_rpt - tk) > 1.0e-9*vgd_rot_dt) cln_roff_sum += 1.0;
       vra_gen += 1;
       par_for("cln_ring_shift", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        const Real rp = pd(m,CLN_J,k,j,i);   // (J ratios: r_j' = r_{j-1}/R, r_1' = 1/R)
-        for (int n = 0; n < CLN_N; ++n) {
+      KOKKOS_LAMBDA(const int m, const int k0, const int j0, const int i0) {
+        const int k = k0 - ks, j = j0 - js, i = i0 - is, fj = fm[CLN_J];
+        const Real rp = pd(m,fj,k,j,i);   // (J ratios: r_j' = r_{j-1}/R, r_1' = 1/R)
+        for (int f = 0; f < nf; ++f) {
           for (int r = nr - 1; r > 0; --r) {
-            const Real o = rr(m,(r-1)*CLN_N+n,k,j,i);
-            rr(m,r*CLN_N+n,k,j,i) = (n != CLN_J) ? o - pd(m,n,k,j,i) :
-                                    ((rp > 0.0 && o >= 0.0) ? o/rp : -1.0);
+            const Real o = rr(m,(r-1)*nf+f,k,j,i);
+            rr(m,r*nf+f,k,j,i) = (f != fj) ? o - pd(m,f,k,j,i) :
+                                 ((rp > 0.0 && o >= 0.0) ? o/rp : -1.0);
           }
-          rr(m,n,k,j,i) = (n != CLN_J) ? -pd(m,n,k,j,i) : ((rp > 0.0) ? 1.0/rp : -1.0);
+          rr(m,f,k,j,i) = (f != fj) ? -pd(m,f,k,j,i) : ((rp > 0.0) ? 1.0/rp : -1.0);
         }
       });
     } else if (full) {
       // the whole union swept: the offsets of the older sets (their moments, above) from
       // the current one
       par_for("cln_ring_fill", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      KOKKOS_LAMBDA(const int m, const int k0, const int j0, const int i0) {
+        const int k = k0 - ks, j = j0 - js, i = i0 - is;
         const Real jb = rl(m,qb*CLN_N+CLN_J,k,j,i);
         for (int r = 0; r < nr; ++r) {
           for (int n = 0; n < CLN_N; ++n) {
-            const Real o = rr(m,r*CLN_N+n,k,j,i);
-            rr(m,r*CLN_N+n,k,j,i) = (n != CLN_J) ? o - rl(m,qb*CLN_N+n,k,j,i) :
-                                    ((jb > 0.0) ? o/jb : -1.0);
+            const int f = fm[n];
+            if (f < 0) continue;
+            const Real o = rr(m,r*nf+f,k,j,i);
+            rr(m,r*nf+f,k,j,i) = (n != CLN_J) ? o - rl(m,qb*CLN_N+n,k,j,i) :
+                                 ((jb > 0.0) ? o/jb : -1.0);
           }
         }
       });
@@ -1024,11 +1053,14 @@ void RadiationM1::CleanRingMoments() {
   // the pending Delta of this build
   if (slot[nk] >= 0) {
     par_for("cln_ring_delta", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    KOKKOS_LAMBDA(const int m, const int k0, const int j0, const int i0) {
+      const int k = k0 - ks, j = j0 - js, i = i0 - is;
       const Real jb = rl(m,qb*CLN_N+CLN_J,k,j,i), jn = rl(m,qn*CLN_N+CLN_J,k,j,i);
       for (int n = 0; n < CLN_N; ++n) {
-        pd(m,n,k,j,i) = (n != CLN_J) ? rl(m,qn*CLN_N+n,k,j,i) - rl(m,qb*CLN_N+n,k,j,i) :
-                        ((jb > 0.0) ? jn/jb : -1.0);
+        if (fm[n] < 0) continue;
+        pd(m,fm[n],k,j,i) = (n != CLN_J) ? rl(m,qn*CLN_N+n,k,j,i) -
+                                           rl(m,qb*CLN_N+n,k,j,i) :
+                            ((jb > 0.0) ? jn/jb : -1.0);
       }
     });
     cln_rpb = b;
@@ -1054,29 +1086,30 @@ void RadiationM1::CleanRingMoments() {
     const int j = js + (t/ni)%nj;
     const int k = ks + (t/(ni*nj))%nkk;
     const int m = t/(ni*nj*nkk);
-    const int nf = x.cub ? CLN_F2 : CLN_N;
+    const int nfx = x.cub ? CLN_F2 : CLN_N;
     // (the swept sets' raw moments M = g J)
+    const int kr = k - ks, jr = j - js, ir = i - is;
     auto raw = [&](const int o, const int n) {
-      const Real jo = rl(m,o+CLN_J,k,j,i);
-      return (n == CLN_J) ? jo : rl(m,o+n,k,j,i)*jo;
+      const Real jo = rl(m,o+CLN_J,kr,jr,ir);
+      return (n == CLN_J) ? jo : rl(m,o+n,kr,jr,ir)*jo;
     };
     Real q[CLN_N];
-    const bool mix = ring && CleanRingMix(rl, rr, qn, nr, s, m, k, j, i, q);
+    const bool mix = ring && CleanRingMix(rl, rr, fm, nf, qn, nr, s, m, kr, jr, ir, q);
     if (!mix) {
       for (int n = 0; n < CLN_N; ++n) q[n] = (1.0 - s)*raw(0, n) + s*raw(qn*CLN_N, n);
     }
     if (mix && !(q[CLN_J] > 0.0 && CleanRealizable(x, q, m, k, j, i))) {
       if ((1.0 - s)*raw(0, CLN_J) + s*raw(qn*CLN_N, CLN_J) > 0.0) ++ng;
-      for (int n = 0; n < nf; ++n) q[n] = (1.0 - s)*raw(0, n) + s*raw(qn*CLN_N, n);
+      for (int n = 0; n < nfx; ++n) q[n] = (1.0 - s)*raw(0, n) + s*raw(qn*CLN_N, n);
     }
     if (q[CLN_J] < ray_min*iw_(m,M1_IW_EN,k,j,i)) q[CLN_J] = 0.0;
     CleanStoreMoments(cs, valid, q, m, k, j, i);
     if (!nxt) return;
     // (the next block's window: the union at s = 1)
-    if (!(CleanRingMix(rl, rr, qn, nr, 1.0, m, k, j, i, q) && q[CLN_J] > 0.0 &&
-          CleanRealizable(x, q, m, k, j, i))) {
-      if (rl(m,qn*CLN_N+CLN_J,k,j,i) > 0.0) ++ng;
-      for (int n = 0; n < nf; ++n) q[n] = raw(qn*CLN_N, n);
+    if (!(CleanRingMix(rl, rr, fm, nf, qn, nr, 1.0, m, kr, jr, ir, q) &&
+          q[CLN_J] > 0.0 && CleanRealizable(x, q, m, k, j, i))) {
+      if (rl(m,qn*CLN_N+CLN_J,kr,jr,ir) > 0.0) ++ng;
+      for (int n = 0; n < nfx; ++n) q[n] = raw(qn*CLN_N, n);
     }
     if (q[CLN_J] < ray_min*iw_(m,M1_IW_EN,k,j,i)) {
       for (int n = 0; n < CLN_F2; ++n) q[n] = 0.0;

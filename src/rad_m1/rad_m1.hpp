@@ -2993,6 +2993,7 @@ class RadiationM1 {
   void CleanDInc(const bool two, const Real c1, const Real c2, const Real w1,
                  const Real w0);
   void CleanDtrD(const bool save);   // dt_retry: d to / from cln_rstd
+  int CleanRingFields(Kokkos::Array<int, CLN_N> &fm) const;   // clean_rot_ring offsets
   // closure components in the restart files of the extrap history and clean_rot_ring:
   // the cell layout keeps the CLN_JR (= 49) of push 16's files, CLN_JR is staggered only
   int CleanRstNq() const;

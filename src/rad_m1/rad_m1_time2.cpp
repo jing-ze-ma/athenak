@@ -3554,15 +3554,27 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
     const int nr = (vra_k - 1)*nq;
     const bool have = cln_rok && (cln_rr.extent_int(0) >= m0 + nmb);
     if (have) {
-      for (int r = 0; r < vra_k - 1; ++r) {
-        Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c+r*nq, c+(r+1)*nq), AL,
-                                          AL, AL),
-                          Kokkos::subview(cln_rr, ms,
-                                          std::make_pair(r*CLN_N, r*CLN_N + nq), AL, AL,
-                                          AL));
-      }
-      Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c+nr, c+nr+nq), AL, AL, AL),
-                        Kokkos::subview(cln_rpd, ms, q0, AL, AL, AL));
+      // (the interior cells of the carried fields; 0 elsewhere)
+      auto &id = pmy_pack->pmesh->mb_indcs;
+      const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
+      Kokkos::Array<int, CLN_N> fm;
+      const int nf = CleanRingFields(fm), nk = vra_k, c0 = c, mq = m0;
+      auto a_ = a;
+      auto rr_ = cln_rr;
+      auto pd_ = cln_rpd;
+      par_for("m1_t2_ringoff", DevExeSpace(), 0, nmb - 1, 0, a.extent_int(2) - 1, 0,
+              a.extent_int(3) - 1, 0, a.extent_int(4) - 1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const bool in = k >= ks && k <= ke && j >= js && j <= je && i >= is && i <= ie;
+        for (int r = 0; r < nk; ++r) {
+          for (int n = 0; n < nq; ++n) {
+            const int f = fm[n], kk = k - ks, jj = j - js, ii = i - is;
+            a_(m,c0+r*nq+n,k,j,i) = (!in || f < 0) ? 0.0 :
+                                    ((r < nk - 1) ? rr_(m+mq,r*nf+f,kk,jj,ii) :
+                                                    pd_(m+mq,f,kk,jj,ii));
+          }
+        }
+      });
     }
     auto a_ = a;
     const int cq = c + nr + nq;
@@ -3737,14 +3749,28 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   if (clean && cln_ring) {
     const int nr = (vra_k - 1)*nq;
     if (ch < nr + nq) {
+      // (the interior cells of the carried fields, CleanRingMoments)
       auto &rx = (ch < nr) ? cln_rr : cln_rpd;
       vra_gen += 1;
-      const int nx = (ch < nr) ? (vra_k - 1)*CLN_N : CLN_N;
+      auto &id = pmy_pack->pmesh->mb_indcs;
+      const int is = id.is, js = id.js, ks = id.ks;
+      Kokkos::Array<int, CLN_N> fm;
+      const int nf = CleanRingFields(fm), f = fm[(ch < nr) ? ch%nq : ch - nr];
+      const int nx = (ch < nr) ? (vra_k - 1)*nf : nf;
       if (rx.extent_int(0) != nmb) {
-        Kokkos::realloc(rx, nmb, nx, w.extent_int(1), w.extent_int(2), w.extent_int(3));
+        Kokkos::realloc(rx, nmb, nx, id.nx3, id.nx2, id.nx1);
       }
-      const int q = (ch < nr) ? (ch/nq)*CLN_N + ch%nq : ch - nr;
-      DeepCopyAcross(Kokkos::subview(rx, mb, q, AL, AL, AL), w);
+      if (f < 0) return;
+      const int q = (ch < nr) ? (ch/nq)*nf + f : f;
+      DvceArray4D<Real> t("m1_t2_ringrd", nmb, w.extent_int(1), w.extent_int(2),
+                          w.extent_int(3));
+      DeepCopyAcross(t, w);
+      auto rx_ = rx;
+      par_for("m1_t2_ringset", DevExeSpace(), 0, nmb - 1, 0, id.nx3 - 1, 0, id.nx2 - 1, 0,
+              id.nx1 - 1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        rx_(m,q,k,j,i) = t(m,k+ks,j+js,i+is);
+      });
       return;
     }
     if (ch == nr + nq) {
