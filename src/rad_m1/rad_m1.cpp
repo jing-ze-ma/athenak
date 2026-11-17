@@ -1325,21 +1325,21 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // geodef-1117 (USER 11-17): DEFAULT vet_gd_geo = 4 (the geodesic set, 162 directions)
     // on a FRESH start that names no set key, recorded for restarts; a restart whose
-    // input names none keeps HEALPix nside 3.  An sp wedge with walls (not the full
-    // sphere) keeps HEALPix too: its pi/2 wall maps are exact, the icosahedral set has no
-    // 4-fold axis (its only z rotation is pi)
+    // input names none keeps HEALPix nside 3.  geodef2-1117 (USER): also on the walled
+    // 3-D sp wedges (nearest-direction / mirrored wall maps); a 2-D axisymmetric mesh
+    // with a phi extent below 2 pi keeps HEALPix: that extent must rotate the set onto
+    // itself (VetGdInit), and the icosahedral set has no 4-fold axis
     if (vgd_on && !pin->DoesParameterExist("rad_m1","vet_gd_gl_nmu") &&
         !pin->DoesParameterExist("rad_m1","vet_gd_ls") &&
         !pin->DoesParameterExist("rad_m1","vet_gd_geo") &&
         !pin->DoesParameterExist("rad_m1","vet_gd_nside")) {
       const auto &ms = ppack->pmesh->mesh_size;
-      const bool wall = ppack->pmesh->use_spherical_polar &&
-          !(ppack->pmesh->use_polar_boundary &&
-            std::abs(ms.x3max - ms.x3min - 2.0*M_PI) < 1.0e-8);
+      const bool wall = ppack->pmesh->use_spherical_polar && !ppack->pmesh->three_d &&
+          std::abs(ms.x3max - ms.x3min - 2.0*M_PI) >= 1.0e-8;
       const bool geo = recipe::NewDefaults(pin) && !global_variable::restart_run && !wall;
       if (geo) {pin->GetOrAddInteger("rad_m1","vet_gd_geo",4);}
       recipe::Log(geo ? "<rad_m1>/vet_gd_geo = 4 (default: the geodesic set)" :
-          std::string("<rad_m1>/vet_gd_nside = 3 (HEALPix: ") + (wall ? "sp wedge walls"
+          std::string("<rad_m1>/vet_gd_nside = 3 (HEALPix: ") + (wall ? "2-D axisymmetric"
           : (global_variable::restart_run ? "restart input has no key" : "recipe none"))
           + ")");
     }
