@@ -597,7 +597,8 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
       continue;
     }
     if (fmeas) icr_dm_dt = pm->dt;
-    // its largest change of E and F/c over max E
+    // its largest change of E and F/c over max E (or over the cell's E)
+    const bool ncell = cln_steady_cell;
     Real dm = 0.0, em = 0.0;
     Kokkos::parallel_reduce("cln_steady_chg", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                             ntot),
@@ -608,14 +609,15 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
       for (int c = 1; c < 4; ++c) {
         x = fmax(x, fabs(u0_(m,M1_E+c,k,j,i) - uo(m,c,k,j,i))/cl);
       }
-      dl = fmax(dl, x);
-      el = fmax(el, fmax(u0_(m,M1_E,k,j,i), uo(m,0,k,j,i)));
+      const Real ec = fmax(u0_(m,M1_E,k,j,i), uo(m,0,k,j,i));
+      dl = fmax(dl, ncell ? x/fmax(ec, 1.0e-300) : x);
+      el = fmax(el, ec);
     }, Kokkos::Max<Real>(dm), Kokkos::Max<Real>(em));
     emax = fmax(emax, CleanReduce(em, true));
-    d = CleanReduce(dm, true)/fmax(emax, 1.0e-300);
+    d = CleanReduce(dm, true)/(ncell ? 1.0 : fmax(emax, 1.0e-300));
     if (global_variable::my_rank == 0) {
-      std::printf("<rad_m1> clean_init steady pass %d: max(|dE|, |dF|/c)/max E = %.3e\n",
-                  n, d);
+      std::printf("<rad_m1> clean_init steady pass %d: max(|dE|, |dF|/c)/%s = %.3e\n",
+                  n, cln_steady_cell ? "E of the cell" : "max E", d);
     }
     if (!big && (d < cln_steady_tol || (++n2 > 2 && d > 0.5*dp))) break;
     if (fmeas) {

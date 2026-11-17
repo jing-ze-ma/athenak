@@ -3086,6 +3086,7 @@ class RadiationM1 {
   bool cln_steady = false;      // clean_init = steady: radiation relaxed before step 1
   int cln_steady_n = 50;        // clean_init_n: most pre-solve passes
   Real cln_steady_dtfac = 1.0e6, cln_steady_tol = 1.0e-8;  // clean_init_dtfac, _tol
+  bool cln_steady_cell = false;  // clean_init_norm = cell
   std::vector<DvceArray5D<Real>> cln_mg;          // coarse levels of the multigrid
   std::vector<std::array<int, 3>> cln_mgn;        //   and their cells along x1..x3
   Real cln_psi_eps = 1.0e-12;   // clean_psi_eps: floor of the smoothness sensor

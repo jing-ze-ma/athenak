@@ -356,6 +356,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_steady_n = pin->GetOrAddInteger("rad_m1","clean_init_n",50);
       cln_steady_dtfac = pin->GetOrAddReal("rad_m1","clean_init_dtfac",1.0e6);
       cln_steady_tol = pin->GetOrAddReal("rad_m1","clean_init_tol",1.0e-8);
+      // the change of a pass over the largest E of the mesh (max) or over the cell's
+      // own E (cell), so that the thin layers far below the largest E also converge
+      std::string sn = pin->GetOrAddString("rad_m1","clean_init_norm","max");
+      cln_steady_cell = (sn.compare("cell") == 0);
+      if (!cln_steady_cell && sn.compare("max") != 0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<rad_m1>/clean_init_norm = " << sn << " (max | cell)"
+          << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
     }
     if (transport != M1_TRANSPORT_IMPLICIT) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
