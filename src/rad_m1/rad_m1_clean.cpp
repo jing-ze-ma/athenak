@@ -32,6 +32,10 @@
 #include "rad_m1/rad_m1_clean.hpp"
 #include "rad_m1/rad_m1_clean_cell.hpp"
 
+#if MPI_PARALLEL_ENABLED
+#include <mpi.h>
+#endif
+
 namespace radm1 {
 extern bool g_vra_adv;   // vet_rotate_advance (rad_m1_vetgd.cpp)
 // the policy of the heavy per-cell reductions: Kokkos' HIP backend compiles a plain
@@ -46,6 +50,20 @@ using CleanRp256 = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>
 static void CleanFatal(const std::string &msg) {
   std::cout << "### FATAL ERROR in " << __FILE__ << std::endl << msg << std::endl;
   std::exit(EXIT_FAILURE);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanReduceMax
+//! \brief the maxima of a, b, c over all ranks, one reduction (CleanReduce)
+
+static void CleanReduceMax(Real &a, Real &b, Real &c) {
+#if MPI_PARALLEL_ENABLED
+  Real v[3] = {a, b, c};
+  MPI_Allreduce(MPI_IN_PLACE, v, 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+  a = v[0];
+  b = v[1];
+  c = v[2];
+#endif
 }
 
 //----------------------------------------------------------------------------------------
@@ -1860,13 +1878,14 @@ Real RadiationM1::CleanNewtonUpdate() {
         fabs(w(m,CLW_EO,k,j,i)) + hc*op(m,M1_OP_P,k,j,i)*arad_*SQR(SQR(t)))/
         fmax(fabs(e), 1.0e-300));
   }, Kokkos::Max<Real>(change), Kokkos::Max<Real>(femax), Kokkos::Max<Real>(ermax));
-  if (!cell) cln_fe = std::numeric_limits<Real>::epsilon()*CleanReduce(femax, true);
+  CleanReduceMax(change, femax, ermax);   // (one reduction over the ranks)
+  if (!cell) cln_fe = std::numeric_limits<Real>::epsilon()*femax;
   if (bud) {   // (the tolerance of the next test and solve; for settled, the level of a
     // change the linear solve fixes at the floor, its 0.1 tfl in the budget's norm)
     // (a step dt_retry redoes, whose state just failed, is solved strictly too)
     const Real tfl = fmax(cln_tol_nl, 10.0*cln_tol);
     cln_tolb = (kok && !dtr_redo) ?
-               fmin(fmax(cln_bkap*CleanReduce(ermax, true), tfl), cln_bmax) : tfl;
+               fmin(fmax(cln_bkap*ermax, tfl), cln_bmax) : tfl;
     cln_fe = 0.1*tfl;
   }
   // (clean_stag_sbimp, fwork: the face beta terms' emission of the new T, hc kP a T^4,
@@ -1880,7 +1899,7 @@ Real RadiationM1::CleanNewtonUpdate() {
   }
   // (staggered: the ghosts of the new E_k, for the velocity update and the next RHS)
   if (!cell && cln_feedback) CleanGhostFill(cln_w, CLW_EK, 1);
-  return CleanReduce(change, true);
+  return change;
 }
 
 //----------------------------------------------------------------------------------------
@@ -1972,15 +1991,16 @@ Real RadiationM1::CleanVelocityUpdate() {
     CleanAdvect(xa, m, k, j, i, v, a);
     for (int n = 0; n < 3; ++n) x.w(m,CLW_A1+n,k,j,i) = a[n];
   }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax), Kokkos::Max<Real>(fvmax));
+  CleanReduceMax(dvmax, vmax, fvmax);
   if (fa) {
     CleanGhostDefer(cln_w, CLW_A1, 3);   // (as CleanAdvectiveCoefficients)
   } else {
     if (cln_vimp) CleanStagDrag(false);   // (with the coefficients of this dm)
     CleanAdvectiveCoefficients();
   }
-  vmax = fmax(CleanReduce(vmax, true), 1.0e-300);
-  cln_fv = std::numeric_limits<Real>::epsilon()*CleanReduce(fvmax, true)/vmax;
-  return CleanReduce(dvmax, true)/vmax;
+  vmax = fmax(vmax, 1.0e-300);
+  cln_fv = std::numeric_limits<Real>::epsilon()*fvmax/vmax;
+  return dvmax/vmax;
 }
 
 //----------------------------------------------------------------------------------------
@@ -2091,8 +2111,12 @@ int RadiationM1::CleanStagRealizable() {
     n1 += r1;
     n2 += r2;
   }
-  cln_nr1 = static_cast<int>(CleanReduce(n1, false));
-  cln_nr2 = static_cast<int>(CleanReduce(n2, false));
+  Real nr[2] = {n1, n2};
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, nr, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  cln_nr1 = static_cast<int>(nr[0]);
+  cln_nr2 = static_cast<int>(nr[1]);
   return cln_nr1 + cln_nr2;
 }
 

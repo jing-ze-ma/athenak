@@ -2026,10 +2026,13 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
   if (nround == 0) {return;}   // nothing limited: t2inc untouched (bitwise)
   // apply: the E channel of every cell next to a limited face, then the face F channels
   Real lv[3] = {0.0, 0.0, 0.0}, qmin = 1.0e300;
-  Kokkos::parallel_reduce("m1_t2_ffct_e", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sl,
-                Real &sw, Real &se, Real &sq) {
+  // (a flat range, as par_reduce_flat: the 4-D MDRange reduction took 8 ms on the A100)
+  const int n1 = ie - is + 1, nji = (je - js + 1)*n1, nkji = (ke - ks + 1)*nji;
+  Kokkos::parallel_reduce("m1_t2_ffct_e", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          (nmb1 + 1)*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &sl, Real &sw, Real &se, Real &sq) {
+    const int m = idx/nkji, k = ks + (idx%nkji)/nji, j = js + (idx%nji)/n1;
+    const int i = is + idx%n1;
     Real w, po, pi, pl, dw;
     bool lim;
     cell(m, k, j, i, w, po, pi, pl, dw, lim);
