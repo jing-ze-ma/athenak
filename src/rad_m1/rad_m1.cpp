@@ -24,6 +24,7 @@
 #include "bvals/bvals.hpp"
 #include "coordinates/coordinates.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_clean.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "utils/recipe.hpp"
@@ -2624,6 +2625,9 @@ DvceArray4D<Real> RadiationM1::FrefWacc() {
 int RadiationM1::RssRstMode() const {return RssMode() + (rst_ext ? 16 : 0);}
 
 int RadiationM1::RssMode() const {
+  // (scheme = clean: its own current Eddington tensor, cln_s, which the stage solve
+  // rebuilds every step; tau_ten is not rebuilt there)
+  if (clean && cln_s.extent(0) > 0) return 5;
   if (tau_closure && tau_ten.extent(0) > 0) return 2;
   if (vet_sc && vet_cell.extent(0) > 0) return vet_full ? 4 : 3;
   if (!eddington && !tau_closure && !vet_sc) return 1;
@@ -2641,6 +2645,7 @@ int RadiationM1::RssRstNch(int mode) const {
   }
   if (mode == 2 || mode == 3) return 5;
   if (mode == 4) return 4;
+  if (mode == 5) return 7;   // (opac_T and the six components of cln_s's D)
   return 1;
 }
 
@@ -2656,6 +2661,7 @@ void RadiationM1::RssSlot(int mode, int n, DvceArray5D<Real> *&a, int &c) {
   }
   if (n == 0) {a = &opac; c = M1_OP_T; return;}
   if (mode == 2) {a = &tau_ten; c = n - 1; return;}
+  if (mode == 5) {a = &cln_s; c = CLN_D11 + n - 1; return;}
   a = &vet_cell;
   c = (mode == 3) ? (M1_VET_CHI + n - 1) : (M1_VET_D11 + n - 1);
 }
@@ -2690,7 +2696,7 @@ void RadiationM1::RssPrime(bool restart) {
   if (rss_stage_mode >= 16) {
     // rstbit-1107: the extended record; the tensor slots only into the same closure
     const int mode = rss_stage_mode, b = mode - 16, nb = RssRstNch(b);
-    const bool tens = (b == 2 && tau_closure) ||
+    const bool tens = (b == 2 && tau_closure) || (b == 5 && RssMode() == 5) ||
                       ((b == 3 || b == 4) && vet_sc && vet_cell.extent(0) > 0 &&
                        (vet_full == (b == 4)));
     if (b == 2 && tau_closure && !tau_ready) {TauClosureInit();}
@@ -2720,8 +2726,8 @@ void RadiationM1::RssPrime(bool restart) {
     if (mode == 2 && tau_closure) {
       if (!tau_ready) {TauClosureInit();}
       want = RssRstNch(mode);
-    } else if ((mode == 3 || mode == 4) && vet_sc && vet_cell.extent(0) > 0 &&
-               (vet_full == (mode == 4))) {
+    } else if (((mode == 3 || mode == 4) && vet_sc && vet_cell.extent(0) > 0 &&
+                (vet_full == (mode == 4))) || (mode == 5 && RssMode() == 5)) {
       want = RssRstNch(mode);
     } else if (mode >= 2 && global_variable::my_rank == 0) {
       std::cout << "### WARNING: <rad_m1> the restart file's signal-speed closure tensor "

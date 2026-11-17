@@ -24,6 +24,7 @@
 #include "diffusion/resistivity.hpp"
 #include "srcterms/srcterms.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_clean.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
 
 namespace mhd {
@@ -102,7 +103,7 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
   // is >= the gas fast speed and -> it in thin cells (tau_d -> 0); at B = 0 it is the
   // hydro signal speed.  Off: no change (the gas fast speed, bitwise).
   const bool rss_ = rad_signal_speed;
-  DvceArray5D<Real> erad_, kopc_, tten_, vcel_;
+  DvceArray5D<Real> erad_, kopc_, tten_, vcel_, gn_;
   int rss_mode = 0;          // 0 isotropic E/3, 1 M1Chi, 2 tau_ten, 3 vet_sc, 4 vet full
   int rss_kind = 0;
   Real rss_cl = 1.0;
@@ -121,7 +122,8 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
     // the same selection decides what a restart file carries (RadiationM1::RssPrime)
     rss_mode = prm->RssMode();
     if (rss_mode == 2) tten_ = prm->tau_ten;
-    if (rss_mode >= 3) vcel_ = prm->vet_cell;
+    if (rss_mode >= 3) vcel_ = (rss_mode == 5) ? prm->cln_s : prm->vet_cell;
+    if (rss_mode == 5) gn_ = prm->cln_gn;   // (cubed sphere: D Cartesian)
   }
 
   if (pdriver->time_evolution == TimeEvolution::kinematic) {
@@ -259,8 +261,16 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
           const Real d = w_d;
           const Real er = fmax(erad_(m,radm1::M1_E,k,j,i), 0.0);
           Real dd[3] = {1.0/3.0, 1.0/3.0, 1.0/3.0};
-          if (rss_mode == 4) {
-            for (int a = 0; a < 3; ++a) dd[a] = vcel_(m,radm1::M1_VET_D11+a,k,j,i);
+          if (rss_mode >= 4) {   // (5: clean's cln_s, 0 before its first closure: 1/3)
+            const int d0 = (rss_mode == 5) ? radm1::CLN_D11 : radm1::M1_VET_D11;
+            if (rss_mode == 4 || vcel_(m,d0,k,j,i) > 0.0) {
+              for (int a = 0; a < 3; ++a) {
+                dd[a] = (rss_mode == 5 && use_cubed_sphere) ?
+                        radm1::CleanDuu(vcel_, gn_, (a == 0) ? radm1::CLG_R :
+                                        radm1::CLG_E + 3*(a - 1), m, k, j, i) :
+                        vcel_(m,d0+a,k,j,i);
+              }
+            }
           } else if (rss_mode >= 1) {
             Real chi, n1, n2, n3;
             if (rss_mode == 2) {

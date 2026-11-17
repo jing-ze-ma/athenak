@@ -458,6 +458,24 @@ constexpr int CLS_X = 9;     // solution
 constexpr int CLS_N = 10;
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanDuu
+//! \brief u.D.u of cln_s's Eddington tensor (Cartesian on the cubed sphere) along the unit
+//! vector u = g(m, gs..gs+2, k,j,i) of cln_gn (CLG_R, CLG_E, CLG_E + 3: the hydro's
+//! directions), for <hydro>/rad_signal_speed
+
+KOKKOS_INLINE_FUNCTION
+Real CleanDuu(const DvceArray5D<Real> &s, const DvceArray5D<Real> &g, const int gs,
+              const int m, const int k, const int j, const int i) {
+  Real d = 0.0;
+  for (int a = 0; a < 3; ++a) {
+    for (int b = 0; b < 3; ++b) {
+      d += g(m,gs+a,k,j,i)*g(m,gs+b,k,j,i)*s(m,CLN_D11+((a == b) ? a : 2 + a + b),k,j,i);
+    }
+  }
+  return d;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real CleanSmoothStep
 //! \brief 3x^2 - 2x^3 on [0,1], 0 below and 1 above
 
