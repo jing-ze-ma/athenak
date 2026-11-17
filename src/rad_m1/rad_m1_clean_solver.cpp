@@ -139,6 +139,10 @@ void RadiationM1::CleanGhostFillLast(DvceArray5D<float> a) {
   CleanGhostFillT<float, true>(a, 0, a.extent_int(4), true, 0);
 }
 
+void RadiationM1::CleanGhostFillLast(DvceArray5D<Real> a) {
+  CleanGhostFillT<Real, true>(a, 0, a.extent_int(4), true, 0);
+}
+
 template <typename T, bool L>
 void RadiationM1::CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc,
                                   const bool phys, const int part) {

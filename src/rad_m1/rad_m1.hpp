@@ -2972,6 +2972,7 @@ class RadiationM1 {
   CleanArgs CleanMakeArgs();
   void CleanGhostFill(DvceArray5D<float> a, const int c0, const int nc);
   void CleanGhostFillLast(DvceArray5D<float> a);
+  void CleanGhostFillLast(DvceArray5D<Real> a);
   template <typename T, bool L = false>
   void CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc, const bool phys,
                        const int part);

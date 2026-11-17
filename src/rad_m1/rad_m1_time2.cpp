@@ -3576,9 +3576,14 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
   }
   // clean_rays = fv1 | fv: the intensities the next sweep starts from, last
   if (clean && cln_rfv > 0 && cln_fvi.extent_int(0) >= m0 + nmb) {
-    Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c + cln_fvb*cln_fvn), AL, AL,
-                                      AL),
-                      Kokkos::subview(cln_fvi, ms, AL, AL, AL, AL));
+    auto a_ = a;
+    auto fi = cln_fvi;
+    const int cv = c, mo = m0;
+    par_for("m1_t2_fvrst", DevExeSpace(), 0, nmb - 1, 0, cln_fvb*cln_fvn - 1, 0,
+            fi.extent_int(1) - 1, 0, fi.extent_int(2) - 1, 0, fi.extent_int(3) - 1,
+    KOKKOS_LAMBDA(const int m, const int v, const int k, const int j, const int i) {
+      a_(m,cv+v,k,j,i) = fi(mo+m,k,j,i,v);
+    });
     CleanFvRstWrite(a, c, nmb, m0);
   } else if (CleanFvHeldF32() && cln_fvis.extent_int(0) >= m0 + nmb) {
     // (clean_fv_float: the rays as held)
@@ -3968,7 +3973,7 @@ void RadiationM1::RstFingerprint(const char *tag) {
   M1Fp("cln_fc1", cln_fc1, cy); M1Fp("cln_fc2", cln_fc2, cy);
   M1Fp("cln_fc3", cln_fc3, cy);
   M1Fp("cln_fref", cln_fref, cy); M1Fp("cln_mn", cln_mn, cy); M1Fp("cln_mp", cln_mp, cy);
-  M1Fp("cln_mc", cln_mc, cy); M1Fp("cln_m1", cln_m1, cy); M1Fp("cln_fvi", cln_fvi, cy);
+  M1Fp("cln_mc", cln_mc, cy); M1Fp("cln_m1", cln_m1, cy);
   M1Fp("cln_fvq", cln_fvq, cy); M1Fp("cln_fvw", cln_fvw, cy);
   M1Fp("cln_fvd", cln_fvd, cy);
   M1Fp("cln_opb", cln_opb, cy); M1Fp("cln_lf", cln_lf, cy); M1Fp("cln_gn", cln_gn, cy);

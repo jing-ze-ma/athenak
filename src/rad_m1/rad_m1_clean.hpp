@@ -89,13 +89,15 @@ constexpr int CLW_N = 41;
 //----------------------------------------------------------------------------------------
 //! \struct CleanFvI
 //! \brief the FV rays' intensities: cln_fvi, or cln_fvis in single precision
-//! (clean_fv_float).  In single precision the first nr components (the intensities, not
-//! the lld slopes) are held as their difference from a reference of the cell,
-//! a + b . n_d (r = (a, b) in single precision, components last, n_d the directions rd
-//! it was taken with, CleanFvRebase), so that the rounding error is a fraction of the
-//! part of the field beyond its isotropic and dipole terms, not of the intensity.  Reads
-//! give Real, Store keeps a value in the precision of the array and returns it as a read
-//! would.
+//! (clean_fv_float), with the components last (m, k, j, i, b N + d: the directions of a
+//! cell side by side, cl), or an array in the mesh layout (m, n, k, j, i; cln_fvq).  In
+//! single precision the first nr components (the intensities, not the lld slopes) are
+//! held as their difference from a reference of the cell, a + b . n_d (r = (a, b) in
+//! single precision, components last, n_d the directions rd it was taken with,
+//! CleanFvRebase), so that the rounding error is a fraction of the part of the field
+//! beyond its isotropic and dipole terms, not of the intensity.  Reads give Real, Store
+//! keeps a value in the precision of the array and returns it as a read would.
+//! extent_int(q) is that of the mesh layout.
 
 struct CleanFvI {
   DvceArray5D<Real> d;
@@ -104,6 +106,15 @@ struct CleanFvI {
   DvceArray2D<Real> rd;
   bool f32 = false;
   int nr = 0;
+  bool cl = false;
+  KOKKOS_INLINE_FUNCTION
+  Real &D(const int m, const int n, const int k, const int j, const int i) const {
+    return cl ? d(m,k,j,i,n) : d(m,n,k,j,i);
+  }
+  KOKKOS_INLINE_FUNCTION
+  float &F(const int m, const int n, const int k, const int j, const int i) const {
+    return cl ? f(m,k,j,i,n) : f(m,n,k,j,i);
+  }
   KOKKOS_INLINE_FUNCTION
   Real Base(const int m, const int n, const int k, const int j, const int i) const {
     if (n >= nr) return 0.0;
@@ -113,9 +124,9 @@ struct CleanFvI {
   }
   KOKKOS_INLINE_FUNCTION
   Real operator()(const int m, const int n, const int k, const int j, const int i) const {
-    if (!f32) return d(m,n,k,j,i);
-    if (n >= nr) return static_cast<Real>(f(m,n,k,j,i));
-    return fmax(Base(m, n, k, j, i) + static_cast<Real>(f(m,n,k,j,i)), 0.0);
+    if (!f32) return D(m,n,k,j,i);
+    if (n >= nr) return static_cast<Real>(F(m,n,k,j,i));
+    return fmax(Base(m, n, k, j, i) + static_cast<Real>(F(m,n,k,j,i)), 0.0);
   }
   KOKKOS_INLINE_FUNCTION
   Real Store(const int m, const int n, const int k, const int j, const int i,
@@ -123,39 +134,47 @@ struct CleanFvI {
     if (f32) {
       const Real b = Base(m, n, k, j, i);
       const float g = static_cast<float>(v - b);
-      f(m,n,k,j,i) = g;
+      F(m,n,k,j,i) = g;
       return (n < nr) ? fmax(b + static_cast<Real>(g), 0.0) : static_cast<Real>(g);
     }
-    d(m,n,k,j,i) = v;
+    D(m,n,k,j,i) = v;
     return v;
   }
   // the value as held, for a copy between components of the same cell
   KOKKOS_INLINE_FUNCTION
   Real Raw(const int m, const int n, const int k, const int j, const int i) const {
-    return f32 ? static_cast<Real>(f(m,n,k,j,i)) : d(m,n,k,j,i);
+    return f32 ? static_cast<Real>(F(m,n,k,j,i)) : D(m,n,k,j,i);
   }
   KOKKOS_INLINE_FUNCTION
   void SetRaw(const int m, const int n, const int k, const int j, const int i,
               const Real v) const {
     if (f32) {
-      f(m,n,k,j,i) = static_cast<float>(v);
+      F(m,n,k,j,i) = static_cast<float>(v);
     } else {
-      d(m,n,k,j,i) = v;
+      D(m,n,k,j,i) = v;
     }
   }
-  int extent_int(const int q) const {return f32 ? f.extent_int(q) : d.extent_int(q);}
+  int extent_int(const int q) const {
+    const int p = cl ? ((q == 0) ? 0 : ((q == 1) ? 4 : q - 1)) : q;
+    return f32 ? f.extent_int(p) : d.extent_int(p);
+  }
   // the intensities as they are held: with clean_fv_float, the doubles a restart read
   // until the next sweep converts them
   static CleanFvI Of(const DvceArray5D<Real> &d_, const DvceArray5D<float> &f_,
                      const DvceArray5D<float> &r_, const DvceArray2D<Real> &rd_,
                      const bool f32_, const int nr_) {
-    const bool s = f32_ && d_.extent_int(1) == 0;
-    return CleanFvI{d_, f_, r_, rd_, s, (s && r_.extent_int(0) > 0) ? nr_ : 0};
+    const bool s = f32_ && d_.extent_int(4) == 0;
+    return CleanFvI{d_, f_, r_, rd_, s, (s && r_.extent_int(0) > 0) ? nr_ : 0, true};
   }
   // those of the RadiationM1 a
   template <class R>
   static CleanFvI Held(const R &a) {
     return Of(a.cln_fvi, a.cln_fvis, a.cln_fvr, a.cln_fvrd, a.cln_fvf32, a.cln_fvn);
+  }
+  // a double array with its components last
+  static CleanFvI Last(const DvceArray5D<Real> &d_) {
+    return CleanFvI{d_, DvceArray5D<float>(), DvceArray5D<float>(), DvceArray2D<Real>(),
+                    false, 0, true};
   }
 };
 
