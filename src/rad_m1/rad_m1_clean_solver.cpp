@@ -516,6 +516,24 @@ void RadiationM1::CleanApply(const int src, const int dst) {
   x.fwc = true;
   xh.hi = cln_split;   // (clean_stag_sbimp: the face momentum, not from CLF_QL)
   auto op = opac;
+  if (cln_stst) {   // (clean_stag_stencil: from the rows of the pass)
+    auto w = cln_w;
+    auto st = cln_st;
+    const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
+    par_for("cln_apply_st", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real a = 0.0;
+#pragma unroll
+      for (int s = 0; s < CLN_ST; ++s) {
+        int dk, dj, di;
+        CleanStOff(s, dk, dj, di);
+        if ((dj != 0 && !md) || (dk != 0 && !td)) continue;   // (no such neighbour)
+        a += st(m,s,k-ks,j-js,i-is)*w(m,src,k+dk,j+dj,i+di);
+      }
+      w(m,dst,k,j,i) = a;
+    });
+    return;
+  }
   const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
 
   par_for("cln_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -558,6 +576,17 @@ void RadiationM1::CleanPreconditionerSetup() {
     });
   }
   x.fwc = true;
+  if (cln_stst) {   // (clean_stag_stencil: the operator's rows, CleanApply)
+    const CleanArgs *px = CleanDevArgs(x, 0);
+    auto st = cln_st;
+    par_for("cln_stencil", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
+      Real c[CLN_ST];
+      CleanStencilRow(x, m, k, j, i, c);
+      for (int s = 0; s < CLN_ST; ++s) st(m,s,k-ks,j-js,i-is) = c[s];
+    });
+  }
   par_for("cln_pcsetup", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real al_p, ar_p, al_m, ar_m;
@@ -940,7 +969,8 @@ int RadiationM1::CleanBiCGStab() {
     apply(sx, sr);
     const int n = (it < 0) ? 2 : 1;
     const auto d = CleanSums(pmy_pack, "cln_dot_rst", n,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0, Real &s1) {
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0,
+                  Real &s1) {
       for (int c = 0; c < nc; ++c) {   // (r = b - A x, r0 = r, p = v = 0)
         w(m,sr+c,k,j,i) = 1.0*w(m,sb+c,k,j,i) + -1.0*w(m,sr+c,k,j,i);
         w(m,sr0+c,k,j,i) = 1.0*w(m,sr+c,k,j,i) + 0.0*w(m,sr+c,k,j,i);
@@ -1032,7 +1062,8 @@ int RadiationM1::CleanBiCGStab() {
     omega = (d[0] > 0.0) ? d[1]/d[0] : 0.0;
     const Real al_ = alpha, om = omega;
     const auto e = CleanSums(pmy_pack, "cln_dot_x", 2,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0, Real &s1) {
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0,
+                  Real &s1) {
       for (int c = 0; c < nc; ++c) {
         w(m,sx+c,k,j,i) += al_*w(m,sy+c,k,j,i) + om*w(m,sz+c,k,j,i);
         w(m,sr+c,k,j,i) = w(m,ss+c,k,j,i) - om*w(m,sq+c,k,j,i);

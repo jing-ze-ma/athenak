@@ -221,6 +221,34 @@ struct CleanArgs {
   DvceArray4D<Real> phi, emag;
 };
 
+// the rows of the staggered operator (clean_stag_stencil): the coefficients of E at the
+// cell and its 18 neighbours that share a face or an edge.  Slot of offset (dk, dj, di):
+// 0 the cell; 1 + 2 a + (d > 0) the faces along axis a (i, j, k); 7 + 4 p + 2 (d1 > 0) +
+// (d2 > 0) the edges in the plane p of axes (j, i), (k, i), (k, j), offsets d1, d2
+constexpr int CLN_ST = 19;
+
+KOKKOS_INLINE_FUNCTION
+constexpr int CleanStSlot(const int dk, const int dj, const int di) {
+  return ((dk != 0) + (dj != 0) + (di != 0) == 0) ? 0 :
+         ((dk != 0) + (dj != 0) + (di != 0) == 1) ?
+         1 + 2*((dk != 0) ? 2 : (dj != 0)) + (dk + dj + di > 0) :
+         7 + 4*((dk == 0) ? 0 : ((dj == 0) ? 1 : 2)) + 2*(((dk == 0) ? dj : dk) > 0) +
+         (((di == 0) ? dj : di) > 0);
+}
+
+KOKKOS_INLINE_FUNCTION
+void CleanStOff(const int s, int &dk, int &dj, int &di) {   // (the offset of slot s)
+  dk = dj = di = 0;
+  if (s > 0 && s < 7) {
+    const int d = ((s - 1) % 2) ? 1 : -1;
+    ((s < 3) ? di : ((s < 5) ? dj : dk)) = d;
+  } else if (s >= 7) {
+    const int p = (s - 7)/4, d1 = (((s - 7)/2) % 2) ? 1 : -1, d2 = ((s - 7) % 2) ? 1 : -1;
+    ((p == 0) ? dj : dk) = d1;
+    ((p == 2) ? dj : di) = d2;
+  }
+}
+
 // the source moments of the FV rays (array cln_fvq; lld: all, else chi and S, CLQ_N0)
 constexpr int CLQ_X = 0;     // chi
 constexpr int CLQ_S0 = 1;    // S (every FV mode)
@@ -980,6 +1008,121 @@ Real CleanFluxDivergence(const CleanArgs &x, const int e, const int m, const int
                      CleanFaceFlux(x, e, 2, m, k, j, i, with_source));
   }
   return x.h*div;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanStAdd
+//! \brief adds f D_ab E of the cell at offset (OK, OJ, OI) from (k,j,i) to its slot of
+//! row c
+
+template <int OK, int OJ, int OI>
+KOKKOS_FORCEINLINE_FUNCTION
+void CleanStAdd(const CleanArgs &x, const int ab, const int m, const int k, const int j,
+                const int i, const Real f, Real (&c)[CLN_ST]) {
+  c[CleanStSlot(OK, OJ, OI)] += f*x.cs(m,ab,k+OK,j+OJ,i+OI);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanStCross
+//! \brief the row terms of the transverse derivative along B of the off-diagonal stress
+//! through face SD (0 low, 1 high) normal to D of cell (k,j,i), times cr: the terms of
+//! CleanFaceStress (normal = false) with every slot a constant (as production's
+//! ImplicitStencilBuild)
+
+template <int D, int SD, int B>
+KOKKOS_FORCEINLINE_FUNCTION
+void CleanStCross(const CleanArgs &x, const int m, const int k, const int j, const int i,
+                  const Real cr, Real (&c)[CLN_ST]) {
+  constexpr int ek = (D == 2), ej = (D == 1), ei = (D == 0);
+  constexpr int bk = (B == 2), bj = (B == 1), bi = (B == 0);
+  constexpr int ab = (D + B == 1) ? 3 : ((D + B == 2) ? 4 : 5);   // D12, D13, D23
+  // (the cells L, R of the face)
+  constexpr int lk = (SD - 1)*ek, lj = (SD - 1)*ej, li = (SD - 1)*ei;
+  constexpr int rk = SD*ek, rj = SD*ej, ri = SD*ei;
+  const int kf = k + rk, jf = j + rj, iff = i + ri;
+  if constexpr (D == 2) {
+    if (x.sph) {   // (torque form, CleanFaceStress)
+      const Real vr = x.vol(m,kf,jf,iff)*x.x1v(m,iff)*sin(x.x2v(m,jf));
+      if constexpr (B == 0) {
+        const Real s = sin(x.x2v(m,jf))/vr*cr*0.25;
+        const Real fp = x.area[0](m,kf,jf,iff+1)*x.x1f(m,iff+1)*s;
+        const Real fm = -x.area[0](m,kf,jf,iff)*x.x1f(m,iff)*s;
+        CleanStAdd<rk, 0, 1>(x, ab, m, k, j, i, fp, c);
+        CleanStAdd<lk, 0, 1>(x, ab, m, k, j, i, fp, c);
+        CleanStAdd<rk, 0, 0>(x, ab, m, k, j, i, fp + fm, c);
+        CleanStAdd<lk, 0, 0>(x, ab, m, k, j, i, fp + fm, c);
+        CleanStAdd<rk, 0, -1>(x, ab, m, k, j, i, fm, c);
+        CleanStAdd<lk, 0, -1>(x, ab, m, k, j, i, fm, c);
+      } else {
+        const Real s = x.x1v(m,iff)/vr*cr*0.25;
+        const Real fp = x.area[1](m,kf,jf+1,iff)*sin(x.x2f(m,jf+1))*s;
+        const Real fm = -x.area[1](m,kf,jf,iff)*sin(x.x2f(m,jf))*s;
+        CleanStAdd<rk, 1, 0>(x, ab, m, k, j, i, fp, c);
+        CleanStAdd<lk, 1, 0>(x, ab, m, k, j, i, fp, c);
+        CleanStAdd<rk, 0, 0>(x, ab, m, k, j, i, fp + fm, c);
+        CleanStAdd<lk, 0, 0>(x, ab, m, k, j, i, fp + fm, c);
+        CleanStAdd<rk, -1, 0>(x, ab, m, k, j, i, fm, c);
+        CleanStAdd<lk, -1, 0>(x, ab, m, k, j, i, fm, c);
+      }
+      return;
+    }
+  }
+  const Real rb = !x.sph ? 1.0 : ((D == 0) ? x.x1f(m,iff) : x.x1v(m,iff));
+  const Real ib = !x.sph ? x.idx[B] : ((B == 0) ? 2.0/(x.x1v(m,iff+1) - x.x1v(m,iff-1)) :
+                  ((B == 1) ? 2.0/(rb*(x.x2v(m,jf+1) - x.x2v(m,jf-1))) :
+                  x.idx[2]/(rb*sin((D == 1) ? x.x2f(m,jf) : x.x2v(m,jf)))));
+  const Real q = 0.25*ib*cr;
+  CleanStAdd<rk + bk, rj + bj, ri + bi>(x, ab, m, k, j, i, q, c);
+  CleanStAdd<lk + bk, lj + bj, li + bi>(x, ab, m, k, j, i, q, c);
+  CleanStAdd<rk - bk, rj - bj, ri - bi>(x, ab, m, k, j, i, -q, c);
+  CleanStAdd<lk - bk, lj - bj, li - bi>(x, ab, m, k, j, i, -q, c);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanStFace
+//! \brief the row terms of face SD (0 low, 1 high) normal to D of cell (k,j,i) in its h
+//! div F: the face weights al, ar and the cross factor of the pass (x.fwc, CLF_QL) with
+//! the off-diagonal stress of CleanFaceCross
+
+template <int D, int SD>
+KOKKOS_FORCEINLINE_FUNCTION
+void CleanStFace(const CleanArgs &x, const int m, const int k, const int j, const int i,
+                 Real (&c)[CLN_ST]) {
+  constexpr int ek = (D == 2), ej = (D == 1), ei = (D == 0);
+  const int kf = k + SD*ek, jf = j + SD*ej, iff = i + SD*ei;
+  const Real wd = (SD ? x.h : -x.h)*CleanDivW(x, D, m, k, j, i, SD);
+  c[CleanStSlot((SD - 1)*ek, (SD - 1)*ej, (SD - 1)*ei)] += wd*x.fc[D](m,CLF_QL,kf,jf,iff);
+  c[CleanStSlot(SD*ek, SD*ej, SD*ei)] += wd*x.fc[D](m,CLF_QL+1,kf,jf,iff);
+  if (!x.multi_d || CleanBoundaryFace(x, D, m, kf, jf, iff)) return;
+  const Real cr = wd*x.fc[D](m,CLF_QL+2,kf,jf,iff);
+  if constexpr (D != 0) CleanStCross<D, SD, 0>(x, m, k, j, i, cr, c);
+  if constexpr (D != 1) CleanStCross<D, SD, 1>(x, m, k, j, i, cr, c);
+  if constexpr (D != 2) {
+    if (x.three_d) CleanStCross<D, SD, 2>(x, m, k, j, i, cr, c);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanStencilRow
+//! \brief c = the row of cell (k,j,i) of the operator of CleanApply (x.fwc): the diagonal
+//! and the coefficients of E in CleanFluxDivergence (clean_stag_stencil)
+
+KOKKOS_INLINE_FUNCTION
+void CleanStencilRow(const CleanArgs &x, const int m, const int k, const int j,
+                     const int i, Real (&c)[CLN_ST]) {
+  for (int s = 0; s < CLN_ST; ++s) c[s] = 0.0;
+  const Real qr = x.feedback ? x.w(m,CLW_RY,k,j,i) : 1.0;   // (1 - r)
+  c[0] = 1.0 + x.h*x.c*x.op(m,M1_OP_E,k,j,i)*qr;
+  CleanStFace<0, 0>(x, m, k, j, i, c);
+  CleanStFace<0, 1>(x, m, k, j, i, c);
+  if (x.multi_d) {
+    CleanStFace<1, 0>(x, m, k, j, i, c);
+    CleanStFace<1, 1>(x, m, k, j, i, c);
+  }
+  if (x.three_d) {
+    CleanStFace<2, 0>(x, m, k, j, i, c);
+    CleanStFace<2, 1>(x, m, k, j, i, c);
+  }
 }
 
 //----------------------------------------------------------------------------------------

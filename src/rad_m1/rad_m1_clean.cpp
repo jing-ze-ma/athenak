@@ -266,6 +266,7 @@ void RadiationM1::CleanInit() {
       cln_fref.extent_int(0) != nmb) {   // (a restart has read it)
     Kokkos::realloc(cln_fref, nmb, (force_ref == M1_FREF_WB_MD) ? 9 : 3, n3, n2, n1);
   }
+  if (cln_stst) Kokkos::realloc(cln_st, nmb, CLN_ST, indcs.nx3, indcs.nx2, indcs.nx1);
   // multigrid levels of the cell layout: halve every direction with an even number
   // (>= 4) of cells, down to the level where no direction can be halved (clean_pc =
   // prodmg, and staggered clean_stag_pc = mg: x1 is never halved, two coarse levels)

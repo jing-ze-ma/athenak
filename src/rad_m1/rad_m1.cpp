@@ -245,6 +245,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_stagmg = !cln_cell && (pc == "mg");}
+    // clean_stag_stencil: the operator applied from its rows (CleanStencilRow), built
+    // once per pass; not with clean_stag_sbimp or on the cubed sphere
+    cln_stst = stag("clean_stag_stencil", false);
+    if (cln_stst && (cln_sbimp || pmy_pack->pmesh->use_cubed_sphere)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/clean_stag_stencil: not with clean_stag_sbimp "
+                << "or on the cubed sphere" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",false);
     cln_posghost = pin->GetOrAddBoolean("rad_m1","clean_pos_ghost",false);
     {std::string cl = pin->GetOrAddString("rad_m1","clean_closure",
