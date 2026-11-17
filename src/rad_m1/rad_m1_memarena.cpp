@@ -11,6 +11,11 @@
 //! moments, half-range, ring); those solve arrays are re-written after every build before
 //! they are read.  Both facts are checked by MEMCUT_POISON (below) and the bitwise gates.
 //! iw is NOT shared: some of its channels live across a build (poisoned, the run breaks).
+//! Under the clean scheme the intensities are dead outside CleanRays (the closure reads
+//! them after the build) and the staggered layout's own work vectors (cln_w.o, the line
+//! rows, BiCGStab vectors, mg couplings, lateral sums and budget scales) are re-written
+//! in every solve before they are read: those alone move over them (MEMCUT_POISON clnw
+//! at the entry of CleanRays, vgdc at its exit).
 //!
 //! The intensity arrays are unmanaged 1-D Views at offsets 0, n_0, ... of marena (it
 //! grows by copy + rebind while they are allocated, until the first dt_retry
@@ -74,27 +79,33 @@ bool RadiationM1::MemArenaVgd(VgdRag &a, const int64_t n) {
   if (!marena_on || marena_sealed) return false;
   const int64_t off = marena_sw;
   const int64_t need = off + n;
-  const int64_t have = static_cast<int64_t>(marena.extent(0));
-  if (need > have) {
-    // grow: a new allocation, the old bytes copied in front (the arrays bound so far keep
-    // their contents and offsets), then rebind them (until the move, MemArenaSeal)
-    Kokkos::fence();
-    DvceArray1D<Real> nb("m1_arena", need);
-    if (have > 0) {
-      Kokkos::deep_copy(Kokkos::subview(nb, std::make_pair(int64_t(0), have)), marena);
-    }
-    const Real *o0 = marena.data(), *o1 = marena.data() + have;
-    VgdRag *bound[3] = {&vgd_i, &vgd_itw, &vgd_i_xb};
-    for (VgdRag *b : bound) {
-      if (have > 0 && b->d.data() != nullptr && b->d.data() >= o0 && b->d.data() < o1) {
-        b->d = DvceArray1D<Real>(nb.data() + (b->d.data() - o0), b->d.extent(0));
-      }
-    }
-    marena = nb;
-  }
+  MemArenaGrow(need);
   a.d = DvceArray1D<Real>(marena.data() + off, n);
   marena_sw = need + ((64 - (need % 64)) % 64);   // 64-Real alignment of the next one
   return true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::MemArenaGrow
+//! \brief at least need Reals: a new allocation, the old bytes copied in front (the
+//! intensity arrays bound so far keep their contents and offsets), then rebind them
+
+void RadiationM1::MemArenaGrow(const int64_t need) {
+  const int64_t have = static_cast<int64_t>(marena.extent(0));
+  if (need <= have) return;
+  Kokkos::fence();
+  DvceArray1D<Real> nb("m1_arena", need);
+  if (have > 0) {
+    Kokkos::deep_copy(Kokkos::subview(nb, std::make_pair(int64_t(0), have)), marena);
+  }
+  const Real *o0 = marena.data(), *o1 = marena.data() + have;
+  VgdRag *bound[3] = {&vgd_i, &vgd_itw, &vgd_i_xb};
+  for (VgdRag *b : bound) {
+    if (have > 0 && b->d.data() != nullptr && b->d.data() >= o0 && b->d.data() < o1) {
+      b->d = DvceArray1D<Real>(nb.data() + (b->d.data() - o0), b->d.extent(0));
+    }
+  }
+  marena = nb;
 }
 
 //----------------------------------------------------------------------------------------
@@ -111,10 +122,13 @@ void RadiationM1::MemArenaSeal() {
   // move restores the moved Views)
   if (marena_sealed || !marena_on || marena.data() == nullptr) return;
   marena_sealed = true;
-  DvceArray5D<Real> *cand[] = {&ost, &fmm_t, &thw, &vmw, &thq, &odc, &d3w, &krw,
-                               &aa_xc, &aa_fc, &aa_xp, &aa_fp};
-  const char *nm[] = {"ost", "fmm_t", "thw", "vmw", "thq", "odc", "d3w", "krw",
+  DvceArray5D<Real> *cand[] = {&cln_w.o, &ost, &fmm_t, &thw, &vmw, &thq, &odc, &d3w,
+                               &krw, &aa_xc, &aa_fc, &aa_xp, &aa_fp};
+  const char *nm[] = {"cln_wo", "ost", "fmm_t", "thw", "vmw", "thq", "odc", "d3w", "krw",
                       "aa_xc", "aa_fc", "aa_xp", "aa_fp"};
+  // (clean: the arena grows to the staggered layout's own work vectors where they
+  // outgrow the intensities, whatever vgd_i's layout makes of those)
+  if (clean && !cln_cell) MemArenaGrow(static_cast<int64_t>(cln_w.o.span()));
   const int64_t have = static_cast<int64_t>(marena.extent(0));
   int64_t off = 0;
   std::string moved;
@@ -122,7 +136,9 @@ void RadiationM1::MemArenaSeal() {
   for (int q = 0; q < static_cast<int>(sizeof(cand)/sizeof(cand[0])); ++q) {
     DvceArray5D<Real> &a = *cand[q];
     const int64_t n = static_cast<int64_t>(a.span());
-    if (a.data() == nullptr || n == 0 || !a.span_is_contiguous() || off + n > have) {
+    // (clean: the staggered layout's own work vectors only)
+    if ((clean && (q > 0 || cln_cell)) || a.data() == nullptr || n == 0 ||
+        !a.span_is_contiguous() || off + n > have) {
       continue;
     }
     DvceArray5D<Real> b(marena.data() + off, a.extent(0), a.extent(1), a.extent(2),
@@ -143,7 +159,8 @@ void RadiationM1::MemArenaSeal() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::MemcutPoison
 //! \brief diagnostic (env MEMCUT_POISON, see the file comment): where 0 = VetGdBuild
-//! entry (the solve-phase arrays), 1 = its exit (the intensities)
+//! entry (the solve-phase arrays), 1 = its exit (the intensities); the clean scheme:
+//! 2 = CleanRays entry (cln_w.o, also at 0), 3 = its exit (the intensities)
 
 void RadiationM1::MemcutPoison(const int where) {
   static const bool on = (std::getenv("MEMCUT_POISON") != nullptr);
@@ -154,7 +171,16 @@ void RadiationM1::MemcutPoison(const int where) {
   auto p5 = [&](DvceArray5D<Real> &a, const char *nm) {
     if (a.data() != nullptr && EnvListHas("MEMCUT_POISON", nm)) {Kokkos::deep_copy(a, v);}
   };
-  if (where == 0) {
+  // (clnw also at every VetGdBuild: a sweep writes the arena wherever it is called)
+  if ((where == 0 || where == 2) && !cln_cell) p5(cln_w.o, "clnw");
+  if (where == 3) {
+    if (EnvListHas("MEMCUT_POISON", "vgdc")) {
+      VgdRag *bound[3] = {&vgd_i, &vgd_itw, &vgd_i_xb};
+      for (VgdRag *b : bound) {
+        if (b->d.data() != nullptr) {Kokkos::deep_copy(b->d, v);}
+      }
+    }
+  } else if (where == 0) {
     p5(iw, "iw");
     p5(ost, "ost");
     p5(thw, "thw");

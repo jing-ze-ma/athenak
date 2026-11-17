@@ -193,6 +193,15 @@ void RadiationM1::CleanGhostDefer(DvceArray5D<Real> a, const int c0, const int n
   cln_hpend.push_back({a, c0, nc, true});
 }
 
+// (a range lies in one of the two arrays: CLW_NS)
+void RadiationM1::CleanGhostFill(const CleanW &a, const int c0, const int nc) {
+  CleanGhostFill((c0 < a.ns) ? a.s : a.o, (c0 < a.ns) ? c0 : c0 - a.ns, nc);
+}
+
+void RadiationM1::CleanGhostDefer(const CleanW &a, const int c0, const int nc) {
+  CleanGhostDefer((c0 < a.ns) ? a.s : a.o, (c0 < a.ns) ? c0 : c0 - a.ns, nc);
+}
+
 void RadiationM1::CleanGhostFlush() {
   if (cln_hpend.empty()) return;
   std::vector<CleanGSeg<Real>> sg;
@@ -412,7 +421,7 @@ std::array<Real, 2> CleanSums(MeshBlockPack *pp, const char *name, const int n,
 //! \brief the n <= 2 sums over active cells and the nc components of w(ab[2q])
 //! w(ab[2q+1]) (q < n): one pass, one reduction over the ranks
 
-std::array<Real, 2> RadiationM1::CleanDots(DvceArray5D<Real> w, const int nc, const int n,
+std::array<Real, 2> RadiationM1::CleanDots(CleanW w, const int nc, const int n,
                                            const std::array<int, 4> ab) {
   const int a0 = ab[0], a1 = ab[1], a2 = ab[2], a3 = ab[3];   // (std::array is host-only)
   return CleanSums(pmy_pack, "cln_dot", n,
@@ -913,7 +922,7 @@ int RadiationM1::CleanBiCGStab() {
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const bool cell = cln_cell;
-  auto w = cell ? cln_x : cln_w;
+  CleanW w = cell ? CleanW(cln_x) : cln_w;
   const int nc = cell ? 4 : 1;
   // clean_conv = budget, in the Newton passes (a single solve keeps clean_tol in its own
   // norm): the rows over their gross terms S (CleanRightHandSide), W A X = W B with

@@ -1300,7 +1300,8 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_nguard", cln_nguard);
   v.value("cln_nguard_sum", cln_nguard_sum);
   v.value("cln_next_sum", cln_next_sum);
-  v.view("cln_w", cln_w);
+  v.view("cln_w", cln_w.s);
+  v.view("cln_wo", cln_w.o);
   v.view("cln_x", cln_x);
   v.view("cln_lf", cln_lf);
   v.view("cln_lw", cln_lw);

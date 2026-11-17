@@ -188,7 +188,7 @@ struct CleanFvI {
 
 struct CleanArgs {
   DvceArray5D<Real> cs;        // closure of the stage
-  DvceArray5D<Real> w;         // work vectors
+  CleanW w;                    // work vectors
   DvceArray5D<Real> fc[3];     // face variables in x1, x2, x3
   DvceArray3D<Real> beam;      // boundary beam flux at x1min (m, k-ks, j-js)
   DvceArray4D<Real> bstress;   // beam stress column c K_b1 at x1min (m, b, k-ks, j-js)
@@ -432,7 +432,7 @@ void CleanLineRange(const int nline, const int t, const int nt, int &lo, int &hi
 //! neighbours along each direction) and 4-component vectors, with their slots
 
 struct CleanLevel {
-  DvceArray5D<Real> u;         // blocks and vectors (m, slot, k, j, i)
+  CleanW u;                    // blocks and vectors (m, slot, k, j, i)
   int o[3];                    // index of the first active cell along x1, x2, x3
   int n[3];                    // active cells along x1, x2, x3
   int a0;                      // diagonal block

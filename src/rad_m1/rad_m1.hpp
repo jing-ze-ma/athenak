@@ -50,6 +50,23 @@ namespace radm1 {
 struct CleanArgs;   // rad_m1_clean.hpp
 struct CleanLevel;  // rad_m1_clean.hpp
 
+//! \struct CleanW
+//! \brief the clean work vectors cln_w (CLW_*) in two arrays: slots n < ns in s, the
+//! layout's own slots in o (n - ns; the staggered layout's lie in mem_arena between the
+//! builds, MemArenaSeal).  One array (cln_x, a coarse mg level) has all in s
+
+struct CleanW {
+  DvceArray5D<Real> s, o;
+  int ns = 1 << 30;
+  CleanW() = default;
+  CleanW(const DvceArray5D<Real> &a) : s(a) {}   // NOLINT (one array)
+  KOKKOS_FORCEINLINE_FUNCTION
+  Real &operator()(const int m, const int n, const int k, const int j,
+                   const int i) const {
+    return (n < ns) ? s(m,n,k,j,i) : o(m,n-ns,k,j,i);
+  }
+};
+
 // indices of the evolved moments in u0(m,n,k,j,i)
 constexpr int M1_E  = 0;
 constexpr int M1_F1 = 1;
@@ -3046,8 +3063,10 @@ class RadiationM1 {
   template <typename T>
   void CleanGhostPhys(DvceArray5D<T> a, const int c0, const int nc);
   void CleanGhostDefer(DvceArray5D<Real> a, const int c0, const int nc);
+  void CleanGhostFill(const CleanW &a, const int c0, const int nc);   // (in one array)
+  void CleanGhostDefer(const CleanW &a, const int c0, const int nc);
   void CleanGhostFlush();
-  std::array<Real, 2> CleanDots(DvceArray5D<Real> w, const int nc, const int n,
+  std::array<Real, 2> CleanDots(CleanW w, const int nc, const int n,
                                 const std::array<int, 4> ab);
   Real CleanReduce(Real v, const bool max);
   // cell-centred layout (<rad_m1>/clean_layout = cell, rad_m1_clean_cell.cpp)
@@ -3279,7 +3298,7 @@ class RadiationM1 {
   int cln_neint = 0;            // cells of the write-back left with gas eint < 0
   int cln_nguard = 0;           // cells whose extrapolated moments fell back to t^n
   Real cln_nguard_sum = 0.0, cln_next_sum = 0.0;   // guard falls, extrapolated closures
-  DvceArray5D<Real> cln_w;      // work vectors (CLW_*)
+  CleanW cln_w;                 // work vectors (CLW_*)
   DvceArray5D<Real> cln_x;      // cell vectors of the cell layout (CLC_*)
   DvceArray5D<Real> cln_dy;     // clean_yres = local: the y change of the cell's local
                                 // exchange of the solution (CleanCellResidual)
@@ -3998,6 +4017,7 @@ class RadiationM1 {
   int64_t marena_sw = 0;      // Reals of the intensity arrays bound so far
   void MemArenaInit(ParameterInput *pin, int nmb, int niw, int n3, int n2, int n1);
   bool MemArenaVgd(VgdRag &a, int64_t n);
+  void MemArenaGrow(int64_t need);
   void MemArenaSeal();
   void MemcutPoison(int where);
   // mem2-1014 vet_gd_band_ring (default true where it applies: MPI band with the exact

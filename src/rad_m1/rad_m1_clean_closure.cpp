@@ -797,6 +797,7 @@ void RadiationM1::CleanClosureSphere() {
 //! which would make the closure depend on dt).
 
 void RadiationM1::CleanRays() {
+  MemcutPoison(2);   // memcut-1113 diagnostic (env MEMCUT_POISON)
   vcol_srelax = false;
   vcol_sbl = false;
   vcol_sesc = false;
@@ -832,12 +833,13 @@ void RadiationM1::CleanRays() {
   }
   if (cln_ring) {
     CleanRingMoments();
-    return;
+  } else {
+    CleanClosureFromGd();
+    // (clean_rays = sc on the cubed sphere: also the intensities cln_fvi of the face half
+    // ranges, CleanCellConsistency)
+    if (cln_consist || cln_cssc) CleanGdFaceSums();
   }
-  CleanClosureFromGd();
-  // (clean_rays = sc on the cubed sphere: also the intensities cln_fvi of the face half
-  // ranges, CleanCellConsistency)
-  if (cln_consist || cln_cssc) CleanGdFaceSums();
+  MemcutPoison(3);
 }
 
 //----------------------------------------------------------------------------------------

@@ -4142,7 +4142,8 @@ void RadiationM1::RstFingerprint(const char *tag) {
   M1Fp("vgd_cs", vgd_cs, cy); M1Fp("vlat_cs", vlat_cs, cy);
   FluidRef fl = FluidRef::Get(pmy_pack);
   if (fl.on) {M1Fp("fl_u0", fl.u0, cy); M1Fp("fl_w0", fl.w0, cy);}
-  M1Fp("cln_s", cln_s, cy); M1Fp("cln_v", cln_v, cy); M1Fp("cln_w", cln_w, cy);
+  M1Fp("cln_s", cln_s, cy); M1Fp("cln_v", cln_v, cy); M1Fp("cln_w", cln_w.s, cy);
+  M1Fp("cln_wo", cln_w.o, cy);
   M1Fp("cln_x", cln_x, cy); M1Fp("cln_dy", cln_dy, cy); M1Fp("cln_ff", cln_ff, cy);
   M1Fp("cln_fc1", cln_fc1, cy); M1Fp("cln_fc2", cln_fc2, cy);
   M1Fp("cln_fc3", cln_fc3, cy);

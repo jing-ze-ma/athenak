@@ -227,7 +227,9 @@ void RadiationM1::CleanInit() {
   // (staggered on the cubed sphere: the cell terms and faces of CleanStagFSolveCs)
   const bool stcs = pmy_pack->pmesh->use_cubed_sphere && !cln_cell;
   Kokkos::realloc(cln_v, nmb, stcs ? 18 : 3, n3, n2, n1);
-  Kokkos::realloc(cln_w, nmb, cln_cell ? CLW_NC : CLW_N, n3, n2, n1);
+  Kokkos::realloc(cln_w.s, nmb, CLW_NS, n3, n2, n1);
+  Kokkos::realloc(cln_w.o, nmb, (cln_cell ? CLW_NC : CLW_N) - CLW_NS, n3, n2, n1);
+  cln_w.ns = CLW_NS;
   // the cubed sphere takes the half ranges about the face normals from the FV rays
   cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
   const int nfc = std::max(cln_milne ? CLF_KK + 6 : (cln_hk ? CLF_HK + 2 : CLF_RC + 1),
@@ -241,7 +243,8 @@ void RadiationM1::CleanInit() {
   Kokkos::realloc(cln_fc1, nmb, nfc, n3, n2, n1);
   Kokkos::realloc(cln_fc2, nmb, nfc, n3, n2, n1);
   Kokkos::realloc(cln_fc3, nmb, nfc, n3, n2, n1);
-  Kokkos::deep_copy(cln_w, 0.0);
+  Kokkos::deep_copy(cln_w.s, 0.0);
+  Kokkos::deep_copy(cln_w.o, 0.0);
   Kokkos::deep_copy(cln_fc1, 0.0);
   Kokkos::deep_copy(cln_fc2, 0.0);
   Kokkos::deep_copy(cln_fc3, 0.0);
@@ -385,9 +388,7 @@ void RadiationM1::CleanInit() {
                  "vet_col with vet_gd (clean_rays = fv1 | fv | sc, no twin or async) and "
                  "an even <mesh>/nx2");
     }
-    if (vgd_on) {
-      marena_on = false;
-    } else {
+    if (!vgd_on) {
       if (cln_edd) cln_sph_r = std::numeric_limits<Real>::max();
       cln_sphere = true;
     }
@@ -413,9 +414,7 @@ void RadiationM1::CleanInit() {
                   (pm->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::reflect);
       vgd_thvac = 0;
     }
-    // (the sweep starts at the first shell, the constructor's vlat_taucut; its
-    // intensities keep their own memory)
-    marena_on = false;
+    // (the sweep starts at the first shell, the constructor's vlat_taucut)
     // (implicit_flux_beam = halfrange has no effect here: no clean solve reads the
     // half-range ratios vgd_hr, so they are neither made nor checkpointed)
     impl_beam_hr = false;
@@ -1280,7 +1279,8 @@ void RadiationM1::CleanRstFaces() {
     }
     for (int d = 0; d < 3; ++d) u0_(m,M1_F1+d,k,j,i) = fv[d];
   });
-  Kokkos::deep_copy(cln_w, 0.0);
+  Kokkos::deep_copy(cln_w.s, 0.0);
+  Kokkos::deep_copy(cln_w.o, 0.0);
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1> clean restart from a file without the clean state: the faces "
               << "take its enthalpy flux a E (lab-frame F)" << std::endl;
@@ -2179,8 +2179,8 @@ void RadiationM1::CleanStagFSolve(const int e) {
     const int dir = q%x.nf, ph = q/x.nf;
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     auto fc = x.fc[dir];
-    auto al = Kokkos::subview(cln_w, AL, std::make_pair(CLW_L + 3*dir, CLW_L + 3*dir + 3),
-                              AL, AL, AL);
+    auto al = Kokkos::subview(cln_w.o, AL, std::make_pair(CLW_L - CLW_NS + 3*dir,
+                              CLW_L - CLW_NS + 3*dir + 3), AL, AL, AL);
     const int cy = (dir == 2) ? CLW_S : CLW_Y + dir;
     if (ph == 0) {
       // F^H of every face (CLF_N) and al of every cell (al slot 0)
