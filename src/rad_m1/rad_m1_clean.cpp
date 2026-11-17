@@ -1121,6 +1121,14 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   }
   if (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2) {
     t2_fail = (nit < 0) || (nneg > 0) || (cln_feedback && cln_neint > 0);
+    // time2_reject = retry: the cycle again at a smaller dt instead of the backward-Euler
+    // redo; after dt_retry_t2_be such cuts the redo (as ImplicitSolve's t2retry-1020)
+    const bool rt = t2_fail && t2_reject == 1 && dtr_on && !t2_inprobe && !t2_pfix_want;
+    if (rt && !dtr_t2be) {
+      if (!dtr_fail) {dtr_why = 5; dtr_resid = -1.0;}
+      dtr_fail = true;
+    }
+    if (rt && dtr_t2be) dtr_t2hit = true;
   }
   // (K1 = f(U^n) for the next solve's predictor and time error: what an accepted
   // backward-Euler or stage-2 solve wrote; a failed one leaves none, the backward-Euler
