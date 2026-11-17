@@ -6000,13 +6000,13 @@ void RadiationM1::VetGdInnerMirror() {
       int dm = 0;
       Real best = -2.0;
       for (int q = 0; q < n; ++q) {
+        // (the nearest INWARD set direction: an outward one is swept only after this)
         Real c = 0.0;
         for (int a = 0; a < 3; ++a) {c += dir_(q,a)*(dir_(d,a) - 2.0*mr*r[a]);}
-        if (c > best) {best = c; dm = q;}
+        const Real mq = dir_(q,0)*r[0] + dir_(q,1)*r[1] + dir_(q,2)*r[2];
+        if (mq < 0.0 && c > best) {best = c; dm = q;}
       }
-      // (an image whose nearest set direction is outward holds no value of this sweep)
-      const Real mm = dir_(dm,0)*r[0] + dir_(dm,1)*r[1] + dir_(dm,2)*r[2];
-      if (mm < 0.0) {ho += dir_(d,3)*mr*vi_(m,dm,k+w,j+w,is);}
+      ho += dir_(d,3)*mr*vi_(m,dm,k+w,j+w,is);
     }
     if (hi > 0.0 && ho > 0.0) {sc_(m,k,j) = hi/ho;}
   });
