@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <utility>
 
@@ -2079,6 +2080,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_taucut")) {
         vlat_taucut = pin->GetReal("rad_m1","vet_col_lat_taucut");
       }
+      // scheme = clean: its rays sweep from the first shell (no depth cut), decided here
+      // so that every build, also one before the first solve (CleanInit), uses it
+      if (clean) vlat_taucut = std::numeric_limits<Real>::max();
       // unify-sc-gd-1012: vet_col_lat_cut_thin (VetLatCsFinish).  DEFAULT 1 on a fresh
       // run; a restart whose file lacks the key keeps 0 (the depth cut alone, bitwise)
       vlat_cut_thin = pin->GetOrAddReal("rad_m1","vet_col_lat_cut_thin",
