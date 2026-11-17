@@ -1283,7 +1283,8 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
   const CleanFvI ofv = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvf32);
   const bool remap = cln_ring && cln_rfv > 0 && on > 0 && cln_fvn != ns*n &&
                      ofv.extent_int(1) == cln_fvb*on*n;
-  if (cln_fvn != ns*n) {
+  // (the sets' tables by their own count: CleanScUnion2 resets cln_fvn to two sets)
+  if (cln_fvn != ns*n || static_cast<int>(cln_fvkey.size()) != ns) {
     cln_fvn = ns*n;
     cln_fvd = DvceArray2D<Real>("cln_fvd", ns*n, 4);
     cln_fvkey.assign(ns, std::numeric_limits<Real>::quiet_NaN());
