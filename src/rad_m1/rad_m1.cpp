@@ -2257,7 +2257,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_hx_mode = 2;
     }
     vgd_hx_on = (vgd_hx_mode > 0);
-    // vgdrot-1011 vet_gd_halo_ipc (read only when named; default false); env VGD_IPC
+    // vgdrot-1011 vet_gd_halo_ipc (default below); env VGD_IPC
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_overlap")) {
       vgd_gbo = pin->GetBoolean("rad_m1","vet_gd_halo_overlap");
     }
@@ -2269,6 +2269,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_compact_nan")) {
       vgd_cnan = pin->GetBoolean("rad_m1","vet_gd_halo_compact_nan");
     }
+    // (default on for clean on CUDA without a theta wall: VetGdSetup keeps it on the raw
+    // 3-D sweep only; off-node partners take the MPI path)
+#if defined(KOKKOS_ENABLE_CUDA)
+    vgd_ipc_on = vgd_on && clean && !vgd_thmir && vgd_thvac == 0;
+#endif
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_ipc")) {
       vgd_ipc_on = pin->GetBoolean("rad_m1","vet_gd_halo_ipc");
     }
