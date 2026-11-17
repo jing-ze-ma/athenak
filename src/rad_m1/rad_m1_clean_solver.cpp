@@ -71,6 +71,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.all_low = cln_all_low;
   x.consist = cln_consist;
   x.bracket = cln_bracket;
+  x.posreal = cln_posreal;
   x.milne = cln_milne;
   x.fvrays = (cln_rfv > 0);
   x.op = opac;

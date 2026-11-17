@@ -1785,14 +1785,16 @@ int RadiationM1::CleanCellCountNegative() {
     if (y > (1.0 + 1.0e-12)*e + zero) n += 1.0;
   }, Kokkos::Sum<Real>(nreal));
   cln_nnreal = static_cast<int>(CleanReduce(nreal, false));
-  return nneg;
+  // (clean_pos_real: a cell with |F| > c E counts as negative)
+  return nneg + (cln_posreal ? cln_nnreal : 0);
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationM1::CleanCellMarkFaces
 //! \brief marks every face of the cells whose solution has E < 0 (beyond the solver
-//! tolerance, 10 clean_tol max|B_E|) as low-order.  |F| > c E is left alone: a beam
-//! overshoots |F| = c E slightly, and low-order faces there smear it into E < 0.  The
+//! tolerance, 10 clean_tol max|B_E|) as low-order.  |F| > c E is left alone (a beam
+//! overshoots |F| = c E slightly, and low-order faces with the cells' stress smear it into
+//! E < 0), except with clean_pos_real, whose low-order faces carry y kinetically.  The
 //! flags of these cells (cln_v slot 2) take the ghost exchange, so that a face shared by
 //! two MeshBlocks is marked on both.  Returns the number of such cells.
 
@@ -1806,6 +1808,7 @@ int RadiationM1::CleanCellMarkFaces() {
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   auto u = cln_x;
   auto bad = cln_v;
+  const bool real = cln_posreal;
 
   Real bmax = 0.0;
   Kokkos::parallel_reduce("clc_bmax", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
@@ -1827,7 +1830,10 @@ int RadiationM1::CleanCellMarkFaces() {
     k += ks;
     j += js;
     i += is;
-    const bool b = !(u(m,CLC_X,k,j,i) >= -zero);
+    const Real e = u(m,CLC_X,k,j,i);
+    const Real y = std::sqrt(SQR(u(m,CLC_X+1,k,j,i)) + SQR(u(m,CLC_X+2,k,j,i)) +
+                             SQR(u(m,CLC_X+3,k,j,i)));
+    const bool b = !(e >= -zero) || (real && y > (1.0 + 1.0e-12)*e + zero);
     if (b) bad(m,2,k,j,i) = 1.0;
     if (b) n += 1.0;
   }, Kokkos::Sum<Real>(nbad));

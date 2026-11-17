@@ -238,6 +238,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_psi_eps = pin->GetOrAddReal("rad_m1","clean_psi_eps",1.0e-12);
     cln_maxpic = pin->GetOrAddInteger("rad_m1","clean_maxpic",12);
     cln_poslim = pin->GetOrAddBoolean("rad_m1","clean_pos_limit",true);
+    // the face limiter also marks the cells with |F| > c E, and a low-order face takes
+    // the rays' kinetic flux of y, c (h+_L y_L + h-_R y_R), with its weight al: the rows
+    // of E and of every y component then have the same M-matrix part
+    cln_posreal = pin->GetOrAddBoolean("rad_m1","clean_pos_real",false);
     cln_diagcells = pin->GetOrAddBoolean("rad_m1","clean_diag_cells",false);
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",false);
     cln_posghost = pin->GetOrAddBoolean("rad_m1","clean_pos_ghost",false);

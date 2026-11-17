@@ -956,6 +956,16 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
       jr[0][0] += s*fmin(CleanCellAdvectN(x, dir, m, k, j, i, k, j, i), 0.0);
     }
     for (int b = 0; b < 3; ++b) jl[0][1+b] = jr[0][1+b] = 0.0;
+    if (x.posreal) {
+      // clean_pos_real: fY_b = a c (h+_L y_b,L + h-_R y_b,R) + (1 - a) (the cells' stress
+      // with dissipation at speed c), so that where a = 1 every row is that of E
+      for (int b = 0; b < x.nf; ++b) {
+        jl[1+b][0] *= 1.0 - a;
+        jr[1+b][0] *= 1.0 - a;
+        jl[1+b][1+b] = (1.0 - a)*jl[1+b][1+b] + a*x.c*hp;
+        jr[1+b][1+b] = (1.0 - a)*jr[1+b][1+b] + a*x.c*hm;
+      }
+    }
   }
   if (!x.consist) return;
   // clean_consistency: w of the face takes the rays' kinetic upwind flux, the cells'
