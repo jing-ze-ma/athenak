@@ -105,10 +105,10 @@ const char *kDtrMinimal[] = {
   // copied to cln_rstd, RadiationM1::CleanDtrD), the rays' intensities a
   // clean_rays = fv1 | fv | lld sweep starts from (cln_fvis in single precision), with
   // cln_fref_set (force_reference = clean recaptures), and the clean_fv_lag = extrap
-  // inflow history (cln_fvgp with its times and count).  The closure's extrap history is
-  // left alone: its flags go with the handles the attempt swapped and, on a first cycle,
-  // with cln_init
-  "m1.cln_rstd", "m1.cln_fvi", "m1.cln_fvis", "m1.cln_fvgp",
+  // inflow history (cln_fvgp with its times and count), and the sc rays' top shell a
+  // reflecting top mirrors (cln_top).  The closure's extrap history is left alone: its
+  // flags go with the handles the attempt swapped and, on a first cycle, with cln_init
+  "m1.cln_rstd", "m1.cln_fvi", "m1.cln_fvis", "m1.cln_fvgp", "m1.cln_top",
 };
 
 // the Views of kDtrMinimal that <rad_m1>/scheme = clean does not write

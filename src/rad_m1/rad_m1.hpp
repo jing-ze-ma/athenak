@@ -2988,9 +2988,10 @@ class RadiationM1 {
   // the cell layout keeps the CLN_JR (= 49) of push 16's files, CLN_JR is staggered only
   int CleanRstNq() const;
   // the rays' intensity channels of the restart files: the FV rays' (cln_fvi), and the sc
-  // rays' last build when their reflecting top mirrors it (cln_scmem, a copy in cln_fvi)
+  // rays' last build when their reflecting top mirrors it (cln_scmem: its top shell)
   int CleanRstNfv() const;
   void CleanScUnion2();
+  DvceArray5D<Real> &CleanRstFv() {return (cln_scmem && !cln_cssc) ? cln_top : cln_fvi;}
   void CleanStagDrag(const bool first);
   void CleanStagFSolveCs(const int e);
   void CleanStagCsLateral(const int e);
@@ -4047,7 +4048,10 @@ class RadiationM1 {
   // vet_gd_wall_interp); ln chi, ln S of the ghost rows are the mirror rows'
   // (VetGdThMirCs, from VetGdHaloCs)
   bool vgd_thmir = false;
-  bool cln_scmem = false;      // clean sc rays, reflecting top: its mirror reads cln_fvi
+  bool cln_scmem = false;      // clean sc rays, reflecting top: its mirror reads cln_top
+  DvceArray5D<Real> cln_top;   // its last top shell: slot s, direction d at (s*nt + d/n1,
+                               // i = d%n1), nt = ceil(n/n1) (VetGdTopCopy)
+  void VetGdTopCopy();
   int cln_rq = 0;               // clean_rot_ring, sc rays: the slot swept (CleanFvSets)
   int cln_rqm = 0;              // and its sp top-mirror slot (blk mod 2)
   void VetGdThMirCs(DvceArray5D<Real> &a, const int i0, const int i1);

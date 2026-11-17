@@ -809,6 +809,7 @@ void RadiationM1::CleanRays() {
     CleanFvSets(pmy_pack->pmesh->time + pmy_pack->pmesh->dt, pmy_pack->pmesh->ncycle);
   } else {
     VetGdBuild();
+    if (cln_scmem) VetGdTopCopy();
   }
   if (cln_ring) {
     CleanRingMoments();
@@ -903,6 +904,7 @@ void RadiationM1::CleanRingMoments() {
       VgdXfTables(cln_fvkey[q]);
       vgd_scut = vlat_icut;
       VetGdSweep();
+      if (cln_scmem) VetGdTopCopy();
     }
     CleanClosureFromGd();
     if (cln_consist || cln_cssc) CleanGdFaceSums();

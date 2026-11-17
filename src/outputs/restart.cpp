@@ -252,8 +252,9 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
                             Kokkos::subview(tmp, 0, AL, AL, AL, AL));
           auto fv = Kokkos::subview(outarray_m1t, m, std::make_pair(nc0, nct), AL, AL,
                                     AL);
-          if (nfv > 0 && pradm1->cln_fvi.extent_int(0) > m) {
-            Kokkos::deep_copy(fv, Kokkos::subview(pradm1->cln_fvi, m, AL, AL, AL, AL));
+          if (nfv > 0 && pradm1->CleanRstFv().extent_int(0) > m) {
+            Kokkos::deep_copy(fv, Kokkos::subview(pradm1->CleanRstFv(), m, AL, AL, AL,
+                                                  AL));
           } else if (nfv > 0) {
             Kokkos::deep_copy(fv, 0.0);
           }

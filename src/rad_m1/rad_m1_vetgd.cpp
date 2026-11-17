@@ -5939,19 +5939,22 @@ void RadiationM1::VetGdTopMirror() {
   auto vi_ = vgd_i;
   auto iw_ = iw;
   auto xf_ = vgd_x1f;
-  // clean sc rays: the last build's intensities from their copy (cln_fvi, which the
-  // restart files keep), the same numbers as vgd_i in a run without a restart; before
-  // the first copy the top cell's E (no outflow yet)
-  auto fi_ = cln_fvi;
-  const int off = cln_ring ? cln_rqm*n : 0;   // (clean_rot_ring: the set's slot)
-  const bool cp = cln_scmem && fi_.extent_int(0) == nmb1 + 1 &&
-                  fi_.extent_int(1) == (cln_ring ? 2 : 1)*n;
+  // clean sc rays: the last build's top shell from its copy (cln_top, which the restart
+  // files keep; clean_rot_ring: the set's slot), the same numbers as vgd_i in a run
+  // without a restart; before the first copy the top cell's E (no outflow yet).  A file
+  // of before holds every direction of every cell
+  auto fi_ = cln_top;
+  const int ns = cln_ring ? 2 : 1, n1 = fi_.extent_int(4);
+  const bool all = (fi_.extent_int(1) == ns*n);
+  const int off = (cln_ring ? cln_rqm : 0)*(all ? n : (n + n1 - 1)/std::max(n1, 1));
+  const bool cp = cln_scmem && fi_.extent_int(0) == nmb1 + 1 && fi_.extent_int(1) > 0;
   const bool e1 = cln_scmem && !cp;
   par_for("m1_vgd_mirror", DevExeSpace(), 0, nmb1, 0, nx3 - 1, 0, nx2 - 1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     if (!(xf_(m) & 4)) {return;}
     auto top = [&](const int q) {
-      return cp ? fi_(m,off+q,k+ks,j+js,ie) : vi_(m,q,k+w,j+w,ie);
+      if (!cp) {return vi_(m,q,k+w,j+w,ie);}
+      return all ? fi_(m,off+q,k+ks,j+js,ie) : fi_(m,off+q/n1,k+ks,j+js,q % n1);
     };
     const Real r[3] = {tg_(m,k,j,0)*tg_(m,k,j,3), tg_(m,k,j,0)*tg_(m,k,j,2),
                        tg_(m,k,j,1)};
@@ -5969,6 +5972,28 @@ void RadiationM1::VetGdTopMirror() {
       vi_(m,d,k+w,j+w,ie+1) = (hp > 0.0 && hm > 0.0 && !e1) ? hp/hm*top(mp_(m,k,j,d))
                                                             : e0;
     }
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdTopCopy
+//! \brief cln_scmem: the top shell of this build's sweep into its slot of cln_top (the
+//! set's slot blk mod 2 on clean_rot_ring), for the next build's VetGdTopMirror
+
+void RadiationM1::VetGdTopCopy() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nmb1 = pmy_pack->nmb_thispack - 1, n = vgd_n, w = vgd_w, ie = indcs.ie;
+  const int ks = indcs.ks, js = indcs.js, n1 = cln_s.extent_int(4), nt = (n + n1 - 1)/n1;
+  const int ns = cln_ring ? 2 : 1, off = (cln_ring ? cln_rqm : 0)*nt;
+  if (cln_top.extent_int(0) != nmb1 + 1 || cln_top.extent_int(1) != ns*nt) {
+    Kokkos::realloc(cln_top, nmb1 + 1, ns*nt, cln_s.extent_int(2), cln_s.extent_int(3),
+                    n1);
+  }
+  auto t_ = cln_top;
+  auto vi_ = vgd_i;
+  par_for("m1_vgd_top", DevExeSpace(), 0, nmb1, 0, indcs.nx3 - 1, 0, indcs.nx2 - 1, 0,
+          n - 1, KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
+    t_(m,off+d/n1,k+ks,j+js,d % n1) = vi_(m,d,k+w,j+w,ie);
   });
 }
 

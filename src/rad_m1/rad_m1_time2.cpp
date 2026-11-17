@@ -3413,7 +3413,7 @@ int RadiationM1::CleanRstNfv() const {
   // (the sc rays' cln_fvi: their slots of the union on a ring, CleanGdFaceSums)
   if (cln_cssc && cln_fvi.extent_int(0) > 0) return cln_fvi.extent_int(1);
   if (cln_rfv > 0 || cln_cssc) return (cln_fvn > 0) ? cln_fvb*cln_fvn : t2_nfv;
-  return cln_scmem ? cln_fvi.extent_int(1) : 0;
+  return cln_scmem ? cln_top.extent_int(1) : 0;
 }
 
 //----------------------------------------------------------------------------------------
@@ -3623,10 +3623,10 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
   // clean_rays = fv1 | fv: the intensities the next sweep starts from, last (unless a
   // has no room for them: restart.cpp copies them itself)
   if (a.extent_int(1) < c + CleanRstNfv()) return;
-  if (CleanRstNfv() > 0 && cln_fvi.extent_int(0) >= m0 + nmb) {
+  if (CleanRstNfv() > 0 && CleanRstFv().extent_int(0) >= m0 + nmb) {
     Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c + CleanRstNfv()), AL, AL,
                                       AL),
-                      Kokkos::subview(cln_fvi, ms, AL, AL, AL, AL));
+                      Kokkos::subview(CleanRstFv(), ms, AL, AL, AL, AL));
     CleanFvRstWrite(a, c, nmb, m0);
   } else if (clean && cln_fvf32 && cln_fvis.extent_int(0) >= m0 + nmb) {
     // (clean_fv_float: the single-precision intensities as doubles)
@@ -3650,11 +3650,11 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   // known before the first sweep, Time2RstAccept)
   const int nfv0 = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0);
   if (clean && (cln_rfv > 0 || cln_cssc || cln_scmem) && ch >= nfv0) {
-    if (cln_fvi.extent_int(0) != nmb || cln_fvi.extent_int(1) != t2_nfv) {
-      Kokkos::realloc(cln_fvi, nmb, t2_nfv, w.extent_int(1), w.extent_int(2),
-                      w.extent_int(3));
+    auto &fv = CleanRstFv();
+    if (fv.extent_int(0) != nmb || fv.extent_int(1) != t2_nfv) {
+      Kokkos::realloc(fv, nmb, t2_nfv, w.extent_int(1), w.extent_int(2), w.extent_int(3));
     }
-    DeepCopyAcross(Kokkos::subview(cln_fvi, mb, ch - nfv0, AL, AL, AL), w);
+    DeepCopyAcross(Kokkos::subview(fv, mb, ch - nfv0, AL, AL, AL), w);
     cln_fvrst = true;
     return;
   }
