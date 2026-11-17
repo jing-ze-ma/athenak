@@ -802,6 +802,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       CleanCellFaceSpeeds();
     }
     if (cln_feedback) CleanAdvectiveCoefficients();
+    // (the first iterate's beta and emission for the drag's face flux, not the last
+    // solve's: a restart, failed stage or discarded attempt does not carry those)
+    if (cln_vimp && cln_feedback) CleanRightHandSide(true);
     if (cln_vimp && cln_feedback) CleanStagDrag(true);
     converged = !iterate;
     npic = 0;
@@ -1124,7 +1127,7 @@ void RadiationM1::CleanFirstIterate() {
 //! (CleanApply, CleanStagBetaE) and B the same at E_k: the solution is that of the lagged
 //! terms
 
-void RadiationM1::CleanRightHandSide() {
+void RadiationM1::CleanRightHandSide(const bool beta) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -1160,6 +1163,7 @@ void RadiationM1::CleanRightHandSide() {
     CleanStagCsLateral(CLW_EK);
     if (x.sbi) CleanGhostFill(cln_w, CLW_GX, 1);
   }
+  if (beta) return;
   CleanArgs xh = x;   // (the face momentum state, clean_stag_split)
   xh.hi = cln_split;
   xh.fs = cln_fsk;

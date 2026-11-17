@@ -2947,7 +2947,7 @@ class RadiationM1 {
   void CleanFaceCoefficients();
   void CleanAdvectiveCoefficients();
   void CleanFirstIterate();
-  void CleanRightHandSide();
+  void CleanRightHandSide(const bool beta = false);   // (beta: CLW_BT, CLW_RE only)
   void CleanPreconditionerSetup();
   void CleanPrecondition(const int src, const int dst);
   CleanLevel CleanStagLevel(const int l);
