@@ -3057,7 +3057,7 @@ class RadiationM1 {
   bool cln_sphere = false;      // clean_closure = sphere (spherical polar)
   Real cln_sph_r = 0.0;         // clean_sphere_radius
   int cln_vfreeze = 0;          // clean_vfreeze: 1 advective a, 2 work term at v_old
-  bool cln_sfloor = true;       // clean_stage_floor: a stage whose increments take a
+  bool cln_sfloor = false;      // clean_stage_floor: a stage whose increments take a
                                 // cell's eint below the EOS floor is not accepted
   bool cln_gas_exact = true;    // clean_gas_exact: gas eint of the write-back by the
                                 // cell's exact local exchange

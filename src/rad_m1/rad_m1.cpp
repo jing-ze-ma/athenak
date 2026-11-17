@@ -240,7 +240,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     cln_vfreeze = pin->GetOrAddInteger("rad_m1","clean_vfreeze",0);
     cln_gas_exact = pin->GetOrAddBoolean("rad_m1","clean_gas_exact",true);
-    cln_sfloor = pin->GetOrAddBoolean("rad_m1","clean_stage_floor",true);
+    cln_sfloor = pin->GetOrAddBoolean("rad_m1","clean_stage_floor",false);
     {const std::string yr = pin->GetOrAddString("rad_m1","clean_yres","false");
     // (a file of the boolean key, before push 17, stores 0 | 1)
     if (yr.compare("false") == 0 || yr.compare("0") == 0) {
