@@ -3138,6 +3138,7 @@ class RadiationM1 {
                                 // (post: 1 + h c chi; local: with the gas response)
   bool cln_nl_cell = false;     // clean_nl_norm = cell: per-cell relative Newton changes
   Real cln_trtol = 0.0;        // clean_troot_rtol: residual stop of the exchange root
+                               // (staggered default 1e-13)
   Real cln_nl_efloor = 0.0;     // clean_nl_efloor: E scale of that norm over max E
   Real cln_nl_escale = 0.0;     // that E scale, clean_nl_efloor max E of the iterate
   int cln_maxpos = 3;           // clean_maxpos: low-order face marking rounds per solve
