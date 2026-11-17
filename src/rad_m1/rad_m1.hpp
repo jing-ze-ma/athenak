@@ -3129,7 +3129,7 @@ class RadiationM1 {
   DvceArray3D<Real> cln_fvgp;   // extrap: the first ghost layer of the build before
   DvceArray3D<Real> cln_fvgx;   // extrap: the inflow the pass took (extrapolated)
   Real cln_fvlagtol = 1.0e-4;   // clean_fv_lag_tol: inflow miss / imax of one extrap pass
-  Real cln_fvlagfrac = 0.5;     // clean_fv_lag_frac: inflow miss / its change, the same
+  Real cln_fvlagfrac = 1.0;     // clean_fv_lag_frac: inflow miss / its change, the same
   void CleanFvExtrapMiss(Real &miss, Real &chg);
   bool CleanFvExtrap();
   void CleanFvRstWrite(DvceArray5D<Real> &a, const int c, const int nmb, const int m0);

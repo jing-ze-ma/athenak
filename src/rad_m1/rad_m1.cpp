@@ -113,17 +113,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
-    // clean_fv_lag_tol, clean_fv_lag_frac (read only when named, defaults 1e-4, 0.5): an
-    // extrap build stays at one pass while its extrapolated inflow missed the new one by
-    // at most clean_fv_lag_tol of the largest intensity, or by at most clean_fv_lag_frac
-    // of the inflow's change since the last build (the extrapolation took most of it),
-    // else it sweeps on until converged
+    // clean_fv_lag_tol (read only when named, default 1e-4), clean_fv_lag_frac (default
+    // 1): an extrap build stays at one pass while its extrapolated inflow missed the new
+    // one by at most clean_fv_lag_tol of the largest intensity, or by at most
+    // clean_fv_lag_frac of the inflow's change since the last build (with 1: no worse
+    // than the last build's inflow), else it sweeps on until converged
     if (pin->DoesParameterExist("rad_m1","clean_fv_lag_tol")) {
       cln_fvlagtol = pin->GetReal("rad_m1","clean_fv_lag_tol");
     }
-    if (pin->DoesParameterExist("rad_m1","clean_fv_lag_frac")) {
-      cln_fvlagfrac = pin->GetReal("rad_m1","clean_fv_lag_frac");
-    }
+    cln_fvlagfrac = pin->GetOrAddReal("rad_m1","clean_fv_lag_frac",1.0);
     // clean_fv_row_cells (read only when named, default 16): the cells of a row chunk of
     // the fv1 sweep (CleanFvRows), one thread each; the same intensities for any length
     if (pin->DoesParameterExist("rad_m1","clean_fv_row_cells")) {
@@ -321,12 +319,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_line_teams")) {
       cln_lteams = std::max(pin->GetInteger("rad_m1","clean_line_teams"), 0);
     }
-    // clean_rss_closure (read only when named): <hydro>/rad_signal_speed takes the
-    // diagonal of the clean solve's own closure (cln_rssd, kept in restart files) instead
-    // of tau_ten, which is then not allocated
-    if (pin->DoesParameterExist("rad_m1","clean_rss_closure")) {
-      cln_rss = pin->GetBoolean("rad_m1","clean_rss_closure");
-    }
+    // clean_rss_closure (default true): <hydro>/rad_signal_speed takes the diagonal of
+    // the clean solve's own closure (cln_rssd, kept in restart files) instead of tau_ten,
+    // which is then not allocated
+    cln_rss = pin->GetOrAddBoolean("rad_m1","clean_rss_closure",true);
     // clean_iter_predict (read only when named): the first Newton iterate of a hesdirk2
     // stage is the old vector plus h times the last stage slope (fewer passes; the
     // solution changes within the Newton tolerance)
