@@ -3304,6 +3304,7 @@ class RadiationM1 {
   DvceArray5D<Real> cln_mn, cln_mp, cln_mc, cln_m1;
   Real cln_tn = -1.0e300, cln_tp = -1.0e300, cln_tm = -1.0e300, cln_t1 = -1.0e300;
   bool cln_have_n = false, cln_have_p = false, cln_have_c = false, cln_have_1 = false;
+  bool cln_psmooth = false;     // clean_predict_pos = smooth: CleanPredictE
   bool cln_cand_be = false;     // the step that made cln_mc ended with backward Euler
   int cln_neint = 0;            // cells of the write-back left with gas eint < 0
   int cln_nguard = 0;           // cells whose extrapolated moments fell back to t^n

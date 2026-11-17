@@ -579,6 +579,18 @@ void RadiationM1::CleanClosureExtrap() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanPredictE
+//! \brief the predicted E = e0 + de kept positive: linear down to 0 and e0 exp(de/e0)
+//! below (cut: a jump to e0/e at e0 + de = 0), or e0 exp(de/e0) for every de < 0
+//! (smooth, clean_predict_pos: continuous, e0 + de to first order)
+
+KOKKOS_INLINE_FUNCTION
+Real CleanPredictE(const Real e0, const Real de, const bool smooth) {
+  if (smooth) return (de >= 0.0) ? e0 + de : ((e0 > 0.0) ? e0*exp(de/e0) : 0.0);
+  return (e0 + de > 0.0) ? e0 + de : ((e0 > 0.0) ? e0*exp(de/e0) : 0.0);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanPredictState
 //! \brief the state at t^{n+1} predicted from the physics of this step, as input of the
 //! formal solution (iw: E, T, F) and, for temperature-dependent opacities, opac.
@@ -640,6 +652,7 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
   bool scat = vscat;
   Real arad_ = arad, cl = c_light;
   const bool feedback = cln_feedback;
+  const bool ps = cln_psmooth;
   CleanArgs x = CleanMakeArgs();
 
   par_for("cln_predict", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
@@ -659,7 +672,7 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
       if (use_rates && !feedback) {
         // gas held fixed: E advances at its own rate, which includes the exchange
         const Real de = dt*k1(m,M1_T2_E,k,j,i);
-        e = (e0 + de > 0.0) ? e0 + de : ((e0 > 0.0) ? e0*exp(de/e0) : 0.0);
+        e = CleanPredictE(e0, de, ps);
       } else if (relax) {
         // radiation transport over dt (a valid K1), less the work of the radiation force
         // on the gas, then the implicit local exchange of (eint, E) over dt
@@ -668,7 +681,7 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
           const Real ekin_new = 0.5*(SQR(mom[0]) + SQR(mom[1]) + SQR(mom[2]))/d;
           const Real de = dt*(k1(m,M1_T2_E,k,j,i) + k1(m,M1_T2_EN,k,j,i))
                           - (ekin_new - ekin);
-          e = (e0 + de > 0.0) ? e0 + de : ((e0 > 0.0) ? e0*exp(de/e0) : 0.0);
+          e = CleanPredictE(e0, de, ps);
         }
         // E (1 + h c kE) = e + h c kP a T^4,  eint(T) + E = eint_h + e
         const Real hce = dt*cl*opac_(m,M1_OP_E,k,j,i);
@@ -679,7 +692,7 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
       }
     } else if (use_rates) {
       const Real de = dt*k1(m,M1_T2_E,k,j,i);
-      e = (e0 + de > 0.0) ? e0 + de : ((e0 > 0.0) ? e0*exp(de/e0) : 0.0);
+      e = CleanPredictE(e0, de, ps);
     }
 
     if (active) {

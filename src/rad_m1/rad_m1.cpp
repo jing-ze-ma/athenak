@@ -290,6 +290,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",false);
     cln_posghost = pin->GetOrAddBoolean("rad_m1","clean_pos_ghost",false);
+    // clean_predict_pos = cut | smooth (read only when named; default cut): the predicted
+    // E of a depleting cell (CleanPredictE)
+    if (pin->DoesParameterExist("rad_m1","clean_predict_pos")) {
+      cln_psmooth = (pin->GetString("rad_m1","clean_predict_pos") == "smooth");
+    }
     {std::string cl = pin->GetOrAddString("rad_m1","clean_closure",
                                           cln_cell ? "extrap1" : "predict");
     cln_closit = (cl.compare("iterate") == 0);
