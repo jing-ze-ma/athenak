@@ -84,7 +84,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_c0 = pin->GetOrAddReal("rad_m1","clean_w_c0",0.1);
     cln_c1 = pin->GetOrAddReal("rad_m1","clean_w_c1",0.5);
     cln_tol = pin->GetOrAddReal("rad_m1","clean_tol",1.0e-10);
-    cln_cnorm = pin->GetOrAddReal("rad_m1","clean_init_cnorm",0.0);
+    cln_cnorm = pin->GetOrAddReal("rad_m1","clean_init_cnorm",1.0e-10);
     cln_lcnorm = pin->GetOrAddReal("rad_m1","clean_lin_cnorm",0.0);
     cln_maxit = pin->GetOrAddInteger("rad_m1","clean_maxit",4000);
     cln_maxnl = pin->GetOrAddInteger("rad_m1","clean_maxnl",50);
