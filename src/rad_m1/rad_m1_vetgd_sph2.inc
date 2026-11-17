@@ -816,6 +816,10 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
     const int np_ = np;
     auto pslot = vgd_ipc_pslot.d_view;
     VgdIpcIdx b0{}, b1{};
+    // the bodies (> 512 B with b0, b1) as kernel arguments, not constant memory, whose
+    // reuse makes the host wait on the previous such kernel at every launch (as par_for)
+    auto lw = [](const int n) {return Kokkos::Experimental::require(Kokkos::RangePolicy<>(
+        DevExeSpace(), 0, n), Kokkos::Experimental::WorkItemProperty::HintLightWeight);};
     if (post) {
       for (int p = 0; p < np; ++p) {b0.v[p] = cb[4*p]; b1.v[p] = cb[4*p + 1];}
       auto prb = vgd_ipc_prb.d_view;
@@ -823,8 +827,7 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
       auto pcs = vgd_ipc_pcs.d_view;
       auto psig = vgd_ipc_psig.d_view;
       auto ls_ = cf[0];
-      Kokkos::parallel_for("m1_vgdgb_ipc_pack",
-                           Kokkos::RangePolicy<>(DevExeSpace(), 0, std::max(cb[4*np], 1)),
+      Kokkos::parallel_for("m1_vgdgb_ipc_pack", lw(std::max(cb[4*np], 1)),
       KOKKOS_LAMBDA(const int o) {
         int p = 0;
         while (p < np_ && !(o >= b0.v[p] && o < b1.v[p])) {++p;}
@@ -859,8 +862,7 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
     const Real *rb = vgd_ipc_rbuf + par*vgd_ipc_half;
     const size_t cs = vgd_ipc_cs;
     auto lr_ = cf[1];
-    Kokkos::parallel_for("m1_vgdgb_ipc_unpack",
-                         Kokkos::RangePolicy<>(DevExeSpace(), 0, std::max(cb[4*np + 1], 1)),
+    Kokkos::parallel_for("m1_vgdgb_ipc_unpack", lw(std::max(cb[4*np + 1], 1)),
     KOKKOS_LAMBDA(const int o) {
       int p = 0;
       while (p < np_ && !(o >= b0.v[p] && o < b1.v[p])) {++p;}
