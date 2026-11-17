@@ -242,6 +242,10 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     std::cout << "### FATAL ERROR: m1_thsw output needs a <rad_m1> block" << std::endl;
     exit(EXIT_FAILURE);
   }
+  if (ivar==171 && (pm->pmb_pack->pradm1 == nullptr)) {
+    std::cout << "### FATAL ERROR: m1_cln output needs a <rad_m1> block" << std::endl;
+    exit(EXIT_FAILURE);
+  }
   if (ivar==166 && (pm->pmb_pack->pradm1 == nullptr)) {
     std::cout << "### FATAL ERROR: m1_vsc output needs a <rad_m1> block" << std::endl;
     exit(EXIT_FAILURE);
@@ -736,6 +740,18 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     // diagonal of the Eddington tensor D = P/E in the coordinate basis (D_11 = D_rr on
     // the spherical-polar wedge), so that P_rad,aa = D_aa E is exact in post-processing.
     // Derived (derived_variables.cpp); not part of variable = m1.
+    // the clean scheme's closure from the rays (cln_s): J, the diagonal of D = K/J
+    // and the flux factors h1, h2 = (H+ + H-)/J along x1, x2 (derived)
+    if (variable.compare("m1_cln") == 0) {
+      out_params.contains_derived = true;
+      outvars.emplace_back("m1_cj",0,&(derived_var));
+      outvars.emplace_back("m1_cd11",1,&(derived_var));
+      outvars.emplace_back("m1_cd22",2,&(derived_var));
+      outvars.emplace_back("m1_cd33",3,&(derived_var));
+      outvars.emplace_back("m1_ch1",4,&(derived_var));
+      outvars.emplace_back("m1_ch2",5,&(derived_var));
+      out_params.n_derived += 6;
+    }
     if (variable.compare("m1_vsc") == 0) {
       out_params.contains_derived = true;
       outvars.emplace_back("m1_vj",0,&(derived_var));
