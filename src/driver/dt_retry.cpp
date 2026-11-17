@@ -521,6 +521,11 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   if (pin->DoesParameterExist("time", "dt_retry_force_cycle")) {
     force_cycle_ = pin->GetInteger("time", "dt_retry_force_cycle");
     force_fac_ = pin->GetOrAddReal("time", "dt_retry_force_fac", 0.5);
+    // dt_retry_force_redo (read only when named): the forced retry's redo is solved as
+    // a failed step's (dtr_redo: clean strict), the twin of a real failure in the tests
+    if (pin->DoesParameterExist("time", "dt_retry_force_redo")) {
+      force_redo_ = pin->GetBoolean("time", "dt_retry_force_redo");
+    }
   }
   if (pin->DoesParameterExist("time", "dt_retry_audit")) {
     audit_ = pin->GetBoolean("time", "dt_retry_audit");
@@ -735,7 +740,7 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   // (vkick_be_retry bookkeeping); set after the put-back, which
   // (generated visitor) rolls dtr_ncut back to its cycle-start value
   m1->dtr_ncut = ncut_;
-  if (why != 9) m1->dtr_redo = true;   // (a failed step, not a forced test retry)
+  if (why != 9 || force_redo_) m1->dtr_redo = true;   // (a failed step, not a forced one)
   // once this cycle took the backward-Euler redo, it keeps it: a failed
   // redo (NON-CONVERGED) is then cut with the redo still armed, instead of the hesdirk2
   // stage being retried at the cut dt, rejected again and sent back to the cycle dt (the
