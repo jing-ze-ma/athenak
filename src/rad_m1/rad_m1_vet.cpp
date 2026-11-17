@@ -4311,11 +4311,12 @@ void RadiationM1::VetShortCharSweep() {
               for (int q = 0; q < n; ++q) p += g(sg > 0 ? -1 - q : q);
               return sg*p;
             };
-            if (!mimg) {
-              add4(up ? fnu : fnd, wr*am1*dx2/dx1*(phi(sh2, g2) + fl[0]));
-              if (thrd) {
-                add4((up ? fnu : fnd) + 12, wr*am1*dx3/dx1*(phi(sh3, g3) + fl[1]));
-              }
+            // (vet_bc_reflect = mirror: the upwind plane is the wall column's mirror
+            // image, so its shift crosses the wall column's own x2 faces: the reflected
+            // ray changes rows there, and the wall face carries no net flux)
+            add4(up ? fnu : fnd, wr*am1*dx2/dx1*(phi(sh2, g2) + fl[0]));
+            if (thrd) {
+              add4((up ? fnu : fnd) + 12, wr*am1*dx3/dx1*(phi(sh3, g3) + fl[1]));
             }
           }
           const Real waa = (1.0 - a2)*(1.0 - a3), wab = a2*(1.0 - a3);
@@ -4479,7 +4480,8 @@ void RadiationM1::VetShortCharSweep() {
           vc_(m,M1_VET_NL,k,j,id) += nld;
         }
         if (f2s_) {
-          const int ium = (iu > is) ? iu - 1 : ie, idp = (id < ie) ? id + 1 : is;
+          const int ium = (iu > is) ? iu - 1 : (mrlo ? is : ie);
+          const int idp = (id < ie) ? id + 1 : (mrhi ? ie : is);
           for (int n = 0; n < M1_VET_NFS; ++n) {
             vc_(m,M1_VET_F2+n,k,j,iu) += f2u[n];
             vc_(m,M1_VET_F2+n,k,j,id) += f2d[n];
