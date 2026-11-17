@@ -324,6 +324,10 @@ void RadiationM1::CleanInit() {
     CleanFatal("scheme = clean has no ghost-built inner face (problem/he_bc_linhao) and "
                "no per-column outer bath");
   }
+  if (t2_lbe) {   // (the stage-2 drop's re-entry and carry are the old write-back's)
+    CleanFatal("<rad_m1>/time2_stage_local_be with scheme = clean: its dropped stage "
+               "increments are neither re-entered nor carried (energy not conserved)");
+  }
   if ((force_ref == M1_FREF_WB_ARAD || force_ref == M1_FREF_WB_MD) && !fref_wsplit) {
     CleanFatal("<rad_m1>/force_reference = wb_arad(_md) with scheme = clean needs the "
                "reference work given by the problem generator (force_reference_work = "
