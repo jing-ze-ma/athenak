@@ -3215,21 +3215,45 @@ void RadiationM1::CleanWriteBack() {
     CleanGhostFill(cln_w, CLW_L, nf);
   }
   const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
+  // (time2_face_fct: the energy flux Phi of every face, which moved E, with its slope;
+  // with the tie each face's Phi once: the low faces' CLW_L, the high one local)
+  const bool pfo = t2_pfst && slopes && t2pf1.extent_int(0) > nmb1;
+  auto pf = (t2_solve == M1_T2S_STAGE1) ? t2pf2 : t2pf1;
   par_for("cln_wbdiv", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
-    x.w(m,CLW_Q,k,j,i) = tie ? CleanFluxDivergenceTie(x, CLW_X, CLW_L, m, k, j, i) :
-                         CleanFluxDivergence(x, CLW_X, m, k, j, i, true);
+    if (tie) {   // (CleanFluxDivergenceTie, its faces' fluxes kept)
+      Real dv = 0.0;
+      for (int n = 0; n < 3; ++n) {
+        const int dk = (n == 2), dj = (n == 1), di = (n == 0);
+        if (n >= x.nf) {
+          if (xh.hi) u0_(m,M1_F1+n,k,j,i) = 0.0;
+          continue;
+        }
+        const Real fl = x.w(m,CLW_L+n,k,j,i);
+        const Real fu = CleanFaceFlux(x, CLW_X, n, m, k+dk, j+dj, i+di, true);
+        const Real fh = CleanBoundaryFace(x, n, m, k+dk, j+dj, i+di) ? fu :
+                        x.w(m,CLW_L+n,k+dk,j+dj,i+di);
+        dv += (x.sph || x.cub) ? CleanDivW(x, n, m, k, j, i, 1)*fh -
+                                 CleanDivW(x, n, m, k, j, i, 0)*fl : x.idx[n]*(fh - fl);
+        if (xh.hi) u0_(m,M1_F1+n,k,j,i) = 0.5*(fl + fu);
+        if (pfo) pf(m,n,k,j,i) = fl;
+        if (pfo && (n == 0 ? i == x.ie : (n == 1 ? j == x.je : k == x.ke))) {
+          pf(m,n,k+dk,j+dj,i+di) = fu;
+        }
+      }
+      x.w(m,CLW_Q,k,j,i) = x.h*dv;
+      return;
+    }
+    x.w(m,CLW_Q,k,j,i) = CleanFluxDivergence(x, CLW_X, m, k, j, i, true);
     for (int d = 0; d < 3 && xh.hi; ++d) {
       u0_(m,M1_F1+d,k,j,i) = ((d == 1 && !multi_d) || (d == 2 && !three_d)) ? 0.0 :
           0.5*(CleanFaceFlux(x, CLW_X, d, m, k, j, i, true) +
                CleanFaceFlux(x, CLW_X, d, m, k+(d == 2), j+(d == 1), i+(d == 0), true));
     }
   });
-  // (time2_face_fct: the energy flux Phi of every face, which moved E, with its slope)
-  if (t2_pfst && slopes && t2pf1.extent_int(0) > nmb1) {
-    auto pf = (t2_solve == M1_T2S_STAGE1) ? t2pf2 : t2pf1;
-    for (int d = 0; d < x.nf; ++d) {
+  if (pfo) {
+    for (int d = 0; d < x.nf && !tie; ++d) {
       const int dk = (d == 2), dj = (d == 1), di = (d == 0);
       par_for("cln_wbpf", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
