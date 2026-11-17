@@ -818,6 +818,14 @@ void RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws) {
   vgd_nexch += 1.0;
   vgd_csvsent += nsent;
   // (5) the expansion into the band (unsent positions of the prefix: 0, or NaN)
+  if (vgd_raw && nr > 0 && std::getenv("VGD_COMPACT_NAN") != nullptr) {
+    // (the gate that no unsent position of the prefix is read: NaN before the unpack)
+    const Real qn = std::numeric_limits<Real>::quiet_NaN();
+    par_for("m1_vgdgb_nan", DevExeSpace(), 0, nr - 1, 0, nv - 1,
+    KOKKOS_LAMBDA(const int e, const int v) {
+      if (DR_(e) <= wq) a_(R_(e,0),v,R_(e,1),R_(e,2),i) = qn;
+    });
+  }
   if (vgd_raw && cb[4*np + 1] > 0) {
     Kokkos::parallel_for("m1_vgdgb_kunpack",
                          Kokkos::RangePolicy<>(DevExeSpace(), 0, cb[4*np + 1]),

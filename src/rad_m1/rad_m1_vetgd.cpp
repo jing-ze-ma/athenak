@@ -3340,8 +3340,10 @@ bool VgdHaloKeepTP(const Real nx, const Real ny, const Real nz, const Real th,
   if (fabs(mu) < 1.0e-12) {return true;}
   if (inw != (mu < 0.0)) {return false;}
   if (mode < 2 || wall) {return true;}
-  const Real psi = acos(fmin(fabs(mu), 1.0));
-  const Real phi_ = fmin(psi + gam, 0.5*M_PI), plo_ = fmax(psi - gam, 0.0);
+  // (the reader is up to dep cells from the source cell: its psi differs by up to that
+  // separation; gam = 2 cell widths)
+  const Real psi = acos(fmin(fabs(mu), 1.0)), gw = 0.5*gam*(dep + 2);
+  const Real phi_ = fmin(psi + gw, 0.5*M_PI), plo_ = fmax(psi - gw, 0.0);
   const Real ph_ = rs*sin(phi_), pl_ = rs*sin(plo_);
   Real dl = 0.0;
   if (inw) {
