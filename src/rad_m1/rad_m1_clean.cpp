@@ -909,8 +909,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // (the budget's norm and time error only in Newton passes whose K1 = f(U^n) is
   // known; a single solve, or a cold one without the time-error estimate, the strict
   // test, whose answer is that of the converged step)
-  cln_bon = cln_budget && iterate && (t2_ok || cln_k1ok) && t2_solve != M1_T2S_NONE &&
-            !cln_vzero && t2k1.extent_int(0) >= pmy_pack->nmb_thispack;
+  cln_bon = cln_budget && iterate && (t2_ok || cln_k1ok) &&
+            t2_solve != M1_T2S_NONE && !cln_vzero &&
+            t2k1.extent_int(0) >= pmy_pack->nmb_thispack;
   cln_ewr = -1.0;
   // a change that stopped decreasing within 100 times both its round-off level (cln_fe,
   // cln_fv, from the magnitudes of the terms of the solve) and tol_nl is converged too
@@ -1501,14 +1502,40 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
     if (!bud) return;   // (clean_conv = budget: the gross terms of the E and gas rows)
     const Real xc = hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) + hckp*arad_*SQR(SQR(t)) +
                     fabs(work) + fabs(sb);
+    // (a face's flux: the old vector's, at least what the cell's E can stream through it
+    // in h, c theta E, theta = 1/(1 + h c chi): free streaming starts from F = 0; a
+    // physical boundary face, whose old F and ghost opacity a fresh start has not set
+    // yet, the cell's streaming alone)
     Real fl = eso ? fabs(es(m,k,j,i)) : 0.0;
+    const Real eo = fabs(x.w(m,CLW_EO,k,j,i));
+    const Real cs = x.c*eo/(1.0 + x.h*x.c*op(m,M1_OP_T,k,j,i));
     for (int n = 0; n < x.nf; ++n) {
-      const int dk = (n == 2), dj = (n == 1), di = (n == 0);
-      fl += CleanDivW(x, n, m, k, j, i, 0)*fabs(x.fc[n](m,CLF_G,k,j,i)) +
-            CleanDivW(x, n, m, k, j, i, 1)*fabs(x.fc[n](m,CLF_G,k+dk,j+dj,i+di));
+      for (int sd = 0; sd < 2; ++sd) {
+        const int kf = k + sd*(n == 2), jf = j + sd*(n == 1), iff = i + sd*(n == 0);
+        const auto &f = x.fc[n];
+        fl += CleanDivW(x, n, m, k, j, i, sd)*(CleanBoundaryFace(x, n, m, kf, jf, iff) ?
+              cs : fmax(fabs(f(m,CLF_G,kf,jf,iff)), x.c*f(m,CLF_TH,kf,jf,iff)*eo));
+      }
     }
-    x.w(m,CLW_SE,k,j,i) = fmax(fabs(x.w(m,CLW_EO,k,j,i)) + xc + x.h*fl, 1.0e-300);
-    x.w(m,CLW_SG,k,j,i) = fmax(fabs(x.w(m,CLW_EI,k,j,i)) + xc, 1.0e-300);
+    x.w(m,CLW_SE,k,j,i) = eo + xc + x.h*fl;
+    x.w(m,CLW_SG,k,j,i) = fabs(x.w(m,CLW_EI,k,j,i)) + xc;
+  });
+  if (!bud) return;
+  // (an empty cell, no energy, no flux: its rows at 1e-12 of the largest scale)
+  auto w = cln_w;
+  Real smax[2] = {0.0, 0.0};
+  Kokkos::parallel_reduce("cln_smax", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &se, Real &sg) {
+    se = fmax(se, w(m,CLW_SE,k,j,i));
+    sg = fmax(sg, w(m,CLW_SG,k,j,i));
+  }, Kokkos::Max<Real>(smax[0]), Kokkos::Max<Real>(smax[1]));
+  const Real fse = 1.0e-12*CleanReduce(smax[0], true);
+  const Real fsg = fmax(1.0e-12*CleanReduce(smax[1], true), 1.0e-300);
+  par_for("cln_sfloor", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    w(m,CLW_SE,k,j,i) = fmax(w(m,CLW_SE,k,j,i), fmax(fse, 1.0e-300));
+    w(m,CLW_SG,k,j,i) = fmax(w(m,CLW_SG,k,j,i), fsg);
   });
 }
 
