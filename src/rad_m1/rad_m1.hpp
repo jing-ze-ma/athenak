@@ -3121,8 +3121,16 @@ class RadiationM1 {
   Real cln_fvlagfrac = 0.5;     // clean_fv_lag_frac: inflow miss / its change, the same
   void CleanFvExtrapMiss(Real &miss, Real &chg);
   bool CleanFvExtrap();
-  void CleanFvRstRead();
   void CleanFvRstWrite(DvceArray5D<Real> &a, const int c, const int nmb, const int m0);
+  // the rays' restart channels: clean_fv_float writes the held form (a header with the
+  // directions, the reference, the single-precision values), else the intensities
+  bool CleanFvHeldF32() const;
+  int CleanFvRstNch() const;
+  void CleanFvRstPack(DvceArray5D<Real> &a, const int c, const int nmb, const int m0);
+  void CleanFvRstSet(const int e, const HostArray4D<Real> &w, const int nmb);
+  bool cln_fvrep = false;       // the restart's rays are in the held form
+  int cln_fvrn = 0;             // directions of the restart's rays
+  DvceArray4D<Real> cln_fvtmp;  // one restart channel on the device
   int cln_fvl0 = 0;             // joint: the first level a later pass takes
   int cln_fvjn[2] = {0, 0};     // joint: the dropped inflows, the cells reading ghosts
   bool cln_fvjoint_said = false;   // joint: the first build's counts printed
@@ -3132,7 +3140,6 @@ class RadiationM1 {
   DvceArray2D<int> cln_fvcore;  // joint: the cycle segment of each cell (m n + d, c)
   std::vector<std::array<int, 3>> cln_fvseg;   // joint: its levels and number
   DvceArray4D<int> cln_fvsrc;   // joint: the local m nc + c of each ghost (-1 none)
-  DvceArray5D<Real> cln_fva;    // the outward vector areas of the six faces of a cell
   DvceArray1D<int> cln_fvc;     // the cells of each m n + d by level (CleanFvLevels)
   DvceArray2D<int> cln_fvg;     // the start of each m n + d in a level (level, m n + d)
   DvceArray2D<int64_t> cln_fvo; // its offset in cln_fvc less that start (level, m n + d)
@@ -3147,7 +3154,7 @@ class RadiationM1 {
   DvceArray2D<int8_t> cln_fvrs; // each row's direction along x1 (m n + d, row)
   DvceArray1D<int> cln_fvre;    // the chunks of all levels, (m n + d) nt + chunk
   std::vector<int64_t> cln_fvrls;   // the start of each level in cln_fvre
-  DvceArray5D<Real> cln_fvga;   // rows: face area vectors and volume (m, k, j, i, 19)
+  DvceArray5D<Real> cln_fvga;   // face area vectors (outward) and volume (m, k, j, i, 19)
   std::vector<bool> cln_fvdo;   // the directions whose levels are due (CleanFvTables)
   DvceArray4D<int> cln_fvm;     // the direction maps of the periodic seams (m, side, k, d)
   DvceArray2D<Real> cln_fvt;    // scratch of CleanFvSeams

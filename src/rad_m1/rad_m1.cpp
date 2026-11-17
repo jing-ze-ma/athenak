@@ -124,6 +124,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_fv_lag_frac")) {
       cln_fvlagfrac = pin->GetReal("rad_m1","clean_fv_lag_frac");
     }
+    // clean_fv_row_cells (read only when named, default 16): the cells of a row chunk of
+    // the fv1 sweep (CleanFvRows), one thread each; the same intensities for any length
+    if (pin->DoesParameterExist("rad_m1","clean_fv_row_cells")) {
+      cln_fvrl = std::max(pin->GetInteger("rad_m1","clean_fv_row_cells"), 1);
+    }
     cln_raymin = pin->GetOrAddReal("rad_m1","clean_ray_min",1.0e-3);
     // clean_rays = sc | fv1 (sp default) | fv | lld
     if (pin->DoesParameterExist("rad_m1","clean_rays")) {
