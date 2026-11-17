@@ -327,6 +327,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_rss_closure")) {
       cln_rss = pin->GetBoolean("rad_m1","clean_rss_closure");
     }
+    // clean_line_group (read only when named): lines a team takes at once in the factored
+    // x1-line solve (the Thomas systems of all of them on the team's threads)
+    if (pin->DoesParameterExist("rad_m1","clean_line_group")) {
+      cln_lgroup = std::min(std::max(pin->GetInteger("rad_m1","clean_line_group"), 1), 64);
+    }
     // clean_line_solver = hybrid | pcr | thomas (TEMPORARY, for GPU timing): rows per
     // Thomas system of the line solve (CleanCellLineSolve)
     if (pin->DoesParameterExist("rad_m1","clean_line_solver")) {

@@ -3078,6 +3078,7 @@ class RadiationM1 {
   int cln_chunk = 32;           // rows per Thomas system of the line solve
   int cln_lteams = 0;           // clean_line_teams: most teams of a line solve (0: all)
   bool cln_rss = false;         // clean_rss_closure: the signal speed from cln_rssd
+  int cln_lgroup = 1;           // clean_line_group: lines a team takes at once
   int cln_hmax = 16;            // clean_halo_vars: most variables of one ghost exchange
   bool cln_pcfac = true;        // clean_pc_factor: x1line keeps the factors of its lines
   bool cln_pcf32 = false;       // clean_pc_factor_float: ... in single precision
