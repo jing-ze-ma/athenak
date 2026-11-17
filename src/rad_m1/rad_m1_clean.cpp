@@ -2767,41 +2767,28 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
       });
     } else if (ph == 1) {
       // the lines' coefficients are the same in every pass below, only the neighbours'
-      // F at the line ends changes: once, lo (CLW_AM), hi at the last face (CLW_AP), the
-      // Thomas factors den (CLW_A0) and c' (CLW_CP), r (CLW_R0) and the faces with an
-      // equation (CLW_P; scratch slots of the E solve)
-      Kokkos::parallel_for("cln_fs2f", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                           (nmb1 + 1)*na*nb),
-      KOKKOS_LAMBDA(const int idx) {
-        const int m = idx/(na*nb), a = idx%na, b = (idx/na)%nb;
-        auto face = [&](const int t, int &k, int &j, int &i) {
-          if (dir == 0) {i = is + t; j = js + a; k = ks + b;}
-          if (dir == 1) {j = js + t; i = is + a; k = ks + b;}
-          if (dir == 2) {k = ks + t; i = is + a; j = js + b;}
-        };
-        Real cp = 0.0;
-        for (int t = 0; t <= n; ++t) {
-          int k, j, i;
-          face(t, k, j, i);
+      // F at the line ends changes: once, per face (coalesced), lo (CLW_AM), hi
+      // (CLW_AP), dg (CLW_A0, the Thomas factor den after the first pass), r (CLW_R0)
+      // and the faces with an equation (CLW_P; scratch slots of the E solve), and in the
+      // first pass the Thomas factors den and c' (CLW_CP) along each line
+      const bool p0 = (q < 2*x.nf);
+      if (p0) {
+        par_for("cln_fs2f", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          const int t = (dir == 0) ? i - is : ((dir == 1) ? j - js : k - ks);
           // (clean_stag_ftie: the high face of a line that another MeshBlock or the
           // periodic wrap shares is its owner's, the block whose low face it is: an
           // identity row, the value its CLW_Y ghost brings, CleanStagFaceTie)
           const bool own = ln.Own(x, dir, m, k, j, i, t, n, tie);
           Real lo, hi, dg, r;
           const bool eq = CleanStagFRow(x, ln, fc, dir, m, k, j, i, lo, hi, dg, r, own);
-          // (the faces beyond a MeshBlock line end: the neighbours', lagged)
           x.w(m,CLW_AM,k,j,i) = lo;
           x.w(m,CLW_AP,k,j,i) = hi;
-          if (eq && t == 0) lo = 0.0;
-          if (eq && t == n) hi = 0.0;
-          const Real den = dg - lo*cp;
-          cp = hi/den;
-          x.w(m,CLW_A0,k,j,i) = den;
-          x.w(m,CLW_CP,k,j,i) = cp;
+          x.w(m,CLW_A0,k,j,i) = dg;
           x.w(m,CLW_R0,k,j,i) = r;
           x.w(m,CLW_P,k,j,i) = !own ? -1.0 : (eq ? 1.0 : 0.0);
-        }
-      });
+        });
+      }
       // one exact Thomas solve per line; the faces beyond a line end of a MeshBlock or
       // a periodic wrap are the last F solve's (lagged); on the cubed sphere the largest
       // change of a face and the largest F (a reduction only there: no fence elsewhere)
@@ -2812,10 +2799,20 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
           if (dir == 1) {j = js + t; i = is + a; k = ks + b;}
           if (dir == 2) {k = ks + t; i = is + a; j = js + b;}
         };
-        Real dp = 0.0;
+        Real dp = 0.0, cp = 0.0;
         for (int t = 0; t <= n; ++t) {
           int k, j, i;
           face(t, k, j, i);
+          Real den = x.w(m,CLW_A0,k,j,i);
+          if (p0) {   // (the faces beyond a MeshBlock line end: the neighbours', lagged)
+            const bool eq = x.w(m,CLW_P,k,j,i) > 0.0;
+            const Real lo = (eq && t == 0) ? 0.0 : x.w(m,CLW_AM,k,j,i);
+            const Real hi = (eq && t == n) ? 0.0 : x.w(m,CLW_AP,k,j,i);
+            den -= lo*cp;
+            cp = hi/den;
+            x.w(m,CLW_A0,k,j,i) = den;
+            x.w(m,CLW_CP,k,j,i) = cp;
+          }
           Real r = (x.w(m,CLW_P,k,j,i) < 0.0) ?
               ln.Near(x, dir, m, k, j, i, k-(t == 0)*dk, j-(t == 0)*dj, i-(t == 0)*di) :
               x.w(m,CLW_R0,k,j,i);
@@ -2824,7 +2821,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
                                                          i-di);
             if (t == n) r -= x.w(m,CLW_AP,k,j,i)*ln.Far(x, dir, m, k, j, i, k, j, i);
           }
-          dp = (r - ((t == 0) ? 0.0 : x.w(m,CLW_AM,k,j,i))*dp)/x.w(m,CLW_A0,k,j,i);
+          dp = (r - ((t == 0) ? 0.0 : x.w(m,CLW_AM,k,j,i))*dp)/den;
           x.w(m,CLW_R,k,j,i) = dp;
         }
         Real fn = 0.0;
@@ -2839,7 +2836,9 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
           ln.Put(x, dir, m, k, j, i, t, n, fn);
         }
       };
-      const auto pol = Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*na*nb);
+      // (one warp per block: the x1 lines are few, one thread each, latency bound)
+      const auto pol = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<32,1>>(
+                           DevExeSpace(), 0, (nmb1 + 1)*na*nb);
       if (cub && nsw > 1) {
         Kokkos::parallel_reduce("cln_fs2", pol, line, Kokkos::Max<Real>(dmax),
                                 Kokkos::Max<Real>(fmx));
