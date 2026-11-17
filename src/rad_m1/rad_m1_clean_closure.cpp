@@ -213,23 +213,26 @@ void CleanLocalBasis(const Real th, const Real ph, Real e[3][3]) {
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanThickI
 //! \brief clean_ray_cut: the intensity of direction n in a cell below the cut, the
-//! diffusion limit I = J + 3 n . H of the cell's E and F (iw, the state the rays are
-//! built for); its moments are D = I/3 and h+- = +-1/4 + h/2 of the set's quadrature
+//! diffusion limit I = J + 3 n . H of the cell's E en and F f (iw, the state the rays are
+//! built for) in its frame e (CleanThickFrame); its moments are D = I/3 and h+- = +-1/4
+//! + h/2 of the set's quadrature
 
 KOKKOS_INLINE_FUNCTION
-Real CleanThickI(const CleanArgs &x, const DvceArray5D<Real> &iw,
-                 const DvceArray2D<Real> &x3v, const Real ic, const Real n[3],
-                 const int m, const int k, const int j, const int i) {
-  Real e[3][3];
+void CleanThickFrame(const CleanArgs &x, const DvceArray2D<Real> &x3v, const int m,
+                     const int k, const int j, const int i, Real e[3][3]) {
   if (x.cub) {
     CleanCsFrame(x, m, k, j, i, e);
   } else {
     CleanLocalBasis(x.x2v(m,j), x3v(m,k), e);
   }
-  const Real f[3] = {iw(m,M1_IW_F1,k,j,i), iw(m,M1_IW_F2,k,j,i), iw(m,M1_IW_F3,k,j,i)};
+}
+
+KOKKOS_INLINE_FUNCTION
+Real CleanThickI(const Real e[3][3], const Real f[3], const Real en, const Real ic,
+                 const Real n[3]) {
   Real nf = 0.0;
   for (int b = 0; b < 3; ++b) nf += (n[0]*e[b][0] + n[1]*e[b][1] + n[2]*e[b][2])*f[b];
-  return fmax(iw(m,M1_IW_EN,k,j,i) + 3.0*ic*nf, 0.0);
+  return fmax(en + 3.0*ic*nf, 0.0);
 }
 
 //----------------------------------------------------------------------------------------
@@ -2860,9 +2863,23 @@ void RadiationM1::CleanClosureFromGd(const int i0, const int i1) {
   // (in device memory, CleanGdFaceSums; vgd_pk: one copy per sweep, at its first shell)
   if (i0 < 0 || i0 == indcs.is) cln_gdx = CleanDevArgs(x, 3);
   const CleanArgs *px = cln_gdx;
-  // (clean_ray_cut: below the cut the sc rays' intensity is the diffusion limit)
-  const int icut = indcs.is + (vgd_on ? vlat_icut : 0);
-  const Real ic = 1.0/c_light;
+  // clean_ray_cut: below the cut the sc rays' intensities are the diffusion limit, in
+  // vgd_i for the moments here and the face sums (CleanGdFaceSums)
+  if (!fv && vgd_on && vlat_icut > 0 && i0 < 0) {
+    const Real ic = 1.0/c_light;
+    par_for("cln_gd_thk", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, is + vlat_icut - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const CleanArgs &x = *px;
+      Real e[3][3];   // (the cell's frame, F and E once, not per direction)
+      CleanThickFrame(x, x3v, m, k, j, i, e);
+      const Real f[3] = {iw_(m,M1_IW_F1,k,j,i), iw_(m,M1_IW_F2,k,j,i),
+                         iw_(m,M1_IW_F3,k,j,i)}, en = iw_(m,M1_IW_EN,k,j,i);
+      for (int d = 0; d < n; ++d) {
+        const Real nv[3] = {dir_(d,0), dir_(d,1), dir_(d,2)};
+        vi_(m,d,k+ok,j+og,i) = CleanThickI(e, f, en, ic, nv);
+      }
+    });
+  }
   par_for("cln_gd", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px;
@@ -2882,8 +2899,7 @@ void RadiationM1::CleanClosureFromGd(const int i0, const int i1) {
         nu[b] = x.cub ? nx*nd[b][0] + ny*nd[b][1] + nz*nd[b][2] : mu[b];
       }
       const Real nv[3] = {nx, ny, nz};
-      const Real iv = fv ? fi_(m,d,k,j,i) : (i < icut)
-                    ? CleanThickI(x, iw_, x3v, ic, nv, m, k, j, i) : vi_(m,d,k+ok,j+og,i);
+      const Real iv = fv ? fi_(m,d,k,j,i) : vi_(m,d,k+ok,j+og,i);
       const Real a = dir_(d,3)*iv;
       q[CLN_J] += a;
       for (int b = 0; b < 3; ++b) {
@@ -3017,18 +3033,6 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   // directions (one exchange each)
   const bool gl = !fv && x.sph && !cln_cell && !axi && pmy_pack->pmesh->three_d &&
                   vgd_nb1 == 1 && !cln_scmem;
-  if (gl && vgd_on && vlat_icut > 0) {   // (clean_ray_cut: below it the diffusion limit)
-    auto iw_ = iw;
-    const Real ic = 1.0/c_light;
-    par_for("cln_gd_thk", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, is + vlat_icut - 1,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const CleanArgs &x = *px;
-      for (int d = 0; d < n; ++d) {
-        const Real nv[3] = {dir_(d,0), dir_(d,1), dir_(d,2)};
-        vi_(m,d,k+ok,j+og,i) = CleanThickI(x, iw_, x3v, ic, nv, m, k, j, i);
-      }
-    });
-  }
   CleanGdI gi{vi_, DvceArray5D<Real>(), ok, og, ks, js, pk, vgd_own};
   if (gl && pk) {
   } else if (gl) {
