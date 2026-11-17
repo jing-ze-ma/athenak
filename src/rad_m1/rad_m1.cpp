@@ -1380,8 +1380,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // restart whose file lacks it).
     VetRotInit(pin);   // bubbles-1012: shared with vet_sc (rad_m1_vetgd.cpp)
     RotAvgParse(pin);   // rotavg-1012 (also after vet_sc's VetRotInit)
+    // scheme = clean: no slope correction of a rotating set (the closure of CleanFvSets),
+    // set before the first VetGdRotStep (a restart on a block boundary acts at once).
     // clean_rot_ring = jump: a block's first step is backward Euler from the first step
     // on (a restart on a block boundary too)
+    if (clean && vgd_on && VgdRotOn()) vgd_rot_slope = 0;
     if (cln_ring == 2) vgd_rot_slope = 2;
     // vgdxf-1112: vet_gd_rotate_xfade (read only when named; rad_m1.hpp)
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade")) {

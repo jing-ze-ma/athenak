@@ -301,7 +301,6 @@ void RadiationM1::CleanInit() {
                  "clean_rays = fv only for a fixed union (vet_rotate_avg without "
                  "vet_rotate_advance), and on a 2-D axisymmetric mesh the z axis");
     }
-    vgd_rot_slope = 0;
   }
   const bool ring_ok = vgd_on && cln_rfv > 0 && vra_on && g_vra_adv &&
                        (vgd_rot_dt > 0.0 || vgd_rot_auto) && vgd_rot_align &&
