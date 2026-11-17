@@ -1074,8 +1074,9 @@ void RadiationM1::CleanRingMoments() {
   // block's window there (cln_rnew, the closure history of the next step)
   const bool ring = cln_rok;
   const bool nxt = ring && cln_rlast && slot[nk] >= 0;
-  if (nxt && cln_rnew.extent_int(0) != nmb) {
-    Kokkos::realloc(cln_rnew, nmb, CLN_N, c3, c2, c1);
+  if (nxt && cln_rnew.extent_int(0) != nmb) {   // (the layout of cln_mc it becomes)
+    Kokkos::realloc(cln_rnew, nmb, CLN_N, cln_s.extent_int(2), cln_s.extent_int(3),
+                    cln_s.extent_int(4));
   }
   auto rw = cln_rnew;
   auto iw_ = iw;
