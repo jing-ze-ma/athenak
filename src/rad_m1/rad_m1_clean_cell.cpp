@@ -1956,6 +1956,14 @@ void RadiationM1::CleanCellWriteBack() {
   const bool vzero = cln_vzero;
   auto fr = cln_fref;
   auto aref = arad_ref;
+  // (wb_arad, FrefWaccOn: E pays exactly the reference work the gas got in the hydro
+  // stages, fref_wacc, its share h/dt in a backward-Euler step and all of it in a stage
+  // step, FrefWaccStage; the slopes carry no payment, wex)
+  const bool wpa = (fref == M1_FREF_WB_ARAD) && !vzero && FrefWaccOn();
+  auto wc = wpa ? FrefWacc() : DvceArray4D<Real>();
+  const Real fra = FrefWaccStage() ? 1.0 : h/pmy_pack->pmesh->dt;
+  const bool wex = (fref == M1_FREF_WB_ARAD) && fref_wacc_t2 && !fref_pay_post &&
+                   (time_scheme == M1_TIME_HESDIRK2);
   const bool eso = esrc_on;
   auto es = esrc;
   const bool gexact = cln_gas_exact;
@@ -1996,7 +2004,7 @@ void RadiationM1::CleanCellWriteBack() {
     const Real e_old = x.w(m,CLW_EO,k,j,i);
     Real dm[3] = {0.0, 0.0, 0.0}, dh[3], y[3];
     for (int b = 0; b < 3; ++b) y[b] = x.u(m,CLC_X+1+b,k,j,i);
-    Real den = 0.0;
+    Real den = 0.0, wsl = 0.0;
     if (feedback) {
       if (yres == M1_YRES_POST) {
         // y less its share of the linear residual, the face fluxes kept: the gas takes
@@ -2014,7 +2022,8 @@ void RadiationM1::CleanCellWriteBack() {
       // the work W of S_E is exactly the kinetic energy (p + dm/2).dm/rho the gas gains,
       // not the W of the iterate the solve took (the gas eint takes -A), and, with
       // wb_arad, the radiation pays the work of the reference force at the velocity
-      // after the kick, which the problem generator's well-balanced source gives the gas
+      // after the kick, or, where FrefWaccOn, the work fref_wacc the problem generator's
+      // well-balanced source gave the gas
       Real pg[3], wk = 0.0, wr = 0.0;
       CleanGasMomentum(x, uh, m, k, j, i, pg);
       for (int b = 0; b < 3; ++b) {
@@ -2024,6 +2033,8 @@ void RadiationM1::CleanCellWriteBack() {
           wr += h*CleanRefForce(fref, fr, aref, d, b, m, k, j, i)*(pg[b] + dm[b])/d;
         }
       }
+      if (wpa) wr = fra*wc(m,k,j,i);
+      if (wex && !vzero) wsl = wr;
       e -= wk - x.w(m,CLW_WK,k,j,i) + wr;
       // (the hydro's components; dm.e_a covariant on the cubed sphere)
       CleanGasChange(x, m, k, j, i, dm, dh);
@@ -2080,7 +2091,7 @@ void RadiationM1::CleanCellWriteBack() {
       uh(m,IEN,k,j,i) += den;
     }
     if (slopes) {
-      kk(m,M1_T2_E,k,j,i) = (e - e_old)/h;
+      kk(m,M1_T2_E,k,j,i) = (e + wsl - e_old)/h;
       for (int b = 0; b < 3; ++b) {
         kk(m,M1_T2_F1+b,k,j,i) = x.c*(y[b] - x.u(m,CLC_O+1+b,k,j,i))/h;
         kk(m,M1_T2_M1+b,k,j,i) = feedback ? dh[b]/h : 0.0;
