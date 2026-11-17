@@ -453,6 +453,11 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   fac_ = pin->GetOrAddReal("time", "dt_retry_fac", 0.5);
   grow_ = pin->GetOrAddReal("time", "dt_retry_grow", 1.25);
   ngood_req_ = pin->GetOrAddInteger("time", "dt_retry_ngood", 10);
+  // dtfix-1117: <time>/dt_fixed is the driver's dt cap (read only when named); the grow
+  // step and the recovery return the cap to it, never above it
+  if (pin->DoesParameterExist("time", "dt_fixed")) {
+    fix_ = pin->GetReal("time", "dt_fixed");
+  }
   // <time>/dt_retry_fac_t2 (read only when named): the dt factor of a
   // retry raised by <rad_m1>/time2_reject = retry (default: dt_retry_fac)
   if (pin->DoesParameterExist("time", "dt_retry_fac_t2")) {
@@ -798,22 +803,23 @@ void DtRetry::Accept(Mesh *pm) {
   nt2cut_ = 0;
   t2be_cyc_ = false;
   m1->dtr_t2be = (t2_be_ == 0) || (t2_be_ > 0 && t2streak_);
-  if (pm->dt_cap > 0.0) {
+  if (pm->dt_cap > 0.0 && pm->dt_cap != fix_) {
     ngood_ += 1;
     if (ngood_ > ngood_req_) {pm->dt_cap *= grow_;}
+    if (fix_ > 0.0) {pm->dt_cap = std::min(pm->dt_cap, fix_);}
   }
 }
 
 //----------------------------------------------------------------------------------------
 void DtRetry::AfterNewDt(Mesh *pm, ParameterInput *pin) {
   if (!on) return;
-  if (pm->dt_cap > 0.0 && pm->dt_cap >= pm->dt_uncapped) {
+  if (pm->dt_cap > 0.0 && pm->dt_cap != fix_ && pm->dt_cap >= pm->dt_uncapped) {
     if (global_variable::my_rank == 0) {
       std::cout << "DT_RETRY recovered cycle=" << pm->ncycle << " t=" << pm->time
                 << " cap " << pm->dt_cap << " >= CFL dt " << pm->dt_uncapped
                 << ": cap off" << std::endl;
     }
-    pm->dt_cap = -1.0;
+    pm->dt_cap = (fix_ > 0.0) ? fix_ : -1.0;
     ngood_ = 0;
   }
   // recorded for a restart file (written after this) only while a cap is or was set
