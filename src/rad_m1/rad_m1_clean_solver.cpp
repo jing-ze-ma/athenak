@@ -129,6 +129,25 @@ CleanArgs RadiationM1::CleanMakeArgs() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn const CleanArgs *RadiationM1::CleanDevArgs
+//! \brief a device copy (slot s) of x for the noinline device calls: a reference to a
+//! kernel's capture of x is copied to the stack of every thread (~3 KB), one to device
+//! memory is read in place.  The host takes x itself.
+
+const CleanArgs *RadiationM1::CleanDevArgs(const CleanArgs &x, const int s) {
+  if constexpr (std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>) {
+    return &x;
+  } else {
+    const size_t n = sizeof(CleanArgs);
+    if (cln_xdev.extent(0) < 2*n) Kokkos::realloc(cln_xdev, 2*n);
+    Kokkos::View<const char *, HostMemSpace, Kokkos::MemoryUnmanaged>
+        h(reinterpret_cast<const char *>(&x), n);
+    Kokkos::deep_copy(Kokkos::subview(cln_xdev, std::make_pair(s*n, (s + 1)*n)), h);
+    return reinterpret_cast<const CleanArgs *>(cln_xdev.data() + s*n);
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanGhostFill
 //! \brief ghost cells of components [c0, c0+nc) of a work array: the neighbours' cells
 //! (other MeshBlocks, periodic wrap; across a cubed-sphere seam the neighbour's own
@@ -435,9 +454,11 @@ void RadiationM1::CleanApply(const int src, const int dst) {
   x.fwc = true;
   xh.hi = cln_split;   // (clean_stag_sbimp: the face momentum, not from CLF_QL)
   auto op = opac;
+  const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
 
   par_for("cln_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
     const Real qr = x.feedback ? x.w(m,CLW_RY,k,j,i) : 1.0;   // (1 - r)
     x.w(m,dst,k,j,i) = x.w(m,src,k,j,i)*(1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*qr)
                        + CleanFluxDivergence(x, src, m, k, j, i, false);
