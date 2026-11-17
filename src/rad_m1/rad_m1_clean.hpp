@@ -89,36 +89,59 @@ constexpr int CLW_N = 41;
 //----------------------------------------------------------------------------------------
 //! \struct CleanFvI
 //! \brief the FV rays' intensities: cln_fvi, or cln_fvis in single precision
-//! (clean_fv_float).  Reads give Real, Set stores in the precision of the array, Round
-//! is a value as stored.
+//! (clean_fv_float).  In single precision the first nr components (the intensities, not
+//! the lld slopes) are held as their difference from a reference of the cell in double
+//! precision (r, CleanFvRebase), so that the rounding error is a fraction of the
+//! anisotropic part of the field, not of the intensity.  Reads give Real, Store keeps a
+//! value in the precision of the array and returns it as a read would.
 
 struct CleanFvI {
   DvceArray5D<Real> d;
   DvceArray5D<float> f;
+  DvceArray5D<Real> r;
   bool f32 = false;
+  int nr = 0;
+  KOKKOS_INLINE_FUNCTION
+  Real Base(const int m, const int n, const int k, const int j, const int i) const {
+    return (n < nr) ? r(m,0,k,j,i) : 0.0;
+  }
   KOKKOS_INLINE_FUNCTION
   Real operator()(const int m, const int n, const int k, const int j, const int i) const {
+    if (!f32) return d(m,n,k,j,i);
+    if (n >= nr) return static_cast<Real>(f(m,n,k,j,i));
+    return fmax(r(m,0,k,j,i) + static_cast<Real>(f(m,n,k,j,i)), 0.0);
+  }
+  KOKKOS_INLINE_FUNCTION
+  Real Store(const int m, const int n, const int k, const int j, const int i,
+             const Real v) const {
+    if (f32) {
+      f(m,n,k,j,i) = static_cast<float>(v - Base(m, n, k, j, i));
+      return (*this)(m, n, k, j, i);
+    }
+    d(m,n,k,j,i) = v;
+    return v;
+  }
+  // the value as held, for a copy between components of the same cell
+  KOKKOS_INLINE_FUNCTION
+  Real Raw(const int m, const int n, const int k, const int j, const int i) const {
     return f32 ? static_cast<Real>(f(m,n,k,j,i)) : d(m,n,k,j,i);
   }
   KOKKOS_INLINE_FUNCTION
-  Real Round(const Real v) const {
-    return f32 ? static_cast<Real>(static_cast<float>(v)) : v;
-  }
-  KOKKOS_INLINE_FUNCTION
-  void Set(const int m, const int n, const int k, const int j, const int i,
-           const Real v) const {
+  void SetRaw(const int m, const int n, const int k, const int j, const int i,
+              const Real v) const {
     if (f32) {
       f(m,n,k,j,i) = static_cast<float>(v);
     } else {
       d(m,n,k,j,i) = v;
     }
   }
-  int extent_int(const int r) const {return f32 ? f.extent_int(r) : d.extent_int(r);}
+  int extent_int(const int q) const {return f32 ? f.extent_int(q) : d.extent_int(q);}
   // the intensities as they are held: with clean_fv_float, the doubles a restart read
   // until the next sweep converts them
   static CleanFvI Of(const DvceArray5D<Real> &d_, const DvceArray5D<float> &f_,
-                     const bool f32_) {
-    return CleanFvI{d_, f_, f32_ && d_.extent_int(1) == 0};
+                     const DvceArray5D<Real> &r_, const bool f32_, const int nr_) {
+    const bool s = f32_ && d_.extent_int(1) == 0;
+    return CleanFvI{d_, f_, r_, s, (s && r_.extent_int(0) > 0) ? nr_ : 0};
   }
 };
 

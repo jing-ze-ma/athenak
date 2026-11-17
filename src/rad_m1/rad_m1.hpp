@@ -2946,6 +2946,7 @@ class RadiationM1 {
                    const DvceArray3D<Real> &xc);
   void CleanFvPanelSlopes(const bool q);
   void CleanFvSeams();
+  void CleanFvRebase();
   bool CleanFvWall(const int side);
   void CleanFvSets(const Real tc, const int cyc);
   void CleanRingMoments();
@@ -3095,6 +3096,7 @@ class RadiationM1 {
   int cln_fvb = 1;              // blocks of cln_fvi: lld 4 (average, slopes along x1..x3)
   DvceArray5D<Real> cln_fvi;    // its intensities (m, b n + d, k, j, i)
   DvceArray5D<float> cln_fvis;  // the same in single precision (clean_fv_float)
+  DvceArray5D<Real> cln_fvr;    // its reference of each cell (m, 0, k, j, i)
   bool cln_fvf32 = false;       // clean_fv_float: cln_fvis instead of cln_fvi
   DvceArray5D<Real> cln_fvq;    // lld: the source moments (m, CLQ_*, k, j, i)
   DvceArray5D<Real> cln_fvp;    // fv: the intensities of the last build (downwind slopes)

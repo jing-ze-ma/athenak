@@ -3492,13 +3492,19 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
   // clean_closure = extrap*: the ray moments at t^n and at the end of the step, then
   // t^n, that end time and the flags at i = 0..4
   if (clean && cln_cell && cln_extrap > 0) {
+    // (CLN_N channels each: a history without the face sums leaves them zero)
     const bool have = (cln_mn.extent_int(0) >= m0 + nmb);
     if (have) {
-      Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+CLN_N), AL, AL, AL),
-                        Kokkos::subview(cln_mn, ms, AL, AL, AL, AL));
-      Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c+CLN_N, c+2*CLN_N), AL,
-                                        AL, AL),
-                        Kokkos::subview(cln_mc, ms, AL, AL, AL, AL));
+      const int nh = cln_mn.extent_int(1);
+      for (int h = 0; h < 2; ++h) {
+        const int ch = c + h*CLN_N;
+        Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(ch, ch+nh), AL, AL, AL),
+                          Kokkos::subview(h ? cln_mc : cln_mn, ms, AL, AL, AL, AL));
+        if (nh < CLN_N) {
+          Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(ch+nh, ch+CLN_N), AL,
+                                            AL, AL), 0.0);
+        }
+      }
     }
     auto a_ = a;
     const int cq = c + 2*CLN_N;
@@ -3577,12 +3583,12 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
   } else if (clean && cln_fvf32 && cln_fvis.extent_int(0) >= m0 + nmb) {
     // (clean_fv_float: the single-precision intensities as doubles)
     auto a_ = a;
-    auto fs = cln_fvis;
+    const CleanFvI fi = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvr, cln_fvf32, cln_fvn);
     const int c0 = c, nv = cln_fvb*cln_fvn, mo = m0;
-    par_for("m1_t2_fvrst", DevExeSpace(), 0, nmb - 1, 0, nv - 1, 0, fs.extent_int(2) - 1,
-            0, fs.extent_int(3) - 1, 0, fs.extent_int(4) - 1,
+    par_for("m1_t2_fvrst", DevExeSpace(), 0, nmb - 1, 0, nv - 1, 0, fi.extent_int(2) - 1,
+            0, fi.extent_int(3) - 1, 0, fi.extent_int(4) - 1,
     KOKKOS_LAMBDA(const int m, const int v, const int k, const int j, const int i) {
-      a_(m,c0+v,k,j,i) = fs(mo+m,v,k,j,i);
+      a_(m,c0+v,k,j,i) = fi(mo+m,v,k,j,i);
     });
     CleanFvRstWrite(a, c, nmb, m0);
   }
@@ -3655,11 +3661,12 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   if (clean && cln_cell && cln_extrap > 0) {
     if (ch < 2*CLN_N) {
       auto &mx = (ch < CLN_N) ? cln_mn : cln_mc;
-      if (mx.extent_int(0) != nmb) {
-        Kokkos::realloc(mx, nmb, CLN_N, w.extent_int(1), w.extent_int(2),
+      const int nh = cln_consist ? CLN_N : CLN_F2;
+      if (mx.extent_int(0) != nmb || mx.extent_int(1) != nh) {
+        Kokkos::realloc(mx, nmb, nh, w.extent_int(1), w.extent_int(2),
                         w.extent_int(3));
       }
-      DeepCopyAcross(Kokkos::subview(mx, mb, ch%CLN_N, AL, AL, AL), w);
+      if (ch%CLN_N < nh) DeepCopyAcross(Kokkos::subview(mx, mb, ch%CLN_N, AL, AL, AL), w);
       return;
     }
     if (ch == 2*CLN_N) {
