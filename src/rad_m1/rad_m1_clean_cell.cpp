@@ -502,10 +502,16 @@ void RadiationM1::CleanCellFirstIterate() {
   auto w = cln_w;
   auto u = cln_x;
   cln_kgh = false;
+  DvceArray5D<Real> kp;
+  const bool pred = CleanPredictSlope(kp);
+  const Real hc = dt_sub/c_light;
   par_for("clc_iter0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     u(m,CLC_K,k,j,i) = w(m,CLW_EK,k,j,i);
-    for (int b = 1; b < 4; ++b) u(m,CLC_K+b,k,j,i) = u(m,CLC_O+b,k,j,i);
+    for (int b = 1; b < 4; ++b) {
+      u(m,CLC_K+b,k,j,i) = u(m,CLC_O+b,k,j,i)
+                           + (pred ? hc*kp(m,M1_T2_F1+b-1,k,j,i) : 0.0);
+    }
   });
 }
 

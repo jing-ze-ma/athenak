@@ -967,7 +967,9 @@ void RadiationM1::CleanAdvectiveCoefficients() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanFirstIterate
 //! \brief first Newton iterate: E of the old vector, no momentum change, and the gas
-//! temperature in local exchange equilibrium with that E
+//! temperature in local exchange equilibrium with that E.  With clean_iter_predict a
+//! hesdirk2 stage starts from E of the old vector plus h times the last stage slope
+//! (CleanPredictSlope)
 
 void RadiationM1::CleanFirstIterate() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -983,9 +985,13 @@ void RadiationM1::CleanFirstIterate() {
   auto op = opac;
   auto w = cln_w;
 
+  DvceArray5D<Real> kp;
+  const bool pred = CleanPredictSlope(kp);
+  const Real h = dt_sub;
+
   par_for("cln_iter0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real e = fmax(w(m,CLW_EO,k,j,i), 0.0);
+    const Real e = fmax(w(m,CLW_EO,k,j,i) + (pred ? h*kp(m,M1_T2_E,k,j,i) : 0.0), 0.0);
     w(m,CLW_EK,k,j,i) = e;
     w(m,CLW_RR,k,j,i) = 0.0;
     for (int n = 0; n < 3; ++n) w(m,CLW_DM+n,k,j,i) = 0.0;
@@ -1293,6 +1299,27 @@ void RadiationM1::CleanRssStore() {
   KOKKOS_LAMBDA(const int m, const int a, const int k, const int j, const int i) {
     rd(m,a,k,j,i) = cs(m,CLN_D11+a,k,j,i);
   });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::CleanPredictSlope
+//! \brief clean_iter_predict: the slope the first iterate of a hesdirk2 stage takes, the
+//! stored FSAL slope (t2k1, kept in restart files and dt_retry checkpoints) for the first
+//! implicit stage and the slope of that stage (t2k2) for the second.  False (no
+//! predictor) without the key or a valid slope.
+
+bool RadiationM1::CleanPredictSlope(DvceArray5D<Real> &kp) {
+  if (!cln_ipred) return false;
+  const int nmb = pmy_pack->nmb_thispack;
+  if (t2_solve == M1_T2S_STAGE1 && t2_ok && t2k1.extent_int(0) >= nmb) {
+    kp = t2k1;
+    return true;
+  }
+  if (t2_solve == M1_T2S_STAGE2 && t2k2.extent_int(0) >= nmb) {
+    kp = t2k2;
+    return true;
+  }
+  return false;
 }
 
 }  // namespace radm1

@@ -327,6 +327,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_rss_closure")) {
       cln_rss = pin->GetBoolean("rad_m1","clean_rss_closure");
     }
+    // clean_iter_predict (read only when named): the first Newton iterate of a hesdirk2
+    // stage is the old vector plus h times the last stage slope (fewer passes; the
+    // solution changes within the Newton tolerance)
+    if (pin->DoesParameterExist("rad_m1","clean_iter_predict")) {
+      cln_ipred = pin->GetBoolean("rad_m1","clean_iter_predict");
+    }
     // clean_line_group (read only when named): lines a team takes at once in the factored
     // x1-line solve (the Thomas systems of all of them on the team's threads)
     if (pin->DoesParameterExist("rad_m1","clean_line_group")) {
