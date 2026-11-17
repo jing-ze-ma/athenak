@@ -1741,8 +1741,10 @@ Real RadiationM1::VetGdAlignDt(const Real time, const Real dt) {
     if (pin_rot_ != nullptr) {pin_rot_->SetReal("rad_m1","vet_gd_rotate_dt",vgd_rot_dt);}
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> vet_gd_rotate_dt = auto: " << vgd_rot_auto_fac
-                << " x the first " << (vgd_rot_unc ? "CFL dt (no dt_fixed / dt_retry cap) " : "dt ")
-                << (vgd_rot_unc ? pmy_pack->pmesh->dt_uncapped : dt) << " = " << ParameterInput::RealToString(vgd_rot_dt)
+                << " x the first "
+                << (vgd_rot_unc ? "CFL dt (no dt_fixed / dt_retry cap) " : "dt ")
+                << (vgd_rot_unc ? pmy_pack->pmesh->dt_uncapped : dt) << " = "
+                << ParameterInput::RealToString(vgd_rot_dt)
                 << " (recorded; t0 " << vgd_rot_t0 << ", align "
                 << (vgd_rot_align ? "on" : "off") << ", stretch " << vgd_rot_stretch
                 << ")" << std::endl;

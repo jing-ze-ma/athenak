@@ -171,9 +171,10 @@ struct VetScAcc {
   }
   template <class V>
   KOKKOS_INLINE_FUNCTION void Write(const V &vc, const int m, const int k, const int j,
-                                    const int iu, const int id, const int is, const int ie,
-                                    const bool mrlo, const bool mrhi, const bool hrs,
-                                    const bool kps, const bool nls, const bool f2s) const {
+                                    const int iu, const int id, const int is,
+                                    const int ie, const bool mrlo, const bool mrhi,
+                                    const bool hrs, const bool kps, const bool nls,
+                                    const bool f2s) const {
     for (int n = 0; n < 10; ++n) {
       vc(m,M1_VET_J+n,k,j,iu) += ac[0][n];
       vc(m,M1_VET_J+n,k,j,id) += ac[1][n];
@@ -4441,7 +4442,7 @@ void RadiationM1::VetShortCharSweep() {
           }
           if (bmn_ > 0) {   // littests-1011: boundary beams
             const int q = (r == bmr0) ? 0 : ((r == bmr1) ? 1 : ((r == bmr2) ? 2
-                                                                : ((r == bmr3) ? 3 : -1)));
+                          : ((r == bmr3) ? 3 : -1)));
             if (q >= 0 && q < bmn_) {ib += bmi_(m,q,k-ks,j-js);}
           }
         }
@@ -4656,7 +4657,9 @@ void RadiationM1::VetShortCharSweep() {
           const int i = (ang_(r,0) > 0.0) ? iu : id;
           a.Add(ang_, r, ip_(m,pw,r,k,j), vc_(m,M1_VET_SRC,k,j,i), g, hrs_, kps_, nls_);
         }
-        if (accum) a.Write(vc_, m, k, j, iu, id, is, ie, mrlo, mrhi, hrs_, kps_, nls_, f2s_);
+        if (accum) {
+          a.Write(vc_, m, k, j, iu, id, is, ie, mrlo, mrhi, hrs_, kps_, nls_, f2s_);
+        }
       });
     } else {
       par_for("m1_vet_sweep", DevExeSpace(), 0, nmb1, ks, ke, js, je,
@@ -4668,7 +4671,9 @@ void RadiationM1::VetShortCharSweep() {
           const int i = (ang_(r,0) > 0.0) ? iu : id;
           a.Add(ang_, r, iv, vc_(m,M1_VET_SRC,k,j,i), g, hrs_, kps_, nls_);
         }
-        if (accum) a.Write(vc_, m, k, j, iu, id, is, ie, mrlo, mrhi, hrs_, kps_, nls_, f2s_);
+        if (accum) {
+          a.Write(vc_, m, k, j, iu, id, is, ie, mrlo, mrhi, hrs_, kps_, nls_, f2s_);
+        }
       });
     }
   }
