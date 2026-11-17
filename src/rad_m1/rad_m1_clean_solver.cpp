@@ -262,8 +262,18 @@ void RadiationM1::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
   auto h = hl.a;
   const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
   MeshBoundaryValuesCC *pb = cln_hpb.get();
+  // one MeshBlock and one array of doubles: the exchange runs on the array's own
+  // components [c0, c0 + nc), no copies (the copies took every cell outside CleanInner,
+  // ghosts included: the same values)
+  DvceArray5D<Real> ha = hl.a;
+  bool own = false;
+  if constexpr (std::is_same<T, Real>::value) {
+    own = (nmb1 == 0 && sg.size() == 1);
+    const size_t off = static_cast<size_t>(sg[0].c0)*n3*n2*n1;
+    if (own) ha = DvceArray5D<Real>(sg[0].a.data() + off, 1, nc, n3, n2, n1);
+  }
   // (only the cells outside CleanInner are copied: CleanShell)
-  if (part != 2) {
+  if (part != 2 && !own) {
     const CleanShell sc(n3, n2, n1, ng, is, ie, js, je, ks, ke, md, td);
     int o = 0;
     for (auto &s : sg) {
@@ -284,16 +294,19 @@ void RadiationM1::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
       }
       o += s.nc;
     }
+  }
+  if (part != 2) {
     while (pb->InitRecv(nc) == TaskStatus::incomplete) {}
-    while (pb->PackAndSendCC(hl.a, hl.ca) == TaskStatus::incomplete) {}
+    while (pb->PackAndSendCC(ha, hl.ca) == TaskStatus::incomplete) {}
     if (part == 1) return;
   }
-  while (pb->RecvAndUnpackCC(hl.a, hl.ca) == TaskStatus::incomplete) {}
+  while (pb->RecvAndUnpackCC(ha, hl.ca) == TaskStatus::incomplete) {}
   while (pb->ClearSend() == TaskStatus::incomplete) {}
   while (pb->ClearRecv() == TaskStatus::incomplete) {}
   const CleanShell sb(n3, n2, n1, 0, is, ie, js, je, ks, ke, md, td);
   int o = 0;
   for (auto &s : sg) {
+    if (own) break;
     auto a = s.a;
     const int c0 = s.c0;
     par_for("cln_hback", DevExeSpace(), 0, nmb1, 0, s.nc-1, 0, sb.ncell-1,
