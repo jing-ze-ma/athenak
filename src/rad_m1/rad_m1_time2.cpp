@@ -618,10 +618,11 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   // recipe none, as before.  Read only when named; an explicit key wins.  Not with
   // scheme = clean: its t2inc F channels are cell momenta, and scaling them alone breaks
   // the momentum and angular-momentum balance with the gas (positivity is the stage
-  // solve's: marking, then backward Euler)
+  // solve's: marking, then backward Euler).  Under clean the key has no effect
+  // (CleanPreflight says so): no stage face flux, no t2pf1, t2pf2
   t2_ffct = ffct14 && !clean;
   if (pin->DoesParameterExist("rad_m1", "time2_face_fct")) {
-    t2_ffct = pin->GetBoolean("rad_m1", "time2_face_fct");
+    t2_ffct = pin->GetBoolean("rad_m1", "time2_face_fct") && !clean;
   }
   if (pin->DoesParameterExist("rad_m1", "time2_k1_redist_r")) {
     t2_k1rd_r = pin->GetInteger("rad_m1", "time2_k1_redist_r");
