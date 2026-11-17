@@ -3998,6 +3998,7 @@ class RadiationM1 {
   bool vgd_ring_named = false, vgd_ring_par = true;
   bool vgd_ring_act = false;          // the ring runs in this sweep
   bool vgd_ring_poison = false;       // env VGD_RING_POISON=1: NaN in lent slabs (test)
+  bool vgd_rg_refill = false;         // vet_gd_band_ring_refill (vgd_raw): no save store
   bool vgd_rg_two = false;            // this sweep carries vgd_itw too
   bool vgd_rg_xb = false;             // xffuse-1113: ... the other xfade set's array
   std::vector<int64_t> vgd_rg_sn2;    // xffuse-1113: (i) the other set's saved count

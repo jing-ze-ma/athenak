@@ -1957,6 +1957,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_ring_named = true;
       vgd_ring_par = pin->GetBoolean("rad_m1","vet_gd_band_ring");
     }
+    // vet_gd_band_ring_refill (read only when named, default false; the raw band of
+    // clean sp): the outward pass fetches a shell's inward band from its owners again
+    // (one more exchange per shell) instead of keeping it in the save store (bitwise)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_ring_refill")) {
+      vgd_rg_refill = pin->GetBoolean("rad_m1","vet_gd_band_ring_refill");
+    }
     if (std::getenv("VGD_RING") != nullptr) {
       vgd_ring_par = (std::atoi(std::getenv("VGD_RING")) != 0);
     }

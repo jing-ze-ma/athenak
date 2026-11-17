@@ -1203,6 +1203,7 @@ void RadiationM1::VetGdInit() {
     auto hl_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_hloc);
     for (size_t q = 0; q < hl_h.extent(0); ++q) {anyside = anyside || (hl_h(q) < 0);}
     vgd_ring = vgd_ring_par && hxok && (vgd_ovl_g == 0) && (vgd_fuse_h <= 1) && anyside;
+    vgd_rg_refill = vgd_rg_refill && vgd_ring && vgd_raw;
     // xffuse-1113: the fused two-set sweep keeps the ragged band (sp; the ring's slabs
     // follow one array); on the cubed sphere the ring stays and the fused sweep falls
     // back to two sweeps where it runs (VetGdXffOk)
@@ -6997,10 +6998,14 @@ void RadiationM1::VetGdSweep() {
           o.kind = 3;
           o.i = i;
           o.copyin = !inw;
-          o.restore = !inw;
+          o.restore = !inw && !vgd_rg_refill;
           vgd_rg_pend.push_back(o);
         }
         VetGdRingFlush();
+        if (!inw && vgd_rg_refill) {   // the inward band again from its owners (unchanged)
+          vgd_hinw = true;
+          VetGdHalo(vgd_i, n, i, i, vgd_wsi[i], true, static_cast<VgdIView *>(nullptr));
+        }
       }
       if (pend && ovl && ovl_ready(q/ovg)) {
         // vet_gd_overlap: the local items while the previous shell's messages travel,
@@ -7098,7 +7103,7 @@ void RadiationM1::VetGdSweep() {
         if (q > 0) {
           const int ip = inw ? (i + 1) : (i - 1);
           VgdRingOp o;
-          if (inw) {
+          if (inw && !vgd_rg_refill) {
             o.kind = 1;
             o.i = ip;
             vgd_rg_pend.push_back(o);
@@ -7112,7 +7117,7 @@ void RadiationM1::VetGdSweep() {
           o.kind = 3;
           o.i = inw ? (i - 1) : (i + 1);
           o.copyin = !inw;
-          o.restore = !inw;
+          o.restore = !inw && !vgd_rg_refill;
           vgd_rg_pend.push_back(o);
         }
       }
@@ -7188,7 +7193,7 @@ void RadiationM1::VetGdSweep() {
       const int il = is + (inw ? lcut : (n1 - 1));
       if (vgd_rg_state[il] >= 0) {
         VgdRingOp o;
-        if (inw) {
+        if (inw && !vgd_rg_refill) {
           o.kind = 1;
           o.i = il;
           vgd_rg_pend.push_back(o);
