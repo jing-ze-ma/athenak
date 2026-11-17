@@ -877,11 +877,12 @@ bool CleanBoundaryFace(const CleanArgs &x, const int dir, const int m, const int
 //----------------------------------------------------------------------------------------
 //! \fn int CleanTransSide
 //! \brief 1 if the transverse stress terms of cell (k,j,i) reach across its face on side
-//! s (0 low, 1 high) along b: inside, across a MeshBlock face, cubed-sphere seam or
-//! periodic face and a reflecting wall (ghosts that carry the field: centred through
-//! them), 0 at an open boundary, an imposed flux and a pole, whose ghosts do not (the
-//! pole's are a mirror at the same phi, not the cell across the axis; one sided, the
-//! cell itself in place of the ghost: production's clamped form, M1OffDiv)
+//! s (0 low, 1 high) along b: inside, across a MeshBlock face or a periodic face and a
+//! reflecting wall (ghosts that carry the field: centred through them), 0 at an open
+//! boundary, an imposed flux, a pole and a cubed-sphere seam, whose ghosts do not (the
+//! pole's are a mirror at the same phi, not the cell across the axis; a seam ghost is
+//! the neighbour panel's cell, off the line, as production's in-panel M1CsTanDer; one
+//! sided, the cell itself in place of the ghost: production's clamped form, M1OffDiv)
 
 KOKKOS_INLINE_FUNCTION
 int CleanTransSide(const CleanArgs &x, const int b, const int m, const int k, const int j,
@@ -890,7 +891,8 @@ int CleanTransSide(const CleanArgs &x, const int b, const int m, const int k, co
   const int end = s ? ((b == 0) ? x.ie : ((b == 1) ? x.je : x.ke))
                     : ((b == 0) ? x.is : ((b == 1) ? x.js : x.ks));
   const int t = CleanBc(x, m, 2*b + s);
-  return (pos != end || (x.mbc(m,2*b+s) != BoundaryFlag::polar &&
+  const BoundaryFlag f = x.mbc(m,2*b+s);
+  return (pos != end || (f != BoundaryFlag::polar && f != BoundaryFlag::panel &&
                          (t == M1_IBC_PERIODIC || t == M1_IBC_REFLECT))) ? 1 : 0;
 }
 
