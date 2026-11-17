@@ -1903,7 +1903,11 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   if (pradm1 != nullptr) {
     pradm1->cln_rstold = pradm1->clean && !pradm1->cln_cell && !t2_read;
   }
-  if (t2_want && !t2_read && global_variable::my_rank == 0) {
+  // (of the old scheme's block only its slope K1, the first slabs: the first step is the
+  // stage step it would have taken)
+  const bool t2_k1 = t2_old && t2_want && nt2_file >= radm1::M1_T2_NK &&
+                     static_cast<int>(pradm1->t2k1.extent(0)) >= nmb;
+  if (t2_want && !t2_read && !t2_k1 && global_variable::my_rank == 0) {
     std::cout << "### WARNING: restart file has no <rad_m1> hesdirk2 slope; the first "
               << "step is backward Euler and this restart is not bitwise." << std::endl;
   }
@@ -1998,7 +2002,8 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                  "complete "
               << "history is then not bitwise)." << std::endl;
   }
-  if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read || t2_read || nck_file > 0 ||
+  if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read || t2_read || t2_k1 ||
+      nck_file > 0 ||
       neint_file > 0 ||   // an ideal-gas eint slab alone
       ctr_read || rss_read || vgd_read || ra_read || csk_read || ams_read ||
       npgs_file > 0 || nfax_file > 0 || nthc_file > 0 || nxfd_file > 0) {
@@ -2103,7 +2108,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       pradm1->pred_ok = true;
       pradm1->pred_dt = pred_dt_file;
     }
-    if (t2_read) {
+    if (t2_read || t2_k1) {
       // the slope slabs sit behind every other tail slab of the record
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0)
@@ -2111,7 +2116,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       offset_myrank = tail0
           + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
       myoffset = offset_myrank;
-      for (int n=0; n<nt2_file; ++n) {
+      for (int n=0; n<(t2_read ? nt2_file : radm1::M1_T2_NK); ++n) {
         read_slab("rad_m1 hesdirk2 slope");
         pradm1->Time2RstSet(n, wtin, nmb);
       }
@@ -2120,7 +2125,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       const int fl = static_cast<int>(t2_hv[2] + 0.5);
       pradm1->t2_ok = t2_want && !pradm1->t2_rstd3 && (nt2_ver < 3 || (fl & 2));
       pradm1->cln_k1ok = (nt2_ver < 3) ? pradm1->t2_ok : ((fl & 4) != 0);
-      pradm1->pred2_ok = (t2_hv[0] > 0.0);
+      pradm1->pred2_ok = t2_read && (t2_hv[0] > 0.0);
       pradm1->pred2_dt = t2_hv[0];
       pradm1->t2_dtprev = t2_hv[1];
       pradm1->t2_vprev = ((fl & 1) != 0);
