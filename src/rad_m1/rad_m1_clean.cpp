@@ -229,7 +229,7 @@ void RadiationM1::CleanInit() {
   Kokkos::realloc(cln_w, nmb, cln_cell ? CLW_NC : CLW_N, n3, n2, n1);
   // the cubed sphere takes the half ranges about the face normals from the FV rays
   cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
-  const int nfc = std::max(cln_milne ? CLF_KK + 6 : (cln_hk ? CLF_HK + 2 : CLF_N),
+  const int nfc = std::max(cln_milne ? CLF_KK + 6 : (cln_hk ? CLF_HK + 2 : CLF_RC + 1),
                            cln_cell ? (cln_fsolve ? CLF_N + 4 : 0) :
                            ((cln_fsolve && cln_fkin) ? CLF_KD + 2 :
                            (cln_vimp ? CLF_DQ + 1 : CLF_QL + 3)));

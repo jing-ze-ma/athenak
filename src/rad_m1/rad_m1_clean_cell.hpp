@@ -72,7 +72,7 @@ constexpr int CLF_AF = 2;    // dissipation speed s = c sqrt(max(D_dd,L, D_dd,R)
 constexpr int CLF_LO = 3;    // 1: low-order face (CleanCellM1Jacobian)
 constexpr int CLF_UG = 4;    // 1: physical boundary face of a marked cell, upwind stress
                              //    against the ghost (clean_pos_ghost)
-constexpr int CLF_CB = CLF_N;  // consistency bracket of (fE, fY_1..3)
+constexpr int CLF_CB = CLF_RC + 1;  // consistency bracket of (fE, fY_1..3)
 constexpr int CLF_WK = CLF_CB + 4;  // weight w of the rays' kinetic flux of U - Ur
 constexpr int CLF_HK = CLF_WK + 1;  // cubed sphere: its h+ of L and h- of R about the
                                     // face normal (CleanCellConsistency)

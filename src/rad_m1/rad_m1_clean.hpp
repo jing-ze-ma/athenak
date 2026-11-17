@@ -61,8 +61,8 @@ constexpr int CLF_TH = 1;    // theta = 1/(1 + h c chi_f)
 constexpr int CLF_G = 2;     // flux of the old vector G_f
 constexpr int CLF_HP = 3;    // h+_f
 constexpr int CLF_HM = 4;    // h-_f
+constexpr int CLF_N = 5;     // (the shared ones)
 constexpr int CLF_RC = 5;    // cell layout: RC coefficient (1 - al) c/chi_f (h-free)
-constexpr int CLF_N = 6;
 // staggered face slots after CLF_N (clean_stag_fsolve: CLF_N .. CLF_N + 3 hold its F,
 // the dissipation term, F^H and, with clean_stag_fkin, the energy flux's memory d)
 constexpr int CLF_QL = CLF_N + 4;   // the operator's al, ar (CleanFaceWeights) and cross
@@ -74,7 +74,9 @@ constexpr int CLF_KD = CLF_N + 10;  // clean_stag_fkin: the slopes K1, K2 of d (
 constexpr Real CLN_MEMUP = 1.0/6.0;  // clean_stag_gflux: a memory outflow above this
                                      // share of the donor's E_old goes upwind
 
-// work vectors (array cln_w); the cell layout allocates the first CLW_NC of them
+// work vectors (array cln_w): the first CLW_NS are shared; the cell layout's own slots
+// (CLW_NS..CLW_NC - 1) and the staggered layout's (CLW_NS..CLW_N - 1) take the same
+// places, and each layout allocates only its own
 constexpr int CLW_EO = 0;    // E of the old vector
 constexpr int CLW_EK = 1;    // Newton iterate of E
 constexpr int CLW_T = 2;     // gas temperature of the iterate
@@ -84,41 +86,42 @@ constexpr int CLW_A1 = 5;    // advective coefficients a_1, a_2, a_3
 constexpr int CLW_DM = 8;    // momentum change of the iterate (3)
 constexpr int CLW_B = 11;    // right-hand side
 constexpr int CLW_X = 12;    // solution
-constexpr int CLW_WK = 13;   // work W of the right-hand side
-constexpr int CLW_DK = 14;   // d(rho kappa_P)/dT, d(rho kappa_E)/dT of the iterate
-constexpr int CLW_BT = 16;   // beta = v/c of the iterate (3, cell layout: frame of y)
-constexpr int CLW_RE = 19;   // h S_E = hc kP G a T^4 - hc kE E + RE E + RY.y - W (Ma et
-constexpr int CLW_RY = 20;   //   al. 2025, eq. 56, G = CLW_GM): the beta terms (RY: 3);
+constexpr int CLW_BT = 13;   // beta = v/c of the iterate (3, cell layout: frame of y)
+constexpr int CLW_RE = 16;   // h S_E = hc kP G a T^4 - hc kE E + RE E + RY.y - W (Ma et
+constexpr int CLW_GM = 17;   //   al. 2025, eq. 56, G = CLW_GM): the beta terms (RY: 3);
                              //   staggered: RE = hc kP a T^4, RY 1 - r
-constexpr int CLW_GM = 23;   // G = 1 - beta^2/2
-constexpr int CLW_EP = 24;   // -(RE E + RY.y) of the solution (eint of the gas)
-constexpr int CLW_JV = 25;   // (1 - r) dA/dbeta/(c^2 rho), dS_p/dbeta/(c^2 rho) of the
-constexpr int CLW_GX = 28;   //   iterate (3 + 1): implicit gas velocity, CleanCellDrag;
+constexpr int CLW_EP = 18;   // -(RE E + RY.y) of the solution (eint of the gas)
+constexpr int CLW_JV = 19;   // (1 - r) dA/dbeta/(c^2 rho), dS_p/dbeta/(c^2 rho) of the
+constexpr int CLW_GX = 22;   //   iterate (3 + 1): implicit gas velocity, CleanCellDrag;
                              //   staggered clean_stag_sbimp: GX = r (CleanRightHandSide);
                              //   staggered gflux: JV + 1 = hc kE dop (CleanNewtonUpdate)
+constexpr int CLW_RY = 23;   // (RY + 1, RY + 2: cell layout only)
+constexpr int CLW_NS = 24;
+constexpr int CLW_WK = 26;   // cell layout: work W of the right-hand side
+constexpr int CLW_DK = 27;   // cell layout: d(rho kappa_P)/dT, d(rho kappa_E)/dT
 constexpr int CLW_NC = 29;
-constexpr int CLW_AM = 29;   // staggered layout: x1-line coefficient of E_{i-1}
-constexpr int CLW_A0 = 30;   // diagonal
-constexpr int CLW_AP = 31;   // x1-line coefficient of E_{i+1}
-constexpr int CLW_CP = 32;   // tridiagonal solve scratch
-constexpr int CLW_R = 33;    // BiCGStab vectors
-constexpr int CLW_R0 = 34;
-constexpr int CLW_P = 35;
-constexpr int CLW_V = 36;
-constexpr int CLW_S = 37;
-constexpr int CLW_Q = 38;
-constexpr int CLW_Y = 39;
-constexpr int CLW_Z = 40;
-constexpr int CLW_TM = 41;   // clean_stag_pc = mg: coefficients of E_{j-1}, E_{j+1},
+constexpr int CLW_AM = 24;   // staggered layout: x1-line coefficient of E_{i-1}
+constexpr int CLW_A0 = 25;   // diagonal
+constexpr int CLW_AP = 26;   // x1-line coefficient of E_{i+1}
+constexpr int CLW_CP = 27;   // tridiagonal solve scratch
+constexpr int CLW_R = 28;    // BiCGStab vectors
+constexpr int CLW_R0 = 29;
+constexpr int CLW_P = 30;
+constexpr int CLW_V = 31;
+constexpr int CLW_S = 32;
+constexpr int CLW_Q = 33;
+constexpr int CLW_Y = 34;
+constexpr int CLW_Z = 35;
+constexpr int CLW_TM = 36;   // clean_stag_pc = mg: coefficients of E_{j-1}, E_{j+1},
                              //   E_{k-1}, E_{k+1} (4)
-constexpr int CLW_L = 45;    // staggered, cubed sphere: the lateral stress sums Y of the
+constexpr int CLW_L = 40;    // staggered, cubed sphere: the lateral stress sums Y of the
                              // face families q of a cell, CLW_L + 3 q
                              // (CleanStagCsLateral)
-constexpr int CLW_SE = 54;   // staggered clean_conv = budget: the gross terms S of the E
-constexpr int CLW_SG = 55;   //   and the gas rows (their scales), the weighted B and a
-constexpr int CLW_BW = 56;   //   preconditioner input (CleanBiCGStab)
-constexpr int CLW_PW = 57;
-constexpr int CLW_N = 58;
+constexpr int CLW_SE = 49;   // staggered clean_conv = budget: the gross terms S of the E
+constexpr int CLW_SG = 50;   //   and the gas rows (their scales), the weighted B and a
+constexpr int CLW_BW = 51;   //   preconditioner input (CleanBiCGStab)
+constexpr int CLW_PW = 52;
+constexpr int CLW_N = 53;
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanFvI
