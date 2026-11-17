@@ -1984,11 +1984,9 @@ void RadiationM1::CleanCellWriteBack() {
   auto u0_ = u0;
   Real neint = 0.0;
   const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
-  const CleanArgs *px = CleanDev(x, 0);
   Kokkos::parallel_reduce("clc_wbcell", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                                                               (nmb1 + 1)*nk*nj*ni),
   KOKKOS_LAMBDA(const int q, Real &nb) {
-    const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
     const int m = q/(nk*nj*ni), k = ks + (q/(nj*ni))%nk;
     const int j = js + (q/ni)%nj, i = is + q%ni;
     Real div[4];
