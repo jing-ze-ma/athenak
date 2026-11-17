@@ -313,10 +313,6 @@ void RadiationM1::CleanInit() {
                  "fluxes with clean_layout = cell); not efix");
     }
   }
-  if (esrc_on && !cln_cell) {
-    CleanFatal("<rad_m1>/esrc (problem/mlt_flux_frozen) with scheme = clean needs "
-               "clean_layout = cell");
-  }
   if (impl_lbath || iebath_hi_col_on) {
     CleanFatal("scheme = clean has no ghost-built inner face (problem/he_bc_linhao) and "
                "no per-column outer bath");
@@ -1155,12 +1151,14 @@ void RadiationM1::CleanFirstIterate() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanRightHandSide
-//! \brief B = E_old + h c kP a T^4 - r h c kE E_k - W - h div F_source, with the exchange
-//! linearised about the iterate (r = s/(d cv + s), s = 4 h c kP a T^3), W the work of
-//! the radiation force of the iterate on the gas (with wb_arad and the reference work
-//! h d arad_ref.v at the iterate's velocity, the row term of ImplicitWorkRow,
-//! rad_m1_implicit.cpp:12438-12465), and the initial guess X = E_k.  With
-//! gas coupling the beta terms of Ma et al. (2025, eq. 56; see rad_m1_clean_cell.hpp):
+//! \brief B = E_old + h c kP a T^4 - r h c kE E_k - W - h div F_source + h esrc, with the
+//! exchange linearised about the iterate (r = s/(d cv + s), s = 4 h c kP a T^3), W the
+//! work of the radiation force of the iterate on the gas (with wb_arad and the reference
+//! work h d arad_ref.v at the iterate's velocity, the row term of ImplicitWorkRow,
+//! rad_m1_implicit.cpp:12438-12465), esrc the explicit energy source of <rad_m1> (the
+//! production old-vector deposit, rad_m1_implicit.cpp:15335-15351), and the initial
+//! guess X = E_k.  With gas coupling the beta terms of Ma et al. (2025, eq. 56; see
+//! rad_m1_clean_cell.hpp):
 //! the emission takes G = 1 - beta^2/2 (CLW_GM) and B adds the lagged A - hc (kP a T^4 G
 //! - kE E) = hc kE [(beta^2/2 - beta.a/c) E_k + 2 beta.y_k] (y_k = F/c of the iterate,
 //! mean of the two faces; the gas eint takes its opposite, CLW_EP), with beta = v/c of
@@ -1186,6 +1184,10 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   const bool wsp = (force_ref == M1_FREF_WB_ARAD) && !x.vzero;
   auto fr = cln_fref;
   auto aref = arad_ref;
+  // (the explicit energy source esrc, problem/mlt_flux_frozen: h esrc joins the old E,
+  // as ImplicitSolve's dt (chat/c) esrc; the slope of E carries it, CleanWriteBack)
+  const bool eso = esrc_on;
+  auto es = esrc;
 
   if (x.feedback) {
     par_for("cln_beta", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -1334,7 +1336,8 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
     x.w(m,CLW_RR,k,j,i) = rr;
     x.w(m,CLW_B,k,j,i) = x.w(m,CLW_EO,k,j,i) + hckp*arad_*SQR(SQR(t))
                          - rr*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) - work
-                         - CleanSourceDivergence(x, m, k, j, i) + sb;
+                         - CleanSourceDivergence(x, m, k, j, i) + sb
+                         + (eso ? x.h*es(m,k,j,i) : 0.0);
     // (clean_stag_sbimp: (1 - r) sb(E) in the operator as the cell layout's, Newton form)
     if (x.sbi) x.w(m,CLW_B,k,j,i) -= (1.0 - rr)*CleanStagBetaE(xh, CLW_EK, m, k, j, i);
     x.w(m,CLW_X,k,j,i) = x.w(m,CLW_EK,k,j,i);
@@ -2286,7 +2289,8 @@ void RadiationM1::CleanStagDrag(const bool first) {
 //! and energy the radiation gives up, so both totals change only by face fluxes; with
 //! force_reference less the reference force, and with wb_arad (force_reference_work =
 //! split) E pays the reference work h d arad_ref.v at the velocity after the kick, which
-//! the problem generator gives the gas (rad_m1_implicit.cpp:12438-12465).  On the
+//! the problem generator gives the gas (rad_m1_implicit.cpp:12438-12465); the explicit
+//! source esrc is the radiation's (the gas takes the exchange only).  On the
 //! cubed sphere the gas takes the vector of CleanStagMomentum in the hydro's components
 //! (CleanGasChange), and the cell flux of the outputs is the face momenta's vector
 //! (CleanStagCsVector) in the frame of y: total energy and L_z (of that vector) are
@@ -2350,6 +2354,8 @@ void RadiationM1::CleanWriteBack() {
   const bool wsp = (fref == M1_FREF_WB_ARAD);
   auto fr = cln_fref;
   auto aref = arad_ref;
+  const bool eso = esrc_on;
+  auto es = esrc;
   const Real arad_ = arad;
   par_for("cln_wbcell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -2387,8 +2393,9 @@ void RadiationM1::CleanWriteBack() {
       if (multi_d) div += x.idx[1]*(f2(m,k,j+1,i) - f2(m,k,j,i));
       if (three_d) div += x.idx[2]*(f3(m,k+1,j,i) - f3(m,k,j,i));
       // (clean_stag_split: the faces store F^H, E moved by the energy flux)
+      // (and esrc, the radiation's external source: the gas takes the exchange only)
       den = -(e - x.w(m,CLW_EO,k,j,i)) - ((xh.hi || x.sph || x.cub) ?
-            x.w(m,CLW_Q,k,j,i) : h*div);
+            x.w(m,CLW_Q,k,j,i) : h*div) + (eso ? h*es(m,k,j,i) : 0.0);
       if (x.vzero) {   // (steady start: the eint of the iterate's T, not the residual of
         Real ei, p, chi_rho, chi_t, cv;   //  a step h -> infinity, as the cell layout)
         eos.ThermoAt(uh(m,IDN,k,j,i), x.w(m,CLW_T,k,j,i), ei, p, chi_rho, chi_t, cv);
