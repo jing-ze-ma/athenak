@@ -2905,6 +2905,7 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   CleanGdI gi{vi_, DvceArray5D<Real>(), ok, og, ks, js, pk, vgd_own};
   if (gl && pk) {
   } else if (gl) {
+    const int ng = indcs.ng;
     const int nc = std::min(n, cln_hmax), nt = std::max(ke - ks + 1, je - js + 1);
     gi.gl = DvceArray5D<Real>("cln_gd_gl", nmb1 + 1, n, 2, nt, cs.extent_int(4));
     DvceArray5D<Real> ch(Kokkos::view_alloc(Kokkos::WithoutInitializing, "cln_gd_ch"),
@@ -2913,8 +2914,11 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
     auto gg = gi.gl;
     for (int d0 = 0; d0 < n; d0 += nc) {
       const int nd = std::min(nc, n - d0);
+      // (only the ng layers along the MeshBlock's theta and phi faces: the exchange reads
+      // no other cell)
       par_for("cln_gd_chc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (j >= js + ng && j <= je - ng && k >= ks + ng && k <= ke - ng) return;
         for (int c = 0; c < nd; ++c) ch(m,c,k,j,i) = vi_(m,d0+c,k+ok,j+og,i);
       });
       CleanGhostFill(ch, 0, nd);
