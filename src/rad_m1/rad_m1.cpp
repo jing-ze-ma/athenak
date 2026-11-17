@@ -2546,13 +2546,18 @@ void RadiationM1::SetX2FaceFlux(const DvceArray3D<Real> &flo, const DvceArray3D<
 bool RadiationM1::FrefWaccOn() const {
   // accbook-1021 time2_fref_wacc: also the backward-Euler steps of a hesdirk2 run (no
   // valid slope: the first step, a redo; not a helper solve, not multi-rate / csplit)
-  const bool t2be = fref_wacc_t2 && (time_scheme == M1_TIME_HESDIRK2) && !t2_ok &&
-                    !t2_inprobe && (csplit == 0);
+  const bool t2be = fref_wacc_t2 && (time_scheme == M1_TIME_HESDIRK2) &&
+                    (!t2_ok || FrefWaccStage()) && !t2_inprobe && (csplit == 0);
   return fref_wsplit && !fref_pay_post && ((time_scheme == M1_TIME_BE) || t2be) &&
          (mr_every <= 1);
 }
 
+bool RadiationM1::FrefWaccStage() const {
+  return clean && !cln_cell && t2_ok;
+}
+
 Real RadiationM1::FrefWaccGam0(Real bdt, Real dt_mesh) const {
+  if (FrefWaccStage()) return 0.0;   // (each stage solve pays its hydro stage's work)
   for (int s = 0; s < fref_hnst; ++s) {
     if (std::abs(bdt - fref_hbeta[s]*dt_mesh) <= 1.0e-12*fref_hbeta[s]*dt_mesh) {
       return fref_hgam0[s];
