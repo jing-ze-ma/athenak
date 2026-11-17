@@ -906,7 +906,12 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // floor, and no state from the last solve, so that restarts stay bitwise)
   Real tol_nl = fmax(cln_tol_nl, 10.0*cln_tol);
   cln_tolb = tol_nl;
-  cln_ewr = iterate ? -1.0 : -2.0;   // (the budget's norm only in the Newton passes)
+  // (the budget's norm and time error only in Newton passes whose K1 = f(U^n) is
+  // known; a single solve, or a cold one without the time-error estimate, the strict
+  // test, whose answer is that of the converged step)
+  cln_bon = cln_budget && iterate && (t2_ok || cln_k1ok) && t2_solve != M1_T2S_NONE &&
+            !cln_vzero && t2k1.extent_int(0) >= pmy_pack->nmb_thispack;
+  cln_ewr = -1.0;
   // a change that stopped decreasing within 100 times both its round-off level (cln_fe,
   // cln_fv, from the magnitudes of the terms of the solve) and tol_nl is converged too
   auto settled = [&](const Real d, const Real d0, const Real f) {
@@ -984,7 +989,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       if (nit < 0) dnl = std::numeric_limits<Real>::infinity();
       if (!iterate || nit < 0) break;
       const Real de = cell ? CleanCellNewtonUpdate() : CleanNewtonUpdate();
-      if (cln_budget) tol_nl = cln_tolb;
+      if (cln_bon) tol_nl = cln_tolb;
       if (lagged && inl < cln_maxpic) dpic = de;
       Real dv = 0.0;
       if (cln_feedback) dv = cell ? CleanCellVelocityUpdate() : CleanVelocityUpdate();
@@ -1324,7 +1329,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   // as ImplicitSolve's dt (chat/c) esrc; the slope of E carries it, CleanWriteBack)
   const bool eso = esrc_on;
   auto es = esrc;
-  const bool bud = cln_budget;
+  const bool bud = cln_bon;
   // (CleanSteadyStart's equilibrium relax, icr_fmeas: h -> infinity)
   const bool eqr = icr_fmeas && x.vzero && x.feedback && !x.sbi;
 
@@ -1537,7 +1542,7 @@ Real RadiationM1::CleanNewtonUpdate() {
   const bool gfd = !cell && cln_gflux && !cln_sbimp && cln_feedback;
   // (clean_conv = budget: the changes over the rows' gross terms, and the time error h/2
   // |f(Y) - f(U^n)| of the iterate, Heun against Euler, K1 = f(U^n))
-  const bool bud = cln_budget;
+  const bool bud = cln_bon;
   const bool kok = bud && (t2_ok || cln_k1ok) && t2_solve != M1_T2S_NONE &&
                    !cln_vzero && t2k1.extent_int(0) >= nmb;
   const Real h = dt_sub;
