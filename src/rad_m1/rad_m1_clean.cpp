@@ -2880,8 +2880,8 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
           dp = (x.sph ? CleanStagSph(x, 0, dir, m, k, j, i) : x.idx[dir])*(pr - pl);
           ds = x.sph ? CleanStagSph(x, 4, dir, m, k, j, i)*(pr + pl) : 0.0;
         }
-        fc(m,CLF_N+1,k,j,i) += (tr[0]*(fp - f) - tl[0]*(f - fm))/
-                               (2.0*x.c*CleanCellFaceDistance(x, dir, m, k, j, i)) - dp - ds;
+        const Real dc = 2.0*x.c*CleanCellFaceDistance(x, dir, m, k, j, i);
+        fc(m,CLF_N+1,k,j,i) += (tr[0]*(fp - f) - tl[0]*(f - fm))/dc - dp - ds;
       });
     }
   }
@@ -3108,7 +3108,9 @@ void RadiationM1::CleanStagFSchur() {
             if (hr && r <= rs) CleanStagFJoin(o, sr, cr, yr, xr);
             for (int q = 0; q < 8; ++q) {
               if (r <= rl) slot(n - 1, -1, q) = c[q];
-              if (r <= rs + (hr && !cub ? 1 : 0)) slot(0, 1, q) = (r <= rs) ? cr[q] : sr[q];
+              if (r <= rs + ((hr && !cub) ? 1 : 0)) {
+                slot(0, 1, q) = (r <= rs) ? cr[q] : sr[q];
+              }
               if (cub && hr && r == rr + 1) keep(q) = sr[q];
             }
             return;
@@ -3202,8 +3204,10 @@ void RadiationM1::CleanStagFCsShared() {
 //! \fn void RadiationM1::CleanStagCsLateral
 //! \brief staggered on the cubed sphere: for E in work vector e, the lateral stress sums
 //! of every cell and face family q, Y_q = 1/4 sum over its two faces of A n.(P' - P),
-//! P = D E (Cartesian, n outward, P' of the cell across).  The momentum F_n of a face
-//! changes by n.div P of its two half cells: A n.(P_R - P_L) and the Y of the families
+//! P = D E (Cartesian, n outward, P' of the cell across; one sided, 1/2 of the other
+//! face, where a side's ghosts do not carry the field, CleanTransSide).  The momentum
+//! F_n of a face changes by n.div P of its two half cells: A n.(P_R - P_L) and the Y of
+//! the families
 //! other than the face's (CleanFaceStress), exact for a uniform P.  The owner computes Y
 //! and the ghosts take it, so that a seam face sees the neighbour's true geometry.
 
@@ -3238,10 +3242,14 @@ void RadiationM1::CleanStagCsLateral(const int e, const bool st) {
     for (int q = 0; q < 3; ++q) {
       const int dk = (q == 2), dj = (q == 1), di = (q == 0);
       Real y[3] = {0.0, 0.0, 0.0};
+      // (a side whose ghosts do not carry the field drops out, the other side's weight
+      // doubled: one sided, CleanTransSide)
+      const Real wq = (CleanTransSide(x, q, m, k, j, i, 0) +
+                       CleanTransSide(x, q, m, k, j, i, 1) == 2) ? 0.25 : 0.5;
       for (int s = -1; s <= 1; s += 2) {
         const int kf = k + (s > 0)*dk, jf = j + (s > 0)*dj, iff = i + (s > 0)*di;
-        if (CleanBoundaryFace(x, q, m, kf, jf, iff)) continue;
-        const Real a = 0.25*s*x.area[q](m,kf,jf,iff);
+        if (!CleanTransSide(x, q, m, k, j, i, s > 0)) continue;
+        const Real a = wq*s*x.area[q](m,kf,jf,iff);
         for (int b = 0; b < 3; ++b) {
           for (int c = 0; c < 3; ++c) {
             const int n = CLN_D11 + ((b == c) ? b : 2 + b + c);

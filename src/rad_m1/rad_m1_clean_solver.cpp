@@ -105,7 +105,8 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.three_d = pmy_pack->pmesh->three_d;
   x.sph = pmy_pack->pmesh->use_spherical_polar;
   auto &ms = pmy_pack->pmesh->mesh_size;
-  x.cseam = 0.5/tan(ms.x2min) + 0.5/tan(ms.x2max);
+  x.cseam = (pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::periodic)
+            ? 0.5/tan(ms.x2min) + 0.5/tan(ms.x2max) : 0.0;   // (read on that wrap only)
   x.cub = pmy_pack->pmesh->use_cubed_sphere;
   if (x.sph || (!x.cub && cln_rfv > 0)) {
     auto *pc = pmy_pack->pcoord;
@@ -948,12 +949,14 @@ void RadiationM1::CleanPreconditionerSetup() {
         for (int q = 0; q < 3; ++q) {
           const int dk = (q == 2), dj = (q == 1), di = (q == 0);
           Real y0[3] = {0.0, 0.0, 0.0};
+          const Real wq = (CleanTransSide(x, q, m, k, j, i, 0) +
+                           CleanTransSide(x, q, m, k, j, i, 1) == 2) ? 0.25 : 0.5;
           for (int s = -1; s <= 1; s += 2) {
             const int kf = k + (s > 0)*dk, jf = j + (s > 0)*dj, iff = i + (s > 0)*di;
             const int o = 6*q + 3*(s > 0);
             Real yn[3] = {0.0, 0.0, 0.0};
-            if (!CleanBoundaryFace(x, q, m, kf, jf, iff)) {
-              const Real a = 0.25*s*x.area[q](m,kf,jf,iff);
+            if (CleanTransSide(x, q, m, k, j, i, s > 0)) {
+              const Real a = wq*s*x.area[q](m,kf,jf,iff);
               for (int b = 0; b < 3; ++b) {
                 for (int c = 0; c < 3; ++c) {
                   const int n = CLN_D11 + ((b == c) ? b : 2 + b + c);

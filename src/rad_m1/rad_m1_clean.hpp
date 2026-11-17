@@ -875,6 +875,26 @@ bool CleanBoundaryFace(const CleanArgs &x, const int dir, const int m, const int
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn int CleanTransSide
+//! \brief 1 if the transverse stress terms of cell (k,j,i) reach across its face on side
+//! s (0 low, 1 high) along b: inside, across a MeshBlock face, cubed-sphere seam or
+//! periodic face and a reflecting wall (ghosts that carry the field: centred through
+//! them), 0 at an open boundary, an imposed flux and a pole, whose ghosts do not (the
+//! pole's are a mirror at the same phi, not the cell across the axis; one sided, the
+//! cell itself in place of the ghost: production's clamped form, M1OffDiv)
+
+KOKKOS_INLINE_FUNCTION
+int CleanTransSide(const CleanArgs &x, const int b, const int m, const int k, const int j,
+                   const int i, const int s) {
+  const int pos = (b == 0) ? i : ((b == 1) ? j : k);
+  const int end = s ? ((b == 0) ? x.ie : ((b == 1) ? x.je : x.ke))
+                    : ((b == 0) ? x.is : ((b == 1) ? x.js : x.ks));
+  const int t = CleanBc(x, m, 2*b + s);
+  return (pos != end || (x.mbc(m,2*b+s) != BoundaryFlag::polar &&
+                         (t == M1_IBC_PERIODIC || t == M1_IBC_REFLECT))) ? 1 : 0;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real CleanFaceStress
 //! \brief divergence of the radiation stress D E at face (k,j,i) normal to dir,
 //! d_b(D_{dir,b} E): the normal derivative from the two adjacent cells (if normal is
@@ -915,13 +935,18 @@ Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m
     auto de = [&](const int kk, const int jj, const int ii) {
       return x.cs(m,ab,kk,jj,ii)*x.w(m,e,kk,jj,ii);
     };
-    // (spherical polar: d_r on theta faces, (1/r) d_theta on r faces, central)
+    // (spherical polar: d_r on theta faces, (1/r) d_theta on r faces, central; one sided
+    // where a side's ghosts do not carry the field, CleanTransSide)
+    const int up = CleanTransSide(x, b, m, k, j, i, 1);
+    const int dn = CleanTransSide(x, b, m, k, j, i, 0);
     // (torque form: dual r faces i, i+1 and theta faces j, j+1)
     if (x.sph && dir == 2) {
       const Real vr = x.vol(m,k,j,i)*x.x1v(m,i)*sin(x.x2v(m,j));
       auto pe = [&](const int jj, const int ii) {   // (D E)_{b,ph} at a dual face
-        return 0.25*(de(k,jj,ii) + de(k-1,jj,ii) + de(k,jj-(b == 1),ii-(b == 0)) +
-                     de(k-1,jj-(b == 1),ii-(b == 0)));
+        const int jh = (jj > j && !up) ? j : jj, ih = (ii > i && !up) ? i : ii;
+        const int jo = jj - (b == 1), io = ii - (b == 0);
+        const int jw = (jo < j && !dn) ? j : jo, iw = (io < i && !dn) ? i : io;
+        return 0.25*(de(k,jh,ih) + de(k-1,jh,ih) + de(k,jw,iw) + de(k-1,jw,iw));
       };
       if (b == 0) {
         div += (x.area[0](m,k,j,i+1)*x.x1f(m,i+1)*pe(j,i+1) -
@@ -932,12 +957,15 @@ Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m
       }
       continue;
     }
+    if (up + dn == 0) continue;
     const Real rb = !x.sph ? 1.0 : ((dir == 0) ? x.x1f(m,i) : x.x1v(m,i));
-    const Real ib = !x.sph ? x.idx[b] : ((b == 0) ? 2.0/(x.x1v(m,i+1) - x.x1v(m,i-1)) :
-                    ((b == 1) ? 2.0/(rb*(x.x2v(m,j+1) - x.x2v(m,j-1))) :
-                    x.idx[2]/(rb*sin((dir == 1) ? x.x2f(m,j) : x.x2v(m,j)))));
-    div += 0.25*ib*(de(k+dk,j+dj,i+di) + de(kl+dk,jl+dj,il+di)
-                    - de(k-dk,j-dj,i-di) - de(kl-dk,jl-dj,il-di));
+    const Real w = (up + dn == 2) ? 1.0 : 2.0;   // (the span: two cells or one)
+    const Real ib = !x.sph ? w*x.idx[b] :
+                    ((b == 0) ? 2.0/(x.x1v(m,i+up) - x.x1v(m,i-dn)) :
+                    ((b == 1) ? 2.0/(rb*(x.x2v(m,j+up) - x.x2v(m,j-dn))) :
+                    w*x.idx[2]/(rb*sin((dir == 1) ? x.x2f(m,j) : x.x2v(m,j)))));
+    div += 0.25*ib*(de(k+up*dk,j+up*dj,i+up*di) + de(kl+up*dk,jl+up*dj,il+up*di)
+                    - de(k-dn*dk,j-dn*dj,i-dn*di) - de(kl-dn*dk,jl-dn*dj,il-dn*di));
   }
   return div;
 }
@@ -1173,6 +1201,9 @@ void CleanStCross(const CleanArgs &x, const int m, const int k, const int j, con
   constexpr int lk = (SD - 1)*ek, lj = (SD - 1)*ej, li = (SD - 1)*ei;
   constexpr int rk = SD*ek, rj = SD*ej, ri = SD*ei;
   const int kf = k + rk, jf = j + rj, iff = i + ri;
+  // (one sided where a side's ghosts do not carry the field, CleanTransSide)
+  const int up = CleanTransSide(x, B, m, kf, jf, iff, 1);
+  const int dn = CleanTransSide(x, B, m, kf, jf, iff, 0);
   if constexpr (D == 2) {
     if (x.sph) {   // (torque form, CleanFaceStress)
       const Real vr = x.vol(m,kf,jf,iff)*x.x1v(m,iff)*sin(x.x2v(m,jf));
@@ -1180,35 +1211,50 @@ void CleanStCross(const CleanArgs &x, const int m, const int k, const int j, con
         const Real s = sin(x.x2v(m,jf))/vr*cr*0.25;
         const Real fp = x.area[0](m,kf,jf,iff+1)*x.x1f(m,iff+1)*s;
         const Real fm = -x.area[0](m,kf,jf,iff)*x.x1f(m,iff)*s;
-        CleanStAdd<rk, 0, 1>(x, ab, m, k, j, i, fp, c);
-        CleanStAdd<lk, 0, 1>(x, ab, m, k, j, i, fp, c);
-        CleanStAdd<rk, 0, 0>(x, ab, m, k, j, i, fp + fm, c);
-        CleanStAdd<lk, 0, 0>(x, ab, m, k, j, i, fp + fm, c);
-        CleanStAdd<rk, 0, -1>(x, ab, m, k, j, i, fm, c);
-        CleanStAdd<lk, 0, -1>(x, ab, m, k, j, i, fm, c);
+        const Real f0 = (up ? fp : 2.0*fp) + (dn ? fm : 2.0*fm);
+        CleanStAdd<rk, 0, 1>(x, ab, m, k, j, i, up ? fp : 0.0, c);
+        CleanStAdd<lk, 0, 1>(x, ab, m, k, j, i, up ? fp : 0.0, c);
+        CleanStAdd<rk, 0, 0>(x, ab, m, k, j, i, f0, c);
+        CleanStAdd<lk, 0, 0>(x, ab, m, k, j, i, f0, c);
+        CleanStAdd<rk, 0, -1>(x, ab, m, k, j, i, dn ? fm : 0.0, c);
+        CleanStAdd<lk, 0, -1>(x, ab, m, k, j, i, dn ? fm : 0.0, c);
       } else {
         const Real s = x.x1v(m,iff)/vr*cr*0.25;
         const Real fp = x.area[1](m,kf,jf+1,iff)*sin(x.x2f(m,jf+1))*s;
         const Real fm = -x.area[1](m,kf,jf,iff)*sin(x.x2f(m,jf))*s;
-        CleanStAdd<rk, 1, 0>(x, ab, m, k, j, i, fp, c);
-        CleanStAdd<lk, 1, 0>(x, ab, m, k, j, i, fp, c);
-        CleanStAdd<rk, 0, 0>(x, ab, m, k, j, i, fp + fm, c);
-        CleanStAdd<lk, 0, 0>(x, ab, m, k, j, i, fp + fm, c);
-        CleanStAdd<rk, -1, 0>(x, ab, m, k, j, i, fm, c);
-        CleanStAdd<lk, -1, 0>(x, ab, m, k, j, i, fm, c);
+        const Real f0 = (up ? fp : 2.0*fp) + (dn ? fm : 2.0*fm);
+        CleanStAdd<rk, 1, 0>(x, ab, m, k, j, i, up ? fp : 0.0, c);
+        CleanStAdd<lk, 1, 0>(x, ab, m, k, j, i, up ? fp : 0.0, c);
+        CleanStAdd<rk, 0, 0>(x, ab, m, k, j, i, f0, c);
+        CleanStAdd<lk, 0, 0>(x, ab, m, k, j, i, f0, c);
+        CleanStAdd<rk, -1, 0>(x, ab, m, k, j, i, dn ? fm : 0.0, c);
+        CleanStAdd<lk, -1, 0>(x, ab, m, k, j, i, dn ? fm : 0.0, c);
       }
       return;
     }
   }
+  if (up + dn == 0) return;
   const Real rb = !x.sph ? 1.0 : ((D == 0) ? x.x1f(m,iff) : x.x1v(m,iff));
-  const Real ib = !x.sph ? x.idx[B] : ((B == 0) ? 2.0/(x.x1v(m,iff+1) - x.x1v(m,iff-1)) :
-                  ((B == 1) ? 2.0/(rb*(x.x2v(m,jf+1) - x.x2v(m,jf-1))) :
-                  x.idx[2]/(rb*sin((D == 1) ? x.x2f(m,jf) : x.x2v(m,jf)))));
+  const Real w = (up + dn == 2) ? 1.0 : 2.0;
+  const Real ib = !x.sph ? w*x.idx[B] :
+                  ((B == 0) ? 2.0/(x.x1v(m,iff+up) - x.x1v(m,iff-dn)) :
+                  ((B == 1) ? 2.0/(rb*(x.x2v(m,jf+up) - x.x2v(m,jf-dn))) :
+                  w*x.idx[2]/(rb*sin((D == 1) ? x.x2f(m,jf) : x.x2v(m,jf)))));
   const Real q = 0.25*ib*cr;
-  CleanStAdd<rk + bk, rj + bj, ri + bi>(x, ab, m, k, j, i, q, c);
-  CleanStAdd<lk + bk, lj + bj, li + bi>(x, ab, m, k, j, i, q, c);
-  CleanStAdd<rk - bk, rj - bj, ri - bi>(x, ab, m, k, j, i, -q, c);
-  CleanStAdd<lk - bk, lj - bj, li - bi>(x, ab, m, k, j, i, -q, c);
+  if (up) {
+    CleanStAdd<rk + bk, rj + bj, ri + bi>(x, ab, m, k, j, i, q, c);
+    CleanStAdd<lk + bk, lj + bj, li + bi>(x, ab, m, k, j, i, q, c);
+  } else {
+    CleanStAdd<rk, rj, ri>(x, ab, m, k, j, i, q, c);
+    CleanStAdd<lk, lj, li>(x, ab, m, k, j, i, q, c);
+  }
+  if (dn) {
+    CleanStAdd<rk - bk, rj - bj, ri - bi>(x, ab, m, k, j, i, -q, c);
+    CleanStAdd<lk - bk, lj - bj, li - bi>(x, ab, m, k, j, i, -q, c);
+  } else {
+    CleanStAdd<rk, rj, ri>(x, ab, m, k, j, i, -q, c);
+    CleanStAdd<lk, lj, li>(x, ab, m, k, j, i, -q, c);
+  }
 }
 
 //----------------------------------------------------------------------------------------

@@ -196,8 +196,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       const int nb = ((cs && d > 0) ? 4 : 1)*((d == 0) ? pm->mesh_indcs.nx1 :
                      ((d == 1) ? pm->mesh_indcs.nx2 : pm->mesh_indcs.nx3))/n;
       const bool per = (cs && d > 0) || (pm->mesh_bcs[2*d] == BoundaryFlag::periodic);
-      const int nmin = (nb > 2 || (nb == 2 && !per)) ? ((cs && per && nb%2 == 0) ? 7 : 6) :
-                       ((nb == 2) ? 3 : 0);
+      const int nlong = (cs && per && nb%2 == 0) ? 7 : 6;   // (cs: the kept segment)
+      const int nmin = (nb > 2 || (nb == 2 && !per)) ? nlong : ((nb == 2) ? 3 : 0);
       ok = ok && n >= nmin && (nmin == 0 || pm->mb_indcs.ng >= 3);
     }
     cln_fschur = !cln_cell && ok;
