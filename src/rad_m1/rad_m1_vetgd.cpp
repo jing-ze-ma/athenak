@@ -1032,6 +1032,10 @@ void RadiationM1::VetGdInit() {
               << std::endl;
   }
   vgd_n = static_cast<int>(vgd_base.size()/4);
+  // fixrot-1117: the set's z-rotation period (the rotation sequences span one): the
+  // product set 2 pi/nphi, the geodesic set pi (z is a 2-fold axis), HEALPix and LQ_N
+  // pi/2 (C4)
+  vgd_zper = (vgd_gl_nmu > 0) ? 2.0*M_PI/vgd_gl_nphi : ((vgd_ls < 0) ? M_PI : 0.5*M_PI);
   if (!pm->three_d) {
     const double per = pm->mesh_size.x3max - pm->mesh_size.x3min;
     const double c = std::cos(per), s = std::sin(per);
@@ -1500,7 +1504,7 @@ void RadiationM1::VetRotInit(ParameterInput *pin) {
 //! \brief vet_gd_rotate_every = N > 0: the z-rotation of the set for cycle c, constant
 //! over each block of N cycles: alpha = (pi/2) frac((c/N) g), g = (sqrt 5 - 1)/2 (a
 //! deterministic low-discrepancy sequence of the cycle number: reruns and restarts
-//! bitwise; pi/2 is the C4 period of the set)
+//! bitwise; pi/2 is the C4 period of the set, vgd_zper = pi for the geodesic set)
 
 Real RadiationM1::VetGdAngle(const int cyc) const {
   if (!VgdRotOn()) {return 0.0;}
@@ -1523,7 +1527,7 @@ Real RadiationM1::VetGdAngleBlk(const int64_t blk) const {
       const int64_t z = (blk >= 0) ? 2*blk : (-2*blk - 1);
       return static_cast<Real>(z);
     }
-    const double per = (vgd_gl_nmu > 0) ? 2.0*M_PI/vgd_gl_nphi : 0.5*M_PI;
+    const double per = vgd_zper;
     if (vgd_rot_rand) {return static_cast<Real>(per*VgdRotU(vgd_rot_seed, blk, 0));}
     const double b = static_cast<double>(blk);
     const double g = 0.5*(std::sqrt(5.0) - 1.0);
@@ -1541,12 +1545,13 @@ Real RadiationM1::VetGdAngleBlk(const int64_t blk) const {
   // sequence on pi/2 clusters for a product set of period 2 pi/nphi (12: consecutive
   // blocks step only -0.146 of the period)
   if (vra_on) {
-    const double per = (vgd_gl_nmu > 0) ? 2.0*M_PI/vgd_gl_nphi : 0.5*M_PI;
+    const double per = vgd_zper;
     return static_cast<Real>(per*RotPhase(blk));
   }
   const double b = static_cast<double>(blk);
   const double g = 0.5*(std::sqrt(5.0) - 1.0);
-  return 0.5*M_PI*(b*g - std::floor(b*g));
+  // (a product set keeps pi/2 here: bitwise)
+  return ((vgd_gl_nmu > 0) ? 0.5*M_PI : vgd_zper)*(b*g - std::floor(b*g));
 }
 
 //----------------------------------------------------------------------------------------

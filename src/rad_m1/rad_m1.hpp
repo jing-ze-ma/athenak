@@ -3557,6 +3557,7 @@ class RadiationM1 {
                                // first gd shell, q from the gd top cell)
   int vgd_n = 0;
   int vgd_ls = 0;              // vet_gd_ls = 6/8/10/12: level-symmetric LQ_N set instead
+  double vgd_zper = 0.5*M_PI;  // fixrot-1117: the set's z-rotation period (VetGdInit)
   int vgd_gl_nmu = 0;          // vet_gd_gl_nmu > 0: product set GL(nmu in n_z) x nphi
   int vgd_gl_nphi = 12;        // vet_gd_gl_nphi (C_nphi about z)
   bool vgd_gl_stag = true;     // vet_gd_gl_stagger: alternate rings half a step
