@@ -481,16 +481,18 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   char t2_hdr[2*sizeof(std::int32_t) + 3*sizeof(Real)];
   {
-    // (version 2: the staggered fkin block carries K1_d, 8349d48ff)
-    const bool fk = (pradm1 != nullptr) && pradm1->clean && pradm1->cln_fsolve &&
-                    pradm1->cln_fkin;
-    const std::int32_t hdr[2] = {(nt2 > 0) ? (fk ? 2 : 1) : 0,
+    // (version 2: the staggered fkin block carries K1_d, 8349d48ff; version 3, the
+    // clean scheme: hv[2] also holds t2_ok and cln_k1ok, as bits 2 and 4)
+    const bool cl = (pradm1 != nullptr) && pradm1->clean;
+    const bool fk = cl && pradm1->cln_fsolve && pradm1->cln_fkin;
+    const std::int32_t hdr[2] = {(nt2 > 0) ? (cl ? 3 : (fk ? 2 : 1)) : 0,
                                  static_cast<std::int32_t>(nt2)};
     Real hv[3] = {0.0, 0.0, 0.0};
     if (pradm1 != nullptr) {
       hv[0] = pradm1->pred2_ok ? pradm1->pred2_dt : 0.0;
       hv[1] = pradm1->t2_dtprev;
-      hv[2] = pradm1->t2_vprev ? 1.0 : 0.0;
+      hv[2] = (pradm1->t2_vprev ? 1.0 : 0.0) + (cl && pradm1->t2_ok ? 2.0 : 0.0) +
+              (cl && pradm1->cln_k1ok ? 4.0 : 0.0);
     }
     std::memcpy(&(t2_hdr[0]), &(hdr[0]), sizeof(hdr));
     std::memcpy(&(t2_hdr[0]) + sizeof(hdr), &(hv[0]), sizeof(hv));

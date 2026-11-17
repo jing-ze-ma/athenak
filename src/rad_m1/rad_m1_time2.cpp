@@ -3469,7 +3469,9 @@ bool RadiationM1::Time2RstAccept(const int nfile, const int ver) {
   return (nfile == nb + t2_nfv) && (t2_nfv >= 0);
 }
 int RadiationM1::Time2RstNch() {
-  return (t2_ok || time_scheme != M1_TIME_HESDIRK2) ? Time2RstNchWant() : 0;
+  // (the clean scheme always: its state, and K1 with cln_k1ok, also in backward-Euler
+  // steps; restart.cpp stores t2_ok)
+  return (t2_ok || clean || time_scheme != M1_TIME_HESDIRK2) ? Time2RstNchWant() : 0;
 }
 
 // gpumem-1022: m0 > 0 packs MeshBlocks m0 .. m0+nmb-1 into a(0 .. nmb-1) (per-MB staging)

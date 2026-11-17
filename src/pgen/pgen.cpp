@@ -659,7 +659,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       std::memcpy(&(hdr[0]), &(t2_hdr[0]), sizeof(hdr));
       std::memcpy(&(t2_hv[0]), &(t2_hdr[0]) + sizeof(hdr), sizeof(t2_hv));
     }
-    if (!ok || hdr[0] < 1 || hdr[0] > 2 || hdr[1] < 1 || hdr[1] > 65536) {
+    if (!ok || hdr[0] < 1 || hdr[0] > 3 || hdr[1] < 1 || hdr[1] > 65536) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "the <rad_m1> hesdirk2 header of this restart file is "
                 << "broken." << std::endl;
@@ -2108,11 +2108,15 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         read_slab("rad_m1 hesdirk2 slope");
         pradm1->Time2RstSet(n, wtin, nmb);
       }
-      pradm1->t2_ok = t2_want && !pradm1->t2_rstd3;   // (no K1_d: backward Euler)
+      // (version 3: t2_ok and cln_k1ok as written, bits 2 and 4 of t2_hv[2]; before,
+      // the slope was written only with t2_ok)
+      const int fl = static_cast<int>(t2_hv[2] + 0.5);
+      pradm1->t2_ok = t2_want && !pradm1->t2_rstd3 && (nt2_ver < 3 || (fl & 2));
+      pradm1->cln_k1ok = (nt2_ver < 3) ? pradm1->t2_ok : ((fl & 4) != 0);
       pradm1->pred2_ok = (t2_hv[0] > 0.0);
       pradm1->pred2_dt = t2_hv[0];
       pradm1->t2_dtprev = t2_hv[1];
-      pradm1->t2_vprev = (t2_hv[2] > 0.5);
+      pradm1->t2_vprev = ((fl & 1) != 0);
     }
     // the internal energy (kEintRstMagic): only with the full general-EOS tail, which is
     // what makes the first conversion frozen; it goes into w0 in that conversion
