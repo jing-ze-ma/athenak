@@ -2978,9 +2978,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // travels in the restart files (kHsDicTag).  Needs he_ic_balance, ic_rad, the WB pair,
   // a fresh start; replaces he_ic_rad_atm_post.
   if (hs_eq_ && !restart && !hs_rmp) {
-    if (!hs_bal_ || hs_pm_ || pm1->icr_mode == 0 || hs_atp_) {
+    if (!hs_bal_ || hs_pm_ || (pm1->icr_mode == 0 && !pm1->cln_steady) || hs_atp_) {
       HsFatal("problem/he_ic_equil = true needs he_ic_balance = true, he_gravity = wb, "
-              "<rad_m1>/ic_rad != none and he_ic_rad_atm_post = false", __LINE__);
+              "<rad_m1>/ic_rad != none (scheme = clean: clean_init = steady) and "
+              "he_ic_rad_atm_post = false", __LINE__);
+    }
+    // (scheme = clean: each round's relax is CleanSteadyStart, E and the face F at the
+    // scheme's own fixed point with the gas T, and its force pass the last steady pass;
+    // the x1 shells of the force need the staggered layout on spherical polar)
+    if (pm1->clean && (pm1->cln_cell || !pmy_mesh_->use_spherical_polar)) {
+      HsFatal("problem/he_ic_equil with scheme = clean needs clean_layout = staggered "
+              "on spherical polar", __LINE__);
     }
     if (wic) HsFatal("problem/he_ic_equil does not combine with he_wind_ic", __LINE__);
     hs_eq_maxit_ = pin->GetOrAddInteger("problem","he_ic_equil_maxit",30);
@@ -2998,7 +3006,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       HsFatal("problem/he_ic_equil_maxit >= 1, _tol, _dtfac, _relax_tol > 0",
               __LINE__);
     }
-    pm1->icr_mode |= 2;   // the relax steps are the steady-state solve
+    if (!pm1->clean) pm1->icr_mode |= 2;   // the relax steps are the steady-state solve
     pm1->icr_relax_dtfac = eqdt;
     pm1->icr_relax_n = eqn;
     pm1->icr_relax_tol = eqrt;

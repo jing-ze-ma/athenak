@@ -616,8 +616,8 @@ void RadiationM1::CleanCsGeometry() {
 //! evolution of the scheme at that dt, which the run carries on.  The radiation energy
 //! and momentum are thereby redefined (reported as volume sums, F in the local basis on
 //! spherical polar); the gas is not touched, except its internal energy with
-//! force_reference = clean.  The closure history is then dropped, so the first step
-//! starts from this state alone.
+//! force_reference = clean or icr_fmeas.  The closure history is then dropped, so the
+//! first step starts from this state alone.
 
 void RadiationM1::CleanSteadyStart(Driver *pdrive) {
   if (!cln_steady) return;
@@ -630,10 +630,16 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
   const int st2 = t2_solve;
   const Real nc0 = vet_ncall;
   // gas frozen, plain backward-Euler steps without substeps; big: the large step.  With
-  // force_reference = clean the gas internal energy relaxes with E (rho and momentum
-  // frozen), so that the reference state is in radiative equilibrium
+  // force_reference = clean, or the problem generator's equilibrium IC (icr_fmeas,
+  // he_star_m1 he_ic_equil), the gas internal energy relaxes with E (rho and momentum
+  // frozen), so that the reference state is in radiative equilibrium; icr_fmeas also
+  // keeps the x1 radiation force of each pass less the reference, dm - h rho a_ref
+  // (CleanWriteBack), in icr_dm (icr_dm_dt = h), as the old module's force pass
   FluidRef fl = FluidRef::Get(pmy_pack);
-  const bool relax = (force_ref == M1_FREF_CLEAN) && sfb && fl.on;
+  const bool relax = (force_ref == M1_FREF_CLEAN || icr_fmeas) && sfb && fl.on;
+  if (relax && icr_fmeas) {
+    Kokkos::realloc(icr_dm, nmb1 + 1, u0.extent(2), u0.extent(3), u0.extent(4));
+  }
   auto uh = fl.u0;
   gas_feedback = relax;
   cln_vzero = relax;
@@ -693,6 +699,7 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
   for (; n < cln_steady_n; ++n) {
     pm->dt = big ? fac*dt0 : dt0;
     dt_sub = pm->dt;
+    if (icr_fmeas) icr_dm_dt = pm->dt;
     copy(true);
     cln_tc = -1.0e300;   // (predict: the closure of this pass, not of the last dt)
     const Real nf = cln_nfail + cln_nneg;
@@ -2474,6 +2481,8 @@ void RadiationM1::CleanWriteBack() {
   const bool wsp = (fref == M1_FREF_WB_ARAD);
   auto fr = cln_fref;
   auto aref = arad_ref;
+  const bool fm = icr_fmeas && cln_vzero;   // (CleanSteadyStart: icr_dm)
+  auto fmd = icr_dm;
   const bool eso = esrc_on;
   auto es = esrc;
   const Real arad_ = arad;
@@ -2489,6 +2498,7 @@ void RadiationM1::CleanWriteBack() {
       CleanStagRefForce(x, fref, fr, aref, uh(m,IDN,k,j,i), m, k, j, i, rf);
       for (int n = 0; n < 3; ++n) {   // (force_reference, frozen gas momentum)
         if (fref != M1_FREF_NONE) dm[n] -= h*rf[n];
+        if (fm && n == 0) fmd(m,k,j,i) = dm[0];
         if (x.vzero) dm[n] = 0.0;
       }
       // (the kinetic energy the gas gains, the work W of the E row at convergence; with

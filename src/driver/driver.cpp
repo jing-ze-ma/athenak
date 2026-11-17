@@ -453,6 +453,7 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
       // he_ic_equil) asks for the IC passes again (false = once, as before)
       while (pmesh->pgen->user_icpost_again) {
         pmesh->pmb_pack->pradm1->IcRadRun(this);
+        pmesh->pmb_pack->pradm1->CleanSteadyStart(this);
         (pmesh->pgen->user_icpost_func)(pmesh);
       }
     }
