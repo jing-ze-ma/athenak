@@ -2167,6 +2167,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_lean")) {
       vgd_lean = pin->GetBoolean("rad_m1","vet_gd_halo_lean");
     }
+    // vet_gd_halo_compact_nan (read only when named; a gate): the compact exchanges put
+    // NaN on the band positions they do not send, so that a read of one shows
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_compact_nan")) {
+      vgd_cnan = pin->GetBoolean("rad_m1","vet_gd_halo_compact_nan");
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_ipc")) {
       vgd_ipc_on = pin->GetBoolean("rad_m1","vet_gd_halo_ipc");
     }

@@ -659,8 +659,8 @@ void RadiationM1::VetGdGlobalBandInit() {
 //! column K (global phi), the receiver's band depth of the entry and the shell's radii:
 //! sender and receiver compute the same flags in the same list order, so the compact
 //! messages need no index.  Rows of the polar zone (+ the band depth) keep their whole
-//! branch (clamped polar reads).  Unsent positions get 0 (env VGD_COMPACT_NAN: NaN, the
-//! gate that nothing unsent is read).  On-rank copies as before (all directions).
+//! branch (clamped polar reads).  Unsent positions get 0 (vet_gd_halo_compact_nan: NaN,
+//! the gate that nothing unsent is read).  On-rank copies as before (all directions).
 
 //! part (vet_gd_halo_overlap): 0 the whole exchange; 1 up to the posted messages (true:
 //! begun, the kept lists of a fixed set only); 2 the wait and the unpack of a begun one
@@ -841,7 +841,7 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
   vgd_nexch += 1.0;
   vgd_csvsent += nsent;
   // (5) the expansion into the band (unsent positions of the prefix: 0, or NaN)
-  if (vgd_raw && nr > 0 && std::getenv("VGD_COMPACT_NAN") != nullptr) {
+  if (vgd_raw && nr > 0 && vgd_cnan) {
     // (the gate that no unsent position of the prefix is read: NaN before the unpack)
     const Real qn = std::numeric_limits<Real>::quiet_NaN();
     par_for("m1_vgdgb_nan", DevExeSpace(), 0, nr - 1, 0, nv - 1,
@@ -857,7 +857,7 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
       a_(R_(e,0),lr_(o) - e*nv,R_(e,1),R_(e,2),i) = rb_(o);
     });
   } else if (nr > 0 && !vgd_raw) {
-    const bool nanfill = (std::getenv("VGD_COMPACT_NAN") != nullptr);
+    const bool nanfill = vgd_cnan;
     const Real fill = nanfill ? std::numeric_limits<Real>::quiet_NaN() : 0.0;
     par_for("m1_vgdgb_unpack", DevExeSpace(), 0, nr - 1, 0, nv - 1,
     KOKKOS_LAMBDA(const int e, const int v) {

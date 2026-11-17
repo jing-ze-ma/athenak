@@ -4541,6 +4541,7 @@ class RadiationM1 {
   };
   std::map<std::pair<int, Real>, VgdGboL> vgd_gbol;   // ((depth, pass), set)
   const VgdGboL &VgdGboList(const int pass, const int d);
+  bool vgd_cnan = false;   // vet_gd_halo_compact_nan: unsent band positions NaN (gate)
   bool vgd_ipc_tfs = false;
   bool vgd_merge = true;         // bsgaccel-1011: env VGD_MERGE=0: twin in own messages
   DvceArray1D<Real> vgd_csbm, vgd_crbm;   // bsgaccel-1011: merged send / receive
