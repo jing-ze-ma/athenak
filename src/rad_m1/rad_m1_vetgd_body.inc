@@ -185,7 +185,7 @@
                 return rd0(kk,jj,ii,dq);
               }
               const int g = hi ? (jj - wb - nx2b) : (wb - 1 - jj);
-              const int jm = hi ? (wb + nx2b - 1 - g) : (wb + g);
+              const int jm = VgdMirRow(g, hi, wb, nx2b);
               const Real mtg = upw ? mr_(m,kk,jj,dq) : 0.0;   // vetgdup-1110
               if (!wint) {return rd0t(kk,jm,ii,mp_(m,kk,jj,dq),mtg);}
               Real v = 0.0;
