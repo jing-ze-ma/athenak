@@ -120,9 +120,13 @@ void LHLLC(TeamMember_t const &member, const EOS_Data &eos,
     qc = wl_ivx - qa*qe;  // al
     qd = wr_ivx + qb*qf;  // ar
 
-    // following min/max set to TINY_NUMBER to fix bug found in converging supersonic flow
-    qa = qd > 0.0 ? qd : 1.0e-20;   // bp
-    qb = qc < 0.0 ? qc : -1.0e-20;  // bm
+    // the outer speeds bound the fan by at least s, a fraction of the face's own speeds
+    // (converging supersonic flow; a fixed 1e-20 let the flux jump between L and R with the
+    // sign of a round-off contact speed, e.g. at a pressure floor)
+    const Real s = fmax(1.0e-8*(fabs(wl_ivx) + fabs(wl_ivy) + fabs(wl_ivz) + fabs(wr_ivx) +
+                                fabs(wr_ivy) + fabs(wr_ivz) + qa + qb), 1.0e-20);
+    qa = fmax(qd, s);    // bp
+    qb = fmin(qc, -s);   // bm
 
     //--- Step 5. Compute the contact wave speed and pressure
 
