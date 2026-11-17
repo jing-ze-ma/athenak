@@ -1202,6 +1202,10 @@ void RadiationM1::VetGdInit() {
                     : vgd_csg ? (vgd_cscomp && vgd_hmpi)
                               : (vgd_hx_on && vgd_shl_on && !vgd_bandx && !vgd_async &&
                                  vgd_hmpi && (vgd_hcomp > 0) && (vgd_hl_mb > 0));
+    // sweepl-1117 (USER: speed over memory): the clean sc rays' raw band on spherical
+    // polar keeps every shell's band (no ring, no planb hook) unless vet_gd_band_ring is
+    // named: A100 R136 rotating -15 % sweep-stage wall, half -3.6 %, +2.3 GiB/GPU, bitwise
+    if (!vgd_ring_named && vgd_raw && !vgd_csg) {vgd_ring_par = false;}
     bool anyside = false;
     auto hl_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_hloc);
     for (size_t q = 0; q < hl_h.extent(0); ++q) {anyside = anyside || (hl_h(q) < 0);}
