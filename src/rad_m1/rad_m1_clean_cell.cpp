@@ -544,6 +544,8 @@ void RadiationM1::CleanCellRightHandSide() {
                     !((fref == M1_FREF_CLEAN) && !cln_fref_set && !cln_vzero);
   auto fr = cln_fref;
   auto aref = arad_ref;
+  // (CleanSteadyStart's equilibrium relax, icr_fmeas: h -> infinity)
+  const bool eqr = icr_fmeas && cln_vzero && x.feedback;
   par_for("clc_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real t = x.w(m,CLW_T,k,j,i);
@@ -554,7 +556,7 @@ void RadiationM1::CleanCellRightHandSide() {
     // beta = v/c of the iterate (that of a), G = 1 - beta^2/2, F'/c = y - a E/c; the
     // beta terms A - hc (kP a T^4 G - kE E) = RE E + RY.y, RE = hc kE (beta^2/2 -
     // beta.a/c), RY = 2 hc kE beta
-    Real bt[3] = {0.0, 0.0, 0.0}, ba = 0.0, b2 = 0.0, rr = 0.0, work = 0.0;
+    Real bt[3] = {0.0, 0.0, 0.0}, ba = 0.0, b2 = 0.0, rr = 0.0, work = 0.0, eg = 0.0;
     if (x.feedback) {
       const Real d = uh(m,IDN,k,j,i);
       CleanGasMomentum(x, uh, m, k, j, i, bt);
@@ -577,8 +579,8 @@ void RadiationM1::CleanCellRightHandSide() {
     }
     if (x.feedback) {
       const Real d = uh(m,IDN,k,j,i);
-      Real e, p, chi_rho, chi_t, cv;
-      eos.ThermoAt(d, t, e, p, chi_rho, chi_t, cv);
+      Real p, chi_rho, chi_t, cv;
+      eos.ThermoAt(d, t, eg, p, chi_rho, chi_t, cv);
       // the exchange h c (kP a T^4 - kE E) linearised in T, with kP(T), kE(T) of a T law
       Real s = 4.0*hckp*arad_*t*t*t;
       if (opt) {
@@ -594,10 +596,22 @@ void RadiationM1::CleanCellRightHandSide() {
     // A linearised about the iterate (the gas eint takes -A)
     const Real sk = hckp*arad_*SQR(SQR(t)) - rr*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0)
                     + rr*CleanCellBetaSource(x, CLC_K, m, k, j, i);
-    x.u(m,CLC_B,k,j,i) = x.w(m,CLW_EO,k,j,i) + hckp*arad_*SQR(SQR(t))
-                         - rr*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) - work - sdiv[0]
-                         + rr*CleanCellBetaSource(x, CLC_K, m, k, j, i)
-                         + (eso ? x.h*es(m,k,j,i) : 0.0);
+    // (eqr: the exchange through the gas row of the root T (CleanNewtonUpdate), hckp a
+    // T^4 - r (hcke E - RE E - RY.y) = EI - e(T) + (1 - r) (hcke E - RE E - RY.y),
+    // without the cancellation of its two terms, each ~ hcke E, whose round-off at h ->
+    // infinity exceeds E in opaque cells)
+    if (eqr) {
+      const Real ex = hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) -
+                      CleanCellBetaSource(x, CLC_K, m, k, j, i);
+      x.u(m,CLC_B,k,j,i) = x.w(m,CLW_EO,k,j,i) + x.w(m,CLW_EI,k,j,i) - eg
+                           + (1.0 - rr)*ex - work - sdiv[0]
+                           + (eso ? x.h*es(m,k,j,i) : 0.0);
+    } else {
+      x.u(m,CLC_B,k,j,i) = x.w(m,CLW_EO,k,j,i) + hckp*arad_*SQR(SQR(t))
+                           - rr*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) - work - sdiv[0]
+                           + rr*CleanCellBetaSource(x, CLC_K, m, k, j, i)
+                           + (eso ? x.h*es(m,k,j,i) : 0.0);
+    }
     // y: + beta h c (kP a T^4 - kE E) (eq. 57), the emission part of sk
     for (int b = 1; b < 4; ++b) {
       x.u(m,CLC_B+b,k,j,i) = x.u(m,CLC_O+b,k,j,i) - sdiv[b]
@@ -1955,6 +1969,8 @@ void RadiationM1::CleanCellWriteBack() {
   const bool vzero = cln_vzero;
   auto fr = cln_fref;
   auto aref = arad_ref;
+  const bool fm = icr_fmeas && vzero;   // (CleanSteadyStart: icr_dm)
+  auto fmd = icr_dm;
   const bool eso = esrc_on;
   auto es = esrc;
   const bool gexact = cln_gas_exact;
@@ -2009,6 +2025,11 @@ void RadiationM1::CleanCellWriteBack() {
       for (int b = 0; b < x.nf && !vzero; ++b) {
         dm[b] = -(y[b] - x.u(m,CLC_O+1+b,k,j,i) + div[1+b])/x.c
                 - h*CleanRefForce(fref, fr, aref, uh(m,IDN,k,j,i), b, m, k, j, i);
+      }
+      // (the steady start's force pass: the x1 deposit the gas does not take)
+      if (fm) {
+        fmd(m,k,j,i) = -(y[0] - x.u(m,CLC_O+1,k,j,i) + div[1])/x.c
+                       - h*CleanRefForce(fref, fr, aref, uh(m,IDN,k,j,i), 0, m, k, j, i);
       }
       // the work W of S_E is exactly the kinetic energy (p + dm/2).dm/rho the gas gains,
       // not the W of the iterate the solve took (the gas eint takes -A), and, with

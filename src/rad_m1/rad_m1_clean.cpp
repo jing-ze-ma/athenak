@@ -471,8 +471,8 @@ void RadiationM1::CleanCsGeometry() {
 //! evolution of the scheme at that dt, which the run carries on.  The radiation energy
 //! and momentum are thereby redefined (reported as volume sums, F in the local basis on
 //! spherical polar); the gas is not touched, except its internal energy with
-//! force_reference = clean.  The closure history is then dropped, so the first step
-//! starts from this state alone.
+//! force_reference = clean or icr_fmeas.  The closure history is then dropped, so the
+//! first step starts from this state alone.
 
 void RadiationM1::CleanSteadyStart(Driver *pdrive) {
   if (!cln_steady) return;
@@ -485,18 +485,32 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
   const int st2 = t2_solve;
   const Real nc0 = vet_ncall;
   // gas frozen, plain backward-Euler steps without substeps; big: the large step.  With
-  // force_reference = clean the gas internal energy relaxes with E (rho and momentum
-  // frozen), so that the reference state is in radiative equilibrium
+  // force_reference = clean, or the problem generator's equilibrium IC (icr_fmeas,
+  // he_star_m1 he_ic_equil), the gas internal energy relaxes with E (rho and momentum
+  // frozen), so that the reference state is in radiative equilibrium; icr_fmeas also
+  // keeps the x1 radiation force of each pass less the reference, dm - h rho a_ref
+  // (CleanCellWriteBack), in icr_dm (icr_dm_dt = h), as the old module's force pass
   FluidRef fl = FluidRef::Get(pmy_pack);
-  const bool relax = (force_ref == M1_FREF_CLEAN) && sfb && fl.on;
+  const bool relax = (force_ref == M1_FREF_CLEAN || icr_fmeas) && sfb && fl.on;
+  const bool fmeas = relax && icr_fmeas;
+  DvceArray4D<Real> dmo;
+  if (fmeas) {
+    Kokkos::realloc(icr_dm, nmb1 + 1, u0.extent(2), u0.extent(3), u0.extent(4));
+    Kokkos::realloc(dmo, nmb1 + 1, u0.extent(2), u0.extent(3), u0.extent(4));
+  }
   auto uh = fl.u0;
   gas_feedback = relax;
   cln_vzero = relax;
   t2_solve = M1_T2S_NONE;
   nsub = 1;
   bool big = true, ok = false;
-  int n2 = 0;
-  Real dp = 0.0, fac = cln_steady_dtfac, emax = 0.0;
+  int n2 = 0, nt = 0;
+  // (icr_fmeas: the large step is reached by a ladder x10 per pass from dt, its smaller
+  // steps the thermal relaxation of the gas, whose solves fail when started at the top;
+  // a failed rung lowers the top of the ladder, ftop, to the rung below it, and the large
+  // passes end at the top once the change no longer contracts by 1/2 per pass)
+  Real dp = 0.0, fac = fmeas ? 1.0 : cln_steady_dtfac, emax = 0.0;
+  Real ftop = cln_steady_dtfac;
   auto u0_ = u0;
   DvceArray5D<Real> uo("cln_steady_u", nmb1 + 1, 4, u0.extent(2), u0.extent(3),
                        u0.extent(4));
@@ -539,6 +553,13 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
         if (relax) uh(m,g,k,j,i) = ug(m,c,k,j,i);
       }
     });
+    if (fmeas) {
+      if (save) {
+        Kokkos::deep_copy(dmo, icr_dm);
+      } else {
+        Kokkos::deep_copy(icr_dm, dmo);
+      }
+    }
     if (relax && !save) FluidRefresh(pdrive);
   };
   Real t0[4], t1[4];
@@ -567,9 +588,15 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
                     "dt, undone\n", n, big ? fac : 1.0);
       }
       if (!big || fac <= 1.0) break;
-      fac = fmax(1.0e-3*fac, 1.0);
+      if (fmeas) {
+        ftop = fmax(0.1*fac, 1.0);
+        fac = ftop;
+      } else {
+        fac = fmax(1.0e-3*fac, 1.0);
+      }
       continue;
     }
+    if (fmeas) icr_dm_dt = pm->dt;
     // its largest change of E and F/c over max E
     Real dm = 0.0, em = 0.0;
     Kokkos::parallel_reduce("cln_steady_chg", Kokkos::RangePolicy<>(DevExeSpace(), 0,
@@ -591,7 +618,12 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
                   n, d);
     }
     if (!big && (d < cln_steady_tol || (++n2 > 2 && d > 0.5*dp))) break;
-    if (d < cln_steady_tol) big = false;
+    if (fmeas) {
+      if (fac >= ftop && (d < cln_steady_tol || (++nt > 2 && d > 0.5*dp))) big = false;
+      fac = fmin(10.0*fac, ftop);
+    } else if (d < cln_steady_tol) {
+      big = false;
+    }
     ok = ok || !big;
     dp = d;
   }
@@ -612,6 +644,10 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
                 "(volume sums)\n", ok ? "converged" : "NOT converged",
                 std::min(n + 1, cln_steady_n), vet_ncall - nc0, t0[0], t1[0], t0[1]/cl,
                 t0[2]/cl, t0[3]/cl, t1[1]/cl, t1[2]/cl, t1[3]/cl);
+    if (fmeas) {
+      std::printf("<rad_m1> clean_init steady: the equilibrium relax's large step %.0e "
+                  "dt\n", ftop);
+    }
   }
 }
 
