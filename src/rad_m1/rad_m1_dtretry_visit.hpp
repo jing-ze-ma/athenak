@@ -1331,6 +1331,13 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_fvlag", cln_fvlag);
   v.value("cln_pc", cln_pc);
   v.value("cln_raymin", cln_raymin);
+  v.value("cln_rcut_on", cln_rcut_on);
+  v.value("cln_rcut_r", cln_rcut_r);
+  v.value("cln_rcut_mg", cln_rcut_mg);
+  v.value("cln_rcut_tau", cln_rcut_tau);
+  v.value("cln_rcut_wait", cln_rcut_wait);
+  v.value("cln_rcut", cln_rcut);
+  v.value("cln_rcut_n", cln_rcut_n);
   v.value("cln_fillpass", cln_fillpass);
   v.value("cln_pred", cln_pred);
   v.value("cln_kpred", cln_kpred);
@@ -2245,6 +2252,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
 //   prav : hydro::RingAvg *
 //   pin_cs_ : ParameterInput *
 //   cln_gdx : const CleanArgs *
+//   pin_rcut_ : ParameterInput *
 //   cln_halo : std::map<int, CleanHalo> (views over cln_hbuf, kept)
 //   cln_hpb : std::unique_ptr<MeshBoundaryValuesCC> (made at first use, kept)
 //   cln_hbuf : DvceArray5D<Real> (the storage of cln_halo, kept)

@@ -571,6 +571,10 @@ void RadiationM1::VetLatCsFinish() {
   auto cs_ = vlat_cs;
   auto cx1f = pmy_pack->pcoord->xx1f;
   VetLatExchange(vlat_cs, vlat_cs_c, pbval_vs);
+  if (clean) {   // (scheme = clean: clean_ray_cut)
+    CleanRayCut();
+    return;
+  }
 
   // (2) the first shell of the sweep: every column has tau_top >= vet_col_lat_taucut
   // there (one global min); the shells below keep dD = 0

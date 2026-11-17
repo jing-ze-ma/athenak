@@ -2531,6 +2531,39 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // clean sc rays with a reflecting top: its mirror reads the last build (rad_m1.hpp)
   cln_scmem = clean && vgd_on && cln_rfv == 0 && sph_geom &&
               ibc_x1max == M1_IBC_REFLECT;
+  // clean_ray_cut (default on where it applies: the staggered layout's sc rays on 3-D
+  // spherical polar, one MeshBlock along x1, no reflecting top, no band_ring_inward;
+  // elsewhere not read, the log says so; naming it true there is FATAL): CleanRayCut
+  if (clean) {
+    const Mesh *pm = ppack->pmesh;
+    const bool ok = vgd_on && cln_rfv == 0 && !cln_cell && sph_geom && !cs_geom &&
+                    pm->three_d && !pm->multilevel && pm->mesh_indcs.nx1 == indcs.nx1 &&
+                    !cln_scmem && !vgd_pk_par;
+    cln_rcut_on = ok;
+    if (pin->DoesParameterExist("rad_m1","clean_ray_cut")) {
+      cln_rcut_on = pin->GetBoolean("rad_m1","clean_ray_cut");
+      if (cln_rcut_on && !ok) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<rad_m1>/clean_ray_cut = true needs the staggered layout's sc "
+          << "rays on 3-D spherical polar, one MeshBlock along x1, no reflecting top and "
+          << "no vet_gd_band_ring_inward" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    } else if (!ok && global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> clean_ray_cut: not applicable here (staggered sc rays on 3-D "
+                << "spherical polar, one MeshBlock along x1 only)" << std::endl;
+    }
+    if (cln_rcut_on) {
+      cln_rcut_r = pin->GetOrAddReal("rad_m1","clean_ray_cut_r",0.01);
+      cln_rcut_mg = pin->GetOrAddReal("rad_m1","clean_ray_cut_margin",10.0);
+      cln_rcut_tau = pin->GetOrAddReal("rad_m1","clean_ray_cut_taumin",0.0);
+      cln_rcut_wait = pin->GetOrAddInteger("rad_m1","clean_ray_cut_wait",10);
+      // (the cut and its count in a restart file, CleanRayCut)
+      cln_rcut = pin->GetOrAddInteger("rad_m1","clean_ray_cut_now",-1);
+      cln_rcut_n = pin->GetOrAddInteger("rad_m1","clean_ray_cut_count",0);
+      pin_rcut_ = pin;
+    }
+  }
   RavInit(pin);     // ringavg-1029 <rad_m1>/polar_ring_avg (rad_m1_ringavg.cpp)
   IcRadInit(pin);   // icrad-1011 (keys read only when named)
   if (sph_geom) {SphericalS1Check(pin);}

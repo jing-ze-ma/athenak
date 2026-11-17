@@ -2994,6 +2994,7 @@ class RadiationM1 {
   // (i0..i1 / s0..s1: shells of VetGdPkHook; else the whole mesh, or with vgd_pk
   // only what the hook leaves)
   void CleanClosureFromGd(const int i0 = -1, const int i1 = -1);
+  void CleanRayCut();
   void CleanGdFaceSums(const int s0 = -1, const int s1 = -1);
   DvceArray5D<Real> cln_gdrf;   // vgd_pk: the rays' r face fluxes of the sweep
   const CleanArgs *cln_gdx = nullptr;   // their CleanArgs in device memory (slot 3)
@@ -3144,6 +3145,15 @@ class RadiationM1 {
   int cln_fvlag = 0;            // clean_fv_lag: 0 off, 1 lag, 2 extrap (CleanFvSweep)
   int cln_pc = 0;               // clean_pc: 0 vcycle or CLN_PC_*
   Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E
+  // clean_ray_cut (CleanRayCut; default on where it applies): no rays below the shell
+  // where every deeper cell is in the diffusion regime, R = |grad S|/(chi S) <
+  // clean_ray_cut_r and no cell thinner than vet_col_lat_cut_thin, less a margin of
+  // clean_ray_cut_margin optical depths and at tau_top >= clean_ray_cut_taumin; it rises
+  // only after clean_ray_cut_wait builds
+  bool cln_rcut_on = false;
+  Real cln_rcut_r = 0.01, cln_rcut_mg = 10.0, cln_rcut_tau = 0.0;
+  int cln_rcut_wait = 10, cln_rcut = -1, cln_rcut_n = 0;
+  ParameterInput *pin_rcut_ = nullptr;
   int cln_fillpass = 8;         // clean_fill_passes: closure fill layers
   bool cln_pred = true;         // clean_predict: closure of the predicted state
   bool cln_kpred = true;        // implicit_predictor: the solve starts from E + h K1_E

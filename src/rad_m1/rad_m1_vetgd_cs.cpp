@@ -1598,7 +1598,7 @@ void RadiationM1::VetGdCsSweep() {
   const int nc = vgd_csn;
   const Real h = 0.5*M_PI/nc;
   const bool bfc = vet_bc_face;
-  const bool izf = vgd_izf && (ibc_x1min == M1_IBC_REFLECT);   // hrsplit-1110
+  const bool izf = vgd_izf && (ibc_x1min == M1_IBC_REFLECT) && lcut == 0;   // hrsplit
   const bool spl = vet_seg_split;
   const int spe = VetSegMode();
   const int vim = vet_interp;

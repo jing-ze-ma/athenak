@@ -22,6 +22,7 @@
 
 #include "athena.hpp"
 #include "globals.hpp"
+#include "parameter_input.hpp"
 #include "coordinates/coordinates.hpp"
 #include "mesh/mesh.hpp"
 #include "mesh/nghbr_index.hpp"
@@ -207,6 +208,28 @@ void CleanLocalBasis(const Real th, const Real ph, Real e[3][3]) {
   e[0][0] = st*cp; e[0][1] = st*sp; e[0][2] = ct;
   e[1][0] = ct*cp; e[1][1] = ct*sp; e[1][2] = -st;
   e[2][0] = -sp;   e[2][1] = cp;    e[2][2] = 0.0;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanThickI
+//! \brief clean_ray_cut: the intensity of direction n in a cell below the cut, the
+//! diffusion limit I = J + 3 n . H of the cell's E and F (iw, the state the rays are
+//! built for); its moments are D = I/3 and h+- = +-1/4 + h/2 of the set's quadrature
+
+KOKKOS_INLINE_FUNCTION
+Real CleanThickI(const CleanArgs &x, const DvceArray5D<Real> &iw,
+                 const DvceArray2D<Real> &x3v, const Real ic, const Real n[3],
+                 const int m, const int k, const int j, const int i) {
+  Real e[3][3];
+  if (x.cub) {
+    CleanCsFrame(x, m, k, j, i, e);
+  } else {
+    CleanLocalBasis(x.x2v(m,j), x3v(m,k), e);
+  }
+  const Real f[3] = {iw(m,M1_IW_F1,k,j,i), iw(m,M1_IW_F2,k,j,i), iw(m,M1_IW_F3,k,j,i)};
+  Real nf = 0.0;
+  for (int b = 0; b < 3; ++b) nf += (n[0]*e[b][0] + n[1]*e[b][1] + n[2]*e[b][2])*f[b];
+  return fmax(iw(m,M1_IW_EN,k,j,i) + 3.0*ic*nf, 0.0);
 }
 
 //----------------------------------------------------------------------------------------
@@ -2726,6 +2749,86 @@ void RadiationM1::CleanFvRstRead() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanRayCut
+//! \brief clean_ray_cut, from the rays' source of this build (vlat_cs, VetLatCsFinish):
+//! the first shell swept, vlat_icut (one global min over the columns).  Below it the
+//! closure is the diffusion limit (CleanThickI), whose error is O(R^2) with R = |grad
+//! S|/(chi S): a column's cut lies clean_ray_cut_margin optical depths below its first
+//! cell from the bottom up with R >= clean_ray_cut_r (central differences along all three
+//! axes, one-sided at a physical face) or thinner than vet_col_lat_cut_thin, and at
+//! tau_top >= clean_ray_cut_taumin.  The cut moves down at once and up only after
+//! clean_ray_cut_wait builds that would raise it; the cut and that count go into the
+//! restart file (clean_ray_cut_now, _count).  The staggered layout's sc rays only
+//! (clean_rays = sc: the vet_gd sweep starts at the cut with the diffusion inflow);
+//! several MeshBlocks along x1: no cut.
+
+void RadiationM1::CleanRayCut() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  vlat_icut = 0;
+  if (!cln_rcut_on || !cln_init || cln_rfv > 0 || cln_cell ||
+      pmy_pack->pmesh->mesh_indcs.nx1 != indcs.nx1) return;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke, n1 = indcs.nx1;
+  const int nk = ke - ks + 1, nj = je - js + 1, nf = pmy_pack->pmesh->three_d ? 3 :
+                                                  (pmy_pack->pmesh->multi_d ? 2 : 1);
+  const Real tcut = cln_rcut_tau, tthin = vlat_cut_thin, er = cln_rcut_r;
+  const Real mg = cln_rcut_mg;
+  CleanArgs x = CleanMakeArgs();
+  auto cs_ = vlat_cs;
+  int lmin = 2*n1;
+  Kokkos::parallel_reduce("cln_raycut", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          pmy_pack->nmb_thispack*nk*nj),
+  KOKKOS_LAMBDA(const int idx, int &lm) {
+    const int m = idx/(nk*nj), k = ks + (idx/nj) % nk, j = js + idx % nj;
+    auto tc = [&](const int i) {return exp(cs_(m,0,k,j,i))*(x.x1f(m,i+1) - x.x1f(m,i));};
+    int lt = 0;   // (tau_top >= clean_ray_cut_taumin, as vet_col_lat_taucut)
+    Real tau = 0.0;
+    for (int i = ie; i >= is; --i) {
+      if (tau + 0.5*tc(i) >= tcut) {lt = i - is; break;}
+      tau += tc(i);
+    }
+    int i = is;
+    for (; i <= ie && !(tthin > 0.0 && tc(i) < tthin); ++i) {
+      Real r2 = 0.0;
+      for (int dir = 0; dir < nf; ++dir) {
+        const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+        Real g = 0.0;
+        for (int up = 0; up < 2; ++up) {
+          const int s = up ? 1 : -1;
+          if (CleanBoundaryFace(x, dir, m, k + up*dk, j + up*dj, i + up*di)) continue;
+          g = fmax(g, fabs(cs_(m,1,k+s*dk,j+s*dj,i+s*di) - cs_(m,1,k,j,i))/
+                      x.dxf[dir](m,k+up*dk,j+up*dj,i+up*di));
+        }
+        r2 += g*g;
+      }
+      if (!(sqrt(r2) < er*exp(cs_(m,0,k,j,i)))) break;
+    }
+    int lc = i - is;
+    for (Real t = 0.0; lc > 0 && t < mg;) t += tc(is + --lc);
+    // (2 lc + 1 where tau_top binds the column)
+    lc = (lc <= lt) ? 2*lc : 2*lt + 1;
+    lm = (lc < lm) ? lc : lm;
+  }, Kokkos::Min<int>(lmin));
+  lmin = -static_cast<int>(CleanReduce(-lmin, true));
+  const bool bt = (lmin % 2 == 1);
+  lmin = std::max(0, std::min(lmin/2, n1 - 2));
+  const int prev = cln_rcut;
+  cln_rcut_n = (lmin > cln_rcut && cln_rcut >= 0) ? cln_rcut_n + 1 : 0;
+  if (lmin < cln_rcut || cln_rcut < 0 || cln_rcut_n >= cln_rcut_wait) {
+    cln_rcut = lmin;
+    cln_rcut_n = 0;
+  }
+  if (global_variable::my_rank == 0 && prev != cln_rcut) {
+    std::cout << "CLEAN ray cut cycle " << pmy_pack->pmesh->ncycle << " shell "
+              << prev << " -> " << cln_rcut << " (want " << lmin << ", "
+              << (bt ? "tau_top" : "R") << ")" << std::endl;
+  }
+  pin_rcut_->SetInteger("rad_m1", "clean_ray_cut_now", cln_rcut);
+  pin_rcut_->SetInteger("rad_m1", "clean_ray_cut_count", cln_rcut_n);
+  vlat_icut = cln_rcut;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanClosureFromGd
 //! \brief the closure from the vet_gd intensities in the local basis (r, theta, phi) of
 //! each cell, mu_b = n . e_b: J = <I>, K_bc = <I mu_b mu_c>, H+-_b = <I mu_b> over mu_b
@@ -2757,6 +2860,9 @@ void RadiationM1::CleanClosureFromGd(const int i0, const int i1) {
   // (in device memory, CleanGdFaceSums; vgd_pk: one copy per sweep, at its first shell)
   if (i0 < 0 || i0 == indcs.is) cln_gdx = CleanDevArgs(x, 3);
   const CleanArgs *px = cln_gdx;
+  // (clean_ray_cut: below the cut the sc rays' intensity is the diffusion limit)
+  const int icut = indcs.is + (vgd_on ? vlat_icut : 0);
+  const Real ic = 1.0/c_light;
   par_for("cln_gd", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px;
@@ -2775,7 +2881,9 @@ void RadiationM1::CleanClosureFromGd(const int i0, const int i1) {
         if (!x.sph) mu[b] = dir_(d,b);
         nu[b] = x.cub ? nx*nd[b][0] + ny*nd[b][1] + nz*nd[b][2] : mu[b];
       }
-      const Real iv = fv ? fi_(m,d,k,j,i) : vi_(m,d,k+ok,j+og,i);
+      const Real nv[3] = {nx, ny, nz};
+      const Real iv = fv ? fi_(m,d,k,j,i) : (i < icut)
+                    ? CleanThickI(x, iw_, x3v, ic, nv, m, k, j, i) : vi_(m,d,k+ok,j+og,i);
       const Real a = dir_(d,3)*iv;
       q[CLN_J] += a;
       for (int b = 0; b < 3; ++b) {
@@ -2902,6 +3010,18 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   // directions (one exchange each)
   const bool gl = !fv && x.sph && !cln_cell && !axi && pmy_pack->pmesh->three_d &&
                   vgd_nb1 == 1 && !cln_scmem;
+  if (gl && vgd_on && vlat_icut > 0) {   // (clean_ray_cut: below it the diffusion limit)
+    auto iw_ = iw;
+    const Real ic = 1.0/c_light;
+    par_for("cln_gd_thk", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, is + vlat_icut - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const CleanArgs &x = *px;
+      for (int d = 0; d < n; ++d) {
+        const Real nv[3] = {dir_(d,0), dir_(d,1), dir_(d,2)};
+        vi_(m,d,k+ok,j+og,i) = CleanThickI(x, iw_, x3v, ic, nv, m, k, j, i);
+      }
+    });
+  }
   CleanGdI gi{vi_, DvceArray5D<Real>(), ok, og, ks, js, pk, vgd_own};
   if (gl && pk) {
   } else if (gl) {
