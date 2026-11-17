@@ -115,7 +115,8 @@ void RadiationM1::CleanInit() {
   Kokkos::realloc(cln_w, nmb, cln_cell ? CLW_NC : CLW_N, n3, n2, n1);
   // the cubed sphere takes the half ranges about the face normals from the FV rays
   cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
-  const int nfc = cln_milne ? CLF_KK + 6 : (cln_hk ? CLF_HK + 2 : CLF_N);
+  const int nfc = cln_milne ? CLF_KK + 6 : (cln_tilt ? CLF_GT + 2 :
+                                            (cln_hk ? CLF_HK + 2 : CLF_N));
   // the opacities depend on T: tables, or the T exponent (bump) of powerlaw (user)
   cln_opt = cln_cell && !opac_freeze && !opac_zero && (opacity_type == M1_OPAC_TABLE ||
             (opacity_type != M1_OPAC_CONST && opac_b != 0.0));
@@ -858,7 +859,12 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       std::printf("CLEAN cycle %d t2s %d it %d neg %d guard %d\n",
                   pmy_pack->pmesh->ncycle, t2_solve, nit, nneg, cln_nguard);
     }
+    if (cln_tilt) {
+      std::printf("CLEAN TILT cycle %d t2s %d y remainder limited on %.0f face-passes\n",
+                  pmy_pack->pmesh->ncycle, t2_solve, cln_ntlim);
+    }
   }
+  cln_ntlim = 0.0;
 
   // 5. new state: face fluxes, E, cell fluxes, gas, stage slopes
   if (cell) {
@@ -1195,8 +1201,9 @@ void RadiationM1::CleanCopyIterate() {
 
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationM1::CleanCountNegative
-//! \brief sets values within the solver tolerance of zero (|E| <= 10 tol max|B|) to zero
-//! and returns the number of cells that are still negative
+//! \brief sets values within the solver tolerance of zero (|E| <= 10 tol max|B|, or
+//! with clean_pos_tol = cell 10 tol max(|B|, |E|) of the cell) to zero and returns the
+//! number of cells that are still negative
 
 int RadiationM1::CleanCountNegative() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1217,6 +1224,8 @@ int RadiationM1::CleanCountNegative() {
   }, Kokkos::Max<Real>(bmax));
 
   const Real zero = 10.0*cln_tol*CleanReduce(bmax, true);
+  const bool zcell = cln_postol_cell;
+  const Real tol10 = 10.0*cln_tol;
   Real nneg = 0.0;
   Kokkos::parallel_reduce("cln_neg", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &n) {
@@ -1225,7 +1234,8 @@ int RadiationM1::CleanCountNegative() {
     int j = (idx - m*nkji - k*nji)/nx1;
     int i = idx - m*nkji - k*nji - j*nx1;
     Real &e = w(m,CLW_X,k+ks,j+js,i+is);
-    if (e < 0.0 && e >= -zero) e = 0.0;
+    const Real z = zcell ? tol10*fmax(fabs(w(m,CLW_B,k+ks,j+js,i+is)), fabs(e)) : zero;
+    if (e < 0.0 && e >= -z) e = 0.0;
     if (!(e >= 0.0)) n += 1.0;
   }, Kokkos::Sum<Real>(nneg));
   return static_cast<int>(CleanReduce(nneg, false));

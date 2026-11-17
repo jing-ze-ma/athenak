@@ -289,6 +289,8 @@ void RadiationM1::CleanCellConsistency() {
   CleanFvI fi = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvf32);
   auto dir_ = cln_fvd;
   const int nd = x.cub ? cln_fvn : 0;
+  const bool tilt = cln_tilt;
+  const int rem = cln_tiltrem;
 
   // the rays' cell moments Ur (y in its frame on the cubed sphere)
   par_for("clc_raymom", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -352,11 +354,11 @@ void RadiationM1::CleanCellConsistency() {
       const int n = bdry ? CLN_F1 : (up ? CLN_FH + 4*(dir - 1) : ((dir == 0) ? CLN_FX :
                                      ((dir == 1) ? CLN_F2 : CLN_F3)));
       Real f[4] = {0.0, 0.0, 0.0, 0.0}, fr[4] = {0.0, 0.0, 0.0, 0.0};
+      Real hp = 0.0, hm = 0.0, ul[4], ur[4];
       if (bdry) {
         CleanCellFaceFlux(x, CLC_U, dir, m, k, j, i, true, f);
       } else {
         // the rays' kinetic flux of their own moments Ur: the part w takes in the solve
-        Real hp, hm, ul[4], ur[4];
         CleanCellKinetic(x, dir, m, k, j, i, hp, hm);
         CleanCellState(x, CLC_U, m, kl, jl, il, ul);
         CleanCellState(x, CLC_U, m, k, j, i, ur);
@@ -368,7 +370,32 @@ void RadiationM1::CleanCellConsistency() {
       const Real q = fmin(bdry && blo ? 1.0 : CleanRayShare(x, m, kl, jl, il),
                           bdry && !blo ? 1.0 : CleanRayShare(x, m, k, j, i));
       for (int r = 0; r < 4; ++r) x.fc[dir](m,CLF_CB+r,k,j,i) = q*wb*(fr[r] - f[r]);
+      if (!tilt || bdry) return;
+      // clean_bracket_tilt: the E bracket as the half ranges H+-' = H+-(1 +- dd/s),
+      // dd = q (F_ray - f(Ur))/c, s = H+ - H-, the shrinking one at most to 0 (upwind
+      // signs kept, no cap at 1); g+- = H+-'/J carry E and every y component alike, and
+      // y keeps the rest of its bracket (the tilt applied to Ur takes the other part)
+      const Real hl = hp*ul[0], hr = hm*ur[0], dd = q*(fr[0] - f[0])/x.c;
+      const Real s = hl - hr, ft = hl + hr + dd;
+      Real gp = hp, gm = hm;
+      if (s > 0.0) {
+        const Real hpt = (dd < 0.0) ? fmax(hl + dd*hl/s, 0.0)
+                                    : ft - fmin(hr - dd*hr/s, 0.0);
+        if (ul[0] > 0.0) gp = hpt/ul[0];
+        if (ur[0] > 0.0) gm = (ft - hpt)/ur[0];
+      }
+      x.fc[dir](m,CLF_GT,k,j,i) = gp;
+      x.fc[dir](m,CLF_GT+1,k,j,i) = gm;
+      x.fc[dir](m,CLF_CB,k,j,i) = 0.0;
+      for (int r = 1; r <= x.nf; ++r) {
+        x.fc[dir](m,CLF_CB+r,k,j,i) = (rem == 0) ? 0.0 : x.fc[dir](m,CLF_CB+r,k,j,i) -
+            wb*x.c*((gp - hp)*ul[r] + (gm - hm)*ur[r]);
+      }
     });
+  }
+  if (cln_tilt) {
+    if (cln_tiltrem == 1 || cln_tiltrem == 3) CleanCellTiltLimit();
+    return;
   }
   if (!cln_consist || !cln_bracket || cln_rfv == 0) return;
 
@@ -413,6 +440,78 @@ void RadiationM1::CleanCellConsistency() {
       for (int r = 0; r < 4; ++r) x.fc[dir](m,CLF_CB+r,k,j,i) *= q;
     });
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellTiltLimit
+//! \brief clean_bracket_rem = limit: the y remainders of the bracket (CLF_CB+1..3) are
+//! the only terms of the streaming share that do not scale with the cell vector.  A cell
+//! takes them in full while their sum of magnitudes |h div| fits in the margin
+//! E_old - |y_old + g| of its old state (g the rays' curvature terms), else the share
+//! a of the margin; every interior face takes the smaller a of its two cells, so that
+//! the flux stays single-valued (momentum and L_z conservative); physical boundary faces
+//! keep their bracket.  clean_bracket_rem = scale: the face's remainder times
+//! min(1, E/J) of the Newton iterate of its two cells (homogeneous in E).  The limited
+//! faces are counted.
+
+void RadiationM1::CleanCellTiltLimit() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanArgs x = CleanMakeArgs();
+  auto lim = cln_v;
+  const bool scale = (cln_tiltrem == 3);
+  par_for("clc_tilt_cell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (scale) {
+      const Real e = fmax(x.u(m,CLC_K,k,j,i), 0.0), jr = x.cs(m,CLN_J,k,j,i);
+      lim(m,1,k,j,i) = (jr > e) ? e/jr : 1.0;
+      return;
+    }
+    Real out = 0.0;
+    for (int dir = 0; dir < x.nf; ++dir) {
+      const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+      for (int n = 0; n < 2; ++n) {
+        if (CleanBoundaryFace(x, dir, m, k+n*dk, j+n*dj, i+n*di)) continue;
+        Real f[4], g[4];
+        f[0] = 0.0;
+        for (int r = 1; r < 4; ++r) f[r] = x.fc[dir](m,CLF_CB+r,k+n*dk,j+n*dj,i+n*di);
+        CleanCellRows(x, dir, m, k+n*dk, j+n*dj, i+n*di, k, j, i, f, g);
+        out += std::sqrt(SQR(g[1]) + SQR(g[2]) + SQR(g[3]));
+      }
+    }
+    Real y[3], gc[3] = {0.0, 0.0, 0.0};
+    if (x.sph) CleanCellSphSource(x, m, k, j, i, gc, true);
+    for (int b = 0; b < 3; ++b) {
+      y[b] = x.u(m,CLC_O+1+b,k,j,i) - ((b < x.nf) ? gc[b] : 0.0);
+    }
+    const Real a = fmax(x.u(m,CLC_O,k,j,i) - std::sqrt(SQR(y[0]) + SQR(y[1]) + SQR(y[2])),
+                        0.0);
+    lim(m,1,k,j,i) = (out > a) ? a/out : 1.0;
+  });
+  CleanGhostFill(cln_v, 1, 1);
+  Real nlim = 0.0;
+  for (int dir = 0; dir < x.nf; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    const int ni = ie - is + 1 + di, nj = je - js + 1 + dj, nk = ke - ks + 1 + dk;
+    Real nd = 0.0;
+    Kokkos::parallel_reduce("clc_tilt_face", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            (nmb1 + 1)*nk*nj*ni),
+    KOKKOS_LAMBDA(const int idx, Real &nf) {
+      const int m = idx/(nk*nj*ni), k = ks + (idx/(nj*ni))%nk;
+      const int j = js + (idx/ni)%nj, i = is + idx%ni;
+      if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
+      const Real q = fmin(lim(m,1,k-dk,j-dj,i-di), lim(m,1,k,j,i));
+      if (q < 1.0) {
+        for (int r = 1; r < 4; ++r) x.fc[dir](m,CLF_CB+r,k,j,i) *= q;
+        nf += 1.0;
+      }
+    }, Kokkos::Sum<Real>(nd));
+    nlim += nd;
+  }
+  cln_ntlim += CleanReduce(nlim, false);
 }
 
 //----------------------------------------------------------------------------------------
@@ -1768,6 +1867,8 @@ int RadiationM1::CleanCellCountNegative() {
     b_max = fmax(b_max, fabs(w(m,CLW_B,k+ks,j+js,i+is)));
   }, Kokkos::Max<Real>(bmax));
   const Real zero = 10.0*cln_tol*CleanReduce(bmax, true);
+  const bool zcell = cln_postol_cell;
+  const Real tol10 = 10.0*cln_tol;
   Real nreal = 0.0;
   Kokkos::parallel_reduce("clc_neg_out", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           nmb*nkji),
@@ -1783,7 +1884,8 @@ int RadiationM1::CleanCellCountNegative() {
     u(m,CLC_X,k,j,i) = e;
     const Real y = std::sqrt(SQR(u(m,CLC_X+1,k,j,i)) + SQR(u(m,CLC_X+2,k,j,i)) +
                              SQR(u(m,CLC_X+3,k,j,i)));
-    if (y > (1.0 + 1.0e-12)*e + zero) n += 1.0;
+    const Real z = zcell ? tol10*fmax(fabs(w(m,CLW_B,k,j,i)), fabs(e)) : zero;
+    if (y > (1.0 + 1.0e-12)*e + z) n += 1.0;
   }, Kokkos::Sum<Real>(nreal));
   cln_nnreal = static_cast<int>(CleanReduce(nreal, false));
   // (clean_pos_real: a cell with |F| > c E counts as negative)
@@ -1793,7 +1895,8 @@ int RadiationM1::CleanCellCountNegative() {
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationM1::CleanCellMarkFaces
 //! \brief marks every face of the cells whose solution has E < 0 (beyond the solver
-//! tolerance, 10 clean_tol max|B_E|) as low-order.  |F| > c E is left alone (a beam
+//! tolerance, 10 clean_tol max|B_E|, or of the cell with clean_pos_tol = cell) as
+//! low-order.  |F| > c E is left alone (a beam
 //! overshoots |F| = c E slightly, and low-order faces with the cells' stress smear it into
 //! E < 0), except with clean_pos_real, whose low-order faces carry y kinetically.  The
 //! flags of these cells (cln_v slot 2) take the ghost exchange, so that a face shared by
@@ -1821,6 +1924,8 @@ int RadiationM1::CleanCellMarkFaces() {
     b_max = fmax(b_max, fabs(u(m,CLC_B,k+ks,j+js,i+is)));
   }, Kokkos::Max<Real>(bmax));
   const Real zero = 10.0*cln_tol*CleanReduce(bmax, true);
+  const bool zcell = cln_postol_cell;
+  const Real tol10 = 10.0*cln_tol;
   Real nbad = 0.0;
   Kokkos::parallel_reduce("clc_bad", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &n) {
@@ -1834,7 +1939,8 @@ int RadiationM1::CleanCellMarkFaces() {
     const Real e = u(m,CLC_X,k,j,i);
     const Real y = std::sqrt(SQR(u(m,CLC_X+1,k,j,i)) + SQR(u(m,CLC_X+2,k,j,i)) +
                              SQR(u(m,CLC_X+3,k,j,i)));
-    const bool b = !(e >= -zero) || (real && y > (1.0 + 1.0e-12)*e + zero);
+    const Real z = zcell ? tol10*fmax(fabs(u(m,CLC_B,k,j,i)), fabs(e)) : zero;
+    const bool b = !(e >= -z) || (real && y > (1.0 + 1.0e-12)*e + z);
     if (b) bad(m,2,k,j,i) = 1.0;
     if (b) n += 1.0;
   }, Kokkos::Sum<Real>(nbad));
@@ -2140,11 +2246,57 @@ void RadiationM1::CleanCellWriteBack() {
     n[s] = CleanReduce(a, false);
     if (s > 0) nn[s-1] = CleanReduce(b, false);
   }
+  // the faces whose energy flux exceeds c E of the written-back donor cell (each face
+  // counted by the MeshBlock that holds its donor; physical boundary faces left out),
+  // and the largest streaming weight w of the faces of the cells left with |F| > c E
+  Real nf0 = 0.0;
+  for (int dir = 0; dir < x.nf; ++dir) {
+    auto f0 = (dir == 0) ? f0x1 : ((dir == 1) ? f0x2 : f0x3);
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    const int fi = ni + di, fj = nj + dj, fk = nk + dk;
+    Real a = 0.0;
+    Kokkos::parallel_reduce("clc_wbf0", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            (nmb1 + 1)*fk*fj*fi),
+    KOKKOS_LAMBDA(const int q, Real &sa) {
+      const int m = q/(fk*fj*fi), k = ks + (q/(fj*fi))%fk;
+      const int j = js + (q/fi)%fj, i = is + q%fi;
+      if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
+      const Real f = f0(m,k,j,i);
+      const int kd = (f > 0.0) ? k - dk : k, jd = (f > 0.0) ? j - dj : j;
+      const int id = (f > 0.0) ? i - di : i;
+      if (kd < ks || kd > ke || jd < js || jd > je || id < is || id > ie) return;
+      if (fabs(f) > (1.0 + 1.0e-12)*x.c*u0_(m,M1_E,kd,jd,id)) sa += 1.0;
+    }, Kokkos::Sum<Real>(a));
+    nf0 += a;
+  }
+  nf0 = CleanReduce(nf0, false);
+  Real wmin = 1.0, wmax = 0.0, wlo = 0.0;
+  Kokkos::parallel_reduce("clc_wbw", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          (nmb1 + 1)*nk*nj*ni),
+  KOKKOS_LAMBDA(const int q, Real &smin, Real &smax, Real &slo) {
+    const int m = q/(nk*nj*ni), k = ks + (q/(nj*ni))%nk;
+    const int j = js + (q/ni)%nj, i = is + q%ni;
+    if (wbr(m,3,k,j,i) == 0.0) return;
+    Real w = 0.0;
+    for (int dir = 0; dir < x.nf; ++dir) {
+      const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+      w = fmax(w, fmax(x.fc[dir](m,CLF_WK,k,j,i), x.fc[dir](m,CLF_WK,k+dk,j+dj,i+di)));
+    }
+    smin = fmin(smin, w);
+    smax = fmax(smax, w);
+    if (w < 0.99) slo += 1.0;
+  }, Kokkos::Min<Real>(wmin), Kokkos::Max<Real>(wmax), Kokkos::Sum<Real>(wlo));
+  wmin = CleanReduce(-wmin, true);
+  wmax = CleanReduce(wmax, true);
+  wlo = CleanReduce(wlo, false);
   if (global_variable::my_rank == 0) {
     std::printf("CLEAN WB cycle %d t2s %d |F| > cE: solution %.0f, after yres %.0f "
                 "(+%.0f), work %.0f (+%.0f), exchange %.0f (+%.0f)\n",
                 pmy_pack->pmesh->ncycle, t2_solve, n[0], n[1], nn[0], n[2], nn[1], n[3],
                 nn[2]);
+    std::printf("CLEAN WB cycle %d t2s %d faces |f0| > c E_donor %.0f; cells |F| > cE: "
+                "max face w from %.3f to %.3f, below 0.99 in %.0f\n",
+                pmy_pack->pmesh->ncycle, t2_solve, nf0, -wmin, wmax, wlo);
   }
 }
 

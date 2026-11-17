@@ -2985,6 +2985,7 @@ class RadiationM1 {
   void CleanCellOldVector();
   void CleanCellFaceCoefficients();
   void CleanCellConsistency();
+  void CleanCellTiltLimit();
   void CleanCellMilneSetup();
   void CleanCellSlopeWeights(const int v);
   void CleanCellFirstIterate();
@@ -3048,6 +3049,11 @@ class RadiationM1 {
   bool cln_posreal = false;     // clean_pos_real: the limiter for |F| <= c E as well
   bool cln_wbreal = false;      // clean_wb_real: |F| > c E counts of the write-back
   DvceArray5D<Real> cln_wbr;    // its per-cell flags (CleanCellWriteBack)
+  bool cln_postol_cell = false; // clean_pos_tol = cell: zero of the tests per cell
+  bool cln_tilt = false;        // clean_bracket_tilt: tilted half-range factors g+-
+  int cln_tiltrem = 1;          // clean_bracket_rem: none 0 | limit 1 | full 2 | scale 3
+  bool cln_curvk = false;       // clean_curv_iterate: curvature terms at the iterate's E
+  Real cln_ntlim = 0.0;         // faces whose y remainder was limited (this solve)
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
   bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces
   bool cln_posghost = false;    // clean_pos_ghost: marked boundary faces, upwind ghost

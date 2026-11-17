@@ -244,6 +244,62 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_posreal = pin->GetOrAddBoolean("rad_m1","clean_pos_real",false);
     // diagnostic: the cells with |F| > c E after each step of the write-back (log line)
     cln_wbreal = pin->GetOrAddBoolean("rad_m1","clean_wb_real",false);
+    // clean_bracket_tilt (read only when named, default false): the E row's bracket of an
+    // interior face enters the streaming share as tilted half-range factors g+- (linear
+    // in E, upwind), and the same g+- carry y, so that the share maps |y| <= E into
+    // itself; the y bracket left over (clean_bracket_rem) is none, full, limit (each
+    // face's remainder times min over its two cells of the share of the old state's
+    // margin E - |y|, less the curvature terms, the remainders of the cell may take) or
+    // scale (times min(1, E/J) of the Newton iterate over its two cells)
+    if (pin->DoesParameterExist("rad_m1","clean_bracket_tilt")) {
+      cln_tilt = pin->GetBoolean("rad_m1","clean_bracket_tilt");
+    }
+    if (pin->DoesParameterExist("rad_m1","clean_bracket_rem")) {
+      std::string br = pin->GetString("rad_m1","clean_bracket_rem");
+      cln_tiltrem = (br == "none") ? 0 : (br == "limit") ? 1 : (br == "full") ? 2 :
+                    (br == "scale") ? 3 : -1;
+      if (cln_tiltrem < 0 || !cln_tilt) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/clean_bracket_rem = " << br
+                  << " needs clean_bracket_tilt = true and none | limit | full | scale"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    if (cln_tilt && (!cln_cell || !cln_consist || !cln_bracket || cln_rfv == 0 ||
+                     cln_milne)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/clean_bracket_tilt needs clean_layout = cell, "
+                << "clean_consistency with its bracket, FV rays and no milne face model"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // clean_curv_iterate (read only when named, default false): the rays' curvature
+    // terms of the streaming share scaled by min(J, E)/J and faded by the ray share of
+    // the Newton iterate's E (not the old E), so that they vanish with E
+    if (pin->DoesParameterExist("rad_m1","clean_curv_iterate")) {
+      cln_curvk = pin->GetBoolean("rad_m1","clean_curv_iterate");
+      if (cln_curvk && (!cln_cell || !cln_consist || !cln_bracket)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/clean_curv_iterate needs clean_layout = cell "
+                  << "and clean_consistency with its bracket" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    // clean_pos_tol (read only when named): global (default) | cell.  The positivity and
+    // realisability tests take as zero 10 clean_tol max|B_E| over the mesh (global) or
+    // 10 clean_tol max(|B_E|, |X_E|) of the cell itself (cell), which sees thin cells
+    if (pin->DoesParameterExist("rad_m1","clean_pos_tol")) {
+      std::string pt = pin->GetString("rad_m1","clean_pos_tol");
+      if (pt == "cell") {
+        cln_postol_cell = true;
+      } else if (pt != "global") {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/clean_pos_tol = " << pt
+                  << " unknown (global | cell)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     cln_diagcells = pin->GetOrAddBoolean("rad_m1","clean_diag_cells",false);
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",false);
     cln_posghost = pin->GetOrAddBoolean("rad_m1","clean_pos_ghost",false);

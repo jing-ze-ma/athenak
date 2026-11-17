@@ -80,6 +80,7 @@ constexpr int CLF_ML = CLF_HK + 2;  // clean_face_model = milne: mu and the sub-
                                     // terms of the derivatives (CleanCellMilneSetup)
 constexpr int CLF_KK = CLF_ML + 9;  // cubed sphere, milne: k+ of L and k- of R about
                                     // the face normal (CleanCellConsistency)
+constexpr int CLF_GT = CLF_HK + 2;  // clean_bracket_tilt (no milne): g+ of L and g- of R
 
 // cell vectors (array cln_x), 4 components (E, y1, y2, y3) each
 constexpr int CLC_O = 0;     // old vector
@@ -613,11 +614,13 @@ void CleanCellRhieChow(const CleanArgs &x, const int dir, const bool lo, const i
 //! \brief causality: the rays, a steady solution, run ahead of the moments' field; with
 //! the FV rays (true face fluxes) their consistency terms fade out where cell (k,j,i)
 //! holds less than half of the rays' J (gone below 0.1 J; the short characteristics'
-//! bracket is defined only up to a divergence-free part and stays)
+//! bracket is defined only up to a divergence-free part and stays); E of the cell vector
+//! at slot v (the old vector by default)
 
 KOKKOS_INLINE_FUNCTION
-Real CleanRayShare(const CleanArgs &x, const int m, const int k, const int j, const int i) {
-  return x.fvrays ? CleanSmoothStep(2.5*fmax(x.u(m,CLC_O,k,j,i), 0.0)/
+Real CleanRayShare(const CleanArgs &x, const int m, const int k, const int j, const int i,
+                   const int v = CLC_O) {
+  return x.fvrays ? CleanSmoothStep(2.5*fmax(x.u(m,v,k,j,i), 0.0)/
                                     fmax(x.cs(m,CLN_J,k,j,i), 1.0e-300) - 0.25) : 1.0;
 }
 
@@ -633,7 +636,8 @@ Real CleanRayShare(const CleanArgs &x, const int m, const int k, const int j, co
 //! of E, shared by the r faces' w as the area terms), so that the rays' moments (J, J h)
 //! are its steady state, and faded with the bracket where the rays run ahead
 //! (CleanRayShare); the y_phi row keeps its angular-momentum flux form (no source),
-//! so that L_z stays exact.
+//! so that L_z stays exact.  With clean_curv_iterate they are scaled by min(J, E)/J and
+//! faded by the ray share of the Newton iterate's E, so that they vanish with E.
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellSphSource(const CleanArgs &x, const int m, const int k, const int j,
@@ -647,8 +651,13 @@ void CleanCellSphSource(const CleanArgs &x, const int m, const int k, const int 
   };
   const Real am = x.area[0](m,k,j,i), ap = x.area[0](m,k,j,i+1);
   if (kin) {
-    const Real w = (wf(0, k, j, i+1)*ap - wf(0, k, j, i)*am)/(ap - am)*
-                   CleanRayShare(x, m, k, j, i);
+    Real w = (wf(0, k, j, i+1)*ap - wf(0, k, j, i)*am)/(ap - am);
+    if (x.curvk) {
+      const Real jr = x.cs(m,CLN_J,k,j,i), e = fmax(x.u(m,CLC_K,k,j,i), 0.0);
+      w *= CleanRayShare(x, m, k, j, i, CLC_K)*((jr > e) ? e/jr : 1.0);
+    } else {
+      w *= CleanRayShare(x, m, k, j, i);
+    }
     for (int b = 0; b < 3; ++b) g[b] = (b < 2) ? w*hv*x.cs(m,CLN_G+b,k,j,i) : 0.0;
     return;
   }
@@ -969,7 +978,8 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
   }
   if (!x.consist) return;
   // clean_consistency: w of the face takes the rays' kinetic upwind flux, the cells'
-  // half-range factors on E and y (c h+_L U_L + c h-_R U_R)
+  // half-range factors on E and y (c h+_L U_L + c h-_R U_R); with clean_bracket_tilt
+  // the factors g+- that carry the E bracket (CleanCellConsistency)
   const Real w = x.fc[dir](m,CLF_WK,k,j,i);
   for (int r = 0; r < 4; ++r) {
     for (int c = 0; c < 4; ++c) {
@@ -979,6 +989,10 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
   }
   Real hp, hm;
   CleanCellKinetic(x, dir, m, k, j, i, hp, hm);
+  if (x.tilt) {
+    hp = x.fc[dir](m,CLF_GT,k,j,i);
+    hm = x.fc[dir](m,CLF_GT+1,k,j,i);
+  }
   for (int r = 0; r < 4; ++r) {
     if (r <= x.nf) {
       jl[r][r] += w*x.c*hp;
