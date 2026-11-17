@@ -104,9 +104,9 @@ const char *kDtrMinimal[] = {
   // intensities a clean_rays = fv1 | fv | lld sweep starts from (cln_fvis in single
   // precision, with their reference cln_fvr, cln_fvrd), with cln_fref_set
   // (force_reference = clean recaptures), and the clean_fv_lag = extrap inflow history
-  // (cln_fvgp with its times and count).  The closure's extrap history is left alone:
-  // its flags go with the handles the attempt swapped and, on a first cycle, with
-  // cln_init
+  // (cln_fvgp with its times and count).  The closure's extrap history (cln_mn, cln_mp,
+  // cln_mc with its times and flags) is put back by handle; with clean_extrap_share
+  // also the contents of cln_mn (Build)
   "m1.cln_fvi", "m1.cln_fvis", "m1.cln_fvr", "m1.cln_fvrd",
   "m1.cln_fvgp",
 };
@@ -373,8 +373,12 @@ struct Binder {
   const std::set<std::string> *sel;
   bool all;
   bool host;   // dt_retry_host
+  const std::set<std::string> *hsel;   // dt_retry_host_views
   bool Deep(const std::string &n) const {
     return all || sel->count(pre + n) > 0;
+  }
+  bool Host(const std::string &n) const {
+    return host || hsel->count(pre + n) > 0;
   }
   template <class T> void value(const char *n, T &x) {
     auto e = std::make_unique<ValEntry<T>>(&x);
@@ -382,12 +386,12 @@ struct Binder {
     ent->push_back(std::move(e));
   }
   template <class T> void view(const char *n, T &x) {
-    auto e = std::make_unique<ViewEntry<T>>(&x, Deep(n), host);
+    auto e = std::make_unique<ViewEntry<T>>(&x, Deep(n), Host(n));
     e->name = pre + n;
     ent->push_back(std::move(e));
   }
   template <class T> void dual(const char *n, T &x) {
-    auto e = std::make_unique<DualEntry<T>>(&x, Deep(n), host);
+    auto e = std::make_unique<DualEntry<T>>(&x, Deep(n), Host(n));
     e->name = pre + n;
     ent->push_back(std::move(e));
   }
@@ -504,6 +508,14 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   if (pin->DoesParameterExist("time", "dt_retry_host")) {
     host_ = pin->GetBoolean("time", "dt_retry_host");
   }
+  // <time>/dt_retry_host_views (read only when named): a comma list of checkpoint
+  // Views (e.g. m1.cln_fvis) whose clones live in pinned host memory, the others on
+  // the device; the same bytes are copied back either way
+  if (pin->DoesParameterExist("time", "dt_retry_host_views")) {
+    std::stringstream ss(pin->GetString("time", "dt_retry_host_views"));
+    std::string w;
+    while (std::getline(ss, w, ',')) {if (!w.empty()) host_views_.insert(w);}
+  }
   // debug / audit keys, read only when named (the parameter dump is unchanged otherwise)
   if (pin->DoesParameterExist("time", "dt_retry_force_cycle")) {
     force_cycle_ = pin->GetInteger("time", "dt_retry_force_cycle");
@@ -567,27 +579,31 @@ void DtRetry::Build(Mesh *pm) {
   }
   for (auto &s : extra_views_) {sel.insert(s);}
   auto *pk = pm->pmb_pack;
+  // clean_extrap_share: the step's candidate moments are written over the buffer that
+  // held those of t^{n-1} (cln_mc is cln_mp after the swap), which a retried step reads
+  // again; the history handles and flags are restored with every checkpoint
+  if (pk->pradm1 != nullptr && pk->pradm1->cln_mshare) {sel.insert("m1.cln_mn");}
   if (pk->phydro != nullptr) {
-    Binder b{&ent_, "hyd.", &sel, all_views_, host_};
+    Binder b{&ent_, "hyd.", &sel, all_views_, host_, &host_views_};
     pk->phydro->DtRetryVisit(b);
   }
   // MHD (and its resistivity, when <mhd>/ohmic_resistivity is set)
   if (pk->pmhd != nullptr) {
-    Binder b{&ent_, "mhd.", &sel, all_views_, host_};
+    Binder b{&ent_, "mhd.", &sel, all_views_, host_, &host_views_};
     pk->pmhd->DtRetryVisit(b);
     if (pk->pmhd->presist != nullptr) {
-      Binder br{&ent_, "res.", &sel, all_views_, host_};
+      Binder br{&ent_, "res.", &sel, all_views_, host_, &host_views_};
       pk->pmhd->presist->DtRetryVisit(br);
     }
   }
   {
-    Binder b{&ent_, "m1.", &sel, all_views_, host_};
+    Binder b{&ent_, "m1.", &sel, all_views_, host_, &host_views_};
     pk->pradm1->DtRetryVisit(b);
   }
   // the angular-momentum module (<hydro|mhd>/am_transport, am_vector,
   // frame_omega; exists only when one of its keys is named)
   if (hydro::AmModule *pam = hydro::AmModuleOf(pk)) {
-    Binder b{&ent_, "am.", &sel, all_views_, host_};
+    Binder b{&ent_, "am.", &sel, all_views_, host_, &host_views_};
     pam->DtRetryVisit(b);
   }
   // dt_retry_host skips the host copy of vet_rotate_avg's history vra_d
@@ -619,6 +635,11 @@ void DtRetry::Save(Mesh *pm) {
   Kokkos::Timer t;
   pm->pmb_pack->pradm1->DtRetryQuiesce(false);
   pm->pmb_pack->pradm1->MemArenaSeal();   // no rebind after a checkpoint
+  // the clean scheme's arrays exist before the first checkpoint (a retry puts back the
+  // handles of its extrap history, which a first solve would otherwise allocate)
+  if (pm->pmb_pack->pradm1->clean && !pm->pmb_pack->pradm1->cln_init) {
+    pm->pmb_pack->pradm1->CleanInit();
+  }
   for (auto &e : ent_) {e->Save();}
   Kokkos::fence();
   tsave_ += t.seconds();
@@ -636,7 +657,7 @@ void DtRetry::Save(Mesh *pm) {
       std::cout << "<time> dt_retry checkpoint: " << ent_.size() << " members, " << nv
                 << " Views (" << nd << " copied, " << static_cast<double>(b)/1.0e6
                 << " MB on rank 0";
-      if (host_) {
+      if (host_ || !host_views_.empty()) {
         std::cout << ", dt_retry_host: " << static_cast<double>(bh)/1.0e6
                   << " MB of it in pinned host memory";
       }

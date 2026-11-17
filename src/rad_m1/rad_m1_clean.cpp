@@ -110,7 +110,9 @@ void RadiationM1::CleanInit() {
   int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
   int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
   int nmb = pmy_pack->nmb_thispack;
-  Kokkos::realloc(cln_s, nmb, CLN_N, n3, n2, n1);
+  // without clean_consistency the rays' face sums and CLN_G are never read: the closure
+  // ends at CLN_F2
+  Kokkos::realloc(cln_s, nmb, cln_consist ? CLN_N : CLN_F2, n3, n2, n1);
   Kokkos::realloc(cln_v, nmb, 3, n3, n2, n1);
   Kokkos::realloc(cln_w, nmb, cln_cell ? CLW_NC : CLW_N, n3, n2, n1);
   // the cubed sphere takes the half ranges about the face normals from the FV rays
@@ -856,7 +858,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     CleanClosureAfterSolve();
     if (reslope) {
       CleanClosureFill();
-      CleanGhostFill(cln_s, 0, CLN_N);
+      CleanGhostFill(cln_s, 0, cln_s.extent_int(1));
       CleanCellFaceSpeeds();
       if (cln_hk) CleanCellConsistency();
       if (cln_milne) CleanCellMilneSetup();

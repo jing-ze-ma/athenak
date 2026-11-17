@@ -69,7 +69,7 @@ void CleanStoreMoments(const DvceArray5D<Real> &cs, const DvceArray5D<Real> &val
     cs(m,CLN_J,k,j,i) = 0.0;
     valid(m,0,k,j,i) = 0.0;
   }
-  for (int n = CLN_F2; n < CLN_N; ++n) cs(m,n,k,j,i) = q[n];
+  for (int n = CLN_F2; n < cs.extent_int(1); ++n) cs(m,n,k,j,i) = q[n];
 }
 
 //----------------------------------------------------------------------------------------
@@ -231,7 +231,7 @@ void RadiationM1::CleanClosure() {
     if (cln_opsaved) Kokkos::deep_copy(opac, cln_opb);
     CleanClosureFill();
   }
-  CleanGhostFill(cln_s, 0, CLN_N);
+  CleanGhostFill(cln_s, 0, cln_s.extent_int(1));
 
   cln_tc = time;
   cln_dtb = dt;
@@ -292,7 +292,7 @@ void RadiationM1::CleanClosureIterate() {
   });
   CleanRays();
   CleanClosureFill();
-  CleanGhostFill(cln_s, 0, CLN_N);
+  CleanGhostFill(cln_s, 0, cln_s.extent_int(1));
   cln_havec = false;
 }
 
@@ -572,7 +572,7 @@ void RadiationM1::CleanClosureExtrap() {
   if (line) cln_next_sum += 1.0;
 
   CleanClosureFill();
-  CleanGhostFill(cln_s, 0, CLN_N);
+  CleanGhostFill(cln_s, 0, cln_s.extent_int(1));
 }
 
 //----------------------------------------------------------------------------------------
@@ -774,7 +774,7 @@ void RadiationM1::CleanClosureSphere() {
       }
     }
   });
-  CleanGhostFill(cln_s, 0, CLN_N);
+  CleanGhostFill(cln_s, 0, cln_s.extent_int(1));
 }
 
 //----------------------------------------------------------------------------------------
@@ -869,12 +869,14 @@ void RadiationM1::CleanRingMoments() {
     cln_fvd = cln_fvdm[q];
     CleanClosureFromGd();
     if (cln_consist) CleanGdFaceSums();
-    const int o = q*CLN_N;
+    const int o = q*CLN_N, ncs = cs.extent_int(1);
     par_for("cln_ring_raw", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real jr = cs(m,CLN_J,k,j,i);
       for (int n = 0; n < CLN_J; ++n) rl(m,o+n,k,j,i) = jr*cs(m,n,k,j,i);
-      for (int n = CLN_J; n < CLN_N; ++n) rl(m,o+n,k,j,i) = cs(m,n,k,j,i);
+      for (int n = CLN_J; n < CLN_N; ++n) {
+        rl(m,o+n,k,j,i) = (n < ncs) ? cs(m,n,k,j,i) : 0.0;
+      }
     });
     const int64_t p = cln_fvblk[q] - (b - nk + 1);
     if (p >= 0 && p <= nk) slot[p] = q;
@@ -1517,7 +1519,9 @@ void RadiationM1::CleanFvLevels() {
     const int md = jt ? (q%nmb)*n + q/nmb : q;
     if (cln_fvdo[md%n]) due.push_back(md);
   }
-  int nw = std::max(1, std::min(static_cast<int>(due.size()), (1 << 27)/nc));
+  // the directions are levelled in batches of at most 2^25 cells (ord, pos and lev are
+  // transient: 3 x 128 MiB at most on top of the step's arrays)
+  int nw = std::max(1, std::min(static_cast<int>(due.size()), (1 << 25)/nc));
   if (jt) nw = std::max(nmb, nw - nw%nmb);
   cln_fvl0 = std::numeric_limits<int>::max();
   cln_fvjn[0] = cln_fvjn[1] = 0;
@@ -3379,8 +3383,8 @@ void RadiationM1::CleanClosureFromRays() {
   par_for("cln_rays", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real jr = vc(m,M1_VET_J,k,j,i);
-    for (int n = 0; n < M1_VET_NFS; ++n) {
-      cs(m,CLN_F2+n,k,j,i) = f2 ? vc(m,M1_VET_F2+n,k,j,i) : 0.0;
+    for (int n = 0; n < M1_VET_NFS && f2; ++n) {
+      cs(m,CLN_F2+n,k,j,i) = vc(m,M1_VET_F2+n,k,j,i);
     }
     if (jr > 0.0 && jr >= ray_min*iw_(m,M1_IW_EN,k,j,i)) {
       for (int a = 0; a < 6; ++a) cs(m,CLN_D11+a,k,j,i) = vc(m,M1_VET_D11+a,k,j,i);
@@ -3427,7 +3431,7 @@ void RadiationM1::CleanClosureFill() {
   auto valid = cln_v;
 
   for (int pass = 0; pass < cln_fillpass; ++pass) {
-    CleanGhostFill(cln_s, 0, CLN_N);
+    CleanGhostFill(cln_s, 0, cln_s.extent_int(1));
     CleanGhostFill(cln_v, 0, 2);
     // valid(1) marks the cells filled in this pass; only cells valid before it are read
     par_for("cln_fill", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
