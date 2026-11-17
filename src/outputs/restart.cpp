@@ -237,15 +237,26 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     if (pradm1->Time2RstNch() > 0) {
       const int nct = pradm1->Time2RstNch();
       if (pradm1->rst_pack_mb) {
-        // restart_pack_per_mb: one MeshBlock at a time (same bytes)
+        // restart_pack_per_mb: one MeshBlock at a time (same bytes); the clean rays'
+        // intensities (the last nfv channels; doubles without clean_fv_lag = extrap)
+        // are copied to the host directly
         Kokkos::realloc(outarray_m1t, nmb, nct, nout3, nout2, nout1);
-        DvceArray5D<Real> tmp("rst-m1t-mb", 1, nct, nout3, nout2, nout1);
+        const int nfv = (pradm1->cln_fvf32 || pradm1->cln_fvlag == 2) ? 0 :
+                        pradm1->CleanRstNfv(), nc0 = nct - nfv;
+        DvceArray5D<Real> tmp("rst-m1t-mb", 1, nc0, nout3, nout2, nout1);
+        auto AL = Kokkos::ALL;
         for (int m = 0; m < nmb; ++m) {
           pradm1->Time2RstPack(tmp, 1, m);
-          Kokkos::deep_copy(Kokkos::subview(outarray_m1t, m, Kokkos::ALL, Kokkos::ALL,
-                                            Kokkos::ALL, Kokkos::ALL),
-                            Kokkos::subview(tmp, 0, Kokkos::ALL, Kokkos::ALL,
-                                            Kokkos::ALL, Kokkos::ALL));
+          Kokkos::deep_copy(Kokkos::subview(outarray_m1t, m, std::make_pair(0, nc0), AL,
+                                            AL, AL),
+                            Kokkos::subview(tmp, 0, AL, AL, AL, AL));
+          auto fv = Kokkos::subview(outarray_m1t, m, std::make_pair(nc0, nct), AL, AL,
+                                    AL);
+          if (nfv > 0 && pradm1->cln_fvi.extent_int(0) > m) {
+            Kokkos::deep_copy(fv, Kokkos::subview(pradm1->cln_fvi, m, AL, AL, AL, AL));
+          } else if (nfv > 0) {
+            Kokkos::deep_copy(fv, 0.0);
+          }
         }
       } else {
         DvceArray5D<Real> tmp("rst-m1t", nmb, nct, nout3, nout2, nout1);

@@ -3603,7 +3603,9 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
     });
     c += 4;
   }
-  // clean_rays = fv1 | fv: the intensities the next sweep starts from, last
+  // clean_rays = fv1 | fv: the intensities the next sweep starts from, last (unless a
+  // has no room for them: restart.cpp copies them itself)
+  if (a.extent_int(1) < c + CleanRstNfv()) return;
   if (CleanRstNfv() > 0 && cln_fvi.extent_int(0) >= m0 + nmb) {
     Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c + CleanRstNfv()), AL, AL,
                                       AL),
