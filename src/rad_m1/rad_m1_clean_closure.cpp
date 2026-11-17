@@ -1247,6 +1247,30 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn int CleanFvMirror
+//! \brief the leaving direction (of d0 .. d0+nd-1) nearest to the mirror image
+//! n - 2 (n . t) t of an incoming direction d at a wall of unit normal t, sg t outward
+//! of the cell (-1: d is not incoming); u = |n . t|
+
+KOKKOS_INLINE_FUNCTION
+int CleanFvMirror(const DvceArray2D<Real> &dir_, const int d0, const int nd, const int d,
+                  const Real t[3], const Real sg, Real &u) {
+  const Real nt = dir_(d,0)*t[0] + dir_(d,1)*t[1] + dir_(d,2)*t[2];
+  u = fabs(nt);
+  int r = -1;
+  if (!(sg*nt < 0.0)) return r;
+  const Real v[3] = {dir_(d,0) - 2.0*nt*t[0], dir_(d,1) - 2.0*nt*t[1],
+                     dir_(d,2) - 2.0*nt*t[2]};
+  Real bd = -2.0;
+  for (int e = d0; e < d0 + nd; ++e) {
+    const Real et = dir_(e,0)*t[0] + dir_(e,1)*t[1] + dir_(e,2)*t[2];
+    const Real dt = v[0]*dir_(e,0) + v[1]*dir_(e,1) + v[2]*dir_(e,2);
+    if (sg*et > 0.0 && dt > bd) {bd = dt; r = e;}
+  }
+  return r;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanFvTables
 //! \brief the tables of the swept directions d0 .. d0+nd-1 (one set; every search stays
 //! in it): the direction maps of the periodic seams of a wedge (cln_fvm: the ghost's
@@ -1254,12 +1278,14 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
 //! nearest set direction; an exact permutation for a phi period of the set) and of the
 //! reflecting theta walls (cln_fvwm: an incoming direction takes the leaving one nearest
 //! to its mirror image n - 2 (n . t) t about the wall's unit normal t, the mean
-//! theta_hat over the face's phi range; cln_fvwu = |n . t|); their sweep levels are due
+//! theta_hat over the face's phi range; cln_fvwu = |n . t|) and of the reflecting x1
+//! faces (cln_fvrm, cln_fvru: t along the face's vector area); their sweep levels are due
 
 void RadiationM1::CleanFvTables(const int d0, const int nd) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int js = indcs.js, je = indcs.je, ks = indcs.ks, ke = indcs.ke;
-  const int nmb = pmy_pack->nmb_thispack, nn = cln_fvn, c3 = cln_s.extent_int(2);
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke, nmb = pmy_pack->nmb_thispack, nn = cln_fvn;
+  const int c3 = cln_s.extent_int(2), c2 = cln_s.extent_int(3);
   if (cln_fvm.extent_int(3) != nn) {
     Kokkos::realloc(cln_fvm, nmb, 4, c3, nn);
     cln_fvdo.assign(nn, true);
@@ -1295,16 +1321,33 @@ void RadiationM1::CleanFvTables(const int d0, const int nd) {
       if (dt > bd) {bd = dt; fm(m,sd,k,d) = e;}
     }
   });
-  if (!CleanFvWall(0) && !CleanFvWall(1)) return;
+  const bool rw = (ibc_x1min == M1_IBC_REFLECT) || (ibc_x1max == M1_IBC_REFLECT);
+  if (!CleanFvWall(0) && !CleanFvWall(1) && !rw) return;
   if (cln_fvwm.extent_int(3) != nn) {
     Kokkos::realloc(cln_fvwm, nmb, 2, c3, nn);
     Kokkos::realloc(cln_fvwu, nmb, 2, c3, nn);
-    Kokkos::realloc(cln_fvw, nmb, 2, c3, cln_s.extent_int(4), cln_fvb*nn);
+    Kokkos::realloc(cln_fvrm, nmb, 2, c3, c2, nn);
+    Kokkos::realloc(cln_fvru, nmb, 2, c3, c2, nn);
+    Kokkos::realloc(cln_fvw, nmb, 4, c3, std::max(cln_s.extent_int(4), c2), cln_fvb*nn);
   }
   auto x2f = pmy_pack->pcoord->xx2f;
   auto x3f = pmy_pack->pcoord->xx3f;
   auto wm = cln_fvwm;
   auto wu = cln_fvwu;
+  auto rm = cln_fvrm;
+  auto ru = cln_fvru;
+  if (rw) {
+    par_for("cln_fv_x1map", DevExeSpace(), 0, nmb - 1, 0, 1, ks, ke, js, je, d0,
+            d0 + nd - 1,
+    KOKKOS_LAMBDA(const int m, const int sd, const int k, const int j, const int d) {
+      Real t[3];
+      CleanFaceVector(x, x3f, 0, m, k, j, sd ? ie + 1 : is, t);
+      const Real tn = sqrt(t[0]*t[0] + t[1]*t[1] + t[2]*t[2]);
+      for (int c = 0; c < 3; ++c) t[c] /= tn;
+      rm(m,sd,k,j,d) = CleanFvMirror(dir_, d0, nd, d, t, sd ? 1.0 : -1.0, ru(m,sd,k,j,d));
+    });
+  }
+  if (!CleanFvWall(0) && !CleanFvWall(1)) return;
   par_for("cln_fv_wallmap", DevExeSpace(), 0, nmb - 1, 0, 1, ks, ke, d0, d0 + nd - 1,
   KOKKOS_LAMBDA(const int m, const int sd, const int k, const int d) {
     const Real th = x2f(m, sd ? je + 1 : js), sgn = sd ? 1.0 : -1.0;
@@ -1313,60 +1356,62 @@ void RadiationM1::CleanFvTables(const int d0, const int nd) {
                  -sin(th)*(p2 - p1)};
     const Real tn = sqrt(t[0]*t[0] + t[1]*t[1] + t[2]*t[2]);
     for (int c = 0; c < 3; ++c) t[c] /= tn;
-    const Real nt = dir_(d,0)*t[0] + dir_(d,1)*t[1] + dir_(d,2)*t[2];
-    wu(m,sd,k,d) = fabs(nt);
-    wm(m,sd,k,d) = -1;
-    if (!(sgn*nt < 0.0)) return;
-    const Real v[3] = {dir_(d,0) - 2.0*nt*t[0], dir_(d,1) - 2.0*nt*t[1],
-                       dir_(d,2) - 2.0*nt*t[2]};
-    Real bd = -2.0;
-    for (int e = d0; e < d0 + nd; ++e) {
-      const Real et = dir_(e,0)*t[0] + dir_(e,1)*t[1] + dir_(e,2)*t[2];
-      const Real dt = v[0]*dir_(e,0) + v[1]*dir_(e,1) + v[2]*dir_(e,2);
-      if (sgn*et > 0.0 && dt > bd) {bd = dt; wm(m,sd,k,d) = e;}
-    }
+    wm(m,sd,k,d) = CleanFvMirror(dir_, d0, nd, d, t, sgn, wu(m,sd,k,d));
   });
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanFvWalls
-//! \brief the incoming intensities of the reflecting theta walls (cln_fvw): each incoming
-//! direction e takes the intensity of the wall cell along its mirror direction, scaled
-//! on each wall face so that it returns exactly the energy it receives,
-//! sum_e w_e |n_e . t| I(e) = sum_out w_d |n_d . t| I_d (isotropic radiation stays
-//! isotropic: the set integrates n exactly); lld: the wall face traces, with the
-//! slopes along x1 and x3 (blocks 1, 3)
+//! \brief the incoming intensities of the reflecting theta walls and x1 faces (cln_fvw):
+//! each incoming direction e takes the intensity of the wall cell along its mirror
+//! direction, scaled on each wall face so that it returns exactly the energy it
+//! receives, sum_e w_e |n_e . t| I(e) = sum_out w_d |n_d . t| I_d (isotropic radiation
+//! stays isotropic: the set integrates n exactly); lld: the wall face traces, with the
+//! slopes along the face (blocks 1, 3 on a theta wall, 2, 3 on an x1 face).  A
+//! reflecting x1max (top) only mirrors the intensities a sweep starts from (the last
+//! build, kept by the restart files: a one-build lag, as vet_gd's VetGdTopMirror), so
+//! that the passes of a closed thin cavity converge
 
-void RadiationM1::CleanFvWalls() {
+void RadiationM1::CleanFvWalls(const bool top) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int js = indcs.js, je = indcs.je, n = cln_fvn, nl = (cln_fvb > 1) ? n : 0;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int n = cln_fvn, nl = (cln_fvb > 1) ? n : 0;
+  // (theta low, high, x1min, x1max)
+  const bool on[4] = {CleanFvWall(0), CleanFvWall(1), ibc_x1min == M1_IBC_REFLECT,
+                      top && ibc_x1max == M1_IBC_REFLECT};
   CleanArgs x = CleanMakeArgs();
   CleanFvI fi = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvf32);
   auto fq = cln_fvq;
   auto fw = cln_fvw;
   auto mp = cln_fvwm;
   auto u = cln_fvwu;
+  auto rm = cln_fvrm;
+  auto ru = cln_fvru;
   auto dir_ = cln_fvd;
-  par_for("cln_fv_wall", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, 0, 1, indcs.ks,
-          indcs.ke, indcs.is, indcs.ie,
-  KOKKOS_LAMBDA(const int m, const int sd, const int k, const int i) {
-    const int jc = sd ? je : js;
-    if (!CleanBoundaryFace(x, 1, m, k, sd ? je + 1 : js, i)) return;
+  par_for("cln_fv_wall", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, 0, 3, indcs.ks,
+          indcs.ke, 0, std::max(ie, je),
+  KOKKOS_LAMBDA(const int m, const int sd, const int k, const int c) {
+    // (c: the wall cell's i on a theta wall, its j on an x1 face)
+    const int s = sd%2, r = sd/2, b0 = 2 - r;   // (b0: the slope normal to the wall)
+    if (!on[sd] || c < (r ? js : is) || c > (r ? je : ie)) return;
+    const int jc = r ? c : (s ? je : js), ic = r ? (s ? ie : is) : c;
+    if (!CleanBoundaryFace(x, 1 - r, m, k, jc + (!r && s), ic + (r && s))) return;
     Real so = 0.0, si = 0.0;
     for (int e = 0; e < n; ++e) {
-      const int d = mp(m,sd,k,e), g = (d >= 0) ? d : e;
-      const Real tr = fi(m,g,k,jc,i) + ((nl > 0) ? (sd ? 1.0 : -1.0)*fi(m,2*n+g,k,jc,i) +
-                                                   fq(m,CLQ_C+1,k,jc,i) : 0.0);
-      const Real q = dir_(e,3)*u(m,sd,k,e)*tr;
-      fw(m,sd,k,i,e) = (d >= 0) ? tr : 0.0;
-      for (int b = 1; b < 4 && nl > 0; b += 2) {
-        fw(m,sd,k,i,b*n+e) = (d >= 0) ? fi(m,b*n+d,k,jc,i) : 0.0;
+      const int d = r ? rm(m,s,k,jc,e) : mp(m,s,k,e), g = (d >= 0) ? d : e;
+      const Real tr = fi(m,g,k,jc,ic) +
+                      ((nl > 0) ? (s ? 1.0 : -1.0)*fi(m,b0*n+g,k,jc,ic) +
+                                  fq(m,CLQ_C+b0-1,k,jc,ic) : 0.0);
+      const Real q = dir_(e,3)*(r ? ru(m,s,k,jc,e) : u(m,s,k,e))*tr;
+      fw(m,sd,k,c,e) = (d >= 0) ? tr : 0.0;
+      for (int b = 1; b < 4 && nl > 0; ++b) {
+        if (b != b0) fw(m,sd,k,c,b*n+e) = (d >= 0) ? fi(m,b*n+d,k,jc,ic) : 0.0;
       }
       if (d >= 0) {si += q;} else {so += q;}
     }
     for (int e = 0; e < n; ++e) {
       for (int b = 0; b < 4; ++b) {
-        if (b == 0 || (nl > 0 && b != 2)) fw(m,sd,k,i,b*n+e) *= (si > 0.0) ? so/si : 0.0;
+        if (b == 0 || (nl > 0 && b != b0)) fw(m,sd,k,c,b*n+e) *= (si > 0.0) ? so/si : 0.0;
       }
     }
   });
@@ -1807,8 +1852,8 @@ int RadiationM1::CleanFvJoint(const DvceArray1D<int> &mds, const int nq,
 //! With fv at most 8 passes per build (the slopes converge over the builds of a run).
 //! The inner face emits the sweep's emission (vet_bc_inner emit) or the S of the first
 //! cell and the boundary beams (implicit_beam), the top its Marshak bath, a reflecting
-//! theta wall is specular (CleanFvWalls), another physical theta or phi (Cartesian x2,
-//! x3) face is closed.  Cartesian meshes take vet_sc's direction set.
+//! theta wall or x1 face is specular (CleanFvWalls), another physical theta or phi
+//! (Cartesian x2, x3) face is closed.  Cartesian meshes take vet_sc's direction set.
 
 void RadiationM1::CleanFvSweep() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1855,6 +1900,20 @@ void RadiationM1::CleanFvSweep() {
     Kokkos::realloc(cln_fvi, nmb, cln_fvb*n, cln_s.extent_int(2), cln_s.extent_int(3),
                     cln_s.extent_int(4));
   }
+  if (!have && ibc_x1max == M1_IBC_REFLECT) {
+    // (a reflecting top mirrors the last build (CleanFvWalls): before the first one the
+    // top cell's E)
+    CleanFvI fi = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvf32);
+    auto iw_ = iw;
+    const int ie = indcs.ie;
+    par_for("cln_fv_top0", DevExeSpace(), 0, nmb - 1, ks, indcs.ke, js, indcs.je, 0,
+            n - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
+      if (CleanBoundaryFace(x, 0, m, k, j, ie + 1)) {
+        fi.Set(m, d, k, j, ie, iw_(m,M1_IW_EN,k,j,ie));
+      }
+    });
+  }
   if (cln_fva.extent_int(0) != nmb) {
     // the outward face vectors of every cell (CleanFvSets: the directions and tables)
     Kokkos::realloc(cln_fva, nmb, 18, cln_s.extent_int(2), cln_s.extent_int(3),
@@ -1890,6 +1949,7 @@ void RadiationM1::CleanFvSweep() {
   auto fm = cln_fvm;
   const bool o2 = (cln_rfv == 2);
   const bool wall[2] = {CleanFvWall(0), CleanFvWall(1)};
+  const bool rwl[2] = {ibc_x1min == M1_IBC_REFLECT, ibc_x1max == M1_IBC_REFLECT};
   auto fw = cln_fvw;
   auto dir_ = cln_fvd;
   auto cw_ = vgd_cs;
@@ -2008,7 +2068,7 @@ void RadiationM1::CleanFvSweep() {
   cln_fvrst = false;
   // the walls' incoming beams of the intensities the sweep starts from (a restart has
   // no others)
-  if (wall[0] || wall[1]) CleanFvWalls();
+  if (wall[0] || wall[1] || rwl[0] || rwl[1]) CleanFvWalls(true);
   // (each level reduces -(its largest change) and its largest intensity on the device:
   // no wait)
   const int nlev = static_cast<int>(cln_fvlv.size());
@@ -2115,16 +2175,19 @@ void RadiationM1::CleanFvSweep() {
             continue;
           }
           const bool bdry = !ax && CleanBoundaryFace(x, dir, m, kf, jf, i_f);
-          // a reflecting theta wall: specular (its incoming beams from cln_fvw)
-          const int sw = (dir == 1 && bdry && wall[up]) ? up : -1;
+          // a reflecting theta wall or x1 face: specular (its incoming beams from
+          // cln_fvw, by i or j)
+          const int sw = !bdry ? -1 : (dir == 1 && wall[up]) ? up
+                       : (dir == 0 && rwl[up]) ? 2 + up : -1;
           if (bdry && dir != 0 && sw < 0) continue;
           const Real sg = up ? 1.0 : -1.0;
           if (sw >= 0 && a < 0.0) {
-            in -= a*fw(m,sw,k,i,d);
+            const int cw = dir ? i : j;
+            in -= a*fw(m,sw,k,cw,d);
             for (int e = 0; e < 3 && ldc; ++e) {
-              rd[e] -= a*((e == 1) ? sg*fw(m,sw,k,i,d) : fw(m,sw,k,i,(1+e)*n+d));
+              rd[e] -= a*((e == dir) ? sg*fw(m,sw,k,cw,d) : fw(m,sw,k,cw,(1+e)*n+d));
             }
-            hd[1] -= sg*a;
+            hd[dir] -= sg*a;
             continue;
           }
           if (a >= 0.0) {
@@ -2270,10 +2333,10 @@ void RadiationM1::CleanFvSweep() {
     }
     CleanFvPanelSlopes(false);
     CleanFvSeams();
-    if (wall[0] || wall[1]) CleanFvWalls();
+    if (wall[0] || wall[1] || rwl[0]) CleanFvWalls(false);
     cln_fvnp[1] += 1;
     cln_fvnp[2] += nlev - l1;
-    if (jt && cln_fvexact) break;
+    if (jt && cln_fvexact && !rwl[0]) break;
     // (extrap: one pass if the inflow it extrapolated was close to the new one)
     if (lag && (cln_fvlag == 1 ||
                 CleanFvExtrapMiss() <= cln_fvlagtol*CleanReduce(imax, true))) {
@@ -2609,6 +2672,8 @@ void RadiationM1::CleanGdFaceSums() {
   const bool emi = VetBcEmit();
   const Real iemit = VetBathLo();
   const Real ihi = (ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
+  const bool rwl[2] = {fv && !open, fv && ibc_x1max == M1_IBC_REFLECT};
+  auto fw_ = cln_fvw;
   auto bmi = ibm_i;
   const int bmn = ibm_nr, bmr[4] = {ibm_ray[0], ibm_ray[1], ibm_ray[2], ibm_ray[3]};
   // the short characteristics' intensities in the mesh layout with the ghost exchange
@@ -2734,6 +2799,9 @@ void RadiationM1::CleanGdFaceSums() {
         for (int q = 0; q < bmn && i == is && f > 0.0; ++q) {
           if (d == bmr[q]) iv += bmi(m,q,(bmi.extent_int(2) > 1) ? k - ks : 0,j - js);
         }
+        // (a reflecting one of the FV rays: their mirrored beams, CleanFvWalls)
+        const int up = (i != is);
+        if (rwl[up] && (f > 0.0) != up) iv = fw_(m,2+up,k,j,d);
       }
       add(0, m, k, j, i, d, f*iv, q);
     }

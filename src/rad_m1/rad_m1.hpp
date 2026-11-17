@@ -2954,7 +2954,7 @@ class RadiationM1 {
   void CleanRingJump();
   void CleanRingSolveSet();
   void CleanFvTables(const int d0, const int nd);
-  void CleanFvWalls();
+  void CleanFvWalls(const bool top);
   void CleanClosureFill();
   void CleanClosureEddington();
   void CleanFaceCoefficients();
@@ -3174,7 +3174,10 @@ class RadiationM1 {
   DvceArray2D<Real> cln_fvt;    // scratch of CleanFvSeams
   DvceArray4D<int> cln_fvwm;    // specular maps of reflecting theta walls (m,side,k,d)
   DvceArray4D<Real> cln_fvwu;   // |n . theta_hat| there
-  DvceArray5D<Real> cln_fvw;    // the walls' incoming intensities (m,side,k,i,b N + d)
+  DvceArray5D<int> cln_fvrm;    // those of reflecting x1 faces (m,side,k,j,d)
+  DvceArray5D<Real> cln_fvru;   // |n . r_hat| there
+  DvceArray5D<Real> cln_fvw;    // the walls' incoming intensities (m,side,k,i,b N + d;
+                                // sides 2, 3: the x1 faces, by j)
   DvceArray2D<Real> cln_fvd;    // the swept directions (x, y, z, weight; CleanFvSets)
   int cln_fvn = 0;              // their number
   std::vector<Real> cln_fvkey;  // the set (block key) in each slot of a rotating union
