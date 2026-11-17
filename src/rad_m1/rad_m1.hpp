@@ -3115,6 +3115,7 @@ class RadiationM1 {
   Real cln_tol = 1.0e-10;       // clean_tol: relative residual of the linear solve
   int cln_maxit = 4000;         // clean_maxit: BiCGStab iterations
   bool cln_pcr = true;          // clean_stag_pcr: PC line solves by PCR on a GPU
+  bool cln_fspcr = false;      // clean_stag_fs_pcr: F solve x1 lines by PCR on a GPU
   bool cln_stst = false;        // clean_stag_stencil: the operator's rows stored per pass
   DvceArray5D<Real> cln_st;     //   (CLN_ST per active cell, CleanPreconditionerSetup)
   int cln_stall_n = 0;          // clean_bicg_stall_its: stall window (0 = off)

@@ -162,6 +162,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_cell = (ly.compare("cell") == 0);
     cln_recon = (rc.compare("plm") == 0);
     cln_pcr = pin->GetOrAddBoolean("rad_m1","clean_stag_pcr",true);
+    cln_fspcr = pin->GetOrAddBoolean("rad_m1","clean_stag_fs_pcr",false);
     cln_stall_n = pin->GetOrAddInteger("rad_m1","clean_bicg_stall_its",cln_cell ? 0 : 50);
     cln_stall_f = pin->GetOrAddReal("rad_m1","clean_bicg_stall_fac",0.99);
     // clean_stag_ftie (read only when named, default true staggered): a face two
