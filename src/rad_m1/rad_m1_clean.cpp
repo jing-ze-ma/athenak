@@ -770,10 +770,11 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // the vet_gd direction set before any use (the consistency term reads it at the first
   // solve of a restart, before any ray build)
   if (vgd_on && !tau_ready) VetColInit();
-  if (vgd_on && cln_rfv > 0 && cln_fvn == 0) {
+  // (the sc rays' ring on the cubed sphere: the union's directions and weights too)
+  if (vgd_on && (cln_rfv > 0 || (cln_cssc && cln_ring)) && cln_fvn == 0) {
     CleanFvSets(pmy_pack->pmesh->time, pmy_pack->pmesh->ncycle - 1);
   }
-  if (cln_cssc) {   // (clean_rays = sc: the sweep's directions, its intensities cln_fvi)
+  if (cln_cssc && !cln_ring) {   // (clean_rays = sc: the sweep's set, its cln_fvi)
     cln_fvd = vgd_dir;
     cln_fvn = vgd_n;
   }
