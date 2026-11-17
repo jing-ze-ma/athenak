@@ -181,20 +181,23 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // clean_stag_fschur (read only when named; default on staggered where it applies): the
     // F solve's lines exact across MeshBlocks and periodic wraps (CleanStagFSchur), in
-    // place of the sweeps; with clean_stag_ftie on a uniform mesh, not the cubed sphere
-    // (whose F solve iterates its seams), and as a segment goes out in three cells at each
+    // place of the sweeps; with clean_stag_ftie (the cubed sphere: its own owner rule) on
+    // a uniform mesh, and as a segment goes out in three cells at each
     // end of a line, MeshBlocks of >= 3 cells along it (>= 6 where it goes both ways: more
     // than two round a periodic line, two or more along one with ends); elsewhere the
     // line ends lagged, as the log says
     {Mesh *pm = pmy_pack->pmesh;
-    bool ok = cln_ftie && cln_fsweeps == 1 && !pm->multilevel && !pm->use_cubed_sphere;
+    // (the cubed sphere: a lateral line is a ring of four panels' MeshBlocks)
+    const bool cs = pm->use_cubed_sphere;
+    bool ok = (cln_ftie || cs) && cln_fsweeps == 1 && !pm->multilevel;
     for (int d = 0; d < 3; ++d) {
       const int n = (d == 0) ? pm->mb_indcs.nx1 : ((d == 1) ? pm->mb_indcs.nx2 :
                                                    pm->mb_indcs.nx3);
-      const int nb = ((d == 0) ? pm->mesh_indcs.nx1 : ((d == 1) ? pm->mesh_indcs.nx2 :
-                                                       pm->mesh_indcs.nx3))/n;
-      const bool per = (pm->mesh_bcs[2*d] == BoundaryFlag::periodic);
-      const int nmin = (nb > 2 || (nb == 2 && !per)) ? 6 : ((nb == 2) ? 3 : 0);
+      const int nb = ((cs && d > 0) ? 4 : 1)*((d == 0) ? pm->mesh_indcs.nx1 :
+                     ((d == 1) ? pm->mesh_indcs.nx2 : pm->mesh_indcs.nx3))/n;
+      const bool per = (cs && d > 0) || (pm->mesh_bcs[2*d] == BoundaryFlag::periodic);
+      const int nmin = (nb > 2 || (nb == 2 && !per)) ? ((cs && per && nb%2 == 0) ? 7 : 6) :
+                       ((nb == 2) ? 3 : 0);
       ok = ok && n >= nmin && (nmin == 0 || pm->mb_indcs.ng >= 3);
     }
     cln_fschur = !cln_cell && ok;
@@ -202,12 +205,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_fschur = pin->GetBoolean("rad_m1","clean_stag_fschur") && !cln_cell;
       if (cln_fschur && !ok) {
         std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_fschur needs clean_stag_ftie, "
-                  << "clean_stag_fsweeps = 1, a uniform mesh (not the cubed sphere), "
+                  << "clean_stag_fsweeps = 1, a uniform mesh, "
                   << "nghost >= 3 and MeshBlocks of >= 3 cells along a line of two round a "
                   << "periodic one, >= 6 along longer or open ones" << std::endl;
         std::exit(EXIT_FAILURE);
       }
-    } else if (!cln_cell && !ok && !pm->use_cubed_sphere && global_variable::my_rank == 0) {
+    } else if (!cln_cell && !ok && global_variable::my_rank == 0) {
       std::cout << "<rad_m1> clean_stag_fschur off: the F solve's line ends lagged "
                 << "(clean_stag_ftie, fsweeps, mesh or MeshBlock size)" << std::endl;
     }}

@@ -230,7 +230,7 @@ void RadiationM1::CleanInit() {
   int nmb = pmy_pack->nmb_thispack;
   Kokkos::realloc(cln_s, nmb, CleanNs(cln_cell, pmy_pack->pmesh->use_cubed_sphere), n3,
                   n2, n1);
-  // (staggered on the cubed sphere: the cell terms and faces of CleanStagFSolveCs)
+  // (staggered on the cubed sphere: the cell terms and faces of CleanStagFSolve)
   const bool stcs = pmy_pack->pmesh->use_cubed_sphere && !cln_cell;
   Kokkos::realloc(cln_v, nmb, stcs ? 18 : 3, n3, n2, n1);
   Kokkos::realloc(cln_w.s, nmb, CLW_NS, n3, n2, n1);
@@ -2233,15 +2233,119 @@ void RadiationM1::CleanDtrD(const bool save) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \struct CleanFLine
+//! \brief the F solve's lines on every mesh (CleanStagFSolve): the cell terms t of cell
+//! (k,j,i) at its face (kf,jf,iff) normal to dir, of the cell's face family along the
+//! line (al, the lagged pressure p, w, h+, h- and the area pressure pa), and the F of
+//! the line's faces.  Spherical polar and Cartesian: t in CLW_L + 3 dir, F of each
+//! cell's low face in CLW_Y + dir (CLW_S); cubed sphere: cln_v in the owner's axes
+//! (CleanCsSlot: across a seam an x2 line may continue as an x3 line, so a cell keeps
+//! both faces of each family; cell terms of family q: 3 q + 0..2, 15 + q; F: 9 + 2 q +
+//! hi)
+
+struct CleanFLine {
+  DvceArray5D<Real> v;
+  bool cub;
+  KOKKOS_INLINE_FUNCTION
+  static int Cy(const int dir) {return (dir == 2) ? CLW_S : CLW_Y + dir;}
+  KOKKOS_INLINE_FUNCTION
+  void Cell(const CleanArgs &x, const int dir, const int m, const int kf, const int jf,
+            const int iff, const int k, const int j, const int i, Real t[6]) const {
+    if (!cub) {
+      for (int n = 0; n < 3; ++n) t[n] = x.w(m,CLW_L+3*dir+n,k,j,i);
+      t[3] = x.cs(m,CLN_HP+dir,k,j,i);
+      t[4] = x.cs(m,CLN_HM+dir,k,j,i);
+      t[5] = 0.0;
+      return;
+    }
+    Real s;
+    const int q = CleanCsSlot(x, dir, m, kf, jf, iff, k, j, i, false, s)/2;
+    for (int n = 0; n < 3; ++n) t[n] = v(m,3*q+n,k,j,i);
+    const Real hp = x.cs(m,CLN_HP+q,k,j,i), hm = x.cs(m,CLN_HM+q,k,j,i);
+    t[3] = (s > 0.0) ? hp : -hm;
+    t[4] = (s > 0.0) ? hm : -hp;
+    t[5] = v(m,15+q,k,j,i);
+  }
+  // the slot of the F of face (kf,jf,iff) (far: of the other face of the family of
+  // cell (k,j,i) along it) in that cell's storage, s its orientation along ours
+  KOKKOS_INLINE_FUNCTION
+  Real &Slot(const CleanArgs &x, const int dir, const int m, const int kf, const int jf,
+             const int iff, const int k, const int j, const int i, const bool far,
+             Real &s) const {
+    s = 1.0;
+    if (cub) return v(m,9+CleanCsSlot(x, dir, m, kf, jf, iff, k, j, i, far, s),k,j,i);
+    if (!far) return x.w(m,Cy(dir),kf,jf,iff);
+    const int up = (k == kf && j == jf && i == iff) ? 1 : 0;
+    return x.w(m,Cy(dir),k+up*(dir == 2),j+up*(dir == 1),i+up*(dir == 0));
+  }
+  // F of the other face of the family of cell (k,j,i) along its face (kf,jf,iff), in
+  // our axes (spherical polar, Cartesian: a physical face's F^H); Near: of that face
+  KOKKOS_INLINE_FUNCTION
+  Real Far(const CleanArgs &x, const int dir, const int m, const int kf, const int jf,
+           const int iff, const int k, const int j, const int i) const {
+    if (!cub) {
+      const int up = (k == kf && j == jf && i == iff) ? 1 : 0;
+      const int ko = k + up*(dir == 2), jo = j + up*(dir == 1), io = i + up*(dir == 0);
+      if (CleanBoundaryFace(x, dir, m, ko, jo, io)) return x.fc[dir](m,CLF_N,ko,jo,io);
+    }
+    Real s;
+    const Real f = Slot(x, dir, m, kf, jf, iff, k, j, i, true, s);
+    return s*f;
+  }
+  KOKKOS_INLINE_FUNCTION
+  Real Near(const CleanArgs &x, const int dir, const int m, const int kf, const int jf,
+            const int iff, const int k, const int j, const int i) const {
+    Real s;
+    const Real f = Slot(x, dir, m, kf, jf, iff, k, j, i, false, s);
+    return s*f;
+  }
+  // whether the MeshBlock solves face (k,j,i), number t of the n + 1 of its line along
+  // dir (tie: clean_stag_ftie, the block whose low face it is; on the cubed sphere, with
+  // clean_stag_fschur, the lower gid's, as CleanStagFCsShared), else its identity row
+  KOKKOS_INLINE_FUNCTION
+  bool Own(const CleanArgs &x, const int dir, const int m, const int k, const int j,
+           const int i, const int t, const int n, const bool tie) const {
+    if (!cub) return !(tie && t == n && !CleanBoundaryFace(x, dir, m, k, j, i));
+    if (!tie || (t > 0 && t < n) || CleanBoundaryFace(x, dir, m, k, j, i)) return true;
+    const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0), o = (t == 0) ? 1 : 0;
+    const Real gc = x.g(m,CLG_F+7,k-(1-o)*dk,j-(1-o)*dj,i-(1-o)*di);
+    const Real go = x.g(m,CLG_F+7,k-o*dk,j-o*dj,i-o*di);
+    return gc < go || (gc == go && t == 0);
+  }
+  // F of face (k,j,i), number t of the n + 1 faces of its line along dir: get, put
+  KOKKOS_INLINE_FUNCTION
+  Real Get(const CleanArgs &x, const int dir, const int m, const int k, const int j,
+           const int i, const int t) const {
+    if (!cub) return x.w(m,Cy(dir),k,j,i);
+    return (t > 0) ? v(m,9+2*dir+1,k-(dir == 2),j-(dir == 1),i-(dir == 0))
+                   : v(m,9+2*dir,k,j,i);
+  }
+  KOKKOS_INLINE_FUNCTION
+  void Put(const CleanArgs &x, const int dir, const int m, const int k, const int j,
+           const int i, const int t, const int n, const Real f) const {
+    if (!cub) {
+      x.w(m,Cy(dir),k,j,i) = f;
+      return;
+    }
+    if (t > 0) v(m,9+2*dir+1,k-(dir == 2),j-(dir == 1),i-(dir == 0)) = f;
+    if (t < n) v(m,9+2*dir,k,j,i) = f;
+  }
+};
+
+//----------------------------------------------------------------------------------------
 //! \fn bool CleanStagFRow
 //! \brief the row lo F_{f-1} + dg F_f + hi F_{f+1} = r of face (k,j,i) normal to dir in
 //! the F solve (CleanStagFSolve); false where the face has no equation (F = F^H) or (own
 //! false, clean_stag_ftie) another block owns it: the identity row, r the caller's;
-//! sm (clean_stag_fschur): the row sum lo + dg + hi, without the cancellation
+//! sm (clean_stag_fschur): the row sum lo + dg + hi, without the cancellation.  The
+//! geometry: the kinetic stress over h c is q (P_R - P_L) + qs (P_R + P_L), spherical
+//! polar's area form (1/dx +- s) (CleanStagSph), Cartesian 1/dx, the cubed sphere's
+//! (A_R P_R - A_L P_L)/V_f (the cells' area pressures pa, the lagged one a gradient
+//! A_f/V_f)
 
-template <class AL, class FC>
+template <class FC>
 KOKKOS_INLINE_FUNCTION
-bool CleanStagFRow(const CleanArgs &x, const AL &al, const FC &fc, const int dir,
+bool CleanStagFRow(const CleanArgs &x, const CleanFLine &ln, const FC &fc, const int dir,
                    const int m, const int k, const int j, const int i, Real &lo, Real &hi,
                    Real &dg, Real &r, const bool own = true, Real *sm = nullptr) {
   const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
@@ -2249,45 +2353,48 @@ bool CleanStagFRow(const CleanArgs &x, const AL &al, const FC &fc, const int dir
   if (sm) *sm = 1.0;
   if (!own) return false;
   const bool bd = CleanBoundaryFace(x, dir, m, k, j, i);
-  const Real all = al(m,0,k-dk,j-dj,i-di), alr = al(m,0,k,j,i);
-  const Real wl = al(m,2,k-dk,j-dj,i-di), wr = al(m,2,k,j,i);
-  const bool eq = !bd && (all > 0.0 || alr > 0.0 || wl > 0.0 || wr > 0.0);
+  Real tl[6], tr[6];
+  ln.Cell(x, dir, m, k, j, i, k-dk, j-dj, i-di, tl);
+  ln.Cell(x, dir, m, k, j, i, k, j, i, tr);
+  const bool eq = !bd && (tl[0] > 0.0 || tr[0] > 0.0 || tl[2] > 0.0 || tr[2] > 0.0);
   if (eq) {
     const Real g = 0.5*x.h*x.c/CleanCellFaceDistance(x, dir, m, k, j, i);
     const Real it_ = 1.0/fc(m,CLF_TH,k,j,i);
     // (fkin: h c^2 [w P_kin]_L^R/dx, P_kin = (h+ F_lo + h- F_hi)/c of a cell)
-    // (spherical polar: area form, (1/dx -+ s) of cell L, R)
-    const Real q = x.h*x.c*(x.sph ? CleanStagSph(x, 0, dir, m, k, j, i) : x.idx[dir]);
-    const Real qs = x.sph ? x.h*x.c*CleanStagSph(x, 4, dir, m, k, j, i) : 0.0;
-    const Real hpl = x.cs(m,CLN_HP+dir,k-dk,j-dj,i-di);
-    const Real hml = x.cs(m,CLN_HM+dir,k-dk,j-dj,i-di);
-    const Real hpr = x.cs(m,CLN_HP+dir,k,j,i), hmr = x.cs(m,CLN_HM+dir,k,j,i);
-    lo = -g*all - q*wl*hpl + qs*wl*hpl;
-    hi = -g*alr + q*wr*hmr + qs*wr*hmr;
-    dg = it_ - lo - hi + q*(wr*(hpr + hmr) - wl*(hpl + hml)) +
-         qs*(wr*(hpr + hmr) + wl*(hpl + hml));
-    if (sm) *sm = it_ + q*(wr*(hpr + hmr) - wl*(hpl + hml)) +
-                  qs*(wr*(hpr + hmr) + wl*(hpl + hml));
-    r = fc(m,CLF_N,k,j,i)*it_ + q*x.c*(al(m,1,k-dk,j-dj,i-di) - al(m,1,k,j,i)) -
-        qs*x.c*(al(m,1,k-dk,j-dj,i-di) + al(m,1,k,j,i)) +
-        x.h*x.c*x.c*fc(m,CLF_N+1,k,j,i);
+    Real q, qs = 0.0, ag = 1.0;
+    if (x.cub) {
+      q = x.h*x.c/(0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,k-dk,j-dj,i-di)));
+      ag = x.area[dir](m,k,j,i);
+    } else {
+      q = x.h*x.c*(x.sph ? CleanStagSph(x, 0, dir, m, k, j, i) : x.idx[dir]);
+      qs = x.sph ? x.h*x.c*CleanStagSph(x, 4, dir, m, k, j, i) : 0.0;
+    }
+    lo = -g*tl[0] - q*tl[2]*tl[3] + qs*tl[2]*tl[3];
+    hi = -g*tr[0] + q*tr[2]*tr[4] + qs*tr[2]*tr[4];
+    const Real sq = q*(tr[2]*(tr[3] + tr[4]) - tl[2]*(tl[3] + tl[4]));
+    const Real ss = qs*(tr[2]*(tr[3] + tr[4]) + tl[2]*(tl[3] + tl[4]));
+    dg = it_ - lo - hi + sq + ss;
+    if (sm) *sm = it_ + sq + ss;
+    r = fc(m,CLF_N,k,j,i)*it_ + q*x.c*(ag*(tl[1] - tr[1]) + tl[5] - tr[5]) -
+        qs*x.c*(tl[1] + tr[1]) + x.h*x.c*x.c*fc(m,CLF_N+1,k,j,i);
   }
   return eq;
 }
-
 //----------------------------------------------------------------------------------------
 //! \fn void CleanStagFOwn
 //! \brief clean_stag_fschur: the line (m, a, b) along dir of a MeshBlock (n cells) as a
-//! segment s of the F line: its first face x = s0 + s1 yL + s2 xR and its last own face
-//! y = s4 + s5 yL + s6 xR, yL the face before the first (another block's or the wrap's
-//! last), xR the shared high face (its owner's, the identity row), and s3 = 1 - s1 - s2,
+//! segment s of the F line: its first own face x = s0 + s1 yL + s2 xR and its last own
+//! face y = s4 + s5 yL + s6 xR, yL the face before the first (another block's or the
+//! wrap's last own), xR the face after the last (the next block's first own: the shared
+//! high face, the identity row, or on the cubed sphere, where the lower gid owns a shared
+//! face (CleanFLine::Own), the one beyond it), and s3 = 1 - s1 - s2,
 //! s7 = 1 - s5 - s6 from the row sums (the response to a uniform F: near 0 on a nearly
 //! singular line, h c/dx >> 1/theta, which 1 - s1 - s2 would lose); by a Thomas sweep
 //! up for y and one down for x
 
-template <class AL, class FC>
+template <class FC>
 KOKKOS_INLINE_FUNCTION
-void CleanStagFOwn(const CleanArgs &x, const AL &al, const FC &fc, const int dir,
+void CleanStagFOwn(const CleanArgs &x, const CleanFLine &ln, const FC &fc, const int dir,
                    const int m, const int a, const int b, const int n, Real s[8]) {
   auto face = [&](const int t, int &k, int &j, int &i) {
     k = (dir == 2) ? x.ks + t : x.ks + b;
@@ -2296,13 +2403,16 @@ void CleanStagFOwn(const CleanArgs &x, const AL &al, const FC &fc, const int dir
   };
   int k, j, i;
   Real lo, hi, dg, r, sm;
+  face(0, k, j, i);
+  const int t0 = ln.Own(x, dir, m, k, j, i, 0, n, true) ? 0 : 1;
   face(n, k, j, i);
   const bool bh = CleanBoundaryFace(x, dir, m, k, j, i);   // (F^H)
+  const int t1 = (x.cub && !bh && ln.Own(x, dir, m, k, j, i, n, n, true)) ? n : n - 1;
   const Real fh = bh ? fc(m,CLF_N,k,j,i) : 0.0, wh = bh ? 1.0 : 0.0;
   Real cp = 0.0, dc = 0.0, dl = 1.0, dw = 0.0;   // (F_{-1} = yL)
-  for (int t = 0; t < n; ++t) {
+  for (int t = t0; t <= t1; ++t) {
     face(t, k, j, i);
-    CleanStagFRow(x, al, fc, dir, m, k, j, i, lo, hi, dg, r, true, &sm);
+    CleanStagFRow(x, ln, fc, dir, m, k, j, i, lo, hi, dg, r, true, &sm);
     const Real den = dg - lo*cp;
     dc = (r - lo*dc)/den;
     dl = -lo*dl/den;
@@ -2310,10 +2420,10 @@ void CleanStagFOwn(const CleanArgs &x, const AL &al, const FC &fc, const int dir
     cp = hi/den;
   }
   s[4] = dc - cp*fh, s[5] = dl, s[6] = bh ? 0.0 : -cp, s[7] = dw - cp*wh;
-  Real cq = 0.0, ec = fh, er = 1.0 - wh, ew = wh;   // (F_n = xR or F^H)
-  for (int t = n - 1; t >= 0; --t) {
+  Real cq = 0.0, ec = fh, er = 1.0 - wh, ew = wh;   // (F_{t1+1} = xR or F^H)
+  for (int t = t1; t >= t0; --t) {
     face(t, k, j, i);
-    CleanStagFRow(x, al, fc, dir, m, k, j, i, lo, hi, dg, r, true, &sm);
+    CleanStagFRow(x, ln, fc, dir, m, k, j, i, lo, hi, dg, r, true, &sm);
     const Real den = dg - hi*cq;
     ec = (r - hi*ec)/den;
     er = -hi*er/den;
@@ -2364,47 +2474,59 @@ void CleanStagFJoin(const Real p[8], const Real q[8], Real c[8], Real ya[3],
 //! h+ = 1, gives D E = E), on spherical polar in area form, (1/dx +- s) P_R,L (s of
 //! CleanStagSph: the w share keeps 2 P_rr/r, F r^2 of a beam is steady).  It telescopes,
 //! the lines stay tridiagonal (M-matrix: h+ >= 0 >= h-), and w = al = 0 keeps F^H.
+//! One solve on every mesh, its lines through CleanFLine: on the cubed sphere the cell
+//! terms of a line (al, the lagged pressure, w and the half ranges) are those of the
+//! cell's face family along it, D about the family's mean normal
+//! (CleanCsFamily), the kinetic stress w (F_kin/c - s^2 J) of the family's normal, 0 for
+//! an isotropic field, in area form, (A_R P_R - A_L P_L)/V_f, A the mean area of the
+//! cell's two faces of the family, so that free streaming F keeps r^2 F, and w D (J - E)
+//! a gradient (A_f/V_f); its line ends iterate the seams (up to 64 sweeps, to 1e-14 of
+//! the largest F), and a face two MeshBlocks share takes the solution of the one with
+//! the lower gid, so that both see the same F to the bit.  Its lateral stress keeps D E
+//! (no transverse kinetic stress: its lateral Gauss sums are also the non-orthogonal
+//! correction of the normal stress, which a kinetic transport of F does not reproduce,
+//! and a static envelope would lose its balance on the panel-tangent faces).
 
 void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
-  if (pmy_pack->pmesh->use_cubed_sphere) {
-    CleanStagFSolveCs(e);
-    return;
-  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
+  if (pmy_pack->pmesh->use_cubed_sphere) CleanStagCsLateral(e);
   CleanArgs x = CleanMakeArgs(), xh = x;
   xh.hi = true;
   auto op = opac;
-  auto AL = Kokkos::ALL;
-  const bool fk = cln_fkin, dok = cln_dok;
+  const CleanFLine ln{cln_v, x.cub};
+  const bool fk = cln_fkin, dok = cln_dok, cub = x.cub;
   const int kd = (t2_solve == M1_T2S_NONE) ? 0 :
                  ((t2_solve == M1_T2S_STAGE1) ? CLF_KD + 1 : CLF_KD);
   const Real c1lo = cln_c0, c1hi = cln_c1;
-  const bool fpcr = cln_fspcr &&
+  const bool fpcr = cln_fspcr && !cub &&
       !std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>;
-  // (the F of every direction, CLW_Y, CLW_Z, CLW_S: one exchange)
+  // (the F of every direction, CLW_Y, CLW_Z, CLW_S or cln_v: one exchange)
   auto yfill = [&]() {
+    if (cub) {
+      CleanGhostFill(cln_v, 9, 6);
+      return;
+    }
     if (x.nf == 3) CleanGhostDefer(cln_w, CLW_S, 1);
     CleanGhostFill(cln_w, CLW_Y, std::min(x.nf, 2));
   };
   // the directions in three phases (F^H, al; the line solves; F), each direction with
-  // its own al (CLW_L + 3 dir) and F (cy), so that each exchange serves all of them
-  // (clean_stag_fsweeps N: the line solves up to N times, each with the line ends' F of
-  // the last, so that the lines converge across MeshBlock faces and the periodic wrap)
-  const int nsw = std::max(cln_fsweeps, 1);
-  const bool tie = cln_ftie;
+  // its own al and F, so that each exchange serves all of them (clean_stag_fsweeps N:
+  // the line solves up to N times, each with the line ends' F of the last, so that the
+  // lines converge across MeshBlock faces and the periodic wrap)
+  // (the cubed sphere without clean_stag_fschur iterates its seams: up to 64 sweeps)
+  const int nsw = (cub && !cln_fschur) ? 64 : std::max(cln_fsweeps, 1);
+  const bool tie = cub ? cln_fschur : cln_ftie;
+  Real fsd = 0.0, fsf = 0.0;
   for (int q = 0; q < (2 + nsw)*x.nf; ++q) {
     const int dir = q%x.nf, ph = std::min(q/x.nf, 1) + (q >= (1 + nsw)*x.nf);
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     auto fc = x.fc[dir];
-    auto al = Kokkos::subview(cln_w.o, AL, std::make_pair(CLW_L - CLW_NS + 3*dir,
-                              CLW_L - CLW_NS + 3*dir + 3), AL, AL, AL);
-    const int cy = (dir == 2) ? CLW_S : CLW_Y + dir;
     if (ph == 0) {
-      // F^H of every face (CLF_N) and al of every cell (al slot 0)
+      // F^H of every face (CLF_N) and the cell terms of every cell (CleanFLine)
       const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
       par_for("cln_fs0", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -2429,6 +2551,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
         };
         fc(m,CLF_N+1,k,j,i) += 0.5*(wq(2, k-dk, j-dj, i-di) + wq(3, k, j, i));
       });
+      auto v = cln_v;
       par_for("cln_fs1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         Real rc;
@@ -2442,26 +2565,49 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
           const Real ed = (f > 0.0) ? x.w(m,e,kf-dk,jf-dj,iff-di) : x.w(m,e,kf,jf,iff);
           if (!fk && !CleanBoundaryFace(x, dir, m, kf, jf, iff) &&
               !(fabs(f) <= (1.0 + 1.0e-12)*x.c*fmax(ed, 0.0))) a = 1.0;
+          // (the cubed sphere's faces: the last F solve's)
+          if (cub) v(m,9+2*dir+s,k,j,i) = fc(m,CLF_N+2,kf,jf,iff);
         }
-        // (fkin: w of the cell, slot 2, and the part of P - D E without F, -w D E,
-        // slot 1)
+        // (fkin: w of the cell; the part of P - D E without F, -w D E, and the stress
+        // the kinetic form misses for the rays' own state, F = c s J: (D - s^2) J, 0 for
+        // a beam, J/3 for an isotropic field, with J of the rays where the cell holds at
+        // least that much, lagged; the cubed sphere: D about the family's mean normal,
+        // s^2 J in area form)
         const Real wc = fk ? CleanSmoothStep((x.cs(m,CLN_C1,k,j,i) - c1lo)/(c1hi - c1lo))
                            : 0.0;
-        al(m,0,k,j,i) = (1.0 - wc)*a;
-        // (and the stress the kinetic form misses for the rays' own state, F = c s J:
-        // (D - s^2) J, 0 for a beam, J/3 for an isotropic field, with J of the rays where
-        // the cell holds at least that much, lagged)
-        const Real dd = x.cs(m,CLN_D11+dir,k,j,i), ec = x.w(m,e,k,j,i);
+        const Real ec = x.w(m,e,k,j,i);
         const Real sr = x.cs(m,CLN_HP+dir,k,j,i) + x.cs(m,CLN_HM+dir,k,j,i);
-        al(m,1,k,j,i) = wc*((dd - sr*sr)*fmin(x.cs(m,CLN_J,k,j,i), fmax(ec, 0.0)) -
-                            dd*ec);
-        al(m,2,k,j,i) = wc;
-        // (F of the low face, for the exchange; multi-D: the last F solve's)
-        x.w(m,cy,k,j,i) = fc(m,(fk && x.multi_d) ? CLF_N+2 : CLF_N,k,j,i);
+        const Real jc = fmin(x.cs(m,CLN_J,k,j,i), fmax(ec, 0.0));
+        if (!cub) {
+          const Real dd = x.cs(m,CLN_D11+dir,k,j,i);
+          x.w(m,CLW_L+3*dir,k,j,i) = (1.0 - wc)*a;
+          x.w(m,CLW_L+3*dir+1,k,j,i) = wc*((dd - sr*sr)*jc - dd*ec);
+          x.w(m,CLW_L+3*dir+2,k,j,i) = wc;
+          // (F of the low face, for the exchange; multi-D: the last F solve's)
+          x.w(m,CleanFLine::Cy(dir),k,j,i) = fc(m,(fk && x.multi_d) ? CLF_N+2 : CLF_N,k,
+                                                j,i);
+          return;
+        }
+        Real nd[3][3], dd = 0.0;
+        CleanCsFamily(x, m, k, j, i, nd);
+        for (int b = 0; b < 3; ++b) {
+          for (int c = 0; c < 3; ++c) {
+            dd += nd[dir][b]*nd[dir][c]*x.cs(m,CLN_D11+((b == c) ? b : 2 + b + c),k,j,i);
+          }
+        }
+        const Real ac = 0.5*(x.area[dir](m,k,j,i) + x.area[dir](m,k+dk,j+dj,i+di));
+        v(m,3*dir,k,j,i) = (1.0 - wc)*a;
+        v(m,3*dir+1,k,j,i) = wc*dd*(jc - ec);
+        v(m,3*dir+2,k,j,i) = ac*wc;
+        v(m,15+dir,k,j,i) = -ac*wc*sr*sr*jc;
       });
       if (dir == x.nf - 1) {
-        CleanGhostDefer(cln_w, CLW_L, 3*x.nf);
-        yfill();
+        if (cub) {
+          CleanGhostFill(cln_v, 0, 18);
+        } else {
+          CleanGhostDefer(cln_w, CLW_L, 3*x.nf);
+          yfill();
+        }
       }
     }
     // (clean_stag_fschur: the faces beyond the line ends exact, not lagged)
@@ -2469,6 +2615,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
     const int n = (dir == 0) ? ie - is + 1 : ((dir == 1) ? je - js + 1 : ke - ks + 1);
     const int na = (dir == 0) ? je - js + 1 : ie - is + 1;
     const int nb = (dir == 2) ? je - js + 1 : ke - ks + 1;
+    Real dmax = 0.0, fmx = 0.0;
     if (ph == 1 && dir == 0 && fpcr) {
       // (clean_stag_fs_pcr: on a GPU the x1 lines by parallel cyclic reduction, one team
       // per line coalesced along x1, as the preconditioner's (CleanStagLineSolve); the
@@ -2489,12 +2636,12 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
           Real lo, hi, dg, r;
           // (the faces beyond a MeshBlock line end: the neighbours', lagged; ftie: a
           // shared high face its owner's, the identity row)
-          const bool own = !(tie && t == n && !CleanBoundaryFace(x, dir, m, k, j, i));
-          if (CleanStagFRow(x, al, fc, dir, m, k, j, i, lo, hi, dg, r, own)) {
-            if (t == 0) r -= lo*x.w(m,cy,k,j,i-1);
-            if (t == n) r -= hi*x.w(m,cy,k,j,i+1);
+          const bool own = ln.Own(x, dir, m, k, j, i, t, n, tie);
+          if (CleanStagFRow(x, ln, fc, dir, m, k, j, i, lo, hi, dg, r, own)) {
+            if (t == 0) r -= lo*ln.Far(x, dir, m, k, j, i, k, j, i-1);
+            if (t == n) r -= hi*ln.Far(x, dir, m, k, j, i, k, j, i);
           }
-          if (!own) r = x.w(m,cy,k,j,i);
+          if (!own) r = ln.Near(x, dir, m, k, j, i, k, j, i-(t == 0));
           sw(t) = (t > 0) ? lo : 0.0;
           sw(nx + t) = dg;
           sw(2*nx + t) = (t < n) ? hi : 0.0;
@@ -2527,13 +2674,9 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
           o = d;
         }
         Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int t) {
-          x.w(m,cy,k,j,is+t) = sw(o + 3*nx + t)/sw(o + nx + t);
+          ln.Put(x, dir, m, k, j, is+t, t, n, sw(o + 3*nx + t)/sw(o + nx + t));
         });
       });
-      if (dir == x.nf - 1) {
-        yfill();
-        if (nsw > 1 && CleanStagFSweepChange() < 1.0e-12 && q >= 2*x.nf) q = (1 + nsw)*x.nf - 1;
-      }
     } else if (ph == 1) {
       // the lines' coefficients are the same in every pass below, only the neighbours'
       // F at the line ends changes: once, lo (CLW_AM), hi at the last face (CLW_AP), the
@@ -2555,9 +2698,9 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
           // (clean_stag_ftie: the high face of a line that another MeshBlock or the
           // periodic wrap shares is its owner's, the block whose low face it is: an
           // identity row, the value its CLW_Y ghost brings, CleanStagFaceTie)
-          const bool own = !(tie && t == n && !CleanBoundaryFace(x, dir, m, k, j, i));
+          const bool own = ln.Own(x, dir, m, k, j, i, t, n, tie);
           Real lo, hi, dg, r;
-          const bool eq = CleanStagFRow(x, al, fc, dir, m, k, j, i, lo, hi, dg, r, own);
+          const bool eq = CleanStagFRow(x, ln, fc, dir, m, k, j, i, lo, hi, dg, r, own);
           // (the faces beyond a MeshBlock line end: the neighbours', lagged)
           x.w(m,CLW_AM,k,j,i) = lo;
           x.w(m,CLW_AP,k,j,i) = hi;
@@ -2572,10 +2715,9 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
         }
       });
       // one exact Thomas solve per line; the faces beyond a line end of a MeshBlock or
-      // a periodic wrap are the last F solve's (lagged)
-      Kokkos::parallel_for("cln_fs2", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                           (nmb1 + 1)*na*nb),
-      KOKKOS_LAMBDA(const int idx) {
+      // a periodic wrap are the last F solve's (lagged); on the cubed sphere the largest
+      // change of a face and the largest F (a reduction only there: no fence elsewhere)
+      auto line = KOKKOS_LAMBDA(const int idx, Real &d_max, Real &f_max) {
         const int m = idx/(na*nb), a = idx%na, b = (idx/na)%nb;
         auto face = [&](const int t, int &k, int &j, int &i) {
           if (dir == 0) {i = is + t; j = js + a; k = ks + b;}
@@ -2586,10 +2728,13 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
         for (int t = 0; t <= n; ++t) {
           int k, j, i;
           face(t, k, j, i);
-          Real r = (x.w(m,CLW_P,k,j,i) < 0.0) ? x.w(m,cy,k,j,i) : x.w(m,CLW_R0,k,j,i);
+          Real r = (x.w(m,CLW_P,k,j,i) < 0.0) ?
+              ln.Near(x, dir, m, k, j, i, k-(t == 0)*dk, j-(t == 0)*dj, i-(t == 0)*di) :
+              x.w(m,CLW_R0,k,j,i);
           if (x.w(m,CLW_P,k,j,i) > 0.0) {
-            if (t == 0) r -= x.w(m,CLW_AM,k,j,i)*x.w(m,cy,k-dk,j-dj,i-di);
-            if (t == n) r -= x.w(m,CLW_AP,k,j,i)*x.w(m,cy,k+dk,j+dj,i+di);
+            if (t == 0) r -= x.w(m,CLW_AM,k,j,i)*ln.Far(x, dir, m, k, j, i, k-dk, j-dj,
+                                                         i-di);
+            if (t == n) r -= x.w(m,CLW_AP,k,j,i)*ln.Far(x, dir, m, k, j, i, k, j, i);
           }
           dp = (r - ((t == 0) ? 0.0 : x.w(m,CLW_AM,k,j,i))*dp)/x.w(m,CLW_A0,k,j,i);
           x.w(m,CLW_R,k,j,i) = dp;
@@ -2599,22 +2744,49 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
           int k, j, i;                   //  neighbour's or a physical face)
           face(t, k, j, i);
           fn = x.w(m,CLW_R,k,j,i) - ((t < n) ? x.w(m,CLW_CP,k,j,i)*fn : 0.0);
-          x.w(m,cy,k,j,i) = fn;
+          if (cub) {
+            d_max = fmax(d_max, fabs(fn - ln.Get(x, dir, m, k, j, i, t)));
+            f_max = fmax(f_max, fmax(fabs(fn), 1.0e-8*x.c*fabs(x.w(m,e,k,j,i))));
+          }
+          ln.Put(x, dir, m, k, j, i, t, n, fn);
         }
-      });
-      if (dir == x.nf - 1) {
-        yfill();
-        // (sweeps: until the high faces' F, their owners', changes by < 1e-12 of itself)
-        if (nsw > 1 && CleanStagFSweepChange() < 1.0e-12 && q >= 2*x.nf) q = (1 + nsw)*x.nf - 1;
+      };
+      const auto pol = Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*na*nb);
+      if (cub && nsw > 1) {
+        Kokkos::parallel_reduce("cln_fs2", pol, line, Kokkos::Max<Real>(dmax),
+                                Kokkos::Max<Real>(fmx));
+      } else {
+        Kokkos::parallel_for("cln_fs2", pol, KOKKOS_LAMBDA(const int idx) {
+          Real d_max = 0.0, f_max = 0.0;
+          line(idx, d_max, f_max);
+        });
       }
     }
+    if (ph == 1) {
+      fsd = (dir == 0) ? dmax : fmax(fsd, dmax);
+      fsf = (dir == 0) ? fmx : fmax(fsf, fmx);
+    }
+    if (ph == 1 && dir == x.nf - 1) {
+      yfill();
+      // (sweeps: the cubed sphere until no face changes by 1e-14 of the largest F, else
+      // until the high faces' F, their owners', changes by < 1e-12 of itself)
+      const bool done = nsw > 1 &&
+          (cub ? CleanReduce(fsd, true) <= 1.0e-14*CleanReduce(fsf, true)
+               : (CleanStagFSweepChange() < 1.0e-12 && q >= 2*x.nf));
+      if (done) q = (1 + nsw)*x.nf - 1;
+    }
+    // (the cubed sphere: a face shared with another MeshBlock takes the F of the lower
+    // gid, and the cells' slots of it)
+    if (cub && q == (1 + nsw)*x.nf) CleanStagFCsShared();
     if (ph == 2) {
       // F and the dissipation term of every face
+      const CleanArgs *px = CleanDevArgs(x, 0);
       par_for("cln_fs3", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
+        const Real f = cub ? fc(m,CLF_N+2,k,j,i) : x.w(m,CleanFLine::Cy(dir),k,j,i);
         fc(m,CLF_N+2,k,j,i) = fc(m,CLF_N,k,j,i);   // (F^H: the boundary's, kept)
         if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
-        const Real f = x.w(m,cy,k,j,i);
         // (fkin, the solution's F solve: d = Phi^H - F, Phi^H = F^H + theta d the energy
         // flux's high-order part, whose memory is G + d (CleanFaceSource): its own
         // history, so that its steady state, F^H of G = F^H, does not depend on h)
@@ -2626,28 +2798,33 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
         }
         fc(m,CLF_N,k,j,i) = f;
         fc(m,CLF_N+2,k,j,i) = f;
-        const Real all = al(m,0,k-dk,j-dj,i-di), alr = al(m,0,k,j,i);
-        const Real wl = al(m,2,k-dk,j-dj,i-di), wr = al(m,2,k,j,i);
-        if (!(all > 0.0 || alr > 0.0 || wl > 0.0 || wr > 0.0)) return;
+        Real tl[6], tr[6];
+        ln.Cell(x, dir, m, k, j, i, k-dk, j-dj, i-di, tl);
+        ln.Cell(x, dir, m, k, j, i, k, j, i, tr);
+        if (!(tl[0] > 0.0 || tr[0] > 0.0 || tl[2] > 0.0 || tr[2] > 0.0)) return;
         // (a physical high face keeps F^H; the ghost fill replaced its slot)
-        const Real fm = x.w(m,cy,k-dk,j-dj,i-di);
-        const Real fp = CleanBoundaryFace(x, dir, m, k+dk, j+dj, i+di) ?
-                        fc(m,CLF_N,k+dk,j+dj,i+di) : x.w(m,cy,k+dk,j+dj,i+di);
-        auto pk = [&](const int kk, const int jj, const int ii, const Real l,
-                      const Real h) {
-          return al(m,2,kk,jj,ii)*(x.cs(m,CLN_HP+dir,kk,jj,ii)*l +
-                 x.cs(m,CLN_HM+dir,kk,jj,ii)*h)/x.c + al(m,1,kk,jj,ii);
+        const Real fm = ln.Far(x, dir, m, k, j, i, k-dk, j-dj, i-di);
+        const Real fp = ln.Far(x, dir, m, k, j, i, k, j, i);
+        auto pk = [&](const Real t[6], const Real l, const Real h) {
+          return t[2]*(t[3]*l + t[4]*h)/x.c + (cub ? t[5] : t[1]);
         };
-        const Real q = x.sph ? CleanStagSph(x, 0, dir, m, k, j, i) : x.idx[dir];
-        const Real qs = x.sph ? CleanStagSph(x, 4, dir, m, k, j, i) : 0.0;
-        fc(m,CLF_N+1,k,j,i) += (alr*(fp - f) - all*(f - fm))/
-                               (2.0*x.c*CleanCellFaceDistance(x, dir, m, k, j, i)) -
-            q*(pk(k, j, i, f, fp) - pk(k-dk, j-dj, i-di, fm, f)) -
-            qs*(pk(k, j, i, f, fp) + pk(k-dk, j-dj, i-di, fm, f));
+        const Real pl = pk(tl, fm, f), pr = pk(tr, f, fp);
+        // (the kinetic stress: the cubed sphere's area form over V_f, else that of the
+        // F row, CleanStagFRow)
+        Real dp, ds = 0.0;
+        if (cub) {
+          dp = (pr - pl + x.area[dir](m,k,j,i)*(tr[1] - tl[1]))/
+               (0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,k-dk,j-dj,i-di)));
+        } else {
+          dp = (x.sph ? CleanStagSph(x, 0, dir, m, k, j, i) : x.idx[dir])*(pr - pl);
+          ds = x.sph ? CleanStagSph(x, 4, dir, m, k, j, i)*(pr + pl) : 0.0;
+        }
+        fc(m,CLF_N+1,k,j,i) += (tr[0]*(fp - f) - tl[0]*(f - fm))/
+                               (2.0*x.c*CleanCellFaceDistance(x, dir, m, k, j, i)) - dp - ds;
       });
     }
   }
-  if (cln_ftie && tie_now) CleanStagFaceTie(e, kd);
+  if (tie && tie_now && !cub) CleanStagFaceTie(e, kd);
 }
 
 //----------------------------------------------------------------------------------------
@@ -2738,8 +2915,9 @@ Real RadiationM1::CleanStagFSweepChange() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanStagFSchur
-//! \brief clean_stag_fschur (spherical polar, Cartesian, uniform mesh, with
-//! clean_stag_ftie): the F solve's lines exact across MeshBlocks and periodic wraps.
+//! \brief clean_stag_fschur (uniform mesh; with clean_stag_ftie, the cubed sphere with
+//! its owner rule, CleanFLine::Own): the F solve's lines exact across MeshBlocks and
+//! periodic wraps, on the cubed sphere round the rings of four panels' lateral lines.
 //! The line of each MeshBlock is a segment of the whole line, its first and last face
 //! affine in the faces beyond its ends (CleanStagFOwn).  Rounds of exchanges join the
 //! segments (CleanStagFJoin): in each, a MeshBlock sends to its right neighbour its own
@@ -2749,25 +2927,31 @@ Real RadiationM1::CleanStagFSweepChange() {
 //! (the CLW_Y, CLW_Z, CLW_S ghosts) in the line solves (Thomas or PCR).  A segment goes
 //! out in three slots of three cells at each end of the line, which the exchange gives
 //! the neighbour's ghosts: the six slots the F solve leaves free serve two directions at
-//! a time.
+//! a time.  Across a cubed-sphere seam the neighbour's line may be its other lateral
+//! family and run the other way (CleanCsSlot): its segment is read from that family's
+//! slots and reversed, so both ends send for the same rounds.
 
 void RadiationM1::CleanStagFSchur() {
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   CleanArgs x = CleanMakeArgs();
-  auto AL = Kokkos::ALL;
+  const CleanFLine ln{cln_v, x.cub};
   const int nn[3] = {indcs.nx1, indcs.nx2, indcs.nx3};
   const int nm[3] = {pm->mesh_indcs.nx1, pm->mesh_indcs.nx2, pm->mesh_indcs.nx3};
   const int fs[6] = {CLW_TM, CLW_TM+1, CLW_TM+2, CLW_TM+3, CLW_BW, CLW_PW};
   // (the rounds of the segments to the left and to the right: a line of nb MeshBlocks
   // with ends nb - 1 each, a periodic one nb/2 and (nb - 1)/2; the group of directions
   // whose exchanges go together, and the slots of a direction in it)
-  int nr[3][2], gr[3], gs[3], ngd = 0;
+  // (the cubed sphere: a lateral line is a ring round four panels, its x2 and x3 lines
+  // in one group, as a seam may turn one into the other)
+  const bool cub = x.cub;
+  int nr[3][2], gr[3], gs[3] = {0, 0, 0}, ngd = 0;
   bool per[3];
-  for (int d = 0; d < x.nf; ++d) {
-    const int nb = nm[d]/nn[d];
-    per[d] = (pm->mesh_bcs[2*d] == BoundaryFlag::periodic);
+  for (int dd = 0; dd < x.nf; ++dd) {
+    const int d = cub ? (dd + 1)%3 : dd;
+    const int nb = (cub && d > 0) ? 4*nm[d]/nn[d] : nm[d]/nn[d];
+    per[d] = (cub && d > 0) || (pm->mesh_bcs[2*d] == BoundaryFlag::periodic);
     nr[d][0] = per[d] ? nb/2 : nb - 1;
     nr[d][1] = per[d] ? (nb - 1)/2 : nb - 1;
     gr[d] = (nr[d][0] > 0) ? ngd/2 : ((per[d]) ? 0 : -1);
@@ -2786,11 +2970,10 @@ void RadiationM1::CleanStagFSchur() {
         const int n = nn[dir], na = (dir == 0) ? nn[1] : nn[0];
         const int nb = (dir == 2) ? nn[1] : nn[2];
         auto fc = x.fc[dir];
-        auto al = Kokkos::subview(cln_w.o, AL, std::make_pair(CLW_L - CLW_NS + 3*dir,
-                                  CLW_L - CLW_NS + 3*dir + 3), AL, AL, AL);
-        const int cy = (dir == 2) ? CLW_S : CLW_Y + dir;
         const int c0 = fs[gs[dir]], c1 = fs[gs[dir]+1], c2 = fs[gs[dir]+2];
+        const int g1 = gs[1], g2 = gs[2];
         const bool pd = per[dir];
+        const int rs = cub ? rl : rr;   // (rounds the low end sends)
         Kokkos::parallel_for("cln_fsch", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                              (nmb1 + 1)*na*nb),
         KOKKOS_LAMBDA(const int idx) {
@@ -2806,6 +2989,31 @@ void RadiationM1::CleanStagFSchur() {
             cell(t0 + sg*(q%3), k, j, i);
             return x.w(m,(q < 3) ? c0 : ((q < 6) ? c1 : c2),k,j,i);
           };
+          auto keepo = [&](const int q) -> Real & {
+            int k, j, i;
+            cell(q/4, k, j, i);
+            return x.w(m,((gs[dir] == 0) ? CLW_AM : CLW_R) + q%4,k,j,i);
+          };
+          // (a segment in the ghosts beyond the low or high end; on the cubed sphere in
+          // the slots of the neighbour's family along the line, reversed, F -> -F, where
+          // it runs the other way: CleanCsSlot)
+          auto ghost = [&](const bool he, Real g[8]) {
+            int k, j, i, kc, jc, ic;
+            cell(he ? n : -1, k, j, i);
+            cell(he ? n : 0, kc, jc, ic);
+            Real sg = 1.0;
+            const int fq = cub ? CleanCsSlot(x, dir, m, kc, jc, ic, k, j, i, false, sg)/2
+                               : dir;
+            const int o = (fq == dir) ? gs[dir] : ((fq == 1) ? g1 : g2);
+            for (int q = 0; q < 8; ++q) {
+              cell(he ? n + q%3 : -1 - q%3, k, j, i);
+              g[q] = x.w(m,fs[o + q/3],k,j,i);
+            }
+            if (sg > 0.0) return;
+            const Real h[8] = {g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7]};
+            g[0] = -h[4], g[1] = h[6], g[2] = h[5], g[3] = h[7];
+            g[4] = -h[0], g[5] = h[2], g[6] = h[1], g[7] = h[3];
+          };
           int k, j, i;
           cell(0, k, j, i);
           const bool bl = CleanBoundaryFace(x, dir, m, k, j, i);
@@ -2813,21 +3021,38 @@ void RadiationM1::CleanStagFSchur() {
           const bool bh = CleanBoundaryFace(x, dir, m, k, j, i);
           const bool hl = r > 1 && rl > 0 && !bl, hr = r > 1 && rr > 0 && !bh;
           Real o[8], sl[8], sr[8], c[8], cr[8], ya[3], xb[3], yr[3], xr[3];
-          CleanStagFOwn(x, al, fc, dir, m, a, b, n, o);
+          // (the own segment once, kept for the rounds in cells 0, 1 of four scratch
+          // slots of the E solve, a set for each direction of the group)
+          for (int q = 0; q < 8 && r > 1; ++q) o[q] = keepo(q);
+          if (r == 1) CleanStagFOwn(x, ln, fc, dir, m, a, b, n, o);
+          for (int q = 0; q < 8 && r == 1 && !fin; ++q) keepo(q) = o[q];
+          // (the segment to the left, in the ghosts; to the right, kept after rr: at the
+          // start, on the cubed sphere in the line's faces' CLF_N + 2, free here, as both
+          // ends send for rl rounds there, for a neighbour that runs the other way)
+          auto keep = [&](const int q) -> Real & {
+            int k, j, i;
+            cell(q, k, j, i);
+            return fc(m,CLF_N+2,k,j,i);
+          };
+          if (hl) ghost(false, sl);
+          if (hr && (r - 1 <= rr || cub)) ghost(true, sr);
           for (int q = 0; q < 8; ++q) {
-            sl[q] = hl ? slot(-1, -1, q) : 0.0;   // (the segment to the left, in the
-            sr[q] = hr ? slot((r - 1 <= rr) ? n : 0, 1, q) : 0.0;   // ghosts; to the
-            c[q] = o[q], cr[q] = o[q];            // right, kept at the start after rr)
+            if (!hl) sl[q] = 0.0;
+            if (hr && r - 1 > rr && !cub) sr[q] = slot(0, 1, q);
+            if (!hr) sr[q] = 0.0;
+            c[q] = o[q], cr[q] = o[q];
           }
           if (hl) CleanStagFJoin(sl, o, c, ya, xb);
           if (!fin) {
-            if (hr && r <= rr) CleanStagFJoin(o, sr, cr, yr, xr);
+            if (hr && r <= rs) CleanStagFJoin(o, sr, cr, yr, xr);
             for (int q = 0; q < 8; ++q) {
               if (r <= rl) slot(n - 1, -1, q) = c[q];
-              if (r <= rr + (hr ? 1 : 0)) slot(0, 1, q) = (r <= rr) ? cr[q] : sr[q];
+              if (r <= rs + (hr && !cub ? 1 : 0)) slot(0, 1, q) = (r <= rs) ? cr[q] : sr[q];
+              if (cub && hr && r == rr + 1) keep(q) = sr[q];
             }
             return;
           }
+          for (int q = 0; q < 8 && cub && hr && r - 1 > rr; ++q) sr[q] = keep(q);
           // the whole line (once round a periodic one, whose ends are each other's: its
           // determinant (1 - c2)(1 - c5) - c1 c6 as a sum)
           for (int q = 0; q < 8; ++q) cr[q] = c[q];
@@ -2840,9 +3065,22 @@ void RadiationM1::CleanStagFSchur() {
           }
           const Real gr = hr ? xr[0] + xr[1]*yo + xr[2]*xo : xo;
           const Real gl = hl ? ya[0] + ya[1]*yo + ya[2]*gr : yo;
-          if (!bh) x.w(m,cy,k,j,i) = gr;   // (cell n)
+          // (the faces beyond the own ones: the next block's first own face xR and the
+          // last block's last yL, in the slots the line solve reads, CleanFLine)
+          Real sg;
+          int kf, jf, iff;
+          if (!bh) {   // (cell n)
+            const bool on = ln.Own(x, dir, m, k, j, i, n, n, true);
+            Real &f = ln.Slot(x, dir, m, k, j, i, k, j, i, on, sg);
+            f = sg*gr;
+          }
+          cell(0, kf, jf, iff);
           cell(-1, k, j, i);
-          if (!bl) x.w(m,cy,k,j,i) = gl;
+          if (!bl) {
+            const bool on = ln.Own(x, dir, m, kf, jf, iff, 0, n, true);
+            Real &f = ln.Slot(x, dir, m, kf, jf, iff, k, j, i, on, sg);
+            f = sg*gl;
+          }
         });
       }
       if (r <= nrt) {
@@ -2854,179 +3092,18 @@ void RadiationM1::CleanStagFSchur() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::CleanStagFSolveCs
-//! \brief clean_stag_fsolve on the cubed sphere: the F solve of CleanStagFSolve for the
-//! face-normal momentum F_n.  The cell terms of a line (the dissipation weight al, the
-//! kinetic share w (h+ F_lo + h- F_hi)/c and its lagged pressure (D - s^2) J) are those
-//! of the cell's face family along the line, D taken about the family's mean normal
-//! (CleanCsFamily).  The kinetic stress w (F_kin/c - s^2 J) of the family's normal, 0 for
-//! an isotropic field, enters in area form, (A_R P_R - A_L P_L)/V_f, A the mean area of
-//! the cell's two faces of the family, so that free streaming F keeps r^2 F; w D (J - E)
-//! as a gradient (A_f/V_f).  A line that ends at another MeshBlock takes the far
-//! face of the next cell from that cell's owner, lagged (cln_v, in the owner's axes,
-//! CleanCsSlot: across a seam an x2 line may continue as an x3 line), so the lines of all
-//! directions iterate together.  A face shared by two MeshBlocks then takes the solution
-//! of the one with the lower gid: both see the same F to the bit.  The lateral stress
-//! keeps D E (no transverse kinetic stress of clean_stag_fkin on the cubed sphere: its
-//! lateral Gauss sums are also the non-orthogonal correction of the normal stress, which
-//! a kinetic transport of F does not reproduce, and a static envelope would lose its
-//! balance on the panel-tangent faces).
+//! \fn void RadiationM1::CleanStagFCsShared
+//! \brief cubed sphere, the F solve's last step before its faces' F (CleanStagFSolve):
+//! a face shared with another MeshBlock takes the solution of the one with the lower
+//! gid (in our axes, CleanCsSlot), so that both see the same F to the bit (CLF_N + 2),
+//! and the cells' slots of cln_v take it
 
-void RadiationM1::CleanStagFSolveCs(const int e) {
+void RadiationM1::CleanStagFCsShared() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke, nmb1 = pmy_pack->nmb_thispack - 1;
-  CleanStagCsLateral(e);
-  CleanArgs x = CleanMakeArgs(), xh = x;
-  xh.hi = true;
-  auto op = opac;
-  auto v = cln_v;   // (cell terms of family q: 3 q + 0..2, 15 + q; F: 9 + 2 q + hi)
-  const bool fk = cln_fkin, dok = cln_dok;
-  const int kd = (t2_solve == M1_T2S_NONE) ? 0 :
-                 ((t2_solve == M1_T2S_STAGE1) ? CLF_KD + 1 : CLF_KD);
-  const Real c1lo = cln_c0, c1hi = cln_c1;
-  for (int dir = 0; dir < 3; ++dir) {
-    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    auto fc = x.fc[dir];
-    const CleanArgs *pxh = CleanDevArgs(xh, 1);
-    par_for("cln_fcs0", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const CleanArgs &xh = *pxh;   // (in device memory: no per-thread copy)
-      fc(m,CLF_N,k,j,i) = CleanFaceFlux(xh, e, dir, m, k, j, i, true);
-      fc(m,CLF_PT,k,j,i) = fc(m,CLF_N,k,j,i);   // (F^H for CleanStagDrag; QL is free)
-      fc(m,CLF_N+1,k,j,i) = 0.0;
-    });
-  }
-  // the cell terms of every family, started from the last F solve's faces
-  const CleanArgs *px = CleanDevArgs(x, 0);
-  par_for("cln_fcs1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
-    Real nd[3][3];
-    CleanCsFamily(x, m, k, j, i, nd);
-    const Real ec = x.w(m,e,k,j,i);
-    const Real wc = fk ? CleanSmoothStep((x.cs(m,CLN_C1,k,j,i) - c1lo)/(c1hi - c1lo))
-                       : 0.0;
-    for (int q = 0; q < 3; ++q) {
-      const int dk = (q == 2), dj = (q == 1), di = (q == 0);
-      Real rc;
-      const Real tau = op(m,M1_OP_T,k,j,i)*CleanCellFaceDistance(x, q, m, k, j, i);
-      Real a = fk ? 0.0 : CleanDissipationWeight(CLA_TAU, tau, 0.0, 0.0, rc);
-      for (int s = 0; s < 2; ++s) {
-        const int kf = k + s*dk, jf = j + s*dj, iff = i + s*di;
-        if (!fk) a = fmax(a, x.fc[q](m,CLF_W,kf,jf,iff));
-        const Real f = x.fc[q](m,CLF_N,kf,jf,iff);
-        const Real ed = (f > 0.0) ? x.w(m,e,kf-dk,jf-dj,iff-di) : x.w(m,e,kf,jf,iff);
-        if (!fk && !CleanBoundaryFace(x, q, m, kf, jf, iff) &&
-            !(fabs(f) <= (1.0 + 1.0e-12)*x.c*fmax(ed, 0.0))) a = 1.0;
-        v(m,9+2*q+s,k,j,i) = x.fc[q](m,CLF_N+2,kf,jf,iff);
-      }
-      Real dd = 0.0;
-      for (int b = 0; b < 3; ++b) {
-        for (int c = 0; c < 3; ++c) {
-          dd += nd[q][b]*nd[q][c]*x.cs(m,CLN_D11+((b == c) ? b : 2 + b + c),k,j,i);
-        }
-      }
-      const Real sr = x.cs(m,CLN_HP+q,k,j,i) + x.cs(m,CLN_HM+q,k,j,i);
-      // (the kinetic stress w (F_kin/c - s^2 J), 0 for an isotropic field, times the mean
-      // area of the family's two faces: area form; w D (J - E) stays a gradient)
-      const Real ac = 0.5*(x.area[q](m,k,j,i) + x.area[q](m,k+dk,j+dj,i+di));
-      const Real jc = fmin(x.cs(m,CLN_J,k,j,i), fmax(ec, 0.0));
-      v(m,3*q,k,j,i) = (1.0 - wc)*a;
-      v(m,3*q+1,k,j,i) = wc*dd*(jc - ec);
-      v(m,3*q+2,k,j,i) = ac*wc;
-      v(m,15+q,k,j,i) = -ac*wc*sr*sr*jc;
-    }
-  });
-  CleanGhostFill(cln_v, 0, 18);
-  // the cell terms of cell (k,j,i) at its face (kf,jf,iff) normal to dir, along dir: al,
-  // the lagged pressure, w and the half ranges h+, h- (of the owner's family, oriented)
-  auto cell = KOKKOS_LAMBDA(const int dir, const int m, const int kf, const int jf,
-                            const int iff, const int k, const int j, const int i,
-                            Real t[6]) {
-    Real s;
-    const int q = CleanCsSlot(x, dir, m, kf, jf, iff, k, j, i, false, s)/2;
-    for (int n = 0; n < 3; ++n) t[n] = v(m,3*q+n,k,j,i);
-    const Real hp = x.cs(m,CLN_HP+q,k,j,i), hm = x.cs(m,CLN_HM+q,k,j,i);
-    t[3] = (s > 0.0) ? hp : -hm;
-    t[4] = (s > 0.0) ? hm : -hp;
-    t[5] = v(m,15+q,k,j,i);
-  };
-  // F of the other face of the family of cell (k,j,i) along face (kf,jf,iff), ours
-  auto far = KOKKOS_LAMBDA(const int dir, const int m, const int kf, const int jf,
-                           const int iff, const int k, const int j, const int i) {
-    Real s;
-    const int n = CleanCsSlot(x, dir, m, kf, jf, iff, k, j, i, true, s);
-    return s*v(m,9+n,k,j,i);
-  };
-  const int nn[3] = {ie - is + 1, je - js + 1, ke - ks + 1};
-  for (int it = 0; it < 64; ++it) {
-    Real dmax = 0.0, fmx = 0.0;
-    for (int dir = 0; dir < 3; ++dir) {
-      const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-      const int n = nn[dir], na = (dir == 0) ? nn[1] : nn[0];
-      const int nb = (dir == 2) ? nn[1] : nn[2];
-      auto fc = x.fc[dir];
-      Real d0 = 0.0, f0 = 0.0;
-      Kokkos::parallel_reduce("cln_fcs2", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                              (nmb1 + 1)*na*nb),
-      KOKKOS_LAMBDA(const int idx, Real &d_max, Real &f_max) {
-        const int m = idx/(na*nb), a = idx%na, b = (idx/na)%nb;
-        auto face = [&](const int t, int &k, int &j, int &i) {
-          if (dir == 0) {i = is + t; j = js + a; k = ks + b;}
-          if (dir == 1) {j = js + t; i = is + a; k = ks + b;}
-          if (dir == 2) {k = ks + t; i = is + a; j = js + b;}
-        };
-        Real cp = 0.0, dp = 0.0;
-        for (int t = 0; t <= n; ++t) {
-          int k, j, i;
-          face(t, k, j, i);
-          const int kl = k - dk, jl = j - dj, il = i - di;
-          Real lo = 0.0, hi = 0.0, dg = 1.0, r = fc(m,CLF_N,k,j,i);
-          Real tl[6], tr[6];
-          cell(dir, m, k, j, i, kl, jl, il, tl);
-          cell(dir, m, k, j, i, k, j, i, tr);
-          if (!CleanBoundaryFace(x, dir, m, k, j, i) &&
-              (tl[0] > 0.0 || tr[0] > 0.0 || tl[2] > 0.0 || tr[2] > 0.0)) {
-            const Real g = 0.5*x.h*x.c/CleanCellFaceDistance(x, dir, m, k, j, i);
-            const Real it_ = 1.0/fc(m,CLF_TH,k,j,i);
-            const Real q = x.h*x.c/(0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,kl,jl,il)));
-            lo = -g*tl[0] - q*tl[2]*tl[3];
-            hi = -g*tr[0] + q*tr[2]*tr[4];
-            dg = it_ - lo - hi + q*(tr[2]*(tr[3] + tr[4]) - tl[2]*(tl[3] + tl[4]));
-            r = fc(m,CLF_N,k,j,i)*it_ + q*x.c*(x.area[dir](m,k,j,i)*(tl[1] - tr[1]) +
-                                               tl[5] - tr[5]);
-            // (the faces beyond a MeshBlock line end: their owners', lagged)
-            if (t == 0) {r -= lo*far(dir, m, k, j, i, kl, jl, il); lo = 0.0;}
-            if (t == n) {r -= hi*far(dir, m, k, j, i, k, j, i); hi = 0.0;}
-          }
-          const Real den = dg - lo*cp;
-          cp = hi/den;
-          dp = (r - lo*dp)/den;
-          x.w(m,CLW_CP,k,j,i) = cp;
-          x.w(m,CLW_R,k,j,i) = dp;
-        }
-        Real fn = 0.0;
-        for (int t = n; t >= 0; --t) {
-          int k, j, i;
-          face(t, k, j, i);
-          const int kl = k - dk, jl = j - dj, il = i - di;
-          fn = x.w(m,CLW_R,k,j,i) - ((t < n) ? x.w(m,CLW_CP,k,j,i)*fn : 0.0);
-          const Real fo = (t > 0) ? v(m,9+2*dir+1,kl,jl,il) : v(m,9+2*dir,k,j,i);
-          d_max = fmax(d_max, fabs(fn - fo));
-          f_max = fmax(f_max, fmax(fabs(fn), 1.0e-8*x.c*fabs(x.w(m,e,k,j,i))));
-          if (t > 0) v(m,9+2*dir+1,kl,jl,il) = fn;
-          if (t < n) v(m,9+2*dir,k,j,i) = fn;
-        }
-      }, Kokkos::Max<Real>(d0), Kokkos::Max<Real>(f0));
-      dmax = fmax(dmax, d0);
-      fmx = fmax(fmx, f0);
-    }
-    CleanGhostFill(cln_v, 9, 6);
-    if (CleanReduce(dmax, true) <= 1.0e-14*CleanReduce(fmx, true)) break;
-  }
-  // F of every face (CLF_N + 2), a face shared with another MeshBlock that of the lower
-  // gid, and the cells' slots of it
+  CleanArgs x = CleanMakeArgs();
+  auto v = cln_v;
   for (int dir = 0; dir < 3; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     auto fc = x.fc[dir];
@@ -3058,36 +3135,6 @@ void RadiationM1::CleanStagFSolveCs(const int e) {
     }
   });
   CleanGhostFill(cln_v, 9, 6);
-  // the energy flux's memory d, F and the dissipation term of every face
-  for (int dir = 0; dir < 3; ++dir) {
-    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    auto fc = x.fc[dir];
-    par_for("cln_fcs5", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
-      const int kl = k - dk, jl = j - dj, il = i - di;
-      const Real f = fc(m,CLF_N+2,k,j,i);
-      if (fk && e == CLW_X && dok) {   // (and its slope, CleanDInc)
-        const Real dd = fc(m,CLF_N,k,j,i) - f - (1.0 - fc(m,CLF_TH,k,j,i))*
-                        fc(m,CLF_N+3,k,j,i);
-        fc(m,CLF_N+3,k,j,i) += dd;
-        if (kd > 0) fc(m,kd,k,j,i) = dd/x.h;
-      }
-      fc(m,CLF_N,k,j,i) = f;
-      Real tl[6], tr[6];
-      cell(dir, m, k, j, i, kl, jl, il, tl);
-      cell(dir, m, k, j, i, k, j, i, tr);
-      if (!(tl[0] > 0.0 || tr[0] > 0.0 || tl[2] > 0.0 || tr[2] > 0.0)) return;
-      const Real fm = far(dir, m, k, j, i, kl, jl, il);
-      const Real fp = far(dir, m, k, j, i, k, j, i);
-      const Real pl = tl[2]*(tl[3]*fm + tl[4]*f)/x.c + tl[5];
-      const Real pr = tr[2]*(tr[3]*f + tr[4]*fp)/x.c + tr[5];
-      fc(m,CLF_N+1,k,j,i) = (tr[0]*(fp - f) - tl[0]*(f - fm))/
-                            (2.0*x.c*CleanCellFaceDistance(x, dir, m, k, j, i)) -
-          (pr - pl + x.area[dir](m,k,j,i)*(tr[1] - tl[1]))/
-          (0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,kl,jl,il)));
-    });
-  }
 }
 
 //----------------------------------------------------------------------------------------

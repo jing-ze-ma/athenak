@@ -3050,7 +3050,7 @@ class RadiationM1 {
   void CleanScUnion2();
   DvceArray5D<Real> &CleanRstFv() {return (cln_scmem && !cln_cssc) ? cln_top : cln_fvi;}
   void CleanStagDrag(const bool first, const bool vel = false);
-  void CleanStagFSolveCs(const int e);
+  void CleanStagFCsShared();
   void CleanStagFaceTie(const int e, const int kd, const bool pt = false);
   Real CleanStagFSweepChange();
   void CleanStagFSchur();
