@@ -867,7 +867,8 @@ void RadiationM1::CleanRingMoments() {
   for (int q = 0; q < ns; ++q) {
     cln_fvd = cln_fvdm[q];
     if (cln_rfv == 0) {   // the sc rays: set q swept alone (its tables, its own weights)
-      cln_rq = static_cast<int>(cln_fvblk[q] & 1);
+      cln_rq = q;
+      cln_rqm = static_cast<int>(cln_fvblk[q] & 1);
       VgdXfTables(cln_fvkey[q]);
       vgd_scut = vlat_icut;
       VetGdSweep();
@@ -2689,9 +2690,11 @@ void RadiationM1::CleanGdFaceSums() {
   const int bmn = ibm_nr, bmr[4] = {ibm_ray[0], ibm_ray[1], ibm_ray[2], ibm_ray[3]};
   // the short characteristics' intensities in the mesh layout with the ghost exchange
   // (the image cell's beyond a periodic seam, re-indexed by the wall map as the sweep)
-  // (clean_rot_ring with a reflecting top: two slots, of the sets blk mod 2, for its
+  // (clean_rot_ring: on the cubed sphere the swept sets' slots of the union (cln_fvd,
+  // CleanFvSets); on sp with a reflecting top two slots, of the sets blk mod 2, for its
   // mirror of the last build)
-  const int ns2 = (cln_ring && cln_scmem) ? 2 : 1, doff = (ns2 > 1) ? cln_rq*n : 0;
+  const int ns2 = !cln_ring ? 1 : (cln_cssc ? cln_rns : (cln_scmem ? 2 : 1));
+  const int doff = (ns2 == 1) ? 0 : (cln_cssc ? cln_rq : cln_rqm)*n;
   if (!fv) {
     if (cln_fvi.extent_int(1) != ns2*n) {
       Kokkos::realloc(cln_fvi, nmb1 + 1, ns2*n, cs.extent_int(2),

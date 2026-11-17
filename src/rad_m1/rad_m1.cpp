@@ -174,10 +174,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     const bool vg = pin->DoesParameterExist("rad_m1","vet_gd") &&
                     pin->GetBoolean("rad_m1","vet_gd");
     const bool gd = sp && vg;
-    // (staggered sp, fresh: vet_gd's own sweep, sc, recorded so that a restart keeps it;
-    // a restart file without the key keeps fv1)
+    // (staggered sp and cs, fresh: vet_gd's own sweep, sc, recorded so that a restart
+    // keeps it; a restart file without the key keeps fv1)
     if ((gd || (cs && vg)) && !pin->DoesParameterExist("rad_m1","clean_rays")) {
-      const bool sc = gd && !cln_cell && !global_variable::restart_run;
+      const bool sc = !cln_cell && !global_variable::restart_run;
       cln_rfv = sc ? 0 : 1;
       if (sc) pin->GetOrAddString("rad_m1","clean_rays","sc");
     }
@@ -1511,11 +1511,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // whose file lacks it), _slope (correct on a fresh run since defaults2-1012, keep on a
     // restart whose file lacks it).
     VetRotInit(pin);   // bubbles-1012: shared with vet_sc (rad_m1_vetgd.cpp)
-    // clean staggered sp, fresh, with a rotating set on the time clock: the set
+    // clean staggered sp and cs, fresh, with a rotating set on the time clock: the set
     // time-averaged by default, vet_rotate_avg = 4 with the cross-fade (clean_rot_ring
     // live), recorded so that a restart keeps them; a restart file without the keys keeps
     // the plain rotation
-    if (clean && !cln_cell && sph_geom && !global_variable::restart_run && VgdRotOn() &&
+    if (clean && !cln_cell && (sph_geom || cs_geom) && !global_variable::restart_run &&
+        VgdRotOn() &&
         (vgd_rot_dt > 0.0 || vgd_rot_auto)) {
       pin->GetOrAddInteger("rad_m1","vet_rotate_avg",4);
       pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_xfade",true);
@@ -1561,11 +1562,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // the cubed sphere with clean_rays = sc: vet_gd's own sweep (intensities to cln_fvi)
     cln_cssc = clean && pmy_pack->pmesh->use_cubed_sphere && vgd_on && cln_rfv == 0;
-    // clean_rot_ring not named: live wherever the vet_gd FV rays (or the sp sc rays)
-    // rotate in time with a cross-fade (decided here, before a restart file's channels
-    // are counted)
-    if (clean && !cln_ring_named && vgd_on && (cln_rfv > 0 || !cln_cssc) && vra_on &&
-        g_vra_adv &&
+    // clean_rot_ring not named: live wherever the vet_gd rays (FV or sc) rotate in time
+    // with a cross-fade (decided here, before a restart file's channels are counted)
+    if (clean && !cln_ring_named && vgd_on && vra_on && g_vra_adv &&
         vgd_xf && (vgd_rot_dt > 0.0 || vgd_rot_auto) && vgd_rot_align &&
         vra_k <= M1_RA_NF) {
       cln_ring = 1;

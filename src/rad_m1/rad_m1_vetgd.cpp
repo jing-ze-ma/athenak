@@ -5943,7 +5943,7 @@ void RadiationM1::VetGdTopMirror() {
   // restart files keep), the same numbers as vgd_i in a run without a restart; before
   // the first copy the top cell's E (no outflow yet)
   auto fi_ = cln_fvi;
-  const int off = cln_ring ? cln_rq*n : 0;   // (clean_rot_ring: the set's slot)
+  const int off = cln_ring ? cln_rqm*n : 0;   // (clean_rot_ring: the set's slot)
   const bool cp = cln_scmem && fi_.extent_int(0) == nmb1 + 1 &&
                   fi_.extent_int(1) == (cln_ring ? 2 : 1)*n;
   const bool e1 = cln_scmem && !cp;

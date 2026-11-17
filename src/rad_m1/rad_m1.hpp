@@ -4043,7 +4043,8 @@ class RadiationM1 {
   // (VetGdThMirCs, from VetGdHaloCs)
   bool vgd_thmir = false;
   bool cln_scmem = false;      // clean sc rays, reflecting top: its mirror reads cln_fvi
-  int cln_rq = 0;               // clean_rot_ring, sc rays: the slot (blk mod 2) swept
+  int cln_rq = 0;               // clean_rot_ring, sc rays: the slot swept (CleanFvSets)
+  int cln_rqm = 0;              // and its sp top-mirror slot (blk mod 2)
   void VetGdThMirCs(DvceArray5D<Real> &a, const int i0, const int i1);
   // wallbug-1027 vet_gd_theta_wall = vacuum (1) | extrap (2), 0 otherwise: the theta
   // ghosts beyond a PHYSICAL theta wall (wall flag 3 / 4) are not the far wall's.

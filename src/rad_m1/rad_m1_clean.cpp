@@ -336,7 +336,7 @@ void RadiationM1::CleanInit() {
                  "vet_rotate_advance), and on a 2-D axisymmetric mesh the z axis");
     }
   }
-  const bool ring_ok = vgd_on && (cln_rfv > 0 || !cln_cssc) && vra_on && g_vra_adv &&
+  const bool ring_ok = vgd_on && vra_on && g_vra_adv &&
                        (vgd_rot_dt > 0.0 || vgd_rot_auto) && vgd_rot_align &&
                        vra_k <= M1_RA_NF;
   if (cln_ring && !(ring_ok && vgd_xf == (cln_ring == 1))) {
