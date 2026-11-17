@@ -2079,6 +2079,7 @@ int RadiationM1::CleanStagRealizable() {
       if (dir == 0 && cell && !(er >= -zero)) q1 += 1.0;
       if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
       const Real f = CleanFaceFlux(x, CLW_X, dir, m, k, j, i, true);
+      x.fc[dir](m,CLF_PT,k,j,i) = f;   // (for CleanWriteBack, next; QL is free)
       const Real ed = (f > 0.0) ? el : er;
       const bool r2 = !(fabs(f) <= (1.0 + 1.0e-12)*x.c*ed + x.c*zero);
       if (r2) q2 += 1.0;
@@ -3262,58 +3263,46 @@ void RadiationM1::CleanWriteBack() {
     par_for("cln_wbphi", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       CLEAN_HIPX(const CleanArgs &x = *px;)   // (in device memory: no per-thread copy)
-      for (int d = 0; d < nf; ++d) {
-        x.w(m,CLW_L+d,k,j,i) = CleanFaceFlux(x, CLW_X, d, m, k, j, i, true);
+      for (int d = 0; d < nf; ++d) {   // (CleanStagRealizable's Phi but on physical faces)
+        x.w(m,CLW_L+d,k,j,i) = CleanBoundaryFace(x, d, m, k, j, i) ?
+            CleanFaceFlux(x, CLW_X, d, m, k, j, i, true) : x.fc[d](m,CLF_PT,k,j,i);
       }
     });
     CleanGhostFill(cln_w, CLW_L, nf);
   }
   const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
-  // (time2_face_fct: the energy flux Phi of every face, which moved E, with its slope;
-  // with the tie each face's Phi once: the low faces' CLW_L, the high one local)
+  // (time2_face_fct: the energy flux Phi of every face, which moved E, with its slope)
   const bool pfo = t2_pfst && slopes && t2pf1.extent_int(0) > nmb1;
   auto pf = (t2_solve == M1_T2S_STAGE1) ? t2pf2 : t2pf1;
   par_for("cln_wbdiv", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
-    if (tie) {   // (CleanFluxDivergenceTie, its faces' fluxes kept)
-      Real dv = 0.0;
-      for (int n = 0; n < 3; ++n) {
-        const int dk = (n == 2), dj = (n == 1), di = (n == 0);
-        if (n >= x.nf) {
-          if (xh.hi) u0_(m,M1_F1+n,k,j,i) = 0.0;
-          continue;
-        }
-        const Real fl = x.w(m,CLW_L+n,k,j,i);
-        const Real fu = CleanFaceFlux(x, CLW_X, n, m, k+dk, j+dj, i+di, true);
-        const Real fh = CleanBoundaryFace(x, n, m, k+dk, j+dj, i+di) ? fu :
-                        x.w(m,CLW_L+n,k+dk,j+dj,i+di);
-        dv += (x.sph || x.cub) ? CleanDivW(x, n, m, k, j, i, 1)*fh -
-                                 CleanDivW(x, n, m, k, j, i, 0)*fl : x.idx[n]*(fh - fl);
-        if (xh.hi) u0_(m,M1_F1+n,k,j,i) = 0.5*(fl + fu);
-        if (pfo) pf(m,n,k,j,i) = fl;
-        if (pfo && (n == 0 ? i == x.ie : (n == 1 ? j == x.je : k == x.ke))) {
-          pf(m,n,k+dk,j+dj,i+di) = fu;
-        }
+    // (CleanFluxDivergence(Tie) with the faces' Phi of CleanStagRealizable, CLF_PT, but
+    // on physical faces; with the tie the low faces' CLW_L and the high faces' owner's)
+    Real dv = 0.0;
+    for (int n = 0; n < 3; ++n) {
+      const int dk = (n == 2), dj = (n == 1), di = (n == 0);
+      if (n >= x.nf) {
+        if (xh.hi) u0_(m,M1_F1+n,k,j,i) = 0.0;
+        continue;
       }
-      x.w(m,CLW_Q,k,j,i) = x.h*dv;
-      return;
+      const Real fl = tie ? x.w(m,CLW_L+n,k,j,i) : (CleanBoundaryFace(x, n, m, k, j, i) ?
+          CleanFaceFlux(x, CLW_X, n, m, k, j, i, true) : x.fc[n](m,CLF_PT,k,j,i));
+      const bool bh = CleanBoundaryFace(x, n, m, k+dk, j+dj, i+di);
+      const Real fu = bh ? CleanFaceFlux(x, CLW_X, n, m, k+dk, j+dj, i+di, true) :
+                           x.fc[n](m,CLF_PT,k+dk,j+dj,i+di);
+      const Real fh = (tie && !bh) ? x.w(m,CLW_L+n,k+dk,j+dj,i+di) : fu;
+      dv += (x.sph || x.cub) ? CleanDivW(x, n, m, k, j, i, 1)*fh -
+                               CleanDivW(x, n, m, k, j, i, 0)*fl : x.idx[n]*(fh - fl);
+      if (xh.hi) u0_(m,M1_F1+n,k,j,i) = 0.5*(fl + fu);
+      if (pfo) pf(m,n,k,j,i) = fl;
+      if (pfo && (n == 0 ? i == x.ie : (n == 1 ? j == x.je : k == x.ke))) {
+        pf(m,n,k+dk,j+dj,i+di) = fu;
+      }
     }
-    x.w(m,CLW_Q,k,j,i) = CleanFluxDivergence(x, CLW_X, m, k, j, i, true);
-    for (int d = 0; d < 3 && xh.hi; ++d) {
-      u0_(m,M1_F1+d,k,j,i) = ((d == 1 && !multi_d) || (d == 2 && !three_d)) ? 0.0 :
-          0.5*(CleanFaceFlux(x, CLW_X, d, m, k, j, i, true) +
-               CleanFaceFlux(x, CLW_X, d, m, k+(d == 2), j+(d == 1), i+(d == 0), true));
-    }
+    x.w(m,CLW_Q,k,j,i) = x.h*dv;
   });
   if (pfo) {
-    for (int d = 0; d < x.nf && !tie; ++d) {
-      const int dk = (d == 2), dj = (d == 1), di = (d == 0);
-      par_for("cln_wbpf", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        pf(m,d,k,j,i) = CleanFaceFlux(x, CLW_X, d, m, k, j, i, true);
-      });
-    }
     if (t2_solve == M1_T2S_STAGE1) {t2pf2_ok = true;} else {t2pf1_ok = true;}
   }
   // (the history's boundary energy: + h A Phi of the physical x1 faces, CleanBndAcc)
