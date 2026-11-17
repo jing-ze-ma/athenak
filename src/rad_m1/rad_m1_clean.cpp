@@ -1884,8 +1884,10 @@ Real RadiationM1::CleanVelocityUpdate() {
   CleanArgs x = CleanMakeArgs(), xh = x;
   xh.hi = cln_split;
   xh.mcl = true;
+  // (the F solve's face tie after the drag, which evaluates the same face T: CLF_PT)
+  const bool td = cln_fwork && cln_ftie && !x.cub;
   if (cln_fwork) {   // (clean_stag_fwork: the momentum of the
-    CleanStagFSolve(CLW_EK);                     //  F solve, which the write-back gives
+    CleanStagFSolve(CLW_EK, !td);                //  F solve, which the write-back gives
     xh.fs = true;                                //  the gas, for the work W of the E row)
     xh.tf = cln_ftie && !x.cub;
     cln_fsk = true;
@@ -1903,6 +1905,8 @@ Real RadiationM1::CleanVelocityUpdate() {
   // cells' momentum and their advective coefficients a_d, CleanAdvectiveCoefficients)
   const bool fa = xh.fs;
   if (fa) CleanStagDrag(false, true);
+  if (td) CleanStagFaceTie(CLW_EK, (t2_solve == M1_T2S_NONE) ? 0 : ((t2_solve ==
+                           M1_T2S_STAGE1) ? CLF_KD + 1 : CLF_KD), true);
   xh.fa = fa;
   auto xa = x;
   xa.cub = false;
@@ -2340,7 +2344,7 @@ void CleanStagFJoin(const Real p[8], const Real q[8], Real c[8], Real ya[3],
 //! CleanStagSph: the w share keeps 2 P_rr/r, F r^2 of a beam is steady).  It telescopes,
 //! the lines stay tridiagonal (M-matrix: h+ >= 0 >= h-), and w = al = 0 keeps F^H.
 
-void RadiationM1::CleanStagFSolve(const int e) {
+void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
   if (pmy_pack->pmesh->use_cubed_sphere) {
     CleanStagFSolveCs(e);
     return;
@@ -2621,7 +2625,7 @@ void RadiationM1::CleanStagFSolve(const int e) {
       });
     }
   }
-  if (cln_ftie) CleanStagFaceTie(e, kd);
+  if (cln_ftie && tie_now) CleanStagFaceTie(e, kd);
 }
 
 //----------------------------------------------------------------------------------------
@@ -2637,7 +2641,7 @@ void RadiationM1::CleanStagFSolve(const int e) {
 //! into CLW_L + 3 dir (+ 1 d, + 2 slope; free after the F solve), the exchange hands the
 //! high faces' to their other side.
 
-void RadiationM1::CleanStagFaceTie(const int e, const int kd) {
+void RadiationM1::CleanStagFaceTie(const int e, const int kd, const bool pt) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -2650,8 +2654,10 @@ void RadiationM1::CleanStagFaceTie(const int e, const int kd) {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     for (int d = 0; d < nf; ++d) {
       const Real f = x.fc[d](m,CLF_N,k,j,i), g = x.fc[d](m,CLF_G,k,j,i);
-      x.w(m,CLW_L+3*d,k,j,i) = (f - g)/(x.c*x.c) + x.h*CleanFaceStress(x, e, d, m, k, j,
-                               i, true) - x.h*x.fc[d](m,CLF_N+1,k,j,i);
+      // (pt: CleanStagDrag's of the same F just took it, CLF_PT, but on physical faces)
+      x.w(m,CLW_L+3*d,k,j,i) = (pt && !CleanBoundaryFace(x, d, m, k, j, i)) ?
+          x.fc[d](m,CLF_PT,k,j,i) : (f - g)/(x.c*x.c) + x.h*CleanFaceStress(x, e, d, m, k,
+                               j, i, true) - x.h*x.fc[d](m,CLF_N+1,k,j,i);
       x.w(m,CLW_L+3*d+1,k,j,i) = x.fc[d](m,CLF_N+3,k,j,i);
       x.w(m,CLW_L+3*d+2,k,j,i) = (kd > 0) ? x.fc[d](m,kd,k,j,i) : 0.0;
     }
