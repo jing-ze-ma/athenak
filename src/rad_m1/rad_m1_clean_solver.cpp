@@ -79,6 +79,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.drag = cln_vimp && cln_feedback;
   x.upw = cln_upw;
   x.sbi = cln_sbimp && cln_feedback;
+  x.sar = !cln_gflux && !(vgd_on && cln_rfv > 0);
   x.op = opac;
   x.nf = pmy_pack->pmesh->three_d ? 3 : (pmy_pack->pmesh->multi_d ? 2 : 1);
   x.is = indcs.is;

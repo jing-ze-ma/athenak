@@ -153,6 +153,8 @@ struct CleanArgs {
   bool upw;                    // staggered, clean_stag_upwind: donor-cell advective flux
   bool fwc;                    // staggered: al, ar and the cross factor from CLF_QL
   bool sbi;                    // staggered, clean_stag_sbimp: E-row beta terms implicit
+  bool sar;                    // staggered: the streaming share's net flux in area form
+                               // (CleanStagArea)
   DvceArray5D<Real> op;        // opacities (M1_OP_*)
   int nf;                      // cell layout: number of flux components (dimensions)
   int is, ie, js, je, ks, ke;
@@ -487,6 +489,29 @@ Real CleanStagN(const CleanArgs &x, const int v, const int dir, const int m,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void CleanStagArea
+//! \brief the net part s = h+ + h- of the streaming share w c (h+ E_L + h- E_R) through
+//! face (k,j,i) normal to dir in area form, from the donor upwind of s: adds w c s
+//! (A_d/A_f - 1) to the coefficient pl or pr of E_L or E_R, A_d the area at the donor's
+//! centre (spherical polar: x1v^2 of r faces, sin(x2v) of theta faces), so that a free
+//! stream keeps A_d E_d (an isotropic field, s = 0, is unchanged; the signs, and with
+//! them the M-matrix, are kept).  Only where h+- are the cells' own, analytic or of point
+//! intensities (clean_rays = sc): the FV rays' (vet_gd, fv1 | fv | lld) are half-range
+//! fluxes through the face, which their own finite-volume transport already carries in
+//! area form, and so are the flux factors of clean_stag_gflux.
+
+KOKKOS_INLINE_FUNCTION
+void CleanStagArea(const CleanArgs &x, const int dir, const int m, const int k,
+                   const int j, const int i, const Real w, Real &pl, Real &pr) {
+  if (!x.sar || x.hi || !x.sph || x.cub || dir == 2) return;
+  const Real s = w*x.c*(x.fc[dir](m,CLF_HP,k,j,i) + x.fc[dir](m,CLF_HM,k,j,i));
+  const int d = (s > 0.0) ? 1 : 0, id = i - d*(dir == 0), jd = j - d*(dir == 1);
+  const Real a = (dir == 0) ? x.x1v(m,id)*x.x1v(m,id)/(x.x1f(m,i)*x.x1f(m,i))
+                            : sin(x.x2v(m,jd))/sin(x.x2f(m,j));
+  ((d == 1) ? pl : pr) += s*(a - 1.0);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanFaceWeights
 //! \brief coefficients of E_L and E_R in the flux through face (k,j,i) normal to dir, i.e.
 //! everything but the off-diagonal Eddington terms and the old-vector flux G.  Physical
@@ -551,6 +576,7 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
          w*x.c*x.fc[dir](m,CLF_HP,k,j,i);
     ar = -gs*CleanStagDnn(x, dir, m, k, j, i, k, j, i) + w*x.c*x.fc[dir](m,CLF_HM,k,j,i);
   }
+  CleanStagArea(x, dir, m, k, j, i, w, al, ar);
   const Real q = CleanStagMemUp(x, dir, m, k, j, i);
   if (q > 0.0) al += q;
   if (q < 0.0) ar += q;

@@ -1577,9 +1577,12 @@ void RadiationM1::CleanStagBracket() {
       const Real w = x.fc[dir](m,CLF_W,k,j,i);
       const Real chi = 0.5*(x.op(m,M1_OP_T,k,j,i) + x.op(m,M1_OP_T,k-dk,j-dj,i-di));
       const Real cd = (chi > 0.0) ? x.c/chi : x.fc[dir](m,CLF_TH,k,j,i)*x.h*x.c*x.c;
+      Real gl = 0.0, gr = 0.0;
+      CleanStagArea(x, dir, m, k, j, i, w, gl, gr);
       const Real pj = -(1.0 - w)*cd*CleanFaceStress(x, CLW_Z, dir, m, k, j, i, true) +
           w*x.c*(x.fc[dir](m,CLF_HP,k,j,i)*x.w(m,CLW_Z,k-dk,j-dj,i-di) +
-                 x.fc[dir](m,CLF_HM,k,j,i)*x.w(m,CLW_Z,k,j,i));
+                 x.fc[dir](m,CLF_HM,k,j,i)*x.w(m,CLW_Z,k,j,i)) +
+          gl*x.w(m,CLW_Z,k-dk,j-dj,i-di) + gr*x.w(m,CLW_Z,k,j,i);
       // (cubed sphere: the high x2, x3 face of a MeshBlock from its last cell, CLN_FH)
       const bool up = x.cub && dir > 0 && (j > x.je || k > x.ke);
       const Real fy = up ? x.cs(m,CLN_FH+4*(dir-1),k-dk,j-dj,i-di) : x.cs(m,n,k,j,i);
