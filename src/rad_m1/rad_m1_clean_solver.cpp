@@ -133,17 +133,28 @@ CleanArgs RadiationM1::CleanMakeArgs() {
 //! cells, without the along-seam resample) by the cell-centred boundary exchange on a
 //! scratch array of nc components (only the ghosts and the ng layers the exchange reads
 //! are copied in, only the ghosts back), then (phys) a copy of the edge cell on physical
-//! boundaries.  part = 1 only starts the exchange (nc <= 32), part = 2 finishes it: work
-//! on the cells CleanInner by ng can run in between.  The closure's off-diagonal D12,
-//! D13, D23 take the edge cell's with their parity: odd across a reflecting radiation
-//! wall normal to one of their axes, and D_r,theta, D_r,phi across the pole (e_theta,
-//! e_phi flip), so that d_b(D E) puts no shear traction on the wall (as ce91f387d)
+//! boundaries.  part = 1 only starts the exchange (nc <= clean_halo_vars), part = 2
+//! finishes it: work on the cells CleanInner by ng can run in between.  The closure's
+//! off-diagonal D12, D13, D23 take the edge cell's with their parity: odd across a
+//! reflecting radiation wall normal to one of their axes, and D_r,theta, D_r,phi across
+//! the pole (e_theta, e_phi flip), so that d_b(D E) puts no shear traction on the wall
+//! (as ce91f387d)
 
 void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
                                  const bool phys, const int part) {
-  if (nc > 32) {   // the exchange moves at most 32 variables at once
-    CleanGhostFill(a, c0, 32, phys);
-    CleanGhostFill(a, c0 + 32, nc - 32, phys);
+  CleanGhostFillT(a, c0, nc, phys, part);
+}
+
+void RadiationM1::CleanGhostFill(DvceArray5D<float> a, const int c0, const int nc) {
+  CleanGhostFillT(a, c0, nc, true, 0);
+}
+
+template <typename T>
+void RadiationM1::CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc,
+                                  const bool phys, const int part) {
+  if (nc > cln_hmax) {   // the exchange moves at most clean_halo_vars variables at once
+    CleanGhostFillT(a, c0, cln_hmax, phys, 0);
+    CleanGhostFillT(a, c0 + cln_hmax, nc - cln_hmax, phys, 0);
     return;
   }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -156,7 +167,9 @@ void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc
   CleanHalo &hl = cln_halo[nc];
   if (!hl.pb) {
     // (the exchanges run one at a time: their scratch arrays share one allocation)
-    if (cln_hbuf.extent_int(0) == 0) Kokkos::realloc(cln_hbuf, nmb1 + 1, 32, n3, n2, n1);
+    if (cln_hbuf.extent_int(0) == 0) {
+      Kokkos::realloc(cln_hbuf, nmb1 + 1, cln_hmax, n3, n2, n1);
+    }
     hl.a = DvceArray5D<Real>(cln_hbuf.data(), nmb1 + 1, nc, n3, n2, n1);
     Kokkos::realloc(hl.ca, nmb1 + 1, nc, 1, 1, 1);
     hl.pb.reset(new MeshBoundaryValuesCC(pmy_pack, nullptr, false));
@@ -167,13 +180,22 @@ void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc
   auto h = hl.a;
   const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
   MeshBoundaryValuesCC *pb = hl.pb.get();
+  // (only the cells outside CleanInner are copied: CleanShell)
   if (part != 2) {
-    par_for("cln_hcopy", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, n1-1,
-    KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-      if (!CleanInner(k, j, i, ng, is, ie, js, je, ks, ke, md, td)) {
+    const CleanShell sc(n3, n2, n1, ng, is, ie, js, je, ks, ke, md, td);
+    if (sc.Empty()) {
+      par_for("cln_hcopy", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, n1-1,
+      KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
         h(m,n,k,j,i) = a(m,c0+n,k,j,i);
-      }
-    });
+      });
+    } else {
+      par_for("cln_hcopy", DevExeSpace(), 0, nmb1, 0, nc-1, 0, sc.ncell-1,
+      KOKKOS_LAMBDA(const int m, const int n, const int q) {
+        int k, j, i;
+        CleanShellCell(sc, q, k, j, i);
+        h(m,n,k,j,i) = a(m,c0+n,k,j,i);
+      });
+    }
     while (pb->InitRecv(nc) == TaskStatus::incomplete) {}
     while (pb->PackAndSendCC(hl.a, hl.ca) == TaskStatus::incomplete) {}
     if (part == 1) return;
@@ -181,15 +203,24 @@ void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc
   while (pb->RecvAndUnpackCC(hl.a, hl.ca) == TaskStatus::incomplete) {}
   while (pb->ClearSend() == TaskStatus::incomplete) {}
   while (pb->ClearRecv() == TaskStatus::incomplete) {}
-  // the ghosts back; with phys, a physical boundary's ghosts take the edge cell (the
-  // index clamped along each physical side: x1, x2, x3 copies in one)
+  const CleanShell sb(n3, n2, n1, 0, is, ie, js, je, ks, ke, md, td);
+  par_for("cln_hback", DevExeSpace(), 0, nmb1, 0, nc-1, 0, sb.ncell-1,
+  KOKKOS_LAMBDA(const int m, const int n, const int q) {
+    int k, j, i;
+    CleanShellCell(sb, q, k, j, i);
+    a(m,c0+n,k,j,i) = h(m,n,k,j,i);
+  });
+  if (!phys) return;
+
   auto bc = pmy_pack->pmb->mb_bcs.d_view;
   auto pf = [] KOKKOS_FUNCTION (const BoundaryFlag f) {
     return f != BoundaryFlag::block && f != BoundaryFlag::periodic &&
            f != BoundaryFlag::panel;
   };
   // (the cubed sphere's D is Cartesian: a radial wall mirrors it about n, not done here)
-  const bool ts = (a.data() == cln_s.data()) && !pmy_pack->pmesh->use_cubed_sphere;
+  const bool ts = (static_cast<const void *>(a.data()) ==
+                   static_cast<const void *>(cln_s.data())) &&
+                  !pmy_pack->pmesh->use_cubed_sphere;
   const int ib[6] = {ibc_x1min, ibc_x1max, ibc_x2min, ibc_x2max, ibc_x3min, ibc_x3max};
   int rf = 0;   // (bit s: side s reflects)
   for (int s = 0; s < 6; ++s) rf |= (ib[s] == M1_IBC_REFLECT) ? (1 << s) : 0;
@@ -206,22 +237,38 @@ void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc
     if (s == 0 && !rm && p == 0) return 1.0;
     return (((rf >> s) & 1) && p != 2 - s/2) ? -1.0 : 1.0;
   };
-  par_for("cln_hback", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, n1-1,
-  KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-    if (CleanInner(k, j, i, 0, is, ie, js, je, ks, ke, md, td)) return;
-    int kk = k, jj = j, ii = i;
-    Real sp = 1.0;   // (the parity of the off-diagonal D at walls and poles)
-    if (phys) {
-      if (i < is && pf(bc(m,BoundaryFace::inner_x1))) {ii = is; sp *= sg(c0+n, 0, m);}
-      if (i > ie && pf(bc(m,BoundaryFace::outer_x1))) {ii = ie; sp *= sg(c0+n, 1, m);}
-      if (j < js && pf(bc(m,BoundaryFace::inner_x2))) {jj = js; sp *= sg(c0+n, 2, m);}
-      if (j > je && pf(bc(m,BoundaryFace::outer_x2))) {jj = je; sp *= sg(c0+n, 3, m);}
-      if (k < ks && pf(bc(m,BoundaryFace::inner_x3))) {kk = ks; sp *= sg(c0+n, 4, m);}
-      if (k > ke && pf(bc(m,BoundaryFace::outer_x3))) {kk = ke; sp *= sg(c0+n, 5, m);}
+  // (x1, x2, x3 in turn: a corner takes the product of its sides' parities)
+  par_for("cln_ghost1", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, ng-1,
+  KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int g) {
+    if (pf(bc(m,BoundaryFace::inner_x1))) {
+      a(m,c0+n,k,j,is-1-g) = sg(c0+n, 0, m)*a(m,c0+n,k,j,is);
     }
-    a(m,c0+n,k,j,i) = sp*(CleanInner(kk, jj, ii, 0, is, ie, js, je, ks, ke, md, td) ?
-                          a(m,c0+n,kk,jj,ii) : h(m,n,kk,jj,ii));
+    if (pf(bc(m,BoundaryFace::outer_x1))) {
+      a(m,c0+n,k,j,ie+1+g) = sg(c0+n, 1, m)*a(m,c0+n,k,j,ie);
+    }
   });
+  if (pmy_pack->pmesh->multi_d) {
+    par_for("cln_ghost2", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, ng-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int n, const int k, const int g, const int i) {
+      if (pf(bc(m,BoundaryFace::inner_x2))) {
+        a(m,c0+n,k,js-1-g,i) = sg(c0+n, 2, m)*a(m,c0+n,k,js,i);
+      }
+      if (pf(bc(m,BoundaryFace::outer_x2))) {
+        a(m,c0+n,k,je+1+g,i) = sg(c0+n, 3, m)*a(m,c0+n,k,je,i);
+      }
+    });
+  }
+  if (pmy_pack->pmesh->three_d) {
+    par_for("cln_ghost3", DevExeSpace(), 0, nmb1, 0, nc-1, 0, ng-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int n, const int g, const int j, const int i) {
+      if (pf(bc(m,BoundaryFace::inner_x3))) {
+        a(m,c0+n,ks-1-g,j,i) = sg(c0+n, 4, m)*a(m,c0+n,ks,j,i);
+      }
+      if (pf(bc(m,BoundaryFace::outer_x3))) {
+        a(m,c0+n,ke+1+g,j,i) = sg(c0+n, 5, m)*a(m,c0+n,ke,j,i);
+      }
+    });
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -670,7 +717,7 @@ int RadiationM1::CleanBiCGStab() {
   const int sx = cell ? CLC_X : CLW_X, sb = cell ? CLC_B : CLW_B;
   const int sr = cell ? CLC_R : CLW_R, sr0 = cell ? CLC_R0 : CLW_R0;
   const int sp = cell ? CLC_P : CLW_P, sv = cell ? CLC_V : CLW_V;
-  const int ss = cell ? CLC_S : CLW_S, sq = cell ? CLC_Q : CLW_Q;
+  const int ss = cell ? CLC_R : CLW_S, sq = cell ? CLC_Q : CLW_Q;
   const int sy = cell ? CLC_Y : CLW_Y, sz = cell ? CLC_Z : CLW_Z;
 
   // w(dst) = sa w(a) + sb w(b)

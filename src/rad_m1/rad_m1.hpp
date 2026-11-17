@@ -165,6 +165,11 @@ constexpr int M1_FREF_NONE    = 0;
 constexpr int M1_FREF_WB_ARAD = 1;
 constexpr int M1_FREF_CLEAN   = 2;   // scheme = clean: its own force of the first solve
 
+// <rad_m1>/clean_yres: the y of a cell (cell layout) whose balance the gas momentum takes
+constexpr int M1_YRES_OFF   = 0;   // the y of the linear solve
+constexpr int M1_YRES_POST  = 1;   // y less its linear residual over 1 + h c chi
+constexpr int M1_YRES_LOCAL = 2;   // y of the cell's exact local momentum exchange
+
 //----------------------------------------------------------------------------------------
 //! \struct M1OpacTab
 //! \brief the two stellar opacity tables, as device Views held BY VALUE on the module so
@@ -2984,6 +2989,10 @@ class RadiationM1 {
   void CleanStagCsLateral(const int e);
   void CleanWriteBack();
   CleanArgs CleanMakeArgs();
+  void CleanGhostFill(DvceArray5D<float> a, const int c0, const int nc);
+  template <typename T>
+  void CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc, const bool phys,
+                       const int part);
   void CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
                       const bool phys = true, const int part = 0);
   std::array<Real, 2> CleanDots(DvceArray5D<Real> w, const int nc, const int n,
@@ -2997,17 +3006,20 @@ class RadiationM1 {
   void CleanCellSlopeWeights(const int v);
   void CleanCellFirstIterate();
   void CleanCellRightHandSide();
+  void CleanCellFaceFluxes(const int src, const bool with_source);
   void CleanCellApply(const int src, const int dst);
   void CleanCellPreconditionerSetup();
   void CleanCellPrecondition(const int src, const int dst);
   CleanLevel CleanCellLevel(const int l);
   void CleanCellLineSolve(const CleanLevel &lv, const int dir, const int src,
                           const int dst);
-  template <bool kStore>
+  template <bool kStore, typename F = Real>
   void CleanCellLineSolveRows(const CleanLevel &lv, const int dir, const int src,
                               const int dst);
+  template <typename F>
   void CleanCellLineFactorSolve(const CleanLevel &lv, const int src, const int dst);
   int CleanCellLineRows(const int nline, const int nw, const int nt);
+  void CleanCellFactorStore();
   void CleanCellLevelApply(const CleanLevel &lv, const int src, const int dst);
   void CleanCellCoarseSetup();
   void CleanCellSmooth(const int l, const int src, const int dst, const bool first,
@@ -3033,6 +3045,7 @@ class RadiationM1 {
   int cln_maxnl = 50;           // clean_maxnl: Newton iterations
   Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: Newton tolerance (relative dE, dT, dv)
   Real cln_fvtol = 1.0e-10;     // clean_fv_tol: pass stop of the FV rays
+  int cln_fvlag = 0;            // clean_fv_lag: 0 off, 1 lag, 2 extrap (CleanFvSweep)
   int cln_pc = 0;               // clean_pc: 0 vcycle or CLN_PC_*
   Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E
   int cln_fillpass = 8;         // clean_fill_passes: closure fill layers
@@ -3057,6 +3070,8 @@ class RadiationM1 {
                                 // the FV rays (clean_rays = fv1 | fv), clean_consistency
   bool cln_closit = false;      // clean_closure: predict | iterate
   int cln_extrap = 0;           // clean_closure = extrap (1) | extrap2 (2)
+  bool cln_mshare = false;      // clean_extrap_share: cln_mp and cln_mc one array
+  bool cln_not2h = false;       // clean_skip_time2_hist: no ipred, ipred2, x2_* arrays
                                 // | extrap1 (3, cell default)
   bool cln_edd = false;         // clean_closure = eddington (D = I/3, no rays)
   bool cln_sphere = false;      // clean_closure = sphere (spherical polar)
@@ -3064,15 +3079,19 @@ class RadiationM1 {
   int cln_vfreeze = 0;          // clean_vfreeze: 1 advective a, 2 work term at v_old
   bool cln_gas_exact = true;    // clean_gas_exact: gas eint of the write-back by the
                                 // cell's exact local exchange
-  bool cln_yres = false;        // clean_yres: y of a cell less its linear residual over
+  int cln_yres = M1_YRES_OFF;   // clean_yres: y of a cell less its linear residual over
                                 // the row diagonal before the gas takes its momentum
+                                // (post: 1 + h c chi; local: with the gas response)
   bool cln_nl_cell = false;     // clean_nl_norm = cell: per-cell relative Newton changes
   Real cln_nl_efloor = 0.0;     // clean_nl_efloor: E scale of that norm over max E
   Real cln_nl_escale = 0.0;     // that E scale, clean_nl_efloor max E of the iterate
   int cln_maxpos = 3;           // clean_maxpos: low-order face marking rounds per solve
   int cln_pcsweeps = 1;         // clean_pc_sweeps: smoothing sweeps of the multigrid
   int cln_chunk = 32;           // rows per Thomas system of the line solve
+  int cln_lteams = 0;           // clean_line_teams: most teams of a line solve (0: all)
+  int cln_hmax = 16;            // clean_halo_vars: most variables of one ghost exchange
   bool cln_pcfac = true;        // clean_pc_factor: x1line keeps the factors of its lines
+  bool cln_pcf32 = false;       // clean_pc_factor_float: ... in single precision
   int cln_pcreuse = 1;          // clean_pc_reuse: preconditioner rebuilt every n passes
   bool cln_conv_est = false;    // clean_conv_est: stop on the estimated remaining change
   bool cln_nlprint = false;     // clean_nl_print: the changes of every pass (rank 0)
@@ -3109,12 +3128,27 @@ class RadiationM1 {
   int cln_rfv = 0;              // clean_rays = fv1 | fv | lld: the conservative sweep
   int cln_fvb = 1;              // blocks of cln_fvi: lld 4 (average, slopes along x1..x3)
   DvceArray5D<Real> cln_fvi;    // its intensities (m, b n + d, k, j, i)
+  DvceArray5D<float> cln_fvis;  // the same in single precision (clean_fv_float)
+  bool cln_fvf32 = false;       // clean_fv_float: cln_fvis instead of cln_fvi
   DvceArray5D<Real> cln_fvq;    // lld: the source moments (m, CLQ_*, k, j, i)
   DvceArray5D<Real> cln_fvp;    // fv: the intensities of the last build (downwind slopes)
   DvceArray5D<Real> cln_fvx;    // 2-D axisymmetric: the intensities of the last pass
   DvceArray2D<int8_t> cln_fvdue, cln_fvdone;   // fv1 passes: cells due (CleanFvSweep)
   bool cln_fvjoint = false;     // clean_fv_joint: fv1 levels over the rank's MeshBlocks
   bool cln_fvexact = false;     // joint: one pass is the exact sweep (all ranks)
+  bool cln_fvfull = true;       // clean_fv_lag: a new swept set this step (full sweep)
+  Real cln_fvtc = 0.0;          // clean_fv_lag: the closure time of this build
+  int cln_fvnv = 0;             // extrap: last builds of this set in the history (2)
+  Real cln_fvt1 = 0.0;          // extrap: closure time of the last build
+  Real cln_fvt2 = 0.0;          // extrap: closure time of the inflow in cln_fvgp
+  bool cln_fvrst = false;       // extrap: cln_fvi read from a restart (its record)
+  DvceArray3D<Real> cln_fvgp;   // extrap: the first ghost layer of the build before
+  DvceArray3D<Real> cln_fvgx;   // extrap: the inflow the pass took (extrapolated)
+  Real cln_fvlagtol = 1.0e-4;   // clean_fv_lag_tol: inflow miss of one extrap pass
+  Real CleanFvExtrapMiss();
+  bool CleanFvExtrap();
+  void CleanFvRstRead();
+  void CleanFvRstWrite(DvceArray5D<Real> &a, const int c, const int nmb, const int m0);
   int cln_fvl0 = 0;             // joint: the first level a later pass takes
   int cln_fvjn[2] = {0, 0};     // joint: the dropped inflows, the cells reading ghosts
   bool cln_fvjoint_said = false;   // joint: the first build's counts printed
@@ -3173,7 +3207,10 @@ class RadiationM1 {
   Real cln_nguard_sum = 0.0, cln_next_sum = 0.0;   // guard falls, extrapolated closures
   DvceArray5D<Real> cln_w;      // work vectors (CLW_*)
   DvceArray5D<Real> cln_x;      // cell vectors of the cell layout (CLC_*)
+  DvceArray5D<Real> cln_dy;     // clean_yres = local: the y change of the cell's local
+                                // exchange of the solution (CleanCellResidual)
   DvceArray5D<Real> cln_lf;     // factors of the x1-line solve (clean_pc_factor)
+  DvceArray5D<float> cln_lfs;   // the same in single precision (clean_pc_factor_float)
   DvceArray1D<Real> cln_lw;     // rows of the line solves, a block per team
   DvceArray5D<Real> cln_ff;     // face fluxes of the operator (CleanCellApply)
   DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)

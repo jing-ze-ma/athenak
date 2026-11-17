@@ -100,13 +100,21 @@ const char *kDtrMinimal[] = {
   // (views minimal) was not bitwise the straight run at the next dump; restoring vgd_hr
   // (or vra_a0/a1/c) alone made it bitwise
   "m1.vgd_hr",
-  // scheme = clean (members not visited before: a retry read the failed attempt's):
-  // the face arrays (clean_stag_fkin's energy flux memory d, CLF_N + 3) and the rays'
-  // intensities a clean_rays = fv1 | fv | lld sweep starts from.  The rest is rewritten
-  // before it is read once the visited values are back (cln_fref_set: force_reference =
-  // clean recaptures; cln_have_*, cln_tn and the swapped handles: the extrap history);
-  // a forced retry with them poisoned was bitwise the straight run
-  "m1.cln_fc1", "m1.cln_fc2", "m1.cln_fc3", "m1.cln_fvi",
+  // scheme = clean (not visited before: a retry read the failed attempt's): the face
+  // arrays (clean_stag_fkin's energy flux memory d, CLF_N + 3), the rays' intensities a
+  // clean_rays = fv1 | fv | lld sweep starts from (cln_fvis in single precision), with
+  // cln_fref_set (force_reference = clean recaptures), and the clean_fv_lag = extrap
+  // inflow history (cln_fvgp with its times and count).  The closure's extrap history is
+  // left alone: its flags go with the handles the attempt swapped and, on a first cycle,
+  // with cln_init
+  "m1.cln_fc1", "m1.cln_fc2", "m1.cln_fc3", "m1.cln_fvi", "m1.cln_fvis", "m1.cln_fvgp",
+};
+
+// the Views of kDtrMinimal that <rad_m1>/scheme = clean does not write
+// (dt_retry_views = clean)
+const char *kDtrNotClean[] = {
+  "m1.ipred", "m1.ipred2", "m1.csk1", "m1.csk2", "m1.tau_ten", "m1.x2_tt", "m1.x2_hr",
+  "m1.x2_q",
 };
 
 // debug (dt_retry_poison_n / dt_retry_poison_cells): restrict the poison of
@@ -471,9 +479,13 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   pk->pradm1->dtr_t2be = (t2_be_ == 0) || (t2_be_ > 0 && t2streak_);
   pk->pradm1->dtr_maxcut = maxcut_;   // (vkick_be_retry bookkeeping)
   std::string vm = pin->GetOrAddString("time", "dt_retry_views", "minimal");
+  // clean: the minimal list without the Views the clean scheme (<rad_m1>/scheme =
+  // clean) does not write (the implicit solve's predictors and sources, the vet_col
+  // closure builds)
   all_views_ = (vm == "all");
-  if (!all_views_ && vm != "minimal") {
-    std::cout << "### FATAL ERROR: <time>/dt_retry_views must be minimal or all"
+  clean_views_ = (vm == "clean");
+  if (!all_views_ && !clean_views_ && vm != "minimal") {
+    std::cout << "### FATAL ERROR: <time>/dt_retry_views must be minimal, all or clean"
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
@@ -540,7 +552,7 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   if (global_variable::my_rank == 0) {
     std::cout << "<time> dt_retry on: fac " << fac_ << " max " << maxcut_ << " ngood "
               << ngood_req_ << " grow " << grow_ << " views "
-              << (all_views_ ? "all" : "minimal") << " cap "
+              << (all_views_ ? "all" : (clean_views_ ? "clean" : "minimal")) << " cap "
               << pm->dt_cap << std::endl;
   }
 }
@@ -549,6 +561,9 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
 void DtRetry::Build(Mesh *pm) {
   std::set<std::string> &sel = sel_;
   for (const char *s : kDtrMinimal) {sel.insert(s);}
+  if (clean_views_) {
+    for (const char *s : kDtrNotClean) {sel.erase(s);}
+  }
   for (auto &s : extra_views_) {sel.insert(s);}
   auto *pk = pm->pmb_pack;
   if (pk->phydro != nullptr) {

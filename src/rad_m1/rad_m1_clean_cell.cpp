@@ -285,7 +285,7 @@ void RadiationM1::CleanCellConsistency() {
   CleanArgs x = CleanMakeArgs();
   const bool ml = x.milne;
   x.milne = false;   // the bracket is that of the moment scheme
-  auto fi = cln_fvi;
+  CleanFvI fi = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvf32);
   auto dir_ = cln_fvd;
   const int nd = x.cub ? cln_fvn : 0;
 
@@ -515,7 +515,12 @@ void RadiationM1::CleanCellFirstIterate() {
 //! of the implicit gas velocity (CleanCellDrag)
 
 void RadiationM1::CleanCellRightHandSide() {
-  if (cln_feedback) CleanGhostFill(cln_x, CLC_K, 4);
+  // (the Milne weights before the face fluxes that read them)
+  if (cln_milne) CleanCellMilneSetup();
+  if (cln_feedback) {
+    CleanGhostFill(cln_x, CLC_K, 4);
+    CleanCellFaceFluxes(CLC_K, false);
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -532,7 +537,13 @@ void RadiationM1::CleanCellRightHandSide() {
   const bool opt = cln_opt && cln_feedback;
 
   const int vfreeze = cln_vfreeze;
-  if (cln_milne) CleanCellMilneSetup();
+  x.ff = cln_ff;
+  // (until force_reference = clean has taken its force, that of the iterate)
+  const int fref = force_ref;
+  const bool yloc = (cln_yres == M1_YRES_LOCAL) &&
+                    !((fref == M1_FREF_CLEAN) && !cln_fref_set && !cln_vzero);
+  auto fr = cln_fref;
+  auto aref = arad_ref;
   par_for("clc_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real t = x.w(m,CLW_T,k,j,i);
@@ -605,21 +616,79 @@ void RadiationM1::CleanCellRightHandSide() {
       x.w(m,CLW_JV+c,k,j,i) = (1.0 - rr)*ic2*(2.0*hcke*(yk - x.w(m,CLW_A1+c,k,j,i)*ek/x.c)
                                                - xe*bt[c]);
     }
+    // (clean_yres = local: y + h div fY of the iterate as its momentum change states it,
+    // y_old - c (dm + h f_ref), less the source part sdiv that B holds, so that the rows
+    // hold the gas velocity of the solution whatever y the iterate's dm balanced)
     if (x.feedback) {
-      Real g[3][3], dk[4];
-      CleanCellDrag(x, op(m,M1_OP_T,k,j,i), uh(m,IDN,k,j,i), m, k, j, i, g);
-      CleanCellDivergence(x, CLC_K, m, k, j, i, false, dk);
-      for (int c = 0; c < x.nf; ++c) {
-        x.u(m,CLC_B,k,j,i) += x.w(m,CLW_JV+c,k,j,i)*(x.u(m,CLC_K+1+c,k,j,i) + dk[1+c]);
+      const Real d = uh(m,IDN,k,j,i);
+      Real g[3][3], dk[4], yk[3];
+      CleanCellDrag(x, op(m,M1_OP_T,k,j,i), d, m, k, j, i, g);
+      if (yloc) {
+        for (int c = 0; c < 3; ++c) {
+          if (c < x.nf) {
+            yk[c] = x.u(m,CLC_O+1+c,k,j,i) - sdiv[1+c] - x.c*(x.w(m,CLW_DM+c,k,j,i) +
+                    x.h*CleanRefForce(fref, fr, aref, d, c, m, k, j, i));
+          }
+        }
+      } else {
+        CleanCellDivergence<true>(x, CLC_K, m, k, j, i, false, dk);
+        for (int c = 0; c < 3; ++c) {
+          if (c < x.nf) yk[c] = x.u(m,CLC_K+1+c,k,j,i) + dk[1+c];
+        }
       }
-      for (int b = 0; b < x.nf; ++b) {
-        for (int c = 0; c < x.nf; ++c) {
-          x.u(m,CLC_B+1+b,k,j,i) += g[b][c]*(x.u(m,CLC_K+1+c,k,j,i) + dk[1+c]);
+      for (int c = 0; c < 3; ++c) {
+        if (c < x.nf) x.u(m,CLC_B,k,j,i) += x.w(m,CLW_JV+c,k,j,i)*yk[c];
+      }
+      for (int b = 0; b < 3; ++b) {
+        if (b < x.nf) {
+          for (int c = 0; c < 3; ++c) {
+            if (c < x.nf) x.u(m,CLC_B+1+b,k,j,i) += g[b][c]*yk[c];
+          }
         }
       }
     }
     for (int b = 0; b < 4; ++b) x.u(m,CLC_X+b,k,j,i) = x.u(m,CLC_K+b,k,j,i);
   });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellFaceFluxes
+//! \brief the face fluxes of the cell vector at slot src into cln_ff (4 per direction, at
+//! every face of the active cells once; with_source as CleanCellFaceFlux), for
+//! CleanCellDivergence<true>
+
+void RadiationM1::CleanCellFaceFluxes(const int src, const bool with_source) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  if (cln_ff.extent_int(0) != nmb1 + 1) {
+    Kokkos::realloc(cln_ff, nmb1 + 1, 12, cln_x.extent_int(2), cln_x.extent_int(3),
+                    cln_x.extent_int(4));
+  }
+  CleanArgs x = CleanMakeArgs();
+  auto ff = cln_ff;
+  for (int dir = 0; dir < 3; ++dir) {
+    if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
+    const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+    // (one kernel each way: the source terms stay out of the apply's)
+    if (with_source) {
+      par_for("clc_facefs", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        Real f[4];
+        CleanCellFaceFlux(x, src, dir, m, k, j, i, true, f);
+        for (int r = 0; r < 4; ++r) ff(m,4*dir+r,k,j,i) = f[r];
+      });
+    } else {
+      par_for("clc_applyf", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        Real f[4];
+        CleanCellFaceFlux(x, src, dir, m, k, j, i, false, f);
+        for (int r = 0; r < 4; ++r) ff(m,4*dir+r,k,j,i) = f[r];
+      });
+    }
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -637,30 +706,16 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
   CleanArgs x = CleanMakeArgs();
   auto op = opac;
   auto uh = FluidRef::Get(pmy_pack).u0;
-  const bool md = x.multi_d, td = x.three_d;
 
   // the face fluxes once per face (cln_ff), then the cells
   CleanGhostFill(cln_x, src, 4, true);
-  if (cln_ff.extent_int(0) != nmb1 + 1) {
-    Kokkos::realloc(cln_ff, nmb1 + 1, 12, cln_x.extent_int(2), cln_x.extent_int(3),
-                    cln_x.extent_int(4));
-  }
+  CleanCellFaceFluxes(src, false);
   x.ff = cln_ff;
-  for (int dir = 0; dir < 3; ++dir) {
-    if ((dir == 1 && !md) || (dir == 2 && !td)) continue;
-    const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
-    par_for("clc_applyf", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      Real f[4];
-      CleanCellFaceFlux(x, src, dir, m, k, j, i, false, f);
-      for (int r = 0; r < 4; ++r) x.ff(m,4*dir+r,k,j,i) = f[r];
-    });
-  }
   x.ffon = true;
   par_for("clc_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real div[4];
-    CleanCellDivergence(x, src, m, k, j, i, false, div);
+    CleanCellDivergence<true>(x, src, m, k, j, i, false, div);
     const Real rr = x.feedback ? x.w(m,CLW_RR,k,j,i) : 0.0;
     const Real e = x.u(m,src,k,j,i);
     const Real chi = op(m,M1_OP_T,k,j,i), hcke = x.h*x.c*op(m,M1_OP_E,k,j,i);
@@ -668,8 +723,10 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
     const Real sb = x.feedback ? CleanCellBetaSource(x, src, m, k, j, i) : 0.0;
     const Real rg = x.feedback ? rr/x.w(m,CLW_GM,k,j,i) : 0.0;
     x.u(m,dst,k,j,i) = e*(1.0 + hcke*(1.0 - rr)) + div[0] - (1.0 - rr)*sb;
-    for (int c = 0; c < x.nf && x.feedback; ++c) {
-      x.u(m,dst,k,j,i) += x.w(m,CLW_JV+c,k,j,i)*(x.u(m,src+1+c,k,j,i) + div[1+c]);
+    for (int c = 0; c < 3; ++c) {
+      if (c < x.nf && x.feedback) {
+        x.u(m,dst,k,j,i) += x.w(m,CLW_JV+c,k,j,i)*(x.u(m,src+1+c,k,j,i) + div[1+c]);
+      }
     }
     Real g[3][3];
     if (x.feedback) CleanCellDrag(x, chi, uh(m,IDN,k,j,i), m, k, j, i, g);
@@ -680,7 +737,9 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
         if (x.feedback) {
           y -= x.h*chi*x.w(m,CLW_A1+b,k,j,i)*e;
           y += x.w(m,CLW_BT+b,k,j,i)*(hcke*(1.0 - rg)*e + rg*sb);
-          for (int c = 0; c < x.nf; ++c) y += g[b][c]*(x.u(m,src+1+c,k,j,i) + div[1+c]);
+          for (int c = 0; c < 3; ++c) {
+            if (c < x.nf) y += g[b][c]*(x.u(m,src+1+c,k,j,i) + div[1+c]);
+          }
         }
       }
       x.u(m,dst+1+b,k,j,i) = y;
@@ -705,6 +764,25 @@ void RadiationM1::CleanCellPreconditionerSetup() {
   x.recon = false;
   auto op = opac;
   auto uh = FluidRef::Get(pmy_pack).u0;
+  // x1line keeps only the blocks along x1; with clean_pc_factor they go to the factor
+  // store (slot - CLC_AM, active cells), which the first line solve overwrites with the
+  // factors (CleanCellLineSolveRows)
+  const bool x1 = (cln_pc == CLN_PC_X1LINE);
+  const bool fd = x1 && cln_pcfac && !cln_pcf32, fs = x1 && cln_pcfac && cln_pcf32;
+  if (x1 && cln_pcfac) CleanCellFactorStore();
+  auto lf = cln_lf;
+  auto lfs = cln_lfs;
+  auto u = cln_x;
+  auto put = [=] KOKKOS_FUNCTION (const int m, const int n, const int k, const int j,
+                                  const int i, const Real v) {
+    if (fd) {
+      lf(m,n-CLC_AM,k-ks,j-js,i-is) = v;
+    } else if (fs) {
+      lfs(m,n-CLC_AM,k-ks,j-js,i-is) = static_cast<float>(v);
+    } else {
+      u(m,n,k,j,i) = v;
+    }
+  };
 
   par_for("clc_pcsetup", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -741,6 +819,7 @@ void RadiationM1::CleanCellPreconditionerSetup() {
       if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
       const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
       const int sm = CleanLineSlotM(dir), sp = CleanLineSlotP(dir);
+      const bool keep = (dir == 0 || !x1);
       CleanCellFaceJacobian(x, dir, m, k+dk, j+dj, i+di, jlp, jrp);
       CleanCellFaceJacobian(x, dir, m, k, j, i, jlm, jrm);
       if (x.sph || x.cub) {
@@ -752,8 +831,10 @@ void RadiationM1::CleanCellPreconditionerSetup() {
         for (int r = 0; r < 4; ++r) {
           for (int c = 0; c < 4; ++c) {
             a0[r][c] += bp[r][c] - bm[r][c];
-            x.u(m,sp+4*r+c,k,j,i) = bpn[r][c];
-            x.u(m,sm+4*r+c,k,j,i) = -bmn[r][c];
+            if (keep) {
+              put(m, sp+4*r+c, k, j, i, bpn[r][c]);
+              put(m, sm+4*r+c, k, j, i, -bmn[r][c]);
+            }
           }
         }
         continue;
@@ -762,8 +843,10 @@ void RadiationM1::CleanCellPreconditionerSetup() {
       for (int r = 0; r < 4; ++r) {
         for (int c = 0; c < 4; ++c) {
           a0[r][c] += s*(jlp[r][c] - jrm[r][c]);
-          x.u(m,sp+4*r+c,k,j,i) = s*jrp[r][c];
-          x.u(m,sm+4*r+c,k,j,i) = -s*jlm[r][c];
+          if (keep) {
+            put(m, sp+4*r+c, k, j, i, s*jrp[r][c]);
+            put(m, sm+4*r+c, k, j, i, -s*jlm[r][c]);
+          }
         }
       }
     }
@@ -773,11 +856,32 @@ void RadiationM1::CleanCellPreconditionerSetup() {
       for (int b = 0; b < x.nf; ++b) a0[1+b][0] += g[b];
     }
     for (int r = 0; r < 4; ++r) {
-      for (int c = 0; c < 4; ++c) x.u(m,CLC_A0+4*r+c,k,j,i) = a0[r][c];
+      for (int c = 0; c < 4; ++c) put(m, CLC_A0+4*r+c, k, j, i, a0[r][c]);
     }
   });
   cln_lf_ok = false;
   if (cln_pc != CLN_PC_X1LINE) CleanCellCoarseSetup();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellFactorStore
+//! \brief allocates the factor store of the x1-line solve (cln_lf, or cln_lfs with
+//! clean_pc_factor_float): per active cell 32 values per PCR round and 49 of the Thomas
+//! rows (CleanCellLineSolveRows), at least the 48 of the blocks it starts from
+
+void RadiationM1::CleanCellFactorStore() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int nsys = 1, nround = 0;
+  while (indcs.nx1 > cln_chunk*nsys) nsys *= 2;
+  for (int st = 1; st < nsys; st *= 2) ++nround;
+  const int nmb = pmy_pack->nmb_thispack, nf = 32*nround + 49;
+  if (cln_pcf32) {
+    if (cln_lfs.extent_int(0) != nmb || cln_lfs.extent_int(1) != nf) {
+      Kokkos::realloc(cln_lfs, nmb, nf, indcs.nx3, indcs.nx2, indcs.nx1);
+    }
+  } else if (cln_lf.extent_int(0) != nmb || cln_lf.extent_int(1) != nf) {
+    Kokkos::realloc(cln_lf, nmb, nf, indcs.nx3, indcs.nx2, indcs.nx1);
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -830,10 +934,11 @@ void RadiationM1::CleanCellLineSolve(const CleanLevel &lv, const int dir, const 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellLineSolveRows
 //! \brief the line solve of CleanCellLineSolve; kStore also keeps its factors in cln_lf
-//! (CleanCellLineFactorSolve): per PCR round the multipliers of the two neighbour rows,
-//! per row of the Thomas systems the reduced lower block, D^-1 C and the factors of D
+//! (cln_lfs: F = float) for CleanCellLineFactorSolve: per PCR round the multipliers of
+//! the two neighbour rows, per row of the Thomas systems the reduced lower block, D^-1 C
+//! and the factors of D
 
-template <bool kStore>
+template <bool kStore, typename F>
 void RadiationM1::CleanCellLineSolveRows(const CleanLevel &lv, const int dir,
                                          const int src, const int dst) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
@@ -846,7 +951,12 @@ void RadiationM1::CleanCellLineSolveRows(const CleanLevel &lv, const int dir,
   auto u = lv.u;
   int nsys = 1;
   while (nl > cln_chunk*nsys) nsys *= 2;
-  auto lf = cln_lf;
+  DvceArray5D<F> lf;
+  if constexpr (std::is_same_v<F, float>) {
+    lf = cln_lfs;
+  } else {
+    lf = cln_lf;
+  }
   int nround = 0;
   for (int st = 1; st < nsys; st *= 2) ++nround;
   const int lt = 32*nround;
@@ -857,7 +967,9 @@ void RadiationM1::CleanCellLineSolveRows(const CleanLevel &lv, const int dir,
   auto lw = cln_lw;
   auto line = KOKKOS_LAMBDA(TeamMember_t tm) {
     LineRows w(&lw(static_cast<size_t>(nw)*tm.league_rank()), nw);
-    for (int ln = tm.league_rank(); ln < nline; ln += tm.league_size()) {
+    int l0, l1, ls;
+    CleanLineRange(nline, tm.league_rank(), tm.league_size(), l0, l1, ls);
+    for (int ln = l0; ln < l1; ln += ls) {
       const int m = ln/(np*nq);
       const int p = (ln - m*np*nq)/nq, q = ln % nq;
       auto cell = [&](const int n, int &k, int &j, int &i) {
@@ -869,9 +981,15 @@ void RadiationM1::CleanCellLineSolveRows(const CleanLevel &lv, const int dir,
         int k, j, i;
         cell(n, k, j, i);
         for (int e = 0; e < 16; ++e) {
-          w(52*n + e) = (n > 0) ? u(m,sm+e,k,j,i) : 0.0;
-          w(52*n + 16 + e) = u(m,a0+e,k,j,i);
-          w(52*n + 32 + e) = (n < nl - 1) ? u(m,sp+e,k,j,i) : 0.0;
+          if (kStore) {   // the blocks of CleanCellPreconditionerSetup
+            w(52*n + e) = (n > 0) ? lf(m,e,k-ks,j-js,i-is) : 0.0;
+            w(52*n + 16 + e) = lf(m,16+e,k-ks,j-js,i-is);
+            w(52*n + 32 + e) = (n < nl - 1) ? lf(m,32+e,k-ks,j-js,i-is) : 0.0;
+          } else {
+            w(52*n + e) = (n > 0) ? u(m,sm+e,k,j,i) : 0.0;
+            w(52*n + 16 + e) = u(m,a0+e,k,j,i);
+            w(52*n + 32 + e) = (n < nl - 1) ? u(m,sp+e,k,j,i) : 0.0;
+          }
         }
         for (int r = 0; r < 4; ++r) w(52*n + 48 + r) = u(m,src+r,k,j,i);
       });
@@ -909,7 +1027,8 @@ void RadiationM1::CleanCellLineSolveRows(const CleanLevel &lv, const int dir,
               for (int l = 0; l < 4; ++l) {
                 const Real g = f[l][r];
                 if (kStore) {
-                  lf(m,32*ir+((sd < 0) ? 0 : 16)+4*r+l,k-ks,j-js,i-is) = g;
+                  const int f = 32*ir + ((sd < 0) ? 0 : 16) + 4*r + l;
+                  lf(m,f,k-ks,j-js,i-is) = static_cast<F>(g);
                 }
                 for (int c = 0; c < 4; ++c) {
                   if (sd < 0) {
@@ -964,14 +1083,18 @@ void RadiationM1::CleanCellLineSolveRows(const CleanLevel &lv, const int dir,
             cell(n, k, j, i);
             Real lu[4][4], piv[4];
             CleanBlockFactor(a, b, 5, lu, piv);
+            // (the four pivot rows packed in one value, 2 bits each)
+            int pk = 0;
             for (int r = 0; r < 4; ++r) {
               for (int c = 0; c < 4; ++c) {
-                lf(m,lt+4*r+c,k-ks,j-js,i-is) = (n >= nsys) ? w(o + 52*n + 4*r + c) : 0.0;
-                lf(m,lt+16+4*r+c,k-ks,j-js,i-is) = b[r][c];
-                lf(m,lt+32+4*r+c,k-ks,j-js,i-is) = lu[r][c];
+                const Real al = (n >= nsys) ? w(o + 52*n + 4*r + c) : 0.0;
+                lf(m,lt+4*r+c,k-ks,j-js,i-is) = static_cast<F>(al);
+                lf(m,lt+16+4*r+c,k-ks,j-js,i-is) = static_cast<F>(b[r][c]);
+                lf(m,lt+32+4*r+c,k-ks,j-js,i-is) = static_cast<F>(lu[r][c]);
               }
-              lf(m,lt+48+r,k-ks,j-js,i-is) = piv[r];
+              pk += static_cast<int>(piv[r]) << (2*r);
             }
+            lf(m,lt+48,k-ks,j-js,i-is) = static_cast<F>(pk);
           } else {
             CleanBlockSolve(a, b, 5);
           }
@@ -1011,7 +1134,7 @@ void RadiationM1::CleanCellLineSolveRows(const CleanLevel &lv, const int dir,
 //! \fn int RadiationM1::CleanCellLineRows
 //! \brief the number of teams of a line solve over nline lines (nw values of rows each,
 //! teams of nt threads on a GPU): at most as many as run at once.  Team t owns values
-//! [t nw, (t+1) nw) of cln_lw and takes the lines t, t + teams, ...  (A block of team
+//! [t nw, (t+1) nw) of cln_lw and takes the lines of CleanLineRange.  (A block of team
 //! scratch that the next team takes over within the same launch carries no memory fence
 //! between the two teams, which on MI300A made the solves differ from run to run.)
 
@@ -1020,6 +1143,7 @@ int RadiationM1::CleanCellLineRows(const int nline, const int nw, const int nt) 
   if constexpr (!std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>) {
     nlg /= nt;
   }
+  if (cln_lteams > 0) nlg = std::min(nlg, cln_lteams);
   nlg = std::max(1, std::min(nline, nlg));
   const size_t n = static_cast<size_t>(nlg)*nw;
   if (cln_lw.extent(0) < n) Kokkos::realloc(cln_lw, n);
@@ -1030,15 +1154,22 @@ int RadiationM1::CleanCellLineRows(const int nline, const int nw, const int nt) 
 //! \fn void RadiationM1::CleanCellLineFactorSolve
 //! \brief u(dst) = L^{-1} u(src) along x1 on the mesh level with the factors that
 //! CleanCellLineSolveRows<true> kept in cln_lf: the operations of that solve on the right
-//! hand side only (the same result to the last bit), one team per line
+//! hand side only (the same result to the last bit), one team per line.  F = float: the
+//! factors of cln_lfs
 
+template <typename F>
 void RadiationM1::CleanCellLineFactorSolve(const CleanLevel &lv, const int src,
                                            const int dst) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const int is = lv.o[0], js = lv.o[1], ks = lv.o[2];
   const int np = lv.n[2], nq = lv.n[1], nl = lv.n[0];
   auto u = lv.u;
-  auto lf = cln_lf;
+  DvceArray5D<F> lf;
+  if constexpr (std::is_same_v<F, float>) {
+    lf = cln_lfs;
+  } else {
+    lf = cln_lf;
+  }
   int nsys = 1;
   while (nl > cln_chunk*nsys) nsys *= 2;
   int nround = 0;
@@ -1051,7 +1182,9 @@ void RadiationM1::CleanCellLineFactorSolve(const CleanLevel &lv, const int src,
   auto lw = cln_lw;
   auto line = KOKKOS_LAMBDA(TeamMember_t tm) {
     LineRows w(&lw(static_cast<size_t>(nw)*tm.league_rank()), nw);
-    for (int ln = tm.league_rank(); ln < nline; ln += tm.league_size()) {
+    int l0, l1, ls;
+    CleanLineRange(nline, tm.league_rank(), tm.league_size(), l0, l1, ls);
+    for (int ln = l0; ln < l1; ln += ls) {
       const int m = ln/(np*nq);
       const int k = (ln - m*np*nq)/nq, j = ln % nq;
       Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nl), [&](const int n) {
@@ -1084,6 +1217,7 @@ void RadiationM1::CleanCellLineFactorSolve(const CleanLevel &lv, const int src,
       Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nsys), [&](const int sy) {
         for (int n = sy; n < nl; n += nsys) {
           Real rhs[4], lu[4][4], piv[4];
+          const int pk = static_cast<int>(lf(m,lt+48,k,j,n));
           for (int r = 0; r < 4; ++r) {
             rhs[r] = w(o + 4*n + r);
             if (n >= nsys) {
@@ -1094,7 +1228,7 @@ void RadiationM1::CleanCellLineFactorSolve(const CleanLevel &lv, const int src,
               }
             }
             for (int c = 0; c < 4; ++c) lu[r][c] = lf(m,lt+32+4*r+c,k,j,n);
-            piv[r] = lf(m,lt+48+r,k,j,n);
+            piv[r] = static_cast<Real>((pk >> (2*r)) & 3);
           }
           CleanBlockFactorSolve(lu, piv, rhs);
           for (int r = 0; r < 4; ++r) w(t + 4*n + r) = rhs[r];
@@ -1339,15 +1473,17 @@ void RadiationM1::CleanCellPrecondition(const int src, const int dst) {
     if (!cln_pcfac) {
       CleanCellLineSolve(lv, 0, src, dst);
     } else if (cln_lf_ok) {
-      CleanCellLineFactorSolve(lv, src, dst);
-    } else {
-      int nsys = 1, nround = 0;
-      while (lv.n[0] > cln_chunk*nsys) nsys *= 2;
-      for (int st = 1; st < nsys; st *= 2) ++nround;
-      const int nmb = pmy_pack->nmb_thispack, nf = 32*nround + 52;
-      if (cln_lf.extent_int(0) != nmb || cln_lf.extent_int(1) != nf) {
-        Kokkos::realloc(cln_lf, nmb, nf, lv.n[2], lv.n[1], lv.n[0]);
+      if (cln_pcf32) {
+        CleanCellLineFactorSolve<float>(lv, src, dst);
+      } else {
+        CleanCellLineFactorSolve<Real>(lv, src, dst);
       }
+    } else if (cln_pcf32) {
+      // (the first solve too takes the rounded factors: one preconditioner per solve)
+      CleanCellLineSolveRows<true, float>(lv, 0, src, dst);
+      CleanCellLineFactorSolve<float>(lv, src, dst);
+      cln_lf_ok = true;
+    } else {
       CleanCellLineSolveRows<true>(lv, 0, src, dst);
       cln_lf_ok = true;
     }
@@ -1444,7 +1580,9 @@ Real RadiationM1::CleanCellVelocityUpdate() {
   int nmb = pmy_pack->nmb_thispack;
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   CleanGhostFill(cln_x, CLC_K, 4);
+  CleanCellFaceFluxes(CLC_K, true);
   CleanArgs x = CleanMakeArgs();
+  x.ff = cln_ff;
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
   auto op = opac;
@@ -1452,13 +1590,15 @@ Real RadiationM1::CleanCellVelocityUpdate() {
   const int fref = force_ref;
   const bool vzero = cln_vzero;
   const bool cap = (fref == M1_FREF_CLEAN) && !cln_fref_set && !vzero;
-  const bool yres = cln_yres;
+  const int yres = cln_yres;
+  auto dy = cln_dy;
   auto fr = cln_fref;
   auto aref = arad_ref;
 
   Real dvmax = 0.0, vmax = 0.0, femax = 0.0, fvmax = 0.0;
-  Kokkos::parallel_reduce("clc_velocity", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                          nmb*nkji),
+  // (256 threads per block: more than 128 registers)
+  using Rp256 = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
+  Kokkos::parallel_reduce("clc_velocity", Rp256(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &dv_max, Real &v_max, Real &fe_max, Real &fv_max) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
@@ -1471,7 +1611,7 @@ Real RadiationM1::CleanCellVelocityUpdate() {
     const Real e = x.u(m,CLC_K,k,j,i), hc = x.h*x.c;
     const Real chi = op(m,M1_OP_T,k,j,i);
     Real div[4], adiv[4] = {0.0, 0.0, 0.0, 0.0};
-    CleanCellDivergence(x, CLC_K, m, k, j, i, true, div, adiv);
+    CleanCellDivergence<true>(x, CLC_K, m, k, j, i, true, div, adiv);
     // round-off levels of E (its terms over E) and of dm (the terms of the flux rows,
     // with that of E in the stress)
     const Real ek = fabs(e)*(1.0 + hc*op(m,M1_OP_E,k,j,i)) + fabs(x.w(m,CLW_EO,k,j,i));
@@ -1484,7 +1624,8 @@ Real RadiationM1::CleanCellVelocityUpdate() {
       Real dm = 0.0;
       if (b < x.nf) {
         Real y = x.u(m,CLC_K+1+b,k,j,i);
-        if (yres) y += x.u(m,CLC_R+1+b,k,j,i)/(1.0 + hc*chi);
+        if (yres == M1_YRES_POST) y += x.u(m,CLC_R+1+b,k,j,i)/(1.0 + hc*chi);
+        if (yres == M1_YRES_LOCAL) y += dy(m,b,k,j,i);
         const Real yo = x.u(m,CLC_O+1+b,k,j,i);
         dm = -(y - yo + div[1+b])/x.c;
         if (cap || vzero) {
@@ -1530,7 +1671,12 @@ void RadiationM1::CleanCellCopyIterate() {
 //! \fn void RadiationM1::CleanCellResidual
 //! \brief clean_yres: the residual B - A X of the solution of the linear solve, in CLC_R
 //! (the vector the next solve starts from), for the cell's y correction of
-//! CleanCellVelocityUpdate and CleanCellWriteBack
+//! CleanCellVelocityUpdate and CleanCellWriteBack.  With clean_yres = local, cln_dy is
+//! that correction: the change of y that zeroes the cell's y rows with its face
+//! fluxes, E and the other cells kept, M dy = r_y, M = (1 + h c chi) I + g + BT rg RY
+//! the cell's own block of the y rows of A (drag, the implicit gas velocity of
+//! CleanCellDrag, the beta term of the emission), so that the cell's radiation and gas
+//! momentum are in exact local exchange and the residual is not taken by the gas.
 
 void RadiationM1::CleanCellResidual() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1545,6 +1691,31 @@ void RadiationM1::CleanCellResidual() {
     for (int b = 0; b < 4; ++b) {
       u(m,CLC_R+b,k,j,i) = u(m,CLC_B+b,k,j,i) - u(m,CLC_R+b,k,j,i);
     }
+  });
+  if (cln_yres != M1_YRES_LOCAL) return;
+  CleanArgs x = CleanMakeArgs();
+  auto op = opac;
+  auto uh = FluidRef::Get(pmy_pack).u0;
+  auto dy = cln_dy;
+  par_for("clc_resloc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real g[3][3], a[4][4], r[4][5];
+    CleanCellDrag(x, op(m,M1_OP_T,k,j,i), uh(m,IDN,k,j,i), m, k, j, i, g);
+    const Real hcx = x.h*x.c*op(m,M1_OP_T,k,j,i);
+    const Real rg = x.w(m,CLW_RR,k,j,i)/x.w(m,CLW_GM,k,j,i);
+    for (int b = 0; b < 4; ++b) {
+      for (int c = 0; c < 4; ++c) a[b][c] = (b == c) ? 1.0 : 0.0;
+      r[b][0] = 0.0;
+    }
+    for (int b = 0; b < x.nf; ++b) {
+      for (int c = 0; c < x.nf; ++c) {
+        a[1+b][1+c] = ((b == c) ? 1.0 + hcx : 0.0) + g[b][c]
+                      + x.w(m,CLW_BT+b,k,j,i)*rg*x.w(m,CLW_RY+c,k,j,i);
+      }
+      r[1+b][0] = x.u(m,CLC_R+1+b,k,j,i);
+    }
+    CleanBlockSolve(a, r, 1);
+    for (int b = 0; b < x.nf; ++b) dy(m,b,k,j,i) = r[1+b][0];
   });
 }
 
@@ -1787,7 +1958,8 @@ void RadiationM1::CleanCellWriteBack() {
   const bool eso = esrc_on;
   auto es = esrc;
   const bool gexact = cln_gas_exact;
-  const bool yres = cln_yres;
+  const int yres = cln_yres;
+  auto dy = cln_dy;
   const Real arad_ = arad;
   auto op = opac;
 
@@ -1825,11 +1997,14 @@ void RadiationM1::CleanCellWriteBack() {
     for (int b = 0; b < 3; ++b) y[b] = x.u(m,CLC_X+1+b,k,j,i);
     Real den = 0.0;
     if (feedback) {
-      if (yres) {
+      if (yres == M1_YRES_POST) {
         // y less its share of the linear residual, the face fluxes kept: the gas takes
         // the balance of the corrected y, not the residual over rho
         const Real hcx = h*x.c*op(m,M1_OP_T,k,j,i);
         for (int b = 0; b < x.nf; ++b) y[b] += x.u(m,CLC_R+1+b,k,j,i)/(1.0 + hcx);
+      } else if (yres == M1_YRES_LOCAL) {
+        // y of the cell's exact local momentum exchange (CleanCellResidual)
+        for (int b = 0; b < x.nf; ++b) y[b] += dy(m,b,k,j,i);
       }
       for (int b = 0; b < x.nf && !vzero; ++b) {
         dm[b] = -(y[b] - x.u(m,CLC_O+1+b,k,j,i) + div[1+b])/x.c

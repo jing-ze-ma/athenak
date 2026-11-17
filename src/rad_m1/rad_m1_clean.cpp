@@ -221,7 +221,7 @@ void RadiationM1::CleanInit() {
   // (staggered on the cubed sphere: the cell terms and faces of CleanStagFSolveCs)
   const bool stcs = pmy_pack->pmesh->use_cubed_sphere && !cln_cell;
   Kokkos::realloc(cln_v, nmb, stcs ? 18 : 3, n3, n2, n1);
-  Kokkos::realloc(cln_w, nmb, CLW_N, n3, n2, n1);
+  Kokkos::realloc(cln_w, nmb, cln_cell ? CLW_NC : CLW_N, n3, n2, n1);
   // the cubed sphere takes the half ranges about the face normals from the FV rays
   cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
   const int nfc = std::max(cln_milne ? CLF_KK + 6 : (cln_hk ? CLF_HK + 2 : CLF_N),
@@ -248,8 +248,14 @@ void RadiationM1::CleanInit() {
                       Kokkos::subview(cln_rstd, AL, 3 + d, AL, AL, AL));
   }
   if (cln_cell) {
-    Kokkos::realloc(cln_x, nmb, CLC_N, n3, n2, n1);
+    const int nf = (cln_hk || cln_milne) ? CLC_NF : CLC_U;
+    const int nc = (cln_pc != CLN_PC_X1LINE) ? CLC_N : (cln_pcfac ? nf : CLC_NL);
+    Kokkos::realloc(cln_x, nmb, nc, n3, n2, n1);
     Kokkos::deep_copy(cln_x, 0.0);
+    if (cln_yres == M1_YRES_LOCAL) {
+      Kokkos::realloc(cln_dy, nmb, 3, n3, n2, n1);
+      Kokkos::deep_copy(cln_dy, 0.0);
+    }
   }
   if (force_ref == M1_FREF_CLEAN && cln_fref.extent_int(0) != nmb) {
     Kokkos::realloc(cln_fref, nmb, 3, n3, n2, n1);   // (a restart has read it)
@@ -277,8 +283,12 @@ void RadiationM1::CleanInit() {
   if (cln_extrap > 0) {
     // (a restart may have read t^n and the end of the last step)
     if (cln_mn.extent_int(0) != nmb) Kokkos::realloc(cln_mn, nmb, CLN_N, n3, n2, n1);
-    Kokkos::realloc(cln_mp, nmb, CLN_N, n3, n2, n1);
     if (cln_mc.extent_int(0) != nmb) Kokkos::realloc(cln_mc, nmb, CLN_N, n3, n2, n1);
+    if (cln_mshare) {
+      cln_mp = cln_mc;
+    } else {
+      Kokkos::realloc(cln_mp, nmb, CLN_N, n3, n2, n1);
+    }
     if (cln_extrap == 2) Kokkos::realloc(cln_m1, nmb, CLN_N, n3, n2, n1);
   }
   Mesh *pm = pmy_pack->pmesh;
@@ -869,7 +879,12 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         CleanPreconditionerSetup();
       }
       nit = CleanBiCGStab();
-      if (cell && cln_yres && cln_feedback) CleanCellResidual();
+      // (clean_yres = local: the local exchange of the solution X, kept while a pass
+      // leaves X as it is, so that the gas does not take the round-off of a new residual)
+      if (cell && cln_yres != M1_YRES_OFF && cln_feedback &&
+          (cln_yres == M1_YRES_POST || inl == 0 || nit != 0)) {
+        CleanCellResidual();
+      }
       nit_sum += std::abs(nit);
       ++nsolve;
       cln_nsolve += 1.0;
@@ -1366,7 +1381,9 @@ Real RadiationM1::CleanNewtonUpdate() {
   }
 
   Real change = 0.0, femax = 0.0;
-  Kokkos::parallel_reduce("cln_newton", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+  // (256 threads per block: the exchange temperature needs more than 128 registers)
+  using Rp256 = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
+  Kokkos::parallel_reduce("cln_newton", Rp256(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &dmax, Real &fe_max) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;

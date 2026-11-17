@@ -74,7 +74,7 @@ constexpr int CLF_KD = CLF_N + 10;  // clean_stag_fkin: the slopes K1, K2 of d (
 constexpr Real CLN_MEMUP = 1.0/6.0;  // clean_stag_gflux: a memory outflow above this
                                      // share of the donor's E_old goes upwind
 
-// work vectors (array cln_w)
+// work vectors (array cln_w); the cell layout allocates the first CLW_NC of them
 constexpr int CLW_EO = 0;    // E of the old vector
 constexpr int CLW_EK = 1;    // Newton iterate of E
 constexpr int CLW_T = 2;     // gas temperature of the iterate
@@ -82,38 +82,75 @@ constexpr int CLW_EI = 3;    // gas internal energy of the old vector
 constexpr int CLW_RR = 4;    // exchange linearisation r = s/(d cv + s), s = 4 h c kP a T^3
 constexpr int CLW_A1 = 5;    // advective coefficients a_1, a_2, a_3
 constexpr int CLW_DM = 8;    // momentum change of the iterate (3)
-constexpr int CLW_AM = 11;   // x1-line coefficient of E_{i-1}
-constexpr int CLW_A0 = 12;   // diagonal
-constexpr int CLW_AP = 13;   // x1-line coefficient of E_{i+1}
-constexpr int CLW_CP = 14;   // tridiagonal solve scratch
-constexpr int CLW_B = 15;    // right-hand side
-constexpr int CLW_X = 16;    // solution
-constexpr int CLW_R = 17;    // BiCGStab vectors
-constexpr int CLW_R0 = 18;
-constexpr int CLW_P = 19;
-constexpr int CLW_V = 20;
-constexpr int CLW_S = 21;
-constexpr int CLW_Q = 22;
-constexpr int CLW_Y = 23;
-constexpr int CLW_Z = 24;
-constexpr int CLW_WK = 25;   // work W of the right-hand side
-constexpr int CLW_DK = 26;   // d(rho kappa_P)/dT, d(rho kappa_E)/dT of the iterate
-constexpr int CLW_BT = 28;   // beta = v/c of the iterate (3, cell layout: frame of y)
-constexpr int CLW_RE = 31;   // h S_E = hc kP G a T^4 - hc kE E + RE E + RY.y - W (Ma et
-constexpr int CLW_RY = 32;   //   al. 2025, eq. 56, G = CLW_GM): the beta terms (RY: 3);
+constexpr int CLW_B = 11;    // right-hand side
+constexpr int CLW_X = 12;    // solution
+constexpr int CLW_WK = 13;   // work W of the right-hand side
+constexpr int CLW_DK = 14;   // d(rho kappa_P)/dT, d(rho kappa_E)/dT of the iterate
+constexpr int CLW_BT = 16;   // beta = v/c of the iterate (3, cell layout: frame of y)
+constexpr int CLW_RE = 19;   // h S_E = hc kP G a T^4 - hc kE E + RE E + RY.y - W (Ma et
+constexpr int CLW_RY = 20;   //   al. 2025, eq. 56, G = CLW_GM): the beta terms (RY: 3);
                              //   staggered: RE = hc kP a T^4, RY 1 - r
-constexpr int CLW_GM = 35;   // G = 1 - beta^2/2
-constexpr int CLW_EP = 36;   // -(RE E + RY.y) of the solution (eint of the gas)
-constexpr int CLW_JV = 37;   // (1 - r) dA/dbeta/(c^2 rho), dS_p/dbeta/(c^2 rho) of the
-constexpr int CLW_GX = 40;   //   iterate (3 + 1): implicit gas velocity, CleanCellDrag;
+constexpr int CLW_GM = 23;   // G = 1 - beta^2/2
+constexpr int CLW_EP = 24;   // -(RE E + RY.y) of the solution (eint of the gas)
+constexpr int CLW_JV = 25;   // (1 - r) dA/dbeta/(c^2 rho), dS_p/dbeta/(c^2 rho) of the
+constexpr int CLW_GX = 28;   //   iterate (3 + 1): implicit gas velocity, CleanCellDrag;
                              //   staggered clean_stag_sbimp: GX = r (CleanRightHandSide);
                              //   staggered gflux: JV + 1 = hc kE dop (CleanNewtonUpdate)
+constexpr int CLW_NC = 29;
+constexpr int CLW_AM = 29;   // staggered layout: x1-line coefficient of E_{i-1}
+constexpr int CLW_A0 = 30;   // diagonal
+constexpr int CLW_AP = 31;   // x1-line coefficient of E_{i+1}
+constexpr int CLW_CP = 32;   // tridiagonal solve scratch
+constexpr int CLW_R = 33;    // BiCGStab vectors
+constexpr int CLW_R0 = 34;
+constexpr int CLW_P = 35;
+constexpr int CLW_V = 36;
+constexpr int CLW_S = 37;
+constexpr int CLW_Q = 38;
+constexpr int CLW_Y = 39;
+constexpr int CLW_Z = 40;
 constexpr int CLW_TM = 41;   // clean_stag_pc = mg: coefficients of E_{j-1}, E_{j+1},
                              //   E_{k-1}, E_{k+1} (4)
 constexpr int CLW_L = 45;    // staggered, cubed sphere: the lateral stress sums Y of the
                              // face families q of a cell, CLW_L + 3 q
                              // (CleanStagCsLateral)
 constexpr int CLW_N = 54;
+
+//----------------------------------------------------------------------------------------
+//! \struct CleanFvI
+//! \brief the FV rays' intensities: cln_fvi, or cln_fvis in single precision
+//! (clean_fv_float).  Reads give Real, Set stores in the precision of the array, Round
+//! is a value as stored.
+
+struct CleanFvI {
+  DvceArray5D<Real> d;
+  DvceArray5D<float> f;
+  bool f32 = false;
+  KOKKOS_INLINE_FUNCTION
+  Real operator()(const int m, const int n, const int k, const int j, const int i) const {
+    return f32 ? static_cast<Real>(f(m,n,k,j,i)) : d(m,n,k,j,i);
+  }
+  KOKKOS_INLINE_FUNCTION
+  Real Round(const Real v) const {
+    return f32 ? static_cast<Real>(static_cast<float>(v)) : v;
+  }
+  KOKKOS_INLINE_FUNCTION
+  void Set(const int m, const int n, const int k, const int j, const int i,
+           const Real v) const {
+    if (f32) {
+      f(m,n,k,j,i) = static_cast<float>(v);
+    } else {
+      d(m,n,k,j,i) = v;
+    }
+  }
+  int extent_int(const int r) const {return f32 ? f.extent_int(r) : d.extent_int(r);}
+  // the intensities as they are held: with clean_fv_float, the doubles a restart read
+  // until the next sweep converts them
+  static CleanFvI Of(const DvceArray5D<Real> &d_, const DvceArray5D<float> &f_,
+                     const bool f32_) {
+    return CleanFvI{d_, f_, f32_ && d_.extent_int(1) == 0};
+  }
+};
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanArgs
@@ -253,6 +290,77 @@ bool CleanInner(const int k, const int j, const int i, const int g, const int is
                 const bool md, const bool td) {
   return i >= is + g && i <= ie - g && (!md || (j >= js + g && j <= je - g)) &&
          (!td || (k >= ks + g && k <= ke - g));
+}
+
+//----------------------------------------------------------------------------------------
+//! \struct CleanShell
+//! \brief the cells of an n3 x n2 x n1 array outside its box [k0,k1] x [j0,j1] x [i0,i1]
+//! (CleanInner by g), counted plane by plane: the k planes below and above the box whole,
+//! the planes through it without the box's rows
+
+struct CleanShell {
+  int n1, n2, n3, i0, i1, j0, j1, k0, k1;
+  int nio, ncell;
+  CleanShell(const int n3_, const int n2_, const int n1_, const int g, const int is,
+             const int ie, const int js, const int je, const int ks, const int ke,
+             const bool md, const bool td) :
+      n1(n1_), n2(n2_), n3(n3_), i0(is + g), i1(ie - g), j0(md ? js + g : 0),
+      j1(md ? je - g : n2_ - 1), k0(td ? ks + g : 0), k1(td ? ke - g : n3_ - 1) {
+    nio = n1 - (i1 - i0 + 1);
+    ncell = n3*n2*n1 - (k1 - k0 + 1)*(j1 - j0 + 1)*(i1 - i0 + 1);
+  }
+  bool Empty() const {return i1 < i0 || j1 < j0 || k1 < k0;}
+};
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanShellCell
+//! \brief cell (k,j,i) number q of the shell s
+
+KOKKOS_INLINE_FUNCTION
+void CleanShellCell(const CleanShell &s, int q, int &k, int &j, int &i) {
+  const int np = s.n2*s.n1, nj = s.j1 - s.j0 + 1;
+  const int pl = np - nj*(s.i1 - s.i0 + 1), nb = s.k0*np, nm = (s.k1 - s.k0 + 1)*pl;
+  if (q < nb || q >= nb + nm) {
+    if (q >= nb) q -= nb + nm - (s.k1 + 1)*np;
+    k = q/np;
+    j = (q - k*np)/s.n1;
+    i = q - k*np - j*s.n1;
+    return;
+  }
+  q -= nb;
+  k = s.k0 + q/pl;
+  int r = q%pl;
+  const int rb = s.j0*s.n1, rm = nj*s.nio;
+  if (r < rb || r >= rb + rm) {
+    if (r >= rb) r -= rb + rm - (s.j1 + 1)*s.n1;
+    j = r/s.n1;
+    i = r%s.n1;
+    return;
+  }
+  r -= rb;
+  j = s.j0 + r/s.nio;
+  const int t = r%s.nio;
+  i = (t < s.i0) ? t : s.i1 + 1 + (t - s.i0);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanLineRange
+//! \brief the lines [lo, hi) in steps st that team t of nt takes out of nline
+//! (CleanCellLineRows): on the host the contiguous chunk [t nline/nt, (t+1) nline/nt), so
+//! that a thread's lines lie next to each other in memory; on a GPU t, t + nt, ...
+
+KOKKOS_INLINE_FUNCTION
+void CleanLineRange(const int nline, const int t, const int nt, int &lo, int &hi,
+                    int &st) {
+  if constexpr (std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>) {
+    lo = static_cast<int>(static_cast<int64_t>(nline)*t/nt);
+    hi = static_cast<int>(static_cast<int64_t>(nline)*(t + 1)/nt);
+    st = 1;
+  } else {
+    lo = t;
+    hi = nline;
+    st = nt;
+  }
 }
 
 //----------------------------------------------------------------------------------------

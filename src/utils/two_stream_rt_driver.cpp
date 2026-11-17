@@ -300,6 +300,8 @@ int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
         [&](const int i, Real &sm) {
           sm += bdt*src_(m,k,j,i)*dx1_(m,k,j,i);
         }, ss);
+        // (t0_ written above is read at i +- 1 by the row pass)
+        tm.team_barrier();
         // ck_impl_warm_step: pass 0 of a warm-started call always takes a step
         const bool cvd = (rn <= tol) && !wfs_;
         if (!pred_) {

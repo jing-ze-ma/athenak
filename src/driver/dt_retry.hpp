@@ -176,6 +176,7 @@ class DtRetry {
   void Build(Mesh *pm);
   bool built_ = false;
   bool all_views_ = false;
+  bool clean_views_ = false;   // dt_retry_views = clean
   bool audit_ = false;
   bool host_ = false;      // <time>/dt_retry_host: clones in pinned host mem
   int poison_ = 0;

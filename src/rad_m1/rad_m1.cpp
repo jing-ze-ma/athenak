@@ -101,6 +101,24 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_fv_tol")) {
       cln_fvtol = pin->GetReal("rad_m1","clean_fv_tol");
     }
+    // clean_fv_lag = off | lag | extrap (read only when named, default off): one pass of
+    // the FV rays per build, the inflow across MeshBlock faces and periodic seams that of
+    // the last build (lag) or extrapolated linearly in time from the last two (extrap)
+    if (pin->DoesParameterExist("rad_m1","clean_fv_lag")) {
+      std::string fl = pin->GetString("rad_m1","clean_fv_lag");
+      cln_fvlag = (fl.compare("extrap") == 0) ? 2 : ((fl.compare("lag") == 0) ? 1 : 0);
+      if (cln_fvlag == 0 && fl.compare("off") != 0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<rad_m1>/clean_fv_lag = off | lag | extrap" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    // clean_fv_lag_tol (read only when named, default 1e-4): an extrap build stays at one
+    // pass while its extrapolated inflow missed the new one by at most this over the
+    // largest intensity, else it sweeps on until converged
+    if (pin->DoesParameterExist("rad_m1","clean_fv_lag_tol")) {
+      cln_fvlagtol = pin->GetReal("rad_m1","clean_fv_lag_tol");
+    }
     cln_raymin = pin->GetOrAddReal("rad_m1","clean_ray_min",1.0e-3);
     // clean_rays = sc | fv1 (sp default) | fv | lld
     if (pin->DoesParameterExist("rad_m1","clean_rays")) {
@@ -150,6 +168,18 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     const bool gd = sp && vg;
     if ((gd || (cs && vg)) && !pin->DoesParameterExist("rad_m1","clean_rays")) {
       cln_rfv = 1;
+    }
+    // clean_fv_float (read only when named): the fv1 rays' intensities in single
+    // precision (no effect without FV rays).  It degrades the well-balanced state
+    // (rhse_cs6 vcs_max 1e-9 -> 4e-8) and the exact L_z (3e-14 -> 1e-11): not for
+    // well-balanced or L_z-sensitive runs
+    if (pin->DoesParameterExist("rad_m1","clean_fv_float")) {
+      cln_fvf32 = pin->GetBoolean("rad_m1","clean_fv_float") && cln_rfv > 0;
+      if (cln_fvf32 && cln_rfv != 1) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<rad_m1>/clean_fv_float needs clean_rays = fv1" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
     }
     // (staggered: with the split energy flux, where the rays are not opt-in)
     cln_split = !cln_cell;
@@ -220,9 +250,33 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     if (cln_sphere) cln_sph_r = pin->GetReal("rad_m1","clean_sphere_radius");}
+    // clean_extrap_share (read only when named): the moments at t^{n-1} and those of the
+    // end of the step share one array (a rejected step then redoes without the line)
+    if (pin->DoesParameterExist("rad_m1","clean_extrap_share")) {
+      cln_mshare = pin->GetBoolean("rad_m1","clean_extrap_share");
+    }
+    // clean_skip_time2_hist (read only when named): no arrays for the implicit solve's
+    // predictors (ipred, ipred2) and the vet_col extrap2 builds (x2_tt, x2_hr, x2_q),
+    // which the clean scheme neither reads nor writes; their restart channels are zeros
+    // and carry no extrap2 history (x2_t = -1e300)
+    if (pin->DoesParameterExist("rad_m1","clean_skip_time2_hist")) {
+      cln_not2h = pin->GetBoolean("rad_m1","clean_skip_time2_hist");
+    }
     cln_vfreeze = pin->GetOrAddInteger("rad_m1","clean_vfreeze",0);
     cln_gas_exact = pin->GetOrAddBoolean("rad_m1","clean_gas_exact",true);
-    cln_yres = pin->GetOrAddBoolean("rad_m1","clean_yres",false);
+    {const std::string yr = pin->GetOrAddString("rad_m1","clean_yres","false");
+    if (yr.compare("false") == 0) {
+      cln_yres = M1_YRES_OFF;
+    } else if (yr.compare("true") == 0 || yr.compare("post") == 0) {
+      cln_yres = M1_YRES_POST;
+    } else if (yr.compare("local") == 0) {
+      cln_yres = M1_YRES_LOCAL;
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1>/clean_yres = false | true (= post) | post | local"
+        << std::endl;
+      std::exit(EXIT_FAILURE);
+    }}
     {const std::string nn = pin->GetOrAddString("rad_m1","clean_nl_norm","global");
     if (nn.compare("global") != 0 && nn.compare("cell") != 0) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -240,6 +294,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_pc_factor")) {
       cln_pcfac = pin->GetBoolean("rad_m1","clean_pc_factor");
     }
+    // clean_pc_factor_float (read only when named): those factors kept in single
+    // precision (half the memory; the preconditioner, not the solution, changes)
+    if (pin->DoesParameterExist("rad_m1","clean_pc_factor_float")) {
+      cln_pcf32 = pin->GetBoolean("rad_m1","clean_pc_factor_float");
+    }
     if (pin->DoesParameterExist("rad_m1","clean_pc_reuse")) {
       cln_pcreuse = std::max(pin->GetInteger("rad_m1","clean_pc_reuse"), 1);
     }
@@ -253,11 +312,27 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_nl_print")) {
       cln_nlprint = pin->GetBoolean("rad_m1","clean_nl_print");
     }
+    // clean_halo_vars (read only when named, 1..32, default 16): at most this many
+    // variables per ghost exchange of the clean solve (its scratch array holds that many)
+    if (pin->DoesParameterExist("rad_m1","clean_halo_vars")) {
+      cln_hmax = std::min(std::max(pin->GetInteger("rad_m1","clean_halo_vars"), 1), 32);
+    }
+    // clean_line_teams (read only when named): at most this many teams take the lines of
+    // a line solve (each line still one team), fewer rows of cln_lw
+    if (pin->DoesParameterExist("rad_m1","clean_line_teams")) {
+      cln_lteams = std::max(pin->GetInteger("rad_m1","clean_line_teams"), 0);
+    }
     // clean_line_solver = hybrid | pcr | thomas (TEMPORARY, for GPU timing): rows per
     // Thomas system of the line solve (CleanCellLineSolve)
     if (pin->DoesParameterExist("rad_m1","clean_line_solver")) {
       const std::string ls = pin->GetString("rad_m1","clean_line_solver");
       cln_chunk = (ls == "pcr") ? 1 : ((ls == "thomas") ? (1 << 30) : 32);
+    }
+    // clean_line_chunk (read only when named): rows per Thomas system of the line solve
+    // (fewer PCR rounds, a smaller factor store with clean_pc_factor; slower, not
+    // recommended)
+    if (pin->DoesParameterExist("rad_m1","clean_line_chunk")) {
+      cln_chunk = std::max(pin->GetInteger("rad_m1","clean_line_chunk"), 1);
     }
     // clean_init = given | steady (read only when named: an input without it keeps a
     // byte-identical parameter dump).  A start out of radiative equilibrium takes steady:

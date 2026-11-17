@@ -4117,6 +4117,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_m1>/implicit_vimp needs <mesh>/nghost >= 2");
   }
   int niw = full ? (bicg_on ? M1_NIW_K : M1_NIW) : M1_NIW_X1;
+  // scheme = clean reads none of the components appended below (its iw ends here)
+  const int niw_clean = niw;
   // MILESTONE 3g: the five per-cell components of the gas coupling are APPENDED, so
   // every index above keeps the value it had and the array grows only when asked for.
   iw_gas = -1;
@@ -4374,7 +4376,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     // DEBUG/ablation implicit_face_mmat_trans = false (read only when named): x1 only
     const bool fmtr = !pin->DoesParameterExist("rad_m1","implicit_face_mmat_trans") ||
                       pin->GetBoolean("rad_m1","implicit_face_mmat_trans");
-    if (trans_on && fmtr) {
+    if (trans_on && fmtr && !clean) {
       Kokkos::realloc(fmm_t, nmb, 14, ncells3+1, ncells2+1, ncells1);
       Kokkos::deep_copy(fmm_t, 0.0);
     }
@@ -4393,7 +4395,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::deep_copy(ecache, -1.0);
   }
   if (impl_cmi) {iw_cmi = niw; niw += 1;}   // cmemimpl-1112: the donor factor lam
-  MemArenaInit(pin, nmb, niw, ncells3, ncells2, ncells1);   // memcut-1113 (= realloc)
+  MemArenaInit(pin, nmb, clean ? niw_clean : niw, ncells3, ncells2, ncells1);
   if (impl_thin_frz > 0.0) {
     Kokkos::realloc(thin_frz, nmb, ncells3, ncells2, ncells1);
     Kokkos::deep_copy(thin_frz, 0.0);
@@ -4424,7 +4426,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(ctr_mem, nmb, 4, ncells3, ncells2, ncells1);
   }
   Kokkos::deep_copy(iw, 0.0);
-  if (impl_pred) {
+  if (impl_pred && !(clean && cln_not2h)) {
     Kokkos::realloc(ipred, nmb, (impl_pord == 2) ? 5 : 3, ncells3, ncells2, ncells1);
     Kokkos::deep_copy(ipred, 0.0);
     pred_ok = false;
@@ -4601,8 +4603,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     pbval_kr->InitializeBuffers(1);
       pbval_kr->SetVectorPairs(1, {});   // one scalar Krylov vector
       // implicit_vimp: the per-pass exchange of the Jacobian rows and dv^k (same
-      // sequential-use argument as above)
-      if (impl_vimp) {
+      // sequential-use argument as above).  The scratch arrays of the solve from here on
+      // are not allocated with scheme = clean, which never runs it.
+      if (impl_vimp && !clean) {
         Kokkos::realloc(vmw, nmb, M1_NVIMP_X, ncells3, ncells2, ncells1);
         Kokkos::deep_copy(vmw, 0.0);
         Kokkos::realloc(vmw_c, nmb, M1_NVIMP_X, 1, 1, 1);
@@ -4615,7 +4618,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       }
       // cs-open-1018: the (scalar, face-normal pair) exchange of the conservative
       // sources' dA on the cubed sphere (ImplicitCsPairHalo)
-      if (cs_geom) {
+      if (cs_geom && !clean) {
         Kokkos::realloc(d3w, nmb, 3, ncells3, ncells2, ncells1);
         Kokkos::deep_copy(d3w, 0.0);
         Kokkos::realloc(d3w_c, nmb, 3, 1, 1, 1);
@@ -4628,11 +4631,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       }
     }
     if (impl_halo_direct) {ImplicitHaloDirectInit();}
-    if (impl_odc) {
+    if (impl_odc && !clean) {
       Kokkos::realloc(odc, nmb, 3, ncells3, ncells2, ncells1);
       Kokkos::deep_copy(odc, 0.0);
     }
-    if (impl_stencil) {
+    if (impl_stencil && !clean) {
       if (ibc_x1min == M1_IBC_PERIODIC) {
         ImplFatal("<rad_m1>/implicit_op_stencil does not take a periodic x1 wrap");
       }
@@ -4641,7 +4644,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
   }
   // MILESTONE 3e: the Anderson histories.  Allocated ONLY when the acceleration is on.
-  if (impl_accel != M1_IACC_NONE) {
+  if (impl_accel != M1_IACC_NONE && !clean) {
     aa_nc = trans_on ? 4 : 2;
     Kokkos::realloc(aa_xc, nmb, aa_nc, ncells3, ncells2, ncells1);
     Kokkos::deep_copy(aa_xc, 0.0);
