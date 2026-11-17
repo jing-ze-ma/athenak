@@ -773,6 +773,15 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // (the sc rays' ring on the cubed sphere: the union's directions and weights too)
   if (vgd_on && (cln_rfv > 0 || (cln_cssc && cln_ring)) && cln_fvn == 0) {
     CleanFvSets(pmy_pack->pmesh->time, pmy_pack->pmesh->ncycle - 1);
+    // (the sc ring: its two sets, the intensities a restart file holds, or none from a
+    // file of another ray method: zero, until the first build)
+    if (cln_cssc) {
+      CleanScUnion2();
+      if (cln_fvi.extent_int(1) != cln_fvn) {
+        Kokkos::realloc(cln_fvi, pmy_pack->nmb_thispack, cln_fvn, cln_s.extent_int(2),
+                        cln_s.extent_int(3), cln_s.extent_int(4));
+      }
+    }
   }
   if (cln_cssc && !cln_ring) {   // (clean_rays = sc: the sweep's set, its cln_fvi)
     cln_fvd = vgd_dir;

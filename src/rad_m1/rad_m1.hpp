@@ -2990,6 +2990,7 @@ class RadiationM1 {
   // the rays' intensity channels of the restart files: the FV rays' (cln_fvi), and the sc
   // rays' last build when their reflecting top mirrors it (cln_scmem, a copy in cln_fvi)
   int CleanRstNfv() const;
+  void CleanScUnion2();
   void CleanStagDrag(const bool first);
   void CleanStagFSolveCs(const int e);
   void CleanStagCsLateral(const int e);

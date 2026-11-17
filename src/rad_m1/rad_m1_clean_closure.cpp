@@ -821,6 +821,30 @@ void RadiationM1::CleanRays() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanScUnion2
+//! \brief clean_rot_ring, the sc rays on the cubed sphere: the union the face half ranges
+//! read (cln_fvd, cln_fvn), the sets b and b+1 of the step in their cln_fvi slots
+//! (blk mod 2) with the cross-fade weights 1 - s and s: two sets of intensities resident
+
+void RadiationM1::CleanScUnion2() {
+  const int n = vgd_n;
+  const int64_t b = cln_rbld;
+  if (cln_fvd.extent_int(0) != 2*n) cln_fvd = DvceArray2D<Real>("cln_fvd", 2*n, 4);
+  auto d_h = Kokkos::create_mirror_view(cln_fvd);
+  for (int64_t blk = b; blk <= b + 1; ++blk) {
+    const int q = static_cast<int>(blk & 1);
+    const std::vector<double> d = VgdRotate(VetGdAngleBlk(blk));
+    const Real w = (blk > b) ? cln_rs : 1.0 - cln_rs;
+    for (int e = 0; e < n; ++e) {
+      for (int c = 0; c < 3; ++c) d_h(q*n+e,c) = d[4*e+c];
+      d_h(q*n+e,3) = w*d[4*e+3];
+    }
+  }
+  Kokkos::deep_copy(cln_fvd, d_h);
+  cln_fvn = 2*n;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanRingMoments
 //! \brief clean_rot_ring: the closure of the rotating union of vet_rotate_avg = K sets
 //! with the cross-fade from a sweep of the current set b and the next set b+1 alone.
@@ -864,7 +888,14 @@ void RadiationM1::CleanRingMoments() {
   auto cs = cln_s;
   auto rl = cln_rl;
   std::vector<int> slot(nk + 2, -1);   // slot of block b - nk + 1 + p
-  for (int q = 0; q < ns; ++q) {
+  // (the sc rays: the sets in block order, so that the last two swept, b and b+1, hold
+  // the two cln_fvi slots blk mod 2)
+  std::vector<int> ord(ns);
+  for (int q = 0; q < ns; ++q) ord[q] = q;
+  std::sort(ord.begin(), ord.end(),
+            [&](int u, int v) {return cln_fvblk[u] < cln_fvblk[v];});
+  for (int qo = 0; qo < ns; ++qo) {
+    const int q = (cln_rfv == 0) ? ord[qo] : qo;
     cln_fvd = cln_fvdm[q];
     if (cln_rfv == 0) {   // the sc rays: set q swept alone (its tables, its own weights)
       cln_rq = q;
@@ -874,7 +905,7 @@ void RadiationM1::CleanRingMoments() {
       VetGdSweep();
     }
     CleanClosureFromGd();
-    if (cln_consist) CleanGdFaceSums();
+    if (cln_consist || cln_cssc) CleanGdFaceSums();
     const int o = q*CLN_N;
     par_for("cln_ring_raw", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -886,6 +917,7 @@ void RadiationM1::CleanRingMoments() {
     if (p >= 0 && p <= nk) slot[p] = q;
   }
   cln_fvd = dfull;
+  if (cln_cssc) CleanScUnion2();
   cln_raymin = ray_min;
   // (jump: the next set only at the build that closes the block; its weight is s = 0)
   const int qb = slot[nr], qn = (slot[nk] >= 0) ? slot[nk] : slot[nr];
@@ -2690,11 +2722,10 @@ void RadiationM1::CleanGdFaceSums() {
   const int bmn = ibm_nr, bmr[4] = {ibm_ray[0], ibm_ray[1], ibm_ray[2], ibm_ray[3]};
   // the short characteristics' intensities in the mesh layout with the ghost exchange
   // (the image cell's beyond a periodic seam, re-indexed by the wall map as the sweep)
-  // (clean_rot_ring: on the cubed sphere the swept sets' slots of the union (cln_fvd,
-  // CleanFvSets); on sp with a reflecting top two slots, of the sets blk mod 2, for its
-  // mirror of the last build)
-  const int ns2 = !cln_ring ? 1 : (cln_cssc ? cln_rns : (cln_scmem ? 2 : 1));
-  const int doff = (ns2 == 1) ? 0 : (cln_cssc ? cln_rq : cln_rqm)*n;
+  // (clean_rot_ring: two slots, of the sets blk mod 2, on the cubed sphere for the face
+  // half ranges (CleanScUnion2), on sp with a reflecting top for its mirror)
+  const int ns2 = (cln_ring && (cln_cssc || cln_scmem)) ? 2 : 1;
+  const int doff = (ns2 == 1) ? 0 : cln_rqm*n;
   if (!fv) {
     if (cln_fvi.extent_int(1) != ns2*n) {
       Kokkos::realloc(cln_fvi, nmb1 + 1, ns2*n, cs.extent_int(2),
