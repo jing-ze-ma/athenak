@@ -889,14 +889,15 @@ void RadiationM1::CleanRingMoments() {
   auto cs = cln_s;
   auto rl = cln_rl;
   std::vector<int> slot(nk + 2, -1);   // slot of block b - nk + 1 + p
-  // (the sc rays: the sets in block order, so that the last two swept, b and b+1, hold
-  // the two cln_fvi slots blk mod 2)
+  // (the sc rays on the cubed sphere: the sets in block order, so that the last two
+  // swept, b and b+1, hold the two cln_fvi slots blk mod 2; on sp the slot order: the
+  // block order breaks the bitwise restart of q_def, reflecting top)
   std::vector<int> ord(ns);
   for (int q = 0; q < ns; ++q) ord[q] = q;
   std::sort(ord.begin(), ord.end(),
             [&](int u, int v) {return cln_fvblk[u] < cln_fvblk[v];});
   for (int qo = 0; qo < ns; ++qo) {
-    const int q = (cln_rfv == 0) ? ord[qo] : qo;
+    const int q = (cln_rfv == 0 && cln_cssc) ? ord[qo] : qo;
     cln_fvd = cln_fvdm[q];
     if (cln_rfv == 0) {   // the sc rays: set q swept alone (its tables, its own weights)
       cln_rq = q;
