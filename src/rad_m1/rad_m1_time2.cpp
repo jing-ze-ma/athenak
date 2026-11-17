@@ -3704,6 +3704,17 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   auto mb = std::make_pair(0, nmb);
   auto AL = Kokkos::ALL;
   const bool h2 = (time_scheme == M1_TIME_HESDIRK2);
+  // clean_skip_time2_hist: a file's predictor / extrap2 channels are read past (a NOTE
+  // once where they hold values: files of the old scheme)
+  auto skip = [&w]() {
+    static bool said = false;
+    for (size_t q = 0; q < w.span() && !said && global_variable::my_rank == 0; ++q) {
+      if (w.data()[q] == 0.0) continue;
+      std::cout << "<rad_m1> NOTE: clean_skip_time2_hist: the restart file's implicit "
+                << "predictor / extrap2 channels are skipped" << std::endl;
+      said = true;
+    }
+  };
   // the last t2_nfv channels: the conservative rays' intensities (their number is not
   // known before the first sweep, Time2RstAccept)
   const int nfv0 = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0);
@@ -3726,6 +3737,8 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     if (ch < np) {
       if (!(clean && cln_not2h)) {
         DeepCopyAcross(Kokkos::subview(ipred2, mb, ch, AL, AL, AL), w);
+      } else {
+        skip();
       }
       return;
     }
@@ -3836,6 +3849,7 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   }
   // rbfast-1021 extrap2 (Time2RstPack)
   // (clean_skip_time2_hist: no extrap2 history kept, x2_ok stays false)
+  if (h2 && vet_col && t2_vcmode == 4 && clean && cln_not2h) skip();
   if (h2 && vet_col && t2_vcmode == 4 && !(clean && cln_not2h)) {
     if (ch < M1_X2_NTT) {
       DeepCopyAcross(Kokkos::subview(x2_tt, mb, ch, AL, AL, AL), w);

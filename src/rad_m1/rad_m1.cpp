@@ -276,10 +276,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_extrap_share")) {
       cln_mshare = pin->GetBoolean("rad_m1","clean_extrap_share");
     }
-    // clean_skip_time2_hist (read only when named): no arrays for the implicit solve's
-    // predictors (ipred, ipred2) and the vet_col extrap2 builds (x2_tt, x2_hr, x2_q),
-    // which the clean scheme neither reads nor writes; their restart channels are zeros
-    // and carry no extrap2 history (x2_t = -1e300)
+    // clean_skip_time2_hist (read only when named; default true): no arrays for the
+    // implicit solve's predictors (ipred, ipred2) and the vet_col extrap2 builds (x2_tt,
+    // x2_hr, x2_q), which the clean scheme neither reads nor writes; their restart
+    // channels are zeros and carry no extrap2 history (x2_t = -1e300)
+    cln_not2h = true;
     if (pin->DoesParameterExist("rad_m1","clean_skip_time2_hist")) {
       cln_not2h = pin->GetBoolean("rad_m1","clean_skip_time2_hist");
     }
