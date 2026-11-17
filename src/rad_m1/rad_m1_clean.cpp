@@ -526,6 +526,9 @@ void RadiationM1::CleanCsGeometry() {
     }
     gn(m,CLG_F+3,k,j,i) = vol(m,k,j,i);
     gn(m,CLG_F+7,k,j,i) = gid(m);
+    gn(m,CLG_A,k,j,i) = 0.5*(rl*rl + rr*rr)*ss;
+    gn(m,CLG_A+1,k,j,i) = 0.5*al*(th[0] + th[1]);
+    gn(m,CLG_A+2,k,j,i) = 0.5*al*(th[2] + th[3]);
     const Real xc = 0.25*M_PI*CellCenterX(j - js, nx2, size(m).x2min, size(m).x2max);
     const Real ec = 0.25*M_PI*CellCenterX(k - ks, nx3, size(m).x3min, size(m).x3max);
     Real qc[3], e1[3], e2[3];
@@ -539,7 +542,7 @@ void RadiationM1::CleanCsGeometry() {
     }
   });
   CleanGhostFill(cln_gn, CLG_X, 6, false);
-  CleanGhostFill(cln_gn, CLG_F, 8, false);
+  CleanGhostFill(cln_gn, CLG_F, 11, false);
   par_for("cln_csdist", DevExeSpace(), 0, nmb1, 1, n3-1, 1, n2-1, 1, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     for (int d = 0; d < 3; ++d) {

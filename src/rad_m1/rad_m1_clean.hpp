@@ -197,7 +197,9 @@ constexpr int CLG_M = 21;    // first moment int x dA of the lower x2, x3 face (
 constexpr int CLG_F = 27;    // staggered, exchanged (a seam ghost's are its owner's): the
                              // normal of the lower x2 face, the volume (+3), the normal
                              // of the lower x3 face (+4) and the MeshBlock gid (+7)
-constexpr int CLG_NV = 35;
+constexpr int CLG_A = 35;    // staggered, exchanged: the mean area of the cell's two
+                             // faces of family x1, x2, x3 (+2), CleanStagArea
+constexpr int CLG_NV = 38;
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanGasEint
@@ -493,9 +495,10 @@ Real CleanStagN(const CleanArgs &x, const int v, const int dir, const int m,
 //! \brief the net part s = h+ + h- of the streaming share w c (h+ E_L + h- E_R) through
 //! face (k,j,i) normal to dir in area form, from the donor upwind of s: adds w c s
 //! (A_d/A_f - 1) to the coefficient pl or pr of E_L or E_R, A_d the area at the donor's
-//! centre (spherical polar: x1v^2 of r faces, sin(x2v) of theta faces), so that a free
-//! stream keeps A_d E_d (an isotropic field, s = 0, is unchanged; the signs, and with
-//! them the M-matrix, are kept).  Only where h+- are the cells' own, analytic or of point
+//! centre (spherical polar: x1v^2 of r faces, sin(x2v) of theta faces; cubed sphere: the
+//! mean area of its two faces of the family, the owner's, CLG_A), so that a free stream
+//! keeps A_d E_d (an isotropic field, s = 0, is unchanged; the signs, and with them the
+//! M-matrix, are kept).  Only where h+- are the cells' own, analytic or of point
 //! intensities (clean_rays = sc): the FV rays' (vet_gd, fv1 | fv | lld) are half-range
 //! fluxes through the face, which their own finite-volume transport already carries in
 //! area form, and so are the flux factors of clean_stag_gflux.
@@ -503,11 +506,18 @@ Real CleanStagN(const CleanArgs &x, const int v, const int dir, const int m,
 KOKKOS_INLINE_FUNCTION
 void CleanStagArea(const CleanArgs &x, const int dir, const int m, const int k,
                    const int j, const int i, const Real w, Real &pl, Real &pr) {
-  if (!x.sar || x.hi || !x.sph || x.cub || dir == 2) return;
+  if (!x.sar || x.hi || !(x.sph || x.cub) || (!x.cub && dir == 2)) return;
   const Real s = w*x.c*(x.fc[dir](m,CLF_HP,k,j,i) + x.fc[dir](m,CLF_HM,k,j,i));
   const int d = (s > 0.0) ? 1 : 0, id = i - d*(dir == 0), jd = j - d*(dir == 1);
-  const Real a = (dir == 0) ? x.x1v(m,id)*x.x1v(m,id)/(x.x1f(m,i)*x.x1f(m,i))
-                            : sin(x.x2v(m,jd))/sin(x.x2f(m,j));
+  const int kd = k - d*(dir == 2);
+  Real sd, a;
+  if (x.cub) {
+    a = x.g(m,CLG_A + CleanCsSlot(x, dir, m, k, j, i, kd, jd, id, false, sd)/2,kd,jd,id)/
+        x.area[dir](m,k,j,i);
+  } else {
+    a = (dir == 0) ? x.x1v(m,id)*x.x1v(m,id)/(x.x1f(m,i)*x.x1f(m,i))
+                   : sin(x.x2v(m,jd))/sin(x.x2f(m,j));
+  }
   ((d == 1) ? pl : pr) += s*(a - 1.0);
 }
 
