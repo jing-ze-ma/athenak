@@ -2195,6 +2195,9 @@ class RadiationM1 {
   void Time2Report();
   void RstFingerprint(const char *tag);   // rstbit-1107
   int dbg_rst_fp = 0;
+  int dbg_rst_fp_cycle = -1;    // dbg_rst_fp_cycle: fingerprints inside that cycle
+  bool dbg_rst_fp_dump = false; // dbg_rst_fp_dump: vgd_cs written at every fingerprint
+  bool dbg_rst_fp_done = false; // (the first clean solve of that cycle has printed)
   int Time2RstNchWant();        // restart channels this run keeps (0 unless hesdirk2)
   int Time2RstNch();            // ...and writes (0 unless a slope is stored)
   bool Time2RstAccept(const int nfile);   // a file's channels fit (sets t2_nfv)

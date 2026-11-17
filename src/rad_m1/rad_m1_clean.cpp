@@ -680,6 +680,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   auto settled = [&](const Real d, const Real d0, const Real f) {
     return d < tol_nl || (d > 0.5*d0 && d < 100.0*fmin(f, tol_nl));
   };
+  // <rad_m1>/dbg_rst_fp_cycle: fingerprints of the first solve of that cycle
+  const bool fpc = (pmy_pack->pmesh->ncycle == dbg_rst_fp_cycle) && !dbg_rst_fp_done;
+  if (fpc) RstFingerprint("cln_setup");
   if (cell) Kokkos::deep_copy(Kokkos::subview(cln_v, Kokkos::ALL, 2, Kokkos::ALL,
                                               Kokkos::ALL, Kokkos::ALL), 0.0);
   for (int ipos = 0; ; ++ipos) {
@@ -720,7 +723,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         CleanRightHandSide();
         CleanPreconditionerSetup();
       }
+      if (fpc) RstFingerprint(("cln_pass" + std::to_string(inl) + "_pre").c_str());
       nit = CleanBiCGStab();
+      if (fpc) RstFingerprint(("cln_pass" + std::to_string(inl) + "_post").c_str());
       // (clean_yres = local: the local exchange of the solution X, kept while a pass
       // leaves X as it is, so that the gas does not take the round-off of a new residual)
       if (cell && cln_yres != M1_YRES_OFF && cln_feedback &&
@@ -851,6 +856,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       CleanCellClosureSlope(1.0);
     }
   }
+  if (fpc) dbg_rst_fp_done = true;
   return TaskStatus::complete;
 }
 
