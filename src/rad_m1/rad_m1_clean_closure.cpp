@@ -1012,20 +1012,53 @@ void RadiationM1::CleanFvRebase() {
   auto fr = cln_fvr;
   auto dir_ = cln_fvd;
   const int nr = cln_fvn, nv = cln_fvb*cln_fvn, nb = src.f32 ? nr : nv;
-  const int n2 = fs.extent_int(1) - 1, n3 = fs.extent_int(2) - 1;
-  const int n4 = fs.extent_int(3) - 1;
-  par_for("cln_fv_rebase", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, 0, n2, 0, n3,
-          0, n4,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real r[4];
-    CleanFvFit(nr, dir_, [&](const int d) {return src(m,d,k,j,i);}, r);
-    for (int c = 0; c < 4; ++c) r[c] = static_cast<Real>(static_cast<float>(r[c]));
-    for (int d = 0; d < nb; ++d) {
-      const Real b = (d < nr) ? r[0] + r[1]*dir_(d,0) + r[2]*dir_(d,1) + r[3]*dir_(d,2)
-                              : 0.0;
-      fs(m,k,j,i,d) = static_cast<float>(src(m,d,k,j,i) - b);
-    }
-    for (int c = 0; c < 4; ++c) fr(m,k,j,i,c) = static_cast<float>(r[c]);
+  const int n2 = fs.extent_int(1), n3 = fs.extent_int(2), n4 = fs.extent_int(3);
+  const int64_t ncl = static_cast<int64_t>(pmy_pack->nmb_thispack)*n2*n3*n4;
+  // (a team takes nt cells: their intensities into scratch with the lanes along the
+  // directions of a cell, the fit of each cell by one lane, the differences back the
+  // same way)
+  constexpr int nt = 8;
+  const int nteam = static_cast<int>((ncl + nt - 1)/nt), ns = nb + 1;
+  const size_t sb = ScrArray1D<Real>::shmem_size(nt*ns) + ScrArray1D<int>::shmem_size(4*nt);
+  Kokkos::TeamPolicy<> pol(DevExeSpace(), nteam, 64);
+  Kokkos::parallel_for("cln_fv_rebase", pol.set_scratch_size(0, Kokkos::PerTeam(sb)),
+  KOKKOS_LAMBDA(TeamMember_t tm) {
+    ScrArray1D<Real> v(tm.team_scratch(0), nt*ns);
+    ScrArray1D<int> x(tm.team_scratch(0), 4*nt);
+    const int64_t c0 = static_cast<int64_t>(tm.league_rank())*nt;
+    const int nc = static_cast<int>((ncl - c0 < nt) ? ncl - c0 : nt);
+    Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nc), [&](const int q) {
+      const int64_t c = c0 + q;
+      x(4*q) = static_cast<int>(c/(static_cast<int64_t>(n4)*n3*n2));
+      const int r = static_cast<int>(c%(static_cast<int64_t>(n4)*n3*n2));
+      x(4*q+1) = r/(n4*n3);
+      x(4*q+2) = (r/n4)%n3;
+      x(4*q+3) = r%n4;
+    });
+    tm.team_barrier();
+    Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nc*nb), [&](const int e) {
+      const int q = e/nb, d = e - q*nb;
+      v(q*ns+d) = src(x(4*q),d,x(4*q+1),x(4*q+2),x(4*q+3));
+    });
+    tm.team_barrier();
+    Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nc), [&](const int q) {
+      Real r[4];
+      CleanFvFit(nr, dir_, [&](const int d) {return v(q*ns+d);}, r);
+      for (int c = 0; c < 4; ++c) r[c] = static_cast<Real>(static_cast<float>(r[c]));
+      for (int d = 0; d < nb; ++d) {
+        const Real b = (d < nr) ? r[0] + r[1]*dir_(d,0) + r[2]*dir_(d,1) + r[3]*dir_(d,2)
+                                : 0.0;
+        v(q*ns+d) = v(q*ns+d) - b;
+      }
+      for (int c = 0; c < 4; ++c) {
+        fr(x(4*q),x(4*q+1),x(4*q+2),x(4*q+3),c) = static_cast<float>(r[c]);
+      }
+    });
+    tm.team_barrier();
+    Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nc*nb), [&](const int e) {
+      const int q = e/nb, d = e - q*nb;
+      fs(x(4*q),x(4*q+1),x(4*q+2),x(4*q+3),d) = static_cast<float>(v(q*ns+d));
+    });
   });
   // (the kernel read the directions of the last reference)
   if (cln_fvrd.extent_int(0) != nr) cln_fvrd = DvceArray2D<Real>("cln_fvrd", nr, 4);
@@ -1982,6 +2015,18 @@ int RadiationM1::CleanFvJoint(const DvceArray1D<int> &mds, const int nq,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn CleanShell CleanFvLayer
+//! \brief clean_fv_lag = extrap: the first ghost layer of a MeshBlock (the cells an fv1
+//! sweep reads across its faces) as the shell of the active cells in the box one larger;
+//! cell q is (k,j,i) + (ks, js, is) - (td, md, 1) of the mesh indices
+
+CleanShell CleanFvLayer(const RegionIndcs &ix, const bool md, const bool td) {
+  return CleanShell(ix.nx3 + (td ? 2 : 0), ix.nx2 + (md ? 2 : 0), ix.nx1 + 2, 0, 1,
+                    ix.nx1, md ? 1 : 0, md ? ix.nx2 : 0, td ? 1 : 0, td ? ix.nx3 : 0, md,
+                    td);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanFvSweep
 //! \brief clean_rays = fv | fv1: the conservative formal solution on the vet_gd
 //! direction set (cln_fvi).  Per direction every face carries n . A_f times its upwind
@@ -2237,6 +2282,27 @@ void RadiationM1::CleanFvSweep() {
   const bool jt = cln_fvjoint;
   auto fsrc = cln_fvsrc;
   auto fcore = cln_fvcore;
+  // fv1: a pass after the first takes a cell at a MeshBlock face only where the inflow it
+  // reads across the face changed since the last pass (cln_fvgx, the inflow the last pass
+  // read: the extrapolated one, else that at the start), and the walls' beams do not
+  const bool gin = act && !jt && !wall[0] && !wall[1];
+  const bool mdi = pmy_pack->pmesh->multi_d, tdi = pmy_pack->pmesh->three_d;
+  const CleanShell gsh = CleanFvLayer(indcs, mdi, tdi);
+  const int gi = is - 1, gj = js - (mdi ? 1 : 0), gk = ks - (tdi ? 1 : 0);
+  if (gin && !(lag && cln_fvlag == 2)) {
+    if (cln_fvgx.extent_int(0) != nmb || cln_fvgx.extent_int(1) != gsh.ncell ||
+        cln_fvgx.extent_int(2) != n) {
+      Kokkos::realloc(cln_fvgx, nmb, gsh.ncell, n);
+    }
+    auto gx = cln_fvgx;
+    par_for("cln_fv_gin", DevExeSpace(), 0, nmb - 1, 0, gsh.ncell - 1, 0, n - 1,
+    KOKKOS_LAMBDA(const int m, const int q, const int d) {
+      int k, j, i;
+      CleanShellCell(gsh, q, k, j, i);
+      gx(m,q,d) = fi(m,d,k+gk,j+gj,i+gi);
+    });
+  }
+  auto gx = cln_fvgx;
   int lseg = 1;
   for (const auto &sg : cln_fvseg) lseg = std::max(lseg, sg[1] - sg[0] + 1);
   Kokkos::View<Kokkos::MinMaxScalar<Real>*, DevMemSpace> rsg("cln_fv_rsg", lseg);
@@ -2245,6 +2311,33 @@ void RadiationM1::CleanFvSweep() {
     Real dmax = 0.0, imax = 0.0;
     if (axi) Kokkos::deep_copy(cln_fvx, cln_fvi);
     if (act) Kokkos::deep_copy(done, -1);
+    if (gin && it > 0) {
+      par_for("cln_fv_gdue", DevExeSpace(), 0, nmb - 1, 0, gsh.ncell - 1, 0, n - 1,
+      KOKKOS_LAMBDA(const int m, const int q, const int d) {
+        int k, j, i;
+        CleanShellCell(gsh, q, k, j, i);
+        k += gk;
+        j += gj;
+        i += gi;
+        // (the face to the block's cell; the sweep reads no ghost beyond an edge or
+        // corner)
+        const int fx = (i < is) ? 0 : ((i > ie) ? 1 : -1);
+        const int fy = (mdi && j < js) ? 2 : ((mdi && j > je) ? 3 : -1);
+        const int fz = (tdi && k < ks) ? 4 : ((tdi && k > ke) ? 5 : -1);
+        if ((fx >= 0) + (fy >= 0) + (fz >= 0) != 1) return;
+        const Real v = fi(m,d,k,j,i);
+        if (v == gx(m,q,d)) return;
+        gx(m,q,d) = v;
+        const int f = (fx >= 0) ? fx : ((fy >= 0) ? fy : fz);
+        const int kb = (f == 4) ? ks : ((f == 5) ? ke : k);
+        const int jb = (f == 2) ? js : ((f == 3) ? je : j);
+        const int ib = (f == 0) ? is : ((f == 1) ? ie : i);
+        const Real a = dir_(d,0)*ga(m,kb-ks,jb-js,ib-is,3*f) +
+                       dir_(d,1)*ga(m,kb-ks,jb-js,ib-is,3*f+1) +
+                       dir_(d,2)*ga(m,kb-ks,jb-js,ib-is,3*f+2);
+        if (a < 0.0) due(m*nc+((kb-ks)*nx2+jb-js)*nx1+ib-is,d) = it;
+      });
+    }
     const int l1 = (jt && it > 0) ? std::min(cln_fvl0, nlev) : 0;
     // one level (sg > 0: only the cells of cycle segment sg) into the reduction rv; pl
     // std::true_type: the plain fv1 sweep, pr std::true_type: its entries are row chunks
@@ -2260,7 +2353,8 @@ void RadiationM1::CleanFvSweep() {
     const int nkb = rows ? 0 : static_cast<int>(cln_fvkl[l+1] - k0);
     // (256 threads per block: the registers of a cell's six faces without spills)
     using Rp256 = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
-    Kokkos::parallel_reduce("cln_fv", Rp256(DevExeSpace(), 0, cln_fvlv[l]),
+    Kokkos::parallel_reduce(it ? "cln_fv_rep" : "cln_fv",
+                            Rp256(DevExeSpace(), 0, cln_fvlv[l]),
     KOKKOS_LAMBDA(const int q, Kokkos::MinMaxScalar<Real> &mm) {
 #if !defined(KOKKOS_ENABLE_CUDA)
       // (the branches of the other forms compiled out)
@@ -2293,8 +2387,8 @@ void RadiationM1::CleanFvSweep() {
         const int c = c0 + r*st;
         if (sg > 0 && fcore(md,c) != sg) continue;
         const int i = is + c%nx1, j = js + (c/nx1)%nx2, k = ks + c/(nx1*nx2);
-        if (acc && it > 0 && due(m*nc+c,d) != it && i != is && i != ie && j != js &&
-            j != je && k != ks && k != ke) {
+        if (acc && it > 0 && due(m*nc+c,d) != it &&
+            (gin || (i != is && i != ie && j != js && j != je && k != ks && k != ke))) {
           done(m*nc+c,d) = it;
           mm.max_val = fmax(mm.max_val, fi(m,d,k,j,i));
           continue;
@@ -2511,18 +2605,6 @@ void RadiationM1::CleanFvSweep() {
     cln_fvt1 = cln_fvtc;
     cln_fvnv = std::min(cln_fvnv + 1, 2);
   }
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn CleanShell CleanFvLayer
-//! \brief clean_fv_lag = extrap: the first ghost layer of a MeshBlock (the cells an fv1
-//! sweep reads across its faces) as the shell of the active cells in the box one larger;
-//! cell q is (k,j,i) + (ks, js, is) - (td, md, 1) of the mesh indices
-
-CleanShell CleanFvLayer(const RegionIndcs &ix, const bool md, const bool td) {
-  return CleanShell(ix.nx3 + (td ? 2 : 0), ix.nx2 + (md ? 2 : 0), ix.nx1 + 2, 0, 1,
-                    ix.nx1, md ? 1 : 0, md ? ix.nx2 : 0, td ? 1 : 0, td ? ix.nx3 : 0, md,
-                    td);
 }
 
 //----------------------------------------------------------------------------------------

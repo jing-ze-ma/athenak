@@ -185,6 +185,13 @@ void RadiationM1::CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc,
       KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
         h(m,n,k,j,i) = at(m,c0+n,k,j,i);
       });
+    } else if constexpr (L) {   // (the components of a cell side by side)
+      par_for("cln_hcopy", DevExeSpace(), 0, nmb1, 0, sc.ncell-1, 0, nc-1,
+      KOKKOS_LAMBDA(const int m, const int q, const int n) {
+        int k, j, i;
+        CleanShellCell(sc, q, k, j, i);
+        h(m,n,k,j,i) = at(m,c0+n,k,j,i);
+      });
     } else {
       par_for("cln_hcopy", DevExeSpace(), 0, nmb1, 0, nc-1, 0, sc.ncell-1,
       KOKKOS_LAMBDA(const int m, const int n, const int q) {
@@ -201,12 +208,21 @@ void RadiationM1::CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc,
   while (pb->ClearSend() == TaskStatus::incomplete) {}
   while (pb->ClearRecv() == TaskStatus::incomplete) {}
   const CleanShell sb(n3, n2, n1, 0, is, ie, js, je, ks, ke, md, td);
-  par_for("cln_hback", DevExeSpace(), 0, nmb1, 0, nc-1, 0, sb.ncell-1,
-  KOKKOS_LAMBDA(const int m, const int n, const int q) {
-    int k, j, i;
-    CleanShellCell(sb, q, k, j, i);
-    at(m,c0+n,k,j,i) = h(m,n,k,j,i);
-  });
+  if constexpr (L) {
+    par_for("cln_hback", DevExeSpace(), 0, nmb1, 0, sb.ncell-1, 0, nc-1,
+    KOKKOS_LAMBDA(const int m, const int q, const int n) {
+      int k, j, i;
+      CleanShellCell(sb, q, k, j, i);
+      at(m,c0+n,k,j,i) = h(m,n,k,j,i);
+    });
+  } else {
+    par_for("cln_hback", DevExeSpace(), 0, nmb1, 0, nc-1, 0, sb.ncell-1,
+    KOKKOS_LAMBDA(const int m, const int n, const int q) {
+      int k, j, i;
+      CleanShellCell(sb, q, k, j, i);
+      at(m,c0+n,k,j,i) = h(m,n,k,j,i);
+    });
+  }
   if (!phys) return;
 
   auto bc = pmy_pack->pmb->mb_bcs.d_view;
