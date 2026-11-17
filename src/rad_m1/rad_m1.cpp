@@ -245,6 +245,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_tol_rel_max")) {
       cln_tolrmx = pin->GetReal("rad_m1","clean_tol_rel_max");
     }
+    // clean_gas_tfloor (read only when named): the gas row's T bounded below by the EOS
+    // tfloor, and the gas eint written back from that root (E takes the rest)
+    cln_gtf = stag("clean_gas_tfloor", false);
     {const std::string pc = pin->DoesParameterExist("rad_m1","clean_stag_pc") ?
                             pin->GetString("rad_m1","clean_stag_pc") : "mg";
     if (pc != "line" && pc != "mg") {
