@@ -3139,6 +3139,7 @@ class RadiationM1 {
   int cln_maxpic = 12;          // clean_maxpic: passes that update the lagged slopes
   bool cln_poslim = true;       // clean_pos_limit: a-posteriori low-order face limiter
   bool cln_gflux = false;       // clean_stag_gflux: rays' face flux as flux factors
+  bool cln_freal = false;       // clean_stag_freal: realisable sb, restart faces
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
   bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces
   bool cln_posghost = false;    // clean_pos_ghost: marked boundary faces, upwind ghost

@@ -214,6 +214,7 @@ struct CleanArgs {
   bool fd;                     // staggered, clean_stag_fkin: the energy flux's
                                // G + F^H - F
   bool gf;                     // staggered, clean_stag_gflux: flux factors, low order
+  bool fre;                    // staggered, clean_stag_freal: a realisable comoving sb
   bool fs;                     // staggered, clean_stag_fsolve: the face F of the F solve
                                // (CLF_N) with its dissipation term (CLF_N + 1)
   bool hi;                     // staggered, clean_stag_split: the face momentum state

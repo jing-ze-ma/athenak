@@ -236,6 +236,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     };
     cln_fsolve = cln_upw = cln_split;
     cln_fkin = cln_fwork = cln_gflux = cln_split && cln_consist;
+    // clean_stag_freal (read only when named, default off): realisable by construction,
+    // the comoving part of sb at most 2 |beta| hc kE E_k and the faces of a restart from
+    // the old scheme's file at most c E of their donor
+    cln_freal = stag("clean_stag_freal", false);
+    if (cln_freal && !(cln_gflux && cln_fsolve)) {
+      std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_freal needs clean_layout = "
+                << "staggered with clean_consistency (the F solve and gflux)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     cln_vimp = stag("clean_stag_vimp", cln_split);
     cln_sbimp = stag("clean_stag_sbimp", false) && cln_split;
     // clean_tol_rel = kappa (staggered default 0.1, 0 = off) and clean_tol_rel_max (1e-4)

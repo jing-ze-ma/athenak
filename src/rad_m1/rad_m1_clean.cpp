@@ -1213,6 +1213,8 @@ void RadiationM1::CleanRstFaces() {
   auto cw = pmy_pack->pcoord->cos_cell, sw = pmy_pack->pcoord->sin_cell;
   const Real efl = e_floor;
   const int enm = (dop_face == 1) ? M1_IENTH_CENTRAL : impl_enth;
+  const bool fre = cln_freal;
+  DvceArray1D<Real> rc("cln_rstr", 2);
   // a of every cell (CLW_DM, 3) and its E (CLW_B), as the old scheme's write-back
   par_for("cln_rsta", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -1260,7 +1262,31 @@ void RadiationM1::CleanRstFaces() {
         if (af < 0.0) PLM(e(-1), e(0), e(1), dum, ef);
       }
       f0(m,k,j,i) += af*ef;
+      // (clean_stag_freal: realisable, at most c E of its donor.  In an E-floor hole of
+      // the old scheme (its floor raised E after the write-back) the file's F and F0 are
+      // not those of its E: the old scheme's next write-back would have clipped them
+      // (M1ApplyLimits), so the excess is no momentum of its state; counted and its
+      // momentum sum |dF| V/c^2 reported, not given to the floor gas)
+      const Real fc = fmin(fmax(f0(m,k,j,i), -x.c*e(0)), x.c*e(-1));
+      if (fre && fc != f0(m,k,j,i)) {
+        const Real v = (x.sph || x.cub) ? x.vol(m,k,j,i) :
+                       1.0/(x.idx[0]*x.idx[1]*x.idx[2]);
+        Kokkos::atomic_add(&rc(0), 1.0);
+        Kokkos::atomic_add(&rc(1), fabs(f0(m,k,j,i) - fc)*v/(x.c*x.c));
+        f0(m,k,j,i) = fc;
+      }
     });
+  }
+  if (fre) {
+    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), rc);
+    const Real n = CleanReduce(h(0), false), p = CleanReduce(h(1), false);
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> clean_stag_freal RESTART CONVERSION (one time, not a "
+                << "deposit): faces of the old scheme's file above c E_donor taken at it="
+                << n << ", radiation momentum removed sum |dF| V/c^2=" << p
+                << " (its energy equivalent c sum |dF| V/c^2=" << p*x.c
+                << "; E unchanged)" << std::endl;
+    }
   }
   // the cell flux of these faces, as CleanWriteBack stores it (on the cubed sphere the
   // face vector in the frame of y, not the old scheme's covariant panel components)
@@ -1583,6 +1609,13 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
       // a E, which hcke >> 1 turned into a lagged source the iteration could not settle
       dop = 0.5*b2 + ba;
       if (x.gf) sb = hcke*(dop*x.w(m,CLW_EK,k,j,i) + 2.0*(by - bp));
+      // (clean_stag_freal: the comoving part realisable, |E0 - E| <= 2 |beta| E as the
+      // old production's implicit_realisable_coupling: a face F' of a hot neighbour
+      // through a cold opaque cell is no flux of its E; the gas takes the same sb)
+      if (x.fre) {
+        const Real s0 = hcke*dop*x.w(m,CLW_EK,k,j,i), sl = 2.0*hcke*std::sqrt(b2)*ek;
+        sb = s0 + fmin(fmax(sb - s0, -sl), sl);
+      }
       if (x.gf) x.w(m,CLW_JV+1,k,j,i) = hcke*dop;   // (d sb/dE, CleanNewtonUpdate)
       gr = !x.sbi && sb != -x.w(m,CLW_EP,k,j,i);   // (T took the last pass's sb)
     }

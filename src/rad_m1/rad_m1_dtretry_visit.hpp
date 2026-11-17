@@ -1166,6 +1166,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_maxpic", cln_maxpic);
   v.value("cln_poslim", cln_poslim);
   v.value("cln_gflux", cln_gflux);
+  v.value("cln_freal", cln_freal);
   v.value("cln_diagcells", cln_diagcells);
   v.value("cln_posbdry", cln_posbdry);
   v.value("cln_posghost", cln_posghost);
