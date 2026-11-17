@@ -131,22 +131,33 @@ CleanArgs RadiationM1::CleanMakeArgs() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn const CleanArgs *RadiationM1::CleanDevArgs
-//! \brief a device copy (slot s) of x for the noinline device calls: a reference to a
-//! kernel's capture of x is copied to the stack of every thread (~3 KB), one to device
-//! memory is read in place.  The host takes x itself.
+//! \fn const void *RadiationM1::CleanDevCopy
+//! \brief a device copy (slot s < 8) of an argument struct of n <= 8 KB bytes (CleanArgs,
+//! the EOS) for the device calls that are not inlined: a reference to a kernel's capture
+//! is copied to the stack of every thread (~3 KB for CleanArgs), one to device memory is
+//! read in place (CleanDev, CleanDevArgs).  The host takes the struct itself.
+
+const void *RadiationM1::CleanDevCopy(const void *p, const size_t n, const int s) {
+  if constexpr (std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>) {
+    return p;
+  } else {
+    constexpr size_t slot = 8192;
+    if (n > slot || s < 0 || s >= 8) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "CleanDevCopy: " << n << " bytes in slot " << s
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (cln_xdev.extent(0) == 0) Kokkos::realloc(cln_xdev, 8*slot);
+    Kokkos::View<const char *, HostMemSpace, Kokkos::MemoryUnmanaged>
+        h(static_cast<const char *>(p), n);
+    Kokkos::deep_copy(Kokkos::subview(cln_xdev, std::make_pair(s*slot, s*slot + n)), h);
+    return cln_xdev.data() + s*slot;
+  }
+}
 
 const CleanArgs *RadiationM1::CleanDevArgs(const CleanArgs &x, const int s) {
-  if constexpr (std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>) {
-    return &x;
-  } else {
-    const size_t n = sizeof(CleanArgs);
-    if (cln_xdev.extent(0) < 2*n) Kokkos::realloc(cln_xdev, 2*n);
-    Kokkos::View<const char *, HostMemSpace, Kokkos::MemoryUnmanaged>
-        h(reinterpret_cast<const char *>(&x), n);
-    Kokkos::deep_copy(Kokkos::subview(cln_xdev, std::make_pair(s*n, (s + 1)*n)), h);
-    return reinterpret_cast<const CleanArgs *>(cln_xdev.data() + s*n);
-  }
+  return CleanDev(x, s);
 }
 
 //----------------------------------------------------------------------------------------

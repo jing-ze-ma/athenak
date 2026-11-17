@@ -3000,6 +3000,10 @@ class RadiationM1 {
   void CleanStagCsLateral(const int e);
   void CleanWriteBack();
   CleanArgs CleanMakeArgs();
+  const void *CleanDevCopy(const void *p, const size_t n, const int s);
+  template <class T> const T *CleanDev(const T &x, const int s) {
+    return static_cast<const T *>(CleanDevCopy(&x, sizeof(T), s));
+  }
   const CleanArgs *CleanDevArgs(const CleanArgs &x, const int s);
   void CleanGhostFill(DvceArray5D<float> a, const int c0, const int nc);
   template <typename T>
@@ -3263,7 +3267,7 @@ class RadiationM1 {
     DvceArray5D<Real> a, ca;    // its coarse dummy
   };
   std::map<int, CleanHalo> cln_halo;   // by nc
-  DvceArray1D<char> cln_xdev;   // device copies of CleanArgs (CleanDevArgs)
+  DvceArray1D<char> cln_xdev;   // device copies of kernel arguments (CleanDevCopy)
   // the exchange object of every clean ghost fill (clean_halo_vars variables; a fill
   // sends only its own), the fills deferred to the next exchange (CleanGhostDefer)
   std::unique_ptr<MeshBoundaryValuesCC> cln_hpb;

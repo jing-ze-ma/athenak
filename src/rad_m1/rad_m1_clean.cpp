@@ -1465,8 +1465,12 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   CleanArgs xh = x;   // (the face momentum state, clean_stag_split)
   xh.hi = cln_split;
   xh.fs = cln_fsk;
+  const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
+  const auto *peos = CleanDev(eos, 2);
   par_for("cln_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
+    const auto &eos = *peos;
     const Real t = x.w(m,CLW_T,k,j,i);
     const Real hcke = x.h*x.c*op(m,M1_OP_E,k,j,i);
     Real rr = 0.0, work = 0.0, gm = 1.0, sb = 0.0, dop = 0.0, ek = 0.0, gres = 0.0;
@@ -1683,8 +1687,10 @@ Real RadiationM1::CleanNewtonUpdate() {
     CleanGhostFill(cln_w, CLW_X, 1);
     CleanArgs xh = CleanMakeArgs();
     xh.hi = cln_split;
+    const CleanArgs *pxh = CleanDevArgs(xh, 1);
     par_for("cln_sbx", DevExeSpace(), 0, nmb-1, ks, ks+nx3-1, js, js+nx2-1, is, is+nx1-1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const CleanArgs &xh = *pxh;   // (in device memory: no per-thread copy)
       w(m,CLW_EP,k,j,i) -= CleanStagBetaE(xh, CLW_X, m, k, j, i) -
                            CleanStagBetaE(xh, CLW_EK, m, k, j, i);
     });
@@ -2135,8 +2141,10 @@ void RadiationM1::CleanStagFSolve(const int e) {
     const int cy = (dir == 2) ? CLW_S : CLW_Y + dir;
     if (ph == 0) {
       // F^H of every face (CLF_N) and al of every cell (al slot 0)
+      const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
       par_for("cln_fs0", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
         fc(m,CLF_N,k,j,i) = CleanFaceFlux(xh, e, dir, m, k, j, i, true);
         fc(m,CLF_N+1,k,j,i) = 0.0;
         if (!fk || !x.sph || dir == 2 || CleanBoundaryFace(x, dir, m, k, j, i)) return;
@@ -2358,15 +2366,19 @@ void RadiationM1::CleanStagFSolveCs(const int e) {
   for (int dir = 0; dir < 3; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     auto fc = x.fc[dir];
+    const CleanArgs *pxh = CleanDevArgs(xh, 1);
     par_for("cln_fcs0", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const CleanArgs &xh = *pxh;   // (in device memory: no per-thread copy)
       fc(m,CLF_N,k,j,i) = CleanFaceFlux(xh, e, dir, m, k, j, i, true);
       fc(m,CLF_N+1,k,j,i) = 0.0;
     });
   }
   // the cell terms of every family, started from the last F solve's faces
+  const CleanArgs *px = CleanDevArgs(x, 0);
   par_for("cln_fcs1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
     Real nd[3][3];
     CleanCsFamily(x, m, k, j, i, nd);
     const Real ec = x.w(m,e,k,j,i);
@@ -2628,8 +2640,10 @@ void RadiationM1::CleanStagDrag(const bool first) {
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     auto fc = x.fc[dir];
+    const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
     par_for("cln_drag", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
       if (CleanBoundaryFace(x, dir, m, k, j, i)) return;   // (no F equation)
       const Real q = !lag ? fc(m,CLF_G,k,j,i) :
                      CleanFaceFlux(xh, CLW_EK, dir, m, k, j, i, true) +
@@ -2683,8 +2697,10 @@ void RadiationM1::CleanWriteBack() {
   // operator it was solved with; with clean_stag_split also the cell flux, that of Phi
   // (the faces keep F^H)
   auto u0_ = u0;
+  const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
   par_for("cln_wbdiv", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
     x.w(m,CLW_Q,k,j,i) = CleanFluxDivergence(x, CLW_X, m, k, j, i, true);
     for (int d = 0; d < 3 && xh.hi; ++d) {
       u0_(m,M1_F1+d,k,j,i) = ((d == 1 && !multi_d) || (d == 2 && !three_d)) ? 0.0 :
