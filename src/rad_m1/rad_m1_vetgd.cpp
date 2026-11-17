@@ -10881,6 +10881,7 @@ void RadiationM1::DtRetryQuiesce(bool restoring) {
   if (!restoring) {
     // csfix-1023: the compact-list build generations at the checkpoint
     for (int c = 0; c < vgd_csncl; ++c) {g_vgd_csgen_save[c] = g_vgd_csgen[c];}
+    CleanDtrD(true);
     return;
   }
   if (vgd_tab_state == 1 && vgd_tabf.valid()) {vgd_tabf.wait();}
@@ -10896,6 +10897,7 @@ void RadiationM1::DtRetryQuiesce(bool restoring) {
 //! synchronously with the same function (VgdTabCompute), so the same numbers.
 
 void RadiationM1::DtRetryAfterRestore() {
+  CleanDtrD(false);
   if (vgd_tabf.valid()) {vgd_tabf.get();}
   if (vgd_on) {
     vgd_tex.fence();

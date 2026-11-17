@@ -1744,6 +1744,28 @@ void RadiationM1::CleanDInc(const bool two, const Real c1, const Real c2, const 
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanDtrD
+//! \brief dt_retry: the memory d and its slope K1 (CLF_N + 3, CLF_KD) are the only face
+//! values a cycle takes from the last one; the checkpoint keeps them in cln_rstd (save,
+//! the restart's layout) instead of the face arrays
+
+void RadiationM1::CleanDtrD(const bool save) {
+  const int nmb = cln_fc1.extent_int(0);
+  if (!clean || !cln_fsolve || !cln_fkin || nmb == 0) return;
+  auto AL = Kokkos::ALL;
+  if (save && (cln_rstd.extent_int(0) != nmb || cln_rstd.extent_int(1) != 6)) {
+    Kokkos::realloc(cln_rstd, nmb, 6, cln_fc1.extent_int(2), cln_fc1.extent_int(3),
+                    cln_fc1.extent_int(4));
+  }
+  for (int e = 0; e < cln_rstd.extent_int(1) && cln_rstd.extent_int(0) == nmb; ++e) {
+    auto d = Kokkos::subview((e%3 == 0) ? cln_fc1 : ((e%3 == 1) ? cln_fc2 : cln_fc3), AL,
+                             (e < 3) ? CLF_N + 3 : CLF_KD, AL, AL, AL);
+    auto r = Kokkos::subview(cln_rstd, AL, e, AL, AL, AL);
+    if (save) {Kokkos::deep_copy(r, d);} else {Kokkos::deep_copy(d, r);}
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanStagFSolve
 //! \brief clean_stag_fsolve (with clean_stag_split): with E of the solution, the face
 //! momentum F on its own, one unknown per face, from
