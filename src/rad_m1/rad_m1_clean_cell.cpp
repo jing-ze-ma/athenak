@@ -585,7 +585,7 @@ void RadiationM1::CleanCellRightHandSide() {
         s = fmax(s + x.h*x.c*gm*(x.w(m,CLW_DK,k,j,i)*arad_*SQR(SQR(t)) -
                               x.w(m,CLW_DK+1,k,j,i)*fmax(x.w(m,CLW_EK,k,j,i), 0.0)), 0.0);
       }
-      rr = s/(d*cv + s);
+      rr = (s > 0.0) ? s/(d*cv + s) : 0.0;   // (no exchange: none, also where T = 0)
     }
     Real sdiv[4];
     CleanCellSourceDivergence(x, m, k, j, i, sdiv);
@@ -1932,7 +1932,8 @@ void RadiationM1::CleanCellDiagnose() {
 //! the exact kinetic energy the gas gains (of the residual force), so its eint takes -A;
 //! with wb_arad (force_reference_work = split) the radiation also pays the work of the
 //! reference force, which the problem generator gives the gas.  cln_neint counts the
-//! cells left with eint < 0 (the fluid's floor would create energy there).  On the
+//! cells the solve left with eint < 0 or below the eint of the EOS temperature floor
+//! from above it (the fluid's floor would create energy there).  On the
 //! cubed sphere F is stored in the frame of y (F_r, F_theta, F_phi) and the gas momentum
 //! change (and its stage slope) in the hydro's components (CleanGasChange): E and L_z of
 //! gas plus radiation are conserved to round-off.
@@ -2035,9 +2036,18 @@ void RadiationM1::CleanCellWriteBack() {
         eos.ThermoAt(uh(m,IDN,k,j,i), x.w(m,CLW_T,k,j,i), ei, p, chi_rho, chi_t, cv);
         den = ei - x.w(m,CLW_EI,k,j,i);
       } else {
-        // the gas eint changes by the exchange of the solve only
+        // the gas eint changes by the exchange of the solve only.  A cell it leaves below
+        // the eint of the EOS temperature floor (0 without one) counts if its eint was
+        // above it (an eint the hydro left there is not the solve's): the fluid's floor
+        // would add energy the radiation's budget does not see
         const Real ke = 0.5*(SQR(pg[0]) + SQR(pg[1]) + SQR(pg[2]))/uh(m,IDN,k,j,i);
         const Real eint = CleanGasEint(x, uh, ke + wk, m, k, j, i) + den;
+        Real ef = 0.0;
+        if (eos.tfloor > 0.0) {
+          Real p, chi_rho, chi_t, cv;
+          eos.ThermoAt(uh(m,IDN,k,j,i), eos.tfloor, ef, p, chi_rho, chi_t, cv);
+        }
+        const bool above = (x.w(m,CLW_EI,k,j,i) > ef);
         if (gexact) {
           // the cell's exchange taken exactly with its face fluxes, work and beta terms
           // fixed: E (1 + h c kE) = E_tr + h c kP G a T^4, E_tr = E_old - h div F - W
@@ -2056,10 +2066,11 @@ void RadiationM1::CleanCellWriteBack() {
             eos.ThermoAt(d, t, ei, p, chi_rho, chi_t, cv);
             den += ei - eint;
             e -= ei - eint;
-          } else {
+            if (ei < ef && above) nb += 1.0;
+          } else if (above) {
             nb += 1.0;
           }
-        } else if (eint < 0.0) {
+        } else if (eint < ef && above) {
           nb += 1.0;
         }
       }
