@@ -3110,6 +3110,7 @@ class RadiationM1 {
   Real cln_fvt1 = 0.0;          // extrap: closure time of the last build
   Real cln_fvt2 = 0.0;          // extrap: closure time of the inflow in cln_fvgp
   bool cln_fvrst = false;       // extrap: cln_fvi read from a restart (its record)
+  Real cln_fvrrec[4] = {0.0, 0.0, 0.0, 0.0};   // the record a restart holds
   DvceArray3D<Real> cln_fvgp;   // extrap: the first ghost layer of the build before
   DvceArray3D<Real> cln_fvgx;   // extrap: the inflow the pass took (extrapolated)
   Real cln_fvlagtol = 1.0e-4;   // clean_fv_lag_tol: inflow miss / imax of one extrap pass
@@ -3117,6 +3118,7 @@ class RadiationM1 {
   void CleanFvExtrapMiss(Real &miss, Real &chg);
   bool CleanFvExtrap();
   void CleanFvRstRead();
+  void CleanFvRstChannel(const int c, const HostArray4D<Real> &w, const int nmb);
   void CleanFvRstWrite(DvceArray5D<Real> &a, const int c, const int nmb, const int m0);
   int cln_fvl0 = 0;             // joint: the first level a later pass takes
   int cln_fvjn[2] = {0, 0};     // joint: the dropped inflows, the cells reading ghosts

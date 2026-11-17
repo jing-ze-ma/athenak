@@ -31,6 +31,7 @@
 #include "rad_m1/rad_m1_opacity.hpp"
 #include "rad_m1/rad_m1_clean.hpp"
 #include "rad_m1/rad_m1_clean_cell.hpp"
+#include "utils/deep_copy_across.hpp"
 #include "utils/imex_sdirk2.hpp"
 
 namespace radm1 {
@@ -1952,6 +1953,8 @@ void RadiationM1::CleanFvSweep() {
     }
     // (a restart has read the intensities in double precision)
     if (cln_fvis.extent_int(1) != cln_fvb*n) {
+      // (a restart's intensities of another set: no history)
+      if (cln_fvi.extent_int(1) != cln_fvb*n) cln_fvnv = 0;
       Kokkos::realloc(cln_fvis, nmb, cln_fvb*n, cln_s.extent_int(2), cln_s.extent_int(3),
                       cln_s.extent_int(4));
       if (cln_fvi.extent_int(1) == cln_fvb*n) {
@@ -2202,8 +2205,9 @@ void RadiationM1::CleanFvSweep() {
 #endif
     const int64_t k0 = rows ? cln_fvrls[l] : cln_fvkl[l];
     const int nkb = rows ? 0 : static_cast<int>(cln_fvkl[l+1] - k0);
-    Kokkos::parallel_reduce("cln_fv", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                                                            cln_fvlv[l]),
+    // (256 threads per block: the registers of a cell's six faces without spills)
+    using Rp256 = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
+    Kokkos::parallel_reduce("cln_fv", Rp256(DevExeSpace(), 0, cln_fvlv[l]),
     KOKKOS_LAMBDA(const int q, Kokkos::MinMaxScalar<Real> &mm) {
 #if !defined(KOKKOS_ENABLE_CUDA)
       // (the branches of the other forms compiled out)
@@ -2664,6 +2668,69 @@ void RadiationM1::CleanFvRstRead() {
     i += (i < is) ? -1 : ((i > ie) ? 1 : 0);
     gp(m,d,q) = fi(m,d,k,j,i);
   });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanFvRstChannel
+//! \brief clean_fv_float: channel c of the intensities a restart holds (double precision)
+//! goes straight into cln_fvis, its extrap history (CleanFvRstRead) taken on the way, so
+//! that the double-precision intensities never sit on the device whole
+
+void RadiationM1::CleanFvRstChannel(const int c, const HostArray4D<Real> &w, const int nmb) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
+  const int nv = t2_nfv, n = nv/cln_fvb;
+  const int n3 = w.extent_int(1), n2 = w.extent_int(2), n1 = w.extent_int(3);
+  if (cln_fvis.extent_int(0) != nmb || cln_fvis.extent_int(1) != nv) {
+    Kokkos::realloc(cln_fvis, nmb, nv, n3, n2, n1);
+  }
+  DvceArray4D<Real> t("cln_fv_rstc", nmb, n3, n2, n1);
+  deep_copy_across::DeepCopyAcross(t, w);
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const bool hist = (cln_fvlag == 2) && md && indcs.ng >= 2 && n >= 4;
+  if (hist && c < 4) {
+    DvceArray1D<Real> rec("cln_fv_rec", 1);
+    par_for("cln_fv_rec", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int e) {
+      rec(e) = t(0,ks,js-1,is-2);
+    });
+    auto v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), rec);
+    cln_fvrrec[c] = v(0);
+  }
+  const CleanShell sh = CleanFvLayer(indcs, md, td);
+  if (hist && c < n) {
+    if (c == 0) Kokkos::realloc(cln_fvgp, nmb, n, sh.ncell);
+    const int oi = is - 1, oj = js - 1, ok = ks - (td ? 1 : 0);
+    auto gp = cln_fvgp;
+    par_for("cln_fv_rstr", DevExeSpace(), 0, nmb - 1, 0, sh.ncell - 1,
+    KOKKOS_LAMBDA(const int m, const int q) {
+      int k, j, i;
+      CleanShellCell(sh, q, k, j, i);
+      k += ok;
+      j += oj;
+      i += oi;
+      k += td ? ((k < ks) ? -1 : ((k > ke) ? 1 : 0)) : 0;
+      j += (j < js) ? -1 : ((j > je) ? 1 : 0);
+      i += (i < is) ? -1 : ((i > ie) ? 1 : 0);
+      gp(m,c,q) = t(m,k,j,i);
+    });
+  }
+  auto fs = cln_fvis;
+  par_for("cln_fv_tof", DevExeSpace(), 0, nmb - 1, 0, n3 - 1, 0, n2 - 1, 0, n1 - 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    fs(m,c,k,j,i) = static_cast<float>(t(m,k,j,i));
+  });
+  cln_fvrst = true;
+  if (c == nv - 1) {
+    // the record of CleanFvRstWrite (none: nv = 0, the first builds sweep in full)
+    cln_fvnv = 0;
+    if (hist && cln_fvrrec[0] == kCleanFvRstMagic) {
+      cln_fvt1 = cln_fvrrec[1];
+      cln_fvt2 = cln_fvrrec[2];
+      cln_fvnv = static_cast<int>(cln_fvrrec[3]);
+    }
+    cln_fvi = DvceArray5D<Real>();
+  }
 }
 
 //----------------------------------------------------------------------------------------

@@ -3596,6 +3596,10 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   // known before the first sweep, Time2RstAccept)
   const int nfv0 = Time2RstNchWant() - ((clean && cln_rfv > 0) ? cln_fvb*cln_fvn : 0);
   if (clean && cln_rfv > 0 && ch >= nfv0) {
+    if (cln_fvf32 && cln_fvb == 1) {
+      CleanFvRstChannel(ch - nfv0, w, nmb);
+      return;
+    }
     if (cln_fvi.extent_int(0) != nmb || cln_fvi.extent_int(1) != t2_nfv) {
       Kokkos::realloc(cln_fvi, nmb, t2_nfv, w.extent_int(1), w.extent_int(2),
                       w.extent_int(3));
