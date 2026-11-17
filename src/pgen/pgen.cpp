@@ -1985,8 +1985,10 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // re-measures the history, or averaging is off)
   const bool ra_read = (nra_file > 0) && (pradm1 != nullptr) && pradm1->vra_on;
   // implicit_gas_src = conservative(2): csk1 and the flags, when this run is one too
-  // (with hesdirk2 for the slabs: csk1 is sized as its slope t2k1)
-  const bool csk_read = csk_have && (pradm1 != nullptr) && pradm1->impl_gas_src_cons;
+  // (with hesdirk2 for the slabs: csk1 is sized as its slope t2k1); not under scheme =
+  // clean, whose solve never reads the slopes (its own run never writes them)
+  const bool csk_read = csk_have && (pradm1 != nullptr) && pradm1->impl_gas_src_cons &&
+                        !pradm1->clean;
   // am_vector: the spin (+ amk1) when this run carries one too
   hydro::AmModule *pam_rst = hydro::AmModuleOf(pmy_mesh_->pmb_pack);
   const bool ams_read = (nams_file > 0) && (pam_rst != nullptr) && pam_rst->am_vector;
