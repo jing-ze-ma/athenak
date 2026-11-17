@@ -296,7 +296,7 @@ void RadiationM1::CleanFaceCoefficients() {
   auto gn = cln_gn;
   auto fi = cln_fvi;
   auto dv = cln_fvd;
-  const int nd = (pmy_pack->pmesh->use_cubed_sphere && cln_rfv > 0) ? cln_fvn : 0;
+  const int nd = pmy_pack->pmesh->use_cubed_sphere ? cln_fvn : 0;
 
   for (int dir = 0; dir < 3; ++dir) {
     if (dir == 1 && !pmy_pack->pmesh->multi_d) continue;

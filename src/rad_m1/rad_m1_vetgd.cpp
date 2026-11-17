@@ -973,8 +973,8 @@ void RadiationM1::VetGdInit() {
   Kokkos::deep_copy(vgd_x1mo, mo_h);
   if (vgd_nb1 > 1) {
     // (the cubed sphere: the clean scheme's FV rays, CleanFvSweep, no sweep levels)
-    if ((vgd_csg && !clean) || vgd_async || vgd_twin || vgd_upf != 0 || vgd_pol ||
-        (!vgd_shl_on && !vgd_csg) || indcs.nx1 < 2) {
+    if ((vgd_csg && !(clean && cln_rfv > 0)) || vgd_async || vgd_twin || vgd_upf != 0 ||
+        vgd_pol || (!vgd_shl_on && !vgd_csg) || indcs.nx1 < 2) {
       VgdFatal("several MeshBlocks along x1 need a wedge or (scheme = clean) the cubed "
                "sphere, MeshBlock nx1 >= 2, vet_gd_shell_list and no vet_gd_async / "
                "twin / upwind / full sphere");
@@ -8097,7 +8097,8 @@ void RadiationM1::VetGdRotAvgSetup() {
 
 void RadiationM1::VetGdPost() {
   Kokkos::Timer tm;
-  VetGdMoments();
+  // (the clean scheme on the cubed sphere reads the intensities: CleanClosureFromGd)
+  if (!(clean && vgd_csg)) {VetGdMoments();}
   if (vgd_twin) {VetGdTwin(1);}
   if (vgd_smooth > 0) {VetGdSmooth();}
   // vgdxf-1112: the current set's raw fields G (before the EMA) for the cross-fade

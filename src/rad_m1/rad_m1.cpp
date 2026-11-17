@@ -148,7 +148,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     const bool vg = pin->DoesParameterExist("rad_m1","vet_gd") &&
                     pin->GetBoolean("rad_m1","vet_gd");
     const bool gd = sp && vg;
-    if (gd && !pin->DoesParameterExist("rad_m1","clean_rays")) cln_rfv = 1;
+    if ((gd || (cs && vg)) && !pin->DoesParameterExist("rad_m1","clean_rays")) {
+      cln_rfv = 1;
+    }
     // (staggered: with the split energy flux, where the rays are not opt-in)
     cln_split = !cln_cell;
     cln_consist = pin->GetOrAddBoolean("rad_m1","clean_consistency",
@@ -1413,10 +1415,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                   << std::endl;
       }
     }
-    // the cubed sphere's FV rays (CleanInit) are counted in a restart file's channels
-    if (clean && pmy_pack->pmesh->use_cubed_sphere && vgd_on) {
-      cln_rfv = std::max(cln_rfv, 1);
-    }
+    // the cubed sphere with clean_rays = sc: vet_gd's own sweep (intensities to cln_fvi)
+    cln_cssc = clean && pmy_pack->pmesh->use_cubed_sphere && vgd_on && cln_rfv == 0;
     // clean_rot_ring not named: live wherever the vet_gd FV rays rotate in time with a
     // cross-fade (decided here, before a restart file's channels are counted)
     if (clean && !cln_ring_named && vgd_on && cln_rfv > 0 && vra_on && g_vra_adv &&

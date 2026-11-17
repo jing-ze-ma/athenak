@@ -801,7 +801,9 @@ void RadiationM1::CleanRays() {
     return;
   }
   CleanClosureFromGd();
-  if (cln_consist) CleanGdFaceSums();
+  // (clean_rays = sc on the cubed sphere: also the intensities cln_fvi of the face half
+  // ranges, CleanCellConsistency)
+  if (cln_consist || cln_cssc) CleanGdFaceSums();
 }
 
 //----------------------------------------------------------------------------------------

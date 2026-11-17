@@ -314,18 +314,18 @@ void RadiationM1::CleanInit() {
   // jump: the first step of a block is a backward-Euler step (no slope of the old sets)
   if (cln_ring == 2) vgd_rot_slope = 2;
   if (pm->use_cubed_sphere) {
-    // the rays are vet_gd's directions transported conservatively (CleanFvSweep), or
+    // the rays are vet_gd's directions transported conservatively (CleanFvSweep) or
+    // swept by vet_gd itself (clean_rays = sc: its band, VetGdCsSweep), or
     // the analytic sphere (eddington: of infinite radius); an even panel resolution
     // keeps the cell centres off the z axis (the frame of y, CleanCsFrame)
     if (!(cln_sphere || cln_edd || vgd_on) || (cln_consist && !vgd_on) ||
         vgd_twin || vgd_async || pm->mesh_indcs.nx2 % 2 != 0) {
       CleanFatal("<rad_m1>/scheme = clean on the cubed sphere needs "
                  "clean_closure = sphere | eddington (no clean_consistency) or closure = "
-                 "vet_col with vet_gd (clean_rays = fv1 | fv, no twin or async) and an "
-                 "even <mesh>/nx2");
+                 "vet_col with vet_gd (clean_rays = fv1 | fv | sc, no twin or async) and "
+                 "an even <mesh>/nx2");
     }
     if (vgd_on) {
-      cln_rfv = std::max(cln_rfv, 1);
       vlat_taucut = std::numeric_limits<Real>::max();
       marena_on = false;
     } else {
@@ -730,6 +730,10 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (vgd_on && !tau_ready) VetColInit();
   if (vgd_on && cln_rfv > 0 && cln_fvn == 0) {
     CleanFvSets(pmy_pack->pmesh->time, pmy_pack->pmesh->ncycle - 1);
+  }
+  if (cln_cssc) {   // (clean_rays = sc: the sweep's directions, its intensities cln_fvi)
+    cln_fvd = vgd_dir;
+    cln_fvn = vgd_n;
   }
   FluidRef fl = FluidRef::Get(pmy_pack);
   cln_feedback = gas_feedback && fl.on;

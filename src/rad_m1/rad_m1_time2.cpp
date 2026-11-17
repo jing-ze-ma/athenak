@@ -3409,7 +3409,7 @@ int RadiationM1::Time2RstNchWant() {
          + ((clean && cln_extrap > 0) ? 2*CleanRstNq() + 1 : 0)    // extrap history
          + ((clean && cln_ring) ? vra_k*CleanRstNq() + 1 : 0)       // clean_rot_ring
          + ((clean && cln_fsolve && cln_fkin) ? 3 : 0)       // stag fkin: memory d
-         + ((clean && cln_rfv > 0) ? cln_fvb*cln_fvn : 0);   // the conservative rays
+         + CleanRayNch();   // the conservative rays
 }
 
 //----------------------------------------------------------------------------------------
@@ -3437,8 +3437,8 @@ bool RadiationM1::ThcRstUnpack(DvceArray5D<Real> in, int nmb, int nsl) {
 }
 
 bool RadiationM1::Time2RstAccept(const int nfile) {
-  const int nb = Time2RstNchWant() - ((clean && cln_rfv > 0) ? cln_fvb*cln_fvn : 0);
-  t2_nfv = (clean && cln_rfv > 0) ? nfile - nb : 0;
+  const int nb = Time2RstNchWant() - CleanRayNch();
+  t2_nfv = (clean && (cln_rfv > 0 || cln_cssc)) ? nfile - nb : 0;
   return (nfile == nb + t2_nfv) && (t2_nfv >= 0);
 }
 int RadiationM1::Time2RstNch() {
@@ -3576,7 +3576,7 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
     c += 4;
   }
   // clean_rays = fv1 | fv: the intensities the next sweep starts from, last
-  if (clean && cln_rfv > 0 && cln_fvi.extent_int(0) >= m0 + nmb) {
+  if (clean && (cln_rfv > 0 || cln_cssc) && cln_fvi.extent_int(0) >= m0 + nmb) {
     Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c + cln_fvb*cln_fvn), AL, AL,
                                       AL),
                       Kokkos::subview(cln_fvi, ms, AL, AL, AL, AL));
@@ -3589,8 +3589,8 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   const bool h2 = (time_scheme == M1_TIME_HESDIRK2);
   // the last t2_nfv channels: the conservative rays' intensities (their number is not
   // known before the first sweep, Time2RstAccept)
-  const int nfv0 = Time2RstNchWant() - ((clean && cln_rfv > 0) ? cln_fvb*cln_fvn : 0);
-  if (clean && cln_rfv > 0 && ch >= nfv0) {
+  const int nfv0 = Time2RstNchWant() - CleanRayNch();
+  if (clean && (cln_rfv > 0 || cln_cssc) && ch >= nfv0) {
     if (cln_fvi.extent_int(0) != nmb || cln_fvi.extent_int(1) != t2_nfv) {
       Kokkos::realloc(cln_fvi, nmb, t2_nfv, w.extent_int(1), w.extent_int(2),
                       w.extent_int(3));

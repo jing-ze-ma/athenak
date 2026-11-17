@@ -3094,6 +3094,10 @@ class RadiationM1 {
   Real cln_tc = -1.0e300;       // time of the closure build
   Real cln_dtb = 0.0;           // dt of the closure build
   DvceArray5D<Real> cln_s;      // closure (CLN_*)
+  bool cln_cssc = false;        // the cubed sphere, clean_rays = sc (vet_gd sweep)
+  int CleanRayNch() const {   // the restart channels of the rays' intensities cln_fvi
+    return (clean && (cln_rfv > 0 || cln_cssc)) ? cln_fvb*cln_fvn : 0;
+  }
   int cln_rfv = 0;              // clean_rays = fv1 | fv | lld: the conservative sweep
   int cln_fvb = 1;              // blocks of cln_fvi: lld 4 (average, slopes along x1..x3)
   DvceArray5D<Real> cln_fvi;    // its intensities (m, b n + d, k, j, i)
