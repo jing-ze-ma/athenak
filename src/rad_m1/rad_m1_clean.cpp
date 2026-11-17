@@ -3224,12 +3224,15 @@ void RadiationM1::CleanStagCsLateral(const int e, const bool st) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       for (int q = 0; q < 3; ++q) {
         const int dk = (q == 2), dj = (q == 1), di = (q == 0);
+        // (a seam side's slot holds the cell 2 away in panel, cln_csyb)
+        const int ol = CleanTransSide(x, q, m, k, j, i, 0) ? -1 : 2;
+        const int oh = CleanTransSide(x, q, m, k, j, i, 1) ? 1 : -2;
         for (int b = 0; b < 3; ++b) {
           x.w(m,CLW_L+3*q+b,k,j,i) = cy(m,18+3*q+b,k-ks,j-js,i-is)*x.w(m,e,k,j,i) +
               ((cy(m,6*q+b,k-ks,j-js,i-is) != 0.0) ?   // (none past a boundary)
-               cy(m,6*q+b,k-ks,j-js,i-is)*x.w(m,e,k-dk,j-dj,i-di) : 0.0) +
+               cy(m,6*q+b,k-ks,j-js,i-is)*x.w(m,e,k+ol*dk,j+ol*dj,i+ol*di) : 0.0) +
               ((cy(m,6*q+3+b,k-ks,j-js,i-is) != 0.0) ?
-               cy(m,6*q+3+b,k-ks,j-js,i-is)*x.w(m,e,k+dk,j+dj,i+di) : 0.0);
+               cy(m,6*q+3+b,k-ks,j-js,i-is)*x.w(m,e,k+oh*dk,j+oh*dj,i+oh*di) : 0.0);
         }
       }
     });
@@ -3244,17 +3247,27 @@ void RadiationM1::CleanStagCsLateral(const int e, const bool st) {
       Real y[3] = {0.0, 0.0, 0.0};
       // (a side whose ghosts do not carry the field drops out, the other side's weight
       // doubled: one sided, CleanTransSide)
-      const Real wq = (CleanTransSide(x, q, m, k, j, i, 0) +
-                       CleanTransSide(x, q, m, k, j, i, 1) == 2) ? 0.25 : 0.5;
+      const int vl = CleanTransSide(x, q, m, k, j, i, 0);
+      const int vh = CleanTransSide(x, q, m, k, j, i, 1);
+      // (a seam side keeps its face, the ghost's P extrapolated in panel to second
+      // order, 3 P0 - 3 P1 + P2, as production's in-panel M1CsTanDer; an open boundary
+      // drops its side, the other's weight doubled: production's clamped first order)
+      const bool o2 = (vl + vh == 1) && x.mbc(m,2*q+vl) == BoundaryFlag::panel &&
+                      CleanCsSeamMono(x, q, m, k, j, i, vl ? -1 : 1);
+      const Real wq = (vl + vh == 2 || o2) ? 0.25 : 0.5;
       for (int s = -1; s <= 1; s += 2) {
         const int kf = k + (s > 0)*dk, jf = j + (s > 0)*dj, iff = i + (s > 0)*di;
-        if (!CleanTransSide(x, q, m, k, j, i, s > 0)) continue;
+        const bool ex = o2 && !CleanTransSide(x, q, m, k, j, i, s > 0);
+        if (!ex && !CleanTransSide(x, q, m, k, j, i, s > 0)) continue;
         const Real a = wq*s*x.area[q](m,kf,jf,iff);
         for (int b = 0; b < 3; ++b) {
           for (int c = 0; c < 3; ++c) {
             const int n = CLN_D11 + ((b == c) ? b : 2 + b + c);
-            y[b] += a*x.g(m,CLG_N+3*q+c,kf,jf,iff)*(x.cs(m,n,k+s*dk,j+s*dj,i+s*di)*
-                    x.w(m,e,k+s*dk,j+s*dj,i+s*di) - x.cs(m,n,k,j,i)*x.w(m,e,k,j,i));
+            auto p = [&](const int o) {
+              return x.cs(m,n,k+o*dk,j+o*dj,i+o*di)*x.w(m,e,k+o*dk,j+o*dj,i+o*di);
+            };
+            y[b] += a*x.g(m,CLG_N+3*q+c,kf,jf,iff)*(ex ? 2.0*p(0) - 3.0*p(-s) + p(-2*s)
+                                                      : p(s) - p(0));
           }
         }
       }

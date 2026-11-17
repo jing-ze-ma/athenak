@@ -897,6 +897,28 @@ int CleanTransSide(const CleanArgs &x, const int b, const int m, const int k, co
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn bool CleanCsSeamMono
+//! \brief cubed sphere: whether the cell (k,j,i) next to a seam takes the second-order
+//! in-panel derivative along q over the cells 0, si, 2 si of the iterate, d = (4 E1 -
+//! 3 E0 - E2)/2: unless the second difference is a front, |E0 - 2 E1 + E2| > 0.1 (|E0| +
+//! |E1| + |E2|)/3, and d leaves [0, 2 (E1 - E0)] (production's cs_cross_mono with k =
+//! 0.1: its default k = 0 clamps smooth extrema too, first order there); else the seam
+//! side takes the clamped first order (a sharp front would extrapolate to the wrong
+//! sign).  Of the iterate, so that the operator and its stencil rows are the same
+//! linear map (CleanStagCsLateral, cln_csyb)
+
+KOKKOS_INLINE_FUNCTION
+bool CleanCsSeamMono(const CleanArgs &x, const int q, const int m, const int k,
+                     const int j, const int i, const int si) {
+  const int dk = (q == 2)*si, dj = (q == 1)*si, di = (q == 0)*si;
+  const Real e0 = x.w(m,CLW_EK,k,j,i), e1 = x.w(m,CLW_EK,k+dk,j+dj,i+di);
+  const Real e2 = x.w(m,CLW_EK,k+2*dk,j+2*dj,i+2*di);
+  if (fabs(e0 - 2.0*e1 + e2) <= 0.1/3.0*(fabs(e0) + fabs(e1) + fabs(e2))) return true;
+  const Real d = 0.5*(4.0*e1 - 3.0*e0 - e2), s1 = e1 - e0;
+  return (s1 > 0.0) ? (d >= 0.0 && d <= 2.0*s1) : (d <= 0.0 && d >= 2.0*s1);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real CleanFaceStress
 //! \brief divergence of the radiation stress D E at face (k,j,i) normal to dir,
 //! d_b(D_{dir,b} E): the normal derivative from the two adjacent cells (if normal is

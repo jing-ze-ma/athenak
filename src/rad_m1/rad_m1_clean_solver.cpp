@@ -948,25 +948,37 @@ void RadiationM1::CleanPreconditionerSetup() {
         const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
         for (int q = 0; q < 3; ++q) {
           const int dk = (q == 2), dj = (q == 1), di = (q == 0);
-          Real y0[3] = {0.0, 0.0, 0.0};
-          const Real wq = (CleanTransSide(x, q, m, k, j, i, 0) +
-                           CleanTransSide(x, q, m, k, j, i, 1) == 2) ? 0.25 : 0.5;
+          Real y0[3] = {0.0, 0.0, 0.0}, yn[2][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
+          const int vl = CleanTransSide(x, q, m, k, j, i, 0);
+          const int vh = CleanTransSide(x, q, m, k, j, i, 1);
+          // (a seam side: its ghost extrapolated in panel, the cell 2 away in its slot,
+          // CleanStagCsLateral)
+          const bool o2 = (vl + vh == 1) && x.mbc(m,2*q+vl) == BoundaryFlag::panel &&
+                          CleanCsSeamMono(x, q, m, k, j, i, vl ? -1 : 1);
+          const Real wq = (vl + vh == 2 || o2) ? 0.25 : 0.5;
           for (int s = -1; s <= 1; s += 2) {
             const int kf = k + (s > 0)*dk, jf = j + (s > 0)*dj, iff = i + (s > 0)*di;
-            const int o = 6*q + 3*(s > 0);
-            Real yn[3] = {0.0, 0.0, 0.0};
-            if (CleanTransSide(x, q, m, k, j, i, s > 0)) {
-              const Real a = wq*s*x.area[q](m,kf,jf,iff);
-              for (int b = 0; b < 3; ++b) {
-                for (int c = 0; c < 3; ++c) {
-                  const int n = CLN_D11 + ((b == c) ? b : 2 + b + c);
-                  const Real ag = a*x.g(m,CLG_N+3*q+c,kf,jf,iff);
-                  yn[b] += ag*x.cs(m,n,k+s*dk,j+s*dj,i+s*di);
-                  y0[b] -= ag*x.cs(m,n,k,j,i);
+            const bool ex = o2 && !CleanTransSide(x, q, m, k, j, i, s > 0);
+            if (!ex && !CleanTransSide(x, q, m, k, j, i, s > 0)) continue;
+            const Real a = wq*s*x.area[q](m,kf,jf,iff);
+            for (int b = 0; b < 3; ++b) {
+              for (int c = 0; c < 3; ++c) {
+                const int n = CLN_D11 + ((b == c) ? b : 2 + b + c);
+                const Real ag = a*x.g(m,CLG_N+3*q+c,kf,jf,iff);
+                if (ex) {   // (2 P0 - 3 P1 + P2 of the other side's cells)
+                  y0[b] += 2.0*ag*x.cs(m,n,k,j,i);
+                  yn[s < 0][b] -= 3.0*ag*x.cs(m,n,k-s*dk,j-s*dj,i-s*di);
+                  yn[s > 0][b] += ag*x.cs(m,n,k-2*s*dk,j-2*s*dj,i-2*s*di);
+                  continue;
                 }
+                yn[s > 0][b] += ag*x.cs(m,n,k+s*dk,j+s*dj,i+s*di);
+                y0[b] -= ag*x.cs(m,n,k,j,i);
               }
             }
-            for (int b = 0; b < 3; ++b) cy(m,o+b,k-ks,j-js,i-is) = yn[b];
+          }
+          for (int b = 0; b < 3; ++b) {
+            cy(m,6*q+b,k-ks,j-js,i-is) = yn[0][b];
+            cy(m,6*q+3+b,k-ks,j-js,i-is) = yn[1][b];
           }
           for (int b = 0; b < 3; ++b) cy(m,18+3*q+b,k-ks,j-js,i-is) = y0[b];
         }
