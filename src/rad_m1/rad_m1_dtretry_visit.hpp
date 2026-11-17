@@ -1171,7 +1171,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_vfreeze", cln_vfreeze);
   v.value("cln_gas_exact", cln_gas_exact);
   v.value("cln_yres", cln_yres);
-  v.value("cln_yrhs", cln_yrhs);
   v.value("cln_nl_cell", cln_nl_cell);
   v.value("cln_nl_efloor", cln_nl_efloor);
   v.value("cln_nl_escale", cln_nl_escale);

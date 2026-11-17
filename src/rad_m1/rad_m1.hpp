@@ -3062,8 +3062,6 @@ class RadiationM1 {
   int cln_yres = M1_YRES_OFF;   // clean_yres: y of a cell less its linear residual over
                                 // the row diagonal before the gas takes its momentum
                                 // (post: 1 + h c chi; local: with the gas response)
-  bool cln_yrhs = false;        // clean_yres = local: the rows also take y + h div fY
-                                // of the iterate's dm (local_dy: the iterate's y)
   bool cln_nl_cell = false;     // clean_nl_norm = cell: per-cell relative Newton changes
   Real cln_nl_efloor = 0.0;     // clean_nl_efloor: E scale of that norm over max E
   Real cln_nl_escale = 0.0;     // that E scale, clean_nl_efloor max E of the iterate

@@ -247,14 +247,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     } else if (yr.compare("true") == 0 || yr.compare("1") == 0 ||
                yr.compare("post") == 0) {
       cln_yres = M1_YRES_POST;
-    } else if (yr.compare("local") == 0 || yr.compare("local_dy") == 0) {
-      // (local_dy: the local correction of y only, the rows keep the iterate's y)
+    } else if (yr.compare("local") == 0) {
       cln_yres = M1_YRES_LOCAL;
-      cln_yrhs = (yr.compare("local") == 0);
     } else {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<rad_m1>/clean_yres = false | true (= post) | post | local | "
-        << "local_dy" << std::endl;
+        << std::endl << "<rad_m1>/clean_yres = false | true (= post) | post | local"
+        << std::endl;
       std::exit(EXIT_FAILURE);
     }}
     {const std::string nn = pin->GetOrAddString("rad_m1","clean_nl_norm","global");
