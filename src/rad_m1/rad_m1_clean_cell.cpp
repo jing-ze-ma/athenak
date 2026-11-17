@@ -2048,8 +2048,9 @@ void RadiationM1::CleanCellWriteBack() {
   auto u0_ = u0;
   Real neint = 0.0;
   const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
-  Kokkos::parallel_reduce("clc_wbcell", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                                                              (nmb1 + 1)*nk*nj*ni),
+  // (256 threads per block: the registers of the exchange solve without spills)
+  using Rp256 = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
+  Kokkos::parallel_reduce("clc_wbcell", Rp256(DevExeSpace(), 0, (nmb1 + 1)*nk*nj*ni),
   KOKKOS_LAMBDA(const int q, Real &nb) {
     const int m = q/(nk*nj*ni), k = ks + (q/(nj*ni))%nk;
     const int j = js + (q/ni)%nj, i = is + q%ni;
