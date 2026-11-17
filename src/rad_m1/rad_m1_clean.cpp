@@ -60,6 +60,28 @@ static void CleanStagGasMomentum(const CleanArgs &x, const DvceArray5D<Real> &uh
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void CleanStagRefForce
+//! \brief staggered: the reference force density force_reference withholds from the gas
+//! of cell (k,j,i) (CleanRefForce of the cell layout) in the components of
+//! CleanStagGasMomentum: clean the stored force, wb_arad d arad_ref along x1 (the radius
+//! on the cubed sphere: no torque), else 0.  With wb_arad the gas takes the residual of
+//! the radiation force, as the production kick (rad_m1.hpp:360-366, the residual dv of
+//! ImplicitWorkRow, rad_m1_implicit.cpp:12353)
+
+KOKKOS_INLINE_FUNCTION
+static void CleanStagRefForce(const CleanArgs &x, const int fref,
+                              const DvceArray5D<Real> &fr, const DvceArray4D<Real> &aref,
+                              const Real d, const int m, const int k, const int j,
+                              const int i, Real rf[3]) {
+  Real q[3][3] = {{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}};
+  if (fref == M1_FREF_WB_ARAD && x.cub) CleanCsFrame(x, m, k, j, i, q);
+  for (int b = 0; b < 3; ++b) {
+    rf[b] = (fref == M1_FREF_CLEAN) ? fr(m,b,k,j,i) :
+            ((fref == M1_FREF_WB_ARAD) ? d*aref(m,k,j,i)*q[0][b] : 0.0);
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanStagMomentum
 //! \brief staggered: the momentum the radiation gives to cell (k,j,i) over the stage
 //! (CleanMomentumChange of each face family, mag its terms' size) in the components of
@@ -289,11 +311,10 @@ void RadiationM1::CleanInit() {
     CleanFatal("scheme = clean has no ghost-built inner face (problem/he_bc_linhao) and "
                "no per-column outer bath");
   }
-  if ((force_ref == M1_FREF_WB_ARAD && !cln_cell) ||
-      (force_ref == M1_FREF_WB_ARAD && !fref_wsplit)) {
-    CleanFatal("<rad_m1>/force_reference with scheme = clean needs clean_layout = cell "
-               "and, for wb_arad, the reference work given by the problem generator "
-               "(force_reference_work = split)");
+  if (force_ref == M1_FREF_WB_ARAD && !fref_wsplit) {
+    CleanFatal("<rad_m1>/force_reference = wb_arad with scheme = clean needs the "
+               "reference work given by the problem generator (force_reference_work = "
+               "split)");
   }
   if (vgd_on && VgdRotOn()) {
     // the rotating FV rays (CleanFvSets): the closure is the J-weighted mean of the
@@ -1121,7 +1142,9 @@ void RadiationM1::CleanFirstIterate() {
 //! \fn void RadiationM1::CleanRightHandSide
 //! \brief B = E_old + h c kP a T^4 - r h c kE E_k - W - h div F_source, with the exchange
 //! linearised about the iterate (r = s/(d cv + s), s = 4 h c kP a T^3), W the work of
-//! the radiation force of the iterate on the gas, and the initial guess X = E_k.  With
+//! the radiation force of the iterate on the gas (with wb_arad and the reference work
+//! h d arad_ref.v at the iterate's velocity, the row term of ImplicitWorkRow,
+//! rad_m1_implicit.cpp:12438-12465), and the initial guess X = E_k.  With
 //! gas coupling the beta terms of Ma et al. (2025, eq. 56; see rad_m1_clean_cell.hpp):
 //! the emission takes G = 1 - beta^2/2 (CLW_GM) and B adds the lagged A - hc (kP a T^4 G
 //! - kE E) = hc kE [(beta^2/2 - beta.a/c) E_k + 2 beta.y_k] (y_k = F/c of the iterate,
@@ -1143,6 +1166,11 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   auto uh = fl.u0;
   auto eos = fl.eos;
   auto op = opac;
+  // (wb_arad: the reference work rides the row, as ImplicitWorkRow's force_reference_work
+  // = split)
+  const bool wsp = (force_ref == M1_FREF_WB_ARAD) && !x.vzero;
+  auto fr = cln_fref;
+  auto aref = arad_ref;
 
   if (x.feedback) {
     par_for("cln_beta", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -1276,12 +1304,16 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
         x.w(m,CLW_RY,k,j,i) *= 1.0 - dc;
       }
       // work of the radiation force on the gas, (v_old + dm/(2 rho)).dm: exactly the
-      // kinetic energy the gas gains, taken from the radiation
-      Real pg[3];
+      // kinetic energy the gas gains, taken from the radiation; with wb_arad also the
+      // work h rho arad_ref.v of the reference force at the iterate's velocity, which the
+      // problem generator gives the gas
+      Real pg[3], rf[3] = {0.0, 0.0, 0.0};
       CleanStagGasMomentum(x, uh, m, k, j, i, pg);
+      if (wsp) CleanStagRefForce(x, M1_FREF_WB_ARAD, fr, aref, d, m, k, j, i, rf);
       for (int n = 0; n < 3; ++n) {
         const Real dm = x.w(m,CLW_DM+n,k,j,i);
         work += (pg[n] + 0.5*dm)*dm/d;
+        if (wsp) work += x.h*rf[n]*(pg[n] + dm)/d;
       }
     }
     x.w(m,CLW_RR,k,j,i) = rr;
@@ -1383,7 +1415,8 @@ Real RadiationM1::CleanNewtonUpdate() {
 
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationM1::CleanVelocityUpdate
-//! \brief momentum change of the new iterate and the advective coefficients of the new
+//! \brief momentum change of the new iterate, less the reference force of
+//! force_reference (CleanStagRefForce), and the advective coefficients of the new
 //! velocity (implicit velocity).  Returns max |dv| over max |v|.
 
 Real RadiationM1::CleanVelocityUpdate() {
@@ -1405,9 +1438,10 @@ Real RadiationM1::CleanVelocityUpdate() {
   auto uh = fl.u0;
   auto op = opac;
   const Real arad_ = arad;
-  const bool fref = (force_ref == M1_FREF_CLEAN);
-  const bool cap = fref && !cln_fref_set && !cln_vzero;
+  const int fref = force_ref;
+  const bool cap = (fref == M1_FREF_CLEAN) && !cln_fref_set && !cln_vzero;
   auto fr = cln_fref;
+  auto aref = arad_ref;
 
   Real dvmax = 0.0, vmax = 0.0, fvmax = 0.0;
   Kokkos::parallel_reduce("cln_velocity", Kokkos::RangePolicy<>(DevExeSpace(), 0,
@@ -1421,9 +1455,10 @@ Real RadiationM1::CleanVelocityUpdate() {
     j += js;
     i += is;
     const Real d = uh(m,IDN,k,j,i);
-    Real v2 = 0.0, dmv[3], mg[3], pg[3];
+    Real v2 = 0.0, dmv[3], mg[3], pg[3], rf[3];
     CleanStagMomentum(xh, CLW_EK, m, k, j, i, dmv, mg);
     CleanStagGasMomentum(x, uh, m, k, j, i, pg);
+    CleanStagRefForce(x, fref, fr, aref, d, m, k, j, i, rf);
     for (int dir = 0; dir < 3; ++dir) {
       Real dm = 0.0;
       if (dir == 0 || (dir == 1 && x.multi_d) || (dir == 2 && x.three_d)) {
@@ -1431,9 +1466,10 @@ Real RadiationM1::CleanVelocityUpdate() {
         dm = dmv[dir];
         v_max = fmax(v_max, mag/d);   // (|v| floor: the size of the stage's force terms)
         // (force_reference = clean: the first coupled solve's force is the reference,
-        // withheld from the gas; nothing while the gas momentum is frozen)
+        // withheld from the gas, as is wb_arad's; nothing while the gas momentum is
+        // frozen)
         if (cap) fr(m,dir,k,j,i) = dm/x.h;
-        if (fref) dm -= cap ? dm : x.h*fr(m,dir,k,j,i);
+        if (fref != M1_FREF_NONE) dm -= cap ? dm : x.h*rf[dir];
         if (x.vzero) dm = 0.0;
         // (times that of E in the stress, as CleanCellVelocityUpdate)
         const Real e = fmax(fabs(x.w(m,CLW_EK,k,j,i)), 1.0e-300), hc = x.h*x.c;
@@ -2185,9 +2221,9 @@ void RadiationM1::CleanStagCsLateral(const int e) {
 //! and the energy flux takes the same increment.  When the loop has converged F = F^H:
 //! the solution is that of the lagged velocity.  first: the first iterate, whose
 //! velocity is that of the old vector: dm_f^k = 0, Q = G; with force_reference = clean
-//! the gas holds the reference force, which balances the radiation force of the start,
-//! so Q is that of E^k (no drag kick); b = 0 while the gas momentum is frozen and before
-//! the reference force is set.
+//! (or wb_arad) the gas holds the reference force, which balances the radiation force of
+//! the start, so Q is that of E^k (no drag kick); b = 0 while the gas momentum is frozen
+//! and before the reference force is set.
 
 void RadiationM1::CleanStagDrag(const bool first) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -2202,7 +2238,7 @@ void RadiationM1::CleanStagDrag(const bool first) {
   xh.drag = x.drag && !first;   // (the flux the iterate's velocity came from)
   auto uh = FluidRef::Get(pmy_pack).u0;
   const bool off = cln_vzero || (first && force_ref == M1_FREF_CLEAN && !cln_fref_set);
-  const bool lag = !first || (force_ref == M1_FREF_CLEAN);
+  const bool lag = !first || (force_ref != M1_FREF_NONE);
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     auto fc = x.fc[dir];
@@ -2230,7 +2266,10 @@ void RadiationM1::CleanStagDrag(const bool first) {
 //! \fn void RadiationM1::CleanWriteBack
 //! \brief stores the solution: face fluxes, E, cell fluxes (face means), the gas momentum
 //! and energy, and the stage slopes K = (U - U_old)/h.  The gas takes exactly the momentum
-//! and energy the radiation gives up, so both totals change only by face fluxes.  On the
+//! and energy the radiation gives up, so both totals change only by face fluxes; with
+//! force_reference less the reference force, and with wb_arad (force_reference_work =
+//! split) E pays the reference work h d arad_ref.v at the velocity after the kick, which
+//! the problem generator gives the gas (rad_m1_implicit.cpp:12438-12465).  On the
 //! cubed sphere the gas takes the vector of CleanStagMomentum in the hydro's components
 //! (CleanGasChange), and the cell flux of the outputs is the face momenta's vector
 //! (CleanStagCsVector) in the frame of y: total energy and L_z (of that vector) are
@@ -2290,8 +2329,10 @@ void RadiationM1::CleanWriteBack() {
   auto uh = fl.u0;
   auto eos = fl.eos;
   auto f1 = f0x1, f2 = f0x2, f3 = f0x3;
-  const bool fref = (force_ref == M1_FREF_CLEAN);
+  const int fref = force_ref;
+  const bool wsp = (fref == M1_FREF_WB_ARAD);
   auto fr = cln_fref;
+  auto aref = arad_ref;
   const Real arad_ = arad;
   par_for("cln_wbcell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -2299,17 +2340,21 @@ void RadiationM1::CleanWriteBack() {
     Real dm[3] = {0.0, 0.0, 0.0}, dh[3] = {0.0, 0.0, 0.0};
     Real den = 0.0;
     if (feedback) {
-      Real mg[3], pg[3];
+      Real mg[3], pg[3], rf[3];
       CleanStagMomentum(xh, CLW_X, m, k, j, i, dm, mg);
       CleanStagGasMomentum(x, uh, m, k, j, i, pg);
-      for (int n = 0; n < 3; ++n) {   // (force_reference = clean, frozen gas momentum)
-        if (fref) dm[n] -= h*fr(m,n,k,j,i);
+      CleanStagRefForce(x, fref, fr, aref, uh(m,IDN,k,j,i), m, k, j, i, rf);
+      for (int n = 0; n < 3; ++n) {   // (force_reference, frozen gas momentum)
+        if (fref != M1_FREF_NONE) dm[n] -= h*rf[n];
         if (x.vzero) dm[n] = 0.0;
       }
-      // (the kinetic energy the gas gains, the work W of the E row at convergence)
-      Real wk = 0.0;
+      // (the kinetic energy the gas gains, the work W of the E row at convergence; with
+      // wb_arad wr, the reference work at the velocity after the kick, which E pays and
+      // the problem generator gives the gas)
+      Real wk = 0.0, wr = 0.0;
       for (int n = 0; n < 3; ++n) {
         wk += (pg[n] + 0.5*dm[n])*dm[n]/uh(m,IDN,k,j,i);
+        if (wsp && !x.vzero) wr += h*rf[n]*(pg[n] + dm[n])/uh(m,IDN,k,j,i);
         dh[n] = dm[n];
       }
       if (x.cub) {   // (the hydro's components of dm, from the frame of y)
@@ -2340,10 +2385,10 @@ void RadiationM1::CleanWriteBack() {
                                x.op(m,M1_OP_E,k,j,i)*fmax(e, 0.0));
         // (the residual over the row's local diagonal: all of it in a scattering cell,
         // little where the exchange is stiff, whose X the solve fixes to tol/diagonal)
-        const Real rd = (den - x.w(m,CLW_EP,k,j,i) + ex - wk)/
+        const Real rd = (den - x.w(m,CLW_EP,k,j,i) + ex - wk - wr)/
                         (1.0 + x.h*x.c*x.op(m,M1_OP_E,k,j,i)*x.w(m,CLW_RY,k,j,i));
         e += rd;
-        den -= rd;
+        den -= rd + wr;
       }
       uh(m,IEN,k,j,i) += den;
       x.w(m,CLW_JV,k,j,i) = den - wk;   // (its change of the gas eint, cln_neint)
