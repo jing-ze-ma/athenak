@@ -43,6 +43,23 @@ extern bool g_vra_adv;   // vet_rotate_advance (rad_m1_vetgd.cpp)
 // gfx942 and spilled them (cln_velocity 1005 VGPRs); 256 threads per block as athena's
 // par_for and old production's m1-fast4.  Max reductions and counts: bitwise.
 using CleanRp256 = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
+// (the heavy per-cell passes at 2 blocks of 256 per SM, <= 128 registers, as the old
+// production's par_for_lb (m1-fast4): 164-213 registers left 1 block per SM; the
+// arithmetic is unchanged)
+using CleanRpLb2 = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 2>>;
+// (the 4-D par_for, same flattening and index arithmetic, at MB blocks of 256 per SM)
+template <int MB, typename F>
+static void CleanParForLb(const char *name, const int nmb1, const int ks, const int ke,
+                          const int js, const int je, const int is, const int ie,
+                          const F &f) {
+  const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
+  Kokkos::parallel_for(name, Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256,
+                       MB>>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+  KOKKOS_LAMBDA(const int idx) {
+    const int m = idx/nkji, k = (idx - m*nkji)/nji, j = (idx - m*nkji - k*nji)/ni;
+    f(m, ks + k, js + j, is + idx - m*nkji - k*nji - j*ni);
+  });
+}
 //----------------------------------------------------------------------------------------
 //! \fn void CleanFatal
 //! \brief stops the run with a message about an unsupported clean-scheme setup
@@ -1597,7 +1614,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
       if (af) x.fc[n](m,CLF_PT,k,j,i) = CleanStagAdvFace(x, xh, n, m, k, j, i);
     }
   });
-  par_for("cln_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  CleanParForLb<3>("cln_rhs", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
     const auto &eos = *peos;
@@ -1832,9 +1849,7 @@ Real RadiationM1::CleanNewtonUpdate() {
   }
 
   Real change = 0.0, femax = 0.0, ermax = 0.0;
-  // (256 threads per block: the exchange temperature needs more than 128 registers)
-  using Rp256 = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
-  Kokkos::parallel_reduce("cln_newton", Rp256(DevExeSpace(), 0, nmb*nkji),
+  Kokkos::parallel_reduce("cln_newton", CleanRpLb2(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &dmax, Real &fe_max, Real &er_max) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
@@ -1947,7 +1962,7 @@ Real RadiationM1::CleanVelocityUpdate() {
   Real dvmax = 0.0, vmax = 0.0, fvmax = 0.0;
   CLEAN_HIPX(const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
              const CleanArgs *pxa = CleanDevArgs(xa, 4);)
-  Kokkos::parallel_reduce("cln_velocity", CleanRp256(DevExeSpace(), 0, nmb*nkji),
+  Kokkos::parallel_reduce("cln_velocity", CleanRpLb2(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &dv_max, Real &v_max, Real &fv_max) {
     CLEAN_HIPX(const CleanArgs &x = *px, &xh = *pxh, &xa = *pxa;)   // (device memory)
     int m = idx/nkji;
@@ -2088,7 +2103,7 @@ int RadiationM1::CleanStagRealizable() {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     const int f1 = nx1 + di, f2 = nx2 + dj, f3 = nx3 + dk, fji = f2*f1, fkji = f3*fji;
     Real r1 = 0.0, r2 = 0.0;
-    Kokkos::parallel_reduce("cln_real", CleanRp256(DevExeSpace(), 0, nmb*fkji),
+    Kokkos::parallel_reduce("cln_real", CleanRpLb2(DevExeSpace(), 0, nmb*fkji),
     KOKKOS_LAMBDA(const int idx, Real &q1, Real &q2) {
       CLEAN_HIPX(const CleanArgs &x = *px;)   // (in device memory: no per-thread copy)
       int m = idx/fkji;
