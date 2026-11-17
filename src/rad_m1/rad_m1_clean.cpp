@@ -948,7 +948,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     if (cln_vimp && cln_feedback) CleanStagDrag(true);
     converged = !iterate;
     npic = 0;
-    Real de0 = 1.0e300, dv0 = 1.0e300;
+    Real de0 = 1.0e300, dv0 = 1.0e300, trel = 0.0;
     for (int inl = 0; inl < maxnl; ++inl) {
       if (lagged && inl < cln_maxpic) ++npic;
       const bool clos = (cln_closit && inl < cln_maxpic) || (clos1 && inl == 1);
@@ -1010,6 +1010,10 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       Real dv = 0.0;
       if (cln_feedback) dv = cell ? CleanCellVelocityUpdate() : CleanVelocityUpdate();
       dnl = fmax(de, dv);
+      // (clean_tol_rel, as the old production's implicit_tol_rel: the strict test stops at
+      // kappa times the first pass's change, at most clean_tol_rel_max)
+      if (cln_tolrel > 0.0 && !cln_bon && inl == 0) trel = fmin(cln_tolrel*dnl, cln_tolrmx);
+      tol_nl = fmax(tol_nl, trel);
       if (cln_nlprint && global_variable::my_rank == 0) {
         std::printf("CLEAN pass cycle %d t2s %d pos %d pass %d it %d de %.3e dv %.3e\n",
                     pmy_pack->pmesh->ncycle, t2_solve, ipos, inl, nit, de, dv);

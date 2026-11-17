@@ -237,6 +237,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_fkin = cln_fwork = cln_gflux = cln_split && cln_consist;
     cln_vimp = stag("clean_stag_vimp", cln_split);
     cln_sbimp = stag("clean_stag_sbimp", false) && cln_split;
+    // clean_tol_rel = kappa (staggered default 0.1, 0 = off) and clean_tol_rel_max (1e-4)
+    // (read only when named): the old production's implicit_tol_rel for the strict test,
+    // max(tol_nl, min(kappa r_0, clean_tol_rel_max)), r_0 the first pass's change
+    cln_tolrel = pin->DoesParameterExist("rad_m1","clean_tol_rel") ?
+                 pin->GetReal("rad_m1","clean_tol_rel") : (cln_cell ? 0.0 : 0.1);
+    if (pin->DoesParameterExist("rad_m1","clean_tol_rel_max")) {
+      cln_tolrmx = pin->GetReal("rad_m1","clean_tol_rel_max");
+    }
     {const std::string pc = pin->DoesParameterExist("rad_m1","clean_stag_pc") ?
                             pin->GetString("rad_m1","clean_stag_pc") : "mg";
     if (pc != "line" && pc != "mg") {

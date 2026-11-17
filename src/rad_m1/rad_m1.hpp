@@ -3088,6 +3088,7 @@ class RadiationM1 {
   Real cln_stall_f = 0.99;      // clean_bicg_stall_fac: least residual drop per window
   int cln_maxnl = 50;           // clean_maxnl: Newton iterations
   Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: Newton tolerance (relative dE, dT, dv)
+  Real cln_tolrel = 0.0, cln_tolrmx = 1.0e-4;   // clean_tol_rel, clean_tol_rel_max
   Real cln_fvtol = 1.0e-10;     // clean_fv_tol: pass stop of the FV rays
   int cln_fvlag = 0;            // clean_fv_lag: 0 off, 1 lag, 2 extrap (CleanFvSweep)
   int cln_pc = 0;               // clean_pc: 0 vcycle or CLN_PC_*
