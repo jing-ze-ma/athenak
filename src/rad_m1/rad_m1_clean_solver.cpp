@@ -12,6 +12,8 @@
 #include <cmath>
 #include <cstdio>
 #include <limits>
+#include <type_traits>
+#include <vector>
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -155,11 +157,13 @@ const CleanArgs *RadiationM1::CleanDevArgs(const CleanArgs &x, const int s) {
 //! scratch array of nc components (only the ghosts and the ng layers the exchange reads
 //! are copied in, only the ghosts back), then (phys) a copy of the edge cell on physical
 //! boundaries.  part = 1 only starts the exchange (nc <= clean_halo_vars), part = 2
-//! finishes it: work on the cells CleanInner by ng can run in between.  The closure's
-//! off-diagonal D12, D13, D23 take the edge cell's with their parity: odd across a
-//! reflecting radiation wall normal to one of their axes, and D_r,theta, D_r,phi across
-//! the pole (e_theta, e_phi flip), so that d_b(D E) puts no shear traction on the wall
-//! (as ce91f387d)
+//! finishes it: work on the cells CleanInner by ng can run in between.  The fills
+//! deferred by CleanGhostDefer (their ghosts are read only after the next exchange) go
+//! in the same exchange where they fit (one exchange of all their components).  The
+//! closure's off-diagonal D12, D13, D23 take the edge cell's with their parity: odd
+//! across a reflecting radiation wall normal to one of their axes, and D_r,theta,
+//! D_r,phi across the pole (e_theta, e_phi flip), so that d_b(D E) puts no shear
+//! traction on the wall (as ce91f387d)
 
 void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
                                  const bool phys, const int part) {
@@ -170,52 +174,89 @@ void RadiationM1::CleanGhostFill(DvceArray5D<float> a, const int c0, const int n
   CleanGhostFillT(a, c0, nc, true, 0);
 }
 
+void RadiationM1::CleanGhostDefer(DvceArray5D<Real> a, const int c0, const int nc) {
+  int np = nc;
+  for (auto &s : cln_hpend) np += s.nc;
+  if (np > cln_hmax) CleanGhostFlush();
+  cln_hpend.push_back({a, c0, nc, true});
+}
+
+void RadiationM1::CleanGhostFlush() {
+  if (cln_hpend.empty()) return;
+  std::vector<CleanGSeg<Real>> sg;
+  sg.swap(cln_hpend);
+  CleanGhostExchange(sg, 0);
+}
+
 template <typename T>
 void RadiationM1::CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc,
                                   const bool phys, const int part) {
-  if (nc > cln_hmax) {   // the exchange moves at most clean_halo_vars variables at once
+  if (nc > cln_hmax) {   // (the exchange moves at most clean_halo_vars variables at once)
     CleanGhostFillT(a, c0, cln_hmax, phys, 0);
     CleanGhostFillT(a, c0 + cln_hmax, nc - cln_hmax, phys, 0);
     return;
   }
+  std::vector<CleanGSeg<T>> sg;
+  if constexpr (std::is_same<T, Real>::value) {
+    int np = nc;
+    for (auto &s : cln_hpend) np += s.nc;
+    if (part == 0 && np <= cln_hmax) sg.swap(cln_hpend);
+  }
+  if (part != 2) CleanGhostFlush();   // (those that do not fit: on their own first)
+  sg.push_back({a, c0, nc, phys});
+  CleanGhostExchange(sg, part);
+}
+
+template <typename T>
+void RadiationM1::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
+                                     const int part) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int ng = indcs.ng;
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  const int n1 = a.extent_int(4), n2 = a.extent_int(3), n3 = a.extent_int(2);
-  CleanHalo &hl = cln_halo[nc];
-  if (!hl.pb) {
+  const int n1 = sg[0].a.extent_int(4), n2 = sg[0].a.extent_int(3);
+  const int n3 = sg[0].a.extent_int(2);
+  int nc = 0;
+  for (auto &s : sg) nc += s.nc;
+  if (!cln_hpb) {
     // (the exchanges run one at a time: their scratch arrays share one allocation)
-    if (cln_hbuf.extent_int(0) == 0) {
-      Kokkos::realloc(cln_hbuf, nmb1 + 1, cln_hmax, n3, n2, n1);
-    }
+    Kokkos::realloc(cln_hbuf, nmb1 + 1, cln_hmax, n3, n2, n1);
+    cln_hpb.reset(new MeshBoundaryValuesCC(pmy_pack, nullptr, false));
+    cln_hpb->InitializeBuffers(cln_hmax);
+    cln_hpb->SetVectorPairs(cln_hmax, {});
+    cln_hpb->cs_noresample = true;
+  }
+  CleanHalo &hl = cln_halo[nc];
+  if (hl.ca.extent_int(0) == 0) {
     hl.a = DvceArray5D<Real>(cln_hbuf.data(), nmb1 + 1, nc, n3, n2, n1);
     Kokkos::realloc(hl.ca, nmb1 + 1, nc, 1, 1, 1);
-    hl.pb.reset(new MeshBoundaryValuesCC(pmy_pack, nullptr, false));
-    hl.pb->InitializeBuffers(nc);
-    hl.pb->SetVectorPairs(nc, {});
-    hl.pb->cs_noresample = true;
   }
   auto h = hl.a;
   const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
-  MeshBoundaryValuesCC *pb = hl.pb.get();
+  MeshBoundaryValuesCC *pb = cln_hpb.get();
   // (only the cells outside CleanInner are copied: CleanShell)
   if (part != 2) {
     const CleanShell sc(n3, n2, n1, ng, is, ie, js, je, ks, ke, md, td);
-    if (sc.Empty()) {
-      par_for("cln_hcopy", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, n1-1,
-      KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-        h(m,n,k,j,i) = a(m,c0+n,k,j,i);
-      });
-    } else {
-      par_for("cln_hcopy", DevExeSpace(), 0, nmb1, 0, nc-1, 0, sc.ncell-1,
-      KOKKOS_LAMBDA(const int m, const int n, const int q) {
-        int k, j, i;
-        CleanShellCell(sc, q, k, j, i);
-        h(m,n,k,j,i) = a(m,c0+n,k,j,i);
-      });
+    int o = 0;
+    for (auto &s : sg) {
+      auto a = s.a;
+      const int c0 = s.c0;
+      if (sc.Empty()) {
+        par_for("cln_hcopy", DevExeSpace(), 0, nmb1, 0, s.nc-1, 0, n3-1, 0, n2-1, 0, n1-1,
+        KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
+          h(m,o+n,k,j,i) = a(m,c0+n,k,j,i);
+        });
+      } else {
+        par_for("cln_hcopy", DevExeSpace(), 0, nmb1, 0, s.nc-1, 0, sc.ncell-1,
+        KOKKOS_LAMBDA(const int m, const int n, const int q) {
+          int k, j, i;
+          CleanShellCell(sc, q, k, j, i);
+          h(m,o+n,k,j,i) = a(m,c0+n,k,j,i);
+        });
+      }
+      o += s.nc;
     }
     while (pb->InitRecv(nc) == TaskStatus::incomplete) {}
     while (pb->PackAndSendCC(hl.a, hl.ca) == TaskStatus::incomplete) {}
@@ -225,14 +266,32 @@ void RadiationM1::CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc,
   while (pb->ClearSend() == TaskStatus::incomplete) {}
   while (pb->ClearRecv() == TaskStatus::incomplete) {}
   const CleanShell sb(n3, n2, n1, 0, is, ie, js, je, ks, ke, md, td);
-  par_for("cln_hback", DevExeSpace(), 0, nmb1, 0, nc-1, 0, sb.ncell-1,
-  KOKKOS_LAMBDA(const int m, const int n, const int q) {
-    int k, j, i;
-    CleanShellCell(sb, q, k, j, i);
-    a(m,c0+n,k,j,i) = h(m,n,k,j,i);
-  });
-  if (!phys) return;
+  int o = 0;
+  for (auto &s : sg) {
+    auto a = s.a;
+    const int c0 = s.c0;
+    par_for("cln_hback", DevExeSpace(), 0, nmb1, 0, s.nc-1, 0, sb.ncell-1,
+    KOKKOS_LAMBDA(const int m, const int n, const int q) {
+      int k, j, i;
+      CleanShellCell(sb, q, k, j, i);
+      a(m,c0+n,k,j,i) = h(m,o+n,k,j,i);
+    });
+    o += s.nc;
+  }
+  for (auto &s : sg) {
+    if (s.phys) CleanGhostPhys(s.a, s.c0, s.nc);
+  }
+}
 
+template <typename T>
+void RadiationM1::CleanGhostPhys(DvceArray5D<T> a, const int c0, const int nc) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int ng = indcs.ng;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  const int n1 = a.extent_int(4), n2 = a.extent_int(3), n3 = a.extent_int(2);
   auto bc = pmy_pack->pmb->mb_bcs.d_view;
   auto pf = [] KOKKOS_FUNCTION (const BoundaryFlag f) {
     return f != BoundaryFlag::block && f != BoundaryFlag::periodic &&

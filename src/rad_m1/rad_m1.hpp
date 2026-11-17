@@ -3006,6 +3006,13 @@ class RadiationM1 {
                        const int part);
   void CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
                       const bool phys = true, const int part = 0);
+  template <typename T> struct CleanGSeg {DvceArray5D<T> a; int c0, nc; bool phys;};
+  template <typename T>
+  void CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg, const int part);
+  template <typename T>
+  void CleanGhostPhys(DvceArray5D<T> a, const int c0, const int nc);
+  void CleanGhostDefer(DvceArray5D<Real> a, const int c0, const int nc);
+  void CleanGhostFlush();
   std::array<Real, 2> CleanDots(DvceArray5D<Real> w, const int nc, const int n,
                                 const std::array<int, 4> ab);
   Real CleanReduce(Real v, const bool max);
@@ -3244,12 +3251,15 @@ class RadiationM1 {
   // cubed sphere: face areas, centroid distances across the faces, normals and centroids
   DvceArray4D<Real> cln_ga[3], cln_gd[3];
   DvceArray5D<Real> cln_gn;
-  struct CleanHalo {            // ghost exchange of nc components: scratch array,
-    DvceArray5D<Real> a, ca;    // its coarse dummy and the exchange object
-    std::unique_ptr<MeshBoundaryValuesCC> pb;
+  struct CleanHalo {            // ghost exchange of nc components: scratch array and
+    DvceArray5D<Real> a, ca;    // its coarse dummy
   };
   std::map<int, CleanHalo> cln_halo;   // by nc
   DvceArray1D<char> cln_xdev;   // device copies of CleanArgs (CleanDevArgs)
+  // the exchange object of every clean ghost fill (clean_halo_vars variables; a fill
+  // sends only its own), the fills deferred to the next exchange (CleanGhostDefer)
+  std::unique_ptr<MeshBoundaryValuesCC> cln_hpb;
+  std::vector<CleanGSeg<Real>> cln_hpend;
   DvceArray5D<Real> cln_hbuf;   // the storage of every scratch array (32 components)
   Real cln_nsolve = 0.0, cln_nit = 0.0, cln_nfail = 0.0, cln_nneg = 0.0;
   //! milestone 3b LIMIT 4: build the x1 stack topology of the gathered line solve
