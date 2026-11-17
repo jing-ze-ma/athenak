@@ -1036,13 +1036,15 @@ int RadiationM1::CleanBiCGStab() {
     cln_eta = eta;
     tol = fmax(eta*r0, 0.1*cln_tolb);
   }
-  // clean_init_cnorm > 0, the steady start's solves (the old production's
-  // implicit_lin_cnorm): the test on max_i |r_i|/(s_i E_i), s_i = 1 + h c chi_E (1 - r)
-  // the row's M-matrix excess, E_i the iterate: |dE_i| <= cnorm E_i in every cell.  The
-  // test relative to |b| leaves an envelope far below the core at its first
-  // preconditioned iterate, which depends on the MeshBlock decomposition (rule 5)
-  const bool cn = (cln_cnorm > 0.0) && cln_insteady && !bud && !cell;
-  CleanArgs xa = CleanMakeArgs();
+  // clean_init_cnorm > 0, the steady start's solves, and clean_lin_cnorm > 0, the steps'
+  // strict ones (as the old production's implicit_lin_cnorm; the budget's passes keep
+  // their own per-row test): max_i |r_i|/(a_i E_i) <= cnorm, a_i the row's diagonal
+  // (CLW_A0), E_i the iterate.  The test relative to |b| leaves an envelope far below
+  // the core at its first preconditioned iterate, which depends on the MeshBlock
+  // decomposition (rule 5).  (Production's s_i = 1 + h c chi_E, the M-matrix excess,
+  // is below the round-off of a transport-dominated row at the steady start's h)
+  const Real cnt = cln_insteady ? cln_cnorm : cln_lcnorm;
+  const bool cn = (cnt > 0.0) && !bud && !cell;
   const Real efl = e_floor;
   auto conv = [&](const int s, const Real r2, const Real t) {
     if (!cn) return std::sqrt(r2) <= t;
@@ -1050,11 +1052,10 @@ int RadiationM1::CleanBiCGStab() {
     Kokkos::parallel_reduce("cln_cnorm", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
         DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &mx) {
-      const Real qr = xa.feedback ? xa.w(m,CLW_RY,k,j,i) : 1.0;
-      mx = fmax(mx, fabs(w(m,s,k,j,i))/((1.0 + xa.h*xa.c*xa.op(m,M1_OP_E,k,j,i)*qr)*
-                                       fmax(xa.w(m,CLW_EK,k,j,i), efl)));
+      mx = fmax(mx, fabs(w(m,s,k,j,i))/(fabs(w(m,CLW_A0,k,j,i))*
+                                       fmax(w(m,CLW_EK,k,j,i), efl)));
     }, Kokkos::Max<Real>(a));
-    return CleanReduce(a, true) <= cln_cnorm;
+    return CleanReduce(a, true) <= cnt;
   };
   if (conv(sr, rr, tol)) return 0;
   auto done = [&](const int it) {return restart(it, true) && conv(sr, rr, 10.0*tol);};

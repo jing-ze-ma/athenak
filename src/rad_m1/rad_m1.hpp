@@ -3124,6 +3124,7 @@ class RadiationM1 {
   Real cln_tol = 1.0e-10;       // clean_tol: relative residual of the linear solve
   Real cln_cnorm = 0.0;         // clean_init_cnorm: the steady start's per-cell test (0 off)
   bool cln_insteady = false;    // in CleanSteadyStart's passes
+  Real cln_lcnorm = 0.0;        // clean_lin_cnorm: the steps' strict solves (0 off)
   int cln_maxit = 4000;         // clean_maxit: BiCGStab iterations
   bool cln_pcr = true;          // clean_stag_pcr: PC line solves by PCR on a GPU
   bool cln_fspcr = false;      // clean_stag_fs_pcr: F solve x1 lines by PCR on a GPU
