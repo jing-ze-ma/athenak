@@ -1556,7 +1556,10 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   if (beta) return;
   CleanArgs xh = x;   // (the face momentum state, clean_stag_split)
   xh.hi = cln_split;
-  xh.fs = cln_fsk;
+  // (a pass without the F solve's F of the iterate: its F^H, each face once in cln_rhsaf
+  // into CLF_N, which the next F solve sets anew)
+  const bool fh = x.feedback && !cln_fsk;
+  xh.fs = true;
   const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
   const auto *peos = CleanDev(eos, 2);
   const Real tgf = cln_gtf ? eos.tfloor : 0.0;   // (clean_gas_tfloor)
@@ -1569,6 +1572,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
     for (int n = 0; n < nf; ++n) {
       if (i > ie+(n == 0) || j > je+(n == 1) || k > ke+(n == 2)) continue;
       x.fc[n](m,CLF_SR,k,j,i) = CleanFaceSource(x, n, m, k, j, i);
+      if (fh) x.fc[n](m,CLF_N,k,j,i) = CleanFaceFlux(xh, CLW_EK, n, m, k, j, i, true);
       if (af) x.fc[n](m,CLF_PT,k,j,i) = CleanStagAdvFace(x, xh, n, m, k, j, i);
     }
   });
@@ -1585,8 +1589,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
       Real b2 = 0.0, ba = 0.0, by = 0.0, bp = 0.0, y2 = 0.0, fs[3] = {0.0, 0.0, 0.0};
       // (clean_stag_fwork: the F solve's F, which the gas takes)
       auto ff = [&](const int d, const int kk, const int jj, const int ii) {
-        return xh.fs ? xh.fc[d](m,CLF_N,kk,jj,ii)
-                     : CleanFaceFluxCall(xh, CLW_EK, d, m, kk, jj, ii, true);
+        return xh.fc[d](m,CLF_N,kk,jj,ii);
       };
       // (gflux: an open physical boundary face's flux, absorbed in an opaque half cell,
       // enters the cell mean as its mean over the half cell, (1 - e^-q)/q, q = chi dx/2,
