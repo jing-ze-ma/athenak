@@ -3399,8 +3399,9 @@ int RadiationM1::CleanRstNq() const {
 
 int RadiationM1::CleanRstNfv() const {
   if (!clean) return 0;
-  // (the FV rays, and the cubed sphere's sc rays)
-  if (cln_rfv > 0 || cln_cssc) return cln_fvb*cln_fvn;
+  // (the FV rays, and the cubed sphere's sc rays; before the first sweep those a restart
+  // file holds)
+  if (cln_rfv > 0 || cln_cssc) return (cln_fvn > 0) ? cln_fvb*cln_fvn : t2_nfv;
   return cln_scmem ? cln_fvi.extent_int(1) : 0;
 }
 
