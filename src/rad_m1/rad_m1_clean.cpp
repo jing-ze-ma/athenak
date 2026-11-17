@@ -33,6 +33,11 @@
 
 namespace radm1 {
 extern bool g_vra_adv;   // vet_rotate_advance (rad_m1_vetgd.cpp)
+// the policy of the heavy per-cell reductions: Kokkos' HIP backend compiles a plain
+// RangePolicy reduction for up to 1024 threads per block, which caps it at 128 VGPRs on
+// gfx942 and spilled them (cln_velocity 1005 VGPRs); 256 threads per block as athena's
+// par_for and old production's m1-fast4.  Max reductions and counts: bitwise.
+using CleanRp256 = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
 //----------------------------------------------------------------------------------------
 //! \fn void CleanFatal
 //! \brief stops the run with a message about an unsupported clean-scheme setup
@@ -1893,8 +1898,7 @@ Real RadiationM1::CleanVelocityUpdate() {
   auto xa = x;
   xa.cub = false;
   Real dvmax = 0.0, vmax = 0.0, fvmax = 0.0;
-  Kokkos::parallel_reduce("cln_velocity", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                          nmb*nkji),
+  Kokkos::parallel_reduce("cln_velocity", CleanRp256(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &dv_max, Real &v_max, Real &fv_max) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
@@ -2032,7 +2036,7 @@ int RadiationM1::CleanStagRealizable() {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     const int f1 = nx1 + di, f2 = nx2 + dj, f3 = nx3 + dk, fji = f2*f1, fkji = f3*fji;
     Real r1 = 0.0, r2 = 0.0;
-    Kokkos::parallel_reduce("cln_real", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*fkji),
+    Kokkos::parallel_reduce("cln_real", CleanRp256(DevExeSpace(), 0, nmb*fkji),
     KOKKOS_LAMBDA(const int idx, Real &q1, Real &q2) {
       int m = idx/fkji;
       int k = (idx - m*fkji)/fji;
@@ -3084,7 +3088,7 @@ void RadiationM1::CleanWriteBack() {
   auto &id = pmy_pack->pmesh->mb_indcs;
   const int nx1 = id.nx1, nx2 = id.nx2, nx3 = id.nx3, nji = nx2*nx1, nkji = nx3*nji;
   Real nb = 0.0;
-  Kokkos::parallel_reduce("cln_neint", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+  Kokkos::parallel_reduce("cln_neint", CleanRp256(DevExeSpace(), 0,
                           (nmb1 + 1)*nkji),
   KOKKOS_LAMBDA(const int idx, Real &n) {
     const int m = idx/nkji, k = (idx - m*nkji)/nji + ks;
