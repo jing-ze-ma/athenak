@@ -3429,6 +3429,7 @@ int RadiationM1::Time2RstNchWant() {
          + ((vet_sc && vsc_every > 1) ? 2*M1_T2_NVET : 0)    // vet_sc_every: D0, D1
          + ((vet_col && t2_vcmode == 4) ? M1_X2_NCH : 0);    // rbfast-1021 extrap2
   return nt + ((force_ref == M1_FREF_CLEAN) ? 4 : 0)         // the reference force, set
+         + ((force_ref == M1_FREF_WB_MD) ? 10 : 0)           // wb_arad_md: 9, set
          + ((clean && cln_extrap > 0) ? 2*CleanRstNq() + 1 : 0)    // extrap history
          + ((clean && cln_ring) ? vra_k*CleanRstNq() + 1 : 0)       // clean_rot_ring
          + ((clean && cln_fsolve && cln_fkin) ? 6 : 0)       // stag fkin: d and its K1
@@ -3507,16 +3508,18 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
       c += 2*nv;
     }
   }
-  // force_reference = clean: the reference force and whether it is set
-  if (force_ref == M1_FREF_CLEAN) {
+  // force_reference = clean (wb_arad_md): the reference force (and potentials) and
+  // whether it is set
+  if (force_ref == M1_FREF_CLEAN || force_ref == M1_FREF_WB_MD) {
+    const int nr = (force_ref == M1_FREF_WB_MD) ? 9 : 3;
     const bool have = (cln_fref.extent_int(0) >= m0 + nmb);
     if (have) {
-      Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+3), AL, AL, AL),
+      Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+nr), AL, AL, AL),
                         Kokkos::subview(cln_fref, ms, AL, AL, AL, AL));
     }
-    Kokkos::deep_copy(Kokkos::subview(a, mb, c+3, AL, AL, AL),
+    Kokkos::deep_copy(Kokkos::subview(a, mb, c+nr, AL, AL, AL),
                       (have && cln_fref_set) ? 1.0 : 0.0);
-    c += 4;
+    c += nr + 1;
   }
   // clean_closure = extrap*: the ray moments at t^n and at the end of the step, then
   // t^n, that end time and the flags at i = 0..4
@@ -3691,20 +3694,21 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
       ch -= 2*M1_T2_NVET;
     }
   }
-  if (force_ref == M1_FREF_CLEAN) {
-    if (ch < 3) {
+  if (force_ref == M1_FREF_CLEAN || force_ref == M1_FREF_WB_MD) {
+    const int nr = (force_ref == M1_FREF_WB_MD) ? 9 : 3;
+    if (ch < nr) {
       if (cln_fref.extent_int(0) != nmb) {
-        Kokkos::realloc(cln_fref, nmb, 3, w.extent_int(1), w.extent_int(2),
+        Kokkos::realloc(cln_fref, nmb, nr, w.extent_int(1), w.extent_int(2),
                         w.extent_int(3));
       }
       DeepCopyAcross(Kokkos::subview(cln_fref, mb, ch, AL, AL, AL), w);
       return;
     }
-    if (ch == 3) {
+    if (ch == nr) {
       cln_fref_set = (w(0,0,0,0) > 0.5);
       return;
     }
-    ch -= 4;
+    ch -= nr + 1;
   }
   const int nq = CleanRstNq();
   if (clean && cln_extrap > 0) {

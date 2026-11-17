@@ -164,6 +164,8 @@ constexpr int M1_OPAC_TABLE    = 3;   // stellar Rosseland + Planck tables (mile
 constexpr int M1_FREF_NONE    = 0;
 constexpr int M1_FREF_WB_ARAD = 1;
 constexpr int M1_FREF_CLEAN   = 2;   // scheme = clean: its own force of the first solve
+constexpr int M1_FREF_WB_MD   = 3;   // wb_arad_md: staggered clean, the steady start's
+                                     // force in every direction (cln_fref, hydro walks)
 
 // <rad_m1>/clean_yres: the y of a cell (cell layout) whose balance the gas momentum takes
 constexpr int M1_YRES_OFF   = 0;   // the y of the linear solve
@@ -3237,6 +3239,7 @@ class RadiationM1 {
   DvceArray5D<Real> cln_fref;   // force_reference = clean: reference force (m,3,k,j,i)
   DvceArray5D<Real> cln_rstd;   // staggered fkin: the restart's d and its K1 (m,6,k,j,i)
   bool cln_fref_set = false;    // cln_fref holds the force of the first coupled solve
+  bool cln_mdcap = false;       // wb_arad_md: the write-back captures cln_fref (steady)
   bool cln_vzero = false;       // the iterates keep the gas momentum (steady start)
   // cubed sphere: face areas, centroid distances across the faces, normals and centroids
   DvceArray4D<Real> cln_ga[3], cln_gd[3];

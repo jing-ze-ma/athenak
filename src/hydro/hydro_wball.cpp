@@ -16,6 +16,7 @@
 #include "hydro.hpp"
 #include "hydro_wball.hpp"
 #include "hydro_am.hpp"
+#include "rad_m1/rad_m1.hpp"
 
 namespace hydro {
 
@@ -26,6 +27,7 @@ namespace hydro {
   auto &w0 = c.w0; auto &u0 = c.u0; auto &wder = c.wder; (void) wder; \
   auto &wbq0 = c.wbq0; auto &wbq2 = c.wbq2; auto &wbq3 = c.wbq3; auto &wbw = c.wbw; \
   auto &phicc0 = c.phicc; auto &wtemp = c.wtemp; auto &pwb = c.pwb; (void) pwb; \
+  auto rr = c.rr; (void) rr; \
   struct WbPhiF {DvceArray4D<Real> x1f, x2f, x3f;}; \
   WbPhiF phi0{c.phi1f, c.phi2f, c.phi3f}; \
   AmModule *pam = c.pam; (void) pam; \
@@ -112,7 +114,9 @@ void WbAllBuild(WbAllCtx &c) {
           const Real dc = w0_(m,IDN,k,j,i);
           const Real pm = ww(m,3,km,jm,i), pc = ww(m,3,k,j,i), pp = ww(m,3,kp,jp,i);
           const Real cs2 = gam*pc/dc;   // the Mach ramp only needs the order of magnitude
-          const Real dpr = pp - pm, dph = phicc(m,kp,jp,i) - phicc(m,km,jm,i);
+          Real fm = phicc(m,km,jm,i), fmh = 0.0, fph = 0.0, fp = phicc(m,kp,jp,i);
+          WbRadPhi(rr, dir, m, k, j, i, fm, fmh, fph, fp);
+          const Real dpr = pp - pm, dph = fp - fm;
           const Real rd = fabs(dpr + dc*dph)/
                           (dc*fabs(dph) + fabs(dpr) + eta*pc + 1.0e-300);
           const Real v2 = w0_(m,IVX,k,j,i)*w0_(m,IVX,k,j,i) +
@@ -136,8 +140,10 @@ void WbAllBuild(WbAllCtx &c) {
                    ww(m,dir-1,kp,jp,i) > 0.0)) return;
       const Real dm = w0_(m,IDN,km,jm,i), dc = w0_(m,IDN,k,j,i), dp = w0_(m,IDN,kp,jp,i);
       const Real em = w0_(m,IEN,km,jm,i), ec = w0_(m,IEN,k,j,i), ep = w0_(m,IEN,kp,jp,i);
-      const Real fm = phicc(m,km,jm,i), fc = phicc(m,k,j,i), fp = phicc(m,kp,jp,i);
-      const Real fmh = phif(m,k,j,i), fph = phif(m,kp,jp,i);
+      Real fm = phicc(m,km,jm,i), fp = phicc(m,kp,jp,i);
+      Real fmh = phif(m,k,j,i), fph = phif(m,kp,jp,i);
+      const Real fc = phicc(m,k,j,i);
+      WbRadPhi(rr, dir, m, k, j, i, fm, fmh, fph, fp);
       if (gen) {
         WBState s_m, s_mh, s_c, s_ph, s_p;
         const Real th[3] = {ww(m,4,k,j,i), ww(m,5,k,j,i), ww(m,6,k,j,i)};
@@ -197,6 +203,16 @@ void WbAllBuild(WbAllCtx &c) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn DvceArray5D<Real> WbRadRef
+//! \brief <rad_m1>/force_reference = wb_arad_md, once set: its reference (WbRadPhi)
+
+DvceArray5D<Real> WbRadRef(MeshBlockPack *pp) {
+  const radm1::RadiationM1 *pr = pp->pradm1;
+  return (pr != nullptr && pr->force_ref == radm1::M1_FREF_WB_MD && pr->cln_fref_set) ?
+         pr->cln_fref : DvceArray5D<Real>();
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void WbAllGravity
 //! \brief the shared well-balanced gravitational MOMENTUM source of <hydro>/wb_dirs =
 //! all, the face-sum form of hydro_wball.hpp (Cartesian: A/V = 1/dx). x2, x3 always;
@@ -240,6 +256,7 @@ void WbAllGravity(WbAllCtx &c, const Real bdt, const bool with_x1) {
       const Real d = w0_(m,IDN,k,j,i);
       const Real phc = phicc(m,k,j,i);
       const Real iv = 1.0/vol(m,k,j,i);
+      auto rp = [&](const int c) {return (rr.extent_int(0) > 0) ? rr(m,c,k,j,i) : 0.0;};
       if (with_x1) {
         const Real pc = c1(m,12,k,j,i);
         u0_(m,IM1,k,j,i) += bdt*iv*(a1(m,k,j,i+1)*(c1(m,13,k,j,i) - pc) +
@@ -250,8 +267,10 @@ void WbAllGravity(WbAllCtx &c, const Real bdt, const bool with_x1) {
         const Real wc = ww(m,1,k,j,i);
         const int jp = (j + 1 > n2 - 1) ? n2 - 1 : j + 1;
         const Real wp = fmin(wc, ww(m,1,k,jp,i)), wm = fmin(wc, ww(m,1,k,j-1,i));
-        const Real sp = wp*(c2(m,13,k,j,i) - pc) + (1.0 - wp)*(-d*(f2(m,k,j+1,i) - phc));
-        const Real sm = wm*(c2(m,11,k,j,i) - pc) + (1.0 - wm)*(-d*(f2(m,k,j,i) - phc));
+        const Real sp = wp*(c2(m,13,k,j,i) - pc) +
+                        (1.0 - wp)*(-d*(f2(m,k,j+1,i) - phc - rp(6)));
+        const Real sm = wm*(c2(m,11,k,j,i) - pc) +
+                        (1.0 - wm)*(-d*(f2(m,k,j,i) - (phc - rp(5))));
         u0_(m,IM2,k,j,i) += bdt*iv*(a2(m,k,j+1,i)*sx(m,k,j+1)*sp -
                                     a2(m,k,j,i)*sx(m,k,j)*sm);
       }
@@ -260,8 +279,10 @@ void WbAllGravity(WbAllCtx &c, const Real bdt, const bool with_x1) {
         const Real wc = ww(m,2,k,j,i);
         const int kp = (k + 1 > n3 - 1) ? n3 - 1 : k + 1;
         const Real wp = fmin(wc, ww(m,2,kp,j,i)), wm = fmin(wc, ww(m,2,k-1,j,i));
-        const Real sp = wp*(c3(m,13,k,j,i) - pc) + (1.0 - wp)*(-d*(f3(m,k+1,j,i) - phc));
-        const Real sm = wm*(c3(m,11,k,j,i) - pc) + (1.0 - wm)*(-d*(f3(m,k,j,i) - phc));
+        const Real sp = wp*(c3(m,13,k,j,i) - pc) +
+                        (1.0 - wp)*(-d*(f3(m,k+1,j,i) - phc - rp(8)));
+        const Real sm = wm*(c3(m,11,k,j,i) - pc) +
+                        (1.0 - wm)*(-d*(f3(m,k,j,i) - (phc - rp(7))));
         u0_(m,IM3,k,j,i) += bdt*iv*(a3(m,k+1,j,i)*se(m,k+1,j)*sp -
                                     a3(m,k,j,i)*se(m,k,j)*sm);
       }
@@ -285,6 +306,7 @@ void WbAllGravity(WbAllCtx &c, const Real bdt, const bool with_x1) {
       const Real d = w0_(m,IDN,k,j,i);
       const Real phc = phicc(m,k,j,i);
       const Real iv = 1.0/vol(m,k,j,i);
+      auto rp = [&](const int c) {return (rr.extent_int(0) > 0) ? rr(m,c,k,j,i) : 0.0;};
       if (with_x1) {
         const Real pc = c1(m,12,k,j,i);
         u0_(m,IM1,k,j,i) += bdt*iv*(a1(m,k,j,i+1)*(c1(m,13,k,j,i) - pc) +
@@ -295,8 +317,10 @@ void WbAllGravity(WbAllCtx &c, const Real bdt, const bool with_x1) {
         const Real wc = ww(m,1,k,j,i);
         const int jp = (j + 1 > n2 - 1) ? n2 - 1 : j + 1;
         const Real wp = fmin(wc, ww(m,1,k,jp,i)), wm = fmin(wc, ww(m,1,k,j-1,i));
-        const Real sp = wp*(c2(m,13,k,j,i) - pc) + (1.0 - wp)*(-d*(f2(m,k,j+1,i) - phc));
-        const Real sm = wm*(c2(m,11,k,j,i) - pc) + (1.0 - wm)*(-d*(f2(m,k,j,i) - phc));
+        const Real sp = wp*(c2(m,13,k,j,i) - pc) +
+                        (1.0 - wp)*(-d*(f2(m,k,j+1,i) - phc - rp(6)));
+        const Real sm = wm*(c2(m,11,k,j,i) - pc) +
+                        (1.0 - wm)*(-d*(f2(m,k,j,i) - (phc - rp(5))));
         u0_(m,IM2,k,j,i) += bdt*iv*(a2(m,k,j+1,i)*sp - a2(m,k,j,i)*sm);
       }
       if (x3) {
@@ -304,8 +328,10 @@ void WbAllGravity(WbAllCtx &c, const Real bdt, const bool with_x1) {
         const Real wc = ww(m,2,k,j,i);
         const int kp = (k + 1 > n3 - 1) ? n3 - 1 : k + 1;
         const Real wp = fmin(wc, ww(m,2,kp,j,i)), wm = fmin(wc, ww(m,2,k-1,j,i));
-        const Real sp = wp*(c3(m,13,k,j,i) - pc) + (1.0 - wp)*(-d*(f3(m,k+1,j,i) - phc));
-        const Real sm = wm*(c3(m,11,k,j,i) - pc) + (1.0 - wm)*(-d*(f3(m,k,j,i) - phc));
+        const Real sp = wp*(c3(m,13,k,j,i) - pc) +
+                        (1.0 - wp)*(-d*(f3(m,k+1,j,i) - phc - rp(8)));
+        const Real sm = wm*(c3(m,11,k,j,i) - pc) +
+                        (1.0 - wm)*(-d*(f3(m,k,j,i) - (phc - rp(7))));
         u0_(m,IM3,k,j,i) += bdt*iv*(a3(m,k+1,j,i)*sp - a3(m,k,j,i)*sm);
       }
       if (am) {
@@ -320,6 +346,7 @@ void WbAllGravity(WbAllCtx &c, const Real bdt, const bool with_x1) {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = w0_(m,IDN,k,j,i);
     const Real phc = phicc(m,k,j,i);
+    auto rp = [&](const int c) {return (rr.extent_int(0) > 0) ? rr(m,c,k,j,i) : 0.0;};
     if (with_x1) {
       // x1: the global scheme, (p_bg,i+1/2 - p_bg,i-1/2)/dx1
       u0_(m,IM1,k,j,i) += bdt*(c1(m,13,k,j,i) - c1(m,11,k,j,i))/size.d_view(m).dx1;
@@ -329,8 +356,10 @@ void WbAllGravity(WbAllCtx &c, const Real bdt, const bool with_x1) {
       const Real wc = ww(m,1,k,j,i);
       const int jp = (j + 1 > n2 - 1) ? n2 - 1 : j + 1;
       const Real wp = fmin(wc, ww(m,1,k,jp,i)), wm = fmin(wc, ww(m,1,k,j-1,i));
-      const Real sp = wp*(c2(m,13,k,j,i) - pc) + (1.0 - wp)*(-d*(f2(m,k,j+1,i) - phc));
-      const Real sm = wm*(c2(m,11,k,j,i) - pc) + (1.0 - wm)*(-d*(f2(m,k,j,i) - phc));
+      const Real sp = wp*(c2(m,13,k,j,i) - pc) +
+                      (1.0 - wp)*(-d*(f2(m,k,j+1,i) - phc - rp(6)));
+      const Real sm = wm*(c2(m,11,k,j,i) - pc) +
+                      (1.0 - wm)*(-d*(f2(m,k,j,i) - (phc - rp(5))));
       u0_(m,IM2,k,j,i) += bdt*(sp - sm)/size.d_view(m).dx2;
     }
     if (x3) {
@@ -338,8 +367,10 @@ void WbAllGravity(WbAllCtx &c, const Real bdt, const bool with_x1) {
       const Real wc = ww(m,2,k,j,i);
       const int kp = (k + 1 > n3 - 1) ? n3 - 1 : k + 1;
       const Real wp = fmin(wc, ww(m,2,kp,j,i)), wm = fmin(wc, ww(m,2,k-1,j,i));
-      const Real sp = wp*(c3(m,13,k,j,i) - pc) + (1.0 - wp)*(-d*(f3(m,k+1,j,i) - phc));
-      const Real sm = wm*(c3(m,11,k,j,i) - pc) + (1.0 - wm)*(-d*(f3(m,k,j,i) - phc));
+      const Real sp = wp*(c3(m,13,k,j,i) - pc) +
+                      (1.0 - wp)*(-d*(f3(m,k+1,j,i) - phc - rp(8)));
+      const Real sm = wm*(c3(m,11,k,j,i) - pc) +
+                      (1.0 - wm)*(-d*(f3(m,k,j,i) - (phc - rp(7))));
       u0_(m,IM3,k,j,i) += bdt*(sp - sm)/size.d_view(m).dx3;
     }
   });
@@ -484,7 +515,7 @@ WbAllCtx Hydro::WbCtx() {
   c.wbw = wbw; c.phicc = phicc0; c.wtemp = wtemp; c.pwb = pwb;
   c.phi1f = phi0.x1f; c.phi2f = phi0.x2f; c.phi3f = phi0.x3f; c.pam = pam;
   c.wbam_u = &wbam_u; c.wbam_w = &wbam_w; c.wbam_f = &wbam_f;
-  c.phimax = wb_phimax; c.phiwb = phicc_wb;
+  c.phimax = wb_phimax; c.phiwb = phicc_wb; c.rr = WbRadRef(pmy_pack);
   return c;
 }
 //----------------------------------------------------------------------------------------

@@ -1094,10 +1094,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     force_ref = M1_FREF_WB_ARAD;
   } else if (fr.compare("clean") == 0 && clean) {
     force_ref = M1_FREF_CLEAN;
+  } else if (fr.compare("wb_arad_md") == 0 && clean) {
+    force_ref = M1_FREF_WB_MD;
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1>/force_reference = '" << fr << "' is not a valid choice "
-      << "(none | wb_arad | clean with scheme = clean)" << std::endl;
+      << "(none | wb_arad | clean or wb_arad_md with scheme = clean)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   }
@@ -1108,14 +1110,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // scheme.  Without wb_arad the key is read only when named and has no effect.
   fref_wsplit = false;
   fref_wsplit_auto = false;
-  if (force_ref == M1_FREF_WB_ARAD ||
-      pin->DoesParameterExist("rad_m1", "force_reference_work")) {
+  const bool fwb = (force_ref == M1_FREF_WB_ARAD) || (force_ref == M1_FREF_WB_MD);
+  if (fwb || pin->DoesParameterExist("rad_m1", "force_reference_work")) {
     const std::string fw = pin->GetOrAddString("rad_m1", "force_reference_work",
                                                "auto");
     if (fw.compare("split") == 0) {
-      fref_wsplit = (force_ref == M1_FREF_WB_ARAD);
+      fref_wsplit = fwb;
     } else if (fw.compare("auto") == 0) {
-      fref_wsplit = (force_ref == M1_FREF_WB_ARAD);
+      fref_wsplit = fwb;
       fref_wsplit_auto = fref_wsplit;
     } else if (fw.compare("full") != 0) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -2452,7 +2454,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     std::cout << "         opacity=" << (opacity_type == M1_OPAC_TABLE ? "table" : "")
               << " force_reference="
               << (force_ref == M1_FREF_WB_ARAD ? "wb_arad" :
-                  (force_ref == M1_FREF_CLEAN ? "clean" : "none"))
+                  (force_ref == M1_FREF_CLEAN ? "clean" :
+                  (force_ref == M1_FREF_WB_MD ? "wb_arad_md" : "none")))
               << " temp_unit_kelvin=" << otab.tunit
               << " rho_unit_cgs=" << otab.dunit << std::endl;
   }

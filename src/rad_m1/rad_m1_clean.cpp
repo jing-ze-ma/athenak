@@ -64,7 +64,8 @@ static void CleanStagGasMomentum(const CleanArgs &x, const DvceArray5D<Real> &uh
 //! \brief staggered: the reference force density force_reference withholds from the gas
 //! of cell (k,j,i) (CleanRefForce of the cell layout) in the components of
 //! CleanStagGasMomentum: clean the stored force, wb_arad d arad_ref along x1 (the radius
-//! on the cubed sphere: no torque), else 0.  With wb_arad the gas takes the residual of
+//! on the cubed sphere: no torque), wb_arad_md d times the stored acceleration (every
+//! direction, cln_fref 0..2), else 0.  With wb_arad the gas takes the residual of
 //! the radiation force, as the production kick (rad_m1.hpp:360-366, the residual dv of
 //! ImplicitWorkRow, rad_m1_implicit.cpp:12353)
 
@@ -77,7 +78,8 @@ static void CleanStagRefForce(const CleanArgs &x, const int fref,
   if (fref == M1_FREF_WB_ARAD && x.cub) CleanCsFrame(x, m, k, j, i, q);
   for (int b = 0; b < 3; ++b) {
     rf[b] = (fref == M1_FREF_CLEAN) ? fr(m,b,k,j,i) :
-            ((fref == M1_FREF_WB_ARAD) ? d*aref(m,k,j,i)*q[0][b] : 0.0);
+            ((fref == M1_FREF_WB_ARAD) ? d*aref(m,k,j,i)*q[0][b] :
+            ((fref == M1_FREF_WB_MD) ? d*fr(m,b,k,j,i) : 0.0));
   }
 }
 
@@ -259,8 +261,9 @@ void RadiationM1::CleanInit() {
       Kokkos::deep_copy(cln_dy, 0.0);
     }
   }
-  if (force_ref == M1_FREF_CLEAN && cln_fref.extent_int(0) != nmb) {
-    Kokkos::realloc(cln_fref, nmb, 3, n3, n2, n1);   // (a restart has read it)
+  if ((force_ref == M1_FREF_CLEAN || force_ref == M1_FREF_WB_MD) &&
+      cln_fref.extent_int(0) != nmb) {   // (a restart has read it)
+    Kokkos::realloc(cln_fref, nmb, (force_ref == M1_FREF_WB_MD) ? 9 : 3, n3, n2, n1);
   }
   // multigrid levels of the cell layout: halve every direction with an even number
   // (>= 4) of cells, down to the level where no direction can be halved (clean_pc =
@@ -319,10 +322,14 @@ void RadiationM1::CleanInit() {
     CleanFatal("scheme = clean has no ghost-built inner face (problem/he_bc_linhao) and "
                "no per-column outer bath");
   }
-  if (force_ref == M1_FREF_WB_ARAD && !fref_wsplit) {
-    CleanFatal("<rad_m1>/force_reference = wb_arad with scheme = clean needs the "
+  if ((force_ref == M1_FREF_WB_ARAD || force_ref == M1_FREF_WB_MD) && !fref_wsplit) {
+    CleanFatal("<rad_m1>/force_reference = wb_arad(_md) with scheme = clean needs the "
                "reference work given by the problem generator (force_reference_work = "
                "split)");
+  }
+  if (force_ref == M1_FREF_WB_MD && (cln_cell || (!cln_steady && !cln_fref_set))) {
+    CleanFatal("<rad_m1>/force_reference = wb_arad_md needs clean_layout = staggered and "
+               "clean_init = steady (its reference is the steady start's force)");
   }
   if (vgd_on && VgdRotOn()) {
     // the rotating FV rays (CleanFvSets): the closure is the J-weighted mean of the
@@ -643,6 +650,7 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
   auto uh = fl.u0;
   gas_feedback = relax;
   cln_vzero = relax;
+  cln_mdcap = (force_ref == M1_FREF_WB_MD);   // (every pass's write-back: the last wins)
   t2_solve = M1_T2S_NONE;
   nsub = 1;
   bool big = true, ok = false;
@@ -753,6 +761,50 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
   }
   // restore the run's setup; the first step starts from this state without history
   sums(t1);
+  if (cln_mdcap) {   // (wb_arad_md: the reference in the ghosts, the hydro walks read it)
+    CleanGhostFill(cln_fref, 0, 9, true, 0);
+    if (pm->use_spherical_polar && pm->multi_d) {   // (across a pole: no theta halves)
+      auto fr = cln_fref;
+      auto bc = pmy_pack->pmb->mb_bcs.d_view;
+      const int n1 = fr.extent_int(4), n3 = fr.extent_int(2), ng = indcs.ng;
+      par_for("cln_mdpole", DevExeSpace(), 0, nmb1, 0, n3-1, 0, ng-1, 0, n1-1,
+      KOKKOS_LAMBDA(const int m, const int k, const int g, const int i) {
+        for (int s = 0; s < 2; ++s) {
+          if (bc(m,s ? BoundaryFace::outer_x2 : BoundaryFace::inner_x2) !=
+              BoundaryFlag::polar) continue;
+          const int j = s ? je + 1 + g : js - 1 - g;
+          fr(m,5,k,j,i) = fr(m,6,k,j,i) = 0.0;
+        }
+      });
+    }
+    if (pm->use_cubed_sphere) {
+      // (the cubed sphere: the lateral walks run along (e_xi, e_eta), not the face normals
+      // of the shares, and a ghost across a panel seam holds the neighbour's axes: each
+      // lateral half is a.(X_face - X_centre), the acceleration's line integral)
+      auto fr = cln_fref;
+      auto pnl = pmy_pack->pmb->mb_panel.d_view;
+      auto x1v = pmy_pack->pcoord->x1v, x2v = pmy_pack->pcoord->x2v;
+      auto x3v = pmy_pack->pcoord->x3v;
+      auto x2f = pmy_pack->pcoord->xx2f, x3f = pmy_pack->pcoord->xx3f;
+      const int n1 = fr.extent_int(4), n2 = fr.extent_int(3), n3 = fr.extent_int(2);
+      par_for("cln_mdcs", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        Real c[3], f[3];
+        const Real q = 0.25*M_PI;
+        cubed_sphere::PanelToCart(pnl(m), q*x2v(m,j), q*x3v(m,k), c);
+        for (int sd = 0; sd < 4; ++sd) {   // (xi -, +, eta -, +)
+          const Real a2 = (sd < 2) ? x2f(m,j+sd) : x2v(m,j);
+          const Real a3 = (sd < 2) ? x3v(m,k) : x3f(m,k+sd-2);
+          cubed_sphere::PanelToCart(pnl(m), q*a2, q*a3, f);
+          Real p = 0.0;
+          for (int b = 0; b < 3; ++b) p += fr(m,b,k,j,i)*x1v(m,i)*(f[b] - c[b]);
+          fr(m,5+sd,k,j,i) = (sd % 2) ? p : -p;
+        }
+      });
+    }
+    cln_fref_set = true;
+    cln_mdcap = false;
+  }
   gas_feedback = sfb;
   cln_vzero = false;
   t2_solve = st2;
@@ -1249,7 +1301,8 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   auto op = opac;
   // (wb_arad: the reference work rides the row, as ImplicitWorkRow's force_reference_work
   // = split)
-  const bool wsp = (force_ref == M1_FREF_WB_ARAD) && !x.vzero;
+  const int fref = force_ref;
+  const bool wsp = (fref == M1_FREF_WB_ARAD || fref == M1_FREF_WB_MD) && !x.vzero;
   auto fr = cln_fref;
   auto aref = arad_ref;
   // (the explicit energy source esrc, problem/mlt_flux_frozen: h esrc joins the old E,
@@ -1405,7 +1458,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
       // problem generator gives the gas
       Real pg[3], rf[3] = {0.0, 0.0, 0.0};
       CleanStagGasMomentum(x, uh, m, k, j, i, pg);
-      if (wsp) CleanStagRefForce(x, M1_FREF_WB_ARAD, fr, aref, d, m, k, j, i, rf);
+      if (wsp) CleanStagRefForce(x, fref, fr, aref, d, m, k, j, i, rf);
       for (int n = 0; n < 3; ++n) {
         const Real dm = x.w(m,CLW_DM+n,k,j,i);
         work += (pg[n] + 0.5*dm)*dm/d;
@@ -2492,7 +2545,7 @@ void RadiationM1::CleanWriteBack() {
   auto eos = fl.eos;
   auto f1 = f0x1, f2 = f0x2, f3 = f0x3;
   const int fref = force_ref;
-  const bool wsp = (fref == M1_FREF_WB_ARAD);
+  const bool wsp = (fref == M1_FREF_WB_ARAD || fref == M1_FREF_WB_MD);
   auto fr = cln_fref;
   auto aref = arad_ref;
   const bool fm = icr_fmeas && cln_vzero;   // (CleanSteadyStart: icr_dm)
@@ -2500,9 +2553,40 @@ void RadiationM1::CleanWriteBack() {
   const bool eso = esrc_on;
   auto es = esrc;
   const Real arad_ = arad;
+  // (wb_arad_md, clean_init = steady: the reference of the steady state, cln_fref 0..2
+  // its acceleration in the components of dm, 3 + 2 dir + side the potential P that the
+  // hydro walks of <hydro>/wb_dirs = all take along dir: the line integral over each half
+  // cell (side 0 face to centre, 1 centre to face) of its acceleration, 2 cf/(h rho), the
+  // half cell's share of the face family's momentum (the cubed sphere's lateral halves:
+  // CleanSteadyStart).  None outside the Roche lobe, problem/wb_lobe_cut)
+  const bool mdc = cln_mdcap;
+  const Real phx = fl.ph ? fl.ph->wb_phimax : (fl.pm ? fl.pm->wb_phimax : 1.0e300);
+  auto phc = fl.phicc_wb;
+  auto cx1 = pmy_pack->pcoord->x1v, cx2 = pmy_pack->pcoord->x2v;
+  auto cx3 = pmy_pack->pcoord->x3v, cf1 = pmy_pack->pcoord->xx1f;
+  auto cf2 = pmy_pack->pcoord->xx2f, cf3 = pmy_pack->pcoord->xx3f;
   par_for("cln_wbcell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real e = x.w(m,CLW_X,k,j,i);
+    if (mdc) {
+      Real dr[3], mg[3], cf[2], wf[2];
+      CleanStagMomentum(xh, CLW_X, m, k, j, i, dr, mg);
+      const Real d = uh(m,IDN,k,j,i), s = (phc(m,k,j,i) > phx) ? 0.0 : 1.0/(h*d);
+      for (int n = 0; n < 3; ++n) {
+        fr(m,n,k,j,i) = s*dr[n];
+        fr(m,3+2*n,k,j,i) = fr(m,4+2*n,k,j,i) = 0.0;
+        if (n >= x.nf) continue;
+        CleanMomentumChange(xh, CLW_X, n, m, k, j, i, nullptr, cf, wf);
+        const int dk = (n == 2), dj = (n == 1), di = (n == 0);
+        for (int sd = 0; sd < 2; ++sd) {
+          const int kf = k + sd*dk, jf = j + sd*dj, iff = i + sd*di;
+          const Real l = !(x.sph || x.cub) ? 0.5/x.idx[n] : ((n == 0) ?
+              fabs(cf1(m,iff) - cx1(m,i)) : ((n == 1) ? cx1(m,i)*fabs(cf2(m,jf) -
+              cx2(m,j)) : cx1(m,i)*sin(cx2(m,j))*fabs(cf3(m,kf) - cx3(m,k))));
+          fr(m,3+2*n+sd,k,j,i) = 2.0*s*cf[sd]*l;
+        }
+      }
+    }
     Real dm[3] = {0.0, 0.0, 0.0}, dh[3] = {0.0, 0.0, 0.0};
     Real den = 0.0;
     if (feedback) {

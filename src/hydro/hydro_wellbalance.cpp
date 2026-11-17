@@ -16,6 +16,7 @@
 #include "coordinates/cartesian_ks.hpp"
 #include "coordinates/cell_locations.hpp"
 #include "eos/eos.hpp"
+#include "hydro/hydro_wball.hpp"
 #include "hydro.hpp"
 
 // the body is shared with MHD (hydro/wellbalance_impl.inc)

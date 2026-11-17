@@ -224,16 +224,19 @@ void WB_CLASS::BuildWBCache(const int jl, const int ju, const int kl, const int 
   auto &c = wbq0;
   const bool wbgi = wb_guard_ideal;
   const bool wbci = wb_clamp_ideal;
+  auto rr = hydro::WbRadRef(pmy_pack);   // (wb_arad_md: the reference radiation force)
   par_for("wbcache", DevExeSpace(), 0, nmb1, kl, ku, jl, ju, is-1, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real fm = phicc(m,k,j,i-1), fmh = phi(m,k,j,i), fph = phi(m,k,j,i+1);
+    Real fp = phicc(m,k,j,i+1);
+    hydro::WbRadPhi(rr, 1, m, k, j, i, fm, fmh, fph, fp);
     if (gen) {
       // ONE walk gives all three channels
       WBState s_im1, s_imh, s_i, s_iph, s_ip1;
       WBBackgroundStencil(eos, wbo,
               w0_(m,IDN,k,j,i-1), w0_(m,IDN,k,j,i), w0_(m,IDN,k,j,i+1),
               w0_(m,IEN,k,j,i-1), w0_(m,IEN,k,j,i), w0_(m,IEN,k,j,i+1),
-              phicc(m,k,j,i-1), phi(m,k,j,i), phicc(m,k,j,i), phi(m,k,j,i+1),
-              phicc(m,k,j,i+1), s_im1, s_imh, s_i, s_iph, s_ip1,
+              fm, fmh, phicc(m,k,j,i), fph, fp, s_im1, s_imh, s_i, s_iph, s_ip1,
               WBT(wt,m,k,j,i-1), WBT(wt,m,k,j,i), WBT(wt,m,k,j,i+1));
       c(m,0,k,j,i) = s_im1.d; c(m,1,k,j,i) = s_imh.d; c(m,2,k,j,i) = s_i.d;
       c(m,3,k,j,i) = s_iph.d; c(m,4,k,j,i) = s_ip1.d;
@@ -248,8 +251,8 @@ void WB_CLASS::BuildWBCache(const int jl, const int ju, const int kl, const int 
         getWBq0(eos, wbo, var,
                 w0_(m,IDN,k,j,i-1), w0_(m,IDN,k,j,i), w0_(m,IDN,k,j,i+1),
                 w0_(m,IEN,k,j,i-1), w0_(m,IEN,k,j,i), w0_(m,IEN,k,j,i+1),
-                phicc(m,k,j,i-1), phi(m,k,j,i), phicc(m,k,j,i), phi(m,k,j,i+1),
-                phicc(m,k,j,i+1), a, b, cc, d, e, -1.0, -1.0, -1.0, wbci);
+                fm, fmh, phicc(m,k,j,i), fph, fp, a, b, cc, d, e, -1.0, -1.0, -1.0,
+                wbci);
         c(m,5*var,k,j,i) = a; c(m,5*var+1,k,j,i) = b; c(m,5*var+2,k,j,i) = cc;
         c(m,5*var+3,k,j,i) = d; c(m,5*var+4,k,j,i) = e;
       }

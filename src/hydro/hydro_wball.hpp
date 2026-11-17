@@ -43,6 +43,24 @@ Real WbRamp(const Real q, const Real a, const Real b) {
   return (q <= a) ? 1.0 : ((q >= b) ? 0.0 : (b - q)/(b - a));
 }
 
+//! <rad_m1>/force_reference = wb_arad_md: the potentials of the walk along dir (1..3)
+//! from cell (k,j,i) to its -1, -1/2, +1/2, +1 points less those of the reference
+//! radiation force, rr = RadiationM1::cln_fref 1 + 2 dir + side (WbRadRef): the line
+//! integral P of the acceleration over each half cell (side 0 face to centre, 1 centre
+//! to face), so that the background balances gravity and that force together; the
+//! neighbours' halves on the same faces (none: rr empty)
+KOKKOS_INLINE_FUNCTION
+void WbRadPhi(const DvceArray5D<Real> &rr, const int dir, const int m, const int k,
+              const int j, const int i, Real &fm, Real &fmh, Real &fph, Real &fp) {
+  if (rr.extent_int(0) == 0) return;
+  const int dk = (dir == 3), dj = (dir == 2), di = (dir == 1), c = 1 + 2*dir;
+  const Real p0 = rr(m,c,k,j,i), p1 = rr(m,c+1,k,j,i);
+  fmh += p0;
+  fm += p0 + rr(m,c+1,k-dk,j-dj,i-di);
+  fph -= p1;
+  fp -= p1 + rr(m,c,k+dk,j+dj,i+di);
+}
+
 //! the blended x2 (dir = 2) or x3 (dir = 3) reconstruction of one pencil: ql_p1(n,i) =
 //! the left state at the face +1/2 of cell (k,j,i), qr(n,i) = the right state at its face
 //! -1/2. wbq = Hydro::wbq2 / wbq3, wbw = Hydro::wbw (index dir-1).
@@ -253,11 +271,13 @@ struct WbAllCtx {
   DvceArray5D<Real> w0, u0, wder, wbq0, wbq2, wbq3, wbw;
   DvceArray4D<Real> phicc, phiwb, wtemp, pwb;   // phiwb: the x1 WB potential (wb_phimax)
   DvceArray4D<Real> phi1f, phi2f, phi3f;   // the face potentials (phi0.x1f/x2f/x3f)
+  DvceArray5D<Real> rr;   // wb_arad_md: the reference radiation potentials (WbRadPhi)
   class AmModule *pam = nullptr;
   DvceArray5D<Real> *wbam_u = nullptr, *wbam_w = nullptr;
   DvceFaceFld5D<Real> **wbam_f = nullptr;
 };
 
+DvceArray5D<Real> WbRadRef(MeshBlockPack *pp);   // (empty unless wb_arad_md is set)
 void WbAllBuild(WbAllCtx &c);
 void WbAllGravity(WbAllCtx &c, const Real bdt, const bool with_x1);
 void WbAllAmBackground(WbAllCtx &c);
