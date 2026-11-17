@@ -519,10 +519,11 @@
               const Real mu = nx*ux + ny*uy + nz*uz;
               int dm = 0;
               Real best = -2.0;
-              for (int q = 0; q < n; ++q) {
+              for (int q = 0; q < n; ++q) {   // (the nearest inward one, as the ratio)
                 const Real c = dir_(q,0)*(nx - 2.0*mu*ux) + dir_(q,1)*(ny - 2.0*mu*uy) +
                                dir_(q,2)*(nz - 2.0*mu*uz);
-                if (c > best) {best = c; dm = q;}
+                const Real mq = dir_(q,0)*ux + dir_(q,1)*uy + dir_(q,2)*uz;
+                if (mq < 0.0 && c > best) {best = c; dm = q;}
               }
               bool ok[4];
               bool all = true;
