@@ -852,6 +852,12 @@ void RadiationM1::CleanCellRightHandSide() {
         }
       }
     }
+    if (x.slave) {
+      // clean_slave: the streaming share of the y rows (y - h E) has no right-hand side
+      Real hs[3];
+      const Real sl = CleanCellSlave(x, m, k, j, i, hs);
+      for (int b = 0; b < x.nf; ++b) x.u(m,CLC_B+1+b,k,j,i) *= 1.0 - sl;
+    }
     for (int b = 0; b < 4; ++b) x.u(m,CLC_X+b,k,j,i) = x.u(m,CLC_K+b,k,j,i);
   });
 }
@@ -949,6 +955,15 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
       }
       x.u(m,dst+1+b,k,j,i) = y;
     }
+    if (x.slave) {
+      // clean_slave: the streaming share s of the y rows is y - h E
+      Real hs[3];
+      const Real sl = CleanCellSlave(x, m, k, j, i, hs), d = sl*(1.0 + x.h*x.c*chi);
+      for (int b = 0; b < x.nf; ++b) {
+        x.u(m,dst+1+b,k,j,i) = (1.0 - sl)*x.u(m,dst+1+b,k,j,i) +
+                               d*(x.u(m,src+1+b,k,j,i) - hs[b]*e);
+      }
+    }
   });
 }
 
@@ -996,6 +1011,11 @@ void RadiationM1::CleanCellPreconditionerSetup() {
     for (int r = 0; r < 4; ++r) {
       for (int c = 0; c < 4; ++c) a0[r][c] = 0.0;
     }
+    // clean_slave: the moment system's share of the y rows (CleanCellApply)
+    Real hs[3] = {0.0, 0.0, 0.0}, sl = 0.0;
+    if (x.slave) sl = CleanCellSlave(x, m, k, j, i, hs);
+    Real rs[4] = {1.0, 1.0, 1.0, 1.0};
+    for (int b = 0; b < x.nf; ++b) rs[1+b] = 1.0 - sl;
     const Real rr = x.feedback ? x.w(m,CLW_RR,k,j,i) : 0.0;
     const Real chi = op(m,M1_OP_T,k,j,i);
     a0[0][0] = 1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*(1.0 - rr);
@@ -1037,8 +1057,8 @@ void RadiationM1::CleanCellPreconditionerSetup() {
           for (int c = 0; c < 4; ++c) {
             a0[r][c] += bp[r][c] - bm[r][c];
             if (keep) {
-              put(m, sp+4*r+c, k, j, i, bpn[r][c]);
-              put(m, sm+4*r+c, k, j, i, -bmn[r][c]);
+              put(m, sp+4*r+c, k, j, i, rs[r]*bpn[r][c]);
+              put(m, sm+4*r+c, k, j, i, -rs[r]*bmn[r][c]);
             }
           }
         }
@@ -1049,8 +1069,8 @@ void RadiationM1::CleanCellPreconditionerSetup() {
         for (int c = 0; c < 4; ++c) {
           a0[r][c] += s*(jlp[r][c] - jrm[r][c]);
           if (keep) {
-            put(m, sp+4*r+c, k, j, i, s*jrp[r][c]);
-            put(m, sm+4*r+c, k, j, i, -s*jlm[r][c]);
+            put(m, sp+4*r+c, k, j, i, rs[r]*s*jrp[r][c]);
+            put(m, sm+4*r+c, k, j, i, -rs[r]*s*jlm[r][c]);
           }
         }
       }
@@ -1059,6 +1079,14 @@ void RadiationM1::CleanCellPreconditionerSetup() {
       Real g[3];
       CleanCellSphSource(x, m, k, j, i, g);
       for (int b = 0; b < x.nf; ++b) a0[1+b][0] += g[b];
+    }
+    if (x.slave) {
+      const Real d = sl*(1.0 + x.h*x.c*chi);
+      for (int b = 0; b < x.nf; ++b) {
+        for (int c = 0; c < 4; ++c) a0[1+b][c] *= 1.0 - sl;
+        a0[1+b][1+b] += d;
+        a0[1+b][0] -= d*hs[b];
+      }
     }
     for (int r = 0; r < 4; ++r) {
       for (int c = 0; c < 4; ++c) put(m, CLC_A0+4*r+c, k, j, i, a0[r][c]);

@@ -348,6 +348,19 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         << std::endl;
       std::exit(EXIT_FAILURE);
     }}
+    // clean_slave (read only when named, default false): in the streaming share s of a
+    // cell (the least w of its faces) y is not an unknown of its own but h E, h = H/J of
+    // the rays' cell moments; the y rows are (1 - s) those of the moment system plus
+    // s (1 + h c chi)(y - h E), and the gas takes the momentum balance as before
+    if (pin->DoesParameterExist("rad_m1","clean_slave")) {
+      cln_slave = pin->GetBoolean("rad_m1","clean_slave");
+      if (cln_slave && (!cln_tilt || cln_yres == M1_YRES_LOCAL)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/clean_slave needs clean_bracket_tilt = true "
+                  << "and clean_yres = false | post" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     {const std::string nn = pin->GetOrAddString("rad_m1","clean_nl_norm","global");
     if (nn.compare("global") != 0 && nn.compare("cell") != 0) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__

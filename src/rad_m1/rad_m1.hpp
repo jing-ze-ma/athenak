@@ -3054,6 +3054,7 @@ class RadiationM1 {
   bool cln_tilt = false;        // clean_bracket_tilt: tilted half-range factors g+-
   int cln_tiltrem = 1;          // clean_bracket_rem: none 0 | limit 1 | full 2 | scale 3
   bool cln_curvk = false;       // clean_curv_iterate: curvature terms at the iterate's E
+  bool cln_slave = false;       // clean_slave: y = h E in the streaming share
   Real cln_ntlim = 0.0;         // faces whose y remainder was limited (this solve)
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
   bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces

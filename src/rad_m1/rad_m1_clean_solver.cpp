@@ -75,6 +75,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.tilt = cln_tilt;
   x.tside = cln_tilt && (cln_tiltrem == 4);
   x.curvk = cln_curvk;
+  x.slave = cln_slave;
   x.milne = cln_milne;
   x.fvrays = (cln_rfv > 0);
   x.op = opac;

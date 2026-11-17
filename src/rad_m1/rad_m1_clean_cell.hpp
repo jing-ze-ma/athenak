@@ -559,6 +559,26 @@ void CleanCellKinetic(const CleanArgs &x, const int dir, const int m, const int 
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanCellSlave
+//! \brief clean_slave: the streaming share s of cell (k,j,i), the least weight w of its
+//! faces (CLF_WK), and h = H/J of the rays' cell moments Ur (CLC_U, |h| <= 1; zero
+//! without rays), with which its y rows are (1 - s) those of the moment system plus
+//! s (1 + h c chi) (y - h E)
+
+KOKKOS_INLINE_FUNCTION
+Real CleanCellSlave(const CleanArgs &x, const int m, const int k, const int j,
+                    const int i, Real hs[3]) {
+  Real s = 1.0;
+  for (int dir = 0; dir < x.nf; ++dir) {
+    const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+    s = fmin(s, fmin(x.fc[dir](m,CLF_WK,k,j,i), x.fc[dir](m,CLF_WK,k+dk,j+dj,i+di)));
+  }
+  const Real jr = x.u(m,CLC_U,k,j,i);
+  for (int b = 0; b < 3; ++b) hs[b] = (jr > 0.0) ? x.u(m,CLC_U+1+b,k,j,i)/jr : 0.0;
+  return s;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real CleanCellAdvectN
 //! \brief component along the normal of face (kf,jf,iff) normal to dir of the advective
 //! coefficient a = v + D v of cell (k,j,i) (CLW_A1, in the frame of y)
