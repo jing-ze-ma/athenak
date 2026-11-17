@@ -1141,6 +1141,7 @@ void RadiationM1::CleanFirstIterate() {
     w(m,CLW_RR,k,j,i) = 0.0;
     for (int n = 0; n < 3; ++n) w(m,CLW_DM+n,k,j,i) = 0.0;
     if (feedback) {
+      w(m,CLW_EP,k,j,i) = 0.0;   // (the beta terms of this T, CleanRightHandSide)
       w(m,CLW_T,k,j,i) = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
                              hc*op(m,M1_OP_P,k,j,i)*arad_,
                              w(m,CLW_EI,k,j,i) + hc*op(m,M1_OP_E,k,j,i)*e,
@@ -1218,7 +1219,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   xh.fs = cln_fsk;
   par_for("cln_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real t = x.w(m,CLW_T,k,j,i);
+    Real t = x.w(m,CLW_T,k,j,i);
     const Real hcke = x.h*x.c*op(m,M1_OP_E,k,j,i);
     Real rr = 0.0, work = 0.0, gm = 1.0, sb = 0.0, dop = 0.0;
     if (x.feedback) {
@@ -1299,6 +1300,17 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
       dop = 0.5*b2 + ba;
       if (x.gf) sb = hcke*(dop*x.w(m,CLW_EK,k,j,i) + 2.0*(by - bp));
       if (x.gf) x.w(m,CLW_JV+1,k,j,i) = hcke*dop;   // (d sb/dE, CleanNewtonUpdate)
+      // the iterate's T in exchange with E_k and these sb (its T took those of the last
+      // pass): the gas row holds at the iterate, so a change of sb between passes enters
+      // the E row with 1 - r, the exchange's share, not all of it (radiation-dominated
+      // opaque gas, r ~ 1, hcke beta F'/c >> eint: the lag otherwise contracted only
+      // ~0.5 per pass)
+      if (!x.sbi && sb != -x.w(m,CLW_EP,k,j,i)) {
+        t = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
+                                     x.h*x.c*op(m,M1_OP_P,k,j,i)*gm*arad_,
+                                     x.w(m,CLW_EI,k,j,i) + hcke*ek - sb, t);
+        x.w(m,CLW_T,k,j,i) = t;
+      }
     }
     const Real hckp = x.h*x.c*op(m,M1_OP_P,k,j,i)*gm;
     x.w(m,CLW_GM,k,j,i) = gm;
