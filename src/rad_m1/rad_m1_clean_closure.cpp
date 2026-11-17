@@ -33,6 +33,7 @@
 #include "rad_m1/rad_m1_clean.hpp"
 #include "rad_m1/rad_m1_clean_cell.hpp"
 #include "utils/imex_sdirk2.hpp"
+#include "utils/scratch_view.hpp"
 
 namespace radm1 {
 extern bool g_vra_adv;   // vet_rotate_advance (rad_m1_vetgd.cpp)
@@ -3038,10 +3039,12 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   } else if (gl) {
     const int ng = indcs.ng;
     const int nc = std::min(n, cln_hmax), nt = std::max(ke - ks + 1, je - js + 1);
-    gi.gl = DvceArray5D<Real>("cln_gd_gl", nmb1 + 1, n, 2, nt, cs.extent_int(4));
-    DvceArray5D<Real> ch(Kokkos::view_alloc(Kokkos::WithoutInitializing, "cln_gd_ch"),
-                         nmb1 + 1, nc, cs.extent_int(2), cs.extent_int(3),
-                         cs.extent_int(4));
+    // (persistent scratch: no cudaMalloc / cudaFree per build; gl's unwritten rows stay
+    // the zeros of its allocation, ch is written before it is read)
+    gi.gl = ScratchView<DvceArray5D<Real>>("cln_gd_gl", nmb1 + 1, n, 2, nt,
+                                           cs.extent_int(4));
+    auto ch = ScratchView<DvceArray5D<Real>>("cln_gd_ch", nmb1 + 1, nc, cs.extent_int(2),
+                                             cs.extent_int(3), cs.extent_int(4));
     auto gg = gi.gl;
     for (int d0 = 0; d0 < n; d0 += nc) {
       const int nd = std::min(nc, n - d0);
@@ -3236,8 +3239,10 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   if (pk && one && s0 == is) {
     cln_gdrf = DvceArray5D<Real>("cln_gd_rf", nmb1 + 1, 4, ke - ks + 1, nj, ie - is + 2);
   }
-  DvceArray5D<Real> rf = pk ? cln_gdrf : DvceArray5D<Real>("cln_gd_rf", rr ? nmb1 + 1 : 1,
-                       4, rr ? ke - ks + 1 : 1, rr ? nj : 1, rr ? ie - is + 2 : 1);
+  DvceArray5D<Real> rf = pk ? cln_gdrf : ScratchView<DvceArray5D<Real>>("cln_gd_rf",
+                       rr ? nmb1 + 1 : 1, 4, rr ? ke - ks + 1 : 1, rr ? nj : 1,
+                       rr ? ie - is + 2 : 1);
+  if (!pk) Kokkos::deep_copy(DevExeSpace(), rf, 0.0);   // (the zeros of a fresh one)
   if (pk && !one) cln_gdrf = DvceArray5D<Real>();
   if (rr && (one || !pk)) {
     par_for("cln_gd_rf", DevExeSpace(), 0, nmb1, ks, ke, js, je, one ? s0 : is,

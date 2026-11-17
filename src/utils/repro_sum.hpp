@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "athena.hpp"
+#include "utils/scratch_view.hpp"
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
 #endif
@@ -234,10 +235,11 @@ template <class F>
 void ShellSums(const char *name, const int nq, const int c1, const int nmb,
                const int ks, const int ke, const int js, const int je, const int ilo,
                const int ihi, const F &f, std::vector<Real> &out) {
-  Kokkos::View<ReproSum**, DevMemSpace> rs(std::string(name), nq, c1);
+  // (persistent scratch, ScratchView: every element is written below before it is read)
+  auto rs = ScratchView<Kokkos::View<ReproSum**, DevMemSpace>>(std::string(name), nq, c1);
   if (block_mode) {
-    Kokkos::View<Real***, DevMemSpace> bp(Kokkos::view_alloc(std::string(name) + "_blk",
-                                          Kokkos::WithoutInitializing), nq, nmb, c1);
+    auto bp = ScratchView<Kokkos::View<Real***, DevMemSpace>>(std::string(name) + "_blk",
+                                                              nq, nmb, c1);
     const int nqm = nq*nmb;
     Kokkos::parallel_for(std::string(name) + "_blk",
                          Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nqm*c1),

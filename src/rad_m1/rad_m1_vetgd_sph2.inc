@@ -817,7 +817,14 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
       sb_(fs_(q)) = a_(S_(e,0),v,S_(e,1),S_(e,2),i);
     });
   }
-  if (post) Kokkos::fence();
+  // (lean: the host waits for the pack alone, an event behind it on the sweep's stream,
+  // as prod's VetGdHlBegin, d6fast3-1112; not a device-wide fence)
+  if (post && lean) {
+    VgdPackEvtRecord(DevExeSpace());
+    VgdPackEvtWait(DevExeSpace());
+  } else if (post) {
+    Kokkos::fence();
+  }
   Kokkos::Timer tq;
   std::vector<MPI_Request> &req = g_vgd_gbo_req;
   if (post) req.clear();

@@ -388,8 +388,10 @@ struct Binder {
     ent->push_back(std::move(e));
   }
   template <class T> void view(const char *n, T &x) {
-    // (clean_rot_ring's offsets and pending Delta: in pinned host memory always)
-    const bool rh = (pre + n == "m1.cln_rr") || (pre + n == "m1.cln_rpd");
+    // (clean_rot_ring's offsets: in pinned host memory always, their copy skipped while
+    // clean; the pending Delta, written every build, keeps a device clone: a pinned-host
+    // one was a synchronous 0.5 GB D2H per cycle on R136)
+    const bool rh = (pre + n == "m1.cln_rr");
     auto e = std::make_unique<ViewEntry<T>>(&x, Deep(n), host || rh);
     e->name = pre + n;
     ent->push_back(std::move(e));
