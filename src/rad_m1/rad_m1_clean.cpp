@@ -1990,6 +1990,7 @@ void RadiationM1::CleanStagBracket() {
   CleanArgs x = CleanMakeArgs();
   x.consist = false;
   x.feedback = false;   // (the gas terms read the last iterate's work vectors)
+  const Real efl = e_floor;
   par_for("cln_rayj", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     x.w(m,CLW_Z,k,j,i) = x.cs(m,CLN_J,k,j,i);
@@ -2025,8 +2026,12 @@ void RadiationM1::CleanStagBracket() {
       // (H+', and H-' = fr - H+'; without half ranges the cell's h+- stay)
       const Real hp = !(s > 0.0) ? hl : ((dd < 0.0) ? fmax(hl + dd*hl/s, 0.0) :
                                         fr - fmin(hr - dd*hr/s, 0.0));
-      if (jl > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = hp/jl;
-      if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = ((s > 0.0) ? fr - hp : hr)/jr;
+      // (rays' J at or below the radiation floor e_floor are no radiation field, J ~
+      // 1e-100 in the E-floor holes of an evolved envelope: there the factors take the
+      // realisable half range |H+-| <= J; unbounded they made rows of the operator ~1e100)
+      const Real hpj = hp/jl, hmj = ((s > 0.0) ? fr - hp : hr)/jr;
+      if (jl > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = (jl > efl) ? hpj : fmin(hpj, 1.0);
+      if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = (jr > efl) ? hmj : fmax(hmj, -1.0);
     });
   }
 }
