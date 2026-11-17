@@ -91,6 +91,7 @@
 #include <iomanip>
 #include <iostream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -114,6 +115,97 @@
 namespace radm1 {
 
 namespace {
+
+// the per-cell sums of one vet_sc launch (VetShortCharSweep): the moments of the up
+// (u = 0) and down (u = 1) rays of the cells iu, id and the face sums into them (f2) and
+// into their upwind cells (fn), added ray by ray in the ray order (the per-cell and the
+// ray-parallel kernel give the same bits)
+struct VetScAcc {
+  Real ac[2][10] = {}, hp[2][3] = {}, kp[2][M1_VET_NKP] = {}, nl[2] = {};
+  Real f2[2][M1_VET_NFS] = {}, fn[2][M1_VET_NFS] = {};
+  // ray r of intensity iv in a cell of source s0; g the scalars of its face sums
+  // (entry, x2 and x3 interpolation flux, face crossing, exit), each times (1, mu)
+  template <class A>
+  KOKKOS_INLINE_FUNCTION void Add(const A &ang, const int r, const Real iv, const Real s0,
+                                  const Real g[5], const bool hrs, const bool kps,
+                                  const bool nls) {
+    const Real m1 = ang(r,0), m2 = ang(r,1), m3 = ang(r,2), wr = ang(r,3);
+    const bool up = (m1 > 0.0);
+    const int u = up ? 0 : 1;
+    auto add4 = [&](Real *fx, const Real q) {
+      fx[0] += q;
+      fx[1] += q*m1;
+      fx[2] += q*m2;
+      fx[3] += q*m3;
+    };
+    add4(f2[u] + 4, g[0]);
+    add4(fn[u], g[1]);
+    add4(fn[u] + 12, g[2]);
+    add4(up ? f2[0] + 8 : fn[1] + 8, g[3]);
+    add4(f2[u] + 4, g[4]);
+    Real *c = ac[u];
+    const Real a = wr*iv;
+    c[0] += a;
+    c[1] += a*m1*m1;
+    c[2] += a*m2*m2;
+    c[3] += a*m3*m3;
+    c[4] += a*m1*m2;
+    c[5] += a*m1*m3;
+    c[6] += a*m2*m3;
+    c[7] += a*m1;
+    c[8] += a*m2;
+    c[9] += a*m3;
+    if (hrs) {
+      hp[u][0] += a*fmax(m1, 0.0);
+      hp[u][1] += a*fmax(m2, 0.0);
+      hp[u][2] += a*fmax(m3, 0.0);
+    }
+    if (kps) {
+      const Real mu[3] = {m1, m2, m3};
+      for (int d = 0; d < 3; ++d) {
+        if (!(mu[d] > 0.0)) continue;
+        for (int b = 0; b < 3; ++b) kp[u][3*d+b] += a*mu[b]*mu[d];
+      }
+    }
+    if (nls) {nl[u] += wr*fabs(iv - s0);}
+  }
+  template <class V>
+  KOKKOS_INLINE_FUNCTION void Write(const V &vc, const int m, const int k, const int j,
+                                    const int iu, const int id, const int is, const int ie,
+                                    const bool mrlo, const bool mrhi, const bool hrs,
+                                    const bool kps, const bool nls, const bool f2s) const {
+    for (int n = 0; n < 10; ++n) {
+      vc(m,M1_VET_J+n,k,j,iu) += ac[0][n];
+      vc(m,M1_VET_J+n,k,j,id) += ac[1][n];
+    }
+    if (hrs) {
+      for (int n = 0; n < 3; ++n) {
+        vc(m,M1_VET_HP1+n,k,j,iu) += hp[0][n];
+        vc(m,M1_VET_HP1+n,k,j,id) += hp[1][n];
+      }
+    }
+    if (kps) {
+      for (int n = 0; n < M1_VET_NKP; ++n) {
+        vc(m,M1_VET_KP+n,k,j,iu) += kp[0][n];
+        vc(m,M1_VET_KP+n,k,j,id) += kp[1][n];
+      }
+    }
+    if (nls) {
+      vc(m,M1_VET_NL,k,j,iu) += nl[0];
+      vc(m,M1_VET_NL,k,j,id) += nl[1];
+    }
+    if (f2s) {
+      const int ium = (iu > is) ? iu - 1 : (mrlo ? is : ie);
+      const int idp = (id < ie) ? id + 1 : (mrhi ? ie : is);
+      for (int n = 0; n < M1_VET_NFS; ++n) {
+        vc(m,M1_VET_F2+n,k,j,iu) += f2[0][n];
+        vc(m,M1_VET_F2+n,k,j,id) += f2[1][n];
+        vc(m,M1_VET_F2+n,k,j,ium) += fn[0][n];
+        vc(m,M1_VET_F2+n,k,j,idp) += fn[1][n];
+      }
+    }
+  }
+};
 
 void VetFatal(const std::string &msg) {
   std::cout << "### FATAL ERROR in rad_m1_vet.cpp" << std::endl << msg << std::endl;
@@ -2094,6 +2186,18 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   } else {
     Kokkos::realloc(vet_ipl, nmb, 2, vet_nray, ncells3, ncells2);
     Kokkos::deep_copy(vet_ipl, 0.0);
+    // gdcart-1117 vet_sc_kernel = ray (the default on a device) | cell (on the host): the
+    // launch of a layer as one thread per (block, ray, cell) and the per-cell sums, or
+    // one thread per cell over the rays; the same bits (read only when named)
+    vsc_rayk = !std::is_same<DevExeSpace, Kokkos::DefaultHostExecutionSpace>::value;
+    if (pin->DoesParameterExist("rad_m1", "vet_sc_kernel")) {
+      const std::string kn = pin->GetString("rad_m1", "vet_sc_kernel");
+      if (kn.compare("ray") != 0 && kn.compare("cell") != 0) {
+        VetFatal("<rad_m1>/vet_sc_kernel = '" + kn + "' is not a choice (ray | cell)");
+      }
+      vsc_rayk = (kn.compare("ray") == 0);
+    }
+    if (vsc_rayk) {Kokkos::realloc(vet_rayg, nmb, 5*vet_nray, ncells3, ncells2);}
     if (vet_x1per && vet_x1ptol > 0.0) {
       Kokkos::realloc(vet_x1ent, nmb, vet_nray, ncells3, ncells2);
     }
@@ -4287,326 +4391,286 @@ void RadiationM1::VetShortCharSweep() {
   for (int l = 0; l < nlaunch; ++l) {
     const int gl = p*nlaunch + l;
     const int pw = gl & 1, pr = pw ^ 1;
-    par_for("m1_vet_sweep", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    const int iu = is + l, id = ie - l;
+    // ray r of launch l in the cell (k, j): its intensity (into the plane buffer) and
+    // the scalars g of its face sums (VetScAcc::Add), shared by the per-cell kernel and
+    // the ray-parallel one (vet_sc_kernel = ray: one thread per (block, ray, cell), then
+    // the sums per cell in the same ray order, the same bits)
+    auto rayf = KOKKOS_LAMBDA(const int m, const int k, const int j, const int r,
+                              Real g[5]) {
       const Real dx1 = mbsize.d_view(m).dx1;
       const Real dx2 = mbsize.d_view(m).dx2;
       const Real dx3 = mbsize.d_view(m).dx3;
-      const int iu = is + l, id = ie - l;
-      Real acu[10], acd[10];
-      for (int n = 0; n < 10; ++n) {acu[n] = 0.0; acd[n] = 0.0;}
-      Real hpu[3] = {0.0, 0.0, 0.0}, hpd[3] = {0.0, 0.0, 0.0};
-      Real kpu[M1_VET_NKP], kpd[M1_VET_NKP];
-      for (int n = 0; n < M1_VET_NKP; ++n) {kpu[n] = 0.0; kpd[n] = 0.0;}
-      Real nlu = 0.0, nld = 0.0;   // thinsw-1010
-      // face fluxes into the cells iu, id (F1, FX) and their upwind cells (F2, FX, F3)
-      Real f2u[M1_VET_NFS] = {0.0}, f2d[M1_VET_NFS] = {0.0};
-      Real fnu[M1_VET_NFS] = {0.0}, fnd[M1_VET_NFS] = {0.0};
-      for (int r = 0; r < nray; ++r) {
-        const Real m1 = ang_(r,0), m2 = ang_(r,1), m3 = ang_(r,2), wr = ang_(r,3);
-        const bool up = (m1 > 0.0);
-        const int i = up ? iu : id;
-        const Real am1 = fabs(m1);
-        const Real c0 = vc_(m,M1_VET_CHX,k,j,i);
-        const Real s0 = vc_(m,M1_VET_SRC,k,j,i);
-        Real iv;
-        const bool mimg = (l == 0) && (up ? mrlo : mrhi);   // vet_bc_reflect = mirror
-        auto add4 = [&](Real *fx, const Real g) {
-          fx[0] += g;
-          fx[1] += g*m1;
-          fx[2] += g*m2;
-          fx[3] += g*m3;
+      const Real m1 = ang_(r,0), m2 = ang_(r,1), m3 = ang_(r,2), wr = ang_(r,3);
+      const bool up = (m1 > 0.0);
+      const int i = up ? iu : id;
+      const Real am1 = fabs(m1);
+      const Real c0 = vc_(m,M1_VET_CHX,k,j,i);
+      const Real s0 = vc_(m,M1_VET_SRC,k,j,i);
+      Real iv;
+      const bool mimg = (l == 0) && (up ? mrlo : mrhi);   // vet_bc_reflect = mirror
+      for (int q = 0; q < 5; ++q) {g[q] = 0.0;}
+      Real ifc = 0.0;   // clean_consistency: the intensity at the face crossing
+      if (l == 0 && !wrap && !mimg) {
+        // half a cell from the boundary face; S at the face linearly extrapolated
+        // from the two boundary cells (exact for the deep linear S of a diffusion
+        // regime), and linear in tau along the segment
+        const int iin = up ? (i + 1) : (i - 1);
+        const Real s1 = vc_(m,M1_VET_SRC,k,j,iin);
+        const Real su = fmax(1.5*s0 - 0.5*s1, 0.0);
+        Real ib = up ? 0.0 : bbhi;
+        if (x1src) {
+          ib = su;   // vet_x1_periodic_inflow = source: symmetric entry
+        } else if (up) {
+          if (bblo >= 0.0) {
+            ib = bblo;
+          } else if (milne) {
+            // the exact deep Milne intensity 3 H (tau + q + mu) = S + 3 H mu
+            ib = su + 3.0*fmil/cl*m1;
+          } else {
+            // diffusion: eps = E + 3 (F . Omega)/c from the bottom cell's M1 state;
+            // vet_bc_diff = face (deepatm-1011): E moved to the FACE by the source's
+            // linear extrapolation, E_f = E + (S_f - S_0) (= 1.5 E_0 - 0.5 E_1 when
+            // S = E), the face value the half-cell carry with linear S expects
+            Real e = esv_(m,esc_,k,j,i);
+            if (bfc) e += 0.5*(s0 - s1);
+            e = fmax(e, efl);
+            Real fo = iw_(m,M1_IW_F1,k,j,i)*m1 + iw_(m,M1_IW_F2,k,j,i)*m2
+                      + iw_(m,M1_IW_F3,k,j,i)*m3;
+            ib = fmax(e + 3.0*fo/cl, 0.0);
+          }
+          if (bmn_ > 0) {   // littests-1011: boundary beams
+            const int q = (r == bmr0) ? 0 : ((r == bmr1) ? 1 : ((r == bmr2) ? 2
+                                                                : ((r == bmr3) ? 3 : -1)));
+            if (q >= 0 && q < bmn_) {ib += bmi_(m,q,k-ks,j-js);}
+          }
+        }
+        if (f2s_) g[0] = wr*m1*ib;
+        const Real dtau = 0.5*c0*dx1/am1;
+        Real ex, w0, wu;
+        VetSegW(dtau, ex, w0, wu);
+        iv = ib*ex + wu*su + w0*s0;
+      } else {
+        const int iup = mimg ? i : ((l == 0) ? (up ? ie : is) : (up ? (i - 1) : (i + 1)));
+        const int rb = mimg ? ((r < nhray) ? (r + nhray) : (r - nhray)) : r;
+        // the foot of the characteristic on the upwind plane, in cell units
+        const Real sh2 = -dx1*m2/(am1*dx2);
+        const Real fl2 = floor(sh2);
+        const Real a2 = sh2 - fl2;
+        const int o2 = static_cast<int>(fl2);
+        int ja = js + VetWrap(j - js + o2, nx2);
+        int jb = js + VetWrap(j - js + o2 + 1, nx2);
+        // bubbles-1012: vacuum x2 (x3) faces: a foot point outside the box carries
+        // I = 0 (the ray entered through the face) and the edge cell's chi and S
+        Real ga = 1.0, gb = 1.0;
+        if (x2o) {
+          const int qa = j - js + o2, qb = qa + 1;
+          ga = (qa >= 0 && qa < nx2) ? 1.0 : 0.0;
+          gb = (qb >= 0 && qb < nx2) ? 1.0 : 0.0;
+          ja = js + ((qa < 0) ? 0 : ((qa >= nx2) ? (nx2 - 1) : qa));
+          jb = js + ((qb < 0) ? 0 : ((qb >= nx2) ? (nx2 - 1) : qb));
+        }
+        int ka = k, kb = k, o3 = 0;
+        Real a3 = 0.0, ka_g = 1.0, kb_g = 1.0;
+        const Real sh3 = thrd ? -dx1*m3/(am1*dx3) : 0.0;
+        if (thrd) {
+          const Real fl3 = floor(sh3);
+          a3 = sh3 - fl3;
+          o3 = static_cast<int>(fl3);
+          ka = ks + VetWrap(k - ks + o3, nx3);
+          kb = ks + VetWrap(k - ks + o3 + 1, nx3);
+          if (x3o) {
+            const int qa = k - ks + o3, qb = qa + 1;
+            ka_g = (qa >= 0 && qa < nx3) ? 1.0 : 0.0;
+            kb_g = (qb >= 0 && qb < nx3) ? 1.0 : 0.0;
+            ka = ks + ((qa < 0) ? 0 : ((qa >= nx3) ? (nx3 - 1) : qa));
+            kb = ks + ((qb < 0) ? 0 : ((qb >= nx3) ? (nx3 - 1) : qb));
+          }
+        }
+        // the upwind plane at offsets (dk, dj) from the cell, 0 beyond a vacuum face
+        auto ipq = [&](const int dk, const int dj) {
+          const int qj = j - js + dj, qk = k - ks + dk;
+          if ((x2o && (qj < 0 || qj >= nx2)) || (x3o && (qk < 0 || qk >= nx3))) {
+            return 0.0;
+          }
+          return ip_(m,pr,rb,thrd ? ks + VetWrap(qk, nx3) : k,js + VetWrap(qj, nx2));
         };
-        Real ifc = 0.0;   // clean_consistency: the intensity at the face crossing
-        if (l == 0 && !wrap && !mimg) {
-          // half a cell from the boundary face; S at the face linearly extrapolated
-          // from the two boundary cells (exact for the deep linear S of a diffusion
-          // regime), and linear in tau along the segment
-          const int iin = up ? (i + 1) : (i - 1);
-          const Real s1 = vc_(m,M1_VET_SRC,k,j,iin);
-          const Real su = fmax(1.5*s0 - 0.5*s1, 0.0);
-          Real ib = up ? 0.0 : bbhi;
-          if (x1src) {
-            ib = su;   // vet_x1_periodic_inflow = source: symmetric entry
-          } else if (up) {
-            if (bblo >= 0.0) {
-              ib = bblo;
-            } else if (milne) {
-              // the exact deep Milne intensity 3 H (tau + q + mu) = S + 3 H mu
-              ib = su + 3.0*fmil/cl*m1;
-            } else {
-              // diffusion: eps = E + 3 (F . Omega)/c from the bottom cell's M1 state;
-              // vet_bc_diff = face (deepatm-1011): E moved to the FACE by the source's
-              // linear extrapolation, E_f = E + (S_f - S_0) (= 1.5 E_0 - 0.5 E_1 when
-              // S = E), the face value the half-cell carry with linear S expects
-              Real e = esv_(m,esc_,k,j,i);
-              if (bfc) e += 0.5*(s0 - s1);
-              e = fmax(e, efl);
-              Real fo = iw_(m,M1_IW_F1,k,j,i)*m1 + iw_(m,M1_IW_F2,k,j,i)*m2
-                        + iw_(m,M1_IW_F3,k,j,i)*m3;
-              ib = fmax(e + 3.0*fo/cl, 0.0);
-            }
-            if (bmn_ > 0) {   // littests-1011: boundary beams
-              const int q = (r == bmr0) ? 0 : ((r == bmr1) ? 1 : ((r == bmr2) ? 2
-                                                                  : ((r == bmr3) ? 3 : -1)));
-              if (q >= 0 && q < bmn_) {ib += bmi_(m,q,k-ks,j-js);}
-            }
-          }
-          if (f2s_) add4((up ? f2u : f2d) + 4, wr*m1*ib);
-          const Real dtau = 0.5*c0*dx1/am1;
-          Real ex, w0, wu;
-          VetSegW(dtau, ex, w0, wu);
-          iv = ib*ex + wu*su + w0*s0;
-        } else {
-          const int iup = mimg ? i : ((l == 0) ? (up ? ie : is) : (up ? (i - 1) : (i + 1)));
-          const int rb = mimg ? ((r < nhray) ? (r + nhray) : (r - nhray)) : r;
-          // the foot of the characteristic on the upwind plane, in cell units
-          const Real sh2 = -dx1*m2/(am1*dx2);
-          const Real fl2 = floor(sh2);
-          const Real a2 = sh2 - fl2;
-          const int o2 = static_cast<int>(fl2);
-          int ja = js + VetWrap(j - js + o2, nx2);
-          int jb = js + VetWrap(j - js + o2 + 1, nx2);
-          // bubbles-1012: vacuum x2 (x3) faces: a foot point outside the box carries
-          // I = 0 (the ray entered through the face) and the edge cell's chi and S
-          Real ga = 1.0, gb = 1.0;
-          if (x2o) {
-            const int qa = j - js + o2, qb = qa + 1;
-            ga = (qa >= 0 && qa < nx2) ? 1.0 : 0.0;
-            gb = (qb >= 0 && qb < nx2) ? 1.0 : 0.0;
-            ja = js + ((qa < 0) ? 0 : ((qa >= nx2) ? (nx2 - 1) : qa));
-            jb = js + ((qb < 0) ? 0 : ((qb >= nx2) ? (nx2 - 1) : qb));
-          }
-          int ka = k, kb = k, o3 = 0;
-          Real a3 = 0.0, ka_g = 1.0, kb_g = 1.0;
-          const Real sh3 = thrd ? -dx1*m3/(am1*dx3) : 0.0;
-          if (thrd) {
-            const Real fl3 = floor(sh3);
-            a3 = sh3 - fl3;
-            o3 = static_cast<int>(fl3);
-            ka = ks + VetWrap(k - ks + o3, nx3);
-            kb = ks + VetWrap(k - ks + o3 + 1, nx3);
-            if (x3o) {
-              const int qa = k - ks + o3, qb = qa + 1;
-              ka_g = (qa >= 0 && qa < nx3) ? 1.0 : 0.0;
-              kb_g = (qb >= 0 && qb < nx3) ? 1.0 : 0.0;
-              ka = ks + ((qa < 0) ? 0 : ((qa >= nx3) ? (nx3 - 1) : qa));
-              kb = ks + ((qb < 0) ? 0 : ((qb >= nx3) ? (nx3 - 1) : qb));
-            }
-          }
-          // the upwind plane at offsets (dk, dj) from the cell, 0 beyond a vacuum face
-          auto ipq = [&](const int dk, const int dj) {
-            const int qj = j - js + dj, qk = k - ks + dk;
-            if ((x2o && (qj < 0 || qj >= nx2)) || (x3o && (qk < 0 || qk >= nx3))) {
-              return 0.0;
-            }
-            return ip_(m,pr,rb,thrd ? ks + VetWrap(qk, nx3) : k,js + VetWrap(qj, nx2));
-          };
-          Real dv = 0.0, fl[2] = {0.0, 0.0};
-          if (plm_) {
-            dv = VetPlmFoot([&](const int dk, const int dj) {
-              return ipq(o3 + dk, o2 + dj);
-            }, a2, a3, thrd, fl);
-          }
-          if (f2s_) {
-            // Phi: the upwind plane's intensity carried across the low x2 (x3) face by
-            // the shift -sh2 (-sh3) cells of the foot interpolation.  The x2 and x3 parts
-            // S2, S3 of the interpolation commute: the x2 face carries (I + S3 I)/2, the
-            // x3 face (I + S2 I)/2, and the cell balance of the two is S3 S2 I - I.
-            auto g2 = [&](const int d) {
-              return thrd ? 0.5*(ipq(0,d) + (1.0 - a3)*ipq(o3,d) + a3*ipq(o3+1,d))
-                          : ipq(0,d);
-            };
-            auto g3 = [&](const int d) {
-              return 0.5*(ipq(d,0) + (1.0 - a2)*ipq(d,o2) + a2*ipq(d,o2+1));
-            };
-            auto phi = [&](const Real sh, const auto &g) {
-              const Real s = fabs(sh), f = s - floor(s);
-              const int n = static_cast<int>(floor(s)), sg = (sh < 0.0) ? 1 : -1;
-              Real p = f*g(sg > 0 ? -1 - n : n);
-              for (int q = 0; q < n; ++q) p += g(sg > 0 ? -1 - q : q);
-              return sg*p;
-            };
-            // (vet_bc_reflect = mirror: the upwind plane is the wall column's mirror
-            // image, so its shift crosses the wall column's own x2 faces: the reflected
-            // ray changes rows there, and the wall face carries no net flux)
-            add4(up ? fnu : fnd, wr*am1*dx2/dx1*(phi(sh2, g2) + fl[0]));
-            if (thrd) {
-              add4((up ? fnu : fnd) + 12, wr*am1*dx3/dx1*(phi(sh3, g3) + fl[1]));
-            }
-          }
-          const Real waa = (1.0 - a2)*(1.0 - a3), wab = a2*(1.0 - a3);
-          const Real wba = (1.0 - a2)*a3, wbb = a2*a3;
-          // fin3-1012: the vacuum-face gates (bubbles-1012) on the mirror-aware ray rb
-          // (unify-sc-gd-1012 #2); a gate is exactly 1 off the open faces
-          const Real gaa = ga*ka_g, gab = gb*ka_g, gba = ga*kb_g, gbb = gb*kb_g;
-          Real iup_v;
-          if (x2o || x3o) {
-            iup_v = waa*gaa*ip_(m,pr,rb,ka,ja) + wab*gab*ip_(m,pr,rb,ka,jb)
-                    + wba*gba*ip_(m,pr,rb,kb,ja) + wbb*gbb*ip_(m,pr,rb,kb,jb);
-          } else {
-            iup_v = waa*ip_(m,pr,rb,ka,ja) + wab*ip_(m,pr,rb,ka,jb)
-                    + wba*ip_(m,pr,rb,kb,ja) + wbb*ip_(m,pr,rb,kb,jb);
-          }
-          iup_v += dv;
-          const Real cu = waa*vc_(m,M1_VET_CHX,ka,ja,iup)
-                          + wab*vc_(m,M1_VET_CHX,ka,jb,iup)
-                          + wba*vc_(m,M1_VET_CHX,kb,ja,iup)
-                          + wbb*vc_(m,M1_VET_CHX,kb,jb,iup);
-          const Real su = waa*vc_(m,M1_VET_SRC,ka,ja,iup)
-                          + wab*vc_(m,M1_VET_SRC,ka,jb,iup)
-                          + wba*vc_(m,M1_VET_SRC,kb,ja,iup)
-                          + wbb*vc_(m,M1_VET_SRC,kb,jb,iup);
-          if (vim != 0) {   // unify-sc-gd-1012 (#6) vet_interp: log | corner
-            const Real wq[4] = {waa, wab, wba, wbb};
-            // fin3-1012: a corner outside a vacuum face carries I = 0 (gate exactly 1
-            // elsewhere, bitwise), its segment the edge cell's chi and S, as lin above
-            const Real iq[4] = {gaa*ip_(m,pr,rb,ka,ja) + dv, gab*ip_(m,pr,rb,ka,jb) + dv,
-                                gba*ip_(m,pr,rb,kb,ja) + dv, gbb*ip_(m,pr,rb,kb,jb) + dv};
-            const Real cq[4] = {vc_(m,M1_VET_CHX,ka,ja,iup), vc_(m,M1_VET_CHX,ka,jb,iup),
-                                vc_(m,M1_VET_CHX,kb,ja,iup), vc_(m,M1_VET_CHX,kb,jb,iup)};
-            const Real sq[4] = {vc_(m,M1_VET_SRC,ka,ja,iup), vc_(m,M1_VET_SRC,ka,jb,iup),
-                                vc_(m,M1_VET_SRC,kb,ja,iup), vc_(m,M1_VET_SRC,kb,jb,iup)};
-            iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe,
-                             f2s_ ? &ifc : nullptr);
-            int r2 = 0, r3 = 0;
-            Real f = xcr ? fmin(VetCrossFrac(sh2, r2),
-                                thrd ? VetCrossFrac(sh3, r3) : 1.0) : 1.0;
-            const int q2 = j - js + r2, q3 = k - ks + r3;
-            if ((x2o && (q2 < 0 || q2 >= nx2)) || (x3o && (q3 < 0 || q3 >= nx3))) f = 1.0;
-            const int jq = js + VetWrap(q2, nx2), kq = thrd ? ks + VetWrap(q3, nx3) : k;
-            if (f < 1.0 && VetCrossEdge(wq, cq, vc_(m,M1_VET_CHX,kq,jq,iup))) {
-              // vet_seg_cross: the stencil over 1 - f, then the cell crossed
-              Real ib;
-              (void) VetUpCorner(vim, wq, iq, cq, sq, s0, c0, (1.0 - f)*dx1/am1, spl, spe,
-                                 &ib);
-              iv = VetSegCross(ib, vc_(m,M1_VET_CHX,kq,jq,iup),
-                               vc_(m,M1_VET_SRC,kq,jq,iup), s0, c0, dx1/am1, f, spe,
-                               f2s_ ? &ifc : nullptr);
-            }
-          } else if (spl) {
-            // segfix-1011: vet_seg = split, the two halves at the x1 face
-            iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe,
-                             f2s_ ? &ifc : nullptr);
-          } else {
-            const Real dtau = 0.5*(cu + c0)*dx1/am1;
-            Real ex, w0, wu;
-            VetSegW(dtau, ex, w0, wu);
-            iv = iup_v*ex + wu*su + w0*s0;
-            if (f2s_) ifc = VetSegFaceI(iup_v, su, s0, 0.5*dtau, 0.5*dtau, 0);
-          }
-          // the face crossing of the single segment, also with vet_path = cells: a face
-          // flux, so the conservation of the update does not depend on the path
-          if (f2s_ && !mimg) add4(up ? f2u + 8 : fnd + 8, wr*m1*fmax(ifc, 0.0));
-          if (vpath) {   // open-od-1013 vet_path = cells (VetPathStep)
-            const Real sh3p = thrd ? (-dx1*m3/(am1*dx3)) : 0.0;
-            auto acc = [&](const int c, const int dk, const int dj, Real &cv,
-                           Real &sv) -> bool {
-              bool in = true;
-              int qj = j - js + dj, qk = k - ks + dk;
-              if (x2o) {
-                if (qj < 0 || qj >= nx2) {in = false;}
-                qj = (qj < 0) ? 0 : ((qj >= nx2) ? (nx2 - 1) : qj);
-              } else {
-                qj = VetWrap(qj, nx2);
-              }
-              if (thrd) {
-                if (x3o) {
-                  if (qk < 0 || qk >= nx3) {in = false;}
-                  qk = (qk < 0) ? 0 : ((qk >= nx3) ? (nx3 - 1) : qk);
-                } else {
-                  qk = VetWrap(qk, nx3);
-                }
-              } else {
-                qk = 0;
-              }
-              const int ic = (c == 0) ? iup : i;
-              cv = vc_(m,M1_VET_CHX,ks + qk,js + qj,ic);
-              sv = vc_(m,M1_VET_SRC,ks + qk,js + qj,ic);
-              return in;
-            };
-            const Real wq[4] = {waa, wab, wba, wbb};
-            const Real iq[4] = {gaa*ip_(m,pr,rb,ka,ja) + dv, gab*ip_(m,pr,rb,ka,jb) + dv,
-                                gba*ip_(m,pr,rb,kb,ja) + dv, gbb*ip_(m,pr,rb,kb,jb) + dv};
-            const Real cq[4] = {vc_(m,M1_VET_CHX,ka,ja,iup), vc_(m,M1_VET_CHX,ka,jb,iup),
-                                vc_(m,M1_VET_CHX,kb,ja,iup), vc_(m,M1_VET_CHX,kb,jb,iup)};
-            const Real sq[4] = {vc_(m,M1_VET_SRC,ka,ja,iup), vc_(m,M1_VET_SRC,ka,jb,iup),
-                                vc_(m,M1_VET_SRC,kb,ja,iup), vc_(m,M1_VET_SRC,kb,jb,iup)};
-            VetPathStep(acc, vim, wq, iq, cq, sq, iup_v, cu, su, s0, c0, dx1/am1, spl, spe,
-                        sh2, sh3p, iv);
-          }
-        }
-        if (dbgc && iv < 0.0) {Kokkos::atomic_add(&dcl_(0), 1.0);}   // DEBUG
-        iv = fmax(iv, 0.0);
-        ip_(m,pw,r,k,j) = iv;
-        if (f2s_ && !x1per && i == (up ? ie : is)) {
-          // the ray leaving through the x1 boundary face: the half cell at chi_0, S_0
-          const Real ex = exp(-0.5*c0*dx1/am1);
-          add4((up ? f2u : f2d) + 4, wr*m1*(iv*ex + (1.0 - ex)*s0));
-        }
-        Real *ac = up ? acu : acd;
-        const Real a = wr*iv;
-        ac[0] += a;
-        ac[1] += a*m1*m1;
-        ac[2] += a*m2*m2;
-        ac[3] += a*m3*m3;
-        ac[4] += a*m1*m2;
-        ac[5] += a*m1*m3;
-        ac[6] += a*m2*m3;
-        ac[7] += a*m1;
-        ac[8] += a*m2;
-        ac[9] += a*m3;
-        if (hrs_) {
-          Real *hp = up ? hpu : hpd;
-          hp[0] += a*fmax(m1, 0.0);
-          hp[1] += a*fmax(m2, 0.0);
-          hp[2] += a*fmax(m3, 0.0);
-        }
-        if (kps_) {
-          Real *kp = up ? kpu : kpd;
-          const Real mu[3] = {m1, m2, m3};
-          for (int d = 0; d < 3; ++d) {
-            if (!(mu[d] > 0.0)) continue;
-            for (int b = 0; b < 3; ++b) kp[3*d+b] += a*mu[b]*mu[d];
-          }
-        }
-        if (nls_) {
-          if (up) {nlu += wr*fabs(iv - s0);} else {nld += wr*fabs(iv - s0);}
-        }
-      }
-      if (accum) {
-        for (int n = 0; n < 10; ++n) {
-          vc_(m,M1_VET_J+n,k,j,iu) += acu[n];
-          vc_(m,M1_VET_J+n,k,j,id) += acd[n];
-        }
-        if (hrs_) {
-          for (int n = 0; n < 3; ++n) {
-            vc_(m,M1_VET_HP1+n,k,j,iu) += hpu[n];
-            vc_(m,M1_VET_HP1+n,k,j,id) += hpd[n];
-          }
-        }
-        if (kps_) {
-          for (int n = 0; n < M1_VET_NKP; ++n) {
-            vc_(m,M1_VET_KP+n,k,j,iu) += kpu[n];
-            vc_(m,M1_VET_KP+n,k,j,id) += kpd[n];
-          }
-        }
-        if (nls_) {
-          vc_(m,M1_VET_NL,k,j,iu) += nlu;
-          vc_(m,M1_VET_NL,k,j,id) += nld;
+        Real dv = 0.0, fl[2] = {0.0, 0.0};
+        if (plm_) {
+          dv = VetPlmFoot([&](const int dk, const int dj) {
+            return ipq(o3 + dk, o2 + dj);
+          }, a2, a3, thrd, fl);
         }
         if (f2s_) {
-          const int ium = (iu > is) ? iu - 1 : (mrlo ? is : ie);
-          const int idp = (id < ie) ? id + 1 : (mrhi ? ie : is);
-          for (int n = 0; n < M1_VET_NFS; ++n) {
-            vc_(m,M1_VET_F2+n,k,j,iu) += f2u[n];
-            vc_(m,M1_VET_F2+n,k,j,id) += f2d[n];
-            vc_(m,M1_VET_F2+n,k,j,ium) += fnu[n];
-            vc_(m,M1_VET_F2+n,k,j,idp) += fnd[n];
+          // Phi: the upwind plane's intensity carried across the low x2 (x3) face by
+          // the shift -sh2 (-sh3) cells of the foot interpolation.  The x2 and x3 parts
+          // S2, S3 of the interpolation commute: the x2 face carries (I + S3 I)/2, the
+          // x3 face (I + S2 I)/2, and the cell balance of the two is S3 S2 I - I.
+          auto g2 = [&](const int d) {
+            return thrd ? 0.5*(ipq(0,d) + (1.0 - a3)*ipq(o3,d) + a3*ipq(o3+1,d))
+                        : ipq(0,d);
+          };
+          auto g3 = [&](const int d) {
+            return 0.5*(ipq(d,0) + (1.0 - a2)*ipq(d,o2) + a2*ipq(d,o2+1));
+          };
+          auto phi = [&](const Real sh, const auto &g) {
+            const Real s = fabs(sh), f = s - floor(s);
+            const int n = static_cast<int>(floor(s)), sg = (sh < 0.0) ? 1 : -1;
+            Real p = f*g(sg > 0 ? -1 - n : n);
+            for (int q = 0; q < n; ++q) p += g(sg > 0 ? -1 - q : q);
+            return sg*p;
+          };
+          // (vet_bc_reflect = mirror: the upwind plane is the wall column's mirror
+          // image, so its shift crosses the wall column's own x2 faces: the reflected
+          // ray changes rows there, and the wall face carries no net flux)
+          g[1] = wr*am1*dx2/dx1*(phi(sh2, g2) + fl[0]);
+          if (thrd) {
+            g[2] = wr*am1*dx3/dx1*(phi(sh3, g3) + fl[1]);
           }
         }
+        const Real waa = (1.0 - a2)*(1.0 - a3), wab = a2*(1.0 - a3);
+        const Real wba = (1.0 - a2)*a3, wbb = a2*a3;
+        // fin3-1012: the vacuum-face gates (bubbles-1012) on the mirror-aware ray rb
+        // (unify-sc-gd-1012 #2); a gate is exactly 1 off the open faces
+        const Real gaa = ga*ka_g, gab = gb*ka_g, gba = ga*kb_g, gbb = gb*kb_g;
+        Real iup_v;
+        if (x2o || x3o) {
+          iup_v = waa*gaa*ip_(m,pr,rb,ka,ja) + wab*gab*ip_(m,pr,rb,ka,jb)
+                  + wba*gba*ip_(m,pr,rb,kb,ja) + wbb*gbb*ip_(m,pr,rb,kb,jb);
+        } else {
+          iup_v = waa*ip_(m,pr,rb,ka,ja) + wab*ip_(m,pr,rb,ka,jb)
+                  + wba*ip_(m,pr,rb,kb,ja) + wbb*ip_(m,pr,rb,kb,jb);
+        }
+        iup_v += dv;
+        const Real cu = waa*vc_(m,M1_VET_CHX,ka,ja,iup)
+                        + wab*vc_(m,M1_VET_CHX,ka,jb,iup)
+                        + wba*vc_(m,M1_VET_CHX,kb,ja,iup)
+                        + wbb*vc_(m,M1_VET_CHX,kb,jb,iup);
+        const Real su = waa*vc_(m,M1_VET_SRC,ka,ja,iup)
+                        + wab*vc_(m,M1_VET_SRC,ka,jb,iup)
+                        + wba*vc_(m,M1_VET_SRC,kb,ja,iup)
+                        + wbb*vc_(m,M1_VET_SRC,kb,jb,iup);
+        if (vim != 0) {   // unify-sc-gd-1012 (#6) vet_interp: log | corner
+          const Real wq[4] = {waa, wab, wba, wbb};
+          // fin3-1012: a corner outside a vacuum face carries I = 0 (gate exactly 1
+          // elsewhere, bitwise), its segment the edge cell's chi and S, as lin above
+          const Real iq[4] = {gaa*ip_(m,pr,rb,ka,ja) + dv, gab*ip_(m,pr,rb,ka,jb) + dv,
+                              gba*ip_(m,pr,rb,kb,ja) + dv, gbb*ip_(m,pr,rb,kb,jb) + dv};
+          const Real cq[4] = {vc_(m,M1_VET_CHX,ka,ja,iup), vc_(m,M1_VET_CHX,ka,jb,iup),
+                              vc_(m,M1_VET_CHX,kb,ja,iup), vc_(m,M1_VET_CHX,kb,jb,iup)};
+          const Real sq[4] = {vc_(m,M1_VET_SRC,ka,ja,iup), vc_(m,M1_VET_SRC,ka,jb,iup),
+                              vc_(m,M1_VET_SRC,kb,ja,iup), vc_(m,M1_VET_SRC,kb,jb,iup)};
+          iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe,
+                           f2s_ ? &ifc : nullptr);
+          int r2 = 0, r3 = 0;
+          Real f = xcr ? fmin(VetCrossFrac(sh2, r2),
+                              thrd ? VetCrossFrac(sh3, r3) : 1.0) : 1.0;
+          const int q2 = j - js + r2, q3 = k - ks + r3;
+          if ((x2o && (q2 < 0 || q2 >= nx2)) || (x3o && (q3 < 0 || q3 >= nx3))) f = 1.0;
+          const int jq = js + VetWrap(q2, nx2), kq = thrd ? ks + VetWrap(q3, nx3) : k;
+          if (f < 1.0 && VetCrossEdge(wq, cq, vc_(m,M1_VET_CHX,kq,jq,iup))) {
+            // vet_seg_cross: the stencil over 1 - f, then the cell crossed
+            Real ib;
+            (void) VetUpCorner(vim, wq, iq, cq, sq, s0, c0, (1.0 - f)*dx1/am1, spl, spe,
+                               &ib);
+            iv = VetSegCross(ib, vc_(m,M1_VET_CHX,kq,jq,iup),
+                             vc_(m,M1_VET_SRC,kq,jq,iup), s0, c0, dx1/am1, f, spe,
+                             f2s_ ? &ifc : nullptr);
+          }
+        } else if (spl) {
+          // segfix-1011: vet_seg = split, the two halves at the x1 face
+          iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe,
+                           f2s_ ? &ifc : nullptr);
+        } else {
+          const Real dtau = 0.5*(cu + c0)*dx1/am1;
+          Real ex, w0, wu;
+          VetSegW(dtau, ex, w0, wu);
+          iv = iup_v*ex + wu*su + w0*s0;
+          if (f2s_) ifc = VetSegFaceI(iup_v, su, s0, 0.5*dtau, 0.5*dtau, 0);
+        }
+        // the face crossing of the single segment, also with vet_path = cells: a face
+        // flux, so the conservation of the update does not depend on the path
+        if (f2s_ && !mimg) g[3] = wr*m1*fmax(ifc, 0.0);
+        if (vpath) {   // open-od-1013 vet_path = cells (VetPathStep)
+          const Real sh3p = thrd ? (-dx1*m3/(am1*dx3)) : 0.0;
+          auto acc = [&](const int c, const int dk, const int dj, Real &cv,
+                         Real &sv) -> bool {
+            bool in = true;
+            int qj = j - js + dj, qk = k - ks + dk;
+            if (x2o) {
+              if (qj < 0 || qj >= nx2) {in = false;}
+              qj = (qj < 0) ? 0 : ((qj >= nx2) ? (nx2 - 1) : qj);
+            } else {
+              qj = VetWrap(qj, nx2);
+            }
+            if (thrd) {
+              if (x3o) {
+                if (qk < 0 || qk >= nx3) {in = false;}
+                qk = (qk < 0) ? 0 : ((qk >= nx3) ? (nx3 - 1) : qk);
+              } else {
+                qk = VetWrap(qk, nx3);
+              }
+            } else {
+              qk = 0;
+            }
+            const int ic = (c == 0) ? iup : i;
+            cv = vc_(m,M1_VET_CHX,ks + qk,js + qj,ic);
+            sv = vc_(m,M1_VET_SRC,ks + qk,js + qj,ic);
+            return in;
+          };
+          const Real wq[4] = {waa, wab, wba, wbb};
+          const Real iq[4] = {gaa*ip_(m,pr,rb,ka,ja) + dv, gab*ip_(m,pr,rb,ka,jb) + dv,
+                              gba*ip_(m,pr,rb,kb,ja) + dv, gbb*ip_(m,pr,rb,kb,jb) + dv};
+          const Real cq[4] = {vc_(m,M1_VET_CHX,ka,ja,iup), vc_(m,M1_VET_CHX,ka,jb,iup),
+                              vc_(m,M1_VET_CHX,kb,ja,iup), vc_(m,M1_VET_CHX,kb,jb,iup)};
+          const Real sq[4] = {vc_(m,M1_VET_SRC,ka,ja,iup), vc_(m,M1_VET_SRC,ka,jb,iup),
+                              vc_(m,M1_VET_SRC,kb,ja,iup), vc_(m,M1_VET_SRC,kb,jb,iup)};
+          VetPathStep(acc, vim, wq, iq, cq, sq, iup_v, cu, su, s0, c0, dx1/am1, spl, spe,
+                      sh2, sh3p, iv);
+        }
       }
-    });
+      if (dbgc && iv < 0.0) {Kokkos::atomic_add(&dcl_(0), 1.0);}   // DEBUG
+      iv = fmax(iv, 0.0);
+      ip_(m,pw,r,k,j) = iv;
+      if (f2s_ && !x1per && i == (up ? ie : is)) {
+        // the ray leaving through the x1 boundary face: the half cell at chi_0, S_0
+        const Real ex = exp(-0.5*c0*dx1/am1);
+        g[4] = wr*m1*(iv*ex + (1.0 - ex)*s0);
+      }
+      return iv;
+    };
+    if (vsc_rayk) {
+      auto rg_ = vet_rayg;
+      par_for("m1_vet_sweep_ray", DevExeSpace(), 0, nmb1, 0, nray - 1, ks, ke, js, je,
+      KOKKOS_LAMBDA(const int m, const int r, const int k, const int j) {
+        Real g[5];
+        rayf(m, k, j, r, g);
+        for (int q = 0; q < 5; ++q) {rg_(m,q*nray + r,k,j) = g[q];}
+      });
+      par_for("m1_vet_sweep_sum", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+      KOKKOS_LAMBDA(const int m, const int k, const int j) {
+        VetScAcc a;
+        for (int r = 0; r < nray; ++r) {
+          const Real g[5] = {rg_(m,r,k,j), rg_(m,nray + r,k,j), rg_(m,2*nray + r,k,j),
+                             rg_(m,3*nray + r,k,j), rg_(m,4*nray + r,k,j)};
+          const int i = (ang_(r,0) > 0.0) ? iu : id;
+          a.Add(ang_, r, ip_(m,pw,r,k,j), vc_(m,M1_VET_SRC,k,j,i), g, hrs_, kps_, nls_);
+        }
+        if (accum) a.Write(vc_, m, k, j, iu, id, is, ie, mrlo, mrhi, hrs_, kps_, nls_, f2s_);
+      });
+    } else {
+      par_for("m1_vet_sweep", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+      KOKKOS_LAMBDA(const int m, const int k, const int j) {
+        VetScAcc a;
+        for (int r = 0; r < nray; ++r) {
+          Real g[5];
+          const Real iv = rayf(m, k, j, r, g);
+          const int i = (ang_(r,0) > 0.0) ? iu : id;
+          a.Add(ang_, r, iv, vc_(m,M1_VET_SRC,k,j,i), g, hrs_, kps_, nls_);
+        }
+        if (accum) a.Write(vc_, m, k, j, iu, id, is, ie, mrlo, mrhi, hrs_, kps_, nls_, f2s_);
+      });
+    }
   }
   ++npdone;
   if (adapt) {

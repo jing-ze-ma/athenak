@@ -456,6 +456,8 @@ class RadiationM1 {
   int vet_nmu = 0, vet_nphi = 0, vet_nray = 0;  // mu nodes per hemisphere, azimuths, rays
   bool vsc_gd = false;       // vet_sc_set = gd: the vet_gd direction set, pole on x1
   int vsc_gdmir = 0;         // ... ray r + nray/2 the x1 mirror of ray r (1) or not (-1)
+  bool vsc_rayk = false;     // vet_sc_kernel = ray: the layer launch ray-parallel
+  DvceArray4D<Real> vet_rayg;   // ... its per-ray face-sum scalars (block, 5 nray, k, j)
   bool vet_milne = false;    // DIAGNOSTIC: source = exact grey Milne S(tau), gate 3
   bool vet_bc_bath = false;  // a MARSHAK x1 end gives the SC rays its bath (m1-h2div)
   // unify-sc-gd-1012 (#2): the x1 boundary intensity of the formal solutions, one rule
