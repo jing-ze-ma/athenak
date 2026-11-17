@@ -874,21 +874,32 @@ void RadiationM1::CleanRingMoments() {
   const int64_t b = cln_rbld;
   const Real s = cln_rs;
   const int c3 = cln_s.extent_int(2), c2 = cln_s.extent_int(3), c1 = cln_s.extent_int(4);
-  if (cln_rl.extent_int(0) != nmb || cln_rl.extent_int(1) != std::max(ns, 2)*CLN_N) {
-    Kokkos::realloc(cln_rl, nmb, std::max(ns, 2)*CLN_N, c3, c2, c1);
+  // (the swept sets' raw moments: the current set in cln_rl slot 0, the next in slot 1;
+  // the older ones of a fill straight into their offsets' slots of cln_rr)
+  if (cln_rl.extent_int(0) != nmb || cln_rl.extent_int(1) != 2*CLN_N) {
+    Kokkos::realloc(cln_rl, nmb, 2*CLN_N, c3, c2, c1);
   }
   if (cln_rr.extent_int(0) != nmb) {   // (a restart has read them)
     Kokkos::realloc(cln_rr, nmb, nr*CLN_N, c3, c2, c1);
     Kokkos::realloc(cln_rpd, nmb, CLN_N, c3, c2, c1);
     cln_rok = false;
   }
+  std::vector<int> slot(nk + 2, -1);   // slot of block b - nk + 1 + p
+  for (int q = 0; q < ns; ++q) {
+    const int64_t p = cln_fvblk[q] - (b - nk + 1);
+    if (p >= 0 && p <= nk) slot[p] = q;
+  }
+  bool full = true;
+  for (int p = 0; p < nr; ++p) full = full && slot[p] >= 0;
+  const bool shift = cln_rok && b == cln_rb + 1 && cln_rpb == cln_rb;
+  const bool fill = (!cln_rok || b != cln_rb) && !shift && full;
   // the moments of each swept set (the ray_min test on the mixture below)
   auto dfull = cln_fvd;
   const Real ray_min = cln_raymin;
   cln_raymin = 0.0;
   auto cs = cln_s;
   auto rl = cln_rl;
-  std::vector<int> slot(nk + 2, -1);   // slot of block b - nk + 1 + p
+  auto rr = cln_rr;
   // (the sc rays on the cubed sphere: the sets in block order, so that the last two
   // swept, b and b+1, hold the two cln_fvi slots blk mod 2; on sp the slot order: the
   // block order breaks the bitwise restart of q_def, reflecting top)
@@ -898,6 +909,9 @@ void RadiationM1::CleanRingMoments() {
             [&](int u, int v) {return cln_fvblk[u] < cln_fvblk[v];});
   for (int qo = 0; qo < ns; ++qo) {
     const int q = (cln_rfv == 0 && cln_cssc) ? ord[qo] : qo;
+    const int64_t p = cln_fvblk[q] - (b - nk + 1);
+    const bool older = (p >= 0 && p < nr);
+    const bool keep = (older && fill) || p == nr || p == nk;
     cln_fvd = cln_fvdm[q];
     if (cln_rfv == 0) {   // the sc rays: set q swept alone (its tables, its own weights)
       cln_rq = q;
@@ -909,27 +923,23 @@ void RadiationM1::CleanRingMoments() {
     }
     CleanClosureFromGd();
     if (cln_consist || cln_cssc) CleanGdFaceSums();
-    const int o = q*CLN_N;
+    if (!keep) continue;
+    const int o = static_cast<int>(older ? nr - 1 - p : ((p == nk) ? 1 : 0))*CLN_N;
+    auto ra = older ? rr : rl;
     par_for("cln_ring_raw", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real jr = cs(m,CLN_J,k,j,i);
-      for (int n = 0; n < CLN_J; ++n) rl(m,o+n,k,j,i) = jr*cs(m,n,k,j,i);
-      for (int n = CLN_J; n < CLN_N; ++n) rl(m,o+n,k,j,i) = cs(m,n,k,j,i);
+      for (int n = 0; n < CLN_J; ++n) ra(m,o+n,k,j,i) = jr*cs(m,n,k,j,i);
+      for (int n = CLN_J; n < CLN_N; ++n) ra(m,o+n,k,j,i) = cs(m,n,k,j,i);
     });
-    const int64_t p = cln_fvblk[q] - (b - nk + 1);
-    if (p >= 0 && p <= nk) slot[p] = q;
   }
   cln_fvd = dfull;
   if (cln_cssc) CleanScUnion2();
   cln_raymin = ray_min;
   // (jump: the next set only at the build that closes the block; its weight is s = 0)
-  const int qb = slot[nr], qn = (slot[nk] >= 0) ? slot[nk] : slot[nr];
-  bool full = true;
-  for (int p = 0; p < nr; ++p) full = full && slot[p] >= 0;
-  auto rr = cln_rr;
+  const int qb = 0, qn = (slot[nk] >= 0) ? 1 : 0;
   auto pd = cln_rpd;
   if (!cln_rok || b != cln_rb) {
-    const bool shift = cln_rok && b == cln_rb + 1 && cln_rpb == cln_rb;
     if (shift) {
       // the pending Delta is that of the boundary of block b when it closed the block
       const Real tk = vgd_rot_t0 + static_cast<Real>(b)*vgd_rot_dt;
@@ -944,14 +954,13 @@ void RadiationM1::CleanRingMoments() {
         }
       });
     } else if (full) {
-      // the whole union swept: the offsets of the older sets from it
-      Kokkos::Array<int, M1_RA_NF> sa;
-      for (int r = 0; r < nr; ++r) sa[r] = slot[nr - 1 - r];
+      // the whole union swept: the offsets of the older sets (their raw moments, above)
+      // from the current one
       par_for("cln_ring_fill", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         for (int r = 0; r < nr; ++r) {
           for (int n = 0; n < CLN_N; ++n) {
-            rr(m,r*CLN_N+n,k,j,i) = rl(m,sa[r]*CLN_N+n,k,j,i) - rl(m,qb*CLN_N+n,k,j,i);
+            rr(m,r*CLN_N+n,k,j,i) = rr(m,r*CLN_N+n,k,j,i) - rl(m,qb*CLN_N+n,k,j,i);
           }
         }
       });
