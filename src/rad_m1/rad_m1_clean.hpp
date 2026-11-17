@@ -90,6 +90,9 @@ constexpr int CLF_RC = 5;    // cell layout: RC coefficient (1 - al) c/chi_f (h-
 // the dissipation term, F^H and, with clean_stag_fkin, the energy flux's memory d)
 constexpr int CLF_QL = CLF_N + 4;   // the operator's al, ar (CleanFaceWeights) and cross
                                     // factor -(1-w) theta h c^2 of the pass (3)
+constexpr int CLF_PT = CLF_QL;      // outside the linear solve (cln_fwc sets QL after
+                                    // the RHS): the faces' momentum terms of the velocity
+                                    // update (CleanStagDrag)
 constexpr int CLF_DS = CLF_N + 7;   // clean_stag_fkin: d of the stage-loop start
 constexpr int CLF_DB = CLF_N + 8;   // clean_stag_vimp: drag share b = beta/(1 + beta) and
 constexpr int CLF_DQ = CLF_N + 9;   //   the face momentum Q = G - c^2 dm_f of the iterate
@@ -222,6 +225,8 @@ struct CleanArgs {
   bool mcl;                    // staggered: a face's momentum term at most the force of
                                // a realisable flux, h chi_f E (the iterate's,
                                // CleanMomentumChange)
+  bool fa;                     // staggered: the faces' momentum terms of the pass stored
+                               // (CLF_PT, CleanStagDrag)
   bool drag;                   // staggered, clean_stag_vimp: implicit gas velocity
   bool upw;                    // staggered, clean_stag_upwind: donor-cell advective flux
   bool fwc;                    // staggered: al, ar and the cross factor from CLF_QL
@@ -1336,8 +1341,9 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
       }
       continue;
     }
-    Real t = wt*((f - g)/(x.c*x.c) + x.h*CleanFaceStress(x, e, dir, m, kf, jf, iff,
-             true) - (x.fs ? x.h*x.fc[dir](m,CLF_N+1,kf,jf,iff) : 0.0));
+    Real t = wt*(x.fa ? x.fc[dir](m,CLF_PT,kf,jf,iff) : ((f - g)/(x.c*x.c) +
+             x.h*CleanFaceStress(x, e, dir, m, kf, jf, iff, true) -
+             (x.fs ? x.h*x.fc[dir](m,CLF_N+1,kf,jf,iff) : 0.0)));
     // (mcl, the Newton passes: the conservative term equals the face's absorption
     // h chi_f F/c only where the iterate's F satisfies its equation; capped there at the
     // force of a realisable flux, |F| <= c E, as the production deposit, so that a lagged

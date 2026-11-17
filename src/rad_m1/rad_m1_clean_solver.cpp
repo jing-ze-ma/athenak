@@ -77,6 +77,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.fvrays = (cln_rfv > 0);
   x.hi = false;
   x.mcl = false;
+  x.fa = false;
   x.fwc = false;
   x.fs = false;
   x.fd = cln_fsolve && cln_fkin;

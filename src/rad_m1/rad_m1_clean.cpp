@@ -1866,6 +1866,13 @@ Real RadiationM1::CleanVelocityUpdate() {
   auto fr = cln_fref;
   auto aref = arad_ref;
 
+  // (with the F solve's F: the faces' terms and the drag first, once per face, then the
+  // cells' momentum and their advective coefficients a_d, CleanAdvectiveCoefficients)
+  const bool fa = xh.fs;
+  if (fa) CleanStagDrag(false, true);
+  xh.fa = fa;
+  auto xa = x;
+  xa.cub = false;
   Real dvmax = 0.0, vmax = 0.0, fvmax = 0.0;
   Kokkos::parallel_reduce("cln_velocity", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           nmb*nkji),
@@ -1905,9 +1912,18 @@ Real RadiationM1::CleanVelocityUpdate() {
       v2 += SQR((pg[dir] + dm)/d);
     }
     v_max = fmax(v_max, std::sqrt(v2));
+    if (!fa) return;
+    Real v[3], a[3];
+    for (int n = 0; n < 3; ++n) v[n] = (pg[n] + x.w(m,CLW_DM+n,k,j,i))/d;
+    CleanAdvect(xa, m, k, j, i, v, a);
+    for (int n = 0; n < 3; ++n) x.w(m,CLW_A1+n,k,j,i) = a[n];
   }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax), Kokkos::Max<Real>(fvmax));
-  if (cln_vimp) CleanStagDrag(false);   // (with the coefficients of this dm)
-  CleanAdvectiveCoefficients();
+  if (fa) {
+    CleanGhostDefer(cln_w, CLW_A1, 3);   // (as CleanAdvectiveCoefficients)
+  } else {
+    if (cln_vimp) CleanStagDrag(false);   // (with the coefficients of this dm)
+    CleanAdvectiveCoefficients();
+  }
   vmax = fmax(CleanReduce(vmax, true), 1.0e-300);
   cln_fv = std::numeric_limits<Real>::epsilon()*CleanReduce(fvmax, true)/vmax;
   return CleanReduce(dvmax, true)/vmax;
@@ -2698,9 +2714,11 @@ void RadiationM1::CleanStagCsLateral(const int e) {
 //! velocity is that of the old vector: dm_f^k = 0, Q = G; with force_reference = clean
 //! (or wb_arad) the gas holds the reference force, which balances the radiation force of
 //! the start, so Q is that of E^k (no drag kick); b = 0 while the gas momentum is frozen
-//! and before the reference force is set.
+//! and before the reference force is set.  vel (CleanVelocityUpdate with the F solve's
+//! F): first the face's term of CleanMomentumChange less its share wt, with the stress
+//! once per face for both (CLF_PT); without clean_stag_vimp only that.
 
-void RadiationM1::CleanStagDrag(const bool first) {
+void RadiationM1::CleanStagDrag(const bool first, const bool vel) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -2713,6 +2731,7 @@ void RadiationM1::CleanStagDrag(const bool first) {
   auto uh = FluidRef::Get(pmy_pack).u0;
   const bool off = cln_vzero || (first && force_ref == M1_FREF_CLEAN && !cln_fref_set);
   const bool lag = !first || (force_ref != M1_FREF_NONE);
+  const bool dr = cln_vimp;
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     auto fc = x.fc[dir];
@@ -2721,9 +2740,15 @@ void RadiationM1::CleanStagDrag(const bool first) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
       if (CleanBoundaryFace(x, dir, m, k, j, i)) return;   // (no F equation)
+      const Real s = (vel || lag) ? CleanFaceStress(x, CLW_EK, dir, m, k, j, i, true)
+                                  : 0.0;
+      if (vel) {
+        fc(m,CLF_PT,k,j,i) = (fc(m,CLF_N,k,j,i) - fc(m,CLF_G,k,j,i))/(x.c*x.c) + x.h*s -
+                             x.h*fc(m,CLF_N+1,k,j,i);
+      }
+      if (!dr) return;
       const Real q = !lag ? fc(m,CLF_G,k,j,i) :
-                     CleanFaceFlux(xh, CLW_EK, dir, m, k, j, i, true) +
-                     x.h*x.c*x.c*CleanFaceStress(x, CLW_EK, dir, m, k, j, i, true);
+                     CleanFaceFlux(xh, CLW_EK, dir, m, k, j, i, true) + x.h*x.c*x.c*s;
       const Real xl = x.op(m,M1_OP_T,k-dk,j-dj,i-di), xs = xl + x.op(m,M1_OP_T,k,j,i);
       const Real wl = (xs > 0.0) ? xl/xs : 0.5;
       auto ce = [&](const int kk, const int jj, const int ii) {
