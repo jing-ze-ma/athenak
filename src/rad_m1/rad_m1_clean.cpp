@@ -916,6 +916,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   std::array<int, 2> nfirst = {0, 0};
   bool all_low = false;
   cln_all_low = false;
+  cln_ncwin = 0;
   Real dpic = 0.0;
   bool converged = !iterate;
   const int maxnl = iterate ? cln_maxnl : 1;
@@ -1108,9 +1109,10 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
                   cln_nnreal, cln_nguard, nsolve);
     } else {
       std::printf("CLEAN cycle %d t2s %d it %d (sum %d) pos %d mark %d all %d neg %d "
-                  "r1 %d r2 %d first %d %d guard %d solves %d\n", pmy_pack->pmesh->ncycle,
-                  t2_solve, nit, nit_sum, npos, nmark, all_low ? 1 : 0, nneg, cln_nr1,
-                  cln_nr2, nfirst[0], nfirst[1], cln_nguard, nsolve);
+                  "r1 %d r2 %d first %d %d guard %d solves %d cwin %d\n",
+                  pmy_pack->pmesh->ncycle, t2_solve, nit, nit_sum, npos, nmark,
+                  all_low ? 1 : 0, nneg, cln_nr1, cln_nr2, nfirst[0], nfirst[1],
+                  cln_nguard, nsolve, cln_ncwin);
     }
   }
 

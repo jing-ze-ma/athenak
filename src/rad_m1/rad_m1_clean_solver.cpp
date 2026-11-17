@@ -1125,7 +1125,9 @@ int RadiationM1::CleanBiCGStab() {
     if (cln_stall_n > 0 && it > 1 && (it - 1) % cln_stall_n == 0) {
       if (cmet) {   // (cnorm with the global test met: the per-cell measure's window)
         if (!(cmin < cln_stall_f*cwin)) {
-          return (restart(it, true) && std::sqrt(rr) <= 10.0*tol) ? it : -it;
+          const bool ok = restart(it, true) && std::sqrt(rr) <= 10.0*tol;
+          cln_ncwin += ok ? 1 : 0;   // (counted: the CLEAN line's cwin)
+          return ok ? it : -it;
         }
         cwin = cmin;
       } else if (!(rmin < cln_stall_f*rwin)) {

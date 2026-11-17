@@ -3223,6 +3223,7 @@ class RadiationM1 {
   bool cln_sbimp = false;       // staggered: the E-row beta terms (1 - r) sb implicit
   bool cln_split = false;       // staggered: energy flux apart from the face momentum
   int cln_nr1 = 0, cln_nr2 = 0;  // staggered: cells E < 0, faces |F| > c E_donor
+  int cln_ncwin = 0;   // solves accepted by the per-cell measure's stall window (cnorm)
   Real cln_fe = 0.0, cln_fv = 0.0;  // round-off levels of the Newton changes dE, dv
   bool cln_feedback = false;    // gas coupling active
   bool cln_init = false;        // arrays allocated
