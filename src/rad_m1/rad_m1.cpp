@@ -314,8 +314,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     cln_stagmg = !cln_cell && (pc == "mg");}
     // clean_stag_stencil: the operator applied from its rows (CleanStencilRow), built
-    // once per pass; not with clean_stag_sbimp or on the cubed sphere
-    cln_stst = stag("clean_stag_stencil", false);
+    // once per pass (default where it applies, as production's implicit_op_stencil); not
+    // with clean_stag_sbimp or on the cubed sphere
+    cln_stst = stag("clean_stag_stencil", !cln_sbimp &&
+                    !pmy_pack->pmesh->use_cubed_sphere);
     if (cln_stst && (cln_sbimp || pmy_pack->pmesh->use_cubed_sphere)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_m1>/clean_stag_stencil: not with clean_stag_sbimp "
