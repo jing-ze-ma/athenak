@@ -2047,7 +2047,10 @@ void RadiationM1::CleanCellWriteBack() {
           Real p, chi_rho, chi_t, cv;
           eos.ThermoAt(uh(m,IDN,k,j,i), eos.tfloor, ef, p, chi_rho, chi_t, cv);
         }
-        const bool above = (x.w(m,CLW_EI,k,j,i) > ef);
+        // (both sides of the test with a margin of eint's round-off: a cell at the floor
+        // is neither above it nor taken below it by the round-off of IEN - ke)
+        const Real tz = 1.0e-12*(fabs(uh(m,IEN,k,j,i)) + ke + ef);
+        const bool above = (x.w(m,CLW_EI,k,j,i) > ef + tz);
         if (gexact) {
           // the cell's exchange taken exactly with its face fluxes, work and beta terms
           // fixed: E (1 + h c kE) = E_tr + h c kP G a T^4, E_tr = E_old - h div F - W
@@ -2066,11 +2069,11 @@ void RadiationM1::CleanCellWriteBack() {
             eos.ThermoAt(d, t, ei, p, chi_rho, chi_t, cv);
             den += ei - eint;
             e -= ei - eint;
-            if (ei < ef && above) nb += 1.0;
+            if (ei < ef - tz && above) nb += 1.0;
           } else if (above) {
             nb += 1.0;
           }
-        } else if (eint < ef && above) {
+        } else if (eint < ef - tz && above) {
           nb += 1.0;
         }
       }
