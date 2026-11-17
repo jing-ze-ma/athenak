@@ -3230,9 +3230,9 @@ class RadiationM1 {
   int64_t cln_rbld = 0;         // the block of the build
   std::vector<int64_t> cln_fvblk;   // the set in each slot
   std::vector<DvceArray2D<Real>> cln_fvdm;   // the directions with only slot q weighted
-  DvceArray5D<Real> cln_rl;     // the slots' ray moments (CLN_*, not normalised)
-  DvceArray5D<Real> cln_rr;     // the offsets M_{b-j} - M_b, j = 1 .. K-1 (CLN_N each)
-  DvceArray5D<Real> cln_rpd;    // the pending Delta M_{b+1} - M_b
+  DvceArray5D<Real> cln_rl;     // the slots' moments g = M/J (CLN_J: J)
+  DvceArray5D<Real> cln_rr;     // offsets g_{b-j} - g_b, J_{b-j}/J_b (< 0: none), K-1
+  DvceArray5D<Real> cln_rpd;    // the pending Delta g_{b+1} - g_b, J_{b+1}/J_b
   Real cln_rguard_sum = 0.0, cln_roff_sum = 0.0;   // guard falls, off-boundary shifts
   DvceArray5D<Real> cln_v;      // closure fill, bracket, E < 0 flags (m,3,k,j,i)
   DvceArray5D<Real> cln_opb;    // opacities of the stage, kept during the closure build
