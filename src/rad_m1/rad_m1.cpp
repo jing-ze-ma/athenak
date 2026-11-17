@@ -234,10 +234,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     cln_vfreeze = pin->GetOrAddInteger("rad_m1","clean_vfreeze",0);
     cln_gas_exact = pin->GetOrAddBoolean("rad_m1","clean_gas_exact",true);
-    // clean_yres = local (default): the gas momentum takes the cell's exact local
-    // exchange of the solution, not minus the radiation change of the linear solve's y
-    // (whose residual over rho drives the gas); false and post stay selectable
-    {const std::string yr = pin->GetOrAddString("rad_m1","clean_yres","local");
+    {const std::string yr = pin->GetOrAddString("rad_m1","clean_yres","false");
     if (yr.compare("false") == 0) {
       cln_yres = M1_YRES_OFF;
     } else if (yr.compare("true") == 0 || yr.compare("post") == 0) {

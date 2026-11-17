@@ -3052,9 +3052,9 @@ class RadiationM1 {
   int cln_vfreeze = 0;          // clean_vfreeze: 1 advective a, 2 work term at v_old
   bool cln_gas_exact = true;    // clean_gas_exact: gas eint of the write-back by the
                                 // cell's exact local exchange
-  int cln_yres = M1_YRES_LOCAL;  // clean_yres: the y of a cell whose balance the gas
-                                 // momentum takes (default local: the exact local
-                                 // exchange; post: y less its residual over 1 + h c chi)
+  int cln_yres = M1_YRES_OFF;   // clean_yres: y of a cell less its linear residual over
+                                // the row diagonal before the gas takes its momentum
+                                // (post: 1 + h c chi; local: with the gas response)
   bool cln_nl_cell = false;     // clean_nl_norm = cell: per-cell relative Newton changes
   Real cln_nl_efloor = 0.0;     // clean_nl_efloor: E scale of that norm over max E
   Real cln_nl_escale = 0.0;     // that E scale, clean_nl_efloor max E of the iterate
