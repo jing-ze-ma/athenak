@@ -953,8 +953,7 @@ void RadiationM1::CleanPreconditionerSetup() {
           const int vh = CleanTransSide(x, q, m, k, j, i, 1);
           // (a seam side: its ghost extrapolated in panel, the cell 2 away in its slot,
           // CleanStagCsLateral)
-          const bool o2 = (vl + vh == 1) && x.mbc(m,2*q+vl) == BoundaryFlag::panel &&
-                          CleanCsSeamMono(x, q, m, k, j, i, vl ? -1 : 1);
+          const bool o2 = (vl + vh == 1) && x.mbc(m,2*q+vl) == BoundaryFlag::panel;
           const Real wq = (vl + vh == 2 || o2) ? 0.25 : 0.5;
           for (int s = -1; s <= 1; s += 2) {
             const int kf = k + (s > 0)*dk, jf = j + (s > 0)*dj, iff = i + (s > 0)*di;
@@ -965,10 +964,12 @@ void RadiationM1::CleanPreconditionerSetup() {
               for (int c = 0; c < 3; ++c) {
                 const int n = CLN_D11 + ((b == c) ? b : 2 + b + c);
                 const Real ag = a*x.g(m,CLG_N+3*q+c,kf,jf,iff);
-                if (ex) {   // (2 P0 - 3 P1 + P2 of the other side's cells)
-                  y0[b] += 2.0*ag*x.cs(m,n,k,j,i);
-                  yn[s < 0][b] -= 3.0*ag*x.cs(m,n,k-s*dk,j-s*dj,i-s*di);
-                  yn[s > 0][b] += ag*x.cs(m,n,k-2*s*dk,j-2*s*dj,i-2*s*di);
+                if (ex) {   // (c0 P0 + c1 P1 + c2 P2 of the other side's cells)
+                  Real cf[3];
+                  CleanCsSeamCoef(x, n, q, m, k, j, i, -s, cf);
+                  y0[b] += cf[0]*ag*x.cs(m,n,k,j,i);
+                  yn[s < 0][b] += cf[1]*ag*x.cs(m,n,k-s*dk,j-s*dj,i-s*di);
+                  yn[s > 0][b] += cf[2]*ag*x.cs(m,n,k-2*s*dk,j-2*s*dj,i-2*s*di);
                   continue;
                 }
                 yn[s > 0][b] += ag*x.cs(m,n,k+s*dk,j+s*dj,i+s*di);

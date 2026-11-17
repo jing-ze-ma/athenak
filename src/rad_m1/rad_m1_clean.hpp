@@ -897,25 +897,28 @@ int CleanTransSide(const CleanArgs &x, const int b, const int m, const int k, co
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn bool CleanCsSeamMono
-//! \brief cubed sphere: whether the cell (k,j,i) next to a seam takes the second-order
-//! in-panel derivative along q over the cells 0, si, 2 si of the iterate, d = (4 E1 -
-//! 3 E0 - E2)/2: unless the second difference is a front, |E0 - 2 E1 + E2| > 0.1 (|E0| +
-//! |E1| + |E2|)/3, and d leaves [0, 2 (E1 - E0)] (production's cs_cross_mono with k =
-//! 0.1: its default k = 0 clamps smooth extrema too, first order there); else the seam
-//! side takes the clamped first order (a sharp front would extrapolate to the wrong
-//! sign).  Of the iterate, so that the operator and its stencil rows are the same
-//! linear map (CleanStagCsLateral, cln_csyb)
+//! \fn void CleanCsSeamCoef
+//! \brief cubed sphere: the ghost's P - P0 of the cell (k,j,i) next to a seam along q as
+//! c0 P0 + c1 P1 + c2 P2 over its cells 0, si, 2 si in panel, P = D_n E: the in-panel
+//! second-order extrapolant (d = (4 P1 - 3 P0 - P2)/2, the ghost P1 - 2 d), with d
+//! clamped to [0, 2 s1] (s1 = P1 - P0) as production's M1CsTanDer with cs_cross_mono
+//! (M1CsTanMono, k = 0).  The clamp's case is taken from the old vector E^n (CLW_EO), so
+//! that the operator is one linear map for the whole step (its stencil rows, cln_csyb,
+//! the same), continuous in E^n: at either bound the two cases coincide
 
 KOKKOS_INLINE_FUNCTION
-bool CleanCsSeamMono(const CleanArgs &x, const int q, const int m, const int k,
-                     const int j, const int i, const int si) {
+void CleanCsSeamCoef(const CleanArgs &x, const int n, const int q, const int m,
+                     const int k, const int j, const int i, const int si, Real c[3]) {
   const int dk = (q == 2)*si, dj = (q == 1)*si, di = (q == 0)*si;
-  const Real e0 = x.w(m,CLW_EK,k,j,i), e1 = x.w(m,CLW_EK,k+dk,j+dj,i+di);
-  const Real e2 = x.w(m,CLW_EK,k+2*dk,j+2*dj,i+2*di);
-  if (fabs(e0 - 2.0*e1 + e2) <= 0.1/3.0*(fabs(e0) + fabs(e1) + fabs(e2))) return true;
-  const Real d = 0.5*(4.0*e1 - 3.0*e0 - e2), s1 = e1 - e0;
-  return (s1 > 0.0) ? (d >= 0.0 && d <= 2.0*s1) : (d <= 0.0 && d >= 2.0*s1);
+  auto p = [&](const int o) {
+    return x.cs(m,n,k+o*dk,j+o*dj,i+o*di)*x.w(m,CLW_EO,k+o*dk,j+o*dj,i+o*di);
+  };
+  const Real s1 = p(1) - p(0), d = 0.5*(4.0*p(1) - 3.0*p(0) - p(2));
+  const Real lo = fmin(0.0, 2.0*s1), hi = fmax(0.0, 2.0*s1);
+  const bool cl = (d < lo || d > hi), z = (s1 > 0.0) ? (d < lo) : (d > hi);
+  c[0] = !cl ? 2.0 : (z ? -1.0 : 3.0);   // (d: P1 - 2 d; d = 0: P1; d = 2 s1: P1 - 4 s1)
+  c[1] = !cl ? -3.0 : (z ? 1.0 : -3.0);
+  c[2] = !cl ? 1.0 : 0.0;
 }
 
 //----------------------------------------------------------------------------------------

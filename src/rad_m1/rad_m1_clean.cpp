@@ -3249,11 +3249,10 @@ void RadiationM1::CleanStagCsLateral(const int e, const bool st) {
       // doubled: one sided, CleanTransSide)
       const int vl = CleanTransSide(x, q, m, k, j, i, 0);
       const int vh = CleanTransSide(x, q, m, k, j, i, 1);
-      // (a seam side keeps its face, the ghost's P extrapolated in panel to second
-      // order, 3 P0 - 3 P1 + P2, as production's in-panel M1CsTanDer; an open boundary
-      // drops its side, the other's weight doubled: production's clamped first order)
-      const bool o2 = (vl + vh == 1) && x.mbc(m,2*q+vl) == BoundaryFlag::panel &&
-                      CleanCsSeamMono(x, q, m, k, j, i, vl ? -1 : 1);
+      // (a seam side keeps its face, the ghost's P extrapolated in panel, clamped, as
+      // production's M1CsTanDer, CleanCsSeamCoef; an open boundary drops its side, the
+      // other's weight doubled)
+      const bool o2 = (vl + vh == 1) && x.mbc(m,2*q+vl) == BoundaryFlag::panel;
       const Real wq = (vl + vh == 2 || o2) ? 0.25 : 0.5;
       for (int s = -1; s <= 1; s += 2) {
         const int kf = k + (s > 0)*dk, jf = j + (s > 0)*dj, iff = i + (s > 0)*di;
@@ -3266,8 +3265,10 @@ void RadiationM1::CleanStagCsLateral(const int e, const bool st) {
             auto p = [&](const int o) {
               return x.cs(m,n,k+o*dk,j+o*dj,i+o*di)*x.w(m,e,k+o*dk,j+o*dj,i+o*di);
             };
-            y[b] += a*x.g(m,CLG_N+3*q+c,kf,jf,iff)*(ex ? 2.0*p(0) - 3.0*p(-s) + p(-2*s)
-                                                      : p(s) - p(0));
+            Real cf[3] = {0.0, 0.0, 0.0};
+            if (ex) CleanCsSeamCoef(x, n, q, m, k, j, i, -s, cf);
+            y[b] += a*x.g(m,CLG_N+3*q+c,kf,jf,iff)*(ex ? cf[0]*p(0) + cf[1]*p(-s) +
+                                                         cf[2]*p(-2*s) : p(s) - p(0));
           }
         }
       }
