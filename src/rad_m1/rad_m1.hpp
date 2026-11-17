@@ -1004,6 +1004,12 @@ class RadiationM1 {
   int fref_hnst = 0;
   Real fref_hgam0[4] = {0.0, 0.0, 0.0, 0.0}, fref_hbeta[4] = {0.0, 0.0, 0.0, 0.0};
   bool FrefWaccOn() const;
+  // clean staggered, a hesdirk2 stage step (time2_fref_wacc): each stage solve pays the
+  // reference work of the hydro stage before it (fref_wacc with gam0 = 0; the Heun
+  // average of the radiation's stage start combines the payments as the gas's works),
+  // and no slope carries a payment (CleanWriteBack), so the stage increments re-apply
+  // none: E pays exactly the work the gas got, as a backward-Euler step does
+  bool FrefWaccStage() const;
   // gam0 of the hydro stage whose beta dt is bdt (FATAL if none matches)
   Real FrefWaccGam0(Real bdt, Real dt_mesh) const;
   // the accumulator, (re)allocated to the shape of arad_ref

@@ -1449,7 +1449,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   // rad_m1_implicit.cpp m1_impl_fws_x)
   const bool wpa = wsp && FrefWaccOn();
   auto wc = wpa ? FrefWacc() : DvceArray4D<Real>();
-  const Real fra = dt_sub/pmy_pack->pmesh->dt;
+  const Real fra = FrefWaccStage() ? 1.0 : dt_sub/pmy_pack->pmesh->dt;
   // (the explicit energy source esrc, problem/mlt_flux_frozen: h esrc joins the old E,
   // as ImplicitSolve's dt (chat/c) esrc; the slope of E carries it, CleanWriteBack)
   const bool eso = esrc_on;
@@ -2789,7 +2789,9 @@ void RadiationM1::CleanWriteBack() {
   auto aref = arad_ref;
   const bool wpa = wsp && FrefWaccOn();   // (fref_wacc: CleanRightHandSide)
   auto wc = wpa ? FrefWacc() : DvceArray4D<Real>();
-  const Real fra = h/pmy_pack->pmesh->dt;
+  const Real fra = FrefWaccStage() ? 1.0 : h/pmy_pack->pmesh->dt;
+  const bool wex = wsp && fref_wacc_t2 && !fref_pay_post && !cln_cell &&
+                   time_scheme == M1_TIME_HESDIRK2;   // (no slope carries a payment)
   const bool fm = icr_fmeas && cln_vzero;   // (CleanSteadyStart: icr_dm)
   auto fmd = icr_dm;
   const bool eso = esrc_on;
@@ -2879,14 +2881,14 @@ void RadiationM1::CleanWriteBack() {
                                x.op(m,M1_OP_E,k,j,i)*fmax(e, 0.0));
         // (the residual over the row's local diagonal: all of it in a scattering cell,
         // little where the exchange is stiff, whose X the solve fixes to tol/diagonal)
-        // (wpa: E pays fref_wacc; the slope keeps the payment wr, which the next step's
-        // stage increments re-apply, as production's be write-back)
+        // (wpa: E pays fref_wacc; the slope keeps no payment (wex: FrefWaccStage) or the
+        // payment wr, which the next step's stage increments re-apply)
         const Real wp = wpa ? fra*wc(m,k,j,i) : wr;
         const Real rd = (den - x.w(m,CLW_EP,k,j,i) + ex - wk - wp)/
                         (1.0 + x.h*x.c*x.op(m,M1_OP_E,k,j,i)*x.w(m,CLW_RY,k,j,i));
         e += rd;
         den -= rd + wp;
-        wsl = wp - wr;
+        wsl = wex ? wp : wp - wr;
       }
       uh(m,IEN,k,j,i) += den;
       x.w(m,CLW_JV,k,j,i) = den - wk;   // (its change of the gas eint, cln_neint)
