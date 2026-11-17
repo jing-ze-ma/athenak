@@ -3392,6 +3392,16 @@ void RadiationM1::Time2VetColExtrap2() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn int RadiationM1::CleanRstNfv
+//! \brief restart channels of the clean FV rays' intensities: those of the sweep, before
+//! the first sweep those the restart file held (a dump before the first step)
+
+int RadiationM1::CleanRstNfv() const {
+  if (!clean || cln_rfv <= 0) return 0;
+  return (cln_fvn > 0) ? cln_fvb*cln_fvn : t2_nfv;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn RadiationM1::Time2Rst*
 //! \brief the restart channels: K1 (M1_T2_NK), then ipred2 (3, implicit_predictor), then
 //! vet_prev (M1_T2_NVET, closure = vet_sc)
@@ -3406,7 +3416,7 @@ int RadiationM1::Time2RstNchWant() {
   return nt + ((force_ref == M1_FREF_CLEAN) ? 4 : 0)         // the reference force, set
          + ((clean && cln_cell && cln_extrap > 0) ? 2*CLN_N + 1 : 0)    // extrap history
          + ((clean && cln_ring) ? vra_k*CLN_N + 1 : 0)       // clean_rot_ring
-         + ((clean && cln_rfv > 0) ? cln_fvb*cln_fvn : 0);   // the conservative rays
+         + CleanRstNfv();   // the conservative rays
 }
 
 //----------------------------------------------------------------------------------------
@@ -3434,7 +3444,7 @@ bool RadiationM1::ThcRstUnpack(DvceArray5D<Real> in, int nmb, int nsl) {
 }
 
 bool RadiationM1::Time2RstAccept(const int nfile) {
-  const int nb = Time2RstNchWant() - ((clean && cln_rfv > 0) ? cln_fvb*cln_fvn : 0);
+  const int nb = Time2RstNchWant() - CleanRstNfv();
   t2_nfv = (clean && cln_rfv > 0) ? nfile - nb : 0;
   return (nfile == nb + t2_nfv) && (t2_nfv >= 0);
 }
@@ -3570,7 +3580,7 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
   }
   // clean_rays = fv1 | fv: the intensities the next sweep starts from, last
   if (clean && cln_rfv > 0 && cln_fvi.extent_int(0) >= m0 + nmb) {
-    Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c + cln_fvb*cln_fvn), AL, AL,
+    Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c + CleanRstNfv()), AL, AL,
                                       AL),
                       Kokkos::subview(cln_fvi, ms, AL, AL, AL, AL));
     CleanFvRstWrite(a, c, nmb, m0);
@@ -3578,7 +3588,7 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
     // (clean_fv_float: the single-precision intensities as doubles)
     auto a_ = a;
     auto fs = cln_fvis;
-    const int c0 = c, nv = cln_fvb*cln_fvn, mo = m0;
+    const int c0 = c, nv = CleanRstNfv(), mo = m0;
     par_for("m1_t2_fvrst", DevExeSpace(), 0, nmb - 1, 0, nv - 1, 0, fs.extent_int(2) - 1,
             0, fs.extent_int(3) - 1, 0, fs.extent_int(4) - 1,
     KOKKOS_LAMBDA(const int m, const int v, const int k, const int j, const int i) {
@@ -3594,7 +3604,7 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   const bool h2 = (time_scheme == M1_TIME_HESDIRK2);
   // the last t2_nfv channels: the conservative rays' intensities (their number is not
   // known before the first sweep, Time2RstAccept)
-  const int nfv0 = Time2RstNchWant() - ((clean && cln_rfv > 0) ? cln_fvb*cln_fvn : 0);
+  const int nfv0 = Time2RstNchWant() - CleanRstNfv();
   if (clean && cln_rfv > 0 && ch >= nfv0) {
     if (cln_fvi.extent_int(0) != nmb || cln_fvi.extent_int(1) != t2_nfv) {
       Kokkos::realloc(cln_fvi, nmb, t2_nfv, w.extent_int(1), w.extent_int(2),

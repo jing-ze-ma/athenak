@@ -2199,6 +2199,7 @@ class RadiationM1 {
   bool dbg_rst_fp_dump = false; // dbg_rst_fp_dump: vgd_cs written at every fingerprint
   bool dbg_rst_fp_done = false; // (the first clean solve of that cycle has printed)
   int Time2RstNchWant();        // restart channels this run keeps (0 unless hesdirk2)
+  int CleanRstNfv() const;     // of them, the clean FV rays' intensities
   int Time2RstNch();            // ...and writes (0 unless a slope is stored)
   bool Time2RstAccept(const int nfile);   // a file's channels fit (sets t2_nfv)
   int t2_nfv = 0;               // conservative-ray intensity channels of the file
