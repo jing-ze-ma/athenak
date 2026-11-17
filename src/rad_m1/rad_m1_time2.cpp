@@ -3465,12 +3465,12 @@ void RadiationM1::Time2VetColExtrap2() {
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationM1::CleanRstNq
 //! \brief closure components per record in the restart files of the clean extrap history
-//! and clean_rot_ring: the cell layout writes the first CLN_JR (push 16's files), the
-//! staggered layout all CLN_N (CLN_JR, the rays' J below clean_ray_min, is staggered
-//! only)
+//! and clean_rot_ring, in push 16's order (CleanRstSlot): the cell layout writes the
+//! first CLN_N - 1 (push 16's files), the staggered layout all CLN_N (the last, CLN_JR,
+//! the rays' J below clean_ray_min, is staggered only)
 
 int RadiationM1::CleanRstNq() const {
-  return cln_cell ? CLN_JR : CLN_N;
+  return cln_cell ? CLN_N - 1 : CLN_N;
 }
 
 int RadiationM1::CleanRstNfv() const {
@@ -3593,14 +3593,13 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
   // clean_closure = extrap*: the ray moments at t^n and at the end of the step, then
   // t^n, that end time and the flags at i = 0..4
   const int nq = CleanRstNq();
-  const auto q0 = std::make_pair(0, nq);
   if (clean && cln_extrap > 0) {
     const bool have = (cln_mn.extent_int(0) >= m0 + nmb);
-    if (have) {
-      Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+nq), AL, AL, AL),
-                        Kokkos::subview(cln_mn, ms, q0, AL, AL, AL));
-      Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c+nq, c+2*nq), AL, AL, AL),
-                        Kokkos::subview(cln_mc, ms, q0, AL, AL, AL));
+    for (int n = 0; n < nq && have; ++n) {
+      Kokkos::deep_copy(Kokkos::subview(a, mb, c + n, AL, AL, AL),
+                        Kokkos::subview(cln_mn, ms, CleanRstSlot(n), AL, AL, AL));
+      Kokkos::deep_copy(Kokkos::subview(a, mb, c + nq + n, AL, AL, AL),
+                        Kokkos::subview(cln_mc, ms, CleanRstSlot(n), AL, AL, AL));
     }
     auto a_ = a;
     const int cq = c + 2*nq;
@@ -3623,8 +3622,9 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
       // (the interior cells of the carried fields; 0 elsewhere)
       auto &id = pmy_pack->pmesh->mb_indcs;
       const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
-      Kokkos::Array<int, CLN_N> fm;
-      const int nf = CleanRingFields(fm.data()), nk = vra_k, c0 = c, mq = m0;
+      Kokkos::Array<int, CLN_N> fs, fm;
+      const int nf = CleanRingFields(fs.data()), nk = vra_k, c0 = c, mq = m0;
+      for (int n = 0; n < CLN_N; ++n) fm[n] = fs[CleanRstSlot(n)];   // (file order)
       auto a_ = a;
       auto rr_ = cln_rr;
       auto pd_ = cln_rpd;
@@ -3812,7 +3812,7 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
         Kokkos::realloc(mx, nmb, CLN_N, w.extent_int(1), w.extent_int(2),
                         w.extent_int(3));
       }
-      DeepCopyAcross(Kokkos::subview(mx, mb, ch%nq, AL, AL, AL), w);
+      DeepCopyAcross(Kokkos::subview(mx, mb, CleanRstSlot(ch%nq), AL, AL, AL), w);
       return;
     }
     if (ch == 2*nq) {
@@ -3834,7 +3834,8 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
       auto &id = pmy_pack->pmesh->mb_indcs;
       const int is = id.is, js = id.js, ks = id.ks;
       Kokkos::Array<int, CLN_N> fm;
-      const int nf = CleanRingFields(fm.data()), f = fm[(ch < nr) ? ch%nq : ch - nr];
+      const int nf = CleanRingFields(fm.data());
+      const int f = fm[CleanRstSlot((ch < nr) ? ch%nq : ch - nr)];
       const int nx = (ch < nr) ? (vra_k - 1)*nf : nf;
       if (rx.extent_int(0) != nmb) {
         Kokkos::realloc(rx, nmb, nx, id.nx3, id.nx2, id.nx1);

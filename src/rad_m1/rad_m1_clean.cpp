@@ -222,7 +222,8 @@ void RadiationM1::CleanInit() {
   int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
   int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
   int nmb = pmy_pack->nmb_thispack;
-  Kokkos::realloc(cln_s, nmb, CLN_N, n3, n2, n1);
+  Kokkos::realloc(cln_s, nmb, CleanNs(cln_cell, pmy_pack->pmesh->use_cubed_sphere), n3,
+                  n2, n1);
   // (staggered on the cubed sphere: the cell terms and faces of CleanStagFSolveCs)
   const bool stcs = pmy_pack->pmesh->use_cubed_sphere && !cln_cell;
   Kokkos::realloc(cln_v, nmb, stcs ? 18 : 3, n3, n2, n1);
@@ -1153,7 +1154,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     CleanClosureAfterSolve();
     if (reslope) {
       CleanClosureFill();
-      CleanGhostFill(cln_s, 0, CLN_N);
+      CleanGhostFill(cln_s, 0, cln_s.extent_int(1));
       CleanCellFaceSpeeds();
       if (cln_hk) CleanCellConsistency();
       if (cln_milne) CleanCellMilneSetup();

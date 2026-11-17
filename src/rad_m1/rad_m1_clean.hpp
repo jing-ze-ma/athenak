@@ -36,24 +36,47 @@
 
 namespace radm1 {
 
-// closure variables (arrays cln_c and cln_s)
+// closure variables (arrays cln_c and cln_s); the staggered layout allocates the first
+// CLN_FH (cubed sphere: CLN_F1), the cell layout all CLN_N
 constexpr int CLN_D11 = 0;   // Eddington tensor D11 D22 D33 D12 D13 D23
 constexpr int CLN_HP = 6;    // h+_a = H+_a/J, a = 1,2,3
 constexpr int CLN_HM = 9;    // h-_a = H-_a/J (<= 0)
-constexpr int CLN_KP = 12;   // k+^d_b = K+^d_bd/J (outgoing stress of mu_d > 0), 3 d + b
-constexpr int CLN_C1 = 21;   // non-locality C1 = <|I - S|>/J
-constexpr int CLN_J = 22;    // J of the rays (energy-density units)
-constexpr int CLN_F2 = 23;   // the rays' flux through the low x2 face (M1_VET_F2, not
+constexpr int CLN_C1 = 12;   // non-locality C1 = <|I - S|>/J
+constexpr int CLN_J = 13;    // J of the rays (energy-density units)
+constexpr int CLN_F2 = 14;   // the rays' flux through the low x2 face (M1_VET_F2, not
                              // normalised; clean_consistency)
-constexpr int CLN_F1 = 27;   // their flux through an x1 boundary face (M1_VET_F1)
-constexpr int CLN_FX = 31;   // their flux through the low x1 face (M1_VET_FX)
-constexpr int CLN_F3 = 35;   // their flux through the low x3 face (M1_VET_F3)
-constexpr int CLN_FH = 39;   // cubed sphere: through the high x2, x3 face of the last
-                             // cell of a MeshBlock (+4; a seam ghost's low face differs)
-constexpr int CLN_G = 47;    // curvature of their stress in the cell layout (y_r, y_theta)
-constexpr int CLN_JR = 49;   // their J also below clean_ray_min E (CLN_J is 0 there): the
+constexpr int CLN_FX = 18;   // their flux through the low x1 face (M1_VET_FX)
+constexpr int CLN_F3 = 22;   // their flux through the low x3 face (M1_VET_F3)
+constexpr int CLN_G = 26;    // curvature of their stress in the cell layout (y_r,
+                             // y_theta)
+constexpr int CLN_JR = 28;   // their J also below clean_ray_min E (CLN_J is 0 there): the
                              // staggered flux factors (clean_stag_gflux)
+constexpr int CLN_FH = 29;   // cubed sphere: through the high x2, x3 face of the last
+                             // cell of a MeshBlock (+4; a seam ghost's low face differs)
+constexpr int CLN_F1 = 37;   // cell layout: their flux through an x1 boundary face
+                             // (M1_VET_F1)
+constexpr int CLN_KP = 41;   // cell layout: k+^d_b = K+^d_bd/J (outgoing stress of
+                             // mu_d > 0), 3 d + b
 constexpr int CLN_N = 50;
+
+// the slots of cln_s
+inline int CleanNs(const bool cell, const bool cub) {
+  return cell ? CLN_N : (cub ? CLN_F1 : CLN_FH);
+}
+
+// the moments of the cell (D, h+-, C1, J, k+; the others are face sums)
+KOKKOS_INLINE_FUNCTION
+bool CleanCellMoment(const int n) {return n <= CLN_J || n >= CLN_KP;}
+
+// the slot of channel n of the restart files, which keep push 16's order (D h+ h- k+ C1
+// J F2 F1 FX F3 FH G JR)
+inline int CleanRstSlot(const int n) {
+  constexpr int o[9] = {0, 12, 21, 23, 27, 31, 39, 47, CLN_N};
+  constexpr int s[8] = {CLN_D11, CLN_KP, CLN_C1, CLN_F2, CLN_F1, CLN_FX, CLN_FH, CLN_G};
+  int g = 0;
+  while (n >= o[g+1]) ++g;
+  return s[g] + n - o[g];
+}
 
 // face variables (arrays cln_fc1, cln_fc2, cln_fc3)
 constexpr int CLF_W = 0;     // blend weight w

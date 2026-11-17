@@ -3016,7 +3016,8 @@ class RadiationM1 {
   void CleanDtrD(const bool save);   // dt_retry: d to / from cln_rstd
   int CleanRingFields(int *fm) const;   // clean_rot_ring: the offsets' fields
   // closure components in the restart files of the extrap history and clean_rot_ring:
-  // the cell layout keeps the CLN_JR (= 49) of push 16's files, CLN_JR is staggered only
+  // push 16's order (CleanRstSlot); the cell layout keeps its first CLN_N - 1, CLN_JR is
+  // staggered only
   int CleanRstNq() const;
   // the rays' intensity channels of the restart files: the FV rays' (cln_fvi), and the sc
   // rays' last build when their reflecting top mirrors it (cln_scmem: its top shell)

@@ -45,6 +45,7 @@ KOKKOS_INLINE_FUNCTION
 void CleanStoreMoments(const DvceArray5D<Real> &cs, const DvceArray5D<Real> &valid,
                        const Real *q, const int m, const int k, const int j,
                        const int i) {
+  const int ns = cs.extent_int(1);   // (the staggered layout: no k+, CleanInit)
   if (q[CLN_J] > 0.0) {
     const Real ij = 1.0/q[CLN_J];
     for (int a = 0; a < 6; ++a) cs(m,CLN_D11+a,k,j,i) = q[CLN_D11+a]*ij;
@@ -52,7 +53,7 @@ void CleanStoreMoments(const DvceArray5D<Real> &cs, const DvceArray5D<Real> &val
       cs(m,CLN_HP+a,k,j,i) = fmax(q[CLN_HP+a]*ij, 0.0);
       cs(m,CLN_HM+a,k,j,i) = fmin(q[CLN_HM+a]*ij, 0.0);
     }
-    for (int a = 0; a < 9; ++a) cs(m,CLN_KP+a,k,j,i) = q[CLN_KP+a]*ij;
+    for (int a = 0; a < 9 && ns > CLN_KP; ++a) cs(m,CLN_KP+a,k,j,i) = q[CLN_KP+a]*ij;
     cs(m,CLN_C1,k,j,i) = fmax(q[CLN_C1]*ij, 0.0);
     cs(m,CLN_J,k,j,i) = q[CLN_J];
     valid(m,0,k,j,i) = 1.0;
@@ -63,12 +64,14 @@ void CleanStoreMoments(const DvceArray5D<Real> &cs, const DvceArray5D<Real> &val
       cs(m,CLN_HP+a,k,j,i) = 0.25;
       cs(m,CLN_HM+a,k,j,i) = -0.25;
     }
-    for (int a = 0; a < 9; ++a) cs(m,CLN_KP+a,k,j,i) = (a%4 == 0) ? 1.0/6.0 : 0.0;
+    for (int a = 0; a < 9 && ns > CLN_KP; ++a) {
+      cs(m,CLN_KP+a,k,j,i) = (a%4 == 0) ? 1.0/6.0 : 0.0;
+    }
     cs(m,CLN_C1,k,j,i) = 1.0;
     cs(m,CLN_J,k,j,i) = 0.0;
     valid(m,0,k,j,i) = 0.0;
   }
-  for (int n = CLN_F2; n < CLN_N; ++n) cs(m,n,k,j,i) = q[n];
+  for (int n = CLN_F2; n < CLN_KP && n < ns; ++n) cs(m,n,k,j,i) = q[n];
 }
 
 //----------------------------------------------------------------------------------------
@@ -230,7 +233,7 @@ void RadiationM1::CleanClosure() {
     if (cln_opsaved) Kokkos::deep_copy(opac, cln_opb);
     CleanClosureFill();
   }
-  CleanGhostFill(cln_s, 0, CLN_N);
+  CleanGhostFill(cln_s, 0, cln_s.extent_int(1));
 
   cln_tc = time;
   cln_dtb = dt;
@@ -257,7 +260,9 @@ void RadiationM1::CleanClosureEddington() {
       cs(m,CLN_HP+a,k,j,i) = 0.25;
       cs(m,CLN_HM+a,k,j,i) = -0.25;
     }
-    for (int a = 0; a < 9; ++a) cs(m,CLN_KP+a,k,j,i) = (a%4 == 0) ? 1.0/6.0 : 0.0;
+    for (int a = 0; a < 9 && cs.extent_int(1) > CLN_KP; ++a) {
+      cs(m,CLN_KP+a,k,j,i) = (a%4 == 0) ? 1.0/6.0 : 0.0;
+    }
     cs(m,CLN_C1,k,j,i) = 0.0;
     cs(m,CLN_J,k,j,i) = 0.0;
   });
@@ -291,7 +296,7 @@ void RadiationM1::CleanClosureIterate() {
   });
   CleanRays();
   CleanClosureFill();
-  CleanGhostFill(cln_s, 0, CLN_N);
+  CleanGhostFill(cln_s, 0, cln_s.extent_int(1));
   cln_havec = false;
 }
 
@@ -365,8 +370,10 @@ void RadiationM1::CleanRayMoments(DvceArray5D<Real> dst, const bool solve) {
   par_for("cln_raymom", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real jr = cs(m,CLN_J,k,j,i);
-    for (int n = 0; n < CLN_J; ++n) dst(m,n,k,j,i) = jr*cs(m,n,k,j,i);
-    for (int n = CLN_J; n < CLN_N; ++n) dst(m,n,k,j,i) = cs(m,n,k,j,i);
+    for (int n = 0; n < CLN_N; ++n) {   // (0: a slot the staggered layout drops)
+      dst(m,n,k,j,i) = (n >= cs.extent_int(1)) ? 0.0 :
+                       ((CleanCellMoment(n) && n != CLN_J) ? jr : 1.0)*cs(m,n,k,j,i);
+    }
   });
   cln_havec = false;
 }
@@ -557,7 +564,9 @@ void RadiationM1::CleanClosureExtrap() {
       if (line && mn(m,CLN_J,k,j,i) > 0.0) ++ng;
       // (the face sums of a MeshBlock face on the cubed sphere, held on both sides, stay
       // extrapolated alike)
-      for (int n = 0; n < (x.cub ? CLN_F2 : CLN_N); ++n) q[n] = mn(m,n,k,j,i);
+      for (int n = 0; n < CLN_N; ++n) {
+        if (!x.cub || CleanCellMoment(n)) q[n] = mn(m,n,k,j,i);
+      }
     }
     CleanStoreMoments(cs, valid, q, m, k, j, i);
   }, Kokkos::Sum<int>(nguard));
@@ -566,7 +575,7 @@ void RadiationM1::CleanClosureExtrap() {
   if (line) cln_next_sum += 1.0;
 
   CleanClosureFill();
-  CleanGhostFill(cln_s, 0, CLN_N);
+  CleanGhostFill(cln_s, 0, cln_s.extent_int(1));
 }
 
 //----------------------------------------------------------------------------------------
@@ -744,14 +753,17 @@ void RadiationM1::CleanClosureSphere() {
       cs(m,CLN_HP+a,k,j,i) = ht;
       cs(m,CLN_HM+a,k,j,i) = -ht;
     }
-    for (int a = 0; a < 9; ++a) cs(m,CLN_KP+a,k,j,i) = 0.0;
-    cs(m,CLN_KP,k,j,i) = krr;
-    cs(m,CLN_KP+3,k,j,i) = kr;
-    cs(m,CLN_KP+4,k,j,i) = 0.25*(1.0 - drr);
-    cs(m,CLN_KP+6,k,j,i) = kr;
-    cs(m,CLN_KP+8,k,j,i) = 0.25*(1.0 - drr);
     cs(m,CLN_C1,k,j,i) = c1;
     cs(m,CLN_J,k,j,i) = 1.0;
+    const bool kp = cs.extent_int(1) > CLN_KP;
+    if (kp) {
+      for (int a = 0; a < 9; ++a) cs(m,CLN_KP+a,k,j,i) = 0.0;
+      cs(m,CLN_KP,k,j,i) = krr;
+      cs(m,CLN_KP+3,k,j,i) = kr;
+      cs(m,CLN_KP+4,k,j,i) = 0.25*(1.0 - drr);
+      cs(m,CLN_KP+6,k,j,i) = kr;
+      cs(m,CLN_KP+8,k,j,i) = 0.25*(1.0 - drr);
+    }
     if (!cub) return;
     const Real dt = 0.5*(1.0 - drr);
     Real nd[3][3];
@@ -761,14 +773,14 @@ void RadiationM1::CleanClosureSphere() {
       cs(m,CLN_D11+a,k,j,i) = (drr - dt)*nd[0][ab[a][0]]*nd[0][ab[a][1]] +
                               ((a < 3) ? dt : 0.0);
     }
-    for (int b = 0; b < 3; ++b) {
+    for (int b = 0; b < 3 && kp; ++b) {
       cs(m,CLN_KP+b,k,j,i) = krr*nd[0][b];
       for (int d = 1; d < 3; ++d) {
         cs(m,CLN_KP+3*d+b,k,j,i) = kr*nd[0][b] + 0.5*dt*nd[d][b];
       }
     }
   });
-  CleanGhostFill(cln_s, 0, CLN_N);
+  CleanGhostFill(cln_s, 0, cln_s.extent_int(1));
 }
 
 //----------------------------------------------------------------------------------------
@@ -888,18 +900,18 @@ bool CleanRingMix(const DvceArray5D<Real> &rl, const DvceArray5D<Real> &rr,
 //! \fn int RadiationM1::CleanRingFields
 //! \brief clean_rot_ring: the fields the offsets and the Delta carry, fm(CLN index) =
 //! their slot or -1, and their number.  The staggered layout leaves out those none of its
-//! solves reads: CLN_KP; off the cubed sphere also CLN_FH, CLN_F1 and the stress parts
-//! of the face sums CLN_FX, CLN_F2, CLN_F3 (only their energy flux is read; the sp F
-//! solve reads CLN_G).  The mixture gives 0 there (CleanRingMix)
+//! solves reads: those cln_s does not hold (CleanNs: CLN_KP, CLN_F1, off the cubed sphere
+//! CLN_FH) and off the cubed sphere the stress parts of the face sums CLN_FX, CLN_F2,
+//! CLN_F3 (only their energy flux is read; the sp F solve reads CLN_G).  The mixture
+//! gives 0 there (CleanRingMix)
 
 int RadiationM1::CleanRingFields(int *fm) const {
   const bool cub = pmy_pack->pmesh->use_cubed_sphere;
+  const int ns = CleanNs(cln_cell, cub);   // (the slots of cln_s)
   int nf = 0;
   for (int n = 0; n < CLN_N; ++n) {
-    const bool kp = (n >= CLN_KP && n < CLN_C1);
-    const bool fs = (n > CLN_F2 && n < CLN_G && (n - CLN_F2)%4 != 0) || n == CLN_F1 ||
-                    (n >= CLN_FH && n < CLN_G);
-    fm[n] = (cln_cell || !(kp || (fs && !cub))) ? nf++ : -1;
+    const bool fs = n >= CLN_F2 && n < CLN_G && (n - CLN_F2)%4 != 0;   // (stress parts)
+    fm[n] = (cln_cell || (n < ns && !(fs && !cub))) ? nf++ : -1;
   }
   return nf;
 }
@@ -998,7 +1010,7 @@ void RadiationM1::CleanRingMoments() {
       const Real jr = cs(m,CLN_J,k,j,i), ij = (jr > 0.0) ? 1.0/jr : 0.0;
       for (int n = 0; n < CLN_N; ++n) {
         if (fm[n] < 0) continue;
-        ra(m,o+fm[n],k-ks,j-js,i-is) = (n <= CLN_J) ? cs(m,n,k,j,i) : ij*cs(m,n,k,j,i);
+        ra(m,o+fm[n],k-ks,j-js,i-is) = (CleanCellMoment(n) ? 1.0 : ij)*cs(m,n,k,j,i);
       }
     });
   }
@@ -1092,7 +1104,6 @@ void RadiationM1::CleanRingMoments() {
     const int j = js + (t/ni)%nj;
     const int k = ks + (t/(ni*nj))%nkk;
     const int m = t/(ni*nj*nkk);
-    const int nfx = x.cub ? CLN_F2 : CLN_N;
     // (the swept sets' raw moments M = g J)
     const int kr = k - ks, jr = j - js, ir = i - is;
     // (slot o; the fields the ring does not carry: 0, none of the solves reads them)
@@ -1107,7 +1118,9 @@ void RadiationM1::CleanRingMoments() {
     }
     if (mix && !(q[CLN_J] > 0.0 && CleanRealizable(x, q, m, k, j, i))) {
       if ((1.0 - s)*raw(0, CLN_J) + s*raw(qn, CLN_J) > 0.0) ++ng;
-      for (int n = 0; n < nfx; ++n) q[n] = (1.0 - s)*raw(0, n) + s*raw(qn, n);
+      for (int n = 0; n < CLN_N; ++n) {
+        if (!x.cub || CleanCellMoment(n)) q[n] = (1.0 - s)*raw(0, n) + s*raw(qn, n);
+      }
     }
     if (q[CLN_J] < ray_min*iw_(m,M1_IW_EN,k,j,i)) q[CLN_J] = 0.0;
     CleanStoreMoments(cs, valid, q, m, k, j, i);
@@ -1116,10 +1129,14 @@ void RadiationM1::CleanRingMoments() {
     if (!(CleanRingMix(rl, rr, fm, nf, qn, nr, 1.0, m, kr, jr, ir, q) &&
           q[CLN_J] > 0.0 && CleanRealizable(x, q, m, k, j, i))) {
       if (rl(m,qn*nf+fm[int{CLN_J}],kr,jr,ir) > 0.0) ++ng;
-      for (int n = 0; n < nfx; ++n) q[n] = raw(qn, n);
+      for (int n = 0; n < CLN_N; ++n) {
+        if (!x.cub || CleanCellMoment(n)) q[n] = raw(qn, n);
+      }
     }
     if (q[CLN_J] < ray_min*iw_(m,M1_IW_EN,k,j,i)) {
-      for (int n = 0; n < CLN_F2; ++n) q[n] = 0.0;
+      for (int n = 0; n < CLN_N; ++n) {
+        if (CleanCellMoment(n)) q[n] = 0.0;
+      }
     }
     for (int n = 0; n < CLN_N; ++n) rw(m,n,k,j,i) = q[n];
   }, Kokkos::Sum<int>(nguard));
@@ -2812,6 +2829,7 @@ void RadiationM1::CleanGdFaceSums() {
   auto w3_ = vgd_w3;
   const bool wint = vgd_wint;
   auto cs = cln_s;
+  const bool f1 = cln_s.extent_int(1) > CLN_F1;   // (the cell layout's CLN_F1)
   CleanArgs x = CleanMakeArgs();
   // nx3 = 1 (axisymmetric): no phi face is a boundary; the upwind cell of the low one is
   // the own cell with the directions rotated back by the phi extent (the wall map), the
@@ -3016,7 +3034,7 @@ void RadiationM1::CleanGdFaceSums() {
         for (int c = 0; c < 4; ++c) {
           const Real f = q[c]/x.area[0](m,k,j,i+up);
           if (!up) cs(m,CLN_FX+c,k,j,i) = f;
-          if ((!up && i == is) || up) cs(m,CLN_F1+c,k,j,i) = f;
+          if (((!up && i == is) || up) && f1) cs(m,CLN_F1+c,k,j,i) = f;
         }
       }
       for (int b = 0; b < 2; ++b) cs(m,CLN_G+b,k,j,i) = 0.0;
@@ -3121,8 +3139,8 @@ void RadiationM1::CleanGdFaceSums() {
         for (int c = 0; c < 4; ++c) q[c] = qw[c]*x.area[0](m,k,j,ie+1);
       }
       for (int c = 0; c < 4; ++c) {
-        cs(m,CLN_F1+c,k,j,is) = cs(m,CLN_FX+c,k,j,is);
-        cs(m,CLN_F1+c,k,j,ie) = q[c]/x.area[0](m,k,j,ie+1);
+        if (f1) cs(m,CLN_F1+c,k,j,is) = cs(m,CLN_FX+c,k,j,is);
+        if (f1) cs(m,CLN_F1+c,k,j,ie) = q[c]/x.area[0](m,k,j,ie+1);
         if (!(xf_(m) & 4)) qb_(m,c*nkj + kj) = q[c];
       }
       if (!(xf_(m) & 4)) {
@@ -3150,8 +3168,8 @@ void RadiationM1::CleanGdFaceSums() {
         for (int c = 0; c < 4; ++c) {
           const Real dq = qr_(m,c*nkj + kj)*vc/vt;
           if (i <= ie) cs(m,CLN_FX+c,k,j,i) -= dq/x.area[0](m,k,j,i);
-          if (i == is) cs(m,CLN_F1+c,k,j,is) = cs(m,CLN_FX+c,k,j,is);
-          if (i == ie + 1) cs(m,CLN_F1+c,k,j,ie) -= dq/x.area[0](m,k,j,ie+1);
+          if (i == is && f1) cs(m,CLN_F1+c,k,j,is) = cs(m,CLN_FX+c,k,j,is);
+          if (i == ie + 1 && f1) cs(m,CLN_F1+c,k,j,ie) -= dq/x.area[0](m,k,j,ie+1);
         }
       }
     });
@@ -3180,8 +3198,9 @@ void RadiationM1::CleanClosureFromRays() {
   par_for("cln_rays", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real jr = vc(m,M1_VET_J,k,j,i);
-    for (int n = 0; n < M1_VET_NFS; ++n) {
-      cs(m,CLN_F2+n,k,j,i) = f2 ? vc(m,M1_VET_F2+n,k,j,i) : 0.0;
+    for (int n = 0; n < M1_VET_NFS; ++n) {   // (F2, F1, FX, F3)
+      const int c = (n < 4) ? CLN_F2 + n : ((n < 8) ? CLN_F1 + n - 4 : CLN_FX + n - 8);
+      if (c < cs.extent_int(1)) cs(m,c,k,j,i) = f2 ? vc(m,M1_VET_F2+n,k,j,i) : 0.0;
     }
     cs(m,CLN_JR,k,j,i) = jr;
     if (jr > 0.0 && jr >= ray_min*iw_(m,M1_IW_EN,k,j,i)) {
@@ -3192,7 +3211,9 @@ void RadiationM1::CleanClosureFromRays() {
         cs(m,CLN_HP+a,k,j,i) = fmax(hp, 0.0);
         cs(m,CLN_HM+a,k,j,i) = fmin(h - hp, 0.0);
       }
-      for (int a = 0; a < 9; ++a) cs(m,CLN_KP+a,k,j,i) = vc(m,M1_VET_KP+a,k,j,i)/jr;
+      for (int a = 0; a < 9 && cs.extent_int(1) > CLN_KP; ++a) {
+        cs(m,CLN_KP+a,k,j,i) = vc(m,M1_VET_KP+a,k,j,i)/jr;
+      }
       cs(m,CLN_C1,k,j,i) = fmax(vc(m,M1_VET_NL,k,j,i)/jr, 0.0);
       cs(m,CLN_J,k,j,i) = jr;
       valid(m,0,k,j,i) = 1.0;
@@ -3204,7 +3225,9 @@ void RadiationM1::CleanClosureFromRays() {
         cs(m,CLN_HP+a,k,j,i) = 0.25;
         cs(m,CLN_HM+a,k,j,i) = -0.25;
       }
-      for (int a = 0; a < 9; ++a) cs(m,CLN_KP+a,k,j,i) = (a%4 == 0) ? 1.0/6.0 : 0.0;
+      for (int a = 0; a < 9 && cs.extent_int(1) > CLN_KP; ++a) {
+        cs(m,CLN_KP+a,k,j,i) = (a%4 == 0) ? 1.0/6.0 : 0.0;
+      }
       cs(m,CLN_C1,k,j,i) = 1.0;
       cs(m,CLN_J,k,j,i) = 0.0;
       valid(m,0,k,j,i) = 0.0;
@@ -3227,29 +3250,35 @@ void RadiationM1::CleanClosureFill() {
   const int dk = pmy_pack->pmesh->three_d ? 1 : 0;
   auto cs = cln_s;
   auto valid = cln_v;
+  // (D, h+- and, where held, k+: the slots t < CLN_C1, then CLN_KP + t - CLN_C1)
+  const int nfl = (cln_s.extent_int(1) > CLN_KP) ? CLN_C1 + 9 : CLN_C1;
 
   for (int pass = 0; pass < cln_fillpass; ++pass) {
-    CleanGhostFill(cln_s, 0, CLN_N);
+    CleanGhostFill(cln_s, 0, cln_s.extent_int(1));
     CleanGhostFill(cln_v, 0, 2);
     // valid(1) marks the cells filled in this pass; only cells valid before it are read
     par_for("cln_fill", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       valid(m,1,k,j,i) = valid(m,0,k,j,i);
       if (valid(m,0,k,j,i) > 0.0) return;
-      Real sum[CLN_C1] = {0.0};
+      Real sum[CLN_C1 + 9] = {0.0};
       int nv = 0;
       for (int kk = k-dk; kk <= k+dk; ++kk) {
         for (int jj = j-dj; jj <= j+dj; ++jj) {
           for (int ii = i-1; ii <= i+1; ++ii) {
             if (valid(m,0,kk,jj,ii) <= 0.0) continue;
             ++nv;
-            for (int n = 0; n < CLN_C1; ++n) sum[n] += cs(m,n,kk,jj,ii);
+            for (int t = 0; t < nfl; ++t) {
+              sum[t] += cs(m,(t < CLN_C1) ? t : CLN_KP + t - CLN_C1,kk,jj,ii);
+            }
           }
         }
       }
       if (nv == 0) return;
       valid(m,1,k,j,i) = 1.0;
-      for (int n = 0; n < CLN_C1; ++n) cs(m,n,k,j,i) = sum[n]/nv;
+      for (int t = 0; t < nfl; ++t) {
+        cs(m,(t < CLN_C1) ? t : CLN_KP + t - CLN_C1,k,j,i) = sum[t]/nv;
+      }
     });
     par_for("cln_fill_mark", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
