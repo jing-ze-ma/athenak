@@ -1405,8 +1405,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // geodef-1117 (USER 11-17): the DEFAULT set of a FRESH start that names no set key,
     // recorded for restarts; a restart whose input names none keeps HEALPix nside 3.
     // geodef5-1117 (USER: <= 120 rays, rotation as in production; RAYSET2): the geodesic
-    // set vet_gd_geo = 3 (92 directions) averaged over vet_rotate_avg = 4 rotated sets
-    // (unless named; vet_gd_rotate_xfade = true with scheme = clean, the clean ring):
+    // set vet_gd_geo = 3 (92 directions), averaged over 4 rotated sets (geodef7 below):
     // the accuracy of the fixed geo 4 at 92 rays.  A 2-D axisymmetric mesh with a phi
     // extent below 2 pi, which must rotate the set onto itself (the icosahedral set has
     // no 4-fold axis), takes the staggered product set GL 9 x nphi, nphi nearest 12 with
@@ -1437,8 +1436,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       }
       if (fresh && !ax2) {
         pin->GetOrAddInteger("rad_m1","vet_gd_geo",3);
-        pin->GetOrAddInteger("rad_m1","vet_rotate_avg",4);
-        if (clean) {pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_xfade",true);}
       }
       if (fresh && ax2) {
         pin->GetOrAddInteger("rad_m1","vet_gd_gl_nmu",9);
@@ -1449,8 +1446,26 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
           (global_variable::restart_run ? "restart input has no key)" : "recipe none)")
           : (ax2 ? "<rad_m1>/vet_gd_gl_nmu = 9, vet_gd_gl_nphi = " + std::to_string(np) +
                    ", stagger (default on 2-D axisymmetric sp: exact phi walls)"
-                 : std::string("<rad_m1>/vet_gd_geo = 3, vet_rotate_avg = ") +
-                   pin->GetString("rad_m1","vet_rotate_avg") + " (default)"));
+                 : std::string("<rad_m1>/vet_gd_geo = 3 (default)")));
+    }
+    // geodef7-1117 (USER: "rotate with averaging"): a FRESH vet_gd run whose set rotates
+    // (vet_gd_rotate_dt unnamed, i.e. auto, or > 0; or vet_gd_rotate_every > 0) and that
+    // names no vet_rotate_avg averages 4 rotated sets (on the time clock of scheme =
+    // clean with vet_gd_rotate_xfade = true: the live ring); never one rotating set alone
+    if (vgd_on && recipe::NewDefaults(pin) && !global_variable::restart_run &&
+        !pin->DoesParameterExist("rad_m1","vet_rotate_avg")) {
+      const bool rdt = !pin->DoesParameterExist("rad_m1","vet_gd_rotate_dt") ||
+          pin->GetString("rad_m1","vet_gd_rotate_dt") == "auto" ||
+          pin->GetReal("rad_m1","vet_gd_rotate_dt") > 0.0;
+      const bool rev = pin->DoesParameterExist("rad_m1","vet_gd_rotate_every") &&
+          pin->GetInteger("rad_m1","vet_gd_rotate_every") > 0;
+      if (rdt || rev) {
+        pin->GetOrAddInteger("rad_m1","vet_rotate_avg",4);
+        if (clean && rdt && !rev && !pin->DoesParameterExist("rad_m1","vet_gd_async")) {
+          pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_xfade",true);
+        }
+        recipe::Log("<rad_m1>/vet_rotate_avg = 4 (default with a rotating vet_gd set)");
+      }
     }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_gl_nmu")) {
       vgd_gl_nmu = pin->GetInteger("rad_m1","vet_gd_gl_nmu");
