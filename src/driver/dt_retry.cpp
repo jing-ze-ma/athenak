@@ -373,8 +373,12 @@ struct Binder {
   const std::set<std::string> *sel;
   bool all;
   bool host;   // dt_retry_host
+  const std::set<std::string> *hsel;   // dt_retry_host_views
   bool Deep(const std::string &n) const {
     return all || sel->count(pre + n) > 0;
+  }
+  bool Host(const std::string &n) const {
+    return host || hsel->count(pre + n) > 0;
   }
   template <class T> void value(const char *n, T &x) {
     auto e = std::make_unique<ValEntry<T>>(&x);
@@ -382,12 +386,12 @@ struct Binder {
     ent->push_back(std::move(e));
   }
   template <class T> void view(const char *n, T &x) {
-    auto e = std::make_unique<ViewEntry<T>>(&x, Deep(n), host);
+    auto e = std::make_unique<ViewEntry<T>>(&x, Deep(n), Host(n));
     e->name = pre + n;
     ent->push_back(std::move(e));
   }
   template <class T> void dual(const char *n, T &x) {
-    auto e = std::make_unique<DualEntry<T>>(&x, Deep(n), host);
+    auto e = std::make_unique<DualEntry<T>>(&x, Deep(n), Host(n));
     e->name = pre + n;
     ent->push_back(std::move(e));
   }
@@ -504,6 +508,14 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   if (pin->DoesParameterExist("time", "dt_retry_host")) {
     host_ = pin->GetBoolean("time", "dt_retry_host");
   }
+  // <time>/dt_retry_host_views (read only when named): a comma list of checkpoint
+  // Views (e.g. m1.cln_fvis) whose clones live in pinned host memory, the others on
+  // the device; the same bytes are copied back either way
+  if (pin->DoesParameterExist("time", "dt_retry_host_views")) {
+    std::stringstream ss(pin->GetString("time", "dt_retry_host_views"));
+    std::string w;
+    while (std::getline(ss, w, ',')) {if (!w.empty()) host_views_.insert(w);}
+  }
   // debug / audit keys, read only when named (the parameter dump is unchanged otherwise)
   if (pin->DoesParameterExist("time", "dt_retry_force_cycle")) {
     force_cycle_ = pin->GetInteger("time", "dt_retry_force_cycle");
@@ -568,26 +580,26 @@ void DtRetry::Build(Mesh *pm) {
   for (auto &s : extra_views_) {sel.insert(s);}
   auto *pk = pm->pmb_pack;
   if (pk->phydro != nullptr) {
-    Binder b{&ent_, "hyd.", &sel, all_views_, host_};
+    Binder b{&ent_, "hyd.", &sel, all_views_, host_, &host_views_};
     pk->phydro->DtRetryVisit(b);
   }
   // MHD (and its resistivity, when <mhd>/ohmic_resistivity is set)
   if (pk->pmhd != nullptr) {
-    Binder b{&ent_, "mhd.", &sel, all_views_, host_};
+    Binder b{&ent_, "mhd.", &sel, all_views_, host_, &host_views_};
     pk->pmhd->DtRetryVisit(b);
     if (pk->pmhd->presist != nullptr) {
-      Binder br{&ent_, "res.", &sel, all_views_, host_};
+      Binder br{&ent_, "res.", &sel, all_views_, host_, &host_views_};
       pk->pmhd->presist->DtRetryVisit(br);
     }
   }
   {
-    Binder b{&ent_, "m1.", &sel, all_views_, host_};
+    Binder b{&ent_, "m1.", &sel, all_views_, host_, &host_views_};
     pk->pradm1->DtRetryVisit(b);
   }
   // the angular-momentum module (<hydro|mhd>/am_transport, am_vector,
   // frame_omega; exists only when one of its keys is named)
   if (hydro::AmModule *pam = hydro::AmModuleOf(pk)) {
-    Binder b{&ent_, "am.", &sel, all_views_, host_};
+    Binder b{&ent_, "am.", &sel, all_views_, host_, &host_views_};
     pam->DtRetryVisit(b);
   }
   // dt_retry_host skips the host copy of vet_rotate_avg's history vra_d
@@ -636,7 +648,7 @@ void DtRetry::Save(Mesh *pm) {
       std::cout << "<time> dt_retry checkpoint: " << ent_.size() << " members, " << nv
                 << " Views (" << nd << " copied, " << static_cast<double>(b)/1.0e6
                 << " MB on rank 0";
-      if (host_) {
+      if (host_ || !host_views_.empty()) {
         std::cout << ", dt_retry_host: " << static_cast<double>(bh)/1.0e6
                   << " MB of it in pinned host memory";
       }

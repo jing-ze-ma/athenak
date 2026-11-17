@@ -179,6 +179,7 @@ class DtRetry {
   bool clean_views_ = false;   // dt_retry_views = clean
   bool audit_ = false;
   bool host_ = false;      // <time>/dt_retry_host: clones in pinned host mem
+  std::set<std::string> host_views_;   // <time>/dt_retry_host_views
   int poison_ = 0;
   Real fac_ = 0.5, grow_ = 1.25;
   static constexpr int maxcut_ = 8;   // cuts of one cycle before the run stops
