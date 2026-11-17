@@ -1088,10 +1088,14 @@ int RadiationM1::CleanBiCGStab() {
   // their own per-row test): besides the test relative to |b|, which leaves an envelope
   // far below the core at its first preconditioned iterate (MeshBlock-dependent, rule
   // 5), max_i |r_i|/(a_i E_i) <= cnorm, a_i the row's diagonal (CLW_A0), E_i the
-  // iterate.  (Production's s_i = 1 + h c chi_E is below the round-off of a
-  // transport-dominated row.)  Where that measure stops falling (stall window below)
-  // with the global test met, it is at the round-off of an empty or free-streaming row,
-  // and the solve is converged
+  // largest of the Newton iterate E^k and the solve's |X| over the row's stencil: an
+  // M-matrix row's off-diagonals sum to at most a_i, so a_i E_i bounds its round-off
+  // (Oettli-Prager), also in a cell next to a beam whose own E is ~0 (with E^k alone the
+  // test was unattainable there, and every solve ran to the stall window).
+  // (Production's s_i = 1 + h c chi_E is below the round-off of a transport-dominated
+  // row.)  Where that measure stops falling (stall window below) with the global test
+  // met, it is at the round-off of an empty or free-streaming row, and the solve is
+  // converged
   const Real cnt = cln_insteady ? cln_cnorm : cln_lcnorm;
   const bool cn = (cnt > 0.0) && !bud && !cell;
   const Real efl = e_floor, inf = std::numeric_limits<Real>::infinity();
@@ -1101,11 +1105,16 @@ int RadiationM1::CleanBiCGStab() {
     if (!(std::sqrt(r2) <= t)) return false;
     if (!cn) return true;
     Real a = 0.0;
+    const int dj = pmy_pack->pmesh->multi_d, dk = pmy_pack->pmesh->three_d;
     Kokkos::parallel_reduce("cln_cnorm", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
         DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &mx) {
-      mx = fmax(mx, fabs(w(m,s,k,j,i))/fmax(cnt*fabs(w(m,CLW_A0,k,j,i))*
-                                            fmax(w(m,CLW_EK,k,j,i), efl), 1.0e-300));
+      Real e = fmax(w(m,CLW_EK,k,j,i), efl);
+      for (int o = -1; o <= 1; o += 2) {
+        e = fmax(e, fmax(fabs(w(m,sx,k,j,i+o)), fabs(w(m,sx,k,j+o*dj,i))));
+        e = fmax(e, fmax(fabs(w(m,sx,k+o*dk,j,i)), fabs(w(m,sx,k,j,i))));
+      }
+      mx = fmax(mx, fabs(w(m,s,k,j,i))/fmax(cnt*fabs(w(m,CLW_A0,k,j,i))*e, 1.0e-300));
     }, Kokkos::Max<Real>(a));
     a = CleanReduce(a, true);
     cmet = true;
