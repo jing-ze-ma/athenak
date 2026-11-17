@@ -3353,7 +3353,8 @@ bool VgdHaloKeepTP(const Real nx, const Real ny, const Real nz, const Real th,
     const Real pp = fmin(ph_, rs);
     dl = fmax(dl, asin(fmin(pp/rs, 1.0)) - asin(fmin(pp/rp, 1.0)));
   }
-  return dep <= static_cast<int>(dl/dmin) + 3;
+  // (the read point is up to dl from the cell centre: up to ceil(dl/dmin) cells away)
+  return dep <= static_cast<int>(ceil(dl/dmin)) + 3;
 }
 
 KOKKOS_INLINE_FUNCTION
