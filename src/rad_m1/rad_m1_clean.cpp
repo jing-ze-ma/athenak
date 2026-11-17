@@ -747,7 +747,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         CleanPreconditionerSetup();
       }
       if (fpc) RstFingerprint(("cln_pass" + std::to_string(inl) + "_pre").c_str());
+      if (cell && cln_ast > 0) CleanCellApplyStore();
       nit = CleanBiCGStab();
+      cln_ast_on = false;
       cln_tol_pass = 0.0;
       if (fpc) RstFingerprint(("cln_pass" + std::to_string(inl) + "_post").c_str());
       // (clean_yres = local: the local exchange of the solution X, kept while a pass

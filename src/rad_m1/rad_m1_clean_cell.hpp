@@ -1237,6 +1237,116 @@ void CleanCellFaceFlux(const CleanArgs &x, const int v, const int dir, const int
   }
 }
 
+// the stored operator of an interior face (clean_apply_store): the derivatives jl, jr of
+// CleanCellFaceJacobian that are not zero by construction (rows of E, the E columns and
+// the diagonals of the y rows), the RC terms, the reconstruction terms and flags
+constexpr int CLS_JL = 0;    // jl[0][0..3], jl[1..3][0], jl[1..3][1..3] (10)
+constexpr int CLS_JR = 10;   // the same of jr
+constexpr int CLS_RL = 20;   // q[0] n.D.n of L-1, q[3] n.D.n of R+1, their weight
+constexpr int CLS_HS = 23;   // the reconstruction weight of fE, of fY
+constexpr int CLS_CJ = 25;   // the jump coefficients cj[0] of E, y_1..3, then cj[3]
+constexpr int CLS_FL = 33;   // CLS_FB: physical boundary (fluxes not stored), CLS_FR
+constexpr int CLS_N = 34;
+constexpr int CLS_FB = 1;
+constexpr int CLS_FR = 2;
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanCellStoreFace
+//! \brief the stored operator of face (k,j,i) normal to dir into slot (ks,js,is) of s:
+//! the coefficients of CleanCellFaceFlux (with_source false) as it forms them
+
+template <typename T>
+KOKKOS_INLINE_FUNCTION
+void CleanCellStoreFace(const CleanArgs &x, const int dir, const int m, const int k,
+                        const int j, const int i, const DvceArray5D<T> &s, const int ko,
+                        const int jo, const int io) {
+  auto put = [&](const int n, const Real v) {s(m,n,ko,jo,io) = static_cast<T>(v);};
+  Real jl[4][4], jr[4][4];
+  CleanCellFaceJacobian(x, dir, m, k, j, i, jl, jr);
+  for (int c = 0; c < 4; ++c) {
+    put(CLS_JL+c, jl[0][c]);
+    put(CLS_JR+c, jr[0][c]);
+  }
+  for (int b = 0; b < 3; ++b) {
+    put(CLS_JL+4+b, jl[1+b][0]);
+    put(CLS_JR+4+b, jr[1+b][0]);
+    put(CLS_JL+7+b, jl[1+b][1+b]);
+    put(CLS_JR+7+b, jr[1+b][1+b]);
+  }
+  for (int n = CLS_RL; n < CLS_FL; ++n) put(n, 0.0);
+  if (CleanBoundaryFace(x, dir, m, k, j, i)) {
+    put(CLS_FL, CLS_FB);
+    return;
+  }
+  const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+  const int kp = k + dk, jp = j + dj, ip = i + di;
+  const int km = k - 2*dk, jm = j - 2*dj, im = i - 2*di;
+  Real al, hs;
+  const bool lo = CleanFaceDissipation(x, dir, m, k, j, i, al, hs);
+  const Real sw = x.consist ? 1.0 - x.fc[dir](m,CLF_WK,k,j,i) : 1.0;
+  const Real mu = x.milne ? x.fc[dir](m,CLF_ML,k,j,i) : 0.0;
+  Real q[4];
+  CleanCellRhieChow(x, dir, lo, m, k, j, i, q);
+  hs *= sw;
+  put(CLS_RL, q[0]*CleanDnn(x, dir, m, k, j, i, km, jm, im));
+  put(CLS_RL+1, q[3]*CleanDnn(x, dir, m, k, j, i, kp, jp, ip));
+  put(CLS_RL+2, (1.0 - mu)*sw);
+  const bool rc = x.recon && !lo;
+  put(CLS_FL, rc ? CLS_FR : 0);
+  if (!rc) return;
+  put(CLS_HS, (1.0 - mu)*hs);
+  put(CLS_HS+1, hs);
+  for (int c = 0; c < 4; ++c) {
+    if (c <= x.nf) {
+      Real cj[4];
+      CleanJumpCoefficients(x, dir, c, m, k, j, i, cj);
+      put(CLS_CJ+c, cj[0]);
+      put(CLS_CJ+4+c, cj[3]);
+    }
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanCellStoredFlux
+//! \brief face fluxes f of face (k,j,i) normal to dir of the cell vector at slot v from
+//! the stored operator in slot (ko,jo,io) of s, in the arithmetic order of
+//! CleanCellFaceFlux (with_source false; the terms dropped are zero).  Returns false
+//! for a physical boundary face (f not set), whose fluxes are not stored.
+
+template <typename T>
+KOKKOS_INLINE_FUNCTION
+bool CleanCellStoredFlux(const CleanArgs &x, const int v, const int dir, const int m,
+                         const int k, const int j, const int i, const DvceArray5D<T> &s,
+                         const int ko, const int jo, const int io, Real f[4]) {
+  auto get = [&](const int n) {return static_cast<Real>(s(m,n,ko,jo,io));};
+  const int fl = static_cast<int>(s(m,CLS_FL,ko,jo,io));
+  if (fl & CLS_FB) return false;
+  const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+  const int kl = k - dk, jl_ = j - dj, il = i - di;
+  Real ul[4], ur[4];
+  CleanCellState(x, v, m, kl, jl_, il, ul);
+  CleanCellState(x, v, m, k, j, i, ur);
+  f[0] = 0.0;
+  for (int c = 0; c < 4; ++c) f[0] += get(CLS_JL+c)*ul[c] + get(CLS_JR+c)*ur[c];
+  for (int b = 0; b < 3; ++b) {
+    f[1+b] = 0.0;
+    f[1+b] += get(CLS_JL+4+b)*ul[0] + get(CLS_JR+4+b)*ur[0];
+    f[1+b] += get(CLS_JL+7+b)*ul[1+b] + get(CLS_JR+7+b)*ur[1+b];
+  }
+  const int kp = k + dk, jp = j + dj, ip = i + di;
+  const int km = kl - dk, jm = jl_ - dj, im = il - di;
+  f[0] += get(CLS_RL+2)*(get(CLS_RL+1)*x.u(m,v,kp,jp,ip) + get(CLS_RL)*x.u(m,v,km,jm,im));
+  if (!(fl & CLS_FR)) return true;
+  CleanCellState(x, v, m, km, jm, im, ul);
+  CleanCellState(x, v, m, kp, jp, ip, ur);
+  for (int c = 0; c < 4; ++c) {
+    if (c <= x.nf) {
+      f[c] -= get(CLS_HS+(c > 0))*(get(CLS_CJ+c)*ul[c] + get(CLS_CJ+4+c)*ur[c]);
+    }
+  }
+  return true;
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn void CleanCellDivergence
 //! \brief h div of the face fluxes of cell (k,j,i) for the cell vector at slot v (adiv

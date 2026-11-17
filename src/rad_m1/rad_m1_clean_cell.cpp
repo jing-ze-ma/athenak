@@ -710,6 +710,10 @@ void RadiationM1::CleanCellFaceFluxesDir(const int src, const bool with_source) 
       CleanCellFaceFlux(x, src, kDir, m, k, j, i, true, f);
       for (int r = 0; r < 4; ++r) ff(m,4*kDir+r,k,j,i) = f[r];
     });
+  } else if (cln_ast_on && cln_ast == 2) {
+    CleanCellStoredFluxes<kDir>(cln_asf[kDir], src);
+  } else if (cln_ast_on) {
+    CleanCellStoredFluxes<kDir>(cln_asd[kDir], src);
   } else if (x.consist || x.milne) {
     par_for("clc_applyf", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -725,6 +729,92 @@ void RadiationM1::CleanCellFaceFluxesDir(const int src, const bool with_source) 
       for (int r = 0; r < 4; ++r) ff(m,4*kDir+r,k,j,i) = f[r];
     });
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellApplyStore
+//! \brief clean_apply_store: the operator of the faces for the applies of the linear
+//! solve that follows (CleanCellStoreFace; the solve leaves cln_ast_on false)
+
+void RadiationM1::CleanCellApplyStore() {
+  if (cln_ast == 2) {
+    CleanCellApplyStoreBuild(cln_asf);
+  } else {
+    CleanCellApplyStoreBuild(cln_asd);
+  }
+  cln_ast_on = true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellApplyStoreBuild
+//! \brief the stored operator of every face of the active cells in st (per direction,
+//! indexed from the first active face)
+
+template <typename T>
+void RadiationM1::CleanCellApplyStoreBuild(DvceArray5D<T> (&st)[3]) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanArgs x = CleanMakeArgs();
+  for (int dir = 0; dir < 3; ++dir) {
+    if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
+    const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+    const int n3 = ke - ks + 1 + dk, n2 = je - js + 1 + dj, n1 = ie - is + 1 + di;
+    if (st[dir].extent_int(0) != nmb1 + 1 || st[dir].extent_int(2) != n3 ||
+        st[dir].extent_int(3) != n2 || st[dir].extent_int(4) != n1) {
+      st[dir] = DvceArray5D<T>("cln_as", nmb1 + 1, CLS_N, n3, n2, n1);
+    }
+    auto s = st[dir];
+    par_for("clc_astore", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      CleanCellStoreFace(x, dir, m, k, j, i, s, k - ks, j - js, i - is);
+    });
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellStoredFluxes
+//! \brief the face fluxes of CleanCellFaceFluxes normal to kDir (with_source false) from
+//! the stored operator st; those of the physical boundary faces as CleanCellFaceFlux
+
+template <int kDir, typename T>
+void RadiationM1::CleanCellStoredFluxes(const DvceArray5D<T> &st, const int src) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanArgs x = CleanMakeArgs();
+  auto ff = cln_ff;
+  auto s = st;
+  const int dk = (kDir == 2), dj = (kDir == 1), di = (kDir == 0);
+  par_for("clc_applys", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real f[4];
+    if (!CleanCellStoredFlux(x, src, kDir, m, k, j, i, s, k - ks, j - js, i - is, f)) {
+      return;
+    }
+    for (int r = 0; r < 4; ++r) ff(m,4*kDir+r,k,j,i) = f[r];
+  });
+  // the two planes of faces normal to kDir on the MeshBlock faces (a, b: the transverse
+  // indices, the slower one first)
+  const int a0 = (kDir == 2) ? js : ks, a1 = (kDir == 2) ? je : ke;
+  const int b0 = (kDir == 0) ? js : is, b1 = (kDir == 0) ? je : ie;
+  const int lo = (kDir == 0) ? is : ((kDir == 1) ? js : ks);
+  const int hi = ((kDir == 0) ? ie : ((kDir == 1) ? je : ke)) + 1;
+  par_for("clc_applyb", DevExeSpace(), 0, nmb1, 0, 1, a0, a1, b0, b1,
+  KOKKOS_LAMBDA(const int m, const int side, const int a, const int b) {
+    const int p = side ? hi : lo;
+    const int k = (kDir == 2) ? p : a;
+    const int j = (kDir == 1) ? p : ((kDir == 2) ? a : b);
+    const int i = (kDir == 0) ? p : b;
+    if (!CleanBoundaryFace(x, kDir, m, k, j, i)) return;
+    Real f[4];
+    CleanCellFaceFlux(x, src, kDir, m, k, j, i, false, f);
+    for (int r = 0; r < 4; ++r) ff(m,4*kDir+r,k,j,i) = f[r];
+  });
 }
 
 //----------------------------------------------------------------------------------------

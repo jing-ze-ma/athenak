@@ -2999,6 +2999,11 @@ class RadiationM1 {
   void CleanCellFaceFluxes(const int src, const bool with_source);
   template <int kDir>
   void CleanCellFaceFluxesDir(const int src, const bool with_source);
+  void CleanCellApplyStore();
+  template <typename T>
+  void CleanCellApplyStoreBuild(DvceArray5D<T> (&st)[3]);
+  template <int kDir, typename T>
+  void CleanCellStoredFluxes(const DvceArray5D<T> &st, const int src);
   void CleanCellApply(const int src, const int dst);
   void CleanCellPreconditionerSetup();
   void CleanCellPrecondition(const int src, const int dst);
@@ -3086,6 +3091,8 @@ class RadiationM1 {
   int cln_hmax = 16;            // clean_halo_vars: most variables of one ghost exchange
   bool cln_pcfac = true;        // clean_pc_factor: x1line keeps the factors of its lines
   bool cln_pcf32 = false;       // clean_pc_factor_float: ... in single precision
+  int cln_ast = 0;              // clean_apply_store: 0 none, 1 double, 2 float
+  bool cln_ast_on = false;      // the store holds the operator of the current solve
   int cln_pcreuse = 1;          // clean_pc_reuse: preconditioner rebuilt every n passes
   bool cln_conv_est = false;    // clean_conv_est: stop on the estimated remaining change
   int cln_opnp = 1 << 30;       // clean_opac_passes: passes that update the opacities
@@ -3222,6 +3229,8 @@ class RadiationM1 {
                                 // closure, for <hydro>/rad_signal_speed (no tau_ten)
   DvceArray1D<Real> cln_lw;     // rows of the line solves, a block per team
   DvceArray5D<Real> cln_ff;     // face fluxes of the operator (CleanCellApply)
+  DvceArray5D<Real> cln_asd[3];   // clean_apply_store: the operator of the faces (CLS_*)
+  DvceArray5D<float> cln_asf[3];  // the same in single precision
   DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)
   DvceArray5D<Real> cln_fref;   // force_reference = clean: reference force (m,3,k,j,i)
   bool cln_fref_set = false;    // cln_fref holds the force of the first coupled solve

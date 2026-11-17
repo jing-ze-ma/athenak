@@ -277,6 +277,22 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_pc_factor_float")) {
       cln_pcf32 = pin->GetBoolean("rad_m1","clean_pc_factor_float");
     }
+    // clean_apply_store = none (default) | double | float: the operator of the faces
+    // (CleanCellStoreFace) is kept for the applies of a linear solve instead of formed
+    // in each; double gives the same answers, float changes them at its precision
+    if (pin->DoesParameterExist("rad_m1","clean_apply_store")) {
+      const std::string as = pin->GetString("rad_m1","clean_apply_store");
+      if (as == "double") {
+        cln_ast = 1;
+      } else if (as == "float") {
+        cln_ast = 2;
+      } else if (as != "none") {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/clean_apply_store = " << as
+                  << " (none, double or float)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     if (pin->DoesParameterExist("rad_m1","clean_pc_reuse")) {
       cln_pcreuse = std::max(pin->GetInteger("rad_m1","clean_pc_reuse"), 1);
     }
