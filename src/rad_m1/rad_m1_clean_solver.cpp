@@ -1085,24 +1085,32 @@ int RadiationM1::CleanBiCGStab() {
   }
   // clean_init_cnorm > 0, the steady start's solves, and clean_lin_cnorm > 0, the steps'
   // strict ones (as the old production's implicit_lin_cnorm; the budget's passes keep
-  // their own per-row test): max_i |r_i|/(a_i E_i) <= cnorm, a_i the row's diagonal
-  // (CLW_A0), E_i the iterate.  The test relative to |b| leaves an envelope far below
-  // the core at its first preconditioned iterate, which depends on the MeshBlock
-  // decomposition (rule 5).  (Production's s_i = 1 + h c chi_E, the M-matrix excess,
-  // is below the round-off of a transport-dominated row at the steady start's h)
+  // their own per-row test): besides the test relative to |b|, which leaves an envelope
+  // far below the core at its first preconditioned iterate (MeshBlock-dependent, rule
+  // 5), max_i |r_i|/(a_i E_i) <= cnorm, a_i the row's diagonal (CLW_A0), E_i the
+  // iterate.  (Production's s_i = 1 + h c chi_E is below the round-off of a
+  // transport-dominated row.)  Where that measure stops falling (stall window below)
+  // with the global test met, it is at the round-off of an empty or free-streaming row,
+  // and the solve is converged
   const Real cnt = cln_insteady ? cln_cnorm : cln_lcnorm;
   const bool cn = (cnt > 0.0) && !bud && !cell;
-  const Real efl = e_floor;
+  const Real efl = e_floor, inf = std::numeric_limits<Real>::infinity();
+  Real cmin = inf, cwin = inf;
+  bool cmet = false;
   auto conv = [&](const int s, const Real r2, const Real t) {
-    if (!cn) return std::sqrt(r2) <= t;
+    if (!(std::sqrt(r2) <= t)) return false;
+    if (!cn) return true;
     Real a = 0.0;
     Kokkos::parallel_reduce("cln_cnorm", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
         DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &mx) {
-      mx = fmax(mx, fabs(w(m,s,k,j,i))/(fabs(w(m,CLW_A0,k,j,i))*
-                                       fmax(w(m,CLW_EK,k,j,i), efl)));
+      mx = fmax(mx, fabs(w(m,s,k,j,i))/fmax(cnt*fabs(w(m,CLW_A0,k,j,i))*
+                                            fmax(w(m,CLW_EK,k,j,i), efl), 1.0e-300));
     }, Kokkos::Max<Real>(a));
-    return CleanReduce(a, true) <= cnt;
+    a = CleanReduce(a, true);
+    cmet = true;
+    cmin = fmin(cmin, a);
+    return a <= 1.0;
   };
   if (conv(sr, rr, tol)) return 0;
   auto done = [&](const int it) {return restart(it, true) && conv(sr, rr, 10.0*tol);};
@@ -1115,7 +1123,12 @@ int RadiationM1::CleanBiCGStab() {
   for (int it = 1; it <= cln_maxit; ++it) {
     rmin = fmin(rmin, std::sqrt(rr));
     if (cln_stall_n > 0 && it > 1 && (it - 1) % cln_stall_n == 0) {
-      if (!(rmin < cln_stall_f*rwin)) {
+      if (cmet) {   // (cnorm with the global test met: the per-cell measure's window)
+        if (!(cmin < cln_stall_f*cwin)) {
+          return (restart(it, true) && std::sqrt(rr) <= 10.0*tol) ? it : -it;
+        }
+        cwin = cmin;
+      } else if (!(rmin < cln_stall_f*rwin)) {
         if (global_variable::my_rank == 0) {
           std::printf("CLEAN BICGSTAB stall cycle %d it %d |r|/tol %.3e\n",
                       pmy_pack->pmesh->ncycle, it - 1, rmin/tol);
