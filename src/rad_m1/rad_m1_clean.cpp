@@ -975,7 +975,13 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         CleanPreconditionerSetup();
       }
       if (fpc) RstFingerprint(("cln_pass" + std::to_string(inl) + "_pre").c_str());
+      // (budget: a pass whose iterate the next pass takes the closure of is solved in
+      // the strict norm, so that closure does not carry the inexact solve: with
+      // clean_closure = extrap1/2 or iterate the step's answer depends on it)
+      const bool cnext = (cln_closit && inl + 1 < cln_maxpic) || (clos1 && inl == 0);
+      if (cnext) cln_ewr = -2.0;
       nit = CleanBiCGStab();
+      if (cnext) cln_ewr = -1.0;
       if (fpc) RstFingerprint(("cln_pass" + std::to_string(inl) + "_post").c_str());
       // (clean_yres = local: the local exchange of the solution X, kept while a pass
       // leaves X as it is, so that the gas does not take the round-off of a new residual)

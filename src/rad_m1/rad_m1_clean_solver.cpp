@@ -906,7 +906,7 @@ int RadiationM1::CleanBiCGStab() {
   // clean_conv = budget, in the Newton passes (a single solve keeps clean_tol in its own
   // norm): the rows over their gross terms S (CleanRightHandSide), W A X = W B with
   // W = 1/S, right-preconditioned by M^-1 W^-1, so that every norm below is the budget's
-  const bool bud = cln_bon && !cell;
+  const bool bud = cln_bon && !cell && cln_ewr > -1.5;
   const int sx = cell ? CLC_X : CLW_X, sb = cell ? CLC_B : (bud ? CLW_BW : CLW_B);
   const int sr = cell ? CLC_R : CLW_R, sr0 = cell ? CLC_R0 : CLW_R0;
   const int sp = cell ? CLC_P : CLW_P, sv = cell ? CLC_V : CLW_V;
