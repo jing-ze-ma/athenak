@@ -1530,7 +1530,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (cln_ring == 2) vgd_rot_slope = 2;
     // vgdxf-1112: vet_gd_rotate_xfade (read only when named; rad_m1.hpp)
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade")) {
-      vgd_xf = pin->GetBoolean("rad_m1","vet_gd_rotate_xfade");
+      // (a fixed set has nothing to cross-fade: the key is inert there)
+      vgd_xf = pin->GetBoolean("rad_m1","vet_gd_rotate_xfade") && VgdRotOn();
       // (the combination checks: VetGdXfade, after every key is read)
       if (vgd_xf && pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade_m")) {
         vgd_xf_m = pin->GetInteger("rad_m1","vet_gd_rotate_xfade_m");
