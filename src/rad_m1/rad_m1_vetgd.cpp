@@ -137,6 +137,7 @@ namespace radm1 {
 // than its shell's laterally uniform twin (a thick bump in a mostly thin shell, the accretor's
 // L1 tip) keeps its own D_gd instead of the thin shell's twin-minus-reference bias (D_rr 0.26,
 // D_tt 0.37 in tau > 30 cells without it); w = 1 cells are bitwise.  Parsed in rad_m1.cpp.
+#if !defined(M1_VGD_SWEEP_TU)
 bool g_vgd_srw = false;
 // rotadv-1102 <rad_m1>/vet_rotate_advance (read only when named, default false = bitwise;
 // parsed in VetRotInit, one RadiationM1 per rank): with vet_rotate_avg = K the set of
@@ -144,6 +145,7 @@ bool g_vgd_srw = false;
 // window the closure averages advances through SO(3) (3d axis) or the azimuth (z axis)
 // instead of freezing one fixed K-set pattern in space
 bool g_vra_adv = false;
+#endif
 
 namespace {
 // env VGD_ASYNC_POLL_US (diagnostic): the async helper polls its MPI with these sleeps
@@ -803,6 +805,7 @@ bool VgdLevelSym(const int nl, std::vector<double> &d) {
   return true;
 }
 } // namespace
+#if !defined(M1_VGD_SWEEP_TU)
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VgdBuildSet
@@ -6124,6 +6127,12 @@ void RadiationM1::VetGdX1Pass(const bool up) {
   Kokkos::deep_copy(vgd_x1r, rh);
 }
 
+#endif  // !M1_VGD_SWEEP_TU
+
+// vgdtu-1117: VetGdSweep and its shell-body kernels are compiled in their own TU,
+// rad_m1_vetgd_sweep.cpp (this file with M1_VGD_SWEEP_TU: the includes, the helpers
+// above and this function only), so the two nvcc/ptxas halves build in parallel
+#if defined(M1_VGD_SWEEP_TU)
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdSweep
 //! \brief one sweep (inward then outward) of every direction
@@ -7285,6 +7294,7 @@ void RadiationM1::VetGdSweep() {
   }
   VetGdRingSweepEnd();
 }
+#else
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdUpPrep
@@ -11202,6 +11212,14 @@ void RadiationM1::DtRetryAfterRestore() {
   }
 }
 
+// vgdtu-1117: the band exchanges VetGdSweep (its own TU) calls
+template void RadiationM1::VetGdHalo<RadiationM1::VgdRag>(VgdRag &a, const int nv,
+    const int i0, const int i1, const int ws, const bool mapd, VgdRag *b);
+template bool RadiationM1::VetGdHlBegin<RadiationM1::VgdRag>(VgdRag &a, const int nv,
+    const int i0, const int ws, VgdRag *b);
+#endif  // !M1_VGD_SWEEP_TU
 } // namespace radm1
 
+#if !defined(M1_VGD_SWEEP_TU)
 #include "rad_m1_vetgd_sph2.inc"   // accsp-1102
+#endif

@@ -211,6 +211,7 @@ add_executable(
         rad_m1/rad_m1_memarena.cpp
         rad_m1/rad_m1_meshfb.cpp
         rad_m1/rad_m1_vetgd.cpp
+        rad_m1/rad_m1_vetgd_sweep.cpp
         rad_m1/rad_m1_vetgd_cs.cpp
         rad_m1/rad_m1_rotavg.cpp
         rad_m1/rad_m1_ringavg.cpp
@@ -353,7 +354,8 @@ endif()
 # NCCL halo (sp list halo + cs compact exchange; used with env ACC_NCCL=1 only): only the
 # two vet_gd sources get the define and the include path (the rest of the tree unchanged)
 if (DEFINED Athena_M1_VGD_NCCL_DIR AND NOT "${Athena_M1_VGD_NCCL_DIR}" STREQUAL "")
-  set_source_files_properties(rad_m1/rad_m1_vetgd.cpp rad_m1/rad_m1_vetgd_cs.cpp
+  set_source_files_properties(rad_m1/rad_m1_vetgd.cpp rad_m1/rad_m1_vetgd_sweep.cpp
+      rad_m1/rad_m1_vetgd_cs.cpp
       PROPERTIES COMPILE_DEFINITIONS M1_VGD_NCCL=1
       INCLUDE_DIRECTORIES ${Athena_M1_VGD_NCCL_DIR}/include)
   target_link_libraries(athena PRIVATE -L${Athena_M1_VGD_NCCL_DIR}/lib nccl
