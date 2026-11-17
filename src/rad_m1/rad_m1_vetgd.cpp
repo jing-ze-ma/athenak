@@ -2112,7 +2112,10 @@ void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
                   w3_h(m,k,j,q,t) = w3[t];
                 }
               }
-              mr_h(m,k,j,q) = a;
+              // (without wint the branch of the value read: r3[0] in the mirror row,
+              // whose own map continues it across a phi wall; else that pass's other
+              // branch, not yet swept, would be read in a corner of the band)
+              mr_h(m,k,j,q) = wint ? a : mr_h(m,k,jm,r3[0]);
             }
           }
         }
