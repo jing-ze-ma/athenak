@@ -5888,9 +5888,10 @@ void RadiationM1::VetGdX1Hand(const bool up) {
 //! \fn void RadiationM1::VetGdTopMirror
 //! \brief a reflecting outer x1 (scheme = clean): the inflow of every inward direction at
 //! the top face (the outer x1 ghost shell of vgd_i) is the top cell's intensity of the
-//! last sweep in its specular image n - 2 (n . r) r (the nearest set direction), scaled
-//! so that the inflow returns the outflow's radial flux; the top cell's E, isotropic,
-//! when the cell has no outflow (the first sweep)
+//! last sweep in its specular image n - 2 (n . r) r (the nearest set direction of this
+//! sweep's set, the first of directions as near to round-off), scaled so that the inflow
+//! returns the outflow's radial flux; the top cell's E, isotropic, when the cell has no
+//! outflow (the first sweep)
 
 void RadiationM1::VetGdTopMirror() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -5902,19 +5903,20 @@ void RadiationM1::VetGdTopMirror() {
   if (mp_.extent_int(0) != nmb1 + 1) {
     Kokkos::realloc(vgd_rmap, nmb1 + 1, nx3, nx2, n);
     mp_ = vgd_rmap;
-    par_for("m1_vgd_rmap", DevExeSpace(), 0, nmb1, 0, nx3 - 1, 0, nx2 - 1, 0, n - 1,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
-      const Real r[3] = {tg_(m,k,j,0)*tg_(m,k,j,3), tg_(m,k,j,0)*tg_(m,k,j,2),
-                         tg_(m,k,j,1)};
-      const Real mr = dir_(d,0)*r[0] + dir_(d,1)*r[1] + dir_(d,2)*r[2];
-      Real best = -2.0;
-      for (int q = 0; q < n; ++q) {
-        Real c = 0.0;
-        for (int a = 0; a < 3; ++a) {c += dir_(q,a)*(dir_(d,a) - 2.0*mr*r[a]);}
-        if (c > best) {best = c; mp_(m,k,j,d) = q;}
-      }
-    });
   }
+  // (every sweep: a rotating set changes the directions)
+  par_for("m1_vgd_rmap", DevExeSpace(), 0, nmb1, 0, nx3 - 1, 0, nx2 - 1, 0, n - 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
+    const Real r[3] = {tg_(m,k,j,0)*tg_(m,k,j,3), tg_(m,k,j,0)*tg_(m,k,j,2),
+                       tg_(m,k,j,1)};
+    const Real mr = dir_(d,0)*r[0] + dir_(d,1)*r[1] + dir_(d,2)*r[2];
+    Real best = -2.0;
+    for (int q = 0; q < n; ++q) {
+      Real c = 0.0;
+      for (int a = 0; a < 3; ++a) {c += dir_(q,a)*(dir_(d,a) - 2.0*mr*r[a]);}
+      if (c > best + 1.0e-12) {best = c; mp_(m,k,j,d) = q;}
+    }
+  });
   auto vi_ = vgd_i;
   auto iw_ = iw;
   auto xf_ = vgd_x1f;
@@ -5944,8 +5946,10 @@ void RadiationM1::VetGdTopMirror() {
 //! \fn void RadiationM1::VetGdInnerMirror
 //! \brief a reflecting inner x1 (scheme = clean), after the inward pass: the ratio of the
 //! inward radial flux of every column of the first shell to the outward flux of its
-//! specular images (nearest set directions), which scales the mirrored inflow of the
-//! inner face so that it returns the inflow (1 where either vanishes)
+//! specular images (nearest set directions, the first of those as near to round-off, so
+//! that the pick does not follow the last bits of the geometry), which scales the
+//! mirrored inflow of the inner face so that it returns the inflow (1 where either
+//! vanishes)
 
 void RadiationM1::VetGdInnerMirror() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -5977,7 +5981,7 @@ void RadiationM1::VetGdInnerMirror() {
         Real c = 0.0;
         for (int a = 0; a < 3; ++a) {c += dir_(q,a)*(dir_(d,a) - 2.0*mr*r[a]);}
         const Real mq = dir_(q,0)*r[0] + dir_(q,1)*r[1] + dir_(q,2)*r[2];
-        if (mq < 0.0 && c > best) {best = c; dm = q;}
+        if (mq < 0.0 && c > best + 1.0e-12) {best = c; dm = q;}
       }
       // (an image whose nearest set direction is outward holds no value of this sweep)
       const Real mm = dir_(dm,0)*r[0] + dir_(dm,1)*r[1] + dir_(dm,2)*r[2];
