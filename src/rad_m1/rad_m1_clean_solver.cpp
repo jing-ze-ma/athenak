@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <functional>
 #include <iostream>
 #include <limits>
 #include <string>
@@ -225,11 +226,16 @@ void RadiationM1::CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc,
   if constexpr (std::is_same<T, Real>::value) {
     int np = nc;
     for (auto &s : cln_hpend) np += s.nc;
-    if (part == 0 && np <= cln_hmax) sg.swap(cln_hpend);
+    // (part 2: the segments part 1 left in cln_hpend, nothing deferred in between)
+    if (part == 2 || np <= cln_hmax) sg.swap(cln_hpend);
+    if (part == 2) return CleanGhostExchange(sg, 2);
   }
-  if (part != 2) CleanGhostFlush();   // (those that do not fit: on their own first)
+  CleanGhostFlush();   // (those that do not fit: on their own first)
   sg.push_back({a, c0, nc, phys});
   CleanGhostExchange(sg, part);
+  if constexpr (std::is_same<T, Real>::value) {
+    if (part == 1) cln_hpend.swap(sg);
+  }
 }
 
 template <typename T>
@@ -797,16 +803,51 @@ void RadiationM1::CleanFaceCoefficients() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void CleanOverlapFor
+//! \brief old production's implicit_halo_overlap: f(m,k,j,i) over the active cells
+//! CleanInner by ng while a ghost exchange is in flight, then fin() (its second half),
+//! then f over the other active cells.  ov = false (or MeshBlocks too thin): fin(), then f
+//! over all of them.  Each cell's value is the same either way
+
+// (fin a std::function: nvcc takes no host lambda type in an extended lambda's parent)
+template <typename F>
+static void CleanOverlapFor(const std::string &nm, MeshBlockPack *pp, const bool ov,
+                            const F &f, const std::function<void()> &fin) {
+  auto &id = pp->pmesh->mb_indcs;
+  const int g = id.ng, nmb1 = pp->nmb_thispack - 1, is = id.is, js = id.js, ks = id.ks;
+  const bool md = pp->pmesh->multi_d, td = pp->pmesh->three_d;
+  const CleanShell sh(id.nx3, id.nx2, id.nx1, g, 0, id.nx1-1, 0, id.nx2-1, 0, id.nx3-1,
+                      md, td);
+  if (!ov || sh.Empty()) {
+    fin();
+    par_for(nm, DevExeSpace(), 0, nmb1, id.ks, id.ke, id.js, id.je, id.is, id.ie, f);
+    return;
+  }
+  par_for(nm, DevExeSpace(), 0, nmb1, ks + sh.k0, ks + sh.k1, js + sh.j0, js + sh.j1,
+          is + sh.i0, is + sh.i1, f);
+  fin();
+  par_for(nm + "_sh", DevExeSpace(), 0, nmb1, 0, sh.ncell-1,
+  KOKKOS_LAMBDA(const int m, const int q) {
+    int k, j, i;
+    CleanShellCell(sh, q, k, j, i);
+    f(m, ks + k, js + j, is + i);
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanApply
-//! \brief w(dst) = A w(src) over the active cells (the linear part of the operator)
+//! \brief w(dst) = A w(src) over the active cells (the linear part of the operator); the
+//! exchange of src overlaps the inner cells (not on the cubed sphere: CleanStagCsLateral
+//! reads its ghosts first)
 
 void RadiationM1::CleanApply(const int src, const int dst) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  int is = indcs.is, ie = indcs.ie;
-  int js = indcs.js, je = indcs.je;
-  int ks = indcs.ks, ke = indcs.ke;
-  int nmb1 = pmy_pack->nmb_thispack - 1;
-  CleanGhostFill(cln_w, src, 1);
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const bool ov = !pmy_pack->pmesh->use_cubed_sphere;
+  auto wa = (src < cln_w.ns) ? cln_w.s : cln_w.o;   // (src's array, CLW_NS)
+  const int ws = (src < cln_w.ns) ? src : src - cln_w.ns;
+  CleanGhostFill(wa, ws, 1, true, ov ? 1 : 0);
+  const std::function<void()> fin = [&]() {if (ov) CleanGhostFill(wa, ws, 1, true, 2);};
   CleanStagCsLateral(src, cln_stst);
   CleanArgs x = CleanMakeArgs(), xh = x;
   x.fwc = true;
@@ -819,8 +860,7 @@ void RadiationM1::CleanApply(const int src, const int dst) {
     // (cubed sphere: the lateral stress of every face from the sums Y, CleanFaceCross)
     const bool cub = x.cub;
     const CleanArgs *px = cub ? CleanDevArgs(x, 0) : nullptr;
-    par_for("cln_apply_st", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    auto f = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real a = 0.0;
 #pragma unroll
       for (int s = 0; s < CLN_ST; ++s) {
@@ -842,20 +882,21 @@ void RadiationM1::CleanApply(const int src, const int dst) {
         }
       }
       w(m,dst,k,j,i) = a;
-    });
+    };
+    CleanOverlapFor("cln_apply_st", pmy_pack, ov, f, fin);
     return;
   }
   const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
 
-  par_for("cln_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+  auto f = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
     const Real qr = x.feedback ? x.w(m,CLW_RY,k,j,i) : 1.0;   // (1 - r)
     x.w(m,dst,k,j,i) = x.w(m,src,k,j,i)*(1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*qr)
                        + CleanFluxDivergence(x, src, m, k, j, i, false);
     // (clean_stag_sbimp: - (1 - r) sb(E), CleanRightHandSide)
     if (x.sbi) x.w(m,dst,k,j,i) -= qr*CleanStagBetaE(xh, src, m, k, j, i);
-  });
+  };
+  CleanOverlapFor("cln_apply", pmy_pack, ov, f, fin);
 }
 
 //----------------------------------------------------------------------------------------
