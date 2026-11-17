@@ -121,6 +121,12 @@ void RadiationM1::CleanInit() {
   // the opacities depend on T: tables, or the T exponent (bump) of powerlaw (user)
   cln_opt = cln_cell && !opac_freeze && !opac_zero && (opacity_type == M1_OPAC_TABLE ||
             (opacity_type != M1_OPAC_CONST && opac_b != 0.0));
+  if (cln_tol_op > 0.0 && !cln_opt) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "<rad_m1>/clean_tol_opac needs opacities that follow T (cell layout, "
+              << "a table or a T law)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   Kokkos::realloc(cln_fc1, nmb, nfc, n3, n2, n1);
   Kokkos::realloc(cln_fc2, nmb, nfc, n3, n2, n1);
   Kokkos::realloc(cln_fc3, nmb, nfc, n3, n2, n1);
@@ -637,6 +643,11 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   }
   FluidRef fl = FluidRef::Get(pmy_pack);
   cln_feedback = gas_feedback && fl.on;
+  if (cln_tol_op > 0.0 && !cln_feedback) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "<rad_m1>/clean_tol_opac needs the gas coupling" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   const bool cell = cln_cell;
 
   // 1. starting face fluxes on the first cycle (restarts carry them)
@@ -717,6 +728,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       }
       // (the opacities of the iterate's T, lagged after clean_opac_passes)
       const bool opit = cln_opt && cln_feedback && inl < cln_opnp;
+      // (clean_tol_opac: these passes solve to it and do not end the iteration)
+      const bool loose = opit && (cln_tol_op > 0.0);
+      cln_tol_pass = loose ? cln_tol_op : 0.0;
       if (opit && inl > 0) {
         CleanCellOpacity();
         CleanCellFaceSpeeds();
@@ -734,6 +748,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       }
       if (fpc) RstFingerprint(("cln_pass" + std::to_string(inl) + "_pre").c_str());
       nit = CleanBiCGStab();
+      cln_tol_pass = 0.0;
       if (fpc) RstFingerprint(("cln_pass" + std::to_string(inl) + "_post").c_str());
       // (clean_yres = local: the local exchange of the solution X, kept while a pass
       // leaves X as it is, so that the gas does not take the round-off of a new residual)
@@ -760,11 +775,12 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         return (q < 0.5) ? q/(1.0 - q)*d : d;
       };
       if (cln_conv_est && inl > 0 && est(de, de0) < tol_nl && est(dv, dv0) < tol_nl &&
-          !(clos1 && inl == 0)) {
+          !(clos1 && inl == 0) && !loose) {
         converged = true;
         break;
       }
-      if (settled(de, de0, cln_fe) && settled(dv, dv0, cln_fv) && !(clos1 && inl == 0)) {
+      if (settled(de, de0, cln_fe) && settled(dv, dv0, cln_fv) && !(clos1 && inl == 0) &&
+          !loose) {
         converged = true;
         break;
       }

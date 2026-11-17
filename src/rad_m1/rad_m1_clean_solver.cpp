@@ -569,7 +569,8 @@ int RadiationM1::CleanBiCGStab() {
     return true;
   };
   restart(-1);
-  const Real tol = cln_tol*fmax(std::sqrt(bb), 1.0e-300);
+  const Real tol = ((cln_tol_pass > 0.0) ? cln_tol_pass : cln_tol)*
+                   fmax(std::sqrt(bb), 1.0e-300);
   if (std::sqrt(rr) <= tol) return 0;
 
   const Real eps = std::numeric_limits<Real>::epsilon();

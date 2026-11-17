@@ -296,6 +296,19 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_opac_passes")) {
       cln_opnp = std::max(pin->GetInteger("rad_m1","clean_opac_passes"), 1);
     }
+    // clean_tol_opac (read only when named): the linear solves of the passes that update
+    // the opacities stop at this relative residual (inexact Newton: the passes after
+    // them, whose iterate is the solution, solve to clean_tol)
+    if (pin->DoesParameterExist("rad_m1","clean_tol_opac")) {
+      cln_tol_op = pin->GetReal("rad_m1","clean_tol_opac");
+      if (!(cln_tol_op >= cln_tol) ||
+          !pin->DoesParameterExist("rad_m1","clean_opac_passes")) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/clean_tol_opac needs clean_opac_passes and "
+                  << "a value >= clean_tol" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     // clean_nl_tnorm = temperature | energy (read only when named; with clean_nl_norm =
     // cell): the gas part of a pass's change as dT/T, or as dT/T times the gas eint over
     // the larger of it and the E scale (clean_nl_efloor)
