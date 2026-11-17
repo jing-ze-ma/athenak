@@ -749,15 +749,16 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       if (fpc) RstFingerprint(("cln_pass" + std::to_string(inl) + "_pre").c_str());
       if (cell && cln_ast > 0) CleanCellApplyStore();
       nit = CleanBiCGStab();
-      cln_ast_on = false;
       cln_tol_pass = 0.0;
       if (fpc) RstFingerprint(("cln_pass" + std::to_string(inl) + "_post").c_str());
       // (clean_yres = local: the local exchange of the solution X, kept while a pass
-      // leaves X as it is, so that the gas does not take the round-off of a new residual)
+      // leaves X as it is, so that the gas does not take the round-off of a new residual;
+      // its apply is that of the solve)
       if (cell && cln_yres != M1_YRES_OFF && cln_feedback &&
           (cln_yres == M1_YRES_POST || inl == 0 || nit != 0)) {
         CleanCellResidual();
       }
+      cln_ast_on = false;
       nit_sum += std::abs(nit);
       ++nsolve;
       cln_nsolve += 1.0;
