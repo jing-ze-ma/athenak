@@ -177,6 +177,32 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_stag_fsweeps")) {
       cln_fsweeps = std::max(pin->GetInteger("rad_m1","clean_stag_fsweeps"), 1);
     }
+    // clean_stag_fschur (read only when named, default false): the F solve's lines exact
+    // across MeshBlocks and periodic wraps (CleanStagFSchur), in place of the sweeps; with
+    // clean_stag_ftie on a uniform mesh, not the cubed sphere, and as a segment goes out in
+    // three cells at each end of a line, MeshBlocks of >= 3 cells along it (>= 6 where it
+    // goes both ways: more than two round a periodic line, two or more along one with ends)
+    {Mesh *pm = pmy_pack->pmesh;
+    bool ok = cln_ftie && cln_fsweeps == 1 && !pm->multilevel && !pm->use_cubed_sphere;
+    for (int d = 0; d < 3; ++d) {
+      const int n = (d == 0) ? pm->mb_indcs.nx1 : ((d == 1) ? pm->mb_indcs.nx2 :
+                                                   pm->mb_indcs.nx3);
+      const int nb = ((d == 0) ? pm->mesh_indcs.nx1 : ((d == 1) ? pm->mesh_indcs.nx2 :
+                                                       pm->mesh_indcs.nx3))/n;
+      const bool per = (pm->mesh_bcs[2*d] == BoundaryFlag::periodic);
+      const int nmin = (nb > 2 || (nb == 2 && !per)) ? 6 : ((nb == 2) ? 3 : 0);
+      ok = ok && n >= nmin && (nmin == 0 || pm->mb_indcs.ng >= 3);
+    }
+    if (pin->DoesParameterExist("rad_m1","clean_stag_fschur")) {
+      cln_fschur = pin->GetBoolean("rad_m1","clean_stag_fschur") && !cln_cell;
+      if (cln_fschur && !ok) {
+        std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_fschur needs clean_stag_ftie, "
+                  << "clean_stag_fsweeps = 1, a uniform mesh (not the cubed sphere), "
+                  << "nghost >= 3 and MeshBlocks of >= 3 cells along a line of two round a "
+                  << "periodic one, >= 6 along longer or open ones" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }}
     // the consistency term is the cell default on Cartesian meshes and, with the vet_gd
     // rays transported conservatively (fv1) or swept by vet_gd (sc), on spherical polar,
     // always with the streaming weight (an optically thick cell keeps the moment flux:

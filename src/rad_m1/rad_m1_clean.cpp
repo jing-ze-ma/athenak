@@ -2206,15 +2206,17 @@ void RadiationM1::CleanDtrD(const bool save) {
 //! \fn bool CleanStagFRow
 //! \brief the row lo F_{f-1} + dg F_f + hi F_{f+1} = r of face (k,j,i) normal to dir in
 //! the F solve (CleanStagFSolve); false where the face has no equation (F = F^H) or (own
-//! false, clean_stag_ftie) another block owns it: the identity row, r the caller's
+//! false, clean_stag_ftie) another block owns it: the identity row, r the caller's;
+//! sm (clean_stag_fschur): the row sum lo + dg + hi, without the cancellation
 
 template <class AL, class FC>
 KOKKOS_INLINE_FUNCTION
 bool CleanStagFRow(const CleanArgs &x, const AL &al, const FC &fc, const int dir,
                    const int m, const int k, const int j, const int i, Real &lo, Real &hi,
-                   Real &dg, Real &r, const bool own = true) {
+                   Real &dg, Real &r, const bool own = true, Real *sm = nullptr) {
   const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
   lo = 0.0, hi = 0.0, dg = 1.0, r = fc(m,CLF_N,k,j,i);
+  if (sm) *sm = 1.0;
   if (!own) return false;
   const bool bd = CleanBoundaryFace(x, dir, m, k, j, i);
   const Real all = al(m,0,k-dk,j-dj,i-di), alr = al(m,0,k,j,i);
@@ -2234,11 +2236,79 @@ bool CleanStagFRow(const CleanArgs &x, const AL &al, const FC &fc, const int dir
     hi = -g*alr + q*wr*hmr + qs*wr*hmr;
     dg = it_ - lo - hi + q*(wr*(hpr + hmr) - wl*(hpl + hml)) +
          qs*(wr*(hpr + hmr) + wl*(hpl + hml));
+    if (sm) *sm = it_ + q*(wr*(hpr + hmr) - wl*(hpl + hml)) +
+                  qs*(wr*(hpr + hmr) + wl*(hpl + hml));
     r = fc(m,CLF_N,k,j,i)*it_ + q*x.c*(al(m,1,k-dk,j-dj,i-di) - al(m,1,k,j,i)) -
         qs*x.c*(al(m,1,k-dk,j-dj,i-di) + al(m,1,k,j,i)) +
         x.h*x.c*x.c*fc(m,CLF_N+1,k,j,i);
   }
   return eq;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanStagFOwn
+//! \brief clean_stag_fschur: the line (m, a, b) along dir of a MeshBlock (n cells) as a
+//! segment s of the F line: its first face x = s0 + s1 yL + s2 xR and its last own face
+//! y = s4 + s5 yL + s6 xR, yL the face before the first (another block's or the wrap's
+//! last), xR the shared high face (its owner's, the identity row), and s3 = 1 - s1 - s2,
+//! s7 = 1 - s5 - s6 from the row sums (the response to a uniform F: near 0 on a nearly
+//! singular line, h c/dx >> 1/theta, which 1 - s1 - s2 would lose); by a Thomas sweep
+//! up for y and one down for x
+
+template <class AL, class FC>
+KOKKOS_INLINE_FUNCTION
+void CleanStagFOwn(const CleanArgs &x, const AL &al, const FC &fc, const int dir,
+                   const int m, const int a, const int b, const int n, Real s[8]) {
+  auto face = [&](const int t, int &k, int &j, int &i) {
+    k = (dir == 2) ? x.ks + t : x.ks + b;
+    j = (dir == 1) ? x.js + t : ((dir == 2) ? x.js + b : x.js + a);
+    i = (dir == 0) ? x.is + t : x.is + a;
+  };
+  int k, j, i;
+  Real lo, hi, dg, r, sm;
+  face(n, k, j, i);
+  const bool bh = CleanBoundaryFace(x, dir, m, k, j, i);   // (F^H)
+  const Real fh = bh ? fc(m,CLF_N,k,j,i) : 0.0, wh = bh ? 1.0 : 0.0;
+  Real cp = 0.0, dc = 0.0, dl = 1.0, dw = 0.0;   // (F_{-1} = yL)
+  for (int t = 0; t < n; ++t) {
+    face(t, k, j, i);
+    CleanStagFRow(x, al, fc, dir, m, k, j, i, lo, hi, dg, r, true, &sm);
+    const Real den = dg - lo*cp;
+    dc = (r - lo*dc)/den;
+    dl = -lo*dl/den;
+    dw = (sm - lo*dw)/den;
+    cp = hi/den;
+  }
+  s[4] = dc - cp*fh, s[5] = dl, s[6] = bh ? 0.0 : -cp, s[7] = dw - cp*wh;
+  Real cq = 0.0, ec = fh, er = 1.0 - wh, ew = wh;   // (F_n = xR or F^H)
+  for (int t = n - 1; t >= 0; --t) {
+    face(t, k, j, i);
+    CleanStagFRow(x, al, fc, dir, m, k, j, i, lo, hi, dg, r, true, &sm);
+    const Real den = dg - hi*cq;
+    ec = (r - hi*ec)/den;
+    er = -hi*er/den;
+    ew = (sm - hi*ew)/den;
+    cq = lo/den;
+  }
+  s[0] = ec, s[1] = -cq, s[2] = er, s[3] = ew;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanStagFJoin
+//! \brief clean_stag_fschur: the segment c of two adjacent ones, p then q (CleanStagFOwn),
+//! and p's last face ya = ya0 + ya1 yL + ya2 xR and q's first xb (same) in the faces
+//! beyond c's ends; 1 - p6 q1 and c's s3, s7 as sums of the parts' (no cancellation)
+
+KOKKOS_INLINE_FUNCTION
+void CleanStagFJoin(const Real p[8], const Real q[8], Real c[8], Real ya[3],
+                    Real xb[3]) {
+  const Real d = p[5] + p[7] + p[6]*(q[2] + q[3]);
+  ya[0] = (p[4] + p[6]*q[0])/d, ya[1] = p[5]/d, ya[2] = p[6]*q[2]/d;
+  xb[0] = (q[0] + q[1]*p[4])/d, xb[1] = q[1]*p[5]/d, xb[2] = q[2]/d;
+  c[0] = p[0] + p[2]*xb[0], c[1] = p[1] + p[2]*xb[1], c[2] = p[2]*xb[2];
+  c[3] = p[3] + p[2]*(q[3] + q[1]*p[7])/d;
+  c[4] = q[4] + q[5]*ya[0], c[5] = q[5]*ya[1], c[6] = q[6] + q[5]*ya[2];
+  c[7] = q[7] + q[5]*(p[7] + p[6]*q[3])/d;
 }
 
 //----------------------------------------------------------------------------------------
@@ -2363,6 +2433,8 @@ void RadiationM1::CleanStagFSolve(const int e) {
         yfill();
       }
     }
+    // (clean_stag_fschur: the faces beyond the line ends exact, not lagged)
+    if (cln_fschur && q == x.nf) CleanStagFSchur();
     const int n = (dir == 0) ? ie - is + 1 : ((dir == 1) ? je - js + 1 : ke - ks + 1);
     const int na = (dir == 0) ? je - js + 1 : ie - is + 1;
     const int nb = (dir == 2) ? je - js + 1 : ke - ks + 1;
@@ -2627,6 +2699,123 @@ Real RadiationM1::CleanStagFSweepChange() {
     x.w(m,CLW_TM+d,k,j,i) = f;
   }, Kokkos::Max<Real>(dmax));
   return CleanReduce(dmax, true);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagFSchur
+//! \brief clean_stag_fschur (spherical polar, Cartesian, uniform mesh, with
+//! clean_stag_ftie): the F solve's lines exact across MeshBlocks and periodic wraps.
+//! The line of each MeshBlock is a segment of the whole line, its first and last face
+//! affine in the faces beyond its ends (CleanStagFOwn).  Rounds of exchanges join the
+//! segments (CleanStagFJoin): in each, a MeshBlock sends to its right neighbour its own
+//! joined to the segment it got from the left (and the mirror to the left), until with
+//! its own they span the line, or once round a periodic one.  The faces beyond its ends
+//! then follow from that system of two unknowns and take the place of the lagged ones
+//! (the CLW_Y, CLW_Z, CLW_S ghosts) in the line solves (Thomas or PCR).  A segment goes
+//! out in three slots of three cells at each end of the line, which the exchange gives
+//! the neighbour's ghosts: the six slots the F solve leaves free serve two directions at
+//! a time.
+
+void RadiationM1::CleanStagFSchur() {
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanArgs x = CleanMakeArgs();
+  auto AL = Kokkos::ALL;
+  const int nn[3] = {indcs.nx1, indcs.nx2, indcs.nx3};
+  const int nm[3] = {pm->mesh_indcs.nx1, pm->mesh_indcs.nx2, pm->mesh_indcs.nx3};
+  const int fs[6] = {CLW_TM, CLW_TM+1, CLW_TM+2, CLW_TM+3, CLW_BW, CLW_PW};
+  // (the rounds of the segments to the left and to the right: a line of nb MeshBlocks
+  // with ends nb - 1 each, a periodic one nb/2 and (nb - 1)/2; the group of directions
+  // whose exchanges go together, and the slots of a direction in it)
+  int nr[3][2], gr[3], gs[3], ngd = 0;
+  bool per[3];
+  for (int d = 0; d < x.nf; ++d) {
+    const int nb = nm[d]/nn[d];
+    per[d] = (pm->mesh_bcs[2*d] == BoundaryFlag::periodic);
+    nr[d][0] = per[d] ? nb/2 : nb - 1;
+    nr[d][1] = per[d] ? (nb - 1)/2 : nb - 1;
+    gr[d] = (nr[d][0] > 0) ? ngd/2 : ((per[d]) ? 0 : -1);
+    gs[d] = (nr[d][0] > 0) ? 3*(ngd++%2) : 0;
+  }
+  for (int g = 0; g == 0 || 2*g < ngd; ++g) {
+    int nrt = 0, nd = 0;
+    for (int d = 0; d < x.nf; ++d) {
+      if (gr[d] == g && nr[d][0] > 0) nrt = std::max(nrt, nr[d][0]), ++nd;
+    }
+    for (int r = 1; r <= nrt + 1; ++r) {
+      const bool fin = (r == nrt + 1);
+      for (int dir = 0; dir < x.nf; ++dir) {
+        const int rl = nr[dir][0], rr = nr[dir][1];
+        if (gr[dir] != g || (!fin && r > rl && r != rr + 1)) continue;
+        const int n = nn[dir], na = (dir == 0) ? nn[1] : nn[0];
+        const int nb = (dir == 2) ? nn[1] : nn[2];
+        auto fc = x.fc[dir];
+        auto al = Kokkos::subview(cln_w.o, AL, std::make_pair(CLW_L - CLW_NS + 3*dir,
+                                  CLW_L - CLW_NS + 3*dir + 3), AL, AL, AL);
+        const int cy = (dir == 2) ? CLW_S : CLW_Y + dir;
+        const int c0 = fs[gs[dir]], c1 = fs[gs[dir]+1], c2 = fs[gs[dir]+2];
+        const bool pd = per[dir];
+        Kokkos::parallel_for("cln_fsch", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                             (nmb1 + 1)*na*nb),
+        KOKKOS_LAMBDA(const int idx) {
+          const int m = idx/(na*nb), a = idx%na, b = (idx/na)%nb;
+          auto cell = [&](const int t, int &k, int &j, int &i) {
+            k = (dir == 2) ? x.ks + t : x.ks + b;
+            j = (dir == 1) ? x.js + t : ((dir == 2) ? x.js + b : x.js + a);
+            i = (dir == 0) ? x.is + t : x.is + a;
+          };
+          // (number q of a segment: slot q/3, cell t0 + sg (q%3))
+          auto slot = [&](const int t0, const int sg, const int q) -> Real & {
+            int k, j, i;
+            cell(t0 + sg*(q%3), k, j, i);
+            return x.w(m,(q < 3) ? c0 : ((q < 6) ? c1 : c2),k,j,i);
+          };
+          int k, j, i;
+          cell(0, k, j, i);
+          const bool bl = CleanBoundaryFace(x, dir, m, k, j, i);
+          cell(n, k, j, i);
+          const bool bh = CleanBoundaryFace(x, dir, m, k, j, i);
+          const bool hl = r > 1 && rl > 0 && !bl, hr = r > 1 && rr > 0 && !bh;
+          Real o[8], sl[8], sr[8], c[8], cr[8], ya[3], xb[3], yr[3], xr[3];
+          CleanStagFOwn(x, al, fc, dir, m, a, b, n, o);
+          for (int q = 0; q < 8; ++q) {
+            sl[q] = hl ? slot(-1, -1, q) : 0.0;   // (the segment to the left, in the
+            sr[q] = hr ? slot((r - 1 <= rr) ? n : 0, 1, q) : 0.0;   // ghosts; to the
+            c[q] = o[q], cr[q] = o[q];            // right, kept at the start after rr)
+          }
+          if (hl) CleanStagFJoin(sl, o, c, ya, xb);
+          if (!fin) {
+            if (hr && r <= rr) CleanStagFJoin(o, sr, cr, yr, xr);
+            for (int q = 0; q < 8; ++q) {
+              if (r <= rl) slot(n - 1, -1, q) = c[q];
+              if (r <= rr + (hr ? 1 : 0)) slot(0, 1, q) = (r <= rr) ? cr[q] : sr[q];
+            }
+            return;
+          }
+          // the whole line (once round a periodic one, whose ends are each other's: its
+          // determinant (1 - c2)(1 - c5) - c1 c6 as a sum)
+          for (int q = 0; q < 8; ++q) cr[q] = c[q];
+          if (hr) CleanStagFJoin(c, sr, cr, yr, xr);
+          Real xo = 0.0, yo = 0.0;
+          if (pd) {
+            const Real det = cr[3]*(cr[6] + cr[7]) + cr[1]*cr[7];
+            xo = (cr[0]*(cr[6] + cr[7]) + cr[1]*cr[4])/det;
+            yo = (cr[4]*(cr[1] + cr[3]) + cr[6]*cr[0])/det;
+          }
+          const Real gr = hr ? xr[0] + xr[1]*yo + xr[2]*xo : xo;
+          const Real gl = hl ? ya[0] + ya[1]*yo + ya[2]*gr : yo;
+          if (!bh) x.w(m,cy,k,j,i) = gr;   // (cell n)
+          cell(-1, k, j, i);
+          if (!bl) x.w(m,cy,k,j,i) = gl;
+        });
+      }
+      if (r <= nrt) {
+        if (nd == 2) CleanGhostDefer(cln_w, CLW_BW, 2);
+        CleanGhostFill(cln_w, CLW_TM, (nd == 2) ? 4 : 3);
+      }
+    }
+  }
 }
 
 //----------------------------------------------------------------------------------------
