@@ -2730,7 +2730,7 @@ void RadiationM1::CleanWriteBack() {
     }
   });
   // (time2_face_fct: the energy flux Phi of every face, which moved E, with its slope)
-  if (t2_ffct && slopes && t2pf1.extent_int(0) > nmb1) {
+  if (t2_pfst && slopes && t2pf1.extent_int(0) > nmb1) {
     auto pf = (t2_solve == M1_T2S_STAGE1) ? t2pf2 : t2pf1;
     for (int d = 0; d < x.nf; ++d) {
       const int dk = (d == 2), dj = (d == 1), di = (d == 0);
@@ -2740,6 +2740,19 @@ void RadiationM1::CleanWriteBack() {
       });
     }
     if (t2_solve == M1_T2S_STAGE1) {t2pf2_ok = true;} else {t2pf1_ok = true;}
+  }
+  // (the history's boundary energy: + h A Phi of the physical x1 faces, CleanBndAcc)
+  if (cln_lacc.extent_int(0) > nmb1) {
+    auto la = cln_lacc;
+    auto ar = pmy_pack->pcoord->area.x1f;
+    const bool stg = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
+    par_for("cln_wbbnd", DevExeSpace(), 0, nmb1, 0, 1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int s, const int k, const int j) {
+      const int i = s ? ie + 1 : is;
+      la(m,s,k,j) = !CleanBoundaryFace(x, 0, m, k, j, i) ? 0.0 :
+                    la(m,stg ? 2+s : s,k,j) + h*ar(m,k,j,i)*CleanFaceFlux(x, CLW_X, 0, m,
+                                                                     k, j, i, true);
+    });
   }
   CleanStagFSolve(CLW_X);   // (the face F of the F solve and its dissipation)
   xh.fs = true;

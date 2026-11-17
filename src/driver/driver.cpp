@@ -856,6 +856,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         const bool m1be2 = (pm1->time_scheme == radm1::M1_TIME_HESDIRK2);
         pm1->t2_solve = m1be2 ? radm1::M1_T2S_BESTORE : radm1::M1_T2S_NONE;
         int nsub = pmesh->pmb_pack->pradm1->SetSubsteps(pmesh->dt);
+        pm1->CleanBndAcc(0, 0.0, 0.0, 0.0, pmesh->dt);   // (history: boundary energy)
         for (int nst=0; nst<nsub; ++nst) {
           // nstage is M1_NSTAGE for the explicit scheme and 1 for the implicit one
           // (milestone 3a: one backward-Euler solve per hydro step)

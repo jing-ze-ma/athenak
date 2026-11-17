@@ -1168,7 +1168,7 @@ class RadiationM1 {
   // as the run would
   int FaxRstNslab() const {
     const int nd = trans_on ? (trans_x3 ? 3 : 2) : 1;
-    const int np = (t2_ffct && t2pf1_ok && t2pf1.extent_int(0) > 0) ? 2*nd : 0;
+    const int np = (t2_pfst && t2pf1_ok && t2pf1.extent_int(0) > 0) ? 2*nd : 0;
     if (!impl_hr_cmem || !impl_cm_rst || fax1.extent_int(0) == 0) {return np;}
     return 2 + ((fax2.extent_int(0) > 0) ? 2 : 0) + ((fax3.extent_int(0) > 0) ? 2 : 0) +
            np;
@@ -2562,6 +2562,15 @@ class RadiationM1 {
   bool t2_ffct = false;
   DvceArray5D<Real> t2pf1, t2pf2;   // (m,3,k,j,i) (chat/c) F_applied of K1's / K2's solve
   bool t2pf1_ok = false, t2pf2_ok = false;
+  // t2pf is stored with the limiter or with clean staggered (the history's boundary
+  // energy, CleanBndAcc): cln_lacc (m,4,k,j) = the energy the step put through the
+  // physical x1 faces so far, inner (0, + inward) and outer (1, + outward), h A Phi of
+  // its solves and the old vector's face part (2, 3: that of the stage's old vector);
+  // cln_ldt = the step's dt (0: none yet; the history then reads the faces' F)
+  bool t2_pfst = false;
+  DvceArray4D<Real> cln_lacc;
+  Real cln_ldt = 0.0;
+  void CleanBndAcc(int stage, Real c1, Real c2, Real w, Real dt);
   Real t2_ffct_calls = 0.0, t2_ffct_cells = 0.0, t2_ffct_faces = 0.0, t2_ffct_left = 0.0;
   Real t2_ffct_rmax = 0.0, t2_ffct_de = 0.0, t2_ffct_nop = 0.0, t2_ffct_fill = 0.0;
   void Time2FaceFct(int stage, Real c1, Real c2);

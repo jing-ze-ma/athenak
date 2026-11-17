@@ -624,6 +624,7 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_face_fct")) {
     t2_ffct = pin->GetBoolean("rad_m1", "time2_face_fct");
   }
+  t2_pfst = t2_ffct || (clean && !cln_cell);
   if (pin->DoesParameterExist("rad_m1", "time2_k1_redist_r")) {
     t2_k1rd_r = pin->GetInteger("rad_m1", "time2_k1_redist_r");
   }
@@ -735,7 +736,7 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     Kokkos::realloc(t2ixd, nmb, n3, n2, n1);
     Kokkos::deep_copy(t2ixd, 0.0);
   }
-  if (t2_ffct) {   // facebound-1112 step 1: zero = no face flux known (restart, start)
+  if (t2_pfst) {   // facebound-1112 step 1: zero = no face flux known (restart, start)
     Kokkos::realloc(t2pf1, nmb, 3, n3, n2, n1);
     Kokkos::realloc(t2pf2, nmb, 3, n3, n2, n1);
     Kokkos::deep_copy(t2pf1, 0.0);
@@ -1398,6 +1399,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
   }
   if (t2_inckc > 0.0) {Time2IncKeCap(stage);}   // hgfix-1110 time2_inc_kecap
   if (t2_ffct) {Time2FaceFct(stage, c1, c2);}   // facebound-1112 step 1
+  CleanBndAcc(stage, c1, c2, (stage == 1) ? 0.0 : (heun ? 0.5 : w0), dt);
   if (t2_theta > 0.0) {Time2StageTheta(stage, dt);}   // facebound-1112
   t2_solve = (stage == 1) ? M1_T2S_STAGE1 : M1_T2S_STAGE2;
   t2_fail = false;
@@ -2042,6 +2044,44 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanBndAcc
+//! \brief the history's x1 boundary energy (rad_m1.hpp cln_lacc), production's rule of
+//! booking the flux that moved E (he_bc_linhao lbath_f, l1, l2): stage 0 starts a
+//! backward-Euler step (its solves add h A Phi, CleanWriteBack); stage 1 / 2 the old
+//! vector of a hesdirk2 stage, whose face part is w x (the energy of Y2, in the Heun
+//! start) + A (c1 t2pf1 + c2 t2pf2), each face at its donor's limiter R
+//! (time2_face_fct, as Time2FaceFct applies it); the stage solve adds g dt A Phi
+
+void RadiationM1::CleanBndAcc(int stage, Real c1, Real c2, Real w, Real dt) {
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  if (!clean || cln_cell || !(sph_geom || cs_geom)) return;
+  if (cln_lacc.extent_int(0) <= nmb1) {
+    Kokkos::realloc(cln_lacc, nmb1 + 1, 4, u0.extent_int(2), u0.extent_int(3));
+  }
+  if (stage == 0 || stage == 1) {cln_ldt = dt;}
+  if (stage == 0) {Kokkos::deep_copy(DevExeSpace(), cln_lacc, 0.0); return;}
+  const bool two = (stage != 1), ok1 = t2pf1_ok;
+  if (t2pf1.extent_int(0) <= nmb1 || (two && !t2pf2_ok)) {cln_ldt = 0.0; return;}
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int is = id.is, ie = id.ie;
+  auto la = cln_lacc;
+  auto p1 = t2pf1, p2 = t2pf2;
+  auto g1 = t2f1;
+  auto iw_ = iw;
+  auto ar = pmy_pack->pcoord->area.x1f;
+  const bool lim = t2_ffct && ok1;   // (the limiter's R in iw slot M1_IW_KZ)
+  const Real crp = chat/c_light, cc2 = two ? c2 : 0.0;
+  par_for("cln_bndacc", DevExeSpace(), 0, nmb1, 0, 1, id.ks, id.ke, id.js, id.je,
+  KOKKOS_LAMBDA(const int m, const int s, const int k, const int j) {
+    const int i = s ? ie + 1 : is;
+    const Real g = ar(m,k,j,i)*(c1*(ok1 ? p1(m,0,k,j,i) : crp*g1(m,k,j,i)) +
+                                cc2*p2(m,0,k,j,i));
+    const Real rd = lim ? iw_(m,M1_IW_KZ,k,j,(g > 0.0) ? i - 1 : i) : 1.0;
+    la(m,2+s,k,j) = w*la(m,s,k,j) + rd*g;
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn bool RadiationM1::Time2PosFix
 //! \brief t2pos-1020 <rad_m1>/time2_posfix: the stage-1 solve (converged or not) left E,
 //! T or the written-back gas eint <= 0 in the cells it marked in t2pm (ImplicitSolve).
@@ -2542,7 +2582,7 @@ bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
   const bool ok = !t2_fail;
   if (ok) {
     Kokkos::deep_copy(DevExeSpace(), t2k1, t2k2);
-    if (t2_ffct && t2pf1.extent_int(0) > 0) {   // facebound-1112 step 1
+    if (t2_pfst && t2pf1.extent_int(0) > 0) {   // facebound-1112 step 1
       Kokkos::deep_copy(DevExeSpace(), t2pf1, t2pf2);
       t2pf1_ok = t2pf2_ok;
     }

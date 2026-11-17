@@ -4335,6 +4335,11 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   auto &volume = pmbp->pcoord->volume;
   const Real rint = hs_rint_, fin = hsdrive::InnerFlux(pm, hs_fin_);   // hg262-drive
   const bool lbcd = hs_lbc_ && (pmbp->pradm1->lbath_f.extent_int(0) > 0);
+  // clean staggered: L_in / L_top = the energy the step's solves put through the x1
+  // faces over dt (CleanBndAcc), the flux that moved E
+  const bool lac = pm1->cln_ldt > 0.0 && pm1->cln_lacc.extent_int(0) > 0;
+  auto lacc = pm1->cln_lacc;
+  const Real ildt = lac ? 1.0/pm1->cln_ldt : 0.0;
   auto lbf = pmbp->pradm1->lbath_f;
   // fin4-linhao-bc: after a hesdirk2 step L_in = L1/2 + b2 L(stage 1) + g L(stage 2)
   const bool lst2 = (pmbp->pradm1->lbath_t2 == radm1::M1_T2S_STAGE2);
@@ -4372,7 +4377,8 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
       }
       if (i == ie) h.the_array[3] = ff0(m,k,j,i+1)*area1(m,k,j,i+1);
     }
-    if (i == is) h.the_array[4] = fin*area1(m,k,j,i);
+    if (i == ie && lac) h.the_array[3] = lacc(m,1,k,j)*ildt;
+    if (i == is) h.the_array[4] = lac ? lacc(m,0,k,j)*ildt : fin*area1(m,k,j,i);
     if (i == is && lbcd) {
       // fin4-linhao-bc: nothing is imposed at the wall; L_in is the lab luminosity the
       // solves put through it this step (rad_m1.hpp lbath_f, lbath_l1/l2)
