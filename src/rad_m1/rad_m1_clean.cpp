@@ -357,7 +357,6 @@ void RadiationM1::CleanInit() {
                  "an even <mesh>/nx2");
     }
     if (vgd_on) {
-      vlat_taucut = std::numeric_limits<Real>::max();
       marena_on = false;
     } else {
       if (cln_edd) cln_sph_r = std::numeric_limits<Real>::max();
@@ -387,8 +386,8 @@ void RadiationM1::CleanInit() {
                   (pm->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::reflect);
       vgd_thvac = 0;
     }
-    // (the sweep starts at the first shell; its intensities keep their own memory)
-    vlat_taucut = std::numeric_limits<Real>::max();
+    // (the sweep starts at the first shell, the constructor's vlat_taucut; its
+    // intensities keep their own memory)
     marena_on = false;
     cln_init = true;
     return;
