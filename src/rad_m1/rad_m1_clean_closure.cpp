@@ -864,7 +864,7 @@ bool CleanRingMix(const DvceArray5D<Real> &rl, const DvceArray5D<Real> &rr,
   const Real wn = s*rl(m,qn*CLN_N+CLN_J,k,j,i)/jb;
   Real na = 1.0 + s, nw = 1.0 + wn;
   for (int r = 0; r < nr; ++r) {
-    const Real rj = rr(m,r*nf+fm[CLN_J],k,j,i), w = (r == nr - 1) ? 1.0 - s : 1.0;
+    const Real rj = rr(m,r*nf+fm[int{CLN_J}],k,j,i), w = (r == nr - 1) ? 1.0 - s : 1.0;
     a[r] = (rj >= 0.0) ? w*rj : 0.0;
     na += (rj >= 0.0) ? w : 0.0;
     nw += a[r];
@@ -889,7 +889,7 @@ bool CleanRingMix(const DvceArray5D<Real> &rl, const DvceArray5D<Real> &rr,
 //! solves reads (CLN_KP, and CLN_FH off the cubed sphere; the sp F solve reads CLN_G):
 //! the mixture takes the current set's there
 
-int RadiationM1::CleanRingFields(Kokkos::Array<int, CLN_N> &fm) const {
+int RadiationM1::CleanRingFields(int *fm) const {
   int nf = 0;
   for (int n = 0; n < CLN_N; ++n) {
     const bool kp = (n >= CLN_KP && n < CLN_C1);
@@ -935,7 +935,7 @@ void RadiationM1::CleanRingMoments() {
   // older ones of a fill straight into their offsets' slots of cln_rr.  All on the
   // interior cells; the offsets and the Delta only of the fields fm carries)
   Kokkos::Array<int, CLN_N> fm;
-  const int nf = CleanRingFields(fm);
+  const int nf = CleanRingFields(fm.data());
   if (cln_rl.extent_int(0) != nmb || cln_rl.extent_int(1) != 2*CLN_N) {
     Kokkos::realloc(cln_rl, nmb, 2*CLN_N, c3, c2, c1);
   }
@@ -1012,7 +1012,7 @@ void RadiationM1::CleanRingMoments() {
       vra_gen += 1;
       par_for("cln_ring_shift", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k0, const int j0, const int i0) {
-        const int k = k0 - ks, j = j0 - js, i = i0 - is, fj = fm[CLN_J];
+        const int k = k0 - ks, j = j0 - js, i = i0 - is, fj = fm[int{CLN_J}];
         const Real rp = pd(m,fj,k,j,i);   // (J ratios: r_j' = r_{j-1}/R, r_1' = 1/R)
         for (int f = 0; f < nf; ++f) {
           for (int r = nr - 1; r > 0; --r) {

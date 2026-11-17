@@ -3558,7 +3558,7 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
       auto &id = pmy_pack->pmesh->mb_indcs;
       const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
       Kokkos::Array<int, CLN_N> fm;
-      const int nf = CleanRingFields(fm), nk = vra_k, c0 = c, mq = m0;
+      const int nf = CleanRingFields(fm.data()), nk = vra_k, c0 = c, mq = m0;
       auto a_ = a;
       auto rr_ = cln_rr;
       auto pd_ = cln_rpd;
@@ -3755,7 +3755,7 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
       auto &id = pmy_pack->pmesh->mb_indcs;
       const int is = id.is, js = id.js, ks = id.ks;
       Kokkos::Array<int, CLN_N> fm;
-      const int nf = CleanRingFields(fm), f = fm[(ch < nr) ? ch%nq : ch - nr];
+      const int nf = CleanRingFields(fm.data()), f = fm[(ch < nr) ? ch%nq : ch - nr];
       const int nx = (ch < nr) ? (vra_k - 1)*nf : nf;
       if (rx.extent_int(0) != nmb) {
         Kokkos::realloc(rx, nmb, nx, id.nx3, id.nx2, id.nx1);
