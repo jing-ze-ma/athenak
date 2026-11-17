@@ -104,9 +104,9 @@ const char *kDtrMinimal[] = {
   // intensities a clean_rays = fv1 | fv | lld sweep starts from (cln_fvis in single
   // precision, with their reference cln_fvr, cln_fvrd), with cln_fref_set
   // (force_reference = clean recaptures), and the clean_fv_lag = extrap inflow history
-  // (cln_fvgp with its times and count).  The closure's extrap history is left alone:
-  // its flags go with the handles the attempt swapped and, on a first cycle, with
-  // cln_init
+  // (cln_fvgp with its times and count).  The closure's extrap history (cln_mn, cln_mp,
+  // cln_mc with its times and flags) is put back by handle; with clean_extrap_share
+  // also the contents of cln_mn (Build)
   "m1.cln_fvi", "m1.cln_fvis", "m1.cln_fvr", "m1.cln_fvrd",
   "m1.cln_fvgp",
 };
@@ -579,6 +579,10 @@ void DtRetry::Build(Mesh *pm) {
   }
   for (auto &s : extra_views_) {sel.insert(s);}
   auto *pk = pm->pmb_pack;
+  // clean_extrap_share: the step's candidate moments are written over the buffer that
+  // held those of t^{n-1} (cln_mc is cln_mp after the swap), which a retried step reads
+  // again; the history handles and flags are restored with every checkpoint
+  if (pk->pradm1 != nullptr && pk->pradm1->cln_mshare) {sel.insert("m1.cln_mn");}
   if (pk->phydro != nullptr) {
     Binder b{&ent_, "hyd.", &sel, all_views_, host_, &host_views_};
     pk->phydro->DtRetryVisit(b);
@@ -631,6 +635,11 @@ void DtRetry::Save(Mesh *pm) {
   Kokkos::Timer t;
   pm->pmb_pack->pradm1->DtRetryQuiesce(false);
   pm->pmb_pack->pradm1->MemArenaSeal();   // no rebind after a checkpoint
+  // the clean scheme's arrays exist before the first checkpoint (a retry puts back the
+  // handles of its extrap history, which a first solve would otherwise allocate)
+  if (pm->pmb_pack->pradm1->clean && !pm->pmb_pack->pradm1->cln_init) {
+    pm->pmb_pack->pradm1->CleanInit();
+  }
   for (auto &e : ent_) {e->Save();}
   Kokkos::fence();
   tsave_ += t.seconds();
