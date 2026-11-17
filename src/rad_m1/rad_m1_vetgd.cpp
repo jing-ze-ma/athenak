@@ -5995,7 +5995,9 @@ void RadiationM1::VetGdInnerMirror() {
         for (int a = 0; a < 3; ++a) {c += dir_(q,a)*(dir_(d,a) - 2.0*mr*r[a]);}
         if (c > best) {best = c; dm = q;}
       }
-      ho += dir_(d,3)*mr*vi_(m,dm,k+w,j+w,is);
+      // (an image whose nearest set direction is outward holds no value of this sweep)
+      const Real mm = dir_(dm,0)*r[0] + dir_(dm,1)*r[1] + dir_(dm,2)*r[2];
+      if (mm < 0.0) {ho += dir_(d,3)*mr*vi_(m,dm,k+w,j+w,is);}
     }
     if (hi > 0.0 && ho > 0.0) {sc_(m,k,j) = hi/ho;}
   });

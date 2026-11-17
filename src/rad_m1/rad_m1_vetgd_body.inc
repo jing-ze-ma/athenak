@@ -159,7 +159,8 @@
           auto rd0 = [&](const int kk, const int jj, const int ii, const int dq) -> Real {
             return rd0t(kk, jj, ii, dq, upw ? mr_(m,kk,jj,dq) : 0.0);
           };
-          auto rd = [&](const int kk, const int jj, const int ii) -> Real {
+          // (rdq: direction dq at the cell's stencil, rd the thread's own direction d)
+          auto rdq = [&](const int kk, const int jj, const int ii, const int dq) -> Real {
             // wallbug-1027: a theta ghost of vet_gd_theta_wall = mirror (wall flag 2)
             // reads its mirror row (then as any read, e.g. a phi wall) through its own
             // wall tables; no extra capture (the closure stays below the launch limit)
@@ -171,31 +172,34 @@
               // (main field only: the twin keeps the periodic read, rd0 below)
               if (wl_(m,kk,jj) == 3) {
                 if (!twn) {return 0.0;}
-                return rd0(kk,jj,ii,d);
+                return rd0(kk,jj,ii,dq);
               }
               if (wl_(m,kk,jj) == 4) {
                 // the edge value only when it is of the ghost's branch (the one the
                 // stencil selected it for): a turned ray reads its own shell, whose
                 // other branch is being written by this launch; else the periodic read
                 const int je = hi ? (wb + nx2b - 1) : wb;
-                if (!twn && ((mr_(m,kk,je,d) < 0.0) == (mr_(m,kk,jj,d) < 0.0))) {
-                  return rd0(kk,je,ii,d);
+                if (!twn && ((mr_(m,kk,je,dq) < 0.0) == (mr_(m,kk,jj,dq) < 0.0))) {
+                  return rd0(kk,je,ii,dq);
                 }
-                return rd0(kk,jj,ii,d);
+                return rd0(kk,jj,ii,dq);
               }
               const int g = hi ? (jj - wb - nx2b) : (wb - 1 - jj);
               const int jm = hi ? (wb + nx2b - 1 - g) : (wb + g);
-              const Real mtg = upw ? mr_(m,kk,jj,d) : 0.0;   // vetgdup-1110
-              if (!wint) {return rd0t(kk,jm,ii,mp_(m,kk,jj,d),mtg);}
+              const Real mtg = upw ? mr_(m,kk,jj,dq) : 0.0;   // vetgdup-1110
+              if (!wint) {return rd0t(kk,jm,ii,mp_(m,kk,jj,dq),mtg);}
               Real v = 0.0;
               for (int t = 0; t < 3; ++t) {
-                const Real wt = w3_(m,kk,jj,d,t);
-                if (t == 0 || wt != 0.0) {v += wt*rd0t(kk,jm,ii,m3_(m,kk,jj,d,t),mtg);}
+                const Real wt = w3_(m,kk,jj,dq,t);
+                if (t == 0 || wt != 0.0) {v += wt*rd0t(kk,jm,ii,m3_(m,kk,jj,dq,t),mtg);}
               }
               return v;
             }
 #endif
-            return rd0(kk,jj,ii,d);
+            return rd0(kk,jj,ii,dq);
+          };
+          auto rd = [&](const int kk, const int jj, const int ii) -> Real {
+            return rdq(kk, jj, ii, d);
           };
           const Real r = cx1v(m,i);
           const Real zr = r*fabs(mr);
@@ -531,7 +535,7 @@
                 all = all && ok[q];
               }
               const Real im = VgdUpwindI(st4, [&](const int kk, const int jj) {
-                return rd0(kk,jj,i,dm);
+                return rdq(kk,jj,i,dm);
               }, ok, all);
               iv = VgdInnerFace(st4, fC, i, true, (im < 0.0) ? s0 : isc_(m,k-ks,j-js)*im,
                                 bfc, cx1f(m,i), cx1v(m,i), cx1v(m,i+1), p2, ch0, ds, s0);
