@@ -1784,6 +1784,7 @@ Real RadiationM1::CleanVelocityUpdate() {
   CleanStagCsLateral(CLW_EK);   // (E_k's ghosts: CleanNewtonUpdate)
   CleanArgs x = CleanMakeArgs(), xh = x;
   xh.hi = cln_split;
+  xh.mcl = true;
   if (cln_fwork) {   // (clean_stag_fwork: the momentum of the
     CleanStagFSolve(CLW_EK);                     //  F solve, which the write-back gives
     xh.fs = true;                                //  the gas, for the work W of the E row)

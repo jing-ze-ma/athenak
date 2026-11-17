@@ -192,6 +192,9 @@ struct CleanArgs {
                                // (CLF_N) with its dissipation term (CLF_N + 1)
   bool hi;                     // staggered, clean_stag_split: the face momentum state
                                // F^H (w = 0), not the energy flux
+  bool mcl;                    // staggered: a face's momentum term at most the force of
+                               // a realisable flux, h chi_f E (the iterate's,
+                               // CleanMomentumChange)
   bool drag;                   // staggered, clean_stag_vimp: implicit gas velocity
   bool upw;                    // staggered, clean_stag_upwind: donor-cell advective flux
   bool fwc;                    // staggered: al, ar and the cross factor from CLF_QL
@@ -1278,8 +1281,17 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
       }
       continue;
     }
-    const Real t = wt*((f - g)/(x.c*x.c) + x.h*CleanFaceStress(x, e, dir, m, kf, jf, iff,
-                   true) - (x.fs ? x.h*x.fc[dir](m,CLF_N+1,kf,jf,iff) : 0.0));
+    Real t = wt*((f - g)/(x.c*x.c) + x.h*CleanFaceStress(x, e, dir, m, kf, jf, iff,
+             true) - (x.fs ? x.h*x.fc[dir](m,CLF_N+1,kf,jf,iff) : 0.0));
+    // (mcl, the Newton passes: the conservative term equals the face's absorption
+    // h chi_f F/c only where the iterate's F satisfies its equation; capped there at the
+    // force of a realisable flux, |F| <= c E, as the production deposit, so that a lagged
+    // F does not kick floor gas to ~c; the write-back keeps the conservative term)
+    if (x.mcl) {
+      const Real cap = wt*(1.0/x.fc[dir](m,CLF_TH,kf,jf,iff) - 1.0)/x.c*
+                       fmax(fmax(x.w(m,e,kf,jf,iff), x.w(m,e,kf-dk,jf-dj,iff-di)), 0.0);
+      t = fmin(fmax(t, -cap), cap);
+    }
     dm -= t;
     if (cf) {
       cf[side] = -t;
