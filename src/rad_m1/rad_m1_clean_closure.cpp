@@ -880,6 +880,7 @@ void RadiationM1::CleanRingMoments() {
     Kokkos::realloc(cln_rl, nmb, 2*CLN_N, c3, c2, c1);
   }
   if (cln_rr.extent_int(0) != nmb) {   // (a restart has read them)
+    vra_gen += 1;   // (cln_rr's writers: the dt_retry checkpoint skips a clean copy)
     Kokkos::realloc(cln_rr, nmb, nr*CLN_N, c3, c2, c1);
     Kokkos::realloc(cln_rpd, nmb, CLN_N, c3, c2, c1);
     cln_rok = false;
@@ -912,6 +913,7 @@ void RadiationM1::CleanRingMoments() {
     const int64_t p = cln_fvblk[q] - (b - nk + 1);
     const bool older = (p >= 0 && p < nr);
     const bool keep = (older && fill) || p == nr || p == nk;
+    if (older && fill) vra_gen += 1;
     cln_fvd = cln_fvdm[q];
     if (cln_rfv == 0) {   // the sc rays: set q swept alone (its tables, its own weights)
       cln_rq = q;
@@ -944,6 +946,7 @@ void RadiationM1::CleanRingMoments() {
       // the pending Delta is that of the boundary of block b when it closed the block
       const Real tk = vgd_rot_t0 + static_cast<Real>(b)*vgd_rot_dt;
       if (std::abs(cln_rpt - tk) > 1.0e-9*vgd_rot_dt) cln_roff_sum += 1.0;
+      vra_gen += 1;
       par_for("cln_ring_shift", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         for (int n = 0; n < CLN_N; ++n) {

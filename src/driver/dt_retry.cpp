@@ -380,7 +380,9 @@ struct Binder {
     ent->push_back(std::move(e));
   }
   template <class T> void view(const char *n, T &x) {
-    auto e = std::make_unique<ViewEntry<T>>(&x, Deep(n), host);
+    // (clean_rot_ring's offsets and pending Delta: in pinned host memory always)
+    const bool rh = (pre + n == "m1.cln_rr") || (pre + n == "m1.cln_rpd");
+    auto e = std::make_unique<ViewEntry<T>>(&x, Deep(n), host || rh);
     e->name = pre + n;
     ent->push_back(std::move(e));
   }
@@ -603,9 +605,11 @@ void DtRetry::Build(Mesh *pm) {
   }
   // dt_retry_host skips the host copy of vet_rotate_avg's history vra_d
   // while it is clean (written only at rotation-block boundaries; RadiationM1::vra_gen)
-  if (host_) {
-    for (auto &e : ent_) {
-      if (e->name == "m1.vra_d") {e->SetGen(&(pk->pradm1->vra_gen));}
+  // (and of clean_rot_ring's offsets cln_rr, written only at block boundaries, a fill
+  // or a restart: their writers bump vra_gen too)
+  for (auto &e : ent_) {
+    if ((host_ && e->name == "m1.vra_d") || e->name == "m1.cln_rr") {
+      e->SetGen(&(pk->pradm1->vra_gen));
     }
   }
   // the problem generator's registered state (PgenEntries)

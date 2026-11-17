@@ -3737,6 +3737,7 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     const int nr = (vra_k - 1)*nq;
     if (ch < nr + nq) {
       auto &rx = (ch < nr) ? cln_rr : cln_rpd;
+      vra_gen += 1;
       const int nx = (ch < nr) ? (vra_k - 1)*CLN_N : CLN_N;
       if (rx.extent_int(0) != nmb) {
         Kokkos::realloc(rx, nmb, nx, w.extent_int(1), w.extent_int(2), w.extent_int(3));
