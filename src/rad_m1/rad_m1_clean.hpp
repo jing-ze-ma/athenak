@@ -33,6 +33,18 @@
 #else
 #define CLEAN_DEVICE_NOINLINE
 #endif
+// HIP: the face flux, stress and source always inlined.  hipcc called them (its inliner
+// declined them): each kernel using them carried a 468 B/lane scratch frame (old
+// production's M1_INL).  Where they are a path the pass does not take (the stored face
+// terms of cln_rhs and cln_velocity) they stay calls (CleanFaceFluxCall, ...): inlined
+// there they raised the register use of the path taken
+#if defined(__HIPCC__)
+#define CLEAN_HIP_INLINE __attribute__((always_inline))
+#define CLEAN_HIP_NOINLINE __attribute__((noinline))
+#else
+#define CLEAN_HIP_INLINE
+#define CLEAN_HIP_NOINLINE
+#endif
 
 namespace radm1 {
 
@@ -856,7 +868,7 @@ bool CleanBoundaryFace(const CleanArgs &x, const int dir, const int m, const int
 //! set) and, away from physical boundaries, the transverse derivatives averaged over the
 //! four cells around the face.  E is work vector e.
 
-KOKKOS_INLINE_FUNCTION
+CLEAN_HIP_INLINE KOKKOS_INLINE_FUNCTION
 Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m,
                      const int k, const int j, const int i, const bool normal) {
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
@@ -967,7 +979,7 @@ Real CleanStagAdvectCorr(const CleanArgs &x, const int dir, const int m, const i
 //! \brief the part of the face flux that does not depend on E: (1-w) theta G inside, the
 //! incoming flux (beam, bath) or the imposed flux on physical boundaries
 
-KOKKOS_INLINE_FUNCTION
+CLEAN_HIP_INLINE KOKKOS_INLINE_FUNCTION
 Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k,
                      const int j, const int i) {
   const int pos = (dir == 0) ? i : ((dir == 1) ? j : k);
@@ -1033,7 +1045,7 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
 //! \brief flux through face (k,j,i) normal to dir for E in work vector e; with_source adds
 //! the E-independent part
 
-CLEAN_DEVICE_NOINLINE KOKKOS_INLINE_FUNCTION
+CLEAN_DEVICE_NOINLINE CLEAN_HIP_INLINE KOKKOS_INLINE_FUNCTION
 Real CleanFaceFlux(const CleanArgs &x, const int e, const int dir, const int m,
                    const int k, const int j, const int i, const bool with_source) {
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
@@ -1044,6 +1056,23 @@ Real CleanFaceFlux(const CleanArgs &x, const int e, const int dir, const int m,
   if (ar != 0.0) f += ar*x.w(m,e,k,j,i);
   if (with_source) f += CleanFaceSource(x, dir, m, k, j, i);
   return f;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanFaceFluxCall, CleanFaceStressCall
+//! \brief the face flux and stress as calls on HIP (CLEAN_HIP_INLINE), for a path the
+//! pass does not take
+
+CLEAN_HIP_NOINLINE KOKKOS_INLINE_FUNCTION
+Real CleanFaceFluxCall(const CleanArgs &x, const int e, const int dir, const int m,
+                       const int k, const int j, const int i, const bool with_source) {
+  return CleanFaceFlux(x, e, dir, m, k, j, i, with_source);
+}
+
+CLEAN_HIP_NOINLINE KOKKOS_INLINE_FUNCTION
+Real CleanFaceStressCall(const CleanArgs &x, const int e, const int dir, const int m,
+                         const int k, const int j, const int i, const bool hi) {
+  return CleanFaceStress(x, e, dir, m, k, j, i, hi);
 }
 
 //----------------------------------------------------------------------------------------
@@ -1312,7 +1341,7 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
   for (int side = 0; side < 2; ++side) {
     const int kf = k + side*dk, jf = j + side*dj, iff = i + side*di;
     const Real f = x.fs ? x.fc[dir](m,CLF_N,kf,jf,iff) :
-                   CleanFaceFlux(x, e, dir, m, kf, jf, iff, true);
+                   CleanFaceFluxCall(x, e, dir, m, kf, jf, iff, true);
     const Real g = x.fc[dir](m,CLF_G,kf,jf,iff);
     // (clean_stag_split: shared as the two half cells absorb, chi_c/(chi_L + chi_R))
     const int o = 2*side - 1;
@@ -1341,7 +1370,7 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
       continue;
     }
     Real t = wt*(x.fa ? x.fc[dir](m,CLF_PT,kf,jf,iff) : ((f - g)/(x.c*x.c) +
-             x.h*CleanFaceStress(x, e, dir, m, kf, jf, iff, true) -
+             x.h*CleanFaceStressCall(x, e, dir, m, kf, jf, iff, true) -
              (x.fs ? x.h*x.fc[dir](m,CLF_N+1,kf,jf,iff) : 0.0)));
     // (mcl, the Newton passes: the conservative term equals the face's absorption
     // h chi_f F/c only where the iterate's F satisfies its equation; capped there at the

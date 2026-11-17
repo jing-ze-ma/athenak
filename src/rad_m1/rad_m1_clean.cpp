@@ -1578,7 +1578,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
       // (clean_stag_fwork: the F solve's F, which the gas takes)
       auto ff = [&](const int d, const int kk, const int jj, const int ii) {
         return xh.fs ? xh.fc[d](m,CLF_N,kk,jj,ii)
-                     : CleanFaceFlux(xh, CLW_EK, d, m, kk, jj, ii, true);
+                     : CleanFaceFluxCall(xh, CLW_EK, d, m, kk, jj, ii, true);
       };
       // (gflux: an open physical boundary face's flux, absorbed in an opaque half cell,
       // enters the cell mean as its mean over the half cell, (1 - e^-q)/q, q = chi dx/2,
