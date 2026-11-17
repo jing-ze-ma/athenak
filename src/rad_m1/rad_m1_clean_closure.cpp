@@ -2664,6 +2664,24 @@ void RadiationM1::CleanClosureFromGd() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \struct CleanGdI
+//! \brief the sc rays' intensities in the mesh layout without a copy (CleanGdFaceSums):
+//! vgd_i, the low theta and phi ghost layers from gl (side 0: j = js - 1, side 1:
+//! k = ks - 1)
+
+struct CleanGdI {
+  RadiationM1::VgdRag vi;
+  DvceArray5D<Real> gl;
+  int ok, og, ks, js;
+  KOKKOS_INLINE_FUNCTION
+  Real operator()(const int m, const int d, const int k, const int j, const int i) const {
+    if (j < js) return gl(m,d,0,k-ks,i);
+    if (k < ks) return gl(m,d,1,j-js,i);
+    return vi(m,d,k+ok,j+og,i);
+  }
+};
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanGdFaceSums
 //! \brief the vet_gd rays' face fluxes for clean_consistency (CLN_FX, CLN_F2, CLN_F3,
 //! CLN_F1: sum_d w (n_d . A_f) I_f / A_f and the stress columns in the face's local
@@ -2731,7 +2749,31 @@ void RadiationM1::CleanGdFaceSums() {
   // half ranges (CleanScUnion2), on sp with a reflecting top for its mirror)
   const int ns2 = (cln_ring && (cln_cssc || cln_scmem)) ? 2 : 1;
   const int doff = (ns2 == 1) ? 0 : cln_rqm*n;
-  if (!fv) {
+  // Staggered spherical polar (one radial MeshBlock, no reflecting top): vgd_i itself,
+  // and only the low theta and phi ghost layers exchanged, in chunks of 8 directions
+  const bool gl = !fv && x.sph && !cln_cell && !axi && pmy_pack->pmesh->three_d &&
+                  vgd_nb1 == 1 && !cln_scmem;
+  CleanGdI gi{vi_, DvceArray5D<Real>(), ok, og, ks, js};
+  if (gl) {
+    const int nc = std::min(n, 8), nt = std::max(ke - ks + 1, je - js + 1);
+    gi.gl = DvceArray5D<Real>("cln_gd_gl", nmb1 + 1, n, 2, nt, cs.extent_int(4));
+    DvceArray5D<Real> ch("cln_gd_ch", nmb1 + 1, nc, cs.extent_int(2), cs.extent_int(3),
+                         cs.extent_int(4));
+    auto gg = gi.gl;
+    for (int d0 = 0; d0 < n; d0 += nc) {
+      const int nd = std::min(nc, n - d0);
+      par_for("cln_gd_chc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        for (int c = 0; c < nd; ++c) ch(m,c,k,j,i) = vi_(m,d0+c,k+ok,j+og,i);
+      });
+      CleanGhostFill(ch, 0, nd);
+      par_for("cln_gd_glc", DevExeSpace(), 0, nmb1, 0, nd - 1, 0, nt - 1, is, ie,
+      KOKKOS_LAMBDA(const int m, const int c, const int t, const int i) {
+        if (t <= ke - ks) gg(m,d0+c,0,t,i) = ch(m,c,ks+t,js-1,i);
+        if (t <= je - js) gg(m,d0+c,1,t,i) = ch(m,c,ks-1,js+t,i);
+      });
+    }
+  } else if (!fv) {
     if (cln_fvi.extent_int(1) != ns2*n) {
       Kokkos::realloc(cln_fvi, nmb1 + 1, ns2*n, cs.extent_int(2),
                       cs.extent_int(3), cs.extent_int(4));
@@ -2745,7 +2787,7 @@ void RadiationM1::CleanGdFaceSums() {
   }
   auto inten = [=] KOKKOS_FUNCTION (const int m, const int d, const int k, const int j,
                                     const int i) {
-    return fi_(m,doff+d,k,j,i);
+    return gl ? gi(m,d,k,j,i) : fi_(m,doff+d,k,j,i);
   };
   // vector area of the low face of cell (k,j,i) normal to dir and the local basis there
   // (Cartesian on the cubed sphere)
@@ -2857,7 +2899,8 @@ void RadiationM1::CleanGdFaceSums() {
     if (ho > 0.0 && hm > 0.0) sm = ho/hm;
     for (int d = 0; d < n; ++d) {
       const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
-      Real iv = CleanFvFace(fi_, fq_, o2, m, doff + d, 0, k, j, i, f > 0.0, nl);
+      Real iv = gl ? CleanFvFace(gi, gi, false, m, d, 0, k, j, i, f > 0.0)
+                   : CleanFvFace(fi_, fq_, o2, m, doff + d, 0, k, j, i, f > 0.0, nl);
       if (CleanBoundaryFace(x, 0, m, k, j, i)) {   // the sweep's x1 boundary
         const Real s0 = fv ? sq_(m,CLQ_S0,k,j,is) : exp(cw_(m,1,k+ok,j+og,is));
         iv = (i == is) ? ((f > 0.0) ? (emi ? iemit : s0) : iv)
