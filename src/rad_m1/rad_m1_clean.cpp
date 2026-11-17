@@ -1439,7 +1439,6 @@ void RadiationM1::CleanFirstIterate() {
                     t2_solve != M1_T2S_NONE && !cln_vzero && t2k1.extent_int(0) > nmb1;
   const Real h = dt_sub, ecap = SQR(SQR(impl_pred_tcap)), rtol = cln_trtol;
 
-  const Real tgf = cln_gtf ? eos.tfloor : 0.0;   // (clean_gas_tfloor)
   par_for("cln_iter0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real eo = fmax(w(m,CLW_EO,k,j,i), 0.0);
@@ -1450,10 +1449,10 @@ void RadiationM1::CleanFirstIterate() {
     for (int n = 0; n < 3; ++n) w(m,CLW_DM+n,k,j,i) = 0.0;
     if (feedback) {
       w(m,CLW_EP,k,j,i) = 0.0;   // (the beta terms of this T, CleanRightHandSide)
-      w(m,CLW_T,k,j,i) = fmax(CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
+      w(m,CLW_T,k,j,i) = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
                              hc*op(m,M1_OP_P,k,j,i)*arad_,
                              w(m,CLW_EI,k,j,i) + hc*op(m,M1_OP_E,k,j,i)*e,
-                             w(m,CLW_T,k,j,i), rtol), tgf);
+                             w(m,CLW_T,k,j,i), rtol);
     }
   });
   // (staggered: the ghosts of E_k for the gas terms, with the next exchange)
@@ -1567,7 +1566,6 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   xh.fs = true;
   const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
   const auto *peos = CleanDev(eos, 2);
-  const Real tgf = cln_gtf ? eos.tfloor : 0.0;   // (clean_gas_tfloor)
   // each face's source once, for its two cells (CLF_SR), and with gflux its a E (CLF_PT)
   const int nf = x.nf;
   const bool af = x.feedback && x.gf && !x.cub;
@@ -1675,13 +1673,6 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
       // passes enters E with 1 - r, the exchange's share (radiation-dominated opaque
       // gas, r ~ 1, hcke beta F'/c >> eint: taken whole it contracted only ~0.5 per pass)
       if (gr) gres = rr*(x.w(m,CLW_EI,k,j,i) + hcke*ek - sb - eg - hckp*arad_*SQR(SQR(t)));
-      // (clean_gas_tfloor: a gas at its floor T holds e(rho, tfloor), its row whole in E,
-      // r = 1: the radiation takes exactly the energy the gas gives, CleanWriteBack)
-      if (tgf > 0.0 && !(t > tgf)) {
-        rr = 1.0;
-        x.w(m,CLW_RY,k,j,i) = 0.0;
-        gres = x.w(m,CLW_EI,k,j,i) + hcke*ek - sb - eg - hckp*arad_*SQR(SQR(t));
-      }
       // gflux: the Doppler part hcke dop E of sb is a change of the absorption, hcke
       // (1 - dop): taken in the Newton step as the exchange (r -> r + dop (1 - r), sb
       // keeps its value at E_k), not lagged; where hcke dop >> 1 (an opaque cell with a
@@ -1813,7 +1804,6 @@ Real RadiationM1::CleanNewtonUpdate() {
   Real change = 0.0, femax = 0.0, ermax = 0.0;
   // (256 threads per block: the exchange temperature needs more than 128 registers)
   using Rp256 = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
-  const Real tgf = cln_gtf ? eos.tfloor : 0.0;   // (clean_gas_tfloor)
   Kokkos::parallel_reduce("cln_newton", Rp256(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &dmax, Real &fe_max, Real &er_max) {
     int m = idx/nkji;
@@ -1833,10 +1823,10 @@ Real RadiationM1::CleanNewtonUpdate() {
     // the net exchange (1 - r) hc kE, and T and E drifted apart pass by pass; sbimp:
     // the gas takes all of sb at X)
     if (gfd) w(m,CLW_EP,k,j,i) -= w(m,CLW_JV+1,k,j,i)*(x - e_old);
-    const Real t = fmax(CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
+    const Real t = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
                        hc*op(m,M1_OP_P,k,j,i)*g*arad_,
                        w(m,CLW_EI,k,j,i) + hc*op(m,M1_OP_E,k,j,i)*ex
-                       + w(m,CLW_EP,k,j,i), t_old, rtol), tgf);
+                       + w(m,CLW_EP,k,j,i), t_old, rtol);
     w(m,CLW_EK,k,j,i) = e;
     w(m,CLW_T,k,j,i) = t;
     const Real de = ncell ? fabs(e - e_old)/fmax(fmax(fabs(e), fabs(e_old)), esc)
@@ -3506,12 +3496,23 @@ void RadiationM1::CleanWriteBack() {
         // e(rho, T) - eint, not by the exchange, a difference of two terms ~E >> eint
         // where r ~ 1: positive by construction, equal to it at a converged root; E
         // takes all the rest, the solve's residual and any work the gas's kinetic
-        // energy change did not receive)
+        // energy change did not receive.  The floor only here: inside the Newton passes
+        // a root below it switched the gas row whole into E and back, a 2-cycle of the
+        // passes; a root below it raises the gas to e(rho, tfloor) with E's energy,
+        // counted as implicit_pos_gas)
         Real eg = x.w(m,CLW_EP,k,j,i) - ex;
         if (gtf) {
           Real ei, p, chi_rho, chi_t, cv;
           eos.ThermoAt(uh(m,IDN,k,j,i), fmax(t, tgf), ei, p, chi_rho, chi_t, cv);
           eg = ei - x.w(m,CLW_EI,k,j,i);
+          if (t < tgf) {
+            Real e0;
+            eos.ThermoAt(uh(m,IDN,k,j,i), t, e0, p, chi_rho, chi_t, cv);
+            const Real vol = (x.sph || x.cub) ? x.vol(m,k,j,i) :
+                             1.0/(x.idx[0]*x.idx[1]*x.idx[2]);
+            Kokkos::atomic_add(&pc_(M1_POS_GAS), 1.0);
+            Kokkos::atomic_add(&pc_(M1_POS_GAS_DE), (ei - e0)*vol);
+          }
         }
         const Real rd = (den - eg - wk - wp)/(gtf ? 1.0 :
                         1.0 + x.h*x.c*x.op(m,M1_OP_E,k,j,i)*x.w(m,CLW_RY,k,j,i));
