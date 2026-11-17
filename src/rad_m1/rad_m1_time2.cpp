@@ -681,11 +681,7 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_adm_poslim")) {
     t2_adm_pl = pin->GetBoolean("rad_m1", "time2_adm_poslim");
   }
-  // autobe-1029: <rad_m1>/time2_auto_be = N (rad_m1.hpp; read only when named).  The
-  // clean staggered layout defaults to 0: a stage fallback's backward-Euler redo is
-  // followed by stage steps again (BE solves in a row lock the face F of a semi-
-  // transparent moving layer into an odd-even oscillation, R136 restart r136.00009)
-  if (clean && !cln_cell) t2_abe = 0;
+  // autobe-1029: <rad_m1>/time2_auto_be = N (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1", "time2_auto_be")) {
     t2_abe = pin->GetInteger("rad_m1", "time2_auto_be");
     if (t2_abe < 0) {
