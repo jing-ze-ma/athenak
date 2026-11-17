@@ -121,7 +121,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_fvlagtol = pin->GetReal("rad_m1","clean_fv_lag_tol");
     }
     cln_raymin = pin->GetOrAddReal("rad_m1","clean_ray_min",1.0e-3);
-    // clean_rays = sc | fv1 (sp default) | fv | lld
+    // clean_rays = sc (staggered sp default) | fv1 (cell sp, cs default) | fv | lld
     if (pin->DoesParameterExist("rad_m1","clean_rays")) {
       std::string cr = pin->GetString("rad_m1","clean_rays");
       cln_rfv = (cr.compare("lld") == 0) ? 3 : (cr.compare("fv") == 0) ? 2 :
@@ -164,7 +164,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_stall_n = pin->GetOrAddInteger("rad_m1","clean_bicg_stall_its",cln_cell ? 0 : 50);
     cln_stall_f = pin->GetOrAddReal("rad_m1","clean_bicg_stall_fac",0.99);
     // the consistency term is the cell default on Cartesian meshes and, with the vet_gd
-    // rays transported conservatively (clean_rays = fv1 by default), on spherical polar,
+    // rays transported conservatively (fv1) or swept by vet_gd (sc), on spherical polar,
     // always with the streaming weight (an optically thick cell keeps the moment flux:
     // the rays' face sums there are not those of the diffusion limit); on the cubed
     // sphere the staggered default with vet_gd (well-balanced only with it), opt-in for
@@ -174,8 +174,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     const bool vg = pin->DoesParameterExist("rad_m1","vet_gd") &&
                     pin->GetBoolean("rad_m1","vet_gd");
     const bool gd = sp && vg;
+    // (staggered sp, fresh: vet_gd's own sweep, sc, recorded so that a restart keeps it;
+    // a restart file without the key keeps fv1)
     if ((gd || (cs && vg)) && !pin->DoesParameterExist("rad_m1","clean_rays")) {
-      cln_rfv = 1;
+      const bool sc = gd && !cln_cell && !global_variable::restart_run;
+      cln_rfv = sc ? 0 : 1;
+      if (sc) pin->GetOrAddString("rad_m1","clean_rays","sc");
     }
     // clean_fv_float (read only when named): the fv1 rays' intensities in single
     // precision (no effect without FV rays).  It degrades the well-balanced state
