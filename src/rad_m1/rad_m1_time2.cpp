@@ -784,9 +784,12 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (vet_col) {
     // Time2VetStart's save slots (E, T) and the saved stage-start opacities;
     // time2_vet_col = predict | rebuild: also KT, T(Y1), E(Y1) and the inner face flux
-    Kokkos::realloc(vet_now, nmb, (t2_vcmode == 0 || t2_vcmode >= 3) ? 2 : 6, n3, n2, n1);
-    Kokkos::realloc(vet_opac, nmb, vscat ? (M1_NOPAC + 1) : M1_NOPAC, n3, n2,
-                    n1);
+    // (scheme = clean: only ImplicitSolve's stage chain reads them; not made)
+    if (!clean) {
+      Kokkos::realloc(vet_now, nmb, (t2_vcmode == 0 || t2_vcmode >= 3) ? 2 : 6, n3, n2,
+                      n1);
+      Kokkos::realloc(vet_opac, nmb, vscat ? (M1_NOPAC + 1) : M1_NOPAC, n3, n2, n1);
+    }
     if (t2_vcmode == 4) {
       if (!noh) {
         Kokkos::realloc(x2_tt, nmb, M1_X2_NTT, n3, n2, n1);
@@ -1170,7 +1173,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
                                       flp.u0.extent(3), flp.u0.extent(4));
         }
         Kokkos::deep_copy(DevExeSpace(), t2gsv_h, flp.u0);
-      } else if (flp.on) {
+      } else if (flp.on && !clean) {   // (clean: no stage-1 re-solve puts it back)
         if (t2gsv.extent(0) != flp.u0.extent(0) || t2gsv.extent(1) != flp.u0.extent(1) ||
             t2gsv.extent(2) != flp.u0.extent(2) || t2gsv.extent(3) != flp.u0.extent(3) ||
             t2gsv.extent(4) != flp.u0.extent(4)) {
