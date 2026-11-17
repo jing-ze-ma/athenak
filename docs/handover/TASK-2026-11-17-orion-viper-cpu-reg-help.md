@@ -39,3 +39,8 @@ since Orion also runs A100 itself. Keep it below your own gates, push 17 and pro
   - m12 changes only analytic-closure or SC-ray decks.
 - Outputs: /viper/ptmp2/jinma/orion_stag2/req1/out/. NOTE: NOTE-2026-11-17-viper-orion-gpu-batch1.md.
 - The CPU request above is withdrawn.
+
+## UPDATE 2: new m12 head
+The m12 history was rewritten (M1 is now restricted to analytic closures and clean_rays = sc). Use **clean-cc-stag2-gpu2-m12 = 7e6cc0bd4**
+(ce49d1c1d + 5a1c7e973 + 7e6cc0bd4), not 680738756. The bundle in req1/ has been replaced and also carries the bases ce49d1c1d and e9227103a
+as refs.
