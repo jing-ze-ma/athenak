@@ -704,9 +704,9 @@ void RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws) {
   auto fs_ = vgd_gbfs;
   auto fr_ = vgd_gbfr;
   const int nmx = std::max(ns, nr);
-  // vgd_raw (a fixed direction set): the kept (entry, direction) lists and the bounds of
-  // each (shell, pass, depth), made at their first exchange; the pack and unpack run over
-  // the kept values only (an unsent band value is never read)
+  // vgd_raw (the current direction set: VetGdTables, VgdXfTables remake them): the kept
+  // lists and bounds of each (shell, pass, depth), made at their first exchange; the
+  // pack and unpack run over the kept values only (an unsent band value is never read)
   const int key = (2*i + (inw ? 1 : 0))*(vgd_w + 1) + wq;
   auto &cf = vgd_gbcf[vgd_raw ? key : -1];
   auto &cb = vgd_gbcb[vgd_raw ? key : -1];

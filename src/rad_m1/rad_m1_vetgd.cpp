@@ -2297,6 +2297,11 @@ void RadiationM1::VetGdTables(const Real alpha) {
              "band copies do not re-index directions)");
   }
   const bool first = (vgd_alpha < 0.0);
+  // (the compact global band's kept lists belong to a set: a new set remakes them)
+  if (alpha != vgd_alpha) {
+    vgd_gbcf.clear();
+    vgd_gbcb.clear();
+  }
   vgd_alpha = alpha;
   g_vgd_tab_alpha = alpha;   // csfix-1023
   if (first && vgd_beam) {
@@ -2355,6 +2360,10 @@ void RadiationM1::VgdXfTables(const Real alpha) {
     // cubed sphere (its compact lists have their own per-set slots; the band ring
     // rewrites these records at every sweep)
     if (!vgd_csg) {std::swap(vgd_hxe, vgd_hxe_alt);}
+    // (the compact global band's kept lists are remade: its keep test reads the
+    // directions, and one set's lists take ~2 MiB per shell, pass and depth)
+    vgd_gbcf.clear();
+    vgd_gbcb.clear();
     // xffuse-1113: the set's intensities and shell lists go with it too (keyed caches)
     if (vgd_xff) {
       std::swap(vgd_i, vgd_i_xb);
