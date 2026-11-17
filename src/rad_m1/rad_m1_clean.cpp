@@ -906,10 +906,11 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // floor, and no state from the last solve, so that restarts stay bitwise)
   Real tol_nl = fmax(cln_tol_nl, 10.0*cln_tol);
   cln_tolb = tol_nl;
-  // (the budget's norm and time error only in Newton passes whose K1 = f(U^n) is
-  // known; a single solve, or a cold one without the time-error estimate, the strict
-  // test, whose answer is that of the converged step)
-  cln_bon = cln_budget && iterate && (t2_ok || cln_k1ok) &&
+  // (the budget's norm and time error only in Newton passes of the gas coupling whose
+  // K1 = f(U^n) is known; a single solve, a cold one without the time-error estimate,
+  // or one without gas feedback, whose E row's residual is the energy error (no gas
+  // row takes it), the strict test, whose answer is that of the converged step)
+  cln_bon = cln_budget && iterate && cln_feedback && (t2_ok || cln_k1ok) &&
             t2_solve != M1_T2S_NONE && !cln_vzero &&
             t2k1.extent_int(0) >= pmy_pack->nmb_thispack;
   cln_ewr = -1.0;
