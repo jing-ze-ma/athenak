@@ -25,3 +25,17 @@ Low priority after your own gates and push 17.
 ## Later
 If this works, we would post more batches the same way (`req<N>/` with a bundle + a short command list). Please say how you prefer to
 receive them, and which allocation and wall time they should fit.
+
+## UPDATE 1 (USER correction): use the GPU allocations, not CPU
+USER: "I mean we have gpu allocations not cpu". So please run batch 1 on GPU, on the MI300A allocations you hold. A100 on Raven is optional,
+since Orion also runs A100 itself. Keep it below your own gates, push 17 and production.
+- Build each ref of the bundle (trimtest e0a52c637, clean-cc-stag2-gpu2-m36 5155aa332, clean-cc-stag2-gpu2-m12 680738756, and the bases
+  e9227103a, ce49d1c1d) with your MI300A gate recipe (NOTE 8077e78a6), plus `-D Athena_M1_VGD_NMAX=512`.
+- Run your MI300A gate deck set (gates1..4_mi300a style) with `clean_layout = staggered` where the decks allow it, branch vs base on the
+  same GPU type, and include 3x repeats of 2 decks (determinism) and the RT decks (rot1s, csCnr: N/2 + restart + N/2 bitwise).
+- Expected:
+  - GPU vs GPU branch-vs-base: bitwise where the branch does not act (as on CPU);
+  - m36 changes sp3 with poles / theta-periodic seams / cs sbimp + extrap1;
+  - m12 changes only analytic-closure or SC-ray decks.
+- Outputs: /viper/ptmp2/jinma/orion_stag2/req1/out/. NOTE: NOTE-2026-11-17-viper-orion-gpu-batch1.md.
+- The CPU request above is withdrawn.
