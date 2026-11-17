@@ -1548,9 +1548,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // the cubed sphere with clean_rays = sc: vet_gd's own sweep (intensities to cln_fvi)
     cln_cssc = clean && pmy_pack->pmesh->use_cubed_sphere && vgd_on && cln_rfv == 0;
-    // clean_rot_ring not named: live wherever the vet_gd FV rays rotate in time with a
-    // cross-fade (decided here, before a restart file's channels are counted)
-    if (clean && !cln_ring_named && vgd_on && cln_rfv > 0 && vra_on && g_vra_adv &&
+    // clean_rot_ring not named: live wherever the vet_gd FV rays (or the sp sc rays)
+    // rotate in time with a cross-fade (decided here, before a restart file's channels
+    // are counted)
+    if (clean && !cln_ring_named && vgd_on && (cln_rfv > 0 || !cln_cssc) && vra_on &&
+        g_vra_adv &&
         vgd_xf && (vgd_rot_dt > 0.0 || vgd_rot_auto) && vgd_rot_align &&
         vra_k <= M1_RA_NF) {
       cln_ring = 1;

@@ -336,13 +336,18 @@ void RadiationM1::CleanInit() {
                  "vet_rotate_advance), and on a 2-D axisymmetric mesh the z axis");
     }
   }
-  const bool ring_ok = vgd_on && cln_rfv > 0 && vra_on && g_vra_adv &&
+  const bool ring_ok = vgd_on && (cln_rfv > 0 || !cln_cssc) && vra_on && g_vra_adv &&
                        (vgd_rot_dt > 0.0 || vgd_rot_auto) && vgd_rot_align &&
                        vra_k <= M1_RA_NF;
   if (cln_ring && !(ring_ok && vgd_xf == (cln_ring == 1))) {
     CleanFatal("<rad_m1>/clean_rot_ring needs vet_gd FV rays rotating in time: "
                "vet_rotate_avg = K with vet_rotate_advance, vet_gd_rotate_dt and "
                "_align, with vet_gd_rotate_xfade for live, without for jump");
+  }
+  // the sc rays sweep one set at a time: a mean or a cross-fade of sets is the ring's
+  if (vgd_on && VgdRotOn() && cln_rfv == 0 && (vra_on || vgd_xf) && !cln_ring) {
+    CleanFatal("<rad_m1>/clean_rays = sc with vet_rotate_avg or vet_gd_rotate_xfade "
+               "needs clean_rot_ring");
   }
   // jump: the first step of a block is a backward-Euler step (no slope of the old sets)
   if (cln_ring == 2) vgd_rot_slope = 2;
@@ -374,12 +379,10 @@ void RadiationM1::CleanInit() {
     // (staggered: also clean_closure = eddington)
     const bool stg = !cln_cell;
     if ((!cln_cell && !stg) || !(cln_sphere || vgd_on || (stg && cln_edd)) ||
-        (cln_consist && !vgd_on) || vgd_twin || vgd_async ||
-        (VgdRotOn() && cln_rfv == 0)) {
+        (cln_consist && !vgd_on) || vgd_twin || vgd_async) {
       CleanFatal("<rad_m1>/scheme = clean on spherical polar needs clean_layout = "
                  "cell, clean_closure = sphere (no clean_consistency) or closure = "
-                 "vet_col with vet_gd (vet_gd_twin = false, no vet_gd_async; a rotating "
-                 "set needs clean_rays = fv1 | fv)");
+                 "vet_col with vet_gd (vet_gd_twin = false, no vet_gd_async)");
     }
     // the rays' theta walls follow the mesh: a reflecting wall mirrors (the conservative
     // transport reflects specularly, CleanFvWalls), a periodic one wraps

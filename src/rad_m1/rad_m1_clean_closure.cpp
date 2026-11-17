@@ -804,6 +804,9 @@ void RadiationM1::CleanRays() {
     }
     CleanFvSets(pmy_pack->pmesh->time + pmy_pack->pmesh->dt, pmy_pack->pmesh->ncycle);
     CleanFvSweep();
+  } else if (cln_ring) {   // (the sc rays: each set's sweep in CleanRingMoments)
+    VetGdSource();
+    CleanFvSets(pmy_pack->pmesh->time + pmy_pack->pmesh->dt, pmy_pack->pmesh->ncycle);
   } else {
     VetGdBuild();
   }
@@ -835,7 +838,8 @@ void RadiationM1::CleanRays() {
 //! mixture is not that of a non-negative intensity takes the two swept sets' (1 - s) M_b
 //! + s M_{b+1} (the cell moments only on the cubed sphere, whose face sums are held on
 //! both sides of a MeshBlock face).  Linear in the moments, so every face sum stays
-//! single-valued and conservative.
+//! single-valued and conservative.  The sc rays (clean_rays = sc, spherical polar) sweep
+//! each set alone here, in its own tables (VgdXfTables keeps two).
 
 void RadiationM1::CleanRingMoments() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -862,6 +866,12 @@ void RadiationM1::CleanRingMoments() {
   std::vector<int> slot(nk + 2, -1);   // slot of block b - nk + 1 + p
   for (int q = 0; q < ns; ++q) {
     cln_fvd = cln_fvdm[q];
+    if (cln_rfv == 0) {   // the sc rays: set q swept alone (its tables, its own weights)
+      cln_rq = static_cast<int>(cln_fvblk[q] & 1);
+      VgdXfTables(cln_fvkey[q]);
+      vgd_scut = vlat_icut;
+      VetGdSweep();
+    }
     CleanClosureFromGd();
     if (cln_consist) CleanGdFaceSums();
     const int o = q*CLN_N;
@@ -1147,7 +1157,7 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
   const int on = cln_fvn/n;
   const std::vector<int64_t> oblk = cln_fvblk;
   const CleanFvI ofv = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvf32);
-  const bool remap = cln_ring && on > 0 && cln_fvn != ns*n &&
+  const bool remap = cln_ring && cln_rfv > 0 && on > 0 && cln_fvn != ns*n &&
                      ofv.extent_int(1) == cln_fvb*on*n;
   if (cln_fvn != ns*n) {
     cln_fvn = ns*n;
@@ -1241,7 +1251,7 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
     cln_rs = s;
     cln_rbld = b;
   }
-  for (int q = 0; q < ns; ++q) {
+  for (int q = 0; q < ns && cln_rfv > 0; ++q) {   // (the sc rays: vet_gd's own tables)
     if (chg[q]) CleanFvTables(q*n, n);
   }
 }
@@ -2678,21 +2688,24 @@ void RadiationM1::CleanGdFaceSums() {
   const int bmn = ibm_nr, bmr[4] = {ibm_ray[0], ibm_ray[1], ibm_ray[2], ibm_ray[3]};
   // the short characteristics' intensities in the mesh layout with the ghost exchange
   // (the image cell's beyond a periodic seam, re-indexed by the wall map as the sweep)
+  // (clean_rot_ring with a reflecting top: two slots, of the sets blk mod 2, for its
+  // mirror of the last build)
+  const int ns2 = (cln_ring && cln_scmem) ? 2 : 1, doff = (ns2 > 1) ? cln_rq*n : 0;
   if (!fv) {
-    if (cln_fvi.extent_int(1) != n) {
-      Kokkos::realloc(cln_fvi, nmb1 + 1, n, cs.extent_int(2), cs.extent_int(3),
-                      cs.extent_int(4));
+    if (cln_fvi.extent_int(1) != ns2*n) {
+      Kokkos::realloc(cln_fvi, nmb1 + 1, ns2*n, cs.extent_int(2),
+                      cs.extent_int(3), cs.extent_int(4));
     }
     fi_ = CleanFvI{cln_fvi};
     par_for("cln_gd_copy", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      for (int d = 0; d < n; ++d) fi_.Set(m, d, k, j, i, vi_(m,d,k+ok,j+og,i));
+      for (int d = 0; d < n; ++d) fi_.Set(m, doff + d, k, j, i, vi_(m,d,k+ok,j+og,i));
     });
-    CleanGhostFill(cln_fvi, 0, n);
+    CleanGhostFill(cln_fvi, doff, n);
   }
   auto inten = [=] KOKKOS_FUNCTION (const int m, const int d, const int k, const int j,
                                     const int i) {
-    return fi_(m,d,k,j,i);
+    return fi_(m,doff+d,k,j,i);
   };
   // vector area of the low face of cell (k,j,i) normal to dir and the local basis there
   // (Cartesian on the cubed sphere)
@@ -2791,7 +2804,7 @@ void RadiationM1::CleanGdFaceSums() {
     face(0, m, k, j, i, a, e);
     for (int d = 0; d < n; ++d) {
       const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
-      Real iv = CleanFvFace(fi_, fq_, o2, m, d, 0, k, j, i, f > 0.0, nl);
+      Real iv = CleanFvFace(fi_, fq_, o2, m, doff + d, 0, k, j, i, f > 0.0, nl);
       if (CleanBoundaryFace(x, 0, m, k, j, i)) {   // the sweep's x1 boundary
         const Real s0 = fv ? sq_(m,CLQ_S0,k,j,is) : exp(cw_(m,1,k+ok,j+og,is));
         iv = (i == is) ? ((f > 0.0) ? (emi ? iemit : s0) : iv)

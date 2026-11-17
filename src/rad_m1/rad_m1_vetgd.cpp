@@ -5941,13 +5941,15 @@ void RadiationM1::VetGdTopMirror() {
   // restart files keep), the same numbers as vgd_i in a run without a restart; before
   // the first copy the top cell's E (no outflow yet)
   auto fi_ = cln_fvi;
-  const bool cp = cln_scmem && fi_.extent_int(0) == nmb1 + 1 && fi_.extent_int(1) == n;
+  const int off = cln_ring ? cln_rq*n : 0;   // (clean_rot_ring: the set's slot)
+  const bool cp = cln_scmem && fi_.extent_int(0) == nmb1 + 1 &&
+                  fi_.extent_int(1) == (cln_ring ? 2 : 1)*n;
   const bool e1 = cln_scmem && !cp;
   par_for("m1_vgd_mirror", DevExeSpace(), 0, nmb1, 0, nx3 - 1, 0, nx2 - 1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     if (!(xf_(m) & 4)) {return;}
     auto top = [&](const int q) {
-      return cp ? fi_(m,q,k+ks,j+js,ie) : vi_(m,q,k+w,j+w,ie);
+      return cp ? fi_(m,off+q,k+ks,j+js,ie) : vi_(m,q,k+w,j+w,ie);
     };
     const Real r[3] = {tg_(m,k,j,0)*tg_(m,k,j,3), tg_(m,k,j,0)*tg_(m,k,j,2),
                        tg_(m,k,j,1)};
