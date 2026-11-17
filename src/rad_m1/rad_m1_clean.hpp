@@ -742,9 +742,12 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
     const Real b = -0.25*(1.0 - w)*t0*(1.0 - qd)*x.c*
                    (CleanStagN(x, CLW_BT, dir, m, k, j, i, kl, jl, il) +
                     CleanStagN(x, CLW_BT, dir, m, k, j, i, k, j, i))*x.h*x.c;
-    // (clean_stag_sbimp: of (1 - r) kE E, the emission's response through the gas T)
-    const Real rl = x.sbi ? 1.0 - x.w(m,CLW_GX,kl,jl,il) : 1.0;
-    const Real rr = x.sbi ? 1.0 - x.w(m,CLW_GX,k,j,i) : 1.0;
+    // of (1 - r) kE E: the emission follows E through the gas T (r = s/(d cv + s)), as
+    // the old production's linearised exchange g0 = -(SRCR - SRCB E), SRCB = (1 - r) hc
+    // kE; the whole hc kE beta made the face an advection at ~ tau_cell v, which broke
+    // the M-matrix of an opaque moving cell at any dt
+    const Real rl = 1.0 - x.w(m,CLW_GX,kl,jl,il);
+    const Real rr = 1.0 - x.w(m,CLW_GX,k,j,i);
     const Real bl = b*x.op(m,M1_OP_E,kl,jl,il)*rl, br = b*x.op(m,M1_OP_E,k,j,i)*rr;
     al += sl;
     ar += sr;
@@ -939,8 +942,8 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
     s += 0.25*tg*x.c*(CleanStagN(x, CLW_BT, dir, m, k, j, i, kl, jl, il) +
                       CleanStagN(x, CLW_BT, dir, m, k, j, i, k, j, i))*
          (x.w(m,CLW_RE,kl,jl,il) + x.w(m,CLW_RE,k,j,i));
-    // (clean_stag_sbimp: less the emission's linear response at E_k, CleanFaceWeights)
-    if (x.sbi) {
+    // (less the emission's linear response at E_k, CleanFaceWeights)
+    {
       auto rk = [&](const int kk, const int jj, const int ii) {
         return x.w(m,CLW_GX,kk,jj,ii)*x.op(m,M1_OP_E,kk,jj,ii)*x.w(m,CLW_EK,kk,jj,ii);
       };

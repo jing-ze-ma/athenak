@@ -1350,7 +1350,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
       }
       x.w(m,CLW_RE,k,j,i) = x.h*x.c*op(m,M1_OP_P,k,j,i)*arad_*
                             SQR(SQR(x.w(m,CLW_T,k,j,i)));
-      if (!x.sbi) return;   // (clean_stag_sbimp: r of the exchange, for the face terms)
+      // (r of the exchange, for the face beta terms: CleanFaceWeights, CleanFaceSource)
       const Real d = uh(m,IDN,k,j,i), t = x.w(m,CLW_T,k,j,i);
       Real b2 = 0.0, e, pg, chi_rho, chi_t, cv;
       for (int n = 0; n < 3; ++n) b2 += SQR(x.w(m,CLW_BT+n,k,j,i));
@@ -1360,7 +1360,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
     });
     CleanGhostFill(cln_w, CLW_BT, 4);   // (E_k's ghosts: those of its last change)
     CleanStagCsLateral(CLW_EK);
-    if (x.sbi) CleanGhostFill(cln_w, CLW_GX, 1);
+    CleanGhostFill(cln_w, CLW_GX, 1);
   }
   if (beta) return;
   CleanArgs xh = x;   // (the face momentum state, clean_stag_split)
