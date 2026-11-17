@@ -4544,7 +4544,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     pbval_th = new MeshBoundaryValuesCC(pmy_pack, pin, false);
     pbval_th->exch_depth = M1HaloDepthEnv(pmy_pack, pin);   // implhalo-1031
     impl_hdepth = pbval_th->exch_depth;   // share-1104 G5: also the halo_mpi cell lists
-    pbval_th->InitializeBuffers(M1_NHALO_T);
+    if (!clean) {pbval_th->InitializeBuffers(M1_NHALO_T);}   // (clean: with thw)
     // COMPONENT ROLES of the scratch halos (SetVectorPairs).  Slots 2,3 hold F1 and KT,
     // SCALARS under the polar flip and the seam transform; the real tangential pairs
     // are (N2,N3), (A2,A3), (V2,V3).  The default (IVY, IVZ) rule would get all of that
@@ -4571,7 +4571,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(thq_c, nmb, M1_NHALO_Q, 1, 1, 1);
     pbval_tq = new MeshBoundaryValuesCC(pmy_pack, pin, false);
     pbval_tq->exch_depth = M1HaloDepthEnv(pmy_pack, pin);   // implhalo-1031
-    pbval_tq->InitializeBuffers(M1_NHALO_Q);
+    if (!clean) {pbval_tq->InitializeBuffers(M1_NHALO_Q);}   // (clean: with thq)
     pbval_tq->SetVectorPairs(M1_NHALO_Q, {});   // E', G0, F1, KT: all scalars
     // the deep interior of the scratch arrays is neither read by a send nor written by a
     // receive when every neighbour is at the SAME level (a same-level buffer reaches ng
@@ -5223,6 +5223,7 @@ void RadiationM1::ImplicitHaloExchange(int nq, int c0) {
     auto &id = pmy_pack->pmesh->mb_indcs;
     Kokkos::realloc(*pa, pmy_pack->nmb_thispack, nq, (id.nx3 > 1) ? id.nx3 + 2*id.ng : 1,
                     (id.nx2 > 1) ? id.nx2 + 2*id.ng : 1, id.nx1 + 2*id.ng);
+    pb->InitializeBuffers(nq);
   }
   ImplicitHaloCopy(*pa, nq, c0, true);
   while (pb->InitRecv(nq) == TaskStatus::incomplete) {}

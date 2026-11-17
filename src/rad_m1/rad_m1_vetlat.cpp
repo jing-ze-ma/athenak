@@ -246,7 +246,10 @@ void RadiationM1::VetLatInit() {
   // (vet_gd: also slot 0 after the fold and every LAT slot: the face diagonals and the
   // tangential cross terms read their lateral ghosts)
   const int nlx = vgd_on ? (1 + M1_TT_NLAT) : 2;
-  Kokkos::realloc(vlat_lx, nmb, nlx, c3, c2, c1);
+  // (scheme = clean: vlat_lx and its exchange buffers made at the first VetLatTTGhosts,
+  // the fold of a fresh start's build; a restart never needs them)
+  const bool lxe = !clean || pm->use_cubed_sphere;
+  if (lxe) {Kokkos::realloc(vlat_lx, nmb, nlx, c3, c2, c1);}
   Kokkos::deep_copy(vlat_lx, 0.0);
   Kokkos::realloc(vlat_tt_c, nmb, nlx, 1, 1, 1);
   Kokkos::realloc(vlat_geo, indcs.nx1, 2*vlat_nmu, 4);
@@ -297,7 +300,7 @@ void RadiationM1::VetLatInit() {
   pbval_vl->cs_blockend_ext_ = pbval_u->cs_blockend_ext_;
   pbval_vs->cs_blockend_ext_ = pbval_u->cs_blockend_ext_;
   pbval_vt = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
-  pbval_vt->InitializeBuffers(nlx);
+  if (lxe) {pbval_vt->InitializeBuffers(nlx);}
   // accsp-1102 (vet_gd on the full sphere): across a pole e_theta and e_phi both flip, so
   // the hand-over pair (D_r,theta, D_r,phi) = lx slots (2, 3) flips; D_rr, the trace-free
   // tangential D_tt, D_pp and D_tp (two flips) are scalars
@@ -447,6 +450,11 @@ void RadiationM1::VetGdIterRebuild() {
 void RadiationM1::VetLatTTGhosts(DvceArray5D<Real> *src) {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   auto tt_ = (src != nullptr) ? *src : tau_ten;   // meshfb-1106: or vlat_tt_loc
+  if (vlat_lx.extent_int(0) == 0) {   // (scheme = clean: made at its first use)
+    Kokkos::realloc(vlat_lx, nmb1 + 1, vlat_tt_c.extent_int(1), tt_.extent_int(2),
+                    tt_.extent_int(3), tt_.extent_int(4));
+    pbval_vt->InitializeBuffers(vlat_lx.extent_int(1));
+  }
   auto lx_ = vlat_lx;
   const int nlx = static_cast<int>(vlat_lx.extent(1));
   const bool gd = vgd_on;
