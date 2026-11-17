@@ -113,13 +113,20 @@ const char *kDtrMinimal[] = {
   // reads with cln_fvi (cln_fvd: the step's last build, at t + dt, rewrites them)
   "m1.cln_rstd", "m1.cln_fvi", "m1.cln_fvis", "m1.cln_fvgp", "m1.cln_top", "m1.cln_rr",
   "m1.cln_rpd", "m1.cln_fvd",
+  // (not visited before the generated visitor): vet_gd_rotate_xfade's G/A/Delta slots,
+  // read by the next builds' estimate (RotXfEst); the old scheme's K1 of
+  // time2_inc_energy / time2_exch_split and time2_stage_local_be carry, read by the next
+  // stage 1; and the cumulative counters of the run report
+  "m1.vgd_xf_d", "m1.t2ke1", "m1.t2kx1", "m1.t2lx1", "m1.t2thc", "m1.cmi_cnt",
+  "m1.fcd_cnt_d", "m1.t2th_cnt_d",
 };
 
 // the Views of kDtrMinimal that <rad_m1>/scheme = clean does not write
 // (dt_retry_views = clean)
 const char *kDtrNotClean[] = {
   "m1.ipred", "m1.ipred2", "m1.csk1", "m1.csk2", "m1.tau_ten", "m1.x2_tt", "m1.x2_hr",
-  "m1.x2_q",
+  "m1.x2_q", "m1.t2ke1", "m1.t2kx1", "m1.t2lx1", "m1.t2thc", "m1.cmi_cnt", "m1.fcd_cnt_d",
+  "m1.t2th_cnt_d",
 };
 
 // debug (dt_retry_poison_n / dt_retry_poison_cells): restrict the poison of

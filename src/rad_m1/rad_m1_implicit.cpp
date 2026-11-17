@@ -19177,6 +19177,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       converged = false;
     }
   }
+  if (pmy_pack->pmesh->ncycle == dbg_nonconv && dtr_ncut == 0) {converged = false;}
   TmrMark(7);
   // consfix-1109 implicit_cons_final / dbg_cons_ledger: r = b - A E' of the last pass,
   // before anything after the loop touches the frozen system

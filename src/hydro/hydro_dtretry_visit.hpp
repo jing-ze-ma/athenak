@@ -18,6 +18,7 @@ void hydro::Hydro::DtRetryVisit(V &v) {
   v.value("tracers", tracers);
   v.value("floor_tracer", floor_tracer);
   v.value("ifltr", ifltr);
+  v.value("dual", dual);
   v.value("fltr_margin", fltr_margin);
   v.value("fltr_fmax", fltr_fmax);
   v.value("fltr_dm", fltr_dm);

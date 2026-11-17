@@ -1882,6 +1882,8 @@ class RadiationM1 {
   int t2_solve{};               // what the next ImplicitSolve does (M1_T2S_*)
   bool t2_fail{};               // the last stage solve was not admissible
   int t2_dbg_fail{};            // DEBUG time2_dbg_fail: fail stage 1 at this cycle
+  int dbg_nonconv = -1;         // DEBUG dbg_nonconv: the solves of this cycle's first
+                                // attempt report non-converged (dt_retry tests)
   int t2_dbg_adm{};             // DEBUG dbg_t2_admiss: report the first N non-admissible
   int t2_dbg_adm_n{};           // stages (which quantity <= 0, where); 0 = off
   // t2retry-1020: <rad_m1>/time2_reject = be (default) | retry (read only when named): a

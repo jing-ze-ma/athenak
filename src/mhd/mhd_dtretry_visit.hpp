@@ -23,6 +23,7 @@ void mhd::MHD::DtRetryVisit(V &v) {
   v.value("floor_tracer", floor_tracer);
   v.value("trc_strang", trc_strang);
   v.value("ifltr", ifltr);
+  v.value("dual", dual);
   v.value("fltr_margin", fltr_margin);
   v.value("fltr_fmax", fltr_fmax);
   v.value("fltr_dm", fltr_dm);

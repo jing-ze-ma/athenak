@@ -30,7 +30,7 @@ void hydro::AmModule::DtRetryVisit(V &v) {
 }
 
 // not visited (pointers, const, threads, timers, MPI, ...):
-// pmy_pack : MeshBlockPack *
-// pbval_spin : MeshBoundaryValuesCC *
+//   pmy_pack : MeshBlockPack *
+//   pbval_spin : MeshBoundaryValuesCC *
 
 #endif  // HYDRO_HYDRO_AM_DTRETRY_VISIT_HPP_

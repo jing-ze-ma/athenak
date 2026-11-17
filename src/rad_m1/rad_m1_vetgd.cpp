@@ -11167,6 +11167,8 @@ void RadiationM1::DtRetryAfterRestore() {
     for (auto &c : vgd_hce) {c.alpha = -9.0; c.scut = -9; c.ws = -9;}
     for (auto &x : vgd_hle) {x.gen = -1; x.alpha = -9.0; x.nofit = false;}
     for (auto &x : vgd_hxe) {x.gen = -1; x.alpha = -9.0; x.nofit = false;}
+    for (auto &x : vgd_hxe_alt) {x.gen = -1; x.alpha = -9.0; x.nofit = false;}
+    vgd_shl_alpha = vgd_shl_alpha_xb = -3.0;   // the shell lists (vgd_shl[_xb]) too
     for (int s = 0; s < 2; ++s) {vgd_htag[s][0] = -1;}
     for (int p = 0; p < 2; ++p) {
       for (auto &a : vgd_ovl_alpha[p]) {a = -5.0;}

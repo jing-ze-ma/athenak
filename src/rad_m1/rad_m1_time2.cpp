@@ -412,6 +412,9 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_dbg_fail")) {
     t2_dbg_fail = pin->GetInteger("rad_m1", "time2_dbg_fail");
   }
+  if (pin->DoesParameterExist("rad_m1", "dbg_nonconv")) {
+    dbg_nonconv = pin->GetInteger("rad_m1", "dbg_nonconv");
+  }
   // dbg_t2_admiss = N (DEBUG, default 0 = off, read only when named so the restart echo
   // and every result stay bitwise): for the first N non-admissible hesdirk2 stages print
   // which quantity went <= 0 (solved E, solved T, written-back gas eint) and, for each,

@@ -25,8 +25,13 @@ SKIP_RE = [r'^std::thread', r'^std::future', r'Timer$', r'^MPI_', r'DevExeSpace'
 # pointer, not visited): rolled back to -1 a retry would make a second communicator
 # cln_hbuf: the storage that the unmanaged scratch views of cln_halo (not visited, not
 # copyable) alias; rolled back to an older handle, the exchanges would write freed memory
-SKIP_NAMES = {'hi_seq', 'vgd_ipc_seq', 'acc_nccl', 'cln_hbuf'}
-NESTED = ['VgdTabHost', 'VgdTabDev', 'M1OpacTab']   # structs holding Views: recurse
+# cln_halo / cln_hpb: the clean ghost exchange, made at first use over cln_hbuf (kept)
+# vgd_es2_made: the second execution space instance vgd_es2 (not copyable) is made
+# vgd_esid / vgd_est: the early-send stamp id and its stamps (monotonic: a rolled-back id
+# would match stamps the failed attempt left, and those cells would be skipped)
+SKIP_NAMES = {'hi_seq', 'vgd_ipc_seq', 'acc_nccl', 'cln_hbuf', 'cln_halo', 'cln_hpb',
+              'vgd_es2_made', 'vgd_esid', 'vgd_est'}
+NESTED = ['VgdTabHost', 'VgdTabDev', 'M1OpacTab', 'CleanW']   # structs holding Views
 
 def ast(header, name):
     tu = '#include "athena.hpp"\n#include "mesh/mesh.hpp"\n#include "%s"\n' % header
@@ -62,7 +67,11 @@ def emit(fields, pre, out, skipped):
         dims = re.findall(r'\[(\d+)\]', t[len(base):])
         if n in SKIP_NAMES:
             why = {'acc_nccl': ' (communicator state, kept)',
-                   'cln_hbuf': " (the storage cln_halo's unmanaged scratch views alias, kept)"}
+                   'cln_hbuf': ' (the storage of cln_halo, kept)',
+                   'cln_halo': ' (views over cln_hbuf, kept)',
+                   'cln_hpb': ' (made at first use, kept)',
+                   'vgd_es2_made': ' (vgd_es2 made, kept)',
+                   'vgd_esid': ' (stamp id, kept monotonic)', 'vgd_est': ' (stamps, kept)'}
             skipped.append(nm + ' : ' + t + why.get(n, ' (protocol counter, kept monotonic)')); continue
         if t.startswith('const ') or t.endswith('*') or '(*)' in t or t.endswith('&'):
             skipped.append(nm + ' : ' + t); continue
@@ -104,6 +113,13 @@ def gen(header, cls, outfile, guard, ns):
            ('void %s::%s::DtRetryVisit(V &v) {' % (ns, cls) if ns else
             'void %s::DtRetryVisit(V &v) {' % cls)] + out + ['}', '', '// not visited (pointers, const, threads, timers, MPI, ...):'] + \
           ['//   ' + s for s in skipped] + ['', '#endif  // %s' % guard, '']
+    for q, l in enumerate(txt):   # cpplint: 90 columns (break after the name)
+        if len(l) > 90 and l.startswith('  v.') and '", ' in l:
+            a, b = l.split('", ', 1)
+            txt[q] = a + '",\n' + ' ' * (l.index('(') + 1) + b
+        elif len(l) > 90 and l.startswith('  for ('):
+            a, b = l.split(' {v.', 1)
+            txt[q] = a + '\n    {v.' + b
     open(os.path.join(SRC, outfile), 'w').write('\n'.join(txt))
     print('%s: %d visits, %d skipped -> %s' % (cls, len(out), len(skipped), outfile))
 
