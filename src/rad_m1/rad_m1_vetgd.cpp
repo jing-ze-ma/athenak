@@ -2327,6 +2327,7 @@ void RadiationM1::VetGdTables(const Real alpha) {
   if (alpha != vgd_alpha) {
     vgd_gbcf.clear();
     vgd_gbcb.clear();
+    vgd_gbrec.clear();
   }
   vgd_alpha = alpha;
   g_vgd_tab_alpha = alpha;   // csfix-1023
@@ -2385,11 +2386,9 @@ void RadiationM1::VgdXfTables(const Real alpha) {
     // rebuild each other's lists at every build (the same lists: bitwise).  Not on the
     // cubed sphere (its compact lists have their own per-set slots; the band ring
     // rewrites these records at every sweep)
+    // (and so do the compact global band's kept lists and their band records)
     if (!vgd_csg) {std::swap(vgd_hxe, vgd_hxe_alt);}
-    // (the compact global band's kept lists are remade: its keep test reads the
-    // directions, and one set's lists take ~2 MiB per shell, pass and depth)
-    vgd_gbcf.clear();
-    vgd_gbcb.clear();
+    VgdGbSwap();
     // xffuse-1113: the set's intensities and shell lists go with it too (keyed caches)
     if (vgd_xff) {
       std::swap(vgd_i, vgd_i_xb);
@@ -2484,6 +2483,7 @@ void RadiationM1::VgdXffSwap() {
     std::swap(vgd_w3, vgd_tabd.w3);
   }
   if (!vgd_csg) {std::swap(vgd_hxe, vgd_hxe_alt);}
+  VgdGbSwap();
   std::swap(vgd_i, vgd_i_xb);
   for (int p = 0; p < 2; ++p) {
     std::swap(vgd_shl[p], vgd_shl_xb[p]);

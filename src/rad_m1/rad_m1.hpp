@@ -3866,6 +3866,11 @@ class RadiationM1 {
   bool VgdXffAllExact();
   void VetGdXffPostB();
   void VgdXffSwap();
+  void VgdGbSwap() {   // the compact global band's kept lists go with their set
+    std::swap(vgd_gbcf, vgd_gbcf_xb);
+    std::swap(vgd_gbcb, vgd_gbcb_xb);
+    std::swap(vgd_gbrec, vgd_gbrec_xb);
+  }
   bool VetGdHlXff(const int i, const int ws, const int mode = 0);
   // vgdsched-1113 early send of the fused sweep (env VGD_XFE): this shell's SEND cells of
   // both sets first, on a second high-priority stream, with their pack; the host
@@ -4083,7 +4088,7 @@ class RadiationM1 {
   std::vector<int> vgd_rg_se;         // (i): the exact list record (3: the raw key)
   // vgd_raw: the band positions (encoded as the exact lists) each raw exchange writes,
   // keyed as vgd_gbcf (rad_m1_vetgd_sph2.inc VetGdRawRec)
-  std::map<int, DvceArray1D<int>> vgd_gbrec;
+  std::map<int, DvceArray1D<int>> vgd_gbrec, vgd_gbrec_xb;
   int VetGdRawKey(const int i, const bool inw, const int ws) const;
   DvceArray1D<int> VetGdRawRec(const int key);
   int64_t vgd_rg_stop = 0;            // store fill this sweep
@@ -4548,8 +4553,8 @@ class RadiationM1 {
   DvceArray1D<int> vgd_gbfs, vgd_gbfr;    // flags -> positions (entry*n + v; +1)
   Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_gbpb;   // segment bounds
   // vgd_raw: the scanned flags and bounds per (shell, pass, depth) (VetGdGbHaloC)
-  std::map<int, std::array<DvceArray1D<int>, 2>> vgd_gbcf;
-  std::map<int, std::vector<int>> vgd_gbcb;
+  std::map<int, std::array<DvceArray1D<int>, 2>> vgd_gbcf, vgd_gbcf_xb;   // (_xb: the
+  std::map<int, std::vector<int>> vgd_gbcb, vgd_gbcb_xb;   // other cross-fade set's)
   Real vgd_gbdmin = 0.0;
   template <class V>
   bool VetGdGbHaloC(V &a, const int i, const int ws, const int part = 0);

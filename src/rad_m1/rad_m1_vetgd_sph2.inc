@@ -580,15 +580,8 @@ void RadiationM1::VetGdGlobalBandInit() {
     Kokkos::deep_copy(vgd_phc, ph_h);
   }
   // share-1104 G1: the compact global band (vet_gd_halo_compact > 0, an MPI band)
-  // (the sc rays of a rotating set, vgd_raw: the dense exchange, the same values; the
-  // kept lists would be remade for every set the sweeps alternate, costlier than they
-  // save)
-  vgd_gbc = (vgd_hcomp > 0) && vgd_hmpi && !(vgd_raw && VgdRotOn());
-  if (vgd_hcomp > 0 && vgd_hmpi && !vgd_gbc && me == 0) {
-    std::cout << "<rad_m1> vet_gd_band_global: the dense exchange for the rotating set "
-              << "(vet_gd_halo_compact = " << vgd_hcomp << " is for a fixed set)"
-              << std::endl;
-  }
+  // (a rotating set's kept lists: remade per new set, swapped with the cross-fade's)
+  vgd_gbc = (vgd_hcomp > 0) && vgd_hmpi;
   if (vgd_gbc) {
     const int n = vgd_n;
     Kokkos::realloc(vgd_gbjs, std::max(vgd_csnsnd, 1), 3);
@@ -645,6 +638,8 @@ void RadiationM1::VetGdGlobalBandInit() {
   }
   vgd_gbcf.clear();
   vgd_gbcb.clear();
+  vgd_gbcf_xb.clear();
+  vgd_gbcb_xb.clear();
   // every slot reads the band (no direct on-rank neighbour reads)
   Kokkos::deep_copy(vgd_hloc, -1);
   for (int t = 0; t < 8*nmb; ++t) {vgd_hrank[t] = me;}
@@ -726,9 +721,10 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
   // planb-1117 vet_gd_band_ring_inward: the outward exchange keeps every direction at
   // depth 1 (the lateral face sums of the shell read them, CleanGdFaceSums)
   const bool pk1 = vgd_pk && !inw;
-  // vgd_raw (the current direction set: VetGdTables, VgdXfTables remake them): the kept
-  // lists and bounds of each (shell, pass, depth), made at their first exchange; the
-  // pack and unpack run over the kept values only (an unsent band value is never read)
+  // vgd_raw (the current direction set: VetGdTables remakes them, VgdXfTables swaps
+  // them): the kept lists and bounds of each (shell, pass, depth), made at their first
+  // exchange; the pack and unpack run over the kept values only (an unsent band value is
+  // never read)
   const int key = (2*i + (inw ? 1 : 0))*(vgd_w + 1) + wq;
   auto &cf = vgd_gbcf[vgd_raw ? key : -1];
   auto &cb = vgd_gbcb[vgd_raw ? key : -1];

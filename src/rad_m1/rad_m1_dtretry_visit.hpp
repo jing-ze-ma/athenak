@@ -1827,6 +1827,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_rg_sk", vgd_rg_sk);
   v.value("vgd_rg_se", vgd_rg_se);
   v.value("vgd_gbrec", vgd_gbrec);
+  v.value("vgd_gbrec_xb", vgd_gbrec_xb);
   v.value("vgd_rg_stop", vgd_rg_stop);
   v.view("vgd_rg_store", vgd_rg_store);
   v.view("vgd_rg_doffc", vgd_rg_doffc);
@@ -2094,7 +2095,9 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("vgd_gbfr", vgd_gbfr);
   v.view("vgd_gbpb", vgd_gbpb);
   v.value("vgd_gbcf", vgd_gbcf);
+  v.value("vgd_gbcf_xb", vgd_gbcf_xb);
   v.value("vgd_gbcb", vgd_gbcb);
+  v.value("vgd_gbcb_xb", vgd_gbcb_xb);
   v.value("vgd_gbdmin", vgd_gbdmin);
   for (int q0_ = 0; q0_ < 2; ++q0_) {v.view("vgd_ovl[]", vgd_ovl[q0_]);}
   v.view("vgd_ovl_f", vgd_ovl_f);
