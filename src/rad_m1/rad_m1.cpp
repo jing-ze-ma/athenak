@@ -134,6 +134,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_rot_ring = off | live | jump (read only when named; live wherever the vet_gd
     // FV rays rotate with a cross-fade, CleanInit): a rotating union swept as the current
     // set (+ the next one), the older ones carried as moment offsets (CleanRingMoments)
+    // clean_rot_fuse (read only when named, default false): the live ring's two sets
+    // (b, b+1) of a build in one fused sweep (vet_gd_rotate_xfade_fuse), the closure of
+    // each from its own intensities: bitwise the two sweeps; a second intensity array
+    if (pin->DoesParameterExist("rad_m1","clean_rot_fuse")) {
+      cln_rfuse = pin->GetBoolean("rad_m1","clean_rot_fuse");
+    }
     if (pin->DoesParameterExist("rad_m1","clean_rot_ring")) {
       std::string rr = pin->GetString("rad_m1","clean_rot_ring");
       cln_ring = (rr.compare("live") == 0) ? 1 : ((rr.compare("jump") == 0) ? 2 : 0);

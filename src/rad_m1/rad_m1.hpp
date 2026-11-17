@@ -3299,6 +3299,8 @@ class RadiationM1 {
   // clean_rot_ring: the rotating union swept as the current and the next set only, the
   // K - 1 older sets carried as offsets of their ray moments (CleanRingMoments)
   int cln_ring = 0;             // clean_rot_ring = live (1: + the next set) | jump (2)
+  bool cln_rfuse = false;       // clean_rot_fuse: live ring's two sets in one sweep
+  bool cln_rfuse_said = false;
   bool cln_ring_named = false;  // clean_rot_ring named in the input
   bool cln_rlast = false;       // jump: the build closes its block (the next set swept)
   bool cln_rjump = false;       // jump: cln_rnew holds the next block's moments

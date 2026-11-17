@@ -1255,7 +1255,7 @@ void RadiationM1::VetGdInit() {
   // sweeps and allocate no second array (e.g. the fused twin of the RSG decks; the clean
   // sc rays' ring, CleanRingMoments, sweeps one set at a time)
   if (vgd_xff && (vgd_xf_m > 0 || vgd_iter != 1 || vgd_twin || vgd_twfuse || vgd_async ||
-                  (clean && cln_ring) ||
+                  (clean && cln_ring && !(cln_rfuse && cln_ring == 1)) ||
                   vgd_bandx || vgd_upf != 0 || vgd_gband || vgd_nb1 > 1 ||
                   (vgd_csg && vgd_cscomp && vgd_csxg > 1) ||
                   (!vgd_csg && (!vgd_shl_on || vgd_ovl_g > 0 || vgd_fuse_h > 1 ||

@@ -1026,6 +1026,34 @@ void RadiationM1::CleanRingMoments() {
   auto cs = cln_s;
   auto rl = cln_rl;
   auto rr = cln_rr;
+  // clean_rot_fuse: the live ring's two sets of a build (b, b+1) in one fused sweep
+  // (VetGdSweep with vgd_xff_now: each set's own tables and intensities, vgd_i and
+  // vgd_i_xb), their lists made first; the loop below then takes each set's moments, its
+  // tables and intensities brought back by VgdXfTables
+  // (not with the band ring yet: its slabs hold one array; nor a reflecting top)
+  const bool fuse = cln_rfuse && cln_rfv == 0 && !cln_cssc && !cln_scmem && !vgd_ring &&
+                    ns == 2 && !fill && VetGdXffOk();
+  if (cln_rfuse && !fuse && ns == 2 && !fill && !cln_rfuse_said &&
+      global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> clean_rot_fuse: not taken (needs the sp sc rays, no "
+              << "reflecting top, vet_gd_band_ring = false and a fused-sweep "
+              << "configuration, VetGdXffOk): two sweeps per build" << std::endl;
+    cln_rfuse_said = true;
+  }
+  if (fuse) {
+    const int qa = (cln_fvblk[0] < cln_fvblk[1]) ? 0 : 1, qb = 1 - qa;
+    vgd_scut = vlat_icut;
+    VgdXfTables(cln_fvkey[qb]);
+    vgd_xff_prep = true;
+    VetGdSweep();
+    VgdXfTables(cln_fvkey[qa]);
+    VetGdSweep();
+    vgd_xff_prep = false;
+    vgd_xff_now = true;
+    VetGdSweep();
+    vgd_xff_now = false;
+    vgd_xff_n += 1.0;   // (the fused builds, reported with vet_gd_rotate_xfade_fuse)
+  }
   // (the sc rays on the cubed sphere: the sets in block order, so that the last two
   // swept, b and b+1, hold the two cln_fvi slots blk mod 2; on sp the slot order: the
   // block order breaks the bitwise restart of q_def, reflecting top)
@@ -1045,7 +1073,7 @@ void RadiationM1::CleanRingMoments() {
       cln_rqm = static_cast<int>(cln_fvblk[q] & 1);
       VgdXfTables(cln_fvkey[q]);
       vgd_scut = vlat_icut;
-      VetGdSweep();
+      if (!fuse) VetGdSweep();
       if (cln_scmem) VetGdTopCopy();
     }
     CleanClosureFromGd();
