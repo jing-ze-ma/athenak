@@ -515,6 +515,8 @@ void RadiationM1::CleanCellFirstIterate() {
 //! of the implicit gas velocity (CleanCellDrag)
 
 void RadiationM1::CleanCellRightHandSide() {
+  // (the Milne weights before the face fluxes that read them)
+  if (cln_milne) CleanCellMilneSetup();
   if (cln_feedback) {
     CleanGhostFill(cln_x, CLC_K, 4);
     CleanCellFaceFluxes(CLC_K, false);
@@ -542,7 +544,6 @@ void RadiationM1::CleanCellRightHandSide() {
                     !((fref == M1_FREF_CLEAN) && !cln_fref_set && !cln_vzero);
   auto fr = cln_fref;
   auto aref = arad_ref;
-  if (cln_milne) CleanCellMilneSetup();
   par_for("clc_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real t = x.w(m,CLW_T,k,j,i);
