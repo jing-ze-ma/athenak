@@ -3096,7 +3096,8 @@ class RadiationM1 {
   int cln_fvb = 1;              // blocks of cln_fvi: lld 4 (average, slopes along x1..x3)
   DvceArray5D<Real> cln_fvi;    // its intensities (m, b n + d, k, j, i)
   DvceArray5D<float> cln_fvis;  // the same in single precision (clean_fv_float)
-  DvceArray5D<Real> cln_fvr;    // its reference of each cell (m, 0, k, j, i)
+  DvceArray5D<Real> cln_fvr;    // its reference of each cell (m, 4, k, j, i)
+  DvceArray2D<Real> cln_fvrd;   // the directions the reference was taken with
   bool cln_fvf32 = false;       // clean_fv_float: cln_fvis instead of cln_fvi
   DvceArray5D<Real> cln_fvq;    // lld: the source moments (m, CLQ_*, k, j, i)
   DvceArray5D<Real> cln_fvp;    // fv: the intensities of the last build (downwind slopes)

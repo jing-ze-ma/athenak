@@ -91,25 +91,29 @@ constexpr int CLW_N = 41;
 //! \brief the FV rays' intensities: cln_fvi, or cln_fvis in single precision
 //! (clean_fv_float).  In single precision the first nr components (the intensities, not
 //! the lld slopes) are held as their difference from a reference of the cell in double
-//! precision (r, CleanFvRebase), so that the rounding error is a fraction of the
-//! anisotropic part of the field, not of the intensity.  Reads give Real, Store keeps a
-//! value in the precision of the array and returns it as a read would.
+//! precision, a + b . n_d (r = (a, b), n_d the directions rd it was taken with,
+//! CleanFvRebase), so that the rounding error is a fraction of the part of the field
+//! beyond its isotropic and dipole terms, not of the intensity.  Reads give Real, Store
+//! keeps a value in the precision of the array and returns it as a read would.
 
 struct CleanFvI {
   DvceArray5D<Real> d;
   DvceArray5D<float> f;
   DvceArray5D<Real> r;
+  DvceArray2D<Real> rd;
   bool f32 = false;
   int nr = 0;
   KOKKOS_INLINE_FUNCTION
   Real Base(const int m, const int n, const int k, const int j, const int i) const {
-    return (n < nr) ? r(m,0,k,j,i) : 0.0;
+    if (n >= nr) return 0.0;
+    return r(m,0,k,j,i) + r(m,1,k,j,i)*rd(n,0) + r(m,2,k,j,i)*rd(n,1) +
+           r(m,3,k,j,i)*rd(n,2);
   }
   KOKKOS_INLINE_FUNCTION
   Real operator()(const int m, const int n, const int k, const int j, const int i) const {
     if (!f32) return d(m,n,k,j,i);
     if (n >= nr) return static_cast<Real>(f(m,n,k,j,i));
-    return fmax(r(m,0,k,j,i) + static_cast<Real>(f(m,n,k,j,i)), 0.0);
+    return fmax(Base(m, n, k, j, i) + static_cast<Real>(f(m,n,k,j,i)), 0.0);
   }
   KOKKOS_INLINE_FUNCTION
   Real Store(const int m, const int n, const int k, const int j, const int i,
@@ -139,11 +143,54 @@ struct CleanFvI {
   // the intensities as they are held: with clean_fv_float, the doubles a restart read
   // until the next sweep converts them
   static CleanFvI Of(const DvceArray5D<Real> &d_, const DvceArray5D<float> &f_,
-                     const DvceArray5D<Real> &r_, const bool f32_, const int nr_) {
+                     const DvceArray5D<Real> &r_, const DvceArray2D<Real> &rd_,
+                     const bool f32_, const int nr_) {
     const bool s = f32_ && d_.extent_int(1) == 0;
-    return CleanFvI{d_, f_, r_, s, (s && r_.extent_int(0) > 0) ? nr_ : 0};
+    return CleanFvI{d_, f_, r_, rd_, s, (s && r_.extent_int(0) > 0) ? nr_ : 0};
+  }
+  // those of the RadiationM1 a
+  template <class R>
+  static CleanFvI Held(const R &a) {
+    return Of(a.cln_fvi, a.cln_fvis, a.cln_fvr, a.cln_fvrd, a.cln_fvf32, a.cln_fvn);
   }
 };
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanFvFit
+//! \brief clean_fv_float: the reference r = (a, b) of a cell with the nr intensities
+//! v(d) along the directions dir (CleanFvRebase): a = sum w v / sum w and b = 3 sum w v n
+//! / sum w where a + b . n_d lies between 0 and twice v(d) for every d, else (a, 0) where
+//! a does, else 0
+
+template <class F>
+KOKKOS_INLINE_FUNCTION
+void CleanFvFit(const int nr, const DvceArray2D<Real> &dir, const F &v, Real r[4]) {
+  Real sw = 0.0;
+  for (int c = 0; c < 4; ++c) r[c] = 0.0;
+  for (int d = 0; d < nr; ++d) {
+    const Real w = dir(d,3), wv = w*v(d);
+    sw += w;
+    r[0] += wv;
+    for (int c = 0; c < 3; ++c) r[1+c] += wv*dir(d,c);
+  }
+  if (!(sw > 0.0)) {
+    for (int c = 0; c < 4; ++c) r[c] = 0.0;
+    return;
+  }
+  r[0] /= sw;
+  for (int c = 0; c < 3; ++c) r[1+c] *= 3.0/sw;
+  bool p1 = true, p0 = true;
+  for (int d = 0; d < nr; ++d) {
+    const Real x = v(d);
+    const Real r1 = r[0] + r[1]*dir(d,0) + r[2]*dir(d,1) + r[3]*dir(d,2);
+    p1 = p1 && (r1 > 0.0) && (r1 < 2.0*x);
+    p0 = p0 && (r[0] > 0.0) && (r[0] < 2.0*x);
+  }
+  if (!p1) {
+    for (int c = 1; c < 4; ++c) r[c] = 0.0;
+    if (!p0) r[0] = 0.0;
+  }
+}
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanArgs

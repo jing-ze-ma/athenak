@@ -1000,41 +1000,42 @@ void RadiationM1::CleanRingMoments() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanFvRebase
 //! \brief clean_fv_float, before a sweep: the reference of every cell (ghosts included)
-//! becomes the mean of its intensities where each of them exceeds half of it (the
-//! difference is then smaller than the intensity in every direction), else 0, and the
+//! becomes the isotropic and dipole terms of its intensities along the directions of the
+//! sweep (CleanFvFit: where they are within the intensity in every direction), and the
 //! single-precision values the differences from it.  From the intensities held, or from
 //! those a restart read (cln_fvi).
 
 void RadiationM1::CleanFvRebase() {
-  const CleanFvI src = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvr, cln_fvf32, cln_fvn);
+  const CleanFvI src = CleanFvI::Held(*this);
   auto fs = cln_fvis;
   auto fr = cln_fvr;
+  auto dir_ = cln_fvd;
   const int nr = cln_fvn, nv = cln_fvb*cln_fvn, nb = src.f32 ? nr : nv;
   const int n2 = fs.extent_int(2) - 1, n3 = fs.extent_int(3) - 1;
   const int n4 = fs.extent_int(4) - 1;
   par_for("cln_fv_rebase", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, 0, n2, 0, n3,
           0, n4,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real sum = 0.0, low = 0.0;
-    for (int d = 0; d < nr; ++d) {
-      const Real v = src(m,d,k,j,i);
-      sum += v;
-      low = (d == 0) ? v : fmin(low, v);
-    }
-    const Real mean = sum/static_cast<Real>(nr);
-    const Real b = (low > 0.5*mean) ? mean : 0.0;
+    Real r[4];
+    CleanFvFit(nr, dir_, [&](const int d) {return src(m,d,k,j,i);}, r);
     for (int d = 0; d < nb; ++d) {
-      fs(m,d,k,j,i) = static_cast<float>(src(m,d,k,j,i) - ((d < nr) ? b : 0.0));
+      const Real b = (d < nr) ? r[0] + r[1]*dir_(d,0) + r[2]*dir_(d,1) + r[3]*dir_(d,2)
+                              : 0.0;
+      fs(m,d,k,j,i) = static_cast<float>(src(m,d,k,j,i) - b);
     }
-    fr(m,0,k,j,i) = b;
+    for (int c = 0; c < 4; ++c) fr(m,c,k,j,i) = r[c];
   });
+  // (the kernel read the directions of the last reference)
+  if (cln_fvrd.extent_int(0) != nr) cln_fvrd = DvceArray2D<Real>("cln_fvrd", nr, 4);
+  Kokkos::deep_copy(cln_fvrd, cln_fvd);
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanFvSeams
 //! \brief the ghosts of cln_fvi beyond a periodic theta or phi seam of the mesh (not a
 //! whole circle in phi) take their directions in the frame of their image cell
-//! (cln_fvm); the ghost exchange has copied the image cell's intensities
+//! (cln_fvm); the ghost exchange has copied the image cell's intensities (clean_fv_float:
+//! with its reference, which the ghost refits along its own directions)
 
 void RadiationM1::CleanFvSeams() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1043,7 +1044,7 @@ void RadiationM1::CleanFvSeams() {
   const Real pp = pmy_pack->pmesh->mesh_size.x3max - pmy_pack->pmesh->mesh_size.x3min;
   const bool circ = std::abs(pp - 2.0*M_PI) < 1.0e-10;
   CleanArgs x = CleanMakeArgs();
-  CleanFvI fi = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvr, cln_fvf32, cln_fvn);
+  CleanFvI fi = CleanFvI::Held(*this);
   auto mp = cln_fvm;
   const int n1 = fi.extent_int(4), n2 = fi.extent_int(3), ng = indcs.ng;
   // the ghost cells of the theta seams (rows j < js, j > je of ks <= k <= ke) and of the
@@ -1067,9 +1068,22 @@ void RadiationM1::CleanFvSeams() {
       const int j = th ? gs : static_cast<int>(q%n2);
       const int sd = (th ? 0 : 2) + ((g < ng) ? 0 : 1);
       if (x.mbc(m,2+sd) != BoundaryFlag::periodic) return;
+      // (clean_fv_float: the intensities take the reference of their new directions,
+      // CleanFvFit)
       for (int b = 0; b < nb; ++b) {
-        for (int d = 0; d < n; ++d) t(e-e0,d) = fi.Raw(m,b*n+mp(m,sd,k,d),k,j,i);
-        for (int d = 0; d < n; ++d) fi.SetRaw(m, b*n+d, k, j, i, t(e-e0,d));
+        const bool ref = (b == 0 && fi.nr > 0);
+        for (int d = 0; d < n; ++d) {
+          const int v = b*n + mp(m,sd,k,d);
+          t(e-e0,d) = ref ? fi(m,v,k,j,i) : fi.Raw(m,v,k,j,i);
+        }
+        if (ref) {
+          Real rf[4];
+          CleanFvFit(n, fi.rd, [&](const int d) {return t(e-e0,d);}, rf);
+          for (int c = 0; c < 4; ++c) fi.r(m,c,k,j,i) = rf[c];
+          for (int d = 0; d < n; ++d) fi.Store(m, d, k, j, i, t(e-e0,d));
+        } else {
+          for (int d = 0; d < n; ++d) fi.SetRaw(m, b*n+d, k, j, i, t(e-e0,d));
+        }
       }
     });
   }
@@ -1183,7 +1197,7 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
   const int ns = (two ? 1 : nk) + nx;
   const int on = cln_fvn/n;
   const std::vector<int64_t> oblk = cln_fvblk;
-  const CleanFvI ofv = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvr, cln_fvf32, cln_fvn);
+  const CleanFvI ofv = CleanFvI::Held(*this);
   const bool remap = cln_ring && on > 0 && cln_fvn != ns*n &&
                      ofv.extent_int(1) == cln_fvb*on*n;
   if (cln_fvn != ns*n) {
@@ -1226,6 +1240,10 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
     const int e4 = ofv.extent_int(4);
     DvceArray5D<Real> fi;
     DvceArray5D<float> fs;
+    // (clean_fv_float: a slot keeps the directions of its reference)
+    const bool rr = ofv.f32 && cln_fvrd.extent_int(0) == on*n;
+    auto ord_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_fvrd);
+    HostArray2D<Real> nrd_h("cln_fvrd", rr ? ns*n : 0, 4);
     if (ofv.f32) {
       fs = DvceArray5D<float>("cln_fvis", e0, cln_fvb*ns*n, e2, e3, e4);
     } else {
@@ -1238,6 +1256,9 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
         if (oblk[r] == cln_fvblk[q] || (oblk[oq] != cln_fvblk[q] && oblk[r] > oblk[oq])) {
           oq = r;
         }
+      }
+      for (int e = 0; e < n && rr; ++e) {
+        for (int c = 0; c < 4; ++c) nrd_h(q*n+e,c) = ord_h(oq*n+e,c);
       }
       for (int c = 0; c < cln_fvb; ++c) {
         const int a = (c*ns + q)*n, o = (c*on + oq)*n;
@@ -1253,6 +1274,10 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
     }
     cln_fvi = fi;
     cln_fvis = fs;
+    if (rr) {
+      cln_fvrd = DvceArray2D<Real>("cln_fvrd", ns*n, 4);
+      Kokkos::deep_copy(cln_fvrd, nrd_h);
+    }
   }
   if (cln_ring) {
     // the directions of each slot alone, with the set's own weights
@@ -1369,7 +1394,7 @@ void RadiationM1::CleanFvWalls() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int js = indcs.js, je = indcs.je, n = cln_fvn, nl = (cln_fvb > 1) ? n : 0;
   CleanArgs x = CleanMakeArgs();
-  CleanFvI fi = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvr, cln_fvf32, cln_fvn);
+  CleanFvI fi = CleanFvI::Held(*this);
   auto fq = cln_fvq;
   auto fw = cln_fvw;
   auto mp = cln_fvwm;
@@ -1994,7 +2019,8 @@ void RadiationM1::CleanFvSweep() {
       const int n2 = cln_s.extent_int(2), n3 = cln_s.extent_int(3);
       const int n4 = cln_s.extent_int(4);
       cln_fvis = DvceArray5D<float>("cln_fvis", nmb, cln_fvb*n, n2, n3, n4);
-      cln_fvr = DvceArray5D<Real>("cln_fvr", nmb, 1, n2, n3, n4);
+      cln_fvr = DvceArray5D<Real>("cln_fvr", nmb, 4, n2, n3, n4);
+      cln_fvrd = DvceArray2D<Real>("cln_fvrd", n, 4);
       if (cln_fvi.extent_int(1) == cln_fvb*n) CleanFvRebase();
       cln_fvi = DvceArray5D<Real>();
     } else {
@@ -2029,7 +2055,7 @@ void RadiationM1::CleanFvSweep() {
                      cln_rfv == 1 && !axi;
   if (!lagon) cln_fvnv = 0;
   bool lag = lagon && (cln_fvlag == 1);
-  CleanFvI fi = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvr, cln_fvf32, cln_fvn);
+  CleanFvI fi = CleanFvI::Held(*this);
   auto fa = cln_fva;
   auto fc = cln_fvc;
   auto fg = cln_fvg;
@@ -2164,7 +2190,7 @@ void RadiationM1::CleanFvSweep() {
   if (lagon) {
     if (cln_fvf32) {
       CleanGhostFill(cln_fvis, 0, cln_fvb*n);
-      CleanGhostFill(cln_fvr, 0, 1);
+      CleanGhostFill(cln_fvr, 0, 4);
     } else {
       CleanGhostFill(cln_fvi, 0, cln_fvb*n);
     }
@@ -2453,7 +2479,7 @@ void RadiationM1::CleanFvSweep() {
     }
     if (cln_fvf32) {
       CleanGhostFill(cln_fvis, 0, cln_fvb*n);
-      CleanGhostFill(cln_fvr, 0, 1);
+      CleanGhostFill(cln_fvr, 0, 4);
     } else {
       CleanGhostFill(cln_fvi, 0, cln_fvb*n);
     }
@@ -2527,7 +2553,7 @@ bool RadiationM1::CleanFvExtrap() {
   if (ex && (cln_fvgx.extent_int(1) != n || cln_fvgx.extent_int(2) != sh.ncell)) {
     Kokkos::realloc(cln_fvgx, nmb, n, sh.ncell);
   }
-  const CleanFvI fi = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvr, cln_fvf32, cln_fvn);
+  const CleanFvI fi = CleanFvI::Held(*this);
   auto gp = cln_fvgp;
   auto gx = cln_fvgx;
   par_for("cln_fv_extrap", DevExeSpace(), 0, nmb - 1, 0, n - 1, 0, sh.ncell - 1,
@@ -2562,7 +2588,7 @@ void RadiationM1::CleanFvExtrapMiss(Real &miss, Real &chg) {
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   const int oi = is - 1, oj = js - (md ? 1 : 0), ok = ks - (td ? 1 : 0);
-  const CleanFvI fi = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvr, cln_fvf32, cln_fvn);
+  const CleanFvI fi = CleanFvI::Held(*this);
   auto gx = cln_fvgx;
   auto gp = cln_fvgp;
   auto fa = cln_fva;
@@ -2712,7 +2738,7 @@ void RadiationM1::CleanClosureFromGd() {
   const bool fv = (cln_rfv > 0);
   const int n = fv ? cln_fvn : vgd_n, og = vgd_w - indcs.ng, ok = vgd_w - ks;
   auto vi_ = vgd_i;
-  const CleanFvI fi_ = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvr, cln_fvf32, cln_fvn);
+  const CleanFvI fi_ = CleanFvI::Held(*this);
   auto dir_ = fv ? cln_fvd : vgd_dir;
   auto cw_ = vgd_cs;
   auto fq = cln_fvq;
@@ -2785,7 +2811,7 @@ void RadiationM1::CleanGdFaceSums() {
   const bool fv = (cln_rfv > 0), o2 = (cln_rfv == 2);
   const int n = fv ? cln_fvn : vgd_n, og = vgd_w - indcs.ng, ok = vgd_w - ks;
   auto vi_ = vgd_i;
-  CleanFvI fi_ = CleanFvI::Of(cln_fvi, cln_fvis, cln_fvr, cln_fvf32, cln_fvn);
+  CleanFvI fi_ = CleanFvI::Held(*this);
   auto fm_ = cln_fvm;
   const int nl = (cln_rfv == 3) ? n : 0;
   const CleanFvI fq_ = (nl > 0) ? CleanFvI{cln_fvq} : fi_;
