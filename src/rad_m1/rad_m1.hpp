@@ -4531,7 +4531,7 @@ class RadiationM1 {
   // the GPU (spin / flag kernels on the sweep's stream; the host never waits in the
   // sweep).  env VGD_IPC=0/1 overrides.
   bool vgd_ipc_on = false;
-  bool vgd_lean = false;   // vet_gd_halo_lean: the compact band exchange without fences
+  bool vgd_lean = true;    // vet_gd_halo_lean (default on): the compact band exchange without fences
   bool vgd_gbo = false;    // vet_gd_halo_overlap: the next shell's interior meanwhile
   bool vgd_gbo_said = false;
   struct VgdGboL {         // a pass's shell list, edge entries first (VgdGboList)
