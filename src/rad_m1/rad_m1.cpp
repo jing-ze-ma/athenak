@@ -1402,15 +1402,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_on = pin->GetBoolean("rad_m1","vet_gd");
       if (vgd_on) {vlat_on = true;}
     }
-    // geodef-1117 (USER 11-17): DEFAULT vet_gd_geo = 4 (the geodesic set, 162 directions)
-    // on a FRESH start that names no set key, recorded for restarts; a restart whose
-    // input names none keeps HEALPix nside 3.  geodef2-1117 (USER): also on the walled
-    // 3-D sp wedges (nearest-direction / mirrored wall maps).  geodef3-1117 (USER: no
-    // HEALPix default): a 2-D axisymmetric mesh with a phi extent below 2 pi, which must
-    // rotate the set onto itself (VetGdInit; the icosahedral set has no 4-fold axis),
-    // takes the product set GL 11 x nphi, nphi nearest 16 with 2 pi/nphi dividing it
-    // (nmu odd: the staggered rings pair with their equatorial mirrors; nmu 10 gave a
-    // spurious F_theta 6.6e-9 of F_r 5.5e-4 on the rhse_sp2 steady state)
+    // geodef-1117 (USER 11-17): the DEFAULT set of a FRESH start that names no set key,
+    // recorded for restarts; a restart whose input names none keeps HEALPix nside 3.
+    // geodef5-1117 (USER: <= 120 rays, rotation as in production; RAYSET2): the geodesic
+    // set vet_gd_geo = 3 (92 directions) averaged over vet_rotate_avg = 4 rotated sets
+    // (unless named; vet_gd_rotate_xfade = true with scheme = clean, the clean ring):
+    // the accuracy of the fixed geo 4 at 92 rays.  A 2-D axisymmetric mesh with a phi
+    // extent below 2 pi, which must rotate the set onto itself (the icosahedral set has
+    // no 4-fold axis), takes the staggered product set GL 9 x nphi, nphi nearest 12 with
+    // 2 pi/nphi dividing the extent (FATAL if none does); nmu odd: the staggered rings
+    // pair with their equatorial mirrors (GL 10 x 12: a spurious F_theta 1.8e-8 of F_r
+    // 5.5e-4 on the rhse_sp steady state)
     if (vgd_on && !pin->DoesParameterExist("rad_m1","vet_gd_gl_nmu") &&
         !pin->DoesParameterExist("rad_m1","vet_gd_ls") &&
         !pin->DoesParameterExist("rad_m1","vet_gd_geo") &&
@@ -1424,7 +1426,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       for (int q = 4; q <= 64 && fresh && ax2; ++q) {
         const double m = per*q/(2.0*M_PI);
         if (std::round(m) >= 1.0 && std::fabs(m - std::round(m)) < 1.0e-9 &&
-            (np == 0 || std::abs(q - 16) < std::abs(np - 16))) {np = q;}
+            (np == 0 || std::abs(q - 12) < std::abs(np - 12))) {np = q;}
       }
       if (fresh && ax2 && np == 0) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -1433,16 +1435,22 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
           << "vet_gd_gl_nphi)" << std::endl;
         std::exit(EXIT_FAILURE);
       }
-      if (fresh && !ax2) {pin->GetOrAddInteger("rad_m1","vet_gd_geo",4);}
+      if (fresh && !ax2) {
+        pin->GetOrAddInteger("rad_m1","vet_gd_geo",3);
+        pin->GetOrAddInteger("rad_m1","vet_rotate_avg",4);
+        if (clean) {pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_xfade",true);}
+      }
       if (fresh && ax2) {
-        pin->GetOrAddInteger("rad_m1","vet_gd_gl_nmu",11);
+        pin->GetOrAddInteger("rad_m1","vet_gd_gl_nmu",9);
         pin->GetOrAddInteger("rad_m1","vet_gd_gl_nphi",np);
+        pin->GetOrAddBoolean("rad_m1","vet_gd_gl_stagger",true);
       }
       recipe::Log(!fresh ? std::string("<rad_m1>/vet_gd_nside = 3 (HEALPix: ") +
           (global_variable::restart_run ? "restart input has no key)" : "recipe none)")
-          : (ax2 ? "<rad_m1>/vet_gd_gl_nmu = 11, vet_gd_gl_nphi = " + std::to_string(np) +
-                   " (default on 2-D axisymmetric sp: exact phi walls)"
-                 : std::string("<rad_m1>/vet_gd_geo = 4 (default: the geodesic set)")));
+          : (ax2 ? "<rad_m1>/vet_gd_gl_nmu = 9, vet_gd_gl_nphi = " + std::to_string(np) +
+                   ", stagger (default on 2-D axisymmetric sp: exact phi walls)"
+                 : std::string("<rad_m1>/vet_gd_geo = 3, vet_rotate_avg = ") +
+                   pin->GetString("rad_m1","vet_rotate_avg") + " (default)"));
     }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_gl_nmu")) {
       vgd_gl_nmu = pin->GetInteger("rad_m1","vet_gd_gl_nmu");
