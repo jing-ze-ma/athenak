@@ -1212,8 +1212,10 @@ void RadiationM1::VetGdInit() {
   }
   VgdRagAlloc(vgd_i);   // after the halo init: the band sides follow vgd_hloc
   // xffuse-1113: the combinations the fused sweep never covers (VetGdXffOk) keep the two
-  // sweeps and allocate no second array (e.g. the fused twin of the RSG decks)
+  // sweeps and allocate no second array (e.g. the fused twin of the RSG decks; the clean
+  // sc rays' ring, CleanRingMoments, sweeps one set at a time)
   if (vgd_xff && (vgd_xf_m > 0 || vgd_iter != 1 || vgd_twin || vgd_twfuse || vgd_async ||
+                  (clean && cln_ring) ||
                   vgd_bandx || vgd_upf != 0 || vgd_gband || vgd_nb1 > 1 ||
                   (vgd_csg && vgd_cscomp && vgd_csxg > 1) ||
                   (!vgd_csg && (!vgd_shl_on || vgd_ovl_g > 0 || vgd_fuse_h > 1 ||
