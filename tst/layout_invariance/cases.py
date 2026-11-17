@@ -180,7 +180,7 @@ def dvar(base, name, what, extra=None, expect='PASS'):
 
 EXT = {'mesh/cs_seam_blockend': 'extend'}
 CASES += [
-    dvar(DHJ_M, 'dhj_r1m', 'r1m v6 MHD deck (wb, sponge, Roche + wb_tan, outflow1, ck every 4, '
+    dvar(DHJ_M, 'dhj_r1m', 'r1m v6 MHD deck (wb, sponge, Roche, outflow1, ck every 4, '
          'RKG Ohmic+ambipolar, tracers), extend', EXT),
     dvar(DHJ_M, 'dhj_r1m_clamp', 'r1m v6 deck, clamp (the old default; explicit since the prod1103 extend default)',
          {'mesh/cs_seam_blockend': 'clamp'}, expect='FAIL'),

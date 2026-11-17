@@ -9,8 +9,7 @@
 //! (see hydro_ringavg.hpp for the keys and the energy rule).
 //!
 //! WHY. The group average leaves a phi STAIRCASE in every averaged row, while the
-//! well-balanced tangential force g_t (roche_wb_tan: the fine operator's own residual of
-//! the smooth tidal IC) and the radiation keep fine-grid smooth fields: the staircase
+//! tangential tidal force and the radiation keep fine-grid smooth fields: the staircase
 //! state is never the discrete equilibrium, and the polar rows of the sp accretor grow a
 //! v_phi pattern at the tidal m = 1, 2 (lateral KE +41 % at t 0.005,
 //! confined to the averaged rows). The truncation leaves the low modes exactly alone.

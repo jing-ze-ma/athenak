@@ -1522,8 +1522,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // equipotential IC (z_eff of Phi_tot), the ghosts, phicc0 and the phi0 faces, hence
     // the well-balanced radial force (each column's own Phi) and the etotgrav energy.
     // The tangential tidal force is the explicit analytic -grad TidePot in SourceFunc
-    // (or, with problem/roche_wb_tan, the hydro's own equilibrium residual: wbtan),
-    // next to the centrifugal one; Coriolis unchanged.  Keys: roche_a [cm] (default
+    // (or, with <hydro|mhd>/wb_dirs = all, the well-balanced AddWbGravity), next to
+    // the centrifugal one; Coriolis unchanged.  Keys: roche_a [cm] (default
     // 0.02571 AU = WASP-121b) and G M_* from Kepler, Omega^2 a^3 = G (M_p + M_*), with
     // G M_p = grav ap^2 (point mass).  The centrifugal force stays in om2 (rot_potential,
     // required) -- not counted a second time anywhere.
@@ -1647,23 +1647,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << "outside the planet's Roche lobe" << std::endl;
       }
     }
-    // problem/roche_wb_tan (fresh default: below; see
-    // namespace wbtan): the tangential centrifugal (+ tidal, with problem/roche) force as
-    // the hydro's own discrete residual of the equipotential equilibrium.  Works with
-    // rot_potential alone (centrifugal only) or with roche.
-    // default FALSE, fresh start and restart alike: S_t = -(rho/rho_eq) R_t(W_eq) is
-    // wrong wherever the gas is not the stored equilibrium (the accretor cold spot; on
-    // dhj 99.5 % of the top shell lies on OPEN equipotentials).  Without the key the
-    // analytic tangential tide of problem/roche is used.  A named key (deck, restart
-    // input, command line) still wins.
-    if (!pin->DoesParameterExist("problem","roche_wb_tan")) {
-      if (roche_on) {
-        recipe::Log("problem/roche_wb_tan = false (default since nowbtan-1104: the "
-                    "analytic tangential tide of problem/roche)");
-      }
-      dhj_wbt.on = pin->GetOrAddBoolean("problem","roche_wb_tan",false);
-    } else {
-      dhj_wbt.on = pin->GetBoolean("problem","roche_wb_tan");
+    // problem/roche_wb_tan (the probed tangential tide) is removed: the real multi-d
+    // well-balanced force is wb_dirs = all + problem/wb_lobe_cut; = false is accepted
+    if (pin->DoesParameterExist("problem","roche_wb_tan") &&
+        pin->GetBoolean("problem","roche_wb_tan")) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "problem/roche_wb_tan is removed: use <hydro|mhd>/wb_dirs"
+                << " = all + problem/wb_lobe_cut = true" << std::endl;
+      exit(EXIT_FAILURE);
     }
     {  // wb_dirs = all: the tangential potential force is AddWbGravity
       const bool wba = (pmbp->pmhd != nullptr) ? pmbp->pmhd->wb_all :
@@ -1678,34 +1669,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
         if (!user_srcs) bad = "problem/user_srcs = true";
         if (tide) bad = "problem/stellar_tide = false (not in Phi)";
-        if (dhj_wbt.on) bad = "problem/roche_wb_tan = false";
         if (!bad.empty()) {
           std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                     << std::endl << "wb_dirs = all on dhj needs " << bad << std::endl;
           exit(EXIT_FAILURE);
         }
       }
-    }
-    if (dhj_wbt.on) {
-      std::string bad = "";
-      if (!rot_potential) bad = "problem/rot_potential = true";
-      if (!(use_spherical_polar || use_cubed_sphere_)) bad = "sp or the cubed sphere";
-      const bool wbx1t = (pmbp->phydro != nullptr) ? pmbp->phydro->use_wb_x1
-                                                   : pmbp->pmhd->use_wb_x1;
-      if (!use_wellbalance_dynamic || !wbx1t) {
-        bad = "wellbalance_dynamic + wb_x1";
-      }
-      if (use_wellbalance_static) bad = "no wellbalance_static";
-      if (!use_etotgrav) bad = "etotgrav = true (the work is booked by the energy flux)";
-      if (!user_srcs) bad = "problem/user_srcs = true";
-      if (tide) bad = "problem/stellar_tide = false";
-      if (pmy_mesh_->adaptive || pmy_mesh_->multilevel) bad = "a single-level mesh";
-      if (!bad.empty()) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "problem/roche_wb_tan needs " << bad << std::endl;
-        exit(EXIT_FAILURE);
-      }
-      dhj_wbt.ready = false;
     }
     Real Rgas = pin->GetReal("problem","Rgas");
     Real met = pin->GetReal("problem","met");
@@ -2086,56 +2055,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
     });
     }  // end of !restart guard on the initial condition
-
-    // the equipotential equilibrium W_eq (rho, eint; v = 0) of EVERY
-    // cell incl. the ghosts, by the IC formula above (fresh start AND restart: the probe
-    // in SourceFunc runs once per run segment)
-    if (dhj_wbt.on) {
-      const int nmbw = pmbp->nmb_thispack;
-      wbtan::Alloc(dhj_wbt, pmbp);
-      auto weq_ = *dhj_wbt.weq;
-      par_for("wbtan_weq", DevExeSpace(), 0, nmbw-1, 0, n3m1, 0, n2m1, 0, n1m1,
-      KOKKOS_LAMBDA(int m, int k, int j, int i) {
-        Real x1v, x2v, x3v;
-        if (use_spherical_polar) {
-          x1v = x1v_(m,i);
-          x2v = x2v_(m,j);
-          x3v = x3v_(m,k);
-        } else {
-          x1v = x1v_(m,i);   // cubed sphere: stored centroid, as the IC
-          x2v = CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
-          x3v = CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
-        }
-        const Real r = x1v;
-        x1v -= ap;
-        Real lam = 0.0, theta, phi;
-        if (use_spherical_polar) {
-          theta = x2v;
-          phi = x3v-M_PI;
-        } else {
-          CSCellAngles(mbpanel_.d_view(m), x2v, x3v, theta, lam, phi);
-        }
-        const Real zs = ZEffFromPot(grav_acc, ap,
-                                    TotPotAt(grav_acc, ap, r, x1v, grav_pmass,
-                                             om2_, theta, phi, rgms_, ra_),
-                                    grav_pmass);
-        Real p, den;
-        get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view, lgparr_init.d_view, N,
-                     zarr_init.d_view, logparr_init.d_view, zs, den, p,
-                     ne_ext, Tarr_ext.d_view, lgparr_ext.d_view);
-        weq_(m,0,k,j,i) = den;
-        weq_(m,1,k,j,i) = EintFromP(eos, igm1, den, p);
-      });
-      dhj_wbt.ready = false;
-      // a restart takes g_t from the file when it carries it
-      if (restart) wbtan::LoadFromRestart(this, dhj_wbt, pmbp, "deep_hot_jupiter_rt");
-      if (global_variable::my_rank == 0) {
-        std::cout << "deep_hot_jupiter_rt: problem/roche_wb_tan ON: tangential "
-                  << (roche_on ? "centrifugal + tidal" : "centrifugal")
-                  << " force = the hydro's own residual of the equipotential state"
-                  << std::endl;
-      }
-    }
 
     // problem/seed + problem/seed_amp: a deterministic density perturbation on the
     // from-scratch initial condition.  It exists to build ENSEMBLES: the cubed-sphere

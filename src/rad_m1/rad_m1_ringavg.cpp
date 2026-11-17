@@ -282,7 +282,7 @@ void RadiationM1::RavFaces() {
   // boundary faces.  Without it Z_f is the solve's own: ~0 on the intra-group faces (E is
   // group-uniform there) and the coarse value on the two group faces, so a group of N
   // cells took the tangential radiation force of ONE cell (1/N of the coarse cell's):
-  // against the WB tide's equilibrium radiative share (roche_wb_tan) a first-order
+  // against the tidal equilibrium's radiative share a first-order
   // imbalance in every averaged row (accsp sp static: v_phi m = 1, 2 grew from t = 0).
   if (!rav_gz || !impl_gas_src_cons) return;
   auto gz3 = gcz3;

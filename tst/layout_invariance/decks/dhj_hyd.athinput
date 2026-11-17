@@ -128,7 +128,6 @@ tfloor_kelvin              = 200.0
 
 <problem>
 sponge_top            = true                                                                    # w121prod_0927: top velocity sponge ON (1e-7..1e-6 bar) (was true)
-roche_wb_tan          = true       # USER 11-01: keep WB tide (torque-fixed, fin51-r-fix 65658289)
 relax_drag            = false      # USER 11-01: no start-up Rayleigh drag (relaxdrag test, fin51-r-fix d3f878be)
 top_bc                = outflow1   # USER 11-01: uniform one-way outflow top for all planets (hydro_prep_1101 verdict)
 sponge_bottom         = false                                                                   # w121prod_0927: user 09-27: NO bottom sponge (was true)
@@ -187,8 +186,6 @@ roche                 = true   # r1: host-star Roche tide (roche-dhj-1031); G M_
 roche_a               = 3.846161e+11   # r1: a = 0.02571 AU
 ic_adiabat_ext        = true   # r1: default; T below the IC table along the adiabat (wall reaches 4680 bar substellar)
 ic_adiabat_ext_dex    = 2.0   # r1: default; the wall needs 0.32 dex below the table
-# r1 SWAP-IN (pending, not in binary cccfebcb): well-balanced tangential tide key, e.g.  roche_wb_tan = true  (name TBD;
-#   needs a new binary: launch with BIN= and OVR=, overrides/README.txt)
 # r1 SWAP-IN (pending user approval): one-way outflow top key (name TBD; same mechanism)
 Rgas                  = 4.593e7                                                                 # ignored under the general EOS; composition is the EOS's
 met                   = 0.0  # hfresh_1x: 1x (3x: 0.4771)

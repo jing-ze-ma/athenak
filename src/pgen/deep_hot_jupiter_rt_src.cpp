@@ -5,9 +5,9 @@
 //========================================================================================
 //! \file deep_hot_jupiter_rt_src.cpp
 //! \brief deep_hot_jupiter_rt problem generator (piece): the source terms --
-//! AmFix, the roche_wb_tan probe, SourceFunc, the double-grey two-stream RT and the
-//! operator-split correlated-k RT (DhjCkRtSplit, DhjRtFreezeSplit).  Moved verbatim
-//! from deep_hot_jupiter_rt.cpp.
+//! AmFix, SourceFunc, the double-grey two-stream RT and the operator-split
+//! correlated-k RT (DhjCkRtSplit, DhjRtFreezeSplit).  Moved verbatim from
+//! deep_hot_jupiter_rt.cpp.
 
 #include <algorithm>
 #include <cinttypes>
@@ -50,45 +50,7 @@ void AmFix(Mesh *pm, const Real bdt) {
   });
 }
 
-//----------------------------------------------------------------------------------------
-//! \fn WbTanProbe (problem/roche_wb_tan): wbtan_common.hpp Probe
-//! (hydro or MHD, cubed sphere or spherical polar), with the pgen's own AmFix of W_eq as
-//! the extra term -- its problem/am_transport part (T_cons - T_code: a transport
-//! correction whose sum is the boundary torque) ONLY.  NOT the amh::fix part:
-//! -Omega Q_c of W_eq is the Coriolis torque on the equilibrium's NUMERICAL mass fluxes
-//! (the first stage's radial redistribution, sum = Omega dI/dt); frozen into g_t it was
-//! a constant net z torque (Ttide -5.5e36 cs C8 WASP deck, -9.8e34 = -1.2e-3 Iw Omega
-//! per rotation on the C32 3x deck).  The live AmFix applies it to
-//! the evolving state every stage, as without the key.
-
-void WbTanAmFixExtra(Mesh *pm, DvceArray5D<Real> &us, DvceArray5D<Real> &u0s) {
-  if (!amh::trans) return;
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  auto &indcs = pm->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
-  const int nmb1 = pmbp->nmb_thispack - 1;
-  Kokkos::deep_copy(u0s, 0.0);
-  const bool sv_fix = amh::fix;
-  amh::fix = false;
-  AmFix(pm, 1.0);   // adds to the fluid's u0, which IS u0s here
-  amh::fix = sv_fix;
-  auto u0a = u0s;
-  auto usa = us;
-  par_for("wbtan_amfix", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(int m, int k, int j, int i) {
-    usa(m,IM2,k,j,i) += u0a(m,IM2,k,j,i);
-    usa(m,IM3,k,j,i) += u0a(m,IM3,k,j,i);
-  });
-}
-
-void WbTanProbe(Mesh *pm, const Real bdt) {
-  wbtan::Probe(pm, dhj_wbt, WbTanAmFixExtra, "deep_hot_jupiter_rt");
-  (void) bdt;
-}
-
 void SourceFunc(Mesh *pm, Real bdt) {
-  if (dhj_wbt.on && !dhj_wbt.ready) WbTanProbe(pm, bdt);
   DhjFluxStage(pm);
   if (amh::on) AmHstStage(pm);
   if (amh::fix || amh::trans) AmFix(pm, bdt);
@@ -179,23 +141,17 @@ void SourceFunc(Mesh *pm, Real bdt) {
     const Real rgms = pm->pgen->hot_jupiter_param.roche ?
                       pm->pgen->hot_jupiter_param.roche_gms : 0.0;
     const Real rra = pm->pgen->hot_jupiter_param.roche_a;
-    // problem/roche_wb_tan: the tangential centrifugal + tidal force is
-    // rho g_t (WbTanProbe) in place of the analytic projections below; Coriolis and the
-    // radial terms unchanged; no energy term (etotgrav books the potential work)
-    const bool wbt_ = dhj_wbt.on;
     // <mhd|hydro>/wb_dirs = all: the tangential centrifugal + tidal force is the shared
     // well-balanced source (AddWbGravity after this kernel, the true Phi of phicc0/phi0):
-    // this kernel keeps the tangential Coriolis only (wbt_a2/a3); x1 as ever
+    // this kernel keeps the tangential Coriolis only (cor_a2/a3); x1 as ever
     const bool wba_ = (pmbp->pmhd != nullptr) ? pmbp->pmhd->wb_all :
                       ((pmbp->phydro != nullptr) ? pmbp->phydro->wb_all : false);
-    const bool cor_only_ = wbt_ || wba_;
+    const bool cor_only_ = wba_;
     const Real phimax_ = (pmbp->pmhd != nullptr) ? pmbp->pmhd->wb_phimax :
                          ((pmbp->phydro != nullptr) ? pmbp->phydro->wb_phimax : 1.0e300);
     // the start-up Rayleigh drag switch and length (R/5, 1 by default)
     const bool relax_ = dhj_relax_drag;
     const Real rdf_ = dhj_relax_drag_rot/5.0;
-    DvceArray5D<Real> wbtg_;
-    if (wbt_) wbtg_ = *dhj_wbt.gt;
 
     // Radial grid stretch, copied out of the Mesh so the device lambdas below capture
     // plain values. Radii rebuilt here with CellCenterX/LeftEdgeX are UNSTRETCHED, so
@@ -308,7 +264,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
         u0(m,IM1,k,j,i) += src;
 
         // Forces in the corotating frame
-        Real wbt_a2 = 0.0, wbt_a3 = 0.0;   // problem/roche_wb_tan: Coriolis, per geometry
+        Real cor_a2 = 0.0, cor_a3 = 0.0;   // wb_dirs = all: Coriolis, per geometry
         if (use_spherical_polar) {
           Real vtheta = w0(m,IVY,k,j,i);
           Real vphi = w0(m,IVZ,k,j,i);
@@ -318,9 +274,9 @@ void SourceFunc(Mesh *pm, Real bdt) {
           Real oor = SQR(omega)*r*sine;
           Real cor = 2.0*omega*vphi;
           if (cor_only_) {
-            // geometry front-end only: Coriolis on (e_theta, e_phi); ApplyTan below
-            wbt_a2 = cor*cosine;
-            wbt_a3 = -2.0*omega*(vr*sine+vtheta*cosine);
+            // geometry front-end only: Coriolis on (e_theta, e_phi), applied below
+            cor_a2 = cor*cosine;
+            cor_a3 = -2.0*omega*(vr*sine+vtheta*cosine);
           } else {
           u0(m,IM2,k,j,i) += rho*(cor+oor)*cosine*bdt;
           u0(m,IM3,k,j,i) += -rho*2.0*omega*(vr*sine+vtheta*cosine)*bdt;
@@ -414,10 +370,10 @@ void SourceFunc(Mesh *pm, Real bdt) {
           const Real acr_rot = rotpot_src ? SQR(omega)*(xx*rh0 + yy*rh1) : 0.0;
           u0(m,IM1,k,j,i) += rho*(acx*rh0 + acy*rh1 - acr_rot)*bdt;
           if (cor_only_) {
-            // geometry front-end only: Coriolis on (e_xi, e_eta); ApplyTan below
+            // geometry front-end only: Coriolis on (e_xi, e_eta), applied below
             const Real ccx =  2.0*omega*vcy, ccy = -2.0*omega*vcx;
-            wbt_a2 = ccx*e1[0] + ccy*e1[1];
-            wbt_a3 = ccx*e2[0] + ccy*e2[1];
+            cor_a2 = ccx*e1[0] + ccy*e1[1];
+            cor_a3 = ccx*e2[0] + ccy*e2[1];
           } else {
           u0(m,IM2,k,j,i) += rho*(acx*e1[0] + acy*e1[1])*bdt;
           u0(m,IM3,k,j,i) += rho*(acx*e2[0] + acy*e2[1])*bdt;
@@ -443,17 +399,14 @@ void SourceFunc(Mesh *pm, Real bdt) {
             u0(m,IM3,k,j,i) += rho*(gs*e2[0] + gy*e2[1] - gz*e2[2])*bdt;
           }
         } else {
-          // corotating beta-plane approximation e.g. Fromang+2016 (roche_wb_tan refused)
+          // corotating beta-plane approximation e.g. Fromang+2016
           Real omega1 = omega*lam;
           u0(m,IM2,k,j,i) += -2.0*rho*omega1*(-w0(m,IVZ,k,j,i))*bdt;
           u0(m,IM3,k,j,i) += -2.0*rho*omega1*w0(m,IVY,k,j,i)*bdt;
         }
-        // problem/roche_wb_tan: ONE force path for sp and cs (wbtan_common.hpp): the
-        // tangential centrifugal + tidal force rho g_t plus the front-end's Coriolis
-        if (wbt_) wbtan::ApplyTan(u0, wbtg_, m, k, j, i, rho, wbt_a2, wbt_a3, bdt);
         if (wba_) {   // Coriolis here, the potential force in AddWbGravity
-          u0(m,IM2,k,j,i) += rho*wbt_a2*bdt;
-          u0(m,IM3,k,j,i) += rho*wbt_a3*bdt;
+          u0(m,IM2,k,j,i) += rho*cor_a2*bdt;
+          u0(m,IM3,k,j,i) += rho*cor_a3*bdt;
         }
 
         // Rayleigh drag (initial relaxation)

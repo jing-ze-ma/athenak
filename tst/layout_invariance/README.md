@@ -84,7 +84,7 @@ takes about 15 min on 16 cores; the cubed-sphere and Cartesian cases take second
   - resistive decay with Ohmic, ambipolar and RKG.
 - **dhj** (`deep_hot_jupiter_rt`), using the production r1m v6 MHD deck and the hydro planet
   deck on C8 x 32:
-  - physics: well-balance cache, top sponge, Roche tide plus the `wb_tan` probe, `outflow1`
+  - physics: well-balance cache, top sponge, Roche tide, `outflow1`
     and `hse` top BCs, bottom sponge, floors;
   - ck: the implicit ck two-stream (spherical beam) at cadence 4 and 1, plus a
     `ck_impl_jreuse = 0` control;

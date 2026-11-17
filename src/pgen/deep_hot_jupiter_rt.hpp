@@ -26,7 +26,6 @@
 #include <sstream>  // ostringstream, for the photosphere dump
 #include <iomanip>  // setw/setfill, for the cycle-diagnostic file name
 #include <string>
-#include <type_traits>  // is_same, roche_wb_tan probe
 #include <utility>  // pair, for problem/ic_profile
 #include <vector>
 
@@ -45,7 +44,6 @@
 #include "utils/random.hpp"
 #include "pgen.hpp"
 #include "roche_common.hpp"   // problem/roche
-#include "wbtan_common.hpp"   // problem/roche_wb_tan
 #include "utils/rosseland.hpp"
 #include "utils/correlated_k.hpp"
 #include "utils/atm_column.hpp"
@@ -517,21 +515,6 @@ void AmCell(const AmV &v, const int m, const int k, const int j, const int i, Am
     if (i == v.is) o.twall = fl1*rl*rb1;
   }
 }
-// problem/roche_wb_tan (default false): the TANGENTIAL (x2/x3) part of
-// the potential force (centrifugal of rot_potential + the Roche tide) as the hydro's OWN
-// discrete tangential momentum residual of the equipotential equilibrium W_eq, instead of
-// the analytic -rho grad_t Phi_tot at the cell centre:
-//     S_t = -(rho/rho_eq) R_t(W_eq),   R_t = -(flux divergence) + geometric source,
-// evaluated ONCE per run segment (WbTanProbe, first SourceFunc call, fresh start or
-// restart) by running the stage's own operators on W_eq: ghost exchange (panel-seam
-// resample) + x1 BCs + ConToPrim, Hydro::Fluxes, the seam flux reconciliation, the
-// coordinate source and both angular-momentum corrections.  W_eq is the IC formula (the
-// column at z_eff(Phi_tot)), so the IC is balanced in x2/x3 to round-off, seams and sp
-// poles included.  The work is booked by the etotgrav energy flux (required), as for
-// the analytic force before: E_tot stays exactly conservative, the O(h^2) mismatch
-// between rho g_t . v and the flux-form potential work lands in e_int, as before.
-inline wbtan::WbTan dhj_wbt;   // wbtan_common.hpp
-void WbTanProbe(Mesh *pm, const Real bdt);
 // problem/ck_impl_once: the whole correlated-k radiation, once per hydro step,
 // with the full cycle dt, after the last RK stage
 void DhjCkRtSplit(Mesh *pm, const Real dt);

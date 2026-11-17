@@ -791,13 +791,8 @@ class AmModule {
   void AmTransport(Real bdt, Driver *pdrive, int stage, const AmFluid &fl);
   // the tangential momentum change rate (bdt = 1) AmTransport would add
   // for fl's state and fluxes, added to fl.u0, with NO side effect (no spin reservoir
-  // update, no driver): the dhj problem/roche_wb_tan equilibrium probe
+  // update, no driver): the wb_dirs = all background (hydro_wball.cpp)
   void AmTransportProbe(const AmFluid &fl, const DvceArray5D<Real> *wmask = nullptr);
-  // the <hydro>/frame_omega FORCE f of fl's state alone
-  // (HydroAmFrame: Coriolis, + centrifugal with frame_cf) on the cell basis, bdt = 1,
-  // added to fl.u0(IM1..IM3); NOT the am_vector torque correction (its Q_c is the
-  // mass-flux term)
-  void FrameForceProbe(const AmFluid &fl);
   void AmSpinReturn(const AmFluid &fl);
   void FrameRotation(Real bdt, Driver *pdrive, int stage, const AmFluid &fl);
   void AmFillV(HydroAmV &v, const AmFluid &fl);
