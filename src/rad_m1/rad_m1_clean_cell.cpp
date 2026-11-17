@@ -524,8 +524,10 @@ void RadiationM1::CleanCellFirstIterate() {
 //! of the implicit gas velocity (CleanCellDrag)
 
 void RadiationM1::CleanCellRightHandSide() {
-  // (the Milne weights before the face fluxes that read them)
+  // (the Milne weights before the face fluxes that read them; clean_apply_store: the
+  // operator of the pass, also for the face fluxes of the iterate)
   if (cln_milne) CleanCellMilneSetup();
+  if (cln_ast > 0) CleanCellApplyStore();
   if (cln_feedback) {
     if (!cln_kgh) CleanGhostFill(cln_x, CLC_K, 4);
     cln_kgh = true;
@@ -733,8 +735,9 @@ void RadiationM1::CleanCellFaceFluxesDir(const int src, const bool with_source) 
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellApplyStore
-//! \brief clean_apply_store: the operator of the faces for the applies of the linear
-//! solve that follows (CleanCellStoreFace; the solve leaves cln_ast_on false)
+//! \brief clean_apply_store: the operator of the faces for the applies of a pass, from
+//! its right hand side to the residual after its solve (CleanCellStoreFace; the pass
+//! leaves cln_ast_on false)
 
 void RadiationM1::CleanCellApplyStore() {
   if (cln_ast == 2) {
