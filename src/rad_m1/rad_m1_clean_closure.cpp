@@ -3245,12 +3245,56 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
     });
   }
   if (one) return;
+  // the lateral faces' part of cell (k,j,i): their sums into q, the curvature into g
+  auto latg = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i,
+                                   const Real e[3][3], Real q[4], Real g[2]) {
+    const CleanArgs &x = *px;
+    Real a[3], ef[3][3];
+    for (int dir = 1; dir < 3; ++dir) {
+      const int nf = (dir == 1) ? CLN_F2 : CLN_F3;
+      for (int up = 0; up < 2; ++up) {
+        const int kk = k + (up && dir == 2), jj = j + (up && dir == 1);
+        if (bnd(dir, m, kk, jj, i)) continue;
+        face(dir, m, kk, jj, i, a, ef);
+        const Real sg = (up ? -1.0 : 1.0)*x.area[dir](m,kk,jj,i);
+        const int kc = (axi && dir == 2) ? k : kk;
+        q[0] += sg*cs(m,nf,kc,jj,i);
+        for (int b = 0; b < 3; ++b) {
+          if (b < 2) g[b] += ((dir == 2 && axi) ? 0.0 : sg*cs(m,nf+1+b,kc,jj,i));
+          for (int c = 0; c < 3; ++c) {
+            const Real r = sg*cs(m,nf+1+c,kc,jj,i)*(ef[c][0]*e[b][0] +
+                           ef[c][1]*e[b][1] + ef[c][2]*e[b][2]);
+            q[1+b] += r;
+            if (b < 2) g[b] -= r;
+          }
+        }
+      }
+    }
+  };
+  // rr on sp without a reflecting top: no march (every r face is the rays'), one thread
+  // per cell (the same numbers); the columns then only close their ends
+  const bool cel = rr && !x.cub && ibc_x1max != M1_IBC_REFLECT;
+  if (cel) {
+    par_for("cln_gd_cel", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const CleanArgs &x = *px;
+      Real a[3], e[3][3], q[4], g[2] = {0.0, 0.0};
+      face(0, m, k, j, is, a, e);
+      for (int c = 0; c < 4; ++c) q[c] = rf(m,c,k-ks,j-js,i-is);
+      for (int c = 0; c < 4; ++c) cs(m,CLN_FX+c,k,j,i) = q[c]/x.area[0](m,k,j,i);
+      const Real qi = q[2];
+      latg(m, k, j, i, e, q, g);
+      const Real q2 = rf(m,2,k-ks,j-js,i+1-is);
+      g[1] += q2*(1.0 - x.x1f(m,i+1)/x.x1v(m,i)) - qi*(1.0 - x.x1f(m,i)/x.x1v(m,i));
+      for (int b = 0; b < 2; ++b) cs(m,CLN_G+b,k,j,i) = g[b];
+    });
+  }
   for (int lev = 0; lev < vgd_nb1; ++lev) {
     if (lev > 0) VetGdX1Pass(true);
     par_for("cln_gd_col", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       const CleanArgs &x = *px;
-      Real a[3], e[3][3], ef[3][3], q[4] = {0.0};
+      Real a[3], e[3][3], q[4] = {0.0};
       const bool in = (xf_(m) & 1);
       const int kj = (k - ks)*nj + j - js;
       face(0, m, k, j, is, a, e);
@@ -3265,7 +3309,7 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
       }
       for (int c = 0; c < 4 && rr; ++c) q[c] = rf(m,c,k-ks,j-js,0);
       const Real vb = in ? 0.0 : qr_(m,4*nkj + kj);   // the column's volume below
-      for (int i = is; i <= ie; ++i) {
+      for (int i = is; i <= ie && !cel; ++i) {
         for (int c = 0; c < 4; ++c) cs(m,CLN_FX+c,k,j,i) = q[c]/x.area[0](m,k,j,i);
         if (x.cub) {   // (no curvature terms: Cartesian momentum)
           if (!fv) rflux(m, k, j, i + 1, q);
@@ -3283,31 +3327,13 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
             q[1+b] -= chi*di*(dir_(d,0)*e[b][0] + dir_(d,1)*e[b][1] + dir_(d,2)*e[b][2]);
           }
         }
-        for (int dir = 1; dir < 3; ++dir) {
-          const int nf = (dir == 1) ? CLN_F2 : CLN_F3;
-          for (int up = 0; up < 2; ++up) {
-            const int kk = k + (up && dir == 2), jj = j + (up && dir == 1);
-            if (bnd(dir, m, kk, jj, i)) continue;
-            face(dir, m, kk, jj, i, a, ef);
-            const Real sg = (up ? -1.0 : 1.0)*x.area[dir](m,kk,jj,i);
-            const int kc = (axi && dir == 2) ? k : kk;
-            q[0] += sg*cs(m,nf,kc,jj,i);
-            for (int b = 0; b < 3; ++b) {
-              if (b < 2) g[b] += ((dir == 2 && axi) ? 0.0 : sg*cs(m,nf+1+b,kc,jj,i));
-              for (int c = 0; c < 3; ++c) {
-                const Real r = sg*cs(m,nf+1+c,kc,jj,i)*(ef[c][0]*e[b][0] +
-                               ef[c][1]*e[b][1] + ef[c][2]*e[b][2]);
-                q[1+b] += r;
-                if (b < 2) g[b] -= r;
-              }
-            }
-          }
-        }
+        latg(m, k, j, i, e, q, g);
         for (int c = 0; c < 4 && rr; ++c) q[c] = rf(m,c,k-ks,j-js,i+1-is);
         // the angular-momentum weight r_f/r of the y_theta row on the r faces
         g[1] += q[2]*(1.0 - x.x1f(m,i+1)/x.x1v(m,i)) - qi*(1.0 - x.x1f(m,i)/x.x1v(m,i));
         for (int b = 0; b < 2; ++b) cs(m,CLN_G+b,k,j,i) = g[b];
       }
+      for (int c = 0; c < 4 && cel; ++c) q[c] = rf(m,c,k-ks,j-js,ie+1-is);
       if (xf_(m) & 4) {
         // a reflecting top: the rays' remainder at the wall (their non-conservation, all
         // but the mirror's momentum) spread over the cells of the column by volume, so
