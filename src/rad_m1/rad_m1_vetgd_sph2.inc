@@ -580,7 +580,15 @@ void RadiationM1::VetGdGlobalBandInit() {
     Kokkos::deep_copy(vgd_phc, ph_h);
   }
   // share-1104 G1: the compact global band (vet_gd_halo_compact > 0, an MPI band)
-  vgd_gbc = (vgd_hcomp > 0) && vgd_hmpi;
+  // (the sc rays of a rotating set, vgd_raw: the dense exchange, the same values; the
+  // kept lists would be remade for every set the sweeps alternate, costlier than they
+  // save)
+  vgd_gbc = (vgd_hcomp > 0) && vgd_hmpi && !(vgd_raw && VgdRotOn());
+  if (vgd_hcomp > 0 && vgd_hmpi && !vgd_gbc && me == 0) {
+    std::cout << "<rad_m1> vet_gd_band_global: the dense exchange for the rotating set "
+              << "(vet_gd_halo_compact = " << vgd_hcomp << " is for a fixed set)"
+              << std::endl;
+  }
   if (vgd_gbc) {
     const int n = vgd_n;
     Kokkos::realloc(vgd_gbjs, std::max(vgd_csnsnd, 1), 3);
