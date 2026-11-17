@@ -540,7 +540,7 @@ void RadiationM1::CleanCellRightHandSide() {
   x.ff = cln_ff;
   // (until force_reference = clean has taken its force, that of the iterate)
   const int fref = force_ref;
-  const bool yloc = (cln_yres == M1_YRES_LOCAL) &&
+  const bool yloc = (cln_yres == M1_YRES_LOCAL) && cln_yrhs &&
                     !((fref == M1_FREF_CLEAN) && !cln_fref_set && !cln_vzero);
   auto fr = cln_fref;
   auto aref = arad_ref;
