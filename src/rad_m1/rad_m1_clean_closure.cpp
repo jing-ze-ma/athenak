@@ -1239,7 +1239,9 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
 //! \fn int CleanFvMirror
 //! \brief the leaving direction (of d0 .. d0+nd-1) nearest to the mirror image
 //! n - 2 (n . t) t of an incoming direction d at a wall of unit normal t, sg t outward
-//! of the cell (-1: d is not incoming); u = |n . t|
+//! of the cell (-1: d is not incoming); u = |n . t|.  Of directions as near as each other
+//! to round-off (a symmetric image: the cubed sphere's faces) the first, so that the map
+//! does not depend on the last bits of the geometry (GPU against CPU)
 
 KOKKOS_INLINE_FUNCTION
 int CleanFvMirror(const DvceArray2D<Real> &dir_, const int d0, const int nd, const int d,
@@ -1254,7 +1256,7 @@ int CleanFvMirror(const DvceArray2D<Real> &dir_, const int d0, const int nd, con
   for (int e = d0; e < d0 + nd; ++e) {
     const Real et = dir_(e,0)*t[0] + dir_(e,1)*t[1] + dir_(e,2)*t[2];
     const Real dt = v[0]*dir_(e,0) + v[1]*dir_(e,1) + v[2]*dir_(e,2);
-    if (sg*et > 0.0 && dt > bd) {bd = dt; r = e;}
+    if (sg*et > 0.0 && dt > bd + 1.0e-12) {bd = dt; r = e;}
   }
   return r;
 }
