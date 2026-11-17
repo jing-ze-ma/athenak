@@ -999,8 +999,6 @@ void RadiationM1::VetGdInit() {
     vgd_hcomp = 0;   // the dense per-shell halo (the compact lists assume one level)
   }
   vgd_raw = clean && !vgd_csg && !vgd_pol && !vgd_sth;
-  const bool hx0 = vgd_hx_on, ipc0 = vgd_ipc_on;   // (the slot band's, see wneed below)
-  const int hxm0 = vgd_hx_mode;
   // (nx3 = 1: the dense halo, the compact / exact lists mark 3-D band reads)
   if (!pm->three_d) {vgd_hcomp = 0;}
   if (vgd_raw || !pm->three_d) {   // (the compact halo: the global band's, VetGdGbHaloC)
@@ -1138,21 +1136,6 @@ void RadiationM1::VetGdInit() {
       MPI_Allreduce(MPI_IN_PLACE, &wneed, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
     }
 #endif
-    // the clean closure on a wedge whose MeshBlocks hold the whole reach: the slot band
-    // of the old scheme, unclamped (the same reads), with its exact halo lists, band ring
-    // and IPC exchange; the global-cell band only where a slot band would clamp
-    if (vgd_raw && !fvr && vgd_nb1 == 1 && pm->three_d) {
-      int wall = wneed;
-#if MPI_PARALLEL_ENABLED
-      MPI_Allreduce(MPI_IN_PLACE, &wall, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
-#endif
-      if (wall <= std::min(indcs.nx2, indcs.nx3)) {
-        vgd_raw = false;
-        vgd_hx_on = hx0;
-        vgd_hx_mode = hxm0;
-        vgd_ipc_on = ipc0;
-      }
-    }
     vgd_w = std::min(wneed, nmax);
     if (vgd_nb1 > 1) {   // every shell at the full band, the x1 ghosts (hand-off) too
       vgd_wsh.assign(c1, vgd_w);
@@ -1164,7 +1147,6 @@ void RadiationM1::VetGdInit() {
       std::cout << "<rad_m1> vet_gd: exact per-shell lateral halo, band " << vgd_w
                 << " cells (needed " << wneed << "), per-shell depth mean "
                 << std::accumulate(vgd_wsh.begin(), vgd_wsh.end(), 0.0)/indcs.nx1
-                << (vgd_raw ? ", global-cell band" : "")
                 << (vgd_capped ? ": MeshBlocks too small, the deepest near-tangent "
                                  "reads are clamped (counted)" : "") << std::endl;
     }
