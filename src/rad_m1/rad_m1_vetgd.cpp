@@ -9522,6 +9522,24 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
     }
     for (int q = 0; q < 4; ++q) {sb_h(m,q) = side[q];}
   }
+  if (vgd_raw) {
+    // the raw band (every slot "remote"): a side carries it only where a band position
+    // has no on-rank owner (vgd_own < 0); the sweep reads the on-rank owners directly
+    auto ow_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_own);
+    const int w = vgd_w;
+    for (int m = 0; m < a.nmb; ++m) {
+      for (int q = 0; q < 4; ++q) {sb_h(m,q) = 0;}
+      for (int kk = 0; kk < a.nx3 + 2*w; ++kk) {
+        for (int jj = 0; jj < a.nx2 + 2*w; ++jj) {
+          if (ow_h(m,kk,jj,0) >= 0) {continue;}
+          sb_h(m,0) |= (kk < w);
+          sb_h(m,1) |= (kk >= w + a.nx3);
+          sb_h(m,2) |= (jj < w);
+          sb_h(m,3) |= (jj >= w + a.nx2);
+        }
+      }
+    }
+  }
   for (int i = 0; i < c1; ++i) {
     int wl = 0;
     if ((i >= indcs.is && i <= indcs.ie) || vgd_nb1 > 1) {
