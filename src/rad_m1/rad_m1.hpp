@@ -4468,7 +4468,7 @@ class RadiationM1 {
   std::map<int, std::vector<int>> vgd_gbcb;
   Real vgd_gbdmin = 0.0;
   template <class V>
-  void VetGdGbHaloC(V &a, const int i, const int ws);
+  bool VetGdGbHaloC(V &a, const int i, const int ws, const int part = 0);
   void VetGdRingGatherI(const int i);
   void VetGdRingGatherC(const int i0, const int i1);
   void VetGdThetaInit();                  // the node table and the checks
@@ -4531,6 +4531,16 @@ class RadiationM1 {
   // the GPU (spin / flag kernels on the sweep's stream; the host never waits in the
   // sweep).  env VGD_IPC=0/1 overrides.
   bool vgd_ipc_on = false;
+  bool vgd_lean = false;   // vet_gd_halo_lean: the compact band exchange without fences
+  bool vgd_gbo = false;    // vet_gd_halo_overlap: the next shell's interior meanwhile
+  bool vgd_gbo_said = false;
+  struct VgdGboL {         // a pass's shell list, edge entries first (VgdGboList)
+    DvceArray1D<int> l;
+    int ne = 0, nt = 0;
+    Real alpha = -1.0;
+  };
+  std::map<std::pair<int, Real>, VgdGboL> vgd_gbol;   // ((depth, pass), set)
+  const VgdGboL &VgdGboList(const int pass, const int d);
   bool vgd_ipc_tfs = false;
   bool vgd_merge = true;         // bsgaccel-1011: env VGD_MERGE=0: twin in own messages
   DvceArray1D<Real> vgd_csbm, vgd_crbm;   // bsgaccel-1011: merged send / receive

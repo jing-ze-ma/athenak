@@ -2161,6 +2161,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     vgd_hx_on = (vgd_hx_mode > 0);
     // vgdrot-1011 vet_gd_halo_ipc (read only when named; default false); env VGD_IPC
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_overlap")) {
+      vgd_gbo = pin->GetBoolean("rad_m1","vet_gd_halo_overlap");
+    }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_lean")) {
+      vgd_lean = pin->GetBoolean("rad_m1","vet_gd_halo_lean");
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_ipc")) {
       vgd_ipc_on = pin->GetBoolean("rad_m1","vet_gd_halo_ipc");
     }

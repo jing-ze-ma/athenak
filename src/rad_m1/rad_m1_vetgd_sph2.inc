@@ -41,6 +41,10 @@ double VgdThetaFace(const Mesh *pm, const int n) {
   }
   return static_cast<double>(t);
 }
+#if MPI_PARALLEL_ENABLED
+// vet_gd_halo_overlap: the requests of a begun compact exchange (VetGdGbHaloC part 1)
+std::vector<MPI_Request> g_vgd_gbo_req;
+#endif
 } // namespace
 
 int RadiationM1::VgdPoleSlot(const int o, const int lx2) const {
@@ -658,13 +662,20 @@ void RadiationM1::VetGdGlobalBandInit() {
 //! branch (clamped polar reads).  Unsent positions get 0 (env VGD_COMPACT_NAN: NaN, the
 //! gate that nothing unsent is read).  On-rank copies as before (all directions).
 
+//! part (vet_gd_halo_overlap): 0 the whole exchange; 1 up to the posted messages (true:
+//! begun, the kept lists of a fixed set only); 2 the wait and the unpack of a begun one
+
 template <class V>
-void RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws) {
+bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) {
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   auto a_ = a;
   const int nv = vgd_n;
-  vgd_cur.fence();   // the shell's intensities (sweep stream) are complete
+  // vet_gd_halo_lean: on the sweep's own (default) stream the pack and the unpack are
+  // stream-ordered with the shell kernels; the host waits only for the pack
+  const bool lean = vgd_lean &&
+                    vgd_cur.impl_instance_id() == DevExeSpace().impl_instance_id();
+  if (!lean && part != 2) vgd_cur.fence();   // the shell's intensities are complete
   const int wq = std::min(ws, static_cast<int>(vgd_gdnl.size()) - 1);
   {
     const int nl = vgd_raw ? 0 : vgd_gdnl[wq];   // (vgd_raw: on-rank owners read direct)
@@ -677,7 +688,7 @@ void RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws) {
     }
   }
 #if MPI_PARALLEL_ENABLED
-  if (!vgd_hmpi) {return;}
+  if (!vgd_hmpi) {return false;}
   const int np = static_cast<int>(vgd_csprk.size());
   const int ns = vgd_csnsnd, nr = vgd_csnrcv;
   const bool inw = vgd_hinw;
@@ -711,6 +722,11 @@ void RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws) {
   auto &cf = vgd_gbcf[vgd_raw ? key : -1];
   auto &cb = vgd_gbcb[vgd_raw ? key : -1];
   auto pv = Kokkos::subview(vgd_gbpb, std::make_pair(4*np, 8*np));
+  if (part == 1 && !(vgd_raw && !cb.empty())) {   // (the lists are made: whole)
+    VetGdGbHaloC(a, i, ws, 0);
+    return false;
+  }
+  const bool post = (part != 2), wait = (part != 1);
   if (vgd_raw && !cb.empty()) {
     for (int q = 0; q < 4*np; ++q) {pv(q) = cb[q];}
   } else {
@@ -777,7 +793,8 @@ void RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws) {
   auto sb_ = vgd_sbuf;
   auto rb_ = vgd_rbuf;
   auto ls_ = cf[0], lr_ = cf[1];
-  if (vgd_raw && cb[4*np] > 0) {
+  if (!post) {
+  } else if (vgd_raw && cb[4*np] > 0) {
     Kokkos::parallel_for("m1_vgdgb_kpack",
                          Kokkos::RangePolicy<>(DevExeSpace(), 0, cb[4*np]),
     KOKKOS_LAMBDA(const int o) {
@@ -792,11 +809,12 @@ void RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws) {
       sb_(fs_(q)) = a_(S_(e,0),v,S_(e,1),S_(e,2),i);
     });
   }
-  Kokkos::fence();
+  if (post) Kokkos::fence();
   Kokkos::Timer tq;
-  std::vector<MPI_Request> req;
+  std::vector<MPI_Request> &req = g_vgd_gbo_req;
+  if (post) req.clear();
   double nsent = 0.0;
-  for (int p = 0; p < np; ++p) {
+  for (int p = 0; p < np && post; ++p) {
     const int rk = vgd_csprk[p];
     const int s0 = pv(4*p), s1 = pv(4*p + 1), r0 = pv(4*p + 2), r1 = pv(4*p + 3);
     if (r1 > r0) {
@@ -813,7 +831,12 @@ void RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws) {
     }
     vgd_csvdense += static_cast<double>(vgd_gdsn[wq][p])*nv;
   }
+  if (!wait) {   // (begun: the next shell's interior runs while the messages travel)
+    vgd_csvsent += nsent;
+    return true;
+  }
   MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
+  req.clear();
   vgd_tmpi += tq.seconds();
   vgd_nexch += 1.0;
   vgd_csvsent += nsent;
@@ -843,10 +866,11 @@ void RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws) {
       a_(R_(e,0),v,R_(e,1),R_(e,2),i) = (fr_(q + 1) > fr_(q)) ? rb_(fr_(q)) : fill;
     });
   }
-  Kokkos::fence();
+  if (!lean) Kokkos::fence();
 #else
   (void) i;
 #endif
+  return false;
 }
 
 //----------------------------------------------------------------------------------------
@@ -893,9 +917,11 @@ DvceArray1D<int> RadiationM1::VetGdRawRec(const int key) {
   return l;
 }
 
-template void RadiationM1::VetGdGbHaloC<DvceArray5D<Real>>(DvceArray5D<Real> &a,
-                                                           const int i, const int ws);
-template void RadiationM1::VetGdGbHaloC<RadiationM1::VgdRag>(RadiationM1::VgdRag &a,
-                                                             const int i, const int ws);
+template bool RadiationM1::VetGdGbHaloC<DvceArray5D<Real>>(DvceArray5D<Real> &a,
+                                                           const int i, const int ws,
+                                                           const int part);
+template bool RadiationM1::VetGdGbHaloC<RadiationM1::VgdRag>(RadiationM1::VgdRag &a,
+                                                             const int i, const int ws,
+                                                             const int part);
 
 } // namespace radm1

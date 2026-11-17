@@ -6967,6 +6967,21 @@ void RadiationM1::VetGdSweep() {
     const bool hxm = vgd_hx_on && vgd_hmpi && (vgd_hcomp > 0) && (vgd_hl_mb > 0) && shl &&
                      !bandx;
     bool pend = false;               // a list-path exchange begun, not ended
+    // vet_gd_halo_overlap (the compact global band of the sc rays, one level): the
+    // exchange of shell i is begun, the next shell's entries farther than its depth + 1
+    // from every lateral MeshBlock edge (they read no band) run while the messages
+    // travel, then the unpack, then the edge entries: each entry the same code, bitwise
+    const bool gbo = vgd_gbo && vgd_raw && vgd_gbc && vgd_hmpi && shl && vgd_nb1 == 1 &&
+                     !(rga && vgd_rg_refill) && !xffs && !ovl && fh <= 1 &&
+                     vgd_upf == 0 && !vgd_rbon && !two;
+    int gbo_i = -1, gbo_ws = 0;      // the begun exchange (shell, depth)
+    if (vgd_gbo && !gbo && !vgd_gbo_said && global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_gd_halo_overlap: not taken by this sweep (it needs the "
+                << "sc rays' compact global band over MPI, one x1 level, the shell "
+                << "lists, and no band-ring refill, cross-fade fuse, vet_gd_overlap, "
+                << "fuse_shells, upwind, polar rings or twin)" << std::endl;
+      vgd_gbo_said = true;
+    }
     // several MeshBlocks along x1: the levels in the pass's order, each from the boundary
     // shell the previous one handed on (wall maps couple all directions: no wavefront)
     const int nst = vgd_nb1;
@@ -7045,6 +7060,12 @@ void RadiationM1::VetGdSweep() {
           }
           xe = (sid > 0);
           run_xff(i, l, sid);
+        } else if (shl && gbo_i >= 0) {
+          const auto &g = VgdGboList(pass, gbo_ws + 1);
+          run_list(g.l, g.ne, g.nt, i, l, "m1_vgd_shell");   // (no band read)
+          VetGdGbHaloC(vgd_i, gbo_i, gbo_ws, 2);
+          gbo_i = -1;
+          run_list(g.l, 0, g.ne, i, l, "m1_vgd_shell");
         } else if (shl) {
           // vet_gd_shell_list: only the (m, k, j, d) of this pass's branch (and level)
           run_list(vgd_shl[pass], vgd_shlv[pass][lv], vgd_shlv[pass][lv + 1], i, l,
@@ -7170,6 +7191,16 @@ void RadiationM1::VetGdSweep() {
           VgdXffSwap();
           VetGdHalo(vgd_i, n, i, i, wsx, true, static_cast<VgdIView *>(nullptr));
         }
+      } else if (gbo && q + 1 < nsh) {
+        vgd_rg_lastx = false;
+        if (VetGdGbHaloC(vgd_i, i, wsx, 1)) {   // (false: the whole exchange, done)
+          gbo_i = i;                 // completed by the next shell's kernels
+          gbo_ws = wsx;
+        }
+        if (rga && inw) {   // (the band ring: the record of what the exchange writes;
+          vgd_rg_sk[i] = 3;   // saved after the unpack, at the next shell's flush)
+          vgd_rg_se[i] = VetGdRawKey(i, true, wsx);
+        }
       } else {
         vgd_rg_lastx = false;
         VetGdHalo(vgd_i, n, i, i, wsx, true, two ? &vgd_itw : nullptr);
@@ -7190,6 +7221,7 @@ void RadiationM1::VetGdSweep() {
       vgd_thalo += th.seconds();
     }
     if (pend) {VetGdHlEnd();}
+    if (gbo_i >= 0) {VetGdGbHaloC(vgd_i, gbo_i, gbo_ws, 2);}
     if (rga) {
       // the last shell of the pass: saved (inward) and back to its compact slab
       const int il = is + (inw ? lcut : (n1 - 1));
@@ -8040,6 +8072,40 @@ void RadiationM1::VetGdBuild() {
   }
   vra_last = false;
   vra_blk = blk;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn const RadiationM1::VgdGboL &RadiationM1::VgdGboList
+//! \brief vet_gd_halo_overlap: the shell list of pass pass (one level) with its entries
+//! within d cells of a lateral MeshBlock edge first (ne of nt), the rest after them, each
+//! part in the list's order; made once per direction set and depth
+
+const RadiationM1::VgdGboL &RadiationM1::VgdGboList(const int pass, const int d) {
+  if (vgd_gbol.size() > 64) vgd_gbol.clear();   // (rotating sets: the old ones)
+  auto &g = vgd_gbol[std::make_pair(2*d + pass, vgd_shl_alpha)];
+  if (g.l.is_allocated()) return g;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int js = indcs.js, je = indcs.je, ks = indcs.ks, ke = indcs.ke, n = vgd_n;
+  const int nj = je - js + 1, nkj = (ke - ks + 1)*nj;
+  const int c0 = vgd_shlv[pass][0], c1 = vgd_shlv[pass][1];
+  auto src = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                 Kokkos::subview(vgd_shl[pass], std::make_pair(c0, c1)));
+  std::vector<int> e, c;
+  for (int q = 0; q < c1 - c0; ++q) {
+    const int t = (src(q)/n) % nkj;
+    const int k = ks + t/nj, j = js + t % nj;
+    const int dm = std::min(std::min(j - js, je - j), std::min(k - ks, ke - k));
+    ((dm < d) ? e : c).push_back(src(q));
+  }
+  g.ne = static_cast<int>(e.size());
+  g.nt = g.ne + static_cast<int>(c.size());
+  e.insert(e.end(), c.begin(), c.end());
+  g.l = DvceArray1D<int>("m1_vgd_gbo", std::max(g.nt, 1));
+  auto h = Kokkos::create_mirror_view(g.l);
+  for (int q = 0; q < g.nt; ++q) h(q) = e[q];
+  Kokkos::deep_copy(g.l, h);
+  g.alpha = vgd_shl_alpha;
+  return g;
 }
 
 //----------------------------------------------------------------------------------------
