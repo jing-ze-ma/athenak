@@ -3997,7 +3997,8 @@ void RadiationM1::RstFingerprint(const char *tag) {
                 pred_ok ? 1 : 0, pred_dt, pred2_ok ? 1 : 0, pred2_dt, t2_ok ? 1 : 0,
                 t2_dtprev, t2_vprev ? 1 : 0, x2_ok ? 1 : 0, x2_t, t2_abe_len, t2_abe_left);
     std::fflush(stdout);
-  }  if (global_variable::my_rank == 0) {
+  }
+  if (global_variable::my_rank == 0) {
     std::printf("RSTFP cyc %d clean init %d faces %d lf_ok %d havec %d tc %.17e "
                 "dtb %.17e fe %.17e fv %.17e\n", cy, cln_init ? 1 : 0,
                 cln_faces_set ? 1 : 0, cln_lf_ok ? 1 : 0, cln_havec ? 1 : 0, cln_tc,
@@ -4010,6 +4011,5 @@ void RadiationM1::RstFingerprint(const char *tag) {
                 "scut %d\n", cy, cln_fvn, cln_fvfull ? 1 : 0, cln_fvtc,
                 cln_fvrst ? 1 : 0, cln_fvl0, vlat_icut, vgd_scut);
   }
-
 }
 }  // namespace radm1
