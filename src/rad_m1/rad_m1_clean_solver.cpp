@@ -777,7 +777,11 @@ int RadiationM1::CleanBiCGStab() {
   const bool cell = cln_cell;
   auto w = cell ? cln_x : cln_w;
   const int nc = cell ? 4 : 1;
-  const int sx = cell ? CLC_X : CLW_X, sb = cell ? CLC_B : CLW_B;
+  // clean_conv = budget, in the Newton passes (a single solve keeps clean_tol in its own
+  // norm): the rows over their gross terms S (CleanRightHandSide), W A X = W B with
+  // W = 1/S, right-preconditioned by M^-1 W^-1, so that every norm below is the budget's
+  const bool bud = cln_budget && !cell && cln_ewr > -1.5;
+  const int sx = cell ? CLC_X : CLW_X, sb = cell ? CLC_B : (bud ? CLW_BW : CLW_B);
   const int sr = cell ? CLC_R : CLW_R, sr0 = cell ? CLC_R0 : CLW_R0;
   const int sp = cell ? CLC_P : CLW_P, sv = cell ? CLC_V : CLW_V;
   const int ss = cell ? CLC_R : CLW_S, sq = cell ? CLC_Q : CLW_Q;
@@ -793,20 +797,32 @@ int RadiationM1::CleanBiCGStab() {
       }
     });
   };
+  // w(dst) = w(a) * w(s)^p
+  auto scale = [&](const int dst, const int a, const int s, const Real p) {
+    par_for("cln_scale", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      w(m,dst,k,j,i) = (p > 0.0) ? w(m,a,k,j,i)*w(m,s,k,j,i) : w(m,a,k,j,i)/w(m,s,k,j,i);
+    });
+  };
   auto apply = [&](const int src, const int dst) {
     if (cell) {
       CleanCellApply(src, dst);
     } else {
       CleanApply(src, dst);
+      if (bud) scale(dst, dst, CLW_SE, -1.0);
     }
   };
   auto precondition = [&](const int src, const int dst) {
     if (cell) {
       CleanCellPrecondition(src, dst);
+    } else if (bud) {
+      scale(CLW_PW, src, CLW_SE, 1.0);
+      CleanPrecondition(CLW_PW, dst);
     } else {
       CleanPrecondition(src, dst);
     }
   };
+  if (bud) scale(CLW_BW, CLW_B, CLW_SE, -1.0);
   auto dots = [&](const int n, const std::array<int, 4> ab) {
     return CleanDots(w, nc, n, ab);
   };
@@ -835,7 +851,21 @@ int RadiationM1::CleanBiCGStab() {
     return true;
   };
   restart(-1);
-  const Real tol = cln_tol*fmax(std::sqrt(bb), 1.0e-300);
+  Real tol = cln_tol*fmax(std::sqrt(bb), 1.0e-300);
+  // Eisenstat-Walker forcing (choice 2, safeguarded) on |r0|, the Newton residual of the
+  // pass in the budget's norm
+  if (bud) {
+    const Real r0 = std::sqrt(rr);
+    Real eta = 0.1;
+    if (cln_ewr > 0.0) {
+      eta = 0.9*SQR(r0/cln_ewr);
+      if (0.9*SQR(cln_eta) > 0.1) eta = fmax(eta, 0.9*SQR(cln_eta));
+      eta = fmin(eta, 0.1);
+    }
+    cln_ewr = r0;
+    cln_eta = eta;
+    tol = fmax(eta*r0, 0.1*cln_tolb);
+  }
   if (std::sqrt(rr) <= tol) return 0;
   auto done = [&](const int it) {return restart(it, true) && std::sqrt(rr) <= 10.0*tol;};
 

@@ -828,7 +828,11 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   const int maxnl = iterate ? cln_maxnl : 1;
   // the lagged slopes (and the staggered velocity) settle only to the accuracy of the
   // linear solve
-  const Real tol_nl = fmax(cln_tol_nl, 10.0*cln_tol);
+  // (clean_conv = budget: of the pass, CleanNewtonUpdate; the first solve's from the
+  // floor, and no state from the last solve, so that restarts stay bitwise)
+  Real tol_nl = fmax(cln_tol_nl, 10.0*cln_tol);
+  cln_tolb = tol_nl;
+  cln_ewr = iterate ? -1.0 : -2.0;   // (the budget's norm only in the Newton passes)
   // a change that stopped decreasing within 100 times both its round-off level (cln_fe,
   // cln_fv, from the magnitudes of the terms of the solve) and tol_nl is converged too
   auto settled = [&](const Real d, const Real d0, const Real f) {
@@ -906,6 +910,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       if (nit < 0) dnl = std::numeric_limits<Real>::infinity();
       if (!iterate || nit < 0) break;
       const Real de = cell ? CleanCellNewtonUpdate() : CleanNewtonUpdate();
+      if (cln_budget) tol_nl = cln_tolb;
       if (lagged && inl < cln_maxpic) dpic = de;
       Real dv = 0.0;
       if (cln_feedback) dv = cell ? CleanCellVelocityUpdate() : CleanVelocityUpdate();
@@ -1231,6 +1236,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   // as ImplicitSolve's dt (chat/c) esrc; the slope of E carries it, CleanWriteBack)
   const bool eso = esrc_on;
   auto es = esrc;
+  const bool bud = cln_budget;
 
   if (x.feedback) {
     par_for("cln_beta", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -1391,6 +1397,17 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
     // (clean_stag_sbimp: (1 - r) sb(E) in the operator as the cell layout's, Newton form)
     if (x.sbi) x.w(m,CLW_B,k,j,i) -= (1.0 - rr)*CleanStagBetaE(xh, CLW_EK, m, k, j, i);
     x.w(m,CLW_X,k,j,i) = x.w(m,CLW_EK,k,j,i);
+    if (!bud) return;   // (clean_conv = budget: the gross terms of the E and gas rows)
+    const Real xc = hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) + hckp*arad_*SQR(SQR(t)) +
+                    fabs(work) + fabs(sb);
+    Real fl = eso ? fabs(es(m,k,j,i)) : 0.0;
+    for (int n = 0; n < x.nf; ++n) {
+      const int dk = (n == 2), dj = (n == 1), di = (n == 0);
+      fl += CleanDivW(x, n, m, k, j, i, 0)*fabs(x.fc[n](m,CLF_N,k,j,i)) +
+            CleanDivW(x, n, m, k, j, i, 1)*fabs(x.fc[n](m,CLF_N,k+dk,j+dj,i+di));
+    }
+    x.w(m,CLW_SE,k,j,i) = fmax(fabs(x.w(m,CLW_EO,k,j,i)) + xc + x.h*fl, 1.0e-300);
+    x.w(m,CLW_SG,k,j,i) = fmax(fabs(x.w(m,CLW_EI,k,j,i)) + xc, 1.0e-300);
   });
 }
 
@@ -1422,6 +1439,13 @@ Real RadiationM1::CleanNewtonUpdate() {
   auto w = cln_w;
   const bool cell = cln_cell, poslim = cln_poslim || cln_gflux;
   const bool gfd = !cell && cln_gflux && !cln_sbimp && cln_feedback;
+  // (clean_conv = budget: the changes over the rows' gross terms, and the time error h/2
+  // |f(Y) - f(U^n)| of the iterate, Heun against Euler, K1 = f(U^n))
+  const bool bud = cln_budget;
+  const bool kok = bud && t2_ok && t2_solve != M1_T2S_NONE && !cln_vzero &&
+                   t2k1.extent_int(0) >= nmb;
+  const Real h = dt_sub;
+  auto k1 = t2k1;
   if (cln_sbimp && cln_feedback) {   // (clean_stag_sbimp: the gas takes -sb of X)
     CleanGhostFill(cln_w, CLW_X, 1);
     CleanArgs xh = CleanMakeArgs();
@@ -1433,11 +1457,11 @@ Real RadiationM1::CleanNewtonUpdate() {
     });
   }
 
-  Real change = 0.0, femax = 0.0;
+  Real change = 0.0, femax = 0.0, ermax = 0.0;
   // (256 threads per block: the exchange temperature needs more than 128 registers)
   using Rp256 = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
   Kokkos::parallel_reduce("cln_newton", Rp256(DevExeSpace(), 0, nmb*nkji),
-  KOKKOS_LAMBDA(const int idx, Real &dmax, Real &fe_max) {
+  KOKKOS_LAMBDA(const int idx, Real &dmax, Real &fe_max, Real &er_max) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
     int j = (idx - m*nkji - k*nji)/nx1;
@@ -1464,13 +1488,28 @@ Real RadiationM1::CleanNewtonUpdate() {
     const Real de = ncell ? fabs(e - e_old)/fmax(fmax(fabs(e), fabs(e_old)), esc)
                           : fabs(e - e_old)/fmax(fmax(fabs(e), fabs(e_old)), 1.0e-300);
     const Real dt = fabs(t - t_old)/fmax(fmax(t, t_old), 1.0e-300);
-    dmax = fmax(dmax, fmax(de, dt));
+    if (bud) {
+      const Real d = uh(m,IDN,k,j,i), se = w(m,CLW_SE,k,j,i);
+      Real e1, e0, p, chi_rho, chi_t, cv;
+      eos.ThermoAt(d, t, e1, p, chi_rho, chi_t, cv);
+      eos.ThermoAt(d, t_old, e0, p, chi_rho, chi_t, cv);
+      dmax = fmax(dmax, fmax(fabs(e - e_old)/se, fabs(e1 - e0)/w(m,CLW_SG,k,j,i)));
+      if (kok) er_max = fmax(er_max, 0.5*fabs(e - w(m,CLW_EO,k,j,i) -
+                                              h*k1(m,M1_T2_E,k,j,i))/se);
+    } else {
+      dmax = fmax(dmax, fmax(de, dt));
+    }
     // staggered: round-off level of E (its terms over E; cell: CleanCellVelocityUpdate)
     if (!cell) fe_max = fmax(fe_max, (fabs(e)*(1.0 + hc*op(m,M1_OP_E,k,j,i)) +
         fabs(w(m,CLW_EO,k,j,i)) + hc*op(m,M1_OP_P,k,j,i)*arad_*SQR(SQR(t)))/
         fmax(fabs(e), 1.0e-300));
-  }, Kokkos::Max<Real>(change), Kokkos::Max<Real>(femax));
+  }, Kokkos::Max<Real>(change), Kokkos::Max<Real>(femax), Kokkos::Max<Real>(ermax));
   if (!cell) cln_fe = std::numeric_limits<Real>::epsilon()*CleanReduce(femax, true);
+  if (bud) {   // (the gross terms' round-off; the tolerance of the next test and solve)
+    cln_fe = 10.0*std::numeric_limits<Real>::epsilon();
+    const Real tfl = fmax(cln_tol_nl, 10.0*cln_tol);
+    cln_tolb = kok ? fmin(fmax(cln_bkap*CleanReduce(ermax, true), tfl), 1.0e-4) : tfl;
+  }
   // (clean_stag_sbimp, fwork: the face beta terms' emission of the new T, hc kP a T^4,
   // for the F solve of the velocity update, whose F the next pass's y and W take)
   if ((cln_sbimp || cln_fwork) && cln_feedback) {

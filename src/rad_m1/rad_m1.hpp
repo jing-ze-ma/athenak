@@ -3104,6 +3104,10 @@ class RadiationM1 {
   bool cln_pcf32 = false;       // clean_pc_factor_float: ... in single precision
   int cln_pcreuse = 1;          // clean_pc_reuse: preconditioner rebuilt every n passes
   bool cln_conv_est = false;    // clean_conv_est: stop on the estimated remaining change
+  bool cln_budget = false;      // clean_conv = budget (staggered default): CleanSolve
+  Real cln_tolb = 0.0;          // its tolerance of the pass (kappa x time error)
+  Real cln_bkap = 0.1;          // clean_conv_kappa
+  Real cln_ewr = -1.0, cln_eta = 0.1;   // Eisenstat-Walker: last |r0|_S, forcing
   bool cln_nlprint = false;     // clean_nl_print: the changes of every pass (rank 0)
   bool cln_lf_ok = false;       // cln_lf holds the factors of the current blocks
   bool cln_stagmg = false;      // clean_stag_pc = mg: the old production mg (staggered)

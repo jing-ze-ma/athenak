@@ -114,7 +114,11 @@ constexpr int CLW_TM = 41;   // clean_stag_pc = mg: coefficients of E_{j-1}, E_{
 constexpr int CLW_L = 45;    // staggered, cubed sphere: the lateral stress sums Y of the
                              // face families q of a cell, CLW_L + 3 q
                              // (CleanStagCsLateral)
-constexpr int CLW_N = 54;
+constexpr int CLW_SE = 54;   // staggered clean_conv = budget: the gross terms S of the E
+constexpr int CLW_SG = 55;   //   and the gas rows (their scales), the weighted B and a
+constexpr int CLW_BW = 56;   //   preconditioner input (CleanBiCGStab)
+constexpr int CLW_PW = 57;
+constexpr int CLW_N = 58;
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanFvI

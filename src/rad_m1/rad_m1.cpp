@@ -324,6 +324,22 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_nl_print")) {
       cln_nlprint = pin->GetBoolean("rad_m1","clean_nl_print");
     }
+    // clean_conv = budget (staggered default) | strict: budget measures every row in the
+    // cell's own budget for the step, S = the sum of its gross terms (old value, fluxes
+    // through the faces, exchange, work, beta terms), so that a change or residual is
+    // the fraction of the energy the cell exchanges in the step.  Its tolerance is
+    // clean_conv_kappa (0.1) x the step's time-error estimate in the same weights,
+    // between clean_tol_nl (10 clean_tol) and 1e-4, and BiCGStab solves in that norm
+    // with Eisenstat-Walker forcing; strict: E, T relative to themselves, clean_tol_nl
+    {const std::string cv = pin->GetOrAddString("rad_m1","clean_conv",
+                                                cln_cell ? "strict" : "budget");
+    if (cv != "budget" && cv != "strict") {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/clean_conv = budget | strict" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    cln_budget = !cln_cell && (cv == "budget");}
+    cln_bkap = pin->GetOrAddReal("rad_m1","clean_conv_kappa",0.1);
     // clean_halo_vars (read only when named, 1..32, default 16): at most this many
     // variables per ghost exchange of the clean solve (its scratch array holds that many)
     if (pin->DoesParameterExist("rad_m1","clean_halo_vars")) {
