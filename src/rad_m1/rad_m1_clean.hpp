@@ -1005,9 +1005,12 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
     }
     if (x.hi && CleanBoundaryFace(x, dir, m, kf, jf, iff)) {
       // (a boundary flux is no F equation: the inner half cell's absorption of it;
-      // gflux: the share 1 - exp(-chi dx/2) the half cell absorbs, not chi dx/2)
+      // gflux: of an open face the share 1 - exp(-chi dx/2) the half cell absorbs, not
+      // chi dx/2; an imposed flux runs through the half cell, which takes chi dx/2 of it,
+      // half the face as the production row, rad_m1_implicit.cpp:15272-15276)
       const Real dc = 1.0/CleanDivW(x, dir, m, k, j, i, side), q = 0.5*xc*dc;
-      const Real db = x.gf ? -expm1(-q)*x.h*f/(x.c*dc) : 0.5*x.h*xc*f/x.c;
+      const bool gq = x.gf && CleanOpen(x, m, 2*dir + side);
+      const Real db = gq ? -expm1(-q)*x.h*f/(x.c*dc) : 0.5*x.h*xc*f/x.c;
       dm += db;
       if (cf) {
         cf[side] = db;

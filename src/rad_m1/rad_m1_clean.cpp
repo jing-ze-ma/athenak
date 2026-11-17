@@ -262,18 +262,21 @@ void RadiationM1::CleanInit() {
     CleanFatal("<rad_m1>/scheme = clean currently needs a uniform mesh and chat = c");
   }
   // the boundaries of the clean solve: open (bath, beam; outflow without a bath),
-  // reflect, periodic and, in the cell layout, an imposed flux (x1, and x2 with the
-  // problem generator's face fluxes).  The staggered face weights take an imposed flux
-  // as the face's whole flux (CleanFaceWeights), but its F solve, write-back and wall
-  // force have not been tested with one: kept out
+  // reflect, periodic and an imposed flux (x1; in the cell layout also x2 with the
+  // problem generator's face fluxes).  Staggered: as the production row, where the
+  // imposed flux is the face's whole energy flux and its face flux (rad_m1_implicit.cpp
+  // ImplicitSolve, lines 17518, 18062 and 18638), the face takes it with no E weights
+  // (CleanFaceWeights, CleanFaceSource), its F solve keeps it as the face F (no F
+  // equation) and the inner half cell absorbs its momentum (CleanMomentumChange), as at
+  // the open faces
   const int bc[6] = {ibc_x1min, ibc_x1max, ibc_x2min, ibc_x2max, ibc_x3min, ibc_x3max};
   for (int s = 0; s < 6; ++s) {
     const bool flux = bc[s] == M1_IBC_FLUX || (bc[s] == M1_IBC_X2FLUX && ifx2_on);
     if (!(bc[s] == M1_IBC_MARSHAK || bc[s] == M1_IBC_OUTFLOW || bc[s] == M1_IBC_REFLECT ||
-          bc[s] == M1_IBC_PERIODIC || (flux && cln_cell))) {
+          bc[s] == M1_IBC_PERIODIC || (flux && (cln_cell || s < 2)))) {
       CleanFatal("<rad_m1>/implicit_bc_* with scheme = clean: auto | marshak | outflow | "
-                 "reflect | periodic, flux (x1, x2 with the problem generator's face "
-                 "fluxes) with clean_layout = cell; not efix");
+                 "reflect | periodic, flux (x1; x2 with the problem generator's face "
+                 "fluxes with clean_layout = cell); not efix");
     }
   }
   if (esrc_on && !cln_cell) {
@@ -1195,14 +1198,15 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
                         ((ul + ur > 0.0) ? ul*el : ur*er);
         return ac + phi*(ah - ac);
       };
-      // (gflux: a physical boundary face's flux, absorbed in an opaque half cell, enters
-      // the cell mean as its mean over the half cell, (1 - e^-q)/q, q = chi dx/2, as the
-      // momentum it gives, CleanMomentumChange)
+      // (gflux: an open physical boundary face's flux, absorbed in an opaque half cell,
+      // enters the cell mean as its mean over the half cell, (1 - e^-q)/q, q = chi dx/2,
+      // as the momentum it gives, CleanMomentumChange; an imposed flux runs through it)
       Real fw[6] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
       for (int n = 0; n < 3; ++n) {   // (trip 3: fw stays in registers)
         const int dk = (n == 2), dj = (n == 1), di = (n == 0);
         for (int sd = 0; sd < 2 && x.gf && n < x.nf; ++sd) {
-          if (!CleanBoundaryFace(x, n, m, k+sd*dk, j+sd*dj, i+sd*di)) continue;
+          if (!CleanBoundaryFace(x, n, m, k+sd*dk, j+sd*dj, i+sd*di) ||
+              !CleanOpen(x, m, 2*n + sd)) continue;
           const Real q = 0.5*op(m,M1_OP_T,k,j,i)/CleanDivW(x, n, m, k, j, i, sd);
           fw[2*n+sd] = (q > 1.0e-8) ? -expm1(-q)/q : 1.0;
         }
