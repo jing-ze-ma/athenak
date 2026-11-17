@@ -227,6 +227,9 @@ void RadiationM1::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
     cln_hpb->InitializeBuffers(cln_hmax);
     cln_hpb->SetVectorPairs(cln_hmax, {});
     cln_hpb->cs_noresample = true;
+    // (16 teams per buffer: a MeshBlock face is one buffer, which one team packed alone,
+    // ~0.5 ms per exchange on an A100 at 831 x 64 x 32; bitwise, copies)
+    cln_hpb->cc_split = 16;
   }
   CleanHalo &hl = cln_halo[nc];
   if (hl.ca.extent_int(0) == 0) {

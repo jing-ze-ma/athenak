@@ -64,17 +64,14 @@ void MeshBoundaryValuesCC::SetVectorPairs(const int nvar,
 //----------------------------------------------------------------------------------------
 //! \fn static int BvCcSplit
 //! \brief Number of teams each (block, buffer, variable) of the CC pack/unpack is split
-//! into over its (k,j) range (env BVALS_CC_SPLIT, default 1).
-static int BvCcSplit() {
+//! into over its (k,j) range (env BVALS_CC_SPLIT, else the object's cc_split).
+static int BvCcSplit(const int def) {
   static int s = -1;
   if (s < 0) {
     const char *e = std::getenv("BVALS_CC_SPLIT");
-    s = (e != nullptr) ? std::atoi(e) : 1;
-    if (s < 1) {
-      s = 1;
-    }
+    s = (e != nullptr) ? std::max(std::atoi(e), 1) : 0;
   }
-  return s;
+  return (s > 0) ? s : std::max(def, 1);
 }
 //----------------------------------------------------------------------------------------
 //! \fn static int BvCcVl
@@ -183,7 +180,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables)
   int nmnv = nmb*nnghbr*nvar;
   const int vmask_ = vmask;   // (BvVarOf, CUDA)
-  const int nsp_ = BvCcSplit();
+  const int nsp_ = BvCcSplit(cc_split);
   BvCcTeamPolicy policy = BvCcPolicy(nmnv*nsp_);
   Kokkos::TeamPolicy<> policy1(DevExeSpace(), nmnv, Kokkos::AUTO);   // (z4c kernel)
   // the seam/pole branch needs per-thread scratch; the body is compiled twice (with and
@@ -433,7 +430,7 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
   int nvar = (vmask != 0) ? vlst_.n : a.extent_int(1);
 
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables)
-  const int nsp_ = BvCcSplit();
+  const int nsp_ = BvCcSplit(cc_split);
   BvCcTeamPolicy policy = BvCcPolicy((nmb*nnghbr*nvar)*nsp_);
   Kokkos::TeamPolicy<> policy1(DevExeSpace(), (nmb*nnghbr*nvar), Kokkos::AUTO);   // (z4c)
   BvalsTeamFor("RecvBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {

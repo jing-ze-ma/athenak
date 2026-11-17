@@ -474,6 +474,9 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // images of this block's cells across the seam. Set by the implicit M1 on its scratch
   // exchanges (stage CS1, rad_m1_sph.cpp), whose seam faces pair cell to cell.
   bool cs_noresample = false;
+  // teams of each (block, buffer, variable) of the CC pack/unpack (env BVALS_CC_SPLIT
+  // overrides): 1, the default since defaults-1105; the clean M1 exchanges take more
+  int cc_split = 1;
   // >= 0 = the *FluxSeamCC exchange (averaging modes only) packs and
   // reconciles only this variable. Set by an RKG super-stage around its flux exchange
   // (the super-stage update reads only the energy flux); -1 everywhere else.
