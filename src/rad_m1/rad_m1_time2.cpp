@@ -2024,7 +2024,9 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     if (rc < 1.0) {sw += (1.0 - rc)*po;}
     if (!(hoi && hm_(m,k,j,i) > 0.0) && !(w + dw > 0.0)) {sl += 1.0;}
   }, Kokkos::Sum<Real>(lv[0]), Kokkos::Sum<Real>(lv[1]));
-  for (int d = 0; d < 3; ++d) {
+  // (clean staggered: the face F is the radiation momentum, which the limiter leaves
+  // alone, so momentum and L_z stay exact; the solve keeps |F| <= cE)
+  for (int d = 0; d < 3 && !(clean && !cln_cell); ++d) {
     if ((d == 1 && !tr2) || (d == 2 && !tr3)) {continue;}
     const int dk = (d == 2) ? 1 : 0, dj = (d == 1) ? 1 : 0, di = (d == 0) ? 1 : 0;
     par_for("m1_t2_ffct_f", DevExeSpace(), 0, nmb1, ks, ke + dk, js, je + dj, is, ie + di,
