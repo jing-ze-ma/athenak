@@ -1445,6 +1445,30 @@ void RadiationM1::CleanFirstIterate() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanStagAdvFace
+//! \brief the advective flux a E at face (k,j,i) normal to n, as the face fluxes carry
+//! it: clean_stag_upwind the share phi as a_f E_f, donor cell plus the lagged rest,
+//! CleanFaceWeights; the central mean there left phi (a_f E_f - mean) in F - a E, a
+//! comoving flux the gas does not have, which 2 hc kE beta/c fed back lagged at every
+//! front (clean_stag_gflux, CleanRightHandSide; xh the face momentum state)
+
+KOKKOS_INLINE_FUNCTION
+static Real CleanStagAdvFace(const CleanArgs &x, const CleanArgs &xh, const int n,
+                             const int m, const int kk, const int jj, const int ii) {
+  const int kl = kk - (n == 2), jl = jj - (n == 1), il = ii - (n == 0);
+  const Real ul = x.w(m,CLW_A1+n,kl,jl,il), ur = x.w(m,CLW_A1+n,kk,jj,ii);
+  const Real el = x.w(m,CLW_EK,kl,jl,il), er = x.w(m,CLW_EK,kk,jj,ii);
+  const Real ac = 0.5*(ul*el + ur*er);
+  if (!x.upw || x.cub || CleanBoundaryFace(x, n, m, kk, jj, ii)) return ac;
+  Real al, ar, phi = 0.0;
+  CleanFaceWeights(xh, n, m, kk, jj, ii, al, ar, &phi);
+  if (!(phi > 0.0)) return ac;
+  const Real ah = CleanStagAdvectCorr(x, n, m, kk, jj, ii) +
+                  ((ul + ur > 0.0) ? ul*el : ur*er);
+  return ac + phi*(ah - ac);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanRightHandSide
 //! \brief B = E_old + h c kP a T^4 - r h c kE E_k - W - h div F_source + h esrc, with the
 //! exchange linearised about the iterate (r = s/(d cv + s), s = 4 h c kP a T^3), W the
@@ -1523,6 +1547,16 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
   const auto *peos = CleanDev(eos, 2);
   const Real tgf = cln_gtf ? eos.tfloor : 0.0;   // (clean_gas_tfloor)
+  // (gflux: each face's a E once, for its two cells, CLF_PT)
+  for (int n = 0; n < x.nf && x.feedback && x.gf && !x.cub; ++n) {
+    const int dk = (n == 2), dj = (n == 1), di = (n == 0);
+    auto fc = x.fc[n];
+    par_for("cln_rhsaf", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
+      fc(m,CLF_PT,k,j,i) = CleanStagAdvFace(x, xh, n, m, k, j, i);
+    });
+  }
   par_for("cln_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
@@ -1538,23 +1572,6 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
       auto ff = [&](const int d, const int kk, const int jj, const int ii) {
         return xh.fs ? xh.fc[d](m,CLF_N,kk,jj,ii)
                      : CleanFaceFlux(xh, CLW_EK, d, m, kk, jj, ii, true);
-      };
-      // (the advective flux a E at a face, as the face fluxes carry it: clean_stag_upwind
-      // the share phi as a_f E_f, donor cell plus the lagged rest, CleanFaceWeights;
-      // the central mean there left phi (a_f E_f - mean) in F - a E, a comoving flux the
-      // gas does not have, which 2 hc kE beta/c fed back lagged at every front)
-      auto af = [&](const int n, const int kk, const int jj, const int ii) {
-        const int kl = kk - (n == 2), jl = jj - (n == 1), il = ii - (n == 0);
-        const Real ul = x.w(m,CLW_A1+n,kl,jl,il), ur = x.w(m,CLW_A1+n,kk,jj,ii);
-        const Real el = x.w(m,CLW_EK,kl,jl,il), er = x.w(m,CLW_EK,kk,jj,ii);
-        const Real ac = 0.5*(ul*el + ur*er);
-        if (!x.upw || x.cub || CleanBoundaryFace(x, n, m, kk, jj, ii)) return ac;
-        Real al, ar, phi = 0.0;
-        CleanFaceWeights(xh, n, m, kk, jj, ii, al, ar, &phi);
-        if (!(phi > 0.0)) return ac;
-        const Real ah = CleanStagAdvectCorr(x, n, m, kk, jj, ii) +
-                        ((ul + ur > 0.0) ? ul*el : ur*er);
-        return ac + phi*(ah - ac);
       };
       // (gflux: an open physical boundary face's flux, absorbed in an opaque half cell,
       // enters the cell mean as its mean over the half cell, (1 - e^-q)/q, q = chi dx/2,
@@ -1591,7 +1608,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
         // components, there the cell's a E, the form without gflux)
         if (n < x.nf && x.gf && !x.cub) {
           const int dk = (n == 2), dj = (n == 1), di = (n == 0);
-          bp += bt*0.5*(af(n, k, j, i) + af(n, k+dk, j+dj, i+di))/x.c;
+          bp += bt*0.5*(x.fc[n](m,CLF_PT,k,j,i) + x.fc[n](m,CLF_PT,k+dk,j+dj,i+di))/x.c;
         }
         b2 += SQR(bt);
         ba += bt*x.w(m,CLW_A1+n,k,j,i)/x.c;

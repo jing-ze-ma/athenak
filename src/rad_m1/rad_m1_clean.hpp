@@ -92,7 +92,7 @@ constexpr int CLF_QL = CLF_N + 4;   // the operator's al, ar (CleanFaceWeights) 
                                     // factor -(1-w) theta h c^2 of the pass (3)
 constexpr int CLF_PT = CLF_QL;      // outside the linear solve (cln_fwc sets QL after
                                     // the RHS): the faces' momentum terms of the velocity
-                                    // update (CleanStagDrag)
+                                    // update (CleanStagDrag) and the RHS's a E (cln_rhsaf)
 constexpr int CLF_DS = CLF_N + 7;   // clean_stag_fkin: d of the stage-loop start
 constexpr int CLF_DB = CLF_N + 8;   // clean_stag_vimp: drag share b = beta/(1 + beta) and
 constexpr int CLF_DQ = CLF_N + 9;   //   the face momentum Q = G - c^2 dm_f of the iterate
