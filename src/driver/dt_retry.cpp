@@ -109,9 +109,10 @@ const char *kDtrMinimal[] = {
   // reflecting top mirrors (cln_top).  The closure's extrap history is left alone: its
   // flags go with the handles the attempt swapped and, on a first cycle, with cln_init.
   // clean_rot_ring: the offsets and the pending Delta (a retried first step of a block
-  // shifted the ring twice)
+  // shifted the ring twice), and the swept directions with their weights the step's solve
+  // reads with cln_fvi (cln_fvd: the step's last build, at t + dt, rewrites them)
   "m1.cln_rstd", "m1.cln_fvi", "m1.cln_fvis", "m1.cln_fvgp", "m1.cln_top", "m1.cln_rr",
-  "m1.cln_rpd",
+  "m1.cln_rpd", "m1.cln_fvd",
 };
 
 // the Views of kDtrMinimal that <rad_m1>/scheme = clean does not write
