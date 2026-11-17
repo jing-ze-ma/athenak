@@ -82,6 +82,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_c0 = pin->GetOrAddReal("rad_m1","clean_w_c0",0.1);
     cln_c1 = pin->GetOrAddReal("rad_m1","clean_w_c1",0.5);
     cln_tol = pin->GetOrAddReal("rad_m1","clean_tol",1.0e-10);
+    // clean_tol_cell (read only when named, default 0 = off): the cell layout's linear
+    // solve also stops only once the residual of every cell is below clean_tol_cell
+    // times that cell's own E scale, max(|B_E|, |X_E|), so that a cell of small E (the
+    // photosphere, the floor) is solved as accurately as the cells that dominate the
+    // norm of B: a row left unsolved there gives the gas the radiation's flux
+    // divergence, eint < 0 at the write-back
+    if (pin->DoesParameterExist("rad_m1","clean_tol_cell")) {
+      cln_tol_cell = pin->GetReal("rad_m1","clean_tol_cell");
+    }
     cln_maxit = pin->GetOrAddInteger("rad_m1","clean_maxit",4000);
     cln_maxnl = pin->GetOrAddInteger("rad_m1","clean_maxnl",50);
     cln_tol_nl = pin->GetOrAddReal("rad_m1","clean_tol_nl",1.0e-11);

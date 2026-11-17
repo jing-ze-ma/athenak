@@ -266,6 +266,31 @@ std::array<Real, 2> RadiationM1::CleanDots(DvceArray5D<Real> w, const int nc, co
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::CleanCellResidualMax
+//! \brief the largest residual of a cell (4-component vector r of cln_x) over that
+//! cell's E scale max(|B_E|, |X_E|) (clean_tol_cell)
+
+Real RadiationM1::CleanCellResidualMax(const int r) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  int nmb = pmy_pack->nmb_thispack;
+  const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
+  auto w = cln_x;
+  Real d = 0.0;
+  Kokkos::parallel_reduce("cln_rcell", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &dmax) {
+    int m = idx/nkji;
+    int k = (idx - m*nkji)/nji + ks;
+    int j = (idx - m*nkji - (k - ks)*nji)/nx1 + js;
+    int i = idx - m*nkji - (k - ks)*nji - (j - js)*nx1 + is;
+    const Real s = fmax(fmax(fabs(w(m,CLC_B,k,j,i)), fabs(w(m,CLC_X,k,j,i))), 1.0e-300);
+    for (int c = 0; c < 4; ++c) dmax = fmax(dmax, fabs(w(m,r+c,k,j,i))/s);
+  }, Kokkos::Max<Real>(d));
+  return CleanReduce(d, true);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanFaceCoefficients
 //! \brief per face: the blend weight w(C1), theta, the old-vector flux G, and the
 //! half-range factors h+-_f.  h+_f = H+_f/J_L and h-_f = H-_f/J_R, with H+-_f the rays'
@@ -486,7 +511,12 @@ int RadiationM1::CleanBiCGStab() {
   };
   restart(-1);
   const Real tol = cln_tol*fmax(std::sqrt(bb), 1.0e-300);
-  if (std::sqrt(rr) <= tol) return 0;
+  // (clean_tol_cell: and the residual of every cell over its own E scale)
+  const bool tcell = cell && cln_tol_cell > 0.0;
+  auto cellok = [&](const int r) {
+    return !tcell || CleanCellResidualMax(r) <= cln_tol_cell;
+  };
+  if (std::sqrt(rr) <= tol && cellok(sr)) return 0;
 
   const Real eps = std::numeric_limits<Real>::epsilon();
   for (int it = 1; it <= cln_maxit; ++it) {
@@ -512,7 +542,7 @@ int RadiationM1::CleanBiCGStab() {
     }
     alpha = rho/r0v;
     axpby(ss, sr, 1.0, sv, -alpha);
-    if (std::sqrt(dots(1, {ss, ss, 0, 0})[0]) <= tol) {
+    if (std::sqrt(dots(1, {ss, ss, 0, 0})[0]) <= tol && cellok(ss)) {
       axpby(sx, sx, 1.0, sy, alpha);
       return it;
     }
@@ -530,7 +560,7 @@ int RadiationM1::CleanBiCGStab() {
     const auto e = dots(2, {sr, sr, sr0, sr});
     rr = e[0];
     rho_new = e[1];
-    if (std::sqrt(rr) <= tol) return it;
+    if (std::sqrt(rr) <= tol && cellok(sr)) return it;
     if (omega == 0.0 && !restart(it)) return -it;
   }
   return -cln_maxit;

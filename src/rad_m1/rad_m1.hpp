@@ -2977,6 +2977,7 @@ class RadiationM1 {
                       const bool phys = true, const int part = 0);
   std::array<Real, 2> CleanDots(DvceArray5D<Real> w, const int nc, const int n,
                                 const std::array<int, 4> ab);
+  Real CleanCellResidualMax(const int r);
   Real CleanReduce(Real v, const bool max);
   // cell-centred layout (<rad_m1>/clean_layout = cell, rad_m1_clean_cell.cpp)
   void CleanCellOldVector();
@@ -3021,6 +3022,7 @@ class RadiationM1 {
   Real cln_c0 = 0.1;            // clean_w_c0: C1 below which w = 0
   Real cln_c1 = 0.5;            // clean_w_c1: C1 above which w = 1
   Real cln_tol = 1.0e-10;       // clean_tol: relative residual of the linear solve
+  Real cln_tol_cell = 0.0;      // clean_tol_cell: and of every cell (cell layout)
   int cln_maxit = 4000;         // clean_maxit: BiCGStab iterations
   int cln_maxnl = 50;           // clean_maxnl: Newton iterations
   Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: Newton tolerance (relative dE, dT, dv)
