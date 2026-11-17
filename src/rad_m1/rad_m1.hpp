@@ -2971,6 +2971,8 @@ class RadiationM1 {
   void CleanStagBracket();
   void CleanStagFSolve(const int e);
   void CleanDMem(const bool save);
+  void CleanDInc(const bool two, const Real c1, const Real c2, const Real w1,
+                 const Real w0);
   // closure components in the restart files of the extrap history and clean_rot_ring:
   // the cell layout keeps the CLN_JR (= 49) of push 16's files, CLN_JR is staggered only
   int CleanRstNq() const;
@@ -3176,7 +3178,7 @@ class RadiationM1 {
   DvceArray5D<Real> cln_ff;     // face fluxes of the operator (CleanCellApply)
   DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)
   DvceArray5D<Real> cln_fref;   // force_reference = clean: reference force (m,3,k,j,i)
-  DvceArray5D<Real> cln_rstd;   // staggered fkin: the restart's memory d (m,3,k,j,i)
+  DvceArray5D<Real> cln_rstd;   // staggered fkin: the restart's d and its K1 (m,6,k,j,i)
   bool cln_fref_set = false;    // cln_fref holds the force of the first coupled solve
   bool cln_vzero = false;       // the iterates keep the gas momentum (steady start)
   // cubed sphere: face areas, centroid distances across the faces, normals and centroids

@@ -1232,6 +1232,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     if (two) {v += c2*k2_(m,n,k,j,i);}
     in_(m,n,k,j,i) = v;
   });
+  CleanDInc(two, c1, c2, heun ? 0.5 : w1, heun ? 0.5 : w0);
   const bool ike = t2_ike && (t2kei.extent_int(0) > nmb1);   // rsglock-1112
   if (ike) {
     auto e1_ = t2ke1, e2_ = t2ke2, ei_ = t2kei;
@@ -3415,7 +3416,7 @@ int RadiationM1::Time2RstNchWant() {
   return nt + ((force_ref == M1_FREF_CLEAN) ? 4 : 0)         // the reference force, set
          + ((clean && cln_extrap > 0) ? 2*CleanRstNq() + 1 : 0)    // extrap history
          + ((clean && cln_ring) ? vra_k*CleanRstNq() + 1 : 0)       // clean_rot_ring
-         + ((clean && cln_fsolve && cln_fkin) ? 3 : 0)       // stag fkin: memory d
+         + ((clean && cln_fsolve && cln_fkin) ? 6 : 0)       // stag fkin: d and its K1
          + CleanRstNfv();                                    // the rays' intensities
 }
 
@@ -3548,15 +3549,18 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
     });
     c += nr + nq + 1;
   }
-  // clean_stag_fkin: the energy flux's memory d of the three face families (CLF_N + 3)
+  // clean_stag_fkin: the energy flux's memory d of the three face families (CLF_N + 3),
+  // then its slope K1 (CLF_KD)
   if (clean && cln_fsolve && cln_fkin) {
     for (int d = 0; d < 3; ++d) {
       auto fc = (d == 0) ? cln_fc1 : ((d == 1) ? cln_fc2 : cln_fc3);
       if (fc.extent_int(0) < m0 + nmb) continue;
       Kokkos::deep_copy(Kokkos::subview(a, mb, c + d, AL, AL, AL),
                         Kokkos::subview(fc, ms, CLF_N + 3, AL, AL, AL));
+      Kokkos::deep_copy(Kokkos::subview(a, mb, c + 3 + d, AL, AL, AL),
+                        Kokkos::subview(fc, ms, CLF_KD, AL, AL, AL));
     }
-    c += 3;
+    c += 6;
   }
   // rbfast-1021 extrap2: the raw builds of the last step, q at i = 0, time, alpha
   if (h2 && vet_col && t2_vcmode == 4) {
@@ -3694,15 +3698,15 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     ch -= nr + nq + 1;
   }
   if (clean && cln_fsolve && cln_fkin) {   // (CleanInit copies it to the face arrays)
-    if (ch < 3) {
+    if (ch < 6) {
       if (cln_rstd.extent_int(0) != nmb) {
-        Kokkos::realloc(cln_rstd, nmb, 3, w.extent_int(1), w.extent_int(2),
+        Kokkos::realloc(cln_rstd, nmb, 6, w.extent_int(1), w.extent_int(2),
                         w.extent_int(3));
       }
       DeepCopyAcross(Kokkos::subview(cln_rstd, mb, ch, AL, AL, AL), w);
       return;
     }
-    ch -= 3;
+    ch -= 6;
   }
   // rbfast-1021 extrap2 (Time2RstPack)
   if (h2 && vet_col && t2_vcmode == 4) {

@@ -204,8 +204,8 @@ void RadiationM1::CleanInit() {
   cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
   const int nfc = std::max(cln_milne ? CLF_KK + 6 : (cln_hk ? CLF_HK + 2 : CLF_N),
                            cln_cell ? (cln_fsolve ? CLF_N + 4 : 0) :
-                           (cln_vimp ? CLF_DQ + 1 :
-                           ((cln_fsolve && cln_fkin) ? CLF_DS + 1 : CLF_QL + 3)));
+                           ((cln_fsolve && cln_fkin) ? CLF_KD + 2 :
+                           (cln_vimp ? CLF_DQ + 1 : CLF_QL + 3)));
   // the opacities depend on T: tables, or the T exponent (bump) of powerlaw (user)
   cln_opt = cln_cell && !opac_freeze && !opac_zero &&
             (opacity_type == M1_OPAC_TABLE ||
@@ -222,6 +222,8 @@ void RadiationM1::CleanInit() {
     auto AL = Kokkos::ALL;
     Kokkos::deep_copy(Kokkos::subview(fc, AL, CLF_N + 3, AL, AL, AL),
                       Kokkos::subview(cln_rstd, AL, d, AL, AL, AL));
+    Kokkos::deep_copy(Kokkos::subview(fc, AL, CLF_KD, AL, AL, AL),
+                      Kokkos::subview(cln_rstd, AL, 3 + d, AL, AL, AL));
   }
   if (cln_cell) {
     Kokkos::realloc(cln_x, nmb, CLC_N, n3, n2, n1);
@@ -1652,6 +1654,28 @@ void RadiationM1::CleanDMem(const bool save) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanDInc
+//! \brief clean_stag_fkin: d of a hesdirk2 stage's old vector, from the stage start state
+//! (stage 2: w1 d^n + w0 Y1, as Time2FormStage) plus the stage increment c1 K1 + c2 K2 of
+//! d's own slopes (CLF_KD, CLF_KD + 1; the write-back's), as every other component: the
+//! energy flux's memory is part of the state the scheme integrates in time
+
+void RadiationM1::CleanDInc(const bool two, const Real c1, const Real c2, const Real w1,
+                            const Real w0) {
+  if (!clean || !cln_fsolve || !cln_fkin) return;
+  for (auto fc : {cln_fc1, cln_fc2, cln_fc3}) {
+    par_for("cln_dinc", DevExeSpace(), 0, fc.extent_int(0) - 1, 0, fc.extent_int(2) - 1,
+            0, fc.extent_int(3) - 1, 0, fc.extent_int(4) - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real d = fc(m,CLF_N+3,k,j,i) + c1*fc(m,CLF_KD,k,j,i);
+      if (two) d += w1*fc(m,CLF_DS,k,j,i) + (w0 - 1.0)*fc(m,CLF_N+3,k,j,i) +
+                    c2*fc(m,CLF_KD+1,k,j,i);
+      fc(m,CLF_N+3,k,j,i) = d;
+    });
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanStagFSolve
 //! \brief clean_stag_fsolve (with clean_stag_split): with E of the solution, the face
 //! momentum F on its own, one unknown per face, from
@@ -1690,6 +1714,8 @@ void RadiationM1::CleanStagFSolve(const int e) {
   auto op = opac;
   auto al = cln_v;
   const bool fk = cln_fkin, dok = cln_dok;
+  const int kd = (t2_solve == M1_T2S_NONE) ? 0 :
+                 ((t2_solve == M1_T2S_STAGE1) ? CLF_KD + 1 : CLF_KD);
   const Real c1lo = cln_c0, c1hi = cln_c1;
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
@@ -1844,9 +1870,11 @@ void RadiationM1::CleanStagFSolve(const int e) {
       // (fkin, the solution's F solve: d = Phi^H - F, Phi^H = F^H + theta d the energy
       // flux's high-order part, whose memory is G + d (CleanFaceSource): its own history,
       // so that its steady state, F^H of G = F^H, does not depend on h)
-      if (fk && e == CLW_X && dok) {
-        fc(m,CLF_N+3,k,j,i) += fc(m,CLF_N,k,j,i) - f - (1.0 - fc(m,CLF_TH,k,j,i))*
-                               fc(m,CLF_N+3,k,j,i);
+      if (fk && e == CLW_X && dok) {   // (and its slope, CleanDInc)
+        const Real dd = fc(m,CLF_N,k,j,i) - f - (1.0 - fc(m,CLF_TH,k,j,i))*
+                        fc(m,CLF_N+3,k,j,i);
+        fc(m,CLF_N+3,k,j,i) += dd;
+        if (kd > 0) fc(m,kd,k,j,i) = dd/x.h;
       }
       fc(m,CLF_N,k,j,i) = f;
       fc(m,CLF_N+2,k,j,i) = f;
@@ -1901,6 +1929,8 @@ void RadiationM1::CleanStagFSolveCs(const int e) {
   auto op = opac;
   auto v = cln_v;   // (cell terms of family q: 3 q + 0..2, 15 + q; F: 9 + 2 q + hi)
   const bool fk = cln_fkin, dok = cln_dok;
+  const int kd = (t2_solve == M1_T2S_NONE) ? 0 :
+                 ((t2_solve == M1_T2S_STAGE1) ? CLF_KD + 1 : CLF_KD);
   const Real c1lo = cln_c0, c1hi = cln_c1;
   for (int dir = 0; dir < 3; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
@@ -2079,9 +2109,11 @@ void RadiationM1::CleanStagFSolveCs(const int e) {
       if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
       const int kl = k - dk, jl = j - dj, il = i - di;
       const Real f = fc(m,CLF_N+2,k,j,i);
-      if (fk && e == CLW_X && dok) {
-        fc(m,CLF_N+3,k,j,i) += fc(m,CLF_N,k,j,i) - f - (1.0 - fc(m,CLF_TH,k,j,i))*
-                               fc(m,CLF_N+3,k,j,i);
+      if (fk && e == CLW_X && dok) {   // (and its slope, CleanDInc)
+        const Real dd = fc(m,CLF_N,k,j,i) - f - (1.0 - fc(m,CLF_TH,k,j,i))*
+                        fc(m,CLF_N+3,k,j,i);
+        fc(m,CLF_N+3,k,j,i) += dd;
+        if (kd > 0) fc(m,kd,k,j,i) = dd/x.h;
       }
       fc(m,CLF_N,k,j,i) = f;
       Real tl[6], tr[6];
@@ -2222,10 +2254,17 @@ void RadiationM1::CleanWriteBack() {
   auto kk = (t2_solve == M1_T2S_STAGE1) ? t2k2 : t2k1;
   // h div Phi of the solution (CLW_Q, a slot the F solve leaves alone) before the F solve
   // below moves the energy flux's memory d (clean_stag_fkin): E takes the residual of the
-  // operator it was solved with
+  // operator it was solved with; with clean_stag_split also the cell flux, that of Phi
+  // (the faces keep F^H)
+  auto u0_ = u0;
   par_for("cln_wbdiv", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     x.w(m,CLW_Q,k,j,i) = CleanFluxDivergence(x, CLW_X, m, k, j, i, true);
+    for (int d = 0; d < 3 && xh.hi; ++d) {
+      u0_(m,M1_F1+d,k,j,i) = ((d == 1 && !multi_d) || (d == 2 && !three_d)) ? 0.0 :
+          0.5*(CleanFaceFlux(x, CLW_X, d, m, k, j, i, true) +
+               CleanFaceFlux(x, CLW_X, d, m, k+(d == 2), j+(d == 1), i+(d == 0), true));
+    }
   });
   CleanStagFSolve(CLW_X);   // (the face F of the F solve and its dissipation)
   xh.fs = true;
@@ -2250,7 +2289,6 @@ void RadiationM1::CleanWriteBack() {
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
   auto eos = fl.eos;
-  auto u0_ = u0;
   auto f1 = f0x1, f2 = f0x2, f3 = f0x3;
   const bool fref = (force_ref == M1_FREF_CLEAN);
   auto fr = cln_fref;
@@ -2316,15 +2354,10 @@ void RadiationM1::CleanWriteBack() {
       kk(m,M1_T2_EN,k,j,i) = den/h;
     }
     u0_(m,M1_E,k,j,i) = e;
-    u0_(m,M1_F1,k,j,i) = 0.5*(f1(m,k,j,i) + f1(m,k,j,i+1));
-    u0_(m,M1_F1+1,k,j,i) = multi_d ? 0.5*(f2(m,k,j,i) + f2(m,k,j+1,i)) : 0.0;
-    u0_(m,M1_F1+2,k,j,i) = three_d ? 0.5*(f3(m,k,j,i) + f3(m,k+1,j,i)) : 0.0;
-    // (clean_stag_split: the cell flux is that of the energy flux Phi, the faces keep
-    // F^H)
-    for (int d = 0; d < 3 && xh.hi; ++d) {
-      if ((d == 1 && !multi_d) || (d == 2 && !three_d)) continue;
-      u0_(m,M1_F1+d,k,j,i) = 0.5*(CleanFaceFlux(x, CLW_X, d, m, k, j, i, true) +
-          CleanFaceFlux(x, CLW_X, d, m, k+(d == 2), j+(d == 1), i+(d == 0), true));
+    if (!xh.hi) {   // (clean_stag_split: the cell flux of Phi, above)
+      u0_(m,M1_F1,k,j,i) = 0.5*(f1(m,k,j,i) + f1(m,k,j,i+1));
+      u0_(m,M1_F1+1,k,j,i) = multi_d ? 0.5*(f2(m,k,j,i) + f2(m,k,j+1,i)) : 0.0;
+      u0_(m,M1_F1+2,k,j,i) = three_d ? 0.5*(f3(m,k,j,i) + f3(m,k+1,j,i)) : 0.0;
     }
     if (x.cub) {   // (cubed sphere: the face momenta's vector, CleanStagCsVector, in the
       Real c[6], w[6], fv[3], q[3][3];   //  frame of y: its L_z is CleanStagMomentum's)
