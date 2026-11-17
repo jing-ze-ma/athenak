@@ -308,6 +308,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                   << "a value >= clean_tol" << std::endl;
         std::exit(EXIT_FAILURE);
       }
+      // clean_tol_opac_passes (default all of them): only the first that many
+      if (pin->DoesParameterExist("rad_m1","clean_tol_opac_passes")) {
+        cln_tol_opn = std::max(pin->GetInteger("rad_m1","clean_tol_opac_passes"), 1);
+      }
     }
     // clean_nl_tnorm = temperature | energy (read only when named; with clean_nl_norm =
     // cell): the gas part of a pass's change as dT/T, or as dT/T times the gas eint over

@@ -729,7 +729,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       // (the opacities of the iterate's T, lagged after clean_opac_passes)
       const bool opit = cln_opt && cln_feedback && inl < cln_opnp;
       // (clean_tol_opac: these passes solve to it and do not end the iteration)
-      const bool loose = opit && (cln_tol_op > 0.0);
+      const bool loose = opit && (cln_tol_op > 0.0) && inl < cln_tol_opn;
       cln_tol_pass = loose ? cln_tol_op : 0.0;
       if (opit && inl > 0) {
         CleanCellOpacity();
