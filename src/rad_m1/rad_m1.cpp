@@ -280,12 +280,31 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_conv_est (read only when named): the Newton/Picard passes also stop once
     // q/(1-q) times the change of a pass (q < 1/2 its ratio to the change of the pass
     // before) is below clean_tol_nl; clean_nl_print: rank 0 prints the changes of every
-    // pass
+    // pass and the passes of every FV ray build
     if (pin->DoesParameterExist("rad_m1","clean_conv_est")) {
       cln_conv_est = pin->GetBoolean("rad_m1","clean_conv_est");
     }
     if (pin->DoesParameterExist("rad_m1","clean_nl_print")) {
       cln_nlprint = pin->GetBoolean("rad_m1","clean_nl_print");
+    }
+    // clean_opac_passes (read only when named, default all): the opacities (and the
+    // consistency terms) follow the iterate's T in the first that many passes of a
+    // solve, then stay (lagged, as implicit_opac_lag_passes)
+    if (pin->DoesParameterExist("rad_m1","clean_opac_passes")) {
+      cln_opnp = std::max(pin->GetInteger("rad_m1","clean_opac_passes"), 1);
+    }
+    // clean_nl_tnorm = temperature | energy (read only when named; with clean_nl_norm =
+    // cell): the gas part of a pass's change as dT/T, or as dT/T times the gas eint over
+    // the larger of it and the E scale (clean_nl_efloor)
+    if (pin->DoesParameterExist("rad_m1","clean_nl_tnorm")) {
+      const std::string tn = pin->GetString("rad_m1","clean_nl_tnorm");
+      cln_nl_tnorm = (tn.compare("energy") == 0);
+      if (!cln_nl_tnorm && tn.compare("temperature") != 0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/clean_nl_tnorm = temperature | energy"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
     }
     // clean_halo_vars (read only when named, 1..32, default 16): at most this many
     // variables per ghost exchange of the clean solve (its scratch array holds that many)

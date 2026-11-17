@@ -2176,6 +2176,7 @@ void RadiationM1::CleanFvSweep() {
   auto due = cln_fvdue;
   auto done = cln_fvdone;
   cln_fvnp[0] += 1;
+  const auto np0 = cln_fvnp[1];
   // clean_fv_joint: a later pass starts at the first level that reads the last pass
   const bool jt = cln_fvjoint;
   auto fsrc = cln_fvsrc;
@@ -2442,6 +2443,12 @@ void RadiationM1::CleanFvSweep() {
       continue;
     }
     if (CleanReduce(dmax, true) <= cln_fvtol*CleanReduce(imax, true)) break;
+  }
+  // (clean_nl_print: the passes of the build)
+  if (cln_nlprint && global_variable::my_rank == 0) {
+    std::printf("CLEAN fv build cycle %d passes %d lag %d full %d\n",
+                pmy_pack->pmesh->ncycle, static_cast<int>(cln_fvnp[1] - np0),
+                lagon ? 1 : 0, cln_fvfull ? 1 : 0);
   }
   // extrap: this build's inflow is the newest of the history (a rebuild at the same time
   // replaces it)

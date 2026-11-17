@@ -198,7 +198,12 @@ struct ViewEntry : public Entry {
   void Save() override {
     orig = *p;
     have = false;
-    if (!deep || p->data() == nullptr || p->span() == 0) return;
+    if (!deep || p->data() == nullptr || p->span() == 0) {
+      // (a View released since the last copy releases its copies too)
+      clone = Clone();
+      hclone = HClone();
+      return;
+    }
     // a non-contiguous View (none today) keeps its clone on the device
     const bool wasonhost = onhost;
     onhost = host && p->span_is_contiguous();

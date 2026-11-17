@@ -708,12 +708,14 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         }
         if (cln_feedback) CleanAdvectiveCoefficients();
       }
-      if (cln_opt && cln_feedback && inl > 0) {   // the opacities of the iterate's T
+      // (the opacities of the iterate's T, lagged after clean_opac_passes)
+      const bool opit = cln_opt && cln_feedback && inl < cln_opnp;
+      if (opit && inl > 0) {
         CleanCellOpacity();
         CleanCellFaceSpeeds();
       }
       if (cell) {
-        if (cln_hk && (inl == 0 || clos || (cln_opt && cln_feedback))) {
+        if (cln_hk && (inl == 0 || clos || opit)) {
           CleanCellConsistency();
         }
         if (cln_recon && inl < cln_maxpic) CleanCellSlopeWeights(CLC_K);
@@ -1053,6 +1055,7 @@ Real RadiationM1::CleanNewtonUpdate() {
   const Real hc = dt_sub*c_light, arad_ = arad;
   const bool ncell = cln_nl_cell;
   const Real esc = fmax(cln_nl_escale, 1.0e-300);
+  const bool tnorm = ncell && cln_nl_tnorm;
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
   auto eos = fl.eos;
@@ -1085,7 +1088,10 @@ Real RadiationM1::CleanNewtonUpdate() {
     w(m,CLW_T,k,j,i) = t;
     const Real de = ncell ? fabs(e - e_old)/fmax(fmax(fabs(e), fabs(e_old)), esc)
                           : fabs(e - e_old)/fmax(fmax(fabs(e), fabs(e_old)), 1.0e-300);
-    const Real dt = fabs(t - t_old)/fmax(fmax(t, t_old), 1.0e-300);
+    Real dt = fabs(t - t_old)/fmax(fmax(t, t_old), 1.0e-300);
+    // (clean_nl_tnorm = energy: dT/T as the change of the gas energy over the larger of
+    // it and the E scale, so that gas holding no energy does not hold the passes)
+    if (tnorm) dt *= fmin(1.0, w(m,CLW_EI,k,j,i)/esc);
     dmax = fmax(dmax, fmax(de, dt));
   }, Kokkos::Max<Real>(change));
   return CleanReduce(change, true);
