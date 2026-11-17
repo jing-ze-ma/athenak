@@ -414,6 +414,9 @@ void RadiationM1::CleanInit() {
     // (the sweep starts at the first shell, the constructor's vlat_taucut; its
     // intensities keep their own memory)
     marena_on = false;
+    // (implicit_flux_beam = halfrange has no effect here: no clean solve reads the
+    // half-range ratios vgd_hr, so they are neither made nor checkpointed)
+    impl_beam_hr = false;
     cln_init = true;
     return;
   }
