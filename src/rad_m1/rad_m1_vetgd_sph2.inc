@@ -636,6 +636,13 @@ void RadiationM1::VetGdGlobalBandInit() {
                 << "keep their whole branch" << std::endl;
     }
   }
+  // vet_gd_halo_ipc (vgd_raw): the kept-list exchanges GPU-driven over CUDA IPC, one
+  // receive region per partner (the largest dense receive segment); collective
+  if (vgd_raw && vgd_ipc_on && vgd_hcomp > 0 && vgd_ipc_state == 0) {
+    size_t cs = 1;
+    for (int p = 0; p < np; ++p) {cs = std::max<size_t>(cs, 1ULL*vgd_cspm[p]*vgd_n);}
+    VetGdIpcInit(vgd_csprk, cs, std::max(np, 1)*cs);
+  }
   vgd_gbcf.clear();
   vgd_gbcb.clear();
   vgd_gbcf_xb.clear();
@@ -797,6 +804,73 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
       }
     }
   }
+#if defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP)
+  // vet_gd_halo_ipc (prod's GPU-driven form, VetGdHlBegin): the pack stores my kept values
+  // of partner p straight into its receive region of me, a flag kernel sets its arrival
+  // flag, a wait kernel waits for mine, the unpack reads my regions: all stream-ordered,
+  // no host wait and no MPI.  The same values in the same band positions (bitwise).
+  // Parity buffers: a partner's flag of exchange s follows its unpack of s - 1.
+  if (vgd_raw && !cb.empty() && vgd_ipc_state == 1 && lean) {
+    if (post) {++vgd_ipc_seq;}
+    const long long seq = vgd_ipc_seq, par = seq & 1;
+    const int np_ = np;
+    auto pslot = vgd_ipc_pslot.d_view;
+    VgdIpcIdx b0{}, b1{};
+    if (post) {
+      for (int p = 0; p < np; ++p) {b0.v[p] = cb[4*p]; b1.v[p] = cb[4*p + 1];}
+      auto prb = vgd_ipc_prb.d_view;
+      auto phalf = vgd_ipc_phalf.d_view;
+      auto pcs = vgd_ipc_pcs.d_view;
+      auto psig = vgd_ipc_psig.d_view;
+      auto ls_ = cf[0];
+      Kokkos::parallel_for("m1_vgdgb_ipc_pack",
+                           Kokkos::RangePolicy<>(DevExeSpace(), 0, std::max(cb[4*np], 1)),
+      KOKKOS_LAMBDA(const int o) {
+        int p = 0;
+        while (p < np_ && !(o >= b0.v[p] && o < b1.v[p])) {++p;}
+        if (p == np_) {return;}
+        const int e = ls_(o)/nv;
+        reinterpret_cast<Real *>(prb(p))[par*phalf(p) + pslot(p)*pcs(p) + o - b0.v[p]] =
+            a_(S_(e,0),ls_(o) - e*nv,S_(e,1),S_(e,2),i);
+      });
+      Kokkos::parallel_for("m1_vgdgb_ipc_set", Kokkos::RangePolicy<>(DevExeSpace(), 0, 1),
+      KOKKOS_LAMBDA(const int) {VgdIpcSetN(psig.data(), pslot.data(), np_, seq);});
+      for (int p = 0; p < np; ++p) {
+        vgd_nbyte += static_cast<Real>(b1.v[p] - b0.v[p])*sizeof(Real);
+        vgd_csvsent += static_cast<double>(b1.v[p] - b0.v[p]);
+        vgd_csvdense += static_cast<double>(vgd_gdsn[wq][p])*nv;
+      }
+      vgd_ipc_n += 1.0;
+    }
+    if (!wait) {return true;}
+    for (int p = 0; p < np; ++p) {b0.v[p] = cb[4*p + 2]; b1.v[p] = cb[4*p + 3];}
+    long long *sig = vgd_ipc_sig;
+    int *err = vgd_ipc_err;
+    Kokkos::parallel_for("m1_vgdgb_ipc_wait", Kokkos::RangePolicy<>(DevExeSpace(), 0, 1),
+    KOKKOS_LAMBDA(const int) {VgdIpcWaitN(sig, np_, seq, err);});
+    vgd_nexch += 1.0;
+    if (nr > 0 && vgd_cnan) {
+      const Real qn = std::numeric_limits<Real>::quiet_NaN();
+      par_for("m1_vgdgb_nan", DevExeSpace(), 0, nr - 1, 0, nv - 1,
+      KOKKOS_LAMBDA(const int e, const int v) {
+        if (DR_(e) <= wq) a_(R_(e,0),v,R_(e,1),R_(e,2),i) = qn;
+      });
+    }
+    const Real *rb = vgd_ipc_rbuf + par*vgd_ipc_half;
+    const size_t cs = vgd_ipc_cs;
+    auto lr_ = cf[1];
+    Kokkos::parallel_for("m1_vgdgb_ipc_unpack",
+                         Kokkos::RangePolicy<>(DevExeSpace(), 0, std::max(cb[4*np + 1], 1)),
+    KOKKOS_LAMBDA(const int o) {
+      int p = 0;
+      while (p < np_ && !(o >= b0.v[p] && o < b1.v[p])) {++p;}
+      if (p == np_) {return;}
+      const int e = lr_(o)/nv;
+      a_(R_(e,0),lr_(o) - e*nv,R_(e,1),R_(e,2),i) = rb[p*cs + o - b0.v[p]];
+    });
+    return false;
+  }
+#endif
   // (4) the compact pack (my kept values in list order)
   auto sb_ = vgd_sbuf;
   auto rb_ = vgd_rbuf;

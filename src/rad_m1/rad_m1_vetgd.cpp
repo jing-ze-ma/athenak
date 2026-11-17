@@ -1007,7 +1007,7 @@ void RadiationM1::VetGdInit() {
   if (vgd_raw || !pm->three_d) {   // (the compact halo: the global band's, VetGdGbHaloC)
     vgd_hx_on = false;
     vgd_hx_mode = 0;
-    vgd_ipc_on = false;
+    vgd_ipc_on = vgd_ipc_on && vgd_raw && pm->three_d;   // (VetGdGbHaloC's own IPC)
   }
   // the direction set (pluggable: any table of unit vectors + weights summing to 1 with
   // sum w nn = I/3; the sweep never looks inside it)
@@ -5772,15 +5772,15 @@ bool RadiationM1::VetGdHaloCompact(V &a, const int nv, const int i0, const int w
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdIpcInit
 //! \brief vgdrot-1011 vet_gd_halo_ipc: the node-local CUDA IPC halo of the sweep's exact
-//! lists (as implicit_halo_ipc): raw cudaMalloc receive buffer (2 parities x 2
-//! components x vgd_crb's size) and flags, handles swapped with every partner, opened.
+//! lists (as implicit_halo_ipc): raw cudaMalloc receive buffer (2 parities x half, cs
+//! the partner stride) and flags, handles swapped with every partner prk, opened.
 //! Off (MPI path) unless every partner is on this node.  Collective.
 
-void RadiationM1::VetGdIpcInit() {
+void RadiationM1::VetGdIpcInit(const std::vector<int> &prk, size_t cs, size_t half) {
   vgd_ipc_state = -1;
 #if MPI_PARALLEL_ENABLED && (defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP))
   const int me = global_variable::my_rank;
-  const int np = static_cast<int>(vgd_prk.size());
+  const int np = static_cast<int>(prk.size());
   int ok = (np <= VGD_IPC_NS) ? 1 : 0;
   MPI_Comm node;
   MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, me, MPI_INFO_NULL, &node);
@@ -5791,10 +5791,10 @@ void RadiationM1::VetGdIpcInit() {
   MPI_Comm_free(&node);
   // vgd_comm is MPI_COMM_WORLD or a duplicate of it (vet_gd_async): the same ranks
   for (int p = 0; p < np; ++p) {
-    if (std::find(nodeg.begin(), nodeg.end(), vgd_prk[p]) == nodeg.end()) {ok = 0;}
+    if (std::find(nodeg.begin(), nodeg.end(), prk[p]) == nodeg.end()) {ok = 0;}
   }
-  vgd_ipc_cs = std::max<size_t>(vgd_crb.extent(0), 1);
-  vgd_ipc_half = 2*vgd_ipc_cs;
+  vgd_ipc_cs = cs;
+  vgd_ipc_half = half;
   if (ok) {
     if (M1G(Malloc)(reinterpret_cast<void **>(&vgd_ipc_rbuf), 2*vgd_ipc_half*sizeof(Real))
         != M1G(Success)) {ok = 0;}
@@ -5830,10 +5830,10 @@ void RadiationM1::VetGdIpcInit() {
     for (int p = 0; p < np; ++p) {
       mine[p] = Info{hb, hs, static_cast<long long>(vgd_ipc_half),
                      static_cast<long long>(vgd_ipc_cs), p};
-      MPI_Irecv(&theirs[p], sizeof(Info), MPI_BYTE, vgd_prk[p], 7010, vgd_comm, &rq[p]);
+      MPI_Irecv(&theirs[p], sizeof(Info), MPI_BYTE, prk[p], 7010, vgd_comm, &rq[p]);
     }
     for (int p = 0; p < np; ++p) {
-      MPI_Isend(&mine[p], sizeof(Info), MPI_BYTE, vgd_prk[p], 7010, vgd_comm,
+      MPI_Isend(&mine[p], sizeof(Info), MPI_BYTE, prk[p], 7010, vgd_comm,
                 &rq[np + p]);
     }
     MPI_Waitall(2*np, rq.data(), MPI_STATUSES_IGNORE);
@@ -6357,7 +6357,8 @@ void RadiationM1::VetGdSweep() {
   // loop below (hx_mark then finds every record matching).  env VGD_HXB=0: per shell.
   if (vgd_ipc_on && vgd_ipc_state == 0 && vgd_hxb_on && vgd_hx_on && vgd_hx_mode == 2 &&
       vgd_hmpi && (vgd_hcomp > 0) && (vgd_hl_mb > 0) && shl && !bandx && !vgd_async) {
-    VetGdIpcInit();     // vgdrot-1011 vet_gd_halo_ipc (collective, once)
+    const size_t cs = std::max<size_t>(vgd_crb.extent(0), 1);
+    VetGdIpcInit(vgd_prk, cs, 2*cs);   // vgdrot-1011 vet_gd_halo_ipc (collective, once)
   }
   if (vgd_hxb_on && vgd_hx_on && vgd_hx_mode == 2 && vgd_hmpi && (vgd_hcomp > 0) &&
       (vgd_hl_mb > 0) && shl && !bandx) {

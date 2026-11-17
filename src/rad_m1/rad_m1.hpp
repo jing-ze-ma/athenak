@@ -4679,7 +4679,7 @@ class RadiationM1 {
   DualArray1D<long long> vgd_ipc_phalf, vgd_ipc_pcs;
   DualArray1D<int> vgd_ipc_pslot;
   std::vector<void *> vgd_ipc_open;
-  void VetGdIpcInit();
+  void VetGdIpcInit(const std::vector<int> &prk, size_t cs, size_t half);
   void VetGdIpcCheck();
   void VetGdHxBuild(const int e, const int i, const bool inw, const int ws,
                     const DvceArray1D<int> &fs, const DvceArray1D<int> &fr,
