@@ -4099,7 +4099,7 @@ class RadiationM1 {
   // over those (VetGdPkHook: moments, closure, face sums of shells i0..i1 while i0 - 1
   // .. i1 are lent: VGD_PK_B + 2 slots; per shell the kernels would be latency-bound)
   static constexpr int VGD_PK_B = 8;
-  bool vgd_pk = false, vgd_pk_par = true, vgd_pk_mom = false;
+  bool vgd_pk = false, vgd_pk_par = false, vgd_pk_mom = false;
   int64_t vgd_pk_cap = 0;               // the packed slab of one (block, shell)
   DvceArray1D<int> vgd_pk_p;
   void VetGdPkMask();

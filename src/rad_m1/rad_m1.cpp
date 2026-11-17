@@ -2049,10 +2049,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (std::getenv("VGD_RING") != nullptr) {
       vgd_ring_par = (std::atoi(std::getenv("VGD_RING")) != 0);
     }
-    // planb-1117 vet_gd_band_ring_inward (read only when named; default true where it
-    // applies, bitwise; VetGdInit)
-    vgd_pk_par = !vgd_on ||
-                 !pin->DoesParameterExist("rad_m1","vet_gd_band_ring_inward") ||
+    // planb-1117 vet_gd_band_ring_inward (read only when named; default false: -2.4 to
+    // -2.9 GB on MI300A but the hook's 8-shell batches cost +0.4 s/cycle on R136
+    // rotating; bitwise; VetGdInit)
+    vgd_pk_par = vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_ring_inward") &&
                  pin->GetBoolean("rad_m1","vet_gd_band_ring_inward");
     vgd_ring_poison = (std::getenv("VGD_RING_POISON") != nullptr) &&
                       (std::atoi(std::getenv("VGD_RING_POISON")) != 0);
