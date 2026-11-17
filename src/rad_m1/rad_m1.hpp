@@ -3075,6 +3075,7 @@ class RadiationM1 {
   bool cln_conv_est = false;    // clean_conv_est: stop on the estimated remaining change
   int cln_opnp = 1 << 30;       // clean_opac_passes: passes that update the opacities
   bool cln_nl_tnorm = false;    // clean_nl_tnorm = energy: gas change in energy terms
+  bool cln_kgh = false;         // the ghosts of the iterate (CLC_K) are current
   bool cln_nlprint = false;     // clean_nl_print: the changes of every pass (rank 0)
   bool cln_lf_ok = false;       // cln_lf holds the factors of the current blocks
   bool cln_steady = false;      // clean_init = steady: radiation relaxed before step 1

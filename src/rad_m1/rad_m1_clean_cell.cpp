@@ -429,7 +429,9 @@ void RadiationM1::CleanCellSlopeWeights(const int v) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const bool multi_d = pmy_pack->pmesh->multi_d;
   const bool three_d = pmy_pack->pmesh->three_d;
-  CleanGhostFill(cln_x, v, 4);
+  // (the iterate's ghosts once per pass: cln_kgh until the iterate changes)
+  if (!(v == CLC_K && cln_kgh)) CleanGhostFill(cln_x, v, 4);
+  if (v == CLC_K) cln_kgh = true;
   auto u = cln_x;
   CleanArgs x = CleanMakeArgs();
 
@@ -499,6 +501,7 @@ void RadiationM1::CleanCellFirstIterate() {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   auto w = cln_w;
   auto u = cln_x;
+  cln_kgh = false;
   par_for("clc_iter0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     u(m,CLC_K,k,j,i) = w(m,CLW_EK,k,j,i);
@@ -518,7 +521,8 @@ void RadiationM1::CleanCellRightHandSide() {
   // (the Milne weights before the face fluxes that read them)
   if (cln_milne) CleanCellMilneSetup();
   if (cln_feedback) {
-    CleanGhostFill(cln_x, CLC_K, 4);
+    if (!cln_kgh) CleanGhostFill(cln_x, CLC_K, 4);
+    cln_kgh = true;
     CleanCellFaceFluxes(CLC_K, false);
   }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1546,6 +1550,7 @@ Real RadiationM1::CleanCellNewtonUpdate() {
     });
     de_newton = CleanNewtonUpdate();
   }
+  cln_kgh = false;
   Real dmax = 0.0, emax = 0.0;
   Kokkos::parallel_reduce("clc_newton", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &d_max, Real &e_max) {
@@ -1585,7 +1590,8 @@ Real RadiationM1::CleanCellVelocityUpdate() {
   int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
   int nmb = pmy_pack->nmb_thispack;
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
-  CleanGhostFill(cln_x, CLC_K, 4);
+  if (!cln_kgh) CleanGhostFill(cln_x, CLC_K, 4);
+  cln_kgh = true;
   CleanCellFaceFluxes(CLC_K, true);
   CleanArgs x = CleanMakeArgs();
   x.ff = cln_ff;
