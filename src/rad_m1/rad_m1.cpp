@@ -1610,10 +1610,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_cssc = clean && pmy_pack->pmesh->use_cubed_sphere && vgd_on && cln_rfv == 0;
     // clean_rot_ring not named: live wherever the vet_gd rays (FV or sc) rotate in time
     // with a cross-fade (decided here, before a restart file's channels are counted)
+    // (and jump for the sp sc rays of an averaged set without the cross-fade: the
+    // averaging over K sets is their smoothing, as the old production's rotation)
     if (clean && !cln_ring_named && vgd_on && vra_on && g_vra_adv &&
-        vgd_xf && (vgd_rot_dt > 0.0 || vgd_rot_auto) && vgd_rot_align &&
-        vra_k <= M1_RA_NF) {
-      cln_ring = 1;
+        (vgd_xf || (cln_rfv == 0 && !cln_cssc)) && (vgd_rot_dt > 0.0 || vgd_rot_auto) &&
+        vgd_rot_align && vra_k <= M1_RA_NF) {
+      cln_ring = vgd_xf ? 1 : 2;
+      if (cln_ring == 2) vgd_rot_slope = 2;   // (as named jump, above)
     }
     // vgdbath-1011: the inward rays of the top shell start from the incident bath
     // implicit_ebath_x1max of a MARSHAK outer x1 (vet_sc's vet_bc_bath, the same key and

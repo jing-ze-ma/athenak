@@ -416,6 +416,7 @@ void RadiationM1::CleanClosureAfterSolve() {
 //! the step after a block boundary reads the next set of the boundary build
 
 void RadiationM1::CleanRingSolveSet() {
+  if (cln_cssc) return;   // (the sc rays on the cubed sphere: CleanScUnion2's two sets)
   const int64_t bs = VetGdBlock(pmy_pack->pmesh->ncycle);
   const int ns = static_cast<int>(cln_fvdm.size());
   for (int q = 0; q < ns && ns > 1; ++q) {
