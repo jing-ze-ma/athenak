@@ -225,6 +225,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vkick_nbefall", vkick_nbefall);
   v.value("dtr_ncut", dtr_ncut);
   v.value("dtr_maxcut", dtr_maxcut);
+  v.value("dtr_redo", dtr_redo);
   v.value("impl_wb_vcap_meas", impl_wb_vcap_meas);
   v.value("impl_wb_vcap_np", impl_wb_vcap_np);
   v.view("vcap_cnt_d", vcap_cnt_d);

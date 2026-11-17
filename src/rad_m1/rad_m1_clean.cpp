@@ -1843,8 +1843,10 @@ Real RadiationM1::CleanNewtonUpdate() {
   if (!cell) cln_fe = std::numeric_limits<Real>::epsilon()*CleanReduce(femax, true);
   if (bud) {   // (the tolerance of the next test and solve; for settled, the level of a
     // change the linear solve fixes at the floor, its 0.1 tfl in the budget's norm)
+    // (a step dt_retry redoes, whose state just failed, is solved strictly too)
     const Real tfl = fmax(cln_tol_nl, 10.0*cln_tol);
-    cln_tolb = kok ? fmin(fmax(cln_bkap*CleanReduce(ermax, true), tfl), cln_bmax) : tfl;
+    cln_tolb = (kok && !dtr_redo) ?
+               fmin(fmax(cln_bkap*CleanReduce(ermax, true), tfl), cln_bmax) : tfl;
     cln_fe = 0.1*tfl;
   }
   // (clean_stag_sbimp, fwork: the face beta terms' emission of the new T, hc kP a T^4,

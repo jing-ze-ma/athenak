@@ -728,6 +728,7 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   // (vkick_be_retry bookkeeping); set after the put-back, which
   // (generated visitor) rolls dtr_ncut back to its cycle-start value
   m1->dtr_ncut = ncut_;
+  if (why != 9) m1->dtr_redo = true;   // (a failed step, not a forced test retry)
   // once this cycle took the backward-Euler redo, it keeps it: a failed
   // redo (NON-CONVERGED) is then cut with the redo still armed, instead of the hesdirk2
   // stage being retried at the cut dt, rejected again and sent back to the cycle dt (the
@@ -811,6 +812,7 @@ void DtRetry::Accept(Mesh *pm) {
   if (!on) return;
   ncut_ = 0;
   pm->pmb_pack->pradm1->dtr_ncut = 0;
+  pm->pmb_pack->pradm1->dtr_redo = false;
   // a cycle that took the backward-Euler redo of time2_reject = retry arms the
   // next cycle to take it at once (a rejection that persists from cycle to cycle costs as
   // much as time2_reject = be); the first cycle without a rejection disarms it

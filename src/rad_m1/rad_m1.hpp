@@ -743,6 +743,7 @@ class RadiationM1 {
   bool impl_wb_vkbr = false;
   Real vkick_nberetry = 0.0, vkick_nbefall = 0.0;
   int dtr_ncut = 0, dtr_maxcut = 8;   // DtRetry bookkeeping (cuts of this cycle, limit)
+  bool dtr_redo = false;   // this cycle's step failed and is redone (clean: solved strictly)
   bool impl_wb_vcap_meas = false;
   int impl_wb_vcap_np = 0;
   DvceArray1D<Real> vcap_cnt_d;
