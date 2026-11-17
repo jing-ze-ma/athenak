@@ -2898,15 +2898,17 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   const int ns2 = (cln_ring && (cln_cssc || cln_scmem)) ? 2 : 1;
   const int doff = (ns2 == 1) ? 0 : cln_rqm*n;
   // Staggered spherical polar (one radial MeshBlock, no reflecting top): vgd_i itself,
-  // and only the low theta and phi ghost layers exchanged, in chunks of 8 directions
+  // and only the low theta and phi ghost layers exchanged, in chunks of clean_halo_vars
+  // directions (one exchange each)
   const bool gl = !fv && x.sph && !cln_cell && !axi && pmy_pack->pmesh->three_d &&
                   vgd_nb1 == 1 && !cln_scmem;
   CleanGdI gi{vi_, DvceArray5D<Real>(), ok, og, ks, js, pk, vgd_own};
   if (gl && pk) {
   } else if (gl) {
-    const int nc = std::min(n, 8), nt = std::max(ke - ks + 1, je - js + 1);
+    const int nc = std::min(n, cln_hmax), nt = std::max(ke - ks + 1, je - js + 1);
     gi.gl = DvceArray5D<Real>("cln_gd_gl", nmb1 + 1, n, 2, nt, cs.extent_int(4));
-    DvceArray5D<Real> ch("cln_gd_ch", nmb1 + 1, nc, cs.extent_int(2), cs.extent_int(3),
+    DvceArray5D<Real> ch(Kokkos::view_alloc(Kokkos::WithoutInitializing, "cln_gd_ch"),
+                         nmb1 + 1, nc, cs.extent_int(2), cs.extent_int(3),
                          cs.extent_int(4));
     auto gg = gi.gl;
     for (int d0 = 0; d0 < n; d0 += nc) {
