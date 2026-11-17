@@ -286,34 +286,49 @@ Real RadiationM1::CleanReduce(Real v, const bool max) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn std::array<Real, 2> CleanSums
+//! \brief the n <= 2 sums s0, s1 that f(m, k, j, i, s0, s1) adds over the active cells
+//! (it may also update the cell's vectors: a BiCGStab step and its dots in one pass), one
+//! reduction over the ranks
+
+template <typename F>
+std::array<Real, 2> CleanSums(MeshBlockPack *pp, const char *name, const int n,
+                              const F &f) {
+  auto &indcs = pp->pmesh->mb_indcs;
+  int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  int nmb = pp->nmb_thispack;
+  const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
+  std::array<Real, 2> d = {0.0, 0.0};
+  Kokkos::parallel_reduce(name, Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &s0, Real &s1) {
+    int m = idx/nkji;
+    int k = (idx - m*nkji)/nji;
+    int j = (idx - m*nkji - k*nji)/nx1;
+    int i = idx - m*nkji - k*nji - j*nx1;
+    f(m, k+ks, j+js, i+is, s0, s1);
+  }, Kokkos::Sum<Real>(d[0]), Kokkos::Sum<Real>(d[1]));
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, d.data(), n, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  return d;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn std::array<Real, 2> RadiationM1::CleanDots
 //! \brief the n <= 2 sums over active cells and the nc components of w(ab[2q])
 //! w(ab[2q+1]) (q < n): one pass, one reduction over the ranks
 
 std::array<Real, 2> RadiationM1::CleanDots(DvceArray5D<Real> w, const int nc, const int n,
                                            const std::array<int, 4> ab) {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  int is = indcs.is, js = indcs.js, ks = indcs.ks;
-  int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
-  int nmb = pmy_pack->nmb_thispack;
-  const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
-  std::array<Real, 2> d = {0.0, 0.0};
   const int a0 = ab[0], a1 = ab[1], a2 = ab[2], a3 = ab[3];   // (std::array is host-only)
-  Kokkos::parallel_reduce("cln_dot", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
-  KOKKOS_LAMBDA(const int idx, Real &s0, Real &s1) {
-    int m = idx/nkji;
-    int k = (idx - m*nkji)/nji;
-    int j = (idx - m*nkji - k*nji)/nx1;
-    int i = idx - m*nkji - k*nji - j*nx1;
+  return CleanSums(pmy_pack, "cln_dot", n,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0, Real &s1) {
     for (int c = 0; c < nc; ++c) {
-      s0 += w(m,a0+c,k+ks,j+js,i+is)*w(m,a1+c,k+ks,j+js,i+is);
-      if (n > 1) s1 += w(m,a2+c,k+ks,j+js,i+is)*w(m,a3+c,k+ks,j+js,i+is);
+      s0 += w(m,a0+c,k,j,i)*w(m,a1+c,k,j,i);
+      if (n > 1) s1 += w(m,a2+c,k,j,i)*w(m,a3+c,k,j,i);
     }
-  }, Kokkos::Sum<Real>(d[0]), Kokkos::Sum<Real>(d[1]));
-#if MPI_PARALLEL_ENABLED
-  MPI_Allreduce(MPI_IN_PLACE, d.data(), n, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-#endif
-  return d;
+  });
 }
 
 //----------------------------------------------------------------------------------------
@@ -460,7 +475,6 @@ void RadiationM1::CleanPreconditionerSetup() {
     });
   }
   x.fwc = true;
-
   par_for("cln_pcsetup", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real al_p, ar_p, al_m, ar_m;
@@ -829,7 +843,9 @@ int RadiationM1::CleanBiCGStab() {
 
   // (re)start from the true residual of X with the shadow residual r0 = r.  A breakdown
   // (r0.r at the rounding level of |r0| |r|, or r0.v or omega zero) restarts; a second
-  // breakdown right after a restart fails the solve.  The dots of an iteration take four
+  // breakdown right after a restart fails the solve.  (A step's vector updates and the
+  // dots after them take one pass, CleanSums, in the arithmetic and summation order of
+  // separate update kernels and CleanDots.)  The dots of an iteration take four
   // reductions: r0.v, s.s, (q.q, q.s), and (r.r, r0.r) for the next one.  Convergence of
   // the recursive residual is checked on the true one, which restarts if it is above
   // 10 tol (rows of very different scale, e.g. the empty side cells of a diagonal beam
@@ -839,12 +855,19 @@ int RadiationM1::CleanBiCGStab() {
   auto restart = [&](const int it, const bool force = false) {
     if (it == it0 + 1 && !force) return false;
     apply(sx, sr);
-    axpby(sr, sb, 1.0, sr, -1.0);
-    axpby(sr0, sr, 1.0, sr, 0.0);
-    axpby(sp, sr, 0.0, sr, 0.0);
-    axpby(sv, sr, 0.0, sr, 0.0);
+    const int n = (it < 0) ? 2 : 1;
+    const auto d = CleanSums(pmy_pack, "cln_dot_rst", n,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0, Real &s1) {
+      for (int c = 0; c < nc; ++c) {   // (r = b - A x, r0 = r, p = v = 0)
+        w(m,sr+c,k,j,i) = 1.0*w(m,sb+c,k,j,i) + -1.0*w(m,sr+c,k,j,i);
+        w(m,sr0+c,k,j,i) = 1.0*w(m,sr+c,k,j,i) + 0.0*w(m,sr+c,k,j,i);
+        w(m,sp+c,k,j,i) = 0.0*w(m,sr+c,k,j,i) + 0.0*w(m,sr+c,k,j,i);
+        w(m,sv+c,k,j,i) = 0.0*w(m,sr+c,k,j,i) + 0.0*w(m,sr+c,k,j,i);
+        s0 += w(m,sr+c,k,j,i)*w(m,sr+c,k,j,i);
+        if (n > 1) s1 += w(m,sb+c,k,j,i)*w(m,sb+c,k,j,i);
+      }
+    });
     rho = alpha = omega = 1.0;
-    const auto d = dots((it < 0) ? 2 : 1, {sr, sr, sb, sb});
     rr = r0r0 = rho_new = d[0];
     if (it < 0) bb = d[1];
     it0 = it;
@@ -907,8 +930,15 @@ int RadiationM1::CleanBiCGStab() {
       return -it;
     }
     alpha = rho/r0v;
-    axpby(ss, sr, 1.0, sv, -alpha);
-    if (std::sqrt(dots(1, {ss, ss, 0, 0})[0]) <= tol) {
+    const Real ma = -alpha;
+    const Real s2 = CleanSums(pmy_pack, "cln_dot_s", 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0, Real &) {
+      for (int c = 0; c < nc; ++c) {   // (s = r - alpha v)
+        w(m,ss+c,k,j,i) = 1.0*w(m,sr+c,k,j,i) + ma*w(m,sv+c,k,j,i);
+        s0 += w(m,ss+c,k,j,i)*w(m,ss+c,k,j,i);
+      }
+    })[0];
+    if (std::sqrt(s2) <= tol) {
       axpby(sx, sx, 1.0, sy, alpha);
       if (done(it)) return it;
       continue;
@@ -917,14 +947,16 @@ int RadiationM1::CleanBiCGStab() {
     apply(sz, sq);
     const auto d = dots(2, {sq, sq, sq, ss});
     omega = (d[0] > 0.0) ? d[1]/d[0] : 0.0;
-    par_for("cln_xupdate", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real al_ = alpha, om = omega;
+    const auto e = CleanSums(pmy_pack, "cln_dot_x", 2,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0, Real &s1) {
       for (int c = 0; c < nc; ++c) {
-        w(m,sx+c,k,j,i) += alpha*w(m,sy+c,k,j,i) + omega*w(m,sz+c,k,j,i);
-        w(m,sr+c,k,j,i) = w(m,ss+c,k,j,i) - omega*w(m,sq+c,k,j,i);
+        w(m,sx+c,k,j,i) += al_*w(m,sy+c,k,j,i) + om*w(m,sz+c,k,j,i);
+        w(m,sr+c,k,j,i) = w(m,ss+c,k,j,i) - om*w(m,sq+c,k,j,i);
+        s0 += w(m,sr+c,k,j,i)*w(m,sr+c,k,j,i);
+        s1 += w(m,sr0+c,k,j,i)*w(m,sr+c,k,j,i);
       }
     });
-    const auto e = dots(2, {sr, sr, sr0, sr});
     rr = e[0];
     rho_new = e[1];
     if (std::sqrt(rr) <= tol && done(it)) return it;
