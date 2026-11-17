@@ -1547,16 +1547,18 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
   const auto *peos = CleanDev(eos, 2);
   const Real tgf = cln_gtf ? eos.tfloor : 0.0;   // (clean_gas_tfloor)
-  // (gflux: each face's a E once, for its two cells, CLF_PT)
-  for (int n = 0; n < x.nf && x.feedback && x.gf && !x.cub; ++n) {
-    const int dk = (n == 2), dj = (n == 1), di = (n == 0);
-    auto fc = x.fc[n];
-    par_for("cln_rhsaf", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
-      fc(m,CLF_PT,k,j,i) = CleanStagAdvFace(x, xh, n, m, k, j, i);
-    });
-  }
+  // each face's source once, for its two cells (CLF_SR), and with gflux its a E (CLF_PT)
+  const int nf = x.nf;
+  const bool af = x.feedback && x.gf && !x.cub;
+  par_for("cln_rhsaf", DevExeSpace(), 0, nmb1, ks, ke+(nf > 2), js, je+(nf > 1), is, ie+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
+    for (int n = 0; n < nf; ++n) {
+      if (i > ie+(n == 0) || j > je+(n == 1) || k > ke+(n == 2)) continue;
+      x.fc[n](m,CLF_SR,k,j,i) = CleanFaceSource(x, n, m, k, j, i);
+      if (af) x.fc[n](m,CLF_PT,k,j,i) = CleanStagAdvFace(x, xh, n, m, k, j, i);
+    }
+  });
   par_for("cln_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)

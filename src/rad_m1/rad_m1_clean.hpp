@@ -93,6 +93,7 @@ constexpr int CLF_QL = CLF_N + 4;   // the operator's al, ar (CleanFaceWeights) 
 constexpr int CLF_PT = CLF_QL;      // outside the linear solve (cln_fwc sets QL after
                                     // the RHS): the faces' momentum terms of the velocity
                                     // update (CleanStagDrag) and the RHS's a E (cln_rhsaf)
+constexpr int CLF_SR = CLF_QL + 1;  //   and the RHS's face sources (CleanFaceSource)
 constexpr int CLF_DS = CLF_N + 7;   // clean_stag_fkin: d of the stage-loop start
 constexpr int CLF_DB = CLF_N + 8;   // clean_stag_vimp: drag share b = beta/(1 + beta) and
 constexpr int CLF_DQ = CLF_N + 9;   //   the face momentum Q = G - c^2 dm_f of the iterate
@@ -1193,7 +1194,8 @@ void CleanStencilRow(const CleanArgs &x, const int m, const int k, const int j,
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanSourceDivergence
-//! \brief h div of the E-independent part of the face fluxes of cell (k,j,i)
+//! \brief h div of the E-independent part of the face fluxes of cell (k,j,i): the face
+//! sources of the pass (CLF_SR, cln_rhsaf)
 
 KOKKOS_INLINE_FUNCTION
 Real CleanSourceDivergence(const CleanArgs &x, const int m, const int k, const int j,
@@ -1203,20 +1205,17 @@ Real CleanSourceDivergence(const CleanArgs &x, const int m, const int k, const i
     for (int n = 0; n < 3; ++n) {
       if (n >= x.nf) break;
       const int dk = (n == 2), dj = (n == 1), di = (n == 0);
-      d += CleanDivW(x, n, m, k, j, i, 1)*CleanFaceSource(x, n, m, k+dk, j+dj, i+di) -
-           CleanDivW(x, n, m, k, j, i, 0)*CleanFaceSource(x, n, m, k, j, i);
+      d += CleanDivW(x, n, m, k, j, i, 1)*x.fc[n](m,CLF_SR,k+dk,j+dj,i+di) -
+           CleanDivW(x, n, m, k, j, i, 0)*x.fc[n](m,CLF_SR,k,j,i);
     }
     return x.h*d;
   }
-  Real div = x.idx[0]*(CleanFaceSource(x, 0, m, k, j, i+1) -
-                       CleanFaceSource(x, 0, m, k, j, i));
+  Real div = x.idx[0]*(x.fc[0](m,CLF_SR,k,j,i+1) - x.fc[0](m,CLF_SR,k,j,i));
   if (x.multi_d) {
-    div += x.idx[1]*(CleanFaceSource(x, 1, m, k, j+1, i) -
-                     CleanFaceSource(x, 1, m, k, j, i));
+    div += x.idx[1]*(x.fc[1](m,CLF_SR,k,j+1,i) - x.fc[1](m,CLF_SR,k,j,i));
   }
   if (x.three_d) {
-    div += x.idx[2]*(CleanFaceSource(x, 2, m, k+1, j, i) -
-                     CleanFaceSource(x, 2, m, k, j, i));
+    div += x.idx[2]*(x.fc[2](m,CLF_SR,k+1,j,i) - x.fc[2](m,CLF_SR,k,j,i));
   }
   return x.h*div;
 }
