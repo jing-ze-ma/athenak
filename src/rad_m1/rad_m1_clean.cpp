@@ -2290,9 +2290,12 @@ void RadiationM1::CleanStagFSolve(const int e) {
   };
   // the directions in three phases (F^H, al; the line solves; F), each direction with
   // its own al (CLW_L + 3 dir) and F (cy), so that each exchange serves all of them
+  // (clean_stag_fsweeps N: the line solves up to N times, each with the line ends' F of
+  // the last, so that the lines converge across MeshBlock faces and the periodic wrap)
+  const int nsw = std::max(cln_fsweeps, 1);
   const bool tie = cln_ftie;
-  for (int q = 0; q < 3*x.nf; ++q) {
-    const int dir = q%x.nf, ph = q/x.nf;
+  for (int q = 0; q < (2 + nsw)*x.nf; ++q) {
+    const int dir = q%x.nf, ph = std::min(q/x.nf, 1) + (q >= (1 + nsw)*x.nf);
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     auto fc = x.fc[dir];
     auto al = Kokkos::subview(cln_w.o, AL, std::make_pair(CLW_L - CLW_NS + 3*dir,
@@ -2422,7 +2425,10 @@ void RadiationM1::CleanStagFSolve(const int e) {
           x.w(m,cy,k,j,is+t) = sw(o + 3*nx + t)/sw(o + nx + t);
         });
       });
-      if (dir == x.nf - 1) yfill();
+      if (dir == x.nf - 1) {
+        yfill();
+        if (nsw > 1 && CleanStagFSweepChange() < 1.0e-12) q = (1 + nsw)*x.nf - 1;
+      }
     } else if (ph == 1) {
       // the lines' coefficients are the same in every pass below, only the neighbours'
       // F at the line ends changes: once, lo (CLW_AM), hi at the last face (CLW_AP), the
@@ -2491,7 +2497,11 @@ void RadiationM1::CleanStagFSolve(const int e) {
           x.w(m,cy,k,j,i) = fn;
         }
       });
-      if (dir == x.nf - 1) yfill();
+      if (dir == x.nf - 1) {
+        yfill();
+        // (sweeps: until the high faces' F, their owners', changes by < 1e-12 of itself)
+        if (nsw > 1 && CleanStagFSweepChange() < 1.0e-12) q = (1 + nsw)*x.nf - 1;
+      }
     }
     if (ph == 2) {
       // F and the dissipation term of every face
@@ -2579,6 +2589,41 @@ void RadiationM1::CleanStagFaceTie(const int e, const int kd) {
       if (kd > 0) fc(m,kd,k,j,i) = x.w(m,CLW_L+3*d+2,k,j,i);
     });
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::CleanStagFSweepChange
+//! \brief clean_stag_fsweeps: the largest change, relative to itself, of the F the high
+//! faces of the F solve's lines took from their neighbours (CLW_Y, CLW_Z, CLW_S ghosts)
+//! since the last sweep (kept in CLW_TM + dir, free in the write-back)
+
+Real RadiationM1::CleanStagFSweepChange() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  const int nmb = pmy_pack->nmb_thispack, nx1 = indcs.nx1, nx2 = indcs.nx2;
+  const int nx3 = indcs.nx3, n12 = nx1*nx2, n13 = nx1*nx3, n23 = nx2*nx3;
+  const int nfc = n23 + n13 + n12;
+  CleanArgs x = CleanMakeArgs();
+  const int nf = x.nf;
+  Real dmax = 0.0;
+  Kokkos::parallel_reduce("cln_fsweep", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nfc),
+  KOKKOS_LAMBDA(const int idx, Real &mx) {
+    const int m = idx/nfc, q = idx%nfc;
+    const int d = (q < n23) ? 0 : ((q < n23 + n13) ? 1 : 2);
+    if (d >= nf) return;
+    int k, j, i;
+    if (d == 0) {i = ie + 1; j = js + q%nx2; k = ks + q/nx2;}
+    if (d == 1) {j = je + 1; i = is + (q - n23)%nx1; k = ks + (q - n23)/nx1;}
+    if (d == 2) {k = ke + 1; i = is + (q - n23 - n13)%nx1; j = js + (q - n23 - n13)/nx1;}
+    if (CleanBoundaryFace(x, d, m, k, j, i)) return;
+    const int cy = (d == 2) ? CLW_S : CLW_Y + d;
+    const Real f = x.w(m,cy,k,j,i), f0 = x.w(m,CLW_TM+d,k,j,i);
+    mx = fmax(mx, fabs(f - f0)/fmax(fabs(f), 1.0e-300));
+    x.w(m,CLW_TM+d,k,j,i) = f;
+  }, Kokkos::Max<Real>(dmax));
+  return CleanReduce(dmax, true);
 }
 
 //----------------------------------------------------------------------------------------

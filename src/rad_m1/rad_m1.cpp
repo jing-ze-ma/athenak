@@ -172,6 +172,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_stag_ftie")) {
       cln_ftie = pin->GetBoolean("rad_m1","clean_stag_ftie") && !cln_cell;
     }
+    // clean_stag_fsweeps N (read only when named, default 1): the staggered F solve's
+    // line solves up to N times, the line ends taking the neighbours' F of the last sweep
+    if (pin->DoesParameterExist("rad_m1","clean_stag_fsweeps")) {
+      cln_fsweeps = std::max(pin->GetInteger("rad_m1","clean_stag_fsweeps"), 1);
+    }
     // the consistency term is the cell default on Cartesian meshes and, with the vet_gd
     // rays transported conservatively (fv1) or swept by vet_gd (sc), on spherical polar,
     // always with the streaming weight (an optically thick cell keeps the moment flux:

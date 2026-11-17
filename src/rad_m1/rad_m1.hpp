@@ -3044,6 +3044,7 @@ class RadiationM1 {
   void CleanStagDrag(const bool first, const bool vel = false);
   void CleanStagFSolveCs(const int e);
   void CleanStagFaceTie(const int e, const int kd);
+  Real CleanStagFSweepChange();
   void CleanStagCsLateral(const int e);
   void CleanWriteBack();
   CleanArgs CleanMakeArgs();
@@ -3119,6 +3120,7 @@ class RadiationM1 {
   bool cln_stst = false;        // clean_stag_stencil: the operator's rows stored per pass
   DvceArray5D<Real> cln_st;     //   (CLN_ST per active cell, CleanPreconditionerSetup)
   int cln_stall_n = 0;          // clean_bicg_stall_its: stall window (0 = off)
+  int cln_fsweeps = 1;          // clean_stag_fsweeps: line-solve sweeps of the F solve
   bool cln_ftie = false;        // clean_stag_ftie: a shared face's T, d of its owner
   Real cln_stall_f = 0.99;      // clean_bicg_stall_fac: least residual drop per window
   int cln_maxnl = 50;           // clean_maxnl: Newton iterations
