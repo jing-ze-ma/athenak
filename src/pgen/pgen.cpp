@@ -633,7 +633,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
 
   // --- THE <rad_m1> time_scheme = hesdirk2 HEADER (radm1::kM1Time2RstMagic), behind the
   // predictor one: nch slabs of the stored FSAL slope follow the predictor slabs.
-  int nt2_file = 0;
+  int nt2_file = 0, nt2_ver = 1;
   Real t2_hv[3] = {0.0, 0.0, 0.0};
   if (std::memcmp(variabledata, &(radm1::kM1Time2RstMagic[0]),
                   sizeof(radm1::kM1Time2RstMagic)) == 0) {
@@ -659,13 +659,14 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       std::memcpy(&(hdr[0]), &(t2_hdr[0]), sizeof(hdr));
       std::memcpy(&(t2_hv[0]), &(t2_hdr[0]) + sizeof(hdr), sizeof(t2_hv));
     }
-    if (!ok || hdr[0] != 1 || hdr[1] < 1 || hdr[1] > 65536) {
+    if (!ok || hdr[0] < 1 || hdr[0] > 2 || hdr[1] < 1 || hdr[1] > 65536) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "the <rad_m1> hesdirk2 header of this restart file is "
                 << "broken." << std::endl;
       exit(EXIT_FAILURE);
     }
     nt2_file = static_cast<int>(hdr[1]);
+    nt2_ver = static_cast<int>(hdr[0]);
   }
 
   // --- THE <rad_m1> implicit_one_pass HEADER (radm1::kM1OnePassRstMagic), behind the
@@ -1893,11 +1894,16 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                      (pradm1->time_scheme == radm1::M1_TIME_HESDIRK2);
   const bool t2_want = t2_h2 && !pradm1->t2_beonly;
   const bool t2_read = (pradm1 != nullptr) && (nt2_file > 0) &&
-                       pradm1->Time2RstAccept(nt2_file) &&
+                       pradm1->Time2RstAccept(nt2_file, nt2_ver) &&
                        (!t2_h2 || static_cast<int>(pradm1->t2k1.extent(0)) >= nmb);
   if (t2_want && !t2_read && global_variable::my_rank == 0) {
     std::cout << "### WARNING: restart file has no <rad_m1> hesdirk2 slope; the first "
               << "step is backward Euler and this restart is not bitwise." << std::endl;
+  }
+  if (t2_want && t2_read && pradm1->t2_rstd3 && global_variable::my_rank == 0) {
+    std::cout << "### WARNING: restart file has the staggered energy-flux memory d "
+              << "without its slope (written before 8349d48ff); the first step is "
+              << "backward Euler and this restart is not bitwise." << std::endl;
   }
   // the time2_auto_be back-off state of the dumping run (a skip run in
   // progress continues; the record is written only then)
@@ -2102,7 +2108,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         read_slab("rad_m1 hesdirk2 slope");
         pradm1->Time2RstSet(n, wtin, nmb);
       }
-      pradm1->t2_ok = t2_want;
+      pradm1->t2_ok = t2_want && !pradm1->t2_rstd3;   // (no K1_d: backward Euler)
       pradm1->pred2_ok = (t2_hv[0] > 0.0);
       pradm1->pred2_dt = t2_hv[0];
       pradm1->t2_dtprev = t2_hv[1];

@@ -3447,8 +3447,11 @@ bool RadiationM1::ThcRstUnpack(DvceArray5D<Real> in, int nmb, int nsl) {
   return true;
 }
 
-bool RadiationM1::Time2RstAccept(const int nfile) {
-  const int nb = Time2RstNchWant() - CleanRstNfv();
+bool RadiationM1::Time2RstAccept(const int nfile, const int ver) {
+  // (a version-1 file, before 8349d48ff, holds d without its slope K1_d: read with K1_d =
+  // 0 and a backward-Euler first step)
+  t2_rstd3 = (ver < 2) && clean && cln_fsolve && cln_fkin;
+  const int nb = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0);
   t2_nfv = (clean && (cln_rfv > 0 || cln_cssc || cln_scmem)) ? nfile - nb : 0;
   return (nfile == nb + t2_nfv) && (t2_nfv >= 0);
 }
@@ -3626,7 +3629,7 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   const bool h2 = (time_scheme == M1_TIME_HESDIRK2);
   // the last t2_nfv channels: the conservative rays' intensities (their number is not
   // known before the first sweep, Time2RstAccept)
-  const int nfv0 = Time2RstNchWant() - CleanRstNfv();
+  const int nfv0 = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0);
   if (clean && (cln_rfv > 0 || cln_cssc || cln_scmem) && ch >= nfv0) {
     if (cln_fvi.extent_int(0) != nmb || cln_fvi.extent_int(1) != t2_nfv) {
       Kokkos::realloc(cln_fvi, nmb, t2_nfv, w.extent_int(1), w.extent_int(2),
@@ -3727,15 +3730,16 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     ch -= nr + nq + 1;
   }
   if (clean && cln_fsolve && cln_fkin) {   // (CleanInit copies it to the face arrays)
-    if (ch < 6) {
-      if (cln_rstd.extent_int(0) != nmb) {
+    const int nd = t2_rstd3 ? 3 : 6;
+    if (ch < nd) {
+      if (cln_rstd.extent_int(0) != nmb) {   // (zeroed: K1_d = 0 for a version-1 file)
         Kokkos::realloc(cln_rstd, nmb, 6, w.extent_int(1), w.extent_int(2),
                         w.extent_int(3));
       }
       DeepCopyAcross(Kokkos::subview(cln_rstd, mb, ch, AL, AL, AL), w);
       return;
     }
-    ch -= 6;
+    ch -= nd;
   }
   // rbfast-1021 extrap2 (Time2RstPack)
   // (clean_skip_time2_hist: no extrap2 history kept, x2_ok stays false)
