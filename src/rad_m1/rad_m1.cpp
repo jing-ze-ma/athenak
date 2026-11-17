@@ -321,6 +321,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_line_teams")) {
       cln_lteams = std::max(pin->GetInteger("rad_m1","clean_line_teams"), 0);
     }
+    // clean_rss_closure (read only when named): <hydro>/rad_signal_speed takes the
+    // diagonal of the clean solve's own closure (cln_rssd, kept in restart files) instead
+    // of tau_ten, which is then not allocated
+    if (pin->DoesParameterExist("rad_m1","clean_rss_closure")) {
+      cln_rss = pin->GetBoolean("rad_m1","clean_rss_closure");
+    }
     // clean_line_solver = hybrid | pcr | thomas (TEMPORARY, for GPU timing): rows per
     // Thomas system of the line solve (CleanCellLineSolve)
     if (pin->DoesParameterExist("rad_m1","clean_line_solver")) {
@@ -2259,6 +2265,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   Kokkos::realloc(opac, nmb, vscat ? (M1_NOPAC + 1) : M1_NOPAC, ncells3, ncells2,
                   ncells1);
   Kokkos::deep_copy(opac, 0.0);
+  if (cln_rss) {
+    if (!clean) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/clean_rss_closure needs scheme = clean"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    Kokkos::realloc(cln_rssd, nmb, 3, ncells3, ncells2, ncells1);
+    Kokkos::deep_copy(cln_rssd, 0.0);
+  }
   if (coupling && !clean) {   // (read only by Coupling, which scheme = clean never takes)
     Kokkos::realloc(ugas1, nmb, 4, ncells3, ncells2, ncells1);
   }
@@ -2448,6 +2464,7 @@ DvceArray4D<Real> RadiationM1::FrefWacc() {
 int RadiationM1::RssRstMode() const {return RssMode() + (rst_ext ? 16 : 0);}
 
 int RadiationM1::RssMode() const {
+  if (cln_rss) return 5;
   if (tau_closure && tau_ten.extent(0) > 0) return 2;
   if (vet_sc && vet_cell.extent(0) > 0) return vet_full ? 4 : 3;
   if (!eddington && !tau_closure && !vet_sc) return 1;
@@ -2464,8 +2481,21 @@ int RadiationM1::RssRstNch(int mode) const {
            + ((b == 2 && tau_ten.extent_int(1) > 4) ? (tau_ten.extent_int(1) - 4) : 0);
   }
   if (mode == 2 || mode == 3) return 5;
-  if (mode == 4) return 4;
+  if (mode == 4 || mode == 5) return 4;
   return 1;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::TauTenCheck
+//! \brief stops a closure-tensor build that finds no tau_ten (clean_rss_closure
+//! allocates none)
+
+void RadiationM1::TauTenCheck(const char *where) const {
+  if (tau_ten.extent_int(0) > 0) return;
+  std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+            << where << " needs tau_ten, which <rad_m1>/clean_rss_closure = true does "
+            << "not allocate" << std::endl;
+  std::exit(EXIT_FAILURE);
 }
 
 void RadiationM1::RssSlot(int mode, int n, DvceArray5D<Real> *&a, int &c) {
@@ -2480,6 +2510,7 @@ void RadiationM1::RssSlot(int mode, int n, DvceArray5D<Real> *&a, int &c) {
   }
   if (n == 0) {a = &opac; c = M1_OP_T; return;}
   if (mode == 2) {a = &tau_ten; c = n - 1; return;}
+  if (mode == 5) {a = &cln_rssd; c = n - 1; return;}
   a = &vet_cell;
   c = (mode == 3) ? (M1_VET_CHI + n - 1) : (M1_VET_D11 + n - 1);
 }
@@ -2514,10 +2545,15 @@ void RadiationM1::RssPrime(bool restart) {
   if (rss_stage_mode >= 16) {
     // rstbit-1107: the extended record; the tensor slots only into the same closure
     const int mode = rss_stage_mode, b = mode - 16, nb = RssRstNch(b);
-    const bool tens = (b == 2 && tau_closure) ||
+    const bool tens = (b == 2 && tau_closure && !cln_rss) || (b == 5 && cln_rss) ||
                       ((b == 3 || b == 4) && vet_sc && vet_cell.extent(0) > 0 &&
                        (vet_full == (b == 4)));
-    if (b == 2 && tau_closure && !tau_ready) {TauClosureInit();}
+    if (b == 2 && tau_closure && !cln_rss && !tau_ready) {TauClosureInit();}
+    if (cln_rss && b != 5 && global_variable::my_rank == 0) {
+      std::cout << "### WARNING: <rad_m1>/clean_rss_closure: the restart file carries no "
+                << "clean closure for the signal speed; E/3 until the first solve"
+                << std::endl;
+    }
     const int nmb = static_cast<int>(rss_stage.extent(0));
     const int nall = static_cast<int>(rss_stage.extent(1));
     const int nop = opac.extent_int(1) - 1;
@@ -2541,8 +2577,10 @@ void RadiationM1::RssPrime(bool restart) {
     const int mode = rss_stage_mode;
     // the tensor is put back only into the same kind of closure; opac always
     int want = 1;
-    if (mode == 2 && tau_closure) {
+    if (mode == 2 && tau_closure && !cln_rss) {
       if (!tau_ready) {TauClosureInit();}
+      want = RssRstNch(mode);
+    } else if (mode == 5 && cln_rss) {
       want = RssRstNch(mode);
     } else if ((mode == 3 || mode == 4) && vet_sc && vet_cell.extent(0) > 0 &&
                (vet_full == (mode == 4))) {

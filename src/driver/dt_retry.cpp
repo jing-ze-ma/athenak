@@ -109,6 +109,8 @@ const char *kDtrMinimal[] = {
   // also the contents of cln_mn (Build)
   "m1.cln_fvi", "m1.cln_fvis", "m1.cln_fvr", "m1.cln_fvrd",
   "m1.cln_fvgp",
+  // clean_rss_closure: the closure the next dt reads
+  "m1.cln_rssd",
 };
 
 // the Views of kDtrMinimal that <rad_m1>/scheme = clean does not write

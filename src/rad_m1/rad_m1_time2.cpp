@@ -3283,6 +3283,7 @@ void RadiationM1::Time2VetColExtrap() {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const Real dtn = mr_on ? mr_dt : pmy_pack->pmesh->dt;   // implicit_mr_every: Delta
   const Real r = (t2_vcprev && t2_dtprev > 0.0) ? (dtn/t2_dtprev) : 0.0;
+  TauTenCheck(__func__);
   auto tt_ = tau_ten;
   auto vp_ = vcol_prev;
   const Real fkm = vcol_axis_flux ? (1.0/3.0) : vcol_fkmin;
@@ -3327,6 +3328,7 @@ void RadiationM1::Time2VetColExtrap2() {
   const int n2 = static_cast<int>(tau_ten.extent(3));
   const int n1 = static_cast<int>(tau_ten.extent(4));
   const int ntt = std::min(static_cast<int>(tau_ten.extent(1)), M1_X2_NTT);
+  TauTenCheck(__func__);
   auto tt_ = tau_ten;
   auto pt_ = x2_tt;
   const Real fkm = vcol_axis_flux ? (1.0/3.0) : vcol_fkmin;

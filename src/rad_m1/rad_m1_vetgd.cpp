@@ -7410,6 +7410,7 @@ void RadiationM1::VetGdMoments() {
   const bool sth_ = vgd_sth;   // accsp-1102
   auto thn_ = vgd_thn;
   auto dir_ = vgd_dir;
+  TauTenCheck(__func__);
   auto tt_ = tau_ten;
   auto &mbsize = pmy_pack->pmb->mb_size;
   const VgdLG lg_ = vgd_lg;   // layinv-1105
@@ -7641,6 +7642,7 @@ void RadiationM1::VetGdSmooth() {
     Kokkos::realloc(vgd_sm, pmy_pack->nmb_thispack, indcs.nx3 + 2*indcs.ng,
                     indcs.nx2 + 2*indcs.ng, indcs.nx1 + 2*indcs.ng);
   }
+  TauTenCheck(__func__);
   auto tt_ = tau_ten;
   auto sm_ = vgd_sm;
   const int c0 = M1_TT_LAT0;
@@ -7704,6 +7706,7 @@ void RadiationM1::VetGdSource() {
 //! sweep(s) with the lagged lateral inflow, the moments; timed per part (fenced)
 
 void RadiationM1::VetGdBuild() {
+  TauTenCheck(__func__);
   if (vgd_async) {
     VetGdBuildAsync();
     return;
@@ -8615,6 +8618,7 @@ void RadiationM1::VetGdRealDiag() {
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
+  TauTenCheck(__func__);
   auto tt_ = tau_ten;
   auto u0_ = u0;
   auto iw_ = iw;   // tau_top from the transport opacity M1_IW_KT
@@ -9131,6 +9135,7 @@ void RadiationM1::VetGdTwin(const int stage) {
   const int ilo = is + vlat_icut;
   // (cs-vetgd-1017: mesh nx2 x nx3 per panel; npanels = 1 off the cubed sphere, exact)
   const Real ncol = static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3*pm->npanels;
+  TauTenCheck(__func__);
   auto tt_ = tau_ten;
   // shell means over the active lateral cells (all ranks) of a(m, c, k+og, j+og, i)
   // (exp of it when ex): no generic lambda around the device kernel (nvcc)
@@ -10125,6 +10130,7 @@ void RadiationM1::VetGdTwinFusedMoments() {
   vgd_noq = false;
   std::swap(vgd_i, vgd_itw);
   if (impl_beam_hr) {VetGdHalfRange(1);}   // hrup-1009: keep the twin's ratios
+  TauTenCheck(__func__);
   auto tt_ = tau_ten;
   auto twl_ = vgd_twl;
   par_for("m1_vgd_tw_keep2", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,

@@ -149,7 +149,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   // Off: no change.
   const bool rss_ = rad_signal_speed;
   DvceArray5D<Real> erad_, kopc_, tten_, vcel_;
-  int rss_mode = 0;          // 0 isotropic E/3, 1 M1Chi, 2 tau_ten, 3 vet_sc, 4 vet full
+  int rss_mode = 0;          // 0 E/3, 1 M1Chi, 2 tau_ten, 3 vet_sc, 4 vet full, 5 clean
   int rss_kind = 0;
   Real rss_cl = 1.0;
   if (rss_) {
@@ -167,7 +167,8 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
     // the same selection decides what a restart file carries (RadiationM1::RssPrime)
     rss_mode = prm->RssMode();
     if (rss_mode == 2) tten_ = prm->tau_ten;
-    if (rss_mode >= 3) vcel_ = prm->vet_cell;
+    if (rss_mode == 3 || rss_mode == 4) vcel_ = prm->vet_cell;
+    if (rss_mode == 5) tten_ = prm->cln_rssd;
   }
 
   if (pdrive->time_evolution == TimeEvolution::kinematic) {
@@ -253,7 +254,15 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
           const Real er = fmax(erad_(m,radm1::M1_E,k,j,i), 0.0);
           // diagonal of the Eddington tensor, D_dd = P_dd/E
           Real dd[3] = {1.0/3.0, 1.0/3.0, 1.0/3.0};
-          if (rss_mode == 4) {
+          if (rss_mode == 5) {   // (zero before the first clean solve: keep 1/3)
+            const Real d1 = tten_(m,0,k,j,i), d2 = tten_(m,1,k,j,i);
+            const Real d3 = tten_(m,2,k,j,i);
+            if (d1 + d2 + d3 > 0.0) {
+              dd[0] = d1;
+              dd[1] = d2;
+              dd[2] = d3;
+            }
+          } else if (rss_mode == 4) {
             for (int a = 0; a < 3; ++a) dd[a] = vcel_(m,radm1::M1_VET_D11+a,k,j,i);
           } else if (rss_mode >= 1) {
             Real chi, n1, n2, n3;
@@ -575,7 +584,15 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         Real dd[3] = {1.0/3.0, 1.0/3.0, 1.0/3.0};
         if (rss_) {
           er = fmax(erad_(m,radm1::M1_E,k,j,i), 0.0);
-          if (rss_mode == 4) {
+          if (rss_mode == 5) {   // (zero before the first clean solve: keep 1/3)
+            const Real d1 = tten_(m,0,k,j,i), d2 = tten_(m,1,k,j,i);
+            const Real d3 = tten_(m,2,k,j,i);
+            if (d1 + d2 + d3 > 0.0) {
+              dd[0] = d1;
+              dd[1] = d2;
+              dd[2] = d3;
+            }
+          } else if (rss_mode == 4) {
             for (int a = 0; a < 3; ++a) dd[a] = vcel_(m,radm1::M1_VET_D11+a,k,j,i);
           } else if (rss_mode >= 1) {
             Real chi, n1, n2, n3;

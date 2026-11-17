@@ -347,6 +347,7 @@ void RadiationM1::VetLatOdMax() {
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
+  TauTenCheck(__func__);
   auto tt_ = tau_ten;
   const bool tn = vgd_on && vgd_tan && vgd_tanop;   // + the tangential slots (vet_gd)
   // cs-s4-1017: on the cubed sphere D_r,lat is the Cartesian vector in LAT1..LAT3
@@ -419,6 +420,7 @@ void RadiationM1::VetGdIterRebuild() {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   Kokkos::fence();
   Kokkos::Timer timer;
+  TauTenCheck(__func__);
   auto tt_ = tau_ten;
   auto f0_ = vgd_fk0;
   par_for("m1_vgd_fk0r", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -540,6 +542,7 @@ void RadiationM1::VetLatBuild() {
     vlat_time += timer.seconds();
   }
   // fold dD_rr into f_K (slot 0, rebuilt by vet_col every step), with vet_col's clamp
+  TauTenCheck(__func__);
   auto tt_ = tau_ten;
   const Real fkm = vcol_fkmin;
   const int ilo = is + vlat_icut;
@@ -713,6 +716,7 @@ void RadiationM1::VetLatSweep(const int stage) {
   VetLatCsFinish();
   }
   if (vgd_on) {return;}   // vet_gd: source and first shell only (VetGdBuild)
+  TauTenCheck(__func__);
   const int lcut = vlat_icut;
 
   // (3) the per-shell ray geometry (host; rebuilt when the first shell moves)

@@ -638,9 +638,12 @@ void RadiationM1::VetColInit() {
   // the cs basis (r, xi, eta), covariant on the panel pair like F, order rr, r xi,
   // r eta, xi xi, xi eta, eta eta.  Zero, and read by nothing yet (CS2_RESULTS.md,
   // "interface"); the uniaxial (chi, n) of slots 0..3 is what runs.  Elsewhere 4 slots.
-  Kokkos::realloc(tau_ten, nmb, (vlat_on || pm->use_cubed_sphere) ?
-                  (M1_TT_LAT0 + M1_TT_NLAT) : 4, c3, c2, c1);
-  Kokkos::deep_copy(tau_ten, 0.0);
+  // (none with clean_rss_closure: TauTenCheck stops any build that would write it)
+  if (!cln_rss) {
+    Kokkos::realloc(tau_ten, nmb, (vlat_on || pm->use_cubed_sphere) ?
+                    (M1_TT_LAT0 + M1_TT_NLAT) : 4, c3, c2, c1);
+    Kokkos::deep_copy(tau_ten, 0.0);
+  }
   if (!vcol_dump.empty()) {
     Kokkos::realloc(vcol_mom, nmb, 5, c3, c2, c1);
     Kokkos::deep_copy(vcol_mom, 0.0);
@@ -728,6 +731,7 @@ void RadiationM1::VetColBuild() {
   const Real cl = c_light, ar = arad, efl = e_floor;
   auto iw_ = iw;
   auto opac_ = opac;
+  TauTenCheck(__func__);
   auto tt_ = tau_ten;
   auto mo_ = vcol_mom;
   auto seg_ = vcol_seg;
@@ -1090,6 +1094,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   const Real cl = c_light, ar = arad, efl = e_floor;
   auto iw_ = iw;
   auto opac_ = opac;
+  TauTenCheck(__func__);
   auto tt_ = tau_ten;
   auto mo_ = vcol_mom;
   auto seg_ = vcol_seg;

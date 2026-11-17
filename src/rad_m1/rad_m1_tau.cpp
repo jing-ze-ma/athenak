@@ -191,6 +191,7 @@ void RadiationM1::TauClosureBuild() {
   const bool thrd = trans_x3;
   auto iw_ = iw;
   auto tc_ = tau_col;
+  TauTenCheck(__func__);
   auto tt_ = tau_ten;
   auto pos_ = tau_pos;
   auto loc_ = tau_loc;

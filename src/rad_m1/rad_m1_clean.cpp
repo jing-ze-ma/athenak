@@ -834,6 +834,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   } else {
     CleanWriteBack();
   }
+  if (cln_rss) CleanRssStore();
   // a write-back that leaves gas eint < 0 (energy for the fluid floor to create) is
   // rejected like a failed solve (the stage is redone by backward Euler, a
   // backward-Euler step by dt_retry)
@@ -1272,6 +1273,25 @@ void RadiationM1::CleanWriteBack() {
     u0_(m,M1_F1,k,j,i) = 0.5*(f1(m,k,j,i) + f1(m,k,j,i+1));
     u0_(m,M1_F1+1,k,j,i) = multi_d ? 0.5*(f2(m,k,j,i) + f2(m,k,j+1,i)) : 0.0;
     u0_(m,M1_F1+2,k,j,i) = three_d ? 0.5*(f3(m,k,j,i) + f3(m,k+1,j,i)) : 0.0;
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanRssStore
+//! \brief the diagonal of the closure of the solve (cln_s) into cln_rssd, which
+//! <hydro>/rad_signal_speed reads with clean_rss_closure
+
+void RadiationM1::CleanRssStore() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto cs = cln_s;
+  auto rd = cln_rssd;
+  par_for("cln_rss", DevExeSpace(), 0, nmb1, 0, 2, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int a, const int k, const int j, const int i) {
+    rd(m,a,k,j,i) = cs(m,CLN_D11+a,k,j,i);
   });
 }
 

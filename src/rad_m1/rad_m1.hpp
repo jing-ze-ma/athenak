@@ -2239,6 +2239,8 @@ class RadiationM1 {
   //! the closure tensor the signal speed reads: 0 E/3, 1 M1Chi(F/cE), 2 tau_ten,
   //! 3 vet_cell (chi, n), 4 vet_cell (D_dd); the mode selection of hydro_newdt.cpp
   int RssMode() const;
+  void TauTenCheck(const char *where) const;
+  void CleanRssStore();
   int RssRstMode() const;   // rstbit-1107: RssMode + 16 under rst_state_ext
   bool rst_ext = true;      // rstbit-1107 <rad_m1>/rst_state_ext
   int RssRstNch(int mode) const;  // channels written: opac(M1_OP_T) + the tensor's
@@ -3075,6 +3077,7 @@ class RadiationM1 {
   int cln_pcsweeps = 1;         // clean_pc_sweeps: smoothing sweeps of the multigrid
   int cln_chunk = 32;           // rows per Thomas system of the line solve
   int cln_lteams = 0;           // clean_line_teams: most teams of a line solve (0: all)
+  bool cln_rss = false;         // clean_rss_closure: the signal speed from cln_rssd
   int cln_hmax = 16;            // clean_halo_vars: most variables of one ghost exchange
   bool cln_pcfac = true;        // clean_pc_factor: x1line keeps the factors of its lines
   bool cln_pcf32 = false;       // clean_pc_factor_float: ... in single precision
@@ -3207,6 +3210,8 @@ class RadiationM1 {
                                 // exchange of the solution (CleanCellResidual)
   DvceArray5D<Real> cln_lf;     // factors of the x1-line solve (clean_pc_factor)
   DvceArray5D<float> cln_lfs;   // the same in single precision (clean_pc_factor_float)
+  DvceArray5D<Real> cln_rssd;   // clean_rss_closure: D11 D22 D33 of the last solve's
+                                // closure, for <hydro>/rad_signal_speed (no tau_ten)
   DvceArray1D<Real> cln_lw;     // rows of the line solves, a block per team
   DvceArray5D<Real> cln_ff;     // face fluxes of the operator (CleanCellApply)
   DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)

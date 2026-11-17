@@ -2501,6 +2501,7 @@ void RadiationM1::VetGdCsMoments(const int part) {
   auto vi_ = vgd_i;
   const int og = vgd_w - indcs.ng;
   auto dir_ = vgd_dir;
+  TauTenCheck(__func__);
   auto tt_ = tau_ten;
   auto cr_ = vgd_csr;
   if (part == 0) {
@@ -2673,6 +2674,7 @@ void RadiationM1::VetGdCsDump(const char *env) {
   DvceArray5D<Real> dd("vgdcs_dump", nmb, nx3, nx2, n1, nv);
   auto vi_ = vgd_i;
   auto cs_ = vgd_cs;
+  TauTenCheck(__func__);
   auto tt_ = tau_ten;
   par_for("m1_vgdcs_dump", DevExeSpace(), 0, nmb - 1, 0, nx3 - 1, 0, nx2 - 1, 0, n1 - 1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int l) {
