@@ -2025,7 +2025,11 @@ void RadiationM1::CleanCellWriteBack() {
   const Real arad_ = arad;
   auto op = opac;
 
-  // face fluxes of E
+  // the face fluxes once per face (cln_ff) for the cells, those of E kept
+  CleanCellFaceFluxes(CLC_X, true);
+  x.ff = cln_ff;
+  x.ffon = true;
+  auto ff = cln_ff;
   for (int dir = 0; dir < 3; ++dir) {
     if (dir == 1 && !multi_d) continue;
     if (dir == 2 && !three_d) continue;
@@ -2033,9 +2037,7 @@ void RadiationM1::CleanCellWriteBack() {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     par_for("clc_wbface", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      Real f[4];
-      CleanCellFaceFlux(x, CLC_X, dir, m, k, j, i, true, f);
-      f0(m,k,j,i) = f[0];
+      f0(m,k,j,i) = ff(m,4*dir,k,j,i);
     });
   }
 
@@ -2052,7 +2054,7 @@ void RadiationM1::CleanCellWriteBack() {
     const int m = q/(nk*nj*ni), k = ks + (q/(nj*ni))%nk;
     const int j = js + (q/ni)%nj, i = is + q%ni;
     Real div[4];
-    CleanCellDivergence(x, CLC_X, m, k, j, i, true, div);
+    CleanCellDivergence<true>(x, CLC_X, m, k, j, i, true, div);
     Real e = x.u(m,CLC_X,k,j,i);
     const Real e_old = x.w(m,CLW_EO,k,j,i);
     Real dm[3] = {0.0, 0.0, 0.0}, dh[3], y[3];
