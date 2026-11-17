@@ -442,6 +442,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_halo_vars")) {
       cln_hmax = std::min(std::max(pin->GetInteger("rad_m1","clean_halo_vars"), 1), 32);
     }
+    if (!pin->GetOrAddBoolean("rad_m1","clean_halo_direct",true)) cln_hdl.state = -1;
     // clean_line_teams (read only when named): at most this many teams take the lines of
     // a line solve (each line still one team), fewer rows of cln_lw
     if (pin->DoesParameterExist("rad_m1","clean_line_teams")) {

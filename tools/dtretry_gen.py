@@ -25,11 +25,11 @@ SKIP_RE = [r'^std::thread', r'^std::future', r'Timer$', r'^MPI_', r'DevExeSpace'
 # pointer, not visited): rolled back to -1 a retry would make a second communicator
 # cln_hbuf: the storage that the unmanaged scratch views of cln_halo (not visited, not
 # copyable) alias; rolled back to an older handle, the exchanges would write freed memory
-# cln_halo / cln_hpb: the clean ghost exchange, made at first use over cln_hbuf (kept)
+# cln_halo / cln_hpb / cln_hdl: the clean ghost exchange, made at first use over cln_hbuf (kept)
 # vgd_es2_made: the second execution space instance vgd_es2 (not copyable) is made
 # vgd_esid / vgd_est: the early-send stamp id and its stamps (monotonic: a rolled-back id
 # would match stamps the failed attempt left, and those cells would be skipped)
-SKIP_NAMES = {'hi_seq', 'vgd_ipc_seq', 'acc_nccl', 'cln_hbuf', 'cln_halo', 'cln_hpb',
+SKIP_NAMES = {'hi_seq', 'vgd_ipc_seq', 'acc_nccl', 'cln_hbuf', 'cln_halo', 'cln_hpb', 'cln_hdl',
               'vgd_es2_made', 'vgd_esid', 'vgd_est'}
 NESTED = ['VgdTabHost', 'VgdTabDev', 'M1OpacTab', 'CleanW']   # structs holding Views
 
@@ -70,6 +70,7 @@ def emit(fields, pre, out, skipped):
                    'cln_hbuf': ' (the storage of cln_halo, kept)',
                    'cln_halo': ' (views over cln_hbuf, kept)',
                    'cln_hpb': ' (made at first use, kept)',
+                   'cln_hdl': ' (cell lists made at first use, kept)',
                    'vgd_es2_made': ' (vgd_es2 made, kept)',
                    'vgd_esid': ' (stamp id, kept monotonic)', 'vgd_est': ' (stamps, kept)'}
             skipped.append(nm + ' : ' + t + why.get(n, ' (protocol counter, kept monotonic)')); continue

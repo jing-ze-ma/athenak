@@ -2256,6 +2256,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
 //   cln_halo : std::map<int, CleanHalo> (views over cln_hbuf, kept)
 //   cln_hpb : std::unique_ptr<MeshBoundaryValuesCC> (made at first use, kept)
 //   cln_hbuf : DvceArray5D<Real> (the storage of cln_halo, kept)
+//   cln_hdl : CleanHaloList (cell lists made at first use, kept)
 //   vtan_x2t_src : const Real *
 //   pbval_vl : MeshBoundaryValuesCC *
 //   pbval_ea : MeshBoundaryValuesCC *

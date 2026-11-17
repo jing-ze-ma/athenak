@@ -9,9 +9,13 @@
 //! preconditioner (or the old production multigrid on it) and right-preconditioned
 //! BiCGStab.
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <iostream>
 #include <limits>
+#include <string>
 #include <type_traits>
 #include <vector>
 
@@ -252,6 +256,18 @@ void RadiationM1::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
     // ~0.5 ms per exchange on an A100 at 831 x 64 x 32; bitwise, copies)
     cln_hpb->cc_split = 16;
   }
+  if (cln_hdl.state == 0) CleanHaloInit(n3, n2, n1);
+  const bool dl = (cln_hdl.state == 1);
+  if (dl && (n1 != cln_hdl.n1 || n2 != cln_hdl.n2 || n3 != cln_hdl.n3)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "CleanGhostExchange: an array of another shape than the "
+              << "lists of clean_halo_direct" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (dl && part != 2) CleanHaloPost(sg);
+  if (dl && part == 1) return;
+  if (dl) CleanHaloFinish(sg);
+  const bool cs = pmy_pack->pmesh->use_cubed_sphere;
   CleanHalo &hl = cln_halo[nc];
   if (hl.ca.extent_int(0) == 0) {
     hl.a = DvceArray5D<Real>(cln_hbuf.data(), nmb1 + 1, nc, n3, n2, n1);
@@ -270,8 +286,9 @@ void RadiationM1::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
     const size_t off = static_cast<size_t>(sg[0].c0)*n3*n2*n1;
     if (own) ha = DvceArray5D<Real>(sg[0].a.data() + off, 1, nc, n3, n2, n1);
   }
-  // (only the cells outside CleanInner are copied: CleanShell)
-  if (part != 2 && !own) {
+  // (only the cells outside CleanInner are copied: CleanShell.  clean_halo_direct: only
+  // on the cubed sphere, after the exchange, for the cube-vertex corners of the old one)
+  if (!own && (dl ? cs : part != 2)) {
     const CleanShell sc(n3, n2, n1, ng, is, ie, js, je, ks, ke, md, td);
     int o = 0;
     for (auto &s : sg) {
@@ -293,18 +310,22 @@ void RadiationM1::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
       o += s.nc;
     }
   }
-  if (part != 2) {
-    while (pb->InitRecv(nc) == TaskStatus::incomplete) {}
-    while (pb->PackAndSendCC(ha, hl.ca) == TaskStatus::incomplete) {}
-    if (part == 1) return;
+  if (dl && cs) {
+    pb->FillPanelCornersCC(ha);
+  } else if (!dl) {
+    if (part != 2) {
+      while (pb->InitRecv(nc) == TaskStatus::incomplete) {}
+      while (pb->PackAndSendCC(ha, hl.ca) == TaskStatus::incomplete) {}
+      if (part == 1) return;
+    }
+    while (pb->RecvAndUnpackCC(ha, hl.ca) == TaskStatus::incomplete) {}
+    while (pb->ClearSend() == TaskStatus::incomplete) {}
+    while (pb->ClearRecv() == TaskStatus::incomplete) {}
   }
-  while (pb->RecvAndUnpackCC(ha, hl.ca) == TaskStatus::incomplete) {}
-  while (pb->ClearSend() == TaskStatus::incomplete) {}
-  while (pb->ClearRecv() == TaskStatus::incomplete) {}
   const CleanShell sb(n3, n2, n1, 0, is, ie, js, je, ks, ke, md, td);
   int o = 0;
   for (auto &s : sg) {
-    if (own) break;
+    if (own || (dl && !cs)) break;
     auto a = s.a;
     const int c0 = s.c0;
     par_for("cln_hback", DevExeSpace(), 0, nmb1, 0, s.nc-1, 0, sb.ncell-1,
@@ -318,6 +339,247 @@ void RadiationM1::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
   for (auto &s : sg) {
     if (s.phys) CleanGhostPhys(s.a, s.c0, s.nc);
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanHaloInit
+//! \brief clean_halo_direct: the cell lists of the ghost exchange, read off the
+//! exchange itself: an array of cell ids (rank, MeshBlock, cell) through cln_hpb gives
+//! every ghost the cell it copies; the on-rank pairs make the copy kernel, the off-rank
+//! ghosts are grouped by rank and their source cells sent to that rank once (its pack
+//! list, in the receiver's order: the messages carry no header).  Checked once: a field
+//! of other values through both paths must give the same array bitwise, else (and on a
+//! refined mesh) the lists stay off and the exchange is cln_hpb's, with a log line.
+
+void RadiationM1::CleanHaloInit(const int n3, const int n2, const int n1) {
+  CleanHaloList &q = cln_hdl;
+  auto *pm = pmy_pack->pmesh;
+  const int me = global_variable::my_rank;
+  if (pm->multilevel) {
+    q.state = -1;
+    if (me == 0) {
+      std::cout << "<rad_m1> clean_halo_direct: refined mesh, the clean ghost exchange "
+                << "is MeshBoundaryValuesCC's" << std::endl;
+    }
+    return;
+  }
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const bool md = pm->multi_d, td = pm->three_d;
+  const int nmb = pmy_pack->nmb_thispack, nrk = global_variable::nranks;
+  int mx = 0;
+  for (int r = 0; r < nrk; ++r) mx = std::max(mx, pm->nmb_eachrank[r]);
+  const int n21 = n2*n1, n321 = n3*n21;
+  const int64_t nid = static_cast<int64_t>(mx)*n321;
+  q.n1 = n1; q.n2 = n2; q.n3 = n3;
+  DvceArray5D<Real> x("cln_hdl_x", nmb, 1, n3, n2, n1), y("cln_hdl_y", nmb, 1, n3, n2, n1);
+  const std::vector<CleanGSeg<Real>> sx = {{x, 0, 1, false}}, sy = {{y, 0, 1, false}};
+  // (pass 0: the ids; pass 1: other values, the check)
+  for (int pass = 0; pass < 2; ++pass) {
+    par_for("cln_hd_id", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real v = static_cast<Real>((me*nid + m*n321) + (k*n2 + j)*n1 + i);
+      x(m,0,k,j,i) = (pass == 0) ? v : 2.0 + Kokkos::sin(1.0e-3*v);
+      y(m,0,k,j,i) = x(m,0,k,j,i);
+    });
+    q.state = -1;
+    CleanGhostExchange(sx, 0);
+    if (pass == 1) {
+      q.state = 1;
+      CleanGhostExchange(sy, 0);
+      break;
+    }
+    auto hx = Kokkos::create_mirror_view_and_copy(HostMemSpace(), x);
+    std::vector<int> ld, ls;
+    std::vector<std::vector<int>> rg(nrk), rs(nrk);   // off-rank ghosts, their sources
+    for (int m = 0; m < nmb; ++m) {
+      for (int k = 0; k < n3; ++k) {
+        for (int j = 0; j < n2; ++j) {
+          for (int i = 0; i < n1; ++i) {
+            const int g = (k*n2 + j)*n1 + i;
+            const Real v = hx(m,0,k,j,i);
+            const int64_t w = static_cast<int64_t>(v);
+            if (v == static_cast<Real>(me*nid + m*n321 + g) || v < 0.0 ||
+                static_cast<Real>(w) != v) continue;   // (not filled, or not a copy)
+            const int r = static_cast<int>(w/nid);
+            const int ms = static_cast<int>((w - r*nid)/n321);
+            const int f = static_cast<int>(w - r*nid - ms*n321);
+            const int kk = f/n21, jj = (f - kk*n21)/n1, ii = f - kk*n21 - jj*n1;
+            if (r >= nrk || ms >= pm->nmb_eachrank[r] || ii < is || ii > ie ||
+                (md && (jj < js || jj > je)) || (td && (kk < ks || kk > ke))) continue;
+            if (r == me) {
+              ld.push_back(m*n321 + g);
+              ls.push_back(ms*n321 + f);
+            } else {
+              rg[r].push_back(m*n321 + g);
+              rs[r].push_back(ms*n321 + f);
+            }
+          }
+        }
+      }
+    }
+    std::vector<int> sc, rc;
+#if MPI_PARALLEL_ENABLED
+    MPI_Comm_dup(MPI_COMM_WORLD, &q.comm);
+    std::vector<int> nr(nrk), ns(nrk);
+    for (int r = 0; r < nrk; ++r) nr[r] = static_cast<int>(rs[r].size());
+    MPI_Alltoall(nr.data(), 1, MPI_INT, ns.data(), 1, MPI_INT, q.comm);
+    std::vector<std::vector<int>> ss(nrk);
+    std::vector<MPI_Request> rq;
+    for (int r = 0; r < nrk; ++r) {
+      if (nr[r] == 0 && ns[r] == 0) continue;
+      q.rank.push_back(r);
+      ss[r].resize(ns[r]);
+      rq.resize(rq.size() + 2);
+      MPI_Irecv(ss[r].data(), ns[r], MPI_INT, r, 4244, q.comm, &rq[rq.size() - 2]);
+      MPI_Isend(rs[r].data(), nr[r], MPI_INT, r, 4244, q.comm, &rq[rq.size() - 1]);
+    }
+    MPI_Waitall(static_cast<int>(rq.size()), rq.data(), MPI_STATUSES_IGNORE);
+    for (int r : q.rank) {
+      q.soff.push_back(static_cast<int>(sc.size()));
+      q.slen.push_back(ns[r]);
+      sc.insert(sc.end(), ss[r].begin(), ss[r].end());
+      q.roff.push_back(static_cast<int>(rc.size()));
+      q.rlen.push_back(nr[r]);
+      rc.insert(rc.end(), rg[r].begin(), rg[r].end());
+    }
+#endif
+    auto mk = [](const char *nm, const std::vector<int> &v) {
+      DvceArray1D<int> a(std::string(nm), std::max(v.size(), static_cast<size_t>(1)));
+      Kokkos::deep_copy(Kokkos::subview(a, std::make_pair(static_cast<size_t>(0), v.size())),
+                        HostArray1D<int>(const_cast<int *>(v.data()), v.size()));
+      return a;
+    };
+    q.nl = static_cast<int>(ld.size());
+    q.ns = static_cast<int>(sc.size());
+    q.nr = static_cast<int>(rc.size());
+    q.ld = mk("cln_hdl_ld", ld);
+    q.ls = mk("cln_hdl_ls", ls);
+    q.sc = mk("cln_hdl_sc", sc);
+    q.rc = mk("cln_hdl_rc", rc);
+    q.sbuf = decltype(q.sbuf)("cln_hdl_sbuf", std::max(q.ns, 1)*cln_hmax);
+    q.rbuf = decltype(q.rbuf)("cln_hdl_rbuf", 2*std::max(q.nr, 1)*cln_hmax);
+  }
+  int bad = 0;
+  Kokkos::parallel_reduce("cln_hd_chk", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          static_cast<int>(x.size())),
+  KOKKOS_LAMBDA(const int p, int &b) {
+    b += (x.data()[p] != y.data()[p]) ? 1 : 0;
+  }, bad);
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, &bad, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  q.state = (bad == 0) ? 1 : -1;
+  if (me == 0) {
+    if (bad == 0) {
+      std::cout << "<rad_m1> clean_halo_direct: ON, rank 0 copies " << q.nl
+                << " ghosts, sends " << q.ns << " cells, receives " << q.nr << " in "
+                << q.rank.size() << " messages" << std::endl;
+    } else {
+      std::cout << "<rad_m1> clean_halo_direct: the lists miss " << bad << " cells of "
+                << "the exchange, the clean ghost exchange is MeshBoundaryValuesCC's"
+                << std::endl;
+    }
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanHaloPost
+//! \brief clean_halo_direct, first half: receives posted (into the half of the receive
+//! buffer the previous exchange's unpack does not read), pack, wait for the pack (the
+//! stream holds nothing behind it), one send per neighbour rank, then the on-rank copy.
+//! Buffer entry p of component n (over the segments in order) at p nc + n
+
+template <typename T>
+void RadiationM1::CleanHaloPost(const std::vector<CleanGSeg<T>> &sg) {
+  CleanHaloList &q = cln_hdl;
+  int nc = 0;
+  for (auto &s : sg) nc += s.nc;
+  const int n1 = q.n1, n21 = q.n2*q.n1, n321 = q.n3*n21;
+  q.par = 1 - q.par;
+#if MPI_PARALLEL_ENABLED
+  const int nseg = static_cast<int>(q.rank.size());
+  q.rq.assign(nseg, MPI_REQUEST_NULL);
+  q.sq.assign(nseg, MPI_REQUEST_NULL);
+  Real *rb = q.rbuf.data() + static_cast<size_t>(q.par)*std::max(q.nr, 1)*cln_hmax;
+  for (int s = 0; s < nseg; ++s) {
+    if (q.rlen[s] > 0) {
+      MPI_Irecv(rb + static_cast<size_t>(q.roff[s])*nc, q.rlen[s]*nc, MPI_ATHENA_REAL,
+                q.rank[s], 4245, q.comm, &q.rq[s]);
+    }
+  }
+  auto sb = q.sbuf;
+  int o = 0;
+  for (auto &s : sg) {
+    auto a = s.a;
+    auto e = q.sc;
+    const int c0 = s.c0;
+    if (q.ns > 0) {
+      par_for("cln_hd_pack", DevExeSpace(), 0, q.ns-1, 0, s.nc-1,
+      KOKKOS_LAMBDA(const int p, const int n) {
+        const int f = e(p), m = f/n321, r = f - m*n321, k = r/n21, j = (r - k*n21)/n1;
+        sb(p*nc + o + n) = a(m,c0+n,k,j,r - k*n21 - j*n1);
+      });
+    }
+    o += s.nc;
+  }
+  if (q.ns > 0 || q.nr > 0) DevExeSpace().fence();
+  for (int s = 0; s < nseg; ++s) {
+    if (q.slen[s] > 0) {
+      MPI_Isend(sb.data() + static_cast<size_t>(q.soff[s])*nc, q.slen[s]*nc,
+                MPI_ATHENA_REAL, q.rank[s], 4245, q.comm, &q.sq[s]);
+    }
+  }
+#endif
+  for (auto &s : sg) {
+    auto a = s.a;
+    auto d = q.ld, c = q.ls;
+    const int c0 = s.c0;
+    if (q.nl == 0) break;
+    par_for("cln_hd_copy", DevExeSpace(), 0, q.nl-1, 0, s.nc-1,
+    KOKKOS_LAMBDA(const int p, const int n) {
+      const int f = d(p), m = f/n321, r = f - m*n321, k = r/n21, j = (r - k*n21)/n1;
+      const int g = c(p), mg = g/n321, t = g - mg*n321, kg = t/n21, jg = (t - kg*n21)/n1;
+      a(m,c0+n,k,j,r - k*n21 - j*n1) = a(mg,c0+n,kg,jg,t - kg*n21 - jg*n1);
+    });
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanHaloFinish
+//! \brief clean_halo_direct, second half: wait for the messages, unpack, wait for the
+//! sends
+
+template <typename T>
+void RadiationM1::CleanHaloFinish(const std::vector<CleanGSeg<T>> &sg) {
+#if MPI_PARALLEL_ENABLED
+  CleanHaloList &q = cln_hdl;
+  int nc = 0;
+  for (auto &s : sg) nc += s.nc;
+  const int n1 = q.n1, n21 = q.n2*q.n1, n321 = q.n3*n21;
+  const int nseg = static_cast<int>(q.rank.size());
+  MPI_Waitall(nseg, q.rq.data(), MPI_STATUSES_IGNORE);
+  auto rb = q.rbuf;
+  const size_t b = static_cast<size_t>(q.par)*std::max(q.nr, 1)*cln_hmax;
+  int o = 0;
+  for (auto &s : sg) {
+    auto a = s.a;
+    auto e = q.rc;
+    const int c0 = s.c0;
+    if (q.nr > 0) {
+      par_for("cln_hd_unpack", DevExeSpace(), 0, q.nr-1, 0, s.nc-1,
+      KOKKOS_LAMBDA(const int p, const int n) {
+        const int f = e(p), m = f/n321, r = f - m*n321, k = r/n21, j = (r - k*n21)/n1;
+        a(m,c0+n,k,j,r - k*n21 - j*n1) = static_cast<T>(rb(b + p*nc + o + n));
+      });
+    }
+    o += s.nc;
+  }
+  MPI_Waitall(nseg, q.sq.data(), MPI_STATUSES_IGNORE);
+#else
+  (void)sg;
+#endif
 }
 
 template <typename T>

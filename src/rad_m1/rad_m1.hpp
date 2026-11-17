@@ -3356,6 +3356,28 @@ class RadiationM1 {
   std::unique_ptr<MeshBoundaryValuesCC> cln_hpb;
   std::vector<CleanGSeg<Real>> cln_hpend;
   DvceArray5D<Real> cln_hbuf;   // the storage of every scratch array (32 components)
+  // clean_halo_direct (default true): the exchange in old production's halo_mpi form,
+  // cell lists read once off cln_hpb's own exchange (CleanHaloInit): on-rank ghosts by
+  // one copy, one message per neighbour rank, receives posted before the pack
+  struct CleanHaloList {
+    int state = 0;              // 0 lists to make at first use, 1 on, -1 off
+    int n1 = 0, n2 = 0, n3 = 0, nl = 0, ns = 0, nr = 0, par = 0;
+    DvceArray1D<int> ld, ls, sc, rc;   // on-rank ghost <- its source; sent; received
+    std::vector<int> rank, soff, slen, roff, rlen;
+#if defined(KOKKOS_ENABLE_HIP)
+    Kokkos::View<Real *, Kokkos::SharedHostPinnedSpace> sbuf, rbuf;   // (hmstage-1019)
+#else
+    DvceArray1D<Real> sbuf, rbuf;      // (rbuf: two halves, alternate exchanges)
+#endif
+#if MPI_PARALLEL_ENABLED
+    MPI_Comm comm = MPI_COMM_NULL;
+    std::vector<MPI_Request> rq, sq;
+#endif
+  };
+  CleanHaloList cln_hdl;
+  void CleanHaloInit(const int n3, const int n2, const int n1);
+  template <typename T> void CleanHaloPost(const std::vector<CleanGSeg<T>> &sg);
+  template <typename T> void CleanHaloFinish(const std::vector<CleanGSeg<T>> &sg);
   Real cln_nsolve = 0.0, cln_nit = 0.0, cln_nfail = 0.0, cln_nneg = 0.0;
   //! milestone 3b LIMIT 4: build the x1 stack topology of the gathered line solve
   void ImplicitPartitionInit();
