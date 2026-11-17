@@ -3168,6 +3168,19 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
       q[1+b] += w*(dir_(d,0)*e[b][0] + dir_(d,1)*e[b][1] + dir_(d,2)*e[b][2]);
     }
   };
+  // post2-1117: the same sums with the momentum in Cartesian components, projected on
+  // the face's basis and divided by its area ar once per face (CleanGdFaceSums' lateral
+  // and r faces: 8 flops per direction instead of 26 and a division)
+  auto addc = [=] KOKKOS_FUNCTION (const int d, const Real f, Real s[4]) {
+    const Real w = dir_(d,3)*f;
+    s[0] += w;
+    for (int c = 0; c < 3; ++c) s[1+c] += w*dir_(d,c);
+  };
+  auto proj = [=] KOKKOS_FUNCTION (const Real e[3][3], const Real ar, const Real s[4],
+                                   Real q[4]) {
+    q[0] = s[0]/ar;
+    for (int b = 0; b < 3; ++b) q[1+b] = (e[b][0]*s[1] + e[b][1]*s[2] + e[b][2]*s[3])/ar;
+  };
   // a mirror at the r face i, per unit area: no energy, the normal momentum of the
   // beams of cell ic that hit it (f of sign sg) doubled, no tangential part
   auto mirror = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i,
@@ -3197,7 +3210,7 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
       const bool hi = x.cub && ((dir == 1) ? j == je : k == ke);
       for (int up = 0; up <= (hi ? 1 : 0); ++up) {
         const int kf = k + up*(dir == 2), jf = j + up*(dir == 1);
-        Real q[4] = {0.0}, a[3], e[3][3];
+        Real q[4], sc[4] = {0.0}, a[3], e[3][3];
         face(dir, m, kf, jf, i, a, e);
         const bool bd = bnd(dir, m, kf, jf, i);
         const Real ar = x.area[dir](m,kf,jf,i);
@@ -3205,8 +3218,9 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
         const CleanRow ru = (gl && !bd) ? gi.At(m, kf - (dir == 2), jf - (dir == 1), i)
                                         : CleanRow{nullptr, 0};
         for (int d = 0; d < n; ++d) {
-          add(e, ar, d, bd ? 0.0 : lat(dir, m, kf, jf, i, d, a, ro, ru), q);
+          addc(d, bd ? 0.0 : lat(dir, m, kf, jf, i, d, a, ro, ru), sc);
         }
+        proj(e, ar, sc, q);
         for (int c = 0; c < 4; ++c) cs(m,(up ? CLN_FH + 4*(dir - 1) : nf)+c,k,j,i) = q[c];
       }
     });
@@ -3221,8 +3235,7 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   auto rflux = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i,
                                     Real q[4]) {
     const CleanArgs &x = *px;
-    Real a[3], e[3][3];
-    for (int c = 0; c < 4; ++c) q[c] = 0.0;
+    Real a[3], e[3][3], sc[4] = {0.0};
     face(0, m, k, j, i, a, e);
     // (the sc rays at a reflecting x1 face: the mirror images of the cell's leaving
     // beams, CleanFvMirror, scaled so that the face returns the energy it receives)
@@ -3256,9 +3269,9 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
         const int r = msc ? CleanFvMirror(dir_, 0, n, d, t, sg, u) : -1;
         if (r >= 0) iv = sm*inten(m, r, k, j, ic);
       }
-      add(e, x.area[0](m,k,j,i), d, f*iv, q);
+      addc(d, f*iv, sc);
     }
-    for (int c = 0; c < 4; ++c) q[c] *= x.area[0](m,k,j,i);
+    proj(e, 1.0, sc, q);   // (the face's sums, not per area)
   };
   if (!x.sph && !x.cub) {   // Cartesian: every x1 face carries the rays' upwind flux
     par_for("cln_gd_x1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
