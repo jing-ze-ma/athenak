@@ -3046,6 +3046,8 @@ class RadiationM1 {
   int cln_maxpic = 12;          // clean_maxpic: passes that update the lagged slopes
   bool cln_poslim = true;       // clean_pos_limit: a-posteriori low-order face limiter
   bool cln_posreal = false;     // clean_pos_real: the limiter for |F| <= c E as well
+  bool cln_wbreal = false;      // clean_wb_real: |F| > c E counts of the write-back
+  DvceArray5D<Real> cln_wbr;    // its per-cell flags (CleanCellWriteBack)
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
   bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces
   bool cln_posghost = false;    // clean_pos_ghost: marked boundary faces, upwind ghost

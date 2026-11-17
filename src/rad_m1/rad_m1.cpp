@@ -242,6 +242,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // the rays' kinetic flux of y, c (h+_L y_L + h-_R y_R), with its weight al: the rows
     // of E and of every y component then have the same M-matrix part
     cln_posreal = pin->GetOrAddBoolean("rad_m1","clean_pos_real",false);
+    // diagnostic: the cells with |F| > c E after each step of the write-back (log line)
+    cln_wbreal = pin->GetOrAddBoolean("rad_m1","clean_wb_real",false);
     cln_diagcells = pin->GetOrAddBoolean("rad_m1","clean_diag_cells",false);
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",false);
     cln_posghost = pin->GetOrAddBoolean("rad_m1","clean_pos_ghost",false);

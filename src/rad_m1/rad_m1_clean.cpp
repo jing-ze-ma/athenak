@@ -619,9 +619,12 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
       std::printf("<rad_m1> clean_init steady pass %d: max(|dE|, |dF|/c)/%s = %.3e\n",
                   n, cln_steady_cell ? "E of the cell" : "max E", d);
     }
-    if (!big && (d < cln_steady_tol || (++n2 > 2 && d > 0.5*dp))) break;
+    // (clean_init_norm = cell: the passes end at the tolerance or clean_init_n only, not
+    // where the change stops contracting, which the slow thin layers do)
+    const bool stall = !ncell && d > 0.5*dp;
+    if (!big && (d < cln_steady_tol || (++n2 > 2 && stall))) break;
     if (fmeas) {
-      if (fac >= ftop && (d < cln_steady_tol || (++nt > 2 && d > 0.5*dp))) big = false;
+      if (fac >= ftop && (d < cln_steady_tol || (++nt > 2 && stall))) big = false;
       fac = fmin(10.0*fac, ftop);
     } else if (d < cln_steady_tol) {
       big = false;

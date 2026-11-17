@@ -17,6 +17,7 @@
 #include <type_traits>
 
 #include "athena.hpp"
+#include "globals.hpp"
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "rad_m1/rad_m1.hpp"
@@ -1984,6 +1985,21 @@ void RadiationM1::CleanCellWriteBack() {
   auto dy = cln_dy;
   const Real arad_ = arad;
   auto op = opac;
+  // clean_wb_real: the cells with |F| > c E after each step of the write-back (the
+  // solution, the y residual correction, the work, the exact exchange), slots 0..3
+  const bool wbr_on = cln_wbreal;
+  if (wbr_on && (cln_wbr.extent_int(0) != nmb1 + 1 ||
+                 cln_wbr.extent_int(2) != u0.extent_int(2) ||
+                 cln_wbr.extent_int(3) != u0.extent_int(3) ||
+                 cln_wbr.extent_int(4) != u0.extent_int(4))) {
+    Kokkos::realloc(cln_wbr, nmb1 + 1, 4, u0.extent(2), u0.extent(3), u0.extent(4));
+  }
+  auto wbr = cln_wbr;
+  auto flag = [=] KOKKOS_FUNCTION (const int s, const int m, const int k, const int j,
+                                   const int i, const Real e, const Real *y) {
+    const Real a = std::sqrt(y[0]*y[0] + y[1]*y[1] + y[2]*y[2]);
+    for (int r = s; r < 4; ++r) wbr(m,r,k,j,i) = (a > (1.0 + 1.0e-12)*e) ? 1.0 : 0.0;
+  };
 
   // face fluxes of E
   for (int dir = 0; dir < 3; ++dir) {
@@ -2018,6 +2034,7 @@ void RadiationM1::CleanCellWriteBack() {
     Real dm[3] = {0.0, 0.0, 0.0}, dh[3], y[3];
     for (int b = 0; b < 3; ++b) y[b] = x.u(m,CLC_X+1+b,k,j,i);
     Real den = 0.0;
+    if (wbr_on) flag(0, m, k, j, i, e, y);
     if (feedback) {
       if (yres == M1_YRES_POST) {
         // y less its share of the linear residual, the face fluxes kept: the gas takes
@@ -2028,6 +2045,7 @@ void RadiationM1::CleanCellWriteBack() {
         // y of the cell's exact local momentum exchange (CleanCellResidual)
         for (int b = 0; b < x.nf; ++b) y[b] += dy(m,b,k,j,i);
       }
+      if (wbr_on) flag(1, m, k, j, i, e, y);
       for (int b = 0; b < x.nf && !vzero; ++b) {
         dm[b] = -(y[b] - x.u(m,CLC_O+1+b,k,j,i) + div[1+b])/x.c
                 - h*CleanRefForce(fref, fr, aref, uh(m,IDN,k,j,i), b, m, k, j, i);
@@ -2051,6 +2069,7 @@ void RadiationM1::CleanCellWriteBack() {
         }
       }
       e -= wk - x.w(m,CLW_WK,k,j,i) + wr;
+      if (wbr_on) flag(2, m, k, j, i, e, y);
       // (the hydro's components; dm.e_a covariant on the cubed sphere)
       CleanGasChange(x, m, k, j, i, dm, dh);
       for (int b = 0; b < x.nf; ++b) uh(m,IM1+b,k,j,i) += dh[b];
@@ -2100,10 +2119,33 @@ void RadiationM1::CleanCellWriteBack() {
       }
       kk(m,M1_T2_EN,k,j,i) = den/h;
     }
+    if (wbr_on) flag(3, m, k, j, i, e, y);
     u0_(m,M1_E,k,j,i) = e;
     for (int b = 0; b < 3; ++b) u0_(m,M1_F1+b,k,j,i) = x.c*y[b];
   }, Kokkos::Sum<Real>(neint));
   cln_neint = static_cast<int>(CleanReduce(neint, false));
+  if (!wbr_on) return;
+  // the counts, and the cells each step makes non-realisable
+  Real n[4], nn[3];
+  for (int s = 0; s < 4; ++s) {
+    Real a = 0.0, b = 0.0;
+    Kokkos::parallel_reduce("clc_wbreal", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            (nmb1 + 1)*nk*nj*ni),
+    KOKKOS_LAMBDA(const int q, Real &sa, Real &sb) {
+      const int m = q/(nk*nj*ni), k = ks + (q/(nj*ni))%nk;
+      const int j = js + (q/ni)%nj, i = is + q%ni;
+      sa += wbr(m,s,k,j,i);
+      if (s > 0) sb += fmax(wbr(m,s,k,j,i) - wbr(m,s-1,k,j,i), 0.0);
+    }, Kokkos::Sum<Real>(a), Kokkos::Sum<Real>(b));
+    n[s] = CleanReduce(a, false);
+    if (s > 0) nn[s-1] = CleanReduce(b, false);
+  }
+  if (global_variable::my_rank == 0) {
+    std::printf("CLEAN WB cycle %d t2s %d |F| > cE: solution %.0f, after yres %.0f "
+                "(+%.0f), work %.0f (+%.0f), exchange %.0f (+%.0f)\n",
+                pmy_pack->pmesh->ncycle, t2_solve, n[0], n[1], nn[0], n[2], nn[1], n[3],
+                nn[2]);
+  }
 }
 
 //----------------------------------------------------------------------------------------
