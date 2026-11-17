@@ -413,7 +413,9 @@ TaskStatus RadiationM1::HydroConToPrim(Driver *pdrive, int stage) {
     (pmy_pack->pmesh->pgen->user_m1post_func)(pmy_pack->pmesh);
   }
   eint_ledger::Mark(pmy_pack->pmesh, "m1_post");
-  if (fcap_rho > 0.0) {FloorGasCap();}   // fastfloor-1109
+  // fastfloor-1109; not on the state of a failed solve, which dt_retry discards (its
+  // inf / NaN cells made the cap's energy counters inf for the rest of the run)
+  if (fcap_rho > 0.0 && !dtr_fail) {FloorGasCap();}
   if (dbg_eaudit) {EAuditMark(4);}   // accbook-1021 (output only)
   FluidRefresh(pdrive);
   eint_ledger::Mark(pmy_pack->pmesh, "m1_c2p");
