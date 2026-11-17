@@ -2113,8 +2113,10 @@ void RadiationM1::CleanCellClosureSlope(const Real sign) {
   auto uh = fl.u0;
   auto op = opac;
   auto kk = t2k1;
+  const CleanArgs *px = CleanDev(x, 0);
   par_for("clc_clslope", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
     Real div[4];
     CleanCellDivergence(x, CLC_X, m, k, j, i, true, div);
     const Real e = x.u(m,CLC_X,k,j,i);
