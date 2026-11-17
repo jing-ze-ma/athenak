@@ -805,6 +805,23 @@ bool VgdLevelSym(const int nl, std::vector<double> &d) {
 } // namespace
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VgdBuildSet
+//! \brief the vet_gd direction set of the keys: the product set, vet_gd_ls, vet_gd_geo or
+//! HEALPix (vet_gd_nside); shared by vet_gd and (gdcart-1117) vet_sc_set = gd
+
+void RadiationM1::VgdBuildSet(std::vector<double> &d) const {
+  if (vgd_gl_nmu > 0) {
+    VgdProduct(vgd_gl_nmu, vgd_gl_nphi, vgd_gl_stag, d);
+  } else if (vgd_ls > 0) {
+    if (!VgdLevelSym(vgd_ls, d)) {VgdFatal("vet_gd_ls must be 6, 8, 10 or 12");}
+  } else if (vgd_ls < 0) {   // geo-1031 vet_gd_geo
+    if (!VgdGeodesic(-vgd_ls, d)) {VgdFatal("vet_gd_geo must be 1 .. 12");}
+  } else {
+    VgdDirections(vgd_nside, d);
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdInit
 //! \brief direction table, intensity array, exchange object, wall maps (from VetLatInit)
 
@@ -1000,14 +1017,8 @@ void RadiationM1::VetGdInit() {
       VgdFatal("vet_gd_gl_nphi must be >= 4 with 2 pi/nphi dividing the phi period of "
                "the wedge (exact wall maps)");
     }
-    VgdProduct(vgd_gl_nmu, vgd_gl_nphi, vgd_gl_stag, vgd_base);
-  } else if (vgd_ls > 0) {
-    if (!VgdLevelSym(vgd_ls, vgd_base)) {VgdFatal("vet_gd_ls must be 6, 8, 10 or 12");}
-  } else if (vgd_ls < 0) {   // geo-1031 vet_gd_geo
-    if (!VgdGeodesic(-vgd_ls, vgd_base)) {VgdFatal("vet_gd_geo must be 1 .. 12");}
-  } else {
-    VgdDirections(vgd_nside, vgd_base);
   }
+  VgdBuildSet(vgd_base);
   // geo-1031: the moments of the set, as built and after a fixed random 3-D rotation
   if (global_variable::my_rank == 0) {
     double e[4], er[4];

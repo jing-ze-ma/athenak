@@ -2044,9 +2044,42 @@ void RadiationM1::VetInit(ParameterInput *pin) {
     vet_nray = vring*((vrgrp == 2) ? 3 : 1);
   }
 
+  // gdcart-1117: vet_sc_set = gd (read only when named): the vet_gd direction set (the
+  // product vet_gd_gl_nmu x vet_gd_gl_nphi [_stagger], or vet_gd_ls / vet_gd_geo) with
+  // its pole on x1.  On a Cartesian block this x1-layer sweep is vet_gd's shell sweep
+  // (the layers are its shells) and vet_gd's z rotation turns the set about x1, so the
+  // three geometries share the set, the rotation and the closure moments
+  if (pin->DoesParameterExist("rad_m1", "vet_sc_set") &&
+      pin->GetString("rad_m1", "vet_sc_set").compare("gd") == 0) {
+    if (vring > 0) VetFatal("<rad_m1>/vet_sc_set = gd replaces vet_ring");
+    vsc_gd = true;
+    vgd_gl_nmu = pin->GetOrAddInteger("rad_m1", "vet_gd_gl_nmu", 0);
+    vgd_gl_nphi = pin->GetOrAddInteger("rad_m1", "vet_gd_gl_nphi", vgd_gl_nphi);
+    vgd_gl_stag = pin->GetOrAddBoolean("rad_m1", "vet_gd_gl_stagger", vgd_gl_stag);
+    vgd_ls = pin->GetOrAddInteger("rad_m1", "vet_gd_ls", 0);
+    // the vet_gd default set, the geodesic vet_gd_geo = 4 (162 directions; HEALPix is not
+    // offered: its equator ring would lie in the layers)
+    const int geo = pin->GetOrAddInteger("rad_m1", "vet_gd_geo",
+                                         (vgd_gl_nmu > 0 || vgd_ls != 0) ? 0 : 4);
+    if (geo > 0) vgd_ls = -geo;
+    // the period of the rotation about x1: C_nphi of the product set, else a full turn
+    vet_nphi = (vgd_gl_nmu > 0) ? vgd_gl_nphi : 1;
+  }
   vet_ring_n = vring;
   vet_ring_g = vrgrp;
   VetBuildAngles(0.0);
+  if (vsc_gd && vsc_gdmir < 0 && ((vet_bc_mirror && ibc_x1min == M1_IBC_REFLECT) ||
+                                  (vet_bc_mirror_hi && ibc_x1max == M1_IBC_REFLECT))) {
+    VetFatal("<rad_m1>/vet_sc_set = gd: a mirrored x1 end needs a set with x1 mirror "
+             "pairs (e.g. vet_gd_gl_stagger = false)");
+  }
+  if (vsc_gd && global_variable::my_rank == 0) {
+    auto ah = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vet_ang);
+    Real mn = 1.0;
+    for (int r = 0; r < vet_nray; ++r) {mn = std::min(mn, std::fabs(ah(r,0)));}
+    std::cout << "<rad_m1> vet_sc_set = gd: " << vet_nray << " rays, min |mu1| " << mn
+              << ", x1 mirror pairs " << ((vsc_gdmir > 0) ? "yes" : "no") << std::endl;
+  }
 
   auto &indcs = pm->mb_indcs;
   int nmb = std::max((pmy_pack->nmb_thispack), (pm->nmb_maxperrank));
@@ -2067,7 +2100,9 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   }
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1> closure = vet_sc: short characteristics, " << vet_nray
-              << " rays (double-Gauss nmu=" << vet_nmu << " x nphi=" << vet_nphi
+              << (vsc_gd ? " rays (vet_sc_set = gd: the vet_gd set, pole on x1"
+                         : " rays (double-Gauss nmu=" + std::to_string(vet_nmu) +
+                           " x nphi=" + std::to_string(vet_nphi))
               << "), lagged per hydro step" << (vet_milne ? ", MILNE source (diag)" : "")
               << (vet_full ? ", FULL tensor D = K/J (eigenvalue floor " : "")
               << (vet_full ? std::to_string(vet_eig_min) + ")" : "")
@@ -2086,6 +2121,10 @@ void RadiationM1::VetInit(ParameterInput *pin) {
 //! azimuths about x1 + beta, ring angles + beta (|beta| < pi/N keeps N/2 rays up).
 
 void RadiationM1::VetBuildAngles(const Real beta) {
+  if (vsc_gd) {
+    VetGdAngles(beta);
+    return;
+  }
   const int vring = vet_ring_n, vrgrp = vet_ring_g;
   // the angle set: (mu1, mu2, mu3, weight), upward hemisphere first
   std::vector<double> xg, wg;
@@ -2137,6 +2176,83 @@ void RadiationM1::VetBuildAngles(const Real beta) {
         ah(q + nhu, c) = (beta != 0.0) ? dn[q][c] : ((c == 0) ? -up[q][c] : up[q][c]);
       }
     }
+  }
+  Kokkos::deep_copy(vet_ang, ah);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetGdAngles
+//! \brief gdcart-1117 vet_sc_set = gd: the vet_gd set (VetGdInit's builders) with its
+//! pole on x1, (mu1, mu2, mu3) = (z, x, y), turned about x1 by beta; the up rays
+//! (mu1 > 0) first, then ray r + nray/2 the x1 mirror of ray r where the set has them
+//! (vsc_gdmir = 1), else the down rays in the builder's order (vsc_gdmir = -1)
+
+void RadiationM1::VetGdAngles(const Real beta) {
+  std::vector<double> d;
+  VgdBuildSet(d);
+  const int n = static_cast<int>(d.size()/4);
+  // the pole: the set's z axis, or where a ray lies in the plane z = 0 (a geodesic set
+  // in its built orientation) the axis p of a 4096-point Fibonacci grid that keeps every
+  // ray furthest from the layers (max over p of min |n . p|), so that no ray runs along
+  // the x1 layers (vet_sc's double-Gauss set: |mu1| >= its first Gauss node)
+  double e[3][3] = {{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}}, best = 0.0;
+  bool tilt = false;
+  for (int q = 0; q < n; ++q) {tilt = tilt || (std::fabs(d[4*q+2]) < 1.0e-9);}
+  for (int g = 0; g < 4096 && tilt; ++g) {
+    const double z = 1.0 - (g + 0.5)/4096.0, rz = std::sqrt(1.0 - z*z);
+    const double ph = g*M_PI*(3.0 - std::sqrt(5.0));
+    const double pg[3] = {rz*std::cos(ph), rz*std::sin(ph), z};
+    double mn = 1.0;
+    for (int q = 0; q < n; ++q) {
+      mn = std::min(mn, std::fabs(d[4*q]*pg[0] + d[4*q+1]*pg[1] + d[4*q+2]*pg[2]));
+    }
+    if (mn <= best + 1.0e-12) continue;
+    best = mn;
+    const double a = (std::fabs(pg[0]) < 0.9) ? 1.0 : 0.0, b = 1.0 - a;
+    const double h = a*pg[0] + b*pg[1], u[3] = {a - h*pg[0], b - h*pg[1], -h*pg[2]};
+    const double un = std::sqrt(u[0]*u[0] + u[1]*u[1] + u[2]*u[2]);
+    for (int c = 0; c < 3; ++c) {
+      e[0][c] = u[c]/un;
+      e[2][c] = pg[c];
+    }
+    for (int c = 0; c < 3; ++c) {
+      e[1][c] = e[2][(c+1)%3]*e[0][(c+2)%3] - e[2][(c+2)%3]*e[0][(c+1)%3];
+    }
+  }
+  for (int q = 0; q < n && tilt; ++q) {
+    double t[3];
+    for (int b = 0; b < 3; ++b) {
+      t[b] = e[b][0]*d[4*q] + e[b][1]*d[4*q+1] + e[b][2]*d[4*q+2];
+    }
+    for (int b = 0; b < 3; ++b) {d[4*q+b] = t[b];}
+  }
+  const double cb = std::cos(beta), sb = std::sin(beta);
+  std::vector<std::array<double, 4>> up, dn;
+  for (int q = 0; q < n; ++q) {
+    const double *u = &d[4*q];
+    const std::array<double, 4> a = {u[2], cb*u[0] - sb*u[1], sb*u[0] + cb*u[1], u[3]};
+    if (std::fabs(a[0]) < 1.0e-9) {
+      VetFatal("<rad_m1>/vet_sc_set = gd: a ray along the x1 layers");
+    }
+    ((a[0] > 0.0) ? up : dn).push_back(a);
+  }
+  const int nh = static_cast<int>(up.size());
+  if (2*nh != n) VetFatal("<rad_m1>/vet_sc_set = gd: the set is not half up, half down");
+  vsc_gdmir = 1;
+  std::vector<std::array<double, 4>> dm;
+  for (int q = 0; q < nh && vsc_gdmir > 0; ++q) {
+    for (const auto &b : dn) {
+      if (std::fabs(b[0] + up[q][0]) + std::fabs(b[1] - up[q][1]) +
+          std::fabs(b[2] - up[q][2]) < 1.0e-12) {dm.push_back(b);}
+    }
+    if (static_cast<int>(dm.size()) != q + 1) vsc_gdmir = -1;
+  }
+  if (vsc_gdmir > 0) dn = dm;
+  vet_nray = n;
+  if (vet_ang.extent_int(0) != n) {Kokkos::realloc(vet_ang, n, 4);}
+  auto ah = Kokkos::create_mirror_view(vet_ang);
+  for (int r = 0; r < n; ++r) {
+    for (int c = 0; c < 4; ++c) {ah(r, c) = (r < nh) ? up[r][c] : dn[r - nh][c];}
   }
   Kokkos::deep_copy(vet_ang, ah);
 }

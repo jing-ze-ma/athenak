@@ -454,6 +454,8 @@ class RadiationM1 {
   // the specific intensity, computed ONCE per hydro step from the start-of-step state
   bool vet_sc{};             // closure = vet_sc (default false)
   int vet_nmu = 0, vet_nphi = 0, vet_nray = 0;  // mu nodes per hemisphere, azimuths, rays
+  bool vsc_gd = false;       // vet_sc_set = gd: the vet_gd direction set, pole on x1
+  int vsc_gdmir = 0;         // ... ray r + nray/2 the x1 mirror of ray r (1) or not (-1)
   bool vet_milne = false;    // DIAGNOSTIC: source = exact grey Milne S(tau), gate 3
   bool vet_bc_bath = false;  // a MARSHAK x1 end gives the SC rays its bath (m1-h2div)
   // unify-sc-gd-1012 (#2): the x1 boundary intensity of the formal solutions, one rule
@@ -507,6 +509,8 @@ class RadiationM1 {
   bool vsc_rot = false;                 // vet_sc rotates (physical clock)
   Real vsc_beta = 0.0;                  // the current rotation of the vet_sc set
   void VetBuildAngles(const Real beta);
+  void VetGdAngles(const Real beta);
+  void VgdBuildSet(std::vector<double> &d) const;
   void VetRotInit(ParameterInput *pin);   // the shared rotation keys (rad_m1_vetgd.cpp)
   void VetRotUpdate();
   Real VetRotBeta(const int64_t blk) const;   // rotavg-1012: the set of block blk
