@@ -2720,9 +2720,10 @@ void RadiationM1::CleanFvRstRead() {
 //! CleanClosureFromRays; no ray face fluxes).  On the cubed sphere mu_b = n_b (Cartesian
 //! D and k+ columns) and the half ranges are about the family normals (CleanCsFamily).
 
-void RadiationM1::CleanClosureFromGd() {
+void RadiationM1::CleanClosureFromGd(const int i0, const int i1) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  int is = indcs.is, ie = indcs.ie;
+  if (vgd_pk && i0 < 0) return;   // (planb-1117: done per shell in the sweep)
+  int is = (i0 < 0) ? indcs.is : i0, ie = (i0 < 0) ? indcs.ie : i1;
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
@@ -2740,8 +2741,12 @@ void RadiationM1::CleanClosureFromGd() {
   auto valid = cln_v;
   Real ray_min = cln_raymin;
   CleanArgs x = CleanMakeArgs();
+  // (in device memory, CleanGdFaceSums; vgd_pk: one copy per sweep, at its first shell)
+  if (i0 < 0 || i0 == indcs.is) cln_gdx = CleanDevArgs(x, 3);
+  const CleanArgs *px = cln_gdx;
   par_for("cln_gd", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const CleanArgs &x = *px;
     const Real st = sin(x2v(m,j)), ct = cos(x2v(m,j));
     const Real sp = sin(x3v(m,k)), cp = cos(x3v(m,k));
     const Real s0 = fv ? fq(m,CLQ_S0,k,j,i) : exp(cw_(m,1,k+ok,j+og,i));
@@ -2781,14 +2786,21 @@ void RadiationM1::CleanClosureFromGd() {
 //! \struct CleanGdI
 //! \brief the sc rays' intensities in the mesh layout without a copy (CleanGdFaceSums):
 //! vgd_i, the low theta and phi ghost layers from gl (side 0: j = js - 1, side 1:
-//! k = ks - 1)
+//! k = ks - 1); planb-1117 (pk): those from the sweep's raw band or the on-rank owner
+//! (own), as the sweep reads them (rd0t), before the wall map
 
 struct CleanGdI {
   RadiationM1::VgdRag vi;
   DvceArray5D<Real> gl;
   int ok, og, ks, js;
+  bool pk;
+  Kokkos::View<int ****, LayoutWrapper, DevMemSpace> own;
   KOKKOS_INLINE_FUNCTION
   Real operator()(const int m, const int d, const int k, const int j, const int i) const {
+    if (pk && (j < js || k < ks)) {
+      const int kb = k + ok, jb = j + og, ow = own(m,kb,jb,0);
+      return (ow < 0) ? vi(m,d,kb,jb,i) : vi(ow,d,own(m,kb,jb,1),own(m,kb,jb,2),i);
+    }
     if (j < js) return gl(m,d,0,k-ks,i);
     if (k < ks) return gl(m,d,1,j-js,i);
     return vi(m,d,k+ok,j+og,i);
@@ -2813,8 +2825,11 @@ struct CleanGdI {
 //! On the cubed sphere the momentum is Cartesian and the r faces carry the rays' upwind
 //! fluxes (no curvature terms).
 
-void RadiationM1::CleanGdFaceSums() {
+void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
+  // planb-1117 (vgd_pk): s0 >= 0 the lateral sums of shells s0..s1 and the r faces they
+  // close (VetGdPkHook); s0 < 0 the rest
+  const bool pk = vgd_pk, one = (s0 >= 0);
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
@@ -2839,12 +2854,17 @@ void RadiationM1::CleanGdFaceSums() {
   auto cs = cln_s;
   const bool f1 = cln_s.extent_int(1) > CLN_F1;   // (the cell layout's CLN_F1)
   CleanArgs x = CleanMakeArgs();
+  // (the kernels read the args in device memory: a light-weight launch without a host
+  // wait, per shell too; vgd_pk: one copy per sweep, CleanClosureFromGd)
+  if (!one) cln_gdx = CleanDevArgs(x, 3);
+  const CleanArgs *px = cln_gdx;
   // nx3 = 1 (axisymmetric): no phi face is a boundary; the upwind cell of the low one is
   // the own cell with the directions rotated back by the phi extent (the wall map), the
   // high one carries the low one's sums in its own basis
   const bool axi = !pmy_pack->pmesh->three_d && x.sph;
   auto bnd = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
                                   const int i) {
+    const CleanArgs &x = *px;
     return !(axi && dir == 2) && CleanBoundaryFace(x, dir, m, k, j, i);
   };
   // the inner face: no flux at a reflecting one, else the outward beams of the sweep's
@@ -2868,8 +2888,9 @@ void RadiationM1::CleanGdFaceSums() {
   // and only the low theta and phi ghost layers exchanged, in chunks of 8 directions
   const bool gl = !fv && x.sph && !cln_cell && !axi && pmy_pack->pmesh->three_d &&
                   vgd_nb1 == 1 && !cln_scmem;
-  CleanGdI gi{vi_, DvceArray5D<Real>(), ok, og, ks, js};
-  if (gl) {
+  CleanGdI gi{vi_, DvceArray5D<Real>(), ok, og, ks, js, pk, vgd_own};
+  if (gl && pk) {
+  } else if (gl) {
     const int nc = std::min(n, 8), nt = std::max(ke - ks + 1, je - js + 1);
     gi.gl = DvceArray5D<Real>("cln_gd_gl", nmb1 + 1, n, 2, nt, cs.extent_int(4));
     DvceArray5D<Real> ch("cln_gd_ch", nmb1 + 1, nc, cs.extent_int(2), cs.extent_int(3),
@@ -2908,6 +2929,7 @@ void RadiationM1::CleanGdFaceSums() {
   // (Cartesian on the cubed sphere)
   auto face = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
                                    const int i, Real a[3], Real e[3][3]) {
+    const CleanArgs &x = *px;
     CleanFaceVector(x, x3f, dir, m, k, j, i, a);
     if (x.sph) {
       CleanLocalBasis((dir == 1) ? x.x2f(m,j) : x.x2v(m,j),
@@ -2918,12 +2940,11 @@ void RadiationM1::CleanGdFaceSums() {
       for (int c = 0; c < 3; ++c) e[b][c] = (b == c) ? 1.0 : 0.0;
     }
   };
-  // beam of direction d through the low theta or phi face of cell (k,j,i)
+  // beam of direction d through the low theta or phi face of cell (k,j,i), of vector
+  // area a (not a boundary)
   auto lat = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
-                                  const int i, const int d) {
-    if (bnd(dir, m, k, j, i)) return 0.0;
-    Real a[3], e[3][3];
-    face(dir, m, k, j, i, a, e);
+                                  const int i, const int d, const Real a[3]) {
+    const CleanArgs &x = *px;
     const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
     const int kl = k - (dir == 2), jl = j - (dir == 1);
     if (fv && axi && dir == 2) {
@@ -2942,12 +2963,11 @@ void RadiationM1::CleanGdFaceSums() {
     }
     return f*v;
   };
-  // sums of the beams of every direction through the face, per unit area
-  auto add = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
-                                  const int i, const int d, const Real f, Real q[4]) {
-    Real a[3], e[3][3];
-    face(dir, m, k, j, i, a, e);
-    const Real w = dir_(d,3)*f/x.area[dir](m,k,j,i);
+  // sums of the beams of every direction through the face (local basis e, area ar), per
+  // unit area (the face's geometry once per face, not per direction: the same numbers)
+  auto add = [=] KOKKOS_FUNCTION (const Real e[3][3], const Real ar, const int d,
+                                  const Real f, Real q[4]) {
+    const Real w = dir_(d,3)*f/ar;
     q[0] += w;
     for (int b = 0; b < 3; ++b) {
       q[1+b] += w*(dir_(d,0)*e[b][0] + dir_(d,1)*e[b][1] + dir_(d,2)*e[b][2]);
@@ -2957,13 +2977,14 @@ void RadiationM1::CleanGdFaceSums() {
   // beams of cell ic that hit it (f of sign sg) doubled, no tangential part
   auto mirror = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i,
                                      const int ic, const Real sg, Real q[4]) {
+    const CleanArgs &x = *px;
     Real a[3], e[3][3], w[4] = {0.0}, nf[3], wn = 0.0;
     face(0, m, k, j, i, a, e);
     for (int d = 0; d < n; ++d) {
       const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
       const Real tr = inten(m, d, k, j, ic) +
                       ((nl > 0) ? sg*fi_(m,nl+d,k,j,ic) + fq_(m,CLQ_C,k,j,ic) : 0.0);
-      if (sg*f > 0.0) add(0, m, k, j, i, d, 2.0*f*tr, w);
+      if (sg*f > 0.0) add(e, x.area[0](m,k,j,i), d, 2.0*f*tr, w);
     }
     for (int b = 0; b < 3; ++b) nf[b] = CleanNf(x, b, 0, m, k, j, i);
     for (int b = 0; b < 3; ++b) wn += w[1+b]*nf[b];
@@ -2972,23 +2993,28 @@ void RadiationM1::CleanGdFaceSums() {
   };
   for (int dir = 1; dir < 3; ++dir) {
     const int nf = (dir == 1) ? CLN_F2 : CLN_F3;
-    if (!x.sph && dir >= x.nf) continue;
-    par_for("cln_gd_lat", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    if ((!x.sph && dir >= x.nf) || (pk && !one)) continue;
+    par_for("cln_gd_lat", DevExeSpace(), 0, nmb1, ks, ke, js, je, one ? s0 : is,
+            one ? s1 : ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const CleanArgs &x = *px;
       // the cubed sphere: the high face of the MeshBlock too (CLN_FH of its last cell)
       const bool hi = x.cub && ((dir == 1) ? j == je : k == ke);
       for (int up = 0; up <= (hi ? 1 : 0); ++up) {
         const int kf = k + up*(dir == 2), jf = j + up*(dir == 1);
-        Real q[4] = {0.0};
+        Real q[4] = {0.0}, a[3], e[3][3];
+        face(dir, m, kf, jf, i, a, e);
+        const bool bd = bnd(dir, m, kf, jf, i);
+        const Real ar = x.area[dir](m,kf,jf,i);
         for (int d = 0; d < n; ++d) {
-          add(dir, m, kf, jf, i, d, lat(dir, m, kf, jf, i, d), q);
+          add(e, ar, d, bd ? 0.0 : lat(dir, m, kf, jf, i, d, a), q);
         }
         for (int c = 0; c < 4; ++c) cs(m,(up ? CLN_FH + 4*(dir - 1) : nf)+c,k,j,i) = q[c];
       }
     });
   }
-  CleanGhostFill(cln_s, CLN_F2, 4);
-  CleanGhostFill(cln_s, CLN_F3, 4);
+  if (!one) CleanGhostFill(cln_s, CLN_F2, 4);
+  if (!one) CleanGhostFill(cln_s, CLN_F3, 4);
   // the conservative rays (clean_rays = fv | fv1), and the staggered layout's sc rays on
   // spherical polar (rr): the r face i carries their own upwind fluxes (area times the
   // per-area sums), not the balance march, which loses the diffusion flux in the
@@ -2996,6 +3022,7 @@ void RadiationM1::CleanGdFaceSums() {
   const bool rr = fv || (x.sph && !cln_cell);
   auto rflux = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i,
                                     Real q[4]) {
+    const CleanArgs &x = *px;
     Real a[3], e[3][3];
     for (int c = 0; c < 4; ++c) q[c] = 0.0;
     face(0, m, k, j, i, a, e);
@@ -3029,13 +3056,14 @@ void RadiationM1::CleanGdFaceSums() {
         const int r = msc ? CleanFvMirror(dir_, 0, n, d, t, sg, u) : -1;
         if (r >= 0) iv = sm*inten(m, r, k, j, ic);
       }
-      add(0, m, k, j, i, d, f*iv, q);
+      add(e, x.area[0](m,k,j,i), d, f*iv, q);
     }
     for (int c = 0; c < 4; ++c) q[c] *= x.area[0](m,k,j,i);
   };
   if (!x.sph && !x.cub) {   // Cartesian: every x1 face carries the rays' upwind flux
     par_for("cln_gd_x1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const CleanArgs &x = *px;
       Real q[4];
       for (int up = 0; up <= ((i == ie) ? 1 : 0); ++up) {
         rflux(m, k, j, i + up, q);
@@ -3054,30 +3082,38 @@ void RadiationM1::CleanGdFaceSums() {
   auto qr_ = vgd_x1r;
   const int nj = je - js + 1, nkj = (ke - ks + 1)*nj;
   // rr: the rays' r face fluxes, all faces at once (the columns only read them)
-  DvceArray5D<Real> rf("cln_gd_rf", rr ? nmb1 + 1 : 1, 4, rr ? ke - ks + 1 : 1,
-                       rr ? nj : 1, rr ? ie - is + 2 : 1);
-  if (rr) {
-    par_for("cln_gd_rf", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie + 1,
+  // (pk: one array over the sweep, freed below)
+  if (pk && one && s0 == is) {
+    cln_gdrf = DvceArray5D<Real>("cln_gd_rf", nmb1 + 1, 4, ke - ks + 1, nj, ie - is + 2);
+  }
+  DvceArray5D<Real> rf = pk ? cln_gdrf : DvceArray5D<Real>("cln_gd_rf", rr ? nmb1 + 1 : 1,
+                       4, rr ? ke - ks + 1 : 1, rr ? nj : 1, rr ? ie - is + 2 : 1);
+  if (pk && !one) cln_gdrf = DvceArray5D<Real>();
+  if (rr && (one || !pk)) {
+    par_for("cln_gd_rf", DevExeSpace(), 0, nmb1, ks, ke, js, je, one ? s0 : is,
+            one ? ((s1 == ie) ? ie + 1 : s1) : ie + 1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real q[4];
       rflux(m, k, j, i, q);
       for (int c = 0; c < 4; ++c) rf(m,c,k-ks,j-js,i-is) = q[c];
     });
   }
+  if (one) return;
   for (int lev = 0; lev < vgd_nb1; ++lev) {
     if (lev > 0) VetGdX1Pass(true);
     par_for("cln_gd_col", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      const CleanArgs &x = *px;
       Real a[3], e[3][3], ef[3][3], q[4] = {0.0};
       const bool in = (xf_(m) & 1);
       const int kj = (k - ks)*nj + j - js;
       face(0, m, k, j, is, a, e);
-      for (int d = 0; open && in && d < n; ++d) {
+      for (int d = 0; open && in && !rr && d < n; ++d) {   // (rr: the rays' rf below)
         const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
         const Real iv = (emi && f > 0.0) ? iemit : inten(m, d, k, j, is);
-        add(0, m, k, j, is, d, f*iv, q);
+        add(e, x.area[0](m,k,j,is), d, f*iv, q);
       }
-      if (in && !open) mirror(m, k, j, is, is, -1.0, q);
+      if (in && !open && !rr) mirror(m, k, j, is, is, -1.0, q);
       for (int c = 0; c < 4; ++c) {
         q[c] = in ? q[c]*x.area[0](m,k,j,is) : qr_(m,c*nkj + kj);
       }
@@ -3164,6 +3200,7 @@ void RadiationM1::CleanGdFaceSums() {
     VetGdX1Pass(false);
     par_for("cln_gd_top", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      const CleanArgs &x = *px;
       if ((xf_(m) >> 3) != lev) return;
       const int kj = (k - ks)*nj + j - js;
       const Real vt = qr_(m,4*nkj + kj);

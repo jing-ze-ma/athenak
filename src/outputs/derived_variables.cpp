@@ -1486,6 +1486,12 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
 
   // m1_fs: J and H_r of the vet_gd formal solution (basetype_output.cpp)
   if (name.compare("m1_fs") == 0) {
+    if (pm->pmb_pack->pradm1->vgd_pk) {   // planb-1117: the slabs keep inward rays only
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "output variable m1_fs reads the vet_gd intensities: "
+                << "set <rad_m1>/vet_gd_band_ring_inward = false" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
     auto dv = derived_var;
@@ -1525,6 +1531,12 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
 
   // m1_lat: the handed-over closure tensor slots (basetype_output.cpp)
   if (name.compare("m1_lat") == 0) {
+    if (pm->pmb_pack->pradm1->vgd_pk) {   // planb-1117: the slabs keep inward rays only
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "output variable m1_lat reads the vet_gd intensities: "
+                << "set <rad_m1>/vet_gd_band_ring_inward = false" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
     auto dv = derived_var;

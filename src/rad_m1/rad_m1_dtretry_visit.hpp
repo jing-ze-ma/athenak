@@ -1132,6 +1132,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("eaud_pc", eaud_pc);
   v.value("eaud_pd", eaud_pd);
   v.view("acl_cnt_d", acl_cnt_d);
+  v.view("cln_gdrf", cln_gdrf);
   v.value("clean", clean);
   v.value("cln_c0", cln_c0);
   v.value("cln_c1", cln_c1);
@@ -1558,6 +1559,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   for (int q0_ = 0; q0_ < 2; ++q0_) {v.view("vgd_shl_xb[]", vgd_shl_xb[q0_]);}
   v.value("vgd_shn_xb", vgd_shn_xb);
   v.value("vgd_shl_alpha_xb", vgd_shl_alpha_xb);
+  v.value("vgd_rg_k", vgd_rg_k);
   v.value("vgd_ring", vgd_ring);
   v.value("vgd_ring_named", vgd_ring_named);
   v.value("vgd_ring_par", vgd_ring_par);
@@ -1582,6 +1584,11 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_rg_pend", vgd_rg_pend);
   v.value("vgd_rg_nk", vgd_rg_nk);
   v.value("vgd_rg_ndense", vgd_rg_ndense);
+  v.value("vgd_pk", vgd_pk);
+  v.value("vgd_pk_par", vgd_pk_par);
+  v.value("vgd_pk_mom", vgd_pk_mom);
+  v.value("vgd_pk_cap", vgd_pk_cap);
+  v.view("vgd_pk_p", vgd_pk_p);
   v.view("vgd_i_c", vgd_i_c);
   v.view("vgd_wall", vgd_wall);
   v.view("vgd_map", vgd_map);
@@ -1959,6 +1966,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
 //   id : RadiationM1TaskIDs
 //   prav : hydro::RingAvg *
 //   pin_cs_ : ParameterInput *
+//   cln_gdx : const CleanArgs *
 //   vtan_x2t_src : const Real *
 //   pbval_vl : MeshBoundaryValuesCC *
 //   pbval_ea : MeshBoundaryValuesCC *

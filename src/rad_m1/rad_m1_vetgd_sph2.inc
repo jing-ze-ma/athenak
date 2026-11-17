@@ -723,6 +723,9 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
   auto fs_ = vgd_gbfs;
   auto fr_ = vgd_gbfr;
   const int nmx = std::max(ns, nr);
+  // planb-1117 vet_gd_band_ring_inward: the outward exchange keeps every direction at
+  // depth 1 (the lateral face sums of the shell read them, CleanGdFaceSums)
+  const bool pk1 = vgd_pk && !inw;
   // vgd_raw (the current direction set: VetGdTables, VgdXfTables remake them): the kept
   // lists and bounds of each (shell, pass, depth), made at their first exchange; the
   // pack and unpack run over the kept values only (an unsent band value is never read)
@@ -751,8 +754,9 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
           const int K = (sd == 0) ? JS_(e,1) : JR_(e,1);
           const Real gam = 2.0*fmax(dt_(J), dph);
           const bool all = (cp_(J) != 0) || (((sd == 0) ? JS_(e,2) : JR_(e,2)) != 0);
-          f = VgdHaloKeepTP(nx, ny, nz, th_(J), p0 + (K + 0.5)*dph, inw, mode, all, dep,
-                            rs, rm, rp, hasm, hasp, gam, dmin) ? 1 : 0;
+          f = ((pk1 && dep == 1) ||
+               VgdHaloKeepTP(nx, ny, nz, th_(J), p0 + (K + 0.5)*dph, inw, mode, all, dep,
+                             rs, rm, rp, hasm, hasp, gam, dmin)) ? 1 : 0;
         }
         if (sd == 0) {fs_(static_cast<size_t>(e)*nv + v) = f;}
         else {fr_(static_cast<size_t>(e)*nv + v) = f;}
