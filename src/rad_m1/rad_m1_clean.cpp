@@ -169,7 +169,7 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/implicit_ghost_x1min", "!"}, {"rad_m1/ic_rad*", "clean_init"},
     {"rad_m1/implicit_predictor", nullptr}, {"rad_m1/implicit_predictor_tcap", nullptr},
     {"rad_m1/implicit_resid_fatal", nullptr},
-    {"rad_m1/implicit_*", ""},
+    {"rad_m1/implicit_pos_gas*", nullptr}, {"rad_m1/implicit_*", ""},
     {"rad_m1/time2_accept_fallback", ""}, {"rad_m1/time2_posfix*", ""},
     {"rad_m1/time2_k1_*", ""}, {"rad_m1/time2_face_fct", ""},
     {"time/dt_retry_t2_be", ""}};
@@ -1898,8 +1898,8 @@ void RadiationM1::CleanCopyIterate() {
 
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationM1::CleanCountNegative
-//! \brief sets values within the solver tolerance of zero (|E| <= 10 tol max|B|) to zero
-//! and returns the number of cells that are still negative
+//! \brief the number of cells whose E is negative beyond the solver tolerance (10 tol
+//! max|B|); those within it CleanWriteBack raises to zero, counted
 
 int RadiationM1::CleanCountNegative() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1927,9 +1927,7 @@ int RadiationM1::CleanCountNegative() {
     int k = (idx - m*nkji)/nji;
     int j = (idx - m*nkji - k*nji)/nx1;
     int i = idx - m*nkji - k*nji - j*nx1;
-    Real &e = w(m,CLW_X,k+ks,j+js,i+is);
-    if (e < 0.0 && e >= -zero) e = 0.0;
-    if (!(e >= 0.0)) n += 1.0;
+    if (!(w(m,CLW_X,k+ks,j+js,i+is) >= -zero)) n += 1.0;
   }, Kokkos::Sum<Real>(nneg));
   return static_cast<int>(CleanReduce(nneg, false));
 }
@@ -2828,7 +2826,9 @@ void RadiationM1::CleanWriteBack() {
   auto cx3 = pmy_pack->pcoord->x3v, cf1 = pmy_pack->pcoord->xx1f;
   auto cf2 = pmy_pack->pcoord->xx2f, cf3 = pmy_pack->pcoord->xx3f;
   const Real tgf = cln_gtf ? eos.tfloor : 0.0;   // (clean_gas_tfloor)
-  const bool gtf = cln_gtf;
+  const bool gtf = cln_gtf, pgas = impl_pos_gas;
+  const Real pgf = impl_pos_gas_frac, efl = e_floor;
+  auto pc_ = pos_cnt_d;
   par_for("cln_wbcell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real e = x.w(m,CLW_X,k,j,i);
@@ -2920,9 +2920,54 @@ void RadiationM1::CleanWriteBack() {
         e += rd;
         den -= rd + wp;
         wsl = wex ? wp : wp - wr;
+        // (implicit_pos_gas, as the old production's write-back: a gas eint below e_min =
+        // max(e(rho, tfloor), implicit_pos_gas_frac x its old eint) is raised to it with
+        // energy from the cell's E above e_floor, gas + E of the cell kept; counted)
+        if (pgas) {
+          Real ef = 0.0, pr, chi_rho, chi_t, cv;
+          if (eos.tfloor > 0.0) {
+            eos.ThermoAt(uh(m,IDN,k,j,i), eos.tfloor, ef, pr, chi_rho, chi_t, cv);
+          }
+          const Real ei = x.w(m,CLW_EI,k,j,i), emin = fmax(ef, pgf*fmax(ei, 0.0));
+          const Real take = fmin(emin - ei - (den - wk), e - efl);
+          if (take > 1.0e-12*emin) {   // (beyond eint's round-off at e_min)
+            const Real vol = (x.sph || x.cub) ? x.vol(m,k,j,i) :
+                             1.0/(x.idx[0]*x.idx[1]*x.idx[2]);
+            den += take;
+            e -= take;
+            Kokkos::atomic_add(&pc_(M1_POS_GAS), 1.0);
+            Kokkos::atomic_add(&pc_(M1_POS_GAS_DE), take*vol);
+          }
+        }
       }
       uh(m,IEN,k,j,i) += den;
       x.w(m,CLW_JV,k,j,i) = den - wk;   // (its change of the gas eint, cln_neint)
+    }
+    // (an E below zero within the solver tolerance, as the old production's
+    // implicit_pos_floor: raised to zero with the energy of the cell's gas above e_min,
+    // counted; what the gas cannot cover stays, and the solve is not accepted
+    // (cln_neint); without the gas the raise is counted as created)
+    if (e < 0.0) {
+      const Real vol = (x.sph || x.cub) ? x.vol(m,k,j,i) :
+                       1.0/(x.idx[0]*x.idx[1]*x.idx[2]);
+      const bool gas = feedback && !x.vzero;
+      Real take = gas ? 0.0 : -e;
+      if (gas) {
+        Real ef = 0.0, pr, chi_rho, chi_t, cv;
+        if (eos.tfloor > 0.0) {
+          eos.ThermoAt(uh(m,IDN,k,j,i), eos.tfloor, ef, pr, chi_rho, chi_t, cv);
+        }
+        const Real ei = x.w(m,CLW_EI,k,j,i), emin = fmax(ef, pgf*fmax(ei, 0.0));
+        take = fmin(-e, fmax(ei + x.w(m,CLW_JV,k,j,i) - emin, 0.0));
+        den -= take;
+        uh(m,IEN,k,j,i) -= take;
+        x.w(m,CLW_JV,k,j,i) -= take;
+        Kokkos::atomic_add(&pc_(M1_POS_FLR_DE), take*vol);
+      } else {
+        Kokkos::atomic_add(&pc_(M1_POS_FLR_UN), take*vol);
+      }
+      e += take;
+      Kokkos::atomic_add(&pc_(M1_POS_FLR), 1.0);
     }
     if (slopes) {
       kk(m,M1_T2_E,k,j,i) = (e + wsl - x.w(m,CLW_EO,k,j,i))/h;
@@ -2975,8 +3020,9 @@ void RadiationM1::CleanWriteBack() {
       eos.ThermoAt(uh(m,IDN,k,j,i), eos.tfloor, ef, pr, chi_rho, chi_t, cv);
     }
     const Real tz = 1.0e-12*(fabs(uh(m,IEN,k,j,i)) + ke + ef);   // (eint's round-off)
-    if (!(CleanGasEint(x, uh, ke, m, k, j, i) > ef - tz) &&
-        !(x.w(m,CLW_JV,k,j,i) >= 0.0) && x.w(m,CLW_EI,k,j,i) > ef + tz) n += 1.0;
+    if ((!(CleanGasEint(x, uh, ke, m, k, j, i) > ef - tz) &&
+         !(x.w(m,CLW_JV,k,j,i) >= 0.0) && x.w(m,CLW_EI,k,j,i) > ef + tz) ||
+        u0_(m,M1_E,k,j,i) < 0.0) n += 1.0;
   }, Kokkos::Sum<Real>(nb));
   cln_neint = static_cast<int>(CleanReduce(nb, false));
 }
