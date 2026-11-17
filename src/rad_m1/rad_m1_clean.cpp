@@ -165,6 +165,7 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/time2_vet_extrap", "clean_closure"}, {"rad_m1/time2_lin_tol*", "clean_tol"},
     {"rad_m1/implicit_ghost_x1min", "!"}, {"rad_m1/ic_rad*", "clean_init"},
     {"rad_m1/implicit_predictor", nullptr}, {"rad_m1/implicit_predictor_tcap", nullptr},
+    {"rad_m1/implicit_resid_fatal", nullptr},
     {"rad_m1/implicit_*", ""},
     {"rad_m1/time2_accept_fallback", ""}, {"rad_m1/time2_posfix*", ""},
     {"rad_m1/time2_k1_*", ""}, {"rad_m1/time2_face_fct", ""},
@@ -827,6 +828,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (fpc) RstFingerprint("cln_setup");
   if (cell) Kokkos::deep_copy(Kokkos::subview(cln_v, Kokkos::ALL, 2, Kokkos::ALL,
                                               Kokkos::ALL, Kokkos::ALL), 0.0);
+  Real dnl = 0.0;   // (the last pass's change, implicit_resid_fatal)
   for (int ipos = 0; ; ++ipos) {
     CleanFirstIterate();
     cln_fsk = false;
@@ -890,11 +892,13 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       ++nsolve;
       cln_nsolve += 1.0;
       cln_nit += std::abs(nit);
+      if (nit < 0) dnl = std::numeric_limits<Real>::infinity();
       if (!iterate || nit < 0) break;
       const Real de = cell ? CleanCellNewtonUpdate() : CleanNewtonUpdate();
       if (lagged && inl < cln_maxpic) dpic = de;
       Real dv = 0.0;
       if (cln_feedback) dv = cell ? CleanCellVelocityUpdate() : CleanVelocityUpdate();
+      dnl = fmax(de, dv);
       if (cln_nlprint && global_variable::my_rank == 0) {
         std::printf("CLEAN pass cycle %d t2s %d pos %d pass %d it %d de %.3e dv %.3e\n",
                     pmy_pack->pmesh->ncycle, t2_solve, ipos, inl, nit, de, dv);
@@ -947,8 +951,11 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (nneg > 0) cln_nneg += 1.0;
   // a backward-Euler solve that did not converge fails the cycle: with <time>/dt_retry
   // the cycle is taken again with a smaller dt (a failed stage is redone by backward
-  // Euler through t2_fail below)
+  // Euler through t2_fail below); without, as the old production's Picard solve, the run
+  // stops where the last change (any after a failed linear solve) exceeds
+  // implicit_resid_fatal, and goes on with the iterate below it
   if (nit < 0 && !t2stage) {
+    const bool fatal = !dtr_on && impl_res_fatal > 0.0 && !(dnl <= impl_res_fatal);
     if (dtr_on) {
       if (!dtr_fail) {
         dtr_why = 1;
@@ -958,10 +965,12 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     }
     if (global_variable::my_rank == 0) {
       std::printf("CLEAN WARNING cycle %d: backward-Euler solve not converged (%s, %d "
-                  "so far)\n", pmy_pack->pmesh->ncycle,
-                  dtr_on ? "dt_retry" : "no dt_retry: accepted",
-                  static_cast<int>(cln_nfail));
+                  "so far; last change %.3e)\n", pmy_pack->pmesh->ncycle,
+                  dtr_on ? "dt_retry" : (fatal ? "no dt_retry: > implicit_resid_fatal" :
+                  "no dt_retry: accepted"), static_cast<int>(cln_nfail), dnl);
     }
+    if (fatal) CleanFatal("<rad_m1> clean: a backward-Euler solve did not converge and "
+                          "its last change exceeds <rad_m1>/implicit_resid_fatal");
   }
   if (global_variable::my_rank == 0) {
     if (cell) {
