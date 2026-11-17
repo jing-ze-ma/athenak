@@ -2872,7 +2872,7 @@ void RadiationM1::CleanClosureFromGd(const int i0, const int i1) {
     // the cubed sphere: D in Cartesian components, half ranges about the families n_d
     Real nd[3][3];
     if (x.cub) CleanCsFamily(x, m, k, j, i, nd);
-    Real q[CLN_N] = {0.0};
+    Real q[CLN_N] = {0.0}, hp[3] = {0.0}, hm[3] = {0.0};   // (q in registers)
     for (int d = 0; d < n; ++d) {
       const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
       Real mu[3] = {nx*st*cp + ny*st*sp + nz*ct, nx*ct*cp + ny*ct*sp - nz*st,
@@ -2888,14 +2888,21 @@ void RadiationM1::CleanClosureFromGd(const int i0, const int i1) {
       q[CLN_J] += a;
       for (int b = 0; b < 3; ++b) {
         q[CLN_D11+b] += a*mu[b]*mu[b];
-        q[((nu[b] > 0.0) ? CLN_HP : CLN_HM)+b] += a*nu[b];
-        if (!(nu[b] > 0.0)) continue;
+        if (!(nu[b] > 0.0)) {
+          hm[b] += a*nu[b];
+          continue;
+        }
+        hp[b] += a*nu[b];
         for (int c = 0; c < 3; ++c) q[CLN_KP+3*b+c] += a*mu[c]*nu[b];
       }
       q[CLN_D11+3] += a*mu[0]*mu[1];
       q[CLN_D11+4] += a*mu[0]*mu[2];
       q[CLN_D11+5] += a*mu[1]*mu[2];
       q[CLN_C1] += dir_(d,3)*fabs(iv - s0);
+    }
+    for (int b = 0; b < 3; ++b) {
+      q[CLN_HP+b] = hp[b];
+      q[CLN_HM+b] = hm[b];
     }
     q[CLN_JR] = q[CLN_J];
     if (q[CLN_J] < ray_min*iw_(m,M1_IW_EN,k,j,i)) q[CLN_J] = 0.0;
