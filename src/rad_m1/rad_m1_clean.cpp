@@ -1972,9 +1972,9 @@ int RadiationM1::CleanStagRealizable() {
 //!   H+-' = H+-_f (1 +- dd/s),  s = H+_f - H-_f,
 //! the shrinking one at most to 0.  Linear in E with the upwind signs, so the streaming
 //! share keeps the M-matrix for any E (an empty cell sends nothing, whatever the rays
-//! hold; the partial-current form of HOLO methods).  g+- are not capped at 1: the sweep's
-//! face flux can exceed c J of the donor at a beam edge (its foot interpolation reaches
-//! past the two cells), and the cap there breaks the consistency of the beam.
+//! hold; the partial-current form of HOLO methods).  g+- are bounded by the realisable
+//! half range, |g+-| <= 1 (|H+-| <= J): where the sweep's face flux exceeds c J of the
+//! donor (a beam edge, a hole the rays barely reach) the bracket is met as far as that.
 //! On the cubed sphere the high x2, x3 faces of a MeshBlock take the rays' flux from its
 //! last cell (CLN_FH; a seam ghost's low face is another face), as CleanCellConsistency.
 
@@ -2022,8 +2022,10 @@ void RadiationM1::CleanStagBracket() {
       // (H+', and H-' = fr - H+'; without half ranges the cell's h+- stay)
       const Real hp = !(s > 0.0) ? hl : ((dd < 0.0) ? fmax(hl + dd*hl/s, 0.0) :
                                         fr - fmin(hr - dd*hr/s, 0.0));
-      if (jl > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = hp/jl;
-      if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = ((s > 0.0) ? fr - hp : hr)/jr;
+      // (|H+-'| <= J: unbounded, a tilt onto a side whose rays hold almost nothing, J ~
+      // 1e-100 in a hole of an evolved envelope, made that row of the operator ~1e100)
+      if (jl > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = fmin(hp/jl, 1.0);
+      if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = fmax(((s > 0.0) ? fr - hp : hr)/jr, -1.0);
     });
   }
 }
