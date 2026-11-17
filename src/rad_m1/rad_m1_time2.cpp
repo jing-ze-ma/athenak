@@ -625,6 +625,10 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     t2_ffct = pin->GetBoolean("rad_m1", "time2_face_fct");
   }
   t2_pfst = t2_ffct || (clean && !cln_cell);
+  t2_ffct_emin = (clean && !cln_cell) ? 0.1 : 0.0;   // (rad_m1.hpp)
+  if (pin->DoesParameterExist("rad_m1", "time2_face_fct_emin")) {
+    t2_ffct_emin = pin->GetReal("rad_m1", "time2_face_fct_emin");
+  }
   if (pin->DoesParameterExist("rad_m1", "time2_k1_redist_r")) {
     t2_k1rd_r = pin->GetInteger("rad_m1", "time2_k1_redist_r");
   }
@@ -1846,6 +1850,8 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     const auto &s = mbsize.d_view(m);
     return curv ? vol(m,k,j,i) : s.dx1*s.dx2*s.dx3;
   };
+  auto un_ = u1;   // (E^n: time2_face_fct_emin keeps th V E^n in a limited cell)
+  const Real eth = t2_ffct_emin;
   // V (E + dE) unlimited (w), the full outflow po and inflow pi, the inflow pl that the
   // current R of the donors lets through, and the change dw of
   // V E_new by the current R (slot ca, ghosts valid); lim: a face next to it is limited
@@ -1937,9 +1943,11 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
         Real w, po, pi, pl, dw;
         bool lim;
         cell(m, k, j, i, w, po, pi, pl, dw, lim);
-        if (!(w + dw > 0.0)) {
-          // what the cell holds without face transport + the inflow it still gets
-          const Real q = w + po - pi + pl;
+        const Real wf = eth*cvol(m,k,j,i)*un_(m,M1_E,k,j,i);
+        if (!(w + dw > wf)) {
+          // what the cell holds without face transport + the inflow it still gets,
+          // above the floor th V E^n
+          const Real q = w + po - pi + pl - wf;
           const Real rq = (q > 0.0 && po > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/po) : 0.0;
           if (rq < rc) {
             rn = rq;
@@ -2015,11 +2023,11 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
   t2_ffct_rmax = std::max(t2_ffct_rmax, static_cast<Real>(nround));
   if (nround == 0) {return;}   // nothing limited: t2inc untouched (bitwise)
   // apply: the E channel of every cell next to a limited face, then the face F channels
-  Real lv[2] = {0.0, 0.0};
+  Real lv[3] = {0.0, 0.0, 0.0}, qmin = 1.0e300;
   Kokkos::parallel_reduce("m1_t2_ffct_e", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
       DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sl,
-                Real &sw) {
+                Real &sw, Real &se, Real &sq) {
     Real w, po, pi, pl, dw;
     bool lim;
     cell(m, k, j, i, w, po, pi, pl, dw, lim);
@@ -2027,7 +2035,13 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     const Real rc = iw_(m,ca,k,j,i);
     if (rc < 1.0) {sw += (1.0 - rc)*po;}
     if (!(hoi && hm_(m,k,j,i) > 0.0) && !(w + dw > 0.0)) {sl += 1.0;}
-  }, Kokkos::Sum<Real>(lv[0]), Kokkos::Sum<Real>(lv[1]));
+    if (lim) {   // (the limited old vector against E^n)
+      const Real q = (u0_(m,M1_E,k,j,i) + in_(m,M1_T2_E,k,j,i))/un_(m,M1_E,k,j,i);
+      if (q < eth) {se += 1.0;}
+      sq = fmin(sq, q);
+    }
+  }, Kokkos::Sum<Real>(lv[0]), Kokkos::Sum<Real>(lv[1]), Kokkos::Sum<Real>(lv[2]),
+     Kokkos::Min<Real>(qmin));
   // (clean staggered: the face F is the radiation momentum, which the limiter leaves
   // alone, so momentum and L_z stay exact; the solve keeps |F| <= cE)
   for (int d = 0; d < 3 && !(clean && !cln_cell); ++d) {
@@ -2043,8 +2057,11 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     });
   }
 #if MPI_PARALLEL_ENABLED
-  MPI_Allreduce(MPI_IN_PLACE, lv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, lv, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &qmin, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
 #endif
+  t2_ffct_qmin = std::min(t2_ffct_qmin, qmin);
+  t2_ffct_nemp += lv[2];
   t2_ffct_left += lv[0];
   t2_ffct_de += lv[1];
 }
@@ -3977,7 +3994,9 @@ void RadiationM1::Time2Report() {
               << t2_ffct_nop << " K1 flux from U^n=" << t2_ffct_fill << " limited cells="
               << t2_ffct_cells << " max rounds="
               << t2_ffct_rmax << " withheld E x vol=" << t2_ffct_de << " left (Q<=0)="
-              << t2_ffct_left << " (rank 0: rounds=" << zl_rounds[0] << " R exchanges="
+              << t2_ffct_left << " emptied (E < " << t2_ffct_emin << " E^n) cells="
+              << t2_ffct_nemp << " min E/E^n="
+              << t2_ffct_qmin << " (rank 0: rounds=" << zl_rounds[0] << " R exchanges="
               << zl_halos[0];
     if (zl_local > 0) {std::cout << " local sub-rounds=" << zl_sub[0];}
     if (zl_prof) {std::cout << " round-loop wall=" << zl_wall[0] << " s";}

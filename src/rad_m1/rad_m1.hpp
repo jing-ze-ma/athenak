@@ -2579,6 +2579,12 @@ class RadiationM1 {
   void CleanBndAcc(int stage, Real c1, Real c2, Real w, Real dt);
   Real t2_ffct_calls = 0.0, t2_ffct_cells = 0.0, t2_ffct_faces = 0.0, t2_ffct_left = 0.0;
   Real t2_ffct_rmax = 0.0, t2_ffct_de = 0.0, t2_ffct_nop = 0.0, t2_ffct_fill = 0.0;
+  // <rad_m1>/time2_face_fct_emin = th (read only when named; default 0.1 for clean
+  // staggered, else 0 = as before): the limiter keeps th V E^n in a limited cell instead
+  // of draining it to zero (a stage started from an emptied cell refills a vacuum: the
+  // gas takes its radiation pressure gradient as a kick); counted: limited cells left
+  // below th E^n (their own inflow-free content is less) and min E/E^n of limited cells
+  Real t2_ffct_emin = 0.0, t2_ffct_nemp = 0.0, t2_ffct_qmin = 1.0e300;
   void Time2FaceFct(int stage, Real c1, Real c2);
   // facebound-1112 <rad_m1>/implicit_fclip_diag (read only when named; diagnostic only,
   // nothing written back): where the write-back's realisability clip |F| <= c E comes
