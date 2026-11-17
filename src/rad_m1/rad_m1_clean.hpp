@@ -90,24 +90,26 @@ constexpr int CLW_N = 41;
 //! \struct CleanFvI
 //! \brief the FV rays' intensities: cln_fvi, or cln_fvis in single precision
 //! (clean_fv_float).  In single precision the first nr components (the intensities, not
-//! the lld slopes) are held as their difference from a reference of the cell in double
-//! precision, a + b . n_d (r = (a, b), n_d the directions rd it was taken with,
-//! CleanFvRebase), so that the rounding error is a fraction of the part of the field
-//! beyond its isotropic and dipole terms, not of the intensity.  Reads give Real, Store
-//! keeps a value in the precision of the array and returns it as a read would.
+//! the lld slopes) are held as their difference from a reference of the cell,
+//! a + b . n_d (r = (a, b) in single precision, components last, n_d the directions rd
+//! it was taken with, CleanFvRebase), so that the rounding error is a fraction of the
+//! part of the field beyond its isotropic and dipole terms, not of the intensity.  Reads
+//! give Real, Store keeps a value in the precision of the array and returns it as a read
+//! would.
 
 struct CleanFvI {
   DvceArray5D<Real> d;
   DvceArray5D<float> f;
-  DvceArray5D<Real> r;
+  DvceArray5D<float> r;
   DvceArray2D<Real> rd;
   bool f32 = false;
   int nr = 0;
   KOKKOS_INLINE_FUNCTION
   Real Base(const int m, const int n, const int k, const int j, const int i) const {
     if (n >= nr) return 0.0;
-    return r(m,0,k,j,i) + r(m,1,k,j,i)*rd(n,0) + r(m,2,k,j,i)*rd(n,1) +
-           r(m,3,k,j,i)*rd(n,2);
+    const Real r0 = r(m,k,j,i,0), r1 = r(m,k,j,i,1), r2 = r(m,k,j,i,2);
+    const Real r3 = r(m,k,j,i,3);
+    return r0 + r1*rd(n,0) + r2*rd(n,1) + r3*rd(n,2);
   }
   KOKKOS_INLINE_FUNCTION
   Real operator()(const int m, const int n, const int k, const int j, const int i) const {
@@ -119,8 +121,10 @@ struct CleanFvI {
   Real Store(const int m, const int n, const int k, const int j, const int i,
              const Real v) const {
     if (f32) {
-      f(m,n,k,j,i) = static_cast<float>(v - Base(m, n, k, j, i));
-      return (*this)(m, n, k, j, i);
+      const Real b = Base(m, n, k, j, i);
+      const float g = static_cast<float>(v - b);
+      f(m,n,k,j,i) = g;
+      return (n < nr) ? fmax(b + static_cast<Real>(g), 0.0) : static_cast<Real>(g);
     }
     d(m,n,k,j,i) = v;
     return v;
@@ -143,7 +147,7 @@ struct CleanFvI {
   // the intensities as they are held: with clean_fv_float, the doubles a restart read
   // until the next sweep converts them
   static CleanFvI Of(const DvceArray5D<Real> &d_, const DvceArray5D<float> &f_,
-                     const DvceArray5D<Real> &r_, const DvceArray2D<Real> &rd_,
+                     const DvceArray5D<float> &r_, const DvceArray2D<Real> &rd_,
                      const bool f32_, const int nr_) {
     const bool s = f32_ && d_.extent_int(1) == 0;
     return CleanFvI{d_, f_, r_, rd_, s, (s && r_.extent_int(0) > 0) ? nr_ : 0};
@@ -152,6 +156,24 @@ struct CleanFvI {
   template <class R>
   static CleanFvI Held(const R &a) {
     return Of(a.cln_fvi, a.cln_fvis, a.cln_fvr, a.cln_fvrd, a.cln_fvf32, a.cln_fvn);
+  }
+};
+
+//----------------------------------------------------------------------------------------
+//! \struct CleanComp
+//! \brief component n of cell (m,k,j,i) of an array, with its components second
+//! (m, n, k, j, i) or last (L: m, k, j, i, n)
+
+template <typename T, bool L>
+struct CleanComp {
+  DvceArray5D<T> a;
+  KOKKOS_INLINE_FUNCTION
+  T &operator()(const int m, const int n, const int k, const int j, const int i) const {
+    if constexpr (L) {
+      return a(m,k,j,i,n);
+    } else {
+      return a(m,n,k,j,i);
+    }
   }
 };
 

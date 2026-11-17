@@ -1018,12 +1018,13 @@ void RadiationM1::CleanFvRebase() {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real r[4];
     CleanFvFit(nr, dir_, [&](const int d) {return src(m,d,k,j,i);}, r);
+    for (int c = 0; c < 4; ++c) r[c] = static_cast<Real>(static_cast<float>(r[c]));
     for (int d = 0; d < nb; ++d) {
       const Real b = (d < nr) ? r[0] + r[1]*dir_(d,0) + r[2]*dir_(d,1) + r[3]*dir_(d,2)
                               : 0.0;
       fs(m,d,k,j,i) = static_cast<float>(src(m,d,k,j,i) - b);
     }
-    for (int c = 0; c < 4; ++c) fr(m,c,k,j,i) = r[c];
+    for (int c = 0; c < 4; ++c) fr(m,k,j,i,c) = static_cast<float>(r[c]);
   });
   // (the kernel read the directions of the last reference)
   if (cln_fvrd.extent_int(0) != nr) cln_fvrd = DvceArray2D<Real>("cln_fvrd", nr, 4);
@@ -1079,7 +1080,7 @@ void RadiationM1::CleanFvSeams() {
         if (ref) {
           Real rf[4];
           CleanFvFit(n, fi.rd, [&](const int d) {return t(e-e0,d);}, rf);
-          for (int c = 0; c < 4; ++c) fi.r(m,c,k,j,i) = rf[c];
+          for (int c = 0; c < 4; ++c) fi.r(m,k,j,i,c) = static_cast<float>(rf[c]);
           for (int d = 0; d < n; ++d) fi.Store(m, d, k, j, i, t(e-e0,d));
         } else {
           for (int d = 0; d < n; ++d) fi.SetRaw(m, b*n+d, k, j, i, t(e-e0,d));
@@ -2019,7 +2020,7 @@ void RadiationM1::CleanFvSweep() {
       const int n2 = cln_s.extent_int(2), n3 = cln_s.extent_int(3);
       const int n4 = cln_s.extent_int(4);
       cln_fvis = DvceArray5D<float>("cln_fvis", nmb, cln_fvb*n, n2, n3, n4);
-      cln_fvr = DvceArray5D<Real>("cln_fvr", nmb, 4, n2, n3, n4);
+      cln_fvr = DvceArray5D<float>("cln_fvr", nmb, n2, n3, n4, 4);
       cln_fvrd = DvceArray2D<Real>("cln_fvrd", n, 4);
       if (cln_fvi.extent_int(1) == cln_fvb*n) CleanFvRebase();
       cln_fvi = DvceArray5D<Real>();
@@ -2190,7 +2191,7 @@ void RadiationM1::CleanFvSweep() {
   if (lagon) {
     if (cln_fvf32) {
       CleanGhostFill(cln_fvis, 0, cln_fvb*n);
-      CleanGhostFill(cln_fvr, 0, 4);
+      CleanGhostFillLast(cln_fvr);
     } else {
       CleanGhostFill(cln_fvi, 0, cln_fvb*n);
     }
@@ -2479,7 +2480,7 @@ void RadiationM1::CleanFvSweep() {
     }
     if (cln_fvf32) {
       CleanGhostFill(cln_fvis, 0, cln_fvb*n);
-      CleanGhostFill(cln_fvr, 0, 4);
+      CleanGhostFillLast(cln_fvr);
     } else {
       CleanGhostFill(cln_fvi, 0, cln_fvb*n);
     }
