@@ -45,6 +45,14 @@
 #define CLEAN_HIP_INLINE
 #define CLEAN_HIP_NOINLINE
 #endif
+// HIP: a kernel reads CleanArgs from its device copy (CleanDevArgs; a capture indexed at
+// run time is copied to every lane's stack); CUDA keeps the capture (parameter space,
+// faster on the A100)
+#if defined(KOKKOS_ENABLE_HIP)
+#define CLEAN_HIPX(...) __VA_ARGS__
+#else
+#define CLEAN_HIPX(...)
+#endif
 
 namespace radm1 {
 

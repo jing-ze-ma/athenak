@@ -1533,10 +1533,10 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   const bool eqr = icr_fmeas && x.vzero && x.feedback && !x.sbi;
 
   if (x.feedback) {
-    const CleanArgs *pxb = CleanDevArgs(x, 0);
+    CLEAN_HIPX(const CleanArgs *pxb = CleanDevArgs(x, 0);)
     par_for("cln_beta", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const CleanArgs &x = *pxb;   // (in device memory: no per-thread copy)
+      CLEAN_HIPX(const CleanArgs &x = *pxb;)   // (in device memory: no per-thread copy)
       Real p[3];
       CleanStagGasMomentum(x, uh, m, k, j, i, p);
       for (int n = 0; n < 3; ++n) {
@@ -1919,11 +1919,11 @@ Real RadiationM1::CleanVelocityUpdate() {
   auto xa = x;
   xa.cub = false;
   Real dvmax = 0.0, vmax = 0.0, fvmax = 0.0;
-  const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
-  const CleanArgs *pxa = CleanDevArgs(xa, 4);
+  CLEAN_HIPX(const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
+             const CleanArgs *pxa = CleanDevArgs(xa, 4);)
   Kokkos::parallel_reduce("cln_velocity", CleanRp256(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &dv_max, Real &v_max, Real &fv_max) {
-    const CleanArgs &x = *px, &xh = *pxh, &xa = *pxa;   // (in device memory)
+    CLEAN_HIPX(const CleanArgs &x = *px, &xh = *pxh, &xa = *pxa;)   // (device memory)
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
     int j = (idx - m*nkji - k*nji)/nx1;
@@ -2056,14 +2056,14 @@ int RadiationM1::CleanStagRealizable() {
   }, Kokkos::Max<Real>(bmax));
   const Real zero = 10.0*cln_tol*CleanReduce(bmax, true);
   Real n1 = 0.0, n2 = 0.0;
-  const CleanArgs *px = CleanDevArgs(x, 0);
+  CLEAN_HIPX(const CleanArgs *px = CleanDevArgs(x, 0);)
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     const int f1 = nx1 + di, f2 = nx2 + dj, f3 = nx3 + dk, fji = f2*f1, fkji = f3*fji;
     Real r1 = 0.0, r2 = 0.0;
     Kokkos::parallel_reduce("cln_real", CleanRp256(DevExeSpace(), 0, nmb*fkji),
     KOKKOS_LAMBDA(const int idx, Real &q1, Real &q2) {
-      const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
+      CLEAN_HIPX(const CleanArgs &x = *px;)   // (in device memory: no per-thread copy)
       int m = idx/fkji;
       int k = (idx - m*fkji)/fji;
       int j = (idx - m*fkji - k*fji)/f1;
@@ -2124,13 +2124,13 @@ void RadiationM1::CleanStagBracket() {
   });
   CleanGhostFill(cln_w, CLW_Z, 1);
   CleanStagCsLateral(CLW_Z);
-  const CleanArgs *px = CleanDevArgs(x, 0);
+  CLEAN_HIPX(const CleanArgs *px = CleanDevArgs(x, 0);)
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     const int n = (dir == 0) ? CLN_FX : ((dir == 1) ? CLN_F2 : CLN_F3);
     par_for("cln_sbracket", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
+      CLEAN_HIPX(const CleanArgs &x = *px;)   // (in device memory: no per-thread copy)
       // (Phi(J) at its steady value, -(c/chi_f) div(D J) in the share 1 - w: the bracket,
       // and with it the steady state of the scheme, does not depend on h or on G)
       const Real w = x.fc[dir](m,CLF_W,k,j,i);
@@ -2665,10 +2665,10 @@ void RadiationM1::CleanStagFaceTie(const int e, const int kd, const bool pt) {
   CleanArgs x = CleanMakeArgs();
   x.fs = true;
   const int nf = x.nf;
-  const CleanArgs *px = CleanDevArgs(x, 0);
+  CLEAN_HIPX(const CleanArgs *px = CleanDevArgs(x, 0);)
   par_for("cln_tie", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
+    CLEAN_HIPX(const CleanArgs &x = *px;)   // (in device memory: no per-thread copy)
     for (int d = 0; d < nf; ++d) {
       const Real f = x.fc[d](m,CLF_N,k,j,i), g = x.fc[d](m,CLF_G,k,j,i);
       // (pt: CleanStagDrag's of the same F just took it, CLF_PT, but on physical faces)
@@ -3250,10 +3250,10 @@ void RadiationM1::CleanWriteBack() {
   const bool tie = cln_ftie && !x.cub;
   if (tie) {
     const int nf = x.nf;
-    const CleanArgs *px = CleanDevArgs(x, 0);
+    CLEAN_HIPX(const CleanArgs *px = CleanDevArgs(x, 0);)
     par_for("cln_wbphi", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
+      CLEAN_HIPX(const CleanArgs &x = *px;)   // (in device memory: no per-thread copy)
       for (int d = 0; d < nf; ++d) {
         x.w(m,CLW_L+d,k,j,i) = CleanFaceFlux(x, CLW_X, d, m, k, j, i, true);
       }
@@ -3380,7 +3380,7 @@ void RadiationM1::CleanWriteBack() {
   pxh = CleanDevArgs(xh, 1);
   par_for("cln_wbcell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
+    CLEAN_HIPX(const CleanArgs &x = *px, &xh = *pxh;)   // (in device memory)
     Real e = x.w(m,CLW_X,k,j,i);
     if (mdc) {
       Real dr[3], mg[3], cf[2], wf[2];
