@@ -562,7 +562,8 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
 void DtRetry::Build(Mesh *pm) {
   std::set<std::string> &sel = sel_;
   for (const char *s : kDtrMinimal) {sel.insert(s);}
-  if (clean_views_) {
+  // (scheme = clean writes none of them: their clones are never needed, the default)
+  if (clean_views_ || pm->pmb_pack->pradm1->clean) {
     for (const char *s : kDtrNotClean) {sel.erase(s);}
   }
   for (auto &s : extra_views_) {sel.insert(s);}
