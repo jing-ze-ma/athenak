@@ -1019,7 +1019,8 @@ void RadiationM1::CleanFvRebase() {
   // same way)
   constexpr int nt = 8;
   const int nteam = static_cast<int>((ncl + nt - 1)/nt), ns = nb + 1;
-  const size_t sb = ScrArray1D<Real>::shmem_size(nt*ns) + ScrArray1D<int>::shmem_size(4*nt);
+  const size_t sb = ScrArray1D<Real>::shmem_size(nt*ns) +
+                    ScrArray1D<int>::shmem_size(4*nt);
   Kokkos::TeamPolicy<> pol(DevExeSpace(), nteam, 64);
   Kokkos::parallel_for("cln_fv_rebase", pol.set_scratch_size(0, Kokkos::PerTeam(sb)),
   KOKKOS_LAMBDA(TeamMember_t tm) {
