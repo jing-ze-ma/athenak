@@ -893,8 +893,10 @@ void CleanCellM1BoundaryJacobian(const CleanArgs &x, const int dir, const int m,
 //! every face low-order is an M-matrix (the work W aside); its fY has the cells' own
 //! stress with first-order dissipation at speed c.  With clean_consistency the leaving
 //! stress and the wall carry the momentum deviation of the inner cell out
-//! (CleanCellDeviationFlux, weight w).
+//! (CleanCellDeviationFlux, weight w).  kModels = false: clean_consistency is known to be
+//! off at compile time.
 
+template <bool kModels = true>
 KOKKOS_INLINE_FUNCTION
 void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const int k,
                          const int j, const int i, Real jl[4][4], Real jr[4][4]) {
@@ -957,7 +959,7 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
     }
     for (int b = 0; b < 3; ++b) jl[0][1+b] = jr[0][1+b] = 0.0;
   }
-  if (!x.consist) return;
+  if (!kModels || !x.consist) return;
   // clean_consistency: w of the face takes the rays' kinetic upwind flux, the cells'
   // half-range factors on E and y (c h+_L U_L + c h-_R U_R)
   const Real w = x.fc[dir](m,CLF_WK,k,j,i);
@@ -1148,13 +1150,16 @@ void CleanCellFaceSource(const CleanArgs &x, const int dir, const int m, const i
 //----------------------------------------------------------------------------------------
 //! \fn void CleanCellFaceJacobian
 //! \brief derivatives jl, jr of the face fluxes: CleanCellM1Jacobian and the blend of
-//! CleanCellMilne, whose weight and terms CleanCellMilneSetup stores per face (CLF_ML)
+//! CleanCellMilne, whose weight and terms CleanCellMilneSetup stores per face (CLF_ML);
+//! kModels = false: clean_consistency and the milne face model are known to be off at
+//! compile time
 
+template <bool kModels = true>
 KOKKOS_INLINE_FUNCTION
 void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const int k,
                            const int j, const int i, Real jl[4][4], Real jr[4][4]) {
-  CleanCellM1Jacobian(x, dir, m, k, j, i, jl, jr);
-  const Real mu = x.milne ? x.fc[dir](m,CLF_ML,k,j,i) : 0.0;
+  CleanCellM1Jacobian<kModels>(x, dir, m, k, j, i, jl, jr);
+  const Real mu = (kModels && x.milne) ? x.fc[dir](m,CLF_ML,k,j,i) : 0.0;
   if (mu == 0.0) return;
   for (int c = 0; c < 4; ++c) {
     jl[0][c] *= 1.0 - mu;
@@ -1182,8 +1187,9 @@ void CleanCellFaceJacobian(const CleanArgs &x, const int dir, const int m, const
 //! \fn void CleanCellFaceFlux
 //! \brief face fluxes f = (fE, fY_1..3) at face (k,j,i) normal to dir of the cell vector
 //! at slot v of x.u; with_source adds the incoming boundary flux and, with
-//! clean_consistency, the bracket
+//! clean_consistency, the bracket; kModels as CleanCellFaceJacobian
 
+template <bool kModels = true>
 KOKKOS_INLINE_FUNCTION
 void CleanCellFaceFlux(const CleanArgs &x, const int v, const int dir, const int m,
                        const int k, const int j, const int i, const bool with_source,
@@ -1191,7 +1197,7 @@ void CleanCellFaceFlux(const CleanArgs &x, const int v, const int dir, const int
   const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
   const int kl = k - dk, jl_ = j - dj, il = i - di;
   Real jl[4][4], jr[4][4], ul[4], ur[4];
-  CleanCellFaceJacobian(x, dir, m, k, j, i, jl, jr);
+  CleanCellFaceJacobian<kModels>(x, dir, m, k, j, i, jl, jr);
   CleanCellState(x, v, m, kl, jl_, il, ul);
   CleanCellState(x, v, m, k, j, i, ur);
   for (int r = 0; r < 4; ++r) {
@@ -1199,7 +1205,8 @@ void CleanCellFaceFlux(const CleanArgs &x, const int v, const int dir, const int
     for (int c = 0; c < 4; ++c) f[r] += jl[r][c]*ul[c] + jr[r][c]*ur[c];
   }
   const bool bdry = CleanBoundaryFace(x, dir, m, k, j, i);
-  if (with_source && (bdry || x.consist || x.milne)) {
+  const bool consist = kModels && x.consist, milne = kModels && x.milne;
+  if (with_source && (bdry || consist || milne)) {
     Real s[4];
     CleanCellFaceSource(x, dir, m, k, j, i, s);
     for (int r = 0; r < 4; ++r) f[r] += s[r];
@@ -1210,8 +1217,8 @@ void CleanCellFaceFlux(const CleanArgs &x, const int v, const int dir, const int
   const int km = kl - dk, jm = jl_ - dj, im = il - di;
   Real al, hs;
   const bool lo = CleanFaceDissipation(x, dir, m, k, j, i, al, hs);
-  const Real s = x.consist ? 1.0 - x.fc[dir](m,CLF_WK,k,j,i) : 1.0;
-  const Real mu = x.milne ? x.fc[dir](m,CLF_ML,k,j,i) : 0.0;
+  const Real s = consist ? 1.0 - x.fc[dir](m,CLF_WK,k,j,i) : 1.0;
+  const Real mu = milne ? x.fc[dir](m,CLF_ML,k,j,i) : 0.0;
   Real q[4];
   CleanCellRhieChow(x, dir, lo, m, k, j, i, q);
   hs *= s;

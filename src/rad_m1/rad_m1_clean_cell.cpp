@@ -674,36 +674,56 @@ void RadiationM1::CleanCellRightHandSide() {
 //! CleanCellDivergence<true>
 
 void RadiationM1::CleanCellFaceFluxes(const int src, const bool with_source) {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  int is = indcs.is, ie = indcs.ie;
-  int js = indcs.js, je = indcs.je;
-  int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   if (cln_ff.extent_int(0) != nmb1 + 1) {
     Kokkos::realloc(cln_ff, nmb1 + 1, 12, cln_x.extent_int(2), cln_x.extent_int(3),
                     cln_x.extent_int(4));
   }
+  auto &pm = pmy_pack->pmesh;
+  CleanCellFaceFluxesDir<0>(src, with_source);
+  if (pm->multi_d) CleanCellFaceFluxesDir<1>(src, with_source);
+  if (pm->three_d) CleanCellFaceFluxesDir<2>(src, with_source);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellFaceFluxesDir
+//! \brief the face fluxes of CleanCellFaceFluxes normal to kDir.  The direction is known
+//! at compile time, so that the face arrays of kDir are addressed directly; without
+//! clean_consistency and the milne face model the apply drops their terms at compile
+//! time.
+
+template <int kDir>
+void RadiationM1::CleanCellFaceFluxesDir(const int src, const bool with_source) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
   CleanArgs x = CleanMakeArgs();
   auto ff = cln_ff;
-  for (int dir = 0; dir < 3; ++dir) {
-    if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
-    const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
-    // (one kernel each way: the source terms stay out of the apply's)
-    if (with_source) {
-      par_for("clc_facefs", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        Real f[4];
-        CleanCellFaceFlux(x, src, dir, m, k, j, i, true, f);
-        for (int r = 0; r < 4; ++r) ff(m,4*dir+r,k,j,i) = f[r];
-      });
-    } else {
-      par_for("clc_applyf", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        Real f[4];
-        CleanCellFaceFlux(x, src, dir, m, k, j, i, false, f);
-        for (int r = 0; r < 4; ++r) ff(m,4*dir+r,k,j,i) = f[r];
-      });
-    }
+  const int dk = (kDir == 2), dj = (kDir == 1), di = (kDir == 0);
+  // (one kernel each way: the source terms stay out of the apply's)
+  if (with_source) {
+    par_for("clc_facefs", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real f[4];
+      CleanCellFaceFlux(x, src, kDir, m, k, j, i, true, f);
+      for (int r = 0; r < 4; ++r) ff(m,4*kDir+r,k,j,i) = f[r];
+    });
+  } else if (x.consist || x.milne) {
+    par_for("clc_applyf", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real f[4];
+      CleanCellFaceFlux(x, src, kDir, m, k, j, i, false, f);
+      for (int r = 0; r < 4; ++r) ff(m,4*kDir+r,k,j,i) = f[r];
+    });
+  } else {
+    par_for("clc_applyf", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real f[4];
+      CleanCellFaceFlux<false>(x, src, kDir, m, k, j, i, false, f);
+      for (int r = 0; r < 4; ++r) ff(m,4*kDir+r,k,j,i) = f[r];
+    });
   }
 }
 
