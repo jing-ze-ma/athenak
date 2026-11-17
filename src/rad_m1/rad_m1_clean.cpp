@@ -1664,10 +1664,22 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
       const Real d = uh(m,IDN,k,j,i);
       Real p, chi_rho, chi_t, cv;
       eos.ThermoAt(d, t, eg, p, chi_rho, chi_t, cv);
-      const Real s = 4.0*hckp*arad_*t*t*t;
-      rr = (s > 0.0) ? s/(d*cv + s) : 0.0;   // (no exchange: none, also where T = 0)
-      // (1 - r = d cv/(d cv + s) without cancellation, as implicit_src_stable)
-      x.w(m,CLW_RY,k,j,i) = (s > 0.0) ? d*cv/(d*cv + s) : 1.0;
+      // the exchange's slopes: the tangent at the iterate's T, or where T is above T_o,
+      // the gas T of the old vector, the secant through T_o and T (emission and gas
+      // energy): exact at T as the tangent, so the solution is the same, and B takes
+      // the exchange as EO + (1 - r) hc kP a T_o^4 >= 0 by construction.  The tangent
+      // at a T above the gas's own (e(T) - eint >> E_old, r ~ 1: radiation heating cold
+      // gas under the photosphere) gave B << 0 and E < 0, a Newton step past the root of
+      // the concave E -> e map (the old production's SRCR ~ q (e^n - e(T_k)) << 0)
+      Real s = 4.0*hckp*arad_*t*t*t, cg = d*cv;
+      const Real ei = x.w(m,CLW_EI,k,j,i), to = eos.Temperature(d, ei, t);
+      if (t - to > 1.0e-6*t && eg > ei) {
+        cg = (eg - ei)/(t - to);
+        s = hckp*arad_*(t + to)*(t*t + to*to);
+      }
+      rr = (s > 0.0) ? s/(cg + s) : 0.0;   // (no exchange: none, also where T = 0)
+      // (1 - r = cg/(cg + s) without cancellation, as implicit_src_stable)
+      x.w(m,CLW_RY,k,j,i) = (s > 0.0) ? cg/(cg + s) : 1.0;
       // the gas row's residual at the iterate with these sb (its T is the root with those
       // of the last pass), share r, as the old production's SRCR: a change of sb between
       // passes enters E with 1 - r, the exchange's share (radiation-dominated opaque
