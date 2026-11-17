@@ -317,6 +317,10 @@ void RadiationM1::CleanCellConsistency() {
       // against the boundary flux of Ur with its source
       for (int r = 0; r < 4; ++r) x.fc[dir](m,CLF_CB+r,k,j,i) = 0.0;
       const bool bdry = CleanBoundaryFace(x, dir, m, k, j, i), blo = (i == x.is);
+      if (bdry && tilt && rem == 4) {
+        x.fc[dir](m,CLF_GT,k,j,i) = 0.0;
+        for (int b = 0; b < 3; ++b) x.fc[dir](m,CLF_GA+b,k,j,i) = 0.0;
+      }
       const int kl = k - dk, jl = j - dj, il = i - di;
       // clean_consistency_weight: the rays' streaming weight of the face
       Real wb = 1.0;
@@ -334,7 +338,7 @@ void RadiationM1::CleanCellConsistency() {
         hj[0] += wl;
         hj[1] += wr;
         hj[(mu > 0.0) ? 2 : 3] += ((mu > 0.0) ? wl : wr)*mu;
-        for (int b = 0; b < 3 && ml; ++b) {
+        for (int b = 0; b < 3 && (ml || rem == 4); ++b) {
           kk[(mu > 0.0) ? b : 3 + b] += ((mu > 0.0) ? wl : wr)*mu*dir_(d,b);
         }
       }
@@ -370,6 +374,19 @@ void RadiationM1::CleanCellConsistency() {
       const Real q = fmin(bdry && blo ? 1.0 : CleanRayShare(x, m, kl, jl, il),
                           bdry && !blo ? 1.0 : CleanRayShare(x, m, k, j, i));
       for (int r = 0; r < 4; ++r) x.fc[dir](m,CLF_CB+r,k,j,i) = q*wb*(fr[r] - f[r]);
+      if (tilt && rem == 4 && bdry) {
+        // clean_bracket_rem = side, open x1 face: the bracket times E/J of the inner cell
+        // (the same flux on the rays' moments, linear in the cell state; CLF_GT takes
+        // the E row's, CLF_GA the y rows'); a cell without rays keeps it as it is
+        const Real ji = x.u(m,CLC_U,blo ? k : kl,blo ? j : jl,blo ? i : il);
+        if (ji <= 0.0) return;
+        for (int r = 0; r < 4; ++r) {
+          x.fc[dir](m,(r == 0) ? CLF_GT : CLF_GA+r-1,k,j,i) =
+              x.fc[dir](m,CLF_CB+r,k,j,i)/ji;
+          x.fc[dir](m,CLF_CB+r,k,j,i) = 0.0;
+        }
+        return;
+      }
       if (!tilt || bdry) return;
       // clean_bracket_tilt: the E bracket as the half ranges H+-' = H+-(1 +- dd/s),
       // dd = q (F_ray - f(Ur))/c, s = H+ - H-, the shrinking one at most to 0 (upwind
@@ -388,8 +405,34 @@ void RadiationM1::CleanCellConsistency() {
       x.fc[dir](m,CLF_GT+1,k,j,i) = gm;
       x.fc[dir](m,CLF_CB,k,j,i) = 0.0;
       for (int r = 1; r <= x.nf; ++r) {
-        x.fc[dir](m,CLF_CB+r,k,j,i) = (rem == 0) ? 0.0 : x.fc[dir](m,CLF_CB+r,k,j,i) -
-            wb*x.c*((gp - hp)*ul[r] + (gm - hm)*ur[r]);
+        x.fc[dir](m,CLF_CB+r,k,j,i) = (rem == 0 || rem == 4) ? 0.0 :
+            x.fc[dir](m,CLF_CB+r,k,j,i) - wb*x.c*((gp - hp)*ul[r] + (gm - hm)*ur[r]);
+      }
+      if (rem != 4) return;
+      // clean_bracket_rem = side: the y flux of each side is c (g y + a E) with
+      // a = q k - (g - (1 - q) h) s, k the rays' stress leaving the donor (K+-/J about
+      // the face) and s = H/J their flux factor: on the rays' moments it is the q share
+      // of their kinetic stress c K+- and the rest of the cells' kinetic flux c h H, and
+      // it is linear in the cell state (no term that does not scale with it)
+      // (cubed sphere: ul, ur and the rows in Cartesian components, k from the FV
+      // intensities about the face normal)
+      Real sl[3], sr[3];
+      for (int b = 0; b < 3; ++b) {
+        sl[b] = (ul[0] > 0.0) ? ul[1+b]/ul[0] : 0.0;
+        sr[b] = (ur[0] > 0.0) ? ur[1+b]/ur[0] : 0.0;
+      }
+      for (int b = 0; b < 3; ++b) {
+        Real al = 0.0, ar = 0.0;
+        if (b < x.nf) {
+          const Real kpl = (nd > 0) ? ((hj[0] > 0.0) ? kk[b]/hj[0] : 0.0)
+                           : CleanCellOutStress(x, dir, b, m, k, j, i, kl, jl, il, false);
+          const Real kmr = (nd > 0) ? ((hj[1] > 0.0) ? kk[3+b]/hj[1] : 0.0)
+                           : CleanCellOutStress(x, dir, b, m, k, j, i, k, j, i, true);
+          al = q*kpl - (gp - (1.0 - q)*hp)*sl[b];
+          ar = q*kmr - (gm - (1.0 - q)*hm)*sr[b];
+        }
+        x.fc[dir](m,CLF_GA+b,k,j,i) = al;
+        x.fc[dir](m,CLF_GA+3+b,k,j,i) = ar;
       }
     });
   }
@@ -512,6 +555,54 @@ void RadiationM1::CleanCellTiltLimit() {
     nlim += nd;
   }
   cln_ntlim += CleanReduce(nlim, false);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellTiltCone
+//! \brief clean_bracket_rem = side: the face sides whose outgoing streaming flux
+//! c (g E, g y + a E) of the solution leaves the cone |y| <= E of its donor while the
+//! donor is inside it (counted, not changed; each side by the MeshBlock of its donor)
+
+void RadiationM1::CleanCellTiltCone() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanArgs x = CleanMakeArgs();
+  const Real tol = 10.0*cln_tol;
+  Real ncone = 0.0;
+  for (int dir = 0; dir < x.nf; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    const int ni = ie - is + 1 + di, nj = je - js + 1 + dj, nk = ke - ks + 1 + dk;
+    Real nd = 0.0;
+    Kokkos::parallel_reduce("clc_tilt_cone", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            (nmb1 + 1)*nk*nj*ni),
+    KOKKOS_LAMBDA(const int idx, Real &nc) {
+      const int m = idx/(nk*nj*ni), k = ks + (idx/(nj*ni))%nk;
+      const int j = js + (idx/ni)%nj, i = is + idx%ni;
+      if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
+      if (x.fc[dir](m,CLF_WK,k,j,i) <= 0.0) return;
+      for (int n = 0; n < 2; ++n) {
+        const int kc = k - dk*(1 - n), jc = j - dj*(1 - n), ic = i - di*(1 - n);
+        if (kc < ks || kc > ke || jc < js || jc > je || ic < is || ic > ie) continue;
+        const Real g = fabs(x.fc[dir](m,CLF_GT+n,k,j,i));
+        const Real sg = n ? -1.0 : 1.0;
+        Real y2 = 0.0, f2 = 0.0, yc[4];
+        CleanCellState(x, CLC_X, m, kc, jc, ic, yc);
+        const Real e = yc[0], z = tol*fabs(e);
+        for (int b = 0; b < 3; ++b) {
+          const Real y = yc[1+b];
+          const Real a = (b < x.nf) ? x.fc[dir](m,CLF_GA+3*n+b,k,j,i) : 0.0;
+          y2 += SQR(y);
+          f2 += SQR(g*y + sg*a*e);
+        }
+        if (e > 0.0 && std::sqrt(y2) <= e + z && std::sqrt(f2) > g*e + g*z) nc += 1.0;
+      }
+    }, Kokkos::Sum<Real>(nd));
+    ncone += nd;
+  }
+  cln_ntlim += CleanReduce(ncone, false);
 }
 
 //----------------------------------------------------------------------------------------

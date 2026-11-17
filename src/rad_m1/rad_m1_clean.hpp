@@ -152,6 +152,7 @@ struct CleanArgs {
   bool bracket;                // clean_consistency_bracket: with its bracket (else w only)
   bool posreal;                // clean_pos_real: kinetic y flux on low-order faces
   bool tilt;                   // clean_bracket_tilt: the E bracket in the factors g+-
+  bool tside;                  // clean_bracket_rem = side: y flux c (g y + a E) per side
   bool curvk;                  // clean_curv_iterate: the rays' curvature terms per E
   bool milne;                  // cell layout: sub-cell Eddington face model
   bool fvrays;                 // cell layout: FV rays (clean_rays = fv1 | fv)

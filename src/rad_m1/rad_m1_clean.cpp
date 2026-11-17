@@ -115,7 +115,7 @@ void RadiationM1::CleanInit() {
   Kokkos::realloc(cln_w, nmb, cln_cell ? CLW_NC : CLW_N, n3, n2, n1);
   // the cubed sphere takes the half ranges about the face normals from the FV rays
   cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
-  const int nfc = cln_milne ? CLF_KK + 6 : (cln_tilt ? CLF_GT + 2 :
+  const int nfc = cln_milne ? CLF_KK + 6 : (cln_tilt ? CLF_GT + 8 :
                                             (cln_hk ? CLF_HK + 2 : CLF_N));
   // the opacities depend on T: tables, or the T exponent (bump) of powerlaw (user)
   cln_opt = cln_cell && !opac_freeze && !opac_zero && (opacity_type == M1_OPAC_TABLE ||
@@ -849,6 +849,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
                   static_cast<int>(cln_nfail));
     }
   }
+  if (cell && cln_tilt && cln_tiltrem == 4) CleanCellTiltCone();
   if (global_variable::my_rank == 0) {
     if (cell) {
       std::printf("CLEAN cycle %d t2s %d it %d (sum %d) pic %d %.2e pos %d mark %d "
@@ -859,7 +860,10 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       std::printf("CLEAN cycle %d t2s %d it %d neg %d guard %d\n",
                   pmy_pack->pmesh->ncycle, t2_solve, nit, nneg, cln_nguard);
     }
-    if (cln_tilt) {
+    if (cln_tilt && cln_tiltrem == 4) {
+      std::printf("CLEAN TILT cycle %d t2s %d face sides out of the cone: %.0f\n",
+                  pmy_pack->pmesh->ncycle, t2_solve, cln_ntlim);
+    } else if (cln_tilt) {
       std::printf("CLEAN TILT cycle %d t2s %d y remainder limited on %.0f face-passes\n",
                   pmy_pack->pmesh->ncycle, t2_solve, cln_ntlim);
     }

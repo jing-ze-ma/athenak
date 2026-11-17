@@ -2986,6 +2986,7 @@ class RadiationM1 {
   void CleanCellFaceCoefficients();
   void CleanCellConsistency();
   void CleanCellTiltLimit();
+  void CleanCellTiltCone();
   void CleanCellMilneSetup();
   void CleanCellSlopeWeights(const int v);
   void CleanCellFirstIterate();

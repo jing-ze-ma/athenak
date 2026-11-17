@@ -250,18 +250,21 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // itself; the y bracket left over (clean_bracket_rem) is none, full, limit (each
     // face's remainder times min over its two cells of the share of the old state's
     // margin E - |y|, less the curvature terms, the remainders of the cell may take) or
-    // scale (times min(1, E/J) of the Newton iterate over its two cells)
+    // scale (times min(1, E/J) of the Newton iterate over its two cells); side: each
+    // side's y flux c [g y + a E], a = q k - (g - (1 - q) h) h_ray from the rays' k, h of
+    // the donor (no remainder left: the flux is linear in the cell state)
     if (pin->DoesParameterExist("rad_m1","clean_bracket_tilt")) {
       cln_tilt = pin->GetBoolean("rad_m1","clean_bracket_tilt");
     }
     if (pin->DoesParameterExist("rad_m1","clean_bracket_rem")) {
       std::string br = pin->GetString("rad_m1","clean_bracket_rem");
       cln_tiltrem = (br == "none") ? 0 : (br == "limit") ? 1 : (br == "full") ? 2 :
-                    (br == "scale") ? 3 : -1;
+                    (br == "scale") ? 3 : (br == "side") ? 4 : -1;
       if (cln_tiltrem < 0 || !cln_tilt) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "<rad_m1>/clean_bracket_rem = " << br
                   << " needs clean_bracket_tilt = true and none | limit | full | scale"
+                  << " | side"
                   << std::endl;
         std::exit(EXIT_FAILURE);
       }

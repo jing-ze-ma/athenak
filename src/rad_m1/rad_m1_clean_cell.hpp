@@ -81,6 +81,8 @@ constexpr int CLF_ML = CLF_HK + 2;  // clean_face_model = milne: mu and the sub-
 constexpr int CLF_KK = CLF_ML + 9;  // cubed sphere, milne: k+ of L and k- of R about
                                     // the face normal (CleanCellConsistency)
 constexpr int CLF_GT = CLF_HK + 2;  // clean_bracket_tilt (no milne): g+ of L and g- of R
+constexpr int CLF_GA = CLF_GT + 2;  // clean_bracket_rem = side: a_1..3 of L, then of R
+                                    // (open x1 face: CLF_GT, CLF_GA its bracket per E)
 
 // cell vectors (array cln_x), 4 components (E, y1, y2, y3) each
 constexpr int CLC_O = 0;     // old vector
@@ -852,6 +854,13 @@ void CleanCellM1BoundaryJacobian(const CleanArgs &x, const int dir, const int m,
     }
   }
   if (!up) CleanCellDeviationFlux(x, dir, m, k, j, i, kc, jc, ic, false, wo, jj);
+  if (x.tside) {
+    // clean_bracket_rem = side: the open face's bracket per E of the inner cell
+    jj[0][0] += x.fc[dir](m,CLF_GT,k,j,i);
+    for (int b = 0; b < 3; ++b) {
+      if (b < x.nf) jj[1+b][0] += x.fc[dir](m,CLF_GA+b,k,j,i);
+    }
+  }
   if (up || x.consist) return;
   // without the consistency term the moment system's outgoing wave (speed c sqrt(D_nn),
   // eigenvector (1, -+sqrt(D_nn) n)) carries the deviation R_n = (y - h E).n from the
@@ -979,7 +988,8 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
   if (!x.consist) return;
   // clean_consistency: w of the face takes the rays' kinetic upwind flux, the cells'
   // half-range factors on E and y (c h+_L U_L + c h-_R U_R); with clean_bracket_tilt
-  // the factors g+- that carry the E bracket (CleanCellConsistency)
+  // the factors g+- that carry the E bracket (CleanCellConsistency), and with
+  // clean_bracket_rem = side the y rows also a E of each side
   const Real w = x.fc[dir](m,CLF_WK,k,j,i);
   for (int r = 0; r < 4; ++r) {
     for (int c = 0; c < 4; ++c) {
@@ -998,6 +1008,12 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
       jl[r][r] += w*x.c*hp;
       jr[r][r] += w*x.c*hm;
     }
+  }
+  if (!x.tside) return;
+  // clean_bracket_rem = side: each side's y flux c (g y + a E)
+  for (int b = 0; b < x.nf; ++b) {
+    jl[1+b][0] += w*x.c*x.fc[dir](m,CLF_GA+b,k,j,i);
+    jr[1+b][0] += w*x.c*x.fc[dir](m,CLF_GA+3+b,k,j,i);
   }
 }
 
