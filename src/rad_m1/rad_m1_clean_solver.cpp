@@ -80,6 +80,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.fa = false;
   x.fwc = false;
   x.fs = false;
+  x.tf = false;
   x.fd = cln_fsolve && cln_fkin;
   x.gf = cln_gflux;
   x.fre = cln_freal;

@@ -232,6 +232,7 @@ struct CleanArgs {
   bool gf;                     // staggered, clean_stag_gflux: flux factors, low order
   bool fre;                    // staggered, clean_stag_freal: a realisable comoving sb
   bool fs;                     // staggered, clean_stag_fsolve: the face F of the F solve
+  bool tf;                     //   and each face's momentum exchange T of its owner block
                                // (CLF_N) with its dissipation term (CLF_N + 1)
   bool hi;                     // staggered, clean_stag_split: the face momentum state
                                // F^H (w = 0), not the energy flux
@@ -1369,9 +1370,12 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
       }
       continue;
     }
-    Real t = wt*(x.fa ? x.fc[dir](m,CLF_PT,kf,jf,iff) : ((f - g)/(x.c*x.c) +
+    // (clean_stag_ftie: T of the face as its owner, the block whose low face it is,
+    // computed it, CleanStagFaceTie)
+    Real t = wt*(x.tf ? x.w(m,CLW_L+3*dir,kf,jf,iff) :
+             (x.fa ? x.fc[dir](m,CLF_PT,kf,jf,iff) : ((f - g)/(x.c*x.c) +
              x.h*CleanFaceStressCall(x, e, dir, m, kf, jf, iff, true) -
-             (x.fs ? x.h*x.fc[dir](m,CLF_N+1,kf,jf,iff) : 0.0)));
+             (x.fs ? x.h*x.fc[dir](m,CLF_N+1,kf,jf,iff) : 0.0))));
     // (mcl, the Newton passes: the conservative term equals the face's absorption
     // h chi_f F/c only where the iterate's F satisfies its equation; capped there at the
     // force of a realisable flux, |F| <= c E, as the production deposit, so that a lagged

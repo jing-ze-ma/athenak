@@ -1879,6 +1879,7 @@ Real RadiationM1::CleanVelocityUpdate() {
   if (cln_fwork) {   // (clean_stag_fwork: the momentum of the
     CleanStagFSolve(CLW_EK);                     //  F solve, which the write-back gives
     xh.fs = true;                                //  the gas, for the work W of the E row)
+    xh.tf = cln_ftie && !x.cub;
     cln_fsk = true;
   }
   FluidRef fl = FluidRef::Get(pmy_pack);
@@ -2247,6 +2248,7 @@ void RadiationM1::CleanStagFSolve(const int e) {
   };
   // the directions in three phases (F^H, al; the line solves; F), each direction with
   // its own al (CLW_L + 3 dir) and F (cy), so that each exchange serves all of them
+  const bool tie = cln_ftie;
   for (int q = 0; q < 3*x.nf; ++q) {
     const int dir = q%x.nf, ph = q/x.nf;
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
@@ -2359,6 +2361,14 @@ void RadiationM1::CleanStagFSolve(const int e) {
                 qs*x.c*(al(m,1,k-dk,j-dj,i-di) + al(m,1,k,j,i)) +
                 x.h*x.c*x.c*fc(m,CLF_N+1,k,j,i);
           }
+          // (clean_stag_ftie: the high face of a line that another MeshBlock or the
+          // periodic wrap shares is its owner's, the block whose low face it is: an
+          // identity row, the value its CLW_Y ghost brings, CleanStagFaceTie)
+          const bool own = !(tie && t == n && !bd);
+          if (!own) {
+            lo = hi = 0.0;
+            dg = 1.0;
+          }
           // (the faces beyond a MeshBlock line end: the neighbours', lagged)
           x.w(m,CLW_AM,k,j,i) = lo;
           x.w(m,CLW_AP,k,j,i) = hi;
@@ -2369,7 +2379,7 @@ void RadiationM1::CleanStagFSolve(const int e) {
           x.w(m,CLW_A0,k,j,i) = den;
           x.w(m,CLW_CP,k,j,i) = cp;
           x.w(m,CLW_R0,k,j,i) = r;
-          x.w(m,CLW_P,k,j,i) = eq ? 1.0 : 0.0;
+          x.w(m,CLW_P,k,j,i) = !own ? -1.0 : (eq ? 1.0 : 0.0);
         }
       });
       // one exact Thomas solve per line; the faces beyond a line end of a MeshBlock or
@@ -2387,7 +2397,7 @@ void RadiationM1::CleanStagFSolve(const int e) {
         for (int t = 0; t <= n; ++t) {
           int k, j, i;
           face(t, k, j, i);
-          Real r = x.w(m,CLW_R0,k,j,i);
+          Real r = (x.w(m,CLW_P,k,j,i) < 0.0) ? x.w(m,cy,k,j,i) : x.w(m,CLW_R0,k,j,i);
           if (x.w(m,CLW_P,k,j,i) > 0.0) {
             if (t == 0) r -= x.w(m,CLW_AM,k,j,i)*x.w(m,cy,k-dk,j-dj,i-di);
             if (t == n) r -= x.w(m,CLW_AP,k,j,i)*x.w(m,cy,k+dk,j+dj,i+di);
@@ -2443,6 +2453,53 @@ void RadiationM1::CleanStagFSolve(const int e) {
             qs*(pk(k, j, i, f, fp) + pk(k-dk, j-dj, i-di, fm, f));
       });
     }
+  }
+  if (cln_ftie) CleanStagFaceTie(e, kd);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagFaceTie
+//! \brief clean_stag_ftie (spherical polar, Cartesian): a face shared by two MeshBlocks,
+//! or by one with itself across a periodic wrap, takes the values of its owner, the block
+//! whose low face it is, as its F does (the F solve's identity row, CleanStagFSolve):
+//! the momentum exchange T = (F - G)/c^2 + h div P - h N1 of each face
+//! (CleanMomentumChange), the energy flux's memory d and its slope.  The two sides of a
+//! seam then give the gas the two halves of one T, its face's absorption where the F
+//! solve converged; across the theta-periodic wrap of a wedge, whose two copies have
+//! opposite cot(theta) terms, the owner's.  Each block computes them for its low faces
+//! into CLW_L + 3 dir (+ 1 d, + 2 slope; free after the F solve), the exchange hands the
+//! high faces' to their other side.
+
+void RadiationM1::CleanStagFaceTie(const int e, const int kd) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanArgs x = CleanMakeArgs();
+  x.fs = true;
+  const int nf = x.nf;
+  par_for("cln_tie", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    for (int d = 0; d < nf; ++d) {
+      const Real f = x.fc[d](m,CLF_N,k,j,i), g = x.fc[d](m,CLF_G,k,j,i);
+      x.w(m,CLW_L+3*d,k,j,i) = (f - g)/(x.c*x.c) + x.h*CleanFaceStress(x, e, d, m, k, j,
+                               i, true) - x.h*x.fc[d](m,CLF_N+1,k,j,i);
+      x.w(m,CLW_L+3*d+1,k,j,i) = x.fc[d](m,CLF_N+3,k,j,i);
+      x.w(m,CLW_L+3*d+2,k,j,i) = (kd > 0) ? x.fc[d](m,kd,k,j,i) : 0.0;
+    }
+  });
+  CleanGhostFill(cln_w, CLW_L, 3*nf);
+  for (int d = 0; d < nf; ++d) {   // (the high faces of the block: their owner's d)
+    const int dk = (d == 2), dj = (d == 1), di = (d == 0);
+    auto fc = x.fc[d];
+    par_for("cln_tie_hi", DevExeSpace(), 0, nmb1, dk ? ke+1 : ks, ke+dk, dj ? je+1 : js,
+            je+dj, di ? ie+1 : is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (CleanBoundaryFace(x, d, m, k, j, i)) return;
+      fc(m,CLF_N+3,k,j,i) = x.w(m,CLW_L+3*d+1,k,j,i);
+      if (kd > 0) fc(m,kd,k,j,i) = x.w(m,CLW_L+3*d+2,k,j,i);
+    });
   }
 }
 
@@ -2861,6 +2918,7 @@ void RadiationM1::CleanWriteBack() {
   }
   CleanStagFSolve(CLW_X);   // (the face F of the F solve and its dissipation)
   xh.fs = true;
+  xh.tf = cln_ftie && !x.cub;
 
   // face fluxes of the solution
   for (int dir = 0; dir < 3; ++dir) {

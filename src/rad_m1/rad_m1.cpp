@@ -164,6 +164,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_pcr = pin->GetOrAddBoolean("rad_m1","clean_stag_pcr",true);
     cln_stall_n = pin->GetOrAddInteger("rad_m1","clean_bicg_stall_its",cln_cell ? 0 : 50);
     cln_stall_f = pin->GetOrAddReal("rad_m1","clean_bicg_stall_fac",0.99);
+    // clean_stag_ftie (read only when named, default true staggered): a face two
+    // MeshBlocks share, or one with itself across a periodic wrap, takes its owner's F,
+    // momentum exchange, energy-flux memory and (the write-back) Phi (CleanStagFaceTie)
+    cln_ftie = !cln_cell;
+    if (pin->DoesParameterExist("rad_m1","clean_stag_ftie")) {
+      cln_ftie = pin->GetBoolean("rad_m1","clean_stag_ftie") && !cln_cell;
+    }
     // the consistency term is the cell default on Cartesian meshes and, with the vet_gd
     // rays transported conservatively (fv1) or swept by vet_gd (sc), on spherical polar,
     // always with the streaming weight (an optically thick cell keeps the moment flux:
