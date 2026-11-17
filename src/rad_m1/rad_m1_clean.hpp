@@ -1108,6 +1108,30 @@ Real CleanFluxDivergence(const CleanArgs &x, const int e, const int m, const int
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanFluxDivergenceTie
+//! \brief CleanFluxDivergence with the source, each high face's flux but a physical
+//! boundary's its owner's from slot tb + dir of the next cell (clean_stag_ftie,
+//! CleanWriteBack): a face two MeshBlocks share, or the periodic wrap, moves the same
+//! energy on both sides
+
+KOKKOS_INLINE_FUNCTION
+Real CleanFluxDivergenceTie(const CleanArgs &x, const int e, const int tb, const int m,
+                            const int k, const int j, const int i) {
+  Real d = 0.0;
+  for (int n = 0; n < 3; ++n) {
+    if (n >= x.nf) break;
+    const int dk = (n == 2), dj = (n == 1), di = (n == 0);
+    const Real fh = CleanBoundaryFace(x, n, m, k+dk, j+dj, i+di) ?
+                    CleanFaceFlux(x, e, n, m, k+dk, j+dj, i+di, true) :
+                    x.w(m,tb+n,k+dk,j+dj,i+di);
+    const Real fl = CleanFaceFlux(x, e, n, m, k, j, i, true);
+    d += (x.sph || x.cub) ? CleanDivW(x, n, m, k, j, i, 1)*fh -
+                            CleanDivW(x, n, m, k, j, i, 0)*fl : x.idx[n]*(fh - fl);
+  }
+  return x.h*d;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanStAdd
 //! \brief adds f D_ab E of the cell at offset (OK, OJ, OI) from (k,j,i) to its slot of
 //! row c

@@ -2880,11 +2880,26 @@ void RadiationM1::CleanWriteBack() {
   // operator it was solved with; with clean_stag_split also the cell flux, that of Phi
   // (the faces keep F^H)
   auto u0_ = u0;
+  // (clean_stag_ftie: a high face's Phi its owner's, CLW_L + dir of the next cell, so the
+  // energy telescopes across MeshBlock faces and the theta-periodic wrap; the solve's
+  // own Phi there differs by its copy's geometry, a residual E takes)
+  const bool tie = cln_ftie && !x.cub;
+  if (tie) {
+    const int nf = x.nf;
+    par_for("cln_wbphi", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int d = 0; d < nf; ++d) {
+        x.w(m,CLW_L+d,k,j,i) = CleanFaceFlux(x, CLW_X, d, m, k, j, i, true);
+      }
+    });
+    CleanGhostFill(cln_w, CLW_L, nf);
+  }
   const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
   par_for("cln_wbdiv", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
-    x.w(m,CLW_Q,k,j,i) = CleanFluxDivergence(x, CLW_X, m, k, j, i, true);
+    x.w(m,CLW_Q,k,j,i) = tie ? CleanFluxDivergenceTie(x, CLW_X, CLW_L, m, k, j, i) :
+                         CleanFluxDivergence(x, CLW_X, m, k, j, i, true);
     for (int d = 0; d < 3 && xh.hi; ++d) {
       u0_(m,M1_F1+d,k,j,i) = ((d == 1 && !multi_d) || (d == 2 && !three_d)) ? 0.0 :
           0.5*(CleanFaceFlux(x, CLW_X, d, m, k, j, i, true) +
