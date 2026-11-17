@@ -1485,7 +1485,9 @@ void RadiationM1::CleanFvLevels() {
     const int md = jt ? (q%nmb)*n + q/nmb : q;
     if (cln_fvdo[md%n]) due.push_back(md);
   }
-  int nw = std::max(1, std::min(static_cast<int>(due.size()), (1 << 27)/nc));
+  // the directions are levelled in batches of at most 2^25 cells (ord, pos and lev are
+  // transient: 3 x 128 MiB at most on top of the step's arrays)
+  int nw = std::max(1, std::min(static_cast<int>(due.size()), (1 << 25)/nc));
   if (jt) nw = std::max(nmb, nw - nw%nmb);
   cln_fvl0 = std::numeric_limits<int>::max();
   cln_fvjn[0] = cln_fvjn[1] = 0;
