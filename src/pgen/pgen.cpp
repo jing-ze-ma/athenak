@@ -1893,18 +1893,20 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   const bool t2_h2 = (pradm1 != nullptr) &&
                      (pradm1->time_scheme == radm1::M1_TIME_HESDIRK2);
   const bool t2_want = t2_h2 && !pradm1->t2_beonly;
-  // (a staggered fkin run writes version 2: an older version is the old scheme's file)
-  const bool t2_old = (pradm1 != nullptr) && pradm1->clean && !pradm1->cln_cell &&
-                      pradm1->cln_fsolve && pradm1->cln_fkin && nt2_ver < 2;
-  const bool t2_read = (pradm1 != nullptr) && (nt2_file > 0) && !t2_old &&
-                       pradm1->Time2RstAccept(nt2_file, nt2_ver) &&
+  const bool t2_acc = (pradm1 != nullptr) && (nt2_file > 0) &&
+                      pradm1->Time2RstAccept(nt2_file, nt2_ver);
+  const bool t2_read = t2_acc &&
                        (!t2_h2 || static_cast<int>(pradm1->t2k1.extent(0)) >= nmb);
-  // (staggered clean from a file without that block: the old scheme's, CleanRstFaces)
-  if (pradm1 != nullptr) {
-    pradm1->cln_rstold = pradm1->clean && !pradm1->cln_cell && !t2_read;
+  // (staggered fkin: every clean file carries its state in that block, a file without
+  // it is the old scheme's, CleanRstFaces; of the old block only its slope K1, the first
+  // slabs: the first step is the stage step it would have taken)
+  const bool t2_old = (pradm1 != nullptr) && pradm1->clean && !pradm1->cln_cell &&
+                      pradm1->cln_fsolve && pradm1->cln_fkin && !t2_acc;
+  if (pradm1 != nullptr) pradm1->cln_rstold = t2_old;
+  if (t2_old) {   // (none of the clean block's layout applies)
+    pradm1->t2_rstd3 = false;
+    pradm1->t2_nfv = 0;
   }
-  // (of the old scheme's block only its slope K1, the first slabs: the first step is the
-  // stage step it would have taken)
   const bool t2_k1 = t2_old && t2_want && nt2_file >= radm1::M1_T2_NK &&
                      static_cast<int>(pradm1->t2k1.extent(0)) >= nmb;
   if (t2_want && !t2_read && !t2_k1 && global_variable::my_rank == 0) {
