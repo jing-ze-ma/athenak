@@ -344,6 +344,13 @@ void RadiationM1::CleanInit() {
                "vet_rotate_avg = K with vet_rotate_advance, vet_gd_rotate_dt and "
                "_align, with vet_gd_rotate_xfade for live, without for jump");
   }
+  // the sc rays are validated with the staggered layout only (the cell layout's ray face
+  // sums of sc are the balance march: not conservative on the cubed sphere, L1(E) 0.4 on
+  // the RAYSET2 sp decks)
+  if (vgd_on && cln_rfv == 0 && cln_cell) {
+    CleanFatal("<rad_m1>/clean_rays = sc needs clean_layout = staggered (the cell layout "
+               "takes clean_rays = fv1)");
+  }
   // the sc rays sweep one set at a time: a mean or a cross-fade of sets is the ring's
   if (vgd_on && VgdRotOn() && cln_rfv == 0 && (vra_on || vgd_xf) && !cln_ring) {
     CleanFatal("<rad_m1>/clean_rays = sc with vet_rotate_avg or vet_gd_rotate_xfade "
