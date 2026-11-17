@@ -202,6 +202,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_consist = pin->GetOrAddBoolean("rad_m1","clean_consistency",
                                        cln_cell && !cs && (!sp || gd));
     cln_conswt = pin->GetOrAddBoolean("rad_m1","clean_consistency_weight",cln_cell);
+    // false: the faces' streaming weight w takes the rays' kinetic flux of the cell
+    // states alone, c (h+_L U_L + h-_R U_R), without the bracket F_ray - f(Ur)
+    cln_bracket = pin->GetOrAddBoolean("rad_m1","clean_consistency_bracket",true);
     std::string fm = pin->GetOrAddString("rad_m1","clean_face_model","none");
     cln_milne = (fm.compare("milne") == 0);
     // the speed of the numerical dissipation: c sqrt(max D_dd) of the two cells

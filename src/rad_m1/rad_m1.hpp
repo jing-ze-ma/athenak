@@ -3039,6 +3039,7 @@ class RadiationM1 {
   int cln_bdry_form = 0;        // clean_bc: 0 rays' half range, 1 Marshak
   bool cln_cell = false;        // clean_layout: false staggered, true cell-centred
   int cln_alpha = 0;            // clean_alpha: dissipation weight (CLA_*), cell layout
+  bool cln_bracket = true;      // clean_consistency_bracket
   bool cln_dlight = false;      // clean_dissip_speed = light: dissipation speed c
   int cln_dpow = 2;             // clean_dissip_power (temporary test key): al = A^p
   bool cln_recon = true;        // clean_recon: plm (true) | none, cell layout

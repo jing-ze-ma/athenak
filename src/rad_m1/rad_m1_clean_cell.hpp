@@ -1274,7 +1274,7 @@ void CleanCellDivergence(const CleanArgs &x, const int v, const int m, const int
     for (int b = 0; b < 3; ++b) {
       if (b < x.nf) div[1+b] += g[b]*x.u(m,v,k,j,i);
     }
-    if (with_source && x.consist) {
+    if (with_source && x.consist && x.bracket) {
       CleanCellSphSource(x, m, k, j, i, g, true);
       for (int b = 0; b < 3; ++b) {
         if (b < x.nf) div[1+b] += g[b];
@@ -1306,7 +1306,7 @@ void CleanCellSourceDivergence(const CleanArgs &x, const int m, const int k, con
       for (int r = 0; r < 4; ++r) div[r] -= g[r];
     }
   }
-  if (x.sph && x.consist) {
+  if (x.sph && x.consist && x.bracket) {
     Real g[3];
     CleanCellSphSource(x, m, k, j, i, g, true);
     for (int b = 0; b < 3; ++b) {

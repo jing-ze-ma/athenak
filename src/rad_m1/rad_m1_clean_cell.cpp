@@ -343,7 +343,7 @@ void RadiationM1::CleanCellConsistency() {
           x.fc[dir](m,CLF_KK+3+b,k,j,i) = (hj[1] > 0.0) ? kk[3+b]/hj[1] : nv[b]/6.0;
         }
       }
-      if (!x.consist) return;
+      if (!x.consist || !x.bracket) return;
       if (bdry && (dir != 0 || !CleanOpen(x, m, blo ? 0 : 1))) return;
       // the rays' flux: of the face's own cell, an x1 boundary's or the high face of a
       // MeshBlock on the cubed sphere from the inner cell
@@ -369,7 +369,7 @@ void RadiationM1::CleanCellConsistency() {
       for (int r = 0; r < 4; ++r) x.fc[dir](m,CLF_CB+r,k,j,i) = q*wb*(fr[r] - f[r]);
     });
   }
-  if (!cln_consist || cln_rfv == 0) return;
+  if (!cln_consist || !cln_bracket || cln_rfv == 0) return;
 
   // FV rays: in a cell whose solution had E < 0 (positivity passes), the bracket takes
   // out at most the energy it has to give, E_old + h c kP a T^4 plus what the bracket
