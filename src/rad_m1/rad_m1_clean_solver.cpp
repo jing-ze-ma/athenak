@@ -9,6 +9,8 @@
 //! preconditioner and right-preconditioned BiCGStab.
 
 #include <cmath>
+#include <cstdlib>
+#include <iostream>
 #include <limits>
 
 #include "athena.hpp"
@@ -441,12 +443,67 @@ void RadiationM1::CleanPrecondition(const int src, const int dst) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellRowScale
+//! \brief clean_row_scale: the 4 components of vector v of cln_x of every cell divided
+//! (up = false) or multiplied (up = true) by the cell's row scale cln_rowsc, a power of 2,
+//! so that both are exact
+
+void RadiationM1::CleanCellRowScale(const int v, const bool up) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto w = cln_x;
+  auto rs = cln_rowsc;
+  par_for("clc_rscale", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real s = up ? rs(m,k,j,i) : 1.0/rs(m,k,j,i);
+    for (int c = 0; c < 4; ++c) w(m,v+c,k,j,i) *= s;
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn int RadiationM1::CleanBiCGStab
+//! \brief the linear solve A X = B of the stage (CleanBiCGStabSolve).  With
+//! clean_row_scale the rows of every cell are divided by its E scale S, the power of 2
+//! of max(|B_E|, |E_old|): the solve is S^-1 A X = S^-1 B, preconditioned by M^-1 S
+
+int RadiationM1::CleanBiCGStab() {
+  if (cln_rscale && !cln_cell) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "<rad_m1>/clean_row_scale needs clean_layout = cell" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (!cln_rscale) return CleanBiCGStabSolve();
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  if (cln_rowsc.extent_int(0) != nmb1 + 1) {
+    Kokkos::realloc(cln_rowsc, nmb1 + 1, cln_x.extent(2), cln_x.extent(3), cln_x.extent(4));
+  }
+  auto w = cln_x;
+  auto rs = cln_rowsc;
+  par_for("clc_rsset", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real e = fmax(fmax(fabs(w(m,CLC_B,k,j,i)), fabs(w(m,CLC_O,k,j,i))), 1.0e-300);
+    rs(m,k,j,i) = std::ldexp(1.0, std::ilogb(e));
+  });
+  CleanCellRowScale(CLC_B, false);
+  const int nit = CleanBiCGStabSolve();
+  CleanCellRowScale(CLC_B, true);
+  return nit;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn int RadiationM1::CleanBiCGStabSolve
 //! \brief right-preconditioned BiCGStab for A X = B, starting from the X it is given:
 //! scalar E vectors of cln_w (staggered layout) or 4-component vectors of cln_x (cell
 //! layout).  Returns the number of iterations, negative if not converged.
 
-int RadiationM1::CleanBiCGStab() {
+int RadiationM1::CleanBiCGStabSolve() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -471,16 +528,20 @@ int RadiationM1::CleanBiCGStab() {
       }
     });
   };
+  const bool rsc = cell && cln_rscale;
   auto apply = [&](const int src, const int dst) {
     if (cell) {
       CleanCellApply(src, dst);
+      if (rsc) CleanCellRowScale(dst, false);
     } else {
       CleanApply(src, dst);
     }
   };
   auto precondition = [&](const int src, const int dst) {
     if (cell) {
+      if (rsc) CleanCellRowScale(src, true);
       CleanCellPrecondition(src, dst);
+      if (rsc) CleanCellRowScale(src, false);
     } else {
       CleanPrecondition(src, dst);
     }

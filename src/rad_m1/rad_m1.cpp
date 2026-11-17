@@ -91,6 +91,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_tol_cell")) {
       cln_tol_cell = pin->GetReal("rad_m1","clean_tol_cell");
     }
+    // clean_row_scale (read only when named, default false): the cell layout's linear
+    // solve takes the rows of every cell over that cell's E scale, the power of 2 of
+    // max(|B_E|, |E_old|), so that the norm of its residual, which stops it at clean_tol,
+    // weighs every cell alike instead of the cells of the largest E (x1line
+    // preconditioner)
+    if (pin->DoesParameterExist("rad_m1","clean_row_scale")) {
+      cln_rscale = pin->GetBoolean("rad_m1","clean_row_scale");
+    }
     cln_maxit = pin->GetOrAddInteger("rad_m1","clean_maxit",4000);
     cln_maxnl = pin->GetOrAddInteger("rad_m1","clean_maxnl",50);
     cln_tol_nl = pin->GetOrAddReal("rad_m1","clean_tol_nl",1.0e-11);
