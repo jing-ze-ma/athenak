@@ -603,7 +603,9 @@ void RadiationM1::CleanStagCoarseSetup() {
 //! \brief u(dst) = L^{-1} u(src) on a level of the staggered preconditioner, L its
 //! x1-line tridiagonal part: Thomas solve along the x1 lines of colour col (-1: every
 //! line; 0: the lines of even j + k; 1: the odd ones, with the couplings to u(dst) of the
-//! even neighbours inside the level on the right-hand side)
+//! even neighbours inside the level on the right-hand side).  On a GPU one team per line
+//! solves it by parallel cyclic reduction in team scratch, coalesced along x1, as the old
+//! production line solves (M1PCRMG); the host keeps Thomas.
 
 void RadiationM1::CleanStagLineSolve(const CleanLevel &lv, const int src, const int dst,
                                      const int col) {
@@ -612,6 +614,65 @@ void RadiationM1::CleanStagLineSolve(const CleanLevel &lv, const int src, const 
   const int is = l.o[0], ie = l.o[0] + l.n[0] - 1, cp = l.a0 + 2;
   auto w = l.u;
 
+  if (!std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace> && cln_pcr) {
+    const int nx = l.n[0], n2 = l.n[1], n32 = l.n[2]*l.n[1];
+    int nround = 0;
+    while ((1 << nround) < nx) ++nround;
+    const size_t scr = ScrArray1D<Real>::shmem_size(8*nx);
+    Kokkos::TeamPolicy<DevExeSpace> pol(DevExeSpace(), (nmb1 + 1)*n32, 256);
+    const int lv0 = TeamScratchLevel(scr, 0, pol.team_size());
+    Kokkos::parallel_for("cln_pcr", pol.set_scratch_size(lv0, Kokkos::PerTeam(scr)),
+    KOKKOS_LAMBDA(TeamMember_t tm) {
+      const int m = tm.league_rank()/n32, pk = (tm.league_rank() - m*n32)/n2;
+      const int pj = tm.league_rank() - m*n32 - pk*n2, k = l.o[2] + pk, j = l.o[1] + pj;
+      if (col >= 0 && (pj + pk) % 2 != col) return;   // (team-uniform)
+      ScrArray1D<Real> sw(tm.team_scratch(lv0), 8*nx);
+      Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int q) {
+        const int i = is + q;
+        Real r = w(m,src,k,j,i);
+        if (col == 1) {
+          if (pj > 0) r -= w(m,l.sm[1],k,j,i)*w(m,dst,k,j-1,i);
+          if (pj < l.n[1] - 1) r -= w(m,l.sp[1],k,j,i)*w(m,dst,k,j+1,i);
+          if (pk > 0) r -= w(m,l.sm[2],k,j,i)*w(m,dst,k-1,j,i);
+          if (pk < l.n[2] - 1) r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
+        }
+        sw(q) = (q > 0) ? w(m,l.sm[0],k,j,i) : 0.0;
+        sw(nx + q) = w(m,l.a0,k,j,i);
+        sw(2*nx + q) = (q < nx - 1) ? w(m,l.sp[0],k,j,i) : 0.0;
+        sw(3*nx + q) = r;
+      });
+      tm.team_barrier();
+      int o = 0;
+      for (int rd = 0, s = 1; rd < nround; ++rd, s *= 2) {
+        const int d = 4*nx - o;
+        Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int q) {
+          Real a = 0.0, b = sw(o + nx + q), c = 0.0, r = sw(o + 3*nx + q);
+          if (q >= s) {
+            const Real f = -sw(o + q)/sw(o + nx + q - s);
+            a = f*sw(o + q - s);
+            b += f*sw(o + 2*nx + q - s);
+            r += f*sw(o + 3*nx + q - s);
+          }
+          if (q + s < nx) {
+            const Real g = -sw(o + 2*nx + q)/sw(o + nx + q + s);
+            c = g*sw(o + 2*nx + q + s);
+            b += g*sw(o + q + s);
+            r += g*sw(o + 3*nx + q + s);
+          }
+          sw(d + q) = a;
+          sw(d + nx + q) = b;
+          sw(d + 2*nx + q) = c;
+          sw(d + 3*nx + q) = r;
+        });
+        tm.team_barrier();
+        o = d;
+      }
+      Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int q) {
+        w(m,dst,k,j,is+q) = sw(o + 3*nx + q)/sw(o + nx + q);
+      });
+    });
+    return;
+  }
   par_for("cln_thomas", DevExeSpace(), 0, nmb1, l.o[2], l.o[2]+l.n[2]-1,
           l.o[1], l.o[1]+l.n[1]-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {

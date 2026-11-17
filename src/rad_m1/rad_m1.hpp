@@ -3048,6 +3048,7 @@ class RadiationM1 {
   Real cln_c1 = 0.5;            // clean_w_c1: C1 above which w = 1
   Real cln_tol = 1.0e-10;       // clean_tol: relative residual of the linear solve
   int cln_maxit = 4000;         // clean_maxit: BiCGStab iterations
+  bool cln_pcr = true;          // clean_stag_pcr: PC line solves by PCR on a GPU
   int cln_stall_n = 0;          // clean_bicg_stall_its: stall window (0 = off)
   Real cln_stall_f = 0.99;      // clean_bicg_stall_fac: least residual drop per window
   int cln_maxnl = 50;           // clean_maxnl: Newton iterations
