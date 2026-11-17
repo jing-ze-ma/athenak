@@ -892,7 +892,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     std::int32_t hdr[4] = {0, 0, 0, 0};
     if (ok) {std::memcpy(&(hdr[0]), &(rss_hdr[0]), sizeof(hdr));}
     if (!ok || hdr[0] != 1 || hdr[1] < 1 || hdr[1] > 64 || hdr[2] < 0 ||
-        (hdr[2] > 4 && (hdr[2] < 16 || hdr[2] > 20))) {   // mode + 16
+        (hdr[2] > 5 && (hdr[2] < 16 || hdr[2] > 21))) {   // mode + 16
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "the <hydro>/rad_signal_speed header of this restart "
                 << "file is broken." << std::endl;
