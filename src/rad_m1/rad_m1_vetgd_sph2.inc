@@ -758,6 +758,7 @@ void RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws) {
     });
     if (vgd_raw) {
       Kokkos::fence();
+      vgd_gbrec.erase(key);
       cb.assign(pv.data(), pv.data() + 4*np);
       for (int sd = 0; sd < 2; ++sd) {
         auto f_ = (sd == 0) ? fs_ : fr_;
@@ -838,6 +839,50 @@ void RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws) {
 #else
   (void) i;
 #endif
+}
+
+//----------------------------------------------------------------------------------------
+//! vgd_raw with vet_gd_band_ring: the record of the band positions the raw exchange of
+//! (shell, pass, depth) key writes (VetGdGbHaloC's kept list, else the depth prefix of
+//! the receive list, every direction), encoded as the exact lists ((m n + v) c3 + k) c2
+//! + j: the ring saves and restores these values of the inward band (VetGdRingFlush)
+
+int RadiationM1::VetGdRawKey(const int i, const bool inw, const int ws) const {
+  const int wq = std::min(ws, static_cast<int>(vgd_gdnl.size()) - 1);
+  return (2*i + (inw ? 1 : 0))*(vgd_w + 1) + wq;
+}
+
+DvceArray1D<int> RadiationM1::VetGdRawRec(const int key) {
+  auto it = vgd_gbrec.find(key);
+  if (it != vgd_gbrec.end()) {return it->second;}
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nv = vgd_n, wq = key % (vgd_w + 1), np = static_cast<int>(vgd_csprk.size());
+  const int c3 = indcs.nx3 + 2*vgd_w, c2 = indcs.nx2 + 2*vgd_w;
+  if (static_cast<double>(pmy_pack->nmb_thispack)*nv*c3*c2 >= INT32_MAX) {
+    VgdFatal("vet_gd_band_ring: raw band index >= 2^31");
+  }
+  const bool kc = vgd_gbc && vgd_gbcb.count(key) && vgd_gbcb[key].size() > 4*np + 1;
+  auto R_ = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_csrl);
+  auto D_ = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_gdpr);
+  std::vector<int> q;   // the kept (entry n + direction), else every one within depth wq
+  if (kc) {
+    q.resize(vgd_gbcb[key][4*np + 1]);
+    auto lh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_gbcf[key][1]);
+    for (size_t o = 0; o < q.size(); ++o) {q[o] = lh(o);}
+  } else {
+    for (int e = 0; e < vgd_csnrcv; ++e) {
+      for (int v = 0; v < nv && D_(e) <= wq; ++v) {q.push_back(e*nv + v);}
+    }
+  }
+  DvceArray1D<int> l("m1_vgd_rawrec", q.size());
+  auto l_h = Kokkos::create_mirror_view(l);
+  for (size_t o = 0; o < q.size(); ++o) {
+    const int e = q[o]/nv, v = q[o] - e*nv;
+    l_h(o) = ((R_(e,0)*nv + v)*c3 + R_(e,1))*c2 + R_(e,2);
+  }
+  Kokkos::deep_copy(l, l_h);
+  vgd_gbrec[key] = l;
+  return l;
 }
 
 template void RadiationM1::VetGdGbHaloC<DvceArray5D<Real>>(DvceArray5D<Real> &a,

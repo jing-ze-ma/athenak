@@ -4009,8 +4009,13 @@ class RadiationM1 {
   std::vector<int> vgd_rg_state;      // (i): -1 compact, else slot
   std::vector<int> vgd_rg_sown;       // (s): the shell holding slot s, -1 free
   std::vector<int64_t> vgd_rg_so, vgd_rg_sn;   // (i): save store offset, count/array
-  std::vector<int> vgd_rg_sk;         // (i): save kind: 1 exact list, 2 dense band
-  std::vector<int> vgd_rg_se;         // (i): the exact list record of the save
+  std::vector<int> vgd_rg_sk;         // (i): save kind: 1 exact list, 2 dense band, 3 raw
+  std::vector<int> vgd_rg_se;         // (i): the exact list record (3: the raw key)
+  // vgd_raw: the band positions (encoded as the exact lists) each raw exchange writes,
+  // keyed as vgd_gbcf (rad_m1_vetgd_sph2.inc VetGdRawRec)
+  std::map<int, DvceArray1D<int>> vgd_gbrec;
+  int VetGdRawKey(const int i, const bool inw, const int ws) const;
+  DvceArray1D<int> VetGdRawRec(const int key);
   int64_t vgd_rg_stop = 0;            // store fill this sweep
   DvceArray1D<Real> vgd_rg_store;     // saved inward band values (main, then twin)
   Kokkos::View<int64_t**, DevMemSpace> vgd_rg_doffc;   // (m, i)

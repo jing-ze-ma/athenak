@@ -1194,7 +1194,9 @@ void RadiationM1::VetGdInit() {
     // shells / async / band_exit) and some block has a remote side (else no band)
     // (memcut-1020: on the cubed sphere, where the cs compact lists apply: every band
     // value the cs sweep reads comes from the compact exchange of this sweep)
-    const bool hxok = vgd_csg ? (vgd_cscomp && vgd_hmpi)
+    // (vgd_raw: every band value the sweep reads, from its exchange of this sweep)
+    const bool hxok = vgd_raw ? (vgd_hmpi && vgd_nb1 == 1 && !vgd_async && !vgd_bandx)
+                    : vgd_csg ? (vgd_cscomp && vgd_hmpi)
                               : (vgd_hx_on && vgd_shl_on && !vgd_bandx && !vgd_async &&
                                  vgd_hmpi && (vgd_hcomp > 0) && (vgd_hl_mb > 0));
     bool anyside = false;
@@ -7166,11 +7168,11 @@ void RadiationM1::VetGdSweep() {
         VetGdHalo(vgd_i, n, i, i, wsx, true, two ? &vgd_itw : nullptr);
         if (rga && inw) {
           // the record of the values to save from this shell's inward band: the exact
-          // list of the exchange, else (another halo path) the whole band
+          // list of the exchange (vgd_raw: what it wrote), else the whole band
           const int ex = i;
           const bool xl = vgd_rg_lastx && (vgd_rg_lastx_e == ex);
-          vgd_rg_sk[i] = xl ? 1 : 2;
-          vgd_rg_se[i] = xl ? ex : -1;
+          vgd_rg_sk[i] = vgd_raw ? 3 : (xl ? 1 : 2);
+          vgd_rg_se[i] = vgd_raw ? VetGdRawKey(i, true, wsx) : (xl ? ex : -1);
         }
       }
       if (rga) {VetGdRingFlush();}
@@ -9889,9 +9891,14 @@ void RadiationM1::VetGdRingFlush() {
     if (sv.kind) {
       const int i = sv.i;
       const int wl = vgd_rg_wfull[i];
-      if (vgd_rg_sk[i] != 1) {vgd_rg_sk[i] = 2;}   // no exact record: the whole band
+      if (vgd_rg_sk[i] != 1 && vgd_rg_sk[i] != 3) {vgd_rg_sk[i] = 2;}   // the whole band
       sv_k = vgd_rg_sk[i];
-      if (sv_k == 1) {
+      if (sv_k == 3) {   // vgd_raw: the positions the raw exchange wrote
+        sv_dl = VetGdRawRec(vgd_rg_se[i]);
+        sv_nr = sv_dl.extent_int(0);
+        sv_n = sv_nr;
+        sv_k = 1;
+      } else if (sv_k == 1) {
         const VgdHlEntry &X = vgd_hxe[vgd_rg_se[i]];
         sv_dl = X.dl;
         sv_dw = X.dw;
@@ -9933,7 +9940,12 @@ void RadiationM1::VetGdRingFlush() {
       rs_k = vgd_rg_sk[i];
       rs_so = vgd_rg_so[i];
       rs_n = vgd_rg_sn[i];
-      if (rs_k == 1) {
+      if (rs_k == 3) {
+        rs_dl = VetGdRawRec(vgd_rg_se[i]);
+        rs_nr = rs_dl.extent_int(0);
+        rs_k = 1;
+        if (rs_nr != rs_n) {VgdFatal("vet_gd_band_ring: the raw record changed");}
+      } else if (rs_k == 1) {
         const VgdHlEntry &X = vgd_hxe[vgd_rg_se[i]];
         rs_dl = X.dl;
         rs_dw = X.dw;
