@@ -301,8 +301,8 @@ void RadiationM1::CleanClosureIterate() {
 
 void RadiationM1::CleanFvSourceAlloc() {
   if (cln_fvq.extent_int(0) == pmy_pack->nmb_thispack) return;
-  Kokkos::realloc(cln_fvq, pmy_pack->nmb_thispack, CLQ_N, cln_s.extent_int(2),
-                  cln_s.extent_int(3), cln_s.extent_int(4));
+  Kokkos::realloc(cln_fvq, pmy_pack->nmb_thispack, (cln_rfv == 3) ? CLQ_N : CLQ_N0,
+                  cln_s.extent_int(2), cln_s.extent_int(3), cln_s.extent_int(4));
 }
 
 //----------------------------------------------------------------------------------------
@@ -1950,7 +1950,7 @@ void RadiationM1::CleanFvSweep() {
       fq(m,CLQ_E,k,j,i) = sj - ej*jr;
       fq(m,CLQ_W,k,j,i) = ej;
     });
-    CleanGhostFill(cln_fvq, CLQ_X, 3);
+    CleanGhostFill(cln_fvq, CLQ_X, 4);   // (chi, S, J, q)
     par_for("cln_fv_src", DevExeSpace(), 0, nmb - 1, ks, indcs.ke, js, indcs.je, is,
             indcs.ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {

@@ -217,14 +217,15 @@ struct CleanArgs {
   DvceArray4D<Real> phi, emag;
 };
 
-// the source moments of the FV rays (array cln_fvq; lld: all, else chi and S)
+// the source moments of the FV rays (array cln_fvq; lld: all, else chi and S, CLQ_N0)
 constexpr int CLQ_X = 0;     // chi
-constexpr int CLQ_J = 1;     // J of the source
-constexpr int CLQ_E = 2;     // the gas's emission q = S - (1 - eps) J
-constexpr int CLQ_S = 3;     // slopes of S along x1, x2, x3 (+3)
-constexpr int CLQ_W = 6;     // 1 - eps
-constexpr int CLQ_C = 7;     // curvatures Q of S along x1, x2, x3 (+3)
-constexpr int CLQ_S0 = 10;   // S (every FV mode)
+constexpr int CLQ_S0 = 1;    // S (every FV mode)
+constexpr int CLQ_N0 = 2;
+constexpr int CLQ_J = 2;     // J of the source
+constexpr int CLQ_E = 3;     // the gas's emission q = S - (1 - eps) J
+constexpr int CLQ_S = 4;     // slopes of S along x1, x2, x3 (+3)
+constexpr int CLQ_W = 7;     // 1 - eps
+constexpr int CLQ_C = 8;     // curvatures Q of S along x1, x2, x3 (+3)
 constexpr int CLQ_N = 11;
 
 // cubed-sphere geometry (array cln_gn), Cartesian components
