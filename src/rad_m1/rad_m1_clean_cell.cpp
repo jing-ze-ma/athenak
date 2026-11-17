@@ -544,8 +544,14 @@ void RadiationM1::CleanCellRightHandSide() {
                     !((fref == M1_FREF_CLEAN) && !cln_fref_set && !cln_vzero);
   auto fr = cln_fref;
   auto aref = arad_ref;
-  par_for("clc_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+  // (256 threads per block: the kernel needs more than 256 registers, the rest go to
+  // the accumulation registers instead of scratch memory)
+  const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
+  using Rp256 = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
+  Kokkos::parallel_for("clc_rhs", Rp256(DevExeSpace(), 0, (nmb1 + 1)*nk*nj*ni),
+  KOKKOS_LAMBDA(const int q) {
+    const int m = q/(nk*nj*ni), k = ks + (q/(nj*ni))%nk;
+    const int j = js + (q/ni)%nj, i = is + q%ni;
     const Real t = x.w(m,CLW_T,k,j,i);
     const Real hcke = x.h*x.c*op(m,M1_OP_E,k,j,i);
     // h S_E (Ma et al. 2025, eq. 56) = A - W: W = v.dm the work of the force on the gas,
