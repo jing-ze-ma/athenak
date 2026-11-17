@@ -286,9 +286,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_vfreeze = pin->GetOrAddInteger("rad_m1","clean_vfreeze",0);
     cln_gas_exact = pin->GetOrAddBoolean("rad_m1","clean_gas_exact",true);
     {const std::string yr = pin->GetOrAddString("rad_m1","clean_yres","false");
-    if (yr.compare("false") == 0) {
+    // (a file of the boolean key, before push 17, stores 0 | 1)
+    if (yr.compare("false") == 0 || yr.compare("0") == 0) {
       cln_yres = M1_YRES_OFF;
-    } else if (yr.compare("true") == 0 || yr.compare("post") == 0) {
+    } else if (yr.compare("true") == 0 || yr.compare("1") == 0 ||
+               yr.compare("post") == 0) {
       cln_yres = M1_YRES_POST;
     } else if (yr.compare("local") == 0) {
       cln_yres = M1_YRES_LOCAL;
