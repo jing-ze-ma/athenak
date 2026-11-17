@@ -1386,7 +1386,7 @@ void RadiationM1::CleanFirstIterate() {
   auto k1 = t2k1;
   const bool pred = cln_kpred && !cln_cell && (t2_ok || cln_k1ok) &&
                     t2_solve != M1_T2S_NONE && !cln_vzero && t2k1.extent_int(0) > nmb1;
-  const Real h = dt_sub, ecap = SQR(SQR(impl_pred_tcap));
+  const Real h = dt_sub, ecap = SQR(SQR(impl_pred_tcap)), rtol = cln_trtol;
 
   par_for("cln_iter0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -1401,7 +1401,7 @@ void RadiationM1::CleanFirstIterate() {
       w(m,CLW_T,k,j,i) = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
                              hc*op(m,M1_OP_P,k,j,i)*arad_,
                              w(m,CLW_EI,k,j,i) + hc*op(m,M1_OP_E,k,j,i)*e,
-                             w(m,CLW_T,k,j,i));
+                             w(m,CLW_T,k,j,i), rtol);
     }
   });
   // (staggered: the ghosts of E_k for the gas terms, with the next exchange)
@@ -1701,7 +1701,7 @@ Real RadiationM1::CleanNewtonUpdate() {
   const bool bud = cln_bon;
   const bool kok = bud && (t2_ok || cln_k1ok) && t2_solve != M1_T2S_NONE &&
                    !cln_vzero && t2k1.extent_int(0) >= nmb;
-  const Real h = dt_sub;
+  const Real h = dt_sub, rtol = cln_trtol;
   auto k1 = t2k1;
   if (cln_sbimp && cln_feedback) {   // (clean_stag_sbimp: the gas takes -sb of X)
     CleanGhostFill(cln_w, CLW_X, 1);
@@ -1741,7 +1741,7 @@ Real RadiationM1::CleanNewtonUpdate() {
     const Real t = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
                        hc*op(m,M1_OP_P,k,j,i)*g*arad_,
                        w(m,CLW_EI,k,j,i) + hc*op(m,M1_OP_E,k,j,i)*ex
-                       + w(m,CLW_EP,k,j,i), t_old);
+                       + w(m,CLW_EP,k,j,i), t_old, rtol);
     w(m,CLW_EK,k,j,i) = e;
     w(m,CLW_T,k,j,i) = t;
     const Real de = ncell ? fabs(e - e_old)/fmax(fmax(fabs(e), fabs(e_old)), esc)

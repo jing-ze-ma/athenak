@@ -449,26 +449,36 @@ Real CleanSmoothStep(Real x) {
 //! \brief the gas temperature of a cell after an implicit local exchange with radiation:
 //! the root of e(d,T) + A T^4 = rhs, with A = h c kP a/(1 + h c kE) folded in by the
 //! caller.  The left side increases monotonically with T, so the root is unique and lies
-//! below T(d, rhs).  Safeguarded Newton iteration, general EOS.
+//! below T(d, rhs).  Safeguarded Newton iteration, general EOS.  rtol > 0
+//! (clean_troot_rtol): the root also stands once the residual is at that level of the
+//! row's terms, |g| <= rtol (e + A T^4 + rhs), the noise of a tabulated e(T) lying above
+//! a step of 1e-15 T; the bound T(d, rhs) (an EOS inversion) then only when a step
+//! leaves the bracket
 
 KOKKOS_INLINE_FUNCTION
 Real CleanExchangeTemperature(const EOS_Data &eos, const Real d, const Real a,
-                              const Real rhs, const Real tguess) {
+                              const Real rhs, const Real tguess, const Real rtol = 0.0) {
   if (!(rhs > 0.0)) return 0.0;
-  Real lo = 0.0, hi = eos.Temperature(d, rhs);
-  Real t = (tguess > 0.0 && tguess < hi) ? tguess : 0.5*hi;
+  Real lo = 0.0, hi = (rtol > 0.0 && tguess > 0.0) ? -1.0 : eos.Temperature(d, rhs);
+  Real t = (tguess > 0.0 && (hi < 0.0 || tguess < hi)) ? tguess : 0.5*hi;
   for (int n = 0; n < 100; ++n) {
     Real e, p, chi_rho, chi_t, cv;
     eos.ThermoAt(d, t, e, p, chi_rho, chi_t, cv);
     const Real t3 = t*t*t;
     const Real g = e + a*t3*t - rhs;
+    if (rtol > 0.0 && fabs(g) <= rtol*(fabs(e) + a*t3*t + rhs)) {
+      return t - g/(d*cv + 4.0*a*t3);
+    }
     if (g > 0.0) {
       hi = t;
     } else {
       lo = t;
     }
     Real tn = t - g/(d*cv + 4.0*a*t3);
-    if (!(tn > lo && tn < hi)) tn = 0.5*(lo + hi);
+    if (!(tn > lo && (hi < 0.0 || tn < hi))) {
+      if (hi < 0.0) hi = eos.Temperature(d, rhs);
+      tn = 0.5*(lo + hi);
+    }
     if (fabs(tn - t) <= 1.0e-15*t) return tn;
     t = tn;
   }

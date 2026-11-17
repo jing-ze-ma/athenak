@@ -317,6 +317,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     cln_nl_cell = (nn.compare("cell") == 0);}
     cln_nl_efloor = pin->GetOrAddReal("rad_m1","clean_nl_efloor",0.0);
+    cln_trtol = pin->GetOrAddReal("rad_m1","clean_troot_rtol",0.0);
     cln_maxpos = pin->GetOrAddInteger("rad_m1","clean_maxpos",3);
     cln_pcsweeps = pin->GetOrAddInteger("rad_m1","clean_pc_sweeps",1);
     // clean_pc_factor (default true), clean_pc_reuse (read only when named): the x1line
