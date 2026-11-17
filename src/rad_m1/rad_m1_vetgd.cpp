@@ -1401,10 +1401,10 @@ void RadiationM1::VetRotInit(ParameterInput *pin) {
       }
       rot_phys = vgd_rot_auto || (vgd_rot_dt > 0.0);
     } else if (vgd_on && !rev_named && fresh && !beam_named && !async_named) {
-      vgd_rot_auto = true;
+      vgd_rot_auto = vgd_rot_unc = true;
       rot_phys = true;
     } else if (vet_sc && !sc_pin && !rev_named && fresh) {
-      vgd_rot_auto = true;
+      vgd_rot_auto = vgd_rot_unc = true;
       rot_phys = true;
     }
     if (rot_phys && vet_sc && sc_pin) {
@@ -1720,12 +1720,13 @@ Real RadiationM1::VetGdAlignDt(const Real time, const Real dt) {
   // (the global step, before any alignment), fixed for the run and recorded as the number
   // so a restart (and the parameter dump) keeps it
   if (vgd_rot_auto && !(vgd_rot_dt > 0.0) && dt > 0.0) {
-    vgd_rot_dt = vgd_rot_auto_fac*dt;
+    vgd_rot_dt = vgd_rot_auto_fac*(vgd_rot_unc ? pmy_pack->pmesh->dt_uncapped : dt);
     vgd_rot_auto = false;
     if (pin_rot_ != nullptr) {pin_rot_->SetReal("rad_m1","vet_gd_rotate_dt",vgd_rot_dt);}
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> vet_gd_rotate_dt = auto: " << vgd_rot_auto_fac
-                << " x the first dt " << dt << " = " << ParameterInput::RealToString(vgd_rot_dt)
+                << " x the first " << (vgd_rot_unc ? "CFL dt (no dt_fixed / dt_retry cap) " : "dt ")
+                << (vgd_rot_unc ? pmy_pack->pmesh->dt_uncapped : dt) << " = " << ParameterInput::RealToString(vgd_rot_dt)
                 << " (recorded; t0 " << vgd_rot_t0 << ", align "
                 << (vgd_rot_align ? "on" : "off") << ", stretch " << vgd_rot_stretch
                 << ")" << std::endl;

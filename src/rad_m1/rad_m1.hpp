@@ -3566,6 +3566,9 @@ class RadiationM1 {
   // defaults-1012: vet_gd_rotate_dt = auto (the fresh vet_gd default): resolved by the
   // first VetGdAlignDt to vgd_rot_auto_fac x that dt and recorded in pin_rot_
   bool vgd_rot_auto = false;
+  // rotclk-1117: the unnamed fresh default resolves from the first CFL dt before the
+  // dt_fixed / dt_retry cap (Mesh::dt_uncapped), so a fixed-dt ladder shares one clock
+  bool vgd_rot_unc = false;
   Real vgd_rot_auto_fac = 20.0;
   ParameterInput *pin_rot_ = nullptr;
   bool vgd_rot_align = false;
