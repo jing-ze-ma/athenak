@@ -2329,7 +2329,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       }
     }
     // the rad_m1 applied face fluxes (kM1FaxRstMagic), last of the record
-    if (nfax_file == 0 && pradm1 != nullptr && pradm1->t2_ffct &&
+    if (nfax_file == 0 && pradm1 != nullptr && pradm1->t2_pfst &&
         global_variable::my_rank == 0) {
       std::cout << "NOTE <rad_m1> restart: no time2_face_fct face fluxes in the file; the "
                 << "first stage takes the stage-start face F" << std::endl;

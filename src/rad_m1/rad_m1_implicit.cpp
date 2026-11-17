@@ -23230,7 +23230,7 @@ void RadiationM1::ImplicitConsResid(bool bicg, bool trans) {
 void RadiationM1::FaxRstPack(DvceArray5D<Real> out, int nmb) {
   const int n3 = out.extent_int(2), n2 = out.extent_int(3), n1 = out.extent_int(4);
   const int nd = trans_on ? (trans_x3 ? 3 : 2) : 1;
-  const int s0 = FaxRstNslab() - ((t2_ffct && t2pf1_ok) ? 2*nd : 0);
+  const int s0 = FaxRstNslab() - ((t2_pfst && t2pf1_ok) ? 2*nd : 0);
   if (s0 < FaxRstNslab()) {   // (time2_face_fct: t2pf1 behind the fax slabs; the
     auto pf = t2pf1;           //  slabs include the ghosts, so every face a solve
     par_for("pf_rst_pack", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,  // set)
@@ -23268,7 +23268,7 @@ bool RadiationM1::FaxRstUnpack(DvceArray5D<Real> in, int nmb, int nsl) {
   const bool cm = impl_hr_cmem && fax1.extent_int(0) >= nmb;
   const int na = cm ? 2 + ((fax2.extent_int(0) > 0) ? 2 : 0) +
                       ((fax3.extent_int(0) > 0) ? 2 : 0) : 0;
-  if (t2_ffct && t2pf1.extent_int(0) >= nmb && nsl == na + 2*nd) {
+  if (t2_pfst && t2pf1.extent_int(0) >= nmb && nsl == na + 2*nd) {
     auto pf = t2pf1;
     par_for("pf_rst_unpack", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -23276,7 +23276,7 @@ bool RadiationM1::FaxRstUnpack(DvceArray5D<Real> in, int nmb, int nsl) {
     });
     t2pf1_ok = true;
     nsl = na;
-  } else if (t2_ffct && global_variable::my_rank == 0) {
+  } else if (t2_pfst && global_variable::my_rank == 0) {
     std::cout << "NOTE <rad_m1> restart: no time2_face_fct face fluxes in the file; the "
               << "first stage takes the stage-start face F" << std::endl;
   }
