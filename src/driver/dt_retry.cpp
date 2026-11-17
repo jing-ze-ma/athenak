@@ -581,8 +581,15 @@ void DtRetry::Build(Mesh *pm) {
     }
   }
   {
+    // (clean sc rays, staggered, without the reflecting top's memory: cln_fvi is each
+    // build's copy of vgd_i, written before it is read; CleanGdFaceSums)
+    auto *m1 = pk->pradm1;
+    if (m1->clean && !m1->cln_cell && m1->cln_rfv == 0 && !m1->cln_cssc &&
+        !m1->cln_scmem) {
+      sel.erase("m1.cln_fvi");
+    }
     Binder b{&ent_, "m1.", &sel, all_views_, host_};
-    pk->pradm1->DtRetryVisit(b);
+    m1->DtRetryVisit(b);
   }
   // the angular-momentum module (<hydro|mhd>/am_transport, am_vector,
   // frame_omega; exists only when one of its keys is named)
