@@ -901,11 +901,11 @@ void RadiationM1::CleanInitFaceFluxes() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanOldVector
 //! \brief E and gas state the stage starts from (stage increments added), with the gas
-//! internal energy and temperature.  With clean_stage_floor, cln_nov counts the cells whose
-//! eint the increments (the explicit combination of the earlier stages) take from above
-//! the eint of the EOS temperature floor to below it: the stage is then not accepted, as
-//! a write-back that does so (the fluid's floor would add energy the radiation's budget
-//! does not see)
+//! internal energy and temperature.  With clean_stage_floor, cln_nov counts the cells
+//! whose eint the increments (the explicit combination of the earlier stages) take from
+//! above the eint of the EOS temperature floor to below it: the stage is then not
+//! accepted, as a write-back that does so (the fluid's floor would add energy the
+//! radiation's budget does not see)
 
 void RadiationM1::CleanOldVector() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;

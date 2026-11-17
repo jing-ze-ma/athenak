@@ -3186,8 +3186,8 @@ class RadiationM1 {
   bool cln_have_n = false, cln_have_p = false, cln_have_c = false, cln_have_1 = false;
   bool cln_cand_be = false;     // the step that made cln_mc ended with backward Euler
   int cln_neint = 0;            // cells of the write-back left with gas eint < 0
-  int cln_nov = 0;              // clean_stage_floor: cells the stage increments take below
-                                // the eint of the EOS temperature floor
+  int cln_nov = 0;              // clean_stage_floor: cells the stage increments take
+                                // below the eint of the EOS temperature floor
   int cln_nguard = 0;           // cells whose extrapolated moments fell back to t^n
   Real cln_nguard_sum = 0.0, cln_next_sum = 0.0;   // guard falls, extrapolated closures
   DvceArray5D<Real> cln_w;      // work vectors (CLW_*)
