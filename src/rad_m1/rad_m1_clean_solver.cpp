@@ -10,9 +10,11 @@
 //! BiCGStab.
 
 #include <cmath>
+#include <cstdio>
 #include <limits>
 
 #include "athena.hpp"
+#include "globals.hpp"
 #include "coordinates/coordinates.hpp"
 #include "mesh/mesh.hpp"
 #include "rad_m1/m1_fluid.hpp"
@@ -777,7 +779,22 @@ int RadiationM1::CleanBiCGStab() {
   auto done = [&](const int it) {return restart(it, true) && std::sqrt(rr) <= 10.0*tol;};
 
   const Real eps = std::numeric_limits<Real>::epsilon();
+  // clean_bicg_stall_its N: a solve whose least residual (the recursive one, or the true
+  // one of a restart) fell by less than clean_bicg_stall_fac over the last N iterations
+  // has stalled, and fails as at the iteration cap
+  Real rmin = std::sqrt(rr), rwin = rmin;
   for (int it = 1; it <= cln_maxit; ++it) {
+    rmin = fmin(rmin, std::sqrt(rr));
+    if (cln_stall_n > 0 && it > 1 && (it - 1) % cln_stall_n == 0) {
+      if (!(rmin < cln_stall_f*rwin)) {
+        if (global_variable::my_rank == 0) {
+          std::printf("CLEAN BICGSTAB stall cycle %d it %d |r|/tol %.3e\n",
+                      pmy_pack->pmesh->ncycle, it - 1, rmin/tol);
+        }
+        return -it;
+      }
+      rwin = rmin;
+    }
     if (!(fabs(rho_new) > eps*std::sqrt(r0r0*rr))) {
       if (restart(it)) continue;
       return -it;

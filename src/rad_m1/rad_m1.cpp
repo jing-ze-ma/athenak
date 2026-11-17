@@ -155,6 +155,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     std::string rc = pin->GetOrAddString("rad_m1","clean_recon","plm");
     cln_cell = (ly.compare("cell") == 0);
     cln_recon = (rc.compare("plm") == 0);
+    cln_stall_n = pin->GetOrAddInteger("rad_m1","clean_bicg_stall_its",cln_cell ? 0 : 50);
+    cln_stall_f = pin->GetOrAddReal("rad_m1","clean_bicg_stall_fac",0.99);
     // the consistency term is the cell default on Cartesian meshes and, with the vet_gd
     // rays transported conservatively (clean_rays = fv1 by default), on spherical polar,
     // always with the streaming weight (an optically thick cell keeps the moment flux:
