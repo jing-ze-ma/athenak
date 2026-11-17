@@ -674,7 +674,7 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
   const int ntot = (nmb1 + 1)*nk*nj*ni;
   auto &sz = pmy_pack->pmb->mb_size.h_view(0);
   const Real dv = sz.dx1*sz.dx2*sz.dx3;
-  const bool sph = pm->use_spherical_polar;
+  const bool sph = pm->use_spherical_polar || pm->use_cubed_sphere;   // (volume sums)
   auto vol = pmy_pack->pcoord->volume;
   // totals of E and F (code units x volume)
   auto sums = [&](Real t[4]) {
