@@ -1742,9 +1742,12 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   // (an empty cell, no energy, no flux: its rows at 1e-12 of the largest scale)
   auto w = cln_w;
   Real smax[2] = {0.0, 0.0};
-  Kokkos::parallel_reduce("cln_smax", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &se, Real &sg) {
+  // (a flat range: the 4-D MDRange reduction took 1.3 ms on the A100)
+  const int n1 = ie - is + 1, n2 = je - js + 1, nji = n2*n1, nkji = (ke - ks + 1)*nji;
+  Kokkos::parallel_reduce("cln_smax", CleanRp256(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &se, Real &sg) {
+    const int m = idx/nkji, k = ks + (idx%nkji)/nji, j = js + (idx%nji)/n1;
+    const int i = is + idx%n1;
     se = fmax(se, w(m,CLW_SE,k,j,i));
     sg = fmax(sg, w(m,CLW_SG,k,j,i));
   }, Kokkos::Max<Real>(smax[0]), Kokkos::Max<Real>(smax[1]));
@@ -2404,6 +2407,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
         fc(m,CLF_N,k,j,i) = CleanFaceFlux(xh, e, dir, m, k, j, i, true);
+        fc(m,CLF_PT,k,j,i) = fc(m,CLF_N,k,j,i);   // (F^H for CleanStagDrag; QL is free)
         fc(m,CLF_N+1,k,j,i) = 0.0;
         if (!fk || !x.sph || dir == 2 || CleanBoundaryFace(x, dir, m, k, j, i)) return;
         // (spherical polar: the w share's transverse pressures, the curvature of D E but
@@ -2886,6 +2890,7 @@ void RadiationM1::CleanStagFSolveCs(const int e) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const CleanArgs &xh = *pxh;   // (in device memory: no per-thread copy)
       fc(m,CLF_N,k,j,i) = CleanFaceFlux(xh, e, dir, m, k, j, i, true);
+      fc(m,CLF_PT,k,j,i) = fc(m,CLF_N,k,j,i);   // (F^H for CleanStagDrag; QL is free)
       fc(m,CLF_N+1,k,j,i) = 0.0;
     });
   }
@@ -3188,13 +3193,16 @@ void RadiationM1::CleanStagDrag(const bool first, const bool vel) {
       if (CleanBoundaryFace(x, dir, m, k, j, i)) continue;   // (no F equation)
       const Real s = (vel || lag) ? CleanFaceStress(x, CLW_EK, dir, m, k, j, i, true)
                                   : 0.0;
+      // (vel: the F solve's fs0 just took F^H of E_k with these weights, CLF_PT)
+      const Real fq = (vel && lag) ? fc(m,CLF_PT,k,j,i) : 0.0;
       if (vel) {
         fc(m,CLF_PT,k,j,i) = (fc(m,CLF_N,k,j,i) - fc(m,CLF_G,k,j,i))/(x.c*x.c) + x.h*s -
                              x.h*fc(m,CLF_N+1,k,j,i);
       }
       if (!dr) continue;
       const Real q = !lag ? fc(m,CLF_G,k,j,i) :
-                     CleanFaceFlux(xh, CLW_EK, dir, m, k, j, i, true) + x.h*x.c*x.c*s;
+                     (vel ? fq : CleanFaceFlux(xh, CLW_EK, dir, m, k, j, i, true)) +
+                     x.h*x.c*x.c*s;
       const Real xl = x.op(m,M1_OP_T,k-dk,j-dj,i-di), xs = xl + x.op(m,M1_OP_T,k,j,i);
       const Real wl = (xs > 0.0) ? xl/xs : 0.5;
       auto ce = [&](const int kk, const int jj, const int ii) {
