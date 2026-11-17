@@ -2104,7 +2104,8 @@ void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
         for (int sd = 0; sd < 2; ++sd) {
           for (int g = 0; g < wb; ++g) {
             const int j = (sd == 1) ? (wb + nx2 + g) : (wb - 1 - g);
-            const int jm = (sd == 1) ? (wb + nx2 - 1 - g) : (wb + g);
+            const int jm = VgdMirRow(g, sd == 1, wb, nx2);
+            const double sb = ((g/nx2) % 2 == 0) ? -1.0 : 1.0;   // (even: no flip)
             const double th = x2_h(m,j), thm = x2_h(m,jm);
             const double st = std::sin(th), ct = std::cos(th);
             const double sw = std::sin(thm), cw = std::cos(thm);
@@ -2115,10 +2116,10 @@ void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
               const double a = nx*st*cp + ny*st*sp + nz*ct;
               const double b = nx*ct*cp + ny*ct*sp - nz*st;
               const double c = -nx*sp + ny*cp;
-              // (a, -b, c) in the mirror cell's frame
-              const double mx = a*sw*cp - b*cw*cp - c*sp;
-              const double my = a*sw*sp - b*cw*sp + c*cp;
-              const double mz = a*cw + b*sw;
+              // (a, -b, c) in the mirror cell's frame ((a, b, c) after two reflections)
+              const double mx = a*sw*cp + sb*b*cw*cp - c*sp;
+              const double my = a*sw*sp + sb*b*cw*sp + c*cp;
+              const double mz = a*cw - sb*b*sw;
               int r3[3];
               double w3[3];
               VgdMirPick(d, n, mx, my, mz, rx, ry, rz, wint, r3, w3);
@@ -3297,7 +3298,7 @@ void RadiationM1::VetGdThMirCs(DvceArray5D<Real> &a, const int i0, const int i1)
   KOKKOS_LAMBDA(const int m, const int c, const int k, const int s, const int i) {
     const int g = (s < wb) ? s : (s - wb);
     const int j = (s < wb) ? (wb - 1 - g) : (wb + nx2 + g);
-    const int jm = (s < wb) ? (wb + g) : (wb + nx2 - 1 - g);
+    const int jm = VgdMirRow(g, s >= wb, wb, nx2);
     a_(m,c,k,j,i) = a_(m,c,k,jm,i);
   });
 }
@@ -5179,7 +5180,7 @@ void RadiationM1::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
                     const bool hi = (ej > 0);
                     const int g = hi ? (jj - wb - nx2b) : (wb - 1 - jj);
                     const int jm = (wf == 4) ? (hi ? (wb + nx2b - 1) : wb)
-                                             : (hi ? (wb + nx2b - 1 - g) : (wb + g));
+                                             : VgdMirRow(g, hi, wb, nx2b);
                     for (int t = 0; t < ((wint && wf == 2) ? 3 : 1); ++t) {
                       if (t > 0 && w3_(m,kk,jj,d,t) == 0.0) {continue;}
                       const int dq = (wf == 4) ? d : (wint ? m3_(m,kk,jj,d,t)
@@ -6877,7 +6878,7 @@ void RadiationM1::VetGdSweep() {
                     const bool hi = (ej > 0);
                     const int g = hi ? (jj - wb - nx2b) : (wb - 1 - jj);
                     const int jm = (wf == 4) ? (hi ? (wb + nx2b - 1) : wb)
-                                             : (hi ? (wb + nx2b - 1 - g) : (wb + g));
+                                             : VgdMirRow(g, hi, wb, nx2b);
                     for (int t = 0; t < ((wint && wf == 2) ? 3 : 1); ++t) {
                       if (t > 0 && w3_(m,kk,jj,d,t) == 0.0) {continue;}
                       const int dq = (wf == 4) ? d : (wint ? m3_(m,kk,jj,d,t)
