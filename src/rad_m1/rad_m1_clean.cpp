@@ -1167,6 +1167,105 @@ void RadiationM1::CleanInitFaceFluxes() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanRstFaces
+//! \brief a staggered restart from a file without the clean scheme's state (the old
+//! production scheme): its faces hold the comoving normal flux F0 and its cells F =
+//! mean(F0) + a E, a = v + v.D (ImplicitSolve's write-back, rad_m1_implicit.cpp:20287,
+//! on the cubed sphere in covariant tangential components, :20282-20289), while the
+//! staggered faces hold the lab-frame flux.  Every face not on a physical boundary takes
+//! the old scheme's own face enthalpy flux a_f E_f (implicit_enthalpy, M1EnthCorr: plm,
+//! central, or the donor cell for upwind, picked by the sign of a_f), with each cell's
+//! a = (F - mean F0)/E from the file (its closure, no other enters); on the cubed sphere
+//! a is Cartesian (exchanged across the seams, CleanStagN takes the face's component).
+//! The faces of the physical boundaries keep theirs
+
+void RadiationM1::CleanRstFaces() {
+  if (!cln_rstold) return;
+  if (!cln_init) CleanInit();
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke, nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanArgs x = CleanMakeArgs();
+  auto u0_ = u0;
+  auto w = cln_w;
+  auto f1 = f0x1, f2 = f0x2, f3 = f0x3;
+  auto cw = pmy_pack->pcoord->cos_cell, sw = pmy_pack->pcoord->sin_cell;
+  const Real efl = e_floor;
+  const int enm = (dop_face == 1) ? M1_IENTH_CENTRAL : impl_enth;
+  // a of every cell (CLW_DM, 3) and its E (CLW_B), as the old scheme's write-back
+  par_for("cln_rsta", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real e = fmax(u0_(m,M1_E,k,j,i), efl);
+    Real g[3] = {0.5*(f1(m,k,j,i) + f1(m,k,j,i+1)), 0.0, 0.0};
+    if (x.nf > 1) g[1] = 0.5*(f2(m,k,j,i) + f2(m,k,j+1,i));
+    if (x.nf > 2) g[2] = 0.5*(f3(m,k,j,i) + f3(m,k+1,j,i));
+    w(m,CLW_B,k,j,i) = e;
+    for (int d = 0; d < 3; ++d) w(m,CLW_DM+d,k,j,i) = (u0_(m,M1_F1+d,k,j,i) - g[d])/e;
+    if (!x.cub) return;
+    // (covariant e_xi, e_eta components, those of the face normals g = sin (a^xi, a^eta))
+    const Real c = cw(m,k,j), sn = sw(m,k,j), s2 = 1.0 - c*c;
+    const Real a2 = (u0_(m,M1_F2,k,j,i) - c*u0_(m,M1_F3,k,j,i))/s2 - g[1]/sn;
+    const Real a3 = (u0_(m,M1_F3,k,j,i) - c*u0_(m,M1_F2,k,j,i))/s2 - g[2]/sn;
+    const Real a1 = u0_(m,M1_F1,k,j,i) - g[0];
+    for (int b = 0; b < 3; ++b) {
+      w(m,CLW_DM+b,k,j,i) = (a1*x.g(m,CLG_R+b,k,j,i) + a2*x.g(m,CLG_E+b,k,j,i) +
+                             a3*x.g(m,CLG_E+3+b,k,j,i))/e;
+    }
+  });
+  CleanGhostFill(cln_w, CLW_DM, 4);
+  for (int dir = 0; dir < x.nf; ++dir) {
+    auto f0 = (dir == 0) ? f0x1 : ((dir == 1) ? f0x2 : f0x3);
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    par_for("cln_rstf", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
+      // (cell o = -2, -1 | 0, 1 of the face: its a along the face normal, and E)
+      auto a = [&](const int o) {
+        return CleanStagN(x, CLW_DM, dir, m, k, j, i, k+o*dk, j+o*dj, i+o*di);
+      };
+      auto e = [&](const int o) {return w(m,CLW_B,k+o*dk,j+o*dj,i+o*di);};
+      Real af = 0.5*(a(-1) + a(0)), ef = 0.5*(e(-1) + e(0)), dum;
+      if (enm == M1_IENTH_UPWIND) {
+        ef = (af > 0.0) ? e(-1) : e(0);
+        af = (af > 0.0) ? a(-1) : a(0);
+      } else if (enm >= M1_IENTH_PLM &&
+                 !CleanBoundaryFace(x, dir, m, k-dk, j-dj, i-di) &&
+                 !CleanBoundaryFace(x, dir, m, k+dk, j+dj, i+di)) {
+        Real afl, afr;
+        PLM(a(-2), a(-1), a(0), afl, dum);
+        PLM(a(-1), a(0), a(1), dum, afr);
+        af = 0.5*(afl + afr);
+        if (af > 0.0) PLM(e(-2), e(-1), e(0), ef, dum);
+        if (af < 0.0) PLM(e(-1), e(0), e(1), dum, ef);
+      }
+      f0(m,k,j,i) += af*ef;
+    });
+  }
+  // the cell flux of these faces, as CleanWriteBack stores it (on the cubed sphere the
+  // face vector in the frame of y, not the old scheme's covariant panel components)
+  par_for("cln_rstc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real c[6] = {f1(m,k,j,i), f1(m,k,j,i+1), (x.nf > 1) ? f2(m,k,j,i) : 0.0,
+                       (x.nf > 1) ? f2(m,k,j+1,i) : 0.0, (x.nf > 2) ? f3(m,k,j,i) : 0.0,
+                       (x.nf > 2) ? f3(m,k+1,j,i) : 0.0};
+    Real fv[3] = {0.5*(c[0] + c[1]), 0.5*(c[2] + c[3]), 0.5*(c[4] + c[5])}, q[3][3];
+    if (x.cub) {
+      const Real wc[6] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+      Real fy[3];
+      CleanStagCsVector(x, m, k, j, i, c, wc, fy);
+      CleanCsFrame(x, m, k, j, i, q);
+      for (int d = 0; d < 3; ++d) fv[d] = q[d][0]*fy[0] + q[d][1]*fy[1] + q[d][2]*fy[2];
+    }
+    for (int d = 0; d < 3; ++d) u0_(m,M1_F1+d,k,j,i) = fv[d];
+  });
+  Kokkos::deep_copy(cln_w, 0.0);
+  if (global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> clean restart from a file without the clean state: the faces "
+              << "take its enthalpy flux a E (lab-frame F)" << std::endl;
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanOldVector
 //! \brief E and gas state the stage starts from (stage increments added), with the gas
 //! internal energy and temperature

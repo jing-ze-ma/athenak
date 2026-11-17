@@ -2932,6 +2932,7 @@ class RadiationM1 {
   void CleanCartGeometry();
   void CleanSteadyStart(Driver *pdrive);
   void CleanInitFaceFluxes();
+  void CleanRstFaces();
   void CleanOldVector();
   void CleanClosure();
   void CleanPredictState(const bool use_k1);
@@ -3151,6 +3152,7 @@ class RadiationM1 {
   bool cln_feedback = false;    // gas coupling active
   bool cln_init = false;        // arrays allocated
   bool cln_faces_set = false;   // starting face fluxes set
+  bool cln_rstold = false;      // restart from a file without the clean state
   bool cln_havec = false;       // a closure has been built
   bool cln_opsaved = false;     // opac holds predicted opacities during the formal solution
   Real cln_tc = -1.0e300;       // time of the closure build

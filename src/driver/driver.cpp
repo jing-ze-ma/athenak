@@ -437,6 +437,10 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
     if (res_flag && dt_rst > 0.0 && !dtfix) { pmesh->dt = dt_rst; }
   }
 
+  // a restart of the staggered clean scheme from the old scheme's file: its face fluxes
+  if (res_flag && pmesh->pmb_pack->pradm1 != nullptr) {
+    pmesh->pmb_pack->pradm1->CleanRstFaces();
+  }
   //---- Step 2b. <rad_m1>/ic_rad (opt-in; FRESH STARTS ONLY, never on a
   // restart): the IC radiation passes (rad_m1_icrad.cpp) or the steady radiation of
   // <rad_m1>/clean_init = steady (rad_m1_clean.cpp) at the first dt, then the

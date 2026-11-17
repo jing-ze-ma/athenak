@@ -1893,9 +1893,16 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   const bool t2_h2 = (pradm1 != nullptr) &&
                      (pradm1->time_scheme == radm1::M1_TIME_HESDIRK2);
   const bool t2_want = t2_h2 && !pradm1->t2_beonly;
-  const bool t2_read = (pradm1 != nullptr) && (nt2_file > 0) &&
+  // (a staggered fkin run writes version 2: an older version is the old scheme's file)
+  const bool t2_old = (pradm1 != nullptr) && pradm1->clean && !pradm1->cln_cell &&
+                      pradm1->cln_fsolve && pradm1->cln_fkin && nt2_ver < 2;
+  const bool t2_read = (pradm1 != nullptr) && (nt2_file > 0) && !t2_old &&
                        pradm1->Time2RstAccept(nt2_file, nt2_ver) &&
                        (!t2_h2 || static_cast<int>(pradm1->t2k1.extent(0)) >= nmb);
+  // (staggered clean from a file without that block: the old scheme's, CleanRstFaces)
+  if (pradm1 != nullptr) {
+    pradm1->cln_rstold = pradm1->clean && !pradm1->cln_cell && !t2_read;
+  }
   if (t2_want && !t2_read && global_variable::my_rank == 0) {
     std::cout << "### WARNING: restart file has no <rad_m1> hesdirk2 slope; the first "
               << "step is backward Euler and this restart is not bitwise." << std::endl;
