@@ -827,7 +827,13 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // a write-back that leaves gas eint < 0 (energy for the fluid floor to create) is
   // rejected like a failed solve (the stage is redone by backward Euler, a
   // backward-Euler step by dt_retry)
-  if (cell && cln_feedback && cln_neint > 0 && !t2stage && dtr_on) dtr_fail = true;
+  if (cell && cln_feedback && cln_neint > 0 && !t2stage && dtr_on) {
+    if (!dtr_fail) {
+      dtr_why = 4;   // (reason eint<=0, as the old production's)
+      dtr_resid = cln_neint;
+    }
+    dtr_fail = true;
+  }
   if (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2) {
     t2_fail = (nit < 0) || (nneg > 0) || (cell && cln_feedback && cln_neint > 0);
   }
