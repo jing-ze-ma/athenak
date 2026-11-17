@@ -595,8 +595,10 @@ void RadiationM1::CleanClosureExtrap() {
 //!     and the transported E (stiff and local, so solved as such; no overshoot).
 //! Without gas feedback the gas is held fixed and E advances at its own rate.
 //! Density is not changed by radiation within a step.  The prediction is within O(dt^2)
-//! of U^{n+1}.  Without a valid K1 (first step) or with use_k1 = false the coupling
-//! rates are zero and the formal solution sees the current state itself.
+//! of U^{n+1}.  Without a valid K1 (first step, backward Euler) the rates of 1. and 2.
+//! are zero, but the exchange 3. still relaxes the gas, as old production's relaxed ray
+//! source does in every step (a hot gas the step cools is no source of the closure).
+//! With use_k1 = false the formal solution sees the current state itself.
 
 void RadiationM1::CleanPredictState(const bool use_k1) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -611,7 +613,8 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
 
   FluidRef fl = FluidRef::Get(pmy_pack);
   const bool fluid = fl.on;
-  const bool rates = use_k1 && cln_pred && t2_ok && (t2k1.extent_int(0) > nmb1);
+  const bool exch = use_k1 && cln_pred;
+  const bool rates = exch && t2_ok && (t2k1.extent_int(0) > nmb1);
 
   // opacities at the predicted state; the solve itself uses those of the stage
   cln_opsaved = fluid && !opac_zero && (opacity_type != M1_OPAC_CONST);
@@ -644,6 +647,7 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
     // K1 is stored on active cells only; ghost cells take the explicit state
     const bool active = (k >= ks && k <= ke && j >= js && j <= je && i >= is && i <= ie);
     const bool use_rates = rates && active;
+    const bool relax = exch && feedback && active;
     const Real e0 = u0_(m,M1_E,k,j,i);
     Real e = e0, d = 1.0, t = 0.0;
     if (fluid) {
@@ -656,14 +660,16 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
         // gas held fixed: E advances at its own rate, which includes the exchange
         const Real de = dt*k1(m,M1_T2_E,k,j,i);
         e = (e0 + de > 0.0) ? e0 + de : ((e0 > 0.0) ? e0*exp(de/e0) : 0.0);
-      } else if (use_rates) {
-        // radiation transport over dt, less the work of the radiation force on the gas,
-        // then the implicit local exchange of (eint, E) over dt
-        for (int n = 0; n < 3; ++n) mom[n] += dt*k1(m,M1_T2_M1+n,k,j,i);
-        const Real ekin_new = 0.5*(SQR(mom[0]) + SQR(mom[1]) + SQR(mom[2]))/d;
-        const Real de = dt*(k1(m,M1_T2_E,k,j,i) + k1(m,M1_T2_EN,k,j,i))
-                        - (ekin_new - ekin);
-        e = (e0 + de > 0.0) ? e0 + de : ((e0 > 0.0) ? e0*exp(de/e0) : 0.0);
+      } else if (relax) {
+        // radiation transport over dt (a valid K1), less the work of the radiation force
+        // on the gas, then the implicit local exchange of (eint, E) over dt
+        if (use_rates) {
+          for (int n = 0; n < 3; ++n) mom[n] += dt*k1(m,M1_T2_M1+n,k,j,i);
+          const Real ekin_new = 0.5*(SQR(mom[0]) + SQR(mom[1]) + SQR(mom[2]))/d;
+          const Real de = dt*(k1(m,M1_T2_E,k,j,i) + k1(m,M1_T2_EN,k,j,i))
+                          - (ekin_new - ekin);
+          e = (e0 + de > 0.0) ? e0 + de : ((e0 > 0.0) ? e0*exp(de/e0) : 0.0);
+        }
         // E (1 + h c kE) = e + h c kP a T^4,  eint(T) + E = eint_h + e
         const Real hce = dt*cl*opac_(m,M1_OP_E,k,j,i);
         const Real hcp = dt*cl*opac_(m,M1_OP_P,k,j,i)*arad_;
