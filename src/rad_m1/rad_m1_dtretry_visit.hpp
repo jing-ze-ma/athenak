@@ -1169,6 +1169,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_sphere", cln_sphere);
   v.value("cln_sph_r", cln_sph_r);
   v.value("cln_vfreeze", cln_vfreeze);
+  v.value("cln_sfloor", cln_sfloor);
   v.value("cln_gas_exact", cln_gas_exact);
   v.value("cln_yres", cln_yres);
   v.value("cln_nl_cell", cln_nl_cell);
@@ -1300,6 +1301,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_have_1", cln_have_1);
   v.value("cln_cand_be", cln_cand_be);
   v.value("cln_neint", cln_neint);
+  v.value("cln_nov", cln_nov);
   v.value("cln_nguard", cln_nguard);
   v.value("cln_nguard_sum", cln_nguard_sum);
   v.value("cln_next_sum", cln_next_sum);

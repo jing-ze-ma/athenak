@@ -844,7 +844,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     dtr_fail = true;
   }
   if (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2) {
-    t2_fail = (nit < 0) || (nneg > 0) || (cell && cln_feedback && cln_neint > 0);
+    t2_fail = (nit < 0) || (nneg > 0) ||
+              (cell && cln_feedback && (cln_neint > 0 || cln_nov > 0));
   }
   // (force_reference = clean: the reference is the force of the converged, accepted
   // first coupled solve, every iterate of which recaptures it; a failed one is redone)
@@ -900,7 +901,11 @@ void RadiationM1::CleanInitFaceFluxes() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanOldVector
 //! \brief E and gas state the stage starts from (stage increments added), with the gas
-//! internal energy and temperature
+//! internal energy and temperature.  With clean_stage_floor, cln_nov counts the cells whose
+//! eint the increments (the explicit combination of the earlier stages) take from above
+//! the eint of the EOS temperature floor to below it: the stage is then not accepted, as
+//! a write-back that does so (the fluid's floor would add energy the radiation's budget
+//! does not see)
 
 void RadiationM1::CleanOldVector() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -918,26 +923,47 @@ void RadiationM1::CleanOldVector() {
   auto inc = t2inc;
   auto w = cln_w;
   CleanArgs x = CleanMakeArgs();
+  const bool sfl = cln_sfloor && feedback && stage;
+  const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
 
-  par_for("cln_old", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+  Real nov = 0.0;
+  Kokkos::parallel_reduce("cln_old", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                                                           (nmb1 + 1)*nk*nj*ni),
+  KOKKOS_LAMBDA(const int q, Real &nb) {
+    const int m = q/(nk*nj*ni), k = ks + (q/(nj*ni))%nk;
+    const int j = js + (q/ni)%nj, i = is + q%ni;
     Real t = 0.0;
     if (fluid) {
+      const Real d = uh(m,IDN,k,j,i);
+      Real p[3];
+      Real e0 = 0.0;
+      if (sfl) {
+        CleanGasMomentum(x, uh, m, k, j, i, p);
+        e0 = CleanGasEint(x, uh, 0.5*(SQR(p[0]) + SQR(p[1]) + SQR(p[2]))/d, m, k, j, i);
+      }
       if (feedback && stage) {
         for (int n = 0; n < 3; ++n) uh(m,IM1+n,k,j,i) += inc(m,M1_T2_M1+n,k,j,i);
         uh(m,IEN,k,j,i) += inc(m,M1_T2_EN,k,j,i);
       }
-      const Real d = uh(m,IDN,k,j,i);
-      Real p[3];
       CleanGasMomentum(x, uh, m, k, j, i, p);
       const Real ekin = 0.5*(SQR(p[0]) + SQR(p[1]) + SQR(p[2]))/d;
-      const Real eint = fmax(CleanGasEint(x, uh, ekin, m, k, j, i), 0.0);
+      const Real e1 = CleanGasEint(x, uh, ekin, m, k, j, i);
+      if (sfl) {
+        Real ef = 0.0;
+        if (eos.tfloor > 0.0) {
+          Real pf, chi_rho, chi_t, cv;
+          eos.ThermoAt(d, eos.tfloor, ef, pf, chi_rho, chi_t, cv);
+        }
+        if (e0 > ef && e1 < ef) nb += 1.0;
+      }
+      const Real eint = fmax(e1, 0.0);
       t = eos.Temperature(d, eint);
       w(m,CLW_EI,k,j,i) = eint;
     }
     w(m,CLW_T,k,j,i) = t;
     w(m,CLW_EO,k,j,i) = u0_(m,M1_E,k,j,i) + (stage ? inc(m,M1_T2_E,k,j,i) : 0.0);
-  });
+  }, Kokkos::Sum<Real>(nov));
+  cln_nov = static_cast<int>(CleanReduce(nov, false));
 }
 
 //----------------------------------------------------------------------------------------
