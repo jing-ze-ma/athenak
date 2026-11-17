@@ -2832,6 +2832,20 @@ void RadiationM1::CleanRayCut() {
   vlat_icut = cln_rcut;
 }
 
+// post2-1117: the directions of one cell as a strided row, the accessor's address once
+// per cell instead of per direction (the same values; out of the slab: its dummy)
+struct CleanRow {
+  Real *p;
+  int64_t s;
+  KOKKOS_INLINE_FUNCTION Real operator[](const int d) const {return p[d*s];}
+};
+KOKKOS_INLINE_FUNCTION
+CleanRow VgdRow(const RadiationM1::VgdRag &vi, const int m, const int kb, const int jb,
+                const int i) {
+  Real *p = &vi(m,0,kb,jb,i);
+  return CleanRow{p, (p == vi.d.data() + vi.dummy) ? 0 : 1};
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanClosureFromGd
 //! \brief the closure from the vet_gd intensities in the local basis (r, theta, phi) of
@@ -2875,9 +2889,10 @@ void RadiationM1::CleanClosureFromGd(const int i0, const int i1) {
       CleanThickFrame(x, x3v, m, k, j, i, e);
       const Real f[3] = {iw_(m,M1_IW_F1,k,j,i), iw_(m,M1_IW_F2,k,j,i),
                          iw_(m,M1_IW_F3,k,j,i)}, en = iw_(m,M1_IW_EN,k,j,i);
+      const CleanRow r = VgdRow(vi_, m, k+ok, j+og, i);
       for (int d = 0; d < n; ++d) {
         const Real nv[3] = {dir_(d,0), dir_(d,1), dir_(d,2)};
-        vi_(m,d,k+ok,j+og,i) = CleanThickI(e, f, en, ic, nv);
+        r.p[d*r.s] = CleanThickI(e, f, en, ic, nv);
       }
     });
   }
@@ -2891,6 +2906,7 @@ void RadiationM1::CleanClosureFromGd(const int i0, const int i1) {
     Real nd[3][3];
     if (x.cub) CleanCsFamily(x, m, k, j, i, nd);
     Real q[CLN_N] = {0.0}, hp[3] = {0.0}, hm[3] = {0.0};   // (q in registers)
+    const CleanRow r = fv ? CleanRow{nullptr, 0} : VgdRow(vi_, m, k+ok, j+og, i);
     for (int d = 0; d < n; ++d) {
       const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
       Real mu[3] = {nx*st*cp + ny*st*sp + nz*ct, nx*ct*cp + ny*ct*sp - nz*st,
@@ -2900,7 +2916,7 @@ void RadiationM1::CleanClosureFromGd(const int i0, const int i1) {
         nu[b] = x.cub ? nx*nd[b][0] + ny*nd[b][1] + nz*nd[b][2] : mu[b];
       }
       const Real nv[3] = {nx, ny, nz};
-      const Real iv = fv ? fi_(m,d,k,j,i) : vi_(m,d,k+ok,j+og,i);
+      const Real iv = fv ? fi_(m,d,k,j,i) : r[d];
       const Real a = dir_(d,3)*iv;
       q[CLN_J] += a;
       for (int b = 0; b < 3; ++b) {
@@ -2949,6 +2965,19 @@ struct CleanGdI {
     if (j < js) return gl(m,d,0,k-ks,i);
     if (k < ks) return gl(m,d,1,j-js,i);
     return vi(m,d,k+ok,j+og,i);
+  }
+  KOKKOS_INLINE_FUNCTION
+  CleanRow At(const int m, const int k, const int j, const int i) const {
+    if (pk && (j < js || k < ks)) {
+      const int kb = k + ok, jb = j + og, ow = own(m,kb,jb,0);
+      return (ow < 0) ? VgdRow(vi, m, kb, jb, i)
+                      : VgdRow(vi, ow, own(m,kb,jb,1), own(m,kb,jb,2), i);
+    }
+    if (j < js || k < ks) {
+      return CleanRow{&gl(m,0,(j < js) ? 0 : 1,(j < js) ? k-ks : j-js,i),
+                      static_cast<int64_t>(gl.stride(1))};
+    }
+    return VgdRow(vi, m, k+ok, j+og, i);
   }
 };
 
@@ -3053,7 +3082,8 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
       par_for("cln_gd_chc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         if (j >= js + ng && j <= je - ng && k >= ks + ng && k <= ke - ng) return;
-        for (int c = 0; c < nd; ++c) ch(m,c,k,j,i) = vi_(m,d0+c,k+ok,j+og,i);
+        const CleanRow r = VgdRow(vi_, m, k+ok, j+og, i);
+        for (int c = 0; c < nd; ++c) ch(m,c,k,j,i) = r[d0+c];
       });
       CleanGhostFill(ch, 0, nd);
       par_for("cln_gd_glc", DevExeSpace(), 0, nmb1, 0, nd - 1, 0, nt - 1, is, ie,
@@ -3095,8 +3125,10 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   };
   // beam of direction d through the low theta or phi face of cell (k,j,i), of vector
   // area a (not a boundary)
+  // (gl: ro, ru the rows of the cell and of its neighbour below along dir)
   auto lat = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
-                                  const int i, const int d, const Real a[3]) {
+                                  const int i, const int d, const Real a[3],
+                                  const CleanRow &ro, const CleanRow &ru) {
     const CleanArgs &x = *px;
     const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
     const int kl = k - (dir == 2), jl = j - (dir == 1);
@@ -3104,12 +3136,15 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
       return f*CleanFvFaceAxi(fi_, fq_, fm_, o2, m, d, k, j, i, 0, f > 0.0, nl);
     }
     if (fv) return f*CleanFvFace(fi_, fq_, o2, m, d, dir, k, j, i, f > 0.0, nl);
-    if (!(f > 0.0)) return f*inten(m, d, k, j, i);
+    if (!(f > 0.0)) return f*(gl ? ro[d] : inten(m, d, k, j, i));
     if (axi && dir == 2) return f*inten(m, mp_(m,kl+ok,j+og,d), k, j, i);
     const bool seam = (dir == 1) ? (j == js && x.mbc(m,2) == BoundaryFlag::periodic)
                                  : (k == ks && x.mbc(m,4) == BoundaryFlag::periodic);
-    if (!seam || wl_(m,kl+ok,jl+og) == 0) return f*inten(m, d, kl, jl, i);
-    if (!wint) return f*inten(m, mp_(m,kl+ok,jl+og,d), kl, jl, i);
+    if (!seam || wl_(m,kl+ok,jl+og) == 0) return f*(gl ? ru[d] : inten(m, d, kl, jl, i));
+    if (!wint) {
+      const int e = mp_(m,kl+ok,jl+og,d);
+      return f*(gl ? ru[e] : inten(m, e, kl, jl, i));
+    }
     Real v = 0.0;
     for (int t = 0; t < 3; ++t) {
       v += w3_(m,kl+ok,jl+og,d,t)*inten(m, m3_(m,kl+ok,jl+og,d,t), kl, jl, i);
@@ -3159,8 +3194,11 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
         face(dir, m, kf, jf, i, a, e);
         const bool bd = bnd(dir, m, kf, jf, i);
         const Real ar = x.area[dir](m,kf,jf,i);
+        const CleanRow ro = gl ? gi.At(m, kf, jf, i) : CleanRow{nullptr, 0};
+        const CleanRow ru = (gl && !bd) ? gi.At(m, kf - (dir == 2), jf - (dir == 1), i)
+                                        : CleanRow{nullptr, 0};
         for (int d = 0; d < n; ++d) {
-          add(e, ar, d, bd ? 0.0 : lat(dir, m, kf, jf, i, d, a), q);
+          add(e, ar, d, bd ? 0.0 : lat(dir, m, kf, jf, i, d, a, ro, ru), q);
         }
         for (int c = 0; c < 4; ++c) cs(m,(up ? CLN_FH + 4*(dir - 1) : nf)+c,k,j,i) = q[c];
       }
@@ -3192,9 +3230,11 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
       if (r >= 0) hm += dir_(d,3)*u*inten(m, r, k, j, ic);
     }
     if (ho > 0.0 && hm > 0.0) sm = ho/hm;
+    const CleanRow rl = gl ? gi.At(m, k, j, i - 1) : CleanRow{nullptr, 0};
+    const CleanRow rh = gl ? gi.At(m, k, j, i) : CleanRow{nullptr, 0};
     for (int d = 0; d < n; ++d) {
       const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
-      Real iv = gl ? CleanFvFace(gi, gi, false, m, d, 0, k, j, i, f > 0.0)
+      Real iv = gl ? ((f > 0.0) ? rl[d] : rh[d])
                    : CleanFvFace(fi_, fq_, o2, m, doff + d, 0, k, j, i, f > 0.0, nl);
       if (CleanBoundaryFace(x, 0, m, k, j, i)) {   // the sweep's x1 boundary
         const Real s0 = fv ? sq_(m,CLQ_S0,k,j,is) : exp(cw_(m,1,k+ok,j+og,is));
