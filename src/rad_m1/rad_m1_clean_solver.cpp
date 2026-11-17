@@ -1039,8 +1039,28 @@ int RadiationM1::CleanBiCGStab() {
     cln_eta = eta;
     tol = fmax(eta*r0, 0.1*cln_tolb);
   }
-  if (std::sqrt(rr) <= tol) return 0;
-  auto done = [&](const int it) {return restart(it, true) && std::sqrt(rr) <= 10.0*tol;};
+  // clean_init_cnorm > 0, the steady start's solves (the old production's
+  // implicit_lin_cnorm): the test on max_i |r_i|/(s_i E_i), s_i = 1 + h c chi_E (1 - r)
+  // the row's M-matrix excess, E_i the iterate: |dE_i| <= cnorm E_i in every cell.  The
+  // test relative to |b| leaves an envelope far below the core at its first
+  // preconditioned iterate, which depends on the MeshBlock decomposition (rule 5)
+  const bool cn = (cln_cnorm > 0.0) && cln_insteady && !bud && !cell;
+  CleanArgs xa = CleanMakeArgs();
+  const Real efl = e_floor;
+  auto conv = [&](const int s, const Real r2, const Real t) {
+    if (!cn) return std::sqrt(r2) <= t;
+    Real a = 0.0;
+    Kokkos::parallel_reduce("cln_cnorm", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+        DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &mx) {
+      const Real qr = xa.feedback ? xa.w(m,CLW_RY,k,j,i) : 1.0;
+      mx = fmax(mx, fabs(w(m,s,k,j,i))/((1.0 + xa.h*xa.c*xa.op(m,M1_OP_E,k,j,i)*qr)*
+                                       fmax(xa.w(m,CLW_EK,k,j,i), efl)));
+    }, Kokkos::Max<Real>(a));
+    return CleanReduce(a, true) <= cln_cnorm;
+  };
+  if (conv(sr, rr, tol)) return 0;
+  auto done = [&](const int it) {return restart(it, true) && conv(sr, rr, 10.0*tol);};
 
   const Real eps = std::numeric_limits<Real>::epsilon();
   // clean_bicg_stall_its N: a solve whose least residual (the recursive one, or the true
@@ -1088,7 +1108,7 @@ int RadiationM1::CleanBiCGStab() {
         s0 += w(m,ss+c,k,j,i)*w(m,ss+c,k,j,i);
       }
     })[0];
-    if (std::sqrt(s2) <= tol) {
+    if (conv(ss, s2, tol)) {
       axpby(sx, sx, 1.0, sy, alpha);
       if (done(it)) return it;
       continue;
@@ -1110,7 +1130,7 @@ int RadiationM1::CleanBiCGStab() {
     });
     rr = e[0];
     rho_new = e[1];
-    if (std::sqrt(rr) <= tol && done(it)) return it;
+    if (conv(sr, rr, tol) && done(it)) return it;
     if (omega == 0.0 && !restart(it)) return -it;
   }
   return -cln_maxit;

@@ -675,6 +675,7 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
   // steps the thermal relaxation of the gas, whose solves fail when started at the top)
   const bool lad = relax && icr_fmeas;
   Real dp = 0.0, fac = lad ? 1.0 : cln_steady_dtfac, emax = 0.0;
+  cln_insteady = true;
   auto u0_ = u0;
   DvceArray5D<Real> uo("cln_steady_u", nmb1 + 1, 4, u0.extent(2), u0.extent(3),
                        u0.extent(4));
@@ -775,6 +776,7 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
     ok = ok || !big;
     dp = d;
   }
+  cln_insteady = false;
   // restore the run's setup; the first step starts from this state without history
   sums(t1);
   if (cln_mdcap) {   // (wb_arad_md: the reference in the ghosts, the hydro walks read it)
