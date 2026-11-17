@@ -139,25 +139,22 @@ CleanArgs RadiationM1::CleanMakeArgs() {
 //! \brief a device copy (slot s < 8) of an argument struct of n <= 8 KB bytes (CleanArgs,
 //! the EOS) for the device calls that are not inlined: a reference to a kernel's capture
 //! is copied to the stack of every thread (~3 KB for CleanArgs), one to device memory is
-//! read in place (CleanDev, CleanDevArgs).  The host takes the struct itself.
+//! read in place (CleanDev, CleanDevArgs).
 
 const void *RadiationM1::CleanDevCopy(const void *p, const size_t n, const int s) {
-  if constexpr (std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>) {
-    return p;
-  } else {
-    constexpr size_t slot = 8192;
-    if (n > slot || s < 0 || s >= 8) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "CleanDevCopy: " << n << " bytes in slot " << s
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    if (cln_xdev.extent(0) == 0) Kokkos::realloc(cln_xdev, 8*slot);
-    Kokkos::View<const char *, HostMemSpace, Kokkos::MemoryUnmanaged>
-        h(static_cast<const char *>(p), n);
-    Kokkos::deep_copy(Kokkos::subview(cln_xdev, std::make_pair(s*slot, s*slot + n)), h);
-    return cln_xdev.data() + s*slot;
+  // (the host too: a copy that outlives the struct, as cln_gdx is kept across calls)
+  constexpr size_t slot = 8192;
+  if (n > slot || s < 0 || s >= 8) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "CleanDevCopy: " << n << " bytes in slot " << s
+              << std::endl;
+    std::exit(EXIT_FAILURE);
   }
+  if (cln_xdev.extent(0) == 0) Kokkos::realloc(cln_xdev, 8*slot);
+  Kokkos::View<const char *, HostMemSpace, Kokkos::MemoryUnmanaged>
+      h(static_cast<const char *>(p), n);
+  Kokkos::deep_copy(Kokkos::subview(cln_xdev, std::make_pair(s*slot, s*slot + n)), h);
+  return cln_xdev.data() + s*slot;
 }
 
 const CleanArgs *RadiationM1::CleanDevArgs(const CleanArgs &x, const int s) {
