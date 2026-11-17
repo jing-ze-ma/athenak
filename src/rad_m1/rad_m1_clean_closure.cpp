@@ -2683,6 +2683,7 @@ void RadiationM1::CleanGdFaceSums() {
   const Real iemit = VetBathLo();
   const Real ihi = (ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
   const bool rwl[2] = {fv && !open, fv && ibc_x1max == M1_IBC_REFLECT};
+  const bool rwsc[2] = {!fv && !open, !fv && ibc_x1max == M1_IBC_REFLECT};
   auto fw_ = cln_fvw;
   auto bmi = ibm_i;
   const int bmn = ibm_nr, bmr[4] = {ibm_ray[0], ibm_ray[1], ibm_ray[2], ibm_ray[3]};
@@ -2802,6 +2803,19 @@ void RadiationM1::CleanGdFaceSums() {
     Real a[3], e[3][3];
     for (int c = 0; c < 4; ++c) q[c] = 0.0;
     face(0, m, k, j, i, a, e);
+    // (the sc rays at a reflecting x1 face: the mirror images of the cell's leaving
+    // beams, CleanFvMirror, scaled so that the face returns the energy it receives)
+    const int ic = (i == is) ? is : ie;
+    const Real sg = (i == is) ? -1.0 : 1.0, an = sqrt(a[0]*a[0] + a[1]*a[1] + a[2]*a[2]);
+    const Real t[3] = {a[0]/an, a[1]/an, a[2]/an};
+    const bool msc = !fv && CleanBoundaryFace(x, 0, m, k, j, i) && rwsc[i != is];
+    Real sm = 1.0, ho = 0.0, hm = 0.0, u;
+    for (int d = 0; d < n && msc; ++d) {
+      const int r = CleanFvMirror(dir_, 0, n, d, t, sg, u);
+      if (r < 0) ho += dir_(d,3)*u*inten(m, d, k, j, ic);
+      if (r >= 0) hm += dir_(d,3)*u*inten(m, r, k, j, ic);
+    }
+    if (ho > 0.0 && hm > 0.0) sm = ho/hm;
     for (int d = 0; d < n; ++d) {
       const Real f = dir_(d,0)*a[0] + dir_(d,1)*a[1] + dir_(d,2)*a[2];
       Real iv = CleanFvFace(fi_, fq_, o2, m, doff + d, 0, k, j, i, f > 0.0, nl);
@@ -2815,6 +2829,8 @@ void RadiationM1::CleanGdFaceSums() {
         // (a reflecting one of the FV rays: their mirrored beams, CleanFvWalls)
         const int up = (i != is);
         if (rwl[up] && (f > 0.0) != up) iv = fw_(m,2+up,k,j,d);
+        const int r = msc ? CleanFvMirror(dir_, 0, n, d, t, sg, u) : -1;
+        if (r >= 0) iv = sm*inten(m, r, k, j, ic);
       }
       add(0, m, k, j, i, d, f*iv, q);
     }
