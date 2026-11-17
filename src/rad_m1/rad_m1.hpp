@@ -2969,6 +2969,10 @@ class RadiationM1 {
   int CleanCountNegative();
   void CleanWriteBack();
   CleanArgs CleanMakeArgs();
+  const void *CleanDevCopy(const void *p, const size_t n, const int s);
+  template <class T> const T *CleanDev(const T &x, const int s) {
+    return static_cast<const T *>(CleanDevCopy(&x, sizeof(T), s));
+  }
   void CleanGhostFill(DvceArray5D<float> a, const int c0, const int nc);
   template <typename T>
   void CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc, const bool phys,
@@ -3202,6 +3206,7 @@ class RadiationM1 {
     std::unique_ptr<MeshBoundaryValuesCC> pb;
   };
   std::map<int, CleanHalo> cln_halo;   // by nc
+  DvceArray1D<char> cln_xdev;   // device copies of kernel arguments (CleanDevCopy)
   DvceArray5D<Real> cln_hbuf;   // the storage of every scratch array (32 components)
   Real cln_nsolve = 0.0, cln_nit = 0.0, cln_nfail = 0.0, cln_nneg = 0.0;
   //! milestone 3b LIMIT 4: build the x1 stack topology of the gathered line solve

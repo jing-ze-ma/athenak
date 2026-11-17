@@ -9,7 +9,10 @@
 //! preconditioner and right-preconditioned BiCGStab.
 
 #include <cmath>
+#include <cstdlib>
+#include <iostream>
 #include <limits>
+#include <type_traits>
 
 #include "athena.hpp"
 #include "coordinates/coordinates.hpp"
@@ -112,6 +115,32 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.phi = fl.phicc0;
   x.emag = emag0;
   return x;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn const void *RadiationM1::CleanDevCopy
+//! \brief a device copy (slot s < 8) of an argument struct of n <= 8 KB bytes (CleanArgs,
+//! CleanLevel) for the kernels whose capture of it the compiler copies to the stack of
+//! every thread: one in device memory is read in place (CleanDev).  The host takes the
+//! struct itself.
+
+const void *RadiationM1::CleanDevCopy(const void *p, const size_t n, const int s) {
+  if constexpr (std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>) {
+    return p;
+  } else {
+    constexpr size_t slot = 8192;
+    if (n > slot || s < 0 || s >= 8) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "CleanDevCopy: " << n << " bytes in slot " << s
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (cln_xdev.extent(0) == 0) Kokkos::realloc(cln_xdev, 8*slot);
+    Kokkos::View<const char *, HostMemSpace, Kokkos::MemoryUnmanaged>
+        h(static_cast<const char *>(p), n);
+    Kokkos::deep_copy(Kokkos::subview(cln_xdev, std::make_pair(s*slot, s*slot + n)), h);
+    return cln_xdev.data() + s*slot;
+  }
 }
 
 //----------------------------------------------------------------------------------------
