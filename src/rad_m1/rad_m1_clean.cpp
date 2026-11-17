@@ -2749,21 +2749,23 @@ void RadiationM1::CleanStagDrag(const bool first, const bool vel) {
   const bool off = cln_vzero || (first && force_ref == M1_FREF_CLEAN && !cln_fref_set);
   const bool lag = !first || (force_ref != M1_FREF_NONE);
   const bool dr = cln_vimp;
-  for (int dir = 0; dir < x.nf; ++dir) {
-    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    auto fc = x.fc[dir];
-    const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
-    par_for("cln_drag", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
-      if (CleanBoundaryFace(x, dir, m, k, j, i)) return;   // (no F equation)
+  const int nf = x.nf;   // (one launch for the faces of all directions)
+  const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
+  par_for("cln_drag", DevExeSpace(), 0, nmb1, ks, ke+(nf > 2), js, je+(nf > 1), is, ie+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
+    for (int dir = 0; dir < nf; ++dir) {
+      const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+      if (i > ie+di || j > je+dj || k > ke+dk) continue;
+      auto &fc = x.fc[dir];
+      if (CleanBoundaryFace(x, dir, m, k, j, i)) continue;   // (no F equation)
       const Real s = (vel || lag) ? CleanFaceStress(x, CLW_EK, dir, m, k, j, i, true)
                                   : 0.0;
       if (vel) {
         fc(m,CLF_PT,k,j,i) = (fc(m,CLF_N,k,j,i) - fc(m,CLF_G,k,j,i))/(x.c*x.c) + x.h*s -
                              x.h*fc(m,CLF_N+1,k,j,i);
       }
-      if (!dr) return;
+      if (!dr) continue;
       const Real q = !lag ? fc(m,CLF_G,k,j,i) :
                      CleanFaceFlux(xh, CLW_EK, dir, m, k, j, i, true) + x.h*x.c*x.c*s;
       const Real xl = x.op(m,M1_OP_T,k-dk,j-dj,i-di), xs = xl + x.op(m,M1_OP_T,k,j,i);
@@ -2776,8 +2778,8 @@ void RadiationM1::CleanStagDrag(const bool first, const bool vel) {
                       (1.0 - wl)*ce(k, j, i))/(x.c*x.c);
       fc(m,CLF_DB,k,j,i) = bt/(1.0 + bt);
       fc(m,CLF_DQ,k,j,i) = q;
-    });
-  }
+    }
+  });
 }
 
 //----------------------------------------------------------------------------------------
