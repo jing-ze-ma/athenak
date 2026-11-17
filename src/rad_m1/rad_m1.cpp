@@ -1569,6 +1569,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       pin->GetOrAddInteger("rad_m1","vet_rotate_avg",4);
       pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_xfade",true);
     }
+    // (a restart of the old production's averaged set, whose file has no cross-fade:
+    // the sp sc rays take it, the live ring; without it the first steps from the
+    // production state take the K-set closure's jumps, which its R136 restart cannot)
+    if (clean && !cln_cell && sph_geom && global_variable::restart_run && cln_rfv == 0 &&
+        VgdRotOn() && pin->DoesParameterExist("rad_m1","vet_rotate_avg") &&
+        pin->GetInteger("rad_m1","vet_rotate_avg") > 1 &&
+        !pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade")) {
+      pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_xfade",true);
+    }
     RotAvgParse(pin);   // rotavg-1012 (also after vet_sc's VetRotInit)
     // scheme = clean: no slope correction of a rotating set (the closure of CleanFvSets),
     // set before the first VetGdRotStep (a restart on a block boundary acts at once).
@@ -1613,13 +1622,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_cssc = clean && pmy_pack->pmesh->use_cubed_sphere && vgd_on && cln_rfv == 0;
     // clean_rot_ring not named: live wherever the vet_gd rays (FV or sc) rotate in time
     // with a cross-fade (decided here, before a restart file's channels are counted)
-    // (and jump for the sp sc rays of an averaged set without the cross-fade: the
-    // averaging over K sets is their smoothing, as the old production's rotation)
     if (clean && !cln_ring_named && vgd_on && vra_on && g_vra_adv &&
-        (vgd_xf || (cln_rfv == 0 && !cln_cssc)) && (vgd_rot_dt > 0.0 || vgd_rot_auto) &&
-        vgd_rot_align && vra_k <= M1_RA_NF) {
-      cln_ring = vgd_xf ? 1 : 2;
-      if (cln_ring == 2) vgd_rot_slope = 2;   // (as named jump, above)
+        vgd_xf && (vgd_rot_dt > 0.0 || vgd_rot_auto) && vgd_rot_align &&
+        vra_k <= M1_RA_NF) {
+      cln_ring = 1;
     }
     // vgdbath-1011: the inward rays of the top shell start from the incident bath
     // implicit_ebath_x1max of a MARSHAK outer x1 (vet_sc's vet_bc_bath, the same key and
