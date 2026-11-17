@@ -1439,6 +1439,12 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   const bool wsp = (fref == M1_FREF_WB_ARAD || fref == M1_FREF_WB_MD) && !x.vzero;
   auto fr = cln_fref;
   auto aref = arad_ref;
+  // (a backward-Euler step, FrefWaccOn: E pays exactly the reference work the gas got in
+  // the hydro stages, its share h/dt of fref_wacc, as production's be write-back,
+  // rad_m1_implicit.cpp m1_impl_fws_x)
+  const bool wpa = wsp && FrefWaccOn();
+  auto wc = wpa ? FrefWacc() : DvceArray4D<Real>();
+  const Real fra = dt_sub/pmy_pack->pmesh->dt;
   // (the explicit energy source esrc, problem/mlt_flux_frozen: h esrc joins the old E,
   // as ImplicitSolve's dt (chat/c) esrc; the slope of E carries it, CleanWriteBack)
   const bool eso = esrc_on;
@@ -1599,8 +1605,9 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
       for (int n = 0; n < 3; ++n) {
         const Real dm = x.w(m,CLW_DM+n,k,j,i);
         work += (pg[n] + 0.5*dm)*dm/d;
-        if (wsp) work += x.h*rf[n]*(pg[n] + dm)/d;
+        if (wsp && !wpa) work += x.h*rf[n]*(pg[n] + dm)/d;
       }
+      if (wpa) work += fra*wc(m,k,j,i);
     }
     x.w(m,CLW_RR,k,j,i) = rr;
     // (eqr: the exchange through the gas row of the root T, hckp a T^4 - r hcke E =
@@ -2762,6 +2769,9 @@ void RadiationM1::CleanWriteBack() {
   const bool wsp = (fref == M1_FREF_WB_ARAD || fref == M1_FREF_WB_MD);
   auto fr = cln_fref;
   auto aref = arad_ref;
+  const bool wpa = wsp && FrefWaccOn();   // (fref_wacc: CleanRightHandSide)
+  auto wc = wpa ? FrefWacc() : DvceArray4D<Real>();
+  const Real fra = h/pmy_pack->pmesh->dt;
   const bool fm = icr_fmeas && cln_vzero;   // (CleanSteadyStart: icr_dm)
   auto fmd = icr_dm;
   const bool eso = esrc_on;
@@ -2802,7 +2812,7 @@ void RadiationM1::CleanWriteBack() {
       }
     }
     Real dm[3] = {0.0, 0.0, 0.0}, dh[3] = {0.0, 0.0, 0.0};
-    Real den = 0.0;
+    Real den = 0.0, wsl = 0.0;
     if (feedback) {
       Real mg[3], pg[3], rf[3];
       CleanStagMomentum(xh, CLW_X, m, k, j, i, dm, mg);
@@ -2851,16 +2861,20 @@ void RadiationM1::CleanWriteBack() {
                                x.op(m,M1_OP_E,k,j,i)*fmax(e, 0.0));
         // (the residual over the row's local diagonal: all of it in a scattering cell,
         // little where the exchange is stiff, whose X the solve fixes to tol/diagonal)
-        const Real rd = (den - x.w(m,CLW_EP,k,j,i) + ex - wk - wr)/
+        // (wpa: E pays fref_wacc; the slope keeps the payment wr, which the next step's
+        // stage increments re-apply, as production's be write-back)
+        const Real wp = wpa ? fra*wc(m,k,j,i) : wr;
+        const Real rd = (den - x.w(m,CLW_EP,k,j,i) + ex - wk - wp)/
                         (1.0 + x.h*x.c*x.op(m,M1_OP_E,k,j,i)*x.w(m,CLW_RY,k,j,i));
         e += rd;
-        den -= rd + wr;
+        den -= rd + wp;
+        wsl = wp - wr;
       }
       uh(m,IEN,k,j,i) += den;
       x.w(m,CLW_JV,k,j,i) = den - wk;   // (its change of the gas eint, cln_neint)
     }
     if (slopes) {
-      kk(m,M1_T2_E,k,j,i) = (e - x.w(m,CLW_EO,k,j,i))/h;
+      kk(m,M1_T2_E,k,j,i) = (e + wsl - x.w(m,CLW_EO,k,j,i))/h;
       for (int n = 0; n < 3; ++n) kk(m,M1_T2_M1+n,k,j,i) = dh[n]/h;
       kk(m,M1_T2_EN,k,j,i) = den/h;
     }
