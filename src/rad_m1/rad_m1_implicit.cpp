@@ -4368,10 +4368,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       ImplFatal("<rad_m1>/implicit_face_mmat_real (stage 2a, measured negative) is not "
                 "combined with the persistent lam of stage 2b");
     }
-    Kokkos::realloc(fmm_lam, nmb, ncells3, ncells2, ncells1+1);
-    Kokkos::realloc(fmm_g, nmb, ncells3, ncells2, ncells1+1);
-    Kokkos::realloc(fmm_lo, nmb, 2, ncells3, ncells2, ncells1+1);
-    Kokkos::realloc(fmm_fh, nmb, ncells3, ncells2, ncells1+1);
+    if (!clean) {   // (scheme = clean: ImplicitSolve's face M-matrix; never read)
+      Kokkos::realloc(fmm_lam, nmb, ncells3, ncells2, ncells1+1);
+      Kokkos::realloc(fmm_g, nmb, ncells3, ncells2, ncells1+1);
+      Kokkos::realloc(fmm_lo, nmb, 2, ncells3, ncells2, ncells1+1);
+      Kokkos::realloc(fmm_fh, nmb, ncells3, ncells2, ncells1+1);
+    }
     Kokkos::deep_copy(fmm_fh, 0.0);
     // DEBUG/ablation implicit_face_mmat_trans = false (read only when named): x1 only
     const bool fmtr = !pin->DoesParameterExist("rad_m1","implicit_face_mmat_trans") ||
@@ -4431,7 +4433,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::deep_copy(ipred, 0.0);
     pred_ok = false;
   }
-  Kokkos::realloc(ifw, nmb, M1_NIFW, ncells3, ncells2, ncells1+1);
+  // (scheme = clean: the face work arrays ifw, ifw2, ifw3 are ImplicitSolve's; not made)
+  if (!clean) {Kokkos::realloc(ifw, nmb, M1_NIFW, ncells3, ncells2, ncells1+1);}
   Kokkos::deep_copy(ifw, 0.0);
   if (impl_pos_trans != 0 && sph_geom && pt_gam > 0.0) {   // postr-1031
     Kokkos::realloc(ptq1, nmb, ncells3, ncells2, ncells1+1);
@@ -4497,7 +4500,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       Kokkos::realloc(vcol_q, nmb, ncells3, ncells2);
       Kokkos::deep_copy(vcol_q, marshak_q);
     }
-    if (blat_on) {
+    if (blat_on && !clean) {
       // thinsw-1010: implicit_thin_switch also keeps the lagged face flux DG there
       const int nfw = (impl_thsw != M1_THSW_NONE) ? M1_NIFW : 3;
       Kokkos::realloc(ifw2, nmb, nfw, ncells3, ncells2+1, ncells1);
@@ -4507,7 +4510,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         Kokkos::deep_copy(ifw3, 0.0);
       }
     }
-    if (impl_tlim == M1_TLIM_LPR && !blat_on) {
+    if (impl_tlim == M1_TLIM_LPR && !blat_on && !clean) {
       // m1lpr-1019: the sp rows (M1SphTransRow, the face/cell kernels' blend terms) read
       // the limited face theta thx2/thx3 through their blend flag; with no blend its
       // weights stay identically zero (AL = HCL = HCR = 0), so only theta changes
@@ -4562,7 +4565,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     // move once the closure is frozen.  A separate array because the exchange takes the
     // variable count from the array's second extent, and a prefix subview of a
     // LayoutRight array is not one.
-    Kokkos::realloc(thq, nmb, M1_NHALO_Q, ncells3, ncells2, ncells1);
+    // (scheme = clean: thq too is made at its first exchange, as thw)
+    if (!clean) {Kokkos::realloc(thq, nmb, M1_NHALO_Q, ncells3, ncells2, ncells1);}
     Kokkos::deep_copy(thq, 0.0);
     Kokkos::realloc(thq_c, nmb, M1_NHALO_Q, 1, 1, 1);
     pbval_tq = new MeshBoundaryValuesCC(pmy_pack, pin, false);
