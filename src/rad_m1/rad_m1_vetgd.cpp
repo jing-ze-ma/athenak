@@ -7709,11 +7709,12 @@ void RadiationM1::VetGdSmooth() {
 void RadiationM1::VetGdSource() {
   VetLatSweep(0);
   // ln chi, ln S in the band index space, the lateral band filled exactly: from the
-  // first shell up (the gd sweep), or every shell for the clean scheme's FV rays, which
-  // sweep the whole column (shells below the cut would keep an earlier build's source)
+  // first shell up (the gd sweep), or every shell for the clean scheme, whose rays and
+  // closure read the whole column (shells below the cut would keep an earlier build's
+  // source)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int og = vgd_w - indcs.ng, ok = vgd_w - indcs.ks, x1g = (vgd_nb1 > 1) ? 1 : 0;
-  const int cut = (clean && cln_rfv > 0) ? 0 : vlat_icut;
+  const int cut = clean ? 0 : vlat_icut;
   const int ilo = indcs.is + cut - x1g, ie = indcs.ie + x1g;
   auto cs_ = vlat_cs;
   auto cw_ = vgd_cs;
