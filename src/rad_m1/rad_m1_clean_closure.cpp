@@ -2882,18 +2882,25 @@ void RadiationM1::CleanClosureFromGd(const int i0, const int i1) {
   // vgd_i for the moments here and the face sums (CleanGdFaceSums)
   if (!fv && vgd_on && vlat_icut > 0 && i0 < 0) {
     const Real ic = 1.0/c_light;
-    par_for("cln_gd_thk", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, is + vlat_icut - 1,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    // (one team per cell, its lanes along the directions: the stores of a warp contiguous;
+    // the same values)
+    const int nc = vlat_icut, nj = je - js + 1, nk = ke - ks + 1;
+    const int tsz = std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace> ? 1 : 32;
+    Kokkos::parallel_for("cln_gd_thk",
+                         Kokkos::TeamPolicy<>(DevExeSpace(), (nmb1 + 1)*nk*nj*nc, tsz),
+    KOKKOS_LAMBDA(TeamMember_t tm) {
+      const int t = tm.league_rank(), i = is + t % nc, j = js + (t/nc) % nj;
+      const int k = ks + (t/(nc*nj)) % nk, m = t/(nc*nj*nk);
       const CleanArgs &x = *px;
       Real e[3][3];   // (the cell's frame, F and E once, not per direction)
       CleanThickFrame(x, x3v, m, k, j, i, e);
       const Real f[3] = {iw_(m,M1_IW_F1,k,j,i), iw_(m,M1_IW_F2,k,j,i),
                          iw_(m,M1_IW_F3,k,j,i)}, en = iw_(m,M1_IW_EN,k,j,i);
       const CleanRow r = VgdRow(vi_, m, k+ok, j+og, i);
-      for (int d = 0; d < n; ++d) {
+      Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, n), [&](const int d) {
         const Real nv[3] = {dir_(d,0), dir_(d,1), dir_(d,2)};
         r.p[d*r.s] = CleanThickI(e, f, en, ic, nv);
-      }
+      });
     });
   }
   par_for("cln_gd", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
