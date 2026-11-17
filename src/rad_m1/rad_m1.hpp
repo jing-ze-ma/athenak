@@ -2974,6 +2974,9 @@ class RadiationM1 {
   // closure components in the restart files of the extrap history and clean_rot_ring:
   // the cell layout keeps the CLN_JR (= 49) of push 16's files, CLN_JR is staggered only
   int CleanRstNq() const;
+  // the rays' intensity channels of the restart files: the FV rays' (cln_fvi), and the sc
+  // rays' last build when their reflecting top mirrors it (cln_scmem, a copy in cln_fvi)
+  int CleanRstNfv() const;
   void CleanStagDrag(const bool first);
   void CleanStagFSolveCs(const int e);
   void CleanStagCsLateral(const int e);
@@ -3101,9 +3104,6 @@ class RadiationM1 {
   Real cln_dtb = 0.0;           // dt of the closure build
   DvceArray5D<Real> cln_s;      // closure (CLN_*)
   bool cln_cssc = false;        // the cubed sphere, clean_rays = sc (vet_gd sweep)
-  int CleanRayNch() const {   // the restart channels of the rays' intensities cln_fvi
-    return (clean && (cln_rfv > 0 || cln_cssc)) ? cln_fvb*cln_fvn : 0;
-  }
   int cln_rfv = 0;              // clean_rays = fv1 | fv | lld: the conservative sweep
   int cln_fvb = 1;              // blocks of cln_fvi: lld 4 (average, slopes along x1..x3)
   DvceArray5D<Real> cln_fvi;    // its intensities (m, b n + d, k, j, i)
@@ -3990,6 +3990,7 @@ class RadiationM1 {
   // vet_gd_wall_interp); ln chi, ln S of the ghost rows are the mirror rows'
   // (VetGdThMirCs, from VetGdHaloCs)
   bool vgd_thmir = false;
+  bool cln_scmem = false;      // clean sc rays, reflecting top: its mirror reads cln_fvi
   void VetGdThMirCs(DvceArray5D<Real> &a, const int i0, const int i1);
   // wallbug-1027 vet_gd_theta_wall = vacuum (1) | extrap (2), 0 otherwise: the theta
   // ghosts beyond a PHYSICAL theta wall (wall flag 3 / 4) are not the far wall's.

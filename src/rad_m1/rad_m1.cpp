@@ -2260,6 +2260,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // (4b) MILESTONE 3a hook: the implicit solver's own parameters, checks and arrays.
   // Returns immediately with transport = explicit.
   ImplicitInit(pin);
+  // clean sc rays with a reflecting top: its mirror reads the last build (rad_m1.hpp)
+  cln_scmem = clean && vgd_on && cln_rfv == 0 && cln_consist && sph_geom &&
+              ibc_x1max == M1_IBC_REFLECT;
   RavInit(pin);     // ringavg-1029 <rad_m1>/polar_ring_avg (rad_m1_ringavg.cpp)
   IcRadInit(pin);   // icrad-1011 (keys read only when named)
   if (sph_geom) {SphericalS1Check(pin);}

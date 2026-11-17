@@ -5936,24 +5936,33 @@ void RadiationM1::VetGdTopMirror() {
   auto vi_ = vgd_i;
   auto iw_ = iw;
   auto xf_ = vgd_x1f;
+  // clean sc rays: the last build's intensities from their copy (cln_fvi, which the
+  // restart files keep), the same numbers as vgd_i in a run without a restart; before
+  // the first copy the top cell's E (no outflow yet)
+  auto fi_ = cln_fvi;
+  const bool cp = cln_scmem && fi_.extent_int(0) == nmb1 + 1 && fi_.extent_int(1) == n;
+  const bool e1 = cln_scmem && !cp;
   par_for("m1_vgd_mirror", DevExeSpace(), 0, nmb1, 0, nx3 - 1, 0, nx2 - 1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     if (!(xf_(m) & 4)) {return;}
+    auto top = [&](const int q) {
+      return cp ? fi_(m,q,k+ks,j+js,ie) : vi_(m,q,k+w,j+w,ie);
+    };
     const Real r[3] = {tg_(m,k,j,0)*tg_(m,k,j,3), tg_(m,k,j,0)*tg_(m,k,j,2),
                        tg_(m,k,j,1)};
     Real hp = 0.0, hm = 0.0;
     for (int d = 0; d < n; ++d) {
       const Real mr = dir_(d,0)*r[0] + dir_(d,1)*r[1] + dir_(d,2)*r[2];
       if (mr >= 0.0) {
-        hp += dir_(d,3)*mr*vi_(m,d,k+w,j+w,ie);
+        hp += dir_(d,3)*mr*top(d);
       } else {
-        hm -= dir_(d,3)*mr*vi_(m,mp_(m,k,j,d),k+w,j+w,ie);
+        hm -= dir_(d,3)*mr*top(mp_(m,k,j,d));
       }
     }
     const Real e0 = iw_(m,M1_IW_EN,k+ks,j+js,ie);
     for (int d = 0; d < n; ++d) {   // (the outward ones are not read)
-      vi_(m,d,k+w,j+w,ie+1) = (hp > 0.0 && hm > 0.0) ?
-                              hp/hm*vi_(m,mp_(m,k,j,d),k+w,j+w,ie) : e0;
+      vi_(m,d,k+w,j+w,ie+1) = (hp > 0.0 && hm > 0.0 && !e1) ? hp/hm*top(mp_(m,k,j,d))
+                                                            : e0;
     }
   });
 }
