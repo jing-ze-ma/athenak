@@ -1432,8 +1432,8 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
     Real fl = eso ? fabs(es(m,k,j,i)) : 0.0;
     for (int n = 0; n < x.nf; ++n) {
       const int dk = (n == 2), dj = (n == 1), di = (n == 0);
-      fl += CleanDivW(x, n, m, k, j, i, 0)*fabs(x.fc[n](m,CLF_N,k,j,i)) +
-            CleanDivW(x, n, m, k, j, i, 1)*fabs(x.fc[n](m,CLF_N,k+dk,j+dj,i+di));
+      fl += CleanDivW(x, n, m, k, j, i, 0)*fabs(x.fc[n](m,CLF_G,k,j,i)) +
+            CleanDivW(x, n, m, k, j, i, 1)*fabs(x.fc[n](m,CLF_G,k+dk,j+dj,i+di));
     }
     x.w(m,CLW_SE,k,j,i) = fmax(fabs(x.w(m,CLW_EO,k,j,i)) + xc + x.h*fl, 1.0e-300);
     x.w(m,CLW_SG,k,j,i) = fmax(fabs(x.w(m,CLW_EI,k,j,i)) + xc, 1.0e-300);
