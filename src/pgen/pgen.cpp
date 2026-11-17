@@ -1874,7 +1874,8 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // the <rad_m1> predictor increment: delivered straight into ipred (allocated by the
   // RadiationM1 constructor) when this run keeps one with the same channel count.  A
   // file without it leaves pred_ok = false: the first step cold starts, as before.
-  const bool pred_want = (pradm1 != nullptr) && pradm1->impl_pred;
+  const bool pred_want = (pradm1 != nullptr) && pradm1->impl_pred &&
+                         !(pradm1->clean && pradm1->cln_not2h);
   const bool pred_read = pred_want && (npred_file > 0) &&
                          (static_cast<int>(pradm1->ipred.extent(1)) == npred_file) &&
                          (static_cast<int>(pradm1->ipred.extent(0)) >= nmb);

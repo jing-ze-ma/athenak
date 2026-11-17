@@ -4426,7 +4426,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(ctr_mem, nmb, 4, ncells3, ncells2, ncells1);
   }
   Kokkos::deep_copy(iw, 0.0);
-  if (impl_pred) {
+  if (impl_pred && !(clean && cln_not2h)) {
     Kokkos::realloc(ipred, nmb, (impl_pord == 2) ? 5 : 3, ncells3, ncells2, ncells1);
     Kokkos::deep_copy(ipred, 0.0);
     pred_ok = false;

@@ -3044,6 +3044,7 @@ class RadiationM1 {
   bool cln_closit = false;      // clean_closure: predict | iterate
   int cln_extrap = 0;           // clean_closure = extrap (1) | extrap2 (2)
   bool cln_mshare = false;      // clean_extrap_share: cln_mp and cln_mc one array
+  bool cln_not2h = false;       // clean_skip_time2_hist: no ipred, ipred2, x2_* arrays
                                 // | extrap1 (3, cell default)
   bool cln_edd = false;         // clean_closure = eddington (D = I/3, no rays)
   bool cln_sphere = false;      // clean_closure = sphere (spherical polar)
