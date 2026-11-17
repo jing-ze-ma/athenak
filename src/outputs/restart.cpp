@@ -243,7 +243,11 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
         Kokkos::realloc(outarray_m1t, nmb, nct, nout3, nout2, nout1);
         const int nfv = (pradm1->cln_fvf32 || pradm1->cln_fvlag == 2) ? 0 :
                         pradm1->CleanRstNfv(), nc0 = nct - nfv;
-        DvceArray5D<Real> tmp("rst-m1t-mb", 1, nc0, nout3, nout2, nout1);
+        // (the staging of a MeshBlock in pinned host memory, which the device writes
+        // directly: no device copy of its channels at a dump)
+        Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> pin("rst-m1t-mb",
+            static_cast<size_t>(nc0)*nout3*nout2*nout1);
+        DvceArray5D<Real> tmp(pin.data(), 1, nc0, nout3, nout2, nout1);
         auto AL = Kokkos::ALL;
         for (int m = 0; m < nmb; ++m) {
           pradm1->Time2RstPack(tmp, 1, m);
