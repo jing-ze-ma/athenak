@@ -275,6 +275,10 @@ struct CleanArgs {
 // 0 the cell; 1 + 2 a + (d > 0) the faces along axis a (i, j, k); 7 + 4 p + 2 (d1 > 0) +
 // (d2 > 0) the edges in the plane p of axes (j, i), (k, i), (k, j), offsets d1, d2
 constexpr int CLN_ST = 19;
+// cubed sphere, clean_stag_stencil: the coefficients of the lateral stress sums Y_q,b of a
+// cell (CleanStagCsLateral) on E of its neighbour across face s of family q (slot
+// 3 (2 q + s) + b) and on its own E (18 + 3 q + b)
+constexpr int CLN_CSY = 27;
 
 KOKKOS_INLINE_FUNCTION
 constexpr int CleanStSlot(const int dk, const int dj, const int di) {
@@ -1214,7 +1218,8 @@ void CleanStFace(const CleanArgs &x, const int m, const int k, const int j, cons
   const Real wd = (SD ? x.h : -x.h)*CleanDivW(x, D, m, k, j, i, SD);
   c[CleanStSlot((SD - 1)*ek, (SD - 1)*ej, (SD - 1)*ei)] += wd*x.fc[D](m,CLF_QL,kf,jf,iff);
   c[CleanStSlot(SD*ek, SD*ej, SD*ei)] += wd*x.fc[D](m,CLF_QL+1,kf,jf,iff);
-  if (!x.multi_d || CleanBoundaryFace(x, D, m, kf, jf, iff)) return;
+  // (the cubed sphere's lateral stress comes through its sums Y, CleanApply)
+  if (!x.multi_d || x.cub || CleanBoundaryFace(x, D, m, kf, jf, iff)) return;
   const Real cr = wd*x.fc[D](m,CLF_QL+2,kf,jf,iff);
   if constexpr (D != 0) CleanStCross<D, SD, 0>(x, m, k, j, i, cr, c);
   if constexpr (D != 1) CleanStCross<D, SD, 1>(x, m, k, j, i, cr, c);

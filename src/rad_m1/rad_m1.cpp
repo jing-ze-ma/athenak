@@ -314,14 +314,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     cln_stagmg = !cln_cell && (pc == "mg");}
     // clean_stag_stencil: the operator applied from its rows (CleanStencilRow), built
-    // once per pass (default where it applies, as production's implicit_op_stencil); not
-    // with clean_stag_sbimp or on the cubed sphere
-    cln_stst = stag("clean_stag_stencil", !cln_sbimp &&
-                    !pmy_pack->pmesh->use_cubed_sphere);
-    if (cln_stst && (cln_sbimp || pmy_pack->pmesh->use_cubed_sphere)) {
+    // once per pass (default, as production's implicit_op_stencil; on the cubed sphere the
+    // rows without the lateral stress, which the stored coefficients of its sums add,
+    // CleanStagCsLateral); not with clean_stag_sbimp
+    cln_stst = stag("clean_stag_stencil", !cln_sbimp);
+    if (cln_stst && cln_sbimp) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_m1>/clean_stag_stencil: not with clean_stag_sbimp "
-                << "or on the cubed sphere" << std::endl;
+                << std::endl << "<rad_m1>/clean_stag_stencil: not with clean_stag_sbimp"
+                << std::endl;
       std::exit(EXIT_FAILURE);
     }
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",false);

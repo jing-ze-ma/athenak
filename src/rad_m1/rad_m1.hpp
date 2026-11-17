@@ -3053,7 +3053,7 @@ class RadiationM1 {
   void CleanStagFaceTie(const int e, const int kd, const bool pt = false);
   Real CleanStagFSweepChange();
   void CleanStagFSchur();
-  void CleanStagCsLateral(const int e);
+  void CleanStagCsLateral(const int e, const bool st = false);
   void CleanWriteBack();
   CleanArgs CleanMakeArgs();
   const void *CleanDevCopy(const void *p, const size_t n, const int s);
@@ -3130,6 +3130,7 @@ class RadiationM1 {
   bool cln_fspcr = false;      // clean_stag_fs_pcr: F solve x1 lines by PCR on a GPU
   bool cln_stst = false;        // clean_stag_stencil: the operator's rows stored per pass
   DvceArray5D<Real> cln_st;     //   (CLN_ST per active cell, CleanPreconditionerSetup)
+  DvceArray5D<Real> cln_csy;    //   (cubed sphere: CLN_CSY coefficients of the lateral sums)
   int cln_stall_n = 0;          // clean_bicg_stall_its: stall window (0 = off)
   int cln_fsweeps = 1;          // clean_stag_fsweeps: line-solve sweeps of the F solve
   bool cln_fschur = false;      // clean_stag_fschur: the F lines exact across MeshBlocks

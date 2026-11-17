@@ -277,6 +277,9 @@ void RadiationM1::CleanInit() {
     Kokkos::realloc(cln_fref, nmb, (force_ref == M1_FREF_WB_MD) ? 9 : 3, n3, n2, n1);
   }
   if (cln_stst) Kokkos::realloc(cln_st, nmb, CLN_ST, indcs.nx3, indcs.nx2, indcs.nx1);
+  if (cln_stst && pmy_pack->pmesh->use_cubed_sphere) {
+    Kokkos::realloc(cln_csy, nmb, CLN_CSY, indcs.nx3, indcs.nx2, indcs.nx1);
+  }
   // multigrid levels of the cell layout: halve every direction with an even number
   // (>= 4) of cells, down to the level where no direction can be halved (clean_pc =
   // prodmg, and staggered clean_stag_pc = mg: x1 is never halved, two coarse levels)
@@ -3088,10 +3091,31 @@ void RadiationM1::CleanStagFSolveCs(const int e) {
 //! other than the face's (CleanFaceStress), exact for a uniform P.  The owner computes Y
 //! and the ghosts take it, so that a seam face sees the neighbour's true geometry.
 
-void RadiationM1::CleanStagCsLateral(const int e) {
+void RadiationM1::CleanStagCsLateral(const int e, const bool st) {
   if (!pmy_pack->pmesh->use_cubed_sphere || cln_cell) return;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   CleanArgs x = CleanMakeArgs();
+  const int ks = indcs.ks, js = indcs.js, is = indcs.is;
+  auto cy = cln_csy;
+  // (st: from the coefficients of the pass, cln_csyb, CleanPreconditionerSetup)
+  if (st) {
+    par_for("cln_cslst", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, indcs.ks, indcs.ke,
+            indcs.js, indcs.je, indcs.is, indcs.ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int q = 0; q < 3; ++q) {
+        const int dk = (q == 2), dj = (q == 1), di = (q == 0);
+        for (int b = 0; b < 3; ++b) {
+          x.w(m,CLW_L+3*q+b,k,j,i) = cy(m,18+3*q+b,k-ks,j-js,i-is)*x.w(m,e,k,j,i) +
+              ((cy(m,6*q+b,k-ks,j-js,i-is) != 0.0) ?   // (none past a boundary)
+               cy(m,6*q+b,k-ks,j-js,i-is)*x.w(m,e,k-dk,j-dj,i-di) : 0.0) +
+              ((cy(m,6*q+3+b,k-ks,j-js,i-is) != 0.0) ?
+               cy(m,6*q+3+b,k-ks,j-js,i-is)*x.w(m,e,k+dk,j+dj,i+di) : 0.0);
+        }
+      }
+    });
+    CleanGhostFill(cln_w, CLW_L, 9);
+    return;
+  }
   par_for("cln_cslat", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, indcs.ks, indcs.ke,
           indcs.js, indcs.je, indcs.is, indcs.ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {

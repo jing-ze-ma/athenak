@@ -545,7 +545,7 @@ void RadiationM1::CleanApply(const int src, const int dst) {
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   CleanGhostFill(cln_w, src, 1);
-  CleanStagCsLateral(src);
+  CleanStagCsLateral(src, cln_stst);
   CleanArgs x = CleanMakeArgs(), xh = x;
   x.fwc = true;
   xh.hi = cln_split;   // (clean_stag_sbimp: the face momentum, not from CLF_QL)
@@ -554,6 +554,9 @@ void RadiationM1::CleanApply(const int src, const int dst) {
     auto w = cln_w;
     auto st = cln_st;
     const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
+    // (cubed sphere: the lateral stress of every face from the sums Y, CleanFaceCross)
+    const bool cub = x.cub;
+    const CleanArgs *px = cub ? CleanDevArgs(x, 0) : nullptr;
     par_for("cln_apply_st", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real a = 0.0;
@@ -561,8 +564,20 @@ void RadiationM1::CleanApply(const int src, const int dst) {
       for (int s = 0; s < CLN_ST; ++s) {
         int dk, dj, di;
         CleanStOff(s, dk, dj, di);
-        if ((dj != 0 && !md) || (dk != 0 && !td)) continue;   // (no such neighbour)
+        if ((dj != 0 && !md) || (dk != 0 && !td) || (cub && dk*dk + dj*dj + di*di > 1)) {
+          continue;   // (no such neighbour)
+        }
         a += st(m,s,k-ks,j-js,i-is)*w(m,src,k+dk,j+dj,i+di);
+      }
+      if (cub) {
+        const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
+        for (int d = 0; d < 3; ++d) {
+          for (int sd = 0; sd < 2 && d < x.nf; ++sd) {
+            const int kf = k + sd*(d == 2), jf = j + sd*(d == 1), iff = i + sd*(d == 0);
+            a += (sd ? x.h : -x.h)*CleanDivW(x, d, m, k, j, i, sd)*
+                 CleanFaceCross(x, src, d, m, kf, jf, iff);
+          }
+        }
       }
       w(m,dst,k,j,i) = a;
     });
@@ -622,6 +637,35 @@ void RadiationM1::CleanPreconditionerSetup() {
       CleanStencilRow(x, m, k, j, i, c);
       for (int s = 0; s < CLN_ST; ++s) st(m,s,k-ks,j-js,i-is) = c[s];
     });
+    if (x.cub) {   // (the lateral stress sums' coefficients, CleanStagCsLateral)
+      auto cy = cln_csy;
+      par_for("cln_csyb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
+        for (int q = 0; q < 3; ++q) {
+          const int dk = (q == 2), dj = (q == 1), di = (q == 0);
+          Real y0[3] = {0.0, 0.0, 0.0};
+          for (int s = -1; s <= 1; s += 2) {
+            const int kf = k + (s > 0)*dk, jf = j + (s > 0)*dj, iff = i + (s > 0)*di;
+            const int o = 6*q + 3*(s > 0);
+            Real yn[3] = {0.0, 0.0, 0.0};
+            if (!CleanBoundaryFace(x, q, m, kf, jf, iff)) {
+              const Real a = 0.25*s*x.area[q](m,kf,jf,iff);
+              for (int b = 0; b < 3; ++b) {
+                for (int c = 0; c < 3; ++c) {
+                  const int n = CLN_D11 + ((b == c) ? b : 2 + b + c);
+                  const Real ag = a*x.g(m,CLG_N+3*q+c,kf,jf,iff);
+                  yn[b] += ag*x.cs(m,n,k+s*dk,j+s*dj,i+s*di);
+                  y0[b] -= ag*x.cs(m,n,k,j,i);
+                }
+              }
+            }
+            for (int b = 0; b < 3; ++b) cy(m,o+b,k-ks,j-js,i-is) = yn[b];
+          }
+          for (int b = 0; b < 3; ++b) cy(m,18+3*q+b,k-ks,j-js,i-is) = y0[b];
+        }
+      });
+    }
   }
   par_for("cln_pcsetup", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
