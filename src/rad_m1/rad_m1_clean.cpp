@@ -1250,9 +1250,10 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   xh.fs = cln_fsk;
   par_for("cln_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real t = x.w(m,CLW_T,k,j,i);
+    const Real t = x.w(m,CLW_T,k,j,i);
     const Real hcke = x.h*x.c*op(m,M1_OP_E,k,j,i);
-    Real rr = 0.0, work = 0.0, gm = 1.0, sb = 0.0, dop = 0.0;
+    Real rr = 0.0, work = 0.0, gm = 1.0, sb = 0.0, dop = 0.0, ek = 0.0, gres = 0.0;
+    bool gr = false;
     if (x.feedback) {
       Real b2 = 0.0, ba = 0.0, by = 0.0, bp = 0.0, y2 = 0.0, fs[3] = {0.0, 0.0, 0.0};
       // (clean_stag_fwork: the F solve's F, which the gas takes)
@@ -1320,7 +1321,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
       if (x.gf && x.cub) bp = ba*x.w(m,CLW_EK,k,j,i);
       // (y realisable, |y| <= E, as implicit_realisable_coupling: the gas eint takes the
       // same sb, CLW_EP, so the energy stays exact)
-      const Real ek = fmax(x.w(m,CLW_EK,k,j,i), 0.0);
+      ek = fmax(x.w(m,CLW_EK,k,j,i), 0.0);
       if (y2 > SQR(ek)) by *= ek/std::sqrt(y2);
       gm = 1.0 - 0.5*b2;
       sb = hcke*((0.5*b2 - ba)*x.w(m,CLW_EK,k,j,i) + 2.0*by);
@@ -1331,17 +1332,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
       dop = 0.5*b2 + ba;
       if (x.gf) sb = hcke*(dop*x.w(m,CLW_EK,k,j,i) + 2.0*(by - bp));
       if (x.gf) x.w(m,CLW_JV+1,k,j,i) = hcke*dop;   // (d sb/dE, CleanNewtonUpdate)
-      // the iterate's T in exchange with E_k and these sb (its T took those of the last
-      // pass): the gas row holds at the iterate, so a change of sb between passes enters
-      // the E row with 1 - r, the exchange's share, not all of it (radiation-dominated
-      // opaque gas, r ~ 1, hcke beta F'/c >> eint: the lag otherwise contracted only
-      // ~0.5 per pass)
-      if (!x.sbi && sb != -x.w(m,CLW_EP,k,j,i)) {
-        t = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
-                                     x.h*x.c*op(m,M1_OP_P,k,j,i)*gm*arad_,
-                                     x.w(m,CLW_EI,k,j,i) + hcke*ek - sb, t);
-        x.w(m,CLW_T,k,j,i) = t;
-      }
+      gr = !x.sbi && sb != -x.w(m,CLW_EP,k,j,i);   // (T took the last pass's sb)
     }
     const Real hckp = x.h*x.c*op(m,M1_OP_P,k,j,i)*gm;
     x.w(m,CLW_GM,k,j,i) = gm;
@@ -1354,6 +1345,11 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
       rr = (s > 0.0) ? s/(d*cv + s) : 0.0;   // (no exchange: none, also where T = 0)
       // (1 - r = d cv/(d cv + s) without cancellation, as implicit_src_stable)
       x.w(m,CLW_RY,k,j,i) = (s > 0.0) ? d*cv/(d*cv + s) : 1.0;
+      // the gas row's residual at the iterate with these sb (its T is the root with those
+      // of the last pass), share r, as the old production's SRCR: a change of sb between
+      // passes enters E with 1 - r, the exchange's share (radiation-dominated opaque
+      // gas, r ~ 1, hcke beta F'/c >> eint: taken whole it contracted only ~0.5 per pass)
+      if (gr) gres = rr*(x.w(m,CLW_EI,k,j,i) + hcke*ek - sb - e - hckp*arad_*SQR(SQR(t)));
       // gflux: the Doppler part hcke dop E of sb is a change of the absorption, hcke
       // (1 - dop): taken in the Newton step as the exchange (r -> r + dop (1 - r), sb
       // keeps its value at E_k), not lagged; where hcke dop >> 1 (an opaque cell with a
@@ -1379,7 +1375,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
     x.w(m,CLW_RR,k,j,i) = rr;
     x.w(m,CLW_B,k,j,i) = x.w(m,CLW_EO,k,j,i) + hckp*arad_*SQR(SQR(t))
                          - rr*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) - work
-                         - CleanSourceDivergence(x, m, k, j, i) + sb
+                         - CleanSourceDivergence(x, m, k, j, i) + sb + gres
                          + (eso ? x.h*es(m,k,j,i) : 0.0);
     // (clean_stag_sbimp: (1 - r) sb(E) in the operator as the cell layout's, Newton form)
     if (x.sbi) x.w(m,CLW_B,k,j,i) -= (1.0 - rr)*CleanStagBetaE(xh, CLW_EK, m, k, j, i);
