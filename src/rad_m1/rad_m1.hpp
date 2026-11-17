@@ -3531,7 +3531,8 @@ class RadiationM1 {
   // vet_col_lat interface (sets vlat_on; the vet_col_lat keys apply).  Read only when
   // named; sp wedge only.
   bool vgd_on = false;         // vet_gd
-  int vgd_nside = 3;           // vet_gd_nside: 12 nside^2 directions (3 -> 108)
+  int vgd_nside = 3;           // vet_gd_nside: 12 nside^2 directions (3 -> 108; the
+                               // default on sp wedges, else vet_gd_geo = 4: geodef-1117)
   bool vgd_tan = true;         // vet_gd_tangential: the lagged M1SphTan term
   // cs-tan-1106: vet_gd_tangential = true on the cubed sphere (vgd_tan itself stays false
   // there, it selects the sp forms): Q in LAT4, LAT5 about the per-cell tangent frame
