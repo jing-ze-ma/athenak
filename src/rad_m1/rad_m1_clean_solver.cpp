@@ -123,6 +123,8 @@ CleanArgs RadiationM1::CleanMakeArgs() {
 //! are copied in, only the ghosts back), then (phys) a copy of the edge cell on physical
 //! boundaries.  part = 1 only starts the exchange (nc <= clean_halo_vars), part = 2
 //! finishes it: work on the cells CleanInner by ng can run in between.
+//! CleanGhostFillLast: all components of an array with its components last
+//! (m, k, j, i, n).
 
 void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
                                  const bool phys, const int part) {
@@ -133,12 +135,16 @@ void RadiationM1::CleanGhostFill(DvceArray5D<float> a, const int c0, const int n
   CleanGhostFillT(a, c0, nc, true, 0);
 }
 
-template <typename T>
+void RadiationM1::CleanGhostFillLast(DvceArray5D<float> a) {
+  CleanGhostFillT<float, true>(a, 0, a.extent_int(4), true, 0);
+}
+
+template <typename T, bool L>
 void RadiationM1::CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc,
                                   const bool phys, const int part) {
   if (nc > cln_hmax) {   // the exchange moves at most clean_halo_vars variables at once
-    CleanGhostFillT(a, c0, cln_hmax, phys, 0);
-    CleanGhostFillT(a, c0 + cln_hmax, nc - cln_hmax, phys, 0);
+    CleanGhostFillT<T, L>(a, c0, cln_hmax, phys, 0);
+    CleanGhostFillT<T, L>(a, c0 + cln_hmax, nc - cln_hmax, phys, 0);
     return;
   }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -147,7 +153,10 @@ void RadiationM1::CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc,
   int ks = indcs.ks, ke = indcs.ke;
   int ng = indcs.ng;
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  const int n1 = a.extent_int(4), n2 = a.extent_int(3), n3 = a.extent_int(2);
+  const CleanComp<T, L> at{a};
+  const int n1 = L ? a.extent_int(3) : a.extent_int(4);
+  const int n2 = L ? a.extent_int(2) : a.extent_int(3);
+  const int n3 = L ? a.extent_int(1) : a.extent_int(2);
   CleanHalo &hl = cln_halo[nc];
   if (!hl.pb) {
     // (the exchanges run one at a time: their scratch arrays share one allocation)
@@ -170,14 +179,14 @@ void RadiationM1::CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc,
     if (sc.Empty()) {
       par_for("cln_hcopy", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, n1-1,
       KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-        h(m,n,k,j,i) = a(m,c0+n,k,j,i);
+        h(m,n,k,j,i) = at(m,c0+n,k,j,i);
       });
     } else {
       par_for("cln_hcopy", DevExeSpace(), 0, nmb1, 0, nc-1, 0, sc.ncell-1,
       KOKKOS_LAMBDA(const int m, const int n, const int q) {
         int k, j, i;
         CleanShellCell(sc, q, k, j, i);
-        h(m,n,k,j,i) = a(m,c0+n,k,j,i);
+        h(m,n,k,j,i) = at(m,c0+n,k,j,i);
       });
     }
     while (pb->InitRecv(nc) == TaskStatus::incomplete) {}
@@ -192,7 +201,7 @@ void RadiationM1::CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc,
   KOKKOS_LAMBDA(const int m, const int n, const int q) {
     int k, j, i;
     CleanShellCell(sb, q, k, j, i);
-    a(m,c0+n,k,j,i) = h(m,n,k,j,i);
+    at(m,c0+n,k,j,i) = h(m,n,k,j,i);
   });
   if (!phys) return;
 
@@ -203,21 +212,21 @@ void RadiationM1::CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc,
   };
   par_for("cln_ghost1", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, ng-1,
   KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int g) {
-    if (pf(bc(m,BoundaryFace::inner_x1))) a(m,c0+n,k,j,is-1-g) = a(m,c0+n,k,j,is);
-    if (pf(bc(m,BoundaryFace::outer_x1))) a(m,c0+n,k,j,ie+1+g) = a(m,c0+n,k,j,ie);
+    if (pf(bc(m,BoundaryFace::inner_x1))) at(m,c0+n,k,j,is-1-g) = at(m,c0+n,k,j,is);
+    if (pf(bc(m,BoundaryFace::outer_x1))) at(m,c0+n,k,j,ie+1+g) = at(m,c0+n,k,j,ie);
   });
   if (pmy_pack->pmesh->multi_d) {
     par_for("cln_ghost2", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, ng-1, 0, n1-1,
     KOKKOS_LAMBDA(const int m, const int n, const int k, const int g, const int i) {
-      if (pf(bc(m,BoundaryFace::inner_x2))) a(m,c0+n,k,js-1-g,i) = a(m,c0+n,k,js,i);
-      if (pf(bc(m,BoundaryFace::outer_x2))) a(m,c0+n,k,je+1+g,i) = a(m,c0+n,k,je,i);
+      if (pf(bc(m,BoundaryFace::inner_x2))) at(m,c0+n,k,js-1-g,i) = at(m,c0+n,k,js,i);
+      if (pf(bc(m,BoundaryFace::outer_x2))) at(m,c0+n,k,je+1+g,i) = at(m,c0+n,k,je,i);
     });
   }
   if (pmy_pack->pmesh->three_d) {
     par_for("cln_ghost3", DevExeSpace(), 0, nmb1, 0, nc-1, 0, ng-1, 0, n2-1, 0, n1-1,
     KOKKOS_LAMBDA(const int m, const int n, const int g, const int j, const int i) {
-      if (pf(bc(m,BoundaryFace::inner_x3))) a(m,c0+n,ks-1-g,j,i) = a(m,c0+n,ks,j,i);
-      if (pf(bc(m,BoundaryFace::outer_x3))) a(m,c0+n,ke+1+g,j,i) = a(m,c0+n,ke,j,i);
+      if (pf(bc(m,BoundaryFace::inner_x3))) at(m,c0+n,ks-1-g,j,i) = at(m,c0+n,ks,j,i);
+      if (pf(bc(m,BoundaryFace::outer_x3))) at(m,c0+n,ke+1+g,j,i) = at(m,c0+n,ke,j,i);
     });
   }
 }
