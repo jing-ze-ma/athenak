@@ -56,3 +56,14 @@ Reply "A bitwise / not (first deck/file); B table; opt-in table; restart bitwise
   ck_impl_reuse_jac = 2; untested at runtime) + the clean_fv_float note (degrades WB and exact L_z).
 - e5c54306a: dt_retry keeps the clean_fv_lag = extrap inflow history (forced retry with extrap bitwise).
 - ec96434ff: your P3 line chunks (host only).  Please time it on Raven CPU vs push 15 / push 16.
+
+## UPDATE 2 (2026-11-17 ~01:30): final candidate head **b66ff2552**
+- 7c4805666 fixes your NOTE d3a90ed90 blocker (RT feed deck not bitwise): speed2 cc7b288c5 computed the
+  right-hand side's face fluxes before CleanCellMilneSetup wrote the Milne face weights they read
+  (clean_face_model = milne), so they took the previous solve's weights (zero on the first solve and after a
+  restart).  CleanCellMilneSetup now runs first.  GPU (MI300A): feed deck (csCnr + clean_rays = fv1,
+  clean_face_model = milne, force_reference = clean, 16 cycles, clean_yres = false) bitwise to push 16, run
+  to run and restarted from cycle 8.  A100 bisect: the mem2 merge 6444c2cbe was already bitwise.
+- b66ff2552 merges mem2 c1bbf5283 (`clean_skip_time2_hist`, opt-in; bitwise off and on per the memory agent).
+- Forced retry with the float set: every memory key alone is bitwise except clean_extrap_share (documented).
+- Please rerun (A) with `rad_m1/clean_yres=false` and (B) with no keys on b66ff2552, incl. rst/feed.
