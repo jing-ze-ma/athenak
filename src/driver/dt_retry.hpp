@@ -195,6 +195,7 @@ class DtRetry {
   // restore of a later failed attempt must not disarm it (it resets dtr_t2be)
   bool t2be_cyc_ = false;
   Real dt0_ = 0.0, cap0_ = -1.0;  // the cycle's dt and cap at Save
+  Real fix_ = -1.0;        // <time>/dt_fixed (> 0): the cap never grows above it
   int ngood0_ = 0;
   Real t2_fac_ = -1.0;     // <time>/dt_retry_fac_t2 (reason time2_reject; < 0 = fac_)
   bool forced_done_ = false;
