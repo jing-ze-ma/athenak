@@ -340,7 +340,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // through the faces, exchange, work, beta terms), so that a change or residual is
     // the fraction of the energy the cell exchanges in the step.  Its tolerance is
     // clean_conv_kappa (0.1) x the step's time-error estimate in the same weights,
-    // between clean_tol_nl (10 clean_tol) and clean_conv_max (1e-6), and BiCGStab in
+    // between clean_tol_nl (10 clean_tol) and clean_conv_max (1e-4), and BiCGStab in
     // that norm with Eisenstat-Walker forcing; strict: E, T relative to themselves,
     // clean_tol_nl
     {const std::string cv = pin->GetOrAddString("rad_m1","clean_conv",
@@ -352,9 +352,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     cln_budget = !cln_cell && (cv == "budget");}
     cln_bkap = pin->GetOrAddReal("rad_m1","clean_conv_kappa",0.1);
-    // clean_conv_max: the tolerance's ceiling; an answer independent of the MeshBlock
-    // layout to it (the stop of a solve may come a pass earlier or later)
-    cln_bmax = pin->GetOrAddReal("rad_m1","clean_conv_max",1.0e-6);
+    // clean_conv_max: the tolerance's ceiling, default 1e-4.  The MeshBlock layout moves
+    // the answer to about it (a solve may stop a pass earlier or later), which the USER
+    // accepts below the time-discretisation error (the sp3 gate: 0.1 x its dt-halving)
+    cln_bmax = pin->GetOrAddReal("rad_m1","clean_conv_max",1.0e-4);
     // clean_halo_vars (read only when named, 1..32, default 16): at most this many
     // variables per ghost exchange of the clean solve (its scratch array holds that many)
     if (pin->DoesParameterExist("rad_m1","clean_halo_vars")) {
