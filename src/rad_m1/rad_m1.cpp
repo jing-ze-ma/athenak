@@ -204,6 +204,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_conswt = pin->GetOrAddBoolean("rad_m1","clean_consistency_weight",cln_cell);
     std::string fm = pin->GetOrAddString("rad_m1","clean_face_model","none");
     cln_milne = (fm.compare("milne") == 0);
+    // the speed of the numerical dissipation: c sqrt(max D_dd) of the two cells
+    // (closure), or c (light), the bound of every signal speed of the moment system
+    {std::string ds = pin->GetOrAddString("rad_m1","clean_dissip_speed","closure");
+      cln_dlight = (ds.compare("light") == 0);
+      if (!cln_dlight && ds.compare("closure") != 0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<rad_m1>/clean_dissip_speed = " << ds
+          << " (closure | light)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     // temporary test key, read only when named: al = A^p, p = 2 | 3
     if (pin->DoesParameterExist("rad_m1","clean_dissip_power")) {
       cln_dpow = (pin->GetInteger("rad_m1","clean_dissip_power") == 3) ? 3 : 2;

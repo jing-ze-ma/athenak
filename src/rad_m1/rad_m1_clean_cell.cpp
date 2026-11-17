@@ -147,7 +147,7 @@ void RadiationM1::CleanCellFaceSpeeds() {
   const Real h = dt_sub, c = c_light;
   const Real c1lo = cln_c0, c1hi = cln_c1;
   const int mode = cln_alpha, pw = cln_dpow;
-  const bool wb = (force_ref == M1_FREF_CLEAN);
+  const bool wb = (force_ref == M1_FREF_CLEAN), dlight = cln_dlight;
   CleanArgs x = CleanMakeArgs();
   auto cs = cln_s;
   auto op = opac;
@@ -174,7 +174,7 @@ void RadiationM1::CleanCellFaceSpeeds() {
       // the RC term takes the steady coefficient at every h (with force_reference = clean
       // TH h c^2 bitwise): an h-dependent one makes the spatial operator depend on dt
       fc(m,CLF_RC,k,j,i) = rc*dxd/(h*c)*h*c*c;
-      fc(m,CLF_AF,k,j,i) = c*std::sqrt(fmax(dd, 0.0));
+      fc(m,CLF_AF,k,j,i) = dlight ? c : c*std::sqrt(fmax(dd, 0.0));
     });
   }
 }
