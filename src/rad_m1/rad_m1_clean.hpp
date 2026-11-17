@@ -105,7 +105,8 @@ constexpr int CLW_GM = 35;   // G = 1 - beta^2/2
 constexpr int CLW_EP = 36;   // -(RE E + RY.y) of the solution (eint of the gas)
 constexpr int CLW_JV = 37;   // (1 - r) dA/dbeta/(c^2 rho), dS_p/dbeta/(c^2 rho) of the
 constexpr int CLW_GX = 40;   //   iterate (3 + 1): implicit gas velocity, CleanCellDrag;
-                             //   staggered clean_stag_sbimp: GX = r (CleanRightHandSide)
+                             //   staggered clean_stag_sbimp: GX = r (CleanRightHandSide);
+                             //   staggered gflux: JV + 1 = hc kE dop (CleanNewtonUpdate)
 constexpr int CLW_TM = 41;   // clean_stag_pc = mg: coefficients of E_{j-1}, E_{j+1},
                              //   E_{k-1}, E_{k+1} (4)
 constexpr int CLW_L = 45;    // staggered, cubed sphere: the lateral stress sums Y of the

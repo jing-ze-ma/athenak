@@ -1236,6 +1236,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
       // a E, which hcke >> 1 turned into a lagged source the iteration could not settle
       dop = 0.5*b2 + ba;
       if (x.gf) sb = hcke*(dop*x.w(m,CLW_EK,k,j,i) + 2.0*(by - bp));
+      if (x.gf) x.w(m,CLW_JV+1,k,j,i) = hcke*dop;   // (d sb/dE, CleanNewtonUpdate)
     }
     const Real hckp = x.h*x.c*op(m,M1_OP_P,k,j,i)*gm;
     x.w(m,CLW_GM,k,j,i) = gm;
@@ -1303,6 +1304,7 @@ Real RadiationM1::CleanNewtonUpdate() {
   auto op = opac;
   auto w = cln_w;
   const bool cell = cln_cell, poslim = cln_poslim || cln_gflux;
+  const bool gfd = !cell && cln_gflux && !cln_sbimp && cln_feedback;
   if (cln_sbimp && cln_feedback) {   // (clean_stag_sbimp: the gas takes -sb of X)
     CleanGhostFill(cln_w, CLW_X, 1);
     CleanArgs xh = CleanMakeArgs();
@@ -1329,6 +1331,11 @@ Real RadiationM1::CleanNewtonUpdate() {
     const Real x = w(m,CLW_X,k,j,i);
     const Real ex = fmax(x, 0.0);
     const Real e = (cell || poslim) ? x : ex, g = w(m,CLW_GM,k,j,i);
+    // (gflux: the gas takes the Doppler part hc kE dop E of sb at X, as the E row takes
+    // it in r; at E_k it lagged a source of hc kE dop, in a moving opaque cell more than
+    // the net exchange (1 - r) hc kE, and T and E drifted apart pass by pass; sbimp:
+    // the gas takes all of sb at X)
+    if (gfd) w(m,CLW_EP,k,j,i) -= w(m,CLW_JV+1,k,j,i)*(x - e_old);
     const Real t = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
                        hc*op(m,M1_OP_P,k,j,i)*g*arad_,
                        w(m,CLW_EI,k,j,i) + hc*op(m,M1_OP_E,k,j,i)*ex
@@ -1345,9 +1352,9 @@ Real RadiationM1::CleanNewtonUpdate() {
         fmax(fabs(e), 1.0e-300));
   }, Kokkos::Max<Real>(change), Kokkos::Max<Real>(femax));
   if (!cell) cln_fe = std::numeric_limits<Real>::epsilon()*CleanReduce(femax, true);
-  // (clean_stag_sbimp: the face beta terms' emission of the new T, hc kP a T^4, for the
-  // F solve of the velocity update, whose F the next pass's y takes)
-  if (cln_sbimp && cln_feedback) {
+  // (clean_stag_sbimp, fwork: the face beta terms' emission of the new T, hc kP a T^4,
+  // for the F solve of the velocity update, whose F the next pass's y and W take)
+  if ((cln_sbimp || cln_fwork) && cln_feedback) {
     par_for("cln_sbre", DevExeSpace(), 0, nmb-1, ks, ks+nx3-1, js, js+nx2-1, is,
             is+nx1-1, KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       w(m,CLW_RE,k,j,i) = hc*op(m,M1_OP_P,k,j,i)*arad_*SQR(SQR(w(m,CLW_T,k,j,i)));
