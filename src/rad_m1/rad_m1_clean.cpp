@@ -1097,6 +1097,12 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2) {
     t2_fail = (nit < 0) || (nneg > 0) || (cln_feedback && cln_neint > 0);
   }
+  // (K1 = f(U^n) for the next solve's predictor and time error: what an accepted
+  // backward-Euler or stage-2 solve wrote; a failed one leaves none, the backward-Euler
+  // redo and auto-BE steps of hesdirk2 keep the last)
+  if (t2_solve == M1_T2S_BESTORE || t2_solve == M1_T2S_STAGE2) {
+    cln_k1ok = (nit >= 0) && !dtr_fail && !(t2_solve == M1_T2S_STAGE2 && t2_fail);
+  }
   // (force_reference = clean: the reference is the force of the converged, accepted
   // first coupled solve, every iterate of which recaptures it; a failed one is redone)
   if (force_ref == M1_FREF_CLEAN && cln_feedback && !cln_vzero && nit >= 0 &&
@@ -1254,8 +1260,8 @@ void RadiationM1::CleanFirstIterate() {
   auto op = opac;
   auto w = cln_w;
   auto k1 = t2k1;
-  const bool pred = cln_kpred && !cln_cell && t2_ok && t2_solve != M1_T2S_NONE &&
-                    !cln_vzero && t2k1.extent_int(0) > nmb1;
+  const bool pred = cln_kpred && !cln_cell && (t2_ok || cln_k1ok) &&
+                    t2_solve != M1_T2S_NONE && !cln_vzero && t2k1.extent_int(0) > nmb1;
   const Real h = dt_sub, ecap = SQR(SQR(impl_pred_tcap));
 
   par_for("cln_iter0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -1532,8 +1538,8 @@ Real RadiationM1::CleanNewtonUpdate() {
   // (clean_conv = budget: the changes over the rows' gross terms, and the time error h/2
   // |f(Y) - f(U^n)| of the iterate, Heun against Euler, K1 = f(U^n))
   const bool bud = cln_budget;
-  const bool kok = bud && t2_ok && t2_solve != M1_T2S_NONE && !cln_vzero &&
-                   t2k1.extent_int(0) >= nmb;
+  const bool kok = bud && (t2_ok || cln_k1ok) && t2_solve != M1_T2S_NONE &&
+                   !cln_vzero && t2k1.extent_int(0) >= nmb;
   const Real h = dt_sub;
   auto k1 = t2k1;
   if (cln_sbimp && cln_feedback) {   // (clean_stag_sbimp: the gas takes -sb of X)

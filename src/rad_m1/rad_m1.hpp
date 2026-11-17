@@ -3074,6 +3074,8 @@ class RadiationM1 {
   int cln_fillpass = 8;         // clean_fill_passes: closure fill layers
   bool cln_pred = true;         // clean_predict: closure of the predicted state
   bool cln_kpred = true;        // implicit_predictor: the solve starts from E + h K1_E
+  bool cln_k1ok = false;        // K1 = f(U^n) valid (an accepted solve wrote it): the
+                                // predictor and the budget's time error also in BE steps
   int cln_bdry_form = 0;        // clean_bc: 0 rays' half range, 1 Marshak
   bool cln_cell = false;        // clean_layout: false staggered, true cell-centred
   int cln_alpha = 0;            // clean_alpha: dissipation weight (CLA_*), cell layout
