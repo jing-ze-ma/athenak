@@ -4534,8 +4534,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     // a scratch array, which is what gives it periodic wrap, corner/edge neighbours and
     // MPI for free; the hand-rolled x1 halo of 3b is then not used at all under
     // transport = implicit (this exchange carries its six quantities and seven more).
-    Kokkos::realloc(thw, nmb, M1_NHALO_T, ncells3, ncells2, ncells1);
-    Kokkos::deep_copy(thw, 0.0);
+    // (scheme = clean never takes the implicit solve: no scratch arrays thw, thq)
+    if (!clean) {
+      Kokkos::realloc(thw, nmb, M1_NHALO_T, ncells3, ncells2, ncells1);
+      Kokkos::deep_copy(thw, 0.0);
+    }
     Kokkos::realloc(thw_c, nmb, M1_NHALO_T, 1, 1, 1);
     pbval_th = new MeshBoundaryValuesCC(pmy_pack, pin, false);
     pbval_th->exch_depth = M1HaloDepthEnv(pmy_pack, pin);   // implhalo-1031
@@ -4561,8 +4564,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     // move once the closure is frozen.  A separate array because the exchange takes the
     // variable count from the array's second extent, and a prefix subview of a
     // LayoutRight array is not one.
-    Kokkos::realloc(thq, nmb, M1_NHALO_Q, ncells3, ncells2, ncells1);
-    Kokkos::deep_copy(thq, 0.0);
+    if (!clean) {
+      Kokkos::realloc(thq, nmb, M1_NHALO_Q, ncells3, ncells2, ncells1);
+      Kokkos::deep_copy(thq, 0.0);
+    }
     Kokkos::realloc(thq_c, nmb, M1_NHALO_Q, 1, 1, 1);
     pbval_tq = new MeshBoundaryValuesCC(pmy_pack, pin, false);
     pbval_tq->exch_depth = M1HaloDepthEnv(pmy_pack, pin);   // implhalo-1031
@@ -5213,6 +5218,12 @@ void RadiationM1::ImplicitHaloExchange(int nq, int c0) {
     pa = &vmw; pc = &vmw_c; pb = pbval_vm;
   } else {
     pa = &krw; pc = &krw_c; pb = pbval_kr;
+  }
+  if (pa->data() == nullptr) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "the implicit solve's halo exchange of " << nq << " components has no "
+              << "scratch array (<rad_m1>/scheme = clean allocates none)" << std::endl;
+    std::exit(EXIT_FAILURE);
   }
   ImplicitHaloCopy(*pa, nq, c0, true);
   while (pb->InitRecv(nq) == TaskStatus::incomplete) {}
