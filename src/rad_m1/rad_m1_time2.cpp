@@ -3571,10 +3571,15 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
     c += nr + nq + 1;
   }
   // clean_stag_fkin: the energy flux's memory d of the three face families (CLF_N + 3),
-  // then its slope K1 (CLF_KD)
+  // then its slope K1 (CLF_KD); before the first solve (CleanInit) those of the file read
   if (clean && cln_fsolve && cln_fkin) {
     for (int d = 0; d < 3; ++d) {
       auto fc = (d == 0) ? cln_fc1 : ((d == 1) ? cln_fc2 : cln_fc3);
+      if (!cln_init && cln_rstd.extent_int(0) >= m0 + nmb) {
+        Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c + 6), AL, AL, AL),
+                          Kokkos::subview(cln_rstd, ms, AL, AL, AL, AL));
+        break;
+      }
       if (fc.extent_int(0) < m0 + nmb) continue;
       Kokkos::deep_copy(Kokkos::subview(a, mb, c + d, AL, AL, AL),
                         Kokkos::subview(fc, ms, CLF_N + 3, AL, AL, AL));

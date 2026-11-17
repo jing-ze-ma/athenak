@@ -843,14 +843,21 @@ void ParameterInput::ParameterDump(std::ostream& os) {
 
   for (auto itb = block.begin(); itb != block.end(); ++itb) {     // loop over InputBlocks
     os<< "<" << itb->block_name << ">" << std::endl;              // write block name
+    // (the widths of the values now: a value shortened during the run, e.g. last_time,
+    // does not pad the dump, so that a dump depends on the state alone)
+    std::size_t wn = 0, wv = 0;
+    for (auto &l : itb->line) {
+      wn = std::max(wn, l.param_name.length());
+      wv = std::max(wv, l.param_value.length());
+    }
     // loop over InputLines and write each parameter name/value
     for (auto itl = itb->line.begin(); itl != itb->line.end(); ++itl) {
       param_name.assign(itl->param_name);
       param_value.assign(itl->param_value);
 
-      len = itb->max_len_parname - param_name.length() + 1;
+      len = wn - param_name.length() + 1;
       param_name.append(len,' ');                         // pad name  to align vertically
-      len = itb->max_len_parvalue - param_value.length() + 1;
+      len = wv - param_value.length() + 1;
       param_value.append(len,' ');                        // pad value to align vertically
 
       os<< param_name << "= " << param_value << itl->param_comment <<  std::endl;
