@@ -3345,8 +3345,10 @@ void RadiationM1::CleanWriteBack() {
                                CleanDivW(x, n, m, k, j, i, 0)*fl : x.idx[n]*(fh - fl);
       if (xh.hi) u0_(m,M1_F1+n,k,j,i) = 0.5*(fl + fu);
       if (pfo) pf(m,n,k,j,i) = fl;
+      // (the high face of the MeshBlock: the Phi that moved E, the owner's with the tie,
+      // so time2_face_fct limits one flux on both sides of a seam or the theta wrap)
       if (pfo && (n == 0 ? i == x.ie : (n == 1 ? j == x.je : k == x.ke))) {
-        pf(m,n,k+dk,j+dj,i+di) = fu;
+        pf(m,n,k+dk,j+dj,i+di) = fh;
       }
     }
     x.w(m,CLW_Q,k,j,i) = x.h*dv;
