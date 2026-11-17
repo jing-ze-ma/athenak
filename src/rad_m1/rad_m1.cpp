@@ -2259,7 +2259,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   Kokkos::realloc(opac, nmb, vscat ? (M1_NOPAC + 1) : M1_NOPAC, ncells3, ncells2,
                   ncells1);
   Kokkos::deep_copy(opac, 0.0);
-  if (coupling) {
+  if (coupling && !clean) {   // (read only by Coupling, which scheme = clean never takes)
     Kokkos::realloc(ugas1, nmb, 4, ncells3, ncells2, ncells1);
   }
   // force_reference: allocated (and zeroed) here so that the kernel always has a valid

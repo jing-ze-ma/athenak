@@ -114,8 +114,8 @@ const char *kDtrMinimal[] = {
 // the Views of kDtrMinimal that <rad_m1>/scheme = clean does not write
 // (dt_retry_views = clean)
 const char *kDtrNotClean[] = {
-  "m1.ipred", "m1.ipred2", "m1.csk1", "m1.csk2", "m1.tau_ten", "m1.x2_tt", "m1.x2_hr",
-  "m1.x2_q",
+  "m1.ipred", "m1.ipred2", "m1.csk1", "m1.csk2", "m1.csinc", "m1.tau_ten", "m1.x2_tt",
+  "m1.x2_hr", "m1.x2_q",
 };
 
 // debug (dt_retry_poison_n / dt_retry_poison_cells): restrict the poison of

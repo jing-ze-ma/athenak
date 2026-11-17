@@ -1967,7 +1967,9 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   const bool ra_read = (nra_file > 0) && (pradm1 != nullptr) && pradm1->vra_on;
   // implicit_gas_src = conservative(2): csk1 and the flags, when this run is one too
   // (with hesdirk2 for the slabs: csk1 is sized as its slope t2k1)
-  const bool csk_read = csk_have && (pradm1 != nullptr) && pradm1->impl_gas_src_cons;
+  // (scheme = clean takes no csk1: only the implicit solve reads what it feeds)
+  const bool csk_read = csk_have && (pradm1 != nullptr) && pradm1->impl_gas_src_cons &&
+                        !pradm1->clean;
   // am_vector: the spin (+ amk1) when this run carries one too
   hydro::AmModule *pam_rst = hydro::AmModuleOf(pmy_mesh_->pmb_pack);
   const bool ams_read = (nams_file > 0) && (pam_rst != nullptr) && pam_rst->am_vector;

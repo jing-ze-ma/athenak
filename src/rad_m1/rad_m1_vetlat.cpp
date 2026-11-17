@@ -245,9 +245,12 @@ void RadiationM1::VetLatInit() {
   // the exchange of the off-diagonal slots only (slots 0-3 keep vet_col's ghosts)
   // (vet_gd: also slot 0 after the fold and every LAT slot: the face diagonals and the
   // tangential cross terms read their lateral ghosts)
+  // (none under scheme = clean with its own rays: only the tensor builds take them)
   const int nlx = vgd_on ? (1 + M1_TT_NLAT) : 2;
-  Kokkos::realloc(vlat_lx, nmb, nlx, c3, c2, c1);
-  Kokkos::deep_copy(vlat_lx, 0.0);
+  if (!(clean && cln_rfv > 0)) {
+    Kokkos::realloc(vlat_lx, nmb, nlx, c3, c2, c1);
+    Kokkos::deep_copy(vlat_lx, 0.0);
+  }
   Kokkos::realloc(vlat_tt_c, nmb, nlx, 1, 1, 1);
   Kokkos::realloc(vlat_geo, indcs.nx1, 2*vlat_nmu, 4);
   Kokkos::realloc(vlat_mu, vlat_nmu);
@@ -445,6 +448,12 @@ void RadiationM1::VetGdIterRebuild() {
 //! through a copy: D_rt, D_rp (vet_col_lat), or slot 0 and every LAT slot (vet_gd)
 
 void RadiationM1::VetLatTTGhosts(DvceArray5D<Real> *src) {
+  if (vlat_lx.extent_int(0) == 0) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "VetLatTTGhosts without vlat_lx (<rad_m1>/scheme = clean with "
+              << "clean_rays allocates none)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   auto tt_ = (src != nullptr) ? *src : tau_ten;   // meshfb-1106: or vlat_tt_loc
   auto lx_ = vlat_lx;
@@ -490,6 +499,12 @@ void RadiationM1::VetLatExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
 
 void RadiationM1::VetLatBuild() {
   if (!vlat_ready) {VetLatInit();}
+  if (vlat_lx.extent_int(0) == 0) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "VetLatBuild without vlat_lx (<rad_m1>/scheme = clean with "
+              << "clean_rays allocates none)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   if (vgd_cstan && cs_qf.extent_int(0) == 0) {   // cs-tan-1106
     CsTanFrameInit(vlat_lx, vlat_tt_c, pbval_vt);
   }

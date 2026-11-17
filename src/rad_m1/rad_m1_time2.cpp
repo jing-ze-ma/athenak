@@ -774,9 +774,12 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (vet_col) {
     // Time2VetStart's save slots (E, T) and the saved stage-start opacities;
     // time2_vet_col = predict | rebuild: also KT, T(Y1), E(Y1) and the inner face flux
-    Kokkos::realloc(vet_now, nmb, (t2_vcmode == 0 || t2_vcmode >= 3) ? 2 : 6, n3, n2, n1);
-    Kokkos::realloc(vet_opac, nmb, vscat ? (M1_NOPAC + 1) : M1_NOPAC, n3, n2,
-                    n1);
+    // (none under scheme = clean: only the implicit solve takes them)
+    if (!clean) {
+      Kokkos::realloc(vet_now, nmb, (t2_vcmode == 0 || t2_vcmode >= 3) ? 2 : 6, n3, n2,
+                      n1);
+      Kokkos::realloc(vet_opac, nmb, vscat ? (M1_NOPAC + 1) : M1_NOPAC, n3, n2, n1);
+    }
     if (t2_vcmode == 4) {
       if (!noh) {
         Kokkos::realloc(x2_tt, nmb, M1_X2_NTT, n3, n2, n1);

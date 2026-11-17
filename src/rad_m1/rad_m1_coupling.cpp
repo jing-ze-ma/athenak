@@ -83,6 +83,12 @@ namespace radm1 {
 
 TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
   if (!coupling) return TaskStatus::complete;
+  if (ugas1.extent_int(0) == 0) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "Coupling called without ugas1 (<rad_m1>/scheme = clean allocates none)"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
 
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;

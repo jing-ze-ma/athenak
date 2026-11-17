@@ -4431,8 +4431,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::deep_copy(ipred, 0.0);
     pred_ok = false;
   }
-  Kokkos::realloc(ifw, nmb, M1_NIFW, ncells3, ncells2, ncells1+1);
-  Kokkos::deep_copy(ifw, 0.0);
+  // (scheme = clean never takes the implicit solve, the only user of ifw, ifw2, ifw3)
+  if (!clean) {
+    Kokkos::realloc(ifw, nmb, M1_NIFW, ncells3, ncells2, ncells1+1);
+    Kokkos::deep_copy(ifw, 0.0);
+  }
   if (impl_pos_trans != 0 && sph_geom && pt_gam > 0.0) {   // postr-1031
     Kokkos::realloc(ptq1, nmb, ncells3, ncells2, ncells1+1);
     Kokkos::deep_copy(ptq1, 0.0);
@@ -4497,7 +4500,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       Kokkos::realloc(vcol_q, nmb, ncells3, ncells2);
       Kokkos::deep_copy(vcol_q, marshak_q);
     }
-    if (blat_on) {
+    if (blat_on && !clean) {
       // thinsw-1010: implicit_thin_switch also keeps the lagged face flux DG there
       const int nfw = (impl_thsw != M1_THSW_NONE) ? M1_NIFW : 3;
       Kokkos::realloc(ifw2, nmb, nfw, ncells3, ncells2+1, ncells1);
@@ -4507,7 +4510,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         Kokkos::deep_copy(ifw3, 0.0);
       }
     }
-    if (impl_tlim == M1_TLIM_LPR && !blat_on) {
+    if (impl_tlim == M1_TLIM_LPR && !blat_on && !clean) {
       // m1lpr-1019: the sp rows (M1SphTransRow, the face/cell kernels' blend terms) read
       // the limited face theta thx2/thx3 through their blend flag; with no blend its
       // weights stay identically zero (AL = HCL = HCR = 0), so only theta changes
@@ -14961,6 +14964,12 @@ void RadiationM1::EAuditMark(int pt) {
 }
 
 TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
+  if (clean) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "ImplicitSolve called with <rad_m1>/scheme = clean (its arrays are not "
+              << "allocated)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
   auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
   TmrMark(1);   // implicit_timers: Opacity (and anything since the closure limits)
