@@ -3058,6 +3058,7 @@ class RadiationM1 {
   Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E
   int cln_fillpass = 8;         // clean_fill_passes: closure fill layers
   bool cln_pred = true;         // clean_predict: closure of the predicted state
+  bool cln_kpred = true;        // implicit_predictor: the solve starts from E + h K1_E
   int cln_bdry_form = 0;        // clean_bc: 0 rays' half range, 1 Marshak
   bool cln_cell = false;        // clean_layout: false staggered, true cell-centred
   int cln_alpha = 0;            // clean_alpha: dissipation weight (CLA_*), cell layout

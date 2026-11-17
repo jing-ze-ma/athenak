@@ -164,6 +164,7 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/time2_vet_sc", "clean_closure"},
     {"rad_m1/time2_vet_extrap", "clean_closure"}, {"rad_m1/time2_lin_tol*", "clean_tol"},
     {"rad_m1/implicit_ghost_x1min", "!"}, {"rad_m1/ic_rad*", "clean_init"},
+    {"rad_m1/implicit_predictor", nullptr}, {"rad_m1/implicit_predictor_tcap", nullptr},
     {"rad_m1/implicit_*", ""},
     {"rad_m1/time2_accept_fallback", ""}, {"rad_m1/time2_posfix*", ""},
     {"rad_m1/time2_k1_*", ""}, {"rad_m1/time2_face_fct", ""},
@@ -1123,7 +1124,11 @@ void RadiationM1::CleanAdvectiveCoefficients() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanFirstIterate
 //! \brief first Newton iterate: E of the old vector, no momentum change, and the gas
-//! temperature in local exchange equilibrium with that E
+//! temperature in local exchange equilibrium with that E.  implicit_predictor (step, as
+//! the old production): E + h K1_E instead, K1 the slope of U^n (hesdirk2, the last
+//! solve's), where that moves the radiation temperature by less than the factor
+//! implicit_predictor_tcap (staggered).  The starting point only: the solution does not
+//! move
 
 void RadiationM1::CleanFirstIterate() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1138,10 +1143,16 @@ void RadiationM1::CleanFirstIterate() {
   auto eos = fl.eos;
   auto op = opac;
   auto w = cln_w;
+  auto k1 = t2k1;
+  const bool pred = cln_kpred && !cln_cell && t2_ok && t2_solve != M1_T2S_NONE &&
+                    !cln_vzero && t2k1.extent_int(0) > nmb1;
+  const Real h = dt_sub, ecap = SQR(SQR(impl_pred_tcap));
 
   par_for("cln_iter0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real e = fmax(w(m,CLW_EO,k,j,i), 0.0);
+    const Real eo = fmax(w(m,CLW_EO,k,j,i), 0.0);
+    const Real ep = pred ? eo + h*k1(m,M1_T2_E,k,j,i) : eo;
+    const Real e = (ep > eo/ecap && ep < eo*ecap) ? ep : eo;
     w(m,CLW_EK,k,j,i) = e;
     w(m,CLW_RR,k,j,i) = 0.0;
     for (int n = 0; n < 3; ++n) w(m,CLW_DM+n,k,j,i) = 0.0;
