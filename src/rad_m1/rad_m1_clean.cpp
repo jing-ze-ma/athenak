@@ -2427,7 +2427,7 @@ void RadiationM1::CleanStagFSolve(const int e) {
       });
       if (dir == x.nf - 1) {
         yfill();
-        if (nsw > 1 && CleanStagFSweepChange() < 1.0e-12) q = (1 + nsw)*x.nf - 1;
+        if (nsw > 1 && CleanStagFSweepChange() < 1.0e-12 && q >= 2*x.nf) q = (1 + nsw)*x.nf - 1;
       }
     } else if (ph == 1) {
       // the lines' coefficients are the same in every pass below, only the neighbours'
@@ -2500,7 +2500,7 @@ void RadiationM1::CleanStagFSolve(const int e) {
       if (dir == x.nf - 1) {
         yfill();
         // (sweeps: until the high faces' F, their owners', changes by < 1e-12 of itself)
-        if (nsw > 1 && CleanStagFSweepChange() < 1.0e-12) q = (1 + nsw)*x.nf - 1;
+        if (nsw > 1 && CleanStagFSweepChange() < 1.0e-12 && q >= 2*x.nf) q = (1 + nsw)*x.nf - 1;
       }
     }
     if (ph == 2) {
@@ -2595,7 +2595,8 @@ void RadiationM1::CleanStagFaceTie(const int e, const int kd) {
 //! \fn Real RadiationM1::CleanStagFSweepChange
 //! \brief clean_stag_fsweeps: the largest change, relative to itself, of the F the high
 //! faces of the F solve's lines took from their neighbours (CLW_Y, CLW_Z, CLW_S ghosts)
-//! since the last sweep (kept in CLW_TM + dir, free in the write-back)
+//! since the last sweep (kept in CLW_TM + dir, free in the write-back; the first sweep
+//! only stores it: CLW_TM holds another solve's or the arena's bytes before)
 
 Real RadiationM1::CleanStagFSweepChange() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
