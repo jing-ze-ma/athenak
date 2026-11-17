@@ -1163,9 +1163,15 @@ class RadiationM1 {
   // restart continues bitwise.  The reader restores them whenever the file has them and
   // the run has cmem (and then skips implicit_hr_cmem_fainit).
   bool impl_cm_rst = false;
+  // time2_face_fct: the slabs also carry K1's face energy flux t2pf1 (2 per direction,
+  // the same layout, behind the fax ones) once a solve stored it, so a restart limits
+  // as the run would
   int FaxRstNslab() const {
-    if (!impl_hr_cmem || !impl_cm_rst || fax1.extent_int(0) == 0) {return 0;}
-    return 2 + ((fax2.extent_int(0) > 0) ? 2 : 0) + ((fax3.extent_int(0) > 0) ? 2 : 0);
+    const int nd = trans_on ? (trans_x3 ? 3 : 2) : 1;
+    const int np = (t2_ffct && t2pf1_ok && t2pf1.extent_int(0) > 0) ? 2*nd : 0;
+    if (!impl_hr_cmem || !impl_cm_rst || fax1.extent_int(0) == 0) {return np;}
+    return 2 + ((fax2.extent_int(0) > 0) ? 2 : 0) + ((fax3.extent_int(0) > 0) ? 2 : 0) +
+           np;
   }
   void FaxRstPack(DvceArray5D<Real> out, int nmb);
   bool FaxRstUnpack(DvceArray5D<Real> in, int nmb, int nsl);

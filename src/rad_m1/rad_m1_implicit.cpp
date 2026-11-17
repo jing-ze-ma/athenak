@@ -23223,6 +23223,24 @@ void RadiationM1::ImplicitConsResid(bool bicg, bool trans) {
 
 void RadiationM1::FaxRstPack(DvceArray5D<Real> out, int nmb) {
   const int n3 = out.extent_int(2), n2 = out.extent_int(3), n1 = out.extent_int(4);
+  const int nd = trans_on ? (trans_x3 ? 3 : 2) : 1;
+  const int s0 = FaxRstNslab() - ((t2_ffct && t2pf1_ok) ? 2*nd : 0);
+  if (s0 < FaxRstNslab()) {   // (time2_face_fct: t2pf1 behind the fax slabs)
+    auto &id = pmy_pack->pmesh->mb_indcs;
+    const int is = id.is, js = id.js, ks = id.ks;
+    auto pf = t2pf1;
+    par_for("pf_rst_pack", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int d = 0; d < nd; ++d) {
+        const int c = (d == 0) ? i : ((d == 1) ? j : k), n = (d == 0) ? n1 : (d == 1) ? n2
+                                                                                  : n3;
+        out(m,s0+2*d,k,j,i) = pf(m,d,ks+k,js+j,is+i);
+        out(m,s0+2*d+1,k,j,i) = (c == 0) ? pf(m,d,ks+k+(d == 2)*n,js+j+(d == 1)*n,
+                                                 is+i+(d == 0)*n) : 0.0;
+      }
+    });
+  }
+  if (s0 == 0) {return;}
   const bool h2 = fax2.extent_int(0) > 0, h3 = fax3.extent_int(0) > 0;
   auto f1 = fax1, f2 = fax2, f3 = fax3;
   par_for("fax_rst_pack", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
@@ -23242,10 +23260,37 @@ void RadiationM1::FaxRstPack(DvceArray5D<Real> out, int nmb) {
 }
 
 bool RadiationM1::FaxRstUnpack(DvceArray5D<Real> in, int nmb, int nsl) {
-  if (!impl_hr_cmem || fax1.extent_int(0) < nmb) {return false;}
+  const int n3 = in.extent_int(2), n2 = in.extent_int(3), n1 = in.extent_int(4);
+  // time2_face_fct: t2pf1 behind the fax slabs (a file without them: the first stage
+  // takes the stage-start face F, Time2FaceFct)
+  const int nd = trans_on ? (trans_x3 ? 3 : 2) : 1;
+  const bool cm = impl_hr_cmem && fax1.extent_int(0) >= nmb;
+  const int na = cm ? 2 + ((fax2.extent_int(0) > 0) ? 2 : 0) +
+                      ((fax3.extent_int(0) > 0) ? 2 : 0) : 0;
+  if (t2_ffct && t2pf1.extent_int(0) >= nmb && nsl == na + 2*nd) {
+    auto &id = pmy_pack->pmesh->mb_indcs;
+    const int is = id.is, js = id.js, ks = id.ks;
+    auto pf = t2pf1;
+    par_for("pf_rst_unpack", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int d = 0; d < nd; ++d) {
+        const int c = (d == 0) ? i : ((d == 1) ? j : k), n = (d == 0) ? n1 : (d == 1) ? n2
+                                                                                  : n3;
+        pf(m,d,ks+k,js+j,is+i) = in(m,na+2*d,k,j,i);
+        if (c == 0) {
+          pf(m,d,ks+k+(d == 2)*n,js+j+(d == 1)*n,is+i+(d == 0)*n) = in(m,na+2*d+1,k,j,i);
+        }
+      }
+    });
+    t2pf1_ok = true;
+    nsl = na;
+  } else if (t2_ffct && global_variable::my_rank == 0) {
+    std::cout << "NOTE <rad_m1> restart: no time2_face_fct face fluxes in the file; the "
+              << "first stage takes the stage-start face F" << std::endl;
+  }
+  if (!cm || nsl == 0) {return nsl == 0;}
   const bool h2 = fax2.extent_int(0) > 0, h3 = fax3.extent_int(0) > 0;
   if (nsl != 2 + (h2 ? 2 : 0) + (h3 ? 2 : 0)) {return false;}
-  const int n3 = in.extent_int(2), n2 = in.extent_int(3), n1 = in.extent_int(4);
   auto f1 = fax1, f2 = fax2, f3 = fax3;
   par_for("fax_rst_unpack", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {

@@ -2716,6 +2716,18 @@ void RadiationM1::CleanWriteBack() {
                CleanFaceFlux(x, CLW_X, d, m, k+(d == 2), j+(d == 1), i+(d == 0), true));
     }
   });
+  // (time2_face_fct: the energy flux Phi of every face, which moved E, with its slope)
+  if (t2_ffct && slopes && t2pf1.extent_int(0) > nmb1) {
+    auto pf = (t2_solve == M1_T2S_STAGE1) ? t2pf2 : t2pf1;
+    for (int d = 0; d < x.nf; ++d) {
+      const int dk = (d == 2), dj = (d == 1), di = (d == 0);
+      par_for("cln_wbpf", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        pf(m,d,k,j,i) = CleanFaceFlux(x, CLW_X, d, m, k, j, i, true);
+      });
+    }
+    if (t2_solve == M1_T2S_STAGE1) {t2pf2_ok = true;} else {t2pf1_ok = true;}
+  }
   CleanStagFSolve(CLW_X);   // (the face F of the F solve and its dissipation)
   xh.fs = true;
 
