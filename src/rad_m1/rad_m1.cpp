@@ -375,6 +375,20 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
+    // clean_slave_energy (read only when named, default false): in the streaming share s
+    // E is the rays' J as well, the E rows (1 - s) those of the moment system plus
+    // s (1 + h c kE)(E - J); the gas takes the local exchange of the radiation state
+    // there, s times the rest of the cell's energy balance is withheld with the momentum
+    // (cln_swh; the gas_exact exchange is left out in cells with s > 0)
+    if (pin->DoesParameterExist("rad_m1","clean_slave_energy")) {
+      cln_slave_e = pin->GetBoolean("rad_m1","clean_slave_energy");
+      if (cln_slave_e && !cln_slave_loc) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/clean_slave_energy needs clean_slave_local = "
+                  << "true" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     {const std::string nn = pin->GetOrAddString("rad_m1","clean_nl_norm","global");
     if (nn.compare("global") != 0 && nn.compare("cell") != 0) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__

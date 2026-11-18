@@ -155,6 +155,7 @@ struct CleanArgs {
   bool tside;                  // clean_bracket_rem = side: y flux c (g y + a E) per side
   bool curvk;                  // clean_curv_iterate: the rays' curvature terms per E
   bool slave;                  // clean_slave: y rows (1 - s) moment rows + s (y - h E)
+  bool slave_e;                // clean_slave_energy: E rows (1 - s) moment + s (E - J)
   bool milne;                  // cell layout: sub-cell Eddington face model
   bool fvrays;                 // cell layout: FV rays (clean_rays = fv1 | fv)
   DvceArray5D<Real> op;        // opacities (M1_OP_*)

@@ -853,10 +853,15 @@ void RadiationM1::CleanCellRightHandSide() {
       }
     }
     if (x.slave) {
-      // clean_slave: the streaming share of the y rows (y - h E) has no right-hand side
+      // clean_slave: the streaming share of the y rows (y - h E) has no right-hand side;
+      // clean_slave_energy: that of the E row is (1 + h c kE) J
       Real hs[3];
       const Real sl = CleanCellSlave(x, m, k, j, i, hs);
       for (int b = 0; b < x.nf; ++b) x.u(m,CLC_B+1+b,k,j,i) *= 1.0 - sl;
+      if (x.slave_e) {
+        x.u(m,CLC_B,k,j,i) = (1.0 - sl)*x.u(m,CLC_B,k,j,i) +
+                             sl*(1.0 + hcke)*x.u(m,CLC_U,k,j,i);
+      }
     }
     for (int b = 0; b < 4; ++b) x.u(m,CLC_X+b,k,j,i) = x.u(m,CLC_K+b,k,j,i);
   });
@@ -963,6 +968,10 @@ void RadiationM1::CleanCellApply(const int src, const int dst) {
         x.u(m,dst+1+b,k,j,i) = (1.0 - sl)*x.u(m,dst+1+b,k,j,i) +
                                d*(x.u(m,src+1+b,k,j,i) - hs[b]*e);
       }
+      // clean_slave_energy: the streaming share s of the E row is E - J
+      if (x.slave_e) {
+        x.u(m,dst,k,j,i) = (1.0 - sl)*x.u(m,dst,k,j,i) + sl*(1.0 + hcke)*e;
+      }
     }
   });
 }
@@ -1016,6 +1025,7 @@ void RadiationM1::CleanCellPreconditionerSetup() {
     if (x.slave) sl = CleanCellSlave(x, m, k, j, i, hs);
     Real rs[4] = {1.0, 1.0, 1.0, 1.0};
     for (int b = 0; b < x.nf; ++b) rs[1+b] = 1.0 - sl;
+    if (x.slave_e) rs[0] = 1.0 - sl;
     const Real rr = x.feedback ? x.w(m,CLW_RR,k,j,i) : 0.0;
     const Real chi = op(m,M1_OP_T,k,j,i);
     a0[0][0] = 1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*(1.0 - rr);
@@ -1086,6 +1096,10 @@ void RadiationM1::CleanCellPreconditionerSetup() {
         for (int c = 0; c < 4; ++c) a0[1+b][c] *= 1.0 - sl;
         a0[1+b][1+b] += d;
         a0[1+b][0] -= d*hs[b];
+      }
+      if (x.slave_e) {
+        for (int c = 0; c < 4; ++c) a0[0][c] *= 1.0 - sl;
+        a0[0][0] += sl*(1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i));
       }
     }
     for (int r = 0; r < 4; ++r) {
@@ -2243,6 +2257,7 @@ void RadiationM1::CleanCellWriteBack() {
   }
   auto sws = cln_sws;
   const int sslot = 4*((t2_solve == M1_T2S_STAGE1) ? 1 : 2);
+  const bool sle = sloc && cln_slave_e;
   auto flag = [=] KOKKOS_FUNCTION (const int s, const int m, const int k, const int j,
                                    const int i, const Real e, const Real *y) {
     const Real a = std::sqrt(y[0]*y[0] + y[1]*y[1] + y[2]*y[2]);
@@ -2281,7 +2296,7 @@ void RadiationM1::CleanCellWriteBack() {
     const Real e_old = x.w(m,CLW_EO,k,j,i);
     Real dm[3] = {0.0, 0.0, 0.0}, dh[3], y[3];
     for (int b = 0; b < 3; ++b) y[b] = x.u(m,CLC_X+1+b,k,j,i);
-    Real den = 0.0;
+    Real den = 0.0, sl = 0.0, we = 0.0;
     if (wbr_on) flag(0, m, k, j, i, e, y);
     if (feedback) {
       if (yres == M1_YRES_POST) {
@@ -2296,7 +2311,7 @@ void RadiationM1::CleanCellWriteBack() {
       if (wbr_on) flag(1, m, k, j, i, e, y);
       // clean_slave_local: the streaming share s takes the local force only, and s times
       // the rest of the cell's balance is withheld
-      Real sl = 0.0, dl[3] = {0.0, 0.0, 0.0}, wh[3] = {0.0, 0.0, 0.0};
+      Real dl[3] = {0.0, 0.0, 0.0}, wh[3] = {0.0, 0.0, 0.0};
       if (sloc && !vzero) {
         Real hs[3];
         sl = CleanCellSlave(x, m, k, j, i, hs);
@@ -2314,7 +2329,6 @@ void RadiationM1::CleanCellWriteBack() {
         Real whh[3];
         CleanGasChange(x, m, k, j, i, wh, whh);
         for (int b = 0; b < 3; ++b) sws(m,sslot+b,k,j,i) = whh[b]/h;
-        sws(m,sslot+3,k,j,i) = 0.0;
       }
       // (the steady start's force pass: the x1 deposit the gas does not take)
       if (fm) {
@@ -2334,12 +2348,27 @@ void RadiationM1::CleanCellWriteBack() {
           wr += h*CleanRefForce(fref, fr, aref, d, b, m, k, j, i)*(pg[b] + dm[b])/d;
         }
       }
+      // clean_slave_energy: the radiation's local energy gain h c (kP G a T^4 - kE E) +
+      // RE E + RY.y - W of the solution (the source of its E row at the iterate's T)
+      Real rl = 0.0;
+      if (sle && sl > 0.0) {
+        const Real tk = x.w(m,CLW_T,k,j,i);
+        Real sb = x.w(m,CLW_RE,k,j,i)*e;
+        for (int b = 0; b < x.nf; ++b) sb += x.w(m,CLW_RY+b,k,j,i)*y[b];
+        rl = h*x.c*(op(m,M1_OP_P,k,j,i)*x.w(m,CLW_GM,k,j,i)*arad_*SQR(SQR(tk)) -
+                    op(m,M1_OP_E,k,j,i)*e) + sb - wk - wr;
+      }
       e -= wk - x.w(m,CLW_WK,k,j,i) + wr;
       if (wbr_on) flag(2, m, k, j, i, e, y);
       // (the hydro's components; dm.e_a covariant on the cubed sphere)
       CleanGasChange(x, m, k, j, i, dm, dh);
       for (int b = 0; b < x.nf; ++b) uh(m,IM1+b,k,j,i) += dh[b];
       den = -(e - e_old) - div[0] + (eso ? h*es(m,k,j,i) : 0.0) - wr;
+      if (sle && sl > 0.0) {
+        // the streaming share s takes the local exchange only; the rest is withheld
+        we = sl*(den + wr + rl);
+        den -= we;
+      }
       if (vzero) {
         // steady start: the internal energy of the gas temperature of the iterate, not
         // the residual of a step h -> infinity
@@ -2350,7 +2379,7 @@ void RadiationM1::CleanCellWriteBack() {
         // the gas eint changes by the exchange of the solve only
         const Real ke = 0.5*(SQR(pg[0]) + SQR(pg[1]) + SQR(pg[2]))/uh(m,IDN,k,j,i);
         const Real eint = CleanGasEint(x, uh, ke + wk, m, k, j, i) + den;
-        if (gexact) {
+        if (gexact && !(sle && sl > 0.0)) {
           // the cell's exchange taken exactly with its face fluxes, work and beta terms
           // fixed: E (1 + h c kE) = E_tr + h c kP G a T^4, E_tr = E_old - h div F - W
           // + h esrc + RE E + RY.y, and E + eint = C of the balance, so that
@@ -2377,6 +2406,7 @@ void RadiationM1::CleanCellWriteBack() {
       }
       uh(m,IEN,k,j,i) += den;
     }
+    if (sloc) sws(m,sslot+3,k,j,i) = we/h;
     if (slopes) {
       kk(m,M1_T2_E,k,j,i) = (e - e_old)/h;
       for (int b = 0; b < 3; ++b) {

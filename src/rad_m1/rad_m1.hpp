@@ -3057,6 +3057,7 @@ class RadiationM1 {
   bool cln_curvk = false;       // clean_curv_iterate: curvature terms at the iterate's E
   bool cln_slave = false;       // clean_slave: y = h E in the streaming share
   bool cln_slave_loc = false;   // clean_slave_local: the gas takes the local force there
+  bool cln_slave_e = false;     // clean_slave_energy: E = J of the rays there as well
   DvceArray5D<Real> cln_swh;    // its withheld momentum (3) and energy, accumulated
   DvceArray5D<Real> cln_sws;    // their slopes of the step (K1, K2, K3; 4 each)
   Real cln_ntlim = 0.0;         // faces whose y remainder was limited (this solve)
