@@ -260,6 +260,13 @@ struct CleanArgs {
   bool recon;                  // cell layout: reconstructed face states in the jumps
   bool all_low;                // cell layout: every interior face low-order
   bool consist;                // cell layout: face fluxes carry the consistency bracket
+  bool bracket;                // clean_consistency_bracket: with its bracket (else w only)
+  bool posreal;                // clean_pos_real: kinetic y flux on low-order faces
+  bool tilt;                   // clean_bracket_tilt: the E bracket in the factors g+-
+  bool tside;                  // clean_bracket_rem = side: y flux c (g y + a E) per side
+  bool curvk;                  // clean_curv_iterate: the rays' curvature terms per E
+  bool slave;                  // clean_slave: y rows (1 - s) moment rows + s (y - h E)
+  bool slave_e;                // clean_slave_energy: E rows (1 - s) moment + s (E - J)
   bool milne;                  // cell layout: sub-cell Eddington face model
   bool fvrays;                 // cell layout: FV rays (clean_rays = fv1 | fv)
   DvceArray5D<Real> op;        // opacities (M1_OP_*)

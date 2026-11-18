@@ -1950,6 +1950,7 @@ class RadiationM1 {
   void EbndStart();
   void EbndStage1();
   void EbndAccept(Real dt, bool t2step);
+  void CleanSlaveAccept(Real dt, bool t2step);
   // pgrst-posfix-1021: an operator positivity fallback (implicit_vimp, offdiag operator,
   // vet_col_lat) of a stage-1 solve marks its E <= 0 cells in t2pm too, and such a stage
   // asks for the local re-solve (the re-solve starts with the full operator again)
@@ -2973,6 +2974,8 @@ class RadiationM1 {
   void CleanPrecondition(const int src, const int dst);
   void CleanApply(const int src, const int dst);
   int CleanBiCGStab();
+  int CleanBiCGStabSolve();
+  void CleanCellRowScale(const int v, const bool up);
   Real CleanNewtonUpdate();
   Real CleanVelocityUpdate();
   void CleanCopyIterate();
@@ -2993,11 +2996,14 @@ class RadiationM1 {
                       const bool phys = true, const int part = 0);
   std::array<Real, 2> CleanDots(DvceArray5D<Real> w, const int nc, const int n,
                                 const std::array<int, 4> ab);
+  Real CleanCellResidualMax(const int r);
   Real CleanReduce(Real v, const bool max);
   // cell-centred layout (<rad_m1>/clean_layout = cell, rad_m1_clean_cell.cpp)
   void CleanCellOldVector();
   void CleanCellFaceCoefficients();
   void CleanCellConsistency();
+  void CleanCellTiltLimit();
+  void CleanCellTiltCone();
   void CleanCellMilneSetup();
   void CleanCellSlopeWeights(const int v);
   void CleanCellFirstIterate();
@@ -3044,6 +3050,9 @@ class RadiationM1 {
   Real cln_c0 = 0.1;            // clean_w_c0: C1 below which w = 0
   Real cln_c1 = 0.5;            // clean_w_c1: C1 above which w = 1
   Real cln_tol = 1.0e-10;       // clean_tol: relative residual of the linear solve
+  Real cln_tol_cell = 0.0;      // clean_tol_cell: and of every cell (cell layout)
+  bool cln_rscale = false;      // clean_row_scale: the rows of a cell over its E scale
+  DvceArray4D<Real> cln_rowsc;  // that scale, a power of 2 (CleanCellRowScale)
   int cln_maxit = 4000;         // clean_maxit: BiCGStab iterations
   int cln_maxnl = 50;           // clean_maxnl: Newton iterations
   Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: Newton tolerance (relative dE, dT, dv)
@@ -3056,10 +3065,25 @@ class RadiationM1 {
   int cln_bdry_form = 0;        // clean_bc: 0 rays' half range, 1 Marshak
   bool cln_cell = false;        // clean_layout: false staggered, true cell-centred
   int cln_alpha = 0;            // clean_alpha: dissipation weight (CLA_*), cell layout
+  bool cln_bracket = true;      // clean_consistency_bracket
+  bool cln_dlight = false;      // clean_dissip_speed = light: dissipation speed c
   int cln_dpow = 2;             // clean_dissip_power (temporary test key): al = A^p
   bool cln_recon = true;        // clean_recon: plm (true) | none, cell layout
   int cln_maxpic = 12;          // clean_maxpic: passes that update the lagged slopes
   bool cln_poslim = true;       // clean_pos_limit: a-posteriori low-order face limiter
+  bool cln_posreal = false;     // clean_pos_real: the limiter for |F| <= c E as well
+  bool cln_wbreal = false;      // clean_wb_real: |F| > c E counts of the write-back
+  DvceArray5D<Real> cln_wbr;    // its per-cell flags (CleanCellWriteBack)
+  bool cln_postol_cell = false; // clean_pos_tol = cell: zero of the tests per cell
+  bool cln_tilt = false;        // clean_bracket_tilt: tilted half-range factors g+-
+  int cln_tiltrem = 1;          // clean_bracket_rem: none 0 | limit 1 | full 2 | scale 3
+  bool cln_curvk = false;       // clean_curv_iterate: curvature terms at the iterate's E
+  bool cln_slave = false;       // clean_slave: y = h E in the streaming share
+  bool cln_slave_loc = false;   // clean_slave_local: the gas takes the local force there
+  bool cln_slave_e = false;     // clean_slave_energy: E = J of the rays there as well
+  DvceArray5D<Real> cln_swh;    // its withheld momentum (3) and energy, accumulated
+  DvceArray5D<Real> cln_sws;    // their slopes of the step (K1, K2, K3; 4 each)
+  Real cln_ntlim = 0.0;         // faces whose y remainder was limited (this solve)
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
   bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces
   bool cln_posghost = false;    // clean_pos_ghost: marked boundary faces, upwind ghost
@@ -3114,6 +3138,7 @@ class RadiationM1 {
   bool cln_steady = false;      // clean_init = steady: radiation relaxed before step 1
   int cln_steady_n = 50;        // clean_init_n: most pre-solve passes
   Real cln_steady_dtfac = 1.0e6, cln_steady_tol = 1.0e-8;  // clean_init_dtfac, _tol
+  bool cln_steady_cell = false;  // clean_init_norm = cell
   std::vector<DvceArray5D<Real>> cln_mg;          // coarse levels of the multigrid
   std::vector<std::array<int, 3>> cln_mgn;        //   and their cells along x1..x3
   Real cln_psi_eps = 1.0e-12;   // clean_psi_eps: floor of the smoothness sensor

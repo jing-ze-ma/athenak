@@ -76,6 +76,13 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.recon = cln_recon;
   x.all_low = cln_all_low;
   x.consist = cln_consist;
+  x.bracket = cln_bracket;
+  x.posreal = cln_posreal;
+  x.tilt = cln_tilt;
+  x.tside = cln_tilt && (cln_tiltrem == 4);
+  x.curvk = cln_curvk;
+  x.slave = cln_slave;
+  x.slave_e = cln_slave_e;
   x.milne = cln_milne;
   x.fvrays = (cln_rfv > 0);
   x.op = opac;
@@ -640,6 +647,31 @@ std::array<Real, 2> RadiationM1::CleanDots(DvceArray5D<Real> w, const int nc, co
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::CleanCellResidualMax
+//! \brief the largest residual of a cell (4-component vector r of cln_x) over that
+//! cell's E scale max(|B_E|, |X_E|) (clean_tol_cell)
+
+Real RadiationM1::CleanCellResidualMax(const int r) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  int nmb = pmy_pack->nmb_thispack;
+  const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
+  auto w = cln_x;
+  Real d = 0.0;
+  Kokkos::parallel_reduce("cln_rcell", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &dmax) {
+    int m = idx/nkji;
+    int k = (idx - m*nkji)/nji + ks;
+    int j = (idx - m*nkji - (k - ks)*nji)/nx1 + js;
+    int i = idx - m*nkji - (k - ks)*nji - (j - js)*nx1 + is;
+    const Real s = fmax(fmax(fabs(w(m,CLC_B,k,j,i)), fabs(w(m,CLC_X,k,j,i))), 1.0e-300);
+    for (int c = 0; c < 4; ++c) dmax = fmax(dmax, fabs(w(m,r+c,k,j,i))/s);
+  }, Kokkos::Max<Real>(d));
+  return CleanReduce(d, true);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanFaceCoefficients
 //! \brief per face: the blend weight w(C1), theta, the old-vector flux G, and the
 //! half-range factors h+-_f.  h+_f = H+_f/J_L and h-_f = H-_f/J_R, with H+-_f the rays'
@@ -790,12 +822,67 @@ void RadiationM1::CleanPrecondition(const int src, const int dst) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellRowScale
+//! \brief clean_row_scale: the 4 components of vector v of cln_x of every cell divided
+//! (up = false) or multiplied (up = true) by the cell's row scale cln_rowsc, a power of 2,
+//! so that both are exact
+
+void RadiationM1::CleanCellRowScale(const int v, const bool up) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto w = cln_x;
+  auto rs = cln_rowsc;
+  par_for("clc_rscale", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real s = up ? rs(m,k,j,i) : 1.0/rs(m,k,j,i);
+    for (int c = 0; c < 4; ++c) w(m,v+c,k,j,i) *= s;
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn int RadiationM1::CleanBiCGStab
+//! \brief the linear solve A X = B of the stage (CleanBiCGStabSolve).  With
+//! clean_row_scale the rows of every cell are divided by its E scale S, the power of 2
+//! of max(|B_E|, |E_old|): the solve is S^-1 A X = S^-1 B, preconditioned by M^-1 S
+
+int RadiationM1::CleanBiCGStab() {
+  if (cln_rscale && !cln_cell) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "<rad_m1>/clean_row_scale needs clean_layout = cell" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (!cln_rscale) return CleanBiCGStabSolve();
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  if (cln_rowsc.extent_int(0) != nmb1 + 1) {
+    Kokkos::realloc(cln_rowsc, nmb1 + 1, cln_x.extent(2), cln_x.extent(3), cln_x.extent(4));
+  }
+  auto w = cln_x;
+  auto rs = cln_rowsc;
+  par_for("clc_rsset", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real e = fmax(fmax(fabs(w(m,CLC_B,k,j,i)), fabs(w(m,CLC_O,k,j,i))), 1.0e-300);
+    rs(m,k,j,i) = std::ldexp(1.0, std::ilogb(e));
+  });
+  CleanCellRowScale(CLC_B, false);
+  const int nit = CleanBiCGStabSolve();
+  CleanCellRowScale(CLC_B, true);
+  return nit;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn int RadiationM1::CleanBiCGStabSolve
 //! \brief right-preconditioned BiCGStab for A X = B, starting from the X it is given:
 //! scalar E vectors of cln_w (staggered layout) or 4-component vectors of cln_x (cell
 //! layout).  Returns the number of iterations, negative if not converged.
 
-int RadiationM1::CleanBiCGStab() {
+int RadiationM1::CleanBiCGStabSolve() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -820,16 +907,20 @@ int RadiationM1::CleanBiCGStab() {
       }
     });
   };
+  const bool rsc = cell && cln_rscale;
   auto apply = [&](const int src, const int dst) {
     if (cell) {
       CleanCellApply(src, dst);
+      if (rsc) CleanCellRowScale(dst, false);
     } else {
       CleanApply(src, dst);
     }
   };
   auto precondition = [&](const int src, const int dst) {
     if (cell) {
+      if (rsc) CleanCellRowScale(src, true);
       CleanCellPrecondition(src, dst);
+      if (rsc) CleanCellRowScale(src, false);
     } else {
       CleanPrecondition(src, dst);
     }
@@ -875,7 +966,12 @@ int RadiationM1::CleanBiCGStab() {
   restart(-1);
   const Real tol = ((cln_tol_pass > 0.0) ? cln_tol_pass : cln_tol)*
                    fmax(std::sqrt(bb), 1.0e-300);
-  if (std::sqrt(rr) <= tol) return 0;
+  // (clean_tol_cell: and the residual of every cell over its own E scale)
+  const bool tcell = cell && cln_tol_cell > 0.0;
+  auto cellok = [&](const int r) {
+    return !tcell || CleanCellResidualMax(r) <= cln_tol_cell;
+  };
+  if (std::sqrt(rr) <= tol && cellok(sr)) return 0;
   auto done = [&](const int it) {return restart(it, true) && std::sqrt(rr) <= 10.0*tol;};
 
   const Real eps = std::numeric_limits<Real>::epsilon();
@@ -909,7 +1005,7 @@ int RadiationM1::CleanBiCGStab() {
         s0 += w(m,ss+c,k,j,i)*w(m,ss+c,k,j,i);
       }
     })[0];
-    if (std::sqrt(s2) <= tol) {
+    if (std::sqrt(s2) <= tol && cellok(ss)) {
       axpby(sx, sx, 1.0, sy, alpha);
       if (done(it)) return it;
       continue;
@@ -931,7 +1027,7 @@ int RadiationM1::CleanBiCGStab() {
     });
     rr = e[0];
     rho_new = e[1];
-    if (std::sqrt(rr) <= tol && done(it)) return it;
+    if (std::sqrt(rr) <= tol && done(it) && cellok(sr)) return it;
     if (omega == 0.0 && !restart(it)) return -it;
   }
   return -cln_maxit;

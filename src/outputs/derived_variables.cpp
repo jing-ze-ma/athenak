@@ -31,6 +31,7 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
+#include "rad_m1/rad_m1_clean.hpp"
 #include "particles/particles.hpp"
 #include "outputs.hpp"
 #include "utils/current.hpp"
@@ -1287,6 +1288,26 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
   //   otherwise: chi(|F|/cE) of the current state about n = F/|F| (eddington 1/3);
   //     closure = tau | vet_col before the first solve has no tensor: f_K = -1 is
   //     written and D = 1/3 (isotropic) as a placeholder.
+  // m1_cln: the clean scheme's closure from the rays (zero without one)
+  if (name.compare("m1_cln") == 0) {
+    if (derived_var.extent(4) <= 1)
+      Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
+    auto dv = derived_var;
+    auto cs_ = pm->pmb_pack->pradm1->cln_s;
+    const bool hc = (cs_.extent_int(0) >= nmb) && (cs_.extent_int(1) >= radm1::CLN_N);
+    par_for("m1_cln_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      dv(m,i_dv  ,k,j,i) = hc ? cs_(m,radm1::CLN_J,k,j,i) : 0.0;
+      for (int c = 0; c < 3; ++c) {
+        dv(m,i_dv+1+c,k,j,i) = hc ? cs_(m,radm1::CLN_D11+c,k,j,i) : 0.0;
+      }
+      for (int c = 0; c < 2; ++c) {
+        dv(m,i_dv+4+c,k,j,i) = hc ? cs_(m,radm1::CLN_HP+c,k,j,i) +
+                                    cs_(m,radm1::CLN_HM+c,k,j,i) : 0.0;
+      }
+    });
+    i_dv += 6;
+  }
   // m1_vsc: J and F/c of the vet_sc formal solution
   if (name.compare("m1_vsc") == 0) {
     if (derived_var.extent(4) <= 1)

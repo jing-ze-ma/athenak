@@ -83,6 +83,23 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_c0 = pin->GetOrAddReal("rad_m1","clean_w_c0",0.1);
     cln_c1 = pin->GetOrAddReal("rad_m1","clean_w_c1",0.5);
     cln_tol = pin->GetOrAddReal("rad_m1","clean_tol",1.0e-10);
+    // clean_tol_cell (read only when named, default 0 = off): the cell layout's linear
+    // solve also stops only once the residual of every cell is below clean_tol_cell
+    // times that cell's own E scale, max(|B_E|, |X_E|), so that a cell of small E (the
+    // photosphere, the floor) is solved as accurately as the cells that dominate the
+    // norm of B: a row left unsolved there gives the gas the radiation's flux
+    // divergence, eint < 0 at the write-back
+    if (pin->DoesParameterExist("rad_m1","clean_tol_cell")) {
+      cln_tol_cell = pin->GetReal("rad_m1","clean_tol_cell");
+    }
+    // clean_row_scale (read only when named, default false): the cell layout's linear
+    // solve takes the rows of every cell over that cell's E scale, the power of 2 of
+    // max(|B_E|, |E_old|), so that the norm of its residual, which stops it at clean_tol,
+    // weighs every cell alike instead of the cells of the largest E (x1line
+    // preconditioner)
+    if (pin->DoesParameterExist("rad_m1","clean_row_scale")) {
+      cln_rscale = pin->GetBoolean("rad_m1","clean_row_scale");
+    }
     cln_maxit = pin->GetOrAddInteger("rad_m1","clean_maxit",4000);
     cln_maxnl = pin->GetOrAddInteger("rad_m1","clean_maxnl",50);
     cln_tol_nl = pin->GetOrAddReal("rad_m1","clean_tol_nl",1.0e-11);
@@ -189,8 +206,22 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_consist = pin->GetOrAddBoolean("rad_m1","clean_consistency",
                                        cln_cell && !cs && (!sp || gd));
     cln_conswt = pin->GetOrAddBoolean("rad_m1","clean_consistency_weight",cln_cell);
+    // false: the faces' streaming weight w takes the rays' kinetic flux of the cell
+    // states alone, c (h+_L U_L + h-_R U_R), without the bracket F_ray - f(Ur)
+    cln_bracket = pin->GetOrAddBoolean("rad_m1","clean_consistency_bracket",true);
     std::string fm = pin->GetOrAddString("rad_m1","clean_face_model","none");
     cln_milne = (fm.compare("milne") == 0);
+    // the speed of the numerical dissipation: c sqrt(max D_dd) of the two cells
+    // (closure), or c (light), the bound of every signal speed of the moment system
+    {std::string ds = pin->GetOrAddString("rad_m1","clean_dissip_speed","closure");
+      cln_dlight = (ds.compare("light") == 0);
+      if (!cln_dlight && ds.compare("closure") != 0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<rad_m1>/clean_dissip_speed = " << ds
+          << " (closure | light)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     // temporary test key, read only when named: al = A^p, p = 2 | 3
     if (pin->DoesParameterExist("rad_m1","clean_dissip_power")) {
       cln_dpow = (pin->GetInteger("rad_m1","clean_dissip_power") == 3) ? 3 : 2;
@@ -211,6 +242,71 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_psi_eps = pin->GetOrAddReal("rad_m1","clean_psi_eps",1.0e-12);
     cln_maxpic = pin->GetOrAddInteger("rad_m1","clean_maxpic",12);
     cln_poslim = pin->GetOrAddBoolean("rad_m1","clean_pos_limit",true);
+    // the face limiter also marks the cells with |F| > c E, and a low-order face takes
+    // the rays' kinetic flux of y, c (h+_L y_L + h-_R y_R), with its weight al: the rows
+    // of E and of every y component then have the same M-matrix part
+    cln_posreal = pin->GetOrAddBoolean("rad_m1","clean_pos_real",false);
+    // diagnostic: the cells with |F| > c E after each step of the write-back (log line)
+    cln_wbreal = pin->GetOrAddBoolean("rad_m1","clean_wb_real",false);
+    // clean_bracket_tilt (read only when named, default false): the E row's bracket of an
+    // interior face enters the streaming share as tilted half-range factors g+- (linear
+    // in E, upwind), and the same g+- carry y, so that the share maps |y| <= E into
+    // itself; the y bracket left over (clean_bracket_rem) is none, full, limit (each
+    // face's remainder times min over its two cells of the share of the old state's
+    // margin E - |y|, less the curvature terms, the remainders of the cell may take) or
+    // scale (times min(1, E/J) of the Newton iterate over its two cells); side: each
+    // side's y flux c [g y + a E], a = q k - (g - (1 - q) h) h_ray from the rays' k, h of
+    // the donor (no remainder left: the flux is linear in the cell state)
+    if (pin->DoesParameterExist("rad_m1","clean_bracket_tilt")) {
+      cln_tilt = pin->GetBoolean("rad_m1","clean_bracket_tilt");
+    }
+    if (pin->DoesParameterExist("rad_m1","clean_bracket_rem")) {
+      std::string br = pin->GetString("rad_m1","clean_bracket_rem");
+      cln_tiltrem = (br == "none") ? 0 : (br == "limit") ? 1 : (br == "full") ? 2 :
+                    (br == "scale") ? 3 : (br == "side") ? 4 : -1;
+      if (cln_tiltrem < 0 || !cln_tilt) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/clean_bracket_rem = " << br
+                  << " needs clean_bracket_tilt = true and none | limit | full | scale"
+                  << " | side"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    if (cln_tilt && (!cln_cell || !cln_consist || !cln_bracket || cln_rfv == 0 ||
+                     cln_milne)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/clean_bracket_tilt needs clean_layout = cell, "
+                << "clean_consistency with its bracket, FV rays and no milne face model"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // clean_curv_iterate (read only when named, default false): the rays' curvature
+    // terms of the streaming share scaled by min(J, E)/J and faded by the ray share of
+    // the Newton iterate's E (not the old E), so that they vanish with E
+    if (pin->DoesParameterExist("rad_m1","clean_curv_iterate")) {
+      cln_curvk = pin->GetBoolean("rad_m1","clean_curv_iterate");
+      if (cln_curvk && (!cln_cell || !cln_consist || !cln_bracket)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/clean_curv_iterate needs clean_layout = cell "
+                  << "and clean_consistency with its bracket" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    // clean_pos_tol (read only when named): global (default) | cell.  The positivity and
+    // realisability tests take as zero 10 clean_tol max|B_E| over the mesh (global) or
+    // 10 clean_tol max(|B_E|, |X_E|) of the cell itself (cell), which sees thin cells
+    if (pin->DoesParameterExist("rad_m1","clean_pos_tol")) {
+      std::string pt = pin->GetString("rad_m1","clean_pos_tol");
+      if (pt == "cell") {
+        cln_postol_cell = true;
+      } else if (pt != "global") {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/clean_pos_tol = " << pt
+                  << " unknown (global | cell)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     cln_diagcells = pin->GetOrAddBoolean("rad_m1","clean_diag_cells",false);
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",false);
     cln_posghost = pin->GetOrAddBoolean("rad_m1","clean_pos_ghost",false);
@@ -259,6 +355,47 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         << std::endl;
       std::exit(EXIT_FAILURE);
     }}
+    // clean_slave (read only when named, default false): in the streaming share s of a
+    // cell (the least w of its faces) y is not an unknown of its own but h E, h = H/J of
+    // the rays' cell moments; the y rows are (1 - s) those of the moment system plus
+    // s (1 + h c chi)(y - h E), and the gas takes the momentum balance as before
+    if (pin->DoesParameterExist("rad_m1","clean_slave")) {
+      cln_slave = pin->GetBoolean("rad_m1","clean_slave");
+      if (cln_slave && (!cln_tilt || cln_yres == M1_YRES_LOCAL)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/clean_slave needs clean_bracket_tilt = true "
+                  << "and clean_yres = false | post" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    // clean_slave_local (read only when named, default false): in the streaming share s
+    // of a cell the gas takes only the local interaction of the radiation state (h S_p
+    // of the moment system) instead of the cell's full momentum balance; the rest, s
+    // times their difference, is withheld from the gas and accumulated per cell
+    // (cln_swh, in the hydro's components; the W columns of problem/am_hist)
+    if (pin->DoesParameterExist("rad_m1","clean_slave_local")) {
+      cln_slave_loc = pin->GetBoolean("rad_m1","clean_slave_local");
+      if (cln_slave_loc && !cln_slave) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/clean_slave_local needs clean_slave = true"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    // clean_slave_energy (read only when named, default false): in the streaming share s
+    // E is the rays' J as well, the E rows (1 - s) those of the moment system plus
+    // s (1 + h c kE)(E - J); the gas takes the local exchange of the radiation state
+    // there, s times the rest of the cell's energy balance is withheld with the momentum
+    // (cln_swh; the gas_exact exchange is left out in cells with s > 0)
+    if (pin->DoesParameterExist("rad_m1","clean_slave_energy")) {
+      cln_slave_e = pin->GetBoolean("rad_m1","clean_slave_energy");
+      if (cln_slave_e && !cln_slave_loc) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/clean_slave_energy needs clean_slave_local = "
+                  << "true" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     {const std::string nn = pin->GetOrAddString("rad_m1","clean_nl_norm","global");
     if (nn.compare("global") != 0 && nn.compare("cell") != 0) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -404,6 +541,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_steady_n = pin->GetOrAddInteger("rad_m1","clean_init_n",50);
       cln_steady_dtfac = pin->GetOrAddReal("rad_m1","clean_init_dtfac",1.0e6);
       cln_steady_tol = pin->GetOrAddReal("rad_m1","clean_init_tol",1.0e-8);
+      // the change of a pass over the largest E of the mesh (max) or over the cell's
+      // own E (cell), so that the thin layers far below the largest E also converge
+      std::string sn = pin->GetOrAddString("rad_m1","clean_init_norm","max");
+      cln_steady_cell = (sn.compare("cell") == 0);
+      if (!cln_steady_cell && sn.compare("max") != 0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<rad_m1>/clean_init_norm = " << sn << " (max | cell)"
+          << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
     }
     if (transport != M1_TRANSPORT_IMPLICIT) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__

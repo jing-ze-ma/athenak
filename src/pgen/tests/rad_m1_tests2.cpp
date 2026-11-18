@@ -2198,19 +2198,28 @@ void RadM1CsHistory(HistoryData *pdata, Mesh *pm) {
 //! active cells, V = Coordinates volume, arm r_c rhat (cell-centre radius, as the
 //! <hydro>/am_transport correction): Eg = sum V u(IEN), Er = sum V E, Lg = sum V r x m
 //! (x, y, z), Lr = sum V r x F/c^2 (x, y, z).  cs: covariant m, F raised with the cell's
-//! e_xi.e_eta; sp: orthonormal.
+//! e_xi.e_eta; sp: orthonormal.  With <rad_m1>/clean_slave_local the columns after
+//! them are the momentum the scheme withheld from the gas (accumulated, cln_swh): Wp =
+//! sum V w (x, y, z), Wl = sum V r x w (x, y, z) and We = sum V w_E, so that Lg + Lr + Wl
+//! and Eg + Er + We are those of the scheme's exchange.
 
 void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
-  pdata->nhist = m1_am_ebnd ? 15 : 14;
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  const bool swo = (pmbp->pradm1 != nullptr) && pmbp->pradm1->cln_slave_loc;
+  const int nb = m1_am_ebnd ? 15 : 14;
+  pdata->nhist = swo ? nb + 7 : nb;
   const char *lab[15] = {"Eg", "Er", "Lgx", "Lgy", "Lgz", "Lrx", "Lry", "Lrz", "Sx", "Sy",
                          "Sz", "Lfx", "Lfy", "Lfz", "Eb"};
-  for (int n = 0; n < pdata->nhist; ++n) {pdata->label[n] = lab[n];}
-  MeshBlockPack *pmbp = pm->pmb_pack;
+  const char *wlab[7] = {"Wpx", "Wpy", "Wpz", "Wlx", "Wly", "Wlz", "We"};
+  for (int n = 0; n < nb; ++n) {pdata->label[n] = lab[n];}
+  for (int n = nb; n < pdata->nhist; ++n) {pdata->label[n] = wlab[n-nb];}
   if (pmbp->pradm1 == nullptr || (pmbp->phydro == nullptr && pmbp->pmhd == nullptr)) {
     return;
   }
   auto u0 = pmbp->pradm1->u0;
   auto uh = (pmbp->phydro != nullptr) ? pmbp->phydro->u0 : pmbp->pmhd->u0;
+  const bool swa = swo && pmbp->pradm1->cln_swh.extent_int(0) > 0;
+  auto swh = pmbp->pradm1->cln_swh;
   auto vol = pmbp->pcoord->volume;
   auto x1v = pmbp->pcoord->x1v;
   auto x2v = pmbp->pcoord->x2v;
@@ -2261,9 +2270,9 @@ void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
       tb[0] = -sin(ph); tb[1] = cos(ph); tb[2] = 0.0;
     }
     const Real r = x1v(m,i), v = vol(m,k,j,i), s2 = 1.0 - c*c;
+    Real p[3];
     auto lv = [&](const Real a1, const Real a2c, const Real a3c, Real *l) {
       const Real a2 = (a2c - c*a3c)/s2, a3 = (a3c - c*a2c)/s2;   // contravariant
-      Real p[3];
       for (int q = 0; q < 3; ++q) {p[q] = a1*rh[q] + a2*ta[q] + a3*tb[q];}
       l[0] = r*(rh[1]*p[2] - rh[2]*p[1]);
       l[1] = r*(rh[2]*p[0] - rh[0]*p[2]);
@@ -2288,9 +2297,19 @@ void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
       hv.the_array[12] = d*(x[2]*ox[0] - x[0]*ox[2]);
       hv.the_array[13] = d*(x[0]*ox[1] - x[1]*ox[0]);
     }
+    if (swa) {
+      Real lw[3];
+      lv(swh(m,0,k,j,i), swh(m,1,k,j,i), swh(m,2,k,j,i), lw);
+      for (int q = 0; q < 3; ++q) {
+        hv.the_array[14+q] = v*p[q];
+        hv.the_array[17+q] = v*lw[q];
+      }
+      hv.the_array[20] = v*swh(m,3,k,j,i);
+    }
     mb_sum += hv;
   }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
   for (int n = 0; n < 14; ++n) {pdata->hdata[n] = sum_this_mb.the_array[n];}
+  for (int n = 0; n < 7 && swo; ++n) {pdata->hdata[nb+n] = sum_this_mb.the_array[14+n];}
   // ebnd_acc is global on every rank; the history output sums over ranks
   if (m1_am_ebnd) {
     pdata->hdata[14] = (global_variable::my_rank == 0) ? pmbp->pradm1->ebnd_acc : 0.0;

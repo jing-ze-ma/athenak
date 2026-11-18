@@ -118,7 +118,8 @@ void RadiationM1::CleanInit() {
   Kokkos::realloc(cln_w, nmb, cln_cell ? CLW_NC : CLW_N, n3, n2, n1);
   // the cubed sphere takes the half ranges about the face normals from the FV rays
   cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
-  const int nfc = cln_milne ? CLF_KK + 6 : (cln_hk ? CLF_HK + 2 : CLF_N);
+  const int nfc = cln_milne ? CLF_KK + 6 : (cln_tilt ? CLF_GT + 8 :
+                                            (cln_hk ? CLF_HK + 2 : CLF_N));
   // the opacities depend on T: tables, or the T exponent (bump) of powerlaw (user)
   cln_opt = cln_cell && !opac_freeze && !opac_zero && (opacity_type == M1_OPAC_TABLE ||
             (opacity_type != M1_OPAC_CONST && opac_b != 0.0));
@@ -484,8 +485,8 @@ void RadiationM1::CleanCsGeometry() {
 //! evolution of the scheme at that dt, which the run carries on.  The radiation energy
 //! and momentum are thereby redefined (reported as volume sums, F in the local basis on
 //! spherical polar); the gas is not touched, except its internal energy with
-//! force_reference = clean.  The closure history is then dropped, so the first step
-//! starts from this state alone.
+//! force_reference = clean or icr_fmeas.  The closure history is then dropped, so the
+//! first step starts from this state alone.
 
 void RadiationM1::CleanSteadyStart(Driver *pdrive) {
   if (!cln_steady) return;
@@ -498,18 +499,32 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
   const int st2 = t2_solve;
   const Real nc0 = vet_ncall;
   // gas frozen, plain backward-Euler steps without substeps; big: the large step.  With
-  // force_reference = clean the gas internal energy relaxes with E (rho and momentum
-  // frozen), so that the reference state is in radiative equilibrium
+  // force_reference = clean, or the problem generator's equilibrium IC (icr_fmeas,
+  // he_star_m1 he_ic_equil), the gas internal energy relaxes with E (rho and momentum
+  // frozen), so that the reference state is in radiative equilibrium; icr_fmeas also
+  // keeps the x1 radiation force of each pass less the reference, dm - h rho a_ref
+  // (CleanCellWriteBack), in icr_dm (icr_dm_dt = h), as the old module's force pass
   FluidRef fl = FluidRef::Get(pmy_pack);
-  const bool relax = (force_ref == M1_FREF_CLEAN) && sfb && fl.on;
+  const bool relax = (force_ref == M1_FREF_CLEAN || icr_fmeas) && sfb && fl.on;
+  const bool fmeas = relax && icr_fmeas;
+  DvceArray4D<Real> dmo;
+  if (fmeas) {
+    Kokkos::realloc(icr_dm, nmb1 + 1, u0.extent(2), u0.extent(3), u0.extent(4));
+    Kokkos::realloc(dmo, nmb1 + 1, u0.extent(2), u0.extent(3), u0.extent(4));
+  }
   auto uh = fl.u0;
   gas_feedback = relax;
   cln_vzero = relax;
   t2_solve = M1_T2S_NONE;
   nsub = 1;
   bool big = true, ok = false;
-  int n2 = 0;
-  Real dp = 0.0, fac = cln_steady_dtfac, emax = 0.0;
+  int n2 = 0, nt = 0;
+  // (icr_fmeas: the large step is reached by a ladder x10 per pass from dt, its smaller
+  // steps the thermal relaxation of the gas, whose solves fail when started at the top;
+  // a failed rung lowers the top of the ladder, ftop, to the rung below it, and the large
+  // passes end at the top once the change no longer contracts by 1/2 per pass)
+  Real dp = 0.0, fac = fmeas ? 1.0 : cln_steady_dtfac, emax = 0.0;
+  Real ftop = cln_steady_dtfac;
   auto u0_ = u0;
   DvceArray5D<Real> uo("cln_steady_u", nmb1 + 1, 4, u0.extent(2), u0.extent(3),
                        u0.extent(4));
@@ -552,6 +567,13 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
         if (relax) uh(m,g,k,j,i) = ug(m,c,k,j,i);
       }
     });
+    if (fmeas) {
+      if (save) {
+        Kokkos::deep_copy(dmo, icr_dm);
+      } else {
+        Kokkos::deep_copy(icr_dm, dmo);
+      }
+    }
     if (relax && !save) FluidRefresh(pdrive);
   };
   Real t0[4], t1[4];
@@ -580,10 +602,17 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
                     "dt, undone\n", n, big ? fac : 1.0);
       }
       if (!big || fac <= 1.0) break;
-      fac = fmax(1.0e-3*fac, 1.0);
+      if (fmeas) {
+        ftop = fmax(0.1*fac, 1.0);
+        fac = ftop;
+      } else {
+        fac = fmax(1.0e-3*fac, 1.0);
+      }
       continue;
     }
-    // its largest change of E and F/c over max E
+    if (fmeas) icr_dm_dt = pm->dt;
+    // its largest change of E and F/c over max E (or over the cell's E)
+    const bool ncell = cln_steady_cell;
     Real dm = 0.0, em = 0.0;
     Kokkos::parallel_reduce("cln_steady_chg", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                             ntot),
@@ -594,17 +623,26 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
       for (int c = 1; c < 4; ++c) {
         x = fmax(x, fabs(u0_(m,M1_E+c,k,j,i) - uo(m,c,k,j,i))/cl);
       }
-      dl = fmax(dl, x);
-      el = fmax(el, fmax(u0_(m,M1_E,k,j,i), uo(m,0,k,j,i)));
+      const Real ec = fmax(u0_(m,M1_E,k,j,i), uo(m,0,k,j,i));
+      dl = fmax(dl, ncell ? x/fmax(ec, 1.0e-300) : x);
+      el = fmax(el, ec);
     }, Kokkos::Max<Real>(dm), Kokkos::Max<Real>(em));
     emax = fmax(emax, CleanReduce(em, true));
-    d = CleanReduce(dm, true)/fmax(emax, 1.0e-300);
+    d = CleanReduce(dm, true)/(ncell ? 1.0 : fmax(emax, 1.0e-300));
     if (global_variable::my_rank == 0) {
-      std::printf("<rad_m1> clean_init steady pass %d: max(|dE|, |dF|/c)/max E = %.3e\n",
-                  n, d);
+      std::printf("<rad_m1> clean_init steady pass %d: max(|dE|, |dF|/c)/%s = %.3e\n",
+                  n, cln_steady_cell ? "E of the cell" : "max E", d);
     }
-    if (!big && (d < cln_steady_tol || (++n2 > 2 && d > 0.5*dp))) break;
-    if (d < cln_steady_tol) big = false;
+    // (clean_init_norm = cell: the passes end at the tolerance or clean_init_n only, not
+    // where the change stops contracting, which the slow thin layers do)
+    const bool stall = !ncell && d > 0.5*dp;
+    if (!big && (d < cln_steady_tol || (++n2 > 2 && stall))) break;
+    if (fmeas) {
+      if (fac >= ftop && (d < cln_steady_tol || (++nt > 2 && stall))) big = false;
+      fac = fmin(10.0*fac, ftop);
+    } else if (d < cln_steady_tol) {
+      big = false;
+    }
     ok = ok || !big;
     dp = d;
   }
@@ -625,6 +663,10 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
                 "(volume sums)\n", ok ? "converged" : "NOT converged",
                 std::min(n + 1, cln_steady_n), vet_ncall - nc0, t0[0], t1[0], t0[1]/cl,
                 t0[2]/cl, t0[3]/cl, t1[1]/cl, t1[2]/cl, t1[3]/cl);
+    if (fmeas) {
+      std::printf("<rad_m1> clean_init steady: the equilibrium relax's large step %.0e "
+                  "dt\n", ftop);
+    }
   }
 }
 
@@ -842,6 +884,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     if (fatal) CleanFatal("<rad_m1> clean: a backward-Euler solve did not converge and "
                           "its last change exceeds <rad_m1>/implicit_resid_fatal");
   }
+  if (cell && cln_tilt && cln_tiltrem == 4) CleanCellTiltCone();
   if (global_variable::my_rank == 0) {
     if (cell) {
       std::printf("CLEAN cycle %d t2s %d it %d (sum %d) pic %d %.2e pos %d mark %d "
@@ -852,7 +895,15 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       std::printf("CLEAN cycle %d t2s %d it %d neg %d guard %d\n",
                   pmy_pack->pmesh->ncycle, t2_solve, nit, nneg, cln_nguard);
     }
+    if (cln_tilt && cln_tiltrem == 4) {
+      std::printf("CLEAN TILT cycle %d t2s %d face sides out of the cone: %.0f\n",
+                  pmy_pack->pmesh->ncycle, t2_solve, cln_ntlim);
+    } else if (cln_tilt) {
+      std::printf("CLEAN TILT cycle %d t2s %d y remainder limited on %.0f face-passes\n",
+                  pmy_pack->pmesh->ncycle, t2_solve, cln_ntlim);
+    }
   }
+  cln_ntlim = 0.0;
 
   // 5. new state: face fluxes, E, cell fluxes, gas, stage slopes
   if (cell) {
@@ -1255,8 +1306,9 @@ void RadiationM1::CleanCopyIterate() {
 
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationM1::CleanCountNegative
-//! \brief sets values within the solver tolerance of zero (|E| <= 10 tol max|B|) to zero
-//! and returns the number of cells that are still negative
+//! \brief sets values within the solver tolerance of zero (|E| <= 10 tol max|B|, or
+//! with clean_pos_tol = cell 10 tol max(|B|, |E|) of the cell) to zero and returns the
+//! number of cells that are still negative
 
 int RadiationM1::CleanCountNegative() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1277,6 +1329,8 @@ int RadiationM1::CleanCountNegative() {
   }, Kokkos::Max<Real>(bmax));
 
   const Real zero = 10.0*cln_tol*CleanReduce(bmax, true);
+  const bool zcell = cln_postol_cell;
+  const Real tol10 = 10.0*cln_tol;
   Real nneg = 0.0;
   Kokkos::parallel_reduce("cln_neg", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &n) {
@@ -1285,7 +1339,8 @@ int RadiationM1::CleanCountNegative() {
     int j = (idx - m*nkji - k*nji)/nx1;
     int i = idx - m*nkji - k*nji - j*nx1;
     Real &e = w(m,CLW_X,k+ks,j+js,i+is);
-    if (e < 0.0 && e >= -zero) e = 0.0;
+    const Real z = zcell ? tol10*fmax(fabs(w(m,CLW_B,k+ks,j+js,i+is)), fabs(e)) : zero;
+    if (e < 0.0 && e >= -z) e = 0.0;
     if (!(e >= 0.0)) n += 1.0;
   }, Kokkos::Sum<Real>(nneg));
   return static_cast<int>(CleanReduce(nneg, false));

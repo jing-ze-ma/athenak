@@ -80,6 +80,9 @@ constexpr int CLF_ML = CLF_HK + 2;  // clean_face_model = milne: mu and the sub-
                                     // terms of the derivatives (CleanCellMilneSetup)
 constexpr int CLF_KK = CLF_ML + 9;  // cubed sphere, milne: k+ of L and k- of R about
                                     // the face normal (CleanCellConsistency)
+constexpr int CLF_GT = CLF_HK + 2;  // clean_bracket_tilt (no milne): g+ of L and g- of R
+constexpr int CLF_GA = CLF_GT + 2;  // clean_bracket_rem = side: a_1..3 of L, then of R
+                                    // (open x1 face: CLF_GT, CLF_GA its bracket per E)
 
 // cell vectors (array cln_x), 4 components (E, y1, y2, y3) each
 constexpr int CLC_O = 0;     // old vector
@@ -556,6 +559,50 @@ void CleanCellKinetic(const CleanArgs &x, const int dir, const int m, const int 
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanCellSlave
+//! \brief clean_slave: the streaming share s of cell (k,j,i), the least weight w of its
+//! faces (CLF_WK), and h = H/J of the rays' cell moments Ur (CLC_U, |h| <= 1; zero
+//! without rays), with which its y rows are (1 - s) those of the moment system plus
+//! s (1 + h c chi) (y - h E)
+
+KOKKOS_INLINE_FUNCTION
+Real CleanCellSlave(const CleanArgs &x, const int m, const int k, const int j,
+                    const int i, Real hs[3]) {
+  Real s = 1.0;
+  for (int dir = 0; dir < x.nf; ++dir) {
+    const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+    s = fmin(s, fmin(x.fc[dir](m,CLF_WK,k,j,i), x.fc[dir](m,CLF_WK,k+dk,j+dj,i+di)));
+  }
+  const Real jr = x.u(m,CLC_U,k,j,i);
+  for (int b = 0; b < 3; ++b) hs[b] = (jr > 0.0) ? x.u(m,CLC_U+1+b,k,j,i)/jr : 0.0;
+  return s;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanCellLocalForce
+//! \brief clean_slave_local: the gas momentum change of cell (k,j,i) from its local
+//! interaction with the radiation state (e, y) alone, h [c chi y_b - chi a_b E - beta_b
+//! c (kP a T^4 - kE E)]/c (the source of the y rows of the moment system, eq. 57 of Ma et
+//! al. 2025, at the iterate's T, beta and a = v + D v), without the face fluxes
+
+KOKKOS_INLINE_FUNCTION
+void CleanCellLocalForce(const CleanArgs &x, const Real e, const Real y[3],
+                         const Real arad_, const int m, const int k, const int j,
+                         const int i, Real dm[3]) {
+  const Real chi = x.op(m,M1_OP_T,k,j,i);
+  const Real t = x.w(m,CLW_T,k,j,i);
+  const Real xe = x.h*x.c*(x.op(m,M1_OP_P,k,j,i)*arad_*SQR(SQR(t)) -
+                           x.op(m,M1_OP_E,k,j,i)*e);
+  for (int b = 0; b < 3; ++b) {
+    dm[b] = 0.0;
+    if (b < x.nf) {
+      dm[b] = (x.h*x.c*chi*y[b] - x.h*chi*x.w(m,CLW_A1+b,k,j,i)*e
+               - x.w(m,CLW_BT+b,k,j,i)*xe)/x.c;
+    }
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real CleanCellAdvectN
 //! \brief component along the normal of face (kf,jf,iff) normal to dir of the advective
 //! coefficient a = v + D v of cell (k,j,i) (CLW_A1, in the frame of y)
@@ -629,11 +676,13 @@ void CleanCellRhieChow(const CleanArgs &x, const int dir, const bool lo, const i
 //! \brief causality: the rays, a steady solution, run ahead of the moments' field; with
 //! the FV rays (true face fluxes) their consistency terms fade out where cell (k,j,i)
 //! holds less than half of the rays' J (gone below 0.1 J; the short characteristics'
-//! bracket is defined only up to a divergence-free part and stays)
+//! bracket is defined only up to a divergence-free part and stays); E of the cell vector
+//! at slot v (the old vector by default)
 
 KOKKOS_INLINE_FUNCTION
-Real CleanRayShare(const CleanArgs &x, const int m, const int k, const int j, const int i) {
-  return x.fvrays ? CleanSmoothStep(2.5*fmax(x.u(m,CLC_O,k,j,i), 0.0)/
+Real CleanRayShare(const CleanArgs &x, const int m, const int k, const int j, const int i,
+                   const int v = CLC_O) {
+  return x.fvrays ? CleanSmoothStep(2.5*fmax(x.u(m,v,k,j,i), 0.0)/
                                     fmax(x.cs(m,CLN_J,k,j,i), 1.0e-300) - 0.25) : 1.0;
 }
 
@@ -649,7 +698,8 @@ Real CleanRayShare(const CleanArgs &x, const int m, const int k, const int j, co
 //! of E, shared by the r faces' w as the area terms), so that the rays' moments (J, J h)
 //! are its steady state, and faded with the bracket where the rays run ahead
 //! (CleanRayShare); the y_phi row keeps its angular-momentum flux form (no source),
-//! so that L_z stays exact.
+//! so that L_z stays exact.  With clean_curv_iterate they are scaled by min(J, E)/J and
+//! faded by the ray share of the Newton iterate's E, so that they vanish with E.
 
 KOKKOS_INLINE_FUNCTION
 void CleanCellSphSource(const CleanArgs &x, const int m, const int k, const int j,
@@ -663,8 +713,13 @@ void CleanCellSphSource(const CleanArgs &x, const int m, const int k, const int 
   };
   const Real am = x.area[0](m,k,j,i), ap = x.area[0](m,k,j,i+1);
   if (kin) {
-    const Real w = (wf(0, k, j, i+1)*ap - wf(0, k, j, i)*am)/(ap - am)*
-                   CleanRayShare(x, m, k, j, i);
+    Real w = (wf(0, k, j, i+1)*ap - wf(0, k, j, i)*am)/(ap - am);
+    if (x.curvk) {
+      const Real jr = x.cs(m,CLN_J,k,j,i), e = fmax(x.u(m,CLC_K,k,j,i), 0.0);
+      w *= CleanRayShare(x, m, k, j, i, CLC_K)*((jr > e) ? e/jr : 1.0);
+    } else {
+      w *= CleanRayShare(x, m, k, j, i);
+    }
     for (int b = 0; b < 3; ++b) g[b] = (b < 2) ? w*hv*x.cs(m,CLN_G+b,k,j,i) : 0.0;
     return;
   }
@@ -871,6 +926,13 @@ void CleanCellM1BoundaryJacobian(const CleanArgs &x, const int dir, const int m,
     }
   }
   if (!up) CleanCellDeviationFlux(x, dir, m, k, j, i, kc, jc, ic, false, wo, jj);
+  if (x.tside) {
+    // clean_bracket_rem = side: the open face's bracket per E of the inner cell
+    jj[0][0] += x.fc[dir](m,CLF_GT,k,j,i);
+    for (int b = 0; b < 3; ++b) {
+      if (b < x.nf) jj[1+b][0] += x.fc[dir](m,CLF_GA+b,k,j,i);
+    }
+  }
   if (up || x.consist) return;
   // without the consistency term the moment system's outgoing wave (speed c sqrt(D_nn),
   // eigenvector (1, -+sqrt(D_nn) n)) carries the deviation R_n = (y - h E).n from the
@@ -987,10 +1049,22 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
       jr[0][0] += s*fmin(CleanCellAdvectN(x, dir, m, k, j, i, k, j, i), 0.0);
     }
     for (int b = 0; b < 3; ++b) jl[0][1+b] = jr[0][1+b] = 0.0;
+    if (x.posreal) {
+      // clean_pos_real: fY_b = a c (h+_L y_b,L + h-_R y_b,R) + (1 - a) (the cells' stress
+      // with dissipation at speed c), so that where a = 1 every row is that of E
+      for (int b = 0; b < x.nf; ++b) {
+        jl[1+b][0] *= 1.0 - a;
+        jr[1+b][0] *= 1.0 - a;
+        jl[1+b][1+b] = (1.0 - a)*jl[1+b][1+b] + a*x.c*hp;
+        jr[1+b][1+b] = (1.0 - a)*jr[1+b][1+b] + a*x.c*hm;
+      }
+    }
   }
   if (!kModels || !x.consist) return;
   // clean_consistency: w of the face takes the rays' kinetic upwind flux, the cells'
-  // half-range factors on E and y (c h+_L U_L + c h-_R U_R)
+  // half-range factors on E and y (c h+_L U_L + c h-_R U_R); with clean_bracket_tilt
+  // the factors g+- that carry the E bracket (CleanCellConsistency), and with
+  // clean_bracket_rem = side the y rows also a E of each side
   const Real w = x.fc[dir](m,CLF_WK,k,j,i);
   for (int r = 0; r < 4; ++r) {
     for (int c = 0; c < 4; ++c) {
@@ -1000,11 +1074,21 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
   }
   Real hp, hm;
   CleanCellKinetic(x, dir, m, k, j, i, hp, hm);
+  if (x.tilt) {
+    hp = x.fc[dir](m,CLF_GT,k,j,i);
+    hm = x.fc[dir](m,CLF_GT+1,k,j,i);
+  }
   for (int r = 0; r < 4; ++r) {
     if (r <= x.nf) {
       jl[r][r] += w*x.c*hp;
       jr[r][r] += w*x.c*hm;
     }
+  }
+  if (!x.tside) return;
+  // clean_bracket_rem = side: each side's y flux c (g y + a E)
+  for (int b = 0; b < x.nf; ++b) {
+    jl[1+b][0] += w*x.c*x.fc[dir](m,CLF_GA+b,k,j,i);
+    jr[1+b][0] += w*x.c*x.fc[dir](m,CLF_GA+3+b,k,j,i);
   }
 }
 
@@ -1420,7 +1504,7 @@ void CleanCellDivergence(const CleanArgs &x, const int v, const int m, const int
     for (int b = 0; b < 3; ++b) {
       if (b < x.nf) div[1+b] += g[b]*x.u(m,v,k,j,i);
     }
-    if (with_source && x.consist) {
+    if (with_source && x.consist && x.bracket) {
       CleanCellSphSource(x, m, k, j, i, g, true);
       for (int b = 0; b < 3; ++b) {
         if (b < x.nf) div[1+b] += g[b];
@@ -1452,7 +1536,7 @@ void CleanCellSourceDivergence(const CleanArgs &x, const int m, const int k, con
       for (int r = 0; r < 4; ++r) div[r] -= g[r];
     }
   }
-  if (x.sph && x.consist) {
+  if (x.sph && x.consist && x.bracket) {
     Real g[3];
     CleanCellSphSource(x, m, k, j, i, g, true);
     for (int b = 0; b < 3; ++b) {

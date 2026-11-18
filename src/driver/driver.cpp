@@ -453,6 +453,7 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
       // he_ic_equil) asks for the IC passes again (false = once, as before)
       while (pmesh->pgen->user_icpost_again) {
         pmesh->pmb_pack->pradm1->IcRadRun(this);
+        pmesh->pmb_pack->pradm1->CleanSteadyStart(this);
         (pmesh->pgen->user_icpost_func)(pmesh);
       }
     }
@@ -893,7 +894,10 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         dtr_retrying = true;
         continue;
       }
-      if (pm1 != nullptr) {pm1->EbndAccept(pmesh->dt, m1t2 && !m1t2fail);}
+      if (pm1 != nullptr) {
+        pm1->EbndAccept(pmesh->dt, m1t2 && !m1t2fail);
+        pm1->CleanSlaveAccept(pmesh->dt, m1t2 && !m1t2fail);
+      }
       eint_ledger::Commit(pmesh);   // (no-op unless on)
       // <hydro|mhd>/floor_pay = rad: the energy this step's fluid floors and
       // dual selection created is taken from E_rad of the same cell, once, after every
