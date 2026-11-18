@@ -2186,13 +2186,21 @@ void RadiationM1::CleanStagBracket() {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       CLEAN_HIPX(const CleanArgs &x = *px;)   // (in device memory: no per-thread copy)
       // (Phi(J) at its steady value, -(c/chi_f) div(D J) in the share 1 - w: the bracket,
-      // and with it the steady state of the scheme, does not depend on h or on G)
+      // and with it the steady state of the scheme, does not depend on h or on G.  The
+      // diffusion model holds where its flux is at most the free-streaming c J_f, lambda =
+      // |div(D J)|/(chi_f J_f) <= 1; where the face is thinner (an outer envelope's floor
+      // gas at w < 1, chi_f 7e-22: c/chi_f made Phi/c ~ 5e3 J, h- ~ -9e3, E < 0) the model
+      // takes that bound, c J_f along -div(D J) (Larsen's max limiter; Wilson's
+      // c/(chi_f + |div(D J)|/J_f) also changed it by 1/(1 + lambda) where it is valid)
       const Real w = x.fc[dir](m,CLF_W,k,j,i);
       const Real chi = 0.5*(x.op(m,M1_OP_T,k,j,i) + x.op(m,M1_OP_T,k-dk,j-dj,i-di));
-      const Real cd = (chi > 0.0) ? x.c/chi : x.fc[dir](m,CLF_TH,k,j,i)*x.h*x.c*x.c;
+      const Real st = CleanFaceStress(x, CLW_Z, dir, m, k, j, i, true);
+      const Real jf = 0.5*(x.w(m,CLW_Z,k,j,i) + x.w(m,CLW_Z,k-dk,j-dj,i-di));
+      const Real cd = (jf > 0.0 && fabs(st) > chi*jf) ? x.c*jf/fabs(st) :
+                      ((chi > 0.0) ? x.c/chi : x.fc[dir](m,CLF_TH,k,j,i)*x.h*x.c*x.c);
       Real gl = 0.0, gr = 0.0;
       CleanStagArea(x, dir, m, k, j, i, w, gl, gr);
-      const Real pj = -(1.0 - w)*cd*CleanFaceStress(x, CLW_Z, dir, m, k, j, i, true) +
+      const Real pj = -(1.0 - w)*cd*st +
           w*x.c*(x.fc[dir](m,CLF_HP,k,j,i)*x.w(m,CLW_Z,k-dk,j-dj,i-di) +
                  x.fc[dir](m,CLF_HM,k,j,i)*x.w(m,CLW_Z,k,j,i)) +
           gl*x.w(m,CLW_Z,k-dk,j-dj,i-di) + gr*x.w(m,CLW_Z,k,j,i);
