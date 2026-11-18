@@ -230,6 +230,13 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/implicit_ghost_x1min", "!"}, {"rad_m1/ic_rad*", "clean_init"},
     {"rad_m1/implicit_predictor", nullptr}, {"rad_m1/implicit_predictor_tcap", nullptr},
     {"rad_m1/implicit_resid_fatal", nullptr},
+    // (members of ImplicitInit the clean steps use: the enthalpy flux, the conservative gas
+    // source, the Marshak face, the predictor order, the hold, the fused kernels, the floor
+    // solve's pairing with implicit_pos_floor)
+    {"rad_m1/implicit_enthalpy", nullptr}, {"rad_m1/implicit_gas_src", nullptr},
+    {"rad_m1/implicit_marshak_face", nullptr}, {"rad_m1/implicit_predictor_order", nullptr},
+    {"rad_m1/implicit_hold", nullptr}, {"rad_m1/implicit_fast_kernels", nullptr},
+    {"rad_m1/implicit_pos_floor_solve", nullptr},
     {"rad_m1/implicit_pos_gas*", nullptr}, {"rad_m1/implicit_pos_floor", nullptr},
     {"rad_m1/implicit_pos_floor_cons", nullptr}, {"rad_m1/implicit_*", ""},
     {"rad_m1/time2_accept_fallback", ""}, {"rad_m1/time2_posfix*", ""},
@@ -237,6 +244,7 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"time/dt_retry_t2_be", ""}};
   const bool say = (global_variable::my_rank == 0);
   std::string none;
+  std::vector<std::string> drop;
   for (const InputBlock &ib : pin->block) {
     if (ib.block_name != "rad_m1" && ib.block_name != "time") continue;
     for (const InputLine &ln : ib.line) {
@@ -252,6 +260,9 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
           CleanFatal("<" + k + "> = " + v + " has no counterpart in scheme = clean");
         }
         if (c.empty()) none += " " + k;
+        if (c != "!" && k.compare(0, 16, "rad_m1/implicit_") == 0) {
+          drop.push_back(ln.param_name);
+        }
         if (say && !c.empty() && c != "!") {
           std::cout << "### WARNING (scheme = clean): <" << k << "> has no effect, the "
                     << "clean solve reads <rad_m1>/" << c << std::endl;
@@ -262,6 +273,14 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
   }
   if (say && !none.empty()) {
     std::cout << "### WARNING (scheme = clean): no effect:" << none << std::endl;
+  }
+  // (the old module's implicit_* keys the clean solve does not read leave the input, so
+  // that its ImplicitInit parses its defaults and none of its cross-checks sees them)
+  for (InputBlock &ib : pin->block) {
+    if (ib.block_name != "rad_m1") continue;
+    ib.line.remove_if([&](const InputLine &ln) {
+      return std::find(drop.begin(), drop.end(), ln.param_name) != drop.end();
+    });
   }
 }
 
