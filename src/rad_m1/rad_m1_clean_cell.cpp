@@ -1991,11 +1991,13 @@ void RadiationM1::CleanCellWriteBack() {
   auto uh = fl.u0;
   auto eos = fl.eos;
   auto u0_ = u0;
-  Real neint = 0.0;
+  Real neint = 0.0, nflr = 0.0, eflr = 0.0;
   const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
+  const bool geo = x.sph || x.cub;
+  const Real vc = 1.0/(x.idx[0]*x.idx[1]*x.idx[2]);
   Kokkos::parallel_reduce("clc_wbcell", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                                                               (nmb1 + 1)*nk*nj*ni),
-  KOKKOS_LAMBDA(const int q, Real &nb) {
+  KOKKOS_LAMBDA(const int q, Real &nb, Real &nf, Real &ef_sum) {
     const int m = q/(nk*nj*ni), k = ks + (q/(nj*ni))%nk;
     const int j = js + (q/ni)%nj, i = is + q%ni;
     Real div[4];
@@ -2050,7 +2052,10 @@ void RadiationM1::CleanCellWriteBack() {
         // the gas eint changes by the exchange of the solve only.  A cell it leaves below
         // the eint of the EOS temperature floor (0 without one) counts if its eint was
         // above it (an eint the hydro left there is not the solve's): the fluid's floor
-        // would add energy the radiation's budget does not see
+        // would add energy the radiation's budget does not see.  A cell whose own
+        // exchange root lies below the floor (CleanFloorRootBelow) does not count: no
+        // step keeps it above, the fluid's floor holds it, and the energy that floor adds
+        // for the solve's part of the fall, V (min(eint_old, e_f) - eint), is booked
         const Real ke = 0.5*(SQR(pg[0]) + SQR(pg[1]) + SQR(pg[2]))/uh(m,IDN,k,j,i);
         const Real eint = CleanGasEint(x, uh, ke + wk, m, k, j, i) + den;
         Real ef = 0.0;
@@ -2061,7 +2066,13 @@ void RadiationM1::CleanCellWriteBack() {
         // (both sides of the test with a margin of eint's round-off: a cell at the floor
         // is neither above it nor taken below it by the round-off of IEN - ke)
         const Real tz = 1.0e-12*(fabs(uh(m,IEN,k,j,i)) + ke + ef);
-        const bool above = (x.w(m,CLW_EI,k,j,i) > ef + tz);
+        const Real eio = x.w(m,CLW_EI,k,j,i);
+        const bool above = (eio > ef + tz);
+        const bool low = CleanFloorRootBelow(eio, e_old, ef, eos.tfloor,
+                                             op(m,M1_OP_P,k,j,i), op(m,M1_OP_E,k,j,i),
+                                             arad_);
+        Real eg = eint;   // (the gas eint the write-back leaves)
+        bool fall = false;
         if (gexact) {
           // the cell's exchange taken exactly with its face fluxes, work and beta terms
           // fixed: E (1 + h c kE) = E_tr + h c kP G a T^4, E_tr = E_old - h div F - W
@@ -2080,12 +2091,19 @@ void RadiationM1::CleanCellWriteBack() {
             eos.ThermoAt(d, t, ei, p, chi_rho, chi_t, cv);
             den += ei - eint;
             e -= ei - eint;
-            if (ei < ef - tz && above) nb += 1.0;
-          } else if (above) {
-            nb += 1.0;
+            eg = ei;
+            fall = (ei < ef - tz);
+          } else {
+            fall = true;
           }
-        } else if (eint < ef - tz && above) {
+        } else {
+          fall = (eint < ef - tz);
+        }
+        if (fall && above && !low) {
           nb += 1.0;
+        } else if (fall && low && eg < fmin(eio, ef)) {
+          nf += 1.0;
+          ef_sum += (fmin(eio, ef) - eg)*(geo ? x.vol(m,k,j,i) : vc);
         }
       }
       uh(m,IEN,k,j,i) += den;
@@ -2100,8 +2118,10 @@ void RadiationM1::CleanCellWriteBack() {
     }
     u0_(m,M1_E,k,j,i) = e;
     for (int b = 0; b < 3; ++b) u0_(m,M1_F1+b,k,j,i) = x.c*y[b];
-  }, Kokkos::Sum<Real>(neint));
+  }, Kokkos::Sum<Real>(neint), Kokkos::Sum<Real>(nflr), Kokkos::Sum<Real>(eflr));
   cln_neint = static_cast<int>(CleanReduce(neint, false));
+  cln_nflr = static_cast<int>(CleanReduce(nflr, false));
+  cln_eflr = CleanReduce(eflr, false);
 }
 
 //----------------------------------------------------------------------------------------

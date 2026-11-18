@@ -207,6 +207,21 @@ Real CleanGasEint(const CleanArgs &x, const DvceArray5D<Real> &uh, const Real ek
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn bool CleanFloorRootBelow
+//! \brief whether the own exchange root of a cell lies at or below the EOS temperature
+//! floor: its gas eint and radiation energy e alone, balanced at h -> infinity, reach
+//! e(d,T) + (kP/kE) a T^4 = eint + e at no T above tfloor (ef = e(d,tfloor); kP, kE the
+//! cell's absorption coefficients; without absorption the gas keeps its eint).  No step
+//! can then hold the cell above the floor, which the hydro's floor does instead
+
+KOKKOS_INLINE_FUNCTION
+bool CleanFloorRootBelow(const Real eint, const Real e, const Real ef, const Real tfloor,
+                         const Real kp, const Real ke, const Real arad) {
+  if (!(ke > 0.0)) return !(eint > ef);
+  return !(eint + e > ef + kp*arad*SQR(SQR(tfloor))/ke);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn int CleanBc
 //! \brief boundary type of side s (x1min, x1max, ..., x3max) of MeshBlock m: the mesh's
 //! on a physical boundary, M1_IBC_PERIODIC on a face shared with a MeshBlock (or a
