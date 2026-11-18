@@ -1029,9 +1029,7 @@ void RadiationM1::CleanFvRebase() {
   const int nteam = static_cast<int>((ncl + nt - 1)/nt), ns = nb + 1;
   const size_t sb = ScrArray1D<Real>::shmem_size(nt*ns) +
                     ScrArray1D<int>::shmem_size(4*nt);
-  Kokkos::TeamPolicy<> pol(DevExeSpace(), nteam, 64);
-  Kokkos::parallel_for("cln_fv_rebase", pol.set_scratch_size(0, Kokkos::PerTeam(sb)),
-  KOKKOS_LAMBDA(TeamMember_t tm) {
+  auto rebase = KOKKOS_LAMBDA(TeamMember_t tm) {
     ScrArray1D<Real> v(tm.team_scratch(0), nt*ns);
     ScrArray1D<int> x(tm.team_scratch(0), 4*nt);
     const int64_t c0 = static_cast<int64_t>(tm.league_rank())*nt;
@@ -1068,7 +1066,14 @@ void RadiationM1::CleanFvRebase() {
       const int q = e/nb, d = e - q*nb;
       fs(x(4*q),x(4*q+1),x(4*q+2),x(4*q+3),d) = static_cast<float>(v(q*ns+d));
     });
-  });
+  };
+  // 64 threads per team on a GPU; at most the host's team size (its threads) on a CPU
+  Kokkos::TeamPolicy<> pol(DevExeSpace(), nteam, 1);
+  pol.set_scratch_size(0, Kokkos::PerTeam(sb));
+  const int ts = std::min(64, pol.team_size_max(rebase, Kokkos::ParallelForTag()));
+  Kokkos::parallel_for("cln_fv_rebase",
+                       Kokkos::TeamPolicy<>(DevExeSpace(), nteam, ts)
+                           .set_scratch_size(0, Kokkos::PerTeam(sb)), rebase);
   // (the kernel read the directions of the last reference)
   if (cln_fvrd.extent_int(0) != nr) cln_fvrd = DvceArray2D<Real>("cln_fvrd", nr, 4);
   Kokkos::deep_copy(cln_fvrd, cln_fvd);

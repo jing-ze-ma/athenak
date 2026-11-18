@@ -5122,8 +5122,9 @@ void RadiationM1::ImplicitHaloCopy(DvceArray5D<Real> &sc, int nq, int c0, bool t
       const int nr2 = n2, nr3 = n3, nqq = nq;
       const int nrow = (nmb1 + 1)*nq*n3*n2;
       constexpr int kTr = 4;
-      Kokkos::TeamPolicy<DevExeSpace, Kokkos::LaunchBounds<256, 2>>
-          pol(DevExeSpace(), (nrow + kTr - 1)/kTr, kTr, 64);
+      using HPol = Kokkos::TeamPolicy<DevExeSpace, Kokkos::LaunchBounds<256, 2>>;
+      HPol pol(DevExeSpace(), (nrow + kTr - 1)/kTr, kTr,
+               std::min(64, HPol::vector_length_max()));
       Kokkos::parallel_for("m1_impl_hcpyt", pol, KOKKOS_LAMBDA(TeamMember_t tm) {
         Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, kTr), [&](const int r) {
           const int row = tm.league_rank()*kTr + r;
