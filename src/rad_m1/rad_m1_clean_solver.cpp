@@ -843,11 +843,14 @@ int RadiationM1::CleanBiCGStab() {
   // breakdown right after a restart fails the solve.  (A step's vector updates and the
   // dots after them take one pass, CleanSums, in the arithmetic and summation order of
   // separate update kernels and CleanDots.)  The dots of an iteration take four
-  // reductions: r0.v, s.s, (q.q, q.s), and (r.r, r0.r) for the next one.
+  // reductions: r0.v, s.s, (q.q, q.s), and (r.r, r0.r) for the next one.  Convergence of
+  // the recursive residual is checked on the true one, which restarts if it is above
+  // 10 tol (rows of very different scale, e.g. the empty side cells of a diagonal beam
+  // whose flux factors are uncapped, can leave the recursion far from it)
   Real rho = 1.0, alpha = 1.0, omega = 1.0, rr = 0.0, r0r0 = 0.0, rho_new = 0.0, bb = 0.0;
   int it0 = 0;
-  auto restart = [&](const int it) {
-    if (it == it0 + 1) return false;
+  auto restart = [&](const int it, const bool force = false) {
+    if (it == it0 + 1 && !force) return false;
     apply(sx, sr);
     const int n = (it < 0) ? 2 : 1;
     const Real one = 1.0, mone = -1.0, zero = 0.0;
@@ -873,6 +876,7 @@ int RadiationM1::CleanBiCGStab() {
   const Real tol = ((cln_tol_pass > 0.0) ? cln_tol_pass : cln_tol)*
                    fmax(std::sqrt(bb), 1.0e-300);
   if (std::sqrt(rr) <= tol) return 0;
+  auto done = [&](const int it) {return restart(it, true) && std::sqrt(rr) <= 10.0*tol;};
 
   const Real eps = std::numeric_limits<Real>::epsilon();
   for (int it = 1; it <= cln_maxit; ++it) {
@@ -907,7 +911,8 @@ int RadiationM1::CleanBiCGStab() {
     })[0];
     if (std::sqrt(s2) <= tol) {
       axpby(sx, sx, 1.0, sy, alpha);
-      return it;
+      if (done(it)) return it;
+      continue;
     }
     precondition(ss, sz);
     apply(sz, sq);
@@ -926,7 +931,7 @@ int RadiationM1::CleanBiCGStab() {
     });
     rr = e[0];
     rho_new = e[1];
-    if (std::sqrt(rr) <= tol) return it;
+    if (std::sqrt(rr) <= tol && done(it)) return it;
     if (omega == 0.0 && !restart(it)) return -it;
   }
   return -cln_maxit;

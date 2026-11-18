@@ -426,8 +426,10 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
     // step of every ladder member is the file's dt, and the members' step boundaries
     // are offset from a schedule in simulated time)
     bool dtfix = false;
+    // (dtfix-1117: a dt_retry cut cap restored from a restart file stays, if smaller)
     if (pin->DoesParameterExist("time", "dt_fixed")) {
-      pmesh->dt_cap = pin->GetReal("time", "dt_fixed");
+      const Real dfx = pin->GetReal("time", "dt_fixed");
+      pmesh->dt_cap = (pmesh->dt_cap > 0.0) ? std::min(pmesh->dt_cap, dfx) : dfx;
       dtfix = true;
     }
     Real dt_rst = pmesh->dt;

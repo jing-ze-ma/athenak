@@ -56,4 +56,13 @@ int VgdPoleRow(const int jj, const int w, const int nx2) {
   return (jj < w) ? (2*w - 1 - jj) : (2*(w + nx2) - 1 - jj);
 }
 
+// vet_gd_theta_wall = mirror: the interior row a theta ghost g rows beyond its wall (hi:
+// the upper one) reads, reflected at the walls as often as it takes (a band deeper than
+// nx2 reaches past the far wall: two reflections there)
+KOKKOS_INLINE_FUNCTION
+int VgdMirRow(const int g, const bool hi, const int w, const int nx2) {
+  const int p = g % nx2;
+  return (hi == ((g/nx2) % 2 == 0)) ? (w + nx2 - 1 - p) : (w + p);
+}
+
 #endif  // RAD_M1_RAD_M1_VGDTHETA_HPP_

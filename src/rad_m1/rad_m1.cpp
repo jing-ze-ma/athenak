@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <utility>
 
@@ -242,10 +243,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     cln_vfreeze = pin->GetOrAddInteger("rad_m1","clean_vfreeze",0);
     cln_gas_exact = pin->GetOrAddBoolean("rad_m1","clean_gas_exact",true);
+    cln_sfloor = pin->GetOrAddBoolean("rad_m1","clean_stage_floor",false);
     {const std::string yr = pin->GetOrAddString("rad_m1","clean_yres","false");
-    if (yr.compare("false") == 0) {
+    // (a file of the boolean key, before push 17, stores 0 | 1)
+    if (yr.compare("false") == 0 || yr.compare("0") == 0) {
       cln_yres = M1_YRES_OFF;
-    } else if (yr.compare("true") == 0 || yr.compare("post") == 0) {
+    } else if (yr.compare("true") == 0 || yr.compare("1") == 0 ||
+               yr.compare("post") == 0) {
       cln_yres = M1_YRES_POST;
     } else if (yr.compare("local") == 0) {
       cln_yres = M1_YRES_LOCAL;
@@ -2150,6 +2154,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_taucut")) {
         vlat_taucut = pin->GetReal("rad_m1","vet_col_lat_taucut");
       }
+      // scheme = clean: its rays sweep from the first shell (no depth cut), decided here
+      // so that every build, also one before the first solve (CleanInit), uses it
+      if (clean) vlat_taucut = std::numeric_limits<Real>::max();
       // unify-sc-gd-1012: vet_col_lat_cut_thin (VetLatCsFinish).  DEFAULT 1 on a fresh
       // run; a restart whose file lacks the key keeps 0 (the depth cut alone, bitwise)
       vlat_cut_thin = pin->GetOrAddReal("rad_m1","vet_col_lat_cut_thin",
@@ -2470,13 +2477,18 @@ void RadiationM1::SetX2FaceFlux(const DvceArray3D<Real> &flo, const DvceArray3D<
 bool RadiationM1::FrefWaccOn() const {
   // accbook-1021 time2_fref_wacc: also the backward-Euler steps of a hesdirk2 run (no
   // valid slope: the first step, a redo; not a helper solve, not multi-rate / csplit)
-  const bool t2be = fref_wacc_t2 && (time_scheme == M1_TIME_HESDIRK2) && !t2_ok &&
-                    !t2_inprobe && (csplit == 0);
+  const bool t2be = fref_wacc_t2 && (time_scheme == M1_TIME_HESDIRK2) &&
+                    (!t2_ok || FrefWaccStage()) && !t2_inprobe && (csplit == 0);
   return fref_wsplit && !fref_pay_post && ((time_scheme == M1_TIME_BE) || t2be) &&
          (mr_every <= 1);
 }
 
+bool RadiationM1::FrefWaccStage() const {
+  return clean && cln_cell && t2_ok;
+}
+
 Real RadiationM1::FrefWaccGam0(Real bdt, Real dt_mesh) const {
+  if (FrefWaccStage()) return 0.0;   // (each stage solve pays its hydro stage's work)
   for (int s = 0; s < fref_hnst; ++s) {
     if (std::abs(bdt - fref_hbeta[s]*dt_mesh) <= 1.0e-12*fref_hbeta[s]*dt_mesh) {
       return fref_hgam0[s];

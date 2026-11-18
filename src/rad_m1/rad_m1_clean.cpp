@@ -66,6 +66,7 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/time2_vet_sc", "clean_closure"},
     {"rad_m1/time2_vet_extrap", "clean_closure"}, {"rad_m1/time2_lin_tol*", "clean_tol"},
     {"rad_m1/implicit_ghost_x1min", "!"}, {"rad_m1/ic_rad*", "clean_init"},
+    {"rad_m1/implicit_resid_fatal", nullptr},
     {"rad_m1/implicit_*", ""},
     {"rad_m1/time2_accept_fallback", ""}, {"rad_m1/time2_posfix*", ""},
     {"rad_m1/time2_k1_*", ""}, {"rad_m1/time2_face_fct", ""},
@@ -250,7 +251,6 @@ void RadiationM1::CleanInit() {
     }
     if (vgd_on) {
       cln_rfv = std::max(cln_rfv, 1);
-      vlat_taucut = std::numeric_limits<Real>::max();
       marena_on = false;
     } else {
       if (cln_edd) cln_sph_r = std::numeric_limits<Real>::max();
@@ -277,8 +277,8 @@ void RadiationM1::CleanInit() {
                   (pm->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::reflect);
       vgd_thvac = 0;
     }
-    // (the sweep starts at the first shell; its intensities keep their own memory)
-    vlat_taucut = std::numeric_limits<Real>::max();
+    // (the sweep starts at the first shell, the constructor's vlat_taucut; its
+    // intensities keep their own memory)
     marena_on = false;
     cln_init = true;
     return;
@@ -703,6 +703,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (fpc) RstFingerprint("cln_setup");
   if (cell) Kokkos::deep_copy(Kokkos::subview(cln_v, Kokkos::ALL, 2, Kokkos::ALL,
                                               Kokkos::ALL, Kokkos::ALL), 0.0);
+  Real dnl = 0.0;   // (the last pass's change, implicit_resid_fatal)
   for (int ipos = 0; ; ++ipos) {
     CleanFirstIterate();
     if (cell) CleanCellFirstIterate();
@@ -762,11 +763,13 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       ++nsolve;
       cln_nsolve += 1.0;
       cln_nit += std::abs(nit);
+      if (nit < 0) dnl = std::numeric_limits<Real>::infinity();
       if (!iterate || nit < 0) break;
       const Real de = cell ? CleanCellNewtonUpdate() : CleanNewtonUpdate();
       if (lagged && inl < cln_maxpic) dpic = de;
       Real dv = 0.0;
       if (cln_feedback) dv = cell ? CleanCellVelocityUpdate() : CleanVelocityUpdate();
+      dnl = fmax(de, dv);
       if (cln_nlprint && global_variable::my_rank == 0) {
         std::printf("CLEAN pass cycle %d t2s %d pos %d pass %d it %d de %.3e dv %.3e\n",
                     pmy_pack->pmesh->ncycle, t2_solve, ipos, inl, nit, de, dv);
@@ -818,8 +821,11 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (nneg > 0) cln_nneg += 1.0;
   // a backward-Euler solve that did not converge fails the cycle: with <time>/dt_retry
   // the cycle is taken again with a smaller dt (a failed stage is redone by backward
-  // Euler through t2_fail below)
+  // Euler through t2_fail below); without, as the old production's Picard solve, the run
+  // stops where the last change (any after a failed linear solve) exceeds
+  // implicit_resid_fatal, and goes on with the iterate below it
   if (nit < 0 && !t2stage) {
+    const bool fatal = !dtr_on && impl_res_fatal > 0.0 && !(dnl <= impl_res_fatal);
     if (dtr_on) {
       if (!dtr_fail) {
         dtr_why = 1;
@@ -829,10 +835,12 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     }
     if (global_variable::my_rank == 0) {
       std::printf("CLEAN WARNING cycle %d: backward-Euler solve not converged (%s, %d "
-                  "so far)\n", pmy_pack->pmesh->ncycle,
-                  dtr_on ? "dt_retry" : "no dt_retry: accepted",
-                  static_cast<int>(cln_nfail));
+                  "so far; last change %.3e)\n", pmy_pack->pmesh->ncycle,
+                  dtr_on ? "dt_retry" : (fatal ? "no dt_retry: > implicit_resid_fatal" :
+                  "no dt_retry: accepted"), static_cast<int>(cln_nfail), dnl);
     }
+    if (fatal) CleanFatal("<rad_m1> clean: a backward-Euler solve did not converge and "
+                          "its last change exceeds <rad_m1>/implicit_resid_fatal");
   }
   if (global_variable::my_rank == 0) {
     if (cell) {
@@ -856,9 +864,32 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // a write-back that leaves gas eint < 0 (energy for the fluid floor to create) is
   // rejected like a failed solve (the stage is redone by backward Euler, a
   // backward-Euler step by dt_retry)
-  if (cell && cln_feedback && cln_neint > 0 && !t2stage && dtr_on) dtr_fail = true;
+  if (cell && cln_feedback && cln_neint > 0 && !t2stage && dtr_on) {
+    if (!dtr_fail) {
+      dtr_why = 4;   // (reason eint<=0, as the old production's)
+      dtr_resid = cln_neint;
+    }
+    dtr_fail = true;
+  }
   if (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2) {
-    t2_fail = (nit < 0) || (nneg > 0) || (cell && cln_feedback && cln_neint > 0);
+    t2_fail = (nit < 0) || (nneg > 0) ||
+              (cell && cln_feedback && (cln_neint > 0 || cln_nov > 0));
+  }
+  // the energy the write-back created to hold gas at the EOS floor where the radiation of
+  // the cell could not pay it: booked at the last solve of a step that is accepted
+  if (cell && cln_feedback && t2_solve != M1_T2S_STAGE1 && !(t2stage && t2_fail) &&
+      !dtr_fail && cln_nflr > 0) {
+    cln_eflr_sum += cln_eflr;
+    if (global_variable::my_rank == 0) {
+      if (!cln_flr_warned) {
+        std::cout << "### WARNING (scheme = clean): gas held at <hydro>/tfloor where the "
+                  << "radiation of the cell cannot pay it; the energy created is booked "
+                  << "(CLEAN floor lines)" << std::endl;
+      }
+      std::printf("CLEAN floor cycle %d cells %d energy %.10e booked %.10e\n",
+                  pmy_pack->pmesh->ncycle, cln_nflr, cln_eflr, cln_eflr_sum);
+    }
+    cln_flr_warned = true;
   }
   // (force_reference = clean: the reference is the force of the converged, accepted
   // first coupled solve, every iterate of which recaptures it; a failed one is redone)
@@ -914,7 +945,12 @@ void RadiationM1::CleanInitFaceFluxes() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanOldVector
 //! \brief E and gas state the stage starts from (stage increments added), with the gas
-//! internal energy and temperature
+//! internal energy and temperature.  With clean_stage_floor, cln_nov counts the cells
+//! whose eint the increments (the explicit combination of the earlier stages) take from
+//! above the eint of the EOS temperature floor to below it: the stage is then not
+//! accepted, as a write-back that does so (the fluid's floor would add energy the
+//! radiation's budget does not see).  As there, a cell whose own exchange root lies below
+//! the floor (CleanFloorRootBelow) does not count
 
 void RadiationM1::CleanOldVector() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -932,26 +968,53 @@ void RadiationM1::CleanOldVector() {
   auto inc = t2inc;
   auto w = cln_w;
   CleanArgs x = CleanMakeArgs();
+  const bool sfl = cln_sfloor && feedback && stage;
+  auto op = opac;
+  const Real arad_ = arad;
+  const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
 
-  par_for("cln_old", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+  Real nov = 0.0;
+  Kokkos::parallel_reduce("cln_old", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                                                           (nmb1 + 1)*nk*nj*ni),
+  KOKKOS_LAMBDA(const int q, Real &nb) {
+    const int m = q/(nk*nj*ni), k = ks + (q/(nj*ni))%nk;
+    const int j = js + (q/ni)%nj, i = is + q%ni;
     Real t = 0.0;
     if (fluid) {
+      const Real d = uh(m,IDN,k,j,i);
+      Real p[3];
+      Real e0 = 0.0;
+      if (sfl) {
+        CleanGasMomentum(x, uh, m, k, j, i, p);
+        e0 = CleanGasEint(x, uh, 0.5*(SQR(p[0]) + SQR(p[1]) + SQR(p[2]))/d, m, k, j, i);
+      }
       if (feedback && stage) {
         for (int n = 0; n < 3; ++n) uh(m,IM1+n,k,j,i) += inc(m,M1_T2_M1+n,k,j,i);
         uh(m,IEN,k,j,i) += inc(m,M1_T2_EN,k,j,i);
       }
-      const Real d = uh(m,IDN,k,j,i);
-      Real p[3];
       CleanGasMomentum(x, uh, m, k, j, i, p);
       const Real ekin = 0.5*(SQR(p[0]) + SQR(p[1]) + SQR(p[2]))/d;
-      const Real eint = fmax(CleanGasEint(x, uh, ekin, m, k, j, i), 0.0);
+      const Real e1 = CleanGasEint(x, uh, ekin, m, k, j, i);
+      if (sfl) {
+        Real ef = 0.0;
+        if (eos.tfloor > 0.0) {
+          Real pf, chi_rho, chi_t, cv;
+          eos.ThermoAt(d, eos.tfloor, ef, pf, chi_rho, chi_t, cv);
+        }
+        if (e0 > ef && e1 < ef &&
+            !CleanFloorRootBelow(e0, u0_(m,M1_E,k,j,i), ef, eos.tfloor,
+                                 op(m,M1_OP_P,k,j,i), op(m,M1_OP_E,k,j,i), arad_)) {
+          nb += 1.0;
+        }
+      }
+      const Real eint = fmax(e1, 0.0);
       t = eos.Temperature(d, eint);
       w(m,CLW_EI,k,j,i) = eint;
     }
     w(m,CLW_T,k,j,i) = t;
     w(m,CLW_EO,k,j,i) = u0_(m,M1_E,k,j,i) + (stage ? inc(m,M1_T2_E,k,j,i) : 0.0);
-  });
+  }, Kokkos::Sum<Real>(nov));
+  cln_nov = static_cast<int>(CleanReduce(nov, false));
 }
 
 //----------------------------------------------------------------------------------------

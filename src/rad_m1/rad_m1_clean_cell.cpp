@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <iostream>
 #include <limits>
 #include <type_traits>
 
@@ -603,7 +604,7 @@ void RadiationM1::CleanCellRightHandSide() {
         s = fmax(s + x.h*x.c*gm*(x.w(m,CLW_DK,k,j,i)*arad_*SQR(SQR(t)) -
                               x.w(m,CLW_DK+1,k,j,i)*fmax(x.w(m,CLW_EK,k,j,i), 0.0)), 0.0);
       }
-      rr = s/(d*cv + s);
+      rr = (s > 0.0) ? s/(d*cv + s) : 0.0;   // (no exchange: none, also where T = 0)
     }
     Real sdiv[4];
     CleanCellSourceDivergence(x, m, k, j, i, sdiv);
@@ -2087,7 +2088,8 @@ void RadiationM1::CleanCellDiagnose() {
 //! the exact kinetic energy the gas gains (of the residual force), so its eint takes -A;
 //! with wb_arad (force_reference_work = split) the radiation also pays the work of the
 //! reference force, which the problem generator gives the gas.  cln_neint counts the
-//! cells left with eint < 0 (the fluid's floor would create energy there).  On the
+//! cells the solve left with eint < 0 or below the eint of the EOS temperature floor
+//! from above it (the fluid's floor would create energy there).  On the
 //! cubed sphere F is stored in the frame of y (F_r, F_theta, F_phi) and the gas momentum
 //! change (and its stage slope) in the hydro's components (CleanGasChange): E and L_z of
 //! gas plus radiation are conserved to round-off.
@@ -2110,6 +2112,14 @@ void RadiationM1::CleanCellWriteBack() {
   const bool vzero = cln_vzero;
   auto fr = cln_fref;
   auto aref = arad_ref;
+  // (wb_arad, FrefWaccOn: E pays exactly the reference work the gas got in the hydro
+  // stages, fref_wacc, its share h/dt in a backward-Euler step and all of it in a stage
+  // step, FrefWaccStage; the slopes carry no payment, wex)
+  const bool wpa = (fref == M1_FREF_WB_ARAD) && !vzero && FrefWaccOn();
+  auto wc = wpa ? FrefWacc() : DvceArray4D<Real>();
+  const Real fra = FrefWaccStage() ? 1.0 : h/pmy_pack->pmesh->dt;
+  const bool wex = (fref == M1_FREF_WB_ARAD) && fref_wacc_t2 && !fref_pay_post &&
+                   (time_scheme == M1_TIME_HESDIRK2);
   const bool eso = esrc_on;
   auto es = esrc;
   const bool gexact = cln_gas_exact;
@@ -2139,12 +2149,17 @@ void RadiationM1::CleanCellWriteBack() {
   auto uh = fl.u0;
   auto eos = fl.eos;
   auto u0_ = u0;
-  Real neint = 0.0;
+  Real neint = 0.0, nflr = 0.0, eflr = 0.0;
   const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
+  const bool geo = x.sph || x.cub;
+  const Real efl = e_floor;
+  // (the floor holds only where <hydro>/tfloor is set above its default FLT_MIN)
+  const bool tfl = eos.tfloor > std::numeric_limits<float>::min();
+  const Real vc = 1.0/(x.idx[0]*x.idx[1]*x.idx[2]);
   // (256 threads per block: the registers of the exchange solve without spills)
   using Rp256 = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
   Kokkos::parallel_reduce("clc_wbcell", Rp256(DevExeSpace(), 0, (nmb1 + 1)*nk*nj*ni),
-  KOKKOS_LAMBDA(const int q, Real &nb) {
+  KOKKOS_LAMBDA(const int q, Real &nb, Real &nf, Real &ef_sum) {
     const int m = q/(nk*nj*ni), k = ks + (q/(nj*ni))%nk;
     const int j = js + (q/ni)%nj, i = is + q%ni;
     Real div[4];
@@ -2153,7 +2168,7 @@ void RadiationM1::CleanCellWriteBack() {
     const Real e_old = x.w(m,CLW_EO,k,j,i);
     Real dm[3] = {0.0, 0.0, 0.0}, dh[3], y[3];
     for (int b = 0; b < 3; ++b) y[b] = x.u(m,CLC_X+1+b,k,j,i);
-    Real den = 0.0;
+    Real den = 0.0, wsl = 0.0;
     if (feedback) {
       if (yres == M1_YRES_POST) {
         // y less its share of the linear residual, the face fluxes kept: the gas takes
@@ -2171,7 +2186,8 @@ void RadiationM1::CleanCellWriteBack() {
       // the work W of S_E is exactly the kinetic energy (p + dm/2).dm/rho the gas gains,
       // not the W of the iterate the solve took (the gas eint takes -A), and, with
       // wb_arad, the radiation pays the work of the reference force at the velocity
-      // after the kick, which the problem generator's well-balanced source gives the gas
+      // after the kick, or, where FrefWaccOn, the work fref_wacc the problem generator's
+      // well-balanced source gave the gas
       Real pg[3], wk = 0.0, wr = 0.0;
       CleanGasMomentum(x, uh, m, k, j, i, pg);
       for (int b = 0; b < 3; ++b) {
@@ -2181,6 +2197,8 @@ void RadiationM1::CleanCellWriteBack() {
           wr += h*CleanRefForce(fref, fr, aref, d, b, m, k, j, i)*(pg[b] + dm[b])/d;
         }
       }
+      if (wpa) wr = fra*wc(m,k,j,i);
+      if (wex && !vzero) wsl = wr;
       e -= wk - x.w(m,CLW_WK,k,j,i) + wr;
       // (the hydro's components; dm.e_a covariant on the cubed sphere)
       CleanGasChange(x, m, k, j, i, dm, dh);
@@ -2193,9 +2211,31 @@ void RadiationM1::CleanCellWriteBack() {
         eos.ThermoAt(uh(m,IDN,k,j,i), x.w(m,CLW_T,k,j,i), ei, p, chi_rho, chi_t, cv);
         den = ei - x.w(m,CLW_EI,k,j,i);
       } else {
-        // the gas eint changes by the exchange of the solve only
+        // the gas eint changes by the exchange of the solve only.  A cell it leaves below
+        // the eint of the EOS temperature floor (0 without one) counts if its eint was
+        // above it (an eint the hydro left there is not the solve's): the fluid's floor
+        // would add energy the radiation's budget does not see.  A cell whose own
+        // exchange root lies below the floor (CleanFloorRootBelow) does not count: no
+        // step keeps it above.  Every cell the exchange takes below the floor is held at
+        // e_f by the radiation of the same cell, E - (e_f - eint), so that E + eint is
+        // kept; only what E above its floor cannot pay is created, and booked
         const Real ke = 0.5*(SQR(pg[0]) + SQR(pg[1]) + SQR(pg[2]))/uh(m,IDN,k,j,i);
         const Real eint = CleanGasEint(x, uh, ke + wk, m, k, j, i) + den;
+        Real ef = 0.0;
+        if (eos.tfloor > 0.0) {
+          Real p, chi_rho, chi_t, cv;
+          eos.ThermoAt(uh(m,IDN,k,j,i), eos.tfloor, ef, p, chi_rho, chi_t, cv);
+        }
+        // (both sides of the test with a margin of eint's round-off: a cell at the floor
+        // is neither above it nor taken below it by the round-off of IEN - ke)
+        const Real tz = 1.0e-12*(fabs(uh(m,IEN,k,j,i)) + ke + ef);
+        const Real eio = x.w(m,CLW_EI,k,j,i);
+        const bool above = (eio > ef + tz);
+        const bool low = CleanFloorRootBelow(eio, e_old, ef, eos.tfloor,
+                                             op(m,M1_OP_P,k,j,i), op(m,M1_OP_E,k,j,i),
+                                             arad_);
+        Real eg = eint;   // (the gas eint the write-back leaves)
+        bool fall = false;
         if (gexact) {
           // the cell's exchange taken exactly with its face fluxes, work and beta terms
           // fixed: E (1 + h c kE) = E_tr + h c kP G a T^4, E_tr = E_old - h div F - W
@@ -2214,17 +2254,29 @@ void RadiationM1::CleanCellWriteBack() {
             eos.ThermoAt(d, t, ei, p, chi_rho, chi_t, cv);
             den += ei - eint;
             e -= ei - eint;
+            eg = ei;
+            fall = (ei < ef - tz);
           } else {
-            nb += 1.0;
+            fall = true;
           }
-        } else if (eint < 0.0) {
-          nb += 1.0;
+        } else {
+          fall = (eint < ef - tz);
+        }
+        if (fall && above && !low) nb += 1.0;
+        if (tfl && eg < ef) {
+          const Real q = ef - eg, pay = fmin(q, fmax(e - efl, 0.0));
+          den += q;
+          e -= pay;
+          if (pay < q) {
+            nf += 1.0;
+            ef_sum += (q - pay)*(geo ? x.vol(m,k,j,i) : vc);
+          }
         }
       }
       uh(m,IEN,k,j,i) += den;
     }
     if (slopes) {
-      kk(m,M1_T2_E,k,j,i) = (e - e_old)/h;
+      kk(m,M1_T2_E,k,j,i) = (e + wsl - e_old)/h;
       for (int b = 0; b < 3; ++b) {
         kk(m,M1_T2_F1+b,k,j,i) = x.c*(y[b] - x.u(m,CLC_O+1+b,k,j,i))/h;
         kk(m,M1_T2_M1+b,k,j,i) = feedback ? dh[b]/h : 0.0;
@@ -2233,8 +2285,10 @@ void RadiationM1::CleanCellWriteBack() {
     }
     u0_(m,M1_E,k,j,i) = e;
     for (int b = 0; b < 3; ++b) u0_(m,M1_F1+b,k,j,i) = x.c*y[b];
-  }, Kokkos::Sum<Real>(neint));
+  }, Kokkos::Sum<Real>(neint), Kokkos::Sum<Real>(nflr), Kokkos::Sum<Real>(eflr));
   cln_neint = static_cast<int>(CleanReduce(neint, false));
+  cln_nflr = static_cast<int>(CleanReduce(nflr, false));
+  cln_eflr = CleanReduce(eflr, false);
 }
 
 //----------------------------------------------------------------------------------------
@@ -2287,6 +2341,70 @@ void RadiationM1::CleanCellClosureSlope(const Real sign) {
       kk(m,M1_T2_M1+b,k,j,i) += dh[b];
     }
   });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanFloorDraw
+//! \brief the EOS temperature floor of the gas, paid by the radiation of the same cell:
+//! where the conserved state holds a gas eint below e(d,tfloor), eint is raised to it and
+//! E gives the difference down to its own floor, so that E + eint is kept; only what E
+//! cannot pay is created, and booked (cln_eflr_sum, a CLEAN floor line).  It runs before
+//! every conversion of the fluid's conserved state, whose floor then adds nothing (on the
+//! cubed sphere, whose conversion keeps no temperature floor in the conserved state, it
+//! is the floor).  Clean cell layout with gas feedback and <hydro>/tfloor set only
+
+void RadiationM1::CleanFloorDraw() {
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  if (!clean || !cln_cell || !cln_feedback || !fl.on) return;
+  auto eos = fl.eos;
+  if (!(eos.tfloor > std::numeric_limits<float>::min())) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int ni = indcs.nx1, nj = indcs.nx2, nk = indcs.nx3;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanArgs x = CleanMakeArgs();
+  auto uh = fl.u0;
+  auto u0_ = u0;
+  const Real efl = e_floor;
+  const bool geo = x.sph || x.cub;
+  const Real vc = 1.0/(x.idx[0]*x.idx[1]*x.idx[2]);
+  Real nflr = 0.0, eflr = 0.0;
+  Kokkos::parallel_reduce("cln_flrdraw", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                                                               (nmb1 + 1)*nk*nj*ni),
+  KOKKOS_LAMBDA(const int q, Real &nf, Real &ef_sum) {
+    const int m = q/(nk*nj*ni), k = ks + (q/(nj*ni))%nk;
+    const int j = js + (q/ni)%nj, i = is + q%ni;
+    const Real d = uh(m,IDN,k,j,i);
+    Real p[3];
+    CleanGasMomentum(x, uh, m, k, j, i, p);
+    const Real eint = CleanGasEint(x, uh, 0.5*(SQR(p[0]) + SQR(p[1]) + SQR(p[2]))/d,
+                                   m, k, j, i);
+    Real ef, pr, chi_rho, chi_t, cv;
+    eos.ThermoAt(d, eos.tfloor, ef, pr, chi_rho, chi_t, cv);
+    if (eint < ef) {
+      const Real dq = ef - eint, pay = fmin(dq, fmax(u0_(m,M1_E,k,j,i) - efl, 0.0));
+      uh(m,IEN,k,j,i) += dq;
+      u0_(m,M1_E,k,j,i) -= pay;
+      if (pay < dq) {
+        nf += 1.0;
+        ef_sum += (dq - pay)*(geo ? x.vol(m,k,j,i) : vc);
+      }
+    }
+  }, Kokkos::Sum<Real>(nflr), Kokkos::Sum<Real>(eflr));
+  const int n = static_cast<int>(CleanReduce(nflr, false));
+  if (n == 0) return;
+  const Real de = CleanReduce(eflr, false);
+  cln_eflr_sum += de;
+  if (global_variable::my_rank == 0) {
+    if (!cln_flr_warned) {
+      std::cout << "### WARNING (scheme = clean): gas held at <hydro>/tfloor where the "
+                << "radiation of the cell cannot pay it; the energy created is booked "
+                << "(CLEAN floor lines)" << std::endl;
+    }
+    std::printf("CLEAN floor draw cycle %d cells %d energy %.10e booked %.10e\n",
+                pmy_pack->pmesh->ncycle, n, de, cln_eflr_sum);
+  }
+  cln_flr_warned = true;
 }
 
 }  // namespace radm1

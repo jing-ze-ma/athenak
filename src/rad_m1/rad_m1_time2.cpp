@@ -3585,7 +3585,7 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
     auto a_ = a;
     auto fi = cln_fvi;
     const int cv = c, mo = m0;
-    par_for("m1_t2_fvrst", DevExeSpace(), 0, nmb - 1, 0, cln_fvb*cln_fvn - 1, 0,
+    par_for("m1_t2_fvrst", DevExeSpace(), 0, nmb - 1, 0, CleanFvRstNch() - 1, 0,
             fi.extent_int(1) - 1, 0, fi.extent_int(2) - 1, 0, fi.extent_int(3) - 1,
     KOKKOS_LAMBDA(const int m, const int v, const int k, const int j, const int i) {
       a_(m,cv+v,k,j,i) = fi(mo+m,k,j,i,v);

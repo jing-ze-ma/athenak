@@ -2085,7 +2085,8 @@ void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
         for (int sd = 0; sd < 2; ++sd) {
           for (int g = 0; g < wb; ++g) {
             const int j = (sd == 1) ? (wb + nx2 + g) : (wb - 1 - g);
-            const int jm = (sd == 1) ? (wb + nx2 - 1 - g) : (wb + g);
+            const int jm = VgdMirRow(g, sd == 1, wb, nx2);
+            const double sb = ((g/nx2) % 2 == 0) ? -1.0 : 1.0;   // (even: no flip)
             const double th = x2_h(m,j), thm = x2_h(m,jm);
             const double st = std::sin(th), ct = std::cos(th);
             const double sw = std::sin(thm), cw = std::cos(thm);
@@ -2096,10 +2097,10 @@ void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
               const double a = nx*st*cp + ny*st*sp + nz*ct;
               const double b = nx*ct*cp + ny*ct*sp - nz*st;
               const double c = -nx*sp + ny*cp;
-              // (a, -b, c) in the mirror cell's frame
-              const double mx = a*sw*cp - b*cw*cp - c*sp;
-              const double my = a*sw*sp - b*cw*sp + c*cp;
-              const double mz = a*cw + b*sw;
+              // (a, -b, c) in the mirror cell's frame ((a, b, c) after two reflections)
+              const double mx = a*sw*cp + sb*b*cw*cp - c*sp;
+              const double my = a*sw*sp + sb*b*cw*sp + c*cp;
+              const double mz = a*cw - sb*b*sw;
               int r3[3];
               double w3[3];
               VgdMirPick(d, n, mx, my, mz, rx, ry, rz, wint, r3, w3);
@@ -2112,7 +2113,10 @@ void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
                   w3_h(m,k,j,q,t) = w3[t];
                 }
               }
-              mr_h(m,k,j,q) = a;
+              // (without wint the branch of the value read: r3[0] in the mirror row,
+              // whose own map continues it across a phi wall; else that pass's other
+              // branch, not yet swept, would be read in a corner of the band)
+              mr_h(m,k,j,q) = wint ? a : mr_h(m,k,jm,r3[0]);
             }
           }
         }
@@ -3275,7 +3279,7 @@ void RadiationM1::VetGdThMirCs(DvceArray5D<Real> &a, const int i0, const int i1)
   KOKKOS_LAMBDA(const int m, const int c, const int k, const int s, const int i) {
     const int g = (s < wb) ? s : (s - wb);
     const int j = (s < wb) ? (wb - 1 - g) : (wb + nx2 + g);
-    const int jm = (s < wb) ? (wb + g) : (wb + nx2 - 1 - g);
+    const int jm = VgdMirRow(g, s >= wb, wb, nx2);
     a_(m,c,k,j,i) = a_(m,c,k,jm,i);
   });
 }
@@ -5157,7 +5161,7 @@ void RadiationM1::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
                     const bool hi = (ej > 0);
                     const int g = hi ? (jj - wb - nx2b) : (wb - 1 - jj);
                     const int jm = (wf == 4) ? (hi ? (wb + nx2b - 1) : wb)
-                                             : (hi ? (wb + nx2b - 1 - g) : (wb + g));
+                                             : VgdMirRow(g, hi, wb, nx2b);
                     for (int t = 0; t < ((wint && wf == 2) ? 3 : 1); ++t) {
                       if (t > 0 && w3_(m,kk,jj,d,t) == 0.0) {continue;}
                       const int dq = (wf == 4) ? d : (wint ? m3_(m,kk,jj,d,t)
@@ -5884,9 +5888,10 @@ void RadiationM1::VetGdX1Hand(const bool up) {
 //! \fn void RadiationM1::VetGdTopMirror
 //! \brief a reflecting outer x1 (scheme = clean): the inflow of every inward direction at
 //! the top face (the outer x1 ghost shell of vgd_i) is the top cell's intensity of the
-//! last sweep in its specular image n - 2 (n . r) r (the nearest set direction), scaled
-//! so that the inflow returns the outflow's radial flux; the top cell's E, isotropic,
-//! when the cell has no outflow (the first sweep)
+//! last sweep in its specular image n - 2 (n . r) r (the nearest set direction of this
+//! sweep's set, the first of directions as near to round-off), scaled so that the inflow
+//! returns the outflow's radial flux; the top cell's E, isotropic, when the cell has no
+//! outflow (the first sweep)
 
 void RadiationM1::VetGdTopMirror() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -5898,19 +5903,20 @@ void RadiationM1::VetGdTopMirror() {
   if (mp_.extent_int(0) != nmb1 + 1) {
     Kokkos::realloc(vgd_rmap, nmb1 + 1, nx3, nx2, n);
     mp_ = vgd_rmap;
-    par_for("m1_vgd_rmap", DevExeSpace(), 0, nmb1, 0, nx3 - 1, 0, nx2 - 1, 0, n - 1,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
-      const Real r[3] = {tg_(m,k,j,0)*tg_(m,k,j,3), tg_(m,k,j,0)*tg_(m,k,j,2),
-                         tg_(m,k,j,1)};
-      const Real mr = dir_(d,0)*r[0] + dir_(d,1)*r[1] + dir_(d,2)*r[2];
-      Real best = -2.0;
-      for (int q = 0; q < n; ++q) {
-        Real c = 0.0;
-        for (int a = 0; a < 3; ++a) {c += dir_(q,a)*(dir_(d,a) - 2.0*mr*r[a]);}
-        if (c > best) {best = c; mp_(m,k,j,d) = q;}
-      }
-    });
   }
+  // (every sweep: a rotating set changes the directions)
+  par_for("m1_vgd_rmap", DevExeSpace(), 0, nmb1, 0, nx3 - 1, 0, nx2 - 1, 0, n - 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int d) {
+    const Real r[3] = {tg_(m,k,j,0)*tg_(m,k,j,3), tg_(m,k,j,0)*tg_(m,k,j,2),
+                       tg_(m,k,j,1)};
+    const Real mr = dir_(d,0)*r[0] + dir_(d,1)*r[1] + dir_(d,2)*r[2];
+    Real best = -2.0;
+    for (int q = 0; q < n; ++q) {
+      Real c = 0.0;
+      for (int a = 0; a < 3; ++a) {c += dir_(q,a)*(dir_(d,a) - 2.0*mr*r[a]);}
+      if (c > best + 1.0e-12) {best = c; mp_(m,k,j,d) = q;}
+    }
+  });
   auto vi_ = vgd_i;
   auto iw_ = iw;
   auto xf_ = vgd_x1f;
@@ -5940,8 +5946,10 @@ void RadiationM1::VetGdTopMirror() {
 //! \fn void RadiationM1::VetGdInnerMirror
 //! \brief a reflecting inner x1 (scheme = clean), after the inward pass: the ratio of the
 //! inward radial flux of every column of the first shell to the outward flux of its
-//! specular images (nearest set directions), which scales the mirrored inflow of the
-//! inner face so that it returns the inflow (1 where either vanishes)
+//! specular images (nearest set directions, the first of those as near to round-off, so
+//! that the pick does not follow the last bits of the geometry), which scales the
+//! mirrored inflow of the inner face so that it returns the inflow (1 where either
+//! vanishes)
 
 void RadiationM1::VetGdInnerMirror() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -5969,11 +5977,15 @@ void RadiationM1::VetGdInnerMirror() {
       int dm = 0;
       Real best = -2.0;
       for (int q = 0; q < n; ++q) {
+        // (the nearest INWARD set direction: an outward one is swept only after this)
         Real c = 0.0;
         for (int a = 0; a < 3; ++a) {c += dir_(q,a)*(dir_(d,a) - 2.0*mr*r[a]);}
-        if (c > best) {best = c; dm = q;}
+        const Real mq = dir_(q,0)*r[0] + dir_(q,1)*r[1] + dir_(q,2)*r[2];
+        if (mq < 0.0 && c > best + 1.0e-12) {best = c; dm = q;}
       }
-      ho += dir_(d,3)*mr*vi_(m,dm,k+w,j+w,is);
+      // (an image whose nearest set direction is outward holds no value of this sweep)
+      const Real mm = dir_(dm,0)*r[0] + dir_(dm,1)*r[1] + dir_(dm,2)*r[2];
+      if (mm < 0.0) {ho += dir_(d,3)*mr*vi_(m,dm,k+w,j+w,is);}
     }
     if (hi > 0.0 && ho > 0.0) {sc_(m,k,j) = hi/ho;}
   });
@@ -6844,7 +6856,7 @@ void RadiationM1::VetGdSweep() {
                     const bool hi = (ej > 0);
                     const int g = hi ? (jj - wb - nx2b) : (wb - 1 - jj);
                     const int jm = (wf == 4) ? (hi ? (wb + nx2b - 1) : wb)
-                                             : (hi ? (wb + nx2b - 1 - g) : (wb + g));
+                                             : VgdMirRow(g, hi, wb, nx2b);
                     for (int t = 0; t < ((wint && wf == 2) ? 3 : 1); ++t) {
                       if (t > 0 && w3_(m,kk,jj,d,t) == 0.0) {continue;}
                       const int dq = (wf == 4) ? d : (wint ? m3_(m,kk,jj,d,t)
@@ -7677,11 +7689,12 @@ void RadiationM1::VetGdSmooth() {
 void RadiationM1::VetGdSource() {
   VetLatSweep(0);
   // ln chi, ln S in the band index space, the lateral band filled exactly: from the
-  // first shell up (the gd sweep), or every shell for the clean scheme's FV rays, which
-  // sweep the whole column (shells below the cut would keep an earlier build's source)
+  // first shell up (the gd sweep), or every shell for the clean scheme, whose rays and
+  // closure read the whole column (shells below the cut would keep an earlier build's
+  // source)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int og = vgd_w - indcs.ng, ok = vgd_w - indcs.ks, x1g = (vgd_nb1 > 1) ? 1 : 0;
-  const int cut = (clean && cln_rfv > 0) ? 0 : vlat_icut;
+  const int cut = clean ? 0 : vlat_icut;
   const int ilo = indcs.is + cut - x1g, ie = indcs.ie + x1g;
   auto cs_ = vlat_cs;
   auto cw_ = vgd_cs;
