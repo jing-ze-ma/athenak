@@ -736,8 +736,12 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
   auto &cf = vgd_gbcf[vgd_raw ? key : -1];
   auto &cb = vgd_gbcb[vgd_raw ? key : -1];
   // (the lists depend on the sweep's first shell, vgd_scut (hasm, rm): its last entry; a
-  // cut change remakes them, the old ones freed)
-  if (vgd_raw && !cb.empty() && cb.back() != vgd_scut) {cb.clear();}
+  // cut change remakes those of the shells whose side of the cut it moves, the old ones
+  // freed)
+  auto side = [&](const int c) {
+    return (i > indcs.is + c) ? 1 : ((i < indcs.is + c) ? -1 : 0);
+  };
+  if (vgd_raw && !cb.empty() && side(cb.back()) != side(vgd_scut)) {cb.clear();}
   auto pv = Kokkos::subview(vgd_gbpb, std::make_pair(4*np, 8*np));
   if (part == 1 && !(vgd_raw && !cb.empty())) {   // (the lists are made: whole)
     VetGdGbHaloC(a, i, ws, 0);
