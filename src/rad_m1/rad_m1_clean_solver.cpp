@@ -322,8 +322,10 @@ DvceArray1D<int> CleanHaloList(const char *name, const std::vector<int> &v) {
 //! \brief clean_halo_lists: the copies the ghost exchange of CleanGhostFill makes, from
 //! two traces of it on arrays of n3 x n2 x n1 cells: the active cells hold their global
 //! id (gid ncell + (k n2 + j) n1 + i), then a hash of it, the ghosts -2 minus their own.
-//! Each ghost that changes must hold the same active cell in both traces, else (sums, a
-//! ghost of a ghost) the lists are refused and the exchange of CleanHalo stays.  The
+//! A ghost that changes in both traces must hold the same active cell in both, else
+//! (sums, a ghost of a ghost) the lists are refused and the exchange of CleanHalo stays;
+//! one that keeps its own value in either trace is left as it is (seen at the cube
+//! corners of a cubed sphere with one MeshBlock per panel side).  The
 //! cells a rank needs from another are sent to it once, in the order of its ghosts; the
 //! messages of CleanHaloListsExchange carry them in that order.
 
@@ -364,6 +366,7 @@ void RadiationM1::CleanHaloListsInit(const int n3, const int n2, const int n1) {
   std::vector<int> lm, lc, dm, dc;
   std::map<int, std::vector<int>> gm, gc;
   std::map<int, std::vector<int64_t>> gid;
+  int nskip = 0;
   for (int m = 0; m < nmb && ok; ++m) {
     for (int k = 0; k < n3; ++k) {
       for (int j = 0; j < n2; ++j) {
@@ -372,8 +375,11 @@ void RadiationM1::CleanHaloListsInit(const int n3, const int n2, const int n1) {
           const int q = (k*n2 + j)*n1 + i;
           const Real a0 = v0[m*ncell + q], a1 = th(m,0,k,j,i);
           const int64_t own = (gid0 + m)*ncell + q;
-          if (a0 == -2.0 - static_cast<Real>(own) && a1 == -2.0 - CleanHaloHash(own)) {
-            continue;   // (not written by the exchange)
+          const bool u0 = (a0 == -2.0 - static_cast<Real>(own));
+          const bool u1 = (a1 == -2.0 - CleanHaloHash(own));
+          if (u0 || u1) {   // (not written by the exchange, or not in one of the traces)
+            nskip += (u0 != u1);
+            continue;
           }
           const int64_t id = static_cast<int64_t>(a0);
           if (!(a0 >= 0.0) || static_cast<Real>(id) != a0 ||
@@ -495,7 +501,8 @@ void RadiationM1::CleanHaloListsInit(const int n3, const int n2, const int n1) {
   if (me == 0) {
     std::cout << "<rad_m1> clean_halo_lists: rank 0 copies " << hl.nloc
               << " ghosts within the rank, sends " << hl.nsend << " and receives "
-              << hl.nrecv << " cells to and from " << nseg << " ranks" << std::endl;
+              << hl.nrecv << " cells to and from " << nseg << " ranks (" << nskip
+              << " ghosts written in one trace only are left as they are)" << std::endl;
   }
 }
 
