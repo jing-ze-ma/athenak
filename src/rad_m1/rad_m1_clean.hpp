@@ -617,31 +617,45 @@ Real CleanDivW(const CleanArgs &x, const int dir, const int m, const int k, cons
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn bool CleanCsSeamFace
+//! \brief cubed sphere: true for a panel seam face (k,j,i) normal to dir, except next to a
+//! cube vertex (production's foot-only vertex)
+
+KOKKOS_INLINE_FUNCTION
+bool CleanCsSeamFace(const CleanArgs &x, const int dir, const int m, const int k,
+                     const int j, const int i) {
+  if (!x.cub || dir == 0) return false;
+  const BoundaryFlag pf = BoundaryFlag::panel;
+  const int b = 3 - dir, p = (dir == 1) ? j : k, o = (dir == 1) ? k : j;
+  const int pl = (dir == 1) ? x.js : x.ks, ph = ((dir == 1) ? x.je : x.ke) + 1;
+  const int ol = (dir == 1) ? x.ks : x.js, oh = (dir == 1) ? x.ke : x.je;
+  return ((p == pl && x.mbc(m,2*dir) == pf) || (p == ph && x.mbc(m,2*dir+1) == pf)) &&
+         !((o == ol && x.mbc(m,2*b) == pf) || (o == oh && x.mbc(m,2*b+1) == pf));
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real CleanCsNormA
 //! \brief cubed sphere: the area A_n that weights the normal stress difference of the
 //! face-normal momentum of face (k,j,i) normal to dir over V_f, A_n (P_R - P_L)/V_f.  It is
-//! the face area, except on a panel seam face: there the two cells are mirror images, their
-//! O(h) volume variation adds in V_f instead of cancelling, and A_n = V_f/d with d the
-//! mirror-pair centroid chord (production's two-point seam row over r angm, M1CsRowGeo).
-//! A seam face next to a cube vertex keeps the area (production's foot-only vertex)
+//! the face area, except on a panel seam face (CleanCsSeamFace): there the two cells are
+//! mirror images, their O(h) volume variation adds in V_f instead of cancelling, and
+//! A_n = V_f/d with d the chord of the mirror pair's cell centres (where the cell values
+//! sit), d = 2 |X| |r_hat.n_f| of the cell on this side (production's two-point seam row
+//! over r angm, M1CsRowGeo / M1CsSeamGeom)
 
 KOKKOS_INLINE_FUNCTION
 Real CleanCsNormA(const CleanArgs &x, const int dir, const int m, const int k,
                   const int j, const int i) {
-  const BoundaryFlag pf = BoundaryFlag::panel;
-  if (dir > 0) {
-    const int b = 3 - dir, p = (dir == 1) ? j : k, o = (dir == 1) ? k : j;
-    const int pl = (dir == 1) ? x.js : x.ks, ph = ((dir == 1) ? x.je : x.ke) + 1;
-    const int ol = (dir == 1) ? x.ks : x.js, oh = (dir == 1) ? x.ke : x.je;
-    const bool seam = (p == pl && x.mbc(m,2*dir) == pf) ||
-                      (p == ph && x.mbc(m,2*dir+1) == pf);
-    const bool vtx = (o == ol && x.mbc(m,2*b) == pf) || (o == oh && x.mbc(m,2*b+1) == pf);
-    if (seam && !vtx) {
-      const int kl = k - (dir == 2), jl = j - (dir == 1);
-      return 0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,kl,jl,i))/x.dxf[dir](m,k,j,i);
-    }
+  if (!CleanCsSeamFace(x, dir, m, k, j, i)) return x.area[dir](m,k,j,i);
+  const int kl = k - (dir == 2), jl = j - (dir == 1);
+  const bool lo = ((dir == 1) ? j : k) == ((dir == 1) ? x.js : x.ks);
+  const int ko = lo ? k : kl, jo = lo ? j : jl;
+  Real xr = 0.0, rn = 0.0;
+  for (int c = 0; c < 3; ++c) {
+    xr += SQR(x.g(m,CLG_X+c,ko,jo,i));
+    rn += x.g(m,CLG_R+c,ko,jo,i)*x.g(m,CLG_N+3*dir+c,k,j,i);
   }
-  return x.area[dir](m,k,j,i);
+  return 0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,kl,jl,i))/(2.0*std::sqrt(xr)*fabs(rn));
 }
 
 //----------------------------------------------------------------------------------------
@@ -966,7 +980,9 @@ Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m
       div = CleanCsNormA(x, dir, m, k, j, i)*(CleanStagDnn(x, dir, m, k, j, i, k, j, i)*x.w(m,e,k,j,i)
             - CleanStagDnn(x, dir, m, k, j, i, kl, jl, il)*x.w(m,e,kl,jl,il));
     }
-    if (!CleanBoundaryFace(x, dir, m, k, j, i)) {
+    // (a seam face takes no lateral sums: its mirror chord is normal to the face, so the
+    // two-point term is the whole n.div(D E), as production's seam row)
+    if (!CleanBoundaryFace(x, dir, m, k, j, i) && !CleanCsSeamFace(x, dir, m, k, j, i)) {
       div += CleanStagCsLat(x, dir, m, k, j, i, kl, jl, il) +
              CleanStagCsLat(x, dir, m, k, j, i, k, j, i);
     }
