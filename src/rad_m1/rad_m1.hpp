@@ -3074,7 +3074,8 @@ class RadiationM1 {
   template <typename T>
   void CleanGhostPhys(DvceArray5D<T> a, const int c0, const int nc);
   void CleanGhostDefer(DvceArray5D<Real> a, const int c0, const int nc);
-  void CleanGhostFill(const CleanW &a, const int c0, const int nc);   // (in one array)
+  void CleanGhostFill(const CleanW &a, const int c0, const int nc,   // (in one array)
+                      const int part = 0);
   void CleanGhostDefer(const CleanW &a, const int c0, const int nc);
   void CleanGhostFlush();
   std::array<Real, 2> CleanDots(CleanW w, const int nc, const int n,

@@ -60,8 +60,11 @@
 //! and their kinetic flux takes the half ranges about the face normal (CleanCellKinetic).
 
 #include <cmath>
+#include <functional>
+#include <string>
 
 #include "athena.hpp"
+#include "mesh/mesh.hpp"
 #include "rad_m1/rad_m1_clean.hpp"
 
 namespace radm1 {
@@ -1432,6 +1435,49 @@ void CleanBlockFactorSolve(const Real lu[4][4], const Real piv[4], Real r[4]) {
     for (int c = p + 1; c < 4; ++c) s -= lu[p][c]*r[c];
     r[p] = s/lu[p][p];
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanOverlapFor
+//! \brief old production's implicit_halo_overlap: f(m,k,j,i) over the active cells
+//! CleanInner by ng while a ghost exchange is in flight, then fin() (its second half),
+//! then f over the other active cells.  ov = false (or MeshBlocks too thin): fin(), then f
+//! over all of them.  Each cell's value is the same either way.  fd >= 0: f over the
+//! faces normal to fd, the inner ones those whose two neighbour faces along fd are the
+//! block's (the F solve's, CleanStagFSolve)
+
+// (fin a std::function: nvcc takes no host lambda type in an extended lambda's parent)
+template <typename F>
+void CleanOverlapFor(const std::string &nm, MeshBlockPack *pp, const bool ov, const F &f,
+                     const std::function<void()> &fin, const int fd = -1) {
+  auto &id = pp->pmesh->mb_indcs;
+  const int g = id.ng, nmb1 = pp->nmb_thispack - 1, is = id.is, js = id.js, ks = id.ks;
+  const bool md = pp->pmesh->multi_d, td = pp->pmesh->three_d;
+  const int nx[3] = {id.nx1, id.nx2, id.nx3};
+  int n[3], lo[3], hi[3];
+  for (int d = 0; d < 3; ++d) {
+    const bool ac = (d == 0) || (d == 1 && md) || (d == 2 && td);
+    n[d] = nx[d] + (d == fd);
+    lo[d] = (fd < 0) ? (ac ? g : 0) : (d == fd);
+    hi[d] = (fd < 0) ? (ac ? nx[d] - 1 - g : nx[d] - 1) : nx[d] - 1 - (d == fd);
+  }
+  const CleanShell sh(n[2], n[1], n[0], 0, lo[0], hi[0], lo[1], hi[1], lo[2], hi[2],
+                      true, true);
+  if (!ov || sh.Empty()) {
+    fin();
+    par_for(nm, DevExeSpace(), 0, nmb1, ks, id.ke + (fd == 2), js, id.je + (fd == 1), is,
+            id.ie + (fd == 0), f);
+    return;
+  }
+  par_for(nm, DevExeSpace(), 0, nmb1, ks + sh.k0, ks + sh.k1, js + sh.j0, js + sh.j1,
+          is + sh.i0, is + sh.i1, f);
+  fin();
+  par_for(nm + "_sh", DevExeSpace(), 0, nmb1, 0, sh.ncell-1,
+  KOKKOS_LAMBDA(const int m, const int q) {
+    int k, j, i;
+    CleanShellCell(sh, q, k, j, i);
+    f(m, ks + k, js + j, is + i);
+  });
 }
 
 }  // namespace radm1

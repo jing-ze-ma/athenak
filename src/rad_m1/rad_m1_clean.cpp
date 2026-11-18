@@ -13,6 +13,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <iostream>
 #include <limits>
 #include <string>
@@ -2587,14 +2588,15 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
   const Real c1lo = cln_c0, c1hi = cln_c1;
   const bool fpcr = cln_fspcr && !cub &&
       !std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>;
-  // (the F of every direction, CLW_Y, CLW_Z, CLW_S or cln_v: one exchange)
-  auto yfill = [&]() {
+  // (the F of every direction, CLW_Y, CLW_Z, CLW_S or cln_v: one exchange; part 1:
+  // started, the last one, which x1's F and dissipation term overlap)
+  auto yfill = [&](const int part) {
     if (cub) {
       CleanGhostFill(cln_v, 9, 6);
       return;
     }
     if (x.nf == 3) CleanGhostDefer(cln_w, CLW_S, 1);
-    CleanGhostFill(cln_w, CLW_Y, std::min(x.nf, 2));
+    CleanGhostFill(cln_w, CLW_Y, std::min(x.nf, 2), part);
   };
   // the directions in three phases (F^H, al; the line solves; F), each direction with
   // its own al and F, so that each exchange serves all of them (clean_stag_fsweeps N:
@@ -2603,6 +2605,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
   // (the cubed sphere without clean_stag_fschur iterates its seams: up to 64 sweeps)
   const int nsw = (cub && !cln_fschur) ? 64 : std::max(cln_fsweeps, 1);
   const bool tie = cub ? cln_fschur : cln_ftie;
+  const bool fov = !cub && nsw == 1;
   Real fsd = 0.0, fsf = 0.0;
   for (int q = 0; q < (2 + nsw)*x.nf; ++q) {
     const int dir = q%x.nf, ph = std::min(q/x.nf, 1) + (q >= (1 + nsw)*x.nf);
@@ -2689,7 +2692,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
           CleanGhostFill(cln_v, 0, 18);
         } else {
           CleanGhostDefer(cln_w, CLW_L, 3*x.nf);
-          yfill();
+          yfill(0);
         }
       }
     }
@@ -2847,7 +2850,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
       fsf = (dir == 0) ? fmx : fmax(fsf, fmx);
     }
     if (ph == 1 && dir == x.nf - 1) {
-      yfill();
+      yfill(fov ? 1 : 0);
       // (sweeps: the cubed sphere until no face changes by 1e-14 of the largest F, else
       // until the high faces' F, their owners', changes by < 1e-12 of itself)
       const bool done = nsw > 1 &&
@@ -2861,8 +2864,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
     if (ph == 2) {
       // F and the dissipation term of every face
       const CleanArgs *px = CleanDevArgs(x, 0);
-      par_for("cln_fs3", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      auto f3 = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
         const Real f = cub ? fc(m,CLF_N+2,k,j,i) : x.w(m,CleanFLine::Cy(dir),k,j,i);
         fc(m,CLF_N+2,k,j,i) = fc(m,CLF_N,k,j,i);   // (F^H: the boundary's, kept)
@@ -2901,7 +2903,13 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
         }
         const Real dc = 2.0*x.c*CleanCellFaceDistance(x, dir, m, k, j, i);
         fc(m,CLF_N+1,k,j,i) += (tr[0]*(fp - f) - tl[0]*(f - fm))/dc - dp - ds;
-      });
+      };
+      // (x1: the faces that read no ghost while the exchange of F finishes)
+      const bool ov = fov && dir == 0;
+      const std::function<void()> fin = [&]() {
+        if (ov) CleanGhostFill(cln_w, CLW_Y, 1, 2);
+      };
+      CleanOverlapFor("cln_fs3", pmy_pack, ov, f3, fin, dir);
     }
   }
   if (tie && tie_now && !cub) CleanStagFaceTie(e, kd);

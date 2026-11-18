@@ -200,8 +200,9 @@ void RadiationM1::CleanGhostDefer(DvceArray5D<Real> a, const int c0, const int n
 }
 
 // (a range lies in one of the two arrays: CLW_NS)
-void RadiationM1::CleanGhostFill(const CleanW &a, const int c0, const int nc) {
-  CleanGhostFill((c0 < a.ns) ? a.s : a.o, (c0 < a.ns) ? c0 : c0 - a.ns, nc);
+void RadiationM1::CleanGhostFill(const CleanW &a, const int c0, const int nc,
+                                 const int part) {
+  CleanGhostFill((c0 < a.ns) ? a.s : a.o, (c0 < a.ns) ? c0 : c0 - a.ns, nc, true, part);
 }
 
 void RadiationM1::CleanGhostDefer(const CleanW &a, const int c0, const int nc) {
@@ -801,38 +802,6 @@ void RadiationM1::CleanFaceCoefficients() {
       fc(m,CLF_HM,k,j,i) = (jr0 > 0.0) ? hm0/jr0 : -0.25;
     });
   }
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void CleanOverlapFor
-//! \brief old production's implicit_halo_overlap: f(m,k,j,i) over the active cells
-//! CleanInner by ng while a ghost exchange is in flight, then fin() (its second half),
-//! then f over the other active cells.  ov = false (or MeshBlocks too thin): fin(), then f
-//! over all of them.  Each cell's value is the same either way
-
-// (fin a std::function: nvcc takes no host lambda type in an extended lambda's parent)
-template <typename F>
-static void CleanOverlapFor(const std::string &nm, MeshBlockPack *pp, const bool ov,
-                            const F &f, const std::function<void()> &fin) {
-  auto &id = pp->pmesh->mb_indcs;
-  const int g = id.ng, nmb1 = pp->nmb_thispack - 1, is = id.is, js = id.js, ks = id.ks;
-  const bool md = pp->pmesh->multi_d, td = pp->pmesh->three_d;
-  const CleanShell sh(id.nx3, id.nx2, id.nx1, g, 0, id.nx1-1, 0, id.nx2-1, 0, id.nx3-1,
-                      md, td);
-  if (!ov || sh.Empty()) {
-    fin();
-    par_for(nm, DevExeSpace(), 0, nmb1, id.ks, id.ke, id.js, id.je, id.is, id.ie, f);
-    return;
-  }
-  par_for(nm, DevExeSpace(), 0, nmb1, ks + sh.k0, ks + sh.k1, js + sh.j0, js + sh.j1,
-          is + sh.i0, is + sh.i1, f);
-  fin();
-  par_for(nm + "_sh", DevExeSpace(), 0, nmb1, 0, sh.ncell-1,
-  KOKKOS_LAMBDA(const int m, const int q) {
-    int k, j, i;
-    CleanShellCell(sh, q, k, j, i);
-    f(m, ks + k, js + j, is + i);
-  });
 }
 
 //----------------------------------------------------------------------------------------
