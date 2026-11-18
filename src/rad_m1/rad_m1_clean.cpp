@@ -2440,7 +2440,7 @@ bool CleanStagFRow(const CleanArgs &x, const CleanFLine &ln, const FC &fc, const
     Real q, qs = 0.0, ag = 1.0;
     if (x.cub) {
       q = x.h*x.c/(0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,k-dk,j-dj,i-di)));
-      ag = x.area[dir](m,k,j,i);
+      ag = CleanCsNormA(x, dir, m, k, j, i);
     } else {
       q = x.h*x.c*(x.sph ? CleanStagSph(x, 0, dir, m, k, j, i) : x.idx[dir]);
       qs = x.sph ? x.h*x.c*CleanStagSph(x, 4, dir, m, k, j, i) : 0.0;
@@ -2889,7 +2889,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
         // F row, CleanStagFRow)
         Real dp, ds = 0.0;
         if (cub) {
-          dp = (pr - pl + x.area[dir](m,k,j,i)*(tr[1] - tl[1]))/
+          dp = (pr - pl + CleanCsNormA(x, dir, m, k, j, i)*(tr[1] - tl[1]))/
                (0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,k-dk,j-dj,i-di)));
         } else {
           dp = (x.sph ? CleanStagSph(x, 0, dir, m, k, j, i) : x.idx[dir])*(pr - pl);

@@ -617,6 +617,34 @@ Real CleanDivW(const CleanArgs &x, const int dir, const int m, const int k, cons
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanCsNormA
+//! \brief cubed sphere: the area A_n that weights the normal stress difference of the
+//! face-normal momentum of face (k,j,i) normal to dir over V_f, A_n (P_R - P_L)/V_f.  It is
+//! the face area, except on a panel seam face: there the two cells are mirror images, their
+//! O(h) volume variation adds in V_f instead of cancelling, and A_n = V_f/d with d the
+//! mirror-pair centroid chord (production's two-point seam row over r angm, M1CsRowGeo).
+//! A seam face next to a cube vertex keeps the area (production's foot-only vertex)
+
+KOKKOS_INLINE_FUNCTION
+Real CleanCsNormA(const CleanArgs &x, const int dir, const int m, const int k,
+                  const int j, const int i) {
+  const BoundaryFlag pf = BoundaryFlag::panel;
+  if (dir > 0) {
+    const int b = 3 - dir, p = (dir == 1) ? j : k, o = (dir == 1) ? k : j;
+    const int pl = (dir == 1) ? x.js : x.ks, ph = ((dir == 1) ? x.je : x.ke) + 1;
+    const int ol = (dir == 1) ? x.ks : x.js, oh = (dir == 1) ? x.ke : x.je;
+    const bool seam = (p == pl && x.mbc(m,2*dir) == pf) ||
+                      (p == ph && x.mbc(m,2*dir+1) == pf);
+    const bool vtx = (o == ol && x.mbc(m,2*b) == pf) || (o == oh && x.mbc(m,2*b+1) == pf);
+    if (seam && !vtx) {
+      const int kl = k - (dir == 2), jl = j - (dir == 1);
+      return 0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,kl,jl,i))/x.dxf[dir](m,k,j,i);
+    }
+  }
+  return x.area[dir](m,k,j,i);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real CleanStagDnn
 //! \brief cubed sphere: n.D.n of cell (k,j,i), n the unit normal of face (kf,jf,iff)
 //! normal to dir (D Cartesian), the normal stress of the face-normal momentum
@@ -812,7 +840,7 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
          w*x.c*x.fc[dir](m,CLF_HM,k,j,i);
   }
   if (x.cub) {   // (cubed sphere: the face-normal momentum, A n.D.n E over V_f)
-    const Real gs = (1.0 - w)*th*x.h*x.c*x.c*x.area[dir](m,k,j,i)/
+    const Real gs = (1.0 - w)*th*x.h*x.c*x.c*CleanCsNormA(x, dir, m, k, j, i)/
                     (0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,kl,jl,il)));
     al = gs*CleanStagDnn(x, dir, m, k, j, i, kl, jl, il) +
          w*x.c*x.fc[dir](m,CLF_HP,k,j,i);
@@ -935,7 +963,7 @@ Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m
   Real div = 0.0;
   if (x.cub) {   // (cubed sphere: n.div(D E) of the two half cells, the normal stress
     if (normal) {  //  and the lateral sums CleanStagCsLat, over V_f)
-      div = x.area[dir](m,k,j,i)*(CleanStagDnn(x, dir, m, k, j, i, k, j, i)*x.w(m,e,k,j,i)
+      div = CleanCsNormA(x, dir, m, k, j, i)*(CleanStagDnn(x, dir, m, k, j, i, k, j, i)*x.w(m,e,k,j,i)
             - CleanStagDnn(x, dir, m, k, j, i, kl, jl, il)*x.w(m,e,kl,jl,il));
     }
     if (!CleanBoundaryFace(x, dir, m, k, j, i)) {
