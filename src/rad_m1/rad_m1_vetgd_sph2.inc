@@ -735,6 +735,9 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
   const int key = (2*i + (inw ? 1 : 0))*(vgd_w + 1) + wq;
   auto &cf = vgd_gbcf[vgd_raw ? key : -1];
   auto &cb = vgd_gbcb[vgd_raw ? key : -1];
+  // (the lists depend on the sweep's first shell, vgd_scut (hasm, rm): its last entry; a
+  // cut change remakes them, the old ones freed)
+  if (vgd_raw && !cb.empty() && cb.back() != vgd_scut) {cb.clear();}
   auto pv = Kokkos::subview(vgd_gbpb, std::make_pair(4*np, 8*np));
   if (part == 1 && !(vgd_raw && !cb.empty())) {   // (the lists are made: whole)
     VetGdGbHaloC(a, i, ws, 0);
@@ -802,6 +805,7 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
         KOKKOS_LAMBDA(const int q) {if (f_(q + 1) > f_(q)) {l_(f_(q)) = q;}});
         cb.push_back(nk);
       }
+      cb.push_back(vgd_scut);
     }
   }
 #if defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP)
