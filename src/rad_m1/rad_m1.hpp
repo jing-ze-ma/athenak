@@ -4664,6 +4664,7 @@ class RadiationM1 {
   std::vector<VgdHlEntry> vgd_hxe;         // (2 n1): the exact lists per (pass, shell)
   std::vector<VgdHlEntry> vgd_hxe_alt;     // fast2nd-1112: the other xfade set's lists
   bool VetGdHxKey(const int e, const int ws) const;   // record e matches the masks' key
+  bool VetGdHxCut(const int e, const VgdHlEntry &X) const;   // ray-cut move test
   void VetGdHxBuild2(const int e, const int i, const int ws);
   // vgdrot-1011: the exact lists of many shells in a few collectives (VetGdHxBatch);
   // per-slot scratch pools, the per-depth partner / piece tables, pinned bounds

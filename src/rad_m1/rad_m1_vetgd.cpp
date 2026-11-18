@@ -2619,7 +2619,7 @@ bool RadiationM1::VetGdHlXff(const int i, const int ws, const int mode) {
   const VgdHlEntry &XA = vgd_hxe[ex];
   const VgdHlEntry &XB = vgd_hxe_alt[ex];
   auto okx = [&](const VgdHlEntry &X, const Real al) {
-    return X.gen != -1 && X.alpha == al && X.scut == vgd_scut && X.ws == ws && X.exact;
+    return X.gen != -1 && X.alpha == al && VetGdHxCut(ex, X) && X.ws == ws && X.exact;
   };
   if (!okx(XA, vgd_alpha) || !okx(XB, vgd_xf_alt)) {return false;}
   const int np = static_cast<int>(vgd_prk.size());
@@ -4451,7 +4451,20 @@ void RadiationM1::VetGdHlEnd() {
 bool RadiationM1::VetGdHxKey(const int e, const int ws) const {
   if (e < 0 || e >= static_cast<int>(vgd_hxe.size())) {return false;}
   const VgdHlEntry &X = vgd_hxe[e];
-  return X.gen != -1 && X.alpha == vgd_alpha && X.scut == vgd_scut && X.ws == ws;
+  return X.gen != -1 && X.alpha == vgd_alpha && VetGdHxCut(e, X) && X.ws == ws;
+}
+
+// rayspd-1118: record X of (pass, shell l) = entry e holds for the current ray cut: made
+// for it, or the move crosses neither l nor l + 1 (its reads, hx_mark: the reader shells
+// l - 1, l, l + 1 against the cut; its masks: the side of the cut, are those of either
+// cut).  A ray-cut move then remakes only the lists of the few shells it crosses
+bool RadiationM1::VetGdHxCut(const int e, const VgdHlEntry &X) const {
+  if (X.scut == vgd_scut) {return true;}
+  if (X.scut < 0 || vgd_scut < 0) {return false;}
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int l = e % (indcs.nx1 + 2*indcs.ng) - indcs.is;
+  auto sd = [](const int a, const int c) {return (a > c) - (a < c);};
+  return sd(l, X.scut) == sd(l, vgd_scut) && sd(l + 1, X.scut) == sd(l + 1, vgd_scut);
 }
 
 //----------------------------------------------------------------------------------------
@@ -8363,9 +8376,11 @@ bool RadiationM1::VgdXffAllExact() {
       if (wsx < 1 || wsx > vgd_w) {continue;}
       const VgdHlEntry &A = vgd_hxe[pass*n1c + i];
       const VgdHlEntry &B = vgd_hxe_alt[pass*n1c + i];
-      if (!(A.gen != -1 && A.alpha == vgd_alpha && A.scut == vgd_scut && A.ws == wsx &&
+      if (!(A.gen != -1 && A.alpha == vgd_alpha && VetGdHxCut(pass*n1c + i, A) &&
+            A.ws == wsx &&
             A.exact)) {ok = 0;}
-      if (!(B.gen != -1 && B.alpha == vgd_xf_alt && B.scut == vgd_scut && B.ws == wsx &&
+      if (!(B.gen != -1 && B.alpha == vgd_xf_alt && VetGdHxCut(pass*n1c + i, B) &&
+            B.ws == wsx &&
             B.exact)) {ok = 0;}
     }
   }
@@ -10085,7 +10100,7 @@ void RadiationM1::VetGdRingSweepBegin(const bool two) {
   if (static_cast<int>(vgd_hxe.size()) == 2*n1c) {
     for (int i = indcs.is; i <= indcs.ie; ++i) {
       const VgdHlEntry &X = vgd_hxe[i];
-      if (X.gen != -1 && X.exact && X.alpha == vgd_alpha && X.scut == vgd_scut) {
+      if (X.gen != -1 && X.exact && X.alpha == vgd_alpha && VetGdHxCut(i, X)) {
         need += static_cast<int64_t>(X.nr) + X.nw;
       }
     }
