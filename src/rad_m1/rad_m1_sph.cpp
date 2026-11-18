@@ -150,7 +150,8 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     // slopes are cell- and face-local (rad_m1_time2.cpp), so they carry no geometry; the
     // seam face state is averaged at the start of each solve (CubedSeamFaceAverage).
     // implicit_vimp too (its cs form: ImplicitVimpBuild, the face-normal work row)
-    if (impl_solver != M1_ISOLV_BICGSTAB) {wcs += " implicit_solver != bicgstab;";}
+    // (scheme = clean: its own solve and preconditioner; the old one's keys are not read)
+    if (impl_solver != M1_ISOLV_BICGSTAB && !clean) {wcs += " implicit_solver != bicgstab;";}
     // cs-port-1016 (CS_VETGD.md S2): implicit_precond = mg as well.  mg is algebraic and
     // block-local (x1 line solves, one red-black transverse sweep, Galerkin 2x2
     // aggregates inside a MeshBlock, rad_m1_precond.cpp): it reads no geometry, and its
@@ -163,10 +164,10 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     // geometry and no neighbour, so the deck's other layout dependences show up bitwise
     const bool cs_line_ok = (impl_prec == 0) &&
                             pin->GetOrAddBoolean("rad_m1","cs_precond_line",false);
-    if (impl_prec != 2 && impl_prec != 3 && !cs_line_ok) {
+    if (impl_prec != 2 && impl_prec != 3 && !cs_line_ok && !clean) {
       wcs += " implicit_precond != rbgs_fwd | mg;";
     }
-    if (impl_prec_fb >= 0) {   // precond-fb-1023: rbgs / line are refused on cs
+    if (impl_prec_fb >= 0 && !clean) {   // precond-fb-1023: rbgs / line refused on cs
       wcs += " implicit_precond_fallback != none;";
     }
     // cs-s4-1017 (USER 10-18: production sp keys must run on cs): implicit_halo_mpi
