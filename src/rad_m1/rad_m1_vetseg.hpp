@@ -129,7 +129,8 @@ inline const F *VgdClosureToDevice(const F &f, DvceArray1D<char> &buf) {
 [[noreturn]] inline void VgdFatalAt(const char *file, const char *tag,
                                     const std::string &msg) {
   std::cout << "### FATAL ERROR in " << file << std::endl << tag << msg << std::endl;
-  std::exit(EXIT_FAILURE);
+  // (_Exit: no static destructors behind the live Kokkos views; they crashed std::exit)
+  std::_Exit(EXIT_FAILURE);
 }
 
 // share-1031: the vet_gd_replace surface q (vet_col_surface_q) of the top cell ie of
