@@ -588,6 +588,22 @@ Real CleanCellFaceDistance(const CleanArgs &x, const int dir, const int m, const
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanCellWallDistance
+//! \brief distance from the centre of the inner cell to the physical boundary face
+//! (k,j,i) normal to dir (low: the face below the cell): along x1 of spherical polar and
+//! the cubed sphere the radii of the centre and the face, otherwise half the distance
+//! between the centres across the face
+
+KOKKOS_INLINE_FUNCTION
+Real CleanCellWallDistance(const CleanArgs &x, const int dir, const int m, const int k,
+                           const int j, const int i, const bool low) {
+  if (dir == 0 && (x.sph || x.cub)) {
+    return low ? x.x1v(m,i) - x.x1f(m,i) : x.x1f(m,i) - x.x1v(m,i-1);
+  }
+  return 0.5*CleanCellFaceDistance(x, dir, m, k, j, i);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanCellRhieChow
 //! \brief coefficients q of (D_dd E) in the cells L-1, L, R, R+1 of the RC term of the
 //! interior face (k,j,i) normal to dir (none at a low-order face).  The cell gradients
@@ -712,7 +728,8 @@ Real CleanCellOutStress(const CleanArgs &x, const int dir, const int b, const in
 //! \brief the E-independent part of the moment scheme's face fluxes: the consistency
 //! bracket and, on a physical boundary, the incoming E flux of CleanFaceSource and the
 //! stress of the incoming radiation (beam: its stress column; isotropic bath: c E_bath/6
-//! on the normal row; imposed flux F: 2F/3, CleanCellM1Jacobian); in a first-order solve
+//! on the normal row; imposed flux F: 2F/3 and the stress gradient chi d F of the half
+//! cell, CleanCellM1Jacobian); in a first-order solve
 //! or on a low-order face the ghost part of the upwind stress
 
 KOKKOS_INLINE_FUNCTION
@@ -728,10 +745,21 @@ void CleanCellM1Source(const CleanArgs &x, const int dir, const int m, const int
   Real n[3];
   for (int b = 0; b < 3; ++b) n[b] = CleanNf(x, b, dir, m, k, j, i);
   if (bc == M1_IBC_FLUX) {
+    // the stress of the face is that of its own E, not of the inner cell's: between the
+    // cell centre and the face the radiation's momentum equation, dP_n/dn = -chi F/c,
+    // carries the imposed flux, so that the face stress exceeds the cell's by
+    // chi d F/c (d the distance from the centre to the face, chi of the inner cell), so
+    // that the inner cell sees the whole stress gradient of an optically thick layer
+    // (with the cell's own stress only about half of it, and its gas would lose the
+    // radiation-pressure support)
+    const int kc = low ? k : k - (dir == 2), jc = low ? j : j - (dir == 1);
+    const int ic = low ? i : i - (dir == 0);
     const Real f = CleanFaceSource(x, dir, m, k, j, i);
+    const Real dp = x.op(m,M1_OP_T,kc,jc,ic)*
+                    CleanCellWallDistance(x, dir, m, k, j, i, low)*f;
     s[0] += f;
     for (int b = 0; b < 3; ++b) {
-      if (b < x.nf) s[1+b] += (low ? 2.0 : -2.0)/3.0*f*n[b];
+      if (b < x.nf) s[1+b] += (low ? 1.0 : -1.0)*(2.0/3.0*f + dp)*n[b];
     }
     return;
   }
@@ -883,9 +911,10 @@ void CleanCellM1BoundaryJacobian(const CleanArgs &x, const int dir, const int m,
 //! fE = F, low-order or not; its face holds the leaving half range of the inner cell,
 //! flux c h E and stress c k_out E, and an isotropic entering half range that makes up
 //! F, flux F - c h E and stress 2/3 of it, so that fY = c k_out E + (2/3) (F - c h E) n
-//! (exact for two half-isotropic streams).  A low-order interior face takes its E flux
-//! from the rays' half ranges and the compact diffusion flux, blended with the face's
-//! weight a,
+//! (exact for two half-isotropic streams) about E of the cell; the stress gradient of the
+//! half cell between them, chi d F, is in CleanCellM1Source.  A low-order interior face
+//! takes its E flux from the rays' half ranges and the compact diffusion flux, blended
+//! with the face's weight a,
 //!   fE = a c (h+_L E_L + h-_R E_R) - (1 - a) th h c^2 ((D_dd E)_R - (D_dd E)_L)/dx_d
 //!        + (1 - a) (1 - th) (max(a_n,L, 0) E_L + min(a_n,R, 0) E_R)
 //! (a_n the normal advective coefficient, the flux of the relaxed y),
