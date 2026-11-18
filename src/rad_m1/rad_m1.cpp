@@ -488,8 +488,19 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_steady = (ci == "steady");
     }
     if (cln_steady) {
-      cln_steady_n = pin->GetOrAddInteger("rad_m1","clean_init_n",50);
-      cln_steady_dtfac = pin->GetOrAddReal("rad_m1","clean_init_dtfac",1.0e6);
+      // (problem/he_ic_equil starts: the old module's relax, he_ic_equil_relax_n steps
+      // of he_ic_equil_dtfac x dt, defaults 40 and 1e6; at 1e3-1e6 dt the gas cooled to
+      // a photosphere with inward F, RSG L/L_in -0.13, and the re-march inverted rho)
+      const bool heq = pin->DoesParameterExist("problem","he_ic_equil") &&
+                       pin->GetBoolean("problem","he_ic_equil");
+      auto eqk = [&](const char *k, const Real d) {
+        return (heq && pin->DoesParameterExist("problem", k)) ?
+               pin->GetReal("problem", k) : d;
+      };
+      cln_steady_n = pin->GetOrAddInteger("rad_m1","clean_init_n",
+          static_cast<int>(eqk("he_ic_equil_relax_n", heq ? 40.0 : 50.0)));
+      cln_steady_dtfac = pin->GetOrAddReal("rad_m1","clean_init_dtfac",
+                                           eqk("he_ic_equil_dtfac", 1.0e6));
       cln_steady_tol = pin->GetOrAddReal("rad_m1","clean_init_tol",1.0e-8);
     }
     if (transport != M1_TRANSPORT_IMPLICIT) {

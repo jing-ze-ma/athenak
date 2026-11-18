@@ -328,7 +328,8 @@ Real HsLinhaoU(const std::uint64_t idx, const std::uint64_t seed) {
 [[noreturn]] void HsFatal(const std::string &msg, const int line) {
   std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << line << std::endl
             << "he_star_m1: " << msg << std::endl;
-  std::exit(EXIT_FAILURE);
+  // (_Exit: no static destructors behind live Kokkos views, as VgdFatalAt)
+  std::_Exit(EXIT_FAILURE);
 }
 
 //! the merged opacity table format of box_convection.cpp's ReadOpacityTable (comment

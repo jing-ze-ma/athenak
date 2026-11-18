@@ -74,7 +74,8 @@ static void CleanParForLb(const char *name, const int nmb1, const int ks, const 
 
 static void CleanFatal(const std::string &msg) {
   std::cout << "### FATAL ERROR in " << __FILE__ << std::endl << msg << std::endl;
-  std::exit(EXIT_FAILURE);
+  // (_Exit: no static destructors behind live Kokkos views, as VgdFatalAt)
+  std::_Exit(EXIT_FAILURE);
 }
 
 //----------------------------------------------------------------------------------------
@@ -889,11 +890,17 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
   pm->dt = dt0;
   (void) SetSubsteps(dt0);
   if (global_variable::my_rank == 0) {
-    std::printf("<rad_m1> clean_init steady: %s after %d passes (%.0f formal solutions); "
-                "radiation E %.10e -> %.10e, F/c %.4e %.4e %.4e -> %.4e %.4e %.4e "
-                "(volume sums)\n", ok ? "converged" : "NOT converged",
-                std::min(n + 1, cln_steady_n), vet_ncall - nc0, t0[0], t1[0], t0[1]/cl,
-                t0[2]/cl, t0[3]/cl, t1[1]/cl, t1[2]/cl, t1[3]/cl);
+    std::printf("<rad_m1> clean_init steady: %s after %d passes, residual %.3e "
+                "(tol %.1e; %.0f formal solutions); radiation E %.10e -> %.10e, F/c "
+                "%.4e %.4e %.4e -> %.4e %.4e %.4e (volume sums)\n",
+                ok ? "converged" : "NOT converged",
+                std::min(n + 1, cln_steady_n), d, cln_steady_tol, vet_ncall - nc0, t0[0],
+                t1[0], t0[1]/cl, t0[2]/cl, t0[3]/cl, t1[1]/cl, t1[2]/cl, t1[3]/cl);
+  }
+  // a last change that is not small is a diverged start, not an unconverged one
+  if (!(d < 1.0e-2)) {
+    CleanFatal("clean_init steady: the last pass changed E or F/c by " +
+               std::to_string(d) + " of max E (diverged: clean_init_dtfac, _n)");
   }
 }
 
