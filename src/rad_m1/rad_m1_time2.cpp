@@ -2366,6 +2366,33 @@ void RadiationM1::EbndAccept(Real dt, bool t2step) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanSlaveAccept
+//! \brief clean_slave_local: adds the step's withheld momentum (and energy) of every
+//! cell to cln_swh with the weights of the stage slopes as EbndAccept (K1 the last
+//! slope of the step before, K2 of the stage-1 solve, K3 of the last solve), then K1 =
+//! K3.  Called once per accepted cycle (a retried cycle accumulates nothing).
+
+void RadiationM1::CleanSlaveAccept(Real dt, bool t2step) {
+  if (!cln_slave_loc || cln_sws.extent_int(0) == 0) return;
+  const Real g = kT2G;
+  const Real wy = (t2_tab != 1) ? 0.5 : t2_w0;
+  const Real a1 = t2step ? dt*(wy*t2_a21 + t2_c31) : 0.0;
+  const Real a2 = t2step ? dt*(wy*g + t2_c32) : 0.0;
+  const Real a3 = t2step ? dt*g : dt;
+  auto sws = cln_sws;
+  auto swh = cln_swh;
+  const int nmb1 = sws.extent_int(0) - 1;
+  const int nk = sws.extent_int(2), nj = sws.extent_int(3), ni = sws.extent_int(4);
+  par_for("clc_slave_acc", DevExeSpace(), 0, nmb1, 0, nk - 1, 0, nj - 1, 0, ni - 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    for (int n = 0; n < 4; ++n) {
+      swh(m,n,k,j,i) += a1*sws(m,n,k,j,i) + a2*sws(m,4+n,k,j,i) + a3*sws(m,8+n,k,j,i);
+      sws(m,n,k,j,i) = sws(m,8+n,k,j,i);
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn bool RadiationM1::T2EnthBe
 //! \brief open-ot-1013 time2_enth_be: this (non-stage, backward-Euler) solve of a hesdirk2
 //! run builds the enthalpy face a_f with the stage rule (time2_enth_vel = central)

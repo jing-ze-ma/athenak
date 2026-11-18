@@ -579,6 +579,30 @@ Real CleanCellSlave(const CleanArgs &x, const int m, const int k, const int j,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void CleanCellLocalForce
+//! \brief clean_slave_local: the gas momentum change of cell (k,j,i) from its local
+//! interaction with the radiation state (e, y) alone, h [c chi y_b - chi a_b E - beta_b
+//! c (kP a T^4 - kE E)]/c (the source of the y rows of the moment system, eq. 57 of Ma et
+//! al. 2025, at the iterate's T, beta and a = v + D v), without the face fluxes
+
+KOKKOS_INLINE_FUNCTION
+void CleanCellLocalForce(const CleanArgs &x, const Real e, const Real y[3],
+                         const Real arad_, const int m, const int k, const int j,
+                         const int i, Real dm[3]) {
+  const Real chi = x.op(m,M1_OP_T,k,j,i);
+  const Real t = x.w(m,CLW_T,k,j,i);
+  const Real xe = x.h*x.c*(x.op(m,M1_OP_P,k,j,i)*arad_*SQR(SQR(t)) -
+                           x.op(m,M1_OP_E,k,j,i)*e);
+  for (int b = 0; b < 3; ++b) {
+    dm[b] = 0.0;
+    if (b < x.nf) {
+      dm[b] = (x.h*x.c*chi*y[b] - x.h*chi*x.w(m,CLW_A1+b,k,j,i)*e
+               - x.w(m,CLW_BT+b,k,j,i)*xe)/x.c;
+    }
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real CleanCellAdvectN
 //! \brief component along the normal of face (kf,jf,iff) normal to dir of the advective
 //! coefficient a = v + D v of cell (k,j,i) (CLW_A1, in the frame of y)

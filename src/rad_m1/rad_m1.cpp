@@ -361,6 +361,20 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
+    // clean_slave_local (read only when named, default false): in the streaming share s
+    // of a cell the gas takes only the local interaction of the radiation state (h S_p
+    // of the moment system) instead of the cell's full momentum balance; the rest, s
+    // times their difference, is withheld from the gas and accumulated per cell
+    // (cln_swh, in the hydro's components; the W columns of problem/am_hist)
+    if (pin->DoesParameterExist("rad_m1","clean_slave_local")) {
+      cln_slave_loc = pin->GetBoolean("rad_m1","clean_slave_local");
+      if (cln_slave_loc && !cln_slave) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/clean_slave_local needs clean_slave = true"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     {const std::string nn = pin->GetOrAddString("rad_m1","clean_nl_norm","global");
     if (nn.compare("global") != 0 && nn.compare("cell") != 0) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__

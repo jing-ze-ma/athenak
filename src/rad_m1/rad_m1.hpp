@@ -1944,6 +1944,7 @@ class RadiationM1 {
   void EbndStart();
   void EbndStage1();
   void EbndAccept(Real dt, bool t2step);
+  void CleanSlaveAccept(Real dt, bool t2step);
   // pgrst-posfix-1021: an operator positivity fallback (implicit_vimp, offdiag operator,
   // vet_col_lat) of a stage-1 solve marks its E <= 0 cells in t2pm too, and such a stage
   // asks for the local re-solve (the re-solve starts with the full operator again)
@@ -3055,6 +3056,9 @@ class RadiationM1 {
   int cln_tiltrem = 1;          // clean_bracket_rem: none 0 | limit 1 | full 2 | scale 3
   bool cln_curvk = false;       // clean_curv_iterate: curvature terms at the iterate's E
   bool cln_slave = false;       // clean_slave: y = h E in the streaming share
+  bool cln_slave_loc = false;   // clean_slave_local: the gas takes the local force there
+  DvceArray5D<Real> cln_swh;    // its withheld momentum (3) and energy, accumulated
+  DvceArray5D<Real> cln_sws;    // their slopes of the step (K1, K2, K3; 4 each)
   Real cln_ntlim = 0.0;         // faces whose y remainder was limited (this solve)
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
   bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces

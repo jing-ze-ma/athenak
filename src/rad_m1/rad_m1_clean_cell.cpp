@@ -1828,6 +1828,7 @@ Real RadiationM1::CleanCellVelocityUpdate() {
   auto fr = cln_fref;
   auto aref = arad_ref;
 
+  const bool sloc = cln_slave_loc;
   Real dvmax = 0.0, vmax = 0.0, femax = 0.0, fvmax = 0.0;
   // (256 threads per block: more than 128 registers)
   using Rp256 = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
@@ -1851,16 +1852,26 @@ Real RadiationM1::CleanCellVelocityUpdate() {
     const Real re = (ek + adiv[0] + hc*op(m,M1_OP_P,k,j,i)*arad_*
                      SQR(SQR(x.w(m,CLW_T,k,j,i))))/fmax(fabs(e), 1.0e-300);
     fe_max = fmax(fe_max, re);
-    Real v2 = 0.0, p[3];
+    Real v2 = 0.0, p[3], yc[3] = {0.0, 0.0, 0.0}, dl[3] = {0.0, 0.0, 0.0};
     CleanGasMomentum(x, uh, m, k, j, i, p);
+    for (int b = 0; b < x.nf; ++b) {
+      yc[b] = x.u(m,CLC_K+1+b,k,j,i);
+      if (yres == M1_YRES_POST) yc[b] += x.u(m,CLC_R+1+b,k,j,i)/(1.0 + hc*chi);
+      if (yres == M1_YRES_LOCAL) yc[b] += dy(m,b,k,j,i);
+    }
+    // clean_slave_local: the streaming share s takes the local force only
+    Real sl = 0.0;
+    if (sloc) {
+      Real hs[3];
+      sl = CleanCellSlave(x, m, k, j, i, hs);
+      CleanCellLocalForce(x, e, yc, arad_, m, k, j, i, dl);
+    }
     for (int b = 0; b < 3; ++b) {
       Real dm = 0.0;
       if (b < x.nf) {
-        Real y = x.u(m,CLC_K+1+b,k,j,i);
-        if (yres == M1_YRES_POST) y += x.u(m,CLC_R+1+b,k,j,i)/(1.0 + hc*chi);
-        if (yres == M1_YRES_LOCAL) y += dy(m,b,k,j,i);
-        const Real yo = x.u(m,CLC_O+1+b,k,j,i);
+        const Real y = yc[b], yo = x.u(m,CLC_O+1+b,k,j,i);
         dm = -(y - yo + div[1+b])/x.c;
+        if (sloc) dm = (1.0 - sl)*dm + sl*dl[b];
         if (cap || vzero) {
           if (cap) fr(m,b,k,j,i) = dm/x.h;
           dm = 0.0;
@@ -2220,6 +2231,18 @@ void RadiationM1::CleanCellWriteBack() {
     Kokkos::realloc(cln_wbr, nmb1 + 1, 4, u0.extent(2), u0.extent(3), u0.extent(4));
   }
   auto wbr = cln_wbr;
+  // clean_slave_local: the momentum withheld from the gas over h, in the slope slot of
+  // this solve (CleanSlaveAccept: 1 the stage-1 solve, 2 the step's last)
+  const bool sloc = cln_slave_loc && feedback;
+  if (sloc && (cln_sws.extent_int(0) != nmb1 + 1 ||
+               cln_sws.extent_int(2) != u0.extent_int(2) ||
+               cln_sws.extent_int(3) != u0.extent_int(3) ||
+               cln_sws.extent_int(4) != u0.extent_int(4))) {
+    Kokkos::realloc(cln_sws, nmb1 + 1, 12, u0.extent(2), u0.extent(3), u0.extent(4));
+    Kokkos::realloc(cln_swh, nmb1 + 1, 4, u0.extent(2), u0.extent(3), u0.extent(4));
+  }
+  auto sws = cln_sws;
+  const int sslot = 4*((t2_solve == M1_T2S_STAGE1) ? 1 : 2);
   auto flag = [=] KOKKOS_FUNCTION (const int s, const int m, const int k, const int j,
                                    const int i, const Real e, const Real *y) {
     const Real a = std::sqrt(y[0]*y[0] + y[1]*y[1] + y[2]*y[2]);
@@ -2271,9 +2294,27 @@ void RadiationM1::CleanCellWriteBack() {
         for (int b = 0; b < x.nf; ++b) y[b] += dy(m,b,k,j,i);
       }
       if (wbr_on) flag(1, m, k, j, i, e, y);
+      // clean_slave_local: the streaming share s takes the local force only, and s times
+      // the rest of the cell's balance is withheld
+      Real sl = 0.0, dl[3] = {0.0, 0.0, 0.0}, wh[3] = {0.0, 0.0, 0.0};
+      if (sloc && !vzero) {
+        Real hs[3];
+        sl = CleanCellSlave(x, m, k, j, i, hs);
+        CleanCellLocalForce(x, e, y, arad_, m, k, j, i, dl);
+      }
       for (int b = 0; b < x.nf && !vzero; ++b) {
-        dm[b] = -(y[b] - x.u(m,CLC_O+1+b,k,j,i) + div[1+b])/x.c
-                - h*CleanRefForce(fref, fr, aref, uh(m,IDN,k,j,i), b, m, k, j, i);
+        dm[b] = -(y[b] - x.u(m,CLC_O+1+b,k,j,i) + div[1+b])/x.c;
+        if (sloc) {
+          wh[b] = sl*(dm[b] - dl[b]);
+          dm[b] -= wh[b];
+        }
+        dm[b] -= h*CleanRefForce(fref, fr, aref, uh(m,IDN,k,j,i), b, m, k, j, i);
+      }
+      if (sloc) {
+        Real whh[3];
+        CleanGasChange(x, m, k, j, i, wh, whh);
+        for (int b = 0; b < 3; ++b) sws(m,sslot+b,k,j,i) = whh[b]/h;
+        sws(m,sslot+3,k,j,i) = 0.0;
       }
       // (the steady start's force pass: the x1 deposit the gas does not take)
       if (fm) {
