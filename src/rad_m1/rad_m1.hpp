@@ -3243,6 +3243,23 @@ class RadiationM1 {
     std::unique_ptr<MeshBoundaryValuesCC> pb;
   };
   std::map<int, CleanHalo> cln_halo;   // by nc
+  // clean_halo_lists: the ghost exchange as the copies it makes (CleanHaloListsInit):
+  // per neighbour rank one message of the cells it sends (sm, sc) and receives (gm, gc),
+  // staged in pinned host memory; the copies within the rank (lm, lc -> dm, dc)
+  struct CleanHaloLists {
+    int state = 0;              // 0 not built, 1 in use, -1 the exchange of CleanHalo
+    int nmb = 0, n3 = 0, n2 = 0, n1 = 0;
+    int nsend = 0, nrecv = 0, nloc = 0;
+    bool unpack = false;        // an unpack kernel may still read gh
+    std::vector<int> rank, soff, slen, goff, glen;
+    DvceArray1D<int> sm, sc, ss, gm, gc, gs, segs, lm, lc, dm, dc;
+    Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> sh, gh;
+  };
+  CleanHaloLists cln_hls;
+  bool cln_hlists = false;      // clean_halo_lists
+  void CleanHaloListsInit(const int n3, const int n2, const int n1);
+  template <typename T, bool L>
+  void CleanHaloListsExchange(DvceArray5D<T> a, const int c0, const int nc);
   DvceArray1D<char> cln_xdev;   // device copies of kernel arguments (CleanDevCopy)
   DvceArray5D<Real> cln_hbuf;   // the storage of every scratch array (32 components)
   Real cln_nsolve = 0.0, cln_nit = 0.0, cln_nfail = 0.0, cln_nneg = 0.0;
