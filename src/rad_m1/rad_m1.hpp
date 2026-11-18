@@ -1192,7 +1192,7 @@ class RadiationM1 {
   // as the run would
   int FaxRstNslab() const {
     const int nd = trans_on ? (trans_x3 ? 3 : 2) : 1;
-    const int np = (t2_pfst && t2pf1_ok && t2pf1.extent_int(0) > 0) ? 2*nd : 0;
+    const int np = (t2_pfst && t2pf1_ok && t2pf1.extent_int(0) > 0) ? nd : 0;
     if (!impl_hr_cmem || !impl_cm_rst || fax1.extent_int(0) == 0) {return np;}
     return 2 + ((fax2.extent_int(0) > 0) ? 2 : 0) + ((fax3.extent_int(0) > 0) ? 2 : 0) +
            np;
@@ -2244,6 +2244,8 @@ class RadiationM1 {
                                 // t2_nfv, t2_rstd3)
   int t2_nfv = 0;               // conservative-ray intensity channels of the file
   bool t2_rstd3 = false;        // a version-1 file: the fkin block is d only (no K1_d)
+  bool t2_rst3 = false;         // a clean file of version <= 3: zero predictor / extrap2
+                                // channels, the ring in CLN_N ghosted slabs per record
   void Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0 = 0);
   // gpumem-1022 <rad_m1>/restart_pack_per_mb (read only when named; default true since
   // memcut-1113, was false): the restart writer stages the hesdirk2 channels one
@@ -3040,6 +3042,9 @@ class RadiationM1 {
                  const Real w0);
   void CleanDtrD(const bool save);   // dt_retry: d to / from cln_rstd
   int CleanRingFields(int *fm) const;   // clean_rot_ring: the offsets' fields
+  int CleanRingRstN() const;            // ... in the restart files (version 4)
+  void CleanRingRstCopy(DvceArray5D<Real> &a, const int c, const int nmb, const int m0,
+                        const bool pk, const bool have);
   // closure components in the restart files of the extrap history and clean_rot_ring:
   // push 16's order (CleanRstSlot); the cell layout keeps its first CLN_N - 1, CLN_JR is
   // staggered only

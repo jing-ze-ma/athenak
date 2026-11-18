@@ -970,6 +970,62 @@ int RadiationM1::CleanRingFields(int *fm) const {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn RadiationM1::CleanRingRst*
+//! \brief clean_rot_ring in the restart files (version 4): the offsets cln_rr, then the
+//! Delta cln_rpd, of the fields the ring carries on the interior cells, in their own
+//! layout flat per MeshBlock, dense in CleanRingRstN() ghosted slabs (the rest of the
+//! last one 0).  CleanRingRstCopy packs (pk; 0 without have) or unpacks the slabs c ..
+//! c + CleanRingRstN() - 1 of a (c < 0: a's channel 0 is slab -c) of MeshBlocks m0 ..
+
+int RadiationM1::CleanRingRstN() const {
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  int fm[CLN_N];
+  const int64_t nv = static_cast<int64_t>(vra_k)*CleanRingFields(fm)*id.nx1*id.nx2*
+                     id.nx3;
+  const int64_t ns = static_cast<int64_t>(id.nx1 + 2*id.ng)*
+                     ((id.nx2 > 1) ? id.nx2 + 2*id.ng : 1)*
+                     ((id.nx3 > 1) ? id.nx3 + 2*id.ng : 1);
+  return static_cast<int>((nv + ns - 1)/ns);
+}
+
+void RadiationM1::CleanRingRstCopy(DvceArray5D<Real> &a, const int c, const int nmb,
+                                   const int m0, const bool pk, const bool have) {
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  int fm[CLN_N];
+  const int nf = CleanRingFields(fm);
+  if (!pk) {   // (the writers of cln_rr bump vra_gen, DtRetry)
+    vra_gen += 1;
+    if (cln_rr.extent_int(0) != nmb) {
+      Kokkos::realloc(cln_rr, nmb, (vra_k - 1)*nf, id.nx3, id.nx2, id.nx1);
+      Kokkos::realloc(cln_rpd, nmb, nf, id.nx3, id.nx2, id.nx1);
+    }
+  }
+  const int64_t ni = static_cast<int64_t>(id.nx1)*id.nx2*id.nx3;
+  const int64_t nr = (vra_k - 1)*nf*ni, nd = nr + nf*ni;
+  const int64_t ns = static_cast<int64_t>(a.extent(2))*a.extent(3)*a.extent(4);
+  const int64_t q0 = std::max(c, 0) - c, q1 = std::min<int64_t>(c + CleanRingRstN(),
+                                                                 a.extent(1)) - c;
+  if (q1 <= q0) return;
+  const int64_t nq = (q1 - q0)*ns, sa = a.stride(0);
+  Real *pa = a.data();
+  Real *pr = (have && cln_rr.extent_int(0) >= m0 + nmb) ? cln_rr.data() : nullptr;
+  Real *pd = (pr != nullptr) ? cln_rpd.data() : nullptr;
+  Kokkos::parallel_for("m1_ring_rst",
+  Kokkos::RangePolicy<DevExeSpace, Kokkos::IndexType<int64_t>>(DevExeSpace(), 0, nmb*nq),
+  KOKKOS_LAMBDA(const int64_t p) {
+    const int64_t m = p/nq, q = q0*ns + p - m*nq;
+    Real *x = pa + m*sa + c*ns + q;
+    Real *y = (pr == nullptr || q >= nd) ? nullptr :
+              ((q < nr) ? pr + (m + m0)*nr + q : pd + (m + m0)*(nd - nr) + q - nr);
+    if (pk) {
+      *x = (y != nullptr) ? *y : 0.0;
+    } else if (y != nullptr) {
+      *y = *x;
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanRingMoments
 //! \brief clean_rot_ring: the closure of the rotating union of vet_rotate_avg = K sets
 //! with the cross-fade from a sweep of the current set b and the next set b+1 alone.

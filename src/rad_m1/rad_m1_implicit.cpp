@@ -23236,15 +23236,14 @@ void RadiationM1::ImplicitConsResid(bool bicg, bool trans) {
 void RadiationM1::FaxRstPack(DvceArray5D<Real> out, int nmb) {
   const int n3 = out.extent_int(2), n2 = out.extent_int(3), n1 = out.extent_int(4);
   const int nd = trans_on ? (trans_x3 ? 3 : 2) : 1;
-  const int s0 = FaxRstNslab() - ((t2_pfst && t2pf1_ok) ? 2*nd : 0);
-  if (s0 < FaxRstNslab()) {   // (time2_face_fct: t2pf1 behind the fax slabs; the
-    auto pf = t2pf1;           //  slabs include the ghosts, so every face a solve
-    par_for("pf_rst_pack", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,  // set)
+  const int s0 = FaxRstNslab() - ((t2_pfst && t2pf1_ok) ? nd : 0);
+  // (time2_face_fct: t2pf1 behind the fax slabs, one per direction, files before two,
+  // the second 0; the slabs include the ghosts, so every face a solve set)
+  if (s0 < FaxRstNslab()) {
+    auto pf = t2pf1;
+    par_for("pf_rst_pack", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      for (int d = 0; d < nd; ++d) {
-        out(m,s0+2*d,k,j,i) = pf(m,d,k,j,i);
-        out(m,s0+2*d+1,k,j,i) = 0.0;
-      }
+      for (int d = 0; d < nd; ++d) out(m,s0+d,k,j,i) = pf(m,d,k,j,i);
     });
   }
   if (s0 == 0) {return;}
@@ -23274,11 +23273,12 @@ bool RadiationM1::FaxRstUnpack(DvceArray5D<Real> in, int nmb, int nsl) {
   const bool cm = impl_hr_cmem && fax1.extent_int(0) >= nmb;
   const int na = cm ? 2 + ((fax2.extent_int(0) > 0) ? 2 : 0) +
                       ((fax3.extent_int(0) > 0) ? 2 : 0) : 0;
-  if (t2_pfst && t2pf1.extent_int(0) >= nmb && nsl == na + 2*nd) {
+  if (t2_pfst && t2pf1.extent_int(0) >= nmb && (nsl == na + nd || nsl == na + 2*nd)) {
     auto pf = t2pf1;
+    const int st = (nsl == na + nd) ? 1 : 2;
     par_for("pf_rst_unpack", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      for (int d = 0; d < nd; ++d) pf(m,d,k,j,i) = in(m,na+2*d,k,j,i);
+      for (int d = 0; d < nd; ++d) pf(m,d,k,j,i) = in(m,na+st*d,k,j,i);
     });
     t2pf1_ok = true;
     nsl = na;
