@@ -3030,7 +3030,7 @@ void RadiationM1::CleanClosureFromGd(const int i0, const int i1) {
       });
     });
   }
-  CleanFor("cln_gd", nmb1, ks, ke, js, je, is, ie,
+  CleanForK("cln_gd", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px;
     const Real st = sin(x2v(m,j)), ct = cos(x2v(m,j));
@@ -3329,7 +3329,7 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   for (int dir = 1; dir < 3; ++dir) {
     const int nf = (dir == 1) ? CLN_F2 : CLN_F3;
     if ((!x.sph && dir >= x.nf) || (pk && !one)) continue;
-    CleanFor("cln_gd_lat", nmb1, ks, ke, js, je, one ? s0 : is,
+    CleanForK("cln_gd_lat", nmb1, ks, ke, js, je, one ? s0 : is,
             one ? s1 : ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const CleanArgs &x = *px;
@@ -3432,7 +3432,7 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   if (!pk) Kokkos::deep_copy(DevExeSpace(), rf, 0.0);   // (the zeros of a fresh one)
   if (pk && !one) cln_gdrf = DvceArray5D<Real>();
   if (rr && (one || !pk)) {
-    CleanFor("cln_gd_rf", nmb1, ks, ke, js, je, one ? s0 : is,
+    CleanForK("cln_gd_rf", nmb1, ks, ke, js, je, one ? s0 : is,
             one ? ((s1 == ie) ? ie + 1 : s1) : ie + 1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real q[4];
