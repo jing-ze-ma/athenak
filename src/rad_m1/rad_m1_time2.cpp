@@ -1522,6 +1522,15 @@ void RadiationM1::Time2IncKeCap(int stage) {
                    aminc.extent_int(1) == t2inc.extent_int(2) &&
                    aminc.extent_int(2) == t2inc.extent_int(3) &&
                    aminc.extent_int(3) == t2inc.extent_int(4);
+  // (clean staggered: the momentum (1 - s) t2inc_m not applied goes to the radiation's
+  // face F of the stage's old vector below, so that gas + radiation momentum is kept)
+  const bool kcf = clean && !cln_cell;
+  if (kcf && t2kc_dp.extent_int(0) != nmb1 + 1) {
+    Kokkos::realloc(t2kc_dp, nmb1 + 1, 3, ug.extent_int(2), ug.extent_int(3),
+                    ug.extent_int(4));
+  }
+  if (kcf) Kokkos::deep_copy(t2kc_dp, 0.0);
+  auto kdp = t2kc_dp;
   Real nf = 0.0, nu = 0.0, nh = 0.0, dk = 0.0, dp = 0.0;
   Kokkos::parallel_reduce("m1_t2_inckc", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
       DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
@@ -1576,6 +1585,11 @@ void RadiationM1::Time2IncKeCap(int stage) {
     in_(m,M1_T2_M1+1,k,j,i) = s*d2;
     in_(m,M1_T2_M1+2,k,j,i) = s*d3;
     if (amz) {ai_(m,k,j,i) *= s;}
+    if (kcf) {
+      kdp(m,0,k,j,i) = (1.0 - s)*d1;
+      kdp(m,1,k,j,i) = (1.0 - s)*d2;
+      kdp(m,2,k,j,i) = (1.0 - s)*d3;
+    }
     sf += 1.0;
     const Real vv = hvol ? cvol(m,k,j,i) : 1.0;
     sk += (f1 - (aa*s + bb)*s)*vv;
@@ -1589,6 +1603,51 @@ void RadiationM1::Time2IncKeCap(int stage) {
     nf = g[0]; nu = g[1]; nh = g[2]; dk = g[3]; dp = g[4];
   }
 #endif
+  // (each cell's momentum V (1 - s) t2inc_m along the face family n to the radiation
+  // momentum V_f F_f/c^2 of its faces, V_f = (V_L + V_R)/2 (CleanMomentumChange), half to
+  // each face, all to the inner one where the other is a MeshBlock face (no ghost data:
+  // both blocks of a shared face add nothing to it); the cubed sphere its Cartesian vector
+  // along the face normal)
+  if (kcf && nf > 0.0) {
+    CleanArgs x = CleanMakeArgs();
+    CLEAN_HIPX(const CleanArgs *px = CleanDevArgs(x, 0);)
+    const int ilo[3] = {is, js, ks}, ihi[3] = {ie, je, ke};
+    for (int n = 0; n < x.nf; ++n) {
+      const int di = (n == 0), dj = (n == 1), dk = (n == 2);
+      if (ihi[n] == ilo[n]) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/time2_inc_kecap with scheme = clean needs >= 2 "
+                  << "cells per MeshBlock along each active direction" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      const int lo = ilo[n], hi = ihi[n];
+      par_for("m1_t2_inckc_f", DevExeSpace(), 0, nmb1, ks + dk, ke, js + dj, je, is + di,
+              ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        CLEAN_HIPX(const CleanArgs &x = *px;)
+        const int f = (n == 0) ? i : ((n == 1) ? j : k);   // (the face between f-1, f)
+        // (a cell's share of a face: half, all where its other face is a block face)
+        const Real al = (f - 1 == lo) ? 1.0 : 0.5, ar = (f == hi) ? 1.0 : 0.5;
+        auto pn = [&](const int kk, const int jj, const int ii) {
+          Real p[3] = {kdp(m,0,kk,jj,ii), kdp(m,1,kk,jj,ii), kdp(m,2,kk,jj,ii)};
+          if (!x.cub) return p[n];
+          // (the hydro's m_r and covariant panel components, CleanGasMomentum)
+          Real c = 0.0, v = 0.0;
+          for (int b = 0; b < 3; ++b) c += x.g(m,CLG_E+b,kk,jj,ii)*x.g(m,CLG_E+3+b,kk,jj,ii);
+          const Real u1 = (p[1] - c*p[2])/(1.0 - c*c), u2 = (p[2] - c*p[1])/(1.0 - c*c);
+          for (int b = 0; b < 3; ++b) {
+            v += x.g(m,CLG_N+3*n+b,k,j,i)*(p[0]*x.g(m,CLG_R+b,kk,jj,ii) +
+                 u1*x.g(m,CLG_E+b,kk,jj,ii) + u2*x.g(m,CLG_E+3+b,kk,jj,ii));
+          }
+          return v;
+        };
+        const bool cv = x.sph || x.cub;   // (Cartesian: uniform cells)
+        const Real vl = cv ? x.vol(m,k-dk,j-dj,i-di) : 1.0, vr = cv ? x.vol(m,k,j,i) : 1.0;
+        in_(m,M1_T2_F1+n,k,j,i) += 2.0*x.c*x.c*(al*vl*pn(k-dk,j-dj,i-di) +
+                                                 ar*vr*pn(k,j,i))/(vl + vr);
+      });
+    }
+  }
   t2_inckc_n += nf;
   t2_inckc_un += nu;
   t2_inckc_hn += nh;
