@@ -221,7 +221,6 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/implicit_maxit", nullptr},   // (clean_maxnl's default, rad_m1.cpp)
     {"rad_m1/implicit_fb_local*", nullptr},   // (staggered: CleanFbLocal)
     {"rad_m1/implicit_tol_rel_max", nullptr},   // (clean_conv_max's default)
-    {"rad_m1/implicit_lin_ew_max", nullptr},   // (clean_lin_ew_max's default)
     {"rad_m1/implicit_lin_maxit", nullptr},   // (clean_maxit's default, rad_m1.cpp)
     {"rad_m1/implicit_recon", "clean_recon"},
     {"rad_m1/implicit_closure_lag", "clean_closure"},
