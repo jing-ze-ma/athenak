@@ -487,9 +487,8 @@ void RadiationM1::CleanHaloListsInit(const int n3, const int n2, const int n1) {
   hl.lc = CleanHaloList("cln_hl_lc", lc);
   hl.dm = CleanHaloList("cln_hl_dm", dm);
   hl.dc = CleanHaloList("cln_hl_dc", dc);
-  using PinnedReal = Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace>;
-  hl.sh = PinnedReal("cln_hl_sh", std::max(hl.nsend, 1)*cln_hmax);
-  hl.gh = PinnedReal("cln_hl_gh", std::max(hl.nrecv, 1)*cln_hmax);
+  hl.sh = DvceArray1D<Real>("cln_hl_sh", std::max(hl.nsend, 1)*cln_hmax);
+  hl.gh = DvceArray1D<Real>("cln_hl_gh", std::max(hl.nrecv, 1)*cln_hmax);
 #if MPI_PARALLEL_ENABLED
   if (clean_hl_comm == MPI_COMM_NULL) MPI_Comm_dup(MPI_COMM_WORLD, &clean_hl_comm);
 #endif
@@ -509,7 +508,7 @@ void RadiationM1::CleanHaloListsInit(const int n3, const int n2, const int n1) {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanHaloListsExchange
 //! \brief clean_halo_lists: the ghosts of components [c0, c0+nc) of a from the lists of
-//! CleanHaloListsInit.  Receives posted, the pack kernel into the pinned send buffer
+//! CleanHaloListsInit.  Receives posted, the pack kernel into the send buffer
 //! and the copies within the rank, the sends once the pack is done, the unpack kernel
 //! once every message is in.  Per neighbour rank the buffer is component major: entry
 //! e of component n at off nc + n len + (e - off).

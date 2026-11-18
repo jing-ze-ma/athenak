@@ -3245,7 +3245,8 @@ class RadiationM1 {
   std::map<int, CleanHalo> cln_halo;   // by nc
   // clean_halo_lists: the ghost exchange as the copies it makes (CleanHaloListsInit):
   // per neighbour rank one message of the cells it sends (sm, sc) and receives (gm, gc),
-  // staged in pinned host memory; the copies within the rank (lm, lc -> dm, dc)
+  // in device buffers as the boundary values pass them; the copies within the rank
+  // (lm, lc -> dm, dc)
   struct CleanHaloLists {
     int state = 0;              // 0 not built, 1 in use, -1 the exchange of CleanHalo
     int nmb = 0, n3 = 0, n2 = 0, n1 = 0;
@@ -3253,7 +3254,7 @@ class RadiationM1 {
     bool unpack = false;        // an unpack kernel may still read gh
     std::vector<int> rank, soff, slen, goff, glen;
     DvceArray1D<int> sm, sc, ss, gm, gc, gs, segs, lm, lc, dm, dc;
-    Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> sh, gh;
+    DvceArray1D<Real> sh, gh;
   };
   CleanHaloLists cln_hls;
   bool cln_hlists = false;      // clean_halo_lists
