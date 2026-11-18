@@ -458,7 +458,7 @@ void VgdCand(const int m, const int k, const int j, const int d, const int i, co
              const int jlo, const int jhi, const int klo, const int khi, const TD &dir_,
              const TB &mbsize, const VgdLG &lg_, const TX &cx1v, const TF &cx1f,
              const bool sth,
-             const bool pol, const TT &tn, const int c2w, const FN &f) {
+             const bool pol, const TT &tn, const int c2w, const bool imir, const FN &f) {
   if (inw && l == n1 - 1) {return;}          // the top shell reads no intensity
   const Real twopi = 2.0*M_PI;
   const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
@@ -470,7 +470,7 @@ void VgdCand(const int m, const int k, const int j, const int d, const int i, co
   const Real r = cx1v(m,i);
   const Real zr = r*fabs(mr);
   const Real p2 = fmax(r*r - zr*zr, 0.0);
-  auto box = [&](const int iu, const Real ds) {
+  auto box = [&](const int iu, const Real ds, const int dq) {
     const Real xu = r*st*cp - ds*nx;
     const Real yu = r*st*sp - ds*ny;
     const Real zu = r*ct - ds*nz;
@@ -489,20 +489,44 @@ void VgdCand(const int m, const int k, const int j, const int d, const int i, co
     jb = (jb < jlo) ? jlo : ((jb > jhi) ? jhi : jb);
     ka = (ka < klo) ? klo : ((ka > khi) ? khi : ka);
     kb = (kb < klo) ? klo : ((kb > khi) ? khi : kb);
-    f(iu, ka, kb + 1, ja, jb + 1);
+    f(iu, ka, kb + 1, ja, jb + 1, dq);
   };
   if (inw) {
     const Real ru = cx1v(m,i+1);
-    box(i + 1, sqrt(fmax(ru*ru - p2, 0.0)) - zr);
+    box(i + 1, sqrt(fmax(ru*ru - p2, 0.0)) - zr, d);
     return;
   }
   const Real rd = (l > lcut) ? cx1v(m,i-1) : cx1f(m,i);
   const Real t2 = rd*rd, tol = 1.0e-9*t2;
   if (l > lcut) {
-    if (p2 <= t2*(1.0 + 1.0e-13) + tol) {box(i - 1, zr - sqrt(fmax(t2 - p2, 0.0)));}
-    if (p2 > t2*(1.0 + 1.0e-13) - tol) {box(i, 2.0*zr);}
+    if (p2 <= t2*(1.0 + 1.0e-13) + tol) {box(i - 1, zr - sqrt(fmax(t2 - p2, 0.0)), d);}
+    if (p2 > t2*(1.0 + 1.0e-13) - tol) {box(i, 2.0*zr, d);}
   } else if (p2 > t2 - tol) {
-    box(i, 2.0*zr);                         // a turned ray (the inner face reads none)
+    box(i, 2.0*zr, d);                      // a turned ray
+  }
+  // a reflecting inner face (scheme = clean, the sweep's typ 2 imir): the first shell's
+  // inward intensity at the face point in the specular image direction (the nearest
+  // inward set direction; every direction within 1e-9 of it: robust to rounding)
+  if (imir && l == lcut && p2 <= t2*(1.0 + 1.0e-13) + tol) {
+    const Real ds = zr - sqrt(fmax(t2 - p2, 0.0));
+    const Real xu = r*st*cp - ds*nx, yu = r*st*sp - ds*ny, zu = r*ct - ds*nz;
+    const Real ru = sqrt(xu*xu + yu*yu + zu*zu);
+    const Real ux = xu/ru, uy = yu/ru, uz = zu/ru;
+    const Real mu = nx*ux + ny*uy + nz*uz;
+    const int nd = static_cast<int>(dir_.extent(0));
+    Real best = -2.0;
+    for (int pass = 0; pass < 2; ++pass) {
+      for (int q = 0; q < nd; ++q) {
+        const Real c = dir_(q,0)*(nx - 2.0*mu*ux) + dir_(q,1)*(ny - 2.0*mu*uy) +
+                       dir_(q,2)*(nz - 2.0*mu*uz);
+        if (dir_(q,0)*ux + dir_(q,1)*uy + dir_(q,2)*uz >= 0.0) {continue;}
+        if (pass == 0) {
+          best = fmax(best, c);
+        } else if (c >= best - 1.0e-9) {
+          box(i, ds, q);
+        }
+      }
+    }
   }
 }
 
@@ -5078,6 +5102,7 @@ void RadiationM1::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
   const int n1 = indcs.nx1, is = indcs.is;
   const int n1c = indcs.nx1 + 2*indcs.ng;
   const int lcut = vgd_scut;
+  const bool imir_ = clean && (ibc_x1min == M1_IBC_REFLECT) && !vgd_rbon && lcut == 0;
   const int wb = w;
   const int js = wb, je = wb + nx2 - 1, ks = wb, ke = wb + nx3 - 1;
   const int jlo = 0, jhi = je + wb - 1, klo = 0, khi = ke + wb - 1;
@@ -5241,8 +5266,9 @@ void RadiationM1::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
           const int k = ks + t/nj;
           const int j = js + (t % nj);
           VgdCand(m, k, j, d, ir, lr, inwr, n1, lcut, js, ks, jlo, jhi, klo, khi, dir_,
-                  mbsize, lg_, cx1v, cx1f, sth_, pol_, thn_, c2w_,
-          [&](const int iu, const int ka, const int kb, const int ja, const int jb) {
+                  mbsize, lg_, cx1v, cx1f, sth_, pol_, thn_, c2w_, imir_,
+          [&](const int iu, const int ka, const int kb, const int ja, const int jb,
+              const int dr) {
             if (iu != i) {return;}
             for (int kk = ka; kk <= kb; ++kk) {
               for (int jj = ja; jj <= jb; ++jj) {
@@ -5261,9 +5287,9 @@ void RadiationM1::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
                     const int jm = (wf == 4) ? (hi ? (wb + nx2b - 1) : wb)
                                              : VgdMirRow(g, hi, wb, nx2b);
                     for (int t = 0; t < ((wint && wf == 2) ? 3 : 1); ++t) {
-                      if (t > 0 && w3_(m,kk,jj,d,t) == 0.0) {continue;}
-                      const int dq = (wf == 4) ? d : (wint ? m3_(m,kk,jj,d,t)
-                                                           : mp_(m,kk,jj,d));
+                      if (t > 0 && w3_(m,kk,jj,dr,t) == 0.0) {continue;}
+                      const int dq = (wf == 4) ? dr : (wint ? m3_(m,kk,jj,dr,t)
+                                                           : mp_(m,kk,jj,dr));
                       mk_(((m*n + dq)*c3 + kk)*c2 + jm) = stamp;
                     }
                     if (kk < wb - wsx || kk >= wb + nx3b + wsx) {
@@ -5274,7 +5300,7 @@ void RadiationM1::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
                 }
                 const int oo = 3*(ek + 1) + (ej + 1);
                 if (hl_(8*m + ((oo < 4) ? oo : (oo - 1))) >= 0) {continue;}
-                mk_(((m*n + d)*c3 + kk)*c2 + jj) = stamp;
+                mk_(((m*n + dr)*c3 + kk)*c2 + jj) = stamp;
                 if (jj < wb - wsx || jj >= wb + nx2b + wsx || kk < wb - wsx ||
                     kk >= wb + nx3b + wsx) {
                   Kokkos::atomic_add(&ocv_(so), 1);
@@ -6899,8 +6925,9 @@ void RadiationM1::VetGdSweep() {
           const int i = is + l;
           const int ip = inw ? (i + 1) : (i - 1);   // the previous shell of the pass
           VgdCand(m, k, j, d, i, l, inw, n1, lcut, js, ks, jlo, jhi, klo, khi, dir_,
-                  mbsize, lg_, cx1v, cx1f, sth_, pol_, thn_, c2w_,
-          [&](const int iu, const int ka, const int kb, const int ja, const int jb) {
+                  mbsize, lg_, cx1v, cx1f, sth_, pol_, thn_, c2w_, imir,
+          [&](const int iu, const int ka, const int kb, const int ja, const int jb,
+              const int dr) {
             if (iu != ip) {return;}
             for (int kk = ka; kk <= kb; ++kk) {
               for (int jj = ja; jj <= jb; ++jj) {
@@ -6982,8 +7009,9 @@ void RadiationM1::VetGdSweep() {
           const int k = ks + t/nj;
           const int j = js + (t % nj);
           VgdCand(m, k, j, d, ir, lr, inwr, n1, lcut, js, ks, jlo, jhi, klo, khi, dir_,
-                  mbsize, lg_, cx1v, cx1f, sth_, pol_, thn_, c2w_,
-          [&](const int iu, const int ka, const int kb, const int ja, const int jb) {
+                  mbsize, lg_, cx1v, cx1f, sth_, pol_, thn_, c2w_, imir,
+          [&](const int iu, const int ka, const int kb, const int ja, const int jb,
+              const int dr) {
             if (iu != i) {return;}
             for (int kk = ka; kk <= kb; ++kk) {
               for (int jj = ja; jj <= jb; ++jj) {
@@ -7002,9 +7030,9 @@ void RadiationM1::VetGdSweep() {
                     const int jm = (wf == 4) ? (hi ? (wb + nx2b - 1) : wb)
                                              : VgdMirRow(g, hi, wb, nx2b);
                     for (int t = 0; t < ((wint && wf == 2) ? 3 : 1); ++t) {
-                      if (t > 0 && w3_(m,kk,jj,d,t) == 0.0) {continue;}
-                      const int dq = (wf == 4) ? d : (wint ? m3_(m,kk,jj,d,t)
-                                                           : mp_(m,kk,jj,d));
+                      if (t > 0 && w3_(m,kk,jj,dr,t) == 0.0) {continue;}
+                      const int dq = (wf == 4) ? dr : (wint ? m3_(m,kk,jj,dr,t)
+                                                           : mp_(m,kk,jj,dr));
                       mk_(((m*n + dq)*c3b + kk)*c2b + jm) = stamp;
                     }
                     if (kk < wb - wsx || kk >= wb + nx3b + wsx) {
@@ -7015,7 +7043,7 @@ void RadiationM1::VetGdSweep() {
                 }
                 const int oo = 3*(ek + 1) + (ej + 1);
                 if (hl_(8*m + ((oo < 4) ? oo : (oo - 1))) >= 0) {continue;}
-                mk_(((m*n + d)*c3b + kk)*c2b + jj) = stamp;
+                mk_(((m*n + dr)*c3b + kk)*c2b + jj) = stamp;
                 if (jj < wb - wsx || jj >= wb + nx2b + wsx || kk < wb - wsx ||
                     kk >= wb + nx3b + wsx) {
                   Kokkos::atomic_add(&oc_(), 1);
