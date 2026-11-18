@@ -1023,6 +1023,11 @@ void RadiationM1::CleanRingMoments() {
   auto dfull = cln_fvd;
   const Real ray_min = cln_raymin;
   cln_raymin = 0.0;
+  // (clean_ring_jmin: the J ratios of the offsets and the Delta only where both sets'
+  // J >= clean_ray_min E: at a fresh start's ring fill a set can see a source hole, J ~
+  // 1e-200 in all sets, and J_s/J_b ~ 1e50 there came back times the next build's J)
+  const Real jmin = cln_ringjmin ? ray_min : 0.0;
+  auto iwr = iw;
   auto cs = cln_s;
   auto rl = cln_rl;
   auto rr = cln_rr;
@@ -1094,13 +1099,14 @@ void RadiationM1::CleanRingMoments() {
       KOKKOS_LAMBDA(const int m, const int k0, const int j0, const int i0) {
         const int k = k0 - ks, j = j0 - js, i = i0 - is;
         const Real jb = rl(m,qb*nf+fm[int{CLN_J}],k,j,i);
+        const Real jm = jmin*iwr(m,M1_IW_EN,k0,j0,i0);
         for (int r = 0; r < nr; ++r) {
           for (int n = 0; n < CLN_N; ++n) {
             const int f = fm[n];
             if (f < 0) continue;
             const Real o = rr(m,r*nf+f,k,j,i);
             rr(m,r*nf+f,k,j,i) = (n != CLN_J) ? o - rl(m,qb*nf+f,k,j,i) :
-                                 ((jb > 0.0) ? o/jb : -1.0);
+                                 ((jb > 0.0 && jb >= jm && o >= jm) ? o/jb : -1.0);
           }
         }
       });
@@ -1121,11 +1127,12 @@ void RadiationM1::CleanRingMoments() {
       const int k = k0 - ks, j = j0 - js, i = i0 - is;
       const int fj = fm[int{CLN_J}];
       const Real jb = rl(m,qb*nf+fj,k,j,i), jn = rl(m,qn*nf+fj,k,j,i);
+      const Real jm = jmin*iwr(m,M1_IW_EN,k0,j0,i0);
       for (int n = 0; n < CLN_N; ++n) {
         const int f = fm[n];
         if (f < 0) continue;
         pd(m,f,k,j,i) = (n != CLN_J) ? rl(m,qn*nf+f,k,j,i) - rl(m,qb*nf+f,k,j,i) :
-                            ((jb > 0.0) ? jn/jb : -1.0);
+                            ((jb > 0.0 && jb >= jm && jn >= jm) ? jn/jb : -1.0);
       }
     });
     cln_rpb = b;

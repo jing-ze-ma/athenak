@@ -290,6 +290,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // the comoving part of sb at most 2 |beta| hc kE E_k and the faces of a restart from
     // the old scheme's file at most c E of their donor
     cln_freal = stag("clean_stag_freal", cln_gflux && cln_fsolve);
+    // clean_stag_rayratio (default off): the bracket reads the rays only as ratios (their
+    // face flux over the donor's ray J, the model flux of E), times the state's E
+    cln_rayratio = stag("clean_stag_rayratio", false) && cln_gflux;
+    // clean_ring_jmin (default on): a clean_rot_ring J ratio J_s/J_b is measured only where
+    // both sets' J are at least clean_ray_min E (a ratio of two ray-shadowed J is no ray
+    // pattern); elsewhere the offset is invalid (left out of the mix)
+    cln_ringjmin = pin->GetOrAddBoolean("rad_m1","clean_ring_jmin",true);
     if (cln_freal && !(cln_gflux && cln_fsolve)) {
       std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_freal needs clean_layout = "
                 << "staggered with clean_consistency (the F solve and gflux)" << std::endl;

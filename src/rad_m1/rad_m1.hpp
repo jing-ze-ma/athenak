@@ -3167,6 +3167,8 @@ class RadiationM1 {
   int cln_maxpic = 12;          // clean_maxpic: passes that update the lagged slopes
   bool cln_poslim = true;       // clean_pos_limit: a-posteriori low-order face limiter
   bool cln_gflux = false;       // clean_stag_gflux: rays' face flux as flux factors
+  bool cln_rayratio = false;    // clean_stag_rayratio: the bracket of ray ratios x E
+  bool cln_ringjmin = true;     // clean_ring_jmin: ring J ratios only of ray-held cells
   bool cln_freal = false;       // clean_stag_freal: realisable sb, restart faces
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
   bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces

@@ -2176,6 +2176,11 @@ int RadiationM1::CleanStagRealizable() {
 //! past the two cells), and the cap there breaks the consistency of the beam.
 //! On the cubed sphere the high x2, x3 faces of a MeshBlock take the rays' flux from its
 //! last cell (CLN_FH; a seam ghost's low face is another face), as CleanCellConsistency.
+//! clean_stag_rayratio (the old production's form: the rays enter only as ratios times
+//! the state's E): J -> E in Phi and in the half ranges, and F_ray -> (F_ray/J_d) E_d of
+//! the face's donor d (the upwind cell of F_ray; none where J_d <= e_floor: no bracket).
+//! The same for E = J; a ray set off the state's scale (a source hole, a lagged ring
+//! ratio) cannot reach the operator.
 
 void RadiationM1::CleanStagBracket() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -2187,9 +2192,11 @@ void RadiationM1::CleanStagBracket() {
   x.consist = false;
   x.feedback = false;   // (the gas terms read the last iterate's work vectors)
   const Real efl = e_floor;
+  const bool rat = cln_rayratio;
+  auto iw_ = iw;
   par_for("cln_rayj", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    x.w(m,CLW_Z,k,j,i) = x.cs(m,CLN_J,k,j,i);
+    x.w(m,CLW_Z,k,j,i) = rat ? iw_(m,M1_IW_EN,k,j,i) : x.cs(m,CLN_J,k,j,i);
   });
   CleanGhostFill(cln_w, CLW_Z, 1);
   CleanStagCsLateral(CLW_Z);
@@ -2221,12 +2228,17 @@ void RadiationM1::CleanStagBracket() {
           gl*x.w(m,CLW_Z,k-dk,j-dj,i-di) + gr*x.w(m,CLW_Z,k,j,i);
       // (cubed sphere: the high x2, x3 face of a MeshBlock from its last cell, CLN_FH)
       const bool up = x.cub && dir > 0 && (j > x.je || k > x.ke);
-      const Real fy = up ? x.cs(m,CLN_FH+4*(dir-1),k-dk,j-dj,i-di) : x.cs(m,n,k,j,i);
+      const Real fr0 = up ? x.cs(m,CLN_FH+4*(dir-1),k-dk,j-dj,i-di) : x.cs(m,n,k,j,i);
       const bool bf = CleanBoundaryFace(x, dir, m, k, j, i);
       if (bf) return;
       // (the rays' J also where it is below clean_ray_min E: their face flux passes
-      // through cells they hold almost nothing in, the side cells of a diagonal beam)
-      const Real jl = x.cs(m,CLN_JR,k-dk,j-dj,i-di), jr = x.cs(m,CLN_JR,k,j,i);
+      // through cells they hold almost nothing in, the side cells of a diagonal beam;
+      // rayratio: E, and the rays' flux per J of its donor times the donor's E)
+      const Real jl = rat ? x.w(m,CLW_Z,k-dk,j-dj,i-di) : x.cs(m,CLN_JR,k-dk,j-dj,i-di);
+      const Real jr = rat ? x.w(m,CLW_Z,k,j,i) : x.cs(m,CLN_JR,k,j,i);
+      const Real jd = (fr0 > 0.0) ? x.cs(m,CLN_JR,k-dk,j-dj,i-di) : x.cs(m,CLN_JR,k,j,i);
+      if (rat && !(jd > efl)) return;
+      const Real fy = rat ? fr0/jd*((fr0 > 0.0) ? jl : jr) : fr0;
       const Real hl = x.fc[dir](m,CLF_HP,k,j,i)*jl, hr = x.fc[dir](m,CLF_HM,k,j,i)*jr;
       const Real dd = fy - pj/x.c, fr = hl + hr + dd, s = hl - hr;
       // (H+' = hl (1 + dd/s), H-' = hr (1 - dd/s), the one tilted past 0 at 0 and the
