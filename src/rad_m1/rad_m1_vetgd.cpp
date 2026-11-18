@@ -1001,7 +1001,7 @@ void RadiationM1::VetGdInit() {
     }
     vgd_hcomp = 0;   // the dense per-shell halo (the compact lists assume one level)
   }
-  vgd_raw = clean && !vgd_csg && !vgd_pol && !vgd_sth;
+  vgd_raw = clean && !vgd_csg && !vgd_pol && !vgd_sth && vgd_raw_par;
   // (nx3 = 1: the dense halo, the compact / exact lists mark 3-D band reads)
   if (!pm->three_d) {vgd_hcomp = 0;}
   if (vgd_raw || !pm->three_d) {   // (the compact halo: the global band's, VetGdGbHaloC)
@@ -6554,15 +6554,24 @@ void RadiationM1::VetGdSweep() {
       auto LB_ = vgd_shl_xb[pass];
       const std::false_type f_;
       const int sid_ = sid;
+      // the current set's codes padded to a multiple of 1024 threads: every block (any
+      // power-of-two size <= 1024) runs one set only (env VGD_XFF_PAD=0: unpadded)
+      static int s_pad = -1;
+      if (s_pad < 0) {
+        const char *ep = std::getenv("VGD_XFF_PAD");
+        s_pad = (ep == nullptr || std::atoi(ep) != 0) ? 1 : 0;
+      }
+      const int nP = s_pad ? ((nA + 1023)/1024)*1024 : nA;
       auto e0_ = vgd_est[0];
       auto e1_ = vgd_est[1];
       if (thm) {
         const auto *qa = xa1;
         const auto *qb = xq1;
-        Kokkos::parallel_for("m1_vgd_shell_xff", VgdShellPol(vgd_cur, 0, nA + nB),
+        Kokkos::parallel_for("m1_vgd_shell_xff", VgdShellPol(vgd_cur, 0, nP + nB),
         KOKKOS_LAMBDA(const int c) {
-          const bool sb = (c >= nA);
-          int t = sb ? LB_(c - nA) : LA_(c);
+          const bool sb = (c >= nP);
+          if (!sb && c >= nA) {return;}
+          int t = sb ? LB_(c - nP) : LA_(c);
           const int d = t % n;
           t /= n;
           const int m = t/nkj;
@@ -6575,10 +6584,11 @@ void RadiationM1::VetGdSweep() {
       } else {
         const auto *qa = xa0;
         const auto *qb = xq0;
-        Kokkos::parallel_for("m1_vgd_shell_xff", VgdShellPol(vgd_cur, 0, nA + nB),
+        Kokkos::parallel_for("m1_vgd_shell_xff", VgdShellPol(vgd_cur, 0, nP + nB),
         KOKKOS_LAMBDA(const int c) {
-          const bool sb = (c >= nA);
-          int t = sb ? LB_(c - nA) : LA_(c);
+          const bool sb = (c >= nP);
+          if (!sb && c >= nA) {return;}
+          int t = sb ? LB_(c - nP) : LA_(c);
           const int d = t % n;
           t /= n;
           const int m = t/nkj;

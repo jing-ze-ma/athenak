@@ -2054,6 +2054,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // mem2-1014 vet_gd_band_ring (read only when named; default true where it applies,
     // bitwise; VetGdInit): the band intensities lent per shell from a few wide slabs
+    // vet_gd_raw (read only when named, default true): the clean sc rays' band on
+    // spherical polar keyed on the global cell (2226d2203); false = the exact-list band
+    // of production (VetGdHalo slots, wall map at the unpack)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_raw")) {
+      vgd_raw_par = pin->GetBoolean("rad_m1","vet_gd_raw");
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_ring")) {
       vgd_ring_named = true;
       vgd_ring_par = pin->GetBoolean("rad_m1","vet_gd_band_ring");
