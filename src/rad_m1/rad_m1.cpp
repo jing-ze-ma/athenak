@@ -87,9 +87,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_cnorm = pin->GetOrAddReal("rad_m1","clean_init_cnorm",1.0e-10);
     cln_lcnorm = pin->GetOrAddReal("rad_m1","clean_lin_cnorm",1.0e-10);
     // the old production's keys an input names (its HG/RSG decks; read only when named):
-    // implicit_maxit, implicit_lin_maxit and implicit_tol_rel_max are the defaults of
-    // clean_maxnl, clean_maxit and clean_conv_max (a linear solve then runs to it, without the stall test, and a pass
-    // goes on from its iterate, CleanSolve); implicit_fb_local(_rounds), CleanFbLocal
+    // implicit_maxit, implicit_lin_maxit, implicit_tol_rel_max and implicit_lin_ew_max
+    // are the defaults of clean_maxnl, clean_maxit, clean_conv_max and clean_lin_ew_max
+    // (a linear solve then runs to clean_maxit without the stall test, and a pass goes on
+    // from its iterate, CleanSolve); implicit_fb_local(_rounds), CleanFbLocal
     {int pm = 50, pl = 0;
     cln_prmax = -1.0;
     for (const InputBlock &ib : pin->block) {
@@ -100,6 +101,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         if (k == "implicit_maxit") pm = pin->GetInteger("rad_m1",k);
         if (k == "implicit_lin_maxit") pl = pin->GetInteger("rad_m1",k);
         if (k == "implicit_tol_rel_max") cln_prmax = pin->GetReal("rad_m1",k);
+        if (k == "implicit_lin_ew_max") cln_ewmax = pin->GetReal("rad_m1",k);
         if (k == "implicit_fb_local") cln_fbl = pin->GetBoolean("rad_m1",k);
         if (k == "implicit_fb_local_rounds") cln_fbl_rounds = pin->GetInteger("rad_m1",k);
       }
@@ -447,6 +449,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // pass
     if (pin->DoesParameterExist("rad_m1","clean_conv_est")) {
       cln_conv_est = pin->GetBoolean("rad_m1","clean_conv_est");
+    }
+    // clean_lin_ew_max (read only when named; default the input's implicit_lin_ew_max,
+    // the old production's, else 0.1): the largest Eisenstat-Walker forcing of the
+    // budget's passes
+    if (pin->DoesParameterExist("rad_m1","clean_lin_ew_max")) {
+      cln_ewmax = pin->GetReal("rad_m1","clean_lin_ew_max");
     }
     if (pin->DoesParameterExist("rad_m1","clean_nl_print")) {
       cln_nlprint = pin->GetBoolean("rad_m1","clean_nl_print");

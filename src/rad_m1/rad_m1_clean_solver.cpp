@@ -1378,11 +1378,11 @@ int RadiationM1::CleanBiCGStab() {
   // pass in the budget's norm
   if (bud) {
     const Real r0 = std::sqrt(rr);
-    Real eta = 0.1;
+    Real eta = cln_ewmax;
     if (cln_ewr > 0.0) {
       eta = 0.9*SQR(r0/cln_ewr);
       if (0.9*SQR(cln_eta) > 0.1) eta = fmax(eta, 0.9*SQR(cln_eta));
-      eta = fmin(eta, 0.1);
+      eta = fmin(eta, cln_ewmax);
     }
     cln_ewr = r0;
     cln_eta = eta;
