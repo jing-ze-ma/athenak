@@ -1222,6 +1222,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // change reaches below R_ph only through <rad_m1>/ic_rad's relaxation (|de/e| <= 5e-4
     // at 0.99 R_ph, <= 1e-6 below 0.95 R_ph at cycle 0, AG Car A), hence opt-in.  See
     // also he_ic_rad_atm_post (HeStarIcPost).
+    // he_ic_rad_atm_relax w (fresh-start default 0.5; a restart whose file lacks the key
+    // keeps 1 = the old march, bitwise): log phi under-relaxed by w, and every face solve
+    // of the march starts from the node below.  The old guess, the last pass's rho at the
+    // node, is the floor once a node fell to it; the secant then misses the root there,
+    // the node stays on the floor: a one-cell rho cliff with phi ~ 20-60 whose cell
+    // alternates between passes (R136, RSG: not converged in 200 passes, the result
+    // roundoff-dependent, CPU != GPU).  With w < 1, not converged in
+    // he_ic_rad_atm_maxit passes (fresh default 1000) is fatal.
     {
       const std::string afm = pin->GetOrAddString("problem","he_ic_rad_atm_force",
                                                    "continuum");
@@ -1233,7 +1241,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 "he_ic_rad_gas = re_atm", __LINE__);
       }
       if (afm == "module") {
-        constexpr int amaxit = 200;
+        const bool rst = global_variable::restart_run;
+        const int amaxit = pin->GetOrAddInteger("problem","he_ic_rad_atm_maxit",
+                                                rst ? 200 : 1000);
+        const Real arel = pin->GetOrAddReal("problem","he_ic_rad_atm_relax",
+                                            rst ? 1.0 : 0.5);
+        if (amaxit < 1 || !(arel > 0.0 && arel <= 1.0)) {
+          HsFatal("problem/he_ic_rad_atm_maxit >= 1 and 0 < he_ic_rad_atm_relax <= 1",
+                  __LINE__);
+        }
         const Real atol = pin->GetOrAddReal("problem","he_ic_rad_atm_tol",1.0e-12);
         auto ax1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
                                                         pmbp->pcoord->x1v);
@@ -1287,6 +1303,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   : (cdx[i+1]*rkc + cdx[i]*cd[i+1]*ckk[i+1])/(cdx[i] + cdx[i+1]);
               ph = (rkl*cf[i] + rkr*cf[i+1])/(rkc*(cf[i] + cf[i+1]));
               ++natm;
+            }
+            if (it > 0 && arel < 1.0) {
+              ph = exp((1.0 - arel)*log(hatm_c[i]) + arel*log(ph));
             }
             dph = std::max(dph, std::fabs(ph/hatm_c[i] - 1.0));
             hatm_c[i] = ph;
@@ -1343,7 +1362,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               eos.ThermoAt(exp(lx), tcur[n+1], e1, p1, c1, c2, c3);
               return (p1 + 0.5*hs_dr_*exp(lx)*g1)/rhs - 1.0;
             };
-            Real x0 = log(hd[n]) + log(std::max(hd[n+1], dfl)/hd[n]), x1 = x0 + 1.0e-6;
+            Real x0 = log(hd[n]);
+            if (arel == 1.0) x0 += log(std::max(hd[n+1], dfl)/hd[n]);
+            Real x1 = x0 + 1.0e-6;
             Real f0 = res(x0), f1 = res(x1);
             for (int k=0; k<60 && fabs(f1) > 1.0e-14 && f1 != f0; ++k) {
               const Real x2 = x1 - f1*(x1 - x0)/(f1 - f0);
@@ -1399,7 +1420,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             }
           }
           std::cout << rfl << " (" << rfl/rpa << " R_ph)" << std::endl;
-          if (!(dph < atol)) {
+          if (!(dph < atol) && arel == 1.0) {
             std::cout << "he_star_m1: he_ic_rad_atm_force: WARNING not converged in "
                       << amaxit << " iterations" << std::endl;
           }
@@ -1413,6 +1434,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           }
         }
         (void) gpost;
+        if (arel < 1.0 && !(dph < atol && rmxa < 1.0e-10)) {
+          HsFatal("problem/he_ic_rad_atm_force = module: the atmosphere march did not "
+                  "converge (he_ic_rad_atm_maxit, he_ic_rad_atm_relax)", __LINE__);
+        }
       }
     }
     // write back: E, and with gas = re the T (file column) and eint of the code's EOS
@@ -5377,6 +5402,11 @@ void HeStarIcEquil(Mesh *pm) {
                   hs_eq_seed_ ? " (deferred he_seed applied)" : "");
     }
   };
+  // not converged in he_ic_equil_maxit rounds is fatal, unless the last round marches
+  // (he_ic_equil_last_march); then that march must converge (below)
+  if (done && !conv && !lastm) {
+    HsFatal("problem/he_ic_equil: not converged in he_ic_equil_maxit rounds", __LINE__);
+  }
   if (done && !lastm) {
     finish(std::vector<Real>(ar0.begin() + is, ar0.begin() + ie + 1));
     return;
@@ -5507,6 +5537,9 @@ void HeStarIcEquil(Mesh *pm) {
                 "cells %d .. %d re-marched, %d passes (last max |da/a| %.3e, face "
                 "residual %.3e), max |drho/rho| %.3e at r %.5e\n", hs_eq_it_, ianc - is,
                 x1v[ianc], 0, ilast - is, npass, chg, rmx, dmx, rdm);
+  }
+  if (lastm && !(chg < 1.0e-12)) {
+    HsFatal("problem/he_ic_equil: the last round's march did not converge", __LINE__);
   }
 }
 
