@@ -952,8 +952,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     CleanCellFaceCoefficients();
   } else {
     CleanFaceCoefficients();
+    // (the donors' E_old, memory; the bracket's gate q)
+    if (cln_gflux || cln_consist) CleanGhostFill(cln_w, CLW_EO, 1);
     if (cln_consist) CleanStagBracket();
-    if (cln_gflux) CleanGhostFill(cln_w, CLW_EO, 1);   // (the donors' E_old, memory)
   }
 
   // 3. Newton iteration on the gas coupling and Picard passes on the lagged quantities:
@@ -2254,14 +2255,15 @@ void RadiationM1::CleanStagBracket() {
       // (the old production's form, M1ThinFace implicit_thin_corr = hc: the cells' half
       // ranges h+- realisable, the rest of the rays' face flux the lagged flux DG/w = q c
       // (F_y - h+ J_L - h- J_R) of the face (CleanThinFaceDG), F_y clamped to [-J_R, J_L]
-      // (|F| <= c J of the donor), q = r^2 the quasi-steadiness gate, r the worse of the two
-      // cells' min(E^n/J, J/E^n); tilted into h+- the defect reached F/J_R ~ 1e3 .. 4e20 at
-      // a ray-shadowed donor below a lit cell of the evolved HG envelope hegiant.00184)
+      // (|F| <= c J of the donor), q = r^2 the quasi-steadiness gate, r the worse of the
+      // two cells' min(E_old/J, J/E_old) (E of the old vector, ghosts filled); tilted into
+      // h+- the defect reached F/J_R ~ 1e3 .. 4e20 at a ray-shadowed donor below a lit
+      // cell of the evolved HG envelope hegiant.00184)
       auto rq = [&](const Real a, const Real b) {
         return (fmax(a, b) > 0.0) ? fmin(a, b)/fmax(a, b) : 1.0;
       };
-      const Real r = fmin(rq(fmax(iw_(m,M1_IW_EN,k-dk,j-dj,i-di), 0.0), fmax(jl, 0.0)),
-                          rq(fmax(iw_(m,M1_IW_EN,k,j,i), 0.0), fmax(jr, 0.0)));
+      const Real r = fmin(rq(fmax(x.w(m,CLW_EO,k-dk,j-dj,i-di), 0.0), fmax(jl, 0.0)),
+                          rq(fmax(x.w(m,CLW_EO,k,j,i), 0.0), fmax(jr, 0.0)));
       const Real hup = x.fc[dir](m,CLF_HP,k,j,i)*jl + x.fc[dir](m,CLF_HM,k,j,i)*jr;
       x.fc[dir](m,x.fdg,k,j,i) = r*r*x.c*(fmin(fmax(fy, -jr), jl) - hup);
     });
