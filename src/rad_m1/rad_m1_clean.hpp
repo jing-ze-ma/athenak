@@ -1089,6 +1089,18 @@ Real CleanStagAdvectCorr(const CleanArgs &x, const int dir, const int m, const i
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanThinFaceDG
+//! \brief staggered: the lagged additive flux DG of a face at thin weight w, the old
+//! production's M1ThinFace (implicit_thin_corr = hc): w times CleanStagBracket's
+//! q c (F_y - h+ J_L - h- J_R) (0 without the bracket)
+
+KOKKOS_INLINE_FUNCTION
+Real CleanThinFaceDG(const CleanArgs &x, const int dir, const int m, const int k,
+                     const int j, const int i, const Real w) {
+  return (x.fdg >= 0) ? w*x.fc[dir](m,x.fdg,k,j,i) : 0.0;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real CleanFaceSource
 //! \brief the part of the face flux that does not depend on E: (1-w) theta G inside, the
 //! incoming flux (beam, bath) or the imposed flux on physical boundaries
@@ -1143,7 +1155,7 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
     }
   }
   if (x.drag) s += (1.0 - w)*qd*x.fc[dir](m,CLF_DQ,k,j,i);
-  if (x.fdg >= 0 && !x.hi) s += x.fc[dir](m,x.fdg,k,j,i);   // (CleanStagBracket's DG)
+  if (!x.hi) s += CleanThinFaceDG(x, dir, m, k, j, i, w);   // (CleanStagBracket's DG)
   // (the advective share 1 - theta_d of an upwind face, CleanFaceWeights)
   if (x.upw && x.feedback) {
     Real al, ar, phi = 0.0;

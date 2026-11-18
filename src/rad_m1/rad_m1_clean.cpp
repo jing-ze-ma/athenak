@@ -2250,13 +2250,19 @@ void RadiationM1::CleanStagBracket() {
         return;
       }
       const Real fy = rat ? fr0/jd*((fr0 > 0.0) ? jl : jr) : fr0;
-      // (the old production's form, M1ThinFace: the cells' half ranges h+- realisable, the
-      // rest of the rays' face flux the lagged flux DG = w (c F_y - Phi(J)) of the face, not
-      // a factor of E: tilted into h+- it reached F/J_R ~ 1e3 .. 4e20 at a ray-shadowed
-      // donor below a lit cell (J_R 1e-25 .. 1e-7 against its E, x1 faces at w = 1 of the
-      // evolved HG envelope hegiant.00184) and drained the donor's E; DG is not capped at
-      // c J of the donor, whose cap breaks a beam's consistency at its edge)
-      x.fc[dir](m,x.fdg,k,j,i) = w*(x.c*fy - pj);
+      // (the old production's form, M1ThinFace implicit_thin_corr = hc: the cells' half
+      // ranges h+- realisable, the rest of the rays' face flux the lagged flux DG/w = q c
+      // (F_y - h+ J_L - h- J_R) of the face (CleanThinFaceDG), F_y clamped to [-J_R, J_L]
+      // (|F| <= c J of the donor), q = r^2 the quasi-steadiness gate, r the worse of the two
+      // cells' min(E^n/J, J/E^n); tilted into h+- the defect reached F/J_R ~ 1e3 .. 4e20 at
+      // a ray-shadowed donor below a lit cell of the evolved HG envelope hegiant.00184)
+      auto rq = [&](const Real a, const Real b) {
+        return (fmax(a, b) > 0.0) ? fmin(a, b)/fmax(a, b) : 1.0;
+      };
+      const Real r = fmin(rq(fmax(iw_(m,M1_IW_EN,k-dk,j-dj,i-di), 0.0), fmax(jl, 0.0)),
+                          rq(fmax(iw_(m,M1_IW_EN,k,j,i), 0.0), fmax(jr, 0.0)));
+      const Real hup = x.fc[dir](m,CLF_HP,k,j,i)*jl + x.fc[dir](m,CLF_HM,k,j,i)*jr;
+      x.fc[dir](m,x.fdg,k,j,i) = r*r*x.c*(fmin(fmax(fy, -jr), jl) - hup);
     });
   }
 }
