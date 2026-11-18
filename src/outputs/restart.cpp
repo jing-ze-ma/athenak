@@ -240,20 +240,33 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
         // restart_pack_per_mb: one MeshBlock at a time (same bytes); the clean rays'
         // intensities (the last nfv channels; doubles without clean_fv_lag = extrap)
         // are copied to the host directly
-        Kokkos::realloc(outarray_m1t, nmb, nct, nout3, nout2, nout1);
         const int nfv = (pradm1->cln_fvf32 || pradm1->cln_fvlag == 2) ? 0 :
                         pradm1->CleanRstNfv(), nc0 = nct - nfv;
         // (the staging of a MeshBlock in pinned host memory, which the device writes
-        // directly: no device copy of its channels at a dump)
+        // directly: no device copy of its channels at a dump; where the host reads device
+        // memory (MI300A, CPU builds) the device array itself, packed in place: no
+        // staging, no host copy, no host memset)
+        constexpr bool um =
+            Kokkos::SpaceAccessibility<HostMemSpace, DevMemSpace>::accessible;
+        if (um) {
+          outarray_m1t_d = DvceArray5D<Real>("rst-m1t-d", nmb, nct, nout3, nout2, nout1);
+          outarray_m1t = HostArray5D<Real>(outarray_m1t_d.data(), nmb, nct, nout3, nout2,
+                                           nout1);
+        } else {
+          Kokkos::realloc(outarray_m1t, nmb, nct, nout3, nout2, nout1);
+        }
         Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> pin("rst-m1t-mb",
-            static_cast<size_t>(nc0)*nout3*nout2*nout1);
-        DvceArray5D<Real> tmp(pin.data(), 1, nc0, nout3, nout2, nout1);
+            um ? 0 : static_cast<size_t>(nc0)*nout3*nout2*nout1);
         auto AL = Kokkos::ALL;
         for (int m = 0; m < nmb; ++m) {
+          DvceArray5D<Real> tmp(um ? outarray_m1t_d.data() + outarray_m1t_d.stride(0)*m :
+                                pin.data(), 1, nc0, nout3, nout2, nout1);
           pradm1->Time2RstPack(tmp, 1, m);
-          Kokkos::deep_copy(Kokkos::subview(outarray_m1t, m, std::make_pair(0, nc0), AL,
-                                            AL, AL),
-                            Kokkos::subview(tmp, 0, AL, AL, AL, AL));
+          if (!um) {
+            Kokkos::deep_copy(Kokkos::subview(outarray_m1t, m, std::make_pair(0, nc0), AL,
+                                              AL, AL),
+                              Kokkos::subview(tmp, 0, AL, AL, AL, AL));
+          }
           auto fv = Kokkos::subview(outarray_m1t, m, std::make_pair(nc0, nct), AL, AL,
                                     AL);
           if (nfv > 0 && pradm1->CleanRstFv().extent_int(0) > m) {
@@ -263,6 +276,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
             Kokkos::deep_copy(fv, 0.0);
           }
         }
+        if (um) Kokkos::fence();
       } else {
         DvceArray5D<Real> tmp("rst-m1t", nmb, nct, nout3, nout2, nout1);
         pradm1->Time2RstPack(tmp, nmb);
@@ -1599,6 +1613,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       outarray_m1c = outarray_m1s = outarray_m1g = outarray_m1r = outarray_m1k =
       outarray_ams = outarray_pgs = outarray_fax = outarray_thc = outarray_xfd =
       HostArray5D<Real>();
+  outarray_m1t_d = DvceArray5D<Real>();
   outarray_m1f = outarray_m1f2 = outarray_m1f3 = outarray_wth = outarray_wtm =
       outarray_wdp = outarray_wdg = outarray_wdpm = outarray_wdgm = outarray_weh =
       outarray_wem = outarray_wm1 = outarray_wm2 = HostArray4D<Real>();

@@ -324,6 +324,7 @@ class BaseTypeOutput {
   // <rad_m1> time_scheme = hesdirk2: the stored slope K1, ipred2, vet_prev (channels of
   // RadiationM1::Time2RstPack); empty unless a slope is stored.  radm1::kM1Time2RstMagic.
   HostArray5D<Real> outarray_m1t;
+  DvceArray5D<Real> outarray_m1t_d;   // (its memory where the host reads device memory)
   // <rad_m1> implicit_closure_thin_relax: ctr_mem (4 channels); empty unless stored.
   // radm1::kM1CtrRstMagic.
   HostArray5D<Real> outarray_m1c;
