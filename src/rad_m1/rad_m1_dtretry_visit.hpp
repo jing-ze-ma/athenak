@@ -987,6 +987,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("dbg_rst_fp_done", dbg_rst_fp_done);
   v.value("t2_nfv", t2_nfv);
   v.value("t2_rstd3", t2_rstd3);
+  v.value("t2_rstv", t2_rstv);
   v.value("rst_pack_mb", rst_pack_mb);
   v.value("impl_offdiag", impl_offdiag);
   v.value("od_now", od_now);
@@ -1304,6 +1305,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("eaud_pd", eaud_pd);
   v.view("acl_cnt_d", acl_cnt_d);
   v.view("cln_gdrf", cln_gdrf);
+  v.value("cln_fvgf", cln_fvgf);
   v.value("clean", clean);
   v.value("cln_c0", cln_c0);
   v.value("cln_c1", cln_c1);
