@@ -1198,6 +1198,13 @@ void RadiationM1::VetGdInit() {
     // (memcut-1020: on the cubed sphere, where the cs compact lists apply: every band
     // value the cs sweep reads comes from the compact exchange of this sweep)
     // (vgd_raw: every band value the sweep reads, from its exchange of this sweep)
+    // (no silent fallback: without the cs compact lists the clean sc rays keep the full
+    // ragged band, +18 GB/GPU on the RSG)
+    if (vgd_csg && clean && cln_rfv == 0 && vgd_hcomp == 0) {
+      VgdFatal("vet_gd_halo_compact = 0 on the cubed sphere with the clean sc rays (no "
+               "compact lists, no band ring: the full band); name vet_gd_halo_compact "
+               "= 2");
+    }
     const bool hxok = vgd_raw ? (vgd_hmpi && vgd_nb1 == 1 && !vgd_async && !vgd_bandx)
                     : vgd_csg ? (vgd_cscomp && vgd_hmpi)
                               : (vgd_hx_on && vgd_shl_on && !vgd_bandx && !vgd_async &&
