@@ -1324,20 +1324,23 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
         // CSMHD: the gas in equilibrium with E keeps the field's |B|^2/2 (b_azi) in IEN
         uh(m,IEN,k,j,i) = dgas*sqrt(sqrt(u0(m,radm1::M1_E,k,j,i)/ara))/gm1 + ebz;
       }
+      // the velocities move the density of the cell (after rho_lat_amp and the other
+      // density profiles), so that eint keeps the temperature gas_temp
+      const Real dv = uh(m,IDN,k,j,i);
       if (gvr != 0.0) {
         Real vr = gvr*sin(M_PI*(r - x1a)/x1l);
-        uh(m,IM1,k,j,i) = dgas*vr;
-        uh(m,IEN,k,j,i) += 0.5*dgas*vr*vr;
+        uh(m,IM1,k,j,i) = dv*vr;
+        uh(m,IEN,k,j,i) += 0.5*dv*vr*vr;
       }
       if (gvt != 0.0 && sp) {
         Real vt = gvt*sin(M_PI*(x2v(m,j) - x2a)/x2l);
-        uh(m,IM2,k,j,i) = dgas*vt;
-        uh(m,IEN,k,j,i) += 0.5*dgas*vt*vt;
+        uh(m,IM2,k,j,i) = dv*vt;
+        uh(m,IEN,k,j,i) += 0.5*dv*vt*vt;
       }
       if (grot != 0.0 && sp && !gax) {
         const Real vp = grot*r*sin(x2v(m,j));
-        uh(m,IM3,k,j,i) = dgas*vp;
-        uh(m,IEN,k,j,i) += 0.5*dgas*vp*vp;
+        uh(m,IM3,k,j,i) = dv*vp;
+        uh(m,IEN,k,j,i) += 0.5*dv*vp*vp;
       }
       if (grot != 0.0 && sp && gax) {
         // gas_rot_axis: v = Omega a x r on the orthonormal (theta, phi) basis
@@ -1349,9 +1352,9 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
                            grot*r*(gax_x*q[1] - gay*q[0])};
         const Real vt = w[0]*et[0] + w[1]*et[1] + w[2]*et[2];
         const Real vp = w[0]*ep[0] + w[1]*ep[1] + w[2]*ep[2];
-        uh(m,IM2,k,j,i) = dgas*vt;
-        uh(m,IM3,k,j,i) = dgas*vp;
-        uh(m,IEN,k,j,i) += 0.5*dgas*(vt*vt + vp*vp);
+        uh(m,IM2,k,j,i) = dv*vt;
+        uh(m,IM3,k,j,i) = dv*vp;
+        uh(m,IEN,k,j,i) += 0.5*dv*(vt*vt + vp*vp);
       }
       if (grot != 0.0 && csm) {
         const Real xi = 0.25*M_PI*CellCenterX(j-js, nx2, size.d_view(m).x2min,
@@ -1367,9 +1370,9 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
           w[1] = grot*r*(gaz*q[0] - gax_x*q[2]);
           w[2] = grot*r*(gax_x*q[1] - gay*q[0]);
         }
-        uh(m,IM2,k,j,i) = dgas*(w[0]*ta[0] + w[1]*ta[1] + w[2]*ta[2]);
-        uh(m,IM3,k,j,i) = dgas*(w[0]*tb[0] + w[1]*tb[1] + w[2]*tb[2]);
-        uh(m,IEN,k,j,i) += 0.5*dgas*(w[0]*w[0] + w[1]*w[1] + w[2]*w[2]);
+        uh(m,IM2,k,j,i) = dv*(w[0]*ta[0] + w[1]*ta[1] + w[2]*ta[2]);
+        uh(m,IM3,k,j,i) = dv*(w[0]*tb[0] + w[1]*tb[1] + w[2]*tb[2]);
+        uh(m,IEN,k,j,i) += 0.5*dv*(w[0]*w[0] + w[1]*w[1] + w[2]*w[2]);
       }
       u0(m,radm1::M1_F1,k,j,i) = 0.0;
       if (ein > 0.0 && i <= is) {
