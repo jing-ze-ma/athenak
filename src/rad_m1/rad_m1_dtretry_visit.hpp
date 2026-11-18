@@ -1903,6 +1903,8 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_thvac", vgd_thvac);
   v.value("vgd_w", vgd_w);
   v.value("vgd_raw", vgd_raw);
+  v.value("vgd_raw_par", vgd_raw_par);
+  v.value("vgd_raw_named", vgd_raw_named);
   v.view("vgd_own", vgd_own);
   v.view("vgd_cs", vgd_cs);
   v.view("vgd_hloc", vgd_hloc);
