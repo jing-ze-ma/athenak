@@ -1207,7 +1207,10 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     dtr_fail = true;
   }
   if (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2) {
-    t2_fail = (nit < 0) || (nneg > 0) || (cln_feedback && cln_neint > 0) ||
+    // (as the old production with implicit_pos_floor(_cons): an E < 0 that the
+    // conservative write-back floor raises does not fail the stage; the floor is counted)
+    const bool flr = impl_pos_floor && impl_pos_flr_cons;
+    t2_fail = (nit < 0) || (nneg > 0 && !flr) || (cln_feedback && cln_neint > 0) ||
               (t2_solve == M1_T2S_STAGE1 && pmy_pack->pmesh->ncycle == t2_dbg_fail);
     // time2_reject = retry: the cycle again at a smaller dt instead of the backward-Euler
     // redo; after dt_retry_t2_be such cuts the redo (as ImplicitSolve's t2retry-1020)
