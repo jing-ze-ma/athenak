@@ -6449,43 +6449,43 @@ void RadiationM1::VetGdSweep() {
 #undef M1_VGD_BODY_MIR
 #undef M1_VGD_BODY_GX0
 #endif
-    // xffuse-1113: the same shell bodies over the OTHER set of the cross-fade (its
-    // direction table, wall tables and intensities; every other input shared), for the
-    // fused two-set shell kernel (run_xff below).  Made in a scope where the set's names
-    // are bound to that set: the code is the include above, unchanged
+    // xffuse-1113: the shell bodies of the fused two-set kernel (run_xff below), one per
+    // set, its direction table, wall tables and intensities bound to the body's names;
+    // every other input shared.  Both sets' bodies come from ONE lambda expression (the
+    // same closure type), so the fused kernel holds one copy of the body and of its stack
+    // frame, and each thread calls it on its set's closure (two closure types doubled the
+    // stack: GH200 551 us per fused launch vs 2 x 210 unfused).  The code is the include
+    // above, unchanged
 #if defined(KOKKOS_ENABLE_CUDA)
 #define M1_VGD_BODY_GX0
 #endif
-    auto xb0 = [&]() {
-      auto dir_ = vgd_tabd.dir;
-      auto wl_ = vgd_tabd.wall;
-      auto mp_ = vgd_tabd.map;
-      auto mr_ = vgd_tabd.mr;
-      auto m3_ = vgd_tabd.m3;
-      auto w3_ = vgd_tabd.w3;
-      auto vi_ = vgd_i_xb;
+    using VgdDirV = decltype(vgd_dir);
+    using VgdWallV = decltype(vgd_wall);
+    using VgdMapV = decltype(vgd_map);
+    using VgdMrV = decltype(vgd_mr);
+    using VgdM3V = decltype(vgd_m3);
+    using VgdW3V = decltype(vgd_w3);
+    using VgdIV = decltype(vgd_i);
+    auto mkx0 = [&](const VgdDirV dir_, const VgdWallV wl_, const VgdMapV mp_,
+                    const VgdMrV mr_, const VgdM3V m3_, const VgdW3V w3_,
+                    const VgdIV vi_) {
 #define M1_VGD_BODY_NAME bodyx
 #define M1_VGD_BODY_MIR 0
 #include "rad_m1_vetgd_body.inc"
 #undef M1_VGD_BODY_NAME
 #undef M1_VGD_BODY_MIR
       return bodyx;
-    }();
-    auto xb1 = [&]() {
-      auto dir_ = vgd_tabd.dir;
-      auto wl_ = vgd_tabd.wall;
-      auto mp_ = vgd_tabd.map;
-      auto mr_ = vgd_tabd.mr;
-      auto m3_ = vgd_tabd.m3;
-      auto w3_ = vgd_tabd.w3;
-      auto vi_ = vgd_i_xb;
+    };
+    auto mkx1 = [&](const VgdDirV dir_, const VgdWallV wl_, const VgdMapV mp_,
+                    const VgdMrV mr_, const VgdM3V m3_, const VgdW3V w3_,
+                    const VgdIV vi_) {
 #define M1_VGD_BODY_NAME bodyx
 #define M1_VGD_BODY_MIR 1
 #include "rad_m1_vetgd_body.inc"
 #undef M1_VGD_BODY_NAME
 #undef M1_VGD_BODY_MIR
       return bodyx;
-    }();
+    };
 #if defined(KOKKOS_ENABLE_CUDA)
 #undef M1_VGD_BODY_GX0
 #endif
@@ -6515,37 +6515,30 @@ void RadiationM1::VetGdSweep() {
     if (gfast && bdp != nullptr) {bgp = VgdClosureToDevice(bodyg, vgd_bbuf2);}
 #endif
     // xffuse-1113: both sets' gx-false closures in device memory (VetGdXffOk: gfast)
-    using VgdXb0T = decltype(xb0);
-    using VgdXb1T = decltype(xb1);
-    const VgdXb0T *xq0 = nullptr;
-    const VgdXb1T *xq1 = nullptr;
-#if defined(KOKKOS_ENABLE_CUDA)
-    const VgdBodygT *xa0 = nullptr;
-    const VgdBodymgT *xa1 = nullptr;
-#else
-    const VgdBodyT *xa0 = nullptr;
-    const VgdBodymT *xa1 = nullptr;
-#endif
+    using VgdXb0T = decltype(mkx0(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3, vgd_i));
+    using VgdXb1T = decltype(mkx1(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3, vgd_i));
+    const VgdXb0T *xa0 = nullptr, *xq0 = nullptr;
+    const VgdXb1T *xa1 = nullptr, *xq1 = nullptr;
     if (xffs) {
       if (!gfast) {VgdFatal("vet_gd_rotate_xfade_fuse: the fused sweep needs the gx-false "
                             "shell kernel");}
 #if defined(KOKKOS_ENABLE_CUDA)
-      if (thm) {
-        xa1 = VgdClosureToDevice(bodymg, vgd_bbuf3);
-      } else {
-        xa0 = VgdClosureToDevice(bodyg, vgd_bbuf2);
-      }
+      auto &bba = vgd_bbuf2;   // (the current set's closure: the buffer of its gx-false body)
 #else
-      if (thm) {
-        xa1 = VgdClosureToDevice(bodym, vgd_bbuf1);
-      } else {
-        xa0 = VgdClosureToDevice(body, vgd_bbuf0);
-      }
+      auto &bba = vgd_bbuf0;
 #endif
       if (thm) {
-        xq1 = VgdClosureToDevice(xb1, vgd_bbufx);
+        xa1 = VgdClosureToDevice(mkx1(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3,
+                                      vgd_i), bba);
+        xq1 = VgdClosureToDevice(mkx1(vgd_tabd.dir, vgd_tabd.wall, vgd_tabd.map,
+                                      vgd_tabd.mr, vgd_tabd.m3, vgd_tabd.w3, vgd_i_xb),
+                                 vgd_bbufx);
       } else {
-        xq0 = VgdClosureToDevice(xb0, vgd_bbufx);
+        xa0 = VgdClosureToDevice(mkx0(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3,
+                                      vgd_i), bba);
+        xq0 = VgdClosureToDevice(mkx0(vgd_tabd.dir, vgd_tabd.wall, vgd_tabd.map,
+                                      vgd_tabd.mr, vgd_tabd.m3, vgd_tabd.w3, vgd_i_xb),
+                                 vgd_bbufx);
       }
     }
     const int nkj = (ke - ks + 1)*(je - js + 1), nj = je - js + 1;
@@ -6577,11 +6570,7 @@ void RadiationM1::VetGdSweep() {
           const int k = ks + t/nj;
           const int j = js + (t % nj);
           if (sid_ > 0 && (sb ? e1_(m,k,j,d) : e0_(m,k,j,d)) == sid_) {return;}
-          if (sb) {
-            (*qb)(m, k, j, d, i, l, f_, f_);
-          } else {
-            (*qa)(m, k, j, d, i, l, f_, f_);
-          }
+          (*(sb ? qb : qa))(m, k, j, d, i, l, f_, f_);   // (one body: one call site)
         });
       } else {
         const auto *qa = xa0;
@@ -6597,11 +6586,7 @@ void RadiationM1::VetGdSweep() {
           const int k = ks + t/nj;
           const int j = js + (t % nj);
           if (sid_ > 0 && (sb ? e1_(m,k,j,d) : e0_(m,k,j,d)) == sid_) {return;}
-          if (sb) {
-            (*qb)(m, k, j, d, i, l, f_, f_);
-          } else {
-            (*qa)(m, k, j, d, i, l, f_, f_);
-          }
+          (*(sb ? qb : qa))(m, k, j, d, i, l, f_, f_);   // (one body: one call site)
         });
       }
     };
@@ -6630,11 +6615,7 @@ void RadiationM1::VetGdSweep() {
           ad /= c3_;
           const int d = ad % nv_;
           const int m = ad/nv_;
-          if (sb) {
-            (*qb)(m, k, j, d, i, l, f_, f_);
-          } else {
-            (*qa)(m, k, j, d, i, l, f_, f_);
-          }
+          (*(sb ? qb : qa))(m, k, j, d, i, l, f_, f_);   // (one body: one call site)
         });
       } else {
         const auto *qa = xa0;
@@ -6649,11 +6630,7 @@ void RadiationM1::VetGdSweep() {
           ad /= c3_;
           const int d = ad % nv_;
           const int m = ad/nv_;
-          if (sb) {
-            (*qb)(m, k, j, d, i, l, f_, f_);
-          } else {
-            (*qa)(m, k, j, d, i, l, f_, f_);
-          }
+          (*(sb ? qb : qa))(m, k, j, d, i, l, f_, f_);   // (one body: one call site)
         });
       }
     };
