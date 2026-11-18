@@ -3350,6 +3350,7 @@ class RadiationM1 {
   // cubed sphere: face areas, centroid distances across the faces, normals and centroids
   DvceArray4D<Real> cln_ga[3], cln_gd[3];
   DvceArray5D<Real> cln_gn;
+  DvceArray3D<Real> cln_tg;   // spherical polar: CleanArgs::tg
   struct CleanHalo {            // ghost exchange of nc components: scratch array and
     DvceArray5D<Real> a, ca;    // its coarse dummy
   };

@@ -121,6 +121,22 @@ CleanArgs RadiationM1::CleanMakeArgs() {
     x.x1f = pc->xx1f;
     x.x2v = pc->x2v;
     x.x2f = pc->xx2f;
+    const int nmb = pmy_pack->nmb_thispack, n2 = pc->x2v.extent_int(1);
+    if (x.sph && (cln_tg.extent_int(0) != nmb || cln_tg.extent_int(2) != n2 + 1)) {
+      Kokkos::realloc(cln_tg, nmb, 4, n2 + 1);   // (once: the trig of theta, per j)
+      auto tg = cln_tg;
+      auto x2v = pc->x2v, x2f = pc->xx2f;
+      par_for("cln_tg", DevExeSpace(), 0, nmb - 1, 0, n2,
+      KOKKOS_LAMBDA(const int m, const int j) {
+        if (j < n2) {
+          tg(m,0,j) = tan(x2v(m,j));
+          tg(m,2,j) = sin(x2v(m,j));
+        }
+        tg(m,1,j) = tan(x2f(m,j));
+        tg(m,3,j) = sin(x2f(m,j));
+      });
+    }
+    x.tg = cln_tg;
   }
   if (x.cub) {
     x.vol = pmy_pack->pcoord->volume;

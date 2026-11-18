@@ -267,6 +267,7 @@ struct CleanArgs {
   DvceArray4D<Real> dxf[3];    // distances between the cell centres across those faces
   DvceArray2D<Real> x1v, x1f;  // cell-centre (volume centroid) and face radii
   DvceArray2D<Real> x2v, x2f;  // cell-centre and face polar angles
+  DvceArray3D<Real> tg;         // tan, tan, sin, sin of x2v, x2f, x2v, x2f by (m, q, j)
   Real cseam;                  // cot of a theta-periodic seam face: its two copies' mean
   // cubed sphere (cell layout): y in the cell's orthonormal frame (r, theta, phi) about
   // the hydro's radius vector; vol, area, dxf and x1v, x1f as above, g the geometry
@@ -590,17 +591,17 @@ Real CleanStagSph(const CleanArgs &x, const int q, const int dir, const int m,
                    (j == x.je + 1 && x.mbc(m,BoundaryFace::outer_x2) == pf));
   if (q == 4) {
     return (dir == 0) ? 1.0/x.x1f(m,i) :
-           (sm ? 0.5*x.cseam/x.x1v(m,i) : 0.5/(tan(x.x2f(m,j))*x.x1v(m,i)));
+           (sm ? 0.5*x.cseam/x.x1v(m,i) : 0.5/(x.tg(m,1,j)*x.x1v(m,i)));
   }
   if (q == 1) return 1.0/((dir == 0) ? x.x1f(m,i) : x.x1v(m,i));
   const int kc = (q == 2) ? k - (dir == 2) : k, jc = (q == 2) ? j - (dir == 1) : j;
   const int ic = (q == 2) ? i - (dir == 0) : i;
   auto d = [&](const int n) {return x.cs(m,CLN_D11+n,kc,jc,ic);};
   if (dir == 0) {
-    return 2.0*d(0) - d(1) - d(2) + (x.multi_d ? d(3)/tan(x.x2v(m,jc)) : 0.0);
+    return 2.0*d(0) - d(1) - d(2) + (x.multi_d ? d(3)/x.tg(m,0,jc) : 0.0);
   }
   if (sm) return (d(1) - d(2))*x.cseam + 3.0*d(3);
-  return (d(1) - d(2))/tan(x.x2f(m,j)) + 3.0*d(3);
+  return (d(1) - d(2))/x.tg(m,1,j) + 3.0*d(3);
 }
 
 //----------------------------------------------------------------------------------------
@@ -790,7 +791,7 @@ void CleanStagArea(const CleanArgs &x, const int dir, const int m, const int k,
         x.area[dir](m,k,j,i);
   } else {
     a = (dir == 0) ? x.x1v(m,id)*x.x1v(m,id)/(x.x1f(m,i)*x.x1f(m,i))
-                   : sin(x.x2v(m,jd))/sin(x.x2f(m,j));
+                   : x.tg(m,2,jd)/x.tg(m,3,j);
   }
   ((d == 1) ? pl : pr) += s*(a - 1.0);
 }
@@ -1012,7 +1013,7 @@ Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m
     const int dn = CleanTransSide(x, b, m, k, j, i, 0);
     // (torque form: dual r faces i, i+1 and theta faces j, j+1)
     if (x.sph && dir == 2) {
-      const Real vr = x.vol(m,k,j,i)*x.x1v(m,i)*sin(x.x2v(m,j));
+      const Real vr = x.vol(m,k,j,i)*x.x1v(m,i)*x.tg(m,2,j);
       auto pe = [&](const int jj, const int ii) {   // (D E)_{b,ph} at a dual face
         const int jh = (jj > j && !up) ? j : jj, ih = (ii > i && !up) ? i : ii;
         const int jo = jj - (b == 1), io = ii - (b == 0);
@@ -1021,10 +1022,10 @@ Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m
       };
       if (b == 0) {
         div += (x.area[0](m,k,j,i+1)*x.x1f(m,i+1)*pe(j,i+1) -
-                x.area[0](m,k,j,i)*x.x1f(m,i)*pe(j,i))*sin(x.x2v(m,j))/vr;
+                x.area[0](m,k,j,i)*x.x1f(m,i)*pe(j,i))*x.tg(m,2,j)/vr;
       } else {
-        div += (x.area[1](m,k,j+1,i)*sin(x.x2f(m,j+1))*pe(j+1,i) -
-                x.area[1](m,k,j,i)*sin(x.x2f(m,j))*pe(j,i))*x.x1v(m,i)/vr;
+        div += (x.area[1](m,k,j+1,i)*x.tg(m,3,j+1)*pe(j+1,i) -
+                x.area[1](m,k,j,i)*x.tg(m,3,j)*pe(j,i))*x.x1v(m,i)/vr;
       }
       continue;
     }
@@ -1034,7 +1035,7 @@ Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m
     const Real ib = !x.sph ? w*x.idx[b] :
                     ((b == 0) ? 2.0/(x.x1v(m,i+up) - x.x1v(m,i-dn)) :
                     ((b == 1) ? 2.0/(rb*(x.x2v(m,j+up) - x.x2v(m,j-dn))) :
-                    w*x.idx[2]/(rb*sin((dir == 1) ? x.x2f(m,j) : x.x2v(m,j)))));
+                    w*x.idx[2]/(rb*((dir == 1) ? x.tg(m,3,j) : x.tg(m,2,j)))));
     div += 0.25*ib*(de(k+up*dk,j+up*dj,i+up*di) + de(kl+up*dk,jl+up*dj,il+up*di)
                     - de(k-dn*dk,j-dn*dj,i-dn*di) - de(kl-dn*dk,jl-dn*dj,il-dn*di));
   }
@@ -1277,9 +1278,9 @@ void CleanStCross(const CleanArgs &x, const int m, const int k, const int j, con
   const int dn = CleanTransSide(x, B, m, kf, jf, iff, 0);
   if constexpr (D == 2) {
     if (x.sph) {   // (torque form, CleanFaceStress)
-      const Real vr = x.vol(m,kf,jf,iff)*x.x1v(m,iff)*sin(x.x2v(m,jf));
+      const Real vr = x.vol(m,kf,jf,iff)*x.x1v(m,iff)*x.tg(m,2,jf);
       if constexpr (B == 0) {
-        const Real s = sin(x.x2v(m,jf))/vr*cr*0.25;
+        const Real s = x.tg(m,2,jf)/vr*cr*0.25;
         const Real fp = x.area[0](m,kf,jf,iff+1)*x.x1f(m,iff+1)*s;
         const Real fm = -x.area[0](m,kf,jf,iff)*x.x1f(m,iff)*s;
         const Real f0 = (up ? fp : 2.0*fp) + (dn ? fm : 2.0*fm);
@@ -1291,8 +1292,8 @@ void CleanStCross(const CleanArgs &x, const int m, const int k, const int j, con
         CleanStAdd<lk, 0, -1>(x, ab, m, k, j, i, dn ? fm : 0.0, c);
       } else {
         const Real s = x.x1v(m,iff)/vr*cr*0.25;
-        const Real fp = x.area[1](m,kf,jf+1,iff)*sin(x.x2f(m,jf+1))*s;
-        const Real fm = -x.area[1](m,kf,jf,iff)*sin(x.x2f(m,jf))*s;
+        const Real fp = x.area[1](m,kf,jf+1,iff)*x.tg(m,3,jf+1)*s;
+        const Real fm = -x.area[1](m,kf,jf,iff)*x.tg(m,3,jf)*s;
         const Real f0 = (up ? fp : 2.0*fp) + (dn ? fm : 2.0*fm);
         CleanStAdd<rk, 1, 0>(x, ab, m, k, j, i, up ? fp : 0.0, c);
         CleanStAdd<lk, 1, 0>(x, ab, m, k, j, i, up ? fp : 0.0, c);

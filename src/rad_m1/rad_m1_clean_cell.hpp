@@ -335,7 +335,7 @@ void CleanCellRows(const CleanArgs &x, const int dir, const int m, const int kf,
       w[2] *= rf;
       w[3] *= rf;
     } else if (dir == 1) {
-      w[3] *= sin(x.x2f(m,jf))/sin(x.x2v(m,j));
+      w[3] *= x.tg(m,3,jf)/x.tg(m,2,j);
     }
     for (int r = 0; r < 4; ++r) g[r] = w[r]*f[r];
     return;
