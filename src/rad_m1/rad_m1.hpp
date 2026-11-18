@@ -2244,8 +2244,9 @@ class RadiationM1 {
                                 // t2_nfv, t2_rstd3)
   int t2_nfv = 0;               // conservative-ray intensity channels of the file
   bool t2_rstd3 = false;        // a version-1 file: the fkin block is d only (no K1_d)
-  bool t2_rst3 = false;         // a clean file of version <= 3: zero predictor / extrap2
-                                // channels, the ring in CLN_N ghosted slabs per record
+  int t2_rstv = 5;              // the clean file's version: <= 3 zero predictor / extrap2
+                                // channels and the ring in CLN_N ghosted slabs per
+                                // record, 4 the cubed sphere's sc rays' cln_fvi ghosted
   void Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0 = 0);
   // gpumem-1022 <rad_m1>/restart_pack_per_mb (read only when named; default true since
   // memcut-1113, was false): the restart writer stages the hesdirk2 channels one
@@ -3045,6 +3046,10 @@ class RadiationM1 {
   int CleanRingRstN() const;            // ... in the restart files (version 4)
   void CleanRingRstCopy(DvceArray5D<Real> &a, const int c, const int nmb, const int m0,
                         const bool pk, const bool have);
+  int CleanFvRstN() const;      // the cubed sphere's sc rays' cln_fvi in the restart
+  void CleanFvRstCopy(DvceArray5D<Real> &a, const int c, const int nmb, const int m0,
+                      const bool pk);   // files (version 5): interior cells, dense
+  bool cln_fvgf = false;        // (their ghosts to be filled, CleanRstFaces)
   // closure components in the restart files of the extrap history and clean_rot_ring:
   // push 16's order (CleanRstSlot); the cell layout keeps its first CLN_N - 1, CLN_JR is
   // staggered only

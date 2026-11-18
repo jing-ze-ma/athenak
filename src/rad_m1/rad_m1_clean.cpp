@@ -1270,6 +1270,10 @@ void RadiationM1::CleanInitFaceFluxes() {
 //! The faces of the physical boundaries keep theirs
 
 void RadiationM1::CleanRstFaces() {
+  if (cln_fvgf) {   // (the ghosts of the restart's cln_fvi, CleanFvRstCopy)
+    CleanGhostFill(cln_fvi, 0, cln_fvi.extent_int(1));
+    cln_fvgf = false;
+  }
   if (!cln_rstold) return;
   if (!cln_init) CleanInit();
   auto &indcs = pmy_pack->pmesh->mb_indcs;

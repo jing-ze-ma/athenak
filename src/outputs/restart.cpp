@@ -240,7 +240,8 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
         // restart_pack_per_mb: one MeshBlock at a time (same bytes); the clean rays'
         // intensities (the last nfv channels; doubles without clean_fv_lag = extrap)
         // are copied to the host directly
-        const int nfv = (pradm1->cln_fvf32 || pradm1->cln_fvlag == 2) ? 0 :
+        const int nfv = (pradm1->cln_fvf32 || pradm1->cln_fvlag == 2 ||
+                         pradm1->cln_cssc) ? 0 :
                         pradm1->CleanRstNfv(), nc0 = nct - nfv;
         // (the staging of a MeshBlock in pinned host memory, which the device writes
         // directly: no device copy of its channels at a dump; where the host reads device
@@ -500,11 +501,12 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   char t2_hdr[2*sizeof(std::int32_t) + 3*sizeof(Real)];
   {
     // (version 2: the staggered fkin block carries K1_d, 8349d48ff; version 3, the
-    // clean scheme: hv[2] also holds t2_ok and cln_k1ok, as bits 2 and 4; version 4,
-    // the clean scheme: no zero channels, the ring dense, Time2RstNchWant)
+    // clean scheme: hv[2] also holds t2_ok and cln_k1ok, as bits 2 and 4; versions 4
+    // and 5, the clean scheme: no zero channels, the ring dense, then also the cubed
+    // sphere's sc rays, Time2RstNchWant)
     const bool cl = (pradm1 != nullptr) && pradm1->clean;
     const bool fk = cl && pradm1->cln_fsolve && pradm1->cln_fkin;
-    const std::int32_t hdr[2] = {(nt2 > 0) ? (cl ? 4 : (fk ? 2 : 1)) : 0,
+    const std::int32_t hdr[2] = {(nt2 > 0) ? (cl ? 5 : (fk ? 2 : 1)) : 0,
                                  static_cast<std::int32_t>(nt2)};
     Real hv[3] = {0.0, 0.0, 0.0};
     if (pradm1 != nullptr) {

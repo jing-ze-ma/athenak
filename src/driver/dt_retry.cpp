@@ -609,6 +609,9 @@ void DtRetry::Build(Mesh *pm) {
         !m1->cln_scmem) {
       sel.erase("m1.cln_fvi");
     }
+    // (and the rays' source vlat_cs, each build's, written before it is read; vet_gd_async
+    // carries the pending build's across the cycle)
+    if (m1->clean && !m1->vgd_async) sel.erase("m1.vlat_cs");
     Binder b{&ent_, "m1.", &sel, all_views_, host_};
     m1->DtRetryVisit(b);
   }

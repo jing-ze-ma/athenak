@@ -3479,7 +3479,11 @@ int RadiationM1::CleanRstNfv() const {
   if (!clean) return 0;
   // (the FV rays, and the cubed sphere's sc rays; before the first sweep those a restart
   // file holds)
-  // (the sc rays' cln_fvi: their slots of the union on a ring, CleanGdFaceSums)
+  // (the sc rays' cln_fvi: their slots of the union on a ring, CleanGdFaceSums; version
+  // 5: dense, CleanFvRstCopy)
+  if (cln_cssc && t2_rstv >= 5) {
+    return (cln_fvi.extent_int(0) > 0) ? CleanFvRstN() : t2_nfv;
+  }
   if (cln_cssc && cln_fvi.extent_int(0) > 0) return cln_fvi.extent_int(1);
   if (cln_rfv > 0 || cln_cssc) return (cln_fvn > 0) ? cln_fvb*cln_fvn : t2_nfv;
   return cln_scmem ? cln_top.extent_int(1) : 0;
@@ -3493,8 +3497,9 @@ int RadiationM1::CleanRstNfv() const {
 int RadiationM1::Time2RstNchWant() {
   // the hesdirk2 slope channels, then (any time scheme) the clean scheme's state.
   // (version 4, the clean scheme: no channels for what clean_skip_time2_hist leaves
-  // zero, and the ring's offsets dense, CleanRingRstCopy)
-  const bool sk = clean && cln_not2h && !t2_rst3;
+  // zero, and the ring's offsets dense, CleanRingRstCopy; version 5: the cubed sphere's
+  // sc rays' intensities dense too, CleanFvRstCopy)
+  const bool sk = clean && cln_not2h && t2_rstv >= 4;
   const int np = (impl_pord == 2) ? 5 : 3;
   const int nt = (time_scheme != M1_TIME_HESDIRK2) ? 0 :
          M1_T2_NK + ((impl_pred && !sk) ? np : 0) + (vet_sc ? M1_T2_NVET : 0)
@@ -3503,7 +3508,7 @@ int RadiationM1::Time2RstNchWant() {
   return nt + ((force_ref == M1_FREF_CLEAN) ? 4 : 0)         // the reference force, set
          + ((force_ref == M1_FREF_WB_MD) ? 10 : 0)           // wb_arad_md: 9, set
          + ((clean && cln_extrap > 0) ? 2*CleanRstNq() + 1 : 0)    // extrap history
-         + ((clean && cln_ring) ? (t2_rst3 ? vra_k*CleanRstNq() : CleanRingRstN()) + 1
+         + ((clean && cln_ring) ? (t2_rstv < 4 ? vra_k*CleanRstNq() : CleanRingRstN()) + 1
                                 : 0)                          // clean_rot_ring
          + ((clean && cln_fsolve && cln_fkin) ? 6 : 0)       // stag fkin: d and its K1
          + CleanRstNfv();                                    // the rays' intensities
@@ -3537,13 +3542,13 @@ bool RadiationM1::Time2RstAccept(const int nfile, const int ver) {
   // (a version-1 file, before 8349d48ff, holds d without its slope K1_d: read with K1_d =
   // 0 and a backward-Euler first step)
   t2_rstd3 = (ver < 2) && clean && cln_fsolve && cln_fkin;
-  t2_rst3 = (ver < 4) && clean;
+  t2_rstv = clean ? ver : 5;
   const int nb = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0);
   t2_nfv = (clean && (cln_rfv > 0 || cln_cssc || cln_scmem)) ? nfile - nb : 0;
   return (nfile == nb + t2_nfv) && (t2_nfv >= 0);
 }
 int RadiationM1::Time2RstNch() {
-  t2_rst3 = false;   // (the writer: version 4, after a restart from an older file too)
+  t2_rstv = 5;   // (the writer: version 5, after a restart from an older file too)
   // (the clean scheme always: its state, and K1 with cln_k1ok, also in backward-Euler
   // steps; restart.cpp stores t2_ok)
   return (t2_ok || clean || time_scheme != M1_TIME_HESDIRK2) ? Time2RstNchWant() : 0;
@@ -3562,7 +3567,7 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
     c += M1_T2_NK;
   }
   // (clean_skip_time2_hist: no predictor and extrap2 channels, version 4; the file is
-  // written in this run's layout, t2_rst3 = false)
+  // written in this run's layout, t2_rstv = 5)
   const bool noh = clean && cln_not2h;
   if (h2 && impl_pred && !noh) {
     const int np = (impl_pord == 2) ? 5 : 3;
@@ -3686,7 +3691,9 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
   // clean_rays = fv1 | fv: the intensities the next sweep starts from, last (unless a
   // has no room for them: restart.cpp copies them itself)
   if (a.extent_int(1) < c + CleanRstNfv()) return;
-  if (CleanRstNfv() > 0 && CleanRstFv().extent_int(0) >= m0 + nmb) {
+  if (cln_cssc && CleanRstNfv() > 0) {
+    CleanFvRstCopy(a, c, nmb, m0, true);
+  } else if (CleanRstNfv() > 0 && CleanRstFv().extent_int(0) >= m0 + nmb) {
     Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c + CleanRstNfv()), AL, AL,
                                       AL),
                       Kokkos::subview(CleanRstFv(), ms, AL, AL, AL, AL));
@@ -3723,6 +3730,13 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   // the last t2_nfv channels: the conservative rays' intensities (their number is not
   // known before the first sweep, Time2RstAccept)
   const int nfv0 = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0);
+  if (clean && cln_cssc && t2_rstv >= 5 && ch >= nfv0) {   // (version 5, CleanFvRstCopy)
+    DvceArray5D<Real> t("m1_t2_fvrd", nmb, 1, w.extent_int(1), w.extent_int(2),
+                        w.extent_int(3));
+    DeepCopyAcross(Kokkos::subview(t, AL, 0, AL, AL, AL), w);
+    CleanFvRstCopy(t, nfv0 - ch, nmb, 0, false);
+    return;
+  }
   if (clean && (cln_rfv > 0 || cln_cssc || cln_scmem) && ch >= nfv0) {
     auto &fv = CleanRstFv();
     if (fv.extent_int(0) != nmb || fv.extent_int(1) != t2_nfv) {
@@ -3737,7 +3751,7 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     return;
   }
   if (h2) ch -= M1_T2_NK;
-  if (h2 && impl_pred && !(clean && cln_not2h && !t2_rst3)) {
+  if (h2 && impl_pred && !(clean && cln_not2h && t2_rstv >= 4)) {
     const int np = (impl_pord == 2) ? 5 : 3;
     if (ch < np) {
       if (!(clean && cln_not2h)) {
@@ -3804,7 +3818,7 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     }
     ch -= 2*nq + 1;
   }
-  if (clean && cln_ring && !t2_rst3) {   // (version 4, CleanRingRstCopy)
+  if (clean && cln_ring && t2_rstv >= 4) {   // (version 4, CleanRingRstCopy)
     if (ch < CleanRingRstN()) {
       DvceArray5D<Real> t("m1_t2_ringrd", nmb, 1, w.extent_int(1), w.extent_int(2),
                           w.extent_int(3));
