@@ -3257,7 +3257,7 @@ class RadiationM1 {
     DvceArray1D<Real> sh, gh;
   };
   CleanHaloLists cln_hls;
-  bool cln_hlists = false;      // clean_halo_lists
+  bool cln_hlists = true;       // clean_halo_lists
   void CleanHaloListsInit(const int n3, const int n2, const int n1);
   template <typename T, bool L>
   void CleanHaloListsExchange(DvceArray5D<T> a, const int c0, const int nc);

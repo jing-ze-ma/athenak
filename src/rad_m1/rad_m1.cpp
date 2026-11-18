@@ -293,7 +293,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
-    // clean_halo_lists (read only when named, default false): the ghost exchanges of the
+    // clean_halo_lists (read only when named, default true): the ghost exchanges of the
     // clean solve as exact copy lists, one message per neighbour rank (same answers)
     if (pin->DoesParameterExist("rad_m1","clean_halo_lists")) {
       cln_hlists = pin->GetBoolean("rad_m1","clean_halo_lists");
