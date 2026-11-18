@@ -3364,11 +3364,9 @@ class RadiationM1 {
     int n1 = 0, n2 = 0, n3 = 0, nl = 0, ns = 0, nr = 0, par = 0;
     DvceArray1D<int> ld, ls, sc, rc;   // on-rank ghost <- its source; sent; received
     std::vector<int> rank, soff, slen, roff, rlen;
-#if defined(KOKKOS_ENABLE_HIP)
-    Kokkos::View<Real *, Kokkos::SharedHostPinnedSpace> sbuf, rbuf;   // (hmstage-1019)
-#else
+    // (device buffers on HIP too: the messages are MB-size, ROCm-aware MPI moves them
+    // GPU to GPU; host-pinned staging (hmstage-1019) is CPU-copy bound on MI300A)
     DvceArray1D<Real> sbuf, rbuf;      // (rbuf: two halves, alternate exchanges)
-#endif
 #if MPI_PARALLEL_ENABLED
     MPI_Comm comm = MPI_COMM_NULL;
     std::vector<MPI_Request> rq, sq;
