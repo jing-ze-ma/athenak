@@ -3712,9 +3712,14 @@ void RadiationM1::CleanWriteBack() {
       eos.ThermoAt(uh(m,IDN,k,j,i), eos.tfloor, ef, pr, chi_rho, chi_t, cv);
     }
     const Real tz = 1.0e-12*(fabs(uh(m,IEN,k,j,i)) + ke + ef);   // (eint's round-off)
+    // (and any non-finite E, F or gas state, also of a cell at the floor: rejected and
+    // retried as the others, never accepted)
+    const bool fin = Kokkos::isfinite(u0_(m,M1_E,k,j,i) + u0_(m,M1_F1,k,j,i) +
+                                      u0_(m,M1_F1+1,k,j,i) + u0_(m,M1_F1+2,k,j,i) +
+                                      uh(m,IDN,k,j,i) + uh(m,IEN,k,j,i) + ke);
     if ((!(CleanGasEint(x, uh, ke, m, k, j, i) > ef - tz) &&
          !(x.w(m,CLW_JV,k,j,i) >= 0.0) && x.w(m,CLW_EI,k,j,i) > ef + tz) ||
-        u0_(m,M1_E,k,j,i) < 0.0) n += 1.0;
+        u0_(m,M1_E,k,j,i) < 0.0 || !fin) n += 1.0;
   }, Kokkos::Sum<Real>(nb));
   cln_neint = static_cast<int>(CleanReduce(nb, false));
 }
