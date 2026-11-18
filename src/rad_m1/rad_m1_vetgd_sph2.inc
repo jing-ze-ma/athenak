@@ -639,8 +639,10 @@ void RadiationM1::VetGdGlobalBandInit() {
   // vet_gd_halo_ipc (vgd_raw): the kept-list exchanges GPU-driven over CUDA IPC, one
   // receive region per partner (the largest dense receive segment); collective
   if (vgd_raw && vgd_ipc_on && vgd_hcomp > 0 && vgd_ipc_state == 0) {
+    // (clean_rot_fuse: room for both cross-fade sets' values, VetGdGbHaloX)
     size_t cs = 1;
     for (int p = 0; p < np; ++p) {cs = std::max<size_t>(cs, 1ULL*vgd_cspm[p]*vgd_n);}
+    if (clean && cln_rfuse) {cs *= 2;}
     VetGdIpcInit(vgd_csprk, cs, std::max(np, 1)*cs);
   }
   vgd_gbcf.clear();
@@ -979,8 +981,7 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
 bool RadiationM1::VetGdGbHaloX(const int i, const int ws) {
 #if MPI_PARALLEL_ENABLED
   const int np = static_cast<int>(vgd_csprk.size());
-  if (!vgd_raw || !vgd_gbc || !vgd_hmpi || vgd_ipc_state == 1 || np < 1 ||
-      np > VGD_IPC_NS) {
+  if (!vgd_raw || !vgd_gbc || !vgd_hmpi || np < 1 || np > VGD_IPC_NS) {
     return false;
   }
   const int wq = std::min(ws, static_cast<int>(vgd_gdnl.size()) - 1);
@@ -1028,6 +1029,88 @@ bool RadiationM1::VetGdGbHaloX(const int i, const int ws) {
   const int nv = vgd_n, npk = np;
   const bool lean = vgd_lean &&
                     vgd_cur.impl_instance_id() == DevExeSpace().impl_instance_id();
+#if defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP)
+  if (vgd_ipc_state == 1) {
+    // vet_gd_halo_ipc (as VetGdGbHaloC): the pack stores the merged piece of partner p
+    // straight into its receive region of me, flag, wait for mine, unpack; stream-ordered
+    for (int p = 0; p < np; ++p) {
+      if (static_cast<size_t>(sm.v[p+1] - sm.v[p]) > vgd_ipc_cs ||
+          static_cast<size_t>(rm.v[p+1] - rm.v[p]) > vgd_ipc_cs) {
+        return false;   // (no room: the two exchanges)
+      }
+    }
+    if (!lean) {return false;}
+    ++vgd_ipc_seq;
+    const long long seq = vgd_ipc_seq, par = seq & 1;
+    auto pslot = vgd_ipc_pslot.d_view;
+    auto prb = vgd_ipc_prb.d_view;
+    auto phalf = vgd_ipc_phalf.d_view;
+    auto pcs = vgd_ipc_pcs.d_view;
+    auto psig = vgd_ipc_psig.d_view;
+    if (nS > 0) {
+      Kokkos::parallel_for("m1_vgdgb_ipc_xpack", VgdLight(DevExeSpace(), 0, nS),
+      KOKKOS_LAMBDA(const int c) {
+        const bool b = (c >= nsA);
+        const int cc = b ? (c - nsA) : c;
+        const VgdIpcIdx &sx = b ? sb : sa;
+        int p = 0;
+        while (p + 1 < npk && sx.v[p+1] <= cc) {++p;}
+        const int q = b ? lsB_(cc) : lsA_(cc);
+        const int e = q/nv;
+        const int o = (b ? (sa.v[p+1] - sa.v[p]) : 0) + (cc - sx.v[p]);
+        reinterpret_cast<Real *>(prb(p))[par*phalf(p) + pslot(p)*pcs(p) + o] =
+            b ? aB_(S_(e,0),q - e*nv,S_(e,1),S_(e,2),i)
+              : aA_(S_(e,0),q - e*nv,S_(e,1),S_(e,2),i);
+      });
+    }
+    Kokkos::parallel_for("m1_vgdgb_ipc_set", Kokkos::RangePolicy<>(DevExeSpace(), 0, 1),
+    KOKKOS_LAMBDA(const int) {VgdIpcSetN(psig.data(), pslot.data(), npk, seq);});
+    long long *sig = vgd_ipc_sig;
+    int *err = vgd_ipc_err;
+    Kokkos::parallel_for("m1_vgdgb_ipc_wait", Kokkos::RangePolicy<>(DevExeSpace(), 0, 1),
+    KOKKOS_LAMBDA(const int) {VgdIpcWaitN(sig, npk, seq, err);});
+    for (int p = 0; p < np; ++p) {
+      vgd_nbyte += static_cast<Real>(sm.v[p+1] - sm.v[p])*sizeof(Real);
+      vgd_csvsent += static_cast<double>(sm.v[p+1] - sm.v[p]);
+      vgd_csvdense += 2.0*static_cast<double>(vgd_gdsn[wq][p])*nv;
+    }
+    vgd_ipc_n += 1.0;
+    vgd_nexch += 2.0;
+    vgd_xff_nmsg += 1.0;
+    const int nr = vgd_csnrcv;
+    if (nr > 0 && vgd_cnan) {
+      const Real qn = std::numeric_limits<Real>::quiet_NaN();
+      par_for("m1_vgdgb_nan", DevExeSpace(), 0, nr - 1, 0, nv - 1,
+      KOKKOS_LAMBDA(const int e, const int v) {
+        if (DR_(e) <= wq) {
+          aA_(R_(e,0),v,R_(e,1),R_(e,2),i) = qn;
+          aB_(R_(e,0),v,R_(e,1),R_(e,2),i) = qn;
+        }
+      });
+    }
+    const Real *rbp = vgd_ipc_rbuf + par*vgd_ipc_half;
+    const size_t cs = vgd_ipc_cs;
+    if (nR > 0) {
+      Kokkos::parallel_for("m1_vgdgb_ipc_xunpack", VgdLight(DevExeSpace(), 0, nR),
+      KOKKOS_LAMBDA(const int c) {
+        const bool b = (c >= nrA);
+        const int cc = b ? (c - nrA) : c;
+        const VgdIpcIdx &rx = b ? rb : ra;
+        int p = 0;
+        while (p + 1 < npk && rx.v[p+1] <= cc) {++p;}
+        const int q = b ? lrB_(cc) : lrA_(cc);
+        const int e = q/nv;
+        const Real x = rbp[p*cs + (b ? (ra.v[p+1] - ra.v[p]) : 0) + (cc - rx.v[p])];
+        if (b) {
+          aB_(R_(e,0),q - e*nv,R_(e,1),R_(e,2),i) = x;
+        } else {
+          aA_(R_(e,0),q - e*nv,R_(e,1),R_(e,2),i) = x;
+        }
+      });
+    }
+    return true;
+  }
+#endif
   if (!lean) vgd_cur.fence();   // the shell's intensities are complete
   if (nS > 0) {
     Kokkos::parallel_for("m1_vgdgb_xpack", VgdLight(DevExeSpace(), 0, nS),

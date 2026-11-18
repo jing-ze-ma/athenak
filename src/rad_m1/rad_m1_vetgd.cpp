@@ -2529,7 +2529,8 @@ bool RadiationM1::VetGdXffOk() {
       !vgd_gfast) {
     return false;
   }
-  if (vgd_ipc_state == 1) {return false;}   // (the IPC halo: one set per exchange)
+  // (the IPC halo: one set per exchange; the raw band's merged one, VetGdGbHaloX)
+  if (vgd_ipc_state == 1 && !vgd_raw) {return false;}
 #if M1_VGD_NCCL_ON
   if (VgdNcclOn()) {return false;}
 #endif
