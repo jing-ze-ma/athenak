@@ -352,6 +352,7 @@ void RadiationM1::CleanFvCartSource() {
   const bool thermal = fl_on && coupling && !opac_zero;
   const int vsf = vscat ? vscat_form : 0;
   const Real ar = arad, efl = e_floor;
+  const bool cvx = cln_srccvx;   // clean_source_convex
   auto iw_ = iw;
   auto op = opac;
   auto fq = cln_fvq;
@@ -363,8 +364,8 @@ void RadiationM1::CleanFvCartSource() {
     const Real eth = fmin(op(m,M1_OP_P,k,j,i)/chi, 1.0);
     Real s = e;
     if (thermal) {
-      s = (vsf != 0) ? VetScatterMix(vsf, op(m,M1_OP_P,k,j,i), chi, op(m,M1_OP_S,k,j,i),
-                                     ar*t2*t2, e)
+      const Real rkp = cvx ? fmin(op(m,M1_OP_P,k,j,i), chi) : op(m,M1_OP_P,k,j,i);
+      s = (vsf != 0) ? VetScatterMix(vsf, rkp, chi, op(m,M1_OP_S,k,j,i), ar*t2*t2, e)
                      : eth*ar*t2*t2 + (1.0 - eth)*e;
     }
     fq(m,CLQ_X,k,j,i) = chi;

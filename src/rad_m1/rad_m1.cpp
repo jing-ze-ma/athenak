@@ -298,6 +298,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // both sets' J are at least clean_ray_min E (a ratio of two ray-shadowed J is no ray
     // pattern); elsewhere the offset is invalid (left out of the mix)
     cln_ringjmin = pin->GetOrAddBoolean("rad_m1","clean_ring_jmin",true);
+    // clean_source_convex (default off): the rays' vet_scatter source of the clean scheme
+    // (the state's own, CleanRays) with the absorption share kappa_P/chi at most 1, as the
+    // thermal source without vet_scatter: S = J + min(kappa_P/chi, 1) (B - J) between J and
+    // B (kappa_P > chi, a cool envelope's Planck mean above its Rosseland extinction, made
+    // S = J + 750 (B - J) < 0 there: floored to 1e-300, a source hole in the rays)
+    cln_srccvx = pin->GetOrAddBoolean("rad_m1","clean_source_convex",false);
     if (cln_freal && !(cln_gflux && cln_fsolve)) {
       std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_freal needs clean_layout = "
                 << "staggered with clean_consistency (the F solve and gflux)" << std::endl;

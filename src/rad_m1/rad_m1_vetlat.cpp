@@ -671,6 +671,7 @@ void RadiationM1::VetLatSweep(const int stage) {
   const Real dts = (vsrc_dt > 0.0) ? vsrc_dt : (mr_on ? mr_dt : pm->dt);
   const Real cl = c_light, ar = arad, efl = e_floor;
   const bool srcep = vlat_src_ep;   // vet_gd_rebuild_every: the Picard iterate's E
+  const bool cvx = clean && cln_srccvx && !srx;   // clean_source_convex
   par_for("m1_vlat_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real chi = fmax(iw_(m,M1_IW_KT,k,j,i), 1.0e-300);
@@ -699,7 +700,8 @@ void RadiationM1::VetLatSweep(const int stage) {
                                     opac_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
                                     chi, rks));
       } else if (vsf != 0) {
-        s = VetScatterMix(vsf, opac_(m,M1_OP_P,k,j,i), chi, rks, ar*t2*t2, e);
+        const Real rkp = cvx ? fmin(opac_(m,M1_OP_P,k,j,i), chi) : opac_(m,M1_OP_P,k,j,i);
+        s = VetScatterMix(vsf, rkp, chi, rks, ar*t2*t2, e);
       } else {
         s = eth*ar*t2*t2 + (1.0 - eth)*e;
       }
