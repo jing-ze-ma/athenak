@@ -3131,7 +3131,7 @@ class RadiationM1 {
   Real cln_tol_op = 0.0;        // clean_tol_opac: linear tolerance of those passes
   int cln_tol_opn = 1 << 30;    // clean_tol_opac_passes: ... of the first that many
   Real cln_tol_pass = 0.0;      // tolerance of the current linear solve (0: clean_tol)
-  bool cln_nl_tnorm = false;    // clean_nl_tnorm = energy: gas change in energy terms
+  bool cln_nl_tnorm = true;     // clean_nl_tnorm = energy: gas change in energy terms
   bool cln_kgh = false;         // the ghosts of the iterate (CLC_K) are current
   bool cln_nlprint = false;     // clean_nl_print: the changes of every pass (rank 0)
   bool cln_lf_ok = false;       // cln_lf holds the factors of the current blocks

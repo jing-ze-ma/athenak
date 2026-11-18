@@ -475,9 +475,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         cln_tol_opn = std::max(pin->GetInteger("rad_m1","clean_tol_opac_passes"), 1);
       }
     }
-    // clean_nl_tnorm = temperature | energy (read only when named; with clean_nl_norm =
-    // cell): the gas part of a pass's change as dT/T, or as dT/T times the gas eint over
-    // the larger of it and the E scale (clean_nl_efloor)
+    // clean_nl_tnorm = temperature | energy (read only when named, default energy; with
+    // clean_nl_norm = cell): the gas part of a pass's change as dT/T, or as dT/T times
+    // the gas eint over the larger of it and the E scale (clean_nl_efloor)
     if (pin->DoesParameterExist("rad_m1","clean_nl_tnorm")) {
       const std::string tn = pin->GetString("rad_m1","clean_nl_tnorm");
       cln_nl_tnorm = (tn.compare("energy") == 0);
