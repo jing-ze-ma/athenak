@@ -299,9 +299,12 @@ void RadiationM1::CleanInit() {
   cln_opt = cln_cell && !opac_freeze && !opac_zero &&
             (opacity_type == M1_OPAC_TABLE ||
             (opacity_type != M1_OPAC_CONST && opac_b != 0.0));
-  Kokkos::realloc(cln_fc1, nmb, nfc, n3, n2, n1);
-  Kokkos::realloc(cln_fc2, nmb, nfc, n3, n2, n1);
-  Kokkos::realloc(cln_fc3, nmb, nfc, n3, n2, n1);
+  // (the staggered bracket's lagged flux DG in one more slot, CleanStagBracket)
+  cln_fdg = (!cln_cell && cln_consist) ? nfc : -1;
+  const int nfx = nfc + (cln_fdg >= 0);
+  Kokkos::realloc(cln_fc1, nmb, nfx, n3, n2, n1);
+  Kokkos::realloc(cln_fc2, nmb, nfx, n3, n2, n1);
+  Kokkos::realloc(cln_fc3, nmb, nfx, n3, n2, n1);
   Kokkos::deep_copy(cln_w.s, 0.0);
   Kokkos::deep_copy(cln_w.o, 0.0);
   Kokkos::deep_copy(cln_fc1, 0.0);
@@ -2216,6 +2219,10 @@ void RadiationM1::CleanStagBracket() {
       const Real jf = 0.5*(x.w(m,CLW_Z,k,j,i) + x.w(m,CLW_Z,k-dk,j-dj,i-di));
       const Real cd = (jf > 0.0 && fabs(st) > chi*jf) ? x.c*jf/fabs(st) :
                       ((chi > 0.0) ? x.c/chi : x.fc[dir](m,CLF_TH,k,j,i)*x.h*x.c*x.c);
+      // (the cells' half ranges realisable, h+ in [0, 1], h- in [-1, 0], as the old
+      // production's; the rest of the rays' flux is DG below)
+      x.fc[dir](m,CLF_HP,k,j,i) = fmin(fmax(x.fc[dir](m,CLF_HP,k,j,i), 0.0), 1.0);
+      x.fc[dir](m,CLF_HM,k,j,i) = fmax(fmin(x.fc[dir](m,CLF_HM,k,j,i), 0.0), -1.0);
       Real gl = 0.0, gr = 0.0;
       CleanStagArea(x, dir, m, k, j, i, w, gl, gr);
       const Real pj = -(1.0 - w)*cd*st +
@@ -2233,24 +2240,18 @@ void RadiationM1::CleanStagBracket() {
       const Real jl = rat ? x.w(m,CLW_Z,k-dk,j-dj,i-di) : x.cs(m,CLN_JR,k-dk,j-dj,i-di);
       const Real jr = rat ? x.w(m,CLW_Z,k,j,i) : x.cs(m,CLN_JR,k,j,i);
       const Real jd = (fr0 > 0.0) ? x.cs(m,CLN_JR,k-dk,j-dj,i-di) : x.cs(m,CLN_JR,k,j,i);
-      if (rat && !(jd > efl)) return;
+      if (rat && !(jd > efl)) {
+        x.fc[dir](m,x.fdg,k,j,i) = 0.0;
+        return;
+      }
       const Real fy = rat ? fr0/jd*((fr0 > 0.0) ? jl : jr) : fr0;
-      const Real hl = x.fc[dir](m,CLF_HP,k,j,i)*jl, hr = x.fc[dir](m,CLF_HM,k,j,i)*jr;
-      const Real dd = fy - pj/x.c, fr = hl + hr + dd, s = hl - hr;
-      // (H+' = hl (1 + dd/s), H-' = hr (1 - dd/s), the one tilted past 0 at 0 and the
-      // other fr, of its sign; each formed directly: H-' = fr - H+' left the round-off
-      // of fr over a J_R ~ 1e-56 of a ray-shadowed cell, h- ~ +1e33 (the wrong sign);
-      // without half ranges the cell's h+- stay)
-      const Real tl = hl + dd*hl/s, tr = hr - dd*hr/s;
-      const bool cut = (tl < 0.0) || (tr > 0.0);
-      const Real hp = !(s > 0.0) ? hl : (cut ? ((tl < 0.0) ? 0.0 : fmax(fr, 0.0)) : tl);
-      const Real hm = !(s > 0.0) ? hr : (cut ? ((tl < 0.0) ? fmin(fr, 0.0) : 0.0) : tr);
-      // (rays' J at or below the radiation floor e_floor are no radiation field, J ~
-      // 1e-100 in the E-floor holes of an evolved envelope: there the factors take the
-      // realisable half range |H+-| <= J; unbounded they made rows of the operator ~1e100)
-      const Real hpj = hp/jl, hmj = hm/jr;
-      if (jl > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = (jl > efl) ? hpj : fmin(hpj, 1.0);
-      if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = (jr > efl) ? hmj : fmax(hmj, -1.0);
+      // (the old production's form, M1ThinFace: the cells' half ranges h+- realisable, the
+      // rest of the rays' face flux the lagged flux DG = w (c F_y - Phi(J)) of the face, not
+      // a factor of E: tilted into h+- it reached F/J_R ~ 1e3 .. 4e20 at a ray-shadowed
+      // donor below a lit cell (J_R 1e-25 .. 1e-7 against its E, x1 faces at w = 1 of the
+      // evolved HG envelope hegiant.00184) and drained the donor's E; DG is not capped at
+      // c J of the donor, whose cap breaks a beam's consistency at its edge)
+      x.fc[dir](m,x.fdg,k,j,i) = w*(x.c*fy - pj);
     });
   }
 }

@@ -239,6 +239,7 @@ struct CleanArgs {
                                // G + F^H - F
   bool gf;                     // staggered, clean_stag_gflux: flux factors, low order
   bool fre;                    // staggered, clean_stag_freal: a realisable comoving sb
+  int fdg;                     // staggered bracket: face slot of its lagged flux DG (-1)
   bool fs;                     // staggered, clean_stag_fsolve: the face F of the F solve
   bool tf;                     //   and each face's momentum exchange T of its owner block
                                // (CLF_N) with its dissipation term (CLF_N + 1)
@@ -1142,6 +1143,7 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
     }
   }
   if (x.drag) s += (1.0 - w)*qd*x.fc[dir](m,CLF_DQ,k,j,i);
+  if (x.fdg >= 0 && !x.hi) s += x.fc[dir](m,x.fdg,k,j,i);   // (CleanStagBracket's DG)
   // (the advective share 1 - theta_d of an upwind face, CleanFaceWeights)
   if (x.upw && x.feedback) {
     Real al, ar, phi = 0.0;
