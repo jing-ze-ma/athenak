@@ -228,7 +228,8 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/implicit_ghost_x1min", "!"}, {"rad_m1/ic_rad*", "clean_init"},
     {"rad_m1/implicit_predictor", nullptr}, {"rad_m1/implicit_predictor_tcap", nullptr},
     {"rad_m1/implicit_resid_fatal", nullptr},
-    {"rad_m1/implicit_pos_gas*", nullptr}, {"rad_m1/implicit_*", ""},
+    {"rad_m1/implicit_pos_gas*", nullptr}, {"rad_m1/implicit_pos_floor", nullptr},
+    {"rad_m1/implicit_pos_floor_cons", nullptr}, {"rad_m1/implicit_*", ""},
     {"rad_m1/time2_accept_fallback", ""}, {"rad_m1/time2_posfix*", ""},
     {"rad_m1/time2_k1_*", ""}, {"rad_m1/time2_face_fct", ""},
     {"time/dt_retry_t2_be", ""}};
@@ -3546,6 +3547,14 @@ void RadiationM1::CleanWriteBack() {
   const bool gtf = cln_gtf, pgas = impl_pos_gas;
   const Real pgf = impl_pos_gas_frac, efl = e_floor;
   auto pc_ = pos_cnt_d;
+  const bool pflr = impl_pos_floor, pfc = pflr && impl_pos_flr_cons;
+  if (pfc && pfc_def.extent_int(0) != nmb1 + 1) {
+    auto &icp = pmy_pack->pmesh->mb_indcs;
+    Kokkos::realloc(pfc_def, nmb1 + 1, icp.nx3 + 2*icp.ng, icp.nx2 + 2*icp.ng,
+                    icp.nx1 + 2*icp.ng);
+  }
+  if (pfc) Kokkos::deep_copy(pfc_def, 0.0);
+  auto pfd = pfc_def;
   px = CleanDevArgs(x, 0);   // (the F solve took the slots; xh changed)
   pxh = CleanDevArgs(xh, 1);
   par_for("cln_wbcell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -3674,30 +3683,33 @@ void RadiationM1::CleanWriteBack() {
       uh(m,IEN,k,j,i) += den;
       x.w(m,CLW_JV,k,j,i) = den - wk;   // (its change of the gas eint, cln_neint)
     }
-    // (an E below zero within the solver tolerance, as the old production's
-    // implicit_pos_floor: raised to zero with the energy of the cell's gas above e_min,
-    // counted; what the gas cannot cover stays, and the solve is not accepted
-    // (cln_neint); without the gas the raise is counted as created)
-    if (e < 0.0) {
+    // (implicit_pos_floor, the old production's write-back: an E at or below e_floor is
+    // raised to it with the energy of the cell's gas above e_min; what the gas cannot
+    // cover is taken from the radiation of the cell's column (implicit_pos_floor_cons,
+    // below), else counted as created; counted)
+    if (pflr && e <= efl) {
       const Real vol = (x.sph || x.cub) ? x.vol(m,k,j,i) :
                        1.0/(x.idx[0]*x.idx[1]*x.idx[2]);
       const bool gas = feedback && !x.vzero;
-      Real take = gas ? 0.0 : -e;
+      Real take = 0.0;
       if (gas) {
         Real ef = 0.0, pr, chi_rho, chi_t, cv;
         if (eos.tfloor > 0.0) {
           eos.ThermoAt(uh(m,IDN,k,j,i), eos.tfloor, ef, pr, chi_rho, chi_t, cv);
         }
         const Real ei = x.w(m,CLW_EI,k,j,i), emin = fmax(ef, pgf*fmax(ei, 0.0));
-        take = fmin(-e, fmax(ei + x.w(m,CLW_JV,k,j,i) - emin, 0.0));
+        take = fmin(efl - e, fmax(ei + x.w(m,CLW_JV,k,j,i) - emin, 0.0));
         den -= take;
         uh(m,IEN,k,j,i) -= take;
         x.w(m,CLW_JV,k,j,i) -= take;
         Kokkos::atomic_add(&pc_(M1_POS_FLR_DE), take*vol);
-      } else {
-        Kokkos::atomic_add(&pc_(M1_POS_FLR_UN), take*vol);
       }
-      e += take;
+      if (pfc) {
+        pfd(m,k,j,i) = (efl - e - take)*vol;
+      } else {
+        Kokkos::atomic_add(&pc_(M1_POS_FLR_UN), (efl - e - take)*vol);
+      }
+      e = efl;
       Kokkos::atomic_add(&pc_(M1_POS_FLR), 1.0);
     }
     if (slopes) {
@@ -3727,6 +3739,43 @@ void RadiationM1::CleanWriteBack() {
       }
     }
   });
+  // (implicit_pos_floor_cons, the old production's column pass: the uncovered raise of a
+  // cell from the radiation above e_floor of the nearest cells of its radial column, i -+
+  // d, the pair split by their energy above the floor; their stage slopes with it)
+  if (pfc) {
+    par_for("cln_pos_flr_cons", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      CLEAN_HIPX(const CleanArgs &x = *px;)
+      auto vol = [&](const int q) {
+        return (x.sph || x.cub) ? x.vol(m,k,j,q) : 1.0/(x.idx[0]*x.idx[1]*x.idx[2]);
+      };
+      Real mv = 0.0, un = 0.0;
+      for (int i = is; i <= ie; ++i) {
+        Real def = pfd(m,k,j,i);
+        for (int d = 1; d <= ie - is && def > 0.0; ++d) {
+          const int qa = i - d, qb = i + d;
+          const Real aa = (qa >= is) ? fmax(u0_(m,M1_E,k,j,qa) - efl, 0.0)*vol(qa) : 0.0;
+          const Real ab = (qb <= ie) ? fmax(u0_(m,M1_E,k,j,qb) - efl, 0.0)*vol(qb) : 0.0;
+          const Real at = aa + ab;
+          if (!(at > 0.0)) continue;
+          const Real tk = fmin(def, at);
+          for (int sd = 0; sd < 2; ++sd) {
+            const int q = sd ? qb : qa;
+            const Real a = sd ? ab : aa;
+            if (!(a > 0.0)) continue;
+            const Real de = (tk*a/at)/vol(q);
+            u0_(m,M1_E,k,j,q) = fmax(u0_(m,M1_E,k,j,q) - de, efl);
+            if (slopes) kk(m,M1_T2_E,k,j,q) -= de/h;
+          }
+          def -= tk;
+          mv += tk;
+        }
+        un += fmax(def, 0.0);
+      }
+      if (mv > 0.0) Kokkos::atomic_add(&pc_(M1_POS_FLR_MV), mv);
+      if (un > 0.0) Kokkos::atomic_add(&pc_(M1_POS_FLR_UN), un);
+    });
+  }
   // cells the write-back left with gas eint < 0, or below the EOS floor, by lowering it
   // (the solve is then not accepted, as in the cell layout; an eint the hydro left there
   // is not the solve's)
