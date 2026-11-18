@@ -3171,6 +3171,20 @@ class RadiationM1 {
   bool cln_gflux = false;       // clean_stag_gflux: rays' face flux as flux factors
   bool cln_rayratio = false;    // clean_stag_rayratio: the bracket of ray ratios x E
   bool cln_ringjmin = true;     // clean_ring_jmin: ring J ratios only of ray-held cells
+  // implicit_fb_local (read only when named; the old production's local positivity
+  // fallback, staggered): the cells within 2 of a pass's X <= 0 lose the off-diagonal
+  // Eddington terms D12 D13 D23 (cln_s, put back after the solve) and the velocity kick
+  // of the advective coefficients for the rest of the solve, at most
+  // implicit_fb_local_rounds (4) times per solve (CleanFbLocal)
+  bool cln_fbl = false;
+  Real cln_prmax = -1.0;      // implicit_tol_rel_max named: clean_conv_max's default
+  bool cln_linpass = false;   // implicit_lin_maxit named: a pass goes on past a failed solve
+  int cln_fbl_rounds = 4, cln_fbl_r = 0;
+  Real cln_fbl_nc = 0.0;
+  DvceArray4D<Real> cln_fbm;   // the mask (1 = fallback cell)
+  DvceArray5D<Real> cln_fbd;   // D12 D13 D23 of cln_s before the first round
+  bool CleanFbLocal();
+  void CleanFbRestore();
   bool cln_srccvx = false;      // clean_source_convex: vet_scatter S between J and B
   bool cln_freal = false;       // clean_stag_freal: realisable sb, restart faces
   int cln_fdg = -1;             // staggered bracket: face slot of its lagged flux DG

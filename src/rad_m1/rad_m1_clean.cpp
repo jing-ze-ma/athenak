@@ -218,8 +218,10 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/implicit_cfl", nullptr}, {"rad_m1/implicit_allow_multid", nullptr},
     {"rad_m1/implicit_mr_*", nullptr}, {"rad_m1/implicit_det_trace", nullptr},
     {"rad_m1/implicit_tol", "clean_tol_nl"}, {"rad_m1/implicit_lin_tol", "clean_tol"},
-    {"rad_m1/implicit_maxit", "clean_maxnl"},
-    {"rad_m1/implicit_lin_maxit", "clean_maxit"},
+    {"rad_m1/implicit_maxit", nullptr},   // (clean_maxnl's default, rad_m1.cpp)
+    {"rad_m1/implicit_fb_local*", nullptr},   // (staggered: CleanFbLocal)
+    {"rad_m1/implicit_tol_rel_max", nullptr},   // (clean_conv_max's default)
+    {"rad_m1/implicit_lin_maxit", nullptr},   // (clean_maxit's default, rad_m1.cpp)
     {"rad_m1/implicit_recon", "clean_recon"},
     {"rad_m1/implicit_closure_lag", "clean_closure"},
     {"rad_m1/time2_vet", "clean_closure"}, {"rad_m1/time2_vet_col", "clean_closure"},
@@ -1003,6 +1005,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (cell) Kokkos::deep_copy(Kokkos::subview(cln_v, Kokkos::ALL, 2, Kokkos::ALL,
                                               Kokkos::ALL, Kokkos::ALL), 0.0);
   Real dnl = 0.0;   // (the last pass's change, implicit_resid_fatal)
+  cln_fbl_r = 0;
   for (int ipos = 0; ; ++ipos) {
     CleanFirstIterate();
     cln_fsk = false;
@@ -1073,7 +1076,13 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       cln_nsolve += 1.0;
       cln_nit += std::abs(nit);
       if (nit < 0) dnl = std::numeric_limits<Real>::infinity();
-      if (!iterate || nit < 0) break;
+      // (implicit_lin_maxit named, as the old production: a linear solve that ends at
+      // its cap leaves its iterate to the pass, which is then not the last one)
+      const bool lp = cln_linpass && !cell && nit < 0 && inl + 1 < maxnl;
+      if (!iterate || (nit < 0 && !lp)) break;
+      // (implicit_fb_local: a pass that masks cells is not the last one)
+      const bool fbl = (cln_fbl && !cell && cln_fbl_r < cln_fbl_rounds && CleanFbLocal()) ||
+                       lp;
       const Real de = cell ? CleanCellNewtonUpdate() : CleanNewtonUpdate();
       if (cln_bon) tol_nl = cln_tolb;
       if (lagged && inl < cln_maxpic) dpic = de;
@@ -1087,6 +1096,11 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       if (cln_nlprint && global_variable::my_rank == 0) {
         std::printf("CLEAN pass cycle %d t2s %d pos %d pass %d it %d de %.3e dv %.3e\n",
                     pmy_pack->pmesh->ncycle, t2_solve, ipos, inl, nit, de, dv);
+      }
+      if (fbl) {
+        de0 = de;
+        dv0 = dv;
+        continue;
       }
       // the remaining change of a contraction q < 1/2 is q/(1-q) times that of the pass
       auto est = [&](const Real d, const Real d0) {
@@ -1214,6 +1228,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // first coupled solve, every iterate of which recaptures it; a failed one is redone)
   if (force_ref == M1_FREF_CLEAN && cln_feedback && !cln_vzero && nit >= 0 &&
       nneg == 0 && !(t2stage && t2_fail) && !dtr_fail) cln_fref_set = true;
+
+  if (cln_fbl_r > 0) CleanFbRestore();   // (implicit_fb_local: the closure's D back)
 
   // 6. clean_closure = extrap(2): ray moments of the new state.  The last solve of a
   //    step also re-evaluates its slope K1 = f(U^{n+1}) with the closure of these rays
@@ -1431,6 +1447,94 @@ void RadiationM1::CleanOldVector() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::CleanFbLocal
+//! \brief implicit_fb_local (staggered), the old production's local positivity fallback
+//! (ImplicitFbLocal, ImplicitVimpKill): the cells within 2 cells along each axis of a
+//! cell this pass solved to X <= 0 join the mask for the rest of the solve; there the
+//! closure's off-diagonal D12 D13 D23 are zero (the non-M-matrix part of the operator,
+//! production's LAT terms) and the advective coefficients take no velocity kick.
+//! Counted (CLEAN FBLOCAL).  True if cells joined (the next pass rebuilds the rows).
+
+bool RadiationM1::CleanFbLocal() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke, ng = indcs.ng;
+  const int nmb = pmy_pack->nmb_thispack;
+  if (cln_fbm.extent_int(0) < nmb) {
+    Kokkos::realloc(cln_fbm, nmb, cln_s.extent_int(2), cln_s.extent_int(3),
+                    cln_s.extent_int(4));
+    Kokkos::realloc(cln_fbd, nmb, 3, cln_s.extent_int(2), cln_s.extent_int(3),
+                    cln_s.extent_int(4));
+  }
+  auto s = cln_s;
+  auto fbm = cln_fbm;
+  auto fbd = cln_fbd;
+  auto dsub = Kokkos::subview(s, Kokkos::ALL, std::make_pair(CLN_D11 + 3, CLN_D11 + 6),
+                              Kokkos::ALL, Kokkos::ALL, Kokkos::ALL);
+  if (cln_fbl_r == 0) {   // (the closure of this solve, put back by CleanFbRestore)
+    Kokkos::deep_copy(fbd, dsub);
+    Kokkos::deep_copy(fbm, 0.0);
+  }
+  CleanGhostFill(cln_w, CLW_X, 1);
+  CleanArgs x = CleanMakeArgs();
+  auto w = cln_w;
+  const int o2 = (ng < 2) ? ng : 2;
+  const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
+  Real nc = 0.0;
+  Kokkos::parallel_reduce("cln_fblocal", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+      DevExeSpace(), {0, ks, js, is}, {nmb, ke + 1, je + 1, ie + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+    // (x1 within the MeshBlock's own cells at a physical end, as production's)
+    auto open = [&](const int f) {
+      const BoundaryFlag q = x.mbc(m,f);
+      return q == BoundaryFlag::block || q == BoundaryFlag::periodic ||
+             q == BoundaryFlag::panel;
+    };
+    bool neg = false;
+    for (int o = -o2; o <= o2; ++o) {
+      const int ii = i + o, jj = j + o, kk = k + o;
+      if ((ii >= is || open(0)) && (ii <= ie || open(1))) {
+        neg = neg || !(w(m,CLW_X,k,j,ii) > 0.0);
+      }
+      if (md && (jj >= js || open(2)) && (jj <= je || open(3))) {
+        neg = neg || !(w(m,CLW_X,k,jj,i) > 0.0);
+      }
+      if (td && (kk >= ks || open(4)) && (kk <= ke || open(5))) {
+        neg = neg || !(w(m,CLW_X,kk,j,i) > 0.0);
+      }
+    }
+    if (neg && !(fbm(m,k,j,i) > 0.0)) {
+      fbm(m,k,j,i) = 1.0;
+      for (int n = 3; n < 6; ++n) s(m,CLN_D11+n,k,j,i) = 0.0;
+      a += 1.0;
+    }
+  }, Kokkos::Sum<Real>(nc));
+  nc = CleanReduce(nc, false);
+  if (!(nc > 0.0)) return false;
+  CleanGhostFill(cln_s, CLN_D11 + 3, 3);
+  cln_fbl_r += 1;
+  cln_fbl_nc += nc;
+  if (global_variable::my_rank == 0) {
+    std::printf("CLEAN FBLOCAL cycle %d t2s %d round %d cells %.0f (total %.0f)\n",
+                pmy_pack->pmesh->ncycle, t2_solve, cln_fbl_r, nc, cln_fbl_nc);
+  }
+  return true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanFbRestore
+//! \brief implicit_fb_local: the closure's D12 D13 D23 of the solve back (the mask is of
+//! one solve; a retry, the next stage and the closure after the solve see the rays')
+
+void RadiationM1::CleanFbRestore() {
+  auto dsub = Kokkos::subview(cln_s, Kokkos::ALL,
+                              std::make_pair(CLN_D11 + 3, CLN_D11 + 6), Kokkos::ALL,
+                              Kokkos::ALL, Kokkos::ALL);
+  Kokkos::deep_copy(dsub, cln_fbd);
+  cln_fbl_r = 0;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanAdvectiveCoefficients
 //! \brief a_d = v_d + D_db v_b, the advective flux per unit E, with v the gas velocity of
 //! the old vector plus the momentum change of the current iterate
@@ -1448,6 +1552,8 @@ void RadiationM1::CleanAdvectiveCoefficients() {
   // (staggered on the cubed sphere: Cartesian, CleanStagGasMomentum)
   const bool sc = x.cub && !cln_cell;
   xa.cub = x.cub && !sc;
+  const bool fbk = cln_fbl_r > 0;   // (implicit_fb_local: no kick in the mask)
+  auto fbm = cln_fbm;
 
   par_for("cln_advcoef", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -1458,7 +1564,8 @@ void RadiationM1::CleanAdvectiveCoefficients() {
     } else {
       CleanGasMomentum(x, uh, m, k, j, i, v);
     }
-    for (int n = 0; n < 3; ++n) v[n] = (v[n] + w(m,CLW_DM+n,k,j,i))/d;
+    const bool kk = !(fbk && fbm(m,k,j,i) > 0.0);
+    for (int n = 0; n < 3; ++n) v[n] = (v[n] + (kk ? w(m,CLW_DM+n,k,j,i) : 0.0))/d;
     CleanAdvect(xa, m, k, j, i, v, a);
     for (int n = 0; n < 3; ++n) w(m,CLW_A1+n,k,j,i) = a[n];
   });
@@ -1988,6 +2095,8 @@ Real RadiationM1::CleanVelocityUpdate() {
   auto xa = x;
   xa.cub = false;
   Real dvmax = 0.0, vmax = 0.0, fvmax = 0.0;
+  const bool fbk = cln_fbl_r > 0;
+  auto fbm = cln_fbm;
   CLEAN_HIPX(const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
              const CleanArgs *pxa = CleanDevArgs(xa, 4);)
   Kokkos::parallel_reduce("cln_velocity", CleanRpLb2(DevExeSpace(), 0, nmb*nkji),
@@ -2030,7 +2139,9 @@ Real RadiationM1::CleanVelocityUpdate() {
     v_max = fmax(v_max, std::sqrt(v2));
     if (!fa) return;
     Real v[3], a[3];
-    for (int n = 0; n < 3; ++n) v[n] = (pg[n] + x.w(m,CLW_DM+n,k,j,i))/d;
+    // (implicit_fb_local: a fallback cell's advection without the kick, CleanFbLocal)
+    const bool kk = !(fbk && fbm(m,k,j,i) > 0.0);
+    for (int n = 0; n < 3; ++n) v[n] = (pg[n] + (kk ? x.w(m,CLW_DM+n,k,j,i) : 0.0))/d;
     CleanAdvect(xa, m, k, j, i, v, a);
     for (int n = 0; n < 3; ++n) x.w(m,CLW_A1+n,k,j,i) = a[n];
   }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax), Kokkos::Max<Real>(fvmax));
