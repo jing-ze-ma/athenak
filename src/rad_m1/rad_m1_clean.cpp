@@ -1256,7 +1256,7 @@ void RadiationM1::CleanInitFaceFluxes() {
     if (dir == 2 && !pmy_pack->pmesh->three_d) continue;
     auto f0 = (dir == 0) ? f0x1 : ((dir == 1) ? f0x2 : f0x3);
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    par_for("cln_f0", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    CleanFor("cln_f0", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       f0(m,k,j,i) = 0.5*(u0_(m,M1_F1+dir,k,j,i) + u0_(m,M1_F1+dir,k-dk,j-dj,i-di));
     });
@@ -1415,7 +1415,7 @@ void RadiationM1::CleanOldVector() {
   auto w = cln_w;
   CleanArgs x = CleanMakeArgs();
 
-  par_for("cln_old", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  CleanFor("cln_old", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real t = 0.0;
     if (fluid) {
@@ -1455,7 +1455,7 @@ void RadiationM1::CleanAdvectiveCoefficients() {
   const bool sc = x.cub && !cln_cell;
   xa.cub = x.cub && !sc;
 
-  par_for("cln_advcoef", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  CleanFor("cln_advcoef", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = uh(m,IDN,k,j,i);
     Real v[3], a[3];
@@ -1503,7 +1503,7 @@ void RadiationM1::CleanFirstIterate() {
                     t2_solve != M1_T2S_NONE && !cln_vzero && t2k1.extent_int(0) > nmb1;
   const Real h = dt_sub, ecap = SQR(SQR(impl_pred_tcap)), rtol = cln_trtol;
 
-  par_for("cln_iter0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  CleanFor("cln_iter0", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real eo = fmax(w(m,CLW_EO,k,j,i), 0.0);
     const Real ep = pred ? eo + h*k1(m,M1_T2_E,k,j,i) : eo;
@@ -1599,7 +1599,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
 
   if (x.feedback) {
     CLEAN_HIPX(const CleanArgs *pxb = CleanDevArgs(x, 0);)
-    par_for("cln_beta", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    CleanFor("cln_beta", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       CLEAN_HIPX(const CleanArgs &x = *pxb;)   // (in device memory: no per-thread copy)
       Real p[3];
@@ -1633,7 +1633,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   // each face's source once, for its two cells (CLF_SR), and with gflux its a E (CLF_PT)
   const int nf = x.nf;
   const bool af = x.feedback && x.gf && !x.cub;
-  par_for("cln_rhsaf", DevExeSpace(), 0, nmb1, ks, ke+(nf > 2), js, je+(nf > 1), is, ie+1,
+  CleanFor("cln_rhsaf", nmb1, ks, ke+(nf > 2), js, je+(nf > 1), is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
     for (int n = 0; n < nf; ++n) {
@@ -1822,7 +1822,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   }, Kokkos::Max<Real>(smax[0]), Kokkos::Max<Real>(smax[1]));
   const Real fse = 1.0e-12*CleanReduce(smax[0], true);
   const Real fsg = fmax(1.0e-12*CleanReduce(smax[1], true), 1.0e-300);
-  par_for("cln_sfloor", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  CleanFor("cln_sfloor", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     w(m,CLW_SE,k,j,i) = fmax(w(m,CLW_SE,k,j,i), fmax(fse, 1.0e-300));
     w(m,CLW_SG,k,j,i) = fmax(w(m,CLW_SG,k,j,i), fsg);
@@ -2058,7 +2058,7 @@ void RadiationM1::CleanCopyIterate() {
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   auto w = cln_w;
-  par_for("cln_copy", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  CleanFor("cln_copy", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     w(m,CLW_X,k,j,i) = w(m,CLW_EK,k,j,i);
   });
@@ -2201,7 +2201,7 @@ void RadiationM1::CleanStagBracket() {
   const Real efl = e_floor;
   const bool rat = cln_rayratio;
   auto iw_ = iw;
-  par_for("cln_rayj", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  CleanFor("cln_rayj", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     x.w(m,CLW_Z,k,j,i) = rat ? iw_(m,M1_IW_EN,k,j,i) : x.cs(m,CLN_J,k,j,i);
   });
@@ -2211,7 +2211,7 @@ void RadiationM1::CleanStagBracket() {
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     const int n = (dir == 0) ? CLN_FX : ((dir == 1) ? CLN_F2 : CLN_F3);
-    par_for("cln_sbracket", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    CleanFor("cln_sbracket", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       CLEAN_HIPX(const CleanArgs &x = *px;)   // (in device memory: no per-thread copy)
       // (Phi(J) at its steady value, -(c/chi_f) div(D J) in the share 1 - w: the bracket,
@@ -2625,7 +2625,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
     if (ph == 0) {
       // F^H of every face (CLF_N) and the cell terms of every cell (CleanFLine)
       const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
-      par_for("cln_fs0", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+      CleanFor("cln_fs0", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
         fc(m,CLF_N,k,j,i) = CleanFaceFlux(xh, e, dir, m, k, j, i, true);
@@ -2649,7 +2649,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
         fc(m,CLF_N+1,k,j,i) += 0.5*(wq(2, k-dk, j-dj, i-di) + wq(3, k, j, i));
       });
       auto v = cln_v;
-      par_for("cln_fs1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      CleanFor("cln_fs1", nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         Real rc;
         const Real tau = op(m,M1_OP_T,k,j,i)*CleanCellFaceDistance(x, dir, m, k, j, i);
@@ -2779,7 +2779,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
       // factor den), r (CLW_R0) and the faces with an equation (CLW_P; scratch slots of
       // the E solve, which the directions share: every pass), and in the line sweep
       // the Thomas factors den and c' (CLW_CP)
-      par_for("cln_fs2f", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+      CleanFor("cln_fs2f", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const int t = (dir == 0) ? i - is : ((dir == 1) ? j - js : k - ks);
         // (clean_stag_ftie: the high face of a line that another MeshBlock or the
@@ -2949,7 +2949,7 @@ void RadiationM1::CleanStagFaceTie(const int e, const int kd, const bool pt) {
   x.fs = true;
   const int nf = x.nf;
   CLEAN_HIPX(const CleanArgs *px = CleanDevArgs(x, 0);)
-  par_for("cln_tie", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  CleanFor("cln_tie", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     CLEAN_HIPX(const CleanArgs &x = *px;)   // (in device memory: no per-thread copy)
     for (int d = 0; d < nf; ++d) {
@@ -3208,7 +3208,7 @@ void RadiationM1::CleanStagFCsShared() {
   for (int dir = 0; dir < 3; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     auto fc = x.fc[dir];
-    par_for("cln_fcs3", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    CleanFor("cln_fcs3", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int kl = k - dk, jl = j - dj, il = i - di;
       if (CleanBoundaryFace(x, dir, m, k, j, i)) {
@@ -3228,7 +3228,7 @@ void RadiationM1::CleanStagFCsShared() {
       fc(m,CLF_N+2,k,j,i) = f;
     });
   }
-  par_for("cln_fcs4", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  CleanFor("cln_fcs4", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     for (int q = 0; q < 3; ++q) {
       v(m,9+2*q,k,j,i) = x.fc[q](m,CLF_N+2,k,j,i);
@@ -3354,7 +3354,7 @@ void RadiationM1::CleanStagDrag(const bool first, const bool vel) {
   const bool dr = cln_vimp;
   const int nf = x.nf;   // (one launch for the faces of all directions)
   const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
-  par_for("cln_drag", DevExeSpace(), 0, nmb1, ks, ke+(nf > 2), js, je+(nf > 1), is, ie+1,
+  CleanFor("cln_drag", nmb1, ks, ke+(nf > 2), js, je+(nf > 1), is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
     for (int dir = 0; dir < nf; ++dir) {
@@ -3430,7 +3430,7 @@ void RadiationM1::CleanWriteBack() {
   if (tie) {
     const int nf = x.nf;
     CLEAN_HIPX(const CleanArgs *px = CleanDevArgs(x, 0);)
-    par_for("cln_wbphi", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    CleanFor("cln_wbphi", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       CLEAN_HIPX(const CleanArgs &x = *px;)   // (in device memory: no per-thread copy)
       for (int d = 0; d < nf; ++d) {   // (CleanStagRealizable's Phi but on physical faces)
@@ -3444,7 +3444,7 @@ void RadiationM1::CleanWriteBack() {
   // (time2_face_fct: the energy flux Phi of every face, which moved E, with its slope)
   const bool pfo = t2_pfst && slopes && t2pf1.extent_int(0) > nmb1;
   auto pf = (t2_solve == M1_T2S_STAGE1) ? t2pf2 : t2pf1;
-  par_for("cln_wbdiv", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  CleanFor("cln_wbdiv", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
     // (CleanFluxDivergence(Tie) with the faces' Phi of CleanStagRealizable, CLF_PT, but
@@ -3502,7 +3502,7 @@ void RadiationM1::CleanWriteBack() {
     auto fc = (dir == 0) ? cln_fc1 : ((dir == 1) ? cln_fc2 : cln_fc3);
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     const int tf = M1_T2_F1 + dir;
-    par_for("cln_wbface", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    CleanFor("cln_wbface", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real f = fc(m,CLF_N,k,j,i);
       if (slopes) kk(m,tf,k,j,i) = (f - fc(m,CLF_G,k,j,i))/h;
@@ -3547,7 +3547,7 @@ void RadiationM1::CleanWriteBack() {
   auto pc_ = pos_cnt_d;
   px = CleanDevArgs(x, 0);   // (the F solve took the slots; xh changed)
   pxh = CleanDevArgs(xh, 1);
-  par_for("cln_wbcell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  CleanFor("cln_wbcell", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     CLEAN_HIPX(const CleanArgs &x = *px, &xh = *pxh;)   // (in device memory)
     Real e = x.w(m,CLW_X,k,j,i);

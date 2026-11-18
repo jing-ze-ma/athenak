@@ -279,7 +279,7 @@ void RadiationM1::CleanClosureEddington() {
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   auto cs = cln_s;
-  par_for("cln_edd", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  CleanFor("cln_edd", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     for (int a = 0; a < 3; ++a) {
       cs(m,CLN_D11+a,k,j,i) = 1.0/3.0;
@@ -395,7 +395,7 @@ void RadiationM1::CleanRayMoments(DvceArray5D<Real> dst, const bool solve) {
   }
 
   auto cs = cln_s;
-  par_for("cln_raymom", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  CleanFor("cln_raymom", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real jr = cs(m,CLN_J,k,j,i);
     for (int n = 0; n < CLN_N; ++n) {   // (0: a slot the staggered layout drops)
@@ -683,7 +683,7 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
   const bool ps = cln_psmooth;
   CleanArgs x = CleanMakeArgs();
 
-  par_for("cln_predict", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+  CleanFor("cln_predict", nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     // K1 is stored on active cells only; ghost cells take the explicit state
     const bool active = (k >= ks && k <= ke && j >= js && j <= je && i >= is && i <= ie);
@@ -772,7 +772,7 @@ void RadiationM1::CleanClosureSphere() {
   auto cs = cln_s;
   CleanArgs x = CleanMakeArgs();
 
-  par_for("cln_sphere", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  CleanFor("cln_sphere", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real r = x1v(m,i);
     Real drr = 1.0/3.0, hpr = 0.25, hmr = -0.25, ht = 0.25, c1 = 0.0, kr = 0.0,
@@ -3030,7 +3030,7 @@ void RadiationM1::CleanClosureFromGd(const int i0, const int i1) {
       });
     });
   }
-  par_for("cln_gd", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  CleanFor("cln_gd", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px;
     const Real st = sin(x2v(m,j)), ct = cos(x2v(m,j));
@@ -3213,7 +3213,7 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
       const int nd = std::min(nc, n - d0);
       // (only the ng layers along the MeshBlock's theta and phi faces: the exchange reads
       // no other cell)
-      par_for("cln_gd_chc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      CleanFor("cln_gd_chc", nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         if (j >= js + ng && j <= je - ng && k >= ks + ng && k <= ke - ng) return;
         const CleanRow r = VgdRow(vi_, m, k+ok, j+og, i);
@@ -3232,7 +3232,7 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
                       cs.extent_int(3), cs.extent_int(4));
     }
     fi_ = CleanFvI{cln_fvi};
-    par_for("cln_gd_copy", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    CleanFor("cln_gd_copy", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       for (int d = 0; d < n; ++d) fi_.Set(m, doff + d, k, j, i, vi_(m,d,k+ok,j+og,i));
     });
@@ -3329,7 +3329,7 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   for (int dir = 1; dir < 3; ++dir) {
     const int nf = (dir == 1) ? CLN_F2 : CLN_F3;
     if ((!x.sph && dir >= x.nf) || (pk && !one)) continue;
-    par_for("cln_gd_lat", DevExeSpace(), 0, nmb1, ks, ke, js, je, one ? s0 : is,
+    CleanFor("cln_gd_lat", nmb1, ks, ke, js, je, one ? s0 : is,
             one ? s1 : ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const CleanArgs &x = *px;
@@ -3401,7 +3401,7 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
     proj(e, 1.0, sc, q);   // (the face's sums, not per area)
   };
   if (!x.sph && !x.cub) {   // Cartesian: every x1 face carries the rays' upwind flux
-    par_for("cln_gd_x1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    CleanFor("cln_gd_x1", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const CleanArgs &x = *px;
       Real q[4];
@@ -3432,7 +3432,7 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   if (!pk) Kokkos::deep_copy(DevExeSpace(), rf, 0.0);   // (the zeros of a fresh one)
   if (pk && !one) cln_gdrf = DvceArray5D<Real>();
   if (rr && (one || !pk)) {
-    par_for("cln_gd_rf", DevExeSpace(), 0, nmb1, ks, ke, js, je, one ? s0 : is,
+    CleanFor("cln_gd_rf", nmb1, ks, ke, js, je, one ? s0 : is,
             one ? ((s1 == ie) ? ie + 1 : s1) : ie + 1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real q[4];
@@ -3471,7 +3471,7 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   // per cell (the same numbers); the columns then only close their ends
   const bool cel = rr && !x.cub && ibc_x1max != M1_IBC_REFLECT;
   if (cel) {
-    par_for("cln_gd_cel", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    CleanFor("cln_gd_cel", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const CleanArgs &x = *px;
       Real a[3], e[3][3], q[4], g[2] = {0.0, 0.0};
@@ -3608,7 +3608,7 @@ void RadiationM1::CleanClosureFromRays() {
   Real ray_min = cln_raymin;
 
   const bool f2 = cln_consist;
-  par_for("cln_rays", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  CleanFor("cln_rays", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real jr = vc(m,M1_VET_J,k,j,i);
     for (int n = 0; n < M1_VET_NFS; ++n) {   // (F2, F1, FX, F3)
