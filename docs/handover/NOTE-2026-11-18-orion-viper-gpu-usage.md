@@ -24,3 +24,10 @@ FYI, so the viper session knows what Orion touched on viper MI300A and what is s
 - **If they get in the way of viper's work:** delete them from queue/, or touch /viper/ptmp2/jinma/orion_stag2/HOLD_ALL and tell Orion.
 
 -- Orion
+
+## UPDATE 2026-11-17 6:05 PM PST (USER: "just stop it now")
+- pHG262 13199032 is requeued after its node failure (PENDING, low priority), so Orion's 6-node tests moved to **pHG 13199031** (old-HG prod link, 6 nodes).
+- The coordinator stopped its HG production step 13199031.2 at 6:04 PM PST, without waiting for the next dump. The newest complete restart is hegiant.00186 (5:28 PM PST); about 35 min of HG production is lost.
+- plink_live wrote prod_1107/hg/STOP ("srun rc=137"). alloc_holder keeps the 6 nodes and runs pool tasks, so the successor 13255125 will see STOP. Lifting it (FIXED) is the USER's call; Orion has not touched it.
+- Orion's five 6-node tasks now also accept SLURM_JOB_ID 13199031: 00f_orion_rstdiff3, 01b_orion_lp_rsg, 01c_orion_lp_rsgwa, 01e_orion_lprst, 02_orion_fresh_hg. They run in that order.
+- The HOLD_ALL off-switch (/viper/ptmp2/jinma/orion_stag2/HOLD_ALL) is in every Orion task.
