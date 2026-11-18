@@ -2206,13 +2206,18 @@ void RadiationM1::CleanStagBracket() {
       const Real jl = x.cs(m,CLN_JR,k-dk,j-dj,i-di), jr = x.cs(m,CLN_JR,k,j,i);
       const Real hl = x.fc[dir](m,CLF_HP,k,j,i)*jl, hr = x.fc[dir](m,CLF_HM,k,j,i)*jr;
       const Real dd = fy - pj/x.c, fr = hl + hr + dd, s = hl - hr;
-      // (H+', and H-' = fr - H+'; without half ranges the cell's h+- stay)
-      const Real hp = !(s > 0.0) ? hl : ((dd < 0.0) ? fmax(hl + dd*hl/s, 0.0) :
-                                        fr - fmin(hr - dd*hr/s, 0.0));
+      // (H+' = hl (1 + dd/s), H-' = hr (1 - dd/s), the one tilted past 0 at 0 and the
+      // other fr, of its sign; each formed directly: H-' = fr - H+' left the round-off
+      // of fr over a J_R ~ 1e-56 of a ray-shadowed cell, h- ~ +1e33 (the wrong sign);
+      // without half ranges the cell's h+- stay)
+      const Real tl = hl + dd*hl/s, tr = hr - dd*hr/s;
+      const bool cut = (tl < 0.0) || (tr > 0.0);
+      const Real hp = !(s > 0.0) ? hl : (cut ? ((tl < 0.0) ? 0.0 : fmax(fr, 0.0)) : tl);
+      const Real hm = !(s > 0.0) ? hr : (cut ? ((tl < 0.0) ? fmin(fr, 0.0) : 0.0) : tr);
       // (rays' J at or below the radiation floor e_floor are no radiation field, J ~
       // 1e-100 in the E-floor holes of an evolved envelope: there the factors take the
       // realisable half range |H+-| <= J; unbounded they made rows of the operator ~1e100)
-      const Real hpj = hp/jl, hmj = ((s > 0.0) ? fr - hp : hr)/jr;
+      const Real hpj = hp/jl, hmj = hm/jr;
       if (jl > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = (jl > efl) ? hpj : fmin(hpj, 1.0);
       if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = (jr > efl) ? hmj : fmax(hmj, -1.0);
     });
