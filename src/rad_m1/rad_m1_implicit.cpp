@@ -2500,725 +2500,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                        : " (default)")) << std::endl;
     }
   }
-  // ---- milestone 3a2 options.  All three default to the 3a behaviour, so an input file
-  // that does not name them reproduces RESULTS.txt of runs_3a exactly.
-  std::string sfx = pin->GetOrAddString("rad_m1","implicit_flux","central");
-  if (sfx.compare("central") == 0) {
-    impl_flux = M1_IFLUX_CENTRAL;
-  } else if (sfx.compare("ap_hll") == 0) {
-    impl_flux = M1_IFLUX_APHLL;
-  } else if (sfx.compare("berthon") == 0) {
-    impl_flux = M1_IFLUX_BERTHON;
-  } else if (sfx.compare("blend") == 0) {
-    impl_flux = M1_IFLUX_BLEND;
-  } else {
-    ImplFatal("<rad_m1>/implicit_flux = '" + sfx
-              + "' is not a choice (central | ap_hll | berthon | blend)");
-  }
-  // 3b phase B: the transverse operator is built for the face-eliminated (central) form
-  // only.  The HLL/berthon/blend face fluxes carry per-face coefficients (ifw) that exist
-  // for the x1 faces alone, so anything but `central` would silently be central in x2/x3.
-  // sp-blend-1008: on the spherical-polar WEDGE (not the cubed sphere) berthon | blend
-  // act on the x1 (radial) faces, with the A_f/V_i areas and volumes and the centroid
-  // distance of the sp row; the x2/x3 faces stay central (a beam in an outflow is
-  // radial).  Every other multi-D mesh keeps the refusal.
-  // blendall-1009: implicit_flux_faces = all extends berthon | blend to EVERY face of the
-  // multi-D solve -- the Cartesian x1, x2, x3 faces and the sp LATERAL faces -- with the
-  // per-face coefficients of the lagged closure's beam vector (M1BeamFace).  Default
-  // `x1`: the behaviour above, bitwise.
-  {
-    std::string sff = pin->GetOrAddString("rad_m1","implicit_flux_faces","x1");
-    if (sff.compare("all") == 0) {
-      impl_flux_all = true;
-    } else if (sff.compare("x1") != 0) {
-      ImplFatal("<rad_m1>/implicit_flux_faces = '" + sff
-                + "' is not a choice (x1 | all)");
-    }
-  }
-  {
-    std::string sbb = pin->GetOrAddString("rad_m1","implicit_flux_beam","closure");
-    if (sbb.compare("fs") == 0) {
-      impl_beam_fs = true;
-    } else if (sbb.compare("halfrange") == 0) {
-      impl_beam_hr = true;
-      // without ray data (closure m1 / eddington / vet_col without vet_gd) the faces
-      // stay central unless implicit_hr_model = true (the isotropic + beam model of the
-      // lagged closure: it is NEUTRAL in a thick layer -- the lagged flux carries the
-      // whole flux with no gradient -- and fails G1, tests: blendall_1009/gates/g1)
-      impl_hr_model = pin->GetOrAddBoolean("rad_m1","implicit_hr_model",false);
-      // cbfix-1011: implicit_hr_face = sf (default) | cell (the hrup-1009 cell ratios)
-      std::string shf = pin->GetOrAddString("rad_m1","implicit_hr_face","sf");
-      if (shf.compare("sf") == 0) {
-        impl_hr_sf = vet_sc;
-      } else if (shf.compare("cell") != 0) {
-        ImplFatal("<rad_m1>/implicit_hr_face = '" + shf + "' is not a choice (sf | cell)");
-      }
-      // unify-sc-gd-1012 (#4): sf on vet_gd too.  The donor scale Jh and the face fluxes
-      // H+-_d = h+-_d J come from vgd_hr (VetGdHalfRange: twin-corrected ratios and J),
-      // on the face set implicit_hr_face_gd = x1 | all | none (the lateral gd half-range
-      // data are the per-shell lateral interpolation whose beam-edge error forced
-      // implicit_thin_js_gd = x1).  DEFAULT none (opt-in; the old behaviour, bitwise):
-      // x1 is bitwise on AG Car A and bsgR (no cell with Jh > J) but in the P2 channel
-      // beam (pinc) the twin-corrected gd ratios make Jh > J cells that turn the Picard
-      // loop into a limit cycle (Picard 5.1 -> 36.8, 21 NONCONV; L/L_ex 0.566 -> 0.535;
-      // pinc + implicit_hr_excess DIVERGED), the same gd lateral-data limit as js_gd.
-      if (vgd_on && sph_geom && shf.compare("sf") == 0) {
-        std::string sg = pin->GetOrAddString("rad_m1","implicit_hr_face_gd","none");
-        if (sg.compare("x1") == 0) {
-          impl_hr_sfgd = 1;
-        } else if (sg.compare("all") == 0) {
-          impl_hr_sfgd = 3;
-        } else if (sg.compare("none") != 0) {
-          ImplFatal("<rad_m1>/implicit_hr_face_gd = '" + sg
-                    + "' is not a choice (x1 | all | none)");
-        }
-        if (impl_hr_sfgd != 0) {impl_hr_sf = true;}
-      }
-      // sptests-1011 P2: implicit_hr_excess = none (default) | iso (vet_gd ratios only)
-      std::string sxs = pin->GetOrAddString("rad_m1","implicit_hr_excess","none");
-      if (sxs.compare("iso") == 0) {
-        impl_hr_xs = true;
-        // steady-regime gate: in a time-resolved transient (c dt/dx ~ 1) E^n differs from
-        // the steady formal solution's J legitimately (the light front), so the excess
-        // test is meaningless there
-        impl_hr_xs_cfl = pin->GetOrAddReal("rad_m1","implicit_hr_excess_cfl",10.0);
-      } else if (sxs.compare("none") != 0) {
-        ImplFatal("<rad_m1>/implicit_hr_excess = '" + sxs + "' is not a choice (none | iso)");
-      }
-    } else if (sbb.compare("closure") != 0) {
-      ImplFatal("<rad_m1>/implicit_flux_beam = '" + sbb + "' is not a choice "
-                "(closure | fs | halfrange)");
-    }
-  }
-  if (full && impl_flux_all) {
-    // cs-s4-1017 (stage S4): the cubed sphere too (ImplicitLatFaceCoefCs, the blend
-    // terms of M1CsTransRow)
-    if (!(impl_flux == M1_IFLUX_BERTHON || impl_flux == M1_IFLUX_BLEND)) {
-      ImplFatal("<rad_m1>/implicit_flux_faces = all needs implicit_flux = berthon | "
-                "blend");
-    }
-  }
-  // cs-port-1016 (CS_VETGD.md S1): berthon | blend on the x1 faces of the cubed sphere
-  // too.  x1 = r on both meshes and the x1 face coefficients (ifw: the lagged reduced
-  // flux RF0 of the radial faces, the face kappa_T x dxface.x1f, the A_f/V_i of the sp
-  // row) read only radial data; the x2/x3 faces stay central there as on the wedge
-  // (implicit_flux_faces = all, the per-face beam of the skew lateral faces, stays
-  // refused above).
-  if (full && impl_flux != M1_IFLUX_CENTRAL) {
-    const bool spok = (sph_geom || impl_flux_all) &&
-                      (impl_flux == M1_IFLUX_BERTHON || impl_flux == M1_IFLUX_BLEND);
-    if (!spok) {
-      ImplFatal("<rad_m1>/transport = implicit supports implicit_flux = central only "
-                "(berthon | blend on the x1 faces of the spherical-polar wedge and the "
-                "cubed sphere); use "
-                "transport = implicit_x1 for ap_hll | berthon | blend");
-    }
-  }
-  // ---- milestone 3c.  The weight of implicit_flux = blend.  Inert for every other
-  // flux, and the two ends of the blend are BITWISE central and berthon.
-  std::string sbl = pin->GetOrAddString("rad_m1","implicit_blend","tau_f");
-  if (sbl.compare("tau") == 0) {
-    impl_blend = M1_IBLEND_TAU;
-  } else if (sbl.compare("f") == 0) {
-    impl_blend = M1_IBLEND_F;
-  } else if (sbl.compare("tau_f") == 0) {
-    impl_blend = M1_IBLEND_TAUF;
-  } else if (sbl.compare("idort") == 0) {
-    impl_blend = M1_IBLEND_IDORT;   // hrup-1009, half-range only
-  } else if (sbl.compare("knudsen") == 0) {
-    impl_blend = M1_IBLEND_KN;      // hrup-1009, half-range only
-  } else if (sbl.compare("idort_f") == 0) {
-    impl_blend = M1_IBLEND_IDF;     // hrup-1009, half-range only
-  } else if (sbl.compare("idort_a") == 0) {
-    impl_blend = M1_IBLEND_IDA;     // hrup-1009, half-range only
-  } else {
-    ImplFatal("<rad_m1>/implicit_blend = '" + sbl
-              + "' is not a choice (tau | f | tau_f | idort | knudsen | idort_f | "
-              "idort_a)");
-  }
-  if (impl_blend >= M1_IBLEND_IDORT &&
-      pin->GetOrAddString("rad_m1","implicit_flux_beam",
-                          "closure").compare("halfrange") != 0) {
-    ImplFatal("<rad_m1>/implicit_blend = idort | knudsen | idort_f | idort_a needs "
-              "implicit_flux_beam = halfrange");
-  }
-  impl_blend_alpha = pin->GetOrAddReal("rad_m1","implicit_blend_alpha",1.0);
-  impl_blend_r0 = pin->GetOrAddReal("rad_m1","implicit_blend_r0",1.5);
-  impl_blend_xthin = pin->GetOrAddReal("rad_m1","implicit_blend_xthin",0.0);
-  // rc18-1110 implicit_blend_dtc = kappa > 0 (opt-in; read only when named, 0 = off,
-  // bitwise): the dt-consistent per-step weight of the half-range faces (M1BlendDtc)
-  impl_blend_dtc = pin->DoesParameterExist("rad_m1","implicit_blend_dtc") ?
-                   pin->GetReal("rad_m1","implicit_blend_dtc") : 0.0;
-  if (impl_blend_dtc < 0.0) {ImplFatal("<rad_m1>/implicit_blend_dtc must be >= 0");}
-  // hr2prod-1110 (diagnostic, read only when named): implicit_hr_wscale_x1 / _lat
-  impl_hr_cmem_cap = pin->DoesParameterExist("rad_m1","implicit_hr_cmem_cap") ?
-                     pin->GetReal("rad_m1","implicit_hr_cmem_cap") : 0.0;   // hr2prod-1110
-  impl_hr_fci = pin->DoesParameterExist("rad_m1","implicit_hr_fcimp") &&
-                pin->GetBoolean("rad_m1","implicit_hr_fcimp");   // hr2prod-1110
-  impl_hr_ws = pin->DoesParameterExist("rad_m1","implicit_hr_wscale_x1") ||
-               pin->DoesParameterExist("rad_m1","implicit_hr_wscale_lat");
-  if (impl_hr_ws) {
-    impl_hr_ws_x1 = pin->GetOrAddReal("rad_m1","implicit_hr_wscale_x1",1.0);
-    impl_hr_ws_lat = pin->GetOrAddReal("rad_m1","implicit_hr_wscale_lat",1.0);
-  }
-  // vgdhr-1110 (rad_m1.hpp): implicit_thin_gface_shell, implicit_hr_fsc
-  impl_tgsh = pin->DoesParameterExist("rad_m1","implicit_thin_gface_shell") &&
-              pin->GetBoolean("rad_m1","implicit_thin_gface_shell");
-  impl_hrfsc = pin->DoesParameterExist("rad_m1","implicit_hr_fsc") &&
-               pin->GetBoolean("rad_m1","implicit_hr_fsc");
-  impl_tgfl = pin->DoesParameterExist("rad_m1","implicit_thin_gface_filter") ?
-              pin->GetReal("rad_m1","implicit_thin_gface_filter") : 0.0;   // vgdhr-1110
-  impl_gwd = pin->DoesParameterExist("rad_m1","implicit_thin_gw_dump") &&
-             pin->GetBoolean("rad_m1","implicit_thin_gw_dump");   // vgdgw-1110
-  // rc18-1110 implicit_hr_cmem (opt-in, read only when named, default false = bitwise):
-  // a SEPARATE central-branch memory.  The face arrays f0x1..3 (and with them f0x*n,
-  // the hesdirk2 copies t2f*, the stage slopes kk / increments t2i, the restart file)
-  // then hold F_c, evolved by the plain face equation F_c' = th (F_c^n - c^2 dt dP/dx
-  // ...); the APPLIED flux (1 - w) F_c' + w F_hr(E') -- what the rows always solved --
-  // goes to fax1..3, read by the cell flux (iw F*, the write-back) and the transverse
-  // divergence.  w is unchanged (no dt, no opacity); nothing relaxes per step.
-  impl_hr_cmem = pin->DoesParameterExist("rad_m1","implicit_hr_cmem") &&
-                 pin->GetBoolean("rad_m1","implicit_hr_cmem");
-  // physflux-1111 implicit_physflux (opt-in, read only when named, default false =
-  // bitwise; rc18_1110/PHYSFLUX_DESIGN.md principle 1): implies implicit_hr_cmem and
-  // makes the face-equation flux F_c (f0x*) the ONE radiation momentum flux: the cell F
-  // between iterates and in the write-back, the write-back drag and the vimp drag read
-  // F_c, so the
-  // conservative gas source's old (mean F_c^n + a E^n) and new values are the same
-  // quantity.  The applied flux fax* stays the E-transport flux of the rows only.
-  impl_physflux = pin->DoesParameterExist("rad_m1","implicit_physflux") &&
-                  pin->GetBoolean("rad_m1","implicit_physflux");
-  if (impl_physflux) {impl_hr_cmem = true;}
-  // implicit_physflux_mom (read only when named; fc = default): which face flux is the
-  // one momentum flux.  fc: the face-equation F_c (above).  fa: the APPLIED flux fax*
-  // (the upwind one in thin beams) for the cell F, the drags and the gas source, with
-  // every old value of that budget the applied one too (Z_f via fax*n =
-  // implicit_hr_cmem_gas_fa, the cs2 / write-back F^old = the stored cell F); F_c is
-  // then only the face memory.
-  if (impl_physflux && pin->DoesParameterExist("rad_m1","implicit_physflux_mom")) {
-    const std::string pm = pin->GetString("rad_m1","implicit_physflux_mom");
-    if (pm.compare("fa") == 0) {
-      impl_pf_fa = true;
-    } else if (pm.compare("fc") != 0) {
-      ImplFatal("<rad_m1>/implicit_physflux_mom = '" + pm
-                + "' is not a choice (fc | fa)");
-    }
-  }
-  if (impl_pf_fa && pin->DoesParameterExist("rad_m1","implicit_physflux_zold")) {
-    const std::string pz = pin->GetString("rad_m1","implicit_physflux_zold");
-    if (pz.compare("fc") == 0) {
-      impl_pf_zfc = true;
-    } else if (pz.compare("fa") != 0) {
-      ImplFatal("<rad_m1>/implicit_physflux_zold = '" + pz
-                + "' is not a choice (fa | fc)");
-    }
-  }
-  // aphll-time-1110 implicit_aphll_mem (opt-in, read only when named, default false =
-  // bitwise): second order in time for the berthon | blend AP-HLL faces.  Two lags made
-  // them first order (tests at /viper/ptmp2/jinma/aphll_1110): (1) the lagged reduced
-  // flux RF0 of the face coefficients was the APPLIED face flux over c E_up, which at
-  // w = 1 has no F^n memory (HCL E_L + HCR E_R), so f followed a per-step map instead of
-  // the F equation; (2) under implicit_recon_lag = step the coefficients were frozen at
-  // the stage start, so the stage-1 slope (weight b2 in the step) carried an O(dt)
-  // coefficient error.  The key turns on (1) implicit_hr_cmem (F_c, evolved by the face
-  // equation, in f0x*; the applied flux in fax*) and (2) implicit_lag_restage (the face
-  // coefficients rebuilt once after the first pass of each stage) unless that is named.
-  impl_aphll_mem = pin->DoesParameterExist("rad_m1","implicit_aphll_mem") &&
-                   pin->GetBoolean("rad_m1","implicit_aphll_mem");
-  // aphll-time-1110 implicit_aphll_fcimp (opt-in, read only when named; implies
-  // implicit_aphll_mem): the LINEARISED form.  At the Picard fixed point of the F_c
-  // memory with a face-local ratio, c f E_up = F_c, so the advective part of the HLL
-  // flux, al (b_R c f_L E_L - b_L c f_R E_R)/(b_R - b_L), IS al F_c(E'): it is put into
-  // the row implicitly, with the face equation's own (M-matrix) coefficients, instead of
-  // lagging f (which is an explicit flux at chat dt/dx >> 1).  The x1 face flux is then
-  // (1 - w + w al) F_c(E') + w al dk (E_L - E_R): AL = w (1 - al), HCL = -HCR = w al dk
-  // (berthon | blend in flux mode; the RF0 path, not halfrange / the Cartesian beam)
-  impl_aphll_fci = pin->DoesParameterExist("rad_m1","implicit_aphll_fcimp") &&
-                   pin->GetBoolean("rad_m1","implicit_aphll_fcimp");
-  if (impl_aphll_fci) {impl_aphll_mem = true;}
-  if (impl_aphll_mem) {
-    if (impl_flux == M1_IFLUX_CENTRAL) {
-      ImplFatal("<rad_m1>/implicit_aphll_mem needs implicit_flux = ap_hll | berthon | "
-                "blend");
-    }
-    impl_hr_cmem = true;
-    if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> implicit_aphll_mem = true: F_c face memory for the AP-HLL "
-                << "reduced flux + restage (aphll-time-1110; TEST key: second order in "
-                << "time at chat dt/dx <~ 1, UNSTABLE in thin media at chat dt/dx >> 1)"
-                << std::endl;
-    }
-  }
-  if (impl_blend_dtc > 0.0 && global_variable::my_rank == 0) {
-    std::cout << "<rad_m1> implicit_blend_dtc = " << impl_blend_dtc
-              << ": dt-consistent half-range face weights (M1BlendDtc)" << std::endl;
-  }
-  {
-    // xthinfix-1009: where the xthin override acts (all faces = hrup-1009 behaviour)
-    std::string sxm = pin->GetOrAddString("rad_m1","implicit_blend_xthin_mode","all");
-    if (sxm.compare("all") == 0) {
-      impl_blend_xthin_mode = 0;
-    } else if (sxm.compare("beam") == 0) {
-      impl_blend_xthin_mode = 1;
-    } else if (sxm.compare("beam_kn") == 0) {
-      impl_blend_xthin_mode = 2;
-    } else if (sxm.compare("steep") == 0) {
-      impl_blend_xthin_mode = 3;
-    } else if (sxm.compare("kn") == 0) {
-      impl_blend_xthin_mode = 4;
-    } else {
-      ImplFatal("<rad_m1>/implicit_blend_xthin_mode = '" + sxm
-                + "' is not a choice (all | beam | beam_kn | steep | kn)");
-    }
-    if (impl_blend_xthin_mode == 2 || impl_blend_xthin_mode == 4) {
-      impl_blend_xthin_r0 = pin->GetOrAddReal("rad_m1","implicit_blend_xthin_r0",1.5);
-    }
-    impl_blend_xthin_wmin = pin->GetOrAddReal("rad_m1","implicit_blend_xthin_wmin",0.0);
-  }
-  {
-    // thinsw-1010: the dt-free, step-frozen thin switch (see M1ThinFace).
-    // prodfinal-1011: DEFAULT fse on a fresh run wherever the switch is accepted and has
-    // ray data: implicit_flux = blend with implicit_flux_beam = halfrange,
-    // implicit_hr_recon dc (or not named), and vet_sc, vet_gd or implicit_hr_model.
-    // Elsewhere (central, ap_hll, berthon, a blend without halfrange, ...) the default
-    // stays none, silently, so those runs are bitwise unchanged and need no key.  A
-    // restart whose file lacks the key keeps none.  The resolved value is echoed (later
-    // restarts keep it); explicit input overrides.
-    const bool thdef = !global_variable::restart_run &&
-        (impl_flux == M1_IFLUX_BLEND) && impl_beam_hr &&
-        (vet_sc || vgd_on || impl_hr_model) &&
-        (!pin->DoesParameterExist("rad_m1","implicit_hr_recon") ||
-         pin->GetString("rad_m1","implicit_hr_recon").compare("dc") == 0);
-    std::string sts = pin->GetOrAddString("rad_m1","implicit_thin_switch",
-                                          thdef ? "fse" : "none");
-    const char *tnm[9] = {"none", "hj", "kn", "fs", "hjkn", "fskn", "fsq", "fsi", "fse"};
-    impl_thsw = -1;
-    for (int q = 0; q < 9; ++q) {
-      if (sts.compare(tnm[q]) == 0) {impl_thsw = q;}
-    }
-    if (impl_thsw < 0) {
-      ImplFatal("<rad_m1>/implicit_thin_switch = '" + sts
-                + "' is not a choice (none | hj | kn | fs | hjkn | fskn | fsq | fsi | "
-                + "fse)");
-    }
-    if (impl_thsw != M1_THSW_NONE) {
-      thsw_h0 = pin->GetOrAddReal("rad_m1","implicit_thin_h0",0.3);
-      thsw_h1 = pin->GetOrAddReal("rad_m1","implicit_thin_h1",0.6);
-      thsw_h0x = pin->DoesParameterExist("rad_m1","implicit_thin_h0_x1") ?
-                 pin->GetReal("rad_m1","implicit_thin_h0_x1") : thsw_h0;   // vgdhr-1110
-      thsw_h1x = pin->DoesParameterExist("rad_m1","implicit_thin_h1_x1") ?
-                 pin->GetReal("rad_m1","implicit_thin_h1_x1") : thsw_h1;
-      thsw_hx_curv = pin->DoesParameterExist("rad_m1","implicit_thin_hx1_curv") &&
-                     pin->GetBoolean("rad_m1","implicit_thin_hx1_curv");
-      if (!(thsw_h1x > thsw_h0x)) {
-        ImplFatal("<rad_m1>/implicit_thin_h1_x1 must exceed implicit_thin_h0_x1");
-      }
-      // hr2prod-1110 (read only when named): implicit_thin_gface = max | mean | jump
-      if (pin->DoesParameterExist("rad_m1","implicit_thin_gface")) {
-        std::string sg = pin->GetString("rad_m1","implicit_thin_gface");
-        if (sg.compare("max") == 0) {
-          thsw_gface = 0;
-        } else if (sg.compare("mean") == 0) {
-          thsw_gface = 1;
-        } else if (sg.compare("jump") == 0) {
-          thsw_gface = 2;
-          thsw_gfd = pin->GetOrAddReal("rad_m1","implicit_thin_gface_d",0.1);
-          if (!(thsw_gfd > 0.0)) {
-            ImplFatal("<rad_m1>/implicit_thin_gface_d must be positive");
-          }
-        } else {
-          ImplFatal("<rad_m1>/implicit_thin_gface = '" + sg
-                    + "' is not a choice (max | mean | jump)");
-        }
-      }
-      thsw_kn0 = pin->GetOrAddReal("rad_m1","implicit_thin_kn0",1.0);
-      thsw_knp = pin->GetOrAddReal("rad_m1","implicit_thin_knp",4.0);
-      thsw_fsa = pin->GetOrAddReal("rad_m1","implicit_thin_fsa",0.0);
-      thsw_fsj = pin->GetOrAddReal("rad_m1","implicit_thin_fsj",0.0);
-      if (impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI) {
-        thsw_qp = pin->GetOrAddReal("rad_m1","implicit_thin_qp",8.0);
-      }
-      // prodfinal-1011: DEFAULT hc on a fresh run with the switch fse (the production
-      // pair fse + hc); none otherwise and on a restart whose file lacks the key
-      const bool tcdef = !global_variable::restart_run && (impl_thsw == M1_THSW_FSE);
-      std::string scr = pin->GetOrAddString("rad_m1","implicit_thin_corr",
-                                            tcdef ? "hc" : "none");
-      if (scr.compare("lag") == 0) {
-        impl_thsw_corr = M1_THCR_LAG;
-      } else if (scr.compare("sc") == 0) {
-        impl_thsw_corr = M1_THCR_SC;
-      } else if (scr.compare("hc") == 0) {
-        impl_thsw_corr = M1_THCR_HC;
-      } else if (scr.compare("hcs") == 0) {
-        impl_thsw_corr = M1_THCR_HCS;
-      } else if (scr.compare("none") != 0) {
-        ImplFatal("<rad_m1>/implicit_thin_corr = '" + scr
-                  + "' is not a choice (none | lag | sc | hc | hcs)");
-      }
-      // thinfix-1011: the formal-solution shape of the half-range face ratios (js) and
-      // the outer Marshak q at the face (lin); read only with the switch on
-      {
-        // unify-1012: DEFAULT jse + lin on a fresh run (vet_sc and vet_gd alike: the
-        // unified thin set fse + hc + jse + lin); a restart whose file lacks the keys keeps
-        // dc / cell (bitwise older runs); the resolved values are echoed
-        const bool tjdef = !global_variable::restart_run;
-        std::string srec = pin->GetOrAddString("rad_m1","implicit_thin_recon",
-                                               tjdef ? "jse" : "dc");
-        if (srec.compare("js") == 0) {
-          thsw_js = true;
-        } else if (srec.compare("jse") == 0) {
-          thsw_js = true;
-          thsw_jse = true;
-        } else if (srec.compare("dc") != 0) {
-          ImplFatal("<rad_m1>/implicit_thin_recon = '" + srec
-                    + "' is not a choice (dc | js | jse)");
-        }
-        // coreL-1012: implicit_thin_hcface = mean | tau, the optical-depth weighted face
-        // value of the formal-solution flux of thin_corr (x1 faces).  defaults-1012: DEFAULT
-        // tau on a fresh run with implicit_thin_corr = hc | hcs (where it acts); a restart
-        // whose file lacks the key keeps mean (bitwise older runs), echoed; otherwise read
-        // only when named.  Explicit input overrides.
-        const bool hfdef = (impl_thsw_corr == M1_THCR_HC || impl_thsw_corr == M1_THCR_HCS);
-        if (hfdef || pin->DoesParameterExist("rad_m1","implicit_thin_hcface")) {
-          std::string shf = hfdef ?
-              pin->GetOrAddString("rad_m1","implicit_thin_hcface",
-                                  global_variable::restart_run ? "mean" : "tau") :
-              pin->GetString("rad_m1","implicit_thin_hcface");
-          if (shf.compare("tau") == 0) {
-            thsw_hctau = true;
-          } else if (shf.compare("mean") != 0) {
-            ImplFatal("<rad_m1>/implicit_thin_hcface = '" + shf
-                      + "' is not a choice (mean | tau)");
-          }
-          // which faces on the sp wedge (vet_gd): x1 (default) | all.  The transverse
-          // faces carry the per-shell lateral interpolation error of the sweep (as
-          // implicit_thin_js_gd): with tau there the P2 channel luminosity rose 1.5 ->
-          // 1.9 L_ex.  Cartesian (vet_sc) meshes take every face.
-          std::string sgd = pin->GetOrAddString("rad_m1","implicit_thin_hcface_gd","x1");
-          if (sgd.compare("all") == 0) {
-            thsw_hctau_lat = true;
-          } else if (sgd.compare("x1") != 0) {
-            ImplFatal("<rad_m1>/implicit_thin_hcface_gd = '" + sgd
-                      + "' is not a choice (x1 | all)");
-          }
-        }
-        std::string sbq = pin->GetOrAddString("rad_m1","implicit_thin_bq",
-                                              tjdef ? "lin" : "cell");
-        if (sbq.compare("lin") == 0) {
-          thsw_bqlin = true;
-          // unify-1012: on vet_gd only with implicit_thin_bq_gd = lin (opt-in; default
-          // cell): the r^2 H+ extrapolation put a +1.3 % kink into the top-cell E of
-          // AG Car A (E/J-1 1.6e-2 vs 2.7e-3, E r^2 smooth without it) and raised the
-          // patm thin-top max error (NOTE-unify)
-          thsw_bqgd = (pin->GetOrAddString("rad_m1", "implicit_thin_bq_gd", "cell")
-                       == "lin");
-        } else if (sbq.compare("cell") != 0) {
-          ImplFatal("<rad_m1>/implicit_thin_bq = '" + sbq
-                    + "' is not a choice (cell | lin)");
-        }
-        if (thsw_js) {
-          thsw_jslim = pin->GetOrAddReal("rad_m1","implicit_thin_jslim",2.0);
-          // unify-1012: js/jse on vet_gd per direction, x1 | lat | all | none (vet_sc
-          // unaffected).  DEFAULT x1 on a fresh run: the vet_gd LATERAL half-range data
-          // come from the per-shell lateral interpolation of the GD formal solution, and
-          // the lateral face shape amplifies its beam-edge errors (P2 pinhole beam L/L_ex
-          // 3.5 and 9 NONCONV with all / lat vs 1.5 and 2 with x1, NOTE-unify); a restart
-          // whose file lacks the key keeps none (0197f020: js was inert on vet_gd)
-          {
-            const bool rr = global_variable::restart_run;
-            std::string sg = pin->GetOrAddString("rad_m1","implicit_thin_js_gd",
-                                                 rr ? "none" : "x1");
-            thsw_jsgd = (sg == "all") ? 3 : (sg == "x1") ? 1 : (sg == "lat") ? 2
-                        : (sg == "none") ? 0 : -1;
-            if (thsw_jsgd < 0) {
-              ImplFatal("<rad_m1>/implicit_thin_js_gd = '" + sg
-                        + "' is not a choice (all | x1 | lat | none)");
-            }
-          }
-          if (!(thsw_jslim >= 1.0)) {
-            ImplFatal("<rad_m1>/implicit_thin_jslim must be >= 1");
-          }
-          // jsfix-1012: implicit_thin_js_face = hcface | mean, the face value of the
-          // formal-solution H+- in the js/jse shape.  hcface (DEFAULT on a fresh run):
-          // the face interpolation of implicit_thin_hcface (tau: optical-depth weights,
-          // r^2 on the sp x1 faces; mean: the arithmetic mean) -- js and hc see ONE face
-          // value.  The arithmetic mean at a thin -> opaque step halved the donor's
-          // upwind ratio and piled E up in front of a cold absorber (T7 front E/E_free
-          // 1.56).  A restart whose file lacks the key keeps mean (bitwise).
-          {
-            std::string sjf = pin->GetOrAddString("rad_m1","implicit_thin_js_face",
-                global_variable::restart_run ? "mean" : "hcface");
-            if (sjf.compare("mean") == 0) {
-              thsw_jsmean = true;
-            } else if (sjf.compare("hcface") != 0) {
-              ImplFatal("<rad_m1>/implicit_thin_js_face = '" + sjf
-                        + "' is not a choice (hcface | mean)");
-            }
-          }
-        }
-      }
-      // unify-1012: implicit_thin_hcsf = jh | j.  hc/hcs subtract the upwind flux of the
-      // formal solution, h+-_f x (the cell scale); where the face ratios are the sf ratios
-      // over the donor scale Jh > J (implicit_hr_face = sf, beam-crossed cells) the cell
-      // scale must be Jh, else the correction is the O(1) part of the SC flux the sf face
-      // carries via E = Jh.  OPT-IN (default j, bitwise older runs): validation
-      // (NOTE-unify) found jh does NOT rescue cbg with dc (jse does), and with hc it
-      // puts +16 % energy into every vacuum crossing beam (cb row 1.164 vs 1.006); it
-      // only cuts the Picard count of hc + jse on cbg (34 -> 3.9).
-      {
-        std::string shj = pin->GetOrAddString("rad_m1","implicit_thin_hcsf","j");
-        if (shj.compare("jh") == 0) {
-          thsw_hcjh = true;
-        } else if (shj.compare("j") != 0) {
-          ImplFatal("<rad_m1>/implicit_thin_hcsf = '" + shj + "' is not a choice (jh | j)");
-        }
-      }
-      thsw_c1 = (impl_thsw_corr == M1_THCR_HCS) || thsw_jse ||
-                (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN ||
-                 impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI ||
-                 impl_thsw == M1_THSW_FSE);
-      // gdthin-1011: vet_gd carries C1, eps and J in vgd_hr (VetGdHalfRange)
-      vgd_thx = thsw_c1 || (impl_thsw_corr != M1_THCR_NONE);
-      if (!(thsw_h1 > thsw_h0) || !(thsw_kn0 > 0.0) || !(thsw_knp > 0.0)) {
-        ImplFatal("<rad_m1>: implicit_thin_h1 must exceed implicit_thin_h0, and "
-                  "implicit_thin_kn0 / implicit_thin_knp must be positive");
-      }
-      if (pin->GetOrAddString("rad_m1","implicit_flux","central").compare("blend") != 0
-          || pin->GetOrAddString("rad_m1","implicit_flux_beam",
-                                 "closure").compare("halfrange") != 0) {
-        ImplFatal("<rad_m1>/implicit_thin_switch needs implicit_flux = blend and "
-                  "implicit_flux_beam = halfrange");
-      }
-      // hr2nd-1110: implicit_hr_recon = plm is accepted with the thin switch (its face
-      // coefficients are fixed for the solve; the plm row multiplies them like any other
-      // upwind part).  The thin_corr / thin_recon corrections are checked below.
-    }
-  }
-  if (pin->DoesParameterExist("rad_m1","implicit_hr_recon")) {
-    // xthinfix-1009 Fix B: read only when given (keys-off parameter dump unchanged)
-    std::string shr = pin->GetString("rad_m1","implicit_hr_recon");
-    if (shr.compare("plm") == 0) {
-      impl_muscl = true;
-    } else if (shr.compare("led") == 0) {
-      impl_muscl = true;
-      impl_muscl_led = true;
-    } else if (shr.compare("dc") != 0) {
-      ImplFatal("<rad_m1>/implicit_hr_recon = '" + shr
-                + "' is not a choice (dc | plm | led)");
-    }
-    if (impl_muscl) {
-      impl_muscl_nfresh = pin->GetOrAddInteger("rad_m1","implicit_hr_recon_fresh",2);
-      impl_muscl_damp = pin->GetOrAddReal("rad_m1","implicit_hr_damp",0.0);
-      impl_muscl_qs = pin->GetOrAddReal("rad_m1","implicit_hr_recon_qs",0.0);
-      {std::string sp = pin->GetOrAddString("rad_m1","implicit_hr_pos","kill");
-      impl_muscl_bound = (sp.compare("bound") == 0);
-      impl_muscl_kill = (sp.compare("kill") == 0);}
-      impl_muscl_qsrel = pin->GetOrAddReal("rad_m1","implicit_hr_recon_qs_rel",0.0);
-      impl_muscl_qsstep = (pin->GetOrAddString("rad_m1","implicit_hr_recon_qs_mode",
-                                               "pass").compare("step") == 0);
-      impl_muscl_pred = pin->GetOrAddBoolean("rad_m1","implicit_hr_recon_pred",false);
-      if (impl_muscl_pred) {impl_muscl_nfresh = 1;}   // the row is fixed after E^dc
-      // cs-s7-1019 (read only when named): implicit_hr_recon_q = e (default) | h, the
-      // reconstructed quantity of the plm half-range faces: E (the face state h+-_c
-      // (E_c +- s_c/2), the donor cell's ratio h+-_c kept: an O(dx) face-flux error
-      // dx (h-' - h+') E/2 wherever the ratios vary, i.e. first order in a thin
-      // atmosphere) or the half-range FLUXES H+- = h+- E themselves (h+-_c E_c +- sig_c
-      // (h+-_c+1 E_c+1 - h+-_c-1 E_c-1)/4: second order).  Plain half-range faces only
-      // (implicit_flux_beam = halfrange; not with led, the sf ratios or hr_excess).
-      if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_q")) {
-        std::string sq = pin->GetString("rad_m1","implicit_hr_recon_q");
-        if (sq.compare("h") == 0) {
-          impl_muscl_hq = true;
-        } else if (sq.compare("e") != 0) {
-          ImplFatal("<rad_m1>/implicit_hr_recon_q = '" + sq + "' is not a choice (e | h)");
-        }
-        // hr2prod-1110 implicit_hr_recon_sfgate (read only when named)
-        impl_sfgate = pin->DoesParameterExist("rad_m1","implicit_hr_recon_sfgate") &&
-                      pin->GetBoolean("rad_m1","implicit_hr_recon_sfgate");
-        impl_hjump = pin->DoesParameterExist("rad_m1","implicit_hr_recon_hjump") ?
-                     pin->GetReal("rad_m1","implicit_hr_recon_hjump") : 0.0;
-        if (impl_hjump > 0.0 && !impl_muscl_hq) {
-          ImplFatal("<rad_m1>/implicit_hr_recon_hjump needs implicit_hr_recon_q = h");
-        }
-        if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_hjump_w")) {   // vgdhr
-          impl_hjw = std::max(1, pin->GetInteger("rad_m1","implicit_hr_recon_hjump_w"));
-        }
-        impl_kjump = pin->DoesParameterExist("rad_m1","implicit_hr_recon_kjump") ?
-                     pin->GetReal("rad_m1","implicit_hr_recon_kjump") : 0.0;   // vgdhr
-        impl_hsm = pin->DoesParameterExist("rad_m1","implicit_hr_recon_hsmooth") ?
-                   pin->GetReal("rad_m1","implicit_hr_recon_hsmooth") : 0.0;   // vgdhr
-        impl_qe_tau = pin->DoesParameterExist("rad_m1","implicit_hr_recon_qe_tau") ?
-                      pin->GetReal("rad_m1","implicit_hr_recon_qe_tau") : 0.0;   // vgdhr
-        impl_hlim = pin->DoesParameterExist("rad_m1","implicit_hr_recon_hlim") &&
-                    pin->GetBoolean("rad_m1","implicit_hr_recon_hlim");   // vgdhr-1110
-        if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_hsmooth_eps")) {
-          impl_hsm_eps = pin->GetReal("rad_m1","implicit_hr_recon_hsmooth_eps");
-        }
-        if (impl_sfgate && !impl_muscl_hq) {
-          ImplFatal("<rad_m1>/implicit_hr_recon_sfgate needs implicit_hr_recon_q = h");
-        }
-        if (impl_muscl_hq && (!impl_beam_hr || impl_muscl_led ||
-                              (impl_hr_sf && !impl_sfgate) || impl_hr_xs)) {
-          ImplFatal("<rad_m1>/implicit_hr_recon_q = h needs implicit_hr_recon = plm with "
-                    "implicit_flux_beam = halfrange (no sf face ratios, no hr_excess)");
-        }
-      }
-      // hr2nd-1110 (read only when named): implicit_hr_recon_lim = vl (default) | smooth.
-      // The van Leer factor clips every extremum (sig = 0 where the one-sided differences
-      // a, b change sign) and flattens the slope next to it (sig = 4ab/(a+b)^2 << 1 for
-      // a << b): a moving pulse peak is donor cell every step and the L1 order of the
-      // whole ladder drops to ~1.5 (the classic TVD-at-extrema loss).  smooth: sig = 1
-      // (the centred slope (E_c+1 - E_c-1)/2) where the second differences d2_c-1, d2_c,
-      // d2_c+1 have one strict sign and max|d2| <= C min|d2|
-      // (C = implicit_hr_recon_lim_c, default 2): the data is a resolved parabola
-      // there, smooth extremum or not; the
-      // face values then keep E_c +- s/2 >= E_c/2 (else van Leer).  A jump (beam edge,
-      // front) has alternating d2 and keeps van Leer.  Needs the cells c-2..c+2 inside
-      // the block along the axis (van Leer otherwise).  No dt, no optical depth.
-      if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_lim")) {
-        std::string sl = pin->GetString("rad_m1","implicit_hr_recon_lim");
-        if (sl.compare("smooth") == 0) {
-          impl_muscl_smooth = true;
-        } else if (sl.compare("smooth0") == 0) {   // hr2prod-1110
-          impl_muscl_smooth = true;
-          impl_muscl_smooth0 = true;
-        } else if (sl.compare("vl") != 0) {
-          ImplFatal("<rad_m1>/implicit_hr_recon_lim = '" + sl
-                    + "' is not a choice (vl | smooth | smooth0)");
-        }
-        if (impl_muscl_smooth && impl_muscl_led) {
-          ImplFatal("<rad_m1>/implicit_hr_recon_lim = smooth needs "
-                    "implicit_hr_recon = plm");
-        }
-        if (impl_muscl_smooth) {
-          impl_muscl_smc = pin->GetOrAddReal("rad_m1","implicit_hr_recon_lim_c",2.0);
-        }
-      }
-      // hr2nd-1110 (read only when named): implicit_hr_recon_xcfl = X0 > 0.  No implicit
-      // 2nd-order upwind row is positive when the light crosses many cells per step
-      // (X = c dt/dx >> 1, Godunov): a beam edge or front in the thin region then gives
-      // E < 0 from the solve and the positivity fallback (KILL, a re-solve) every step.
-      // A slope the limiter has CUT (van Leer, not the smooth branch) is scaled by
-      // 1/(1 + (X/X0)^4), X = c dt / V^(1/3): donor cell at a jump the step jumps over,
-      // unchanged for X << X0, and -> 1 as dt -> 0 (time-consistent: the T ladder sees
-      // plm).  Smooth cells (implicit_hr_recon_lim = smooth) keep sig = 1.  No optical
-      // depth enters.
-      if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_xcfl")) {
-        impl_muscl_xcfl = pin->GetReal("rad_m1","implicit_hr_recon_xcfl");
-        if (!(impl_muscl_xcfl > 0.0)) {
-          ImplFatal("<rad_m1>/implicit_hr_recon_xcfl must be positive");
-        }
-      }
-      // cs-s7-1019 (read only when named): implicit_hr_recon_seam = centred (default) |
-      // onesided: on the cubed sphere the seam cells (and the ghosts beyond a seam) take
-      // the one-sided slope of their own panel (M1HqW); the centred slope across a seam
-      // runs along the bent mirror stencil, an O(1) slope error near the cube vertices
-      // (the thin-regime lateral flux there, S7 test).  Needs implicit_hr_recon_q = h.
-      if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_seam")) {
-        std::string ss = pin->GetString("rad_m1","implicit_hr_recon_seam");
-        if (ss.compare("onesided") == 0) {
-          impl_muscl_seam1 = true;
-        } else if (ss.compare("centred") != 0) {
-          ImplFatal("<rad_m1>/implicit_hr_recon_seam = '" + ss
-                    + "' is not a choice (centred | onesided)");
-        }
-        if (impl_muscl_seam1 && !impl_muscl_hq) {
-          ImplFatal("<rad_m1>/implicit_hr_recon_seam = onesided needs "
-                    "implicit_hr_recon_q = h");
-        }
-      }
-    }
-    // the plm face states multiply the face coefficients HCL/HCR of ANY upwind part:
-    // the half-range flux, or the berthon / blend AP-HLL part (implicit_flux_beam =
-    // closure | fs); a central face has none
-    if (impl_muscl && pin->GetOrAddString("rad_m1","implicit_flux",
-                                          "central").compare("central") == 0) {
-      ImplFatal("<rad_m1>/implicit_hr_recon = plm needs implicit_flux = berthon | blend");
-    }
-    // hr2nd-1110: plm under implicit_thin_switch.  The thin switch's own second-order
-    // patches of the DONOR-CELL upwind flux -- implicit_thin_corr (DG = q w c (H_f -
-    // h+_L J_L - h-_R J_R), the formal solution's central-minus-donor flux) and
-    // implicit_thin_recon = js | jse (face ratios H+-_f/J) -- remove an O(dx) error that
-    // the plm face state no longer has; added to a plm flux they put an O(dx) error back
-    // (first order wherever E ~ J).  They are refused with plm.  implicit_hr_recon_q = h
-    // (H+- = h+- E reconstructed) is the second-order form of both.
-    // hrhc-1110 (read only when named): implicit_thin_corr_plm = true makes hc / hcs
-    // plm-consistent (ImplicitHcPlm: the formal-solution flux minus the PLM upwind flux
-    // of the formal solution, same limiter), so the steady face flux is w c H_f exactly;
-    // needs implicit_hr_recon_q = h and implicit_thin_corr = hc | hcs
-    if (pin->DoesParameterExist("rad_m1","implicit_thin_corr_plm")) {
-      impl_hcplm = pin->GetBoolean("rad_m1","implicit_thin_corr_plm");
-      if (impl_hcplm && !(impl_muscl && impl_muscl_hq && !impl_muscl_led &&
-                          impl_thsw != M1_THSW_NONE &&
-                          (impl_thsw_corr == M1_THCR_HC ||
-                           impl_thsw_corr == M1_THCR_HCS))) {
-        ImplFatal("<rad_m1>/implicit_thin_corr_plm needs implicit_hr_recon = plm, "
-                  "implicit_hr_recon_q = h, implicit_thin_switch on and "
-                  "implicit_thin_corr = hc | hcs");
-      }
-    }
-    if (impl_muscl && impl_thsw != M1_THSW_NONE &&
-        ((impl_thsw_corr != M1_THCR_NONE && !impl_hcplm) ||
-         (thsw_js && !impl_sfgate))) {
-      ImplFatal("<rad_m1>/implicit_hr_recon = plm with implicit_thin_switch needs "
-                "implicit_thin_corr = none and implicit_thin_recon = dc (the plm face "
-                "state replaces both donor-cell corrections; use implicit_hr_recon_q = h)");
-    }
-    // cs-open-1018: plm on the cubed sphere too (m1bcs, canonical seam areas, the
-    // limiter ghosts across a seam on the receiving block's axes: ImplicitMusclSigHalo);
-    // led keeps its refusal (its a/b pair would need the side swap of a reversed axis)
-    if (impl_muscl_led && cs_geom) {
-      ImplFatal("<rad_m1>/implicit_hr_recon = led is not implemented on the cubed "
-                "sphere (plm is)");
-    }
-  }
-  std::string sbm = pin->GetOrAddString("rad_m1","implicit_blend_fmode","max");
-  if (sbm.compare("max") == 0) {
-    impl_blend_fmode = M1_IBFM_MAX;
-  } else if (sbm.compare("mean") == 0) {
-    impl_blend_fmode = M1_IBFM_MEAN;
-  } else {
-    ImplFatal("<rad_m1>/implicit_blend_fmode = '" + sbm
-              + "' is not a choice (max | mean)");
-  }
-  std::string sbw = pin->GetOrAddString("rad_m1","implicit_blend_mode","flux");
-  if (sbw.compare("flux") == 0) {
-    impl_blend_mode = M1_IBMODE_FLUX;
-  } else if (sbw.compare("dissipation") == 0) {
-    impl_blend_mode = M1_IBMODE_DISSIP;
-  } else {
-    ImplFatal("<rad_m1>/implicit_blend_mode = '" + sbw
-              + "' is not a choice (flux | dissipation)");
-  }
-  // sp-blend-1008: the tau-only weight fails the grey atmosphere, the opacity jump and
-  // the He column (design sect. 9), and `dissipation` is rejected there too; neither is
-  // offered on the multi-D wedge
-  if (impl_beam_hr) {
-    // hrup-1009: the half-range face flux takes the AP weight of the face optical depth
-    // alone (implicit_blend = tau), or w = 1 (berthon); no f-gate: the half-range ratios
-    // ARE the angular information
-    if (!((impl_flux == M1_IFLUX_BLEND && impl_blend != M1_IBLEND_F &&
-           impl_blend_mode == M1_IBMODE_FLUX) || impl_flux == M1_IFLUX_BERTHON) ||
-        (full && pmy_pack->pmesh->multi_d && !impl_flux_all)) {
-      ImplFatal("<rad_m1>/implicit_flux_beam = halfrange needs implicit_flux = "
-                "berthon, or "
-                "blend with implicit_blend = tau | tau_f | idort and "
-                "implicit_blend_mode = "
-                "flux; on a multi-D mesh also implicit_flux_faces = all");
-    }
-  }
-  if (full && impl_flux == M1_IFLUX_BLEND && !impl_beam_hr &&
-      (impl_blend == M1_IBLEND_TAU || impl_blend_mode == M1_IBMODE_DISSIP)) {
-    ImplFatal("<rad_m1>/transport = implicit with implicit_flux = blend takes "
-              "implicit_blend = f | tau_f and implicit_blend_mode = flux only");
-  }
-  impl_blend_tau0 = pin->GetOrAddReal("rad_m1","implicit_blend_tau0",1.0);
-  impl_blend_flo = pin->GetOrAddReal("rad_m1","implicit_blend_flo",0.6);
-  impl_blend_fhi = pin->GetOrAddReal("rad_m1","implicit_blend_fhi",0.9);
-  if (!(impl_blend_tau0 > 0.0) || !(impl_blend_fhi > impl_blend_flo)) {
-    ImplFatal("<rad_m1>: implicit_blend_tau0 must be positive and implicit_blend_fhi "
-              "must exceed implicit_blend_flo");
-  }
+  // (scheme = clean: not read; the clean solve has its own face, and CleanPreflight
+  // lists the keys an input names)
+  if (!clean) ImplicitFaceInit(pin);
   std::string srn = pin->GetOrAddString("rad_m1","implicit_recon","dc");
   if (srn.compare("dc") == 0) {
     impl_recon = M1_IRECON_DC;
@@ -4682,8 +3966,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               << ((impl_flux == M1_IFLUX_APHLL) ? "ap_hll" :
                   ((impl_flux == M1_IFLUX_BERTHON) ? "berthon" :
                    ((impl_flux == M1_IFLUX_BLEND) ? "blend" : "central")))
-              << ((impl_flux == M1_IFLUX_BLEND) ? (":" + sbl + "/" + sbm + "/" + sbw)
-                                                : std::string(""))
+              << ((impl_flux == M1_IFLUX_BLEND) ?
+                  (":" + pin->GetString("rad_m1","implicit_blend") + "/" +
+                   pin->GetString("rad_m1","implicit_blend_fmode") + "/" +
+                   pin->GetString("rad_m1","implicit_blend_mode")) : std::string(""))
               << " implicit_recon="
               << ((impl_recon == M1_IRECON_PLMDC) ? "plm_dc" : "dc")
               << " implicit_partition="
@@ -4748,6 +4034,735 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (transport >= M1_TRANSPORT_IMPLICIT_X1 && time_scheme == M1_TIME_BE &&
       mr_every <= 1) {
     Kokkos::realloc(u1, u1.extent(0), M1_NVAR, 1, 1, 1);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitFaceInit
+//! \brief the face-form keys of the old production's implicit solve (implicit_flux,
+//! _blend*, _thin_*, _hr_*; moved from ImplicitInit, which calls it unless scheme =
+//! clean)
+
+void RadiationM1::ImplicitFaceInit(ParameterInput *pin) {
+  const bool full = (transport == M1_TRANSPORT_IMPLICIT);
+  // ---- milestone 3a2 options.  All three default to the 3a behaviour, so an input file
+  // that does not name them reproduces RESULTS.txt of runs_3a exactly.
+  std::string sfx = pin->GetOrAddString("rad_m1","implicit_flux","central");
+  if (sfx.compare("central") == 0) {
+    impl_flux = M1_IFLUX_CENTRAL;
+  } else if (sfx.compare("ap_hll") == 0) {
+    impl_flux = M1_IFLUX_APHLL;
+  } else if (sfx.compare("berthon") == 0) {
+    impl_flux = M1_IFLUX_BERTHON;
+  } else if (sfx.compare("blend") == 0) {
+    impl_flux = M1_IFLUX_BLEND;
+  } else {
+    ImplFatal("<rad_m1>/implicit_flux = '" + sfx
+              + "' is not a choice (central | ap_hll | berthon | blend)");
+  }
+  // 3b phase B: the transverse operator is built for the face-eliminated (central) form
+  // only.  The HLL/berthon/blend face fluxes carry per-face coefficients (ifw) that exist
+  // for the x1 faces alone, so anything but `central` would silently be central in x2/x3.
+  // sp-blend-1008: on the spherical-polar WEDGE (not the cubed sphere) berthon | blend
+  // act on the x1 (radial) faces, with the A_f/V_i areas and volumes and the centroid
+  // distance of the sp row; the x2/x3 faces stay central (a beam in an outflow is
+  // radial).  Every other multi-D mesh keeps the refusal.
+  // blendall-1009: implicit_flux_faces = all extends berthon | blend to EVERY face of the
+  // multi-D solve -- the Cartesian x1, x2, x3 faces and the sp LATERAL faces -- with the
+  // per-face coefficients of the lagged closure's beam vector (M1BeamFace).  Default
+  // `x1`: the behaviour above, bitwise.
+  {
+    std::string sff = pin->GetOrAddString("rad_m1","implicit_flux_faces","x1");
+    if (sff.compare("all") == 0) {
+      impl_flux_all = true;
+    } else if (sff.compare("x1") != 0) {
+      ImplFatal("<rad_m1>/implicit_flux_faces = '" + sff
+                + "' is not a choice (x1 | all)");
+    }
+  }
+  {
+    std::string sbb = pin->GetOrAddString("rad_m1","implicit_flux_beam","closure");
+    if (sbb.compare("fs") == 0) {
+      impl_beam_fs = true;
+    } else if (sbb.compare("halfrange") == 0) {
+      impl_beam_hr = true;
+      // without ray data (closure m1 / eddington / vet_col without vet_gd) the faces
+      // stay central unless implicit_hr_model = true (the isotropic + beam model of the
+      // lagged closure: it is NEUTRAL in a thick layer -- the lagged flux carries the
+      // whole flux with no gradient -- and fails G1, tests: blendall_1009/gates/g1)
+      impl_hr_model = pin->GetOrAddBoolean("rad_m1","implicit_hr_model",false);
+      // cbfix-1011: implicit_hr_face = sf (default) | cell (the hrup-1009 cell ratios)
+      std::string shf = pin->GetOrAddString("rad_m1","implicit_hr_face","sf");
+      if (shf.compare("sf") == 0) {
+        impl_hr_sf = vet_sc;
+      } else if (shf.compare("cell") != 0) {
+        ImplFatal("<rad_m1>/implicit_hr_face = '" + shf + "' is not a choice (sf | cell)");
+      }
+      // unify-sc-gd-1012 (#4): sf on vet_gd too.  The donor scale Jh and the face fluxes
+      // H+-_d = h+-_d J come from vgd_hr (VetGdHalfRange: twin-corrected ratios and J),
+      // on the face set implicit_hr_face_gd = x1 | all | none (the lateral gd half-range
+      // data are the per-shell lateral interpolation whose beam-edge error forced
+      // implicit_thin_js_gd = x1).  DEFAULT none (opt-in; the old behaviour, bitwise):
+      // x1 is bitwise on AG Car A and bsgR (no cell with Jh > J) but in the P2 channel
+      // beam (pinc) the twin-corrected gd ratios make Jh > J cells that turn the Picard
+      // loop into a limit cycle (Picard 5.1 -> 36.8, 21 NONCONV; L/L_ex 0.566 -> 0.535;
+      // pinc + implicit_hr_excess DIVERGED), the same gd lateral-data limit as js_gd.
+      if (vgd_on && sph_geom && shf.compare("sf") == 0) {
+        std::string sg = pin->GetOrAddString("rad_m1","implicit_hr_face_gd","none");
+        if (sg.compare("x1") == 0) {
+          impl_hr_sfgd = 1;
+        } else if (sg.compare("all") == 0) {
+          impl_hr_sfgd = 3;
+        } else if (sg.compare("none") != 0) {
+          ImplFatal("<rad_m1>/implicit_hr_face_gd = '" + sg
+                    + "' is not a choice (x1 | all | none)");
+        }
+        if (impl_hr_sfgd != 0) {impl_hr_sf = true;}
+      }
+      // sptests-1011 P2: implicit_hr_excess = none (default) | iso (vet_gd ratios only)
+      std::string sxs = pin->GetOrAddString("rad_m1","implicit_hr_excess","none");
+      if (sxs.compare("iso") == 0) {
+        impl_hr_xs = true;
+        // steady-regime gate: in a time-resolved transient (c dt/dx ~ 1) E^n differs from
+        // the steady formal solution's J legitimately (the light front), so the excess
+        // test is meaningless there
+        impl_hr_xs_cfl = pin->GetOrAddReal("rad_m1","implicit_hr_excess_cfl",10.0);
+      } else if (sxs.compare("none") != 0) {
+        ImplFatal("<rad_m1>/implicit_hr_excess = '" + sxs + "' is not a choice (none | iso)");
+      }
+    } else if (sbb.compare("closure") != 0) {
+      ImplFatal("<rad_m1>/implicit_flux_beam = '" + sbb + "' is not a choice "
+                "(closure | fs | halfrange)");
+    }
+  }
+  if (full && impl_flux_all) {
+    // cs-s4-1017 (stage S4): the cubed sphere too (ImplicitLatFaceCoefCs, the blend
+    // terms of M1CsTransRow)
+    if (!(impl_flux == M1_IFLUX_BERTHON || impl_flux == M1_IFLUX_BLEND)) {
+      ImplFatal("<rad_m1>/implicit_flux_faces = all needs implicit_flux = berthon | "
+                "blend");
+    }
+  }
+  // cs-port-1016 (CS_VETGD.md S1): berthon | blend on the x1 faces of the cubed sphere
+  // too.  x1 = r on both meshes and the x1 face coefficients (ifw: the lagged reduced
+  // flux RF0 of the radial faces, the face kappa_T x dxface.x1f, the A_f/V_i of the sp
+  // row) read only radial data; the x2/x3 faces stay central there as on the wedge
+  // (implicit_flux_faces = all, the per-face beam of the skew lateral faces, stays
+  // refused above).
+  if (full && impl_flux != M1_IFLUX_CENTRAL) {
+    const bool spok = (sph_geom || impl_flux_all) &&
+                      (impl_flux == M1_IFLUX_BERTHON || impl_flux == M1_IFLUX_BLEND);
+    if (!spok) {
+      ImplFatal("<rad_m1>/transport = implicit supports implicit_flux = central only "
+                "(berthon | blend on the x1 faces of the spherical-polar wedge and the "
+                "cubed sphere); use "
+                "transport = implicit_x1 for ap_hll | berthon | blend");
+    }
+  }
+  // ---- milestone 3c.  The weight of implicit_flux = blend.  Inert for every other
+  // flux, and the two ends of the blend are BITWISE central and berthon.
+  std::string sbl = pin->GetOrAddString("rad_m1","implicit_blend","tau_f");
+  if (sbl.compare("tau") == 0) {
+    impl_blend = M1_IBLEND_TAU;
+  } else if (sbl.compare("f") == 0) {
+    impl_blend = M1_IBLEND_F;
+  } else if (sbl.compare("tau_f") == 0) {
+    impl_blend = M1_IBLEND_TAUF;
+  } else if (sbl.compare("idort") == 0) {
+    impl_blend = M1_IBLEND_IDORT;   // hrup-1009, half-range only
+  } else if (sbl.compare("knudsen") == 0) {
+    impl_blend = M1_IBLEND_KN;      // hrup-1009, half-range only
+  } else if (sbl.compare("idort_f") == 0) {
+    impl_blend = M1_IBLEND_IDF;     // hrup-1009, half-range only
+  } else if (sbl.compare("idort_a") == 0) {
+    impl_blend = M1_IBLEND_IDA;     // hrup-1009, half-range only
+  } else {
+    ImplFatal("<rad_m1>/implicit_blend = '" + sbl
+              + "' is not a choice (tau | f | tau_f | idort | knudsen | idort_f | "
+              "idort_a)");
+  }
+  if (impl_blend >= M1_IBLEND_IDORT &&
+      pin->GetOrAddString("rad_m1","implicit_flux_beam",
+                          "closure").compare("halfrange") != 0) {
+    ImplFatal("<rad_m1>/implicit_blend = idort | knudsen | idort_f | idort_a needs "
+              "implicit_flux_beam = halfrange");
+  }
+  impl_blend_alpha = pin->GetOrAddReal("rad_m1","implicit_blend_alpha",1.0);
+  impl_blend_r0 = pin->GetOrAddReal("rad_m1","implicit_blend_r0",1.5);
+  impl_blend_xthin = pin->GetOrAddReal("rad_m1","implicit_blend_xthin",0.0);
+  // rc18-1110 implicit_blend_dtc = kappa > 0 (opt-in; read only when named, 0 = off,
+  // bitwise): the dt-consistent per-step weight of the half-range faces (M1BlendDtc)
+  impl_blend_dtc = pin->DoesParameterExist("rad_m1","implicit_blend_dtc") ?
+                   pin->GetReal("rad_m1","implicit_blend_dtc") : 0.0;
+  if (impl_blend_dtc < 0.0) {ImplFatal("<rad_m1>/implicit_blend_dtc must be >= 0");}
+  // hr2prod-1110 (diagnostic, read only when named): implicit_hr_wscale_x1 / _lat
+  impl_hr_cmem_cap = pin->DoesParameterExist("rad_m1","implicit_hr_cmem_cap") ?
+                     pin->GetReal("rad_m1","implicit_hr_cmem_cap") : 0.0;   // hr2prod-1110
+  impl_hr_fci = pin->DoesParameterExist("rad_m1","implicit_hr_fcimp") &&
+                pin->GetBoolean("rad_m1","implicit_hr_fcimp");   // hr2prod-1110
+  impl_hr_ws = pin->DoesParameterExist("rad_m1","implicit_hr_wscale_x1") ||
+               pin->DoesParameterExist("rad_m1","implicit_hr_wscale_lat");
+  if (impl_hr_ws) {
+    impl_hr_ws_x1 = pin->GetOrAddReal("rad_m1","implicit_hr_wscale_x1",1.0);
+    impl_hr_ws_lat = pin->GetOrAddReal("rad_m1","implicit_hr_wscale_lat",1.0);
+  }
+  // vgdhr-1110 (rad_m1.hpp): implicit_thin_gface_shell, implicit_hr_fsc
+  impl_tgsh = pin->DoesParameterExist("rad_m1","implicit_thin_gface_shell") &&
+              pin->GetBoolean("rad_m1","implicit_thin_gface_shell");
+  impl_hrfsc = pin->DoesParameterExist("rad_m1","implicit_hr_fsc") &&
+               pin->GetBoolean("rad_m1","implicit_hr_fsc");
+  impl_tgfl = pin->DoesParameterExist("rad_m1","implicit_thin_gface_filter") ?
+              pin->GetReal("rad_m1","implicit_thin_gface_filter") : 0.0;   // vgdhr-1110
+  impl_gwd = pin->DoesParameterExist("rad_m1","implicit_thin_gw_dump") &&
+             pin->GetBoolean("rad_m1","implicit_thin_gw_dump");   // vgdgw-1110
+  // rc18-1110 implicit_hr_cmem (opt-in, read only when named, default false = bitwise):
+  // a SEPARATE central-branch memory.  The face arrays f0x1..3 (and with them f0x*n,
+  // the hesdirk2 copies t2f*, the stage slopes kk / increments t2i, the restart file)
+  // then hold F_c, evolved by the plain face equation F_c' = th (F_c^n - c^2 dt dP/dx
+  // ...); the APPLIED flux (1 - w) F_c' + w F_hr(E') -- what the rows always solved --
+  // goes to fax1..3, read by the cell flux (iw F*, the write-back) and the transverse
+  // divergence.  w is unchanged (no dt, no opacity); nothing relaxes per step.
+  impl_hr_cmem = pin->DoesParameterExist("rad_m1","implicit_hr_cmem") &&
+                 pin->GetBoolean("rad_m1","implicit_hr_cmem");
+  // physflux-1111 implicit_physflux (opt-in, read only when named, default false =
+  // bitwise; rc18_1110/PHYSFLUX_DESIGN.md principle 1): implies implicit_hr_cmem and
+  // makes the face-equation flux F_c (f0x*) the ONE radiation momentum flux: the cell F
+  // between iterates and in the write-back, the write-back drag and the vimp drag read
+  // F_c, so the
+  // conservative gas source's old (mean F_c^n + a E^n) and new values are the same
+  // quantity.  The applied flux fax* stays the E-transport flux of the rows only.
+  impl_physflux = pin->DoesParameterExist("rad_m1","implicit_physflux") &&
+                  pin->GetBoolean("rad_m1","implicit_physflux");
+  if (impl_physflux) {impl_hr_cmem = true;}
+  // implicit_physflux_mom (read only when named; fc = default): which face flux is the
+  // one momentum flux.  fc: the face-equation F_c (above).  fa: the APPLIED flux fax*
+  // (the upwind one in thin beams) for the cell F, the drags and the gas source, with
+  // every old value of that budget the applied one too (Z_f via fax*n =
+  // implicit_hr_cmem_gas_fa, the cs2 / write-back F^old = the stored cell F); F_c is
+  // then only the face memory.
+  if (impl_physflux && pin->DoesParameterExist("rad_m1","implicit_physflux_mom")) {
+    const std::string pm = pin->GetString("rad_m1","implicit_physflux_mom");
+    if (pm.compare("fa") == 0) {
+      impl_pf_fa = true;
+    } else if (pm.compare("fc") != 0) {
+      ImplFatal("<rad_m1>/implicit_physflux_mom = '" + pm
+                + "' is not a choice (fc | fa)");
+    }
+  }
+  if (impl_pf_fa && pin->DoesParameterExist("rad_m1","implicit_physflux_zold")) {
+    const std::string pz = pin->GetString("rad_m1","implicit_physflux_zold");
+    if (pz.compare("fc") == 0) {
+      impl_pf_zfc = true;
+    } else if (pz.compare("fa") != 0) {
+      ImplFatal("<rad_m1>/implicit_physflux_zold = '" + pz
+                + "' is not a choice (fa | fc)");
+    }
+  }
+  // aphll-time-1110 implicit_aphll_mem (opt-in, read only when named, default false =
+  // bitwise): second order in time for the berthon | blend AP-HLL faces.  Two lags made
+  // them first order (tests at /viper/ptmp2/jinma/aphll_1110): (1) the lagged reduced
+  // flux RF0 of the face coefficients was the APPLIED face flux over c E_up, which at
+  // w = 1 has no F^n memory (HCL E_L + HCR E_R), so f followed a per-step map instead of
+  // the F equation; (2) under implicit_recon_lag = step the coefficients were frozen at
+  // the stage start, so the stage-1 slope (weight b2 in the step) carried an O(dt)
+  // coefficient error.  The key turns on (1) implicit_hr_cmem (F_c, evolved by the face
+  // equation, in f0x*; the applied flux in fax*) and (2) implicit_lag_restage (the face
+  // coefficients rebuilt once after the first pass of each stage) unless that is named.
+  impl_aphll_mem = pin->DoesParameterExist("rad_m1","implicit_aphll_mem") &&
+                   pin->GetBoolean("rad_m1","implicit_aphll_mem");
+  // aphll-time-1110 implicit_aphll_fcimp (opt-in, read only when named; implies
+  // implicit_aphll_mem): the LINEARISED form.  At the Picard fixed point of the F_c
+  // memory with a face-local ratio, c f E_up = F_c, so the advective part of the HLL
+  // flux, al (b_R c f_L E_L - b_L c f_R E_R)/(b_R - b_L), IS al F_c(E'): it is put into
+  // the row implicitly, with the face equation's own (M-matrix) coefficients, instead of
+  // lagging f (which is an explicit flux at chat dt/dx >> 1).  The x1 face flux is then
+  // (1 - w + w al) F_c(E') + w al dk (E_L - E_R): AL = w (1 - al), HCL = -HCR = w al dk
+  // (berthon | blend in flux mode; the RF0 path, not halfrange / the Cartesian beam)
+  impl_aphll_fci = pin->DoesParameterExist("rad_m1","implicit_aphll_fcimp") &&
+                   pin->GetBoolean("rad_m1","implicit_aphll_fcimp");
+  if (impl_aphll_fci) {impl_aphll_mem = true;}
+  if (impl_aphll_mem) {
+    if (impl_flux == M1_IFLUX_CENTRAL) {
+      ImplFatal("<rad_m1>/implicit_aphll_mem needs implicit_flux = ap_hll | berthon | "
+                "blend");
+    }
+    impl_hr_cmem = true;
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> implicit_aphll_mem = true: F_c face memory for the AP-HLL "
+                << "reduced flux + restage (aphll-time-1110; TEST key: second order in "
+                << "time at chat dt/dx <~ 1, UNSTABLE in thin media at chat dt/dx >> 1)"
+                << std::endl;
+    }
+  }
+  if (impl_blend_dtc > 0.0 && global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> implicit_blend_dtc = " << impl_blend_dtc
+              << ": dt-consistent half-range face weights (M1BlendDtc)" << std::endl;
+  }
+  {
+    // xthinfix-1009: where the xthin override acts (all faces = hrup-1009 behaviour)
+    std::string sxm = pin->GetOrAddString("rad_m1","implicit_blend_xthin_mode","all");
+    if (sxm.compare("all") == 0) {
+      impl_blend_xthin_mode = 0;
+    } else if (sxm.compare("beam") == 0) {
+      impl_blend_xthin_mode = 1;
+    } else if (sxm.compare("beam_kn") == 0) {
+      impl_blend_xthin_mode = 2;
+    } else if (sxm.compare("steep") == 0) {
+      impl_blend_xthin_mode = 3;
+    } else if (sxm.compare("kn") == 0) {
+      impl_blend_xthin_mode = 4;
+    } else {
+      ImplFatal("<rad_m1>/implicit_blend_xthin_mode = '" + sxm
+                + "' is not a choice (all | beam | beam_kn | steep | kn)");
+    }
+    if (impl_blend_xthin_mode == 2 || impl_blend_xthin_mode == 4) {
+      impl_blend_xthin_r0 = pin->GetOrAddReal("rad_m1","implicit_blend_xthin_r0",1.5);
+    }
+    impl_blend_xthin_wmin = pin->GetOrAddReal("rad_m1","implicit_blend_xthin_wmin",0.0);
+  }
+  {
+    // thinsw-1010: the dt-free, step-frozen thin switch (see M1ThinFace).
+    // prodfinal-1011: DEFAULT fse on a fresh run wherever the switch is accepted and has
+    // ray data: implicit_flux = blend with implicit_flux_beam = halfrange,
+    // implicit_hr_recon dc (or not named), and vet_sc, vet_gd or implicit_hr_model.
+    // Elsewhere (central, ap_hll, berthon, a blend without halfrange, ...) the default
+    // stays none, silently, so those runs are bitwise unchanged and need no key.  A
+    // restart whose file lacks the key keeps none.  The resolved value is echoed (later
+    // restarts keep it); explicit input overrides.
+    const bool thdef = !global_variable::restart_run &&
+        (impl_flux == M1_IFLUX_BLEND) && impl_beam_hr &&
+        (vet_sc || vgd_on || impl_hr_model) &&
+        (!pin->DoesParameterExist("rad_m1","implicit_hr_recon") ||
+         pin->GetString("rad_m1","implicit_hr_recon").compare("dc") == 0);
+    std::string sts = pin->GetOrAddString("rad_m1","implicit_thin_switch",
+                                          thdef ? "fse" : "none");
+    const char *tnm[9] = {"none", "hj", "kn", "fs", "hjkn", "fskn", "fsq", "fsi", "fse"};
+    impl_thsw = -1;
+    for (int q = 0; q < 9; ++q) {
+      if (sts.compare(tnm[q]) == 0) {impl_thsw = q;}
+    }
+    if (impl_thsw < 0) {
+      ImplFatal("<rad_m1>/implicit_thin_switch = '" + sts
+                + "' is not a choice (none | hj | kn | fs | hjkn | fskn | fsq | fsi | "
+                + "fse)");
+    }
+    if (impl_thsw != M1_THSW_NONE) {
+      thsw_h0 = pin->GetOrAddReal("rad_m1","implicit_thin_h0",0.3);
+      thsw_h1 = pin->GetOrAddReal("rad_m1","implicit_thin_h1",0.6);
+      thsw_h0x = pin->DoesParameterExist("rad_m1","implicit_thin_h0_x1") ?
+                 pin->GetReal("rad_m1","implicit_thin_h0_x1") : thsw_h0;   // vgdhr-1110
+      thsw_h1x = pin->DoesParameterExist("rad_m1","implicit_thin_h1_x1") ?
+                 pin->GetReal("rad_m1","implicit_thin_h1_x1") : thsw_h1;
+      thsw_hx_curv = pin->DoesParameterExist("rad_m1","implicit_thin_hx1_curv") &&
+                     pin->GetBoolean("rad_m1","implicit_thin_hx1_curv");
+      if (!(thsw_h1x > thsw_h0x)) {
+        ImplFatal("<rad_m1>/implicit_thin_h1_x1 must exceed implicit_thin_h0_x1");
+      }
+      // hr2prod-1110 (read only when named): implicit_thin_gface = max | mean | jump
+      if (pin->DoesParameterExist("rad_m1","implicit_thin_gface")) {
+        std::string sg = pin->GetString("rad_m1","implicit_thin_gface");
+        if (sg.compare("max") == 0) {
+          thsw_gface = 0;
+        } else if (sg.compare("mean") == 0) {
+          thsw_gface = 1;
+        } else if (sg.compare("jump") == 0) {
+          thsw_gface = 2;
+          thsw_gfd = pin->GetOrAddReal("rad_m1","implicit_thin_gface_d",0.1);
+          if (!(thsw_gfd > 0.0)) {
+            ImplFatal("<rad_m1>/implicit_thin_gface_d must be positive");
+          }
+        } else {
+          ImplFatal("<rad_m1>/implicit_thin_gface = '" + sg
+                    + "' is not a choice (max | mean | jump)");
+        }
+      }
+      thsw_kn0 = pin->GetOrAddReal("rad_m1","implicit_thin_kn0",1.0);
+      thsw_knp = pin->GetOrAddReal("rad_m1","implicit_thin_knp",4.0);
+      thsw_fsa = pin->GetOrAddReal("rad_m1","implicit_thin_fsa",0.0);
+      thsw_fsj = pin->GetOrAddReal("rad_m1","implicit_thin_fsj",0.0);
+      if (impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI) {
+        thsw_qp = pin->GetOrAddReal("rad_m1","implicit_thin_qp",8.0);
+      }
+      // prodfinal-1011: DEFAULT hc on a fresh run with the switch fse (the production
+      // pair fse + hc); none otherwise and on a restart whose file lacks the key
+      const bool tcdef = !global_variable::restart_run && (impl_thsw == M1_THSW_FSE);
+      std::string scr = pin->GetOrAddString("rad_m1","implicit_thin_corr",
+                                            tcdef ? "hc" : "none");
+      if (scr.compare("lag") == 0) {
+        impl_thsw_corr = M1_THCR_LAG;
+      } else if (scr.compare("sc") == 0) {
+        impl_thsw_corr = M1_THCR_SC;
+      } else if (scr.compare("hc") == 0) {
+        impl_thsw_corr = M1_THCR_HC;
+      } else if (scr.compare("hcs") == 0) {
+        impl_thsw_corr = M1_THCR_HCS;
+      } else if (scr.compare("none") != 0) {
+        ImplFatal("<rad_m1>/implicit_thin_corr = '" + scr
+                  + "' is not a choice (none | lag | sc | hc | hcs)");
+      }
+      // thinfix-1011: the formal-solution shape of the half-range face ratios (js) and
+      // the outer Marshak q at the face (lin); read only with the switch on
+      {
+        // unify-1012: DEFAULT jse + lin on a fresh run (vet_sc and vet_gd alike: the
+        // unified thin set fse + hc + jse + lin); a restart whose file lacks the keys keeps
+        // dc / cell (bitwise older runs); the resolved values are echoed
+        const bool tjdef = !global_variable::restart_run;
+        std::string srec = pin->GetOrAddString("rad_m1","implicit_thin_recon",
+                                               tjdef ? "jse" : "dc");
+        if (srec.compare("js") == 0) {
+          thsw_js = true;
+        } else if (srec.compare("jse") == 0) {
+          thsw_js = true;
+          thsw_jse = true;
+        } else if (srec.compare("dc") != 0) {
+          ImplFatal("<rad_m1>/implicit_thin_recon = '" + srec
+                    + "' is not a choice (dc | js | jse)");
+        }
+        // coreL-1012: implicit_thin_hcface = mean | tau, the optical-depth weighted face
+        // value of the formal-solution flux of thin_corr (x1 faces).  defaults-1012: DEFAULT
+        // tau on a fresh run with implicit_thin_corr = hc | hcs (where it acts); a restart
+        // whose file lacks the key keeps mean (bitwise older runs), echoed; otherwise read
+        // only when named.  Explicit input overrides.
+        const bool hfdef = (impl_thsw_corr == M1_THCR_HC || impl_thsw_corr == M1_THCR_HCS);
+        if (hfdef || pin->DoesParameterExist("rad_m1","implicit_thin_hcface")) {
+          std::string shf = hfdef ?
+              pin->GetOrAddString("rad_m1","implicit_thin_hcface",
+                                  global_variable::restart_run ? "mean" : "tau") :
+              pin->GetString("rad_m1","implicit_thin_hcface");
+          if (shf.compare("tau") == 0) {
+            thsw_hctau = true;
+          } else if (shf.compare("mean") != 0) {
+            ImplFatal("<rad_m1>/implicit_thin_hcface = '" + shf
+                      + "' is not a choice (mean | tau)");
+          }
+          // which faces on the sp wedge (vet_gd): x1 (default) | all.  The transverse
+          // faces carry the per-shell lateral interpolation error of the sweep (as
+          // implicit_thin_js_gd): with tau there the P2 channel luminosity rose 1.5 ->
+          // 1.9 L_ex.  Cartesian (vet_sc) meshes take every face.
+          std::string sgd = pin->GetOrAddString("rad_m1","implicit_thin_hcface_gd","x1");
+          if (sgd.compare("all") == 0) {
+            thsw_hctau_lat = true;
+          } else if (sgd.compare("x1") != 0) {
+            ImplFatal("<rad_m1>/implicit_thin_hcface_gd = '" + sgd
+                      + "' is not a choice (x1 | all)");
+          }
+        }
+        std::string sbq = pin->GetOrAddString("rad_m1","implicit_thin_bq",
+                                              tjdef ? "lin" : "cell");
+        if (sbq.compare("lin") == 0) {
+          thsw_bqlin = true;
+          // unify-1012: on vet_gd only with implicit_thin_bq_gd = lin (opt-in; default
+          // cell): the r^2 H+ extrapolation put a +1.3 % kink into the top-cell E of
+          // AG Car A (E/J-1 1.6e-2 vs 2.7e-3, E r^2 smooth without it) and raised the
+          // patm thin-top max error (NOTE-unify)
+          thsw_bqgd = (pin->GetOrAddString("rad_m1", "implicit_thin_bq_gd", "cell")
+                       == "lin");
+        } else if (sbq.compare("cell") != 0) {
+          ImplFatal("<rad_m1>/implicit_thin_bq = '" + sbq
+                    + "' is not a choice (cell | lin)");
+        }
+        if (thsw_js) {
+          thsw_jslim = pin->GetOrAddReal("rad_m1","implicit_thin_jslim",2.0);
+          // unify-1012: js/jse on vet_gd per direction, x1 | lat | all | none (vet_sc
+          // unaffected).  DEFAULT x1 on a fresh run: the vet_gd LATERAL half-range data
+          // come from the per-shell lateral interpolation of the GD formal solution, and
+          // the lateral face shape amplifies its beam-edge errors (P2 pinhole beam L/L_ex
+          // 3.5 and 9 NONCONV with all / lat vs 1.5 and 2 with x1, NOTE-unify); a restart
+          // whose file lacks the key keeps none (0197f020: js was inert on vet_gd)
+          {
+            const bool rr = global_variable::restart_run;
+            std::string sg = pin->GetOrAddString("rad_m1","implicit_thin_js_gd",
+                                                 rr ? "none" : "x1");
+            thsw_jsgd = (sg == "all") ? 3 : (sg == "x1") ? 1 : (sg == "lat") ? 2
+                        : (sg == "none") ? 0 : -1;
+            if (thsw_jsgd < 0) {
+              ImplFatal("<rad_m1>/implicit_thin_js_gd = '" + sg
+                        + "' is not a choice (all | x1 | lat | none)");
+            }
+          }
+          if (!(thsw_jslim >= 1.0)) {
+            ImplFatal("<rad_m1>/implicit_thin_jslim must be >= 1");
+          }
+          // jsfix-1012: implicit_thin_js_face = hcface | mean, the face value of the
+          // formal-solution H+- in the js/jse shape.  hcface (DEFAULT on a fresh run):
+          // the face interpolation of implicit_thin_hcface (tau: optical-depth weights,
+          // r^2 on the sp x1 faces; mean: the arithmetic mean) -- js and hc see ONE face
+          // value.  The arithmetic mean at a thin -> opaque step halved the donor's
+          // upwind ratio and piled E up in front of a cold absorber (T7 front E/E_free
+          // 1.56).  A restart whose file lacks the key keeps mean (bitwise).
+          {
+            std::string sjf = pin->GetOrAddString("rad_m1","implicit_thin_js_face",
+                global_variable::restart_run ? "mean" : "hcface");
+            if (sjf.compare("mean") == 0) {
+              thsw_jsmean = true;
+            } else if (sjf.compare("hcface") != 0) {
+              ImplFatal("<rad_m1>/implicit_thin_js_face = '" + sjf
+                        + "' is not a choice (hcface | mean)");
+            }
+          }
+        }
+      }
+      // unify-1012: implicit_thin_hcsf = jh | j.  hc/hcs subtract the upwind flux of the
+      // formal solution, h+-_f x (the cell scale); where the face ratios are the sf ratios
+      // over the donor scale Jh > J (implicit_hr_face = sf, beam-crossed cells) the cell
+      // scale must be Jh, else the correction is the O(1) part of the SC flux the sf face
+      // carries via E = Jh.  OPT-IN (default j, bitwise older runs): validation
+      // (NOTE-unify) found jh does NOT rescue cbg with dc (jse does), and with hc it
+      // puts +16 % energy into every vacuum crossing beam (cb row 1.164 vs 1.006); it
+      // only cuts the Picard count of hc + jse on cbg (34 -> 3.9).
+      {
+        std::string shj = pin->GetOrAddString("rad_m1","implicit_thin_hcsf","j");
+        if (shj.compare("jh") == 0) {
+          thsw_hcjh = true;
+        } else if (shj.compare("j") != 0) {
+          ImplFatal("<rad_m1>/implicit_thin_hcsf = '" + shj + "' is not a choice (jh | j)");
+        }
+      }
+      thsw_c1 = (impl_thsw_corr == M1_THCR_HCS) || thsw_jse ||
+                (impl_thsw == M1_THSW_FS || impl_thsw == M1_THSW_FSKN ||
+                 impl_thsw == M1_THSW_FSQ || impl_thsw == M1_THSW_FSI ||
+                 impl_thsw == M1_THSW_FSE);
+      // gdthin-1011: vet_gd carries C1, eps and J in vgd_hr (VetGdHalfRange)
+      vgd_thx = thsw_c1 || (impl_thsw_corr != M1_THCR_NONE);
+      if (!(thsw_h1 > thsw_h0) || !(thsw_kn0 > 0.0) || !(thsw_knp > 0.0)) {
+        ImplFatal("<rad_m1>: implicit_thin_h1 must exceed implicit_thin_h0, and "
+                  "implicit_thin_kn0 / implicit_thin_knp must be positive");
+      }
+      if (pin->GetOrAddString("rad_m1","implicit_flux","central").compare("blend") != 0
+          || pin->GetOrAddString("rad_m1","implicit_flux_beam",
+                                 "closure").compare("halfrange") != 0) {
+        ImplFatal("<rad_m1>/implicit_thin_switch needs implicit_flux = blend and "
+                  "implicit_flux_beam = halfrange");
+      }
+      // hr2nd-1110: implicit_hr_recon = plm is accepted with the thin switch (its face
+      // coefficients are fixed for the solve; the plm row multiplies them like any other
+      // upwind part).  The thin_corr / thin_recon corrections are checked below.
+    }
+  }
+  if (pin->DoesParameterExist("rad_m1","implicit_hr_recon")) {
+    // xthinfix-1009 Fix B: read only when given (keys-off parameter dump unchanged)
+    std::string shr = pin->GetString("rad_m1","implicit_hr_recon");
+    if (shr.compare("plm") == 0) {
+      impl_muscl = true;
+    } else if (shr.compare("led") == 0) {
+      impl_muscl = true;
+      impl_muscl_led = true;
+    } else if (shr.compare("dc") != 0) {
+      ImplFatal("<rad_m1>/implicit_hr_recon = '" + shr
+                + "' is not a choice (dc | plm | led)");
+    }
+    if (impl_muscl) {
+      impl_muscl_nfresh = pin->GetOrAddInteger("rad_m1","implicit_hr_recon_fresh",2);
+      impl_muscl_damp = pin->GetOrAddReal("rad_m1","implicit_hr_damp",0.0);
+      impl_muscl_qs = pin->GetOrAddReal("rad_m1","implicit_hr_recon_qs",0.0);
+      {std::string sp = pin->GetOrAddString("rad_m1","implicit_hr_pos","kill");
+      impl_muscl_bound = (sp.compare("bound") == 0);
+      impl_muscl_kill = (sp.compare("kill") == 0);}
+      impl_muscl_qsrel = pin->GetOrAddReal("rad_m1","implicit_hr_recon_qs_rel",0.0);
+      impl_muscl_qsstep = (pin->GetOrAddString("rad_m1","implicit_hr_recon_qs_mode",
+                                               "pass").compare("step") == 0);
+      impl_muscl_pred = pin->GetOrAddBoolean("rad_m1","implicit_hr_recon_pred",false);
+      if (impl_muscl_pred) {impl_muscl_nfresh = 1;}   // the row is fixed after E^dc
+      // cs-s7-1019 (read only when named): implicit_hr_recon_q = e (default) | h, the
+      // reconstructed quantity of the plm half-range faces: E (the face state h+-_c
+      // (E_c +- s_c/2), the donor cell's ratio h+-_c kept: an O(dx) face-flux error
+      // dx (h-' - h+') E/2 wherever the ratios vary, i.e. first order in a thin
+      // atmosphere) or the half-range FLUXES H+- = h+- E themselves (h+-_c E_c +- sig_c
+      // (h+-_c+1 E_c+1 - h+-_c-1 E_c-1)/4: second order).  Plain half-range faces only
+      // (implicit_flux_beam = halfrange; not with led, the sf ratios or hr_excess).
+      if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_q")) {
+        std::string sq = pin->GetString("rad_m1","implicit_hr_recon_q");
+        if (sq.compare("h") == 0) {
+          impl_muscl_hq = true;
+        } else if (sq.compare("e") != 0) {
+          ImplFatal("<rad_m1>/implicit_hr_recon_q = '" + sq + "' is not a choice (e | h)");
+        }
+        // hr2prod-1110 implicit_hr_recon_sfgate (read only when named)
+        impl_sfgate = pin->DoesParameterExist("rad_m1","implicit_hr_recon_sfgate") &&
+                      pin->GetBoolean("rad_m1","implicit_hr_recon_sfgate");
+        impl_hjump = pin->DoesParameterExist("rad_m1","implicit_hr_recon_hjump") ?
+                     pin->GetReal("rad_m1","implicit_hr_recon_hjump") : 0.0;
+        if (impl_hjump > 0.0 && !impl_muscl_hq) {
+          ImplFatal("<rad_m1>/implicit_hr_recon_hjump needs implicit_hr_recon_q = h");
+        }
+        if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_hjump_w")) {   // vgdhr
+          impl_hjw = std::max(1, pin->GetInteger("rad_m1","implicit_hr_recon_hjump_w"));
+        }
+        impl_kjump = pin->DoesParameterExist("rad_m1","implicit_hr_recon_kjump") ?
+                     pin->GetReal("rad_m1","implicit_hr_recon_kjump") : 0.0;   // vgdhr
+        impl_hsm = pin->DoesParameterExist("rad_m1","implicit_hr_recon_hsmooth") ?
+                   pin->GetReal("rad_m1","implicit_hr_recon_hsmooth") : 0.0;   // vgdhr
+        impl_qe_tau = pin->DoesParameterExist("rad_m1","implicit_hr_recon_qe_tau") ?
+                      pin->GetReal("rad_m1","implicit_hr_recon_qe_tau") : 0.0;   // vgdhr
+        impl_hlim = pin->DoesParameterExist("rad_m1","implicit_hr_recon_hlim") &&
+                    pin->GetBoolean("rad_m1","implicit_hr_recon_hlim");   // vgdhr-1110
+        if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_hsmooth_eps")) {
+          impl_hsm_eps = pin->GetReal("rad_m1","implicit_hr_recon_hsmooth_eps");
+        }
+        if (impl_sfgate && !impl_muscl_hq) {
+          ImplFatal("<rad_m1>/implicit_hr_recon_sfgate needs implicit_hr_recon_q = h");
+        }
+        if (impl_muscl_hq && (!impl_beam_hr || impl_muscl_led ||
+                              (impl_hr_sf && !impl_sfgate) || impl_hr_xs)) {
+          ImplFatal("<rad_m1>/implicit_hr_recon_q = h needs implicit_hr_recon = plm with "
+                    "implicit_flux_beam = halfrange (no sf face ratios, no hr_excess)");
+        }
+      }
+      // hr2nd-1110 (read only when named): implicit_hr_recon_lim = vl (default) | smooth.
+      // The van Leer factor clips every extremum (sig = 0 where the one-sided differences
+      // a, b change sign) and flattens the slope next to it (sig = 4ab/(a+b)^2 << 1 for
+      // a << b): a moving pulse peak is donor cell every step and the L1 order of the
+      // whole ladder drops to ~1.5 (the classic TVD-at-extrema loss).  smooth: sig = 1
+      // (the centred slope (E_c+1 - E_c-1)/2) where the second differences d2_c-1, d2_c,
+      // d2_c+1 have one strict sign and max|d2| <= C min|d2|
+      // (C = implicit_hr_recon_lim_c, default 2): the data is a resolved parabola
+      // there, smooth extremum or not; the
+      // face values then keep E_c +- s/2 >= E_c/2 (else van Leer).  A jump (beam edge,
+      // front) has alternating d2 and keeps van Leer.  Needs the cells c-2..c+2 inside
+      // the block along the axis (van Leer otherwise).  No dt, no optical depth.
+      if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_lim")) {
+        std::string sl = pin->GetString("rad_m1","implicit_hr_recon_lim");
+        if (sl.compare("smooth") == 0) {
+          impl_muscl_smooth = true;
+        } else if (sl.compare("smooth0") == 0) {   // hr2prod-1110
+          impl_muscl_smooth = true;
+          impl_muscl_smooth0 = true;
+        } else if (sl.compare("vl") != 0) {
+          ImplFatal("<rad_m1>/implicit_hr_recon_lim = '" + sl
+                    + "' is not a choice (vl | smooth | smooth0)");
+        }
+        if (impl_muscl_smooth && impl_muscl_led) {
+          ImplFatal("<rad_m1>/implicit_hr_recon_lim = smooth needs "
+                    "implicit_hr_recon = plm");
+        }
+        if (impl_muscl_smooth) {
+          impl_muscl_smc = pin->GetOrAddReal("rad_m1","implicit_hr_recon_lim_c",2.0);
+        }
+      }
+      // hr2nd-1110 (read only when named): implicit_hr_recon_xcfl = X0 > 0.  No implicit
+      // 2nd-order upwind row is positive when the light crosses many cells per step
+      // (X = c dt/dx >> 1, Godunov): a beam edge or front in the thin region then gives
+      // E < 0 from the solve and the positivity fallback (KILL, a re-solve) every step.
+      // A slope the limiter has CUT (van Leer, not the smooth branch) is scaled by
+      // 1/(1 + (X/X0)^4), X = c dt / V^(1/3): donor cell at a jump the step jumps over,
+      // unchanged for X << X0, and -> 1 as dt -> 0 (time-consistent: the T ladder sees
+      // plm).  Smooth cells (implicit_hr_recon_lim = smooth) keep sig = 1.  No optical
+      // depth enters.
+      if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_xcfl")) {
+        impl_muscl_xcfl = pin->GetReal("rad_m1","implicit_hr_recon_xcfl");
+        if (!(impl_muscl_xcfl > 0.0)) {
+          ImplFatal("<rad_m1>/implicit_hr_recon_xcfl must be positive");
+        }
+      }
+      // cs-s7-1019 (read only when named): implicit_hr_recon_seam = centred (default) |
+      // onesided: on the cubed sphere the seam cells (and the ghosts beyond a seam) take
+      // the one-sided slope of their own panel (M1HqW); the centred slope across a seam
+      // runs along the bent mirror stencil, an O(1) slope error near the cube vertices
+      // (the thin-regime lateral flux there, S7 test).  Needs implicit_hr_recon_q = h.
+      if (pin->DoesParameterExist("rad_m1","implicit_hr_recon_seam")) {
+        std::string ss = pin->GetString("rad_m1","implicit_hr_recon_seam");
+        if (ss.compare("onesided") == 0) {
+          impl_muscl_seam1 = true;
+        } else if (ss.compare("centred") != 0) {
+          ImplFatal("<rad_m1>/implicit_hr_recon_seam = '" + ss
+                    + "' is not a choice (centred | onesided)");
+        }
+        if (impl_muscl_seam1 && !impl_muscl_hq) {
+          ImplFatal("<rad_m1>/implicit_hr_recon_seam = onesided needs "
+                    "implicit_hr_recon_q = h");
+        }
+      }
+    }
+    // the plm face states multiply the face coefficients HCL/HCR of ANY upwind part:
+    // the half-range flux, or the berthon / blend AP-HLL part (implicit_flux_beam =
+    // closure | fs); a central face has none
+    if (impl_muscl && pin->GetOrAddString("rad_m1","implicit_flux",
+                                          "central").compare("central") == 0) {
+      ImplFatal("<rad_m1>/implicit_hr_recon = plm needs implicit_flux = berthon | blend");
+    }
+    // hr2nd-1110: plm under implicit_thin_switch.  The thin switch's own second-order
+    // patches of the DONOR-CELL upwind flux -- implicit_thin_corr (DG = q w c (H_f -
+    // h+_L J_L - h-_R J_R), the formal solution's central-minus-donor flux) and
+    // implicit_thin_recon = js | jse (face ratios H+-_f/J) -- remove an O(dx) error that
+    // the plm face state no longer has; added to a plm flux they put an O(dx) error back
+    // (first order wherever E ~ J).  They are refused with plm.  implicit_hr_recon_q = h
+    // (H+- = h+- E reconstructed) is the second-order form of both.
+    // hrhc-1110 (read only when named): implicit_thin_corr_plm = true makes hc / hcs
+    // plm-consistent (ImplicitHcPlm: the formal-solution flux minus the PLM upwind flux
+    // of the formal solution, same limiter), so the steady face flux is w c H_f exactly;
+    // needs implicit_hr_recon_q = h and implicit_thin_corr = hc | hcs
+    if (pin->DoesParameterExist("rad_m1","implicit_thin_corr_plm")) {
+      impl_hcplm = pin->GetBoolean("rad_m1","implicit_thin_corr_plm");
+      if (impl_hcplm && !(impl_muscl && impl_muscl_hq && !impl_muscl_led &&
+                          impl_thsw != M1_THSW_NONE &&
+                          (impl_thsw_corr == M1_THCR_HC ||
+                           impl_thsw_corr == M1_THCR_HCS))) {
+        ImplFatal("<rad_m1>/implicit_thin_corr_plm needs implicit_hr_recon = plm, "
+                  "implicit_hr_recon_q = h, implicit_thin_switch on and "
+                  "implicit_thin_corr = hc | hcs");
+      }
+    }
+    if (impl_muscl && impl_thsw != M1_THSW_NONE &&
+        ((impl_thsw_corr != M1_THCR_NONE && !impl_hcplm) ||
+         (thsw_js && !impl_sfgate))) {
+      ImplFatal("<rad_m1>/implicit_hr_recon = plm with implicit_thin_switch needs "
+                "implicit_thin_corr = none and implicit_thin_recon = dc (the plm face "
+                "state replaces both donor-cell corrections; use implicit_hr_recon_q = h)");
+    }
+    // cs-open-1018: plm on the cubed sphere too (m1bcs, canonical seam areas, the
+    // limiter ghosts across a seam on the receiving block's axes: ImplicitMusclSigHalo);
+    // led keeps its refusal (its a/b pair would need the side swap of a reversed axis)
+    if (impl_muscl_led && cs_geom) {
+      ImplFatal("<rad_m1>/implicit_hr_recon = led is not implemented on the cubed "
+                "sphere (plm is)");
+    }
+  }
+  std::string sbm = pin->GetOrAddString("rad_m1","implicit_blend_fmode","max");
+  if (sbm.compare("max") == 0) {
+    impl_blend_fmode = M1_IBFM_MAX;
+  } else if (sbm.compare("mean") == 0) {
+    impl_blend_fmode = M1_IBFM_MEAN;
+  } else {
+    ImplFatal("<rad_m1>/implicit_blend_fmode = '" + sbm
+              + "' is not a choice (max | mean)");
+  }
+  std::string sbw = pin->GetOrAddString("rad_m1","implicit_blend_mode","flux");
+  if (sbw.compare("flux") == 0) {
+    impl_blend_mode = M1_IBMODE_FLUX;
+  } else if (sbw.compare("dissipation") == 0) {
+    impl_blend_mode = M1_IBMODE_DISSIP;
+  } else {
+    ImplFatal("<rad_m1>/implicit_blend_mode = '" + sbw
+              + "' is not a choice (flux | dissipation)");
+  }
+  // sp-blend-1008: the tau-only weight fails the grey atmosphere, the opacity jump and
+  // the He column (design sect. 9), and `dissipation` is rejected there too; neither is
+  // offered on the multi-D wedge
+  if (impl_beam_hr) {
+    // hrup-1009: the half-range face flux takes the AP weight of the face optical depth
+    // alone (implicit_blend = tau), or w = 1 (berthon); no f-gate: the half-range ratios
+    // ARE the angular information
+    if (!((impl_flux == M1_IFLUX_BLEND && impl_blend != M1_IBLEND_F &&
+           impl_blend_mode == M1_IBMODE_FLUX) || impl_flux == M1_IFLUX_BERTHON) ||
+        (full && pmy_pack->pmesh->multi_d && !impl_flux_all)) {
+      ImplFatal("<rad_m1>/implicit_flux_beam = halfrange needs implicit_flux = "
+                "berthon, or "
+                "blend with implicit_blend = tau | tau_f | idort and "
+                "implicit_blend_mode = "
+                "flux; on a multi-D mesh also implicit_flux_faces = all");
+    }
+  }
+  if (full && impl_flux == M1_IFLUX_BLEND && !impl_beam_hr &&
+      (impl_blend == M1_IBLEND_TAU || impl_blend_mode == M1_IBMODE_DISSIP)) {
+    ImplFatal("<rad_m1>/transport = implicit with implicit_flux = blend takes "
+              "implicit_blend = f | tau_f and implicit_blend_mode = flux only");
+  }
+  impl_blend_tau0 = pin->GetOrAddReal("rad_m1","implicit_blend_tau0",1.0);
+  impl_blend_flo = pin->GetOrAddReal("rad_m1","implicit_blend_flo",0.6);
+  impl_blend_fhi = pin->GetOrAddReal("rad_m1","implicit_blend_fhi",0.9);
+  if (!(impl_blend_tau0 > 0.0) || !(impl_blend_fhi > impl_blend_flo)) {
+    ImplFatal("<rad_m1>: implicit_blend_tau0 must be positive and implicit_blend_fhi "
+              "must exceed implicit_blend_flo");
   }
 }
 
