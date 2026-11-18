@@ -1255,8 +1255,9 @@ void RadiationM1::VetGdInit() {
   // sweeps and allocate no second array (e.g. the fused twin of the RSG decks; the clean
   // sc rays' ring, CleanRingMoments, sweeps one set at a time)
   if (vgd_xff && (vgd_xf_m > 0 || vgd_iter != 1 || vgd_twin || vgd_twfuse || vgd_async ||
-                  (clean && cln_ring && !(cln_rfuse && cln_ring == 1)) ||
-                  vgd_bandx || vgd_upf != 0 || vgd_gband || vgd_nb1 > 1 ||
+                  (clean && cln_ring && !(cln_rfuse && cln_ring == 1 && cln_rfv == 0 &&
+                                          !vgd_csg && ibc_x1max != M1_IBC_REFLECT)) ||
+                  vgd_bandx || vgd_upf != 0 || (vgd_gband && !vgd_raw) || vgd_nb1 > 1 ||
                   (vgd_csg && vgd_cscomp && vgd_csxg > 1) ||
                   (!vgd_csg && (!vgd_shl_on || vgd_ovl_g > 0 || vgd_fuse_h > 1 ||
                                 vet_path != 0 || vgd_beam || vgd_lhx_ie > 0.0 ||
@@ -2524,7 +2525,8 @@ bool RadiationM1::VetGdXffOk() {
            (vgd_i_xb.d.extent(0) == vgd_i.d.extent(0));
   }
   if (!vgd_shl_on || vgd_ovl_g > 0 || vgd_fuse_h > 1 || vgd_upf != 0 || vgd_rbon ||
-      vet_path != 0 || vgd_gband || vgd_beam || vgd_lhx_ie > 0.0 || !vgd_gfast) {
+      vet_path != 0 || (vgd_gband && !vgd_raw) || vgd_beam || vgd_lhx_ie > 0.0 ||
+      !vgd_gfast) {
     return false;
   }
   if (vgd_ipc_state == 1) {return false;}   // (the IPC halo: one set per exchange)
@@ -6398,7 +6400,7 @@ void RadiationM1::VetGdSweep() {
     s_xfe = (ee != nullptr) ? std::atoi(ee) : 1;
   }
   const bool xfe = xffs && (s_xfe != 0) && vgd_xff_msg && vgd_hmpi && (vgd_ovl_g <= 0) &&
-                   (vgd_fuse_h <= 1) && (vgd_hx_mode != 2);
+                   (vgd_fuse_h <= 1) && (vgd_hx_mode != 2) && !vgd_raw;
   // mem2-1014 vet_gd_band_ring: shells lent a wide slab while their band is needed
   // (xffuse-1113: the other set's array as the second one, VetGdRingFlush)
   if (ibc_x1max == M1_IBC_REFLECT) {VetGdTopMirror();}
@@ -7221,19 +7223,21 @@ void RadiationM1::VetGdSweep() {
           VetGdHlBegin(vgd_i, n, i, wsx, two ? &vgd_itw : nullptr)) {
         pend = true;                 // completed by the next shell (VetGdHlEnd)
       } else if (xffs) {
-        // xffuse-1113: one message per partner with both sets' exact lists; else the two
-        // exchanges, the other set's first (each writes only its own set's band)
+        // xffuse-1113: one message per partner with both sets' exact lists (vgd_raw:
+        // kept lists, VetGdGbHaloX); else the two exchanges, the other set's first (each
+        // writes only its own set's band)
         vgd_rg_lastx = false;
-        const bool hx2 = vgd_xff_msg && VetGdHlXff(i, wsx, xe ? 2 : 0);
+        const bool hx2 = vgd_xff_msg && (vgd_raw ? VetGdGbHaloX(i, wsx)
+                                                 : VetGdHlXff(i, wsx, xe ? 2 : 0));
         if (xe && !hx2) {
           VgdFatal("vgdsched-1113 early send: the exchange of a packed shell failed");
         }
-        if (!hx2 && rga) {
+        if (!hx2 && rga && !vgd_raw) {
           VgdFatal("vet_gd_rotate_xfade_fuse: the band ring needs the merged exchange");
         }
         if (rga && inw) {   // (the record of the saved inward band, as below; both sets)
-          vgd_rg_sk[i] = vgd_rg_lastx ? 1 : 2;
-          vgd_rg_se[i] = vgd_rg_lastx ? i : -1;
+          vgd_rg_sk[i] = vgd_raw ? 3 : (vgd_rg_lastx ? 1 : 2);
+          vgd_rg_se[i] = vgd_raw ? VetGdRawKey(i, true, wsx) : (vgd_rg_lastx ? i : -1);
         }
         if (!hx2) {
           VgdXffSwap();
@@ -10107,6 +10111,12 @@ void RadiationM1::VetGdRingFlush() {
       const int wl = vgd_rg_wfull[i];
       if (vgd_rg_sk[i] != 1 && vgd_rg_sk[i] != 3) {vgd_rg_sk[i] = 2;}   // the whole band
       sv_k = vgd_rg_sk[i];
+      if (xb && sv_k == 3) {   // (the other set's: its own kept list)
+        VgdGbSwap();
+        sv_dl2 = VetGdRawRec(vgd_rg_se[i]);
+        VgdGbSwap();
+        sv_nr2 = sv_dl2.extent_int(0);
+      }
       if (sv_k == 3) {   // vgd_raw: the positions the raw exchange wrote
         sv_dl = VetGdRawRec(vgd_rg_se[i]);
         sv_nr = sv_dl.extent_int(0);
@@ -10122,8 +10132,8 @@ void RadiationM1::VetGdRingFlush() {
         sv_n = static_cast<int64_t>(nmb)*n*(nx3 + 2*wl)*(nx2 + 2*wl);
         vgd_rg_ndense += 1.0;
       }
-      sv_n2 = sv_n;
-      if (xb && sv_k == 1) {
+      sv_n2 = (xb && vgd_rg_sk[i] == 3) ? sv_nr2 : sv_n;
+      if (xb && sv_k == 1 && vgd_rg_sk[i] != 3) {
         const VgdHlEntry &X2 = vgd_hxe_alt[vgd_rg_se[i]];
         sv_dl2 = X2.dl;
         sv_dw2 = X2.dw;
@@ -10154,6 +10164,12 @@ void RadiationM1::VetGdRingFlush() {
       rs_k = vgd_rg_sk[i];
       rs_so = vgd_rg_so[i];
       rs_n = vgd_rg_sn[i];
+      if (xb && rs_k == 3) {   // (the other set's raw record)
+        VgdGbSwap();
+        rs_dl2 = VetGdRawRec(vgd_rg_se[i]);
+        VgdGbSwap();
+        rs_nr2 = rs_dl2.extent_int(0);
+      }
       if (rs_k == 3) {
         rs_dl = VetGdRawRec(vgd_rg_se[i]);
         rs_nr = rs_dl.extent_int(0);
@@ -10172,7 +10188,10 @@ void RadiationM1::VetGdRingFlush() {
       }
       if (xb) {
         rs_n2 = vgd_rg_sn2[i];
-        if (rs_k == 1) {
+        if (vgd_rg_sk[i] == 3 && rs_nr2 != rs_n2) {
+          VgdFatal("vet_gd_band_ring: the other set's raw record changed");
+        }
+        if (rs_k == 1 && vgd_rg_sk[i] != 3) {
           const VgdHlEntry &X2 = vgd_hxe_alt[vgd_rg_se[i]];
           rs_dl2 = X2.dl;
           rs_dw2 = X2.dw;

@@ -969,6 +969,152 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
 }
 
 //----------------------------------------------------------------------------------------
+//! clean_rot_fuse (vgd_raw, the fused two-set sweep): the compact exchange of shell i
+//! (pass vgd_hinw, depth ws) for both cross-fade sets in ONE message per partner, piece
+//! p = [the current set's kept values of p, then the other set's] (as VetGdHlXff for the
+//! exact lists); one pack and one unpack.  Each set's kept lists (VetGdGbHaloC): the same
+//! values reach the same band positions as the two exchanges (bitwise).  false (nothing
+//! done) unless both sets hold the kept lists of this (shell, pass, depth, cut)
+
+bool RadiationM1::VetGdGbHaloX(const int i, const int ws) {
+#if MPI_PARALLEL_ENABLED
+  const int np = static_cast<int>(vgd_csprk.size());
+  if (!vgd_raw || !vgd_gbc || !vgd_hmpi || vgd_ipc_state == 1 || np < 1 ||
+      np > VGD_IPC_NS) {
+    return false;
+  }
+  const int wq = std::min(ws, static_cast<int>(vgd_gdnl.size()) - 1);
+  const int key = (2*i + (vgd_hinw ? 1 : 0))*(vgd_w + 1) + wq;
+  auto ia = vgd_gbcb.find(key), ib = vgd_gbcb_xb.find(key);
+  if (ia == vgd_gbcb.end() || ib == vgd_gbcb_xb.end()) {return false;}
+  const std::vector<int> &A = ia->second, &B = ib->second;
+  // (each set's pieces contiguous from 0 in partner order: piece p at [c(4p), c(4p+1)))
+  auto ok = [&](const std::vector<int> &c) {
+    if (static_cast<int>(c.size()) != 4*np + 3 || c.back() != vgd_scut || c[0] != 0 ||
+        c[2] != 0) {
+      return false;
+    }
+    for (int p = 0; p + 1 < np; ++p) {
+      if (c[4*p + 1] != c[4*p + 4] || c[4*p + 3] != c[4*p + 6]) {return false;}
+    }
+    return c[4*np - 3] == c[4*np] && c[4*np - 1] == c[4*np + 1];
+  };
+  if (!ok(A) || !ok(B)) {return false;}
+  VgdIpcIdx sa{}, sb{}, sm{}, ra{}, rb{}, rm{};
+  for (int p = 0; p <= np; ++p) {
+    sa.v[p] = (p < np) ? A[4*p] : A[4*np];
+    sb.v[p] = (p < np) ? B[4*p] : B[4*np];
+    ra.v[p] = (p < np) ? A[4*p + 2] : A[4*np + 1];
+    rb.v[p] = (p < np) ? B[4*p + 2] : B[4*np + 1];
+    sm.v[p] = sa.v[p] + sb.v[p];
+    rm.v[p] = ra.v[p] + rb.v[p];
+  }
+  const int nsA = sa.v[np], nS = sm.v[np], nrA = ra.v[np], nR = rm.v[np];
+  if (static_cast<int>(vgd_xff_sb.extent(0)) < std::max(nS, 1)) {
+    Kokkos::realloc(vgd_xff_sb, std::max(nS, 1) + nS/8);
+  }
+  if (static_cast<int>(vgd_xff_rb.extent(0)) < std::max(nR, 1)) {
+    Kokkos::realloc(vgd_xff_rb, std::max(nR, 1) + nR/8);
+  }
+  auto sbuf_ = vgd_xff_sb;
+  auto rbuf_ = vgd_xff_rb;
+  auto aA_ = vgd_i;
+  auto aB_ = vgd_i_xb;
+  auto S_ = vgd_cssl;
+  auto R_ = vgd_csrl;
+  auto DR_ = vgd_gdpr;
+  auto lsA_ = vgd_gbcf[key][0], lrA_ = vgd_gbcf[key][1];
+  auto lsB_ = vgd_gbcf_xb[key][0], lrB_ = vgd_gbcf_xb[key][1];
+  const int nv = vgd_n, npk = np;
+  const bool lean = vgd_lean &&
+                    vgd_cur.impl_instance_id() == DevExeSpace().impl_instance_id();
+  if (!lean) vgd_cur.fence();   // the shell's intensities are complete
+  if (nS > 0) {
+    Kokkos::parallel_for("m1_vgdgb_xpack", VgdLight(DevExeSpace(), 0, nS),
+    KOKKOS_LAMBDA(const int c) {
+      const bool b = (c >= nsA);
+      const int cc = b ? (c - nsA) : c;
+      const VgdIpcIdx &sx = b ? sb : sa;
+      int p = 0;
+      while (p + 1 < npk && sx.v[p+1] <= cc) {++p;}
+      const int q = b ? lsB_(cc) : lsA_(cc);
+      const int e = q/nv;
+      const int pos = sm.v[p] + (b ? (sa.v[p+1] - sa.v[p]) : 0) + (cc - sx.v[p]);
+      sbuf_(pos) = b ? aB_(S_(e,0),q - e*nv,S_(e,1),S_(e,2),i)
+                     : aA_(S_(e,0),q - e*nv,S_(e,1),S_(e,2),i);
+    });
+  }
+  if (lean) {
+    VgdPackEvtRecord(DevExeSpace());
+    VgdPackEvtWait(DevExeSpace());
+  } else {
+    Kokkos::fence();
+  }
+  Kokkos::Timer tq;
+  std::vector<MPI_Request> req;
+  for (int p = 0; p < np; ++p) {
+    const int rk = vgd_csprk[p];
+    req.emplace_back();
+    MPI_Irecv(rbuf_.data() + rm.v[p], rm.v[p+1] - rm.v[p], MPI_ATHENA_REAL, rk, 7112,
+              MPI_COMM_WORLD, &req.back());
+    req.emplace_back();
+    MPI_Isend(sbuf_.data() + sm.v[p], sm.v[p+1] - sm.v[p], MPI_ATHENA_REAL, rk, 7112,
+              MPI_COMM_WORLD, &req.back());
+  }
+  std::vector<MPI_Status> stat(req.size());
+  MPI_Waitall(static_cast<int>(req.size()), req.data(), stat.data());
+  vgd_tmpi += tq.seconds();
+  vgd_nexch += 2.0;
+  vgd_xff_nmsg += 1.0;
+  for (int p = 0; p < np; ++p) {
+    int got = 0;
+    MPI_Get_count(&stat[2*p], MPI_ATHENA_REAL, &got);
+    if (got != rm.v[p+1] - rm.v[p]) {
+      VgdFatal("clean_rot_fuse: sender and receiver kept lists disagree");
+    }
+    vgd_nbyte += static_cast<Real>(sm.v[p+1] - sm.v[p])*sizeof(Real);
+    vgd_csvsent += static_cast<double>(sm.v[p+1] - sm.v[p]);
+    vgd_csvdense += 2.0*static_cast<double>(vgd_gdsn[wq][p])*nv;
+  }
+  const int nr = vgd_csnrcv;
+  if (nr > 0 && vgd_cnan) {   // (the gate: no unsent position of the prefix is read)
+    const Real qn = std::numeric_limits<Real>::quiet_NaN();
+    par_for("m1_vgdgb_nan", DevExeSpace(), 0, nr - 1, 0, nv - 1,
+    KOKKOS_LAMBDA(const int e, const int v) {
+      if (DR_(e) <= wq) {
+        aA_(R_(e,0),v,R_(e,1),R_(e,2),i) = qn;
+        aB_(R_(e,0),v,R_(e,1),R_(e,2),i) = qn;
+      }
+    });
+  }
+  if (nR > 0) {
+    Kokkos::parallel_for("m1_vgdgb_xunpack", VgdLight(DevExeSpace(), 0, nR),
+    KOKKOS_LAMBDA(const int c) {
+      const bool b = (c >= nrA);
+      const int cc = b ? (c - nrA) : c;
+      const VgdIpcIdx &rx = b ? rb : ra;
+      int p = 0;
+      while (p + 1 < npk && rx.v[p+1] <= cc) {++p;}
+      const int q = b ? lrB_(cc) : lrA_(cc);
+      const int e = q/nv;
+      const Real x = rbuf_(rm.v[p] + (b ? (ra.v[p+1] - ra.v[p]) : 0) + (cc - rx.v[p]));
+      if (b) {
+        aB_(R_(e,0),q - e*nv,R_(e,1),R_(e,2),i) = x;
+      } else {
+        aA_(R_(e,0),q - e*nv,R_(e,1),R_(e,2),i) = x;
+      }
+    });
+  }
+  if (!lean) Kokkos::fence();
+  return true;
+#else
+  (void) i;
+  (void) ws;
+  return false;
+#endif
+}
+
+//----------------------------------------------------------------------------------------
 //! vgd_raw with vet_gd_band_ring: the record of the band positions the raw exchange of
 //! (shell, pass, depth) key writes (VetGdGbHaloC's kept list, else the depth prefix of
 //! the receive list, every direction), encoded as the exact lists ((m n + v) c3 + k) c2

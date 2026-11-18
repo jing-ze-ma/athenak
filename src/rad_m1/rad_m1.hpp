@@ -3904,6 +3904,7 @@ class RadiationM1 {
     std::swap(vgd_gbrec, vgd_gbrec_xb);
   }
   bool VetGdHlXff(const int i, const int ws, const int mode = 0);
+  bool VetGdGbHaloX(const int i, const int ws);   // (vgd_raw: both sets, one message)
   // vgdsched-1113 early send of the fused sweep (env VGD_XFE): this shell's SEND cells of
   // both sets first, on a second high-priority stream, with their pack; the host
   // exchanges while the fused kernel (which skips the stamped cells) runs

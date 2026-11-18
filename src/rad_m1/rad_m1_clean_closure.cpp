@@ -1029,15 +1029,14 @@ void RadiationM1::CleanRingMoments() {
   // clean_rot_fuse: the live ring's two sets of a build (b, b+1) in one fused sweep
   // (VetGdSweep with vgd_xff_now: each set's own tables and intensities, vgd_i and
   // vgd_i_xb), their lists made first; the loop below then takes each set's moments, its
-  // tables and intensities brought back by VgdXfTables
-  // (not with the band ring yet: its slabs hold one array; nor a reflecting top)
-  const bool fuse = cln_rfuse && cln_rfv == 0 && !cln_cssc && !cln_scmem && !vgd_ring &&
+  // tables and intensities brought back by VgdXfTables (not with a reflecting top)
+  const bool fuse = cln_rfuse && cln_rfv == 0 && !cln_cssc && !cln_scmem &&
                     ns == 2 && !fill && VetGdXffOk();
   if (cln_rfuse && !fuse && ns == 2 && !fill && !cln_rfuse_said &&
       global_variable::my_rank == 0) {
     std::cout << "<rad_m1> clean_rot_fuse: not taken (needs the sp sc rays, no "
-              << "reflecting top, vet_gd_band_ring = false and a fused-sweep "
-              << "configuration, VetGdXffOk): two sweeps per build" << std::endl;
+              << "reflecting top and a fused-sweep configuration, VetGdXffOk): two "
+              << "sweeps per build" << std::endl;
     cln_rfuse_said = true;
   }
   if (fuse) {
