@@ -1,0 +1,38 @@
+[
+ {
+  "action": "publish",
+  "file_path": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/index.publish.html",
+  "icon": "star",
+  "title": "RY Per Accretor 3-D",
+  "files": {
+   "img/fig_cmp96.png": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/img/fig_cmp96.png",
+   "img/fig_hist.png": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/img/fig_hist.png",
+   "img/fig_ke_static.png": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/img/fig_ke_static.png",
+   "img/fig_phot_latest.jpg": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/img/fig_phot_latest.jpg",
+   "img/fig_slices_latest.jpg": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/img/fig_slices_latest.jpg",
+   "img/fig_tip.png": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/img/fig_tip.png",
+   "img/run12_hist.png": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/img/run12_hist.png",
+   "img/run12_map.jpg": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/img/run12_map.jpg",
+   "img/sp_hist.png": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/img/sp_hist.png",
+   "img/sp_keband.png": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/img/sp_keband.png",
+   "img/sp_phot_latest.jpg": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/img/sp_phot_latest.jpg",
+   "img/sp_slices_latest.jpg": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/img/sp_slices_latest.jpg",
+   "img/sp_tip.png": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/img/sp_tip.png",
+   "img/sp_trc_budget.png": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/img/sp_trc_budget.png",
+   "img/sp_trc_maps.jpg": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/img/sp_trc_maps.jpg",
+   "img/sp_trc_prof.png": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/img/sp_trc_prof.png",
+   "movie/acc3d_3d_poster.png": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/movie/acc3d_3d_poster.png",
+   "movie/acc3d_eq.mp4": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/movie/acc3d_eq.mp4",
+   "movie/acc3d_eq_poster.png": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/movie/acc3d_eq_poster.png",
+   "movie/cs128_eq.mp4": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/movie/cs128_eq.mp4",
+   "movie/cs128_eq_poster.png": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/movie/cs128_eq_poster.png",
+   "movie/cs128_phot.mp4": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/movie/cs128_phot.mp4",
+   "movie/cs128_phot_poster.png": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/movie/cs128_phot_poster.png",
+   "movie/sp_eq.mp4": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/movie/sp_eq.mp4",
+   "movie/sp_eq_poster.png": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/movie/sp_eq_poster.png",
+   "movie/sp_phot.mp4": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/movie/sp_phot.mp4",
+   "movie/sp_phot_poster.png": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/movie/sp_phot_poster.png",
+   "movie/acc3d_3d.mp4": "docs/handover/caltech-to-viper-1118/acc3d_sp_page/movie/acc3d_3d.mp4"
+  }
+ }
+]

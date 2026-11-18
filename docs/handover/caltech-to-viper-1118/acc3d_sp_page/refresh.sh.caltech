@@ -1,0 +1,29 @@
+#!/bin/bash
+# One-command, incremental refresh of "RY Per Accretor 3-D" for the sp full-sphere PRODUCTION (accsp_1102/prod/fresh/stream). READ ONLY on the run.
+# The heavy part runs as a CPU-only srun --overlap step (8 cores, --gres=none, nice 10) in alloc 5274196 (hpc-sm-01-11) by default
+# (JOBID=5544871 NODE=hpc-sm-02-03 for the other one; NEVER 01-05 = the production node, never 01-09), launched detached (setsid nohup)
+# so a session kill cannot take it down; this script waits for it, then stages to ~/ATHENAK/pages/acc3d_sp and prints FILES.
+# Only new dumps are reduced (data/red_<a|b>_NNNNN.npz) and framed; FORCE=1 redraws all movie frames.
+# Usage: bash refresh.sh          bash refresh.sh status
+# Publish (Artifact tool): url https://claude.ai/artifact/D8q681tiTgNDnBM6aaJHz3, file_path ~/ATHENAK/pages/acc3d_sp/index.html,
+#   files = the paths on the FILES line (same relative paths). NEVER re-send or null img/fig_*, img/run12_*, movie/cs128_*, movie/acc3d_*
+#   (the cs128 test and RUN12, kept on the artifact and referenced by the page).
+P=/resnick/groups/carnegie_poc/jingze/accsp_prod_page; STG=/resnick/home/jingze/ATHENAK/pages/acc3d_sp
+JOBID=${JOBID:-5274196}; NODE=${NODE:-hpc-sm-01-11}
+case $NODE in hpc-sm-01-09|hpc-sm-01-05) echo "not on $NODE"; exit 1;; esac
+mkdir -p $P/logs
+if [ "$1" = status ]; then
+  L=$(ls -t $P/logs/refresh.*.log 2>/dev/null | head -1); echo "$(basename "$L"): $(tail -1 "$L")"; exit 0
+fi
+exec 9>$P/.refresh.lock; flock -n 9 || { echo "BUSY (another refresh running)"; exit 3; }
+[ "$(squeue -h -j $JOBID -o %T 2>/dev/null)" = RUNNING ] || { echo "allocation $JOBID not RUNNING (try JOBID=5544871 NODE=hpc-sm-02-03)"; exit 2; }
+LOG=$P/logs/refresh.$(date +%Y%m%d_%H%M%S).log
+cd /tmp
+setsid nohup srun --overlap --jobid=$JOBID -w $NODE -N1 -n1 -c 8 --mem=64G --gres=none -J accsppage nice -n 10 env FORCE=$FORCE bash $P/src/job.sh > $LOG 2>&1 < /dev/null &
+wait $!; rc=$?
+grep -E "^(reduced|mk_figs|index.html|== done)" $LOG | tail -6
+[ $rc = 0 ] && grep -q "== done" $LOG || { echo "FAILED rc $rc, log $LOG"; tail -5 $LOG; exit 1; }
+mkdir -p $STG/img $STG/movie
+rsync -a $P/publish/index.html $STG/; rsync -a $P/publish/img/ $STG/img/; rsync -a --exclude '*.json' --exclude '*.tmp.*' $P/publish/movie/ $STG/movie/
+echo "staged -> $STG ($(stat -c %s $STG/index.html) B html; movies $(cd $STG/movie && stat -c '%n %s' *.mp4 2>/dev/null | paste -sd ' '))"
+echo "FILES: $(cd $STG && ls img/sp_* movie/sp_* 2>/dev/null | paste -sd ' ')"

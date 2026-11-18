@@ -1,0 +1,128 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RY Per Accretor 3-D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Source+Sans+3:wght@400;600&family=Source+Code+Pro:wght@400;500&display=swap">
+<style>:root { --bg: #0b0d10; --surface: #12161b; --fg: #e8ecf1; --muted: #a3adb8; --rule: #262c33;
+  --accent: #ffb347; --accent2: #4cc3ff; --warn-bg: #2a1d10; --warn-fg: #ffd2a1;
+  --display: "Fraunces", Georgia, serif; --body: "Source Sans 3", "Helvetica Neue", Arial, sans-serif;
+  --mono: "Source Code Pro", ui-monospace, Menlo, monospace; color-scheme: dark; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #0b0d10; --surface: #12161b; --fg: #e8ecf1; } }
+:root[data-theme="dark"] { --bg: #0b0d10; --surface: #12161b; --fg: #e8ecf1; }
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 19px; line-height: 1.55;
+  margin: 0; padding: 28px 16px 56px; }
+main { max-width: 1180px; margin: 0 auto; display: grid; gap: 36px; }
+header { display: grid; gap: 14px; }
+h1 { font-family: var(--display); font-weight: 600; font-size: clamp(1.9rem, 4.4vw, 2.8rem); line-height: 1.1; margin: 0; }
+h2 { font-family: var(--display); font-weight: 600; font-size: clamp(1.35rem, 3vw, 1.7rem); margin: 0; }
+p, ul { margin: 0; max-width: 78ch; }
+li { margin: 3px 0; }
+.lede { color: var(--muted); font-size: 1.08rem; }
+section { display: grid; gap: 14px; border-top: 1px solid var(--rule); padding-top: 22px; min-width: 0; }
+figure { margin: 0; display: grid; gap: 8px; min-width: 0; }
+figure img { display: block; width: 100%; height: auto; border-radius: 4px; background: #000; }
+figcaption { font-size: 0.95rem; color: var(--muted); max-width: 86ch; }
+video { display: block; margin: 0 auto; max-width: 100%; max-height: 78vh; width: auto; height: auto; background: #000; }
+.tbl { overflow-x: auto; border: 1px solid var(--rule); border-radius: 4px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 600px; font-size: 0.92rem; }
+th, td { text-align: left; padding: 8px 11px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+thead th { font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+tbody tr:last-child td { border-bottom: 0; }
+td.n { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.kv div { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 14px; }
+.kv b { display: block; font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+.note { background: var(--warn-bg); color: var(--warn-fg); border-radius: 6px; padding: 12px 16px; max-width: 86ch; }
+code { font-family: var(--mono); font-size: 0.86em; }
+.status { font-family: var(--mono); font-size: 0.82rem; color: var(--muted); overflow-wrap: anywhere; }
+footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--rule); padding-top: 14px; }
+h3 { font-family: var(--display); font-weight: 600; font-size: 1.2rem; margin: 6px 0 0; }
+
+.take { font-weight: 600; color: var(--fg); max-width: 86ch; margin: 0; }
+</style></head><body>
+<main>
+<header>
+<p class="note"><b>Since 11-02 evening this page shows the spherical-polar full-sphere PRODUCTION run</b> (launched 11-02 18:44, stream phase from t 0.01).
+The cubed-sphere N = 128 test (shown here earlier on 11-02) and RUN12 (10-24 – 10-30) are kept at the bottom.</p>
+<h1>RY Per accretor in 3-D: full-sphere production</h1>
+<p class="lede">AthenaK radiation hydrodynamics of the 16 M<sub>⊙</sub> mass gainer of RY Per on the full sphere (spherical polar, 500 × 116 × 512, stretched θ with
+a fine ±20° core), with the 3-D Roche potential, the WB tangential tide, Coriolis and centrifugal forces, in the frame co-rotating with the binary
+(donor towards +x, longitude 0). Static phase to t 0.01, then the 1e-4 M<sub>⊙</sub>/yr L1 stream; the polar ring averaging uses the new
+<code>polar_ring_avg_gz</code> fix that removed the grid-scale v<sub>φ</sub> noise in the polar rows.</p>
+<div class="kv">
+<div><b>status</b>t = 0.14360 code = 27.75 h = 0.3035 orbits; stream on since t 0.0100 (25.82 h, 0.2824 orbits); cycle 37450, dt 3.26e-06; run running</div>
+<div><b>speed</b>2116 ms/cycle over the last 50 cycles, 2058 ms/cycle since the restart; ≈ 0.29 orbits per wall day at this dt; 1 node × 4 H200 (hpc-sm-01-05, alloc 5719508), 8 MeshBlocks 500 × 116 × 64</div>
+<div><b>health</b>clean: hst NaN 0, run.log NaN/FATAL lines 0/0, non-finite cells in the latest dump 0; stream: 1145 time2_posfix re-solves, 355 backward-Euler step redos</div>
+<div><b>binary</b>athena_gpu_ry_per_accretor_r2 (branch ringsmooth-1102 e67c9e967 = accsp-1102 167c05ce4 + the polar ring-averaging fix; md5 c9163a55)</div>
+<div><b>keys</b><code>rad_m1/polar_ring_avg = true</code>, <code>polar_ring_avg_ke = rad</code>, <b style="display:inline;color:var(--accent)"><code>polar_ring_avg_gz = true</code></b> (new: the coarse-group tangential radiation force deposited smoothly across the phi faces), <code>vet_gd = true</code> (twin off), <code>problem/roche_wb_tan = true</code> (WB tide), <code>floor_m1_vcap = true</code>, <code>time2_floor_eint = 1e-7</code></div>
+<div><b>decks</b>static <code>ringsmooth_1102/decks/sp_static_gz.athinput</code> t 0 – 0.01 (run ringsmooth_1102/long/L_gz, same binary); stream <code>sp_stream_gz.athinput</code> from its rst 00002, tlim 1e9; outputs hydro_w every 0.005, m1 every 0.01, rst every 0.05</div>
+<div><b>grid</b>spherical polar, full sphere: nx 500 (r 6.3 – 24.34 R<sub>⊙</sub> stretched) × 116 θ × 512 φ; θ plateau |lat| ≤ 20.39° at 0.703°, stretched caps (q 1.073) to 5.45° polar cells; φ 0.703°; the 7 polar rows ring-averaged in φ groups 16, 4, 4, 2, 2, 2, 2</div>
+<div><b>now</b>L<sub>meas</sub> 4.782e+04 L<sub>⊙</sub> · L<sub>top</sub> 5.66e+04 L<sub>⊙</sub> · M<sub>in</sub> 40.62 · KE 9.67e+05 (lateral 9.885e+05) code · M<sub>fl</sub> 1.24e-05 · Picard 4.96 (max 124)</div>
+<div><b>system</b>M<sub>acc</sub> 16, M<sub>don</sub> 18 M<sub>⊙</sub>, a 33.26 R<sub>⊙</sub>, P 3.81 d (1 code time = 8.05 d); R<sub>acc</sub> ≈ 9.0 R<sub>⊙</sub>, T<sub>eff</sub> 28.3 kK; d<sub>L1</sub> 16.23; stream 1e-4 M<sub>⊙</sub>/yr from a nozzle at r 14.5</div>
+<div><b>physics</b>3-D Roche gravity + WB tangential tide, Coriolis + centrifugal; implicit grey M1 (hesdirk2) with the global-direction VET (vet_gd); MESA-kap Rosseland + Planck tables; general EOS (Saha H/He)</div>
+</div>
+<p class="status">page built 2026-11-03 23:28 PST on Caltech by accsp_prod_page/refresh.sh from the hst, logs and dumps present then (read only); unread input keys: rad_m1/time2_pred_cap = 0.5</p>
+</header>
+<section>
+<h2>History</h2>
+<p class="take">dt 3.26e-06 now, smallest in the stream phase 2.32e-06 (cs N=128 test: 1.04e-06); L<sub>meas</sub> 4.782e+04 L<sub>⊙</sub>; no NaN/FATAL so far.</p><figure><img alt="history" loading="lazy" src="img/sp_hist.png"><figcaption>Static phase (t &lt; 0.01, the ringsmooth_1102/long/L_gz run that the production restarts from) and the stream phase; dotted line = stream on; dashed = the cs N = 128 test (test128wb) over its t 0 – 0.03. Row 1: dt, wall ms per cycle (run.log every 50 cycles), L<sub>meas</sub> and L<sub>top</sub>. Row 2: nozzle mass M<sub>in</sub>/M<sub>nzf</sub>, total KE, lateral and radial KE from hydro.hst (cs: panel components, no metric cross term). Row 3: booked floor mass M<sub>fl</sub> with the cumulative M1 fallbacks (time2_posfix re-solves, backward-Euler redos), Picard iterations, WB torque and the stream tracer mass.</figcaption></figure>
+</section>
+<section>
+<h2>Lateral KE by latitude: sp vs the cs N = 128 test</h2>
+<p class="take">At t 0.0300 the sp lateral KE is 1.05× the cs N=128 test (|lat| &gt; 60°: 1.60×) – the polar bands still carry more lateral KE than on the cubed sphere. Latest (t 0.1400): 9.71e+05 code; the cs128 test stopped at t 0.030.</p><figure><img alt="KE by latitude band" loading="lazy" src="img/sp_keband.png"><figcaption>Lateral KE ½ρ(v<sub>θ</sub>² + v<sub>φ</sub>²) dV by |latitude| band (accsp_1102/tools/keband.py: sp orthonormal components, cs exact gnomonic metric) at the latest sp dump that the cs N = 128 test also has (it ran to t 0.03), the deep (r &lt; 8) and envelope (r 8 – 9.3) parts, both totals and the |lat| &gt; 60° part vs time, and the φ-rms of v<sub>φ</sub> in the 10 rows next to each pole at r 6.8 (the 11-02 source of the excess lateral KE before the gz fix).</figcaption></figure>
+</section>
+<section>
+<h2>Slices</h2>
+<figure><img alt="slices" loading="lazy" src="img/sp_slices_latest.jpg"><figcaption>Orbital plane (top, the two θ rows next to the equator averaged) and the x–z plane through the donor axis (bottom, φ = 0 and φ = π half planes, pole to pole), t = 0.1400 (dump b_00030, latest with an m1 dump). Columns: log ρ, log T<sub>gas</sub> (run EOS), log P<sub>rad</sub>/P<sub>gas</sub> (E/3), v<sub>r</sub>, v<sub>φ</sub> (rotating frame). T<sub>gas</sub> and P<sub>rad</sub>/P<sub>gas</sub> are shown everywhere, including the floor-class gas (ρ &lt; 1e-7 code) around the star, whose T is EOS noise on the H-ionisation step and which holds no mass. Dashed circle = d<sub>L1</sub>; dark disc = the inner boundary r 6.3.</figcaption></figure>
+</section>
+<section>
+<h2>Photosphere and the L1 tip</h2>
+<p class="take">Median R<sub>phot</sub> 9.055 R<sub>⊙</sub> (2nd percentile 8.825); at the L1 tip v<sub>r</sub> is -358.5 to -196.6 km/s and ρ up to 1.9e+06× the t = 0 value.</p><figure><img alt="photosphere" loading="lazy" src="img/sp_phot_latest.jpg"><figcaption>t = 0.1400 (dump b_00030). Top: Rosseland photosphere R(τ<sub>R</sub> = 2/3) per (φ, θ) column (τ inward from x1max with the deck's MESA-kap table, T<sub>gas</sub> from the run EOS; longitude 0 = towards the donor) and T<sub>gas</sub> there; native cells, so the polar caps show the 5.45° cells. Bottom: the L1-facing tip, log ρ and v<sub>r</sub> in the orbital and x–z planes (dashed = median R<sub>phot</sub>).</figcaption></figure>
+<figure><img alt="tip" loading="lazy" src="img/sp_tip.png"><figcaption>L1-tip column (φ = 0, the 2 × 2 cells at the equator): ρ/ρ<sub>t=0</sub> and v<sub>r</sub> (up to 12 dumps; dotted = median R<sub>phot</sub>), and the solid-angle-weighted median and 2nd percentile of R<sub>phot</sub> vs time.</figcaption></figure>
+</section>
+<section>
+<h2>Stream tracer</h2>
+<p class="take">Of the stream gas injected so far (40.6 code), 85 % is still in the domain, 15 % went into the sinks, 0 % through r_in and 0 % out through r_out/walls; the budget closes to 1e-14 of the injected mass.</p><figure><img alt="stream tracer budget" loading="lazy" src="img/sp_trc_budget.png"><figcaption>Passive scalars s0 (gas written by the nozzle, the stream) and s1 (gas that entered through the other user boundaries), from ryper.trc.hst since the stream was switched on: injected Nz0, in the domain Ms0, removed by the sinks Sk0, out through r<sub>in</sub> Fi0 and through r<sub>out</sub> + the θ walls Fo0 (cumulative registers of the pgen, acctrc-1019). Middle: budget closure ΔMs − (sources − sinks − outflows), relative to the injected s0 / the s1 inflow. Right: the s1 budget.</figcaption></figure><p class="take">At t = 0.1400 the photosphere is stream gas (s0 &gt; 0.1) over 33 % of its area; the maps show where the accreted gas spreads in the orbital and x-z planes.</p><figure><img alt="stream tracer maps" loading="lazy" src="img/sp_trc_maps.jpg"><figcaption>Stream-gas fraction s0 (log scale, dark = below 1e-4) in the orbital plane (the two θ rows next to the equator), the x–z plane through the donor axis, and in the cell of each (φ, θ) column where the Rosseland optical depth reaches 2/3 (same photosphere as above). Dashed circle = d<sub>L1</sub>, dark disc = r<sub>in</sub>.</figcaption></figure><p class="take">Half of the stream gas in the domain is inside r = 9.04 R_sun (10 % inside 8.81; median R_phot 9.06), 52 % lies below the photosphere, and the stream fraction exceeds 1e-3 of the shell mass down to r = 8.61 R_sun.</p><figure><img alt="stream tracer radial profile" loading="lazy" src="img/sp_trc_prof.png"><figcaption>Left: stream-gas mass per unit radius, ρ s0 summed over each spherical shell, for up to 10 stream dumps (colour = time). Right: the stream-gas fraction of each shell mass: how deep the accreted gas has mixed. Dotted: median R<sub>phot</sub> of the latest dump and r<sub>in</sub>.</figcaption></figure>
+</section>
+<section>
+<h2>Movies</h2>
+<figure><video controls muted playsinline preload="metadata" poster="movie/sp_eq_poster.png" src="movie/sp_eq.mp4"></video><figcaption>Orbital plane and x–z plane, same panels as the slice figure, one frame per hydro dump (static every 0.0025, stream every 0.005 code); dumps without an m1 dump at the same time leave the P<sub>rad</sub>/P<sub>gas</sub> panels empty. 31 frames at 7 fps.</figcaption></figure>
+<figure><video controls muted playsinline preload="metadata" poster="movie/sp_phot_poster.png" src="movie/sp_phot.mp4"></video><figcaption>Photosphere and L1 tip, same panels as the photosphere figure, one frame per hydro dump. 31 frames at 7 fps.</figcaption></figure>
+</section>
+<section>
+<h2>Earlier runs</h2>
+<h3>cs N = 128 test (test128wb, 11-01 – 11-02)</h3>
+<p>Cubed sphere, 6 × 128 × 128 columns × 500 radial cells, same physics and keys except the sp pole handling; static to t 0.01, stream to
+t 0.03 (5.8 h, 0.063 orbits), 2.4 s per cycle on 4 H200. It is the reference for the lateral-KE check above. Figures and movies are its final ones.</p>
+<figure><img alt="cs128 history" loading="lazy" src="img/fig_hist.png"><figcaption>cs N = 128: hst history (static + stream; dotted = stream on at t 0.01).</figcaption></figure>
+<figure><img alt="cs128 static KE" loading="lazy" src="img/fig_ke_static.png"><figcaption>cs N = 128 static phase: KE with and without the WB tide, and d ln KE/dt.</figcaption></figure>
+<figure><img alt="cs128 vs cs96" loading="lazy" src="img/fig_cmp96.png"><figcaption>cs N = 128 stream phase against the cs96 long tests long_base and long_F.</figcaption></figure>
+<figure><img alt="cs128 slices" loading="lazy" src="img/fig_slices_latest.jpg"><figcaption>cs N = 128 slices at t 0.03 (orbital and x–z planes).</figcaption></figure>
+<figure><img alt="cs128 photosphere" loading="lazy" src="img/fig_phot_latest.jpg"><figcaption>cs N = 128 photosphere and L1 tip at t 0.03.</figcaption></figure>
+<figure><img alt="cs128 tip" loading="lazy" src="img/fig_tip.png"><figcaption>cs N = 128 L1-tip column and R<sub>phot</sub> vs time.</figcaption></figure>
+<figure><video controls muted playsinline preload="metadata" poster="movie/cs128_eq_poster.png" src="movie/cs128_eq.mp4"></video><figcaption>cs N = 128: orbital and x–z planes, one frame per hydro dump.</figcaption></figure>
+<figure><video controls muted playsinline preload="metadata" poster="movie/cs128_phot_poster.png" src="movie/cs128_phot.mp4"></video><figcaption>cs N = 128: photosphere and L1 tip, one frame per hydro dump.</figcaption></figure>
+<h3>RUN12 (spherical-polar ±20° wedge, 10-24 – 10-30)</h3>
+<p>±20.4° wedge about the orbital plane (420 × 58 × 512, closed θ walls), static to t 0.05 then the stream; last shown at t = 2.0244 code
+= 16.3 d = 4.28 orbits (405 hydro dumps).</p>
+<figure><img alt="run12 history" loading="lazy" src="img/run12_hist.png"><figcaption>RUN12 hst history to t 2.02 (10-30).</figcaption></figure>
+<figure><img alt="run12 map" loading="lazy" src="img/run12_map.jpg"><figcaption>RUN12 maps at t = 2.020 (hydro dump 404); grey = cells the code resets every stage.</figcaption></figure>
+<figure><video controls muted playsinline preload="metadata" poster="movie/acc3d_3d_poster.png" src="movie/acc3d_3d.mp4"></video><figcaption>RUN12 3-D view (r ≤ d<sub>L1</sub>): nested density isosurfaces coloured by T<sub>gas</sub>, to t 2.02.</figcaption></figure>
+<figure><video controls muted playsinline preload="metadata" poster="movie/acc3d_eq_poster.png" src="movie/acc3d_eq.mp4"></video><figcaption>RUN12 orbital plane and edge-on cut to t 2.02.</figcaption></figure>
+</section>
+<section>
+<h2>Caveats</h2>
+<ul>
+<li>P<sub>rad</sub> = E/3 is the isotropic value; in the optically thin atmosphere the VET P<sub>rr</sub> differs.</li>
+<li>The photosphere is a radial ray trace per column (no oblique rays); the stream columns near longitude 0 reach τ = 2/3 at the nozzle.</li>
+<li>The floor-class cells (ρ &lt; 1e-7 code) are mostly the ambient around the star, not failures; M<sub>fl</sub> is the floor mass the code books.</li>
+<li>The cs N = 128 comparison ends at t 0.03; later sp times are compared with that end state only.</li>
+</ul>
+</section>
+<footer>Page built by /resnick/groups/carnegie_poc/jingze/accsp_prod_page/refresh.sh (reduce_sp.py → mk_figs.py → ffmpeg → build_page.py, adapted
+from acc3d_cs128_page) from accsp_1102/prod/fresh/stream and ringsmooth_1102/long/L_gz (static phase); comparison csacc_1031/test128wb.</footer>
+</main>
+</body></html>
