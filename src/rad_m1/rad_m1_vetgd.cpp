@@ -1001,14 +1001,21 @@ void RadiationM1::VetGdInit() {
     }
     vgd_hcomp = 0;   // the dense per-shell halo (the compact lists assume one level)
   }
-  vgd_raw = clean && !vgd_csg && !vgd_pol && !vgd_sth;
+  // vet_gd_raw: the raw band where named true; unnamed, with the FV rays (no band) or
+  // where the exact-list band would clamp (below, after the reach): the two bands give
+  // the same values where nothing clamps
+  const bool raw_ok = clean && !vgd_csg && !vgd_pol && !vgd_sth;
+  vgd_raw = raw_ok && (vgd_raw_named ? vgd_raw_par : cln_rfv > 0);
   // (nx3 = 1: the dense halo, the compact / exact lists mark 3-D band reads)
   if (!pm->three_d) {vgd_hcomp = 0;}
-  if (vgd_raw || !pm->three_d) {   // (the compact halo: the global band's, VetGdGbHaloC)
-    vgd_hx_on = false;
-    vgd_hx_mode = 0;
-    vgd_ipc_on = vgd_ipc_on && vgd_raw && pm->three_d;   // (VetGdGbHaloC's own IPC)
-  }
+  auto raw_halo = [&]() {
+    if (vgd_raw || !pm->three_d) {   // (the compact halo: VetGdGbHaloC)
+      vgd_hx_on = false;
+      vgd_hx_mode = 0;
+      vgd_ipc_on = vgd_ipc_on && vgd_raw && pm->three_d;   // (VetGdGbHaloC's own IPC)
+    }
+  };
+  raw_halo();
   // the direction set (pluggable: any table of unit vectors + weights summing to 1 with
   // sum w nn = I/3; the sweep never looks inside it)
   if (vgd_gl_nmu > 0) {
@@ -1095,63 +1102,80 @@ void RadiationM1::VetGdInit() {
     // angular offset <= chord / r_lo; + 2 cells for the bilinear stencil and rounding
     auto x1f_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
                                                      pmy_pack->pcoord->xx1f);
-    // (the clean scheme's FV rays, CleanFvSweep, read the cells and ghosts only: no band)
-    const bool fvr = vgd_raw && cln_rfv > 0;
-    int nmax = vgd_raw ? (fvr ? 0 : std::numeric_limits<int>::max())
-                       : (pm->three_d ? std::min(indcs.nx2, indcs.nx3) : indcs.nx2);
-    // accpolar-1103 vet_gd_band_global: the band is filled from any block (global-cell
-    // lists), so its depth is capped by the SPHERE (half a ring in phi, the theta rows
-    // of one pole-to-pole mirror), not by the MeshBlock: the same depth for every layout
-    if (vgd_gband) {
-      if (!vgd_pol) {
-        VgdFatal("vet_gd_band_global needs the full sphere (mesh/use_polar_boundary)");
-      }
-      nmax = std::min(pm->mesh_indcs.nx3/2, pm->mesh_indcs.nx2);
-    }
-    vgd_wsh.assign(indcs.nx1 + 2*indcs.ng, 0);
-    vgd_wsi.assign(indcs.nx1 + 2*indcs.ng, 0);
-    vgd_wso.assign(indcs.nx1 + 2*indcs.ng, 0);
-    int wneed = 0;
-    for (int m = 0; m < ((vgd_nb1 > 1) ? nmb : 1); ++m) {
-      // (the shells next to another level: its radii from the x1 ghosts)
-      const bool lo = (xf_h(m) & 1), hi = (xf_h(m) & 2);
-      for (int l = indcs.is; l <= indcs.ie; ++l) {
-        const double r = x1v_h(m,l);
-        const double rlo = (l > indcs.is || !lo) ? x1v_h(m,l-1) : x1f_h(m,l);
-        const bool up = (l < indcs.ie || !hi);
-        double a = 2.0*std::sqrt(std::max(r*r - rlo*rlo, 0.0));
-        if (up) {
-          a = std::max(a, std::sqrt(x1v_h(m,l+1)*x1v_h(m,l+1) - r*r));
+    // (pass 1: the raw band, where pass 0's exact lists would clamp; vet_gd_raw unnamed)
+    for (int pass = 0; pass < 2; ++pass) {
+      // (the clean scheme's FV rays, CleanFvSweep, read the cells and ghosts only: no
+      // band)
+      const bool fvr = vgd_raw && cln_rfv > 0;
+      int nmax = vgd_raw ? (fvr ? 0 : std::numeric_limits<int>::max())
+                         : (pm->three_d ? std::min(indcs.nx2, indcs.nx3) : indcs.nx2);
+      // accpolar-1103 vet_gd_band_global: the band is filled from any block (global-
+      // cell lists), so its depth is capped by the SPHERE (half a ring in phi, the theta
+      // rows of one pole-to-pole mirror), not by the MeshBlock: the same depth for every
+      // layout
+      if (vgd_gband) {
+        if (!vgd_pol) {
+          VgdFatal("vet_gd_band_global needs the full sphere (mesh/use_polar_boundary)");
         }
-        const int wl = static_cast<int>(std::ceil(a/(rlo*dmin))) + 2;
-        wneed = std::max(wneed, wl);
-        vgd_wsh[l] = std::min(wl, nmax);
-        // per pass: the INWARD-pass halo of shell s serves (a) and (c) (inward values),
-        // the OUTWARD-pass halo only (b) (outward values read by shell s+1)
-        const double ain = 2.0*std::sqrt(std::max(r*r - rlo*rlo, 0.0));
-        const double aout = up ? std::sqrt(x1v_h(m,l+1)*x1v_h(m,l+1) - r*r) : 0.0;
-        vgd_wsi[l] = std::min(static_cast<int>(std::ceil(ain/(rlo*dmin))) + 2, nmax);
-        vgd_wso[l] = std::min(static_cast<int>(std::ceil(aout/(rlo*dmin))) + 2, nmax);
+        nmax = std::min(pm->mesh_indcs.nx3/2, pm->mesh_indcs.nx2);
       }
-    }
-#if MPI_PARALLEL_ENABLED
-    if (vgd_nb1 > 1) {
-      MPI_Allreduce(MPI_IN_PLACE, &wneed, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
-    }
-#endif
-    vgd_w = std::min(wneed, nmax);
-    if (vgd_nb1 > 1) {   // every shell at the full band, the x1 ghosts (hand-off) too
-      vgd_wsh.assign(c1, vgd_w);
-      vgd_wsi = vgd_wsh;
-      vgd_wso = vgd_wsh;
-    }
-    vgd_capped = (vgd_w < wneed) && !fvr;
-    if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> vet_gd: exact per-shell lateral halo, band " << vgd_w
-                << " cells (needed " << wneed << "), per-shell depth mean "
-                << std::accumulate(vgd_wsh.begin(), vgd_wsh.end(), 0.0)/indcs.nx1
-                << (vgd_capped ? ": MeshBlocks too small, the deepest near-tangent "
-                                 "reads are clamped (counted)" : "") << std::endl;
+      vgd_wsh.assign(indcs.nx1 + 2*indcs.ng, 0);
+      vgd_wsi.assign(indcs.nx1 + 2*indcs.ng, 0);
+      vgd_wso.assign(indcs.nx1 + 2*indcs.ng, 0);
+      int wneed = 0;
+      for (int m = 0; m < ((vgd_nb1 > 1) ? nmb : 1); ++m) {
+        // (the shells next to another level: its radii from the x1 ghosts)
+        const bool lo = (xf_h(m) & 1), hi = (xf_h(m) & 2);
+        for (int l = indcs.is; l <= indcs.ie; ++l) {
+          const double r = x1v_h(m,l);
+          const double rlo = (l > indcs.is || !lo) ? x1v_h(m,l-1) : x1f_h(m,l);
+          const bool up = (l < indcs.ie || !hi);
+          double a = 2.0*std::sqrt(std::max(r*r - rlo*rlo, 0.0));
+          if (up) {
+            a = std::max(a, std::sqrt(x1v_h(m,l+1)*x1v_h(m,l+1) - r*r));
+          }
+          const int wl = static_cast<int>(std::ceil(a/(rlo*dmin))) + 2;
+          wneed = std::max(wneed, wl);
+          vgd_wsh[l] = std::min(wl, nmax);
+          // per pass: the INWARD-pass halo of shell s serves (a) and (c) (inward values),
+          // the OUTWARD-pass halo only (b) (outward values read by shell s+1)
+          const double ain = 2.0*std::sqrt(std::max(r*r - rlo*rlo, 0.0));
+          const double aout = up ? std::sqrt(x1v_h(m,l+1)*x1v_h(m,l+1) - r*r) : 0.0;
+          vgd_wsi[l] = std::min(static_cast<int>(std::ceil(ain/(rlo*dmin))) + 2, nmax);
+          vgd_wso[l] = std::min(static_cast<int>(std::ceil(aout/(rlo*dmin))) + 2, nmax);
+        }
+      }
+  #if MPI_PARALLEL_ENABLED
+      if (vgd_nb1 > 1) {
+        MPI_Allreduce(MPI_IN_PLACE, &wneed, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+      }
+  #endif
+      vgd_w = std::min(wneed, nmax);
+      if (pass == 0 && raw_ok && !vgd_raw_named && wneed > nmax) {
+        vgd_raw = true;
+        raw_halo();
+        if (global_variable::my_rank == 0) {
+          std::cout << "<rad_m1> vet_gd_raw (default): the exact-list band needs "
+                    << wneed << " cells, MeshBlocks of " << indcs.nx2 << " x "
+                    << indcs.nx3 << " (theta x phi) hold " << nmax << ": the raw "
+                    << "global band (no clamped reads)" << std::endl;
+        }
+        continue;
+      }
+      if (vgd_nb1 > 1) {   // every shell at the full band, the x1 ghosts (hand-off) too
+        vgd_wsh.assign(c1, vgd_w);
+        vgd_wsi = vgd_wsh;
+        vgd_wso = vgd_wsh;
+      }
+      vgd_capped = (vgd_w < wneed) && !fvr;
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> vet_gd: exact per-shell lateral halo, band " << vgd_w
+                  << " cells (needed " << wneed << "), per-shell depth mean "
+                  << std::accumulate(vgd_wsh.begin(), vgd_wsh.end(), 0.0)/indcs.nx1
+                  << (vgd_capped ? ": MeshBlocks too small, the deepest near-tangent "
+                                   "reads are clamped (counted)" : "") << std::endl;
+      }
+      break;
     }
   }
   const int c2w = indcs.nx2 + 2*vgd_w, c3w = indcs.nx3 + 2*vgd_w;

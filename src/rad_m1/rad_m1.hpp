@@ -4248,6 +4248,8 @@ class RadiationM1 {
   // reads an on-rank owner (vgd_own) directly, a remote one from the band, and applies
   // the wall map at the read, as one MeshBlock reads itself
   bool vgd_raw = false;
+  bool vgd_raw_par = true;     // vet_gd_raw (read only when named): false = exact lists
+  bool vgd_raw_named = false;  //   (unnamed: the exact lists unless they would clamp)
   DvceArray4D<int> vgd_own;   // (m, band k, band j, 3): owner's local index (-1 remote),
                               // its band k, j
   DvceArray5D<Real> vgd_cs;    // (m, 2, k, j, i): ln chi, ln S with the vgd_w band
