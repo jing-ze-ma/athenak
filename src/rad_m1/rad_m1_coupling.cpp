@@ -408,6 +408,7 @@ TaskStatus RadiationM1::HydroConToPrim(Driver *pdrive, int stage) {
   }
   eint_ledger::Mark(pmy_pack->pmesh, "m1_ravg");   // floorheat-1029
   if (!coupling || !gas_feedback) return TaskStatus::complete;
+  if (clean) CleanFloorDraw();
   if (!fl_on) return TaskStatus::complete;
   if (pmy_pack->pmesh->pgen->user_m1post_func != nullptr) {
     (pmy_pack->pmesh->pgen->user_m1post_func)(pmy_pack->pmesh);

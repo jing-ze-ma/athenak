@@ -949,6 +949,7 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
   if (sbf_on && sbf_want) SplitBvalSnap(pdrive, stage);
   if (c2p_track) C2PTrack(pdrive, stage, true);
   eint_ledger::Mark(pmy_pack->pmesh, "gap_c2p");
+  if (pmy_pack->pradm1 != nullptr) pmy_pack->pradm1->CleanFloorDraw();
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int &ng = indcs.ng;
   int n1m1 = indcs.nx1 + 2*ng - 1;

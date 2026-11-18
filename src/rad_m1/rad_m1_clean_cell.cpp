@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <iostream>
 #include <limits>
 #include <type_traits>
 
@@ -1994,6 +1995,9 @@ void RadiationM1::CleanCellWriteBack() {
   Real neint = 0.0, nflr = 0.0, eflr = 0.0;
   const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
   const bool geo = x.sph || x.cub;
+  const Real efl = e_floor;
+  // (the floor holds only where <hydro>/tfloor is set above its default FLT_MIN)
+  const bool tfl = eos.tfloor > std::numeric_limits<float>::min();
   const Real vc = 1.0/(x.idx[0]*x.idx[1]*x.idx[2]);
   Kokkos::parallel_reduce("clc_wbcell", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                                                               (nmb1 + 1)*nk*nj*ni),
@@ -2054,8 +2058,9 @@ void RadiationM1::CleanCellWriteBack() {
         // above it (an eint the hydro left there is not the solve's): the fluid's floor
         // would add energy the radiation's budget does not see.  A cell whose own
         // exchange root lies below the floor (CleanFloorRootBelow) does not count: no
-        // step keeps it above, the fluid's floor holds it, and the energy that floor adds
-        // for the solve's part of the fall, V (min(eint_old, e_f) - eint), is booked
+        // step keeps it above.  Every cell the exchange takes below the floor is held at
+        // e_f by the radiation of the same cell, E - (e_f - eint), so that E + eint is
+        // kept; only what E above its floor cannot pay is created, and booked
         const Real ke = 0.5*(SQR(pg[0]) + SQR(pg[1]) + SQR(pg[2]))/uh(m,IDN,k,j,i);
         const Real eint = CleanGasEint(x, uh, ke + wk, m, k, j, i) + den;
         Real ef = 0.0;
@@ -2099,11 +2104,15 @@ void RadiationM1::CleanCellWriteBack() {
         } else {
           fall = (eint < ef - tz);
         }
-        if (fall && above && !low) {
-          nb += 1.0;
-        } else if (fall && low && eg < fmin(eio, ef)) {
-          nf += 1.0;
-          ef_sum += (fmin(eio, ef) - eg)*(geo ? x.vol(m,k,j,i) : vc);
+        if (fall && above && !low) nb += 1.0;
+        if (tfl && eg < ef) {
+          const Real q = ef - eg, pay = fmin(q, fmax(e - efl, 0.0));
+          den += q;
+          e -= pay;
+          if (pay < q) {
+            nf += 1.0;
+            ef_sum += (q - pay)*(geo ? x.vol(m,k,j,i) : vc);
+          }
         }
       }
       uh(m,IEN,k,j,i) += den;
@@ -2172,6 +2181,70 @@ void RadiationM1::CleanCellClosureSlope(const Real sign) {
       kk(m,M1_T2_M1+b,k,j,i) += dh[b];
     }
   });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanFloorDraw
+//! \brief the EOS temperature floor of the gas, paid by the radiation of the same cell:
+//! where the conserved state holds a gas eint below e(d,tfloor), eint is raised to it and
+//! E gives the difference down to its own floor, so that E + eint is kept; only what E
+//! cannot pay is created, and booked (cln_eflr_sum, a CLEAN floor line).  It runs before
+//! every conversion of the fluid's conserved state, whose floor then adds nothing (on the
+//! cubed sphere, whose conversion keeps no temperature floor in the conserved state, it
+//! is the floor).  Clean cell layout with gas feedback and <hydro>/tfloor set only
+
+void RadiationM1::CleanFloorDraw() {
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  if (!clean || !cln_cell || !cln_feedback || !fl.on) return;
+  auto eos = fl.eos;
+  if (!(eos.tfloor > std::numeric_limits<float>::min())) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int ni = indcs.nx1, nj = indcs.nx2, nk = indcs.nx3;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanArgs x = CleanMakeArgs();
+  auto uh = fl.u0;
+  auto u0_ = u0;
+  const Real efl = e_floor;
+  const bool geo = x.sph || x.cub;
+  const Real vc = 1.0/(x.idx[0]*x.idx[1]*x.idx[2]);
+  Real nflr = 0.0, eflr = 0.0;
+  Kokkos::parallel_reduce("cln_flrdraw", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                                                               (nmb1 + 1)*nk*nj*ni),
+  KOKKOS_LAMBDA(const int q, Real &nf, Real &ef_sum) {
+    const int m = q/(nk*nj*ni), k = ks + (q/(nj*ni))%nk;
+    const int j = js + (q/ni)%nj, i = is + q%ni;
+    const Real d = uh(m,IDN,k,j,i);
+    Real p[3];
+    CleanGasMomentum(x, uh, m, k, j, i, p);
+    const Real eint = CleanGasEint(x, uh, 0.5*(SQR(p[0]) + SQR(p[1]) + SQR(p[2]))/d,
+                                   m, k, j, i);
+    Real ef, pr, chi_rho, chi_t, cv;
+    eos.ThermoAt(d, eos.tfloor, ef, pr, chi_rho, chi_t, cv);
+    if (eint < ef) {
+      const Real dq = ef - eint, pay = fmin(dq, fmax(u0_(m,M1_E,k,j,i) - efl, 0.0));
+      uh(m,IEN,k,j,i) += dq;
+      u0_(m,M1_E,k,j,i) -= pay;
+      if (pay < dq) {
+        nf += 1.0;
+        ef_sum += (dq - pay)*(geo ? x.vol(m,k,j,i) : vc);
+      }
+    }
+  }, Kokkos::Sum<Real>(nflr), Kokkos::Sum<Real>(eflr));
+  const int n = static_cast<int>(CleanReduce(nflr, false));
+  if (n == 0) return;
+  const Real de = CleanReduce(eflr, false);
+  cln_eflr_sum += de;
+  if (global_variable::my_rank == 0) {
+    if (!cln_flr_warned) {
+      std::cout << "### WARNING (scheme = clean): gas held at <hydro>/tfloor where the "
+                << "radiation of the cell cannot pay it; the energy created is booked "
+                << "(CLEAN floor lines)" << std::endl;
+    }
+    std::printf("CLEAN floor draw cycle %d cells %d energy %.10e booked %.10e\n",
+                pmy_pack->pmesh->ncycle, n, de, cln_eflr_sum);
+  }
+  cln_flr_warned = true;
 }
 
 }  // namespace radm1

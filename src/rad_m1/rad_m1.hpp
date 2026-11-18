@@ -3194,9 +3194,9 @@ class RadiationM1 {
   int cln_neint = 0;            // cells of the write-back left with gas eint < 0
   int cln_nov = 0;              // clean_stage_floor: cells the stage increments take
                                 // below the eint of the EOS temperature floor
-  int cln_nflr = 0;             // cells of the write-back whose own exchange root lies
-                                // below the EOS temperature floor and that end below it
-  Real cln_eflr = 0.0;          // the energy the floor adds to them, sum V (e_f - eint)
+  int cln_nflr = 0;             // cells the write-back holds at the EOS temperature floor
+                                // beyond what the radiation of the cell can pay
+  Real cln_eflr = 0.0;          // the energy created there, sum V (e_f - eint - paid)
   Real cln_eflr_sum = 0.0;      // that energy booked over the accepted steps of the run
   bool cln_flr_warned = false;  // the WARNING of the first such cell was printed
   int cln_nguard = 0;           // cells whose extrapolated moments fell back to t^n
@@ -4608,6 +4608,7 @@ class RadiationM1 {
   TaskStatus Update(Driver *d, int stage);
   TaskStatus Coupling(Driver *d, int stage);
   TaskStatus HydroConToPrim(Driver *d, int stage);
+  void CleanFloorDraw();   // the EOS floor of the gas paid by the cell's radiation
   TaskStatus RestrictU(Driver *d, int stage);
   TaskStatus SendU(Driver *d, int stage);
   TaskStatus RecvU(Driver *d, int stage);

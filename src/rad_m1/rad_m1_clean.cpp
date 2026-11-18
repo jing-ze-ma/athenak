@@ -847,16 +847,16 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     t2_fail = (nit < 0) || (nneg > 0) ||
               (cell && cln_feedback && (cln_neint > 0 || cln_nov > 0));
   }
-  // the floor energy of the cells whose own exchange root lies below the EOS floor (the
-  // fluid's floor holds them): booked at the last solve of a step that is accepted
+  // the energy the write-back created to hold gas at the EOS floor where the radiation of
+  // the cell could not pay it: booked at the last solve of a step that is accepted
   if (cell && cln_feedback && t2_solve != M1_T2S_STAGE1 && !(t2stage && t2_fail) &&
       !dtr_fail && cln_nflr > 0) {
     cln_eflr_sum += cln_eflr;
     if (global_variable::my_rank == 0) {
       if (!cln_flr_warned) {
-        std::cout << "### WARNING (scheme = clean): cells whose own exchange equilibrium "
-                  << "lies below <hydro>/tfloor; the fluid's floor holds them and the "
-                  << "energy it adds is booked (CLEAN floor lines)" << std::endl;
+        std::cout << "### WARNING (scheme = clean): gas held at <hydro>/tfloor where the "
+                  << "radiation of the cell cannot pay it; the energy created is booked "
+                  << "(CLEAN floor lines)" << std::endl;
       }
       std::printf("CLEAN floor cycle %d cells %d energy %.10e booked %.10e\n",
                   pmy_pack->pmesh->ncycle, cln_nflr, cln_eflr, cln_eflr_sum);
