@@ -292,7 +292,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_freal = stag("clean_stag_freal", cln_gflux && cln_fsolve);
     // clean_stag_rayratio (default off): the bracket reads the rays only as ratios (their
     // face flux over the donor's ray J, the model flux of E), times the state's E
-    cln_rayratio = stag("clean_stag_rayratio", false) && cln_gflux;
+    cln_rayratio = !cln_cell && pin->GetOrAddBoolean("rad_m1","clean_stag_rayratio",false) &&
+                   cln_gflux;
     // clean_ring_jmin (default on): a clean_rot_ring J ratio J_s/J_b is measured only where
     // both sets' J are at least clean_ray_min E (a ratio of two ray-shadowed J is no ray
     // pattern); elsewhere the offset is invalid (left out of the mix)
