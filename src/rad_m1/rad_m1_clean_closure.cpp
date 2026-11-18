@@ -852,6 +852,10 @@ void RadiationM1::CleanRays() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   auto iw_ = iw;
   auto opac_ = opac;
+  // (the closure's time: a step at least one rotation block long, the steady start's
+  // large steps, takes the sets of its start, as VetGdBlock)
+  const Real dt = pmy_pack->pmesh->dt, tc = pmy_pack->pmesh->time +
+                  ((vgd_rot_dt > 0.0 && dt >= vgd_rot_dt) ? 0.0 : dt);
   par_for("cln_gd_chi", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, indcs.ks, indcs.ke,
           indcs.js, indcs.je, indcs.is, indcs.ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -863,11 +867,11 @@ void RadiationM1::CleanRays() {
     } else {
       CleanFvCartSource();
     }
-    CleanFvSets(pmy_pack->pmesh->time + pmy_pack->pmesh->dt, pmy_pack->pmesh->ncycle);
+    CleanFvSets(tc, pmy_pack->pmesh->ncycle);
     CleanFvSweep();
   } else if (cln_ring) {   // (the sc rays: each set's sweep in CleanRingMoments)
     VetGdSource();
-    CleanFvSets(pmy_pack->pmesh->time + pmy_pack->pmesh->dt, pmy_pack->pmesh->ncycle);
+    CleanFvSets(tc, pmy_pack->pmesh->ncycle);
   } else {
     VetGdBuild();
     if (cln_scmem) VetGdTopCopy();
