@@ -108,6 +108,16 @@ static void CleanStagGasMomentum(const CleanArgs &x, const DvceArray5D<Real> &uh
   for (int b = 0; b < 3; ++b) p[b] = y[0]*q[0][b] + y[1]*q[1][b] + y[2]*q[2][b];
 }
 
+//! \brief staggered: the radial component of a vector v in the components of
+//! CleanStagGasMomentum (spherical polar: v[0]; the cubed sphere: r_hat . v)
+
+KOKKOS_INLINE_FUNCTION
+static Real CleanStagRadial(const CleanArgs &x, const int m, const int k, const int j,
+                            const int i, const Real v[3]) {
+  if (!x.cub) return v[0];
+  return x.g(m,CLG_R,k,j,i)*v[0] + x.g(m,CLG_R+1,k,j,i)*v[1] + x.g(m,CLG_R+2,k,j,i)*v[2];
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn void CleanStagRefForce
 //! \brief staggered: the reference force density force_reference withholds from the gas
@@ -3539,11 +3549,11 @@ void RadiationM1::CleanWriteBack() {
       CleanStagMomentum(xh, CLW_X, m, k, j, i, dm, mg);
       CleanStagGasMomentum(x, uh, m, k, j, i, pg);
       CleanStagRefForce(x, fref, fr, aref, uh(m,IDN,k,j,i), m, k, j, i, rf);
-      for (int n = 0; n < 3; ++n) {   // (force_reference, frozen gas momentum)
+      for (int n = 0; n < 3; ++n) {   // (force_reference)
         if (fref != M1_FREF_NONE) dm[n] -= h*rf[n];
-        if (fm && n == 0) fmd(m,k,j,i) = dm[0];
-        if (x.vzero) dm[n] = 0.0;
       }
+      if (fm) fmd(m,k,j,i) = CleanStagRadial(x, m, k, j, i, dm);
+      if (x.vzero) dm[0] = dm[1] = dm[2] = 0.0;   // (frozen gas momentum)
       // (the kinetic energy the gas gains, the work W of the E row at convergence; with
       // wb_arad wr, the reference work at the velocity after the kick, which E pays and
       // the problem generator gives the gas)
