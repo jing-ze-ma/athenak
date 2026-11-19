@@ -9,6 +9,7 @@
 #include <sys/stat.h>  // mkdir
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>      // fwrite(), fclose(), fopen(), fnprintf(), snprintf()
 #include <cstdlib>
@@ -702,6 +703,15 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   IOWrapper resfile;
   resfile.SetDeferred(this);  // background write if ATHENA_ASYNC_OUTPUT=1
   resfile.Open(fname.c_str(), IOWrapper::FileMode::write, single_file_per_rank);
+  // rank 0's progress through the dump (a stalled file system shows as a missing line)
+  const auto t0w = std::chrono::steady_clock::now();
+  auto prog = [&](const char *what) {
+    if (global_variable::my_rank != 0) return;
+    std::cout << "<restart> " << fname << ": " << what << " written at " << std::fixed
+              << std::setprecision(1) << std::chrono::duration<double>(
+                 std::chrono::steady_clock::now() - t0w).count() << " s" << std::endl;
+    std::cout.unsetf(std::ios_base::floatfield);
+  };
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     // output the input parameters (input file)
     resfile.Write_any_type(sbuf.c_str(), sbuf.size(), "byte", single_file_per_rank);
@@ -1536,6 +1546,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
         write_wtemp(Kokkos::subview(a, Kokkos::ALL, c, Kokkos::ALL, Kokkos::ALL,
                                     Kokkos::ALL), what);
       }
+      prog(what);
       return;
     }
     const IOWrapperSizeT cnt = static_cast<IOWrapperSizeT>(n)*nout1*nout2*nout3;
@@ -1561,7 +1572,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     }
     offset_myrank += cnt*sizeof(Real);
     myoffset = offset_myrank;
+    prog(what);
   };
+  prog("the cell and face variables");
   if (wt_hyd) { write_wtemp(outarray_wth, "hydro"); }
   if (wt_mhd) { write_wtemp(outarray_wtm, "mhd"); }
   // the derived cache follows it, same layout, same loop (see outarray_wdp)
@@ -1611,6 +1624,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
 
   // close file, clean up
   resfile.Close(single_file_per_rank);
+  prog("all (file closed)");
   // drop the host staging copies (filled again by the next LoadOutputData,
   // whose Kokkos::realloc allocates anew anyway): on a unified-memory APU (MI300A) they
   // held a full second copy of the restart data in HBM for the rest of the run
