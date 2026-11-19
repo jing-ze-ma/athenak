@@ -2617,6 +2617,13 @@ class RadiationM1 {
   // gas takes its radiation pressure gradient as a kick); counted: limited cells left
   // below th E^n (their own inflow-free content is less) and min E/E^n of limited cells
   Real t2_ffct_emin = 0.0, t2_ffct_nemp = 0.0, t2_ffct_qmin = 1.0e300;
+  // s3c <rad_m1>/time2_face_fct_rounds K (read only when named; default 0 = rounds until
+  // no cell is newly limited, bitwise): from round K a cell is limited again only when
+  // below half the floor (th/2 V E^n; the deficit a lost inflow leaves is absorbed by
+  // that margin), and from round 2K its new R takes no inflow (its own content only, so
+  // that it needs no donor); at the end every cell holds > th/2 V E^n (positive,
+  // conservative: one flux per face)
+  int t2_ffct_rk = 0;
   void Time2FaceFct(int stage, Real c1, Real c2);
   // facebound-1112 <rad_m1>/implicit_fclip_diag (read only when named; diagnostic only,
   // nothing written back): where the write-back's realisability clip |F| <= c E comes

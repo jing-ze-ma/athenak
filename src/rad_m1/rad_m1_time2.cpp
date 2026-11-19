@@ -633,6 +633,9 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_face_fct_emin")) {
     t2_ffct_emin = pin->GetReal("rad_m1", "time2_face_fct_emin");
   }
+  if (pin->DoesParameterExist("rad_m1", "time2_face_fct_rounds")) {
+    t2_ffct_rk = pin->GetInteger("rad_m1", "time2_face_fct_rounds");
+  }
   if (pin->DoesParameterExist("rad_m1", "time2_k1_redist_r")) {
     t2_k1rd_r = pin->GetInteger("rad_m1", "time2_k1_redist_r");
   }
@@ -1930,6 +1933,10 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     nv[0] = 0.0;
     nv[1] = 0.0;
     const bool xb = zxb;
+    // (time2_face_fct_rounds: the slack trigger from round K, no inflow from round 2K)
+    const int rk = t2_ffct_rk;
+    const Real wtr = (rk > 0 && r >= rk) ? 0.5 : 1.0;
+    const Real pin_ = (rk > 0 && r >= 2*rk) ? 0.0 : 1.0;
     par_reduce_flat2("m1_t2_ffct_r", 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a,
                   Real &ab) {
@@ -1949,10 +1956,10 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
         bool lim;
         cell(m, k, j, i, w, po, pi, pl, dw, lim);
         const Real wf = eth*cvol(m,k,j,i)*un_(m,M1_E,k,j,i);
-        if (!(w + dw > wf)) {
+        if (!(w + dw > wtr*wf)) {
           // what the cell holds without face transport + the inflow it still gets,
           // above the floor th V E^n
-          const Real q = w + po - pi + pl - wf;
+          const Real q = w + po - pi + pin_*pl - wf;
           const Real rq = (q > 0.0 && po > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/po) : 0.0;
           if (rq < rc) {
             rn = rq;
