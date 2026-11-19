@@ -2424,8 +2424,8 @@ Real RadiationM1::CleanNewtonUpdate() {
                       (pxe ? w(m,CLW_PD,k,j,i) : 0.0);
       const Real ga = hc*op(m,M1_OP_P,k,j,i)*g*arad_*SQR(SQR(t)) - hcke*x -
                       w(m,CLW_EP,k,j,i);
-      xc = fmax(xc, fabs(w(m,CLW_XA,k,j,i) - (dg - 1.0)*x - ga)/
-                    fmax(fmax(fabs(x), fabs(w(m,CLW_EO,k,j,i))), 1.0e-300));
+      xc = fmax(xc, fabs(w(m,CLW_XA,k,j,i) - (dg - 1.0)*x - ga)/fmax(fabs(x) +
+                    fabs(w(m,CLW_EO,k,j,i)) + fabs(w(m,CLW_EI,k,j,i)), 1.0e-300));
     }
     w(m,CLW_EK,k,j,i) = e;
     w(m,CLW_T,k,j,i) = t;
@@ -4202,8 +4202,8 @@ void RadiationM1::CleanWriteBack() {
         const Real dw = xwb ? x.w(m,CLW_XW,k,j,i) - wk - wp : 0.0;
         const Real rd = (den - eg - wk - wp - dw)/(gtf ? 1.0 :
                         1.0 + x.h*x.c*x.op(m,M1_OP_E,k,j,i)*x.w(m,CLW_RY,k,j,i)) + dw;
-        if (xwb) x.w(m,CLW_XA,k,j,i) = fabs(den - eg - wk - wp)/
-                                       fmax(fmax(fabs(e), fabs(x.w(m,CLW_EO,k,j,i))), 1.0e-300);
+        if (xwb) x.w(m,CLW_XA,k,j,i) = fabs(den - eg - wk - wp)/fmax(fabs(e) +
+            fabs(x.w(m,CLW_EO,k,j,i)) + fabs(x.w(m,CLW_EI,k,j,i)), 1.0e-300);
         e += rd;
         den -= rd + wp;
         wsl = wex ? wp : wp - wr;
@@ -4286,7 +4286,7 @@ void RadiationM1::CleanWriteBack() {
       }
     }
   });
-  if (xwb) {   // (clean_xt_exact: the stage's closure |dE + de + dK + h div Phi|/E, max)
+  if (xwb) {   // (clean_xt_exact: the stage's closure |dE + de + dK + h div Phi| over E + eint)
     auto w = cln_w;
     const int n1 = ie - is + 1, nji = (je - js + 1)*n1, nkji = (ke - ks + 1)*nji;
     Real cm = 0.0;
