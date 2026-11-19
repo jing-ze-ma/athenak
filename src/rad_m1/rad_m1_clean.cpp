@@ -1560,8 +1560,9 @@ void RadiationM1::CleanStagXDonor() {
 //! - every interior face's G enters the stage as q X_donor, q = |G|/(h E_ref,donor)
 //!   (CleanFaceWeights, the E rows and the write-back's energy only, never the momentum);
 //! - a physical x1 boundary's outflow and the removal R = -Q > 0 (radiation the slope
-//!   gave the gas, which the gas gives back at the stage start, at most (1 - th) of its
-//!   eint) enter the row's diagonal as pd X, pd = (R_b + R_g)/E_ref (CLW_KM; CLW_KF the
+//!   gave the gas: the eint its increment gained, which the gas gives back at the stage
+//!   start; the work on its kinetic energy stays explicit, counted) enter the row's
+//!   diagonal as pd X, pd = (R_b + R_g)/E_ref (CLW_KM; CLW_KF the
 //!   boundary's part, which the write-back books as boundary energy; the gas row takes
 //!   pd_g X; without gas feedback the removal into the fixed gas on the diagonal whole);
 //! - E_old = E_s + Q+ + the boundary inflows - the gas-limited rest (counted), >= 0.
@@ -1652,6 +1653,7 @@ void RadiationM1::CleanStagKPos() {
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
   auto eos = fl.eos;
+  auto inc = t2inc;
   const bool gas = cln_feedback;
   Real nn[4] = {0.0, 0.0, 0.0, 0.0};   // (cells with pd, gas-limited, pd guard, E_old < 0)
   Kokkos::parallel_reduce("cln_kpos", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
@@ -1682,9 +1684,18 @@ void RadiationM1::CleanStagKPos() {
     if (q >= 0.0) {
       e += q;
     } else if (gas && w(m,CLW_JV,k,j,i) >= 0.0) {   // (a stage start eint >= 0)
-      rg = fmin(-q, (1.0 - th)*fmax(w(m,CLW_EI,k,j,i), 0.0));
+      // (the gas gives back the eint its increment gained, de = inc_EN less the kinetic
+      // energy of the momentum increment, at most -Q: eint stays >= that of the stage
+      // start; the rest, the work on the gas's kinetic energy, a removal of E, counted)
+      Real m2 = 0.0, m2s = 0.0;
+      for (int n = 0; n < 3; ++n) {
+        m2 += SQR(uh(m,IM1+n,k,j,i));
+        m2s += SQR(uh(m,IM1+n,k,j,i) - inc(m,M1_T2_M1+n,k,j,i));
+      }
+      const Real de = inc(m,M1_T2_EN,k,j,i) - 0.5*(m2 - m2s)/uh(m,IDN,k,j,i);
+      rg = fmin(fmax(de, 0.0), fmin(-q, fmax(w(m,CLW_EI,k,j,i), 0.0)));
       if (rg < -q) {
-        e += q + rg;   // (the rest a removal of E: counted)
+        e += q + rg;
         ng += 1.0;
       }
     } else if (!gas) {
