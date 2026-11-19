@@ -75,6 +75,7 @@ void hydro::Hydro::DtRetryVisit(V &v) {
   v.value("c2p_freeze_derived", c2p_freeze_derived);
   v.value("c2p_eint_rst", c2p_eint_rst);
   v.view("eint_rst", eint_rst);
+  v.view("w0v_rst", w0v_rst);
   v.value("c2p_track", c2p_track);
   v.value("c2p_split", c2p_split);
   v.value("sbf_on", sbf_on);
