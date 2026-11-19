@@ -30,8 +30,9 @@ SKIP_RE = [r'^std::thread', r'^std::future', r'Timer$', r'^MPI_', r'DevExeSpace'
 # vgd_esid / vgd_est: the early-send stamp id and its stamps (monotonic: a rolled-back id
 # would match stamps the failed attempt left, and those cells would be skipped)
 # pos_un_drop: the positivity report's sum over discarded attempts (CounterKeep::Restore adds after the checkpoint)
+# vgd_csmb: the cubed sphere's two read-mask buffers (a cache: dropped after a restore, the mask kernel re-runs on reuse)
 SKIP_NAMES = {'hi_seq', 'vgd_ipc_seq', 'acc_nccl', 'cln_hbuf', 'cln_halo', 'cln_hpb', 'cln_hdl',
-              'vgd_es2_made', 'vgd_esid', 'vgd_est', 'pos_un_drop'}
+              'vgd_es2_made', 'vgd_esid', 'vgd_est', 'pos_un_drop', 'vgd_csmb'}
 NESTED = ['VgdTabHost', 'VgdTabDev', 'M1OpacTab', 'CleanW', 'CleanGeo']   # structs holding Views
 
 def ast(header, name):
@@ -73,6 +74,7 @@ def emit(fields, pre, out, skipped):
                    'cln_hpb': ' (made at first use, kept)',
                    'cln_hdl': ' (cell lists made at first use, kept)',
                    'vgd_es2_made': ' (vgd_es2 made, kept)',
+                   'vgd_csmb': ' (read-mask cache, rebuilt on reuse)',
                    'vgd_esid': ' (stamp id, kept monotonic)', 'vgd_est': ' (stamps, kept)'}
             skipped.append(nm + ' : ' + t + why.get(n, ' (protocol counter, kept monotonic)')); continue
         if t.startswith('const ') or t.endswith('*') or '(*)' in t or t.endswith('&'):

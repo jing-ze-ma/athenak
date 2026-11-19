@@ -2022,7 +2022,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_csmw_h", vgd_csmw_h);
   v.value("vgd_csmw_r", vgd_csmw_r);
   v.value("vgd_cscl", vgd_cscl);
-  for (int q0_ = 0; q0_ < 2; ++q0_) {v.view("vgd_csmb[]", vgd_csmb[q0_]);}
   v.value("vgd_csncl", vgd_csncl);
   v.value("vgd_cscur", vgd_cscur);
   v.value("vgd_csuse", vgd_csuse);
@@ -2330,6 +2329,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
 //   vgd_sr_fut : std::future<std::vector<double>>
 //   pbval_gd : MeshBoundaryValuesCC *
 //   pbval_hr : MeshBoundaryValuesCC *
+//   vgd_csmb : Kokkos::View<uint32_t *, LayoutWrapper, DevMemSpace>[2] (read-mask cache, rebuilt on reuse)
 //   vgd_ipc_rbuf : Real *
 //   vgd_ipc_sig : long long *
 //   vgd_ipc_err : int *
