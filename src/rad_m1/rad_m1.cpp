@@ -338,12 +338,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_xsw = cln_xd && stag("clean_stag_xsweep", false);
       cln_kpos = stag("clean_stag_kpos", false);
       cln_xpat = stag("clean_stag_xpat", false);
-      // clean_xt_norm / clean_xt_cons (default off): the first iterate's gas T from the
-      // local exchange with E responding, e(T) + A T^4/(1 + hc kE) = eint + hc kE E/(1 +
-      // hc kE) (norm), or from the gas row of the pass, G and the beta terms of
-      // CleanRightHandSide (cons: one Newton update at X = E_k after the first RHS)
-      cln_xtnorm = stag("clean_xt_norm", false);
+      // clean_xt_norm (default off): the first iterate's gas T from the local exchange
+      // with E responding, e(T) + A T^4/(1 + hc kE) = eint + hc kE E/(1 + hc kE);
+      // clean_xt_cons (default off): that with A's G = 1 - beta^2/2, and after the first
+      // right-hand side T from the pass's gas row (its G and beta terms: one Newton
+      // update at X = E_k), so the first pass's A is the gas row's
       cln_xtcons = stag("clean_xt_cons", false);
+      cln_xtnorm = cln_xtcons || stag("clean_xt_norm", false);
     }
     // clean_stag_rayratio (default off): the bracket reads the rays only as ratios (their
     // face flux over the donor's ray J, the model flux of E), times the state's E

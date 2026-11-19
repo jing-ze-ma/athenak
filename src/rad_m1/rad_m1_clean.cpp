@@ -1938,6 +1938,8 @@ void RadiationM1::CleanFirstIterate() {
                     t2_solve != M1_T2S_NONE && !cln_vzero && t2k1.extent_int(0) > nmb1;
   const Real h = dt_sub, ecap = SQR(SQR(impl_pred_tcap)), rtol = cln_trtol;
   const bool xtn = cln_xtnorm;   // (clean_xt_norm: E responds, 1/(1 + hc kE) folded)
+  const bool xtg = cln_xtcons;   // (clean_xt_cons: and G = 1 - beta^2/2 of the gas)
+  const Real cl = c_light;
 
   CleanFor("cln_iter0", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -1950,8 +1952,10 @@ void RadiationM1::CleanFirstIterate() {
     if (feedback) {
       w(m,CLW_EP,k,j,i) = 0.0;   // (the beta terms of this T, CleanRightHandSide)
       const Real fe = xtn ? 1.0/(1.0 + hc*op(m,M1_OP_E,k,j,i)) : 1.0;
+      const Real gm = xtg ? 1.0 - 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
+                                       SQR(uh(m,IM3,k,j,i)))/SQR(uh(m,IDN,k,j,i)*cl) : 1.0;
       w(m,CLW_T,k,j,i) = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
-                             hc*op(m,M1_OP_P,k,j,i)*arad_*fe,
+                             hc*op(m,M1_OP_P,k,j,i)*arad_*fe*gm,
                              w(m,CLW_EI,k,j,i) + hc*op(m,M1_OP_E,k,j,i)*e*fe,
                              w(m,CLW_T,k,j,i), rtol);
     }
