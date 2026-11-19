@@ -1044,11 +1044,12 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       CleanCellFaceSpeeds();
     }
     if (cln_feedback) CleanAdvectiveCoefficients();
-    CleanStagXDonor();   // (clean_stag_xdonor: q of the first iterate)
     // (the first iterate's beta and emission for the drag's face flux, not the last
     // solve's: a restart, failed stage or discarded attempt does not carry those)
     if (cln_vimp && cln_feedback) CleanRightHandSide(true);
     if (cln_vimp && cln_feedback) CleanStagDrag(true);
+    // (clean_stag_xdonor: q of the first iterate, with its drag share b)
+    CleanStagXDonor();
     converged = !iterate;
     npic = 0;
     Real de0 = 1.0e300, dv0 = 1.0e300, trel = 0.0;
@@ -1636,19 +1637,26 @@ void RadiationM1::CleanStagXCount(const int inl) {
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   auto w = cln_w;
-  Real nn = 0.0, xmin = 0.0;
+  Real nn = 0.0, xmin = 0.0, nb = 0.0, nbx = 0.0;
   Kokkos::parallel_reduce("cln_xcount", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
       DevExeSpace(), {0, ks, js, is}, {pmy_pack->nmb_thispack, ke + 1, je + 1, ie + 1}),
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a, Real &b) {
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a, Real &b,
+                Real &c, Real &d) {
     const Real v = w(m,CLW_X,k,j,i);
     if (!(v > 0.0)) a += 1.0;
+    if (w(m,CLW_B,k,j,i) < 0.0) c += 1.0;
+    if (!(v > 0.0) && w(m,CLW_B,k,j,i) < 0.0) d += 1.0;
     b = fmin(b, v/fmax(fabs(w(m,CLW_EO,k,j,i)), 1.0e-300));
-  }, Kokkos::Sum<Real>(nn), Kokkos::Min<Real>(xmin));
+  }, Kokkos::Sum<Real>(nn), Kokkos::Min<Real>(xmin), Kokkos::Sum<Real>(nb),
+     Kokkos::Sum<Real>(nbx));
   nn = CleanReduce(nn, false);
+  nb = CleanReduce(nb, false);
+  nbx = CleanReduce(nbx, false);
   xmin = -CleanReduce(-xmin, true);
   if (global_variable::my_rank == 0 && (nn > 0.0 || cln_xd_ncap > 0.0)) {
-    std::printf("CLEAN XDONOR cycle %d t2s %d pass %d xle0 %.0f minX/Eo %.3e cap %.0f\n",
-                pmy_pack->pmesh->ncycle, t2_solve, inl, nn, xmin, cln_xd_ncap);
+    std::printf("CLEAN XDONOR cycle %d t2s %d pass %d xle0 %.0f minX/Eo %.3e cap %.0f "
+                "b<0 %.0f (with X<=0 %.0f)\n", pmy_pack->pmesh->ncycle, t2_solve, inl, nn,
+                xmin, cln_xd_ncap, nb, nbx);
   }
 }
 
