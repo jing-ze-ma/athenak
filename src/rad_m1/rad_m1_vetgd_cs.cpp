@@ -1972,6 +1972,18 @@ void RadiationM1::VetGdCsSweep() {
 #endif
   if (early && vgd_cscl[vgd_cscur].ng != 1) {early = false;}
   if (xffs) {early = false;}   // xffuse-1113 (the early send: one set per shell kernel)
+  // spdb-1119: the early send's cells are not computed twice: m1_vgdcs_eshell stamps
+  // each (m, k, j, d) it computes (vgd_est[0], stamp vgd_esid of the shell; it counts
+  // the clamps itself) and the shell kernel skips the stamped ones: the same values from
+  // the same code, written once (bitwise)
+  const int nkb = ke - ks + 1, njb = je - js + 1;
+  if (early && (vgd_est[0].extent_int(0) < nmb1 + 1 || vgd_est[0].extent_int(1) < nkb ||
+                vgd_est[0].extent_int(2) < njb || vgd_est[0].extent_int(3) < n)) {
+    vgd_est[0] = DvceArray4D<int>("vgd_est", nmb1 + 1, nkb, njb, n);   // (zero)
+    vgd_esid = 0;
+  }
+  auto est_ = vgd_est[0];
+  int esid = 0;   // (0: no early cells; never a stamp)
   VgdCsEv eev;
   static int s_lb = -1;   // speed2-1031 cslb (see the shell kernel)
   if (s_lb < 0) {
@@ -2050,12 +2062,17 @@ void RadiationM1::VetGdCsSweep() {
         if (ens > 0) {
           auto si_ = E.si;
           auto S_ = vgd_cssl;
+          vgd_esid = (vgd_esid >= std::numeric_limits<int>::max() - 1) ? 1 : (vgd_esid + 1);
+          if (vgd_esid == 1) {Kokkos::deep_copy(est_, 0);}   // (first use or wrapped)
+          esid = vgd_esid;
+          const int sid_ = esid;
           Kokkos::parallel_for("m1_vgdcs_eshell", VgdLight(DevExeSpace(), 0,
                                                             static_cast<int>(ens)),
           KOKKOS_LAMBDA(const int o) {
             const int x = si_(es0 + o);
             const int e = x/n, d = x - e*n;
-            shell_(S_(e,0), S_(e,1), S_(e,2), d, false);
+            shell_(S_(e,0), S_(e,1), S_(e,2), d, true);
+            est_(S_(e,0), S_(e,1) - ks, S_(e,2) - js, d) = sid_;
           });
           auto a_ = vgd_i;
           auto b_ = vgd_itw;
@@ -2098,6 +2115,8 @@ void RadiationM1::VetGdCsSweep() {
       } else {                                                                         \
         Kokkos::parallel_for("m1_vgdcs_shell_xff", VgdLight(DevExeSpace(), 0, N), F);  \
       }
+      const int esid_ = esid;
+      esid = 0;
       if (xffs) {
         auto xsb_ = [&]() {
           auto dir_ = vgd_tabd.dir;
@@ -2146,6 +2165,7 @@ void RadiationM1::VetGdCsSweep() {
         t /= njj;
         const int k = ks + t % nkk;
         const int m = t/nkk;
+        if (esid_ != 0 && est_(m, k - ks, j - js, d) == esid_) {return;}
         shell_(m, k, j, d, true);
       };
       auto mainff_ = KOKKOS_LAMBDA(const int c) {
@@ -2156,6 +2176,7 @@ void RadiationM1::VetGdCsSweep() {
         t /= njj;
         const int k = ks + t % nkk;
         const int m = t/nkk;
+        if (esid_ != 0 && est_(m, k - ks, j - js, d) == esid_) {return;}
         shellf_(m, k, j, d, true);
       };
       // d6fast4-1112: the shellf_ kernel when the upwind profile and the fused twin are
@@ -2200,6 +2221,7 @@ void RadiationM1::VetGdCsSweep() {
         t /= njj;
         const int k = ks + t % nkk;
         const int m = t/nkk;
+        if (esid_ != 0 && est_(m, k - ks, j - js, d) == esid_) {return;}
         shell_(m, k, j, d, true);
       };
       // speed2-1031 cslb: the shell kernel is latency bound at 25 % occupancy (114
