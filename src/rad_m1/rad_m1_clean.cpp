@@ -741,6 +741,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         }
         if (cln_recon && inl < cln_maxpic) CleanCellSlopeWeights(CLC_K);
         CleanCellRightHandSide();
+        if (inl == 0 && cln_dgc[0] >= 0) CleanCellDiagStencil();
         if (inl % cln_pcreuse == 0) CleanCellPreconditionerSetup();
       } else {
         CleanRightHandSide();

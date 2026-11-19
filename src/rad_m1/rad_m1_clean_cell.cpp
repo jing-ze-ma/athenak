@@ -2515,4 +2515,111 @@ void RadiationM1::CleanCellDiagNb() {
   }
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellDiagStencil
+//! \brief diagnostic (clean_diag_cell = "gid i j k"): the E row of the operator of that
+//! cell, printed by the rank that holds it.  Per direction and face (lo: the face at the
+//! cell, hi: the next one): the face's E-row scale s (h A/V), whether it is low-order,
+//! the derivatives of fE in E of the two cells (total, of which the RC share q D_nn), in
+//! the normal y component of the two cells (0.5 c n), and dy/dE of the outer cell's own y
+//! row, h chi a_n/(1 + h c chi).  Then the row: the coefficients of E of the neighbours
+//! directly and with their y eliminated locally (M-matrix: both <= 0), the diagonal
+//! 1 + h c kE (1 - r) plus the faces' own-cell terms, and the dominance
+//! diag - sum |off|.
+
+void RadiationM1::CleanCellDiagStencil() {
+  int mm = -1;
+  auto &gid = pmy_pack->pmb->mb_gid.h_view;
+  for (int m = 0; m < pmy_pack->nmb_thispack; ++m) {
+    if (gid(m) == cln_dgc[0]) mm = m;
+  }
+  if (mm < 0) return;
+  const int m = mm, i = cln_dgc[1], j = cln_dgc[2], k = cln_dgc[3];
+  CleanArgs x = CleanMakeArgs();
+  auto op = opac;
+  const Real hc = x.h*x.c;
+  DvceArray1D<Real> tv("clc_diag_stencil", 3*2*12 + 4);
+  par_for("clc_diag_stencil", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int) {
+    for (int dir = 0; dir < 3; ++dir) {
+      if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
+      const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+      for (int s = 0; s < 2; ++s) {
+        const int kf = k + s*dk, jf = j + s*dj, iff = i + s*di;
+        const int o = 12*(2*dir + s);
+        Real jl[4][4], jr[4][4];
+        CleanCellFaceJacobian(x, dir, m, kf, jf, iff, jl, jr);
+        Real f[4] = {1.0, 0.0, 0.0, 0.0}, g[4];
+        CleanCellRows(x, dir, m, kf, jf, iff, k, j, i, f, g);
+        Real al, hs;
+        const bool low = CleanFaceDissipation(x, dir, m, kf, jf, iff, al, hs);
+        Real q[4];
+        CleanCellRhieChow(x, dir, low, m, kf, jf, iff, q);
+        const int kl = kf - dk, jl_ = jf - dj, il = iff - di;
+        const Real rcl = q[1]*CleanDnn(x, dir, m, kf, jf, iff, kl, jl_, il);
+        const Real rcr = q[2]*CleanDnn(x, dir, m, kf, jf, iff, kf, jf, iff);
+        // the outer cell (lo face: L, hi face: R) and the own cell
+        const int ko = s ? kf : kl, jo = s ? jf : jl_, io = s ? iff : il;
+        auto dyde = [&](const int kc, const int jc, const int ic, const int b) {
+          const Real ch = op(m,M1_OP_T,kc,jc,ic);
+          return x.h*ch*x.w(m,CLW_A1+b,kc,jc,ic)/(1.0 + hc*ch);
+        };
+        Real vyo = 0.0, vys = 0.0, yo = 0.0, ys = 0.0;
+        for (int b = 0; b < x.nf; ++b) {
+          const Real co = s ? jr[0][1+b] : jl[0][1+b];
+          const Real cs = s ? jl[0][1+b] : jr[0][1+b];
+          vyo += co*dyde(ko, jo, io, b);
+          vys += cs*dyde(k, j, i, b);
+          yo += fabs(co);
+          ys += fabs(cs);
+        }
+        tv(o) = g[0];
+        tv(o+1) = low ? 1.0 : 0.0;
+        tv(o+2) = s ? jr[0][0] : jl[0][0];     // outer cell E, total
+        tv(o+3) = s ? rcr : rcl;               // of which RC
+        tv(o+4) = s ? jl[0][0] : jr[0][0];     // own cell E, total
+        tv(o+5) = s ? rcl : rcr;               // of which RC
+        tv(o+6) = yo;                          // sum |d fE/d y_outer|
+        tv(o+7) = vyo;                         // outer E via outer y
+        tv(o+8) = ys;
+        tv(o+9) = vys;                         // own E via own y
+        tv(o+10) = x.fc[dir](m,CLF_AL,kf,jf,iff);
+        tv(o+11) = op(m,M1_OP_T,ko,jo,io)*CleanCellFaceDistance(x, dir, m, kf, jf, iff);
+      }
+    }
+    tv(72) = 1.0 + hc*op(m,M1_OP_E,k,j,i)*(1.0 - x.w(m,CLW_RR,k,j,i));
+    tv(73) = x.u(m,CLC_O,k,j,i);
+    tv(74) = x.u(m,CLC_B,k,j,i);
+    tv(75) = hc*op(m,M1_OP_T,k,j,i);
+  });
+  auto t = Kokkos::create_mirror_view_and_copy(HostMemSpace(), tv);
+  const int cy = pmy_pack->pmesh->ncycle;
+  // row i: + s_hi fE_hi - s_lo fE_lo; outer coefficient sign: hi +, lo -
+  Real diag = t(72), offd = 0.0, offv = 0.0, dsum = t(72), dvia = t(72);
+  for (int dir = 0; dir < 3; ++dir) {
+    for (int s = 0; s < 2; ++s) {
+      const int o = 12*(2*dir + s);
+      if (t(o) == 0.0 && t(o+2) == 0.0) continue;
+      const Real sg = s ? 1.0 : -1.0;
+      const Real cd = sg*t(o)*t(o+2), cv = sg*t(o)*(t(o+2) + t(o+7));
+      const Real dd = sg*t(o)*t(o+4), dv = sg*t(o)*(t(o+4) + t(o+9));
+      std::printf("CLEAN DIAGC cycle %d t2s %d gid %d i %d j %d k %d dir %d %s: s %.3e "
+                  "low %.0f al %.3f chi*d %.3e | outer E: fE' %+.3e (RC %+.3e) coef "
+                  "%+.3e, via y %+.3e (sum|fE_y| %.3e) | own E: fE' %+.3e (RC %+.3e) "
+                  "coef %+.3e, via y %+.3e\n", cy, t2_solve, cln_dgc[0], i, j, k, dir,
+                  s ? "hi" : "lo", t(o), t(o+1), t(o+10), t(o+11), t(o+2), t(o+3), cd,
+                  cv, t(o+6), t(o+4), t(o+5), dd, dv);
+      offd += fabs(cd);
+      offv += fabs(cv);
+      dsum += dd;
+      dvia += dv;
+      diag = dsum;
+    }
+  }
+  std::printf("CLEAN DIAGC cycle %d t2s %d row: 1+hckE(1-r) %.4e diag %.4e (via y %.4e) "
+              "sum|off| %.4e (via y %.4e) dominance %+.4e (via y %+.4e) E_old %.4e "
+              "B %.4e hc*chi %.3e\n", cy, t2_solve, t(72), diag, dvia, offd, offv,
+              diag - offd, dvia - offv, t(73), t(74), t(75));
+  std::fflush(stdout);
+}
+
 }  // namespace radm1
