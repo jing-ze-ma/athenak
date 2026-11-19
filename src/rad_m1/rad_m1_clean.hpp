@@ -1249,32 +1249,41 @@ void CleanStagXSplit(const CleanArgs &x, const CleanArgs &xr, const int dir, con
     ex = sr;
   } else {
     const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
-    auto put = [&](const Real l, const bool lag) {
-      if (l == 0.0) return;
-      const bool up = (l > 0.0);   // (the donor: L for a flux to R)
-      Real li = l;
-      if (lag) {
-        const Real eo = fmax(up ? x.w(m,CLW_EO,kl,jl,il) : x.w(m,CLW_EO,k,j,i), 0.0);
-        const Real out = x.h*fabs(l)*(up ? CleanDivW(x, dir, m, kl, jl, il, 1) :
-                                           CleanDivW(x, dir, m, k, j, i, 0));
-        const Real s = (out > CLN_MEMUP*eo) ? CLN_MEMUP*eo/out : 1.0;
-        ex += s*l;
-        li = (1.0 - s)*l;
-      }
+    // (the explicit share s of a lagged flux l: its outflow over the stage at most
+    // CLN_MEMUP of the donor's E_old)
+    auto share = [&](const Real l) {
+      if (l == 0.0) return 1.0;
+      const bool up = (l > 0.0);
+      const Real eo = fmax(up ? x.w(m,CLW_EO,kl,jl,il) : x.w(m,CLW_EO,k,j,i), 0.0);
+      const Real out = x.h*fabs(l)*(up ? CleanDivW(x, dir, m, kl, jl, il, 1) :
+                                         CleanDivW(x, dir, m, k, j, i, 0));
+      return (out > CLN_MEMUP*eo) ? CLN_MEMUP*eo/out : 1.0;
+    };
+    // (a donor part li: q = |li|/E_donor at most c; the cross flux of E_k over E_k (at the
+    // fixed point exactly C), a face source, E-independent, over E_old as CleanStagMemUp
+    // (the donor-cell form in time, one linear map for the step))
+    auto put = [&](const Real li, const bool src) {
       if (li == 0.0) return;
-      const Real ed = up ? x.w(m,CLW_EK,kl,jl,il) : x.w(m,CLW_EK,k,j,i);
+      const bool up = (li > 0.0);
+      const int e = src ? CLW_EO : CLW_EK;
+      const Real ed = up ? x.w(m,e,kl,jl,il) : x.w(m,e,k,j,i);
       const Real q = (fabs(li) < x.c*ed) ? fabs(li)/ed : x.c;
       if (up) ql += q;
       if (!up) qr -= q;
     };
     const Real cf = f(m,x.xq+3,k,j,i);
+    const Real sx = x.xsrc ? sr : 0.0;   // (the face source in the split)
+    if (!x.xsrc) ex += sr;
     if (x.xlag) {
-      put(cf + (x.xsrc ? sr : 0.0), true);
-      if (!x.xsrc) ex += sr;
+      const Real s = share(cf + sx);
+      ex += s*(cf + sx);
+      put((1.0 - s)*cf, false);
+      put((1.0 - s)*sx, true);
     } else {
       put(cf, false);
-      if (x.xsrc) put(sr, true);
-      if (!x.xsrc) ex += sr;
+      const Real s = share(sx);
+      ex += s*sx;
+      put((1.0 - s)*sx, true);
     }
   }
   f(m,x.xq,k,j,i) = ql;
