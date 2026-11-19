@@ -3906,7 +3906,10 @@ void RadiationM1::CleanClosureFill() {
   const int nfl = (cln_s.extent_int(1) > CLN_KP) ? CLN_C1 + 9 : CLN_C1;
 
   for (int pass = 0; pass < cln_fillpass; ++pass) {
-    CleanGhostFill(cln_s, 0, cln_s.extent_int(1));
+    // (the last chunk of cln_s and the marks in one exchange: the same ghosts)
+    const int ns = cln_s.extent_int(1), nf = (ns/cln_hmax)*cln_hmax;
+    if (nf > 0) CleanGhostFill(cln_s, 0, nf);
+    if (ns > nf) CleanGhostDefer(cln_s, nf, ns - nf);
     CleanGhostFill(cln_v, 0, 2);
     // valid(1) marks the cells filled in this pass; only cells valid before it are read
     par_for("cln_fill", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
