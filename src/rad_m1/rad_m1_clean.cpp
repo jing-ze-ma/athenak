@@ -48,7 +48,7 @@ static void CleanFatal(const std::string &msg) {
 //! its clean counterpart, the others it does not read are listed once, and a key whose
 //! loss would change the physics stops the run unless it is off.  The keys the clean
 //! solve reads (boundaries, beams, the time step, multi-rate, the hesdirk2 tableau and
-//! its backward-Euler steps) pass.
+//! its backward-Euler steps, time2_k1_* of the stage increment, Time2FormStage) pass.
 
 void RadiationM1::CleanPreflight(ParameterInput *pin) {
   // block/key (* ends a prefix): nullptr read, "" no effect, "!" fatal, else clean key
@@ -68,7 +68,7 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/implicit_ghost_x1min", "!"}, {"rad_m1/ic_rad*", "clean_init"},
     {"rad_m1/implicit_*", ""},
     {"rad_m1/time2_accept_fallback", ""}, {"rad_m1/time2_posfix*", ""},
-    {"rad_m1/time2_k1_*", ""}, {"rad_m1/time2_face_fct", ""},
+    {"rad_m1/time2_face_fct", ""},
     {"time/dt_retry_t2_be", ""}};
   const bool say = (global_variable::my_rank == 0);
   std::string none;
@@ -965,6 +965,24 @@ void RadiationM1::CleanOldVector() {
     w(m,CLW_T,k,j,i) = t;
     w(m,CLW_EO,k,j,i) = u0_(m,M1_E,k,j,i) + (stage ? inc(m,M1_T2_E,k,j,i) : 0.0);
   });
+  // (clean_diag_neg: the cells whose old vector has E < 0, a stage's explicit increment
+  // taking E below zero)
+  if (cln_diagneg) {
+    const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
+    Real neo = 0.0;
+    Kokkos::parallel_reduce("cln_old_neg", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            (nmb1 + 1)*nk*nj*ni),
+    KOKKOS_LAMBDA(const int q, Real &n) {
+      const int m = q/(nk*nj*ni), k = ks + (q/(nj*ni))%nk;
+      const int j = js + (q/ni)%nj, i = is + q%ni;
+      if (!(w(m,CLW_EO,k,j,i) >= 0.0)) n += 1.0;
+    }, Kokkos::Sum<Real>(neo));
+    neo = CleanReduce(neo, false);
+    if (global_variable::my_rank == 0) {
+      std::printf("CLEAN EOLD cycle %d t2s %d E_old<0 cells %.0f\n",
+                  pmy_pack->pmesh->ncycle, t2_solve, neo);
+    }
+  }
 }
 
 //----------------------------------------------------------------------------------------
