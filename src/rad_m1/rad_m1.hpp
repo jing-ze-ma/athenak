@@ -3258,6 +3258,7 @@ class RadiationM1 {
   int cln_pcsweeps = 1;         // clean_pc_sweeps: smoothing sweeps of the multigrid
   int cln_chunk = 32;           // rows per Thomas system of the line solve
   int cln_lteams = 0;           // clean_line_teams: most teams of a line solve (0: all)
+  int cln_wo_nc = 0;            // the slots of cln_w.o (CleanWoBind)
   int cln_hmax = 16;            // clean_halo_vars: most variables of one ghost exchange
   bool cln_pcfac = true;        // clean_pc_factor: x1line keeps the factors of its lines
   bool cln_pcf32 = false;       // clean_pc_factor_float: ... in single precision
@@ -4140,6 +4141,7 @@ class RadiationM1 {
   bool MemArenaVgd(VgdRag &a, int64_t n);
   void MemArenaGrow(int64_t need);
   void MemArenaSeal();
+  void CleanWoBind();   // cln_w.o at the first solve (mem_arena)
   void MemcutPoison(int where);
   // mem2-1014 vet_gd_band_ring (default true where it applies: MPI band with the exact
   // halo lists, no overlap / async / fused shells; memcut-1020: on the cubed sphere with

@@ -105,6 +105,11 @@ void RadiationM1::MemArenaGrow(const int64_t need) {
       b->d = DvceArray1D<Real>(nb.data() + (b->d.data() - o0), b->d.extent(0));
     }
   }
+  DvceArray5D<Real> &wo = cln_w.o;   // (bound by CleanWoBind)
+  if (have > 0 && wo.data() != nullptr && wo.data() >= o0 && wo.data() < o1) {
+    wo = DvceArray5D<Real>(nb.data() + (wo.data() - o0), wo.extent(0), wo.extent(1),
+                           wo.extent(2), wo.extent(3), wo.extent(4));
+  }
   marena = nb;
 }
 
@@ -138,7 +143,9 @@ void RadiationM1::MemArenaSeal() {
     const int64_t n = static_cast<int64_t>(a.span());
     // (clean: the staggered layout's own work vectors only)
     if ((clean && (q > 0 || cln_cell)) || a.data() == nullptr || n == 0 ||
-        !a.span_is_contiguous() || off + n > have) {
+        !a.span_is_contiguous() || off + n > have || a.data() == marena.data()) {
+      // (cln_w.o already there, CleanWoBind)
+      if (a.data() == marena.data() && n > 0) off += n + ((64 - (n % 64)) % 64);
       continue;
     }
     DvceArray5D<Real> b(marena.data() + off, a.extent(0), a.extent(1), a.extent(2),
@@ -154,6 +161,27 @@ void RadiationM1::MemArenaSeal() {
               << " GB in one allocation; solve scratch moved over them (" << off*
               sizeof(Real)/1.0e9 << " GB on rank 0):" << moved << std::endl;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanWoBind
+//! \brief the staggered layout's own work vectors cln_w.o at the first solve that needs
+//! them: in the arena, over the intensities (dead outside a build), where a build has
+//! made it (MemArenaGrow rebinds them with the intensities), else their own allocation
+//! (moved over the intensities by MemArenaSeal): no second copy before the first
+//! checkpoint
+
+void RadiationM1::CleanWoBind() {
+  if (cln_w.o.data() != nullptr) return;
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int n1 = id.nx1 + 2*id.ng, n2 = (id.nx2 > 1) ? id.nx2 + 2*id.ng : 1;
+  const int n3 = (id.nx3 > 1) ? id.nx3 + 2*id.ng : 1, nmb = pmy_pack->nmb_thispack;
+  if (marena.data() == nullptr) {
+    Kokkos::realloc(cln_w.o, nmb, cln_wo_nc, n3, n2, n1);
+    return;
+  }
+  MemArenaGrow(static_cast<int64_t>(nmb)*cln_wo_nc*n3*n2*n1);
+  cln_w.o = DvceArray5D<Real>(marena.data(), nmb, cln_wo_nc, n3, n2, n1);
 }
 
 //----------------------------------------------------------------------------------------
