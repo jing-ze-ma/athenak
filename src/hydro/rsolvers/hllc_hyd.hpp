@@ -131,6 +131,13 @@ void HLLC(TeamMember_t const &member, const EOS_Data &eos,
     Real am = (qc - qd)/(ml + mr);
     // ...and the pressure at the contact surface
     Real cp = (ml*qd + mr*qc)/(ml + mr);
+    // (a cold gas whose sound speed is below the round-off of its velocity: v - (v -+ c)
+    // is 0 on both sides, ml + mr = 0 and the two above 0/0; their limit c -> 0 is the
+    // density-weighted mean velocity and pressure)
+    if (!(ml + mr > 0.0)) {
+      am = (wl_idn*wl_ivx + wr_idn*wr_ivx)/(wl_idn + wr_idn);
+      cp = (wl_idn*wr_ipr + wr_idn*wl_ipr)/(wl_idn + wr_idn);
+    }
     cp = cp > 0.0 ? cp : 0.0;
 
     //--- Step 6. Compute L/R fluxes along the line bm (qb), bp (qa)
