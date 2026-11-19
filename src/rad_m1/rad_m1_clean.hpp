@@ -302,7 +302,9 @@ struct CleanArgs {
   int xq;                      // staggered, clean_stag_xdonor: face slots qL, qR of the
                                // lagged fluxes' donor part, their explicit part, C(E_k)
                                // (-1: the central cross flux)
-  bool pd;                     // staggered, xpat: the rows' diagonal CLW_PD
+  bool pd;                     // staggered, kpos / xpat: the rows' diagonal CLW_PD
+  int kq;                      // staggered, clean_stag_kpos: face slots qL, qR of the
+                               // moved increment flux (-1: none; the E rows only)
   bool xlag, xsrc;             //   lag: explicit up to the donor's share; xsrc: the
                                //   face sources too
   bool mcl;                    // staggered: a face's momentum term at most the force of
@@ -967,6 +969,25 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
     al += x.fc[dir](m,x.xq,k,j,i);
     ar += x.fc[dir](m,x.xq+1,k,j,i);
   }
+  // (clean_stag_kpos: the increment's moved flux q E_donor, CleanStagKPos; the E rows
+  // and the write-back's energy only: the momentum's args carry kq = -1)
+  if (x.kq >= 0) {
+    al += x.fc[dir](m,x.kq,k,j,i);
+    ar += x.fc[dir](m,x.kq+1,k,j,i);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanKposFlux
+//! \brief clean_stag_kpos: the moved increment flux q E_donor of face (k,j,i) normal to
+//! dir in work vector e (0 without kpos); the stored Phi and the slopes leave it out
+
+KOKKOS_INLINE_FUNCTION
+Real CleanKposFlux(const CleanArgs &x, const int e, const int dir, const int m,
+                   const int k, const int j, const int i) {
+  if (x.kq < 0) return 0.0;
+  const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
+  return x.fc[dir](m,x.kq,k,j,i)*x.w(m,e,kl,jl,il) + x.fc[dir](m,x.kq+1,k,j,i)*x.w(m,e,k,j,i);
 }
 
 //----------------------------------------------------------------------------------------
