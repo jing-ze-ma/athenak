@@ -3212,6 +3212,7 @@ class RadiationM1 {
   // removal -r hcke E_k past its share of the row in Patankar form (CleanRightHandSide)
   bool cln_kpos = false, cln_xpat = false, cln_kq_on = false;
   bool cln_xtnorm = false, cln_xtcons = false;   // (CleanFirstIterate, CleanSolve)
+  int cln_xte = 0;   // (clean_xt_exact: 0 off, 1 cons, 2 x2)
   Real cln_kc1 = 0.0, cln_kc2 = 0.0;   // (the stage's c1, c2 of t2pf1, t2pf2)
   DvceArray1D<Real> cln_kcnt;   // (p capped, xpat rows: the last pass; their sums)
   void CleanStagKPos();

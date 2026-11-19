@@ -312,7 +312,8 @@ void RadiationM1::CleanInit() {
   const bool stcs = pmy_pack->pmesh->use_cubed_sphere && !cln_cell;
   Kokkos::realloc(cln_v, nmb, stcs ? 18 : 3, n3, n2, n1);
   Kokkos::realloc(cln_w.s, nmb, CLW_NS, n3, n2, n1);
-  const int nwo = cln_cell ? CLW_NC : ((cln_kpos || cln_xpat) ? CLW_NK : CLW_N);
+  const int nwo = cln_cell ? CLW_NC : ((cln_xte > 0) ? CLW_NX :
+                  ((cln_kpos || cln_xpat) ? CLW_NK : CLW_N));
   Kokkos::realloc(cln_w.o, nmb, nwo - CLW_NS, n3, n2, n1);
   cln_w.ns = CLW_NS;
   // the cubed sphere takes the half ranges about the face normals from the FV rays
@@ -2097,6 +2098,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   const bool xdd = cln_xd;
   // (clean_stag_kpos / xpat: the rows' Patankar diagonal CLW_PD; counts of this pass)
   const bool pdo = x.pd, kqo = x.kp, xpo = cln_xpat && x.pd;
+  const bool xte = (cln_xte > 0) && x.feedback;   // (clean_xt_exact: CLW_XA, CLW_XW)
   auto kc = cln_kcnt;
   if (pdo) Kokkos::deep_copy(Kokkos::subview(kc, std::make_pair(0, 2)), 0.0);
   CleanParForLb<3>("cln_rhs", nmb1, ks, ke, js, je, is, ie,
@@ -2283,6 +2285,12 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
       }
       x.w(m,CLW_PD,k,j,i) = pd;
     }
+    // (clean_xt_exact: the row's exchange as linearised, B less its rest, and its work)
+    if (xte) {
+      x.w(m,CLW_XA,k,j,i) = eqr ? 0.0 : x.w(m,CLW_B,k,j,i) - (x.w(m,CLW_EO,k,j,i) - work
+          - CleanSourceDivergence(x, m, k, j, i) + (eso ? x.h*es(m,k,j,i) : 0.0));
+      x.w(m,CLW_XW,k,j,i) = work;
+    }
     x.w(m,CLW_X,k,j,i) = x.w(m,CLW_EK,k,j,i);
     if (!bud) return;   // (clean_conv = budget: the gross terms of the E and gas rows)
     const Real xc = hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) + hckp*arad_*SQR(SQR(t)) +
@@ -2375,9 +2383,13 @@ Real RadiationM1::CleanNewtonUpdate() {
     });
   }
 
-  Real change = 0.0, femax = 0.0, ermax = 0.0;
+  // (clean_xt_exact: the closure of the row's linearised exchange at the new T; x2: T
+  // from the local 2x2 of the E and gas rows, the E row's rest S = X diag - XA fixed)
+  const bool xte = (cln_xte > 0) && !cell && cln_feedback, x2 = xte && cln_xte == 2;
+  const bool pdx = x2 && cln_xpat, pxe = xte && cln_xpat;
+  Real change = 0.0, femax = 0.0, ermax = 0.0, xcl = 0.0;
   Kokkos::parallel_reduce("cln_newton", CleanRpLb2(DevExeSpace(), 0, nmb*nkji),
-  KOKKOS_LAMBDA(const int idx, Real &dmax, Real &fe_max, Real &er_max) {
+  KOKKOS_LAMBDA(const int idx, Real &dmax, Real &fe_max, Real &er_max, Real &xc) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
     int j = (idx - m*nkji - k*nji)/nx1;
@@ -2395,10 +2407,26 @@ Real RadiationM1::CleanNewtonUpdate() {
     // the net exchange (1 - r) hc kE, and T and E drifted apart pass by pass; sbimp:
     // the gas takes all of sb at X)
     if (gfd) w(m,CLW_EP,k,j,i) -= w(m,CLW_JV+1,k,j,i)*(x - e_old);
-    const Real t = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
-                       hc*op(m,M1_OP_P,k,j,i)*g*arad_,
-                       w(m,CLW_EI,k,j,i) + hc*op(m,M1_OP_E,k,j,i)*ex
-                       + w(m,CLW_EP,k,j,i), t_old, rtol);
+    const Real hcke = hc*op(m,M1_OP_E,k,j,i);
+    Real t;
+    if (x2) {
+      const Real dg = 1.0 + hcke*w(m,CLW_RY,k,j,i) + (pdx ? w(m,CLW_PD,k,j,i) : 0.0);
+      const Real sr = x*dg - w(m,CLW_XA,k,j,i);
+      t = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
+              hc*op(m,M1_OP_P,k,j,i)*g*arad_/(1.0 + hcke),
+              w(m,CLW_EI,k,j,i) + (hcke*sr + w(m,CLW_EP,k,j,i))/(1.0 + hcke), t_old, rtol);
+    } else {
+      t = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i), hc*op(m,M1_OP_P,k,j,i)*g*arad_,
+              w(m,CLW_EI,k,j,i) + hcke*ex + w(m,CLW_EP,k,j,i), t_old, rtol);
+    }
+    if (xte) {
+      const Real dg = 1.0 + hcke*w(m,CLW_RY,k,j,i) +
+                      (pxe ? w(m,CLW_PD,k,j,i) : 0.0);
+      const Real ga = hc*op(m,M1_OP_P,k,j,i)*g*arad_*SQR(SQR(t)) - hcke*x -
+                      w(m,CLW_EP,k,j,i);
+      xc = fmax(xc, fabs(w(m,CLW_XA,k,j,i) - (dg - 1.0)*x - ga)/
+                    fmax(fmax(fabs(x), fabs(w(m,CLW_EO,k,j,i))), 1.0e-300));
+    }
     w(m,CLW_EK,k,j,i) = e;
     w(m,CLW_T,k,j,i) = t;
     const Real de = ncell ? fabs(e - e_old)/fmax(fmax(fabs(e), fabs(e_old)), esc)
@@ -2419,8 +2447,16 @@ Real RadiationM1::CleanNewtonUpdate() {
     if (!cell) fe_max = fmax(fe_max, (fabs(e)*(1.0 + hc*op(m,M1_OP_E,k,j,i)) +
         fabs(w(m,CLW_EO,k,j,i)) + hc*op(m,M1_OP_P,k,j,i)*arad_*SQR(SQR(t)))/
         fmax(fabs(e), 1.0e-300));
-  }, Kokkos::Max<Real>(change), Kokkos::Max<Real>(femax), Kokkos::Max<Real>(ermax));
+  }, Kokkos::Max<Real>(change), Kokkos::Max<Real>(femax), Kokkos::Max<Real>(ermax),
+     Kokkos::Max<Real>(xcl));
   CleanReduceMax(change, femax, ermax);   // (one reduction over the ranks)
+  if (xte) {
+    xcl = CleanReduce(xcl, true);
+    if (global_variable::my_rank == 0) {
+      std::printf("CLEAN XT cycle %d t2s %d pass closure %.3e\n", pmy_pack->pmesh->ncycle,
+                  t2_solve, xcl);
+    }
+  }
   if (!cell) cln_fe = std::numeric_limits<Real>::epsilon()*femax;
   if (bud) {   // (the tolerance of the next test and solve; for settled, the level of a
     // change the linear solve fixes at the floor, its 0.1 tfl in the budget's norm)
@@ -4060,6 +4096,7 @@ void RadiationM1::CleanWriteBack() {
   }
   if (pfc) Kokkos::deep_copy(pfc_def, 0.0);
   auto pfd = pfc_def;
+  const bool xwb = (cln_xte > 0) && feedback && !cln_vzero;
   px = CleanDevArgs(x, 0);   // (the F solve took the slots; xh changed)
   pxh = CleanDevArgs(xh, 1);
   CleanFor("cln_wbcell", nmb1, ks, ke, js, je, is, ie,
@@ -4160,8 +4197,13 @@ void RadiationM1::CleanWriteBack() {
             Kokkos::atomic_add(&pc_(M1_POS_GAS_DE), (ei - e0)*vol);
           }
         }
-        const Real rd = (den - eg - wk - wp)/(gtf ? 1.0 :
-                        1.0 + x.h*x.c*x.op(m,M1_OP_E,k,j,i)*x.w(m,CLW_RY,k,j,i));
+        // (clean_xt_exact: the work the row took and the gas's kinetic energy did not
+        // receive to E whole, eint the heating only; the closure in CLW_XA)
+        const Real dw = xwb ? x.w(m,CLW_XW,k,j,i) - wk - wp : 0.0;
+        const Real rd = (den - eg - wk - wp - dw)/(gtf ? 1.0 :
+                        1.0 + x.h*x.c*x.op(m,M1_OP_E,k,j,i)*x.w(m,CLW_RY,k,j,i)) + dw;
+        if (xwb) x.w(m,CLW_XA,k,j,i) = fabs(den - eg - wk - wp)/
+                                       fmax(fmax(fabs(e), fabs(x.w(m,CLW_EO,k,j,i))), 1.0e-300);
         e += rd;
         den -= rd + wp;
         wsl = wex ? wp : wp - wr;
@@ -4244,6 +4286,21 @@ void RadiationM1::CleanWriteBack() {
       }
     }
   });
+  if (xwb) {   // (clean_xt_exact: the stage's closure |dE + de + dK + h div Phi|/E, max)
+    auto w = cln_w;
+    const int n1 = ie - is + 1, nji = (je - js + 1)*n1, nkji = (ke - ks + 1)*nji;
+    Real cm = 0.0;
+    Kokkos::parallel_reduce("cln_wbclose", CleanRp256(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &c) {
+      const int m = idx/nkji, k = ks + (idx%nkji)/nji, j = js + (idx%nji)/n1;
+      c = fmax(c, w(m,CLW_XA,k,j,is + idx%n1));
+    }, Kokkos::Max<Real>(cm));
+    cm = CleanReduce(cm, true);
+    if (global_variable::my_rank == 0) {
+      std::printf("CLEAN XT cycle %d t2s %d write-back closure %.3e\n",
+                  pmy_pack->pmesh->ncycle, t2_solve, cm);
+    }
+  }
   // (implicit_pos_floor_cons, the old production's column pass: the uncovered raise of a
   // cell from the radiation above e_floor of the nearest cells of its radial column, i -+
   // d, the pair split by their energy above the floor; their stage slopes with it)

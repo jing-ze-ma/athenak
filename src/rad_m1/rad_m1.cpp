@@ -344,6 +344,23 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       // clean_xt_norm (default off, study): the local exchange with E responding,
       // e(T) + A T^4/(1 + hc kE) = eint + hc kE E/(1 + hc kE)
       cln_xtcons = stag("clean_xt_cons", false);
+      // clean_xt_exact = off | cons | x2 (default off): the exchange's bookkeeping with one
+      // A' per cell and pass (CleanRightHandSide): cons, the first iterate's T from the
+      // pass's gas row (clean_xt_cons), the work the row and the gas's kinetic energy
+      // differ by to E whole (eint takes the heating only), the closure printed (CLEAN
+      // XT); x2 also every T root from the local 2x2 of the E and gas rows, E + e kept
+      {
+        const std::string xe = pin->DoesParameterExist("rad_m1", "clean_xt_exact") ?
+                               pin->GetString("rad_m1", "clean_xt_exact") : "off";
+        if (xe != "off" && xe != "cons" && xe != "x2") {
+          std::cout << "### FATAL ERROR <rad_m1>/clean_xt_exact = off | cons | x2"
+                    << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        cln_xte = (xe == "cons") ? 1 : ((xe == "x2") ? 2 : 0);
+        if (cln_xte > 0) cln_xtcons = true;
+        if (cln_xte == 2) cln_xtnorm = true;
+      }
       cln_xtnorm = stag("clean_xt_norm", false);
     }
     // clean_stag_rayratio (default off): the bracket reads the rays only as ratios (their

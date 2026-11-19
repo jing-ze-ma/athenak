@@ -217,6 +217,9 @@ constexpr int CLW_KF = 53;   // staggered clean_stag_kpos: E of the old vector a
 constexpr int CLW_KM = 54;   //   the destruction of the increment moved implicit (>= 0),
 constexpr int CLW_PD = 55;   //   with clean_stag_xpat the rows' Patankar diagonal
 constexpr int CLW_NK = 56;   //   (allocated only with clean_stag_kpos / xpat)
+constexpr int CLW_XA = 56;   // staggered clean_xt_exact: B less its rest (the row's
+constexpr int CLW_XW = 57;   //   exchange as linearised), the row's work W
+constexpr int CLW_NX = 58;   //   (allocated only with clean_xt_exact)
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanFvI
