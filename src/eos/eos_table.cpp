@@ -10,11 +10,14 @@
 //! interpolant is fourth-order accurate.
 
 #include <math.h>
+#include <sched.h>
 
 #include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <thread>
+#include <vector>
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -206,7 +209,7 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
   const double h1 = 1.0e-5;
   const double h2 = 1.0e-3;
 
-  for (int j=0; j<ny; ++j) {
+  auto row = [&](const int j) {
     double y = ylo + j*tbl.dy;
     for (int i=0; i<nx; ++i) {
       double x = xlo + i*tbl.dx;
@@ -248,7 +251,27 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
       h_tbl(j,i, ITXE+2) = (xyp - xym)*i2h1;
       h_tbl(j,i, ITXE+3) = (xpp - xpm - xmp + xmm)*i4h2;
     }
+  };
+  // the rows are independent: split over the ranks and the cores of each, then gathered
+  // (every node computed once, by the same code: the same table)
+  const int nr = global_variable::nranks, me = global_variable::my_rank;
+  const int j0 = static_cast<int>(static_cast<int64_t>(ny)*me/nr);
+  const int j1 = static_cast<int>(static_cast<int64_t>(ny)*(me + 1)/nr);
+  cpu_set_t cpus;
+  int nt = (sched_getaffinity(0, sizeof(cpus), &cpus) == 0) ? CPU_COUNT(&cpus) : 1;
+  nt = std::max(1, std::min(nt, j1 - j0));
+  std::vector<std::thread> th;
+  for (int t=0; t<nt; ++t) th.emplace_back([&, t]() {for (int j=j0+t; j<j1; j+=nt) row(j);});
+  for (auto &t : th) t.join();
+#if MPI_PARALLEL_ENABLED
+  std::vector<int> cnt(nr), dsp(nr);
+  for (int r=0; r<nr; ++r) {
+    dsp[r] = static_cast<int>(static_cast<int64_t>(ny)*r/nr)*nx*ITNVAR;
+    cnt[r] = static_cast<int>(static_cast<int64_t>(ny)*(r + 1)/nr)*nx*ITNVAR - dsp[r];
   }
+  MPI_Allgatherv(MPI_IN_PLACE, 0, MPI_DATATYPE_NULL, h_tbl.data(), cnt.data(), dsp.data(),
+                 MPI_ATHENA_REAL, MPI_COMM_WORLD);
+#endif
 
   // per x cell, the maximum of the floor energy over the cell from the analytic model,
   // slightly inflated so it also bounds the interpolant (EOSTable::EnergyFloorBound).
