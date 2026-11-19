@@ -336,8 +336,9 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
         (pmhd != nullptr && pmhd->rad_signal_speed)) {
       const int rmode = pradm1->RssRstMode();
       const int nrs = pradm1->RssRstNch(rmode);
-      // (zero-copy: one MeshBlock's pack, filled MeshBlock by MeshBlock by the writer)
-      const bool one = zc && nmb > 1;
+      // (zero-copy, independent I/O: one MeshBlock's pack, filled MeshBlock by MeshBlock
+      // by the writer)
+      const bool one = zc && nmb > 1 && !IOWrapper::collective;
       DvceArray5D<Real> tmp("rst-m1s", one ? 1 : nmb, nrs, nout3, nout2, nout1);
       if (!one) pradm1->RssRstPack(tmp, nmb, rmode);
       hold(outarray_m1s, tmp);
