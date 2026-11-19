@@ -1143,6 +1143,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("t2_ffct_nemp", t2_ffct_nemp);
   v.value("t2_ffct_qmin", t2_ffct_qmin);
   v.value("t2_ffct_rk", t2_ffct_rk);
+  v.value("t2_ffct_swp", t2_ffct_swp);
   v.value("impl_fclip_diag", impl_fclip_diag);
   v.view("fcd_cnt_d", fcd_cnt_d);
   v.value("impl_am_cs_diag", impl_am_cs_diag);

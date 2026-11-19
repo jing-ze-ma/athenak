@@ -2693,6 +2693,12 @@ class RadiationM1 {
   // |K| only, no inflow-free rounds (HG: -61 % rounds, -14 % s/cycle, withheld and left
   // as K = 0; K > 0 cut the beams there)
   int t2_ffct_rk = 0;
+  // <rad_m1>/time2_face_fct_sweep (read only when named; default false = Jacobi rounds as
+  // before): the same Zalesak limiter, each round one thread per x1 column runs the
+  // cells up and then down the column with the x1 neighbours' R of this round (lateral
+  // neighbours: the last round's), so a deficit runs a whole radial column in one round;
+  // the same test and R = (1 - 1e-12) Q/P, rounds until no cell is newly limited
+  bool t2_ffct_swp = false;
   void Time2FaceFct(int stage, Real c1, Real c2);
   // facebound-1112 <rad_m1>/implicit_fclip_diag (read only when named; diagnostic only,
   // nothing written back): where the write-back's realisability clip |F| <= c E comes

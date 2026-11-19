@@ -633,6 +633,9 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_face_fct_emin")) {
     t2_ffct_emin = pin->GetReal("rad_m1", "time2_face_fct_emin");
   }
+  if (pin->DoesParameterExist("rad_m1", "time2_face_fct_sweep")) {
+    t2_ffct_swp = pin->GetBoolean("rad_m1", "time2_face_fct_sweep");
+  }
   if (pin->DoesParameterExist("rad_m1", "time2_face_fct_rounds")) {
     t2_ffct_rk = pin->GetInteger("rad_m1", "time2_face_fct_rounds");
   }
@@ -1945,7 +1948,60 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
   int *const zp = zac ? zl_chg.data() : nullptr;
   int *const zc = zac ? zp + 3*zS : nullptr;
   int zn = 0, zq = 0;   // the entries of the read list, and which list it is
-  for (int r = 0; r < 4096; ++r) {   // until no cell is newly limited
+  const bool swp = t2_ffct_swp;
+  if (swp) {   // (time2_face_fct_sweep: x1 columns in place, slot cb the last round's R)
+    auto sweepq = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
+                                Real &a) {
+      if (hoi && hm_(m,k,j,i) > 0.0) return;
+      const Real rc = iw_(m,ca,k,j,i);
+      Real po = 0.0, pi = 0.0, pl = 0.0;
+      for (int d = 0; d < 3; ++d) {
+        if ((d == 1 && !tr2) || (d == 2 && !tr3)) {continue;}
+        const int dk = (d == 2) ? 1 : 0, dj = (d == 1) ? 1 : 0, di = (d == 0) ? 1 : 0;
+        const int sn = (d == 0) ? ca : cb;
+        Real g = gf(m, d, k, j, i);
+        if (g > 0.0) {pi += g; pl += iw_(m,sn,k-dk,j-dj,i-di)*g;} else {po -= g;}
+        g = gf(m, d, k+dk, j+dj, i+di);
+        if (g > 0.0) {
+          po += g;
+        } else if (g < 0.0) {
+          pi -= g;
+          pl -= iw_(m,sn,k+dk,j+dj,i+di)*g;
+        }
+      }
+      const Real v = cvol(m,k,j,i);
+      const Real c = v*(u0_(m,M1_E,k,j,i) + in_(m,M1_T2_E,k,j,i)) - pi + po;
+      const Real wf = eth*v*un_(m,M1_E,k,j,i);
+      if (c + pl - rc*po > wf) return;
+      const Real q = c + pl - wf;
+      const Real rq = (q > 0.0 && po > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/po) : 0.0;
+      if (rq < rc) {
+        iw_(m,ca,k,j,i) = rq;
+        a += 1.0;
+      }
+    };
+    for (int r = 0; r < 4096; ++r) {
+      Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, cb, Kokkos::ALL,
+                        Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw, Kokkos::ALL, ca,
+                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+      Real nv = 0.0;
+      Kokkos::parallel_reduce("m1_t2_ffct_sw", Kokkos::MDRangePolicy<Kokkos::Rank<3>>(
+          DevExeSpace(), {0, ks, js}, {nmb1 + 1, ke + 1, je + 1}),
+      KOKKOS_LAMBDA(const int m, const int k, const int j, Real &a) {
+        for (int i = is; i <= ie; ++i) {sweepq(m, k, j, i, a);}
+        for (int i = ie; i >= is; --i) {sweepq(m, k, j, i, a);}
+      }, Kokkos::Sum<Real>(nv));
+#if MPI_PARALLEL_ENABLED
+      MPI_Allreduce(MPI_IN_PLACE, &nv, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+      if (!(nv > 0.0)) {break;}
+      ncell += nv;
+      nround = r + 1;
+      ImplicitKrylovHalo(ca);
+      zl_halos[0] += 1.0;
+    }
+  }
+  for (int r = 0; r < (swp ? 0 : 4096); ++r) {   // until no cell is newly limited
     Real nv[2] = {0.0, 0.0};
     Real nl[2] = {0.0, 0.0};
     for (int s = 0; s < (zlr > 0 ? zlr : 1); ++s) {
