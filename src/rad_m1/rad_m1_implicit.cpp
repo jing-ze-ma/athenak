@@ -3281,7 +3281,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
   Kokkos::realloc(f0x1, nmb, ncells3, ncells2, ncells1+1);
   Kokkos::deep_copy(f0x1, 0.0);
-  Kokkos::realloc(f0x1n, nmb, ncells3, ncells2, ncells1+1);
+  // (hgmem: scheme = clean: f0x*n, gcz*, cs2f*, thin_frz and ktn are ImplicitSolve's,
+  // not made; the keys that name them have no effect there)
+  if (!clean) {Kokkos::realloc(f0x1n, nmb, ncells3, ncells2, ncells1+1);}
   Kokkos::deep_copy(f0x1n, 0.0);
   // rc18-1110: without the half-range beam the stored flux has no blend: inert (echoed)
   // aphll-time-1110: also the berthon | blend AP-HLL faces (the lagged reduced flux of
@@ -3369,11 +3371,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       }
     }
   }
-  if (impl_gas_src_cons) {
+  if (impl_gas_src_cons && !clean) {
     Kokkos::realloc(gcz1, nmb, ncells3, ncells2, ncells1+1);
     Kokkos::deep_copy(gcz1, 0.0);
   }
-  if (impl_gas_src_cs2 || impl_rinr_solve) {   // consfix-1011: dA face means in F0^n
+  if ((impl_gas_src_cs2 || impl_rinr_solve) && !clean) {   // consfix-1011: dA face means in F0^n
     Kokkos::realloc(cs2f1, nmb, ncells3, ncells2, ncells1+1);
     Kokkos::deep_copy(cs2f1, 0.0);
     if (trans_on) {
@@ -3694,7 +3696,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   if (impl_cmi) {iw_cmi = niw; niw += 1;}   // cmemimpl-1112: the donor factor lam
   MemArenaInit(pin, nmb, clean ? niw_clean : niw, ncells3, ncells2, ncells1);
-  if (impl_thin_frz > 0.0) {
+  if (impl_thin_frz > 0.0 && !clean) {
     Kokkos::realloc(thin_frz, nmb, ncells3, ncells2, ncells1);
     Kokkos::deep_copy(thin_frz, 0.0);
   }
@@ -3713,7 +3715,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       ImplFatal("<rad_m1>/implicit_face_opac_n needs ONE MeshBlock along x1 (the T^n "
                 "snapshot has no x1 halo)");
     }
-    Kokkos::realloc(ktn, nmb, ncells3, ncells2, ncells1);
+    if (!clean) {Kokkos::realloc(ktn, nmb, ncells3, ncells2, ncells1);}
     Kokkos::deep_copy(ktn, 0.0);
   }
   if (impl_ctrelax > 0.0) {
@@ -3739,7 +3741,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (trans_on) {
     Kokkos::realloc(f0x2, nmb, ncells3, ncells2+1, ncells1);
     Kokkos::deep_copy(f0x2, 0.0);
-    Kokkos::realloc(f0x2n, nmb, ncells3, ncells2+1, ncells1);
+    if (!clean) {Kokkos::realloc(f0x2n, nmb, ncells3, ncells2+1, ncells1);}
     Kokkos::deep_copy(f0x2n, 0.0);
     if (impl_hr_cmem) {
       Kokkos::realloc(fax2, nmb, ncells3, ncells2+1, ncells1);
@@ -3748,18 +3750,18 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (trans_x3) {
       Kokkos::realloc(f0x3, nmb, ncells3+1, ncells2, ncells1);
       Kokkos::deep_copy(f0x3, 0.0);
-      Kokkos::realloc(f0x3n, nmb, ncells3+1, ncells2, ncells1);
+      if (!clean) {Kokkos::realloc(f0x3n, nmb, ncells3+1, ncells2, ncells1);}
       Kokkos::deep_copy(f0x3n, 0.0);
       if (impl_hr_cmem) {
         Kokkos::realloc(fax3, nmb, ncells3+1, ncells2, ncells1);
         Kokkos::deep_copy(fax3, 0.0);
       }
-      if (impl_gas_src_cons) {
+      if (impl_gas_src_cons && !clean) {
         Kokkos::realloc(gcz3, nmb, ncells3+1, ncells2, ncells1);
         Kokkos::deep_copy(gcz3, 0.0);
       }
     }
-    if (impl_gas_src_cons) {
+    if (impl_gas_src_cons && !clean) {
       Kokkos::realloc(gcz2, nmb, ncells3, ncells2+1, ncells1);
       Kokkos::deep_copy(gcz2, 0.0);
     }
