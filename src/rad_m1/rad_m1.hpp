@@ -3211,12 +3211,10 @@ class RadiationM1 {
   // in Patankar form (CleanStagKPos); clean_stag_xpat (default off): the exchange's
   // removal -r hcke E_k past its share of the row in Patankar form (CleanRightHandSide)
   bool cln_kpos = false, cln_xpat = false, cln_kq_on = false;
-  int cln_kqs = -1;             // (3 face slots: the moved flux M, qL >= 0, qR <= 0)
+  bool cln_xtnorm = false, cln_xtcons = false;   // (CleanFirstIterate, CleanSolve)
   Real cln_kc1 = 0.0, cln_kc2 = 0.0;   // (the stage's c1, c2 of t2pf1, t2pf2)
   DvceArray1D<Real> cln_kcnt;   // (p capped, xpat rows: the last pass; their sums)
-  Real cln_kqcap = 0.0, cln_kqcaps = 0.0;   // (faces at q = c: last pass, sum)
   void CleanStagKPos();
-  void CleanStagKQ();
   void CleanStagKEnd();
   int cln_fdg = -1;             // staggered bracket: face slot of its lagged flux DG
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells

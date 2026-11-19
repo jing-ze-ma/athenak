@@ -162,7 +162,6 @@ constexpr int CLF_DB = CLF_N + 8;   // clean_stag_vimp: drag share b = beta/(1 +
 constexpr int CLF_DQ = CLF_N + 9;   //   the face momentum Q = G - c^2 dm_f of the iterate
 constexpr int CLF_KD = CLF_N + 10;  // clean_stag_fkin: the slopes K1, K2 of d (2)
 constexpr Real CLN_KPOS_TH = 0.1;   // clean_stag_kpos: E_old at least this share of E_s
-constexpr int CLN_KPOS_ROUNDS = 16;  //  (rounds with the current inflows, then the last)
 constexpr Real CLN_MEMUP = 1.0/6.0;  // clean_stag_gflux: a memory outflow above this
                                      // share of the donor's E_old goes upwind
 
@@ -215,7 +214,7 @@ constexpr int CLW_BW = 51;   //   preconditioner input (CleanBiCGStab)
 constexpr int CLW_PW = 52;
 constexpr int CLW_N = 53;
 constexpr int CLW_KF = 53;   // staggered clean_stag_kpos: E of the old vector as formed,
-constexpr int CLW_KM = 54;   //   the cell removal of the increment moved implicit (>= 0),
+constexpr int CLW_KM = 54;   //   the destruction of the increment moved implicit (>= 0),
 constexpr int CLW_PD = 55;   //   with clean_stag_xpat the rows' Patankar diagonal
 constexpr int CLW_NK = 56;   //   (allocated only with clean_stag_kpos / xpat)
 
@@ -297,8 +296,7 @@ struct CleanArgs {
   int xq;                      // staggered, clean_stag_xdonor: face slots qL, qR of the
                                // lagged fluxes' donor part, their explicit part, C(E_k)
                                // (-1: the central cross flux)
-  int kq;                      // staggered, clean_stag_kpos: face slots of the moved
-                               // increment flux M and its qL, qR (-1: none)
+  bool kp;                     // staggered, clean_stag_kpos: the moved destruction KM
   bool pd;                     // staggered, kpos / xpat: the rows' diagonal CLW_PD
   bool xlag, xsrc;             //   lag: explicit up to the donor's share; xsrc: the
                                //   face sources too
@@ -963,11 +961,6 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
   if (x.xq >= 0 && !x.hi) {   // (the energy flux; F^H keeps the central form)
     al += x.fc[dir](m,x.xq,k,j,i);
     ar += x.fc[dir](m,x.xq+1,k,j,i);
-  }
-  // (clean_stag_kpos: the increment's moved flux M as q E_donor, CleanStagKPos)
-  if (x.kq >= 0 && !x.hi) {
-    al += x.fc[dir](m,x.kq+1,k,j,i);
-    ar += x.fc[dir](m,x.kq+2,k,j,i);
   }
 }
 
