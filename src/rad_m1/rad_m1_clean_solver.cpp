@@ -995,6 +995,49 @@ void RadiationM1::CleanApply(const int src, const int dst) {
       // two end planes of each direction)
       for (int ps = 0; ps < 2; ++ps) {
         if (ps == 1 && yov) CleanGhostFill(cln_w, CLW_L, 9, 2, 1);
+        const bool xon0 = x.multi_d && !(x.xq >= 0 && !x.hi);
+        if (ps == 1 || !xon0) {
+          // spdb-1119: the cln_xfe faces of every direction in ONE launch (were one per
+          // plane or direction, up to 9 per apply): pass 1 the end planes, pass 0 (no
+          // inner kernel) the inner faces; the same CleanFaceCross per face
+          const int ne[3] = {ie - is + 1, je - js + 1, ke - ks + 1};
+          Kokkos::Array<int, 7> c0;   // (segment s: faces c0[s] .. c0[s+1]-1 per block)
+          Kokkos::Array<int, 6> sd, sk0, sj0, si0, snj, sni;
+          int ns = 0;
+          c0[0] = 0;
+          for (int d = 0; d < x.nf; ++d) {
+            const int dk = (d == 2), dj = (d == 1), di = (d == 0);
+            for (int pl = 0; pl < (ps ? 2 : 1); ++pl) {
+              const int o = pl*ne[d];
+              const int k0 = ps ? ks + o*dk : ks + dk, k1 = ps ? (dk ? ks + o : ke) : ke;
+              const int j0 = ps ? js + o*dj : js + dj, j1 = ps ? (dj ? js + o : je) : je;
+              const int i0 = ps ? is + o*di : is + di, i1 = ps ? (di ? is + o : ie) : ie;
+              sd[ns] = d;
+              sk0[ns] = k0;
+              sj0[ns] = j0;
+              si0[ns] = i0;
+              snj[ns] = j1 - j0 + 1;
+              sni[ns] = i1 - i0 + 1;
+              c0[ns+1] = c0[ns] + (k1 - k0 + 1)*snj[ns]*sni[ns];
+              ++ns;
+            }
+          }
+          const int nper = c0[ns];
+          Kokkos::parallel_for("cln_xfe", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                               pmy_pack->nmb_thispack*nper),
+          KOKKOS_LAMBDA(const int t) {
+            const int m = t/nper;
+            int c = t - m*nper, q = 0;
+            while (c >= c0[q+1]) {++q;}
+            c -= c0[q];
+            const int i = si0[q] + c % sni[q];
+            c /= sni[q];
+            const int j = sj0[q] + c % snj[q];
+            const int k = sk0[q] + c/snj[q];
+            xf(m,sd[q],k,j,i) = CleanFaceCross(*px, src, sd[q], m, k, j, i);
+          });
+          continue;
+        }
         for (int d = 0; d < x.nf; ++d) {
           const int dk = (d == 2), dj = (d == 1), di = (d == 0);
           const int ne[3] = {ie - is + 1, je - js + 1, ke - ks + 1};
