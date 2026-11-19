@@ -2346,7 +2346,8 @@ void RadiationM1::CleanCellDiagNeg() {
   auto u0f = FluidRef::Get(pmy_pack).u0;
   DvceArray4D<Real> dd("clc_diag_rho", u0f.extent(0), u0f.extent(2), u0f.extent(3),
                        u0f.extent(4));
-  Kokkos::deep_copy(dd, Kokkos::subview(u0f, Kokkos::ALL, IDN, Kokkos::ALL, Kokkos::ALL,
+  const int idn = static_cast<int>(IDN);
+  Kokkos::deep_copy(dd, Kokkos::subview(u0f, Kokkos::ALL, idn, Kokkos::ALL, Kokkos::ALL,
                                         Kokkos::ALL));
   auto rho = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dd);
   constexpr int kNd = 14, kNx = 16;     // log10 rho bins (< -17 .. >= -5), mesh x1 bins
@@ -2450,7 +2451,8 @@ void RadiationM1::CleanCellDiagNb() {
   auto u0f = FluidRef::Get(pmy_pack).u0;
   DvceArray4D<Real> dd("clc_diag_rho", u0f.extent(0), u0f.extent(2), u0f.extent(3),
                        u0f.extent(4));
-  Kokkos::deep_copy(dd, Kokkos::subview(u0f, Kokkos::ALL, IDN, Kokkos::ALL, Kokkos::ALL,
+  const int idn = static_cast<int>(IDN);
+  Kokkos::deep_copy(dd, Kokkos::subview(u0f, Kokkos::ALL, idn, Kokkos::ALL, Kokkos::ALL,
                                         Kokkos::ALL));
   auto rho = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dd);
   auto &gid = pmy_pack->pmb->mb_gid.h_view;
