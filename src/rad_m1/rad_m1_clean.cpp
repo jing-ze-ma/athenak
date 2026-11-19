@@ -619,10 +619,10 @@ void RadiationM1::CleanCsGeometry() {
     Kokkos::realloc(cln_ga[d], nmb1 + 1, n3, n2, n1);
     Kokkos::realloc(cln_gd[d], nmb1 + 1, n3, n2, n1);
   }
-  Kokkos::realloc(cln_gn, nmb1 + 1, CLG_NV, n3, n2, n1);
+  // (all CLG_NV in gn first: the exchanges, the distances; then into cln_gn's two arrays)
+  DvceArray5D<Real> gn("cln_csgn", nmb1 + 1, CLG_NV, n3, n2, n1);
   auto ga0 = cln_ga[0], ga1 = cln_ga[1], ga2 = cln_ga[2];
   auto gd0 = cln_gd[0], gd1 = cln_gd[1], gd2 = cln_gd[2];
-  auto gn = cln_gn;
   auto size = pmy_pack->pmb->mb_size.d_view;
   auto pnl = pmy_pack->pmb->mb_panel.d_view;
   auto rf = pmy_pack->pcoord->xx1f;
@@ -704,8 +704,8 @@ void RadiationM1::CleanCsGeometry() {
       gn(m,CLG_E+3+c,k,j,i) = e2[c];
     }
   });
-  CleanGhostFill(cln_gn, CLG_X, 6, false);
-  CleanGhostFill(cln_gn, CLG_F, 11, false);
+  CleanGhostFill(gn, CLG_X, 6, false);
+  CleanGhostFill(gn, CLG_F, 11, false);
   par_for("cln_csdist", DevExeSpace(), 0, nmb1, 1, n3-1, 1, n2-1, 1, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     for (int d = 0; d < 3; ++d) {
@@ -718,6 +718,37 @@ void RadiationM1::CleanCsGeometry() {
       gd(m,k,j,i) = std::sqrt(s);
     }
   });
+  // the directions of CleanGeo::a are the same in every cell of an x1 range of a line,
+  // to the bit
+  const int is = indcs.is, ie = indcs.ie;
+  Kokkos::realloc(cln_gn.r, nmb1 + 1, CLG_NV - CLG_NA, n3, n2, n1);
+  Kokkos::realloc(cln_gn.a, nmb1 + 1, CLG_NA, n3, n2, 3);
+  cln_gn.is = is;
+  cln_gn.ie = ie;
+  auto gr = cln_gn.r;
+  auto gt = cln_gn.a;
+  int nbad = 0;
+  Kokkos::parallel_reduce("cln_csgeo2", Kokkos::MDRangePolicy<Kokkos::Rank<4>, DevExeSpace>(
+      {0, 0, 0, 0}, {nmb1 + 1, n3, n2, n1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, int &nb) {
+    for (int n = 0; n < CLG_NV; ++n) {
+      const int s = CleanGeo::Slot(n);
+      const int c = (i < is) ? 0 : ((i > ie) ? 2 : 1), i0 = (c == 0) ? 0 : ((c == 1) ? is
+                                                                        : ie + 1);
+      const Real v = gn(m,n,k,j,i), v0 = gn(m,n,k,j,i0);
+      if (s < 0) {
+        gr(m,-1-s,k,j,i) = v;
+      } else if (v != v0 || Kokkos::signbit(v) != Kokkos::signbit(v0)) {
+        nb += 1;
+      } else if (i == i0) {
+        gt(m,s,k,j,c) = v;
+      }
+    }
+  }, nbad);
+  if (nbad > 0) {
+    CleanFatal("<rad_m1> clean cubed sphere: " + std::to_string(nbad) +
+               " geometry directions change along x1 (CleanGeo)");
+  }
 }
 
 //----------------------------------------------------------------------------------------

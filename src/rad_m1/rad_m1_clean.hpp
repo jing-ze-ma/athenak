@@ -346,7 +346,7 @@ struct CleanArgs {
   // the hydro's radius vector; vol, area, dxf and x1v, x1f as above, g the geometry
   // (CLG_*) of CleanCsGeometry
   bool cub;
-  DvceArray5D<Real> g;
+  CleanGeo g;
   // the conserved gas energy also holds d phi (<hydro>/etotgrav) and |B|^2/2 (<mhd>)
   bool etg, mhd;
   DvceArray4D<Real> phi, emag;
@@ -394,19 +394,6 @@ constexpr int CLQ_S = 4;     // slopes of S along x1, x2, x3 (+3)
 constexpr int CLQ_W = 7;     // 1 - eps
 constexpr int CLQ_C = 8;     // curvatures Q of S along x1, x2, x3 (+3)
 constexpr int CLQ_N = 11;
-
-// cubed-sphere geometry (array cln_gn), Cartesian components
-constexpr int CLG_N = 0;     // unit normal of the lower face along dir: CLG_N + 3 dir
-constexpr int CLG_X = 9;     // cell centroid
-constexpr int CLG_R = 12;    // r_hat of the cell centre (the hydro's, hydro_am.hpp)
-constexpr int CLG_E = 15;    // the hydro's unit panel tangents e_xi, e_eta (+3)
-constexpr int CLG_M = 21;    // first moment int x dA of the lower x2, x3 face (+3)
-constexpr int CLG_F = 27;    // staggered, exchanged (a seam ghost's are its owner's): the
-                             // normal of the lower x2 face, the volume (+3), the normal
-                             // of the lower x3 face (+4) and the MeshBlock gid (+7)
-constexpr int CLG_A = 35;    // staggered, exchanged: the mean area of the cell's two
-                             // faces of family x1, x2, x3 (+2), CleanStagArea
-constexpr int CLG_NV = 38;
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanGasEint
@@ -570,7 +557,7 @@ constexpr int CLS_N = 10;
 //! directions), for <hydro>/rad_signal_speed
 
 KOKKOS_INLINE_FUNCTION
-Real CleanDuu(const DvceArray5D<Real> &s, const DvceArray5D<Real> &g, const int gs,
+Real CleanDuu(const DvceArray5D<Real> &s, const CleanGeo &g, const int gs,
               const int m, const int k, const int j, const int i) {
   Real d = 0.0;
   for (int a = 0; a < 3; ++a) {

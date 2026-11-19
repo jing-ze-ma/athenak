@@ -68,6 +68,47 @@ struct CleanW {
   }
 };
 
+// cubed-sphere geometry (array cln_gn), Cartesian components
+constexpr int CLG_N = 0;     // unit normal of the lower face along dir: CLG_N + 3 dir
+constexpr int CLG_X = 9;     // cell centroid
+constexpr int CLG_R = 12;    // r_hat of the cell centre (the hydro's, hydro_am.hpp)
+constexpr int CLG_E = 15;    // the hydro's unit panel tangents e_xi, e_eta (+3)
+constexpr int CLG_M = 21;    // first moment int x dA of the lower x2, x3 face (+3)
+constexpr int CLG_F = 27;    // staggered, exchanged (a seam ghost's are its owner's): the
+                             // normal of the lower x2 face, the volume (+3), the normal
+                             // of the lower x3 face (+4) and the MeshBlock gid (+7)
+constexpr int CLG_A = 35;    // staggered, exchanged: the mean area of the cell's two
+                             // faces of family x1, x2, x3 (+2), CleanStagArea
+constexpr int CLG_NV = 38;
+
+//! \struct CleanGeo
+//! \brief cln_gn (CLG_*) in two arrays: the components that do not change along x1 (the
+//! directions: CLG_N, CLG_R, CLG_E and the exchanged normals CLG_F, CLG_F + 4..6) once per
+//! (m,k,j) and x1 range (the low ghosts, the MeshBlock's cells, the high ghosts: a corner
+//! ghost's exchanged ones are another cell's) in a, the others (CLG_X, CLG_M, the volume
+//! CLG_F + 3, the gid CLG_F + 7 and CLG_A) in r, CleanCsGeometry
+
+struct CleanGeo {
+  DvceArray5D<Real> r, a;
+  int is = 0, ie = 0;
+  KOKKOS_FORCEINLINE_FUNCTION
+  static int Slot(const int n) {   // a: n >= 0, r: -1 - n
+    if (n < CLG_X) return n;
+    if (n < CLG_R) return -1 - (n - CLG_X);
+    if (n < CLG_M) return n - 3;
+    if (n < CLG_F) return -1 - (n - CLG_M + 3);
+    if (n == CLG_F + 3) return -10;
+    if (n >= CLG_F + 7) return -1 - (n - CLG_F + 3);
+    return n - CLG_F + 18 - (n > CLG_F + 3);
+  }
+  KOKKOS_FORCEINLINE_FUNCTION
+  Real operator()(const int m, const int n, const int k, const int j, const int i) const {
+    const int s = Slot(n);
+    return (s >= 0) ? a(m,s,k,j,(i < is) ? 0 : ((i > ie) ? 2 : 1)) : r(m,-1-s,k,j,i);
+  }
+};
+constexpr int CLG_NA = 24;   // components of CleanGeo::a
+
 // indices of the evolved moments in u0(m,n,k,j,i)
 constexpr int M1_E  = 0;
 constexpr int M1_F1 = 1;
@@ -3446,7 +3487,7 @@ class RadiationM1 {
   bool cln_vzero = false;       // the iterates keep the gas momentum (steady start)
   // cubed sphere: face areas, centroid distances across the faces, normals and centroids
   DvceArray4D<Real> cln_ga[3], cln_gd[3];
-  DvceArray5D<Real> cln_gn;
+  CleanGeo cln_gn;
   DvceArray3D<Real> cln_tg;   // spherical polar: CleanArgs::tg
   struct CleanHalo {            // ghost exchange of nc components: scratch array and
     DvceArray5D<Real> a, ca;    // its coarse dummy

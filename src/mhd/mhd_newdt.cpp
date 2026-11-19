@@ -103,7 +103,8 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
   // is >= the gas fast speed and -> it in thin cells (tau_d -> 0); at B = 0 it is the
   // hydro signal speed.  Off: no change (the gas fast speed, bitwise).
   const bool rss_ = rad_signal_speed;
-  DvceArray5D<Real> erad_, kopc_, tten_, vcel_, gn_;
+  DvceArray5D<Real> erad_, kopc_, tten_, vcel_;
+  radm1::CleanGeo gn_;
   int rss_mode = 0;          // 0 isotropic E/3, 1 M1Chi, 2 tau_ten, 3 vet_sc, 4 vet full
   int rss_kind = 0;
   Real rss_cl = 1.0;

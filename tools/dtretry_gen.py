@@ -32,7 +32,7 @@ SKIP_RE = [r'^std::thread', r'^std::future', r'Timer$', r'^MPI_', r'DevExeSpace'
 # pos_un_drop: the positivity report's sum over discarded attempts (CounterKeep::Restore adds after the checkpoint)
 SKIP_NAMES = {'hi_seq', 'vgd_ipc_seq', 'acc_nccl', 'cln_hbuf', 'cln_halo', 'cln_hpb', 'cln_hdl',
               'vgd_es2_made', 'vgd_esid', 'vgd_est', 'pos_un_drop'}
-NESTED = ['VgdTabHost', 'VgdTabDev', 'M1OpacTab', 'CleanW']   # structs holding Views
+NESTED = ['VgdTabHost', 'VgdTabDev', 'M1OpacTab', 'CleanW', 'CleanGeo']   # structs holding Views
 
 def ast(header, name):
     tu = '#include "athena.hpp"\n#include "mesh/mesh.hpp"\n#include "%s"\n' % header

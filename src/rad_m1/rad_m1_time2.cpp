@@ -4194,7 +4194,8 @@ void RadiationM1::RstFingerprint(const char *tag) {
   M1Fp("cln_mc", cln_mc, cy); M1Fp("cln_m1", cln_m1, cy); M1Fp("cln_fvi", cln_fvi, cy);
   M1Fp("cln_fvq", cln_fvq, cy); M1Fp("cln_fvw", cln_fvw, cy);
   M1Fp("cln_fvd", cln_fvd, cy);
-  M1Fp("cln_opb", cln_opb, cy); M1Fp("cln_lf", cln_lf, cy); M1Fp("cln_gn", cln_gn, cy);
+  M1Fp("cln_opb", cln_opb, cy); M1Fp("cln_lf", cln_lf, cy); M1Fp("cln_gn", cln_gn.r, cy);
+  M1Fp("cln_gn.a", cln_gn.a, cy);
   M1Fp("cln_rl", cln_rl, cy); M1Fp("cln_rr", cln_rr, cy); M1Fp("cln_rpd", cln_rpd, cy);
   M1Fp("cln_rnew", cln_rnew, cy);
   if (dbg_rst_fp_dump && vgd_cs.span() > 0) {
