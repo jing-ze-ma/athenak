@@ -3324,7 +3324,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
   // started, the last one, which x1's F and dissipation term overlap)
   auto yfill = [&](const int part) {
     if (cub) {
-      CleanGhostFill(cln_v, 9, 6);
+      CleanGhostFill(cln_v, 9, 6, true, 0, 1);   // (CleanFLine reads the faces' own cells)
       return;
     }
     if (x.nf == 3) CleanGhostDefer(cln_w, CLW_S, 1);
@@ -3421,7 +3421,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
       });
       if (dir == x.nf - 1) {
         if (cub) {
-          CleanGhostFill(cln_v, 0, 18);
+          CleanGhostFill(cln_v, 0, 18, true, 0, 1);
         } else {
           CleanGhostDefer(cln_w, CLW_L, 3*x.nf);
           yfill(0);
@@ -3959,7 +3959,7 @@ void RadiationM1::CleanStagFCsShared() {
       v(m,9+2*q+1,k,j,i) = x.fc[q](m,CLF_N+2,k+(q == 2),j+(q == 1),i+(q == 0));
     }
   });
-  CleanGhostFill(cln_v, 9, 6);
+  CleanGhostFill(cln_v, 9, 6, true, 0, 1);
 }
 
 //----------------------------------------------------------------------------------------
