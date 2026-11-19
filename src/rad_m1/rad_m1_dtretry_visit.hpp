@@ -1082,7 +1082,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("t2_inckc_hn", t2_inckc_hn);
   v.value("t2_inckc_ke", t2_inckc_ke);
   v.value("t2_inckc_pm", t2_inckc_pm);
-  v.view("t2kc_dp", t2kc_dp);
   v.value("t2_inckc_calls", t2_inckc_calls);
   v.value("t2_ike", t2_ike);
   v.value("t2_ike_de", t2_ike_de);
