@@ -1079,7 +1079,7 @@ void RadiationM1::CleanPreconditionerSetup() {
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     auto fc = x.fc[dir];
-    CleanFor("cln_fwc", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    CleanFor<0, 3>("cln_fwc", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       CLEAN_HIPX(const CleanArgs &x = *pxw;)   // (in device memory: no per-thread copy)
       CleanFaceWeights(x, dir, m, k, j, i, fc(m,CLF_QL,k,j,i), fc(m,CLF_QL+1,k,j,i));
@@ -1092,7 +1092,7 @@ void RadiationM1::CleanPreconditionerSetup() {
   const CleanArgs *px = CleanDevArgs(x, 0);
   if (cln_stst) {   // (clean_stag_stencil: the operator's rows, CleanApply)
     auto st = cln_st;
-    CleanFor("cln_stencil", nmb1, ks, ke, js, je, is, ie,
+    CleanFor<0, 3>("cln_stencil", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
       Real c[CLN_ST];

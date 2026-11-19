@@ -52,7 +52,14 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
   const bool kvtally = eos.dfloor_keep_velocity && !eos.defer_cons_floors;
   Real fdm_ = 0.0, fde_ = 0.0;   // floor ledger (EventCounters flr_*_v)
   const auto fvw_ = FloorVol();
-  Kokkos::parallel_reduce("hyd_c2p_gen",Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+  // (CUDA: LaunchBounds<256, 2> as general_hyd.cpp, same blocks and grid: bitwise; HIP
+  // keeps its policy, whose block size the sums depend on)
+#if defined(KOKKOS_ENABLE_CUDA)
+  using C2pPol = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 2>>;
+#else
+  using C2pPol = Kokkos::RangePolicy<>;
+#endif
+  Kokkos::parallel_reduce("hyd_c2p_gen", C2pPol(DevExeSpace(), 0, nmkji),
   KOKKOS_LAMBDA(const int &idx, int &sumd, int &sume, int &sumt, int &sumv,
                 int &sumc, int &sumts, Real &sumde, Real &sumvde, Real &sumdke, Real &sdm_,
                 Real &sde_) {

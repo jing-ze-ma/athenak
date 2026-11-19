@@ -76,6 +76,7 @@
 #include "coordinates/coordinates.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/m1_fluid.hpp"
+#include "rad_m1/rad_m1_parfor.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_vetseg.hpp"
 #include "rad_m1/rad_m1_vetsrc.hpp"
@@ -672,7 +673,7 @@ void RadiationM1::VetLatSweep(const int stage) {
   const Real cl = c_light, ar = arad, efl = e_floor;
   const bool srcep = vlat_src_ep;   // vet_gd_rebuild_every: the Picard iterate's E
   const bool cvx = clean && cln_srccvx && !srx;   // clean_source_convex
-  par_for("m1_vlat_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  par_for_lb("m1_vlat_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real chi = fmax(iw_(m,M1_IW_KT,k,j,i), 1.0e-300);
     Real e = fmax((noes && !srcep) ? ur_(m,M1_E,k,j,i)

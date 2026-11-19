@@ -67,14 +67,16 @@ constexpr int kCleanForMb = 3;
 #else
 constexpr int kCleanForMb = 2;
 #endif
-template <int kHipMb = 0, typename F>
+// (kCudaMb: a pass's own CUDA blocks per SM, measured per kernel on A100 R136 (spdc):
+// cln_fwc, cln_stencil, cln_beta at 3 (-2.3, -1.0, -0.4 ms/cycle))
+template <int kHipMb = 0, int kCudaMb = kCleanForMb, typename F>
 inline void CleanFor(const char *name, const int nmb1, const int ks, const int ke,
                      const int js, const int je, const int is, const int ie,
                      const F &f) {
 #if defined(KOKKOS_ENABLE_HIP)
   constexpr int mb = kHipMb;
 #elif defined(KOKKOS_ENABLE_CUDA)
-  constexpr int mb = kCleanForMb;
+  constexpr int mb = kCudaMb;
 #else
   constexpr int mb = 0;
 #endif

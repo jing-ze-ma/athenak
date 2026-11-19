@@ -2615,7 +2615,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
 
   if (x.feedback) {
     CLEAN_HIPX(const CleanArgs *pxb = CleanDevArgs(x, 0);)
-    CleanFor("cln_beta", nmb1, ks, ke, js, je, is, ie,
+    CleanFor<0, 3>("cln_beta", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       CLEAN_HIPX(const CleanArgs &x = *pxb;)   // (in device memory: no per-thread copy)
       Real p[3];
@@ -2958,7 +2958,11 @@ Real RadiationM1::CleanNewtonUpdate() {
   const bool pdx = x2 && cln_xpat, pxe = xte && cln_xpat;
   const bool kpg = cln_kq_on;   // (clean_stag_kpos: the gas row's pd_g X)
   Real change = 0.0, femax = 0.0, ermax = 0.0, xcl = 0.0;
-  Kokkos::parallel_reduce("cln_newton", CleanRpLb2(DevExeSpace(), 0, nmb*nkji),
+  // (CUDA: 4 blocks of 256 per SM, A100 R136 -1.5 ms/cycle; the reduction keeps its
+  // blocks and grid: bitwise)
+  using NewtonRp =
+      Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, CleanLbMb(4)>>;
+  Kokkos::parallel_reduce("cln_newton", NewtonRp(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &dmax, Real &fe_max, Real &er_max, Real &xc) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;

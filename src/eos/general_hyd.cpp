@@ -81,13 +81,10 @@ void GeneralHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
   }
 
   int nfloord_=0, nfloore_=0, nfloort_=0, ntclamp_=0;
-  // on HIP LaunchBounds<256, 2> keeps the body in registers; the integer sums are
-  // independent of the block size
-#if defined(KOKKOS_ENABLE_HIP)
+  // LaunchBounds<256, 2>: on HIP keeps the body in registers, on CUDA caps it at 128
+  // (228 left 1 block per SM); Kokkos' reduction keeps 256-thread blocks and its grid
+  // (concurrency/256), so the sums are unchanged (bitwise)
   using C2pPol = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 2>>;
-#else
-  using C2pPol = Kokkos::RangePolicy<>;
-#endif
   Real fdm_ = 0.0, fde_ = 0.0;   // floor ledger (EventCounters flr_*_v)
   const auto fvw_ = FloorVol();
   Kokkos::parallel_reduce("hyd_c2p_gen", C2pPol(DevExeSpace(), 0, nmkji),
