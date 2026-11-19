@@ -327,7 +327,7 @@ void RadiationM1::CleanInit() {
   // (the staggered bracket's lagged flux DG in one more slot, CleanStagBracket)
   cln_fdg = (!cln_cell && cln_consist) ? nfc : -1;
   cln_xqs = cln_xd ? nfc + (cln_fdg >= 0) : -1;   // (clean_stag_xdonor's q)
-  const int nfx = nfc + (cln_fdg >= 0) + (cln_xd ? 1 : 0);
+  const int nfx = nfc + (cln_fdg >= 0) + (cln_xd ? 4 : 0);
   Kokkos::realloc(cln_fc1, nmb, nfx, n3, n2, n1);
   Kokkos::realloc(cln_fc2, nmb, nfx, n3, n2, n1);
   Kokkos::realloc(cln_fc3, nmb, nfx, n3, n2, n1);
@@ -1103,6 +1103,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
           (cln_yres == M1_YRES_POST || inl == 0 || nit != 0)) {
         CleanCellResidual();
       }
+      if (cln_xsw && !cell && nit >= 0) CleanStagXSweep();
       if (cln_xd && !cell) CleanStagXCount(inl);
       nit_sum += std::abs(nit);
       ++nsolve;
@@ -1599,32 +1600,50 @@ void RadiationM1::CleanStagXDonor() {
   if (pmy_pack->pmesh->use_cubed_sphere) CleanStagCsLateral(CLW_EK);
   CleanArgs x = CleanMakeArgs();   // (x.xq = -1: the central cross flux)
   const int xq = cln_xqs;
-  Real ncap = 0.0;
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     auto fc = x.fc[dir];
-    // (faces outside the active range: none, every solve)
-    Kokkos::deep_copy(Kokkos::subview(fc, Kokkos::ALL, xq, Kokkos::ALL, Kokkos::ALL,
-                                      Kokkos::ALL), 0.0);
-    Real nc = 0.0;
-    Kokkos::parallel_reduce("cln_xdonor", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-        DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + dk + 1, je + dj + 1, ie + di + 1}),
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
-      const Real cf = CleanFaceCross(x, CLW_EK, dir, m, k, j, i);
-      Real q = 0.0;
-      if (cf != 0.0) {
-        const Real ed = (cf > 0.0) ? x.w(m,CLW_EK,k-dk,j-dj,i-di) : x.w(m,CLW_EK,k,j,i);
-        const bool cap = !(fabs(cf) < x.c*ed);
-        q = cap ? x.c : fabs(cf)/ed;
-        if (cf < 0.0) q = -q;
-        if (cap) a += 1.0;
-      }
-      fc(m,xq,k,j,i) = q;
-    }, Kokkos::Sum<Real>(nc));
-    ncap += nc;
+    // (faces outside the active range: none, every solve; the pass's split,
+    // CleanStagXSplit in the right-hand side, sets the active ones)
+    Kokkos::deep_copy(Kokkos::subview(fc, Kokkos::ALL, std::make_pair(xq, xq + 4),
+                                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), 0.0);
+    par_for("cln_xdonor", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      fc(m,xq+3,k,j,i) = CleanFaceCross(x, CLW_EK, dir, m, k, j, i);
+    });
   }
-  cln_xd_ncap = CleanReduce(ncap, false);
   cln_xd_on = true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagXSweep
+//! \brief clean_stag_xsweep: one line-Jacobi sweep from the linear solve's X,
+//!   X = X+ + L^{-1} (B - A X+),  X+ = max(X, 0),
+//! L the x1-line tridiagonal part of A with A's diagonal (CleanPreconditionerSetup).  A
+//! an M-matrix (clean_stag_xdonor), A = L - N is a regular splitting (L^{-1} >= 0,
+//! N >= 0), so X = L^{-1} (B + N X+) >= 0 where B >= 0, and the sweep contracts the
+//! error of the solution.
+
+void RadiationM1::CleanStagXSweep() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto w = cln_w;
+  par_for("cln_xsw0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    w(m,CLW_V,k,j,i) = fmax(w(m,CLW_X,k,j,i), 0.0);
+  });
+  CleanApply(CLW_V, CLW_S);
+  par_for("cln_xsw1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    w(m,CLW_R,k,j,i) = w(m,CLW_B,k,j,i) - w(m,CLW_S,k,j,i);
+  });
+  CleanStagLineSolve(CleanStagLevel(0), CLW_R, CLW_Z, -1);
+  par_for("cln_xsw2", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    w(m,CLW_X,k,j,i) = w(m,CLW_V,k,j,i) + w(m,CLW_Z,k,j,i);
+  });
 }
 
 //----------------------------------------------------------------------------------------
@@ -1667,12 +1686,33 @@ void RadiationM1::CleanStagXCount(const int inl) {
   nbx = CleanReduce(nbx, false);
   neo = CleanReduce(neo, false);
   nsd = CleanReduce(nsd, false);
+  // (faces: with a donor part, at the cap c)
+  Real nd = 0.0, ncp = 0.0;
+  for (int dir = 0; dir < x.nf && cln_xd_on; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    auto fc = x.fc[dir];
+    const int xq = cln_xqs;
+    const Real c = x.c;
+    Real a0 = 0.0, a1 = 0.0;
+    Kokkos::parallel_reduce("cln_xfaces", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+        DevExeSpace(), {0, ks, js, is},
+        {pmy_pack->nmb_thispack, ke + dk + 1, je + dj + 1, ie + di + 1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a, Real &b) {
+      const Real ql = fc(m,xq,k,j,i), qr = fc(m,xq+1,k,j,i);
+      if (ql != 0.0 || qr != 0.0) a += 1.0;
+      if (ql >= c || -qr >= c) b += 1.0;
+    }, Kokkos::Sum<Real>(a0), Kokkos::Sum<Real>(a1));
+    nd += a0;
+    ncp += a1;
+  }
+  cln_xd_ncap = CleanReduce(ncp, false);
+  nd = CleanReduce(nd, false);
   xmin = -CleanReduce(-xmin, true);
-  if (global_variable::my_rank == 0 && (nn > 0.0 || cln_xd_ncap > 0.0)) {
-    std::printf("CLEAN XDONOR cycle %d t2s %d pass %d xle0 %.0f minX/Eo %.3e cap %.0f "
-                "b<0 %.0f (with X<=0 %.0f; Eo<0 %.0f, Eo<hdivS %.0f)\n",
-                pmy_pack->pmesh->ncycle, t2_solve, inl, nn, xmin, cln_xd_ncap, nb, nbx, neo,
-                nsd);
+  if (global_variable::my_rank == 0 && (nn > 0.0 || nd > 0.0)) {
+    std::printf("CLEAN XDONOR cycle %d t2s %d pass %d xle0 %.0f minX/Eo %.3e donor %.0f "
+                "cap %.0f b<0 %.0f (with X<=0 %.0f; Eo<0 %.0f, Eo<hdivS %.0f)\n",
+                pmy_pack->pmesh->ncycle, t2_solve, inl, nn, xmin, nd, cln_xd_ncap, nb, nbx,
+                neo, nsd);
   }
 }
 
@@ -1873,6 +1913,9 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   xh.fs = true;
   const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
   const auto *peos = CleanDev(eos, 2);
+  CleanArgs xr = x;   // (clean_stag_xdonor: the face sources as they are)
+  xr.xq = -1;
+  const CleanArgs *pxr = CleanDevArgs(xr, 3);
   // each face's source once, for its two cells (CLF_SR), and with gflux its a E (CLF_PT)
   const int nf = x.nf;
   const bool af = x.feedback && x.gf && !x.cub;
@@ -1881,6 +1924,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
     const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
     for (int n = 0; n < nf; ++n) {
       if (i > ie+(n == 0) || j > je+(n == 1) || k > ke+(n == 2)) continue;
+      if (x.xq >= 0) CleanStagXSplit(x, *pxr, n, m, k, j, i);
       x.fc[n](m,CLF_SR,k,j,i) = CleanFaceSource(x, n, m, k, j, i);
       if (fh) x.fc[n](m,CLF_N,k,j,i) = CleanFaceFlux(xh, CLW_EK, n, m, k, j, i, true);
       if (af) x.fc[n](m,CLF_PT,k,j,i) = CleanStagAdvFace(x, xh, n, m, k, j, i);

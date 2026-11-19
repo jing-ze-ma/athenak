@@ -3196,13 +3196,15 @@ class RadiationM1 {
   bool CleanFbLocal();
   void CleanStagXDonor();
   void CleanStagXCount(const int inl);
+  void CleanStagXSweep();
   void CleanFbRestore();
   bool cln_srccvx = false;      // clean_source_convex: vet_scatter S between J and B
   bool cln_freal = false;       // clean_stag_freal: realisable sb, restart faces
   // clean_stag_xdonor (staggered, default off): the cross flux of the iterate as a
   // donor-cell coefficient of its face (CleanStagXDonor); its face slot, set in a solve
-  bool cln_xd = false, cln_xd_on = false;
-  int cln_xqs = -1;
+  bool cln_xd = false, cln_xd_on = false, cln_xlag = false, cln_xsrc = false;
+  bool cln_xsw = false;
+  int cln_xqs = -1;   // (4 slots: qL >= 0, qR <= 0, the lagged explicit flux, C(E_k))
   Real cln_xd_ncap = 0.0;
   int cln_fdg = -1;             // staggered bracket: face slot of its lagged flux DG
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells

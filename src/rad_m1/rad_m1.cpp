@@ -321,8 +321,22 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // the comoving part of sb at most 2 |beta| hc kE E_k and the faces of a restart from
     // the old scheme's file at most c E of their donor
     cln_freal = stag("clean_stag_freal", cln_gflux && cln_fsolve);
-    // clean_stag_xdonor (default off): the off-diagonal stress flux an M-matrix term
-    cln_xd = stag("clean_stag_xdonor", false);
+    // clean_stag_xdonor = off (default) | p1 | lag: the off-diagonal stress flux an
+    // M-matrix term (CleanStagXDonor); clean_stag_xsrc (default off): also the face
+    // sources past their explicit share; clean_stag_xsweep (default off): a monotone
+    // line-Jacobi sweep after each linear solve
+    if (!cln_cell) {
+      const std::string xd = pin->GetOrAddString("rad_m1","clean_stag_xdonor","off");
+      if (xd != "off" && xd != "p1" && xd != "lag") {
+        std::cout << "### FATAL ERROR <rad_m1>/clean_stag_xdonor = off | p1 | lag"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      cln_xd = (xd != "off");
+      cln_xlag = (xd == "lag");
+      cln_xsrc = cln_xd && stag("clean_stag_xsrc", false);
+      cln_xsw = cln_xd && stag("clean_stag_xsweep", false);
+    }
     // clean_stag_rayratio (default off): the bracket reads the rays only as ratios (their
     // face flux over the donor's ray J, the model flux of E), times the state's E
     cln_rayratio = !cln_cell && pin->GetOrAddBoolean("rad_m1","clean_stag_rayratio",false) &&
