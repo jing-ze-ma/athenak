@@ -184,7 +184,16 @@ const void *RadiationM1::CleanDevCopy(const void *p, const size_t n, const int s
   if (cln_xdev.extent(0) == 0) Kokkos::realloc(cln_xdev, 8*slot);
   Kokkos::View<const char *, HostMemSpace, Kokkos::MemoryUnmanaged>
       h(static_cast<const char *>(p), n);
-  Kokkos::deep_copy(Kokkos::subview(cln_xdev, std::make_pair(s*slot, s*slot + n)), h);
+  auto d = Kokkos::subview(cln_xdev, std::make_pair(s*slot, s*slot + n));
+#if defined(KOKKOS_ENABLE_CUDA)
+  // (CUDA: in stream order, after the kernels that read the slot and before the next; a
+  // pageable copy this small is staged at the call (athena.hpp AthBodyToDevice), so it
+  // needs no fence: the plain deep_copy's two device syncs and blocking copy per launch
+  // left the A100 idle)
+  Kokkos::deep_copy(DevExeSpace(), d, h);
+#else
+  Kokkos::deep_copy(d, h);
+#endif
   return cln_xdev.data() + s*slot;
 }
 
