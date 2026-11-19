@@ -86,8 +86,27 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_tol = pin->GetOrAddReal("rad_m1","clean_tol",1.0e-10);
     cln_cnorm = pin->GetOrAddReal("rad_m1","clean_init_cnorm",1.0e-10);
     cln_lcnorm = pin->GetOrAddReal("rad_m1","clean_lin_cnorm",1.0e-10);
-    cln_maxit = pin->GetOrAddInteger("rad_m1","clean_maxit",4000);
-    cln_maxnl = pin->GetOrAddInteger("rad_m1","clean_maxnl",50);
+    // the old production's keys an input names (its HG/RSG decks; read only when named):
+    // implicit_maxit, implicit_lin_maxit and implicit_tol_rel_max are the defaults of
+    // clean_maxnl, clean_maxit and clean_conv_max (a linear solve then runs to it, without the stall test, and a pass
+    // goes on from its iterate, CleanSolve); implicit_fb_local(_rounds), CleanFbLocal
+    {int pm = 50, pl = 0;
+    cln_prmax = -1.0;
+    for (const InputBlock &ib : pin->block) {
+      if (ib.block_name != "rad_m1") continue;
+      for (const InputLine &ln : ib.line) {
+        if (ln.param_comment == ParameterInput::default_comment) continue;
+        const std::string &k = ln.param_name;
+        if (k == "implicit_maxit") pm = pin->GetInteger("rad_m1",k);
+        if (k == "implicit_lin_maxit") pl = pin->GetInteger("rad_m1",k);
+        if (k == "implicit_tol_rel_max") cln_prmax = pin->GetReal("rad_m1",k);
+        if (k == "implicit_fb_local") cln_fbl = pin->GetBoolean("rad_m1",k);
+        if (k == "implicit_fb_local_rounds") cln_fbl_rounds = pin->GetInteger("rad_m1",k);
+      }
+    }
+    cln_maxnl = pin->GetOrAddInteger("rad_m1","clean_maxnl",pm);
+    cln_maxit = pin->GetOrAddInteger("rad_m1","clean_maxit",(pl > 0) ? pl : 4000);
+    cln_linpass = (pl > 0);}
     cln_tol_nl = pin->GetOrAddReal("rad_m1","clean_tol_nl",1.0e-11);
     // clean_pc = vcycle | x1line | prodmg (read only when named): the preconditioner of
     // the cell layout (CleanCellPrecondition)
@@ -166,7 +185,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_pcr = pin->GetOrAddBoolean("rad_m1","clean_stag_pcr",true);
     // (clean_stag_fs_pcr: default on for staggered; it applies on a GPU, not on cs)
     cln_fspcr = pin->GetOrAddBoolean("rad_m1","clean_stag_fs_pcr",!cln_cell);
-    cln_stall_n = pin->GetOrAddInteger("rad_m1","clean_bicg_stall_its",cln_cell ? 0 : 50);
+    cln_stall_n = pin->GetOrAddInteger("rad_m1","clean_bicg_stall_its",
+                                      (cln_cell || cln_linpass) ? 0 : 50);
     cln_stall_f = pin->GetOrAddReal("rad_m1","clean_bicg_stall_fac",0.99);
     // clean_stag_ftie (read only when named, default true staggered): a face two
     // MeshBlocks share, or one with itself across a periodic wrap, takes its owner's F,
@@ -451,7 +471,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_conv_max: the tolerance's ceiling, default 1e-5.  The MeshBlock layout moves
     // the answer to about it (a solve may stop a pass earlier or later), which a step
     // dt_retry redoes amplifies (mpirej_retry, 1 vs 2 ranks: 1e-4 9.1e-2, 1e-5 9.2e-6)
-    cln_bmax = pin->GetOrAddReal("rad_m1","clean_conv_max",1.0e-5);
+    cln_bmax = pin->GetOrAddReal("rad_m1","clean_conv_max",(cln_prmax > 0.0) ? cln_prmax :
+                                                                               1.0e-5);
     // clean_halo_vars (read only when named, 1..32, default 16): at most this many
     // variables per ghost exchange of the clean solve (its scratch array holds that many)
     if (pin->DoesParameterExist("rad_m1","clean_halo_vars")) {

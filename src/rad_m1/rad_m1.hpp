@@ -2503,6 +2503,7 @@ class RadiationM1 {
   // time2_inc_fct_gas; cells with eint(U_h) <= 0 are not touched (counted)
   Real t2_inckc = 0.0, t2_inckc_n = 0.0, t2_inckc_un = 0.0, t2_inckc_hn = 0.0;
   Real t2_inckc_ke = 0.0, t2_inckc_pm = 0.0;
+  DvceArray5D<Real> t2kc_dp;     // clean: the momentum the KE cap hands to the face F
   int t2_inckc_calls = 0;
   void Time2IncKeCap(int stage);
   // rsglock-1112 <rad_m1>/time2_inc_energy = gas | rad (read only when named; gas =
@@ -2813,6 +2814,7 @@ class RadiationM1 {
   //! read the implicit-solver parameters and allocate its arrays; a no-op in
   //! transport = explicit
   void ImplicitInit(ParameterInput *pin);
+  void ImplicitFaceInit(ParameterInput *pin);
   // icrad-1011 (rad_m1_icrad.cpp): opt-in IC radiation start, fresh starts only
   int icr_mode = 0;             // <rad_m1>/ic_rad: 0 none, 1 fs, 2 relax, 3 fs_relax
                                 // (default 3 when eligible, IcRadInit)
@@ -3180,8 +3182,23 @@ class RadiationM1 {
   bool cln_gflux = false;       // clean_stag_gflux: rays' face flux as flux factors
   bool cln_rayratio = false;    // clean_stag_rayratio: the bracket of ray ratios x E
   bool cln_ringjmin = true;     // clean_ring_jmin: ring J ratios only of ray-held cells
+  // implicit_fb_local (read only when named; the old production's local positivity
+  // fallback, staggered): the cells within 2 of a pass's X <= 0 lose the off-diagonal
+  // Eddington terms D12 D13 D23 (cln_s, put back after the solve) and the velocity kick
+  // of the advective coefficients for the rest of the solve, at most
+  // implicit_fb_local_rounds (4) times per solve (CleanFbLocal)
+  bool cln_fbl = false;
+  Real cln_prmax = -1.0;      // implicit_tol_rel_max named: clean_conv_max's default
+  bool cln_linpass = false;   // implicit_lin_maxit named: a pass goes on past a failed solve
+  int cln_fbl_rounds = 4, cln_fbl_r = 0;
+  Real cln_fbl_nc = 0.0;
+  DvceArray4D<Real> cln_fbm;   // the mask (1 = fallback cell)
+  DvceArray5D<Real> cln_fbd;   // D12 D13 D23 of cln_s before the first round
+  bool CleanFbLocal();
+  void CleanFbRestore();
   bool cln_srccvx = false;      // clean_source_convex: vet_scatter S between J and B
   bool cln_freal = false;       // clean_stag_freal: realisable sb, restart faces
+  int cln_fdg = -1;             // staggered bracket: face slot of its lagged flux DG
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
   bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces
   bool cln_posghost = false;    // clean_pos_ghost: marked boundary faces, upwind ghost
