@@ -2018,9 +2018,10 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
   }
   const bool swp = t2_ffct_swp && !t2_ffct_dnr;
   if (swp) {   // (time2_face_fct_sweep: x1 columns in place, slot cb the last round's R)
-    auto sweepq = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
-                                Real &a) {
-      if (hoi && hm_(m,k,j,i) > 0.0) return;
+    // (one cell: the Zalesak test with x1 neighbours from ca, in place, and lateral ones
+    // from cb, the last round's; true if its R fell)
+    auto sweepq = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (hoi && hm_(m,k,j,i) > 0.0) return false;
       const Real rc = iw_(m,ca,k,j,i);
       Real po = 0.0, pi = 0.0, pl = 0.0;
       for (int d = 0; d < 3; ++d) {
@@ -2040,35 +2041,70 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
       const Real v = cvol(m,k,j,i);
       const Real c = v*(u0_(m,M1_E,k,j,i) + in_(m,M1_T2_E,k,j,i)) - pi + po;
       const Real wf = eth*v*un_(m,M1_E,k,j,i);
-      if (c + pl - rc*po > wf) return;
+      if (c + pl - rc*po > wf) return false;
       const Real q = c + pl - wf;
       const Real rq = (q > 0.0 && po > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/po) : 0.0;
-      if (rq < rc) {
-        iw_(m,ca,k,j,i) = rq;
-        a += 1.0;
-      }
+      if (!(rq < rc)) return false;
+      iw_(m,ca,k,j,i) = rq;
+      return true;
     };
-    // (only the columns whose inputs changed run: a column's own cells or a lateral
-    // neighbour column changed in the last round, or the exchange changed a ghost next to
-    // it; any other column would find what it found before, so the R are those of the
-    // full sweep)
-    const int n3a = iw.extent_int(2), n2a = iw.extent_int(3), n1a = iw.extent_int(4);
-    Kokkos::View<int***> act("m1_t2_ffct_act", nmb1 + 1, n3a, n2a);
-    Kokkos::View<int***> nxt("m1_t2_ffct_nxt", nmb1 + 1, n3a, n2a);
-    Kokkos::deep_copy(DevExeSpace(), act, 1);
+    // (a round evaluates only the cells whose inputs changed since their last evaluation,
+    // kept per column as a range [lo, hi]: a lateral neighbour or a ghost next to them
+    // changed in the last round, or, from the last round's downward pass, the cell below
+    // them; the upward pass goes on past hi while the cell below changed, the downward
+    // pass starts below the highest upward change and goes on while the cell above
+    // changed.  Any other cell would find what it found before, so the R are those of
+    // the full sweep)
+    const int n3a = iw.extent_int(2), n2a = iw.extent_int(3);
+    Kokkos::View<int****> rng("m1_t2_ffct_rng", nmb1 + 1, 4, n3a, n2a);
+    auto rlo = Kokkos::subview(rng, Kokkos::ALL, 0, Kokkos::ALL, Kokkos::ALL);
+    auto rhi = Kokkos::subview(rng, Kokkos::ALL, 1, Kokkos::ALL, Kokkos::ALL);
+    auto nlo = Kokkos::subview(rng, Kokkos::ALL, 2, Kokkos::ALL, Kokkos::ALL);
+    auto nhi = Kokkos::subview(rng, Kokkos::ALL, 3, Kokkos::ALL, Kokkos::ALL);
+    Kokkos::deep_copy(DevExeSpace(), rlo, is);
+    Kokkos::deep_copy(DevExeSpace(), rhi, ie);
+    const int n1 = ie - is + 1, n2 = je - js + 1, n3 = ke - ks + 1;
+    const int f1 = n3*n2, f2 = tr2 ? n3*n1 : 0, f3 = tr3 ? n2*n1 : 0;
+    const int nf = 2*(f1 + f2 + f3);
+    auto mark = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Kokkos::atomic_min(&nlo(m,k,j), i);
+      Kokkos::atomic_max(&nhi(m,k,j), i);
+    };
     for (int r = 0; r < 4096; ++r) {
-      if (r > 0) {   // (the ghosts the exchange changed: their column, or the next one)
-        Kokkos::deep_copy(DevExeSpace(), act, nxt);
-        par_for("m1_t2_ffct_sg", DevExeSpace(), 0, nmb1, 0, n3a - 1, 0, n2a - 1, 0,
-                n1a - 1,
-        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-          if (k >= ks && k <= ke && j >= js && j <= je && i >= is && i <= ie) return;
-          if (iw_(m,ca,k,j,i) == iw_(m,cb,k,j,i)) return;
-          const int kc = (k < ks) ? ks : ((k > ke) ? ke : k);
-          act(m, kc, (j < js) ? js : ((j > je) ? je : j)) = 1;
+      if (r > 0) {   // (the face ghosts the exchange changed mark the cell next to them)
+        Kokkos::parallel_for("m1_t2_ffct_sg", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                             (nmb1 + 1)*nf),
+        KOKKOS_LAMBDA(const int t) {
+          const int m = t/nf;
+          int u = t - m*nf, k, j, i, kc, jc, ic;
+          if (u < 2*f1) {
+            i = (u < f1) ? is - 1 : ie + 1;
+            ic = (u < f1) ? is : ie;
+            u %= f1;
+            k = kc = ks + u/n2;
+            j = jc = js + u % n2;
+          } else if (u < 2*(f1 + f2)) {
+            u -= 2*f1;
+            j = (u < f2) ? js - 1 : je + 1;
+            jc = (u < f2) ? js : je;
+            u %= f2;
+            k = kc = ks + u/n1;
+            i = ic = is + u % n1;
+          } else {
+            u -= 2*(f1 + f2);
+            k = (u < f3) ? ks - 1 : ke + 1;
+            kc = (u < f3) ? ks : ke;
+            u %= f3;
+            j = jc = js + u/n1;
+            i = ic = is + u % n1;
+          }
+          if (iw_(m,ca,k,j,i) != iw_(m,cb,k,j,i)) {mark(m, kc, jc, ic);}
         });
+        Kokkos::deep_copy(DevExeSpace(), rlo, nlo);
+        Kokkos::deep_copy(DevExeSpace(), rhi, nhi);
       }
-      Kokkos::deep_copy(DevExeSpace(), nxt, 0);
+      Kokkos::deep_copy(DevExeSpace(), nlo, ie + 1);
+      Kokkos::deep_copy(DevExeSpace(), nhi, is - 1);
       Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, cb, Kokkos::ALL,
                         Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw, Kokkos::ALL, ca,
                         Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
@@ -2076,19 +2112,31 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
       Kokkos::parallel_reduce("m1_t2_ffct_sw", Kokkos::MDRangePolicy<Kokkos::Rank<3>>(
           DevExeSpace(), {0, ks, js}, {nmb1 + 1, ke + 1, je + 1}),
       KOKKOS_LAMBDA(const int m, const int k, const int j, Real &a) {
-        if (act(m,k,j) == 0) return;
-        const Real a0 = a;
-        for (int i = is; i <= ie; ++i) {sweepq(m, k, j, i, a);}
-        for (int i = ie; i >= is; --i) {sweepq(m, k, j, i, a);}
-        if (a > a0) {   // (this column and its lateral neighbours run again)
-          nxt(m,k,j) = 1;
+        const int lo = rlo(m,k,j), hi = rhi(m,k,j);
+        if (lo > hi) return;
+        auto lat = [&](const int i) {   // (a change: the lateral neighbours' cell i)
           if (tr2) {
-            if (j > js) {nxt(m,k,j-1) = 1;}
-            if (j < je) {nxt(m,k,j+1) = 1;}
+            if (j > js) {mark(m, k, j-1, i);}
+            if (j < je) {mark(m, k, j+1, i);}
           }
           if (tr3) {
-            if (k > ks) {nxt(m,k-1,j) = 1;}
-            if (k < ke) {nxt(m,k+1,j) = 1;}
+            if (k > ks) {mark(m, k-1, j, i);}
+            if (k < ke) {mark(m, k+1, j, i);}
+          }
+        };
+        int cl = ie + 1, ch = is - 1;   // (the upward pass's lowest / highest change)
+        bool prev = false;
+        for (int i = lo; i <= ie && (i <= hi || prev); ++i) {
+          prev = sweepq(m, k, j, i);
+          if (prev) {a += 1.0; lat(i); cl = (i < cl) ? i : cl; ch = i;}
+        }
+        prev = false;
+        for (int i = ch - 1; i >= is && (i >= cl - 1 || prev); --i) {
+          prev = sweepq(m, k, j, i);
+          if (prev) {   // (the cell above saw this one only before: it runs next round)
+            a += 1.0;
+            lat(i);
+            if (i < ie) {mark(m, k, j, i+1);}
           }
         }
       }, Kokkos::Sum<Real>(nv));
