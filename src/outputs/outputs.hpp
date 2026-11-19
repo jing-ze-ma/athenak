@@ -261,6 +261,12 @@ class BaseTypeOutput {
   // virtual functions may be over-ridden in derived classes
   virtual void LoadOutputData(Mesh *pm);
   virtual void WriteOutputFile(Mesh *pm, ParameterInput *pin) = 0;
+  // the output data (host copy) and the derived variables exist only during a write
+  // (LoadOutputData and ComputeDerivedVariable make them again)
+  void FreeOutputData() {
+    outarray = HostArray5D<Real>();
+    derived_var = DvceArray5D<Real>();
+  }
 
   // Functions to detect big endian machine, and to byte-swap 32-bit words.  The vtk
   // legacy format requires data to be stored as big-endian.
