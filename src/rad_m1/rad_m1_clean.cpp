@@ -2729,13 +2729,14 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
       xdg(m,2,k,j,i) = eqr ? 0.0 : sb;
       xdg(m,3,k,j,i) = eqr ? 0.0 : gres;
     }
+    // (the face sources' divergence and the source term once: each call is inlined)
+    const Real sdv = CleanSourceDivergence(x, m, k, j, i);
+    const Real hes = eso ? x.h*es(m,k,j,i) : 0.0;
     x.w(m,CLW_B,k,j,i) = eqr ?
         x.w(m,CLW_EO,k,j,i) + x.w(m,CLW_EI,k,j,i) - eg - work
-        + x.w(m,CLW_RY,k,j,i)*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0)
-        - CleanSourceDivergence(x, m, k, j, i) + (eso ? x.h*es(m,k,j,i) : 0.0) :
+        + x.w(m,CLW_RY,k,j,i)*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) - sdv + hes :
         x.w(m,CLW_EO,k,j,i) + hckp*arad_*SQR(SQR(t))
-        - rr*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) - work
-        - CleanSourceDivergence(x, m, k, j, i) + sb + gres + (eso ? x.h*es(m,k,j,i) : 0.0);
+        - rr*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) - work - sdv + sb + gres + hes;
     // (clean_stag_sbimp: (1 - r) sb(E) in the operator as the cell layout's, Newton form)
     if (x.sbi) x.w(m,CLW_B,k,j,i) -= (1.0 - rr)*CleanStagBetaE(xh, CLW_EK, m, k, j, i);
     // (clean_stag_xpat: the exchange's removal R = r hcke E_k explicit while it leaves B >= th E_old (th = CLN_KPOS_TH),
@@ -2759,7 +2760,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
     // (clean_xt_exact: the row's exchange as linearised, B less its rest, and its work)
     if (xte) {
       x.w(m,CLW_XA,k,j,i) = eqr ? 0.0 : x.w(m,CLW_B,k,j,i) - (x.w(m,CLW_EO,k,j,i) - work
-          - CleanSourceDivergence(x, m, k, j, i) + (eso ? x.h*es(m,k,j,i) : 0.0));
+          - sdv + hes);
       x.w(m,CLW_XW,k,j,i) = work;
     }
     x.w(m,CLW_X,k,j,i) = x.w(m,CLW_EK,k,j,i);
