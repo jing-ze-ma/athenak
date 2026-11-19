@@ -456,10 +456,10 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
   // blow a whole-stencil chord up.  Two more inversions, seeded by the anchor's
   // temperature.  Zero on a side that spans no potential (a tangential sweep), which
   // reduces that side to isothermal.
-  Real a_m = 0.0, a_p = 0.0;
+  Real a_m = 0.0, a_p = 0.0, t_m = t_i, t_p = t_i;
   if (wb_opt == 3 && (phi_im1 != phi_i || phi_ip1 != phi_i)) {
-    const Real t_m = (t_im1c > 0.0) ? t_im1c : eos.Temperature(rho_im1, e_im1, t_i);
-    const Real t_p = (t_ip1c > 0.0) ? t_ip1c : eos.Temperature(rho_ip1, e_ip1, t_i);
+    t_m = (t_im1c > 0.0) ? t_im1c : eos.Temperature(rho_im1, e_im1, t_i);
+    t_p = (t_ip1c > 0.0) ? t_ip1c : eos.Temperature(rho_ip1, e_ip1, t_i);
     if (phi_i != phi_im1) a_m = (t_i - t_m)/(phi_i - phi_im1);
     if (phi_ip1 != phi_i) a_p = (t_p - t_i)/(phi_ip1 - phi_i);
   }
@@ -489,30 +489,38 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
     // chi_rho (p ~ d^chi_rho at fixed T) and e ~ d (exact for a gamma law, O(dphi^2)
     // otherwise on a correction that is itself O(dphi^2)).  The end evaluation's chi's
     // seed the next segment.  Second order per segment, five evaluations per stencil.
-    auto seg = [&](const Real a, const Real d0, const Real t0, const Real k0,
-                   const Real dph, Real &d1, Real &t1, Real &e1, Real &p1, Real &k1) {
+    // T STAYS IN THE CHORD'S BRACKET [min, max](T_i, T_nb): where Phi_eff has an extremum
+    // between the centres the face lies outside the chord's Phi span (a ~ dT/0 on a
+    // near-flat side), and the linear walk would leave it (to T <= 0 or inf: the HG
+    // envelope); clamped, the segment's slope is the one that reaches the bracket edge.
+    // Unclamped (monotone Phi, a true polytrope) a is used as is, bit for bit.
+    auto seg = [&](const Real a, const Real tn, const Real d0, const Real t0,
+                   const Real k0, const Real dph, Real &d1, Real &t1, Real &e1, Real &p1,
+                   Real &k1) {
       const Real dpred = d0*exp(k0*dph);
-      t1 = t0 + a*dph;
+      const Real tw = t0 + a*dph;
+      t1 = fmin(fmax(tw, fmin(t_i, tn)), fmax(t_i, tn));
+      const Real ae = (t1 == tw) ? a : (t1 - t0)/dph;
       Real ep, pp, cr, ct;
       eos.ThermoAt(dpred, t1, ep, pp, cr, ct, dum_cv);
-      const Real kend = -(dpred + (a/t1)*pp*ct)/(pp*cr);
+      const Real kend = -(dpred + (ae/t1)*pp*ct)/(pp*cr);
       d1 = d0*exp(0.5*(k0 + kend)*dph);
       // r - 1 is O(dphi^2), so first order in it is enough (and saves a pow)
       const Real r = d1/dpred;
       p1 = pp*(1.0 + cr*(r - 1.0));
       e1 = ep*r;
-      k1 = -(d1 + (a/t1)*p1*ct)/(p1*cr);
+      k1 = -(d1 + (ae/t1)*p1*ct)/(p1*cr);
     };
     const Real k0m = -(rho_i + (a_m/t_i)*p_i*chit)/(p_i*chir);
     const Real k0p = -(rho_i + (a_p/t_i)*p_i*chit)/(p_i*chir);
     Real d1, t1, e1, p1, k1, d2, t2, e2, p2, k2;
-    seg(a_m, rho_i, t_i, k0m, phi_imh - phi_i, d1, t1, e1, p1, k1);
+    seg(a_m, t_m, rho_i, t_i, k0m, phi_imh - phi_i, d1, t1, e1, p1, k1);
     q0_imh.d = d1; q0_imh.e = e1; q0_imh.p = p1;
-    seg(a_m, d1, t1, k1, phi_im1 - phi_imh, d2, t2, e2, p2, k2);
+    seg(a_m, t_m, d1, t1, k1, phi_im1 - phi_imh, d2, t2, e2, p2, k2);
     q0_im1.d = d2; q0_im1.e = e2; q0_im1.p = p2;
-    seg(a_p, rho_i, t_i, k0p, phi_iph - phi_i, d1, t1, e1, p1, k1);
+    seg(a_p, t_p, rho_i, t_i, k0p, phi_iph - phi_i, d1, t1, e1, p1, k1);
     q0_iph.d = d1; q0_iph.e = e1; q0_iph.p = p1;
-    seg(a_p, d1, t1, k1, phi_ip1 - phi_iph, d2, t2, e2, p2, k2);
+    seg(a_p, t_p, d1, t1, k1, phi_ip1 - phi_iph, d2, t2, e2, p2, k2);
     q0_ip1.d = d2; q0_ip1.e = e2; q0_ip1.p = p2;
     WBGuard(q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
     return;
