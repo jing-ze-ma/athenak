@@ -1263,8 +1263,16 @@ void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
     }
   }
   global_variable::final_outputs = !at_tlim;
+  // <job>/final_restart (read only when named; default true): false skips this restart
+  // file (timing and test runs; the scheduled ones are written as before)
+  const bool frst = !pin->DoesParameterExist("job", "final_restart") ||
+                    pin->GetBoolean("job", "final_restart");
+  if (!frst && global_variable::my_rank == 0) {
+    std::cout << "<job> final_restart = false: no restart file at the end of the run"
+              << std::endl;
+  }
   for (auto &out : pout->pout_list) {
-    if (out->out_params.file_type.compare("rst") != 0) {continue;}
+    if (out->out_params.file_type.compare("rst") != 0 || !frst) {continue;}
     out->LoadOutputData(pmesh);
     out->WriteOutputFile(pmesh, pin);
     out->FreeOutputData();
