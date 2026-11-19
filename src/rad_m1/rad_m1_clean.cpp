@@ -4553,13 +4553,20 @@ void RadiationM1::CleanWriteBack() {
     });
     CleanGhostFill(cln_w, CLW_L, nf);
   }
+  // (clean_stag_xdonor: the cell flux, the radiation's momentum, of the central cross flux
+  // and face sources, as the gas momentum's stress (CleanMomentumChange): Phi's donor
+  // form equals it only at the exact fixed point of q, so total momentum would carry
+  // the passes' tolerance)
+  CleanArgs xc = x;
+  xc.xq = -1;
   const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
+  const CleanArgs *pxc = CleanDevArgs(xc, 2);
   // (time2_face_fct: the energy flux Phi of every face, which moved E, with its slope)
   const bool pfo = t2_pfst && slopes && t2pf1.extent_int(0) > nmb1;
   auto pf = (t2_solve == M1_T2S_STAGE1) ? t2pf2 : t2pf1;
   CleanFor("cln_wbdiv", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
+    const CleanArgs &x = *px, &xh = *pxh, &xc = *pxc;   // (device memory: no copy)
     // (CleanFluxDivergence(Tie) with the faces' Phi of CleanStagRealizable, CLF_PT, but
     // on physical faces; with the tie the low faces' CLW_L and the high faces' owner's)
     Real dv = 0.0;
@@ -4578,8 +4585,15 @@ void RadiationM1::CleanWriteBack() {
       dv += (x.sph || x.cub) ? CleanDivW(x, n, m, k, j, i, 1)*fh -
                                CleanDivW(x, n, m, k, j, i, 0)*fl : x.idx[n]*(fh - fl);
       // (clean_stag_kpos: the cell flux without the moved increment flux)
-      if (xh.hi) u0_(m,M1_F1+n,k,j,i) = 0.5*(fl + fu - CleanKposFlux(x, CLW_X, n, m, k, j, i) -
-                                             CleanKposFlux(x, CLW_X, n, m, k+dk, j+dj, i+di));
+      if (xh.hi && x.xq >= 0) {
+        u0_(m,M1_F1+n,k,j,i) = 0.5*(CleanFaceFlux(xc, CLW_X, n, m, k, j, i, true) +
+                                    CleanFaceFlux(xc, CLW_X, n, m, k+dk, j+dj, i+di, true) -
+                                    CleanKposFlux(x, CLW_X, n, m, k, j, i) -
+                                    CleanKposFlux(x, CLW_X, n, m, k+dk, j+dj, i+di));
+      } else if (xh.hi) {
+        u0_(m,M1_F1+n,k,j,i) = 0.5*(fl + fu - CleanKposFlux(x, CLW_X, n, m, k, j, i) -
+                                    CleanKposFlux(x, CLW_X, n, m, k+dk, j+dj, i+di));
+      }
       // (clean_stag_kpos: the stored Phi without the moved increment flux)
       if (pfo) pf(m,n,k,j,i) = fl - CleanKposFlux(x, CLW_X, n, m, k, j, i);
       // (the high face of the MeshBlock: the Phi that moved E, the owner's with the tie,
