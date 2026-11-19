@@ -233,6 +233,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_diag_neg")) {
       cln_diagneg = pin->GetBoolean("rad_m1","clean_diag_neg");
     }
+    // clean_bcg_fallback (read only when named, default 0): the preconditioned Richardson
+    // sweeps after a BiCGStab breakdown that a restart does not cure, before it fails
+    if (pin->DoesParameterExist("rad_m1","clean_bcg_fallback")) {
+      cln_bcgfb = pin->GetInteger("rad_m1","clean_bcg_fallback");
+    }
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",false);
     cln_posghost = pin->GetOrAddBoolean("rad_m1","clean_pos_ghost",false);
     {std::string cl = pin->GetOrAddString("rad_m1","clean_closure",

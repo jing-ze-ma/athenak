@@ -884,11 +884,33 @@ int RadiationM1::CleanBiCGStab() {
                    fmax(std::sqrt(bb), 1.0e-300);
   if (std::sqrt(rr) <= tol) return 0;
 
+  // clean_bcg_fallback: a breakdown the restart does not cure takes that many
+  // preconditioned Richardson sweeps x += M^-1 (b - A x) (the line preconditioner of the
+  // solve); converged if the true residual then meets the tolerance, else the iterate is
+  // kept and the solve fails
+  auto fallback = [&](const int it) {
+    const int nfb = cln_bcgfb;
+    for (int n = 0; ; ++n) {
+      apply(sx, sr);
+      const Real r2 = CleanSums(pmy_pack, "cln_dot_fb", 1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0,
+                    Real &) {
+        for (int c = 0; c < nc; ++c) {   // (r = b - A x)
+          w(m,sr+c,k,j,i) = w(m,sb+c,k,j,i) - w(m,sr+c,k,j,i);
+          s0 += w(m,sr+c,k,j,i)*w(m,sr+c,k,j,i);
+        }
+      })[0];
+      if (std::sqrt(r2) <= tol) return it + n;
+      if (n == nfb) return -(it + n);
+      precondition(sr, sy);
+      axpby(sx, sx, 1.0, sy, 1.0);
+    }
+  };
   const Real eps = std::numeric_limits<Real>::epsilon();
   for (int it = 1; it <= cln_maxit; ++it) {
     if (!(fabs(rho_new) > eps*std::sqrt(r0r0*rr))) {
       if (restart(it)) continue;
-      return -it;
+      return (cln_bcgfb > 0) ? fallback(it) : -it;
     }
     const Real beta = (rho_new/rho)*(alpha/omega);
     rho = rho_new;
@@ -904,7 +926,7 @@ int RadiationM1::CleanBiCGStab() {
     const Real r0v = dots(1, {sr0, sv, 0, 0})[0];
     if (!std::isfinite(r0v) || r0v == 0.0) {
       if (restart(it)) continue;
-      return -it;
+      return (cln_bcgfb > 0) ? fallback(it) : -it;
     }
     alpha = rho/r0v;
     const Real one = 1.0, ma = -alpha;
@@ -937,7 +959,7 @@ int RadiationM1::CleanBiCGStab() {
     rr = e[0];
     rho_new = e[1];
     if (std::sqrt(rr) <= tol) return it;
-    if (omega == 0.0 && !restart(it)) return -it;
+    if (omega == 0.0 && !restart(it)) return (cln_bcgfb > 0) ? fallback(it) : -it;
   }
   return -cln_maxit;
 }
