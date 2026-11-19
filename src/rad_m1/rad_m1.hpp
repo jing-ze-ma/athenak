@@ -2988,6 +2988,7 @@ class RadiationM1 {
   std::array<Real, 2> CleanDots(DvceArray5D<Real> w, const int nc, const int n,
                                 const std::array<int, 4> ab);
   Real CleanReduce(Real v, const bool max);
+  void CleanReduceMax(Real *v, const int n);   // n maxima over all ranks, in place
   // cell-centred layout (<rad_m1>/clean_layout = cell, rad_m1_clean_cell.cpp)
   void CleanCellOldVector();
   void CleanCellFaceCoefficients();
