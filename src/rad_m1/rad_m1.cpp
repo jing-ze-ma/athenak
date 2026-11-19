@@ -216,6 +216,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_xt_cons")) {
       cln_xtcons = pin->GetBoolean("rad_m1","clean_xt_cons");
     }
+    // clean_rst_k1 (read only when named, default 0): a restart file whose slope block does
+    // not fit this run (an old-production file) still gives its hesdirk2 slope K1, so that
+    // the first step is a staged step; 1 = all K1 channels, 2 = without the face fluxes
+    if (pin->DoesParameterExist("rad_m1","clean_rst_k1")) {
+      cln_rstk1 = pin->GetInteger("rad_m1","clean_rst_k1");
+    }
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",false);
     cln_posghost = pin->GetOrAddBoolean("rad_m1","clean_pos_ghost",false);
     {std::string cl = pin->GetOrAddString("rad_m1","clean_closure",

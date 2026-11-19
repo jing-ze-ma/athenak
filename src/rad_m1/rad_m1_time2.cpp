@@ -3442,7 +3442,19 @@ bool RadiationM1::ThcRstUnpack(DvceArray5D<Real> in, int nmb, int nsl) {
 bool RadiationM1::Time2RstAccept(const int nfile) {
   const int nb = Time2RstNchWant() - CleanFvRstNch();
   t2_nfv = (clean && cln_rfv > 0) ? nfile - nb : 0;
-  return (nfile == nb + t2_nfv) && (t2_nfv >= 0);
+  t2_k1only = false;
+  if ((nfile == nb + t2_nfv) && (t2_nfv >= 0)) return true;
+  // clean_rst_k1: the first M1_T2_NK channels of a slope block of another layout
+  t2_nfv = 0;
+  t2_k1only = clean && (cln_rstk1 > 0) && (time_scheme == M1_TIME_HESDIRK2) &&
+              (nfile >= M1_T2_NK);
+  if (t2_k1only && global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> clean_rst_k1=" << cln_rstk1 << ": the restart file's slope "
+              << "block (" << nfile << " channels, this run keeps " << nb << ") gives K1"
+              << ((cln_rstk1 == 2) ? " without the face fluxes" : "")
+              << "; the first step is a staged step" << std::endl;
+  }
+  return t2_k1only;
 }
 int RadiationM1::Time2RstNch() {
   return (t2_ok || time_scheme != M1_TIME_HESDIRK2) ? Time2RstNchWant() : 0;
@@ -3604,14 +3616,19 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   // the last t2_nfv channels: the conservative rays (their number is not known before
   // the first sweep, Time2RstAccept)
   const int nfv0 = Time2RstNchWant() - CleanFvRstNch();
-  if (clean && cln_rfv > 0 && ch >= nfv0) {
+  if (clean && cln_rfv > 0 && !t2_k1only && ch >= nfv0) {
     CleanFvRstSet(ch - nfv0, w, nmb);
     return;
   }
   if (h2 && ch < M1_T2_NK) {
-    DeepCopyAcross(Kokkos::subview(t2k1, mb, ch, AL, AL, AL), w);
+    if (t2_k1only && cln_rstk1 == 2 && ch >= M1_T2_F1) {
+      Kokkos::deep_copy(Kokkos::subview(t2k1, mb, ch, AL, AL, AL), 0.0);
+    } else {
+      DeepCopyAcross(Kokkos::subview(t2k1, mb, ch, AL, AL, AL), w);
+    }
     return;
   }
+  if (t2_k1only) return;
   if (h2) ch -= M1_T2_NK;
   if (h2 && impl_pred) {
     const int np = (impl_pord == 2) ? 5 : 3;
