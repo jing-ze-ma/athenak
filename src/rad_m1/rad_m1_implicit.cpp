@@ -8351,10 +8351,11 @@ bool RadiationM1::ImplicitFaceMmat(bool bicg, Real dt) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a,
                   Real &ab) {
       if (zac && r > 0) {   // only cells whose stencil changed (stamp r = round r-1)
-        bool act = (ch_(m,k,j,i) == r) || (ch_(m,k,j,i-1) == r) ||
-                   (ch_(m,k,j,i+1) == r);
-        if (zx2) {act = act || (ch_(m,k,j-1,i) == r) || (ch_(m,k,j+1,i) == r);}
-        if (zx3) {act = act || (ch_(m,k-1,j,i) == r) || (ch_(m,k+1,j,i) == r);}
+        // (>= r: a neighbour limited again in this round has already stamped r + 1)
+        bool act = (ch_(m,k,j,i) >= r) || (ch_(m,k,j,i-1) >= r) ||
+                   (ch_(m,k,j,i+1) >= r);
+        if (zx2) {act = act || (ch_(m,k,j-1,i) >= r) || (ch_(m,k,j+1,i) >= r);}
+        if (zx3) {act = act || (ch_(m,k-1,j,i) >= r) || (ch_(m,k+1,j,i) >= r);}
         if (xb && (i == is || i == ie || (zx2 && (j == js || j == je)) ||
                    (zx3 && (k == ks || k == ke)))) {act = true;}
         if (!act) {return;}

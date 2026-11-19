@@ -1943,14 +1943,17 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     const int rk = t2_ffct_rk, ra = (rk < 0) ? -rk : rk;   // (K < 0: the slack only)
     const Real wtr = (ra > 0 && r >= ra) ? 0.5 : 1.0;
     const Real pin_ = (rk > 0 && r >= 2*rk) ? 0.0 : 1.0;
+    // (zalesak_active: every cell in round 0 and in the rounds that change wtr / pin_)
+    const bool zsel = zac && r > 0 && !(ra > 0 && r == ra) && !(rk > 0 && r == 2*rk);
     par_reduce_flat2("m1_t2_ffct_r", 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a,
                   Real &ab) {
-      if (zac && r > 0) {   // only cells whose stencil changed (stamp r = round r-1)
-        bool act = (ch_(m,k,j,i) == r) || (ch_(m,k,j,i-1) == r) ||
-                   (ch_(m,k,j,i+1) == r);
-        if (tr2) {act = act || (ch_(m,k,j-1,i) == r) || (ch_(m,k,j+1,i) == r);}
-        if (tr3) {act = act || (ch_(m,k-1,j,i) == r) || (ch_(m,k+1,j,i) == r);}
+      if (zsel) {   // only cells whose stencil changed (stamp r = round r-1)
+        // (>= r: a neighbour limited again in this round has already stamped r + 1)
+        bool act = (ch_(m,k,j,i) >= r) || (ch_(m,k,j,i-1) >= r) ||
+                   (ch_(m,k,j,i+1) >= r);
+        if (tr2) {act = act || (ch_(m,k,j-1,i) >= r) || (ch_(m,k,j+1,i) >= r);}
+        if (tr3) {act = act || (ch_(m,k-1,j,i) >= r) || (ch_(m,k+1,j,i) >= r);}
         if (xb && (i == is || i == ie || (zx2 && (j == js || j == je)) ||
                    (zx3 && (k == ks || k == ke)))) {act = true;}
         if (!act) {return;}
