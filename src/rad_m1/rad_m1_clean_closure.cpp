@@ -3311,6 +3311,7 @@ void RadiationM1::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
       // (the two cells' intensity rows once, not an index per direction)
       const CleanRow gl_ = fv ? CleanRow{nullptr, 0} : gi.At(m, kl, jl, il);
       const CleanRow gr_ = fv ? CleanRow{nullptr, 0} : gi.At(m, k, j, i);
+#pragma unroll 4   // (rays in flight: hipcc kept one at a time since 089efb501)
       for (int e = 0; e < n; ++e) {
         const int d = o + e;
         Real mu = 0.0;
