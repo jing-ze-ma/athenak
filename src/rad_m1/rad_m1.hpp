@@ -3276,7 +3276,8 @@ class RadiationM1 {
   Real cln_ewr = -1.0, cln_eta = 0.1;   // Eisenstat-Walker: last |r0|_S, forcing
   bool cln_nlprint = false;     // clean_nl_print: the changes of every pass (rank 0)
   bool cln_lf_ok = false;       // cln_lf holds the factors of the current blocks
-  bool cln_stagmg = false;      // clean_stag_pc = mg: the old production mg (staggered)
+  int cln_stagmg = 0;           // clean_stag_pc = mg: the old production mg (staggered);
+                                //   2: its line colours mirror (clean_stag_mg_color)
   bool cln_steady = false;      // clean_init = steady: radiation relaxed before step 1
   int cln_steady_n = 50;        // clean_init_n: most pre-solve passes
   Real cln_steady_dtfac = 1.0e6, cln_steady_tol = 1.0e-8;  // clean_init_dtfac, _tol

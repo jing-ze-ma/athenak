@@ -429,7 +429,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl << "<rad_m1>/clean_stag_pc = mg | line" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    cln_stagmg = !cln_cell && (pc == "mg");}
+    // clean_stag_mg_color = parity (default) | mirror (read only when named): the mg's
+    // line colours, (j + k) parity or mirror-symmetric (CleanStagLineSolve)
+    const std::string mc = pin->DoesParameterExist("rad_m1","clean_stag_mg_color") ?
+                           pin->GetString("rad_m1","clean_stag_mg_color") : "parity";
+    if (mc != "parity" && mc != "mirror") {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/clean_stag_mg_color = parity | mirror"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    cln_stagmg = (!cln_cell && (pc == "mg")) ? ((mc == "mirror") ? 2 : 1) : 0;}
     // clean_stag_stencil: the operator applied from its rows (CleanStencilRow), built
     // once per pass (default, as production's implicit_op_stencil; on the cubed sphere the
     // rows without the lateral stress, which the stored coefficients of its sums add,
