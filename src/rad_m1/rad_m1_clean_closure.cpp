@@ -884,7 +884,7 @@ void RadiationM1::CleanRays() {
     // ranges, CleanCellConsistency, CleanFaceHalf)
     if (cln_consist || cln_cssc) CleanGdFaceSums();
     if (cln_cssc) CleanFaceHalf(vgd_dir, 0, true, 0);
-    if (CleanFvScratch()) cln_fvi = DvceArray5D<Real>();   // (build scratch)
+    if (cln_cssc && !cln_cell) cln_fvi = DvceArray5D<Real>();   // (build scratch)
   }
   MemcutPoison(3);
 }
@@ -911,55 +911,6 @@ void RadiationM1::CleanScUnion2() {
   }
   Kokkos::deep_copy(cln_fvd, d_h);
   cln_fvn = 2*n;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::CleanFaceHalf
-//! \brief the sc rays on the cubed sphere, staggered layout: the half ranges of every
-//! face about its own normal (CleanFaceCoefficients), as the sums of the union's beams of
-//! the face's two cells, J_L, J_R, H+_L, H-_R (cln_fh, 4 per face family), folded set by
-//! set right after its sweep (the set's intensities in cln_fvi from row fo, its union
-//! rows o of dv): one set of intensities resident.  zero: the first set of a build
-
-void RadiationM1::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
-                                const bool zero, const int fo) {
-  if (cln_cell) return;   // (the cell layout reads cln_fvi, CleanCellConsistency)
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke, n = vgd_n, nmb1 = pmy_pack->nmb_thispack - 1;
-  if (cln_fh.extent_int(0) != nmb1 + 1) {
-    Kokkos::realloc(cln_fh, nmb1 + 1, 12, cln_s.extent_int(2), cln_s.extent_int(3),
-                    cln_s.extent_int(4));
-  }
-  auto fh = cln_fh;
-  auto fi = cln_fvi;
-  auto gn = cln_gn;
-  for (int dir = 0; dir < 3; ++dir) {
-    if (dir == 1 && !pmy_pack->pmesh->multi_d) continue;
-    if (dir == 2 && !pmy_pack->pmesh->three_d) continue;
-    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    par_for("cln_facehalf", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const int kl = k - dk, jl = j - dj, il = i - di;
-      // (J_L, J_R, H+_L, H-_R as scalars: nvcc -O3 miscompiles a runtime-indexed local)
-      Real jl0 = zero ? 0.0 : fh(m,4*dir,k,j,i), jr0 = zero ? 0.0 : fh(m,4*dir+1,k,j,i);
-      Real hp0 = zero ? 0.0 : fh(m,4*dir+2,k,j,i), hm0 = zero ? 0.0 : fh(m,4*dir+3,k,j,i);
-      for (int e = 0; e < n; ++e) {
-        const int d = o + e;
-        Real mu = 0.0;
-        for (int b = 0; b < 3; ++b) mu += dv(d,b)*gn(m,CLG_N+3*dir+b,k,j,i);
-        const Real wl = dv(d,3)*fi(m,fo+e,kl,jl,il), wr = dv(d,3)*fi(m,fo+e,k,j,i);
-        jl0 += wl;
-        jr0 += wr;
-        if (mu > 0.0) hp0 += wl*mu;
-        if (!(mu > 0.0)) hm0 += wr*mu;
-      }
-      fh(m,4*dir,k,j,i) = jl0;
-      fh(m,4*dir+1,k,j,i) = jr0;
-      fh(m,4*dir+2,k,j,i) = hp0;
-      fh(m,4*dir+3,k,j,i) = hm0;
-    });
-  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -1083,11 +1034,11 @@ bool RadiationM1::CleanRingTwo() const {
   return clean && cln_ring == 1 && vgd_xf && !(vra_on && !g_vra_adv);
 }
 
-// (the sc rays on the staggered cubed sphere: their intensities are a build's scratch
-// where every solve builds the closure first and every build sweeps all the sets the
-// face half ranges read; else they are kept, in the restart files too, and a restart
-// takes the half ranges from them, CleanSolve)
-bool RadiationM1::CleanFvScratch() const {
+// (the sc rays on the staggered cubed sphere: their intensities are a build's scratch,
+// folded into the face half ranges cln_fh; those are rebuilt before every solve where
+// every solve builds the closure first and every build sweeps all the sets they read,
+// else they are state: the dt_retry checkpoint and the restart files keep them)
+bool RadiationM1::CleanFhBuilt() const {
   return cln_cssc && !cln_cell && cln_extrap == 0 && !cln_closit && !cln_edd &&
          !cln_sphere && (!cln_ring || CleanRingTwo());
 }
@@ -1344,8 +1295,7 @@ void RadiationM1::CleanRingMoments() {
     CleanClosureFromGd();
     if (cln_consist || cln_cssc) CleanGdFaceSums();
     if (cln_cssc && (p == nr || p == nk)) {
-      CleanFaceHalf(dfull, cln_rqm*vgd_n, fh0,
-                    (cln_fvi.extent_int(1) == 2*vgd_n) ? cln_rqm*vgd_n : 0);
+      CleanFaceHalf(dfull, cln_rqm*vgd_n, fh0, 0);
       fh0 = false;
     }
     if (!keep) continue;
@@ -1476,7 +1426,7 @@ void RadiationM1::CleanRingMoments() {
   cln_rjump = nxt;
   cln_rguard_sum += CleanReduce(nguard, false);
   cln_rl = DvceArray5D<Real>();   // (build scratch: freed, every build writes it first)
-  if (CleanFvScratch()) cln_fvi = DvceArray5D<Real>();   // (and so cln_fvi)
+  if (cln_cssc && !cln_cell) cln_fvi = DvceArray5D<Real>();   // (and so cln_fvi)
 }
 
 //----------------------------------------------------------------------------------------
@@ -3239,9 +3189,11 @@ void RadiationM1::CleanClosureFromGd(const int i0, const int i1) {
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanGdI
-//! \brief the sc rays' intensities in the mesh layout without a copy (CleanGdFaceSums):
-//! vgd_i, the low theta and phi ghost layers from gl (side 0: j = js - 1, side 1:
-//! k = ks - 1); planb-1117 (pk): those from the sweep's raw band or the on-rank owner
+//! \brief the sc rays' intensities in the mesh layout without a copy (CleanGdFaceSums,
+//! CleanFaceHalf): vgd_i, the first ghost layer of the MeshBlock's faces from gl (side
+//! 0: j = js - 1, 1: k = ks - 1, (r, t) = (k - ks, i), (j - js, i); the cubed sphere
+//! (six) also 2: j = je + 1, 3: k = ke + 1 alike, 4: i = is - 1, 5: i = ie + 1 at (k - ks,
+//! j - js)); planb-1117 (pk): those from the sweep's raw band or the on-rank owner
 //! (own), as the sweep reads them (rd0t), before the wall map
 
 struct CleanGdI {
@@ -3250,15 +3202,25 @@ struct CleanGdI {
   int ok, og, ks, js;
   bool pk;
   Kokkos::View<int ****, LayoutWrapper, DevMemSpace> own;
+  bool six = false;
+  int ke = 0, je = 0, is = 0, ie = 0;
+  // (the ghost side of (k, j, i) or -1, and its two indices)
+  KOKKOS_INLINE_FUNCTION
+  int Side(const int k, const int j, const int i, int &r, int &t) const {
+    if (j < js || (six && j > je)) {r = k - ks; t = i; return (j < js) ? 0 : 2;}
+    if (k < ks || (six && k > ke)) {r = j - js; t = i; return (k < ks) ? 1 : 3;}
+    if (six && (i < is || i > ie)) {r = k - ks; t = j - js; return (i < is) ? 4 : 5;}
+    return -1;
+  }
   KOKKOS_INLINE_FUNCTION
   Real operator()(const int m, const int d, const int k, const int j, const int i) const {
     if (pk && (j < js || k < ks)) {
       const int kb = k + ok, jb = j + og, ow = own(m,kb,jb,0);
       return (ow < 0) ? vi(m,d,kb,jb,i) : vi(ow,d,own(m,kb,jb,1),own(m,kb,jb,2),i);
     }
-    if (j < js) return gl(m,d,0,k-ks,i);
-    if (k < ks) return gl(m,d,1,j-js,i);
-    return vi(m,d,k+ok,j+og,i);
+    int r, t;
+    const int s = Side(k, j, i, r, t);
+    return (s >= 0) ? gl(m,d,s,r,t) : vi(m,d,k+ok,j+og,i);
   }
   KOKKOS_INLINE_FUNCTION
   CleanRow At(const int m, const int k, const int j, const int i) const {
@@ -3267,13 +3229,69 @@ struct CleanGdI {
       return (ow < 0) ? VgdRow(vi, m, kb, jb, i)
                       : VgdRow(vi, ow, own(m,kb,jb,1), own(m,kb,jb,2), i);
     }
-    if (j < js || k < ks) {
-      return CleanRow{&gl(m,0,(j < js) ? 0 : 1,(j < js) ? k-ks : j-js,i),
-                      static_cast<int64_t>(gl.stride(1))};
-    }
+    int r, t;
+    const int s = Side(k, j, i, r, t);
+    if (s >= 0) return CleanRow{&gl(m,0,s,r,t), static_cast<int64_t>(gl.stride(1))};
     return VgdRow(vi, m, k+ok, j+og, i);
   }
 };
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanFaceHalf
+//! \brief the sc rays on the cubed sphere, staggered layout: the half ranges of every
+//! face about its own normal (CleanFaceCoefficients), as the sums of the union's beams of
+//! the face's two cells, J_L, J_R, H+_L, H-_R (cln_fh, 4 per face family), folded set by
+//! set right after its sweep (the set's intensities in vgd_i with the ghost layers of
+//! CleanGdFaceSums, or a version-5 restart's in cln_fvi from row fo; its union rows o of
+//! dv): no copy of the intensities.  zero: the first set of a build
+
+void RadiationM1::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
+                                const bool zero, const int fo) {
+  if (cln_cell) return;   // (the cell layout reads cln_fvi, CleanCellConsistency)
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke, n = vgd_n, nmb1 = pmy_pack->nmb_thispack - 1;
+  if (cln_fh.extent_int(0) != nmb1 + 1) {
+    Kokkos::realloc(cln_fh, nmb1 + 1, 12, cln_s.extent_int(2), cln_s.extent_int(3),
+                    cln_s.extent_int(4));
+  }
+  auto fh = cln_fh;
+  auto fi = cln_fvi;
+  auto gn = cln_gn;
+  // (the swept set in vgd_i and its ghost layers, CleanGdFaceSums; a version-5 restart's
+  // intensities in cln_fvi)
+  const bool fv = cln_fvi.extent_int(0) > 0;
+  const CleanGdI gi{vgd_i, cln_gdgl, vgd_w - ks, vgd_w - indcs.ng, ks, js, false, vgd_own,
+                    true, ke, je, is, ie};
+  for (int dir = 0; dir < 3; ++dir) {
+    if (dir == 1 && !pmy_pack->pmesh->multi_d) continue;
+    if (dir == 2 && !pmy_pack->pmesh->three_d) continue;
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    par_for("cln_facehalf", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const int kl = k - dk, jl = j - dj, il = i - di;
+      // (J_L, J_R, H+_L, H-_R as scalars: nvcc -O3 miscompiles a runtime-indexed local)
+      Real jl0 = zero ? 0.0 : fh(m,4*dir,k,j,i), jr0 = zero ? 0.0 : fh(m,4*dir+1,k,j,i);
+      Real hp0 = zero ? 0.0 : fh(m,4*dir+2,k,j,i), hm0 = zero ? 0.0 : fh(m,4*dir+3,k,j,i);
+      for (int e = 0; e < n; ++e) {
+        const int d = o + e;
+        Real mu = 0.0;
+        for (int b = 0; b < 3; ++b) mu += dv(d,b)*gn(m,CLG_N+3*dir+b,k,j,i);
+        const Real il_ = fv ? fi(m,fo+e,kl,jl,il) : gi(m,e,kl,jl,il);
+        const Real ir_ = fv ? fi(m,fo+e,k,j,i) : gi(m,e,k,j,i);
+        const Real wl = dv(d,3)*il_, wr = dv(d,3)*ir_;
+        jl0 += wl;
+        jr0 += wr;
+        if (mu > 0.0) hp0 += wl*mu;
+        if (!(mu > 0.0)) hm0 += wr*mu;
+      }
+      fh(m,4*dir,k,j,i) = jl0;
+      fh(m,4*dir+1,k,j,i) = jr0;
+      fh(m,4*dir+2,k,j,i) = hp0;
+      fh(m,4*dir+3,k,j,i) = hm0;
+    });
+  }
+}
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanGdFaceSums
@@ -3350,33 +3368,40 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   // (the image cell's beyond a periodic seam, re-indexed by the wall map as the sweep)
   // (clean_rot_ring: two slots, of the sets blk mod 2, on the cubed sphere for the face
   // half ranges (CleanScUnion2), on sp with a reflecting top for its mirror)
-  const int ns2 = (cln_ring && ((cln_cssc && (cln_cell || !CleanFvScratch())) ||
-                                cln_scmem)) ? 2 : 1;
+  const int ns2 = (cln_ring && ((cln_cssc && cln_cell) || cln_scmem)) ? 2 : 1;
   const int doff = (ns2 == 1) ? 0 : cln_rqm*n;
   // Staggered spherical polar (one radial MeshBlock, no reflecting top): vgd_i itself,
   // and only the low theta and phi ghost layers exchanged, in chunks of clean_halo_vars
   // directions (one exchange each)
-  const bool gl = !fv && x.sph && !cln_cell && !axi && pmy_pack->pmesh->three_d &&
-                  vgd_nb1 == 1 && !cln_scmem;
-  CleanGdI gi{vi_, DvceArray5D<Real>(), ok, og, ks, js, pk, vgd_own};
+  // The staggered cubed sphere (one radial MeshBlock) likewise, with the first ghost
+  // layer of every MeshBlock face (CleanGdI six: the high lateral faces' sums CLN_FH and
+  // the face half ranges, CleanFaceHalf, read them): no copy of the intensities
+  const bool six = !fv && x.cub && !cln_cell && vgd_nb1 == 1 && !pk && !cln_scmem;
+  const bool gl = (!fv && x.sph && !cln_cell && !axi && pmy_pack->pmesh->three_d &&
+                   vgd_nb1 == 1 && !cln_scmem) || six;
+  CleanGdI gi{vi_, DvceArray5D<Real>(), ok, og, ks, js, pk, vgd_own, six, ke, je, is, ie};
   if (gl && pk) {
   } else if (gl) {
     const int ng = indcs.ng;
     const int nc = std::min(n, cln_hmax), nt = std::max(ke - ks + 1, je - js + 1);
     // (persistent scratch: no cudaMalloc / cudaFree per build; gl's unwritten rows stay
     // the zeros of its allocation, ch is written before it is read)
-    gi.gl = ScratchView<DvceArray5D<Real>>("cln_gd_gl", nmb1 + 1, n, 2, nt,
-                                           cs.extent_int(4));
+    cln_gdgl = ScratchView<DvceArray5D<Real>>("cln_gd_gl", nmb1 + 1, n, six ? 6 : 2, nt,
+                                              std::max(cs.extent_int(4), je - js + 1));
+    gi.gl = cln_gdgl;
     auto ch = ScratchView<DvceArray5D<Real>>("cln_gd_ch", nmb1 + 1, nc, cs.extent_int(2),
                                              cs.extent_int(3), cs.extent_int(4));
     auto gg = gi.gl;
     for (int d0 = 0; d0 < n; d0 += nc) {
       const int nd = std::min(nc, n - d0);
-      // (only the ng layers along the MeshBlock's theta and phi faces: the exchange reads
-      // no other cell)
+      // (only the ng layers along the MeshBlock's theta and phi faces (six: and r faces):
+      // the exchange reads no other cell)
       CleanFor("cln_gd_chc", nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        if (j >= js + ng && j <= je - ng && k >= ks + ng && k <= ke - ng) return;
+        if (j >= js + ng && j <= je - ng && k >= ks + ng && k <= ke - ng &&
+            !(six && (i < is + ng || i > ie - ng))) {
+          return;
+        }
         const CleanRow r = VgdRow(vi_, m, k+ok, j+og, i);
         for (int c = 0; c < nd; ++c) ch(m,c,k,j,i) = r[d0+c];
       });
@@ -3385,6 +3410,14 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
       KOKKOS_LAMBDA(const int m, const int c, const int t, const int i) {
         if (t <= ke - ks) gg(m,d0+c,0,t,i) = ch(m,c,ks+t,js-1,i);
         if (t <= je - js) gg(m,d0+c,1,t,i) = ch(m,c,ks-1,js+t,i);
+        if (six && t <= ke - ks) gg(m,d0+c,2,t,i) = ch(m,c,ks+t,je+1,i);
+        if (six && t <= je - js) gg(m,d0+c,3,t,i) = ch(m,c,ke+1,js+t,i);
+      });
+      if (!six) continue;
+      par_for("cln_gd_glr", DevExeSpace(), 0, nmb1, 0, nd - 1, ks, ke, js, je,
+      KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
+        gg(m,d0+c,4,k-ks,j-js) = ch(m,c,k,j,is-1);
+        gg(m,d0+c,5,k-ks,j-js) = ch(m,c,k,j,ie+1);
       });
     }
   } else if (!fv) {

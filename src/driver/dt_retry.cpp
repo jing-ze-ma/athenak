@@ -612,12 +612,11 @@ void DtRetry::Build(Mesh *pm) {
     // (clean sc rays, staggered, without the reflecting top's memory: cln_fvi is each
     // build's copy of vgd_i, written before it is read; CleanGdFaceSums)
     auto *m1 = pk->pradm1;
-    // (and on the cubed sphere where they are a build's scratch, with the face half
-    // ranges, CleanFvScratch)
-    if (m1->clean && !m1->cln_cell && m1->cln_rfv == 0 && !m1->cln_scmem &&
-        (!m1->cln_cssc || m1->CleanFvScratch())) {
+    // (on the cubed sphere too; their face half ranges cln_fh where every solve rebuilds
+    // them first, CleanFhBuilt)
+    if (m1->clean && !m1->cln_cell && m1->cln_rfv == 0 && !m1->cln_scmem) {
       sel.erase("m1.cln_fvi");
-      sel.erase("m1.cln_fh");
+      if (!m1->cln_cssc || m1->CleanFhBuilt()) sel.erase("m1.cln_fh");
     }
     // (and the rays' source vlat_cs, each build's, written before it is read; vet_gd_async
     // carries the pending build's across the cycle)

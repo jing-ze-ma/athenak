@@ -948,7 +948,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     // file of another ray method: zero, until the first build)
     if (cln_cssc) {
       CleanScUnion2();
-      if (!CleanFvScratch() && cln_fvi.extent_int(1) != cln_fvn) {
+      if (cln_cell && cln_fvi.extent_int(1) != cln_fvn) {   // (staggered: cln_fh)
         Kokkos::realloc(cln_fvi, pmy_pack->nmb_thispack, cln_fvn, cln_s.extent_int(2),
                         cln_s.extent_int(3), cln_s.extent_int(4));
       }
@@ -958,12 +958,13 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     cln_fvd = vgd_dir;
     cln_fvn = vgd_n;
   }
-  // (a restart before any build, staggered: the face half ranges of the file's
-  // intensities, set by set as the builds fold them)
+  // (a restart from a file with the intensities (version 5), staggered: the face half
+  // ranges they give, set by set as the builds fold them)
   if (cln_cssc && !cln_cell && cln_fh.extent_int(0) == 0 && cln_fvi.extent_int(0) > 0) {
     for (int q = 0; q < cln_fvi.extent_int(1)/vgd_n; ++q) {
       CleanFaceHalf(cln_fvd, q*vgd_n, q == 0, q*vgd_n);
     }
+    cln_fvi = DvceArray5D<Real>();
   }
   FluidRef fl = FluidRef::Get(pmy_pack);
   cln_feedback = gas_feedback && fl.on;

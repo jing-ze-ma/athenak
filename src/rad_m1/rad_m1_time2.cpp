@@ -3482,10 +3482,11 @@ int RadiationM1::CleanRstNfv() const {
   // file holds)
   // (the sc rays' cln_fvi: their slots of the union on a ring, CleanGdFaceSums; version
   // 5: dense, CleanFvRstCopy)
-  // (none with both sets swept in every build: the first build after a restart rewrites
-  // them, CleanGdFaceSums)
+  // (version 6, staggered: their face half ranges cln_fh instead, none where every
+  // solve rebuilds them first, CleanFhBuilt)
+  if (cln_cssc && !cln_cell && t2_rstv >= 6) return CleanFhBuilt() ? 0 : 12;
   if (cln_cssc && t2_rstv >= 5) {
-    return CleanFvScratch() ? 0 : ((cln_fvi.extent_int(0) > 0) ? CleanFvRstN() : t2_nfv);
+    return (cln_fvi.extent_int(0) > 0) ? CleanFvRstN() : t2_nfv;
   }
   if (cln_cssc && cln_fvi.extent_int(0) > 0) return cln_fvi.extent_int(1);
   if (cln_rfv > 0 || cln_cssc) return (cln_fvn > 0) ? cln_fvb*cln_fvn : t2_nfv;
@@ -3551,7 +3552,7 @@ bool RadiationM1::Time2RstAccept(const int nfile, const int ver) {
   return (nfile == nb + t2_nfv) && (t2_nfv >= 0);
 }
 int RadiationM1::Time2RstNch() {
-  t2_rstv = 5;   // (the writer: version 5, after a restart from an older file too)
+  t2_rstv = 6;   // (the writer: version 6, after a restart from an older file too)
   // (the clean scheme always: its state, and K1 with cln_k1ok, also in backward-Euler
   // steps; restart.cpp stores t2_ok)
   return (t2_ok || clean || time_scheme != M1_TIME_HESDIRK2) ? Time2RstNchWant() : 0;
@@ -3694,7 +3695,14 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
   // clean_rays = fv1 | fv: the intensities the next sweep starts from, last (unless a
   // has no room for them: restart.cpp copies them itself)
   if (a.extent_int(1) < c + CleanRstNfv()) return;
-  if (cln_cssc && CleanRstNfv() > 0) {
+  if (cln_cssc && !cln_cell && CleanRstNfv() > 0) {   // (version 6: cln_fh)
+    auto af = Kokkos::subview(a, mb, std::make_pair(c, c + 12), AL, AL, AL);
+    if (cln_fh.extent_int(0) >= m0 + nmb) {
+      Kokkos::deep_copy(af, Kokkos::subview(cln_fh, ms, AL, AL, AL, AL));
+    } else {
+      Kokkos::deep_copy(af, 0.0);
+    }
+  } else if (cln_cssc && CleanRstNfv() > 0) {
     CleanFvRstCopy(a, c, nmb, m0, true);
   } else if (CleanRstNfv() > 0 && CleanRstFv().extent_int(0) >= m0 + nmb) {
     Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c + CleanRstNfv()), AL, AL,
@@ -3733,6 +3741,13 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   // the last t2_nfv channels: the conservative rays' intensities (their number is not
   // known before the first sweep, Time2RstAccept)
   const int nfv0 = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0);
+  if (clean && cln_cssc && !cln_cell && t2_rstv >= 6 && ch >= nfv0) {   // (cln_fh)
+    if (cln_fh.extent_int(0) != nmb) {
+      Kokkos::realloc(cln_fh, nmb, 12, w.extent_int(1), w.extent_int(2), w.extent_int(3));
+    }
+    DeepCopyAcross(Kokkos::subview(cln_fh, mb, ch - nfv0, AL, AL, AL), w);
+    return;
+  }
   if (clean && cln_cssc && t2_rstv >= 5 && ch >= nfv0) {   // (version 5, CleanFvRstCopy)
     DvceArray5D<Real> t("m1_t2_fvrd", nmb, 1, w.extent_int(1), w.extent_int(2),
                         w.extent_int(3));

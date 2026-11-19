@@ -1508,6 +1508,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   for (std::size_t q_ = 0; q_ < cln_fvdm.size(); ++q_)
     {v.view("cln_fvdm[]", cln_fvdm[q_]);}
   v.view("cln_fh", cln_fh);
+  v.view("cln_gdgl", cln_gdgl);
   v.view("cln_rl", cln_rl);
   v.view("cln_rr", cln_rr);
   v.view("cln_rpd", cln_rpd);

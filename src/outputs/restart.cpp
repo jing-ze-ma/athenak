@@ -506,7 +506,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     // sphere's sc rays, Time2RstNchWant)
     const bool cl = (pradm1 != nullptr) && pradm1->clean;
     const bool fk = cl && pradm1->cln_fsolve && pradm1->cln_fkin;
-    const std::int32_t hdr[2] = {(nt2 > 0) ? (cl ? 5 : (fk ? 2 : 1)) : 0,
+    const std::int32_t hdr[2] = {(nt2 > 0) ? (cl ? 6 : (fk ? 2 : 1)) : 0,
                                  static_cast<std::int32_t>(nt2)};
     Real hv[3] = {0.0, 0.0, 0.0};
     if (pradm1 != nullptr) {
