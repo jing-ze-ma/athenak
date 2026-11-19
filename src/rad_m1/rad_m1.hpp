@@ -2352,7 +2352,7 @@ class RadiationM1 {
   int RssRstNch(int mode) const;  // channels written: opac(M1_OP_T) + the tensor's
   //! the array and channel holding restart channel n of a given mode
   void RssSlot(int mode, int n, DvceArray5D<Real> *&a, int &c);
-  void RssRstPack(DvceArray5D<Real> &dst, int nmb, int mode);
+  void RssRstPack(DvceArray5D<Real> &dst, int nmb, int mode, int m0 = 0);
   void RssPrime(bool restart);
   DvceArray5D<Real> rss_stage;   // (nmb, nch, k, j, i) read from the restart file
   int rss_stage_mode = -1;       // mode of rss_stage, -1 = nothing staged

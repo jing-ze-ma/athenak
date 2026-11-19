@@ -2941,9 +2941,10 @@ void RadiationM1::RssSlot(int mode, int n, DvceArray5D<Real> *&a, int &c) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::RssRstPack
-//! \brief the signal-speed inputs, channel by channel, into dst (nmb, nch, k, j, i)
+//! \brief the signal-speed inputs of MeshBlocks m0 .. m0+nmb-1, channel by channel, into
+//! dst (nmb, nch, k, j, i)
 
-void RadiationM1::RssRstPack(DvceArray5D<Real> &dst, int nmb, int mode) {
+void RadiationM1::RssRstPack(DvceArray5D<Real> &dst, int nmb, int mode, int m0) {
   const int nch = RssRstNch(mode);
   for (int n=0; n<nch; ++n) {
     DvceArray5D<Real> *a = nullptr;
@@ -2951,7 +2952,7 @@ void RadiationM1::RssRstPack(DvceArray5D<Real> &dst, int nmb, int mode) {
     RssSlot(mode, n, a, c);
     Kokkos::deep_copy(Kokkos::subview(dst, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
                                       Kokkos::ALL),
-                      Kokkos::subview(*a, std::make_pair(0,nmb), c, Kokkos::ALL,
+                      Kokkos::subview(*a, std::make_pair(m0, m0 + nmb), c, Kokkos::ALL,
                                       Kokkos::ALL, Kokkos::ALL));
   }
 }

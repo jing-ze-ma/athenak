@@ -15,6 +15,7 @@
 #include <cstdio>      // fwrite(), fclose(), fopen(), fnprintf(), snprintf()
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <mutex>
@@ -335,8 +336,10 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
         (pmhd != nullptr && pmhd->rad_signal_speed)) {
       const int rmode = pradm1->RssRstMode();
       const int nrs = pradm1->RssRstNch(rmode);
-      DvceArray5D<Real> tmp("rst-m1s", nmb, nrs, nout3, nout2, nout1);
-      pradm1->RssRstPack(tmp, nmb, rmode);
+      // (zero-copy: one MeshBlock's pack, filled MeshBlock by MeshBlock by the writer)
+      const bool one = zc && nmb > 1;
+      DvceArray5D<Real> tmp("rst-m1s", one ? 1 : nmb, nrs, nout3, nout2, nout1);
+      if (!one) pradm1->RssRstPack(tmp, nmb, rmode);
       hold(outarray_m1s, tmp);
     }
     // vet_gd_async: the source of the pending gd build (its sweep may be in flight; it
@@ -1592,7 +1595,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   // a group of n slabs (a(m, n, k, j, i)): with independent I/O a MeshBlock's slabs are
   // contiguous in memory and in its record, so they go out in one write per MeshBlock (in
   // pieces of at most 2 GB); same bytes as the slab by slab loop
-  auto write_group = [&](const auto &a, const int n, const char *what) {
+  auto write_group = [&](const auto &a, const int n, const char *what,
+                         const std::function<void(DvceArray5D<Real> &, int, int)> &pk = {}) {
     if (n <= 0) return;
     if (IOWrapper::collective) {
       for (int c=0; c<n; ++c) {
@@ -1610,8 +1614,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     for (int m=0; m<pm->nmb_thisrank; ++m) {
       for (int w0=0; w0<n; w0+=nw) {
         if (st) {
-          DvceArray5D<Real> t(outarray_m1t_d.data(), 1, nw, nout3, nout2, nout1);
-          pm->pmb_pack->pradm1->Time2RstPack(t, 1, m, w0);
+          DvceArray5D<Real> t(const_cast<Real *>(a.data()), 1, nw, nout3, nout2, nout1);
+          pk(t, m, w0);
           Kokkos::fence();
         }
         const Real *p = Kokkos::subview(a, st ? 0 : m, Kokkos::ALL, Kokkos::ALL,
@@ -1652,7 +1656,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   // and the implicit_predictor increment behind that, one slab per channel
   write_group(outarray_m1p, npred, "rad_m1 predictor");
   // and the hesdirk2 slope behind that
-  write_group(outarray_m1t, nt2, "rad_m1 hesdirk2 slope");
+  write_group(outarray_m1t, nt2, "rad_m1 hesdirk2 slope",
+              [&](DvceArray5D<Real> &t, int m, int w0) {pradm1->Time2RstPack(t, 1, m, w0);});
   // and the internal energy last of all (kEintRstMagic)
   if (we_hyd) { write_wtemp(outarray_weh, "hydro internal energy"); }
   if (we_mhd) { write_wtemp(outarray_wem, "mhd internal energy"); }
@@ -1664,7 +1669,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   // and the thin_relax closure memory last of all (kM1CtrRstMagic)
   write_group(outarray_m1c, nctr, "rad_m1 thin_relax closure");
   // and the rad_signal_speed inputs behind it (kM1RssRstMagic)
-  write_group(outarray_m1s, nrss, "rad_signal_speed inputs");
+  write_group(outarray_m1s, nrss, "rad_signal_speed inputs",
+              [&](DvceArray5D<Real> &t, int m, int) {
+                pradm1->RssRstPack(t, 1, pradm1->RssRstMode(), m);});
   // and the vet_gd_async pending source behind it (kM1VgdRstMagic)
   write_group(outarray_m1g, nvgd, "vet_gd_async source");
   // and the conservative cell-F slope behind it (kM1CskRstMagic)
