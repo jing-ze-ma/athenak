@@ -1490,7 +1490,8 @@ void RadiationM1::CleanStagKReal() {
   cln_krel_on = false;
   const bool stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
   FluidRef fl = FluidRef::Get(pmy_pack);
-  if (!cln_kreal || cln_cell || !stage || !cln_feedback || !fl.on) return;
+  // (with clean_stag_kpos the bound is on kpos's E_old, CleanStagKPos)
+  if (!cln_kreal || cln_kpos || cln_cell || !stage || !cln_feedback || !fl.on) return;
   auto &id = pmy_pack->pmesh->mb_indcs;
   const int is = id.is, js = id.js, ks = id.ks, nx1 = id.nx1, nx2 = id.nx2;
   const int nji = nx2*nx1, nkji = id.nx3*nji, nmb = pmy_pack->nmb_thispack;
@@ -1779,14 +1780,16 @@ void RadiationM1::CleanStagKPos() {
   auto uh = fl.u0;
   auto eos = fl.eos;
   auto inc = t2inc;
-  const bool gas = cln_feedback, krl = cln_kreal;
+  const bool gas = cln_feedback, krk = cln_kreal && gas;
   // (cells with pd, gas-limited, pd guard, E_old < 0, of which the stage start's eint < 0)
   Real nn[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+  Real nkr = 0.0, skr = 1.0;   // (clean_stag_kreal: cells limited, min s)
   Kokkos::parallel_reduce("cln_kpos", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
       DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &np, Real &ng,
-                Real &nc, Real &ne, Real &nj) {
+                Real &nc, Real &ne, Real &nj, Real &lk, Real &ls) {
     const Real es = u0_(m,M1_E,k,j,i);
+    if (krk) for (int n = 0; n < 3; ++n) w(m,CLW_KR+n,k,j,i) = 0.0;
     Real e = es, dg = 0.0, dgs[2] = {0.0, 0.0}, rbs[2] = {0.0, 0.0};
     for (int d = 0; d < x.nf; ++d) {
       const int dk = (d == 2), dj = (d == 1), di = (d == 0);
@@ -1823,18 +1826,52 @@ void RadiationM1::CleanStagKPos() {
       // (the gas gives back the eint its increment gained, de = inc_EN less the kinetic
       // energy of the momentum increment, at most -Q: eint stays >= that of the stage
       // start; the rest, the work on the gas's kinetic energy, a removal of E, counted)
-      // (kreal: the momentum increment applied with the share s, CLW_KS)
-      const Real ksh = krl ? w(m,CLW_KS,k,j,i) : 1.0;
       Real m2 = 0.0, m2s = 0.0;
       for (int n = 0; n < 3; ++n) {
         m2 += SQR(uh(m,IM1+n,k,j,i));
-        m2s += SQR(uh(m,IM1+n,k,j,i) - ksh*inc(m,M1_T2_M1+n,k,j,i));
+        m2s += SQR(uh(m,IM1+n,k,j,i) - inc(m,M1_T2_M1+n,k,j,i));
       }
       const Real de = inc(m,M1_T2_EN,k,j,i) - 0.5*(m2 - m2s)/uh(m,IDN,k,j,i);
       rg = fmin(fmax(de, 0.0), fmin(-q, fmax(w(m,CLW_EI,k,j,i), 0.0)));
-      if (rg < -q) {
-        e += q + rg;
-        wke = -(q + rg);
+      Real rem = -q - rg;   // (the explicit rest: the kinetic-energy work W(1))
+      // (clean_stag_kreal: the increment's kick D at the largest share s whose work this
+      // E_old, KW = e, can pay with the rest: W(s) <= W(1) - (rem - (1 - th) KW), W(s) =
+      // a s + b s^2 (CleanStagKReal's form); the gas takes m_s + s D and its energy less
+      // W(1) - W(s) (eint as formed), the stage the rest (1 - s) D (CLW_KR))
+      if (krk && rem > 0.0) {
+        const Real d = uh(m,IDN,k,j,i);
+        const Real ud[3] = {inc(m,M1_T2_M1,k,j,i), inc(m,M1_T2_M1+1,k,j,i),
+                            inc(m,M1_T2_M1+2,k,j,i)};
+        const Real us[3] = {uh(m,IM1,k,j,i) - ud[0], uh(m,IM2,k,j,i) - ud[1],
+                            uh(m,IM3,k,j,i) - ud[2]};
+        Real ps[3], pv[3], a = 0.0, b = 0.0;
+        CleanGasVector(x, m, k, j, i, us, ps);
+        CleanGasVector(x, m, k, j, i, ud, pv);
+        for (int n = 0; n < 3; ++n) {
+          a += ps[n]*pv[n]/d;
+          b += 0.5*SQR(pv[n])/d;
+        }
+        const Real w1 = a + b, exc = rem - (1.0 - th)*fmax(e, 0.0);
+        if (exc > 0.0 && b > 0.0 && w1 > 0.0) {
+          const Real bd = fmax(w1 - exc, 0.0);
+          const Real sq = std::sqrt(a*a + 4.0*b*bd);
+          Real s = (a >= 0.0) ? ((a + sq > 0.0) ? 2.0*bd/(a + sq) : 0.0) :
+                   (sq - a)/(2.0*b);
+          s = fmin(fmax(s, 0.0), 1.0);
+          const Real dw = w1 - (a + b*s)*s;
+          for (int n = 0; n < 3; ++n) {
+            uh(m,IM1+n,k,j,i) -= (1.0 - s)*ud[n];
+            w(m,CLW_KR+n,k,j,i) = (1.0 - s)*pv[n];
+          }
+          uh(m,IEN,k,j,i) -= dw;
+          rem -= dw;
+          lk += 1.0;
+          ls = fmin(ls, s);
+        }
+      }
+      if (rem > 0.0) {
+        e -= rem;
+        wke = rem;
         ng += 1.0;
       }
     } else if (!gas) {
@@ -1876,8 +1913,16 @@ void RadiationM1::CleanStagKPos() {
     w(m,CLW_KM,k,j,i) = pd;
     w(m,CLW_EO,k,j,i) = e;
   }, Kokkos::Sum<Real>(nn[0]), Kokkos::Sum<Real>(nn[1]), Kokkos::Sum<Real>(nn[2]),
-     Kokkos::Sum<Real>(nn[3]), Kokkos::Sum<Real>(nn[4]));
+     Kokkos::Sum<Real>(nn[3]), Kokkos::Sum<Real>(nn[4]), Kokkos::Sum<Real>(nkr),
+     Kokkos::Min<Real>(skr));
   for (int n = 0; n < 5; ++n) nn[n] = CleanReduce(nn[n], false);
+  nkr = CleanReduce(nkr, false);
+  skr = -CleanReduce(-skr, true);
+  cln_krel_on = (nkr > 0.0);
+  if (cln_krel_on && global_variable::my_rank == 0) {
+    std::printf("CLEAN KREAL cycle %d t2s %d cells %.0f min s %.3e (on the kpos E_old)\n",
+                pmy_pack->pmesh->ncycle, t2_solve, nkr, skr);
+  }
   nq[0] = CleanReduce(nq[0], false);
   nq[1] = CleanReduce(nq[1], false);
   cln_kq_on = true;
