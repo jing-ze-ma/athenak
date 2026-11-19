@@ -307,7 +307,8 @@ inline void BvalsTeamFor(const char *name, const P &policy, const F &functor) {
 // 128 VGPRs on gfx942; the cs / pole pack then spilled 816 B per lane to scratch
 // (rocprofv3, HG small cs deck: SendBuff 0.86 s of 10.0 s GPU time). LaunchBounds<256, 2>
 // lifts the cap to 256 VGPRs; the copies (and so the result) are unchanged.
-#if defined(KOKKOS_ENABLE_HIP)
+// CUDA likewise: the cs pack took 255 registers per thread (12 % occupancy).
+#if defined(KOKKOS_ENABLE_HIP) || defined(KOKKOS_ENABLE_CUDA)
 using BvCcTeamPolicy = Kokkos::TeamPolicy<DevExeSpace, Kokkos::LaunchBounds<256, 2>>;
 #else
 using BvCcTeamPolicy = Kokkos::TeamPolicy<>;
@@ -475,8 +476,14 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // exchanges (stage CS1, rad_m1_sph.cpp), whose seam faces pair cell to cell.
   bool cs_noresample = false;
   // teams of each (block, buffer, variable) of the CC pack/unpack (env BVALS_CC_SPLIT
-  // overrides): 1, the default since defaults-1105; the clean M1 exchanges take more
+  // overrides): 1, the default since defaults-1105; the clean M1 exchanges take more.
+  // CUDA: 16 (a cubed-sphere face of 700 x 64 x 3 cells was one team's; A100 RSG 12
+  // ranks -0.28 s/cycle, hst and dumps bitwise)
+#if defined(KOKKOS_ENABLE_CUDA)
+  int cc_split = 16;
+#else
   int cc_split = 1;
+#endif
   // >= 0 = the *FluxSeamCC exchange (averaging modes only) packs and
   // reconciles only this variable. Set by an RKG super-stage around its flux exchange
   // (the super-stage update reads only the energy flux); -1 everywhere else.
