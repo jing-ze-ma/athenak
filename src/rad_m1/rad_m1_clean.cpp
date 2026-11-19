@@ -1637,26 +1637,42 @@ void RadiationM1::CleanStagXCount(const int inl) {
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   auto w = cln_w;
-  Real nn = 0.0, xmin = 0.0, nb = 0.0, nbx = 0.0;
+  Real nn = 0.0, xmin = 0.0, nb = 0.0, nbx = 0.0, neo = 0.0, nsd = 0.0;
+  CleanArgs x = CleanMakeArgs();
   Kokkos::parallel_reduce("cln_xcount", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
       DevExeSpace(), {0, ks, js, is}, {pmy_pack->nmb_thispack, ke + 1, je + 1, ie + 1}),
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a, Real &b,
-                Real &c, Real &d) {
+                Real &c, Real &d, Real &e, Real &f) {
     const Real v = w(m,CLW_X,k,j,i);
     if (!(v > 0.0)) a += 1.0;
     if (w(m,CLW_B,k,j,i) < 0.0) c += 1.0;
     if (!(v > 0.0) && w(m,CLW_B,k,j,i) < 0.0) d += 1.0;
-    b = fmin(b, v/fmax(fabs(w(m,CLW_EO,k,j,i)), 1.0e-300));
+    // (of the X <= 0 cells: the old vector < 0, or its face sources' outflow above it)
+    const Real eo = w(m,CLW_EO,k,j,i);
+    if (!(v > 0.0) && eo < 0.0) e += 1.0;
+    if (!(v > 0.0) && eo >= 0.0) {   // (CLF_SR holds ar now: the sources anew)
+      Real sd = 0.0;
+      for (int q = 0; q < x.nf; ++q) {
+        const int dk = (q == 2), dj = (q == 1), di = (q == 0);
+        sd += CleanDivW(x, q, m, k, j, i, 1)*CleanFaceSource(x, q, m, k+dk, j+dj, i+di) -
+              CleanDivW(x, q, m, k, j, i, 0)*CleanFaceSource(x, q, m, k, j, i);
+      }
+      if (eo < x.h*sd) f += 1.0;
+    }
+    b = fmin(b, v/fmax(fabs(eo), 1.0e-300));
   }, Kokkos::Sum<Real>(nn), Kokkos::Min<Real>(xmin), Kokkos::Sum<Real>(nb),
-     Kokkos::Sum<Real>(nbx));
+     Kokkos::Sum<Real>(nbx), Kokkos::Sum<Real>(neo), Kokkos::Sum<Real>(nsd));
   nn = CleanReduce(nn, false);
   nb = CleanReduce(nb, false);
   nbx = CleanReduce(nbx, false);
+  neo = CleanReduce(neo, false);
+  nsd = CleanReduce(nsd, false);
   xmin = -CleanReduce(-xmin, true);
   if (global_variable::my_rank == 0 && (nn > 0.0 || cln_xd_ncap > 0.0)) {
     std::printf("CLEAN XDONOR cycle %d t2s %d pass %d xle0 %.0f minX/Eo %.3e cap %.0f "
-                "b<0 %.0f (with X<=0 %.0f)\n", pmy_pack->pmesh->ncycle, t2_solve, inl, nn,
-                xmin, cln_xd_ncap, nb, nbx);
+                "b<0 %.0f (with X<=0 %.0f; Eo<0 %.0f, Eo<hdivS %.0f)\n",
+                pmy_pack->pmesh->ncycle, t2_solve, inl, nn, xmin, cln_xd_ncap, nb, nbx, neo,
+                nsd);
   }
 }
 
