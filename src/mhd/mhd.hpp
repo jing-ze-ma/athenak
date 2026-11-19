@@ -1231,22 +1231,24 @@ class MHD {
             // LOCAL POLYTROPE, closed form for a gamma law, T = p/d = (gamma-1) e/d.
             // Walked in two segments like the other branches: anchor -> interface, then
             // interface -> neighbour continuing from the interface state.
-            // T LINEAR in Phi with slope b from the two neighbours is the exact
-            // polytrope: d(dT)/dPhi = -d => dln d/dPhi = -(1 + b)/T
-            // => d = d_0 (T/T_0)^(-(1+b)/b)
+            // T LINEAR in Phi with slope b is the exact polytrope:
+            // d(dT)/dPhi = -d => dln d/dPhi = -(1 + b)/T => d = d_0 (T/T_0)^(-(1+b)/b)
             // (isothermal, b -> 0: d = d_0 exp(-dPhi/T_0)); e = d T/(gamma-1).
-            const Real dphis = phi_ip1 - phi_im1;
+            // b PER SIDE, the (i-1, i) chord inward and (i, i+1) outward, so each walk
+            // ends at its neighbour's T (zero on a side that spans no potential).
             const Real gm1_ = gamma - 1.0;
-            const Real b = (fabs(dphis) > 0.0) ?
-                gm1_*(e_ip1/rho_ip1 - e_im1/rho_im1)/dphis : 0.0;
             const Real t_i = gm1_*e_i/rho_i;
+            const Real b_m = (phi_i != phi_im1) ?
+                (t_i - gm1_*e_im1/rho_im1)/(phi_i - phi_im1) : 0.0;
+            const Real b_p = (phi_ip1 != phi_i) ?
+                (gm1_*e_ip1/rho_ip1 - t_i)/(phi_ip1 - phi_i) : 0.0;
             // clamp_dt (<mhd>/wb_clamp_ideal, x1 cache only): BOUND THE TEMPERATURE
             // EXTRAPOLATION as the general-EOS walk does (wb_background.hpp): limit the
             // DECREASE of T over a segment to half the starting temperature, so a small
             // positive t1 cannot overflow pow(t1/t0, -(1+b)/b) across a steep T jump;
             // the branch degrades toward its isothermal member instead.
             // Where the clamp does not bite, be IS b bit for bit.
-            auto step = [&](const Real d0, const Real t0, const Real dphi,
+            auto step = [&](const Real b, const Real d0, const Real t0, const Real dphi,
                             Real &d1, Real &t1) {
               const Real be = (clamp_dt && b*dphi < -0.5*t0) ? (-0.5*t0/dphi) : b;
               t1 = t0 + be*dphi;
@@ -1258,10 +1260,10 @@ class MHD {
               }
             };
             Real d_imh, t_imh, d_iph, t_iph, d_im1, t_im1, d_ip1, t_ip1;
-            step(rho_i, t_i, phi_imh - phi_i, d_imh, t_imh);
-            step(rho_i, t_i, phi_iph - phi_i, d_iph, t_iph);
-            step(d_imh, t_imh, phi_im1 - phi_imh, d_im1, t_im1);
-            step(d_iph, t_iph, phi_ip1 - phi_iph, d_ip1, t_ip1);
+            step(b_m, rho_i, t_i, phi_imh - phi_i, d_imh, t_imh);
+            step(b_p, rho_i, t_i, phi_iph - phi_i, d_iph, t_iph);
+            step(b_m, d_imh, t_imh, phi_im1 - phi_imh, d_im1, t_im1);
+            step(b_p, d_iph, t_iph, phi_ip1 - phi_iph, d_ip1, t_ip1);
             if (n == (IEN)) {
               q0_i = e_i;
               q0_imh = d_imh*t_imh*igm1; q0_iph = d_iph*t_iph*igm1;

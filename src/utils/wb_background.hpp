@@ -268,7 +268,7 @@ Real WBEnergyFromEnthalpy(const EOS_Data &eos, const Real d, const Real h,
 //! temperature is safe precisely because Pressure(d,e,t) IGNORES t under a gamma law.
 
 //! `dlntdphi` is the local temperature gradient with respect to the potential, dT/dPhi,
-//! measured across the stencil by WBBackgroundStencil(); it is
+//! measured by the caller (a one-sided chord, as WBBackgroundStencil() takes); it is
 //! only read by the POLYTROPIC branch (wb_opt == 3) and defaults to zero, which makes
 //! that branch the isothermal one.
 
@@ -450,17 +450,18 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
 
   int wb_opt = WBOptionNumber(eos, wb_option, rho_im1, e_im1, rho_ip1, e_ip1, rho_i, e_i,
                               t_i, t_im1c, t_ip1c);
-  // the local polytrope's gradient, dT/dPhi across the whole stencil.  Two more
-  // inversions, seeded by the anchor's temperature.  Zero when the stencil does not
-  // span any potential (a tangential sweep), which reduces the branch to isothermal.
-  Real dlntdphi = 0.0;
-  if (wb_opt == 3) {
-    const Real dphis = phi_ip1 - phi_im1;
-    if (fabs(dphis) > 0.0) {
-      const Real t_m = (t_im1c > 0.0) ? t_im1c : eos.Temperature(rho_im1, e_im1, t_i);
-      const Real t_p = (t_ip1c > 0.0) ? t_ip1c : eos.Temperature(rho_ip1, e_ip1, t_i);
-      dlntdphi = (t_p - t_m)/dphis;   // dT/dPhi: T LINEAR in Phi, the true polytrope
-    }
+  // the local polytrope's gradient dT/dPhi, ONE PER SIDE: the inner walk takes the
+  // (i-1, i) chord and the outer walk the (i, i+1) chord, so each ends exactly at its
+  // neighbour's temperature, and a non-monotonic Phi (super-Eddington Phi_eff) cannot
+  // blow a whole-stencil chord up.  Two more inversions, seeded by the anchor's
+  // temperature.  Zero on a side that spans no potential (a tangential sweep), which
+  // reduces that side to isothermal.
+  Real a_m = 0.0, a_p = 0.0;
+  if (wb_opt == 3 && (phi_im1 != phi_i || phi_ip1 != phi_i)) {
+    const Real t_m = (t_im1c > 0.0) ? t_im1c : eos.Temperature(rho_im1, e_im1, t_i);
+    const Real t_p = (t_ip1c > 0.0) ? t_ip1c : eos.Temperature(rho_ip1, e_ip1, t_i);
+    if (phi_i != phi_im1) a_m = (t_i - t_m)/(phi_i - phi_im1);
+    if (phi_ip1 != phi_i) a_p = (t_p - t_i)/(phi_ip1 - phi_i);
   }
 
   q0_i.d = rho_i;
@@ -482,15 +483,14 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
       eos.ThermoAt(rho_i, t_i, ei_t, p_i, chir, chit, dum_cv);
     }
     q0_i.p = p_i;
-    const Real a = dlntdphi;   // dT/dPhi
     // one segment: predictor with the start coefficient k0, ONE table evaluation at the
     // predicted end point (its e, p and chi's), trapezoidal corrector on ln d with the
     // end coefficient, and e, p moved to the corrected density with the evaluated
     // chi_rho (p ~ d^chi_rho at fixed T) and e ~ d (exact for a gamma law, O(dphi^2)
     // otherwise on a correction that is itself O(dphi^2)).  The end evaluation's chi's
     // seed the next segment.  Second order per segment, five evaluations per stencil.
-    auto seg = [&](const Real d0, const Real t0, const Real k0, const Real dph,
-                   Real &d1, Real &t1, Real &e1, Real &p1, Real &k1) {
+    auto seg = [&](const Real a, const Real d0, const Real t0, const Real k0,
+                   const Real dph, Real &d1, Real &t1, Real &e1, Real &p1, Real &k1) {
       const Real dpred = d0*exp(k0*dph);
       t1 = t0 + a*dph;
       Real ep, pp, cr, ct;
@@ -503,15 +503,16 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
       e1 = ep*r;
       k1 = -(d1 + (a/t1)*p1*ct)/(p1*cr);
     };
-    const Real k0 = -(rho_i + (a/t_i)*p_i*chit)/(p_i*chir);
+    const Real k0m = -(rho_i + (a_m/t_i)*p_i*chit)/(p_i*chir);
+    const Real k0p = -(rho_i + (a_p/t_i)*p_i*chit)/(p_i*chir);
     Real d1, t1, e1, p1, k1, d2, t2, e2, p2, k2;
-    seg(rho_i, t_i, k0, phi_imh - phi_i, d1, t1, e1, p1, k1);
+    seg(a_m, rho_i, t_i, k0m, phi_imh - phi_i, d1, t1, e1, p1, k1);
     q0_imh.d = d1; q0_imh.e = e1; q0_imh.p = p1;
-    seg(d1, t1, k1, phi_im1 - phi_imh, d2, t2, e2, p2, k2);
+    seg(a_m, d1, t1, k1, phi_im1 - phi_imh, d2, t2, e2, p2, k2);
     q0_im1.d = d2; q0_im1.e = e2; q0_im1.p = p2;
-    seg(rho_i, t_i, k0, phi_iph - phi_i, d1, t1, e1, p1, k1);
+    seg(a_p, rho_i, t_i, k0p, phi_iph - phi_i, d1, t1, e1, p1, k1);
     q0_iph.d = d1; q0_iph.e = e1; q0_iph.p = p1;
-    seg(d1, t1, k1, phi_ip1 - phi_iph, d2, t2, e2, p2, k2);
+    seg(a_p, d1, t1, k1, phi_ip1 - phi_iph, d2, t2, e2, p2, k2);
     q0_ip1.d = d2; q0_ip1.e = e2; q0_ip1.p = p2;
     WBGuard(q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
     return;
@@ -520,12 +521,12 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
 
   // inner half cells, from the anchor, using the anchor's own coefficient
   Real dm = rho_i, em = e_i, tm = -1.0, pm = 0.0;
-  WBAdvance(eos, wb_opt, rho_i, e_i, phi_imh - phi_i, dm, em, tm, t_i, dlntdphi,
+  WBAdvance(eos, wb_opt, rho_i, e_i, phi_imh - phi_i, dm, em, tm, t_i, 0.0,
             t_i, t_i, &pm);
   q0_imh.d = dm; q0_imh.e = em; q0_imh.p = pm;
 
   Real dp = rho_i, ep = e_i, tp = -1.0, pp = 0.0;
-  WBAdvance(eos, wb_opt, rho_i, e_i, phi_iph - phi_i, dp, ep, tp, t_i, dlntdphi,
+  WBAdvance(eos, wb_opt, rho_i, e_i, phi_iph - phi_i, dp, ep, tp, t_i, 0.0,
             t_i, t_i, &pp);
   q0_iph.d = dp; q0_iph.e = ep; q0_iph.p = pp;
 
@@ -533,11 +534,11 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
   // its own half cell -- the same two-segment walk the ideal-gas closed forms perform
   // these two continue FROM the interfaces, whose temperatures the calls above just
   // handed back in tm/tp -- a closer guess still than the anchor's
-  WBAdvance(eos, wb_opt, rho_im1, e_im1, phi_im1 - phi_imh, dm, em, tm, tm, dlntdphi,
+  WBAdvance(eos, wb_opt, rho_im1, e_im1, phi_im1 - phi_imh, dm, em, tm, tm, 0.0,
             tm, t_im1c, &pm);
   q0_im1.d = dm; q0_im1.e = em; q0_im1.p = pm;
 
-  WBAdvance(eos, wb_opt, rho_ip1, e_ip1, phi_ip1 - phi_iph, dp, ep, tp, tp, dlntdphi,
+  WBAdvance(eos, wb_opt, rho_ip1, e_ip1, phi_ip1 - phi_iph, dp, ep, tp, tp, 0.0,
             tp, t_ip1c, &pp);
   q0_ip1.d = dp; q0_ip1.e = ep; q0_ip1.p = pp;
   WBGuard(q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
