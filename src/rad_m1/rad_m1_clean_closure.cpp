@@ -884,6 +884,7 @@ void RadiationM1::CleanRays() {
     // ranges, CleanCellConsistency, CleanFaceHalf)
     if (cln_consist || cln_cssc) CleanGdFaceSums();
     if (cln_cssc) CleanFaceHalf(vgd_dir, 0, true);
+    if (cln_cssc && !cln_cell) cln_fvi = DvceArray5D<Real>();   // (build scratch)
   }
   MemcutPoison(3);
 }
@@ -1460,6 +1461,8 @@ void RadiationM1::CleanRingMoments() {
   cln_rjump = nxt;
   cln_rguard_sum += CleanReduce(nguard, false);
   cln_rl = DvceArray5D<Real>();   // (build scratch: freed, every build writes it first)
+  if (cln_cssc && !cln_cell) cln_fvi = DvceArray5D<Real>();   // (and so cln_fvi, read only
+                                                                // by CleanFaceHalf)
 }
 
 //----------------------------------------------------------------------------------------
