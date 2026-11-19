@@ -3207,6 +3207,17 @@ class RadiationM1 {
   int cln_xqs = -1;   // (4 slots: qL >= 0, qR <= 0, the lagged explicit flux, C(E_k))
   Real cln_xd_ncap = 0.0;
   DvceArray5D<Real> cln_xdg;   // (diagnostic: -work, -r hcke E_k, sb, gres of the rows)
+  // clean_stag_kpos (staggered, default off): the explicit stage increment of hesdirk2
+  // in Patankar form (CleanStagKPos); clean_stag_xpat (default off): the exchange's
+  // removal -r hcke E_k past its share of the row in Patankar form (CleanRightHandSide)
+  bool cln_kpos = false, cln_xpat = false, cln_kq_on = false;
+  int cln_kqs = -1;             // (3 face slots: the moved flux M, qL >= 0, qR <= 0)
+  Real cln_kc1 = 0.0, cln_kc2 = 0.0;   // (the stage's c1, c2 of t2pf1, t2pf2)
+  DvceArray1D<Real> cln_kcnt;   // (p capped, xpat rows: the last pass; their sums)
+  Real cln_kqcap = 0.0, cln_kqcaps = 0.0;   // (faces at q = c: last pass, sum)
+  void CleanStagKPos();
+  void CleanStagKQ();
+  void CleanStagKEnd();
   int cln_fdg = -1;             // staggered bracket: face slot of its lagged flux DG
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
   bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces

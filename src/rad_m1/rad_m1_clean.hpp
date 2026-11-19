@@ -212,6 +212,10 @@ constexpr int CLW_SG = 50;   //   and the gas rows (their scales), the weighted 
 constexpr int CLW_BW = 51;   //   preconditioner input (CleanBiCGStab)
 constexpr int CLW_PW = 52;
 constexpr int CLW_N = 53;
+constexpr int CLW_KF = 53;   // staggered clean_stag_kpos: E of the old vector as formed,
+constexpr int CLW_KM = 54;   //   the cell removal of the increment moved implicit (>= 0),
+constexpr int CLW_PD = 55;   //   with clean_stag_xpat the rows' Patankar diagonal
+constexpr int CLW_NK = 56;   //   (allocated only with clean_stag_kpos / xpat)
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanFvI
@@ -291,6 +295,9 @@ struct CleanArgs {
   int xq;                      // staggered, clean_stag_xdonor: face slots qL, qR of the
                                // lagged fluxes' donor part, their explicit part, C(E_k)
                                // (-1: the central cross flux)
+  int kq;                      // staggered, clean_stag_kpos: face slots of the moved
+                               // increment flux M and its qL, qR (-1: none)
+  bool pd;                     // staggered, kpos / xpat: the rows' diagonal CLW_PD
   bool xlag, xsrc;             //   lag: explicit up to the donor's share; xsrc: the
                                //   face sources too
   bool mcl;                    // staggered: a face's momentum term at most the force of
@@ -955,6 +962,11 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
     al += x.fc[dir](m,x.xq,k,j,i);
     ar += x.fc[dir](m,x.xq+1,k,j,i);
   }
+  // (clean_stag_kpos: the increment's moved flux M as q E_donor, CleanStagKPos)
+  if (x.kq >= 0 && !x.hi) {
+    al += x.fc[dir](m,x.kq+1,k,j,i);
+    ar += x.fc[dir](m,x.kq+2,k,j,i);
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -1502,7 +1514,7 @@ void CleanStencilRow(const CleanArgs &x, const int m, const int k, const int j,
                      const int i, Real (&c)[CLN_ST]) {
   for (int s = 0; s < CLN_ST; ++s) c[s] = 0.0;
   const Real qr = x.feedback ? x.w(m,CLW_RY,k,j,i) : 1.0;   // (1 - r)
-  c[0] = 1.0 + x.h*x.c*x.op(m,M1_OP_E,k,j,i)*qr;
+  c[0] = 1.0 + x.h*x.c*x.op(m,M1_OP_E,k,j,i)*qr + (x.pd ? x.w(m,CLW_PD,k,j,i) : 0.0);
   CleanStFace<0, 0>(x, m, k, j, i, c);
   CleanStFace<0, 1>(x, m, k, j, i, c);
   if (x.multi_d) {

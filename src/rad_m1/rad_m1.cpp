@@ -336,6 +336,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_xlag = (xd == "lag");
       cln_xsrc = cln_xd && stag("clean_stag_xsrc", false);
       cln_xsw = cln_xd && stag("clean_stag_xsweep", false);
+      cln_kpos = stag("clean_stag_kpos", false);
+      cln_xpat = stag("clean_stag_xpat", false);
     }
     // clean_stag_rayratio (default off): the bracket reads the rays only as ratios (their
     // face flux over the donor's ray J, the model flux of E), times the state's E

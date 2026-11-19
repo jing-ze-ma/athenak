@@ -312,7 +312,8 @@ void RadiationM1::CleanInit() {
   const bool stcs = pmy_pack->pmesh->use_cubed_sphere && !cln_cell;
   Kokkos::realloc(cln_v, nmb, stcs ? 18 : 3, n3, n2, n1);
   Kokkos::realloc(cln_w.s, nmb, CLW_NS, n3, n2, n1);
-  Kokkos::realloc(cln_w.o, nmb, (cln_cell ? CLW_NC : CLW_N) - CLW_NS, n3, n2, n1);
+  const int nwo = cln_cell ? CLW_NC : ((cln_kpos || cln_xpat) ? CLW_NK : CLW_N);
+  Kokkos::realloc(cln_w.o, nmb, nwo - CLW_NS, n3, n2, n1);
   cln_w.ns = CLW_NS;
   // the cubed sphere takes the half ranges about the face normals from the FV rays
   cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
@@ -327,7 +328,12 @@ void RadiationM1::CleanInit() {
   // (the staggered bracket's lagged flux DG in one more slot, CleanStagBracket)
   cln_fdg = (!cln_cell && cln_consist) ? nfc : -1;
   cln_xqs = cln_xd ? nfc + (cln_fdg >= 0) : -1;   // (clean_stag_xdonor's q)
-  const int nfx = nfc + (cln_fdg >= 0) + (cln_xd ? 4 : 0);
+  cln_kqs = cln_kpos ? nfc + (cln_fdg >= 0) + (cln_xd ? 4 : 0) : -1;   // (kpos: M, q)
+  const int nfx = nfc + (cln_fdg >= 0) + (cln_xd ? 4 : 0) + (cln_kpos ? 3 : 0);
+  if (cln_kpos || cln_xpat) {
+    Kokkos::realloc(cln_kcnt, 4);
+    Kokkos::deep_copy(cln_kcnt, 0.0);
+  }
   Kokkos::realloc(cln_fc1, nmb, nfx, n3, n2, n1);
   Kokkos::realloc(cln_fc2, nmb, nfx, n3, n2, n1);
   Kokkos::realloc(cln_fc3, nmb, nfx, n3, n2, n1);
@@ -978,6 +984,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   }
   if (cln_ring == 2) CleanRingSolveSet();
   CleanOldVector();
+  CleanStagKPos();   // (clean_stag_kpos: the increment in Patankar form)
   if (cell) {
     CleanCellOldVector();
     CleanCellFaceCoefficients();
@@ -1050,6 +1057,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     if (cln_vimp && cln_feedback) CleanStagDrag(true);
     // (clean_stag_xdonor: q of the first iterate, with its drag share b)
     CleanStagXDonor();
+    CleanStagKQ();
     converged = !iterate;
     npic = 0;
     Real de0 = 1.0e300, dv0 = 1.0e300, trel = 0.0;
@@ -1079,6 +1087,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         if (inl % cln_pcreuse == 0) CleanCellPreconditionerSetup();
       } else {
         if (inl > 0) CleanStagXDonor();   // (clean_stag_xdonor: q of the iterate)
+        if (inl > 0) CleanStagKQ();   // (clean_stag_kpos)
         CleanRightHandSide();
         // (clean_stag_sbimp: the first iterate's T in exchange with E_k and the beta
         // terms sb(E_k) the RHS just built, then the RHS of that T)
@@ -1160,6 +1169,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         CleanCopyIterate();
       }
     }
+    // (clean_stag_kpos: the write-back and the slopes take the old vector as formed and
+    // the faces' own flux; the counts of the last pass)
+    if ((cln_kq_on || cln_xpat) && !cell) CleanStagKEnd();
     // (staggered: R1, R2 of the solution, counted)
     const int nbad = cell ? (cln_poslim ? CleanCellMarkFaces() : 0) :
                      CleanStagRealizable();
@@ -1268,6 +1280,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
 
   if (cln_fbl_r > 0) CleanFbRestore();   // (implicit_fb_local: the closure's D back)
   cln_xd_on = false;   // (clean_stag_xdonor: q is of this solve's passes only)
+  cln_kq_on = false;
 
   // 6. clean_closure = extrap(2): ray moments of the new state.  The last solve of a
   //    step also re-evaluates its slope K1 = f(U^{n+1}) with the closure of these rays
@@ -1617,6 +1630,196 @@ void RadiationM1::CleanStagXDonor() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagKPos
+//! \brief clean_stag_kpos (staggered, hesdirk2 stage solves): the explicit increment of
+//! the old vector, E_old = E_s + c1 K1_E (+ c2 K2_E), E_s the stage start, in the
+//! modified-Patankar form of MPRK22 (Burchard, Deleersnijder & Meister 2003), the split
+//! of clean_stag_xdonor = lag.  The increment is -div G + Q, G = c1 Phi1 + c2 Phi2 the
+//! energy its slopes' solves moved across each face (t2pf1, t2pf2, CleanWriteBack), Q the
+//! cell part.  A face's G leaves its donor explicitly up to the share b E_s,donor
+//! (b = 1/(2 nf + 1)); the rest M enters the stage operator as q E_donor,
+//! q = |M|/(h E_k,donor) <= c (CleanRightHandSide, CleanFaceWeights).  Q < 0 (the
+//! exchange of the slope) is removed explicitly up to b E_s; the rest goes on the row's
+//! diagonal as |Q_moved|/E_k (CLW_PD).  So E_old >= 0 and the operator stays an M-matrix:
+//! the stage is positive for any h.  At the fixed point (E_k = X) the stage carries the
+//! increment exactly; where no share fires it is the unchanged increment (2nd order).
+//! The write-back, the slopes and the gas take the old vector as formed (CLW_KF): one
+//! flux per face, energy exact.  Counted (CLEAN KPOS).
+
+void RadiationM1::CleanStagKPos() {
+  cln_kq_on = false;
+  const bool stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
+  if (!cln_kpos || cln_cell || !stage) return;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const bool two = (t2_solve == M1_T2S_STAGE2);   // (stage 2: K1 and K2)
+  if (!t2pf1_ok || (two && !t2pf2_ok) || t2pf1.extent_int(0) <= nmb1) {
+    if (global_variable::my_rank == 0) {
+      std::printf("CLEAN KPOS cycle %d t2s %d: no stored face slope, increment as is\n",
+                  pmy_pack->pmesh->ncycle, t2_solve);
+    }
+    return;
+  }
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  auto w = cln_w;
+  auto u0_ = u0;
+  CleanFor("cln_kpos0", nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    w(m,CLW_KF,k,j,i) = w(m,CLW_EO,k,j,i);
+    w(m,CLW_X,k,j,i) = u0_(m,M1_E,k,j,i);   // (E_s, the stage start)
+  });
+  CleanGhostFill(cln_w, CLW_X, 1);
+  CleanArgs x = CleanMakeArgs();
+  const int kq = cln_kqs;
+  const Real b = 1.0/(2.0*x.nf + 1.0);
+  const Real c1 = cln_kc1, c2 = cln_kc2;
+  auto p1 = t2pf1, p2 = t2pf2;
+  Real nfm = 0.0;
+  for (int dir = 0; dir < x.nf; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    auto fc = x.fc[dir];
+    Real nd = 0.0;
+    Kokkos::parallel_reduce("cln_kpos1", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+        DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + dk + 1, je + dj + 1, ie + di + 1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &n) {
+      Real mv = 0.0;
+      if (!CleanBoundaryFace(x, dir, m, k, j, i)) {
+        const Real g = c1*p1(m,dir,k,j,i) + (two ? c2*p2(m,dir,k,j,i) : 0.0);
+        const int kl = k - dk, jl = j - dj, il = i - di;
+        const bool up = (g > 0.0);
+        const Real es = fmax(up ? w(m,CLW_X,kl,jl,il) : w(m,CLW_X,k,j,i), 0.0);
+        const Real out = fabs(g)*(up ? CleanDivW(x, dir, m, kl, jl, il, 1) :
+                                       CleanDivW(x, dir, m, k, j, i, 0));
+        if (out > b*es) {
+          mv = (1.0 - b*es/out)*g;
+          n += 1.0;
+        }
+      }
+      fc(m,kq,k,j,i) = mv;
+      fc(m,kq+1,k,j,i) = 0.0;
+      fc(m,kq+2,k,j,i) = 0.0;
+    }, Kokkos::Sum<Real>(nd));
+    nfm += nd;
+  }
+  // (the cells: E_old less the explicit share, Q < 0 past b E_s moved to the diagonal)
+  Real nc = 0.0, nneg = 0.0;
+  Kokkos::parallel_reduce("cln_kpos2", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &n, Real &ng) {
+    Real dg = 0.0, dm = 0.0;   // (h div of G and of M)
+    for (int d = 0; d < x.nf; ++d) {
+      const int dk = (d == 2), dj = (d == 1), di = (d == 0);
+      const Real wl = CleanDivW(x, d, m, k, j, i, 0), wh = CleanDivW(x, d, m, k, j, i, 1);
+      auto gf = [&](const int kk, const int jj, const int ii) {
+        return c1*p1(m,d,kk,jj,ii) + (two ? c2*p2(m,d,kk,jj,ii) : 0.0);
+      };
+      dg += wh*gf(k+dk, j+dj, i+di) - wl*gf(k, j, i);
+      dm += wh*x.fc[d](m,kq,k+dk,j+dj,i+di) - wl*x.fc[d](m,kq,k,j,i);
+    }
+    const Real es = fmax(w(m,CLW_X,k,j,i), 0.0), eo = w(m,CLW_KF,k,j,i);
+    const Real q = eo - w(m,CLW_X,k,j,i) + dg;   // (the cell part Q)
+    Real mc = 0.0;
+    if (-q > b*es) {
+      mc = -q - b*es;
+      n += 1.0;
+    }
+    const Real e = eo + dm + mc;
+    if (e < 0.0) ng += 1.0;
+    w(m,CLW_KM,k,j,i) = mc;
+    w(m,CLW_EO,k,j,i) = e;
+  }, Kokkos::Sum<Real>(nc), Kokkos::Sum<Real>(nneg));
+  nfm = CleanReduce(nfm, false);
+  nc = CleanReduce(nc, false);
+  nneg = CleanReduce(nneg, false);
+  cln_kqcap = cln_kqcaps = 0.0;
+  cln_kq_on = true;
+  if (global_variable::my_rank == 0 && (nfm > 0.0 || nc > 0.0 || nneg > 0.0)) {
+    std::printf("CLEAN KPOS cycle %d t2s %d faces %.0f cells %.0f Eo<0 %.0f\n",
+                pmy_pack->pmesh->ncycle, t2_solve, nfm, nc, nneg);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagKQ
+//! \brief clean_stag_kpos: q = |M|/(h E_k,donor) of the iterate on every face with a
+//! moved increment flux M (at most c: counted as capped, CLEAN KPOS)
+
+void RadiationM1::CleanStagKQ() {
+  if (!cln_kq_on) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanGhostFill(cln_w, CLW_EK, 1);
+  CleanArgs x = CleanMakeArgs();
+  const int kq = cln_kqs;
+  auto w = cln_w;
+  Real ncap = 0.0;
+  for (int dir = 0; dir < x.nf; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    auto fc = x.fc[dir];
+    Real nd = 0.0;
+    Kokkos::parallel_reduce("cln_kq", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+        DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + dk + 1, je + dj + 1, ie + di + 1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &n) {
+      const Real mv = fc(m,kq,k,j,i);
+      Real ql = 0.0, qr = 0.0;
+      if (mv != 0.0) {
+        const bool up = (mv > 0.0);
+        const Real ed = up ? w(m,CLW_EK,k-dk,j-dj,i-di) : w(m,CLW_EK,k,j,i);
+        Real q = x.c;
+        if (fabs(mv) < x.c*x.h*ed) {
+          q = fabs(mv)/(x.h*ed);
+        } else {
+          n += 1.0;
+        }
+        if (up) ql = q;
+        if (!up) qr = -q;
+      }
+      fc(m,kq+1,k,j,i) = ql;
+      fc(m,kq+2,k,j,i) = qr;
+    }, Kokkos::Sum<Real>(nd));
+    ncap += nd;
+  }
+  ncap = CleanReduce(ncap, false);
+  cln_kqcap = ncap;   // (the last pass's; CleanStagKEnd prints it)
+  cln_kqcaps += ncap;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagKEnd
+//! \brief clean_stag_kpos / xpat after the passes: the old vector as formed back in
+//! CLW_EO (the write-back, slopes and gas take it; the faces' own flux, without M), and
+//! the counts of the solve: faces at the cap c, cells at the diagonal's cap, exchange
+//! rows in Patankar form (last pass; sum over the passes)
+
+void RadiationM1::CleanStagKEnd() {
+  if (cln_kq_on) {
+    auto &indcs = pmy_pack->pmesh->mb_indcs;
+    auto w = cln_w;
+    CleanFor("cln_kend", pmy_pack->nmb_thispack - 1, indcs.ks, indcs.ke, indcs.js,
+             indcs.je, indcs.is, indcs.ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      w(m,CLW_EO,k,j,i) = w(m,CLW_KF,k,j,i);
+    });
+    cln_kq_on = false;
+  }
+  auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_kcnt);
+  Real v[4] = {h(0), h(1), h(2), h(3)};
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, v, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  if (global_variable::my_rank == 0 && (v[2] > 0.0 || v[3] > 0.0 || cln_kqcaps > 0.0)) {
+    std::printf("CLEAN KPOS cycle %d t2s %d end: q at c %.0f (sum %.0f) p at cap %.0f "
+                "(sum %.0f) xpat rows %.0f (sum %.0f)\n", pmy_pack->pmesh->ncycle,
+                t2_solve, cln_kqcap, cln_kqcaps, v[0], v[2], v[1], v[3]);
+  }
+  Kokkos::deep_copy(cln_kcnt, 0.0);
+  cln_kqcap = cln_kqcaps = 0.0;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanStagXSweep
 //! \brief clean_stag_xsweep: one line-Jacobi sweep from the linear solve's X,
 //!   X = X+ + L^{-1} (B - A X+),  X+ = max(X, 0),
@@ -1962,6 +2165,10 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   }
   auto xdg = cln_xdg;
   const bool xdd = cln_xd;
+  // (clean_stag_kpos / xpat: the rows' Patankar diagonal CLW_PD; counts of this pass)
+  const bool pdo = x.pd, kqo = (x.kq >= 0), xpo = cln_xpat && x.pd;
+  auto kc = cln_kcnt;
+  if (pdo) Kokkos::deep_copy(Kokkos::subview(kc, std::make_pair(0, 2)), 0.0);
   CleanParForLb<3>("cln_rhs", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
@@ -2115,6 +2322,36 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
         - CleanSourceDivergence(x, m, k, j, i) + sb + gres + (eso ? x.h*es(m,k,j,i) : 0.0);
     // (clean_stag_sbimp: (1 - r) sb(E) in the operator as the cell layout's, Newton form)
     if (x.sbi) x.w(m,CLW_B,k,j,i) -= (1.0 - rr)*CleanStagBetaE(xh, CLW_EK, m, k, j, i);
+    // (clean_stag_kpos: the increment's cell removal moved out of E_old, M_c, on the
+    // diagonal as M_c/E_k (at most 1e12, counted); clean_stag_xpat: the exchange's
+    // removal R = r hcke E_k explicit up to half of the rest of the row B0 = B + R, the
+    // remainder on the diagonal as r hcke (1 - share): B >= B0/2 >= 0 where B0 >= 0; the
+    // same fixed point, X = E_k)
+    if (pdo) {
+      Real pd = 0.0;
+      const Real ekc = x.w(m,CLW_EK,k,j,i);
+      if (kqo && x.w(m,CLW_KM,k,j,i) > 0.0) {
+        const Real mc = x.w(m,CLW_KM,k,j,i);
+        if (mc < 1.0e12*ekc) {
+          pd = mc/ekc;
+        } else {
+          pd = 1.0e12;
+          Kokkos::atomic_add(&kc(0), 1.0);
+          Kokkos::atomic_add(&kc(2), 1.0);
+        }
+      }
+      const Real rx = rr*hcke*fmax(ekc, 0.0);
+      if (xpo && !eqr && rx > 0.0) {
+        const Real b0 = x.w(m,CLW_B,k,j,i) + rx, ex = 0.5*fmax(b0, 0.0);
+        if (rx > ex) {
+          pd += rr*hcke*(1.0 - ex/rx);
+          x.w(m,CLW_B,k,j,i) = b0 - ex;
+          Kokkos::atomic_add(&kc(1), 1.0);
+          Kokkos::atomic_add(&kc(3), 1.0);
+        }
+      }
+      x.w(m,CLW_PD,k,j,i) = pd;
+    }
     x.w(m,CLW_X,k,j,i) = x.w(m,CLW_EK,k,j,i);
     if (!bud) return;   // (clean_conv = budget: the gross terms of the E and gas rows)
     const Real xc = hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) + hckp*arad_*SQR(SQR(t)) +

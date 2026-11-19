@@ -1258,6 +1258,8 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     in_(m,n,k,j,i) = v;
   });
   CleanDInc(two, c1, c2, heun ? 0.5 : w1, heun ? 0.5 : w0);
+  cln_kc1 = c1;   // (clean_stag_kpos: the face part of the increment, CleanStagKPos)
+  cln_kc2 = two ? c2 : 0.0;
   const bool ike = t2_ike && (t2kei.extent_int(0) > nmb1);   // rsglock-1112
   if (ike) {
     auto e1_ = t2ke1, e2_ = t2ke2, ei_ = t2kei;
