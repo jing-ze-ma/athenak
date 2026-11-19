@@ -325,7 +325,9 @@ void RadiationM1::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
   }
   // (only the cells outside CleanInner are copied: CleanShell.  clean_halo_direct: only
   // on the cubed sphere, after the exchange, for the cube-vertex corners of the old one)
-  if (!own && (dl ? cs : part != 2)) {
+  // (clean_halo_direct, doubles: the cube-vertex corners on the arrays themselves)
+  const bool dc = dl && cs && std::is_same<T, Real>::value;
+  if (!own && !dc && (dl ? cs : part != 2)) {
     const CleanShell sc(n3, n2, n1, ng, is, ie, js, je, ks, ke, md, td);
     int o = 0;
     for (auto &s : sg) {
@@ -347,7 +349,14 @@ void RadiationM1::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
       o += s.nc;
     }
   }
-  if (dl && cs) {
+  if (dc) {
+    if constexpr (std::is_same<T, Real>::value) {
+      for (auto &s : sg) {
+        DvceArray5D<Real> a = s.a;
+        pb->FillPanelCornersCC(a, false, 0, s.c0, s.nc);
+      }
+    }
+  } else if (dl && cs) {
     pb->FillPanelCornersCC(ha);
   } else if (!dl) {
     if (part != 2) {
@@ -362,7 +371,7 @@ void RadiationM1::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
   const CleanShell sb(n3, n2, n1, 0, is, ie, js, je, ks, ke, md, td);
   int o = 0;
   for (auto &s : sg) {
-    if (own || (dl && !cs)) break;
+    if (own || (dl && !cs) || dc) break;
     auto a = s.a;
     const int c0 = s.c0;
     par_for("cln_hback", DevExeSpace(), 0, nmb1, 0, s.nc-1, 0, sb.ncell-1,

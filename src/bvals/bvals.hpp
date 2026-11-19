@@ -540,7 +540,9 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
                            int iwl = -1, int iwu = -1, int vmask = 0);
   TaskStatus RecvAndUnpackCC(DvceArray5D<Real> &a, DvceArray5D<Real> &ca,
                              int iwl = -1, int iwu = -1, int vmask = 0);
-  void FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse = false, int vmask = 0);
+  // (v0, nv > 0: the variables v0 .. v0 + nv - 1 of a, vmask ignored)
+  void FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse = false, int vmask = 0,
+                          int v0 = 0, int nv = 0);
 
   // COMPONENT-ROLE TABLE of this exchange. The polar sign flip (sp) and the seam
   // basis transform (cs) act on the TANGENTIAL VECTOR PAIRS of the exchanged array and

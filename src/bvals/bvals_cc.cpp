@@ -638,7 +638,7 @@ static Real SignPreserveCS(const Real q, const Real n0, const Real n1, const Rea
 }
 
 void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse,
-                                              int vmask) {
+                                              int vmask, int v0, int nv) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int js = coarse ? indcs.cjs : indcs.js;
   const int je = coarse ? indcs.cje : indcs.je;
@@ -647,8 +647,9 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse,
   const int ng = indcs.ng;
   const int nmb = pmy_pack->nmb_thispack;
   // the variables filled (default vmask = 0: all of a); see bvals.hpp
-  const BvVarList vlst_ = MakeBvVarList(a.extent_int(1), vmask);
-  const int nvar = (vmask != 0) ? vlst_.n : a.extent_int(1);
+  const BvVarList vlst_ = MakeBvVarList((nv > 0) ? nv : a.extent_int(1),
+                                         (nv > 0) ? 0 : vmask);
+  const int nvar = (nv > 0) ? nv : ((vmask != 0) ? vlst_.n : a.extent_int(1));
   const int n1 = a.extent_int(4);
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
@@ -664,7 +665,7 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse,
   par_for("cs_fill_corners_cc", DevExeSpace(), 0,(nmb-1), 0,3, 0,(nvar-1), 0,(n1-1),
           0,(ng*ng-1),
   KOKKOS_LAMBDA(const int m, const int c, const int vl, const int i, const int g) {
-    const int v = vlst_.v[vl];
+    const int v = v0 + ((nv > 0) ? vl : vlst_.v[vl]);
     const int gj = g/ng;
     const int gk = g - gj*ng;
     const int sj = (c & 1) ? 1 : -1;      // -1 = the -x2 side of the block
