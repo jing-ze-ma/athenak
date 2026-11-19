@@ -28,6 +28,7 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_clean.hpp"
 #include "rad_m1/rad_m1_clean_cell.hpp"
+#include "utils/scratch_view.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -931,6 +932,21 @@ void RadiationM1::CleanApply(const int src, const int dst) {
     // (cubed sphere: the lateral stress of every face from the sums Y, CleanFaceCross)
     const bool cub = x.cub;
     const CleanArgs *px = cub ? CleanDevArgs(x, 0) : nullptr;
+    // (the cubed sphere: each face's cross term once, not once per cell beside it)
+    DvceArray5D<Real> xf;
+    if (cub) {
+      const int ie = indcs.ie, je = indcs.je, ke = indcs.ke;
+      xf = ScratchView<DvceArray5D<Real>>("cln_xf", pmy_pack->nmb_thispack, 3,
+                                          w.s.extent_int(2), w.s.extent_int(3),
+                                          w.s.extent_int(4));
+      for (int d = 0; d < x.nf; ++d) {
+        CleanFor("cln_xf", pmy_pack->nmb_thispack - 1, ks, ke+(d == 2), js, je+(d == 1),
+                 is, ie+(d == 0), KOKKOS_LAMBDA(const int m, const int k, const int j,
+                                                const int i) {
+          xf(m,d,k,j,i) = CleanFaceCross(*px, src, d, m, k, j, i);
+        });
+      }
+    }
     auto f = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real a = 0.0;
 #pragma unroll
@@ -947,8 +963,7 @@ void RadiationM1::CleanApply(const int src, const int dst) {
         for (int d = 0; d < 3; ++d) {
           for (int sd = 0; sd < 2 && d < x.nf; ++sd) {
             const int kf = k + sd*(d == 2), jf = j + sd*(d == 1), iff = i + sd*(d == 0);
-            a += (sd ? x.h : -x.h)*CleanDivW(x, d, m, k, j, i, sd)*
-                 CleanFaceCross(x, src, d, m, kf, jf, iff);
+            a += (sd ? x.h : -x.h)*CleanDivW(x, d, m, k, j, i, sd)*xf(m,d,kf,jf,iff);
           }
         }
       }
