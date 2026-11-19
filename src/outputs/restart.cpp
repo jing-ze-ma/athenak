@@ -10,14 +10,17 @@
 
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdio>      // fwrite(), fclose(), fopen(), fnprintf(), snprintf()
 #include <cstdlib>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <utility> // make_pair
 #include <vector>
 
@@ -703,13 +706,40 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   IOWrapper resfile;
   resfile.SetDeferred(this);  // background write if ATHENA_ASYNC_OUTPUT=1
   resfile.Open(fname.c_str(), IOWrapper::FileMode::write, single_file_per_rank);
-  // rank 0's progress through the dump (a stalled file system shows as a missing line)
+  // rank 0's progress through the dump, and its watchdog: every <job>/restart_warn_s
+  // seconds (default 600; 0 off) without a progress line it warns, naming the last one,
+  // so a stalled file system is never silent
   const auto t0w = std::chrono::steady_clock::now();
+  auto sec = [&t0w]() {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0w).count();
+  };
+  const double warn_s = pin->GetOrAddReal("job", "restart_warn_s", 600.0);
+  std::mutex wmx;
+  std::condition_variable wcv;
+  bool wdone = false;
+  double tlast = 0.0;
+  std::string wlast = "the open";
+  std::thread wd;
+  if (global_variable::my_rank == 0 && warn_s > 0.0) {
+    wd = std::thread([&]() {
+      std::unique_lock<std::mutex> lk(wmx);
+      while (!wdone) {
+        if (wcv.wait_for(lk, std::chrono::duration<double>(warn_s)) ==
+            std::cv_status::timeout && !wdone && sec() - tlast >= warn_s) {
+          std::cout << "CLEAN WARNING restart dump " << fname << ": no progress for "
+                    << static_cast<int>(sec() - tlast) << " s after " << wlast
+                    << std::endl;
+        }
+      }
+    });
+  }
   auto prog = [&](const char *what) {
     if (global_variable::my_rank != 0) return;
+    std::lock_guard<std::mutex> lk(wmx);
+    tlast = sec();
+    wlast = what;
     std::cout << "<restart> " << fname << ": " << what << " written at " << std::fixed
-              << std::setprecision(1) << std::chrono::duration<double>(
-                 std::chrono::steady_clock::now() - t0w).count() << " s" << std::endl;
+              << std::setprecision(1) << tlast << " s" << std::endl;
     std::cout.unsetf(std::ios_base::floatfield);
   };
   if (global_variable::my_rank == 0 || single_file_per_rank) {
@@ -1625,6 +1655,11 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   // close file, clean up
   resfile.Close(single_file_per_rank);
   prog("all (file closed)");
+  if (wd.joinable()) {
+    { std::lock_guard<std::mutex> lk(wmx); wdone = true; }
+    wcv.notify_all();
+    wd.join();
+  }
   // drop the host staging copies (filled again by the next LoadOutputData,
   // whose Kokkos::realloc allocates anew anyway): on a unified-memory APU (MI300A) they
   // held a full second copy of the restart data in HBM for the rest of the run
