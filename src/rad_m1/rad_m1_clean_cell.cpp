@@ -2545,7 +2545,7 @@ void RadiationM1::CleanCellDiagStencil() {
   CleanArgs x = CleanMakeArgs();
   auto op = opac;
   const Real hc = x.h*x.c;
-  DvceArray1D<Real> tv("clc_diag_stencil", 3*2*12 + 4);
+  DvceArray1D<Real> tv("clc_diag_stencil", 3*2*12 + 10);
   par_for("clc_diag_stencil", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int) {
     for (int dir = 0; dir < 3; ++dir) {
       if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
@@ -2591,8 +2591,17 @@ void RadiationM1::CleanCellDiagStencil() {
         tv(o+9) = vys;                         // own E via own y
         tv(o+10) = x.fc[dir](m,CLF_AL,kf,jf,iff);
         tv(o+11) = op(m,M1_OP_T,ko,jo,io)*CleanCellFaceDistance(x, dir, m, kf, jf, iff);
+        // the y rows' coupling to E: |d fY_n/d E| of both cells (scale h A/V)
+        tv(76) += fabs(g[0])*(fabs(jl[1+dir][0]) + fabs(jr[1+dir][0]));
       }
     }
+    // the work coupling of the E row to y (non-Z columns): sum |JV_b| |y_b| and sum
+    // |JV_b|, and the y rows' diagonal 1 + h c chi
+    for (int b = 0; b < x.nf; ++b) {
+      tv(77) += fabs(x.w(m,CLW_JV+b,k,j,i)*x.u(m,CLC_K+1+b,k,j,i));
+      tv(78) += fabs(x.w(m,CLW_JV+b,k,j,i));
+    }
+    tv(79) = 1.0 + hc*op(m,M1_OP_T,k,j,i);
     tv(72) = 1.0 + hc*op(m,M1_OP_E,k,j,i)*(1.0 - x.w(m,CLW_RR,k,j,i));
     tv(73) = x.u(m,CLC_O,k,j,i);
     tv(74) = x.u(m,CLC_B,k,j,i);
@@ -2626,6 +2635,9 @@ void RadiationM1::CleanCellDiagStencil() {
               "sum|off| %.4e (via y %.4e) dominance %+.4e (via y %+.4e) E_old %.4e "
               "B %.4e hc*chi %.3e\n", cy, t2_solve, t(72), diag, dvia, offd, offv,
               diag - offd, dvia - offv, t(73), t(74), t(75));
+  std::printf("CLEAN DIAGC cycle %d t2s %d non-Z: work sum|JV_b| %.4e sum|JV_b y_b| "
+              "%.4e | y rows: sum s|dfY_n/dE| %.4e diag 1+hc chi %.4e\n", cy, t2_solve,
+              t(78), t(77), t(76), t(79));
   std::fflush(stdout);
 }
 
