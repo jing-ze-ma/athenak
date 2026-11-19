@@ -1358,6 +1358,23 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_linpass", cln_linpass);
   v.value("cln_srccvx", cln_srccvx);
   v.value("cln_freal", cln_freal);
+  v.value("cln_xd", cln_xd);
+  v.value("cln_xd_on", cln_xd_on);
+  v.value("cln_xlag", cln_xlag);
+  v.value("cln_xsrc", cln_xsrc);
+  v.value("cln_xsw", cln_xsw);
+  v.value("cln_xqs", cln_xqs);
+  v.value("cln_xd_ncap", cln_xd_ncap);
+  v.view("cln_xdg", cln_xdg);
+  v.value("cln_kpos", cln_kpos);
+  v.value("cln_xpat", cln_xpat);
+  v.value("cln_kpb", cln_kpb);
+  v.value("cln_xtnorm", cln_xtnorm);
+  v.value("cln_xtcons", cln_xtcons);
+  v.value("cln_xte", cln_xte);
+  v.value("cln_kc1", cln_kc1);
+  v.value("cln_kc2", cln_kc2);
+  v.view("cln_kcnt", cln_kcnt);
   v.value("cln_fdg", cln_fdg);
   v.value("cln_diagcells", cln_diagcells);
   v.value("cln_posbdry", cln_posbdry);
@@ -2252,6 +2269,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
 
 // not visited (pointers, const, threads, timers, MPI, ...):
 //   vet_mbs : VetMBState *
+//   pos_un_drop : Real (protocol counter, kept monotonic)
 //   tmr_t : Kokkos::Timer
 //   pbval_th : MeshBoundaryValuesCC *
 //   pbval_tq : MeshBoundaryValuesCC *

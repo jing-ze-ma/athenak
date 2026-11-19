@@ -29,8 +29,9 @@ SKIP_RE = [r'^std::thread', r'^std::future', r'Timer$', r'^MPI_', r'DevExeSpace'
 # vgd_es2_made: the second execution space instance vgd_es2 (not copyable) is made
 # vgd_esid / vgd_est: the early-send stamp id and its stamps (monotonic: a rolled-back id
 # would match stamps the failed attempt left, and those cells would be skipped)
+# pos_un_drop: the positivity report's sum over discarded attempts (CounterKeep::Restore adds after the checkpoint)
 SKIP_NAMES = {'hi_seq', 'vgd_ipc_seq', 'acc_nccl', 'cln_hbuf', 'cln_halo', 'cln_hpb', 'cln_hdl',
-              'vgd_es2_made', 'vgd_esid', 'vgd_est'}
+              'vgd_es2_made', 'vgd_esid', 'vgd_est', 'pos_un_drop'}
 NESTED = ['VgdTabHost', 'VgdTabDev', 'M1OpacTab', 'CleanW']   # structs holding Views
 
 def ast(header, name):
