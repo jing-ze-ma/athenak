@@ -110,8 +110,10 @@ const char *kDtrMinimal[] = {
   // flags go with the handles the attempt swapped and, on a first cycle, with cln_init.
   // clean_rot_ring: the offsets and the pending Delta (a retried first step of a block
   // shifted the ring twice), and the swept directions with their weights the step's solve
-  // reads with cln_fvi (cln_fvd: the step's last build, at t + dt, rewrites them)
-  "m1.cln_rstd", "m1.cln_fvi", "m1.cln_fh", "m1.cln_fvis", "m1.cln_fvgp", "m1.cln_top",
+  // reads with cln_fvi (cln_fvd: the step's last build, at t + dt, rewrites them).
+  // (cln_rstd itself is that checkpoint: written only by DtRetryQuiesce, CleanDtrD, so
+  // it needs no clone of its own)
+  "m1.cln_fvi", "m1.cln_fh", "m1.cln_fvis", "m1.cln_fvgp", "m1.cln_top",
   "m1.cln_rr", "m1.cln_rpd", "m1.cln_fvd",
   // (not visited before the generated visitor): vet_gd_rotate_xfade's G/A/Delta slots,
   // read by the next builds' estimate (RotXfEst); the old scheme's K1 of
@@ -522,9 +524,11 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   // (SharedHostPinnedSpace) instead of device memory; the same bytes are copied back, so
   // a retried cycle is bitwise the device-clone one. Saves device memory = one copy of
   // the minimal list; costs a device -> host copy of it per cycle (PCIe on discrete
-  // GPUs). No memory effect on a host-only build.
+  // GPUs). No memory effect on a host-only build.  = m1: the radiation's clones only
+  // (the hydro's stay on the device)
   if (pin->DoesParameterExist("time", "dt_retry_host")) {
-    host_ = pin->GetBoolean("time", "dt_retry_host");
+    hm1_ = (pin->GetString("time", "dt_retry_host") == "m1");
+    host_ = !hm1_ && pin->GetBoolean("time", "dt_retry_host");
   }
   // debug / audit keys, read only when named (the parameter dump is unchanged otherwise)
   if (pin->DoesParameterExist("time", "dt_retry_force_cycle")) {
@@ -621,7 +625,7 @@ void DtRetry::Build(Mesh *pm) {
     // (and the rays' source vlat_cs, each build's, written before it is read; vet_gd_async
     // carries the pending build's across the cycle)
     if (m1->clean && !m1->vgd_async) sel.erase("m1.vlat_cs");
-    Binder b{&ent_, "m1.", &sel, all_views_, host_};
+    Binder b{&ent_, "m1.", &sel, all_views_, host_ || hm1_};
     m1->DtRetryVisit(b);
   }
   // the angular-momentum module (<hydro|mhd>/am_transport, am_vector,
@@ -635,7 +639,7 @@ void DtRetry::Build(Mesh *pm) {
   // (and of clean_rot_ring's offsets cln_rr, written only at block boundaries, a fill
   // or a restart: their writers bump vra_gen too)
   for (auto &e : ent_) {
-    if ((host_ && e->name == "m1.vra_d") || e->name == "m1.cln_rr") {
+    if (((host_ || hm1_) && e->name == "m1.vra_d") || e->name == "m1.cln_rr") {
       e->SetGen(&(pk->pradm1->vra_gen));
     }
     // (and both, with the pending Delta, while no build of the cycle shifts the ring:
@@ -683,7 +687,7 @@ void DtRetry::Save(Mesh *pm) {
       std::cout << "<time> dt_retry checkpoint: " << ent_.size() << " members, " << nv
                 << " Views (" << nd << " copied, " << static_cast<double>(b)/1.0e6
                 << " MB on rank 0";
-      if (host_) {
+      if (host_ || hm1_) {
         std::cout << ", dt_retry_host: " << static_cast<double>(bh)/1.0e6
                   << " MB of it in pinned host memory";
       }

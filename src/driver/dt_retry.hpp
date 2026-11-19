@@ -180,6 +180,7 @@ class DtRetry {
   bool clean_views_ = false;   // dt_retry_views = clean
   bool audit_ = false;
   bool host_ = false;      // <time>/dt_retry_host: clones in pinned host mem
+  bool hm1_ = false;       // <time>/dt_retry_host = m1: the radiation's clones only
   int poison_ = 0;
   Real fac_ = 0.5, grow_ = 1.25;
   static constexpr int maxcut_ = 8;   // cuts of one cycle before the run stops
