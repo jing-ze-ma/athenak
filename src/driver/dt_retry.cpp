@@ -235,7 +235,7 @@ struct ViewEntry : public Entry {
         hclone = HClone(Kokkos::view_alloc(std::string("dtrh:") + name,
                                            Kokkos::WithoutInitializing), p->layout());
       }
-      Kokkos::deep_copy(hclone, *p);
+      Kokkos::deep_copy(DevExeSpace(), hclone, *p);   // (async: DtRetry::Save fences once)
       if (gen != nullptr) {gsaved = *gen; dsaved = p->data();}
     } else {
       if (!Same(*p, clone)) {
