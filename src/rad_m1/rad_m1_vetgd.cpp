@@ -1303,8 +1303,9 @@ void RadiationM1::VetGdInit() {
   // sweeps and allocate no second array (e.g. the fused twin of the RSG decks; the clean
   // sc rays' ring, CleanRingMoments, sweeps one set at a time)
   if (vgd_xff && (vgd_xf_m > 0 || vgd_iter != 1 || vgd_twin || vgd_twfuse || vgd_async ||
-                  (clean && cln_ring) ||
-                  vgd_bandx || vgd_upf != 0 || vgd_gband || vgd_nb1 > 1 ||
+                  (clean && cln_ring && !(cln_rfuse && cln_ring == 1 && cln_rfv == 0 &&
+                                          !vgd_csg && ibc_x1max != M1_IBC_REFLECT)) ||
+                  vgd_bandx || vgd_upf != 0 || (vgd_gband && !vgd_raw) || vgd_nb1 > 1 ||
                   (vgd_csg && vgd_cscomp && vgd_csxg > 1) ||
                   (!vgd_csg && (!vgd_shl_on || vgd_ovl_g > 0 || vgd_fuse_h > 1 ||
                                 vet_path != 0 || vgd_beam || vgd_lhx_ie > 0.0 ||
@@ -2572,10 +2573,12 @@ bool RadiationM1::VetGdXffOk() {
            (vgd_i_xb.d.extent(0) == vgd_i.d.extent(0));
   }
   if (!vgd_shl_on || vgd_ovl_g > 0 || vgd_fuse_h > 1 || vgd_upf != 0 || vgd_rbon ||
-      vet_path != 0 || vgd_gband || vgd_beam || vgd_lhx_ie > 0.0 || !vgd_gfast) {
+      vet_path != 0 || (vgd_gband && !vgd_raw) || vgd_beam || vgd_lhx_ie > 0.0 ||
+      !vgd_gfast) {
     return false;
   }
-  if (vgd_ipc_state == 1) {return false;}   // (the IPC halo: one set per exchange)
+  // (the IPC halo: one set per exchange; the raw band's merged one, VetGdGbHaloX)
+  if (vgd_ipc_state == 1 && !vgd_raw) {return false;}
 #if M1_VGD_NCCL_ON
   if (VgdNcclOn()) {return false;}
 #endif
@@ -6461,7 +6464,7 @@ void RadiationM1::VetGdSweep() {
     s_xfe = (ee != nullptr) ? std::atoi(ee) : 1;
   }
   const bool xfe = xffs && (s_xfe != 0) && vgd_xff_msg && vgd_hmpi && (vgd_ovl_g <= 0) &&
-                   (vgd_fuse_h <= 1) && (vgd_hx_mode != 2);
+                   (vgd_fuse_h <= 1) && (vgd_hx_mode != 2) && !vgd_raw;
   // mem2-1014 vet_gd_band_ring: shells lent a wide slab while their band is needed
   // (xffuse-1113: the other set's array as the second one, VetGdRingFlush)
   if (ibc_x1max == M1_IBC_REFLECT) {VetGdTopMirror();}
@@ -6509,43 +6512,43 @@ void RadiationM1::VetGdSweep() {
 #undef M1_VGD_BODY_MIR
 #undef M1_VGD_BODY_GX0
 #endif
-    // xffuse-1113: the same shell bodies over the OTHER set of the cross-fade (its
-    // direction table, wall tables and intensities; every other input shared), for the
-    // fused two-set shell kernel (run_xff below).  Made in a scope where the set's names
-    // are bound to that set: the code is the include above, unchanged
+    // xffuse-1113: the shell bodies of the fused two-set kernel (run_xff below), one per
+    // set, its direction table, wall tables and intensities bound to the body's names;
+    // every other input shared.  Both sets' bodies come from ONE lambda expression (the
+    // same closure type), so the fused kernel holds one copy of the body and of its stack
+    // frame, and each thread calls it on its set's closure (two closure types doubled the
+    // stack: GH200 551 us per fused launch vs 2 x 210 unfused).  The code is the include
+    // above, unchanged
 #if defined(KOKKOS_ENABLE_CUDA)
 #define M1_VGD_BODY_GX0
 #endif
-    auto xb0 = [&]() {
-      auto dir_ = vgd_tabd.dir;
-      auto wl_ = vgd_tabd.wall;
-      auto mp_ = vgd_tabd.map;
-      auto mr_ = vgd_tabd.mr;
-      auto m3_ = vgd_tabd.m3;
-      auto w3_ = vgd_tabd.w3;
-      auto vi_ = vgd_i_xb;
+    using VgdDirV = decltype(vgd_dir);
+    using VgdWallV = decltype(vgd_wall);
+    using VgdMapV = decltype(vgd_map);
+    using VgdMrV = decltype(vgd_mr);
+    using VgdM3V = decltype(vgd_m3);
+    using VgdW3V = decltype(vgd_w3);
+    using VgdIV = decltype(vgd_i);
+    auto mkx0 = [&](const VgdDirV dir_, const VgdWallV wl_, const VgdMapV mp_,
+                    const VgdMrV mr_, const VgdM3V m3_, const VgdW3V w3_,
+                    const VgdIV vi_) {
 #define M1_VGD_BODY_NAME bodyx
 #define M1_VGD_BODY_MIR 0
 #include "rad_m1_vetgd_body.inc"
 #undef M1_VGD_BODY_NAME
 #undef M1_VGD_BODY_MIR
       return bodyx;
-    }();
-    auto xb1 = [&]() {
-      auto dir_ = vgd_tabd.dir;
-      auto wl_ = vgd_tabd.wall;
-      auto mp_ = vgd_tabd.map;
-      auto mr_ = vgd_tabd.mr;
-      auto m3_ = vgd_tabd.m3;
-      auto w3_ = vgd_tabd.w3;
-      auto vi_ = vgd_i_xb;
+    };
+    auto mkx1 = [&](const VgdDirV dir_, const VgdWallV wl_, const VgdMapV mp_,
+                    const VgdMrV mr_, const VgdM3V m3_, const VgdW3V w3_,
+                    const VgdIV vi_) {
 #define M1_VGD_BODY_NAME bodyx
 #define M1_VGD_BODY_MIR 1
 #include "rad_m1_vetgd_body.inc"
 #undef M1_VGD_BODY_NAME
 #undef M1_VGD_BODY_MIR
       return bodyx;
-    }();
+    };
 #if defined(KOKKOS_ENABLE_CUDA)
 #undef M1_VGD_BODY_GX0
 #endif
@@ -6575,37 +6578,30 @@ void RadiationM1::VetGdSweep() {
     if (gfast && bdp != nullptr) {bgp = VgdClosureToDevice(bodyg, vgd_bbuf2);}
 #endif
     // xffuse-1113: both sets' gx-false closures in device memory (VetGdXffOk: gfast)
-    using VgdXb0T = decltype(xb0);
-    using VgdXb1T = decltype(xb1);
-    const VgdXb0T *xq0 = nullptr;
-    const VgdXb1T *xq1 = nullptr;
-#if defined(KOKKOS_ENABLE_CUDA)
-    const VgdBodygT *xa0 = nullptr;
-    const VgdBodymgT *xa1 = nullptr;
-#else
-    const VgdBodyT *xa0 = nullptr;
-    const VgdBodymT *xa1 = nullptr;
-#endif
+    using VgdXb0T = decltype(mkx0(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3, vgd_i));
+    using VgdXb1T = decltype(mkx1(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3, vgd_i));
+    const VgdXb0T *xa0 = nullptr, *xq0 = nullptr;
+    const VgdXb1T *xa1 = nullptr, *xq1 = nullptr;
     if (xffs) {
       if (!gfast) {VgdFatal("vet_gd_rotate_xfade_fuse: the fused sweep needs the gx-false "
                             "shell kernel");}
 #if defined(KOKKOS_ENABLE_CUDA)
-      if (thm) {
-        xa1 = VgdClosureToDevice(bodymg, vgd_bbuf3);
-      } else {
-        xa0 = VgdClosureToDevice(bodyg, vgd_bbuf2);
-      }
+      auto &bba = vgd_bbuf2;   // (the current set's closure: the buffer of its gx-false body)
 #else
-      if (thm) {
-        xa1 = VgdClosureToDevice(bodym, vgd_bbuf1);
-      } else {
-        xa0 = VgdClosureToDevice(body, vgd_bbuf0);
-      }
+      auto &bba = vgd_bbuf0;
 #endif
       if (thm) {
-        xq1 = VgdClosureToDevice(xb1, vgd_bbufx);
+        xa1 = VgdClosureToDevice(mkx1(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3,
+                                      vgd_i), bba);
+        xq1 = VgdClosureToDevice(mkx1(vgd_tabd.dir, vgd_tabd.wall, vgd_tabd.map,
+                                      vgd_tabd.mr, vgd_tabd.m3, vgd_tabd.w3, vgd_i_xb),
+                                 vgd_bbufx);
       } else {
-        xq0 = VgdClosureToDevice(xb0, vgd_bbufx);
+        xa0 = VgdClosureToDevice(mkx0(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3,
+                                      vgd_i), bba);
+        xq0 = VgdClosureToDevice(mkx0(vgd_tabd.dir, vgd_tabd.wall, vgd_tabd.map,
+                                      vgd_tabd.mr, vgd_tabd.m3, vgd_tabd.w3, vgd_i_xb),
+                                 vgd_bbufx);
       }
     }
     const int nkj = (ke - ks + 1)*(je - js + 1), nj = je - js + 1;
@@ -6621,15 +6617,24 @@ void RadiationM1::VetGdSweep() {
       auto LB_ = vgd_shl_xb[pass];
       const std::false_type f_;
       const int sid_ = sid;
+      // the current set's codes padded to a multiple of 1024 threads: every block (any
+      // power-of-two size <= 1024) runs one set only (env VGD_XFF_PAD=0: unpadded)
+      static int s_pad = -1;
+      if (s_pad < 0) {
+        const char *ep = std::getenv("VGD_XFF_PAD");
+        s_pad = (ep == nullptr || std::atoi(ep) != 0) ? 1 : 0;
+      }
+      const int nP = s_pad ? ((nA + 1023)/1024)*1024 : nA;
       auto e0_ = vgd_est[0];
       auto e1_ = vgd_est[1];
       if (thm) {
         const auto *qa = xa1;
         const auto *qb = xq1;
-        Kokkos::parallel_for("m1_vgd_shell_xff", VgdShellPol(vgd_cur, 0, nA + nB),
+        Kokkos::parallel_for("m1_vgd_shell_xff", VgdShellPol(vgd_cur, 0, nP + nB),
         KOKKOS_LAMBDA(const int c) {
-          const bool sb = (c >= nA);
-          int t = sb ? LB_(c - nA) : LA_(c);
+          const bool sb = (c >= nP);
+          if (!sb && c >= nA) {return;}
+          int t = sb ? LB_(c - nP) : LA_(c);
           const int d = t % n;
           t /= n;
           const int m = t/nkj;
@@ -6637,19 +6642,16 @@ void RadiationM1::VetGdSweep() {
           const int k = ks + t/nj;
           const int j = js + (t % nj);
           if (sid_ > 0 && (sb ? e1_(m,k,j,d) : e0_(m,k,j,d)) == sid_) {return;}
-          if (sb) {
-            (*qb)(m, k, j, d, i, l, f_, f_);
-          } else {
-            (*qa)(m, k, j, d, i, l, f_, f_);
-          }
+          (*(sb ? qb : qa))(m, k, j, d, i, l, f_, f_);   // (one body: one call site)
         });
       } else {
         const auto *qa = xa0;
         const auto *qb = xq0;
-        Kokkos::parallel_for("m1_vgd_shell_xff", VgdShellPol(vgd_cur, 0, nA + nB),
+        Kokkos::parallel_for("m1_vgd_shell_xff", VgdShellPol(vgd_cur, 0, nP + nB),
         KOKKOS_LAMBDA(const int c) {
-          const bool sb = (c >= nA);
-          int t = sb ? LB_(c - nA) : LA_(c);
+          const bool sb = (c >= nP);
+          if (!sb && c >= nA) {return;}
+          int t = sb ? LB_(c - nP) : LA_(c);
           const int d = t % n;
           t /= n;
           const int m = t/nkj;
@@ -6657,11 +6659,7 @@ void RadiationM1::VetGdSweep() {
           const int k = ks + t/nj;
           const int j = js + (t % nj);
           if (sid_ > 0 && (sb ? e1_(m,k,j,d) : e0_(m,k,j,d)) == sid_) {return;}
-          if (sb) {
-            (*qb)(m, k, j, d, i, l, f_, f_);
-          } else {
-            (*qa)(m, k, j, d, i, l, f_, f_);
-          }
+          (*(sb ? qb : qa))(m, k, j, d, i, l, f_, f_);   // (one body: one call site)
         });
       }
     };
@@ -6690,11 +6688,7 @@ void RadiationM1::VetGdSweep() {
           ad /= c3_;
           const int d = ad % nv_;
           const int m = ad/nv_;
-          if (sb) {
-            (*qb)(m, k, j, d, i, l, f_, f_);
-          } else {
-            (*qa)(m, k, j, d, i, l, f_, f_);
-          }
+          (*(sb ? qb : qa))(m, k, j, d, i, l, f_, f_);   // (one body: one call site)
         });
       } else {
         const auto *qa = xa0;
@@ -6709,11 +6703,7 @@ void RadiationM1::VetGdSweep() {
           ad /= c3_;
           const int d = ad % nv_;
           const int m = ad/nv_;
-          if (sb) {
-            (*qb)(m, k, j, d, i, l, f_, f_);
-          } else {
-            (*qa)(m, k, j, d, i, l, f_, f_);
-          }
+          (*(sb ? qb : qa))(m, k, j, d, i, l, f_, f_);   // (one body: one call site)
         });
       }
     };
@@ -7286,19 +7276,21 @@ void RadiationM1::VetGdSweep() {
           VetGdHlBegin(vgd_i, n, i, wsx, two ? &vgd_itw : nullptr)) {
         pend = true;                 // completed by the next shell (VetGdHlEnd)
       } else if (xffs) {
-        // xffuse-1113: one message per partner with both sets' exact lists; else the two
-        // exchanges, the other set's first (each writes only its own set's band)
+        // xffuse-1113: one message per partner with both sets' exact lists (vgd_raw:
+        // kept lists, VetGdGbHaloX); else the two exchanges, the other set's first (each
+        // writes only its own set's band)
         vgd_rg_lastx = false;
-        const bool hx2 = vgd_xff_msg && VetGdHlXff(i, wsx, xe ? 2 : 0);
+        const bool hx2 = vgd_xff_msg && (vgd_raw ? VetGdGbHaloX(i, wsx)
+                                                 : VetGdHlXff(i, wsx, xe ? 2 : 0));
         if (xe && !hx2) {
           VgdFatal("vgdsched-1113 early send: the exchange of a packed shell failed");
         }
-        if (!hx2 && rga) {
+        if (!hx2 && rga && !vgd_raw) {
           VgdFatal("vet_gd_rotate_xfade_fuse: the band ring needs the merged exchange");
         }
         if (rga && inw) {   // (the record of the saved inward band, as below; both sets)
-          vgd_rg_sk[i] = vgd_rg_lastx ? 1 : 2;
-          vgd_rg_se[i] = vgd_rg_lastx ? i : -1;
+          vgd_rg_sk[i] = vgd_raw ? 3 : (vgd_rg_lastx ? 1 : 2);
+          vgd_rg_se[i] = vgd_raw ? VetGdRawKey(i, true, wsx) : (vgd_rg_lastx ? i : -1);
         }
         if (!hx2) {
           VgdXffSwap();
@@ -10174,6 +10166,12 @@ void RadiationM1::VetGdRingFlush() {
       const int wl = vgd_rg_wfull[i];
       if (vgd_rg_sk[i] != 1 && vgd_rg_sk[i] != 3) {vgd_rg_sk[i] = 2;}   // the whole band
       sv_k = vgd_rg_sk[i];
+      if (xb && sv_k == 3) {   // (the other set's: its own kept list)
+        VgdGbSwap();
+        sv_dl2 = VetGdRawRec(vgd_rg_se[i]);
+        VgdGbSwap();
+        sv_nr2 = sv_dl2.extent_int(0);
+      }
       if (sv_k == 3) {   // vgd_raw: the positions the raw exchange wrote
         sv_dl = VetGdRawRec(vgd_rg_se[i]);
         sv_nr = sv_dl.extent_int(0);
@@ -10189,8 +10187,8 @@ void RadiationM1::VetGdRingFlush() {
         sv_n = static_cast<int64_t>(nmb)*n*(nx3 + 2*wl)*(nx2 + 2*wl);
         vgd_rg_ndense += 1.0;
       }
-      sv_n2 = sv_n;
-      if (xb && sv_k == 1) {
+      sv_n2 = (xb && vgd_rg_sk[i] == 3) ? sv_nr2 : sv_n;
+      if (xb && sv_k == 1 && vgd_rg_sk[i] != 3) {
         const VgdHlEntry &X2 = vgd_hxe_alt[vgd_rg_se[i]];
         sv_dl2 = X2.dl;
         sv_dw2 = X2.dw;
@@ -10221,6 +10219,12 @@ void RadiationM1::VetGdRingFlush() {
       rs_k = vgd_rg_sk[i];
       rs_so = vgd_rg_so[i];
       rs_n = vgd_rg_sn[i];
+      if (xb && rs_k == 3) {   // (the other set's raw record)
+        VgdGbSwap();
+        rs_dl2 = VetGdRawRec(vgd_rg_se[i]);
+        VgdGbSwap();
+        rs_nr2 = rs_dl2.extent_int(0);
+      }
       if (rs_k == 3) {
         rs_dl = VetGdRawRec(vgd_rg_se[i]);
         rs_nr = rs_dl.extent_int(0);
@@ -10239,7 +10243,10 @@ void RadiationM1::VetGdRingFlush() {
       }
       if (xb) {
         rs_n2 = vgd_rg_sn2[i];
-        if (rs_k == 1) {
+        if (vgd_rg_sk[i] == 3 && rs_nr2 != rs_n2) {
+          VgdFatal("vet_gd_band_ring: the other set's raw record changed");
+        }
+        if (rs_k == 1 && vgd_rg_sk[i] != 3) {
           const VgdHlEntry &X2 = vgd_hxe_alt[vgd_rg_se[i]];
           rs_dl2 = X2.dl;
           rs_dw2 = X2.dw;
