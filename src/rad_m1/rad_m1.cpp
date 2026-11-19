@@ -239,6 +239,19 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_bcg_fallback")) {
       cln_bcgfb = pin->GetInteger("rad_m1","clean_bcg_fallback");
     }
+    // clean_low_face_d (read only when named, default false): the compact diffusion flux
+    // of a low-order face takes one D_nn of the face, the mean of its two cells, so that
+    // the face's inflow and outflow coefficients of D are the same
+    if (pin->DoesParameterExist("rad_m1","clean_low_face_d")) {
+      cln_lowdf = pin->GetBoolean("rad_m1","clean_low_face_d");
+    }
+    // clean_thin_low (read only when named, default 0 = off): an interior face whose two
+    // cells are both thin across the cell (chi d below this) and thick over the step
+    // (h c chi > 1) is low-order from the start of the solve (kinetic E flux, no central
+    // y columns in the E row)
+    if (pin->DoesParameterExist("rad_m1","clean_thin_low")) {
+      cln_thinlow = pin->GetReal("rad_m1","clean_thin_low");
+    }
     // clean_diag_cell = gid,i,j,k (read only when named): the E row of the operator of
     // that cell, by term, after the right-hand side of every first pass
     if (pin->DoesParameterExist("rad_m1","clean_diag_cell")) {

@@ -978,8 +978,11 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
                    CleanCellFaceDistance(x, dir, m, k, j, i);
     Real hp, hm;
     CleanCellKinetic(x, dir, m, k, j, i, hp, hm);
-    jl[0][0] = a*x.c*hp + g*CleanDnn(x, dir, m, k, j, i, kl, jl_, il);
-    jr[0][0] = a*x.c*hm - g*CleanDnn(x, dir, m, k, j, i, k, j, i);
+    Real dl = CleanDnn(x, dir, m, k, j, i, kl, jl_, il);
+    Real dr = CleanDnn(x, dir, m, k, j, i, k, j, i);
+    if (x.lowdf) dl = dr = 0.5*(dl + dr);
+    jl[0][0] = a*x.c*hp + g*dl;
+    jr[0][0] = a*x.c*hm - g*dr;
     if (x.feedback) {
       // the advective flux of the relaxed y, (1 - a)(1 - th) a_n E, upwind
       const Real s = fmax(1.0 - a - x.fc[dir](m,CLF_TH,k,j,i), 0.0);

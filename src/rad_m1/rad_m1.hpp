@@ -3062,6 +3062,8 @@ class RadiationM1 {
   bool cln_lincont = false;     // clean_lin_continue: Picard continues past a failed solve
   bool cln_diagneg = false;     // clean_diag_neg: where the E < 0 / |F| > cE cells are
   int cln_bcgfb = 0;            // clean_bcg_fallback: Richardson sweeps after a breakdown
+  bool cln_lowdf = false;       // clean_low_face_d: low-order faces take the face's D_nn
+  Real cln_thinlow = 0.0;       // clean_thin_low: chi d below which a stiff face is low
   void CleanCellDiagNeg();
   void CleanCellDiagNb();       // clean_diag_neg: the write-back's eint <= 0 cells
   void CleanCellDiagStencil();  // clean_diag_cell: the E row of one cell, by term

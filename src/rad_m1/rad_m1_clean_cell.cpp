@@ -128,10 +128,17 @@ void RadiationM1::CleanCellFaceCoefficients() {
     if (dir == 2 && !three_d) continue;
     auto fc = (dir == 0) ? cln_fc1 : ((dir == 1) ? cln_fc2 : cln_fc3);
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    const Real thl = cln_thinlow, hc = dt_sub*c_light;
     par_for("clc_facecoef", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       fc(m,CLF_LO,k,j,i) = 0.0;
       fc(m,CLF_UG,k,j,i) = 0.0;
+      // (clean_thin_low: thin across the cell, thick over the step, on both sides)
+      if (thl > 0.0 && !CleanBoundaryFace(x, dir, m, k, j, i)) {
+        const Real cl = op(m,M1_OP_T,k-dk,j-dj,i-di), cr = op(m,M1_OP_T,k,j,i);
+        const Real d = CleanCellFaceDistance(x, dir, m, k, j, i);
+        if (fmax(cl, cr)*d < thl && hc*fmin(cl, cr) > 1.0) fc(m,CLF_LO,k,j,i) = 1.0;
+      }
     });
   }
 }

@@ -261,6 +261,7 @@ struct CleanArgs {
   bool all_low;                // cell layout: every interior face low-order
   bool consist;                // cell layout: face fluxes carry the consistency bracket
   bool milne;                  // cell layout: sub-cell Eddington face model
+  bool lowdf;                  // cell layout: low-order faces take the face's D_nn
   bool fvrays;                 // cell layout: FV rays (clean_rays = fv1 | fv)
   DvceArray5D<Real> op;        // opacities (M1_OP_*)
   int nf;                      // cell layout: number of flux components (dimensions)
