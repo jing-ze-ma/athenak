@@ -214,8 +214,9 @@ constexpr int CLW_BW = 51;   //   preconditioner input (CleanBiCGStab)
 constexpr int CLW_PW = 52;
 constexpr int CLW_N = 53;
 constexpr int CLW_KF = 53;   // staggered clean_stag_kpos: E of the old vector as formed,
-constexpr int CLW_KM = 54;   //   the destruction of the increment moved implicit (>= 0),
-constexpr int CLW_PD = 55;   //   with clean_stag_xpat the rows' Patankar diagonal
+constexpr int CLW_KM = 54;   //   the gas's give-back of the limited cell part (>= 0),
+constexpr int CLW_PD = 55;   //   the limiter r (setup); clean_stag_xpat: the rows'
+                             //   Patankar diagonal
 constexpr int CLW_NK = 56;   //   (allocated only with clean_stag_kpos / xpat)
 constexpr int CLW_XA = 56;   // staggered clean_xt_exact: B less its rest (the row's
 constexpr int CLW_XW = 57;   //   exchange as linearised), the row's work W
@@ -299,8 +300,7 @@ struct CleanArgs {
   int xq;                      // staggered, clean_stag_xdonor: face slots qL, qR of the
                                // lagged fluxes' donor part, their explicit part, C(E_k)
                                // (-1: the central cross flux)
-  bool kp;                     // staggered, clean_stag_kpos: the moved destruction KM
-  bool pd;                     // staggered, kpos / xpat: the rows' diagonal CLW_PD
+  bool pd;                     // staggered, xpat: the rows' diagonal CLW_PD
   bool xlag, xsrc;             //   lag: explicit up to the donor's share; xsrc: the
                                //   face sources too
   bool mcl;                    // staggered: a face's momentum term at most the force of

@@ -3208,13 +3208,14 @@ class RadiationM1 {
   Real cln_xd_ncap = 0.0;
   DvceArray5D<Real> cln_xdg;   // (diagnostic: -work, -r hcke E_k, sb, gres of the rows)
   // clean_stag_kpos (staggered, default off): the explicit stage increment of hesdirk2
-  // in Patankar form (CleanStagKPos); clean_stag_xpat (default off): the exchange's
-  // removal -r hcke E_k past its share of the row in Patankar form (CleanRightHandSide)
-  bool cln_kpos = false, cln_xpat = false, cln_kq_on = false;
+  // limited to E_old >= th E_s, conservatively (CleanStagKPos); clean_stag_xpat
+  // (default off): the exchange's removal -r hcke E_k past its share of the row in Patankar form (CleanRightHandSide)
+  bool cln_kpos = false, cln_xpat = false;
+  bool cln_kpb = false;   // (kpos limited this stage: CLW_KM the gas's give-back)
   bool cln_xtnorm = false, cln_xtcons = false;   // (CleanFirstIterate, CleanSolve)
   int cln_xte = 0;   // (clean_xt_exact: 0 off, 1 cons, 2 x2)
   Real cln_kc1 = 0.0, cln_kc2 = 0.0;   // (the stage's c1, c2 of t2pf1, t2pf2)
-  DvceArray1D<Real> cln_kcnt;   // (p capped, xpat rows: the last pass; their sums)
+  DvceArray1D<Real> cln_kcnt;   // (xpat rows: the last pass; their sum)
   void CleanStagKPos();
   void CleanStagKEnd();
   int cln_fdg = -1;             // staggered bracket: face slot of its lagged flux DG
