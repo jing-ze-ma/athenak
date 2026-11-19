@@ -3236,6 +3236,12 @@ class RadiationM1 {
   bool CleanStagKRedo();
   bool cln_xtnorm = false, cln_xtcons = false;   // (CleanFirstIterate, CleanSolve)
   int cln_xte = 0;   // (clean_xt_exact: 0 off, 1 cons, 2 x2)
+  // clean_stag_kreal (staggered, default off): the stage increment's momentum kick D at
+  // the share s whose kinetic-energy work E can pay, the rest deferred into the stage's
+  // implicit momentum change (CleanStagKReal); cln_krel_on: a cell was limited this
+  // stage
+  bool cln_krel_on = false;
+  void CleanStagKReal();
   Real cln_kc1 = 0.0, cln_kc2 = 0.0;   // (the stage's c1, c2 of t2pf1, t2pf2)
   DvceArray1D<Real> cln_kcnt;   // (xpat rows: the last pass; their sum)
   void CleanStagKPos();

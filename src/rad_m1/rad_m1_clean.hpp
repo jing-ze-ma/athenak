@@ -229,6 +229,8 @@ constexpr int CLW_KS = 58;   // staggered clean_stag_kpos / kreal: the momentum 
 constexpr int CLW_KT = 59;   //   a donor's faces moved: 1 (redo: 2 the new ones; with
                              //   ghosts; CleanStagKPos, CleanStagKRedo)
 constexpr int CLW_NKP = 60;  //   (allocated with clean_stag_kpos)
+constexpr int CLW_KR = 60;   // staggered clean_stag_kreal: the deferred kick (1 - s) D of
+constexpr int CLW_NR = 63;   //   the stage's gas momentum in the frame of y (3)
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanFvI

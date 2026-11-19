@@ -378,15 +378,15 @@ void CleanCellBlock(const CleanArgs &x, const int dir, const int m, const int kf
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void CleanGasMomentum
+//! \fn void CleanGasVector, CleanGasMomentum
 //! \brief the gas momentum of cell (k,j,i) in the frame of y.  On the cubed sphere the
 //! hydro stores m_r = p.r_hat and the COVARIANT components m_a = p.e_a on its unit panel
 //! tangents (non-orthogonal, g_ab = e_a.e_b, hydro_am.hpp): p_t = g^ab m_b e_a.
 
 KOKKOS_INLINE_FUNCTION
-void CleanGasMomentum(const CleanArgs &x, const DvceArray5D<Real> &uh, const int m,
-                      const int k, const int j, const int i, Real p[3]) {
-  for (int n = 0; n < 3; ++n) p[n] = uh(m,IM1+n,k,j,i);
+void CleanGasVector(const CleanArgs &x, const int m, const int k, const int j,
+                    const int i, const Real u[3], Real p[3]) {
+  for (int n = 0; n < 3; ++n) p[n] = u[n];
   if (!x.cub) return;
   Real q[3][3], pt[3], c = 0.0;
   CleanCsFrame(x, m, k, j, i, q);
@@ -396,6 +396,14 @@ void CleanGasMomentum(const CleanArgs &x, const DvceArray5D<Real> &uh, const int
     pt[b] = u1*x.g(m,CLG_E+b,k,j,i) + u2*x.g(m,CLG_E+3+b,k,j,i);
   }
   for (int a = 1; a < 3; ++a) p[a] = q[a][0]*pt[0] + q[a][1]*pt[1] + q[a][2]*pt[2];
+}
+
+//! (CleanGasVector: the same for hydro momentum components u, a linear map)
+KOKKOS_INLINE_FUNCTION
+void CleanGasMomentum(const CleanArgs &x, const DvceArray5D<Real> &uh, const int m,
+                      const int k, const int j, const int i, Real p[3]) {
+  const Real u[3] = {uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i)};
+  CleanGasVector(x, m, k, j, i, u, p);
 }
 
 //----------------------------------------------------------------------------------------

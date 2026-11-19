@@ -359,6 +359,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                     (kp == "redo" ? 3 : 0));
         cln_kpos = (cln_kmode > 0);
       }
+      cln_kreal = stag("clean_stag_kreal", false);
       cln_xpat = stag("clean_stag_xpat", false);
       // clean_xt_cons (default off): the first iterate's gas T with A's G = 1 - beta^2/2,
       // and after the first right-hand side T from the pass's gas row (its G and beta
