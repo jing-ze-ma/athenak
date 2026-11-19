@@ -1926,24 +1926,31 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
   if (zl_prof) {Kokkos::fence(); zt0 = std::chrono::steady_clock::now();}
   const int zlr = zl_local;   // zlocal-1113 (rad_m1.hpp zalesak_local_rounds)
   const bool zac = zl_active;   // zlocal-1113 (rad_m1.hpp zalesak_active)
+  // zalesak_active: zl_chg holds the claim marks (slab 0), two lists of cells (slabs 1,
+  // 2: the cells whose R changed in the last round, then the ghosts the exchange
+  // changed) and their counter (slab 3); a round evaluates the 7-point stencils of the
+  // read list only, each cell once (the claim)
+  const int zN3 = iw.extent_int(2), zN2 = iw.extent_int(3), zN1 = iw.extent_int(4);
+  const int64_t zS = static_cast<int64_t>(nmb1 + 1)*zN3*zN2*zN1;
   if (zac) {
-    if (zl_chg.extent_int(0) < nmb1 + 1 || zl_chg.extent_int(1) != iw.extent_int(2) ||
-        zl_chg.extent_int(2) != iw.extent_int(3) ||
-        zl_chg.extent_int(3) != iw.extent_int(4)) {
-      Kokkos::realloc(zl_chg, nmb1 + 1, iw.extent_int(2), iw.extent_int(3),
-                      iw.extent_int(4));
+    const int nz = 3*(nmb1 + 1) + 1;
+    if (zl_chg.extent_int(0) < nz || zl_chg.extent_int(1) != zN3 ||
+        zl_chg.extent_int(2) != zN2 || zl_chg.extent_int(3) != zN1) {
+      Kokkos::realloc(zl_chg, nz, zN3, zN2, zN1);
     }
-    Kokkos::deep_copy(DevExeSpace(), zl_chg, 0);
+    Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(zl_chg, Kokkos::make_pair(0,
+                      nmb1 + 1), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), -1);
   }
   auto ch_ = zl_chg;
-  bool zxb = false;
+  int *const zp = zac ? zl_chg.data() : nullptr;
+  int *const zc = zac ? zp + 3*zS : nullptr;
+  int zn = 0, zq = 0;   // the entries of the read list, and which list it is
   for (int r = 0; r < 4096; ++r) {   // until no cell is newly limited
     Real nv[2] = {0.0, 0.0};
     Real nl[2] = {0.0, 0.0};
     for (int s = 0; s < (zlr > 0 ? zlr : 1); ++s) {
     nv[0] = 0.0;
     nv[1] = 0.0;
-    const bool xb = zxb;
     // (time2_face_fct_rounds: the slack trigger from round K, no inflow from round 2K)
     const int rk = t2_ffct_rk, ra = (rk < 0) ? -rk : rk;   // (K < 0: the slack only)
     const Real wtr = (ra > 0 && r >= ra) ? 0.5 : 1.0;
@@ -1951,22 +1958,14 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     // (zalesak_active: every cell in round 0 and in the rounds that change wtr / pin_)
     const bool zsel = zac && r > 0 && !(ra > 0 && r == ra) && !(rk > 0 && r == 2*rk);
     const int s0 = sa, s1 = sb;
-    par_reduce_flat2("m1_t2_ffct_r", 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a,
-                  Real &ab) {
-      if (zsel) {   // only cells whose stencil changed (stamp r = round r-1)
-        // (>= r: a neighbour limited again in this round has already stamped r + 1)
-        bool act = (ch_(m,k,j,i) >= r) || (ch_(m,k,j,i-1) >= r) ||
-                   (ch_(m,k,j,i+1) >= r);
-        if (tr2) {act = act || (ch_(m,k,j-1,i) >= r) || (ch_(m,k,j+1,i) >= r);}
-        if (tr3) {act = act || (ch_(m,k-1,j,i) >= r) || (ch_(m,k+1,j,i) >= r);}
-        if (xb && (i == is || i == ie || (zx2 && (j == js || j == je)) ||
-                   (zx3 && (k == ks || k == ke)))) {act = true;}
-        if (!act) {
-          iw_(m,s1,k,j,i) = iw_(m,s0,k,j,i);
-          return;
-        }
-      }
+    int *const la = zac ? zp + zS*(1 + zq) : nullptr;
+    int *const lb = zac ? zp + zS*(2 - zq) : nullptr;
+    if (zac) {
+      Kokkos::parallel_for("m1_t2_ffct_z0", Kokkos::RangePolicy<>(DevExeSpace(), 0, 1),
+      KOKKOS_LAMBDA(const int) {*zc = 0;});
+    }
+    auto rnd = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
+                             Real &a, Real &ab) {
       const Real rc = iw_(m,s0,k,j,i);
       Real rn = rc;
       if (!(hoi && hm_(m,k,j,i) > 0.0)) {
@@ -1985,12 +1984,37 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
             if (zsk && (i < is + zd || i > ie - zd ||
                         (zx2 && (j < js + zd || j > je - zd)) ||
                         (zx3 && (k < ks + zd || k > ke - zd)))) {ab += 1.0;}
-            if (zac) {ch_(m,k,j,i) = r + 1;}
+            if (zac) {lb[Kokkos::atomic_fetch_add(zc, 1)] = ((m*zN3 + k)*zN2 + j)*zN1 + i;}
           }
         }
       }
       iw_(m,s1,k,j,i) = rn;
-    }, Kokkos::Sum<Real>(nv[0]), Kokkos::Sum<Real>(nv[1]));
+    };
+    if (zsel) {   // the stencils of the read list (a cell whose inputs did not change
+                  // gives the R it has)
+      Kokkos::parallel_reduce("m1_t2_ffct_ra", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                              7*zn),
+      KOKKOS_LAMBDA(const int t, Real &a, Real &ab) {
+        const int q = t % 7;
+        if (((q == 3 || q == 4) && !tr2) || (q >= 5 && !tr3)) {return;}
+        int x = la[t/7];
+        int i = x % zN1 + ((q == 1) ? -1 : ((q == 2) ? 1 : 0));
+        x /= zN1;
+        const int j = x % zN2 + ((q == 3) ? -1 : ((q == 4) ? 1 : 0));
+        x /= zN2;
+        const int k = x % zN3 + ((q == 5) ? -1 : ((q == 6) ? 1 : 0));
+        const int m = x/zN3;
+        if (i < is || i > ie || j < js || j > je || k < ks || k > ke) {return;}
+        if (Kokkos::atomic_exchange(&ch_(m,k,j,i), r) == r) {return;}   // (claimed)
+        rnd(m, k, j, i, a, ab);
+      }, Kokkos::Sum<Real>(nv[0]), Kokkos::Sum<Real>(nv[1]));
+    } else {
+      par_reduce_flat2("m1_t2_ffct_r", 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a,
+                    Real &ab) {
+        rnd(m, k, j, i, a, ab);
+      }, Kokkos::Sum<Real>(nv[0]), Kokkos::Sum<Real>(nv[1]));
+    }
     if (zlr > 0) {   // local sub-round: keep the changes, no MPI, ghosts held
       if (!(nv[0] > 0.0)) {break;}
       nl[0] += nv[0];
@@ -2003,6 +2027,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     }
     }   // zalesak_local_rounds sub-round loop (one pass when off)
     if (zlr > 0) {nv[0] = nl[0]; nv[1] = nl[1];}
+    const int zloc = static_cast<int>(nv[0]);   // (this rank's changed cells)
 #if MPI_PARALLEL_ENABLED
     MPI_Allreduce(MPI_IN_PLACE, nv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
@@ -2010,26 +2035,47 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     if (!(nn > 0.0)) {break;}
     ncell += nn;
     nround = r + 1;
-    if (zlr == 0) {std::swap(sa, sb);}   // (the round's R is read next)
-    zxb = false;
+    int *const lb = zac ? zp + zS*(2 - zq) : nullptr;
+    if (zac) {   // the changed cells' R into the read slot
+      Kokkos::parallel_for("m1_t2_ffct_ca", Kokkos::RangePolicy<>(DevExeSpace(), 0, zloc),
+      KOKKOS_LAMBDA(const int t) {
+        int x = lb[t];
+        const int i = x % zN1;
+        x /= zN1;
+        const int j = x % zN2;
+        x /= zN2;
+        const int k = x % zN3, m = x/zN3;
+        iw_(m,ca,k,j,i) = iw_(m,cb,k,j,i);
+      });
+      zn = zloc;
+      zq = 1 - zq;
+    } else if (zlr == 0) {
+      std::swap(sa, sb);   // (the round's R is read next)
+    }
     if (!zsk || zfirst || nv[1] > 0.0) {
-      ImplicitKrylovHalo(sa);
-      const int s0 = sa, s1 = sb;
-      if (zac) {   // every cell (ghost or not) the exchange changed counts as changed
-        const int rr = r + 1;   // (sb holds the ghosts before it; interior: stamped)
-        const int n3 = iw.extent_int(2) - 1, n2 = iw.extent_int(3) - 1;
-        const int n1 = iw.extent_int(4) - 1;
-        par_for("m1_t2_ffct_xs", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, 0, n1,
-        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-          if (iw_(m,s0,k,j,i) != iw_(m,s1,k,j,i)) {ch_(m,k,j,i) = rr;}
-        });
-      }
-      if (zlr == 0) {   // (the other slot keeps the same ghosts)
-        Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, s1,
+      if (zac) {   // snapshot (ghosts incl.) to list the ghosts the exchange changes
+        Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, cb,
                           Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw,
-                          Kokkos::ALL, s0, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+                          Kokkos::ALL, ca, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
       }
-      zxb = true;
+      ImplicitKrylovHalo(sa);
+      if (zac) {
+        int ng = 0;
+        Kokkos::parallel_reduce("m1_t2_ffct_xs", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+                                DevExeSpace(), {0, 0, 0, 0}, {nmb1 + 1, zN3, zN2, zN1}),
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, int &g) {
+          if (k >= ks && k <= ke && j >= js && j <= je && i >= is && i <= ie) {return;}
+          if (iw_(m,ca,k,j,i) != iw_(m,cb,k,j,i)) {
+            lb[Kokkos::atomic_fetch_add(zc, 1)] = ((m*zN3 + k)*zN2 + j)*zN1 + i;
+            g += 1;
+          }
+        }, Kokkos::Sum<int>(ng));
+        zn += ng;
+      } else if (zlr == 0) {   // (the other slot keeps the same ghosts)
+        Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, sb,
+                          Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw,
+                          Kokkos::ALL, sa, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+      }
       zl_halos[0] += 1.0;
       zfirst = false;
     }

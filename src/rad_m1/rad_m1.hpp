@@ -1323,9 +1323,10 @@ class RadiationM1 {
   int zl_local = 0;
   Real zl_sub[2] = {0.0, 0.0};
   // zlocal-1113 <rad_m1>/zalesak_active (default false): a Zalesak round evaluates only
-  // the cells whose 7-point stencil changed in the previous round (stamp array zl_chg),
-  // plus the block-face layer after an R exchange.  A cell whose inputs did not change
-  // cannot be newly limited (it was evaluated with the same inputs before): BITWISE.
+  // the cells whose 7-point stencil changed in the previous round or in the R exchange
+  // after it (time2 face FCT: lists of those cells and claim marks in zl_chg).  A cell
+  // whose inputs did not change cannot be newly limited (it was evaluated with the same
+  // inputs before): BITWISE.
   bool zl_active = false;
   // zlocal-1113 <rad_m1>/zalesak_colsweep (default false; face_mmat only): each round is
   // one x1 Gauss-Seidel sweep up + down per column (transverse R from the round's
