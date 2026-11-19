@@ -2630,7 +2630,10 @@ class RadiationM1 {
   // below half the floor (th/2 V E^n; the deficit a lost inflow leaves is absorbed by
   // that margin), and from round 2K its new R takes no inflow (its own content only, so
   // that it needs no donor); at the end every cell holds > th/2 V E^n (positive,
-  // conservative: one flux per face)
+  // conservative: one flux per face; cells whose own content cannot cover their inflow
+  // loss are left, counted, as with K = 0).  K < 0: the half-floor trigger from round
+  // |K| only, no inflow-free rounds (HG: -61 % rounds, -14 % s/cycle, withheld and left
+  // as K = 0; K > 0 cut the beams there)
   int t2_ffct_rk = 0;
   void Time2FaceFct(int stage, Real c1, Real c2);
   // facebound-1112 <rad_m1>/implicit_fclip_diag (read only when named; diagnostic only,

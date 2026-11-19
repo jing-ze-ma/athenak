@@ -1934,8 +1934,8 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     nv[1] = 0.0;
     const bool xb = zxb;
     // (time2_face_fct_rounds: the slack trigger from round K, no inflow from round 2K)
-    const int rk = t2_ffct_rk;
-    const Real wtr = (rk > 0 && r >= rk) ? 0.5 : 1.0;
+    const int rk = t2_ffct_rk, ra = (rk < 0) ? -rk : rk;   // (K < 0: the slack only)
+    const Real wtr = (ra > 0 && r >= ra) ? 0.5 : 1.0;
     const Real pin_ = (rk > 0 && r >= 2*rk) ? 0.0 : 1.0;
     par_reduce_flat2("m1_t2_ffct_r", 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a,
