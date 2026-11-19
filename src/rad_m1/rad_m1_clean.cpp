@@ -239,10 +239,12 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/implicit_pos_floor_solve", nullptr},
     {"rad_m1/implicit_pos_gas*", nullptr}, {"rad_m1/implicit_pos_floor", nullptr},
     {"rad_m1/implicit_pos_floor_cons", nullptr}, {"rad_m1/implicit_*", ""},
+    // (the hesdirk2 stage formation the clean solve shares, Time2FormStage / Time2Stash,
+    // and dt_retry: read; ImplicitSolve's acceptance and posfix and the KE cap: none)
+    {"rad_m1/time2_k1_*", nullptr}, {"rad_m1/time2_face_fct*", nullptr},
+    {"time/dt_retry_t2_be", nullptr},
     {"rad_m1/time2_accept_fallback", ""}, {"rad_m1/time2_posfix*", ""},
-    {"rad_m1/time2_k1_*", ""}, {"rad_m1/time2_face_fct", ""},
-    {"rad_m1/time2_inc_kecap", ""},
-    {"time/dt_retry_t2_be", ""}};
+    {"rad_m1/time2_inc_kecap", ""}};
   const bool say = (global_variable::my_rank == 0);
   std::string none;
   std::vector<std::string> drop;
