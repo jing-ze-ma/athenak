@@ -1761,20 +1761,6 @@ void RadiationM1::CleanStagKPos() {
     nq[0] += nd[0];
     nq[1] += nd[1];
   }
-  // (the history's boundary energy: the x1 boundary outflows leave the old vector; the
-  // write-back books pd_b X)
-  if (cln_lacc.extent_int(0) > nmb1) {
-    auto la = cln_lacc;
-    auto ar = pmy_pack->pcoord->area.x1f;
-    par_for("cln_kpos_bnd", DevExeSpace(), 0, nmb1, 0, 1, ks, ke, js, je,
-    KOKKOS_LAMBDA(const int m, const int s, const int k, const int j) {
-      const int i = s ? ie + 1 : is;
-      if (!CleanBoundaryFace(x, 0, m, k, j, i)) return;
-      const Real g = ar(m,k,j,i)*(c1*p1(m,0,k,j,i) + (two ? c2*p2(m,0,k,j,i) : 0.0));
-      if (s ? !(g > 0.0) : !(g < 0.0)) return;   // (an outflow: its donor is the cell)
-      la(m,2+s,k,j) -= g;
-    });
-  }
   // 2. the old vector, pd, the gas's give-back
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
@@ -1892,6 +1878,13 @@ void RadiationM1::CleanStagKPos() {
     qs[0] = fmax(qs[0], 0.0);
     qs[1] = fmax(qs[1], 0.0);
     const Real qt = qs[0] + qs[1];
+    // (an x1 boundary's outflow stays explicit where E_old can pay it, rb <= (1 - th)
+    // E_old: the well-balanced decks' photosphere keeps its explicit flux; only past that
+    // on the diagonal)
+    if (rbs[0] + rbs[1] <= (1.0 - th)*fmax(e, 0.0)) {
+      e -= rbs[0] + rbs[1];
+      rbs[0] = rbs[1] = 0.0;
+    }
     Real pd = 0.0, pb = 0.0;
     for (int s = 0; s < 1 + two; ++s) {
       const Real er = w(m,s ? CLW_KF : CLW_PW,k,j,i);
@@ -1916,6 +1909,21 @@ void RadiationM1::CleanStagKPos() {
      Kokkos::Sum<Real>(nn[3]), Kokkos::Sum<Real>(nn[4]), Kokkos::Sum<Real>(nkr),
      Kokkos::Min<Real>(skr));
   for (int n = 0; n < 5; ++n) nn[n] = CleanReduce(nn[n], false);
+  // (the history's boundary energy: a moved x1 boundary outflow (CLW_KF > 0) leaves the
+  // old vector; the write-back books pd_b X)
+  if (cln_lacc.extent_int(0) > nmb1) {
+    auto la = cln_lacc;
+    auto ar = pmy_pack->pcoord->area.x1f;
+    par_for("cln_kpos_bnd", DevExeSpace(), 0, nmb1, 0, 1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int s, const int k, const int j) {
+      const int i = s ? ie + 1 : is;
+      if (!CleanBoundaryFace(x, 0, m, k, j, i)) return;
+      const Real g = ar(m,k,j,i)*(c1*p1(m,0,k,j,i) + (two ? c2*p2(m,0,k,j,i) : 0.0));
+      if (s ? !(g > 0.0) : !(g < 0.0)) return;   // (an outflow: its donor is the cell)
+      if (!(w(m,CLW_KF,k,j,s ? ie : is) > 0.0)) return;   // (kept explicit)
+      la(m,2+s,k,j) -= g;
+    });
+  }
   nkr = CleanReduce(nkr, false);
   skr = -CleanReduce(-skr, true);
   cln_krel_on = (nkr > 0.0);
