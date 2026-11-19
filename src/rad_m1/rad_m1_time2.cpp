@@ -1480,6 +1480,12 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
   t2_fail = false;
   t2_ok = false;
   t2_nfall += 1.0;
+  // (rule 9: the backward-Euler redo that carries the step is counted, not silent)
+  if (global_variable::my_rank == 0) {
+    std::printf("CLEAN WARNING cycle %d t2s %d: stage solve failed, the step is redone with "
+                "backward Euler (stage fallback %.0f)\n", pmy_pack->pmesh->ncycle, t2_solve,
+                t2_nfall);
+  }
   // m1-h2div (tests_m1/runs_5j_h2div): the predictor increments were stored by the
   // stage solve that just FAILED (the store precedes the admissibility test), and the
   // backward-Euler redo would start its Picard loop from U^n + (dt/(g dt)) x that
