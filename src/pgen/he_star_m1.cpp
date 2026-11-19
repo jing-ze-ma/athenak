@@ -4345,7 +4345,6 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   const int is = indcs.is, ie = indcs.ie, nx1 = indcs.nx1;
   const int js = indcs.js, nx2 = indcs.nx2, ks = indcs.ks, nx3 = indcs.nx3;
   const int imid = is + nx1/2;
-  const int nmkji = pmbp->nmb_thispack*nx3*nx2*nx1;
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   radm1::FluidRef fl = radm1::FluidRef::Get(pmbp);
   auto *ph = &fl;
@@ -4386,7 +4385,7 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   const bool hcsh = pm->use_cubed_sphere;   // metric KE
   auto hccl_ = pmbp->pcoord->cos_cell;
   array_sum::GlobalSum sum_this;
-  Kokkos::parallel_reduce("hs_hist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+  repro::HistSums("hs_hist", pmbp->nmb_thispack, nkji, nx1,
   KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &msum) {
     const int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
@@ -4455,7 +4454,7 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
       h.the_array[12] = vol;
     }
     msum += h;
-  }, Kokkos::Sum<array_sum::GlobalSum>(sum_this));
+  }, sum_this);
   for (int n=0; n<20; ++n) pdata->hdata[n] = sum_this.the_array[n];
   pdata->hdata[nb] = sum_this.the_array[22];
   pdata->hdata[nb+1] = sum_this.the_array[23];

@@ -298,6 +298,41 @@ void ShellSums(const char *name, const int nq, const int c1, const int nmb,
   for (std::size_t n = 0; n < v.size(); ++n) {out[n] = v[n].Value();}
 }
 
+//! the history sums in a FIXED order: the drop-in for Kokkos::parallel_reduce(name,
+//! RangePolicy(0, nmb nkji), fn, Kokkos::Sum<GlobalSum>(out)), fn(idx, acc) adding the
+//! terms of cell idx = m nkji + (k nx2 + j) nx1 + i into acc.  One thread per (m, k, j)
+//! row sums its nx1 cells in increasing i, one thread per (q, m) its MeshBlock's rows in
+//! order, the host the MeshBlocks in order: the result is a function of this rank's
+//! MeshBlocks alone (the reduce's join order changes with the thread count / backend).
+template <class F>
+void HistSums(const char *name, const int nmb, const int nkji, const int nx1, const F &fn,
+              array_sum::GlobalSum &out) {
+  constexpr int nq = NREDUCTION_VARIABLES;
+  const int nr = nkji/nx1;
+  auto rp = ScratchView<DvceArray2D<Real>>(std::string(name) + "_row", nmb*nr, nq);
+  auto bp = ScratchView<DvceArray2D<Real>>(std::string(name) + "_blk", nq, nmb);
+  Kokkos::parallel_for(std::string(name) + "_row",
+                       Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nmb*nr),
+  KOKKOS_LAMBDA(const int r) {
+    array_sum::GlobalSum a;
+    for (int i = 0; i < nx1; ++i) {fn(r*nx1 + i, a);}
+    for (int q = 0; q < nq; ++q) {rp(r, q) = a.the_array[q];}
+  });
+  Kokkos::parallel_for(std::string(name) + "_blk",
+                       Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nq*nmb),
+  KOKKOS_LAMBDA(const int idx) {
+    const int q = idx/nmb, m = idx - q*nmb;
+    Real a = 0.0;
+    for (int r = m*nr; r < (m + 1)*nr; ++r) {a += rp(r, q);}
+    bp(q, m) = a;
+  });
+  auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), bp);
+  for (int q = 0; q < nq; ++q) {
+    out.the_array[q] = 0.0;
+    for (int m = 0; m < nmb; ++m) {out.the_array[q] += h(q, m);}
+  }
+}
+
 }  // namespace repro
 
 #endif  // UTILS_REPRO_SUM_HPP_
