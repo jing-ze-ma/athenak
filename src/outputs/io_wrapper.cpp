@@ -17,6 +17,8 @@
 #include "athena.hpp"
 #include "io_wrapper.hpp"
 
+bool IOWrapper::collective = false;
+
 //----------------------------------------------------------------------------------------
 //! \fn int IOWrapper::Open(const char* fname, FileMode rw)
 //! \brief wrapper for {MPI_File_open} versus {std::fopen} including error check
@@ -180,7 +182,8 @@ std::size_t IOWrapper::Read_bytes_at_all(void *buf, IOWrapperSizeT size,
 #if MPI_PARALLEL_ENABLED
   if (!single_file_per_rank) {
     MPI_Status status;
-    int errcode = MPI_File_read_at_all(fh_, offset, buf, cnt*size, MPI_BYTE, &status);
+    int errcode = (collective ? MPI_File_read_at_all : MPI_File_read_at)(fh_, offset, buf,
+                                  cnt*size, MPI_BYTE, &status);
     if (errcode != MPI_SUCCESS) {
       char msg[MPI_MAX_ERROR_STRING];
       int resultlen;
@@ -275,7 +278,8 @@ std::size_t IOWrapper::Read_Reals_at_all(void *buf, IOWrapperSizeT cnt,
 #if MPI_PARALLEL_ENABLED
   if (!single_file_per_rank) {
     MPI_Status status;
-    int errcode = MPI_File_read_at_all(fh_, offset, buf, cnt, MPI_ATHENA_REAL, &status);
+    int errcode = (collective ? MPI_File_read_at_all : MPI_File_read_at)(fh_, offset, buf,
+                                  cnt, MPI_ATHENA_REAL, &status);
     if (errcode != MPI_SUCCESS) {
       char msg[MPI_MAX_ERROR_STRING];
       int resultlen;
@@ -548,7 +552,8 @@ std::size_t IOWrapper::Write_any_type_at_all(const void *buf, IOWrapperSizeT cnt
     }
     // Now write data using MPI-IO
     MPI_Status status;
-    int errcode = MPI_File_write_at_all(fh_, offset, buf, cnt, mpitype, &status);
+    int errcode = (collective ? MPI_File_write_at_all : MPI_File_write_at)(fh_, offset, buf,
+                                  cnt, mpitype, &status);
     if (errcode != MPI_SUCCESS) {
       char msg[MPI_MAX_ERROR_STRING];
       int resultlen;

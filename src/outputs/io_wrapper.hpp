@@ -24,6 +24,9 @@ using IOWrapperSizeT = std::uint64_t;
 
 class IOWrapper {
  public:
+  // <job>/mpiio_collective: the *_at_all calls as MPI collectives (true) or as independent
+  // MPI_File_*_at of the same bytes (false, default: each rank's range is contiguous)
+  static bool collective;
 #if MPI_PARALLEL_ENABLED
   IOWrapper() : fh_(nullptr), comm_(MPI_COMM_WORLD), job_(nullptr), dtag_(nullptr),
                 job_pos_(0) {}

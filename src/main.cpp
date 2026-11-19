@@ -555,6 +555,7 @@ int main(int argc, char *argv[]) {
   }
   // a restart may ADD keys its embedded input predates (parameter_input.cpp)
   pinput->ModifyFromCmdline(argc, argv, res_flag);
+  IOWrapper::collective = pinput->GetOrAddBoolean("job", "mpiio_collective", false);
   if (res_flag) CheckRestartPotentialKeys(pinput, rst_potential_keys);
   // the problem generator's pre-physics fresh-start defaults (recipe.hpp)
   recipe::PgenEarlyDefaults(pinput);
