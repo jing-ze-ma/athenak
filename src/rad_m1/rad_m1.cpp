@@ -89,7 +89,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // the old production's keys an input names (its HG/RSG decks; read only when named):
     // implicit_maxit, implicit_lin_maxit and implicit_tol_rel_max are the defaults of
     // clean_maxnl, clean_maxit and clean_conv_max (a linear solve then runs to it, without the stall test, and a pass
-    // goes on from its iterate, CleanSolve); implicit_fb_local(_rounds), CleanFbLocal
+    // goes on from its iterate, CleanSolve)
     {int pm = 50, pl = 0;
     cln_prmax = -1.0;
     for (const InputBlock &ib : pin->block) {
@@ -100,8 +100,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         if (k == "implicit_maxit") pm = pin->GetInteger("rad_m1",k);
         if (k == "implicit_lin_maxit") pl = pin->GetInteger("rad_m1",k);
         if (k == "implicit_tol_rel_max") cln_prmax = pin->GetReal("rad_m1",k);
-        if (k == "implicit_fb_local") cln_fbl = pin->GetBoolean("rad_m1",k);
-        if (k == "implicit_fb_local_rounds") cln_fbl_rounds = pin->GetInteger("rad_m1",k);
       }
     }
     cln_maxnl = pin->GetOrAddInteger("rad_m1","clean_maxnl",pm);
