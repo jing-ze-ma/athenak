@@ -1769,6 +1769,8 @@ void RadiationM1::CleanStagKPos() {
   auto eos = fl.eos;
   auto inc = t2inc;
   const bool gas = cln_feedback, krk = cln_kreal && gas;
+  // (cell / redo: a boundary outflow explicit unless it takes E_old below 0)
+  const bool kbt = (cln_kmode == 2 || cln_kmode == 3);
   // (cells with pd, gas-limited, pd guard, E_old < 0, of which the stage start's eint < 0)
   Real nn[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
   Real nkr = 0.0, skr = 1.0;   // (clean_stag_kreal: cells limited, min s)
@@ -1883,7 +1885,7 @@ void RadiationM1::CleanStagKPos() {
     // (an x1 boundary's outflow stays explicit where E_old can pay it, rb <= (1 - th)
     // E_old: the well-balanced decks' photosphere keeps its explicit flux; only past that
     // on the diagonal)
-    if (rbs[0] + rbs[1] <= (1.0 - th)*fmax(e, 0.0)) {
+    if (rbs[0] + rbs[1] <= (kbt ? 1.0 : 1.0 - th)*fmax(e, 0.0)) {
       e -= rbs[0] + rbs[1];
       rbs[0] = rbs[1] = 0.0;
     }
@@ -2034,14 +2036,26 @@ bool RadiationM1::CleanStagKRedo() {
   auto w = cln_w;
   auto u0_ = u0;
   const bool last = (cln_kredo + 1 >= CLN_KPOS_REDO);
-  // 1. the new donors (KT = 2): X <= 0 and not moved yet; the last round all
+  // 1. the new donors (KT = 2): X <= 0 there or at a face neighbour (one layer: the
+  //    receivers that would lose a moved inflow move with it, fewer rounds), not moved
+  //    yet; the last round all
+  CleanGhostFill(cln_w, CLW_X, 1);
+  CleanArgs xa = CleanMakeArgs();
+  const int nf = xa.nf;
   Real nn[2] = {0.0, 0.0};   // (cells X <= 0, new donors)
   Kokkos::parallel_reduce("cln_kredo_n", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
       DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a, Real &b) {
     const bool neg = !(w(m,CLW_X,k,j,i) > 0.0);
     if (neg) a += 1.0;
-    if ((neg || last) && !(w(m,CLW_KT,k,j,i) > 0.0)) {
+    bool nb = neg;
+    for (int d = 0; d < nf && !nb; ++d) {
+      const int dk = (d == 2), dj = (d == 1), di = (d == 0);
+      nb = (!CleanBoundaryFace(xa, d, m, k, j, i) && !(w(m,CLW_X,k-dk,j-dj,i-di) > 0.0)) ||
+           (!CleanBoundaryFace(xa, d, m, k+dk, j+dj, i+di) &&
+            !(w(m,CLW_X,k+dk,j+dj,i+di) > 0.0));
+    }
+    if ((nb || last) && !(w(m,CLW_KT,k,j,i) > 0.0)) {
       w(m,CLW_KT,k,j,i) = 2.0;
       b += 1.0;
     }
