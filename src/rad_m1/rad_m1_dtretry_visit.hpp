@@ -2022,6 +2022,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_csmw_h", vgd_csmw_h);
   v.value("vgd_csmw_r", vgd_csmw_r);
   v.value("vgd_cscl", vgd_cscl);
+  for (int q0_ = 0; q0_ < 2; ++q0_) {v.view("vgd_csmb[]", vgd_csmb[q0_]);}
   v.value("vgd_csncl", vgd_csncl);
   v.value("vgd_cscur", vgd_cscur);
   v.value("vgd_csuse", vgd_csuse);
