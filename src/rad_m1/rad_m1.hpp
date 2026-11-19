@@ -3195,7 +3195,7 @@ class RadiationM1 {
   DvceArray5D<Real> cln_fbd;   // D12 D13 D23 of cln_s before the first round
   bool CleanFbLocal();
   void CleanStagXDonor();
-  void CleanStagXCount(const int inl);
+  void CleanStagXCount(const int inl, const int nit);
   void CleanStagXSweep();
   void CleanFbRestore();
   bool cln_srccvx = false;      // clean_source_convex: vet_scatter S between J and B
@@ -3206,6 +3206,7 @@ class RadiationM1 {
   bool cln_xsw = false;
   int cln_xqs = -1;   // (4 slots: qL >= 0, qR <= 0, the lagged explicit flux, C(E_k))
   Real cln_xd_ncap = 0.0;
+  DvceArray5D<Real> cln_xdg;   // (diagnostic: -work, -r hcke E_k, sb, gres of the rows)
   int cln_fdg = -1;             // staggered bracket: face slot of its lagged flux DG
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
   bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces

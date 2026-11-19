@@ -1104,7 +1104,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         CleanCellResidual();
       }
       if (cln_xsw && !cell && nit >= 0) CleanStagXSweep();
-      if (cln_xd && !cell) CleanStagXCount(inl);
+      if (cln_xd && !cell) CleanStagXCount(inl, nit);
       nit_sum += std::abs(nit);
       ++nsolve;
       cln_nsolve += 1.0;
@@ -1651,13 +1651,36 @@ void RadiationM1::CleanStagXSweep() {
 //! \brief clean_stag_xdonor: the pass's cells with X <= 0 and faces at the cap (CLEAN
 //! XDONOR, diagnostic)
 
-void RadiationM1::CleanStagXCount(const int inl) {
+void RadiationM1::CleanStagXCount(const int inl, const int nit) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   auto w = cln_w;
   Real nn = 0.0, xmin = 0.0, nb = 0.0, nbx = 0.0, neo = 0.0, nsd = 0.0;
   CleanArgs x = CleanMakeArgs();
+  // (of the X <= 0 cells: the row term most negative relative to E_old)
+  Real tw = 0.0, te = 0.0, ts = 0.0, tg = 0.0;
+  {
+    auto xdg = cln_xdg;
+    Kokkos::parallel_reduce("cln_xterm", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+        DevExeSpace(), {0, ks, js, is}, {pmy_pack->nmb_thispack, ke + 1, je + 1, ie + 1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a, Real &b,
+                  Real &c, Real &d) {
+      if (w(m,CLW_X,k,j,i) > 0.0) return;
+      int n = 0;
+      for (int q = 1; q < 4; ++q) if (xdg(m,q,k,j,i) < xdg(m,n,k,j,i)) n = q;
+      if (!(xdg(m,n,k,j,i) < 0.0)) return;
+      if (n == 0) a += 1.0;
+      if (n == 1) b += 1.0;
+      if (n == 2) c += 1.0;
+      if (n == 3) d += 1.0;
+    }, Kokkos::Sum<Real>(tw), Kokkos::Sum<Real>(te), Kokkos::Sum<Real>(ts),
+       Kokkos::Sum<Real>(tg));
+    tw = CleanReduce(tw, false);
+    te = CleanReduce(te, false);
+    ts = CleanReduce(ts, false);
+    tg = CleanReduce(tg, false);
+  }
   Kokkos::parallel_reduce("cln_xcount", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
       DevExeSpace(), {0, ks, js, is}, {pmy_pack->nmb_thispack, ke + 1, je + 1, ie + 1}),
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a, Real &b,
@@ -1710,9 +1733,10 @@ void RadiationM1::CleanStagXCount(const int inl) {
   xmin = -CleanReduce(-xmin, true);
   if (global_variable::my_rank == 0 && (nn > 0.0 || nd > 0.0)) {
     std::printf("CLEAN XDONOR cycle %d t2s %d pass %d xle0 %.0f minX/Eo %.3e donor %.0f "
-                "cap %.0f b<0 %.0f (with X<=0 %.0f; Eo<0 %.0f, Eo<hdivS %.0f)\n",
+                "cap %.0f b<0 %.0f (with X<=0 %.0f; Eo<0 %.0f, Eo<hdivS %.0f) most-neg "
+                "work %.0f exch %.0f sb %.0f gres %.0f it %d\n",
                 pmy_pack->pmesh->ncycle, t2_solve, inl, nn, xmin, nd, cln_xd_ncap, nb, nbx,
-                neo, nsd);
+                neo, nsd, tw, te, ts, tg, nit);
   }
 }
 
@@ -1930,6 +1954,13 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
       if (af) x.fc[n](m,CLF_PT,k,j,i) = CleanStagAdvFace(x, xh, n, m, k, j, i);
     }
   });
+  // (clean_stag_xdonor diagnostic: the row's terms, CleanStagXCount)
+  if (cln_xd && cln_xdg.extent_int(0) < nmb1 + 1) {
+    Kokkos::realloc(cln_xdg, nmb1 + 1, 4, cln_w.s.extent_int(2), cln_w.s.extent_int(3),
+                    cln_w.s.extent_int(4));
+  }
+  auto xdg = cln_xdg;
+  const bool xdd = cln_xd;
   CleanParForLb<3>("cln_rhs", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
@@ -2068,6 +2099,12 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
     // (eqr: the exchange through the gas row of the root T, hckp a T^4 - r hcke E =
     // EI - e(T) - sb + (1 - r) hcke E, without the cancellation of its two terms, each
     // ~ hcke E, whose round-off at h -> infinity exceeds E in opaque cells)
+    if (xdd) {
+      xdg(m,0,k,j,i) = -work;
+      xdg(m,1,k,j,i) = eqr ? 0.0 : -rr*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0);
+      xdg(m,2,k,j,i) = eqr ? 0.0 : sb;
+      xdg(m,3,k,j,i) = eqr ? 0.0 : gres;
+    }
     x.w(m,CLW_B,k,j,i) = eqr ?
         x.w(m,CLW_EO,k,j,i) + x.w(m,CLW_EI,k,j,i) - eg - work
         + x.w(m,CLW_RY,k,j,i)*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0)
