@@ -601,6 +601,16 @@ Real RadiationM1::CleanReduce(Real v, const bool max) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanReduceMax
+//! \brief the maxima of v[0 .. n-1] over all ranks, in one reduction
+
+void RadiationM1::CleanReduceMax(Real *v, const int n) {
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, v, n, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+#endif
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn std::array<Real, 2> CleanSums
 //! \brief the n <= 2 sums s0, s1 that f(m, k, j, i, s0, s1) adds over the active cells
 //! (it may also update the cell's vectors: a BiCGStab step and its dots in one pass), one

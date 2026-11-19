@@ -2998,6 +2998,7 @@ class RadiationM1 {
                                 const std::array<int, 4> ab);
   Real CleanCellResidualMax(const int r);
   Real CleanReduce(Real v, const bool max);
+  void CleanReduceMax(Real *v, const int n);   // n maxima over all ranks, in place
   // cell-centred layout (<rad_m1>/clean_layout = cell, rad_m1_clean_cell.cpp)
   void CleanCellOldVector();
   void CleanCellFaceCoefficients();

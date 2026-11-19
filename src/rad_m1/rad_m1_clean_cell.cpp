@@ -1960,7 +1960,8 @@ Real RadiationM1::CleanCellNewtonUpdate() {
       if (!ncell) d = fmax(d, fabs(u(m,CLC_X+b,k,j,i) - u(m,CLC_K+b,k,j,i)));
       u(m,CLC_K+b,k,j,i) = u(m,CLC_X+b,k,j,i);
     }
-    d_max = fmax(d_max, d);
+    // (a non-finite change counts as infinite: fmax drops NaN)
+    d_max = (d == d) ? fmax(d_max, d) : std::numeric_limits<Real>::infinity();
     e_max = fmax(e_max, fabs(e));
   }, Kokkos::Max<Real>(dmax), Kokkos::Max<Real>(emax));
   if (ncell) return fmax(de_newton, CleanReduce(dmax, true));
@@ -2021,7 +2022,7 @@ Real RadiationM1::CleanCellVelocityUpdate() {
     const Real ek = fabs(e)*(1.0 + hc*op(m,M1_OP_E,k,j,i)) + fabs(x.w(m,CLW_EO,k,j,i));
     const Real re = (ek + adiv[0] + hc*op(m,M1_OP_P,k,j,i)*arad_*
                      SQR(SQR(x.w(m,CLW_T,k,j,i))))/fmax(fabs(e), 1.0e-300);
-    fe_max = fmax(fe_max, re);
+    fe_max = (re == re) ? fmax(fe_max, re) : std::numeric_limits<Real>::infinity();
     Real v2 = 0.0, p[3], yc[3] = {0.0, 0.0, 0.0}, dl[3] = {0.0, 0.0, 0.0};
     CleanGasMomentum(x, uh, m, k, j, i, p);
     for (int b = 0; b < x.nf; ++b) {
@@ -2051,17 +2052,22 @@ Real RadiationM1::CleanCellVelocityUpdate() {
         fv_max = fmax(fv_max, (fabs(y)*(1.0 + hc*chi) + fabs(yo) + adiv[1+b]*(1.0 + re)
                                + x.h*chi*fabs(x.w(m,CLW_A1+b,k,j,i)*e))/(x.c*d));
       }
-      dv_max = fmax(dv_max, fabs(dm - x.w(m,CLW_DM+b,k,j,i))/d);
+      const Real ddv = fabs(dm - x.w(m,CLW_DM+b,k,j,i))/d;
+      dv_max = (ddv == ddv) ? fmax(dv_max, ddv) : std::numeric_limits<Real>::infinity();
       x.w(m,CLW_DM+b,k,j,i) = dm;
       v2 += SQR((p[b] + dm)/d);
     }
     v_max = fmax(v_max, std::sqrt(v2));
   }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax), Kokkos::Max<Real>(femax),
   Kokkos::Max<Real>(fvmax));
-  cln_fe = std::numeric_limits<Real>::epsilon()*femax;
-  cln_fv = std::numeric_limits<Real>::epsilon()*fvmax/fmax(vmax, 1.0e-300);
+  // the round-off levels are those of all ranks, so that every rank ends the nonlinear
+  // iteration at the same pass
+  Real mx[4] = {dvmax, vmax, femax, fvmax};
+  CleanReduceMax(mx, 4);
+  cln_fe = std::numeric_limits<Real>::epsilon()*mx[2];
+  cln_fv = std::numeric_limits<Real>::epsilon()*mx[3]/fmax(mx[1], 1.0e-300);
   if (cln_vfreeze != 1) CleanAdvectiveCoefficients();
-  return CleanReduce(dvmax, true)/fmax(CleanReduce(vmax, true), 1.0e-300);
+  return mx[0]/fmax(mx[1], 1.0e-300);
 }
 
 //----------------------------------------------------------------------------------------
