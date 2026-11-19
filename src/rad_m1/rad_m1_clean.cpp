@@ -311,7 +311,7 @@ void RadiationM1::CleanInit() {
   const bool stcs = pmy_pack->pmesh->use_cubed_sphere && !cln_cell;
   Kokkos::realloc(cln_v, nmb, stcs ? 18 : 3, n3, n2, n1);
   Kokkos::realloc(cln_w.s, nmb, CLW_NS, n3, n2, n1);
-  const int nwo = cln_cell ? CLW_NC : ((cln_xte > 0) ? CLW_NX :
+  const int nwo = cln_cell ? CLW_NC : (cln_kpos ? CLW_NKP : (cln_xte > 0) ? CLW_NX :
                   ((cln_kpos || cln_xpat) ? CLW_NK : CLW_N));
   Kokkos::realloc(cln_w.o, nmb, nwo - CLW_NS, n3, n2, n1);
   cln_w.ns = CLW_NS;
@@ -1663,7 +1663,7 @@ void RadiationM1::CleanStagKPos() {
   auto uh = fl.u0;
   auto eos = fl.eos;
   auto inc = t2inc;
-  const bool gas = cln_feedback;
+  const bool gas = cln_feedback, krl = cln_kreal;
   Real nn[4] = {0.0, 0.0, 0.0, 0.0};   // (cells with pd, gas-limited, pd guard, E_old < 0)
   Kokkos::parallel_reduce("cln_kpos", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
       DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
@@ -1693,22 +1693,25 @@ void RadiationM1::CleanStagKPos() {
       }
     }
     const Real q = w(m,CLW_EO,k,j,i) - es - dg;
-    Real rg = 0.0;
+    Real rg = 0.0, wke = 0.0;   // (wke: the kinetic-energy work removed explicitly)
     if (q >= 0.0) {
       e += q;
     } else if (gas && w(m,CLW_JV,k,j,i) >= 0.0) {   // (a stage start eint >= 0)
       // (the gas gives back the eint its increment gained, de = inc_EN less the kinetic
       // energy of the momentum increment, at most -Q: eint stays >= that of the stage
       // start; the rest, the work on the gas's kinetic energy, a removal of E, counted)
+      // (kreal: the momentum increment applied with the share s, CLW_KS)
+      const Real ksh = krl ? w(m,CLW_KS,k,j,i) : 1.0;
       Real m2 = 0.0, m2s = 0.0;
       for (int n = 0; n < 3; ++n) {
         m2 += SQR(uh(m,IM1+n,k,j,i));
-        m2s += SQR(uh(m,IM1+n,k,j,i) - inc(m,M1_T2_M1+n,k,j,i));
+        m2s += SQR(uh(m,IM1+n,k,j,i) - ksh*inc(m,M1_T2_M1+n,k,j,i));
       }
       const Real de = inc(m,M1_T2_EN,k,j,i) - 0.5*(m2 - m2s)/uh(m,IDN,k,j,i);
       rg = fmin(fmax(de, 0.0), fmin(-q, fmax(w(m,CLW_EI,k,j,i), 0.0)));
       if (rg < -q) {
         e += q + rg;
+        wke = -(q + rg);
         ng += 1.0;
       }
     } else if (!gas) {
@@ -1745,6 +1748,7 @@ void RadiationM1::CleanStagKPos() {
     }
     if (pd > 0.0) np += 1.0;
     if (e < 0.0) ne += 1.0;
+    w(m,CLW_KW,k,j,i) = e + wke;   // (E_old before the work removal: kreal's hook)
     w(m,CLW_KF,k,j,i) = pb;
     w(m,CLW_KM,k,j,i) = pd;
     w(m,CLW_EO,k,j,i) = e;
