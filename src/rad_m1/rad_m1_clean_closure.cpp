@@ -1308,10 +1308,15 @@ void RadiationM1::CleanRingMoments() {
   // (the sc rays on the cubed sphere: the sets in block order, so that the last two
   // swept, b and b+1, hold the two cln_fvi slots blk mod 2; on sp the slot order: the
   // block order breaks the bitwise restart of q_def, reflecting top)
+  // (and the two live ones b, b+1 last in their slot order blk mod 2: CleanFaceHalf folds
+  // the union in the slot order; the sweeps of the sets are independent)
   std::vector<int> ord(ns);
   for (int q = 0; q < ns; ++q) ord[q] = q;
-  std::sort(ord.begin(), ord.end(),
-            [&](int u, int v) {return cln_fvblk[u] < cln_fvblk[v];});
+  auto okey = [&](int u) {
+    const int64_t bu = cln_fvblk[u];
+    return (bu >= b) ? std::make_pair(int64_t{1}, bu & 1) : std::make_pair(int64_t{0}, bu);
+  };
+  std::sort(ord.begin(), ord.end(), [&](int u, int v) {return okey(u) < okey(v);});
   for (int qo = 0; qo < ns; ++qo) {
     const int q = (cln_rfv == 0 && cln_cssc) ? ord[qo] : qo;
     const int64_t p = cln_fvblk[q] - (b - nk + 1);
