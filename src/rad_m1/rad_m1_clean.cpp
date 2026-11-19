@@ -190,6 +190,7 @@ static Real CleanStagTorqueFace(const CleanArgs &x, const int e, const int d, co
 //! the faces (M_f = int x dA, (D E)_f the mean of the two cells; none on physical
 //! boundaries), so that gas plus radiation L_z changes only by round-off.
 
+template <bool kFs = false>
 KOKKOS_INLINE_FUNCTION
 static void CleanStagMomentum(const CleanArgs &x, const int e, const int m, const int k,
                               const int j, const int i, Real dm[3], Real mag[3],
@@ -197,8 +198,8 @@ static void CleanStagMomentum(const CleanArgs &x, const int e, const int m, cons
   Real cf[6], wf[6];
   for (int d = 0; d < 3; ++d) {
     mag[d] = 0.0;
-    dm[d] = (d < x.nf) ? CleanMomentumChange(x, e, d, m, k, j, i, &mag[d], &cf[2*d],
-                                             &wf[2*d]) : 0.0;
+    dm[d] = (d < x.nf) ? CleanMomentumChange<kFs>(x, e, d, m, k, j, i, &mag[d],
+                                                  &cf[2*d], &wf[2*d]) : 0.0;
   }
   if (!x.cub) return;
   Real dv[3], df[6], one[6], fd[3], q[3][3];
@@ -208,8 +209,8 @@ static void CleanStagMomentum(const CleanArgs &x, const int e, const int m, cons
     const int dk = (d == 2), dj = (d == 1), di = (d == 0);
     for (int s = 0; s < 2; ++s) {
       const int kf = k + s*dk, jf = j + s*dj, iff = i + s*di;
-      const Real f = x.fs ? x.fc[d](m,CLF_N,kf,jf,iff)
-                          : CleanFaceFlux(x, e, d, m, kf, jf, iff, true);
+      const Real f = (kFs || x.fs) ? x.fc[d](m,CLF_N,kf,jf,iff)
+                                   : CleanFaceFlux(x, e, d, m, kf, jf, iff, true);
       df[2*d+s] = f - x.fc[d](m,CLF_G,kf,jf,iff);
       one[2*d+s] = 1.0;
       if (CleanBoundaryFace(x, d, m, kf, jf, iff)) continue;
@@ -227,6 +228,56 @@ static void CleanStagMomentum(const CleanArgs &x, const int e, const int m, cons
   const Real dp = -(q[2][0]*fd[0] + q[2][1]*fd[1] + q[2][2]*fd[2])/(x.c*x.c) -
                   x.h*tz/(x.vol(m,k,j,i)*rc);
   for (int b = 0; b < 3; ++b) dm[b] = dr*q[0][b] + dt*q[1][b] + dp*q[2][b];
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanVelocityCell
+//! \brief CleanVelocityUpdate's cell (k,j,i): the momentum change (CLW_DM), with fa the
+//! advective coefficients of the new velocity (CLW_A1), and the maxima of |dv|, |v| and
+//! of the force scale; kFs: the F solve's F known set (xh.fs, xh.fa)
+
+template <bool kFs>
+KOKKOS_INLINE_FUNCTION
+static void CleanVelocityCell(const CleanArgs &x, const CleanArgs &xh, const CleanArgs &xa,
+                              const DvceArray5D<Real> &uh, const DvceArray5D<Real> &tzf,
+                              const int fref, const DvceArray5D<Real> &fr,
+                              const DvceArray4D<Real> &aref, const bool cap,
+                              const DvceArray5D<Real> &op, const Real arad_, const bool fa,
+                              const int m, const int k, const int j, const int i,
+                              Real &dv_max, Real &v_max, Real &fv_max) {
+  const Real d = uh(m,IDN,k,j,i);
+  Real v2 = 0.0, dmv[3], mg[3], pg[3], rf[3];
+  CleanStagMomentum<kFs>(xh, CLW_EK, m, k, j, i, dmv, mg, tzf);
+  CleanStagGasMomentum(x, uh, m, k, j, i, pg);
+  CleanStagRefForce(x, fref, fr, aref, d, m, k, j, i, rf);
+  for (int dir = 0; dir < 3; ++dir) {
+    Real dm = 0.0;
+    if (dir == 0 || (dir == 1 && x.multi_d) || (dir == 2 && x.three_d)) {
+      const Real mag = mg[dir];
+      dm = dmv[dir];
+      v_max = fmax(v_max, mag/d);   // (|v| floor: the size of the stage's force terms)
+      // (force_reference = clean: the first coupled solve's force is the reference,
+      // withheld from the gas, as is wb_arad's; nothing while the gas momentum is
+      // frozen)
+      if (cap) fr(m,dir,k,j,i) = dm/x.h;
+      if (fref != M1_FREF_NONE) dm -= cap ? dm : x.h*rf[dir];
+      if (x.vzero) dm = 0.0;
+      // (times that of E in the stress, as CleanCellVelocityUpdate)
+      const Real e = fmax(fabs(x.w(m,CLW_EK,k,j,i)), 1.0e-300), hc = x.h*x.c;
+      fv_max = fmax(fv_max, mag/d*(2.0 + (e*hc*op(m,M1_OP_E,k,j,i) + fabs(x.w(m,
+               CLW_EO,k,j,i)) + hc*op(m,M1_OP_P,k,j,i)*arad_*SQR(SQR(x.w(m,CLW_T,k,j,
+               i))))/e));
+    }
+    dv_max = fmax(dv_max, fabs(dm - x.w(m,CLW_DM+dir,k,j,i))/d);
+    x.w(m,CLW_DM+dir,k,j,i) = dm;
+    v2 += SQR((pg[dir] + dm)/d);
+  }
+  v_max = fmax(v_max, std::sqrt(v2));
+  if (!fa) return;
+  Real v[3], a[3];
+  for (int n = 0; n < 3; ++n) v[n] = (pg[n] + x.w(m,CLW_DM+n,k,j,i))/d;
+  CleanAdvect(xa, m, k, j, i, v, a);
+  for (int n = 0; n < 3; ++n) x.w(m,CLW_A1+n,k,j,i) = a[n];
 }
 
 //----------------------------------------------------------------------------------------
@@ -3026,50 +3077,39 @@ Real RadiationM1::CleanVelocityUpdate() {
       });
     }
   }
-  Kokkos::parallel_reduce("cln_velocity", CleanRpLb2(DevExeSpace(), 0, nmb*nkji),
-  KOKKOS_LAMBDA(const int idx, Real &dv_max, Real &v_max, Real &fv_max) {
-    CLEAN_HIPX(const CleanArgs &x = *px, &xh = *pxh, &xa = *pxa;)   // (device memory)
-    int m = idx/nkji;
-    int k = (idx - m*nkji)/nji;
-    int j = (idx - m*nkji - k*nji)/nx1;
-    int i = idx - m*nkji - k*nji - j*nx1;
-    k += ks;
-    j += js;
-    i += is;
-    const Real d = uh(m,IDN,k,j,i);
-    Real v2 = 0.0, dmv[3], mg[3], pg[3], rf[3];
-    CleanStagMomentum(xh, CLW_EK, m, k, j, i, dmv, mg, tzf);
-    CleanStagGasMomentum(x, uh, m, k, j, i, pg);
-    CleanStagRefForce(x, fref, fr, aref, d, m, k, j, i, rf);
-    for (int dir = 0; dir < 3; ++dir) {
-      Real dm = 0.0;
-      if (dir == 0 || (dir == 1 && x.multi_d) || (dir == 2 && x.three_d)) {
-        const Real mag = mg[dir];
-        dm = dmv[dir];
-        v_max = fmax(v_max, mag/d);   // (|v| floor: the size of the stage's force terms)
-        // (force_reference = clean: the first coupled solve's force is the reference,
-        // withheld from the gas, as is wb_arad's; nothing while the gas momentum is
-        // frozen)
-        if (cap) fr(m,dir,k,j,i) = dm/x.h;
-        if (fref != M1_FREF_NONE) dm -= cap ? dm : x.h*rf[dir];
-        if (x.vzero) dm = 0.0;
-        // (times that of E in the stress, as CleanCellVelocityUpdate)
-        const Real e = fmax(fabs(x.w(m,CLW_EK,k,j,i)), 1.0e-300), hc = x.h*x.c;
-        fv_max = fmax(fv_max, mag/d*(2.0 + (e*hc*op(m,M1_OP_E,k,j,i) + fabs(x.w(m,
-                 CLW_EO,k,j,i)) + hc*op(m,M1_OP_P,k,j,i)*arad_*SQR(SQR(x.w(m,CLW_T,k,j,
-                 i))))/e));
-      }
-      dv_max = fmax(dv_max, fabs(dm - x.w(m,CLW_DM+dir,k,j,i))/d);
-      x.w(m,CLW_DM+dir,k,j,i) = dm;
-      v2 += SQR((pg[dir] + dm)/d);
-    }
-    v_max = fmax(v_max, std::sqrt(v2));
-    if (!fa) return;
-    Real v[3], a[3];
-    for (int n = 0; n < 3; ++n) v[n] = (pg[n] + x.w(m,CLW_DM+n,k,j,i))/d;
-    CleanAdvect(xa, m, k, j, i, v, a);
-    for (int n = 0; n < 3; ++n) x.w(m,CLW_A1+n,k,j,i) = a[n];
-  }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax), Kokkos::Max<Real>(fvmax));
+  // (with the F solve's F, fa: CleanStagMomentum<true> reads the faces' terms and
+  // computes none, in a kernel of its own; on HIP at 256 VGPRs, 2 waves per SIMD)
+#if defined(KOKKOS_ENABLE_HIP)
+  constexpr int vmb = 2;
+#else
+  constexpr int vmb = CleanLbMb(2);
+#endif
+  auto cell = KOKKOS_LAMBDA(const int idx, int &m, int &k, int &j, int &i) {
+    m = idx/nkji;
+    k = (idx - m*nkji)/nji + ks;
+    j = (idx - m*nkji - (k - ks)*nji)/nx1 + js;
+    i = idx - m*nkji - (k - ks)*nji - (j - js)*nx1 + is;
+  };
+  if (fa) {
+    Kokkos::parallel_reduce("cln_velocity", Kokkos::RangePolicy<DevExeSpace,
+                            Kokkos::LaunchBounds<256, vmb>>(DevExeSpace(), 0, nmb*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &dv_max, Real &v_max, Real &fv_max) {
+      CLEAN_HIPX(const CleanArgs &x = *px, &xh = *pxh, &xa = *pxa;)   // (device memory)
+      int m, k, j, i;
+      cell(idx, m, k, j, i);
+      CleanVelocityCell<true>(x, xh, xa, uh, tzf, fref, fr, aref, cap, op, arad_, true, m,
+                              k, j, i, dv_max, v_max, fv_max);
+    }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax), Kokkos::Max<Real>(fvmax));
+  } else {
+    Kokkos::parallel_reduce("cln_velocity", CleanRpLb2(DevExeSpace(), 0, nmb*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &dv_max, Real &v_max, Real &fv_max) {
+      CLEAN_HIPX(const CleanArgs &x = *px, &xh = *pxh, &xa = *pxa;)   // (device memory)
+      int m, k, j, i;
+      cell(idx, m, k, j, i);
+      CleanVelocityCell<false>(x, xh, xa, uh, tzf, fref, fr, aref, cap, op, arad_, false, m,
+                               k, j, i, dv_max, v_max, fv_max);
+    }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax), Kokkos::Max<Real>(fvmax));
+  }
   CleanReduceMax(dvmax, vmax, fvmax);
   if (fa) {
     CleanGhostDefer(cln_w, CLW_A1, 3);   // (as CleanAdvectiveCoefficients)

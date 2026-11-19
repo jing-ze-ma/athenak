@@ -1694,15 +1694,18 @@ Real CleanStagBetaE(const CleanArgs &xh, const int e, const int m, const int k,
 //! proportion to their chi, as the two half cells absorb).  E is work vector e.  With cf,
 //! wf set: the term of each face (low, high) and its weight wt.
 
+template <bool kFs = false>
 KOKKOS_INLINE_FUNCTION
 Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const int m,
                          const int k, const int j, const int i, Real *mag = nullptr,
                          Real *cf = nullptr, Real *wf = nullptr) {
+  // (kFs: x.fs and x.fa known set, the face fluxes and terms read, none computed)
+  const bool fs = kFs || x.fs, fa = kFs || x.fa;
   const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
   Real dm = 0.0;
   for (int side = 0; side < 2; ++side) {
     const int kf = k + side*dk, jf = j + side*dj, iff = i + side*di;
-    const Real f = x.fs ? x.fc[dir](m,CLF_N,kf,jf,iff) :
+    const Real f = fs ? x.fc[dir](m,CLF_N,kf,jf,iff) :
                    CleanFaceFluxCall(x, e, dir, m, kf, jf, iff, true);
     const Real g = x.fc[dir](m,CLF_G,kf,jf,iff);
     // (clean_stag_split: shared as the two half cells absorb, chi_c/(chi_L + chi_R))
@@ -1734,9 +1737,9 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
     // (clean_stag_ftie: T of the face as its owner, the block whose low face it is,
     // computed it, CleanStagFaceTie)
     Real t = wt*(x.tf ? x.w(m,CLW_L+3*dir,kf,jf,iff) :
-             (x.fa ? x.fc[dir](m,CLF_PT,kf,jf,iff) : ((f - g)/(x.c*x.c) +
+             (fa ? x.fc[dir](m,CLF_PT,kf,jf,iff) : ((f - g)/(x.c*x.c) +
              x.h*CleanFaceStressCall(x, e, dir, m, kf, jf, iff, true) -
-             (x.fs ? x.h*x.fc[dir](m,CLF_N+1,kf,jf,iff) : 0.0))));
+             (fs ? x.h*x.fc[dir](m,CLF_N+1,kf,jf,iff) : 0.0))));
     // (mcl, the Newton passes: the conservative term equals the face's absorption
     // h chi_f F/c only where the iterate's F satisfies its equation; capped there at the
     // force of a realisable flux, |F| <= c E, as the production deposit, so that a lagged
