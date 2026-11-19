@@ -284,6 +284,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_consist = pin->GetOrAddBoolean("rad_m1","clean_consistency",
                                        cs ? !cln_cell && vg : !sp || gd);
     cln_conswt = pin->GetOrAddBoolean("rad_m1","clean_consistency_weight",cln_cell);
+    // spdb-1119 clean_gd_face_fuse (read only when named; default true): sp sc rays, both
+    // lateral faces and the r face of a cell in one pass over the directions (cln_gd_fs,
+    // bitwise the three kernels cln_gd_lat x2 + cln_gd_rf)
+    if (pin->DoesParameterExist("rad_m1","clean_gd_face_fuse")) {
+      cln_gdfs = pin->GetBoolean("rad_m1","clean_gd_face_fuse");
+    }
     std::string fm = pin->GetOrAddString("rad_m1","clean_face_model","none");
     cln_milne = (fm.compare("milne") == 0);
     // temporary test key, read only when named: al = A^p, p = 2 | 3

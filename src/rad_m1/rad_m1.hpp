@@ -3344,6 +3344,7 @@ class RadiationM1 {
   bool cln_hk = false;          // CleanCellConsistency fills the face half ranges CLF_HK
   bool cln_opt = false;         // cell layout: opacities at the iterate's T (a T law)
   bool cln_consist = false;     // clean_consistency: bracket C = F_ray - f(Ur), cell
+  bool cln_gdfs = true;         // spdb-1119 clean_gd_face_fuse (cln_gd_fs)
   bool cln_conswt = false;      // clean_consistency_weight: bracket times w(C1)
   bool cln_milne = false;       // clean_face_model = milne: sub-cell Eddington faces, for
                                 // the FV rays (clean_rays = fv1 | fv), clean_consistency

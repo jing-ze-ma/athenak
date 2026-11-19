@@ -3590,7 +3590,12 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
     q[0] = 0.0;
     for (int b = 0; b < 3; ++b) q[1+b] = wn*nf[b];
   };
-  for (int dir = 1; dir < 3; ++dir) {
+  // spdb-1119: sp, the raw rows (gl), a whole build: both lateral faces and the r face of
+  // a cell in one pass over the directions (cln_gd_fs below; clean_gd_face_fuse = false:
+  // the three kernels), each sum its own terms in the same order (bitwise)
+  const bool fs = cln_gdfs && gl && !pk && !one && !fv && x.sph && !x.cub && !axi &&
+                  !cln_cell;
+  for (int dir = 1; dir < 3 && !fs; ++dir) {
     const int nf = (dir == 1) ? CLN_F2 : CLN_F3;
     if ((!x.sph && dir >= x.nf) || (pk && !one)) continue;
     CleanForK("cln_gd_lat", nmb1, ks, ke, js, je, one ? s0 : is,
@@ -3616,8 +3621,8 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
       }
     });
   }
-  if (!one) CleanGhostFill(cln_s, CLN_F2, 4);
-  if (!one) CleanGhostFill(cln_s, CLN_F3, 4);
+  if (!one && !fs) CleanGhostFill(cln_s, CLN_F2, 4);
+  if (!one && !fs) CleanGhostFill(cln_s, CLN_F3, 4);
   // the conservative rays (clean_rays = fv | fv1), and the staggered layout's sc rays on
   // spherical polar (rr): the r face i carries their own upwind fluxes (area times the
   // per-area sums), not the balance march, which loses the diffusion flux in the
@@ -3695,7 +3700,54 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
                        rr ? ie - is + 2 : 1);
   if (!pk) Kokkos::deep_copy(DevExeSpace(), rf, 0.0);   // (the zeros of a fresh one)
   if (pk && !one) cln_gdrf = DvceArray5D<Real>();
-  if (rr && (one || !pk)) {
+  if (fs) {
+    // (cells is..ie: the low theta and phi faces as cln_gd_lat; faces is..ie+1: the r
+    // face as cln_gd_rf, a boundary one by rflux after the loop)
+    CleanForK("cln_gd_fs", nmb1, ks, ke, js, je, is, ie + 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const CleanArgs &x = *px;
+      const bool cl = (i <= ie), rb = CleanBoundaryFace(x, 0, m, k, j, i);
+      Real a1[3], a2[3], a0[3], e[3][3], q[4];
+      Real s1[4] = {0.0}, s2[4] = {0.0}, s0[4] = {0.0};
+      const bool b1 = !cl || bnd(1, m, k, j, i), b2 = !cl || bnd(2, m, k, j, i);
+      const CleanRow ro = gi.At(m, k, j, i);
+      const CleanRow u1 = b1 ? CleanRow{nullptr, 0} : gi.At(m, k, j - 1, i);
+      const CleanRow u2 = b2 ? CleanRow{nullptr, 0} : gi.At(m, k - 1, j, i);
+      const CleanRow rl = gi.At(m, k, j, i - 1);
+      if (cl) {
+        CleanFaceVector(x, x3f, 1, m, k, j, i, a1);
+        CleanFaceVector(x, x3f, 2, m, k, j, i, a2);
+      }
+      if (!rb) CleanFaceVector(x, x3f, 0, m, k, j, i, a0);
+      for (int d = 0; d < n; ++d) {
+        if (cl) {
+          addc(d, b1 ? 0.0 : lat(1, m, k, j, i, d, a1, ro, u1), s1);
+          addc(d, b2 ? 0.0 : lat(2, m, k, j, i, d, a2, ro, u2), s2);
+        }
+        if (!rb) {
+          const Real f = dir_(d,0)*a0[0] + dir_(d,1)*a0[1] + dir_(d,2)*a0[2];
+          addc(d, f*((f > 0.0) ? rl[d] : ro[d]), s0);
+        }
+      }
+      if (cl) {
+        face(1, m, k, j, i, a1, e);
+        proj(e, x.area[1](m,k,j,i), s1, q);
+        for (int c = 0; c < 4; ++c) cs(m,CLN_F2+c,k,j,i) = q[c];
+        face(2, m, k, j, i, a2, e);
+        proj(e, x.area[2](m,k,j,i), s2, q);
+        for (int c = 0; c < 4; ++c) cs(m,CLN_F3+c,k,j,i) = q[c];
+      }
+      if (rb) {
+        rflux(m, k, j, i, q);
+      } else {
+        face(0, m, k, j, i, a0, e);
+        proj(e, 1.0, s0, q);
+      }
+      for (int c = 0; c < 4; ++c) rf(m,c,k-ks,j-js,i-is) = q[c];
+    });
+    CleanGhostFill(cln_s, CLN_F2, 4);
+    CleanGhostFill(cln_s, CLN_F3, 4);
+  } else if (rr && (one || !pk)) {
     CleanForK("cln_gd_rf", nmb1, ks, ke, js, je, one ? s0 : is,
             one ? ((s1 == ie) ? ie + 1 : s1) : ie + 1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
