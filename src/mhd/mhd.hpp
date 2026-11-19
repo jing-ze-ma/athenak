@@ -1234,14 +1234,12 @@ class MHD {
             // T LINEAR in Phi with slope b is the exact polytrope:
             // d(dT)/dPhi = -d => dln d/dPhi = -(1 + b)/T => d = d_0 (T/T_0)^(-(1+b)/b)
             // (isothermal, b -> 0: d = d_0 exp(-dPhi/T_0)); e = d T/(gamma-1).
-            // b PER SIDE, the (i-1, i) chord inward and (i, i+1) outward, so each walk
-            // ends at its neighbour's T (zero on a side that spans no potential).
+            // b per side, centred or one-sided by Phi's monotonicity (WBPolySlopes)
             const Real gm1_ = gamma - 1.0;
             const Real t_i = gm1_*e_i/rho_i;
-            const Real b_m = (phi_i != phi_im1) ?
-                (t_i - gm1_*e_im1/rho_im1)/(phi_i - phi_im1) : 0.0;
-            const Real b_p = (phi_ip1 != phi_i) ?
-                (gm1_*e_ip1/rho_ip1 - t_i)/(phi_ip1 - phi_i) : 0.0;
+            Real b_m, b_p;
+            WBPolySlopes(phi_im1, phi_imh, phi_i, phi_iph, phi_ip1, gm1_*e_im1/rho_im1,
+                         t_i, gm1_*e_ip1/rho_ip1, b_m, b_p);
             // clamp_dt (<mhd>/wb_clamp_ideal, x1 cache only): BOUND THE TEMPERATURE
             // EXTRAPOLATION as the general-EOS walk does (wb_background.hpp): limit the
             // DECREASE of T over a segment to half the starting temperature, so a small

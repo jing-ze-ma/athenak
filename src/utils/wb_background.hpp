@@ -416,6 +416,37 @@ void WBAdvance(const EOS_Data &eos, const int wb_opt, const Real d_c, const Real
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real WBPolySlopes
+//! \brief the POLYTROPIC background's dT/dPhi on each side of the anchor, a_m (inner
+//! walk) and a_p (outer walk); returns the blend weight w.  Where Phi is monotone across
+//! the stencil and each face lies inside its chord (w = 1), both take the CENTRED chord
+//! (i-1, i+1), second order at the anchor.  Where Phi_eff is non-monotone (super-
+//! Eddington) that chord can span ~0, so each side takes its OWN chord, (i-1, i) and
+//! (i, i+1), which ends at the neighbour's temperature (w = 0).  Between, a smooth blend:
+//! w = smoothstep of the worst of the face positions in their chords (4 r (1 - r), 1 at
+//! the midpoint) and the stencil's monotonicity (2 s_m s_p/(s_m^2 + s_p^2), 1 for equal
+//! spans): 1 above 0.5, 0 below 0.1.  Zero on a side that spans no potential (a
+//! tangential sweep), which reduces that side to isothermal.
+
+KOKKOS_INLINE_FUNCTION
+Real WBPolySlopes(const Real phi_im1, const Real phi_imh, const Real phi_i,
+                  const Real phi_iph, const Real phi_ip1, const Real t_m, const Real t_i,
+                  const Real t_p, Real &a_m, Real &a_p) {
+  const Real sm = phi_i - phi_im1, sp = phi_ip1 - phi_i;
+  const Real fm = phi_i - phi_imh, fp = phi_iph - phi_i;
+  const Real gm = (sm != 0.0) ? 4.0*fm*(sm - fm)/(sm*sm) : ((fm == 0.0) ? 1.0 : -1.0);
+  const Real gp = (sp != 0.0) ? 4.0*fp*(sp - fp)/(sp*sp) : ((fp == 0.0) ? 1.0 : -1.0);
+  const Real cs = (sm*sm + sp*sp > 0.0) ? 2.0*sm*sp/(sm*sm + sp*sp) : 1.0;
+  const Real x = (fmin(fmin(gm, gp), cs) - 0.1)/0.4;
+  const Real w = (x >= 1.0) ? 1.0 : ((x <= 0.0) ? 0.0 : x*x*(3.0 - 2.0*x));
+  const Real dphis = phi_ip1 - phi_im1;   // the centred chord
+  const Real ac = (dphis != 0.0) ? (t_p - t_m)/dphis : 0.0;
+  a_m = (w == 1.0) ? ac : w*ac + (1.0 - w)*((sm != 0.0) ? (t_i - t_m)/sm : 0.0);
+  a_p = (w == 1.0) ? ac : w*ac + (1.0 - w)*((sp != 0.0) ? (t_p - t_i)/sp : 0.0);
+  return w;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void WBBackgroundStencil
 //! \brief background states at the five points the deviation reconstruction needs:
 //! the two neighbouring cell centres, the two interfaces, and the anchor cell itself.
@@ -450,18 +481,13 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
 
   int wb_opt = WBOptionNumber(eos, wb_option, rho_im1, e_im1, rho_ip1, e_ip1, rho_i, e_i,
                               t_i, t_im1c, t_ip1c);
-  // the local polytrope's gradient dT/dPhi, ONE PER SIDE: the inner walk takes the
-  // (i-1, i) chord and the outer walk the (i, i+1) chord, so each ends exactly at its
-  // neighbour's temperature, and a non-monotonic Phi (super-Eddington Phi_eff) cannot
-  // blow a whole-stencil chord up.  Two more inversions, seeded by the anchor's
-  // temperature.  Zero on a side that spans no potential (a tangential sweep), which
-  // reduces that side to isothermal.
-  Real a_m = 0.0, a_p = 0.0, t_m = t_i, t_p = t_i;
+  // the local polytrope's gradient dT/dPhi per side, WBPolySlopes().  Two more
+  // inversions, seeded by the anchor's temperature.
+  Real a_m = 0.0, a_p = 0.0, t_m = t_i, t_p = t_i, wc = 1.0;
   if (wb_opt == 3 && (phi_im1 != phi_i || phi_ip1 != phi_i)) {
     t_m = (t_im1c > 0.0) ? t_im1c : eos.Temperature(rho_im1, e_im1, t_i);
     t_p = (t_ip1c > 0.0) ? t_ip1c : eos.Temperature(rho_ip1, e_ip1, t_i);
-    if (phi_i != phi_im1) a_m = (t_i - t_m)/(phi_i - phi_im1);
-    if (phi_ip1 != phi_i) a_p = (t_p - t_i)/(phi_ip1 - phi_i);
+    wc = WBPolySlopes(phi_im1, phi_imh, phi_i, phi_iph, phi_ip1, t_m, t_i, t_p, a_m, a_p);
   }
 
   q0_i.d = rho_i;
@@ -489,17 +515,20 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
     // chi_rho (p ~ d^chi_rho at fixed T) and e ~ d (exact for a gamma law, O(dphi^2)
     // otherwise on a correction that is itself O(dphi^2)).  The end evaluation's chi's
     // seed the next segment.  Second order per segment, five evaluations per stencil.
-    // T STAYS IN THE CHORD'S BRACKET [min, max](T_i, T_nb): where Phi_eff has an extremum
-    // between the centres the face lies outside the chord's Phi span (a ~ dT/0 on a
-    // near-flat side), and the linear walk would leave it (to T <= 0 or inf: the HG
-    // envelope); clamped, the segment's slope is the one that reaches the bracket edge.
-    // Unclamped (monotone Phi, a true polytrope) a is used as is, bit for bit.
+    // T STAYS IN THE CHORD'S BRACKET [min, max](T_i, T_nb), widened by (1 -/+ w/2) with
+    // the blend weight: where Phi_eff has an extremum between the centres the face lies
+    // outside the chord's Phi span and the walk would leave it (to T <= 0 or inf: the
+    // HG envelope); clamped, the segment's slope is the one that reaches the bracket
+    // edge.  An end within (1 - w) 1e-12 of T_nb is T_nb (round-off of the per-side
+    // walk).  Unclamped (the centred chord, w = 1) a is used as is, bit for bit.
     auto seg = [&](const Real a, const Real tn, const Real d0, const Real t0,
                    const Real k0, const Real dph, Real &d1, Real &t1, Real &e1, Real &p1,
                    Real &k1) {
       const Real dpred = d0*exp(k0*dph);
       const Real tw = t0 + a*dph;
-      t1 = fmin(fmax(tw, fmin(t_i, tn)), fmax(t_i, tn));
+      t1 = (fabs(tw - tn) <= (1.0 - wc)*1.0e-12*tn) ? tn : tw;
+      t1 = fmin(fmax(t1, fmin(t_i, tn)*(1.0 - 0.5*wc)),
+                fmax(t_i, tn)*(1.0 + 0.5*wc));
       const Real ae = (t1 == tw) ? a : (t1 - t0)/dph;
       Real ep, pp, cr, ct;
       eos.ThermoAt(dpred, t1, ep, pp, cr, ct, dum_cv);
