@@ -1919,14 +1919,24 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
   // (time2_face_fct_form = donor: the cell's own sink of the increment that the gas
   // takes, at most the gas's gain (chat/c) V dEN, is limited with the faces: an outflow
   // to the gas of the cell, given back to E and taken from the gas by the same R)
+  // (the gas's gain is its eint's: dEN less the kinetic energy of its momentum increment)
   const Real chcl = chat/c_light;
-  const bool dnr = t2_ffct_dnr;
+  FluidRef fdn = FluidRef::Get(pmy_pack);
+  const bool dnr = t2_ffct_dnr && fdn.on;
+  auto ugd = fdn.u0;
+  const bool csd = cs_geom;
+  auto ccd = pmy_pack->pcoord->cos_cell;
   auto csink = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
                              const Real w, const Real po, const Real pi) {
     if (!dnr) return 0.0;
     const Real v = cvol(m,k,j,i);
     const Real sv = w - v*u0_(m,M1_E,k,j,i) - pi + po;
-    return fmin(fmax(-sv, 0.0), fmax(chcl*v*in_(m,M1_T2_EN,k,j,i), 0.0));
+    const Real idd = 1.0/fmax(ugd(m,IDN,k,j,i), 1.0e-300), cc = csd ? ccd(m,k,j) : 0.0;
+    const Real m1 = ugd(m,IM1,k,j,i), m2 = ugd(m,IM2,k,j,i), m3 = ugd(m,IM3,k,j,i);
+    const Real dke = (CsKeMom(m1 + in_(m,M1_T2_M1,k,j,i), m2 + in_(m,M1_T2_M1+1,k,j,i),
+                              m3 + in_(m,M1_T2_M1+2,k,j,i), cc) -
+                      CsKeMom(m1, m2, m3, cc))*idd;
+    return fmin(fmax(-sv, 0.0), fmax(chcl*v*(in_(m,M1_T2_EN,k,j,i) - dke), 0.0));
   };
   // R = 1 everywhere, ghosts included (physical ghosts are never filled: unlimited);
   // the rounds read slot sa and write sb, then swap them (no copy; both slots keep the
