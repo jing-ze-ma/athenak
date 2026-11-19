@@ -21,6 +21,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility> // make_pair
 #include <vector>
 
@@ -110,10 +111,38 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
   }
 
   // Note for restarts, outarrays are dimensioned (m,n,k,j,i)
+  // where the host reads device memory (MI300A, CPU builds) and the dump is written
+  // synchronously, a staging array is the contiguous device array (or its device pack)
+  // itself instead of a host copy of it: the same bytes, one copy fewer at the dump
+  constexpr bool um_ = Kokkos::SpaceAccessibility<HostMemSpace, DevMemSpace>::accessible;
+  const bool zc = um_ && !async_io::Enabled();
+  rst_keep_.clear();
+  auto stage = [&](auto &out, const auto &sv) {
+    using H = std::remove_reference_t<decltype(out)>;
+    if (zc && sv.span_is_contiguous()) {
+      if constexpr (H::rank == 5) {
+        out = H(sv.data(), sv.extent(0), sv.extent(1), sv.extent(2), sv.extent(3),
+                sv.extent(4));
+      } else {
+        out = H(sv.data(), sv.extent(0), sv.extent(1), sv.extent(2), sv.extent(3));
+      }
+    } else {
+      if constexpr (H::rank == 5) {
+        Kokkos::realloc(out, sv.extent(0), sv.extent(1), sv.extent(2), sv.extent(3),
+                        sv.extent(4));
+      } else {
+        Kokkos::realloc(out, sv.extent(0), sv.extent(1), sv.extent(2), sv.extent(3));
+      }
+      Kokkos::deep_copy(out, sv);
+    }
+  };
+  auto hold = [&](HostArray5D<Real> &out, const DvceArray5D<Real> &tmp) {
+    if (zc) rst_keep_.push_back(tmp);
+    stage(out, tmp);
+  };
   if (phydro != nullptr) {
-    Kokkos::realloc(outarray_hyd, nmb, nhydro, nout3, nout2, nout1);
-    Kokkos::deep_copy(outarray_hyd, Kokkos::subview(phydro->u0, std::make_pair(0,nmb),
-                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+    stage(outarray_hyd, Kokkos::subview(phydro->u0, std::make_pair(0,nmb), Kokkos::ALL,
+                                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
   if (pmhd != nullptr) {
     Kokkos::realloc(outarray_mhd, nmb, nmhd, nout3, nout2, nout1);
@@ -131,9 +160,8 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
   }
   // the general-EOS temperature cache, see the note on outarray_wth in outputs.hpp
   if (phydro != nullptr && phydro->peos->eos_data.IsGeneral()) {
-    Kokkos::realloc(outarray_wth, nmb, nout3, nout2, nout1);
-    Kokkos::deep_copy(outarray_wth, Kokkos::subview(phydro->wtemp,
-                      std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+    stage(outarray_wth, Kokkos::subview(phydro->wtemp, std::make_pair(0,nmb), Kokkos::ALL,
+                                        Kokkos::ALL, Kokkos::ALL));
   }
   if (pmhd != nullptr && pmhd->peos->eos_data.IsGeneral()) {
     Kokkos::realloc(outarray_wtm, nmb, nout3, nout2, nout1);
@@ -208,25 +236,21 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
   if (pradm1 != nullptr) {
-    Kokkos::realloc(outarray_m1, nmb, nm1, nout3, nout2, nout1);
-    Kokkos::deep_copy(outarray_m1, Kokkos::subview(pradm1->u0, std::make_pair(0,nmb),
-                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+    stage(outarray_m1, Kokkos::subview(pradm1->u0, std::make_pair(0,nmb), Kokkos::ALL,
+                                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
     // milestone 3a: the persistent x1 face fluxes of the implicit scheme
     if (pradm1->transport >= radm1::M1_TRANSPORT_IMPLICIT_X1) {
-      Kokkos::realloc(outarray_m1f, nmb, nout3, nout2, nout1+1);
-      Kokkos::deep_copy(outarray_m1f, Kokkos::subview(pradm1->f0x1,
-                        std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+      stage(outarray_m1f, Kokkos::subview(pradm1->f0x1, std::make_pair(0,nmb), Kokkos::ALL,
+                                          Kokkos::ALL, Kokkos::ALL));
     }
     // milestone 3b phase B: the transverse face fluxes, in the SAME order the reader
     // (src/pgen/pgen.cpp) takes them back: f0x1, then f0x2, then f0x3.
     if (pradm1->trans_on) {
-      Kokkos::realloc(outarray_m1f2, nmb, nout3, nout2+1, nout1);
-      Kokkos::deep_copy(outarray_m1f2, Kokkos::subview(pradm1->f0x2,
-                        std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+      stage(outarray_m1f2, Kokkos::subview(pradm1->f0x2, std::make_pair(0,nmb),
+                                           Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
       if (pradm1->trans_x3) {
-        Kokkos::realloc(outarray_m1f3, nmb, nout3+1, nout2, nout1);
-        Kokkos::deep_copy(outarray_m1f3, Kokkos::subview(pradm1->f0x3,
-                          std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+        stage(outarray_m1f3, Kokkos::subview(pradm1->f0x3, std::make_pair(0,nmb),
+                                             Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
       }
     }
     // implicit_predictor = step: the stored previous-step increment (radm1::ipred)
@@ -307,16 +331,14 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
       const int nrs = pradm1->RssRstNch(rmode);
       DvceArray5D<Real> tmp("rst-m1s", nmb, nrs, nout3, nout2, nout1);
       pradm1->RssRstPack(tmp, nmb, rmode);
-      Kokkos::realloc(outarray_m1s, nmb, nrs, nout3, nout2, nout1);
-      Kokkos::deep_copy(outarray_m1s, tmp);
+      hold(outarray_m1s, tmp);
     }
     // vet_gd_async: the source of the pending gd build (its sweep may be in flight; it
     // does not touch vlat_cs)
     if (pradm1->VetGdAsyncRstNch() > 0) {
       DvceArray5D<Real> tmp("rst-m1g", nmb, 2, nout3, nout2, nout1);
       pradm1->VetGdAsyncRstPack(tmp, nmb);
-      Kokkos::realloc(outarray_m1g, nmb, 2, nout3, nout2, nout1);
-      Kokkos::deep_copy(outarray_m1g, tmp);
+      hold(outarray_m1g, tmp);
     }
     // implicit_gas_src = conservative(2): the cell-F slope csk1
     if (pradm1->CskRstNch() > 0) {
@@ -341,7 +363,6 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
                     (pradm1->amk1.extent_int(0) > 0);
     const int nams = ((pam != nullptr) && pam->am_vector) ? (k1 ? 2 : 1) : 0;
     if (nams > 0) {
-      Kokkos::realloc(outarray_ams, nmb, nams, nout3, nout2, nout1);
       auto mb = std::make_pair(0, nmb);
       auto AL = Kokkos::ALL;
       DvceArray5D<Real> tmp("rst-ams", nmb, nams, nout3, nout2, nout1);
@@ -351,7 +372,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
         Kokkos::deep_copy(Kokkos::subview(tmp, AL, 1, AL, AL, AL),
                           Kokkos::subview(pradm1->amk1, mb, AL, AL, AL));
       }
-      Kokkos::deep_copy(outarray_ams, tmp);
+      hold(outarray_ams, tmp);
     }
   }
   // the per-cell pgen slabs (kPgenSlabRstMagic), behind the spin ones
@@ -359,36 +380,32 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     DvceArray5D<Real> *ps = (pm->pgen != nullptr) ? pm->pgen->pgen_rst_slabs : nullptr;
     const int nps = (ps != nullptr) ? ps->extent_int(1) : 0;
     if (nps > 0) {
-      Kokkos::realloc(outarray_pgs, nmb, nps, nout3, nout2, nout1);
       DvceArray5D<Real> tmp("rst-pgs", nmb, nps, nout3, nout2, nout1);
       Kokkos::deep_copy(tmp, Kokkos::subview(*ps, std::make_pair(0, nmb), Kokkos::ALL,
                                              Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
-      Kokkos::deep_copy(outarray_pgs, tmp);
+      hold(outarray_pgs, tmp);
     }
   }
   // implicit_hr_cmem_rst: the applied face fluxes (kM1FaxRstMagic)
   if (pradm1 != nullptr && pradm1->FaxRstNslab() > 0) {
     const int nf = pradm1->FaxRstNslab();
-    Kokkos::realloc(outarray_fax, nmb, nf, nout3, nout2, nout1);
     DvceArray5D<Real> tmp("rst-fax", nmb, nf, nout3, nout2, nout1);
     pradm1->FaxRstPack(tmp, nmb);
-    Kokkos::deep_copy(outarray_fax, tmp);
+    hold(outarray_fax, tmp);
   }
   // time2_stage_local_be: the carried stage-2 drop (kM1ThcRstMagic)
   if (pradm1 != nullptr && pradm1->ThcRstNslab() > 0) {
     const int nf = pradm1->ThcRstNslab();
-    Kokkos::realloc(outarray_thc, nmb, nf, nout3, nout2, nout1);
     DvceArray5D<Real> tmp("rst-thc", nmb, nf, nout3, nout2, nout1);
     pradm1->ThcRstPack(tmp, nmb);
-    Kokkos::deep_copy(outarray_thc, tmp);
+    hold(outarray_thc, tmp);
   }
   // vet_gd_rotate_xfade: the cross-fade state (kM1XfdRstMagic)
   if (pradm1 != nullptr && pradm1->XfdRstNslab(nout1*nout2*nout3) > 0) {
     const int nf = pradm1->XfdRstNslab(nout1*nout2*nout3);
-    Kokkos::realloc(outarray_xfd, nmb, nf, nout3, nout2, nout1);
     DvceArray5D<Real> tmp("rst-xfd", nmb, nf, nout3, nout2, nout1);
     pradm1->XfdRstPack(tmp, nmb);
-    Kokkos::deep_copy(outarray_xfd, tmp);
+    hold(outarray_xfd, tmp);
   }
   if (pturb != nullptr) {
     Kokkos::realloc(outarray_force, nmb, nforce, nout3, nout2, nout1);
@@ -1670,6 +1687,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       outarray_ams = outarray_pgs = outarray_fax = outarray_thc = outarray_xfd =
       HostArray5D<Real>();
   outarray_m1t_d = DvceArray5D<Real>();
+  rst_keep_.clear();
   outarray_m1f = outarray_m1f2 = outarray_m1f3 = outarray_wth = outarray_wtm =
       outarray_wdp = outarray_wdg = outarray_wdpm = outarray_wdgm = outarray_weh =
       outarray_wem = outarray_wm1 = outarray_wm2 = HostArray4D<Real>();
