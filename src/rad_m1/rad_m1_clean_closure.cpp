@@ -3997,7 +3997,7 @@ void RadiationM1::CleanClosureFill() {
     // (before the last pass only what cln_fill reads, D and h+-, valid(0), depth 1; the
     // last one every slot, all layers, as the ghosts are left)
     const int ns = cln_s.extent_int(1), nf = (ns/cln_hmax)*cln_hmax;
-    if (pass + 1 < cln_fillpass && nfl == CLN_C1) {
+    if (pass + 1 < cln_fillpass && nfl == CLN_C1 && cln_hmax > CLN_C1) {
       CleanGhostDefer(cln_s, 0, CLN_C1);
       cln_hpend.back().dep = 1;
       CleanGhostFill(cln_v, 0, 1, true, 0, 1);

@@ -3831,7 +3831,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
         v(m,15+dir,k,j,i) = -ac*wc*sr*sr*jc;
       });
       if (dir == x.nf - 1) {
-        if (cub && f0 > 0) {   // (one exchange, depth 1)
+        if (cub && f0 > 0 && cln_hmax >= 12) {   // (one exchange, depth 1)
           CleanGhostDefer(cln_v, 3, 6);
           cln_hpend.back().dep = 1;
           CleanGhostDefer(cln_v, 11, 4);
