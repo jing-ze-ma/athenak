@@ -3060,6 +3060,8 @@ class RadiationM1 {
   int cln_rstk1 = 0;            // clean_rst_k1: K1 from a restart slope block that misfits
   bool t2_k1only = false;       // the restart's slope block gives K1 only
   bool cln_lincont = false;     // clean_lin_continue: Picard continues past a failed solve
+  bool cln_diagneg = false;     // clean_diag_neg: where the E < 0 / |F| > cE cells are
+  void CleanCellDiagNeg();
   bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces
   bool cln_posghost = false;    // clean_pos_ghost: marked boundary faces, upwind ghost
   bool cln_all_low = false;     // the solve has every interior face low-order

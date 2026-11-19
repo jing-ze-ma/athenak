@@ -227,6 +227,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_lin_continue")) {
       cln_lincont = pin->GetBoolean("rad_m1","clean_lin_continue");
     }
+    // clean_diag_neg (read only when named): after every solve, rank 0 prints where the
+    // cells with E < 0 and those with |F| > c E are (radial bins, block faces and edges,
+    // MeshBlocks), summed over the ranks
+    if (pin->DoesParameterExist("rad_m1","clean_diag_neg")) {
+      cln_diagneg = pin->GetBoolean("rad_m1","clean_diag_neg");
+    }
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",false);
     cln_posghost = pin->GetOrAddBoolean("rad_m1","clean_pos_ghost",false);
     {std::string cl = pin->GetOrAddString("rad_m1","clean_closure",

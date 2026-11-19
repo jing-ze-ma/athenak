@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <limits>
 #include <type_traits>
+#include <vector>
 
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
@@ -24,6 +25,10 @@
 #include "rad_m1/rad_m1_opacity.hpp"
 #include "rad_m1/rad_m1_clean.hpp"
 #include "rad_m1/rad_m1_clean_cell.hpp"
+
+#if MPI_PARALLEL_ENABLED
+#include <mpi.h>
+#endif
 
 namespace radm1 {
 // the rows of one line solve in cln_lw
@@ -1932,6 +1937,7 @@ int RadiationM1::CleanCellCountNegative() {
     if (y > (1.0 + 1.0e-12)*e + zero) n += 1.0;
   }, Kokkos::Sum<Real>(nreal));
   cln_nnreal = static_cast<int>(CleanReduce(nreal, false));
+  if (cln_diagneg) CleanCellDiagNeg();
   return nneg;
 }
 
@@ -2293,6 +2299,114 @@ void RadiationM1::CleanCellClosureSlope(const Real sign) {
       kk(m,M1_T2_M1+b,k,j,i) += dh[b];
     }
   });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellDiagNeg
+//! \brief diagnostic (clean_diag_neg): the cells of the solution with E < 0 and with
+//! |F| > c E, counted in 16 radial bins of the MeshBlock's i, by position in the block
+//! (inside, on one block face, on a block edge of j and k) and by MeshBlock gid (first
+//! 64), the density (log10 bins) and the cell's x1 over the mesh's x1 range, summed over
+//! the ranks and printed by rank 0, with the most negative E / |B_E| and the largest
+//! |F|/(c E) and their gid, i, j, k.
+
+void RadiationM1::CleanCellDiagNeg() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, je = indcs.je, ks = indcs.ks, ke = indcs.ke;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nmb = pmy_pack->nmb_thispack;
+  auto u = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_x);
+  auto &gid = pmy_pack->pmb->mb_gid.h_view;
+  auto &mbs = pmy_pack->pmb->mb_size.h_view;
+  auto &msz = pmy_pack->pmesh->mesh_size;
+  // the density of the cells, and the cells' x1 over the mesh's x1 range
+  auto u0f = FluidRef::Get(pmy_pack).u0;
+  DvceArray4D<Real> dd("clc_diag_rho", u0f.extent(0), u0f.extent(2), u0f.extent(3),
+                       u0f.extent(4));
+  Kokkos::deep_copy(dd, Kokkos::subview(u0f, Kokkos::ALL, IDN, Kokkos::ALL, Kokkos::ALL,
+                                        Kokkos::ALL));
+  auto rho = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dd);
+  constexpr int kNd = 14, kNx = 16;     // log10 rho bins (< -17 .. >= -5), mesh x1 bins
+  std::vector<double> cd(2*(kNd + kNx), 0.0);
+  constexpr int kNr = 16, kNg = 64, kN = 2*(kNr + 3 + kNg);
+  // counts [neg|nreal] x [radial bins, inside/face/edge, gid]; extremes
+  std::vector<double> cnt(kN, 0.0);
+  double emin = 0.0, fmx = 0.0;
+  int pe[4] = {-1, -1, -1, -1}, pf[4] = {-1, -1, -1, -1};
+  for (int m = 0; m < nmb; ++m) {
+    for (int k = ks; k < ks + nx3; ++k) {
+      for (int j = js; j < js + nx2; ++j) {
+        for (int i = is; i < is + nx1; ++i) {
+          const Real e = u(m,CLC_X,k,j,i), b = std::fabs(u(m,CLC_B,k,j,i));
+          const Real y = std::sqrt(SQR(u(m,CLC_X+1,k,j,i)) + SQR(u(m,CLC_X+2,k,j,i)) +
+                                   SQR(u(m,CLC_X+3,k,j,i)));
+          const bool neg = !(e >= 0.0), nre = (y > (1.0 + 1.0e-12)*e) && !neg;
+          if (!neg && !nre) continue;
+          const int nedge = ((nx2 > 1 && (j == js || j == je)) ? 1 : 0) +
+                            ((nx3 > 1 && (k == ks || k == ke)) ? 1 : 0);
+          const int g = gid(m);
+          const int o = neg ? 0 : (kNr + 3 + kNg);
+          {
+            const int od = neg ? 0 : (kNd + kNx);
+            const double lr = std::log10(std::fmax(rho(m,k,j,i), 1.0e-300));
+            const int bd = std::min(kNd - 1, std::max(0, static_cast<int>(lr + 18.0)));
+            const double x1 = mbs(m).x1min + (i - is + 0.5)*mbs(m).dx1;
+            const double fx = (x1 - msz.x1min)/(msz.x1max - msz.x1min);
+            const int bx = std::min(kNx - 1, std::max(0, static_cast<int>(fx*kNx)));
+            cd[od + bd] += 1.0;
+            cd[od + kNd + bx] += 1.0;
+          }
+          cnt[o + ((i - is)*kNr)/nx1] += 1.0;
+          cnt[o + kNr + nedge] += 1.0;
+          if (g >= 0 && g < kNg) cnt[o + kNr + 3 + g] += 1.0;
+          if (neg && b > 0.0 && e/b < emin) {
+            emin = e/b; pe[0] = g; pe[1] = i; pe[2] = j; pe[3] = k;
+          }
+          if (nre && e > 0.0 && y/e > fmx) {
+            fmx = y/e; pf[0] = g; pf[1] = i; pf[2] = j; pf[3] = k;
+          }
+        }
+      }
+    }
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, cnt.data(), kN, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, cd.data(), 2*(kNd + kNx), MPI_DOUBLE, MPI_SUM,
+                MPI_COMM_WORLD);
+  {
+    struct {double v; int r;} a = {emin, global_variable::my_rank}, b = {-fmx,
+                                                        global_variable::my_rank};
+    MPI_Allreduce(MPI_IN_PLACE, &a, 1, MPI_DOUBLE_INT, MPI_MINLOC, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &b, 1, MPI_DOUBLE_INT, MPI_MINLOC, MPI_COMM_WORLD);
+    MPI_Bcast(pe, 4, MPI_INT, a.r, MPI_COMM_WORLD);
+    MPI_Bcast(pf, 4, MPI_INT, b.r, MPI_COMM_WORLD);
+    emin = a.v;
+    fmx = -b.v;
+  }
+#endif
+  if (global_variable::my_rank != 0) return;
+  for (int s = 0; s < 2; ++s) {
+    const int o = s*(kNr + 3 + kNg);
+    std::printf("CLEAN DIAGNEG cycle %d t2s %d %s radial(i/%d):", pmy_pack->pmesh->ncycle,
+                t2_solve, s ? "nreal" : "neg", nx1/kNr);
+    for (int r = 0; r < kNr; ++r) std::printf(" %.0f", cnt[o + r]);
+    std::printf(" | inside %.0f face %.0f edge %.0f | gid:", cnt[o + kNr],
+                cnt[o + kNr + 1], cnt[o + kNr + 2]);
+    for (int g = 0; g < kNg; ++g) {
+      if (cnt[o + kNr + 3 + g] > 0.0) std::printf(" %d:%.0f", g, cnt[o + kNr + 3 + g]);
+    }
+    std::printf("\n");
+    const int od = s*(kNd + kNx);
+    std::printf("CLEAN DIAGNEG cycle %d t2s %d %s log10rho(<-17..>=-5):",
+                pmy_pack->pmesh->ncycle, t2_solve, s ? "nreal" : "neg");
+    for (int b = 0; b < kNd; ++b) std::printf(" %.0f", cd[od + b]);
+    std::printf(" | mesh x1 (16 bins):");
+    for (int b = 0; b < kNx; ++b) std::printf(" %.0f", cd[od + kNd + b]);
+    std::printf("\n");
+  }
+  std::printf("CLEAN DIAGNEG cycle %d min E/|B_E| %.3e at gid %d i %d j %d k %d; "
+              "max |F|/(cE) %.3e at gid %d i %d j %d k %d\n", pmy_pack->pmesh->ncycle,
+              emin, pe[0], pe[1], pe[2], pe[3], fmx, pf[0], pf[1], pf[2], pf[3]);
 }
 
 }  // namespace radm1
