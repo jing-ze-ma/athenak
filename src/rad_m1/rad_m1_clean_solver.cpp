@@ -222,6 +222,21 @@ void RadiationM1::CleanGhostDefer(DvceArray5D<Real> a, const int c0, const int n
   for (auto &s : cln_hpend) np += s.nc;
   if (np > cln_hmax) CleanGhostFlush();
   cln_hpend.push_back({a, c0, nc, true});
+  if (!cln_hdl.poison) return;
+  // (CLEAN_POISON_GHOST: the ghosts are poison until the exchange that takes them, so that
+  // a kernel reading them in between, before the flush, reads the poison, not old values)
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const CleanShell sb(a.extent_int(2), a.extent_int(3), a.extent_int(4), 0, id.is, id.ie,
+                      id.js, id.je, id.ks, id.ke, pmy_pack->pmesh->multi_d,
+                      pmy_pack->pmesh->three_d);
+  const Real pv = cln_hdl.pval;
+  par_for("cln_hpoison", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, 0, nc - 1, 0,
+          sb.ncell - 1,
+  KOKKOS_LAMBDA(const int m, const int n, const int q) {
+    int k, j, i;
+    CleanShellCell(sb, q, k, j, i);
+    a(m,c0+n,k,j,i) = pv;
+  });
 }
 
 // (a range lies in one of the two arrays: CLW_NS)
