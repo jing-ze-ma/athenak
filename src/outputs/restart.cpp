@@ -249,9 +249,13 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
         // staging, no host copy, no host memset)
         constexpr bool um =
             Kokkos::SpaceAccessibility<HostMemSpace, DevMemSpace>::accessible;
+        // (independent I/O, synchronous: one MeshBlock's buffer, packed and written
+        // MeshBlock by MeshBlock in WriteOutputFile)
+        const int nst = (um && nfv == 0 && !IOWrapper::collective &&
+                         !async_io::Enabled()) ? 1 : nmb;
         if (um) {
-          outarray_m1t_d = DvceArray5D<Real>("rst-m1t-d", nmb, nct, nout3, nout2, nout1);
-          outarray_m1t = HostArray5D<Real>(outarray_m1t_d.data(), nmb, nct, nout3, nout2,
+          outarray_m1t_d = DvceArray5D<Real>("rst-m1t-d", nst, nct, nout3, nout2, nout1);
+          outarray_m1t = HostArray5D<Real>(outarray_m1t_d.data(), nst, nct, nout3, nout2,
                                            nout1);
         } else {
           Kokkos::realloc(outarray_m1t, nmb, nct, nout3, nout2, nout1);
@@ -259,7 +263,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
         Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> pin("rst-m1t-mb",
             um ? 0 : static_cast<size_t>(nc0)*nout3*nout2*nout1);
         auto AL = Kokkos::ALL;
-        for (int m = 0; m < nmb; ++m) {
+        for (int m = 0; m < ((nst < nmb) ? 0 : nmb); ++m) {
           DvceArray5D<Real> tmp(um ? outarray_m1t_d.data() + outarray_m1t_d.stride(0)*m :
                                 pin.data(), 1, nc0, nout3, nout2, nout1);
           pradm1->Time2RstPack(tmp, 1, m);
@@ -1535,8 +1539,14 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       return;
     }
     const IOWrapperSizeT cnt = static_cast<IOWrapperSizeT>(n)*nout1*nout2*nout3;
+    const bool st = (a.extent_int(0) < pm->nmb_thisrank);   // (streamed: m1t)
     for (int m=0; m<pm->nmb_thisrank; ++m) {
-      const Real *p = Kokkos::subview(a, m, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL,
+      if (st) {
+        DvceArray5D<Real> t(outarray_m1t_d.data(), 1, n, nout3, nout2, nout1);
+        pm->pmb_pack->pradm1->Time2RstPack(t, 1, m);
+        Kokkos::fence();
+      }
+      const Real *p = Kokkos::subview(a, st ? 0 : m, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL,
                                       Kokkos::ALL).data();
       for (IOWrapperSizeT q=0; q<cnt; q+=(IOWrapperSizeT{1} << 28)) {
         const IOWrapperSizeT c = std::min(cnt - q, IOWrapperSizeT{1} << 28);
