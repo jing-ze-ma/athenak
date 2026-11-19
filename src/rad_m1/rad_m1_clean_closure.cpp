@@ -3994,10 +3994,18 @@ void RadiationM1::CleanClosureFill() {
 
   for (int pass = 0; pass < cln_fillpass; ++pass) {
     // (the last chunk of cln_s and the marks in one exchange: the same ghosts)
+    // (before the last pass only what cln_fill reads, D and h+-, valid(0), depth 1; the
+    // last one every slot, all layers, as the ghosts are left)
     const int ns = cln_s.extent_int(1), nf = (ns/cln_hmax)*cln_hmax;
-    if (nf > 0) CleanGhostFill(cln_s, 0, nf);
-    if (ns > nf) CleanGhostDefer(cln_s, nf, ns - nf);
-    CleanGhostFill(cln_v, 0, 2);
+    if (pass + 1 < cln_fillpass && nfl == CLN_C1) {
+      CleanGhostDefer(cln_s, 0, CLN_C1);
+      cln_hpend.back().dep = 1;
+      CleanGhostFill(cln_v, 0, 1, true, 0, 1);
+    } else {
+      if (nf > 0) CleanGhostFill(cln_s, 0, nf);
+      if (ns > nf) CleanGhostDefer(cln_s, nf, ns - nf);
+      CleanGhostFill(cln_v, 0, 2);
+    }
     // valid(1) marks the cells filled in this pass; only cells valid before it are read
     par_for("cln_fill", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
