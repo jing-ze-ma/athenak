@@ -274,10 +274,11 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
   if (say && !none.empty()) {
     std::cout << "### WARNING (scheme = clean): no effect:" << none << std::endl;
   }
-  // (the old module's implicit_* keys the clean solve does not read leave the input, so
-  // that its ImplicitInit parses its defaults and none of its cross-checks sees them)
+  // (the old module's implicit_* keys the clean solve does not read leave the input of a
+  // fresh run, so that its ImplicitInit parses its defaults and none of its cross-checks
+  // sees them; a restart keeps its file's keys, which also set the layout of its data)
   for (InputBlock &ib : pin->block) {
-    if (ib.block_name != "rad_m1") continue;
+    if (ib.block_name != "rad_m1" || global_variable::restart_run) continue;
     ib.line.remove_if([&](const InputLine &ln) {
       return std::find(drop.begin(), drop.end(), ln.param_name) != drop.end();
     });
