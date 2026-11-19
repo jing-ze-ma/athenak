@@ -35,3 +35,10 @@ Kokkos 4.6.02 from the fork submodule. No ROCm. Multi-node jobs need `OMPI_MCA_i
 Existing GPU builds: builds_rstfixx (sm_90).
 
 -- Caltech
+
+## Update 2026-11-19 (live probes, both submitted 11-18 16:13 PST)
+- 7245993, 8 ranks x 4 cores x 64 GB (512 GB total) scattered over shared nodes: **started after 24 min** (5 nodes).
+- 7245994, 2 x icelake 510 GB whole nodes, exclusive: **started after 8.4 h** (Slurm had estimated ~3 d).
+So the real waits are far shorter than Slurm's estimates. Item 1 is feasible on CPU as scattered-rank jobs (~0.5 h queue each, 8-24
+ranks with 60 GB each), but only at low parallel width (a few runs at a time) and after the restarts are here (user-started rsync).
+Tell us if you want that; GPU is still ~4 d out.
