@@ -107,6 +107,25 @@ inline void CleanForK(const char *name, const int nmb1, const int ks, const int 
 #endif
 }
 
+// spd6-1119: a pass of columns (one thread per (m, k, j), marching in i): on HIP blocks
+// of 64 with k fastest (blocks of 256 put the HG level's 12k columns on 48 of the 228
+// MI300A CUs); CUDA and the host keep par_for.  The same arithmetic per column
+template <typename F>
+inline void CleanForCol(const char *name, const int nmb1, const int ks, const int ke,
+                        const int js, const int je, const F &f) {
+#if defined(KOKKOS_ENABLE_HIP)
+  const int nk = ke - ks + 1, njk = (je - js + 1)*nk;
+  Kokkos::parallel_for(name, Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<64,
+                       1>>(DevExeSpace(), 0, (nmb1 + 1)*njk),
+  KOKKOS_LAMBDA(const int idx) {
+    const int m = idx/njk, j = (idx - m*njk)/nk;
+    f(m, ks + idx - m*njk - j*nk, js + j);
+  });
+#else
+  par_for(name, DevExeSpace(), 0, nmb1, ks, ke, js, je, f);
+#endif
+}
+
 // closure variables (arrays cln_c and cln_s); the staggered layout allocates the first
 // CLN_FH (cubed sphere: CLN_F1), the cell layout all CLN_N
 constexpr int CLN_D11 = 0;   // Eddington tensor D11 D22 D33 D12 D13 D23

@@ -3726,7 +3726,7 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   }
   for (int lev = 0; lev < vgd_nb1; ++lev) {
     if (lev > 0) VetGdX1Pass(true);
-    par_for("cln_gd_col", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    CleanForCol("cln_gd_col", nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       const CleanArgs &x = *px;
       Real a[3], e[3][3], q[4] = {0.0};
