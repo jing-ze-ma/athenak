@@ -3308,12 +3308,15 @@ void RadiationM1::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
       // (J_L, J_R, H+_L, H-_R as scalars: nvcc -O3 miscompiles a runtime-indexed local)
       Real jl0 = zero ? 0.0 : fh(m,4*dir,k,j,i), jr0 = zero ? 0.0 : fh(m,4*dir+1,k,j,i);
       Real hp0 = zero ? 0.0 : fh(m,4*dir+2,k,j,i), hm0 = zero ? 0.0 : fh(m,4*dir+3,k,j,i);
+      // (the two cells' intensity rows once, not an index per direction)
+      const CleanRow gl_ = fv ? CleanRow{nullptr, 0} : gi.At(m, kl, jl, il);
+      const CleanRow gr_ = fv ? CleanRow{nullptr, 0} : gi.At(m, k, j, i);
       for (int e = 0; e < n; ++e) {
         const int d = o + e;
         Real mu = 0.0;
         for (int b = 0; b < 3; ++b) mu += dv(d,b)*gn(m,CLG_N+3*dir+b,k,j,i);
-        const Real il_ = fv ? fi(m,fo+e,kl,jl,il) : gi(m,e,kl,jl,il);
-        const Real ir_ = fv ? fi(m,fo+e,k,j,i) : gi(m,e,k,j,i);
+        const Real il_ = fv ? fi(m,fo+e,kl,jl,il) : gl_[e];
+        const Real ir_ = fv ? fi(m,fo+e,k,j,i) : gr_[e];
         const Real wl = dv(d,3)*il_, wr = dv(d,3)*ir_;
         jl0 += wl;
         jr0 += wr;
