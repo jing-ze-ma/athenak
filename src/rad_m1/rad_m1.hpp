@@ -2185,6 +2185,11 @@ class RadiationM1 {
   // decomposition-invariant; M1_POS_FLR_MV counts it, M1_POS_FLR_UN only a column with
   // no radiation left above the floor.
   bool impl_pos_flr_cons = true;   // DEFAULT true since defaults-1029 (USER 10-29)
+  // s3c <rad_m1>/implicit_pos_floor_gas_keep th (read only when named; default -1 = off,
+  // bitwise): the clean write-back's E floor raise takes from the gas at most (1 - th) of
+  // its eint (the rest from the column's radiation, implicit_pos_floor_cons); th = 1:
+  // never from the gas
+  Real impl_pos_flr_gk = -1.0;
   DvceArray4D<Real> pfc_def;      // (m,k,j,i) the uncovered floor energy of the cell
   bool t2_vcprev = false;       // extrap: vcol_prev holds the previous step's tensor
   Real t2_vcnfb = 0.0;          // predict/rebuild builds that fell back to U^n

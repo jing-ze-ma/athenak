@@ -958,6 +958,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cs_vtx_mono", cs_vtx_mono);
   v.value("cs_vtx_n", cs_vtx_n);
   v.value("impl_pos_flr_cons", impl_pos_flr_cons);
+  v.value("impl_pos_flr_gk", impl_pos_flr_gk);
   v.view("pfc_def", pfc_def);
   v.value("t2_vcprev", t2_vcprev);
   v.value("t2_vcnfb", t2_vcnfb);

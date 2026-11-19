@@ -238,7 +238,8 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/implicit_hold", nullptr}, {"rad_m1/implicit_fast_kernels", nullptr},
     {"rad_m1/implicit_pos_floor_solve", nullptr},
     {"rad_m1/implicit_pos_gas*", nullptr}, {"rad_m1/implicit_pos_floor", nullptr},
-    {"rad_m1/implicit_pos_floor_cons", nullptr}, {"rad_m1/implicit_*", ""},
+    {"rad_m1/implicit_pos_floor_cons", nullptr},
+    {"rad_m1/implicit_pos_floor_gas_keep", nullptr}, {"rad_m1/implicit_*", ""},
     // (the hesdirk2 stage formation the clean solve shares, Time2FormStage / Time2Stash,
     // and dt_retry: read; ImplicitSolve's acceptance and posfix and the KE cap: none)
     {"rad_m1/time2_k1_*", nullptr}, {"rad_m1/time2_face_fct*", nullptr},
@@ -4276,7 +4277,7 @@ void RadiationM1::CleanWriteBack() {
   auto cf2 = pmy_pack->pcoord->xx2f, cf3 = pmy_pack->pcoord->xx3f;
   const Real tgf = cln_gtf ? eos.tfloor : 0.0;   // (clean_gas_tfloor)
   const bool gtf = cln_gtf, pgas = impl_pos_gas;
-  const Real pgf = impl_pos_gas_frac, efl = e_floor;
+  const Real pgf = impl_pos_gas_frac, efl = e_floor, pgk = impl_pos_flr_gk;
   auto pc_ = pos_cnt_d;
   const bool pflr = impl_pos_floor, pfc = pflr && impl_pos_flr_cons;
   if (pfc && pfc_def.extent_int(0) != nmb1 + 1) {
@@ -4459,8 +4460,10 @@ void RadiationM1::CleanWriteBack() {
         if (eos.tfloor > 0.0) {
           eos.ThermoAt(uh(m,IDN,k,j,i), eos.tfloor, ef, pr, chi_rho, chi_t, cv);
         }
-        const Real ei = x.w(m,CLW_EI,k,j,i), emin = fmax(ef, pgf*fmax(ei, 0.0));
-        take = fmin(efl - e, fmax(ei + d0 + x.w(m,CLW_JV,k,j,i) - emin, 0.0));
+        const Real ei = x.w(m,CLW_EI,k,j,i), en = ei + d0 + x.w(m,CLW_JV,k,j,i);
+        // (implicit_pos_floor_gas_keep: the gas keeps pgk of its eint)
+        const Real emin = fmax(fmax(ef, pgf*fmax(ei, 0.0)), pgk*fmax(en, 0.0));
+        take = fmin(efl - e, fmax(en - emin, 0.0));
         den -= take;
         uh(m,IEN,k,j,i) -= take;
         x.w(m,CLW_JV,k,j,i) -= take;
