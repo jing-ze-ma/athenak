@@ -239,10 +239,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_bcg_fallback")) {
       cln_bcgfb = pin->GetInteger("rad_m1","clean_bcg_fallback");
     }
-    // clean_diag_cell = "gid i j k" (read only when named): the E row of the operator of
+    // clean_diag_cell = gid,i,j,k (read only when named): the E row of the operator of
     // that cell, by term, after the right-hand side of every first pass
     if (pin->DoesParameterExist("rad_m1","clean_diag_cell")) {
-      std::stringstream ss(pin->GetString("rad_m1","clean_diag_cell"));
+      std::string dc = pin->GetString("rad_m1","clean_diag_cell");
+      std::replace(dc.begin(), dc.end(), ',', ' ');
+      std::stringstream ss(dc);
       for (int n = 0; n < 4; ++n) ss >> cln_dgc[n];
     }
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",false);

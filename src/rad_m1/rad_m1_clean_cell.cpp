@@ -2517,7 +2517,7 @@ void RadiationM1::CleanCellDiagNb() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellDiagStencil
-//! \brief diagnostic (clean_diag_cell = "gid i j k"): the E row of the operator of that
+//! \brief diagnostic (clean_diag_cell = gid,i,j,k): the E row of the operator of that
 //! cell, printed by the rank that holds it.  Per direction and face (lo: the face at the
 //! cell, hi: the next one): the face's E-row scale s (h A/V), whether it is low-order,
 //! the derivatives of fE in E of the two cells (total, of which the RC share q D_nn), in
