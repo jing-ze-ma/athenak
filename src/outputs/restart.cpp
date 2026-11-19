@@ -1522,6 +1522,36 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     offset_myrank += nout1*nout2*nout3*sizeof(Real);
     myoffset = offset_myrank;
   };
+  // a group of n slabs (a(m, n, k, j, i)): with independent I/O a MeshBlock's slabs are
+  // contiguous in memory and in its record, so they go out in one write per MeshBlock (in
+  // pieces of at most 2 GB); same bytes as the slab by slab loop
+  auto write_group = [&](const auto &a, const int n, const char *what) {
+    if (n <= 0) return;
+    if (IOWrapper::collective) {
+      for (int c=0; c<n; ++c) {
+        write_wtemp(Kokkos::subview(a, Kokkos::ALL, c, Kokkos::ALL, Kokkos::ALL,
+                                    Kokkos::ALL), what);
+      }
+      return;
+    }
+    const IOWrapperSizeT cnt = static_cast<IOWrapperSizeT>(n)*nout1*nout2*nout3;
+    for (int m=0; m<pm->nmb_thisrank; ++m) {
+      const Real *p = Kokkos::subview(a, m, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL,
+                                      Kokkos::ALL).data();
+      for (IOWrapperSizeT q=0; q<cnt; q+=(IOWrapperSizeT{1} << 28)) {
+        const IOWrapperSizeT c = std::min(cnt - q, IOWrapperSizeT{1} << 28);
+        if (resfile.Write_any_type_at(p + q, c, offset_myrank + m*data_size +
+                                      q*sizeof(Real), "Real", single_file_per_rank) != c) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << what << " not written correctly to rst file, "
+                    << "restart file is broken." << std::endl;
+          exit(EXIT_FAILURE);
+        }
+      }
+    }
+    offset_myrank += cnt*sizeof(Real);
+    myoffset = offset_myrank;
+  };
   if (wt_hyd) { write_wtemp(outarray_wth, "hydro"); }
   if (wt_mhd) { write_wtemp(outarray_wtm, "mhd"); }
   // the derived cache follows it, same layout, same loop (see outarray_wdp)
@@ -1537,15 +1567,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (nwarm > 0) { write_wtemp(outarray_wm1, "rt warm start"); }
   if (nwarm > 1) { write_wtemp(outarray_wm2, "rt warm start 2"); }
   // and the implicit_predictor increment behind that, one slab per channel
-  for (int n=0; n<npred; ++n) {
-    write_wtemp(Kokkos::subview(outarray_m1p, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
-                                Kokkos::ALL), "rad_m1 predictor");
-  }
+  write_group(outarray_m1p, npred, "rad_m1 predictor");
   // and the hesdirk2 slope behind that
-  for (int n=0; n<nt2; ++n) {
-    write_wtemp(Kokkos::subview(outarray_m1t, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
-                                Kokkos::ALL), "rad_m1 hesdirk2 slope");
-  }
+  write_group(outarray_m1t, nt2, "rad_m1 hesdirk2 slope");
   // and the internal energy last of all (kEintRstMagic)
   if (we_hyd) { write_wtemp(outarray_weh, "hydro internal energy"); }
   if (we_mhd) { write_wtemp(outarray_wem, "mhd internal energy"); }
@@ -1555,55 +1579,25 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
                                 Kokkos::ALL), "ck restart state");
   }
   // and the thin_relax closure memory last of all (kM1CtrRstMagic)
-  for (int n=0; n<nctr; ++n) {
-    write_wtemp(Kokkos::subview(outarray_m1c, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
-                                Kokkos::ALL), "rad_m1 thin_relax closure");
-  }
+  write_group(outarray_m1c, nctr, "rad_m1 thin_relax closure");
   // and the rad_signal_speed inputs behind it (kM1RssRstMagic)
-  for (int n=0; n<nrss; ++n) {
-    write_wtemp(Kokkos::subview(outarray_m1s, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
-                                Kokkos::ALL), "rad_signal_speed inputs");
-  }
+  write_group(outarray_m1s, nrss, "rad_signal_speed inputs");
   // and the vet_gd_async pending source behind it (kM1VgdRstMagic)
-  for (int n=0; n<nvgd; ++n) {
-    write_wtemp(Kokkos::subview(outarray_m1g, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
-                                Kokkos::ALL), "vet_gd_async source");
-  }
+  write_group(outarray_m1g, nvgd, "vet_gd_async source");
   // and the conservative cell-F slope behind it (kM1CskRstMagic)
-  for (int n=0; n<ncsk; ++n) {
-    write_wtemp(Kokkos::subview(outarray_m1k, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
-                                Kokkos::ALL), "rad_m1 conservative cell-F slope");
-  }
+  write_group(outarray_m1k, ncsk, "rad_m1 conservative cell-F slope");
   // and the vet_rotate_avg history behind it (kM1RaRstMagic)
-  for (int n=0; n<nra; ++n) {
-    write_wtemp(Kokkos::subview(outarray_m1r, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
-                                Kokkos::ALL), "vet_rotate_avg history");
-  }
+  write_group(outarray_m1r, nra, "vet_rotate_avg history");
   // and the am_vector spin (+ amk1) behind it (hydro::kAmSpinRstMagic)
-  for (int n=0; n<nams; ++n) {
-    write_wtemp(Kokkos::subview(outarray_ams, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
-                                Kokkos::ALL), "am_vector spin");
-  }
+  write_group(outarray_ams, nams, "am_vector spin");
   // and the per-cell pgen slabs behind it (kPgenSlabRstMagic)
-  for (int n=0; n<npgs; ++n) {
-    write_wtemp(Kokkos::subview(outarray_pgs, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
-                                Kokkos::ALL), "pgen slab");
-  }
+  write_group(outarray_pgs, npgs, "pgen slab");
   // and the rad_m1 applied face fluxes last of all (kM1FaxRstMagic)
-  for (int n=0; n<nfax; ++n) {
-    write_wtemp(Kokkos::subview(outarray_fax, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
-                                Kokkos::ALL), "rad_m1 applied face flux");
-  }
+  write_group(outarray_fax, nfax, "rad_m1 applied face flux");
   // and the time2_stage_local_be carry behind them (kM1ThcRstMagic)
-  for (int n=0; n<nthc; ++n) {
-    write_wtemp(Kokkos::subview(outarray_thc, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
-                                Kokkos::ALL), "rad_m1 local_be carry");
-  }
+  write_group(outarray_thc, nthc, "rad_m1 local_be carry");
   // and the vet_gd_rotate_xfade state behind them (kM1XfdRstMagic)
-  for (int n=0; n<nxfd; ++n) {
-    write_wtemp(Kokkos::subview(outarray_xfd, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
-                                Kokkos::ALL), "rad_m1 xfade state");
-  }
+  write_group(outarray_xfd, nxfd, "rad_m1 xfade state");
 
   // close file, clean up
   resfile.Close(single_file_per_rank);
