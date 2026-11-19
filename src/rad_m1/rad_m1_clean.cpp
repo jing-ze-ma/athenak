@@ -1473,7 +1473,8 @@ void RadiationM1::CleanOldVector() {
   auto w = cln_w;
   CleanArgs x = CleanMakeArgs();
 
-  // (counted: gas eint < 0 of the stage start, which the exchange takes as 0, and E < 0)
+  // (counted: gas eint < 0 of the stage start, which the exchange takes as 0 and the
+  // write-back's implicit_pos_gas meets, and E < 0)
   Real nn[2] = {0.0, 0.0};
   Kokkos::parallel_reduce("cln_old", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
       DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
@@ -1492,6 +1493,7 @@ void RadiationM1::CleanOldVector() {
       if (e0 < 0.0) ng += 1.0;
       t = eos.Temperature(d, eint);
       w(m,CLW_EI,k,j,i) = eint;
+      w(m,CLW_JV,k,j,i) = e0 - eint;   // (the gas's deficit below 0: CleanWriteBack)
     }
     w(m,CLW_T,k,j,i) = t;
     w(m,CLW_EO,k,j,i) = u0_(m,M1_E,k,j,i) + (stage ? inc(m,M1_T2_E,k,j,i) : 0.0);
@@ -4075,6 +4077,7 @@ void RadiationM1::CleanWriteBack() {
     }
     Real dm[3] = {0.0, 0.0, 0.0}, dh[3] = {0.0, 0.0, 0.0};
     Real den = 0.0, wsl = 0.0;
+    const Real d0 = x.w(m,CLW_JV,k,j,i);   // (the stage start's eint deficit, <= 0)
     if (feedback) {
       Real mg[3], pg[3], rf[3];
       CleanStagMomentum(xh, CLW_X, m, k, j, i, dm, mg);
@@ -4166,8 +4169,10 @@ void RadiationM1::CleanWriteBack() {
           if (eos.tfloor > 0.0) {
             eos.ThermoAt(uh(m,IDN,k,j,i), eos.tfloor, ef, pr, chi_rho, chi_t, cv);
           }
+          // (from the gas's true eint: the stage start's deficit below 0 too, which the
+          // exchange took as 0 and the hydro's floor would have created)
           const Real ei = x.w(m,CLW_EI,k,j,i), emin = fmax(ef, pgf*fmax(ei, 0.0));
-          const Real take = fmin(emin - ei - (den - wk), e - efl);
+          const Real take = fmin(emin - ei - d0 - (den - wk), e - efl);
           if (take > 1.0e-12*emin) {   // (beyond eint's round-off at e_min)
             const Real vol = (x.sph || x.cub) ? x.vol(m,k,j,i) :
                              1.0/(x.idx[0]*x.idx[1]*x.idx[2]);
@@ -4196,7 +4201,7 @@ void RadiationM1::CleanWriteBack() {
           eos.ThermoAt(uh(m,IDN,k,j,i), eos.tfloor, ef, pr, chi_rho, chi_t, cv);
         }
         const Real ei = x.w(m,CLW_EI,k,j,i), emin = fmax(ef, pgf*fmax(ei, 0.0));
-        take = fmin(efl - e, fmax(ei + x.w(m,CLW_JV,k,j,i) - emin, 0.0));
+        take = fmin(efl - e, fmax(ei + d0 + x.w(m,CLW_JV,k,j,i) - emin, 0.0));
         den -= take;
         uh(m,IEN,k,j,i) -= take;
         x.w(m,CLW_JV,k,j,i) -= take;
