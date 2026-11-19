@@ -1266,8 +1266,13 @@ void RadiationM1::CleanRingMoments() {
   }
   const int64_t pl = cln_fvblk[ord[ns - 1]] - (b - nk + 1);
   const int ol = (cln_ring != 1) ? -1 : ((pl == nr) ? 0 : ((pl == nk) ? 1 : -1));
-  if (cln_rl.extent_int(0) != nmb || cln_rl.extent_int(1) != ((ol < 0) ? 2 : 1)*nf) {
-    Kokkos::realloc(cln_rl, nmb, ((ol < 0) ? 2 : 1)*nf, c3, c2, c1);
+  // (over the stencil coefficients cln_csy where they fit: every pass's
+  // CleanPreconditionerSetup rewrites them before they are read, dead across a build)
+  const int nrl = ((ol < 0) ? 2 : 1)*nf;
+  if (cln_csy.span() >= static_cast<std::size_t>(nmb)*nrl*c3*c2*c1) {
+    cln_rl = DvceArray5D<Real>(cln_csy.data(), nmb, nrl, c3, c2, c1);
+  } else if (cln_rl.extent_int(0) != nmb || cln_rl.extent_int(1) != nrl) {
+    Kokkos::realloc(cln_rl, nmb, nrl, c3, c2, c1);
   }
   if (cln_rr.extent_int(0) != nmb) {   // (a restart has read them)
     vra_gen += 1;   // (cln_rr's writers: the dt_retry checkpoint skips a clean copy)
@@ -3456,7 +3461,12 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
     cln_gdgl = ScratchView<DvceArray5D<Real>>("cln_gd_gl", nmb1 + 1, n, six ? 6 : 2, nt,
                                               std::max(cs.extent_int(4), je - js + 1));
     gi.gl = cln_gdgl;
-    auto ch = six ? DvceArray5D<Real>("cln_gd_ch", nmb1 + 1, nc, cs.extent_int(2),
+    // (six: over the stencil rows cln_st where they fit, dead across a build as cln_csy)
+    const bool ost = cln_st.span() >= static_cast<std::size_t>(nmb1 + 1)*nc*
+                     cs.extent_int(2)*cs.extent_int(3)*cs.extent_int(4);
+    auto ch = (six && ost) ? DvceArray5D<Real>(cln_st.data(), nmb1 + 1, nc,
+                             cs.extent_int(2), cs.extent_int(3), cs.extent_int(4))
+            : six ? DvceArray5D<Real>("cln_gd_ch", nmb1 + 1, nc, cs.extent_int(2),
                                       cs.extent_int(3), cs.extent_int(4))
                   : ScratchView<DvceArray5D<Real>>("cln_gd_ch", nmb1 + 1, nc,
                                                    cs.extent_int(2), cs.extent_int(3),

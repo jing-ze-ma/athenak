@@ -201,6 +201,8 @@ void RadiationM1::MemcutPoison(const int where) {
   };
   // (clnw also at every VetGdBuild: a sweep writes the arena wherever it is called)
   if ((where == 0 || where == 2) && !cln_cell) p5(cln_w.o, "clnw");
+  // (the stencil rows: dead across a build, CleanRingMoments' build scratch over them)
+  if (where == 2 || where == 3) {p5(cln_st, "clnst"); p5(cln_csy, "clnst");}
   if (where == 3) {
     if (EnvListHas("MEMCUT_POISON", "vgdc")) {
       VgdRag *bound[3] = {&vgd_i, &vgd_itw, &vgd_i_xb};
