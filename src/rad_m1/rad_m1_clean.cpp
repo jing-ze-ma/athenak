@@ -1108,7 +1108,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       const bool lp = cln_linpass && !cell && nit < 0 && inl + 1 < maxnl;
       if (!iterate || (nit < 0 && !lp)) break;
       // (implicit_fb_local: a pass that masks cells is not the last one)
-      bool fbl = cln_fbl && !cell && cln_fbl_r <= cln_fbl_rounds && CleanFbLocal();
+      bool fbl = cln_fbl && !cell && cln_fbl_r < cln_fbl_rounds && CleanFbLocal();
       fbl = fbl || lp;
       const Real de = cell ? CleanCellNewtonUpdate() : CleanNewtonUpdate();
       if (cln_bon) tol_nl = cln_tolb;
@@ -1484,8 +1484,7 @@ void RadiationM1::CleanOldVector() {
 //! \fn bool RadiationM1::CleanFbLocal
 //! \brief implicit_fb_local (staggered), the old production's local positivity fallback
 //! (ImplicitFbLocal, ImplicitVimpKill): the cells within 2 cells along each axis of a
-//! cell this pass solved to X <= 0 join the mask for the rest of the solve (after
-//! implicit_fb_local_rounds rounds every cell, production's global path); there the
+//! cell this pass solved to X <= 0 join the mask for the rest of the solve; there the
 //! closure's off-diagonal D12 D13 D23 are zero (the non-M-matrix part of the operator,
 //! production's LAT terms) and the advective coefficients take no velocity kick.
 //! Counted (CLEAN FBLOCAL).  True if cells joined (the next pass rebuilds the rows).
@@ -1515,18 +1514,6 @@ bool RadiationM1::CleanFbLocal() {
   auto w = cln_w;
   const int o2 = (ng < 2) ? ng : 2;
   const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
-  // (the rounds used up: production's global path, every cell for the rest of the solve)
-  bool all = false;
-  if (cln_fbl_r >= cln_fbl_rounds) {
-    Real nb = 0.0;
-    Kokkos::parallel_reduce("cln_fbneg", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-        DevExeSpace(), {0, ks, js, is}, {nmb, ke + 1, je + 1, ie + 1}),
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
-      a += (w(m,CLW_X,k,j,i) > 0.0) ? 0.0 : 1.0;
-    }, Kokkos::Sum<Real>(nb));
-    all = CleanReduce(nb, false) > 0.0;
-    if (!all) return false;
-  }
   Real nc = 0.0;
   Kokkos::parallel_reduce("cln_fblocal", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
       DevExeSpace(), {0, ks, js, is}, {nmb, ke + 1, je + 1, ie + 1}),
@@ -1537,8 +1524,8 @@ bool RadiationM1::CleanFbLocal() {
       return q == BoundaryFlag::block || q == BoundaryFlag::periodic ||
              q == BoundaryFlag::panel;
     };
-    bool neg = all;
-    for (int o = -o2; o <= o2 && !all; ++o) {
+    bool neg = false;
+    for (int o = -o2; o <= o2; ++o) {
       const int ii = i + o, jj = j + o, kk = k + o;
       if ((ii >= is || open(0)) && (ii <= ie || open(1))) {
         neg = neg || !(w(m,CLW_X,k,j,ii) > 0.0);
