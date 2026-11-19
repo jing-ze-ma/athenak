@@ -288,6 +288,8 @@ struct CleanArgs {
                                // (CLF_N) with its dissipation term (CLF_N + 1)
   bool hi;                     // staggered, clean_stag_split: the face momentum state
                                // F^H (w = 0), not the energy flux
+  int xq;                      // staggered, clean_stag_xdonor: face slot of the cross
+                               // flux's donor coefficient q (-1: the central cross flux)
   bool mcl;                    // staggered: a face's momentum term at most the force of
                                // a realisable flux, h chi_f E (the iterate's,
                                // CleanMomentumChange)
@@ -945,6 +947,12 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
       ar -= o*phi*sr;
     }
   }
+  // (clean_stag_xdonor: the cross flux q E_donor, CleanStagXDonor; keeps al >= 0 >= ar)
+  if (x.xq >= 0) {
+    const Real q = x.fc[dir](m,x.xq,k,j,i);
+    if (q > 0.0) al += q;
+    if (q < 0.0) ar += q;
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -1094,7 +1102,7 @@ Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m
 KOKKOS_INLINE_FUNCTION
 Real CleanFaceCross(const CleanArgs &x, const int e, const int dir, const int m,
                     const int k, const int j, const int i) {
-  if (!x.multi_d || CleanBoundaryFace(x, dir, m, k, j, i)) return 0.0;
+  if (!x.multi_d || x.xq >= 0 || CleanBoundaryFace(x, dir, m, k, j, i)) return 0.0;
   const Real w = x.hi ? 0.0 : x.fc[dir](m,CLF_W,k,j,i);
   const Real t0 = x.fc[dir](m,CLF_TH,k,j,i);   // (clean_stag_vimp: theta_d, as
   const Real qd = x.drag ? x.fc[dir](m,CLF_DB,k,j,i) : 0.0;   //  CleanFaceWeights)

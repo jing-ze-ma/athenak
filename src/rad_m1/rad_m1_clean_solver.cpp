@@ -90,6 +90,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.gf = cln_gflux;
   x.fre = cln_freal;
   x.fdg = cln_fdg;
+  x.xq = cln_xd_on ? cln_xqs : -1;
   x.drag = cln_vimp && cln_feedback;
   x.upw = cln_upw;
   x.sbi = cln_sbimp && cln_feedback;
@@ -835,7 +836,7 @@ void RadiationM1::CleanApply(const int src, const int dst) {
   const int ws = (src < cln_w.ns) ? src : src - cln_w.ns;
   CleanGhostFill(wa, ws, 1, true, ov ? 1 : 0);
   const std::function<void()> fin = [&]() {if (ov) CleanGhostFill(wa, ws, 1, true, 2);};
-  CleanStagCsLateral(src, cln_stst);
+  if (!cln_xd_on) CleanStagCsLateral(src, cln_stst);   // (xdonor: no cross terms)
   CleanArgs x = CleanMakeArgs(), xh = x;
   x.fwc = true;
   xh.hi = cln_split;   // (clean_stag_sbimp: the face momentum, not from CLF_QL)
@@ -913,7 +914,7 @@ void RadiationM1::CleanPreconditionerSetup() {
       CleanFaceWeights(x, dir, m, k, j, i, fc(m,CLF_QL,k,j,i), fc(m,CLF_QL+1,k,j,i));
       const Real t0 = fc(m,CLF_TH,k,j,i);   // (clean_stag_vimp: theta_d, CleanFaceCross)
       const Real th = t0 + (x.drag ? fc(m,CLF_DB,k,j,i) : 0.0)*(1.0 - t0);
-      fc(m,CLF_QL+2,k,j,i) = -(1.0 - fc(m,CLF_W,k,j,i))*th*x.h*x.c*x.c;
+      fc(m,CLF_QL+2,k,j,i) = (x.xq >= 0) ? 0.0 : -(1.0 - fc(m,CLF_W,k,j,i))*th*x.h*x.c*x.c;
     });
   }
   x.fwc = true;

@@ -321,6 +321,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // the comoving part of sb at most 2 |beta| hc kE E_k and the faces of a restart from
     // the old scheme's file at most c E of their donor
     cln_freal = stag("clean_stag_freal", cln_gflux && cln_fsolve);
+    // clean_stag_xdonor (default off): the off-diagonal stress flux an M-matrix term
+    cln_xd = stag("clean_stag_xdonor", false);
     // clean_stag_rayratio (default off): the bracket reads the rays only as ratios (their
     // face flux over the donor's ray J, the model flux of E), times the state's E
     cln_rayratio = !cln_cell && pin->GetOrAddBoolean("rad_m1","clean_stag_rayratio",false) &&

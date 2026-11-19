@@ -326,7 +326,8 @@ void RadiationM1::CleanInit() {
             (opacity_type != M1_OPAC_CONST && opac_b != 0.0));
   // (the staggered bracket's lagged flux DG in one more slot, CleanStagBracket)
   cln_fdg = (!cln_cell && cln_consist) ? nfc : -1;
-  const int nfx = nfc + (cln_fdg >= 0);
+  cln_xqs = cln_xd ? nfc + (cln_fdg >= 0) : -1;   // (clean_stag_xdonor's q)
+  const int nfx = nfc + (cln_fdg >= 0) + (cln_xd ? 1 : 0);
   Kokkos::realloc(cln_fc1, nmb, nfx, n3, n2, n1);
   Kokkos::realloc(cln_fc2, nmb, nfx, n3, n2, n1);
   Kokkos::realloc(cln_fc3, nmb, nfx, n3, n2, n1);
@@ -1043,6 +1044,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       CleanCellFaceSpeeds();
     }
     if (cln_feedback) CleanAdvectiveCoefficients();
+    CleanStagXDonor();   // (clean_stag_xdonor: q of the first iterate)
     // (the first iterate's beta and emission for the drag's face flux, not the last
     // solve's: a restart, failed stage or discarded attempt does not carry those)
     if (cln_vimp && cln_feedback) CleanRightHandSide(true);
@@ -1075,6 +1077,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         CleanCellRightHandSide();
         if (inl % cln_pcreuse == 0) CleanCellPreconditionerSetup();
       } else {
+        if (inl > 0) CleanStagXDonor();   // (clean_stag_xdonor: q of the iterate)
         CleanRightHandSide();
         // (clean_stag_sbimp: the first iterate's T in exchange with E_k and the beta
         // terms sb(E_k) the RHS just built, then the RHS of that T)
@@ -1099,6 +1102,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
           (cln_yres == M1_YRES_POST || inl == 0 || nit != 0)) {
         CleanCellResidual();
       }
+      if (cln_xd && !cell) CleanStagXCount(inl);
       nit_sum += std::abs(nit);
       ++nsolve;
       cln_nsolve += 1.0;
@@ -1261,6 +1265,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       nneg == 0 && !(t2stage && t2_fail) && !dtr_fail) cln_fref_set = true;
 
   if (cln_fbl_r > 0) CleanFbRestore();   // (implicit_fb_local: the closure's D back)
+  cln_xd_on = false;   // (clean_stag_xdonor: q is of this solve's passes only)
 
   // 6. clean_closure = extrap(2): ray moments of the new state.  The last solve of a
   //    step also re-evaluates its slope K1 = f(U^{n+1}) with the closure of these rays
@@ -1567,6 +1572,81 @@ void RadiationM1::CleanFbRestore() {
                               Kokkos::ALL, Kokkos::ALL);
   Kokkos::deep_copy(dsub, cln_fbd);
   cln_fbl_r = 0;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagXDonor
+//! \brief clean_stag_xdonor (staggered): the off-diagonal stress flux of each face,
+//! C = -(1-w) theta h c^2 d_t(D_nt E) (CleanFaceCross; cubed sphere: the lateral sums),
+//! of the iterate E_k enters the pass as a donor-cell coefficient of the face,
+//!   C(E) -> q E_donor,  q = C(E_k)/E_k,donor,  |q| <= c,
+//! the donor the cell the flux leaves.  q adds to al (>= 0) or ar (<= 0) only, so the
+//! operator stays an M-matrix (column dominant, conservative) for any D, h: every pass's
+//! solution of a non-negative right-hand side is non-negative, without a mask.  At the
+//! fixed point q E_donor = C(E) where |C| <= c E_donor (the central discretisation);
+//! beyond, the cross flux is limited at free streaming.  The gas momentum keeps the
+//! central stress (CleanMomentumChange: momentum and L_z by telescoping).
+
+void RadiationM1::CleanStagXDonor() {
+  if (!cln_xd || cln_cell || !pmy_pack->pmesh->multi_d) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  cln_xd_on = false;
+  CleanGhostFill(cln_w, CLW_EK, 1);
+  if (pmy_pack->pmesh->use_cubed_sphere) CleanStagCsLateral(CLW_EK);
+  CleanArgs x = CleanMakeArgs();   // (x.xq = -1: the central cross flux)
+  const int xq = cln_xqs;
+  Real ncap = 0.0;
+  for (int dir = 0; dir < x.nf; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    auto fc = x.fc[dir];
+    Real nc = 0.0;
+    Kokkos::parallel_reduce("cln_xdonor", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+        DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + dk + 1, je + dj + 1, ie + di + 1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+      const Real cf = CleanFaceCross(x, CLW_EK, dir, m, k, j, i);
+      Real q = 0.0;
+      if (cf != 0.0) {
+        const Real ed = (cf > 0.0) ? x.w(m,CLW_EK,k-dk,j-dj,i-di) : x.w(m,CLW_EK,k,j,i);
+        const bool cap = !(fabs(cf) < x.c*ed);
+        q = cap ? x.c : fabs(cf)/ed;
+        if (cf < 0.0) q = -q;
+        if (cap) a += 1.0;
+      }
+      fc(m,xq,k,j,i) = q;
+    }, Kokkos::Sum<Real>(nc));
+    ncap += nc;
+  }
+  cln_xd_ncap = CleanReduce(ncap, false);
+  cln_xd_on = true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagXCount
+//! \brief clean_stag_xdonor: the pass's cells with X <= 0 and faces at the cap (CLEAN
+//! XDONOR, diagnostic)
+
+void RadiationM1::CleanStagXCount(const int inl) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  auto w = cln_w;
+  Real nn = 0.0, xmin = 0.0;
+  Kokkos::parallel_reduce("cln_xcount", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+      DevExeSpace(), {0, ks, js, is}, {pmy_pack->nmb_thispack, ke + 1, je + 1, ie + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a, Real &b) {
+    const Real v = w(m,CLW_X,k,j,i);
+    if (!(v > 0.0)) a += 1.0;
+    b = fmin(b, v/fmax(fabs(w(m,CLW_EO,k,j,i)), 1.0e-300));
+  }, Kokkos::Sum<Real>(nn), Kokkos::Min<Real>(xmin));
+  nn = CleanReduce(nn, false);
+  xmin = -CleanReduce(-xmin, true);
+  if (global_variable::my_rank == 0 && (nn > 0.0 || cln_xd_ncap > 0.0)) {
+    std::printf("CLEAN XDONOR cycle %d t2s %d pass %d xle0 %.0f minX/Eo %.3e cap %.0f\n",
+                pmy_pack->pmesh->ncycle, t2_solve, inl, nn, xmin, cln_xd_ncap);
+  }
 }
 
 //----------------------------------------------------------------------------------------

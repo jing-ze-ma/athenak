@@ -3194,9 +3194,16 @@ class RadiationM1 {
   DvceArray4D<Real> cln_fbm;   // the mask (1 = fallback cell)
   DvceArray5D<Real> cln_fbd;   // D12 D13 D23 of cln_s before the first round
   bool CleanFbLocal();
+  void CleanStagXDonor();
+  void CleanStagXCount(const int inl);
   void CleanFbRestore();
   bool cln_srccvx = false;      // clean_source_convex: vet_scatter S between J and B
   bool cln_freal = false;       // clean_stag_freal: realisable sb, restart faces
+  // clean_stag_xdonor (staggered, default off): the cross flux of the iterate as a
+  // donor-cell coefficient of its face (CleanStagXDonor); its face slot, set in a solve
+  bool cln_xd = false, cln_xd_on = false;
+  int cln_xqs = -1;
+  Real cln_xd_ncap = 0.0;
   int cln_fdg = -1;             // staggered bracket: face slot of its lagged flux DG
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
   bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces
