@@ -397,7 +397,12 @@ void RadiationM1::CleanInit() {
   // (staggered on the cubed sphere: the cell terms and faces of CleanStagFSolve)
   const bool stcs = pmy_pack->pmesh->use_cubed_sphere && !cln_cell;
   Kokkos::realloc(cln_v, nmb, stcs ? 18 : 3, n3, n2, n1);
-  Kokkos::realloc(cln_w.s, nmb, CLW_NS, n3, n2, n1);
+  // (mem_arena, staggered, closure outside the solve: the shared slots too, after
+  // cln_w.o, CleanWoBind; clean_closure = iterate | extrap* builds inside the solve)
+  cln_w.s = DvceArray5D<Real>();
+  if (cln_cell || !marena_on || cln_closit || cln_extrap > 0) {
+    Kokkos::realloc(cln_w.s, nmb, CLW_NS, n3, n2, n1);
+  }
   const int nwo = cln_cell ? CLW_NC : (cln_kreal ? CLW_NR : (cln_kpos ? CLW_NKP :
                   ((cln_xte > 0) ? CLW_NX : ((cln_kpos || cln_xpat) ? CLW_NK : CLW_N))));
   // (mem_arena, staggered: made at the first solve, over the intensities, CleanWoBind)
@@ -1502,6 +1507,7 @@ void RadiationM1::CleanRstFaces() {
   }
   if (!cln_rstold) return;
   if (!cln_init) CleanInit();
+  CleanWoBind();
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke, nmb1 = pmy_pack->nmb_thispack - 1;

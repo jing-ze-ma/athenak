@@ -4291,9 +4291,9 @@ class RadiationM1 {
   int64_t marena_sw = 0;      // Reals of the intensity arrays bound so far
   void MemArenaInit(ParameterInput *pin, int nmb, int niw, int n3, int n2, int n1);
   bool MemArenaVgd(VgdRag &a, int64_t n);
-  void MemArenaGrow(int64_t need);
+  void MemArenaGrow(int64_t need, bool keep = true);
   void MemArenaSeal();
-  void CleanWoBind();   // cln_w.o at the first solve (mem_arena)
+  void CleanWoBind();   // cln_w.o, .s at the first solve (mem_arena)
   void MemcutPoison(int where);
   // mem2-1014 vet_gd_band_ring (default true where it applies: MPI band with the exact
   // halo lists, no overlap / async / fused shells; memcut-1020: on the cubed sphere with
