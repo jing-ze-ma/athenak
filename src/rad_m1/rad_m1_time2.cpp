@@ -3566,15 +3566,34 @@ int RadiationM1::Time2RstNch() {
 }
 
 // gpumem-1022: m0 > 0 packs MeshBlocks m0 .. m0+nmb-1 into a(0 .. nmb-1) (per-MB staging)
-void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
+void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
   auto mb = std::make_pair(0, nmb);
   auto ms = std::make_pair(m0, m0 + nmb);
   auto AL = Kokkos::ALL;
   const bool h2 = (time_scheme == M1_TIME_HESDIRK2);
+  // a holds the record's channels w0 .. w1-1 (the writer streams the record in windows);
+  // put copies the record channels c0 .. c0+n-1 = src's s0 .. s0+n-1 that fall inside,
+  // one sets channel cc to v
+  const int w1 = w0 + a.extent_int(1);
+  auto put = [&](const int c0, const int n, const auto &src, const int s0) {
+    const int lo = std::max(c0, w0), hi = std::min(c0 + n, w1);
+    if (lo < hi) {
+      Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(lo - w0, hi - w0), AL, AL,
+                                        AL),
+                        Kokkos::subview(src, ms, std::make_pair(s0 + lo - c0, s0 + hi - c0),
+                                        AL, AL, AL));
+    }
+  };
+  auto one = [&](const int cc, const Real v) {
+    if (cc >= w0 && cc < w1) {
+      Kokkos::deep_copy(Kokkos::subview(a, mb, cc - w0, AL, AL, AL), v);
+    }
+  };
+  const int na3 = static_cast<int>(a.extent(2)), na2 = static_cast<int>(a.extent(3));
+  const int na1 = static_cast<int>(a.extent(4)), nw = a.extent_int(1);
   int c = 0;
   if (h2) {
-    Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+M1_T2_NK), AL, AL, AL),
-                      Kokkos::subview(t2k1, ms, AL, AL, AL, AL));
+    put(c, M1_T2_NK, t2k1, 0);
     c += M1_T2_NK;
   }
   // (clean_skip_time2_hist: no predictor and extrap2 channels, version 4; the file is
@@ -3582,20 +3601,16 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
   const bool noh = clean && cln_not2h;
   if (h2 && impl_pred && !noh) {
     const int np = (impl_pord == 2) ? 5 : 3;
-    Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+np), AL, AL, AL),
-                      Kokkos::subview(ipred2, ms, AL, AL, AL, AL));
+    put(c, np, ipred2, 0);
     c += np;
   }
   if (h2 && vet_sc) {
-    Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+M1_T2_NVET), AL, AL, AL),
-                      Kokkos::subview(vet_prev, ms, AL, AL, AL, AL));
+    put(c, M1_T2_NVET, vet_prev, 0);
     c += M1_T2_NVET;
     if (vsc_every > 1) {
       const int nv = M1_T2_NVET;
-      Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+nv), AL, AL, AL),
-                        Kokkos::subview(vsc_d0, ms, AL, AL, AL, AL));
-      Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c+nv, c+2*nv), AL, AL, AL),
-                        Kokkos::subview(vsc_d1, ms, AL, AL, AL, AL));
+      put(c, nv, vsc_d0, 0);
+      put(c + nv, nv, vsc_d1, 0);
       c += 2*nv;
     }
   }
@@ -3604,12 +3619,8 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
   if (force_ref == M1_FREF_CLEAN || force_ref == M1_FREF_WB_MD) {
     const int nr = (force_ref == M1_FREF_WB_MD) ? 9 : 3;
     const bool have = (cln_fref.extent_int(0) >= m0 + nmb);
-    if (have) {
-      Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+nr), AL, AL, AL),
-                        Kokkos::subview(cln_fref, ms, AL, AL, AL, AL));
-    }
-    Kokkos::deep_copy(Kokkos::subview(a, mb, c+nr, AL, AL, AL),
-                      (have && cln_fref_set) ? 1.0 : 0.0);
+    if (have) put(c, nr, cln_fref, 0);
+    one(c + nr, (have && cln_fref_set) ? 1.0 : 0.0);
     c += nr + 1;
   }
   // clean_closure = extrap*: the ray moments at t^n and at the end of the step, then
@@ -3618,21 +3629,20 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
   if (clean && cln_extrap > 0) {
     const bool have = (cln_mn.extent_int(0) >= m0 + nmb);
     for (int n = 0; n < nq && have; ++n) {
-      Kokkos::deep_copy(Kokkos::subview(a, mb, c + n, AL, AL, AL),
-                        Kokkos::subview(cln_mn, ms, CleanRstSlot(n), AL, AL, AL));
-      Kokkos::deep_copy(Kokkos::subview(a, mb, c + nq + n, AL, AL, AL),
-                        Kokkos::subview(cln_mc, ms, CleanRstSlot(n), AL, AL, AL));
+      put(c + n, 1, cln_mn, CleanRstSlot(n));
+      put(c + nq + n, 1, cln_mc, CleanRstSlot(n));
     }
     auto a_ = a;
-    const int cq = c + 2*nq;
+    const int cq = c + 2*nq - w0;
     const Real v0 = cln_tn, v1 = cln_tm, v2 = (have && cln_have_n) ? 1.0 : 0.0;
     const Real v3 = (have && cln_have_c) ? 1.0 : 0.0, v4 = cln_cand_be ? 1.0 : 0.0;
-    par_for("m1_t2_clnrst", DevExeSpace(), 0, nmb - 1, 0, static_cast<int>(a.extent(2))-1,
-            0, static_cast<int>(a.extent(3))-1, 0, static_cast<int>(a.extent(4))-1,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      a_(m,cq,k,j,i) = (i == 0) ? v0 : ((i == 1) ? v1 : ((i == 2) ? v2 :
-                       ((i == 3) ? v3 : ((i == 4) ? v4 : 0.0))));
-    });
+    if (cq >= 0 && cq < nw) {
+      par_for("m1_t2_clnrst", DevExeSpace(), 0, nmb - 1, 0, na3 - 1, 0, na2 - 1, 0, na1 - 1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        a_(m,cq,k,j,i) = (i == 0) ? v0 : ((i == 1) ? v1 : ((i == 2) ? v2 :
+                         ((i == 3) ? v3 : ((i == 4) ? v4 : 0.0))));
+      });
+    }
     c += 2*nq + 1;
   }
   // clean_rot_ring: the offsets and the pending Delta of the fields the ring carries
@@ -3641,19 +3651,19 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
   if (clean && cln_ring) {
     const int nd = CleanRingRstN();
     const bool have = cln_rok && (cln_rr.extent_int(0) >= m0 + nmb);
-    CleanRingRstCopy(a, c, nmb, m0, true, have);
+    CleanRingRstCopy(a, c - w0, nmb, m0, true, have);
     auto a_ = a;
-    const int cq = c + nd;
+    const int cq = c + nd - w0;
     const Real v0 = have ? 1.0 : 0.0, v1 = static_cast<Real>(cln_rb);
     const Real v2 = static_cast<Real>(cln_rpb), v3 = cln_rpt;
-    const int na3 = static_cast<int>(a.extent(2)), na2 = static_cast<int>(a.extent(3));
-    const int na1 = static_cast<int>(a.extent(4));
-    par_for("m1_t2_ringrst", DevExeSpace(), 0, nmb - 1, 0, na3 - 1, 0, na2 - 1, 0,
-            na1 - 1,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      a_(m,cq,k,j,i) = (i == 0) ? v0 : ((i == 1) ? v1 : ((i == 2) ? v2 :
-                       ((i == 3) ? v3 : 0.0)));
-    });
+    if (cq >= 0 && cq < nw) {
+      par_for("m1_t2_ringrst", DevExeSpace(), 0, nmb - 1, 0, na3 - 1, 0, na2 - 1, 0,
+              na1 - 1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        a_(m,cq,k,j,i) = (i == 0) ? v0 : ((i == 1) ? v1 : ((i == 2) ? v2 :
+                         ((i == 3) ? v3 : 0.0)));
+      });
+    }
     c += nd + 1;
   }
   // clean_stag_fkin: the energy flux's memory d of the three face families (CLF_N + 3),
@@ -3662,43 +3672,37 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0) {
     for (int d = 0; d < 3; ++d) {
       auto fc = (d == 0) ? cln_fc1 : ((d == 1) ? cln_fc2 : cln_fc3);
       if (!cln_init && cln_rstd.extent_int(0) >= m0 + nmb) {
-        Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c + 6), AL, AL, AL),
-                          Kokkos::subview(cln_rstd, ms, AL, AL, AL, AL));
+        put(c, 6, cln_rstd, 0);
         break;
       }
       if (fc.extent_int(0) < m0 + nmb) continue;
-      Kokkos::deep_copy(Kokkos::subview(a, mb, c + d, AL, AL, AL),
-                        Kokkos::subview(fc, ms, CLF_N + 3, AL, AL, AL));
-      Kokkos::deep_copy(Kokkos::subview(a, mb, c + 3 + d, AL, AL, AL),
-                        Kokkos::subview(fc, ms, CLF_KD, AL, AL, AL));
+      put(c + d, 1, fc, CLF_N + 3);
+      put(c + 3 + d, 1, fc, CLF_KD);
     }
     c += 6;
   }
   // rbfast-1021 extrap2: the raw builds of the last step, q at i = 0, time, alpha
   if (h2 && vet_col && t2_vcmode == 4 && !noh) {
-    auto rt = std::make_pair(c, c+M1_X2_NTT);
-    auto rh = std::make_pair(c+M1_X2_NTT, c+M1_X2_NTT+M1_X2_NHR);
-    Kokkos::deep_copy(Kokkos::subview(a, mb, rt, AL, AL, AL),
-                      Kokkos::subview(x2_tt, ms, AL, AL, AL, AL));
-    Kokkos::deep_copy(Kokkos::subview(a, mb, rh, AL, AL, AL),
-                      Kokkos::subview(x2_hr, ms, AL, AL, AL, AL));
+    put(c, M1_X2_NTT, x2_tt, 0);
+    put(c + M1_X2_NTT, M1_X2_NHR, x2_hr, 0);
     c += M1_X2_NTT + M1_X2_NHR;
     auto a_ = a;
     auto q_ = x2_q;
     const Real t = x2_ok ? x2_t : -1.0e300, al = x2_alpha, ds = x2_dts;
-    const int cq = c;
+    const int cq = c - w0;
     const int mq = m0;
-    const int na3 = static_cast<int>(a.extent(2)), na2 = static_cast<int>(a.extent(3));
-    const int na1 = static_cast<int>(a.extent(4));
     par_for("m1_t2_x2rst", DevExeSpace(), 0, nmb - 1, 0, na3-1, 0, na2-1, 0, na1-1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      a_(m,cq,k,j,i) = (i == 0) ? q_(m+mq,k,j) : 0.0;
-      a_(m,cq+1,k,j,i) = t;
-      a_(m,cq+2,k,j,i) = al;
-      a_(m,cq+3,k,j,i) = ds;
+      if (cq >= 0 && cq < nw) a_(m,cq,k,j,i) = (i == 0) ? q_(m+mq,k,j) : 0.0;
+      if (cq+1 >= 0 && cq+1 < nw) a_(m,cq+1,k,j,i) = t;
+      if (cq+2 >= 0 && cq+2 < nw) a_(m,cq+2,k,j,i) = al;
+      if (cq+3 >= 0 && cq+3 < nw) a_(m,cq+3,k,j,i) = ds;
     });
     c += 4;
   }
+  // (a window that does not reach the rays' intensities: restart.cpp windows only a
+  // record without them)
+  if (w0 > 0 || w1 < c + CleanRstNfv()) return;
   // clean_rays = fv1 | fv: the intensities the next sweep starts from, last (unless a
   // has no room for them: restart.cpp copies them itself)
   if (a.extent_int(1) < c + CleanRstNfv()) return;

@@ -54,6 +54,7 @@ using deep_copy_across::DeepCopyAcross;
 RestartOutput::RestartOutput(ParameterInput *pin, Mesh *pm, OutputParameters op) :
   BaseTypeOutput(pin, pm, op) {
   // create directories for outputs. Comments in binary.cpp constructor explain why
+  win_mb_ = pin->GetOrAddReal("job", "restart_window_mb", 1024.0);
   mkdir("rst",0775);
   bool single_file_per_rank = op.single_file_per_rank;
   if (single_file_per_rank) {
@@ -281,9 +282,14 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
         // MeshBlock by MeshBlock in WriteOutputFile)
         const int nst = (um && nfv == 0 && !IOWrapper::collective &&
                          !async_io::Enabled()) ? 1 : nmb;
+        // (and, without ray intensities in the record, in windows of at most
+        // <job>/restart_window_mb)
+        const int nwin = (nst < nmb && pradm1->CleanRstNfv() == 0) ?
+            std::max(1, std::min(nct, static_cast<int>(win_mb_*1048576.0/
+                                 (sizeof(Real)*nout1*nout2*nout3)))) : nct;
         if (um) {
-          outarray_m1t_d = DvceArray5D<Real>("rst-m1t-d", nst, nct, nout3, nout2, nout1);
-          outarray_m1t = HostArray5D<Real>(outarray_m1t_d.data(), nst, nct, nout3, nout2,
+          outarray_m1t_d = DvceArray5D<Real>("rst-m1t-d", nst, nwin, nout3, nout2, nout1);
+          outarray_m1t = HostArray5D<Real>(outarray_m1t_d.data(), nst, nwin, nout3, nout2,
                                            nout1);
         } else {
           Kokkos::realloc(outarray_m1t, nmb, nct, nout3, nout2, nout1);
@@ -1597,23 +1603,30 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       return;
     }
     const IOWrapperSizeT cnt = static_cast<IOWrapperSizeT>(n)*nout1*nout2*nout3;
-    const bool st = (a.extent_int(0) < pm->nmb_thisrank);   // (streamed: m1t)
+    // (streamed, the time2 record: packed MeshBlock by MeshBlock in windows of nw slabs)
+    const bool st = (a.extent_int(0) < pm->nmb_thisrank);
+    const int nw = st ? a.extent_int(1) : n;
+    const IOWrapperSizeT ns = static_cast<IOWrapperSizeT>(nout1)*nout2*nout3;
     for (int m=0; m<pm->nmb_thisrank; ++m) {
-      if (st) {
-        DvceArray5D<Real> t(outarray_m1t_d.data(), 1, n, nout3, nout2, nout1);
-        pm->pmb_pack->pradm1->Time2RstPack(t, 1, m);
-        Kokkos::fence();
-      }
-      const Real *p = Kokkos::subview(a, st ? 0 : m, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL,
-                                      Kokkos::ALL).data();
-      for (IOWrapperSizeT q=0; q<cnt; q+=(IOWrapperSizeT{1} << 28)) {
-        const IOWrapperSizeT c = std::min(cnt - q, IOWrapperSizeT{1} << 28);
-        if (resfile.Write_any_type_at(p + q, c, offset_myrank + m*data_size +
-                                      q*sizeof(Real), "Real", single_file_per_rank) != c) {
-          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << what << " not written correctly to rst file, "
-                    << "restart file is broken." << std::endl;
-          exit(EXIT_FAILURE);
+      for (int w0=0; w0<n; w0+=nw) {
+        if (st) {
+          DvceArray5D<Real> t(outarray_m1t_d.data(), 1, nw, nout3, nout2, nout1);
+          pm->pmb_pack->pradm1->Time2RstPack(t, 1, m, w0);
+          Kokkos::fence();
+        }
+        const Real *p = Kokkos::subview(a, st ? 0 : m, Kokkos::ALL, Kokkos::ALL,
+                                        Kokkos::ALL, Kokkos::ALL).data();
+        const IOWrapperSizeT cw = std::min(nw, n - w0)*ns, o = w0*ns;
+        for (IOWrapperSizeT q=0; q<cw; q+=(IOWrapperSizeT{1} << 28)) {
+          const IOWrapperSizeT c = std::min(cw - q, IOWrapperSizeT{1} << 28);
+          if (resfile.Write_any_type_at(p + q, c, offset_myrank + m*data_size +
+                                        (o + q)*sizeof(Real), "Real",
+                                        single_file_per_rank) != c) {
+            std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                      << std::endl << what << " not written correctly to rst file, "
+                      << "restart file is broken." << std::endl;
+            exit(EXIT_FAILURE);
+          }
         }
       }
     }

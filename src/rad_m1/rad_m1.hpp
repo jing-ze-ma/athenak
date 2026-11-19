@@ -2251,7 +2251,7 @@ class RadiationM1 {
   int t2_rstv = 5;              // the clean file's version: <= 3 zero predictor / extrap2
                                 // channels and the ring in CLN_N ghosted slabs per
                                 // record, 4 the cubed sphere's sc rays' cln_fvi ghosted
-  void Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0 = 0);
+  void Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0 = 0, int w0 = 0);
   // gpumem-1022 <rad_m1>/restart_pack_per_mb (read only when named; default true since
   // memcut-1113, was false): the restart writer stages the hesdirk2 channels one
   // MeshBlock at a time (a device buffer of one block instead of all; same bytes)

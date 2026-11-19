@@ -491,6 +491,8 @@ class RestartOutput : public BaseTypeOutput {
   RestartOutput(ParameterInput *pin, Mesh *pm, OutputParameters oparams);
   void LoadOutputData(Mesh *pm) override;
   void WriteOutputFile(Mesh *pm, ParameterInput *pin) override;
+ private:
+  double win_mb_;   // <job>/restart_window_mb: the time2 record's write window
 };
 
 // Forward declaration
