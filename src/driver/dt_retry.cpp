@@ -212,7 +212,9 @@ struct ViewEntry : public Entry {
   void Save() override {
     orig = *p;
     have = false;
-    if (skip != nullptr && *skip) {clone = Clone(); hclone = HClone(); onhost = false;}
+    if (skip != nullptr && *skip) {
+      clone = Clone(); hclone = HClone(); onhost = false; nskip += 1;
+    }
     if (!deep || p->data() == nullptr || p->span() == 0 || (skip != nullptr && *skip)) {
       return;
     }
@@ -887,11 +889,11 @@ void DtRetry::Report(Mesh *pm) {
   std::cout << "<time> dt_retry: " << nsave_ << " checkpoints (" << tsave_ << " s, "
             << static_cast<double>(bytes_dev_)/1.0e6 << " MB on rank 0), " << nretry_
             << " retries, cap " << pm->dt_cap << std::endl;
-  if (host_) {
-    std::int64_t ns = 0;
-    for (auto &e : ent_) {ns += e->NSkip();}
-    std::cout << "<time> dt_retry_host: " << ns << " clean host copies skipped"
-              << std::endl;
+  std::int64_t ns = 0;
+  for (auto &e : ent_) {ns += e->NSkip();}
+  if (host_ || ns > 0) {
+    std::cout << "<time> dt_retry: " << ns << " View copies skipped (unwritten since the "
+              << "last copy, dt_retry_host; not written in the cycle, SetSkip)" << std::endl;
   }
   if (nt2be_ > 0) {
     std::cout << "<time> dt_retry: " << nt2be_ << " cycles took the backward-Euler redo "
