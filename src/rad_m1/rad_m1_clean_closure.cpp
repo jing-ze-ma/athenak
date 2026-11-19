@@ -992,8 +992,8 @@ bool CleanRingMix(const CleanRingL &rl, const DvceArray5D<Real> &rr,
 //! sp F solve reads it).  The mixture gives 0 there (CleanRingMix).  ring: those of the
 //! offsets and the Delta (with clean_ring_fields = closure the cell moments and CLN_JR;
 //! the others are mixed from the swept sets alone).  file: the fields of the restart
-//! files' layout (CleanRingRstCopy), which keeps the stress parts and CLN_G on the cubed
-//! sphere (0 in a file written since)
+//! files' layout (CleanRingRstCopy): up to version 6 it keeps the stress parts and CLN_G
+//! on the cubed sphere (0 in a file written since), from version 7 the ring's own
 
 #if M1_TU_PART(0)
 int RadiationM1::CleanRingFields(int *fm, const bool ring, const bool file) const {
@@ -1005,7 +1005,8 @@ int RadiationM1::CleanRingFields(int *fm, const bool ring, const bool file) cons
                     (n >= CLN_FH && n < CLN_F1 && (n - CLN_FH)%4 != 0);    // parts)
     const bool un = fs || (cub && (n == CLN_G || n == CLN_G + 1));
     const bool cm = !(ring && cln_rcell) || CleanCellMoment(n) || n == CLN_JR;
-    fm[n] = ((cln_cell || (n < ns && !(file ? fs && !cub : un))) && cm) ? nf++ : -1;
+    const bool f6 = file && t2_rstv < 7;
+    fm[n] = ((cln_cell || (n < ns && !(f6 ? fs && !cub : un))) && cm) ? nf++ : -1;
   }
   return nf;
 }

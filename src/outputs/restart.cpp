@@ -540,10 +540,11 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     // (version 2: the staggered fkin block carries K1_d, 8349d48ff; version 3, the
     // clean scheme: hv[2] also holds t2_ok and cln_k1ok, as bits 2 and 4; versions 4
     // and 5, the clean scheme: no zero channels, the ring dense, then also the cubed
-    // sphere's sc rays, Time2RstNchWant)
+    // sphere's sc rays, Time2RstNchWant; version 7: the ring without the cubed sphere's
+    // zero stress / CLN_G fields, CleanRingFields)
     const bool cl = (pradm1 != nullptr) && pradm1->clean;
     const bool fk = cl && pradm1->cln_fsolve && pradm1->cln_fkin;
-    const std::int32_t hdr[2] = {(nt2 > 0) ? (cl ? 6 : (fk ? 2 : 1)) : 0,
+    const std::int32_t hdr[2] = {(nt2 > 0) ? (cl ? 7 : (fk ? 2 : 1)) : 0,
                                  static_cast<std::int32_t>(nt2)};
     Real hv[3] = {0.0, 0.0, 0.0};
     if (pradm1 != nullptr) {

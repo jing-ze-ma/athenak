@@ -3856,7 +3856,7 @@ bool RadiationM1::Time2RstAccept(const int nfile, const int ver) {
   return (nfile == nb + t2_nfv) && (t2_nfv >= 0);
 }
 int RadiationM1::Time2RstNch() {
-  t2_rstv = 6;   // (the writer: version 6, after a restart from an older file too)
+  t2_rstv = 7;   // (the writer: version 7, after a restart from an older file too)
   // (the clean scheme always: its state, and K1 with cln_k1ok, also in backward-Euler
   // steps; restart.cpp stores t2_ok)
   return (t2_ok || clean || time_scheme != M1_TIME_HESDIRK2) ? Time2RstNchWant() : 0;

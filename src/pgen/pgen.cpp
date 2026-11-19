@@ -659,7 +659,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       std::memcpy(&(hdr[0]), &(t2_hdr[0]), sizeof(hdr));
       std::memcpy(&(t2_hv[0]), &(t2_hdr[0]) + sizeof(hdr), sizeof(t2_hv));
     }
-    if (!ok || hdr[0] < 1 || hdr[0] > 6 || hdr[1] < 1 || hdr[1] > 65536) {
+    if (!ok || hdr[0] < 1 || hdr[0] > 7 || hdr[1] < 1 || hdr[1] > 65536) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "the <rad_m1> hesdirk2 header of this restart file is "
                 << "broken." << std::endl;
