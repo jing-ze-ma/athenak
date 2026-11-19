@@ -117,7 +117,9 @@ void RadiationM1::CleanInit() {
   Kokkos::realloc(cln_w, nmb, cln_cell ? CLW_NC : CLW_N, n3, n2, n1);
   // the cubed sphere takes the half ranges about the face normals from the FV rays
   cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
-  const int nfc = cln_milne ? CLF_KK + 6 : (cln_hk ? CLF_HK + 2 : CLF_N);
+  const int nfc0 = cln_milne ? CLF_KK + 6 : (cln_hk ? CLF_HK + 2 : CLF_N);
+  cln_yqs = (cln_cell && cln_thinyd > 0.0) ? nfc0 : -1;
+  const int nfc = nfc0 + ((cln_yqs >= 0) ? 4 : 0);
   // the opacities depend on T: tables, or the T exponent (bump) of powerlaw (user)
   cln_opt = cln_cell && !opac_freeze && !opac_zero && (opacity_type == M1_OPAC_TABLE ||
             (opacity_type != M1_OPAC_CONST && opac_b != 0.0));
@@ -706,6 +708,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   for (int ipos = 0; ; ++ipos) {
     CleanFirstIterate();
     if (cell) CleanCellFirstIterate();
+    if (cell) CleanCellYDonor(true);
     if (cln_opt && cln_feedback) {
       CleanCellOpacity();
       CleanCellFaceSpeeds();
@@ -731,6 +734,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       // (clean_tol_opac: these passes solve to it and do not end the iteration)
       const bool loose = opit && (cln_tol_op > 0.0) && inl < cln_tol_opn;
       cln_tol_pass = loose ? cln_tol_op : 0.0;
+      if (cell && inl > 0) CleanCellYDonor(false);
       if (opit && inl > 0) {
         CleanCellOpacity();
         CleanCellFaceSpeeds();

@@ -2641,4 +2641,69 @@ void RadiationM1::CleanCellDiagStencil() {
   std::fflush(stdout);
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellYDonor
+//! \brief clean_thin_ydonor: on the interior high-order faces whose two cells are thin
+//! across the cell (chi d below the key) and thick over the step (h c chi > 1), the E
+//! row's central y flux of the Newton iterate, C = c n.(y_L + y_R)/2, enters the pass as
+//! a donor coefficient q = C/E_donor (|q| <= c), the donor the cell C leaves: q adds to
+//! the derivative in E of that cell only, so that the E row has no y columns there and
+//! keeps the M-matrix form (conservative, Z).  At the fixed point q E_donor = C where
+//! |C| <= c E_donor.  C of the iterate is a lagged coupling; a face whose C turns back,
+//! its change d = l times the last one (l < 0), takes d/(1 - l), the fixed point of that
+//! mode.  first: the first iterate of a solve (no history).
+
+void RadiationM1::CleanCellYDonor(const bool first) {
+  cln_yq_on = false;
+  if (cln_yqs < 0) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanGhostFill(cln_x, CLC_K, 4);
+  CleanArgs x = CleanMakeArgs();
+  auto op = opac;
+  const int yq = cln_yqs;
+  const Real thr = cln_thinyd, hc = dt_sub*c_light;
+  for (int dir = 0; dir < 3; ++dir) {
+    if ((dir == 1 && !x.multi_d) || (dir == 2 && !x.three_d)) continue;
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    auto fc = x.fc[dir];
+    par_for("clc_ydonor", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const int kl = k - dk, jl = j - dj, il = i - di;
+      const Real cl = op(m,M1_OP_T,kl,jl,il), cr = op(m,M1_OP_T,k,j,i);
+      const Real d = CleanCellFaceDistance(x, dir, m, k, j, i);
+      const bool on = !CleanBoundaryFace(x, dir, m, k, j, i) &&
+                      fc(m,CLF_LO,k,j,i) == 0.0 && fmax(cl, cr)*d < thr &&
+                      hc*fmin(cl, cr) > 1.0;
+      if (!on) {
+        fc(m,yq,k,j,i) = 0.0;
+        fc(m,yq+1,k,j,i) = 0.0;
+        fc(m,yq+2,k,j,i) = 0.0;
+        fc(m,yq+3,k,j,i) = 0.0;
+        return;
+      }
+      Real ul[4], ur[4];
+      CleanCellState(x, CLC_K, m, kl, jl, il, ul);
+      CleanCellState(x, CLC_K, m, k, j, i, ur);
+      Real cn = 0.0;
+      for (int b = 0; b < x.nf; ++b) {
+        cn += 0.5*x.c*CleanNf(x, b, dir, m, k, j, i)*(ul[1+b] + ur[1+b]);
+      }
+      const bool was = !first && fc(m,yq+3,k,j,i) > 0.0;
+      const Real cp = fc(m,yq+1,k,j,i), dp = fc(m,yq+2,k,j,i), dc = cn - cp;
+      const Real l = (was && dc*dp < 0.0) ? dc/dp : 0.0;
+      const Real cu = was ? cp + dc/(1.0 - l) : cn;
+      const Real ed = fmax((cu > 0.0) ? ul[0] : ur[0], 0.0);
+      const Real q = (ed > 0.0) ? fmin(fmax(cu/ed, -x.c), x.c) : 0.0;
+      fc(m,yq,k,j,i) = q;
+      fc(m,yq+1,k,j,i) = cu;
+      fc(m,yq+2,k,j,i) = was ? cu - cp : 0.0;
+      fc(m,yq+3,k,j,i) = 1.0;
+    });
+  }
+  cln_yq_on = true;
+}
+
 }  // namespace radm1

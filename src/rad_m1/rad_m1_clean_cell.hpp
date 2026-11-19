@@ -990,6 +990,15 @@ void CleanCellM1Jacobian(const CleanArgs &x, const int dir, const int m, const i
       jr[0][0] += s*fmin(CleanCellAdvectN(x, dir, m, k, j, i, k, j, i), 0.0);
     }
     for (int b = 0; b < 3; ++b) jl[0][1+b] = jr[0][1+b] = 0.0;
+  } else if (x.yq >= 0 && x.fc[dir](m,x.yq+3,k,j,i) > 0.0) {
+    // clean_thin_ydonor: the E row's y flux as q E_donor (CleanCellYDonor)
+    const Real q = x.fc[dir](m,x.yq,k,j,i);
+    for (int b = 0; b < 3; ++b) jl[0][1+b] = jr[0][1+b] = 0.0;
+    if (q > 0.0) {
+      jl[0][0] += q;
+    } else {
+      jr[0][0] += q;
+    }
   }
   if (!kModels || !x.consist) return;
   // clean_consistency: w of the face takes the rays' kinetic upwind flux, the cells'

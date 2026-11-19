@@ -252,6 +252,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_thin_low")) {
       cln_thinlow = pin->GetReal("rad_m1","clean_thin_low");
     }
+    // clean_thin_ydonor (read only when named, default 0 = off): on the interior
+    // high-order faces of clean_thin_low's kind (both cells chi d below this and
+    // h c chi > 1)
+    // the E row's central y flux C = c n.(y_L + y_R)/2 of the Newton iterate enters the
+    // pass as q E_donor, q = C/E_donor (|q| <= c, the donor the cell C leaves), so that
+    // the E row keeps the M-matrix form; a face whose C turns back takes d/(1 - l)
+    if (pin->DoesParameterExist("rad_m1","clean_thin_ydonor")) {
+      cln_thinyd = pin->GetReal("rad_m1","clean_thin_ydonor");
+    }
     // clean_diag_cell = gid,i,j,k (read only when named): the E row of the operator of
     // that cell, by term, after the right-hand side of every first pass
     if (pin->DoesParameterExist("rad_m1","clean_diag_cell")) {

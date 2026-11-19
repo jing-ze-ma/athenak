@@ -3064,6 +3064,11 @@ class RadiationM1 {
   int cln_bcgfb = 0;            // clean_bcg_fallback: Richardson sweeps after a breakdown
   bool cln_lowdf = false;       // clean_low_face_d: low-order faces take the face's D_nn
   Real cln_thinlow = 0.0;       // clean_thin_low: chi d below which a stiff face is low
+  Real cln_thinyd = 0.0;        // clean_thin_ydonor: chi d below which (stiff) the E
+                                // row's y flux is a lagged donor coefficient
+  int cln_yqs = -1;             // its face slots: q, the flux C, C's last change, flag
+  bool cln_yq_on = false;       // q of the current solve is set
+  void CleanCellYDonor(const bool first);
   void CleanCellDiagNeg();
   void CleanCellDiagNb();       // clean_diag_neg: the write-back's eint <= 0 cells
   void CleanCellDiagStencil();  // clean_diag_cell: the E row of one cell, by term
