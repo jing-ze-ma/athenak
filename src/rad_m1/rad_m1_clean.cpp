@@ -1487,10 +1487,14 @@ void RadiationM1::CleanOldVector() {
 
   // (counted: gas eint < 0 of the stage start, which the exchange takes as 0 and the
   // write-back's implicit_pos_gas meets, and E < 0)
+  // (a flat range, as cln_newton: A100 ran the 4-D MDRange reduction at 39 ms; the
+  // counts are whole numbers, exact in any order)
   Real nn[2] = {0.0, 0.0};
-  Kokkos::parallel_reduce("cln_old", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &ng, Real &ne) {
+  const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
+  Kokkos::parallel_reduce("cln_old", CleanRp256(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &ng, Real &ne) {
+    const int m = idx/nkji, k = ks + (idx - m*nkji)/nji;
+    const int j = js + (idx - m*nkji - (k - ks)*nji)/ni, i = is + idx%ni;
     Real t = 0.0;
     if (fluid) {
       if (feedback && stage) {
