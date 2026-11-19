@@ -279,8 +279,6 @@ void RadiationM1::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
   int nc = 0;
   for (auto &s : sg) nc += s.nc;
   if (!cln_hpb) {
-    // (the exchanges run one at a time: their scratch arrays share one allocation)
-    Kokkos::realloc(cln_hbuf, nmb1 + 1, cln_hmax, n3, n2, n1);
     cln_hpb.reset(new MeshBoundaryValuesCC(pmy_pack, nullptr, false));
     cln_hpb->InitializeBuffers(cln_hmax);
     cln_hpb->SetVectorPairs(cln_hmax, {});
@@ -307,6 +305,19 @@ void RadiationM1::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
   if (dl && part == 1) return;
   if (dl) CleanHaloFinish(sg);
   const bool cs = pmy_pack->pmesh->use_cubed_sphere;
+  // one MeshBlock and one array of doubles: the exchange runs on the array's own
+  // components [c0, c0 + nc), no copies (the copies took every cell outside CleanInner,
+  // ghosts included: the same values)
+  bool own = false;
+  if constexpr (std::is_same<T, Real>::value) own = (nmb1 == 0 && sg.size() == 1);
+  // (clean_halo_direct, doubles: the cube-vertex corners on the arrays themselves)
+  const bool dc = dl && cs && std::is_same<T, Real>::value;
+  // (the exchanges run one at a time: their scratch arrays share one allocation, made
+  // and grown to nc components by the first exchange that copies through it)
+  if (!own && (dl ? cs && !dc : true) && cln_hbuf.extent_int(1) < nc) {
+    Kokkos::realloc(cln_hbuf, nmb1 + 1, nc, n3, n2, n1);
+    cln_halo.clear();
+  }
   CleanHalo &hl = cln_halo[nc];
   if (hl.ca.extent_int(0) == 0) {
     hl.a = DvceArray5D<Real>(cln_hbuf.data(), nmb1 + 1, nc, n3, n2, n1);
@@ -315,20 +326,13 @@ void RadiationM1::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
   auto h = hl.a;
   const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
   MeshBoundaryValuesCC *pb = cln_hpb.get();
-  // one MeshBlock and one array of doubles: the exchange runs on the array's own
-  // components [c0, c0 + nc), no copies (the copies took every cell outside CleanInner,
-  // ghosts included: the same values)
   DvceArray5D<Real> ha = hl.a;
-  bool own = false;
   if constexpr (std::is_same<T, Real>::value) {
-    own = (nmb1 == 0 && sg.size() == 1);
     const size_t off = static_cast<size_t>(sg[0].c0)*n3*n2*n1;
     if (own) ha = DvceArray5D<Real>(sg[0].a.data() + off, 1, nc, n3, n2, n1);
   }
   // (only the cells outside CleanInner are copied: CleanShell.  clean_halo_direct: only
   // on the cubed sphere, after the exchange, for the cube-vertex corners of the old one)
-  // (clean_halo_direct, doubles: the cube-vertex corners on the arrays themselves)
-  const bool dc = dl && cs && std::is_same<T, Real>::value;
   if (!own && !dc && (dl ? cs : part != 2)) {
     const CleanShell sc(n3, n2, n1, ng, is, ie, js, je, ks, ke, md, td);
     int o = 0;

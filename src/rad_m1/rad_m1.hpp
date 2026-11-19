@@ -3498,7 +3498,7 @@ class RadiationM1 {
   // sends only its own), the fills deferred to the next exchange (CleanGhostDefer)
   std::unique_ptr<MeshBoundaryValuesCC> cln_hpb;
   std::vector<CleanGSeg<Real>> cln_hpend;
-  DvceArray5D<Real> cln_hbuf;   // the storage of every scratch array (32 components)
+  DvceArray5D<Real> cln_hbuf;   // the storage of every scratch array (as used, <= 32)
   // clean_halo_direct (default true): the exchange in old production's halo_mpi form,
   // cell lists read once off cln_hpb's own exchange (CleanHaloInit): on-rank ghosts by
   // one copy, one message per neighbour rank, receives posted before the pack
