@@ -1777,11 +1777,17 @@ void RadiationM1::CleanStagXDonor(const bool first) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     auto fc = x.fc[dir];
     // (faces outside the active range: none, every solve; the pass's split,
-    // CleanStagXSplit in the right-hand side, sets the active ones)
-    Kokkos::deep_copy(Kokkos::subview(fc, Kokkos::ALL, std::make_pair(xq, xq + 3),
-                                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), 0.0);
-    par_for("cln_xdonor", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    // CleanStagXSplit in the right-hand side, sets the active ones) (one flat range over
+    // every face: A100 R136 ran the 5-D subview fill and the 4-D par_for at 0.55 ms each)
+    const int n4 = fc.extent_int(4), n34 = fc.extent_int(3)*n4;
+    const int n234 = fc.extent_int(2)*n34;
+    Kokkos::parallel_for("cln_xdonor", Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0,
+                         (nmb1 + 1)*n234),
+    KOKKOS_LAMBDA(const int idx) {
+      const int m = idx/n234, k = (idx - m*n234)/n34;
+      const int j = (idx - m*n234 - k*n34)/n4, i = idx%n4;
+      for (int q = 0; q < 3; ++q) fc(m,xq+q,k,j,i) = 0.0;
+      if (k < ks || k > ke+dk || j < js || j > je+dj || i < is || i > ie+di) return;
       const Real cn = CleanFaceCross(x, CLW_EK, dir, m, k, j, i);
       const Real cp = fc(m,xq+3,k,j,i), d = cn - cp, dp = fc(m,xq+4,k,j,i);
       // (the change over the last one, l < 0 where C turns back: the step d/(1 - l), the
@@ -2341,73 +2347,79 @@ void RadiationM1::CleanStagXCount(const int inl, const int nit) {
   CleanArgs x = CleanMakeArgs();
   // (of the X <= 0 cells: the row term most negative relative to E_old)
   Real tw = 0.0, te = 0.0, ts = 0.0, tg = 0.0;
+  // (flat range reductions, as cln_old: A100 R136 ran the 4-D MDRange ones at 6.7 ms
+  // (cln_xcount) and 1.6 ms per launch (cln_xfaces, per direction); every count is a
+  // whole number and the minimum is exact, in any order)
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
   {
     auto xdg = cln_xdg;
-    Kokkos::parallel_reduce("cln_xterm", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-        DevExeSpace(), {0, ks, js, is}, {pmy_pack->nmb_thispack, ke + 1, je + 1, ie + 1}),
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a, Real &b,
-                  Real &c, Real &d) {
-      if (w(m,CLW_X,k,j,i) > 0.0) return;
-      int n = 0;
-      for (int q = 1; q < 4; ++q) if (xdg(m,q,k,j,i) < xdg(m,n,k,j,i)) n = q;
-      if (!(xdg(m,n,k,j,i) < 0.0)) return;
-      if (n == 0) a += 1.0;
-      if (n == 1) b += 1.0;
-      if (n == 2) c += 1.0;
-      if (n == 3) d += 1.0;
-    }, Kokkos::Sum<Real>(tw), Kokkos::Sum<Real>(te), Kokkos::Sum<Real>(ts),
-       Kokkos::Sum<Real>(tg));
-    tw = CleanReduce(tw, false);
-    te = CleanReduce(te, false);
-    ts = CleanReduce(ts, false);
-    tg = CleanReduce(tg, false);
-  }
-  Kokkos::parallel_reduce("cln_xcount", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-      DevExeSpace(), {0, ks, js, is}, {pmy_pack->nmb_thispack, ke + 1, je + 1, ie + 1}),
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a, Real &b,
-                Real &c, Real &d, Real &e, Real &f) {
-    const Real v = w(m,CLW_X,k,j,i);
-    if (!(v > 0.0)) a += 1.0;
-    if (w(m,CLW_B,k,j,i) < 0.0) c += 1.0;
-    if (!(v > 0.0) && w(m,CLW_B,k,j,i) < 0.0) d += 1.0;
-    // (of the X <= 0 cells: the old vector < 0, or its face sources' outflow above it)
-    const Real eo = w(m,CLW_EO,k,j,i);
-    if (!(v > 0.0) && eo < 0.0) e += 1.0;
-    if (!(v > 0.0) && eo >= 0.0) {   // (CLF_SR holds ar now: the sources anew)
-      Real sd = 0.0;
-      for (int q = 0; q < x.nf; ++q) {
-        const int dk = (q == 2), dj = (q == 1), di = (q == 0);
-        sd += CleanDivW(x, q, m, k, j, i, 1)*CleanFaceSource(x, q, m, k+dk, j+dj, i+di) -
-              CleanDivW(x, q, m, k, j, i, 0)*CleanFaceSource(x, q, m, k, j, i);
+    const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
+    Kokkos::parallel_reduce("cln_xcount", CleanRp256(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &a, Real &b, Real &c, Real &d, Real &e, Real &f,
+                  Real &tw_, Real &te_, Real &ts_, Real &tg_) {
+      const int m = idx/nkji, k = ks + (idx - m*nkji)/nji;
+      const int j = js + (idx - m*nkji - (k - ks)*nji)/ni, i = is + idx%ni;
+      const Real v = w(m,CLW_X,k,j,i);
+      if (!(v > 0.0)) {
+        int n = 0;
+        for (int q = 1; q < 4; ++q) if (xdg(m,q,k,j,i) < xdg(m,n,k,j,i)) n = q;
+        if (xdg(m,n,k,j,i) < 0.0) {
+          if (n == 0) tw_ += 1.0;
+          if (n == 1) te_ += 1.0;
+          if (n == 2) ts_ += 1.0;
+          if (n == 3) tg_ += 1.0;
+        }
       }
-      if (eo < x.h*sd) f += 1.0;
-    }
-    b = fmin(b, v/fmax(fabs(eo), 1.0e-300));
-  }, Kokkos::Sum<Real>(nn), Kokkos::Min<Real>(xmin), Kokkos::Sum<Real>(nb),
-     Kokkos::Sum<Real>(nbx), Kokkos::Sum<Real>(neo), Kokkos::Sum<Real>(nsd));
+      if (!(v > 0.0)) a += 1.0;
+      if (w(m,CLW_B,k,j,i) < 0.0) c += 1.0;
+      if (!(v > 0.0) && w(m,CLW_B,k,j,i) < 0.0) d += 1.0;
+      // (of the X <= 0 cells: the old vector < 0, or its face sources' outflow above it)
+      const Real eo = w(m,CLW_EO,k,j,i);
+      if (!(v > 0.0) && eo < 0.0) e += 1.0;
+      if (!(v > 0.0) && eo >= 0.0) {   // (CLF_SR holds ar now: the sources anew)
+        Real sd = 0.0;
+        for (int q = 0; q < x.nf; ++q) {
+          const int dk = (q == 2), dj = (q == 1), di = (q == 0);
+          sd += CleanDivW(x, q, m, k, j, i, 1)*
+                    CleanFaceSource(x, q, m, k+dk, j+dj, i+di) -
+                CleanDivW(x, q, m, k, j, i, 0)*CleanFaceSource(x, q, m, k, j, i);
+        }
+        if (eo < x.h*sd) f += 1.0;
+      }
+      b = fmin(b, v/fmax(fabs(eo), 1.0e-300));
+    }, Kokkos::Sum<Real>(nn), Kokkos::Min<Real>(xmin), Kokkos::Sum<Real>(nb),
+       Kokkos::Sum<Real>(nbx), Kokkos::Sum<Real>(neo), Kokkos::Sum<Real>(nsd),
+       Kokkos::Sum<Real>(tw), Kokkos::Sum<Real>(te), Kokkos::Sum<Real>(ts),
+       Kokkos::Sum<Real>(tg));
+  }
+  tw = CleanReduce(tw, false);
+  te = CleanReduce(te, false);
+  ts = CleanReduce(ts, false);
+  tg = CleanReduce(tg, false);
   nn = CleanReduce(nn, false);
   nb = CleanReduce(nb, false);
   nbx = CleanReduce(nbx, false);
   neo = CleanReduce(neo, false);
   nsd = CleanReduce(nsd, false);
-  // (faces: with a donor part, at the cap c)
+  // (faces: with a donor part, at the cap c; the directions' faces in one range)
   Real nd = 0.0, ncp = 0.0;
-  for (int dir = 0; dir < x.nf && cln_xd_on; ++dir) {
-    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    auto fc = x.fc[dir];
-    const int xq = cln_xqs;
+  if (cln_xd_on) {
+    const int nf = x.nf, xq = cln_xqs;
     const Real c = x.c;
-    Real a0 = 0.0, a1 = 0.0;
-    Kokkos::parallel_reduce("cln_xfaces", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-        DevExeSpace(), {0, ks, js, is},
-        {pmy_pack->nmb_thispack, ke + dk + 1, je + dj + 1, ie + di + 1}),
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a, Real &b) {
-      const Real ql = fc(m,xq,k,j,i), qr = fc(m,xq+1,k,j,i);
-      if (ql != 0.0 || qr != 0.0) a += 1.0;
-      if (ql >= c || -qr >= c) b += 1.0;
-    }, Kokkos::Sum<Real>(a0), Kokkos::Sum<Real>(a1));
-    nd += a0;
-    ncp += a1;
+    auto fc0 = x.fc[0], fc1 = x.fc[1], fc2 = x.fc[2];
+    const int ni = ie - is + 2, nji = (je - js + 2)*ni, nkji = (ke - ks + 2)*nji;
+    Kokkos::parallel_reduce("cln_xfaces", CleanRp256(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &a, Real &b) {
+      const int m = idx/nkji, k = ks + (idx - m*nkji)/nji;
+      const int j = js + (idx - m*nkji - (k - ks)*nji)/ni, i = is + idx%ni;
+      for (int dir = 0; dir < nf; ++dir) {
+        if (i > ie + (dir == 0) || j > je + (dir == 1) || k > ke + (dir == 2)) continue;
+        const auto &fc = (dir == 0) ? fc0 : ((dir == 1) ? fc1 : fc2);
+        const Real ql = fc(m,xq,k,j,i), qr = fc(m,xq+1,k,j,i);
+        if (ql != 0.0 || qr != 0.0) a += 1.0;
+        if (ql >= c || -qr >= c) b += 1.0;
+      }
+    }, Kokkos::Sum<Real>(nd), Kokkos::Sum<Real>(ncp));
   }
   cln_xd_ncap = CleanReduce(ncp, false);
   nd = CleanReduce(nd, false);
@@ -4567,9 +4579,23 @@ void RadiationM1::CleanWriteBack() {
   // (time2_face_fct: the energy flux Phi of every face, which moved E, with its slope)
   const bool pfo = t2_pfst && slopes && t2pf1.extent_int(0) > nmb1;
   auto pf = (t2_solve == M1_T2S_STAGE1) ? t2pf2 : t2pf1;
+  // (xdonor: each face's central cross flux once, for the two cells that read it, in
+  // cln_xf's scratch (dead here: its users write it before they read it); A100 R136
+  // cln_wbdiv 1.6 -> 14.5 ms per launch with it evaluated twice per face)
+  DvceArray5D<Real> xcv;
+  if (xh.hi && x.xq >= 0) {
+    xcv = ScratchView<DvceArray5D<Real>>("cln_xf", nmb1 + 1, 3, cln_w.s.extent_int(2),
+                                         cln_w.s.extent_int(3), cln_w.s.extent_int(4));
+    for (int n = 0; n < x.nf; ++n) {
+      CleanFor("cln_wbxc", nmb1, ks, ke+(n == 2), js, je+(n == 1), is, ie+(n == 0),
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        xcv(m,n,k,j,i) = CleanFaceFlux(*pxc, CLW_X, n, m, k, j, i, true);
+      });
+    }
+  }
   CleanFor("cln_wbdiv", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const CleanArgs &x = *px, &xh = *pxh, &xc = *pxc;   // (device memory: no copy)
+    const CleanArgs &x = *px, &xh = *pxh;   // (device memory: no copy)
     // (CleanFluxDivergence(Tie) with the faces' Phi of CleanStagRealizable, CLF_PT, but
     // on physical faces; with the tie the low faces' CLW_L and the high faces' owner's)
     Real dv = 0.0;
@@ -4589,8 +4615,7 @@ void RadiationM1::CleanWriteBack() {
                                CleanDivW(x, n, m, k, j, i, 0)*fl : x.idx[n]*(fh - fl);
       // (clean_stag_kpos: the cell flux without the moved increment flux)
       if (xh.hi && x.xq >= 0) {
-        u0_(m,M1_F1+n,k,j,i) = 0.5*(CleanFaceFlux(xc, CLW_X, n, m, k, j, i, true) +
-                                    CleanFaceFlux(xc, CLW_X, n, m, k+dk, j+dj, i+di, true) -
+        u0_(m,M1_F1+n,k,j,i) = 0.5*(xcv(m,n,k,j,i) + xcv(m,n,k+dk,j+dj,i+di) -
                                     CleanKposFlux(x, CLW_X, n, m, k, j, i) -
                                     CleanKposFlux(x, CLW_X, n, m, k+dk, j+dj, i+di));
       } else if (xh.hi) {
