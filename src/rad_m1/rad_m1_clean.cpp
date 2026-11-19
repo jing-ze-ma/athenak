@@ -48,7 +48,8 @@ using CleanRp256 = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>
 // (the heavy per-cell passes at 2 blocks of 256 per SM, <= 128 registers, as the old
 // production's par_for_lb (m1-fast4): 164-213 registers left 1 block per SM; the
 // arithmetic is unchanged)
-// (CUDA only: on HIP (wave64) the bounds stay at 1 block until measured on MI300A)
+// (CUDA only: on HIP (wave64) the bounds stay at 1 block, as measured on MI300A, but
+// for cln_rhs, CleanParForLb)
 #if defined(KOKKOS_ENABLE_CUDA)
 static constexpr int CleanLbMb(int mb) {return mb;}
 #else
@@ -62,8 +63,15 @@ static void CleanParForLb(const char *name, const int nmb1, const int ks, const 
                           const int js, const int je, const int is, const int ie,
                           const F &f) {
   const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
+#if defined(KOKKOS_ENABLE_HIP)
+  constexpr int mb = 2;   // (cln_rhs at 256 VGPRs, 2 waves per SIMD: MI300A RSG -45 ms
+                          // per 8 cycles, though it spills more; CleanRpLb2's passes at 2
+                          // measured no gain)
+#else
+  constexpr int mb = CleanLbMb(MB);
+#endif
   Kokkos::parallel_for(name, Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256,
-                       CleanLbMb(MB)>>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+                       mb>>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
   KOKKOS_LAMBDA(const int idx) {
     const int m = idx/nkji, k = (idx - m*nkji)/nji, j = (idx - m*nkji - k*nji)/ni;
     f(m, ks + k, js + j, is + idx - m*nkji - k*nji - j*ni);
