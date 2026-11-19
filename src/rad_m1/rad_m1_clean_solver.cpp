@@ -1427,9 +1427,13 @@ int RadiationM1::CleanBiCGStab() {
     if (!cn) return true;
     Real a = 0.0;
     const int dj = pmy_pack->pmesh->multi_d, dk = pmy_pack->pmesh->three_d;
-    Kokkos::parallel_reduce("cln_cnorm", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-        DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &mx) {
+    // (a flat range, as cln_old: a max, the same in any order)
+    const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
+    Kokkos::parallel_reduce("cln_cnorm", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            (nmb1 + 1)*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &mx) {
+      const int m = idx/nkji, k = ks + (idx - m*nkji)/nji;
+      const int j = js + (idx - m*nkji - (k - ks)*nji)/ni, i = is + idx%ni;
       Real e = fmax(w(m,CLW_EK,k,j,i), efl);
       for (int o = -1; o <= 1; o += 2) {
         e = fmax(e, fmax(fabs(w(m,sx,k,j,i+o)), fabs(w(m,sx,k,j+o*dj,i))));
