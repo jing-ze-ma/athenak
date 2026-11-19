@@ -1642,17 +1642,16 @@ void RadiationM1::CleanStagXDonor() {
 //! \fn void RadiationM1::CleanStagKPos
 //! \brief clean_stag_kpos (staggered, hesdirk2 stage solves): the explicit increment of
 //! the old vector, E_old = E_s + c1 K1_E (+ c2 K2_E), E_s the stage start, limited so
-//! that E_old >= th E_s (th = CLN_KPOS_TH) by construction, conservatively.  The
-//! increment is -div G + Q, G = c1 Phi1 + c2 Phi2 the energy its slopes' solves moved
-//! across each face (t2pf1, t2pf2, CleanWriteBack), Q the cell part (the exchange and
-//! work with the gas).  A cell whose destructions D (the faces' G out of it, physical
-//! boundaries included, and Q < 0) exceed (1 - th) E_s takes them with the share r =
-//! (1 - th) E_s/D: each face's G at its donor's r on both sides (one flux per face, the
-//! boundary energy too), the cell's Q < 0 at r with the rest (1 - r) |Q| given back by
-//! the gas, which took the whole Q in its own increment (CLW_EI and the write-back's
-//! IEN, CLW_KM): E + gas exact for any iterate, E_old >= E_s - r D >= th E_s with the
-//! inflows at any share.  Where r = 1 it is the unchanged increment (2nd order).
-//! Counted (CLEAN KPOS: cells, min r, gas-limited cells).
+//! that E_old >= th E_s (th = CLN_KPOS_TH), conservatively.  The increment is -div G +
+//! Q, G = c1 Phi1 + c2 Phi2 the energy its slopes' solves moved across each face (t2pf1,
+//! t2pf2, CleanWriteBack), Q the cell part (exchange and work with the gas, whose own
+//! increment holds their counterpart: Q stays whole).  A cell whose E_old falls below th
+//! E_s takes its face outflows D with the share r = ((1 - th) E_s + Q + P)/D, P its
+//! inflows at their donors' shares; each face's G at its donor's r on both sides (one
+//! flux per face, the boundary energy too), so E + gas stay exact.  Rounds until no cell
+//! fails, from round CLN_KPOS_RF on without the inflows (P = 0: the cell is safe whatever
+//! its donors do).  Where r = 1 the increment is unchanged (2nd order); a cell whose Q
+//! alone takes it below th E_s is left (r = 0) and counted.  Counted (CLEAN KPOS).
 
 void RadiationM1::CleanStagKPos() {
   cln_kpb = false;
@@ -1675,44 +1674,78 @@ void RadiationM1::CleanStagKPos() {
   CleanArgs x = CleanMakeArgs();
   const Real c1 = cln_kc1, c2 = cln_kc2, th = CLN_KPOS_TH;
   auto p1 = t2pf1, p2 = t2pf2;
-  // the face slope g into cell i through its side sd of direction d (and its donor)
-  auto gin = KOKKOS_LAMBDA(const int m, const int d, const int k, const int j, const int i,
-                           const int sd) {
-    const int kf = k + sd*(d == 2), jf = j + sd*(d == 1), iff = i + sd*(d == 0);
-    const Real g = c1*p1(m,d,kf,jf,iff) + (two ? c2*p2(m,d,kf,jf,iff) : 0.0);
-    return CleanDivW(x, d, m, k, j, i, sd)*(sd ? -g : g);
-  };
-  // 1. r of each cell (CLW_PD until the first right-hand side), with the ghosts for
-  //    the faces' donors
-  Real nr[2] = {0.0, 1.0};
-  Kokkos::parallel_reduce("cln_kpos_r", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &n, Real &rmin) {
-    const Real es = u0_(m,M1_E,k,j,i), eo = w(m,CLW_EO,k,j,i);
-    Real de = 0.0, dg = 0.0;   // (destructions, -h div G)
-    for (int d = 0; d < x.nf; ++d) {
+  // E_old of cell i with the faces at their donors' r (CLW_PD; an inflow from a physical
+  // boundary whole), its face outflow D and inflow P; Q in CLW_KF
+  auto old = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &d,
+                           Real &p) {
+    const Real r = w(m,CLW_PD,k,j,i);
+    Real e = u0_(m,M1_E,k,j,i) + w(m,CLW_KF,k,j,i);
+    d = p = 0.0;
+    for (int n = 0; n < x.nf; ++n) {
+      const int dk = (n == 2), dj = (n == 1), di = (n == 0);
       for (int sd = 0; sd < 2; ++sd) {
-        const Real a = gin(m, d, k, j, i, sd);
-        dg += a;
-        if (a < 0.0) de -= a;
+        const int kf = k + sd*dk, jf = j + sd*dj, iff = i + sd*di, s = sd ? 1 : -1;
+        const Real g = c1*p1(m,n,kf,jf,iff) + (two ? c2*p2(m,n,kf,jf,iff) : 0.0);
+        const Real a = CleanDivW(x, n, m, k, j, i, sd)*(sd ? -g : g);   // (into i)
+        if (a < 0.0) {
+          d -= a;
+          e += r*a;
+        } else {
+          const Real ad = CleanBoundaryFace(x, n, m, kf, jf, iff) ? 1.0 :
+                          w(m,CLW_PD,k+s*dk,j+s*dj,i+s*di);
+          p += ad*a;
+          e += ad*a;
+        }
       }
     }
-    const Real q = eo - es - dg;   // (Q, the cell part)
-    if (q < 0.0) de -= q;
-    const Real ef = (1.0 - th)*fmax(es, 0.0);
-    Real r = 1.0;
-    if (de > ef) {
-      r = ef/de;
-      n += 1.0;
-      rmin = fmin(rmin, r);
-    }
-    w(m,CLW_KF,k,j,i) = q;
-    w(m,CLW_PD,k,j,i) = r;
-  }, Kokkos::Sum<Real>(nr[0]), Kokkos::Min<Real>(nr[1]));
-  nr[0] = CleanReduce(nr[0], false);
-  nr[1] = -CleanReduce(-nr[1], true);
-  if (!(nr[0] > 0.0)) return;   // (no cell limited: the increment as is, bitwise)
+    return e;
+  };
+  // Q (the old vector less the face part) and r = 1
+  CleanFor("cln_kpos0", nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    w(m,CLW_PD,k,j,i) = 1.0;
+    w(m,CLW_KF,k,j,i) = 0.0;
+  });
   CleanGhostFill(cln_w, CLW_PD, 1);
+  CleanFor("cln_kpos1", nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real d, p;
+    w(m,CLW_KM,k,j,i) = w(m,CLW_EO,k,j,i) - old(m, k, j, i, d, p);
+  });
+  CleanFor("cln_kpos2", nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    w(m,CLW_KF,k,j,i) = w(m,CLW_KM,k,j,i);
+  });
+  // rounds: a failing cell lowers its r (new r in CLW_KM, then CLW_PD and its ghosts)
+  Real nc = 0.0, nf = 0.0;
+  int nround = 0;
+  for (; nround < CLN_KPOS_RN; ++nround) {
+    const bool free = (nround >= CLN_KPOS_RF);
+    nf = 0.0;
+    Kokkos::parallel_reduce("cln_kpos_r", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+        DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &n) {
+      Real d, p;
+      const Real es = fmax(u0_(m,M1_E,k,j,i), 0.0), r = w(m,CLW_PD,k,j,i);
+      const Real e = old(m, k, j, i, d, p);
+      Real rn = r;
+      if (e < th*es && d > 0.0) {
+        const Real av = (1.0 - th)*es + w(m,CLW_KF,k,j,i) + (free ? 0.0 : p);
+        rn = fmin(r, fmax(av/d, 0.0));
+        if (rn < r) n += 1.0;
+      }
+      w(m,CLW_KM,k,j,i) = rn;
+    }, Kokkos::Sum<Real>(nf));
+    nf = CleanReduce(nf, false);
+    if (!(nf > 0.0)) break;
+    nc += nf;
+    CleanFor("cln_kpos_c", nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      w(m,CLW_PD,k,j,i) = w(m,CLW_KM,k,j,i);
+    });
+    CleanGhostFill(cln_w, CLW_PD, 1);
+  }
+  if (!(nc > 0.0)) return;   // (no cell limited: the increment as is, bitwise)
   // (the history's boundary energy: the x1 boundary faces' G at the donor's r)
   if (cln_lacc.extent_int(0) > nmb1) {
     auto la = cln_lacc;
@@ -1726,46 +1759,32 @@ void RadiationM1::CleanStagKPos() {
       la(m,2+s,k,j) -= (1.0 - w(m,CLW_PD,k,j,s ? ie : is))*g;
     });
   }
-  // 2. the old vector with each face's G at its donor's r (an inflow from a physical
-  //    boundary whole), Q < 0 at r; the gas's give-back (1 - r) |Q| (CLW_KM), at most
-  //    (1 - th) of its eint (counted where that bounds it)
-  auto fx = x;
-  Real ng = 0.0;
+  // the old vector with the final r (CLW_KM, then CLW_EO; the formed one in CLW_KF)
+  Real cnt[3] = {0.0, 0.0, 1.0};   // (cells r < 1, left below th E_s, min r)
   Kokkos::parallel_reduce("cln_kpos", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
       DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &n) {
-    const Real r = w(m,CLW_PD,k,j,i), q = w(m,CLW_KF,k,j,i);
-    Real e = u0_(m,M1_E,k,j,i);
-    for (int d = 0; d < fx.nf; ++d) {
-      const int dk = (d == 2), dj = (d == 1), di = (d == 0);
-      for (int sd = 0; sd < 2; ++sd) {
-        const Real a = gin(m, d, k, j, i, sd);
-        const int s = sd ? 1 : -1;   // (the neighbour across the face)
-        const bool bf = CleanBoundaryFace(fx, d, m, k + sd*dk, j + sd*dj, i + sd*di);
-        const Real ad = (a < 0.0) ? r : (bf ? 1.0 : w(m,CLW_PD,k+s*dk,j+s*dj,i+s*di));
-        e += ad*a;
-      }
-    }
-    Real pb = 0.0;
-    if (q < 0.0) {
-      pb = (1.0 - r)*(-q);
-      const Real ga = (1.0 - th)*fmax(w(m,CLW_EI,k,j,i), 0.0);
-      if (pb > ga) {
-        pb = ga;
-        n += 1.0;
-      }
-      w(m,CLW_EI,k,j,i) -= pb;
-    }
-    e += q + pb;
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &nl, Real &nb,
+                Real &rmin) {
+    Real d, p;
+    const Real e = old(m, k, j, i, d, p), r = w(m,CLW_PD,k,j,i);
+    if (r < 1.0) nl += 1.0;
+    if (e < th*fmax(u0_(m,M1_E,k,j,i), 0.0)) nb += 1.0;
+    rmin = fmin(rmin, r);
+    w(m,CLW_KM,k,j,i) = e;
+  }, Kokkos::Sum<Real>(cnt[0]), Kokkos::Sum<Real>(cnt[1]), Kokkos::Min<Real>(cnt[2]));
+  CleanFor("cln_kpos_e", nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     w(m,CLW_KF,k,j,i) = w(m,CLW_EO,k,j,i);   // (as formed, diagnostic)
-    w(m,CLW_EO,k,j,i) = e;
-    w(m,CLW_KM,k,j,i) = pb;
-  }, Kokkos::Sum<Real>(ng));
-  ng = CleanReduce(ng, false);
+    w(m,CLW_EO,k,j,i) = w(m,CLW_KM,k,j,i);
+  });
+  cnt[0] = CleanReduce(cnt[0], false);
+  cnt[1] = CleanReduce(cnt[1], false);
+  cnt[2] = -CleanReduce(-cnt[2], true);
   cln_kpb = true;
   if (global_variable::my_rank == 0) {
-    std::printf("CLEAN KPOS cycle %d t2s %d cells %.0f min r %.3e gas-limited %.0f\n",
-                pmy_pack->pmesh->ncycle, t2_solve, nr[0], nr[1], ng);
+    std::printf("CLEAN KPOS cycle %d t2s %d cells %.0f min r %.3e rounds %d left below th "
+                "E_s %.0f\n", pmy_pack->pmesh->ncycle, t2_solve, cnt[0], cnt[2], nround,
+                cnt[1]);
   }
 }
 
@@ -4259,9 +4278,7 @@ void RadiationM1::CleanWriteBack() {
           }
         }
       }
-      // (kpos: the gas's give-back of the limited cell part of the increment, which its
-      // old vector CLW_EI already holds; not the stage's slope)
-      uh(m,IEN,k,j,i) += den - (kpb ? x.w(m,CLW_KM,k,j,i) : 0.0);
+      uh(m,IEN,k,j,i) += den;
       x.w(m,CLW_JV,k,j,i) = den - wk;   // (its change of the gas eint, cln_neint)
     }
     // (implicit_pos_floor, the old production's write-back: an E at or below e_floor is

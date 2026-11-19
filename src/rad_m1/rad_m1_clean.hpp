@@ -162,6 +162,8 @@ constexpr int CLF_DB = CLF_N + 8;   // clean_stag_vimp: drag share b = beta/(1 +
 constexpr int CLF_DQ = CLF_N + 9;   //   the face momentum Q = G - c^2 dm_f of the iterate
 constexpr int CLF_KD = CLF_N + 10;  // clean_stag_fkin: the slopes K1, K2 of d (2)
 constexpr Real CLN_KPOS_TH = 0.1;   // clean_stag_kpos: E_old at least this share of E_s
+constexpr int CLN_KPOS_RN = 12;     //   rounds at most, the inflow-free share from
+constexpr int CLN_KPOS_RF = 6;      //   round CLN_KPOS_RF
 constexpr Real CLN_MEMUP = 1.0/6.0;  // clean_stag_gflux: a memory outflow above this
                                      // share of the donor's E_old goes upwind
 
@@ -214,7 +216,7 @@ constexpr int CLW_BW = 51;   //   preconditioner input (CleanBiCGStab)
 constexpr int CLW_PW = 52;
 constexpr int CLW_N = 53;
 constexpr int CLW_KF = 53;   // staggered clean_stag_kpos: E of the old vector as formed,
-constexpr int CLW_KM = 54;   //   the gas's give-back of the limited cell part (>= 0),
+constexpr int CLW_KM = 54;   //   scratch (the new r of a round, the limited E_old),
 constexpr int CLW_PD = 55;   //   the limiter r (setup); clean_stag_xpat: the rows'
                              //   Patankar diagonal
 constexpr int CLW_NK = 56;   //   (allocated only with clean_stag_kpos / xpat)
