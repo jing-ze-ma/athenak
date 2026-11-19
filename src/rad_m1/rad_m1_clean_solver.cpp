@@ -1288,15 +1288,19 @@ void RadiationM1::CleanStagLineSolve(const CleanLevel &lv, const int src, const 
     const int nx = l.n[0], n2 = l.n[1], n32 = l.n[2]*l.n[1];
     int nround = 0;
     while ((1 << nround) < nx) ++nround;
-    const size_t scr = ScrArray1D<Real>::shmem_size(8*nx);
+    // (nx <= kPcrRows team size: each round in place, a lane keeps the new values of its
+    // rows in registers over a barrier; half the scratch, so more teams per CU)
+    constexpr int kPcrRows = 4;
     Kokkos::TeamPolicy<DevExeSpace> pol(DevExeSpace(), (nmb1 + 1)*n32, 256);
+    const bool inp = (nx <= kPcrRows*pol.team_size());
+    const size_t scr = ScrArray1D<Real>::shmem_size((inp ? 4 : 8)*nx);
     const int lv0 = TeamScratchLevel(scr, 0, pol.team_size());
     Kokkos::parallel_for("cln_pcr", pol.set_scratch_size(lv0, Kokkos::PerTeam(scr)),
     KOKKOS_LAMBDA(TeamMember_t tm) {
       const int m = tm.league_rank()/n32, pk = (tm.league_rank() - m*n32)/n2;
       const int pj = tm.league_rank() - m*n32 - pk*n2, k = l.o[2] + pk, j = l.o[1] + pj;
       if (col >= 0 && cl(pj, pk) != col) return;   // (team-uniform)
-      ScrArray1D<Real> sw(tm.team_scratch(lv0), 8*nx);
+      ScrArray1D<Real> sw(tm.team_scratch(lv0), (inp ? 4 : 8)*nx);
       Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int q) {
         const int i = is + q;
         Real r = w(m,src,k,j,i);
@@ -1313,7 +1317,38 @@ void RadiationM1::CleanStagLineSolve(const CleanLevel &lv, const int src, const 
       });
       tm.team_barrier();
       int o = 0;
-      for (int rd = 0, s = 1; rd < nround; ++rd, s *= 2) {
+      for (int rd = 0, s = 1; inp && rd < nround; ++rd, s *= 2) {
+        Real v[kPcrRows][4];
+        for (int u = 0; u < kPcrRows; ++u) {
+          const int q = tm.team_rank() + u*tm.team_size();
+          if (q >= nx) break;
+          Real a = 0.0, b = sw(nx + q), c = 0.0, r = sw(3*nx + q);
+          if (q >= s) {
+            const Real f = -sw(q)/sw(nx + q - s);
+            a = f*sw(q - s);
+            b += f*sw(2*nx + q - s);
+            r += f*sw(3*nx + q - s);
+          }
+          if (q + s < nx) {
+            const Real g = -sw(2*nx + q)/sw(nx + q + s);
+            c = g*sw(2*nx + q + s);
+            b += g*sw(q + s);
+            r += g*sw(3*nx + q + s);
+          }
+          v[u][0] = a;
+          v[u][1] = b;
+          v[u][2] = c;
+          v[u][3] = r;
+        }
+        tm.team_barrier();
+        for (int u = 0; u < kPcrRows; ++u) {
+          const int q = tm.team_rank() + u*tm.team_size();
+          if (q >= nx) break;
+          for (int p = 0; p < 4; ++p) sw(p*nx + q) = v[u][p];
+        }
+        tm.team_barrier();
+      }
+      for (int rd = 0, s = 1; !inp && rd < nround; ++rd, s *= 2) {
         const int d = 4*nx - o;
         Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int q) {
           Real a = 0.0, b = sw(o + nx + q), c = 0.0, r = sw(o + 3*nx + q);
