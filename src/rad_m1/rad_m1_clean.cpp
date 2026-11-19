@@ -1757,9 +1757,9 @@ void RadiationM1::CleanOldVector() {
 //! with a gain ~ the light CFL where nothing else holds E (optically thin): there its
 //! checkerboard mode alternates from pass to pass (RSG floor gas, tau ~ 1e-9: the
 //! passes stall at the round-off of the solve and the floor-density gas velocity grows,
-//! S3P4).  A face whose C turns back (its change against the last one) takes half the
-//! change, which takes that mode out; C is unchanged at the fixed point.  first: the
-//! first iterate of a solve, no history.
+//! S3P4).  A face whose C turns back, its change d = l times the last one (l < 0),
+//! takes d/(1 - l), the fixed point of that mode (half the change for l = -1); C is
+//! unchanged at the fixed point.  first: the first iterate of a solve, no history.
 
 void RadiationM1::CleanStagXDonor(const bool first) {
   if (!cln_xd || cln_cell || !pmy_pack->pmesh->multi_d) return;
@@ -1783,8 +1783,11 @@ void RadiationM1::CleanStagXDonor(const bool first) {
     par_for("cln_xdonor", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real cn = CleanFaceCross(x, CLW_EK, dir, m, k, j, i);
-      const Real cp = fc(m,xq+3,k,j,i), d = cn - cp;   // (the last pass's C, change)
-      const Real cu = (!first && d*fc(m,xq+4,k,j,i) < 0.0) ? cp + 0.5*d : cn;
+      const Real cp = fc(m,xq+3,k,j,i), d = cn - cp, dp = fc(m,xq+4,k,j,i);
+      // (the change over the last one, l < 0 where C turns back: the step d/(1 - l), the
+      // fixed point of a mode C -> l C exactly; continuous in l, l >= 0 as it is)
+      const Real l = (d*dp < 0.0) ? d/dp : 0.0;
+      const Real cu = first ? cn : cp + d/(1.0 - l);
       fc(m,xq+3,k,j,i) = cu;
       fc(m,xq+4,k,j,i) = first ? 0.0 : cu - cp;
     });
