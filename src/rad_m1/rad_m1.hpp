@@ -97,14 +97,12 @@ struct CleanGeo {
   int is = 0, ie = 0;
   KOKKOS_FORCEINLINE_FUNCTION
   static int Slot(const int n) {   // a: n >= 0, r: -1 - n
-    if (n == CLG_Q) return CLG_NA - 1;   // (the directions: along x1 as they)
-    if (n < CLG_X) return n;
-    if (n < CLG_R) return -1 - (n - CLG_X);
-    if (n < CLG_M) return n - 3;
-    if (n < CLG_F) return -1 - (n - CLG_M + 3);
-    if (n == CLG_F + 3) return -10;
-    if (n >= CLG_F + 7) return -1 - (n - CLG_F + 3);
-    return n - CLG_F + 18 - (n > CLG_F + 3);
+    // (a table, not a chain of branches on n: with n a loop index, the face kernels keep
+    // their registers on the GPU)
+    constexpr signed char t[CLG_NV] = {0, 1, 2, 3, 4, 5, 6, 7, 8, -1, -2, -3, 9, 10, 11, 12,
+      13, 14, 15, 16, 17, -4, -5, -6, -7, -8, -9, 18, 19, 20, -10, 21, 22, 23, -11, -12,
+      -13, -14, CLG_NA - 1};
+    return t[n];
   }
   KOKKOS_FORCEINLINE_FUNCTION
   Real operator()(const int m, const int n, const int k, const int j, const int i) const {
