@@ -762,6 +762,8 @@ void RadiationM1::CleanFaceCoefficients() {
   auto gn = cln_gn;
   auto fi = cln_fvi;
   auto dv = cln_fvd;
+  auto fh = cln_fh;
+  const bool fsc = cln_cssc;   // (the sc rays: their folded sums, CleanFaceHalf)
   const int nd = pmy_pack->pmesh->use_cubed_sphere ? cln_fvn : 0;
 
   for (int dir = 0; dir < 3; ++dir) {
@@ -806,7 +808,13 @@ void RadiationM1::CleanFaceCoefficients() {
       // as CleanCellConsistency, so that a seam face takes the same h+- on both sides)
       // (J_L, J_R, H+_L, H-_R as scalars: nvcc -O3 miscompiles a runtime-indexed local)
       Real jl0 = 0.0, jr0 = 0.0, hp0 = 0.0, hm0 = 0.0;
-      for (int d = 0; d < nd; ++d) {
+      if (fsc) {
+        jl0 = fh(m,4*dir,k,j,i);
+        hp0 = fh(m,4*dir+2,k,j,i);
+        hm0 = fh(m,4*dir+3,k,j,i);
+        jr0 = fh(m,4*dir+1,k,j,i);
+      }
+      for (int d = 0; d < nd && !fsc; ++d) {
         Real mu = 0.0;
         for (int b = 0; b < 3; ++b) mu += dv(d,b)*gn(m,CLG_N+3*dir+b,k,j,i);
         const Real wl = dv(d,3)*fi(m,d,kl,jl,il), wr = dv(d,3)*fi(m,d,k,j,i);

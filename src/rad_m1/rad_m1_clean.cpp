@@ -948,7 +948,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     // file of another ray method: zero, until the first build)
     if (cln_cssc) {
       CleanScUnion2();
-      if (cln_fvi.extent_int(1) != cln_fvn) {
+      if (cln_cell && cln_fvi.extent_int(1) != cln_fvn) {   // (staggered: CleanFaceHalf)
         Kokkos::realloc(cln_fvi, pmy_pack->nmb_thispack, cln_fvn, cln_s.extent_int(2),
                         cln_s.extent_int(3), cln_s.extent_int(4));
       }

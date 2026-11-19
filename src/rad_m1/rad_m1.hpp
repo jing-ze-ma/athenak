@@ -3063,6 +3063,7 @@ class RadiationM1 {
   // rays' last build when their reflecting top mirrors it (cln_scmem: its top shell)
   int CleanRstNfv() const;
   void CleanScUnion2();
+  void CleanFaceHalf(const DvceArray2D<Real> &dv, const int o, const bool zero);
   DvceArray5D<Real> &CleanRstFv() {return (cln_scmem && !cln_cssc) ? cln_top : cln_fvi;}
   void CleanStagDrag(const bool first, const bool vel = false);
   void CleanStagFCsShared();
@@ -3350,6 +3351,7 @@ class RadiationM1 {
   int64_t cln_rbld = 0;         // the block of the build
   std::vector<int64_t> cln_fvblk;   // the set in each slot
   std::vector<DvceArray2D<Real>> cln_fvdm;   // the directions with only slot q weighted
+  DvceArray5D<Real> cln_fh;     // the sc rays' face half-range sums (CleanFaceHalf)
   DvceArray5D<Real> cln_rl;     // the slots' moments g = M/J (CLN_J: J); a build's scratch
   DvceArray5D<Real> cln_rr;     // offsets g_{b-j} - g_b, J_{b-j}/J_b (< 0: none), K-1
   DvceArray5D<Real> cln_rpd;    // the pending Delta g_{b+1} - g_b, J_{b+1}/J_b

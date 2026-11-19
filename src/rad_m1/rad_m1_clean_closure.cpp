@@ -881,8 +881,9 @@ void RadiationM1::CleanRays() {
   } else {
     CleanClosureFromGd();
     // (clean_rays = sc on the cubed sphere: also the intensities cln_fvi of the face half
-    // ranges, CleanCellConsistency)
+    // ranges, CleanCellConsistency, CleanFaceHalf)
     if (cln_consist || cln_cssc) CleanGdFaceSums();
+    if (cln_cssc) CleanFaceHalf(vgd_dir, 0, true);
   }
   MemcutPoison(3);
 }
@@ -909,6 +910,55 @@ void RadiationM1::CleanScUnion2() {
   }
   Kokkos::deep_copy(cln_fvd, d_h);
   cln_fvn = 2*n;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanFaceHalf
+//! \brief the sc rays on the cubed sphere, staggered layout: the half ranges of every
+//! face about its own normal (CleanFaceCoefficients), as the sums of the union's beams of
+//! the face's two cells, J_L, J_R, H+_L, H-_R (cln_fh, 4 per face family), folded set by
+//! set right after its sweep (the set's intensities in cln_fvi, its union rows o of dv):
+//! one set of intensities resident.  zero: the first set of a build
+
+void RadiationM1::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
+                                const bool zero) {
+  if (cln_cell) return;   // (the cell layout reads cln_fvi, CleanCellConsistency)
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke, n = vgd_n, nmb1 = pmy_pack->nmb_thispack - 1;
+  if (cln_fh.extent_int(0) != nmb1 + 1) {
+    Kokkos::realloc(cln_fh, nmb1 + 1, 12, cln_s.extent_int(2), cln_s.extent_int(3),
+                    cln_s.extent_int(4));
+  }
+  auto fh = cln_fh;
+  auto fi = cln_fvi;
+  auto gn = cln_gn;
+  for (int dir = 0; dir < 3; ++dir) {
+    if (dir == 1 && !pmy_pack->pmesh->multi_d) continue;
+    if (dir == 2 && !pmy_pack->pmesh->three_d) continue;
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    par_for("cln_facehalf", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const int kl = k - dk, jl = j - dj, il = i - di;
+      // (J_L, J_R, H+_L, H-_R as scalars: nvcc -O3 miscompiles a runtime-indexed local)
+      Real jl0 = zero ? 0.0 : fh(m,4*dir,k,j,i), jr0 = zero ? 0.0 : fh(m,4*dir+1,k,j,i);
+      Real hp0 = zero ? 0.0 : fh(m,4*dir+2,k,j,i), hm0 = zero ? 0.0 : fh(m,4*dir+3,k,j,i);
+      for (int e = 0; e < n; ++e) {
+        const int d = o + e;
+        Real mu = 0.0;
+        for (int b = 0; b < 3; ++b) mu += dv(d,b)*gn(m,CLG_N+3*dir+b,k,j,i);
+        const Real wl = dv(d,3)*fi(m,e,kl,jl,il), wr = dv(d,3)*fi(m,e,k,j,i);
+        jl0 += wl;
+        jr0 += wr;
+        if (mu > 0.0) hp0 += wl*mu;
+        if (!(mu > 0.0)) hm0 += wr*mu;
+      }
+      fh(m,4*dir,k,j,i) = jl0;
+      fh(m,4*dir+1,k,j,i) = jr0;
+      fh(m,4*dir+2,k,j,i) = hp0;
+      fh(m,4*dir+3,k,j,i) = hm0;
+    });
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -1212,8 +1262,11 @@ void RadiationM1::CleanRingMoments() {
   for (int p = 0; p < nr; ++p) full = full && slot[p] >= 0;
   const bool shift = cln_rok && b == cln_rb + 1 && cln_rpb == cln_rb;
   const bool fill = (!cln_rok || b != cln_rb) && !shift && full;
-  // the moments of each swept set (the ray_min test on the mixture below)
+  // the moments of each swept set (the ray_min test on the mixture below); the sc rays on
+  // the cubed sphere: the union's directions first (the face half ranges, CleanFaceHalf)
+  if (cln_cssc) CleanScUnion2();
   auto dfull = cln_fvd;
+  bool fh0 = true;
   const Real ray_min = cln_raymin;
   cln_raymin = 0.0;
   // (clean_ring_jmin: the J ratios of the offsets and the Delta only where both sets'
@@ -1275,6 +1328,10 @@ void RadiationM1::CleanRingMoments() {
     }
     CleanClosureFromGd();
     if (cln_consist || cln_cssc) CleanGdFaceSums();
+    if (cln_cssc && (p == nr || p == nk)) {
+      CleanFaceHalf(dfull, cln_rqm*vgd_n, fh0);
+      fh0 = false;
+    }
     if (!keep) continue;
     const int o = static_cast<int>(older ? (nr - 1 - p)*nfr : ((p == nk) ? nf : 0));
     auto ra = older ? rr : rl;
@@ -1289,7 +1346,6 @@ void RadiationM1::CleanRingMoments() {
     });
   }
   cln_fvd = dfull;
-  if (cln_cssc) CleanScUnion2();
   cln_raymin = ray_min;
   // (jump: the next set only at the build that closes the block; its weight is s = 0)
   const int qb = 0, qn = (slot[nk] >= 0) ? 1 : 0;
@@ -3277,7 +3333,7 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   // (the image cell's beyond a periodic seam, re-indexed by the wall map as the sweep)
   // (clean_rot_ring: two slots, of the sets blk mod 2, on the cubed sphere for the face
   // half ranges (CleanScUnion2), on sp with a reflecting top for its mirror)
-  const int ns2 = (cln_ring && (cln_cssc || cln_scmem)) ? 2 : 1;
+  const int ns2 = (cln_ring && ((cln_cssc && cln_cell) || cln_scmem)) ? 2 : 1;
   const int doff = (ns2 == 1) ? 0 : cln_rqm*n;
   // Staggered spherical polar (one radial MeshBlock, no reflecting top): vgd_i itself,
   // and only the low theta and phi ghost layers exchanged, in chunks of clean_halo_vars
