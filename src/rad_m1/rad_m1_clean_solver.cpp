@@ -294,7 +294,13 @@ void RadiationM1::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
               << "lists of clean_halo_direct" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  if (dl && part != 2) CleanHaloPost(sg);
+  if (dl && part != 2) {   // (the depth: the deepest its segments need, clean_halo_depth)
+    int d = 0;
+    for (auto &s : sg) d = (s.dep <= 0) ? ng : std::max(d, s.dep);
+    if (cln_hdl.dcap > 0) d = std::min(d, cln_hdl.dcap);
+    cln_hdl.dcur = std::min(std::max(d, 1), ng);
+    CleanHaloPost(sg);
+  }
   if (dl && part == 1) return;
   if (dl) CleanHaloFinish(sg);
   const bool cs = pmy_pack->pmesh->use_cubed_sphere;
@@ -403,6 +409,9 @@ void RadiationM1::CleanHaloInit(const int n3, const int n2, const int n1) {
   const int n21 = n2*n1, n321 = n3*n21;
   const int64_t nid = static_cast<int64_t>(mx)*n321;
   q.n1 = n1; q.n2 = n2; q.n3 = n3;
+  const int ng = indcs.ng, dcap = q.dcap;
+  q.ng = ng;
+  q.dcap = 0;   // (the lists and their check: all ng layers)
   DvceArray5D<Real> x("cln_hdl_x", nmb, 1, n3, n2, n1), y("cln_hdl_y", nmb, 1, n3, n2, n1);
   const std::vector<CleanGSeg<Real>> sx = {{x, 0, 1, false}}, sy = {{y, 0, 1, false}};
   // (pass 0: the ids; pass 1: other values, the check)
@@ -449,6 +458,29 @@ void RadiationM1::CleanHaloInit(const int n3, const int n2, const int n1) {
         }
       }
     }
+    // (each list in order of depth, the ghost layer of the receiving cell)
+    auto dep = [&](const int f) {
+      const int r = f%n321, k = r/n21, j = (r - k*n21)/n1, i = r - k*n21 - j*n1;
+      const int d = std::max({is - i, i - ie, js - j, j - je, ks - k, k - ke});
+      return std::min(std::max(d, 1), ng);
+    };
+    std::vector<int> nrd(static_cast<size_t>(nrk)*ng, 0), lrd, ldd;
+    auto srt = [&](std::vector<int> &g, std::vector<int> &c, int *n, std::vector<int> &dv) {
+      std::vector<int> o(g.size()), g2, c2;
+      for (size_t a = 0; a < o.size(); ++a) o[a] = static_cast<int>(a);
+      std::stable_sort(o.begin(), o.end(), [&](int a, int b) {return dep(g[a]) < dep(g[b]);});
+      for (int a : o) {
+        g2.push_back(g[a]);
+        c2.push_back(c[a]);
+        dv.push_back(dep(g[a]));
+        for (int d = dv.back(); d <= ng; ++d) ++n[d-1];
+      }
+      g.swap(g2);
+      c.swap(c2);
+    };
+    q.nld.assign(ng, 0);
+    srt(ld, ls, q.nld.data(), ldd);
+    for (int r = 0; r < nrk; ++r) srt(rg[r], rs[r], nrd.data() + r*ng, lrd);
     std::vector<int> sc, rc;
 #if MPI_PARALLEL_ENABLED
     MPI_Comm_dup(MPI_COMM_WORLD, &q.comm);
@@ -466,7 +498,11 @@ void RadiationM1::CleanHaloInit(const int n3, const int n2, const int n1) {
       MPI_Isend(rs[r].data(), nr[r], MPI_INT, r, 4244, q.comm, &rq[rq.size() - 1]);
     }
     MPI_Waitall(static_cast<int>(rq.size()), rq.data(), MPI_STATUSES_IGNORE);
+    std::vector<int> nsd(nrd.size());
+    MPI_Alltoall(nrd.data(), ng, MPI_INT, nsd.data(), ng, MPI_INT, q.comm);
     for (int r : q.rank) {
+      q.rlend.insert(q.rlend.end(), nrd.begin() + r*ng, nrd.begin() + (r + 1)*ng);
+      q.slend.insert(q.slend.end(), nsd.begin() + r*ng, nsd.begin() + (r + 1)*ng);
       q.soff.push_back(static_cast<int>(sc.size()));
       q.slen.push_back(ns[r]);
       sc.insert(sc.end(), ss[r].begin(), ss[r].end());
@@ -488,6 +524,8 @@ void RadiationM1::CleanHaloInit(const int n3, const int n2, const int n1) {
     q.ls = mk("cln_hdl_ls", ls);
     q.sc = mk("cln_hdl_sc", sc);
     q.rc = mk("cln_hdl_rc", rc);
+    q.rd = mk("cln_hdl_rd", lrd);   // (rg in rank order: rc's order)
+    q.ldp = mk("cln_hdl_ldp", ldd);
     q.sbuf = decltype(q.sbuf)("cln_hdl_sbuf", std::max(q.ns, 1)*cln_hmax);
     q.rbuf = decltype(q.rbuf)("cln_hdl_rbuf", 2*std::max(q.nr, 1)*cln_hmax);
   }
@@ -501,11 +539,15 @@ void RadiationM1::CleanHaloInit(const int n3, const int n2, const int n1) {
   MPI_Allreduce(MPI_IN_PLACE, &bad, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 #endif
   q.state = (bad == 0) ? 1 : -1;
+  q.dcap = dcap;
   if (me == 0) {
     if (bad == 0) {
       std::cout << "<rad_m1> clean_halo_direct: ON, rank 0 copies " << q.nl
                 << " ghosts, sends " << q.ns << " cells, receives " << q.nr << " in "
-                << q.rank.size() << " messages" << std::endl;
+                << q.rank.size() << " messages; on-rank ghosts by depth";
+      for (int d = 0; d < ng; ++d) std::cout << " " << q.nld[d];
+      std::cout << ", clean_halo_depth " << dcap << (q.poison ? " (POISON)" : "")
+                << std::endl;
     } else {
       std::cout << "<rad_m1> clean_halo_direct: the lists miss " << bad << " cells of "
                 << "the exchange, the clean ghost exchange is MeshBoundaryValuesCC's"
@@ -534,8 +576,9 @@ void RadiationM1::CleanHaloPost(const std::vector<CleanGSeg<T>> &sg) {
   q.sq.assign(nseg, MPI_REQUEST_NULL);
   Real *rb = q.rbuf.data() + static_cast<size_t>(q.par)*std::max(q.nr, 1)*cln_hmax;
   for (int s = 0; s < nseg; ++s) {
-    if (q.rlen[s] > 0) {
-      MPI_Irecv(rb + static_cast<size_t>(q.roff[s])*nc, q.rlen[s]*nc, MPI_ATHENA_REAL,
+    const int nrs = q.rlend[s*q.ng + q.dcur - 1];   // (the entries of depth <= dcur)
+    if (nrs > 0) {
+      MPI_Irecv(rb + static_cast<size_t>(q.roff[s])*nc, nrs*nc, MPI_ATHENA_REAL,
                 q.rank[s], 4245, q.comm, &q.rq[s]);
     }
   }
@@ -556,20 +599,29 @@ void RadiationM1::CleanHaloPost(const std::vector<CleanGSeg<T>> &sg) {
   }
   if (q.ns > 0 || q.nr > 0) DevExeSpace().fence();
   for (int s = 0; s < nseg; ++s) {
-    if (q.slen[s] > 0) {
-      MPI_Isend(sb.data() + static_cast<size_t>(q.soff[s])*nc, q.slen[s]*nc,
+    const int nss = q.slend[s*q.ng + q.dcur - 1];
+    if (nss > 0) {
+      MPI_Isend(sb.data() + static_cast<size_t>(q.soff[s])*nc, nss*nc,
                 MPI_ATHENA_REAL, q.rank[s], 4245, q.comm, &q.sq[s]);
     }
   }
 #endif
+  // (the ghosts deeper than dcur keep their values; CLEAN_POISON_GHOST: NaN)
+  const int dc = q.dcur;
+  const bool pz = q.poison;
+  const T nan = static_cast<T>(std::numeric_limits<Real>::quiet_NaN());
   for (auto &s : sg) {
     auto a = s.a;
-    auto d = q.ld, c = q.ls;
+    auto d = q.ld, c = q.ls, dp = q.ldp;
     const int c0 = s.c0;
     if (q.nl == 0) break;
-    par_for("cln_hd_copy", DevExeSpace(), 0, q.nl-1, 0, s.nc-1,
+    par_for("cln_hd_copy", DevExeSpace(), 0, (pz ? q.nl : q.nld[dc-1])-1, 0, s.nc-1,
     KOKKOS_LAMBDA(const int p, const int n) {
       const int f = d(p), m = f/n321, r = f - m*n321, k = r/n21, j = (r - k*n21)/n1;
+      if (dp(p) > dc) {
+        a(m,c0+n,k,j,r - k*n21 - j*n1) = nan;
+        return;
+      }
       const int g = c(p), mg = g/n321, t = g - mg*n321, kg = t/n21, jg = (t - kg*n21)/n1;
       a(m,c0+n,k,j,r - k*n21 - j*n1) = a(mg,c0+n,kg,jg,t - kg*n21 - jg*n1);
     });
@@ -592,15 +644,22 @@ void RadiationM1::CleanHaloFinish(const std::vector<CleanGSeg<T>> &sg) {
   MPI_Waitall(nseg, q.rq.data(), MPI_STATUSES_IGNORE);
   auto rb = q.rbuf;
   const size_t b = static_cast<size_t>(q.par)*std::max(q.nr, 1)*cln_hmax;
+  const int dc = q.dcur;
+  const bool pz = q.poison;
+  const T nan = static_cast<T>(std::numeric_limits<Real>::quiet_NaN());
   int o = 0;
   for (auto &s : sg) {
     auto a = s.a;
-    auto e = q.rc;
+    auto e = q.rc, dp = q.rd;
     const int c0 = s.c0;
     if (q.nr > 0) {
       par_for("cln_hd_unpack", DevExeSpace(), 0, q.nr-1, 0, s.nc-1,
       KOKKOS_LAMBDA(const int p, const int n) {
         const int f = e(p), m = f/n321, r = f - m*n321, k = r/n21, j = (r - k*n21)/n1;
+        if (dp(p) > dc) {   // (not sent; CLEAN_POISON_GHOST: NaN)
+          if (pz) a(m,c0+n,k,j,r - k*n21 - j*n1) = nan;
+          return;
+        }
         a(m,c0+n,k,j,r - k*n21 - j*n1) = static_cast<T>(rb(b + p*nc + o + n));
       });
     }

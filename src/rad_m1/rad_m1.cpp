@@ -558,6 +558,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_hmax = std::min(std::max(pin->GetInteger("rad_m1","clean_halo_vars"), 1), 32);
     }
     if (!pin->GetOrAddBoolean("rad_m1","clean_halo_direct",true)) cln_hdl.state = -1;
+    // clean_halo_depth (read only when named; 0 = ng): clean_halo_direct sends at most this
+    // many ghost layers (old production's implicit_halo_depth); env CLEAN_POISON_GHOST=1
+    // (gate only): the layers not sent are NaN
+    if (pin->DoesParameterExist("rad_m1","clean_halo_depth")) {
+      cln_hdl.dcap = std::max(pin->GetInteger("rad_m1","clean_halo_depth"), 0);
+    }
+    cln_hdl.poison = (std::getenv("CLEAN_POISON_GHOST") != nullptr);
     // clean_line_teams (read only when named): at most this many teams take the lines of
     // a line solve (each line still one team), fewer rows of cln_lw
     if (pin->DoesParameterExist("rad_m1","clean_line_teams")) {

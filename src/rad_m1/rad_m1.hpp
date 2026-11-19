@@ -3093,7 +3093,8 @@ class RadiationM1 {
                        const int part);
   void CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
                       const bool phys = true, const int part = 0);
-  template <typename T> struct CleanGSeg {DvceArray5D<T> a; int c0, nc; bool phys;};
+  // (dep: the ghost layers its readers need, 0 = all ng; clean_halo_direct sends those)
+  template <typename T> struct CleanGSeg {DvceArray5D<T> a; int c0, nc; bool phys; int dep = 0;};
   template <typename T>
   void CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg, const int part);
   template <typename T>
@@ -3432,6 +3433,14 @@ class RadiationM1 {
     int n1 = 0, n2 = 0, n3 = 0, nl = 0, ns = 0, nr = 0, par = 0;
     DvceArray1D<int> ld, ls, sc, rc;   // on-rank ghost <- its source; sent; received
     std::vector<int> rank, soff, slen, roff, rlen;
+    // (clean_halo_depth: the lists in order of depth, the ghost layer, 1..ng; per message
+    // and depth d the entries of depth <= d, slend/rlend[s ng + d - 1], nld[d - 1];
+    // rd, ldp the depth of each received / on-rank ghost; dcap the key, dcur the
+    // exchange's depth)
+    int ng = 0, dcap = 0, dcur = 0;
+    bool poison = false;
+    std::vector<int> slend, rlend, nld;
+    DvceArray1D<int> rd, ldp;
     // (device buffers on HIP too: the messages are MB-size, ROCm-aware MPI moves them
     // GPU to GPU; host-pinned staging (hmstage-1019) is CPU-copy bound on MI300A)
     DvceArray1D<Real> sbuf, rbuf;      // (rbuf: two halves, alternate exchanges)
