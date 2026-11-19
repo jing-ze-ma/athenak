@@ -24,6 +24,12 @@
 #include "rad_m1/rad_m1_opacity.hpp"
 #include "rad_m1/rad_m1_clean.hpp"
 #include "rad_m1/rad_m1_clean_cell.hpp"
+// M1_TU_PART: this file is compiled as 3 translation units (rad_m1_clean_cell.cpp = part 0, rad_m1_clean_cell_p<k>.cpp
+// = part k, see split_tu.py); every member function below is in exactly one part.
+#ifndef M1_TU_PART_N
+#define M1_TU_PART_N 0
+#endif
+#define M1_TU_PART(k) (M1_TU_PART_N == (k))
 
 namespace radm1 {
 // the rows of one line solve in cln_lw
@@ -34,6 +40,7 @@ using LineRows = Kokkos::View<Real*, DevMemSpace, Kokkos::MemoryUnmanaged>;
 //! \brief old vector (E, F/c) of the stage: E from CleanOldVector, F of the cells plus
 //! the stage increment.  Flux components beyond the mesh dimension are zero.
 
+#if M1_TU_PART(0)
 void RadiationM1::CleanCellOldVector() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
@@ -650,6 +657,7 @@ void RadiationM1::CleanCellRightHandSide() {
     for (int b = 0; b < 4; ++b) x.u(m,CLC_X+b,k,j,i) = x.u(m,CLC_K+b,k,j,i);
   });
 }
+#endif  // M1_TU_PART(0)
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellFaceFluxes
@@ -657,6 +665,7 @@ void RadiationM1::CleanCellRightHandSide() {
 //! every face of the active cells once; with_source as CleanCellFaceFlux), for
 //! CleanCellDivergence<true>
 
+#if M1_TU_PART(1)
 void RadiationM1::CleanCellFaceFluxes(const int src, const bool with_source) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
@@ -930,6 +939,7 @@ void RadiationM1::CleanCellLineSolve(const CleanLevel &lv, const int dir, const 
                                      const int dst) {
   CleanCellLineSolveRows<false>(lv, dir, src, dst);
 }
+#endif  // M1_TU_PART(1)
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellLineSolveRows
@@ -1138,6 +1148,7 @@ void RadiationM1::CleanCellLineSolveRows(const CleanLevel &lv, const int dir,
 //! scratch that the next team takes over within the same launch carries no memory fence
 //! between the two teams, which on MI300A made the solves differ from run to run.)
 
+#if M1_TU_PART(1)
 int RadiationM1::CleanCellLineRows(const int nline, const int nw, const int nt) {
   int nlg = DevExeSpace().concurrency();
   if constexpr (!std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>) {
@@ -1149,6 +1160,7 @@ int RadiationM1::CleanCellLineRows(const int nline, const int nw, const int nt) 
   if (cln_lw.extent(0) < n) Kokkos::realloc(cln_lw, n);
   return nlg;
 }
+#endif  // M1_TU_PART(1)
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanCellLineFactorSolve
@@ -1262,6 +1274,7 @@ void RadiationM1::CleanCellLineFactorSolve(const CleanLevel &lv, const int src,
 //! \brief u(dst) = A_l u(src) with the blocks of a level: diagonal block plus the
 //! neighbour blocks of the neighbours inside the level
 
+#if M1_TU_PART(1)
 void RadiationM1::CleanCellLevelApply(const CleanLevel &lv, const int src,
                                       const int dst) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
@@ -1564,6 +1577,7 @@ Real RadiationM1::CleanCellNewtonUpdate() {
   if (ncell) return fmax(de_newton, CleanReduce(dmax, true));
   return fmax(de_newton, CleanReduce(dmax, true)/fmax(CleanReduce(emax, true), 1.0e-300));
 }
+#endif  // M1_TU_PART(1)
 
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationM1::CleanCellVelocityUpdate
@@ -1573,6 +1587,7 @@ Real RadiationM1::CleanCellNewtonUpdate() {
 //! first coupled solve), and the advective coefficients of the new velocity.  Returns
 //! max |dv| over max |v|.
 
+#if M1_TU_PART(2)
 Real RadiationM1::CleanCellVelocityUpdate() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, js = indcs.js, ks = indcs.ks;
@@ -2128,5 +2143,6 @@ void RadiationM1::CleanCellClosureSlope(const Real sign) {
     }
   });
 }
+#endif  // M1_TU_PART(2)
 
 }  // namespace radm1

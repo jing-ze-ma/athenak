@@ -34,6 +34,12 @@
 #include "rad_m1/rad_m1_clean_cell.hpp"
 #include "utils/imex_sdirk2.hpp"
 #include "utils/scratch_view.hpp"
+// M1_TU_PART: this file is compiled as 3 translation units (rad_m1_clean_closure.cpp = part 0, rad_m1_clean_closure_p<k>.cpp
+// = part k, see split_tu.py); every member function below is in exactly one part.
+#ifndef M1_TU_PART_N
+#define M1_TU_PART_N 0
+#endif
+#define M1_TU_PART(k) (M1_TU_PART_N == (k))
 
 namespace radm1 {
 extern bool g_vra_adv;   // vet_rotate_advance (rad_m1_vetgd.cpp)
@@ -242,6 +248,7 @@ Real CleanThickI(const Real e[3][3], const Real f[3], const Real en, const Real 
 //! at t^{n+1}, so one closure serves the whole step; it is rebuilt for a new step or a
 //! new dt.  clean_closure = eddington takes the isotropic closure instead of the rays.
 
+#if M1_TU_PART(0)
 void RadiationM1::CleanClosure() {
   if (cln_sphere) {
     if (!cln_havec) CleanClosureSphere();
@@ -471,6 +478,7 @@ void RadiationM1::CleanRingJump() {
   cln_cand_be = true;
   cln_rjump = false;
 }
+#endif  // M1_TU_PART(0)
 
 //----------------------------------------------------------------------------------------
 //! \fn bool CleanRealizable
@@ -521,6 +529,7 @@ bool CleanRealizable(const CleanArgs &x, const Real *q, const int m, const int k
 //! step, restart) the closure of the state at t^n is built (CleanClosure).  With extrap1
 //! the moments are those of the stage-1 closures and stage 2 keeps the stage-1 closure.
 
+#if M1_TU_PART(0)
 void RadiationM1::CleanClosureExtrap() {
   const Real time = pmy_pack->pmesh->time;
   const Real dt = pmy_pack->pmesh->dt;
@@ -605,6 +614,7 @@ void RadiationM1::CleanClosureExtrap() {
   CleanClosureFill();
   CleanGhostFill(cln_s, 0, cln_s.extent_int(1));
 }
+#endif  // M1_TU_PART(0)
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanPredictE
@@ -640,6 +650,7 @@ Real CleanPredictE(const Real e0, const Real de, const bool smooth) {
 //! source does in every step (a hot gas the step cools is no source of the closure).
 //! With use_k1 = false the formal solution sees the current state itself.
 
+#if M1_TU_PART(0)
 void RadiationM1::CleanPredictState(const bool use_k1) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
@@ -912,6 +923,7 @@ void RadiationM1::CleanScUnion2() {
   Kokkos::deep_copy(cln_fvd, d_h);
   cln_fvn = 2*n;
 }
+#endif  // M1_TU_PART(0)
 
 //----------------------------------------------------------------------------------------
 //! \fn bool CleanRingMix
@@ -983,6 +995,7 @@ bool CleanRingMix(const CleanRingL &rl, const DvceArray5D<Real> &rr,
 //! files' layout (CleanRingRstCopy), which keeps the stress parts and CLN_G on the cubed
 //! sphere (0 in a file written since)
 
+#if M1_TU_PART(0)
 int RadiationM1::CleanRingFields(int *fm, const bool ring, const bool file) const {
   const bool cub = pmy_pack->pmesh->use_cubed_sphere;
   const int ns = CleanNs(cln_cell, cub);   // (the slots of cln_s)
@@ -1717,6 +1730,7 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
     if (chg[q]) CleanFvTables(q*n, n);
   }
 }
+#endif  // M1_TU_PART(0)
 
 //----------------------------------------------------------------------------------------
 //! \fn int CleanFvMirror
@@ -1755,6 +1769,7 @@ int CleanFvMirror(const DvceArray2D<Real> &dir_, const int d0, const int nd, con
 //! theta_hat over the face's phi range; cln_fvwu = |n . t|) and of the reflecting x1
 //! faces (cln_fvrm, cln_fvru: t along the face's vector area); their sweep levels are due
 
+#if M1_TU_PART(0)
 void RadiationM1::CleanFvTables(const int d0, const int nd) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -2108,6 +2123,7 @@ void RadiationM1::CleanFvLevels() {
   Kokkos::deep_copy(cln_fvk, k_h);
   cln_fvdo.assign(n, false);
 }
+#endif  // M1_TU_PART(0)
 
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationM1::CleanFvJoint
@@ -2121,6 +2137,7 @@ void RadiationM1::CleanFvLevels() {
 //! last pass there).  Returns the number of levels; cln_fvl0 is the first level with a
 //! dropped inflow or one from another rank, cln_fvexact whether there is none.
 
+#if M1_TU_PART(1)
 int RadiationM1::CleanFvJoint(const DvceArray1D<int> &mds, const int nq,
                               DvceArray2D<int> lev, const DvceArray3D<Real> &xc) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -2934,6 +2951,7 @@ Real RadiationM1::CleanFvExtrapMiss() {
   }, Kokkos::Max<Real>(miss));
   return CleanReduce(miss, true);
 }
+#endif  // M1_TU_PART(1)
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanFvRstWrite
@@ -2945,6 +2963,7 @@ Real RadiationM1::CleanFvExtrapMiss() {
 
 constexpr Real kCleanFvRstMagic = -7.5e7;
 
+#if M1_TU_PART(1)
 void RadiationM1::CleanFvRstWrite(DvceArray5D<Real> &a, const int c, const int nmb,
                                   const int m0) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -3023,6 +3042,7 @@ void RadiationM1::CleanFvRstRead() {
     gp(m,d,q) = fi(m,d,k,j,i);
   });
 }
+#endif  // M1_TU_PART(1)
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanRayCut
@@ -3038,6 +3058,7 @@ void RadiationM1::CleanFvRstRead() {
 //! (clean_rays = sc: the vet_gd sweep starts at the cut with the diffusion inflow);
 //! several MeshBlocks along x1: no cut.
 
+#if M1_TU_PART(2)
 void RadiationM1::CleanRayCut() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   vlat_icut = 0;
@@ -3103,6 +3124,7 @@ void RadiationM1::CleanRayCut() {
   pin_rcut_->SetInteger("rad_m1", "clean_ray_cut_count", cln_rcut_n);
   vlat_icut = cln_rcut;
 }
+#endif  // M1_TU_PART(2)
 
 // post2-1117: the directions of one cell as a strided row, the accessor's address once
 // per cell instead of per direction (the same values; out of the slab: its dummy)
@@ -3126,6 +3148,7 @@ CleanRow VgdRow(const RadiationM1::VgdRag &vi, const int m, const int kb, const 
 //! CleanClosureFromRays; no ray face fluxes).  On the cubed sphere mu_b = n_b (Cartesian
 //! D and k+ columns) and the half ranges are about the family normals (CleanCsFamily).
 
+#if M1_TU_PART(2)
 void RadiationM1::CleanClosureFromGd(const int i0, const int i1) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   if (vgd_pk && i0 < 0) return;   // (planb-1117: done per shell in the sweep)
@@ -3221,6 +3244,7 @@ void RadiationM1::CleanClosureFromGd(const int i0, const int i1) {
     CleanStoreMoments(cs, valid, q, m, k, j, i);
   });
 }
+#endif  // M1_TU_PART(2)
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanGdI
@@ -3280,6 +3304,7 @@ struct CleanGdI {
 //! CleanGdFaceSums, or a version-5 restart's in cln_fvi from row fo; its union rows o of
 //! dv): no copy of the intensities.  zero: the first set of a build
 
+#if M1_TU_PART(2)
 void RadiationM1::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
                                 const bool zero, const int fo) {
   if (cln_cell) return;   // (the cell layout reads cln_fvi, CleanCellConsistency)
@@ -3941,5 +3966,6 @@ void RadiationM1::CleanClosureFill() {
     });
   }
 }
+#endif  // M1_TU_PART(2)
 
 }  // namespace radm1

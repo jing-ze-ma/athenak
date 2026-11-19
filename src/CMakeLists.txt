@@ -191,8 +191,14 @@ add_executable(
         rad_m1/rad_m1_fluxes.cpp
         rad_m1/rad_m1_implicit.cpp
         rad_m1/rad_m1_clean.cpp
+        rad_m1/rad_m1_clean_p1.cpp
+        rad_m1/rad_m1_clean_p2.cpp
         rad_m1/rad_m1_clean_cell.cpp
+        rad_m1/rad_m1_clean_cell_p1.cpp
+        rad_m1/rad_m1_clean_cell_p2.cpp
         rad_m1/rad_m1_clean_closure.cpp
+        rad_m1/rad_m1_clean_closure_p1.cpp
+        rad_m1/rad_m1_clean_closure_p2.cpp
         rad_m1/rad_m1_clean_solver.cpp
         rad_m1/rad_m1_icrad.cpp
         rad_m1/rad_m1_sph.cpp

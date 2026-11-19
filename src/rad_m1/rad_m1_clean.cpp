@@ -36,6 +36,12 @@
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
+// M1_TU_PART: this file is compiled as 3 translation units (rad_m1_clean.cpp = part 0, rad_m1_clean_p<k>.cpp
+// = part k, see split_tu.py); every member function below is in exactly one part.
+#ifndef M1_TU_PART_N
+#define M1_TU_PART_N 0
+#endif
+#define M1_TU_PART(k) (M1_TU_PART_N == (k))
 #endif
 
 namespace radm1 {
@@ -289,6 +295,7 @@ static void CleanVelocityCell(const CleanArgs &x, const CleanArgs &xh, const Cle
 //! solve reads (boundaries, beams, the time step, multi-rate, the hesdirk2 tableau and
 //! its backward-Euler steps) pass.
 
+#if M1_TU_PART(0)
 void RadiationM1::CleanPreflight(ParameterInput *pin) {
   // block/key (* ends a prefix): nullptr read, "" no effect, "!" fatal, else clean key
   static const char *tab[][2] = {
@@ -2283,12 +2290,14 @@ bool RadiationM1::CleanStagKRedo() {
   }
   return true;
 }
+#endif  // M1_TU_PART(0)
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanStagKEnd
 //! \brief clean_stag_xpat after the passes: the counts of the solve, exchange rows in
 //! Patankar form (last pass; sum over passes)
 
+#if M1_TU_PART(1)
 void RadiationM1::CleanStagKEnd() {
   auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_kcnt);
   Real v[2] = {h(0), h(1)};
@@ -2527,6 +2536,7 @@ void RadiationM1::CleanFirstIterate() {
   // (staggered: the ghosts of E_k for the gas terms, with the next exchange)
   if (feedback && !cln_cell) CleanGhostDefer(cln_w, CLW_EK, 1);
 }
+#endif  // M1_TU_PART(1)
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanStagAdvFace
@@ -2570,6 +2580,7 @@ static Real CleanStagAdvFace(const CleanArgs &x, const CleanArgs &xh, const int 
 //! (CleanApply, CleanStagBetaE) and B the same at E_k: the solution is that of the lagged
 //! terms
 
+#if M1_TU_PART(1)
 void RadiationM1::CleanRightHandSide(const bool beta) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
@@ -3411,6 +3422,7 @@ void RadiationM1::CleanDInc(const bool two, const Real c1, const Real c2, const 
     });
   }
 }
+#endif  // M1_TU_PART(1)
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanDtrD
@@ -3418,6 +3430,7 @@ void RadiationM1::CleanDInc(const bool two, const Real c1, const Real c2, const 
 //! values a cycle takes from the last one; the checkpoint keeps them in cln_rstd (save,
 //! the restart's layout) instead of the face arrays
 
+#if M1_TU_PART(2)
 void RadiationM1::CleanDtrD(const bool save) {
   const int nmb = cln_fc1.extent_int(0);
   if (!clean || !cln_fsolve || !cln_fkin || nmb == 0) return;
@@ -3433,6 +3446,7 @@ void RadiationM1::CleanDtrD(const bool save) {
     if (save) {Kokkos::deep_copy(r, d);} else {Kokkos::deep_copy(d, r);}
   }
 }
+#endif  // M1_TU_PART(2)
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanFLine
@@ -3689,6 +3703,7 @@ void CleanStagFJoin(const Real p[8], const Real q[8], Real c[8], Real ya[3],
 //! correction of the normal stress, which a kinetic transport of F does not reproduce,
 //! and a static envelope would lose its balance on the panel-tangent faces).
 
+#if M1_TU_PART(2)
 void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
@@ -5088,5 +5103,6 @@ void RadiationM1::CleanWriteBack() {
                 "created)\n", pmy_pack->pmesh->ncycle, t2_solve, nh);
   }
 }
+#endif  // M1_TU_PART(2)
 
 }  // namespace radm1
