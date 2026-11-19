@@ -4317,6 +4317,8 @@ void RadiationM1::CleanStagCsLateral(const int e, const bool st, const int part)
   par_for("cln_cslat", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, indcs.ks, indcs.ke,
           indcs.js, indcs.je, indcs.is, indcs.ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real p0[6];   // (the cell's own P, once)
+    for (int n = 0; n < 6; ++n) p0[n] = x.cs(m,CLN_D11+n,k,j,i)*x.w(m,e,k,j,i);
     for (int q = 0; q < 3; ++q) {
       const int dk = (q == 2), dj = (q == 1), di = (q == 0);
       Real y[3] = {0.0, 0.0, 0.0};
@@ -4338,7 +4340,7 @@ void RadiationM1::CleanStagCsLateral(const int e, const bool st, const int part)
           Real dp[6], nf[3];
           for (int n = 0; n < 6; ++n) {
             dp[n] = x.cs(m,CLN_D11+n,k+s*dk,j+s*dj,i+s*di)*x.w(m,e,k+s*dk,j+s*dj,i+s*di) -
-                    x.cs(m,CLN_D11+n,k,j,i)*x.w(m,e,k,j,i);
+                    p0[n];
           }
           for (int c = 0; c < 3; ++c) nf[c] = x.g(m,CLG_N+3*q+c,kf,jf,iff);
           for (int b = 0; b < 3; ++b) {
