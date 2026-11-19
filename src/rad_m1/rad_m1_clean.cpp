@@ -1689,11 +1689,12 @@ void RadiationM1::CleanStagKPos() {
   auto eos = fl.eos;
   auto inc = t2inc;
   const bool gas = cln_feedback, krl = cln_kreal;
-  Real nn[4] = {0.0, 0.0, 0.0, 0.0};   // (cells with pd, gas-limited, pd guard, E_old < 0)
+  // (cells with pd, gas-limited, pd guard, E_old < 0, of which the stage start's eint < 0)
+  Real nn[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
   Kokkos::parallel_reduce("cln_kpos", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
       DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &np, Real &ng,
-                Real &nc, Real &ne) {
+                Real &nc, Real &ne, Real &nj) {
     const Real es = u0_(m,M1_E,k,j,i);
     Real e = es, dg = 0.0, dgs[2] = {0.0, 0.0}, rbs[2] = {0.0, 0.0};
     for (int d = 0; d < x.nf; ++d) {
@@ -1779,19 +1780,21 @@ void RadiationM1::CleanStagKPos() {
     }
     if (pd > 0.0) np += 1.0;
     if (e < 0.0) ne += 1.0;
+    if (e < 0.0 && gas && w(m,CLW_JV,k,j,i) < 0.0) nj += 1.0;
     w(m,CLW_KF,k,j,i) = pb;
     w(m,CLW_KM,k,j,i) = pd;
     w(m,CLW_EO,k,j,i) = e;
   }, Kokkos::Sum<Real>(nn[0]), Kokkos::Sum<Real>(nn[1]), Kokkos::Sum<Real>(nn[2]),
-     Kokkos::Sum<Real>(nn[3]));
-  for (int n = 0; n < 4; ++n) nn[n] = CleanReduce(nn[n], false);
+     Kokkos::Sum<Real>(nn[3]), Kokkos::Sum<Real>(nn[4]));
+  for (int n = 0; n < 5; ++n) nn[n] = CleanReduce(nn[n], false);
   nq[0] = CleanReduce(nq[0], false);
   nq[1] = CleanReduce(nq[1], false);
   cln_kq_on = true;
   if (global_variable::my_rank == 0) {
     std::printf("CLEAN KPOS cycle %d t2s %d faces %.0f cells pd %.0f guard %.0f/%.0f "
-                "gas-limited %.0f Eo<0 %.0f\n", pmy_pack->pmesh->ncycle, t2_solve, nq[0],
-                nn[0], nq[1], nn[2], nn[1], nn[3]);
+                "gas-limited %.0f Eo<0 %.0f (eint<0 at the stage start %.0f)\n",
+                pmy_pack->pmesh->ncycle, t2_solve, nq[0], nn[0], nq[1], nn[2], nn[1], nn[3],
+                nn[4]);
   }
 }
 
