@@ -2048,7 +2048,27 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
         a += 1.0;
       }
     };
+    // (only the columns whose inputs changed run: a column's own cells or a lateral
+    // neighbour column changed in the last round, or the exchange changed a ghost next to
+    // it; any other column would find what it found before, so the R are those of the
+    // full sweep)
+    const int n3a = iw.extent_int(2), n2a = iw.extent_int(3), n1a = iw.extent_int(4);
+    Kokkos::View<int***> act("m1_t2_ffct_act", nmb1 + 1, n3a, n2a);
+    Kokkos::View<int***> nxt("m1_t2_ffct_nxt", nmb1 + 1, n3a, n2a);
+    Kokkos::deep_copy(DevExeSpace(), act, 1);
     for (int r = 0; r < 4096; ++r) {
+      if (r > 0) {   // (the ghosts the exchange changed: their column, or the next one)
+        Kokkos::deep_copy(DevExeSpace(), act, nxt);
+        par_for("m1_t2_ffct_sg", DevExeSpace(), 0, nmb1, 0, n3a - 1, 0, n2a - 1, 0,
+                n1a - 1,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          if (k >= ks && k <= ke && j >= js && j <= je && i >= is && i <= ie) return;
+          if (iw_(m,ca,k,j,i) == iw_(m,cb,k,j,i)) return;
+          const int kc = (k < ks) ? ks : ((k > ke) ? ke : k);
+          act(m, kc, (j < js) ? js : ((j > je) ? je : j)) = 1;
+        });
+      }
+      Kokkos::deep_copy(DevExeSpace(), nxt, 0);
       Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, cb, Kokkos::ALL,
                         Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw, Kokkos::ALL, ca,
                         Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
@@ -2056,8 +2076,21 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
       Kokkos::parallel_reduce("m1_t2_ffct_sw", Kokkos::MDRangePolicy<Kokkos::Rank<3>>(
           DevExeSpace(), {0, ks, js}, {nmb1 + 1, ke + 1, je + 1}),
       KOKKOS_LAMBDA(const int m, const int k, const int j, Real &a) {
+        if (act(m,k,j) == 0) return;
+        const Real a0 = a;
         for (int i = is; i <= ie; ++i) {sweepq(m, k, j, i, a);}
         for (int i = ie; i >= is; --i) {sweepq(m, k, j, i, a);}
+        if (a > a0) {   // (this column and its lateral neighbours run again)
+          nxt(m,k,j) = 1;
+          if (tr2) {
+            if (j > js) {nxt(m,k,j-1) = 1;}
+            if (j < je) {nxt(m,k,j+1) = 1;}
+          }
+          if (tr3) {
+            if (k > ks) {nxt(m,k-1,j) = 1;}
+            if (k < ke) {nxt(m,k+1,j) = 1;}
+          }
+        }
       }, Kokkos::Sum<Real>(nv));
 #if MPI_PARALLEL_ENABLED
       MPI_Allreduce(MPI_IN_PLACE, &nv, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
