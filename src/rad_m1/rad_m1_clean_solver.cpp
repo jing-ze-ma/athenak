@@ -746,17 +746,26 @@ void RadiationM1::CleanGhostPhys(DvceArray5D<T> a, const int c0, const int nc) {
     if (s == 0 && !rm && p == 0) return 1.0;
     return (((rf >> s) & 1) && p != 2 - s/2) ? -1.0 : 1.0;
   };
+  // (a direction without a physical side on this rank's MeshBlocks: no launch; mb_bcs
+  // is set on the host, the device copy is never written)
+  auto bh = pmy_pack->pmb->mb_bcs.h_view;
+  auto phys = [&](const int d) {
+    for (int m = 0; m <= nmb1; ++m) if (pf(bh(m,2*d)) || pf(bh(m,2*d+1))) return true;
+    return false;
+  };
   // (x1, x2, x3 in turn: a corner takes the product of its sides' parities)
-  par_for("cln_ghost1", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, ng-1,
-  KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int g) {
-    if (pf(bc(m,BoundaryFace::inner_x1))) {
-      a(m,c0+n,k,j,is-1-g) = sg(c0+n, 0, m)*a(m,c0+n,k,j,is);
-    }
-    if (pf(bc(m,BoundaryFace::outer_x1))) {
-      a(m,c0+n,k,j,ie+1+g) = sg(c0+n, 1, m)*a(m,c0+n,k,j,ie);
-    }
-  });
-  if (pmy_pack->pmesh->multi_d) {
+  if (phys(0)) {
+    par_for("cln_ghost1", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, n2-1, 0, ng-1,
+    KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int g) {
+      if (pf(bc(m,BoundaryFace::inner_x1))) {
+        a(m,c0+n,k,j,is-1-g) = sg(c0+n, 0, m)*a(m,c0+n,k,j,is);
+      }
+      if (pf(bc(m,BoundaryFace::outer_x1))) {
+        a(m,c0+n,k,j,ie+1+g) = sg(c0+n, 1, m)*a(m,c0+n,k,j,ie);
+      }
+    });
+  }
+  if (pmy_pack->pmesh->multi_d && phys(1)) {
     par_for("cln_ghost2", DevExeSpace(), 0, nmb1, 0, nc-1, 0, n3-1, 0, ng-1, 0, n1-1,
     KOKKOS_LAMBDA(const int m, const int n, const int k, const int g, const int i) {
       if (pf(bc(m,BoundaryFace::inner_x2))) {
@@ -767,7 +776,7 @@ void RadiationM1::CleanGhostPhys(DvceArray5D<T> a, const int c0, const int nc) {
       }
     });
   }
-  if (pmy_pack->pmesh->three_d) {
+  if (pmy_pack->pmesh->three_d && phys(2)) {
     par_for("cln_ghost3", DevExeSpace(), 0, nmb1, 0, nc-1, 0, ng-1, 0, n2-1, 0, n1-1,
     KOKKOS_LAMBDA(const int m, const int n, const int g, const int j, const int i) {
       if (pf(bc(m,BoundaryFace::inner_x3))) {
