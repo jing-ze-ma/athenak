@@ -1478,8 +1478,11 @@ void RadiationM1::CleanOldVector() {
   auto w = cln_w;
   CleanArgs x = CleanMakeArgs();
 
-  CleanFor("cln_old", nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+  // (counted: gas eint < 0 of the stage start, which the exchange takes as 0, and E < 0)
+  Real nn[2] = {0.0, 0.0};
+  Kokkos::parallel_reduce("cln_old", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &ng, Real &ne) {
     Real t = 0.0;
     if (fluid) {
       if (feedback && stage) {
@@ -1490,13 +1493,21 @@ void RadiationM1::CleanOldVector() {
       Real p[3];
       CleanGasMomentum(x, uh, m, k, j, i, p);
       const Real ekin = 0.5*(SQR(p[0]) + SQR(p[1]) + SQR(p[2]))/d;
-      const Real eint = fmax(CleanGasEint(x, uh, ekin, m, k, j, i), 0.0);
+      const Real e0 = CleanGasEint(x, uh, ekin, m, k, j, i), eint = fmax(e0, 0.0);
+      if (e0 < 0.0) ng += 1.0;
       t = eos.Temperature(d, eint);
       w(m,CLW_EI,k,j,i) = eint;
     }
     w(m,CLW_T,k,j,i) = t;
     w(m,CLW_EO,k,j,i) = u0_(m,M1_E,k,j,i) + (stage ? inc(m,M1_T2_E,k,j,i) : 0.0);
-  });
+    if (w(m,CLW_EO,k,j,i) < 0.0) ne += 1.0;
+  }, Kokkos::Sum<Real>(nn[0]), Kokkos::Sum<Real>(nn[1]));
+  nn[0] = CleanReduce(nn[0], false);
+  nn[1] = CleanReduce(nn[1], false);
+  if (global_variable::my_rank == 0 && (nn[0] > 0.0 || nn[1] > 0.0)) {
+    std::printf("CLEAN OLDVEC cycle %d t2s %d eint<0 %.0f (taken as 0) E<0 %.0f\n",
+                pmy_pack->pmesh->ncycle, t2_solve, nn[0], nn[1]);
+  }
 }
 
 //----------------------------------------------------------------------------------------
