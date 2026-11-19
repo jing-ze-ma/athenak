@@ -173,6 +173,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
+    // clean_ring_fields (read only when named; default all): closure = the ring's offsets
+    // and Delta carry only the cell moments (CleanRingFields), the face sums are those of
+    // the swept sets b, b+1 (as production's ring)
+    if (pin->DoesParameterExist("rad_m1","clean_ring_fields")) {
+      cln_rcell = (pin->GetString("rad_m1","clean_ring_fields") == "closure");
+    }
     // clean_fv_joint (read only when named): the fv1 sweep levels of all
     // MeshBlocks of a rank at once, the upwind cell across a MeshBlock face read from its
     // own block

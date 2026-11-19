@@ -3840,7 +3840,7 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
       auto &id = pmy_pack->pmesh->mb_indcs;
       const int is = id.is, js = id.js, ks = id.ks;
       Kokkos::Array<int, CLN_N> fm;
-      const int nf = CleanRingFields(fm.data());
+      const int nf = CleanRingFields(fm.data(), true);
       const int f = fm[CleanRstSlot((ch < nr) ? ch%nq : ch - nr)];
       const int nx = (ch < nr) ? (vra_k - 1)*nf : nf;
       if (rx.extent_int(0) != nmb) {

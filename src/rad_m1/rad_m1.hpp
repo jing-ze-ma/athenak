@@ -3047,7 +3047,7 @@ class RadiationM1 {
   void CleanDInc(const bool two, const Real c1, const Real c2, const Real w1,
                  const Real w0);
   void CleanDtrD(const bool save);   // dt_retry: d to / from cln_rstd
-  int CleanRingFields(int *fm) const;   // clean_rot_ring: the offsets' fields
+  int CleanRingFields(int *fm, const bool ring = false) const;   // clean_rot_ring
   int CleanRingRstN() const;            // ... in the restart files (version 4)
   void CleanRingRstCopy(DvceArray5D<Real> &a, const int c, const int nmb, const int m0,
                         const bool pk, const bool have);
@@ -3332,6 +3332,7 @@ class RadiationM1 {
   std::vector<Real> cln_fvkey;  // the set (block key) in each slot of a rotating union
   // clean_rot_ring: the rotating union swept as the current and the next set only, the
   // K - 1 older sets carried as offsets of their ray moments (CleanRingMoments)
+  bool cln_rcell = false;       // clean_ring_fields = closure (CleanRingFields)
   int cln_ring = 0;             // clean_rot_ring = live (1: + the next set) | jump (2)
   bool cln_rfuse = false;       // clean_rot_fuse: live ring's two sets in one sweep
   bool cln_rfuse_said = false;
