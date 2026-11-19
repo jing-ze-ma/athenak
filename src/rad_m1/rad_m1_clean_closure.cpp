@@ -3192,9 +3192,9 @@ void RadiationM1::CleanClosureFromGd(const int i0, const int i1) {
 //! \brief the sc rays' intensities in the mesh layout without a copy (CleanGdFaceSums,
 //! CleanFaceHalf): vgd_i, the first ghost layer of the MeshBlock's faces from gl (side
 //! 0: j = js - 1, 1: k = ks - 1, (r, t) = (k - ks, i), (j - js, i); the cubed sphere
-//! (six) also 2: j = je + 1, 3: k = ke + 1 alike, 4: i = is - 1, 5: i = ie + 1 at (k - ks,
-//! j - js)); planb-1117 (pk): those from the sweep's raw band or the on-rank owner
-//! (own), as the sweep reads them (rd0t), before the wall map
+//! (six) also 2: j = je + 1, 3: k = ke + 1 alike, 4: i = is - 1, 5: i = ie + 1 at
+//! (k - ks, j - js)); planb-1117 (pk): those from the sweep's raw band or the on-rank
+//! owner (own), as the sweep reads them (rd0t), before the wall map
 
 struct CleanGdI {
   RadiationM1::VgdRag vi;
