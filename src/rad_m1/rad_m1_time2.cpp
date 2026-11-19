@@ -2053,19 +2053,38 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
       std::swap(sa, sb);   // (the round's R is read next)
     }
     if (!zsk || zfirst || nv[1] > 0.0) {
-      if (zac) {   // snapshot (ghosts incl.) to list the ghosts the exchange changes
-        Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, cb,
-                          Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw,
-                          Kokkos::ALL, ca, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
-      }
       ImplicitKrylovHalo(sa);
-      if (zac) {
+      if (zac) {   // the face ghosts (the only ones a stencil reads) the exchange
+                   // changed: listed, and copied to slot cb, which holds them before it
+        const int n1 = ie - is + 1, n2 = je - js + 1, n3 = ke - ks + 1;
+        const int f1 = n3*n2, f2 = tr2 ? n3*n1 : 0, f3 = tr3 ? n2*n1 : 0;
+        const int nf = 2*(f1 + f2 + f3);
         int ng = 0;
-        Kokkos::parallel_reduce("m1_t2_ffct_xs", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-                                DevExeSpace(), {0, 0, 0, 0}, {nmb1 + 1, zN3, zN2, zN1}),
-        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, int &g) {
-          if (k >= ks && k <= ke && j >= js && j <= je && i >= is && i <= ie) {return;}
+        Kokkos::parallel_reduce("m1_t2_ffct_xs", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                                (nmb1 + 1)*nf),
+        KOKKOS_LAMBDA(const int t, int &g) {
+          const int m = t/nf;
+          int u = t - m*nf, k, j, i;
+          if (u < 2*f1) {
+            i = (u < f1) ? is - 1 : ie + 1;
+            u %= f1;
+            k = ks + u/n2;
+            j = js + u % n2;
+          } else if (u < 2*(f1 + f2)) {
+            u -= 2*f1;
+            j = (u < f2) ? js - 1 : je + 1;
+            u %= f2;
+            k = ks + u/n1;
+            i = is + u % n1;
+          } else {
+            u -= 2*(f1 + f2);
+            k = (u < f3) ? ks - 1 : ke + 1;
+            u %= f3;
+            j = js + u/n1;
+            i = is + u % n1;
+          }
           if (iw_(m,ca,k,j,i) != iw_(m,cb,k,j,i)) {
+            iw_(m,cb,k,j,i) = iw_(m,ca,k,j,i);
             lb[Kokkos::atomic_fetch_add(zc, 1)] = ((m*zN3 + k)*zN2 + j)*zN1 + i;
             g += 1;
           }
