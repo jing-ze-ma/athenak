@@ -3729,10 +3729,14 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
       !std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>;
   // (the F of every direction, CLW_Y, CLW_Z, CLW_S or cln_v: one exchange; part 1:
   // started, the last one, which x1's F and dissipation term overlap)
+  // (cubed sphere, one MeshBlock along x1: the x1 family's slots (0..2, 9, 10, 15) have no
+  // line across a MeshBlock face and their ghosts are not read: not exchanged)
+  const int f0 = (cub && pmy_pack->pmesh->nmb_rootx1 == 1 && !pmy_pack->pmesh->multilevel)
+                 ? 2 : 0;
   auto yfill = [&](const int part) {
     if (cub) {
-      CleanGhostFill(cln_v, 9, 6, true, 0, 1);   // (CleanFLine reads the faces' own cells)
-      return;
+      CleanGhostFill(cln_v, 9 + f0, 6 - f0, true, 0, 1);   // (CleanFLine reads the faces'
+      return;                                            // own cells)
     }
     if (x.nf == 3) CleanGhostDefer(cln_w, CLW_S, 1);
     CleanGhostFill(cln_w, CLW_Y, std::min(x.nf, 2), part);
@@ -3827,7 +3831,13 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
         v(m,15+dir,k,j,i) = -ac*wc*sr*sr*jc;
       });
       if (dir == x.nf - 1) {
-        if (cub) {
+        if (cub && f0 > 0) {   // (one exchange, depth 1)
+          CleanGhostDefer(cln_v, 3, 6);
+          cln_hpend.back().dep = 1;
+          CleanGhostDefer(cln_v, 11, 4);
+          cln_hpend.back().dep = 1;
+          CleanGhostFill(cln_v, 16, 2, true, 0, 1);
+        } else if (cub) {
           CleanGhostFill(cln_v, 0, 18, true, 0, 1);
         } else {
           CleanGhostDefer(cln_w, CLW_L, 3*x.nf);
@@ -4366,7 +4376,9 @@ void RadiationM1::CleanStagFCsShared() {
       v(m,9+2*q+1,k,j,i) = x.fc[q](m,CLF_N+2,k+(q == 2),j+(q == 1),i+(q == 0));
     }
   });
-  CleanGhostFill(cln_v, 9, 6, true, 0, 1);
+  // (one MeshBlock along x1: not the x1 family's F, CleanStagFSolve)
+  const int f0 = (pmy_pack->pmesh->nmb_rootx1 == 1 && !pmy_pack->pmesh->multilevel) ? 2 : 0;
+  CleanGhostFill(cln_v, 9 + f0, 6 - f0, true, 0, 1);
 }
 
 //----------------------------------------------------------------------------------------
