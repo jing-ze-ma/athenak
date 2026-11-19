@@ -3286,7 +3286,7 @@ void RadiationM1::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
     if (dir == 1 && !pmy_pack->pmesh->multi_d) continue;
     if (dir == 2 && !pmy_pack->pmesh->three_d) continue;
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    par_for("cln_facehalf", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    CleanForK("cln_facehalf", nmb1, ks, ke+dk, js, je+dj, is, ie+di,   // (HIP: k fastest)
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int kl = k - dk, jl = j - dj, il = i - di;
       // (J_L, J_R, H+_L, H-_R as scalars: nvcc -O3 miscompiles a runtime-indexed local)
@@ -3430,7 +3430,7 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
         const CleanRow r = VgdRow(vi_, m, k+ok, j+og, i);
         for (int c = 0; c < nd; ++c) ch(m,c,k,j,i) = r[d0+c];
       });
-      CleanGhostFill(ch, 0, nd);
+      CleanGhostFill(ch, 0, nd, true, 0, 1);   // (glc, glr read the first layer)
       par_for("cln_gd_glc", DevExeSpace(), 0, nmb1, 0, nd - 1, 0, nt - 1, is, ie,
       KOKKOS_LAMBDA(const int m, const int c, const int t, const int i) {
         if (t <= ke - ks) gg(m,d0+c,0,t,i) = ch(m,c,ks+t,js-1,i);
