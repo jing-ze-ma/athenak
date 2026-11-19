@@ -479,6 +479,7 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
     for (auto &out : pout->pout_list) {
       out->LoadOutputData(pmesh);
       out->WriteOutputFile(pmesh, pin);
+      out->FreeOutputData();
     }
   }
 
@@ -983,6 +984,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         if (out_is_due(out)) {
           out->LoadOutputData(pmesh);
           out->WriteOutputFile(pmesh, pin);
+          out->FreeOutputData();
         }
       }
 
@@ -999,6 +1001,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         if (out_is_due(out)) {
           out->LoadOutputData(pmesh);
           out->WriteOutputFile(pmesh, pin);
+          out->FreeOutputData();
         }
       }
 
@@ -1251,6 +1254,7 @@ void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
     const std::string sfn = hfn ? pin->GetString(bn, "file_number") : std::string();
     out->LoadOutputData(pmesh);
     out->WriteOutputFile(pmesh, pin);
+    out->FreeOutputData();
     if (!at_tlim) {
       out->out_params.last_time = lt;
       out->out_params.file_number = fnum;
@@ -1263,6 +1267,7 @@ void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
     if (out->out_params.file_type.compare("rst") != 0) {continue;}
     out->LoadOutputData(pmesh);
     out->WriteOutputFile(pmesh, pin);
+    out->FreeOutputData();
   }
   global_variable::final_outputs = false;
 
