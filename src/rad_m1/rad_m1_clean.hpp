@@ -775,19 +775,30 @@ Real CleanStagMemUp(const CleanArgs &x, const int dir, const int m, const int k,
 //! flipped; the face is in the owner's x2 family if its x2 normal is along n)
 
 KOKKOS_INLINE_FUNCTION
+int CleanCsSlotQ(const DvceArray5D<Real> &g, const int dir, const int m, const int kf,
+                 const int jf, const int iff, const int k, const int j, const int i,
+                 Real &s) {
+  Real t2 = 0.0, t3 = 0.0;
+  for (int c = 0; c < 3; ++c) {
+    t2 += g(m,CLG_F+c,k,j,i)*g(m,CLG_N+3*dir+c,kf,jf,iff);
+    t3 += g(m,CLG_F+4+c,k,j,i)*g(m,CLG_N+3*dir+c,kf,jf,iff);
+  }
+  const int q = (fabs(t2) > fabs(t3)) ? 1 : 2;
+  s = (((q == 1) ? t2 : t3) > 0.0) ? 1.0 : -1.0;
+  return q;
+}
+
+KOKKOS_INLINE_FUNCTION
 int CleanCsSlot(const CleanArgs &x, const int dir, const int m, const int kf,
                 const int jf, const int iff, const int k, const int j, const int i,
                 const bool far, Real &s) {
   s = 1.0;
   const bool up = (dir == 0) ? (iff > i) : ((dir == 1) ? (jf > j) : (kf > k));
   if (dir == 0) return (up != far) ? 1 : 0;
-  Real t2 = 0.0, t3 = 0.0;
-  for (int c = 0; c < 3; ++c) {
-    t2 += x.g(m,CLG_F+c,k,j,i)*x.g(m,CLG_N+3*dir+c,kf,jf,iff);
-    t3 += x.g(m,CLG_F+4+c,k,j,i)*x.g(m,CLG_N+3*dir+c,kf,jf,iff);
-  }
-  const int q = (fabs(t2) > fabs(t3)) ? 1 : 2;
-  s = (((q == 1) ? t2 : t3) > 0.0) ? 1.0 : -1.0;
+  // (CleanCsSlotQ of the face's cell on this side, CLG_Q)
+  const int b = static_cast<int>(x.g(m,CLG_Q,kf,jf,iff)) >> (4*(dir - 1) + 2*up);
+  const int q = 1 + (b & 1);
+  s = (b & 2) ? 1.0 : -1.0;
   return 2*q + (((up == (s > 0.0)) != far) ? 1 : 0);
 }
 

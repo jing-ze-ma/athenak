@@ -706,6 +706,19 @@ void RadiationM1::CleanCsGeometry() {
   });
   CleanGhostFill(gn, CLG_X, 6, false);
   CleanGhostFill(gn, CLG_F, 11, false);
+  par_for("cln_csq", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    int b = 0;
+    for (int d = 1; d < 3; ++d) {
+      for (int lo = 0; lo < 2 && (lo == 0 || (d == 1 ? j : k) > 0); ++lo) {
+        Real s;
+        const int q = CleanCsSlotQ(gn, d, m, k, j, i, k - lo*(d == 2), j - lo*(d == 1),
+                                   i, s);
+        b += ((q - 1) + 2*(s > 0.0)) << (4*(d - 1) + 2*lo);
+      }
+    }
+    gn(m,CLG_Q,k,j,i) = b;
+  });
   par_for("cln_csdist", DevExeSpace(), 0, nmb1, 1, n3-1, 1, n2-1, 1, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     for (int d = 0; d < 3; ++d) {
@@ -4285,6 +4298,18 @@ void RadiationM1::CleanStagCsLateral(const int e, const bool st, const int part)
         const bool ex = o2 && !CleanTransSide(x, q, m, k, j, i, s > 0);
         if (!ex && !CleanTransSide(x, q, m, k, j, i, s > 0)) continue;
         const Real a = wq*s*x.area[q](m,kf,jf,iff);
+        if (!ex) {   // (each component's P(s) - P(0) and the normal once)
+          Real dp[6], nf[3];
+          for (int n = 0; n < 6; ++n) {
+            dp[n] = x.cs(m,CLN_D11+n,k+s*dk,j+s*dj,i+s*di)*x.w(m,e,k+s*dk,j+s*dj,i+s*di) -
+                    x.cs(m,CLN_D11+n,k,j,i)*x.w(m,e,k,j,i);
+          }
+          for (int c = 0; c < 3; ++c) nf[c] = x.g(m,CLG_N+3*q+c,kf,jf,iff);
+          for (int b = 0; b < 3; ++b) {
+            for (int c = 0; c < 3; ++c) y[b] += a*nf[c]*dp[(b == c) ? b : 2 + b + c];
+          }
+          continue;
+        }
         for (int b = 0; b < 3; ++b) {
           for (int c = 0; c < 3; ++c) {
             const int n = CLN_D11 + ((b == c) ? b : 2 + b + c);

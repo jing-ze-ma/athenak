@@ -79,7 +79,11 @@ constexpr int CLG_F = 27;    // staggered, exchanged (a seam ghost's are its own
                              // of the lower x3 face (+4) and the MeshBlock gid (+7)
 constexpr int CLG_A = 35;    // staggered, exchanged: the mean area of the cell's two
                              // faces of family x1, x2, x3 (+2), CleanStagArea
-constexpr int CLG_NV = 38;
+constexpr int CLG_Q = 38;    // staggered: the face's family and orientation in the
+                             // owner's axes of its two cells (CleanCsSlotQ), 4 bits per
+                             // x2 (low) and x3 face: q - 1 and s > 0 of the low cell (+2)
+constexpr int CLG_NV = 39;
+constexpr int CLG_NA = 25;   // components of CleanGeo::a
 
 //! \struct CleanGeo
 //! \brief cln_gn (CLG_*) in two arrays: the components that do not change along x1 (the
@@ -93,6 +97,7 @@ struct CleanGeo {
   int is = 0, ie = 0;
   KOKKOS_FORCEINLINE_FUNCTION
   static int Slot(const int n) {   // a: n >= 0, r: -1 - n
+    if (n == CLG_Q) return CLG_NA - 1;   // (the directions: along x1 as they)
     if (n < CLG_X) return n;
     if (n < CLG_R) return -1 - (n - CLG_X);
     if (n < CLG_M) return n - 3;
@@ -107,7 +112,7 @@ struct CleanGeo {
     return (s >= 0) ? a(m,s,k,j,(i < is) ? 0 : ((i > ie) ? 2 : 1)) : r(m,-1-s,k,j,i);
   }
 };
-constexpr int CLG_NA = 24;   // components of CleanGeo::a
+
 
 // indices of the evolved moments in u0(m,n,k,j,i)
 constexpr int M1_E  = 0;
