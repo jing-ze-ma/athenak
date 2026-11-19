@@ -4112,6 +4112,7 @@ class RadiationM1 {
   bool VgdXffAllExact();
   void VetGdXffPostB();
   void VgdXffSwap();
+  void VgdEs2Make();   // rays-1120: the early send's second stream
   void VgdGbSwap() {   // the compact global band's kept lists go with their set
     std::swap(vgd_gbcf, vgd_gbcf_xb);
     std::swap(vgd_gbcb, vgd_gbcb_xb);

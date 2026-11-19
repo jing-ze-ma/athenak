@@ -2558,6 +2558,17 @@ void RadiationM1::VgdXffSwap() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VgdEs2Make
+//! \brief the early send's second, high-priority stream vgd_es2 (made once)
+
+void RadiationM1::VgdEs2Make() {
+  if (!vgd_es2_made) {
+    vgd_es2 = VgdPrioSpace();
+    vgd_es2_made = true;
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn bool RadiationM1::VetGdXffOk
 //! \brief xffuse-1113: the fused two-set sweep covers this configuration (the same answer
 //! on every rank: keys and the halo setup only).  Otherwise the two sweeps run
@@ -2781,10 +2792,7 @@ bool RadiationM1::VetGdHlXff(const int i, const int ws, const int mode) {
   if (mode == 1) {
     // the stamps of this shell's send cells (band index space, as the (m, k, j, d) of
     // the fused kernel), then the fork: the second stream waits for all work before
-    if (!vgd_es2_made) {
-      vgd_es2 = VgdPrioSpace();
-      vgd_es2_made = true;
-    }
+    VgdEs2Make();
     for (int s = 0; s < 2; ++s) {
       if (vgd_est[s].extent_int(0) != nmb1 + 1 || vgd_est[s].extent_int(1) != c3_ ||
           vgd_est[s].extent_int(2) != c2_ || vgd_est[s].extent_int(3) != nv_) {

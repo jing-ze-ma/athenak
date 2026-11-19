@@ -101,9 +101,12 @@ struct VgdCsEv {
   VgdCsEv &operator=(const VgdCsEv &) = delete;
 #if defined(KOKKOS_ENABLE_CUDA)
   cudaEvent_t e = nullptr;
-  void Record() {
+  void Record(const DevExeSpace &ex = DevExeSpace()) {
     if (e == nullptr) {cudaEventCreateWithFlags(&e, cudaEventDisableTiming);}
-    cudaEventRecord(e, DevExeSpace().cuda_stream());
+    cudaEventRecord(e, ex.cuda_stream());
+  }
+  void StreamWait(const DevExeSpace &ex) const {
+    cudaStreamWaitEvent(ex.cuda_stream(), e, 0);
   }
   bool Done() const {return e == nullptr || cudaEventQuery(e) != cudaErrorNotReady;}
   void Wait() const {
@@ -114,9 +117,12 @@ struct VgdCsEv {
   }
 #elif defined(KOKKOS_ENABLE_HIP)
   hipEvent_t e = nullptr;
-  void Record() {
+  void Record(const DevExeSpace &ex = DevExeSpace()) {
     if (e == nullptr) {(void) hipEventCreateWithFlags(&e, hipEventDisableTiming);}
-    (void) hipEventRecord(e, DevExeSpace().hip_stream());
+    (void) hipEventRecord(e, ex.hip_stream());
+  }
+  void StreamWait(const DevExeSpace &ex) const {
+    (void) hipStreamWaitEvent(ex.hip_stream(), e, 0);
   }
   bool Done() const {return e == nullptr || hipEventQuery(e) != hipErrorNotReady;}
   void Wait() const {
@@ -126,7 +132,8 @@ struct VgdCsEv {
     if (e != nullptr) {(void) hipEventDestroy(e);}
   }
 #else
-  void Record() {Kokkos::fence();}
+  void Record(const DevExeSpace & = DevExeSpace()) {Kokkos::fence();}
+  void StreamWait(const DevExeSpace &) const {}
   bool Done() const {return true;}
   void Wait() const {}
 #endif
@@ -1972,10 +1979,10 @@ void RadiationM1::VetGdCsSweep() {
 #endif
   if (early && vgd_cscl[vgd_cscur].ng != 1) {early = false;}
   if (xffs) {early = false;}   // xffuse-1113 (the early send: one set per shell kernel)
-  // spdb-1119: the early send's cells are not computed twice: m1_vgdcs_eshell stamps
-  // each (m, k, j, d) it computes (vgd_est[0], stamp vgd_esid of the shell; it counts
-  // the clamps itself) and the shell kernel skips the stamped ones: the same values from
-  // the same code, written once (bitwise)
+  // spdb-1119: the early send's cells are not computed twice: m1_vgdcs_estamp stamps
+  // each (m, k, j, d) m1_vgdcs_eshell computes (vgd_est[0], stamp vgd_esid of the shell;
+  // eshell counts the clamps itself) and the shell kernel skips the stamped ones: the
+  // same values from the same code, written once (bitwise)
   const int nkb = ke - ks + 1, njb = je - js + 1;
   if (early && (vgd_est[0].extent_int(0) < nmb1 + 1 || vgd_est[0].extent_int(1) < nkb ||
                 vgd_est[0].extent_int(2) < njb || vgd_est[0].extent_int(3) < n)) {
@@ -1984,7 +1991,7 @@ void RadiationM1::VetGdCsSweep() {
   }
   auto est_ = vgd_est[0];
   int esid = 0;   // (0: no early cells; never a stamp)
-  VgdCsEv eev;
+  VgdCsEv eev, efork;
   static int s_lb = -1;   // speed2-1031 cslb (see the shell kernel)
   if (s_lb < 0) {
     const char *el = std::getenv("VGD_CS_LB");
@@ -2066,19 +2073,31 @@ void RadiationM1::VetGdCsSweep() {
           if (vgd_esid == 1) {Kokkos::deep_copy(est_, 0);}   // (first use or wrapped)
           esid = vgd_esid;
           const int sid_ = esid;
-          Kokkos::parallel_for("m1_vgdcs_eshell", VgdLight(DevExeSpace(), 0,
+          Kokkos::parallel_for("m1_vgdcs_estamp", VgdLight(DevExeSpace(), 0,
                                                             static_cast<int>(ens)),
           KOKKOS_LAMBDA(const int o) {
             const int x = si_(es0 + o);
             const int e = x/n, d = x - e*n;
-            shell_(S_(e,0), S_(e,1), S_(e,2), d, true);
             est_(S_(e,0), S_(e,1) - ks, S_(e,2) - js, d) = sid_;
+          });
+          // rays-1120: the send cells and their pack on the second stream, concurrent
+          // with the shell kernel (which skips them); the sweep stream waits for them
+          // after the shell kernel (efork / eev)
+          VgdEs2Make();
+          efork.Record();
+          efork.StreamWait(vgd_es2);
+          Kokkos::parallel_for("m1_vgdcs_eshell",
+                               VgdLight(vgd_es2, 0, static_cast<int>(ens)),
+          KOKKOS_LAMBDA(const int o) {
+            const int x = si_(es0 + o);
+            const int e = x/n, d = x - e*n;
+            shell_(S_(e,0), S_(e,1), S_(e,2), d, true);
           });
           auto a_ = vgd_i;
           auto b_ = vgd_itw;
           Real *sbp = vgd_cssb.data();
           Kokkos::parallel_for("m1_vgdcs_cpack",
-                               VgdLight(DevExeSpace(), 0, static_cast<int>(ens)),
+                               VgdLight(vgd_es2, 0, static_cast<int>(ens)),
           KOKKOS_LAMBDA(const int o) {
             const int x = si_(es0 + o);
             const int e = x/n, d = x - e*n;
@@ -2090,7 +2109,7 @@ void RadiationM1::VetGdCsSweep() {
             }
           });
         }
-        eev.Record();
+        eev.Record((esid != 0) ? vgd_es2 : DevExeSpace());
       }
       // xffuse-1113: the fused two-set shell kernel: this pass's list of the current set,
       // then the next set's, one launch; the next set's body is the include above with
@@ -2251,6 +2270,7 @@ void RadiationM1::VetGdCsSweep() {
       }
 #endif
       }   // !xffs
+      if (esid_ != 0) {eev.StreamWait(DevExeSpace());}   // rays-1120 (the send cells)
 #undef M1_VGDCS_LAUNCHN
 #if MPI_PARALLEL_ENABLED
       if (pipe) {
