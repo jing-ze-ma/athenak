@@ -142,6 +142,24 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     if (zc) rst_keep_.push_back(tmp);
     stage(out, tmp);
   };
+  // hgmem: a module's pack (fn writes a device-typed (n0, nf, k, j, i) View) where the
+  // host does not read device memory: straight into pinned host memory (no device copy
+  // at a dump; the same bytes), then staged; elsewhere the device array as before
+  auto pack = [&](HostArray5D<Real> &out, const char *lbl, const int n0, const int nf,
+                  const auto &fn) {
+    if constexpr (!um_) {
+      Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> pin(std::string(lbl),
+          static_cast<size_t>(n0)*nf*nout3*nout2*nout1);
+      DvceArray5D<Real> d(pin.data(), n0, nf, nout3, nout2, nout1);
+      fn(d);
+      Kokkos::fence();
+      stage(out, HostArray5D<Real>(pin.data(), n0, nf, nout3, nout2, nout1));
+    } else {
+      DvceArray5D<Real> tmp(std::string(lbl), n0, nf, nout3, nout2, nout1);
+      fn(tmp);
+      hold(out, tmp);
+    }
+  };
   if (phydro != nullptr) {
     stage(outarray_hyd, Kokkos::subview(phydro->u0, std::make_pair(0,nmb), Kokkos::ALL,
                                         Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
@@ -341,16 +359,16 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
       // (zero-copy, independent I/O: one MeshBlock's pack, filled MeshBlock by MeshBlock
       // by the writer)
       const bool one = zc && nmb > 1 && !IOWrapper::collective;
-      DvceArray5D<Real> tmp("rst-m1s", one ? 1 : nmb, nrs, nout3, nout2, nout1);
-      if (!one) pradm1->RssRstPack(tmp, nmb, rmode);
-      hold(outarray_m1s, tmp);
+      pack(outarray_m1s, "rst-m1s", one ? 1 : nmb, nrs, [&](DvceArray5D<Real> &t) {
+        if (!one) pradm1->RssRstPack(t, nmb, rmode);
+      });
     }
     // vet_gd_async: the source of the pending gd build (its sweep may be in flight; it
     // does not touch vlat_cs)
     if (pradm1->VetGdAsyncRstNch() > 0) {
-      DvceArray5D<Real> tmp("rst-m1g", nmb, 2, nout3, nout2, nout1);
-      pradm1->VetGdAsyncRstPack(tmp, nmb);
-      hold(outarray_m1g, tmp);
+      pack(outarray_m1g, "rst-m1g", nmb, 2, [&](DvceArray5D<Real> &t) {
+        pradm1->VetGdAsyncRstPack(t, nmb);
+      });
     }
     // implicit_gas_src = conservative(2): the cell-F slope csk1
     if (pradm1->CskRstNch() > 0) {
@@ -401,23 +419,23 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
   // implicit_hr_cmem_rst: the applied face fluxes (kM1FaxRstMagic)
   if (pradm1 != nullptr && pradm1->FaxRstNslab() > 0) {
     const int nf = pradm1->FaxRstNslab();
-    DvceArray5D<Real> tmp("rst-fax", nmb, nf, nout3, nout2, nout1);
-    pradm1->FaxRstPack(tmp, nmb);
-    hold(outarray_fax, tmp);
+    pack(outarray_fax, "rst-fax", nmb, nf, [&](DvceArray5D<Real> &t) {
+      pradm1->FaxRstPack(t, nmb);
+    });
   }
   // time2_stage_local_be: the carried stage-2 drop (kM1ThcRstMagic)
   if (pradm1 != nullptr && pradm1->ThcRstNslab() > 0) {
     const int nf = pradm1->ThcRstNslab();
-    DvceArray5D<Real> tmp("rst-thc", nmb, nf, nout3, nout2, nout1);
-    pradm1->ThcRstPack(tmp, nmb);
-    hold(outarray_thc, tmp);
+    pack(outarray_thc, "rst-thc", nmb, nf, [&](DvceArray5D<Real> &t) {
+      pradm1->ThcRstPack(t, nmb);
+    });
   }
   // vet_gd_rotate_xfade: the cross-fade state (kM1XfdRstMagic)
   if (pradm1 != nullptr && pradm1->XfdRstNslab(nout1*nout2*nout3) > 0) {
     const int nf = pradm1->XfdRstNslab(nout1*nout2*nout3);
-    DvceArray5D<Real> tmp("rst-xfd", nmb, nf, nout3, nout2, nout1);
-    pradm1->XfdRstPack(tmp, nmb);
-    hold(outarray_xfd, tmp);
+    pack(outarray_xfd, "rst-xfd", nmb, nf, [&](DvceArray5D<Real> &t) {
+      pradm1->XfdRstPack(t, nmb);
+    });
   }
   if (pturb != nullptr) {
     Kokkos::realloc(outarray_force, nmb, nforce, nout3, nout2, nout1);
