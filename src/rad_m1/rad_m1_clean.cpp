@@ -4303,10 +4303,10 @@ void RadiationM1::CleanWriteBack() {
   if (!feedback) return;
   auto &id = pmy_pack->pmesh->mb_indcs;
   const int nx1 = id.nx1, nx2 = id.nx2, nx3 = id.nx3, nji = nx2*nx1, nkji = nx3*nji;
-  Real nb = 0.0;
+  Real nb = 0.0, nh = 0.0;
   Kokkos::parallel_reduce("cln_neint", CleanRp256(DevExeSpace(), 0,
                           (nmb1 + 1)*nkji),
-  KOKKOS_LAMBDA(const int idx, Real &n) {
+  KOKKOS_LAMBDA(const int idx, Real &n, Real &nf) {
     const int m = idx/nkji, k = (idx - m*nkji)/nji + ks;
     const int j = (idx%nji)/nx1 + js, i = idx%nx1 + is;
     Real p[3];
@@ -4325,11 +4325,19 @@ void RadiationM1::CleanWriteBack() {
     const bool fin = Kokkos::isfinite(u0_(m,M1_E,k,j,i) + u0_(m,M1_F1,k,j,i) +
                                       u0_(m,M1_F1+1,k,j,i) + u0_(m,M1_F1+2,k,j,i) +
                                       uh(m,IDN,k,j,i) + uh(m,IEN,k,j,i) + ke);
-    if ((!(CleanGasEint(x, uh, ke, m, k, j, i) > ef - tz) &&
-         !(x.w(m,CLW_JV,k,j,i) >= 0.0) && x.w(m,CLW_EI,k,j,i) > ef + tz) ||
+    const bool low = !(CleanGasEint(x, uh, ke, m, k, j, i) > ef - tz);
+    if ((low && !(x.w(m,CLW_JV,k,j,i) >= 0.0) && x.w(m,CLW_EI,k,j,i) > ef + tz) ||
         u0_(m,M1_E,k,j,i) < 0.0 || !fin) n += 1.0;
-  }, Kokkos::Sum<Real>(nb));
+    // (without implicit_pos_gas: an eint the hydro's floor will raise, counted)
+    if (low && !pgas) nf += 1.0;
+  }, Kokkos::Sum<Real>(nb), Kokkos::Sum<Real>(nh));
   cln_neint = static_cast<int>(CleanReduce(nb, false));
+  nh = CleanReduce(nh, false);
+  if (nh > 0.0 && global_variable::my_rank == 0) {
+    std::printf("CLEAN WARNING cycle %d t2s %d: %.0f cells left with gas eint below the "
+                "EOS floor (implicit_pos_gas off: the hydro's floor raises them, energy "
+                "created)\n", pmy_pack->pmesh->ncycle, t2_solve, nh);
+  }
 }
 
 }  // namespace radm1
