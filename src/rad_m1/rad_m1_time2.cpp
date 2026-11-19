@@ -3485,7 +3485,7 @@ int RadiationM1::CleanRstNfv() const {
   // (none with both sets swept in every build: the first build after a restart rewrites
   // them, CleanGdFaceSums)
   if (cln_cssc && t2_rstv >= 5) {
-    return CleanRingTwo() ? 0 : ((cln_fvi.extent_int(0) > 0) ? CleanFvRstN() : t2_nfv);
+    return CleanFvScratch() ? 0 : ((cln_fvi.extent_int(0) > 0) ? CleanFvRstN() : t2_nfv);
   }
   if (cln_cssc && cln_fvi.extent_int(0) > 0) return cln_fvi.extent_int(1);
   if (cln_rfv > 0 || cln_cssc) return (cln_fvn > 0) ? cln_fvb*cln_fvn : t2_nfv;

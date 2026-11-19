@@ -3016,6 +3016,7 @@ class RadiationM1 {
   void CleanRingShift(const int64_t b);
   int64_t CleanRingBlk(const Real dt) const;
   bool CleanRingTwo() const;
+  bool CleanFvScratch() const;
   void CleanRingPreShift();   // dt_retry: the shift before the checkpoint
   void CleanRingJump();
   void CleanRingSolveSet();
@@ -3063,7 +3064,8 @@ class RadiationM1 {
   // rays' last build when their reflecting top mirrors it (cln_scmem: its top shell)
   int CleanRstNfv() const;
   void CleanScUnion2();
-  void CleanFaceHalf(const DvceArray2D<Real> &dv, const int o, const bool zero);
+  void CleanFaceHalf(const DvceArray2D<Real> &dv, const int o, const bool zero,
+                     const int fo);
   DvceArray5D<Real> &CleanRstFv() {return (cln_scmem && !cln_cssc) ? cln_top : cln_fvi;}
   void CleanStagDrag(const bool first, const bool vel = false);
   void CleanStagFCsShared();

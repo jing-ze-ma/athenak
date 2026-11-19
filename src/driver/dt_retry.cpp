@@ -111,8 +111,8 @@ const char *kDtrMinimal[] = {
   // clean_rot_ring: the offsets and the pending Delta (a retried first step of a block
   // shifted the ring twice), and the swept directions with their weights the step's solve
   // reads with cln_fvi (cln_fvd: the step's last build, at t + dt, rewrites them)
-  "m1.cln_rstd", "m1.cln_fvi", "m1.cln_fvis", "m1.cln_fvgp", "m1.cln_top", "m1.cln_rr",
-  "m1.cln_rpd", "m1.cln_fvd",
+  "m1.cln_rstd", "m1.cln_fvi", "m1.cln_fh", "m1.cln_fvis", "m1.cln_fvgp", "m1.cln_top",
+  "m1.cln_rr", "m1.cln_rpd", "m1.cln_fvd",
   // (not visited before the generated visitor): vet_gd_rotate_xfade's G/A/Delta slots,
   // read by the next builds' estimate (RotXfEst); the old scheme's K1 of
   // time2_inc_energy / time2_exch_split and time2_stage_local_be carry, read by the next
@@ -612,10 +612,12 @@ void DtRetry::Build(Mesh *pm) {
     // (clean sc rays, staggered, without the reflecting top's memory: cln_fvi is each
     // build's copy of vgd_i, written before it is read; CleanGdFaceSums)
     auto *m1 = pk->pradm1;
-    // (and on the cubed sphere while every build sweeps both of its sets, CleanRingTwo)
+    // (and on the cubed sphere where they are a build's scratch, with the face half
+    // ranges, CleanFvScratch)
     if (m1->clean && !m1->cln_cell && m1->cln_rfv == 0 && !m1->cln_scmem &&
-        (!m1->cln_cssc || m1->CleanRingTwo())) {
+        (!m1->cln_cssc || m1->CleanFvScratch())) {
       sel.erase("m1.cln_fvi");
+      sel.erase("m1.cln_fh");
     }
     // (and the rays' source vlat_cs, each build's, written before it is read; vet_gd_async
     // carries the pending build's across the cycle)

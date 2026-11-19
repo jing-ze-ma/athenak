@@ -883,8 +883,8 @@ void RadiationM1::CleanRays() {
     // (clean_rays = sc on the cubed sphere: also the intensities cln_fvi of the face half
     // ranges, CleanCellConsistency, CleanFaceHalf)
     if (cln_consist || cln_cssc) CleanGdFaceSums();
-    if (cln_cssc) CleanFaceHalf(vgd_dir, 0, true);
-    if (cln_cssc && !cln_cell) cln_fvi = DvceArray5D<Real>();   // (build scratch)
+    if (cln_cssc) CleanFaceHalf(vgd_dir, 0, true, 0);
+    if (CleanFvScratch()) cln_fvi = DvceArray5D<Real>();   // (build scratch)
   }
   MemcutPoison(3);
 }
@@ -918,11 +918,11 @@ void RadiationM1::CleanScUnion2() {
 //! \brief the sc rays on the cubed sphere, staggered layout: the half ranges of every
 //! face about its own normal (CleanFaceCoefficients), as the sums of the union's beams of
 //! the face's two cells, J_L, J_R, H+_L, H-_R (cln_fh, 4 per face family), folded set by
-//! set right after its sweep (the set's intensities in cln_fvi, its union rows o of dv):
-//! one set of intensities resident.  zero: the first set of a build
+//! set right after its sweep (the set's intensities in cln_fvi from row fo, its union
+//! rows o of dv): one set of intensities resident.  zero: the first set of a build
 
 void RadiationM1::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
-                                const bool zero) {
+                                const bool zero, const int fo) {
   if (cln_cell) return;   // (the cell layout reads cln_fvi, CleanCellConsistency)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -948,7 +948,7 @@ void RadiationM1::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
         const int d = o + e;
         Real mu = 0.0;
         for (int b = 0; b < 3; ++b) mu += dv(d,b)*gn(m,CLG_N+3*dir+b,k,j,i);
-        const Real wl = dv(d,3)*fi(m,e,kl,jl,il), wr = dv(d,3)*fi(m,e,k,j,i);
+        const Real wl = dv(d,3)*fi(m,fo+e,kl,jl,il), wr = dv(d,3)*fi(m,fo+e,k,j,i);
         jl0 += wl;
         jr0 += wr;
         if (mu > 0.0) hp0 += wl*mu;
@@ -1081,6 +1081,15 @@ int64_t RadiationM1::CleanRingBlk(const Real dt) const {
 // (live with the cross-fade: every build sweeps the sets b and b+1)
 bool RadiationM1::CleanRingTwo() const {
   return clean && cln_ring == 1 && vgd_xf && !(vra_on && !g_vra_adv);
+}
+
+// (the sc rays on the staggered cubed sphere: their intensities are a build's scratch
+// where every solve builds the closure first and every build sweeps all the sets the
+// face half ranges read; else they are kept, in the restart files too, and a restart
+// takes the half ranges from them, CleanSolve)
+bool RadiationM1::CleanFvScratch() const {
+  return cln_cssc && !cln_cell && cln_extrap == 0 && !cln_closit && !cln_edd &&
+         !cln_sphere && (!cln_ring || CleanRingTwo());
 }
 
 void RadiationM1::CleanRingPreShift() {
@@ -1335,7 +1344,8 @@ void RadiationM1::CleanRingMoments() {
     CleanClosureFromGd();
     if (cln_consist || cln_cssc) CleanGdFaceSums();
     if (cln_cssc && (p == nr || p == nk)) {
-      CleanFaceHalf(dfull, cln_rqm*vgd_n, fh0);
+      CleanFaceHalf(dfull, cln_rqm*vgd_n, fh0,
+                    (cln_fvi.extent_int(1) == 2*vgd_n) ? cln_rqm*vgd_n : 0);
       fh0 = false;
     }
     if (!keep) continue;
@@ -1466,8 +1476,7 @@ void RadiationM1::CleanRingMoments() {
   cln_rjump = nxt;
   cln_rguard_sum += CleanReduce(nguard, false);
   cln_rl = DvceArray5D<Real>();   // (build scratch: freed, every build writes it first)
-  if (cln_cssc && !cln_cell) cln_fvi = DvceArray5D<Real>();   // (and so cln_fvi, read only
-                                                                // by CleanFaceHalf)
+  if (CleanFvScratch()) cln_fvi = DvceArray5D<Real>();   // (and so cln_fvi)
 }
 
 //----------------------------------------------------------------------------------------
@@ -3341,7 +3350,8 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   // (the image cell's beyond a periodic seam, re-indexed by the wall map as the sweep)
   // (clean_rot_ring: two slots, of the sets blk mod 2, on the cubed sphere for the face
   // half ranges (CleanScUnion2), on sp with a reflecting top for its mirror)
-  const int ns2 = (cln_ring && ((cln_cssc && cln_cell) || cln_scmem)) ? 2 : 1;
+  const int ns2 = (cln_ring && ((cln_cssc && (cln_cell || !CleanFvScratch())) ||
+                                cln_scmem)) ? 2 : 1;
   const int doff = (ns2 == 1) ? 0 : cln_rqm*n;
   // Staggered spherical polar (one radial MeshBlock, no reflecting top): vgd_i itself,
   // and only the low theta and phi ghost layers exchanged, in chunks of clean_halo_vars
