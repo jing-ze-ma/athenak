@@ -242,6 +242,7 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/implicit_pos_floor_cons", nullptr}, {"rad_m1/implicit_*", ""},
     {"rad_m1/time2_accept_fallback", ""}, {"rad_m1/time2_posfix*", ""},
     {"rad_m1/time2_k1_*", ""}, {"rad_m1/time2_face_fct", ""},
+    {"rad_m1/time2_inc_kecap", ""},
     {"time/dt_retry_t2_be", ""}};
   const bool say = (global_variable::my_rank == 0);
   std::string none;

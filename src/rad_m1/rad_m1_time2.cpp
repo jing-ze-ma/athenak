@@ -424,8 +424,9 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "dbg_t2_admiss")) {
     t2_dbg_adm = pin->GetInteger("rad_m1", "dbg_t2_admiss");
   }
-  // hgfix-1110 time2_inc_kecap = th (rad_m1.hpp; read only when named)
-  if (pin->DoesParameterExist("rad_m1", "time2_inc_kecap")) {
+  // hgfix-1110 time2_inc_kecap = th (rad_m1.hpp; read only when named; not with scheme =
+  // clean, whose CleanPreflight lists it as no effect)
+  if (pin->DoesParameterExist("rad_m1", "time2_inc_kecap") && !clean) {
     t2_inckc = pin->GetReal("rad_m1", "time2_inc_kecap");
     if (t2_inckc < 0.0 || t2_inckc >= 1.0) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
