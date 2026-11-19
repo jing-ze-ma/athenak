@@ -2503,7 +2503,6 @@ class RadiationM1 {
   // time2_inc_fct_gas; cells with eint(U_h) <= 0 are not touched (counted)
   Real t2_inckc = 0.0, t2_inckc_n = 0.0, t2_inckc_un = 0.0, t2_inckc_hn = 0.0;
   Real t2_inckc_ke = 0.0, t2_inckc_pm = 0.0;
-  DvceArray5D<Real> t2kc_dp;     // clean: the momentum the KE cap hands to the face F
   int t2_inckc_calls = 0;
   void Time2IncKeCap(int stage);
   // rsglock-1112 <rad_m1>/time2_inc_energy = gas | rad (read only when named; gas =
