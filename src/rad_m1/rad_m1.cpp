@@ -578,7 +578,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_halo_depth")) {
       cln_hdl.dcap = std::max(pin->GetInteger("rad_m1","clean_halo_depth"), 0);
     }
-    cln_hdl.poison = (std::getenv("CLEAN_POISON_GHOST") != nullptr);
+    // (1: NaN; 2: +1e30; 3: -1e30, for readers that compare or take min / max)
+    if (std::getenv("CLEAN_POISON_GHOST") != nullptr) {
+      const int pm = std::atoi(std::getenv("CLEAN_POISON_GHOST"));
+      cln_hdl.poison = true;
+      cln_hdl.pval = (pm == 2) ? 1.0e30 : ((pm == 3) ? -1.0e30 : cln_hdl.pval);
+    }
     // clean_line_teams (read only when named): at most this many teams take the lines of
     // a line solve (each line still one team), fewer rows of cln_lw
     if (pin->DoesParameterExist("rad_m1","clean_line_teams")) {

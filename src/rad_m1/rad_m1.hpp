@@ -27,6 +27,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <map>
 #include <memory>
 #include <string>
@@ -3461,6 +3462,7 @@ class RadiationM1 {
     // exchange's depth)
     int ng = 0, dcap = 0, dcur = 0;
     bool poison = false;
+    Real pval = std::numeric_limits<Real>::quiet_NaN();
     std::vector<int> slend, rlend, nld;
     DvceArray1D<int> rd, ldp;
     // (device buffers on HIP too: the messages are MB-size, ROCm-aware MPI moves them

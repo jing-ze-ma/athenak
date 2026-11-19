@@ -621,7 +621,7 @@ void RadiationM1::CleanHaloPost(const std::vector<CleanGSeg<T>> &sg) {
   // (the ghosts deeper than dcur keep their values; CLEAN_POISON_GHOST: NaN)
   const int dc = q.dcur;
   const bool pz = q.poison;
-  const T nan = static_cast<T>(std::numeric_limits<Real>::quiet_NaN());
+  const T nan = static_cast<T>(q.pval);
   for (auto &s : sg) {
     auto a = s.a;
     auto d = q.ld, c = q.ls, dp = q.ldp;
@@ -658,7 +658,7 @@ void RadiationM1::CleanHaloFinish(const std::vector<CleanGSeg<T>> &sg) {
   const size_t b = static_cast<size_t>(q.par)*std::max(q.nr, 1)*cln_hmax;
   const int dc = q.dcur;
   const bool pz = q.poison;
-  const T nan = static_cast<T>(std::numeric_limits<Real>::quiet_NaN());
+  const T nan = static_cast<T>(q.pval);
   int o = 0;
   for (auto &s : sg) {
     auto a = s.a;
