@@ -3998,7 +3998,7 @@ void RadiationM1::CleanStagCsLateral(const int e, const bool st) {
         }
       }
     });
-    CleanGhostFill(cln_w, CLW_L, 9);
+    CleanGhostFill(cln_w, CLW_L, 9, 0, 1);   // (read by the faces' own cells: depth 1)
     return;
   }
   par_for("cln_cslat", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, indcs.ks, indcs.ke,
@@ -4037,7 +4037,7 @@ void RadiationM1::CleanStagCsLateral(const int e, const bool st) {
       for (int b = 0; b < 3; ++b) x.w(m,CLW_L+3*q+b,k,j,i) = y[b];
     }
   });
-  CleanGhostFill(cln_w, CLW_L, 9);
+  CleanGhostFill(cln_w, CLW_L, 9, 0, 1);
 }
 
 //----------------------------------------------------------------------------------------

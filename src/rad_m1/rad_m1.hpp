@@ -3090,9 +3090,9 @@ class RadiationM1 {
   void CleanGhostFill(DvceArray5D<float> a, const int c0, const int nc);
   template <typename T>
   void CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc, const bool phys,
-                       const int part);
+                       const int part, const int dep = 0);
   void CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
-                      const bool phys = true, const int part = 0);
+                      const bool phys = true, const int part = 0, const int dep = 0);
   // (dep: the ghost layers its readers need, 0 = all ng; clean_halo_direct sends those)
   template <typename T> struct CleanGSeg {DvceArray5D<T> a; int c0, nc; bool phys; int dep = 0;};
   template <typename T>
@@ -3101,7 +3101,7 @@ class RadiationM1 {
   void CleanGhostPhys(DvceArray5D<T> a, const int c0, const int nc);
   void CleanGhostDefer(DvceArray5D<Real> a, const int c0, const int nc);
   void CleanGhostFill(const CleanW &a, const int c0, const int nc,   // (in one array)
-                      const int part = 0);
+                      const int part = 0, const int dep = 0);
   void CleanGhostDefer(const CleanW &a, const int c0, const int nc);
   void CleanGhostFlush();
   std::array<Real, 2> CleanDots(CleanW w, const int nc, const int n,
