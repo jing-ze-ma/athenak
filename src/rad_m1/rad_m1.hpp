@@ -3063,6 +3063,8 @@ class RadiationM1 {
   bool cln_diagneg = false;     // clean_diag_neg: where the E < 0 / |F| > cE cells are
   int cln_bcgfb = 0;            // clean_bcg_fallback: Richardson sweeps after a breakdown
   void CleanCellDiagNeg();
+  void CleanCellDiagNb();       // clean_diag_neg: the write-back's eint <= 0 cells
+  DvceArray5D<Real> cln_nbt;    // (m, 10, k, j, i) their terms (clean_diag_neg)
   bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces
   bool cln_posghost = false;    // clean_pos_ghost: marked boundary faces, upwind ghost
   bool cln_all_low = false;     // the solve has every interior face low-order

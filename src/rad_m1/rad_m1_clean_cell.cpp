@@ -2153,6 +2153,16 @@ void RadiationM1::CleanCellWriteBack() {
   auto u0_ = u0;
   Real neint = 0.0;
   const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
+  // (clean_diag_neg: the terms of the cells whose balance leaves no eint > 0)
+  const bool dgn = cln_diagneg;
+  if (dgn) {
+    if (cln_nbt.extent_int(0) != nmb1 + 1) {
+      Kokkos::realloc(cln_nbt, nmb1 + 1, 10, uh.extent_int(2), uh.extent_int(3),
+                      uh.extent_int(4));
+    }
+    Kokkos::deep_copy(cln_nbt, 0.0);
+  }
+  auto nbt = cln_nbt;
   // (256 threads per block: the registers of the exchange solve without spills)
   using Rp256 = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 1>>;
   Kokkos::parallel_reduce("clc_wbcell", Rp256(DevExeSpace(), 0, (nmb1 + 1)*nk*nj*ni),
@@ -2228,6 +2238,18 @@ void RadiationM1::CleanCellWriteBack() {
             e -= ei - eint;
           } else {
             nb += 1.0;
+            if (dgn) {
+              nbt(m,0,k,j,i) = 1.0;
+              nbt(m,1,k,j,i) = rhs;
+              nbt(m,2,k,j,i) = e;
+              nbt(m,3,k,j,i) = eint;
+              nbt(m,4,k,j,i) = e_old;
+              nbt(m,5,k,j,i) = div[0];
+              nbt(m,6,k,j,i) = wk;
+              nbt(m,7,k,j,i) = wr;
+              nbt(m,8,k,j,i) = eso ? h*es(m,k,j,i) : 0.0;
+              nbt(m,9,k,j,i) = etr;
+            }
           }
         } else if (eint < 0.0) {
           nb += 1.0;
@@ -2247,6 +2269,7 @@ void RadiationM1::CleanCellWriteBack() {
     for (int b = 0; b < 3; ++b) u0_(m,M1_F1+b,k,j,i) = x.c*y[b];
   }, Kokkos::Sum<Real>(neint));
   cln_neint = static_cast<int>(CleanReduce(neint, false));
+  if (dgn && cln_neint > 0) CleanCellDiagNb();
 }
 
 //----------------------------------------------------------------------------------------
@@ -2407,6 +2430,87 @@ void RadiationM1::CleanCellDiagNeg() {
   std::printf("CLEAN DIAGNEG cycle %d min E/|B_E| %.3e at gid %d i %d j %d k %d; "
               "max |F|/(cE) %.3e at gid %d i %d j %d k %d\n", pmy_pack->pmesh->ncycle,
               emin, pe[0], pe[1], pe[2], pe[3], fmx, pf[0], pf[1], pf[2], pf[3]);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellDiagNb
+//! \brief diagnostic (clean_diag_neg): the cells of the write-back whose exact exchange
+//! has no root with eint > 0 (rhs = E + eint - E_tr/(1 + h c kE) <= 0), counted by
+//! density (log10 bins), the cell's x1 over the mesh's x1 range and position in the
+//! block, summed over the ranks; the rank of the worst cell (most negative rhs over
+//! |E_old| + |eint|) prints its terms: rhs, E, eint, E_old, h div F, the work W (wk, wr),
+//! h esrc and E_tr
+
+void RadiationM1::CleanCellDiagNb() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, je = indcs.je, ks = indcs.ks, ke = indcs.ke;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nmb = pmy_pack->nmb_thispack;
+  auto t = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_nbt);
+  auto u0f = FluidRef::Get(pmy_pack).u0;
+  DvceArray4D<Real> dd("clc_diag_rho", u0f.extent(0), u0f.extent(2), u0f.extent(3),
+                       u0f.extent(4));
+  Kokkos::deep_copy(dd, Kokkos::subview(u0f, Kokkos::ALL, IDN, Kokkos::ALL, Kokkos::ALL,
+                                        Kokkos::ALL));
+  auto rho = Kokkos::create_mirror_view_and_copy(HostMemSpace(), dd);
+  auto &gid = pmy_pack->pmb->mb_gid.h_view;
+  auto &mbs = pmy_pack->pmb->mb_size.h_view;
+  auto &msz = pmy_pack->pmesh->mesh_size;
+  constexpr int kNd = 14, kNx = 16, kN = kNd + kNx + 3;
+  std::vector<double> cnt(kN, 0.0);
+  double wmin = 0.0;
+  int pw[5] = {-1, -1, -1, -1, -1};
+  for (int m = 0; m < nmb; ++m) {
+    for (int k = ks; k < ks + nx3; ++k) {
+      for (int j = js; j < js + nx2; ++j) {
+        for (int i = is; i < is + nx1; ++i) {
+          if (t(m,0,k,j,i) == 0.0) continue;
+          const double lr = std::log10(std::fmax(rho(m,k,j,i), 1.0e-300));
+          cnt[std::min(kNd - 1, std::max(0, static_cast<int>(lr + 18.0)))] += 1.0;
+          const double x1 = mbs(m).x1min + (i - is + 0.5)*mbs(m).dx1;
+          const double fx = (x1 - msz.x1min)/(msz.x1max - msz.x1min);
+          cnt[kNd + std::min(kNx - 1, std::max(0, static_cast<int>(fx*kNx)))] += 1.0;
+          const int nedge = ((nx2 > 1 && (j == js || j == je)) ? 1 : 0) +
+                            ((nx3 > 1 && (k == ks || k == ke)) ? 1 : 0);
+          cnt[kNd + kNx + nedge] += 1.0;
+          const double w = t(m,1,k,j,i)/std::fmax(std::fabs(t(m,4,k,j,i)) +
+                                                  std::fabs(t(m,3,k,j,i)), 1.0e-300);
+          if (w < wmin) {
+            wmin = w; pw[0] = m; pw[1] = gid(m); pw[2] = i; pw[3] = j; pw[4] = k;
+          }
+        }
+      }
+    }
+  }
+  int owner = global_variable::my_rank;
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, cnt.data(), kN, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  {
+    struct {double v; int r;} a = {wmin, global_variable::my_rank};
+    MPI_Allreduce(MPI_IN_PLACE, &a, 1, MPI_DOUBLE_INT, MPI_MINLOC, MPI_COMM_WORLD);
+    owner = a.r;
+  }
+#endif
+  if (global_variable::my_rank == 0) {
+    std::printf("CLEAN DIAGNB cycle %d t2s %d eint<=0 cells: log10rho(<-17..>=-5):",
+                pmy_pack->pmesh->ncycle, t2_solve);
+    for (int b = 0; b < kNd; ++b) std::printf(" %.0f", cnt[b]);
+    std::printf(" | mesh x1 (16 bins):");
+    for (int b = 0; b < kNx; ++b) std::printf(" %.0f", cnt[kNd + b]);
+    std::printf(" | inside %.0f face %.0f edge %.0f\n", cnt[kNd + kNx],
+                cnt[kNd + kNx + 1], cnt[kNd + kNx + 2]);
+  }
+  if (global_variable::my_rank == owner && pw[0] >= 0) {
+    const int m = pw[0], k = pw[4], j = pw[3], i = pw[2];
+    std::printf("CLEAN DIAGNB cycle %d worst rank %d gid %d i %d j %d k %d rho %.3e "
+                "x1 %.4e: rhs %.4e E %.4e eint %.4e E_old %.4e hdivF %.4e wk %.4e "
+                "wr %.4e hesrc %.4e E_tr %.4e\n", pmy_pack->pmesh->ncycle,
+                global_variable::my_rank, pw[1], i, j, k, rho(m,k,j,i),
+                mbs(m).x1min + (i - is + 0.5)*mbs(m).dx1, t(m,1,k,j,i), t(m,2,k,j,i),
+                t(m,3,k,j,i), t(m,4,k,j,i), t(m,5,k,j,i), t(m,6,k,j,i), t(m,7,k,j,i),
+                t(m,8,k,j,i), t(m,9,k,j,i));
+    std::fflush(stdout);
+  }
 }
 
 }  // namespace radm1
