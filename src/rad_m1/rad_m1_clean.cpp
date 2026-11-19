@@ -3258,6 +3258,27 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
     const int na = (dir == 0) ? je - js + 1 : ie - is + 1;
     const int nb = (dir == 2) ? je - js + 1 : ke - ks + 1;
     Real dmax = 0.0, fmx = 0.0;
+    if (ph == 1) {
+      // per face (coalesced) lo (CLW_AM), hi (CLW_AP), dg (CLW_A0, then the Thomas
+      // factor den), r (CLW_R0) and the faces with an equation (CLW_P; scratch slots of
+      // the E solve, which the directions share: every pass; the x1 PCR reads them too),
+      // and in the line sweep the Thomas factors den and c' (CLW_CP)
+      CleanFor("cln_fs2f", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const int t = (dir == 0) ? i - is : ((dir == 1) ? j - js : k - ks);
+        // (clean_stag_ftie: the high face of a line that another MeshBlock or the
+        // periodic wrap shares is its owner's, the block whose low face it is: an
+        // identity row, the value its CLW_Y ghost brings, CleanStagFaceTie)
+        const bool own = ln.Own(x, dir, m, k, j, i, t, n, tie);
+        Real lo, hi, dg, r;
+        const bool eq = CleanStagFRow(x, ln, fc, dir, m, k, j, i, lo, hi, dg, r, own);
+        x.w(m,CLW_AM,k,j,i) = lo;
+        x.w(m,CLW_AP,k,j,i) = hi;
+        x.w(m,CLW_A0,k,j,i) = dg;
+        x.w(m,CLW_R0,k,j,i) = r;
+        x.w(m,CLW_P,k,j,i) = !own ? -1.0 : (eq ? 1.0 : 0.0);
+      });
+    }
     if (ph == 1 && dir == 0 && fpcr) {
       // (clean_stag_fs_pcr: on a GPU the x1 lines by parallel cyclic reduction, one team
       // per line coalesced along x1, as the preconditioner's (CleanStagLineSolve); the
@@ -3275,15 +3296,16 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
         ScrArray1D<Real> sw(tm.team_scratch(lv0), 8*nx);
         Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int t) {
           const int i = is + t;
-          Real lo, hi, dg, r;
-          // (the faces beyond a MeshBlock line end: the neighbours', lagged; ftie: a
-          // shared high face its owner's, the identity row)
-          const bool own = ln.Own(x, dir, m, k, j, i, t, n, tie);
-          if (CleanStagFRow(x, ln, fc, dir, m, k, j, i, lo, hi, dg, r, own)) {
+          // (the rows of cln_fs2f; the faces beyond a MeshBlock line end: the
+          // neighbours', lagged; ftie: a shared high face its owner's, the identity row)
+          const Real lo = x.w(m,CLW_AM,k,j,i), hi = x.w(m,CLW_AP,k,j,i);
+          const Real dg = x.w(m,CLW_A0,k,j,i), p = x.w(m,CLW_P,k,j,i);
+          Real r = x.w(m,CLW_R0,k,j,i);
+          if (p > 0.0) {
             if (t == 0) r -= lo*ln.Far(x, dir, m, k, j, i, k, j, i-1);
             if (t == n) r -= hi*ln.Far(x, dir, m, k, j, i, k, j, i);
           }
-          if (!own) r = ln.Near(x, dir, m, k, j, i, k, j, i-(t == 0));
+          if (p < 0.0) r = ln.Near(x, dir, m, k, j, i, k, j, i-(t == 0));
           sw(t) = (t > 0) ? lo : 0.0;
           sw(nx + t) = dg;
           sw(2*nx + t) = (t < n) ? hi : 0.0;
@@ -3320,25 +3342,6 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
         });
       });
     } else if (ph == 1) {
-      // per face (coalesced) lo (CLW_AM), hi (CLW_AP), dg (CLW_A0, then the Thomas
-      // factor den), r (CLW_R0) and the faces with an equation (CLW_P; scratch slots of
-      // the E solve, which the directions share: every pass), and in the line sweep
-      // the Thomas factors den and c' (CLW_CP)
-      CleanFor("cln_fs2f", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        const int t = (dir == 0) ? i - is : ((dir == 1) ? j - js : k - ks);
-        // (clean_stag_ftie: the high face of a line that another MeshBlock or the
-        // periodic wrap shares is its owner's, the block whose low face it is: an
-        // identity row, the value its CLW_Y ghost brings, CleanStagFaceTie)
-        const bool own = ln.Own(x, dir, m, k, j, i, t, n, tie);
-        Real lo, hi, dg, r;
-        const bool eq = CleanStagFRow(x, ln, fc, dir, m, k, j, i, lo, hi, dg, r, own);
-        x.w(m,CLW_AM,k,j,i) = lo;
-        x.w(m,CLW_AP,k,j,i) = hi;
-        x.w(m,CLW_A0,k,j,i) = dg;
-        x.w(m,CLW_R0,k,j,i) = r;
-        x.w(m,CLW_P,k,j,i) = !own ? -1.0 : (eq ? 1.0 : 0.0);
-      });
       // one exact Thomas solve per line; the faces beyond a line end of a MeshBlock or
       // a periodic wrap are the last F solve's (lagged); on the cubed sphere the largest
       // change of a face and the largest F (a reduction only there: no fence elsewhere)
