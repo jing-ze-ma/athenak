@@ -2699,7 +2699,9 @@ class RadiationM1 {
   // cell keeps R = 1.  Every other cell takes R = (V (E + s) + I_safe - th V E^n)/P, I_safe
   // the inflow from safe donors (those faces are never limited), so V E_new >= th V E^n
   // in every cell after one pass and one R exchange: positive by construction, one flux
-  // per face (energy exact); unsafe cells are limited even where the rounds would not
+  // per face (energy exact); unsafe cells are limited even where the rounds would not.
+  // The cell's own sink that its gas takes (at most (chat/c) V dEN) counts as one more
+  // outflow, to the gas, scaled by the same R (given back to E, taken from the gas)
   bool t2_ffct_dnr = false;
   void Time2FaceFct(int stage, Real c1, Real c2);
   // facebound-1112 <rad_m1>/implicit_fclip_diag (read only when named; diagnostic only,

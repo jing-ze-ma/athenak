@@ -1916,6 +1916,18 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     }
     w = cvol(m,k,j,i)*(u0_(m,M1_E,k,j,i) + in_(m,M1_T2_E,k,j,i));
   };
+  // (time2_face_fct_form = donor: the cell's own sink of the increment that the gas
+  // takes, at most the gas's gain (chat/c) V dEN, is limited with the faces: an outflow
+  // to the gas of the cell, given back to E and taken from the gas by the same R)
+  const Real chcl = chat/c_light;
+  const bool dnr = t2_ffct_dnr;
+  auto csink = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
+                             const Real w, const Real po, const Real pi) {
+    if (!dnr) return 0.0;
+    const Real v = cvol(m,k,j,i);
+    const Real sv = w - v*u0_(m,M1_E,k,j,i) - pi + po;
+    return fmin(fmax(-sv, 0.0), fmax(chcl*v*in_(m,M1_T2_EN,k,j,i), 0.0));
+  };
   // R = 1 everywhere, ghosts included (physical ghosts are never filled: unlimited);
   // the rounds read slot sa and write sb, then swap them (no copy; both slots keep the
   // same ghosts: after an exchange of sa they are copied to sb)
@@ -1962,7 +1974,8 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
       bool lim;
       cell(m, k, j, i, w, po, pi, pl, dw, lim, ca);
       const Real wf = eth*cvol(m,k,j,i)*un_(m,M1_E,k,j,i);
-      const bool safe = (hoi && hm_(m,k,j,i) > 0.0) || !(po > 0.0) || (w - pi > wf);
+      const bool safe = (hoi && hm_(m,k,j,i) > 0.0) ||
+                        !(po + csink(m, k, j, i, w, po, pi) > 0.0) || (w - pi > wf);
       iw_(m,cb,k,j,i) = safe ? 1.0 : 0.0;
     });
     ImplicitKrylovHalo(cb);
@@ -1973,8 +1986,9 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
       Real w, po, pi, pl, dw;
       bool lim;
       cell(m, k, j, i, w, po, pi, pl, dw, lim, cb);   // (pl: the safe donors' inflow)
-      const Real q = w + po - pi + pl - eth*cvol(m,k,j,i)*un_(m,M1_E,k,j,i);
-      const Real rq = (q > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/po) : 0.0;
+      const Real pc = csink(m, k, j, i, w, po, pi);
+      const Real q = w + po + pc - pi + pl - eth*cvol(m,k,j,i)*un_(m,M1_E,k,j,i);
+      const Real rq = (q > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/(po + pc)) : 0.0;
       if (rq < 1.0) {
         iw_(m,ca,k,j,i) = rq;
         a += 1.0;
@@ -2169,8 +2183,14 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     Real w, po, pi, pl, dw;
     bool lim;
     cell(m, k, j, i, w, po, pi, pl, dw, lim, ca);
-    if (lim) {in_(m,M1_T2_E,k,j,i) += dw/cvol(m,k,j,i);}
     const Real rc = iw_(m,ca,k,j,i);
+    if (dnr && rc < 1.0) {   // (donor: the gas gives the withheld cell sink back)
+      const Real dc = (1.0 - rc)*csink(m, k, j, i, w, po, pi);
+      in_(m,M1_T2_EN,k,j,i) -= dc/(chcl*cvol(m,k,j,i));
+      dw += dc;
+      lim = true;
+    }
+    if (lim) {in_(m,M1_T2_E,k,j,i) += dw/cvol(m,k,j,i);}
     if (rc < 1.0) {sw += (1.0 - rc)*po;}
     if (!(hoi && hm_(m,k,j,i) > 0.0) && !(w + dw > 0.0)) {sl += 1.0;}
     if (lim) {   // (the limited old vector against E^n)
