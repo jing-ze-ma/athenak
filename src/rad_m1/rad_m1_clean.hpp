@@ -223,6 +223,11 @@ constexpr int CLW_NK = 56;   //   (allocated only with clean_stag_kpos / xpat)
 constexpr int CLW_XA = 56;   // staggered clean_xt_exact: B less its rest (the row's
 constexpr int CLW_XW = 57;   //   exchange as linearised), the row's work W
 constexpr int CLW_NX = 58;   //   (allocated only with clean_xt_exact)
+constexpr int CLW_KS = 58;   // staggered clean_stag_kpos / kreal: the momentum increment's
+                             //   applied share s (CleanOldVector, kreal; 1 without),
+constexpr int CLW_KW = 59;   //   E_old after the gas's give-back, before the explicit
+                             //   kinetic-energy work removal (CleanStagKPos)
+constexpr int CLW_NKP = 60;  //   (allocated with clean_stag_kpos)
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanFvI
