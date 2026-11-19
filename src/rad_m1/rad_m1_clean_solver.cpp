@@ -896,7 +896,7 @@ void RadiationM1::CleanFaceCoefficients() {
       }
       for (int d = 0; d < nd && !fsc; ++d) {
         Real mu = 0.0;
-        for (int b = 0; b < 3; ++b) mu += dv(d,b)*gn(m,CLG_N+3*dir+b,k,j,i);
+        for (int b = 0; b < 3; ++b) mu += dv(d,b)*gn.At<CLG_N>(m,3*dir+b,k,j,i);
         const Real wl = dv(d,3)*fi(m,d,kl,jl,il), wr = dv(d,3)*fi(m,d,k,j,i);
         jl0 += wl;
         jr0 += wr;
@@ -979,7 +979,7 @@ void RadiationM1::CleanApply(const int src, const int dst) {
                 const int p = (q == 0) ? 1 : 0, pp = (q == 2) ? 1 : 2;
                 Real r = 0.0;
                 for (int c = 0; c < 3; ++c) {
-                  r += gn(m,CLG_N+3*d+c,k,j,i)*(w(m,CLW_L+3*p+c,kc,jc,ic) +
+                  r += gn.At<CLG_N>(m,3*d+c,k,j,i)*(w(m,CLW_L+3*p+c,kc,jc,ic) +
                                                w(m,CLW_L+3*pp+c,kc,jc,ic));
                 }
                 return r;
@@ -1095,7 +1095,7 @@ void RadiationM1::CleanPreconditionerSetup() {
             for (int b = 0; b < 3; ++b) {
               for (int c = 0; c < 3; ++c) {
                 const int n = CLN_D11 + ((b == c) ? b : 2 + b + c);
-                const Real ag = a*x.g(m,CLG_N+3*q+c,kf,jf,iff);
+                const Real ag = a*x.g.At<CLG_N>(m,3*q+c,kf,jf,iff);
                 if (ex) {   // (c0 P0 + c1 P1 + c2 P2 of the other side's cells)
                   Real cf[3];
                   CleanCsSeamCoef(x, n, q, m, k, j, i, -s, cf);

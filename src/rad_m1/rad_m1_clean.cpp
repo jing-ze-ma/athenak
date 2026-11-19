@@ -160,12 +160,12 @@ static Real CleanStagTorqueFace(const CleanArgs &x, const int e, const int d, co
     pf[n] = 0.5*(x.cs(m,CLN_D11+n,kf-dk,jf-dj,iff-di)*x.w(m,e,kf-dk,jf-dj,iff-di) +
                  x.cs(m,CLN_D11+n,kf,jf,iff)*x.w(m,e,kf,jf,iff));
   }
-  for (int c = 0; c < 3; ++c) nf[c] = x.g(m,CLG_N+3*d+c,kf,jf,iff);
+  for (int c = 0; c < 3; ++c) nf[c] = x.g.At<CLG_N>(m,3*d+c,kf,jf,iff);
   for (int b = 0; b < 3; ++b) {
     pn[b] = 0.0;
     for (int c = 0; c < 3; ++c) pn[b] += pf[(b == c) ? b : 2 + b + c]*nf[c];
-    mf[b] = (d == 0) ? x.x1f(m,iff)*x.area[0](m,kf,jf,iff)*x.g(m,CLG_N+b,kf,jf,iff)
-                     : x.g(m,CLG_M+3*(d-1)+b,kf,jf,iff);
+    mf[b] = (d == 0) ? x.x1f(m,iff)*x.area[0](m,kf,jf,iff)*x.g.At<CLG_N>(m,b,kf,jf,iff)
+                     : x.g.At<CLG_M>(m,3*(d-1)+b,kf,jf,iff);
   }
   return mf[0]*pn[1] - mf[1]*pn[0];
 }
@@ -1454,8 +1454,8 @@ void RadiationM1::CleanRstFaces() {
     const Real a3 = (u0_(m,M1_F3,k,j,i) - c*u0_(m,M1_F2,k,j,i))/s2 - g[2]/sn;
     const Real a1 = u0_(m,M1_F1,k,j,i) - g[0];
     for (int b = 0; b < 3; ++b) {
-      w(m,CLW_DM+b,k,j,i) = (a1*x.g(m,CLG_R+b,k,j,i) + a2*x.g(m,CLG_E+b,k,j,i) +
-                             a3*x.g(m,CLG_E+3+b,k,j,i))/e;
+      w(m,CLW_DM+b,k,j,i) = (a1*x.g.At<CLG_R>(m,b,k,j,i) + a2*x.g.At<CLG_E>(m,b,k,j,i) +
+                             a3*x.g.At<CLG_E>(m,3+b,k,j,i))/e;
     }
   });
   CleanGhostFill(cln_w, CLW_DM, 4);
@@ -4342,7 +4342,7 @@ void RadiationM1::CleanStagCsLateral(const int e, const bool st, const int part)
             dp[n] = x.cs(m,CLN_D11+n,k+s*dk,j+s*dj,i+s*di)*x.w(m,e,k+s*dk,j+s*dj,i+s*di) -
                     p0[n];
           }
-          for (int c = 0; c < 3; ++c) nf[c] = x.g(m,CLG_N+3*q+c,kf,jf,iff);
+          for (int c = 0; c < 3; ++c) nf[c] = x.g.At<CLG_N>(m,3*q+c,kf,jf,iff);
           for (int b = 0; b < 3; ++b) {
             for (int c = 0; c < 3; ++c) y[b] += a*nf[c]*dp[(b == c) ? b : 2 + b + c];
           }
@@ -4356,7 +4356,7 @@ void RadiationM1::CleanStagCsLateral(const int e, const bool st, const int part)
             };
             Real cf[3] = {0.0, 0.0, 0.0};
             if (ex) CleanCsSeamCoef(x, n, q, m, k, j, i, -s, cf);
-            y[b] += a*x.g(m,CLG_N+3*q+c,kf,jf,iff)*(ex ? cf[0]*p(0) + cf[1]*p(-s) +
+            y[b] += a*x.g.At<CLG_N>(m,3*q+c,kf,jf,iff)*(ex ? cf[0]*p(0) + cf[1]*p(-s) +
                                                          cf[2]*p(-2*s) : p(s) - p(0));
           }
         }

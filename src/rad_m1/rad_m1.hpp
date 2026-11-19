@@ -96,13 +96,26 @@ struct CleanGeo {
   DvceArray5D<Real> r, a;
   int is = 0, ie = 0;
   KOKKOS_FORCEINLINE_FUNCTION
-  static int Slot(const int n) {   // a: n >= 0, r: -1 - n
+  static constexpr int Slot(const int n) {   // a: n >= 0, r: -1 - n
     // (a table, not a chain of branches on n: with n a loop index, the face kernels keep
     // their registers on the GPU)
     constexpr signed char t[CLG_NV] = {0, 1, 2, 3, 4, 5, 6, 7, 8, -1, -2, -3, 9, 10, 11, 12,
       13, 14, 15, 16, 17, -4, -5, -6, -7, -8, -9, 18, 19, 20, -10, 21, 22, 23, -11, -12,
       -13, -14, CLG_NA - 1};
     return t[n];
+  }
+  // component B + o, B known at compile time, o < the run of components from B that lie
+  // together in one of the arrays (CLG_N 9, CLG_X 3, CLG_R 9, CLG_E 6, CLG_M 6, CLG_F 3,
+  // CLG_F + 4 3, CLG_A 3): the array and the slot without a lookup
+  template <int B>
+  KOKKOS_FORCEINLINE_FUNCTION
+  Real At(const int m, const int o, const int k, const int j, const int i) const {
+    constexpr int s = Slot(B);
+    if constexpr (s >= 0) {
+      return a(m,s+o,k,j,(i < is) ? 0 : ((i > ie) ? 2 : 1));
+    } else {
+      return r(m,-1-s+o,k,j,i);
+    }
   }
   KOKKOS_FORCEINLINE_FUNCTION
   Real operator()(const int m, const int n, const int k, const int j, const int i) const {

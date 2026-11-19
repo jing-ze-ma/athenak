@@ -86,7 +86,7 @@ KOKKOS_INLINE_FUNCTION
 void CleanFaceVector(const CleanArgs &x, const DvceArray2D<Real> &x3f, const int dir,
                      const int m, const int k, const int j, const int i, Real a[3]) {
   if (x.cub) {   // the exact closed face vectors of CleanCsGeometry
-    for (int c = 0; c < 3; ++c) a[c] = x.area[dir](m,k,j,i)*x.g(m,CLG_N+3*dir+c,k,j,i);
+    for (int c = 0; c < 3; ++c) a[c] = x.area[dir](m,k,j,i)*x.g.At<CLG_N>(m,3*dir+c,k,j,i);
     return;
   }
   if (!x.sph) {
@@ -1928,7 +1928,7 @@ void RadiationM1::CleanFvLevels() {
     // (the cubed sphere: the centroid; Cartesian: the centre)
     const Real xp[3] = {x1v(m,i), x2v(m,j), x3v(m,k)};
     for (int a = 0; a < 5; ++a) {
-      xc(m,a,c) = (a >= 3 || ca.sph) ? f[a] : (ca.cub ? gn(m,CLG_X+a,k,j,i) : xp[a]);
+      xc(m,a,c) = (a >= 3 || ca.sph) ? f[a] : (ca.cub ? gn.At<CLG_X>(m,a,k,j,i) : xp[a]);
     }
   });
   if (cln_fvc.extent(0) != static_cast<size_t>(nmd)*nc) {
@@ -3314,7 +3314,7 @@ void RadiationM1::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
       for (int e = 0; e < n; ++e) {
         const int d = o + e;
         Real mu = 0.0;
-        for (int b = 0; b < 3; ++b) mu += dv(d,b)*gn(m,CLG_N+3*dir+b,k,j,i);
+        for (int b = 0; b < 3; ++b) mu += dv(d,b)*gn.At<CLG_N>(m,3*dir+b,k,j,i);
         const Real il_ = fv ? fi(m,fo+e,kl,jl,il) : gl_[e];
         const Real ir_ = fv ? fi(m,fo+e,k,j,i) : gr_[e];
         const Real wl = dv(d,3)*il_, wr = dv(d,3)*ir_;

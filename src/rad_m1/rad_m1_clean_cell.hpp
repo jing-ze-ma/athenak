@@ -190,7 +190,7 @@ Real CleanDiag(const CleanArgs &x, const int a, const int b, const int m, const 
 KOKKOS_INLINE_FUNCTION
 Real CleanNf(const CleanArgs &x, const int b, const int dir, const int m, const int kf,
              const int jf, const int iff) {
-  return x.cub ? x.g(m,CLG_N+3*dir+b,kf,jf,iff) : ((b == dir) ? 1.0 : 0.0);
+  return x.cub ? x.g.At<CLG_N>(m,3*dir+b,kf,jf,iff) : ((b == dir) ? 1.0 : 0.0);
 }
 
 //----------------------------------------------------------------------------------------
@@ -234,7 +234,7 @@ Real CleanDnn(const CleanArgs &x, const int dir, const int m, const int kf, cons
 KOKKOS_INLINE_FUNCTION
 Real CleanCsFrame(const CleanArgs &x, const int m, const int k, const int j, const int i,
                   Real q[3][3]) {
-  for (int c = 0; c < 3; ++c) q[0][c] = x.g(m,CLG_R+c,k,j,i);
+  for (int c = 0; c < 3; ++c) q[0][c] = x.g.At<CLG_R>(m,c,k,j,i);
   const Real rho = std::sqrt(q[0][0]*q[0][0] + q[0][1]*q[0][1]);
   q[2][0] = -q[0][1]/rho;
   q[2][1] = q[0][0]/rho;
@@ -258,8 +258,8 @@ void CleanCsFamily(const CleanArgs &x, const int m, const int k, const int j, co
     const int dk = (d == 2), dj = (d == 1);
     Real s = 0.0;
     for (int c = 0; c < 3; ++c) {
-      nd[d][c] = (d == 0) ? x.g(m,CLG_R+c,k,j,i) :
-                 x.g(m,CLG_N+3*d+c,k,j,i) + x.g(m,CLG_N+3*d+c,k+dk,j+dj,i);
+      nd[d][c] = (d == 0) ? x.g.At<CLG_R>(m,c,k,j,i) :
+                 x.g.At<CLG_N>(m,3*d+c,k,j,i) + x.g.At<CLG_N>(m,3*d+c,k+dk,j+dj,i);
       s += nd[d][c]*nd[d][c];
     }
     for (int c = 0; c < 3; ++c) nd[d][c] /= std::sqrt(s);
@@ -343,8 +343,8 @@ void CleanCellRows(const CleanArgs &x, const int dir, const int m, const int kf,
   Real q[3][3], mf[3];
   const Real rc = CleanCsFrame(x, m, k, j, i, q);
   for (int c = 0; c < 3; ++c) {
-    mf[c] = (dir == 0) ? x.x1f(m,iff)*a*x.g(m,CLG_N+c,kf,jf,iff)
-                       : x.g(m,CLG_M+3*(dir-1)+c,kf,jf,iff);
+    mf[c] = (dir == 0) ? x.x1f(m,iff)*a*x.g.At<CLG_N>(m,c,kf,jf,iff)
+                       : x.g.At<CLG_M>(m,3*(dir-1)+c,kf,jf,iff);
   }
   g[0] = hv*a*f[0];
   for (int b = 0; b < 2; ++b) {
@@ -390,10 +390,10 @@ void CleanGasVector(const CleanArgs &x, const int m, const int k, const int j,
   if (!x.cub) return;
   Real q[3][3], pt[3], c = 0.0;
   CleanCsFrame(x, m, k, j, i, q);
-  for (int b = 0; b < 3; ++b) c += x.g(m,CLG_E+b,k,j,i)*x.g(m,CLG_E+3+b,k,j,i);
+  for (int b = 0; b < 3; ++b) c += x.g.At<CLG_E>(m,b,k,j,i)*x.g.At<CLG_E>(m,3+b,k,j,i);
   const Real u1 = (p[1] - c*p[2])/(1.0 - c*c), u2 = (p[2] - c*p[1])/(1.0 - c*c);
   for (int b = 0; b < 3; ++b) {
-    pt[b] = u1*x.g(m,CLG_E+b,k,j,i) + u2*x.g(m,CLG_E+3+b,k,j,i);
+    pt[b] = u1*x.g.At<CLG_E>(m,b,k,j,i) + u2*x.g.At<CLG_E>(m,3+b,k,j,i);
   }
   for (int a = 1; a < 3; ++a) p[a] = q[a][0]*pt[0] + q[a][1]*pt[1] + q[a][2]*pt[2];
 }
@@ -421,8 +421,8 @@ void CleanGasChange(const CleanArgs &x, const int m, const int k, const int j,
   CleanCsFrame(x, m, k, j, i, q);
   for (int b = 0; b < 3; ++b) dt[b] = dm[1]*q[1][b] + dm[2]*q[2][b];
   for (int a = 1; a < 3; ++a) {
-    dh[a] = dt[0]*x.g(m,CLG_E+3*(a-1),k,j,i) + dt[1]*x.g(m,CLG_E+3*(a-1)+1,k,j,i) +
-            dt[2]*x.g(m,CLG_E+3*(a-1)+2,k,j,i);
+    dh[a] = dt[0]*x.g.At<CLG_E>(m,3*(a-1),k,j,i) + dt[1]*x.g.At<CLG_E>(m,3*(a-1)+1,k,j,i) +
+            dt[2]*x.g.At<CLG_E>(m,3*(a-1)+2,k,j,i);
   }
 }
 

@@ -721,8 +721,8 @@ Real CleanCsNormA(const CleanArgs &x, const int dir, const int m, const int k,
   const int ko = lo ? k : kl, jo = lo ? j : jl;
   Real xr = 0.0, rn = 0.0;
   for (int c = 0; c < 3; ++c) {
-    xr += SQR(x.g(m,CLG_X+c,ko,jo,i));
-    rn += x.g(m,CLG_R+c,ko,jo,i)*x.g(m,CLG_N+3*dir+c,k,j,i);
+    xr += SQR(x.g.At<CLG_X>(m,c,ko,jo,i));
+    rn += x.g.At<CLG_R>(m,c,ko,jo,i)*x.g.At<CLG_N>(m,3*dir+c,k,j,i);
   }
   return 0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,kl,jl,i))/(2.0*std::sqrt(xr)*fabs(rn));
 }
@@ -738,7 +738,7 @@ Real CleanStagDnn(const CleanArgs &x, const int dir, const int m, const int kf,
   Real d = 0.0;
   for (int a = 0; a < 3; ++a) {
     for (int b = 0; b < 3; ++b) {
-      d += x.g(m,CLG_N+3*dir+a,kf,jf,iff)*x.g(m,CLG_N+3*dir+b,kf,jf,iff)*
+      d += x.g.At<CLG_N>(m,3*dir+a,kf,jf,iff)*x.g.At<CLG_N>(m,3*dir+b,kf,jf,iff)*
            x.cs(m,CLN_D11+((a == b) ? a : 2 + a + b),k,j,i);
     }
   }
@@ -823,7 +823,7 @@ Real CleanStagCsLat(const CleanArgs &x, const int dir, const int m, const int kf
   const int q = CleanCsSlot(x, dir, m, kf, jf, iff, k, j, i, false, s)/2;
   const int p = (q == 0) ? 1 : 0, pp = (q == 2) ? 1 : 2;
   for (int c = 0; c < 3; ++c) {
-    d += x.g(m,CLG_N+3*dir+c,kf,jf,iff)*(x.w(m,CLW_L+3*p+c,k,j,i) +
+    d += x.g.At<CLG_N>(m,3*dir+c,kf,jf,iff)*(x.w(m,CLW_L+3*p+c,k,j,i) +
                                         x.w(m,CLW_L+3*pp+c,k,j,i));
   }
   return d;
@@ -840,7 +840,7 @@ Real CleanStagN(const CleanArgs &x, const int v, const int dir, const int m,
                 const int i) {
   if (!x.cub) return x.w(m,v+dir,k,j,i);
   Real d = 0.0;
-  for (int b = 0; b < 3; ++b) d += x.g(m,CLG_N+3*dir+b,kf,jf,iff)*x.w(m,v+b,k,j,i);
+  for (int b = 0; b < 3; ++b) d += x.g.At<CLG_N>(m,3*dir+b,kf,jf,iff)*x.w(m,v+b,k,j,i);
   return d;
 }
 
@@ -866,7 +866,7 @@ void CleanStagArea(const CleanArgs &x, const int dir, const int m, const int k,
   const int kd = k - d*(dir == 2);
   Real sd, a;
   if (x.cub) {
-    a = x.g(m,CLG_A + CleanCsSlot(x, dir, m, k, j, i, kd, jd, id, false, sd)/2,kd,jd,id)/
+    a = x.g.At<CLG_A>(m,CleanCsSlot(x, dir, m, k, j, i, kd, jd, id, false, sd)/2,kd,jd,id)/
         x.area[dir](m,k,j,i);
   } else {
     a = (dir == 0) ? x.x1v(m,id)*x.x1v(m,id)/(x.x1f(m,i)*x.x1f(m,i))
@@ -1629,9 +1629,9 @@ void CleanStagCsVector(const CleanArgs &x, const int m, const int k, const int j
     for (int s = 0; s < 2; ++s) {
       const int kf = k + s*(q == 2), jf = j + s*(q == 1), iff = i + s*(q == 0);
       for (int r = 0; r < 3; ++r) {
-        const Real nr = x.g(m,CLG_N+3*q+r,kf,jf,iff);
+        const Real nr = x.g.At<CLG_N>(m,3*q+r,kf,jf,iff);
         b[r] += c[2*q+s]*nr;
-        for (int t = 0; t < 3; ++t) a[r][t] += w[2*q+s]*nr*x.g(m,CLG_N+3*q+t,kf,jf,iff);
+        for (int t = 0; t < 3; ++t) a[r][t] += w[2*q+s]*nr*x.g.At<CLG_N>(m,3*q+t,kf,jf,iff);
       }
     }
   }
