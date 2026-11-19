@@ -1602,6 +1602,9 @@ void RadiationM1::CleanStagXDonor() {
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     auto fc = x.fc[dir];
+    // (faces outside the active range: none, every solve)
+    Kokkos::deep_copy(Kokkos::subview(fc, Kokkos::ALL, xq, Kokkos::ALL, Kokkos::ALL,
+                                      Kokkos::ALL), 0.0);
     Real nc = 0.0;
     Kokkos::parallel_reduce("cln_xdonor", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
         DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + dk + 1, je + dj + 1, ie + di + 1}),
