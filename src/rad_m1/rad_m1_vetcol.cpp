@@ -638,8 +638,9 @@ void RadiationM1::VetColInit() {
   // the cs basis (r, xi, eta), covariant on the panel pair like F, order rr, r xi,
   // r eta, xi xi, xi eta, eta eta.  Zero, and read by nothing yet (CS2_RESULTS.md,
   // "interface"); the uniaxial (chi, n) of slots 0..3 is what runs.  Elsewhere 4 slots.
-  Kokkos::realloc(tau_ten, nmb, (vlat_on || pm->use_cubed_sphere) ?
-                  (M1_TT_LAT0 + M1_TT_NLAT) : 4, c3, c2, c1);
+  // (scheme = clean: no slots, its closure is the rays' cln_s)
+  Kokkos::realloc(tau_ten, nmb, clean ? 0 : ((vlat_on || pm->use_cubed_sphere) ?
+                  (M1_TT_LAT0 + M1_TT_NLAT) : 4), c3, c2, c1);
   Kokkos::deep_copy(tau_ten, 0.0);
   if (!vcol_dump.empty()) {
     Kokkos::realloc(vcol_mom, nmb, 5, c3, c2, c1);

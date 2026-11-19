@@ -248,7 +248,7 @@ void RadiationM1::VetLatInit() {
   const int nlx = vgd_on ? (1 + M1_TT_NLAT) : 2;
   // (scheme = clean: vlat_lx and its exchange buffers made at the first VetLatTTGhosts,
   // the fold of a fresh start's build; a restart never needs them)
-  const bool lxe = !clean || pm->use_cubed_sphere;
+  const bool lxe = !clean;
   if (lxe) {Kokkos::realloc(vlat_lx, nmb, nlx, c3, c2, c1);}
   Kokkos::deep_copy(vlat_lx, 0.0);
   Kokkos::realloc(vlat_tt_c, nmb, nlx, 1, 1, 1);
