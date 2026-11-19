@@ -956,17 +956,20 @@ void RadiationM1::CleanFaceCoefficients() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanApply
 //! \brief w(dst) = A w(src) over the active cells (the linear part of the operator); the
-//! exchange of src overlaps the inner cells (not on the cubed sphere: CleanStagCsLateral
-//! reads its ghosts first)
+//! exchange of src overlaps the inner cells (on the cubed sphere with the xdonor only:
+//! else CleanStagCsLateral reads its ghosts first)
 
 void RadiationM1::CleanApply(const int src, const int dst) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, js = indcs.js, ks = indcs.ks;
-  const bool ov = !pmy_pack->pmesh->use_cubed_sphere;
+  // (the cubed sphere: with the xdonor, whose cross terms read no ghost of src and no
+  // lateral sums, as elsewhere; else the lateral sums of src follow its exchange)
+  const bool ov = !pmy_pack->pmesh->use_cubed_sphere || cln_xd_on;
   auto wa = (src < cln_w.ns) ? cln_w.s : cln_w.o;   // (src's array, CLW_NS)
   const int ws = (src < cln_w.ns) ? src : src - cln_w.ns;
   // (the cubed sphere: the stencil and CleanStagCsLateral read the first ghost layer)
-  CleanGhostFill(wa, ws, 1, true, ov ? 1 : 0, ov ? 0 : 1);
+  const bool cub0 = pmy_pack->pmesh->use_cubed_sphere;
+  CleanGhostFill(wa, ws, 1, true, ov ? 1 : 0, cub0 ? 1 : 0);
   const std::function<void()> fin = [&]() {if (ov) CleanGhostFill(wa, ws, 1, true, 2);};
   // (the cubed sphere's lateral sums Y of src: their exchange overlaps the inner faces'
   // cross terms, cln_xf)
