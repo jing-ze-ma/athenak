@@ -958,32 +958,36 @@ void RadiationM1::CleanApply(const int src, const int dst) {
           const bool xon = x.multi_d && !(x.xq >= 0 && !x.hi);
           for (int pl = 0; pl < (ps ? 2 : 1); ++pl) {
             const int o = pl*ne[d];   // (ps 1: the low and the high plane)
-            CleanFor("cln_xf", pmy_pack->nmb_thispack - 1,
-                     ps ? ks + o*dk : ks + dk, ps ? (dk ? ks + o : ke) : ke,
-                     ps ? js + o*dj : js + dj, ps ? (dj ? js + o : je) : je,
-                     ps ? is + o*di : is + di, ps ? (di ? is + o : ie) : ie,
+            const int k0 = ps ? ks + o*dk : ks + dk, k1 = ps ? (dk ? ks + o : ke) : ke;
+            const int j0 = ps ? js + o*dj : js + dj, j1 = ps ? (dj ? js + o : je) : je;
+            const int i0 = ps ? is + o*di : is + di, i1 = ps ? (di ? is + o : ie) : ie;
+            if (ps == 1 || !xon) {
+              CleanFor("cln_xfe", pmy_pack->nmb_thispack - 1, k0, k1, j0, j1, i0, i1,
+              KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+                xf(m,d,k,j,i) = CleanFaceCross(*px, src, d, m, k, j, i);
+              });
+              continue;
+            }
+            // (inside: CleanFaceCross with no boundary or seam, its own kernel)
+            CleanFor("cln_xf", pmy_pack->nmb_thispack - 1, k0, k1, j0, j1, i0, i1,
             KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-              if (ps == 0 && xon) {   // (inside: CleanFaceCross with no boundary or seam)
-                const int kl = k - dk, jl = j - dj, il = i - di;
-                auto lat = [&](const int kc, const int jc, const int ic) {
-                  Real s;   // (CleanStagCsLat)
-                  const int q = d ? CleanCsSlot(*px, d, m, k, j, i, kc, jc, ic, false, s)/2
-                                  : 0;
-                  const int p = (q == 0) ? 1 : 0, pp = (q == 2) ? 1 : 2;
-                  Real r = 0.0;
-                  for (int c = 0; c < 3; ++c) {
-                    r += gn(m,CLG_N+3*d+c,k,j,i)*(w(m,CLW_L+3*p+c,kc,jc,ic) +
-                                                 w(m,CLW_L+3*pp+c,kc,jc,ic));
-                  }
-                  return r;
-                };
-                Real dv = 0.0;
-                dv += lat(kl, jl, il) + lat(k, j, i);
-                xf(m,d,k,j,i) = fcd(m,CLF_QL+2,k,j,i)*
-                    (dv/(0.5*(gn(m,CLG_F+3,k,j,i) + gn(m,CLG_F+3,kl,jl,il))));
-                return;
-              }
-              xf(m,d,k,j,i) = CleanFaceCross(*px, src, d, m, k, j, i);
+              const int kl = k - dk, jl = j - dj, il = i - di;
+              auto lat = [&](const int kc, const int jc, const int ic) {
+                Real s;   // (CleanStagCsLat)
+                const int q = d ? CleanCsSlot(*px, d, m, k, j, i, kc, jc, ic, false, s)/2
+                                : 0;
+                const int p = (q == 0) ? 1 : 0, pp = (q == 2) ? 1 : 2;
+                Real r = 0.0;
+                for (int c = 0; c < 3; ++c) {
+                  r += gn(m,CLG_N+3*d+c,k,j,i)*(w(m,CLW_L+3*p+c,kc,jc,ic) +
+                                               w(m,CLW_L+3*pp+c,kc,jc,ic));
+                }
+                return r;
+              };
+              Real dv = 0.0;
+              dv += lat(kl, jl, il) + lat(k, j, i);
+              xf(m,d,k,j,i) = fcd(m,CLF_QL+2,k,j,i)*
+                  (dv/(0.5*(gn(m,CLG_F+3,k,j,i) + gn(m,CLG_F+3,kl,jl,il))));
             });
           }
         }
