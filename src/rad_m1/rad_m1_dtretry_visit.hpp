@@ -1082,6 +1082,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("t2_inckc_hn", t2_inckc_hn);
   v.value("t2_inckc_ke", t2_inckc_ke);
   v.value("t2_inckc_pm", t2_inckc_pm);
+  v.view("t2kc_dp", t2kc_dp);
   v.value("t2_inckc_calls", t2_inckc_calls);
   v.value("t2_ike", t2_ike);
   v.value("t2_ike_de", t2_ike_de);
@@ -1354,8 +1355,17 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_gflux", cln_gflux);
   v.value("cln_rayratio", cln_rayratio);
   v.value("cln_ringjmin", cln_ringjmin);
+  v.value("cln_fbl", cln_fbl);
+  v.value("cln_prmax", cln_prmax);
+  v.value("cln_linpass", cln_linpass);
+  v.value("cln_fbl_rounds", cln_fbl_rounds);
+  v.value("cln_fbl_r", cln_fbl_r);
+  v.value("cln_fbl_nc", cln_fbl_nc);
+  v.view("cln_fbm", cln_fbm);
+  v.view("cln_fbd", cln_fbd);
   v.value("cln_srccvx", cln_srccvx);
   v.value("cln_freal", cln_freal);
+  v.value("cln_fdg", cln_fdg);
   v.value("cln_diagcells", cln_diagcells);
   v.value("cln_posbdry", cln_posbdry);
   v.value("cln_posghost", cln_posghost);
@@ -1479,6 +1489,8 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_fvn", cln_fvn);
   v.value("cln_fvkey", cln_fvkey);
   v.value("cln_ring", cln_ring);
+  v.value("cln_rfuse", cln_rfuse);
+  v.value("cln_rfuse_said", cln_rfuse_said);
   v.value("cln_ring_named", cln_ring_named);
   v.value("cln_rlast", cln_rlast);
   v.value("cln_rjump", cln_rjump);
