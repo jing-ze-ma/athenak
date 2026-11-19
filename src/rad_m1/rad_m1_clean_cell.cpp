@@ -18,6 +18,8 @@
 #include <vector>
 
 #include "athena.hpp"
+#include "bvals/bvals.hpp"
+#include "coordinates/coordinates.hpp"
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "rad_m1/rad_m1.hpp"
@@ -2704,6 +2706,65 @@ void RadiationM1::CleanCellYDonor(const bool first) {
     });
   }
   cln_yq_on = true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellDiagLedger
+//! \brief diagnostic (clean_diag_neg): the energy balance of the solve just written
+//! back, summed over the cells and ranks: sum V (E - E_old), sum V de_gas (the
+//! write-back's gas energy change, h K_EN) and h times the x1 face fluxes fE through the
+//! inner and outer faces of the mesh (A f0x1 at is of the blocks at x1min, at ie+1 of
+//! those at x1max).  A conservative solve has res = dE + de_gas + h (L_out - L_in) = 0;
+//! the hst ledger books L_top and L_in at the end of the step instead.
+
+void RadiationM1::CleanCellDiagLedger() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
+  const Real h = dt_sub;
+  auto vol = pmy_pack->pcoord->volume;
+  auto a1 = pmy_pack->pcoord->area.x1f;
+  auto w = cln_w;
+  auto u0_ = u0;
+  auto f1 = f0x1;
+  auto kk = (t2_solve == M1_T2S_STAGE1) ? t2k2 : t2k1;
+  const bool slopes = (t2_solve != M1_T2S_NONE);
+  auto &bcs = pmy_pack->pmb->mb_bcs;
+  DvceArray1D<int> lo("clc_dl_lo", nmb), hi("clc_dl_hi", nmb);
+  auto loh = Kokkos::create_mirror_view(lo);
+  auto hih = Kokkos::create_mirror_view(hi);
+  for (int m = 0; m < nmb; ++m) {
+    loh(m) = (bcs.h_view(m,BoundaryFace::inner_x1) != BoundaryFlag::block) ? 1 : 0;
+    hih(m) = (bcs.h_view(m,BoundaryFace::outer_x1) != BoundaryFlag::block) ? 1 : 0;
+  }
+  Kokkos::deep_copy(lo, loh);
+  Kokkos::deep_copy(hi, hih);
+  Real se = 0.0, sg = 0.0, fi = 0.0, fo = 0.0;
+  Kokkos::parallel_reduce("clc_diag_ledger", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          nmb*nkji),
+  KOKKOS_LAMBDA(const int q, Real &a, Real &b, Real &c, Real &d) {
+    const int m = q/nkji, k = ks + (q - m*nkji)/nji;
+    const int j = js + (q - m*nkji - (k - ks)*nji)/nx1, i = is + q%nx1;
+    const Real v = vol(m,k,j,i);
+    a += v*(u0_(m,M1_E,k,j,i) - w(m,CLW_EO,k,j,i));
+    if (slopes) b += v*h*kk(m,M1_T2_EN,k,j,i);
+    if (i == is && lo(m)) c += h*a1(m,k,j,i)*f1(m,k,j,i);
+    if (i == ie && hi(m)) d += h*a1(m,k,j,i+1)*f1(m,k,j,i+1);
+  }, Kokkos::Sum<Real>(se), Kokkos::Sum<Real>(sg), Kokkos::Sum<Real>(fi),
+     Kokkos::Sum<Real>(fo));
+  Real s[4] = {se, sg, fi, fo};
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, s, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  if (global_variable::my_rank == 0) {
+    const Real res = s[0] + s[1] + s[3] - s[2];
+    std::printf("CLEAN LEDGER cycle %d t2s %d h %.4e: sum V dE %+.6e sum V de_gas %+.6e "
+                "h L_in %+.6e h L_out %+.6e res %+.4e (res/h L_out %+.3e)\n",
+                pmy_pack->pmesh->ncycle, t2_solve, h, s[0], s[1], s[2], s[3], res,
+                res/fmax(fabs(s[3]), 1.0e-300));
+  }
 }
 
 }  // namespace radm1

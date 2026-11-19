@@ -856,6 +856,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // 5. new state: face fluxes, E, cell fluxes, gas, stage slopes
   if (cell) {
     CleanCellWriteBack();
+    if (cln_diagneg) CleanCellDiagLedger();
   } else {
     CleanWriteBack();
   }
