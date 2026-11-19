@@ -311,6 +311,8 @@ struct CleanArgs {
                                // lagged fluxes' donor part, their explicit part, C(E_k)
                                // (-1: the central cross flux)
   bool pd;                     // staggered, kpos / xpat: the rows' diagonal CLW_PD
+  Real kt;                     // staggered, clean_stag_kpos = delta: tau/h, the slopes'
+                               // linear face flux tau (al E_L + ar E_R) implicit
   int kq;                      // staggered, clean_stag_kpos: face slots qL, qR of the
                                // moved increment flux (-1: none; the E rows only)
   bool xlag, xsrc;             //   lag: explicit up to the donor's share; xsrc: the
@@ -876,6 +878,10 @@ void CleanStagArea(const CleanArgs &x, const int dir, const int m, const int k,
 //! clean_stag_upwind.
 
 KOKKOS_INLINE_FUNCTION
+bool CleanBoundaryFace(const CleanArgs &x, const int dir, const int m, const int k,
+                       const int j, const int i);
+
+KOKKOS_INLINE_FUNCTION
 void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int k,
                       const int j, const int i, Real &al, Real &ar, Real *up = nullptr) {
   if (x.fwc) {
@@ -972,6 +978,12 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
       ar -= o*phi*sr;
     }
   }
+  // (clean_stag_kpos = delta: the slopes' linear flux tau (al E_L + ar E_R) implicit on an
+  // interior face, the E rows only (the momentum's args carry kq = -1))
+  if (x.kq >= 0 && x.kt != 0.0 && !CleanBoundaryFace(x, dir, m, k, j, i)) {
+    al *= 1.0 + x.kt;
+    ar *= 1.0 + x.kt;
+  }
   // (clean_stag_xdonor: the cross flux q E_donor, CleanStagXDonor; keeps al >= 0 >= ar)
   if (x.xq >= 0 && !x.hi) {   // (the energy flux; F^H keeps the central form)
     al += x.fc[dir](m,x.xq,k,j,i);
@@ -995,7 +1007,16 @@ Real CleanKposFlux(const CleanArgs &x, const int e, const int dir, const int m,
                    const int k, const int j, const int i) {
   if (x.kq < 0) return 0.0;
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
-  return x.fc[dir](m,x.kq,k,j,i)*x.w(m,e,kl,jl,il) + x.fc[dir](m,x.kq+1,k,j,i)*x.w(m,e,k,j,i);
+  Real f = x.fc[dir](m,x.kq,k,j,i)*x.w(m,e,kl,jl,il) + x.fc[dir](m,x.kq+1,k,j,i)*x.w(m,e,k,j,i);
+  if (x.kt != 0.0 && !CleanBoundaryFace(x, dir, m, k, j, i)) {   // (delta: tau al/ar part)
+    CleanArgs y = x;
+    y.kq = -1;
+    y.xq = -1;
+    Real al, ar;
+    CleanFaceWeights(y, dir, m, k, j, i, al, ar);
+    f += x.kt*(al*x.w(m,e,kl,jl,il) + ar*x.w(m,e,k,j,i));
+  }
+  return f;
 }
 
 //----------------------------------------------------------------------------------------

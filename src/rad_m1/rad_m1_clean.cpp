@@ -1006,6 +1006,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     CleanCellFaceCoefficients();
   } else {
     CleanFaceCoefficients();
+    CleanStagKDelta();   // (clean_stag_kpos = delta: the faces' rest dG)
     // (the donors' E_old, memory; the bracket's gate q)
     if (cln_gflux || cln_consist) CleanGhostFill(cln_w, CLW_EO, 1);
     if (cln_consist) CleanStagBracket();
@@ -1715,7 +1716,8 @@ void RadiationM1::CleanStagKPos() {
     w(m,CLW_KF,k,j,i) = y1 ? fmax(ky(m,k,j,i), 0.0) : w(m,CLW_PW,k,j,i);
   });
   // (the donors whose faces move: all with faces, none yet with cell / redo)
-  const Real kt0 = (cln_kmode == 1) ? 1.0 : 0.0;
+  const Real kt0 = (cln_kmode == 1 || cln_kmode == 4) ? 1.0 : 0.0;
+  const bool kdl = (cln_kmode == 4);   // (delta: the faces' q later, CleanStagKDelta)
   CleanFor("cln_kpos_kt", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     w(m,CLW_KT,k,j,i) = kt0;
@@ -1750,7 +1752,7 @@ void RadiationM1::CleanStagKPos() {
         if (up) ql += q;
         if (!up) qr -= q;
       };
-      if (!CleanBoundaryFace(x, dir, m, k, j, i)) {
+      if (!kdl && !CleanBoundaryFace(x, dir, m, k, j, i)) {
         put(c1*p1(m,dir,k,j,i), CLW_PW);
         if (two) put(c2*p2(m,dir,k,j,i), CLW_KF);
         if (ql != 0.0 || qr != 0.0) n += 1.0;
@@ -1939,6 +1941,78 @@ void RadiationM1::CleanStagKPos() {
                 "gas-limited %.0f Eo<0 %.0f (eint<0 at the stage start %.0f)\n",
                 pmy_pack->pmesh->ncycle, t2_solve, nq[0], nn[0], nq[1], nn[2], nn[1], nn[3],
                 nn[4]);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagKDelta
+//! \brief clean_stag_kpos = delta (after CleanFaceCoefficients): each interior face's slope
+//! flux G = c1 Phi1 + c2 Phi2 splits into tau (al E_L + ar E_R), tau = c1 + c2, with the
+//! stage's own coefficients (al >= 0 >= ar, CleanFaceWeights), taken implicit in X
+//! (x.kt = tau/h scales al, ar of the E rows), and the rest dG = G - tau (al E_s,L + ar
+//! E_s,R), moved as q X_donor (q = |dG|/(h E_s,donor), the donor by dG's sign).  The
+//! old vector has no face part (as faces), so b >= 0 and the operator an M-matrix: X >= 0
+//! by construction; at X = E_s the face carries G exactly, and near equilibrium dG -> 0
+//! (the moved part vanishes; the well-balanced and steady states as the stage's own
+//! flux).  Counted (CLEAN KPOS delta).
+
+void RadiationM1::CleanStagKDelta() {
+  if (!cln_kq_on || cln_kmode != 4) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const bool two = (t2_solve == M1_T2S_STAGE2);
+  const Real c1 = cln_kc1, c2 = cln_kc2, tau = c1 + (two ? c2 : 0.0);
+  cln_ktau = tau/dt_sub;
+  CleanArgs x = CleanMakeArgs(), y = x;
+  y.kq = -1;
+  y.xq = -1;
+  y.kt = 0.0;
+  auto w = cln_w;
+  auto p1 = t2pf1, p2 = t2pf2;
+  const int kq = cln_kqs;
+  const Real qcap = 1.0e12*x.c;
+  Real nq[2] = {0.0, 0.0};   // (faces moved, at the guard)
+  for (int dir = 0; dir < x.nf; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    auto fc = x.fc[dir];
+    Real nd[2] = {0.0, 0.0};
+    Kokkos::parallel_reduce("cln_kdelta", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+        DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + dk + 1, je + dj + 1, ie + di + 1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &n, Real &nc) {
+      Real ql = 0.0, qr = 0.0;
+      if (!CleanBoundaryFace(y, dir, m, k, j, i)) {
+        Real al, ar;
+        CleanFaceWeights(y, dir, m, k, j, i, al, ar);
+        const Real el = w(m,CLW_PW,k-dk,j-dj,i-di), er = w(m,CLW_PW,k,j,i);
+        const Real g = c1*p1(m,dir,k,j,i) + (two ? c2*p2(m,dir,k,j,i) : 0.0);
+        const Real dg = g - tau*(al*el + ar*er);
+        if (dg != 0.0) {
+          const bool up = (dg > 0.0);
+          const Real ed = up ? el : er;
+          Real q = qcap;
+          if (fabs(dg) < qcap*y.h*ed) {
+            q = fabs(dg)/(y.h*ed);
+          } else {
+            nc += 1.0;
+          }
+          if (up) ql = q;
+          if (!up) qr = -q;
+          n += 1.0;
+        }
+      }
+      fc(m,kq,k,j,i) = ql;
+      fc(m,kq+1,k,j,i) = qr;
+    }, Kokkos::Sum<Real>(nd[0]), Kokkos::Sum<Real>(nd[1]));
+    nq[0] += nd[0];
+    nq[1] += nd[1];
+  }
+  nq[0] = CleanReduce(nq[0], false);
+  nq[1] = CleanReduce(nq[1], false);
+  if (global_variable::my_rank == 0) {
+    std::printf("CLEAN KPOS delta cycle %d t2s %d tau/h %.3e faces dG %.0f guard %.0f\n",
+                pmy_pack->pmesh->ncycle, t2_solve, cln_ktau, nq[0], nq[1]);
   }
 }
 

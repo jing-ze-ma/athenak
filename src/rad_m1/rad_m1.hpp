@@ -3231,7 +3231,9 @@ class RadiationM1 {
   int cln_kqs = -1;   // (kpos: 2 face slots, the moved flux's qL >= 0, qR <= 0)
   DvceArray4D<Real> cln_ky1;   // (kpos: E of the stage-1 solution, K2's reference)
   bool cln_kreal = false;   // (S3B kick bound: CLW_KS set in CleanOldVector)
-  int cln_kmode = 0;        // (clean_stag_kpos: 1 faces, 2 cell, 3 redo)
+  int cln_kmode = 0;        // (clean_stag_kpos: 1 faces, 2 cell, 3 redo, 4 delta)
+  Real cln_ktau = 0.0;      // (delta: tau/h of the stage)
+  void CleanStagKDelta();
   int cln_kredo = 0;        // (redo: rounds of this stage)
   bool CleanStagKRedo();
   bool cln_xtnorm = false, cln_xtcons = false;   // (CleanFirstIterate, CleanSolve)

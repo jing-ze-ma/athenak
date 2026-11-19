@@ -350,13 +350,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                                 "clean_stag_kpos")) ? "off" :
                                pin->GetString("rad_m1", "clean_stag_kpos");
         if (kp != "off" && kp != "false" && kp != "true" && kp != "faces" &&
-            kp != "cell" && kp != "redo") {
+            kp != "cell" && kp != "redo" && kp != "delta") {
           std::cout << "### FATAL ERROR <rad_m1>/clean_stag_kpos = off | faces | cell | redo"
-                    << std::endl;
+                    << " | delta" << std::endl;
           std::exit(EXIT_FAILURE);
         }
+        // (delta: as faces, but each face's slope flux G splits into tau (al E + ar E) of
+        // the stage's own coefficients, implicit, and the rest dG = G - tau (al E_s,L +
+        // ar E_s,R) moved as q X_donor: near equilibrium dG -> 0, CleanStagKDelta)
         cln_kmode = (kp == "true" || kp == "faces") ? 1 : (kp == "cell" ? 2 :
-                    (kp == "redo" ? 3 : 0));
+                    (kp == "redo" ? 3 : (kp == "delta" ? 4 : 0)));
         cln_kpos = (cln_kmode > 0);
       }
       cln_kreal = stag("clean_stag_kreal", false);
