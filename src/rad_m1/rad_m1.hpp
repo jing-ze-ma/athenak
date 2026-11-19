@@ -4541,6 +4541,9 @@ class RadiationM1 {
   // rotation (keys b mod K) every set's lists are made once, not at every rotation
   static constexpr int M1_VGD_CSCL_MAX = 16;
   VgdCsCl vgd_cscl[M1_VGD_CSCL_MAX];
+  // hgmem: the read masks of two entries (the set in use and the one made or re-masked
+  // next); the others keep their lists alone (VetGdCsCompact)
+  Kokkos::View<uint32_t *, LayoutWrapper, DevMemSpace> vgd_csmb[2];
   int vgd_csncl = 2;
   int vgd_cscur = 0;
   int64_t vgd_csuse = 0;

@@ -707,9 +707,7 @@ void RadiationM1::VetGdCsInit() {
   for (int c = 0; c < vgd_csncl; ++c) {
     vgd_cscl[c].alpha = -9.0;
     vgd_cscl[c].use = 0;
-    const int64_t nmv = vgd_cscomp ? static_cast<int64_t>(std::max(vgd_csnrcv, 1))*
-                                     vgd_csper : 1;
-    Kokkos::realloc(vgd_cscl[c].msk, (nmv + 15)/16);   // memcut-1020: packed 2 bits
+    vgd_cscl[c].msk = decltype(vgd_cscl[c].msk)();   // (hgmem: VetGdCsCompact, vgd_csmb)
   }
   if (me == 0) {
     std::cout << "<rad_m1> vet_gd (cubed sphere): rank 0 band copies on-rank "
@@ -749,19 +747,41 @@ void RadiationM1::VetGdCsInit() {
 //! lists in the same (pass, shell, partner, entry, direction) order.
 
 void RadiationM1::VetGdCsCompact() {
-  for (int c = 0; c < vgd_csncl; ++c) {
-    if (vgd_cscl[c].alpha == vgd_alpha && vgd_cscl[c].ng == vgd_csxg) {
-      vgd_cscur = c;
-      vgd_cscl[c].use = ++vgd_csuse;
-      return;
+  int c = -1;
+  for (int q = 0; q < vgd_csncl; ++q) {
+    if (vgd_cscl[q].alpha == vgd_alpha && vgd_cscl[q].ng == vgd_csxg) {c = q;}
+  }
+  if (c >= 0 && vgd_cscl[c].msk.data() != nullptr) {
+    vgd_cscur = c;
+    vgd_cscl[c].use = ++vgd_csuse;
+    return;
+  }
+  // (hgmem: a cached set whose read mask went to another set gets its mask again, (1)
+  // only: its lists stand, the mask is the sweep's check of them)
+  const bool remask = (c >= 0);
+  Kokkos::Timer tb;
+  if (!remask) {
+    c = 0;   // the least recently used entry (the first of equal ones)
+    for (int q = 1; q < vgd_csncl; ++q) {
+      if (vgd_cscl[q].use < vgd_cscl[c].use) {c = q;}
     }
   }
-  Kokkos::Timer tb;
-  int c = 0;   // the least recently used entry (the first of equal ones)
-  for (int q = 1; q < vgd_csncl; ++q) {
-    if (vgd_cscl[q].use < vgd_cscl[c].use) {c = q;}
-  }
   VgdCsCl &E = vgd_cscl[c];
+  // hgmem: two read masks only (vgd_csmb), the one of the entry in use (xfade's current
+  // set while the next set's is made) is kept
+  if (E.msk.data() == nullptr) {
+    const auto *k = vgd_cscl[vgd_cscur].msk.data();
+    const int b = (k != nullptr && k == vgd_csmb[0].data()) ? 1 : 0;
+    for (auto &e : vgd_cscl) {
+      if (e.msk.data() == vgd_csmb[b].data()) {e.msk = decltype(e.msk)();}
+    }
+    const int64_t nmv = static_cast<int64_t>(std::max(vgd_csnrcv, 1))*vgd_csper;
+    if (vgd_csmb[b].extent(0) != static_cast<size_t>((nmv + 15)/16)) {
+      vgd_csmb[b] = decltype(E.msk)();
+      Kokkos::realloc(vgd_csmb[b], (nmv + 15)/16);
+    }
+    E.msk = vgd_csmb[b];
+  }
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is;
@@ -849,6 +869,11 @@ void RadiationM1::VetGdCsCompact() {
   Kokkos::fence();
   vgd_cstb_k += tsub.seconds();
   tsub.reset();
+  if (remask) {
+    vgd_cscur = c;
+    E.use = ++vgd_csuse;
+    return;
+  }
   const int np = static_cast<int>(vgd_csprk.size());
   const size_t per = static_cast<size_t>(per_);
   // (3) the lists: counts per (pass, shell, group, partner), offsets, fill in (entry, d)

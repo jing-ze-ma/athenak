@@ -11499,6 +11499,9 @@ void RadiationM1::DtRetryAfterRestore() {
         vgd_cscl[c].use = 0;
       }
     }
+    // (hgmem: the two read masks may hold other sets than the restored handles say:
+    // every cached set makes its mask again at its next use, VetGdCsCompact)
+    for (auto &e : vgd_cscl) {e.msk = decltype(e.msk)();}
     // csfix-1023: a failed attempt on the LAST step of a rotation block (vet_rotate_avg)
     // left the tables on the NEXT set (VetGdTables(blk + 1)); the restored vgd_alpha
     // names the current one, and the retried (shorter, not last) step skipped
