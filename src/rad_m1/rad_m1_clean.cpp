@@ -1726,6 +1726,7 @@ void RadiationM1::CleanStagKPos() {
   if (two) CleanGhostFill(cln_w, CLW_KF, 1);
   CleanGhostFill(cln_w, CLW_KT, 1);
   cln_kredo = 0;
+  cln_kredo_neg = 0.0;
   // 1. the faces' q
   const int kq = cln_kqs;
   Real nq[2] = {0.0, 0.0};   // (faces moved, at the guard)
@@ -2035,19 +2036,29 @@ bool RadiationM1::CleanStagKRedo() {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   auto w = cln_w;
   auto u0_ = u0;
-  const bool last = (cln_kredo + 1 >= CLN_KPOS_REDO);
-  // 1. the new donors (KT = 2): X <= 0 there or at a face neighbour (one layer: the
-  //    receivers that would lose a moved inflow move with it, fewer rounds), not moved
-  //    yet; the last round all
+  // (the last round, all faces: the cap, or a round that did not lower the count of
+  // X <= 0 cells (a receiver cascade; cheaper than more rounds))
+  const bool cap = (cln_kredo + 1 >= CLN_KPOS_REDO);
+  // 1. the cells X <= 0 (counted), then the new donors (KT = 2): X <= 0 there or at a face
+  //    neighbour (one layer: the receivers that would lose a moved inflow move with it),
+  //    not moved yet; the last round all
   CleanGhostFill(cln_w, CLW_X, 1);
   CleanArgs xa = CleanMakeArgs();
   const int nf = xa.nf;
   Real nn[2] = {0.0, 0.0};   // (cells X <= 0, new donors)
+  Kokkos::parallel_reduce("cln_kredo_c", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+    if (!(w(m,CLW_X,k,j,i) > 0.0)) a += 1.0;
+  }, Kokkos::Sum<Real>(nn[0]));
+  nn[0] = CleanReduce(nn[0], false);
+  if (!(nn[0] > 0.0)) return false;   // (positive: no round)
+  const bool last = cap || (cln_kredo > 0 && nn[0] >= cln_kredo_neg);
+  cln_kredo_neg = nn[0];
   Kokkos::parallel_reduce("cln_kredo_n", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
       DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a, Real &b) {
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &b) {
     const bool neg = !(w(m,CLW_X,k,j,i) > 0.0);
-    if (neg) a += 1.0;
     bool nb = neg;
     for (int d = 0; d < nf && !nb; ++d) {
       const int dk = (d == 2), dj = (d == 1), di = (d == 0);
@@ -2059,17 +2070,7 @@ bool RadiationM1::CleanStagKRedo() {
       w(m,CLW_KT,k,j,i) = 2.0;
       b += 1.0;
     }
-  }, Kokkos::Sum<Real>(nn[0]), Kokkos::Sum<Real>(nn[1]));
-  nn[0] = CleanReduce(nn[0], false);
-  if (!(nn[0] > 0.0)) {   // (positive: no round; the flags back)
-    if (last) {
-      CleanFor("cln_kredo_0", nmb1, ks, ke, js, je, is, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        if (w(m,CLW_KT,k,j,i) > 1.5) w(m,CLW_KT,k,j,i) = 0.0;
-      });
-    }
-    return false;
-  }
+  }, Kokkos::Sum<Real>(nn[1]));
   nn[1] = CleanReduce(nn[1], false);
   ++cln_kredo;
   // 2. the references (K1: E_s in CLW_PW; K2: the stage-1 solution in CLW_KS)
