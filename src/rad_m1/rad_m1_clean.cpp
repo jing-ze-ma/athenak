@@ -1563,7 +1563,7 @@ void RadiationM1::CleanStagXDonor() {
 //!   gave the gas, which the gas gives back at the stage start, at most (1 - th) of its
 //!   eint) enter the row's diagonal as pd X, pd = (R_b + R_g)/E_ref (CLW_KM; CLW_KF the
 //!   boundary's part, which the write-back books as boundary energy; the gas row takes
-//!   pd_g X);
+//!   pd_g X; without gas feedback the removal into the fixed gas on the diagonal whole);
 //! - E_old = E_s + Q+ + the boundary inflows - the gas-limited rest (counted), >= 0.
 //! E_ref = max(E_s + tau K1_E, th E_s), tau = c1 + c2 + h, the predictor of the stage
 //! value (X/E_ref = 1 + O(h^2): 2nd order), from stored state only.  q and pd are
@@ -1687,11 +1687,13 @@ void RadiationM1::CleanStagKPos() {
         e += q + rg;   // (the rest a removal of E: counted)
         ng += 1.0;
       }
+    } else if (!gas) {
+      rg = -q;   // (no gas feedback: the removal into a fixed gas, on the diagonal whole)
     } else {
       e += q;
-      if (q < 0.0) ng += 1.0;
+      ng += 1.0;
     }
-    if (rg > 0.0) {
+    if (gas && rg > 0.0) {
       uh(m,IEN,k,j,i) -= rg;
       w(m,CLW_EI,k,j,i) -= rg;
       w(m,CLW_T,k,j,i) = eos.Temperature(uh(m,IDN,k,j,i), w(m,CLW_EI,k,j,i));
@@ -4285,7 +4287,7 @@ void RadiationM1::CleanWriteBack() {
       // the gas's pd_g X: K_E + K_EN = -div of the stored Phi)
       kk(m,M1_T2_E,k,j,i) = (e + wsl - x.w(m,CLW_EO,k,j,i) + hdq + pbx + pgx)/h;
       for (int n = 0; n < 3; ++n) kk(m,M1_T2_M1+n,k,j,i) = dh[n]/h;
-      kk(m,M1_T2_EN,k,j,i) = (den - pgx)/h;
+      kk(m,M1_T2_EN,k,j,i) = (den - (feedback ? pgx : 0.0))/h;
     }
     u0_(m,M1_E,k,j,i) = e;
     if (!xh.hi) {   // (clean_stag_split: the cell flux of Phi, above)
