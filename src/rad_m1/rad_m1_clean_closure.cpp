@@ -1344,6 +1344,7 @@ void RadiationM1::CleanRingMoments() {
   }, Kokkos::Sum<int>(nguard));
   cln_rjump = nxt;
   cln_rguard_sum += CleanReduce(nguard, false);
+  cln_rl = DvceArray5D<Real>();   // (build scratch: freed, every build writes it first)
 }
 
 //----------------------------------------------------------------------------------------
