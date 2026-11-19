@@ -1290,8 +1290,8 @@ void RadiationM1::VetGdInit() {
                (vgd_fuse_h <= 1) && (anyside || vgd_pk);
     vgd_rg_refill = vgd_rg_refill && vgd_ring && vgd_raw;
     // xffuse-1113: the fused two-set sweep keeps the ragged band (sp; the ring's slabs
-    // follow one array); on the cubed sphere the ring stays and the fused sweep falls
-    // back to two sweeps where it runs (VetGdXffOk)
+    // follow one array); on the cubed sphere the ring records both sets' compact lists
+    // (VetGdCsSweep's ringrec)
     if (vgd_ring_named && vgd_ring_par && !vgd_ring && global_variable::my_rank == 0) {
       std::cout << "<rad_m1> vet_gd_band_ring: does not apply here (needs the exact halo "
                 << "lists, no vet_gd_overlap / fuse_shells / async / band_exit, MPI band; "
@@ -1304,7 +1304,7 @@ void RadiationM1::VetGdInit() {
   // sc rays' ring, CleanRingMoments, sweeps one set at a time)
   if (vgd_xff && (vgd_xf_m > 0 || vgd_iter != 1 || vgd_twin || vgd_twfuse || vgd_async ||
                   (clean && cln_ring && !(cln_rfuse && cln_ring == 1 && cln_rfv == 0 &&
-                                          !vgd_csg && ibc_x1max != M1_IBC_REFLECT)) ||
+                                          ibc_x1max != M1_IBC_REFLECT)) ||
                   vgd_bandx || vgd_upf != 0 || (vgd_gband && !vgd_raw) || vgd_nb1 > 1 ||
                   (vgd_csg && vgd_cscomp && vgd_csxg > 1) ||
                   (!vgd_csg && (!vgd_shl_on || vgd_ovl_g > 0 || vgd_fuse_h > 1 ||
