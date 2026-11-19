@@ -60,27 +60,35 @@ namespace radm1 {
 // register cap of 65536/(256 kCleanForMb)), with the flattening and index arithmetic of
 // athena's par_for (bitwise).  Measured on R136 (20 cycles, hst identical): GH200 MB 3
 // -19 ms/cycle (MB 2 -7), A100 MB 2 -20 ms/cycle (MB 3 +14, MB 1 +29).  HIP and the host
-// keep athena's par_for
+// keep athena's par_for; on HIP a pass may ask for kHipMb blocks (kHipMb 4: a cap of 128
+// VGPRs, 4 waves per SIMD, for the face passes that fit it without spilling)
 #if defined(KOKKOS_ARCH_HOPPER90)
 constexpr int kCleanForMb = 3;
 #else
 constexpr int kCleanForMb = 2;
 #endif
-template <typename F>
+template <int kHipMb = 0, typename F>
 inline void CleanFor(const char *name, const int nmb1, const int ks, const int ke,
                      const int js, const int je, const int is, const int ie,
                      const F &f) {
-#if defined(KOKKOS_ENABLE_CUDA)
-  const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
-  Kokkos::parallel_for(name, Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256,
-                       kCleanForMb>>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
-  KOKKOS_LAMBDA(const int idx) {
-    const int m = idx/nkji, k = (idx - m*nkji)/nji, j = (idx - m*nkji - k*nji)/ni;
-    f(m, ks + k, js + j, is + idx - m*nkji - k*nji - j*ni);
-  });
+#if defined(KOKKOS_ENABLE_HIP)
+  constexpr int mb = kHipMb;
+#elif defined(KOKKOS_ENABLE_CUDA)
+  constexpr int mb = kCleanForMb;
 #else
-  par_for(name, DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie, f);
+  constexpr int mb = 0;
 #endif
+  if constexpr (mb > 0) {
+    const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
+    Kokkos::parallel_for(name, Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256,
+                         mb>>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+    KOKKOS_LAMBDA(const int idx) {
+      const int m = idx/nkji, k = (idx - m*nkji)/nji, j = (idx - m*nkji - k*nji)/ni;
+      f(m, ks + k, js + j, is + idx - m*nkji - k*nji - j*ni);
+    });
+  } else {
+    par_for(name, DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie, f);
+  }
 }
 
 // rayspd-1118: on HIP, CleanFor with k fastest, then j, then i (the order of the rows in

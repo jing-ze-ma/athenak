@@ -2557,7 +2557,7 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
   // each face's source once, for its two cells (CLF_SR), and with gflux its a E (CLF_PT)
   const int nf = x.nf;
   const bool af = x.feedback && x.gf && !x.cub;
-  CleanFor("cln_rhsaf", nmb1, ks, ke+(nf > 2), js, je+(nf > 1), is, ie+1,
+  CleanFor<4>("cln_rhsaf", nmb1, ks, ke+(nf > 2), js, je+(nf > 1), is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
     for (int n = 0; n < nf; ++n) {
@@ -3658,7 +3658,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
     if (ph == 0) {
       // F^H of every face (CLF_N) and the cell terms of every cell (CleanFLine)
       const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
-      CleanFor("cln_fs0", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+      CleanFor<4>("cln_fs0", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
         fc(m,CLF_N,k,j,i) = CleanFaceFlux(xh, e, dir, m, k, j, i, true);
