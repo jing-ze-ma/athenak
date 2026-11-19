@@ -975,20 +975,24 @@ bool CleanRingMix(const CleanRingL &rl, const DvceArray5D<Real> &rr,
 //! \brief clean_rot_ring: the fields the offsets and the Delta carry, fm(CLN index) =
 //! their slot or -1, and their number.  The staggered layout leaves out those none of its
 //! solves reads: those cln_s does not hold (CleanNs: CLN_KP, CLN_F1, off the cubed sphere
-//! CLN_FH) and off the cubed sphere the stress parts of the face sums CLN_FX, CLN_F2,
-//! CLN_F3 (only their energy flux is read; the sp F solve reads CLN_G).  The mixture
-//! gives 0 there (CleanRingMix).  ring: those of the offsets and the Delta (with
-//! clean_ring_fields = closure the cell moments and CLN_JR; the others are mixed from the
-//! swept sets alone)
+//! CLN_FH) and the stress parts of the face sums CLN_FX, CLN_F2, CLN_F3 and (cubed
+//! sphere) CLN_FH: only their energy flux is read; on the cubed sphere also CLN_G (the
+//! sp F solve reads it).  The mixture gives 0 there (CleanRingMix).  ring: those of the
+//! offsets and the Delta (with clean_ring_fields = closure the cell moments and CLN_JR;
+//! the others are mixed from the swept sets alone).  file: the fields of the restart
+//! files' layout (CleanRingRstCopy), which keeps the stress parts and CLN_G on the cubed
+//! sphere (0 in a file written since)
 
-int RadiationM1::CleanRingFields(int *fm, const bool ring) const {
+int RadiationM1::CleanRingFields(int *fm, const bool ring, const bool file) const {
   const bool cub = pmy_pack->pmesh->use_cubed_sphere;
   const int ns = CleanNs(cln_cell, cub);   // (the slots of cln_s)
   int nf = 0;
   for (int n = 0; n < CLN_N; ++n) {
-    const bool fs = n >= CLN_F2 && n < CLN_G && (n - CLN_F2)%4 != 0;   // (stress parts)
+    const bool fs = (n >= CLN_F2 && n < CLN_G && (n - CLN_F2)%4 != 0) ||   // (stress
+                    (n >= CLN_FH && n < CLN_F1 && (n - CLN_FH)%4 != 0);    // parts)
+    const bool un = fs || (cub && (n == CLN_G || n == CLN_G + 1));
     const bool cm = !(ring && cln_rcell) || CleanCellMoment(n) || n == CLN_JR;
-    fm[n] = ((cln_cell || (n < ns && !(fs && !cub))) && cm) ? nf++ : -1;
+    fm[n] = ((cln_cell || (n < ns && !(file ? fs && !cub : un))) && cm) ? nf++ : -1;
   }
   return nf;
 }
@@ -1070,15 +1074,16 @@ void RadiationM1::CleanRingPreShift() {
 //! \fn RadiationM1::CleanRingRst*
 //! \brief clean_rot_ring in the restart files (version 4): the offsets cln_rr, then the
 //! Delta cln_rpd, of the fields the ring carries on the interior cells, in their own
-//! layout flat per MeshBlock, dense in CleanRingRstN() ghosted slabs (the rest of the
-//! last one 0).  CleanRingRstCopy packs (pk; 0 without have) or unpacks the slabs c ..
+//! layout flat per MeshBlock (the fields of the file layout, CleanRingFields: 0 in those
+//! cln_rr does not hold), dense in CleanRingRstN() ghosted slabs (the rest of the last
+//! one 0).  CleanRingRstCopy packs (pk; 0 without have) or unpacks the slabs c ..
 //! c + CleanRingRstN() - 1 of a (c < 0: a's channel 0 is slab -c) of MeshBlocks m0 ..
 
 int RadiationM1::CleanRingRstN() const {
   auto &id = pmy_pack->pmesh->mb_indcs;
   int fm[CLN_N];
-  const int64_t nv = static_cast<int64_t>(vra_k)*CleanRingFields(fm, true)*id.nx1*id.nx2*
-                     id.nx3;
+  const int64_t nv = static_cast<int64_t>(vra_k)*CleanRingFields(fm, true, true)*id.nx1*
+                     id.nx2*id.nx3;
   const int64_t ns = static_cast<int64_t>(id.nx1 + 2*id.ng)*
                      ((id.nx2 > 1) ? id.nx2 + 2*id.ng : 1)*
                      ((id.nx3 > 1) ? id.nx3 + 2*id.ng : 1);
@@ -1088,8 +1093,12 @@ int RadiationM1::CleanRingRstN() const {
 void RadiationM1::CleanRingRstCopy(DvceArray5D<Real> &a, const int c, const int nmb,
                                    const int m0, const bool pk, const bool have) {
   auto &id = pmy_pack->pmesh->mb_indcs;
-  int fm[CLN_N];
-  const int nf = CleanRingFields(fm, true);
+  int fm[CLN_N], ff[CLN_N];
+  const int nf = CleanRingFields(fm, true), nff = CleanRingFields(ff, true, true);
+  Kokkos::Array<int, CLN_N> mp;   // (the file's field slot -> cln_rr's, -1: not held)
+  for (int n = 0; n < CLN_N; ++n) {
+    if (ff[n] >= 0) mp[ff[n]] = fm[n];
+  }
   if (!pk) {   // (the writers of cln_rr bump vra_gen, DtRetry)
     vra_gen += 1;
     if (cln_rr.extent_int(0) != nmb) {
@@ -1098,7 +1107,7 @@ void RadiationM1::CleanRingRstCopy(DvceArray5D<Real> &a, const int c, const int 
     }
   }
   const int64_t ni = static_cast<int64_t>(id.nx1)*id.nx2*id.nx3;
-  const int64_t nr = (vra_k - 1)*nf*ni, nd = nr + nf*ni;
+  const int64_t nr = (vra_k - 1)*nf*ni, nro = (vra_k - 1)*nff*ni, nd = nro + nff*ni;
   const int64_t ns = static_cast<int64_t>(a.extent(2))*a.extent(3)*a.extent(4);
   const int64_t q0 = std::max(c, 0) - c, q1 = std::min<int64_t>(c + CleanRingRstN(),
                                                                  a.extent(1)) - c;
@@ -1112,8 +1121,15 @@ void RadiationM1::CleanRingRstCopy(DvceArray5D<Real> &a, const int c, const int 
   KOKKOS_LAMBDA(const int64_t p) {
     const int64_t m = p/nq, q = q0*ns + p - m*nq;
     Real *x = pa + m*sa + c*ns + q;
-    Real *y = (pr == nullptr || q >= nd) ? nullptr :
-              ((q < nr) ? pr + (m + m0)*nr + q : pd + (m + m0)*(nd - nr) + q - nr);
+    Real *y = nullptr;
+    if (pr != nullptr && q < nd) {
+      const int64_t u = (q < nro) ? q : q - nro, r = u/(nff*ni), ic = u%ni;
+      const int f = mp[(u/ni)%nff];
+      if (f >= 0) {
+        y = (q < nro) ? pr + (m + m0)*nr + (r*nf + f)*ni + ic
+                      : pd + ((m + m0)*nf + f)*ni + ic;
+      }
+    }
     if (pk) {
       *x = (y != nullptr) ? *y : 0.0;
     } else if (y != nullptr) {

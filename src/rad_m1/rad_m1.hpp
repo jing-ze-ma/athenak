@@ -3116,7 +3116,8 @@ class RadiationM1 {
   void CleanDInc(const bool two, const Real c1, const Real c2, const Real w1,
                  const Real w0);
   void CleanDtrD(const bool save);   // dt_retry: d to / from cln_rstd
-  int CleanRingFields(int *fm, const bool ring = false) const;   // clean_rot_ring
+  int CleanRingFields(int *fm, const bool ring = false,          // clean_rot_ring
+                      const bool file = false) const;
   // time2_face_fct's two scratch slots of iw (scheme = clean: the line-solve slots, its
   // iw ends before the Krylov vectors)
   int Time2FctSlot(const int q) const;
