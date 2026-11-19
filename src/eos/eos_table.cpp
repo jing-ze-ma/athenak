@@ -16,7 +16,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
-#include <thread>
+#include <thread>  // NOLINT(build/c++11)
 #include <vector>
 
 #include "athena.hpp"
@@ -252,8 +252,9 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
       h_tbl(j,i, ITXE+3) = (xpp - xpm - xmp + xmm)*i4h2;
     }
   };
-  // the rows are independent: split over the ranks and the cores of each, then gathered
-  // (every node computed once, by the same code: the same table)
+  // the rows are independent: split them over the ranks and the cores of each rank, then
+  // gather; every node is computed once by the same code, so the table does not depend
+  // on the decomposition
   const int nr = global_variable::nranks, me = global_variable::my_rank;
   const int j0 = static_cast<int>(static_cast<int64_t>(ny)*me/nr);
   const int j1 = static_cast<int>(static_cast<int64_t>(ny)*(me + 1)/nr);
@@ -261,7 +262,11 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
   int nt = (sched_getaffinity(0, sizeof(cpus), &cpus) == 0) ? CPU_COUNT(&cpus) : 1;
   nt = std::max(1, std::min(nt, j1 - j0));
   std::vector<std::thread> th;
-  for (int t=0; t<nt; ++t) th.emplace_back([&, t]() {for (int j=j0+t; j<j1; j+=nt) row(j);});
+  for (int t=0; t<nt; ++t) {
+    th.emplace_back([&, t]() {
+      for (int j=j0+t; j<j1; j+=nt) row(j);
+    });
+  }
   for (auto &t : th) t.join();
 #if MPI_PARALLEL_ENABLED
   std::vector<int> cnt(nr), dsp(nr);

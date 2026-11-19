@@ -759,17 +759,16 @@ struct EOS_Data {
 
 //----------------------------------------------------------------------------------------
 //! \struct FloorVolW
-//! \brief the volume of an active cell (0 in a ghost): the conserved inversions book the
-//! mass and energy their floors create as sum vol x (u_new - u_old) (EventCounters
-//! flr_dm_v / flr_de_v)
+//! \brief volume of an active cell, zero in ghost cells; the c2p kernels sum
+//! vol*(u_new - u_old) to get the mass and energy created by the floors
 
 struct FloorVolW {
   DvceArray4D<Real> vol;
   DualArray1D<RegionSize> size;
   bool curv;
   int is, ie, js, je, ks, ke;
-  KOKKOS_INLINE_FUNCTION Real operator()(const int m, const int k, const int j,
-                                         const int i) const {
+  KOKKOS_INLINE_FUNCTION
+  Real operator()(const int m, const int k, const int j, const int i) const {
     if (i < is || i > ie || j < js || j > je || k < ks || k > ke) return 0.0;
     const auto &s = size.d_view(m);
     return curv ? vol(m,k,j,i) : s.dx1*s.dx2*s.dx3;
@@ -796,10 +795,10 @@ class EquationOfState {
   // (no-op otherwise)
   void BuildElectronFractionTable(std::string block, ParameterInput *pin);
 
-  // the active-cell volumes of the floor ledger, and its booking (EventCounters)
+  // active-cell volumes and booking of the mass and energy created by the floors
   FloorVolW FloorVol() const;
   void FloorBook(const Real dm, const Real de);
-  Real flr_w = 1.0;   // the weight of this conversion's change in the step (Hydro)
+  Real flr_w = 1.0;   // weight of this conversion's floor change within the step
 
   // virtual functions to convert cons to prim in either Hydro or MHD (depending on
   // arguments), overwritten in derived eos classes

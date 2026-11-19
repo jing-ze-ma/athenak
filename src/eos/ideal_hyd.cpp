@@ -49,7 +49,7 @@ void IdealHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
   }
 
   int nfloord_=0, nfloore_=0, nfloort_=0;
-  Real fdm_ = 0.0, fde_ = 0.0;   // floor ledger (EventCounters flr_*_v)
+  Real fdm_ = 0.0, fde_ = 0.0;   // mass and energy created by the floors
   const auto fvw_ = FloorVol();
   Kokkos::parallel_reduce("hyd_c2p",Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
   KOKKOS_LAMBDA(const int &idx, int &sumd, int &sume, int &sumt, Real &sdm_,

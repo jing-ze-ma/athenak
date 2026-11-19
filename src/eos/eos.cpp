@@ -328,16 +328,23 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void EquationOfState::FloorVol / FloorBook (eos.hpp FloorVolW)
+//! \fn FloorVolW EquationOfState::FloorVol()
+//! \brief returns the active-cell volume functor with which the c2p kernels sum the mass
+//! and energy created by the floors
 
 FloorVolW EquationOfState::FloorVol() const {
   auto &id = pmy_pack->pmesh->mb_indcs;
   auto &vol = pmy_pack->pcoord->volume;
   const bool curv = (pmy_pack->pmesh->use_cubed_sphere ||
                      pmy_pack->pmesh->use_spherical_polar) && vol.extent_int(3) > 1;
-  return FloorVolW{vol, pmy_pack->pmb->mb_size, curv, id.is, id.ie, id.js, id.je, id.ks,
-                   id.ke};
+  return FloorVolW{vol, pmy_pack->pmb->mb_size, curv, id.is, id.ie, id.js, id.je,
+                   id.ks, id.ke};
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn void EquationOfState::FloorBook()
+//! \brief adds the mass and energy created by the floors, weighted by flr_w, to the
+//! event counters flr_dm_v and flr_de_v
 
 void EquationOfState::FloorBook(const Real dm, const Real de) {
   pmy_pack->pmesh->ecounter.flr_dm_v += flr_w*dm;
