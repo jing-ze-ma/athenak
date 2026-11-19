@@ -3305,7 +3305,7 @@ class RadiationM1 {
   bool cln_ringjmin = true;     // clean_ring_jmin: ring J ratios only of ray-held cells
   Real cln_prmax = -1.0;      // implicit_tol_rel_max named: clean_conv_max's default
   bool cln_linpass = false;   // implicit_lin_maxit named: a pass goes on past a failed solve
-  void CleanStagXDonor(const bool first);
+  void CleanStagXDonor(const bool first, const bool lat = true);
   void CleanStagXCount(const int inl, const int nit);
   void CleanStagXSweep();
   bool cln_srccvx = false;      // clean_source_convex: vet_scatter S between J and B

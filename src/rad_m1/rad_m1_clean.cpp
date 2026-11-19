@@ -1209,7 +1209,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     if (cln_vimp && cln_feedback) CleanRightHandSide(true);
     if (cln_vimp && cln_feedback) CleanStagDrag(true);
     // (clean_stag_xdonor: q of the first iterate, with its drag share b)
-    CleanStagXDonor(true);
+    // (after the first drag: CLW_L holds E_k's lateral sums, CleanStagDrag)
+    CleanStagXDonor(true, !(cln_vimp && cln_feedback));
     converged = !iterate;
     npic = 0;
     Real de0 = 1.0e300, dv0 = 1.0e300, trel = 0.0;
@@ -1239,7 +1240,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         CleanCellRightHandSide();
         if (inl % cln_pcreuse == 0) CleanCellPreconditionerSetup();
       } else {
-        if (inl > 0) CleanStagXDonor(false);   // (clean_stag_xdonor: q of the iterate)
+        // (clean_stag_xdonor: q of the iterate; CLW_L holds E_k's lateral sums, those of
+        // the velocity update, but where the closure moved D or the bracket took CLW_L)
+        if (inl > 0) CleanStagXDonor(false, clos || !cln_feedback);
         // (after the xdonor: the lateral sums of E_k are its, CleanStagXDonor)
         CleanRightHandSide(false, !(inl > 0 && cln_xd_on));
         // (clean_stag_sbimp: the first iterate's T in exchange with E_k and the beta
@@ -1777,7 +1780,7 @@ void RadiationM1::CleanOldVector() {
 //! takes d/(1 - l), the fixed point of that mode (half the change for l = -1); C is
 //! unchanged at the fixed point.  first: the first iterate of a solve, no history.
 
-void RadiationM1::CleanStagXDonor(const bool first) {
+void RadiationM1::CleanStagXDonor(const bool first, const bool lat) {
   if (!cln_xd || cln_cell || !pmy_pack->pmesh->multi_d) return;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -1786,7 +1789,7 @@ void RadiationM1::CleanStagXDonor(const bool first) {
   cln_xd_on = false;
   CleanGhostDefer(cln_w, CLW_EK, 1);   // (one exchange)
   CleanGhostFill(cln_w, CLW_EO, 1);   // (the donors' E_old of the lag split)
-  if (pmy_pack->pmesh->use_cubed_sphere) CleanStagCsLateral(CLW_EK);
+  if (lat) CleanStagCsLateral(CLW_EK);
   CleanArgs x = CleanMakeArgs();   // (x.xq = -1: the central cross flux)
   const int xq = cln_xqs;
   for (int dir = 0; dir < x.nf; ++dir) {
