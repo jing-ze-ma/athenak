@@ -3013,6 +3013,9 @@ class RadiationM1 {
   bool CleanFvWall(const int side);
   void CleanFvSets(const Real tc, const int cyc);
   void CleanRingMoments();
+  void CleanRingShift(const int64_t b);
+  int64_t CleanRingBlk(const Real dt) const;
+  void CleanRingPreShift();   // dt_retry: the shift before the checkpoint
   void CleanRingJump();
   void CleanRingSolveSet();
   void CleanFvTables(const int d0, const int nd);
@@ -3335,6 +3338,7 @@ class RadiationM1 {
   bool cln_rlast = false;       // jump: the build closes its block (the next set swept)
   bool cln_rjump = false;       // jump: cln_rnew holds the next block's moments
   DvceArray5D<Real> cln_rnew;   // jump: the moments of block b+1's window at the boundary
+  bool cln_rfix = false;        // no build of this cycle shifts (CleanRingPreShift)
   bool cln_rok = false;         // the ring holds the offsets of the sets before cln_rb
   int64_t cln_rb = 0;           // the current set of the ring (rotation block)
   int64_t cln_rpb = 0;          // the block of the pending Delta

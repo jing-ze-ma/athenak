@@ -197,6 +197,7 @@ struct ViewEntry : public Entry {
   std::int64_t gsaved = -1;
   const void *dsaved = nullptr;
   std::int64_t nskip = 0;
+  const bool *skip = nullptr;   // a cycle that does not write it: no copy (SetSkip)
   ViewEntry(T *pp, bool d, bool h = false) : p(pp), deep(d), host(h) {
     is_view = true;
   }
@@ -211,7 +212,10 @@ struct ViewEntry : public Entry {
   void Save() override {
     orig = *p;
     have = false;
-    if (!deep || p->data() == nullptr || p->span() == 0) return;
+    if (skip != nullptr && *skip) {clone = Clone(); hclone = HClone(); onhost = false;}
+    if (!deep || p->data() == nullptr || p->span() == 0 || (skip != nullptr && *skip)) {
+      return;
+    }
     // a non-contiguous View (none today) keeps its clone on the device
     const bool wasonhost = onhost;
     onhost = host && p->span_is_contiguous();
@@ -259,6 +263,7 @@ struct ViewEntry : public Entry {
   }
   bool OnHost() const override {return have && onhost;}
   void SetGen(const std::int64_t *g) override {gen = g;}
+  void SetSkip(const bool *s) override {skip = s;}
   std::int64_t NSkip() const override {return nskip;}
   bool Differs() override {
     if (!have) return false;
@@ -628,6 +633,11 @@ void DtRetry::Build(Mesh *pm) {
   for (auto &e : ent_) {
     if ((host_ && e->name == "m1.vra_d") || e->name == "m1.cln_rr") {
       e->SetGen(&(pk->pradm1->vra_gen));
+    }
+    // (and both, with the pending Delta, while no build of the cycle shifts the ring:
+    // RadiationM1::CleanRingPreShift)
+    if (e->name == "m1.cln_rr" || e->name == "m1.cln_rpd") {
+      e->SetSkip(&(pk->pradm1->cln_rfix));
     }
   }
   // the problem generator's registered state (PgenEntries)

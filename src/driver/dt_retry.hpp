@@ -54,6 +54,7 @@ struct Entry {
   virtual std::size_t Bytes() const {return 0;}
   virtual bool OnHost() const {return false;}   // copy in pinned host memory
   virtual void SetGen(const std::int64_t *g) {(void) g;}   // write counter
+  virtual void SetSkip(const bool *s) {(void) s;}   // no copy while *s (not written)
   virtual std::int64_t NSkip() const {return 0;}
   virtual bool Differs() {return false;}   // audit: changed since Save (Views only)
   virtual void PoisonPrepare(bool whole) {(void) whole;}   // audit: before the put-back

@@ -11230,6 +11230,7 @@ void RadiationM1::DtRetryQuiesce(bool restoring) {
   if (!restoring) {
     // csfix-1023: the compact-list build generations at the checkpoint
     for (int c = 0; c < vgd_csncl; ++c) {g_vgd_csgen_save[c] = g_vgd_csgen[c];}
+    CleanRingPreShift();
     CleanDtrD(true);
     return;
   }

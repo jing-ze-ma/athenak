@@ -970,6 +970,66 @@ int RadiationM1::CleanRingFields(int *fm) const {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanRingShift
+//! \brief clean_rot_ring: the first build of block b shifts the ring by the pending
+//! Delta (that of the boundary of block b when it closed the block): d_1 = -Delta,
+//! d_j -= Delta, the J ratios r_j' = r_{j-1}/R, r_1' = 1/R
+
+void RadiationM1::CleanRingShift(const int64_t b) {
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int nr = vra_k - 1;
+  Kokkos::Array<int, CLN_N> fm;
+  const int nf = CleanRingFields(fm.data());
+  const Real tk = vgd_rot_t0 + static_cast<Real>(b)*vgd_rot_dt;
+  if (std::abs(cln_rpt - tk) > 1.0e-9*vgd_rot_dt) cln_roff_sum += 1.0;
+  vra_gen += 1;
+  auto rr = cln_rr;
+  auto pd = cln_rpd;
+  par_for("cln_ring_shift", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, 0, id.nx3 - 1,
+          0, id.nx2 - 1, 0, id.nx1 - 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int fj = fm[int{CLN_J}];
+    const Real rp = pd(m,fj,k,j,i);
+    for (int f = 0; f < nf; ++f) {
+      for (int r = nr - 1; r > 0; --r) {
+        const Real o = rr(m,(r-1)*nf+f,k,j,i);
+        rr(m,r*nf+f,k,j,i) = (f != fj) ? o - pd(m,f,k,j,i) :
+                             ((rp > 0.0 && o >= 0.0) ? o/rp : -1.0);
+      }
+      rr(m,f,k,j,i) = (f != fj) ? -pd(m,f,k,j,i) : ((rp > 0.0) ? 1.0/rp : -1.0);
+    }
+  });
+  cln_rok = true;
+  cln_rb = b;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanRingPreShift
+//! \brief dt_retry checkpoint (DtRetryQuiesce): with clean_rot_ring = live, the cross-fade
+//! and vet_gd_rotate_align the build of a step lies in one block for every dt of its
+//! retries (a step ends on each boundary): a step that starts on the boundary of block
+//! cln_rb shifts the ring here, before the checkpoint, as its first build would.  The
+//! offsets then do not change within the cycle and the pending Delta is read by no build
+//! of it: the checkpoint skips both (cln_rfix).  Otherwise the build shifts and both are
+//! copied
+
+int64_t RadiationM1::CleanRingBlk(const Real dt) const {
+  const Real tau = (pmy_pack->pmesh->time + dt - vgd_rot_t0)/vgd_rot_dt;
+  const int64_t b = static_cast<int64_t>(std::floor(tau));
+  return (tau - static_cast<Real>(b) < 1.0e-9) ? b - 1 : b;   // (CleanFvSets)
+}
+
+void RadiationM1::CleanRingPreShift() {
+  const Real dt = pmy_pack->pmesh->dt;
+  cln_rfix = clean && cln_ring == 1 && vgd_xf && !(vra_on && !g_vra_adv) &&
+             vgd_rot_dt > 0.0 && vgd_rot_align && dt < vgd_rot_dt &&
+             CleanRingBlk(dt) == CleanRingBlk(1.0e-6*dt);   // (any retry's dt)
+  if (cln_rfix && cln_rok && cln_rpb == cln_rb && CleanRingBlk(dt) == cln_rb + 1) {
+    CleanRingShift(cln_rb + 1);
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn RadiationM1::CleanRingRst*
 //! \brief clean_rot_ring in the restart files (version 4): the offsets cln_rr, then the
 //! Delta cln_rpd, of the fields the ring carries on the interior cells, in their own
@@ -1222,23 +1282,7 @@ void RadiationM1::CleanRingMoments() {
   auto pd = cln_rpd;
   if (!cln_rok || b != cln_rb) {
     if (shift) {
-      // the pending Delta is that of the boundary of block b when it closed the block
-      const Real tk = vgd_rot_t0 + static_cast<Real>(b)*vgd_rot_dt;
-      if (std::abs(cln_rpt - tk) > 1.0e-9*vgd_rot_dt) cln_roff_sum += 1.0;
-      vra_gen += 1;
-      par_for("cln_ring_shift", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
-      KOKKOS_LAMBDA(const int m, const int k0, const int j0, const int i0) {
-        const int k = k0 - ks, j = j0 - js, i = i0 - is, fj = fm[int{CLN_J}];
-        const Real rp = pd(m,fj,k,j,i);   // (J ratios: r_j' = r_{j-1}/R, r_1' = 1/R)
-        for (int f = 0; f < nf; ++f) {
-          for (int r = nr - 1; r > 0; --r) {
-            const Real o = rr(m,(r-1)*nf+f,k,j,i);
-            rr(m,r*nf+f,k,j,i) = (f != fj) ? o - pd(m,f,k,j,i) :
-                                 ((rp > 0.0 && o >= 0.0) ? o/rp : -1.0);
-          }
-          rr(m,f,k,j,i) = (f != fj) ? -pd(m,f,k,j,i) : ((rp > 0.0) ? 1.0/rp : -1.0);
-        }
-      });
+      CleanRingShift(b);
     } else if (full) {
       // the whole union swept: the offsets of the older sets (their moments, above) from
       // the current one
