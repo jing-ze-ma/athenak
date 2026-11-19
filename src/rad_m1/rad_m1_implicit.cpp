@@ -3401,8 +3401,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_m1>/implicit_vimp needs <mesh>/nghost >= 2");
   }
   int niw = full ? (bicg_on ? M1_NIW_K : M1_NIW) : M1_NIW_X1;
-  // scheme = clean reads none of the components appended below (its iw ends here)
-  const int niw_clean = niw;
+  // scheme = clean reads none of the components appended below, nor the Krylov
+  // vectors (its iw ends at M1_NIW; time2_face_fct's scratch, Time2FctSlot)
+  const int niw_clean = full ? M1_NIW : niw;
   // MILESTONE 3g: the five per-cell components of the gas coupling are APPENDED, so
   // every index above keeps the value it had and the array grows only when asked for.
   iw_gas = -1;

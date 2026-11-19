@@ -1811,7 +1811,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     t2_ffct_nop += 1.0;   // no stored face flux for this slope (start, restart)
     return;
   }
-  if (iw.extent_int(1) <= M1_IW_KZ) {
+  if (iw.extent_int(1) <= Time2FctSlot(0)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
               << std::endl << "<rad_m1>/time2_face_fct needs the Krylov work slots "
               << "(implicit_solver = bicgstab)" << std::endl;
@@ -1826,7 +1826,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
   auto p1_ = t2pf1;
   auto p2_ = t2pf2;
   auto iw_ = iw;
-  const int ca = M1_IW_KZ, cb = M1_IW_KS;
+  const int ca = Time2FctSlot(0), cb = Time2FctSlot(1);
   const bool tr2 = trans_on, tr3 = trans_on && trans_x3;
   auto &mbsize = pmy_pack->pmb->mb_size;
   auto vol = pmy_pack->pcoord->volume;
@@ -2100,14 +2100,15 @@ void RadiationM1::CleanBndAcc(int stage, Real c1, Real c2, Real w, Real dt) {
   auto g1 = t2f1;
   auto iw_ = iw;
   auto ar = pmy_pack->pcoord->area.x1f;
-  const bool lim = t2_ffct && ok1;   // (the limiter's R in iw slot M1_IW_KZ)
+  const bool lim = t2_ffct && ok1;   // (the limiter's R in iw slot Time2FctSlot(0))
+  const int sr = Time2FctSlot(0);
   const Real crp = chat/c_light, cc2 = two ? c2 : 0.0;
   par_for("cln_bndacc", DevExeSpace(), 0, nmb1, 0, 1, id.ks, id.ke, id.js, id.je,
   KOKKOS_LAMBDA(const int m, const int s, const int k, const int j) {
     const int i = s ? ie + 1 : is;
     const Real g = ar(m,k,j,i)*(c1*(ok1 ? p1(m,0,k,j,i) : crp*g1(m,k,j,i)) +
                                 cc2*p2(m,0,k,j,i));
-    const Real rd = lim ? iw_(m,M1_IW_KZ,k,j,(g > 0.0) ? i - 1 : i) : 1.0;
+    const Real rd = lim ? iw_(m,sr,k,j,(g > 0.0) ? i - 1 : i) : 1.0;
     la(m,2+s,k,j) = w*la(m,s,k,j) + rd*g;
   });
 }
@@ -2182,7 +2183,7 @@ bool RadiationM1::Time2PosFix(Driver *pdrive) {
   const bool d2 = (indcs.nx2 > 1), d3 = (indcs.nx3 > 1);
   auto iw_ = iw;
   auto pm_ = t2pm;
-  const int sl = M1_IW_KZ;
+  const int sl = Time2FctSlot(0);
   auto to_slot = [&]() {
     par_for("m1_t2p_ts", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -3465,6 +3466,10 @@ void RadiationM1::Time2VetColExtrap2() {
   x2_t = tn;
   x2_alpha = vgd_alpha;
   x2_ok = true;
+}
+
+int RadiationM1::Time2FctSlot(const int q) const {
+  return clean ? (q ? M1_IW_S2 : M1_IW_S1) : (q ? M1_IW_KS : M1_IW_KZ);
 }
 
 //----------------------------------------------------------------------------------------
