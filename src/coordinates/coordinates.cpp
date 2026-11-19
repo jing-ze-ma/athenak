@@ -883,9 +883,12 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
 #else
   using RvPol = Kokkos::RangePolicy<>;
 #endif
+  Real fde_ = 0.0;   // floor ledger (EventCounters flr_de_v)
+  auto cvol_ = volume;
   Kokkos::parallel_reduce("cs_raisev",
   RvPol(DevExeSpace(), 0, (nmb1 + 1)*nkji),
-  KOKKOS_LAMBDA(const int &idx, int &sumv, int &sumts, Real &sumde, Real &sumvde) {
+  KOKKOS_LAMBDA(const int &idx, int &sumv, int &sumts, Real &sumde, Real &sumvde,
+                Real &sfde) {
     const int m = idx/nkji;
     const int k = (idx - m*nkji)/nji + kl;
     const int j = (idx - m*nkji - (k - kl)*nji)/ni + jl;
@@ -910,6 +913,7 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
     u0(m,IM1,k,j,i) = m1;
     u0(m,IM2,k,j,i) = m2;
     u0(m,IM3,k,j,i) = m3;
+    if (act_) {sfde += cvol_(m,k,j,i)*(etot - u0(m,IEN,k,j,i));}
     u0(m,IEN,k,j,i) = etot;
     if (gen_) {
       wder_(m,IDPR,k,j,i) = pnew;
@@ -929,7 +933,10 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
     w0(m,IVZ,k,j,i) = v3;
     w0(m,IEN,k,j,i) = eint;
   }, Kokkos::Sum<int>(nceilv_), Kokkos::Sum<int>(ntset_),
-     Kokkos::Sum<Real>(efloor_de_), Kokkos::Sum<Real>(vceil_de_));
+     Kokkos::Sum<Real>(efloor_de_), Kokkos::Sum<Real>(vceil_de_),
+     Kokkos::Sum<Real>(fde_));
+  pmy_pack->pmesh->ecounter.flr_de_v += fde_*((pmy_pack->phydro != nullptr) ?
+                                          pmy_pack->phydro->peos->flr_w : 1.0);
   pmy_pack->pmesh->ecounter.efloor_de += efloor_de_;
   pmy_pack->pmesh->ecounter.vceil_de += vceil_de_;
   pmy_pack->pmesh->ecounter.neos_vceil += nceilv_;

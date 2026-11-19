@@ -914,7 +914,7 @@ std::int64_t *EcInt(EventCounters &e, int q) {
   return p[q];
 }
 Real *EcReal(EventCounters &e, int q) {
-  Real *p[3] = {&e.efloor_de, &e.vceil_de, &e.dfloor_ke};
+  Real *p[5] = {&e.efloor_de, &e.vceil_de, &e.dfloor_ke, &e.flr_dm_v, &e.flr_de_v};
   return p[q];
 }
 // a device counter View into its slot clone (false = not allocated yet)
@@ -953,7 +953,7 @@ void CounterKeep::Save(Mesh *pm, int slot) {
   if (!on) return;
   Snap &s = s_[slot];
   for (int q = 0; q < 9; ++q) {s.ni[q] = *EcInt(pm->ecounter, q);}
-  for (int q = 0; q < 3; ++q) {s.ec[q] = *EcReal(pm->ecounter, q);}
+  for (int q = 0; q < 5; ++q) {s.ec[q] = *EcReal(pm->ecounter, q);}
   auto *pm1 = pm->pmb_pack->pradm1;
   if (pm1 != nullptr) {
     s.hpos = SnapView(pm1->pos_cnt_d, s.pos);
@@ -968,7 +968,7 @@ void CounterKeep::Restore(Mesh *pm, int slot, int why) {
   Snap &s = s_[slot];
   dvc_[why] += static_cast<double>(pm->ecounter.vceil_de - s.ec[1]);
   for (int q = 0; q < 9; ++q) {*EcInt(pm->ecounter, q) = s.ni[q];}
-  for (int q = 0; q < 3; ++q) {*EcReal(pm->ecounter, q) = s.ec[q];}
+  for (int q = 0; q < 5; ++q) {*EcReal(pm->ecounter, q) = s.ec[q];}
   auto *pm1 = pm->pmb_pack->pradm1;
   if (pm1 != nullptr) {
     const Real un1 = HostAt(pm1->pos_cnt_d, radm1::M1_POS_FLR_UN);

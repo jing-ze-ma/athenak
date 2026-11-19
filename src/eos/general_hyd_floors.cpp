@@ -50,9 +50,12 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
   Real vceil_de_=0.0;
   Real dfloor_ke_=0.0;
   const bool kvtally = eos.dfloor_keep_velocity && !eos.defer_cons_floors;
+  Real fdm_ = 0.0, fde_ = 0.0;   // floor ledger (EventCounters flr_*_v)
+  const auto fvw_ = FloorVol();
   Kokkos::parallel_reduce("hyd_c2p_gen",Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
   KOKKOS_LAMBDA(const int &idx, int &sumd, int &sume, int &sumt, int &sumv,
-                int &sumc, int &sumts, Real &sumde, Real &sumvde, Real &sumdke) {
+                int &sumc, int &sumts, Real &sumde, Real &sumvde, Real &sumdke, Real &sdm_,
+                Real &sde_) {
     int m = (idx)/nkji;
     int k = (idx - m*nkji)/nji;
     int j = (idx - m*nkji - k*nji)/ni;
@@ -67,6 +70,7 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
     u.my = cons(m,IM2,k,j,i);
     u.mz = cons(m,IM3,k,j,i);
     u.e  = cons(m,IEN,k,j,i);
+    const Real d0_ = u.d, e0_ = u.e;
 
     // call c2p function, which also returns the derived quantities (general_c2p_hyd.hpp)
     HydPrim1D w;
@@ -178,16 +182,23 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
         prim(m,n,k,j,i) = cons(m,n,k,j,i)/u.d;
       }
     }
+    if (!only_testfloors) {
+      const Real fw = fvw_(m,k,j,i);
+      sdm_ += fw*(cons(m,IDN,k,j,i) - d0_);
+      sde_ += fw*(cons(m,IEN,k,j,i) - e0_);
+    }
   }, Kokkos::Sum<int>(nfloord_), Kokkos::Sum<int>(nfloore_), Kokkos::Sum<int>(nfloort_),
      Kokkos::Sum<int>(nceilv_), Kokkos::Sum<int>(ntclamp_), Kokkos::Sum<int>(ntset_),
      Kokkos::Sum<Real>(efloor_de_), Kokkos::Sum<Real>(vceil_de_),
-     Kokkos::Sum<Real>(dfloor_ke_));
+     Kokkos::Sum<Real>(dfloor_ke_),
+     Kokkos::Sum<Real>(fdm_), Kokkos::Sum<Real>(fde_));
 
   // store appropriate counters
   if (only_testfloors) {
     pmy_pack->pmesh->ecounter.nfofc += nfloord_;
   } else {
     pmy_pack->pmesh->ecounter.neos_dfloor += nfloord_;
+    FloorBook(fdm_, fde_);
     pmy_pack->pmesh->ecounter.neos_efloor += nfloore_;
     pmy_pack->pmesh->ecounter.neos_tfloor += nfloort_;
     pmy_pack->pmesh->ecounter.neos_vceil  += nceilv_;

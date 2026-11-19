@@ -49,8 +49,11 @@ void IdealHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
   }
 
   int nfloord_=0, nfloore_=0, nfloort_=0;
+  Real fdm_ = 0.0, fde_ = 0.0;   // floor ledger (EventCounters flr_*_v)
+  const auto fvw_ = FloorVol();
   Kokkos::parallel_reduce("hyd_c2p",Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
-  KOKKOS_LAMBDA(const int &idx, int &sumd, int &sume, int &sumt) {
+  KOKKOS_LAMBDA(const int &idx, int &sumd, int &sume, int &sumt, Real &sdm_,
+                Real &sde_) {
     int m = (idx)/nkji;
     int k = (idx - m*nkji)/nji;
     int j = (idx - m*nkji - k*nji)/ni;
@@ -65,6 +68,7 @@ void IdealHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
     u.my = cons(m,IM2,k,j,i);
     u.mz = cons(m,IM3,k,j,i);
     u.e  = cons(m,IEN,k,j,i);
+    const Real d0_ = u.d, e0_ = u.e;
 
     // call c2p function
     // (inline function in ideal_c2p_hyd.hpp file)
@@ -113,14 +117,21 @@ void IdealHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
         prim(m,n,k,j,i) = cons(m,n,k,j,i)/u.d;
       }
     }
+    if (!only_testfloors) {
+      const Real fw = fvw_(m,k,j,i);
+      sdm_ += fw*(cons(m,IDN,k,j,i) - d0_);
+      sde_ += fw*(cons(m,IEN,k,j,i) - e0_);
+    }
   }, Kokkos::Sum<int>(nfloord_), Kokkos::Sum<int>(nfloore_),
-     Kokkos::Sum<int>(nfloort_));
+     Kokkos::Sum<int>(nfloort_),
+     Kokkos::Sum<Real>(fdm_), Kokkos::Sum<Real>(fde_));
 
   // store appropriate counters
   if (only_testfloors) {
     pmy_pack->pmesh->ecounter.nfofc += nfloord_;
   } else {
     pmy_pack->pmesh->ecounter.neos_dfloor += nfloord_;
+    FloorBook(fdm_, fde_);
     pmy_pack->pmesh->ecounter.neos_efloor += nfloore_;
     pmy_pack->pmesh->ecounter.neos_tfloor += nfloort_;
   }

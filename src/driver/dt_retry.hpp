@@ -233,7 +233,7 @@ class CounterKeep {
  private:
   struct Snap {
     bool have = false;
-    Real ec[3] = {0, 0, 0};               // Mesh::ecounter efloor_de, vceil_de, dfloor_ke
+    Real ec[5] = {0, 0, 0, 0, 0};   // ecounter efloor_de, vceil_de, dfloor_ke, flr_*_v
     std::int64_t ni[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};   // its integer counters
     DvceArray1D<Real> pos, acl, opn;
     bool hpos = false, hacl = false, hopn = false;

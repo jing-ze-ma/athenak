@@ -11622,6 +11622,11 @@ void RadiationM1::ImplicitReport() {
     pos_un_drop = gd;
 #endif
   }
+  // s3c: the hydro inversions' floor energy (EventCounters flr_de_v), all ranks
+  Real hfl = pmy_pack->pmesh->ecounter.flr_de_v;
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, &hfl, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
   // the Picard iteration count is MPI_MAX-reduced every step (see ImplicitSolve), so
   // every rank holds the same three numbers and no reduction is needed here
   // hgkmom-1110 implicit_am_cs_kecap: the capped am_cs deposits
@@ -11843,7 +11848,8 @@ void RadiationM1::ImplicitReport() {
               << " taken from the column's radiation (implicit_pos_floor_cons)="
               << pos_cnt[M1_POS_FLR_MV]
               << " | |F| > c E scaled back cell-solves=" << pos_cnt[M1_POS_FCLIP]
-              << " sum(|F|/(cE) - 1)=" << pos_cnt[M1_POS_FCLIPM] << std::endl;
+              << " sum(|F|/(cE) - 1)=" << pos_cnt[M1_POS_FCLIPM]
+              << " | hydro EOS floors energy created=" << hfl << std::endl;
   }
   if (impl_fmm) {   // facemmat-1112 (all ranks, all passes)
     std::cout << "<rad_m1> implicit_face_mmat: checked passes=" << fmm_pass

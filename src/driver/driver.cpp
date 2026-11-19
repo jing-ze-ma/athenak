@@ -1286,6 +1286,15 @@ void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
                     MPI_COMM_WORLD);
     }
 #endif
+    // s3c floor ledger: the mass and energy the hydro inversions' floors created
+    Real fl[2] = {pmesh->ecounter.flr_dm_v, pmesh->ecounter.flr_de_v};
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, fl, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0 && pmesh->pmb_pack->phydro != nullptr) {
+      std::cout << "<hydro> EOS floors (all ranks, accepted steps, RK-weighted): mass "
+                << "created x vol=" << fl[0] << " energy created x vol=" << fl[1] << std::endl;
+    }
     if (global_variable::my_rank == 0) {
       // Print diagnostic messages related to the end of the simulation
       OutputCycleDiagnostics(pmesh);

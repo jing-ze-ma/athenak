@@ -110,6 +110,10 @@ struct EventCounters {
   // the total energy (sum over cells of (1 - fv^3) KE, not volume weighted, general
   // hydro EOS, off the cubed sphere), since the last row
   Real dfloor_ke;
+  // s3c: mass and energy the hydro inversions' floors created, sum over active cells of
+  // vol x (u_new - u_old), this rank, since the start of the run (never reset by the
+  // event log; a discarded attempt's part is rolled back, dtretry::CounterKeep)
+  Real flr_dm_v, flr_de_v;
   // F4: <rad_m1> solver/limiter totals since the start of this run (or
   // restart), filled at each event-log output (RadiationM1::EventTotals)
   static constexpr int kNM1Tot = 13;
@@ -118,6 +122,7 @@ struct EventCounters {
   EventCounters() : nfofc(0), neos_dfloor(0), neos_efloor(0), neos_tfloor(0),
                     neos_vceil(0), neos_fail(0), maxit_c2p(0), neos_tclamp(0),
                     neos_tset(0), efloor_de(0.0), vceil_de(0.0), dfloor_ke(0.0),
+                    flr_dm_v(0.0), flr_de_v(0.0),
                     m1on(false), m1tot{} {}
 };
 

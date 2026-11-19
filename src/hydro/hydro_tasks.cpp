@@ -948,6 +948,8 @@ TaskStatus Hydro::RTStrangSplit(Driver *pdrive, int stage) {
 TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
   if (sbf_on && sbf_want) SplitBvalSnap(pdrive, stage);
   if (c2p_track) C2PTrack(pdrive, stage, true);
+  // (the floor ledger, EventCounters flr_*_v: the change's weight in the step)
+  peos->flr_w = c2p_track::Weight(pdrive, stage, c2p_split || pdrive == nullptr);
   eint_ledger::Mark(pmy_pack->pmesh, "gap_c2p");
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int &ng = indcs.ng;
