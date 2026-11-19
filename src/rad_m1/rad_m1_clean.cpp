@@ -4001,7 +4001,9 @@ void RadiationM1::CleanWriteBack() {
       const Real fh = (tie && !bh) ? x.w(m,CLW_L+n,k+dk,j+dj,i+di) : fu;
       dv += (x.sph || x.cub) ? CleanDivW(x, n, m, k, j, i, 1)*fh -
                                CleanDivW(x, n, m, k, j, i, 0)*fl : x.idx[n]*(fh - fl);
-      if (xh.hi) u0_(m,M1_F1+n,k,j,i) = 0.5*(fl + fu);
+      // (clean_stag_kpos: the cell flux without the moved increment flux)
+      if (xh.hi) u0_(m,M1_F1+n,k,j,i) = 0.5*(fl + fu - CleanKposFlux(x, CLW_X, n, m, k, j, i) -
+                                             CleanKposFlux(x, CLW_X, n, m, k+dk, j+dj, i+di));
       // (clean_stag_kpos: the stored Phi without the moved increment flux)
       if (pfo) pf(m,n,k,j,i) = fl - CleanKposFlux(x, CLW_X, n, m, k, j, i);
       // (the high face of the MeshBlock: the Phi that moved E, the owner's with the tie,
