@@ -3049,6 +3049,9 @@ class RadiationM1 {
                  const Real w0);
   void CleanDtrD(const bool save);   // dt_retry: d to / from cln_rstd
   int CleanRingFields(int *fm, const bool ring = false) const;   // clean_rot_ring
+  // time2_face_fct's two scratch slots of iw (scheme = clean: the line-solve slots, its
+  // iw ends before the Krylov vectors)
+  int Time2FctSlot(const int q) const;
   int CleanRingRstN() const;            // ... in the restart files (version 4)
   void CleanRingRstCopy(DvceArray5D<Real> &a, const int c, const int nmb, const int m0,
                         const bool pk, const bool have);
