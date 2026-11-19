@@ -3128,7 +3128,8 @@ class RadiationM1 {
   void CleanFaceCoefficients();
   void CleanAdvectiveCoefficients();
   void CleanFirstIterate();
-  void CleanRightHandSide(const bool beta = false);   // (beta: CLW_BT, CLW_RE only)
+  // (beta: CLW_BT, CLW_RE only; lat false: CLW_L holds E_k's lateral sums)
+  void CleanRightHandSide(const bool beta = false, const bool lat = true);
   void CleanPreconditionerSetup();
   void CleanPrecondition(const int src, const int dst);
   CleanLevel CleanStagLevel(const int l);
@@ -3144,7 +3145,7 @@ class RadiationM1 {
   int CleanCountNegative();
   int CleanStagRealizable();
   void CleanStagBracket();
-  void CleanStagFSolve(const int e, const bool tie = true);
+  void CleanStagFSolve(const int e, const bool tie = true, const bool lat = true);
   void CleanDMem(const bool save);
   void CleanDInc(const bool two, const Real c1, const Real c2, const Real w1,
                  const Real w0);
@@ -3178,7 +3179,7 @@ class RadiationM1 {
   void CleanFaceHalf(const DvceArray2D<Real> &dv, const int o, const bool zero,
                      const int fo);
   DvceArray5D<Real> &CleanRstFv() {return (cln_scmem && !cln_cssc) ? cln_top : cln_fvi;}
-  void CleanStagDrag(const bool first, const bool vel = false);
+  void CleanStagDrag(const bool first, const bool vel = false, const bool lat = true);
   void CleanStagFCsShared();
   void CleanStagFaceTie(const int e, const int kd, const bool pt = false);
   Real CleanStagFSweepChange();

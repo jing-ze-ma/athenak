@@ -1240,7 +1240,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         if (inl % cln_pcreuse == 0) CleanCellPreconditionerSetup();
       } else {
         if (inl > 0) CleanStagXDonor(false);   // (clean_stag_xdonor: q of the iterate)
-        CleanRightHandSide();
+        // (after the xdonor: the lateral sums of E_k are its, CleanStagXDonor)
+        CleanRightHandSide(false, !(inl > 0 && cln_xd_on));
         // (clean_stag_sbimp: the first iterate's T in exchange with E_k and the beta
         // terms sb(E_k) the RHS just built, then the RHS of that T)
         // (clean_xt_cons: the same, the first iterate's T from the pass's gas row)
@@ -1783,7 +1784,7 @@ void RadiationM1::CleanStagXDonor(const bool first) {
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   cln_xd_on = false;
-  CleanGhostFill(cln_w, CLW_EK, 1);
+  CleanGhostDefer(cln_w, CLW_EK, 1);   // (one exchange)
   CleanGhostFill(cln_w, CLW_EO, 1);   // (the donors' E_old of the lag split)
   if (pmy_pack->pmesh->use_cubed_sphere) CleanStagCsLateral(CLW_EK);
   CleanArgs x = CleanMakeArgs();   // (x.xq = -1: the central cross flux)
@@ -2589,7 +2590,7 @@ static Real CleanStagAdvFace(const CleanArgs &x, const CleanArgs &xh, const int 
 //! terms
 
 #if M1_TU_PART(1)
-void RadiationM1::CleanRightHandSide(const bool beta) {
+void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -2641,9 +2642,11 @@ void RadiationM1::CleanRightHandSide(const bool beta) {
       const Real s = 4.0*x.h*x.c*op(m,M1_OP_P,k,j,i)*(1.0 - 0.5*b2)*arad_*t*t*t;
       x.w(m,CLW_GX,k,j,i) = (s > 0.0) ? s/(d*cv + s) : 0.0;
     });
-    CleanGhostFill(cln_w, CLW_BT, 4);   // (E_k's ghosts: those of its last change)
-    CleanStagCsLateral(CLW_EK);
+    // (E_k's ghosts: those of its last change; BT, RE and GX in one exchange, before the
+    // lateral sums, which read what an earlier fill deferred)
+    CleanGhostDefer(cln_w, CLW_BT, 4);
     CleanGhostFill(cln_w, CLW_GX, 1);
+    if (lat) CleanStagCsLateral(CLW_EK);
   }
   if (beta) return;
   CleanArgs xh = x;   // (the face momentum state, clean_stag_split)
@@ -3083,7 +3086,7 @@ Real RadiationM1::CleanVelocityUpdate() {
   // (the F solve's face tie after the drag, which evaluates the same face T: CLF_PT)
   const bool td = cln_fwork && cln_ftie && !x.cub;
   if (cln_fwork) {   // (clean_stag_fwork: the momentum of the
-    CleanStagFSolve(CLW_EK, !td);                //  F solve, which the write-back gives
+    CleanStagFSolve(CLW_EK, !td, false);         //  F solve, which the write-back gives
     xh.fs = true;                                //  the gas, for the work W of the E row)
     xh.tf = cln_ftie && !x.cub;
     cln_fsk = true;
@@ -3100,7 +3103,7 @@ Real RadiationM1::CleanVelocityUpdate() {
   // (with the F solve's F: the faces' terms and the drag first, once per face, then the
   // cells' momentum and their advective coefficients a_d, CleanAdvectiveCoefficients)
   const bool fa = xh.fs;
-  if (fa) CleanStagDrag(false, true);
+  if (fa) CleanStagDrag(false, true, false);   // (the lateral sums of E_k: above)
   if (td) CleanStagFaceTie(CLW_EK, (t2_solve == M1_T2S_NONE) ? 0 : ((t2_solve ==
                            M1_T2S_STAGE1) ? CLF_KD + 1 : CLF_KD), true);
   xh.fa = fa;
@@ -3716,13 +3719,14 @@ void CleanStagFJoin(const Real p[8], const Real q[8], Real c[8], Real ya[3],
 //! and a static envelope would lose its balance on the panel-tangent faces).
 
 #if M1_TU_PART(2)
-void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
+void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool lat) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  if (pmy_pack->pmesh->use_cubed_sphere) CleanStagCsLateral(e);
+  // (lat false: the caller's are those of e, CLW_L as they were)
+  if (lat) CleanStagCsLateral(e);
   CleanArgs x = CleanMakeArgs(), xh = x;
   xh.hi = true;
   xh.kq = -1;
@@ -4504,13 +4508,14 @@ void RadiationM1::CleanStagCsLateral(const int e, const bool st, const int part)
 //! F): first the face's term of CleanMomentumChange less its share wt, with the stress
 //! once per face for both (CLF_PT); without clean_stag_vimp only that.
 
-void RadiationM1::CleanStagDrag(const bool first, const bool vel) {
+void RadiationM1::CleanStagDrag(const bool first, const bool vel, const bool lat) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  CleanStagCsLateral(CLW_EK);   // (cubed sphere: the lateral stress of the iterate)
+  // (cubed sphere: the lateral stress of the iterate; lat false: the caller's)
+  if (lat) CleanStagCsLateral(CLW_EK);
   CleanArgs x = CleanMakeArgs(), xh = x;
   xh.hi = true;
   xh.kq = -1;
@@ -4692,7 +4697,8 @@ void RadiationM1::CleanWriteBack() {
                                                                      k, j, i, true) + kb;
     });
   }
-  CleanStagFSolve(CLW_X);   // (the face F of the F solve and its dissipation)
+  // (the face F of the F solve and its dissipation; the lateral sums of X: above)
+  CleanStagFSolve(CLW_X, true, false);
   xh.fs = true;
   xh.tf = cln_ftie && !x.cub;
 
