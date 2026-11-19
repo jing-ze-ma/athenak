@@ -2887,6 +2887,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     std::cout << "<rad_m1> implicit_pos_floor_cons: the E floor's uncovered raise is taken "
               << "from the radiation of the same column (no energy created)" << std::endl;
   }
+  if (pin->DoesParameterExist("rad_m1","implicit_pos_gas_cons")) {
+    impl_pos_gas_cons = pin->GetBoolean("rad_m1","implicit_pos_gas_cons");
+  }
   if (pin->DoesParameterExist("rad_m1","implicit_pos_floor_gas_keep")) {
     impl_pos_flr_gk = pin->GetReal("rad_m1","implicit_pos_floor_gas_keep");
     if (global_variable::my_rank == 0) {

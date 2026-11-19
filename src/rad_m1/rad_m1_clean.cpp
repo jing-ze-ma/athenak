@@ -239,7 +239,8 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/implicit_pos_floor_solve", nullptr},
     {"rad_m1/implicit_pos_gas*", nullptr}, {"rad_m1/implicit_pos_floor", nullptr},
     {"rad_m1/implicit_pos_floor_cons", nullptr},
-    {"rad_m1/implicit_pos_floor_gas_keep", nullptr}, {"rad_m1/implicit_*", ""},
+    {"rad_m1/implicit_pos_floor_gas_keep", nullptr}, {"rad_m1/implicit_pos_gas_cons", nullptr},
+    {"rad_m1/implicit_*", ""},
     // (the hesdirk2 stage formation the clean solve shares, Time2FormStage / Time2Stash,
     // and dt_retry: read; ImplicitSolve's acceptance and posfix and the KE cap: none)
     {"rad_m1/time2_k1_*", nullptr}, {"rad_m1/time2_face_fct*", nullptr},
@@ -4518,6 +4519,13 @@ void RadiationM1::CleanWriteBack() {
   }
   if (pfc) Kokkos::deep_copy(pfc_def, 0.0);
   auto pfd = pfc_def;
+  const bool pgc = pfc && pgas && impl_pos_gas_cons;   // (implicit_pos_gas_cons)
+  if (pgc && pgc_def.extent_int(0) != nmb1 + 1) {
+    Kokkos::realloc(pgc_def, nmb1 + 1, pfc_def.extent_int(1), pfc_def.extent_int(2),
+                    pfc_def.extent_int(3));
+  }
+  if (pgc) Kokkos::deep_copy(pgc_def, 0.0);
+  auto pgd = pgc_def;
   const bool ky1s = cln_kpos && t2_solve == M1_T2S_STAGE1;
   if (ky1s && cln_ky1.extent_int(0) != nmb1 + 1) {
     Kokkos::realloc(cln_ky1, nmb1 + 1, u0.extent_int(2), u0.extent_int(3), u0.extent_int(4));
@@ -4675,15 +4683,20 @@ void RadiationM1::CleanWriteBack() {
           // (from the gas's true eint: the stage start's deficit below 0 too, which the
           // exchange took as 0 and the hydro's floor would have created)
           const Real ei = x.w(m,CLW_EI,k,j,i), emin = fmax(ef, pgf*fmax(ei, 0.0));
-          const Real take = fmin(emin - ei - d0 - (den - wk), e - efl);
-          if (take > 1.0e-12*emin) {   // (beyond eint's round-off at e_min)
-            const Real vol = (x.sph || x.cub) ? x.vol(m,k,j,i) :
-                             1.0/(x.idx[0]*x.idx[1]*x.idx[2]);
+          const Real need = emin - ei - d0 - (den - wk);
+          const Real take = fmin(need, e - efl);
+          const Real vol = (x.sph || x.cub) ? x.vol(m,k,j,i) :
+                           1.0/(x.idx[0]*x.idx[1]*x.idx[2]);
+          const bool tk = take > 1.0e-12*emin;   // (beyond eint's round-off at e_min)
+          if (tk) {
             den += take;
             e -= take;
             Kokkos::atomic_add(&pc_(M1_POS_GAS), 1.0);
             Kokkos::atomic_add(&pc_(M1_POS_GAS_DE), take*vol);
           }
+          // (implicit_pos_gas_cons: what E could not cover, from the column, below)
+          const Real un = need - (tk ? take : 0.0);
+          if (pgc && un > 1.0e-12*emin) pgd(m,k,j,i) = un*vol;
         }
       }
       uh(m,IEN,k,j,i) += den;
@@ -4803,6 +4816,37 @@ void RadiationM1::CleanWriteBack() {
       }
       if (mv > 0.0) Kokkos::atomic_add(&pc_(M1_POS_FLR_MV), mv);
       if (un > 0.0) Kokkos::atomic_add(&pc_(M1_POS_FLR_UN), un);
+      if (!pgc) return;
+      // (implicit_pos_gas_cons: the gas raise E could not cover, the same way, into the
+      // cell's gas; what the column cannot give stays below e_min: the hydro EOS floor
+      // ledger books it)
+      Real gm = 0.0;
+      for (int i = is; i <= ie; ++i) {
+        Real def = pgd(m,k,j,i);
+        for (int d = 1; d <= ie - is && def > 0.0; ++d) {
+          const int qa = i - d, qb = i + d;
+          const Real aa = (qa >= is) ? fmax(u0_(m,M1_E,k,j,qa) - efl, 0.0)*vol(qa) : 0.0;
+          const Real ab = (qb <= ie) ? fmax(u0_(m,M1_E,k,j,qb) - efl, 0.0)*vol(qb) : 0.0;
+          const Real at = aa + ab;
+          if (!(at > 0.0)) continue;
+          const Real tk = fmin(def, at);
+          for (int sd = 0; sd < 2; ++sd) {
+            const int q = sd ? qb : qa;
+            const Real a = sd ? ab : aa;
+            if (!(a > 0.0)) continue;
+            const Real de = (tk*a/at)/vol(q);
+            u0_(m,M1_E,k,j,q) = fmax(u0_(m,M1_E,k,j,q) - de, efl);
+            if (slopes) kk(m,M1_T2_E,k,j,q) -= de/h;
+          }
+          const Real dg = tk/vol(i);
+          uh(m,IEN,k,j,i) += dg;
+          x.w(m,CLW_JV,k,j,i) += dg;
+          if (slopes) kk(m,M1_T2_EN,k,j,i) += dg/h;
+          def -= tk;
+          gm += tk;
+        }
+      }
+      if (gm > 0.0) Kokkos::atomic_add(&pc_(M1_POS_GAS_DE), gm);
     });
   }
   // cells the write-back left with gas eint < 0, or below the EOS floor, by lowering it

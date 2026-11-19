@@ -2191,6 +2191,13 @@ class RadiationM1 {
   // its eint (the rest from the column's radiation, implicit_pos_floor_cons); th = 1:
   // never from the gas
   Real impl_pos_flr_gk = -1.0;
+  // s3c <rad_m1>/implicit_pos_gas_cons (read only when named; default false, bitwise):
+  // the part of implicit_pos_gas's raise that the cell's E cannot cover (an explicit
+  // stage increment's eint deficit, a wind cell near tfloor) is taken from the radiation
+  // of the cell's radial column, as implicit_pos_floor_cons does for E, instead of being
+  // left to the hydro EOS floor (which creates it); needs implicit_pos_floor_cons
+  bool impl_pos_gas_cons = false;
+  DvceArray4D<Real> pgc_def;      // (m,k,j,i) the uncovered gas raise x volume
   DvceArray4D<Real> pfc_def;      // (m,k,j,i) the uncovered floor energy of the cell
   bool t2_vcprev = false;       // extrap: vcol_prev holds the previous step's tensor
   Real t2_vcnfb = 0.0;          // predict/rebuild builds that fell back to U^n
