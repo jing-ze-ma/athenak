@@ -3280,7 +3280,7 @@ class RadiationM1 {
   bool cln_ringjmin = true;     // clean_ring_jmin: ring J ratios only of ray-held cells
   Real cln_prmax = -1.0;      // implicit_tol_rel_max named: clean_conv_max's default
   bool cln_linpass = false;   // implicit_lin_maxit named: a pass goes on past a failed solve
-  void CleanStagXDonor();
+  void CleanStagXDonor(const bool first);
   void CleanStagXCount(const int inl, const int nit);
   void CleanStagXSweep();
   bool cln_srccvx = false;      // clean_source_convex: vet_scatter S between J and B
@@ -3289,7 +3289,8 @@ class RadiationM1 {
   // donor-cell coefficient of its face (CleanStagXDonor); its face slot, set in a solve
   bool cln_xd = false, cln_xd_on = false, cln_xlag = false, cln_xsrc = false;
   bool cln_xsw = false;
-  int cln_xqs = -1;   // (4 slots: qL >= 0, qR <= 0, the lagged explicit flux, C(E_k))
+  int cln_xqs = -1;   // (5 slots: qL >= 0, qR <= 0, the lagged explicit flux, C(E_k),
+                    //  C's last change)
   Real cln_xd_ncap = 0.0;
   DvceArray5D<Real> cln_xdg;   // (diagnostic: -work, -r hcke E_k, sb, gres of the rows)
   // clean_stag_kpos (staggered, default off): the explicit stage increment of hesdirk2

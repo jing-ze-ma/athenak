@@ -413,8 +413,8 @@ void RadiationM1::CleanInit() {
   // (the staggered bracket's lagged flux DG in one more slot, CleanStagBracket)
   cln_fdg = (!cln_cell && cln_consist) ? nfc : -1;
   cln_xqs = cln_xd ? nfc + (cln_fdg >= 0) : -1;   // (clean_stag_xdonor's q)
-  cln_kqs = cln_kpos ? nfc + (cln_fdg >= 0) + (cln_xd ? 4 : 0) : -1;   // (kpos: q)
-  const int nfx = nfc + (cln_fdg >= 0) + (cln_xd ? 4 : 0) + (cln_kpos ? 2 : 0);
+  cln_kqs = cln_kpos ? nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0) : -1;   // (kpos: q)
+  const int nfx = nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0) + (cln_kpos ? 2 : 0);
   if (cln_kpos || cln_xpat) {
     Kokkos::realloc(cln_kcnt, 2);
     Kokkos::deep_copy(cln_kcnt, 0.0);
@@ -1195,7 +1195,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     if (cln_vimp && cln_feedback) CleanRightHandSide(true);
     if (cln_vimp && cln_feedback) CleanStagDrag(true);
     // (clean_stag_xdonor: q of the first iterate, with its drag share b)
-    CleanStagXDonor();
+    CleanStagXDonor(true);
     converged = !iterate;
     npic = 0;
     Real de0 = 1.0e300, dv0 = 1.0e300, trel = 0.0;
@@ -1224,7 +1224,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         CleanCellRightHandSide();
         if (inl % cln_pcreuse == 0) CleanCellPreconditionerSetup();
       } else {
-        if (inl > 0) CleanStagXDonor();   // (clean_stag_xdonor: q of the iterate)
+        if (inl > 0) CleanStagXDonor(false);   // (clean_stag_xdonor: q of the iterate)
         CleanRightHandSide();
         // (clean_stag_sbimp: the first iterate's T in exchange with E_k and the beta
         // terms sb(E_k) the RHS just built, then the RHS of that T)
@@ -1753,8 +1753,15 @@ void RadiationM1::CleanOldVector() {
 //! fixed point q E_donor = C(E) where |C| <= c E_donor (the central discretisation);
 //! beyond, the cross flux is limited at free streaming.  The gas momentum keeps the
 //! central stress (CleanMomentumChange: momentum and L_z by telescoping).
+//! C of the iterate is a lagged (Jacobi) coupling of the face to the cells beside it,
+//! with a gain ~ the light CFL where nothing else holds E (optically thin): there its
+//! checkerboard mode alternates from pass to pass (RSG floor gas, tau ~ 1e-9: the
+//! passes stall at the round-off of the solve and the floor-density gas velocity grows,
+//! S3P4).  A face whose C turns back (its change against the last one) takes half the
+//! change, which takes that mode out; C is unchanged at the fixed point.  first: the
+//! first iterate of a solve, no history.
 
-void RadiationM1::CleanStagXDonor() {
+void RadiationM1::CleanStagXDonor(const bool first) {
   if (!cln_xd || cln_cell || !pmy_pack->pmesh->multi_d) return;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -1771,11 +1778,15 @@ void RadiationM1::CleanStagXDonor() {
     auto fc = x.fc[dir];
     // (faces outside the active range: none, every solve; the pass's split,
     // CleanStagXSplit in the right-hand side, sets the active ones)
-    Kokkos::deep_copy(Kokkos::subview(fc, Kokkos::ALL, std::make_pair(xq, xq + 4),
+    Kokkos::deep_copy(Kokkos::subview(fc, Kokkos::ALL, std::make_pair(xq, xq + 3),
                                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), 0.0);
     par_for("cln_xdonor", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      fc(m,xq+3,k,j,i) = CleanFaceCross(x, CLW_EK, dir, m, k, j, i);
+      const Real cn = CleanFaceCross(x, CLW_EK, dir, m, k, j, i);
+      const Real cp = fc(m,xq+3,k,j,i), d = cn - cp;   // (the last pass's C, change)
+      const Real cu = (!first && d*fc(m,xq+4,k,j,i) < 0.0) ? cp + 0.5*d : cn;
+      fc(m,xq+3,k,j,i) = cu;
+      fc(m,xq+4,k,j,i) = first ? 0.0 : cu - cp;
     });
   }
   cln_xd_on = true;
