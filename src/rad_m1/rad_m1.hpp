@@ -3015,6 +3015,7 @@ class RadiationM1 {
   void CleanRingMoments();
   void CleanRingShift(const int64_t b);
   int64_t CleanRingBlk(const Real dt) const;
+  bool CleanRingTwo() const;
   void CleanRingPreShift();   // dt_retry: the shift before the checkpoint
   void CleanRingJump();
   void CleanRingSolveSet();

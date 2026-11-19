@@ -610,8 +610,9 @@ void DtRetry::Build(Mesh *pm) {
     // (clean sc rays, staggered, without the reflecting top's memory: cln_fvi is each
     // build's copy of vgd_i, written before it is read; CleanGdFaceSums)
     auto *m1 = pk->pradm1;
-    if (m1->clean && !m1->cln_cell && m1->cln_rfv == 0 && !m1->cln_cssc &&
-        !m1->cln_scmem) {
+    // (and on the cubed sphere while every build sweeps both of its sets, CleanRingTwo)
+    if (m1->clean && !m1->cln_cell && m1->cln_rfv == 0 && !m1->cln_scmem &&
+        (!m1->cln_cssc || m1->CleanRingTwo())) {
       sel.erase("m1.cln_fvi");
     }
     // (and the rays' source vlat_cs, each build's, written before it is read; vet_gd_async

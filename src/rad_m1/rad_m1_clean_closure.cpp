@@ -1019,10 +1019,14 @@ int64_t RadiationM1::CleanRingBlk(const Real dt) const {
   return (tau - static_cast<Real>(b) < 1.0e-9) ? b - 1 : b;   // (CleanFvSets)
 }
 
+// (live with the cross-fade: every build sweeps the sets b and b+1)
+bool RadiationM1::CleanRingTwo() const {
+  return clean && cln_ring == 1 && vgd_xf && !(vra_on && !g_vra_adv);
+}
+
 void RadiationM1::CleanRingPreShift() {
   const Real dt = pmy_pack->pmesh->dt;
-  cln_rfix = clean && cln_ring == 1 && vgd_xf && !(vra_on && !g_vra_adv) &&
-             vgd_rot_dt > 0.0 && vgd_rot_align && dt < vgd_rot_dt &&
+  cln_rfix = CleanRingTwo() && vgd_rot_dt > 0.0 && vgd_rot_align && dt < vgd_rot_dt &&
              CleanRingBlk(dt) == CleanRingBlk(1.0e-6*dt);   // (any retry's dt)
   if (cln_rfix && cln_rok && cln_rpb == cln_rb && CleanRingBlk(dt) == cln_rb + 1) {
     CleanRingShift(cln_rb + 1);
