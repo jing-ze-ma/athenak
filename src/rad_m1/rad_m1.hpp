@@ -672,6 +672,10 @@ class RadiationM1 {
   Real impl_pos_gas_frac = 1.0e-3;
   DvceArray1D<Real> pos_cnt_d;
   Real pos_cnt[10] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  // the E floor's created energy of discarded attempts (dt_retry, backward-Euler redo,
+  // helper solves; rank-local, CounterKeep::Restore), not in pos_cnt; all-rank total at
+  // the report
+  Real pos_un_drop = 0.0;
   // fixbundle-1009 F3 <rad_m1>/implicit_pos_floor_solve (default false = bitwise): the
   // T-solve / accept no longer raise the iterate to e_floor (EP = max(S2, e_floor) made
   // energy that implicit_pos_floor never saw, and the face fluxes rebuilt from the raised

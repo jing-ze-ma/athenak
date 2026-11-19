@@ -960,6 +960,7 @@ void CounterKeep::Restore(Mesh *pm, int slot, int why) {
     const Real un1 = HostAt(pm1->pos_cnt_d, radm1::M1_POS_FLR_UN);
     const Real un0 = s.hpos ? HostAt(s.pos, radm1::M1_POS_FLR_UN) : 0.0;
     dun_[why] += static_cast<double>(un1 - un0);
+    pm1->pos_un_drop += un1 - un0;   // (the positivity report's discarded field)
     BackView(pm1->pos_cnt_d, s.pos, s.hpos);
     BackView(pm1->acl_cnt_d, s.acl, s.hacl);
     BackView(pm1->opn_nskip_d, s.opn, s.hopn);
