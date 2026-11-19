@@ -1597,6 +1597,7 @@ void RadiationM1::CleanStagXDonor() {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   cln_xd_on = false;
   CleanGhostFill(cln_w, CLW_EK, 1);
+  CleanGhostFill(cln_w, CLW_EO, 1);   // (the donors' E_old of the lag split)
   if (pmy_pack->pmesh->use_cubed_sphere) CleanStagCsLateral(CLW_EK);
   CleanArgs x = CleanMakeArgs();   // (x.xq = -1: the central cross flux)
   const int xq = cln_xqs;
