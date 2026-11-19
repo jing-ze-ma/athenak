@@ -3258,6 +3258,7 @@ class RadiationM1 {
   bool cln_stst = false;        // clean_stag_stencil: the operator's rows stored per pass
   DvceArray5D<Real> cln_st;     //   (CLN_ST per active cell, CleanPreconditionerSetup)
   DvceArray5D<Real> cln_csy;    //   (cubed sphere: CLN_CSY coefficients of the lateral sums)
+  bool cln_csyok = false;       //   spdb-1119: cln_csy is of the current closure (no rebuild)
   int cln_stall_n = 0;          // clean_bicg_stall_its: stall window (0 = off)
   int cln_fsweeps = 1;          // clean_stag_fsweeps: line-solve sweeps of the F solve
   bool cln_fschur = false;      // clean_stag_fschur: the F lines exact across MeshBlocks

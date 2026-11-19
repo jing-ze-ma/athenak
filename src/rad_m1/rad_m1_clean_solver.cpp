@@ -1118,7 +1118,10 @@ void RadiationM1::CleanPreconditionerSetup() {
       CleanStencilRow(x, m, k, j, i, c);
       for (int s = 0; s < CLN_ST; ++s) st(m,s,k-ks,j-js,i-is) = c[s];
     });
-    if (x.cub) {   // (the lateral stress sums' coefficients, CleanStagCsLateral)
+    // (the lateral stress sums' coefficients, CleanStagCsLateral; spdb-1119: of the
+    // geometry and the closure alone, so built once per closure of a solve, cln_csyok)
+    if (x.cub && !cln_csyok) {
+      cln_csyok = true;
       auto cy = cln_csy;
       par_for("cln_csyb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {

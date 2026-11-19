@@ -1191,6 +1191,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   for (int ipos = 0; ; ++ipos) {
     CleanFirstIterate();
     cln_fsk = false;
+    cln_csyok = false;   // (spdb-1119: the lateral sums' coefficients once per closure)
     if (cell) CleanCellFirstIterate();
     if (cln_opt && cln_feedback) {
       CleanCellOpacity();
@@ -1210,6 +1211,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       if (lagged && inl < cln_maxpic) ++npic;
       const bool clos = (cln_closit && inl < cln_maxpic) || (clos1 && inl == 1);
       if (clos) {
+        cln_csyok = false;
         CleanClosureIterate();
         if (cell) {
           CleanCellFaceSpeeds();
