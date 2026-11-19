@@ -1496,10 +1496,12 @@ void RadiationM1::CleanOldVector() {
   // write-back's implicit_pos_gas meets, and E < 0)
   // (a flat range, as cln_newton: A100 ran the 4-D MDRange reduction at 39 ms; the
   // counts are whole numbers, exact in any order)
-  Real nn[2] = {0.0, 0.0};
+  // (and a stage start that is not finite: a NaN the hydro stage left, which eint = max(e0,
+  // 0) would hide; the solve then fails and the step is redone, CLEAN WARNING, rule 9)
+  Real nn[3] = {0.0, 0.0, 0.0};
   const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
   Kokkos::parallel_reduce("cln_old", CleanRp256(DevExeSpace(), 0, (nmb1 + 1)*nkji),
-  KOKKOS_LAMBDA(const int idx, Real &ng, Real &ne) {
+  KOKKOS_LAMBDA(const int idx, Real &ng, Real &ne, Real &nf) {
     const int m = idx/nkji, k = ks + (idx - m*nkji)/nji;
     const int j = js + (idx - m*nkji - (k - ks)*nji)/ni, i = is + idx%ni;
     Real t = 0.0;
@@ -1514,6 +1516,7 @@ void RadiationM1::CleanOldVector() {
       const Real ekin = 0.5*(SQR(p[0]) + SQR(p[1]) + SQR(p[2]))/d;
       const Real e0 = CleanGasEint(x, uh, ekin, m, k, j, i), eint = fmax(e0, 0.0);
       if (e0 < 0.0) ng += 1.0;
+      if (!(Kokkos::isfinite(e0) && Kokkos::isfinite(d))) nf += 1.0;
       t = eos.Temperature(d, eint);
       w(m,CLW_EI,k,j,i) = eint;
       w(m,CLW_JV,k,j,i) = e0 - eint;   // (the gas's deficit below 0: CleanWriteBack)
@@ -1521,9 +1524,16 @@ void RadiationM1::CleanOldVector() {
     w(m,CLW_T,k,j,i) = t;
     w(m,CLW_EO,k,j,i) = u0_(m,M1_E,k,j,i) + (stage ? inc(m,M1_T2_E,k,j,i) : 0.0);
     if (w(m,CLW_EO,k,j,i) < 0.0) ne += 1.0;
-  }, Kokkos::Sum<Real>(nn[0]), Kokkos::Sum<Real>(nn[1]));
+    if (!Kokkos::isfinite(w(m,CLW_EO,k,j,i))) nf += 1.0;
+  }, Kokkos::Sum<Real>(nn[0]), Kokkos::Sum<Real>(nn[1]), Kokkos::Sum<Real>(nn[2]));
   nn[0] = CleanReduce(nn[0], false);
   nn[1] = CleanReduce(nn[1], false);
+  nn[2] = CleanReduce(nn[2], false);
+  if (global_variable::my_rank == 0 && nn[2] > 0.0) {
+    std::printf("CLEAN WARNING cycle %d t2s %d: stage start not finite in %.0f cells (gas or "
+                "E; the solve fails and the step is redone)\n", pmy_pack->pmesh->ncycle,
+                t2_solve, nn[2]);
+  }
   if (global_variable::my_rank == 0 && (nn[0] > 0.0 || nn[1] > 0.0)) {
     std::printf("CLEAN OLDVEC cycle %d t2s %d eint<0 %.0f (taken as 0) E<0 %.0f\n",
                 pmy_pack->pmesh->ncycle, t2_solve, nn[0], nn[1]);
