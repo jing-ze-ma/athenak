@@ -767,7 +767,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
 
   // --- THE GENERAL-EOS INTERNAL ENERGY HEADER (kEintRstMagic, pgen.hpp), behind all the
   // others: neint_file slabs of w0(IEN), hydro then mhd, are the LAST slabs of the tail.
-  int neint_file = 0;
+  int neint_file = 0, nwpv_file = 0;   // (w0(IEN) slabs; hydro w0 IDN, IVX..IVZ slabs)
   if (std::memcmp(variabledata, &(kEintRstMagic[0]), sizeof(kEintRstMagic)) == 0) {
     char eint_hdr[2*sizeof(std::int32_t)];
     IOWrapperSizeT nb = 0;
@@ -788,13 +788,14 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
 #endif
     std::int32_t hdr[2] = {0, 0};
     if (ok) { std::memcpy(&(hdr[0]), &(eint_hdr[0]), sizeof(hdr)); }
-    if (!ok || hdr[0] < 1 || hdr[0] > 2) {
+    if (!ok || hdr[0] < 1 || hdr[0] > 2 || (hdr[1] != 0 && hdr[1] != 4)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "the internal energy header of this restart file is "
                 << "broken." << std::endl;
       exit(EXIT_FAILURE);
     }
     neint_file = static_cast<int>(hdr[0]);
+    nwpv_file = static_cast<int>(hdr[1]);
   }
 
   // --- THE IMPLICIT-CK STATE HEADER (kCkRstMagic, utils/two_stream_ck_rst.hpp), behind
@@ -1264,7 +1265,8 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // the marked header above gave us rather than something inferred from the length
   // (and behind those the npred_file <rad_m1> predictor slabs, also header-declared)
   IOWrapperSizeT wm_size = static_cast<IOWrapperSizeT>(nwarm_file + npred_file + nt2_file
-                            + neint_file + nck_file + nctr_file + nrss_file + nvgd_file
+                            + neint_file + nwpv_file + nck_file + nctr_file + nrss_file
+                            + nvgd_file
                             + ncsk_file + nra_file + nams_file + npgs_file + nfax_file
                             + nthc_file + nxfd_file)
                            *nout1*nout2*nout3
@@ -2030,8 +2032,9 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
               (rec_end - offset_myrank)/slab, (IOWrapperSizeT{1} << 31)/(nmb*slab)));
           if (rab.extent(1) < k) Kokkos::realloc(rab, nmb, k, nout3, nout2, nout1);
           for (int m=0; m<nmb; ++m) {
-            if (resfile.Read_Reals_at(&rab(m,0,0,0,0), k*slab/sizeof(Real),
-                offset_myrank + m*data_size, single_file_per_rank) != k*slab/sizeof(Real)) {
+            const IOWrapperSizeT nr = k*slab/sizeof(Real);
+            if (resfile.Read_Reals_at(&rab(m,0,0,0,0), nr, offset_myrank + m*data_size,
+                                      single_file_per_rank) != nr) {
               std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                         << std::endl << what << " cache not read correctly from rst "
                         << "file, restart file is broken." << std::endl;
@@ -2184,6 +2187,14 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         Kokkos::realloc(phydro->eint_rst, nmb, nout3, nout2, nout1);
         Kokkos::deep_copy(phydro->eint_rst, wtin);
         phydro->c2p_eint_rst = true;
+        if (nwpv_file == 4) {
+          Kokkos::realloc(phydro->w0v_rst, nmb, 4, nout3, nout2, nout1);
+          for (int n=0; n<4; ++n) {
+            read_slab("hydro w0 density and velocities");
+            DeepCopyAcross(Kokkos::subview(phydro->w0v_rst, Kokkos::ALL, n, Kokkos::ALL,
+                                           Kokkos::ALL, Kokkos::ALL), wtin);
+          }
+        }
       }
       if (ei_mhd) {
         read_slab("mhd internal energy");
@@ -2201,7 +2212,8 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     // call(s) of the restarted run (utils/two_stream_ck_rst_state.hpp)
     if (nck_file > 0) {
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
-                  + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file;
+                  + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
+                  + nwpv_file;
       offset_myrank = tail0
           + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
       myoffset = offset_myrank;
@@ -2223,6 +2235,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     if (ctr_read) {
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
+                  + nwpv_file
                   + nck_file;
       offset_myrank = tail0
           + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
@@ -2238,6 +2251,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     if (rss_read) {
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
+                  + nwpv_file
                   + nck_file + nctr_file;
       offset_myrank = tail0
           + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
@@ -2254,6 +2268,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     if (vgd_read) {
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
+                  + nwpv_file
                   + nck_file + nctr_file + nrss_file;
       offset_myrank = tail0
           + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
@@ -2273,6 +2288,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       if (ncsk_file == 3 && q0 > 0) {
         int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                     + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
+                  + nwpv_file
                     + nck_file + nctr_file + nrss_file + nvgd_file;
         offset_myrank = tail0
             + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
@@ -2299,6 +2315,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     if (ra_read) {
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
+                  + nwpv_file
                   + nck_file + nctr_file + nrss_file + nvgd_file + ncsk_file;
       offset_myrank = tail0
           + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
@@ -2315,6 +2332,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     if (ams_read) {
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
+                  + nwpv_file
                   + nck_file + nctr_file + nrss_file + nvgd_file + ncsk_file + nra_file;
       offset_myrank = tail0
           + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
@@ -2347,6 +2365,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     if (npgs_file > 0) {
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
+                  + nwpv_file
                   + nck_file + nctr_file + nrss_file + nvgd_file + ncsk_file + nra_file
                   + nams_file;
       offset_myrank = tail0
@@ -2369,6 +2388,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     if (nfax_file > 0) {
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
+                  + nwpv_file
                   + nck_file + nctr_file + nrss_file + nvgd_file + ncsk_file + nra_file
                   + nams_file + npgs_file;
       offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3
@@ -2392,6 +2412,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     if (nthc_file > 0) {
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
+                  + nwpv_file
                   + nck_file + nctr_file + nrss_file + nvgd_file + ncsk_file + nra_file
                   + nams_file + npgs_file + nfax_file;
       offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3
@@ -2414,6 +2435,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     if (nxfd_file > 0) {
       int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                   + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
+                  + nwpv_file
                   + nck_file + nctr_file + nrss_file + nvgd_file + ncsk_file + nra_file
                   + nams_file + npgs_file + nfax_file + nthc_file;
       offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3

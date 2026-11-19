@@ -196,6 +196,8 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
   }
   // the internal energy the last inversion produced, see kEintRstMagic in pgen.hpp
   if (phydro != nullptr && phydro->RstEint()) {   // + ideal gas
+    stage(outarray_wpv, Kokkos::subview(phydro->w0, std::make_pair(0,nmb), Kokkos::ALL,
+                                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
     Kokkos::realloc(outarray_weh, nmb, nout3, nout2, nout1);
     DeepCopyAcross(outarray_weh, Kokkos::subview(phydro->w0,
                    std::make_pair(0,nmb), static_cast<int>(IEN),
@@ -242,8 +244,8 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
                                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
     // milestone 3a: the persistent x1 face fluxes of the implicit scheme
     if (pradm1->transport >= radm1::M1_TRANSPORT_IMPLICIT_X1) {
-      stage(outarray_m1f, Kokkos::subview(pradm1->f0x1, std::make_pair(0,nmb), Kokkos::ALL,
-                                          Kokkos::ALL, Kokkos::ALL));
+      stage(outarray_m1f, Kokkos::subview(pradm1->f0x1, std::make_pair(0,nmb),
+                                          Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
     }
     // milestone 3b phase B: the transverse face fluxes, in the SAME order the reader
     // (src/pgen/pgen.cpp) takes them back: f0x1, then f0x2, then f0x3.
@@ -659,7 +661,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   char eint_hdr[2*sizeof(std::int32_t)];
   {
-    const std::int32_t hdr[2] = {static_cast<std::int32_t>(neint), 0};
+    // (hdr[1]: the hydro w0 density and velocity slabs behind the hydro w0(IEN))
+    const std::int32_t hdr[2] = {static_cast<std::int32_t>(neint), we_hyd ? 4 : 0};
     std::memcpy(&(eint_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
   int nhydro=0, nmhd=0, nrad=0, nm1=0, nforce=3, nz4c=0, nadm=0, nco=0;
@@ -1046,7 +1049,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (nt2 > 0) {
     data_size += nt2*cell_bytes;   // rad_m1 hesdirk2 slope
   }
-  data_size += neint*cell_bytes;   // hydro / mhd w0(IEN)
+  // hydro / mhd w0(IEN), + the hydro w0 density and velocities
+  data_size += (neint + (we_hyd ? 4 : 0))*cell_bytes;
   data_size += nck*cell_bytes;   // implicit-ck state
   data_size += nctr*cell_bytes;   // rad_m1 thin_relax ctr_mem
   data_size += nrss*cell_bytes;   // rad_signal_speed inputs
@@ -1596,8 +1600,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   // a group of n slabs (a(m, n, k, j, i)): with independent I/O a MeshBlock's slabs are
   // contiguous in memory and in its record, so they go out in one write per MeshBlock (in
   // pieces of at most 2 GB); same bytes as the slab by slab loop
+  using PackFn = std::function<void(DvceArray5D<Real> &, int, int)>;
   auto write_group = [&](const auto &a, const int n, const char *what,
-                         const std::function<void(DvceArray5D<Real> &, int, int)> &pk = {}) {
+                         const PackFn &pk = {}) {
     if (n <= 0) return;
     if (IOWrapper::collective) {
       for (int c=0; c<n; ++c) {
@@ -1658,9 +1663,12 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   write_group(outarray_m1p, npred, "rad_m1 predictor");
   // and the hesdirk2 slope behind that
   write_group(outarray_m1t, nt2, "rad_m1 hesdirk2 slope",
-              [&](DvceArray5D<Real> &t, int m, int w0) {pradm1->Time2RstPack(t, 1, m, w0);});
+              [&](DvceArray5D<Real> &t, int m, int w0) {
+                pradm1->Time2RstPack(t, 1, m, w0);});
   // and the internal energy last of all (kEintRstMagic)
   if (we_hyd) { write_wtemp(outarray_weh, "hydro internal energy"); }
+  // (w0's IDN, IVX, IVY, IVZ are its first 4 channels: contiguous per MeshBlock)
+  write_group(outarray_wpv, we_hyd ? 4 : 0, "hydro w0 density and velocities");
   if (we_mhd) { write_wtemp(outarray_wem, "mhd internal energy"); }
   // and the implicit-ck state behind it (utils/two_stream_ck_rst.hpp)
   for (int n=0; n<nck; ++n) {
@@ -1706,7 +1714,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       outarray_z4c = outarray_adm = outarray_ck = outarray_m1p = outarray_m1t =
       outarray_m1c = outarray_m1s = outarray_m1g = outarray_m1r = outarray_m1k =
       outarray_ams = outarray_pgs = outarray_fax = outarray_thc = outarray_xfd =
-      HostArray5D<Real>();
+      outarray_wpv = HostArray5D<Real>();
   outarray_m1t_d = DvceArray5D<Real>();
   rst_keep_.clear();
   outarray_m1f = outarray_m1f2 = outarray_m1f3 = outarray_wth = outarray_wtm =

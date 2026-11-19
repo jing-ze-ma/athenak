@@ -270,6 +270,10 @@ class Hydro {
   // then released. Empty (and c2p_eint_rst false) otherwise.
   bool c2p_eint_rst = false;
   DvceArray4D<Real> eint_rst;
+  // ... and, with it, w0's density and velocities of that inversion (IDN, IVX..IVZ):
+  // the floors and the velocity ceiling rescale m and v separately, so v is not
+  // exactly g^ij m_j/rho of the dumped u0 there
+  DvceArray5D<Real> w0v_rst;
   // The ideal-gas EOS carries w0(IEN) in the restart file too, as the general EOS
   // does, and the first ConToPrim of the restarted run takes it from there.
   // Re-deriving it from u0 is not bitwise where the last inversion of the straight run

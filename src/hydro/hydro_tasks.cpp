@@ -1021,6 +1021,12 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), eint_rst);
     Kokkos::deep_copy(Kokkos::subview(u0, std::make_pair(0,nmbe), static_cast<int>(IEN),
                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), ekeep);
+    // and w0's density and velocities of the straight run's last inversion
+    if (w0v_rst.extent_int(0) == nmbe) {
+      Kokkos::deep_copy(Kokkos::subview(w0, std::make_pair(0,nmbe), std::make_pair(0,4),
+                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), w0v_rst);
+    }
+    w0v_rst = DvceArray5D<Real>();
     eint_rst = DvceArray4D<Real>();
     c2p_eint_rst = false;
   }
