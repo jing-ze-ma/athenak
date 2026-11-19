@@ -3254,6 +3254,7 @@ class RadiationM1 {
   int cln_maxit = 4000;         // clean_maxit: BiCGStab iterations
   bool cln_pcr = true;          // clean_stag_pcr: PC line solves by PCR on a GPU
   bool cln_fspcr = false;      // clean_stag_fs_pcr: F solve x1 lines by PCR on a GPU
+  bool cln_fspcs = false;      //   clean_stag_fs_pcr_cs: also on the cubed sphere
   bool cln_stst = false;        // clean_stag_stencil: the operator's rows stored per pass
   DvceArray5D<Real> cln_st;     //   (CLN_ST per active cell, CleanPreconditionerSetup)
   DvceArray5D<Real> cln_csy;    //   (cubed sphere: CLN_CSY coefficients of the lateral sums)

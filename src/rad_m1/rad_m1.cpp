@@ -199,6 +199,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_pcr = pin->GetOrAddBoolean("rad_m1","clean_stag_pcr",true);
     // (clean_stag_fs_pcr: default on for staggered; it applies on a GPU, not on cs)
     cln_fspcr = pin->GetOrAddBoolean("rad_m1","clean_stag_fs_pcr",!cln_cell);
+    // clean_stag_fs_pcr_cs (read only when named, default off): also on the cubed sphere
+    // (with clean_stag_fschur), the x1 lines by PCR as on spherical polar
+    if (pin->DoesParameterExist("rad_m1","clean_stag_fs_pcr_cs")) {
+      cln_fspcs = pin->GetBoolean("rad_m1","clean_stag_fs_pcr_cs");
+    }
     cln_stall_n = pin->GetOrAddInteger("rad_m1","clean_bicg_stall_its",
                                       (cln_cell || cln_linpass) ? 0 : 50);
     cln_stall_f = pin->GetOrAddReal("rad_m1","clean_bicg_stall_fac",0.99);

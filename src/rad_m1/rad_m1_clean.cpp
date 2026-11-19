@@ -3720,7 +3720,8 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now) {
   const int kd = (t2_solve == M1_T2S_NONE) ? 0 :
                  ((t2_solve == M1_T2S_STAGE1) ? CLF_KD + 1 : CLF_KD);
   const Real c1lo = cln_c0, c1hi = cln_c1;
-  const bool fpcr = cln_fspcr && !cub &&
+  // (the cubed sphere with clean_stag_fs_pcr_cs and fschur: its x1 lines, in panel, too)
+  const bool fpcr = cln_fspcr && (!cub || (cln_fspcs && cln_fschur)) &&
       !std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>;
   // (the F of every direction, CLW_Y, CLW_Z, CLW_S or cln_v: one exchange; part 1:
   // started, the last one, which x1's F and dissipation term overlap)
