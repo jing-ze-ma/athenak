@@ -983,6 +983,48 @@ bool CleanRingMix(const CleanRingL &rl, const DvceArray5D<Real> &rr,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn bool CleanRingEma
+//! \brief clean_rot_ring with vet_rotate_avg_ema (production's form, RotAvgEma*,
+//! RotXfBlend): the raw moments q of (1 - s) A + s T in the normalised fields and J.
+//! A = the current set with the EMA offsets (e = rr's first nfr, its J entry the ratio
+//! r = J_avg/J_b), T = the next set with the EMA the coming boundary makes of this
+//! state's Delta (RotAvgEmaShift): aw = max(1/N, a_ch, 1/(n + 1)), r' = (1 - aw) r/R + aw, e' =
+//! (1 - aw)(r/R)/r' (e - D), R = J_{b+1}/J_b; a_ch is this build's (pd's entry nfr), n
+//! rr's entry nfr + 2 (0: no history, A and T the sets themselves)
+
+KOKKOS_INLINE_FUNCTION
+bool CleanRingEma(const CleanRingL &rl, const DvceArray5D<Real> &rr,
+                  const DvceArray5D<Real> &pd, const Kokkos::Array<int, CLN_N> &fr,
+                  const int nfr, const int qn, const Real s, const Real a0, const int m,
+                  const int k, const int j, const int i, Real *q) {
+  const Real jb = rl(m,0,CLN_J,k,j,i), jn = rl(m,qn,CLN_J,k,j,i);
+  if (!(jb > 0.0)) return false;
+  const Real nset = rr(m,nfr+2,k,j,i), r = rr(m,fr[int{CLN_J}],k,j,i);
+  const bool hist = nset > 0.5 && r > 0.0, sh = hist && jn > 0.0;
+  Real jt = jn, fac = 0.0;
+  if (sh) {
+    const Real aw = fmax(fmax(a0, fmin(pd(m,nfr,k,j,i), 1.0)), 1.0/(nset + 1.0));
+    const Real rq = r*jb/jn, r1 = (1.0 - aw)*rq + aw;
+    fac = (1.0 - aw)*rq/r1;
+    jt = jn*r1;
+  }
+  q[CLN_J] = (1.0 - s)*jb*(hist ? r : 1.0) + s*jt;
+  for (int n = 0; n < CLN_N; ++n) {
+    if (n == CLN_J) continue;
+    if (rl.fm[n] < 0) {q[n] = 0.0; continue;}
+    const Real gb = rl(m,0,n,k,j,i), gn = rl(m,qn,n,k,j,i);
+    if (fr[n] < 0) {   // (not on the ring: the swept sets', as CleanRingMix)
+      q[n] = (1.0 - s)*(gb*jb) + s*(gn*jn);
+      continue;
+    }
+    const Real e = rr(m,fr[n],k,j,i);
+    const Real ga = gb + (hist ? e : 0.0), gt = sh ? gn + fac*(e - (gn - gb)) : gn;
+    q[n] = ((1.0 - s)*ga + s*gt)*q[CLN_J];
+  }
+  return true;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn int RadiationM1::CleanRingFields
 //! \brief clean_rot_ring: the fields the offsets and the Delta carry, fm(CLN index) =
 //! their slot or -1, and their number.  The staggered layout leaves out those none of its
@@ -1027,6 +1069,31 @@ void RadiationM1::CleanRingShift(const int64_t b) {
   vra_gen += 1;
   auto rr = cln_rr;
   auto pd = cln_rpd;
+  if (vra_ema) {
+    // (RotAvgEmaShift: the EMA moves on with the Delta and the change weight a_ch of the
+    // boundary; the aux := the next set there.  No history or no Delta: the current set
+    // alone)
+    const Real a0 = 1.0/vra_ema_n;
+    par_for("cln_ring_eshift", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, 0,
+            id.nx3 - 1, 0, id.nx2 - 1, 0, id.nx1 - 1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const int fj = fm[int{CLN_J}];
+      const Real R = pd(m,fj,k,j,i), nset = rr(m,nf+2,k,j,i), r = rr(m,fj,k,j,i);
+      rr(m,nf,k,j,i) = pd(m,nf+1,k,j,i);
+      rr(m,nf+1,k,j,i) = pd(m,nf+2,k,j,i);
+      if (!(R > 0.0) || !(nset > 0.5) || !(r > 0.0)) {
+        for (int f = 0; f < nf; ++f) rr(m,f,k,j,i) = (f == fj) ? 1.0 : 0.0;
+        rr(m,nf+2,k,j,i) = (R > 0.0) ? 1.0 : 0.0;
+        return;
+      }
+      const Real aw = fmax(fmax(a0, fmin(pd(m,nf,k,j,i), 1.0)), 1.0/(nset + 1.0));
+      const Real r1 = (1.0 - aw)*r/R + aw, fac = (1.0 - aw)*(r/R)/r1;
+      for (int f = 0; f < nf; ++f) {
+        rr(m,f,k,j,i) = (f == fj) ? r1 : fac*(rr(m,f,k,j,i) - pd(m,f,k,j,i));
+      }
+      rr(m,nf+2,k,j,i) = (aw >= 1.0) ? 1.0 : fmin(nset + 1.0, 1.0e9);
+    });
+  } else {
   par_for("cln_ring_shift", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, 0, id.nx3 - 1,
           0, id.nx2 - 1, 0, id.nx1 - 1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -1041,6 +1108,7 @@ void RadiationM1::CleanRingShift(const int64_t b) {
       rr(m,f,k,j,i) = (f != fj) ? -pd(m,f,k,j,i) : ((rp > 0.0) ? 1.0/rp : -1.0);
     }
   });
+  }
   cln_rok = true;
   cln_rb = b;
 }
@@ -1089,14 +1157,16 @@ void RadiationM1::CleanRingPreShift() {
 //! \brief clean_rot_ring in the restart files (version 4): the offsets cln_rr, then the
 //! Delta cln_rpd, of the fields the ring carries on the interior cells, in their own
 //! layout flat per MeshBlock (the fields of the file layout, CleanRingFields: 0 in those
-//! cln_rr does not hold), dense in CleanRingRstN() ghosted slabs (the rest of the last
-//! one 0).  CleanRingRstCopy packs (pk; 0 without have) or unpacks the slabs c ..
+//! cln_rr does not hold; with vet_rotate_avg_ema each followed by its 3 entries,
+//! CleanRingNr / Nd), dense in CleanRingRstN() ghosted slabs (the rest of the last one
+//! 0).  CleanRingRstCopy packs (pk; 0 without have) or unpacks the slabs c ..
 //! c + CleanRingRstN() - 1 of a (c < 0: a's channel 0 is slab -c) of MeshBlocks m0 ..
 
 int RadiationM1::CleanRingRstN() const {
   auto &id = pmy_pack->pmesh->mb_indcs;
   int fm[CLN_N];
-  const int64_t nv = static_cast<int64_t>(vra_k)*CleanRingFields(fm, true, true)*id.nx1*
+  const int nff = CleanRingFields(fm, true, true);
+  const int64_t nv = static_cast<int64_t>(CleanRingNr(nff) + CleanRingNd(nff))*id.nx1*
                      id.nx2*id.nx3;
   const int64_t ns = static_cast<int64_t>(id.nx1 + 2*id.ng)*
                      ((id.nx2 > 1) ? id.nx2 + 2*id.ng : 1)*
@@ -1116,12 +1186,16 @@ void RadiationM1::CleanRingRstCopy(DvceArray5D<Real> &a, const int c, const int 
   if (!pk) {   // (the writers of cln_rr bump vra_gen, DtRetry)
     vra_gen += 1;
     if (cln_rr.extent_int(0) != nmb) {
-      Kokkos::realloc(cln_rr, nmb, (vra_k - 1)*nf, id.nx3, id.nx2, id.nx1);
-      Kokkos::realloc(cln_rpd, nmb, nf, id.nx3, id.nx2, id.nx1);
+      Kokkos::realloc(cln_rr, nmb, CleanRingNr(nf), id.nx3, id.nx2, id.nx1);
+      Kokkos::realloc(cln_rpd, nmb, CleanRingNd(nf), id.nx3, id.nx2, id.nx1);
     }
   }
+  // (the field groups of cln_rr: the K - 1 offsets, or the EMA's 1; the entries after
+  // the groups are copied as they are)
+  const int gr = vra_ema ? 1 : vra_k - 1;
   const int64_t ni = static_cast<int64_t>(id.nx1)*id.nx2*id.nx3;
-  const int64_t nr = (vra_k - 1)*nf*ni, nro = (vra_k - 1)*nff*ni, nd = nro + nff*ni;
+  const int64_t nr = CleanRingNr(nf)*ni, ndm = CleanRingNd(nf)*ni;
+  const int64_t nro = CleanRingNr(nff)*ni, nd = nro + CleanRingNd(nff)*ni;
   const int64_t ns = static_cast<int64_t>(a.extent(2))*a.extent(3)*a.extent(4);
   const int64_t q0 = std::max(c, 0) - c, q1 = std::min<int64_t>(c + CleanRingRstN(),
                                                                  a.extent(1)) - c;
@@ -1137,12 +1211,12 @@ void RadiationM1::CleanRingRstCopy(DvceArray5D<Real> &a, const int c, const int 
     Real *x = pa + m*sa + c*ns + q;
     Real *y = nullptr;
     if (pr != nullptr && q < nd) {
-      const int64_t u = (q < nro) ? q : q - nro, r = u/(nff*ni), ic = u%ni;
-      const int f = mp[(u/ni)%nff];
-      if (f >= 0) {
-        y = (q < nro) ? pr + (m + m0)*nr + (r*nf + f)*ni + ic
-                      : pd + ((m + m0)*nf + f)*ni + ic;
-      }
+      const bool o = (q < nro);
+      const int64_t u = o ? q : q - nro, ic = u%ni;
+      const int g = static_cast<int>(u/ni), ng = o ? gr : 1;
+      const int f = (g >= ng*nff) ? g - ng*(nff - nf) :
+                    ((mp[g%nff] < 0) ? -1 : (g/nff)*nf + mp[g%nff]);
+      if (f >= 0) y = (o ? pr + (m + m0)*nr : pd + (m + m0)*ndm) + f*ni + ic;
     }
     if (pk) {
       *x = (y != nullptr) ? *y : 0.0;
@@ -1239,7 +1313,7 @@ void RadiationM1::CleanRingMoments() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
-  const int nmb = pmy_pack->nmb_thispack, nk = vra_k, nr = nk - 1, ns = cln_rns;
+  const int nmb = pmy_pack->nmb_thispack, nk = CleanRingK(), nr = nk - 1, ns = cln_rns;
   const int64_t b = cln_rbld;
   const Real s = cln_rs;
   const int c3 = ke - ks + 1, c2 = je - js + 1, c1 = ie - is + 1;
@@ -1277,10 +1351,15 @@ void RadiationM1::CleanRingMoments() {
   }
   if (cln_rr.extent_int(0) != nmb) {   // (a restart has read them)
     vra_gen += 1;   // (cln_rr's writers: the dt_retry checkpoint skips a clean copy)
-    Kokkos::realloc(cln_rr, nmb, nr*nfr, c3, c2, c1);
-    Kokkos::realloc(cln_rpd, nmb, nfr, c3, c2, c1);
+    Kokkos::realloc(cln_rr, nmb, CleanRingNr(nfr), c3, c2, c1);
+    Kokkos::realloc(cln_rpd, nmb, CleanRingNd(nfr), c3, c2, c1);
     cln_rok = false;
   }
+  // vet_rotate_avg_ema (CleanRingEma): rr = the EMA offsets, the aux J and D11 (the
+  // current set at the last boundary) and the set count n; pd also a_ch and the next
+  // set's J and D11
+  const bool ema = vra_ema, chj = vra_ema_chj, estep = vra_ema_chstep;
+  const Real a0 = ema ? 1.0/vra_ema_n : 1.0, eps = vra_ema_eps;
   std::vector<int> slot(nk + 2, -1);   // slot of block b - nk + 1 + p
   for (int q = 0; q < ns; ++q) {
     const int64_t p = cln_fvblk[q] - (b - nk + 1);
@@ -1375,6 +1454,26 @@ void RadiationM1::CleanRingMoments() {
   if (!cln_rok || b != cln_rb) {
     if (shift) {
       CleanRingShift(b);
+    } else if (full && ema) {
+      // RotAvgEmaInit: the J-weighted equal mix of the current and the previous set (its
+      // moments in rr's offsets, above); the aux := the current set
+      par_for("cln_ring_einit", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k0, const int j0, const int i0) {
+        const int k = k0 - ks, j = j0 - js, i = i0 - is;
+        const Real jb = rl(m,qb,CLN_J,k,j,i), jp = rr(m,fr[int{CLN_J}],k,j,i);
+        const Real jm = jmin*iwr(m,M1_IW_EN,k0,j0,i0);
+        const bool v = jb > 0.0 && jb >= jm && jp > 0.0 && jp >= jm;
+        const Real ws = v ? jp/jb : 1.0;
+        for (int n = 0; n < CLN_N; ++n) {
+          const int f = fr[n];
+          if (f < 0) continue;
+          rr(m,f,k,j,i) = (n == CLN_J) ? (v ? 0.5*(1.0 + ws) : 1.0) :
+                          (v ? ws*(rr(m,f,k,j,i) - rl(m,qb,n,k,j,i))/(1.0 + ws) : 0.0);
+        }
+        rr(m,nfr,k,j,i) = jb;
+        rr(m,nfr+1,k,j,i) = rl(m,qb,CLN_D11,k,j,i);
+        rr(m,nfr+2,k,j,i) = v ? 2.0 : 0.0;
+      });
     } else if (full) {
       // the whole union swept: the offsets of the older sets (their moments, above) from
       // the current one
@@ -1415,6 +1514,19 @@ void RadiationM1::CleanRingMoments() {
         pd(m,fr[n],k,j,i) = (n != CLN_J) ? rl(m,qn,n,k,j,i) - rl(m,qb,n,k,j,i) :
                                 ((jb > 0.0 && jb >= jm && jn >= jm) ? jn/jb : -1.0);
       }
+      if (!ema) return;
+      // (RotAvgEmaChange: a_ch of the boundary, the current set now against the aux,
+      // c = max |ln J_b/J_aux|, |D11_b - D11_aux|; the next set's J and D11 for the aux)
+      Real ach = -1.0;
+      if (eps > 0.0) {
+        const Real jo = rr(m,nfr,k,j,i);
+        Real c = !chj ? 0.0 : ((jb > 0.0 && jo > 0.0) ? fabs(log(jb/jo)) : 1.0e30);
+        c = fmax(c, fabs(rl(m,qb,CLN_D11,k,j,i) - rr(m,nfr+1,k,j,i)));
+        ach = estep ? fmin(1.0, fmax(0.0, c/eps - 1.0)) : fmin(1.0, c/eps);
+      }
+      pd(m,nfr,k,j,i) = ach;
+      pd(m,nfr+1,k,j,i) = jn;
+      pd(m,nfr+2,k,j,i) = rl(m,qn,CLN_D11,k,j,i);
     });
     cln_rpb = b;
     cln_rpt = vgd_rot_t0 + (static_cast<Real>(b) + (cln_rlast ? 1.0 : s))*vgd_rot_dt;
@@ -1448,8 +1560,10 @@ void RadiationM1::CleanRingMoments() {
       return (n == CLN_J) ? jo : ((fm[n] < 0) ? 0.0 : rl(m,o,n,kr,jr,ir)*jo);
     };
     Real q[CLN_N];
-    const bool mix = ring && CleanRingMix(rl, rr, fr, nfr, qn, nr, s, m, kr, jr,
-                                          ir, q);
+    const bool mix = ring && (ema ? CleanRingEma(rl, rr, pd, fr, nfr, qn, s, a0, m, kr,
+                                                 jr, ir, q)
+                                  : CleanRingMix(rl, rr, fr, nfr, qn, nr, s, m, kr, jr,
+                                                 ir, q));
     if (!mix) {
       for (int n = 0; n < CLN_N; ++n) q[n] = (1.0 - s)*raw(0, n) + s*raw(qn, n);
     }
@@ -1609,7 +1723,7 @@ void RadiationM1::CleanFvSets(const Real tc, const int cyc) {
     return;
   }
   const Mesh *pm = pmy_pack->pmesh;
-  const int nk = vra_on ? vra_k : 1;
+  const int nk = vra_on ? CleanRingK() : 1;
   const bool xf = vgd_xf && !(vra_on && !g_vra_adv);
   int64_t b = VetGdBlock(cyc);
   if (vgd_rot_dt <= 0.0) cln_fvfull = cln_fvfull || (cyc < 1) || VetGdBlock(cyc - 1) != b;

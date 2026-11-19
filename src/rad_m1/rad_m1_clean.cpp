@@ -535,12 +535,18 @@ void RadiationM1::CleanInit() {
     // the rotating FV rays (CleanFvSets): the closure is the J-weighted mean of the
     // sets, continuous across the blocks with the cross-fade; no slope correction
     const bool fixed = vra_on && !g_vra_adv;
-    if (vra_ema || vra_eq || (vgd_xf && !(vgd_rot_dt > 0.0 || vgd_rot_auto)) ||
+    // (vet_rotate_avg_ema: production's EMA, only on clean_rot_ring = live; without
+    // _dema, _tau, _lc and _diag, which CleanRingEma does not carry)
+    const bool ema_ok = cln_ring == 1 && !vra_ema_dema && vra_ema_tau <= 0.0 &&
+                        vra_ema_lc <= 0.0 && vra_ema_diag == 0;
+    if ((vra_ema && !ema_ok) || vra_eq ||
+        (vgd_xf && !(vgd_rot_dt > 0.0 || vgd_rot_auto)) ||
         (cln_rfv == 2 && !fixed) || (vgd_rot3 && !pm->three_d)) {
       CleanFatal("<rad_m1>/scheme = clean with a rotating vet_gd set: vet_rotate_avg = K "
-                 "(J-weighted, no _ema), vet_gd_rotate_xfade with vet_gd_rotate_dt, "
-                 "clean_rays = fv only for a fixed union (vet_rotate_avg without "
-                 "vet_rotate_advance), and on a 2-D axisymmetric mesh the z axis");
+                 "(J-weighted; _ema only with clean_rot_ring = live, no _dema, _tau, "
+                 "_lc, _diag), vet_gd_rotate_xfade with vet_gd_rotate_dt, clean_rays = "
+                 "fv only for a fixed union (vet_rotate_avg without vet_rotate_advance), "
+                 "and on a 2-D axisymmetric mesh the z axis");
     }
   }
   const bool ring_ok = vgd_on && vra_on && g_vra_adv &&

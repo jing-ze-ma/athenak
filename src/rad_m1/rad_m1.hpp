@@ -3155,6 +3155,12 @@ class RadiationM1 {
   // iw ends before the Krylov vectors)
   int Time2FctSlot(const int q) const;
   int CleanRingRstN() const;            // ... in the restart files (version 4)
+  // (vet_rotate_avg_ema, production's EMA: a fill takes 2 sets; cln_rr = the EMA offsets
+  // e, the aux J and D11 and the set count n, cln_rpd = the Delta, a_ch and the next
+  // set's J and D11 (CleanRingEma))
+  int CleanRingK() const {return vra_ema ? 2 : vra_k;}
+  int CleanRingNr(const int nf) const {return vra_ema ? nf + 3 : (vra_k - 1)*nf;}
+  int CleanRingNd(const int nf) const {return vra_ema ? nf + 3 : nf;}
   void CleanRingRstCopy(DvceArray5D<Real> &a, const int c, const int nmb, const int m0,
                         const bool pk, const bool have);
   int CleanFvRstN() const;      // the cubed sphere's sc rays' cln_fvi in the restart
