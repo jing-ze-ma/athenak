@@ -28,6 +28,7 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_clean.hpp"
 #include "rad_m1/rad_m1_clean_cell.hpp"
+#include "rad_m1/rad_m1_layreduce.hpp"
 #include "utils/scratch_view.hpp"
 
 #if MPI_PARALLEL_ENABLED
@@ -771,7 +772,7 @@ Real RadiationM1::CleanReduce(Real v, const bool max) {
 //! \fn std::array<Real, 2> CleanSums
 //! \brief the n <= 2 sums s0, s1 that f(m, k, j, i, s0, s1) adds over the active cells
 //! (it may also update the cell's vectors: a BiCGStab step and its dots in one pass), one
-//! reduction over the ranks
+//! reduction over the ranks; <mesh>/layout_invariant: M1LayReduce's (rank-count invariant)
 
 template <typename F>
 std::array<Real, 2> CleanSums(MeshBlockPack *pp, const char *name, const int n,
@@ -782,6 +783,16 @@ std::array<Real, 2> CleanSums(MeshBlockPack *pp, const char *name, const int n,
   int nmb = pp->nmb_thispack;
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   std::array<Real, 2> d = {0.0, 0.0};
+  if (pp->pmesh->layout_invariant) {   // (old production's sums: M1LayReduce, any ranks)
+    M1BcgVal v;
+    auto *r = pp->pradm1;
+    M1LayReduce(name, nmb*nkji, nkji, r->lay_part, r->lay_part_h,
+    KOKKOS_LAMBDA(const int idx, M1BcgVal &a) {
+      int m = idx/nkji, k = (idx - m*nkji)/nji, j = (idx - m*nkji - k*nji)/nx1;
+      f(m, k+ks, j+js, idx - m*nkji - k*nji - j*nx1 + is, a.s0, a.s1);
+    }, v);
+    return {v.s0, v.s1};
+  }
   Kokkos::parallel_reduce(name, Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &s0, Real &s1) {
     int m = idx/nkji;
