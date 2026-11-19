@@ -1809,6 +1809,20 @@ void RadiationM1::Time2StageTheta(int stage, Real dt) {
 
 void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
   const bool two = (stage != 1);
+  // the R exchange: with the clean scheme's direct lists, the first ghost layer only (the
+  // 7-point stencil reads the face ghosts; raw copies as pbval_kr's, cs_noresample), one
+  // message per neighbour rank, without the clean exchanges deferred to their next fill
+  auto rhalo = [&](const int c) {
+    if (cln_hdl.state == 1 && iw.extent_int(4) == cln_hdl.n1 &&
+        iw.extent_int(3) == cln_hdl.n2 && iw.extent_int(2) == cln_hdl.n3) {
+      std::vector<CleanGSeg<Real>> hp;
+      hp.swap(cln_hpend);
+      CleanGhostFill(iw, c, 1, false, 0, 1);
+      cln_hpend.swap(hp);
+    } else {
+      ImplicitKrylovHalo(c);
+    }
+  };
   // no stored face flux for K1 (first stage step, restart): K1 is the slope of the last
   // stage-2 solve, whose solution is U^n, so its face flux is the stage-start face flux
   // t2f* = f0x* (the restart file's F; the cmem applied flux is not used here)
@@ -1991,7 +2005,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
                         !(po + csink(m, k, j, i, w, po, pi) > 0.0) || (w - pi > wf);
       iw_(m,cb,k,j,i) = safe ? 1.0 : 0.0;
     });
-    ImplicitKrylovHalo(cb);
+    rhalo(cb);
     Real nv = 0.0;
     par_reduce_flat("m1_t2_ffct_dr", 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
@@ -2011,7 +2025,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     MPI_Allreduce(MPI_IN_PLACE, &nv, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
     if (nv > 0.0) {
-      ImplicitKrylovHalo(ca);
+      rhalo(ca);
       ncell = nv;
       nround = 1;
     }
@@ -2146,7 +2160,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
       if (!(nv > 0.0)) {break;}
       ncell += nv;
       nround = r + 1;
-      ImplicitKrylovHalo(ca);
+      rhalo(ca);
       zl_halos[0] += 1.0;
     }
   }
@@ -2258,7 +2272,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
       std::swap(sa, sb);   // (the round's R is read next)
     }
     if (!zsk || zfirst || nv[1] > 0.0) {
-      ImplicitKrylovHalo(sa);
+      rhalo(sa);
       if (zac) {   // the face ghosts (the only ones a stencil reads) the exchange
                    // changed: listed, and copied to slot cb, which holds them before it
         const int n1 = ie - is + 1, n2 = je - js + 1, n3 = ke - ks + 1;
