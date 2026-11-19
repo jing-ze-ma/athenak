@@ -965,7 +965,8 @@ void RadiationM1::CleanApply(const int src, const int dst) {
   const bool ov = !pmy_pack->pmesh->use_cubed_sphere;
   auto wa = (src < cln_w.ns) ? cln_w.s : cln_w.o;   // (src's array, CLW_NS)
   const int ws = (src < cln_w.ns) ? src : src - cln_w.ns;
-  CleanGhostFill(wa, ws, 1, true, ov ? 1 : 0);
+  // (the cubed sphere: the stencil and CleanStagCsLateral read the first ghost layer)
+  CleanGhostFill(wa, ws, 1, true, ov ? 1 : 0, ov ? 0 : 1);
   const std::function<void()> fin = [&]() {if (ov) CleanGhostFill(wa, ws, 1, true, 2);};
   // (the cubed sphere's lateral sums Y of src: their exchange overlaps the inner faces'
   // cross terms, cln_xf)
