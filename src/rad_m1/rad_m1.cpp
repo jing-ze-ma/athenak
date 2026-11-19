@@ -2453,6 +2453,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (std::getenv("VGD_IPC_LEAN") != nullptr) {
       vgd_ipc_lean = (std::atoi(std::getenv("VGD_IPC_LEAN")) != 0);
     }
+    // spdb-1119 vet_gd_halo_ipc_fuse (read only when named; default true; CUDA lean IPC):
+    // an exchange's pack, flags, wait and scatter in one kernel (bitwise the three)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_ipc_fuse")) {
+      vgd_ipc_fz = pin->GetBoolean("rad_m1","vet_gd_halo_ipc_fuse");
+    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_fuse_shells")) {
       vgd_fuse_h = std::max(1, pin->GetInteger("rad_m1","vet_gd_fuse_shells"));
     }

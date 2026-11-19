@@ -2233,6 +2233,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("vgd_csbm", vgd_csbm);
   v.view("vgd_crbm", vgd_crbm);
   v.value("vgd_ipc_lean", vgd_ipc_lean);
+  v.value("vgd_ipc_fz", vgd_ipc_fz);
   v.value("vgd_ipc_mode", vgd_ipc_mode);
   v.value("vgd_ipc_state", vgd_ipc_state);
   v.value("vgd_ipc_cs", vgd_ipc_cs);

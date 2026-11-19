@@ -2577,8 +2577,13 @@ bool RadiationM1::VetGdXffOk() {
       !vgd_gfast) {
     return false;
   }
-  // (the IPC halo: one set per exchange; the raw band's merged one, VetGdGbHaloX)
+  // (the IPC halo: one set per exchange; the raw band's merged one, VetGdGbHaloX;
+  // spdb-1119: CUDA lean, VetGdHlXff's IPC form, without the early send)
+#if defined(KOKKOS_ENABLE_CUDA)
+  if (vgd_ipc_state == 1 && !vgd_raw && !(vgd_ipc_lean && vgd_ipc_fz)) {return false;}
+#else
   if (vgd_ipc_state == 1 && !vgd_raw) {return false;}
+#endif
 #if M1_VGD_NCCL_ON
   if (VgdNcclOn()) {return false;}
 #endif
@@ -2656,6 +2661,123 @@ bool RadiationM1::VetGdHlXff(const int i, const int ws, const int mode) {
   auto aB_ = vgd_i_xb;
   const int nsA = XA.ns, nsB = XB.ns;
   const int npk = np;
+#if defined(KOKKOS_ENABLE_CUDA)
+  // spdb-1119: the IPC form (CUDA, lean; no early send): one kernel packs both sets' kept
+  // values of partner p straight into its receive buffer (A at its list's offset, B at
+  // the second array's, as the twin), the last team sets the partners' flags, every team
+  // waits for mine and scatters both sets (the m1_vgd_xff_scatter numbers: bitwise)
+  if (vgd_ipc_state == 1 && vgd_ipc_lean && vgd_ipc_fz && mode == 0 &&
+      vgd_rg_pend.empty() && static_cast<int>(XA.dsto.size()) == np &&
+      static_cast<int>(XB.dsto.size()) == np) {
+    if (!vgd_hlp.cnt.is_allocated()) {
+      vgd_hlp.cnt = Kokkos::View<int, DevMemSpace>("m1_vgd_ipc_cnt");
+    }
+    const long long seq = ++vgd_ipc_seq, par = seq & 1;
+    auto cnt_ = vgd_hlp.cnt;
+    long long *sig = vgd_ipc_sig;
+    int *err = vgd_ipc_err;
+    auto psig = vgd_ipc_psig.d_view;
+    auto pslot = vgd_ipc_pslot.d_view;
+    auto prb = vgd_ipc_prb.d_view;
+    auto phalf = vgd_ipc_phalf.d_view;
+    auto pcs = vgd_ipc_pcs.d_view;
+    const Real *rb_ = vgd_ipc_rbuf + par*vgd_ipc_half;
+    const size_t cs_ = vgd_ipc_cs;
+    VgdIpcIdx da{}, db{};
+    for (int p = 0; p < np; ++p) {da.v[p] = XA.dsto[p]; db.v[p] = XB.dsto[p];}
+    auto aA_ = vgd_i;
+    auto aB_ = vgd_i_xb;
+    auto slA_ = XA.sl;
+    auto slB_ = XB.sl;
+    const int nsA = XA.ns, nsB = XB.ns;
+    const int nrA = XA.nr, nA = XA.nr + XA.nw, nrB = XB.nr, nB = XB.nr + XB.nw;
+    auto dlA_ = XA.dl;
+    auto srA_ = XA.sr;
+    auto dwA_ = XA.dw;
+    auto swA_ = XA.sw;
+    auto dlB_ = XB.dl;
+    auto srB_ = XB.sr;
+    auto dwB_ = XB.dw;
+    auto swB_ = XB.sw;
+    auto w3A_ = vgd_w3;
+    auto w3B_ = vgd_tabd.w3;
+    constexpr int kT = 128;
+    const int nt = std::max(nsA + nsB, nA + nB);
+    const int nl = std::min((nt + kT - 1)/kT, 216);
+    Kokkos::parallel_for("m1_vgd_ipc_xff", Kokkos::Experimental::require(
+        Kokkos::TeamPolicy<>(vgd_cur, std::max(nl, 1), kT),
+        Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+    KOKKOS_LAMBDA(const TeamMember_t &tm) {
+      const int e0 = tm.league_rank()*kT + tm.team_rank(), de = tm.league_size()*kT;
+      for (int c = e0; c < nsA + nsB; c += de) {
+        const bool b = (c >= nsA);
+        const int cc = b ? (c - nsA) : c;
+        const VgdIpcIdx &sx = b ? sb : sa;
+        int p = 0;
+        while (p + 1 < npk && sx.v[p+1] <= cc) {++p;}
+        int ad = b ? slB_(cc) : slA_(cc);
+        const int jb = ad % c2_;
+        ad /= c2_;
+        const int kb = ad % c3_;
+        ad /= c3_;
+        const int v = ad % nv_;
+        const int m = ad/nv_;
+        Real *dst = reinterpret_cast<Real *>(prb(p)) + par*phalf(p) + (b ? pcs(p) : 0) +
+                    (b ? db.v[p] : da.v[p]) + (cc - sx.v[p]);
+        *dst = b ? aB_(m,v,kb,jb,i) : aA_(m,v,kb,jb,i);
+      }
+#if defined(__CUDA_ARCH__)
+      __threadfence_system();
+#endif
+      tm.team_barrier();
+      if (tm.team_rank() == 0) {
+        if (Kokkos::atomic_fetch_add(&cnt_(), 1) == tm.league_size() - 1) {
+          cnt_() = 0;
+          VgdIpcSetN(psig.data(), pslot.data(), npk, seq);
+        }
+        VgdIpcWaitN(sig, npk, seq, err);
+      }
+      tm.team_barrier();
+      for (int c0 = e0; c0 < nA + nB; c0 += de) {
+        const bool b = (c0 >= nA);
+        const int c = b ? (c0 - nA) : c0;
+        const int nr = b ? nrB : nrA;
+        const Real *rx = rb_ + (b ? cs_ : 0);
+        int ad = (c < nr) ? (b ? dlB_(c) : dlA_(c)) : (b ? dwB_(c - nr) : dwA_(c - nr));
+        const int jb = ad % c2_;
+        ad /= c2_;
+        const int kb = ad % c3_;
+        ad /= c3_;
+        const int v = ad % nv_;
+        const int m = ad/nv_;
+        Real val = 0.0;
+        if (c < nr) {
+          const int s = b ? srB_(c) : srA_(c);
+          val = (s >= 0) ? rx[s] : 0.0;
+        } else {
+          const int cw = c - nr;
+          for (int u = 0; u < 3; ++u) {
+            const int s = b ? swB_(3*cw + u) : swA_(3*cw + u);
+            const Real wq = b ? w3B_(m,kb,jb,v,u) : w3A_(m,kb,jb,v,u);
+            val += wq*((s >= 0) ? rx[s] : 0.0);
+          }
+        }
+        if (b) {
+          aB_(m,v,kb,jb,i) = val;
+        } else {
+          aA_(m,v,kb,jb,i) = val;
+        }
+      }
+    });
+    vgd_ipc_n += 1.0;
+    vgd_nexch += 2.0;
+    vgd_hl_nuse += 2.0;
+    vgd_xff_nmsg += 1.0;
+    vgd_rg_lastx = true;
+    vgd_rg_lastx_e = ex;
+    return true;
+  }
+#endif
   if (mode == 1) {
     // the stamps of this shell's send cells (band index space, as the (m, k, j, d) of
     // the fused kernel), then the fork: the second stream waits for all work before
@@ -4055,6 +4177,94 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
       VgdIpcIdx spi, doi;
       for (int p = 0; p <= np; ++p) {spi.v[p] = X.sp[p];}
       for (int p = 0; p < np; ++p) {doi.v[p] = X.dsto[p];}
+      // spdb-1119 fused exchange (CUDA, lean, VetGdHalo's begin + end, no band-ring copy
+      // between them): the teams pack as m1_vgd_ipc_pack, the last one to finish sets the
+      // partners' flags (k2), every team waits for mine and scatters as m1_vgd_hl_scatter
+      // (exact lists: no merged twin).  The same values in the same places (bitwise); one
+      // launch instead of three (vet_gd_halo_ipc_fuse = false: the three).  At most 216
+      // teams of 128: all resident, so the spin of the early teams cannot starve the last
+      // one's pack
+#if defined(KOKKOS_ENABLE_CUDA)
+      if (vgd_ipc_fz && lean && vgd_hlp.now && vgd_ipc_mode != 2 && vgd_rg_pend.empty() &&
+          X.ns + X.nr + X.nw > 0) {
+        if (!vgd_hlp.cnt.is_allocated()) {
+          vgd_hlp.cnt = Kokkos::View<int, DevMemSpace>("m1_vgd_ipc_cnt");
+        }
+        auto cnt_ = vgd_hlp.cnt;
+        long long *sig = vgd_ipc_sig;
+        int *err = vgd_ipc_err;
+        const Real *rb_ = vgd_ipc_rbuf + par*vgd_ipc_half;
+        const size_t cs_ = vgd_ipc_cs;
+        const int ns_ = X.ns, nr = X.nr, nw = X.nw;
+        auto dl_ = X.dl;
+        auto sr_ = X.sr;
+        auto dw_ = X.dw;
+        auto sw_ = X.sw;
+        auto w3_ = vgd_w3;
+        constexpr int kT = 128;
+        const int nt = std::max(ns_, nr + nw);
+        const int nl = std::min((nt + kT - 1)/kT, 216);
+        // (light-weight: the body as kernel arguments, no host wait on the previous launch)
+        Kokkos::parallel_for("m1_vgd_ipc_x", Kokkos::Experimental::require(
+            Kokkos::TeamPolicy<>(vgd_cur, nl, kT),
+            Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+        KOKKOS_LAMBDA(const TeamMember_t &tm) {
+          const int c0 = tm.league_rank()*kT + tm.team_rank(), dc = tm.league_size()*kT;
+          for (int c = c0; c < ns_; c += dc) {
+            int p = 0;
+            while (p + 1 < np_ && spi.v[p+1] <= c) {++p;}
+            int ad = sl_(c);
+            const int jb = ad % c2_;
+            ad /= c2_;
+            const int kb = ad % c3_;
+            ad /= c3_;
+            const int v = ad % nv_;
+            const int m = ad/nv_;
+            Real *dst = reinterpret_cast<Real *>(prb(p)) + par*phalf(p) + doi.v[p] +
+                        (c - spi.v[p]);
+            *dst = a_(m,v,kb,jb,i);
+            if (two) {dst[pcs(p)] = b_(m,v,kb,jb,i);}
+          }
+#if defined(__CUDA_ARCH__)
+          __threadfence_system();
+#endif
+          tm.team_barrier();
+          if (tm.team_rank() == 0) {
+            if (Kokkos::atomic_fetch_add(&cnt_(), 1) == tm.league_size() - 1) {
+              cnt_() = 0;
+              VgdIpcSetN(psig.data(), pslot.data(), np_, seq);
+            }
+            VgdIpcWaitN(sig, np_, seq, err);
+          }
+          tm.team_barrier();
+          for (int c = c0; c < nr + nw; c += dc) {
+            int ad = (c < nr) ? dl_(c) : dw_(c - nr);
+            const int jb = ad % c2_;
+            ad /= c2_;
+            const int kb = ad % c3_;
+            ad /= c3_;
+            const int v = ad % nv_;
+            const int m = ad/nv_;
+            if (c < nr) {
+              const int s = sr_(c);
+              a_(m,v,kb,jb,i) = (s >= 0) ? rb_[s] : 0.0;
+              if (two) {b_(m,v,kb,jb,i) = (s >= 0) ? rb_[cs_ + s] : 0.0;}
+              continue;
+            }
+            const int cw = c - nr;
+            Real val = 0.0, val2 = 0.0;
+            for (int u = 0; u < 3; ++u) {
+              const int s = sw_(3*cw + u);
+              val += w3_(m,kb,jb,v,u)*((s >= 0) ? rb_[s] : 0.0);
+              if (two) {val2 += w3_(m,kb,jb,v,u)*((s >= 0) ? rb_[cs_ + s] : 0.0);}
+            }
+            a_(m,v,kb,jb,i) = val;
+            if (two) {b_(m,v,kb,jb,i) = val2;}
+          }
+        });
+        vgd_hlp.done = true;
+      } else
+#endif
       if (X.ns > 0 && vgd_ipc_mode == 2) {
         // VGD_IPC=2: the local gather pack, then one peer copy per partner and array
         // (copy engines over NVLink) instead of scattered remote stores
@@ -4112,7 +4322,8 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V
       // that reads the slabs and before the scatter that writes the lent slab (as the MPI
       // path does in this hook); without them the scatter wrote a slab not yet lent
       VetGdRingFlush();
-      if (lean) {
+      if (vgd_hlp.done) {
+      } else if (lean) {
       Kokkos::parallel_for("m1_vgd_ipc_k2", Kokkos::RangePolicy<>(vgd_cur, 0, 1),
       KOKKOS_LAMBDA(const int) {
         VgdIpcSetN(psig.data(), pslot.data(), np_, seq);
@@ -4388,7 +4599,7 @@ void RadiationM1::VetGdHlEnd() {
   auto dw_ = X.dw;
   auto sw_ = X.sw;
   auto w3_ = vgd_w3;
-  if (nr + nw > 0) {
+  if (nr + nw > 0 && !vgd_hlp.done) {
     Kokkos::parallel_for("m1_vgd_hl_scatter",
                          VgdLight(vgd_cur, 0, nr + nw),
     KOKKOS_LAMBDA(const int c) {
@@ -4441,6 +4652,7 @@ void RadiationM1::VetGdHlEnd() {
   vgd_hl_nuse += 1.0;
   vgd_hlp.on = false;
   vgd_hlp.ipc = false;
+  vgd_hlp.done = false;
   vgd_hlp.a = VgdRag();
   vgd_hlp.b = VgdRag();
 #endif
@@ -5681,10 +5893,13 @@ bool RadiationM1::VetGdHaloCompact(V &a, const int nv, const int i0, const int w
   // ---- the list path (vgdfuse-1010: begin + end, as the overlap uses them; Begin
   // decides: the mask lists X (valid, last writers) or, vet_gd_halo_exact, X's exact
   // record) ----
+  vgd_hlp.now = true;
   if (lst && VetGdHlBegin(a, nv, i0, ws, b)) {
+    vgd_hlp.now = false;
     VetGdHlEnd();
     return true;
   }
+  vgd_hlp.now = false;
   // ---- the dense path ----
   // the slot holding this shell's mask (prepared by the previous exchange), else now
   auto tagged = [&](const int sl) {
@@ -6464,7 +6679,8 @@ void RadiationM1::VetGdSweep() {
     s_xfe = (ee != nullptr) ? std::atoi(ee) : 1;
   }
   const bool xfe = xffs && (s_xfe != 0) && vgd_xff_msg && vgd_hmpi && (vgd_ovl_g <= 0) &&
-                   (vgd_fuse_h <= 1) && (vgd_hx_mode != 2) && !vgd_raw;
+                   (vgd_fuse_h <= 1) && (vgd_hx_mode != 2) && !vgd_raw &&
+                   vgd_ipc_state != 1;
   // mem2-1014 vet_gd_band_ring: shells lent a wide slab while their band is needed
   // (xffuse-1113: the other set's array as the second one, VetGdRingFlush)
   if (ibc_x1max == M1_IBC_REFLECT) {VetGdTopMirror();}
