@@ -178,15 +178,15 @@ static void CleanStagMomentum(const CleanArgs &x, const int e, const int m, cons
       df[2*d+s] = f - x.fc[d](m,CLF_G,kf,jf,iff);
       one[2*d+s] = 1.0;
       if (CleanBoundaryFace(x, d, m, kf, jf, iff)) continue;
-      Real pn[3], mf[3];
+      Real pn[3], mf[3], pf[6], nf[3];   // (each component's mean and the normal once)
+      for (int n = 0; n < 6; ++n) {
+        pf[n] = 0.5*(x.cs(m,CLN_D11+n,kf-dk,jf-dj,iff-di)*x.w(m,e,kf-dk,jf-dj,iff-di) +
+                     x.cs(m,CLN_D11+n,kf,jf,iff)*x.w(m,e,kf,jf,iff));
+      }
+      for (int c = 0; c < 3; ++c) nf[c] = x.g(m,CLG_N+3*d+c,kf,jf,iff);
       for (int b = 0; b < 3; ++b) {
         pn[b] = 0.0;
-        for (int c = 0; c < 3; ++c) {
-          const int n = CLN_D11 + ((b == c) ? b : 2 + b + c);
-          pn[b] += 0.5*(x.cs(m,n,kf-dk,jf-dj,iff-di)*x.w(m,e,kf-dk,jf-dj,iff-di) +
-                        x.cs(m,n,kf,jf,iff)*x.w(m,e,kf,jf,iff))*
-                   x.g(m,CLG_N+3*d+c,kf,jf,iff);
-        }
+        for (int c = 0; c < 3; ++c) pn[b] += pf[(b == c) ? b : 2 + b + c]*nf[c];
         mf[b] = (d == 0) ? x.x1f(m,iff)*x.area[0](m,kf,jf,iff)*x.g(m,CLG_N+b,kf,jf,iff)
                          : x.g(m,CLG_M+3*(d-1)+b,kf,jf,iff);
       }
