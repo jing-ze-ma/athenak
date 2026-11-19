@@ -1871,8 +1871,8 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
   // V E_new by the current R (slot ca, ghosts valid); lim: a face next to it is limited
   auto cell = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
                             Real &w, Real &po, Real &pi, Real &pl, Real &dw,
-                            bool &lim) {
-    const Real rc = iw_(m,ca,k,j,i);
+                            bool &lim, const int sa) {
+    const Real rc = iw_(m,sa,k,j,i);
     po = 0.0;
     pi = 0.0;
     pl = 0.0;
@@ -1885,7 +1885,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
       Real g = gf(m, d, k, j, i);
       if (g > 0.0) {
         pi += g;
-        const Real rn = iw_(m,ca,k-dk,j-dj,i-di);
+        const Real rn = iw_(m,sa,k-dk,j-dj,i-di);
         pl += rn*g;
         if (rn < 1.0) {dw -= (1.0 - rn)*g; lim = true;}
       } else if (g < 0.0) {
@@ -1899,16 +1899,21 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
         if (rc < 1.0) {dw += (1.0 - rc)*g; lim = true;}
       } else if (g < 0.0) {
         pi -= g;
-        const Real rn = iw_(m,ca,k+dk,j+dj,i+di);
+        const Real rn = iw_(m,sa,k+dk,j+dj,i+di);
         pl -= rn*g;
         if (rn < 1.0) {dw += (1.0 - rn)*g; lim = true;}
       }
     }
     w = cvol(m,k,j,i)*(u0_(m,M1_E,k,j,i) + in_(m,M1_T2_E,k,j,i));
   };
-  // R = 1 everywhere, ghosts included (physical ghosts are never filled: unlimited)
-  Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, ca, Kokkos::ALL,
-                    Kokkos::ALL, Kokkos::ALL), 1.0);
+  // R = 1 everywhere, ghosts included (physical ghosts are never filled: unlimited);
+  // the rounds read slot sa and write sb, then swap them (no copy; both slots keep the
+  // same ghosts: after an exchange of sa they are copied to sb)
+  for (const int c : {ca, cb}) {
+    Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, c, Kokkos::ALL,
+                      Kokkos::ALL, Kokkos::ALL), 1.0);
+  }
+  int sa = ca, sb = cb;
   Real ncell = 0.0;
   int nround = 0;
   // fast2nd-1112 (rad_m1.hpp zalesak_halo_skip): exchange R only after a round that
@@ -1945,6 +1950,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     const Real pin_ = (rk > 0 && r >= 2*rk) ? 0.0 : 1.0;
     // (zalesak_active: every cell in round 0 and in the rounds that change wtr / pin_)
     const bool zsel = zac && r > 0 && !(ra > 0 && r == ra) && !(rk > 0 && r == 2*rk);
+    const int s0 = sa, s1 = sb;
     par_reduce_flat2("m1_t2_ffct_r", 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a,
                   Real &ab) {
@@ -1956,14 +1962,17 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
         if (tr3) {act = act || (ch_(m,k-1,j,i) >= r) || (ch_(m,k+1,j,i) >= r);}
         if (xb && (i == is || i == ie || (zx2 && (j == js || j == je)) ||
                    (zx3 && (k == ks || k == ke)))) {act = true;}
-        if (!act) {return;}
+        if (!act) {
+          iw_(m,s1,k,j,i) = iw_(m,s0,k,j,i);
+          return;
+        }
       }
-      const Real rc = iw_(m,ca,k,j,i);
+      const Real rc = iw_(m,s0,k,j,i);
       Real rn = rc;
       if (!(hoi && hm_(m,k,j,i) > 0.0)) {
         Real w, po, pi, pl, dw;
         bool lim;
-        cell(m, k, j, i, w, po, pi, pl, dw, lim);
+        cell(m, k, j, i, w, po, pi, pl, dw, lim, s0);
         const Real wf = eth*cvol(m,k,j,i)*un_(m,M1_E,k,j,i);
         if (!(w + dw > wtr*wf)) {
           // what the cell holds without face transport + the inflow it still gets,
@@ -1980,7 +1989,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
           }
         }
       }
-      iw_(m,cb,k,j,i) = rn;
+      iw_(m,s1,k,j,i) = rn;
     }, Kokkos::Sum<Real>(nv[0]), Kokkos::Sum<Real>(nv[1]));
     if (zlr > 0) {   // local sub-round: keep the changes, no MPI, ghosts held
       if (!(nv[0] > 0.0)) {break;}
@@ -2001,38 +2010,34 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     if (!(nn > 0.0)) {break;}
     ncell += nn;
     nround = r + 1;
-    if (zac) {
-      par_for("m1_t2_ffct_ca", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        if (ch_(m,k,j,i) == r + 1) {iw_(m,ca,k,j,i) = iw_(m,cb,k,j,i);}
-      });
-    } else if (zlr == 0) {
-    par_for("m1_t2_ffct_c", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      iw_(m,ca,k,j,i) = iw_(m,cb,k,j,i);
-    });
-    }
+    if (zlr == 0) {std::swap(sa, sb);}   // (the round's R is read next)
     zxb = false;
     if (!zsk || zfirst || nv[1] > 0.0) {
-      if (zac) {   // snapshot (ghosts incl.) to stamp what the exchange changes
-        Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, cb,
-                          Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw,
-                          Kokkos::ALL, ca, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
-      }
-      ImplicitKrylovHalo(ca);
+      ImplicitKrylovHalo(sa);
+      const int s0 = sa, s1 = sb;
       if (zac) {   // every cell (ghost or not) the exchange changed counts as changed
-        const int rr = r + 1;
+        const int rr = r + 1;   // (sb holds the ghosts before it; interior: stamped)
         const int n3 = iw.extent_int(2) - 1, n2 = iw.extent_int(3) - 1;
         const int n1 = iw.extent_int(4) - 1;
         par_for("m1_t2_ffct_xs", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, 0, n1,
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-          if (iw_(m,ca,k,j,i) != iw_(m,cb,k,j,i)) {ch_(m,k,j,i) = rr;}
+          if (iw_(m,s0,k,j,i) != iw_(m,s1,k,j,i)) {ch_(m,k,j,i) = rr;}
         });
+      }
+      if (zlr == 0) {   // (the other slot keeps the same ghosts)
+        Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, s1,
+                          Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw,
+                          Kokkos::ALL, s0, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
       }
       zxb = true;
       zl_halos[0] += 1.0;
       zfirst = false;
     }
+  }
+  if (sa != ca) {   // (the last round changed nothing: the R of both slots)
+    Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, ca, Kokkos::ALL,
+                      Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw, Kokkos::ALL, sa,
+                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
   zl_rounds[0] += static_cast<Real>(nround);
   if (zl_prof) {
@@ -2054,7 +2059,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     const int i = is + idx%n1;
     Real w, po, pi, pl, dw;
     bool lim;
-    cell(m, k, j, i, w, po, pi, pl, dw, lim);
+    cell(m, k, j, i, w, po, pi, pl, dw, lim, ca);
     if (lim) {in_(m,M1_T2_E,k,j,i) += dw/cvol(m,k,j,i);}
     const Real rc = iw_(m,ca,k,j,i);
     if (rc < 1.0) {sw += (1.0 - rc)*po;}
