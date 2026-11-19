@@ -340,7 +340,25 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_xlag = (xd == "lag");
       cln_xsrc = cln_xd && stag("clean_stag_xsrc", false);
       cln_xsw = cln_xd && stag("clean_stag_xsweep", false);
-      cln_kpos = stag("clean_stag_kpos", false);
+      // clean_stag_kpos = off (default) | faces (= true) | cell | redo: the stage increment
+      // in MPRK form (CleanStagKPos): faces, every slope face flux and the cell part
+      // moved; cell, the cell part and the x1 boundary only, the face fluxes explicit;
+      // redo, as cell, and where the solve gives X <= 0 the stage again with those
+      // donors' faces moved (CleanStagKRedo, rounds, the last all faces)
+      {
+        const std::string kp = (cln_cell || !pin->DoesParameterExist("rad_m1",
+                                "clean_stag_kpos")) ? "off" :
+                               pin->GetString("rad_m1", "clean_stag_kpos");
+        if (kp != "off" && kp != "false" && kp != "true" && kp != "faces" &&
+            kp != "cell" && kp != "redo") {
+          std::cout << "### FATAL ERROR <rad_m1>/clean_stag_kpos = off | faces | cell | redo"
+                    << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        cln_kmode = (kp == "true" || kp == "faces") ? 1 : (kp == "cell" ? 2 :
+                    (kp == "redo" ? 3 : 0));
+        cln_kpos = (cln_kmode > 0);
+      }
       cln_xpat = stag("clean_stag_xpat", false);
       // clean_xt_cons (default off): the first iterate's gas T with A's G = 1 - beta^2/2,
       // and after the first right-hand side T from the pass's gas row (its G and beta

@@ -3218,6 +3218,9 @@ class RadiationM1 {
   int cln_kqs = -1;   // (kpos: 2 face slots, the moved flux's qL >= 0, qR <= 0)
   DvceArray4D<Real> cln_ky1;   // (kpos: E of the stage-1 solution, K2's reference)
   bool cln_kreal = false;   // (S3B kick bound: CLW_KS set in CleanOldVector)
+  int cln_kmode = 0;        // (clean_stag_kpos: 1 faces, 2 cell, 3 redo)
+  int cln_kredo = 0;        // (redo: rounds of this stage)
+  bool CleanStagKRedo();
   bool cln_xtnorm = false, cln_xtcons = false;   // (CleanFirstIterate, CleanSolve)
   int cln_xte = 0;   // (clean_xt_exact: 0 off, 1 cons, 2 x2)
   Real cln_kc1 = 0.0, cln_kc2 = 0.0;   // (the stage's c1, c2 of t2pf1, t2pf2)

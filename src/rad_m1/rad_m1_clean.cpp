@@ -1175,9 +1175,11 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         CleanCopyIterate();
       }
     }
-    // (clean_stag_kpos: the write-back and the slopes take the old vector as formed;
-    // the counts of the passes)
+    // (clean_stag_xpat: the counts of the passes)
     if (cln_xpat && !cell) CleanStagKEnd();
+    // (clean_stag_kpos = redo: X <= 0 left, the stage again with those donors' faces
+    // moved)
+    if (!cell && CleanStagKRedo()) continue;
     // (staggered: R1, R2 of the solution, counted)
     const int nbad = cell ? (cln_poslim ? CleanCellMarkFaces() : 0) :
                      CleanStagRealizable();
@@ -1620,8 +1622,16 @@ void RadiationM1::CleanStagKPos() {
     w(m,CLW_PW,k,j,i) = fmax(u0_(m,M1_E,k,j,i), 0.0);
     w(m,CLW_KF,k,j,i) = y1 ? fmax(ky(m,k,j,i), 0.0) : w(m,CLW_PW,k,j,i);
   });
+  // (the donors whose faces move: all with faces, none yet with cell / redo)
+  const Real kt0 = (cln_kmode == 1) ? 1.0 : 0.0;
+  CleanFor("cln_kpos_kt", nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    w(m,CLW_KT,k,j,i) = kt0;
+  });
   CleanGhostFill(cln_w, CLW_PW, 1);
   if (two) CleanGhostFill(cln_w, CLW_KF, 1);
+  CleanGhostFill(cln_w, CLW_KT, 1);
+  cln_kredo = 0;
   // 1. the faces' q
   const int kq = cln_kqs;
   Real nq[2] = {0.0, 0.0};   // (faces moved, at the guard)
@@ -1638,6 +1648,7 @@ void RadiationM1::CleanStagKPos() {
         if (g == 0.0) return;
         const bool up = (g > 0.0);
         const Real ed = up ? w(m,sl,k-dk,j-dj,i-di) : w(m,sl,k,j,i);
+        if (!((up ? w(m,CLW_KT,k-dk,j-dj,i-di) : w(m,CLW_KT,k,j,i)) > 0.0)) return;
         Real q = qcap;
         if (fabs(g) < qcap*x.h*ed) {
           q = fabs(g)/(x.h*ed);
@@ -1695,7 +1706,13 @@ void RadiationM1::CleanStagKPos() {
           const Real a = CleanDivW(x, d, m, k, j, i, sd)*(sd ? -g : g);   // (into i)
           dg += a;
           dgs[s] += a;
-          if (!bf) continue;
+          if (!bf) {   // (a face whose donor's faces do not move: explicit)
+            const int sn = 2*sd - 1;
+            const Real fd = (a < 0.0) ? w(m,CLW_KT,k,j,i) :
+                            w(m,CLW_KT,k+sn*dk,j+sn*dj,i+sn*di);
+            if (!(fd > 0.0)) e += a;
+            continue;
+          }
           if (a >= 0.0) {
             e += a;        // (a boundary's inflow explicit)
           } else if (d == 0) {
@@ -1762,7 +1779,6 @@ void RadiationM1::CleanStagKPos() {
     }
     if (pd > 0.0) np += 1.0;
     if (e < 0.0) ne += 1.0;
-    w(m,CLW_KW,k,j,i) = e + wke;   // (E_old before the work removal: kreal's hook)
     w(m,CLW_KF,k,j,i) = pb;
     w(m,CLW_KM,k,j,i) = pd;
     w(m,CLW_EO,k,j,i) = e;
@@ -1777,6 +1793,116 @@ void RadiationM1::CleanStagKPos() {
                 "gas-limited %.0f Eo<0 %.0f\n", pmy_pack->pmesh->ncycle, t2_solve, nq[0],
                 nn[0], nq[1], nn[2], nn[1], nn[3]);
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool RadiationM1::CleanStagKRedo
+//! \brief clean_stag_kpos = redo: after the passes, the cells the solve left at X <= 0
+//! (globally counted) become donors whose slope face fluxes move (q X_donor, as faces);
+//! their explicit part leaves the old vector on both sides of each face, and the stage
+//! is solved again (true).  At most CLN_KPOS_REDO rounds; the last moves every donor's
+//! faces (= faces: b >= 0, an M-matrix, X >= 0 by construction).  Deterministic (flags
+//! from stored state, no in-place neighbour reads), counted (CLEAN KPOS redo).
+
+bool RadiationM1::CleanStagKRedo() {
+  if (cln_kmode != 3 || !cln_kq_on || cln_kredo >= CLN_KPOS_REDO) return false;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto w = cln_w;
+  auto u0_ = u0;
+  const bool last = (cln_kredo + 1 >= CLN_KPOS_REDO);
+  // 1. the new donors (KT = 2): X <= 0 and not moved yet; the last round all
+  Real nn[2] = {0.0, 0.0};   // (cells X <= 0, new donors)
+  Kokkos::parallel_reduce("cln_kredo_n", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a, Real &b) {
+    const bool neg = !(w(m,CLW_X,k,j,i) > 0.0);
+    if (neg) a += 1.0;
+    if ((neg || last) && !(w(m,CLW_KT,k,j,i) > 0.0)) {
+      w(m,CLW_KT,k,j,i) = 2.0;
+      b += 1.0;
+    }
+  }, Kokkos::Sum<Real>(nn[0]), Kokkos::Sum<Real>(nn[1]));
+  nn[0] = CleanReduce(nn[0], false);
+  if (!(nn[0] > 0.0)) {   // (positive: no round; the flags back)
+    if (last) {
+      CleanFor("cln_kredo_0", nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (w(m,CLW_KT,k,j,i) > 1.5) w(m,CLW_KT,k,j,i) = 0.0;
+      });
+    }
+    return false;
+  }
+  nn[1] = CleanReduce(nn[1], false);
+  ++cln_kredo;
+  // 2. the references (K1: E_s in CLW_PW; K2: the stage-1 solution in CLW_KS)
+  const bool two = (t2_solve == M1_T2S_STAGE2);
+  const bool y1 = two && cln_ky1.extent_int(0) > nmb1;
+  auto ky = cln_ky1;
+  CleanFor("cln_kredo_ref", nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    w(m,CLW_PW,k,j,i) = fmax(u0_(m,M1_E,k,j,i), 0.0);
+    w(m,CLW_KS,k,j,i) = y1 ? fmax(ky(m,k,j,i), 0.0) : w(m,CLW_PW,k,j,i);
+  });
+  CleanGhostFill(cln_w, CLW_PW, 1);
+  CleanGhostFill(cln_w, CLW_KS, 1);
+  CleanGhostFill(cln_w, CLW_KT, 1);
+  CleanArgs x = CleanMakeArgs();
+  const Real c1 = cln_kc1, c2 = cln_kc2, qcap = 1.0e12*x.c;
+  auto p1 = t2pf1, p2 = t2pf2;
+  const int kq = cln_kqs;
+  // 3. the new donors' faces: q added, their explicit part out of E_old
+  for (int dir = 0; dir < x.nf; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    auto fc = x.fc[dir];
+    par_for("cln_kredo_q", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
+      auto put = [&](const Real g, const int sl) {
+        if (g == 0.0) return;
+        const bool up = (g > 0.0);
+        if (!((up ? w(m,CLW_KT,k-dk,j-dj,i-di) : w(m,CLW_KT,k,j,i)) > 1.5)) return;
+        const Real ed = up ? w(m,sl,k-dk,j-dj,i-di) : w(m,sl,k,j,i);
+        const Real q = (fabs(g) < qcap*x.h*ed) ? fabs(g)/(x.h*ed) : qcap;
+        if (up) fc(m,kq,k,j,i) += q;
+        if (!up) fc(m,kq+1,k,j,i) -= q;
+      };
+      put(c1*p1(m,dir,k,j,i), CLW_PW);
+      if (two) put(c2*p2(m,dir,k,j,i), CLW_KS);
+    });
+  }
+  CleanFor("cln_kredo_eo", nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real de = 0.0;
+    for (int d = 0; d < x.nf; ++d) {
+      const int dk = (d == 2), dj = (d == 1), di = (d == 0);
+      for (int sd = 0; sd < 2; ++sd) {
+        const int kf = k + sd*dk, jf = j + sd*dj, iff = i + sd*di, sn = 2*sd - 1;
+        if (CleanBoundaryFace(x, d, m, kf, jf, iff)) continue;
+        for (int s = 0; s < 1 + two; ++s) {
+          const Real g = s ? c2*p2(m,d,kf,jf,iff) : c1*p1(m,d,kf,jf,iff);
+          const Real a = CleanDivW(x, d, m, k, j, i, sd)*(sd ? -g : g);   // (into i)
+          const Real fd = (a < 0.0) ? w(m,CLW_KT,k,j,i) :
+                          w(m,CLW_KT,k+sn*dk,j+sn*dj,i+sn*di);
+          if (fd > 1.5) de -= a;
+        }
+      }
+    }
+    w(m,CLW_EO,k,j,i) += de;
+  });
+  CleanFor("cln_kredo_1", nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (w(m,CLW_KT,k,j,i) > 1.5) w(m,CLW_KT,k,j,i) = 1.0;
+  });
+  CleanGhostFill(cln_w, CLW_EO, 1);
+  if (global_variable::my_rank == 0) {
+    std::printf("CLEAN KPOS redo cycle %d t2s %d round %d X<=0 %.0f new donors %.0f%s\n",
+                pmy_pack->pmesh->ncycle, t2_solve, cln_kredo, nn[0], nn[1],
+                last ? " (last: all)" : "");
+  }
+  return true;
 }
 
 //----------------------------------------------------------------------------------------

@@ -164,6 +164,7 @@ constexpr int CLF_KD = CLF_N + 10;  // clean_stag_fkin: the slopes K1, K2 of d (
 constexpr Real CLN_KPOS_TH = 0.1;   // clean_stag_kpos: E_old at least this share of E_s
 constexpr int CLN_KPOS_RN = 12;     //   rounds at most, the inflow-free share from
 constexpr int CLN_KPOS_RF = 6;      //   round CLN_KPOS_RF
+constexpr int CLN_KPOS_REDO = 4;    // clean_stag_kpos = redo: rounds, the last all faces
 constexpr Real CLN_MEMUP = 1.0/6.0;  // clean_stag_gflux: a memory outflow above this
                                      // share of the donor's E_old goes upwind
 
@@ -225,8 +226,8 @@ constexpr int CLW_XW = 57;   //   exchange as linearised), the row's work W
 constexpr int CLW_NX = 58;   //   (allocated only with clean_xt_exact)
 constexpr int CLW_KS = 58;   // staggered clean_stag_kpos / kreal: the momentum increment's
                              //   applied share s (CleanOldVector, kreal; 1 without),
-constexpr int CLW_KW = 59;   //   E_old after the gas's give-back, before the explicit
-                             //   kinetic-energy work removal (CleanStagKPos)
+constexpr int CLW_KT = 59;   //   a donor's faces moved: 1 (redo: 2 the new ones; with
+                             //   ghosts; CleanStagKPos, CleanStagKRedo)
 constexpr int CLW_NKP = 60;  //   (allocated with clean_stag_kpos)
 
 //----------------------------------------------------------------------------------------
