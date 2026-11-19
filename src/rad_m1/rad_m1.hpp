@@ -672,6 +672,10 @@ class RadiationM1 {
   Real impl_pos_gas_frac = 1.0e-3;
   DvceArray1D<Real> pos_cnt_d;
   Real pos_cnt[10] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  // the E floor's created energy of discarded attempts (dt_retry, backward-Euler redo,
+  // helper solves; rank-local, CounterKeep::Restore), not in pos_cnt; all-rank total at
+  // the report
+  Real pos_un_drop = 0.0;
   // fixbundle-1009 F3 <rad_m1>/implicit_pos_floor_solve (default false = bitwise): the
   // T-solve / accept no longer raise the iterate to e_floor (EP = max(S2, e_floor) made
   // energy that implicit_pos_floor never saw, and the face fluxes rebuilt from the raised
@@ -3188,22 +3192,33 @@ class RadiationM1 {
   bool cln_gflux = false;       // clean_stag_gflux: rays' face flux as flux factors
   bool cln_rayratio = false;    // clean_stag_rayratio: the bracket of ray ratios x E
   bool cln_ringjmin = true;     // clean_ring_jmin: ring J ratios only of ray-held cells
-  // implicit_fb_local (read only when named; the old production's local positivity
-  // fallback, staggered): the cells within 2 of a pass's X <= 0 lose the off-diagonal
-  // Eddington terms D12 D13 D23 (cln_s, put back after the solve) and the velocity kick
-  // of the advective coefficients for the rest of the solve, at most
-  // implicit_fb_local_rounds (4) times per solve (CleanFbLocal)
-  bool cln_fbl = false;
   Real cln_prmax = -1.0;      // implicit_tol_rel_max named: clean_conv_max's default
   bool cln_linpass = false;   // implicit_lin_maxit named: a pass goes on past a failed solve
-  int cln_fbl_rounds = 4, cln_fbl_r = 0;
-  Real cln_fbl_nc = 0.0;
-  DvceArray4D<Real> cln_fbm;   // the mask (1 = fallback cell)
-  DvceArray5D<Real> cln_fbd;   // D12 D13 D23 of cln_s before the first round
-  bool CleanFbLocal();
-  void CleanFbRestore();
+  void CleanStagXDonor();
+  void CleanStagXCount(const int inl, const int nit);
+  void CleanStagXSweep();
   bool cln_srccvx = false;      // clean_source_convex: vet_scatter S between J and B
   bool cln_freal = false;       // clean_stag_freal: realisable sb, restart faces
+  // clean_stag_xdonor (staggered, default off): the cross flux of the iterate as a
+  // donor-cell coefficient of its face (CleanStagXDonor); its face slot, set in a solve
+  bool cln_xd = false, cln_xd_on = false, cln_xlag = false, cln_xsrc = false;
+  bool cln_xsw = false;
+  int cln_xqs = -1;   // (4 slots: qL >= 0, qR <= 0, the lagged explicit flux, C(E_k))
+  Real cln_xd_ncap = 0.0;
+  DvceArray5D<Real> cln_xdg;   // (diagnostic: -work, -r hcke E_k, sb, gres of the rows)
+  // clean_stag_kpos (staggered, default off): the explicit stage increment of hesdirk2
+  // limited to E_old >= th E_s, conservatively (CleanStagKPos); clean_stag_xpat
+  // (default off): the exchange's removal -r hcke E_k past its share of the row in Patankar form (CleanRightHandSide)
+  bool cln_kpos = false, cln_xpat = false;
+  bool cln_kpb = false;   // (kpos limited this stage: its closure print)
+  bool cln_kq_on = false;   // (kpos: the stage's q and pd set)
+  int cln_kqs = -1;   // (kpos: 2 face slots, the moved flux's qL >= 0, qR <= 0)
+  bool cln_xtnorm = false, cln_xtcons = false;   // (CleanFirstIterate, CleanSolve)
+  int cln_xte = 0;   // (clean_xt_exact: 0 off, 1 cons, 2 x2)
+  Real cln_kc1 = 0.0, cln_kc2 = 0.0;   // (the stage's c1, c2 of t2pf1, t2pf2)
+  DvceArray1D<Real> cln_kcnt;   // (xpat rows: the last pass; their sum)
+  void CleanStagKPos();
+  void CleanStagKEnd();
   int cln_fdg = -1;             // staggered bracket: face slot of its lagged flux DG
   bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
   bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces

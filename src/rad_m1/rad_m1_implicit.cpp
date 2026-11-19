@@ -11616,6 +11616,9 @@ void RadiationM1::ImplicitReport() {
     Real g[M1_POS_N];
     MPI_Allreduce(pos_cnt, g, M1_POS_N, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
     for (int q = 0; q < M1_POS_N; ++q) {pos_cnt[q] = g[q];}
+    Real gd = 0.0;
+    MPI_Allreduce(&pos_un_drop, &gd, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    pos_un_drop = gd;
 #endif
   }
   // the Picard iteration count is MPI_MAX-reduced every step (see ImplicitSolve), so
@@ -11834,6 +11837,7 @@ void RadiationM1::ImplicitReport() {
               << " | E floor raises cell-solves=" << pos_cnt[M1_POS_FLR]
               << " energy from gas=" << pos_cnt[M1_POS_FLR_DE]
               << " energy created=" << pos_cnt[M1_POS_FLR_UN] << " (code units x volume)"
+              << " [in discarded attempts, rolled back: " << pos_un_drop << "]"
               << " of which solve undershoot (pos_floor_solve)=" << pos_cnt[M1_POS_FLRS]
               << " taken from the column's radiation (implicit_pos_floor_cons)="
               << pos_cnt[M1_POS_FLR_MV]

@@ -90,6 +90,11 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.gf = cln_gflux;
   x.fre = cln_freal;
   x.fdg = cln_fdg;
+  x.xq = cln_xd_on ? cln_xqs : -1;
+  x.kq = cln_kq_on ? cln_kqs : -1;
+  x.pd = cln_kq_on || (cln_xpat && cln_w.o.extent_int(1) > CLW_PD - CLW_NS);
+  x.xlag = cln_xlag;
+  x.xsrc = cln_xsrc;
   x.drag = cln_vimp && cln_feedback;
   x.upw = cln_upw;
   x.sbi = cln_sbimp && cln_feedback;
@@ -843,10 +848,11 @@ void RadiationM1::CleanApply(const int src, const int dst) {
   const int ws = (src < cln_w.ns) ? src : src - cln_w.ns;
   CleanGhostFill(wa, ws, 1, true, ov ? 1 : 0);
   const std::function<void()> fin = [&]() {if (ov) CleanGhostFill(wa, ws, 1, true, 2);};
-  CleanStagCsLateral(src, cln_stst);
+  if (!cln_xd_on) CleanStagCsLateral(src, cln_stst);   // (xdonor: no cross terms)
   CleanArgs x = CleanMakeArgs(), xh = x;
   x.fwc = true;
   xh.hi = cln_split;   // (clean_stag_sbimp: the face momentum, not from CLF_QL)
+  xh.kq = -1;
   auto op = opac;
   if (cln_stst) {   // (clean_stag_stencil: from the rows of the pass)
     auto w = cln_w;
@@ -886,7 +892,8 @@ void RadiationM1::CleanApply(const int src, const int dst) {
   auto f = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
     const Real qr = x.feedback ? x.w(m,CLW_RY,k,j,i) : 1.0;   // (1 - r)
-    x.w(m,dst,k,j,i) = x.w(m,src,k,j,i)*(1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*qr)
+    x.w(m,dst,k,j,i) = x.w(m,src,k,j,i)*(1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*qr +
+                                         (x.pd ? x.w(m,CLW_PD,k,j,i) : 0.0))
                        + CleanFluxDivergence(x, src, m, k, j, i, false);
     // (clean_stag_sbimp: - (1 - r) sb(E), CleanRightHandSide)
     if (x.sbi) x.w(m,dst,k,j,i) -= qr*CleanStagBetaE(xh, src, m, k, j, i);
@@ -921,7 +928,7 @@ void RadiationM1::CleanPreconditionerSetup() {
       CleanFaceWeights(x, dir, m, k, j, i, fc(m,CLF_QL,k,j,i), fc(m,CLF_QL+1,k,j,i));
       const Real t0 = fc(m,CLF_TH,k,j,i);   // (clean_stag_vimp: theta_d, CleanFaceCross)
       const Real th = t0 + (x.drag ? fc(m,CLF_DB,k,j,i) : 0.0)*(1.0 - t0);
-      fc(m,CLF_QL+2,k,j,i) = -(1.0 - fc(m,CLF_W,k,j,i))*th*x.h*x.c*x.c;
+      fc(m,CLF_QL+2,k,j,i) = (x.xq >= 0) ? 0.0 : -(1.0 - fc(m,CLF_W,k,j,i))*th*x.h*x.c*x.c;
     });
   }
   x.fwc = true;
@@ -987,12 +994,13 @@ void RadiationM1::CleanPreconditionerSetup() {
     CleanFaceWeights(x, 0, m, k, j, i+1, al_p, ar_p);
     CleanFaceWeights(x, 0, m, k, j, i, al_m, ar_m);
     const Real qr = x.feedback ? x.w(m,CLW_RY,k,j,i) : 1.0;   // (1 - r)
-    Real a0 = 1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*qr + x.h*x.idx[0]*(al_p - ar_m);
+    const Real pd = x.pd ? x.w(m,CLW_PD,k,j,i) : 0.0;   // (kpos / xpat)
+    Real a0 = 1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*qr + pd + x.h*x.idx[0]*(al_p - ar_m);
     x.w(m,CLW_AM,k,j,i) = -x.h*x.idx[0]*al_m;
     x.w(m,CLW_AP,k,j,i) = x.h*x.idx[0]*ar_p;
     if (x.sph || x.cub) {   // (A_f/V weights, CleanDivW)
       const Real wp = CleanDivW(x, 0, m, k, j, i, 1), wm = CleanDivW(x, 0, m, k, j, i, 0);
-      a0 = 1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*qr + x.h*(wp*al_p - wm*ar_m);
+      a0 = 1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*qr + pd + x.h*(wp*al_p - wm*ar_m);
       x.w(m,CLW_AM,k,j,i) = -x.h*wm*al_m;
       x.w(m,CLW_AP,k,j,i) = x.h*wp*ar_p;
     }

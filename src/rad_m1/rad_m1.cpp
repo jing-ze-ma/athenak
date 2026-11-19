@@ -89,7 +89,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // the old production's keys an input names (its HG/RSG decks; read only when named):
     // implicit_maxit, implicit_lin_maxit and implicit_tol_rel_max are the defaults of
     // clean_maxnl, clean_maxit and clean_conv_max (a linear solve then runs to it, without the stall test, and a pass
-    // goes on from its iterate, CleanSolve); implicit_fb_local(_rounds), CleanFbLocal
+    // goes on from its iterate, CleanSolve)
     {int pm = 50, pl = 0;
     cln_prmax = -1.0;
     for (const InputBlock &ib : pin->block) {
@@ -100,8 +100,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         if (k == "implicit_maxit") pm = pin->GetInteger("rad_m1",k);
         if (k == "implicit_lin_maxit") pl = pin->GetInteger("rad_m1",k);
         if (k == "implicit_tol_rel_max") cln_prmax = pin->GetReal("rad_m1",k);
-        if (k == "implicit_fb_local") cln_fbl = pin->GetBoolean("rad_m1",k);
-        if (k == "implicit_fb_local_rounds") cln_fbl_rounds = pin->GetInteger("rad_m1",k);
       }
     }
     cln_maxnl = pin->GetOrAddInteger("rad_m1","clean_maxnl",pm);
@@ -327,6 +325,53 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // the comoving part of sb at most 2 |beta| hc kE E_k and the faces of a restart from
     // the old scheme's file at most c E of their donor
     cln_freal = stag("clean_stag_freal", cln_gflux && cln_fsolve);
+    // clean_stag_xdonor = off (default) | p1 | lag: the off-diagonal stress flux an
+    // M-matrix term (CleanStagXDonor); clean_stag_xsrc (default off): also the face
+    // sources past their explicit share; clean_stag_xsweep (default off): a monotone
+    // line-Jacobi sweep after each linear solve
+    if (!cln_cell) {
+      const std::string xd = pin->GetOrAddString("rad_m1","clean_stag_xdonor","off");
+      if (xd != "off" && xd != "p1" && xd != "lag") {
+        std::cout << "### FATAL ERROR <rad_m1>/clean_stag_xdonor = off | p1 | lag"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      cln_xd = (xd != "off");
+      cln_xlag = (xd == "lag");
+      cln_xsrc = cln_xd && stag("clean_stag_xsrc", false);
+      cln_xsw = cln_xd && stag("clean_stag_xsweep", false);
+      cln_kpos = stag("clean_stag_kpos", false);
+      cln_xpat = stag("clean_stag_xpat", false);
+      // clean_xt_cons (default off): the first iterate's gas T with A's G = 1 - beta^2/2,
+      // and after the first right-hand side T from the pass's gas row (its G and beta
+      // terms: one Newton update at X = E_k), so the first pass's A is the gas row's;
+      // clean_xt_norm (default off, study): the local exchange with E responding,
+      // e(T) + A T^4/(1 + hc kE) = eint + hc kE E/(1 + hc kE)
+      cln_xtcons = stag("clean_xt_cons", false);
+      // clean_xt_exact = off | cons | x2 (default off): the exchange's bookkeeping with one
+      // A' per cell and pass (CleanRightHandSide): cons, the first iterate's T from the
+      // pass's gas row (clean_xt_cons), the work the row and the gas's kinetic energy
+      // differ by to E whole (eint takes the heating only), the closure printed (CLEAN
+      // XT); x2 also every T root from the local 2x2 of the E and gas rows, E + e kept
+      {
+        const std::string xe = pin->DoesParameterExist("rad_m1", "clean_xt_exact") ?
+                               pin->GetString("rad_m1", "clean_xt_exact") : "off";
+        if (xe != "off" && xe != "cons" && xe != "x2") {
+          std::cout << "### FATAL ERROR <rad_m1>/clean_xt_exact = off | cons | x2"
+                    << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        cln_xte = (xe == "cons") ? 1 : ((xe == "x2") ? 2 : 0);
+        if (cln_xte > 0) cln_xtcons = true;
+        if (cln_xte == 2) cln_xtnorm = true;
+      }
+      if (cln_kpos && cln_xte == 2) {   // (x2's local 2x2 has no kpos gas term)
+        std::cout << "### FATAL ERROR <rad_m1>/clean_stag_kpos with clean_xt_exact = x2 "
+                  << "is not implemented" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      cln_xtnorm = stag("clean_xt_norm", false);
+    }
     // clean_stag_rayratio (default off): the bracket reads the rays only as ratios (their
     // face flux over the donor's ray J, the model flux of E), times the state's E
     cln_rayratio = !cln_cell && pin->GetOrAddBoolean("rad_m1","clean_stag_rayratio",false) &&

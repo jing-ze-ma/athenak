@@ -161,6 +161,9 @@ constexpr int CLF_DS = CLF_N + 7;   // clean_stag_fkin: d of the stage-loop star
 constexpr int CLF_DB = CLF_N + 8;   // clean_stag_vimp: drag share b = beta/(1 + beta) and
 constexpr int CLF_DQ = CLF_N + 9;   //   the face momentum Q = G - c^2 dm_f of the iterate
 constexpr int CLF_KD = CLF_N + 10;  // clean_stag_fkin: the slopes K1, K2 of d (2)
+constexpr Real CLN_KPOS_TH = 0.1;   // clean_stag_kpos: E_old at least this share of E_s
+constexpr int CLN_KPOS_RN = 12;     //   rounds at most, the inflow-free share from
+constexpr int CLN_KPOS_RF = 6;      //   round CLN_KPOS_RF
 constexpr Real CLN_MEMUP = 1.0/6.0;  // clean_stag_gflux: a memory outflow above this
                                      // share of the donor's E_old goes upwind
 
@@ -212,6 +215,14 @@ constexpr int CLW_SG = 50;   //   and the gas rows (their scales), the weighted 
 constexpr int CLW_BW = 51;   //   preconditioner input (CleanBiCGStab)
 constexpr int CLW_PW = 52;
 constexpr int CLW_N = 53;
+constexpr int CLW_KF = 53;   // staggered clean_stag_kpos: E of the old vector as formed,
+constexpr int CLW_KM = 54;   //   scratch (the new r of a round, the limited E_old),
+constexpr int CLW_PD = 55;   //   the limiter r (setup); clean_stag_xpat: the rows'
+                             //   Patankar diagonal
+constexpr int CLW_NK = 56;   //   (allocated only with clean_stag_kpos / xpat)
+constexpr int CLW_XA = 56;   // staggered clean_xt_exact: B less its rest (the row's
+constexpr int CLW_XW = 57;   //   exchange as linearised), the row's work W
+constexpr int CLW_NX = 58;   //   (allocated only with clean_xt_exact)
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanFvI
@@ -288,6 +299,14 @@ struct CleanArgs {
                                // (CLF_N) with its dissipation term (CLF_N + 1)
   bool hi;                     // staggered, clean_stag_split: the face momentum state
                                // F^H (w = 0), not the energy flux
+  int xq;                      // staggered, clean_stag_xdonor: face slots qL, qR of the
+                               // lagged fluxes' donor part, their explicit part, C(E_k)
+                               // (-1: the central cross flux)
+  bool pd;                     // staggered, kpos / xpat: the rows' diagonal CLW_PD
+  int kq;                      // staggered, clean_stag_kpos: face slots qL, qR of the
+                               // moved increment flux (-1: none; the E rows only)
+  bool xlag, xsrc;             //   lag: explicit up to the donor's share; xsrc: the
+                               //   face sources too
   bool mcl;                    // staggered: a face's momentum term at most the force of
                                // a realisable flux, h chi_f E (the iterate's,
                                // CleanMomentumChange)
@@ -945,6 +964,30 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
       ar -= o*phi*sr;
     }
   }
+  // (clean_stag_xdonor: the cross flux q E_donor, CleanStagXDonor; keeps al >= 0 >= ar)
+  if (x.xq >= 0 && !x.hi) {   // (the energy flux; F^H keeps the central form)
+    al += x.fc[dir](m,x.xq,k,j,i);
+    ar += x.fc[dir](m,x.xq+1,k,j,i);
+  }
+  // (clean_stag_kpos: the increment's moved flux q E_donor, CleanStagKPos; the E rows
+  // and the write-back's energy only: the momentum's args carry kq = -1)
+  if (x.kq >= 0) {
+    al += x.fc[dir](m,x.kq,k,j,i);
+    ar += x.fc[dir](m,x.kq+1,k,j,i);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanKposFlux
+//! \brief clean_stag_kpos: the moved increment flux q E_donor of face (k,j,i) normal to
+//! dir in work vector e (0 without kpos); the stored Phi and the slopes leave it out
+
+KOKKOS_INLINE_FUNCTION
+Real CleanKposFlux(const CleanArgs &x, const int e, const int dir, const int m,
+                   const int k, const int j, const int i) {
+  if (x.kq < 0) return 0.0;
+  const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
+  return x.fc[dir](m,x.kq,k,j,i)*x.w(m,e,kl,jl,il) + x.fc[dir](m,x.kq+1,k,j,i)*x.w(m,e,k,j,i);
 }
 
 //----------------------------------------------------------------------------------------
@@ -1094,7 +1137,9 @@ Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m
 KOKKOS_INLINE_FUNCTION
 Real CleanFaceCross(const CleanArgs &x, const int e, const int dir, const int m,
                     const int k, const int j, const int i) {
-  if (!x.multi_d || CleanBoundaryFace(x, dir, m, k, j, i)) return 0.0;
+  if (!x.multi_d || (x.xq >= 0 && !x.hi) || CleanBoundaryFace(x, dir, m, k, j, i)) {
+    return 0.0;
+  }
   const Real w = x.hi ? 0.0 : x.fc[dir](m,CLF_W,k,j,i);
   const Real t0 = x.fc[dir](m,CLF_TH,k,j,i);   // (clean_stag_vimp: theta_d, as
   const Real qd = x.drag ? x.fc[dir](m,CLF_DB,k,j,i) : 0.0;   //  CleanFaceWeights)
@@ -1175,6 +1220,8 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
     return (x.marshak ? -x.c*x.marshak_q*x.ebath[2*dir+1] : -0.25*x.c*x.ebath[2*dir+1]) +
            ab*x.ebath[2*dir+1];
   }
+  // (clean_stag_xdonor: the explicit share of the lagged fluxes of the pass, CleanStagXSplit)
+  if (x.xq >= 0 && !x.hi) return x.fc[dir](m,x.xq+2,k,j,i);
   const Real w = x.hi ? 0.0 : x.fc[dir](m,CLF_W,k,j,i);
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
   const Real th = (1.0 - w)*x.fc[dir](m,CLF_TH,k,j,i);
@@ -1208,6 +1255,73 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
     }
   }
   return s;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanStagXSplit
+//! \brief clean_stag_xdonor: the lagged fluxes of face (k,j,i) normal to dir for the pass,
+//! the cross flux C(E_k) (CleanStagXDonor, slot xq + 3) and the face source S (xr: as it
+//! is), into a donor-cell part and an explicit part:
+//!   p1:  C donor-implicit; with xsrc S as lag below, else S explicit;
+//!   lag: L = C (+ S with xsrc) explicit up to its share s of the donor, where its
+//!        outflow over the stage h (A/V) |L| exceeds CLN_MEMUP E_old,donor (>= 0): the
+//!        explicit part s L, s = CLN_MEMUP E_old/outflow (continuous), the rest donor.
+//! A donor part l enters as q E_donor, q = |l|/E_k,donor at most c (slots xq: qL >= 0
+//! of E_L, xq + 1: qR <= 0 of E_R), the explicit part in slot xq + 2
+//! (CleanFaceSource).  So the right-hand side keeps E_old - sum of the explicit
+//! outflows >= 0 and the operator its M-matrix; at the fixed point the face carries
+//! C + S wherever q < c.
+
+KOKKOS_INLINE_FUNCTION
+void CleanStagXSplit(const CleanArgs &x, const CleanArgs &xr, const int dir, const int m,
+                     const int k, const int j, const int i) {
+  const auto &f = x.fc[dir];
+  const Real sr = CleanFaceSource(xr, dir, m, k, j, i);
+  Real ql = 0.0, qr = 0.0, ex = 0.0;
+  if (CleanBoundaryFace(x, dir, m, k, j, i)) {
+    ex = sr;
+  } else {
+    const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
+    // (the explicit share s of a lagged flux l: its outflow over the stage at most
+    // CLN_MEMUP of the donor's E_old)
+    auto share = [&](const Real l) {
+      if (l == 0.0) return 1.0;
+      const bool up = (l > 0.0);
+      const Real eo = fmax(up ? x.w(m,CLW_EO,kl,jl,il) : x.w(m,CLW_EO,k,j,i), 0.0);
+      const Real out = x.h*fabs(l)*(up ? CleanDivW(x, dir, m, kl, jl, il, 1) :
+                                         CleanDivW(x, dir, m, k, j, i, 0));
+      return (out > CLN_MEMUP*eo) ? CLN_MEMUP*eo/out : 1.0;
+    };
+    // (a donor part li: q = |li|/E_donor at most c; the cross flux of E_k over E_k (at the
+    // fixed point exactly C), a face source, E-independent, over E_old as CleanStagMemUp
+    // (the donor-cell form in time, one linear map for the step))
+    auto put = [&](const Real li, const bool src) {
+      if (li == 0.0) return;
+      const bool up = (li > 0.0);
+      const int e = src ? CLW_EO : CLW_EK;
+      const Real ed = up ? x.w(m,e,kl,jl,il) : x.w(m,e,k,j,i);
+      const Real q = (fabs(li) < x.c*ed) ? fabs(li)/ed : x.c;
+      if (up) ql += q;
+      if (!up) qr -= q;
+    };
+    const Real cf = f(m,x.xq+3,k,j,i);
+    const Real sx = x.xsrc ? sr : 0.0;   // (the face source in the split)
+    if (!x.xsrc) ex += sr;
+    if (x.xlag) {
+      const Real s = share(cf + sx);
+      ex += s*(cf + sx);
+      put((1.0 - s)*cf, false);
+      put((1.0 - s)*sx, true);
+    } else {
+      put(cf, false);
+      const Real s = share(sx);
+      ex += s*sx;
+      put((1.0 - s)*sx, true);
+    }
+  }
+  f(m,x.xq,k,j,i) = ql;
+  f(m,x.xq+1,k,j,i) = qr;
+  f(m,x.xq+2,k,j,i) = ex;
 }
 
 //----------------------------------------------------------------------------------------
@@ -1421,7 +1535,7 @@ void CleanStencilRow(const CleanArgs &x, const int m, const int k, const int j,
                      const int i, Real (&c)[CLN_ST]) {
   for (int s = 0; s < CLN_ST; ++s) c[s] = 0.0;
   const Real qr = x.feedback ? x.w(m,CLW_RY,k,j,i) : 1.0;   // (1 - r)
-  c[0] = 1.0 + x.h*x.c*x.op(m,M1_OP_E,k,j,i)*qr;
+  c[0] = 1.0 + x.h*x.c*x.op(m,M1_OP_E,k,j,i)*qr + (x.pd ? x.w(m,CLW_PD,k,j,i) : 0.0);
   CleanStFace<0, 0>(x, m, k, j, i, c);
   CleanStFace<0, 1>(x, m, k, j, i, c);
   if (x.multi_d) {
