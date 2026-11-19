@@ -762,7 +762,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       ++nsolve;
       cln_nsolve += 1.0;
       cln_nit += std::abs(nit);
-      if (!iterate || nit < 0) break;
+      // (clean_lin_continue: a linear solve that breaks down or reaches clean_maxit
+      // leaves its iterate X, and the next pass continues from it)
+      if (!iterate || (nit < 0 && !(cln_lincont && inl + 1 < maxnl))) break;
       const Real de = cell ? CleanCellNewtonUpdate() : CleanNewtonUpdate();
       if (lagged && inl < cln_maxpic) dpic = de;
       Real dv = 0.0;
@@ -776,13 +778,13 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         const Real q = d/d0;
         return (q < 0.5) ? q/(1.0 - q)*d : d;
       };
-      if (cln_conv_est && inl > 0 && est(de, de0) < tol_nl && est(dv, dv0) < tol_nl &&
-          !(clos1 && inl == 0) && !loose) {
+      if (cln_conv_est && nit >= 0 && inl > 0 && est(de, de0) < tol_nl &&
+          est(dv, dv0) < tol_nl && !(clos1 && inl == 0) && !loose) {
         converged = true;
         break;
       }
-      if (settled(de, de0, cln_fe) && settled(dv, dv0, cln_fv) && !(clos1 && inl == 0) &&
-          !loose) {
+      if (nit >= 0 && settled(de, de0, cln_fe) && settled(dv, dv0, cln_fv) &&
+          !(clos1 && inl == 0) && !loose) {
         converged = true;
         break;
       }

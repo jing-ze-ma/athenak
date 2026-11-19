@@ -222,6 +222,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_rst_k1")) {
       cln_rstk1 = pin->GetInteger("rad_m1","clean_rst_k1");
     }
+    // clean_lin_continue (read only when named, default false): a failed linear solve
+    // does not end the nonlinear iteration; the next pass starts from its iterate
+    if (pin->DoesParameterExist("rad_m1","clean_lin_continue")) {
+      cln_lincont = pin->GetBoolean("rad_m1","clean_lin_continue");
+    }
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",false);
     cln_posghost = pin->GetOrAddBoolean("rad_m1","clean_pos_ghost",false);
     {std::string cl = pin->GetOrAddString("rad_m1","clean_closure",
