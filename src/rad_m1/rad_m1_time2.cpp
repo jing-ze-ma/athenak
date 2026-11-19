@@ -636,6 +636,16 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_face_fct_rounds")) {
     t2_ffct_rk = pin->GetInteger("rad_m1", "time2_face_fct_rounds");
   }
+  if (pin->DoesParameterExist("rad_m1", "time2_face_fct_form")) {
+    const std::string ff = pin->GetString("rad_m1", "time2_face_fct_form");
+    if (ff != "zalesak" && ff != "donor") {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_face_fct_form = zalesak | donor, not "
+                << ff << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    t2_ffct_dnr = (ff == "donor");
+  }
   if (pin->DoesParameterExist("rad_m1", "time2_k1_redist_r")) {
     t2_k1rd_r = pin->GetInteger("rad_m1", "time2_k1_redist_r");
   }
@@ -1945,7 +1955,41 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
   int *const zp = zac ? zl_chg.data() : nullptr;
   int *const zc = zac ? zp + 3*zS : nullptr;
   int zn = 0, zq = 0;   // the entries of the read list, and which list it is
-  for (int r = 0; r < 4096; ++r) {   // until no cell is newly limited
+  if (t2_ffct_dnr) {   // (time2_face_fct_form = donor: safe flags in cb, then R in ca)
+    par_for("m1_t2_ffct_ds", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real w, po, pi, pl, dw;
+      bool lim;
+      cell(m, k, j, i, w, po, pi, pl, dw, lim, ca);
+      const Real wf = eth*cvol(m,k,j,i)*un_(m,M1_E,k,j,i);
+      const bool safe = (hoi && hm_(m,k,j,i) > 0.0) || !(po > 0.0) || (w - pi > wf);
+      iw_(m,cb,k,j,i) = safe ? 1.0 : 0.0;
+    });
+    ImplicitKrylovHalo(cb);
+    Real nv = 0.0;
+    par_reduce_flat("m1_t2_ffct_dr", 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
+      if (iw_(m,cb,k,j,i) > 0.0) return;
+      Real w, po, pi, pl, dw;
+      bool lim;
+      cell(m, k, j, i, w, po, pi, pl, dw, lim, cb);   // (pl: the safe donors' inflow)
+      const Real q = w + po - pi + pl - eth*cvol(m,k,j,i)*un_(m,M1_E,k,j,i);
+      const Real rq = (q > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/po) : 0.0;
+      if (rq < 1.0) {
+        iw_(m,ca,k,j,i) = rq;
+        a += 1.0;
+      }
+    }, Kokkos::Sum<Real>(nv));
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &nv, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (nv > 0.0) {
+      ImplicitKrylovHalo(ca);
+      ncell = nv;
+      nround = 1;
+    }
+  }
+  for (int r = 0; r < (t2_ffct_dnr ? 0 : 4096); ++r) {   // until no cell is newly limited
     Real nv[2] = {0.0, 0.0};
     Real nl[2] = {0.0, 0.0};
     for (int s = 0; s < (zlr > 0 ? zlr : 1); ++s) {
