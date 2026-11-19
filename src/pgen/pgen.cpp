@@ -1335,6 +1335,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     offset_myrank += data_size_ * pm->gids_eachrank[global_variable::my_rank];
   }
   IOWrapperSizeT myoffset = offset_myrank;
+  const IOWrapperSizeT rec_end = offset_myrank + data_size;   // (of MeshBlock 0)
 
   HostArray5D<Real> ccin("rst-cc-in", 1, 1, 1, 1, 1);
   HostFaceFld4D<Real> fcin("rst-fc-in", 1, 1, 1, 1);
@@ -2017,7 +2018,36 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     // fills wtin with the next per-MeshBlock slab and advances the offsets; the caller
     // copies it where it belongs, which is a 4D array for wtemp and one channel of the
     // 5D wder for the derived cache
+    // independent I/O: a MeshBlock's tail slabs are contiguous in its record, so they
+    // are read ahead, up to 2 GB per rank at a time, with one read per MeshBlock
+    HostArray5D<Real> rab("rst-tail-ahead", 1, 1, 1, 1, 1);
+    const IOWrapperSizeT slab = nout1*nout2*nout3*sizeof(Real);
+    IOWrapperSizeT rab0 = 0, rab1 = 0;   // the file range (of MeshBlock 0) rab holds
     auto read_slab = [&](const char *what) {
+      if (!IOWrapper::collective) {
+        if (offset_myrank < rab0 || offset_myrank >= rab1) {
+          const IOWrapperSizeT k = std::max<IOWrapperSizeT>(1, std::min<IOWrapperSizeT>(
+              (rec_end - offset_myrank)/slab, (IOWrapperSizeT{1} << 31)/(nmb*slab)));
+          if (rab.extent(1) < k) Kokkos::realloc(rab, nmb, k, nout3, nout2, nout1);
+          for (int m=0; m<nmb; ++m) {
+            if (resfile.Read_Reals_at(&rab(m,0,0,0,0), k*slab/sizeof(Real),
+                offset_myrank + m*data_size, single_file_per_rank) != k*slab/sizeof(Real)) {
+              std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                        << std::endl << what << " cache not read correctly from rst "
+                        << "file, restart file is broken." << std::endl;
+              exit(EXIT_FAILURE);
+            }
+          }
+          rab0 = offset_myrank;
+          rab1 = offset_myrank + k*slab;
+        }
+        const int q = static_cast<int>((offset_myrank - rab0)/slab);
+        Kokkos::deep_copy(wtin, Kokkos::subview(rab, Kokkos::ALL, q, Kokkos::ALL,
+                                                Kokkos::ALL, Kokkos::ALL));
+        offset_myrank += slab;
+        myoffset = offset_myrank;
+        return;
+      }
       for (int m=0;  m<noutmbs_max; ++m) {
         if (m < noutmbs_min) {
           auto mbptr = Kokkos::subview(wtin, m, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL);
