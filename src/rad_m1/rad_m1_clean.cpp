@@ -1003,6 +1003,8 @@ void RadiationM1::CleanFirstIterate() {
   auto op = opac;
   auto w = cln_w;
 
+  const bool cons = cln_xtcons && cln_cell;
+  CleanArgs x = CleanMakeArgs();
   DvceArray5D<Real> kp;
   const bool pred = CleanPredictSlope(kp);
   const Real h = dt_sub;
@@ -1014,9 +1016,29 @@ void RadiationM1::CleanFirstIterate() {
     w(m,CLW_RR,k,j,i) = 0.0;
     for (int n = 0; n < 3; ++n) w(m,CLW_DM+n,k,j,i) = 0.0;
     if (feedback) {
+      // (clean_xt_cons: the exchange of the right-hand side, the emission factor G = 1 -
+      // beta^2/2 and the beta terms RE E + RY.y of the old gas velocity (no momentum
+      // change yet), a = v + D v of that velocity)
+      Real gm = 1.0, sb = 0.0;
+      if (cons) {
+        const Real d = uh(m,IDN,k,j,i), hcke = hc*op(m,M1_OP_E,k,j,i);
+        Real v[3], a[3], bt[3];
+        CleanGasMomentum(x, uh, m, k, j, i, v);
+        for (int n = 0; n < 3; ++n) v[n] /= d;
+        CleanAdvect(x, m, k, j, i, v, a);
+        Real b2 = 0.0, ba = 0.0;
+        for (int n = 0; n < 3; ++n) {
+          bt[n] = v[n]/x.c;
+          b2 += SQR(bt[n]);
+          ba += bt[n]*a[n]/x.c;
+        }
+        gm = 1.0 - 0.5*b2;
+        sb = hcke*(0.5*b2 - ba)*e;
+        for (int n = 0; n < x.nf; ++n) sb += 2.0*hcke*bt[n]*x.u(m,CLC_O+1+n,k,j,i);
+      }
       w(m,CLW_T,k,j,i) = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
-                             hc*op(m,M1_OP_P,k,j,i)*arad_,
-                             w(m,CLW_EI,k,j,i) + hc*op(m,M1_OP_E,k,j,i)*e,
+                             hc*op(m,M1_OP_P,k,j,i)*gm*arad_,
+                             w(m,CLW_EI,k,j,i) + hc*op(m,M1_OP_E,k,j,i)*e - sb,
                              w(m,CLW_T,k,j,i));
     }
   });

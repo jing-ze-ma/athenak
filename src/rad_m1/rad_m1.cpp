@@ -211,6 +211,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_maxpic = pin->GetOrAddInteger("rad_m1","clean_maxpic",12);
     cln_poslim = pin->GetOrAddBoolean("rad_m1","clean_pos_limit",true);
     cln_diagcells = pin->GetOrAddBoolean("rad_m1","clean_diag_cells",false);
+    // clean_xt_cons (read only when named, default false): the first iterate's exchange
+    // with the emission factor G and the beta terms of the right-hand side
+    if (pin->DoesParameterExist("rad_m1","clean_xt_cons")) {
+      cln_xtcons = pin->GetBoolean("rad_m1","clean_xt_cons");
+    }
     cln_posbdry = pin->GetOrAddBoolean("rad_m1","clean_pos_boundary",false);
     cln_posghost = pin->GetOrAddBoolean("rad_m1","clean_pos_ghost",false);
     {std::string cl = pin->GetOrAddString("rad_m1","clean_closure",
