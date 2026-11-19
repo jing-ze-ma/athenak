@@ -1342,8 +1342,11 @@ void CleanStagXSplit(const CleanArgs &x, const CleanArgs &xr, const int dir, con
       if (l == 0.0) return 1.0;
       const bool up = (l > 0.0);
       const Real eo = fmax(up ? x.w(m,CLW_EO,kl,jl,il) : x.w(m,CLW_EO,k,j,i), 0.0);
-      const Real out = x.h*fabs(l)*(up ? CleanDivW(x, dir, m, kl, jl, il, 1) :
-                                         CleanDivW(x, dir, m, k, j, i, 0));
+      // (cubed sphere: A_f over the owner's V, so a seam face takes one share on both
+      // sides; the ghost's own V is this panel's extension, not the neighbour's cell)
+      const Real out = x.h*fabs(l)*(!x.cub ? (up ? CleanDivW(x, dir, m, kl, jl, il, 1) :
+                                                   CleanDivW(x, dir, m, k, j, i, 0)) :
+                     x.area[dir](m,k,j,i)/(up ? x.g(m,CLG_F+3,kl,jl,il) : x.g(m,CLG_F+3,k,j,i)));
       return (out > CLN_MEMUP*eo) ? CLN_MEMUP*eo/out : 1.0;
     };
     // (a donor part li: q = |li|/E_donor at most c; the cross flux of E_k over E_k (at the
