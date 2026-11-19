@@ -1602,7 +1602,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   // pieces of at most 2 GB); same bytes as the slab by slab loop
   using PackFn = std::function<void(DvceArray5D<Real> &, int, int)>;
   auto write_group = [&](const auto &a, const int n, const char *what,
-                         const PackFn &pk = {}) {
+                         const PackFn &pk = PackFn()) {
     if (n <= 0) return;
     if (IOWrapper::collective) {
       for (int c=0; c<n; ++c) {
