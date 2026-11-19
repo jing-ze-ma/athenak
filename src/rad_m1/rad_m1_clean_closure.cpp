@@ -3402,14 +3402,20 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   if (gl && pk) {
   } else if (gl) {
     const int ng = indcs.ng;
-    const int nc = std::min(n, cln_hmax), nt = std::max(ke - ks + 1, je - js + 1);
+    // (the cubed sphere: chunks of a quarter of clean_halo_vars, the chunk array made for
+    // this call only, the largest scratch of a build there)
+    const int nc = std::min(n, six ? std::max(cln_hmax/4, 1) : cln_hmax);
+    const int nt = std::max(ke - ks + 1, je - js + 1);
     // (persistent scratch: no cudaMalloc / cudaFree per build; gl's unwritten rows stay
     // the zeros of its allocation, ch is written before it is read)
     cln_gdgl = ScratchView<DvceArray5D<Real>>("cln_gd_gl", nmb1 + 1, n, six ? 6 : 2, nt,
                                               std::max(cs.extent_int(4), je - js + 1));
     gi.gl = cln_gdgl;
-    auto ch = ScratchView<DvceArray5D<Real>>("cln_gd_ch", nmb1 + 1, nc, cs.extent_int(2),
-                                             cs.extent_int(3), cs.extent_int(4));
+    auto ch = six ? DvceArray5D<Real>("cln_gd_ch", nmb1 + 1, nc, cs.extent_int(2),
+                                      cs.extent_int(3), cs.extent_int(4))
+                  : ScratchView<DvceArray5D<Real>>("cln_gd_ch", nmb1 + 1, nc,
+                                                   cs.extent_int(2), cs.extent_int(3),
+                                                   cs.extent_int(4));
     auto gg = gi.gl;
     for (int d0 = 0; d0 < n; d0 += nc) {
       const int nd = std::min(nc, n - d0);

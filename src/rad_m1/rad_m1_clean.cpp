@@ -315,7 +315,10 @@ void RadiationM1::CleanInit() {
   Kokkos::realloc(cln_w.s, nmb, CLW_NS, n3, n2, n1);
   const int nwo = cln_cell ? CLW_NC : (cln_kpos ? CLW_NKP : (cln_xte > 0) ? CLW_NX :
                   ((cln_kpos || cln_xpat) ? CLW_NK : CLW_N));
-  Kokkos::realloc(cln_w.o, nmb, nwo - CLW_NS, n3, n2, n1);
+  // (mem_arena, staggered: made at the first solve, over the intensities, CleanWoBind)
+  cln_wo_nc = nwo - CLW_NS;
+  cln_w.o = DvceArray5D<Real>();
+  if (cln_cell || !marena_on) Kokkos::realloc(cln_w.o, nmb, cln_wo_nc, n3, n2, n1);
   cln_w.ns = CLW_NS;
   // the cubed sphere takes the half ranges about the face normals from the FV rays
   cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
@@ -993,6 +996,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     CleanClosure();
   }
   if (cln_ring == 2) CleanRingSolveSet();
+  CleanWoBind();
   CleanOldVector();
   CleanStagKPos();   // (clean_stag_kpos: the increment in Patankar form)
   if (cell) {
