@@ -919,7 +919,10 @@ void RadiationM1::CleanApply(const int src, const int dst) {
   const int ws = (src < cln_w.ns) ? src : src - cln_w.ns;
   CleanGhostFill(wa, ws, 1, true, ov ? 1 : 0);
   const std::function<void()> fin = [&]() {if (ov) CleanGhostFill(wa, ws, 1, true, 2);};
-  if (!cln_xd_on) CleanStagCsLateral(src, cln_stst);   // (xdonor: no cross terms)
+  // (the cubed sphere's lateral sums Y of src: their exchange overlaps the inner faces'
+  // cross terms, cln_xf)
+  const bool yov = cln_stst && pmy_pack->pmesh->use_cubed_sphere && !cln_cell && !cln_xd_on;
+  if (!cln_xd_on) CleanStagCsLateral(src, cln_stst, yov ? 1 : 0);   // (xdonor: none)
   CleanArgs x = CleanMakeArgs(), xh = x;
   x.fwc = true;
   xh.hi = cln_split;   // (clean_stag_sbimp: the face momentum, not from CLF_QL)
@@ -939,12 +942,24 @@ void RadiationM1::CleanApply(const int src, const int dst) {
       xf = ScratchView<DvceArray5D<Real>>("cln_xf", pmy_pack->nmb_thispack, 3,
                                           w.s.extent_int(2), w.s.extent_int(3),
                                           w.s.extent_int(4));
-      for (int d = 0; d < x.nf; ++d) {
-        CleanFor("cln_xf", pmy_pack->nmb_thispack - 1, ks, ke+(d == 2), js, je+(d == 1),
-                 is, ie+(d == 0), KOKKOS_LAMBDA(const int m, const int k, const int j,
-                                                const int i) {
-          xf(m,d,k,j,i) = CleanFaceCross(*px, src, d, m, k, j, i);
-        });
+      // (pass 0: the faces between two active cells; pass 1, after the exchange: the
+      // two end planes of each direction)
+      for (int ps = 0; ps < 2; ++ps) {
+        if (ps == 1 && yov) CleanGhostFill(cln_w, CLW_L, 9, 2, 1);
+        for (int d = 0; d < x.nf; ++d) {
+          const int dk = (d == 2), dj = (d == 1), di = (d == 0);
+          const int ne[3] = {ie - is + 1, je - js + 1, ke - ks + 1};
+          for (int pl = 0; pl < (ps ? 2 : 1); ++pl) {
+            const int o = pl*ne[d];   // (ps 1: the low and the high plane)
+            CleanFor("cln_xf", pmy_pack->nmb_thispack - 1,
+                     ps ? ks + o*dk : ks + dk, ps ? (dk ? ks + o : ke) : ke,
+                     ps ? js + o*dj : js + dj, ps ? (dj ? js + o : je) : je,
+                     ps ? is + o*di : is + di, ps ? (di ? is + o : ie) : ie,
+            KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+              xf(m,d,k,j,i) = CleanFaceCross(*px, src, d, m, k, j, i);
+            });
+          }
+        }
       }
     }
     auto f = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {

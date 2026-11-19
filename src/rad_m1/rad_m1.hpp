@@ -3092,7 +3092,7 @@ class RadiationM1 {
   void CleanStagFaceTie(const int e, const int kd, const bool pt = false);
   Real CleanStagFSweepChange();
   void CleanStagFSchur();
-  void CleanStagCsLateral(const int e, const bool st = false);
+  void CleanStagCsLateral(const int e, const bool st = false, const int part = 0);
   void CleanWriteBack();
   CleanArgs CleanMakeArgs();
   const void *CleanDevCopy(const void *p, const size_t n, const int s);

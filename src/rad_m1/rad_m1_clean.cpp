@@ -4204,7 +4204,7 @@ void RadiationM1::CleanStagFCsShared() {
 //! other than the face's (CleanFaceStress), exact for a uniform P.  The owner computes Y
 //! and the ghosts take it, so that a seam face sees the neighbour's true geometry.
 
-void RadiationM1::CleanStagCsLateral(const int e, const bool st) {
+void RadiationM1::CleanStagCsLateral(const int e, const bool st, const int part) {
   if (!pmy_pack->pmesh->use_cubed_sphere || cln_cell) return;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   CleanArgs x = CleanMakeArgs();
@@ -4229,7 +4229,8 @@ void RadiationM1::CleanStagCsLateral(const int e, const bool st) {
         }
       }
     });
-    CleanGhostFill(cln_w, CLW_L, 9, 0, 1);   // (read by the faces' own cells: depth 1)
+    // (read by the faces' own cells: depth 1; part 1: CleanApply finishes it)
+    CleanGhostFill(cln_w, CLW_L, 9, part, 1);
     return;
   }
   par_for("cln_cslat", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, indcs.ks, indcs.ke,
