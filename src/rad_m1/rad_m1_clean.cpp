@@ -2411,15 +2411,6 @@ void RadiationM1::CleanStagXCount(const int inl, const int nit) {
        Kokkos::Sum<Real>(tw), Kokkos::Sum<Real>(te), Kokkos::Sum<Real>(ts),
        Kokkos::Sum<Real>(tg));
   }
-  tw = CleanReduce(tw, false);
-  te = CleanReduce(te, false);
-  ts = CleanReduce(ts, false);
-  tg = CleanReduce(tg, false);
-  nn = CleanReduce(nn, false);
-  nb = CleanReduce(nb, false);
-  nbx = CleanReduce(nbx, false);
-  neo = CleanReduce(neo, false);
-  nsd = CleanReduce(nsd, false);
   // (faces: with a donor part, at the cap c; the directions' faces in one range)
   Real nd = 0.0, ncp = 0.0;
   if (cln_xd_on) {
@@ -2440,8 +2431,13 @@ void RadiationM1::CleanStagXCount(const int inl, const int nit) {
       }
     }, Kokkos::Sum<Real>(nd), Kokkos::Sum<Real>(ncp));
   }
-  cln_xd_ncap = CleanReduce(ncp, false);
-  nd = CleanReduce(nd, false);
+  // (the counts in one reduction over the ranks: whole numbers, exact in any order)
+  Real cn[11] = {tw, te, ts, tg, nn, nb, nbx, neo, nsd, ncp, nd};
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, cn, 11, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  tw = cn[0]; te = cn[1]; ts = cn[2]; tg = cn[3]; nn = cn[4]; nb = cn[5]; nbx = cn[6];
+  neo = cn[7]; nsd = cn[8]; cln_xd_ncap = cn[9]; nd = cn[10];
   xmin = -CleanReduce(-xmin, true);
   if (global_variable::my_rank == 0 && (nn > 0.0 || nd > 0.0)) {
     std::printf("CLEAN XDONOR cycle %d t2s %d pass %d xle0 %.0f minX/Eo %.3e donor %.0f "
@@ -2906,8 +2902,11 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
     se = fmax(se, w(m,CLW_SE,k,j,i));
     sg = fmax(sg, w(m,CLW_SG,k,j,i));
   }, Kokkos::Max<Real>(smax[0]), Kokkos::Max<Real>(smax[1]));
-  const Real fse = 1.0e-12*CleanReduce(smax[0], true);
-  const Real fsg = fmax(1.0e-12*CleanReduce(smax[1], true), 1.0e-300);
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, smax, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+#endif
+  const Real fse = 1.0e-12*smax[0];
+  const Real fsg = fmax(1.0e-12*smax[1], 1.0e-300);
   CleanFor("cln_sfloor", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     w(m,CLW_SE,k,j,i) = fmax(w(m,CLW_SE,k,j,i), fmax(fse, 1.0e-300));
@@ -3036,9 +3035,13 @@ Real RadiationM1::CleanNewtonUpdate() {
         fmax(fabs(e), 1.0e-300));
   }, Kokkos::Max<Real>(change), Kokkos::Max<Real>(femax), Kokkos::Max<Real>(ermax),
      Kokkos::Max<Real>(xcl));
-  CleanReduceMax(change, femax, ermax);   // (one reduction over the ranks)
+  // (one reduction over the ranks)
+  Real mx[4] = {change, femax, ermax, xcl};
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, mx, xte ? 4 : 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+#endif
+  change = mx[0]; femax = mx[1]; ermax = mx[2]; xcl = mx[3];
   if (xte) {
-    xcl = CleanReduce(xcl, true);
     if (global_variable::my_rank == 0) {
       std::printf("CLEAN XT cycle %d t2s %d pass closure %.3e\n", pmy_pack->pmesh->ncycle,
                   t2_solve, xcl);
