@@ -3212,11 +3212,12 @@ class RadiationM1 {
   void CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg, const int part);
   template <typename T>
   void CleanGhostPhys(DvceArray5D<T> a, const int c0, const int nc);
-  void CleanGhostDefer(DvceArray5D<Real> a, const int c0, const int nc);
+  void CleanGhostDefer(DvceArray5D<Real> a, const int c0, const int nc,
+                       const int dep = 0);
   void CleanGhostFill(const CleanW &a, const int c0, const int nc,   // (in one array)
                       const int part = 0, const int dep = 0,
                       const std::array<uint32_t, 4> fm = {~0u, ~0u, ~0u, ~0u});
-  void CleanGhostDefer(const CleanW &a, const int c0, const int nc);
+  void CleanGhostDefer(const CleanW &a, const int c0, const int nc, const int dep = 0);
   void CleanGhostFlush();
   std::array<Real, 2> CleanDots(CleanW w, const int nc, const int n,
                                 const std::array<int, 4> ab);

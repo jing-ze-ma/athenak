@@ -230,11 +230,12 @@ void RadiationM1::CleanGhostFill(DvceArray5D<float> a, const int c0, const int n
   CleanGhostFillT(a, c0, nc, true, 0);
 }
 
-void RadiationM1::CleanGhostDefer(DvceArray5D<Real> a, const int c0, const int nc) {
+void RadiationM1::CleanGhostDefer(DvceArray5D<Real> a, const int c0, const int nc,
+                                  const int dep) {
   int np = nc;
   for (auto &s : cln_hpend) np += s.nc;
   if (np > cln_hmax) CleanGhostFlush();
-  cln_hpend.push_back({a, c0, nc, true});
+  cln_hpend.push_back({a, c0, nc, true, dep});
   if (!cln_hdl.poison) return;
   // (CLEAN_POISON_GHOST: the ghosts are poison until the exchange that takes them, so that
   // a kernel reading them in between, before the flush, reads the poison, not old values)
@@ -260,8 +261,9 @@ void RadiationM1::CleanGhostFill(const CleanW &a, const int c0, const int nc,
                   dep, fm);
 }
 
-void RadiationM1::CleanGhostDefer(const CleanW &a, const int c0, const int nc) {
-  CleanGhostDefer((c0 < a.ns) ? a.s : a.o, (c0 < a.ns) ? c0 : c0 - a.ns, nc);
+void RadiationM1::CleanGhostDefer(const CleanW &a, const int c0, const int nc,
+                                  const int dep) {
+  CleanGhostDefer((c0 < a.ns) ? a.s : a.o, (c0 < a.ns) ? c0 : c0 - a.ns, nc, dep);
 }
 
 void RadiationM1::CleanGhostFlush() {

@@ -3832,8 +3832,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
         fc(m,CLF_N+1,k,j,i) += 0.5*(wq(2, k-dk, j-dj, i-di) + wq(3, k, j, i));
       });
       auto v = cln_v;
-      CleanFor("cln_fs1", nmb1, ks, ke, js, je, is, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      auto f1 = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         Real rc;
         const Real tau = op(m,M1_OP_T,k,j,i)*CleanCellFaceDistance(x, dir, m, k, j, i);
         // (fkin: the streaming share is kinetic, without dissipation)
@@ -3880,20 +3879,26 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
         v(m,3*dir+1,k,j,i) = wc*dd*(jc - ec);
         v(m,3*dir+2,k,j,i) = ac*wc;
         v(m,15+dir,k,j,i) = -ac*wc*sr*sr*jc;
-      });
-      if (dir == x.nf - 1) {
-        if (cub && f0 > 0 && cln_hmax >= 12) {   // (one exchange, depth 1; the ghosts of
-          CleanGhostDefer(cln_v, 3, 6);            // a face take its family's terms, fm)
-          cln_hpend.back().dep = 1;
-          cln_hpend.back().fm = {0, 7, 070, 0};
-          CleanGhostDefer(cln_v, 11, 4);
-          cln_hpend.back().dep = 1;
-          cln_hpend.back().fm = {0, 3, 014, 0};
-          CleanGhostDefer(cln_v, 16, 2);
-          cln_hpend.back().dep = 1;
-          cln_hpend.back().fm = {0, 1, 2, 0};
-          CleanGhostFlush();
-        } else if (cub) {
+      };
+      // (the cubed sphere, one MeshBlock along x1: one exchange, depth 1, the ghosts of a
+      // face its family's terms (fm), started once the last direction's cells it sends
+      // are done, in flight behind its inner cells)
+      const bool pv = cub && f0 > 0 && cln_hmax >= 12 && dir == x.nf - 1;
+      const std::function<void()> post = [&]() {
+        CleanGhostDefer(cln_v, 3, 6, 1);
+        cln_hpend.back().fm = {0, 7, 070, 0};
+        CleanGhostDefer(cln_v, 11, 4, 1);
+        cln_hpend.back().fm = {0, 3, 014, 0};
+        CleanGhostFill(cln_v, 16, 2, true, 1, 1, {0, 1, 2, 0});
+      };
+      const std::function<void()> fin = [&]() {CleanGhostFill(cln_v, 16, 2, true, 2, 1);};
+      if (pv) {
+        CleanOverlapFor("cln_fs1", pmy_pack, true, f1, fin, -1, post);
+      } else {
+        CleanFor("cln_fs1", nmb1, ks, ke, js, je, is, ie, f1);
+      }
+      if (dir == x.nf - 1 && !pv) {
+        if (cub) {
           CleanGhostFill(cln_v, 0, 18, true, 0, 1);
         } else {
           CleanGhostDefer(cln_w, CLW_L, 3*x.nf);
