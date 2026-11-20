@@ -7,6 +7,7 @@
 //! \brief see hydro/dual_energy.hpp.
 
 #include <cmath>
+#include <cstdio>
 #include <iostream>
 #include <string>
 
@@ -45,10 +46,11 @@ void DualEnergy::Read(ParameterInput *pin, const std::string &block, const EOS_D
   on = Named(pin, blk, "dual_energy") && pin->GetBoolean(blk, "dual_energy");
   if (Named(pin, blk, "floor_pay")) {
     const std::string s = pin->GetString(blk, "floor_pay");
-    if (s == "rad") {
+    if (s == "rad" || s == "rad_column") {
       pay = true;
+      pcol = (s == "rad_column");
     } else if (s != "none") {
-      Fatal("<" + blk + ">/floor_pay = " + s + ": use rad or none");
+      Fatal("<" + blk + ">/floor_pay = " + s + ": use rad, rad_column or none");
     }
   }
   retest = Named(pin, blk, "fofc_retest") && pin->GetBoolean(blk, "fofc_retest");
@@ -311,6 +313,7 @@ void DualPayFromRad(MeshBlockPack *pp, DualEnergy &de, DvceArray5D<Real> &urad,
   auto &size = pp->pmb->mb_size;
   auto payv_ = de.payv;
   const int nji = nj*ni, nkji = nk*nji;
+  const bool col = de.pcol;
   Real paid = 0.0, unpaid = 0.0, npay = 0.0, given = 0.0;
   Kokkos::parallel_reduce("duale_pay", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int &idx, Real &sp, Real &su, Real &sn, Real &sg) {
@@ -332,13 +335,62 @@ void DualPayFromRad(MeshBlockPack *pp, DualEnergy &de, DvceArray5D<Real> &urad,
       const Real take = fmin(want, fmax(er - efl, 0.0));
       urad(m,ie,k,j,i) = er - take;
       sp += fa*(take/ch_cl)*vol;
-      su += fa*((want - take)/ch_cl)*vol;
+      if (col && act) {   // (rad_column: the rest from the column, below)
+        payv_(m,k,j,i) = (want - take)*vol;
+      } else {
+        su += fa*((want - take)/ch_cl)*vol;
+      }
     } else {
       urad(m,ie,k,j,i) = er - ch_cl*need;
       sg += fa*(-need)*vol;
     }
   }, Kokkos::Sum<Real>(paid), Kokkos::Sum<Real>(unpaid), Kokkos::Sum<Real>(npay),
      Kokkos::Sum<Real>(given));
+  // floor_pay = rad_column: what the cell's E_rad could not cover is taken from the E_rad
+  // above e_floor of the nearest cells of its radial column, i -+ d, the pair split by
+  // their energy above the floor (implicit_pos_gas_cons's column pass, CleanWriteBack)
+  if (col) {
+    Real cp = 0.0, cu = 0.0;
+    Kokkos::parallel_reduce("duale_pay_col", Kokkos::MDRangePolicy<Kokkos::Rank<3>>(
+                            DevExeSpace(), {0, ks, js}, {nmb, ke + 1, je + 1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, Real &sp, Real &su) {
+      auto vol = [&](const int q) {
+        return curv ? vol_(m,k,j,q)
+                    : size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
+      };
+      for (int i = is; i <= ie_; ++i) {
+        Real def = payv_(m,k,j,i);
+        if (!(def > 0.0)) continue;
+        payv_(m,k,j,i) = 0.0;
+        for (int d = 1; d <= ie_ - is && def > 0.0; ++d) {
+          const int qa = i - d, qb = i + d;
+          const Real aa = (qa >= is) ? fmax(urad(m,ie,k,j,qa) - efl, 0.0)*vol(qa) : 0.0;
+          const Real ab = (qb <= ie_) ? fmax(urad(m,ie,k,j,qb) - efl, 0.0)*vol(qb) : 0.0;
+          const Real at = aa + ab;
+          if (!(at > 0.0)) continue;
+          const Real tk = fmin(def, at);
+          if (aa > 0.0) urad(m,ie,k,j,qa) = fmax(urad(m,ie,k,j,qa) - (tk*aa/at)/vol(qa), efl);
+          if (ab > 0.0) urad(m,ie,k,j,qb) = fmax(urad(m,ie,k,j,qb) - (tk*ab/at)/vol(qb), efl);
+          def -= tk;
+          sp += tk/ch_cl;
+        }
+        su += def/ch_cl;
+      }
+    }, Kokkos::Sum<Real>(cp), Kokkos::Sum<Real>(cu));
+    paid += cp;
+    unpaid += cu;
+  }
+  // (no silent fallback: energy the column could not give is created, reported)
+  if (col) {
+    Real ug = unpaid;
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &ug, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (ug > 0.0 && global_variable::my_rank == 0) {
+      std::printf("CLEAN WARNING cycle %d: floor_pay = rad_column left %.6e of the fluid "
+                  "floors' energy unpaid (created)\n", pp->pmesh->ncycle, ug);
+    }
+  }
   de.hc[DC_PAID] += paid;
   de.hc[DC_UNPAID] += unpaid;
   de.hc[DC_NPAY] += npay;
