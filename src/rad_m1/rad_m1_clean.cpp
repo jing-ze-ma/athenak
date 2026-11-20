@@ -4450,6 +4450,63 @@ void RadiationM1::CleanStagFCsShared() {
 //! boundary (else its high face) in cln_v slot 3 n + q (the F solve's cell terms, free
 //! after it), which the ghosts take.
 
+// TIE study (env TIE_CHECK, never merge): per face class (0 in panel, 1 seam, 2 seam next
+// to a cube vertex) the sum over every MeshBlock's shared faces of h sigma A Phi (sigma
+// outward), which is the non-telescoping part of sum V Q, and the max |A Phi - s A' Phi'|
+void RadiationM1::CleanStagCsTieCheck(const int after) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke, nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanArgs x = CleanMakeArgs();
+  auto v = cln_v;
+  const Real h = dt_sub;
+  CleanFor("cln_cstiek", nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    for (int q = 0; q < 3; ++q) {
+      const int u = (q == 0) ? (i == ie) : ((q == 1) ? (j == je) : (k == ke));
+      const int kf = k+u*(q == 2), jf = j+u*(q == 1), iff = i+u*(q == 0);
+      v(m,q,k,j,i) = x.area[q](m,kf,jf,iff)*x.fc[q](m,CLF_PT,kf,jf,iff);
+    }
+  });
+  CleanGhostFill(cln_v, 0, 3, true, 0, 1);
+  DvceArray1D<Real> acc("tiek", 9);
+  for (int dir = 0; dir < 3; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    auto fc = x.fc[dir];
+    auto ar = x.area[dir];
+    par_for("cln_cstiek2", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const bool lin = (dir == 0) ? (i > is) : ((dir == 1) ? (j > js) : (k > ks));
+      const bool rin = (dir == 0) ? (i <= ie) : ((dir == 1) ? (j <= je) : (k <= ke));
+      if ((lin && rin) || CleanBoundaryFace(x, dir, m, k, j, i)) return;
+      const int kg = lin ? k : k - dk, jg = lin ? j : j - dj, ig = lin ? i : i - di;
+      Real s;
+      const int q = CleanCsSlot(x, dir, m, k, j, i, kg, jg, ig, false, s)/2;
+      const int side = lin ? 1 : 0;
+      const BoundaryFlag f = x.mbc(m, 2*dir + side);
+      const int c = (f != BoundaryFlag::panel) ? 0 :
+                    (CleanCsSeamFace(x, dir, m, k, j, i) ? 1 : 2);
+      const Real a = ar(m,k,j,i)*fc(m,CLF_PT,k,j,i);
+      Kokkos::atomic_add(&acc(c), h*(lin ? 1.0 : -1.0)*a);
+      Kokkos::atomic_add(&acc(3+c), fabs(h*a));
+      Kokkos::atomic_max(&acc(6+c), fabs(a - s*v(m,q,kg,jg,ig))/fmax(fabs(a), 1.0e-300));
+    });
+  }
+  auto hc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), acc);
+  Real g[9];
+  for (int n = 0; n < 9; ++n) g[n] = hc(n);
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, g, 6, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, g + 6, 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+#endif
+  if (global_variable::my_rank == 0) {
+    std::printf("TIEK cycle %d t2s %d %s net %.4e %.4e %.4e gross %.4e %.4e %.4e "
+                "mis %.2e %.2e %.2e\n", pmy_pack->pmesh->ncycle, t2_solve,
+                after ? "after" : "before", g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7],
+                g[8]);
+  }
+}
+
 void RadiationM1::CleanStagCsTie(const int nc, const int c0, const int c1, const int c2) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -4728,7 +4785,9 @@ void RadiationM1::CleanWriteBack() {
   // own Phi there differs by its copy's geometry, a residual E takes; the cubed sphere:
   // each shared face's CLF_PT the lower gid's, CleanStagCsTie)
   const bool tie = cln_ftie && !x.cub;
+  if (std::getenv("TIE_CHECK")) CleanStagCsTieCheck(0);
   if (cln_ftie && x.cub) CleanStagCsTie(1, CLF_PT);
+  if (std::getenv("TIE_CHECK")) CleanStagCsTieCheck(1);
   if (tie) {
     const int nf = x.nf;
     CLEAN_HIPX(const CleanArgs *px = CleanDevArgs(x, 0);)

@@ -3173,6 +3173,7 @@ class RadiationM1 {
   void CleanStagFCsShared();
   void CleanStagFaceTie(const int e, const int kd, const bool pt = false);
   void CleanStagCsTie(const int nc, const int c0, const int c1 = 0, const int c2 = 0);
+  void CleanStagCsTieCheck(const int after);
   Real CleanStagFSweepChange();
   void CleanStagFSchur();
   void CleanStagCsLateral(const int e, const bool st = false, const int part = 0);
