@@ -1,0 +1,11 @@
+# REALZ2 (orion 2026-11-20). B_rz2 = caltech-runs/realz2 94805ca84 (v20n + study prints + key clean_stag_freal_relax, default off). 20 cycles.
+# Priority: RZ2o_hg, RZ2l_hg, RZ2g_hg, RZ2l001_hg first.
+FINALRST=0 RZ2o_hg    B_rz2 HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true
+FINALRST=0 RZ2l_hg    B_rz2 HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=ledger
+FINALRST=0 RZ2g_hg    B_rz2 HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=gas
+FINALRST=0 RZ2l001_hg B_rz2 HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=ledger rad_m1/clean_conv_kappa=0.01
+FINALRST=0 RZ2m_hg    B_rz2 HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_conv_max=9.9e-5
+FINALRST=0 RZ2g001_hg B_rz2 HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=gas rad_m1/clean_conv_kappa=0.01
+FINALRST=0 RZ2o_rsg   B_rz2 RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true
+FINALRST=0 RZ2g_rsg   B_rz2 RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=gas
+FINALRST=0 RZ2l_rsg   B_rz2 RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=ledger
