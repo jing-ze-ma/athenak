@@ -536,3 +536,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - S_m35mms (hpc-sm-02-03): a rc=0 wall=92 b rc=0 wall=70 b rc=0 wall=322 | a cycles 0 - 50 dt first 12.0076 last 8.98525 s/cycle steady 0.750 first elapsed 15.3 a 'FATAL' 0  a 'CLEAN WARNING' 0   | GPU mem peak MiB 27133 | CW 0 FATAL 0
   FRESHGO START B16_bsg 15:37:33 on hpc-sm-02-03
 - S_t9l62 (hpc-sm-02-04): a rc=0 wall=232 b rc=0 wall=165 b rc=0 wall=131 | a cycles 0 - 50 dt first 96.8523 last 96.8589 s/cycle steady 1.965 first elapsed 44.7 a 'FATAL' 0  a 'CLEAN WARNING' 0   | GPU mem peak MiB 75533 | CW 0 FATAL 0
+  FRESHGO START L300_bsg 15:37:56 on hpc-sm-02-04
+- B4_t9l62 (hpc-sm-01-17): a rc=0 wall=98 | a cycles 0 - 8 dt first 96.8523 last 96.8618 s/cycle steady 1.246 first elapsed 42.8 a 'FATAL' 0  a 'CLEAN WARNING' 0   | GPU mem peak MiB 73993 | CW 0 FATAL 0

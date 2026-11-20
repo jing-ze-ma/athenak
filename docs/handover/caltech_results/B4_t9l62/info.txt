@@ -1,0 +1,1 @@
+TAG=B4_t9l62 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v203_e688cb7bc md5=7df2b64833e40a77e8a8a04e6dc900ee DECK=/resnick/groups/carnegie_poc/jingze/fresh_prod_1120/fg_v2/decks/t9l62_smoke.athinput md5=8e3dabf5d3dd6a1a6f7f32a12aa1eed4 NC=8 HOLDER=6133592 NODE=hpc-sm-01-17 NR=4 EX=meshblock/nx2=128 meshblock/nx3=256
