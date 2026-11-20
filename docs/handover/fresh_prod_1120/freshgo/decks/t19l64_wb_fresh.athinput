@@ -252,9 +252,9 @@ dt                       = 43200.0                # rst every 12 h
 <output6>
 file_type = bin
 variable  = m1_vet
-dt                       = 10800.0                # 3 h
+dt = 43200   # FRESHGO (USER 11-20): every 4th output2 output (output2 dt 10800.0)
 <output7>
 file_type = bin
 variable  = m1_face       # face fluxes fx1/fx1o/fx2/fx3: the thin-atmosphere check (TRUEREPRO.md sect. atm)
-dt                       = 10800.0                # 3 h
+dt = 43200   # FRESHGO (USER 11-20): every 4th output2 output (output2 dt 10800.0)
 

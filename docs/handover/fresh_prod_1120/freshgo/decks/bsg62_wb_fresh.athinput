@@ -275,9 +275,9 @@ dt = 8.64e4                      # 1 d
 bin_double = true   # mkdeck (bsgnv_1107)
 file_type = bin
 variable  = m1_vet
-dt = 4.32e4
+dt = 172800   # FRESHGO (USER 11-20): every 4th output2 output (output2 dt 4.32e4)
 <output7>
 bin_double = true   # mkdeck (bsgnv_1107)
 file_type = bin
 variable  = m1_face       # face fluxes fx1/fx1o/fx2/fx3: the thin-atmosphere check (TRUEREPRO.md sect. atm)
-dt = 4.32e4
+dt = 172800   # FRESHGO (USER 11-20): every 4th output2 output (output2 dt 4.32e4)

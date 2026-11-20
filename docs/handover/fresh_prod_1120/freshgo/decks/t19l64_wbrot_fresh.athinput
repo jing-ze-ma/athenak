@@ -1,4 +1,4 @@
-# FRESHGO 11-20 ROTATION variant (USER): HG/RSG production rotation keys (vet_rotate_avg 8, EMA 128 step + ema_wb, ring live/xfade/advance/align/fuse, axis 3d), vet_gd_rotate_dt ~10 dt = 390 s, LQ10 rays, wall maps nearest-direction
+# FRESHGO 11-20 ROTATION variant (USER): HG/RSG production rotation keys, vet_gd_rotate_dt ~10 dt = 390 s
 # FRESHPREP 2026-11-20: fresh-production deck on v20.1 25ea76366, built by freshprep/build_decks.py
 #   base viper1120/t19l64/t19l64.athinput + common_scheme (fixed rays: no ring keys) + keys/t19l64.txt keys/fixed_lq10.txt keys/wb.txt keys/wb_t19l64.txt
 #   dropped: hydro/tfloor_kelvin rad_m1/ic_rad rad_m1/implicit_blend rad_m1/implicit_blend_alpha rad_m1/implicit_blend_dtc rad_m1/implicit_blend_fhi rad_m1/implicit_blend_flo rad_m1/implicit_blend_tau0 rad_m1/implicit_blend_xthin rad_m1/implicit_closure_lag rad_m1/implicit_closure_thin_relax rad_m1/implicit_cs2_hll rad_m1/implicit_cs2_shift rad_m1/implicit_cs2_vimp_npass rad_m1/implicit_cs2_wbsolve rad_m1/implicit_f0_init rad_m1/implicit_face_mmat rad_m1/implicit_face_opac_n rad_m1/implicit_fb_local rad_m1/implicit_fb_local_rounds rad_m1/implicit_flux rad_m1/implicit_flux_beam rad_m1/implicit_flux_faces rad_m1/implicit_g0_exchange rad_m1/implicit_g0_limit rad_m1/implicit_gas_newton rad_m1/implicit_gas_newton_switch rad_m1/implicit_halo_direct rad_m1/implicit_halo_mpi rad_m1/implicit_halo_overlap rad_m1/implicit_hr_cmem rad_m1/implicit_hr_excess rad_m1/implicit_hr_face rad_m1/implicit_hr_face_gd rad_m1/implicit_krylov_fuse rad_m1/implicit_lin_cnorm rad_m1/implicit_lin_ew_max rad_m1/implicit_lin_tol rad_m1/implicit_lzx rad_m1/implicit_nofb_work rad_m1/implicit_od_cache rad_m1/implicit_offdiag rad_m1/implicit_one_pass rad_m1/implicit_op_stencil rad_m1/implicit_opac_lag_passes rad_m1/implicit_opac_newton rad_m1/implicit_opac_newton_guard_mode rad_m1/implicit_opac_update rad_m1/implicit_physflux rad_m1/implicit_precond rad_m1/implicit_predictor_frozen rad_m1/implicit_rad_inertia rad_m1/implicit_realisable_coupling rad_m1/implicit_solver rad_m1/implicit_thin_bq rad_m1/implicit_thin_bq_gd rad_m1/implicit_thin_corr rad_m1/implicit_thin_freeze rad_m1/implicit_thin_hcface rad_m1/implicit_thin_hcface_gd rad_m1/implicit_thin_hcsf rad_m1/implicit_thin_js_face rad_m1/implicit_thin_js_gd rad_m1/implicit_thin_recon rad_m1/implicit_thin_switch rad_m1/implicit_tol rad_m1/implicit_tsolve_opac rad_m1/implicit_tsolve_opac_mode rad_m1/implicit_vimp rad_m1/implicit_vimp_bc rad_m1/time2_adm_poslim rad_m1/time2_vet_col rad_m1/time2_vet_sc rad_m1/time2_vet_x2_fields rad_m1/vet_col_lat_posfix rad_m1/vet_gd_gl_nmu rad_m1/vet_gd_gl_nphi rad_m1/vet_gd_gl_stagger rad_m1/vet_gd_ls rad_m1/vet_gd_rotate_align rad_m1/vet_gd_rotate_dt rad_m1/vet_gd_rotate_slope rad_m1/vet_gd_rotate_stretch rad_m1/vet_gd_rotate_t0 rad_m1/vet_rotate_avg rad_m1/vet_source_noesrc rad_m1/zalesak_cap_rounds
@@ -261,9 +261,9 @@ dt                       = 43200.0                # rst every 12 h
 <output6>
 file_type = bin
 variable  = m1_vet
-dt                       = 10800.0                # 3 h
+dt = 43200   # FRESHGO (USER 11-20): every 4th output2 output (output2 dt 10800.0)
 <output7>
 file_type = bin
 variable  = m1_face       # face fluxes fx1/fx1o/fx2/fx3: the thin-atmosphere check (TRUEREPRO.md sect. atm)
-dt                       = 10800.0                # 3 h
+dt = 43200   # FRESHGO (USER 11-20): every 4th output2 output (output2 dt 10800.0)
 
