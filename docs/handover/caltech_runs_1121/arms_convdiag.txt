@@ -1,0 +1,4 @@
+# CONV diagnostics (orion 2026-11-20), after CV_tight_hg. B_convdiag = caltech-runs/convdiag 0fbbe9f91.
+FINALRST=0 CD_hg  B_convdiag HG 3  hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true
+FINALRST=0 CE_hg  B_convdiag HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true rad_m1/clean_ew_off=true
+FINALRST=0 CXS_hg B_convdiag HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true rad_m1/clean_xt_sticky=true
