@@ -538,3 +538,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - S_t9l62 (hpc-sm-02-04): a rc=0 wall=232 b rc=0 wall=165 b rc=0 wall=131 | a cycles 0 - 50 dt first 96.8523 last 96.8589 s/cycle steady 1.965 first elapsed 44.7 a 'FATAL' 0  a 'CLEAN WARNING' 0   | GPU mem peak MiB 75533 | CW 0 FATAL 0
   FRESHGO START L300_bsg 15:37:56 on hpc-sm-02-04
 - B4_t9l62 (hpc-sm-01-17): a rc=0 wall=98 | a cycles 0 - 8 dt first 96.8523 last 96.8618 s/cycle steady 1.246 first elapsed 42.8 a 'FATAL' 0  a 'CLEAN WARNING' 0   | GPU mem peak MiB 73993 | CW 0 FATAL 0
+  FRESHGO START F0_bsg 15:38:05 on hpc-sm-01-17
+- (15:38) Got 385b37d10 + f2e8f4cbe: L300_bsg started 15:37:56 (02-04), F0_bsg 15:38:05 (01-17), L300T_bsg on the next free node (FRESHGO arms ahead of it already finished/finishing). F0_bsg bins stay on disk; the inner-16-cell slice (all variables, cycles 0-2, x1/x2/x3) goes to caltech_results/F0_bsg/F0_bsg_inner16.npz. EMA = 0 for the fresh decks noted (no deck change).
