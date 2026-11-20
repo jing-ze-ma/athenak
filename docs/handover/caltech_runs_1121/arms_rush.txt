@@ -18,10 +18,13 @@ FINALRST=0 NR=4 G_on_rsg  B_lztel3 RSG 600 rsg_v20.keys rad_m1/clean_cs_lz_tel=t
 FINALRST=0 NR=4 G_off_rsg B_lztel3 RSG 600 rsg_v20.keys
 # added NOTE de: B_bfxg = caltech-runs/beamfixg e07e164a86dcfc7c1383b271f628ccb2a991a9a6 (thinf + g cap key). HEAD of the queue, all 4 concurrent, 1 node each. Controls: THF100_hg / THF100_ref_hg (v7 = gmax 1), BFX0_rsg.
 FINALRST=0 NR=4 TG4_hg    B_bfxg HG  100 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_gmax=4
-FINALRST=0 NR=4 TG4_rsg   B_bfxg RSG 100 rsg_v20.keys rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_gmax=4
-FINALRST=0 NR=4 TGinf_hg  B_bfxg HG  100 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_gmax=1e30
-FINALRST=0 NR=4 TGinf_rsg B_bfxg RSG 100 rsg_v20.keys rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_gmax=1e30
+# DROPPED if not started (NOTE dr: G>1 rejected) FINALRST=0 NR=4 TG4_rsg   B_bfxg RSG 100 rsg_v20.keys rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_gmax=4
+# DROPPED if not started (NOTE dr: G>1 rejected) FINALRST=0 NR=4 TGinf_hg  B_bfxg HG  100 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_gmax=1e30
+# DROPPED if not started (NOTE dr: G>1 rejected) FINALRST=0 NR=4 TGinf_rsg B_bfxg RSG 100 rsg_v20.keys rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_gmax=1e30
 # added NOTE dg: B_xcap = caltech-runs/xcap 999d7afaaefb510a55a9b879c7d827687bf0de14 (thinf v7 + smooth xdonor cap key clean_stag_xcap_p; p=0 = bitwise old). With the TG arms, 1 node each, concurrent. Same keys as THF100_hg / THF300_rsg (thv7 keys); RSG = rsg.01295 as THF300_rsg.
 FINALRST=0 NR=4 XCP8_hg  B_xcap HG  100 hg_thv7.keys  time/dt_retry_host=m1 rad_m1/clean_stag_xcap_p=8
 FINALRST=0 NR=4 XCP2_hg  B_xcap HG  100 hg_thv7.keys  time/dt_retry_host=m1 rad_m1/clean_stag_xcap_p=2
 FINALRST=0 NR=4 XCP8_rsg B_xcap RSG 100 rsg_thv7.keys rad_m1/clean_conv_kappa=0.1 rad_m1/clean_stag_xcap_p=8
+# added NOTE dr: B_bfxf = caltech-runs/beamfixf 6ad6817aa5a124e1c18b95307f615ca5e05ad175 (thinf face-reconstruction cap, gmax=-1). HEAD of the queue, 2 concurrent, 1 node each.
+FINALRST=0 NR=4 TGF_hg  B_bfxf HG  100 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_gmax=-1 rad_m1/clean_maxit=800
+FINALRST=0 NR=4 TGF_rsg B_bfxf RSG 100 rsg_v20.keys rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_gmax=-1 rad_m1/clean_maxit=800
