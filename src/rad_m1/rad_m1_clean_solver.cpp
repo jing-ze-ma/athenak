@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <iostream>
 #include <limits>
@@ -1028,6 +1029,46 @@ Real RadiationM1::CleanLzTotal() {
     s0 += v*r*p[2] + lr;
   })[0];
   return s + (cln_lzbook ? cln_lzl + cln_lzp : 0.0);
+}
+
+// LZTEL3 study (never merge): env LZ3=1 prints gas and face-form radiation L_z and the
+// ledger at a tag
+void RadiationM1::CleanLz3Print(const char *tag, const bool winc) {
+  static int on = -1;
+  if (on < 0) {const char *e = std::getenv("LZ3"); on = (e != nullptr) ? std::atoi(e) : 0;}
+  if (!on || !clean || cln_cell || !cln_init || !cs_geom) return;
+  CleanArgs x = CleanMakeArgs();
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  const bool fo = fl.on;
+  auto uh = fl.u0;
+  auto ur = u0;
+  auto f2 = f0x2, f3 = f0x3;
+  auto inc = t2inc;
+  const bool wi = winc && (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
+  const Real ic2 = 1.0/(x.c*x.c);
+  auto s = CleanSums(pmy_pack, "cln_lz3", 2,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0, Real &s1) {
+    Real p[3] = {0.0, 0.0, 0.0}, q[3][3];
+    if (fo) CleanGasMomentum(x, uh, m, k, j, i, p);
+    const Real r = CleanCsFrame(x, m, k, j, i, q);
+    const Real v = CleanVol(x, m, k, j, i);
+    Real lr = 0.0;
+    for (int qd = 1; qd < 3; ++qd) {
+      for (int sd = 0; sd < 2; ++sd) {
+        const int kf = k + sd*(qd == 2), jf = j + sd*(qd == 1);
+        const Real fi = wi ? inc(m,M1_T2_F1+qd,kf,jf,i) : 0.0;
+        lr += 0.5*v*(((qd == 1) ? f2(m,kf,jf,i) : f3(m,kf,jf,i)) + fi)*ic2*
+              CleanCsArm(x, qd, m, kf, jf, i);
+      }
+    }
+    s0 += v*r*p[2];
+    s1 += lr;
+  });
+  if (global_variable::my_rank == 0) {
+    std::printf("LZ3 %s%s cycle %d t2s %d gas %.16e rad %.16e led %.16e lzp %.16e tot %.16e\n",
+                tag, wi ? "+" : "", pmy_pack->pmesh->ncycle, t2_solve, s[0], s[1], cln_lzl, cln_lzp,
+                s[0] + s[1] + cln_lzl + cln_lzp);
+  }
 }
 
 //----------------------------------------------------------------------------------------

@@ -3348,6 +3348,7 @@ class RadiationM1 {
   Real cln_lzl = 0.0, cln_lzs1 = 0.0, cln_lzs2 = 0.0, cln_lzc = 0.0, cln_lzp = 0.0;
   ParameterInput *cln_lzpin = nullptr;
   void CleanLzBook(const Real s, const bool start);
+  void CleanLz3Print(const char *tag, const bool winc = false);   // LZTEL3 study
   Real CleanLzTotal();   // (the history's L_z: gas + radiation + ledger)
   int cln_kmode = 0;        // (clean_stag_kpos: 1 faces, 2 cell, 3 redo, 4 delta)
   Real cln_ktau = 0.0;      // (delta: tau/h of the stage)
