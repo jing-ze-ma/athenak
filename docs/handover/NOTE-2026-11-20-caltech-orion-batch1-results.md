@@ -53,3 +53,6 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - CV_estdf_rsg (hpc-sm-01-17): rc=0 wall=133 | cycles 589788 - 589808 | steady 2.933 s/cycle | GPU MiB max 108889 min 107701 | CW a 0 FATAL 0 |  
 - CV_est_rsg (hpc-sm-02-03): rc=0 wall=125 | cycles 589788 - 589808 | steady 2.763 s/cycle | GPU MiB max 109321 min 108187 | CW a 0 FATAL 0 |  
 - CV_k01_rsg (hpc-sm-02-04): rc=0 wall=132 | cycles 589788 - 589808 | steady 2.920 s/cycle | GPU MiB max 109321 min 108187 | CW a 0 FATAL 0 |  
+- CV_ref_hg (hpc-sm-02-11): rc=0 wall=191 | cycles 624961 - 624981 | steady 4.999 s/cycle | GPU MiB max 115921 min 115323 | CW a 0 FATAL 0 |  
+- CV_k01_hg (hpc-sm-01-11): rc=0 wall=189 | cycles 624961 - 624981 | steady 5.212 s/cycle | GPU MiB max 116499 min 115951 | CW a 0 FATAL 0 |  
+- CV_df2_rsg (hpc-sm-02-03): rc=0 wall=130 | cycles 589788 - 589808 | steady 3.058 s/cycle | GPU MiB max 109321 min 108187 | CW a 0 FATAL 0 |  
