@@ -363,6 +363,7 @@ struct CleanArgs {
                                // (-1: the central cross flux)
   int xc;                      // staggered, clean_stag_xcorner: face slots of the excess,
                                // t and its code (-1: none; with xq only)
+  int xcm;                     //   its mode: 1 corner, 2 cancel, 3 both
   bool pd;                     // staggered, kpos / xpat: the rows' diagonal CLW_PD
   Real kt;                     // staggered, clean_stag_kpos = delta: tau/h, the slopes'
                                // linear face flux tau (al E_L + ar E_R) implicit
@@ -1397,6 +1398,8 @@ void CleanStagXSplit(const CleanArgs &x, const CleanArgs &xr, const int dir, con
   const auto &f = x.fc[dir];
   const Real sr = CleanFaceSource(xr, dir, m, k, j, i);
   Real ql = 0.0, qr = 0.0, ex = 0.0, xs = 0.0;   // (xs: xcorner's excess, signed)
+  Real alm = 0.0, arm = 0.0;   // (xcorner >= 2: the face's own weights, CleanFaceWeights)
+  if (x.xc >= 0 && x.xcm >= 2) CleanFaceWeights(xr, dir, m, k, j, i, alm, arm);
   if (CleanBoundaryFace(x, dir, m, k, j, i)) {
     ex = sr;
   } else {
@@ -1424,10 +1427,24 @@ void CleanStagXSplit(const CleanArgs &x, const CleanArgs &xr, const int dir, con
       const int e = src ? CLW_EO : CLW_EK;
       const Real ed = up ? x.w(m,e,kl,jl,il) : x.w(m,e,k,j,i);
       const Real q = (fabs(li) < x.c*ed) ? fabs(li)/ed : x.c;
-      if (src && q == x.c) xs += up ? fabs(li) - x.c*fmax(ed, 0.0) :
-                                      x.c*fmax(ed, 0.0) - fabs(li);
       if (up) ql += q;
       if (!up) qr -= q;
+      if (!(src && q == x.c && x.xc >= 0)) return;
+      // (clean_stag_xcorner: the excess past c E_old of the donor; >= 2: first the part
+      // that cancels the face's own flux of the other cell (a ray correction against
+      // the operator's outflow of that cell, the side face of a diagonal beam's lit
+      // cell): that cell's coefficient shrinks, at most to 0, so its outflow stays >= 0
+      // (M-matrix); the rest xs, CleanStagXCorner)
+      Real xe = fabs(li) - x.c*fmax(ed, 0.0);
+      const Real eo = fmax(up ? x.w(m,CLW_EO,k,j,i) : x.w(m,CLW_EO,kl,jl,il), 0.0);
+      if (x.xcm >= 2 && eo > 0.0) {
+        const Real ow = up ? -arm : alm;   // (the other cell's outflow coefficient, >= 0)
+        const Real a = fmin(xe, fmax(ow, 0.0)*eo);
+        if (up) qr += a/eo;
+        if (!up) ql -= a/eo;
+        xe -= a;
+      }
+      if (x.xcm & 1) xs += up ? xe : -xe;
     };
     const Real cf = f(m,x.xq+3,k,j,i);
     const Real sx = x.xsrc ? sr : 0.0;   // (the face source in the split)
@@ -1464,7 +1481,7 @@ Real CleanFaceFlux(const CleanArgs &x, const int e, const int dir, const int m,
   Real f = CleanFaceCross(x, e, dir, m, k, j, i);
   if (al != 0.0) f += al*x.w(m,e,kl,jl,il);
   if (ar != 0.0) f += ar*x.w(m,e,k,j,i);
-  if (x.xc >= 0 && x.xq >= 0 && !x.hi) {   // (clean_stag_xcorner: t E_u, CleanStagXCorner)
+  if (x.xc >= 0 && (x.xcm & 1) && x.xq >= 0 && !x.hi) {   // (xcorner: t E_u)
     const Real t = x.fc[dir](m,x.xc+1,k,j,i);
     if (t != 0.0) {
       int uk, uj, ui;
@@ -1634,7 +1651,7 @@ void CleanStFace(const CleanArgs &x, const int m, const int k, const int j, cons
   const Real wd = (SD ? x.h : -x.h)*CleanDivW(x, D, m, k, j, i, SD);
   c[CleanStSlot((SD - 1)*ek, (SD - 1)*ej, (SD - 1)*ei)] += wd*x.fc[D](m,CLF_QL,kf,jf,iff);
   c[CleanStSlot(SD*ek, SD*ej, SD*ei)] += wd*x.fc[D](m,CLF_QL+1,kf,jf,iff);
-  if (x.xc >= 0 && x.xq >= 0) {   // (clean_stag_xcorner: t E_u, CleanFaceFlux)
+  if (x.xc >= 0 && (x.xcm & 1) && x.xq >= 0) {   // (clean_stag_xcorner: t E_u, CleanFaceFlux)
     const Real t = x.fc[D](m,x.xc+1,kf,jf,iff);
     if (t != 0.0) {
       int uk, uj, ui;

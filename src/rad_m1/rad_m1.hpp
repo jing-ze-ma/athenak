@@ -3326,7 +3326,7 @@ class RadiationM1 {
   // donor in proportion to E of the cell feeding it across a transverse face
   // (CleanStagXCorner); 2 face slots, the excess and the coefficient t (code in its sign
   // and a third slot)
-  bool cln_xcn = false;
+  int cln_xcn = 0;   // (1 corner, 2 cancel, 3 both)
   int cln_xcs = -1;
   void CleanStagXCorner();
   int cln_xqs = -1;   // (5 slots: qL >= 0, qR <= 0, the lagged explicit flux, C(E_k),

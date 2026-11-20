@@ -503,8 +503,8 @@ void RadiationM1::CleanInit() {
   cln_xqs = cln_xd ? nfc + (cln_fdg >= 0) : -1;   // (clean_stag_xdonor's q)
   cln_kqs = cln_kpos ? nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0) : -1;   // (kpos: q)
   const int nfx0 = nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0) + (cln_kpos ? 2 : 0);
-  cln_xcs = cln_xcn ? nfx0 : -1;   // (clean_stag_xcorner: excess, t, code)
-  const int nfx = nfx0 + (cln_xcn ? 3 : 0);
+  cln_xcs = (cln_xcn > 0) ? nfx0 : -1;   // (clean_stag_xcorner: excess, t, code)
+  const int nfx = nfx0 + ((cln_xcn > 0) ? 3 : 0);
   if (cln_kpos || cln_xpat) {
     Kokkos::realloc(cln_kcnt, 2);
     Kokkos::deep_copy(cln_kcnt, 0.0);
@@ -2887,7 +2887,7 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
       if (af) x.fc[n](m,CLF_PT,k,j,i) = CleanStagAdvFace(x, xh, n, m, k, j, i);
     }
   });
-  if (x.xq >= 0 && x.xc >= 0) CleanStagXCorner();   // (the excesses of the split above)
+  if (x.xq >= 0 && x.xc >= 0 && (x.xcm & 1)) CleanStagXCorner();   // (the excesses of the split above)
   // (clean_stag_xdonor diagnostic: the row's terms, CleanStagXCount; clean_nl_print only)
   const bool xdd = cln_xd && cln_nlprint;
   if (xdd && cln_xdg.extent_int(0) < nmb1 + 1) {
