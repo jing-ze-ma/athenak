@@ -17,3 +17,12 @@ FINALRST=0 NR=4 L2_rsg_on  B_v201e RSG 3000 rsg_v20.keys rad_m1/clean_conv_max=9
 FINALRST=0 NR=8 H_fp_hg  B_v201e HG 1000 hg_v20.keys time/dt_retry_host=m1 hydro/floor_pay=rad_column
 FINALRST=0 NR=8 H_tel_hg B_v201e HG 1000 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_cs_lz_tel=true
 FINALRST=0 NR=8 H_xl_hg  B_v201e HG 1000 hg_v20.keys time/dt_retry_host=m1 rad_m1/time2_k1_xlim=0.1
+# added 2026-11-20 (NOTE bw, USER: fill every free node until the holders end). B_v201e. Priority order below (REALZ3/LEAN2 arms, when posted, go ahead of 2-3).
+# 1. RSG single-key attribution, NR=4 single nodes, 1000 cycles (reference = L1_rsg_off's first 1000 rows, same binary/layout -> no new off arm)
+FINALRST=0 NR=4 R_fp_rsg  B_v201e RSG 1000 rsg_v20.keys hydro/floor_pay=rad_column
+FINALRST=0 NR=4 R_tel_rsg B_v201e RSG 1000 rsg_v20.keys rad_m1/clean_cs_lz_tel=true
+FINALRST=0 NR=4 R_xl_rsg  B_v201e RSG 1000 rsg_v20.keys rad_m1/time2_k1_xlim=0.1
+# 2. k1_stiff on (off reference = L1_*_off, same binary/layout -> no new off arms)
+FINALRST=0 NR=8 K_on_hg   B_v201e HG 1000 hg_v20.keys time/dt_retry_host=m1 rad_m1/time2_k1_stiff=1.0
+FINALRST=0 NR=4 K_on_rsg  B_v201e RSG 1000 rsg_v20.keys rad_m1/time2_k1_stiff=1.0
+# 3. then the L2_* seeds above
