@@ -3599,27 +3599,10 @@ class RadiationM1 {
   bool vcol_sqf = false;
   Real vcol_jca = 0.0, vcol_jcb = 0.0, vcol_jcap = 0.0;
   Real vcol_amax = 0.99;
-  DvceArray2D<Real> vcol_abuf; // (ray, column): transmission, then the top intensity
   int vcol_dump_every{};       // vet_col_dump_every (0 = off)
   bool vcol_built{};           // a tensor exists (vet_col_every > 1 skips builds)
   std::string vcol_dump;       // vet_col_dump: file prefix of the column dump
   Real vcol_time{}, vcol_ncall{}, vcol_nskip{};
-  DvceArray2D<Real> vcol_seg;  // (ray, shell l): path length from shell l to l+1 / top
-  DvceArray2D<Real> vcol_mu;   // (ray, shell): mu of the ray at the shell
-  DvceArray2D<Real> vcol_w;    // (ray, shell): hemisphere quadrature weight (sum 1)
-  DvceArray2D<Real> vcol_ray;  // (ray, 0..3): L (first shell), type, seg0, a_t | mu_face
-  // vet_col_order2 (sp): the mean over the segment of g(u) = (r(u) - r_a)/(r_b - r_a),
-  // u the fraction of the path from the inner end r_a (1/2 radial, ~1/3 from a tangent
-  // point): S and chi are taken linear in r, not in the path, along every segment
-  DvceArray2D<Real> vcol_gb;   // (ray, shell l): the segment from shell l to l+1 / top
-  DvceArray1D<Real> vcol_gb0;  // (ray): the first segment (core: r_in -> shell 0;
-                               // sub-ray: tangent point -> its shell)
-  DvceArray1D<int> vcol_klast; // (shell): index of the last ray active at the shell
-  DvceArray3D<Real> vcol_sgt;  // (shell l, ray, 2): vcol_seg and vcol_gb transposed, so
-                               // the team sweep's threads (rays) read them coalesced
-  DvceArray2D<Real> vcol_buf;  // (ray, column): the running intensity of each ray
-  DvceArray5D<Real> vcol_mom;  // (m,5,k,j,i): J, H, K, S, chi of the solution (dump)
-  std::vector<double> vcol_rc; // shell radii (host, for the dump)
   // vet_col_surface_q (runs_5e): the outer-x1 Marshak q per column from the formal
   // solution, q = H(top face)/J(top cell), lagged like the tensor; vet_col_team: the
   // build as one team per column (rays over the team's threads, fixed-order moments)
@@ -3628,15 +3611,9 @@ class RadiationM1 {
   int vcol_lc{};               // shells per chunk of the team build (scratch budget)
   int vcol_ts{}, vcol_lcin{};  // vet_col_team_size (0 = AUTO), vet_col_chunk (0 = auto)
   DvceArray3D<Real> vcol_q;    // (m, k, j): the column's Marshak q at the top face
-  DvceArray1D<Real> vcol_muf;  // (ray): mu at the top face
-  DvceArray1D<Real> vcol_wf;   // (ray): hemisphere weight at the top face
-  void VetColInit();           // checks, ray tables, buffers (first TauClosureInit)
-  void VetColBuild();          // the formal solution -> tau_ten (chi, n)
-  void VetColSpread(int ncall);   // vet_col_spread (CS2, gate T-S6)
+  void VetColInit();           // checks, tau_ten, vcol_q (first TauClosureInit)
   int vcol_spread = 0;
-  void VetColBuildTeam(bool dmp);   // the same, one team per column (vet_col_team)
   void VetColReport();
-  void VetColDumpColumn(int ncall);
 
   // ---- <rad_m1>/vet_col_lat (m1-vetcol-lat, rad_m1_vetlat.cpp; design
   // rt_design_1003/SP_SC_G0.md sect. 4, plan C1): the LATERAL CORRECTION of vet_col from
