@@ -1,0 +1,3 @@
+# v20g3 (= v20g2 + restart read-ahead buffer fix), orion 2026-11-20: TOP priority, DEFAULT io (romio321). Replaces any not-yet-run V20G2_* arm.
+FINALRST=1 MODE=rt NH=2 V20G3_hg  B_v20g3 HG  4 hg_v20.keys time/dt_retry_host=m1
+FINALRST=1 MODE=rt NH=2 V20G3_rsg B_v20g3 RSG 4 rsg_v20.keys
