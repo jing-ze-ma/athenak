@@ -394,3 +394,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - H_xl_hg (hpc-sm-02-09,hpc-sm-02-10): rc=0 wall=2696 | cycles 624961 - 625961 | steady 2.634 s/cycle | GPU MiB max 59357 min 5 | CW a 0 FATAL 0 |  
 - K_on_rsg (hpc-sm-02-11): rc=1 wall=661 | cycles 589788 - 589873 | steady 4.418 s/cycle | GPU MiB max 108943 min 107973 | CW a 15 FATAL 1 |  
   FAILED: last 100 lines in caltech_results/K_on_rsg/FAIL_tail100.txt
+- R_tel_rsg (hpc-sm-02-16): rc=0 wall=3271 | cycles 589788 - 590788 | steady 3.194 s/cycle | GPU MiB max 109689 min 108719 | CW a 6 FATAL 0 |  
