@@ -50,3 +50,6 @@ problem/he_ic_equil=false
 rad_m1/clean_init=steady
 hydro/tfloor_kelvin=1000
 hydro/eos_logt_min=2.9
+rad_m1/vet_rotate_avg_ema=128
+rad_m1/vet_rotate_avg_ema_change_form=step
+rad_m1/clean_cs_lz_tel=true
