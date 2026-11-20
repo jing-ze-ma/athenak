@@ -1,0 +1,21 @@
+== LI4d_rsg vs LI8d_rsg
+hst rsg.hydro.hst rows 3 differing cols (1-based) [] first diff row None max rel 0.000e+00
+hst rsg.user.hst rows 3 differing cols (1-based) [] first diff row None max rel 0.000e+00
+bin rsg.hydro_w.06329.bin dens identical
+bin rsg.hydro_w.06329.bin velx identical
+bin rsg.hydro_w.06329.bin vely identical
+bin rsg.hydro_w.06329.bin velz identical
+bin rsg.hydro_w.06329.bin eint identical
+bin rsg.m1.06329.bin m1_e identical
+bin rsg.m1.06329.bin m1_f1 identical
+bin rsg.m1.06329.bin m1_f2 identical
+bin rsg.m1.06329.bin m1_f3 identical
+bin rsg.m1.06329.bin m1_phi1 identical
+bin rsg.m1.06329.bin m1_phi2 identical
+bin rsg.m1.06329.bin m1_phi3 identical
+bin rsg.m1_vet.01269.bin m1_d11 identical
+bin rsg.m1_vet.01269.bin m1_d22 identical
+bin rsg.m1_vet.01269.bin m1_d33 identical
+bin rsg.m1_vet.01269.bin m1_d12 identical
+bin rsg.m1_vet.01269.bin m1_d13 identical
+bin rsg.m1_vet.01269.bin m1_d23 identical
