@@ -537,6 +537,9 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
       t2_k1reset = pin->GetBoolean("rad_m1", "time2_k1_reset");
     }
   }
+  if (pin->DoesParameterExist("rad_m1", "time2_k1_xlim")) {   // xlim-1120
+    t2_k1xlim = pin->GetReal("rad_m1", "time2_k1_xlim");
+  }
   // stiffk1-1029: <rad_m1>/time2_k1_stiff = s (default 0 = off, bitwise)
   t2_k1stiff = 0.0;
   if (pin->DoesParameterExist("rad_m1", "time2_k1_stiff")) {
@@ -1427,7 +1430,9 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     }
   }
   if (t2_inckc > 0.0) {Time2IncKeCap(stage);}   // hgfix-1110 time2_inc_kecap
+  if (t2_k1xlim > 0.0) {Time2K1XLim(stage, c1, c2, true);}   // xlim-1120 (gas side)
   if (t2_ffct) {Time2FaceFct(stage, c1, c2);}   // facebound-1112 step 1
+  if (t2_k1xlim > 0.0) {Time2K1XLim(stage, c1, c2, false);}   // xlim-1120 (E side)
   CleanBndAcc(stage, c1, c2, (stage == 1) ? 0.0 : (heun ? 0.5 : w0), dt);
   if (t2_theta > 0.0) {Time2StageTheta(stage, dt);}   // facebound-1112
   t2_solve = (stage == 1) ? M1_T2S_STAGE1 : M1_T2S_STAGE2;
@@ -1791,6 +1796,121 @@ void RadiationM1::Time2StageTheta(int stage, Real dt) {
     t2_th_s2 += sf;
   }
   t2_th_calls += 1;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::Time2K1XLim
+//! \brief xlim-1120 <rad_m1>/time2_k1_xlim = th (read only when named; default 0 = off,
+//! bitwise): the exchange pair of the stage increment (the gas eint change de and E's
+//! -(ch/cl) de) is scaled by theta in [0, 1] where it would take the old vector's E or gas
+//! eint to <= th x its stage start.  The FSAL exchange slope is the last solve's relaxation
+//! rate; extrapolated over a21 dt (with K2) it overshoots where radiation flowing in is
+//! absorbed (HG prod KSPLIT: in 98 % of the stage-1 cells whose increment leaves E <= 0
+//! without its inflow the exchange pair dominates), and once face FCT limits the donors the
+//! inflow no longer pays for it.  gas = true, before time2_face_fct, where the gas loses
+//! (de < 0): theta the largest with eint + theta de >= th eint, but no smaller than what
+//! keeps E + its local part (the increment without the faces' divergence, all FCT can
+//! fall back to) >= th E, so that FCT, which reads the result, can still keep E positive.
+//! gas = false, after FCT (the face part final), where E loses (de > 0): theta the largest
+//! with E + dE >= th E.  The scaled-away exchange is taken by the implicit stage
+//! (L-stable).  Per cell: E + gas energy exact ((c/ch) dE + dEgas = 0), momentum and faces
+//! unchanged, no new state (restart and dt_retry bitwise); untouched cells bitwise.
+
+void RadiationM1::Time2K1XLim(int stage, Real c1, Real c2, bool gas) {
+  FluidRef flx = FluidRef::Get(pmy_pack);
+  if (!flx.on) return;
+  const bool two = (stage != 1);
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto in_ = t2inc;
+  auto u0_ = u0;
+  auto ug = flx.u0;
+  const bool etg = flx.use_etotgrav;
+  auto phc = etg ? flx.phicc0 : DvceArray4D<Real>();
+  const bool emh = flx.mhd;
+  auto emg = emag0;
+  const bool csk = cs_geom;
+  auto ccl = pmy_pack->pcoord->cos_cell;
+  // (time2_inc_energy = rad: t2kei is the KE increment, unchanged here)
+  // (the faces' divergence as Time2FaceFct reads it: none stored yet = none taken)
+  const bool fdo = gas && t2pf1_ok && (!two || t2pf2_ok) &&
+                   t2pf1.extent_int(0) >= pmy_pack->nmb_thispack;
+  auto p1_ = t2pf1;
+  auto p2_ = t2pf2;
+  const bool tr2 = trans_on, tr3 = trans_on && trans_x3;
+  auto &mbsize = pmy_pack->pmb->mb_size;
+  auto vol = pmy_pack->pcoord->volume;
+  auto ar1 = pmy_pack->pcoord->area.x1f;
+  auto ar2 = pmy_pack->pcoord->area.x2f;
+  auto ar3 = pmy_pack->pcoord->area.x3f;
+  const bool curv = (cs_geom || sph_geom) && vol.extent_int(0) > nmb1 &&
+                    vol.extent_int(3) > 1 && ar1.extent_int(0) > nmb1;
+  const Real cc1 = c1, cc2 = two ? c2 : 0.0;
+  const Real chcl = chat/c_light, th = t2_k1xlim;
+  Real nx = 0.0;
+  Kokkos::parallel_reduce("m1_t2_k1xlim", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+      DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sum) {
+    const Real dd = ug(m,IDN,k,j,i), idd = 1.0/fmax(dd, 1.0e-300);
+    const Real q1 = ug(m,IM1,k,j,i), q2 = ug(m,IM2,k,j,i), q3 = ug(m,IM3,k,j,i);
+    const Real cc = csk ? ccl(m,k,j) : 0.0;
+    const Real ek0 = CsKeMom(q1, q2, q3, cc)*idd;
+    const Real w = CsKeMom(q1 + in_(m,M1_T2_M1,k,j,i), q2 + in_(m,M1_T2_M1+1,k,j,i),
+                           q3 + in_(m,M1_T2_M1+2,k,j,i), cc)*idd - ek0;
+    const Real de = in_(m,M1_T2_EN,k,j,i) - w;
+    const Real e0 = u0_(m,M1_E,k,j,i);
+    Real tq = 1.0;
+    if (!gas) {   // E loses: E + dE >= th E
+      if (!(de > 0.0)) return;
+      const Real need = th*e0 - e0 - in_(m,M1_T2_E,k,j,i);
+      if (!(e0 > 0.0)) {
+        tq = 0.0;
+      } else if (need > 0.0) {
+        tq = fmax(1.0 - need/(chcl*de), 0.0);
+      }
+    } else {   // the gas loses: eint + theta de >= th eint
+      if (!(de < 0.0)) return;
+      Real egr = etg ? dd*phc(m,k,j,i) : 0.0;
+      if (emh) egr += emg(m,k,j,i);
+      const Real eg0 = ug(m,IEN,k,j,i) - ek0 - egr;
+      if (!(eg0 > 0.0) || eg0 + de > th*eg0) return;
+      tq = fmax((1.0 - th)*eg0/(-de), 0.0);
+      Real fd = 0.0;
+      if (fdo) {
+        Real g = 0.0;
+        for (int d = 0; d < 3; ++d) {
+          if ((d == 1 && !tr2) || (d == 2 && !tr3)) {continue;}
+          const int dk = (d == 2), dj = (d == 1), di = (d == 0);
+          for (int u = 0; u < 2; ++u) {
+            const int kk = k + u*dk, jj = j + u*dj, ii = i + u*di;
+            Real a;
+            if (curv) {
+              a = (d == 0) ? ar1(m,kk,jj,ii) : ((d == 1) ? ar2(m,kk,jj,ii) :
+                                                          ar3(m,kk,jj,ii));
+            } else {
+              const auto &s = mbsize.d_view(m);
+              a = (d == 0) ? s.dx2*s.dx3 : ((d == 1) ? s.dx1*s.dx3 : s.dx1*s.dx2);
+            }
+            const Real gf = a*(cc1*p1_(m,d,kk,jj,ii) + cc2*p2_(m,d,kk,jj,ii));
+            g += u ? -gf : gf;
+          }
+        }
+        const auto &s = mbsize.d_view(m);
+        fd = g/(curv ? vol(m,k,j,i) : s.dx1*s.dx2*s.dx3);
+      }
+      // (E keeps the gain its local part needs: E + local part >= th E)
+      const Real el = e0 + in_(m,M1_T2_E,k,j,i) - fd;
+      const Real tqe = (el > th*e0) ? 1.0 - (el - th*e0)/(chcl*(-de)) : 1.0;
+      tq = fmin(fmax(tq, tqe), 1.0);
+    }
+    if (!(tq < 1.0)) return;
+    const Real mv = (1.0 - tq)*de;   // (the exchange taken back: the stage solve's)
+    in_(m,M1_T2_EN,k,j,i) -= mv;
+    in_(m,M1_T2_E,k,j,i) += chcl*mv;
+    sum += 1.0;
+  }, Kokkos::Sum<Real>(nx));
+  t2_k1xlim_n += nx;
 }
 
 //----------------------------------------------------------------------------------------
@@ -4259,6 +4379,9 @@ void RadiationM1::Time2Report() {
   }
   if (t2_k1stiff > 0.0) {
     std::cout << " k1_stiff(s=" << t2_k1stiff << ") cells(rank 0)=" << t2_k1stiff_n;
+  }
+  if (t2_k1xlim > 0.0) {
+    std::cout << " k1_xlim(th=" << t2_k1xlim << ") cell-stages(rank 0)=" << t2_k1xlim_n;
   }
   if (t2_theta > 0.0) {   // facebound-1112
     Real hc[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
