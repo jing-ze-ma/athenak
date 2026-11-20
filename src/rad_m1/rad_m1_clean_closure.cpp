@@ -320,13 +320,17 @@ void RadiationM1::CleanClosureIterate() {
   auto u0_ = u0;
   auto w = cln_w;
   auto u = cln_x;
+  auto phq = cln_phic;
+  const bool rfi = !cell && cln_rfin;   // (clean_ray_flux_in = phi)
   par_for("cln_clositer", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     iw_(m,M1_IW_EN,k,j,i) = fmax(cell ? u(m,CLC_K,k,j,i) : w(m,CLW_EK,k,j,i), 0.0);
     iw_(m,M1_IW_TP,k,j,i) = w(m,CLW_T,k,j,i);
-    iw_(m,M1_IW_F1,k,j,i) = cell ? cl*u(m,CLC_K+1,k,j,i) : u0_(m,M1_F1,k,j,i);
-    iw_(m,M1_IW_F2,k,j,i) = cell ? cl*u(m,CLC_K+2,k,j,i) : u0_(m,M1_F1+1,k,j,i);
-    iw_(m,M1_IW_F3,k,j,i) = cell ? cl*u(m,CLC_K+3,k,j,i) : u0_(m,M1_F1+2,k,j,i);
+    const int fw[3] = {M1_IW_F1, M1_IW_F2, M1_IW_F3};
+    for (int b = 0; b < 3; ++b) {
+      iw_(m,fw[b],k,j,i) = cell ? cl*u(m,CLC_K+1+b,k,j,i) :
+                           (rfi ? phq(m,b,k,j,i) : u0_(m,M1_F1+b,k,j,i));
+    }
   });
   CleanRays();
   CleanClosureFill();
@@ -680,6 +684,8 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
 
   auto iw_ = iw;
   auto u0_ = u0;
+  auto phq = cln_phic;
+  const bool rfi = !cln_cell && cln_rfin;   // (clean_ray_flux_in = phi)
   auto uh = fl.u0;
   auto eos = fl.eos;
   auto k1 = t2k1;
@@ -737,9 +743,10 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
     if (active) {
       iw_(m,M1_IW_EN,k,j,i) = e;
       iw_(m,M1_IW_TP,k,j,i) = t;
-      iw_(m,M1_IW_F1,k,j,i) = u0_(m,M1_F1,k,j,i);
-      iw_(m,M1_IW_F2,k,j,i) = u0_(m,M1_F1+1,k,j,i);
-      iw_(m,M1_IW_F3,k,j,i) = u0_(m,M1_F1+2,k,j,i);
+      const int fw[3] = {M1_IW_F1, M1_IW_F2, M1_IW_F3};
+      for (int b = 0; b < 3; ++b) {   // (clean_ray_flux_in = phi: the faces' Phi)
+        iw_(m,fw[b],k,j,i) = rfi ? phq(m,b,k,j,i) : u0_(m,M1_F1+b,k,j,i);
+      }
     }
     if (new_opac) {
       Real op, oe, of, os;
