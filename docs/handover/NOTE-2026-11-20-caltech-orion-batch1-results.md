@@ -235,3 +235,7 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   FAILED: last 100 lines in caltech_results/LS_rsg_r2/FAIL_tail100.txt
   LS_rsg_r2: OOM as expected, `Kokkos ERROR: Cuda memory space failed to allocate 5.582 GiB` at setup (GPU at 114 GB). Going on.
 - LS_rsg_r3 (hpc-sm-01-11): rc=0 wall=139 | cycles 589788 - 589808 | steady 3.477 s/cycle | GPU MiB max 141597 min 5 | CW a 0 FATAL 0 |  
+- LWt1170_hg (hpc-sm-02-11): rc=0 wall=587 | cycles 624961 - 625061 | steady 5.018 s/cycle | GPU MiB max 116347 min 115799 | CW a 0 FATAL 0 |  real_nb v2 -> caltech_results/LW_real_nb2.txt
+- KX001_hg (hpc-sm-02-10): rc=1 wall=403 | cycles 624961 - 624965 | steady 16.674 s/cycle | GPU MiB max 115761 min 114973 | CW a 11 FATAL 1 |  CW 11 FATAL 1 | KSPLIT 3 OLDVEC 3 | k1_xlim' in block 'rad_m1' is absent from the restart's input: added from the command line (= 0.1) |  | CLEAN REAL lines 2: CLEAN REAL cycle 624964 | faces 205357056: F^H/(c maxE) >1 25950219 >10 567652 max 1.111e+04 | Phi/(c maxE) >1 5421 >10 0 max 4.875e+00 | cells 69206016: |Fcell|/(cE) >1 25251935 >10 645864 max 1.974e
+  FAILED: last 100 lines in caltech_results/KX001_hg/FAIL_tail100.txt
+- LS_rsg_r6 (hpc-sm-01-17,hpc-sm-02-03): rc=0 wall=97 | cycles 589788 - 589808 | steady 2.027 s/cycle | GPU MiB max 72513 min 5 | CW a 0 FATAL 0 |  

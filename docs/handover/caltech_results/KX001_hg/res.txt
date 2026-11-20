@@ -1,0 +1,6 @@
+cycles 624961 - 624965 dt [68.96552, 100.5172, 106.3636] s/cycle(all) ['26.97', '30.64', '2.71', '34.61'] steady(excl first+last) 16.674 first elapsed 44.2 last elapsed 139.2
+[]
+CW a 11 FATAL 1 retries []
+GPU mem peak MiB max 115761 min 114973 (n=4)
+rc=1 wall=403
+DONE

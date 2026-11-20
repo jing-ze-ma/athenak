@@ -1,0 +1,1 @@
+TAG=LS_rsg_r6 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c md5=dcda4fb0cf556deb57f0098d863344fb RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=20 MODE=speed HOLDER=6133592 NODES=hpc-sm-01-17,hpc-sm-02-03 NR=6 PPN=3 ENVX= EX= UCX=UCX_IB_GPU_DIRECT_RDMA=no 

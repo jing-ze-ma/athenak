@@ -1,0 +1,9 @@
+total 14330860
+-rw-r-----. 1 jingze hpc_carnegie_poc 1384510625 Nov 20 05:46 hegiant.hydro_w.01741.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 1938158776 Nov 20 05:40 hegiant.m1.01741.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 1938158776 Nov 20 05:41 hegiant.m1.01742.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 1938158777 Nov 20 05:43 hegiant.m1.01743.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 1938158777 Nov 20 05:44 hegiant.m1.01744.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 1938158777 Nov 20 05:46 hegiant.m1.01745.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 1938158777 Nov 20 05:46 hegiant.m1.01746.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 1661334707 Nov 20 05:46 hegiant.m1_vet.00117.bin
