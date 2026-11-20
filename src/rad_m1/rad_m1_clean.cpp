@@ -1220,22 +1220,37 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
                              SQR(s.the_array[13]));
       s.the_array[22] = fabs(s.the_array[9]);
       s.the_array[23] = v*rr*sqrt(SQR(y[1]) + SQR(y[2]));
+      // spherical polar 3-D: the L_z the torque form of the phi faces' transverse stress
+      // gives through an open radial boundary (one sided there, CleanTransSide = 0):
+      // h sin(theta) A r_f (D_13 E) of the boundary cell (inner +, outer -), approx
+      // (E = u0 now)
+      if (sph && x.three_d) {
+        const Real hh = x.h;
+        if (i == x.is && CleanTransSide(x, 0, m, k, j, i, 0) == 0) {
+          s.the_array[24] += hh*x.tg(m,2,j)*x.area[0](m,k,j,i)*x.x1f(m,i)*
+                             x.cs(m,4,k,j,i)*pur(m,M1_E,k,j,i);
+        }
+        if (i == x.ie && CleanTransSide(x, 0, m, k, j, i, 1) == 0) {
+          s.the_array[24] -= hh*x.tg(m,2,j)*x.area[0](m,k,j,i+1)*x.x1f(m,i+1)*
+                             x.cs(m,4,k,j,i)*pur(m,M1_E,k,j,i);
+        }
+      }
       sum += s;
     }, Kokkos::Sum<array_sum::GlobalSum>(cs));
-    Real g[24];
-    for (int c = 0; c < 24; ++c) g[c] = cs.the_array[c];
+    Real g[25];
+    for (int c = 0; c < 25; ++c) g[c] = cs.the_array[c];
 #if MPI_PARALLEL_ENABLED
-    MPI_Allreduce(MPI_IN_PLACE, g, 24, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, g, 25, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
     if (global_variable::my_rank == 0) {
       std::printf("CAUD cycle %d t2s %d mark %d %s from %s h %.9e M %.17e Lg %.17e "
                   "Pg %.17e %.17e %.17e Lr %.17e Pr %.17e %.17e %.17e | dM %.10e dLg %.10e "
                   "dPg %.10e %.10e %.10e dLr %.10e dPr %.10e %.10e %.10e | sLz %.6e sP %.6e "
-                  "sdL %.6e sdP %.6e sdM %.6e sLt %.6e | lzl %.17e lzp %.17e\n",
+                  "sdL %.6e sdP %.6e sdM %.6e sLt %.6e | lzl %.17e lzp %.17e | Lbnd %.10e\n",
                   pmy_pack->pmesh->ncycle, t2_solve, cmark, tag, ctag, dt_sub,
                   g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7], g[8],
                   g[9], g[10], g[11], g[12], g[13], g[14], g[15], g[16], g[17],
-                  g[18], g[19], g[20], g[21], g[22], g[23], cln_lzl, cln_lzp);
+                  g[18], g[19], g[20], g[21], g[22], g[23], cln_lzl, cln_lzp, g[24]);
     }
     ++cmark;
     ctag = tag;
