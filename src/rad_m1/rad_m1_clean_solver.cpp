@@ -119,6 +119,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.cseam = (pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::periodic)
             ? 0.5/tan(ms.x2min) + 0.5/tan(ms.x2max) : 0.0;   // (read on that wrap only)
   x.cub = pmy_pack->pmesh->use_cubed_sphere;
+  x.lwb = x.cub && cln_latwb;
   if (x.sph || (!x.cub && cln_rfv > 0)) {
     auto *pc = pmy_pack->pcoord;
     x.vol = pc->volume;
