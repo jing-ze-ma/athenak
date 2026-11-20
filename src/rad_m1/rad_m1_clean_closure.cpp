@@ -1454,17 +1454,19 @@ void RadiationM1::CleanRingMoments() {
   const int qb = 0, qn = (slot[nk] >= 0) ? 1 : 0;
   auto pd = cln_rpd;
   if (!cln_rok || b != cln_rb) {
+    const bool f0 = !cln_insteady;   // (a fill outside the steady start: below)
     if (shift) {
       CleanRingShift(b);
     } else if (full && ema) {
       // RotAvgEmaInit: the J-weighted equal mix of the current and the previous set (its
-      // moments in rr's offsets, above); the aux := the current set
+      // moments in rr's offsets, above); the aux := the current set.  Outside the steady
+      // start the fill0 form (as the window's fill below): the current set alone, count 1
       par_for("cln_ring_einit", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k0, const int j0, const int i0) {
         const int k = k0 - ks, j = j0 - js, i = i0 - is;
         const Real jb = rl(m,qb,CLN_J,k,j,i), jp = rr(m,fr[int{CLN_J}],k,j,i);
         const Real jm = jmin*iwr(m,M1_IW_EN,k0,j0,i0);
-        const bool v = jb > 0.0 && jb >= jm && jp > 0.0 && jp >= jm;
+        const bool v = !f0 && jb > 0.0 && jb >= jm && jp > 0.0 && jp >= jm;
         const Real ws = v ? jp/jb : 1.0;
         for (int n = 0; n < CLN_N; ++n) {
           const int f = fr[n];
@@ -1474,7 +1476,7 @@ void RadiationM1::CleanRingMoments() {
         }
         rr(m,nfr,k,j,i) = jb;
         rr(m,nfr+1,k,j,i) = rl(m,qb,CLN_D11,k,j,i);
-        rr(m,nfr+2,k,j,i) = v ? 2.0 : 0.0;
+        rr(m,nfr+2,k,j,i) = v ? 2.0 : ((f0 && jb > 0.0 && jb >= jm) ? 1.0 : 0.0);
       });
     } else if (full) {
       // a fill: within CleanSteadyStart (a fresh start's ring, built at the initial state
@@ -1483,7 +1485,6 @@ void RadiationM1::CleanRingMoments() {
       // and enter one per block through the shifts: their sweep at a step's build would
       // take a state one step on, at a time that depends on dt, into the window for K
       // blocks, an O(dt) error (deck D with rotation 1st order, 2nd with this form)
-      const bool f0 = !cln_insteady;
       par_for("cln_ring_fill", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k0, const int j0, const int i0) {
         const int k = k0 - ks, j = j0 - js, i = i0 - is;
