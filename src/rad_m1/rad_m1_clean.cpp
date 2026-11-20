@@ -2691,6 +2691,7 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
   const bool pdo = x.pd, xpd = cln_xpat;
   const bool xte = (cln_xte > 0) && x.feedback;   // (clean_xt_exact: CLW_XA, CLW_XW)
   const bool krl = cln_krel_on && x.feedback;   // (clean_stag_kreal: CLW_KR)
+  const bool sbo = cln_sbown && x.gf;   // (clean_stag_sbown)
   auto kc = cln_kcnt;
   if (pdo) Kokkos::deep_copy(Kokkos::subview(kc, 0), 0.0);
   CleanParForLb<3>("cln_rhs", nmb1, ks, ke, js, je, is, ie,
@@ -2751,7 +2752,8 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
       // (y realisable, |y| <= E, as implicit_realisable_coupling: the gas eint takes the
       // same sb, CLW_EP, so the energy stays exact)
       ek = fmax(x.w(m,CLW_EK,k,j,i), 0.0);
-      if (y2 > SQR(ek)) by *= ek/std::sqrt(y2);
+      const bool ysc = y2 > SQR(ek);
+      if (ysc) by *= ek/std::sqrt(y2);
       gm = 1.0 - 0.5*b2;
       sb = hcke*((0.5*b2 - ba)*x.w(m,CLW_EK,k,j,i) + 2.0*by);
       // gflux: sb = hcke [dop E + 2 beta.F'/c] with the comoving flux F' = F - a E taken
@@ -2760,14 +2762,19 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
       // a E, which hcke >> 1 turned into a lagged source the iteration could not settle
       dop = 0.5*b2 + ba;
       if (x.gf) sb = hcke*(dop*x.w(m,CLW_EK,k,j,i) + 2.0*(by - bp));
+      // (clean_stag_sbown: d sb/dE of the cell's own E, the face F' kept: the Doppler
+      // part, by of a realisable y scaled with E, the cubed sphere's a E)
+      Real kap = hcke*(dop + 2.0*(((ysc && ek > 0.0) ? by/ek : 0.0) - (x.cub ? ba : 0.0)));
       // (clean_stag_freal: the comoving part realisable, |E0 - E| <= 2 |beta| E as the
       // old production's implicit_realisable_coupling: a face F' of a hot neighbour
       // through a cold opaque cell is no flux of its E; the gas takes the same sb)
       if (x.fre) {
         const Real s0 = hcke*dop*x.w(m,CLW_EK,k,j,i), sl = 2.0*hcke*std::sqrt(b2)*ek;
+        if (fabs(sb - s0) > sl) kap = hcke*(dop + std::copysign(2.0*std::sqrt(b2), sb - s0));
         sb = s0 + fmin(fmax(sb - s0, -sl), sl);
       }
-      if (x.gf) x.w(m,CLW_JV+1,k,j,i) = hcke*dop;   // (d sb/dE, CleanNewtonUpdate)
+      if (x.gf) x.w(m,CLW_JV+1,k,j,i) = sbo ? kap : hcke*dop;   // (d sb/dE, NewtonUpdate)
+      if (sbo) dop = kap/hcke;   // (the E row takes it as the exchange, below)
       gr = !x.sbi && sb != -x.w(m,CLW_EP,k,j,i);   // (T took the last pass's sb)
     }
     const Real hckp = x.h*x.c*op(m,M1_OP_P,k,j,i)*gm;

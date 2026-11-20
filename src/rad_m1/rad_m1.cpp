@@ -334,6 +334,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // the comoving part of sb at most 2 |beta| hc kE E_k and the faces of a restart from
     // the old scheme's file at most c E of their donor
     cln_freal = stag("clean_stag_freal", cln_gflux && cln_fsolve);
+    // clean_stag_sbown (default off): the beta terms' slope in the cell's own E (the
+    // Doppler part, the realisable y and the cubed sphere's a E scaled with E, the
+    // freal bound's side) taken in the Newton step as gflux takes the Doppler part
+    // (CleanRightHandSide, CleanNewtonUpdate), the face F' lagged; needs gflux
+    cln_sbown = stag("clean_stag_sbown", false);
+    if (cln_sbown && !cln_gflux) {
+      std::cout << "### FATAL ERROR <rad_m1>/clean_stag_sbown needs clean_stag_gflux"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     // clean_stag_csvec_radial (true, the only form): the cubed sphere's cell vector exact
     // for a radial field (CleanStagCsVector); false (the old least-squares fit) is gone
     cln_csvr = stag("clean_stag_csvec_radial", true);
