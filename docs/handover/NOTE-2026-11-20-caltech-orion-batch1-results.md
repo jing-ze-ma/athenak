@@ -294,3 +294,6 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   FAILED: last 100 lines in caltech_results/KX001f_hg/FAIL_tail100.txt
 - KL8_rsg (hpc-sm-02-11): rc=0 wall=125 | cycles 589788 - 589808 | steady 2.652 s/cycle | GPU MiB max 108711 min 107577 | CW a 0 FATAL 0 |  hstmd5 rsg.hydro.hst:a67cd964 rsg.user.hst:17b51966 
 - KL2_rsg (hpc-sm-02-09): rc=0 wall=133 | cycles 589788 - 589808 | steady 2.759 s/cycle | GPU MiB max 108711 min 107577 | CW a 0 FATAL 0 |  hstmd5 rsg.hydro.hst:a67cd964 rsg.user.hst:17b51966 
+- (06:53) Got 6041d6e66: KXR1_rsg/KSR1_rsg and KXH20_hg/KSH20_hg (ksplit7) queued as two together-pairs after KD001 (CW and k1_xlim counts, full run.log.gz).
+- KXR1_rsg (hpc-sm-02-11): rc=0 wall=124 | cycles 589788 - 589808 | steady 2.656 s/cycle | GPU MiB max 109209 min 108075 | CW a 0 FATAL 0 |  CW 0 | k1_xlim lines 2
+- KSR1_rsg (hpc-sm-01-11): rc=0 wall=125 | cycles 589788 - 589808 | steady 2.698 s/cycle | GPU MiB max 109209 min 108075 | CW a 0 FATAL 0 |  CW 0 | k1_xlim lines 0
