@@ -246,3 +246,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   FAILED: last 100 lines in caltech_results/LS_hg_r2/FAIL_tail100.txt
 - LS_hg_r3 (hpc-sm-02-11): rc=134 wall=69 |  | steady  s/cycle | GPU MiB max 142483 min 5 | CW a 0 FATAL 0 |  
   FAILED: last 100 lines in caltech_results/LS_hg_r3/FAIL_tail100.txt
+- KX1d_hg (hpc-sm-02-11): rc=0 wall=124 | cycles 624961 - 624967 | steady 5.749 s/cycle | GPU MiB max 116341 min 115785 | CW a 0 FATAL 0 |  CW 0 FATAL 0 | KSPLIT 11 OLDVEC 12 | k1_xlim(th=1.000000e-01) cell-stages(rank 0)=9.614900e+04 face_fct calls=1.200000e+01 skipped(no face flux)=0.000000e+00 K1 flux from U^n=1.000000e+00 | left (Q<=0)=3.703800e+04 | CLEAN REAL lines 5: CLEAN REAL cycle 624966 | faces 205357056: F^H/(c maxE) >1 40022914 >10 4974362 max 5.157e+06 | Phi/(c maxE) >1 625702 >10 32021 max 2.195e+06 | cells 69206016: |Fcell|/(cE) >1 31246649 >10 3872529 ma
+- LS_hg_r6 (hpc-sm-02-09,hpc-sm-02-10): rc=0 wall=142 | cycles 624961 - 624981 | steady 3.917 s/cycle | GPU MiB max 79985 min 5 | CW a 0 FATAL 0 |  
