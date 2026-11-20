@@ -387,3 +387,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - L1_rsg_on (hpc-sm-01-11): rc=1 wall=8543 | cycles 589788 - 592299 | steady 3.222 s/cycle | GPU MiB max 110563 min 109593 | CW a 40 FATAL 1 |  CW 40 | retry 38 | last cycle cycle=592299
   FAILED: last 100 lines in caltech_results/L1_rsg_on/FAIL_tail100.txt
 - L1_rsg_off (hpc-sm-02-11): rc=0 wall=10254 | cycles 589788 - 592788 | steady 3.394 s/cycle | GPU MiB max 108943 min 107973 | CW a 50 FATAL 0 |  CW 50 | retry 52 | last cycle cycle=592788
+  progress 11:11: L1_rsg_off:DONE L1_rsg_on:DONE H_fp_hg:DONE H_tel_hg:DONE H_xl_hg:625712(CW 0) R_fp_rsg:590483(CW 12) R_tel_rsg:590524(CW 1) R_xl_rsg:590362(CW 0) K_on_hg:625601(CW 0) L2_hg_off:stopped(requeued) L2_hg_on:stopped(requeued)
