@@ -1,0 +1,14 @@
+<rad_m1> implicit_pos_floor_cons: the E floor's uncovered raise is taken from the radiation of the same column (no energy created)
+<time> dt_retry on: fac 0.5 max 8 ngood 20 grow 1.1 views minimal cap -1
+<time> dt_retry checkpoint: 2423 members, 638 Views (13 copied, 3.008365e+03 MB on rank 0, dt_retry_host: 1.922911e+03 MB of it in pinned host memory): hyd.u0 4.174800e+02 hyd.w0 4.174800e+02 hyd.wder 1.669920e+02 hyd.wtemp 8.349600e+01 m1.esrc 8.349600e+01 m1.f0x1 8.361360e+01 m1.f0x2 8.468880e+01 m1.f0x3 8.468880e+01 m1.t2k1 6.679680e+02 m1.t2pf1 2.504880e+02 m1.u0 3.339840e+02 m1.opac 3.339840e+02 pgen.hs_fsub 5.688000e-03
+CLEAN WARNING cycle 625174: backward-Euler solve not converged (dt_retry, 2 so far; last change 6.877e-01)
+CLEAN WARNING cycle 625174: backward-Euler solve not converged (dt_retry, 2 so far; last change 3.439e-06)
+CLEAN WARNING cycle 625174: backward-Euler solve not converged (dt_retry, 2 so far; last change 2.881e-06)
+CLEAN WARNING cycle 625174: backward-Euler solve not converged (dt_retry, 2 so far; last change 4.108e-06)
+CLEAN WARNING cycle 625174: backward-Euler solve not converged (dt_retry, 2 so far; last change 6.225e-06)
+<time> dt_retry: 300 checkpoints (1.204045e+01 s, 3.008365e+03 MB on rank 0), 5 retries, cap -1.000000e+00
+<time> dt_retry: 600 View copies skipped (unwritten since the last copy, dt_retry_host; not written in the cycle, SetSkip)
+<time> counters_rollback: event counters of discarded attempts dropped: dt_retry 5, backward-Euler redo 5, hesdirk2 helper solves 0; E-floor created energy dropped (m1_pos_un, x volume) 0.000000e+00 / 0.000000e+00 / 0.000000e+00, vceil_de dropped 0.000000e+00 / 0.000000e+00 / 0.000000e+00
+<hydro> EOS floors (all ranks, accepted steps, RK-weighted): mass created x vol=5.792315e+17 energy created x vol=3.313764e+37 | FOFC first-order cell-stages=0.000000e+00
+<rad_m1> m1-positivity: implicit_g0_exchange=1 implicit_g0_limit=1.000000e+00 clipped cell-passes=0.000000e+00 | implicit_pos_gas=1 (frac 1.000000e-03) cell-solves=1.204844e+09 energy moved rad->gas=4.374568e+41 | E floor raises cell-solves=2.323653e+08 energy from gas=0.000000e+00 energy created=0.000000e+00 (code units x volume) [in discarded attempts, rolled back: 0.000000e+00] of which solve undershoot (pos_floor_solve)=0.000000e+00 taken from the column's radiation (implicit_pos_floor_cons)=8.419584e+39 | |F| > c E scaled back cell-solves=0.000000e+00 sum(|F|/(cE) - 1)=0.000000e+00 | hydro EOS floors energy created=3.313764e+37
+<rad_m1> hesdirk2 wall split (rank 0 s): clean stage steps 8.623397e+02 (posfix 0.000000e+00) | failed stage attempts 0.000000e+00 (posfix 0.000000e+00) | their BE redo 0.000000e+00 | auto_be steps 0.000000e+00 | other BE steps 0.000000e+00 | discarded dt_retry attempts 0.000000e+00
