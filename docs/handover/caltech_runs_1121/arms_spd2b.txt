@@ -1,0 +1,12 @@
+# SPD2 P5 step 2 gate (orion 2026-11-20). B_spd2b = caltech-runs/spd2b 170812c47 (v20l + 1 commit). Plain cmake line. Medium priority.
+FINALRST=0                          SD_rsg  B_spd2b RSG 10 rsg_v20.keys
+FINALRST=1 MODE=rt NH=3             SDR_rsg B_spd2b RSG 6  rsg_v20.keys
+FINALRST=0 ENVX=CLEAN_POISON_GHOST=2 SDP_rsg B_spd2b RSG 10 rsg_v20.keys
+# timing pairs: round 1 together on 2 comparable nodes (claimed exclusively, not 02-16), round 2 swapped
+FINALRST=0 SDT_b_1 B_v20l  RSG 10 rsg_v20.keys
+FINALRST=0 SDT_s_1 B_spd2b RSG 10 rsg_v20.keys
+FINALRST=0 SDT_b_2 B_v20l  RSG 10 rsg_v20.keys
+FINALRST=0 SDT_s_2 B_spd2b RSG 10 rsg_v20.keys
+# if cheap: HG pair (together)
+FINALRST=0 SDT_b_hg B_v20l  HG 10 hg_v20.keys time/dt_retry_host=m1
+FINALRST=0 SDT_s_hg B_spd2b HG 10 hg_v20.keys time/dt_retry_host=m1
