@@ -1267,7 +1267,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (fpc) RstFingerprint("cln_setup");
   if (cell) Kokkos::deep_copy(Kokkos::subview(cln_v, Kokkos::ALL, 2, Kokkos::ALL,
                                               Kokkos::ALL, Kokkos::ALL), 0.0);
-  Real dnl = 0.0;   // (the last pass's change, implicit_resid_fatal)
+  Real dnl = 0.0, dnl0 = -1.0;   // (the last pass's change and the one before)
   for (int ipos = 0; ; ++ipos) {
     CleanFirstIterate();
     cln_fsk = false;
@@ -1355,11 +1355,19 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       const bool lp = cln_linpass && !cell && nit < 0 && inl + 1 < maxnl;
       if (!iterate || (nit < 0 && !lp)) break;
       const bool fbl = lp;
+      if (!cell && !t2stage && inl + 1 == maxnl) {   // (CleanWorstCell)
+        auto sv = Kokkos::subview(cln_w.s, Kokkos::ALL, std::make_pair(CLW_EK,
+                                  CLW_EK + 1), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL);
+        Kokkos::realloc(cln_wci, sv.extent(0), 1, sv.extent(2), sv.extent(3),
+                        sv.extent(4));
+        Kokkos::deep_copy(cln_wci, sv);
+      }
       const Real de = cell ? CleanCellNewtonUpdate() : CleanNewtonUpdate();
       if (cln_bon) tol_nl = cln_tolb;
       if (lagged && inl < cln_maxpic) dpic = de;
       Real dv = 0.0;
       if (cln_feedback) dv = cell ? CleanCellVelocityUpdate() : CleanVelocityUpdate();
+      dnl0 = (inl + 1 == maxnl) ? dnl : -1.0;
       dnl = fmax(de, dv);
       // (clean_tol_rel, as the old production's implicit_tol_rel: the strict test stops at
       // kappa times the first pass's change, at most clean_tol_rel_max)
@@ -1447,8 +1455,14 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
                   dtr_on ? "dt_retry" : (fatal ? "no dt_retry: > implicit_resid_fatal" :
                   "no dt_retry: accepted"), static_cast<int>(cln_nfail), dnl);
     }
+    if (!cell) CleanWorstCell(dnl, dnl0);
     if (fatal) CleanFatal("<rad_m1> clean: a backward-Euler solve did not converge and "
                           "its last change exceeds <rad_m1>/implicit_resid_fatal");
+  }
+  if (cln_rtb && dtr_redo && cln_bon && nit >= 0 && global_variable::my_rank == 0) {
+    std::printf("CLEAN RETRY cycle %d t2s %d: the redone solve converged to the budget "
+                "tolerance %.3e, last change %.3e\n", pmy_pack->pmesh->ncycle, t2_solve,
+                cln_tolb, dnl);
   }
   if (global_variable::my_rank == 0) {
     if (cell) {
@@ -2426,6 +2440,52 @@ void RadiationM1::CleanStagXSweep() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanWorstCell
+//! \brief CLEAN WORST (diagnostic) of a backward-Euler solve that did not converge: its
+//! kind from the last two changes (STALL: fell less than 2x, a cut dt does not help) and
+//! the cell of the largest |dE|/S of the last pass, printed by its rank
+
+void RadiationM1::CleanWorstCell(const Real dnl, const Real dnl0) {
+  const bool ok = std::isfinite(dnl) && dnl0 >= 0.0 && cln_bon;
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int ni = id.nx1, nji = id.nx2*ni, nkji = id.nx3*nji, is = id.is, js = id.js;
+  const int ks = id.ks;
+  auto w = cln_w;
+  auto ci = cln_wci;
+  auto op = opac;
+  Kokkos::MaxLoc<Real,int>::value_type ml;
+  Kokkos::parallel_reduce("cln_worst", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          ok ? pmy_pack->nmb_thispack*nkji : 0),
+  KOKKOS_LAMBDA(const int q, Kokkos::MaxLoc<Real,int>::value_type &v) {
+    const int m = q/nkji, k = ks + (q%nkji)/nji, j = js + (q%nji)/ni, i = is + q%ni;
+    const Real d = fabs(w(m,CLW_EK,k,j,i) - ci(m,0,k,j,i))/w(m,CLW_SE,k,j,i);
+    if (d > v.val) {v.val = d; v.loc = q;}
+  }, Kokkos::MaxLoc<Real,int>(ml));
+  const Real gmx = CleanReduce(ml.val, true);
+  if (ok ? !(ml.loc >= 0 && ml.val >= gmx) : global_variable::my_rank != 0) return;
+  const int q = std::max(ml.loc, 0), m = q/nkji, k = ks + (q%nkji)/nji;
+  const int j = js + (q%nji)/ni, i = is + q%ni;
+  DvceArray1D<Real> cv("cln_worst", 5);
+  if (ok) {
+    par_for("cln_worst_cell", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int) {
+      cv(0) = w(m,CLW_EK,k,j,i);
+      cv(1) = w(m,CLW_EO,k,j,i);
+      cv(2) = w(m,CLW_T,k,j,i);
+      cv(3) = w(m,CLW_SE,k,j,i);
+      cv(4) = op(m,M1_OP_T,k,j,i);
+    });
+  }
+  auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cv);
+  std::printf("CLEAN WORST cycle %d %s last change %.3e (before %.3e) gid %d k %d j %d "
+              "i %d E %.6e E_old %.6e T %.6e S %.3e chi_T %.3e\n",
+              pmy_pack->pmesh->ncycle,
+              !std::isfinite(dnl) ? "BREAKDOWN" : (dnl0 < 0.0 ? "?" : (dnl > 2.0*dnl0 ?
+              "DIVERGE" : (dnl > 0.5*dnl0 ? "STALL" : "SLOW"))), dnl, dnl0,
+              ok ? pmy_pack->pmb->mb_gid.h_view(m) : -1, k, j, i, h(0), h(1), h(2), h(3),
+              h(4));
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanStagXCount
 //! \brief clean_stag_xdonor: the pass's cells with X <= 0 and faces at the cap (CLEAN
 //! XDONOR, diagnostic)
@@ -3125,7 +3185,7 @@ Real RadiationM1::CleanNewtonUpdate() {
     // change the linear solve fixes at the floor, its 0.1 tfl in the budget's norm)
     // (a step dt_retry redoes, whose state just failed, is solved strictly too)
     const Real tfl = fmax(cln_tol_nl, 10.0*cln_tol);
-    cln_tolb = (kok && !dtr_redo) ?
+    cln_tolb = (kok && (!dtr_redo || cln_rtb)) ?
                fmin(fmax(cln_bkap*ermax, tfl), cln_bmax) : tfl;
     cln_fe = 0.1*tfl;
   }
