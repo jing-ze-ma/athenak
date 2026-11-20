@@ -3394,6 +3394,7 @@ void RadiationM1::CleanStagBracket() {
   x.feedback = false;   // (the gas terms read the last iterate's work vectors)
   const Real efl = e_floor;
   const bool rat = cln_rayratio, thf = cln_thinf;
+  const int dgf = cln_dgform;
   const Real rmn = cln_raymin;
   auto iw_ = iw;
   CleanFor("cln_rayj", nmb1, ks, ke, js, je, is, ie,
@@ -3479,10 +3480,28 @@ void RadiationM1::CleanStagBracket() {
       auto rq = [&](const Real a, const Real b) {
         return (fmax(a, b) > 0.0) ? fmin(a, b)/fmax(a, b) : 1.0;
       };
-      const Real r = fmin(rq(fmax(x.w(m,CLW_EO,k-dk,j-dj,i-di), 0.0), fmax(jl, 0.0)),
-                          rq(fmax(x.w(m,CLW_EO,k,j,i), 0.0), fmax(jr, 0.0)));
-      const Real hup = x.fc[dir](m,CLF_HP,k,j,i)*jl + x.fc[dir](m,CLF_HM,k,j,i)*jr;
-      x.fc[dir](m,x.fdg,k,j,i) = r*r*x.c*(fmin(fmax(fy, -jr), jl) - hup);
+      const Real eol = fmax(x.w(m,CLW_EO,k-dk,j-dj,i-di), 0.0);
+      const Real eor = fmax(x.w(m,CLW_EO,k,j,i), 0.0);
+      // BEAMFIX prototype (clean_stag_dg_form): 1 q = 1, M1's flux subtracted at
+      // min(J, E_old); 2 r one-sided min(1, E_old/J); 3 = 2 with q = r; 4 pre-36ffdcd87
+      if (dgf == 4 || dgf == 6) {
+        x.fc[dir](m,x.fdg,k,j,i) = x.c*((dgf == 6) ? fmin(fmax(fy, -jr), jl) : fy) - pj;
+        return;
+      }
+      if (dgf == 5) {
+        x.fc[dir](m,x.fdg,k,j,i) = x.c*(fy - x.fc[dir](m,CLF_HP,k,j,i)*jl
+                                         - x.fc[dir](m,CLF_HM,k,j,i)*jr);
+        return;
+      }
+      auto rd = [&](const Real e, const Real jj) {
+        return (jj > e) ? e/jj : 1.0;
+      };
+      Real r = fmin(rq(eol, fmax(jl, 0.0)), rq(eor, fmax(jr, 0.0)));
+      if (dgf == 2 || dgf == 3) r = fmin(rd(eol, jl), rd(eor, jr));
+      const Real q = (dgf == 1) ? 1.0 : ((dgf == 3) ? r : r*r);
+      const Real ml = (dgf == 1) ? fmin(jl, eol) : jl, mr = (dgf == 1) ? fmin(jr, eor) : jr;
+      const Real hup = x.fc[dir](m,CLF_HP,k,j,i)*ml + x.fc[dir](m,CLF_HM,k,j,i)*mr;
+      x.fc[dir](m,x.fdg,k,j,i) = q*x.c*(fmin(fmax(fy, -jr), jl) - hup);
     });
   }
 }

@@ -3339,6 +3339,7 @@ class RadiationM1 {
   bool cln_lzbook = false;  // (the L_z ledger: cubed sphere, or 3-D spherical polar)
   bool cln_lzt = false;     // clean_cs_lz_tel
   bool cln_thinf = false;   // clean_stag_thinf
+  int cln_dgform = 0;       // clean_stag_dg_form (BEAMFIX prototype)
   // (clean_cs_lz_abs = 2: the L_z V R (dp_torque - dp) the gas does not take, booked as
   // the radiation's, cln_lzl (<rad_m1>/clean_cs_lz_ledger); its sums over the cells as the
   // gas momentum's slopes K1 (cln_lzs1, <rad_m1>/clean_cs_lz_k1), K2 (cln_lzs2) and stage
