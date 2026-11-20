@@ -45,3 +45,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   ompio. Batch 4 is queued after everything (builds h200-p4/h200/h200mb2 under way; nsys 2023.2.3 is on the nodes; no Kokkos
   nvtx connector found, so PF_* run without KOKKOS_TOOLS_LIBS). Starts are now staggered 30 s (RSG restart read is ~24 s).
 - CS_hg_tie (hpc-sm-02-09): rc=0 wall=135 | cycles 624961 - 624969 | steady 5.551 s/cycle | GPU MiB max 121663 min 121107 | CW a 0 FATAL 0 |  
+- V20FP_rsg (hpc-sm-02-11): rc=0 wall=159 | cycles 589788 - 589792 | steady 2.884 s/cycle | GPU MiB max 108763 min 107575 | CW a 0 FATAL 0 |   xcheck vs V20F_rsg/a: V20FP_rsg/rsg.hydro.hst=same V20FP_rsg/rsg.user.hst=same

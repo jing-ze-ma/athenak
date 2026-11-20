@@ -1,1 +1,1 @@
-vs V20F_rsg/a:
+vs V20F_rsg/a: V20FP_rsg/rsg.hydro.hst=same V20FP_rsg/rsg.user.hst=same
