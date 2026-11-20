@@ -650,6 +650,12 @@ std::array<uint32_t, 5> RadiationM1::CleanHaloKey(const std::vector<CleanGSeg<T>
   for (auto &s : sg) {
     const uint32_t a = (s.nc < 32) ? (1u << s.nc) - 1 : ~0u;
     for (int f = 0; f < 4; ++f) k[f] |= (s.fm[f] & a) << k[4];
+    if (((s.fm[0] | s.fm[1] | s.fm[2] | s.fm[3]) & a) != a) {   // (no silent skip)
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "CleanHaloKey: a ghost fill whose masks leave a "
+                << "component out of every face family" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     k[4] += s.nc;
   }
   return k;
