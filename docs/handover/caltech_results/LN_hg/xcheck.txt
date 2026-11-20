@@ -1,0 +1,1 @@
+xcheck: user cols1-26==V20G_hg_ompio/a, hydro==V20G_hg_ompio/a

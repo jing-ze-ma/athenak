@@ -1,0 +1,1 @@
+TAG=LN_hg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_lean_425f2548f md5=6120328ac879b3d6dfc2ded799f2b80e RST=/resnick/groups/carnegie_poc/jingze/hgglob_1021/prodG/rst/hegiant.00139.rst N0=624961 NC=4 MODE=rt HOLDER=6133592 NODES=hpc-sm-02-04 NR=4 PPN=4 ENVX= EX=time/dt_retry_host=m1 UCX=
