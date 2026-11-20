@@ -1431,17 +1431,21 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       t2_flr_n += nf;
     }
   }
-  // xlim-1120 time2_k1_xlim = th (read only when named; default 0 = off, bitwise): the
-  // exchange pair of the stage increment (the gas eint change de and E's -(ch/cl) de) is
-  // scaled by theta in [0, 1], the largest value that keeps the old vector's E, with its
-  // face outflow removed and its inflow kept (what time2_face_fct can reach next), at
-  // >= th E of the stage start where E loses (de > 0) and the increment leaves E <= th E,
-  // or its gas eint at >= th eint where the gas loses (de < 0).
-  // The FSAL exchange slope is the last solve's relaxation rate: extrapolated over a21 dt
-  // (with K2) it overshoots in stiff cells and drives the stage start negative, which no
-  // face limiter can repair.  The scaled-away part is not lost: the implicit stage solve
-  // takes the exchange (L-stable).  Per cell: E + gas energy exact ((c/ch) dE + dEgas
-  // = 0), momentum and the faces unchanged, no new state (restart and dt_retry bitwise);
+  if (t2_inckc > 0.0) {Time2IncKeCap(stage);}   // hgfix-1110 time2_inc_kecap
+  if (t2_ksplit) {Time2KSplit(stage, c1, c2);}   // ksplit-1120 (study print)
+  if (t2_ffct) {Time2FaceFct(stage, c1, c2);}   // facebound-1112 step 1
+  // xlim-1120 time2_k1_xlim = th (read only when named; default 0 = off, bitwise): after
+  // time2_face_fct, the exchange pair of the stage increment (the gas eint change de and
+  // E's -(ch/cl) de) is scaled by theta in [0, 1], the largest value that leaves the old
+  // vector's E >= th E of the stage start where E loses (de > 0), or its gas eint >= th
+  // eint where the gas loses (de < 0).  The FSAL exchange slope is the last solve's
+  // relaxation rate; extrapolated over a21 dt (with K2) it overshoots where radiation
+  // flowing in is absorbed (HG prod KSPLIT: in 98 % of the stage-1 cells whose increment
+  // leaves E <= 0 without its inflow, the exchange alone does), and once FCT limits the
+  // donors the inflow no longer pays for it.  After FCT the face part is final, so the
+  // limiter acts only where the old vector would still be <= th.  The scaled-away part is
+  // taken by the implicit stage (L-stable).  Per cell: E + gas energy exact ((c/ch) dE +
+  // dEgas = 0), momentum and faces unchanged, no new state (restart and dt_retry bitwise);
   // cells it does not touch bitwise.
   if (t2_k1xlim > 0.0) {
     FluidRef flx = FluidRef::Get(pmy_pack);
@@ -1456,20 +1460,6 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       const bool csk = cs_geom;
       auto ccl = pmy_pack->pcoord->cos_cell;
       // (time2_inc_energy = rad: t2kei is the KE increment, unchanged here)
-      // (the face part of E's increment, as Time2FaceFct: none stored yet = none taken)
-      const bool fdo = t2pf1_ok && (!two || t2pf2_ok) &&
-                       t2pf1.extent_int(0) >= pmy_pack->nmb_thispack;
-      auto p1_ = t2pf1;
-      auto p2_ = t2pf2;
-      const bool tr2 = trans_on, tr3 = trans_on && trans_x3;
-      auto &mbsize = pmy_pack->pmb->mb_size;
-      auto vol = pmy_pack->pcoord->volume;
-      auto ar1 = pmy_pack->pcoord->area.x1f;
-      auto ar2 = pmy_pack->pcoord->area.x2f;
-      auto ar3 = pmy_pack->pcoord->area.x3f;
-      const bool curv = (cs_geom || sph_geom) && vol.extent_int(0) > nmb1 &&
-                        vol.extent_int(3) > 1 && ar1.extent_int(0) > nmb1;
-      const Real cc1 = c1, cc2 = two ? c2 : 0.0;
       const Real chcl = chat/c_light, th = t2_k1xlim;
       Real nx = 0.0;
       Kokkos::parallel_reduce("m1_t2_k1xlim", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
@@ -1485,45 +1475,15 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
         if (emh) egr += emg(m,k,j,i);
         const Real eg0 = ug(m,IEN,k,j,i) - ek0 - egr;
         const Real de = in_(m,M1_T2_EN,k,j,i) - w;
-        if (!(de != 0.0)) return;
         Real tq = 1.0;
-        if (de > 0.0) {   // E loses: E + its local part >= th E
-          const Real e0 = u0_(m,M1_E,k,j,i);
+        if (de > 0.0) {   // E loses: E + dE >= th E
+          const Real e0 = u0_(m,M1_E,k,j,i), need = th*e0 - e0 - in_(m,M1_T2_E,k,j,i);
           if (!(e0 > 0.0)) {
             tq = 0.0;
-          } else if (!(e0 + in_(m,M1_T2_E,k,j,i) > th*e0)) {   // (else: FCT not needed)
-            Real fd = 0.0, fi = 0.0;
-            if (fdo) {
-              Real g = 0.0;
-              for (int d = 0; d < 3; ++d) {
-                if ((d == 1 && !tr2) || (d == 2 && !tr3)) {continue;}
-                const int dk = (d == 2), dj = (d == 1), di = (d == 0);
-                for (int u = 0; u < 2; ++u) {
-                  const int kk = k + u*dk, jj = j + u*dj, ii = i + u*di;
-                  Real a;
-                  if (curv) {
-                    a = (d == 0) ? ar1(m,kk,jj,ii) : ((d == 1) ? ar2(m,kk,jj,ii) :
-                                                                ar3(m,kk,jj,ii));
-                  } else {
-                    const auto &s = mbsize.d_view(m);
-                    a = (d == 0) ? s.dx2*s.dx3 : ((d == 1) ? s.dx1*s.dx3 : s.dx1*s.dx2);
-                  }
-                  const Real gf = a*(cc1*p1_(m,d,kk,jj,ii) + cc2*p2_(m,d,kk,jj,ii));
-                  g += u ? -gf : gf;
-                  if (u ? (gf < 0.0) : (gf > 0.0)) fi += fabs(gf);   // (inflow)
-                }
-              }
-              const auto &s = mbsize.d_view(m);
-              const Real iv = 1.0/(curv ? vol(m,k,j,i) : s.dx1*s.dx2*s.dx3);
-              fd = g*iv;
-              fi *= iv;
-            }
-            const Real sl = in_(m,M1_T2_E,k,j,i) - fd;   // (E's local part, incl. -ch/cl de)
-            // (> 0: what it lacks with its full inflow, all FCT lets in at most)
-            const Real need = th*e0 - e0 - sl - fi;
-            if (need > 0.0) tq = fmax(1.0 - need/(chcl*de), 0.0);
+          } else if (need > 0.0) {
+            tq = fmax(1.0 - need/(chcl*de), 0.0);
           }
-        } else if (eg0 > 0.0) {   // the gas loses: eint + theta de >= th eint
+        } else if (de < 0.0 && eg0 > 0.0) {   // the gas loses: eint + theta de >= th eint
           if (!(eg0 + de > th*eg0)) tq = fmax((1.0 - th)*eg0/(-de), 0.0);
         }
         if (!(tq < 1.0)) return;
@@ -1535,9 +1495,6 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       t2_k1xlim_n += nx;
     }
   }
-  if (t2_inckc > 0.0) {Time2IncKeCap(stage);}   // hgfix-1110 time2_inc_kecap
-  if (t2_ksplit) {Time2KSplit(stage, c1, c2);}   // ksplit-1120 (study print)
-  if (t2_ffct) {Time2FaceFct(stage, c1, c2);}   // facebound-1112 step 1
   CleanBndAcc(stage, c1, c2, (stage == 1) ? 0.0 : (heun ? 0.5 : w0), dt);
   if (t2_theta > 0.0) {Time2StageTheta(stage, dt);}   // facebound-1112
   t2_solve = (stage == 1) ? M1_T2S_STAGE1 : M1_T2S_STAGE2;
