@@ -47,6 +47,19 @@ void DualDiscard(Mesh *pm) {
   if (pm->pmb_pack->phydro != nullptr) pm->pmb_pack->phydro->dual.Discard();
   if (pm->pmb_pack->pmhd != nullptr) pm->pmb_pack->pmhd->dual.Discard();
 }
+// <hydro|mhd>/floor_pay = rad: the energy the fluid floors and dual selection created
+// is taken from E_rad of the same cell (hydro/dual_energy.hpp)
+void DualPay(Mesh *pm) {
+  auto *pm1 = pm->pmb_pack->pradm1;
+  auto *ph = pm->pmb_pack->phydro;
+  auto *pmh = pm->pmb_pack->pmhd;
+  fluid::DualEnergy *pde = (ph != nullptr && ph->dual.pay) ? &(ph->dual) :
+      ((pmh != nullptr && pmh->dual.pay) ? &(pmh->dual) : nullptr);
+  if (pm1 != nullptr && pde != nullptr) {
+    fluid::DualPayFromRad(pm->pmb_pack, *pde, pm1->u0, radm1::M1_E,
+                          pm1->chat/pm1->c_light, pm1->e_floor);
+  }
+}
 }  // namespace
 
 //----------------------------------------------------------------------------------------
@@ -632,6 +645,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
     while ((pmesh->time < tlim) && (pmesh->ncycle < nlim || nlim < 0) &&
            (elapsed_time < wall_time)) {
       if (global_variable::my_rank == 0 && !dtr_retrying) {OutputCycleDiagnostics(pmesh);}
+      // (floor_pay: what the conversions before the loop floored, e.g. a restart's, is
+      // paid before the checkpoint, so that a discarded attempt drops only its own)
+      if (!dtr_retrying) {DualPay(pmesh);}
       if (pdtr_ != nullptr && pdtr_->on && !dtr_retrying) {pdtr_->Save(pmesh);}
       if (pctr_ != nullptr && pdtr_->on && !dtr_retrying) {pctr_->Save(pmesh, 0);}
       // <problem>/eint_ledger (no-op unless on): a retried cycle drops the
@@ -915,16 +931,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // <hydro|mhd>/floor_pay = rad: the energy this step's fluid floors and
       // dual selection created is taken from E_rad of the same cell, once, after every
       // radiation stage (hydro/dual_energy.hpp)
-      if (pm1 != nullptr) {
-        auto *ph = pmesh->pmb_pack->phydro;
-        auto *pmh = pmesh->pmb_pack->pmhd;
-        fluid::DualEnergy *pde = (ph != nullptr && ph->dual.pay) ? &(ph->dual) :
-            ((pmh != nullptr && pmh->dual.pay) ? &(pmh->dual) : nullptr);
-        if (pde != nullptr) {
-          fluid::DualPayFromRad(pmesh->pmb_pack, *pde, pm1->u0, radm1::M1_E,
-                                pm1->chat/pm1->c_light, pm1->e_floor);
-        }
-      }
+      DualPay(pmesh);
       if (t2kind == 1) {
         pm1->Time2AutoBeEnd(1, t2sec(t2w0, t2wf), t2sec(t2wf, t2we), t2wp);
       } else if (t2kind >= 0) {
