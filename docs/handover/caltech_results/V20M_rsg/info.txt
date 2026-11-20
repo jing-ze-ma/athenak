@@ -1,0 +1,1 @@
+TAG=V20M_rsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20m_cf584d3a6 md5=e82f3e3031d69953b35f6ceb5ba22c01 RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=4 MODE=rt HOLDER=6133591 NODE=hpc-sm-02-09 NR=4 ENVX= EX=
