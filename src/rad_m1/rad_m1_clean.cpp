@@ -5059,6 +5059,7 @@ void RadiationM1::CleanWriteBack() {
       }
     }
   });
+  cln_phiset = true;   // (clean_ray_flux_in = phi: the rays' state from now on)
   if (lzb) {   // (clean_cs_lz_abs = 2: the stage's L_z as its slope, then booked)
     const Real s = CleanSumCells(lzw);
     if (slopes) (t2_solve == M1_T2S_STAGE1 ? cln_lzs2 : cln_lzs1) = s/h;
