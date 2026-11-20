@@ -1,0 +1,8 @@
+# Batch 3 (orion 2026-11-21): reference arms for batch 2 (same build, keys, restart, cycles, ranks; feature OFF). Run each on the same node type as its test arm.
+FINALRST=0 THF300_ref_rsg B_thinf    RSG 300 rsg_thv7.keys rad_m1/clean_conv_kappa=0.1 rad_m1/clean_stag_thinf=0
+FINALRST=0 THF100_ref_hg  B_thinf    HG  100 hg_thv7.keys  time/dt_retry_host=m1 rad_m1/clean_stag_thinf=0
+FINALRST=0 GCA300_ref_rsg B_v20b     RSG 300 rsg_v19.keys
+FINALRST=0 FMM300_hg      B_geom-fm2 HG  300 hg_v19.keys time/dt_retry_host=m1 rad_m1/clean_rot_fuse=true rad_m1/clean_conv_kappa=1.0
+FINALRST=0 UR0_rsg        B_speedhead RSG 30 rsg_v19.keys
+FINALRST=0 RF300_ref_rsg  B_realf    RSG 300 rsg_fidp1.keys rad_m1/clean_conv_kappa=0.1 rad_m1/clean_stag_fidp=0
+FINALRST=0 RF100_ref_hg   B_realf    HG  100 hg_fidp1.keys  time/dt_retry_host=m1 rad_m1/clean_stag_fidp=0
