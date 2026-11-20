@@ -1801,7 +1801,7 @@ void RadiationM1::CleanStagXDonor(const bool first, const bool lat) {
     // every face: A100 R136 ran the 5-D subview fill and the 4-D par_for at 0.55 ms each)
     const int n4 = fc.extent_int(4), n34 = fc.extent_int(3)*n4;
     const int n234 = fc.extent_int(2)*n34;
-    Kokkos::parallel_for("cln_xdonor", Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0,
+    AthFor("cln_xdonor", Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0,
                          (nmb1 + 1)*n234),
     KOKKOS_LAMBDA(const int idx) {
       const int m = idx/n234, k = (idx - m*n234)/n34;
@@ -2975,7 +2975,7 @@ Real RadiationM1::CleanNewtonUpdate() {
   // blocks and grid: bitwise)
   using NewtonRp =
       Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, CleanLbMb(4)>>;
-  Kokkos::parallel_reduce("cln_newton", NewtonRp(DevExeSpace(), 0, nmb*nkji),
+  AthReduce("cln_newton", NewtonRp(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &dmax, Real &fe_max, Real &er_max, Real &xc) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
@@ -3133,8 +3133,8 @@ Real RadiationM1::CleanVelocityUpdate() {
     i = idx - m*nkji - (k - ks)*nji - (j - js)*nx1 + is;
   };
   if (fa) {
-    Kokkos::parallel_reduce("cln_velocity", Kokkos::RangePolicy<DevExeSpace,
-                            Kokkos::LaunchBounds<256, vmb>>(DevExeSpace(), 0, nmb*nkji),
+    AthReduce("cln_velocity", Kokkos::RangePolicy<DevExeSpace,
+              Kokkos::LaunchBounds<256, vmb>>(DevExeSpace(), 0, nmb*nkji),
     KOKKOS_LAMBDA(const int idx, Real &dv_max, Real &v_max, Real &fv_max) {
       CLEAN_HIPX(const CleanArgs &x = *px, &xh = *pxh, &xa = *pxa;)   // (device memory)
       int m, k, j, i;
@@ -3143,7 +3143,7 @@ Real RadiationM1::CleanVelocityUpdate() {
                               k, j, i, dv_max, v_max, fv_max);
     }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax), Kokkos::Max<Real>(fvmax));
   } else {
-    Kokkos::parallel_reduce("cln_velocity", CleanRpLb2(DevExeSpace(), 0, nmb*nkji),
+    AthReduce("cln_velocity", CleanRpLb2(DevExeSpace(), 0, nmb*nkji),
     KOKKOS_LAMBDA(const int idx, Real &dv_max, Real &v_max, Real &fv_max) {
       CLEAN_HIPX(const CleanArgs &x = *px, &xh = *pxh, &xa = *pxa;)   // (device memory)
       int m, k, j, i;
@@ -4029,10 +4029,9 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
       const auto pol = Kokkos::RangePolicy<DevExeSpace, LineBounds>(DevExeSpace(), 0,
                                                                     (nmb1 + 1)*na*nb);
       if (cub && nsw > 1) {
-        Kokkos::parallel_reduce("cln_fs2", pol, line, Kokkos::Max<Real>(dmax),
-                                Kokkos::Max<Real>(fmx));
+        AthReduce("cln_fs2", pol, line, Kokkos::Max<Real>(dmax), Kokkos::Max<Real>(fmx));
       } else {
-        Kokkos::parallel_for("cln_fs2", pol, KOKKOS_LAMBDA(const int idx) {
+        AthFor("cln_fs2", pol, KOKKOS_LAMBDA(const int idx) {
           Real d_max = 0.0, f_max = 0.0;
           line(idx, d_max, f_max);
         });
@@ -4269,7 +4268,7 @@ void RadiationM1::CleanStagFSchur() {
         const int g1 = gs[1], g2 = gs[2];
         const bool pd = per[dir];
         const int rs = cub ? rl : rr;   // (rounds the low end sends)
-        Kokkos::parallel_for("cln_fsch", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+        AthFor("cln_fsch", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                              (nmb1 + 1)*na*nb),
         KOKKOS_LAMBDA(const int idx) {
           const int m = idx/(na*nb), a = idx%na, b = (idx/na)%nb;

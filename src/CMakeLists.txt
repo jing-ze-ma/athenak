@@ -345,6 +345,9 @@ if (${PROBLEM} STREQUAL "he_star_m1")
   target_sources(athena PRIVATE pgen/he_strip_bg.cpp)
   # The driven inner boundary (inflow table, live gravity, ledgers)
   target_sources(athena PRIVATE pgen/he_drive.cpp)
+  # CUDA, bodies >= 512 B launched from device memory, not Kokkos' constant-memory launch
+  # (a host cudaEventSynchronize per launch; athena.hpp AthFor / AthReduce; bitwise)
+  target_compile_definitions(athena PRIVATE ATHENA_CUDA_BODY_GLOBAL=512)
 endif()
 
 # The rad_m1 ic_rad = fs_relax default is for the stellar-envelope pgen only

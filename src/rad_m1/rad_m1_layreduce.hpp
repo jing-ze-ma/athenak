@@ -127,7 +127,10 @@ void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real
       });
     });
     auto hp = Kokkos::subview(hpart, Kokkos::make_pair(0, 4*nmb));
-    Kokkos::deep_copy(hp, Kokkos::subview(part, Kokkos::make_pair(off2, off2 + 4*nmb)));
+    // (stream-ordered copy + one stream fence, not deep_copy's two device syncs; h200)
+    Kokkos::deep_copy(DevExeSpace(), hp, Kokkos::subview(part, Kokkos::make_pair(off2,
+                      off2 + 4*nmb)));
+    DevExeSpace().fence();
     repro::ReproSum rs[3];
     for (int c = 0; c < 3; ++c) {rs[c].Init();}
     Real mx = 0.0;

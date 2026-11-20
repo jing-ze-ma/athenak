@@ -313,10 +313,37 @@ inline void AthFor(const std::string &name, const Policy &policy, const F &body)
     Kokkos::parallel_for(name, policy, body);
   }
 }
+// AthReduce(name, policy, body, reducers...): parallel_reduce with the same rule (h200-1120:
+// a body of 512 B .. 32 kB otherwise takes Kokkos' constant-memory launch, whose
+// cudaEventSynchronize on the previous such kernel is a host sync per launch).  The kernel
+// changes, so its block size may: only for reductions exact in any order (Max / Min /
+// whole-number counts)
+template <typename F>
+struct AthRedBody {
+  const F *f;
+  template <typename... A>
+  KOKKOS_INLINE_FUNCTION void operator()(A &&...a) const {(*f)(a...);}
+};
+template <typename Policy, typename F, typename... R>
+inline void AthReduce(const std::string &name, const Policy &policy, const F &body,
+                      R &&...r) {
+  if constexpr (std::is_same_v<typename Policy::execution_space, Kokkos::Cuda> &&
+                sizeof(F) >= ATHENA_CUDA_BODY_GLOBAL) {
+    Kokkos::parallel_reduce(name, policy, AthRedBody<F>{AthBodyToDevice(policy.space(),
+                            body)}, std::forward<R>(r)...);
+  } else {
+    Kokkos::parallel_reduce(name, policy, body, std::forward<R>(r)...);
+  }
+}
 #else
 template <typename Policy, typename F>
 inline void AthFor(const std::string &name, const Policy &policy, const F &body) {
   Kokkos::parallel_for(name, policy, body);
+}
+template <typename Policy, typename F, typename... R>
+inline void AthReduce(const std::string &name, const Policy &policy, const F &body,
+                      R &&...r) {
+  Kokkos::parallel_reduce(name, policy, body, std::forward<R>(r)...);
 }
 #endif
 
