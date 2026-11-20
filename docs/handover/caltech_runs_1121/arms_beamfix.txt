@@ -2,7 +2,7 @@
 # B_bfx = caltech-runs/beamfix 3a67711b9ec01fcd8afeb7e2fbd29765f890ce6a (src = v201e 3efbbbd17 + key rad_m1/clean_stag_dg_form, default 0 = v20.1 bitwise).
 # Layouts as L1_*_off: RSG NR=4 on 1 node, HG NR=8 on 2 nodes (armc2.sh). Keep each pair on the same layout.
 # Provenance: BFX0_rsg hst must equal L1_rsg_off rows 0-299 bitwise; BFX0_hg must equal L1_hg_off rows 0-299.
-FINALRST=0 NR=4 BFX4_rsg B_bfx RSG 300 rsg_v20.keys rad_m1/clean_stag_dg_form=4
+# DROPPED (NOTE ce) FINALRST=0 NR=4 BFX4_rsg B_bfx RSG 300 rsg_v20.keys rad_m1/clean_stag_dg_form=4
 FINALRST=0 NR=4 BFX0_rsg B_bfx RSG 300 rsg_v20.keys rad_m1/clean_stag_dg_form=0
 FINALRST=0 NR=8 BFX4_hg  B_bfx HG  300 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=4
 FINALRST=0 NR=8 BFX0_hg  B_bfx HG  300 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=0
