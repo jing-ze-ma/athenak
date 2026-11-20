@@ -185,3 +185,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - BA_rsg_h200 (hpc-sm-01-11): rc=0 wall=129 | cycles 589788 - 589808 | steady 2.759 s/cycle | GPU MiB max 108265 min 107077 | CW a 0 FATAL 0 |  
 - AB9rt_rsg (hpc-sm-02-16): rc=0 wall=175 rc=0 wall=158 rc=0 wall=131 | cycles 589788 - 589794 | steady 2.870 s/cycle | GPU MiB max 109963 min 108829 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF floor_audit cycle lines 18 | CLEAN WARNING..unpaid lines 0
 - BA_rsg_mb2 (hpc-sm-02-11): rc=0 wall=137 | cycles 589788 - 589808 | steady 2.978 s/cycle | GPU MiB max 108545 min 107411 | CW a 0 FATAL 0 |  
+- (05:05) Scheduler fix on our side: the main queue had drained at 04:43 and its runner exited, so batch 4 (BA_*) started and the later additions (T2K_rsg, V20L_*, AB10_*) waited ~20 min. Runner is persistent now and batch 4 yields to any waiting main-queue arm.
+- BA_hg_v20g (hpc-sm-01-11): rc=0 wall=176 | cycles 624961 - 624981 | steady 4.904 s/cycle | GPU MiB max 120005 min 119457 | CW a 0 FATAL 0 |  
