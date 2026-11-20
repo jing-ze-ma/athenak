@@ -261,3 +261,6 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   TG_rsg_r8_gdr (GDR on, 2 nodes): aborts at the first halo traffic with `ib_mlx5_log.c:179 Local protection error on mlx5_2:1/IB (synd 0x4 vend 0x51)` in uct_rc_mlx5 (same as our 10-21 finding); tail sent, not retried. GDR stays off (UCX_IB_GPU_DIRECT_RDMA=no) for every multi-node arm.
 - V20M_rsg (hpc-sm-02-09): rc=0 wall=148 rc=0 wall=147 rc=0 wall=158 | cycles 589788 - 589792 | steady 2.840 s/cycle | GPU MiB max 109025 min 107837 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF xcheck: rsg.hydro.hst==V20L_rsg/a rsg.user.hst==V20L_rsg/a
 - LS_rsg_r8_rep (hpc-sm-01-17,hpc-sm-02-03): rc=0 wall=91 | cycles 589788 - 589808 | steady 1.655 s/cycle | GPU MiB max 56811 min 55989 | CW a 0 FATAL 0 |  
+- (06:10) Got 12134e163: RZ1_hg had not started; realz rebuilt at f959d9535 (the e15e5bc52 build was stopped before it finished), RZ1_hg runs on it.
+- V20NP_rsg (hpc-sm-02-09): rc=0 wall=154 | cycles 589788 - 589792 | steady 2.870 s/cycle | GPU MiB max 108279 min 107091 | CW a 0 FATAL 0 |  xcheck: rsg.hydro.hst==V20M_rsg/a rsg.user.hst==V20M_rsg/a
+- LNP_rsg (hpc-sm-02-03): rc=0 wall=152 | cycles 589788 - 589792 | steady 2.880 s/cycle | GPU MiB max 108673 min 107485 | CW a 0 FATAL 0 |  xcheck: user cols1-26==V20G_rsg/a, hydro==V20G_rsg/a
