@@ -6,3 +6,7 @@ FINALRST=0 KT001_hg B_v20j HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_
 FINALRST=0 KT1_rsg   B_v20j RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true
 FINALRST=0 KT01_rsg  B_v20j RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.1
 FINALRST=0 KT001_rsg B_v20j RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.01
+# added 2026-11-20 (NOTE ak): HIGH priority chaos test; order KC1c, KC009, KC1m; must land before ~10:30 PST
+FINALRST=0 KC1c_hg  B_v20j HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true time/cfl_number=0.2999
+FINALRST=0 KC009_hg B_v20j HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.09
+FINALRST=0 KC1m_hg  B_v20j HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_conv_max=9.9e-5
