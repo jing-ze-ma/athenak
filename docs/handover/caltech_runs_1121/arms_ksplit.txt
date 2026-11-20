@@ -22,3 +22,8 @@ FINALRST=0 KX1f_hg   B_ksplit7 HG 6  hg_v20.keys time/dt_retry_host=m1 rad_m1/cl
 FINALRST=0 KX001f_hg B_ksplit7 HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/time2_k1_xlim=0.1 rad_m1/clean_conv_kappa=0.01
 # added 2026-11-20 (NOTE bi): B_ksplitdiag = caltech-runs/ksplitdiag 0de311cd9. After KX1f_hg, before KX001f_hg.
 FINALRST=0 KD001_hg B_ksplitdiag HG 5 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_k1_xlim=0.1 rad_m1/clean_conv_kappa=0.01
+# added 2026-11-20 (NOTE bj): B_ksplit7 (324176605), production keys, no time2_ksplit. After KD001/KX001f. Pairs together on comparable nodes.
+FINALRST=0 KXR1_rsg B_ksplit7 RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/time2_k1_xlim=0.1
+FINALRST=0 KSR1_rsg B_ksplit7 RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true
+FINALRST=0 KXH20_hg B_ksplit7 HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_k1_xlim=0.1
+FINALRST=0 KSH20_hg B_ksplit7 HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true
