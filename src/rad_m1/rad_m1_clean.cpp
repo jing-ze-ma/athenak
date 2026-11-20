@@ -243,13 +243,14 @@ static void CleanStagMomentum(const CleanArgs &x, const int e, const int m, cons
 //! the exact one of P = D E over the cell: the angular-momentum fluxes r_f A (n x P n)_z
 //! of its radial faces and (M_f x P n)_z of its lateral ones, P the two cells' mean (one
 //! sided at a radial boundary).  The interior faces cancel in the sum, so gas and
-//! radiation L_z change only by the radial boundaries' torque (CleanLzBook)
+//! radiation L_z change only by the radial boundaries' torque (CleanLzBook).  In xs the
+//! stress part, the exact torque less the faces' own: the radiation's (CleanWriteBack)
 
 KOKKOS_INLINE_FUNCTION
 static Real CleanCsTorque(const CleanArgs &x, const int e, const int m, const int k,
-                          const int j, const int i, Real &rl) {
+                          const int j, const int i, Real &rl, Real &xs) {
   const Real v = x.vol(m,k,j,i), ic2 = 1.0/(x.c*x.c);
-  Real gl = 0.0, tc = 0.0, p0[6];
+  Real gl = 0.0, gs = 0.0, tc = 0.0, p0[6];
   rl = 0.0;
   for (int q = 1; q < 3; ++q) {   // (the lateral faces' absorption and momenta)
     Real cf[2], wf[2], tq[2];
@@ -259,7 +260,8 @@ static Real CleanCsTorque(const CleanArgs &x, const int e, const int m, const in
       const Real f = x.fs ? x.fc[q](m,CLF_N,kf,jf,i) : CleanFaceFlux(x, e, q, m, kf, jf, i, true);
       const Real df = (f - x.fc[q](m,CLF_G,kf,jf,i))*ic2;
       const Real lam = CleanCsArm(x, q, m, kf, jf, i);
-      gl += v*lam*(cf[s] + 0.5*(tq[s] - df));
+      gl += v*lam*cf[s];
+      gs += 0.5*v*lam*(tq[s] - df);
       rl += 0.5*v*lam*df;
     }
   }
@@ -287,7 +289,8 @@ static Real CleanCsTorque(const CleanArgs &x, const int e, const int m, const in
       tc += a[0]*t[1] - a[1]*t[0];
     }
   }
-  return gl - x.h*tc;
+  xs = gs - x.h*tc;
+  return gl + xs;
 }
 
 //----------------------------------------------------------------------------------------
@@ -4920,6 +4923,40 @@ void RadiationM1::CleanWriteBack() {
   xh.tf = cln_ftie && !x.cub;
   xh.fa = cln_ftie && x.cub;   // (the cubed sphere's tied T: CLF_PT, CleanStagFaceTie)
 
+  // (clean_cs_lz_tel: the stress torque CleanCsTorque's xs is the radiation's, a defect of
+  // its momentum equation; as a force on that equation the implicit step gives the gas
+  // the absorbed share a = hc chi/(1 + hc chi) and leaves 1 - a in the face momenta, so
+  // the gas of a thin cell, whose small mass cannot hold the radiation's stress, takes
+  // what its opacity couples (rule 6).  tqv: (1 - a) xs over the cell's sum of
+  // V_f lambda_f^2, V_f the halves of its two cells (CleanLzTotal), then the gas's L_z
+  // and the ledger's)
+  const bool lzt = cln_lzt && feedback;
+  DvceArray5D<Real> tqv;
+  if (lzt) {
+    tqv = ScratchView<DvceArray5D<Real>>("cln_tqv", nmb1 + 1, 3, u0.extent_int(2),
+                                         u0.extent_int(3), u0.extent_int(4));
+    px = CleanDevArgs(x, 0);   // (xh changed: the F solve's F)
+    pxh = CleanDevArgs(xh, 1);
+    CleanFor("cln_wbtq", nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      CLEAN_HIPX(const CleanArgs &x = *px, &xh = *pxh;)
+      Real rl, xs, sl = 0.0;
+      const Real gl = CleanCsTorque(xh, CLW_X, m, k, j, i, rl, xs);
+      const Real hc = h*x.c*x.op(m,M1_OP_T,k,j,i), qr = xs/(1.0 + hc);
+      for (int q = 1; q < 3; ++q) {
+        for (int s = 0; s < 2; ++s) {
+          const int kf = k + s*(q == 2), jf = j + s*(q == 1);
+          const int ko = k + (2*s - 1)*(q == 2), jo = j + (2*s - 1)*(q == 1);
+          sl += 0.5*(x.vol(m,k,j,i) + x.vol(m,ko,jo,i))*SQR(CleanCsArm(x, q, m, kf, jf, i));
+        }
+      }
+      tqv(m,0,k,j,i) = (sl > 0.0) ? qr/sl : 0.0;
+      tqv(m,1,k,j,i) = gl - ((sl > 0.0) ? qr : 0.0);
+      tqv(m,2,k,j,i) = -(gl + rl);
+    });
+    CleanGhostFill(tqv, 0, 1);
+  }
+
   // face fluxes of the solution
   for (int dir = 0; dir < 3; ++dir) {
     if (dir == 1 && !multi_d) continue;
@@ -4930,7 +4967,12 @@ void RadiationM1::CleanWriteBack() {
     const int tf = M1_T2_F1 + dir;
     CleanFor("cln_wbface", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real f = fc(m,CLF_N,k,j,i);
+      Real f = fc(m,CLF_N,k,j,i);
+      if (lzt && dir > 0) {   // (the radiation's share of its two cells' stress torque)
+        CLEAN_HIPX(const CleanArgs &x = *px;)
+        const int kl = k - dk, jl = j - dj;
+        f += x.c*x.c*CleanCsArm(x, dir, m, k, j, i)*(tqv(m,0,kl,jl,i) + tqv(m,0,k,j,i));
+      }
       if (slopes) kk(m,tf,k,j,i) = (f - fc(m,CLF_G,k,j,i))/h;
       f0(m,k,j,i) = f;
     });
@@ -4998,7 +5040,6 @@ void RadiationM1::CleanWriteBack() {
   px = CleanDevArgs(x, 0);   // (the F solve took the slots; xh changed)
   pxh = CleanDevArgs(xh, 1);
   const bool lzb = cln_lzbook && feedback;
-  const bool lzt = cln_lzt && feedback;
   DvceArray4D<Real> lzw;
   if (lzb) lzw = ScratchView<DvceArray4D<Real>>("cln_lzw", nmb1 + 1, u0.extent_int(2),
                                                  u0.extent_int(3), u0.extent_int(4));
@@ -5044,14 +5085,13 @@ void RadiationM1::CleanWriteBack() {
     if (feedback) {
       Real mg[3], pg[3], rf[3], dlz = 0.0;
       CleanStagMomentum(xh, CLW_X, m, k, j, i, dm, mg, &dlz);
-      if (lzt) {   // (clean_cs_lz_tel: the gas phi momentum of CleanCsTorque)
-        Real q[3][3], rl;
+      if (lzt) {   // (clean_cs_lz_tel: the gas phi momentum of CleanCsTorque, cln_wbtq)
+        Real q[3][3];
         const Real rc = CleanCsFrame(x, m, k, j, i, q);
-        const Real gl = CleanCsTorque(xh, CLW_X, m, k, j, i, rl);
-        const Real dp = gl/(x.vol(m,k,j,i)*rc) - (q[2][0]*dm[0] + q[2][1]*dm[1] +
-                                                   q[2][2]*dm[2]);
+        const Real dp = tqv(m,1,k,j,i)/(x.vol(m,k,j,i)*rc) - (q[2][0]*dm[0] +
+                        q[2][1]*dm[1] + q[2][2]*dm[2]);
         for (int n = 0; n < 3; ++n) dm[n] += dp*q[2][n];
-        dlz = -(gl + rl);
+        dlz = tqv(m,2,k,j,i);
       }
       CleanStagGasMomentum(x, uh, m, k, j, i, pg);
       CleanStagRefForce(x, fref, fr, aref, uh(m,IDN,k,j,i), m, k, j, i, rf);
