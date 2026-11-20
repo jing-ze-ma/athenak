@@ -553,47 +553,6 @@ void M1OpnCell(const Real q, const Real kt, const Real bk, const Real rk, const 
     rr -= s*rk;
   }
 }
-// implicit_opac_newton_guard (m1-opn-guard): M1OpnCell that also records what it added
-// (dc: to coef, dr: SUBTRACTED from rr), so that a face whose term would drive the row
-// diagonal below guard x its value without the term can be taken out again (the face
-// then stays Picard).  The in-place update is the one of M1OpnCell.
-KOKKOS_INLINE_FUNCTION
-void M1OpnCellRec(const Real q, const Real kt, const Real bk, const Real rk,
-                  const Real ke, const Real cl, const Real dt, Real &coef, Real &rr,
-                  Real &dc, Real &dr) {
-  if (bk > 0.0) {
-    const Real s = q*kt/bk;
-    const Real a = s*cl*dt*ke, b = s*rk;
-    coef += a;
-    rr -= b;
-    dc += a;
-    dr += b;
-  }
-}
-// the guard decision for one face: the Newton term (dd on the diagonal, doff on the
-// neighbour's entry, dr subtracted from rr) is taken out of the row when it would leave
-// the diagonal below th x bc, bc = the diagonal without it (and without the faces taken
-// out before).  gm (implicit_opac_newton_guard_mode) adds bit 1: also when it takes a
-// positive rr below th x rc (rc = rr without it), bit 2: also when it leaves the
-// neighbour entry positive (an M-matrix needs off-diagonals <= 0).  Returns 1 when it
-// took the face out.
-KOKKOS_INLINE_FUNCTION
-int M1OpnGuardFace(const Real th, const int gm, const Real dd, const Real doff,
-                   const Real dr, Real &bc, Real &rc, Real &bb, Real &off, Real &rr) {
-  bool bad = (dd < 0.0 && bc + dd < th*bc);
-  if ((gm & 1) && dr > 0.0 && rc > 0.0 && rc - dr < th*rc) {bad = true;}
-  if ((gm & 2) && doff > 0.0 && off > 0.0) {bad = true;}
-  if (bad) {
-    bb -= dd;
-    off -= doff;
-    rr += dr;
-    return 1;
-  }
-  bc += dd;
-  rc -= dr;
-  return 0;
-}
-
 // BiCGStab breakdown thresholds: |rho| and |rhat.v| below these times the scale of the
 // right-hand side mean the shadow residual has become orthogonal to the Krylov space.
 constexpr Real M1_BCG_EPS = 1.0e-300;
@@ -650,51 +609,12 @@ Real M1EddDiag(const Real chi, const Real nd) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn M1EddOff
-//! \brief the OFF-diagonal component D_ab = (3 chi - 1)/2 n_a n_b, a != b.
-
-KOKKOS_INLINE_FUNCTION
-Real M1EddOff(const Real chi, const Real na, const Real nb) {
-  return 0.5*(3.0*chi - 1.0)*na*nb;
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn M1POff
 //! \brief the OFF-diagonal radiation pressure P_ab = D_ab E at one cell, from the LAGGED
 //! closure of the previous Picard pass.  a, b are 0-based directions.  `ec` names the
 //! component of the work array the energy is taken from: M1_IW_EP for the lagged form,
 //! and a KRYLOV VECTOR when the term is applied as part of the linear operator
 //! (implicit_offdiag = operator), where the closure is frozen and the term is linear.
-
-//!
-//! FULL TENSOR (<rad_m1>/closure = vet_sc, vet_tensor = full): with `full` the component
-//! is read from the guarded D_ab = K_ab/J of the formal solution, RadiationM1::vet_cell
-//! (vd), instead of being built from the uniaxial (chi, n).  With full = false vd is
-//! never touched and the arithmetic is that of the uniaxial form, term for term.
-
-template <class V>
-KOKKOS_INLINE_FUNCTION
-Real M1POff(const V &iw, const int m, const int a, const int b,
-            const int k, const int j, const int i, const int ec,
-            const V &vd, const bool full) {
-  if (full) {return vd(m,M1_VET_D11+2+a+b,k,j,i)*iw(m,ec,k,j,i);}
-  return M1EddOff(iw(m,M1_IW_WCHI,k,j,i), iw(m,M1_IW_N1+a,k,j,i),
-                  iw(m,M1_IW_N1+b,k,j,i))*iw(m,ec,k,j,i);
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn M1DDiag
-//! \brief the DIAGONAL Eddington component D_dd of direction d (0,1,2) at one cell of the
-//! MULTI-D solve: M1EddDiag of the lagged uniaxial closure (WCHI, N1+d), or with `full`
-//! the guarded D_dd of the formal solution (see M1POff).
-
-template <class V>
-KOKKOS_INLINE_FUNCTION
-Real M1DDiag(const V &iw, const V &vd, const bool full, const int m, const int d,
-             const int k, const int j, const int i) {
-  if (full) {return vd(m,M1_VET_D11+d,k,j,i);}
-  return M1EddDiag(iw(m,M1_IW_WCHI,k,j,i), iw(m,M1_IW_N1+d,k,j,i));
-}
 
 //----------------------------------------------------------------------------------------
 //! \fn M1CsSeamGeom
@@ -848,22 +768,6 @@ Real M1CsAxisDer(const Q &q, const H &h, const int c, const int lo, const int hi
   return (q(1) - q(-1))/(h(0) + h(1));
 }
 
-template <class V, class VF>
-KOKKOS_INLINE_FUNCTION
-Real M1CsTanDer(const V &iw, const V &vd, const bool full, const VF &cdxf, const int m,
-                const int e, const int k, const int j, const int i, const int lo,
-                const int hi, const bool slo, const bool shi, const Real mono = -1.0) {
-  const int c = (e == 1) ? j : k;
-  auto q = [&](const int o) {
-    const int kk = (e == 2) ? (k + o) : k, jj = (e == 1) ? (j + o) : j;
-    return M1DDiag(iw, vd, full, m, e, kk, jj, i)*iw(m,M1_IW_EP,kk,jj,i);
-  };
-  auto h = [&](const int o) {   // the arc between cells c+o-1 and c+o
-    return (e == 1) ? cdxf.x2f(m,k,j+o,i) : cdxf.x3f(m,k+o,j,i);
-  };
-  return M1CsAxisDer(q, h, c, lo, hi, slo, shi, mono);
-}
-
 //----------------------------------------------------------------------------------------
 //! \fn M1OffDiv
 //! \brief sum_{e != d} d_e P_de at one cell: the OFF-DIAGONAL part of the divergence of
@@ -886,65 +790,6 @@ struct M1Vtx {
   int js = 0, je = 0, ks = 0, ke = 0;
   bool jl = false, jh = false, kl = false, kh = false;   // panel edges of the block
 };
-template <class SZ>
-KOKKOS_INLINE_FUNCTION
-M1Vtx M1VtxOf(const bool on, const SZ &z, const int js, const int je, const int ks,
-              const int ke) {
-  M1Vtx v;
-  v.on = on; v.js = js; v.je = je; v.ks = ks; v.ke = ke;
-  v.jl = z.x2min <= -1.0 + 1.0e-12; v.jh = z.x2max >= 1.0 - 1.0e-12;
-  v.kl = z.x3min <= -1.0 + 1.0e-12; v.kh = z.x3max >= 1.0 - 1.0e-12;
-  return v;
-}
-
-template <class V>
-KOKKOS_INLINE_FUNCTION
-Real M1OffDiv(const V &iw, const int m, const int d, const int k, const int j,
-              const int i, const Real dx1, const Real dx2, const Real dx3,
-              const bool thrd,
-              const int il_, const int iu_, const int jl_, const int ju_,
-              const int kl_, const int ku_, const int ec,
-              const V &vd, const bool full, const M1Vtx vx = M1Vtx()) {
-  const int il = il_, iu = iu_;
-  int jl = jl_, ju = ju_, kl = kl_, ku = ku_;
-  if (vx.on) {
-    const bool jg = (j < vx.js) || (j > vx.je), kg = (k < vx.ks) || (k > vx.ke);
-    if (jg && !kg && ((j < vx.js) ? vx.jl : vx.jh)) {
-      if (vx.kl && kl < vx.ks) kl = vx.ks;
-      if (vx.kh && ku > vx.ke) ku = vx.ke;
-    } else if (kg && !jg && ((k < vx.ks) ? vx.kl : vx.kh)) {
-      if (vx.jl && jl < vx.js) jl = vx.js;
-      if (vx.jh && ju > vx.je) ju = vx.je;
-    }
-  }
-  Real s = 0.0;
-  if (d != 0) {
-    int ia = (i+1 <= iu) ? (i+1) : i;
-    int ib = (i-1 >= il) ? (i-1) : i;
-    if (ia != ib) {
-      s += (M1POff(iw,m,d,0,k,j,ia,ec,vd,full)
-            - M1POff(iw,m,d,0,k,j,ib,ec,vd,full))/((ia - ib)*dx1);
-    }
-  }
-  if (d != 1) {
-    int ja = (j+1 <= ju) ? (j+1) : j;
-    int jb = (j-1 >= jl) ? (j-1) : j;
-    if (ja != jb) {
-      s += (M1POff(iw,m,d,1,k,ja,i,ec,vd,full)
-            - M1POff(iw,m,d,1,k,jb,i,ec,vd,full))/((ja - jb)*dx2);
-    }
-  }
-  if (thrd && d != 2) {
-    int ka = (k+1 <= ku) ? (k+1) : k;
-    int kb = (k-1 >= kl) ? (k-1) : k;
-    if (ka != kb) {
-      s += (M1POff(iw,m,d,2,ka,j,i,ec,vd,full)
-            - M1POff(iw,m,d,2,kb,j,i,ec,vd,full))/((ka - kb)*dx3);
-    }
-  }
-  return s;
-}
-
 //----------------------------------------------------------------------------------------
 //! \fn M1SphDrr
 //! \brief STAGE S2 (spherical-polar wedge, closure m1/minerbo/kershaw): the radial face
@@ -960,179 +805,6 @@ Real M1OffDiv(const V &iw, const int m, const int d, const int k, const int j,
 KOKKOS_INLINE_FUNCTION
 Real M1SphDrr(const Real chi, const Real n1, const Real s2) {
   return 0.5*(1.0 - chi) + 0.5*(3.0*chi - 1.0)*n1*n1*s2;
-}
-
-//! postr-1031 <rad_m1>/implicit_pos_transport = upwind: the M1SphDrr face weights of the
-//! LEFT (wl) and RIGHT (wr) cell of one x1 face with the curvature part UPWINDED.  The
-//! "both parts >= 0" above holds only for chi >= 1/3: with chi < 1/3 (q < 0, a beam
-//! crossing the radial direction, vet_col f_rr ~ 0) the outer cell's weight
-//! (1-chi)/2 + q n^2 s, s = (r_R/r_f)^2 > 1, turns NEGATIVE and the row gets a positive
-//! off-diagonal (anti-diffusion: a dim cell beside a bright one drains to E < 0 at the
-//! fixed point, measured at the RY Per nozzle face).  Split w(s) = w(1) + k, k = q n^2
-//! (s - 1): the two-point part w(1) = D_rr >= 0 keeps the centred gradient, and the
-//! curvature flux h E_f, h = k_L - k_R (the O(dx/r) force term), takes the donor cell's
-//! E (L if h > 0, else R).  Every coefficient is then >= 0 (M-matrix), the face flux is
-//! one number for the two cells (conservative), and the change is continuous at chi =
-//! 1/3 (h -> 0).  Applied only where either cell has chi < 1/3 (q < 0): elsewhere the
-//! weights are the M1SphDrr ones exactly (the caller keeps its own expressions there).
-KOKKOS_INLINE_FUNCTION
-bool M1SphDrrUpNeed(const Real chil, const Real chir) {
-  return (chil < 1.0/3.0) || (chir < 1.0/3.0);
-}
-
-KOKKOS_INLINE_FUNCTION
-void M1SphDrrUp(const Real chil, const Real n1l, const Real s2l, const Real chir,
-                const Real n1r, const Real s2r, Real &wl, Real &wr) {
-  const Real w1l = M1SphDrr(chil, n1l, 1.0), w1r = M1SphDrr(chir, n1r, 1.0);
-  const Real h = (M1SphDrr(chil, n1l, s2l) - w1l) - (M1SphDrr(chir, n1r, s2r) - w1r);
-  wl = w1l + fmax(h, 0.0);
-  wr = w1r + fmax(-h, 0.0);
-}
-
-//! postr-1031 implicit_pos_transport = upwind, the MEMORY term: the lagged face flux
-//! theta F^n of the face-eliminated flux equation is explicit transport at c dt/dx >> 1
-//! wherever the face is not blended to the HLL form (thin floor gas with a weak formal-
-//! solution flux keeps w = 0): its outflow drains a dim donor below zero (RY Per nozzle
-//! face: 12 E^n out of a cell in one step, b < 0 rows).  Where the memory outflow alone
-//! would take more than gam E^n of the donor (cr |fmem| dt A_f/V_d > gam E^n_d), the face
-//! takes it IMPLICITLY UPWIND, fmem E'_d/E^n_d (the reduced flux of t^n times the donor's
-//! new E): a >= 0 diagonal entry in the donor's row and a <= 0 one in the receiver's (M-
-//! matrix), one number for the face (conservative), = fmem when E' = E^n.  Returns q =
-//! fmem/E^n_d capped at |q| <= qmax (the sign gives the donor: q > 0 the LEFT cell) or 0
-//! (face unchanged).
-//! cmemimpl-1112 implicit_hr_cmem_implicit: the memory part mm (= tw F_c^n) of a face
-//! flux (positive = from the LEFT cell l to the right cell r) as q E'_d + R: q =
-//! mm/max(E^n_d, E^k_d, |mm|/qmax, efl), d = l if mm > 0; R = mm - q E^k_d at the
-//! iterate.  Returns q; rr = R, ld = true when the donor of q is l, ro = true when R
-//! leaves the LEFT cell (R > 0): R is an explicit flux, scaled by the Zalesak factor of
-//! the cell it leaves (the donor or, where E^k_d > E^n_d makes R < 0, the receiver).
-KOKKOS_INLINE_FUNCTION
-Real M1CmiFace(const Real mm, const Real enl, const Real enr, const Real epl,
-               const Real epr, const Real efl, const Real qmax, Real &rr, bool &ld,
-               bool &ro) {
-  ld = (mm > 0.0);
-  if (mm == 0.0) {rr = 0.0; ro = false; return 0.0;}
-  // the reference E of the reduced flux: E^n_d, but never below the iterate E^k_d nor
-  // below |mm|/qmax (so |q| <= qmax without a cap): then q E^k_d <= |mm| and R has the
-  // sign of mm (R = mm (1 - E^k_d/E_ref)): the remainder only ever leaves the donor, a
-  // round-off memory cannot become a c E flux, and R = 0 where E^k_d >= E^n_d
-  const Real ek = ld ? epl : epr;
-  const Real en = fmax(fmax(ld ? enl : enr, ek), fmax(fabs(mm)/qmax, efl));
-  const Real q = mm/en;
-  rr = mm - q*ek;
-  ro = (rr > 0.0);
-  return q;
-}
-
-KOKKOS_INLINE_FUNCTION
-Real M1PtMemQ(const Real fmem, const Real cr, const Real nl, const Real nr,
-              const Real enl, const Real enr, const Real efl, const Real gam,
-              const Real qmax) {
-  const bool dl = (fmem > 0.0);
-  const Real en = fmax(dl ? enl : enr, efl);
-  const Real nd = dl ? nl : nr;
-  // the face speed q is capped at qmax = c (|F| <= c E'_donor, realisability): an
-  // uncapped q = fmem/E^n of a near-empty donor (E^n ~ e_floor) lets q E' carry a
-  // donor that gained energy in the same solve out at >> c (measured: NaN in 5 cycles)
-  return (cr*fabs(fmem)*nd > gam*en) ? copysign(fmin(fabs(fmem)/en, qmax), fmem) : 0.0;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn M1GhostBathAB
-//! \brief marelax-1013 <rad_m1>/implicit_ghost_x1min: the inner face flux of the first
-//! cell is,  F = A - B E_is,  from the interior face formula (the central part of the
-//! m1_impl_face expression)
-//!   F = th (F0^n - ch cl dt (D_is E_is - D_g E_g)/dr_g - ch dt v g0),
-//!   th = 1/(1 + ch dt kt_is),  dr_g = x1v(is) - x1v(is-1),
-//! with the fixed ghost E_g at x1v(is-1) (the IC radiation of the ghost) and the first
-//! cell's own opacity kt, Eddington weight chi (n1) and v, g0 standing in for the ghost's.
-//! On sp (sphq) D = M1SphDrr(chi, n1, (r_c/r_f)^2) as in the row; else D = chi.
-template <typename IW, typename FN, typename CV, typename CF>
-KOKKOS_INLINE_FUNCTION
-void M1GhostBathAB(const IW &iw, const FN &f0n, const CV &x1v, const CF &x1f,
-                   const int m, const int k, const int j, const int is, const Real eg,
-                   const Real ch, const Real cl, const Real dt, const bool sphq,
-                   const bool trans, Real &a, Real &b) {
-  const Real th = 1.0/(1.0 + ch*dt*iw(m,M1_IW_KT,k,j,is));
-  const Real chi = iw(m,M1_IW_WCHI,k,j,is);
-  Real di = chi, dg = chi;
-  if (sphq) {
-    const Real rf = x1f(m,is);
-    const Real n1 = trans ? iw(m,M1_IW_N1,k,j,is) : 1.0;
-    di = M1SphDrr(chi, n1, (x1v(m,is)/rf)*(x1v(m,is)/rf));
-    dg = M1SphDrr(chi, n1, (x1v(m,is-1)/rf)*(x1v(m,is-1)/rf));
-  }
-  const Real drg = x1v(m,is) - x1v(m,is-1);
-  b = th*ch*cl*dt*di/drg;
-  a = th*(f0n(m,k,j,is) + ch*cl*dt*dg*eg/drg
-          - ch*dt*iw(m,M1_IW_V1,k,j,is)*iw(m,M1_IW_G0,k,j,is));
-}
-
-//! linhao-prod-1104: the modified-HLLE dissipation factor of the halfrange inner face
-KOKKOS_INLINE_FUNCTION
-Real M1LbathDiss(const int mode, const Real tau) {
-  if (mode == 0) return 1.0;
-  if (mode == 4) return 0.0;   // linhao-prod-1104 none (user 11-04): pure central face
-  if (mode == 3) {
-    // Athena++ (PrincetonUniversity/athena 053bc738, Oct 2026) implicit DO face flux:
-    // implicit_first_order.cpp:71-88 + rad_integrators.cpp:549-566, 615-657 (tau_scheme 1,
-    // Advection 1): HLLE with Smax = f_r v, Smin = -f_l v, f_r^2 = (1 - e^-t^2)/t^2,
-    // f_l^2 = (1 - e^-t^4)/t^2 (t^2 > 1e-3; else 1 - t^2/2 and t^2), t = taucell (tau_L +
-    // tau_R); the E-jump coefficient s = 2a - 1 with a = f_r (1 + f_l)/(f_r + f_l)
-    const Real t2 = tau*tau;
-    const Real fr = sqrt((t2 > 1.0e-3) ? (1.0 - exp(-t2))/t2 : (1.0 - 0.5*t2));
-    const Real fl = sqrt((t2 > 1.0e-3) ? (1.0 - exp(-t2*t2))/t2 : t2);
-    return (fr - fl + 2.0*fr*fl)/(fr + fl);
-  }
-  const Real x = (mode == 1) ? tau : 0.5*tau*tau;
-  return (x > 1.0e-3) ? (1.0 - exp(-x))/x : (1.0 - 0.5*x);
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn M1FaceAvg
-//! \brief <rad_m1>/implicit_face_weight: the x1 face value of a cell quantity from the
-//! left (ql, radial width dl) and right (qr, dr) cells.  equal (dist false): 0.5 (ql+qr),
-//! the expression of the code before the key, bitwise.  distance: linear interpolation
-//! between the two cell midpoints, whose distances to the face are dl/2 and dr/2:
-//! q_f = (dr ql + dl qr)/(dl + dr).  Two widths that agree to 1e-12 (a uniform grid, up
-//! to the round-off of the face positions) give the equal form exactly.
-KOKKOS_INLINE_FUNCTION
-Real M1FaceAvg(const Real ql, const Real qr, const Real dl, const Real dr,
-               const bool dist) {
-  if (dist) {
-    const Real s = dl + dr;
-    if (fabs(dr - dl) > 1.0e-12*s) {return (dr*ql + dl*qr)/s;}
-  }
-  return 0.5*(ql + qr);
-}
-
-//! \brief M1FaceAvg with the widths of the cells il (left) and ir (right) read from the
-//! x1 face positions x1f(m,i) -- only when dist is set, so a Cartesian mesh (whose x1f
-//! is a dummy view) never touches it.
-template <typename X1F>
-KOKKOS_INLINE_FUNCTION
-Real M1FaceAvgX1(const Real ql, const Real qr, const X1F &x1f, const int m, const int il,
-                 const int ir, const bool dist) {
-  if (dist) {
-    return M1FaceAvg(ql, qr, x1f(m,il+1) - x1f(m,il), x1f(m,ir+1) - x1f(m,ir), true);
-  }
-  return 0.5*(ql + qr);
-}
-
-//! kirch-1022 M1KtX1: the x1 FACE transport opacity rho kappa_T between cells il, ir.
-//! With <rad_m1>/implicit_face_opac = kirchhoff (kir >= 0) an interior face (ir = il+1)
-//! takes the precomputed Kirchhoff (T-integral) mean stored in iw(kir, ir) when it is set
-//! (> 0); otherwise (default kir = -1, a block-edge face, or unset) the M1FaceAvgX1 mean
-//! of the two cells, exactly as before (bitwise).
-template <typename IW, typename X1F>
-KOKKOS_INLINE_FUNCTION
-Real M1KtX1(const IW &iw, const int kir, const int m, const int k, const int j,
-            const int il, const int ir, const X1F &x1f, const bool dist) {
-  if (kir >= 0 && ir == il + 1) {
-    const Real v = iw(m,kir,k,j,ir);
-    if (v > 0.0) return v;
-  }
-  return M1FaceAvgX1(iw(m,M1_IW_KT,k,j,il), iw(m,M1_IW_KT,k,j,ir), x1f, m, il, ir, dist);
 }
 
 //! \fn M1SphMarshakFaceE
@@ -1728,45 +1400,6 @@ void M1CsTanFaceOp(const VT &tt, const int c0, const G &tg, const int e, const i
 // Picard iteration (halo "A"), in the order the pack kernel uses.  The seventh exchange
 // (halo "B") carries M1_IW_EP alone, after the line solve has accepted the new iterate.
 constexpr int M1_NHALO_A = 6;
-KOKKOS_INLINE_FUNCTION
-int M1HaloCompA(const int n) {
-  switch (n) {
-    case 0: return M1_IW_WCHI;
-    case 1: return M1_IW_ADV;
-    case 2: return M1_IW_G0;
-    case 3: return M1_IW_V1;
-    case 4: return M1_IW_RF0;
-    default: return M1_IW_KT;
-  }
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn M1BlendWeight
-//! \brief the per-face blend weight w_f in [0,1] of implicit_flux = blend, from the
-//! LAGGED face optical depth and the LAGGED comoving reduced fluxes of the two cells.
-//! Every quantity it reads lives in the iw work array, so the x1 halo of the partitioned
-//! solve already carries what a face on a block boundary needs (milestone 3b, LIMIT 4).
-
-KOKKOS_INLINE_FUNCTION
-Real M1BlendWeight(const int kind, const int fmode, const Real tauf, const Real tau0,
-                   const Real rfl, const Real rfr, const Real flo, const Real fhi) {
-  Real wt = 1.0;
-  if (kind != M1_IBLEND_F) {
-    Real x = tauf/tau0;
-    wt = exp(-x*x);
-  }
-  Real wf = 1.0;
-  if (kind != M1_IBLEND_TAU) {
-    Real afl = fabs(rfl), afr = fabs(rfr);
-    Real ff = (fmode == M1_IBFM_MEAN) ? (0.5*(afl + afr)) : fmax(afl, afr);
-    Real s = (ff - flo)/fmax(fhi - flo, 1.0e-300);
-    if (s < 0.0) {s = 0.0;}
-    if (s > 1.0) {s = 1.0;}
-    wf = s*s*(3.0 - 2.0*s);
-  }
-  return wt*wf;
-}
-
 //----------------------------------------------------------------------------------------
 //! MILESTONE 3g, the FROZEN-DENSITY EOS CACHE, <rad_m1>/implicit_eos_cache.
 //!
@@ -1801,56 +1434,6 @@ constexpr int M1_EC_NTMAX = 8;   // cap on implicit_eos_cache_nt
 
 KOKKOS_INLINE_FUNCTION
 int M1EosCacheNComp(const int nt) { return 4*(2*nt + 1) + 1; }
-
-//----------------------------------------------------------------------------------------
-//! \fn M1EosCacheBuild
-//! \brief collapse the density direction of the tabulated energy surface at (rho, T^n)
-//! and store the 1-D Hermite coefficients of the window.  Called once per cell per step.
-
-template <class EosT, class V>
-KOKKOS_INLINE_FUNCTION
-void M1EosCacheBuild(const EosT &eos, const V &ec, const int m, const int k,
-                     const int j, const int i, const int nt,
-                     const Real dd, const Real tt) {
-  ec(m,0,k,j,i) = -1.0;
-  const auto &tb = eos.tbl;
-  if (!tb.active || tb.rad_taper) {return;}
-  const Real rho = dd*eos.dens_cgs;
-  const Real tk = tt*eos.temp_cgs;
-  if (!(rho > 0.0) || !(tk > 0.0)) {return;}
-  const Real gx = (log10(rho) - tb.xmin)*tb.dxi;
-  const int ix = static_cast<int>(floor(gx));
-  if (ix < 0 || ix > tb.nx-2) {return;}
-  const Real u = gx - static_cast<Real>(ix);
-  if (u < 0.0 || u > 1.0) {return;}
-  const int nc = 2*nt + 1;
-  if (tb.ny-1 < nc) {return;}
-  const Real gy = (log10(tk) - tb.ymin)*tb.dyi;
-  int iy0 = static_cast<int>(floor(gy)) - nt;
-  if (iy0 < 0) {iy0 = 0;}
-  if (iy0 > tb.ny-1-nc) {iy0 = tb.ny-1-nc;}
-  const Real u2 = u*u, u3 = u2*u;
-  const Real hu[4] = {2.0*u3 - 3.0*u2 + 1.0, u3 - 2.0*u2 + u,
-                      -2.0*u3 + 3.0*u2, u3 - u2};
-  for (int c=0; c<nc; ++c) {
-    const int iy = iy0 + c;
-    for (int b=0; b<4; ++b) {
-      // the Hermite coefficient matrix of HermitePatch(): row r -> node ix + (r>>1) and
-      // the dx-scaled slope surface when r is odd, column b -> node iy + (b>>1) and the
-      // dy-scaled slope surface when b is odd.
-      const int j0 = iy + (b >> 1);
-      const Real sy = (b & 1) ? tb.dy : 1.0;
-      Real s = 0.0;
-      for (int a=0; a<4; ++a) {
-        const int i0 = ix + (a >> 1);
-        const Real sx = (a & 1) ? tb.dx : 1.0;
-        s += hu[a]*tb.tbl(j0, i0, ITE + (a & 1) + 2*(b & 1))*sx*sy;
-      }
-      ec(m,1+4*c+b,k,j,i) = s;
-    }
-  }
-  ec(m,0,k,j,i) = static_cast<Real>(iy0);
-}
 
 //----------------------------------------------------------------------------------------
 //! \fn M1EosCacheEval
@@ -2044,73 +1627,6 @@ int M1ImplTemperatureT(const ThermoT &th, const Real dd, const Real tguess,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn M1ImplTemperatureOpac
-//! \brief <rad_m1>/implicit_tsolve_opac (nc_cure_1002): the bracketed gas-temperature
-//! root find with the Planck and absorption opacities evaluated AT the trial T,
-//!   y(T) = e(T) + c dt rho kappa_P(T) a T^4 - rho e^n - c dt rho kappa_E(T) (E' + de0),
-//! instead of at the lagged iterate.  With the opacity frozen at the previous pass a cell
-//! whose kappa_P changes by >10x over the iterate's T range (shock-heated near-void
-//! cells at log T 6.3-6.6) has no fixed point of the Picard map and cycles with
-//! |dT|/T ~ 0.36 for implicit_maxit passes.  y need not be monotone here, so the root
-//! is found by bisection in log T on a sign-change bracket grown from the guess (same
-//! growth rule as M1ImplTemperatureT).  opf(d, T, rkp, rke) returns rho kappa_P and
-//! rho kappa_E in code units.
-
-template <class ThermoT, class OpF>
-KOKKOS_INLINE_FUNCTION
-int M1ImplTemperatureOpac(const ThermoT &th, const OpF &opf, const Real dd,
-                          const Real tguess, const Real egn, const Real cdta,
-                          const Real cdt, const Real erhs, Real &tout, bool &ok) {
-  auto yfn = [&](const Real t) {
-    Real ee, cv, rkp, rke;
-    th(dd, t, ee, cv);
-    opf(dd, t, rkp, rke);
-    const Real t2 = t*t;
-    return ee + cdta*rkp*t2*t2 - egn - cdt*rke*erhs;
-  };
-  Real tlo = tguess, thi = tguess;
-  Real y0 = yfn(tguess);
-  int nev = 1;
-  ok = true;
-  if (y0 == 0.0) {
-    tout = tguess;
-    return nev;
-  }
-  if (y0 > 0.0) {
-    Real y = y0;
-    for (int it=0; it<80 && y > 0.0; ++it) {
-      thi = tlo;
-      tlo *= 0.5;
-      y = yfn(tlo);
-      ++nev;
-    }
-    ok = (y <= 0.0);
-  } else {
-    Real y = y0;
-    for (int it=0; it<80 && y < 0.0; ++it) {
-      tlo = thi;
-      thi *= 2.0;
-      y = yfn(thi);
-      ++nev;
-    }
-    ok = (y >= 0.0);
-  }
-  if (!ok) {
-    tout = tguess;
-    return nev;
-  }
-  // bisection in log T: y(tlo) <= 0 <= y(thi), thi/tlo = 2 at the start
-  for (int it=0; it<M1_IMPL_TMAXIT && (thi - tlo) > M1_IMPL_TRTOL*thi; ++it) {
-    const Real tm = sqrt(tlo*thi);
-    const Real y = yfn(tm);
-    ++nev;
-    if (y > 0.0) {thi = tm;} else {tlo = tm;}
-  }
-  tout = sqrt(tlo*thi);
-  return nev;
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn M1ImplTemperatureOpacNear
 //! \brief <rad_m1>/implicit_tsolve_opac_mode bit 1 (tsolve_root_fix_1003): the same
 //! equation as M1ImplTemperatureOpac, but the root NEAREST the guess in log T.  y(T) need
@@ -2295,107 +1811,6 @@ int M1ImplTemperatureOpacStable(const ThermoT &th, const OpF &opf, const Real dd
 }
 
 constexpr int M1_TSO_ODE_NS = 32;    // log-T points of the exchange-ODE quadrature
-
-template <class ThermoT, class OpF>
-KOKKOS_INLINE_FUNCTION
-int M1ImplTemperatureOpacOde(const ThermoT &th, const OpF &opf, const Real dd,
-                             const Real tlag, const Real egn, const Real cdta,
-                             const Real cdt, const Real erhs, Real &tout, bool &ok) {
-  ok = false;
-  tout = tlag;
-  if (!(erhs > 0.0) || !(cdta > 0.0) || !(cdt > 0.0) || !(tlag > 0.0)) {return 0;}
-  int nev = 0;
-  // T_gn: e(T) = e_gn, Newton in T with a bracket that grows by halving/doubling
-  Real tg = tlag, lo = 0.0, hi = 0.0;
-  bool conv = false;
-  for (int it=0; it<60; ++it) {
-    Real ee, cv;
-    th(dd, tg, ee, cv);
-    ++nev;
-    const Real f = ee - egn;
-    if (f > 0.0) {hi = tg;} else {lo = tg;}
-    if (fabs(f) <= 1.0e-12*fabs(egn)) {conv = true; break;}
-    Real tn = (cv > 0.0) ? (tg - f/(dd*cv)) : -1.0;   // cv per unit mass
-    const bool inb = (tn > 0.0) && (lo <= 0.0 || tn > lo) && (hi <= 0.0 || tn < hi);
-    if (!inb) {
-      if (lo > 0.0 && hi > 0.0) {
-        tn = sqrt(lo*hi);
-      } else {
-        tn = (f > 0.0) ? 0.5*tg : 2.0*tg;
-      }
-    }
-    if (fabs(tn - tg) <= 1.0e-13*tg) {tg = tn; conv = true; break;}
-    tg = tn;
-  }
-  if (!conv || !(tg > 0.0)) {return nev;}
-  const Real arad = cdta/cdt;
-  const Real trad = sqrt(sqrt(erhs/arad));
-  // end point of the exchange ODE: elapsed (c t) = int de / rate, rate = rho kE E' -
-  // rho kP a T^4, marched in log T from T_gn toward T_rad
-  Real tend = trad;
-  const Real L = log(trad/tg);
-  if (fabs(L) < 1.0e-3) {
-    tend = tg;              // T_gn ~ T_rad: the anchor is either; skip the quadrature
-  } else {
-    auto rate = [&](const Real t) {
-      Real rkp, rke;
-      opf(dd, t, rkp, rke);
-      const Real t2 = t*t;
-      return rke*erhs - rkp*arad*t2*t2;
-    };
-    Real tt = 0.0, tp = tg, rp = rate(tg), ep = egn;
-    ++nev;
-    for (int s=1; s<=M1_TSO_ODE_NS; ++s) {
-      const Real t = tg*exp(L*s/M1_TSO_ODE_NS);
-      const Real r = rate(t);
-      Real e, cv;
-      th(dd, t, e, cv);
-      nev += 2;
-      const Real rm = 0.5*(r + rp);
-      const Real dts = (rm != 0.0) ? (e - ep)/rm : 1.0e300;
-      if (!(dts >= 0.0) || tt + dts >= cdt) {
-        const Real fr = (dts > 0.0 && dts < 1.0e299) ? (cdt - tt)/dts : 0.0;
-        tend = tp*exp(log(t/tp)*fmin(fmax(fr, 0.0), 1.0));
-        break;
-      }
-      tt += dts; tp = t; rp = r; ep = e;
-    }
-  }
-  nev += M1ImplTemperatureOpacStable(th, opf, dd, tend, egn, cdta, cdt, erhs, tout, ok);
-  if (!ok) {tout = tlag;}
-  return nev;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn M1TsoSlope
-//! \brief implicit_tsolve_opac_mode bit 2: d ln kappa_P / d ln T at (dd, t), by a central
-//! difference (+-1e-3 in ln T) of the same opacity call the root find uses.
-
-template <class OpF>
-KOKKOS_INLINE_FUNCTION
-Real M1TsoSlope(const OpF &opf, const Real dd, const Real t) {
-  constexpr Real h = 1.0e-3;
-  Real p1, e1, p2, e2;
-  opf(dd, t*exp(h), p1, e1);
-  opf(dd, t*exp(-h), p2, e2);
-  if (!(p1 > 0.0) || !(p2 > 0.0)) {return 0.0;}
-  return log(p1/p2)/(2.0*h);
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn M1ImplTemperature
-//! \brief the pre-3g entry point: the same safeguarded root find, reading the EOS table
-//! directly.  Kept so that every call site that does not use the cache makes exactly the
-//! sequence of EOS_Data::ThermoAt() calls it made before, bit for bit.
-
-template <class EosT>
-KOKKOS_INLINE_FUNCTION
-int M1ImplTemperature(const EosT &eos, const Real dd, const Real tguess,
-                      const Real egn, const Real cdtkp_a, const Real rhs_abs,
-                      Real &tout, bool &ok) {
-  M1EosDirect<EosT> th{eos};
-  return M1ImplTemperatureT(th, dd, tguess, egn, cdtkp_a, rhs_abs, tout, ok);
-}
 
 } // namespace radm1
 #endif // RAD_M1_RAD_M1_IMPLICIT_HPP_

@@ -467,9 +467,7 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
   // <rad_m1>/clean_init = steady (rad_m1_clean.cpp) at the first dt, then the
   // boundaries, primitives and dt of the new state exactly as Steps 1-2 do on any start
   if (!res_flag && time_evolution != TimeEvolution::tstatic &&
-      pmesh->pmb_pack->pradm1 != nullptr && (pmesh->pmb_pack->pradm1->icr_mode != 0 ||
-      pmesh->pmb_pack->pradm1->cln_steady)) {
-    pmesh->pmb_pack->pradm1->IcRadRun(this);
+      pmesh->pmb_pack->pradm1 != nullptr && pmesh->pmb_pack->pradm1->cln_steady) {
     pmesh->pmb_pack->pradm1->CleanSteadyStart(this);
     // the pgen's post-ic_rad hook (null = nothing; pgen.hpp)
     if (pmesh->pgen->user_icpost_func != nullptr) {
@@ -477,7 +475,6 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
       // a pgen that iterates its IC with the radiation (he_star_m1
       // he_ic_equil) asks for the IC passes again (false = once, as before)
       while (pmesh->pgen->user_icpost_again) {
-        pmesh->pmb_pack->pradm1->IcRadRun(this);
         pmesh->pmb_pack->pradm1->CleanSteadyStart(this);
         (pmesh->pgen->user_icpost_func)(pmesh);
       }
@@ -730,46 +727,35 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // runs INSIDE each Heun stage, after its after_stagen; a stage that is not
       // admissible sends the step back to U^n and through the backward-Euler path below.
       radm1::RadiationM1 *pm1 = pmesh->pmb_pack->pradm1;
-      // <rad_m1>/implicit_mr_every > 1 (rad_m1_mr.cpp): multi-rate radiation, the Heun
-      // stages run the hydro alone and the radiation is taken by MRStep below
-      // <rad_m1>/coupling_split (rad_m1_mr.cpp): 1 = the Heun hydro alone,
-      // then R(dt); 2 = R(dt), then the Heun hydro alone; 0 = the paths here
-      const int m1cs = (pm1 != nullptr) ? pm1->CSplitStep() : 0;
-      if (m1cs == 2) {
-        pm1->MRSolve(this, pmesh->dt);
-      }
-      const bool m1mr = (pm1 != nullptr) && (pm1->MRActive() || m1cs != 0);
       // time2_start = slope: a step without a stored slope gets K1 from a
       // probe solve and runs the stages (no-op otherwise)
       // the first step of a new vet_gd rotation block drops the old set's
       // slope (vet_gd_rotate_slope; no-op without vet_gd_rotate_dt)
-      if (pm1 != nullptr && !m1mr) {pm1->VetGdRotStep();}
+      if (pm1 != nullptr) {pm1->VetGdRotStep();}
       // <rad_m1>/time2_auto_be (off unless named): a step of a skip run takes
       // the backward-Euler redo path at once (t2_ok = false: no stages, no probe)
-      if (pm1 != nullptr && !m1mr) {(void) pm1->Time2AutoBeBegin();}
+      if (pm1 != nullptr) {(void) pm1->Time2AutoBeBegin();}
       // slot 1 = the counters at the stage start; the helper solves
       // below put U^n back, so their counters are dropped (back to slot 1) too
       if (pctr_ != nullptr && pm1 != nullptr) {pctr_->Save(pmesh, 1);}
       bool m1help = false;
-      if (pm1 != nullptr && !m1mr) {m1help = pm1->Time2StartProbe(this, pmesh->dt);}
+      if (pm1 != nullptr) {m1help = pm1->Time2StartProbe(this, pmesh->dt);}
       // vet_gd_rotate_slope = correct, the slope's closure jump
-      if (pm1 != nullptr && !m1mr) {
+      if (pm1 != nullptr) {
         m1help = pm1->Time2RotCorrect(this, pmesh->dt) || m1help;
       }
       if (m1help && pctr_ != nullptr) {pctr_->Restore(pmesh, 1, 2);}
-      const bool m1t2 = (pm1 != nullptr) && !m1mr && pm1->Time2Active();
+      const bool m1t2 = (pm1 != nullptr) && pm1->Time2Active();
       bool m1t2fail = false;
       // Ebnd (energy-budget diagnostic; no-op unless a pgen turned it on)
       if (pm1 != nullptr) {pm1->EbndStart();}
-      const bool nohyd = (pm1 != nullptr) && pm1->dbg_hydro_off && m1mr;
       // DIAGNOSTIC <rad_m1>/dbg_hydro_skip_t2 (read only when named): on
       // the hesdirk2 path the hydro stages do only their register arithmetic with a zero
       // flux divergence (stage 1: u1 = u0; stage 2: u0 = gam0 u0 + gam1 u1), so the gas
       // moves only through the radiation exchange of the stage solves (R alone)
-      const bool nohyd2 = (pm1 != nullptr) && pm1->dbg_hydro_skip_t2 && !m1mr &&
+      const bool nohyd2 = (pm1 != nullptr) && pm1->dbg_hydro_skip_t2 &&
                           (pmesh->pmb_pack->phydro != nullptr);
       auto hydro_stage = [&](int stage) {
-        if (nohyd) return;   // DIAGNOSTIC <rad_m1>/dbg_hydro_off: R alone
         if (nohyd2) {
           hydro::Hydro *ph = pmesh->pmb_pack->phydro;
           if (stage == 1) {
@@ -792,9 +778,6 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
           }
           return;
         }
-        if (pm1 != nullptr) {   // <rad_m1>/implicit_det_trace (no-op unless named)
-          pm1->DetTrace(stage == 1 ? "hyd_in1" : "hyd_in2");
-        }
         ExecuteTaskList(pmesh, "before_stagen", stage);
         // solve gravity at each RK stage so the potential is consistent
         // with the current density (required for 2nd-order accuracy)
@@ -802,7 +785,6 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
             {pmesh->pmb_pack->pgrav->pmgd->Solve(this, stage);}
         ExecuteTaskList(pmesh, "stagen", stage);
         ExecuteTaskList(pmesh, "after_stagen", stage);
-        if (pm1 != nullptr) {pm1->DetTrace("hyd_out");}
       };
       // the pgen registers at the stage-loop start (the backward-Euler redo
       // below puts them back with U^n); taken only when a redo can happen
@@ -846,8 +828,6 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         if (pctr_ != nullptr) {pctr_->Restore(pmesh, 1, 1);}
         pm1->Time2Restore(this);
         DualDiscard(pmesh);   // (floor_pay: the failed stages' payment)
-        // dbg_energy_audit: the put-back is no segment (EAUDIT D=)
-        if (pm1->dbg_eaudit) {pm1->EAuditMark(6);}
         dtretry::PgenStageRestore();
         eint_ledger::Discard(pmesh);   // the redo starts a new baseline
         for (int stage=1; stage<=(nexp_stages); ++stage) {hydro_stage(stage);}
@@ -864,13 +844,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // N_sub = ceil(dt_mesh/dt_rad); each substep runs the module's own two-stage
       // PD-ARS chain with dt_sub = dt_mesh/N_sub.  Skipped entirely -- lists empty,
       // loop not entered -- when there is no <rad_m1> block.
-      if (m1mr) {
-        if (m1cs == 1) {
-          pm1->MRSolve(this, pmesh->dt);
-        } else if (m1cs == 0) {
-          pm1->MRStep(this, pmesh->dt);
-        }
-      } else if (pm1 != nullptr && m1t2 && !m1t2fail) {
+      if (pm1 != nullptr && m1t2 && !m1t2fail) {
         // hesdirk2: U^{n+1} = Y3 is in place and K1 is stored by the stage-2 solve
         pm1->t2_solve = radm1::M1_T2S_NONE;
         pm1->t2_nstep += 1.0;
@@ -908,7 +882,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
 
       // the cycle's kind for the wall split / time2_auto_be run state
       const auto t2we = t2clk();
-      const int t2kind = (!t2wall || m1mr) ? -1 :
+      const int t2kind = !t2wall ? -1 :
                          (m1t2 ? (m1t2fail ? 1 : 0) : (pm1->t2_abe_now ? 2 : 3));
       // a module raised a failure in this cycle -> the checkpoint back, a
       // smaller dt, and the cycle again (nothing of the failed attempt is output)

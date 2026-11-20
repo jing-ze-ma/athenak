@@ -404,7 +404,12 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/clean_pc_factor*", "x"}, {"rad_m1/clean_pc_reuse", "x"},
     {"rad_m1/clean_dissip_power", "x"},
     {"rad_m1/clean_line_teams", "x"}, {"rad_m1/clean_line_solver", "x"},
-    {"rad_m1/clean_line_chunk", "x"}};
+    {"rad_m1/clean_line_chunk", "x"},
+    // (the old solver's diagnostics, multi-rate, coupling split and K1 FCT: removed)
+    {"rad_m1/dbg_energy_audit", "!"}, {"rad_m1/dbg_cs_metric_selftest", "!"},
+    {"rad_m1/implicit_det_trace", "!"}, {"rad_m1/dbg_hydro_off", "!"},
+    {"rad_m1/time2_k1_fct", "!"}, {"rad_m1/implicit_mr_every", "!"},
+    {"rad_m1/coupling_split", "!"}};
   const bool say = (global_variable::my_rank == 0);
   std::string none;
   std::vector<std::string> drop;

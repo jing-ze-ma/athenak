@@ -748,11 +748,6 @@ void RaRstCopy(const DvceArray5D<Real> &d, const DvceArray5D<Real> &sl, const in
 }
 }  // namespace
 
-void RadiationM1::RotAvgRstPack(DvceArray5D<Real> &dst, const int nmb) {
-  RaRstCopy(vra_d, dst, nmb, ((vra_pend == 3) ? vra_k : vra_k - 1)*(RotAvgNf() + 1), 0,
-            RotAvgRstI0());
-}
-
 //! mem-1014: the same record straight into the host array of the restart output
 //! (nmb, nslab, n3, n2, n1), through a device buffer of at most nsc slabs of one
 //! MeshBlock instead of the whole (nmb, nslab) record: every element is the value

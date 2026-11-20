@@ -781,7 +781,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("impl_rho_direct", impl_rho_direct);
   v.value("impl_dump_cyc", impl_dump_cyc);
   v.value("impl_dump_done", impl_dump_done);
-  v.value("impl_dtrace", impl_dtrace);
   v.value("impl_tsolve_opac", impl_tsolve_opac);
   v.value("impl_tsolve_opac_start", impl_tsolve_opac_start);
   v.value("impl_tsolve_opac_mode", impl_tsolve_opac_mode);

@@ -663,9 +663,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         << std::endl << "<rad_m1>/scheme = clean needs transport = implicit" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-  } else if (sc.compare("default") != 0) {
+  } else {   // (the old production solver, scheme = default, is not in this build)
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<rad_m1>/scheme = '" << sc << "' (default | clean)" << std::endl;
+      << std::endl << "<rad_m1>/scheme = '" << sc << "': only scheme = clean (with "
+      << "transport = implicit; a restart file without the key ran the old solver)"
+      << std::endl;
     std::exit(EXIT_FAILURE);
   }
   }
@@ -809,7 +811,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   bcg_pfbit = 0.0;
   bcg_nred = 0.0;
   impl_bcg_sync = 0;
-  impl_dtrace = 0;
   impl_det = false;
   impl_plog = 0;
   bcg_r0rel = 0.0;
@@ -2777,7 +2778,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
   }
   RavInit(pin);     // ringavg-1029 <rad_m1>/polar_ring_avg (rad_m1_ringavg.cpp)
-  IcRadInit(pin);   // icrad-1011 (keys read only when named)
+
   if (sph_geom) {SphericalS1Check(pin);}
   if (cs_geom) {
     pin_cs_ = pin;

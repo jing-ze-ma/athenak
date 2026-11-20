@@ -477,19 +477,6 @@ bool CleanOpen(const CleanArgs &x, const int m, const int s) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn bool CleanInner
-//! \brief cell (k,j,i) lies inside the active cells, at least g from every block face
-//! along the mesh dimensions (md: multi-D, td: 3-D)
-
-KOKKOS_INLINE_FUNCTION
-bool CleanInner(const int k, const int j, const int i, const int g, const int is,
-                const int ie, const int js, const int je, const int ks, const int ke,
-                const bool md, const bool td) {
-  return i >= is + g && i <= ie - g && (!md || (j >= js + g && j <= je - g)) &&
-         (!td || (k >= ks + g && k <= ke - g));
-}
-
-//----------------------------------------------------------------------------------------
 //! \struct CleanShell
 //! \brief the cells of an n3 x n2 x n1 array outside its box [k0,k1] x [j0,j1] x [i0,i1]
 //! (CleanInner by g), counted plane by plane: the k planes below and above the box whole,
@@ -538,26 +525,6 @@ void CleanShellCell(const CleanShell &s, int q, int &k, int &j, int &i) {
   j = s.j0 + r/s.nio;
   const int t = r%s.nio;
   i = (t < s.i0) ? t : s.i1 + 1 + (t - s.i0);
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void CleanLineRange
-//! \brief the lines [lo, hi) in steps st that team t of nt takes out of nline
-//! (CleanCellLineRows): on the host the contiguous chunk [t nline/nt, (t+1) nline/nt), so
-//! that a thread's lines lie next to each other in memory; on a GPU t, t + nt, ...
-
-KOKKOS_INLINE_FUNCTION
-void CleanLineRange(const int nline, const int t, const int nt, int &lo, int &hi,
-                    int &st) {
-  if constexpr (std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>) {
-    lo = static_cast<int>(static_cast<int64_t>(nline)*t/nt);
-    hi = static_cast<int>(static_cast<int64_t>(nline)*(t + 1)/nt);
-    st = 1;
-  } else {
-    lo = t;
-    hi = nline;
-    st = nt;
-  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -1476,29 +1443,6 @@ Real CleanFluxDivergence(const CleanArgs &x, const int e, const int m, const int
     const int dk = (n == 2), dj = (n == 1), di = (n == 0);
     d += CleanDivF(x, n, m, k, j, i, CleanFaceFlux(x, e, n, m, k, j, i, with_source),
                    CleanFaceFlux(x, e, n, m, k+dk, j+dj, i+di, with_source));
-  }
-  return x.h*d;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn Real CleanFluxDivergenceTie
-//! \brief CleanFluxDivergence with the source, each high face's flux but a physical
-//! boundary's its owner's from slot tb + dir of the next cell (clean_stag_ftie,
-//! CleanWriteBack): a face two MeshBlocks share, or the periodic wrap, moves the same
-//! energy on both sides
-
-KOKKOS_INLINE_FUNCTION
-Real CleanFluxDivergenceTie(const CleanArgs &x, const int e, const int tb, const int m,
-                            const int k, const int j, const int i) {
-  Real d = 0.0;
-  for (int n = 0; n < 3; ++n) {
-    if (n >= x.nf) break;
-    const int dk = (n == 2), dj = (n == 1), di = (n == 0);
-    const Real fh = CleanBoundaryFace(x, n, m, k+dk, j+dj, i+di) ?
-                    CleanFaceFlux(x, e, n, m, k+dk, j+dj, i+di, true) :
-                    x.w(m,tb+n,k+dk,j+dj,i+di);
-    const Real fl = CleanFaceFlux(x, e, n, m, k, j, i, true);
-    d += CleanDivF(x, n, m, k, j, i, fl, fh);
   }
   return x.h*d;
 }
