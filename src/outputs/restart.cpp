@@ -1618,7 +1618,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   };
   // a group of n slabs (a(m, n, k, j, i)): with independent I/O a MeshBlock's slabs are
   // contiguous in memory and in its record, so they go out in one write per MeshBlock (in
-  // pieces of at most 2 GB); same bytes as the slab by slab loop
+  // pieces of at most 1 GiB: ROMIO fails a single request of 2^31 bytes); same bytes as the
+  // slab by slab loop
   using PackFn = std::function<void(DvceArray5D<Real> &, int, int)>;
   auto write_group = [&](const auto &a, const int n, const char *what,
                          const PackFn &pk = PackFn()) {
@@ -1646,8 +1647,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
         const Real *p = Kokkos::subview(a, st ? 0 : m, Kokkos::ALL, Kokkos::ALL,
                                         Kokkos::ALL, Kokkos::ALL).data();
         const IOWrapperSizeT cw = std::min(nw, n - w0)*ns, o = w0*ns;
-        for (IOWrapperSizeT q=0; q<cw; q+=(IOWrapperSizeT{1} << 28)) {
-          const IOWrapperSizeT c = std::min(cw - q, IOWrapperSizeT{1} << 28);
+        for (IOWrapperSizeT q=0; q<cw; q+=(IOWrapperSizeT{1} << 27)) {
+          const IOWrapperSizeT c = std::min(cw - q, IOWrapperSizeT{1} << 27);
           if (resfile.Write_any_type_at(p + q, c, offset_myrank + m*data_size +
                                         (o + q)*sizeof(Real), "Real",
                                         single_file_per_rank) != c) {

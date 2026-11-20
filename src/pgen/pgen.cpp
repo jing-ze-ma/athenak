@@ -2021,7 +2021,8 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     // copies it where it belongs, which is a 4D array for wtemp and one channel of the
     // 5D wder for the derived cache
     // independent I/O: a MeshBlock's tail slabs are contiguous in its record, so they
-    // are read ahead, up to 2 GB per rank at a time, with one read per MeshBlock
+    // are read ahead, up to 1 GiB per rank at a time (ROMIO fails a single request of
+    // 2^31 bytes), with one read per MeshBlock
     HostArray5D<Real> rab("rst-tail-ahead", 1, 1, 1, 1, 1);
     const IOWrapperSizeT slab = nout1*nout2*nout3*sizeof(Real);
     IOWrapperSizeT rab0 = 0, rab1 = 0;   // the file range (of MeshBlock 0) rab holds
@@ -2029,7 +2030,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       if (!IOWrapper::collective) {
         if (offset_myrank < rab0 || offset_myrank >= rab1) {
           const IOWrapperSizeT k = std::max<IOWrapperSizeT>(1, std::min<IOWrapperSizeT>(
-              (rec_end - offset_myrank)/slab, (IOWrapperSizeT{1} << 31)/(nmb*slab)));
+              (rec_end - offset_myrank)/slab, (IOWrapperSizeT{1} << 30)/(nmb*slab)));
           if (rab.extent(1) < k) Kokkos::realloc(rab, nmb, k, nout3, nout2, nout1);
           for (int m=0; m<nmb; ++m) {
             const IOWrapperSizeT nr = k*slab/sizeof(Real);
