@@ -3048,6 +3048,11 @@ Real RadiationM1::CleanNewtonUpdate() {
   // blocks and grid: bitwise)
   using NewtonRp =
       Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, CleanLbMb(4)>>;
+  // (clean_nl_print with budget: each cell's change, + the E row's, - the gas row's,
+  // for the CLEAN PDIAG line below; nothing is allocated without it)
+  const bool pdo_ = cln_nlprint && bud;
+  DvceArray1D<Real> pdg;
+  if (pdo_) pdg = DvceArray1D<Real>("cln_pdg", nmb*nkji);
   AthReduce("cln_newton", NewtonRp(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int idx, Real &dmax, Real &fe_max, Real &er_max, Real &xc) {
     int m = idx/nkji;
@@ -3099,6 +3104,10 @@ Real RadiationM1::CleanNewtonUpdate() {
       eos.ThermoAt(d, t, e1, p, chi_rho, chi_t, cv);
       eos.ThermoAt(d, t_old, e0, p, chi_rho, chi_t, cv);
       dmax = fmax(dmax, fmax(fabs(e - e_old)/se, fabs(e1 - e0)/w(m,CLW_SG,k,j,i)));
+      if (pdo_) {
+        const Real ae = fabs(e - e_old)/se, ag = fabs(e1 - e0)/w(m,CLW_SG,k,j,i);
+        pdg(idx) = (ae >= ag) ? ae : -ag;
+      }
       if (kok) er_max = fmax(er_max, 0.5*fabs(e - w(m,CLW_EO,k,j,i) -
                                               h*k1(m,M1_T2_E,k,j,i))/se);
     } else {
@@ -3132,6 +3141,7 @@ Real RadiationM1::CleanNewtonUpdate() {
                fmin(fmax(cln_bkap*ermax, tfl), cln_bmax) : tfl;
     cln_fe = 0.1*tfl;
   }
+  if (pdo_) CleanPassDiag(pdg, change, nmb, nkji, nji, nx1);
   // (clean_stag_sbimp, fwork: the face beta terms' emission of the new T, hc kP a T^4,
   // for the F solve of the velocity update, whose F the next pass's y and W take)
   if ((cln_sbimp || cln_fwork) && cln_feedback) {
@@ -3144,6 +3154,67 @@ Real RadiationM1::CleanNewtonUpdate() {
   // (staggered: the ghosts of the new E_k, for the velocity update and the next RHS)
   if (!cell && cln_feedback) CleanGhostFill(cln_w, CLW_EK, 1);
   return change;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanPassDiag
+//! \brief clean_nl_print (study diagnostic): of a pass's change d (CleanNewtonUpdate), the
+//! cells above the next tolerance and 10 times it, and the cell of the largest change
+//! (the rank that holds it prints): its row (E or gas), MeshBlock, k j i, rho, T, E,
+//! hc kE, r, 1 - r and hc kT (the cell's optical depth per h c)
+
+void RadiationM1::CleanPassDiag(const DvceArray1D<Real> &pdg, const Real change,
+                                const int nmb, const int nkji, const int nji,
+                                const int nx1) {
+  using MaxLoc = Kokkos::MaxLoc<Real,int>;
+  MaxLoc::value_type ml;
+  const Real tol = cln_tolb;
+  Real n1 = 0.0, n10 = 0.0, ng = 0.0;
+  Kokkos::parallel_reduce("cln_pdiag", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
+  KOKKOS_LAMBDA(const int idx, MaxLoc::value_type &l, Real &a, Real &b, Real &c) {
+    const Real v = fabs(pdg(idx));
+    if (v > l.val) {l.val = v; l.loc = idx;}
+    if (v > tol) a += 1.0;
+    if (v > 10.0*tol) b += 1.0;
+    if (v > tol && pdg(idx) < 0.0) c += 1.0;
+  }, MaxLoc(ml), Kokkos::Sum<Real>(n1), Kokkos::Sum<Real>(n10), Kokkos::Sum<Real>(ng));
+  n1 = CleanReduce(n1, false);
+  n10 = CleanReduce(n10, false);
+  ng = CleanReduce(ng, false);
+  const int r0 = global_variable::my_rank;
+  if (r0 == 0) {
+    std::printf("CLEAN PDIAG cycle %d t2s %d d %.3e tol %.3e cells>tol %.0f (gas %.0f) "
+                ">10tol %.0f\n", pmy_pack->pmesh->ncycle, t2_solve, change, tol, n1, ng,
+                n10);
+  }
+  if (!(ml.val == change) || ml.loc < 0) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int idx = ml.loc, m = idx/nkji, k = indcs.ks + (idx%nkji)/nji;
+  const int j = indcs.js + (idx%nji)/nx1, i = indcs.is + idx%nx1;
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  auto uh = fl.u0;
+  auto op = opac;
+  auto w = cln_w;
+  const Real hc = dt_sub*c_light;
+  DvceArray1D<Real> v("cln_pdv", 9);
+  Kokkos::parallel_for("cln_pdv", Kokkos::RangePolicy<>(DevExeSpace(), 0, 1),
+  KOKKOS_LAMBDA(const int) {
+    v(0) = pdg(idx);
+    v(1) = uh(m,IDN,k,j,i);
+    v(2) = w(m,CLW_T,k,j,i);
+    v(3) = w(m,CLW_EK,k,j,i);
+    v(4) = hc*op(m,M1_OP_E,k,j,i);
+    v(5) = w(m,CLW_RR,k,j,i);
+    v(6) = w(m,CLW_RY,k,j,i);
+    v(7) = hc*op(m,M1_OP_T,k,j,i);
+    v(8) = w(m,CLW_EO,k,j,i);
+  });
+  auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), v);
+  std::printf("CLEAN PDIAG max cycle %d t2s %d rank %d row %s gid %d k %d j %d i %d rho "
+              "%.3e T %.4e E %.3e Eo %.3e hckE %.3e r %.3e 1-r %.3e hckT %.3e\n",
+              pmy_pack->pmesh->ncycle, t2_solve, r0, (h(0) >= 0.0) ? "E" : "gas",
+              pmy_pack->pmb->mb_gid.h_view(m), k, j, i, h(1), h(2), h(3), h(8), h(4), h(5),
+              h(6), h(7));
 }
 
 //----------------------------------------------------------------------------------------
