@@ -1,0 +1,4 @@
+# v20n gate (orion 2026-11-20): v20m + LZTEL2 fix, keys off. B_v20n = caltech-runs/v20n 6d3da47b2. High priority, romio.
+FINALRST=1 MODE=rt NH=2              V20N_rsg  B_v20n RSG 4 rsg_v20.keys
+FINALRST=1 ENVX=CLEAN_POISON_GHOST=1 V20NP_rsg B_v20n RSG 4 rsg_v20.keys
+FINALRST=1 MODE=rt NH=2              V20N_hg   B_v20n HG  4 hg_v20.keys time/dt_retry_host=m1
