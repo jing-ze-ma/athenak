@@ -409,10 +409,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                   << "sphere gas phi momentum) is gone; 2 is the only form" << std::endl;
         std::exit(EXIT_FAILURE);
       }
-      if (cln_lza == 2) {
+      cln_lzbook = (cln_lza == 2) || (pmy_pack->pmesh->use_spherical_polar &&
+                                      pmy_pack->pmesh->three_d);
+      if (cln_lzbook) {
+        const bool cs = (cln_lza == 2);
         cln_lzpin = pin;
-        cln_lzl = pin->GetOrAddReal("rad_m1", "clean_cs_lz_ledger", 0.0);
-        cln_lzs1 = pin->GetOrAddReal("rad_m1", "clean_cs_lz_k1", 0.0);
+        cln_lzl = pin->GetOrAddReal("rad_m1", cs ? "clean_cs_lz_ledger" : "clean_sp_lz_bnd",
+                                    0.0);
+        cln_lzs1 = pin->GetOrAddReal("rad_m1", cs ? "clean_cs_lz_k1" : "clean_sp_lz_bnd_k1",
+                                     0.0);
       }
       cln_xpat = stag("clean_stag_xpat", false);
       // clean_xt_cons (default off): the first iterate's gas T with A's G = 1 - beta^2/2,

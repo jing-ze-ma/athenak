@@ -82,6 +82,7 @@
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
+#include "hydro/hydro_am.hpp"
 #include "mhd/mhd.hpp"
 #include "outputs/outputs.hpp"
 #include "utils/wb_background.hpp"
@@ -4325,6 +4326,10 @@ void HeStarBC(Mesh *pm) {
 //! walls its rate is L_in - L_top(lab) (the comoving L_top differs from it by O(v/c)).
 //! Mdot_top is the mass really leaving through the top (the inflow part is removed by
 //! the gravity-source correction), Min_top the inflow that was removed.
+//! M_hflx, E_hflx, Lz_hflx: the hydro's mass, energy (IEN) and L_z leaving through the
+//! physical x1 faces over the step, as rates (am_bflx, hydro_am.hpp: the RK-weighted
+//! fluxes); Lz_tot: the L_z of gas + radiation (CleanLzTotal, incl. the L_z ledger), so
+//! that d M_tot/dt = -M_hflx and d Lz_tot/dt = -Lz_hflx close in the history.
 
 void HeStarHist(HistoryData *pdata, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
@@ -4333,14 +4338,14 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   // esrc V) and P_sponge (kinetic-energy loss rate of the top sponge at this state), the
   // two non-flux terms of d Etot/dt = L_in - L_top + P_esrc - P_sponge
   const int nb = hs_mlt_ ? 22 : 20;
-  pdata->nhist = nb + 2;
-  const char *lab[24] = {"L_bot", "L_mid", "L_int", "L_top", "L_in", "E_rad", "e_gas",
+  pdata->nhist = nb + 6;
+  const char *lab[28] = {"L_bot", "L_mid", "L_int", "L_top", "L_in", "E_rad", "e_gas",
                          "M_int", "KE_int", "KEr_int", "Mr_int", "PV_int", "V_int",
                          "M_tot", "Mdot_top", "Mdot_bot", "Etot", "Min_top",
-                         "v1sq_wall", "Picard", "w_mlt", "L_MLT", "P_esrc", "P_sponge"};
+                         "v1sq_wall", "Picard", "w_mlt", "L_MLT", "P_esrc", "P_sponge",
+                         "M_hflx", "E_hflx", "Lz_hflx", "Lz_tot"};
   for (int n=0; n<nb; ++n) pdata->label[n] = lab[n];
-  pdata->label[nb] = lab[22];
-  pdata->label[nb+1] = lab[23];
+  for (int n=0; n<6; ++n) pdata->label[nb+n] = lab[22+n];
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, nx1 = indcs.nx1;
   const int js = indcs.js, nx2 = indcs.nx2, ks = indcs.ks, nx3 = indcs.nx3;
@@ -4458,6 +4463,26 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   for (int n=0; n<20; ++n) pdata->hdata[n] = sum_this.the_array[n];
   pdata->hdata[nb] = sum_this.the_array[22];
   pdata->hdata[nb+1] = sum_this.the_array[23];
+  // M_hflx, E_hflx, Lz_hflx: the step's am_bflx over its dt (0 without the module)
+  for (int n=0; n<3; ++n) pdata->hdata[nb+2+n] = 0.0;
+  hydro::AmModule *pam = hydro::AmModuleOf(pmbp);
+  if (pam != nullptr && pam->am_bflx.extent_int(0) > 0 && pam->am_bdt > 0.0) {
+    auto bf = pam->am_bflx;
+    const int nkj = nx3*nx2;
+    array_sum::GlobalSum fsum;
+    repro::HistSums("hs_hflx", pmbp->nmb_thispack, nkj, 1,
+    KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &msum) {
+      const int m = idx/nkj, k = (idx - m*nkj)/nx2 + ks, j = idx%nx2 + js;
+      array_sum::GlobalSum h;
+      for (int n=0; n<NREDUCTION_VARIABLES; ++n) h.the_array[n] = 0.0;
+      for (int n=0; n<3; ++n) h.the_array[n] = bf(m,n,0,k,j) + bf(m,n,1,k,j);
+      msum += h;
+    }, fsum);
+    for (int n=0; n<3; ++n) pdata->hdata[nb+2+n] = fsum.the_array[n]/pam->am_bdt;
+  }
+  // (a global value: rank 0 contributes)
+  const Real lzt = pm1->CleanLzTotal();
+  pdata->hdata[nb+5] = (global_variable::my_rank == 0) ? lzt : 0.0;
   if (hs_mlt_) {
     // host values, summed over ranks by the history output: rank 0 contributes
     const bool r0 = (global_variable::my_rank == 0);

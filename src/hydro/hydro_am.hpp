@@ -353,6 +353,32 @@ bool HydroAmTorqueBase(const HydroAmV &v, const int m, const int k, const int j,
 }
 
 
+//! \brief the L_z (about z) the flux of radial face ii of column (m,k,j) carries outward,
+//! T_cons's radial-face term of HydroAmTorque: cs A r_f (rhat_c x F)_z with F on the
+//! cell's basis, sp F_phi A r_f Rbar (Rbar the cell's mean sin(theta))
+KOKKOS_INLINE_FUNCTION
+Real HydroAmRadialTorque(const HydroAmV &v, const int m, const int k, const int j,
+                         const int ii) {
+  const Real af = v.a1(m,k,j,ii)*v.x1f(m,ii);
+  if (v.cs) {
+    const Real x2l = v.size.d_view(m).x2min, x2u = v.size.d_view(m).x2max;
+    const Real x3l = v.size.d_view(m).x3min, x3u = v.size.d_view(m).x3max;
+    const Real xc = 0.25*M_PI*CellCenterX(j-v.js, v.nx2, x2l, x2u);
+    const Real ec = 0.25*M_PI*CellCenterX(k-v.ks, v.nx3, x3l, x3u);
+    Real qc[3], e1[3], e2[3];
+    cubed_sphere::PanelToCart(v.panel.d_view(m), xc, ec, qc);
+    cubed_sphere::PanelTangents(v.panel.d_view(m), xc, ec, e1, e2);
+    const Real qn = 1.0/sqrt(qc[0]*qc[0] + qc[1]*qc[1] + qc[2]*qc[2]);
+    const Real c = v.ccell(m,k,j), s2 = 1.0 - c*c;
+    const Real g2 = v.f1(m,IM2,k,j,ii), g3 = v.f1(m,IM3,k,j,ii);
+    const Real fa = (g2 - c*g3)/s2, fb = (g3 - c*g2)/s2;
+    return af*qn*(qc[0]*(fa*e1[1] + fb*e2[1]) - qc[1]*(fa*e1[0] + fb*e2[0]));
+  }
+  const Real thl = v.x2f(m,j), thr = v.x2f(m,j+1), dcos = cos(thl) - cos(thr);
+  const Real sin2int = 0.5*(thr - thl) - 0.25*(sin(2.0*thr) - sin(2.0*thl));
+  return v.f1(m,IM3,k,j,ii)*af*((dcos > 0.0) ? sin2int/dcos : 0.0);
+}
+
 KOKKOS_INLINE_FUNCTION
 void HydroAmCross(const Real *a, const Real *b, Real *c) {
   c[0] = a[1]*b[2] - a[2]*b[1];
@@ -796,6 +822,12 @@ class AmModule {
   void AmSpinReturn(const AmFluid &fl);
   void FrameRotation(Real bdt, Driver *pdrive, int stage, const AmFluid &fl);
   void AmFillV(HydroAmV &v, const AmFluid &fl);
+  // the history's physical x1 boundary fluxes over the step, outward +, with the RK
+  // weights of u0 (am_bflx (m, q, side, k, j): q = 0 mass, 1 energy IEN, 2 L_z by
+  // HydroAmRadialTorque), the hydro's part of the mass, energy and L_z budgets
+  DvceArray5D<Real> am_bflx;
+  Real am_bdt = 0.0;
+  void AmBndFlux(Driver *pdrive, int stage, Real bdt, const AmFluid &fl);
   // the dt_retry checkpoint visitor (generated: hydro/hydro_am_dtretry_visit.hpp)
   template <class V> void DtRetryVisit(V &v);
 };

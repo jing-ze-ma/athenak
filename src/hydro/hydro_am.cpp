@@ -157,6 +157,7 @@ AmModule::~AmModule() {
 }
 
 void AmModule::Apply(Driver *pdrive, int stage, Real bdt, const AmFluid &fl) {
+  AmBndFlux(pdrive, stage, bdt, fl);
   if (am_transport) {
     AmTransport(bdt, pdrive, stage, fl);
   }
@@ -630,6 +631,33 @@ void AmModule::FrameRotation(Real bdt, Driver *pdrive, int stage, const AmFluid 
       u0_(m,IM3,k,j,i) += p2;
       sp_(m,k,j,i) += dl[0]*rh[0] + dl[1]*rh[1] + dl[2]*rh[2];
     }
+  });
+}
+
+//! \brief am_bflx (hydro_am.hpp): this stage's x1 boundary fluxes, weighted as the RK
+//! update weights u0 (gam0 of the register, the step start's part 0)
+void AmModule::AmBndFlux(Driver *pdrive, int stage, Real bdt, const AmFluid &fl) {
+  auto &ic = pmy_pack->pmesh->mb_indcs;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  if (am_bflx.extent_int(0) <= nmb1) {
+    Kokkos::realloc(am_bflx, nmb1 + 1, 3, 2, ic.nx3 + 2*ic.ng, ic.nx2 + 2*ic.ng);
+  }
+  HydroAmV v;
+  AmFillV(v, fl);
+  auto bf = am_bflx;
+  const int is = ic.is, ie = ic.ie;
+  const Real g0 = (stage == 1) ? 0.0 : pdrive->gam0[stage-1];
+  am_bdt = g0*am_bdt + bdt;   // (the step's dt, the same weights)
+  par_for("hydro_am_bflx", DevExeSpace(), 0, nmb1, 0, 1, ic.ks, ic.ke, ic.js, ic.je,
+  KOKKOS_LAMBDA(const int m, const int s, const int k, const int j) {
+    const int ii = s ? ie + 1 : is;
+    const BoundaryFlag f = v.bcs.d_view(m, s ? BoundaryFace::outer_x1
+                                              : BoundaryFace::inner_x1);
+    const bool phys = (f != BoundaryFlag::block) && (f != BoundaryFlag::periodic);
+    const Real o = (s ? 1.0 : -1.0)*bdt;
+    const Real q[3] = {v.f1(m,IDN,k,j,ii)*v.a1(m,k,j,ii), v.f1(m,IEN,k,j,ii)*v.a1(m,k,j,ii),
+                       HydroAmRadialTorque(v, m, k, j, ii)};
+    for (int n = 0; n < 3; ++n) bf(m,n,s,k,j) = g0*bf(m,n,s,k,j) + (phys ? o*q[n] : 0.0);
   });
 }
 
