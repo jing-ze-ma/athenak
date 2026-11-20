@@ -135,3 +135,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - GCA300_ref_rsg (hpc-sm-02-10): rc=0 wall=1437 | cycles 589788 - 590088 | steady 4.554 s/cycle | GPU MiB max 95621 min 94595 | CW a 17 FATAL 0 |  
 - KT1_hg (hpc-sm-01-11): rc=0 wall=193 | cycles 624961 - 624981 | steady 5.190 s/cycle | GPU MiB max 116353 min 115805 | CW a 0 FATAL 0 |  
 - KT01_hg (hpc-sm-02-10): rc=0 wall=197 | cycles 624961 - 624981 | steady 5.577 s/cycle | GPU MiB max 116353 min 115805 | CW a 0 FATAL 0 |  
+- RF100_hg_f1 (hpc-sm-02-03): rc=0 wall=609 | cycles 624961 - 625061 | steady 5.063 s/cycle | GPU MiB max 112977 min 112453 | CW a 0 FATAL 0 |  
+- RF100_ref_hg (hpc-sm-02-04): rc=0 wall=595 | cycles 624961 - 625061 | steady 4.942 s/cycle | GPU MiB max 112977 min 112453 | CW a 0 FATAL 0 |  
