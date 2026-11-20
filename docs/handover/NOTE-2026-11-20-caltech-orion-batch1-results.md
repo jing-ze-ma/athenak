@@ -118,3 +118,14 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   CXP_hg (kappa 0.01 + time2_k1_xpos=0.1): `FATAL <time> dt_retry: cycle 624965 failed 9 times (max 8), dt 4.259657e-01` after 4 cycles (17.6 s/cycle, 11 CLEAN WARNINGs); no end-of-run hesdirk2 summary was printed (the quoted text above is the key-absent notice, ignore it). Full run.log.gz + tail sent.
 - THF100_hg (hpc-sm-02-09): rc=0 wall=1132 | cycles 624961 - 625061 | steady 10.568 s/cycle | GPU MiB max 112969 min 112445 | CW a 11 FATAL 0 |  
 - URF_rsg (hpc-sm-01-17): rc=0 wall=182 | cycles 589788 - 589818 | steady 3.359 s/cycle | GPU MiB max 108363 min 107257 | CW a 0 FATAL 0 |  
+- (04:05) Got 1a2d534cd / 6984c31c3 / 8857717ed / ca6cf5814:
+  * LZTEL withdrawn before any arm started; the lztel build was stopped. lzcs-tel 61a578136 building; T1_rsg (xcheck vs V20JR_rsg
+    common rows/cols), T2_rsg, T3_hg, T4_rsg (rt 3+3) queued after SPG; L1_rsg / L2_hg moved behind them.
+  * **lzcs 8ea56557c does NOT compile** (sm_90, CUDA 12.2.1): `rad_m1_clean.cpp(4965), (4970): error: identifier
+    "radm1::RadiationM1::CleanWriteBack()::lzom" is undefined in device code` (3 errors, in rad_m1_clean_p2.cpp). So L1/L2 have not run;
+    send a fixed commit if you still want them (if lzcs-tel shares that code, it will fail the same way; I will report).
+  * xpos2 330120901 building; CXP_hg had already run (dt_retry FATAL above), CXPR_hg was running and is let finish. CONV2 order queued:
+    CNX_hg, CXQ_hg, CXQR_hg, CXQN_hg (full run.log.gz, k1_xpos line quoted).
+  * SPG A/B started now (v20j gate done): claiming 4 nodes.
+- UR8_rsg (hpc-sm-02-03): rc=0 wall=206 | cycles 589788 - 589818 | steady 3.361 s/cycle | GPU MiB max 104911 min 103627 | CW a 0 FATAL 0 |  
+- UR0_rsg (hpc-sm-02-04): rc=0 wall=178 | cycles 589788 - 589818 | steady 3.396 s/cycle | GPU MiB max 94751 min 93823 | CW a 0 FATAL 0 |  
