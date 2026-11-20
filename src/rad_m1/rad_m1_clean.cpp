@@ -3690,6 +3690,18 @@ void RadiationM1::CleanStagBracket() {
                                                  - x.fc[dir](m,CLF_HM,k,j,i)*jr);
         return;
       }
+      // (15, 16, diagnosis: no clamp; 15 gates only the excess side (E_old > J: r = J/E),
+      // 16 only the deficit side (E_old < J: r = E/J))
+      if (dgf == 15 || dgf == 16) {
+        auto rh = [&](const Real e, const Real jj) {
+          return (dgf == 15) ? ((e > jj && e > 0.0) ? jj/e : 1.0)
+                             : ((jj > e && jj > 0.0) ? e/jj : 1.0);
+        };
+        const Real r6 = fmin(rh(eol, jl), rh(eor, jr));
+        x.fc[dir](m,x.fdg,k,j,i) = r6*r6*x.c*(fy - x.fc[dir](m,CLF_HP,k,j,i)*jl
+                                               - x.fc[dir](m,CLF_HM,k,j,i)*jr);
+        return;
+      }
       if (dgf == 9) {
         x.fc[dir](m,x.fdg,k,j,i) = q*x.c*(fy - x.fc[dir](m,CLF_HP,k,j,i)*jl
                                            - x.fc[dir](m,CLF_HM,k,j,i)*jr);
