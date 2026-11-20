@@ -199,14 +199,6 @@ constexpr int M1_VGD_HRC1 = 6;     // C1 = sum w |I - S| / J (twin-corrected as 
 constexpr int M1_VGD_HREP = 7;     // eps = min(kappa_P/chi, 1) (1 where chi = 0)
 constexpr int M1_VGD_HRJ  = 8;     // J (E units; twin-corrected by J_tw/<J_tw>)
 constexpr int M1_VGD_HRNX = 9;
-// vgdlat-1012 vet_gd_symref: the per-shell quantities of the 1-D reference (vgd_srm)
-constexpr int M1_VGD_SR_F = 0;    // K/J
-constexpr int M1_VGD_SR_HP = 1;   // H+_r/J
-constexpr int M1_VGD_SR_HM = 2;   // H-_r/J (<= 0)
-constexpr int M1_VGD_SR_HL = 3;   // H+_theta/J = H+_phi/J = -H-_theta/J
-constexpr int M1_VGD_SR_C1 = 4;   // int |I - S|/J
-constexpr int M1_VGD_SR_J = 5;    // J (E units)
-constexpr int M1_VGD_SR_N = 6;
 #ifdef M1_VGD_NMAX_BUILD
 constexpr int M1_VGD_NMAX = M1_VGD_NMAX_BUILD;   // rotavg-1012: cmake -D Athena_M1_VGD_NMAX
 #else
@@ -1343,7 +1335,6 @@ class RadiationM1 {
   bool vgd_hr_tw = false;              // stage 0 of the fused twin: S from vgd_cst
   DvceArray1D<Real> vgd_hrm6;          // vgdrot-1011: the 6 shell means at once
   Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> vgd_pin_hr, vgd_pin_tw, vgd_pin_cnt;
-  void VetGdHalfRange(const int stage);
   DvceArray5D<Real> ifw2, ifw3;
   // the partitioned (gathered) line solve, LIMIT 4.  Every rank that owns a piece of a
   // column sends its (a,b,c,r) rows to the column's ROOT rank, which runs the identical
@@ -2370,19 +2361,6 @@ class RadiationM1 {
   // Needs the cell volume array (cs / sp); off on Cartesian
   Real impl_clip_kecap = 0.0;
   DvceArray1D<Real> clkc_d;
-  // hgfix-1110 <rad_m1>/time2_inc_kecap = th (read only when named; 0 = off = bitwise):
-  // where the gas old vector of a stage solve would have eint(U_h + t2inc) < th eint(U_h)
-  // because the momentum part of t2inc carries more kinetic energy than the cell has
-  // (a stored slope whose K_m outgrew its K_EN: the am_cs L deposit and the consrc clip
-  // take their kinetic energy from e_int), the momentum increment t2inc_m (and the
-  // am_vector spin increment) of THAT cell is scaled by the largest s in [0, 1) that
-  // restores th eint(U_h); t2inc_EN is untouched, so the total energy is kept and the
-  // momentum (1 - s) t2inc_m is dropped (counted: INCKECAP).  Both stages, before
-  // time2_inc_fct_gas; cells with eint(U_h) <= 0 are not touched (counted)
-  Real t2_inckc = 0.0, t2_inckc_n = 0.0, t2_inckc_un = 0.0, t2_inckc_hn = 0.0;
-  Real t2_inckc_ke = 0.0, t2_inckc_pm = 0.0;
-  int t2_inckc_calls = 0;
-  void Time2IncKeCap(int stage);
   // rsglock-1112 <rad_m1>/time2_inc_energy = gas | rad (read only when named; gas =
   // absent = bitwise).  rad: each slope K also stores its kinetic-energy part
   // K_KE = (KE(m_o + dt K_m) - KE(m_o))/dt (m_o the solve's old-vector momentum), and
@@ -2419,38 +2397,6 @@ class RadiationM1 {
   Real t2_xsp_de = 0.0, t2_xsp_cells = 0.0;
   int t2_xsp_calls = 0;
   DvceArray4D<Real> t2kx1, t2kx2, t2lx1, t2lx2;    // K_X and lambda of K1, K2
-  // facebound-1112 <rad_m1>/time2_stage_theta = th (read only when named; absent or 0 =
-  // off, bitwise; rc18_1110/FACEBOUND_LOCALBE_1112.md): a LOCAL, conservative limiter of
-  // the hesdirk2 stage old vectors.  Per active cell the largest theta in [0, 1] with
-  // E + theta dE >= th E and eint(gas + theta d) >= th eint (eint > 0 only) scales the
-  // cell increment (E, gas momentum, gas energy); faces and the stored cell F keep
-  // theirs.
-  // Stage 1: the dropped (1 - theta1) a21 dt K1 re-enters the stage-2 old vector with the
-  // weight of Y1 there (as time2_posfix's compensation).  Stage 2: the dropped part is
-  // added to U^{n+1} in the write-back (after the slope K is formed), as far as it keeps
-  // the cell admissible; the rest is counted as unpaid.  No column moves, no BE.
-  Real t2_theta = 0.0;
-  Real t2_th_n1 = 0.0, t2_th_n2 = 0.0, t2_th_s1 = 0.0, t2_th_s2 = 0.0;
-  int t2_th_calls = 0;
-  DvceArray4D<Real> t2thd;       // (m,k,j,i) 1 - theta1 of the current step's stage 1
-  DvceArray5D<Real> t2thr;       // (m,5,k,j,i) the stage-2 drop (E, m1..3, EN)
-  // <rad_m1>/time2_stage_local_be = true (read only when named; no threshold): theta is
-  // 0 (the local backward-Euler stage start, U_s) in exactly the cells whose old vector
-  // is not admissible (E + dE <= 0 or eint(U_h + d) <= 0) and 1 (bitwise) elsewhere; the
-  // stage-2 drop re-enters only as a whole and only if the new state stays admissible.
-  // What cannot re-enter is CARRIED (t2thc) into the next step's stage-1 increment
-  // (energy and momentum exact over steps).  rstbit-1112: the carry is restart state
-  // (kM1ThcRstMagic, 5 slabs behind the fax ones, written once it is allocated); the
-  // reader keeps it in t2thc_rst until the first Time2StageTheta allocates t2thc
-  bool t2_lbe = false;
-  DvceArray5D<Real> t2thc;       // (m,5,k,j,i) the carried stage-2 drop
-  DvceArray5D<Real> t2thc_rst;   // rstbit-1112: the restart file's carry, pending
-  int ThcRstNslab() const;
-  void ThcRstPack(DvceArray5D<Real> out, int nmb);
-  bool ThcRstUnpack(DvceArray5D<Real> in, int nmb, int nsl);
-  DvceArray1D<Real> t2th_cnt_d;  // 0 re-entered cells, 1 unpaid cells, 2 unpaid E x vol,
-                                 // 3 unpaid gas energy x vol, 4 unpaid |dm| x vol
-  void Time2StageTheta(int stage, Real dt);
   // facebound-1112 step 1 <rad_m1>/time2_face_fct = true (read only when named; default
   // false = bitwise; no threshold): Zalesak positivity limiter on the FACE fluxes of the
   // explicit stage increment t2inc.  Each stage solve also stores the E transport flux of
@@ -3916,47 +3862,13 @@ class RadiationM1 {
   // vet_gd_wall_interp (read only when named, default false): wall ghosts from the 3
   // nearest same-branch directions with weights (m, k, j, d, 3)
   bool vgd_wint = false;
-  // vet_gd_twin (read only when named, default false): uniform-state twin subtraction
-  bool vgd_twin = false, vgd_noq = false;
-  bool vgd_twfull = false;    // vet_gd_twin_full: LAT0 -= full twin LAT0 (no shell mean)
-  DvceArray1D<Real> vgd_twm, vgd_twm2;
-  // twinfix-1012: vet_gd_twin_state = trans (the twin's shell state from the shell's mean
-  // TRANSMISSION, not its mean opacity; vgd_twtr) and vet_gd_twin_weight = j (the twin
-  // subtraction weighted per cell by the main/twin J agreement; vgd_twwt, vgd_twwq)
-  bool vgd_twtr = false, vgd_twwt = false;
-  Real vgd_twwq = 0.5;
-  DvceArray1D<Real> vgd_twtb;  // (5*c1): sum t, sum (1-t), sum S(1-t), min, max ln chi
-  void VetGdTwinTrans();
-  DvceArray5D<Real> vgd_twl, vgd_cs0;
-  // vgdlat-1012 vet_gd_symref = col (read only when named, default none; needs
-  // vet_gd_twin): the twin's laterally symmetric reference (its shell mean) replaced by
-  // the 1-D spherical p-ray solution of the same shell-mean state (VetGdSymRef)
-  bool vgd_symref = false, vgd_sr_ok = false;
-  int vgd_sr_nc = 64, vgd_sr_ns = 4;
-  std::vector<Real> vgd_sr_x1v, vgd_sr_x1f;
-  DvceArray1D<Real> vgd_srm;   // (q c1 + i), q = M1_VGD_SR_*
-  double vgd_tsr = 0.0, vgd_tsrj = 0.0;
-  bool vgd_sr_pend = false;
-  std::vector<double> vgd_sr_h;
-  std::future<std::vector<double>> vgd_sr_fut;
-  void VetGdSymRef();
-  void VetGdSymRefJoin();
-  // vet_gd_twin_fuse (accel-1009): the twin's own source (ln chi, ln S of the shell
-  // means) and intensities, swept in the main sweep's kernels; vgd_sw2 = this sweep
-  // carries the twin; second compact halo buffers for it
-  bool vgd_twfuse = false, vgd_sw2 = false;
-  bool vgd_twdet = false;      // vet_gd_twin_det: fixed-order (reproducible) shell means
-  bool vgd_twseq = false;      // vet_gd_twin_lowmem: fused twin swept first, one array
+  // the cubed-sphere sweep's second field (vgd_sw2: the old fused twin's arrays; never
+  // set since the twin was removed)
+  bool vgd_sw2 = false;
   DvceArray5D<Real> vgd_cst;
   VgdIView vgd_itw;
   DvceArray1D<Real> vgd_csb2, vgd_crb2, vgd_rbuf2;
-  void VetGdTwinFusedMoments();
-  Real vgd_ttwin = 0.0;
-  void VetGdTwin(const int stage);
   VgdLG vgd_lg;   // layinv-1105: the vet_gd sweep geometry from the global index
-  // layinv-1105: order-independent shell means of VetGdTwin (rad_m1_vetgd.cpp)
-  void VgdReproMean(DvceArray5D<Real> &arr, const int ca, const int cb, const int og,
-                    const bool ex, DvceArray1D<Real> &outa, DvceArray1D<Real> *outb);
   Kokkos::View<int *****, LayoutWrapper, DevMemSpace> vgd_m3;
   DvceArray5D<Real> vgd_w3;
   // wallbug-1027 vet_gd_theta_wall (read only when named; periodic | mirror, default
@@ -4541,7 +4453,6 @@ class RadiationM1 {
   // and host thread while the rest of cycle n runs; the D of cycle n is the moments of
   // build n-1 (one cycle lag).  The pending build's source (vlat_cs) and cycle travel
   // in the restart file (kM1VgdRstMagic).  vgd_cur: the instance the sweep/halo use.
-  bool vgd_async = false;
   // speedup-1109 vet_gd_body_global (read only when named; prod-1110 default true when
   // vet_gd is on; bitwise): the
   // shell body closure in device memory, called through a pointer (VgdClosureToDevice)
@@ -4551,27 +4462,13 @@ class RadiationM1 {
   DvceArray1D<char> vgd_bbuf2, vgd_bbuf3;   // d6fast4-1112: CUDA gx-false closures
   int vgd_cuda_lb = 0;   // d6fast4-1112: env VGD_CUDA_LB (rad_m1_vetgd.cpp)
 #endif
-  bool vgd_ainl = false;       // the sweep inline at launch (host backends, or env
-                               // VGD_ASYNC_INLINE=1): same numbers, no overlap
-  bool vgd_apend = false;      // a swept build whose moments are not yet taken
-  bool vgd_afly = false;       // the helper thread is running
-  int vgd_acyc = -1;           // ncycle of the pending build (its z-angle)
-  int vgd_pcut = -1;           // vlat_icut of the pending build (async)
   int vgd_scut = 0;            // vlat_icut the running sweep uses (sync: = vlat_icut)
-  std::thread vgd_athr;
-  DevExeSpace vgd_cur, vgd_ex;
-  Real vgd_tjoin = 0.0, vgd_nasync = 0.0;
-  DvceArray5D<Real> vgd_rst;   // (nmb, 2, k, j, i): vlat_cs of the pending build, staged
-  int vgd_rst_cyc = -1;        // from the restart file (-1: nothing staged)
+  DevExeSpace vgd_cur;
 #if MPI_PARALLEL_ENABLED
   MPI_Comm vgd_comm = MPI_COMM_WORLD;
 #endif
   void VetGdSource();
   void VetGdPost();
-  void VetGdBuildAsync();
-  void VetGdAsyncJoin();
-  int VetGdAsyncRstNch() const {return (vgd_async && vgd_apend) ? 2 : 0;}
-  void VetGdAsyncRstPack(DvceArray5D<Real> &dst, int nmb);
   void VetLatCsFinish();
 
   // ...in "m1_before_stagen"

@@ -353,7 +353,8 @@ static void CleanVelocityCell(const CleanArgs &x, const CleanArgs &xh, const Cle
 #if M1_TU_PART(0)
 void RadiationM1::CleanPreflight(ParameterInput *pin) {
   // block/key (* ends a prefix): nullptr read, "" no effect, "!" fatal unless off, "x"
-  // removed (fatal when named), else clean key
+  // removed (fatal when named), "=v" removed (fatal unless v, the value old-prod restart
+  // files carry), else clean key
   static const char *tab[][2] = {
     {"rad_m1/implicit_bc_*", nullptr}, {"rad_m1/implicit_flux_x1m*", nullptr},
     {"rad_m1/implicit_ebath_*", nullptr}, {"rad_m1/implicit_beam*", nullptr},
@@ -410,7 +411,16 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/dbg_energy_audit", "!"}, {"rad_m1/dbg_cs_metric_selftest", "!"},
     {"rad_m1/implicit_det_trace", "!"}, {"rad_m1/dbg_hydro_off", "!"},
     {"rad_m1/time2_k1_fct", "!"}, {"rad_m1/implicit_mr_every", "!"},
-    {"rad_m1/coupling_split", "!"}};
+    {"rad_m1/coupling_split", "!"},
+    // (the vet_gd twin and its symmetric reference: removed, L4)
+    {"rad_m1/vet_gd_twin_state", "=mean"}, {"rad_m1/vet_gd_twin_weight", "=none"},
+    {"rad_m1/vet_gd_twin_full", "=false"}, {"rad_m1/vet_gd_twin_fuse", "=false"},
+    {"rad_m1/vet_gd_twin_lowmem", "=false"}, {"rad_m1/vet_gd_twin_det", ""},
+    {"rad_m1/vet_gd_twin_wq", ""}, {"rad_m1/vet_gd_twin_srw", "=false"},
+    {"rad_m1/vet_gd_twin", "=false"},
+    {"rad_m1/vet_gd_symref", "=none"}, {"rad_m1/vet_gd_symref_*", ""},
+    {"rad_m1/vet_gd_async", "!"}, {"rad_m1/time2_stage_theta", "!"},
+    {"rad_m1/time2_stage_local_be", "!"}};
   const bool say = (global_variable::my_rank == 0);
   std::string none;
   std::vector<std::string> drop;
@@ -429,14 +439,18 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
           CleanFatal("<" + k + "> belonged to a removed path (the cell layout or the FV "
                      "rays); remove it from the input");
         }
+        if (c[0] == '=' && v != c.substr(1) && !(c == "=false" && v == "0")) {
+          CleanFatal("<" + k + "> = " + v + ": removed from this build (only " +
+                     c.substr(1) + " is accepted)");
+        }
         if (c == "!" && v != "false" && v != "0") {
           CleanFatal("<" + k + "> = " + v + " has no counterpart in scheme = clean");
         }
         if (c.empty()) none += " " + k;
-        if (c != "!" && k.compare(0, 16, "rad_m1/implicit_") == 0) {
+        if (c != "!" && c[0] != '=' && k.compare(0, 16, "rad_m1/implicit_") == 0) {
           drop.push_back(ln.param_name);
         }
-        if (say && !c.empty() && c != "!") {
+        if (say && !c.empty() && c != "!" && c[0] != '=') {
           std::cout << "### WARNING (scheme = clean): <" << k << "> has no effect, the "
                     << "clean solve reads <rad_m1>/" << c << std::endl;
         }
@@ -466,11 +480,9 @@ void RadiationM1::CleanInit() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   // (the L_z ledger follows the gas momentum's increments as the slopes' sums: not the
   // cell-wise scalings of these)
-  if (cln_lzbook && (t2_theta > 0.0 || t2_inckc > 0.0 || t2_flr_rho > 0.0 || cln_kreal ||
-                       cln_kpos)) {
+  if (cln_lzbook && (t2_flr_rho > 0.0 || cln_kreal || cln_kpos)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "<rad_m1> the L_z ledger (cubed sphere, 3-D spherical polar) needs no "
-              << "time2_stage_theta, time2_inc_kecap, "
               << "time2_floor_eint, clean_stag_kreal, clean_stag_kpos (staggered)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
@@ -596,11 +608,6 @@ void RadiationM1::CleanInit() {
     CleanFatal("scheme = clean has no ghost-built inner face (problem/he_bc_linhao) and "
                "no per-column outer bath");
   }
-  if (t2_theta > 0.0) {   // (the drop's re-entry and carry are the old write-back's)
-    CleanFatal("<rad_m1>/time2_stage_local_be or time2_stage_theta with scheme = clean: "
-               "its dropped stage increments are neither re-entered nor carried (energy "
-               "not conserved)");
-  }
   if ((force_ref == M1_FREF_WB_ARAD || force_ref == M1_FREF_WB_MD) && !fref_wsplit) {
     CleanFatal("<rad_m1>/force_reference = wb_arad(_md) with scheme = clean needs the "
                "reference work given by the problem generator (force_reference_work = "
@@ -647,10 +654,10 @@ void RadiationM1::CleanInit() {
     // panel resolution keeps the cell centres off the z axis (the frame of y,
     // CleanCsFrame)
     if (!(cln_sphere || cln_edd || vgd_on) || (cln_consist && !vgd_on) ||
-        vgd_twin || vgd_async || pm->mesh_indcs.nx2 % 2 != 0) {
+        pm->mesh_indcs.nx2 % 2 != 0) {
       CleanFatal("<rad_m1>/scheme = clean on the cubed sphere needs "
                  "clean_closure = sphere | eddington (no clean_consistency) or closure = "
-                 "vet_col with vet_gd (clean_rays = sc, no twin or async) and "
+                 "vet_col with vet_gd (clean_rays = sc) and "
                  "an even <mesh>/nx2");
     }
     if (!vgd_on) {
@@ -666,10 +673,10 @@ void RadiationM1::CleanInit() {
     // swept from the first shell, or the analytic sphere (clean_closure = sphere |
     // eddington)
     if (!(cln_sphere || vgd_on || cln_edd) ||
-        (cln_consist && !vgd_on) || vgd_twin || vgd_async) {
+        (cln_consist && !vgd_on)) {
       CleanFatal("<rad_m1>/scheme = clean on spherical polar needs clean_closure = "
                  "sphere | eddington (no clean_consistency) or closure = "
-                 "vet_col with vet_gd (vet_gd_twin = false, no vet_gd_async)");
+                 "vet_col with vet_gd");
     }
     // (the rays' theta walls: rad_m1.cpp, vet_gd_theta_wall or, unnamed, the mesh's walls)
     // (the sweep starts at the first shell, the constructor's vlat_taucut)

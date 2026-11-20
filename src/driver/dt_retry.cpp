@@ -68,7 +68,7 @@ const char *kDtrMinimal[] = {
   // RadiationM1
   "m1.u0", "m1.f0x1", "m1.f0x2", "m1.f0x3", "m1.ipred", "m1.ipred2", "m1.t2k1",
   "m1.vet_prev", "m1.vsc_d0", "m1.vsc_d1", "m1.ctr_mem", "m1.csk1", "m1.csk2",
-  "m1.csinc", "m1.vra_d", "m1.opac", "m1.tau_ten", "m1.vet_cell", "m1.vgd_rst",
+  "m1.csinc", "m1.vra_d", "m1.opac", "m1.tau_ten", "m1.vet_cell",
   "m1.vlat_cs",
   // step 1 time2_face_fct: the face E flux of K1 (rotated with it)
   "m1.t2pf1",
@@ -115,18 +115,17 @@ const char *kDtrMinimal[] = {
   "m1.cln_rr", "m1.cln_rpd", "m1.cln_fvd",
   // (not visited before the generated visitor): vet_gd_rotate_xfade's G/A/Delta slots,
   // read by the next builds' estimate (RotXfEst); the old scheme's K1 of
-  // time2_inc_energy / time2_exch_split and time2_stage_local_be carry, read by the next
+  // time2_inc_energy / time2_exch_split, read by the next
   // stage 1; and the cumulative counters of the run report
-  "m1.vgd_xf_d", "m1.t2ke1", "m1.t2kx1", "m1.t2lx1", "m1.t2thc", "m1.cmi_cnt",
-  "m1.fcd_cnt_d", "m1.t2th_cnt_d",
+  "m1.vgd_xf_d", "m1.t2ke1", "m1.t2kx1", "m1.t2lx1", "m1.cmi_cnt",
+  "m1.fcd_cnt_d",
 };
 
 // the Views of kDtrMinimal that <rad_m1>/scheme = clean does not write
 // (dt_retry_views = clean)
 const char *kDtrNotClean[] = {
   "m1.ipred", "m1.ipred2", "m1.csk1", "m1.csk2", "m1.tau_ten", "m1.x2_tt", "m1.x2_hr",
-  "m1.x2_q", "m1.t2ke1", "m1.t2kx1", "m1.t2lx1", "m1.t2thc", "m1.cmi_cnt", "m1.fcd_cnt_d",
-  "m1.t2th_cnt_d",
+  "m1.x2_q", "m1.t2ke1", "m1.t2kx1", "m1.t2lx1", "m1.cmi_cnt", "m1.fcd_cnt_d",
 };
 
 // debug (dt_retry_poison_n / dt_retry_poison_cells): restrict the poison of
@@ -463,10 +462,10 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   if ((pk->phydro != nullptr && pk->pmhd != nullptr) || pk->prad != nullptr ||
       pk->pz4c != nullptr ||
       pk->padm != nullptr || pk->ppart != nullptr || pk->pturb != nullptr ||
-      pk->pradm1 == nullptr || pm->adaptive || pm->multilevel || pk->pradm1->vgd_async) {
+      pk->pradm1 == nullptr || pm->adaptive || pm->multilevel) {
     if (global_variable::my_rank == 0) {
       std::cout << "<time> dt_retry: not wired for this module set (wired: <hydro> + "
-                << "<rad_m1> or <mhd> + <rad_m1>, no mesh refinement, no vet_gd_async) "
+                << "<rad_m1> or <mhd> + <rad_m1>, no mesh refinement) "
                 << "-> off" << std::endl;
     }
     on = false;
@@ -619,9 +618,8 @@ void DtRetry::Build(Mesh *pm) {
       sel.erase("m1.cln_fvi");
       if (!m1->cln_cssc || m1->CleanFhBuilt()) sel.erase("m1.cln_fh");
     }
-    // (and the rays' source vlat_cs, each build's, written before it is read; vet_gd_async
-    // carries the pending build's across the cycle)
-    if (m1->clean && !m1->vgd_async) sel.erase("m1.vlat_cs");
+    // (and the rays' source vlat_cs, each build's, written before it is read)
+    if (m1->clean) sel.erase("m1.vlat_cs");
     Binder b{&ent_, "m1.", &sel, all_views_, host_ || hm1_};
     m1->DtRetryVisit(b);
   }

@@ -889,13 +889,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("amvp_d", amvp_d);
   v.value("impl_clip_kecap", impl_clip_kecap);
   v.view("clkc_d", clkc_d);
-  v.value("t2_inckc", t2_inckc);
-  v.value("t2_inckc_n", t2_inckc_n);
-  v.value("t2_inckc_un", t2_inckc_un);
-  v.value("t2_inckc_hn", t2_inckc_hn);
-  v.value("t2_inckc_ke", t2_inckc_ke);
-  v.value("t2_inckc_pm", t2_inckc_pm);
-  v.value("t2_inckc_calls", t2_inckc_calls);
   v.value("t2_ike", t2_ike);
   v.value("t2_ike_de", t2_ike_de);
   v.value("t2_ike_dp", t2_ike_dp);
@@ -921,18 +914,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("t2kx2", t2kx2);
   v.view("t2lx1", t2lx1);
   v.view("t2lx2", t2lx2);
-  v.value("t2_theta", t2_theta);
-  v.value("t2_th_n1", t2_th_n1);
-  v.value("t2_th_n2", t2_th_n2);
-  v.value("t2_th_s1", t2_th_s1);
-  v.value("t2_th_s2", t2_th_s2);
-  v.value("t2_th_calls", t2_th_calls);
-  v.view("t2thd", t2thd);
-  v.view("t2thr", t2thr);
-  v.value("t2_lbe", t2_lbe);
-  v.view("t2thc", t2thc);
-  v.view("t2thc_rst", t2thc_rst);
-  v.view("t2th_cnt_d", t2th_cnt_d);
   v.value("t2_ffct", t2_ffct);
   v.view("t2pf1", t2pf1);
   v.view("t2pf2", t2pf2);
@@ -1561,38 +1542,12 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("vgd_map", vgd_map);
   v.view("vgd_mr", vgd_mr);
   v.value("vgd_wint", vgd_wint);
-  v.value("vgd_twin", vgd_twin);
-  v.value("vgd_noq", vgd_noq);
-  v.value("vgd_twfull", vgd_twfull);
-  v.view("vgd_twm", vgd_twm);
-  v.view("vgd_twm2", vgd_twm2);
-  v.value("vgd_twtr", vgd_twtr);
-  v.value("vgd_twwt", vgd_twwt);
-  v.value("vgd_twwq", vgd_twwq);
-  v.view("vgd_twtb", vgd_twtb);
-  v.view("vgd_twl", vgd_twl);
-  v.view("vgd_cs0", vgd_cs0);
-  v.value("vgd_symref", vgd_symref);
-  v.value("vgd_sr_ok", vgd_sr_ok);
-  v.value("vgd_sr_nc", vgd_sr_nc);
-  v.value("vgd_sr_ns", vgd_sr_ns);
-  v.value("vgd_sr_x1v", vgd_sr_x1v);
-  v.value("vgd_sr_x1f", vgd_sr_x1f);
-  v.view("vgd_srm", vgd_srm);
-  v.value("vgd_tsr", vgd_tsr);
-  v.value("vgd_tsrj", vgd_tsrj);
-  v.value("vgd_sr_pend", vgd_sr_pend);
-  v.value("vgd_sr_h", vgd_sr_h);
-  v.value("vgd_twfuse", vgd_twfuse);
   v.value("vgd_sw2", vgd_sw2);
-  v.value("vgd_twdet", vgd_twdet);
-  v.value("vgd_twseq", vgd_twseq);
   v.view("vgd_cst", vgd_cst);
   v.value("vgd_itw", vgd_itw);
   v.view("vgd_csb2", vgd_csb2);
   v.view("vgd_crb2", vgd_crb2);
   v.view("vgd_rbuf2", vgd_rbuf2);
-  v.value("vgd_ttwin", vgd_ttwin);
   v.value("vgd_lg", vgd_lg);
   v.view("vgd_m3", vgd_m3);
   v.view("vgd_w3", vgd_w3);
@@ -1922,20 +1877,10 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_tab_pre", vgd_tab_pre);
   v.value("vgd_tab_state", vgd_tab_state);
   v.value("vgd_tab_nswap", vgd_tab_nswap);
-  v.value("vgd_async", vgd_async);
   v.value("vgd_bglob", vgd_bglob);
   v.view("vgd_bbuf0", vgd_bbuf0);
   v.view("vgd_bbuf1", vgd_bbuf1);
-  v.value("vgd_ainl", vgd_ainl);
-  v.value("vgd_apend", vgd_apend);
-  v.value("vgd_afly", vgd_afly);
-  v.value("vgd_acyc", vgd_acyc);
-  v.value("vgd_pcut", vgd_pcut);
   v.value("vgd_scut", vgd_scut);
-  v.value("vgd_tjoin", vgd_tjoin);
-  v.value("vgd_nasync", vgd_nasync);
-  v.view("vgd_rst", vgd_rst);
-  v.value("vgd_rst_cyc", vgd_rst_cyc);
 }
 
 // not visited (pointers, const, threads, timers, MPI, ...):
@@ -1976,7 +1921,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
 //   vgd_es2_made : bool (vgd_es2 made, kept)
 //   vgd_est : DvceArray4D<int>[2] (stamps, kept)
 //   vgd_esid : int (stamp id, kept monotonic)
-//   vgd_sr_fut : std::future<std::vector<double>>
 //   pbval_gd : MeshBoundaryValuesCC *
 //   pbval_hr : MeshBoundaryValuesCC *
 //   vgd_csmw_h : std::vector<uint32_t> (mark exchange scratch, written before read)
@@ -1991,9 +1935,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
 //   acc_ncomm : void *
 //   vgd_tabf : std::future<void>
 //   vgd_tex : DevExeSpace
-//   vgd_athr : std::thread
 //   vgd_cur : DevExeSpace
-//   vgd_ex : DevExeSpace
 //   vgd_comm : MPI_Comm
 //   pmy_pack : MeshBlockPack *
 

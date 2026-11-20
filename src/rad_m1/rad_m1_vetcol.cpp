@@ -130,7 +130,7 @@ void RadiationM1::VetColReport() {
       std::cout << "<rad_m1> vet_gd: rank 0 fenced seconds: source " << vgd_tsrc
                 << ", sweeps " << vgd_tswp << " (of which per-shell halo+walls "
                 << vgd_thalo << ", of which MPI wait " << vgd_tmpi
-                << "), tables (rotation) " << vgd_ttab << ", uniform twin " << vgd_ttwin
+                << "), tables (rotation) " << vgd_ttab
                 << ", moments " << vgd_tmom << "; in-solve rebuilds " << vgd_nrb << " ("
                 << vgd_trb << " s)" << std::endl;
       if (vra_on) {
@@ -138,10 +138,6 @@ void RadiationM1::VetColReport() {
                   << vra_nsweep << " (rotations " << vra_nrot << ", inits " << vra_ninit
                   << "), " << vra_time << " s incl. offsets (rank 0, fenced)"
                   << std::endl;
-      }
-      if (vgd_symref) {
-        std::cout << "<rad_m1> vet_gd_symref: host start " << vgd_tsr << " s, join "
-                  << vgd_tsrj << " s (rank 0)" << std::endl;
       }
       std::cout << "<rad_m1> vet_gd halo (rank 0): exchanges " << vgd_nexch
                 << ", bytes sent "
@@ -199,10 +195,8 @@ void RadiationM1::VetColReport() {
                     << std::endl;
         }
       }
-      if (vgd_hc_mb > 0 || vgd_twfuse || vgd_twdet || vgd_twseq) {
-        std::cout << "<rad_m1> accel-1009 (rank 0): vet_gd_twin_fuse=" << vgd_twfuse
-                  << " vet_gd_twin_lowmem=" << vgd_twseq
-                  << " vet_gd_twin_det=" << vgd_twdet << " halo mask cache: "
+      if (vgd_hc_mb > 0) {
+        std::cout << "<rad_m1> accel-1009 (rank 0): halo mask cache: "
                   << vgd_hc_nmade << " entries made, " << vgd_hc_bytes/1048576.0
                   << " MB of " << vgd_hc_mb << std::endl;
       }
@@ -234,11 +228,6 @@ void RadiationM1::VetColReport() {
                   << (vgd_ovl_nofit ? " (over vet_gd_overlap_mb)" : "")
                   << "; vet_gd_fuse_shells=" << vgd_fuse_h << " skipped exchanges "
                   << vgd_fuse_nskip << std::endl;
-      }
-      if (vgd_async) {
-        std::cout << "<rad_m1> vet_gd_async (rank 0): " << vgd_nasync
-                  << " overlapped sweeps (" << (vgd_ainl ? "inline" : "thread")
-                  << "), wait at the join " << vgd_tjoin << " s" << std::endl;
       }
     }
   }

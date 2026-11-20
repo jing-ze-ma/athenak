@@ -1973,16 +1973,6 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   const bool rss_read = (nrss_file > 0) && (pradm1 != nullptr) &&
                         ((phydro != nullptr && phydro->rad_signal_speed) ||
                          (pmhd != nullptr && pmhd->rad_signal_speed));
-  // <rad_m1>/vet_gd_async: the pending gd build's source, staged for VetGdBuildAsync
-  // when this run is async too (a sync run ignores it; an async run from a file
-  // without it starts with a synchronous build)
-  const bool vgd_read = (nvgd_file == 2) && (pradm1 != nullptr) && pradm1->vgd_async;
-  if (pradm1 != nullptr && pradm1->vgd_async && !vgd_read &&
-      global_variable::my_rank == 0) {
-    std::cout << "### WARNING: restart file has no <rad_m1> vet_gd_async pending build; "
-              << "the first gd build is synchronous and this restart is not bitwise."
-              << std::endl;
-  }
   // <rad_m1>/vet_rotate_avg: the averaging history, when this run averages (a file
   // without it, or a run without averaging, keeps the plain behaviour: the first build
   // re-measures the history, or averaging is off)
@@ -2012,7 +2002,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read || t2_read || t2_k1 ||
       nck_file > 0 ||
       neint_file > 0 ||   // an ideal-gas eint slab alone
-      ctr_read || rss_read || vgd_read || ra_read || csk_read || ams_read ||
+      ctr_read || rss_read || ra_read || csk_read || ams_read ||
       npgs_file > 0 || nfax_file > 0 || nthc_file > 0 || nxfd_file > 0) {
     const IOWrapperSizeT tail0 = offset_myrank;
     HostArray4D<Real> wtin("rst-wt-in", 1, 1, 1, 1);
@@ -2266,23 +2256,6 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       }
       pradm1->rss_stage_mode = rss_mode_file;
     }
-    // the vet_gd_async pending source (kM1VgdRstMagic), the last slabs of the record
-    if (vgd_read) {
-      int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
-                  + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
-                  + nwpv_file
-                  + nck_file + nctr_file + nrss_file;
-      offset_myrank = tail0
-          + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
-      myoffset = offset_myrank;
-      Kokkos::realloc(pradm1->vgd_rst, nmb, nvgd_file, nout3, nout2, nout1);
-      for (int n=0; n<nvgd_file; ++n) {
-        read_slab("vet_gd_async source");
-        DeepCopyAcross(Kokkos::subview(pradm1->vgd_rst, Kokkos::ALL, n,
-                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), wtin);
-      }
-      pradm1->vgd_rst_cyc = vgd_cyc_file;
-    }
     // the conservative cell-F slope (kM1CskRstMagic), behind the vet_gd_async slabs
     if (csk_read) {
       pradm1->gcs_first = false;
@@ -2410,28 +2383,10 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                   << std::endl;
       }
     }
-    // the time2_stage_local_be carry (kM1ThcRstMagic), last of the record
-    if (nthc_file > 0) {
-      int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
-                  + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
-                  + nwpv_file
-                  + nck_file + nctr_file + nrss_file + nvgd_file + ncsk_file + nra_file
-                  + nams_file + npgs_file + nfax_file;
-      offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3
-                              *sizeof(Real);
-      myoffset = offset_myrank;
-      DvceArray5D<Real> thcin("rst-thc-in", nmb, nthc_file, nout3, nout2, nout1);
-      for (int n=0; n<nthc_file; ++n) {
-        read_slab("rad_m1 local_be carry");
-        DeepCopyAcross(Kokkos::subview(thcin, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
-                       Kokkos::ALL), wtin);
-      }
-      const bool got = (pradm1 != nullptr) && pradm1->ThcRstUnpack(thcin, nmb, nthc_file);
-      if (global_variable::my_rank == 0) {
-        std::cout << "<rad_m1> restart: time2_stage_local_be carry (" << nthc_file
-                  << " slabs) " << (got ? "restored" : "IGNORED (local_be off)")
-                  << std::endl;
-      }
+    // the time2_stage_local_be carry (kM1ThcRstMagic) of an old file: not used
+    if (nthc_file > 0 && global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> restart: time2_stage_local_be carry (" << nthc_file
+                << " slabs) IGNORED (local_be is not in this build)" << std::endl;
     }
     // the vet_gd_rotate_xfade state (kM1XfdRstMagic), last of the record
     if (nxfd_file > 0) {

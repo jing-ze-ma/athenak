@@ -138,7 +138,6 @@ namespace radm1 {
 // L1 tip) keeps its own D_gd instead of the thin shell's twin-minus-reference bias (D_rr 0.26,
 // D_tt 0.37 in tau > 30 cells without it); w = 1 cells are bitwise.  Parsed in rad_m1.cpp.
 #if !defined(M1_VGD_SWEEP_TU)
-bool g_vgd_srw = false;
 // rotadv-1102 <rad_m1>/vet_rotate_advance (read only when named, default false = bitwise;
 // parsed in VetRotInit, one RadiationM1 per rank): with vet_rotate_avg = K the set of
 // block b no longer repeats with period K (VetGdAngleBlk / RotPhase), so the last-K
@@ -149,7 +148,6 @@ bool g_vra_adv = false;
 
 namespace {
 // env VGD_ASYNC_POLL_US (diagnostic): the async helper polls its MPI with these sleeps
-int g_vgd_apoll = 0;
 
 void VgdFatal(const std::string &msg) {VgdFatalAt(__FILE__, "<rad_m1>/vet_gd: ", msg);}
 
@@ -186,56 +184,6 @@ struct VgdSt4 {
     return VgdLerp(VgdLerp(f(k0,j0), f(k0,j1), uj), VgdLerp(f(k1,j0), f(k1,j1), uj), uk);
   }
 };
-
-// vgdlat-1012 vet_gd_symref: the weight of the symmetric shift (ref - shell mean) in a
-// cell: the fraction of the cell's formal-solution J that the shell-mean (twin) field
-// explains, min(J_twin/J, 1) (1 on a laterally uniform state; -> 0 in a beam or channel
-// much brighter than the mean field, where the mean's bias says nothing); 1 without the
-// stored J (vgd_thx false)
-template <typename V>
-KOKKOS_INLINE_FUNCTION
-Real VgdSrW(const V &hr, const V &ht, const bool thx, const int m, const int k,
-            const int j, const int i) {
-  if (!thx) {return 1.0;}
-  const Real jm = hr(m,M1_VGD_HRJ,k,j,i), jt = ht(m,M1_VGD_HRJ,k,j,i);
-  return (jm > jt && jm > 0.0) ? fmax(jt, 0.0)/jm : 1.0;
-}
-
-// twinfix-1012 vet_gd_twin_weight = j: the weight of the twin's pattern subtraction in a
-// cell, w = min(1, min(J/J_tw, J_tw/J)/q) from the stored main and twin J (1 where they
-// agree within the factor 1/q, so a near-uniform shell is unchanged bitwise; -> 0 in a
-// shadow, beam or channel where the twin's field is not the main field's); 1 when off or
-// without the stored J
-template <typename V>
-KOKKOS_INLINE_FUNCTION
-Real VgdTwW(const V &hr, const V &ht, const bool on, const Real q, const int m,
-            const int k, const int j, const int i) {
-  if (!on) {return 1.0;}
-  const Real jm = hr(m,M1_VGD_HRJ,k,j,i), jt = ht(m,M1_VGD_HRJ,k,j,i);
-  if (!(jm > 0.0) && !(jt > 0.0)) {return 1.0;}
-  if (!(jm > 0.0) || !(jt > 0.0)) {return 0.0;}
-  return fmin(fmin(jm/jt, jt/jm)/q, 1.0);
-}
-
-// csacc-1031 vet_gd_twin_srw: the twin pattern weight, min(VgdTwW, VgdSrW) with the key on
-// (fmin(x, 1) = x: bitwise wherever both are 1)
-template <typename V>
-KOKKOS_INLINE_FUNCTION
-Real VgdTwWs(const V &hr, const V &ht, const bool on, const Real q, const bool srw,
-             const bool thx, const int m, const int k, const int j, const int i) {
-  const Real w = VgdTwW(hr, ht, on, q, m, k, j, i);
-  return srw ? fmin(w, VgdSrW(hr, ht, thx, m, k, j, i)) : w;
-}
-
-// vgdlat-1012 vet_gd_symref: the reference of vgd_hr component c at shell i (vgd_srm)
-KOKKOS_INLINE_FUNCTION
-Real VgdSrRef(const DvceArray1D<Real> &sr, const int c, const int i, const int c1) {
-  if (c == 0) {return sr(M1_VGD_SR_HP*c1 + i);}
-  if (c == 1) {return sr(M1_VGD_SR_HM*c1 + i);}
-  if (c < 6) {return ((c % 2 == 0) ? 1.0 : -1.0)*sr(M1_VGD_SR_HL*c1 + i);}
-  if (c == M1_VGD_HRC1) {return sr(M1_VGD_SR_C1*c1 + i);}
-  return sr(M1_VGD_SR_J*c1 + i);   // M1_VGD_HRJ
-}
 
 // (VgdLight: rad_m1_vetseg.hpp)
 
@@ -859,8 +807,8 @@ void RadiationM1::VetGdInit() {
   // directions rotated by their phi offset (the mesh's phi extent per column, which must
   // map the direction set onto itself: exact wall maps)
   if (!pm->multi_d) {VgdFatal("needs a 3-D wedge or a 2-D axisymmetric mesh");}
-  if (!pm->three_d && (vgd_twin || vgd_async || impl_beam_hr || impl_beam_fs)) {
-    VgdFatal("2-D axisymmetric: no vet_gd_twin / async / implicit_flux_beam");
+  if (!pm->three_d && (impl_beam_hr || impl_beam_fs)) {
+    VgdFatal("2-D axisymmetric: no implicit_flux_beam");
   }
   if (ibc_x1max != M1_IBC_MARSHAK &&
       !(clean && (ibc_x1max == M1_IBC_REFLECT || ibc_x1max == M1_IBC_OUTFLOW))) {
@@ -910,7 +858,6 @@ void RadiationM1::VetGdInit() {
     std::string bad;
     if (vgd_beam) {bad += " vet_gd_beam (a wedge (theta, phi) patch);";}
     if (vgd_bandx) {bad += " vet_gd_band_exit;";}
-    if (vgd_async) {bad += " vet_gd_async;";}
     if (vet_path != 0) {bad += " vet_path = cells;";}
     if (vgd_seam > 0) {bad += " vet_gd_seam_mask (the sp theta seam);";}
     if (vgd_smooth > 0) {bad += " vet_gd_smooth;";}
@@ -927,17 +874,10 @@ void RadiationM1::VetGdInit() {
     // fused twin's numbers); the plain unfused twin would take the previous build's cut
     // (its sp default when the fuse cannot apply, e.g. MPI without vet_gd_halo_compact):
     // decomposition-dependent.  cstwin-1031: vet_gd_twin_fuse (lowmem off) is kept
-    if (vgd_twin && !vgd_twfuse) {
-      vgd_twseq = true;
-    }
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> vet_gd on the CUBED SPHERE (cs-vetgd-1017, stage S3): seam "
                 << "strip + vertex triangle upwind stencil, exact per-shell band copies "
-                << "(the sp halo lists / IPC / overlap keys do not apply), twin "
-                << (vgd_twin ? (vgd_twfuse ? "FUSED (vet_gd_twin_fuse: in the main "
-                                             "sweep, second band array)"
-                                           : "unfused (this build's cut)")
-                             : "off") << "; hand-over "
+                << "(the sp halo lists / IPC / overlap keys do not apply); hand-over "
                 << "D_rr" << ((vlat_odm == 2) ? " + D_r,lat in the operator (S4)"
                               : ((vlat_odm == 1) ? " + D_r,lat lagged (S4)"
                                                  : " only (vet_col_lat_offdiag = none)"))
@@ -956,8 +896,6 @@ void RadiationM1::VetGdInit() {
     if (vgd_seam > 0) {bad += " vet_gd_seam_mask;";}
     if (vet_path != 0) {bad += " vet_path = cells;";}
     if (vgd_smooth > 0) {bad += " vet_gd_smooth;";}
-    if (vgd_twin) {bad += " vet_gd_twin (shell means not solid-angle weighted here);";}
-    if (vgd_async) {bad += " vet_gd_async;";}
     if (vgd_ovl_g > 0) {bad += " vet_gd_overlap;";}
     if (vgd_fuse_h > 1) {bad += " vet_gd_fuse_shells > 1;";}
     if (!bad.empty()) {
@@ -1016,10 +954,10 @@ void RadiationM1::VetGdInit() {
                    [&](const int a, const int b) {return vgd_x1lv[a] < vgd_x1lv[b];});
   Kokkos::deep_copy(vgd_x1mo, mo_h);
   if (vgd_nb1 > 1) {
-    if (vgd_csg || vgd_async || vgd_twin || vgd_upf != 0 ||
+    if (vgd_csg || vgd_upf != 0 ||
         vgd_pol || !vgd_shl_on || indcs.nx1 < 2) {
       VgdFatal("several MeshBlocks along x1 need a wedge, MeshBlock nx1 >= 2, "
-               "vet_gd_shell_list and no vet_gd_async / twin / upwind / full sphere");
+               "vet_gd_shell_list and no vet_gd_upwind / full sphere");
     }
     vgd_hcomp = 0;   // the dense per-shell halo (the compact lists assume one level)
   }
@@ -1248,9 +1186,9 @@ void RadiationM1::VetGdInit() {
                "compact lists, no band ring: the full band); name vet_gd_halo_compact "
                "= 2");
     }
-    const bool hxok = vgd_raw ? (vgd_hmpi && vgd_nb1 == 1 && !vgd_async && !vgd_bandx)
+    const bool hxok = vgd_raw ? (vgd_hmpi && vgd_nb1 == 1 && !vgd_bandx)
                     : vgd_csg ? (vgd_cscomp && vgd_hmpi)
-                              : (vgd_hx_on && vgd_shl_on && !vgd_bandx && !vgd_async &&
+                              : (vgd_hx_on && vgd_shl_on && !vgd_bandx &&
                                  vgd_hmpi && (vgd_hcomp > 0) && (vgd_hl_mb > 0));
     // sweepl-1117 (USER: speed over memory): the clean sc rays' raw band on spherical
     // polar keeps every shell's band (no ring, no planb hook) unless vet_gd_band_ring is
@@ -1268,9 +1206,9 @@ void RadiationM1::VetGdInit() {
          "the clean sc rays on 3-D spherical polar with the band ring"},
         {vgd_raw, "the raw band"}, {vgd_nb1 == 1, "one x1 level"},
         {!cln_scmem && ibc_x1min != M1_IBC_REFLECT, "no reflecting x1 face"},
-        {!vgd_twin && vgd_upf == 0 && !vgd_rbon, "no twin, upwind or polar rings"},
-        {!vgd_async && !vgd_bandx && vgd_ovl_g == 0 && vgd_fuse_h <= 1,
-         "no async, band_exit, vet_gd_overlap or fuse_shells"}};
+        {vgd_upf == 0 && !vgd_rbon, "no upwind or polar rings"},
+        {!vgd_bandx && vgd_ovl_g == 0 && vgd_fuse_h <= 1,
+         "no band_exit, vet_gd_overlap or fuse_shells"}};
     std::string pkn;
     for (const auto &c : pkc) {
       if (!c.first) {pkn += std::string(pkn.empty() ? "" : ", ") + c.second;}
@@ -1297,7 +1235,7 @@ void RadiationM1::VetGdInit() {
   // xffuse-1113: the combinations the fused sweep never covers (VetGdXffOk) keep the two
   // sweeps and allocate no second array (e.g. the fused twin of the RSG decks; the clean
   // sc rays' ring, CleanRingMoments, sweeps one set at a time)
-  if (vgd_xff && (vgd_xf_m > 0 || vgd_iter != 1 || vgd_twin || vgd_twfuse || vgd_async ||
+  if (vgd_xff && (vgd_xf_m > 0 || vgd_iter != 1 ||
                   (clean && cln_ring && !(cln_rfuse && cln_ring == 1 &&
                                           ibc_x1max != M1_IBC_REFLECT)) ||
                   vgd_bandx || vgd_upf != 0 || (vgd_gband && !vgd_raw) || vgd_nb1 > 1 ||
@@ -1307,7 +1245,7 @@ void RadiationM1::VetGdInit() {
                                 !vgd_gfast)))) {
     vgd_xff = false;
     if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> vet_gd_rotate_xfade_fuse: not covered here (twin, async, "
+      std::cout << "<rad_m1> vet_gd_rotate_xfade_fuse: not covered here ("
                 << "xfade_m, ...): two sweeps per build" << std::endl;
     }
   }
@@ -1321,9 +1259,9 @@ void RadiationM1::VetGdInit() {
     }
   }
   // vgdfuse-1010: vet_gd_halo_exact marks the reads in the shell-list sweep
-  if (vgd_hx_on && (!vgd_shl_on || vgd_bandx || vgd_async || !vgd_hmpi ||
+  if (vgd_hx_on && (!vgd_shl_on || vgd_bandx || !vgd_hmpi ||
                     vgd_hcomp <= 0 || vgd_hl_mb <= 0)) {
-    if (vgd_hx_named && (!vgd_shl_on || vgd_bandx || vgd_async)) {
+    if (vgd_hx_named && (!vgd_shl_on || vgd_bandx)) {
       VgdFatal("vet_gd_halo_exact needs vet_gd_shell_list = true and no vet_gd_band_exit "
                "/ vet_gd_async");
     }
@@ -1332,36 +1270,6 @@ void RadiationM1::VetGdInit() {
   }
   if (vgd_fuse_h > 1 && !vgd_hx_on) {
     VgdFatal("vet_gd_fuse_shells > 1 needs vet_gd_halo_exact");
-  }
-  if (vgd_twfuse) {
-    // vet_gd_twin_fuse: the twin's intensities and source live in their own arrays
-    if (vgd_iter != 1 || vgd_async || vgd_bandx || (vgd_hmpi && vgd_hcomp <= 0)) {
-      VgdFatal("vet_gd_twin_fuse needs vet_gd_iter = 1, no vet_gd_async / "
-               "vet_gd_band_exit, and vet_gd_halo_compact > 0 when the halo uses MPI");
-    }
-    VgdRagAlloc(vgd_itw);
-    Kokkos::realloc(vgd_cst, nmb, 2, c3w, c2w, c1);
-    if (vgd_csg) {
-      // cstwin-1031: the cs exchange carries both fields (main, twin) interleaved per
-      // value: the message buffers of VetGdCsInit doubled (the sp buffers do not apply)
-      const size_t nb = 2*vgd_cssb.extent(0);
-      vgd_cssb = decltype(vgd_cssb)();
-      vgd_csrb = decltype(vgd_csrb)();
-      Kokkos::realloc(vgd_cssb, nb);
-      Kokkos::realloc(vgd_csrb, nb);
-    } else if (vgd_hmpi) {
-      Kokkos::realloc(vgd_csb2, vgd_csb.extent(0));
-      Kokkos::realloc(vgd_crb2, vgd_crb.extent(0));
-      // mem-1014: the twin's expanded buffer only ever holds one shell of the compact
-      // exchange (VetGdHaloCompact: q < rtot of the deepest band), not the dense size
-      {
-        const auto &pd = vgd_prdsp[vgd_w];
-        const auto &pc = vgd_prcnt[vgd_w];
-        const size_t rt = static_cast<size_t>(pd.empty() ? 0 : (pd.back() + pc.back()))*
-                          vgd_n;
-        Kokkos::realloc(vgd_rbuf2, std::max<size_t>(rt, 1));
-      }
-    }
   }
   if (vgd_rbe > 0) {
     Kokkos::realloc(vgd_fk0, nmb, indcs.nx3 + 2*indcs.ng, indcs.nx2 + 2*indcs.ng, c1);
@@ -1384,52 +1292,6 @@ void RadiationM1::VetGdInit() {
     vgd_cuda_lb = (e == nullptr) ? M1_VGD_CUDA_LB : std::atoi(e);
   }
 #endif
-  if (vgd_async) {
-    // vet_gd_async (GD_ASYNC.md): one exact sweep per build, nothing that rereads the
-    // source between builds
-    if (vgd_iter != 1 || vgd_twin || vgd_bandx || vgd_rbe > 0 || vlat_every > 1) {
-      VgdFatal("vet_gd_async needs vet_gd_iter = 1, vet_col_lat_every = 1 and no "
-               "vet_gd_twin / vet_gd_band_exit / vet_gd_rebuild_every");
-    }
-    vgd_ainl = std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace> ||
-               (std::getenv("VGD_ASYNC_INLINE") != nullptr);
-#if MPI_PARALLEL_ENABLED
-    if (!vgd_ainl && global_variable::nranks > 1) {
-      int prov = 0;
-      MPI_Query_thread(&prov);
-      if (prov < MPI_THREAD_MULTIPLE) {
-        VgdFatal("vet_gd_async runs the sweep's MPI on a helper thread: MPI must be "
-                 "initialised with MPI_THREAD_MULTIPLE (export "
-                 "ATHENA_MPI_THREAD_MULTIPLE=1 before the run)");
-      }
-    }
-    MPI_Comm_dup(MPI_COMM_WORLD, &vgd_comm);
-#endif
-    if (!vgd_ainl) {
-      vgd_ex = Kokkos::Experimental::partition_space(DevExeSpace(), 1)[0];
-    }
-    // diagnostic: the helper polls its MPI with sleeps of this many microseconds
-    if (std::getenv("VGD_ASYNC_POLL_US") != nullptr) {
-      g_vgd_apoll = std::atoi(std::getenv("VGD_ASYNC_POLL_US"));
-    }
-    if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> vet_gd_async: ON, the sweep of build n overlaps cycle n ("
-                << (vgd_ainl ? "INLINE: same numbers, no overlap" :
-                               "host thread + own device instance")
-                << "); D of cycle n = build n-1" << std::endl;
-      // vcpred-1010: under hesdirk2 + time2_vet_col = predict | rebuild the tensor of
-      // cycle n is then the build at the PREVIOUS step's predicted state, ~ t^n: the
-      // O(dt) lag that predict removes is back (first order in time)
-      if (time_scheme == M1_TIME_HESDIRK2 && (t2_vcmode == 1 || t2_vcmode == 2)) {
-        std::cout << "<rad_m1> vet_gd_async: WARNING with time_scheme = hesdirk2 and "
-                  << "time2_vet_col = predict | rebuild the tensor of cycle n is the "
-                  << "build of cycle n-1 (D ~ t^n): first order in time" << std::endl;
-      }
-    }
-  }
-  if (vgd_async && (vgd_rot_dt > 0.0 || vgd_rot_auto)) {
-    VgdFatal("vet_gd_rotate_dt (the physical-time rotation) needs vet_gd_async = false");
-  }
   vgd_alpha = -1.0;
   // vgdrot-1011: the table prefetch (its own device instance for the upload)
   {
@@ -2570,7 +2432,7 @@ void RadiationM1::VgdEs2Make() {
 
 bool RadiationM1::VetGdXffOk() {
   if (!vgd_xff || !vgd_xf || vgd_xf_m > 0) {return false;}
-  if (vgd_iter != 1 || vgd_twin || vgd_twfuse || vgd_async || vgd_bandx) {
+  if (vgd_iter != 1 || vgd_bandx) {
     return false;
   }
   if (vgd_csg) {
@@ -3005,7 +2867,7 @@ void RadiationM1::VetGdXfade(const int64_t blk, const bool last, const bool stor
   static bool checked = false;
   if (!checked) {
     checked = true;
-    if (vgd_async || vgd_hrs != 0 || vgd_hlf >= 0 || (vra_ema && vra_ema_dema)) {
+    if (vgd_hrs != 0 || vgd_hlf >= 0 || (vra_ema && vra_ema_dema)) {
       VgdFatal("vet_gd_rotate_xfade needs vet_gd_async = false, no "
                "vet_rotate_avg_ema_dema, no vet_gd_hr_split / vet_gd_hr_latfit");
     }
@@ -4565,16 +4427,7 @@ void RadiationM1::VetGdHlEnd() {
     }
   } else {
   std::vector<MPI_Status> stat(req.size());
-  if (vgd_afly && g_vgd_apoll > 0) {
-    int done = 0;
-    while (true) {
-      MPI_Testall(static_cast<int>(req.size()), req.data(), &done, stat.data());
-      if (done) {break;}
-      std::this_thread::sleep_for(std::chrono::microseconds(g_vgd_apoll));
-    }
-  } else {
-    MPI_Waitall(static_cast<int>(req.size()), req.data(), stat.data());
-  }
+  MPI_Waitall(static_cast<int>(req.size()), req.data(), stat.data());
   vgd_tmpi += tq.seconds();
   vgd_nexch += 1.0;
   for (int p = 0; p < np; ++p) {
@@ -6024,18 +5877,7 @@ bool RadiationM1::VetGdHaloCompact(V &a, const int nv, const int i0, const int w
     }
   }
   std::vector<MPI_Status> stat(req.size());
-  if (vgd_afly && g_vgd_apoll > 0) {
-    // vet_gd_async helper (env VGD_ASYNC_POLL_US > 0): poll instead of a blocking wait,
-    // sleeping between tests, so that the main thread's MPI is not held up
-    int done = 0;
-    while (true) {
-      MPI_Testall(static_cast<int>(req.size()), req.data(), &done, stat.data());
-      if (done) {break;}
-      std::this_thread::sleep_for(std::chrono::microseconds(g_vgd_apoll));
-    }
-  } else {
-    MPI_Waitall(static_cast<int>(req.size()), req.data(), stat.data());
-  }
+  MPI_Waitall(static_cast<int>(req.size()), req.data(), stat.data());
   vgd_tmpi += tq.seconds();
   vgd_nexch += 1.0;
   for (int p = 0; p < np; ++p) {
@@ -6626,7 +6468,7 @@ void RadiationM1::VetGdSweep() {
   // batched collectives (VetGdHxBatch) instead of one collective build per shell in the
   // loop below (hx_mark then finds every record matching).  env VGD_HXB=0: per shell.
   if (vgd_ipc_on && vgd_ipc_state == 0 && vgd_hxb_on && vgd_hx_on && vgd_hx_mode == 2 &&
-      vgd_hmpi && (vgd_hcomp > 0) && (vgd_hl_mb > 0) && shl && !bandx && !vgd_async) {
+      vgd_hmpi && (vgd_hcomp > 0) && (vgd_hl_mb > 0) && shl && !bandx) {
     const size_t cs = std::max<size_t>(vgd_crb.extent(0), 1);
     VetGdIpcInit(vgd_prk, cs, 2*cs);   // vgdrot-1011 vet_gd_halo_ipc (collective, once)
   }
@@ -7984,7 +7826,7 @@ void RadiationM1::VetGdMoments(const int i0, const int i1) {
   }  // !VgdMomLds
   }  // !vgd_csg
   // (sub: only the top shell's surface q below)
-  if (sub && !(i1 == indcs.ie && repq && !vgd_noq)) {return;}
+  if (sub && !(i1 == indcs.ie && repq)) {return;}
   // vet_gd_thin_taumin > 0: taper the LATERAL parts (LAT1..LAT5: D_r,lat and the
   // tangential anisotropy, both lagged terms of the face equations) to 0 in the far thin
   // top, log-linearly from 1 at tau_top = 10 taumin to 0 at tau_top = taumin (tau_top of
@@ -8044,8 +7886,7 @@ void RadiationM1::VetGdMoments(const int i0, const int i1) {
     });
   }
   // hrup-1009: the half-range ratios of this sweep's intensities (main or twin)
-  if (impl_beam_hr && !vgd_pk) {VetGdHalfRange(0);}
-  if (!repq || vgd_noq || skip) {return;}
+  if (!repq || skip) {return;}
   // vet_gd_replace with vet_col_surface_q: the outer Marshak q in vet_col's FACE form,
   // q = H(face)/J_f, clamped to [vet_col_surface_qmin, _qmax]: H(face) = H_r of the top
   // cell carried to the face as r^2 H (free streaming over the half cell), J_f = J of the
@@ -8152,10 +7993,6 @@ void RadiationM1::VetGdSource() {
 //! sweep(s) with the lagged lateral inflow, the moments; timed per part (fenced)
 
 void RadiationM1::VetGdBuild() {
-  if (vgd_async) {
-    VetGdBuildAsync();
-    return;
-  }
   Kokkos::Timer tm;
   VetGdSource();
   Kokkos::fence();
@@ -8497,26 +8334,12 @@ void RadiationM1::VetGdPkMask() {
 
 void RadiationM1::VetGdSweepPost() {
   Kokkos::Timer tm;
-  // vet_gd_twin: the RAY-NOISE pattern of the set on the laterally uniform field (the
-  // shell means of chi and S), same angle, subtracted below
-  // cs-s3b-1017 (USER decision 4): the unfused twin ALWAYS sweeps with THIS build's cut,
-  // as the fused twin (vet_gd_twin_fuse) and vet_gd_twin_lowmem do.  Before, the plain
-  // unfused twin reused the previous build's vgd_scut (0 at the first build of a run and
-  // after a restart): with MPI and no vet_gd_halo_compact (the fuse cannot apply there,
-  // while one rank fuses) the result depended on the decomposition, and a restart was
-  // not continuous.  The fused production path does not come here (bitwise); the old
-  // diagnostic env VGD_TWIN_CUTFIX is now the only behaviour
-  if (vgd_twin && !vgd_twfuse) {
-    vgd_scut = vlat_icut;
-  }
-  if (vgd_twin) {VetGdTwin(0);}
   // the per-shell halo makes one sweep exact; vet_gd_iter > 1 only repeats it
   const int nit = vgd_iter;
   vgd_cur = DevExeSpace();
   vgd_scut = vlat_icut;
   for (int it = 0; it < nit; ++it) {
     tm.reset();
-    vgd_sw2 = vgd_twfuse;   // vet_gd_twin_fuse: the twin rides in this sweep (nit = 1)
     vgd_pk_mom = vgd_pk;
     VetGdSweep();
     vgd_pk_mom = false;
@@ -8526,7 +8349,6 @@ void RadiationM1::VetGdSweepPost() {
     vgd_tswp += tm.seconds();
     vlat_ncall += 1.0;
   }
-  if (vgd_twfuse) {VetGdTwinFusedMoments();}
   VetGdPost();
 }
 
@@ -8640,7 +8462,6 @@ void RadiationM1::VetGdPost() {
   Kokkos::Timer tm;
   // (the clean scheme on the cubed sphere reads the intensities: CleanClosureFromGd)
   if (!(clean && vgd_csg)) {VetGdMoments();}
-  if (vgd_twin) {VetGdTwin(1);}
   if (vgd_smooth > 0) {VetGdSmooth();}
   // vgdxf-1112: the current set's raw fields G (before the EMA) for the cross-fade
   if (vgd_xf && !vra_raw) {
@@ -8749,180 +8570,6 @@ void RadiationM1::VetGdPost() {
       std::fclose(fp);
     }
   }
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::VetGdAsyncJoin
-//! \brief vet_gd_async: wait for the helper thread of the pending build (if any), its
-//! device instance included; the sweep and halo use the default instance again
-
-void RadiationM1::VetGdAsyncJoin() {
-  if (vgd_afly) {
-    Kokkos::Timer tj;
-    vgd_athr.join();
-    vgd_afly = false;
-    vgd_tjoin += tj.seconds();
-  }
-  vgd_cur = DevExeSpace();
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::VetGdBuildAsync
-//! \brief vet_gd_async = true (GD_ASYNC.md).  At the build point of cycle n:
-//!   (1) [first build of a restarted run, file with kM1VgdRstMagic] the pending build
-//!       n0-1 of the straight run, swept here from its stored source and angle;
-//!   (2) [first build of a run otherwise] build n swept here (this cycle unlagged);
-//!   (3) join the helper of build n-1; its moments -> D of this cycle (the tables and
-//!       vlat_icut are still those of build n-1);
-//!   (4) [not after (2)] the source of build n (default instance, blocking: it reads
-//!       the stage's swapped-in inputs), the tables of its angle, and the sweep launched
-//!       on vgd_ex from a host thread (or inline with vgd_ainl).
-//! The sweep reads only vgd_cs and the tables and writes only vgd_i and the halo
-//! buffers, none of which the rest of the cycle touches, so the numbers do not depend
-//! on the timing: thread and inline give the same bits.
-
-void RadiationM1::VetGdBuildAsync() {
-  const int cyc = pmy_pack->pmesh->ncycle;
-  auto sweep_now = [this]() {
-    vgd_cur = DevExeSpace();
-    vgd_scut = vlat_icut;
-    Kokkos::Timer t;
-    VetGdSweep();
-    Kokkos::fence();
-    vgd_tswp += t.seconds();
-    vlat_ncall += 1.0;
-  };
-  auto tables = [this](const int c) {
-    const Real al = VetGdAngle(c);
-    if (al != vgd_alpha) {
-      Kokkos::Timer tt;
-      VetGdTables(al);
-      vgd_ttab += tt.seconds();
-    }
-    VetGdTabPrefetch(c);
-  };
-  bool first = false;
-  if (!vgd_apend && vgd_rst_cyc >= 0) {
-    // (1) the stored source of the pending build -> vlat_cs (ghosts refilled, first
-    // shell recomputed), the band copy and its halo, swept with ITS angle
-    Kokkos::Timer tm;
-    const int nmb = pmy_pack->nmb_thispack;
-    if (static_cast<int>(vgd_rst.extent(0)) < nmb || vgd_rst.extent(1) != 2 ||
-        vgd_rst.extent(2) != vlat_cs.extent(2) || vgd_rst.extent(3) != vlat_cs.extent(3)
-        || vgd_rst.extent(4) != vlat_cs.extent(4)) {
-      VgdFatal("vet_gd_async: the restart file's pending source does not fit vlat_cs");
-    }
-    Kokkos::deep_copy(Kokkos::subview(vlat_cs, std::make_pair(0,nmb), std::make_pair(0,2),
-                                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL),
-                      Kokkos::subview(vgd_rst, std::make_pair(0,nmb), Kokkos::ALL,
-                                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
-    VetLatCsFinish();
-    {
-      auto &indcs = pmy_pack->pmesh->mb_indcs;
-      const int og = vgd_w - indcs.ng;
-      const int ilo = indcs.is + vlat_icut, ie = indcs.ie;
-      auto cs_ = vlat_cs;
-      auto cw_ = vgd_cs;
-      par_for("m1_vgd_csw", DevExeSpace(), 0, nmb - 1, indcs.ks, indcs.ke, indcs.js,
-              indcs.je, ilo, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        cw_(m,0,k+og,j+og,i) = cs_(m,0,k,j,i);
-        cw_(m,1,k+og,j+og,i) = cs_(m,1,k,j,i);
-      });
-      vgd_cur = DevExeSpace();
-      VetGdHaloCs(vgd_cs, ilo, ie);
-  if (vgd_rbon) {VetGdRingGatherC(ilo, ie);}   // accsp-1102
-    }
-    Kokkos::fence();
-    vgd_tsrc += tm.seconds();
-    tables(vgd_rst_cyc);
-    sweep_now();
-    vgd_apend = true;
-    vgd_acyc = vgd_rst_cyc;
-    vgd_rst_cyc = -1;
-    vgd_rst = DvceArray5D<Real>();
-    if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> vet_gd_async: the pending build of cycle " << vgd_acyc
-                << " restored from the restart file and swept" << std::endl;
-    }
-  }
-  if (!vgd_apend) {
-    // (2) the first build of the run: swept now, used now and (lagged) next cycle
-    Kokkos::Timer tm;
-    VetGdSource();
-    Kokkos::fence();
-    vgd_tsrc += tm.seconds();
-    tables(cyc);
-    sweep_now();
-    vgd_apend = true;
-    vgd_acyc = cyc;
-    first = true;
-  }
-  // (3) the pending build's moments, with ITS first shell
-  VetGdAsyncJoin();
-  if (!first && vgd_pcut >= 0) {vlat_icut = vgd_pcut;}
-  VetGdPost();
-  if (first) {return;}
-  // (4) the source of build n, its tables, the sweep launched.  vlat_icut keeps the
-  // first shell of the D now in tau_ten (the fold, the operator bound and the ghosts of
-  // this cycle use it); the sweep of build n uses its own (vgd_scut)
-  const int dcut = vlat_icut;
-  {
-    Kokkos::Timer tm;
-    VetGdSource();
-    Kokkos::fence();
-    vgd_tsrc += tm.seconds();
-  }
-  tables(cyc);
-  vgd_acyc = cyc;
-  vgd_nasync += 1.0;
-  vgd_scut = vlat_icut;
-  vgd_pcut = vlat_icut;
-  vlat_icut = dcut;
-  if (vgd_ainl) {
-    vgd_cur = DevExeSpace();
-    Kokkos::Timer t;
-    VetGdSweep();
-    Kokkos::fence();
-    vgd_tswp += t.seconds();
-    vlat_ncall += 1.0;
-    return;
-  }
-  vgd_cur = vgd_ex;
-  vgd_afly = true;
-  // the helper thread starts on device 0 of the runtime: give it the rank's device (the
-  // CUDA-aware MPI of the halo uses the calling thread's current device/context)
-  int dev = 0;
-#if defined(KOKKOS_ENABLE_CUDA)
-  cudaGetDevice(&dev);
-#elif defined(KOKKOS_ENABLE_HIP)
-  (void) hipGetDevice(&dev);
-#endif
-  vgd_athr = std::thread([this, dev]() {
-#if defined(KOKKOS_ENABLE_CUDA)
-    cudaSetDevice(dev);
-#elif defined(KOKKOS_ENABLE_HIP)
-    (void) hipSetDevice(dev);
-#else
-    (void) dev;
-#endif
-    Kokkos::Timer t;
-    VetGdSweep();
-    vgd_ex.fence();
-    vgd_tswp += t.seconds();
-    vlat_ncall += 1.0;
-  });
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::VetGdAsyncRstPack
-//! \brief vet_gd_async: the source of the pending build (vlat_cs, 2 channels) into dst
-//! (nmb, 2, k, j, i) for the restart file.  vlat_cs is not touched by the helper.
-
-void RadiationM1::VetGdAsyncRstPack(DvceArray5D<Real> &dst, int nmb) {
-  Kokkos::deep_copy(dst, Kokkos::subview(vlat_cs, std::make_pair(0,nmb),
-                                         std::make_pair(0,2), Kokkos::ALL, Kokkos::ALL,
-                                         Kokkos::ALL));
 }
 
 //----------------------------------------------------------------------------------------
@@ -9130,663 +8777,6 @@ void RadiationM1::VetGdMms() {
                 << emax[t]/amax[c] << std::endl;
     }
   }
-}
-
-namespace {
-// vgdlat-1012: the inputs of one VgdSymRefSolve (a copy: it may run on a host thread)
-struct VgdSrIn {
-  int c1 = 0, ilo = 0, ns = 0, nc = 64, nsb = 4;
-  bool emi = false, bfc = false, spl = false;
-  int spe = 0;
-  double iemit = 0.0, itop = 0.0;
-  std::vector<double> R, F, chi, S;
-};
-
-// the 1-D p-ray solve of RadiationM1::VetGdSymRef: out (M1_VGD_SR_N c1) as vgd_srm
-std::vector<double> VgdSymRefSolve(const VgdSrIn in) {
-  const int ns = in.ns, c1 = in.c1, ilo = in.ilo;
-  const std::vector<double> &R = in.R, &F = in.F, &chi = in.chi, &S = in.S;
-  const bool emi = in.emi, bfc = in.bfc, spl = in.spl;
-  const int spe = in.spe;
-  const double iemit = in.iemit, itop = in.itop;
-  auto segw = [](const double dtau, double &ex, double &w0, double &wu) {
-    ex = std::exp(-dtau);
-    if (dtau < 1.0e-3) {
-      w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
-      wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
-    } else {
-      const double g = (1.0 - ex)/dtau;
-      w0 = 1.0 - g;
-      wu = g - ex;
-    }
-  };
-  // the ray set (p, core), in decreasing p; at p = F0 the ray just outside the inner
-  // sphere (turned) before the core ray tangent to it (the same mu at every shell)
-  const int nc = in.nc, nsb = in.nsb;
-  std::vector<std::pair<double, int>> rays;
-  rays.reserve(nc + 2 + static_cast<size_t>(nsb)*ns);
-  for (int l = ns - 1; l >= 0; --l) {
-    const double lo = (l == 0) ? F[0] : R[l - 1];
-    for (int q = nsb; q >= 1; --q) {rays.emplace_back(lo + (R[l] - lo)*q/nsb, 0);}
-  }
-  rays.emplace_back(F[0], 0);
-  for (int q = 0; q <= nc; ++q) {
-    const double mu = static_cast<double>(q)/nc;
-    rays.emplace_back(F[0]*std::sqrt(std::max(1.0 - mu*mu, 0.0)), 1);
-  }
-  // per shell: the running node of each hemisphere and the moment sums
-  std::vector<double> pmo(ns, -1.0), pio(ns, 0.0), pmi(ns, -1.0), pii(ns, 0.0);
-  std::vector<double> sJ(ns, 0.0), sK(ns, 0.0), sHp(ns, 0.0), sHm(ns, 0.0),
-                      sHl(ns, 0.0), sC(ns, 0.0);
-  std::vector<double> Iin(ns), Iout(ns);
-  // exact integrals over [m0, m1] of the linear I(mu) between two nodes
-  auto sq0 = [](double x) {
-    x = std::min(std::max(x, -1.0), 1.0);
-    return 0.5*(x*std::sqrt(1.0 - x*x) + std::asin(x));
-  };
-  auto sq1 = [](double x) {
-    x = std::min(std::max(x, -1.0), 1.0);
-    const double u = 1.0 - x*x;
-    return -u*std::sqrt(u)/3.0;
-  };
-  auto acc = [&](const int l, const double m0, const double i0, const double m1,
-                 const double i1, const bool out) {
-    if (!(m1 > m0)) {return;}
-    const double b = (i1 - i0)/(m1 - m0), a = i0 - b*m0;
-    const double p0[5] = {1.0, m0, m0*m0, m0*m0*m0, m0*m0*m0*m0};
-    const double p1[5] = {1.0, m1, m1*m1, m1*m1*m1, m1*m1*m1*m1};
-    auto mom = [&](const int n) {
-      return a*(p1[n + 1] - p0[n + 1])/(n + 1) + b*(p1[n + 2] - p0[n + 2])/(n + 2);
-    };
-    sJ[l] += 0.5*mom(0);
-    sK[l] += 0.5*mom(2);
-    if (out) {
-      sHp[l] += 0.5*mom(1);
-    } else {
-      sHm[l] -= 0.5*mom(1);
-    }
-    sHl[l] += 0.5*(a*(sq0(m1) - sq0(m0)) + b*(sq1(m1) - sq1(m0)))/M_PI;
-    const double d0 = i0 - S[l], d1 = i1 - S[l];
-    if (d0*d1 >= 0.0) {
-      sC[l] += 0.25*std::fabs(d0 + d1)*(m1 - m0);
-    } else {
-      const double t = d0/(d0 - d1);
-      sC[l] += 0.25*(std::fabs(d0)*t + std::fabs(d1)*(1.0 - t))*(m1 - m0);
-    }
-  };
-  for (const auto &ry : rays) {
-    const double p = ry.first, p2 = p*p;
-    const bool core = (ry.second != 0);
-    int lmin = 0;
-    while (lmin < ns && R[lmin]*R[lmin] < p2*(1.0 - 1.0e-13)) {++lmin;}
-    if (lmin >= ns) {continue;}
-    // inward, top down
-    for (int l = ns - 1; l >= lmin; --l) {
-      const double r = R[l];
-      const double zr = std::sqrt(std::max(r*r - p2, 0.0));
-      double ex, w0, wu;
-      if (l == ns - 1) {
-        const double ds = std::sqrt(std::max(F[ns]*F[ns] - p2, 0.0)) - zr;
-        const double stp = std::max(1.5*S[l] - 0.5*S[l-1], 1.0e-300);
-        segw(chi[l]*ds, ex, w0, wu);
-        Iin[l] = itop*ex + wu*stp + w0*S[l];
-      } else {
-        const double ru = R[l+1];
-        const double ds = std::sqrt(std::max(ru*ru - p2, 0.0)) - zr;
-        if (spl) {
-          double dso = std::sqrt(std::max(F[l+1]*F[l+1] - p2, 0.0)) - zr;
-          dso = std::min(std::max(dso, 0.0), ds);
-          Iin[l] = std::max(static_cast<double>(VetSegSplit(Iin[l+1], S[l+1], S[l],
-                                     chi[l+1]*(ds - dso), chi[l]*dso, spe)), 0.0);
-        } else {
-          segw(0.5*(chi[l+1] + chi[l])*ds, ex, w0, wu);
-          Iin[l] = std::max(Iin[l+1]*ex + wu*S[l+1] + w0*S[l], 0.0);
-        }
-      }
-    }
-    // outward, bottom up
-    for (int l = lmin; l < ns; ++l) {
-      const double r = R[l];
-      const double zr = std::sqrt(std::max(r*r - p2, 0.0));
-      double ex, w0, wu;
-      if (zr < 1.0e-12*r) {
-        // the ray tangent AT this shell: out = in (mu = 0).  (The sweep's S there is a
-        // measure-zero case; here every shell carries one such node, and S would be
-        // carried outward along it.)
-        Iout[l] = Iin[l];
-      } else if (l > 0 && p2 <= R[l-1]*R[l-1]*(1.0 + 1.0e-13)) {
-        const double rd = R[l-1];
-        const double ds = zr - std::sqrt(std::max(rd*rd - p2, 0.0));
-        if (spl) {
-          double dso = zr - std::sqrt(std::max(F[l]*F[l] - p2, 0.0));
-          dso = std::min(std::max(dso, 0.0), ds);
-          Iout[l] = std::max(static_cast<double>(VetSegSplit(Iout[l-1], S[l-1], S[l],
-                                      chi[l-1]*(ds - dso), chi[l]*dso, spe)), 0.0);
-        } else {
-          segw(0.5*(chi[l-1] + chi[l])*ds, ex, w0, wu);
-          Iout[l] = std::max(Iout[l-1]*ex + wu*S[l-1] + w0*S[l], 0.0);
-        }
-      } else if (l == 0 && core) {
-        // the inner face of the first shell (typ 2)
-        const double ds = zr - std::sqrt(std::max(F[0]*F[0] - p2, 0.0));
-        const double qv = std::max(1.5*S[0] - 0.5*S[1], 1.0e-300);
-        segw(chi[0]*ds, ex, w0, wu);
-        double bv;
-        if (emi) {
-          bv = iemit;
-        } else {
-          const double muf = std::sqrt(std::max(1.0 - p2/(F[0]*F[0]), 0.0));
-          const double g0 = -(S[1] - S[0])/(R[1] - R[0])/chi[0];
-          bv = std::max((bfc ? (1.5*S[0] - 0.5*S[1]) : S[0]) + g0*muf, 0.0);
-        }
-        Iout[l] = bv*ex + wu*qv + w0*S[0];
-      } else if (spl && spe == 2 && l > 0 && p2 < F[l]*F[l]) {
-        // coreL-1012 vet_seg = jump: the turned ray's chord below the own inner face
-        // takes chi, S of the shell below (the sweep's rule)
-        const double zf = std::sqrt(std::max(F[l]*F[l] - p2, 0.0));
-        const double e1 = std::exp(-chi[l]*(zr - zf)), e2 = std::exp(-chi[l-1]*2.0*zf);
-        const double ia = Iin[l]*e1 + S[l]*(1.0 - e1);
-        Iout[l] = std::max((ia*e2 + S[l-1]*(1.0 - e2))*e1 + S[l]*(1.0 - e1), 0.0);
-      } else {
-        // turned in its own shell (typ 3)
-        const double ds = 2.0*zr;
-        if (spl) {
-          Iout[l] = std::max(static_cast<double>(VetSegSplit(Iin[l], S[l], S[l],
-                                      chi[l]*0.5*ds, chi[l]*0.5*ds, spe)), 0.0);
-        } else {
-          segw(chi[l]*ds, ex, w0, wu);
-          Iout[l] = std::max(Iin[l]*ex + wu*S[l] + w0*S[l], 0.0);
-        }
-      }
-    }
-    for (int l = lmin; l < ns; ++l) {
-      const double mu = std::sqrt(std::max(1.0 - p2/(R[l]*R[l]), 0.0));
-      if (pmo[l] >= 0.0) {acc(l, pmo[l], pio[l], mu, Iout[l], true);}
-      if (pmi[l] >= 0.0) {acc(l, pmi[l], pii[l], mu, Iin[l], false);}
-      pmo[l] = mu;
-      pio[l] = Iout[l];
-      pmi[l] = mu;
-      pii[l] = Iin[l];
-    }
-  }
-  std::vector<double> h(static_cast<size_t>(M1_VGD_SR_N)*c1, 0.0);
-  for (int l = 0; l < ns; ++l) {
-    const int i = ilo + l;
-    const double J = sJ[l];
-    const bool ok = (J > 0.0);
-    h[M1_VGD_SR_F*c1 + i] = ok ? sK[l]/J : 1.0/3.0;
-    h[M1_VGD_SR_HP*c1 + i] = ok ? sHp[l]/J : 0.25;
-    h[M1_VGD_SR_HM*c1 + i] = ok ? sHm[l]/J : -0.25;
-    h[M1_VGD_SR_HL*c1 + i] = ok ? sHl[l]/J : 0.25;
-    h[M1_VGD_SR_C1*c1 + i] = ok ? sC[l]/J : 0.0;
-    h[M1_VGD_SR_J*c1 + i] = J;
-  }
-  return h;
-}
-}  // namespace
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::VetGdSymRef
-//! \brief vgdlat-1012 vet_gd_symref = col: the 1-D spherical formal solution of the
-//! twin's SHELL-MEAN state (vgd_twm = <chi>, vgd_twm2 = <S> per shell, all ranks), on the
-//! host, every build.  It is the SC sweep of VetGdSweep without its two approximations
-//! that a laterally uniform state does not need:
-//!   - no lateral interpolation: on a spherically symmetric state every intensity is a
-//!     function of (r, mu) alone and is carried along its own straight ray (impact
-//!     parameter p), from shell centre to shell centre, with the SC's own segment rules
-//!     term for term (VetSegSplit at the face / the mean segment, the inner face start
-//!     (diffusion intensity or vet_gd_inner = emit), the turned ray in its own shell,
-//!     the top segment with the top bath; a ray tangent at a shell leaves it with its
-//!     incoming intensity);
-//!   - no direction sampling: the moments at a shell integrate the piecewise-linear-in-mu
-//!     intensity of its rays EXACTLY (1, mu, mu^2, the lateral half-range weight
-//!     sqrt(1 - mu^2)/pi, |I - S|), so a linear (diffusion) intensity is exact.
-//! Rays (as vet_col): vet_gd_symref_ncore + 1 core rays uniform in mu at the inner face
-//! of the first shell, the ray just outside it, and per shell interval
-//! vet_gd_symref_nsub rays with their tangent point in it (the last at the shell).
-//! Rays are processed in decreasing p, so each shell sees its mu nodes in increasing
-//! order: one running node per shell and hemisphere, O(nx1) memory.
-//! Out (vgd_srm, comp q at q c1 + i, i in [ilo, ie]): f = K/J, H+_r/J, H-_r/J, the
-//! lateral half-range H+_theta/J (= H+_phi/J = -H-_a/J), C1 = int |I - S| / J, J.
-//! VetGdTwin(1) and VetGdHalfRange(2) then use these in place of the twin's shell means:
-//! the corrected quantity is  main - twin + reference.  Deterministic, identical on every
-//! rank (the same gathered shell means); vgd_sr_ok = false (shell means kept) when the
-//! vet_gd range has fewer than 2 shells.
-
-void RadiationM1::VetGdSymRef() {
-  Kokkos::Timer tm;
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie;
-  const int c1 = indcs.nx1 + 2*indcs.ng;
-  const int lcut = vlat_icut;
-  const int ilo = is + lcut;
-  const int ns = ie - ilo + 1;
-  vgd_sr_ok = false;
-  if (static_cast<int>(vgd_sr_x1v.size()) != c1) {
-    auto xv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x1v);
-    auto xf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->xx1f);
-    vgd_sr_x1v.assign(c1, 0.0);
-    vgd_sr_x1f.assign(c1 + 1, 0.0);
-    for (int i = 0; i < c1; ++i) {vgd_sr_x1v[i] = xv(0,i);}
-    for (int i = 0; i <= c1 && i < xf.extent_int(1); ++i) {vgd_sr_x1f[i] = xf(0,i);}
-  }
-  if (vgd_srm.extent_int(0) != M1_VGD_SR_N*c1) {
-    Kokkos::realloc(vgd_srm, M1_VGD_SR_N*c1);
-  }
-  if (ns < 2) {return;}
-  // the shell means (c1 values each; the same on every rank after the twin's gather)
-  auto hc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_twm);
-  auto hs = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_twm2);
-  VgdSrIn in;
-  in.c1 = c1;
-  in.ilo = ilo;
-  in.ns = ns;
-  in.nc = vgd_sr_nc;
-  in.nsb = vgd_sr_ns;
-  in.R.resize(ns);
-  in.F.resize(ns + 1);
-  in.chi.resize(ns);
-  in.S.resize(ns);
-  for (int l = 0; l < ns; ++l) {
-    const int i = ilo + l;
-    in.R[l] = vgd_sr_x1v[i];
-    in.F[l] = vgd_sr_x1f[i];
-    in.chi[l] = std::max(static_cast<double>(hc(i)), 1.0e-300);   // exp(log(fmax(mean)))
-    in.S[l] = std::max(static_cast<double>(hs(i)), 1.0e-300);
-  }
-  in.F[ns] = vgd_sr_x1f[ie + 1];
-  // the boundary rules of VetGdSweep (twin: no beam; vet_gd_symref refuses vet_gd_beam)
-  in.emi = VetBcEmit() && (lcut == 0) &&
-           (ibc_x1min != M1_IBC_REFLECT);
-  in.iemit = VetBathLo();
-  if (vgd_lhx_ie > 0.0 && lcut == 0) {   // linhao-prod-1104 halfrange (rad_m1.hpp)
-    in.emi = true;
-    in.iemit = vgd_lhx_ie;
-  }
-  const bool tbh = vgd_tbath && (ibc_x1max == M1_IBC_MARSHAK) && (iebath_x1max != 0.0);
-  in.itop = tbh ? iebath_x1max : 0.0;
-  in.bfc = vet_bc_face;
-  in.spl = vet_seg_split;
-  in.spe = VetSegMode();
-  // on a host thread, overlapping the sweep (joined in VetGdSymRefJoin before the first
-  // use); env VGD_SR_SYNC=1: inline (timing)
-  static const bool sync = (std::getenv("VGD_SR_SYNC") != nullptr) &&
-                           (std::atoi(std::getenv("VGD_SR_SYNC")) != 0);
-  if (sync) {
-    vgd_sr_h = VgdSymRefSolve(std::move(in));
-  } else {
-    vgd_sr_fut = std::async(std::launch::async, VgdSymRefSolve, std::move(in));
-  }
-  vgd_sr_pend = true;
-  vgd_tsr += tm.seconds();
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::VetGdSymRefJoin
-//! \brief vgdlat-1012: wait for the pending VetGdSymRef solve and upload it (vgd_srm)
-
-void RadiationM1::VetGdSymRefJoin() {
-  if (!vgd_sr_pend) {return;}
-  Kokkos::Timer tm;
-  if (vgd_sr_fut.valid()) {vgd_sr_h = vgd_sr_fut.get();}
-  vgd_sr_pend = false;
-  auto h = Kokkos::create_mirror_view(vgd_srm);
-  const int nt = vgd_srm.extent_int(0);
-  for (int c = 0; c < nt; ++c) {h(c) = vgd_sr_h[c];}
-  Kokkos::deep_copy(vgd_srm, h);
-  // diagnostic env VGD_SR_DUMP=<file>: rank 0's reference of the latest build
-  static const char *fdump = std::getenv("VGD_SR_DUMP");
-  if (fdump != nullptr && global_variable::my_rank == 0) {
-    FILE *fp = std::fopen(fdump, "w");
-    if (fp != nullptr) {
-      const int c1 = nt/M1_VGD_SR_N;
-      std::fprintf(fp, "# i x1v f hp hm hl c1 J\n");
-      for (int i = 0; i < c1; ++i) {
-        if (!(vgd_sr_h[M1_VGD_SR_J*c1 + i] > 0.0)) {continue;}
-        std::fprintf(fp, "%d %.16e", i, vgd_sr_x1v[i]);
-        for (int q = 0; q < M1_VGD_SR_N; ++q) {
-          std::fprintf(fp, " %.16e", vgd_sr_h[q*c1 + i]);
-        }
-        std::fprintf(fp, "\n");
-      }
-      std::fclose(fp);
-    }
-  }
-  vgd_sr_ok = true;
-  vgd_tsrj += tm.seconds();
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::VetGdTwin
-//! \brief vet_gd_twin (read only when named, default false): uniform-state twin
-//! subtraction of the direction-sampling (ray) noise of the set.
-//!  stage 0 (before the real sweep): the band arrays vgd_cs set to the SHELL MEANS of chi
-//!    and S (all ranks; arithmetic means of chi and S, logged), one sweep + moments with
-//!    the same angle (no Marshak q) -> the LAT slots, kept in vgd_twl; vgd_cs restored.
-//!  stage 1 (after the real moments): LAT0 -= (twin LAT0 - its shell mean), LAT1..5 -=
-//!    twin LAT1..5 (the exact laterally uniform tensor is diagonal, D_tt = D_pp, and
-//!    laterally constant: its noise-free value is the shell mean of the twin's D_rr).
-//!  A laterally uniform state then gives a laterally uniform D exactly.
-//!  vet_gd_twin_full: LAT0 -= twin LAT0 (no shell mean), i.e. on a laterally uniform
-//!    state D_rr = vet_col's f_K exactly and LAT1..5 = 0.
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::VgdReproMean
-//! \brief layinv-1105 <mesh>/layout_invariant: the shell means of VetGdTwin (over the
-//! active lateral cells of all ranks, cells ilo..ie, exp of the value when ex) with
-//! order-independent sums (repro::ShellSums): components ca -> outa and (outb != null)
-//! cb -> *outb.  Same means as the block-ordered path up to round-off, for any layout.
-
-void RadiationM1::VgdReproMean(DvceArray5D<Real> &arr, const int ca, const int cb,
-                               const int og, const bool ex, DvceArray1D<Real> &outa,
-                               DvceArray1D<Real> *outb) {
-  Mesh *pm = pmy_pack->pmesh;
-  auto &indcs = pm->mb_indcs;
-  const int ie = indcs.ie, js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
-  const int c1 = indcs.nx1 + 2*indcs.ng;
-  const int ilo = indcs.is + vlat_icut;
-  const Real ncol = static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3*pm->npanels;
-  auto a_ = arr;
-  const int nq = (outb != nullptr) ? 2 : 1;
-  std::vector<Real> sm;
-  repro::ShellSums("m1_vgd_tw_sumr", nq, c1, pmy_pack->nmb_thispack, ks, ke, js, je, ilo,
-                   ie, KOKKOS_LAMBDA(const int q, const int m, const int k, const int j,
-                                     const int i) {
-    const Real v = a_(m, (q == 0) ? ca : cb, k+og, j+og, i);
-    return ex ? exp(v) : v;
-  }, sm);
-  for (int q = 0; q < nq; ++q) {
-    DvceArray1D<Real> &o = (q == 0) ? outa : *outb;
-    auto h = Kokkos::create_mirror_view(o);
-    for (int i = 0; i < c1; ++i) {h(i) = sm[static_cast<size_t>(q)*c1 + i]/ncol;}
-    Kokkos::deep_copy(o, h);
-  }
-}
-
-void RadiationM1::VetGdTwin(const int stage) {
-  Mesh *pm = pmy_pack->pmesh;
-  auto &indcs = pm->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
-  const int nmb1 = pmy_pack->nmb_thispack - 1;
-  const int c1 = indcs.nx1 + 2*indcs.ng;
-  const int ilo = is + vlat_icut;
-  // (cs-vetgd-1017: mesh nx2 x nx3 per panel; npanels = 1 off the cubed sphere, exact)
-  const Real ncol = static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3*pm->npanels;
-  auto tt_ = tau_ten;
-  // shell means over the active lateral cells (all ranks) of a(m, c, k+og, j+og, i)
-  // (exp of it when ex): no generic lambda around the device kernel (nvcc)
-  // vgdrot-1011: the host side in a persistent pinned buffer (was a host mirror per
-  // call); nq = 2: two means (out, out2: (c, c2) of arr) in one gather (vet_gd_twin_det
-  // with ranks > 1: each mean is the same rank-ordered sum, so the same numbers)
-  if (vgd_pin_tw.extent_int(0) < 2*c1) {
-    vgd_pin_tw = Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace>("m1_vgd_pin_tw", 2*c1);
-  }
-#if MPI_PARALLEL_ENABLED
-  auto shell_mean2 = [&](DvceArray5D<Real> &arr, const int ca, const int cb, const int og,
-                         const bool ex, DvceArray1D<Real> &outa, DvceArray1D<Real> &outb) {
-    if (pm->layout_invariant) {   // layinv-1105: order-independent (both means)
-      VgdReproMean(arr, ca, cb, og, ex, outa, &outb);
-      return;
-    }
-    Kokkos::deep_copy(outa, 0.0);
-    Kokkos::deep_copy(outb, 0.0);
-    auto a_ = arr;
-    for (int q = 0; q < 2; ++q) {
-      auto o_ = (q == 0) ? outa : outb;
-      const int c = (q == 0) ? ca : cb;
-      par_for("m1_vgd_tw_sumd", DevExeSpace(), ilo, ie,
-      KOKKOS_LAMBDA(const int i) {
-        Real acc = 0.0;
-        for (int m = 0; m <= nmb1; ++m) {
-          for (int k = ks; k <= ke; ++k) {
-            int j = js;
-            // accel-1014: 8 loads (and exps) ahead of the adds, which keep their order
-            for (; j + 7 <= je; j += 8) {
-              Real t[8];
-              for (int q = 0; q < 8; ++q) {t[q] = a_(m,c,k+og,j+q+og,i);}
-              if (ex) {
-                for (int q = 0; q < 8; ++q) {t[q] = exp(t[q]);}
-              }
-              for (int q = 0; q < 8; ++q) {acc += t[q];}
-            }
-            for (; j <= je; ++j) {
-              const Real v = a_(m,c,k+og,j+og,i);
-              acc += ex ? exp(v) : v;
-            }
-          }
-        }
-        o_(i) = acc;
-      });
-    }
-    auto h = vgd_pin_tw;
-    Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace,
-                 Kokkos::MemoryTraits<Kokkos::Unmanaged>> ha(h.data(), c1), hb(h.data() + c1,
-                                                                             c1);
-    Kokkos::deep_copy(ha, outa);
-    Kokkos::deep_copy(hb, outb);
-    const int nr = global_variable::nranks;
-    std::vector<Real> all(static_cast<size_t>(2*c1)*nr);
-    MPI_Allgather(h.data(), 2*c1, MPI_ATHENA_REAL, all.data(), 2*c1, MPI_ATHENA_REAL,
-                  MPI_COMM_WORLD);
-    for (int i = 0; i < 2*c1; ++i) {
-      Real a = 0.0;
-      for (int r = 0; r < nr; ++r) {a += all[static_cast<size_t>(r)*2*c1 + i];}
-      h(i) = a;
-    }
-    for (int i = 0; i < 2*c1; ++i) {h(i) /= ncol;}
-    Kokkos::deep_copy(outa, ha);
-    Kokkos::deep_copy(outb, hb);
-  };
-  const bool pair = vgd_twdet && global_variable::nranks > 1;
-#else
-  const bool pair = false;
-#endif
-  auto shell_mean = [&](DvceArray5D<Real> &arr, const int c, const int og, const bool ex,
-                        DvceArray1D<Real> &out) {
-    if (pm->layout_invariant) {   // layinv-1105: order-independent
-      VgdReproMean(arr, c, c, og, ex, out, nullptr);
-      return;
-    }
-    Kokkos::deep_copy(out, 0.0);
-    auto o_ = out;
-    auto a_ = arr;
-    if (vgd_twdet) {
-      // vet_gd_twin_det: one thread per shell sums its cells in a fixed (m, k, j) order
-      // (the atomic sum below is order-dependent on a GPU: not run-to-run reproducible)
-      par_for("m1_vgd_tw_sumd", DevExeSpace(), ilo, ie,
-      KOKKOS_LAMBDA(const int i) {
-        Real acc = 0.0;
-        for (int m = 0; m <= nmb1; ++m) {
-          for (int k = ks; k <= ke; ++k) {
-            int j = js;
-            // accel-1014: 8 loads (and exps) ahead of the adds, which keep their order
-            for (; j + 7 <= je; j += 8) {
-              Real t[8];
-              for (int q = 0; q < 8; ++q) {t[q] = a_(m,c,k+og,j+q+og,i);}
-              if (ex) {
-                for (int q = 0; q < 8; ++q) {t[q] = exp(t[q]);}
-              }
-              for (int q = 0; q < 8; ++q) {acc += t[q];}
-            }
-            for (; j <= je; ++j) {
-              const Real v = a_(m,c,k+og,j+og,i);
-              acc += ex ? exp(v) : v;
-            }
-          }
-        }
-        o_(i) = acc;
-      });
-    } else {
-      par_for("m1_vgd_tw_sum", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        const Real v = a_(m,c,k+og,j+og,i);
-        Kokkos::atomic_add(&o_(i), ex ? exp(v) : v);
-      });
-    }
-    Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace,
-                 Kokkos::MemoryTraits<Kokkos::Unmanaged>> h(vgd_pin_tw.data(), c1);
-    Kokkos::deep_copy(h, out);
-#if MPI_PARALLEL_ENABLED
-    std::vector<Real> g(c1);
-    if (vgd_twdet && global_variable::nranks > 1) {
-      // rank-ordered sum of the per-rank shell sums (as implicit_det_reduce)
-      const int nr = global_variable::nranks;
-      std::vector<Real> all(static_cast<size_t>(c1)*nr);
-      MPI_Allgather(h.data(), c1, MPI_ATHENA_REAL, all.data(), c1, MPI_ATHENA_REAL,
-                    MPI_COMM_WORLD);
-      for (int i = 0; i < c1; ++i) {
-        Real a = 0.0;
-        for (int r = 0; r < nr; ++r) {a += all[static_cast<size_t>(r)*c1 + i];}
-        g[i] = a;
-      }
-    } else {
-      MPI_Allreduce(h.data(), g.data(), c1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-    }
-    for (int i = 0; i < c1; ++i) {h(i) = g[i];}
-#endif
-    for (int i = 0; i < c1; ++i) {h(i) /= ncol;}
-    Kokkos::deep_copy(out, h);
-  };
-  if (vgd_twm.extent(0) == 0) {
-    Kokkos::realloc(vgd_twm, c1);
-    Kokkos::realloc(vgd_twm2, c1);
-    Kokkos::realloc(vgd_twl, pmy_pack->nmb_thispack, M1_TT_NLAT, indcs.nx3 + 2*indcs.ng,
-                    indcs.nx2 + 2*indcs.ng, c1);
-  }
-  auto twl_ = vgd_twl;
-  if (stage == 0 && vgd_twfuse) {
-    // vet_gd_twin_fuse: only the twin's source here (the same values the unfused path
-    // writes into vgd_cs for its own sweep); the sweep is VetGdBuild's, the moments
-    // VetGdTwinFusedMoments
-    Kokkos::Timer tm;
-    const int og = vgd_w - indcs.ng;
-    auto ct_ = vgd_cst;
-    Kokkos::deep_copy(ct_, vgd_cs);
-#if MPI_PARALLEL_ENABLED
-    if (pair) {
-      shell_mean2(vgd_cs, 0, 1, og, true, vgd_twm, vgd_twm2);
-    } else {
-      shell_mean(vgd_cs, 0, og, true, vgd_twm);
-      shell_mean(vgd_cs, 1, og, true, vgd_twm2);
-    }
-#else
-    (void) pair;
-    shell_mean(vgd_cs, 0, og, true, vgd_twm);
-    shell_mean(vgd_cs, 1, og, true, vgd_twm2);
-#endif
-    if (vgd_twtr) {VetGdTwinTrans();}  // twinfix-1012: transmission-consistent state
-    if (vgd_symref) {VetGdSymRef();}   // vgdlat-1012: from the same shell means
-    auto mc_ = vgd_twm;
-    auto ms_ = vgd_twm2;
-    const int n3 = static_cast<int>(ct_.extent(2)) - 1;
-    const int n2 = static_cast<int>(ct_.extent(3)) - 1;
-    par_for("m1_vgd_tw_uni2", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, ilo, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      ct_(m,0,k,j,i) = log(fmax(mc_(i), 1.0e-300));
-      ct_(m,1,k,j,i) = log(fmax(ms_(i), 1.0e-300));
-    });
-    Kokkos::fence();
-    vgd_ttwin += tm.seconds();
-    return;
-  }
-  if (stage == 0) {
-    Kokkos::Timer tm;
-    const int og = vgd_w - indcs.ng;
-    // mem-1014: the saved source only on this (unfused / lowmem) path (the fused twin
-    // never touches it: it was allocated for every twin run)
-    if (vgd_cs0.extent(0) != vgd_cs.extent(0) || vgd_cs0.extent(4) != vgd_cs.extent(4)) {
-      Kokkos::realloc(vgd_cs0, vgd_cs.extent(0), vgd_cs.extent(1), vgd_cs.extent(2),
-                      vgd_cs.extent(3), vgd_cs.extent(4));
-    }
-    auto cw_ = vgd_cs;
-    auto c0_ = vgd_cs0;
-    Kokkos::deep_copy(c0_, cw_);
-    shell_mean(vgd_cs, 0, og, true, vgd_twm);
-    shell_mean(vgd_cs, 1, og, true, vgd_twm2);
-    if (vgd_twtr) {VetGdTwinTrans();}  // twinfix-1012: transmission-consistent state
-    if (vgd_symref) {VetGdSymRef();}   // vgdlat-1012: from the same shell means
-    auto mc_ = vgd_twm;
-    auto ms_ = vgd_twm2;
-    const int n3 = static_cast<int>(cw_.extent(2)) - 1;
-    const int n2 = static_cast<int>(cw_.extent(3)) - 1;
-    par_for("m1_vgd_tw_uni", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, ilo, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      cw_(m,0,k,j,i) = log(fmax(mc_(i), 1.0e-300));
-      cw_(m,1,k,j,i) = log(fmax(ms_(i), 1.0e-300));
-    });
-    vgd_tws = true;    // sptests-1011: the twin's inner inflow (vet_gd_beam)
-    VetGdSweep();
-    vgd_tws = false;
-    vgd_noq = true;
-    VetGdMoments();
-    vgd_noq = false;
-    if (vgd_csg) {VetGdCsDump("VGD_CS_DUMP_TW");}   // cs-vetgd-1017 gate dump
-    if (impl_beam_hr) {VetGdHalfRange(1);}   // hrup-1009: keep the twin's ratios
-    par_for("m1_vgd_tw_keep", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      for (int c = 0; c < M1_TT_NLAT; ++c) {twl_(m,c,k,j,i) = tt_(m,M1_TT_LAT0+c,k,j,i);}
-    });
-    Kokkos::deep_copy(cw_, c0_);
-    Kokkos::fence();
-    vgd_ttwin += tm.seconds();
-    return;
-  }
-  if (vgd_symref) {VetGdSymRefJoin();}   // vgdlat-1012
-  // stage 1: subtract the noise pattern.  vet_gd_twin_full: the full twin LAT0 (its
-  // shell mean not added back), so D_rr = f_K(vet_col) + D_rr,gd - D_rr,twin
-  if (vgd_twfull) {
-    Kokkos::deep_copy(vgd_twm, 0.0);
-  } else {
-    shell_mean(vgd_twl, 0, 0, false, vgd_twm);
-  }
-  auto mt_ = vgd_twm;
-  // vgdlat-1012 vet_gd_symref: the reference D_rr is the 1-D solution's f (LAT0 is
-  // D_rr - f_K(vet_col) of the cell, slot 0 still f_K here): D_rr = D_gd - D_twin + f_ref
-  // weighted by VgdSrW (the main and twin J of VetGdHalfRange(0)/(1), when stored)
-  const bool sref = vgd_symref && vgd_sr_ok;
-  auto sr_ = vgd_srm;
-  const int sc1 = c1;
-  const bool sthx = vgd_thx && impl_beam_hr && (vgd_hr.extent_int(0) > nmb1) &&
-                    (vgd_hr.extent_int(1) > M1_VGD_HRJ);
-  auto shr_ = vgd_hr;
-  auto sht_ = vgd_hrt;
-  const bool twwt = vgd_twwt && sthx;
-  const Real twwq = vgd_twwq;
-  const bool srw = g_vgd_srw && sthx;   // csacc-1031 vet_gd_twin_srw
-  par_for("m1_vgd_tw_sub", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real ref = mt_(i);
-    if (sref) {
-      const Real w = VgdSrW(shr_, sht_, sthx, m, k, j, i);
-      ref += w*((sr_(M1_VGD_SR_F*sc1 + i) - tt_(m,0,k,j,i)) - mt_(i));
-    }
-    if (srw) {   // csacc-1031 vet_gd_twin_srw: pattern x ww, shift x w (w = VgdSrW)
-      const Real ww = VgdTwWs(shr_, sht_, twwt, twwq, true, sthx, m, k, j, i);
-      if (ww < 1.0) {
-        const Real w = VgdSrW(shr_, sht_, sthx, m, k, j, i);
-        Real d = ww*(twl_(m,0,k,j,i) - mt_(i));
-        if (sref) {d -= w*((sr_(M1_VGD_SR_F*sc1 + i) - tt_(m,0,k,j,i)) - mt_(i));}
-        tt_(m,M1_TT_LAT0,k,j,i) -= d;
-        for (int c = 1; c < M1_TT_NLAT; ++c) {
-          tt_(m,M1_TT_LAT0+c,k,j,i) -= ww*twl_(m,c,k,j,i);
-        }
-        return;
-      }
-    }
-    if (twwt) {   // twinfix-1012 vet_gd_twin_weight = j (w = 1: the same numbers)
-      const Real ww = VgdTwW(shr_, sht_, true, twwq, m, k, j, i);
-      tt_(m,M1_TT_LAT0,k,j,i) -= ww*(twl_(m,0,k,j,i) - ref);
-      for (int c = 1; c < M1_TT_NLAT; ++c) {
-        tt_(m,M1_TT_LAT0+c,k,j,i) -= ww*twl_(m,c,k,j,i);
-      }
-      return;
-    }
-    tt_(m,M1_TT_LAT0,k,j,i) -= twl_(m,0,k,j,i) - ref;
-    for (int c = 1; c < M1_TT_NLAT; ++c) {tt_(m,M1_TT_LAT0+c,k,j,i) -= twl_(m,c,k,j,i);}
-  });
-  if (impl_beam_hr) {VetGdHalfRange(2);}   // hrup-1009: the same subtraction
 }
 
 //----------------------------------------------------------------------------------------
@@ -10410,736 +9400,6 @@ void RadiationM1::VetGdRingFlush() {
   vgd_rg_pend.clear();
 }
 
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::VetGdTwinTrans
-//! \brief twinfix-1012 vet_gd_twin_state = trans: the twin's laterally uniform shell
-//! state (vgd_twm = chi_tw, vgd_twm2 = S_tw, set by VetGdTwin stage 0 to the arithmetic
-//! shell means) replaced, shell by shell, by the state of the same mean TRANSMISSION:
-//!   chi_tw = -ln <exp(-chi dr)> / dr,   S_tw = <S (1 - e^-chi dr)> / <1 - e^-chi dr>
-//! (S weighted by what each cell emits through the shell).  The arithmetic <chi> lets a
-//! few opaque cells (a clump covering 8 % of the shell: <chi> dr = 12 for a true mean
-//! transmission e^-0.08) make the twin's shell opaque, so the twin's field and its ray
-//! pattern are no longer the main field's.  A shell whose chi is laterally CONSTANT keeps
-//! the mean values (bitwise).  Sums in a fixed (m, k, j) order per shell, rank-ordered
-//! over ranks (as vet_gd_twin_det); laterally constant = global min ln chi == max.
-
-void RadiationM1::VetGdTwinTrans() {
-  Mesh *pm = pmy_pack->pmesh;
-  auto &indcs = pm->mb_indcs;
-  const int ie = indcs.ie, js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
-  const int nmb1 = pmy_pack->nmb_thispack - 1;
-  const int c1 = indcs.nx1 + 2*indcs.ng;
-  const int ilo = indcs.is + vlat_icut;
-  const int og = vgd_w - indcs.ng;
-  // (cs-vetgd-1017: mesh nx2 x nx3 per panel; npanels = 1 off the cubed sphere, exact)
-  const Real ncol = static_cast<Real>(pm->mesh_indcs.nx2)*pm->mesh_indcs.nx3*pm->npanels;
-  if (vgd_twtb.extent_int(0) != 5*c1) {Kokkos::realloc(vgd_twtb, 5*c1);}
-  Kokkos::deep_copy(vgd_twtb, 0.0);
-  auto tb_ = vgd_twtb;
-  auto cs_ = vgd_cs;
-  auto cx1f = pmy_pack->pcoord->xx1f;
-  const int c1_ = c1;
-  par_for("m1_vgd_twtr_sum", DevExeSpace(), ilo, ie, KOKKOS_LAMBDA(const int i) {
-    Real st = 0.0, sw = 0.0, ssw = 0.0, mn = 1.0e300, mx = -1.0e300;
-    for (int m = 0; m <= nmb1; ++m) {
-      const Real dr = cx1f(m,i+1) - cx1f(m,i);
-      for (int k = ks; k <= ke; ++k) {
-        int j = js;
-        // accel-1014: the terms of 8 cells ahead of the sums, which keep their order
-        for (; j + 7 <= je; j += 8) {
-          Real tl[8], te[8], tw[8], ts[8];
-          for (int q = 0; q < 8; ++q) {
-            tl[q] = cs_(m,0,k+og,j+q+og,i);
-            ts[q] = cs_(m,1,k+og,j+q+og,i);
-          }
-          for (int q = 0; q < 8; ++q) {
-            const Real tau = exp(tl[q])*dr;
-            tw[q] = -expm1(-tau);
-            te[q] = exp(-tau);
-            ts[q] = exp(ts[q]);
-          }
-          for (int q = 0; q < 8; ++q) {
-            st += te[q];
-            sw += tw[q];
-            ssw += tw[q]*ts[q];
-            mn = fmin(mn, tl[q]);
-            mx = fmax(mx, tl[q]);
-          }
-        }
-        for (; j <= je; ++j) {
-          const Real lc = cs_(m,0,k+og,j+og,i);
-          const Real tau = exp(lc)*dr;
-          const Real w = -expm1(-tau);
-          st += exp(-tau);
-          sw += w;
-          ssw += w*exp(cs_(m,1,k+og,j+og,i));
-          mn = fmin(mn, lc);
-          mx = fmax(mx, lc);
-        }
-      }
-    }
-    tb_(i) = st;
-    tb_(c1_ + i) = sw;
-    tb_(2*c1_ + i) = ssw;
-    tb_(3*c1_ + i) = mn;
-    tb_(4*c1_ + i) = mx;
-  });
-  if (pm->layout_invariant) {
-    // layinv-1105: the three shell sums order-independent (the same per-cell terms);
-    // min / max are order-independent already
-    std::vector<Real> sm;
-    repro::ShellSums("m1_vgd_twtr_sumr", 3, c1, nmb1 + 1, ks, ke, js, je, ilo, ie,
-                     KOKKOS_LAMBDA(const int q, const int m, const int k, const int j,
-                                   const int i) {
-      const Real dr = cx1f(m,i+1) - cx1f(m,i);
-      const Real tau = exp(cs_(m,0,k+og,j+og,i))*dr;
-      if (q == 0) {return exp(-tau);}
-      const Real w = -expm1(-tau);
-      return (q == 1) ? w : w*exp(cs_(m,1,k+og,j+og,i));
-    }, sm);
-    auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vgd_twtb);
-    for (int n = 0; n < 3*c1; ++n) {h(n) = sm[n];}
-#if MPI_PARALLEL_ENABLED
-    if (global_variable::nranks > 1) {
-      MPI_Allreduce(MPI_IN_PLACE, h.data() + 3*c1, c1, MPI_ATHENA_REAL, MPI_MIN,
-                    MPI_COMM_WORLD);
-      MPI_Allreduce(MPI_IN_PLACE, h.data() + 4*c1, c1, MPI_ATHENA_REAL, MPI_MAX,
-                    MPI_COMM_WORLD);
-    }
-#endif
-    Kokkos::deep_copy(vgd_twtb, h);
-  }
-#if MPI_PARALLEL_ENABLED
-  if (global_variable::nranks > 1 && !pm->layout_invariant) {
-    auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vgd_twtb);
-    const int nr = global_variable::nranks;
-    std::vector<Real> all(static_cast<size_t>(3*c1)*nr);
-    MPI_Allgather(h.data(), 3*c1, MPI_ATHENA_REAL, all.data(), 3*c1, MPI_ATHENA_REAL,
-                  MPI_COMM_WORLD);
-    for (int i = 0; i < 3*c1; ++i) {
-      Real a = 0.0;
-      for (int r = 0; r < nr; ++r) {a += all[static_cast<size_t>(r)*3*c1 + i];}
-      h(i) = a;
-    }
-    MPI_Allreduce(MPI_IN_PLACE, h.data() + 3*c1, c1, MPI_ATHENA_REAL, MPI_MIN,
-                  MPI_COMM_WORLD);
-    MPI_Allreduce(MPI_IN_PLACE, h.data() + 4*c1, c1, MPI_ATHENA_REAL, MPI_MAX,
-                  MPI_COMM_WORLD);
-    Kokkos::deep_copy(vgd_twtb, h);
-  }
-#endif
-  auto mc_ = vgd_twm;
-  auto ms_ = vgd_twm2;
-  par_for("m1_vgd_twtr_set", DevExeSpace(), ilo, ie, KOKKOS_LAMBDA(const int i) {
-    if (!(tb_(4*c1_ + i) > tb_(3*c1_ + i))) {return;}   // laterally constant chi: mean
-    const Real dr = cx1f(0,i+1) - cx1f(0,i);
-    const Real tm = tb_(i)/ncol, wm = tb_(c1_ + i)/ncol;
-    // -ln<t>: from <t> where the shell is thick, from log1p(-<1 - t>) where it is thin
-    const Real tau = (tm < 0.5) ? -log(fmax(tm, 1.0e-300)) : -log1p(-wm);
-    mc_(i) = tau/dr;
-    if (tb_(c1_ + i) > 0.0) {ms_(i) = tb_(2*c1_ + i)/tb_(c1_ + i);}
-  });
-  Kokkos::fence();
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::VetGdTwinFusedMoments
-//! \brief vet_gd_twin_fuse: the twin's moments from its own intensities (vgd_itw), kept
-//! in vgd_twl exactly as the unfused VetGdTwin(0) keeps them; the main moments follow
-//! in VetGdPost and overwrite tau_ten as before
-
-void RadiationM1::VetGdTwinFusedMoments() {
-  Kokkos::Timer tm;
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
-  const int nmb1 = pmy_pack->nmb_thispack - 1;
-  std::swap(vgd_i, vgd_itw);
-  vgd_noq = true;
-  vgd_hr_tw = true;   // gdthin-1011: the twin's C1 with the twin's source
-  VetGdMoments();
-  vgd_hr_tw = false;
-  vgd_noq = false;
-  std::swap(vgd_i, vgd_itw);
-  if (impl_beam_hr) {VetGdHalfRange(1);}   // hrup-1009: keep the twin's ratios
-  auto tt_ = tau_ten;
-  auto twl_ = vgd_twl;
-  par_for("m1_vgd_tw_keep2", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    for (int c = 0; c < M1_TT_NLAT; ++c) {twl_(m,c,k,j,i) = tt_(m,M1_TT_LAT0+c,k,j,i);}
-  });
-  Kokkos::fence();
-  vgd_ttwin += tm.seconds();
-}
-
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::VetGdHalfRange
-//! \brief hrup-1009 (implicit_flux_beam = halfrange): the HALF-RANGE ratios of the vet_gd
-//! intensities along the local axes, r+_a = sum_{mu_a > 0} w mu_a I / J and
-//! r-_a = sum_{mu_a < 0} w mu_a I / J, a = r, theta, phi, into vgd_hr(m, 2a, ...) and (m,
-//! 2a+1, ...).
-//! Below the vet_gd cut (no formal solution) and where J <= 0: r+ = -1 (flag: the face
-//! stays central).  stage 0: from the current vgd_i (the main or the twin sweep);
-//! stage 1: copy to vgd_hrt (the twin's, kept); stage 2 (vet_gd_twin): r -= (r_twin -
-//! its shell mean), the same ray-noise subtraction as the tensor's LAT0, then clamped to
-//! r+ in [0, 1], r- in [-1, 0].
-//! gdthin-1011 (vgd_thx: implicit_thin_switch = fs* or an implicit_thin_corr): in the
-//! same pass also C1 = sum w |I - S| / J (vet_sc's M1_VET_NL / J, S = the sweep's own
-//! cell source), eps = min(kappa_P/chi, 1) (M1_VET_EPS) and J, components M1_VGD_HRC1..;
-//! stage 2 subtracts the twin's C1 pattern as for r+- (clamped >= 0) and divides J by
-//! the twin's J/<J_twin>; eps is cell-local (no ray noise) and kept.
-
-void RadiationM1::VetGdHalfRange(const int stage) {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie;
-  const int js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
-  const int nmb1 = pmy_pack->nmb_thispack - 1;
-  const int ilo = is + vlat_icut;
-  const int c1 = indcs.nx1 + 2*indcs.ng;
-  const bool thx = vgd_thx;
-  const int nhc = thx ? M1_VGD_HRNX : 6;
-  if (vgd_hr.extent_int(0) < nmb1 + 1) {
-    const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
-    const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
-    // cs-s4-1017: on the cubed sphere one more component, |H|/J (VetGdCsHrPrep)
-    const int nha = nhc + (vgd_csg ? 1 : 0);
-    Kokkos::realloc(vgd_hr, nmb1 + 1, nha, n3, n2, c1);
-    Kokkos::deep_copy(vgd_hr, 0.0);
-    Kokkos::realloc(vgd_hrt, nmb1 + 1, nha, n3, n2, c1);
-    Kokkos::deep_copy(vgd_hrt, 0.0);
-    Kokkos::realloc(vgd_hrm, c1);
-  }
-  auto hr_ = vgd_hr;
-  auto ht_ = vgd_hrt;
-  if (stage == 0) {
-    const int n = vgd_n;
-    auto vi_ = vgd_i;
-    const int og = vgd_w - indcs.ng;
-    const bool sth_ = vgd_sth;   // accsp-1102
-    auto thn_ = vgd_thn;
-    auto dir_ = vgd_dir;
-    auto &mbsize = pmy_pack->pmb->mb_size;
-  const VgdLG lg_ = vgd_lg;   // layinv-1105
-    // gdthin-1011: the sweep's cell source (the fused twin's own in its pass) and opacity
-    auto cs_ = vgd_hr_tw ? vgd_cst : vgd_cs;
-    auto opac_ = opac;
-    const bool thermal = fl_on && coupling && !opac_zero;
-    // env VGD_THIN_EPS (diagnostic): eps -> min(eps, value), to exercise the hcs
-    // correction (1 - eps) where the opacity tables give kappa_P >= kappa_R (eps = 1)
-    static const char *epe = std::getenv("VGD_THIN_EPS");
-    const Real epmax = (epe != nullptr) ? std::atof(epe) : 1.0;
-    if (vgd_csg) {
-      // cs-s4-1017: the cubed sphere's own axes -- r_hat (vgd_csr) and the planar
-      // normals nhat_xi, nhat_eta at the cell centre (cs_cn2/cs_cn3): the ratios the x1
-      // faces and the skew lateral faces of the cs half-range flux need; everything else
-      // as below
-      auto cr_ = vgd_csr;
-      auto cn2 = cs_cn2, cn3 = cs_cn3;
-      if (VgdMomLds()) {
-        // d6fast5-1112: LDS-staged (see VgdMomLds); the same cells, sums and outputs
-      const int nk = ke - ks + 1, nj = je - js + 1, ni = ie - is + 1;
-      const int ncell = (nmb1 + 1)*ni*nj*nk;
-      const int nlg = (ncell + VGD_LDS_TS - 1)/VGD_LDS_TS;
-      const size_t scr = ScrArray1D<Real>::shmem_size(VGD_LDS_TS*VGD_LDS_DC);
-      Kokkos::TeamPolicy<> pol(DevExeSpace(), nlg, VGD_LDS_TS, 1);
-      Kokkos::parallel_for("m1_vgd_hrcs", pol.set_scratch_size(0, Kokkos::PerTeam(scr)),
-      KOKKOS_LAMBDA(const TeamMember_t &tm) {
-        ScrArray1D<Real> sv(tm.team_scratch(0), VGD_LDS_TS*VGD_LDS_DC);
-        const int c0 = tm.league_rank()*VGD_LDS_TS;
-        const int tr = tm.team_rank();
-        auto dec = [&](const int c, int &m, int &i, int &j, int &k) {
-          int t = c;
-          k = ks + t % nk;
-          t /= nk;
-          j = js + t % nj;
-          t /= nj;
-          i = is + t % ni;
-          m = t/ni;
-        };
-        int m = 0, i = 0, j = 0, k = 0;
-        const int c = c0 + tr;
-        const bool val = (c < ncell);
-        if (val) {dec(c, m, i, j, k);}
-        const bool act = val && (i >= ilo);
-        if (val && i < ilo) {
-          for (int cc = 0; cc < 6; ++cc) {hr_(m,cc,k,j,i) = (cc % 2 == 0) ? -1.0 : 0.0;}
-          if (thx) {
-            hr_(m,M1_VGD_HRC1,k,j,i) = 0.0;
-            hr_(m,M1_VGD_HREP,k,j,i) = 1.0;
-            hr_(m,M1_VGD_HRJ,k,j,i) = 0.0;
-          }
-        }
-        Real ax[3][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
-        Real s0 = 0.0;
-        if (act) {
-          for (int b = 0; b < 3; ++b) {
-            ax[0][b] = cr_(m,k+og,j+og,b);
-            ax[1][b] = cn2(m,j,b);
-            ax[2][b] = cn3(m,k,b);
-          }
-          if (thx) {s0 = exp(cs_(m,1,k+og,j+og,i));}
-        }
-        Real jm = 0.0, nl = 0.0, h[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-        for (int d0 = 0; d0 < n; d0 += VGD_LDS_DC) {
-          const int dn = (n - d0 < VGD_LDS_DC) ? (n - d0) : VGD_LDS_DC;
-          tm.team_barrier();
-          for (int e = tr; e < VGD_LDS_TS*dn; e += VGD_LDS_TS) {
-            const int cc = e/dn, dd = e - (e/dn)*dn;
-            const int c2 = c0 + cc;
-            if (c2 < ncell) {
-              int m2, i2, j2, k2;
-              dec(c2, m2, i2, j2, k2);
-              if (i2 >= ilo) {sv(cc*VGD_LDS_DC + dd) = vi_(m2,d0+dd,k2+og,j2+og,i2);}
-            }
-          }
-          tm.team_barrier();
-          if (act) {
-            for (int dd = 0; dd < dn; ++dd) {
-              const int d = d0 + dd;
-              const Real vv = sv(tr*VGD_LDS_DC + dd);
-              const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
-              const Real wi = dir_(d,3)*vv;
-              jm += wi;
-              for (int a = 0; a < 3; ++a) {
-                const Real mu = nx*ax[a][0] + ny*ax[a][1] + nz*ax[a][2];
-                h[2*a] += wi*fmax(mu, 0.0);
-                h[2*a+1] += wi*fmin(mu, 0.0);
-              }
-              if (thx) {nl += dir_(d,3)*fabs(vv - s0);}
-            }
-          }
-        }
-        if (!act) {return;}
-        for (int cc = 0; cc < 6; ++cc) {
-          hr_(m,cc,k,j,i) = (jm > 0.0) ? h[cc]/jm : ((cc % 2 == 0) ? -1.0 : 0.0);
-        }
-        if (thx) {
-          hr_(m,M1_VGD_HRC1,k,j,i) = (jm > 0.0) ? nl/jm : 0.0;
-          const Real kt = opac_(m,M1_OP_T,k,j,i);
-          hr_(m,M1_VGD_HREP,k,j,i) = !(kt > 0.0) ? 1.0
-                                     : (thermal ? fmin(opac_(m,M1_OP_P,k,j,i)/
-                                                       fmax(kt, 1.0e-300), 1.0) : 0.0);
-          hr_(m,M1_VGD_HREP,k,j,i) = fmin(hr_(m,M1_VGD_HREP,k,j,i), epmax);
-          hr_(m,M1_VGD_HRJ,k,j,i) = jm;
-        }
-      });
-      return;
-      }
-      par_for("m1_vgd_hrcs", DevExeSpace(), 0, nmb1, is, ie, js, je, ks, ke,
-      KOKKOS_LAMBDA(const int m, const int i, const int j, const int k) {
-        if (i < ilo) {
-          for (int c = 0; c < 6; ++c) {hr_(m,c,k,j,i) = (c % 2 == 0) ? -1.0 : 0.0;}
-          if (thx) {
-            hr_(m,M1_VGD_HRC1,k,j,i) = 0.0;
-            hr_(m,M1_VGD_HREP,k,j,i) = 1.0;
-            hr_(m,M1_VGD_HRJ,k,j,i) = 0.0;
-          }
-          return;
-        }
-        const Real ax[3][3] = {{cr_(m,k+og,j+og,0), cr_(m,k+og,j+og,1),
-                                cr_(m,k+og,j+og,2)},
-                               {cn2(m,j,0), cn2(m,j,1), cn2(m,j,2)},
-                               {cn3(m,k,0), cn3(m,k,1), cn3(m,k,2)}};
-        Real jm = 0.0, h[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-        for (int d = 0; d < n; ++d) {
-          const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
-          const Real wi = dir_(d,3)*vi_(m,d,k+og,j+og,i);
-          jm += wi;
-          for (int a = 0; a < 3; ++a) {
-            const Real mu = nx*ax[a][0] + ny*ax[a][1] + nz*ax[a][2];
-            h[2*a] += wi*fmax(mu, 0.0);
-            h[2*a+1] += wi*fmin(mu, 0.0);
-          }
-        }
-        for (int c = 0; c < 6; ++c) {
-          hr_(m,c,k,j,i) = (jm > 0.0) ? h[c]/jm : ((c % 2 == 0) ? -1.0 : 0.0);
-        }
-        if (thx) {
-          const Real s0 = exp(cs_(m,1,k+og,j+og,i));
-          Real nl = 0.0;
-          for (int d = 0; d < n; ++d) {nl += dir_(d,3)*fabs(vi_(m,d,k+og,j+og,i) - s0);}
-          hr_(m,M1_VGD_HRC1,k,j,i) = (jm > 0.0) ? nl/jm : 0.0;
-          const Real kt = opac_(m,M1_OP_T,k,j,i);
-          hr_(m,M1_VGD_HREP,k,j,i) = !(kt > 0.0) ? 1.0
-                                     : (thermal ? fmin(opac_(m,M1_OP_P,k,j,i)/
-                                                       fmax(kt, 1.0e-300), 1.0) : 0.0);
-          hr_(m,M1_VGD_HREP,k,j,i) = fmin(hr_(m,M1_VGD_HREP,k,j,i), epmax);
-          hr_(m,M1_VGD_HRJ,k,j,i) = jm;
-        }
-      });
-      return;
-    }
-    const bool gph_ = vgd_gband; auto phc_ = vgd_phc; const int gpw_ = vgd_w;   // accpolar-1103
-    if (VgdMomLds()) {
-      // d6fast5-1112: LDS-staged (see VgdMomLds); the same cells, sums and outputs
-      const int nk = ke - ks + 1, nj = je - js + 1, ni = ie - is + 1;
-      const int ncell = (nmb1 + 1)*ni*nj*nk;
-      const int nlg = (ncell + VGD_LDS_TS - 1)/VGD_LDS_TS;
-      const size_t scr = ScrArray1D<Real>::shmem_size(VGD_LDS_TS*VGD_LDS_DC);
-      Kokkos::TeamPolicy<> pol(DevExeSpace(), nlg, VGD_LDS_TS, 1);
-      Kokkos::parallel_for("m1_vgd_hr", pol.set_scratch_size(0, Kokkos::PerTeam(scr)),
-      KOKKOS_LAMBDA(const TeamMember_t &tm) {
-        ScrArray1D<Real> sv(tm.team_scratch(0), VGD_LDS_TS*VGD_LDS_DC);
-        const int c0 = tm.league_rank()*VGD_LDS_TS;
-        const int tr = tm.team_rank();
-        auto dec = [&](const int c, int &m, int &i, int &j, int &k) {
-          int t = c;
-          k = ks + t % nk;
-          t /= nk;
-          j = js + t % nj;
-          t /= nj;
-          i = is + t % ni;
-          m = t/ni;
-        };
-        int m = 0, i = 0, j = 0, k = 0;
-        const int c = c0 + tr;
-        const bool val = (c < ncell);
-        if (val) {dec(c, m, i, j, k);}
-        if (val && i < ilo) {
-          for (int cc = 0; cc < 6; ++cc) {hr_(m,cc,k,j,i) = (cc % 2 == 0) ? -1.0 : 0.0;}
-          if (thx) {
-            hr_(m,M1_VGD_HRC1,k,j,i) = 0.0;
-            hr_(m,M1_VGD_HREP,k,j,i) = 1.0;
-            hr_(m,M1_VGD_HRJ,k,j,i) = 0.0;
-          }
-        }
-        const bool act = val && (i >= ilo);
-        Real st = 0.0, ct = 0.0, sp = 0.0, cp = 0.0, s0 = 0.0;
-        if (act) {
-          const Real th = sth_ ? thn_(m,j+og) : lg_.Th(mbsize, m, j, js);
-          const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : lg_.Ph(mbsize, m, k, ks));
-          st = sin(th); ct = cos(th); sp = sin(ph); cp = cos(ph);
-          if (thx) {s0 = exp(cs_(m,1,k+og,j+og,i));}
-        }
-        Real jm = 0.0, nl = 0.0, h[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-        for (int d0 = 0; d0 < n; d0 += VGD_LDS_DC) {
-          const int dn = (n - d0 < VGD_LDS_DC) ? (n - d0) : VGD_LDS_DC;
-          tm.team_barrier();
-          for (int e = tr; e < VGD_LDS_TS*dn; e += VGD_LDS_TS) {
-            const int cc = e/dn, dd = e - (e/dn)*dn;
-            const int c2 = c0 + cc;
-            if (c2 < ncell) {
-              int m2, i2, j2, k2;
-              dec(c2, m2, i2, j2, k2);
-              if (i2 >= ilo) {sv(cc*VGD_LDS_DC + dd) = vi_(m2,d0+dd,k2+og,j2+og,i2);}
-            }
-          }
-          tm.team_barrier();
-          if (act) {
-            for (int dd = 0; dd < dn; ++dd) {
-              const int d = d0 + dd;
-              const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
-              const Real mu[3] = {nx*st*cp + ny*st*sp + nz*ct,
-                                  nx*ct*cp + ny*ct*sp - nz*st,
-                                  -nx*sp + ny*cp};
-              const Real vv = sv(tr*VGD_LDS_DC + dd);
-              const Real wi = dir_(d,3)*vv;
-              jm += wi;
-              for (int a = 0; a < 3; ++a) {
-                h[2*a] += wi*fmax(mu[a], 0.0);
-                h[2*a+1] += wi*fmin(mu[a], 0.0);
-              }
-              if (thx) {nl += dir_(d,3)*fabs(vv - s0);}
-            }
-          }
-        }
-        if (!act) {return;}
-        for (int cc = 0; cc < 6; ++cc) {
-          hr_(m,cc,k,j,i) = (jm > 0.0) ? h[cc]/jm : ((cc % 2 == 0) ? -1.0 : 0.0);
-        }
-        if (thx) {
-          hr_(m,M1_VGD_HRC1,k,j,i) = (jm > 0.0) ? nl/jm : 0.0;
-          const Real kt = opac_(m,M1_OP_T,k,j,i);
-          hr_(m,M1_VGD_HREP,k,j,i) = !(kt > 0.0) ? 1.0
-                                     : (thermal ? fmin(opac_(m,M1_OP_P,k,j,i)/
-                                                       fmax(kt, 1.0e-300), 1.0) : 0.0);
-          hr_(m,M1_VGD_HREP,k,j,i) = fmin(hr_(m,M1_VGD_HREP,k,j,i), epmax);
-          hr_(m,M1_VGD_HRJ,k,j,i) = jm;
-        }
-      });
-      return;
-    }
-    par_for("m1_vgd_hr", DevExeSpace(), 0, nmb1, is, ie, js, je, ks, ke,
-    KOKKOS_LAMBDA(const int m, const int i, const int j, const int k) {
-      if (i < ilo) {
-        for (int c = 0; c < 6; ++c) {hr_(m,c,k,j,i) = (c % 2 == 0) ? -1.0 : 0.0;}
-        if (thx) {
-          hr_(m,M1_VGD_HRC1,k,j,i) = 0.0;
-          hr_(m,M1_VGD_HREP,k,j,i) = 1.0;
-          hr_(m,M1_VGD_HRJ,k,j,i) = 0.0;
-        }
-        return;
-      }
-      const Real th = sth_ ? thn_(m,j+og)   // accsp-1102
-                           : lg_.Th(mbsize, m, j, js);
-      const Real ph = (gph_ ? phc_(m, gpw_ + k - ks) : lg_.Ph(mbsize, m, k, ks));
-      const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
-      Real jm = 0.0, h[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-      for (int d = 0; d < n; ++d) {
-        const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
-        const Real mu[3] = {nx*st*cp + ny*st*sp + nz*ct, nx*ct*cp + ny*ct*sp - nz*st,
-                            -nx*sp + ny*cp};
-        const Real wi = dir_(d,3)*vi_(m,d,k+og,j+og,i);
-        jm += wi;
-        for (int a = 0; a < 3; ++a) {
-          h[2*a] += wi*fmax(mu[a], 0.0);
-          h[2*a+1] += wi*fmin(mu[a], 0.0);
-        }
-      }
-      for (int c = 0; c < 6; ++c) {
-        hr_(m,c,k,j,i) = (jm > 0.0) ? h[c]/jm : ((c % 2 == 0) ? -1.0 : 0.0);
-      }
-      if (thx) {
-        // C1 (as vet_sc: sum over the rays at the cell of w |I - S|), eps, J
-        const Real s0 = exp(cs_(m,1,k+og,j+og,i));
-        Real nl = 0.0;
-        for (int d = 0; d < n; ++d) {nl += dir_(d,3)*fabs(vi_(m,d,k+og,j+og,i) - s0);}
-        hr_(m,M1_VGD_HRC1,k,j,i) = (jm > 0.0) ? nl/jm : 0.0;
-        const Real kt = opac_(m,M1_OP_T,k,j,i);
-        hr_(m,M1_VGD_HREP,k,j,i) = !(kt > 0.0) ? 1.0
-                                   : (thermal ? fmin(opac_(m,M1_OP_P,k,j,i)/
-                                                     fmax(kt, 1.0e-300), 1.0) : 0.0);
-        hr_(m,M1_VGD_HREP,k,j,i) = fmin(hr_(m,M1_VGD_HREP,k,j,i), epmax);
-        hr_(m,M1_VGD_HRJ,k,j,i) = jm;
-      }
-    });
-    return;
-  }
-  if (stage == 1) {
-    Kokkos::deep_copy(ht_, hr_);
-    return;
-  }
-  // stage 2: subtract the twin's lateral pattern, shell by shell, component by component
-  // vgdlat-1012 vet_gd_symref: and shift by w (ref - shell mean), w = VgdSrW
-  const bool sref = vgd_symref && vgd_sr_ok;
-  // twinfix-1012 vet_gd_twin_weight = j: the pattern subtracted with the weight VgdTwW
-  // (J is the last component, so every component reads the cell's uncorrected J)
-  const bool twwt = vgd_twwt && thx;
-  const Real twwq = vgd_twwq;
-  const bool srw = g_vgd_srw && thx;   // csacc-1031 vet_gd_twin_srw
-  auto sr_ = vgd_srm;
-  const int c1x = c1;
-  // (cs-s4-1017: nx2 x nx3 per panel x npanels, as the twin's means; 1 off the cs)
-  const Real ncol = static_cast<Real>(pmy_pack->pmesh->mesh_indcs.nx2)*
-                    pmy_pack->pmesh->mesh_indcs.nx3*pmy_pack->pmesh->npanels;
-#if MPI_PARALLEL_ENABLED
-  // vgdrot-1011: vet_gd_twin_det with ranks > 1: the nhc shell means in one launch, one
-  // copy and ONE rank-ordered gather (was one round per component; each mean is the
-  // same fixed-order sum, so the same numbers), into a persistent pinned buffer; the
-  // per-component subtractions then in the same order as below
-  // (layinv-1105: not with <mesh>/layout_invariant, whose sums the loop below takes)
-  if (vgd_twdet && global_variable::nranks > 1 && !pmy_pack->pmesh->layout_invariant) {
-    if (vgd_hrm6.extent_int(0) != nhc*c1) {
-      Kokkos::realloc(vgd_hrm6, nhc*c1);
-      vgd_pin_hr = Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace>("m1_vgd_pin_hr",
-                                                                      nhc*c1);
-    }
-    Kokkos::deep_copy(vgd_hrm6, 0.0);
-    auto m6_ = vgd_hrm6;
-    const int nm = nmb1 + 1;
-    const int c1_ = c1;
-    par_for("m1_vgd_hr_sm6", DevExeSpace(), 0, nhc - 1, ilo, ie,
-    KOKKOS_LAMBDA(const int c, const int i) {
-      if (c == M1_VGD_HREP) {return;}   // gdthin-1011: cell-local, no ray noise
-      Real sm = 0.0;
-      for (int m = 0; m < nm; ++m) {
-        for (int k = ks; k <= ke; ++k) {
-          int j = js;
-          for (; j + 7 <= je; j += 8) {   // accel-1014: loads ahead, adds in order
-            Real t[8];
-            for (int q = 0; q < 8; ++q) {t[q] = ht_(m,c,k,j+q,i);}
-            for (int q = 0; q < 8; ++q) {sm += t[q];}
-          }
-          for (; j <= je; ++j) {sm += ht_(m,c,k,j,i);}
-        }
-      }
-      m6_(c*c1_ + i) = sm/ncol;
-    });
-    auto mh = vgd_pin_hr;
-    Kokkos::deep_copy(mh, vgd_hrm6);
-    const int nr = global_variable::nranks;
-    const int nt = nhc*c1;
-    std::vector<Real> all(static_cast<size_t>(nt)*nr);
-    MPI_Allgather(mh.data(), nt, MPI_ATHENA_REAL, all.data(), nt, MPI_ATHENA_REAL,
-                  MPI_COMM_WORLD);
-    for (int i = 0; i < nt; ++i) {
-      Real a = 0.0;
-      for (int r = 0; r < nr; ++r) {a += all[static_cast<size_t>(r)*nt + i];}
-      mh(i) = a;
-    }
-    // cs-s4-1017: on the cubed sphere the two LATERAL axes share one shell mean (r+ and
-    // r- each the mean of the xi and eta ratios): a seam joins one panel's xi axis to
-    // its neighbour's eta axis, and with a set that is not cube-symmetric (GL about z)
-    // the per-axis means differ; the symmetric-state reference of the twin correction
-    // is the same for every tangential axis
-    if (vgd_csg) {
-      for (int i = 0; i < c1; ++i) {
-        for (int c = 2; c <= 3; ++c) {
-          const Real a = 0.5*(mh(c*c1 + i) + mh((c + 2)*c1 + i));
-          mh(c*c1 + i) = a;
-          mh((c + 2)*c1 + i) = a;
-        }
-      }
-    }
-    Kokkos::deep_copy(vgd_hrm6, mh);
-    for (int c = 0; c < nhc; ++c) {
-      if (c == M1_VGD_HREP) {continue;}
-      const bool plus = (c % 2 == 0);
-      const int off = c*c1;
-      if (c >= 6) {   // gdthin-1011: C1 (additive, >= 0) and J (relative)
-        par_for("m1_vgd_hr_sub2", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
-        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-          if (hr_(m,0,k,j,i) < 0.0 || ht_(m,0,k,j,i) < 0.0) return;   // flagged
-          const Real mo = m6_(off + i);
-          const Real w = sref ? VgdSrW(hr_, ht_, thx, m, k, j, i) : 0.0;
-          const Real rf = sref ? VgdSrRef(sr_, c, i, c1x) : mo;
-          const Real ww = VgdTwWs(hr_, ht_, twwt, twwq, srw, thx, m, k, j, i);
-          if (c == M1_VGD_HRC1) {
-            const Real d = (ww < 1.0) ? ww*(ht_(m,c,k,j,i) - mo) : ht_(m,c,k,j,i) - mo;
-            hr_(m,c,k,j,i) = fmax(hr_(m,c,k,j,i) - d + w*(rf - mo), 0.0);
-          } else if (ht_(m,c,k,j,i) > 0.0 && mo > 0.0) {
-            if (ww < 1.0) {
-              hr_(m,c,k,j,i) *= pow(mo/ht_(m,c,k,j,i), ww);
-            } else {
-              hr_(m,c,k,j,i) *= mo/ht_(m,c,k,j,i);
-            }
-            if (sref && rf > 0.0) {hr_(m,c,k,j,i) *= pow(rf/mo, w);}
-          }
-        });
-        continue;
-      }
-      par_for("m1_vgd_hr_sub", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        if (hr_(m,2*(c/2),k,j,i) < 0.0 || ht_(m,2*(c/2),k,j,i) < 0.0) return;   // flagged
-        const Real ww = VgdTwWs(hr_, ht_, twwt, twwq, srw, thx, m, k, j, i);
-        Real v = hr_(m,c,k,j,i) - ((ww < 1.0) ? ww*(ht_(m,c,k,j,i) - m6_(off + i))
-                                              : ht_(m,c,k,j,i) - m6_(off + i));
-        if (sref) {
-          v += VgdSrW(hr_, ht_, thx, m, k, j, i)*
-               (VgdSrRef(sr_, c, i, c1x) - m6_(off + i));
-        }
-        hr_(m,c,k,j,i) = plus ? fmin(fmax(v, 0.0), 1.0) : fmin(fmax(v, -1.0), 0.0);
-      });
-    }
-    return;
-  }
-#endif
-  for (int c = 0; c < nhc; ++c) {
-    if (c == M1_VGD_HREP) {continue;}   // gdthin-1011: cell-local, no ray noise
-    Kokkos::deep_copy(vgd_hrm, 0.0);
-    auto mo_ = vgd_hrm;
-    // one thread per shell, a fixed (m, k, j) order: reproducible (as vet_gd_twin_det)
-    const int nm = nmb1 + 1;
-    if (vgd_csg && c >= 2 && c <= 5) {
-      // cs-s4-1017: the lateral pair (xi, eta) shares one shell mean (see the MPI path)
-      const int pc = (c <= 3) ? (c + 2) : (c - 2);
-      par_for("m1_vgd_hr_smcs", DevExeSpace(), ilo, ie, KOKKOS_LAMBDA(const int i) {
-        Real sm = 0.0;
-        for (int m = 0; m < nm; ++m) {
-          for (int k = ks; k <= ke; ++k) {
-            for (int j = js; j <= je; ++j) {
-              sm += 0.5*(ht_(m,(c <= 3) ? c : pc,k,j,i) + ht_(m,(c <= 3) ? pc : c,k,j,i));
-            }
-          }
-        }
-        mo_(i) = sm/ncol;
-      });
-    } else {
-    par_for("m1_vgd_hr_sm", DevExeSpace(), ilo, ie, KOKKOS_LAMBDA(const int i) {
-      Real sm = 0.0;
-      for (int m = 0; m < nm; ++m) {
-        for (int k = ks; k <= ke; ++k) {
-          int j = js;
-          for (; j + 7 <= je; j += 8) {   // accel-1014: loads ahead, adds in order
-            Real t[8];
-            for (int q = 0; q < 8; ++q) {t[q] = ht_(m,c,k,j+q,i);}
-            for (int q = 0; q < 8; ++q) {sm += t[q];}
-          }
-          for (; j <= je; ++j) {sm += ht_(m,c,k,j,i);}
-        }
-      }
-      mo_(i) = sm/ncol;
-    });
-    }  // !(vgd_csg lateral)
-    const bool lay = pmy_pack->pmesh->layout_invariant;
-    if (lay) {
-      // layinv-1105: the same per-cell terms, summed order-independently over all ranks
-      const bool lpair = vgd_csg && c >= 2 && c <= 5;
-      const int pc = (c <= 3) ? (c + 2) : (c - 2);
-      std::vector<Real> sm;
-      repro::ShellSums("m1_vgd_hr_smr", 1, c1, nm, ks, ke, js, je, ilo, ie,
-                       KOKKOS_LAMBDA(const int, const int m, const int k, const int j,
-                                     const int i) {
-        return lpair ? 0.5*(ht_(m,(c <= 3) ? c : pc,k,j,i) + ht_(m,(c <= 3) ? pc : c,k,j,i))
-                     : ht_(m,c,k,j,i);
-      }, sm);
-      auto mh = Kokkos::create_mirror_view(vgd_hrm);
-      for (int i = 0; i < c1; ++i) {mh(i) = (i >= ilo && i <= ie) ? sm[i]/ncol : 0.0;}
-      Kokkos::deep_copy(vgd_hrm, mh);
-    }
-#if MPI_PARALLEL_ENABLED
-    if (!lay) {
-      auto mh = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vgd_hrm);
-      if (vgd_twdet && global_variable::nranks > 1) {
-        // hrdet-1009: rank-ordered sum (as the twin's shell_mean under vet_gd_twin_det).
-        // MPI_Allreduce of these c1 values is NOT run-to-run reproducible on the 16-rank
-        // 8-node BSG layout (identical runs differed in m1 F2/F3 from cycle 1, in every
-        // block and shell, while E, F1 and the twin-det tensor stayed bitwise).
-        const int nr = global_variable::nranks;
-        std::vector<Real> all(static_cast<size_t>(c1)*nr);
-        MPI_Allgather(mh.data(), c1, MPI_ATHENA_REAL, all.data(), c1, MPI_ATHENA_REAL,
-                      MPI_COMM_WORLD);
-        for (int i = 0; i < c1; ++i) {
-          Real a = 0.0;
-          for (int r = 0; r < nr; ++r) {a += all[static_cast<size_t>(r)*c1 + i];}
-          mh(i) = a;
-        }
-      } else {
-        MPI_Allreduce(MPI_IN_PLACE, mh.data(), c1, MPI_ATHENA_REAL, MPI_SUM,
-                      MPI_COMM_WORLD);
-      }
-      Kokkos::deep_copy(vgd_hrm, mh);
-    }
-#endif
-    const bool plus = (c % 2 == 0);
-    if (c >= 6) {   // gdthin-1011: C1 (additive, >= 0) and J (relative)
-      par_for("m1_vgd_hr_sub2", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        if (hr_(m,0,k,j,i) < 0.0 || ht_(m,0,k,j,i) < 0.0) return;   // flagged
-        const Real w = sref ? VgdSrW(hr_, ht_, thx, m, k, j, i) : 0.0;
-        const Real rf = sref ? VgdSrRef(sr_, c, i, c1x) : mo_(i);
-        const Real ww = VgdTwWs(hr_, ht_, twwt, twwq, srw, thx, m, k, j, i);
-        if (c == M1_VGD_HRC1) {
-          const Real d = (ww < 1.0) ? ww*(ht_(m,c,k,j,i) - mo_(i))
-                                    : ht_(m,c,k,j,i) - mo_(i);
-          hr_(m,c,k,j,i) = fmax(hr_(m,c,k,j,i) - d + w*(rf - mo_(i)), 0.0);
-        } else if (ht_(m,c,k,j,i) > 0.0 && mo_(i) > 0.0) {
-          if (ww < 1.0) {
-            hr_(m,c,k,j,i) *= pow(mo_(i)/ht_(m,c,k,j,i), ww);
-          } else {
-            hr_(m,c,k,j,i) *= mo_(i)/ht_(m,c,k,j,i);
-          }
-          if (sref && rf > 0.0) {hr_(m,c,k,j,i) *= pow(rf/mo_(i), w);}
-        }
-      });
-      continue;
-    }
-    par_for("m1_vgd_hr_sub", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      if (hr_(m,2*(c/2),k,j,i) < 0.0 || ht_(m,2*(c/2),k,j,i) < 0.0) return;   // flagged
-      const Real ww = VgdTwWs(hr_, ht_, twwt, twwq, srw, thx, m, k, j, i);
-      Real v = hr_(m,c,k,j,i) - ((ww < 1.0) ? ww*(ht_(m,c,k,j,i) - mo_(i))
-                                            : ht_(m,c,k,j,i) - mo_(i));
-      if (sref) {
-        v += VgdSrW(hr_, ht_, thx, m, k, j, i)*(VgdSrRef(sr_, c, i, c1x) - mo_(i));
-      }
-      hr_(m,c,k,j,i) = plus ? fmin(fmax(v, 0.0), 1.0) : fmin(fmax(v, -1.0), 0.0);
-    });
-  }
-}
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdHrSplit
@@ -11266,7 +9526,6 @@ extern int64_t g_vgd_csgen[16];       // csfix-1023 (rad_m1_vetgd_cs.cpp; M1_VGD
 extern int64_t g_vgd_csgen_save[16];
 
 void RadiationM1::DtRetryQuiesce(bool restoring) {
-  if (vgd_sr_pend) {VetGdSymRefJoin();}
   if (!restoring) {
     // csfix-1023: the compact-list build generations at the checkpoint
     for (int c = 0; c < vgd_csncl; ++c) {g_vgd_csgen_save[c] = g_vgd_csgen[c];}

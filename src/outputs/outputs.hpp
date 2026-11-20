@@ -339,9 +339,6 @@ class BaseTypeOutput {
   // <hydro>/rad_signal_speed: the M1 inputs of the signal speed (RadiationM1::RssSlot);
   // empty unless the signal speed is on.  radm1::kM1RssRstMagic.
   HostArray5D<Real> outarray_m1s;
-  // <rad_m1>/vet_gd_async: the pending gd build's source (vlat_cs, 2 channels); empty
-  // unless one is pending.  radm1::kM1VgdRstMagic.
-  HostArray5D<Real> outarray_m1g;
   // <rad_m1>/vet_rotate_avg: the averaging history, densely packed
   // slabs; empty without a complete history.  radm1::kM1RaRstMagic.
   HostArray5D<Real> outarray_m1r;
@@ -350,7 +347,6 @@ class BaseTypeOutput {
   HostArray5D<Real> outarray_ams;   // am_vector spin (+ amk1)
   HostArray5D<Real> outarray_pgs;   // per-cell pgen slabs
   HostArray5D<Real> outarray_fax;   // rad_m1 applied face fluxes
-  HostArray5D<Real> outarray_thc;   // rad_m1 time2_stage_local_be carry
   HostArray5D<Real> outarray_xfd;   // rad_m1 vet_gd_rotate_xfade state
   HostFaceFld4D<Real> outfield;  // FC output field on host
   std::vector<int> noutmbs;   // with MPI, number of output MBs across all ranks

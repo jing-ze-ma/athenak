@@ -360,13 +360,6 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
         if (!one) pradm1->RssRstPack(t, nmb, rmode);
       });
     }
-    // vet_gd_async: the source of the pending gd build (its sweep may be in flight; it
-    // does not touch vlat_cs)
-    if (pradm1->VetGdAsyncRstNch() > 0) {
-      pack(outarray_m1g, "rst-m1g", nmb, 2, [&](DvceArray5D<Real> &t) {
-        pradm1->VetGdAsyncRstPack(t, nmb);
-      });
-    }
     // implicit_gas_src = conservative(2): the cell-F slope csk1
     if (pradm1->CskRstNch() > 0) {
       Kokkos::realloc(outarray_m1k, nmb, 3, nout3, nout2, nout1);
@@ -418,13 +411,6 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     const int nf = pradm1->FaxRstNslab();
     pack(outarray_fax, "rst-fax", nmb, nf, [&](DvceArray5D<Real> &t) {
       pradm1->FaxRstPack(t, nmb);
-    });
-  }
-  // time2_stage_local_be: the carried stage-2 drop (kM1ThcRstMagic)
-  if (pradm1 != nullptr && pradm1->ThcRstNslab() > 0) {
-    const int nf = pradm1->ThcRstNslab();
-    pack(outarray_thc, "rst-thc", nmb, nf, [&](DvceArray5D<Real> &t) {
-      pradm1->ThcRstPack(t, nmb);
     });
   }
   // vet_gd_rotate_xfade: the cross-fade state (kM1XfdRstMagic)
@@ -600,16 +586,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
                                  static_cast<std::int32_t>(rss_mode), 0};
     std::memcpy(&(rss_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
-  // <rad_m1>/vet_gd_async: 2 slabs of the pending build's source behind even those
-  // (radm1::kM1VgdRstMagic); the header carries the build's ncycle (its z-angle)
-  const int nvgd = (pradm1 != nullptr) ? pradm1->VetGdAsyncRstNch() : 0;
-  char vgd_hdr[4*sizeof(std::int32_t)];
-  {
-    const std::int32_t hdr[4] = {(nvgd > 0) ? 1 : 0, static_cast<std::int32_t>(nvgd),
-                                 static_cast<std::int32_t>((pradm1 != nullptr) ?
-                                                           pradm1->vgd_acyc : -1), 0};
-    std::memcpy(&(vgd_hdr[0]), &(hdr[0]), sizeof(hdr));
-  }
   // <rad_m1>/implicit_gas_src = conservative(2): csk1 + the flags,
   // ncsk slabs behind the vet_gd_async ones (radm1::kM1CskRstMagic)
   const bool wcsk = (pradm1 != nullptr) && pradm1->CskRstHdr();
@@ -653,14 +629,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     const std::int32_t hdr[4] = {1, static_cast<std::int32_t>(nfax), 0, 0};
     std::memcpy(&(fax_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
-  // the time2_stage_local_be carry, behind even the fax slabs
-  const int nthc = (pradm1 != nullptr) ? pradm1->ThcRstNslab() : 0;
-  char thc_hdr[4*sizeof(std::int32_t)];
-  {
-    const std::int32_t hdr[4] = {1, static_cast<std::int32_t>(nthc), 0, 0};
-    std::memcpy(&(thc_hdr[0]), &(hdr[0]), sizeof(hdr));
-  }
-  // the vet_gd_rotate_xfade state, behind the thc slabs
+  // the vet_gd_rotate_xfade state, behind the fax slabs
   const int nxfd = (pradm1 != nullptr) ? pradm1->XfdRstNslab(nout1*nout2*nout3) : 0;
   char xfd_hdr[radm1::kM1XfdRstNi*sizeof(std::int64_t) + radm1::kM1XfdRstNr*sizeof(Real)];
   {
@@ -931,15 +900,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(rss_hdr[0]), nb, "byte", single_file_per_rank);
     }
-    // the vet_gd_async header, same marked form, behind the signal-speed one
-    if (nvgd > 0) {
-      IOWrapperSizeT nb = sizeof(vgd_hdr);
-      resfile.Write_any_type(&(radm1::kM1VgdRstMagic[0]), sizeof(radm1::kM1VgdRstMagic),
-                             "byte", single_file_per_rank);
-      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
-      resfile.Write_any_type(&(vgd_hdr[0]), nb, "byte", single_file_per_rank);
-    }
-    // the conservative cell-F slope header, same marked form, behind the vet_gd_async one
+    // the conservative cell-F slope header, same marked form, behind the signal-speed one
     if (wcsk) {
       IOWrapperSizeT nb = sizeof(csk_hdr);
       resfile.Write_any_type(&(radm1::kM1CskRstMagic[0]), sizeof(radm1::kM1CskRstMagic),
@@ -979,15 +940,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(fax_hdr[0]), nb, "byte", single_file_per_rank);
     }
-    // the time2_stage_local_be carry header, same marked form, behind the fax one
-    if (nthc > 0) {
-      IOWrapperSizeT nb = sizeof(thc_hdr);
-      resfile.Write_any_type(&(radm1::kM1ThcRstMagic[0]), sizeof(radm1::kM1ThcRstMagic),
-                             "byte", single_file_per_rank);
-      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
-      resfile.Write_any_type(&(thc_hdr[0]), nb, "byte", single_file_per_rank);
-    }
-    // the vet_gd_rotate_xfade header, behind the thc one
+    // the vet_gd_rotate_xfade header, behind the fax one
     if (nxfd > 0) {
       IOWrapperSizeT nb = sizeof(xfd_hdr);
       resfile.Write_any_type(&(radm1::kM1XfdRstMagic[0]), sizeof(radm1::kM1XfdRstMagic),
@@ -1070,13 +1023,11 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   data_size += nck*cell_bytes;   // implicit-ck state
   data_size += nctr*cell_bytes;   // rad_m1 thin_relax ctr_mem
   data_size += nrss*cell_bytes;   // rad_signal_speed inputs
-  data_size += nvgd*cell_bytes;   // vet_gd_async source
   data_size += ncsk*cell_bytes;   // conservative csk1
   data_size += nra*cell_bytes;   // vet_rotate_avg history
   data_size += nams*cell_bytes;   // am_vector spin (+ amk1)
   data_size += npgs*cell_bytes;   // per-cell pgen slabs
   data_size += nfax*cell_bytes;   // fax*
-  data_size += nthc*cell_bytes;   // t2thc
   data_size += nxfd*cell_bytes;   // xfade
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     resfile.Write_any_type(&(data_size), sizeof(IOWrapperSizeT), "byte",
@@ -1130,9 +1081,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (nrss > 0) {
     step3size += sizeof(radm1::kM1RssRstMagic) + sizeof(IOWrapperSizeT) + sizeof(rss_hdr);
   }
-  if (nvgd > 0) {
-    step3size += sizeof(radm1::kM1VgdRstMagic) + sizeof(IOWrapperSizeT) + sizeof(vgd_hdr);
-  }
   if (wcsk) {
     step3size += sizeof(radm1::kM1CskRstMagic) + sizeof(IOWrapperSizeT) + sizeof(csk_hdr);
   }
@@ -1148,9 +1096,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   if (nfax > 0) {
     step3size += sizeof(radm1::kM1FaxRstMagic) + sizeof(IOWrapperSizeT) + sizeof(fax_hdr);
-  }
-  if (nthc > 0) {
-    step3size += sizeof(radm1::kM1ThcRstMagic) + sizeof(IOWrapperSizeT) + sizeof(thc_hdr);
   }
   if (nxfd > 0) {
     step3size += sizeof(radm1::kM1XfdRstMagic) + sizeof(IOWrapperSizeT) + sizeof(xfd_hdr);
@@ -1699,7 +1644,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
               [&](DvceArray5D<Real> &t, int m, int) {
                 pradm1->RssRstPack(t, 1, pradm1->RssRstMode(), m);});
   // and the vet_gd_async pending source behind it (kM1VgdRstMagic)
-  write_group(outarray_m1g, nvgd, "vet_gd_async source");
   // and the conservative cell-F slope behind it (kM1CskRstMagic)
   write_group(outarray_m1k, ncsk, "rad_m1 conservative cell-F slope");
   // and the vet_rotate_avg history behind it (kM1RaRstMagic)
@@ -1710,8 +1654,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   write_group(outarray_pgs, npgs, "pgen slab");
   // and the rad_m1 applied face fluxes last of all (kM1FaxRstMagic)
   write_group(outarray_fax, nfax, "rad_m1 applied face flux");
-  // and the time2_stage_local_be carry behind them (kM1ThcRstMagic)
-  write_group(outarray_thc, nthc, "rad_m1 local_be carry");
   // and the vet_gd_rotate_xfade state behind them (kM1XfdRstMagic)
   write_group(outarray_xfd, nxfd, "rad_m1 xfade state");
 
@@ -1729,8 +1671,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   outarray = HostArray5D<Real>();
   outarray_hyd = outarray_mhd = outarray_rad = outarray_m1 = outarray_force =
       outarray_z4c = outarray_adm = outarray_ck = outarray_m1p = outarray_m1t =
-      outarray_m1c = outarray_m1s = outarray_m1g = outarray_m1r = outarray_m1k =
-      outarray_ams = outarray_pgs = outarray_fax = outarray_thc = outarray_xfd =
+      outarray_m1c = outarray_m1s = outarray_m1r = outarray_m1k =
+      outarray_ams = outarray_pgs = outarray_fax = outarray_xfd =
       outarray_wpv = HostArray5D<Real>();
   outarray_m1t_d = DvceArray5D<Real>();
   rst_keep_.clear();

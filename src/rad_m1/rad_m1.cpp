@@ -35,7 +35,6 @@
 
 namespace radm1 {
 // csacc-1031 <rad_m1>/vet_gd_twin_srw (defined in rad_m1_vetgd.cpp)
-extern bool g_vgd_srw;
 extern bool g_vra_adv;   // vet_rotate_advance (rad_m1_vetgd.cpp)
 //----------------------------------------------------------------------------------------
 // constructor, initializes data structures and parameters
@@ -2019,175 +2018,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       // xchg-1021: speed only (bitwise any value); 1 = the plain per-shell exchange
       vgd_csxg = std::max(1, pin->GetInteger("rad_m1","vet_gd_cs_xgroups"));
     }
-    // defaults-1009 (user 10-09): vet_gd_twin, vet_gd_twin_fuse (where its needs below
-    // hold), vet_gd_twin_det and vet_source_noesrc (with the twin) default ON on a FRESH
-    // vet_gd run; a restart whose file lacks a key keeps the old default (off).  The
-    // resolved values are recorded.  The twin is not taken with vet_gd_async = true.
-    const bool vgd_async_named = pin->DoesParameterExist("rad_m1","vet_gd_async") &&
-                                 pin->GetBoolean("rad_m1","vet_gd_async");
-    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_twin")) {
-      vgd_twin = pin->GetBoolean("rad_m1","vet_gd_twin");
-    } else if (vgd_on && fresh && !vgd_async_named) {
-      // prod1104b (USER 11-04): the fresh default is FALSE on the cubed sphere (every cs
-      // production runs without the twin); spherical polar keeps true (BSG fin3 lineage)
-      // A deck that names a twin-only setting (twin_state trans, twin_weight j,
-      // twin_full, twin_fuse, symref col) keeps the old default true, so a default never
-      // FATALs a fresh deck.
-      auto nv = [pin](const char *k, const char *off) {
-        return pin->DoesParameterExist("rad_m1", k) &&
-               pin->GetString("rad_m1", k).compare(off) != 0;
-      };
-      const bool twkeys = nv("vet_gd_twin_state", "mean") || nv("vet_gd_twin_weight", "none") ||
-                          nv("vet_gd_twin_full", "false") || nv("vet_gd_twin_fuse", "false") ||
-                          nv("vet_gd_symref", "none");
-      const bool cs_tw = ppack->pmesh->use_cubed_sphere && !twkeys;
-      vgd_twin = pin->GetOrAddBoolean("rad_m1","vet_gd_twin",!cs_tw);
-      if (cs_tw) {
-        recipe::Log("<rad_m1>/vet_gd_twin = false (default with vet_gd on the cubed sphere)");
-      } else if (ppack->pmesh->use_cubed_sphere) {
-        recipe::Log("<rad_m1>/vet_gd_twin = true (cs default false skipped: the deck names "
-                    "twin-only keys)");
-      }
-    }
-    // twinfix-1012 (rad_m1_vetgd.cpp VetGdTwinTrans, VgdTwW).
-    // vet_gd_twin_state = mean | trans: the twin's laterally uniform shell state from
-    // the arithmetic shell means <chi>, <S> (mean, the old rule) or from the shell's mean
-    // TRANSMISSION, chi_tw = -ln<exp(-chi dr)>/dr, S_tw = <S (1 - e^-chi dr)>/<1 - e^-chi
-    // dr> (trans; a shell whose chi is laterally constant keeps the means, bitwise).
-    // vet_gd_twin_weight = none | j: the twin's pattern subtracted with the per-cell
-    // weight w = min(1, min(J/J_tw, J_tw/J)/vet_gd_twin_wq) (j; w = 1 where the main and
-    // twin J agree within the factor 1/wq, so near-uniform shells are bitwise; needs the
-    // stored J of the thin switch, else w = 1).  Defaults: vet_gd_twin_state = trans on a
-    // FRESH run (twinfix-1012 validation), mean on a restart whose file lacks the key
-    // (bitwise older runs); vet_gd_twin_weight = none (validated: no gain, Picard cost).
-    if (vgd_on && vgd_twin) {
-      const std::string ts = pin->GetOrAddString("rad_m1","vet_gd_twin_state",
-                                                  fresh ? "trans" : "mean");
-      if (ts.compare("trans") == 0) {
-        vgd_twtr = true;
-      } else if (ts.compare("mean") != 0) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_m1>/vet_gd_twin_state must be mean or trans"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      const std::string tw = pin->GetOrAddString("rad_m1","vet_gd_twin_weight","none");
-      if (tw.compare("j") == 0) {
-        vgd_twwt = true;
-      } else if (tw.compare("none") != 0) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_m1>/vet_gd_twin_weight must be none or j"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      vgd_twwq = pin->GetOrAddReal("rad_m1","vet_gd_twin_wq",0.5);
-      g_vgd_srw = pin->DoesParameterExist("rad_m1","vet_gd_twin_srw") &&
-                  pin->GetBoolean("rad_m1","vet_gd_twin_srw");
-      if (!(vgd_twwq > 0.0 && vgd_twwq <= 1.0)) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_m1>/vet_gd_twin_wq must be in (0, 1]"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-    } else if (vgd_on && (pin->DoesParameterExist("rad_m1","vet_gd_twin_state") ||
-                          pin->DoesParameterExist("rad_m1","vet_gd_twin_weight"))) {
-      const bool bad = (pin->DoesParameterExist("rad_m1","vet_gd_twin_state") &&
-                        pin->GetString("rad_m1","vet_gd_twin_state").compare("mean")) ||
-                       (pin->DoesParameterExist("rad_m1","vet_gd_twin_weight") &&
-                        pin->GetString("rad_m1","vet_gd_twin_weight").compare("none"));
-      if (bad) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_m1>/vet_gd_twin_state = trans and "
-                  << "vet_gd_twin_weight = j need vet_gd_twin = true" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-    }
-    // vet_gd_twin_full (read only when named, default false; needs vet_gd_twin): subtract
-    // the FULL twin D_rr correction, so that the laterally symmetric part of D_rr is
-    // vet_col's column f_K and gd supplies only the 3-D deviation D_gd - D_gd,twin
-    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_twin_full")) {
-      vgd_twfull = pin->GetBoolean("rad_m1","vet_gd_twin_full");
-      if (vgd_twfull && !vgd_twin) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_m1>/vet_gd_twin_full needs vet_gd_twin = true"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-    }
-    // vgdlat-1012 vet_gd_symref (read only when named; none | col): the twin's laterally
-    // symmetric reference (the shell mean of the twin's D_rr, half-range ratios, C1, J)
-    // replaced by the 1-D spherical p-ray formal solution of the same shell-mean state
-    // (rad_m1_vetgd.cpp VetGdSymRef); vet_gd_symref_ncore / _nsub: its ray set.
-    // defaults-1012: DEFAULT col on a fresh vet_gd run where it is valid (vet_gd_twin on,
-    // no vet_gd_twin_full, no vet_gd_beam); a restart whose file lacks the key keeps none
-    // (bitwise older runs); the resolved value is echoed; explicit input overrides.
-    // Elsewhere read only when named.
-    const bool srdef = vgd_on && vgd_twin && !vgd_twfull && !vgd_beam;
-    if (vgd_on && (srdef || pin->DoesParameterExist("rad_m1","vet_gd_symref"))) {
-      const std::string sr = srdef ?
-          pin->GetOrAddString("rad_m1","vet_gd_symref",
-                              global_variable::restart_run ? "none" : "col") :
-          pin->GetString("rad_m1","vet_gd_symref");
-      if (sr.compare("col") == 0) {
-        vgd_symref = true;
-      } else if (sr.compare("none") != 0) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_m1>/vet_gd_symref must be none or col" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      if (vgd_symref && (!vgd_twin || vgd_twfull || vgd_beam)) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_m1>/vet_gd_symref = col needs vet_gd_twin = true "
-                  << "and vet_gd_twin_full = false (no vet_gd_beam)" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      if (vgd_symref && pin->DoesParameterExist("rad_m1","vet_gd_symref_ncore")) {
-        vgd_sr_nc = std::max(2, pin->GetInteger("rad_m1","vet_gd_symref_ncore"));
-      }
-      if (vgd_symref && pin->DoesParameterExist("rad_m1","vet_gd_symref_nsub")) {
-        vgd_sr_ns = std::max(1, pin->GetInteger("rad_m1","vet_gd_symref_nsub"));
-      }
-    }
-    // vet_gd_twin_fuse (accel-1009; read only when named, default false = bitwise): the
-    // twin sweep of the shell-mean field rides in the main sweep's kernels and per-shell
-    // halo (one launch and one message round per shell instead of two); needs
-    // vet_gd_twin, vet_gd_iter = 1, no vet_gd_async / vet_gd_band_exit, and with MPI
-    // vet_gd_halo_compact > 0 (checked in VetGdInit)
-    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_twin_fuse")) {
-      vgd_twfuse = pin->GetBoolean("rad_m1","vet_gd_twin_fuse");
-      if (vgd_twfuse && !vgd_twin) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_m1>/vet_gd_twin_fuse needs vet_gd_twin = true"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-    } else if (vgd_on && fresh && vgd_twin) {
-      // defaults-1009: on only where VetGdInit's needs hold (else the old unfused twin)
-      const bool it1 = !pin->DoesParameterExist("rad_m1","vet_gd_iter") ||
-                       pin->GetInteger("rad_m1","vet_gd_iter") <= 1;
-      const bool bx = pin->DoesParameterExist("rad_m1","vet_gd_band_exit") &&
-                      pin->GetBoolean("rad_m1","vet_gd_band_exit");
-      const bool hok = (global_variable::nranks == 1) || (vgd_hcomp > 0);
-      // csdef-1031: also on the cubed sphere (the cs fused twin, cstwin-1031; bitwise the
-      // unfused / lowmem twin).  MEMORY: the fused twin keeps a second ragged band
-      // intensity array (+ vgd_cst): about +8-10 GB per GPU on the He giant at 8 ranks
-      // (3 blocks 704x64x64 per rank, 120 directions; measured peak +7.8 GB) and ~+6.5 GB
-      // at 12 ranks; where that does not fit, name vet_gd_twin_lowmem = true (the same
-      // numbers, one array)
-      vgd_twfuse = pin->GetOrAddBoolean("rad_m1","vet_gd_twin_fuse",
-                                        it1 && !bx && !vgd_async_named && hok);
-    }
-    // vet_gd_twin_lowmem (mem-1009; read only when named, default false): with
-    // vet_gd_twin_fuse, the twin is swept BEFORE the main sweep in the same intensity
-    // array (the unfused path with this build's cut), instead of in a second array that
-    // rides in the main sweep.  Bitwise the fused result (the sweep never reads values of
-    // a previous build: restart = continuous); halves the largest device array (the
-    // ragged band intensities) at the price of a second per-shell sweep and halo
-    if (vgd_twfuse && pin->DoesParameterExist("rad_m1","vet_gd_twin_lowmem") &&
-        pin->GetBoolean("rad_m1","vet_gd_twin_lowmem")) {
-      vgd_twfuse = false;
-      vgd_twseq = true;
-    }
     // mem2-1014 vet_gd_band_ring (read only when named; default true where it applies,
     // bitwise; VetGdInit): the band intensities lent per shell from a few wide slabs
     // vet_gd_raw (read only when named): the clean sc rays' band on spherical polar
@@ -2219,21 +2049,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                  pin->GetBoolean("rad_m1","vet_gd_band_ring_inward");
     vgd_ring_poison = (std::getenv("VGD_RING_POISON") != nullptr) &&
                       (std::atoi(std::getenv("VGD_RING_POISON")) != 0);
-    // vet_gd_twin_det (accel-1009; read only when named, default false = bitwise): the
-    // twin's shell means summed in a fixed order (thread per shell, rank-ordered MPI)
-    // instead of by atomics, so a GPU run is reproducible run to run
-    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_twin_det")) {
-      vgd_twdet = pin->GetBoolean("rad_m1","vet_gd_twin_det");
-    } else if (vgd_on && fresh && vgd_twin) {
-      // defaults-1009
-      vgd_twdet = pin->GetOrAddBoolean("rad_m1","vet_gd_twin_det",true);
-    }
-    // defaults-1009: vet_source_noesrc follows the twin on a fresh vet_gd run (read above
-    // when named)
-    if (vgd_on && fresh && vgd_twin &&
-        !pin->DoesParameterExist("rad_m1","vet_source_noesrc")) {
-      vsrc_noes = pin->GetOrAddBoolean("rad_m1","vet_source_noesrc",true);
-    }
     // unify-sc-gd-1012 (#11): the same fresh default for a plain vet_col (no vet_gd), as
     // vet_sc.  vet_gd without the twin keeps false: there the pair is needed together
     // (NOTE-2026-10-09-viper-sp-seam-mass-leak: noesrc alone exposes the gd ray effect)
@@ -2457,9 +2272,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_pipe")) {
       vgd_hpipe = pin->GetBoolean("rad_m1","vet_gd_halo_pipe");
-    }
-    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_async")) {
-      vgd_async = pin->GetBoolean("rad_m1","vet_gd_async");
     }
     // prod-1110: vet_gd_body_global DEFAULT true (bitwise); name false for prod-1109
     vgd_bglob = vgd_on;
@@ -3144,7 +2956,6 @@ bool RadiationM1::VetBcEmit() const {
 }
 
 RadiationM1::~RadiationM1() {
-  VetGdAsyncJoin();   // vet_gd_async: the helper thread of the pending build
   if (vgd_tab_state == 1) {vgd_tabf.wait();}   // vgdrot-1011: the table prefetch
   if (vgd_tab_state == 3) {vgd_tex.fence();}
 #if defined(KOKKOS_ENABLE_CUDA)
