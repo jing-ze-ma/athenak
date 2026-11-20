@@ -2974,10 +2974,10 @@ Real RadiationM1::CleanNewtonUpdate() {
   const bool xte = (cln_xte > 0) && !cell && cln_feedback, x2 = xte && cln_xte == 2;
   const bool pdx = x2 && cln_xpat, pxe = xte && cln_xpat;
   const bool kpg = cln_kq_on;   // (clean_stag_kpos: the gas row's pd_g X)
-  // (clean_xt_local: the cell's root to 1e-2 of the next test's tolerance; none in the
+  // (clean_xt_local: the cell's root to 1e-2 of the next test's tolerance, in the row's
+  // budget scale (strict: in E); none in the
   // equilibrium relax of CleanSteadyStart, whose B has no exchange row)
   const bool xlo = cln_xtloc && !cell && cln_feedback && !(icr_fmeas && cln_vzero);
-  if (xlo && !bud) CleanFatal("<rad_m1>/clean_xt_local needs clean_conv = budget");
   const Real xtl = 1.0e-2*fmax(cln_tolb, fmax(cln_tol_nl, 10.0*cln_tol));
   Real change = 0.0, femax = 0.0, ermax = 0.0, xcl = 0.0;
   // (CUDA: 4 blocks of 256 per SM, A100 R136 -1.5 ms/cycle; the reduction keeps its
@@ -3030,7 +3030,8 @@ Real RadiationM1::CleanNewtonUpdate() {
       const Real hry = hcke*w(m,CLW_RY,k,j,i), a1 = w(m,CLW_A0,k,j,i) - hry;
       const Real jv = gfd ? w(m,CLW_JV+1,k,j,i) : 0.0, hk = hcke - jv;
       const Real c0 = w(m,CLW_XA,k,j,i) + ep0 - hry*x + jv*e_old;
-      const Real grc = w(m,CLW_EI,k,j,i) + ep0 + jv*e_old, ltol = xtl*w(m,CLW_SE,k,j,i);
+      const Real grc = w(m,CLW_EI,k,j,i) + ep0 + jv*e_old;
+      const Real ltol = xtl*(bud ? w(m,CLW_SE,k,j,i) : fmax(x, fabs(e_old)));
       Real ee = x, tt = t, lo = 0.0, hi = -1.0;
       Real gv = a1*(ee - x) + c0 + hk*ee - hp*SQR(SQR(tt));
       bool mv = false;
