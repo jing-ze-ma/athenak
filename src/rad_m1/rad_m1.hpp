@@ -3347,6 +3347,7 @@ class RadiationM1 {
   bool CleanStagKRedo();
   bool cln_xtnorm = false, cln_xtcons = false;   // (CleanFirstIterate, CleanSolve)
   int cln_xte = 0;   // (clean_xt_exact: 0 off, 1 cons, 2 x2)
+  bool cln_xtloc = false;   // clean_xt_local: the cell's exchange root after the solve
   // clean_stag_kreal (staggered, default off): the stage increment's momentum kick D at
   // the share s whose kinetic-energy work E can pay, the rest deferred into the stage's
   // implicit momentum change (CleanStagKReal); cln_krel_on: a cell was limited this

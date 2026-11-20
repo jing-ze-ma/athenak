@@ -444,6 +444,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
       cln_xtnorm = stag("clean_xt_norm", false);
+      // clean_xt_local (default off): after each linear solve, the E of a cell from its
+      // E row with the exact exchange (the gas T root of that E), the neighbours' X and
+      // the pass's lagged terms kept (CleanNewtonUpdate): the exchange's nonlinearity
+      // is not carried pass by pass; needs the row's exchange of clean_xt_exact = cons
+      cln_xtloc = stag("clean_xt_local", false);
+      if (cln_xtloc && (cln_xte != 1 || cln_kpos || cln_xpat)) {
+        std::cout << "### FATAL ERROR <rad_m1>/clean_xt_local needs clean_xt_exact = cons "
+                  << "and neither clean_stag_kpos nor xpat" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
     }
     // clean_stag_rayratio (default off): the bracket reads the rays only as ratios (their
     // face flux over the donor's ray J, the model flux of E), times the state's E
@@ -466,6 +476,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     cln_vimp = stag("clean_stag_vimp", cln_split);
     cln_sbimp = stag("clean_stag_sbimp", false) && cln_split;
+    if (cln_xtloc && cln_sbimp) {
+      std::cout << "### FATAL ERROR <rad_m1>/clean_xt_local with clean_stag_sbimp is not "
+                << "implemented" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     // clean_tol_rel = kappa (staggered default 0.1, 0 = off) and clean_tol_rel_max (1e-4)
     // (read only when named): the old production's implicit_tol_rel for the strict test,
     // max(tol_nl, min(kappa r_0, clean_tol_rel_max)), r_0 the first pass's change
