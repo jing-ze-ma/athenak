@@ -1360,6 +1360,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_maxpic", cln_maxpic);
   v.value("cln_poslim", cln_poslim);
   v.value("cln_gflux", cln_gflux);
+  v.value("cln_csvr", cln_csvr);
   v.value("cln_rayratio", cln_rayratio);
   v.value("cln_ringjmin", cln_ringjmin);
   v.value("cln_prmax", cln_prmax);
