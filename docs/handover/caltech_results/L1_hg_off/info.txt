@@ -1,0 +1,1 @@
+TAG=L1_hg_off BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v201e_3efbbbd17 md5=5c78f0ea63a63cf9ec5817e11bf8583d RST=/resnick/groups/carnegie_poc/jingze/hgglob_1021/prodG/rst/hegiant.00139.rst N0=624961 NC=1500 MODE=speed HOLDER=6133592 NODES=hpc-sm-01-17,hpc-sm-02-03 NR=8 PPN=4 ENVX= EX=time/dt_retry_host=m1 UCX=UCX_IB_GPU_DIRECT_RDMA=no 

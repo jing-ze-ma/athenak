@@ -374,3 +374,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   FAILED: last 100 lines in caltech_results/RZ3ll001_hg/FAIL_tail100.txt
 - (09:29) Got bbe664a78: RZ3m_rsg (rz3b) added at the end of the RZ3b list on 02-04 / 02-16.
 - L1_hg_on (hpc-sm-02-09,hpc-sm-02-10): rc=0 wall=4295 | cycles 624961 - 626461 | steady 2.825 s/cycle | GPU MiB max 60491 min 59789 | CW a 2 FATAL 0 |  CW 2 | retry 7 | last cycle cycle=626461
+- L1_hg_off (hpc-sm-01-17,hpc-sm-02-03): rc=0 wall=4954 | cycles 624961 - 626461 | steady 3.264 s/cycle | GPU MiB max 59667 min 5 | CW a 20 FATAL 0 |  CW 20 | retry 28 | last cycle cycle=626461
