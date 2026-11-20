@@ -2715,8 +2715,9 @@ void RadiationM1::CleanCellYDonor(const bool first) {
 //! write-back's gas energy change, h K_EN) and h times the x1 face fluxes fE through the
 //! inner and outer faces of the mesh (at is of the blocks at x1min, at ie+1 of those at
 //! x1max), each as its cell's E row takes it: V g_E of CleanCellRows (h A/V fE, the
-//! cubed sphere's own face areas).  A conservative solve has res = dE + de_gas + h (L_out - L_in) = 0;
-//! the hst ledger books L_top and L_in at the end of the step instead.
+//! cubed sphere's own face areas).  A conservative solve has
+//! res = dE + de_gas + h (L_out - L_in) = 0; the hst ledger books L_top and L_in at the
+//! end of the step instead.
 
 void RadiationM1::CleanCellDiagLedger() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
