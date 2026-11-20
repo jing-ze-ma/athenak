@@ -4979,6 +4979,31 @@ void RadiationM1::CleanWriteBack() {
     CleanGhostFill(tqv, 4, 2, true, 0, 1);
   }
   static const bool lzt2 = (std::getenv("LZT2") != nullptr);   // LZTEL2 STUDY
+  if (lzt && lzt2) {   // LZTEL2 STUDY: ghost exactness of a 5-D scratch (cell volume)
+    auto gv = ScratchView<DvceArray5D<Real>>("lzt2g", nmb1 + 1, 6, u0.extent_int(2),
+                                             u0.extent_int(3), u0.extent_int(4));
+    Kokkos::deep_copy(gv, 0.0);
+    CleanFor("lzt2g1", nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      gv(m,0,k,j,i) = x.vol(m,k,j,i);
+    });
+    CleanGhostFill(gv, 0, 1);
+    Real mx = 0.0, nb = 0.0;
+    const int nx1 = ie - is + 1;
+    Kokkos::parallel_reduce("lzt2g2", Kokkos::RangePolicy<DevExeSpace>(0, (nmb1 + 1)*nx1*(je - js + 1)),
+    KOKKOS_LAMBDA(const int idx, Real &a, Real &b) {
+      const int m = idx/(nx1*(je - js + 1)), j = js + (idx/nx1)%(je - js + 1), i = is + idx%nx1;
+      for (int s2 = 0; s2 < 2; ++s2) {
+        const int k = s2 ? ke + 1 : ks - 1;
+        const Real r = fabs(gv(m,0,k,j,i) - x.vol(m,k,j,i))/x.vol(m,k,j,i);
+        a = fmax(a, r);
+        if (r > 1.0e-6) b += 1.0;
+      }
+    }, Kokkos::Max<Real>(mx), Kokkos::Sum<Real>(nb));
+    mx = CleanReduce(mx, true);
+    nb = CleanReduce(nb, false);
+    if (global_variable::my_rank == 0) std::printf("LZT2G k-ghost vol relerr max %.3e n>1e-6 %.0f\n", mx, nb);
+  }
   if (lzt && lzt2) {   // (the deposit's |dF|/(c E_f), faces with |F| > c E_f before/after)
     for (int dir = 1; dir < 3; ++dir) {
       auto fc = (dir == 1) ? cln_fc2 : cln_fc3;
