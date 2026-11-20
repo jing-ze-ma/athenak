@@ -1,0 +1,3 @@
+# v20g2 (= v20g + 1 GiB rst write pieces), orion 2026-11-20: top priority, DEFAULT io (romio321)
+FINALRST=1 MODE=rt NH=2 V20G2_hg  B_v20g2 HG  4 hg_v20.keys time/dt_retry_host=m1
+FINALRST=1 MODE=rt NH=2 V20G2_rsg B_v20g2 RSG 4 rsg_v20.keys
