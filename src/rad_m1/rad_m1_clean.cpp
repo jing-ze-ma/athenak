@@ -3360,6 +3360,8 @@ void RadiationM1::CleanStagBracket() {
   x.feedback = false;   // (the gas terms read the last iterate's work vectors)
   const Real efl = e_floor;
   const bool rat = cln_rayratio, thf = cln_thinf > 0;
+  const int thv = cln_thinfv;
+  const Real rmn = cln_raymin;
   auto iw_ = iw;
   CleanFor("cln_rayj", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -3389,8 +3391,10 @@ void RadiationM1::CleanStagBracket() {
                       ((chi > 0.0) ? x.c/chi : x.fc[dir](m,CLF_TH,k,j,i)*x.h*x.c*x.c);
       // (the cells' half ranges realisable, h+ in [0, 1], h- in [-1, 0], as the old
       // production's; the rest of the rays' flux is DG below)
+      if (!(thf && thv >= 0 && (thv & 8))) {
       x.fc[dir](m,CLF_HP,k,j,i) = fmin(fmax(x.fc[dir](m,CLF_HP,k,j,i), 0.0), 1.0);
       x.fc[dir](m,CLF_HM,k,j,i) = fmax(fmin(x.fc[dir](m,CLF_HM,k,j,i), 0.0), -1.0);
+      }
       Real gl = 0.0, gr = 0.0;
       CleanStagArea(x, dir, m, k, j, i, w, gl, gr);
       const Real pj = -(1.0 - w)*cd*st +
@@ -3418,6 +3422,25 @@ void RadiationM1::CleanStagBracket() {
       // proportion to their sizes and cut to that interval: the thin share w c (g+ E_L +
       // g- E_R) is linear in E with the upwind signs, within [-c E_R, c E_L], and equal to
       // w c F_y at E = J; no DG)
+      if (thf && thv >= 0) {   // (prototype variants: the g65u tilt, v&1 cap, v&2 floor)
+        const Real hl = x.fc[dir](m,CLF_HP,k,j,i)*jl, hr = x.fc[dir](m,CLF_HM,k,j,i)*jr;
+        const Real dd = fy - ((thv & 4) ? hl + hr : pj/x.c), fr = hl + hr + dd, s = hl - hr;
+        const Real tl = hl + dd*hl/s, tr = hr - dd*hr/s;
+        const bool cut = (tl < 0.0) || (tr > 0.0);
+        const Real hp = !(s > 0.0) ? hl : (cut ? ((tl < 0.0) ? 0.0 : fmax(fr, 0.0)) : tl);
+        const Real hm = !(s > 0.0) ? hr : (cut ? ((tl < 0.0) ? fmin(fr, 0.0) : 0.0) : tr);
+        const Real fl = (thv & 2) ? rmn : 0.0;
+        Real hpj = hp/fmax(jl, fl*fmax(x.w(m,CLW_EO,k-dk,j-dj,i-di), 0.0));
+        Real hmj = hm/fmax(jr, fl*fmax(x.w(m,CLW_EO,k,j,i), 0.0));
+        if (thv & 1) {
+          hpj = fmin(hpj, 1.0);
+          hmj = fmax(hmj, -1.0);
+        }
+        if (jl > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = (jl > efl) ? hpj : fmin(hpj, 1.0);
+        if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = (jr > efl) ? hmj : fmax(hmj, -1.0);
+        x.fc[dir](m,x.fdg,k,j,i) = 0.0;
+        return;
+      }
       if (thf) {
         const Real t = fmin(fmax(fy, -jr), jl);
         const Real hl = x.fc[dir](m,CLF_HP,k,j,i)*jl, hr = x.fc[dir](m,CLF_HM,k,j,i)*jr;

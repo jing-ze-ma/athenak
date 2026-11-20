@@ -353,6 +353,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (!cln_cell && pin->DoesParameterExist("rad_m1", "clean_stag_thinf")) {
       cln_thinf = std::min(std::max(pin->GetInteger("rad_m1", "clean_stag_thinf"), 0), 3);
       if (cln_thinf >= 2) cln_fidp = (cln_thinf == 2) ? 2 : 1;
+      if (pin->DoesParameterExist("rad_m1", "clean_stag_thinf_v")) {
+        cln_thinfv = pin->GetInteger("rad_m1", "clean_stag_thinf_v");
+      }
     }
     // clean_stag_xdonor = off (default) | p1 | lag: the off-diagonal stress flux an
     // M-matrix term (CleanStagXDonor); clean_stag_xsrc (default off): also the face

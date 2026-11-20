@@ -3342,6 +3342,7 @@ class RadiationM1 {
   int cln_lza = 0;          // clean_cs_lz_abs
   int cln_fidp = 0;         // clean_stag_fidp
   int cln_thinf = 0;        // clean_stag_thinf
+  int cln_thinfv = -1;      // clean_stag_thinf_v (prototype variants)
   DvceArray1D<Real> cln_fids;   // (its write-back sums: CleanStagFSolve)
   // (clean_cs_lz_abs = 2: the L_z V R (dp_torque - dp) the gas does not take, booked as
   // the radiation's, cln_lzl (<rad_m1>/clean_cs_lz_ledger); its sums over the cells as the
