@@ -1,0 +1,1 @@
+TAG=BR_hg_h200 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h200_a774c43b3 md5=85b03bc9e9c30526cc2fe9c0e9f6b6df RST=/resnick/groups/carnegie_poc/jingze/hgglob_1021/prodG/rst/hegiant.00139.rst N0=624961 NC=4 MODE=rt HOLDER=6133591 NODES=hpc-sm-02-10 NR=4 PPN=4 ENVX= EX= UCX=
