@@ -274,3 +274,14 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   FAILED: last 100 lines in caltech_results/KX001e_hg/FAIL_tail100.txt
 - V20N_hg (hpc-sm-01-17): rc=0 wall=255 rc=0 wall=227 rc=0 wall=249 | cycles 624961 - 624965 | steady 4.177 s/cycle | GPU MiB max 116079 min 115291 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF xcheck: hegiant.hydro.hst==V20M_hg/a hegiant.user.hst==V20M_hg/a
 - LN_hg (hpc-sm-02-04): rc=0 wall=247 rc=0 wall=229 rc=0 wall=232 | cycles 624961 - 624965 | steady 4.194 s/cycle | GPU MiB max 116321 min 115763 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF xcheck: user cols1-26==V20G_hg_ompio/a, hydro==V20G_hg_ompio/a
+- (06:30) **Batch 4 summary** (hst md5 over the non-comment rows, steady s/cycle, GPU peak MiB; all 20 cycles, 1 node x 4 unless noted):
+  * P1 gate: RSG BA_v20g / p4 / h200 / mb2 all hydro a67cd964 user 9c8d2e23 = EQUAL; s/cycle 2.695 / 2.685 / 2.759 / 2.978.
+    HG BA_v20g / p4 / h200 / mb2 / v20g_m1 all hydro c0ae31ca user 4e5ee30f = EQUAL; s/cycle 4.904 / 4.876 / 5.092 / 5.252 / 4.977
+    (no dt_retry_host=m1 ~1.5 % faster than m1; peak 120.0 vs 116.3 GB). BR_rsg_h200 / BR_hg_h200 (ompio) rt and BP_rsg_h200 lines above.
+  * P2 layout scan (v20g): **hst md5 differ between NR** (layout_invariant not bitwise here): RSG r3 38d55bc5/57ed940d, r4 a67cd964/9c8d2e23,
+    r6 b3ad5441/00753ceb, r8 0f855732/b4d2466d (r8_rep identical to r8 = deterministic), r12 18554643/89b0215c; HG r4 c0ae31ca/4e5ee30f,
+    r6 b883920d/a434049d, r8 ea287d14/cfee78b7, r12 0f7af552/83c1f3b5. s/cycle RSG r3 3.48, r4 2.70, r6 2.03, r8 1.67, r12 1.21;
+    HG r4 4.90, r6 3.92, r8 3.20, r12 2.48. OOM at setup: LS_rsg_r2, LS_hg_r2, LS_hg_r3 (RSG r3 fit at 141.6 GB).
+  * P3 PF_* nsys: r0lab/syncattr outputs in caltech_results/PF_*/ (no Kokkos nvtx connector on our side).
+  * P4 TG GDR: aborts (IB local protection error), see above; LS_rsg_r8_rep = LS_rsg_r8 bitwise.
+  * LEAN: LN_rsg / LNP_rsg / LN_hg lines above.
