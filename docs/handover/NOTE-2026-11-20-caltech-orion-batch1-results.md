@@ -507,3 +507,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   FAILED: last 100 lines in caltech_results/TGF_hg/FAIL_tail100.txt
 - V203L_rsg (hpc-sm-01-11): rc=0 wall=116 rc=0 wall=120 rc=0 wall=112 | cycles 589788 - 589792 | steady 2.683 s/cycle | GPU MiB max 106551 min 105459 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF  | CW 0 FATAL 0
   progress 15:19: BFX4_rsg:DONE BFX0_rsg:DONE BFX4_hg:DONE BFX0_hg:DONE D_on_hg:DONE G_on_hg:DONE G_rsg:DONE L1_rsg_off:DONE L1_rsg_on:DONE H_fp_hg:DONE H_tel_hg:DONE H_xl_hg:DONE R_fp_rsg:DONE R_tel_rsg:DONE R_xl_rsg:DONE K_on_hg:DONE K_on_rsg:DONE LF_rsg:DONE LX_rsg:591224(CW 1) LF_hg:DONE L2_hg_off:626236(CW 0) L2_hg_on:DONE
+- V203LP_rsg (hpc-sm-01-11): rc=0 wall=129 | cycles 589788 - 589792 | steady 2.670 s/cycle | GPU MiB max 105805 min 104713 | CW a 0 FATAL 0 |  poison vs V203L_rsg/a:  rsg.hydro.hst==V203L_rsg/a rsg.user.hst==V203L_rsg/a | CW 0 FATAL 0
