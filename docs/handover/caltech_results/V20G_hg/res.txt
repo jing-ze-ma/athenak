@@ -1,0 +1,16 @@
+cycles 624961 - 624964 dt [68.96552, 100.5172, 106.3636] s/cycle(all) ['26.69', '3.92', '4.51'] steady(excl first+last) 3.919 first elapsed 42.7 last elapsed 77.8
+[]
+CW a 0 FATAL 1 retries ['<time> dt_retry: 4 checkpoints (1.819714e+00 s, 6.016724e+03 MB on rank 0), 0 retries, cap -1.000000e+00']
+GPU mem peak MiB max 116703 min 115915 (n=4)
+rt hegiant.hydro.hst last row DIFF
+rt hegiant.user.hst last row DIFF
+rt hegiant.hydro_w.01741.bin DIFF/missing
+rt hegiant.m1.01741.bin DIFF/missing
+rt hegiant.m1_vet.00117.bin DIFF/missing
+CW b /run.log 0
+CW b run2.log 0
+rc=137 wall=126
+rc=137 wall=116
+restart from /resnick/groups/carnegie_poc/jingze/orion_runs_1121/V20G_hg/b/rst/hegiant.00140.rst
+rc=137 wall=25
+DONE

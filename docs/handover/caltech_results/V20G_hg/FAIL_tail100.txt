@@ -1,0 +1,299 @@
+== /resnick/groups/carnegie_poc/jingze/orion_runs_1121/V20G_hg/a/run.log
+CLEAN OLDVEC cycle 624963 t2s 3 eint<0 16 (taken as 0) E<0 285
+CLEAN XT cycle 624963 t2s 3 pass closure 1.400e-04
+CLEAN XDONOR cycle 624963 t2s 3 pass 0 xle0 13493 minX/Eo -2.831e+02 donor 74825376 cap 1563 b<0 26 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 13493 sb 0 gres 0 it 1
+CLEAN XT cycle 624963 t2s 3 pass closure 4.424e+03
+CLEAN XDONOR cycle 624963 t2s 3 pass 1 xle0 1368 minX/Eo -7.205e+01 donor 74826628 cap 1241 b<0 20 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 38 exch 694 sb 102 gres 534 it 1
+CLEAN XT cycle 624963 t2s 3 pass closure 1.931e+01
+CLEAN XDONOR cycle 624963 t2s 3 pass 2 xle0 0 minX/Eo 2.424e-02 donor 74826744 cap 1174 b<0 14 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 2
+CLEAN XT cycle 624963 t2s 3 pass closure 2.759e+00
+CLEAN XDONOR cycle 624963 t2s 3 pass 3 xle0 0 minX/Eo 3.154e-02 donor 74826853 cap 1166 b<0 13 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 2
+CLEAN XT cycle 624963 t2s 3 pass closure 9.378e-01
+CLEAN XDONOR cycle 624963 t2s 3 pass 4 xle0 0 minX/Eo 2.163e-03 donor 74826823 cap 1163 b<0 14 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 2
+CLEAN XT cycle 624963 t2s 3 pass closure 1.261e+00
+CLEAN cycle 624963 t2s 3 it 2 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 929 first 0 929 guard 0 solves 5 cwin 0
+CLEAN LZ cycle 624963 t2s 3 ledger 1.7314294302413331e+42
+CLEAN XT cycle 624963 t2s 3 write-back closure 1.261e+00
+elapsed=7.781155e+01 cycle=624964 time=5.011227e+07 dt=1.063636e+02
+CLEAN OLDVEC cycle 624964 t2s 2 eint<0 158637 (taken as 0) E<0 1910
+CLEAN XT cycle 624964 t2s 2 pass closure 5.356e-02
+CLEAN XDONOR cycle 624964 t2s 2 pass 0 xle0 47149 minX/Eo -7.728e+02 donor 70016309 cap 56994 b<0 1077 (with X<=0 45; Eo<0 0, Eo<hdivS 0) most-neg work 13 exch 47136 sb 0 gres 0 it 1
+CLEAN XT cycle 624964 t2s 2 pass closure 1.105e+06
+CLEAN XDONOR cycle 624964 t2s 2 pass 1 xle0 364 minX/Eo -2.758e+01 donor 70045111 cap 50558 b<0 1427 (with X<=0 17; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 320 sb 6 gres 38 it 3
+CLEAN XT cycle 624964 t2s 2 pass closure 3.034e+04
+CLEAN XDONOR cycle 624964 t2s 2 pass 2 xle0 140 minX/Eo -1.522e+01 donor 70052974 cap 57103 b<0 1668 (with X<=0 47; Eo<0 0, Eo<hdivS 0) most-neg work 2 exch 71 sb 27 gres 40 it 3
+CLEAN XT cycle 624964 t2s 2 pass closure 4.917e+03
+CLEAN XDONOR cycle 624964 t2s 2 pass 3 xle0 91 minX/Eo -1.218e+00 donor 70053648 cap 60437 b<0 1710 (with X<=0 67; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 75 sb 12 gres 4 it 2
+CLEAN XT cycle 624964 t2s 2 pass closure 1.966e+03
+CLEAN XDONOR cycle 624964 t2s 2 pass 4 xle0 68 minX/Eo -7.552e-03 donor 70054562 cap 63084 b<0 1731 (with X<=0 68; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 68 sb 0 gres 0 it 2
+CLEAN XT cycle 624964 t2s 2 pass closure 1.299e+03
+CLEAN XDONOR cycle 624964 t2s 2 pass 5 xle0 35 minX/Eo -5.878e-03 donor 70054696 cap 63873 b<0 1702 (with X<=0 34; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 34 sb 1 gres 0 it 1
+CLEAN XT cycle 624964 t2s 2 pass closure 1.121e+03
+CLEAN XDONOR cycle 624964 t2s 2 pass 6 xle0 25 minX/Eo -3.864e-03 donor 70054884 cap 64176 b<0 1744 (with X<=0 25; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 25 sb 0 gres 0 it 1
+CLEAN XT cycle 624964 t2s 2 pass closure 8.738e+02
+CLEAN XDONOR cycle 624964 t2s 2 pass 7 xle0 25 minX/Eo -3.069e-03 donor 70054784 cap 64353 b<0 1754 (with X<=0 25; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 25 sb 0 gres 0 it 1
+CLEAN XT cycle 624964 t2s 2 pass closure 3.393e+02
+CLEAN XDONOR cycle 624964 t2s 2 pass 8 xle0 18 minX/Eo -1.094e-03 donor 70054818 cap 64390 b<0 1763 (with X<=0 18; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 18 sb 0 gres 0 it 1
+CLEAN XT cycle 624964 t2s 2 pass closure 3.937e+02
+CLEAN XDONOR cycle 624964 t2s 2 pass 9 xle0 13 minX/Eo -5.684e-04 donor 70054858 cap 64418 b<0 1759 (with X<=0 13; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 13 sb 0 gres 0 it 1
+CLEAN XT cycle 624964 t2s 2 pass closure 1.777e+02
+CLEAN cycle 624964 t2s 2 it 1 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 4684 first 0 4684 guard 0 solves 10 cwin 0
+CLEAN XT cycle 624964 t2s 2 write-back closure 1.763e+02
+CLEAN OLDVEC cycle 624964 t2s 3 eint<0 12 (taken as 0) E<0 256
+CLEAN XT cycle 624964 t2s 3 pass closure 2.614e-04
+CLEAN XDONOR cycle 624964 t2s 3 pass 0 xle0 26897 minX/Eo -1.076e+03 donor 74459698 cap 43867 b<0 55 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 26897 sb 0 gres 0 it 1
+CLEAN XT cycle 624964 t2s 3 pass closure 2.256e+03
+CLEAN XDONOR cycle 624964 t2s 3 pass 1 xle0 0 minX/Eo 1.710e-03 donor 74470983 cap 47454 b<0 70 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 3
+CLEAN XT cycle 624964 t2s 3 pass closure 1.615e+01
+CLEAN XDONOR cycle 624964 t2s 3 pass 2 xle0 0 minX/Eo 2.040e-02 donor 74470820 cap 50468 b<0 96 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 2
+CLEAN XT cycle 624964 t2s 3 pass closure 3.288e+00
+CLEAN XDONOR cycle 624964 t2s 3 pass 3 xle0 0 minX/Eo 2.446e-02 donor 74471049 cap 51065 b<0 105 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 624964 t2s 3 pass closure 1.262e+00
+CLEAN XDONOR cycle 624964 t2s 3 pass 4 xle0 0 minX/Eo 1.941e-02 donor 74471049 cap 51860 b<0 102 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 2
+CLEAN XT cycle 624964 t2s 3 pass closure 1.806e+00
+CLEAN XDONOR cycle 624964 t2s 3 pass 5 xle0 0 minX/Eo 2.480e-02 donor 74471248 cap 52149 b<0 99 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 2
+CLEAN XT cycle 624964 t2s 3 pass closure 8.546e-01
+CLEAN cycle 624964 t2s 3 it 2 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 3367 first 0 3367 guard 0 solves 6 cwin 0
+CLEAN LZ cycle 624964 t2s 3 ledger 2.5537104831625041e+42
+CLEAN XT cycle 624964 t2s 3 write-back closure 3.298e+00
+<time> dt_retry: 4 checkpoints (1.819714e+00 s, 6.016724e+03 MB on rank 0), 0 retries, cap -1.000000e+00
+<time> dt_retry: 8 View copies skipped (unwritten since the last copy, dt_retry_host; not written in the cycle, SetSkip)
+<time> counters_rollback: event counters of discarded attempts dropped: dt_retry 0, backward-Euler redo 0, hesdirk2 helper solves 0; E-floor created energy dropped (m1_pos_un, x volume) 0.000000e+00 / 0.000000e+00 / 0.000000e+00, vceil_de dropped 0.000000e+00 / 0.000000e+00 / 0.000000e+00
+### FATAL ERROR in ../../src/outputs/restart.cpp at line 1654
+rad_m1 hesdirk2 slope not written correctly to rst file, restart file is broken.
+Kokkos::Cuda ERROR: Failed to call Kokkos::Cuda::finalize()
+terminate called after throwing an instance of 'std::runtime_error'
+  what():  cudaSetDevice(m_device) error( cudaErrorCudartUnloading): driver shutting down ../../../../kokkos/core/src/Cuda/Kokkos_CudaSpace.cpp:378
+[hpc-sm-02-16:3383495] *** Process received signal ***
+[hpc-sm-02-16:3383495] Signal: Aborted (6)
+[hpc-sm-02-16:3383495] Signal code:  (-6)
+[hpc-sm-02-16:3383495] [ 0] /lib64/libc.so.6(+0x3e730)[0x7f6e2ce3e730]
+[hpc-sm-02-16:3383495] [ 1] /lib64/libc.so.6(+0x8ba6c)[0x7f6e2ce8ba6c]
+[hpc-sm-02-16:3383495] [ 2] /lib64/libc.so.6(raise+0x16)[0x7f6e2ce3e686]
+[hpc-sm-02-16:3383495] [ 3] /lib64/libc.so.6(abort+0xd3)[0x7f6e2ce28833]
+[hpc-sm-02-16:3383495] [ 4] /lib64/libstdc++.so.6(+0xa1b21)[0x7f6e2d2a1b21]
+[hpc-sm-02-16:3383495] [ 5] /lib64/libstdc++.so.6(+0xad52c)[0x7f6e2d2ad52c]
+[hpc-sm-02-16:3383495] [ 6] /lib64/libstdc++.so.6(+0xac4f9)[0x7f6e2d2ac4f9]
+[hpc-sm-02-16:3383495] [ 7] /lib64/libstdc++.so.6(__gxx_personality_v0+0x9a)[0x7f6e2d2acc7a]
+[hpc-sm-02-16:3383495] [ 8] /lib64/libgcc_s.so.1(+0x112d4)[0x7f6e336652d4]
+[hpc-sm-02-16:3383495] [ 9] /lib64/libgcc_s.so.1(_Unwind_Resume+0x12e)[0x7f6e33665d0e]
+[hpc-sm-02-16:3383495] [10] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x5f0644]
+[hpc-sm-02-16:3383495] [11] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x283aa60]
+[hpc-sm-02-16:3383495] [12] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x283bf0f]
+[hpc-sm-02-16:3383495] [13] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x677c4f]
+[hpc-sm-02-16:3383495] [14] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x2836e21]
+[hpc-sm-02-16:3383495] [15] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x27bea79]
+[hpc-sm-02-16:3383495] [16] /lib64/libc.so.6(+0x40e2d)[0x7f6e2ce40e2d]
+[hpc-sm-02-16:3383495] [17] /lib64/libc.so.6(on_exit+0x0)[0x7f6e2ce40f70]
+[hpc-sm-02-16:3383495] [18] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x148cbff]
+[hpc-sm-02-16:3383495] [19] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x951847]
+[hpc-sm-02-16:3383495] [20] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x5f2b8e]
+[hpc-sm-02-16:3383495] [21] /lib64/libc.so.6(+0x295d0)[0x7f6e2ce295d0]
+[hpc-sm-02-16:3383495] [22] /lib64/libc.so.6(__libc_start_main+0x80)[0x7f6e2ce29680]
+[hpc-sm-02-16:3383495] [23] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x6598b5]
+[hpc-sm-02-16:3383495] *** End of error message ***
+srun: error: hpc-sm-02-16: task 1: Aborted (core dumped)
+[2026-11-20T01:57:38.328] error:  mpi/pmix_v3: _errhandler: hpc-sm-02-16 [0]: pmixp_client_v2.c:219: Error handler invoked: status = -25, source = [slurm.pmix.5840650.5:1]
+[2026-11-20T01:57:38.352] error: *** STEP 5840650.5 ON hpc-sm-02-16 CANCELLED AT 2026-11-20T01:57:38 DUE to SIGNAL Killed ***
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+[2026-11-20T01:57:40.423] error:  mpi/pmix_v3: _errhandler: hpc-sm-02-16 [0]: pmixp_client_v2.c:219: Error handler invoked: status = -25, source = [slurm.pmix.5840650.5:3]
+srun: error: hpc-sm-02-16: tasks 0,3: Killed
+srun: error: hpc-sm-02-16: task 2: Killed
+== /resnick/groups/carnegie_poc/jingze/orion_runs_1121/V20G_hg/b/run2.log
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+Mesh: cubed-sphere seam flux = shared, resample = linear, rho_guard = 4
+
+Cubed sphere: Root grid = 6 x 1 x (2 x 2) MeshBlocks
+Total number of MeshBlocks = 24
+Number of logical  levels of refinement = 1 (2 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 4
+  Rank = 0: 6 MeshBlocks, cost = 6
+  Rank = 1: 6 MeshBlocks, cost = 6
+  Rank = 2: 6 MeshBlocks, cost = 6
+  Rank = 3: 6 MeshBlocks, cost = 6
+Load Balancing:
+  Maximum normalized cost = 1, Average = 1
+<hydro>/tfloor_kelvin = 1000 K -> tfloor = 8.31446e+10 in code temperature (1.20272e-08 K per unit, general EOS)
+General EOS: tabulated on 1001 x 1276 nodes (155 MB), log10 rho[cgs] in [-21, -1], log10 T[K] in [2.9, 8]
+             X = 0.0009496, Y = 0.97752, Z = 0.0215304, H2 off, radiation off
+             metal ionization off
+             mu at the grid centre = 1.33962, n_e/n_tot = 0.655591
+General EOS: tabulated on 1001 x 1276 nodes (155 MB), log10 rho[cgs] in [-21, -1], log10 T[K] in [2.9, 8]
+             X = 0.0009496, Y = 0.97752, Z = 0.0215304, H2 off, radiation off
+             metal ionization off
+             mu at the grid centre = 1.33962, n_e/n_tot = 0.655591
+General EOS: tabulated on 1001 x 1276 nodes (155 MB), log10 rho[cgs] in [-21, -1], log10 T[K] in [2.9, 8]
+             X = 0.0009496, Y = 0.97752, Z = 0.0215304, H2 off, radiation off
+             metal ionization off
+             mu at the grid centre = 1.33962, n_e/n_tot = 0.655591
+General EOS: tabulated on 1001 x 1276 nodes (155 MB), log10 rho[cgs] in [-21, -1], log10 T[K] in [2.9, 8]
+             X = 0.0009496, Y = 0.97752, Z = 0.0215304, H2 off, radiation off
+             metal ionization off
+             mu at the grid centre = 1.33962, n_e/n_tot = 0.655591
+### WARNING (scheme = clean): <rad_m1/time2_vet_sc> has no effect, the clean solve reads <rad_m1>/clean_closure
+### WARNING (scheme = clean): <rad_m1/ic_rad> has no effect, the clean solve reads <rad_m1>/clean_init
+### WARNING (scheme = clean): <rad_m1/implicit_closure_lag> has no effect, the clean solve reads <rad_m1>/clean_closure
+### WARNING (scheme = clean): <rad_m1/implicit_lin_tol> has no effect, the clean solve reads <rad_m1>/clean_tol
+### WARNING (scheme = clean): <rad_m1/implicit_tol> has no effect, the clean solve reads <rad_m1>/clean_tol_nl
+### WARNING (scheme = clean): <rad_m1/time2_vet_col> has no effect, the clean solve reads <rad_m1>/clean_closure
+### WARNING (scheme = clean): <rad_m1/implicit_recon> has no effect, the clean solve reads <rad_m1>/clean_recon
+### WARNING (scheme = clean): <rad_m1/time2_lin_tol_fac> has no effect, the clean solve reads <rad_m1>/clean_tol
+### WARNING (scheme = clean): <rad_m1/ic_rad_fs_iter> has no effect, the clean solve reads <rad_m1>/clean_init
+### WARNING (scheme = clean): <rad_m1/ic_rad_relax_n> has no effect, the clean solve reads <rad_m1>/clean_init
+### WARNING (scheme = clean): <rad_m1/ic_rad_relax_tol> has no effect, the clean solve reads <rad_m1>/clean_init
+### WARNING (scheme = clean): <rad_m1/ic_rad_relax_dtfac> has no effect, the clean solve reads <rad_m1>/clean_init
+### WARNING (scheme = clean): no effect: rad_m1/time2_posfix_host rad_m1/implicit_cs2_clip rad_m1/implicit_am_cs rad_m1/implicit_predictor_frozen rad_m1/implicit_hr_face_gd rad_m1/implicit_thin_js_face rad_m1/implicit_vimp_bc rad_m1/implicit_cs2_shift rad_m1/implicit_cs2_hll rad_m1/implicit_thin_hcface_gd rad_m1/implicit_thin_hcface rad_m1/implicit_thin_bq_gd rad_m1/implicit_thin_js_gd rad_m1/implicit_thin_hcsf rad_m1/implicit_hr_excess rad_m1/implicit_thin_corr rad_m1/implicit_thin_switch rad_m1/implicit_face_opac_n rad_m1/implicit_tsolve_opac rad_m1/implicit_tsolve_opac_mode rad_m1/implicit_gas_newton_switch rad_m1/implicit_thin_freeze rad_m1/implicit_realisable_coupling rad_m1/implicit_halo_direct rad_m1/implicit_od_cache rad_m1/implicit_krylov_fuse rad_m1/implicit_op_stencil rad_m1/implicit_precond rad_m1/implicit_halo_mpi rad_m1/implicit_halo_overlap rad_m1/implicit_solver rad_m1/implicit_offdiag rad_m1/implicit_lin_cnorm rad_m1/implicit_one_pass rad_m1/implicit_opac_update rad_m1/implicit_opac_newton rad_m1/implicit_opac_newton_guard_mode rad_m1/implicit_opac_newton_slope_max rad_m1/implicit_gas_newton rad_m1/implicit_flux rad_m1/implicit_flux_faces rad_m1/implicit_flux_beam rad_m1/implicit_blend rad_m1/implicit_blend_tau0 rad_m1/implicit_blend_alpha rad_m1/implicit_blend_flo rad_m1/implicit_blend_fhi rad_m1/implicit_blend_xthin rad_m1/implicit_vimp rad_m1/implicit_lin_ew_max rad_m1/implicit_closure_thin_relax rad_m1/implicit_g0_exchange rad_m1/implicit_g0_limit rad_m1/time2_accept_fallback rad_m1/time2_posfix rad_m1/implicit_closure_relax rad_m1/implicit_closure_relax_thin rad_m1/implicit_trans_limit rad_m1/implicit_trans_fmax rad_m1/implicit_accel rad_m1/implicit_eos_cache rad_m1/implicit_eos_cache_nt rad_m1/implicit_eos_cache_check rad_m1/implicit_line_solver rad_m1/implicit_pcr_team rad_m1/implicit_pcr_check rad_m1/implicit_bcg_sync rad_m1/implicit_precond_float rad_m1/implicit_op_team_red rad_m1/implicit_mg_levels rad_m1/implicit_mg_halo rad_m1/implicit_krylov_pipe rad_m1/implicit_halo_ipc rad_m1/implicit_halo_ovl_faces rad_m1/implicit_picard_log rad_m1/implicit_tsolve_opac_start rad_m1/implicit_lres_test rad_m1/implicit_conv_est rad_m1/implicit_src_stable rad_m1/implicit_lin_ew_gamma rad_m1/implicit_bcg_max_restarts rad_m1/implicit_bcg_fallback rad_m1/implicit_anderson_m rad_m1/implicit_anderson_beta rad_m1/implicit_anderson_start rad_m1/implicit_opac_newton_guard rad_m1/implicit_face_weight rad_m1/implicit_face_opac rad_m1/implicit_hr_model rad_m1/implicit_hr_face rad_m1/implicit_blend_r0 rad_m1/implicit_blend_xthin_mode rad_m1/implicit_blend_xthin_wmin rad_m1/implicit_thin_h0 rad_m1/implicit_thin_h1 rad_m1/implicit_thin_kn0 rad_m1/implicit_thin_knp rad_m1/implicit_thin_fsa rad_m1/implicit_thin_fsj rad_m1/implicit_thin_recon rad_m1/implicit_thin_bq rad_m1/implicit_blend_fmode rad_m1/implicit_blend_mode rad_m1/implicit_vimp_fold rad_m1/implicit_partition rad_m1/implicit_recon_w rad_m1/implicit_res_floor rad_m1/implicit_gas_newton_switch_min rad_m1/implicit_stall_fac rad_m1/implicit_recon_lag rad_m1/implicit_recon_npass rad_m1/implicit_bmom_half rad_m1/implicit_rad_inertia rad_m1/implicit_nofb_work rad_m1/implicit_f0_init rad_m1/implicit_cs2_vimp rad_m1/implicit_cs2_vimp_npass rad_m1/implicit_tol_rel rad_m1/implicit_opac_lag rad_m1/implicit_opac_lag_passes rad_m1/implicit_gas_newton_u4 rad_m1/implicit_work_fix
+rad_m1: vet_scatter on, form ma, J (relaxed source) relaxed (default), table split kappa_e = eos (kappa_e 0.34, floor 1e-05, sigma_T/m_u 0.40062, code units)
+<rad_m1>/c_light = 2.99792e+10 [code] ; <units> implies 2.99792e+10 (c in code velocity), rel. diff 0
+<rad_m1>/arad = 1.58312e-46 [code] ; <units> implies 1.58312e-46 (a_rad T_unit^4 / p_unit), rel. diff 1.51153e-09
+<rad_m1>/temp_unit_kelvin = 1.20272e-08 [code] ; <units> implies 1.20272e-08 (K per code temperature), rel. diff 3.16964e-07
+<rad_m1>/rho_unit_cgs = 1 [code] ; <units> implies 1 (g/cm^3 per code density), rel. diff 0
+<rad_m1>/kappa_unit = 1 [code] ; <units> implies 1 (code opacity per cm^2/g), rel. diff 0
+<rad_m1> vet_rotate_advance = true (rotadv-1102): with vet_rotate_avg the rotated sets do not repeat; the averaged last-K window advances (no effect without vet_rotate_avg)
+<rad_m1> vet_rotate_avg = 8: the vet_gd closure is the mean over the last 8 rotated sets
+<rad_m1> vet_gd_rotate_xfade = true (vgdxf-1112): the closure is cross-faded from the current to the next ray set over each rotation block (two sweeps per build)
+<rad_m1> implicit_precond = mg
+<rad_m1> implicit_mg_x3line = false
+<rad_m1>/implicit_face_weight = distance (from the input)
+<rad_m1> implicit_pos_floor_cons: the E floor's uncovered raise is taken from the radiation of the same column (no energy created)
+<rad_m1> implicit_pos_floor_gas_keep=1: the E floor's raise leaves the gas at least that share of its eint
+<rad_m1> cs_vertex_mono: two-point lateral faces within 1 cell(s) of the 8 cube vertices (no skew cross term, seam foot values, D_r,lat = 0 within 2)
+<rad_m1> implicit_lzx: implicit_am_cs deposit off (lzx closes the solve's L_z)
+<rad_m1> implicit_face_mmat = true: x1 face flux lam F_H + (1-lam) F_L, lam = Zalesak factor of the explicit face flux (facemmat-1112)
+<rad_m1>: transport=implicit (3-D) solver=bicgstab lin_tol=1e-10 lin_maxit=200
+         implicit_cfl=-1 tol=1e-08 maxit=200 opac_update=true marshak_q=0.5
+         implicit_flux=central implicit_recon=dc implicit_partition=none
+         implicit_vimp=true (v' of the enthalpy flux implicit)
+         implicit_enthalpy=plm (deferred correction)
+         implicit_bc_advect=true (Marshak x1 end carries A E)
+         implicit_offdiag=operator (auto) closure_relax=1 closure_lag=step trans_limit=none
+         implicit_accel=none
+         implicit_gas_newton=true implicit_eos_cache=false
+         x1 boundaries: min=1 max=0 (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=3.60602e+13 flux_max=0
+<rad_m1> time2_auto_be=16: after a stage fallback the next 1, 2, 4, ... 16 steps take the backward-Euler redo path at once
+<rad_m1> time2_posfix=4 time2_posfix_grow=1: local stage-1 positivity re-solve (start copies in pinned host memory)
+<rad_m1> time_scheme=hesdirk2 (g=0.292893; first step, restarts without the slope and failed stages take backward Euler)
+         time2_enth_be=true implicit_cs2_vimp_npass=3
+<rad_m1> cubed sphere: implicit_halo_mpi (+ overlap) falls back to the ordinary seam-aware exchange (the seam halo_mpi port is open)
+<rad_m1>: cubed sphere (stage CS2: vet_col, radial axis; covariant cell F and gas coupling; skewed transverse faces with the lagged cross term, mirror-pair seam faces without the resample; implicit with areas/volumes/face distances from Coordinates, stretched radial grid)
+<rad_m1>: c=2.99792e+10 chat/c=1 cfl_rad=0.4 thick_flux=none ap_form=alpha2 recon=plm advect_split=false split_vel=recon source_form=full closure=vet_col subcycle=false
+         kappa_p=0 kappa_e=0 kappa_f=0 kappa_s=0 coupling=true gas_feedback=true arad=1.58312e-46
+         opacity=table force_reference=wb_arad temp_unit_kelvin=1.20272e-08 rho_unit_cgs=1
+### FATAL ERROR in ../../src/pgen/pgen.cpp at line 2038
+hydro cache not read correctly from rst file, restart file is broken.
+Kokkos::Cuda ERROR: Failed to call Kokkos::Cuda::finalize()
+srun: error: hpc-sm-02-16: task 3: Exited with exit code 1
+[2026-11-20T02:00:01.181] error:  mpi/pmix_v3: _errhandler: hpc-sm-02-16 [0]: pmixp_client_v2.c:219: Error handler invoked: status = -25, source = [slurm.pmix.5840650.8:3]
+[2026-11-20T02:00:01.188] error: *** STEP 5840650.8 ON hpc-sm-02-16 CANCELLED AT 2026-11-20T02:00:01 DUE to SIGNAL Killed ***
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+srun: error: hpc-sm-02-16: tasks 1-2: Killed
+srun: error: hpc-sm-02-16: task 0: Killed
+== /resnick/groups/carnegie_poc/jingze/orion_runs_1121/V20G_hg/b/run.log
+CLEAN XT cycle 624961 t2s 2 pass closure 1.042e+01
+CLEAN XDONOR cycle 624961 t2s 2 pass 1 xle0 0 minX/Eo 8.923e-02 donor 69014185 cap 2900 b<0 1 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 4
+CLEAN XT cycle 624961 t2s 2 pass closure 1.566e+00
+CLEAN XDONOR cycle 624961 t2s 2 pass 2 xle0 0 minX/Eo 8.940e-02 donor 69015109 cap 2791 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 3
+CLEAN XT cycle 624961 t2s 2 pass closure 1.152e-01
+CLEAN cycle 624961 t2s 2 it 3 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 160 first 0 160 guard 0 solves 3 cwin 0
+CLEAN XT cycle 624961 t2s 2 write-back closure 1.153e-01
+CLEAN OLDVEC cycle 624961 t2s 3 eint<0 0 (taken as 0) E<0 105
+CLEAN XT cycle 624961 t2s 3 pass closure 9.379e-08
+CLEAN XDONOR cycle 624961 t2s 3 pass 0 xle0 0 minX/Eo 8.375e-03 donor 68931531 cap 2681 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 624961 t2s 3 pass closure 3.031e+00
+CLEAN XDONOR cycle 624961 t2s 3 pass 1 xle0 0 minX/Eo 3.526e-02 donor 68958959 cap 3021 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 624961 t2s 3 pass closure 6.241e-01
+CLEAN XDONOR cycle 624961 t2s 3 pass 2 xle0 0 minX/Eo 6.155e-02 donor 68959337 cap 2996 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 2
+CLEAN XT cycle 624961 t2s 3 pass closure 7.043e-01
+CLEAN XDONOR cycle 624961 t2s 3 pass 3 xle0 0 minX/Eo 6.919e-02 donor 68959005 cap 2961 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 2
+CLEAN XT cycle 624961 t2s 3 pass closure 5.357e-02
+CLEAN XDONOR cycle 624961 t2s 3 pass 4 xle0 0 minX/Eo 6.954e-02 donor 68958815 cap 2959 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 3
+CLEAN XT cycle 624961 t2s 3 pass closure 4.440e-03
+CLEAN cycle 624961 t2s 3 it 3 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 928 first 0 928 guard 0 solves 5 cwin 0
+CLEAN LZ cycle 624961 t2s 3 ledger 2.5263067419543845e+41
+CLEAN XT cycle 624961 t2s 3 write-back closure 8.099e-03
+elapsed=7.045195e+01 cycle=624962 time=5.011207e+07 dt=1.005172e+02
+CLEAN OLDVEC cycle 624962 t2s 2 eint<0 21042 (taken as 0) E<0 14000
+CLEAN XT cycle 624962 t2s 2 pass closure 8.465e-02
+CLEAN XDONOR cycle 624962 t2s 2 pass 0 xle0 45585 minX/Eo -3.484e+01 donor 69722679 cap 23426 b<0 364 (with X<=0 31; Eo<0 1, Eo<hdivS 0) most-neg work 0 exch 45584 sb 0 gres 0 it 1
+CLEAN XT cycle 624962 t2s 2 pass closure 1.951e+05
+CLEAN XDONOR cycle 624962 t2s 2 pass 1 xle0 2837 minX/Eo -1.551e+01 donor 69741891 cap 13470 b<0 1185 (with X<=0 202; Eo<0 0, Eo<hdivS 0) most-neg work 163 exch 2077 sb 263 gres 334 it 1
+CLEAN XT cycle 624962 t2s 2 pass closure 2.765e+05
+CLEAN XDONOR cycle 624962 t2s 2 pass 2 xle0 615 minX/Eo -1.595e+00 donor 69730421 cap 12375 b<0 1625 (with X<=0 273; Eo<0 0, Eo<hdivS 0) most-neg work 6 exch 487 sb 89 gres 33 it 1
+CLEAN XT cycle 624962 t2s 2 pass closure 1.770e+03
+CLEAN XDONOR cycle 624962 t2s 2 pass 3 xle0 192 minX/Eo -8.573e-02 donor 69719268 cap 12510 b<0 1434 (with X<=0 192; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 192 sb 0 gres 0 it 6
+CLEAN XT cycle 624962 t2s 2 pass closure 7.756e+02
+CLEAN XDONOR cycle 624962 t2s 2 pass 4 xle0 144 minX/Eo -3.729e-02 donor 69717077 cap 12556 b<0 1456 (with X<=0 144; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 144 sb 0 gres 0 it 2
+CLEAN XT cycle 624962 t2s 2 pass closure 7.706e+02
+CLEAN XDONOR cycle 624962 t2s 2 pass 5 xle0 17 minX/Eo -3.549e-02 donor 69717038 cap 12612 b<0 1285 (with X<=0 17; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 17 sb 0 gres 0 it 2
+CLEAN XT cycle 624962 t2s 2 pass closure 5.974e+02
+CLEAN XDONOR cycle 624962 t2s 2 pass 6 xle0 14 minX/Eo -8.064e-03 donor 69717079 cap 12616 b<0 1277 (with X<=0 14; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 14 sb 0 gres 0 it 1
+CLEAN XT cycle 624962 t2s 2 pass closure 4.822e+02
+CLEAN XDONOR cycle 624962 t2s 2 pass 7 xle0 9 minX/Eo -2.846e-02 donor 69717067 cap 12618 b<0 1269 (with X<=0 3; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 9 sb 0 gres 0 it 1
+CLEAN XT cycle 624962 t2s 2 pass closure 3.510e+02
+CLEAN cycle 624962 t2s 2 it 1 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 9602 first 0 9602 guard 0 solves 8 cwin 0
+CLEAN XT cycle 624962 t2s 2 write-back closure 6.137e+02
+CLEAN OLDVEC cycle 624962 t2s 3 eint<0 2 (taken as 0) E<0 332
+CLEAN XT cycle 624962 t2s 3 pass closure 4.658e-04
+CLEAN XDONOR cycle 624962 t2s 3 pass 0 xle0 3091 minX/Eo -2.080e+01 donor 75226066 cap 2251 b<0 14 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 3091 sb 0 gres 0 it 1
+CLEAN XT cycle 624962 t2s 3 pass closure 1.629e+03
+CLEAN XDONOR cycle 624962 t2s 3 pass 1 xle0 674 minX/Eo -6.699e+00 donor 75180144 cap 1910 b<0 17 (with X<=0 2; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 641 sb 16 gres 17 it 1
+CLEAN XT cycle 624962 t2s 3 pass closure 2.252e+02
+CLEAN XDONOR cycle 624962 t2s 3 pass 2 xle0 0 minX/Eo 2.669e-02 donor 75170105 cap 1856 b<0 19 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 2
+CLEAN XT cycle 624962 t2s 3 pass closure 9.139e+00
+CLEAN XDONOR cycle 624962 t2s 3 pass 3 xle0 0 minX/Eo 3.119e-02 donor 75168050 cap 1845 b<0 20 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 2
+CLEAN XT cycle 624962 t2s 3 pass closure 9.405e-01
+CLEAN XDONOR cycle 624962 t2s 3 pass 4 xle0 0 minX/Eo 3.119e-02 donor 75167953 cap 1848 b<0 17 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 3
+CLEAN XT cycle 624962 t2s 3 pass closure 9.243e-01
+CLEAN cycle 624962 t2s 3 it 3 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 774 first 0 774 guard 0 solves 5 cwin 0
+CLEAN LZ cycle 624962 t2s 3 ledger 9.8449137896052544e+41
+CLEAN XT cycle 624962 t2s 3 write-back closure 9.243e-01
+<time> dt_retry: 2 checkpoints (1.701706e+00 s, 6.016724e+03 MB on rank 0), 0 retries, cap -1.000000e+00
+<time> dt_retry: 4 View copies skipped (unwritten since the last copy, dt_retry_host; not written in the cycle, SetSkip)
+<time> counters_rollback: event counters of discarded attempts dropped: dt_retry 0, backward-Euler redo 0, hesdirk2 helper solves 0; E-floor created energy dropped (m1_pos_un, x volume) 0.000000e+00 / 0.000000e+00 / 0.000000e+00, vceil_de dropped 0.000000e+00 / 0.000000e+00 / 0.000000e+00
+### FATAL ERROR in ../../src/outputs/restart.cpp at line 1654
+rad_m1 hesdirk2 slope not written correctly to rst file, restart file is broken.
+Kokkos::Cuda ERROR: Failed to call Kokkos::Cuda::finalize()
+terminate called after throwing an instance of 'std::runtime_error'
+  what():  cudaSetDevice(m_device) error( cudaErrorCudartUnloading): driver shutting down ../../../../kokkos/core/src/Cuda/Kokkos_CudaSpace.cpp:378
+[hpc-sm-02-16:3383987] *** Process received signal ***
+[hpc-sm-02-16:3383987] Signal: Aborted (6)
+[hpc-sm-02-16:3383987] Signal code:  (-6)
+[hpc-sm-02-16:3383987] [ 0] /lib64/libc.so.6(+0x3e730)[0x7f8d63e3e730]
+[hpc-sm-02-16:3383987] [ 1] /lib64/libc.so.6(+0x8ba6c)[0x7f8d63e8ba6c]
+[hpc-sm-02-16:3383987] [ 2] /lib64/libc.so.6(raise+0x16)[0x7f8d63e3e686]
+[hpc-sm-02-16:3383987] [ 3] /lib64/libc.so.6(abort+0xd3)[0x7f8d63e28833]
+[hpc-sm-02-16:3383987] [ 4] /lib64/libstdc++.so.6(+0xa1b21)[0x7f8d642a1b21]
+[hpc-sm-02-16:3383987] [ 5] /lib64/libstdc++.so.6(+0xad52c)[0x7f8d642ad52c]
+[hpc-sm-02-16:3383987] [ 6] /lib64/libstdc++.so.6(+0xac4f9)[0x7f8d642ac4f9]
+[hpc-sm-02-16:3383987] [ 7] /lib64/libstdc++.so.6(__gxx_personality_v0+0x9a)[0x7f8d642acc7a]
+[hpc-sm-02-16:3383987] [ 8] /lib64/libgcc_s.so.1(+0x112d4)[0x7f8d6a6e22d4]
+[hpc-sm-02-16:3383987] [ 9] /lib64/libgcc_s.so.1(_Unwind_Resume+0x12e)[0x7f8d6a6e2d0e]
+[hpc-sm-02-16:3383987] [10] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x5f0644]
+[hpc-sm-02-16:3383987] [11] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x283aa60]
+[hpc-sm-02-16:3383987] [12] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x283bf0f]
+[hpc-sm-02-16:3383987] [13] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x677c4f]
+[hpc-sm-02-16:3383987] [14] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x2836e21]
+[hpc-sm-02-16:3383987] [15] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x27bea79]
+[hpc-sm-02-16:3383987] [16] /lib64/libc.so.6(+0x40e2d)[0x7f8d63e40e2d]
+[hpc-sm-02-16:3383987] [17] /lib64/libc.so.6(on_exit+0x0)[0x7f8d63e40f70]
+[hpc-sm-02-16:3383987] [18] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x148cbff]
+[hpc-sm-02-16:3383987] [19] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x951847]
+[hpc-sm-02-16:3383987] [20] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x5f2b8e]
+[hpc-sm-02-16:3383987] [21] /lib64/libc.so.6(+0x295d0)[0x7f8d63e295d0]
+[hpc-sm-02-16:3383987] [22] /lib64/libc.so.6(__libc_start_main+0x80)[0x7f8d63e29680]
+[hpc-sm-02-16:3383987] [23] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x6598b5]
+[hpc-sm-02-16:3383987] *** End of error message ***
+srun: error: hpc-sm-02-16: task 2: Aborted (core dumped)
+[2026-11-20T01:59:32.431] error:  mpi/pmix_v3: _errhandler: hpc-sm-02-16 [0]: pmixp_client_v2.c:219: Error handler invoked: status = -25, source = [slurm.pmix.5840650.6:2]
+[2026-11-20T01:59:33.249] error: *** STEP 5840650.6 ON hpc-sm-02-16 CANCELLED AT 2026-11-20T01:59:33 DUE to SIGNAL Killed ***
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+[2026-11-20T01:59:36.285] error:  mpi/pmix_v3: _errhandler: hpc-sm-02-16 [0]: pmixp_client_v2.c:219: Error handler invoked: status = -25, source = [slurm.pmix.5840650.6:1]
+srun: error: hpc-sm-02-16: tasks 0-1,3: Killed

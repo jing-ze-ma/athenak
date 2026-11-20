@@ -26,3 +26,7 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 ## Results (one line per arm)
 - V20GP_rsg (hpc-sm-02-16): rc=0 wall=161 | cycles 589788 - 589792 | steady 2.906 s/cycle | GPU MiB max 109195 min 108061 | CW a 0 FATAL 0 |  
 - V20GR_rsg (hpc-sm-02-11): rc=0 wall=158 | cycles 589788 - 589792 | steady 2.872 s/cycle | GPU MiB max 109195 min 108061 | CW a 0 FATAL 0 |  
+- V20G_rsg (hpc-sm-01-17): rc=0 wall=153 rc=0 wall=151 rc=0 wall=148 | cycles 589788 - 589792 | steady 2.858 s/cycle | GPU MiB max 109195 min 108061 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF  xcheck vs V20G_rsg/a: V20GP_rsg/rsg.hydro.hst=same V20GP_rsg/rsg.user.hst=same V20GR_rsg/rsg.hydro.hst=same V20GR_rsg/rsg.user.hst=same
+- TQK_rsg (hpc-sm-01-11): rc=0 wall=94 | cycles 589788 - 589794 | steady 3.021 s/cycle | GPU MiB max 109195 min 108061 | CW a 0 FATAL 0 |  
+- V20G_hg (hpc-sm-02-16): rc=137 wall=126 rc=137 wall=116 rc=137 wall=25 | cycles 624961 - 624964 | steady 3.919 s/cycle | GPU MiB max 116703 min 115915 | CW a 0 FATAL 1 | rt: 0 same, 5 DIFF 
+  FAILED: last 100 lines in caltech_results/V20G_hg/FAIL_tail100.txt

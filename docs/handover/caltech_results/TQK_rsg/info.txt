@@ -1,0 +1,1 @@
+TAG=TQK_rsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_tie-check_b8cb577ab md5=9fe38751ef0c3329fd143496caa5e376 RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=6 MODE=speed HOLDER=6133593 NODE=hpc-sm-01-11 NR=4 ENVX=TIE_CHECK=1 EX=output1/dt=1
