@@ -129,3 +129,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   * SPG A/B started now (v20j gate done): claiming 4 nodes.
 - UR8_rsg (hpc-sm-02-03): rc=0 wall=206 | cycles 589788 - 589818 | steady 3.361 s/cycle | GPU MiB max 104911 min 103627 | CW a 0 FATAL 0 |  
 - UR0_rsg (hpc-sm-02-04): rc=0 wall=178 | cycles 589788 - 589818 | steady 3.396 s/cycle | GPU MiB max 94751 min 93823 | CW a 0 FATAL 0 |  
+- GCA300_rsg (hpc-sm-01-11): rc=0 wall=1338 | cycles 589788 - 590088 | steady 4.227 s/cycle | GPU MiB max 95661 min 94343 | CW a 15 FATAL 0 |  
+- CNX_hg (hpc-sm-01-17): rc=0 wall=180 | cycles 624961 - 624967 | steady 17.710 s/cycle | GPU MiB max 120151 min 119595 | CW a 2 FATAL 0 |  k1_xpos: 
