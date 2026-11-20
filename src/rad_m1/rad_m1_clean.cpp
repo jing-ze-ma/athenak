@@ -5056,7 +5056,7 @@ void RadiationM1::CleanWriteBack() {
   static const bool lzcs_env = (std::getenv("LZCS") != nullptr);
   const bool lzd = lzcs_env && lzb && x.cub;
   DvceArray5D<Real> lzq;
-  if (lzd) lzq = DvceArray5D<Real>("lzcs_q", nmb1 + 1, 10, u0.extent_int(2),
+  if (lzd) lzq = DvceArray5D<Real>("lzcs_q", nmb1 + 1, 12, u0.extent_int(2),
                                    u0.extent_int(3), u0.extent_int(4));
   CleanFor("cln_wbcell", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -5159,8 +5159,19 @@ void RadiationM1::CleanWriteBack() {
         lzq(m,8,k,j,i) = dlz;
         lzq(m,9,k,j,i) = (xh.lzs < 0) ? 0.0 : (h*((i == ie) ? xh.fc[0](m,xh.lzs,k,j,ie+1) : 0.0)
                          - h*((i == is) ? xh.fc[0](m,xh.lzs,k,j,is) : 0.0));
+        Real sa = 0.0;
+        for (int d = 0; d < 6 && xh.lzs >= 0; ++d) {
+          const int n = d/2;
+          sa += fabs(xh.fc[n](m,xh.lzs,k+(d%2)*(n == 2),j+(d%2)*(n == 1),i+(d%2)*(n == 0)));
+        }
+        lzq(m,10,k,j,i) = h*sa;
       }
       CleanStagGasMomentum(x, uh, m, k, j, i, pg);
+      if (lzd) {   // (LZTEL: sLt = V R |p_phi| of the gas)
+        Real q[3][3];
+        const Real rc = CleanCsFrame(x, m, k, j, i, q);
+        lzq(m,11,k,j,i) = x.vol(m,k,j,i)*rc*fabs(q[2][0]*pg[0] + q[2][1]*pg[1] + q[2][2]*pg[2]);
+      }
       CleanStagRefForce(x, fref, fr, aref, uh(m,IDN,k,j,i), m, k, j, i, rf);
       for (int n = 0; n < 3; ++n) {   // (force_reference)
         if (fref != M1_FREF_NONE) dm[n] -= h*rf[n];
@@ -5350,7 +5361,7 @@ void RadiationM1::CleanWriteBack() {
     }
   });
   if (lzd) {   // (LZCS STUDY)
-    for (int c = 0; c < 10; ++c) {
+    for (int c = 0; c < 12; ++c) {
       const std::array<Real, 3> r = LzcsSum(pmy_pack, lzq, c);
       if (global_variable::my_rank == 0) {
         std::printf("LZCS cycle %d t2s %d c %d all %.10e top %.10e bot %.10e\n",
