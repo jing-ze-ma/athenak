@@ -1,0 +1,10 @@
+# LZTEL3 cs_lz_tel study (orion 2026-11-20, NOTE ca). PRIORITY 5: run after BEAMFIX, the attribution set, LEAN2 and the L2 seeds.
+# Same settings as H_tel_hg (NR=8 on 2 nodes, armc2.sh, hegiant.00139) and R_tel_rsg (NR=4, rsg.01295).
+# B_lztel3s = caltech-runs/lztel3-study   3b22ddd2fa776df474269221726c3de6e19723dd (v201e 3efbbbd17 + env LZ3 prints only, no state change)
+# B_lztel3f = caltech-runs/lztel3-fixstudy 90c4715106f10abf520a5b2a6b767d88e00bd930 (candidate cs_lz_tel fix + LZ3 prints)
+# Provenance: D_on hst must equal H_tel_hg rows 0-499 bitwise; D_off hst must equal L1_hg_off rows 0-299 bitwise.
+FINALRST=0 NR=8 ENVX=LZ3=1,ATHENA_DT_REPORT=1  D_on_hg  B_lztel3s HG 500  hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_cs_lz_tel=true
+FINALRST=0 NR=8 ENVX=LZ3=1,ATHENA_DT_REPORT=1  D_off_hg B_lztel3s HG 300  hg_v20.keys time/dt_retry_host=m1
+FINALRST=0 NR=8 ENVX=LZ3=1,ATHENA_DT_REPORT=10 G_on_hg  B_lztel3f HG 1000 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_cs_lz_tel=true
+# only if a slot is free:
+FINALRST=0 NR=4 ENVX=LZ3=1,ATHENA_DT_REPORT=10 G_rsg    B_lztel3f RSG 1000 rsg_v20.keys rad_m1/clean_cs_lz_tel=true
