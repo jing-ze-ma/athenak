@@ -337,12 +337,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_stag_csvec_radial (default off): the cubed sphere's cell vector exact for a
     // radial field (CleanStagCsVector)
     cln_csvr = stag("clean_stag_csvec_radial", false);
-    // clean_stag_fidp = 0 (default) | 1 | 2: the face momentum of every F solve within the
+    // clean_stag_fidp = 0 (default) | 1 | 2 | 3: the face momentum of every F solve within the
     // free-streaming interval of its cells, [-c E_R, c E_L] (CleanStagFSolve); 1: the gas
     // takes the absorption of the limited F and the removed momentum is booked (CLEAN
-    // FIDP), 2: the gas takes the removed momentum
+    // FIDP), 2: the gas takes the removed momentum, 3: the gas takes what it took of the
+    // solve's F, the radiation's change booked
     if (!cln_cell && pin->DoesParameterExist("rad_m1", "clean_stag_fidp")) {
-      cln_fidp = std::min(std::max(pin->GetInteger("rad_m1", "clean_stag_fidp"), 0), 2);
+      cln_fidp = std::min(std::max(pin->GetInteger("rad_m1", "clean_stag_fidp"), 0), 3);
     }
     // clean_stag_xdonor = off (default) | p1 | lag: the off-diagonal stress flux an
     // M-matrix term (CleanStagXDonor); clean_stag_xsrc (default off): also the face
