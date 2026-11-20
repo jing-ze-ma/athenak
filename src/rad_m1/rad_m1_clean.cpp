@@ -3675,11 +3675,14 @@ void RadiationM1::CleanStagBracket() {
       // (12: no clamp; a cell gates only where it holds more than the rays and that excess
       // is sourced by its gas: r = 1 - s (1 - J/E_old), s = min(1, a T^4/E_old); an excess
       // the gas cannot source (vacuum, cold gas) is numerical leak, corrected in full)
-      // (13: = 12 with s times the cell's coupling over the stage, min(1, rho kappa_P c h))
-      if (dgf == 12 || dgf == 13) {
+      // (13: = 12 with s times the cell's coupling over the stage, min(1, rho kappa_P c h);
+      // 17: = 13, then each face's DG times its donor's R below)
+      if (dgf == 12 || dgf == 13 || dgf == 17 || dgf == 18 || dgf == 19) {
+        // (19: = 13, and the deficit side gated as v20.1, r = E_old/J)
         auto rs = [&](const Real e, const Real jj, const Real t, const Real kp) {
+          if (dgf == 19 && jj > e && jj > 0.0) return e/jj;
           if (!(e > jj && e > 0.0)) return 1.0;
-          const Real cp = (dgf == 13) ? fmin(1.0, fmax(kp, 0.0)*x.c*x.h) : 1.0;
+          const Real cp = (dgf >= 13) ? fmin(1.0, fmax(kp, 0.0)*x.c*x.h) : 1.0;
           const Real sg = cp*fmin(1.0, ar_*SQR(SQR(fmax(t, 0.0)))/e);
           return 1.0 - sg*(1.0 - jj/e);
         };
@@ -3710,6 +3713,48 @@ void RadiationM1::CleanStagBracket() {
       const Real ml = (dgf == 1) ? fmin(jl, eol) : jl, mr = (dgf == 1) ? fmin(jr, eor) : jr;
       const Real hup = x.fc[dir](m,CLF_HP,k,j,i)*ml + x.fc[dir](m,CLF_HM,k,j,i)*mr;
       x.fc[dir](m,x.fdg,k,j,i) = q*x.c*(fmin(fmax(fy, -jr), jl) - hup);
+    });
+  }
+  // (17: a cell passes on at most the rays' flux it receives plus the E it holds: R =
+  // min(1, (E_old + h sum_in w|DG| A/V)/(h sum_out w|DG| A/V)) of each cell (CLW_Z, J no
+  // longer read), each face's DG times R of its donor; a beam's cells, inflow = outflow,
+  // keep R = 1, a cell the rays drain beyond its E is cut)
+  // (18: = 17 with the inflow of the last solve's total face flux CLF_PT, M1's own part
+  // and the boundaries' included)
+  if ((dgf != 17 && dgf != 18) || rat || x.fdg < 0) return;
+  CleanFor("cln_sbr", nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    CLEAN_HIPX(const CleanArgs &x = *px;)
+    Real fin = 0.0, fout = 0.0;
+    for (int dir = 0; dir < x.nf; ++dir) {
+      const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+      const Real lo = CleanBoundaryFace(x, dir, m, k, j, i) ? 0.0 :
+          x.fc[dir](m,CLF_W,k,j,i)*x.fc[dir](m,x.fdg,k,j,i)*CleanDivW(x, dir, m, k, j, i, 0);
+      const Real hi = CleanBoundaryFace(x, dir, m, k+dk, j+dj, i+di) ? 0.0 :
+          x.fc[dir](m,CLF_W,k+dk,j+dj,i+di)*x.fc[dir](m,x.fdg,k+dk,j+dj,i+di)*
+          CleanDivW(x, dir, m, k, j, i, 1);
+      if (dgf == 18) {
+        fin += fmax(x.fc[dir](m,CLF_PT,k,j,i)*CleanDivW(x, dir, m, k, j, i, 0), 0.0) -
+               fmin(x.fc[dir](m,CLF_PT,k+dk,j+dj,i+di)*CleanDivW(x, dir, m, k, j, i, 1), 0.0);
+      } else {
+        fin += fmax(lo, 0.0) - fmin(hi, 0.0);
+      }
+      fout += fmax(hi, 0.0) - fmin(lo, 0.0);
+    }
+    const Real av = fmax(x.w(m,CLW_EO,k,j,i), 0.0) + x.h*fin;
+    x.w(m,CLW_Z,k,j,i) = (x.h*fout > av) ? av/(x.h*fout) : 1.0;
+  });
+  CleanGhostFill(cln_w, CLW_Z, 1);
+  CleanStagCsLateral(CLW_Z);
+  for (int dir = 0; dir < x.nf; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    CleanFor("cln_sbr2", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      CLEAN_HIPX(const CleanArgs &x = *px;)
+      if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
+      const Real g = x.fc[dir](m,x.fdg,k,j,i);
+      x.fc[dir](m,x.fdg,k,j,i) = g*((g > 0.0) ? x.w(m,CLW_Z,k-dk,j-dj,i-di) :
+                                               x.w(m,CLW_Z,k,j,i));
     });
   }
 }
