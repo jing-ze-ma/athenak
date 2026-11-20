@@ -321,7 +321,7 @@ void RadiationM1::CleanClosureIterate() {
   auto w = cln_w;
   auto u = cln_x;
   auto phq = cln_phic;
-  const bool rfi = !cell && cln_rfin;   // (clean_ray_flux_in = phi)
+  const bool rfi = !cell && cln_rfin && cln_phiset;   // (clean_ray_flux_in = phi)
   par_for("cln_clositer", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     iw_(m,M1_IW_EN,k,j,i) = fmax(cell ? u(m,CLC_K,k,j,i) : w(m,CLW_EK,k,j,i), 0.0);
@@ -685,7 +685,7 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
   auto iw_ = iw;
   auto u0_ = u0;
   auto phq = cln_phic;
-  const bool rfi = !cln_cell && cln_rfin;   // (clean_ray_flux_in = phi)
+  const bool rfi = !cln_cell && cln_rfin && cln_phiset;   // (clean_ray_flux_in = phi)
   auto uh = fl.u0;
   auto eos = fl.eos;
   auto k1 = t2k1;
