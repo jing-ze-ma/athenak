@@ -258,3 +258,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - PF_hg_h200 (hpc-sm-01-11): rc=0 wall=118 | cycles 624961 - 624966 | steady 5.220 s/cycle | GPU MiB max 119355 min 118811 | CW a 0 FATAL 0 |  nsys: r0lab.txt 4 lines, syncattr.txt 6 lines
 - TG_rsg_r8_gdr (hpc-sm-01-17,hpc-sm-02-03): rc=137 wall=63 |  | steady  s/cycle | GPU MiB max 56677 min 55791 | CW a 0 FATAL 0 |  
   FAILED: last 100 lines in caltech_results/TG_rsg_r8_gdr/FAIL_tail100.txt
+  TG_rsg_r8_gdr (GDR on, 2 nodes): aborts at the first halo traffic with `ib_mlx5_log.c:179 Local protection error on mlx5_2:1/IB (synd 0x4 vend 0x51)` in uct_rc_mlx5 (same as our 10-21 finding); tail sent, not retried. GDR stays off (UCX_IB_GPU_DIRECT_RDMA=no) for every multi-node arm.
