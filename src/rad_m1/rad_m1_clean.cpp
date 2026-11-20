@@ -4617,7 +4617,8 @@ void RadiationM1::CleanStagFCsShared() {
 //! the cubed sphere books dlz, the L_z of dF the gas does not take, CleanStagMomentum).
 //! The faces' F before it in slot cln_rzs; F' into the cells' slots, then the ghosts and
 //! CleanStagFCsShared again, so that a shared face has one F' (the lower gid's) to the
-//! bit.  gas_cone | ledger_cone: a = a_c only (F' = F inside the cone)
+//! bit.  gas_cone | ledger_cone: a = a_c only (F' = F inside the cone);
+//! clean_stag_freal_lat: w = 0 on the x1 (radial) faces
 
 void RadiationM1::CleanStagFRelax(const int e) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -4627,7 +4628,8 @@ void RadiationM1::CleanStagFRelax(const int e) {
   auto v = cln_v;
   const int rzs = cln_rzs;
   const bool pr = (e == CLW_X);   // (the write-back's: counted and printed)
-  const bool cone = (cln_frz > 2);   // (_cone: a = a_c, no c/dx relaxation)
+  const bool cone = (cln_frz % 10 > 2);   // (_cone: a = a_c, no c/dx relaxation)
+  const bool lat = (cln_frz >= 10);       // (clean_stag_freal_lat: x2, x3 faces only)
   Kokkos::View<Real*> rc("m1_frz", 8);
   for (int dir = 0; dir < 3; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
@@ -4642,7 +4644,7 @@ void RadiationM1::CleanStagFRelax(const int e) {
       const Real cm = x.c*fmax(el, er);
       const Real fk = x.c*(fmin(fmax(fc(m,CLF_HP,k,j,i), 0.0), 1.0)*el +
                            fmax(fmin(fc(m,CLF_HM,k,j,i), 0.0), -1.0)*er);
-      const Real w = fmin(fmax(fc(m,CLF_W,k,j,i), 0.0), 1.0);
+      const Real w = (lat && dir == 0) ? 0.0 : fmin(fmax(fc(m,CLF_W,k,j,i), 0.0), 1.0);
       Real a = cone ? 1.0 :
                1.0/(1.0 + x.h*x.c/CleanCellFaceDistance(x, dir, m, k, j, i));
       const bool out = !(fabs(f) <= cm);

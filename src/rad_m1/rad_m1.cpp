@@ -369,6 +369,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                   << " the cubed sphere's F solve only" << std::endl;
         std::exit(EXIT_FAILURE);
       }
+      // clean_stag_freal_lat (default false): the lateral faces only (x2, x3)
+      if (cln_frz > 0 && pin->GetOrAddBoolean("rad_m1", "clean_stag_freal_lat", false)) {
+        cln_frz += 10;
+      }
     }
     // clean_stag_csvec_radial (true, the only form): the cubed sphere's cell vector exact
     // for a radial field (CleanStagCsVector); false (the old least-squares fit) is gone
