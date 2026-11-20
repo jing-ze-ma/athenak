@@ -191,6 +191,7 @@ Mesh::Mesh(ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     repro::block_mode = (lim == "block");
+    repro::hist_exact = true;
   }
   cs_seam_fc_nolimit = use_cubed_sphere &&
                        pin->DoesParameterExist("mesh", "cs_seam_fc_nolimit") &&
