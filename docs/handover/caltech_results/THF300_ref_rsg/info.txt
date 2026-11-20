@@ -1,0 +1,1 @@
+TAG=THF300_ref_rsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_thinf_2aaaaa5d1 md5=d4d9ed4708794c11b7055bd5890fe255 RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=300 MODE=speed HOLDER=6133592 NODE=hpc-sm-02-04 NR=4 ENVX= EX=rad_m1/clean_conv_kappa=0.1 rad_m1/clean_stag_thinf=0
