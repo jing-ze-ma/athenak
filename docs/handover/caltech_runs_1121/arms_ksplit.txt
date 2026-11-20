@@ -1,0 +1,6 @@
+# CONV3 KSPLIT diagnostic (orion 2026-11-20). B_ksplit = caltech-runs/ksplit 1f9926b49 (v20l + print only). KS1 first.
+FINALRST=0 KS1_hg   B_ksplit HG 6 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true
+FINALRST=0 KS001_hg B_ksplit HG 5 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_conv_kappa=0.01
+# if the LWr bins are gone: exact reruns with bins kept (as LWr1170_hg / LWr260_hg), then real_nb.py, then delete bins
+FINALRST=0 KEEPBIN=1 LWs1170_hg B_v20f HG 100 hg_v20.keys time/dt_retry_host=m1 output3/dt=1950
+FINALRST=0 KEEPBIN=1 LWs260_hg  B_v20f HG 100 hg_v20.keys time/dt_retry_host=m1 output3/dt=1950 rad_m1/vet_gd_rotate_dt=260
