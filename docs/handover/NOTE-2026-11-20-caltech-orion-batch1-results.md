@@ -68,3 +68,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   so the HG rst-write FATAL is the romio321 path.
 - AB4_rsg (hpc-sm-02-09): rc=0 wall=94 | cycles 589788 - 589794 | steady 3.000 s/cycle | GPU MiB max 109447 min 108315 | CW a 9 FATAL 0 |  
 - AB5_rsg (hpc-sm-01-17): rc=0 wall=86 | cycles 589788 - 589794 | steady 2.970 s/cycle | GPU MiB max 108889 min 107703 | CW a 0 FATAL 0 |  
+- LW1170_hg (hpc-sm-02-11): rc=0 wall=594 | cycles 624961 - 625061 | steady 5.023 s/cycle | GPU MiB max 115761 min 115163 | CW a 0 FATAL 0 |  (real.py runs when both LW arms are done)
