@@ -3488,6 +3488,25 @@ void RadiationM1::CleanStagBracket() {
         x.fc[dir](m,x.fdg,k,j,i) = x.c*((dgf == 6) ? fmin(fmax(fy, -jr), jl) : fy) - pj;
         return;
       }
+      // (7, 8: the defect first shrinks the half range it cancels, h+ of L where it flows to
+      // L, h- of R where it flows to R, at most to 0, per max(J, E_old) (7) or J (8) of
+      // that cell; the rest the additive DG)
+      if (dgf == 7 || dgf == 8) {
+        const Real hp = x.fc[dir](m,CLF_HP,k,j,i), hm = x.fc[dir](m,CLF_HM,k,j,i);
+        Real dg = x.c*(fy - hp*jl - hm*jr);
+        const Real nl = (dgf == 7) ? fmax(jl, eol) : jl, nr = (dgf == 7) ? fmax(jr, eor) : jr;
+        if (dg < 0.0 && nl > 0.0) {
+          const Real d = fmax(dg, -x.c*hp*nl);
+          x.fc[dir](m,CLF_HP,k,j,i) = fmax(hp + d/(x.c*nl), 0.0);
+          dg -= d*jl/nl;
+        } else if (dg > 0.0 && nr > 0.0) {
+          const Real d = fmin(dg, -x.c*hm*nr);
+          x.fc[dir](m,CLF_HM,k,j,i) = fmin(hm + d/(x.c*nr), 0.0);
+          dg -= d*jr/nr;
+        }
+        x.fc[dir](m,x.fdg,k,j,i) = dg;
+        return;
+      }
       if (dgf == 5) {
         x.fc[dir](m,x.fdg,k,j,i) = x.c*(fy - x.fc[dir](m,CLF_HP,k,j,i)*jl
                                          - x.fc[dir](m,CLF_HM,k,j,i)*jr);
