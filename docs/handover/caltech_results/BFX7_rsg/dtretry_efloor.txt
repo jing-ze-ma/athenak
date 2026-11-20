@@ -1,0 +1,13 @@
+<rad_m1> implicit_pos_floor_cons: the E floor's uncovered raise is taken from the radiation of the same column (no energy created)
+<time> dt_retry on: fac 0.5 max 8 ngood 20 grow 1.1 views minimal cap -1
+<time> dt_retry checkpoint: 2423 members, 638 Views (13 copied, 4.694791e+03 MB on rank 0): hyd.u0 6.515040e+02 hyd.w0 6.515040e+02 hyd.wder 2.606016e+02 hyd.wtemp 1.303008e+02 m1.esrc 1.303008e+02 m1.f0x1 1.305360e+02 m1.f0x2 1.321622e+02 m1.f0x3 1.321622e+02 m1.t2k1 1.042406e+03 m1.t2pf1 3.909024e+02 m1.u0 5.212032e+02 m1.opac 5.212032e+02 pgen.hs_fsub 4.440000e-03
+CLEAN WARNING cycle 589838: backward-Euler solve not converged (dt_retry, 5 so far; last change 8.973e-04)
+CLEAN WARNING cycle 589838: backward-Euler solve not converged (dt_retry, 5 so far; last change 4.060e-04)
+CLEAN WARNING cycle 589838: backward-Euler solve not converged (dt_retry, 5 so far; last change 5.046e-05)
+CLEAN WARNING cycle 589838: backward-Euler solve not converged (dt_retry, 5 so far; last change 7.087e-05)
+CLEAN WARNING cycle 589838: backward-Euler solve not converged (dt_retry, 5 so far; last change 2.547e-05)
+CLEAN WARNING cycle 589838: backward-Euler solve not converged (dt_retry, 5 so far; last change 6.811e-05)
+CLEAN WARNING cycle 589838: backward-Euler solve not converged (dt_retry, 5 so far; last change 3.844e-05)
+CLEAN WARNING cycle 589838: backward-Euler solve not converged (dt_retry, 5 so far; last change 2.385e-05)
+CLEAN WARNING cycle 589838: backward-Euler solve not converged (dt_retry, 5 so far; last change 5.176e-05)
+### FATAL ERROR: <time> dt_retry: cycle 589838 failed 9 times (max 8), dt 3.836587e+00
