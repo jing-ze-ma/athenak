@@ -1292,7 +1292,7 @@ Real CleanThinFaceDG(const CleanArgs &x, const int dir, const int m, const int k
 
 CLEAN_HIP_INLINE KOKKOS_INLINE_FUNCTION
 Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k,
-                     const int j, const int i) {
+                     const int j, const int i, const Real *phw = nullptr) {
   const int pos = (dir == 0) ? i : ((dir == 1) ? j : k);
   const int lo = (dir == 0) ? x.is : ((dir == 1) ? x.js : x.ks);
   const int hi = (dir == 0) ? x.ie + 1 : ((dir == 1) ? x.je + 1 : x.ke + 1);
@@ -1345,8 +1345,8 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
   if (!x.hi) s += CleanThinFaceDG(x, dir, m, k, j, i, w);   // (CleanStagBracket's DG)
   // (the advective share 1 - theta_d of an upwind face, CleanFaceWeights)
   if (x.upw && x.feedback) {
-    Real al, ar, phi = 0.0;
-    CleanFaceWeights(x, dir, m, k, j, i, al, ar, &phi);
+    Real al, ar, phi = 0.0;   // (phw: the caller's phi of these args, CleanFaceFlux)
+    if (phw) phi = *phw; else CleanFaceWeights(x, dir, m, k, j, i, al, ar, &phi);
     if (phi > 0.0) {
       s += phi*((1.0 - w) - th)*(1.0 - qd)*CleanStagAdvectCorr(x, dir, m, k, j, i);
     }
@@ -1434,12 +1434,12 @@ CLEAN_DEVICE_NOINLINE CLEAN_HIP_INLINE KOKKOS_INLINE_FUNCTION
 Real CleanFaceFlux(const CleanArgs &x, const int e, const int dir, const int m,
                    const int k, const int j, const int i, const bool with_source) {
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
-  Real al, ar;
-  CleanFaceWeights(x, dir, m, k, j, i, al, ar);
+  Real al, ar, phi = 0.0;   // (phi: the source's upwind share, weights once)
+  CleanFaceWeights(x, dir, m, k, j, i, al, ar, &phi);
   Real f = CleanFaceCross(x, e, dir, m, k, j, i);
   if (al != 0.0) f += al*x.w(m,e,kl,jl,il);
   if (ar != 0.0) f += ar*x.w(m,e,k,j,i);
-  if (with_source) f += CleanFaceSource(x, dir, m, k, j, i);
+  if (with_source) f += CleanFaceSource(x, dir, m, k, j, i, &phi);
   return f;
 }
 
