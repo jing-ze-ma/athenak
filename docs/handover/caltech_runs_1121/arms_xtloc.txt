@@ -1,0 +1,4 @@
+# LAG xt_local pass cap (orion 2026-11-20). B_xtloc = caltech-runs/xtloc 947c469d8. Same setup as LV_loc300k01_rsg.
+FINALRST=0 LV_loc8_300k01_rsg B_xtloc RSG 300 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true rad_m1/clean_conv_kappa=0.1
+FINALRST=0 LV_loc8_300k10_rsg B_xtloc RSG 300 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true
+FINALRST=0 LV_ref8_300k10_rsg B_xtloc RSG 300 rsg_v20.keys rad_m1/clean_nl_print=true
