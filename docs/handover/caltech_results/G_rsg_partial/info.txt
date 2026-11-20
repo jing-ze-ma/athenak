@@ -1,0 +1,1 @@
+TAG=G_rsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_lztel3f_90c471510 md5=394f963d52717585cfccd9ccff9f2304 RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=1000 MODE=speed HOLDER=6133593 NODE=hpc-sm-01-11 NR=4 ENVX=LZ3=1 ATHENA_DT_REPORT=10 EX=rad_m1/clean_cs_lz_tel=true
