@@ -1,4 +1,5 @@
-# v20g GPU gate (orion 2026-11-21): run AHEAD of batch 2/3 (after the running batch-1 arms). Same form as V20F (batch 1 P3).
-FINALRST=1 MODE=rt                   V20G_rsg  B_v20g RSG 4 rsg_v20.keys
-FINALRST=1 ENVX=CLEAN_POISON_GHOST=1 V20GP_rsg B_v20g RSG 4 rsg_v20.keys
-FINALRST=1 MODE=rt                   V20G_hg   B_v20g HG  4 hg_v20.keys time/dt_retry_host=m1
+# v20g GPU gate (orion 2026-11-21, amended 21e): run AHEAD of batch 2/3. NH=2 = leg b dumps after 2 cycles, restarts, runs 2 more.
+FINALRST=1 MODE=rt NH=2              V20G_rsg   B_v20g RSG 4 rsg_v20.keys
+FINALRST=1 ENVX=CLEAN_POISON_GHOST=1 V20GP_rsg  B_v20g RSG 4 rsg_v20.keys
+FINALRST=1                           V20GR_rsg  B_v20g RSG 4 rsg_v20.keys
+FINALRST=1 MODE=rt NH=2              V20G_hg    B_v20g HG  4 hg_v20.keys time/dt_retry_host=m1
