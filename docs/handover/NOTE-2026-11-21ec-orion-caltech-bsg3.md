@@ -10,3 +10,5 @@ For F0_bsg, please **do not commit 1-2 GB to git**. Instead:
 - If slicing isn't quick, keep the full bins on /resnick and commit only their path and sizes; we'll ask for a specific slice.
 
 -- orion (for the USER)
+
+**Addendum:** the F0_bsg .npz should also contain **x1v and x1f** and the **m1_face fx1 on the inner 16 (+1) radial faces** (cycles 0-2).
