@@ -4161,7 +4161,9 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
         fc(m,CLF_N,k,j,i) = f;
         fc(m,CLF_N+2,k,j,i) = f;
         // (clean_stag_freal_relax = ledger: the gas takes the faces' terms as if F were
-        // the solve's, the relaxation's momentum is the radiation's, CleanLzBook)
+        // the solve's; the relaxation's momentum stays the radiation's: its L_z enters
+        // the cubed sphere's ledger through dlz, CleanStagMomentum, which books what the
+        // gas does not take of the faces' actual dF)
         if (rzl) fc(m,CLF_N+1,k,j,i) -= (fc(m,rzs,k,j,i) - f)/(x.h*x.c*x.c);
         if (rfo) {
           const Real xl = x.w(m,e,k-dk,j-dj,i-di), xr = x.w(m,e,k,j,i);
@@ -4611,7 +4613,8 @@ void RadiationM1::CleanStagFCsShared() {
 //! |F_K + a (F - F_K)| <= c max(E_L, E_R), so that F' is realisable where w = 1 (and its
 //! excess shrinks by w elsewhere); continuous in the state, no clip.  The removed
 //! momentum (F - F') V_f/c^2 goes to the gas through the faces' terms (gas), or is the
-//! radiation's, in the L_z ledger (ledger, CleanWriteBack).  The faces' F before it in
+//! radiation's (ledger: the gas's terms as without it; its L_z in the ledger, which on
+//! the cubed sphere books dlz, the L_z of dF the gas does not take, CleanStagMomentum).  The faces' F before it in
 //! slot cln_rzs; F' into the cells' slots, then the ghosts and CleanStagFCsShared again,
 //! so that a shared face has one F' (the lower gid's) to the bit
 
@@ -5231,8 +5234,7 @@ void RadiationM1::CleanWriteBack() {
   const bool cls = xwb || kpb;   // (the closure in CLW_PW, printed below)
   px = CleanDevArgs(x, 0);   // (the F solve took the slots; xh changed)
   pxh = CleanDevArgs(xh, 1);
-  const bool lzb = cln_lzbook && feedback, rzl = (cln_frz == 2);
-  const int rzs = cln_rzs;
+  const bool lzb = cln_lzbook && feedback;
   DvceArray4D<Real> lzw;
   if (lzb) lzw = ScratchView<DvceArray4D<Real>>("cln_lzw", nmb1 + 1, u0.extent_int(2),
                                                  u0.extent_int(3), u0.extent_int(4));
@@ -5300,17 +5302,6 @@ void RadiationM1::CleanWriteBack() {
       if (fm) fmd(m,k,j,i) = CleanStagRadial(x, m, k, j, i, dm);
       if (x.vzero) dm[0] = dm[1] = dm[2] = dlz = 0.0;   // (frozen gas momentum)
       if (lzb) lzw(m,k,j,i) = dlz;   // (clean_cs_lz_abs = 2: CleanLzBook)
-      if (lzb && rzl && !x.vzero) {   // (clean_stag_freal_relax = ledger: the L_z of the
-        Real c[6], fv[3], q[3][3];    //  face momentum it took, CleanLzTotal's form)
-        for (int d = 0; d < 6; ++d) {
-          const int n = d/2, s = d%2, kk = k+s*(n == 2), jj = j+s*(n == 1), ii = i+s*(n == 0);
-          c[d] = x.fc[n](m,rzs,kk,jj,ii) - x.fc[n](m,CLF_N,kk,jj,ii);
-        }
-        CleanStagCellVector(x, m, k, j, i, c, fv);
-        CleanStagHydro(x, m, k, j, i, fv);
-        lzw(m,k,j,i) += CleanVol(x, m, k, j, i)*CleanCsFrame(x, m, k, j, i, q)*fv[2]/
-                        (x.c*x.c);
-      }
       // (clean_stag_kreal: the stage's deferred kick, CleanStagKReal; its own kinetic
       // energy wkr leaves the slopes, which are the stage's f)
       if (krl && !x.vzero) {
