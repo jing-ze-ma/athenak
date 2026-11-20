@@ -1057,7 +1057,7 @@ void RadiationM1::CleanFaceCoefficients() {
   auto cs = cln_s;
   auto op = opac;
   auto inc = t2inc;
-  const bool fsk = cln_fsolve;
+  const bool fsk = cln_fsolve, fch = cln_fchi;
   // (cubed sphere: the opacities of seam ghosts are the neighbour's cells, not of the
   // resampled gas ghosts, as CleanCellFaceCoefficients: a seam face is single-valued)
   if (pmy_pack->pmesh->use_cubed_sphere) {
@@ -1081,7 +1081,9 @@ void RadiationM1::CleanFaceCoefficients() {
     par_for("cln_facecoef", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int kl = k - dk, jl = j - dj, il = i - di;
-      const Real chi = 0.5*(op(m,M1_OP_T,k,j,i) + op(m,M1_OP_T,kl,jl,il));
+      const Real chi = !fch ? 0.5*(op(m,M1_OP_T,k,j,i) + op(m,M1_OP_T,kl,jl,il)) :
+          0.5*(fmax(op(m,M1_OP_T,k,j,i), op(m,M1_OP_E,k,j,i)) +
+               fmax(op(m,M1_OP_T,kl,jl,il), op(m,M1_OP_E,kl,jl,il)));
       const Real c1 = fmax(cs(m,CLN_C1,k,j,i), cs(m,CLN_C1,kl,jl,il));
       fc(m,CLF_W,k,j,i) = CleanSmoothStep((c1 - c1lo)/(c1hi - c1lo));
       fc(m,CLF_TH,k,j,i) = 1.0/(1.0 + h*c*chi);

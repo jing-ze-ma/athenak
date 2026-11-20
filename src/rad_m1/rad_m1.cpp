@@ -342,6 +342,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // the comoving part of sb at most 2 |beta| hc kE E_k and the faces of a restart from
     // the old scheme's file at most c E of their donor
     cln_freal = stag("clean_stag_freal", cln_gflux && cln_fsolve);
+    // realz-1120 clean_stag_fchi (default false): the face momentum's extinction (theta)
+    // at least the absorption mean of E, chi_f = max(op_T, op_E): sources keep
+    // |F| <= c E (d(cE - |F|)/dt >= c^2 E (chi_F - kappa_E) at |F| = cE)
+    cln_fchi = stag("clean_stag_fchi", false);
     // clean_stag_csvec_radial (true, the only form): the cubed sphere's cell vector exact
     // for a radial field (CleanStagCsVector); false (the old least-squares fit) is gone
     cln_csvr = stag("clean_stag_csvec_radial", true);
