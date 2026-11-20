@@ -2019,8 +2019,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_cstb_m", vgd_cstb_m);
   v.value("vgd_cstb_h", vgd_cstb_h);
   v.value("vgd_cstb_u", vgd_cstb_u);
-  v.value("vgd_csmw_h", vgd_csmw_h);
-  v.value("vgd_csmw_r", vgd_csmw_r);
   v.value("vgd_cscl", vgd_cscl);
   v.value("vgd_csncl", vgd_csncl);
   v.value("vgd_cscur", vgd_cscur);
@@ -2329,6 +2327,8 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
 //   vgd_sr_fut : std::future<std::vector<double>>
 //   pbval_gd : MeshBoundaryValuesCC *
 //   pbval_hr : MeshBoundaryValuesCC *
+//   vgd_csmw_h : std::vector<uint32_t> (mark exchange scratch, written before read)
+//   vgd_csmw_r : std::vector<uint32_t> (mark exchange scratch, written before read)
 //   vgd_csmb : Kokkos::View<uint32_t *, LayoutWrapper, DevMemSpace>[2] (read-mask cache, rebuilt on reuse)
 //   vgd_ipc_rbuf : Real *
 //   vgd_ipc_sig : long long *

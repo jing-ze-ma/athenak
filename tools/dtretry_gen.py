@@ -31,8 +31,11 @@ SKIP_RE = [r'^std::thread', r'^std::future', r'Timer$', r'^MPI_', r'DevExeSpace'
 # would match stamps the failed attempt left, and those cells would be skipped)
 # pos_un_drop: the positivity report's sum over discarded attempts (CounterKeep::Restore adds after the checkpoint)
 # vgd_csmb: the cubed sphere's two read-mask buffers (a cache: dropped after a restore, the mask kernel re-runs on reuse)
+# vgd_csmw_h / vgd_csmw_r: the read-mark exchange's persistent host buffers (scratch: every build writes them before it
+# reads them; their copy was ~55 ms of host time per checkpoint on the A100 RSG / HG decks)
 SKIP_NAMES = {'hi_seq', 'vgd_ipc_seq', 'acc_nccl', 'cln_hbuf', 'cln_halo', 'cln_hpb', 'cln_hdl',
-              'vgd_es2_made', 'vgd_esid', 'vgd_est', 'pos_un_drop', 'vgd_csmb'}
+              'vgd_es2_made', 'vgd_esid', 'vgd_est', 'pos_un_drop', 'vgd_csmb',
+              'vgd_csmw_h', 'vgd_csmw_r'}
 NESTED = ['VgdTabHost', 'VgdTabDev', 'M1OpacTab', 'CleanW', 'CleanGeo']   # structs holding Views
 
 def ast(header, name):
@@ -75,6 +78,8 @@ def emit(fields, pre, out, skipped):
                    'cln_hdl': ' (cell lists made at first use, kept)',
                    'vgd_es2_made': ' (vgd_es2 made, kept)',
                    'vgd_csmb': ' (read-mask cache, rebuilt on reuse)',
+                   'vgd_csmw_h': ' (mark exchange scratch, written before read)',
+                   'vgd_csmw_r': ' (mark exchange scratch, written before read)',
                    'vgd_esid': ' (stamp id, kept monotonic)', 'vgd_est': ' (stamps, kept)'}
             skipped.append(nm + ' : ' + t + why.get(n, ' (protocol counter, kept monotonic)')); continue
         if t.startswith('const ') or t.endswith('*') or '(*)' in t or t.endswith('&'):
