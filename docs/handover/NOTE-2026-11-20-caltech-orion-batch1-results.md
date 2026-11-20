@@ -111,3 +111,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - LV_ref8_300k10_rsg (hpc-sm-02-10): rc=0 wall=1087 | cycles 589788 - 590088 | steady 3.368 s/cycle | GPU MiB max 109425 min 108455 | CW a 2 FATAL 0 |  npass: /resnick/groups/carnegie_poc/jingze/orion_runs_1121/LV_ref8_300k10_rsg/a/run.log: stages 601 passes mean 5.12 max 200 sum 3080 CW 2 | t2s1 200.00/200  | grep -ci retry run.log: 9
 - THF300_ref_rsg (hpc-sm-02-04): rc=0 wall=1099 | cycles 589788 - 590088 | steady 3.410 s/cycle | GPU MiB max 94893 min 93577 | CW a 0 FATAL 0 |  
 - THF100_ref_hg (hpc-sm-01-17): rc=0 wall=579 | cycles 624961 - 625061 | steady 4.944 s/cycle | GPU MiB max 112977 min 112453 | CW a 0 FATAL 0 |  
+- THF300_rsg (hpc-sm-02-03): rc=0 wall=1640 | cycles 589788 - 590088 | steady 5.228 s/cycle | GPU MiB max 94893 min 93867 | CW a 14 FATAL 0 |  
