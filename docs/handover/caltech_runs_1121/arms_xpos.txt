@@ -4,3 +4,6 @@ FINALRST=0 CXPR_hg B_xpos HG 6 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl
 # added 2026-11-20 (NOTE ad): B_xpos2 = caltech-runs/xpos2 330120901 (logic fix)
 FINALRST=0 CXQ_hg  B_xpos2 HG 6 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true rad_m1/clean_conv_kappa=0.01 rad_m1/time2_k1_xpos=0.1
 FINALRST=0 CXQR_hg B_xpos2 HG 6 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true rad_m1/time2_k1_xpos=0.1
+# added 2026-11-20 (NOTE ag): WITHOUT clean_xt_local. Order: CNX_hg first, then CXQ_hg / CXQR_hg, then CXQN_hg
+FINALRST=0 CNX_hg  B_convdiag HG 6 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.01
+FINALRST=0 CXQN_hg B_xpos2    HG 6 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.01 rad_m1/time2_k1_xpos=0.1
