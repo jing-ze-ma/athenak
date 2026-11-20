@@ -1,1 +1,26 @@
-MISSING /resnick/groups/carnegie_poc/jingze/fresh_prod_1120/t9l62/prof_t9l62_LIC.txt
+a cycles 0 - 50 dt first 96.8523 last 96.8589 s/cycle steady 1.965 first elapsed 44.7
+a 'FATAL' 0 
+a 'CLEAN WARNING' 0 
+a 'DT_RETRY' 0 
+a 'WARNING' 3 ### WARNING: 12 input parameter(s) were never read by the code (typo, or a key AthenaK does not have?):
+a 'march' 0 
+a 'clean_init steady:' 1 <rad_m1> clean_init steady: converged after 3 passes, residual 3.516e-17 (tol 1.0e-08; 0 formal solutions); radiation E 8.2441512239e+46 -> 8.2213711641e+46, F/c 1.5972e+42 0.0000e+00 0.0000e+00 -> 2.1620e+42 2.1857e+35 -3.1426e+29 (volume sums)
+a 'he_star_m1: GM' 1 he_star_m1: GM = 7.40338e+27, F_in = 6.9466e+13, tau(r_in) = 7.78158e+06, r_int (tau = 1) = 6.52547e+12, r_top = 5.63216e+13, sponge rate = 0 above r = 6.52547e+12
+a 'he_seed_band = n2 BAND' 1 he_star_m1: he_seed_band = n2 BAND r 4.32436e+12 .. 5.76689e+12 (r/r_int 0.662689 - 0.88375, r_int 6.52547e+12), 41 cells 138..178; peak at r/r_int 0.813972: sigma 2.971e-05 /s, 1/sigma 0.389569 d, T 142153 K, Gamma1 1.35135, H_p/r 0.118115; pi r/H_p 26.5977, l_8 180.467 (8 cells per wavelength, min
+a 'seed = ' 1 he_star_m1: seed = real spherical harmonics l 7..26 (680 terms, all m), amplitude 0.001 (eint), r 4.32436e+12 .. 5.76689e+12, rng 1234
+a 'direction maps' 1 <rad_m1> vet_gd: global-direction SC closure on the sp wedge, level-symmetric LQ10 (120 directions); z-rotation every 0 cycle(s) (0 = fixed), first angle 0; rank 0 wall ghost columns 48678, direction maps exact 2530800 of 5841360 (the rest: nearest direction)
+a 'he_ic_equil' 0 
+b run.log CW 0 DT_RETRY 0 FATAL 0
+b run2.log CW 0 DT_RETRY 0 FATAL 0
+GPU mem peak MiB max 75533 min 75377 (n=4) = 52.5 % of 143771 MiB
+rt t9l62.hydro.hst rows a 51 b 51 last 25 rows IDENTICAL
+rt t9l62.user.hst rows a 51 b 51 last 25 rows IDENTICAL
+rt t9l62.hydro_w.00003.bin same
+rt t9l62.m1.00003.bin same
+rt t9l62.m1_face.00001.bin same
+rt t9l62.m1_vet.00001.bin same
+a rc=0 wall=232
+b rc=0 wall=165
+restart from /resnick/groups/carnegie_poc/jingze/orion_runs_1121/freshgo/S_t9l62/b/rst/t9l62.00002.rst
+b rc=0 wall=131
+DONE
