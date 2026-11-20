@@ -21,3 +21,7 @@ FINALRST=0 NR=4 TG4_hg    B_bfxg HG  100 hg_v20.keys  time/dt_retry_host=m1 rad_
 FINALRST=0 NR=4 TG4_rsg   B_bfxg RSG 100 rsg_v20.keys rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_gmax=4
 FINALRST=0 NR=4 TGinf_hg  B_bfxg HG  100 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_gmax=1e30
 FINALRST=0 NR=4 TGinf_rsg B_bfxg RSG 100 rsg_v20.keys rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_gmax=1e30
+# added NOTE dg: B_xcap = caltech-runs/xcap 999d7afaaefb510a55a9b879c7d827687bf0de14 (thinf v7 + smooth xdonor cap key clean_stag_xcap_p; p=0 = bitwise old). With the TG arms, 1 node each, concurrent. Same keys as THF100_hg / THF300_rsg (thv7 keys); RSG = rsg.01295 as THF300_rsg.
+FINALRST=0 NR=4 XCP8_hg  B_xcap HG  100 hg_thv7.keys  time/dt_retry_host=m1 rad_m1/clean_stag_xcap_p=8
+FINALRST=0 NR=4 XCP2_hg  B_xcap HG  100 hg_thv7.keys  time/dt_retry_host=m1 rad_m1/clean_stag_xcap_p=2
+FINALRST=0 NR=4 XCP8_rsg B_xcap RSG 100 rsg_thv7.keys rad_m1/clean_conv_kappa=0.1 rad_m1/clean_stag_xcap_p=8
