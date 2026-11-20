@@ -501,3 +501,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   * BFX11_rsg / BFX13_rsg had finished (13:14-13:50) but their END markers were lost when an older runner was stopped; posted now.
   * converr.sh runs automatically in a holder step (01-11, -c 8) when all 14 CONVERR arms are done; its four text files go to caltech_results/CONVERR/, then the CONVERR bins are deleted.
   * FRESHGO: waiting for the NOTE. Its 6 smoke arms will go to the head and preempt CONVERR / LF seeds / EW / L2 / LX if needed (logged). Fresh production: prepared only; nothing launches until orion's explicit go NOTE AND the user's confirmation through the coordinator.
+- CET1_rsg (hpc-sm-02-11): rc=134 wall=52 |  | steady  s/cycle | GPU MiB max 125569 min 125231 | CW a 0 FATAL 0 |  CW 0 FATAL 0 dt_retry 1 | nl_print (last):  | bins kept: /resnick/groups/carnegie_poc/jingze/orion_runs_1121/CET1_rsg/a/bin (0 files, 0) | eos table: /resnick/groups/carnegie_poc/jingze/orion_runs_1121/CET1_rsg/a/eos_table.txt
+  FAILED: last 100 lines in caltech_results/CET1_rsg/FAIL_tail100.txt
