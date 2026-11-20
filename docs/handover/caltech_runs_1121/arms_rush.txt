@@ -16,3 +16,8 @@ FINALRST=0 NR=4 G_off_hg  B_lztel3 HG  600 hg_v20.keys  time/dt_retry_host=m1
 # added NOTE dd: RSG speed/CW pair for the L_z adoption decision. Plain B_lztel3, no env, NR=4, same node type, concurrent. G_off_rsg hst should == L1_rsg_off rows 0-599.
 FINALRST=0 NR=4 G_on_rsg  B_lztel3 RSG 600 rsg_v20.keys rad_m1/clean_cs_lz_tel=true
 FINALRST=0 NR=4 G_off_rsg B_lztel3 RSG 600 rsg_v20.keys
+# added NOTE de: B_bfxg = caltech-runs/beamfixg e07e164a86dcfc7c1383b271f628ccb2a991a9a6 (thinf + g cap key). HEAD of the queue, all 4 concurrent, 1 node each. Controls: THF100_hg / THF100_ref_hg (v7 = gmax 1), BFX0_rsg.
+FINALRST=0 NR=4 TG4_hg    B_bfxg HG  100 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_gmax=4
+FINALRST=0 NR=4 TG4_rsg   B_bfxg RSG 100 rsg_v20.keys rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_gmax=4
+FINALRST=0 NR=4 TGinf_hg  B_bfxg HG  100 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_gmax=1e30
+FINALRST=0 NR=4 TGinf_rsg B_bfxg RSG 100 rsg_v20.keys rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_gmax=1e30
