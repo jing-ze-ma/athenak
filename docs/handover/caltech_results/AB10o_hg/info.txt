@@ -1,0 +1,1 @@
+TAG=AB10o_hg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_eleak2_8d8ed6e27 md5=831ce3bd32cb14f773e73def9304ffd2 RST=/resnick/groups/carnegie_poc/jingze/hgglob_1021/prodG/rst/hegiant.00139.rst N0=624961 NC=6 MODE=speed HOLDER=6133591 NODE=hpc-sm-02-10 NR=4 ENVX=PROF_U=1 EX=rad_m1/dbg_energy_audit=true output1/dt=1 hydro/floor_audit=1

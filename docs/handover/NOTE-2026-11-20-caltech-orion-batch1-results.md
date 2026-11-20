@@ -191,3 +191,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - AB10_hg (hpc-sm-02-09): rc=0 wall=122 | cycles 624961 - 624967 | steady 5.168 s/cycle | GPU MiB max 120991 min 120435 | CW a 0 FATAL 0 |  floor_audit cycle lines 18 | unpaid CW 0 | EOS floors:  hydro EOS floors energy created=2.721342e+33
 - BA_hg_p4 (hpc-sm-02-11): rc=0 wall=179 | cycles 624961 - 624981 | steady 4.876 s/cycle | GPU MiB max 119391 min 118843 | CW a 0 FATAL 0 |  
 - BA_hg_h200 (hpc-sm-01-11): rc=0 wall=177 | cycles 624961 - 624981 | steady 5.092 s/cycle | GPU MiB max 118789 min 118191 | CW a 0 FATAL 0 |  
+- AB10o_hg (hpc-sm-02-10): rc=0 wall=109 | cycles 624961 - 624967 | steady 5.160 s/cycle | GPU MiB max 120831 min 120275 | CW a 0 FATAL 0 |  floor_audit cycle lines 18 | unpaid CW 0 | EOS floors:  hydro EOS floors energy created=2.721292e+33
