@@ -1,0 +1,1 @@
+SD vs SDT_b_1: xcheck: rsg.hydro.hst==SDT_b_1/a rsg.user.hst==SDT_b_1/a | SDP vs SD: xcheck: rsg.hydro.hst==SD_rsg/a rsg.user.hst==SD_rsg/a

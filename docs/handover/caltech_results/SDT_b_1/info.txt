@@ -1,0 +1,1 @@
+TAG=SDT_b_1 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20l_e067945c2 md5=d83925e068f677c08aabb89d0b3cb33c RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=10 MODE=speed HOLDER=6133592 NODE=hpc-sm-02-03 NR=4 ENVX= EX=
