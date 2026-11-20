@@ -4614,9 +4614,10 @@ void RadiationM1::CleanStagFCsShared() {
 //! excess shrinks by w elsewhere); continuous in the state, no clip.  The removed
 //! momentum (F - F') V_f/c^2 goes to the gas through the faces' terms (gas), or is the
 //! radiation's (ledger: the gas's terms as without it; its L_z in the ledger, which on
-//! the cubed sphere books dlz, the L_z of dF the gas does not take, CleanStagMomentum).  The faces' F before it in
-//! slot cln_rzs; F' into the cells' slots, then the ghosts and CleanStagFCsShared again,
-//! so that a shared face has one F' (the lower gid's) to the bit
+//! the cubed sphere books dlz, the L_z of dF the gas does not take, CleanStagMomentum).
+//! The faces' F before it in slot cln_rzs; F' into the cells' slots, then the ghosts and
+//! CleanStagFCsShared again, so that a shared face has one F' (the lower gid's) to the
+//! bit
 
 void RadiationM1::CleanStagFRelax(const int e) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
