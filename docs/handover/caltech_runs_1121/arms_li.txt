@@ -1,0 +1,4 @@
+# Layout invariance (orion 2026-11-20), HIGH priority. B_v20n. Final rst KEPT (FINALRST=1, do not delete), bins kept (KEEPBIN=1).
+# output2/output3 dt chosen so the final hydro_w / m1 / m1_vet bins are written at the last cycle (RSG dt ~956.5: 3 cycles ~2870 s).
+FINALRST=1 KEEPBIN=1 NR=4 LI4_rsg B_v20n RSG 3 rsg_v20.keys output2/dt=950 output3/dt=950 output6/dt=950
+FINALRST=1 KEEPBIN=1 NR=8 LI8_rsg B_v20n RSG 3 rsg_v20.keys output2/dt=950 output3/dt=950 output6/dt=950
