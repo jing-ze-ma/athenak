@@ -234,12 +234,6 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       }
     }
   }
-  if (ivar==171 && (pm->pmb_pack->pradm1 == nullptr || !pm->pmb_pack->pradm1->clean ||
-                    pm->pmb_pack->pradm1->cln_cell)) {
-    std::cout << "### FATAL ERROR: m1_phi output needs <rad_m1>/scheme = clean, "
-              << "clean_layout = staggered" << std::endl;
-    exit(EXIT_FAILURE);
-  }
   if (ivar==168 && (pm->pmb_pack->pradm1 == nullptr)) {
     std::cout << "### FATAL ERROR: m1_gdhr output needs a <rad_m1> block" << std::endl;
     exit(EXIT_FAILURE);
@@ -737,10 +731,11 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     if (variable.compare("m1_f3") == 0 || variable.compare("m1") == 0) {
       outvars.emplace_back("m1_f3",radm1::M1_F3,&(pm->pmb_pack->pradm1->u0));
     }
-    // staggered clean: the cell flux of the faces' energy flux Phi (m1_f: the momentum's)
-    if (variable.compare("m1_phi") == 0) {
-      auto *pr = pm->pmb_pack->pradm1;   // (CleanInit allocates it again, the same shape)
-      if (pr->cln_phic.extent_int(0) == 0) {
+    // staggered clean: m1 also carries the cell flux of the faces' energy flux Phi (m1_f:
+    // the face momenta's, the radiation momentum)
+    auto *pr = pm->pmb_pack->pradm1;
+    if (variable.compare("m1") == 0 && pr != nullptr && pr->clean && !pr->cln_cell) {
+      if (pr->cln_phic.extent_int(0) == 0) {   // (CleanInit keeps it: the same shape)
         Kokkos::realloc(pr->cln_phic, pr->u0.extent_int(0), 3, pr->u0.extent_int(2),
                         pr->u0.extent_int(3), pr->u0.extent_int(4));
       }

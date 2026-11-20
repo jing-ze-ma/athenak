@@ -21,7 +21,7 @@
     #error NHISTORY > NREDUCTION in outputs.hpp
 #endif
 
-#define NOUTPUT_CHOICES 172
+#define NOUTPUT_CHOICES 171
 // choices for output variables used in <ouput> blocks in input file
 // TO ADD MORE CHOICES:
 //   - add more strings to array below, change NOUTPUT_CHOICES above appropriately
@@ -134,11 +134,7 @@ static const char *var_choice[NOUTPUT_CHOICES] = {
 
   // the closure tensor handed to the implicit operator (tau_ten slot 0 and
   // the vet_col_lat slots LAT0..5), the cell unit vector and the vet_gd J, H_r (168)
-  "m1_lat",
-
-  // staggered clean: the cell flux of the faces' energy flux Phi (m1_f: the momentum's)
-  // (171)
-  "m1_phi"
+  "m1_lat"
 };
 
 
