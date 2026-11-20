@@ -8,12 +8,13 @@ S_t19l64         decks/t19l64_smoke.athinput         50
 S_m35mms         decks/m35mms_smoke.athinput         50
 S_t9l62_corona   decks/t9l62_corona_smoke.athinput   50
 S_t19l64_corona  decks/t19l64_corona_smoke.athinput  50
-# THINF variant (USER: beam fix in tonight's prod): binary B_v203thinf = caltech-runs/v203thinf (BEAMHG confirms the build), 100 cycles (a 100 straight, b 50 + rst + 50),
-# keys: rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_v=7 rad_m1/clean_maxit=800 (G = 1: no gmax key). Concurrent with the S_* arms.
-T_t9l62   B_v203thinf decks/t9l62_smoke.athinput   100 rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_v=7 rad_m1/clean_maxit=800
-T_bsg     B_v203thinf decks/bsg_smoke.athinput     100 rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_v=7 rad_m1/clean_maxit=800
-T_t19l64  B_v203thinf decks/t19l64_smoke.athinput  100 rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_v=7 rad_m1/clean_maxit=800
-T_m35mms  B_v203thinf decks/m35mms_smoke.athinput  100 rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_v=7 rad_m1/clean_maxit=800
+# THINF v7 variant (USER: beam fix in tonight's prod). SAME binary B_v203 (v20.3 contains THINF v7, default off). Keys are IN THE DECK
+# (decks/<star>_smoke_thinf.athinput = smoke deck + rad_m1/clean_stag_thinf=true + rad_m1/clean_maxit=800 via addk.py; NO clean_stag_thinf_v, NO gmax).
+# 120 cycles (a 120 straight, b 60 + rst + 60) to see the v7 dt-collapse/KE risk (HG showed it after ~50 cycles). Concurrent with the S_* arms.
+T_t9l62   decks/t9l62_smoke_thinf.athinput   120
+T_bsg     decks/bsg_smoke_thinf.athinput     120
+T_t19l64  decks/t19l64_smoke_thinf.athinput  120
+T_m35mms  decks/m35mms_smoke_thinf.athinput  120
 # Block-shape timing, REDUCED to 2 arms (RT=0, 8 cycles, B_v203; the 128x128 baseline is the S_* arm). Full radial pencils always.
 RT=0 B4_t9l62    decks/t9l62_smoke.athinput   8 meshblock/nx2=128 meshblock/nx3=256   # 4 blocks, 1/GPU
 RT=0 B16_bsg     decks/bsg_smoke.athinput     8 meshblock/nx2=64  meshblock/nx3=64    # 16 blocks, 4/GPU (viper's old BSG layout; hst rows 1-8 vs S_bsg = layout invariance)
