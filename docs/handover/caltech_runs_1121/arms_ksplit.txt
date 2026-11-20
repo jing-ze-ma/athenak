@@ -4,3 +4,6 @@ FINALRST=0 KS001_hg B_ksplit HG 5 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean
 # if the LWr bins are gone: exact reruns with bins kept (as LWr1170_hg / LWr260_hg), then real_nb.py, then delete bins
 FINALRST=0 KEEPBIN=1 LWs1170_hg B_v20f HG 100 hg_v20.keys time/dt_retry_host=m1 output3/dt=1950
 FINALRST=0 KEEPBIN=1 LWs260_hg  B_v20f HG 100 hg_v20.keys time/dt_retry_host=m1 output3/dt=1950 rad_m1/vet_gd_rotate_dt=260
+# added 2026-11-20 (NOTE at): B_ksplit2 = caltech-runs/ksplit at 6b18f5de5 (adds key time2_k1_xlim, default off). After KS1/KS001.
+FINALRST=0 KX1_hg   B_ksplit2 HG 6  hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/time2_k1_xlim=0.1
+FINALRST=0 KX001_hg B_ksplit2 HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/time2_k1_xlim=0.1 rad_m1/clean_conv_kappa=0.01
