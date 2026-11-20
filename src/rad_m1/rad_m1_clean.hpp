@@ -395,6 +395,7 @@ struct CleanArgs {
   // the hydro's radius vector; vol, area, dxf and x1v, x1f as above, g the geometry
   // (CLG_*) of CleanCsGeometry
   bool cub;
+  DvceArray4D<Real> ae0;   // (the cubed sphere: pcoord's radial face area, CleanDivW)
   CleanGeo g;
   // the conserved gas energy also holds d phi (<hydro>/etotgrav) and |B|^2/2 (<mhd>)
   bool etg, mhd;
@@ -716,14 +717,17 @@ Real CleanStagSph(const CleanArgs &x, const int q, const int dir, const int m,
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanDivW
 //! \brief weight of the flux through the low (side 0) or high (side 1) face along dir in
-//! the divergence of cell (k,j,i): 1/dx_d, on spherical polar A_f/V
+//! the divergence of cell (k,j,i): 1/dx_d, on spherical polar A_f/V; on the cubed sphere
+//! a radial face's curved area r^2 Omega (pcoord's, the hydro's: 4 pi r^2 over a shell),
+//! not that of the closed vector areas (r^2 |S|, CleanCsGeometry, which the momentum and
+//! the rays' face sums take; 7e-4 less over the sphere at N = 16)
 
 KOKKOS_INLINE_FUNCTION
 Real CleanDivW(const CleanArgs &x, const int dir, const int m, const int k, const int j,
                const int i, const int side) {
   if (!x.sph && !x.cub) return x.idx[dir];
-  return x.area[dir](m,k+side*(dir == 2),j+side*(dir == 1),i+side*(dir == 0))/
-         x.vol(m,k,j,i);
+  const auto &a = (x.cub && dir == 0) ? x.ae0 : x.area[dir];
+  return a(m,k+side*(dir == 2),j+side*(dir == 1),i+side*(dir == 0))/x.vol(m,k,j,i);
 }
 
 //! \brief CleanDivW's divergence of the low and high face values fl, fh along dir
@@ -1383,7 +1387,8 @@ void CleanStagXSplit(const CleanArgs &x, const CleanArgs &xr, const int dir, con
       // sides; the ghost's own V is this panel's extension, not the neighbour's cell)
       const Real out = x.h*fabs(l)*(!x.cub ? (up ? CleanDivW(x, dir, m, kl, jl, il, 1) :
                                                    CleanDivW(x, dir, m, k, j, i, 0)) :
-                     x.area[dir](m,k,j,i)/(up ? x.g(m,CLG_F+3,kl,jl,il) : x.g(m,CLG_F+3,k,j,i)));
+                     ((dir == 0) ? x.ae0 : x.area[dir])(m,k,j,i)/
+                     (up ? x.g(m,CLG_F+3,kl,jl,il) : x.g(m,CLG_F+3,k,j,i)));
       return (out > CLN_MEMUP*eo) ? CLN_MEMUP*eo/out : 1.0;
     };
     // (a donor part li: q = |li|/E_donor at most c; the cross flux of E_k over E_k (at the

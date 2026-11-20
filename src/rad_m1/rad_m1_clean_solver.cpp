@@ -151,6 +151,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   }
   if (x.cub) {
     x.vol = pmy_pack->pcoord->volume;
+    x.ae0 = pmy_pack->pcoord->area.x1f;
     for (int d = 0; d < 3; ++d) {
       x.area[d] = cln_ga[d];
       x.dxf[d] = cln_gd[d];
