@@ -91,3 +91,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   queued after the v20j gate. LV_* result lines now also carry `grep -c -i retry run.log`.
 - V20JP_rsg (hpc-sm-02-09): rc=0 wall=155 | cycles 589788 - 589792 | steady 2.957 s/cycle | GPU MiB max 108711 min 107577 | CW a 0 FATAL 0 |  xcheck:
 - V20JR_rsg (hpc-sm-02-04): rc=0 wall=159 | cycles 589788 - 589792 | steady 2.938 s/cycle | GPU MiB max 108279 min 107091 | CW a 0 FATAL 0 |  xcheck:
+- AB8_rsg (hpc-sm-02-04): rc=0 wall=94 | cycles 589788 - 589794 | steady 3.043 s/cycle | GPU MiB max 110447 min 109315 | CW a 0 FATAL 0 |  
