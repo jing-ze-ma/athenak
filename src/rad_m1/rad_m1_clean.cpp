@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include "utils/repro_sum.hpp"   // PROF study (array_sum::GlobalSum)
 #include <functional>
 #include <iostream>
 #include <limits>
@@ -1119,6 +1120,41 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
                   pmy_pack->pmesh->ncycle, t2_solve, tag, g[0], g[1]);
     }
   };
+  // PROF study: sum V t2inc (E, EN) and the four booked la slots (per-stage balance)
+  auto profi = [&](const char *tag) {
+    if (std::getenv("PROF_U") == nullptr) return;
+    auto &id = pmy_pack->pmesh->mb_indcs;
+    const int pis = id.is, pjs = id.js, pks = id.ks;
+    const int pni = id.nx1, pnj = id.nx2, pnk = id.nx3;
+    auto pin_ = t2inc; auto pv = pmy_pack->pcoord->volume; auto pla = cln_lacc;
+    const bool hin = t2inc.extent_int(0) >= pmy_pack->nmb_thispack;
+    const bool hla = cln_lacc.extent_int(0) >= pmy_pack->nmb_thispack;
+    array_sum::GlobalSum gs;
+    Kokkos::parallel_reduce("prof_i", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+        pmy_pack->nmb_thispack*pnk*pnj*pni),
+    KOKKOS_LAMBDA(const int n, array_sum::GlobalSum &sum) {
+      const int m = n/(pnk*pnj*pni), k = (n/(pnj*pni))%pnk + pks;
+      const int j = (n/pni)%pnj + pjs, i = n%pni + pis;
+      array_sum::GlobalSum q;
+      for (int c = 0; c < NREDUCTION_VARIABLES; ++c) q.the_array[c] = 0.0;
+      if (hin) {
+        q.the_array[0] = pin_(m,M1_T2_E,k,j,i)*pv(m,k,j,i);
+        q.the_array[1] = pin_(m,M1_T2_EN,k,j,i)*pv(m,k,j,i);
+      }
+      if (hla && i == pis) for (int c = 0; c < 4; ++c) q.the_array[2+c] = pla(m,c,k,j);
+      sum += q;
+    }, Kokkos::Sum<array_sum::GlobalSum>(gs));
+    Real g[6];
+    for (int c = 0; c < 6; ++c) g[c] = gs.the_array[c];
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, g, 6, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::printf("PROF I cycle %d t2s %d %s incE %.10e incEN %.10e la %.10e %.10e %.10e "
+                  "%.10e\n", pmy_pack->pmesh->ncycle, t2_solve, tag, g[0], g[1], g[2], g[3],
+                  g[4], g[5]);
+    }
+  };
   // PROF study: sum V Q (the solve's h div of its faces) and the booked boundary la
   auto profq = [&]() {
     if (std::getenv("PROF_U") == nullptr) return;
@@ -1461,9 +1497,11 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     // (a failed solve or a probe does not change the energy flux's memory)
     cln_dok = (nit >= 0) && !t2_inprobe;
     profu("prewb");
+    profi("prewb");
     CleanWriteBack();
     profu("wb");
     profq();
+    profi("wb");
   }
   // a write-back that leaves gas eint < 0 (energy for the fluid floor to create) is
   // rejected like a failed solve (the stage is redone by backward Euler, a
