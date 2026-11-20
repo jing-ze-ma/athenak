@@ -233,3 +233,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - LWl_hg (hpc-sm-01-11): rc=0 wall=287 | cycles 624961 - 625001 | steady 5.158 s/cycle | GPU MiB max 115715 min 115169 | CW a 0 FATAL 0 |  real_nb v2 -> caltech_results/LW_real_nb2.txt
 - LS_rsg_r2 (hpc-sm-01-17): rc=134 wall=44 |  | steady  s/cycle | GPU MiB max 113999 min 5 | CW a 0 FATAL 0 |  
   FAILED: last 100 lines in caltech_results/LS_rsg_r2/FAIL_tail100.txt
+  LS_rsg_r2: OOM as expected, `Kokkos ERROR: Cuda memory space failed to allocate 5.582 GiB` at setup (GPU at 114 GB). Going on.
+- LS_rsg_r3 (hpc-sm-01-11): rc=0 wall=139 | cycles 589788 - 589808 | steady 3.477 s/cycle | GPU MiB max 141597 min 5 | CW a 0 FATAL 0 |  
