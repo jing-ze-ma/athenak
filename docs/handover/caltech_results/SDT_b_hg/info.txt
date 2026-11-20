@@ -1,0 +1,1 @@
+TAG=SDT_b_hg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20l_e067945c2 md5=d83925e068f677c08aabb89d0b3cb33c RST=/resnick/groups/carnegie_poc/jingze/hgglob_1021/prodG/rst/hegiant.00139.rst N0=624961 NC=10 MODE=speed HOLDER=5840649 NODE=hpc-sm-02-11 NR=4 ENVX= EX=time/dt_retry_host=m1
