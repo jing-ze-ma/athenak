@@ -1435,11 +1435,11 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
   // a21 dt (or with K2) it overshoots and takes E (or eint) of the old vector negative,
   // which face FCT cannot limit (no face carries it) and which the Picard passes of the
   // stage then chase in a limit cycle (also the radiation force's work: E pays the gas
-  // KE of the momentum increment).  E low: E takes back the gas energy increment (ch/cl;
-  // the gas eint pays its KE change, if it keeps > th), else its eint change; eint low:
-  // the gas keeps its stage-start eint.  E + gas, momentum and the face fluxes are
-  // unchanged; the stage solve takes the exchange
-  // implicitly (L-stable).  Local, per cell; a cell above th is untouched (bitwise).
+  // KE of the momentum increment).  There E takes back the gas energy increment (ch/cl),
+  // so it keeps only its face transport (FCT-limited); the gas eint pays the KE of its
+  // momentum increment if it keeps > th, else E does and eint keeps its stage start.
+  // E + gas, momentum and the face fluxes are unchanged; the stage solve takes the
+  // exchange implicitly (L-stable).  Local, per cell; other cells untouched (bitwise).
   if (t2_k1xpos > 0.0) {
     FluidRef flx = FluidRef::Get(pmy_pack);
     if (flx.on) {
@@ -1470,17 +1470,13 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
         const Real eg0 = ug(m,IEN,k,j,i) - ek0 - egr;
         const Real dex = in_(m,M1_T2_EN,k,j,i) - (ek1 - ek0);   // (the gas eint change)
         const Real e0 = u0_(m,M1_E,k,j,i), e1 = e0 + in_(m,M1_T2_E,k,j,i);
-        // (eint low: the exchange; else E low: the gas's whole energy increment, exchange
-        // and the kinetic energy of the radiation force's work, if its eint keeps > th of
-        // its start, else the exchange.  eint first: E's test still holds the face
-        // transport, which FCT limits next, so E low and eint low together is transport)
+        // (the gas's whole energy increment: E keeps only what its faces carry, which FCT
+        // limits next, so E of the old vector stays >= 0; the gas eint pays the kinetic
+        // energy of its momentum increment if it keeps > th of its start, else E pays it
+        // and eint keeps its start)
         const Real den = in_(m,M1_T2_EN,k,j,i);
-        Real mv = 0.0;
-        if (dex < 0.0 && eg0 > 0.0 && !(eg0 + dex > th*eg0)) {
-          mv = dex;
-        } else if (e0 > 0.0 && !(e1 > th*e0)) {
-          mv = (den > 0.0 && eg0 - (ek1 - ek0) > th*eg0) ? den : fmax(dex, 0.0);
-        }
+        if (!((e0 > 0.0 && !(e1 > th*e0)) || (eg0 > 0.0 && !(eg0 + dex > th*eg0)))) return;
+        const Real mv = (eg0 - (ek1 - ek0) > th*eg0) ? den : dex;
         if (mv == 0.0) return;
         in_(m,M1_T2_EN,k,j,i) -= mv;
         in_(m,M1_T2_E,k,j,i) += chcl*mv;
