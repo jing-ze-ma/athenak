@@ -20,7 +20,9 @@
 //!   E (1 + h c kE) + h div F = E_old + h c kP a T^4.
 
 #include <cmath>
+#include <functional>
 #include <limits>
+#include <string>
 
 #include "athena.hpp"
 #include "bvals/bvals.hpp"
@@ -149,8 +151,8 @@ inline void CleanForCol(const char *name, const int nmb1, const int ks, const in
 #endif
 }
 
-// closure variables (arrays cln_c and cln_s); the staggered layout allocates the first
-// CLN_FH (cubed sphere: CLN_F1), the cell layout all CLN_N
+// closure variables (arrays cln_c and cln_s); cln_s holds the first CLN_FH (cubed
+// sphere: CLN_F1)
 constexpr int CLN_D11 = 0;   // Eddington tensor D11 D22 D33 D12 D13 D23
 constexpr int CLN_HP = 6;    // h+_a = H+_a/J, a = 1,2,3
 constexpr int CLN_HM = 9;    // h-_a = H-_a/J (<= 0)
@@ -173,8 +175,8 @@ constexpr int CLN_KP = 41;   // cell layout: k+^d_b = K+^d_bd/J (outgoing stress
 constexpr int CLN_N = 50;
 
 // the slots of cln_s
-inline int CleanNs(const bool cell, const bool cub) {
-  return cell ? CLN_N : (cub ? CLN_F1 : CLN_FH);
+inline int CleanNs(const bool cub) {
+  return cub ? CLN_F1 : CLN_FH;
 }
 
 // the moments of the cell (D, h+-, C1, J, k+; the others are face sums)
@@ -198,7 +200,6 @@ constexpr int CLF_G = 2;     // flux of the old vector G_f
 constexpr int CLF_HP = 3;    // h+_f
 constexpr int CLF_HM = 4;    // h-_f
 constexpr int CLF_N = 5;     // (the shared ones)
-constexpr int CLF_RC = 5;    // cell layout: RC coefficient (1 - al) c/chi_f (h-free)
 // staggered face slots after CLF_N (clean_stag_fsolve: CLF_N .. CLF_N + 3 hold its F,
 // the dissipation term, F^H and, with clean_stag_fkin, the energy flux's memory d)
 constexpr int CLF_QL = CLF_N + 4;   // the operator's al, ar (CleanFaceWeights) and cross
@@ -218,9 +219,8 @@ constexpr int CLN_KPOS_REDO = 4;    // clean_stag_kpos = redo: rounds, the last 
 constexpr Real CLN_MEMUP = 1.0/6.0;  // clean_stag_gflux: a memory outflow above this
                                      // share of the donor's E_old goes upwind
 
-// work vectors (array cln_w): the first CLW_NS are shared; the cell layout's own slots
-// (CLW_NS..CLW_NC - 1) and the staggered layout's (CLW_NS..CLW_N - 1) take the same
-// places, and each layout allocates only its own
+// work vectors (array cln_w): the first CLW_NS are shared, then the staggered layout's
+// own (CLW_NS..CLW_N - 1)
 constexpr int CLW_EO = 0;    // E of the old vector
 constexpr int CLW_EK = 1;    // Newton iterate of E
 constexpr int CLW_T = 2;     // gas temperature of the iterate
@@ -230,20 +230,17 @@ constexpr int CLW_A1 = 5;    // advective coefficients a_1, a_2, a_3
 constexpr int CLW_DM = 8;    // momentum change of the iterate (3)
 constexpr int CLW_B = 11;    // right-hand side
 constexpr int CLW_X = 12;    // solution
-constexpr int CLW_BT = 13;   // beta = v/c of the iterate (3, cell layout: frame of y)
+constexpr int CLW_BT = 13;   // beta = v/c of the iterate (3)
 constexpr int CLW_RE = 16;   // h S_E = hc kP G a T^4 - hc kE E + RE E + RY.y - W (Ma et
 constexpr int CLW_GM = 17;   //   al. 2025, eq. 56, G = CLW_GM): the beta terms (RY: 3);
                              //   staggered: RE = hc kP a T^4, RY 1 - r
 constexpr int CLW_EP = 18;   // -(RE E + RY.y) of the solution (eint of the gas)
 constexpr int CLW_JV = 19;   // (1 - r) dA/dbeta/(c^2 rho), dS_p/dbeta/(c^2 rho) of the
-constexpr int CLW_GX = 22;   //   iterate (3 + 1): implicit gas velocity, CleanCellDrag;
+constexpr int CLW_GX = 22;   //   iterate (3 + 1): implicit gas velocity;
                              //   staggered clean_stag_sbimp: GX = r (CleanRightHandSide);
                              //   staggered gflux: JV + 1 = hc kE dop (CleanNewtonUpdate)
-constexpr int CLW_RY = 23;   // (RY + 1, RY + 2: cell layout only)
+constexpr int CLW_RY = 23;
 constexpr int CLW_NS = 24;
-constexpr int CLW_WK = 26;   // cell layout: work W of the right-hand side
-constexpr int CLW_DK = 27;   // cell layout: d(rho kappa_P)/dT, d(rho kappa_E)/dT
-constexpr int CLW_NC = 29;
 constexpr int CLW_AM = 24;   // staggered layout: x1-line coefficient of E_{i-1}
 constexpr int CLW_A0 = 25;   // diagonal
 constexpr int CLW_AP = 26;   // x1-line coefficient of E_{i+1}
@@ -328,9 +325,6 @@ struct CleanArgs {
   DvceArray5D<Real> fc[3];     // face variables in x1, x2, x3
   DvceArray3D<Real> beam;      // boundary beam flux at x1min (m, k-ks, j-js)
   DvceArray4D<Real> bstress;   // beam stress column c K_b1 at x1min (m, b, k-ks, j-js)
-  DvceArray5D<Real> u;         // cell vectors of the cell layout (CLC_*)
-  DvceArray5D<Real> ff;        // face fluxes, 4 per direction (ffon: CleanCellDivergence)
-  bool ffon = false;
   Real h, c, idx[3];           // stage step, light speed, inverse cell widths
   int bc[6];                   // boundary types x1min, x1max, ..., x3max
   DvceArray2D<BoundaryFlag> mbc;  // boundary flags of the six faces of each MeshBlock
@@ -342,11 +336,6 @@ struct CleanArgs {
   bool use_beam;
   bool feedback;               // gas coupling (advective flux, exchange linearisation)
   bool vzero;                  // the gas momentum is frozen (cln_vzero, steady start)
-  bool recon;                  // cell layout: reconstructed face states in the jumps
-  bool all_low;                // cell layout: every interior face low-order
-  bool consist;                // cell layout: face fluxes carry the consistency bracket
-  bool milne;                  // cell layout: sub-cell Eddington face model
-  bool fvrays;                 // cell layout: FV rays (clean_rays = fv1 | fv)
   bool fd;                     // staggered, clean_stag_fkin: the energy flux's
                                // G + F^H - F
   bool gf;                     // staggered, clean_stag_gflux: flux factors, low order
@@ -380,11 +369,11 @@ struct CleanArgs {
   bool sar;                    // staggered: the streaming share's net flux in area form
                                // (CleanStagArea)
   DvceArray5D<Real> op;        // opacities (M1_OP_*)
-  int nf;                      // cell layout: number of flux components (dimensions)
+  int nf;                      // number of flux components (dimensions)
   int is, ie, js, je, ks, ke;
   bool multi_d, three_d;
-  // spherical-polar geometry (cell layout): x1 = r, x2 = theta, x3 = phi, vectors in the
-  // local orthonormal basis
+  // spherical-polar geometry: x1 = r, x2 = theta, x3 = phi, vectors in the local
+  // orthonormal basis
   bool sph;
   DvceArray4D<Real> vol;       // cell volumes
   DvceArray4D<Real> area[3];   // face areas normal to x1, x2, x3
@@ -393,9 +382,9 @@ struct CleanArgs {
   DvceArray2D<Real> x2v, x2f;  // cell-centre and face polar angles
   DvceArray3D<Real> tg;         // tan, tan, sin, sin of x2v, x2f, x2v, x2f by (m, q, j)
   Real cseam;                  // cot of a theta-periodic seam face: its two copies' mean
-  // cubed sphere (cell layout): y in the cell's orthonormal frame (r, theta, phi) about
-  // the hydro's radius vector; vol, area, dxf and x1v, x1f as above, g the geometry
-  // (CLG_*) of CleanCsGeometry
+  // cubed sphere: y in the cell's orthonormal frame (r, theta, phi) about the hydro's
+  // radius vector; vol, area, dxf and x1v, x1f as above, g the geometry (CLG_*) of
+  // CleanCsGeometry
   bool cub;
   bool lwb = false;   // clean_cs_lat_wb (CleanStagCsLat)
   DvceArray4D<Real> ae0;   // (the cubed sphere: pcoord's radial face area, CleanDivW)
@@ -573,9 +562,8 @@ void CleanLineRange(const int nline, const int t, const int nt, int &lo, int &hi
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanLevel
-//! \brief one grid level of the cell-layout preconditioner: an array holding the 4x4
-//! blocks of the first-order operator (diagonal block and the blocks of the two
-//! neighbours along each direction) and 4-component vectors, with their slots
+//! \brief one grid level of the staggered multigrid (CleanStagLevel): an array holding
+//! its blocks and vectors, with their slots
 
 struct CleanLevel {
   CleanW u;                    // blocks and vectors (m, slot, k, j, i)
@@ -584,16 +572,6 @@ struct CleanLevel {
   int a0;                      // diagonal block
   int sm[3], sp[3];            // blocks of the lower and upper neighbour along each dir
 };
-
-// slots of a coarse level (arrays cln_mg, no ghost cells)
-constexpr int CLM_A0 = 0;    // diagonal block (row major)
-constexpr int CLM_M = 16;    // block of the lower neighbour along dir: CLM_M + 32 dir
-constexpr int CLM_P = 32;    // block of the upper neighbour along dir: CLM_P + 32 dir
-constexpr int CLM_B = 112;   // right-hand side
-constexpr int CLM_X = 116;   // solution
-constexpr int CLM_T1 = 120;  // residual
-constexpr int CLM_T2 = 124;  // line-solve correction
-constexpr int CLM_N = 128;
 
 // slots of a coarse level of the staggered mg (arrays cln_mg): the x1-line coefficients,
 // diagonal and Thomas scratch in the order of cln_w (CLW_AM..CLW_CP), then as CLW_TM
@@ -1863,6 +1841,264 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
                           (de(kf,jf,iff) + de(kf-dk,jf-dj,iff-di)));
   }
   return dm;
+}
+
+// dissipation weight candidates (<rad_m1>/clean_alpha)
+constexpr int CLA_TAU = 0;          // A(tau)^2, A = (1 - exp(-tau))/tau
+constexpr int CLA_TAU_SENSOR = 1;   // max(A(tau)^2 psi, s_ray)
+constexpr int CLA_TAU_RAY = 2;      // max(A(tau)^2, s_ray)
+constexpr int CLA_ONE = 3;          // 1
+constexpr int CLA_ZERO = 4;         // 0
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanDissipationWeight
+//! \brief the weight al of the numerical dissipation at a face, from the cell optical
+//! depth tau = chi_f dx_d, the smoothness sensor psi and the rays' streaming weight sray,
+//! and rc = (1 - al)/tau, with which the steady RC coefficient (1 - al) c/chi is c dx rc
+//! (analytic to tau = 0 for clean_alpha = tau).  A^2 makes the dissipation O(1/tau^2)
+//! where the physical diffusion flux is O(1/tau), also where the jumps are first order.
+//! tau enters only here (numerical dissipation), never the closure.
+
+KOKKOS_INLINE_FUNCTION
+Real CleanDissipationWeight(const int mode, const Real tau, const Real psi,
+                            const Real sray, Real &rc, const int p = 2) {
+  // A = 1 - b tau
+  const Real b = (tau > 1.0e-4) ? (1.0 + expm1(-tau)/tau)/tau
+                                : 0.5 - tau*(1.0 - 0.25*tau)/6.0;
+  const Real a = (tau > 1.0e-4) ? -expm1(-tau)/tau : 1.0 - b*tau;
+  // A^p, p = <rad_m1>/clean_dissip_power (temporary test key)
+  const Real ap = (p == 3) ? a*a*a : a*a;
+  Real al = 0.0;
+  switch (mode) {
+    case CLA_TAU: al = ap; break;
+    case CLA_TAU_SENSOR: al = fmax(ap*psi, sray); break;
+    case CLA_TAU_RAY: al = fmax(ap, sray); break;
+    case CLA_ONE: al = 1.0; break;
+    default: break;
+  }
+  rc = (mode == CLA_TAU) ? b*(1.0 + a + ((p == 3) ? a*a : 0.0))
+                         : (1.0 - al)/fmax(tau, 2.0);
+  return al;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanDiag
+//! \brief component D_ab of the Eddington tensor of cell (k,j,i)
+
+KOKKOS_INLINE_FUNCTION
+Real CleanDiag(const CleanArgs &x, const int a, const int b, const int m, const int k,
+               const int j, const int i) {
+  return x.cs(m,CLN_D11+((a == b) ? a : 2 + a + b),k,j,i);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanNf
+//! \brief component b of the unit normal of face (kf,jf,iff) normal to dir: e_dir, on the
+//! cubed sphere the face's own normal
+
+KOKKOS_INLINE_FUNCTION
+Real CleanNf(const CleanArgs &x, const int b, const int dir, const int m, const int kf,
+             const int jf, const int iff) {
+  return x.cub ? x.g.At<CLG_N>(m,3*dir+b,kf,jf,iff) : ((b == dir) ? 1.0 : 0.0);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanCsFrame
+//! \brief cubed sphere: the orthonormal frame of y in cell (k,j,i), rows q[0] = r_hat
+//! (the hydro's), q[1] = theta_hat = phi_hat x r_hat, q[2] = phi_hat = z x r_hat/|.|, in
+//! Cartesian components (y_cart = Q^T y, Q^T = Q^-1).  Returns R = x1v |z x r_hat|, the
+//! arm of L_z (CleanInit refuses an odd panel resolution, which has R = 0 cells).
+
+KOKKOS_INLINE_FUNCTION
+Real CleanCsFrame(const CleanArgs &x, const int m, const int k, const int j, const int i,
+                  Real q[3][3]) {
+  for (int c = 0; c < 3; ++c) q[0][c] = x.g.At<CLG_R>(m,c,k,j,i);
+  const Real rho = std::sqrt(q[0][0]*q[0][0] + q[0][1]*q[0][1]);
+  q[2][0] = -q[0][1]/rho;
+  q[2][1] = q[0][0]/rho;
+  q[2][2] = 0.0;
+  q[1][0] = q[2][1]*q[0][2];
+  q[1][1] = -q[2][0]*q[0][2];
+  q[1][2] = q[2][0]*q[0][1] - q[2][1]*q[0][0];
+  return x.x1v(m,i)*rho;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanCsFamily
+//! \brief cubed sphere: the normals n_d of the face families of cell (k,j,i) for the
+//! half-range closure (CLN_HP, CLN_HM, CLN_KP): r_hat of the frame and the mean normals
+//! of the two x2 and the two x3 faces
+
+KOKKOS_INLINE_FUNCTION
+void CleanCsFamily(const CleanArgs &x, const int m, const int k, const int j, const int i,
+                   Real nd[3][3]) {
+  for (int d = 0; d < 3; ++d) {
+    const int dk = (d == 2), dj = (d == 1);
+    Real s = 0.0;
+    for (int c = 0; c < 3; ++c) {
+      nd[d][c] = (d == 0) ? x.g.At<CLG_R>(m,c,k,j,i) :
+                 x.g.At<CLG_N>(m,3*d+c,k,j,i) + x.g.At<CLG_N>(m,3*d+c,k+dk,j+dj,i);
+      s += nd[d][c]*nd[d][c];
+    }
+    for (int c = 0; c < 3; ++c) nd[d][c] /= std::sqrt(s);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanRayFlux
+//! \brief the rays' flux factor h = H/J of cell (k,j,i) in the components of the face
+//! fluxes from its half-range sums s_b = h+_b + h-_b: s itself; on the cubed sphere
+//! (Cartesian) the solution of n_b . h = s_b for the family normals n_b (CleanCsFamily)
+
+KOKKOS_INLINE_FUNCTION
+void CleanRayFlux(const CleanArgs &x, const int m, const int k, const int j, const int i,
+                  const Real s[3], Real h[3]) {
+  for (int b = 0; b < 3; ++b) h[b] = s[b];
+  if (!x.cub) return;
+  Real nd[3][3], c[3][3];   // c_b = n_{b+1} x n_{b+2}
+  CleanCsFamily(x, m, k, j, i, nd);
+  for (int b = 0; b < 3; ++b) {
+    const Real *p = nd[(b+1)%3], *q = nd[(b+2)%3];
+    for (int e = 0; e < 3; ++e) c[b][e] = p[(e+1)%3]*q[(e+2)%3] - p[(e+2)%3]*q[(e+1)%3];
+  }
+  const Real det = nd[0][0]*c[0][0] + nd[0][1]*c[0][1] + nd[0][2]*c[0][2];
+  for (int e = 0; e < 3; ++e) h[e] = (s[0]*c[0][e] + s[1]*c[1][e] + s[2]*c[2][e])/det;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanGasVector, CleanGasMomentum
+//! \brief the gas momentum of cell (k,j,i) in the frame of y.  On the cubed sphere the
+//! hydro stores m_r = p.r_hat and the COVARIANT components m_a = p.e_a on its unit panel
+//! tangents (non-orthogonal, g_ab = e_a.e_b, hydro_am.hpp): p_t = g^ab m_b e_a.
+
+KOKKOS_INLINE_FUNCTION
+void CleanGasVector(const CleanArgs &x, const int m, const int k, const int j,
+                    const int i, const Real u[3], Real p[3]) {
+  for (int n = 0; n < 3; ++n) p[n] = u[n];
+  if (!x.cub) return;
+  Real q[3][3], pt[3], c = 0.0;
+  CleanCsFrame(x, m, k, j, i, q);
+  for (int b = 0; b < 3; ++b) c += x.g.At<CLG_E>(m,b,k,j,i)*x.g.At<CLG_E>(m,3+b,k,j,i);
+  const Real u1 = (p[1] - c*p[2])/(1.0 - c*c), u2 = (p[2] - c*p[1])/(1.0 - c*c);
+  for (int b = 0; b < 3; ++b) {
+    pt[b] = u1*x.g.At<CLG_E>(m,b,k,j,i) + u2*x.g.At<CLG_E>(m,3+b,k,j,i);
+  }
+  for (int a = 1; a < 3; ++a) p[a] = q[a][0]*pt[0] + q[a][1]*pt[1] + q[a][2]*pt[2];
+}
+
+//! (CleanGasVector: the same for hydro momentum components u, a linear map)
+KOKKOS_INLINE_FUNCTION
+void CleanGasMomentum(const CleanArgs &x, const DvceArray5D<Real> &uh, const int m,
+                      const int k, const int j, const int i, Real p[3]) {
+  const Real u[3] = {uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i)};
+  CleanGasVector(x, m, k, j, i, u, p);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanAdvect
+//! \brief a = v + D v of cell (k,j,i) for the gas velocity v in the frame of y (D in
+//! Cartesian components on the cubed sphere)
+
+KOKKOS_INLINE_FUNCTION
+void CleanAdvect(const CleanArgs &x, const int m, const int k, const int j, const int i,
+                 const Real v[3], Real a[3]) {
+  if (!x.cub) {
+    for (int b = 0; b < 3; ++b) {
+      a[b] = v[b];
+      for (int c = 0; c < 3; ++c) a[b] += CleanDiag(x, b, c, m, k, j, i)*v[c];
+    }
+    return;
+  }
+  Real q[3][3], vc[3], ac[3];
+  CleanCsFrame(x, m, k, j, i, q);
+  for (int b = 0; b < 3; ++b) vc[b] = v[0]*q[0][b] + v[1]*q[1][b] + v[2]*q[2][b];
+  for (int b = 0; b < 3; ++b) {
+    ac[b] = vc[b];
+    for (int c = 0; c < 3; ++c) ac[b] += CleanDiag(x, b, c, m, k, j, i)*vc[c];
+  }
+  for (int b = 0; b < 3; ++b) a[b] = q[b][0]*ac[0] + q[b][1]*ac[1] + q[b][2]*ac[2];
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanGasChange
+//! \brief the change dh of the hydro's momentum components of cell (k,j,i) for a change
+//! dm of the gas momentum in the frame of y (the inverse map of CleanGasMomentum): on the
+//! cubed sphere dh_r = dm_r and the covariant dh_a = dm_t.e_a
+
+KOKKOS_INLINE_FUNCTION
+void CleanGasChange(const CleanArgs &x, const int m, const int k, const int j,
+                    const int i, const Real dm[3], Real dh[3]) {
+  for (int n = 0; n < 3; ++n) dh[n] = dm[n];
+  if (!x.cub) return;
+  Real q[3][3], dt[3];
+  CleanCsFrame(x, m, k, j, i, q);
+  for (int b = 0; b < 3; ++b) dt[b] = dm[1]*q[1][b] + dm[2]*q[2][b];
+  for (int a = 1; a < 3; ++a) {
+    dh[a] = dt[0]*x.g.At<CLG_E>(m,3*(a-1),k,j,i) + dt[1]*x.g.At<CLG_E>(m,3*(a-1)+1,k,j,i) +
+            dt[2]*x.g.At<CLG_E>(m,3*(a-1)+2,k,j,i);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanCellFaceDistance
+//! \brief distance between the centres of the two cells across face (k,j,i) normal to
+//! dir: dx_d on a Cartesian mesh; on spherical polar dr, r dtheta and r sin(theta) dphi
+//! between the volume centroids, on the cubed sphere the centroids' distance
+
+KOKKOS_INLINE_FUNCTION
+Real CleanCellFaceDistance(const CleanArgs &x, const int dir, const int m, const int k,
+                           const int j, const int i) {
+  return (x.sph || x.cub) ? x.dxf[dir](m,k,j,i) : 1.0/x.idx[dir];
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CleanOverlapFor
+//! \brief old production's implicit_halo_overlap: f(m,k,j,i) over the active cells
+//! CleanInner by ng while a ghost exchange is in flight, then fin() (its second half),
+//! then f over the other active cells.  ov = false (or MeshBlocks too thin): fin(), then f
+//! over all of them.  Each cell's value is the same either way.  fd >= 0: f over the
+//! faces normal to fd, the inner ones those whose two neighbour faces along fd are the
+//! block's (the F solve's, CleanStagFSolve).  post (the producer's side): f over the
+//! other cells first, which the exchange sends, then post() (its first half), f over the
+//! inner ones while it is in flight, then fin()
+
+// (fin a std::function: nvcc takes no host lambda type in an extended lambda's parent)
+template <typename F>
+void CleanOverlapFor(const std::string &nm, MeshBlockPack *pp, const bool ov, const F &f,
+                     const std::function<void()> &fin, const int fd = -1,
+                     const std::function<void()> &post = nullptr) {
+  auto &id = pp->pmesh->mb_indcs;
+  const int g = id.ng, nmb1 = pp->nmb_thispack - 1, is = id.is, js = id.js, ks = id.ks;
+  const bool md = pp->pmesh->multi_d, td = pp->pmesh->three_d;
+  const int nx[3] = {id.nx1, id.nx2, id.nx3};
+  int n[3], lo[3], hi[3];
+  for (int d = 0; d < 3; ++d) {
+    const bool ac = (d == 0) || (d == 1 && md) || (d == 2 && td);
+    n[d] = nx[d] + (d == fd);
+    lo[d] = (fd < 0) ? (ac ? g : 0) : (d == fd);
+    hi[d] = (fd < 0) ? (ac ? nx[d] - 1 - g : nx[d] - 1) : nx[d] - 1 - (d == fd);
+  }
+  const CleanShell sh(n[2], n[1], n[0], 0, lo[0], hi[0], lo[1], hi[1], lo[2], hi[2],
+                      true, true);
+  if (!ov || sh.Empty()) {
+    if (!post) fin();
+    par_for(nm, DevExeSpace(), 0, nmb1, ks, id.ke + (fd == 2), js, id.je + (fd == 1), is,
+            id.ie + (fd == 0), f);
+    if (post) post(), fin();
+    return;
+  }
+  auto inner = [&]() {
+    par_for(nm, DevExeSpace(), 0, nmb1, ks + sh.k0, ks + sh.k1, js + sh.j0, js + sh.j1,
+            is + sh.i0, is + sh.i1, f);
+  };
+  if (!post) inner(), fin();
+  par_for(nm + "_sh", DevExeSpace(), 0, nmb1, 0, sh.ncell-1,
+  KOKKOS_LAMBDA(const int m, const int q) {
+    int k, j, i;
+    CleanShellCell(sh, q, k, j, i);
+    f(m, ks + k, js + j, is + i);
+  });
+  if (post) post(), inner(), fin();
 }
 
 }  // namespace radm1

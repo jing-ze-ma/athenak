@@ -28,7 +28,6 @@
 #include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_clean.hpp"
-#include "rad_m1/rad_m1_clean_cell.hpp"
 #include "rad_m1/rad_m1_layreduce.hpp"
 #include "utils/scratch_view.hpp"
 
@@ -52,7 +51,6 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.fc[2] = cln_fc3;
   x.beam = ibm_f;
   x.bstress = ibm_s;
-  x.u = cln_x;
   x.h = dt_sub;
   x.c = c_light;
   x.idx[0] = 1.0/size.h_view(0).dx1;
@@ -78,11 +76,6 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.use_beam = (ibm_n > 0);
   x.feedback = cln_feedback;
   x.vzero = cln_vzero;
-  x.recon = cln_recon;
-  x.all_low = cln_all_low;
-  x.consist = cln_consist;
-  x.milne = cln_milne;
-  x.fvrays = (cln_rfv > 0);
   x.hi = false;
   x.mcl = false;
   x.fa = false;
@@ -999,7 +992,7 @@ Real RadiationM1::CleanSumCells(const DvceArray4D<Real> &a) {
 //! clean_cs_lz_tel the radiation's is that of its face momenta (CleanCsTorque)
 
 Real RadiationM1::CleanLzTotal() {
-  if (!clean || cln_cell || !cln_init || !(sph_geom || cs_geom)) return 0.0;
+  if (!clean || !cln_init || !(sph_geom || cs_geom)) return 0.0;
   CleanArgs x = CleanMakeArgs();
   FluidRef fl = FluidRef::Get(pmy_pack);
   const bool fo = fl.on;
@@ -1070,7 +1063,7 @@ void RadiationM1::CleanFaceCoefficients() {
   auto inc = t2inc;
   const bool fsk = cln_fsolve;
   // (cubed sphere: the opacities of seam ghosts are the neighbour's cells, not of the
-  // resampled gas ghosts, as CleanCellFaceCoefficients: a seam face is single-valued)
+  // resampled gas ghosts: a seam face is single-valued)
   if (pmy_pack->pmesh->use_cubed_sphere) {
     CleanGhostFill(opac, 0, opac.extent_int(1), false);
   }
@@ -1120,7 +1113,7 @@ void RadiationM1::CleanFaceCoefficients() {
                                        : cs(m,CLN_HM+dir,k,j,i);
       if (nd == 0) return;
       // (cubed sphere: about the face's own normal from the FV intensities of L and R,
-      // as CleanCellConsistency, so that a seam face takes the same h+- on both sides)
+      // so that a seam face takes the same h+- on both sides)
       // (J_L, J_R, H+_L, H-_R as scalars: nvcc -O3 miscompiles a runtime-indexed local)
       Real jl0 = 0.0, jr0 = 0.0, hp0 = 0.0, hm0 = 0.0;
       if (fsc) {
@@ -1164,7 +1157,7 @@ void RadiationM1::CleanApply(const int src, const int dst) {
   const std::function<void()> fin = [&]() {if (ov) CleanGhostFill(wa, ws, 1, true, 2);};
   // (the cubed sphere's lateral sums Y of src: their exchange overlaps the inner faces'
   // cross terms, cln_xf)
-  const bool yov = cln_stst && pmy_pack->pmesh->use_cubed_sphere && !cln_cell && !cln_xd_on;
+  const bool yov = cln_stst && pmy_pack->pmesh->use_cubed_sphere && !cln_xd_on;
   if (!cln_xd_on) CleanStagCsLateral(src, cln_stst, yov ? 1 : 0);   // (xdonor: none)
   CleanArgs x = CleanMakeArgs(), xh = x;
   x.fwc = true;
@@ -1492,8 +1485,7 @@ CleanLevel RadiationM1::CleanStagLevel(const int l) {
 //! production mg): P piecewise constant over 2 x 2 (x2,x3) aggregates of the same x1
 //! index inside one MeshBlock, R = P^T.  A coupling inside the aggregate goes onto the
 //! diagonal, one to another aggregate stays, one across the block face is never used.
-//! On curvilinear meshes the mesh rows are summed with their cell volumes (as
-//! CleanCellCoarseSetup).
+//! On curvilinear meshes the mesh rows are summed with their cell volumes.
 
 void RadiationM1::CleanStagCoarseSetup() {
   int nmb1 = pmy_pack->nmb_thispack - 1;
@@ -1765,8 +1757,8 @@ void RadiationM1::CleanPrecondition(const int src, const int dst) {
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationM1::CleanBiCGStab
 //! \brief right-preconditioned BiCGStab for A X = B, starting from the X it is given:
-//! scalar E vectors of cln_w (staggered layout) or 4-component vectors of cln_x (cell
-//! layout).  Returns the number of iterations, negative if not converged.
+//! scalar E vectors of cln_w.  Returns the number of iterations, negative if not
+//! converged.
 
 int RadiationM1::CleanBiCGStab() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1774,18 +1766,17 @@ int RadiationM1::CleanBiCGStab() {
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  const bool cell = cln_cell;
-  CleanW w = cell ? CleanW(cln_x) : cln_w;
-  const int nc = cell ? 4 : 1;
+  CleanW w = cln_w;
+  const int nc = 1;
   // clean_conv = budget, in the Newton passes (a single solve keeps clean_tol in its own
   // norm): the rows over their gross terms S (CleanRightHandSide), W A X = W B with
   // W = 1/S, right-preconditioned by M^-1 W^-1, so that every norm below is the budget's
-  const bool bud = cln_bon && !cell && cln_ewr > -1.5;
-  const int sx = cell ? CLC_X : CLW_X, sb = cell ? CLC_B : (bud ? CLW_BW : CLW_B);
-  const int sr = cell ? CLC_R : CLW_R, sr0 = cell ? CLC_R0 : CLW_R0;
-  const int sp = cell ? CLC_P : CLW_P, sv = cell ? CLC_V : CLW_V;
-  const int ss = cell ? CLC_R : CLW_S, sq = cell ? CLC_Q : CLW_Q;
-  const int sy = cell ? CLC_Y : CLW_Y, sz = cell ? CLC_Z : CLW_Z;
+  const bool bud = cln_bon && cln_ewr > -1.5;
+  const int sx = CLW_X, sb = bud ? CLW_BW : CLW_B;
+  const int sr = CLW_R, sr0 = CLW_R0;
+  const int sp = CLW_P, sv = CLW_V;
+  const int ss = CLW_S, sq = CLW_Q;
+  const int sy = CLW_Y, sz = CLW_Z;
 
   // w(dst) = sa w(a) + sb w(b)
   auto axpby = [&](const int dst, const int a, const Real sa, const int b,
@@ -1805,17 +1796,11 @@ int RadiationM1::CleanBiCGStab() {
     });
   };
   auto apply = [&](const int src, const int dst) {
-    if (cell) {
-      CleanCellApply(src, dst);
-    } else {
-      CleanApply(src, dst);
-      if (bud) scale(dst, dst, CLW_SE, -1.0);
-    }
+    CleanApply(src, dst);
+    if (bud) scale(dst, dst, CLW_SE, -1.0);
   };
   auto precondition = [&](const int src, const int dst) {
-    if (cell) {
-      CleanCellPrecondition(src, dst);
-    } else if (bud) {
+    if (bud) {
       scale(CLW_PW, src, CLW_SE, 1.0);
       CleanPrecondition(CLW_PW, dst);
     } else {
@@ -1890,7 +1875,7 @@ int RadiationM1::CleanBiCGStab() {
   // met, it is at the round-off of an empty or free-streaming row, and the solve is
   // converged
   const Real cnt = cln_insteady ? cln_cnorm : cln_lcnorm;
-  const bool cn = (cnt > 0.0) && !bud && !cell;
+  const bool cn = (cnt > 0.0) && !bud;
   const Real efl = e_floor, inf = std::numeric_limits<Real>::infinity();
   Real cmin = inf, cwin = inf;
   bool cmet = false;

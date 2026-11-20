@@ -31,7 +31,6 @@
 #include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
 #include "rad_m1/rad_m1_clean.hpp"
-#include "rad_m1/rad_m1_clean_cell.hpp"
 #include "utils/imex_sdirk2.hpp"
 #include "utils/scratch_view.hpp"
 // M1_TU_PART: this file is compiled as 3 translation units (rad_m1_clean_closure.cpp = part 0, rad_m1_clean_closure_p<k>.cpp
@@ -314,19 +313,16 @@ void RadiationM1::CleanClosureIterate() {
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  const bool cell = cln_cell;
-  const Real cl = c_light;
   auto iw_ = iw;
   auto u0_ = u0;
   auto w = cln_w;
-  auto u = cln_x;
   par_for("cln_clositer", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    iw_(m,M1_IW_EN,k,j,i) = fmax(cell ? u(m,CLC_K,k,j,i) : w(m,CLW_EK,k,j,i), 0.0);
+    iw_(m,M1_IW_EN,k,j,i) = fmax(w(m,CLW_EK,k,j,i), 0.0);
     iw_(m,M1_IW_TP,k,j,i) = w(m,CLW_T,k,j,i);
-    iw_(m,M1_IW_F1,k,j,i) = cell ? cl*u(m,CLC_K+1,k,j,i) : u0_(m,M1_F1,k,j,i);
-    iw_(m,M1_IW_F2,k,j,i) = cell ? cl*u(m,CLC_K+2,k,j,i) : u0_(m,M1_F1+1,k,j,i);
-    iw_(m,M1_IW_F3,k,j,i) = cell ? cl*u(m,CLC_K+3,k,j,i) : u0_(m,M1_F1+2,k,j,i);
+    iw_(m,M1_IW_F1,k,j,i) = u0_(m,M1_F1,k,j,i);
+    iw_(m,M1_IW_F2,k,j,i) = u0_(m,M1_F1+1,k,j,i);
+    iw_(m,M1_IW_F3,k,j,i) = u0_(m,M1_F1+2,k,j,i);
   });
   CleanRays();
   CleanClosureFill();
@@ -454,7 +450,7 @@ void RadiationM1::CleanClosureAfterSolve() {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanRingSolveSet
 //! \brief clean_rot_ring = jump: the swept set whose intensities give the face half
-//! ranges of the solve (CleanCellConsistency) is the set of the step's rotation block;
+//! ranges of the solve is the set of the step's rotation block;
 //! the step after a block boundary reads the next set of the boundary build
 
 void RadiationM1::CleanRingSolveSet() {
@@ -892,10 +888,10 @@ void RadiationM1::CleanRays() {
   } else {
     CleanClosureFromGd();
     // (clean_rays = sc on the cubed sphere: also the intensities cln_fvi of the face half
-    // ranges, CleanCellConsistency, CleanFaceHalf)
+    // ranges, CleanFaceHalf)
     if (cln_consist || cln_cssc) CleanGdFaceSums();
     if (cln_cssc) CleanFaceHalf(vgd_dir, 0, true, 0);
-    if (cln_cssc && !cln_cell) cln_fvi = DvceArray5D<Real>();   // (build scratch)
+    if (cln_cssc) cln_fvi = DvceArray5D<Real>();   // (build scratch)
   }
   MemcutPoison(3);
 }
@@ -1041,7 +1037,7 @@ bool CleanRingEma(const CleanRingL &rl, const DvceArray5D<Real> &rr,
 #if M1_TU_PART(0)
 int RadiationM1::CleanRingFields(int *fm, const bool ring, const bool file) const {
   const bool cub = pmy_pack->pmesh->use_cubed_sphere;
-  const int ns = CleanNs(cln_cell, cub);   // (the slots of cln_s)
+  const int ns = CleanNs(cub);   // (the slots of cln_s)
   int nf = 0;
   for (int n = 0; n < CLN_N; ++n) {
     const bool fs = (n >= CLN_F2 && n < CLN_G && (n - CLN_F2)%4 != 0) ||   // (stress
@@ -1049,7 +1045,7 @@ int RadiationM1::CleanRingFields(int *fm, const bool ring, const bool file) cons
     const bool un = fs || (cub && (n == CLN_G || n == CLN_G + 1));
     const bool cm = !(ring && cln_rcell) || CleanCellMoment(n) || n == CLN_JR;
     const bool f6 = file && t2_rstv < 7;
-    fm[n] = ((cln_cell || (n < ns && !(f6 ? fs && !cub : un))) && cm) ? nf++ : -1;
+    fm[n] = ((n < ns && !(f6 ? fs && !cub : un)) && cm) ? nf++ : -1;
   }
   return nf;
 }
@@ -1141,7 +1137,7 @@ bool RadiationM1::CleanRingTwo() const {
 // every solve builds the closure first and every build sweeps all the sets they read,
 // else they are state: the dt_retry checkpoint and the restart files keep them)
 bool RadiationM1::CleanFhBuilt() const {
-  return cln_cssc && !cln_cell && cln_extrap == 0 && !cln_closit && !cln_edd &&
+  return cln_cssc && cln_extrap == 0 && !cln_closit && !cln_edd &&
          !cln_sphere && (!cln_ring || CleanRingTwo());
 }
 
@@ -1603,7 +1599,7 @@ void RadiationM1::CleanRingMoments() {
   cln_rjump = nxt;
   cln_rguard_sum += CleanReduce(nguard, false);
   cln_rl = DvceArray5D<Real>();   // (build scratch: freed, every build writes it first)
-  if (cln_cssc && !cln_cell) cln_fvi = DvceArray5D<Real>();   // (and so cln_fvi)
+  if (cln_cssc) cln_fvi = DvceArray5D<Real>();   // (and so cln_fvi)
 }
 
 //----------------------------------------------------------------------------------------
@@ -2698,26 +2694,8 @@ void RadiationM1::CleanFvSweep() {
   // take a cell, done: the pass that has); the others would repeat their intensity
   const bool act = !o2 && !ld && !axi;
   const int ie = indcs.ie, je = indcs.je, ke = indcs.ke, nc = nx1*nx2*indcs.nx3;
-  // (clean_pc = x1line with clean_pc_factor, the factors rebuilt every pass: the flags
-  // live in the factor store, which no solve reads before its next rebuild)
-  bool shf = act && cln_cell && cln_pc == CLN_PC_X1LINE && cln_pcfac &&
-             cln_pcreuse == 1;
-  const size_t nf = static_cast<size_t>(nmb)*n*nc;
-  if (shf) {
-    CleanCellFactorStore();
-    const size_t nb = cln_pcf32 ? cln_lfs.span()*sizeof(float)
-                                : cln_lf.span()*sizeof(Real);
-    shf = (nb >= 2*nf);   // (a store too small for the two flag arrays)
-  }
-  if (shf) {
-    int8_t *pf = cln_pcf32 ? reinterpret_cast<int8_t *>(cln_lfs.data())
-                           : reinterpret_cast<int8_t *>(cln_lf.data());
-    cln_fvdue = DvceArray2D<int8_t>(pf, nmb*n, nc);
-    cln_fvdone = DvceArray2D<int8_t>(pf + nf, nmb*n, nc);
-    Kokkos::deep_copy(cln_fvdue, -1);
-    cln_lf_ok = false;
-  } else if (act && (cln_fvdue.extent_int(0) != nmb*n || cln_fvdue.extent_int(1) != nc ||
-                     !cln_fvdue.use_count())) {
+  if (act && (cln_fvdue.extent_int(0) != nmb*n || cln_fvdue.extent_int(1) != nc ||
+              !cln_fvdue.use_count())) {
     Kokkos::realloc(cln_fvdue, nmb*n, nc);
     Kokkos::realloc(cln_fvdone, nmb*n, nc);
   }
@@ -3191,7 +3169,7 @@ void RadiationM1::CleanFvRstRead() {
 void RadiationM1::CleanRayCut() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   vlat_icut = 0;
-  if (!cln_rcut_on || !cln_init || cln_rfv > 0 || cln_cell ||
+  if (!cln_rcut_on || !cln_init || cln_rfv > 0 ||
       pmy_pack->pmesh->mesh_indcs.nx1 != indcs.nx1) return;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke, n1 = indcs.nx1;
@@ -3436,7 +3414,6 @@ struct CleanGdI {
 #if M1_TU_PART(2)
 void RadiationM1::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
                                 const bool zero, const int fo) {
-  if (cln_cell) return;   // (the cell layout reads cln_fvi, CleanCellConsistency)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke, n = vgd_n, nmb1 = pmy_pack->nmb_thispack - 1;
@@ -3561,7 +3538,7 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   // (the image cell's beyond a periodic seam, re-indexed by the wall map as the sweep)
   // (clean_rot_ring: two slots, of the sets blk mod 2, on the cubed sphere for the face
   // half ranges (CleanScUnion2), on sp with a reflecting top for its mirror)
-  const int ns2 = (cln_ring && ((cln_cssc && cln_cell) || cln_scmem)) ? 2 : 1;
+  const int ns2 = (cln_ring && cln_scmem) ? 2 : 1;
   const int doff = (ns2 == 1) ? 0 : cln_rqm*n;
   // Staggered spherical polar (one radial MeshBlock, no reflecting top): vgd_i itself,
   // and only the low theta and phi ghost layers exchanged, in chunks of clean_halo_vars
@@ -3569,8 +3546,8 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   // The staggered cubed sphere (one radial MeshBlock) likewise, with the first ghost
   // layer of every MeshBlock face (CleanGdI six: the high lateral faces' sums CLN_FH and
   // the face half ranges, CleanFaceHalf, read them): no copy of the intensities
-  const bool six = !fv && x.cub && !cln_cell && vgd_nb1 == 1 && !pk && !cln_scmem;
-  const bool gl = (!fv && x.sph && !cln_cell && !axi && pmy_pack->pmesh->three_d &&
+  const bool six = !fv && x.cub && vgd_nb1 == 1 && !pk && !cln_scmem;
+  const bool gl = (!fv && x.sph && !axi && pmy_pack->pmesh->three_d &&
                    vgd_nb1 == 1 && !cln_scmem) || six;
   CleanGdI gi{vi_, DvceArray5D<Real>(), ok, og, ks, js, pk, vgd_own, six, ke, je, is, ie};
   if (gl && pk) {
@@ -3727,8 +3704,7 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   // spdb-1119: sp, the raw rows (gl), a whole build: both lateral faces and the r face of
   // a cell in one pass over the directions (cln_gd_fs below; clean_gd_face_fuse = false:
   // the three kernels), each sum its own terms in the same order (bitwise)
-  const bool fs = cln_gdfs && gl && !pk && !one && !fv && x.sph && !x.cub && !axi &&
-                  !cln_cell;
+  const bool fs = cln_gdfs && gl && !pk && !one && !fv && x.sph && !x.cub && !axi;
   for (int dir = 1; dir < 3 && !fs; ++dir) {
     const int nf = (dir == 1) ? CLN_F2 : CLN_F3;
     if ((!x.sph && dir >= x.nf) || (pk && !one)) continue;
@@ -3761,7 +3737,7 @@ void RadiationM1::CleanGdFaceSums(const int s0, const int s1) {
   // spherical polar (rr): the r face i carries their own upwind fluxes (area times the
   // per-area sums), not the balance march, which loses the diffusion flux in the
   // difference V chi (S - J) of thick cells and, with the bracket, feeds back on E
-  const bool rr = fv || (x.sph && !cln_cell);
+  const bool rr = fv || x.sph;
   auto rflux = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i,
                                     Real q[4]) {
     const CleanArgs &x = *px;

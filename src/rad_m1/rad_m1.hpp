@@ -54,7 +54,7 @@ struct CleanLevel;  // rad_m1_clean.hpp
 //! \struct CleanW
 //! \brief the clean work vectors cln_w (CLW_*) in two arrays: slots n < ns in s, the
 //! layout's own slots in o (n - ns; the staggered layout's lie in mem_arena between the
-//! builds, MemArenaSeal).  One array (cln_x, a coarse mg level) has all in s
+//! builds, MemArenaSeal)
 
 struct CleanW {
   DvceArray5D<Real> s, o;
@@ -131,8 +131,6 @@ constexpr int M1_F1 = 1;
 constexpr int M1_F2 = 2;
 constexpr int M1_F3 = 3;
 constexpr int M1_NVAR = 4;
-constexpr int CLN_PC_X1LINE = 1;   // clean_pc = x1line: x1-line solve of the mesh
-constexpr int CLN_PC_PRODMG = 2;   // clean_pc = prodmg: the old production mg
 
 // number of explicit stages of the PD-ARS (Chu et al. 2019) integrator used per substep.
 // With S == 0 it reduces to Heun / SSP-RK2.
@@ -243,9 +241,6 @@ constexpr int M1_FREF_WB_MD   = 3;   // wb_arad_md: staggered clean, the steady 
                                      // force in every direction (cln_fref, hydro walks)
 
 // <rad_m1>/clean_yres: the y of a cell (cell layout) whose balance the gas momentum takes
-constexpr int M1_YRES_OFF   = 0;   // the y of the linear solve
-constexpr int M1_YRES_POST  = 1;   // y less its linear residual over 1 + h c chi
-constexpr int M1_YRES_LOCAL = 2;   // y of the cell's exact local momentum exchange
 
 //----------------------------------------------------------------------------------------
 //! \struct M1OpacTab
@@ -3088,8 +3083,6 @@ class RadiationM1 {
   void CleanClosureExtrap();
   void CleanClosureAfterSolve();
   void CleanClosureIterate();
-  void CleanCellFaceSpeeds();
-  void CleanCellOpacity();
   void CleanRays();
   void CleanClosureFromRays();
   // (i0..i1 / s0..s1: shells of VetGdPkHook; else the whole mesh, or with vgd_pk
@@ -3220,43 +3213,6 @@ class RadiationM1 {
                                 const std::array<int, 4> ab);
   Real CleanReduce(Real v, const bool max);
   Real CleanSumCells(const DvceArray4D<Real> &a);
-  // cell-centred layout (<rad_m1>/clean_layout = cell, rad_m1_clean_cell.cpp)
-  void CleanCellOldVector();
-  void CleanCellFaceCoefficients();
-  void CleanCellConsistency();
-  void CleanCellMilneSetup();
-  void CleanCellSlopeWeights(const int v);
-  void CleanCellFirstIterate();
-  void CleanCellRightHandSide();
-  void CleanCellFaceFluxes(const int src, const bool with_source);
-  void CleanCellApply(const int src, const int dst);
-  void CleanCellPreconditionerSetup();
-  void CleanCellPrecondition(const int src, const int dst);
-  CleanLevel CleanCellLevel(const int l);
-  void CleanCellLineSolve(const CleanLevel &lv, const int dir, const int src,
-                          const int dst);
-  template <bool kStore, typename F = Real>
-  void CleanCellLineSolveRows(const CleanLevel &lv, const int dir, const int src,
-                              const int dst);
-  template <typename F>
-  void CleanCellLineFactorSolve(const CleanLevel &lv, const int src, const int dst);
-  int CleanCellLineRows(const int nline, const int nw, const int nt);
-  void CleanCellFactorStore();
-  void CleanCellLevelApply(const CleanLevel &lv, const int src, const int dst);
-  void CleanCellCoarseSetup();
-  void CleanCellSmooth(const int l, const int src, const int dst, const bool first,
-                       const int nsweep);
-  void CleanCellVCycle(const int l, const int src, const int dst);
-  int CleanCellMarkFaces();
-  void CleanCellAllLowOrder();
-  void CleanCellDiagnose();
-  Real CleanCellNewtonUpdate();
-  Real CleanCellVelocityUpdate();
-  void CleanCellCopyIterate();
-  void CleanCellResidual();
-  int CleanCellCountNegative();
-  void CleanCellWriteBack();
-  void CleanCellClosureSlope(const Real sign);
   void CleanClosureSphere();
 
   bool clean = false;           // <rad_m1>/scheme = clean
@@ -3285,7 +3241,6 @@ class RadiationM1 {
   bool cln_gtf = false;         // clean_gas_tfloor: gas T >= tfloor, energy to/from E
   Real cln_fvtol = 1.0e-10;     // clean_fv_tol: pass stop of the FV rays
   int cln_fvlag = 0;            // clean_fv_lag: 0 off, 1 lag, 2 extrap (CleanFvSweep)
-  int cln_pc = 0;               // clean_pc: 0 vcycle or CLN_PC_*
   Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E
   // clean_ray_cut (CleanRayCut; default on where it applies): no rays below the shell
   // where every deeper cell is in the diffusion regime, R = |grad S|/(chi S) <
@@ -3302,12 +3257,7 @@ class RadiationM1 {
   bool cln_k1ok = false;        // K1 = f(U^n) valid (an accepted solve wrote it): the
                                 // predictor and the budget's time error also in BE steps
   int cln_bdry_form = 0;        // clean_bc: 0 rays' half range, 1 Marshak
-  bool cln_cell = false;        // clean_layout: false staggered, true cell-centred
-  int cln_alpha = 0;            // clean_alpha: dissipation weight (CLA_*), cell layout
-  int cln_dpow = 2;             // clean_dissip_power (temporary test key): al = A^p
-  bool cln_recon = true;        // clean_recon: plm (true) | none, cell layout
   int cln_maxpic = 12;          // clean_maxpic: passes that update the lagged slopes
-  bool cln_poslim = true;       // clean_pos_limit: a-posteriori low-order face limiter
   bool cln_gflux = false;       // clean_stag_gflux: rays' face flux as flux factors
   bool cln_csvr = false;        // clean_stag_csvec_radial (CleanStagCsVector)
   bool cln_rayratio = false;    // clean_stag_rayratio: the bracket of ray ratios x E
@@ -3373,17 +3323,8 @@ class RadiationM1 {
   void CleanStagKPos();
   void CleanStagKEnd();
   int cln_fdg = -1;             // staggered bracket: face slot of its lagged flux DG
-  bool cln_diagcells = false;   // clean_diag_cells: print the non-realizable cells
-  bool cln_posbdry = false;     // clean_pos_boundary: the limiter also marks boundary faces
-  bool cln_posghost = false;    // clean_pos_ghost: marked boundary faces, upwind ghost
-  bool cln_all_low = false;     // the solve has every interior face low-order
-  bool cln_hk = false;          // CleanCellConsistency fills the face half ranges CLF_HK
-  bool cln_opt = false;         // cell layout: opacities at the iterate's T (a T law)
   bool cln_consist = false;     // clean_consistency: bracket C = F_ray - f(Ur), cell
   bool cln_gdfs = true;         // spdb-1119 clean_gd_face_fuse (cln_gd_fs)
-  bool cln_conswt = false;      // clean_consistency_weight: bracket times w(C1)
-  bool cln_milne = false;       // clean_face_model = milne: sub-cell Eddington faces, for
-                                // the FV rays (clean_rays = fv1 | fv), clean_consistency
   bool cln_closit = false;      // clean_closure: predict | iterate
   int cln_extrap = 0;           // clean_closure = extrap (1) | extrap2 (2)
   bool cln_mshare = false;      // clean_extrap_share: cln_mp and cln_mc one array
@@ -3392,26 +3333,12 @@ class RadiationM1 {
   bool cln_edd = false;         // clean_closure = eddington (D = I/3, no rays)
   bool cln_sphere = false;      // clean_closure = sphere (spherical polar)
   Real cln_sph_r = 0.0;         // clean_sphere_radius
-  int cln_vfreeze = 0;          // clean_vfreeze: 1 advective a, 2 work term at v_old
-  bool cln_gas_exact = true;    // clean_gas_exact: gas eint of the write-back by the
-                                // cell's exact local exchange
-  int cln_yres = M1_YRES_OFF;   // clean_yres: y of a cell less its linear residual over
-                                // the row diagonal before the gas takes its momentum
-                                // (post: 1 + h c chi; local: with the gas response)
   bool cln_nl_cell = false;     // clean_nl_norm = cell: per-cell relative Newton changes
   Real cln_trtol = 0.0;        // clean_troot_rtol: residual stop of the exchange root
                                // (staggered default 1e-13)
-  Real cln_nl_efloor = 0.0;     // clean_nl_efloor: E scale of that norm over max E
   Real cln_nl_escale = 0.0;     // that E scale, clean_nl_efloor max E of the iterate
-  int cln_maxpos = 3;           // clean_maxpos: low-order face marking rounds per solve
-  int cln_pcsweeps = 1;         // clean_pc_sweeps: smoothing sweeps of the multigrid
-  int cln_chunk = 32;           // rows per Thomas system of the line solve
-  int cln_lteams = 0;           // clean_line_teams: most teams of a line solve (0: all)
   int cln_wo_nc = 0;            // the slots of cln_w.o (CleanWoBind)
   int cln_hmax = 16;            // clean_halo_vars: most variables of one ghost exchange
-  bool cln_pcfac = true;        // clean_pc_factor: x1line keeps the factors of its lines
-  bool cln_pcf32 = false;       // clean_pc_factor_float: ... in single precision
-  int cln_pcreuse = 1;          // clean_pc_reuse: preconditioner rebuilt every n passes
   bool cln_conv_est = false;    // clean_conv_est: stop on the estimated remaining change
   bool cln_budget = false;      // clean_conv = budget (staggered default): CleanSolve
   bool cln_bon = false;         // this solve takes it (Newton passes with a valid K1)
@@ -3422,7 +3349,6 @@ class RadiationM1 {
   DvceArray5D<Real> cln_wci;    // E before a backward-Euler solve's last pass
   Real cln_ewr = -1.0, cln_eta = 0.1;   // Eisenstat-Walker: last |r0|_S, forcing
   bool cln_nlprint = false;     // clean_nl_print: the changes of every pass (rank 0)
-  bool cln_lf_ok = false;       // cln_lf holds the factors of the current blocks
   int cln_stagmg = 0;           // clean_stag_pc = mg: the old production mg (staggered);
                                 //   2: its line colours mirror (clean_stag_mg_color)
   int cln_pcsweep = 0;          // clean_pc_sweep: +1 a 2nd red pass, +2 a post-sweep
@@ -3431,7 +3357,6 @@ class RadiationM1 {
   Real cln_steady_dtfac = 1.0e6, cln_steady_tol = 1.0e-8;  // clean_init_dtfac, _tol
   std::vector<DvceArray5D<Real>> cln_mg;          // coarse levels of the multigrid
   std::vector<std::array<int, 3>> cln_mgn;        //   and their cells along x1..x3
-  Real cln_psi_eps = 1.0e-12;   // clean_psi_eps: floor of the smoothness sensor
   int cln_nnreal = 0;           // cells with |F| > c E in the last cell-layout solve
   bool cln_fsolve = false;      // staggered: the face F of a separate F solve
   bool cln_fkin = false;        // staggered fsolve: streaming share of the rays' kinetic
@@ -3547,13 +3472,6 @@ class RadiationM1 {
   int cln_nguard = 0;           // cells whose extrapolated moments fell back to t^n
   Real cln_nguard_sum = 0.0, cln_next_sum = 0.0;   // guard falls, extrapolated closures
   CleanW cln_w;                 // work vectors (CLW_*)
-  DvceArray5D<Real> cln_x;      // cell vectors of the cell layout (CLC_*)
-  DvceArray5D<Real> cln_dy;     // clean_yres = local: the y change of the cell's local
-                                // exchange of the solution (CleanCellResidual)
-  DvceArray5D<Real> cln_lf;     // factors of the x1-line solve (clean_pc_factor)
-  DvceArray5D<float> cln_lfs;   // the same in single precision (clean_pc_factor_float)
-  DvceArray1D<Real> cln_lw;     // rows of the line solves, a block per team
-  DvceArray5D<Real> cln_ff;     // face fluxes of the operator (CleanCellApply)
   DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)
   DvceArray5D<Real> cln_fref;   // force_reference = clean: reference force (m,3,k,j,i)
   // staggered: the cell flux of the faces' energy flux Phi (m,3,k,j,i; the write-back,

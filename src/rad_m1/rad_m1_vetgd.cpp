@@ -1269,7 +1269,7 @@ void RadiationM1::VetGdInit() {
     // also on one rank (no band: the slabs are the shells' interiors)
     // (impl_beam_hr: the clean sp init turns it off, VetGdMoments skips it with vgd_pk)
     const std::pair<bool, const char *> pkc[] = {
-        {vgd_ring_par && clean && cln_rfv == 0 && !cln_cell && sph_geom && pm->three_d,
+        {vgd_ring_par && clean && cln_rfv == 0 && sph_geom && pm->three_d,
          "the clean sc rays on 3-D spherical polar with the band ring"},
         {vgd_raw, "the raw band"}, {vgd_nb1 == 1, "one x1 level"},
         {!cln_scmem && ibc_x1min != M1_IBC_REFLECT, "no reflecting x1 face"},

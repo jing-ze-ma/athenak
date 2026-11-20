@@ -2224,7 +2224,7 @@ void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
   // the cubed sphere the cell flux is the face momenta's vector.  The clean scheme's cs
   // cell flux is in the frame of y, (r, theta, phi) about rhat, not covariant)
   radm1::RadiationM1 *pr = pmbp->pradm1;
-  const bool sfh = pr->clean && !pr->cln_cell && pr->cln_split && !csm;
+  const bool sfh = pr->clean && pr->cln_split && !csm;
   const bool fry = pr->clean && csm;
   const bool md = pm->multi_d, td = pm->three_d;
   auto g1 = pr->f0x1, g2 = pr->f0x2, g3 = pr->f0x3;
