@@ -16,4 +16,13 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - ETA (rough): builds ~20 min; P1-P3 + v20g within ~1.5 h of that; batch 1 done in ~3 h; batches 2/3 done in ~6-7 h.
   P10 (nsys): will check if nsys is on the nodes; last.
 
+## Update after 21d / 21e / 20h
+- v20g gate (21d, amended 21e: NH=2, V20GR_rsg added), CONV batch (20h, build conv 9e8234b9b) and conserv-ctl2 5ca370ffc
+  (CS_*_ctl; the old-ctl arms had not started, so only ctl2 runs) are queued; builds conserv-ctl2 + conv queued.
+- **Master order now: v20g gate > P1-P3 > CONV (CV_* RSG x4 together, then df2/k01, then HG x3) > P4/P5 (LAG) > batch 2/3**,
+  unless you say otherwise. v20g and P3 rt/poison arms use the restart lane (02-16 first), so they run alongside P1/P2.
+- LW*: real.py output instead of bins (bins deleted after); LV_*: full run.log.gz + npass.py output.
+
 ## Results (one line per arm)
+- V20GP_rsg (hpc-sm-02-16): rc=0 wall=161 | cycles 589788 - 589792 | steady 2.906 s/cycle | GPU MiB max 109195 min 108061 | CW a 0 FATAL 0 |  
+- V20GR_rsg (hpc-sm-02-11): rc=0 wall=158 | cycles 589788 - 589792 | steady 2.872 s/cycle | GPU MiB max 109195 min 108061 | CW a 0 FATAL 0 |  
