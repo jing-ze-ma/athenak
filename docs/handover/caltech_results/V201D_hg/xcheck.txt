@@ -1,0 +1,1 @@
+vs V201_hg/a: hst hegiant.hydro.hst rows 4 differing cols (1-based) [3, 4, 5, 6, 7, 8, 9, 10] first diff row 1 max rel 1.072e-11 hst hegiant.user.hst rows 4 differing cols (1-based) [3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 20, 21, 26, 27, 28, 29, 30] first diff row 1 max rel 2.170e-06  | s/cycle 3.932 vs V201_hg 4.184
