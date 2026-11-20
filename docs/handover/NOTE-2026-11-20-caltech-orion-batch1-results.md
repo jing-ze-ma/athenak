@@ -77,3 +77,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - LV_ref300k10_rsg (hpc-sm-01-11): rc=0 wall=1436 | cycles 589788 - 590088 | steady 4.533 s/cycle | GPU MiB max 109385 min 108415 | CW a 17 FATAL 0 |  npass: /resnick/groups/carnegie_poc/jingze/orion_runs_1121/LV_ref300k10_rsg/a/run.log: stages 601 passes mean 5.78 max 200 sum 3474 CW 17 | t2s1 102.50/200 t
 - AB6_rsg (hpc-sm-01-11): rc=1 wall=38 |  | steady  s/cycle | GPU MiB max 77271 min 29151 | CW a 0 FATAL 4 |  
   FAILED: last 100 lines in caltech_results/AB6_rsg/FAIL_tail100.txt
+  AB6_rsg: the build rejects the key at setup: `rad_m1/force_reference = wb_arad(_md) with scheme = clean needs the reference work given by the problem generator (force_reference_work = split)` (FATAL, 4 ranks). Not rerun; send a fix or a different key if you want it.
