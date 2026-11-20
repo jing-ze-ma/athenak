@@ -10,20 +10,26 @@ C = 2.99792458e10
 fs = sorted(glob.glob(os.path.join(sys.argv[1], 'a', 'bin', '*.m1.*.bin')) or glob.glob(os.path.join(sys.argv[1], 'bin', '*.m1.*.bin')))
 for f in (fs[0], fs[-1]):
     d = bc.read_binary(f); md = d['mb_data']
+    print('==', os.path.basename(f), 't', d['time'])
     arr = lambda v: np.stack([np.asarray(md[v][m]) for m in range(d['n_mbs'])]).astype(np.float64)
-    E, F1, F2, F3 = arr('m1_e'), arr('m1_f1'), arr('m1_f2'), arr('m1_f3')   # (mb, k, j, i)
-    fm = np.sqrt(F1**2 + F2**2 + F3**2); r = fm/(C*np.abs(E) + 1e-300)
-    pad = np.pad(E, ((0, 0), (1, 1), (1, 1), (1, 1)), mode='edge')   # (MeshBlock edges: own edge, a lower bound of the bound)
-    ex1 = np.maximum(np.maximum(pad[:, 1:-1, 1:-1, :-2], pad[:, 1:-1, 1:-1, 2:]), E)
-    e27 = E.copy()
-    for dk in (0, 1, 2):
+    # (cubed sphere: m1_f*/m1_phi* are the orthonormal (r, theta, phi) components of the frame of y, CleanStagHydro/
+    #  CleanCsFrame, so |F| = sqrt(sum of squares) is physical and *1 is radial; no metric conversion needed)
+    E = arr('m1_e')
+    for tag in ('f', 'phi'):
+      if 'm1_%s1' % tag not in d['var_names']: continue
+      F1, F2, F3 = arr('m1_%s1' % tag), arr('m1_%s2' % tag), arr('m1_%s3' % tag)   # (mb, k, j, i)
+      fm = np.sqrt(F1**2 + F2**2 + F3**2); r = fm/(C*np.abs(E) + 1e-300)
+      print('  -- m1_%s' % tag)
+      pad = np.pad(E, ((0, 0), (1, 1), (1, 1), (1, 1)), mode='edge')   # (MeshBlock edges: own edge, a lower bound of the bound)
+      ex1 = np.maximum(np.maximum(pad[:, 1:-1, 1:-1, :-2], pad[:, 1:-1, 1:-1, 2:]), E)
+      e27 = E.copy()
+      for dk in (0, 1, 2):
         for dj in (0, 1, 2):
             for di in (0, 1, 2):
                 e27 = np.maximum(e27, pad[:, dk:dk + E.shape[1], dj:dj + E.shape[2], di:di + E.shape[3]])
-    q = lambda a: ' '.join('%.3e' % v for v in np.percentile(a, [50, 90, 99, 100])) if a.size else '-'
-    print('==', os.path.basename(f), 't', d['time'])
-    for nm, sl in (('all', np.s_[...]), ('top120', np.s_[..., -120:]), ('shells300-400', np.s_[..., 300:400])):
-        m = r[sl] > 10.0
-        a1 = (np.abs(F1[sl])/(C*ex1[sl]))[m]; a3 = (fm[sl]/(C*e27[sl]))[m]
-        print('  %s: cells %d |F|/cE>10 %d (at floor %d) | |F1|/(c max E_x1nb) p50/90/99/max %s (>1: %d) | |F|/(c max E_27) %s (>1: %d)'
-              % (nm, r[sl].size, m.sum(), (E[sl][m] <= 1.001e-4).sum(), q(a1), (a1 > 1).sum(), q(a3), (a3 > 1).sum()))
+      q = lambda a: ' '.join('%.3e' % v for v in np.percentile(a, [50, 90, 99, 100])) if a.size else '-'
+      for nm, sl in (('all', np.s_[...]), ('top120', np.s_[..., -120:]), ('shells300-400', np.s_[..., 300:400])):
+          m = r[sl] > 10.0
+          a1 = (np.abs(F1[sl])/(C*ex1[sl]))[m]; a3 = (fm[sl]/(C*e27[sl]))[m]
+          print('  %s: cells %d |F|/cE>10 %d (at floor %d) | |F1|/(c max E_x1nb) p50/90/99/max %s (>1: %d) | |F|/(c max E_27) %s (>1: %d)'
+                % (nm, r[sl].size, m.sum(), (E[sl][m] <= 1.001e-4).sum(), q(a1), (a1 > 1).sum(), q(a3), (a3 > 1).sum()))

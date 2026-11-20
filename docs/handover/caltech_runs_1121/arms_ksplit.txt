@@ -8,3 +8,6 @@ FINALRST=0 KEEPBIN=1 LWs260_hg  B_v20f HG 100 hg_v20.keys time/dt_retry_host=m1 
 FINALRST=0 KX1_hg   B_ksplit2 HG 6  hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/time2_k1_xlim=0.1
 FINALRST=0 KX001_hg B_ksplit2 HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/time2_k1_xlim=0.1 rad_m1/clean_conv_kappa=0.01
 FINALRST=0 KS1c_hg  B_ksplit4 HG 4 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true   # only if KS1_hg already ran on an older rev (NOTE ax)
+# added 2026-11-20 (NOTE ay): for real_nb.py v2, low priority, after KS1c. Bins kept, real_nb.py, then delete bins.
+FINALRST=0 KEEPBIN=1 LWt1170_hg B_v20f HG 100 hg_v20.keys time/dt_retry_host=m1 output3/dt=1950   # only if LWs1170_hg bins are gone
+FINALRST=0 KEEPBIN=1 LWl_hg     B_v20l HG 40  hg_v20.keys time/dt_retry_host=m1 output3/dt=1950
