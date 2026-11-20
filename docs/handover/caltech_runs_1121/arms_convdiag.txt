@@ -5,3 +5,6 @@ FINALRST=0 CXS_hg B_convdiag HG 6 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean
 FINALRST=0 CEX_hg B_convdiag HG 6 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true rad_m1/clean_conv_kappa=0.01 rad_m1/clean_ew_off=true rad_m1/clean_xt_sticky=true
 # if CD_hg (v1, kappa 1, 3 cycles) already started: let it finish, and also run
 FINALRST=0 CD2_hg B_convdiag HG 2 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true rad_m1/clean_conv_kappa=0.01
+# added 2026-11-20 (NOTE aa): K1 stiff test, normal priority
+FINALRST=0 CK1_hg  B_convdiag HG 6 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true rad_m1/clean_conv_kappa=0.01 rad_m1/time2_k1_stiff=1.0
+FINALRST=0 CK1R_hg B_convdiag HG 6 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true rad_m1/time2_k1_stiff=1.0
