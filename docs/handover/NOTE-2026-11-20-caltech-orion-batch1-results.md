@@ -299,3 +299,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - KSR1_rsg (hpc-sm-01-11): rc=0 wall=125 | cycles 589788 - 589808 | steady 2.698 s/cycle | GPU MiB max 109209 min 108075 | CW a 0 FATAL 0 |  CW 0 | k1_xlim lines 0
 - KXH20_hg (hpc-sm-02-09): rc=0 wall=180 | cycles 624961 - 624981 | steady 4.688 s/cycle | GPU MiB max 116353 min 115805 | CW a 0 FATAL 0 |  CW 0 | k1_xlim lines 2
 - KSH20_hg (hpc-sm-02-10): rc=0 wall=187 | cycles 624961 - 624981 | steady 4.971 s/cycle | GPU MiB max 115775 min 115177 | CW a 0 FATAL 0 |  CW 0 | k1_xlim lines 0
+- KD001_hg (hpc-sm-02-11): rc=0 wall=150 | cycles 624961 - 624966 | steady 6.916 s/cycle | GPU MiB max 120165 min 119609 | CW a 1 FATAL 0 |  pdiag_624965 lines 844 | CW 1 FATAL 0
