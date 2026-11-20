@@ -1,0 +1,14 @@
+# LONG robustness pairs (orion 2026-11-20): decide the USER's key-on choices. Binary B_v201e (3efbbbd17). Production keys, kappa 1, FINALRST=0, hst kept.
+# Layout: both arms of a pair MUST use the same layout. Holders: a 3-node layout only fits hgGH3b, so use
+#   HG pair:  NR=8 on 2 nodes each (hgGH3b: 2 of its 3 nodes; rsgEH2: its 2 nodes), armc2.sh, UCX_IB_GPU_DIRECT_RDMA=no
+#   RSG pair: NR=4 on 1 node each (r1H1, testH1)
+# Start both pairs now, together. Expected wall: HG 1500 cyc x ~3.2 s = ~1.3 h; RSG 3000 cyc x ~2.7 s = ~2.3 h.
+FINALRST=0 NR=8 L1_hg_off  B_v201e HG 1500 hg_v20.keys time/dt_retry_host=m1
+FINALRST=0 NR=8 L1_hg_on   B_v201e HG 1500 hg_v20.keys time/dt_retry_host=m1 hydro/floor_pay=rad_column rad_m1/clean_cs_lz_tel=true rad_m1/time2_k1_xlim=0.1
+FINALRST=0 NR=4 L1_rsg_off B_v201e RSG 3000 rsg_v20.keys
+FINALRST=0 NR=4 L1_rsg_on  B_v201e RSG 3000 rsg_v20.keys hydro/floor_pay=rad_column rad_m1/clean_cs_lz_tel=true rad_m1/time2_k1_xlim=0.1
+# afterwards, if nodes remain (and after any REALZ3 arms): second seed of each pair, same layouts
+FINALRST=0 NR=8 L2_hg_off  B_v201e HG 1500 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_conv_max=9.9e-5
+FINALRST=0 NR=8 L2_hg_on   B_v201e HG 1500 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_conv_max=9.9e-5 hydro/floor_pay=rad_column rad_m1/clean_cs_lz_tel=true rad_m1/time2_k1_xlim=0.1
+FINALRST=0 NR=4 L2_rsg_off B_v201e RSG 3000 rsg_v20.keys rad_m1/clean_conv_max=9.9e-5
+FINALRST=0 NR=4 L2_rsg_on  B_v201e RSG 3000 rsg_v20.keys rad_m1/clean_conv_max=9.9e-5 hydro/floor_pay=rad_column rad_m1/clean_cs_lz_tel=true rad_m1/time2_k1_xlim=0.1
