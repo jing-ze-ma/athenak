@@ -1,0 +1,7 @@
+['main loop time (before the final outputs) = 3.636033e+01']
+CW a 0 FATAL 0 retries ['<rad_m1> time2_auto_be=16: skipped-stage BE steps=0.000000e+00 stage retries=0.000000e+00 (succeeded 0.000000e+00)']
+GPU mem peak MiB max 109571 min 108551 (n=4)
+rc=0 wall=84
+hstmd5 rsg.hydro.hst c41e985a9d3d652a3416a67af3e2e109 rows 1
+hstmd5 rsg.user.hst 08819effd3f2ce491f3801f3e9a0947c rows 1
+DONE
