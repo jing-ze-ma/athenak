@@ -1981,6 +1981,10 @@ class RadiationM1 {
   // with relaxation k dt > s (Time2FormStage); 0 = off
   Real t2_k1stiff = 0.0;
   Real t2_k1stiff_n = 0.0;      // cell-steps changed (this rank, whole run)
+  // xlim-1120 time2_k1_xlim = th (read only when named; 0 = off): the stage increment's
+  // exchange pair limited so the old vector's E and gas eint keep >= th (Time2K1XLim)
+  Real t2_k1xlim = 0.0;
+  Real t2_k1xlim_n = 0.0;       // cell-stages changed (this rank, whole run)
   DvceArray4D<Real> t2ys;       // (m,k,j,i) radiation E at the stage-loop start
   void Time2Stash();
   // t2pos-1020: <rad_m1>/time2_posfix = N (read only when named; absent = 4 since
@@ -2700,6 +2704,7 @@ class RadiationM1 {
   // the same test and R = (1 - 1e-12) Q/P, rounds until no cell is newly limited
   bool t2_ffct_swp = false;
   void Time2FaceFct(int stage, Real c1, Real c2);
+  void Time2K1XLim(int stage, Real c1, Real c2, bool gas);   // xlim-1120
   // facebound-1112 <rad_m1>/implicit_fclip_diag (read only when named; diagnostic only,
   // nothing written back): where the write-back's realisability clip |F| <= c E comes
   // from.  fcd_cnt_d (20): in-loop clip of the conservative2 kick (cs2_clip = rad): 0 n,
