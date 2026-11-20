@@ -375,3 +375,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - (09:29) Got bbe664a78: RZ3m_rsg (rz3b) added at the end of the RZ3b list on 02-04 / 02-16.
 - L1_hg_on (hpc-sm-02-09,hpc-sm-02-10): rc=0 wall=4295 | cycles 624961 - 626461 | steady 2.825 s/cycle | GPU MiB max 60491 min 59789 | CW a 2 FATAL 0 |  CW 2 | retry 7 | last cycle cycle=626461
 - L1_hg_off (hpc-sm-01-17,hpc-sm-02-03): rc=0 wall=4954 | cycles 624961 - 626461 | steady 3.264 s/cycle | GPU MiB max 59667 min 5 | CW a 20 FATAL 0 |  CW 20 | retry 28 | last cycle cycle=626461
+- (09:45) Got bcaa35c03: the L1_hg pair had finished at 09:30/09:40 and the L2_hg seeds had auto-started at 09:40; I stopped them (4 min in, nothing posted) so H_fp_hg (hgGH3b 01-17+02-03) and H_tel_hg (rsgEH2) start now, H_xl_hg on the first slot to free, then the L2_hg pair reruns on the same layouts. NR=8 2x4, GDR off, TL=180. H arms are in the 30-min progress lines. L1_rsg pair still running; L2_rsg follows it.
+  progress 10:15: L1_rsg_off:591773(CW 46) L1_rsg_on:591924(CW 21) H_fp_hg:625523(CW 2) H_tel_hg:625535(CW 0) L2_hg_off:DONE L2_hg_on:DONE
