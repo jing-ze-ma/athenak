@@ -2774,7 +2774,7 @@ void RadiationM1::CleanStagXCorner() {
       int cnt = 0;
       for (int dir = 0; dir < x.nf && cnt < 12; ++dir) {
         const int di = (dir == 0), dj = (dir == 1);
-        for (int j = js + 20; j <= je - 20 && cnt < 12; ++j) {
+        for (int j = js; j <= je + dj && cnt < 12; ++j) {
           for (int i = is + 100; i <= is + 104 + di && cnt < 12; ++i) {
             const Real xf = x.fc[dir](0,x.xc,ks,j,i), t = x.fc[dir](0,x.xc+1,ks,j,i);
             if (xf == 0.0) continue;
