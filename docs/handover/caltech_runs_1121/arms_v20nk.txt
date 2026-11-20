@@ -1,0 +1,4 @@
+# v20nk SPEEDHEAD gate (orion 2026-11-20). B_v20nk = caltech-runs/v20nk b9c0d1739 (v20n + kern-fw). After the v201d arms. romio.
+FINALRST=1 MODE=rt NH=2              V20NK_rsg  B_v20nk RSG 4 rsg_v20.keys
+FINALRST=1 ENVX=CLEAN_POISON_GHOST=1 V20NKP_rsg B_v20nk RSG 4 rsg_v20.keys
+FINALRST=1 MODE=rt NH=2              V20NK_hg   B_v20nk HG  4 hg_v20.keys time/dt_retry_host=m1
