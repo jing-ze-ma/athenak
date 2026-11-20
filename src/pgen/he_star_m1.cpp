@@ -3028,16 +3028,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     hs_eq_last_ = pin->GetOrAddBoolean("problem","he_ic_equil_last_march",false);
     hs_eq_tol_ = pin->GetOrAddReal("problem","he_ic_equil_tol",1.0e-9);
     const Real eqdt = pin->GetOrAddReal("problem","he_ic_equil_dtfac",1.0e6);
-    constexpr int eqn = 40;
     const Real eqrt = pin->GetOrAddReal("problem","he_ic_equil_relax_tol",1.0e-12);
     if (hs_eq_maxit_ < 1 || !(hs_eq_tol_ > 0.0) || !(eqdt > 0.0) || !(eqrt > 0.0)) {
       HsFatal("problem/he_ic_equil_maxit >= 1, _tol, _dtfac, _relax_tol > 0",
               __LINE__);
     }
-    if (!pm1->clean) pm1->icr_mode |= 2;   // the relax steps are the steady-state solve
-    pm1->icr_relax_dtfac = eqdt;
-    pm1->icr_relax_n = eqn;
-    pm1->icr_relax_tol = eqrt;
     pm1->icr_fmeas = true;
     hs_eq_it_ = 0;
     user_icpost_func = HeStarIcEquil;
@@ -4803,7 +4798,7 @@ std::vector<char> HsAdaptiveRstWrite() {
   // fin4-linhao-bc: the wall luminosity of the last solve (collective: every rank calls)
   auto lbt = [&out]() {
     if (!hs_lbc_ || hs_mesh_ == nullptr) return;
-    const Real l = hs_mesh_->pmb_pack->pradm1->LbathWallSum();
+    const Real l = 0.0;   // (the old solver's wall luminosity: none with scheme = clean)
     const std::size_t o = out.size();
     out.resize(o + sizeof(Real) + sizeof(kHsLbcTag));
     std::memcpy(out.data() + o, &l, sizeof(Real));

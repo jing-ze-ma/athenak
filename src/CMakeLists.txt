@@ -188,6 +188,7 @@ add_executable(
 
         rad_m1/rad_m1.cpp
         rad_m1/rad_m1_coupling.cpp
+        rad_m1/rad_m1_halo.cpp
         rad_m1/rad_m1_fluxes.cpp
         rad_m1/rad_m1_implicit.cpp
         rad_m1/rad_m1_clean.cpp
@@ -197,14 +198,8 @@ add_executable(
         rad_m1/rad_m1_clean_closure_p1.cpp
         rad_m1/rad_m1_clean_closure_p2.cpp
         rad_m1/rad_m1_clean_solver.cpp
-        rad_m1/rad_m1_icrad.cpp
         rad_m1/rad_m1_sph.cpp
-        rad_m1/rad_m1_krylov.cpp
-        rad_m1/rad_m1_launch.cpp
-        rad_m1/rad_m1_opcheck.cpp
-        rad_m1/rad_m1_precond.cpp
         rad_m1/rad_m1_time2.cpp
-        rad_m1/rad_m1_lz.cpp
         rad_m1/rad_m1_mr.cpp
         rad_m1/rad_m1_newdt.cpp
         rad_m1/rad_m1_opacity.cpp
@@ -212,14 +207,12 @@ add_executable(
         rad_m1/rad_m1_vetcol.cpp
         rad_m1/rad_m1_vetlat.cpp
         rad_m1/rad_m1_memarena.cpp
-        rad_m1/rad_m1_meshfb.cpp
         rad_m1/rad_m1_vetgd.cpp
         rad_m1/rad_m1_vetgd_sweep.cpp
         rad_m1/rad_m1_vetgd_cs.cpp
         rad_m1/rad_m1_rotavg.cpp
         rad_m1/rad_m1_ringavg.cpp
         rad_m1/rad_m1_tasks.cpp
-        rad_m1/rad_m1_update.cpp
         rad_m1/rad_m1_vet.cpp
         radiation/radiation.cpp
         radiation/radiation_fluxes.cpp
@@ -344,13 +337,6 @@ if (${PROBLEM} STREQUAL "he_star_m1")
   target_sources(athena PRIVATE pgen/he_drive.cpp)
   # (ATHENA_CUDA_BODY_GLOBAL is not set by default: on H200 it costs 2 % per RSG cycle;
   # set it per arch with -D Athena_EXTRA_DEFS="ATHENA_CUDA_BODY_GLOBAL=512" where measured)
-endif()
-
-# The rad_m1 ic_rad = fs_relax default is for the stellar-envelope pgen only
-# (rad_m1_icrad.cpp IcRadInit); every other problem defaults to ic_rad = none
-if (${PROBLEM} STREQUAL "he_star_m1")
-  set_source_files_properties(rad_m1/rad_m1_icrad.cpp PROPERTIES
-      COMPILE_DEFINITIONS M1_ICRAD_DEFAULT_FS_RELAX=1)
 endif()
 
 # -D Athena_M1_VGD_NMAX=<n> raises the vet_gd direction cap (default 432 in

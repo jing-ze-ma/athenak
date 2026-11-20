@@ -312,7 +312,6 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
     fofc_rep.Count(pmy_pack, fofc, w0, peos->eos_data.dfloor);
   }
 
-  if (pmy_pack->pradm1 != nullptr) {pmy_pack->pradm1->DetTrace("h_fofcflag");}
   auto &coord = pmy_pack->pcoord->coord_data;
   bool &is_sr = pmy_pack->pcoord->is_special_relativistic;
   bool &is_gr = pmy_pack->pcoord->is_general_relativistic;

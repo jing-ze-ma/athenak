@@ -23,7 +23,7 @@ namespace fluid {
 //! \fn void fluid::RKUpdateCore
 //! \brief the explicit RK stage update u0 = gam0 u0 + gam1 u1 - beta dt
 //! div(F) of the first nvar variables, ONE implementation for Hydro::RKUpdate and
-//! MHD::RKUpdate (which keep their own hooks: eint_ledger + DetTrace).
+//! MHD::RKUpdate (which keep their own hook: eint_ledger).
 
 void RKUpdateCore(MeshBlockPack *pmy_pack, Driver *pdriver, const int stage,
                   const int nvar, const DvceFaceFld5D<Real> &uflx,
@@ -133,7 +133,6 @@ namespace hydro {
 
 TaskStatus Hydro::RKUpdate(Driver *pdriver, int stage) {
   eint_ledger::Mark(pmy_pack->pmesh, "gap_pre");   // (no-op unless on)
-  if (pmy_pack->pradm1 != nullptr) {pmy_pack->pradm1->DetTrace("h_preupd");}
   fluid::RKUpdateCore(pmy_pack, pdriver, stage, nhydro + nscalars, uflx, u0, u1);
   return TaskStatus::complete;
 }

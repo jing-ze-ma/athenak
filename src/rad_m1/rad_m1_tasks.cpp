@@ -36,50 +36,20 @@ void RadiationM1::AssembleRadM1Tasks(std::map<std::string,
   // "m1_before_stagen": work that must complete over all MeshBlocks before the stage
   id.irecv = tl["m1_before_stagen"]->AddTask(&RadiationM1::InitRecv, this, none);
 
-  // ---- MILESTONE 3a hook: the implicit column solve replaces the whole explicit stage
-  // chain (closure limits -> opacity -> fluxes -> update -> coupling).  Everything after
-  // the solve -- the hydro inversion and the ghost-zone exchange of the moments -- is
-  // the same as in the explicit path.
-  if (transport >= M1_TRANSPORT_IMPLICIT_X1) {
-    id.closure = tl["m1_stagen"]->AddTask(&RadiationM1::ApplyClosureLimits,this,none);
-    id.opac    = tl["m1_stagen"]->AddTask(&RadiationM1::Opacity, this, id.closure);
-    if (clean) {
-      id.update = tl["m1_stagen"]->AddTask(&RadiationM1::CleanSolve, this, id.opac);
-    } else {
-      id.update = tl["m1_stagen"]->AddTask(&RadiationM1::ImplicitSolve, this, id.opac);
-    }
-    id.c2p     = tl["m1_stagen"]->AddTask(&RadiationM1::HydroConToPrim,this,id.update);
-    id.restu   = tl["m1_stagen"]->AddTask(&RadiationM1::RestrictU, this, id.c2p);
-    id.sendu   = tl["m1_stagen"]->AddTask(&RadiationM1::SendU, this, id.restu);
-    id.recvu   = tl["m1_stagen"]->AddTask(&RadiationM1::RecvU, this, id.sendu);
-    id.bcs     = tl["m1_stagen"]->AddTask(&RadiationM1::ApplyPhysicalBCs,this,id.recvu);
-    id.prol    = tl["m1_stagen"]->AddTask(&RadiationM1::Prolongate, this, id.bcs);
-    id.csend = tl["m1_after_stagen"]->AddTask(&RadiationM1::ClearSend, this, none);
-    id.crecv = tl["m1_after_stagen"]->AddTask(&RadiationM1::ClearRecv, this, id.csend);
-    return;
-  }
-  // ---- end of the 3a hook
-
-  // "m1_stagen"
-  id.copyu   = tl["m1_stagen"]->AddTask(&RadiationM1::CopyCons, this, none);
-  id.closure = tl["m1_stagen"]->AddTask(&RadiationM1::ApplyClosureLimits,this,id.copyu);
+  // "m1_stagen": the clean stage solve (scheme = clean, transport = implicit), then the
+  // hydro inversion and the ghost-zone exchange of the moments
+  id.closure = tl["m1_stagen"]->AddTask(&RadiationM1::ApplyClosureLimits,this,none);
   id.opac    = tl["m1_stagen"]->AddTask(&RadiationM1::Opacity, this, id.closure);
-  id.flux    = tl["m1_stagen"]->AddTask(&RadiationM1::CalculateFluxes, this, id.opac);
-  id.sendf   = tl["m1_stagen"]->AddTask(&RadiationM1::SendFlux, this, id.flux);
-  id.recvf   = tl["m1_stagen"]->AddTask(&RadiationM1::RecvFlux, this, id.sendf);
-  id.update  = tl["m1_stagen"]->AddTask(&RadiationM1::Update, this, id.recvf);
-  id.coupl   = tl["m1_stagen"]->AddTask(&RadiationM1::Coupling, this, id.update);
-  id.c2p     = tl["m1_stagen"]->AddTask(&RadiationM1::HydroConToPrim,this,id.coupl);
+  id.update  = tl["m1_stagen"]->AddTask(&RadiationM1::CleanSolve, this, id.opac);
+  id.c2p     = tl["m1_stagen"]->AddTask(&RadiationM1::HydroConToPrim,this,id.update);
   id.restu   = tl["m1_stagen"]->AddTask(&RadiationM1::RestrictU, this, id.c2p);
   id.sendu   = tl["m1_stagen"]->AddTask(&RadiationM1::SendU, this, id.restu);
   id.recvu   = tl["m1_stagen"]->AddTask(&RadiationM1::RecvU, this, id.sendu);
   id.bcs     = tl["m1_stagen"]->AddTask(&RadiationM1::ApplyPhysicalBCs,this,id.recvu);
   id.prol    = tl["m1_stagen"]->AddTask(&RadiationM1::Prolongate, this, id.bcs);
-
   // "m1_after_stagen"
   id.csend = tl["m1_after_stagen"]->AddTask(&RadiationM1::ClearSend, this, none);
   id.crecv = tl["m1_after_stagen"]->AddTask(&RadiationM1::ClearRecv, this, id.csend);
-
   return;
 }
 
@@ -99,41 +69,6 @@ TaskStatus RadiationM1::InitRecv(Driver *pdrive, int stage) {
     }
   }
   return TaskStatus::complete;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn TaskStatus RadiationM1::CopyCons
-//! \brief copy u0 --> u1 in the first stage of each substep
-
-TaskStatus RadiationM1::CopyCons(Driver *pdrive, int stage) {
-  if (stage == 1) {
-    Kokkos::deep_copy(DevExeSpace(), u1, u0);
-  }
-  return TaskStatus::complete;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn TaskStatus RadiationM1::SendFlux
-//! \brief pack/send restricted face fluxes at fine/coarse boundaries
-
-TaskStatus RadiationM1::SendFlux(Driver *pdrive, int stage) {
-  TaskStatus tstat = TaskStatus::complete;
-  if (pmy_pack->pmesh->multilevel) {
-    tstat = pbval_u->PackAndSendFluxCC(uflx);
-  }
-  return tstat;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn TaskStatus RadiationM1::RecvFlux
-//! \brief recv/unpack restricted face fluxes at fine/coarse boundaries
-
-TaskStatus RadiationM1::RecvFlux(Driver *pdrive, int stage) {
-  TaskStatus tstat = TaskStatus::complete;
-  if (pmy_pack->pmesh->multilevel) {
-    tstat = pbval_u->RecvAndUnpackFluxCC(uflx);
-  }
-  return tstat;
 }
 
 //----------------------------------------------------------------------------------------
