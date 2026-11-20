@@ -29,6 +29,7 @@
 #include "radiation/radiation.hpp"
 #include "radiation/radiation_tetrad.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_clean.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "particles/particles.hpp"
@@ -1303,7 +1304,61 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     });
     i_dv += 4;
   }
-  if (name.compare("m1_vet") == 0) {
+  // m1_vet under scheme = clean: D = K/J of the closure the step's solves read, cln_s
+  // (clean_closure = predict, the staggered default; rad_m1_clean_closure.cpp
+  // CleanClosure: the formal solution of the predicted state at
+  // t^{n+1}, the clean_rot_ring average over the window's sets, CleanClosureFromGd, then
+  // CleanClosureFill; built once per step and rebuilt for a new dt (dt_retry), read by
+  // every solve of the step, not rebuilt after it; a restart restores the ring, so the
+  // next step builds the same D), so the D of the step that produced the dumped E and
+  // F; a dump before the first build (cycle 0; cln_s is not in the restart file) writes
+  // D = I/3.  Components 11 22 33 12 13 23 in the frame of m1_f1..3, radial first: the
+  // cubed sphere's Cartesian D turned into CleanCsFrame's (r_hat, ., .), D' = q D q^T
+  // (the old scheme's m1_vet wrote the Cartesian D there).  P_ab = m1_e D_ab.
+  if (name.compare("m1_vet") == 0 && pm->pmb_pack->pradm1->clean) {
+    if (derived_var.extent(4) <= 1)
+      Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
+    auto dv = derived_var;
+    auto prm = pm->pmb_pack->pradm1;
+    auto cs_ = prm->cln_s;
+    auto gn_ = prm->cln_gn;
+    const bool have = (prm->cln_tc > -1.0e299) && (cs_.extent_int(0) >= nmb) &&
+                      (cs_.extent_int(1) > radm1::CLN_D11 + 5);
+    // (D = I/3 is the same in every frame)
+    const bool rot = have && prm->cs_geom && (gn_.a.extent_int(0) >= nmb);
+    par_for("m1_vet_cln", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      Real d[3][3] = {{1.0/3.0, 0.0, 0.0}, {0.0, 1.0/3.0, 0.0}, {0.0, 0.0, 1.0/3.0}};
+      if (have) {
+        for (int a = 0; a < 3; ++a) {
+          for (int b = 0; b < 3; ++b) {
+            d[a][b] = cs_(m,radm1::CLN_D11+((a == b) ? a : 2+a+b),k,j,i);
+          }
+        }
+      }
+      Real q[3][3] = {{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}};
+      if (rot) {   // (CleanCsFrame's rows)
+        for (int c = 0; c < 3; ++c) q[0][c] = gn_.At<radm1::CLG_R>(m,c,k,j,i);
+        const Real rho = sqrt(q[0][0]*q[0][0] + q[0][1]*q[0][1]);
+        q[2][0] = -q[0][1]/rho;
+        q[2][1] = q[0][0]/rho;
+        q[2][2] = 0.0;
+        q[1][0] = q[2][1]*q[0][2];
+        q[1][1] = -q[2][0]*q[0][2];
+        q[1][2] = q[2][0]*q[0][1] - q[2][1]*q[0][0];
+      }
+      for (int n = 0; n < 6; ++n) {
+        const int a = (n < 3) ? n : ((n == 5) ? 1 : 0);
+        const int b = (n < 3) ? n : ((n == 3) ? 1 : 2);
+        Real t = 0.0;
+        for (int c = 0; c < 3; ++c) {
+          for (int e = 0; e < 3; ++e) t += q[a][c]*d[c][e]*q[b][e];
+        }
+        dv(m,i_dv+n,k,j,i) = t;
+      }
+    });
+    i_dv += 6;
+  } else if (name.compare("m1_vet") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
     auto dv = derived_var;

@@ -780,7 +780,14 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       outvars.emplace_back("m1_ce0",3,&(derived_var));
       out_params.n_derived += 4;
     }
-    if (variable.compare("m1_vet") == 0) {
+    // scheme = clean: the full D (11 22 33 12 13 23) in the frame of m1_f1..3, no f_K
+    // (derived_variables.cpp)
+    if (variable.compare("m1_vet") == 0 && pm->pmb_pack->pradm1->clean) {
+      out_params.contains_derived = true;
+      const char *dn[6] = {"m1_d11", "m1_d22", "m1_d33", "m1_d12", "m1_d13", "m1_d23"};
+      for (int n = 0; n < 6; ++n) outvars.emplace_back(dn[n],n,&(derived_var));
+      out_params.n_derived += 6;
+    } else if (variable.compare("m1_vet") == 0) {
       out_params.contains_derived = true;
       outvars.emplace_back("m1_fk",0,&(derived_var));
       outvars.emplace_back("m1_d11",1,&(derived_var));
