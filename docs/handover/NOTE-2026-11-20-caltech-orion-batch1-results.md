@@ -239,3 +239,6 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - KX001_hg (hpc-sm-02-10): rc=1 wall=403 | cycles 624961 - 624965 | steady 16.674 s/cycle | GPU MiB max 115761 min 114973 | CW a 11 FATAL 1 |  CW 11 FATAL 1 | KSPLIT 3 OLDVEC 3 | k1_xlim' in block 'rad_m1' is absent from the restart's input: added from the command line (= 0.1) |  | CLEAN REAL lines 2: CLEAN REAL cycle 624964 | faces 205357056: F^H/(c maxE) >1 25950219 >10 567652 max 1.111e+04 | Phi/(c maxE) >1 5421 >10 0 max 4.875e+00 | cells 69206016: |Fcell|/(cE) >1 25251935 >10 645864 max 1.974e
   FAILED: last 100 lines in caltech_results/KX001_hg/FAIL_tail100.txt
 - LS_rsg_r6 (hpc-sm-01-17,hpc-sm-02-03): rc=0 wall=97 | cycles 589788 - 589808 | steady 2.027 s/cycle | GPU MiB max 72513 min 5 | CW a 0 FATAL 0 |  
+- (05:50) Got de2ae8c3c: KX001_hg had already started (05:40, on ksplit4 c28cf2f41), so it finishes and is sent. ksplit5 = c24692a3c building; KX1d_hg then KX001d_hg queued (same result-line fields as KX1).
+- LS_rsg_r8 (hpc-sm-01-17,hpc-sm-02-03): rc=0 wall=91 | cycles 589788 - 589808 | steady 1.666 s/cycle | GPU MiB max 56677 min 5 | CW a 0 FATAL 0 |  
+- LS_rsg_r12 (hpc-sm-01-17,hpc-sm-02-03,hpc-sm-02-04): rc=0 wall=75 | cycles 589788 - 589808 | steady 1.207 s/cycle | GPU MiB max 38473 min 0 | CW a 0 FATAL 0 |  
