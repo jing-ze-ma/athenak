@@ -3399,7 +3399,7 @@ class RadiationM1 {
   bool cln_budget = false;      // clean_conv = budget (staggered default): CleanSolve
   bool cln_bon = false;         // this solve takes it (Newton passes with a valid K1)
   Real cln_tolb = 0.0;          // its tolerance of the pass (kappa x time error)
-  Real cln_bkap = 0.1;          // clean_conv_kappa
+  Real cln_bkap = 1.0;          // clean_conv_kappa
   Real cln_bmax = 1.0e-5;       // clean_conv_max
   Real cln_ewr = -1.0, cln_eta = 0.1;   // Eisenstat-Walker: last |r0|_S, forcing
   bool cln_nlprint = false;     // clean_nl_print: the changes of every pass (rank 0)

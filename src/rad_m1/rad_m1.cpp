@@ -581,7 +581,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // cell's own budget for the step, S = the sum of its gross terms (old value, fluxes
     // through the faces, exchange, work, beta terms), so that a change or residual is
     // the fraction of the energy the cell exchanges in the step.  Its tolerance is
-    // clean_conv_kappa (0.1) x the step's time-error estimate in the same weights,
+    // clean_conv_kappa (1.0) x the step's time-error estimate in the same weights,
     // between clean_tol_nl (10 clean_tol) and clean_conv_max (1e-5), and BiCGStab in
     // that norm with Eisenstat-Walker forcing; strict: E, T relative to themselves,
     // clean_tol_nl
@@ -593,7 +593,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_budget = !cln_cell && (cv == "budget");}
-    cln_bkap = pin->GetOrAddReal("rad_m1","clean_conv_kappa",0.1);
+    cln_bkap = pin->GetOrAddReal("rad_m1","clean_conv_kappa",1.0);
     // clean_conv_max: the tolerance's ceiling, default 1e-5.  The MeshBlock layout moves
     // the answer to about it (a solve may stop a pass earlier or later), which a step
     // dt_retry redoes amplifies (mpirej_retry, 1 vs 2 ranks: 1e-4 9.1e-2, 1e-5 9.2e-6)
