@@ -3395,6 +3395,7 @@ void RadiationM1::CleanStagBracket() {
   const Real efl = e_floor;
   const bool rat = cln_rayratio, thf = cln_thinf;
   const int dgf = cln_dgform;
+  const Real ar_ = arad;
   const Real rmn = cln_raymin;
   auto iw_ = iw;
   CleanFor("cln_rayj", nmb1, ks, ke, js, je, is, ie,
@@ -3521,6 +3522,32 @@ void RadiationM1::CleanStagBracket() {
       // a cell; 9 without the F_y clamp)
       const Real rg = fmin(r/rmn, 1.0);
       const Real q = (dgf == 1) ? 1.0 : ((dgf == 3) ? r : ((dgf >= 9) ? rg*rg : r*r));
+      // (11: no clamp; a cell gates only where it holds more than the rays (E_old > J) AND
+      // more than its neighbour: r = max(J/E_old, min(1, E_old,o/E_old)), the worse side)
+      if (dgf == 11) {
+        auto rx = [&](const Real e, const Real jj, const Real eo) {
+          return (e > jj && e > 0.0) ? fmax(jj/e, fmin(1.0, eo/e)) : 1.0;
+        };
+        const Real r11 = fmin(rx(eol, jl, eor), rx(eor, jr, eol));
+        x.fc[dir](m,x.fdg,k,j,i) = r11*r11*x.c*(fy - x.fc[dir](m,CLF_HP,k,j,i)*jl
+                                                 - x.fc[dir](m,CLF_HM,k,j,i)*jr);
+        return;
+      }
+      // (12: no clamp; a cell gates only where it holds more than the rays and that excess
+      // is sourced by its gas: r = 1 - s (1 - J/E_old), s = min(1, a T^4/E_old); an excess
+      // the gas cannot source (vacuum, cold gas) is numerical leak, corrected in full)
+      if (dgf == 12) {
+        auto rs = [&](const Real e, const Real jj, const Real t) {
+          if (!(e > jj && e > 0.0)) return 1.0;
+          const Real sg = fmin(1.0, ar_*SQR(SQR(fmax(t, 0.0)))/e);
+          return 1.0 - sg*(1.0 - jj/e);
+        };
+        const Real r12 = fmin(rs(eol, jl, x.w(m,CLW_T,k-dk,j-dj,i-di)),
+                              rs(eor, jr, x.w(m,CLW_T,k,j,i)));
+        x.fc[dir](m,x.fdg,k,j,i) = r12*r12*x.c*(fy - x.fc[dir](m,CLF_HP,k,j,i)*jl
+                                                 - x.fc[dir](m,CLF_HM,k,j,i)*jr);
+        return;
+      }
       if (dgf == 9) {
         x.fc[dir](m,x.fdg,k,j,i) = q*x.c*(fy - x.fc[dir](m,CLF_HP,k,j,i)*jl
                                            - x.fc[dir](m,CLF_HM,k,j,i)*jr);
