@@ -35,3 +35,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   leg b at its N0+2 dump, so leg b2 reads a broken rst). RSG rst writes of the same build are fine (V20G_rsg rt 5/5 same).
   V20F_hg (v20f, same form) is queued next on 02-16 and will show whether it is v20g-specific. Tail in caltech_results/V20G_hg/.
 - Memory note: GPU peak is ~109 GB/GPU for RSG and ~117 GB/GPU for HG at 4 ranks (you expected 50 / 70); both fit in 141 GB.
+- TQS_rsg_tie (hpc-sm-02-09): rc=0 wall=91 | cycles 589788 - 589794 | steady 3.011 s/cycle | GPU MiB max 109141 min 107955 | CW a 0 FATAL 0 |  
