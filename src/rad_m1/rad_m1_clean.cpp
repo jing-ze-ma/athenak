@@ -2081,8 +2081,7 @@ void RadiationM1::CleanStagKPos() {
   // old vector; the write-back books pd_b X)
   if (cln_lacc.extent_int(0) > nmb1) {
     auto la = cln_lacc;
-    // (the x1 face area of the clean fluxes: the cubed sphere's own, CleanCsGeometry)
-    auto ar = pmy_pack->pmesh->use_cubed_sphere ? cln_ga[0] : pmy_pack->pcoord->area.x1f;
+    auto ar = pmy_pack->pcoord->area.x1f;   // (the x1 face area of the clean fluxes)
     par_for("cln_kpos_bnd", DevExeSpace(), 0, nmb1, 0, 1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int s, const int k, const int j) {
       const int i = s ? ie + 1 : is;
@@ -4764,8 +4763,7 @@ void RadiationM1::CleanWriteBack() {
   // (the history's boundary energy: + h A Phi of the physical x1 faces, CleanBndAcc)
   if (cln_lacc.extent_int(0) > nmb1) {
     auto la = cln_lacc;
-    // (the x1 face area of the clean fluxes: the cubed sphere's own, CleanCsGeometry)
-    auto ar = pmy_pack->pmesh->use_cubed_sphere ? cln_ga[0] : pmy_pack->pcoord->area.x1f;
+    auto ar = pmy_pack->pcoord->area.x1f;   // (the x1 face area of the clean fluxes)
     const bool stg = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
     par_for("cln_wbbnd", DevExeSpace(), 0, nmb1, 0, 1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int s, const int k, const int j) {
