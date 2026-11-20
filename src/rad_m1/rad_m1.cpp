@@ -356,13 +356,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // the streaming share w the face momentum relaxes toward the realisable streaming flux
     // F_K = c (h+ E_L + h- E_R) at the rate c/dx, and at least into |F| <= c max(E_L, E_R)
     // (CleanStagFRelax); the momentum it takes goes to the gas (gas) or is booked as the
-    // radiation's (ledger: the L_z in the ledger of CleanLzBook)
+    // radiation's (ledger: the L_z in the ledger of CleanLzBook); gas_cone | ledger_cone:
+    // no c/dx relaxation, only the projection into the cone (where |F| > c max(E_L, E_R))
     if (!cln_cell && pin->DoesParameterExist("rad_m1", "clean_stag_freal_relax")) {
       const std::string fr = pin->GetString("rad_m1", "clean_stag_freal_relax");
       cln_frz = (fr == "gas") ? 1 : ((fr == "ledger") ? 2 : 0);
+      if (fr == "gas_cone" || fr == "ledger_cone") cln_frz = (fr[0] == 'l') ? 4 : 3;
       if (fr != "off" && (cln_frz == 0 || !pmy_pack->pmesh->use_cubed_sphere ||
                           !cln_fsolve)) {
-        std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_freal_relax = off | gas | ledger,"
+        std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_freal_relax = off | gas | ledger | "
+                  << "gas_cone | ledger_cone,"
                   << " the cubed sphere's F solve only" << std::endl;
         std::exit(EXIT_FAILURE);
       }
@@ -440,7 +443,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       // momentum of CleanCsTorque and the radiation's L_z that of its face momenta, so
       // that the ledger holds the radial boundaries' torque alone
       cln_lzt = stag("clean_cs_lz_tel", false);
-      if (cln_lzt && cln_frz == 2) {
+      if (cln_lzt && cln_frz % 2 == 0 && cln_frz > 0) {
         std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_freal_relax = ledger books the "
                   << "cell vector's L_z, not clean_cs_lz_tel's" << std::endl;
         std::exit(EXIT_FAILURE);
