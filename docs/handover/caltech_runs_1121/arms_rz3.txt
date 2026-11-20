@@ -12,3 +12,4 @@ FINALRST=0 RZ3lcl_hg   B_rz3b HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/cle
 FINALRST=0 RZ3ll_rsg   B_rz3b RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=ledger rad_m1/clean_stag_freal_lat=true
 FINALRST=0 RZ3lcl_rsg  B_rz3b RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=ledger_cone rad_m1/clean_stag_freal_lat=true
 FINALRST=0 RZ3ll001_hg B_rz3b HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=ledger rad_m1/clean_stag_freal_lat=true rad_m1/clean_conv_kappa=0.01
+FINALRST=0 RZ3m_rsg B_rz3b RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_conv_max=9.9e-5   # (NOTE bu) chaos baseline, key off
