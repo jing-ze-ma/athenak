@@ -1981,6 +1981,10 @@ class RadiationM1 {
   // with relaxation k dt > s (Time2FormStage); 0 = off
   Real t2_k1stiff = 0.0;
   Real t2_k1stiff_n = 0.0;      // cell-steps changed (this rank, whole run)
+  // xlim-1120 time2_k1_xlim = th (read only when named; 0 = off): the stage increment's
+  // exchange pair scaled so E (w/o faces) / gas eint keep >= th (Time2FormStage)
+  Real t2_k1xlim = 0.0;
+  Real t2_k1xlim_n = 0.0;       // cell-stages changed (this rank, whole run)
   DvceArray4D<Real> t2ys;       // (m,k,j,i) radiation E at the stage-loop start
   void Time2Stash();
   // t2pos-1020: <rad_m1>/time2_posfix = N (read only when named; absent = 4 since
