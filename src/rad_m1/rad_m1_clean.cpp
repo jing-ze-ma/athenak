@@ -3442,13 +3442,17 @@ void RadiationM1::CleanStagBracket() {
         return;
       }
       if (thf) {
-        const Real t = fmin(fmax(fy, -jr), jl);
-        const Real hl = x.fc[dir](m,CLF_HP,k,j,i)*jl, hr = x.fc[dir](m,CLF_HM,k,j,i)*jr;
+        // (thinf_v = -2: the interval of the state's old E, [-E_R, E_L], the rays as ratios)
+        const bool eo = (thv == -2);
+        const Real ul = eo ? fmax(x.w(m,CLW_EO,k-dk,j-dj,i-di), 0.0) : jl;
+        const Real ur = eo ? fmax(x.w(m,CLW_EO,k,j,i), 0.0) : jr;
+        const Real t = fmin(fmax(fy, -ur), ul);
+        const Real hl = x.fc[dir](m,CLF_HP,k,j,i)*ul, hr = x.fc[dir](m,CLF_HM,k,j,i)*ur;
         const Real s = hl - hr, dd = t - hl - hr;
         const Real a0 = (s > 0.0) ? hl + dd*hl/s : fmax(t, 0.0);
-        const Real a = fmin(fmax(a0, fmax(t, 0.0)), fmin(jl, t + jr));
-        if (jl > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = a/jl;
-        if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = (t - a)/jr;
+        const Real a = fmin(fmax(a0, fmax(t, 0.0)), fmin(ul, t + ur));
+        if (ul > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = a/ul;
+        if (ur > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = (t - a)/ur;
         x.fc[dir](m,x.fdg,k,j,i) = 0.0;
         return;
       }
