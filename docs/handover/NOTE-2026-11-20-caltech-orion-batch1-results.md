@@ -513,3 +513,8 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - T_t9l62 (): | MISSING /resnick/groups/carnegie_poc/jingze/fresh_prod_1120/t9l62/prof_t9l62_LIC.txt  |  | CW 0 FATAL 0
 - V203L_hg (hpc-sm-02-10): rc=0 wall=158 rc=0 wall=140 rc=0 wall=142 | cycles 624961 - 624965 | steady 4.349 s/cycle | GPU MiB max 102089 min 101427 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF  | CW 0 FATAL 0
 - CET1_hg (hpc-sm-02-10): rc=0 wall=90 |  | steady  s/cycle | GPU MiB max 117277 min 116753 | CW a 0 FATAL 0 |  CW 0 FATAL 0 dt_retry 6 | nl_print (last): CLEAN pass cycle 624961 t2s 3 pos 0 pass 4 it 4 de 2.339e-05 dv 3.783e-10;CLEAN pass cycle 624961 t2s 3 pos 0 pass 5 it 3 de 5.580e-07 dv 6.747e-11; | bins kept: /resnick/groups/carnegie_poc/jingze/orion_runs_1121/CET1_hg/a/bin (3 files, 7.8G) | eos table: /resnick/groups/carnegie_poc/jingze/orion_runs_1121/CET1_hg/a/eos_table.txt
+  FRESHGO START S_t9l62 15:28:37 on hpc-sm-02-04
+  FRESHGO START T_t9l62 15:28:43 on hpc-sm-02-11
+  FRESHGO START T_t19l64 15:28:46 on hpc-sm-02-10
+  FRESHGO START S_m35mms 15:28:55 on hpc-sm-02-03
+- S_bsg (hpc-sm-02-03, started 15:24:35): a rc=0 wall=81 b rc=0 wall=60 b rc=0 wall=47 | a cycles 0 - 50 dt first 165.455 last 167.849 s/cycle steady 0.591 first elapsed 14.7 a 'FATAL' 0  a 'CLEAN WARNING' 0   | GPU mem peak MiB 22885 | CW 0 FATAL 0
