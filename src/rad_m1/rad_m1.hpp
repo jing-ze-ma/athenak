@@ -2693,16 +2693,6 @@ class RadiationM1 {
   // |K| only, no inflow-free rounds (HG: -61 % rounds, -14 % s/cycle, withheld and left
   // as K = 0; K > 0 cut the beams there)
   int t2_ffct_rk = 0;
-  // <rad_m1>/time2_face_fct_form = zalesak (default, the rounds above) | donor: one pass
-  // instead of rounds.  A cell is safe when it stays above th V E^n even with all its
-  // inflow cut and its outflow full (V (E + s) - P > th V E^n, s the cell part); a safe
-  // cell keeps R = 1.  Every other cell takes R = (V (E + s) + I_safe - th V E^n)/P, I_safe
-  // the inflow from safe donors (those faces are never limited), so V E_new >= th V E^n
-  // in every cell after one pass and one R exchange: positive by construction, one flux
-  // per face (energy exact); unsafe cells are limited even where the rounds would not.
-  // The cell's own sink that its gas takes (at most (chat/c) V dEN) counts as one more
-  // outflow, to the gas, scaled by the same R (given back to E, taken from the gas)
-  bool t2_ffct_dnr = false;
   // <rad_m1>/time2_face_fct_sweep (read only when named; default false = Jacobi rounds as
   // before): the same Zalesak limiter, each round one thread per x1 column runs the
   // cells up and then down the column with the x1 neighbours' R of this round (lateral

@@ -639,15 +639,13 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_face_fct_rounds")) {
     t2_ffct_rk = pin->GetInteger("rad_m1", "time2_face_fct_rounds");
   }
-  if (pin->DoesParameterExist("rad_m1", "time2_face_fct_form")) {
-    const std::string ff = pin->GetString("rad_m1", "time2_face_fct_form");
-    if (ff != "zalesak" && ff != "donor") {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_m1>/time2_face_fct_form = zalesak | donor, not "
-                << ff << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    t2_ffct_dnr = (ff == "donor");
+  // (the one-pass donor form was removed: it fails the accuracy gate)
+  if (pin->DoesParameterExist("rad_m1", "time2_face_fct_form") &&
+      pin->GetString("rad_m1", "time2_face_fct_form") != "zalesak") {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<rad_m1>/time2_face_fct_form: only zalesak (the default) "
+              << "remains; the donor form was removed" << std::endl;
+    std::exit(EXIT_FAILURE);
   }
   if (pin->DoesParameterExist("rad_m1", "time2_k1_redist_r")) {
     t2_k1rd_r = pin->GetInteger("rad_m1", "time2_k1_redist_r");
@@ -1935,28 +1933,6 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     }
     w = cvol(m,k,j,i)*(u0_(m,M1_E,k,j,i) + in_(m,M1_T2_E,k,j,i));
   };
-  // (time2_face_fct_form = donor: the cell's own sink of the increment that the gas
-  // takes, at most the gas's gain (chat/c) V dEN, is limited with the faces: an outflow
-  // to the gas of the cell, given back to E and taken from the gas by the same R)
-  // (the gas's gain is its eint's: dEN less the kinetic energy of its momentum increment)
-  const Real chcl = chat/c_light;
-  FluidRef fdn = FluidRef::Get(pmy_pack);
-  const bool dnr = t2_ffct_dnr && fdn.on;
-  auto ugd = fdn.u0;
-  const bool csd = cs_geom;
-  auto ccd = pmy_pack->pcoord->cos_cell;
-  auto csink = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
-                             const Real w, const Real po, const Real pi) {
-    if (!dnr) return 0.0;
-    const Real v = cvol(m,k,j,i);
-    const Real sv = w - v*u0_(m,M1_E,k,j,i) - pi + po;
-    const Real idd = 1.0/fmax(ugd(m,IDN,k,j,i), 1.0e-300), cc = csd ? ccd(m,k,j) : 0.0;
-    const Real m1 = ugd(m,IM1,k,j,i), m2 = ugd(m,IM2,k,j,i), m3 = ugd(m,IM3,k,j,i);
-    const Real dke = (CsKeMom(m1 + in_(m,M1_T2_M1,k,j,i), m2 + in_(m,M1_T2_M1+1,k,j,i),
-                              m3 + in_(m,M1_T2_M1+2,k,j,i), cc) -
-                      CsKeMom(m1, m2, m3, cc))*idd;
-    return fmin(fmax(-sv, 0.0), fmax(chcl*v*(in_(m,M1_T2_EN,k,j,i) - dke), 0.0));
-  };
   // R = 1 everywhere, ghosts included (physical ghosts are never filled: unlimited);
   // the rounds read slot sa and write sb, then swap them (no copy; both slots keep the
   // same ghosts: after an exchange of sa they are copied to sb)
@@ -1996,43 +1972,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
   int *const zp = zac ? zl_chg.data() : nullptr;
   int *const zc = zac ? zp + 3*zS : nullptr;
   int zn = 0, zq = 0;   // the entries of the read list, and which list it is
-  if (t2_ffct_dnr) {   // (time2_face_fct_form = donor: safe flags in cb, then R in ca)
-    par_for("m1_t2_ffct_ds", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      Real w, po, pi, pl, dw;
-      bool lim;
-      cell(m, k, j, i, w, po, pi, pl, dw, lim, ca);
-      const Real wf = eth*cvol(m,k,j,i)*un_(m,M1_E,k,j,i);
-      const bool safe = (hoi && hm_(m,k,j,i) > 0.0) ||
-                        !(po + csink(m, k, j, i, w, po, pi) > 0.0) || (w - pi > wf);
-      iw_(m,cb,k,j,i) = safe ? 1.0 : 0.0;
-    });
-    rhalo(cb);
-    Real nv = 0.0;
-    par_reduce_flat("m1_t2_ffct_dr", 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
-      if (iw_(m,cb,k,j,i) > 0.0) return;
-      Real w, po, pi, pl, dw;
-      bool lim;
-      cell(m, k, j, i, w, po, pi, pl, dw, lim, cb);   // (pl: the safe donors' inflow)
-      const Real pc = csink(m, k, j, i, w, po, pi);
-      const Real q = w + po + pc - pi + pl - eth*cvol(m,k,j,i)*un_(m,M1_E,k,j,i);
-      const Real rq = (q > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/(po + pc)) : 0.0;
-      if (rq < 1.0) {
-        iw_(m,ca,k,j,i) = rq;
-        a += 1.0;
-      }
-    }, Kokkos::Sum<Real>(nv));
-#if MPI_PARALLEL_ENABLED
-    MPI_Allreduce(MPI_IN_PLACE, &nv, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-#endif
-    if (nv > 0.0) {
-      rhalo(ca);
-      ncell = nv;
-      nround = 1;
-    }
-  }
-  const bool swp = t2_ffct_swp && !t2_ffct_dnr;
+  const bool swp = t2_ffct_swp;
   if (swp) {   // (time2_face_fct_sweep: x1 columns in place, slot cb the last round's R)
     // (one cell: the Zalesak test with x1 neighbours from ca, in place, and lateral ones
     // from cb, the last round's; true if its R fell)
@@ -2166,7 +2106,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
       zl_halos[0] += 1.0;
     }
   }
-  for (int r = 0; r < ((t2_ffct_dnr || swp) ? 0 : 4096); ++r) {   // until no cell is newly limited
+  for (int r = 0; r < (swp ? 0 : 4096); ++r) {   // until no cell is newly limited
     Real nv[2] = {0.0, 0.0};
     Real nl[2] = {0.0, 0.0};
     for (int s = 0; s < (zlr > 0 ? zlr : 1); ++s) {
@@ -2347,12 +2287,6 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     bool lim;
     cell(m, k, j, i, w, po, pi, pl, dw, lim, ca);
     const Real rc = iw_(m,ca,k,j,i);
-    if (dnr && rc < 1.0) {   // (donor: the gas gives the withheld cell sink back)
-      const Real dc = (1.0 - rc)*csink(m, k, j, i, w, po, pi);
-      in_(m,M1_T2_EN,k,j,i) -= dc/(chcl*cvol(m,k,j,i));
-      dw += dc;
-      lim = true;
-    }
     if (lim) {in_(m,M1_T2_E,k,j,i) += dw/cvol(m,k,j,i);}
     if (rc < 1.0) {sw += (1.0 - rc)*po;}
     if (!(hoi && hm_(m,k,j,i) > 0.0) && !(w + dw > 0.0)) {sl += 1.0;}
