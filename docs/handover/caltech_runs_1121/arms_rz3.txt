@@ -6,3 +6,9 @@ FINALRST=0 RZ3o_hg     B_rz3 HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clea
 FINALRST=0 RZ3lc_rsg   B_rz3 RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=ledger_cone
 FINALRST=0 RZ3lc001_hg B_rz3 HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=ledger_cone rad_m1/clean_conv_kappa=0.01
 FINALRST=0 RZ3gc_rsg   B_rz3 RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=gas_cone
+# added 2026-11-20 (NOTE bt): B_rz3b = caltech-runs/realz3 at 4c684f37b (adds clean_stag_freal_lat). Order: ll_hg, lcl_hg, ll_rsg, lcl_rsg, ll001_hg. Ahead of L2 seeds.
+FINALRST=0 RZ3ll_hg    B_rz3b HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=ledger rad_m1/clean_stag_freal_lat=true
+FINALRST=0 RZ3lcl_hg   B_rz3b HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=ledger_cone rad_m1/clean_stag_freal_lat=true
+FINALRST=0 RZ3ll_rsg   B_rz3b RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=ledger rad_m1/clean_stag_freal_lat=true
+FINALRST=0 RZ3lcl_rsg  B_rz3b RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=ledger_cone rad_m1/clean_stag_freal_lat=true
+FINALRST=0 RZ3ll001_hg B_rz3b HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=ledger rad_m1/clean_stag_freal_lat=true rad_m1/clean_conv_kappa=0.01
