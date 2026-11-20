@@ -1,0 +1,1 @@
+TAG=RZ2l_rsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_rz2_94805ca84 md5=076753bf53c9bb91ccf5fb35a2639c39 RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=20 MODE=speed HOLDER=6133591 NODE=hpc-sm-02-09 NR=4 ENVX= EX=rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=ledger
