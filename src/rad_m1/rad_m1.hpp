@@ -2700,6 +2700,8 @@ class RadiationM1 {
   // the same test and R = (1 - 1e-12) Q/P, rounds until no cell is newly limited
   bool t2_ffct_swp = false;
   void Time2FaceFct(int stage, Real c1, Real c2);
+  bool t2_ksplit = false;   // ksplit-1120 study: time2_ksplit (CLEAN KSPLIT print)
+  void Time2KSplit(int stage, Real c1, Real c2);
   // facebound-1112 <rad_m1>/implicit_fclip_diag (read only when named; diagnostic only,
   // nothing written back): where the write-back's realisability clip |F| <= c E comes
   // from.  fcd_cnt_d (20): in-loop clip of the conservative2 kick (cs2_clip = rad): 0 n,
