@@ -1,0 +1,24 @@
+# CONVERR (orion 2026-11-20, USER): per-cell solver (iteration) error of ONE production step, prod tolerance vs tight.
+# B_v202 = caltech-runs/v202 f4cefb181 (= LATEST v20.2 code), production keys + floor_pay (= stag2 rsg/hg_latest.txt).
+# All arms: 1 node x 4 H200, from rsg.01295 / hegiant.00139, KEEPBIN=1 FINALRST=0 (no restart dump; KEEP the bins until
+# converr.sh has run), final hydro_w + m1 bins in double precision (output2/3 bin_double) + the EOS table dump.
+# Short: 1 cycle (~4-5 min incl. restart read + final bin write). Please slot ahead of long runs if that costs < 15 min.
+# Priority order = file order (CEP + CET3 first; the rest only add checks). Spread on any free nodes, concurrently.
+# Tight levels: T1 kappa 0.1 max 1e-6 | T2 kappa 0.01 max 1e-8 tol_nl 1e-12 tol 1e-13 | T3 kappa 1e-3 max 1e-10 tol_nl 1e-13 tol 1e-14.
+# If HG T3/T2 FATAL (kappa 0.01 HG was FATAL on v20j): report it and keep going (T1 is the fallback reference).
+KEEPBIN=1 FINALRST=0 CEP_rsg   B_v202 RSG 1 rsg_v20.keys hydro/floor_pay=rad_column output2/bin_double=true output3/bin_double=true hydro/eos_table_dump=eos_table.txt rad_m1/clean_nl_print=true
+KEEPBIN=1 FINALRST=0 CET3_rsg  B_v202 RSG 1 rsg_v20.keys hydro/floor_pay=rad_column output2/bin_double=true output3/bin_double=true hydro/eos_table_dump=eos_table.txt rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.001 rad_m1/clean_conv_max=1e-10 rad_m1/clean_tol_nl=1e-13 rad_m1/clean_tol=1e-14 rad_m1/clean_maxit=1000
+KEEPBIN=1 FINALRST=0 CEP_hg    B_v202 HG  1 hg_v20.keys time/dt_retry_host=m1 hydro/floor_pay=rad_column output2/bin_double=true output3/bin_double=true hydro/eos_table_dump=eos_table.txt rad_m1/clean_nl_print=true
+KEEPBIN=1 FINALRST=0 CET3_hg   B_v202 HG  1 hg_v20.keys time/dt_retry_host=m1 hydro/floor_pay=rad_column output2/bin_double=true output3/bin_double=true hydro/eos_table_dump=eos_table.txt rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.001 rad_m1/clean_conv_max=1e-10 rad_m1/clean_tol_nl=1e-13 rad_m1/clean_tol=1e-14 rad_m1/clean_maxit=1000
+KEEPBIN=1 FINALRST=0 CET2_rsg  B_v202 RSG 1 rsg_v20.keys hydro/floor_pay=rad_column output2/bin_double=true output3/bin_double=true hydro/eos_table_dump=eos_table.txt rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.01 rad_m1/clean_conv_max=1e-8 rad_m1/clean_tol_nl=1e-12 rad_m1/clean_tol=1e-13 rad_m1/clean_maxit=1000
+KEEPBIN=1 FINALRST=0 CET2_hg   B_v202 HG  1 hg_v20.keys time/dt_retry_host=m1 hydro/floor_pay=rad_column output2/bin_double=true output3/bin_double=true hydro/eos_table_dump=eos_table.txt rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.01 rad_m1/clean_conv_max=1e-8 rad_m1/clean_tol_nl=1e-12 rad_m1/clean_tol=1e-13 rad_m1/clean_maxit=1000
+KEEPBIN=1 FINALRST=0 CET1_rsg  B_v202 RSG 1 rsg_v20.keys hydro/floor_pay=rad_column output2/bin_double=true output3/bin_double=true hydro/eos_table_dump=eos_table.txt rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.1 rad_m1/clean_conv_max=1e-6
+KEEPBIN=1 FINALRST=0 CET1_hg   B_v202 HG  1 hg_v20.keys time/dt_retry_host=m1 hydro/floor_pay=rad_column output2/bin_double=true output3/bin_double=true hydro/eos_table_dump=eos_table.txt rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.1 rad_m1/clean_conv_max=1e-6
+# nl_print-off control (expect bins bitwise to CEP_*: nl_print is diagnostic only)
+KEEPBIN=1 FINALRST=0 CEP0_rsg  B_v202 RSG 1 rsg_v20.keys hydro/floor_pay=rad_column output2/bin_double=true output3/bin_double=true hydro/eos_table_dump=eos_table.txt
+KEEPBIN=1 FINALRST=0 CEP0_hg   B_v202 HG  1 hg_v20.keys time/dt_retry_host=m1 hydro/floor_pay=rad_column output2/bin_double=true output3/bin_double=true hydro/eos_table_dump=eos_table.txt
+# 3-cycle check (does the per-step error accumulate or stay at the per-step level?)
+KEEPBIN=1 FINALRST=0 CEPc_rsg  B_v202 RSG 3 rsg_v20.keys hydro/floor_pay=rad_column output2/bin_double=true output3/bin_double=true hydro/eos_table_dump=eos_table.txt rad_m1/clean_nl_print=true
+KEEPBIN=1 FINALRST=0 CET3c_rsg B_v202 RSG 3 rsg_v20.keys hydro/floor_pay=rad_column output2/bin_double=true output3/bin_double=true hydro/eos_table_dump=eos_table.txt rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.001 rad_m1/clean_conv_max=1e-10 rad_m1/clean_tol_nl=1e-13 rad_m1/clean_tol=1e-14 rad_m1/clean_maxit=1000
+KEEPBIN=1 FINALRST=0 CEPc_hg   B_v202 HG  3 hg_v20.keys time/dt_retry_host=m1 hydro/floor_pay=rad_column output2/bin_double=true output3/bin_double=true hydro/eos_table_dump=eos_table.txt rad_m1/clean_nl_print=true
+KEEPBIN=1 FINALRST=0 CET3c_hg  B_v202 HG  3 hg_v20.keys time/dt_retry_host=m1 hydro/floor_pay=rad_column output2/bin_double=true output3/bin_double=true hydro/eos_table_dump=eos_table.txt rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.001 rad_m1/clean_conv_max=1e-10 rad_m1/clean_tol_nl=1e-13 rad_m1/clean_tol=1e-14 rad_m1/clean_maxit=1000
