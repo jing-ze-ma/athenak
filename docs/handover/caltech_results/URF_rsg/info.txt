@@ -1,0 +1,1 @@
+TAG=URF_rsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_speedhead_fe6e94f03 md5=5081dc74b3932d799801664c815ed686 RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=30 MODE=speed HOLDER=6133592 NODE=hpc-sm-01-17 NR=4 ENVX= EX=rad_m1/clean_rot_fuse=true

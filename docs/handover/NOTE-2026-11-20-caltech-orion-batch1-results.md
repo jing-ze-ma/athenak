@@ -116,3 +116,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - CXP_hg (hpc-sm-02-04): rc=1 wall=436 | cycles 624961 - 624965 | steady 17.627 s/cycle | GPU MiB max 115761 min 114973 | CW a 11 FATAL 1 |  hesdirk2: k1_xpos' in block 'rad_m1' is absent from the restart's input: added from the command line (= 0.1)
   FAILED: last 100 lines in caltech_results/CXP_hg/FAIL_tail100.txt
   CXP_hg (kappa 0.01 + time2_k1_xpos=0.1): `FATAL <time> dt_retry: cycle 624965 failed 9 times (max 8), dt 4.259657e-01` after 4 cycles (17.6 s/cycle, 11 CLEAN WARNINGs); no end-of-run hesdirk2 summary was printed (the quoted text above is the key-absent notice, ignore it). Full run.log.gz + tail sent.
+- THF100_hg (hpc-sm-02-09): rc=0 wall=1132 | cycles 624961 - 625061 | steady 10.568 s/cycle | GPU MiB max 112969 min 112445 | CW a 11 FATAL 0 |  
+- URF_rsg (hpc-sm-01-17): rc=0 wall=182 | cycles 589788 - 589818 | steady 3.359 s/cycle | GPU MiB max 108363 min 107257 | CW a 0 FATAL 0 |  
