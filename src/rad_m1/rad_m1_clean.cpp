@@ -1119,6 +1119,34 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
                   pmy_pack->pmesh->ncycle, t2_solve, tag, g[0], g[1]);
     }
   };
+  // PROF study: sum V Q (the solve's h div of its faces) and the booked boundary la
+  auto profq = [&]() {
+    if (std::getenv("PROF_U") == nullptr) return;
+    auto &id = pmy_pack->pmesh->mb_indcs;
+    const int pis = id.is, pie = id.ie, pjs = id.js, pks = id.ks;
+    const int pni = id.nx1, pnj = id.nx2, pnk = id.nx3;
+    auto pw = cln_w; auto pv = pmy_pack->pcoord->volume; auto pla = cln_lacc;
+    const bool hla = cln_lacc.extent_int(0) >= pmy_pack->nmb_thispack;
+    Real sq = 0.0, sqt = 0.0, l0 = 0.0, l1 = 0.0;
+    Kokkos::parallel_reduce("prof_q", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+        pmy_pack->nmb_thispack*pnk*pnj*pni),
+    KOKKOS_LAMBDA(const int n, Real &a, Real &b, Real &c, Real &d) {
+      const int m = n/(pnk*pnj*pni), k = (n/(pnj*pni))%pnk + pks;
+      const int j = (n/pni)%pnj + pjs, i = n%pni + pis;
+      const Real q = pw(m,CLW_Q,k,j,i)*pv(m,k,j,i);
+      a += q; if (i == pie) b += q;
+      if (hla && i == pis) {c += pla(m,0,k,j); d += pla(m,1,k,j);}
+    }, Kokkos::Sum<Real>(sq), Kokkos::Sum<Real>(sqt), Kokkos::Sum<Real>(l0),
+       Kokkos::Sum<Real>(l1));
+    Real g[4] = {sq, sqt, l0, l1};
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, g, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::printf("PROF Q cycle %d t2s %d sumQV %.10e topcellQV %.10e la0 %.10e la1 %.10e\n",
+                  pmy_pack->pmesh->ncycle, t2_solve, g[0], g[1], g[2], g[3]);
+    }
+  };
   profu("in");
   if (!cln_init) CleanInit();
   // the vet_gd direction set before any use (the consistency term reads it at the first
@@ -1435,6 +1463,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     profu("prewb");
     CleanWriteBack();
     profu("wb");
+    profq();
   }
   // a write-back that leaves gas eint < 0 (energy for the fluid floor to create) is
   // rejected like a failed solve (the stage is redone by backward Euler, a
