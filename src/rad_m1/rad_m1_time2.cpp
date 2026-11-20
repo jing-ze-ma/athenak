@@ -1484,7 +1484,14 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
             tq = fmax(1.0 - need/(chcl*de), 0.0);
           }
         } else if (de < 0.0 && eg0 > 0.0) {   // the gas loses: eint + theta de >= th eint
-          if (!(eg0 + de > th*eg0)) tq = fmax((1.0 - th)*eg0/(-de), 0.0);
+          if (!(eg0 + de > th*eg0)) {
+            tq = fmax((1.0 - th)*eg0/(-de), 0.0);
+            // (E keeps its gain where it needs it: theta no smaller than what leaves E >=
+            // th E, else E's old vector would turn <= th E (HG KX1d: E < 0 x5))
+            const Real e0 = u0_(m,M1_E,k,j,i), e1 = e0 + in_(m,M1_T2_E,k,j,i);
+            const Real tqe = (e1 > th*e0) ? 1.0 - (e1 - th*e0)/(chcl*(-de)) : 1.0;
+            tq = fmin(fmax(tq, tqe), 1.0);
+          }
         }
         if (!(tq < 1.0)) return;
         const Real mv = (1.0 - tq)*de;   // (the exchange taken back: the stage solve's)
