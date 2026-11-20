@@ -1,0 +1,1 @@
+TAG=V201B_rsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v201b_873db9965 md5=487d4eaa96b105f519fe14bd9592ef8d RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=4 MODE=speed HOLDER=6133593 NODE=hpc-sm-01-11 NR=4 ENVX= EX=
