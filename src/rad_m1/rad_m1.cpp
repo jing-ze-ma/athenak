@@ -337,6 +337,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_stag_csvec_radial (default off): the cubed sphere's cell vector exact for a
     // radial field (CleanStagCsVector)
     cln_csvr = stag("clean_stag_csvec_radial", false);
+    // clean_stag_fidp = 0 (default) | 1 | 2: the face momentum of every F solve within the
+    // free-streaming interval of its cells, [-c E_R, c E_L] (CleanStagFSolve); 1: the gas
+    // takes the absorption of the limited F and the removed momentum is booked (CLEAN
+    // FIDP), 2: the gas takes the removed momentum
+    if (!cln_cell && pin->DoesParameterExist("rad_m1", "clean_stag_fidp")) {
+      cln_fidp = std::min(std::max(pin->GetInteger("rad_m1", "clean_stag_fidp"), 0), 2);
+    }
     // clean_stag_xdonor = off (default) | p1 | lag: the off-diagonal stress flux an
     // M-matrix term (CleanStagXDonor); clean_stag_xsrc (default off): also the face
     // sources past their explicit share; clean_stag_xsweep (default off): a monotone
@@ -433,6 +440,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // B (kappa_P > chi, a cool envelope's Planck mean above its Rosseland extinction, made
     // S = J + 750 (B - J) < 0 there: floored to 1e-300, a source hole in the rays)
     cln_srccvx = pin->GetOrAddBoolean("rad_m1","clean_source_convex",false);
+    if (cln_fidp > 0 && !cln_fsolve) {
+      std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_fidp needs the staggered F solve "
+                << "(clean_stag_fsolve)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     if (cln_freal && !(cln_gflux && cln_fsolve)) {
       std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_freal needs clean_layout = "
                 << "staggered with clean_consistency (the F solve and gflux)" << std::endl;
