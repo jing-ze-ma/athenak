@@ -1,0 +1,1 @@
+TAG=L2_hg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_lzcs2_b4ba38764 md5=e54147aa43648ecf7e7eb35e72db7c56 RST=/resnick/groups/carnegie_poc/jingze/hgglob_1021/prodG/rst/hegiant.00139.rst N0=624961 NC=6 MODE=speed HOLDER=6133591 NODE=hpc-sm-02-09 NR=4 ENVX=LZCS=1 EX=rad_m1/dbg_energy_audit=true output1/dt=1
