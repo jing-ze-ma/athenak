@@ -3678,7 +3678,7 @@ void RadiationM1::CleanStagBracket() {
       // (13: = 12 with s times the cell's coupling over the stage, min(1, rho kappa_P c h);
       // 17: = 13, then each face's DG times its donor's R below)
       if (dgf == 12 || dgf == 13 || dgf == 17 || dgf == 18 || dgf == 19 || dgf == 20 ||
-          dgf == 21) {
+          dgf == 21 || dgf == 22) {
         // (19: = 13, and the deficit side gated as v20.1, r = E_old/J)
         auto rs = [&](const Real e, const Real jj, const Real t, const Real kp) {
           if (dgf == 19 && jj > e && jj > 0.0) return e/jj;
@@ -3697,8 +3697,13 @@ void RadiationM1::CleanStagBracket() {
         // filling cell downstream of a lit donor is not gated)
         const Real qd = (dgf == 20 && jd2 > ed && fabs(fy) > ed) ? ed/fabs(fy) :
                         ((dgf == 21 && jd2 > ed) ? SQR(ed/jd2) : 1.0);
-        x.fc[dir](m,x.fdg,k,j,i) = qd*r12*r12*x.c*(fy - x.fc[dir](m,CLF_HP,k,j,i)*jl
-                                                    - x.fc[dir](m,CLF_HM,k,j,i)*jr);
+        const Real dg = r12*r12*x.c*(fy - x.fc[dir](m,CLF_HP,k,j,i)*jl
+                                     - x.fc[dir](m,CLF_HM,k,j,i)*jr);
+        // (22: = 13, and the deficit gate (E_old/J)^2 on the cell the DG drains (L where
+        // DG > 0): a cell short of its rays' J is not drained further, but may fill)
+        const Real eg = (dg > 0.0) ? eol : eor, jg = (dg > 0.0) ? jl : jr;
+        const Real qg = (dgf == 22 && jg > eg) ? SQR(eg/jg) : 1.0;
+        x.fc[dir](m,x.fdg,k,j,i) = qd*qg*dg;
         return;
       }
       // (15, 16, diagnosis: no clamp; 15 gates only the excess side (E_old > J: r = J/E),
