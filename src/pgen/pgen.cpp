@@ -2023,7 +2023,8 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     // independent I/O: a MeshBlock's tail slabs are contiguous in its record, so they
     // are read ahead, up to 1 GiB per rank at a time (ROMIO fails a single request of
     // 2^31 bytes), with one read per MeshBlock
-    HostArray5D<Real> rab("rst-tail-ahead", 1, 1, 1, 1, 1);
+    // (one slab per MeshBlock from the start: a read-ahead of k = 1 slab keeps this shape)
+    HostArray5D<Real> rab("rst-tail-ahead", nmb, 1, nout3, nout2, nout1);
     const IOWrapperSizeT slab = nout1*nout2*nout3*sizeof(Real);
     IOWrapperSizeT rab0 = 0, rab1 = 0;   // the file range (of MeshBlock 0) rab holds
     auto read_slab = [&](const char *what) {
