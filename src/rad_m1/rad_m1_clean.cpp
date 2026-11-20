@@ -5085,7 +5085,7 @@ void RadiationM1::CleanWriteBack() {
           const Real d = (q == 1) ? f2d(m,kf,jf,i) - g2(m,CLF_N,kf,jf,i)
                                   : f3d(m,kf,jf,i) - g3(m,CLF_N,kf,jf,i);
           sd += 0.5*v*lam*d/(x.c*x.c);
-          sl += 0.5*(v + x.vol(m,ko,jo,i))*lam*lam;
+          sl += 0.5*(v + tqv(m,3,ko,jo,i))*lam*lam;
           const Real ex = 0.5*v*lam*lam*(tqv(m,0,k,j,i) + tqv(m,0,ko,jo,i));
           const bool bf = (q == 1) ? (jf == js || jf == je + 1) : (kf == ks || kf == ke + 1);
           if (bf) {db_ += 0.5*v*lam*d/(x.c*x.c); eb_ += ex;}
