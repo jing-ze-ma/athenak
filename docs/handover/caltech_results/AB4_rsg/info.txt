@@ -1,0 +1,1 @@
+TAG=AB4_rsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_tie-prof_2ae22f2c4 md5=d9ac46d3c3cf1cf04beae1244049b819 RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=6 MODE=speed HOLDER=6133591 NODE=hpc-sm-02-09 NR=4 ENVX=PROF_U=1 EX=rad_m1/dbg_energy_audit=true output1/dt=1 rad_m1/implicit_pos_gas=false

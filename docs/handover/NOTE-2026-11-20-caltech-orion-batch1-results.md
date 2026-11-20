@@ -61,3 +61,10 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - AB1_rsg (hpc-sm-01-17): rc=0 wall=90 | cycles 589788 - 589794 | steady 2.999 s/cycle | GPU MiB max 109015 min 107829 | CW a 0 FATAL 0 |  
 - AB3_rsg (hpc-sm-02-09): rc=0 wall=93 | cycles 589788 - 589794 | steady 2.854 s/cycle | GPU MiB max 108391 min 107205 | CW a 0 FATAL 0 |  
 - AB2_rsg (hpc-sm-01-17): rc=0 wall=114 | cycles 589788 - 589794 | steady 7.972 s/cycle | GPU MiB max 108943 min 107757 | CW a 1 FATAL 0 |  
+- (02:45) Got 7b574f6f9 / b2f7ba19c / dfafbf9f1: v20g3 35a5b37e6 and convdiag 0fbbe9f91 building; V20G3_hg / V20G3_rsg (rt NH=2,
+  romio321) at the top, then CD_hg, CE_hg, CXS_hg, CEX_hg (convdiag v2, kappa 0.01; CD_hg log sent gzipped whatever its size).
+  V20G2_* never started (v20g2 build was still running; stopped), so no v20g2 results. Old CD_hg v1 never ran, so CD2_hg is skipped.
+  CV_estdf_hg had already run before the drop (result above). Ompio cross-check: V20G_hg_ompio and V20F_hg both rt 5/5 same,
+  so the HG rst-write FATAL is the romio321 path.
+- AB4_rsg (hpc-sm-02-09): rc=0 wall=94 | cycles 589788 - 589794 | steady 3.000 s/cycle | GPU MiB max 109447 min 108315 | CW a 9 FATAL 0 |  
+- AB5_rsg (hpc-sm-01-17): rc=0 wall=86 | cycles 589788 - 589794 | steady 2.970 s/cycle | GPU MiB max 108889 min 107703 | CW a 0 FATAL 0 |  
