@@ -1,0 +1,15 @@
+total 9962836
+-rw-r-----. 1 jingze hpc_carnegie_poc 671186792 Nov 20 15:38 bsg3d.hydro_w.00000.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 671188578 Nov 20 15:38 bsg3d.hydro_w.00001.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 671188578 Nov 20 15:38 bsg3d.hydro_w.00002.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 671188570 Nov 20 15:38 bsg3d.hydro_w.00003.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 939622288 Nov 20 15:38 bsg3d.m1.00000.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 939624058 Nov 20 15:38 bsg3d.m1.00001.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 939624058 Nov 20 15:38 bsg3d.m1.00002.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 939624050 Nov 20 15:38 bsg3d.m1.00003.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 536969123 Nov 20 15:38 bsg3d.m1_face.00000.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 536970853 Nov 20 15:38 bsg3d.m1_face.00001.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 536970853 Nov 20 15:38 bsg3d.m1_face.00002.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 536970853 Nov 20 15:38 bsg3d.m1_face.00003.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 805404578 Nov 20 15:38 bsg3d.m1_vet.00000.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 805406324 Nov 20 15:38 bsg3d.m1_vet.00001.bin

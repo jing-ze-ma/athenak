@@ -1,0 +1,26 @@
+a cycles 0 - 50 dt first 27.5868 last 29.4283 s/cycle steady 1.820 first elapsed 73.4
+a 'FATAL' 0 
+a 'CLEAN WARNING' 2 CLEAN WARNING cycle 0: backward-Euler solve not converged (dt_retry, 2 so far; last change inf)
+a 'DT_RETRY' 0 
+a 'WARNING' 5 ### WARNING: 12 input parameter(s) were never read by the code (typo, or a key AthenaK does not have?):
+a 'march' 0 
+a 'clean_init steady:' 1 <rad_m1> clean_init steady: NOT converged after 50 passes, residual 2.634e-05 (tol 1.0e-08; 0 formal solutions); radiation E 8.2441512239e+46 -> 1.7006120110e+48, F/c 1.5972e+42 0.0000e+00 0.0000e+00 -> 3.1769e+46 2.2022e+35 1.2029e+33 (volume sums)
+a 'he_star_m1: GM' 1 he_star_m1: GM = 7.40338e+27, F_in = 6.9466e+13, tau(r_in) = 7.78158e+06, r_int (tau = 1) = 6.52591e+12, r_top = 5.63216e+13, sponge rate = 0.001 above r = 5.06894e+13
+a 'he_seed_band = n2 BAND' 1 he_star_m1: he_seed_band = n2 BAND r 4.32436e+12 .. 5.76689e+12 (r/r_int 0.662645 - 0.883692, r_int 6.52591e+12), 41 cells 138..178; peak at r/r_int 0.813918: sigma 2.971e-05 /s, 1/sigma 0.389569 d, T 142153 K, Gamma1 1.35135, H_p/r 0.118115; pi r/H_p 26.5977, l_8 180.467 (8 cells per wavelength, mi
+a 'seed = ' 1 he_star_m1: seed = real spherical harmonics l 7..26 (680 terms, all m), amplitude 0.001 (eint), r 4.32436e+12 .. 5.76689e+12, rng 1234
+a 'direction maps' 1 <rad_m1> vet_gd: global-direction SC closure on the sp wedge, level-symmetric LQ10 (120 directions); z-rotation every 0 cycle(s) (0 = fixed), first angle 0; rank 0 wall ghost columns 48678, direction maps exact 2530800 of 5841360 (the rest: nearest direction)
+a 'he_ic_equil' 0 
+b run.log CW 2 DT_RETRY 0 FATAL 0
+b run2.log CW 0 DT_RETRY 0 FATAL 0
+GPU mem peak MiB max 75589 min 75435 (n=4) = 52.6 % of 143771 MiB
+rt t9cor.hydro.hst rows a 51 b 51 last 25 rows IDENTICAL
+rt t9cor.user.hst rows a 51 b 51 last 25 rows IDENTICAL
+rt t9cor.hydro_w.00003.bin same
+rt t9cor.m1.00003.bin same
+rt t9cor.m1_face.00001.bin same
+rt t9cor.m1_vet.00001.bin same
+a rc=0 wall=248
+b rc=0 wall=193
+restart from /resnick/groups/carnegie_poc/jingze/orion_runs_1121/freshgo/S_t9l62_corona/b/rst/t9cor.00002.rst
+b rc=0 wall=133
+DONE

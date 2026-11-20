@@ -1,0 +1,1 @@
+TAG=S_t9l62_corona BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v203_e688cb7bc md5=7df2b64833e40a77e8a8a04e6dc900ee DECK=/resnick/groups/carnegie_poc/jingze/fresh_prod_1120/fg_v2/decks/t9l62_corona_smoke.athinput md5=d91a008579dc8397bf4fc2810dbf5099 NC=50 HOLDER=6133593 NODE=hpc-sm-01-11 NR=4 EX=

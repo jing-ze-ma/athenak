@@ -1,0 +1,1 @@
+TAG=F0_bsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v203_e688cb7bc md5=7df2b64833e40a77e8a8a04e6dc900ee DECK=/resnick/groups/carnegie_poc/jingze/fresh_prod_1120/fg_v2/decks/bsg_smoke.athinput md5=f790ee9f31be86ddd07f167f45272840 NC=2 HOLDER=6133592 NODE=hpc-sm-01-17 NR=4 EX=output2/dcycle=1 output3/dcycle=1 output5/dcycle=100000 output7/dt=100
