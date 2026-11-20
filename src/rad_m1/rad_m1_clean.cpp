@@ -5071,6 +5071,12 @@ void RadiationM1::CleanWriteBack() {
       for (int n = 0; n < 3; ++n) {   // (force_reference)
         if (fref != M1_FREF_NONE) dm[n] -= h*rf[n];
       }
+      if (lzb && fref == M1_FREF_CLEAN) {   // (its torque, of the gas's WB background,
+        Real q[3][3];                        //  in the ledger as the radiation's)
+        const Real rz = x.cub ? CleanCsFrame(x, m, k, j, i, q) : x.x1v(m,i)*x.tg(m,2,j);
+        dlz += h*(x.cub ? q[2][0]*rf[0] + q[2][1]*rf[1] + q[2][2]*rf[2] : rf[2])*rz*
+               x.vol(m,k,j,i);
+      }
       if (fm) fmd(m,k,j,i) = CleanStagRadial(x, m, k, j, i, dm);
       if (x.vzero) dm[0] = dm[1] = dm[2] = dlz = dz = 0.0;   // (frozen gas momentum)
       if (lzb) lzw(m,k,j,i) = dlz;   // (clean_cs_lz_abs = 2: CleanLzBook)
