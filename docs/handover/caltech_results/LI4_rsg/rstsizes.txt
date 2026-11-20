@@ -1,0 +1,1 @@
+-rw-r-----. 1 jingze hpc_carnegie_poc 59954284571 Nov 20 06:36 /resnick/groups/carnegie_poc/jingze/orion_runs_1121/LI4_rsg/a/rst/rsg.01296.rst
