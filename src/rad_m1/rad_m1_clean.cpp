@@ -1290,7 +1290,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         CleanCellResidual();
       }
       if (cln_xsw && !cell && nit >= 0) CleanStagXSweep();
-      if (cln_xd && !cell) CleanStagXCount(inl, nit);
+      if (cln_xd && !cell && cln_nlprint) CleanStagXCount(inl, nit);   // (diagnostic)
       nit_sum += std::abs(nit);
       ++nsolve;
       cln_nsolve += 1.0;
@@ -2691,13 +2691,13 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
       if (af) x.fc[n](m,CLF_PT,k,j,i) = CleanStagAdvFace(x, xh, n, m, k, j, i);
     }
   });
-  // (clean_stag_xdonor diagnostic: the row's terms, CleanStagXCount)
-  if (cln_xd && cln_xdg.extent_int(0) < nmb1 + 1) {
+  // (clean_stag_xdonor diagnostic: the row's terms, CleanStagXCount; clean_nl_print only)
+  const bool xdd = cln_xd && cln_nlprint;
+  if (xdd && cln_xdg.extent_int(0) < nmb1 + 1) {
     Kokkos::realloc(cln_xdg, nmb1 + 1, 4, cln_w.s.extent_int(2), cln_w.s.extent_int(3),
                     cln_w.s.extent_int(4));
   }
   auto xdg = cln_xdg;
-  const bool xdd = cln_xd;
   // (clean_stag_kpos / xpat: the rows' Patankar diagonal CLW_PD; counts of this pass)
   const bool pdo = x.pd, xpd = cln_xpat;
   const bool xte = (cln_xte > 0) && x.feedback;   // (clean_xt_exact: CLW_XA, CLW_XW)
@@ -3056,10 +3056,11 @@ Real RadiationM1::CleanNewtonUpdate() {
   // (one reduction over the ranks)
   Real mx[4] = {change, femax, ermax, xcl};
 #if MPI_PARALLEL_ENABLED
-  MPI_Allreduce(MPI_IN_PLACE, mx, xte ? 4 : 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, mx, (xte && cln_nlprint) ? 4 : 3, MPI_ATHENA_REAL, MPI_MAX,
+                MPI_COMM_WORLD);
 #endif
   change = mx[0]; femax = mx[1]; ermax = mx[2]; xcl = mx[3];
-  if (xte) {
+  if (xte && cln_nlprint) {   // (diagnostic: CLEAN XT with clean_nl_print only)
     if (global_variable::my_rank == 0) {
       std::printf("CLEAN XT cycle %d t2s %d pass closure %.3e\n", pmy_pack->pmesh->ncycle,
                   t2_solve, xcl);

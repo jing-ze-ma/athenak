@@ -593,7 +593,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_conv_est (read only when named): the Newton/Picard passes also stop once
     // q/(1-q) times the change of a pass (q < 1/2 its ratio to the change of the pass
     // before) is below clean_tol_nl; clean_nl_print: rank 0 prints the changes of every
-    // pass
+    // pass and the CLEAN XDONOR / CLEAN XT diagnostics (computed only then)
     if (pin->DoesParameterExist("rad_m1","clean_conv_est")) {
       cln_conv_est = pin->GetBoolean("rad_m1","clean_conv_est");
     }
