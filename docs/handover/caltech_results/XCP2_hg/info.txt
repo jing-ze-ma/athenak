@@ -1,0 +1,1 @@
+TAG=XCP2_hg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_xcap_999d7afaa md5=5de4239e0bb93f763c99c90756bef6d8 RST=/resnick/groups/carnegie_poc/jingze/hgglob_1021/prodG/rst/hegiant.00139.rst N0=624961 NC=100 MODE=speed HOLDER=6133591 NODES=hpc-sm-02-10 NR=4 PPN=4 ENVX= EX=time/dt_retry_host=m1 rad_m1/clean_stag_xcap_p=2 UCX=
