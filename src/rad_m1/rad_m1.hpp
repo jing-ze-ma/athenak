@@ -3315,6 +3315,7 @@ class RadiationM1 {
   bool cln_linpass = false;   // implicit_lin_maxit named: a pass goes on past a failed solve
   void CleanStagXDonor(const bool first, const bool lat = true);
   void CleanStagXCount(const int inl, const int nit);
+  void CleanWorstCell(const Real dnl, const Real dnl0);
   void CleanStagXSweep();
   bool cln_srccvx = false;      // clean_source_convex: vet_scatter S between J and B
   bool cln_freal = false;       // clean_stag_freal: realisable sb, restart faces
@@ -3413,6 +3414,8 @@ class RadiationM1 {
   Real cln_tolb = 0.0;          // its tolerance of the pass (kappa x time error)
   Real cln_bkap = 1.0;          // clean_conv_kappa
   Real cln_bmax = 1.0e-5;       // clean_conv_max
+  bool cln_rtb = false;         // clean_retry_budget
+  DvceArray5D<Real> cln_wci;    // E before a backward-Euler solve's last pass
   Real cln_ewr = -1.0, cln_eta = 0.1;   // Eisenstat-Walker: last |r0|_S, forcing
   bool cln_nlprint = false;     // clean_nl_print: the changes of every pass (rank 0)
   bool cln_lf_ok = false;       // cln_lf holds the factors of the current blocks

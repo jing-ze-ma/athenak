@@ -635,6 +635,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // dt_retry redoes amplifies (mpirej_retry, 1 vs 2 ranks: 1e-4 9.1e-2, 1e-5 9.2e-6)
     cln_bmax = pin->GetOrAddReal("rad_m1","clean_conv_max",(cln_prmax > 0.0) ? cln_prmax :
                                                                                1.0e-5);
+    // clean_retry_budget (default false): a step dt_retry redoes keeps the budget
+    // tolerance, clean_conv_kappa x its time-error estimate at the cut dt, not the strict
+    // one (RSGDIE: passes stalled at 1e-7..1e-5, which no dt cut lowers, failed the
+    // strict 1e-9 eight times in a row); a converged redo prints CLEAN RETRY
+    cln_rtb = pin->GetOrAddBoolean("rad_m1","clean_retry_budget",false);
     // clean_halo_vars (read only when named, 1..32, default 16): at most this many
     // variables per ghost exchange of the clean solve (its scratch array holds that many)
     if (pin->DoesParameterExist("rad_m1","clean_halo_vars")) {
