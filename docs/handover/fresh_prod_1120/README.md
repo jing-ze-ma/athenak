@@ -14,7 +14,7 @@ copies here have the same content. Checksums are in `MD5SUMS`; they are of the g
 
 | star | deck | IC / profile | EOS | GM | L | opacity | grid | layout run here |
 |---|---|---|---|---|---|---|---|---|
-| BSG (Ma+2026 reproduction) | `bsg/bsg.athinput` | Linhao profile `linhao_profile_full.txt` (he_ic_linhao) + `ic_ma2026_f0.txt` | ideal, γ 5/3, **μ 0.614** | 2.62502e27 (19.78 Msun, his deck) **OPEN** | 5.581461e38 | Ma+2026 tables (padded) | sp 20-80 Rsun, 256³, π/3 x π/3, SMR merge_lat_rc | 16 blocks, 4 Raven nodes x 4 A100 |
+| BSG (Ma+2026 reproduction) | `bsg/bsg.athinput` | Linhao profile `linhao_profile_full.txt` (he_ic_linhao) + `ic_ma2026_f0.txt` | ideal, γ 5/3, **μ 0.62 (his)** | 2.62502e27 (19.78 Msun, his deck; USER 11-20 keep) | 5.581461e38 | Ma+2026 tables (padded); dfloor 6.15245e-14 (his, keep) | sp 20-80 Rsun, 256³, π/3 x π/3, SMR merge_lat_rc | 16 blocks, 4 Raven nodes x 4 A100 |
 | M35MMS (Will, Schultz+22 T35L5.2) | `m35mms/m35mms.athinput` (paper deck) | `ic_m35mms.txt` (radiative-only HSE, Jiang+18 construction) + `prof_m35mms.txt` (inner ghosts); MESA `35M_save_profile_MS.data` | ideal, γ 5/3, μ 0.6215 | 35 Msun point mass | 1.063065e39 (MESA) | MESA Rosseland (`tables/rosseland_mesakap...`) + TOPS Planck (`tables/planck_ext2...`) | sp 9.697 Rsun-1.114 R_ph, 336x256x256, 20°x20° | 4 blocks, 1 node |
 | M35ZAMS (Will, Schultz+22 T42L5.0), NEW | **no deck yet**: grid from `GRID_REFERENCE_m35zams_ours_mesaR_1blk.athinput` (a general-EOS deck: take the mesh/meshblock only); EOS/IC/table/BC keys as in m35mms.athinput | `ic_m35zams_ideal.txt` + `prof_m35zams_ideal.txt`; MESA `35M_save_profile_ZAMS.data`; builder `build_ic_ideal.py` | ideal, γ 5/3, μ 0.6220 | 35 Msun | 6.61828e38 | same as M35MMS | sp 6.798-8.200 Rsun, 384x128x128, θ 1.53875-1.60284, φ 0-0.064 | - |
 | T19L6.4 (Yan-Fei, Jiang+18) | `t19l64/t19l64.athinput` | `ic_t19l64_LIC.txt` = `init_80.txt` as is (+ ghost extension below 14.83 Rsun, `build_ic.py`) | ideal, γ 5/3, μ 0.674 | 1.0268751734e28 (77.356 Msun) | 4.02933e39 (log 6.022) | same as M35MMS | sp 14.83-336.5 Rsun, 512x256x512, θ π/4-3π/4, φ 0-π | 8 blocks, 4 viper nodes |
@@ -30,11 +30,10 @@ copies here have the same content. Checksums are in `MD5SUMS`; they are of the g
   - HSE 5e-8 / 4e-8, and the diffusion flux equals L.
   - ZAMS: Γ_Edd peaks at 0.88 (Fe bump), there is no density inversion, and ρ is within 1-4 % of MESA.
   - MMS: Γ_Edd reaches 1.04 at the Fe bump (radiative-only construction).
-- **BSG:**
-  - The Linhao profile is an ideal gas with μ = 0.6140 ± 0.0001 against its own M(r) (16.6-48 Rsun), so μ is
-    **0.614** here. The paper text and the old deck have 0.62. `temp_unit_kelvin` = 7.3847230193e-09 = μ m_u/k_B.
-  - **OPEN for the USER:** GM. The deck has 19.78 Msun from his deck, but the profile's M(r) runs from 19.82 to
-    19.99 Msun over the domain, so gravity is 0.2-1.1 % weak. 19.90 Msun would keep the error within ±0.5 %.
+- **BSG (USER 11-20: use HIS GM, μ and floor):**
+  - μ 0.62 (Ma+2026 text / his deck), GM 19.78 Msun (his deck), dfloor 6.15245e-14 (his).
+  - For information only: the Linhao profile by itself balances at μ 0.614 with its own M(r) (19.82-19.99 Msun).
+    With his values, the HSE mismatch is 0.7 % (μ) plus 0.2-1.1 % (GM), the same as in his own run.
 - **All decks:** `temp_unit_kelvin` = μ m_u/k_B to within 6e-8.
 
 ## T19L6.4 corona test (`t19l64/corona_test/`): please run this on Caltech before any long T19/T9 run

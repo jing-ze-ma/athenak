@@ -83,7 +83,7 @@ ndiag      = 50
 length_cgs = 1.0
 mass_cgs   = 1.0
 time_cgs   = 1.0
-mu         = 0.614    # fresh_prod_1120: the mu that puts L. Ma profile (linhao_profile_full.txt) in HSE with its M(r): 0.6140 on 16.6-48 Rsun (paper text 0.62)
+mu         = 0.62     # USER 11-20: his mu (Ma+2026 text, his deck). His profile alone balances at 0.614 with its M(r); kept his value on purpose
 <hydro>
 merge_lat_rc             = 2.43495e12,3.82635e12,5.5656e12   # USER 11-06 his SMR: 128^2 at 20-35, 256^2 at 35-55, 128^2 at 55-80 Rsun
 merge_lat_f              = 2,1,2
@@ -197,7 +197,7 @@ implicit_precond         = mg_gf          # bsgaccel global Fourier coarse space
 implicit_halo_mpi = true
 implicit_halo_overlap = true
 opacity          = table
-temp_unit_kelvin = 7.3847230193e-09   # = mu amu / k_B, mu 0.614
+temp_unit_kelvin = 7.4568864364e-9   # = mu amu / k_B, mu 0.62
 rho_unit_cgs     = 1.0
 kappa_unit       = 1.0
 e_floor          = 1.0e-4
