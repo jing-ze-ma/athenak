@@ -4937,6 +4937,14 @@ void RadiationM1::CleanWriteBack() {
                                          u0.extent_int(3), u0.extent_int(4));
     px = CleanDevArgs(x, 0);   // (xh changed: the F solve's F)
     pxh = CleanDevArgs(xh, 1);
+    // (the cells' volumes, which the ghosts take: across a panel seam a ghost's own
+    // geometry is not that of the cell it copies)
+    CleanFor("cln_wbtqv", nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      CLEAN_HIPX(const CleanArgs &x = *px;)
+      tqv(m,3,k,j,i) = x.vol(m,k,j,i);
+    });
+    CleanGhostFill(tqv, 3, 1);
     CleanFor("cln_wbtq", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       CLEAN_HIPX(const CleanArgs &x = *px, &xh = *pxh;)
@@ -4947,7 +4955,7 @@ void RadiationM1::CleanWriteBack() {
         for (int s = 0; s < 2; ++s) {
           const int kf = k + s*(q == 2), jf = j + s*(q == 1);
           const int ko = k + (2*s - 1)*(q == 2), jo = j + (2*s - 1)*(q == 1);
-          sl += 0.5*(x.vol(m,k,j,i) + x.vol(m,ko,jo,i))*SQR(CleanCsArm(x, q, m, kf, jf, i));
+          sl += 0.5*(x.vol(m,k,j,i) + tqv(m,3,ko,jo,i))*SQR(CleanCsArm(x, q, m, kf, jf, i));
         }
       }
       tqv(m,0,k,j,i) = (sl > 0.0) ? qr/sl : 0.0;
@@ -4957,11 +4965,10 @@ void RadiationM1::CleanWriteBack() {
     CleanGhostFill(tqv, 0, 1);
     // (a face shared with another MeshBlock takes the lower gid's change, as its F,
     // CleanStagCsTie: each cell puts that of its face of family q on its MeshBlock's
-    // boundary, else its high face, in slot 3 + q, which the ghosts take)
+    // boundary, else its high face, in slot 3 + q (q = 1, 2), which the ghosts take)
     CleanFor("cln_wbtq2", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       CLEAN_HIPX(const CleanArgs &x = *px;)
-      tqv(m,3,k,j,i) = 0.0;
       for (int q = 1; q < 3; ++q) {
         const int u = (q == 1) ? (j == je) : (k == ke);
         const int kf = k + u*(q == 2), jf = j + u*(q == 1);
