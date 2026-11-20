@@ -1,0 +1,16 @@
+# Batch 2 (orion 2026-11-21), after batch 1. Same format as arms_batch1.txt. RSG = rsg.01295 (N0 589788), HG = hegiant.00139 (N0 624961)
+# P6 thin-limit F (thinf)
+FINALRST=0 THF300_rsg   B_thinf RSG 300 rsg_thv7.keys rad_m1/clean_conv_kappa=0.1
+FINALRST=0 THF100_hg    B_thinf HG  100 hg_thv7.keys  time/dt_retry_host=m1
+FINALRST=1 MODE=rt THF_hg_rt_v7 B_thinf HG 4 hg_thv7.keys time/dt_retry_host=m1
+# P7 geometry (curved face area / ray flux in)
+FINALRST=0 GCA300_rsg   B_geom-ca  RSG 300 rsg_v19.keys
+FINALRST=0 FMP300_hg    B_geom-fm2 HG  300 hg_v19.keys time/dt_retry_host=m1 rad_m1/clean_rot_fuse=true rad_m1/clean_conv_kappa=1.0 rad_m1/clean_ray_flux_in=phi
+# P8 v19 head (speedhead fe6e94f03): HG 40 cycles; URF vs UR8 pair
+FINALRST=0 HGV40_12     B_speedhead HG  40 hg_v19.keys time/dt_retry_host=m1 rad_m1/clean_rot_fuse=true
+FINALRST=0 URF_rsg      B_speedhead RSG 30 rsg_v19.keys rad_m1/clean_rot_fuse=true
+FINALRST=0 UR8_rsg      B_speedhead RSG 30 rsg_v19.keys rad_m1/vet_rotate_avg=8
+# P9 real-F prototype (fidp=1)
+FINALRST=0 RF300_rsg_f1 B_realf RSG 300 rsg_fidp1.keys rad_m1/clean_conv_kappa=0.1
+FINALRST=0 RF100_hg_f1  B_realf HG  100 hg_fidp1.keys  time/dt_retry_host=m1
+# P10 optional profile: PF_rsg_v19 = B_speedhead RSG 5 rsg_v19.keys under nsys (per rank: -t cuda,mpi; rank 0 also nvtx); only if nsys is at hand
