@@ -26,7 +26,7 @@
 //! reflect.  <problem>/rh_seed adds a cell-to-cell x1 velocity of that amplitude after
 //! the background is set (a lateral seed for stability tests; in 3-D the unsplit hydro
 //! step needs cfl_number <= 1/3, else its grid-scale lateral mode grows).  History: gas
-//! x1 momentum, kinetic energy, max |v|/c_s (one rank), radiation E and F1/c (volume
+//! x1 momentum, kinetic energy, max |v|/c_s (all ranks), radiation E and F1/c (volume
 //! sums).
 //!
 //! The tidally distorted envelope (spherical polar or cubed sphere, <hydro>/
@@ -665,7 +665,7 @@ void RhseWbGravity(Mesh *pm, const Real bdt) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RhseHist
-//! \brief gas x1 momentum and kinetic energy, max |v|/c_s (one rank), radiation E, F1/c
+//! \brief gas x1 momentum and kinetic energy, max |v|/c_s (all ranks), radiation E, F1/c
 
 void RhseHist(HistoryData *pdata, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
@@ -703,9 +703,8 @@ void RhseHist(HistoryData *pdata, Mesh *pm) {
   auto &size = pmbp->pmb->mb_size;
   const bool sph = rh_sph;
   const Real gam = pmbp->phydro->peos->eos_data.gamma, ic = 1.0/pmbp->pradm1->c_light;
-  Real s[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+  Real s[5] = {0.0, 0.0, 0.0, 0.0, 0.0}, v[4] = {0.0, 0.0, 0.0, 0.0};
   if (rh_wb) {   // (the tidal envelope: radial and lateral |v|/c_s, all and r < rdp)
-    Real v[4] = {0.0, 0.0, 0.0, 0.0};
     Kokkos::parallel_reduce("rhse_histv", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                             pmbp->nmb_thispack*nkji),
     KOKKOS_LAMBDA(const int q, Real &v0, Real &v1, Real &v2, Real &v3) {
@@ -717,7 +716,6 @@ void RhseHist(HistoryData *pdata, Mesh *pm) {
       if (x1v(m,i) < rdp) {v2 = fmax(v2, vr); v3 = fmax(v3, vl);}
     }, Kokkos::Max<Real>(v[0]), Kokkos::Max<Real>(v[1]), Kokkos::Max<Real>(v[2]),
     Kokkos::Max<Real>(v[3]));
-    for (int n = 0; n < 4; ++n) pdata->hdata[5+n] = v[n];
   }
   Kokkos::parallel_reduce("rhse_hist", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           pmbp->nmb_thispack*nkji),
@@ -734,6 +732,14 @@ void RhseHist(HistoryData *pdata, Mesh *pm) {
     s4 += dv*ic*ur(m,radm1::M1_F1,k,j,i);
   }, Kokkos::Sum<Real>(s[0]), Kokkos::Sum<Real>(s[1]), Kokkos::Max<Real>(s[2]),
   Kokkos::Sum<Real>(s[3]), Kokkos::Sum<Real>(s[4]));
+#if MPI_PARALLEL_ENABLED   // (the maxima on the master only: the history writer sums ranks)
+  Real mx[5] = {s[2], v[0], v[1], v[2], v[3]};
+  MPI_Allreduce(MPI_IN_PLACE, mx, 5, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+  for (int n = 0; n < 5; ++n) mx[n] = (global_variable::my_rank == 0) ? mx[n] : 0.0;
+  s[2] = mx[0];
+  for (int n = 0; n < 4; ++n) v[n] = mx[1+n];
+#endif
   for (int n = 0; n < 5; ++n) pdata->hdata[n] = s[n];
+  for (int n = 0; n < 4 && rh_wb; ++n) pdata->hdata[5+n] = v[n];
 }
 }  // namespace
