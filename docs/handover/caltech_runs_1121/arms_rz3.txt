@@ -1,0 +1,8 @@
+# REALZ3 (orion 2026-11-20). B_rz3 = caltech-runs/realz3 7dcda602a (realz2 + cone variants of clean_stag_freal_relax; off bitwise to 94805ca84). 20 cycles, NR=4, 1 node.
+# Priority: lc_hg, gc_hg, o_hg, lc_rsg, lc001_hg, gc_rsg. These go AHEAD of the L2_* seeds, on the free single nodes (02-04, 02-16) as they appear.
+FINALRST=0 RZ3lc_hg    B_rz3 HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=ledger_cone
+FINALRST=0 RZ3gc_hg    B_rz3 HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=gas_cone
+FINALRST=0 RZ3o_hg     B_rz3 HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true
+FINALRST=0 RZ3lc_rsg   B_rz3 RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=ledger_cone
+FINALRST=0 RZ3lc001_hg B_rz3 HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=ledger_cone rad_m1/clean_conv_kappa=0.01
+FINALRST=0 RZ3gc_rsg   B_rz3 RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/clean_stag_freal_relax=gas_cone
