@@ -398,3 +398,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - R_fp_rsg (hpc-sm-02-04): rc=0 wall=3456 | cycles 589788 - 590788 | steady 3.386 s/cycle | GPU MiB max 109817 min 108847 | CW a 20 FATAL 0 |  
 - K_on_hg (hpc-sm-01-17,hpc-sm-02-03): rc=0 wall=3149 | cycles 624961 - 625961 | steady 3.090 s/cycle | GPU MiB max 59661 min 58755 | CW a 0 FATAL 0 |  
 - R_xl_rsg (hpc-sm-01-11): rc=0 wall=3066 | cycles 589788 - 590788 | steady 2.989 s/cycle | GPU MiB max 108943 min 107973 | CW a 1 FATAL 0 |  
+- BFX4_hg (hpc-sm-01-17,hpc-sm-02-03): rc=1 wall=536 | cycles 624961 - 624973 | steady 4.612 s/cycle | GPU MiB max 59293 min 5 | CW a 18 FATAL 1 |   | CW kinds:  9 cycl : backwardulr solv not convrgd (dt_; 9 cycl ts : stag solv faild, th stp is rd; | dt_retry lines 12 | energy created lines 1
+  FAILED: last 100 lines in caltech_results/BFX4_hg/FAIL_tail100.txt
