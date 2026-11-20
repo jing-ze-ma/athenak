@@ -397,3 +397,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - R_tel_rsg (hpc-sm-02-16): rc=0 wall=3271 | cycles 589788 - 590788 | steady 3.194 s/cycle | GPU MiB max 109689 min 108719 | CW a 6 FATAL 0 |  
 - R_fp_rsg (hpc-sm-02-04): rc=0 wall=3456 | cycles 589788 - 590788 | steady 3.386 s/cycle | GPU MiB max 109817 min 108847 | CW a 20 FATAL 0 |  
 - K_on_hg (hpc-sm-01-17,hpc-sm-02-03): rc=0 wall=3149 | cycles 624961 - 625961 | steady 3.090 s/cycle | GPU MiB max 59661 min 58755 | CW a 0 FATAL 0 |  
+- R_xl_rsg (hpc-sm-01-11): rc=0 wall=3066 | cycles 589788 - 590788 | steady 2.989 s/cycle | GPU MiB max 108943 min 107973 | CW a 1 FATAL 0 |  
