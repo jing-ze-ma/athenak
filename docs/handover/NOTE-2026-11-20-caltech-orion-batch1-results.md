@@ -217,3 +217,7 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - SPL_g_2 (hpc-sm-02-10): rc=0 wall=102 | cycles 589788 - 589798 | steady 2.724 s/cycle | GPU MiB max 109195 min 108061 | CW a 0 FATAL 0 |  xcheck: user cols1-26==SPG_g_1/a, hydro==SPG_g_1/a
 - SPL_l_2 (hpc-sm-02-09): rc=0 wall=105 | cycles 589788 - 589798 | steady 2.709 s/cycle | GPU MiB max 108279 min 107091 | CW a 0 FATAL 0 |  xcheck: user cols1-26==SPG_g_1/a, hydro==SPG_g_1/a
 - Z2_rsg (hpc-sm-02-04): rc=0 wall=1020 | cycles 589788 - 590088 | steady 3.136 s/cycle | GPU MiB max 109687 min 108717 | CW a 0 FATAL 0 |  CW 0
+- KS1_hg (hpc-sm-02-11): rc=0 wall=116 | cycles 624961 - 624967 | steady 5.037 s/cycle | GPU MiB max 116341 min 115785 | CW a 0 FATAL 0 |  CLEAN KSPLIT lines 11 | CLEAN OLDVEC lines 12 | CLEAN REAL lines 0: 
+- SDR_rsg (hpc-sm-01-11): rc=0 wall=159 rc=0 wall=149 rc=0 wall=150 | cycles 589788 - 589794 | steady 2.788 s/cycle | GPU MiB max 108711 min 107577 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF 
+- V20L_hg (hpc-sm-01-17): rc=0 wall=235 rc=0 wall=234 rc=0 wall=239 | cycles 624961 - 624965 | steady 4.175 s/cycle | GPU MiB max 116103 min 115315 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF xcheck: hegiant.hydro.hst==V20J_hg/a hegiant.user.hst==V20J_hg/a
+- BP_rsg_h200 (hpc-sm-02-10): rc=0 wall=156 | cycles 589788 - 589792 | steady 2.963 s/cycle | GPU MiB max 108697 min 107563 | CW a 0 FATAL 0 |  
