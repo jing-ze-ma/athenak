@@ -31,7 +31,6 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1_clean.hpp"
-#include "rad_m1/rad_m1_clean_cell.hpp"
 #include "utils/scratch_view.hpp"
 
 #if MPI_PARALLEL_ENABLED
@@ -149,12 +148,11 @@ static Real CleanStagRadial(const CleanArgs &x, const int m, const int k, const 
 //----------------------------------------------------------------------------------------
 //! \fn void CleanStagRefForce
 //! \brief staggered: the reference force density force_reference withholds from the gas
-//! of cell (k,j,i) (CleanRefForce of the cell layout) in the components of
-//! CleanStagGasMomentum: clean the stored force, wb_arad d arad_ref along x1 (the radius
-//! on the cubed sphere: no torque), wb_arad_md d times the stored acceleration (every
-//! direction, cln_fref 0..2), else 0.  With wb_arad the gas takes the residual of
-//! the radiation force, as the production kick (rad_m1.hpp:360-366, the residual dv of
-//! ImplicitWorkRow, rad_m1_implicit.cpp:12353)
+//! of cell (k,j,i) in the components of CleanStagGasMomentum: clean the stored force,
+//! wb_arad d arad_ref along x1 (the radius on the cubed sphere: no torque), wb_arad_md
+//! d times the stored acceleration (every direction, cln_fref 0..2), else 0.  With
+//! wb_arad the gas takes the residual of the radiation force, as the production kick
+//! (rad_m1.hpp:360-366, the residual dv of ImplicitWorkRow, rad_m1_implicit.cpp:12353)
 
 KOKKOS_INLINE_FUNCTION
 static void CleanStagRefForce(const CleanArgs &x, const int fref,
@@ -325,7 +323,7 @@ static void CleanVelocityCell(const CleanArgs &x, const CleanArgs &xh, const Cle
       if (cap) fr(m,dir,k,j,i) = dm/x.h;
       if (fref != M1_FREF_NONE) dm -= cap ? dm : x.h*rf[dir];
       if (x.vzero) dm = 0.0;
-      // (times that of E in the stress, as CleanCellVelocityUpdate)
+      // (times that of E in the stress)
       const Real e = fmax(fabs(x.w(m,CLW_EK,k,j,i)), 1.0e-300), hc = x.h*x.c;
       fv_max = fmax(fv_max, mag/d*(2.0 + (e*hc*op(m,M1_OP_E,k,j,i) + fabs(x.w(m,
                CLW_EO,k,j,i)) + hc*op(m,M1_OP_P,k,j,i)*arad_*SQR(SQR(x.w(m,CLW_T,k,j,
@@ -446,7 +444,7 @@ void RadiationM1::CleanInit() {
   // (the L_z ledger follows the gas momentum's increments as the slopes' sums: not the
   // cell-wise scalings of these)
   if (cln_lzbook && (t2_theta > 0.0 || t2_inckc > 0.0 || t2_flr_rho > 0.0 || cln_kreal ||
-                       cln_kpos || cln_cell)) {
+                       cln_kpos)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "<rad_m1> the L_z ledger (cubed sphere, 3-D spherical polar) needs no "
               << "time2_stage_theta, time2_inc_kecap, "
@@ -455,7 +453,7 @@ void RadiationM1::CleanInit() {
   }
   // (staggered on the cubed sphere: no clean_stag_vimp yet, CleanStagDrag's half-cell
   // masses and D_nn would be the resampled gas ghosts' and the Cartesian D_dd at a seam)
-  if (pmy_pack->pmesh->use_cubed_sphere && !cln_cell && cln_vimp) {
+  if (pmy_pack->pmesh->use_cubed_sphere && cln_vimp) {
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> staggered on the cubed sphere: clean_stag_vimp = false"
                 << std::endl;
@@ -466,39 +464,31 @@ void RadiationM1::CleanInit() {
   int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
   int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
   int nmb = pmy_pack->nmb_thispack;
-  Kokkos::realloc(cln_s, nmb, CleanNs(cln_cell, pmy_pack->pmesh->use_cubed_sphere), n3,
+  Kokkos::realloc(cln_s, nmb, CleanNs(pmy_pack->pmesh->use_cubed_sphere), n3,
                   n2, n1);
-  if (!cln_cell && cln_phic.extent_int(0) != nmb) {
+  if (cln_phic.extent_int(0) != nmb) {
     Kokkos::realloc(cln_phic, nmb, 3, n3, n2, n1);
   }
   // (staggered on the cubed sphere: the cell terms and faces of CleanStagFSolve)
-  const bool stcs = pmy_pack->pmesh->use_cubed_sphere && !cln_cell;
+  const bool stcs = pmy_pack->pmesh->use_cubed_sphere;
   Kokkos::realloc(cln_v, nmb, stcs ? 18 : 3, n3, n2, n1);
   // (mem_arena, staggered, closure outside the solve: the shared slots too, after
   // cln_w.o, CleanWoBind; clean_closure = iterate | extrap* builds inside the solve)
   cln_w.s = DvceArray5D<Real>();
-  if (cln_cell || !marena_on || cln_closit || cln_extrap > 0) {
+  if (!marena_on || cln_closit || cln_extrap > 0) {
     Kokkos::realloc(cln_w.s, nmb, CLW_NS, n3, n2, n1);
   }
-  const int nwo = cln_cell ? CLW_NC : (cln_kreal ? CLW_NR : (cln_kpos ? CLW_NKP :
-                  ((cln_xte > 0) ? CLW_NX : ((cln_kpos || cln_xpat) ? CLW_NK : CLW_N))));
+  const int nwo = cln_kreal ? CLW_NR : (cln_kpos ? CLW_NKP :
+                  ((cln_xte > 0) ? CLW_NX : ((cln_kpos || cln_xpat) ? CLW_NK : CLW_N)));
   // (mem_arena, staggered: made at the first solve, over the intensities, CleanWoBind)
   cln_wo_nc = nwo - CLW_NS;
   cln_w.o = DvceArray5D<Real>();
-  if (cln_cell || !marena_on) Kokkos::realloc(cln_w.o, nmb, cln_wo_nc, n3, n2, n1);
+  if (!marena_on) Kokkos::realloc(cln_w.o, nmb, cln_wo_nc, n3, n2, n1);
   cln_w.ns = CLW_NS;
-  // the cubed sphere takes the half ranges about the face normals from the FV rays
-  cln_hk = cln_consist || (pmy_pack->pmesh->use_cubed_sphere && vgd_on);
-  const int nfc = std::max(cln_milne ? CLF_KK + 6 : (cln_hk ? CLF_HK + 2 : CLF_RC + 1),
-                           cln_cell ? (cln_fsolve ? CLF_N + 4 : 0) :
-                           ((cln_fsolve && cln_fkin) ? CLF_KD + 2 :
-                           (cln_vimp ? CLF_DQ + 1 : CLF_QL + 3)));
-  // the opacities depend on T: tables, or the T exponent (bump) of powerlaw (user)
-  cln_opt = cln_cell && !opac_freeze && !opac_zero &&
-            (opacity_type == M1_OPAC_TABLE ||
-            (opacity_type != M1_OPAC_CONST && opac_b != 0.0));
+  const int nfc = (cln_fsolve && cln_fkin) ? CLF_KD + 2 :
+                  (cln_vimp ? CLF_DQ + 1 : CLF_QL + 3);
   // (the staggered bracket's lagged flux DG in one more slot, CleanStagBracket)
-  cln_fdg = (!cln_cell && cln_consist) ? nfc : -1;
+  cln_fdg = cln_consist ? nfc : -1;
   cln_xqs = cln_xd ? nfc + (cln_fdg >= 0) : -1;   // (clean_stag_xdonor's q)
   cln_kqs = cln_kpos ? nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0) : -1;   // (kpos: q)
   const int nfx = nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0) + (cln_kpos ? 2 : 0);
@@ -522,16 +512,6 @@ void RadiationM1::CleanInit() {
     Kokkos::deep_copy(Kokkos::subview(fc, AL, CLF_KD, AL, AL, AL),
                       Kokkos::subview(cln_rstd, AL, 3 + d, AL, AL, AL));
   }
-  if (cln_cell) {
-    const int nf = (cln_hk || cln_milne) ? CLC_NF : CLC_U;
-    const int nc = (cln_pc != CLN_PC_X1LINE) ? CLC_N : (cln_pcfac ? nf : CLC_NL);
-    Kokkos::realloc(cln_x, nmb, nc, n3, n2, n1);
-    Kokkos::deep_copy(cln_x, 0.0);
-    if (cln_yres == M1_YRES_LOCAL) {
-      Kokkos::realloc(cln_dy, nmb, 3, n3, n2, n1);
-      Kokkos::deep_copy(cln_dy, 0.0);
-    }
-  }
   if ((force_ref == M1_FREF_CLEAN || force_ref == M1_FREF_WB_MD) &&
       cln_fref.extent_int(0) != nmb) {   // (a restart has read it)
     Kokkos::realloc(cln_fref, nmb, (force_ref == M1_FREF_WB_MD) ? 9 : 3, n3, n2, n1);
@@ -540,15 +520,13 @@ void RadiationM1::CleanInit() {
   if (cln_stst && pmy_pack->pmesh->use_cubed_sphere) {
     Kokkos::realloc(cln_csy, nmb, CLN_CSY, indcs.nx3, indcs.nx2, indcs.nx1);
   }
-  // multigrid levels of the cell layout: halve every direction with an even number
-  // (>= 4) of cells, down to the level where no direction can be halved (clean_pc =
-  // prodmg, and staggered clean_stag_pc = mg: x1 is never halved, two coarse levels)
-  if ((cln_cell && cln_pc != CLN_PC_X1LINE) || cln_stagmg) {
-    const bool pm = (cln_cell && cln_pc == CLN_PC_PRODMG) || cln_stagmg;
+  // multigrid levels of clean_stag_pc = mg: halve x2 and x3 where even (>= 4), two
+  // coarse levels at most (x1 is never halved)
+  if (cln_stagmg) {
     std::array<int, 3> nc = {indcs.nx1, indcs.nx2, indcs.nx3};
-    while (!(pm && cln_mgn.size() == 2)) {
+    while (cln_mgn.size() != 2) {
       bool coarser = false;
-      for (int d = (pm ? 1 : 0); d < 3; ++d) {
+      for (int d = 1; d < 3; ++d) {
         if (nc[d] >= 4 && nc[d] % 2 == 0) {
           nc[d] /= 2;
           coarser = true;
@@ -556,8 +534,7 @@ void RadiationM1::CleanInit() {
       }
       if (!coarser) break;
       cln_mgn.push_back(nc);
-      cln_mg.emplace_back("cln_mg", nmb, cln_stagmg ? CLS_N : CLM_N, nc[2], nc[1],
-                          nc[0]);
+      cln_mg.emplace_back("cln_mg", nmb, CLS_N, nc[2], nc[1], nc[0]);
     }
   }
   if (cln_extrap > 0) {
@@ -576,8 +553,7 @@ void RadiationM1::CleanInit() {
     CleanFatal("<rad_m1>/scheme = clean currently needs a uniform mesh and chat = c");
   }
   // the boundaries of the clean solve: open (bath, beam; outflow without a bath),
-  // reflect, periodic and an imposed flux (x1; in the cell layout also x2 with the
-  // problem generator's face fluxes).  Staggered: as the production row, where the
+  // reflect, periodic and an imposed flux (x1), as the production row, where the
   // imposed flux is the face's whole energy flux and its face flux (rad_m1_implicit.cpp
   // ImplicitSolve, lines 17518, 18062 and 18638), the face takes it with no E weights
   // (CleanFaceWeights, CleanFaceSource), its F solve keeps it as the face F (no F
@@ -587,10 +563,9 @@ void RadiationM1::CleanInit() {
   for (int s = 0; s < 6; ++s) {
     const bool flux = bc[s] == M1_IBC_FLUX || (bc[s] == M1_IBC_X2FLUX && ifx2_on);
     if (!(bc[s] == M1_IBC_MARSHAK || bc[s] == M1_IBC_OUTFLOW || bc[s] == M1_IBC_REFLECT ||
-          bc[s] == M1_IBC_PERIODIC || (flux && (cln_cell || s < 2)))) {
+          bc[s] == M1_IBC_PERIODIC || (flux && s < 2))) {
       CleanFatal("<rad_m1>/implicit_bc_* with scheme = clean: auto | marshak | outflow | "
-                 "reflect | periodic, flux (x1; x2 with the problem generator's face "
-                 "fluxes with clean_layout = cell); not efix");
+                 "reflect | periodic, flux (x1); not efix");
     }
   }
   if (impl_lbath || iebath_hi_col_on) {
@@ -607,9 +582,9 @@ void RadiationM1::CleanInit() {
                "reference work given by the problem generator (force_reference_work = "
                "split)");
   }
-  if (force_ref == M1_FREF_WB_MD && (cln_cell || (!cln_steady && !cln_fref_set))) {
-    CleanFatal("<rad_m1>/force_reference = wb_arad_md needs clean_layout = staggered and "
-               "clean_init = steady (its reference is the steady start's force)");
+  if (force_ref == M1_FREF_WB_MD && !cln_steady && !cln_fref_set) {
+    CleanFatal("<rad_m1>/force_reference = wb_arad_md needs clean_init = steady (its "
+               "reference is the steady start's force)");
   }
   if (vgd_on && VgdRotOn()) {
     // the rotating FV rays (CleanFvSets): the closure is the J-weighted mean of the
@@ -636,13 +611,6 @@ void RadiationM1::CleanInit() {
     CleanFatal("<rad_m1>/clean_rot_ring needs vet_gd FV rays rotating in time: "
                "vet_rotate_avg = K with vet_rotate_advance, vet_gd_rotate_dt and "
                "_align, with vet_gd_rotate_xfade for live, without for jump");
-  }
-  // the sc rays are validated with the staggered layout only (the cell layout's ray face
-  // sums of sc are the balance march: not conservative on the cubed sphere, L1(E) 0.4 on
-  // the RAYSET2 sp decks)
-  if (vgd_on && cln_rfv == 0 && cln_cell) {
-    CleanFatal("<rad_m1>/clean_rays = sc needs clean_layout = staggered (the cell layout "
-               "takes clean_rays = fv1)");
   }
   // the sc rays sweep one set at a time: a mean or a cross-fade of sets is the ring's
   if (vgd_on && VgdRotOn() && cln_rfv == 0 && (vra_on || vgd_xf) && !cln_ring) {
@@ -673,13 +641,12 @@ void RadiationM1::CleanInit() {
   }
   if (pm->use_spherical_polar) {
     // the rays are vet_gd's (closure = vet_col with vet_gd) on its fixed direction set,
-    // swept from the first shell, or the analytic sphere (clean_closure = sphere)
-    // (staggered: also clean_closure = eddington)
-    const bool stg = !cln_cell;
-    if ((!cln_cell && !stg) || !(cln_sphere || vgd_on || (stg && cln_edd)) ||
+    // swept from the first shell, or the analytic sphere (clean_closure = sphere |
+    // eddington)
+    if (!(cln_sphere || vgd_on || cln_edd) ||
         (cln_consist && !vgd_on) || vgd_twin || vgd_async) {
-      CleanFatal("<rad_m1>/scheme = clean on spherical polar needs clean_layout = "
-                 "cell, clean_closure = sphere (no clean_consistency) or closure = "
+      CleanFatal("<rad_m1>/scheme = clean on spherical polar needs clean_closure = "
+                 "sphere | eddington (no clean_consistency) or closure = "
                  "vet_col with vet_gd (vet_gd_twin = false, no vet_gd_async)");
     }
     // the rays' theta walls follow the mesh: a reflecting wall mirrors (the conservative
@@ -1163,7 +1130,7 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
 //----------------------------------------------------------------------------------------
 //! \fn TaskStatus RadiationM1::CleanSolve
 //! \brief the implicit stage solve of the clean scheme (replaces ImplicitSolve), in the
-//! staggered layout (E in cells, F on faces) or the cell layout (E and F in cells)
+//! staggered layout (E in cells, F on faces)
 
 TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (!cln_init) CleanInit();
@@ -1175,21 +1142,15 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     CleanFvSets(pmy_pack->pmesh->time, pmy_pack->pmesh->ncycle - 1);
     // (the sc ring: its two sets, the intensities a restart file holds, or none from a
     // file of another ray method: zero, until the first build)
-    if (cln_cssc) {
-      CleanScUnion2();
-      if (cln_cell && cln_fvi.extent_int(1) != cln_fvn) {   // (staggered: cln_fh)
-        Kokkos::realloc(cln_fvi, pmy_pack->nmb_thispack, cln_fvn, cln_s.extent_int(2),
-                        cln_s.extent_int(3), cln_s.extent_int(4));
-      }
-    }
+    if (cln_cssc) CleanScUnion2();
   }
   if (cln_cssc && !cln_ring) {   // (clean_rays = sc: the sweep's set, its cln_fvi)
     cln_fvd = vgd_dir;
     cln_fvn = vgd_n;
   }
-  // (a restart from a file with the intensities (version 5), staggered: the face half
-  // ranges they give, set by set as the builds fold them)
-  if (cln_cssc && !cln_cell && cln_fh.extent_int(0) == 0 && cln_fvi.extent_int(0) > 0) {
+  // (a restart from a file with the intensities (version 5): the face half ranges they
+  // give, set by set as the builds fold them)
+  if (cln_cssc && cln_fh.extent_int(0) == 0 && cln_fvi.extent_int(0) > 0) {
     for (int q = 0; q < cln_fvi.extent_int(1)/vgd_n; ++q) {
       CleanFaceHalf(cln_fvd, q*vgd_n, q == 0, q*vgd_n);
     }
@@ -1197,12 +1158,11 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   }
   FluidRef fl = FluidRef::Get(pmy_pack);
   cln_feedback = gas_feedback && fl.on;
-  const bool cell = cln_cell;
 
   // 1. starting face fluxes on the first cycle (restarts carry them)
   if (!cln_faces_set) {
     cln_faces_set = true;
-    if (pmy_pack->pmesh->ncycle == 0 && !cell) CleanInitFaceFluxes();
+    if (pmy_pack->pmesh->ncycle == 0) CleanInitFaceFluxes();
   }
 
   // 2. closure (from the gas before the stage increments are added), old vector, face
@@ -1217,16 +1177,11 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   CleanStagKReal();   // (clean_stag_kreal: the kick E can pay, the rest deferred)
   CleanOldVector();
   CleanStagKPos();   // (clean_stag_kpos: the increment in Patankar form)
-  if (cell) {
-    CleanCellOldVector();
-    CleanCellFaceCoefficients();
-  } else {
-    CleanFaceCoefficients();
-    CleanStagKDelta();   // (clean_stag_kpos = delta: the faces' rest dG)
-    // (the donors' E_old, memory; the bracket's gate q)
-    if (cln_gflux || cln_consist) CleanGhostFill(cln_w, CLW_EO, 1);
-    if (cln_consist) CleanStagBracket();
-  }
+  CleanFaceCoefficients();
+  CleanStagKDelta();   // (clean_stag_kpos = delta: the faces' rest dG)
+  // (the donors' E_old, memory; the bracket's gate q)
+  if (cln_gflux || cln_consist) CleanGhostFill(cln_w, CLW_EO, 1);
+  if (cln_consist) CleanStagBracket();
 
   // 3. Newton iteration on the gas coupling and Picard passes on the lagged quantities:
   //    the slopes (reconstruction) and, with clean_closure = iterate, the closure from
@@ -1234,19 +1189,13 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   //    gas coupling iterates on); one linear solve without any of these.  With
   //    clean_closure = extrap(2) the stage-1 solve, whose state Y1 differs from
   //    U(t^{n+1}) at O(dt^2), takes the closure of its own first iterate once (pass 1):
-  //    the extrapolated closure alone makes the step first order in time.  In the cell
-  //    layout a solution with cells E < 0 switches their faces to the low-order flux
-  //    and is solved again (at most clean_maxpos times).
+  //    the extrapolated closure alone makes the step first order in time.
   const bool clos1 = (cln_extrap > 0) && (t2_solve == M1_T2S_STAGE1);
-  const bool iterate = cln_feedback || (cell && cln_recon) || cln_closit || clos1;
-  const bool lagged = (cell && cln_recon) || cln_closit || clos1;
+  const bool iterate = cln_feedback || cln_closit || clos1;
   const bool t2stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
-  int nit = 0, nit_sum = 0, nsolve = 0, npic = 0, npos = 0, nmark = 0;
+  int nit = 0, nit_sum = 0, nsolve = 0;
   std::array<int, 2> nfirst = {0, 0};
-  bool all_low = false;
-  cln_all_low = false;
   cln_ncwin = 0;
-  Real dpic = 0.0;
   bool converged = !iterate;
   const int maxnl = iterate ? cln_maxnl : 1;
   // the lagged slopes (and the staggered velocity) settle only to the accuracy of the
@@ -1271,18 +1220,11 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // <rad_m1>/dbg_rst_fp_cycle: fingerprints of the first solve of that cycle
   const bool fpc = (pmy_pack->pmesh->ncycle == dbg_rst_fp_cycle) && !dbg_rst_fp_done;
   if (fpc) RstFingerprint("cln_setup");
-  if (cell) Kokkos::deep_copy(Kokkos::subview(cln_v, Kokkos::ALL, 2, Kokkos::ALL,
-                                              Kokkos::ALL, Kokkos::ALL), 0.0);
   Real dnl = 0.0;   // (the last pass's change, implicit_resid_fatal)
   for (int ipos = 0; ; ++ipos) {
     CleanFirstIterate();
     cln_fsk = false;
     cln_csyok = false;   // (spdb-1119: the lateral sums' coefficients once per closure)
-    if (cell) CleanCellFirstIterate();
-    if (cln_opt && cln_feedback) {
-      CleanCellOpacity();
-      CleanCellFaceSpeeds();
-    }
     if (cln_feedback) CleanAdvectiveCoefficients();
     // (the first iterate's beta and emission for the drag's face flux, not the last
     // solve's: a restart, failed stage or discarded attempt does not carry those)
@@ -1292,48 +1234,29 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     // (after the first drag: CLW_L holds E_k's lateral sums, CleanStagDrag)
     CleanStagXDonor(true, !(cln_vimp && cln_feedback));
     converged = !iterate;
-    npic = 0;
     Real de0 = 1.0e300, dv0 = 1.0e300, trel = 0.0;
     for (int inl = 0; inl < maxnl; ++inl) {
-      if (lagged && inl < cln_maxpic) ++npic;
       const bool clos = (cln_closit && inl < cln_maxpic) || (clos1 && inl == 1);
       if (clos) {
         cln_csyok = false;
         CleanClosureIterate();
-        if (cell) {
-          CleanCellFaceSpeeds();
-        } else {
-          CleanFaceCoefficients();
-          if (cln_consist) CleanStagBracket();
-        }
+        CleanFaceCoefficients();
+        if (cln_consist) CleanStagBracket();
         if (cln_feedback) CleanAdvectiveCoefficients();
       }
-      if (cln_opt && cln_feedback && inl > 0) {   // the opacities of the iterate's T
-        CleanCellOpacity();
-        CleanCellFaceSpeeds();
+      // (clean_stag_xdonor: q of the iterate; CLW_L holds E_k's lateral sums, those of
+      // the velocity update, but where the closure moved D or the bracket took CLW_L)
+      if (inl > 0) CleanStagXDonor(false, clos || !cln_feedback);
+      // (after the xdonor: the lateral sums of E_k are its, CleanStagXDonor)
+      CleanRightHandSide(false, !(inl > 0 && cln_xd_on));
+      // (clean_stag_sbimp: the first iterate's T in exchange with E_k and the beta
+      // terms sb(E_k) the RHS just built, then the RHS of that T)
+      // (clean_xt_cons: the same, the first iterate's T from the pass's gas row)
+      if (inl == 0 && (cln_sbimp || cln_xtcons) && cln_feedback) {
+        CleanNewtonUpdate();
+        CleanRightHandSide();
       }
-      if (cell) {
-        if (cln_hk && (inl == 0 || clos || (cln_opt && cln_feedback))) {
-          CleanCellConsistency();
-        }
-        if (cln_recon && inl < cln_maxpic) CleanCellSlopeWeights(CLC_K);
-        CleanCellRightHandSide();
-        if (inl % cln_pcreuse == 0) CleanCellPreconditionerSetup();
-      } else {
-        // (clean_stag_xdonor: q of the iterate; CLW_L holds E_k's lateral sums, those of
-        // the velocity update, but where the closure moved D or the bracket took CLW_L)
-        if (inl > 0) CleanStagXDonor(false, clos || !cln_feedback);
-        // (after the xdonor: the lateral sums of E_k are its, CleanStagXDonor)
-        CleanRightHandSide(false, !(inl > 0 && cln_xd_on));
-        // (clean_stag_sbimp: the first iterate's T in exchange with E_k and the beta
-        // terms sb(E_k) the RHS just built, then the RHS of that T)
-        // (clean_xt_cons: the same, the first iterate's T from the pass's gas row)
-        if (inl == 0 && (cln_sbimp || cln_xtcons) && cln_feedback) {
-          CleanNewtonUpdate();
-          CleanRightHandSide();
-        }
-        CleanPreconditionerSetup();
-      }
+      CleanPreconditionerSetup();
       if (fpc) RstFingerprint(("cln_pass" + std::to_string(inl) + "_pre").c_str());
       // (budget: a pass whose iterate the next pass takes the closure of is solved in
       // the strict norm, so that closure does not carry the inexact solve: with
@@ -1343,14 +1266,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       nit = CleanBiCGStab();
       if (cnext) cln_ewr = -1.0;
       if (fpc) RstFingerprint(("cln_pass" + std::to_string(inl) + "_post").c_str());
-      // (clean_yres = local: the local exchange of the solution X, kept while a pass
-      // leaves X as it is, so that the gas does not take the round-off of a new residual)
-      if (cell && cln_yres != M1_YRES_OFF && cln_feedback &&
-          (cln_yres == M1_YRES_POST || inl == 0 || nit != 0)) {
-        CleanCellResidual();
-      }
-      if (cln_xsw && !cell && nit >= 0) CleanStagXSweep();
-      if (cln_xd && !cell && cln_nlprint) CleanStagXCount(inl, nit);   // (diagnostic)
+      if (cln_xsw && nit >= 0) CleanStagXSweep();
+      if (cln_xd && cln_nlprint) CleanStagXCount(inl, nit);   // (diagnostic)
       nit_sum += std::abs(nit);
       ++nsolve;
       cln_nsolve += 1.0;
@@ -1358,14 +1275,13 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       if (nit < 0) dnl = std::numeric_limits<Real>::infinity();
       // (implicit_lin_maxit named, as the old production: a linear solve that ends at
       // its cap leaves its iterate to the pass, which is then not the last one)
-      const bool lp = cln_linpass && !cell && nit < 0 && inl + 1 < maxnl;
+      const bool lp = cln_linpass && nit < 0 && inl + 1 < maxnl;
       if (!iterate || (nit < 0 && !lp)) break;
       const bool fbl = lp;
-      const Real de = cell ? CleanCellNewtonUpdate() : CleanNewtonUpdate();
+      const Real de = CleanNewtonUpdate();
       if (cln_bon) tol_nl = cln_tolb;
-      if (lagged && inl < cln_maxpic) dpic = de;
       Real dv = 0.0;
-      if (cln_feedback) dv = cell ? CleanCellVelocityUpdate() : CleanVelocityUpdate();
+      if (cln_feedback) dv = CleanVelocityUpdate();
       dnl = fmax(de, dv);
       // (clean_tol_rel, as the old production's implicit_tol_rel: the strict test stops at
       // kappa times the first pass's change, at most clean_tol_rel_max)
@@ -1397,40 +1313,23 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       de0 = de;
       dv0 = dv;
     }
-    if (iterate) {
-      if (cell) {
-        CleanCellCopyIterate();
-      } else {
-        CleanCopyIterate();
-      }
-    }
+    if (iterate) CleanCopyIterate();
     // (clean_stag_xpat: the counts of the passes)
-    if (cln_xpat && !cell) CleanStagKEnd();
+    if (cln_xpat) CleanStagKEnd();
     // (clean_stag_kpos = redo: X <= 0 left, the stage again with those donors' faces
     // moved)
-    if (!cell && CleanStagKRedo()) continue;
-    // (staggered: R1, R2 of the solution, counted)
-    const int nbad = cell ? (cln_poslim ? CleanCellMarkFaces() : 0) :
-                     CleanStagRealizable();
-    if (!cell && ipos == 0) nfirst = {cln_nr1, cln_nr2};
-    if (!cln_poslim || nbad == 0) break;
-    nmark += nbad;
-    if (ipos >= cln_maxpos) {
-      // a stage gives up (the step is redone by backward Euler); a backward-Euler step
-      // is solved once more with every face low-order
-      if (t2stage || all_low) break;
-      CleanCellAllLowOrder();
-      all_low = true;
-    }
-    ++npos;
+    if (CleanStagKRedo()) continue;
+    // (R1, R2 of the solution, counted)
+    CleanStagRealizable();
+    if (ipos == 0) nfirst = {cln_nr1, cln_nr2};
+    break;
   }
   if (!converged || (pmy_pack->pmesh->ncycle == dbg_nonconv && dtr_ncut == 0)) {
     nit = -std::abs(nit) - 1;
   }
 
   // 4. positivity of the solution
-  const int nneg = cell ? CleanCellCountNegative() : CleanCountNegative();
-  if (cell && cln_diagcells && all_low) CleanCellDiagnose();
+  const int nneg = CleanCountNegative();
   if (nit < 0) cln_nfail += 1.0;
   if (nneg > 0) cln_nneg += 1.0;
   // a backward-Euler solve that did not converge fails the cycle: with <time>/dt_retry
@@ -1457,28 +1356,16 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
                           "its last change exceeds <rad_m1>/implicit_resid_fatal");
   }
   if (global_variable::my_rank == 0) {
-    if (cell) {
-      std::printf("CLEAN cycle %d t2s %d it %d (sum %d) pic %d %.2e pos %d mark %d "
-                  "all %d neg %d nreal %d guard %d solves %d\n", pmy_pack->pmesh->ncycle,
-                  t2_solve, nit, nit_sum, npic, dpic, npos, nmark, all_low ? 1 : 0, nneg,
-                  cln_nnreal, cln_nguard, nsolve);
-    } else {
-      std::printf("CLEAN cycle %d t2s %d it %d (sum %d) pos %d mark %d all %d neg %d "
-                  "r1 %d r2 %d first %d %d guard %d solves %d cwin %d\n",
-                  pmy_pack->pmesh->ncycle, t2_solve, nit, nit_sum, npos, nmark,
-                  all_low ? 1 : 0, nneg, cln_nr1, cln_nr2, nfirst[0], nfirst[1],
-                  cln_nguard, nsolve, cln_ncwin);
-    }
+    std::printf("CLEAN cycle %d t2s %d it %d (sum %d) pos 0 mark 0 all 0 neg %d "
+                "r1 %d r2 %d first %d %d guard %d solves %d cwin %d\n",
+                pmy_pack->pmesh->ncycle, t2_solve, nit, nit_sum, nneg, cln_nr1, cln_nr2,
+                nfirst[0], nfirst[1], cln_nguard, nsolve, cln_ncwin);
   }
 
   // 5. new state: face fluxes, E, cell fluxes, gas, stage slopes
-  if (cell) {
-    CleanCellWriteBack();
-  } else {
-    // (a failed solve or a probe does not change the energy flux's memory)
-    cln_dok = (nit >= 0) && !t2_inprobe;
-    CleanWriteBack();
-  }
+  // (a failed solve or a probe does not change the energy flux's memory)
+  cln_dok = (nit >= 0) && !t2_inprobe;
+  CleanWriteBack();
   // a write-back that leaves gas eint < 0 (energy for the fluid floor to create) is
   // rejected like a failed solve (the stage is redone by backward Euler, a
   // backward-Euler step by dt_retry)
@@ -1518,25 +1405,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   cln_xd_on = false;   // (clean_stag_xdonor: q is of this solve's passes only)
   cln_kq_on = false;   // (clean_stag_kpos: q, pd of this stage)
 
-  // 6. clean_closure = extrap(2): ray moments of the new state.  The last solve of a
-  //    step also re-evaluates its slope K1 = f(U^{n+1}) with the closure of these rays
-  //    (the difference quotient of the solve carries the extrapolated closure, whose
-  //    error the stiff coupling turns into an O(dt) error of the slope; extrap1 keeps the
-  //    slope, whose stage-2 closure is that of stage 1)
-  if (cln_extrap > 0 && !t2_fail) {
-    const bool reslope = cell && cln_extrap != 3 && t2_solve != M1_T2S_NONE &&
-                         t2_solve != M1_T2S_STAGE1;
-    if (reslope) CleanCellClosureSlope(-1.0);
-    CleanClosureAfterSolve();
-    if (reslope) {
-      CleanClosureFill();
-      CleanGhostFill(cln_s, 0, cln_s.extent_int(1));
-      CleanCellFaceSpeeds();
-      if (cln_hk) CleanCellConsistency();
-      if (cln_milne) CleanCellMilneSetup();
-      CleanCellClosureSlope(1.0);
-    }
-  }
+  // 6. clean_closure = extrap(2): ray moments of the new state
+  if (cln_extrap > 0 && !t2_fail) CleanClosureAfterSolve();
   if (fpc) dbg_rst_fp_done = true;
   return TaskStatus::complete;
 }
@@ -1709,7 +1579,7 @@ void RadiationM1::CleanStagKReal() {
   const bool stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
   FluidRef fl = FluidRef::Get(pmy_pack);
   // (with clean_stag_kpos the bound is on kpos's E_old, CleanStagKPos)
-  if (!cln_kreal || cln_kpos || cln_cell || !stage || !cln_feedback || !fl.on) return;
+  if (!cln_kreal || cln_kpos || !stage || !cln_feedback || !fl.on) return;
   auto &id = pmy_pack->pmesh->mb_indcs;
   const int is = id.is, js = id.js, ks = id.ks, nx1 = id.nx1, nx2 = id.nx2;
   const int nji = nx2*nx1, nkji = id.nx3*nji, nmb = pmy_pack->nmb_thispack;
@@ -1858,7 +1728,7 @@ void RadiationM1::CleanOldVector() {
 //! unchanged at the fixed point.  first: the first iterate of a solve, no history.
 
 void RadiationM1::CleanStagXDonor(const bool first, const bool lat) {
-  if (!cln_xd || cln_cell || !pmy_pack->pmesh->multi_d) return;
+  if (!cln_xd || !pmy_pack->pmesh->multi_d) return;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -1924,7 +1794,7 @@ void RadiationM1::CleanStagXDonor(const bool first, const bool lat) {
 void RadiationM1::CleanStagKPos() {
   cln_kq_on = false;
   const bool stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
-  if (!cln_kpos || cln_cell || !stage) return;
+  if (!cln_kpos || !stage) return;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const bool two = (t2_solve == M1_T2S_STAGE2);   // (stage 2: K1 and K2)
   if (!t2pf1_ok || (two && !t2pf2_ok) || t2pf1.extent_int(0) <= nmb1) {
@@ -2543,8 +2413,8 @@ void RadiationM1::CleanAdvectiveCoefficients() {
   auto w = cln_w;
   CleanArgs x = CleanMakeArgs(), xa = x;
   // (staggered on the cubed sphere: Cartesian, CleanStagGasMomentum)
-  const bool sc = x.cub && !cln_cell;
-  xa.cub = x.cub && !sc;
+  const bool sc = x.cub;
+  xa.cub = false;
 
   CleanFor("cln_advcoef", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -2559,12 +2429,8 @@ void RadiationM1::CleanAdvectiveCoefficients() {
     CleanAdvect(xa, m, k, j, i, v, a);
     for (int n = 0; n < 3; ++n) w(m,CLW_A1+n,k,j,i) = a[n];
   });
-  // (staggered: their ghosts are first read after the next exchange, the RHS's)
-  if (cln_cell) {
-    CleanGhostFill(cln_w, CLW_A1, 3);
-  } else {
-    CleanGhostDefer(cln_w, CLW_A1, 3);
-  }
+  // (their ghosts are first read after the next exchange, the RHS's)
+  CleanGhostDefer(cln_w, CLW_A1, 3);
 }
 
 //----------------------------------------------------------------------------------------
@@ -2590,7 +2456,7 @@ void RadiationM1::CleanFirstIterate() {
   auto op = opac;
   auto w = cln_w;
   auto k1 = t2k1;
-  const bool pred = cln_kpred && !cln_cell && (t2_ok || cln_k1ok) &&
+  const bool pred = cln_kpred && (t2_ok || cln_k1ok) &&
                     t2_solve != M1_T2S_NONE && !cln_vzero && t2k1.extent_int(0) > nmb1;
   const Real h = dt_sub, ecap = SQR(SQR(impl_pred_tcap)), rtol = cln_trtol;
   const bool xtn = cln_xtnorm;   // (clean_xt_norm: E responds, 1/(1 + hc kE) folded)
@@ -2618,8 +2484,8 @@ void RadiationM1::CleanFirstIterate() {
                              w(m,CLW_T,k,j,i), rtol);
     }
   });
-  // (staggered: the ghosts of E_k for the gas terms, with the next exchange)
-  if (feedback && !cln_cell) CleanGhostDefer(cln_w, CLW_EK, 1);
+  // (the ghosts of E_k for the gas terms, with the next exchange)
+  if (feedback) CleanGhostDefer(cln_w, CLW_EK, 1);
 }
 #endif  // M1_TU_PART(1)
 
@@ -2655,9 +2521,8 @@ static Real CleanStagAdvFace(const CleanArgs &x, const CleanArgs &xh, const int 
 //! work h d arad_ref.v at the iterate's velocity, the row term of ImplicitWorkRow,
 //! rad_m1_implicit.cpp:12438-12465), esrc the explicit energy source of <rad_m1> (the
 //! production old-vector deposit, rad_m1_implicit.cpp:15335-15351), and the initial
-//! guess X = E_k.  With gas coupling the beta terms of Ma et al. (2025, eq. 56; see
-//! rad_m1_clean_cell.hpp):
-//! the emission takes G = 1 - beta^2/2 (CLW_GM) and B adds the lagged A - hc (kP a T^4 G
+//! guess X = E_k.  With gas coupling the beta terms of Ma et al. (2025, eq. 56): the
+//! emission takes G = 1 - beta^2/2 (CLW_GM) and B adds the lagged A - hc (kP a T^4 G
 //! - kE E) = hc kE [(beta^2/2 - beta.a/c) E_k + 2 beta.y_k] (y_k = F/c of the iterate,
 //! mean of the two faces; the gas eint takes its opposite, CLW_EP), with beta = v/c of
 //! the iterate (CLW_BT) and hc kP a T^4 (CLW_RE) for the face fluxes (eq. 57,
@@ -2919,7 +2784,7 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
         + x.w(m,CLW_RY,k,j,i)*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) - sdv + hes :
         x.w(m,CLW_EO,k,j,i) + hckp*arad_*SQR(SQR(t))
         - rr*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) - work - sdv + sb + gres + hes;
-    // (clean_stag_sbimp: (1 - r) sb(E) in the operator as the cell layout's, Newton form)
+    // (clean_stag_sbimp: (1 - r) sb(E) in the operator, Newton form)
     if (x.sbi) x.w(m,CLW_B,k,j,i) -= (1.0 - rr)*CleanStagBetaE(xh, CLW_EK, m, k, j, i);
     // (clean_stag_xpat: the exchange's removal R = r hcke E_k explicit while it leaves B >= th E_old (th = CLN_KPOS_TH),
     // past that, R - (B0 - th E_old) (B0 = B + R) on the diagonal as its ratio to E_k:
@@ -2995,12 +2860,8 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationM1::CleanNewtonUpdate
 //! \brief new iterate E_k = X and the gas temperature in exchange equilibrium with it
-//! (the absorption takes max(X, 0); the staggered layout also keeps that as the iterate
-//! without its positivity limiter and clean_stag_gflux, the cell layout keeps X, whose
-//! E < 0 its positivity limiter treats; clean_stag_sbimp: the gas eint takes -sb(X),
-//! CleanStagBetaE).  The cell layout
-//! takes the gas eint change -A of eq. 56 of Ma et al. (2025) (CLW_GM, CLW_EP of
-//! CleanCellRightHandSide, CleanCellNewtonUpdate).
+//! (the absorption takes max(X, 0), also kept as the iterate without clean_stag_gflux;
+//! clean_stag_sbimp: the gas eint takes -sb(X), CleanStagBetaE).
 //! Returns max |dE|/E, |dT|/T (clean_nl_norm = cell: |dE| over max(|E|, the E scale
 //! cln_nl_escale)).
 
@@ -3018,8 +2879,8 @@ Real RadiationM1::CleanNewtonUpdate() {
   auto eos = fl.eos;
   auto op = opac;
   auto w = cln_w;
-  const bool cell = cln_cell, poslim = cln_poslim || cln_gflux;
-  const bool gfd = !cell && cln_gflux && !cln_sbimp && cln_feedback;
+  const bool poslim = cln_gflux;
+  const bool gfd = cln_gflux && !cln_sbimp && cln_feedback;
   // (clean_conv = budget: the changes over the rows' gross terms, and the time error h/2
   // |f(Y) - f(U^n)| of the iterate, Heun against Euler, K1 = f(U^n))
   const bool bud = cln_bon;
@@ -3043,7 +2904,7 @@ Real RadiationM1::CleanNewtonUpdate() {
 
   // (clean_xt_exact: the closure of the row's linearised exchange at the new T; x2: T
   // from the local 2x2 of the E and gas rows, the E row's rest S = X diag - XA fixed)
-  const bool xte = (cln_xte > 0) && !cell && cln_feedback, x2 = xte && cln_xte == 2;
+  const bool xte = (cln_xte > 0) && cln_feedback, x2 = xte && cln_xte == 2;
   const bool pdx = x2 && cln_xpat, pxe = xte && cln_xpat;
   const bool kpg = cln_kq_on;   // (clean_stag_kpos: the gas row's pd_g X)
   Real change = 0.0, femax = 0.0, ermax = 0.0, xcl = 0.0;
@@ -3064,7 +2925,7 @@ Real RadiationM1::CleanNewtonUpdate() {
     const Real t_old = w(m,CLW_T,k,j,i);
     const Real x = w(m,CLW_X,k,j,i);
     const Real ex = fmax(x, 0.0);
-    const Real e = (cell || poslim) ? x : ex, g = w(m,CLW_GM,k,j,i);
+    const Real e = poslim ? x : ex, g = w(m,CLW_GM,k,j,i);
     // (gflux: the gas takes the Doppler part hc kE dop E of sb at X, as the E row takes
     // it in r; at E_k it lagged a source of hc kE dop, in a moving opaque cell more than
     // the net exchange (1 - r) hc kE, and T and E drifted apart pass by pass; sbimp:
@@ -3107,8 +2968,8 @@ Real RadiationM1::CleanNewtonUpdate() {
     } else {
       dmax = fmax(dmax, fmax(de, dt));
     }
-    // staggered: round-off level of E (its terms over E; cell: CleanCellVelocityUpdate)
-    if (!cell) fe_max = fmax(fe_max, (fabs(e)*(1.0 + hc*op(m,M1_OP_E,k,j,i)) +
+    // round-off level of E (its terms over E)
+    fe_max = fmax(fe_max, (fabs(e)*(1.0 + hc*op(m,M1_OP_E,k,j,i)) +
         fabs(w(m,CLW_EO,k,j,i)) + hc*op(m,M1_OP_P,k,j,i)*arad_*SQR(SQR(t)))/
         fmax(fabs(e), 1.0e-300));
   }, Kokkos::Max<Real>(change), Kokkos::Max<Real>(femax), Kokkos::Max<Real>(ermax),
@@ -3126,7 +2987,7 @@ Real RadiationM1::CleanNewtonUpdate() {
                   t2_solve, xcl);
     }
   }
-  if (!cell) cln_fe = std::numeric_limits<Real>::epsilon()*femax;
+  cln_fe = std::numeric_limits<Real>::epsilon()*femax;
   if (bud) {   // (the tolerance of the next test and solve; for settled, the level of a
     // change the linear solve fixes at the floor, its 0.1 tfl in the budget's norm)
     // (a step dt_retry redoes, whose state just failed, is solved strictly too)
@@ -3145,7 +3006,7 @@ Real RadiationM1::CleanNewtonUpdate() {
     CleanGhostDefer(cln_w, CLW_RE, 1);
   }
   // (staggered: the ghosts of the new E_k, for the velocity update and the next RHS)
-  if (!cell && cln_feedback) CleanGhostFill(cln_w, CLW_EK, 1);
+  if (cln_feedback) CleanGhostFill(cln_w, CLW_EK, 1);
   return change;
 }
 
@@ -3376,7 +3237,7 @@ int RadiationM1::CleanStagRealizable() {
 //! face flux can exceed c J of the donor at a beam edge (its foot interpolation reaches
 //! past the two cells), and the cap there breaks the consistency of the beam.
 //! On the cubed sphere the high x2, x3 faces of a MeshBlock take the rays' flux from its
-//! last cell (CLN_FH; a seam ghost's low face is another face), as CleanCellConsistency.
+//! last cell (CLN_FH; a seam ghost's low face is another face).
 //! clean_stag_rayratio (the old production's form: the rays enter only as ratios times
 //! the state's E): J -> E in Phi and in the half ranges, and F_ray -> (F_ray/J_d) E_d of
 //! the face's donor d (the upwind cell of F_ray; none where J_d <= e_floor: no bracket).
@@ -3390,7 +3251,6 @@ void RadiationM1::CleanStagBracket() {
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   CleanArgs x = CleanMakeArgs();
-  x.consist = false;
   x.feedback = false;   // (the gas terms read the last iterate's work vectors)
   const Real efl = e_floor;
   const bool rat = cln_rayratio, thf = cln_thinf;
@@ -3776,7 +3636,7 @@ void CleanStagFJoin(const Real p[8], const Real q[8], Real c[8], Real ya[3],
 //! momentum F on its own, one unknown per face, from
 //!   (F - G)/h + c^2 [P_R - P_L]/dx_f = -c chi_f (F - A) (+ the beta terms),
 //!   P_i = (D E)_i - alpha_i [F]_i/(2c),  [F]_i the jump of the two faces of cell i,
-//! the cell layout's dissipation (fY = c (D E) - al (c/2) [y]) on the stress: per face
+//! a dissipation (fY = c (D E) - al (c/2) [y]) on the stress: per face
 //!   F (1/theta + h c (al_L + al_R)/(2 dx_f))
 //!     - h c (al_L F_{f-1} + al_R F_{f+1})/(2 dx_f)
 //!     = F^H/theta,
@@ -3789,7 +3649,7 @@ void CleanStagFJoin(const Real p[8], const Real q[8], Real c[8], Real ya[3],
 //! clean_stag_fkin: the streaming share w_i (C1 of the cell, the faces' ramp) of every
 //! cell's momentum flux is the rays' kinetic upwind flux of the face momentum,
 //!   P_i = (1 - w_i) [(D E)_i - al_i [F]_i/(2c)] + w_i (h+_i F_lo + h-_i F_hi)/c,
-//! the staggered form of the cell layout's c (h+ y_L + h- y_R) (y = F/c; a beam, F = c E,
+//! the staggered form of c (h+ y_L + h- y_R) (y = F/c; a beam, F = c E,
 //! h+ = 1, gives D E = E), on spherical polar in area form, (1/dx +- s) P_R,L (s of
 //! CleanStagSph: the w share keeps 2 P_rr/r, F r^2 of a beam is steady).  It telescopes,
 //! the lines stay tridiagonal (M-matrix: h+ >= 0 >= h-), and w = al = 0 keeps F^H.
@@ -3872,8 +3732,8 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
         fc(m,CLF_N+1,k,j,i) = 0.0;
         if (!fk || !x.sph || dir == 2 || CleanBoundaryFace(x, dir, m, k, j, i)) return;
         // (spherical polar: the w share's transverse pressures, the curvature of D E but
-        // that of the normal stress (q = 4), are the rays' own (CLN_G, the cell layout's
-        // CleanCellSphSource) where the cell holds their J, faded as CleanRayShare)
+        // that of the normal stress (q = 4), are the rays' own (CLN_G) where the cell
+        // holds their J, faded as CleanRayShare)
         const Real q1 = CleanStagSph(x, 1, dir, m, k, j, i);
         const Real qn = 2.0*CleanStagSph(x, 4, dir, m, k, j, i)/q1;
         auto wq = [&](const int q, const int kk, const int jj, const int ii) {
@@ -4574,7 +4434,7 @@ void RadiationM1::CleanStagCsTie(const int nc, const int c0, const int c1, const
 //! and the ghosts take it, so that a seam face sees the neighbour's true geometry.
 
 void RadiationM1::CleanStagCsLateral(const int e, const bool st, const int part) {
-  if (!pmy_pack->pmesh->use_cubed_sphere || cln_cell) return;
+  if (!pmy_pack->pmesh->use_cubed_sphere) return;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   CleanArgs x = CleanMakeArgs();
   const int ks = indcs.ks, js = indcs.js, is = indcs.is;
@@ -5021,7 +4881,7 @@ void RadiationM1::CleanWriteBack() {
   const bool wpa = wsp && FrefWaccOn();   // (fref_wacc: CleanRightHandSide)
   auto wc = wpa ? FrefWacc() : DvceArray4D<Real>();
   const Real fra = FrefWaccStage() ? 1.0 : h/pmy_pack->pmesh->dt;
-  const bool wex = wsp && fref_wacc_t2 && !fref_pay_post && !cln_cell &&
+  const bool wex = wsp && fref_wacc_t2 && !fref_pay_post &&
                    time_scheme == M1_TIME_HESDIRK2;   // (no slope carries a payment)
   const bool fm = icr_fmeas && cln_vzero;   // (CleanSteadyStart: icr_dm)
   auto fmd = icr_dm;
@@ -5175,7 +5035,7 @@ void RadiationM1::CleanWriteBack() {
       den = -(e - x.w(m,CLW_EO,k,j,i)) - ((xh.hi || x.sph || x.cub) ?
             x.w(m,CLW_Q,k,j,i) : h*div + hdq) + (eso ? h*es(m,k,j,i) : 0.0) - pbx;
       if (x.vzero) {   // (steady start: the eint of the iterate's T, not the residual of
-        Real ei, p, chi_rho, chi_t, cv;   //  a step h -> infinity, as the cell layout)
+        Real ei, p, chi_rho, chi_t, cv;   //  a step h -> infinity)
         eos.ThermoAt(uh(m,IDN,k,j,i), x.w(m,CLW_T,k,j,i), ei, p, chi_rho, chi_t, cv);
         den = ei - x.w(m,CLW_EI,k,j,i);
       } else {
@@ -5395,8 +5255,7 @@ void RadiationM1::CleanWriteBack() {
     });
   }
   // cells the write-back left with gas eint < 0, or below the EOS floor, by lowering it
-  // (the solve is then not accepted, as in the cell layout; an eint the hydro left there
-  // is not the solve's)
+  // (the solve is then not accepted; an eint the hydro left there is not the solve's)
   cln_neint = 0;
   if (!feedback) return;
   auto &id = pmy_pack->pmesh->mb_indcs;

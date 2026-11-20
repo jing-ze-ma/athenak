@@ -3012,12 +3012,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     // (scheme = clean: each round's relax is CleanSteadyStart, E and the face F at the
     // scheme's own fixed point with the gas T, and its force pass the last steady pass;
-    // the x1 shells of the force, its radial component: the staggered layout on
-    // spherical polar or the cubed sphere)
-    if (pm1->clean && (pm1->cln_cell || !(pmy_mesh_->use_spherical_polar ||
-                                          pmy_mesh_->use_cubed_sphere))) {
-      HsFatal("problem/he_ic_equil with scheme = clean needs clean_layout = staggered "
-              "on spherical polar or the cubed sphere", __LINE__);
+    // the x1 shells of the force, its radial component: spherical polar or the cubed
+    // sphere)
+    if (pm1->clean && !(pmy_mesh_->use_spherical_polar || pmy_mesh_->use_cubed_sphere)) {
+      HsFatal("problem/he_ic_equil with scheme = clean needs spherical polar or the "
+              "cubed sphere", __LINE__);
     }
     if (wic) HsFatal("problem/he_ic_equil does not combine with he_wind_ic", __LINE__);
     hs_eq_maxit_ = pin->GetOrAddInteger("problem","he_ic_equil_maxit",30);

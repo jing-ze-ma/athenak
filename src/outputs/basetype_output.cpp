@@ -731,10 +731,10 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     if (variable.compare("m1_f3") == 0 || variable.compare("m1") == 0) {
       outvars.emplace_back("m1_f3",radm1::M1_F3,&(pm->pmb_pack->pradm1->u0));
     }
-    // staggered clean: m1 also carries the cell flux of the faces' energy flux Phi (m1_f:
+    // clean: m1 also carries the cell flux of the faces' energy flux Phi (m1_f:
     // the face momenta's, the radiation momentum)
     auto *pr = pm->pmb_pack->pradm1;
-    if (variable.compare("m1") == 0 && pr != nullptr && pr->clean && !pr->cln_cell) {
+    if (variable.compare("m1") == 0 && pr != nullptr && pr->clean) {
       if (pr->cln_phic.extent_int(0) == 0) {   // (CleanInit keeps it: the same shape)
         Kokkos::realloc(pr->cln_phic, pr->u0.extent_int(0), 3, pr->u0.extent_int(2),
                         pr->u0.extent_int(3), pr->u0.extent_int(4));
