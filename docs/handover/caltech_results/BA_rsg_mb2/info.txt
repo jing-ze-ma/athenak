@@ -1,0 +1,1 @@
+TAG=BA_rsg_mb2 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h200mb2_a774c43b3 md5=8d433d581578b67578fa73f77c8ef17b RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=20 MODE=speed HOLDER=5840649 NODES=hpc-sm-02-11 NR=4 PPN=4 ENVX= EX= UCX=

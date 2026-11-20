@@ -183,3 +183,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - LWr260_hg (hpc-sm-02-03): rc=0 wall=697 | cycles 624961 - 625061 | steady 5.835 s/cycle | GPU MiB max 116343 min 115791 | CW a 0 FATAL 0 |  real_diag -> caltech_results/LW_real_diag.txt
 - BA_rsg_p4 (hpc-sm-02-11): rc=0 wall=135 | cycles 589788 - 589808 | steady 2.685 s/cycle | GPU MiB max 108697 min 107563 | CW a 0 FATAL 0 |  
 - BA_rsg_h200 (hpc-sm-01-11): rc=0 wall=129 | cycles 589788 - 589808 | steady 2.759 s/cycle | GPU MiB max 108265 min 107077 | CW a 0 FATAL 0 |  
+- AB9rt_rsg (hpc-sm-02-16): rc=0 wall=175 rc=0 wall=158 rc=0 wall=131 | cycles 589788 - 589794 | steady 2.870 s/cycle | GPU MiB max 109963 min 108829 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF floor_audit cycle lines 18 | CLEAN WARNING..unpaid lines 0
+- BA_rsg_mb2 (hpc-sm-02-11): rc=0 wall=137 | cycles 589788 - 589808 | steady 2.978 s/cycle | GPU MiB max 108545 min 107411 | CW a 0 FATAL 0 |  
