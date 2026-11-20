@@ -1,0 +1,1 @@
+TAG=KT01_rsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20j_6b5388315 md5=7f897ea9f3f1299067cf035afe61e470 RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=20 MODE=speed HOLDER=6133591 NODE=hpc-sm-02-10 NR=4 ENVX= EX=rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.1

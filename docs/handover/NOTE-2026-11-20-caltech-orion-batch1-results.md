@@ -137,3 +137,7 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - KT01_hg (hpc-sm-02-10): rc=0 wall=197 | cycles 624961 - 624981 | steady 5.577 s/cycle | GPU MiB max 116353 min 115805 | CW a 0 FATAL 0 |  
 - RF100_hg_f1 (hpc-sm-02-03): rc=0 wall=609 | cycles 624961 - 625061 | steady 5.063 s/cycle | GPU MiB max 112977 min 112453 | CW a 0 FATAL 0 |  
 - RF100_ref_hg (hpc-sm-02-04): rc=0 wall=595 | cycles 624961 - 625061 | steady 4.942 s/cycle | GPU MiB max 112977 min 112453 | CW a 0 FATAL 0 |  
+- KT1_rsg (hpc-sm-01-11): rc=0 wall=128 | cycles 589788 - 589808 | steady 2.771 s/cycle | GPU MiB max 108777 min 107589 | CW a 0 FATAL 0 |  
+- KT001_hg (hpc-sm-01-17): rc=1 wall=431 | cycles 624961 - 624965 | steady 17.544 s/cycle | GPU MiB max 115761 min 114973 | CW a 11 FATAL 1 |  
+  FAILED: last 100 lines in caltech_results/KT001_hg/FAIL_tail100.txt
+- KT01_rsg (hpc-sm-02-10): rc=0 wall=136 | cycles 589788 - 589808 | steady 3.218 s/cycle | GPU MiB max 109209 min 108075 | CW a 0 FATAL 0 |  
