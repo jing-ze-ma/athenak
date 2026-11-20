@@ -1,0 +1,282 @@
+# FRESHPREP 2026-11-20: fresh-production deck on v20.1 25ea76366, built by freshprep/build_decks.py
+#   base viper1120/bsg/bsg.athinput + common_scheme (fixed rays: no ring keys) + keys/bsg.txt keys/fixed_lq10.txt keys/bsg_mu616.txt keys/smoke.txt
+#   dropped: hydro/merge_lat_rad hydro/tfloor_kelvin problem/he_bc_linhao_diss problem/he_bc_linhao_fis problem/he_bc_linhao_rad rad_m1/ic_rad rad_m1/implicit_blend rad_m1/implicit_blend_alpha rad_m1/implicit_blend_fhi rad_m1/implicit_blend_flo rad_m1/implicit_blend_tau0 rad_m1/implicit_blend_xthin rad_m1/implicit_closure_lag rad_m1/implicit_closure_thin_relax rad_m1/implicit_cs2_hll rad_m1/implicit_cs2_shift rad_m1/implicit_cs2_vimp_npass rad_m1/implicit_f0_init rad_m1/implicit_face_opac_n rad_m1/implicit_flux rad_m1/implicit_flux_beam rad_m1/implicit_flux_faces rad_m1/implicit_g0_exchange rad_m1/implicit_g0_limit rad_m1/implicit_gas_newton rad_m1/implicit_gas_newton_switch rad_m1/implicit_halo_direct rad_m1/implicit_halo_mpi rad_m1/implicit_halo_overlap rad_m1/implicit_hr_excess rad_m1/implicit_hr_face rad_m1/implicit_hr_face_gd rad_m1/implicit_krylov_fuse rad_m1/implicit_lin_cnorm rad_m1/implicit_lin_ew_max rad_m1/implicit_lin_tol rad_m1/implicit_nofb_work rad_m1/implicit_od_cache rad_m1/implicit_offdiag rad_m1/implicit_one_pass rad_m1/implicit_op_stencil rad_m1/implicit_opac_newton rad_m1/implicit_opac_newton_guard_mode rad_m1/implicit_opac_update rad_m1/implicit_precond rad_m1/implicit_predictor_frozen rad_m1/implicit_rad_inertia rad_m1/implicit_realisable_coupling rad_m1/implicit_solver rad_m1/implicit_thin_bq rad_m1/implicit_thin_bq_gd rad_m1/implicit_thin_corr rad_m1/implicit_thin_freeze rad_m1/implicit_thin_hcface rad_m1/implicit_thin_hcface_gd rad_m1/implicit_thin_hcsf rad_m1/implicit_thin_js_face rad_m1/implicit_thin_js_gd rad_m1/implicit_thin_recon rad_m1/implicit_thin_switch rad_m1/implicit_tol rad_m1/implicit_tsolve_opac rad_m1/implicit_tsolve_opac_mode rad_m1/implicit_vimp rad_m1/implicit_vimp_bc rad_m1/time2_vet_col rad_m1/time2_vet_sc rad_m1/vet_gd_gl_nmu rad_m1/vet_gd_gl_nphi rad_m1/vet_gd_gl_stagger rad_m1/vet_gd_ls rad_m1/vet_gd_rotate_align rad_m1/vet_gd_rotate_dt rad_m1/vet_gd_rotate_slope rad_m1/vet_gd_rotate_stretch rad_m1/vet_gd_rotate_t0 rad_m1/vet_rotate_avg rad_m1/vet_source_noesrc
+# LHX RUSTY ARM (USER 11-06): kick-fixed vstarfix deck with Linhao athinput.bsg_star.rusty: no FOFC, his SMR lateral grid incl. radiation, his floors and seed threshold. Not matched: rk2 (his VL2), M1 + vet_gd (his DO); cfl_rad applied; his GM; USER 11-06 normal CFL 0.3, rad_signal_speed on; USER 11-06 twin off
+# bsgli_1104 bsgLI_exact (USER 11-04 12:50 "follow Linhao's setting exactly, except with our radiation"; 12:55 "fix their gravity
+# VSN+MLAT ARM (USER 11-05 ~19:05): bsgLI_exact + rad_m1/doppler_vel = vstar_n + hydro merge_lat x2 below 35 Rsun (Linhao SMR base 128^2), NO sink; from t = 0 to 57.4 d
+# Binary: run branch linhao-prod-1104 (origin/prod-1102 21dfeb5d8 + Linhao IC/BC commits + he_bc_outer_r2 + he_ic_linhao_gext).
+# His code = docs/handover/bsg-paper-code-1104/bsg_star.cpp on bsg-files-1009 (cpp:N). He sent no athinput: its settings are [PAPER].
+<comment>
+VSN+SINK ARM (PREPARED ONLY, NOT LAUNCHED; 1-D best match S3 in LINHAO1D.txt) -- base: DOFACE ARM (athpp-doface-1105, PREPARED ONLY, NOT LAUNCHED: user decides): bsgLI_exact.athinput + rad_m1/doppler_vel = vstar_n (doppler_face dropped 11-05: inert), from t = 0; USER 11-05 GO after GPU gate
+TABLE  setting | his code (bsg_star.cpp line, or athinput -> paper 2609.28656 txt) | ours (this deck) | status.  Labels: [HIS] matched his code; [FIXED] made to match on linhao-prod-1104;
+       [USER] user change; [PAPER] his athinput missing, value from the paper; [RT] ours by necessity (M1+VET vs DO); [OURS] numerical default kept (user); [CANNOT] cannot match (reason)
+ IC r<=rmax rho,T,F_r linear in r        | cpp:434-451                                   | he_ic_linhao, same formula + file (cgs)        | [HIS]
+ IC atmosphere gravity (r>52.49 Rsun)    | cpp:429 g=g(rmax)(r/rmax)^+2                  | he_ic_linhao_gext = invsq: HSE in GM/r^2       | [USER] fixed (his r^+2 = gext r2)
+ IC atmosphere T, floor, F               | cpp:424-431 T(rmax), max(rho,dfloor), F=0     | same                                           | [HIS]
+ IC v, gas energy                        | cpp:464-469 v=0, IEN=rho T/(g-1) unperturbed  | same                                           | [HIS]
+ IC seed                                 | cpp:384,457-463 5 % p-p, isobaric, rho>0.01 code, srand(gid) | amp 0.05, rho_thr 1e-11 g/cc, splitmix64(cell) | [HIS] form; RNG [CANNOT] (his is layout-dependent); threshold assumes density_unit 1e-9 (unknown; rho(rmax)=2.6e-11 so the whole profile is seeded either way)
+ our seed                                | none                                          | he_seed 0, he_seed_band old                    | [HIS] (nothing else seeds)
+ IC radiation                            | cpp:476-501 two-zone I+-                      | E=aT^4, F1=F_r                                 | [RT] same moments
+ inner ghosts rho, P                     | cpp:318-350,797-801 bd_data linear in r, P=rho T | he_bc_linhao                                 | [HIS]
+ inner ghost radii                       | x1v(is-i), dr 0.3125 Rsun                     | same faces (19.2196 19.5321 19.8446 Rsun)      | [HIS] (grid below)
+ inner ghost count                       | NGHOST 2 (xorder 2)                           | 3 (ghost 3 not read by PLM/HLLC, halfrange)    | matched in effect
+ inner ghost v                           | cpp:798-861 v=0; ghost-1 v_r iterated to HLLC S_M=0 (<=100 it, tol 1e-20) | he_bc_inner = zerocontact: same S_M (PVRS q-factors, Mignone PLM), bracketed Illinois root | [HIS] same root to round-off; if his 100 iterations fail he keeps the last iterate + warning, ours mirrors v (no bracket): [CANNOT] identical failure path
+ inner radiation (M1 face)               | cpp:969-1034 half-range I+- (E=T^4, F=F_r) ComToLab(v_ghost), DO modified-HLLE face | he_bc_linhao_rad = halfrange: F = 0.5(F_g+F_is) + s 0.5 c<mu>+(E_g-E_is) + (2/3)(v_g E_g + v_is E_is), <mu>+ LQ10 = 0.50636, s = 0: inner-face dissipation none (user; his HLLE taucell 4 would give s ~ 2e-7) | [FIXED]/[USER]
+ inner radiation (VET rays)              | same ghost I+                                 | vet_gd/vet_col outward rays start from I+ = E_g + F_g/(c<mu>+) | [FIXED]
+ inner ghost opacity                     | cpp:566-577 kappa(T=max(P/rho,tfloor)) in ghosts | used only in s(tau_c) (deep: s ~ 0)        | [HIS] in effect
+ BC timing                               | every VL2 substage                            | every RK2 stage                                | [CANNOT] (no VL2 in AthenaK)
+ outer BC hydro                          | cpp:916-931 v_r(ie)<0: rho copy, v_r 0; else rho ~ r^-2 per ghost, v_r copy; P, v_t copy | he_bc_outer copy + he_bc_outer_r2 | [FIXED]
+ outer BC radiation                      | cpp:947-957 outgoing copied, incoming 0       | marshak, bath 0                                | [RT]
+ gravity                                 | cpp:141 none in code; GM from athinput        | he_gravity pointmass, he_gm = G 20 Msun        | [PAPER] txt:488-495 (his GM value unknown)
+ EOS                                     | cpp:133,378,469 P=rho T code, mu/gamma athinput | ideal, gamma 5/3, mu 0.62, gas only          | [PAPER] txt:484-487
+ opacity tables                          | cpp:200-266 TOPS X0.7 Z0.008 kR, kP, ke        | same tables, resampled in log T, padded = clamp | [HIS] (resample <= 1.7e-4)
+ opacity interpolation / clamp           | cpp:617-745 bilinear log kappa, clamp rho and low T | same (pad)                                | [HIS]
+ kP above T_max (3.48 MK)                | cpp:655-660 x 10^(-3.5 dlogT)                 | clamp                                          | not reached (domain T <= 1.1 MK)
+ kappa_a / kappa_e                       | cpp:601-607 ka = kR - ke(table 0.335-0.34), sigma_pe = sigma_p | ke const 0.34, ka = kR - ke         | [RT] split enters only the VET closure source (<= 6e-6)
+ opacity temperature                     | cpp:587 max(P/rho, tfloor)                    | gas T                                          | [HIS] (tfloor value unknown)
+ floors                                  | athinput dfloor, tfloor                       | dfloor 1e-20, tfloor 5e3 K, pfloor 1e-12, vceil 1e8 | [PAPER]/unknown
+ domain                                  | athinput                                      | 20-80 Rsun, pi/3..2pi/3, 0..pi/3, periodic     | [PAPER] txt:198,212-220,362-364
+ rays (VET)                              | his fixed 120-angle set (paper txt:247), local frame | vet_gd_ls 10 (LQ10, 120 dirs), FIXED: rotation off (user: to match him) | [FIXED] orientation global, his local [CANNOT] exactly
+ radial grid                             | athinput: base 192 x 0.3125 Rsun (paper "196" is a typo: 2560 blocks of 16^3 => 12 base x1 blocks + 4 refined on 35-55) | 256 faces = his exactly (sharp plateau, max face error < 1e-10 Rsun) | [FIXED]
+ lateral grid                            | 128^2 base, 256^2 on 35-55 (SMR)              | 256^2 everywhere                               | [CANNOT] (vet_gd needs one x1 block, no SMR); ours finer outside 35-55
+ hydro                                   | athinput VL2, PLM, HLLC                       | rk2, plm (Mignone), hllc, fofc                 | VL2 [CANNOT] (user: leave); HLLC [PAPER]; fofc [OURS]
+ CFL                                     | athinput                                      | 0.3                                            | [PAPER] txt:496-501
+ RT                                      | implicit DO 120 angles, tol 1e-6              | implicit M1 + VET (vet_gd), tol 1e-8           | [RT]
+ run length                              | athinput                                      | tlim 4.96e6 s                                  | [PAPER] txt:557-566
+ split_c2p_once, am_transport, dt_retry, cs2_vimp_npass 3, time2_enth_be, time2_fref_wacc | (none) | fresh defaults, named explicitly | [OURS] numerical default kept (user)
+
+<job>
+basename = bsg3d
+<mesh>
+nghost    = 3
+nx1 = 256          # his grid has exactly 256 radial cells: 48 x 0.3125 + 128 x 0.15625 + 80 x 0.3125 Rsun (see comment)
+x1min     = 1.391400e12          # 20 Rsun
+x1max     = 5.565600e12          # 80 Rsun
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 256
+x2min     = 1.0471975511965976    # pi/3
+x2max     = 2.0943951023931953    # 2 pi/3
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3       = 256
+x3min     = 0.0
+x3max     = 1.0471975511965976    # pi/3
+ix3_bc    = periodic
+ox3_bc    = periodic
+use_spherical_polar = true
+use_grid_stretch_r_poly = true
+f_stretch_r_p_amp = -0.66666666666666667   # [PAPER, his SMR reconstructed] dr 0.3125 Rsun on 20-35 and 55-80, 0.15625 on 35-55 (refinement level 1)
+f_stretch_r_p_xa = 0.1875                    # = face 48/256 = 35 Rsun (his refined region starts at a base-block edge)
+f_stretch_r_p_xb = 0.6875                    # = face 176/256 = 55 Rsun
+f_stretch_r_p_w = 1.0e-12                    # sharp edges: every face equals his piecewise-uniform faces to < 1e-10 Rsun
+layout_invariant = true   # FRESHPREP
+cs_seam_blockend = extend   # FRESHPREP
+cs_vertex_3cell = true   # FRESHPREP
+cs_seam_rho_guard = 4   # FRESHPREP
+<meshblock>
+nx1 = 256
+nx2 = 128   # FRESHPREP
+nx3 = 128   # FRESHPREP
+<time>
+dt_retry = true   # FRESHPREP
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3   # FRESHPREP
+nlim = 50   # FRESHPREP
+tlim = 1e30   # FRESHPREP
+ndiag = 1   # FRESHPREP
+restart_refill_ghosts = false   # FRESHPREP
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu = 0.616   # FRESHPREP
+<hydro>
+merge_lat_rc             = 2.43495e12,3.82635e12,5.5656e12   # USER 11-06 his SMR: 128^2 at 20-35, 256^2 at 35-55, 128^2 at 55-80 Rsun
+merge_lat_f              = 2,1,2
+merge_lat_mom            = rigid
+merge_lat_diag           = 1000
+split_c2p_once = true   # FRESHPREP
+am_transport   = true         # [OURS] numerical default kept (user 11-04); Athena++ (his code) has none
+sp_x2_periodic_image = true   # theta-periodic wedge: seam mass/energy fix (mass_1009)
+eos = general   # FRESHPREP
+rad_signal_speed = true
+gamma       = 1.6666666666666667
+reconstruct = plm
+rsolver     = hllc             # paper: HLLC
+fofc        = false            # USER 11-06: as Linhao (no FOFC)
+etotgrav    = true
+wellbalance_dynamic = false      # paper: no well-balanced scheme
+dfloor = 6.15245e-14   # FRESHPREP
+pfloor  = 8.9014e-3              # his: 1e-12 x rho_unit c_s,unit^2
+dfloor_keep_velocity = true
+vceil   = 1.0e8
+wall_wb_onesided = true   # FRESHPREP
+floor_pay = rad_column   # FRESHPREP
+general_eos = gamma   # FRESHPREP
+tfloor = 426521110068.0391   # FRESHPREP
+<rad_m1>
+clean_stag_thinf = true
+clean_maxit = 800
+time2_enth_be            = true           # [RT] = the 10-14 binary's fresh default (named)
+time2_fref_wacc          = true           # [RT] inert (force_reference = none)
+vet_gd_twin_state        = mean   # needed with twin off
+vet_gd_twin_weight       = none           # FIN3 (prodswitch-1013, fin3-1012)
+vet_interp               = auto           # FIN3 (prodswitch-1013, fin3-1012)
+vet_col_lat_cut_thin     = 1.0            # FIN3 (prodswitch-1013, fin3-1012)
+vet_bc_inner             = auto           # FIN3 (prodswitch-1013, fin3-1012)
+vet_bc_reflect           = auto           # FIN3 (prodswitch-1013, fin3-1012)
+vet_source               = relaxed        # FIN3 (prodswitch-1013, fin3-1012)
+time2_start              = be             # FIN
+time2_vstage             = true           # FIN
+time2_pred_cap           = 0.5            # FIN
+time2_vet_col_source     = blend          # FIN (X sporder-1012)
+implicit_gas_src         = conservative2  # FIN (consfix-1011; full BSG OK, DeltaAI 3363656)
+vet_seg                  = jump           # FIN (coreL-1012; was emit)
+vet_bc_diff              = face           # FIN
+vet_gd_symref            = none   # USER 11-06 twin off, as R136a1
+vet_source_noesrc_h2be   = true           # bsgrec-R
+vet_gd_allow_clamp       = true           # [OURS-BIN] binary compatibility, not physics: the 10-14 binaries clamped the vet_gd lateral reach silently (band 64, needs 102); prod-1102 FATALs unless allowed (as bsgma-1104)
+vet_gd_halo_ipc          = true           # Caltech: single node, 2 H200 x 8 blocks (CUDA IPC; speed-only, bitwise: smoke arm Coff)
+vet_gd_twin_fuse         = false  # twin off, as R136a1
+vet_gd_twin_lowmem       = true           # Caltech: 8 blocks/GPU, as your BSG fin3 deck (bitwise vs false per DeltaAI mem2)
+vet_gd_twin_det          = true   # accel-1009: fixed-order twin shell means (GPU run-to-run bitwise)
+vet_gd_twin = false   # FRESHPREP
+implicit_pos_floor_solve = true   # F3 (needs implicit_pos_floor = true)
+vet_scatter_form         = ma     # paper split (Jiang 2021 eq. 6)
+vet_scatter_j            = relaxed
+vet_scatter_kappa_e      = const  # paper: ideal gas mu 0.62, kappa_es const (NOT eos)
+report_newton_fb = false   # rc-1009: no per-step iw host copy (F4 counters keep the count)
+c_light          = 2.99792458e10
+arad = 2.2794875902e-47   # FRESHPREP
+chat_over_c      = 1.0
+closure          = vet_col          # vet_gd rides on the vet_col interface; vet_gd_replace drops the vet_col sweep
+vet_gd           = true
+vet_scatter      = true           # Ma+2026 kappa_a/kappa_e split in the closure source (Jiang 2021 eq. 6, form ma; VET_SCATTER.md: <= 6e-6 effect)
+vet_gd_replace   = true
+vet_col_lat_taucut = 30.0
+# vet_gd_rotate_every = 10  # bsgprod-1012: DROPPED (vet_gd_rotate_dt in this block = the physical clock)
+vet_col_lat_offdiag = operator       # T5wihc
+vet_gd_tangential = true   # FRESHPREP
+vet_gd_wall_interp  = true           # T5wihc
+vet_gd_halo_compact = 2              # T5wihc
+opacity          = table
+temp_unit_kelvin = 7.4087774917e-09   # FRESHPREP
+rho_unit_cgs     = 1.0
+kappa_unit       = 1.0
+e_floor          = 1.0e-4
+coupling         = true
+gas_feedback     = true
+force_reference = none     # full M1 radiation force (no WB pair)
+transport        = implicit
+implicit_lin_maxit = 200
+implicit_resid_fatal = 1.0e-2
+implicit_maxit   = 200
+implicit_enthalpy = plm
+implicit_predictor = step
+implicit_pos_gas = true   # FRESHPREP
+implicit_pos_floor = true
+time_scheme              = hesdirk2       # FIN (was be in the 10-09 hr deck)
+vet_col_every    = 1
+marshak_q        = 0.5
+implicit_bc_x1min = flux   # FRESHPREP
+implicit_flux_x1min = 2.2942145641e+13   # FRESHPREP
+implicit_bc_x1max   = marshak
+implicit_flux_x1max = 0.0
+scheme = clean   # FRESHPREP
+clean_layout = staggered   # FRESHPREP
+clean_rays = sc   # FRESHPREP
+time2_face_fct = true   # FRESHPREP
+zalesak_active = true   # FRESHPREP
+clean_xt_exact = cons   # FRESHPREP
+implicit_pos_floor_cons = true   # FRESHPREP
+implicit_pos_floor_gas_keep = 1   # FRESHPREP
+implicit_pos_gas_cons = true   # FRESHPREP
+clean_stag_xdonor = lag   # FRESHPREP
+clean_stag_xsrc = true   # FRESHPREP
+clean_stag_mg_color = mirror   # FRESHPREP
+time2_k1_redist = 0   # FRESHPREP
+time2_auto_be = 16   # FRESHPREP
+time2_stage_local_be = false   # FRESHPREP
+implicit_predictor_tcap = 1.1   # FRESHPREP
+time2_k1_stiff = 0   # FRESHPREP
+clean_conv_kappa = 1.0   # FRESHPREP
+cs_vertex_mono = true   # FRESHPREP
+cs_cross_mono = true   # FRESHPREP
+clean_init = steady   # FRESHPREP
+vet_rotate_avg_ema = 0   # FRESHPREP
+clean_cs_lz_tel = false   # FRESHPREP
+vet_gd_ls = 10   # FRESHPREP
+vet_rotate_avg = 0   # FRESHPREP
+vet_gd_rotate_dt = 0   # FRESHPREP
+<problem>
+he_seed_band = old   # FRESHPREP
+he_seed = 0.0   # FRESHPREP
+he_ic_linhao = true   # FRESHPREP
+he_ic_linhao_file = FRESH_DIR/bsg/linhao_profile_full.txt   # FRESHPREP
+he_ic_linhao_amp = 0.05   # FRESHPREP
+he_ic_linhao_rho_thr     = 6.15245e-7     # his rho > 0.01 code x density_unit 6.15245e-5 (his athinput.bsg_star.rusty)
+he_ic_linhao_seed_group = true   # lhxseed-1106: one deviate per merged group, as his coarse cells
+he_ic_linhao_rng         = 0              # splitmix64(global cell index) seed
+he_ic_linhao_gconst      = 6.67408e-8     # Athena++ Constants::grav_const_cgs (his g(rmax) = G M_rmax / rmax^2)
+he_ic_linhao_gext        = invsq          # [USER 11-04] atmosphere above rmax hydrostatic in GM/r^2 (his cpp:429 r^+2 = r2)
+he_bc_linhao = false   # FRESHPREP
+he_ic_rad_gas            = column         # ORIGINAL IC
+he_ic_rad_hse            = false          # ORIGINAL IC
+he_ic_rad                = file           # ORIGINAL IC (fresh default sph1d)
+he_ic_eint_from_t        = false          # ORIGINAL IC (PIN defaults-1009)
+user_srcs   = true
+user_bcs    = true
+user_hist   = true
+he_gm = 2.62502e27   # FRESHPREP
+he_gravity = pointmass   # Athena++ point-mass source (bsg-truerepro-1008)
+he_ic_file = FRESH_DIR/bsg/ic_ma2026_f0.txt   # FRESHPREP
+he_opac_table = FRESH_DIR/bsg/rosseland_ma2026_x0.7_z0.008_padded.txt   # FRESHPREP
+he_planck_table = FRESH_DIR/bsg/planck_ma2026_x0.7_z0.008_padded.txt   # FRESHPREP
+he_nfine    = 262144
+he_tau_int  = 1.0
+he_ic_cols  = 5
+he_wall_zero_flux = true   # FRESHPREP
+he_ic_balance = false            # the Ma IC AS IS (paper: no re-balance)
+mlt_flux_frozen = false          # radiative-only IC, no MLT deposit
+he_wall_closed = true   # FRESHPREP
+mlt_closure    = frozen
+he_grid_dump   = true
+he_bc_outer = copy     # [HIS] cpp:916-931 with he_bc_outer_r2 below
+he_bc_outer_r2 = true  # [HIS] Outflow_X1: outflow ghost rho ~ r^-2 (cpp:925), inflow rho copy + v_r 0
+he_bc_inner = wall   # FRESHPREP
+<output1>
+file_type   = hst
+dt          = 1000.0
+data_format = %24.16e
+dcycle = 1   # FRESHPREP
+<output2>
+bin_double = true   # mkdeck (bsgnv_1107)
+file_type = bin
+variable  = hydro_w
+dt = 4.32e4                      # 0.5 d
+dcycle = 25   # FRESHPREP
+<output3>
+bin_double = true   # mkdeck (bsgnv_1107)
+file_type = bin
+variable  = m1
+dt = 4.32e4
+dcycle = 25   # FRESHPREP
+<output4>
+file_type = log
+dt = 1e30   # FRESHPREP
+<output5>
+file_type = rst
+dt = 8.64e4                      # 1 d
+dcycle = 25   # FRESHPREP
+<output6>
+bin_double = true   # mkdeck (bsgnv_1107)
+file_type = bin
+variable  = m1_vet
+dt = 1e30   # FRESHPREP
+<output7>
+bin_double = true   # mkdeck (bsgnv_1107)
+file_type = bin
+variable  = m1_face       # face fluxes fx1/fx1o/fx2/fx3: the thin-atmosphere check (TRUEREPRO.md sect. atm)
+dt = 1e30   # FRESHPREP
