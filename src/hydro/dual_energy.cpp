@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdio>
 #include <iostream>
+#include <sstream>
 #include <string>
 
 #include "athena.hpp"
@@ -285,9 +286,11 @@ void DualEnergy::Report(MeshBlockPack *pp) {
   MPI_Allreduce(MPI_IN_PLACE, c, DC_NCNT, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
   if (global_variable::my_rank != 0) return;
+  std::ostringstream os;   // (its own precision: std::cout's is set elsewhere)
+  os.precision(10);
   for (int h = 0; h < 2; ++h) {
     const int b = h ? DC_REFRESH : 0;
-    std::cout << "<" << blk << "> floor_audit cycle " << cyc << (h ? " [refresh]" :
+    os << "<" << blk << "> floor_audit cycle " << cyc << (h ? " [refresh]" :
               " [update]") << " cell-c2p " << c[b+DC_N] << " e_c<=0 " << c[b+DC_LE0]
               << " kedom " << c[b+DC_KEDOM] << " sub_tfloor " << c[b+DC_SUBT]
               << " sub_edge " << c[b+DC_SUBEDGE] << " dual " << c[b+DC_SEL]
@@ -299,10 +302,11 @@ void DualEnergy::Report(MeshBlockPack *pp) {
               << c[b+DC_SKIP] << " above_table_top " << c[h ? DC_TOPE_R : DC_TOPE_U]
               << std::endl;
   }
-  std::cout << "<" << blk << "> floor_audit cycle " << cyc << " pay: paid " << c[DC_PAID]
+  os << "<" << blk << "> floor_audit cycle " << cyc << " pay: paid " << c[DC_PAID]
             << " unpaid " << c[DC_UNPAID] << " given_to_rad " << c[DC_GIVEN]
             << " cells " << c[DC_NPAY] << " | fofc_retest: retested " << c[DC_RETEST]
             << " unflagged " << c[DC_UNFLAG] << std::endl;
+  std::cout << os.str() << std::flush;
 }
 
 //----------------------------------------------------------------------------------------
