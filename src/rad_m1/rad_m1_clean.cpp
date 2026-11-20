@@ -13,6 +13,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <iostream>
 #include <limits>
@@ -1091,6 +1092,34 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
 
 TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (dbg_eaudit) {EAuditMark(2);}   // PROF study (output only)
+  // PROF study (output only, env PROF_U): U = sum (gas IEN + E) V over active cells
+  auto profu = [&](const char *tag) {
+    if (std::getenv("PROF_U") == nullptr) return;
+    auto &id = pmy_pack->pmesh->mb_indcs;
+    const int pis = id.is, pjs = id.js, pks = id.ks;
+    const int pni = id.nx1, pnj = id.nx2, pnk = id.nx3;
+    FluidRef pfl = FluidRef::Get(pmy_pack);
+    auto puh = pfl.u0; auto pur = u0; auto pv = pmy_pack->pcoord->volume;
+    const bool phy = pfl.on;
+    Real su = 0.0, se = 0.0;
+    Kokkos::parallel_reduce("prof_u", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+        pmy_pack->nmb_thispack*pnk*pnj*pni),
+    KOKKOS_LAMBDA(const int n, Real &a, Real &b) {
+      const int m = n/(pnk*pnj*pni), k = (n/(pnj*pni))%pnk + pks;
+      const int j = (n/pni)%pnj + pjs, i = n%pni + pis;
+      const Real v = pv(m,k,j,i);
+      a += (phy ? puh(m,IEN,k,j,i) : 0.0)*v; b += pur(m,M1_E,k,j,i)*v;
+    }, Kokkos::Sum<Real>(su), Kokkos::Sum<Real>(se));
+    Real g[2] = {su, se};
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, g, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::printf("PROF U cycle %d t2s %d %s gas %.17e rad %.17e\n",
+                  pmy_pack->pmesh->ncycle, t2_solve, tag, g[0], g[1]);
+    }
+  };
+  profu("in");
   if (!cln_init) CleanInit();
   // the vet_gd direction set before any use (the consistency term reads it at the first
   // solve of a restart, before any ray build)
@@ -1142,6 +1171,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   CleanStagKReal();   // (clean_stag_kreal: the kick E can pay, the rest deferred)
   CleanOldVector();
   CleanStagKPos();   // (clean_stag_kpos: the increment in Patankar form)
+  profu("old");
   if (cell) {
     CleanCellOldVector();
     CleanCellFaceCoefficients();
@@ -1402,7 +1432,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   } else {
     // (a failed solve or a probe does not change the energy flux's memory)
     cln_dok = (nit >= 0) && !t2_inprobe;
+    profu("prewb");
     CleanWriteBack();
+    profu("wb");
   }
   // a write-back that leaves gas eint < 0 (energy for the fluid floor to create) is
   // rejected like a failed solve (the stage is redone by backward Euler, a
@@ -1463,6 +1495,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     }
   }
   if (fpc) dbg_rst_fp_done = true;
+  profu("out");
   if (dbg_eaudit) {EAuditMark(3);}   // PROF study (output only)
   return TaskStatus::complete;
 }
