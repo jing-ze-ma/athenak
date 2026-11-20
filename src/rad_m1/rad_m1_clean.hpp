@@ -329,6 +329,7 @@ struct CleanArgs {
   DvceArray5D<Real> u;         // cell vectors of the cell layout (CLC_*)
   DvceArray5D<Real> ff;        // face fluxes, 4 per direction (ffon: CleanCellDivergence)
   bool ffon = false;
+  bool czb = false;            // CONSERV study (env CONSERV_ZB): no torque-form flux at open r bnd
   Real h, c, idx[3];           // stage step, light speed, inverse cell widths
   int bc[6];                   // boundary types x1min, x1max, ..., x3max
   DvceArray2D<BoundaryFlag> mbc;  // boundary flags of the six faces of each MeshBlock
@@ -1200,6 +1201,7 @@ Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m
         const int jh = (jj > j && !up) ? j : jj, ih = (ii > i && !up) ? i : ii;
         const int jo = jj - (b == 1), io = ii - (b == 0);
         const int jw = (jo < j && !dn) ? j : jo, iw = (io < i && !dn) ? i : io;
+        if (x.czb && b == 0 && ((ii > i && !up) || (io < i && !dn))) return 0.0;  // CONSERV
         return 0.25*(de(k,jh,ih) + de(k-1,jh,ih) + de(k,jw,iw) + de(k-1,jw,iw));
       };
       if (b == 0) {

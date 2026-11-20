@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <bitset>
 #include <cmath>
+#include <cstdlib>
 #include <cstdint>
 #include <cstdio>
 #include <functional>
@@ -55,6 +56,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.u = cln_x;
   x.h = dt_sub;
   x.c = c_light;
+  x.czb = std::getenv("CONSERV_ZB") != nullptr;   // CONSERV study
   x.idx[0] = 1.0/size.h_view(0).dx1;
   x.idx[1] = 1.0/size.h_view(0).dx2;
   x.idx[2] = 1.0/size.h_view(0).dx3;
