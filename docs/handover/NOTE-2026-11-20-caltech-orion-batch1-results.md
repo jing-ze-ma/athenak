@@ -386,3 +386,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - (10:41) Got f161f65ca: LF_rsg / LX_rsg (3000 cyc, TL 300) queued on the single nodes after R_* / RZ3m / K_on_rsg and before L2_rsg; LF_hg / LX_hg (1500 cyc, 2x4, TL 180) take the 2-node slots after H_xl / K_on_hg, before the L2_hg pair. Reservation noted: from 11-21 13:00 PST ~2 nodes kept free (nothing will be started that runs past then); no production runs from our side.
 - L1_rsg_on (hpc-sm-01-11): rc=1 wall=8543 | cycles 589788 - 592299 | steady 3.222 s/cycle | GPU MiB max 110563 min 109593 | CW a 40 FATAL 1 |  CW 40 | retry 38 | last cycle cycle=592299
   FAILED: last 100 lines in caltech_results/L1_rsg_on/FAIL_tail100.txt
+- L1_rsg_off (hpc-sm-02-11): rc=0 wall=10254 | cycles 589788 - 592788 | steady 3.394 s/cycle | GPU MiB max 108943 min 107973 | CW a 50 FATAL 0 |  CW 50 | retry 52 | last cycle cycle=592788
