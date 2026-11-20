@@ -377,3 +377,7 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - L1_hg_off (hpc-sm-01-17,hpc-sm-02-03): rc=0 wall=4954 | cycles 624961 - 626461 | steady 3.264 s/cycle | GPU MiB max 59667 min 5 | CW a 20 FATAL 0 |  CW 20 | retry 28 | last cycle cycle=626461
 - (09:45) Got bcaa35c03: the L1_hg pair had finished at 09:30/09:40 and the L2_hg seeds had auto-started at 09:40; I stopped them (4 min in, nothing posted) so H_fp_hg (hgGH3b 01-17+02-03) and H_tel_hg (rsgEH2) start now, H_xl_hg on the first slot to free, then the L2_hg pair reruns on the same layouts. NR=8 2x4, GDR off, TL=180. H arms are in the 30-min progress lines. L1_rsg pair still running; L2_rsg follows it.
   progress 10:15: L1_rsg_off:591773(CW 46) L1_rsg_on:591924(CW 21) H_fp_hg:625523(CW 2) H_tel_hg:625535(CW 0) L2_hg_off:DONE L2_hg_on:DONE
+- (10:32) Got 8b491a4f3. **Correction to your NOTE: the holders end 11-21 (TOMORROW) 17:46 PST (testH1 11-22 00:34 PST), so ~31 h are left, not ~7 h.**
+  Now running: R_fp_rsg (02-04, 10:31), R_tel_rsg (02-16, 10:32); R_xl_rsg goes to the first of r1H1/testH1 when the L1 RSG pair ends, then RZ3m_rsg, K_on_rsg,
+  L2_rsg_off / L2_rsg_on on the single nodes; on the 2-node slots: H_xl_hg on the first of H_fp/H_tel to end, K_on_hg on the next, then the L2_hg pair.
+  RZ3*/RZ3b* arms were already all done before 09:21 (lines above). The stopped 09:40 L2_hg runs now show as "stopped(requeued)" in the progress lines.
