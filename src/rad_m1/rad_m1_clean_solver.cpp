@@ -253,9 +253,10 @@ void RadiationM1::CleanGhostDefer(DvceArray5D<Real> a, const int c0, const int n
 
 // (a range lies in one of the two arrays: CLW_NS)
 void RadiationM1::CleanGhostFill(const CleanW &a, const int c0, const int nc,
-                                 const int part, const int dep) {
-  CleanGhostFill((c0 < a.ns) ? a.s : a.o, (c0 < a.ns) ? c0 : c0 - a.ns, nc, true, part,
-                 dep);
+                                 const int part, const int dep,
+                                 const std::array<uint32_t, 4> fm) {
+  CleanGhostFillT((c0 < a.ns) ? a.s : a.o, (c0 < a.ns) ? c0 : c0 - a.ns, nc, true, part,
+                  dep, fm);
 }
 
 void RadiationM1::CleanGhostDefer(const CleanW &a, const int c0, const int nc) {
@@ -271,10 +272,15 @@ void RadiationM1::CleanGhostFlush() {
 
 template <typename T>
 void RadiationM1::CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc,
-                                  const bool phys, const int part, const int dep) {
+                                  const bool phys, const int part, const int dep,
+                                  const std::array<uint32_t, 4> fm) {
   if (nc > cln_hmax) {   // (the exchange moves at most clean_halo_vars variables at once)
-    CleanGhostFillT(a, c0, cln_hmax, phys, 0, dep);
-    CleanGhostFillT(a, c0 + cln_hmax, nc - cln_hmax, phys, 0, dep);
+    const int h = cln_hmax;
+    // (a full mask stays full for every chunk)
+    auto sh = [&](const uint32_t m) {return (m == ~0u || h >= 32) ? m : m >> h;};
+    CleanGhostFillT(a, c0, h, phys, 0, dep, fm);
+    CleanGhostFillT(a, c0 + h, nc - h, phys, 0, dep, {sh(fm[0]), sh(fm[1]), sh(fm[2]),
+                                                       sh(fm[3])});
     return;
   }
   std::vector<CleanGSeg<T>> sg;
@@ -286,7 +292,7 @@ void RadiationM1::CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc,
     if (part == 2) return CleanGhostExchange(sg, 2);
   }
   CleanGhostFlush();   // (those that do not fit: on their own first)
-  sg.push_back({a, c0, nc, phys, dep});
+  sg.push_back({a, c0, nc, phys, dep, fm});
   CleanGhostExchange(sg, part);
   if constexpr (std::is_same<T, Real>::value) {
     if (part == 1) cln_hpend.swap(sg);
