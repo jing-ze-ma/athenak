@@ -539,6 +539,8 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   }
   t2_ksplit = pin->DoesParameterExist("rad_m1", "time2_ksplit") &&
               pin->GetBoolean("rad_m1", "time2_ksplit");   // ksplit-1120 (study)
+  t2_realmap_r0 = pin->DoesParameterExist("rad_m1", "time2_realmap_r0") ?   // realz
+                  pin->GetReal("rad_m1", "time2_realmap_r0") : 7.9468e12;
   // stiffk1-1029: <rad_m1>/time2_k1_stiff = s (default 0 = off, bitwise)
   t2_k1stiff = 0.0;
   if (pin->DoesParameterExist("rad_m1", "time2_k1_stiff")) {
@@ -1957,6 +1959,125 @@ void RadiationM1::Time2KSplit(int stage, Real c1, Real c2) {
                   "Phi/(c maxE) >1 %.0f >10 %.0f max %.3e | cells %.0f: |Fcell|/(cE) >1 %.0f "
                   ">10 %.0f max %.3e (>10 at floor %.0f)\n", pmy_pack->pmesh->ncycle, r[0],
                   r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11]);
+    }
+    const Real rmx_ = r[3], pmx_ = r[6];
+    // realz-1120 (study): where the unrealisable faces are.  Sets T (all interior faces),
+    // A (F/(c maxE) > 1), B (> 10), P (Phi/(c maxE) > 1); per set histograms of the face
+    // direction (3), radius r/r0 (8: 0.5 0.9 0.99 1.01 1.04 1.2 2), log10 min rho of the
+    // two cells (6: -16 -14 -12 -10 -8), log10 max tau = op_T V/A of the two cells (6: -6
+    // -4 -2 0 2), log10 Emax/Emin (6: 0.3 1 2 4 8), and counts Emin <= 1.001 E_floor,
+    // Emin <= 0, F > c max E of the four cells of the line (2 beyond), F^H opposite to
+    // the E gradient (F (E_L - E_R) < 0)
+    {
+      constexpr int NS = 36, NM = 4;
+      Kokkos::View<Real*> hm("m1_t2_realmap", NS*NM + 16);
+      auto opr = opac;
+      const Real r0 = t2_realmap_r0;
+      auto uh_ = ug;
+      auto xv1 = pmy_pack->pcoord->x1v;
+      auto vv = vol;
+      auto a1 = ar1, a2 = ar2, a3 = ar3;
+      const bool cv = curv;
+      par_for("m1_t2_realmap", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const auto &sz = mbsize.d_view(m);
+        const Real rr = (xv1.extent_int(1) > ie ? xv1(m,i) :
+                         sz.x1min + (i - is + 0.5)*sz.dx1)/r0;
+        const Real e = u0_(m,M1_E,k,j,i);
+        for (int d = 0; d < 3; ++d) {
+          if ((d == 1 && !tr2) || (d == 2 && !tr3)) {continue;}
+          if ((d == 0 && i == is) || (d == 1 && j == js) || (d == 2 && k == ks)) continue;
+          const int dk = (d == 2), dj = (d == 1), di = (d == 0);
+          const Real el = u0_(m,M1_E,k-dk,j-dj,i-di);
+          const Real emx = fmax(fmax(e, el), 1.0e-300), emn = fmin(e, el);
+          const Real f = (d == 0) ? g1_(m,k,j,i) : ((d == 1) ? g2_(m,k,j,i) : g3_(m,k,j,i));
+          const Real rf = fabs(crp*f)/(cl*emx), rp = fabs(p1_(m,d,k,j,i))/(cl*emx);
+          auto tau = [&](const int kk, const int jj, const int ii) {
+            Real a = (d == 0) ? a1(m,kk,jj,ii) : ((d == 1) ? a2(m,kk,jj,ii) : a3(m,kk,jj,ii));
+            Real dx = (cv && a > 0.0) ? vv(m,kk,jj,ii)/a :
+                      ((d == 0) ? sz.dx1 : ((d == 1) ? sz.dx2 : sz.dx3));
+            return opr(m,M1_OP_T,kk,jj,ii)*dx;
+          };
+          const Real tu = fmax(tau(k, j, i), tau(k-dk, j-dj, i-di));
+          const Real rho = fmin(uh_(m,IDN,k,j,i), uh_(m,IDN,k-dk,j-dj,i-di));
+          const Real e4 = fmax(emx, fmax(u0_(m,M1_E,k+dk,j+dj,i+di),
+                                         u0_(m,M1_E,k-2*dk,j-2*dj,i-2*di)));
+          auto bin = [](const Real v, const Real *ed, const int n) {
+            int b = 0;
+            while (b < n && v >= ed[b]) ++b;
+            return b;
+          };
+          const Real er[7] = {0.5, 0.9, 0.99, 1.01, 1.04, 1.2, 2.0};
+          const Real ed1[5] = {-16.0, -14.0, -12.0, -10.0, -8.0};
+          const Real ed2[5] = {-6.0, -4.0, -2.0, 0.0, 2.0};
+          const Real ed3[5] = {0.3, 1.0, 2.0, 4.0, 8.0};
+          const int br = bin(rr, er, 7);
+          const int bd = bin(log10(fmax(rho, 1.0e-300)), ed1, 5);
+          const int bt = bin(log10(fmax(tu, 1.0e-300)), ed2, 5);
+          const int bc = (emn > 0.0) ? bin(log10(emx/emn), ed3, 5) : 5;
+          const bool in[NM] = {true, rf > 1.0, rf > 10.0, rp > 1.0};
+          for (int s = 0; s < NM; ++s) {
+            if (!in[s]) continue;
+            const int o = NS*s;
+            Kokkos::atomic_add(&hm(o + d), 1.0);
+            Kokkos::atomic_add(&hm(o + 3 + br), 1.0);
+            Kokkos::atomic_add(&hm(o + 11 + bd), 1.0);
+            Kokkos::atomic_add(&hm(o + 17 + bt), 1.0);
+            Kokkos::atomic_add(&hm(o + 23 + bc), 1.0);
+            if (emn <= 1.001*efl) Kokkos::atomic_add(&hm(o + 29), 1.0);
+            if (emn <= 0.0) Kokkos::atomic_add(&hm(o + 30), 1.0);
+            if (fabs(crp*f) > cl*e4) Kokkos::atomic_add(&hm(o + 31), 1.0);
+            if (f*(el - e) < 0.0) Kokkos::atomic_add(&hm(o + 32), 1.0);
+            if ((f > 0.0 ? el : e) < (f > 0.0 ? e : el)) Kokkos::atomic_add(&hm(o + 33), 1.0);
+          }
+          // (the worst face: r/r0, rho, tau, E_L, E_R, F (c units), Phi, dir)
+          if (rf >= 0.999999*rmx_ && rmx_ > 0.0) {
+            const int o = NS*NM;
+            hm(o) = rr, hm(o+1) = rho, hm(o+2) = tu, hm(o+3) = el, hm(o+4) = e;
+            hm(o+5) = crp*f/cl, hm(o+6) = p1_(m,d,k,j,i)/cl, hm(o+7) = d;
+            hm(o+8) = u0_(m,M1_E,k-2*dk,j-2*dj,i-2*di), hm(o+9) = u0_(m,M1_E,k+dk,j+dj,i+di);
+          }
+          if (rp >= 0.999999*pmx_ && pmx_ > 0.0) {
+            const int o = NS*NM + 10;
+            hm(o) = rr, hm(o+1) = rho, hm(o+2) = tu, hm(o+3) = el, hm(o+4) = e;
+            hm(o+5) = p1_(m,d,k,j,i)/cl;
+          }
+        }
+      });
+      auto hh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hm);
+      std::vector<Real> h(NS*NM + 16);
+      for (int n = 0; n < NS*NM + 16; ++n) h[n] = hh(n);
+#if MPI_PARALLEL_ENABLED
+      MPI_Allreduce(MPI_IN_PLACE, h.data(), NS*NM, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+      if (global_variable::my_rank == 0) {
+        const char *nm[NM] = {"T", "A", "B", "P"};
+        for (int s = 0; s < NM; ++s) {
+          const Real *q = &h[NS*s];
+          std::printf("CLEAN REALMAP cycle %d %s | dir %.0f %.0f %.0f | r %.0f %.0f %.0f %.0f "
+                      "%.0f %.0f %.0f %.0f | rho %.0f %.0f %.0f %.0f %.0f %.0f | tau %.0f %.0f "
+                      "%.0f %.0f %.0f %.0f | con %.0f %.0f %.0f %.0f %.0f %.0f | Efl %.0f E<=0 "
+                      "%.0f >cE4 %.0f antigrad %.0f fromlow %.0f\n", pmy_pack->pmesh->ncycle,
+                      nm[s], q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7], q[8], q[9], q[10],
+                      q[11], q[12], q[13], q[14], q[15], q[16], q[17], q[18], q[19], q[20],
+                      q[21], q[22], q[23], q[24], q[25], q[26], q[27], q[28], q[29], q[30],
+                      q[31], q[32], q[33]);
+        }
+      }
+      // (the worst faces live on one rank: each rank prints its own if it has them)
+      if (h[NS*NM+5] != 0.0) {
+        const Real *q = &h[NS*NM];
+        std::printf("CLEAN REALMAP worst F rank %d: r/r0 %.5f rho %.3e tau %.3e E_L %.3e "
+                    "E_R %.3e F/c %.3e Phi/c %.3e dir %.0f E_LL %.3e E_RR %.3e\n",
+                    global_variable::my_rank, q[0], q[1], q[2], q[3], q[4], q[5], q[6],
+                    q[7], q[8], q[9]);
+      }
+      if (h[NS*NM+15] != 0.0) {
+        const Real *q = &h[NS*NM+10];
+        std::printf("CLEAN REALMAP worst Phi rank %d: r/r0 %.5f rho %.3e tau %.3e E_L %.3e "
+                    "E_R %.3e Phi/c %.3e\n", global_variable::my_rank, q[0], q[1], q[2],
+                    q[3], q[4], q[5]);
+      }
     }
   }
   auto ah = Kokkos::create_mirror_view_and_copy(HostMemSpace(), acc);

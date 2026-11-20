@@ -2701,6 +2701,7 @@ class RadiationM1 {
   bool t2_ffct_swp = false;
   void Time2FaceFct(int stage, Real c1, Real c2);
   bool t2_ksplit = false;   // ksplit-1120 study: time2_ksplit (CLEAN KSPLIT print)
+  Real t2_realmap_r0 = 1.0;   // realz-1120 study: CLEAN REALMAP radius unit
   void Time2KSplit(int stage, Real c1, Real c2);
   // facebound-1112 <rad_m1>/implicit_fclip_diag (read only when named; diagnostic only,
   // nothing written back): where the write-back's realisability clip |F| <= c E comes

@@ -3856,6 +3856,12 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
   const int nsw = (cub && !cln_fschur) ? 64 : std::max(cln_fsweeps, 1);
   const bool tie = cub ? cln_fschur : cln_ftie;
   const bool fov = !cub && nsw == 1;
+  // realz-1120 (study, time2_ksplit): the write-back solve's faces with
+  // |F| > c max(X) split by the part of the row that carries them (CLEAN REALF)
+  const bool rfo = t2_ksplit && e == CLW_X;
+  Kokkos::View<Real*> rfd;
+  if (rfo) rfd = Kokkos::View<Real*>("m1_realf", 48);
+  const Real rcl = c_light, rcp = chat/c_light, refl = e_floor;
   Real fsd = 0.0, fsf = 0.0;
   for (int q = 0; q < (2 + nsw)*x.nf; ++q) {
     const int dir = q%x.nf, ph = std::min(q/x.nf, 1) + (q >= (1 + nsw)*x.nf);
@@ -4131,7 +4137,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
     if (cub && q == (1 + nsw)*x.nf) CleanStagFCsShared();
     if (ph == 2) {
       // F and the dissipation term of every face
-      const CleanArgs *px = CleanDevArgs(x, 0);
+      const CleanArgs *px = CleanDevArgs(x, 0), *pxh3 = CleanDevArgs(xh, 1);
       auto f3 = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
         const Real f = cub ? fc(m,CLF_N+2,k,j,i) : x.w(m,CleanFLine::Cy(dir),k,j,i);
@@ -4146,8 +4152,53 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
           fc(m,CLF_N+3,k,j,i) += dd;
           if (kd > 0) fc(m,kd,k,j,i) = dd/x.h;
         }
+        const Real fhr = fc(m,CLF_N,k,j,i);   // (F^H, before it is replaced: realz)
         fc(m,CLF_N,k,j,i) = f;
         fc(m,CLF_N+2,k,j,i) = f;
+        if (rfo) {
+          const Real xl = x.w(m,e,k-dk,j-dj,i-di), xr = x.w(m,e,k,j,i);
+          const Real cx = rcl*fmax(fmax(xl, xr), 1.0e-300)/rcp;
+          const Real cxo = rcl*fmax(fmax(x.w(m,CLW_EO,k-dk,j-dj,i-di),
+                                         x.w(m,CLW_EO,k,j,i)), 1.0e-300)/rcp;
+          const Real rf = fabs(f)/cx;
+          if (rf > 1.0) {
+            const Real gr = CleanFaceFlux(*pxh3, e, dir, m, k, j, i, false);
+            const Real tg = fc(m,CLF_TH,k,j,i)*fc(m,CLF_G,k,j,i);
+            const Real sr = fhr - gr - tg;
+            for (int s = 0; s < 2; ++s) {
+              if (s == 1 && rf <= 10.0) break;
+              const int o = 24*s;
+              Kokkos::atomic_add(&rfd(o), 1.0);
+              if (fabs(fhr) > cx) Kokkos::atomic_add(&rfd(o+1), 1.0);
+              if (fabs(tg) > cx) Kokkos::atomic_add(&rfd(o+2), 1.0);
+              if (fabs(gr) > cx) Kokkos::atomic_add(&rfd(o+3), 1.0);
+              if (fabs(sr) > cx) Kokkos::atomic_add(&rfd(o+4), 1.0);
+              if (fabs(fc(m,CLF_G,k,j,i)) > cx) Kokkos::atomic_add(&rfd(o+5), 1.0);
+              if (fabs(f) > fabs(fhr)) Kokkos::atomic_add(&rfd(o+6), 1.0);
+              if (f*fhr < 0.0) Kokkos::atomic_add(&rfd(o+7), 1.0);
+              if (fmin(xl, xr) <= 1.001*refl) Kokkos::atomic_add(&rfd(o+8), 1.0);
+              if (fabs(f) > cxo) Kokkos::atomic_add(&rfd(o+9), 1.0);
+              if (dir == 0) Kokkos::atomic_add(&rfd(o+10), 1.0);
+              if (fabs(fc(m,CLF_G,k,j,i)) > cxo) Kokkos::atomic_add(&rfd(o+11), 1.0);
+              const Real wl = CleanSmoothStep((x.cs(m,CLN_C1,k-dk,j-dj,i-di) - c1lo)/
+                                              (c1hi - c1lo));
+              const Real wr = CleanSmoothStep((x.cs(m,CLN_C1,k,j,i) - c1lo)/(c1hi - c1lo));
+              if (fmax(wl, wr) > 0.5) Kokkos::atomic_add(&rfd(o+12), 1.0);
+              if (fc(m,CLF_TH,k,j,i) > 0.9) Kokkos::atomic_add(&rfd(o+13), 1.0);
+              Kokkos::atomic_max(&rfd(o+14), rf);
+              Kokkos::atomic_max(&rfd(o+15), fabs(fhr)/cx);
+              Kokkos::atomic_max(&rfd(o+16), fabs(tg)/cx);
+              Kokkos::atomic_max(&rfd(o+17), fabs(gr)/cx);
+              Kokkos::atomic_max(&rfd(o+18), fabs(sr)/cx);
+              Kokkos::atomic_max(&rfd(o+19), fabs(f)/cxo);
+              // (the far faces of the line: |F| <= c max E of the cells beyond?)
+              const Real fm = ln.Far(x, dir, m, k, j, i, k-dk, j-dj, i-di);
+              const Real fp = ln.Far(x, dir, m, k, j, i, k, j, i);
+              if (fabs(fm) > cx || fabs(fp) > cx) Kokkos::atomic_add(&rfd(o+20), 1.0);
+              if (fabs(fhr) <= cx && fabs(tg) <= cx) Kokkos::atomic_add(&rfd(o+21), 1.0);
+            }
+          }
+        }
         Real tl[6], tr[6];
         ln.Cell(x, dir, m, k, j, i, k-dk, j-dj, i-di, tl);
         ln.Cell(x, dir, m, k, j, i, k, j, i, tr);
@@ -4178,6 +4229,30 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
         if (ov) CleanGhostFill(cln_w, CLW_Y, 1, 2);
       };
       CleanOverlapFor("cln_fs3", pmy_pack, ov, f3, fin, dir);
+    }
+  }
+  if (rfo) {
+    auto hh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), rfd);
+    Real h[48];
+    for (int n = 0; n < 48; ++n) h[n] = hh(n);
+#if MPI_PARALLEL_ENABLED
+    for (int s = 0; s < 2; ++s) {
+      MPI_Allreduce(MPI_IN_PLACE, &h[24*s], 14, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, &h[24*s+14], 6, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, &h[24*s+20], 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    }
+#endif
+    if (global_variable::my_rank == 0) {
+      for (int s = 0; s < 2; ++s) {
+        const Real *q = &h[24*s];
+        std::printf("CLEAN REALF cycle %d t2s %d %s | n %.0f | >cX: FH %.0f thG %.0f grad %.0f "
+                    "src %.0f G %.0f | |F|>|FH| %.0f F.FH<0 %.0f Xfl %.0f >cEO %.0f radial %.0f "
+                    "G>cEO %.0f w>.5 %.0f th>.9 %.0f lineFar>cX %.0f FH,thG<=cX %.0f | max F "
+                    "%.3e FH %.3e thG %.3e grad %.3e src %.3e F/cEO %.3e\n",
+                    pmy_pack->pmesh->ncycle, static_cast<int>(t2_solve), s ? ">10" : ">1",
+                    q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7], q[8], q[9], q[10], q[11],
+                    q[12], q[13], q[20], q[21], q[14], q[15], q[16], q[17], q[18], q[19]);
+      }
     }
   }
   if (cln_ftie && tie_now) CleanStagFaceTie(e, kd);
