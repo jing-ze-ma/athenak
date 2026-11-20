@@ -4,3 +4,6 @@ FINALRST=0 ENVX=PROF_U=1 AB3_rsg B_tie-prof RSG 6 rsg_v20.keys rad_m1/dbg_energy
 FINALRST=0 ENVX=PROF_U=1 AB2_rsg B_tie-prof RSG 6 rsg_v20.keys rad_m1/dbg_energy_audit=true output1/dt=1 rad_m1/time2_face_fct=false
 FINALRST=0 ENVX=PROF_U=1 AB4_rsg B_tie-prof RSG 6 rsg_v20.keys rad_m1/dbg_energy_audit=true output1/dt=1 rad_m1/implicit_pos_gas=false
 FINALRST=0 ENVX=PROF_U=1 AB5_rsg B_tie-prof RSG 6 rsg_v20.keys rad_m1/dbg_energy_audit=true output1/dt=1 rad_m1/implicit_pos_floor_cons=false
+# added 2026-11-20 (NOTE q): priority AB7, AB6, then AB4/AB5. B_lzbook = caltech-runs/lzbook fb7a8a27f
+FINALRST=0 ENVX=PROF_U=1 AB7_rsg B_lzbook   RSG 6 rsg_v20.keys rad_m1/dbg_energy_audit=true output1/dt=1
+FINALRST=0 ENVX=PROF_U=1 AB6_rsg B_tie-prof RSG 6 rsg_v20.keys rad_m1/dbg_energy_audit=true output1/dt=1 rad_m1/force_reference_work=full
