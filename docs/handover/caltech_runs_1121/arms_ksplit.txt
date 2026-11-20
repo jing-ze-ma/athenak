@@ -14,3 +14,6 @@ FINALRST=0 KEEPBIN=1 LWl_hg     B_v20l HG 40  hg_v20.keys time/dt_retry_host=m1 
 # added 2026-11-20 (NOTE az): B_ksplit5 = caltech-runs/ksplit at c24692a3c. DROP KX001_hg if not started. In order:
 FINALRST=0 KX1d_hg   B_ksplit5 HG 6  hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/time2_k1_xlim=0.1
 FINALRST=0 KX001d_hg B_ksplit5 HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/time2_k1_xlim=0.1 rad_m1/clean_conv_kappa=0.01
+# added 2026-11-20 (NOTE ba): B_ksplit6 = caltech-runs/ksplit at f909195e0. Replaces KX001d_hg if not started. In order:
+FINALRST=0 KX1e_hg   B_ksplit6 HG 6  hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/time2_k1_xlim=0.1
+FINALRST=0 KX001e_hg B_ksplit6 HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/time2_k1_xlim=0.1 rad_m1/clean_conv_kappa=0.01
