@@ -1,0 +1,10 @@
+# v20.2 GPU gate (orion 2026-11-20, NOTE cx). Priority: after the BEAMFIX and G_on/G_off arms (before LF/LX etc.). Short (4 cycles), single nodes.
+# B_v202 = caltech-runs/v202 f4cefb18115b438349f293faffdce5a4a5965308 (v20.1 + theta-wall fix + rhse vcs_max MPI_MAX; both bitwise for production decks).
+# Same recipe/restarts as V201D_*. Expect V202_* hst == V201D_*/a bitwise; poison == plain; 0 CW.
+FINALRST=1 MODE=rt NH=2                        V202_rsg   B_v202 RSG 4 rsg_v20.keys
+FINALRST=1 ENVX=CLEAN_POISON_GHOST=1           V202P_rsg  B_v202 RSG 4 rsg_v20.keys
+FINALRST=1 MODE=rt NH=2                        V202_hg    B_v202 HG  4 hg_v20.keys time/dt_retry_host=m1
+# + floor_pay=rad_column (USER: on for all stars). Expect L/Mdot within chaos of V202_*, budget residual ~1e-8 L_in dt.
+FINALRST=1 MODE=rt NH=2                        V202F_rsg  B_v202 RSG 4 rsg_v20.keys hydro/floor_pay=rad_column
+FINALRST=1 ENVX=CLEAN_POISON_GHOST=1           V202FP_rsg B_v202 RSG 4 rsg_v20.keys hydro/floor_pay=rad_column
+FINALRST=1 MODE=rt NH=2                        V202F_hg   B_v202 HG  4 hg_v20.keys time/dt_retry_host=m1 hydro/floor_pay=rad_column
