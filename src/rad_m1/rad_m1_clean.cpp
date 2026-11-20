@@ -36,13 +36,13 @@
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
+#endif
 // M1_TU_PART: this file is compiled as 3 translation units (rad_m1_clean.cpp = part 0, rad_m1_clean_p<k>.cpp
 // = part k, see split_tu.py); every member function below is in exactly one part.
 #ifndef M1_TU_PART_N
 #define M1_TU_PART_N 0
 #endif
 #define M1_TU_PART(k) (M1_TU_PART_N == (k))
-#endif
 
 namespace radm1 {
 extern bool g_vra_adv;   // vet_rotate_advance (rad_m1_vetgd.cpp)
