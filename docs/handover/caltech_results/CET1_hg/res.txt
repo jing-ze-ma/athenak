@@ -1,0 +1,7 @@
+['main loop time (before the final outputs) = 2.714589e+01']
+CW a 0 FATAL 0 retries ['<rad_m1> time2_auto_be=16: skipped-stage BE steps=0.000000e+00 stage retries=0.000000e+00 (succeeded 0.000000e+00)']
+GPU mem peak MiB max 117277 min 116753 (n=4)
+rc=0 wall=90
+hstmd5 hegiant.hydro.hst 50479dd9a5ba79e91beb9ed0ed744e7e rows 1
+hstmd5 hegiant.user.hst c8ecfecf0d4806856f705a8d6bd2d74b rows 1
+DONE
