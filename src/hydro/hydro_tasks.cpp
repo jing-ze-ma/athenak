@@ -331,7 +331,7 @@ TaskStatus Hydro::Fluxes(Driver *pdrive, int stage) {
   // reaches the end of the step with the weight prod_{s > stage} gam0[s] (the 2S
   // register update u0 = gam0 u0 + gam1 u1 + ...; u1 is the step-start state)
   if (dual.any) {
-    if (dual.on) dual.armed = true;
+    dual.armed = true;   // (the audit splits update / refresh by it; selection needs on)
     dual.wst = 1.0;
     for (int s = stage + 1; s <= pdrive->nexp_stages; ++s) dual.wst *= pdrive->gam0[s-1];
   }

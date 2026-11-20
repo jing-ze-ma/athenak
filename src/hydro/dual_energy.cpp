@@ -155,11 +155,12 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
   const Real tmin_ = eos.TableTempMin();
   const Real tmax_ = eos.TableTempMax();
   const int nji = n2*n1, nkji = n3*nji;
-  Real s[12] = {};
+  Real s[14] = {};
+  auto x1v_ = pp->pcoord->x1v;
   Kokkos::parallel_reduce("duale_post", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),
   KOKKOS_LAMBDA(const int &idx, Real &s0, Real &s1, Real &s2, Real &s3, Real &s4,
                 Real &s5, Real &s6, Real &s7, Real &s8, Real &s9, Real &s10,
-                Real &s11) {
+                Real &s11, Real &s12, Real &s13) {
     const int m = idx/nkji;
     const int k = (idx - m*nkji)/nji;
     const int j = (idx - m*nkji - k*nji)/n1;
@@ -218,6 +219,8 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
           s4 += 1.0;
           s5 += wst_*(efin - esel)*vol;
           if (kedom) s10 += 1.0;
+          s12 += x1v_(m,i);   // (where: the floored cells' mean r, and energy weighted)
+          s13 += wst_*(efin - esel)*vol*x1v_(m,i);
         }
         if (edg_) {
           if (tfl_ > 0.0 && econs < eos_.EnergyFromTemperature(d, tfl_)) s6 += 1.0;
@@ -243,7 +246,8 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
   }, Kokkos::Sum<Real>(s[0]), Kokkos::Sum<Real>(s[1]), Kokkos::Sum<Real>(s[2]),
      Kokkos::Sum<Real>(s[3]), Kokkos::Sum<Real>(s[4]), Kokkos::Sum<Real>(s[5]),
      Kokkos::Sum<Real>(s[6]), Kokkos::Sum<Real>(s[7]), Kokkos::Sum<Real>(s[8]),
-     Kokkos::Sum<Real>(s[9]), Kokkos::Sum<Real>(s[10]), Kokkos::Sum<Real>(s[11]));
+     Kokkos::Sum<Real>(s[9]), Kokkos::Sum<Real>(s[10]), Kokkos::Sum<Real>(s[11]),
+     Kokkos::Sum<Real>(s[12]), Kokkos::Sum<Real>(s[13]));
   const int b = armed ? 0 : DC_REFRESH;
   hc[b + DC_N] += static_cast<Real>(pp->nmb_thispack)*indcs.nx1*indcs.nx2*indcs.nx3;
   hc[b + DC_KEDOM] += s[0];
@@ -258,6 +262,8 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
   hc[b + DC_SUBT_SEL] += s[9];
   hc[b + DC_FLR_KED] += s[10];
   hc[armed ? DC_TOPE_U : DC_TOPE_R] += s[11];
+  hc[b + DC_FLR_R] += s[12];
+  hc[b + DC_FLR_RDE] += s[13];
   const bool was_armed = armed;
   armed = false;
   if (on) valid = true;
@@ -286,7 +292,9 @@ void DualEnergy::Report(MeshBlockPack *pp) {
               << " sub_edge " << c[b+DC_SUBEDGE] << " dual " << c[b+DC_SEL]
               << " dual_de " << c[b+DC_SEL_DE] << " dual_sub_tfloor " << c[b+DC_SUBT_SEL]
               << " floored " << c[b+DC_FLR] << " (kedom " << c[b+DC_FLR_KED]
-              << ") floor_de " << c[b+DC_FLR_DE] << " skip(dfloor/vceil) "
+              << ") floor_de " << c[b+DC_FLR_DE] << " <r> " << c[b+DC_FLR_R]/
+                 fmax(c[b+DC_FLR], 1.0) << " <r>_de " << c[b+DC_FLR_RDE]/
+                 (c[b+DC_FLR_DE] != 0.0 ? c[b+DC_FLR_DE] : 1.0) << " skip(dfloor/vceil) "
               << c[b+DC_SKIP] << " above_table_top " << c[h ? DC_TOPE_R : DC_TOPE_U]
               << std::endl;
   }
