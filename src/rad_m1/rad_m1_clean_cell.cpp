@@ -1659,10 +1659,13 @@ Real RadiationM1::CleanCellVelocityUpdate() {
     v_max = fmax(v_max, std::sqrt(v2));
   }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax), Kokkos::Max<Real>(femax),
   Kokkos::Max<Real>(fvmax));
-  cln_fe = std::numeric_limits<Real>::epsilon()*femax;
-  cln_fv = std::numeric_limits<Real>::epsilon()*fvmax/fmax(vmax, 1.0e-300);
+  // (one reduction: rank-local round-off levels made the ranks' Picard exits disagree)
+  Real mx[4] = {dvmax, vmax, femax, fvmax};
+  CleanMaxRanks(mx, 4);
+  cln_fe = std::numeric_limits<Real>::epsilon()*mx[2];
+  cln_fv = std::numeric_limits<Real>::epsilon()*mx[3]/fmax(mx[1], 1.0e-300);
   if (cln_vfreeze != 1) CleanAdvectiveCoefficients();
-  return CleanReduce(dvmax, true)/fmax(CleanReduce(vmax, true), 1.0e-300);
+  return mx[0]/fmax(mx[1], 1.0e-300);
 }
 
 //----------------------------------------------------------------------------------------

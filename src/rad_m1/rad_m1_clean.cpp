@@ -98,13 +98,11 @@ static void CleanFatal(const std::string &msg) {
 //! \brief the maxima of a, b, c over all ranks, one reduction (CleanReduce)
 
 static void CleanReduceMax(Real &a, Real &b, Real &c) {
-#if MPI_PARALLEL_ENABLED
   Real v[3] = {a, b, c};
-  MPI_Allreduce(MPI_IN_PLACE, v, 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+  CleanMaxRanks(v, 3);
   a = v[0];
   b = v[1];
   c = v[2];
-#endif
 }
 
 //----------------------------------------------------------------------------------------

@@ -19,6 +19,9 @@
 //! rays' non-locality C1 = <|I - S|>/J.  The cell equation is
 //!   E (1 + h c kE) + h div F = E_old + h c kP a T^4.
 
+#include <cmath>
+#include <limits>
+
 #include "athena.hpp"
 #include "bvals/bvals.hpp"
 #include "eos/eos.hpp"
@@ -54,7 +57,23 @@
 #define CLEAN_HIPX(...)
 #endif
 
+#if MPI_PARALLEL_ENABLED
+#include <mpi.h>
+#endif
+
 namespace radm1 {
+
+//! \fn void CleanMaxRanks
+//! \brief the maxima of v[0..n-1] over all ranks in one reduction, a non-finite one as
+//! inf (MPI_MAX of a NaN may differ between the ranks, whose Picard exits then disagree)
+inline void CleanMaxRanks(Real *v, const int n) {
+  for (int q = 0; q < n; ++q) {
+    if (!std::isfinite(v[q])) v[q] = std::numeric_limits<Real>::infinity();
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, v, n, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+#endif
+}
 
 // CleanFor: a 4-D clean pass; on CUDA at kCleanForMb blocks of 256 threads per SM (a
 // register cap of 65536/(256 kCleanForMb)), with the flattening and index arithmetic of
