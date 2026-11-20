@@ -1,0 +1,1 @@
+TAG=BFX12_rsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_bfx12_8ba228941 md5=ddc3f5232d458fc7c4e55841a03f5692 RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=300 MODE=speed HOLDER=6133592 NODE=hpc-sm-02-04 NR=4 ENVX= EX=rad_m1/clean_stag_dg_form=12
