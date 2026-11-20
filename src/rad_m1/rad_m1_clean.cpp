@@ -1147,8 +1147,102 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
                   pmy_pack->pmesh->ncycle, t2_solve, g[0], g[1], g[2], g[3]);
     }
   };
+  // CONSERV study (output only, env CONSERV_L, never merge): per mark, global sums of
+  // mass, gas momentum (Cartesian) and L_z, radiation cell-vector momentum F/c^2 and its
+  // L_z, and their cell-wise changes since the previous mark (exact segment sums), the
+  // cs CLEAN LZ ledger (cln_lzl + cln_lzp), and scales.  Line "CAUD".
+  auto caud = [&](const char *tag) {
+    if (std::getenv("CONSERV_L") == nullptr) return;
+    static DvceArray5D<Real> *cprev = nullptr;
+    static int cmark = 0;
+    static const char *ctag = "none";
+    auto &id = pmy_pack->pmesh->mb_indcs;
+    const int pis = id.is, pjs = id.js, pks = id.ks;
+    const int pni = id.nx1, pnj = id.nx2, pnk = id.nx3;
+    const int nmb = pmy_pack->nmb_thispack;
+    const bool first = (cprev == nullptr);
+    if (first) cprev = new DvceArray5D<Real>("caud_prev", nmb, 9, pnk, pnj, pni);
+    auto cp = *cprev;
+    FluidRef pfl = FluidRef::Get(pmy_pack);
+    auto puh = pfl.u0; auto pur = u0;
+    CleanArgs x = CleanMakeArgs();
+    auto cx2 = pmy_pack->pcoord->x2v, cx3 = pmy_pack->pcoord->x3v;
+    auto cx1 = pmy_pack->pcoord->x1v;
+    const bool phy = pfl.on, sph = x.sph, cub = x.cub;
+    const Real ic2 = 1.0/(x.c*x.c);
+    array_sum::GlobalSum cs;
+    Kokkos::parallel_reduce("conserv_l", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+        nmb*pnk*pnj*pni),
+    KOKKOS_LAMBDA(const int n, array_sum::GlobalSum &sum) {
+      const int m = n/(pnk*pnj*pni), kk = (n/(pnj*pni))%pnk, jj = (n/pni)%pnj;
+      const int ii = n%pni, k = kk + pks, j = jj + pjs, i = ii + pis;
+      const Real v = CleanVol(x, m, k, j, i);
+      Real y[3] = {0.0, 0.0, 0.0}, f[3], q[3][3], rr = 0.0;
+      if (phy) CleanGasMomentum(x, puh, m, k, j, i, y);
+      for (int d = 0; d < 3; ++d) f[d] = pur(m,M1_F1+d,k,j,i)*ic2;
+      if (cub) {
+        rr = CleanCsFrame(x, m, k, j, i, q);
+      } else if (sph) {
+        const Real st = sin(cx2(m,j)), ct = cos(cx2(m,j));
+        const Real sp = sin(cx3(m,k)), cp_ = cos(cx3(m,k));
+        q[0][0] = st*cp_; q[0][1] = st*sp; q[0][2] = ct;
+        q[1][0] = ct*cp_; q[1][1] = ct*sp; q[1][2] = -st;
+        q[2][0] = -sp;    q[2][1] = cp_;   q[2][2] = 0.0;
+        rr = cx1(m,i)*st;
+      } else {
+        for (int a = 0; a < 3; ++a) for (int b = 0; b < 3; ++b) q[a][b] = (a == b);
+      }
+      Real val[9];
+      val[0] = phy ? puh(m,IDN,k,j,i)*v : 0.0;
+      for (int b = 0; b < 3; ++b) {
+        val[2+b] = v*(y[0]*q[0][b] + y[1]*q[1][b] + y[2]*q[2][b]);
+        val[6+b] = v*(f[0]*q[0][b] + f[1]*q[1][b] + f[2]*q[2][b]);
+      }
+      if (cub || sph) {
+        val[1] = v*rr*y[2];
+        val[5] = v*rr*f[2];
+      } else {   // Cartesian: L_z = x p_y - y p_x (the cell centre)
+        val[1] = cx1(m,i)*val[3] - cx2(m,j)*val[2];
+        val[5] = cx1(m,i)*val[7] - cx2(m,j)*val[6];
+      }
+      array_sum::GlobalSum s;
+      for (int c = 0; c < NREDUCTION_VARIABLES; ++c) s.the_array[c] = 0.0;
+      for (int c = 0; c < 9; ++c) {
+        s.the_array[c] = val[c];
+        s.the_array[9+c] = first ? 0.0 : val[c] - cp(m,c,kk,jj,ii);
+        cp(m,c,kk,jj,ii) = val[c];
+      }
+      // scales: sum |L_z| gas, sum V |p| gas, the abs of the cell changes of L_z and p
+      s.the_array[18] = fabs(val[1]);
+      s.the_array[19] = sqrt(SQR(val[2]) + SQR(val[3]) + SQR(val[4]));
+      s.the_array[20] = fabs(s.the_array[10]);
+      s.the_array[21] = sqrt(SQR(s.the_array[11]) + SQR(s.the_array[12]) +
+                             SQR(s.the_array[13]));
+      s.the_array[22] = fabs(s.the_array[9]);
+      s.the_array[23] = v*rr*sqrt(SQR(y[1]) + SQR(y[2]));
+      sum += s;
+    }, Kokkos::Sum<array_sum::GlobalSum>(cs));
+    Real g[24];
+    for (int c = 0; c < 24; ++c) g[c] = cs.the_array[c];
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, g, 24, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::printf("CAUD cycle %d t2s %d mark %d %s from %s h %.9e M %.17e Lg %.17e "
+                  "Pg %.17e %.17e %.17e Lr %.17e Pr %.17e %.17e %.17e | dM %.10e dLg %.10e "
+                  "dPg %.10e %.10e %.10e dLr %.10e dPr %.10e %.10e %.10e | sLz %.6e sP %.6e "
+                  "sdL %.6e sdP %.6e sdM %.6e sLt %.6e | lzl %.17e lzp %.17e\n",
+                  pmy_pack->pmesh->ncycle, t2_solve, cmark, tag, ctag, dt_sub,
+                  g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7], g[8],
+                  g[9], g[10], g[11], g[12], g[13], g[14], g[15], g[16], g[17],
+                  g[18], g[19], g[20], g[21], g[22], g[23], cln_lzl, cln_lzp);
+    }
+    ++cmark;
+    ctag = tag;
+  };
   profu("in");
   if (!cln_init) CleanInit();
+  caud("in");
   // the vet_gd direction set before any use (the consistency term reads it at the first
   // solve of a restart, before any ray build)
   if (vgd_on && !tau_ready) VetColInit();
@@ -1463,6 +1557,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     profu("prewb");
     CleanWriteBack();
     profu("wb");
+    caud("wb");
     profq();
   }
   // a write-back that leaves gas eint < 0 (energy for the fluid floor to create) is
@@ -1525,6 +1620,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   }
   if (fpc) dbg_rst_fp_done = true;
   profu("out");
+  caud("out");
   if (dbg_eaudit) {EAuditMark(3);}   // PROF study (output only)
   return TaskStatus::complete;
 }
