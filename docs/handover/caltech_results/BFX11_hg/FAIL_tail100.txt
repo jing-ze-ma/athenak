@@ -1,0 +1,101 @@
+== /resnick/groups/carnegie_poc/jingze/orion_runs_1121/BFX11_hg/a/run.log
+DT_RETRY cycle=624972 t=5.011312e+07 dt 3.358852e+00 -> 1.688312e+00 reason=NON-CONVERGED resid=-1.000000e+00 cut 6
+CLEAN OLDVEC cycle 624972 t2s 2 eint<0 304 (taken as 0) E<0 793
+CLEAN cycle 624972 t2s 2 it -2 (sum 200) pos 0 mark 0 all 0 neg 0 r1 0 r2 14099623 first 0 14099623 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624972 t2s 2 write-back closure 2.708e+01
+CLEAN WARNING cycle 624972 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN WARNING cycle 624972: backward-Euler solve not converged (dt_retry, 2 so far; last change 1.254e-04)
+CLEAN cycle 624972 t2s 1 it -2 (sum 201) pos 0 mark 0 all 0 neg 0 r1 0 r2 5414532 first 0 5414532 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 624972 t2s 1 ledger 9.1945527598725536e+42
+CLEAN XT cycle 624972 t2s 1 write-back closure 4.650e+01
+DT_RETRY cycle=624972 t=5.011312e+07 dt 1.688312e+00 -> 8.463950e-01 reason=NON-CONVERGED resid=-1.000000e+00 cut 7
+CLEAN OLDVEC cycle 624972 t2s 2 eint<0 0 (taken as 0) E<0 754
+CLEAN cycle 624972 t2s 2 it -2 (sum 200) pos 0 mark 0 all 0 neg 0 r1 0 r2 27600166 first 0 27600166 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624972 t2s 2 write-back closure 5.333e+01
+CLEAN WARNING cycle 624972 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN WARNING cycle 624972: backward-Euler solve not converged (dt_retry, 2 so far; last change 1.123e-04)
+CLEAN cycle 624972 t2s 1 it -2 (sum 201) pos 0 mark 0 all 0 neg 0 r1 0 r2 12274829 first 0 12274829 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 624972 t2s 1 ledger 9.1877983996757948e+42
+CLEAN XT cycle 624972 t2s 1 write-back closure 3.194e+01
+DT_RETRY cycle=624972 t=5.011312e+07 dt 8.463950e-01 -> 4.237595e-01 reason=NON-CONVERGED resid=-1.000000e+00 cut 8
+CLEAN OLDVEC cycle 624972 t2s 2 eint<0 0 (taken as 0) E<0 750
+CLEAN cycle 624972 t2s 2 it -2 (sum 200) pos 0 mark 0 all 0 neg 0 r1 0 r2 42353906 first 0 42353906 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624972 t2s 2 write-back closure 2.740e+01
+CLEAN WARNING cycle 624972 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN WARNING cycle 624972: backward-Euler solve not converged (dt_retry, 2 so far; last change 2.813e-04)
+CLEAN cycle 624972 t2s 1 it -2 (sum 200) pos 0 mark 0 all 0 neg 0 r1 0 r2 27346585 first 0 27346585 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 624972 t2s 1 ledger 9.1844177437293041e+42
+CLEAN XT cycle 624972 t2s 1 write-back closure 2.480e+01
+### FATAL ERROR: <time> dt_retry: cycle 624972 failed 9 times (max 8), dt 4.237595e-01
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 0 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 1 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 2 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 5 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 6 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 7 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 3 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 4 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+[2026-11-20T13:03:54.861] error: *** STEP 6133592.315 ON hpc-sm-01-17 CANCELLED AT 2026-11-20T13:03:54 DUE to SIGNAL Killed ***
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+[2026-11-20T13:03:56.627] error:  mpi/pmix_v3: _errhandler: hpc-sm-02-03 [1]: pmixp_client_v2.c:219: Error handler invoked: status = -25, source = [slurm.pmix.6133592.315:4]
+[2026-11-20T13:03:56.653] error:  mpi/pmix_v3: _errhandler: hpc-sm-01-17 [0]: pmixp_client_v2.c:219: Error handler invoked: status = -25, source = [slurm.pmix.6133592.315:0]
+srun: error: hpc-sm-02-03: tasks 4,6-7: Killed
+srun: error: hpc-sm-02-03: task 5: Exited with exit code 1
+srun: error: hpc-sm-01-17: task 0: Exited with exit code 1
+srun: error: hpc-sm-01-17: tasks 1-3: Killed
