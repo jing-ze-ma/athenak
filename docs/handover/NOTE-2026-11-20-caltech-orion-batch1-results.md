@@ -198,3 +198,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - (05:13) Got fa5e9209d + c002f7759: KX1_hg / KX001_hg had not started, so they now run on ksplit3 = baf94d6e9 (the 6b18f5de5 build was stopped). LZTEL2: lztel2 a1874999f + lztel2-study 79406ea57 building; Z1..Z4, ZS_hg, ZS_rsg queued right after T2K_rsg (Z1 xcheck vs T1_rsg, Z3 dt list, CW counts).
 - BA_hg_mb2 (hpc-sm-02-10): rc=0 wall=185 | cycles 624961 - 624981 | steady 5.252 s/cycle | GPU MiB max 119215 min 118667 | CW a 0 FATAL 0 |  
 - BA_hg_v20g_m1 (hpc-sm-01-17): rc=0 wall=188 | cycles 624961 - 624981 | steady 4.977 s/cycle | GPU MiB max 116339 min 115791 | CW a 0 FATAL 0 |  
+- Z1_rsg (hpc-sm-01-17): rc=0 wall=90 | cycles 589788 - 589794 | steady 2.839 s/cycle | GPU MiB max 108279 min 107091 | CW a 0 FATAL 0 |  xcheck: rsg.hydro.hst==T1_rsg/a rsg.user.hst==T1_rsg/a | CW 0
