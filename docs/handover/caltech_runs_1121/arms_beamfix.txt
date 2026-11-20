@@ -37,3 +37,8 @@ FINALRST=0 NR=8 BFXC20x2_hg  B_bfxc20 HG  100 hg_v20.keys  time/dt_retry_host=m1
 FINALRST=0 NR=4 BFXC20x2_rsg B_bfxc20 RSG 100 rsg_v20.keys rad_m1/clean_stag_dg_form=20 rad_m1/clean_stag_xcorner=2
 FINALRST=0 NR=8 BFXC19x2_hg  B_bfxc20 HG  100 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=19 rad_m1/clean_stag_xcorner=2
 FINALRST=0 NR=4 BFXC19x2_rsg B_bfxc20 RSG 100 rsg_v20.keys rad_m1/clean_stag_dg_form=19 rad_m1/clean_stag_xcorner=2
+# added NOTE cu: gate-only arms (NO xcorner; valid on the cubed sphere), B_bfxc20, 100 cycles. VERY HEAD of both queues, before the x2 arms. Order: BFX20 > BFX19 > BFXC20x2 > (BFXC19x2 only if slots allow).
+FINALRST=0 NR=8 BFX20_hg  B_bfxc20 HG  100 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=20
+FINALRST=0 NR=4 BFX20_rsg B_bfxc20 RSG 100 rsg_v20.keys rad_m1/clean_stag_dg_form=20
+FINALRST=0 NR=8 BFX19_hg  B_bfxc20 HG  100 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=19
+FINALRST=0 NR=4 BFX19_rsg B_bfxc20 RSG 100 rsg_v20.keys rad_m1/clean_stag_dg_form=19
