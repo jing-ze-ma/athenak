@@ -4465,7 +4465,7 @@ void RadiationM1::CleanStagCsTieCheck(const int after) {
     for (int q = 0; q < 3; ++q) {
       const int u = (q == 0) ? (i == ie) : ((q == 1) ? (j == je) : (k == ke));
       const int kf = k+u*(q == 2), jf = j+u*(q == 1), iff = i+u*(q == 0);
-      v(m,q,k,j,i) = x.area[q](m,kf,jf,iff)*x.fc[q](m,CLF_PT,kf,jf,iff);
+      v(m,q,k,j,i) = CleanDivW(x, q, m, k, j, i, u)*x.vol(m,k,j,i)*x.fc[q](m,CLF_PT,kf,jf,iff);
     }
   });
   CleanGhostFill(cln_v, 0, 3, true, 0, 1);
@@ -4473,7 +4473,6 @@ void RadiationM1::CleanStagCsTieCheck(const int after) {
   for (int dir = 0; dir < 3; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     auto fc = x.fc[dir];
-    auto ar = x.area[dir];
     par_for("cln_cstiek2", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const bool lin = (dir == 0) ? (i > is) : ((dir == 1) ? (j > js) : (k > ks));
@@ -4486,7 +4485,9 @@ void RadiationM1::CleanStagCsTieCheck(const int after) {
       const BoundaryFlag f = x.mbc(m, 2*dir + side);
       const int c = (f != BoundaryFlag::panel) ? 0 :
                     (CleanCsSeamFace(x, dir, m, k, j, i) ? 1 : 2);
-      const Real a = ar(m,k,j,i)*fc(m,CLF_PT,k,j,i);
+      const int ko = lin ? k - dk : k, jo = lin ? j - dj : j, io = lin ? i - di : i;
+      const Real a = CleanDivW(x, dir, m, ko, jo, io, side)*x.vol(m,ko,jo,io)*
+                     fc(m,CLF_PT,k,j,i);
       Kokkos::atomic_add(&acc(c), h*(lin ? 1.0 : -1.0)*a);
       Kokkos::atomic_add(&acc(3+c), fabs(h*a));
       Kokkos::atomic_max(&acc(6+c), fabs(a - s*v(m,q,kg,jg,ig))/fmax(fabs(a), 1.0e-300));
