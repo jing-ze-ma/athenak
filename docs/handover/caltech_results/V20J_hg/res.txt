@@ -1,0 +1,16 @@
+cycles 624961 - 624965 dt [68.96552, 100.5172, 106.3636] s/cycle(all) ['26.81', '4.07', '4.68', '146.32'] steady(excl first+last) 4.377 first elapsed 50.0 last elapsed 231.9
+['main loop time (before the final outputs) = 4.262952e+01']
+CW a 0 FATAL 0 retries ['<rad_m1> time2_auto_be=16: skipped-stage BE steps=0.000000e+00 stage retries=0.000000e+00 (succeeded 0.000000e+00)']
+GPU mem peak MiB max 116079 min 115291 (n=4)
+rt hegiant.hydro.hst last row same
+rt hegiant.user.hst last row same
+rt hegiant.hydro_w.01741.bin same
+rt hegiant.m1.01741.bin same
+rt hegiant.m1_vet.00117.bin same
+CW b /run.log 0
+CW b run2.log 0
+rc=0 wall=244
+rc=0 wall=244
+restart from /resnick/groups/carnegie_poc/jingze/orion_runs_1121/V20J_hg/b/rst/hegiant.00140.rst
+rc=0 wall=250
+DONE
