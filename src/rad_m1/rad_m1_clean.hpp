@@ -727,6 +727,21 @@ Real CleanDivW(const CleanArgs &x, const int dir, const int m, const int k, cons
          x.vol(m,k,j,i);
 }
 
+//! \brief CleanDivW's divergence of the low and high face values fl, fh along dir
+//! (Cartesian (fh - fl)/dx), and the volume of cell (k,j,i) (Cartesian dx dy dz)
+
+KOKKOS_INLINE_FUNCTION
+Real CleanDivF(const CleanArgs &x, const int dir, const int m, const int k, const int j,
+               const int i, const Real fl, const Real fh) {
+  if (!x.sph && !x.cub) return x.idx[dir]*(fh - fl);
+  return CleanDivW(x, dir, m, k, j, i, 1)*fh - CleanDivW(x, dir, m, k, j, i, 0)*fl;
+}
+
+KOKKOS_INLINE_FUNCTION
+Real CleanVol(const CleanArgs &x, const int m, const int k, const int j, const int i) {
+  return (x.sph || x.cub) ? x.vol(m,k,j,i) : 1.0/(x.idx[0]*x.idx[1]*x.idx[2]);
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn bool CleanCsSeamFace
 //! \brief cubed sphere: true for a panel seam face (k,j,i) normal to dir, except next to a
@@ -971,7 +986,7 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
   const Real g = (1.0 - w)*th*x.h*x.c*x.c*x.idx[dir];
   al = g*x.cs(m,CLN_D11+dir,kl,jl,il) + w*x.c*x.fc[dir](m,CLF_HP,k,j,i);
   ar = -g*x.cs(m,CLN_D11+dir,k,j,i) + w*x.c*x.fc[dir](m,CLF_HM,k,j,i);
-  if (x.sph && !x.cub) {   // (centre distance and the curvature terms, CleanStagSph)
+  if (x.sph) {   // (centre distance and the curvature terms, CleanStagSph)
     const Real gs = (1.0 - w)*th*x.h*x.c*x.c, id = CleanStagSph(x, 0, dir, m, k, j, i);
     const Real hr = 0.5*CleanStagSph(x, 1, dir, m, k, j, i);
     al = gs*(id*x.cs(m,CLN_D11+dir,kl,jl,il) - hr*CleanStagSph(x, 2, dir, m, k, j, i)) +
@@ -1446,28 +1461,14 @@ Real CleanFaceStressCall(const CleanArgs &x, const int e, const int dir, const i
 KOKKOS_INLINE_FUNCTION
 Real CleanFluxDivergence(const CleanArgs &x, const int e, const int m, const int k,
                          const int j, const int i, const bool with_source) {
-  if (x.sph || x.cub) {   // (finite volume, sum A_f F_f/V)
-    Real d = 0.0;
-    for (int n = 0; n < 3; ++n) {   // (constant trip: x.fc[n], x.area[n] resolved)
-      if (n >= x.nf) break;
-      const int dk = (n == 2), dj = (n == 1), di = (n == 0);
-      d += CleanDivW(x, n, m, k, j, i, 1)*CleanFaceFlux(x, e, n, m, k+dk, j+dj, i+di,
-                                                         with_source) -
-           CleanDivW(x, n, m, k, j, i, 0)*CleanFaceFlux(x, e, n, m, k, j, i, with_source);
-    }
-    return x.h*d;
+  Real d = 0.0;
+  for (int n = 0; n < 3; ++n) {   // (constant trip: x.fc[n], x.area[n] resolved)
+    if (n >= x.nf) break;
+    const int dk = (n == 2), dj = (n == 1), di = (n == 0);
+    d += CleanDivF(x, n, m, k, j, i, CleanFaceFlux(x, e, n, m, k, j, i, with_source),
+                   CleanFaceFlux(x, e, n, m, k+dk, j+dj, i+di, with_source));
   }
-  Real div = x.idx[0]*(CleanFaceFlux(x, e, 0, m, k, j, i+1, with_source) -
-                       CleanFaceFlux(x, e, 0, m, k, j, i, with_source));
-  if (x.multi_d) {
-    div += x.idx[1]*(CleanFaceFlux(x, e, 1, m, k, j+1, i, with_source) -
-                     CleanFaceFlux(x, e, 1, m, k, j, i, with_source));
-  }
-  if (x.three_d) {
-    div += x.idx[2]*(CleanFaceFlux(x, e, 2, m, k+1, j, i, with_source) -
-                     CleanFaceFlux(x, e, 2, m, k, j, i, with_source));
-  }
-  return x.h*div;
+  return x.h*d;
 }
 
 //----------------------------------------------------------------------------------------
@@ -1488,8 +1489,7 @@ Real CleanFluxDivergenceTie(const CleanArgs &x, const int e, const int tb, const
                     CleanFaceFlux(x, e, n, m, k+dk, j+dj, i+di, true) :
                     x.w(m,tb+n,k+dk,j+dj,i+di);
     const Real fl = CleanFaceFlux(x, e, n, m, k, j, i, true);
-    d += (x.sph || x.cub) ? CleanDivW(x, n, m, k, j, i, 1)*fh -
-                            CleanDivW(x, n, m, k, j, i, 0)*fl : x.idx[n]*(fh - fl);
+    d += CleanDivF(x, n, m, k, j, i, fl, fh);
   }
   return x.h*d;
 }
@@ -1636,24 +1636,14 @@ void CleanStencilRow(const CleanArgs &x, const int m, const int k, const int j,
 KOKKOS_INLINE_FUNCTION
 Real CleanSourceDivergence(const CleanArgs &x, const int m, const int k, const int j,
                            const int i) {
-  if (x.sph || x.cub) {
-    Real d = 0.0;
-    for (int n = 0; n < 3; ++n) {
-      if (n >= x.nf) break;
-      const int dk = (n == 2), dj = (n == 1), di = (n == 0);
-      d += CleanDivW(x, n, m, k, j, i, 1)*x.fc[n](m,CLF_SR,k+dk,j+dj,i+di) -
-           CleanDivW(x, n, m, k, j, i, 0)*x.fc[n](m,CLF_SR,k,j,i);
-    }
-    return x.h*d;
+  Real d = 0.0;
+  for (int n = 0; n < 3; ++n) {
+    if (n >= x.nf) break;
+    const int dk = (n == 2), dj = (n == 1), di = (n == 0);
+    d += CleanDivF(x, n, m, k, j, i, x.fc[n](m,CLF_SR,k,j,i),
+                   x.fc[n](m,CLF_SR,k+dk,j+dj,i+di));
   }
-  Real div = x.idx[0]*(x.fc[0](m,CLF_SR,k,j,i+1) - x.fc[0](m,CLF_SR,k,j,i));
-  if (x.multi_d) {
-    div += x.idx[1]*(x.fc[1](m,CLF_SR,k,j+1,i) - x.fc[1](m,CLF_SR,k,j,i));
-  }
-  if (x.three_d) {
-    div += x.idx[2]*(x.fc[2](m,CLF_SR,k+1,j,i) - x.fc[2](m,CLF_SR,k,j,i));
-  }
-  return x.h*div;
+  return x.h*d;
 }
 
 //----------------------------------------------------------------------------------------
@@ -1704,6 +1694,22 @@ void CleanStagCsVector(const CleanArgs &x, const int m, const int k, const int j
   for (int t = 0; t < 3; ++t) u[t] = (ca[0][t]*b[0] + ca[1][t]*b[1] + ca[2][t]*b[2])/det;
 }
 
+//! \brief staggered: the cell vector u of cell (k,j,i) of its six face values c (as
+//! CleanStagCsVector) in the components of CleanStagGasMomentum: the mean of the two
+//! faces of each family; on the cubed sphere CleanStagCsVector of weights 1 (the same
+//! where the normals are the cell's axes)
+
+KOKKOS_INLINE_FUNCTION
+void CleanStagCellVector(const CleanArgs &x, const int m, const int k, const int j,
+                         const int i, const Real c[6], Real u[3]) {
+  if (x.cub) {
+    const Real w[6] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+    CleanStagCsVector(x, m, k, j, i, c, w, u);
+    return;
+  }
+  for (int q = 0; q < 3; ++q) u[q] = 0.5*(c[2*q] + c[2*q+1]);
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanStagBetaE
 //! \brief the E-dependent part of the E-row beta terms (Ma et al. 2025, eq. 56) of cell
@@ -1714,25 +1720,17 @@ void CleanStagCsVector(const CleanArgs &x, const int m, const int k, const int j
 KOKKOS_INLINE_FUNCTION
 Real CleanStagBetaE(const CleanArgs &xh, const int e, const int m, const int k,
                     const int j, const int i) {
-  Real b2 = 0.0, ba = 0.0, by = 0.0, fv[3];
-  if (xh.cub) {   // (the cell's flux vector, CleanStagCsVector, as CleanRightHandSide)
-    Real c[6], w[6];
-    for (int d = 0; d < 6; ++d) {
-      const int q = d/2, s = d%2;
+  Real b2 = 0.0, ba = 0.0, by = 0.0, fv[3], c[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  for (int d = 0; d < 6; ++d) {   // (the cell's flux vector, CleanStagCellVector)
+    const int q = d/2, s = d%2;
+    if (q < xh.nf) {
       c[d] = CleanFaceFlux(xh, e, q, m, k+s*(q == 2), j+s*(q == 1), i+s*(q == 0), false);
-      w[d] = 1.0;
     }
-    CleanStagCsVector(xh, m, k, j, i, c, w, fv);
   }
+  CleanStagCellVector(xh, m, k, j, i, c, fv);
   for (int n = 0; n < 3; ++n) {
     const Real bt = xh.w(m,CLW_BT+n,k,j,i);
-    const int dk = (n == 2), dj = (n == 1), di = (n == 0);
-    if (n < xh.nf && xh.cub) {
-      by += bt*fv[n]/xh.c;
-    } else if (n < xh.nf) {
-      by += bt*0.5*(CleanFaceFlux(xh, e, n, m, k, j, i, false) +
-                    CleanFaceFlux(xh, e, n, m, k+dk, j+dj, i+di, false))/xh.c;
-    }
+    if (n < xh.nf) by += bt*fv[n]/xh.c;
     b2 += SQR(bt);
     ba += bt*xh.w(m,CLW_A1+n,k,j,i)/xh.c;
   }

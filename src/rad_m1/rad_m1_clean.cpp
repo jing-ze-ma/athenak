@@ -123,6 +123,19 @@ static void CleanStagGasMomentum(const CleanArgs &x, const DvceArray5D<Real> &uh
   for (int b = 0; b < 3; ++b) p[b] = y[0]*q[0][b] + y[1]*q[1][b] + y[2]*q[2][b];
 }
 
+//! \brief staggered: v of CleanStagGasMomentum's components in the hydro's (the cubed
+//! sphere: from the frame of y; else unchanged)
+
+KOKKOS_INLINE_FUNCTION
+static void CleanStagHydro(const CleanArgs &x, const int m, const int k, const int j,
+                           const int i, Real v[3]) {
+  if (!x.cub) return;
+  Real q[3][3];
+  const Real y[3] = {v[0], v[1], v[2]};
+  CleanCsFrame(x, m, k, j, i, q);
+  for (int d = 0; d < 3; ++d) v[d] = q[d][0]*y[0] + q[d][1]*y[1] + q[d][2]*y[2];
+}
+
 //! \brief staggered: the radial component of a vector v in the components of
 //! CleanStagGasMomentum (spherical polar: v[0]; the cubed sphere: r_hat . v)
 
@@ -1594,8 +1607,7 @@ void RadiationM1::CleanRstFaces() {
       // momentum sum |dF| V/c^2 reported, not given to the floor gas)
       const Real fc = fmin(fmax(f0(m,k,j,i), -x.c*e(0)), x.c*e(-1));
       if (fre && fc != f0(m,k,j,i)) {
-        const Real v = (x.sph || x.cub) ? x.vol(m,k,j,i) :
-                       1.0/(x.idx[0]*x.idx[1]*x.idx[2]);
+        const Real v = CleanVol(x, m, k, j, i);
         Kokkos::atomic_add(&rc(0), 1.0);
         Kokkos::atomic_add(&rc(1), fabs(f0(m,k,j,i) - fc)*v/(x.c*x.c));
         f0(m,k,j,i) = fc;
@@ -1620,14 +1632,9 @@ void RadiationM1::CleanRstFaces() {
     const Real c[6] = {f1(m,k,j,i), f1(m,k,j,i+1), (x.nf > 1) ? f2(m,k,j,i) : 0.0,
                        (x.nf > 1) ? f2(m,k,j+1,i) : 0.0, (x.nf > 2) ? f3(m,k,j,i) : 0.0,
                        (x.nf > 2) ? f3(m,k+1,j,i) : 0.0};
-    Real fv[3] = {0.5*(c[0] + c[1]), 0.5*(c[2] + c[3]), 0.5*(c[4] + c[5])}, q[3][3];
-    if (x.cub) {
-      const Real wc[6] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
-      Real fy[3];
-      CleanStagCsVector(x, m, k, j, i, c, wc, fy);
-      CleanCsFrame(x, m, k, j, i, q);
-      for (int d = 0; d < 3; ++d) fv[d] = q[d][0]*fy[0] + q[d][1]*fy[1] + q[d][2]*fy[2];
-    }
+    Real fv[3];
+    CleanStagCellVector(x, m, k, j, i, c, fv);
+    CleanStagHydro(x, m, k, j, i, fv);
     for (int d = 0; d < 3; ++d) u0_(m,M1_F1+d,k,j,i) = fv[d];
   });
   Kokkos::deep_copy(cln_w.s, 0.0);
@@ -2587,7 +2594,7 @@ static Real CleanStagAdvFace(const CleanArgs &x, const CleanArgs &xh, const int 
   const Real ul = x.w(m,CLW_A1+n,kl,jl,il), ur = x.w(m,CLW_A1+n,kk,jj,ii);
   const Real el = x.w(m,CLW_EK,kl,jl,il), er = x.w(m,CLW_EK,kk,jj,ii);
   const Real ac = 0.5*(ul*el + ur*er);
-  if (!x.upw || x.cub || CleanBoundaryFace(x, n, m, kk, jj, ii)) return ac;
+  if (!x.upw || CleanBoundaryFace(x, n, m, kk, jj, ii)) return ac;
   Real al, ar, phi = 0.0;
   CleanFaceWeights(xh, n, m, kk, jj, ii, al, ar, &phi);
   if (!(phi > 0.0)) return ac;
@@ -2745,14 +2752,13 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
         const int dk = (n == 2), dj = (n == 1), di = (n == 0);
         if (n < x.nf) fs[n] = fw[2*n]*ff(n, k, j, i) + fw[2*n+1]*ff(n, k+dk, j+dj, i+di);
       }
-      if (x.cub) {   // (the cell's flux vector, CleanStagCsVector)
-        Real c[6], w[6];
-        for (int d = 0; d < 6; ++d) w[d] = 1.0;
+      if (x.cub) {   // (the cell's flux vector, CleanStagCellVector)
+        Real c[6];
         for (int d = 0; d < 3; ++d) {
           c[2*d] = fw[2*d]*ff(d, k, j, i);
           c[2*d+1] = fw[2*d+1]*ff(d, k+(d == 2), j+(d == 1), i+(d == 0));
         }
-        CleanStagCsVector(x, m, k, j, i, c, w, fs);
+        CleanStagCellVector(x, m, k, j, i, c, fs);
         for (int d = 0; d < 3; ++d) fs[d] *= 2.0;
       }
       for (int n = 0; n < 3; ++n) {
@@ -4745,8 +4751,7 @@ void RadiationM1::CleanWriteBack() {
       const Real fu = bh ? CleanFaceFlux(x, CLW_X, n, m, k+dk, j+dj, i+di, true) :
                            x.fc[n](m,CLF_PT,k+dk,j+dj,i+di);
       const Real fh = (tie && !bh) ? x.w(m,CLW_L+n,k+dk,j+dj,i+di) : fu;
-      dv += (x.sph || x.cub) ? CleanDivW(x, n, m, k, j, i, 1)*fh -
-                               CleanDivW(x, n, m, k, j, i, 0)*fl : x.idx[n]*(fh - fl);
+      dv += CleanDivF(x, n, m, k, j, i, fl, fh);
       // (clean_stag_kpos: the cell flux without the moved increment flux)
       if (xh.hi && x.xq >= 0) {
         u0_(m,M1_F1+n,k,j,i) = 0.5*(xcv(m,n,k,j,i) + xcv(m,n,k+dk,j+dj,i+di) -
@@ -4884,8 +4889,7 @@ void RadiationM1::CleanWriteBack() {
         const int dk = (n == 2), dj = (n == 1), di = (n == 0);
         const Real ql = CleanKposFlux(x, CLW_X, n, m, k, j, i);
         const Real qh = CleanKposFlux(x, CLW_X, n, m, k+dk, j+dj, i+di);
-        hdq += h*((x.sph || x.cub) ? CleanDivW(x, n, m, k, j, i, 1)*qh -
-                                     CleanDivW(x, n, m, k, j, i, 0)*ql : x.idx[n]*(qh - ql));
+        hdq += h*CleanDivF(x, n, m, k, j, i, ql, qh);
       }
       pbx = x.w(m,CLW_KF,k,j,i)*fmax(e, 0.0);
       pgx = (x.w(m,CLW_KM,k,j,i) - x.w(m,CLW_KF,k,j,i))*fmax(e, 0.0);
@@ -4944,9 +4948,8 @@ void RadiationM1::CleanWriteBack() {
         dh[n] = dm[n];
       }
       if (x.cub) {   // (the hydro's components of dm, from the frame of y)
-        Real q[3][3], dy[3];
-        CleanCsFrame(x, m, k, j, i, q);
-        for (int a = 0; a < 3; ++a) dy[a] = q[a][0]*dm[0] + q[a][1]*dm[1] + q[a][2]*dm[2];
+        Real dy[3] = {dm[0], dm[1], dm[2]};
+        CleanStagHydro(x, m, k, j, i, dy);
         CleanGasChange(x, m, k, j, i, dy, dh);
       }
       for (int n = 0; n < 3; ++n) uh(m,IM1+n,k,j,i) += dh[n];
@@ -4992,8 +4995,7 @@ void RadiationM1::CleanWriteBack() {
           if (t < tgf) {
             Real e0;
             eos.ThermoAt(uh(m,IDN,k,j,i), t, e0, p, chi_rho, chi_t, cv);
-            const Real vol = (x.sph || x.cub) ? x.vol(m,k,j,i) :
-                             1.0/(x.idx[0]*x.idx[1]*x.idx[2]);
+            const Real vol = CleanVol(x, m, k, j, i);
             Kokkos::atomic_add(&pc_(M1_POS_GAS), 1.0);
             Kokkos::atomic_add(&pc_(M1_POS_GAS_DE), (ei - e0)*vol);
           }
@@ -5021,8 +5023,7 @@ void RadiationM1::CleanWriteBack() {
           const Real ei = x.w(m,CLW_EI,k,j,i), emin = fmax(ef, pgf*fmax(ei, 0.0));
           const Real need = emin - ei - d0 - (den - wk);
           const Real take = fmin(need, e - efl);
-          const Real vol = (x.sph || x.cub) ? x.vol(m,k,j,i) :
-                           1.0/(x.idx[0]*x.idx[1]*x.idx[2]);
+          const Real vol = CleanVol(x, m, k, j, i);
           const bool tk = take > 1.0e-12*emin;   // (beyond eint's round-off at e_min)
           if (tk) {
             den += take;
@@ -5043,8 +5044,7 @@ void RadiationM1::CleanWriteBack() {
     // cover is taken from the radiation of the cell's column (implicit_pos_floor_cons,
     // below), else counted as created; counted)
     if (pflr && e <= efl) {
-      const Real vol = (x.sph || x.cub) ? x.vol(m,k,j,i) :
-                       1.0/(x.idx[0]*x.idx[1]*x.idx[2]);
+      const Real vol = CleanVol(x, m, k, j, i);
       const bool gas = feedback && !x.vzero;
       Real take = 0.0;
       if (gas) {
@@ -5084,20 +5084,13 @@ void RadiationM1::CleanWriteBack() {
       u0_(m,M1_F1+1,k,j,i) = multi_d ? 0.5*(f2(m,k,j,i) + f2(m,k,j+1,i)) : 0.0;
       u0_(m,M1_F1+2,k,j,i) = three_d ? 0.5*(f3(m,k,j,i) + f3(m,k+1,j,i)) : 0.0;
     }
-    if (x.cub) {   // (cubed sphere: the face momenta's vector, CleanStagCsVector, in the
-      Real c[6], w[6], fv[3], q[3][3];   //  frame of y: its L_z is CleanStagMomentum's)
-      for (int d = 0; d < 6; ++d) w[d] = 1.0;
-      c[0] = f1(m,k,j,i);
-      c[1] = f1(m,k,j,i+1);
-      c[2] = f2(m,k,j,i);
-      c[3] = f2(m,k,j+1,i);
-      c[4] = f3(m,k,j,i);
-      c[5] = f3(m,k+1,j,i);
-      CleanStagCsVector(x, m, k, j, i, c, w, fv);
-      CleanCsFrame(x, m, k, j, i, q);
-      for (int d = 0; d < 3; ++d) {
-        u0_(m,M1_F1+d,k,j,i) = q[d][0]*fv[0] + q[d][1]*fv[1] + q[d][2]*fv[2];
-      }
+    if (x.cub) {   // (cubed sphere: the face momenta's vector, CleanStagCellVector, in the
+      const Real c[6] = {f1(m,k,j,i), f1(m,k,j,i+1), f2(m,k,j,i),   //  frame of y: its L_z
+                         f2(m,k,j+1,i), f3(m,k,j,i), f3(m,k+1,j,i)};   //  CleanStagMomentum's)
+      Real fv[3];
+      CleanStagCellVector(x, m, k, j, i, c, fv);
+      CleanStagHydro(x, m, k, j, i, fv);
+      for (int d = 0; d < 3; ++d) u0_(m,M1_F1+d,k,j,i) = fv[d];
     }
   });
   if (lzb) {   // (clean_cs_lz_abs = 2: the stage's L_z as its slope, then booked)
@@ -5130,7 +5123,7 @@ void RadiationM1::CleanWriteBack() {
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       CLEAN_HIPX(const CleanArgs &x = *px;)
       auto vol = [&](const int q) {
-        return (x.sph || x.cub) ? x.vol(m,k,j,q) : 1.0/(x.idx[0]*x.idx[1]*x.idx[2]);
+        return CleanVol(x, m, k, j, q);
       };
       Real mv = 0.0, un = 0.0;
       for (int i = is; i <= ie; ++i) {
