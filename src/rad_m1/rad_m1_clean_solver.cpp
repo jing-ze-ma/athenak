@@ -221,8 +221,9 @@ const CleanArgs *RadiationM1::CleanDevArgs(const CleanArgs &x, const int s) {
 //! traction on the wall (as ce91f387d)
 
 void RadiationM1::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
-                                 const bool phys, const int part, const int dep) {
-  CleanGhostFillT(a, c0, nc, phys, part, dep);
+                                 const bool phys, const int part, const int dep,
+                                 const std::array<uint32_t, 4> fm) {
+  CleanGhostFillT(a, c0, nc, phys, part, dep, fm);
 }
 
 void RadiationM1::CleanGhostFill(DvceArray5D<float> a, const int c0, const int nc) {

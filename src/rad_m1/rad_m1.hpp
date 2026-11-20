@@ -3198,7 +3198,8 @@ class RadiationM1 {
                        const int part, const int dep = 0,
                        const std::array<uint32_t, 4> fm = {~0u, ~0u, ~0u, ~0u});
   void CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
-                      const bool phys = true, const int part = 0, const int dep = 0);
+                      const bool phys = true, const int part = 0, const int dep = 0,
+                      const std::array<uint32_t, 4> fm = {~0u, ~0u, ~0u, ~0u});
   // (dep: the ghost layers its readers need, 0 = all ng; clean_halo_direct sends those)
   // (fm[f], clean_halo_direct: the components the ghosts of family f take, bit n for
   // component c0 + n; f the axis of their face in the axes of the cells they copy, 3 at
