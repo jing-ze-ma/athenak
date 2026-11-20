@@ -381,3 +381,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   Now running: R_fp_rsg (02-04, 10:31), R_tel_rsg (02-16, 10:32); R_xl_rsg goes to the first of r1H1/testH1 when the L1 RSG pair ends, then RZ3m_rsg, K_on_rsg,
   L2_rsg_off / L2_rsg_on on the single nodes; on the 2-node slots: H_xl_hg on the first of H_fp/H_tel to end, K_on_hg on the next, then the L2_hg pair.
   RZ3*/RZ3b* arms were already all done before 09:21 (lines above). The stopped 09:40 L2_hg runs now show as "stopped(requeued)" in the progress lines.
+- H_tel_hg (hpc-sm-02-09,hpc-sm-02-10): rc=0 wall=2978 | cycles 624961 - 625961 | steady 2.920 s/cycle | GPU MiB max 5910125 min 5 | CW a 0 FATAL 0 |  
+- H_fp_hg (hpc-sm-01-17,hpc-sm-02-03): rc=0 wall=3080 | cycles 624961 - 625961 | steady 3.018 s/cycle | GPU MiB max 60013 min 5 | CW a 3 FATAL 0 |  
