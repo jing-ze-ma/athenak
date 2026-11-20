@@ -1433,9 +1433,10 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
   }
   // xlim-1120 time2_k1_xlim = th (read only when named; default 0 = off, bitwise): the
   // exchange pair of the stage increment (the gas eint change de and E's -(ch/cl) de) is
-  // scaled by theta in [0, 1], the largest value that keeps the old vector's E, without
-  // its face transport (which time2_face_fct limits next), at >= th E of the stage start
-  // where E loses (de > 0), or its gas eint at >= th eint where the gas loses (de < 0).
+  // scaled by theta in [0, 1], the largest value that keeps the old vector's E, with its
+  // face outflow removed and its inflow kept (what time2_face_fct can reach next), at
+  // >= th E of the stage start where E loses (de > 0) and the increment leaves E <= th E,
+  // or its gas eint at >= th eint where the gas loses (de < 0).
   // The FSAL exchange slope is the last solve's relaxation rate: extrapolated over a21 dt
   // (with K2) it overshoots in stiff cells and drives the stage start negative, which no
   // face limiter can repair.  The scaled-away part is not lost: the implicit stage solve
@@ -1490,8 +1491,8 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
           const Real e0 = u0_(m,M1_E,k,j,i);
           if (!(e0 > 0.0)) {
             tq = 0.0;
-          } else {
-            Real fd = 0.0;
+          } else if (!(e0 + in_(m,M1_T2_E,k,j,i) > th*e0)) {   // (else: FCT not needed)
+            Real fd = 0.0, fi = 0.0;
             if (fdo) {
               Real g = 0.0;
               for (int d = 0; d < 3; ++d) {
@@ -1509,13 +1510,17 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
                   }
                   const Real gf = a*(cc1*p1_(m,d,kk,jj,ii) + cc2*p2_(m,d,kk,jj,ii));
                   g += u ? -gf : gf;
+                  if (u ? (gf < 0.0) : (gf > 0.0)) fi += fabs(gf);   // (inflow)
                 }
               }
               const auto &s = mbsize.d_view(m);
-              fd = g/(curv ? vol(m,k,j,i) : s.dx1*s.dx2*s.dx3);
+              const Real iv = 1.0/(curv ? vol(m,k,j,i) : s.dx1*s.dx2*s.dx3);
+              fd = g*iv;
+              fi *= iv;
             }
             const Real sl = in_(m,M1_T2_E,k,j,i) - fd;   // (E's local part, incl. -ch/cl de)
-            const Real need = th*e0 - e0 - sl;           // (> 0: what it lacks)
+            // (> 0: what it lacks with its full inflow, all FCT lets in at most)
+            const Real need = th*e0 - e0 - sl - fi;
             if (need > 0.0) tq = fmax(1.0 - need/(chcl*de), 0.0);
           }
         } else if (eg0 > 0.0) {   // the gas loses: eint + theta de >= th eint
