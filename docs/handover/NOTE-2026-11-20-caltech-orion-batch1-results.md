@@ -164,3 +164,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - KC1m_hg (hpc-sm-02-09): rc=0 wall=196 | cycles 624961 - 624981 | steady 5.172 s/cycle | GPU MiB max 116353 min 115805 | CW a 0 FATAL 0 |  
 - T2_rsg (hpc-sm-01-11): rc=1 wall=830 | cycles 589788 - 589864 | steady 3.492 s/cycle | GPU MiB max 108941 min 107971 | CW a 19 FATAL 1 |  
   FAILED: last 100 lines in caltech_results/T2_rsg/FAIL_tail100.txt
+  T2_rsg (lzcs-tel, key on, 300 cyc): `FATAL <time> dt_retry: cycle 589864 failed 9 times (max 8), dt 3.681391e+00` at cycle N0+76 (19 CLEAN WARNINGs). Full log + tail sent.
+- (04:40) Got ec649bc78: T3K_hg (key off, 50 cyc) queued right after KC / AB9, prefers 02-11; its result line carries the per-cycle dt list.
