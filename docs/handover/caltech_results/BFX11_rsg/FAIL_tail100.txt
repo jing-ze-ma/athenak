@@ -1,0 +1,101 @@
+== /resnick/groups/carnegie_poc/jingze/orion_runs_1121/BFX11_rsg/a/run.log
+CLEAN cycle 589950 t2s 1 it 1 (sum 18) pos 0 mark 0 all 0 neg 1 r1 1 r2 416 first 1 416 guard 0 solves 5 cwin 0
+CLEAN LZ cycle 589950 t2s 1 ledger -7.0997929741544789e+47
+CLEAN XT cycle 589950 t2s 1 write-back closure 6.834e+02
+elapsed=1.415554e+03 cycle=589951 time=5.465568e+08 dt=9.344274e+02
+CLEAN ray cut cycle 589951 shell 262 -> 261 (want 261, R)
+CLEAN cycle 589951 t2s 1 it 3 (sum 58) pos 0 mark 0 all 0 neg 4 r1 4 r2 355 first 4 355 guard 0 solves 30 cwin 0
+CLEAN LZ cycle 589951 t2s 1 ledger -7.2033183535676616e+47
+CLEAN XT cycle 589951 t2s 1 write-back closure 7.615e+02
+elapsed=1.420179e+03 cycle=589952 time=5.465577e+08 dt=9.344274e+02
+CLEAN ray cut cycle 589952 shell 261 -> 258 (want 258, R)
+CLEAN WARNING cycle 589952: backward-Euler solve not converged (dt_retry, 7 so far; last change 5.230e-03)
+CLEAN cycle 589952 t2s 1 it -2 (sum 359) pos 0 mark 0 all 0 neg 5 r1 5 r2 127 first 5 127 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 589952 t2s 1 ledger -7.3230651694131208e+47
+CLEAN XT cycle 589952 t2s 1 write-back closure 4.484e+02
+DT_RETRY cycle=589952 t=5.465577e+08 dt 9.344274e+02 -> 4.672137e+02 reason=NON-CONVERGED resid=-1.000000e+00 cut 1
+CLEAN ray cut cycle 589952 shell 261 -> 258 (want 258, R)
+CLEAN WARNING cycle 589952: backward-Euler solve not converged (dt_retry, 7 so far; last change 6.081e-03)
+CLEAN cycle 589952 t2s 1 it -2 (sum 803) pos 0 mark 0 all 0 neg 0 r1 0 r2 177 first 0 177 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 589952 t2s 1 ledger -7.2547232381621095e+47
+CLEAN XT cycle 589952 t2s 1 write-back closure 1.286e+02
+DT_RETRY cycle=589952 t=5.465577e+08 dt 4.672137e+02 -> 2.336068e+02 reason=NON-CONVERGED resid=-1.000000e+00 cut 2
+CLEAN ray cut cycle 589952 shell 261 -> 258 (want 258, R)
+CLEAN WARNING cycle 589952: backward-Euler solve not converged (dt_retry, 7 so far; last change 2.178e-04)
+CLEAN cycle 589952 t2s 1 it -10 (sum 938) pos 0 mark 0 all 0 neg 7 r1 7 r2 234 first 7 234 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 589952 t2s 1 ledger -7.2286684970563695e+47
+CLEAN XT cycle 589952 t2s 1 write-back closure 1.204e+02
+DT_RETRY cycle=589952 t=5.465577e+08 dt 2.336068e+02 -> 1.181460e+02 reason=NON-CONVERGED resid=-1.000000e+00 cut 3
+CLEAN ray cut cycle 589952 shell 261 -> 258 (want 258, R)
+CLEAN WARNING cycle 589952: backward-Euler solve not converged (dt_retry, 7 so far; last change 5.079e-05)
+CLEAN cycle 589952 t2s 1 it -2 (sum 248) pos 0 mark 0 all 0 neg 14 r1 14 r2 450 first 14 450 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 589952 t2s 1 ledger -7.2160215680906664e+47
+CLEAN XT cycle 589952 t2s 1 write-back closure 1.052e+02
+DT_RETRY cycle=589952 t=5.465577e+08 dt 1.181460e+02 -> 5.941446e+01 reason=NON-CONVERGED resid=-1.000000e+00 cut 4
+CLEAN ray cut cycle 589952 shell 261 -> 258 (want 258, R)
+CLEAN WARNING cycle 589952: backward-Euler solve not converged (dt_retry, 7 so far; last change 5.398e-04)
+CLEAN cycle 589952 t2s 1 it -2 (sum 201) pos 0 mark 0 all 0 neg 0 r1 0 r2 800 first 0 800 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 589952 t2s 1 ledger -7.2096741440790180e+47
+CLEAN XT cycle 589952 t2s 1 write-back closure 5.737e+01
+DT_RETRY cycle=589952 t=5.465577e+08 dt 5.941446e+01 -> 2.979334e+01 reason=NON-CONVERGED resid=-1.000000e+00 cut 5
+CLEAN ray cut cycle 589952 shell 261 -> 258 (want 258, R)
+CLEAN WARNING cycle 589952: backward-Euler solve not converged (dt_retry, 7 so far; last change 2.743e-05)
+CLEAN cycle 589952 t2s 1 it -2 (sum 201) pos 0 mark 0 all 0 neg 0 r1 0 r2 1526 first 0 1526 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 589952 t2s 1 ledger -7.2064971905410148e+47
+CLEAN XT cycle 589952 t2s 1 write-back closure 3.836e+01
+DT_RETRY cycle=589952 t=5.465577e+08 dt 2.979334e+01 -> 1.491829e+01 reason=NON-CONVERGED resid=-1.000000e+00 cut 6
+CLEAN ray cut cycle 589952 shell 261 -> 258 (want 258, R)
+CLEAN WARNING cycle 589952: backward-Euler solve not converged (dt_retry, 7 so far; last change 1.267e-05)
+CLEAN cycle 589952 t2s 1 it -2 (sum 202) pos 0 mark 0 all 0 neg 0 r1 0 r2 2668 first 0 2668 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 589952 t2s 1 ledger -7.2049078978233023e+47
+CLEAN XT cycle 589952 t2s 1 write-back closure 2.466e+01
+DT_RETRY cycle=589952 t=5.465577e+08 dt 1.491829e+01 -> 7.464562e+00 reason=NON-CONVERGED resid=-1.000000e+00 cut 7
+CLEAN ray cut cycle 589952 shell 261 -> 258 (want 258, R)
+CLEAN WARNING cycle 589952: backward-Euler solve not converged (dt_retry, 7 so far; last change 8.847e-04)
+CLEAN cycle 589952 t2s 1 it -2 (sum 201) pos 0 mark 0 all 0 neg 0 r1 0 r2 5780 first 0 5780 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 589952 t2s 1 ledger -7.2041139920659671e+47
+CLEAN XT cycle 589952 t2s 1 write-back closure 2.306e+01
+DT_RETRY cycle=589952 t=5.465577e+08 dt 7.464562e+00 -> 3.733636e+00 reason=NON-CONVERGED resid=-1.000000e+00 cut 8
+CLEAN ray cut cycle 589952 shell 261 -> 258 (want 258, R)
+CLEAN WARNING cycle 589952: backward-Euler solve not converged (dt_retry, 7 so far; last change 9.635e-04)
+CLEAN cycle 589952 t2s 1 it -2 (sum 200) pos 0 mark 0 all 0 neg 0 r1 0 r2 22250 first 0 22250 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 589952 t2s 1 ledger -7.2037165500546719e+47
+CLEAN XT cycle 589952 t2s 1 write-back closure 2.293e+01
+### FATAL ERROR: <time> dt_retry: cycle 589952 failed 9 times (max 8), dt 3.733636e+00
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 0 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 2 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 3 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 1 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+[2026-11-20T13:41:39.232] error: *** STEP 6133592.321 ON hpc-sm-02-04 CANCELLED AT 2026-11-20T13:41:39 DUE to SIGNAL Killed ***
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+srun: error: hpc-sm-02-04: tasks 0,2: Killed
+srun: error: hpc-sm-02-04: task 3: Exited with exit code 1
+srun: error: hpc-sm-02-04: task 1: Killed
