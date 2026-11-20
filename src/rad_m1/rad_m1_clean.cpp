@@ -3090,7 +3090,7 @@ Real RadiationM1::CleanVelocityUpdate() {
   xh.kq = -1;
   xh.mcl = true;
   // (the F solve's face tie after the drag, which evaluates the same face T: CLF_PT)
-  const bool td = cln_fwork && cln_ftie && !x.cub;
+  const bool td = cln_fwork && cln_ftie;
   if (cln_fwork) {   // (clean_stag_fwork: the momentum of the
     CleanStagFSolve(CLW_EK, !td, false);         //  F solve, which the write-back gives
     xh.fs = true;                                //  the gas, for the work W of the E row)
@@ -4104,7 +4104,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
       CleanOverlapFor("cln_fs3", pmy_pack, ov, f3, fin, dir);
     }
   }
-  if (tie && tie_now && !cub) CleanStagFaceTie(e, kd);
+  if (cln_ftie && tie_now) CleanStagFaceTie(e, kd);
 }
 
 //----------------------------------------------------------------------------------------
@@ -4118,7 +4118,8 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
 //! solve converged; across the theta-periodic wrap of a wedge, whose two copies have
 //! opposite cot(theta) terms, the owner's.  Each block computes them for its low faces
 //! into CLW_L + 3 dir (+ 1 d, + 2 slope; free after the F solve), the exchange hands the
-//! high faces' to their other side.
+//! high faces' to their other side.  The cubed sphere: T in CLF_PT (pt: the drag's),
+//! each face's three of the lower gid (CleanStagCsTie).
 
 void RadiationM1::CleanStagFaceTie(const int e, const int kd, const bool pt) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -4129,6 +4130,19 @@ void RadiationM1::CleanStagFaceTie(const int e, const int kd, const bool pt) {
   CleanArgs x = CleanMakeArgs();
   x.fs = true;
   const int nf = x.nf;
+  if (x.cub) {
+    for (int d = 0; d < nf && !pt; ++d) {   // (as CleanStagDrag; none at physical faces)
+      auto fc = x.fc[d];
+      CleanFor("cln_tiet", nmb1, ks, ke+(d == 2), js, je+(d == 1), is, ie+(d == 0),
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (CleanBoundaryFace(x, d, m, k, j, i)) return;
+        fc(m,CLF_PT,k,j,i) = (fc(m,CLF_N,k,j,i) - fc(m,CLF_G,k,j,i))/(x.c*x.c) +
+            x.h*CleanFaceStress(x, e, d, m, k, j, i, true) - x.h*fc(m,CLF_N+1,k,j,i);
+      });
+    }
+    CleanStagCsTie((kd > 0) ? 3 : 2, CLF_PT, CLF_N + 3, kd);
+    return;
+  }
   CLEAN_HIPX(const CleanArgs *px = CleanDevArgs(x, 0);)
   CleanFor("cln_tie", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -4428,6 +4442,51 @@ void RadiationM1::CleanStagFCsShared() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagCsTie
+//! \brief cubed sphere, clean_stag_ftie: the nc face slots c0, c1, c2 of a face shared
+//! with another MeshBlock, in a panel or across a seam, take the values of the lower gid
+//! (as its F, CleanStagFCsShared), in our axes (CleanCsSlot), so that both sides use one
+//! value to the bit.  Each cell puts those of its face of family q on its MeshBlock's
+//! boundary (else its high face) in cln_v slot 3 n + q (the F solve's cell terms, free
+//! after it), which the ghosts take.
+
+void RadiationM1::CleanStagCsTie(const int nc, const int c0, const int c1, const int c2) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke, nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanArgs x = CleanMakeArgs();
+  auto v = cln_v;
+  CleanFor("cln_cstie", nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int c[3] = {c0, c1, c2};
+    for (int q = 0; q < 3; ++q) {
+      const int u = (q == 0) ? (i == ie) : ((q == 1) ? (j == je) : (k == ke));
+      for (int n = 0; n < nc; ++n) {
+        v(m,3*n+q,k,j,i) = x.fc[q](m,c[n],k+u*(q == 2),j+u*(q == 1),i+u*(q == 0));
+      }
+    }
+  });
+  CleanGhostFill(cln_v, 0, 3*nc, true, 0, 1);
+  for (int dir = 0; dir < 3; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    auto fc = x.fc[dir];
+    CleanFor("cln_cstie2", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const bool lin = (dir == 0) ? (i > is) : ((dir == 1) ? (j > js) : (k > ks));
+      const bool rin = (dir == 0) ? (i <= ie) : ((dir == 1) ? (j <= je) : (k <= ke));
+      if ((lin && rin) || CleanBoundaryFace(x, dir, m, k, j, i)) return;
+      const int kg = lin ? k : k - dk, jg = lin ? j : j - dj, ig = lin ? i : i - di;
+      const int ko = lin ? k - dk : k, jo = lin ? j - dj : j, io = lin ? i - di : i;
+      if (!(x.g(m,CLG_F+7,kg,jg,ig) < x.g(m,CLG_F+7,ko,jo,io))) return;
+      const int c[3] = {c0, c1, c2};
+      Real s;
+      const int q = CleanCsSlot(x, dir, m, k, j, i, kg, jg, ig, false, s)/2;
+      for (int n = 0; n < nc; ++n) fc(m,c[n],k,j,i) = s*v(m,3*n+q,kg,jg,ig);
+    });
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanStagCsLateral
 //! \brief staggered on the cubed sphere: for E in work vector e, the lateral stress sums
 //! of every cell and face family q, Y_q = 1/4 sum over its two faces of A n.(P' - P),
@@ -4666,8 +4725,10 @@ void RadiationM1::CleanWriteBack() {
   auto u0_ = u0;
   // (clean_stag_ftie: a high face's Phi its owner's, CLW_L + dir of the next cell, so the
   // energy telescopes across MeshBlock faces and the theta-periodic wrap; the solve's
-  // own Phi there differs by its copy's geometry, a residual E takes)
+  // own Phi there differs by its copy's geometry, a residual E takes; the cubed sphere:
+  // each shared face's CLF_PT the lower gid's, CleanStagCsTie)
   const bool tie = cln_ftie && !x.cub;
+  if (cln_ftie && x.cub) CleanStagCsTie(1, CLF_PT);
   if (tie) {
     const int nf = x.nf;
     CLEAN_HIPX(const CleanArgs *px = CleanDevArgs(x, 0);)
@@ -4781,6 +4842,7 @@ void RadiationM1::CleanWriteBack() {
   CleanStagFSolve(CLW_X, true, false);
   xh.fs = true;
   xh.tf = cln_ftie && !x.cub;
+  xh.fa = cln_ftie && x.cub;   // (the cubed sphere's tied T: CLF_PT, CleanStagFaceTie)
 
   // face fluxes of the solution
   for (int dir = 0; dir < 3; ++dir) {
