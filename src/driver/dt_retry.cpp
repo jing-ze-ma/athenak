@@ -214,9 +214,8 @@ struct ViewEntry : public Entry {
   void Save() override {
     orig = *p;
     have = false;
-    if (skip != nullptr && *skip) {
-      clone = Clone(); hclone = HClone(); onhost = false; nskip += 1;
-    }
+    // (the clones are kept for the next copy: no free and allocation per skipped cycle)
+    if (skip != nullptr && *skip) {onhost = false; nskip += 1;}
     if (!deep || p->data() == nullptr || p->span() == 0 || (skip != nullptr && *skip)) {
       return;
     }
