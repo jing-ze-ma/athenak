@@ -501,7 +501,10 @@ void RadiationM1::CleanInit() {
   cln_fdg = (!cln_cell && cln_consist) ? nfc : -1;
   cln_xqs = cln_xd ? nfc + (cln_fdg >= 0) : -1;   // (clean_stag_xdonor's q)
   cln_kqs = cln_kpos ? nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0) : -1;   // (kpos: q)
-  const int nfx = nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0) + (cln_kpos ? 2 : 0);
+  cln_rzs = (cln_frz > 0) ? nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0) + (cln_kpos ? 2 : 0)
+                          : -1;   // (clean_stag_freal_relax)
+  const int nfx = nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0) + (cln_kpos ? 2 : 0) +
+                  (cln_frz > 0);
   if (cln_kpos || cln_xpat) {
     Kokkos::realloc(cln_kcnt, 2);
     Kokkos::deep_copy(cln_kcnt, 0.0);
@@ -3827,7 +3830,8 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
   xh.kq = -1;
   auto op = opac;
   const CleanFLine ln{cln_v, x.cub};
-  const bool fk = cln_fkin, dok = cln_dok, cub = x.cub;
+  const bool fk = cln_fkin, dok = cln_dok, cub = x.cub, rzl = (cln_frz == 2);
+  const int rzs = cln_rzs;
   const int kd = (t2_solve == M1_T2S_NONE) ? 0 :
                  ((t2_solve == M1_T2S_STAGE1) ? CLF_KD + 1 : CLF_KD);
   const Real c1lo = cln_c0, c1hi = cln_c1;
@@ -4135,6 +4139,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
     // (the cubed sphere: a face shared with another MeshBlock takes the F of the lower
     // gid, and the cells' slots of it)
     if (cub && q == (1 + nsw)*x.nf) CleanStagFCsShared();
+    if (cub && cln_frz > 0 && q == (1 + nsw)*x.nf) CleanStagFRelax(e);
     if (ph == 2) {
       // F and the dissipation term of every face
       const CleanArgs *px = CleanDevArgs(x, 0), *pxh3 = CleanDevArgs(xh, 1);
@@ -4155,6 +4160,9 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
         const Real fhr = fc(m,CLF_N,k,j,i);   // (F^H, before it is replaced: realz)
         fc(m,CLF_N,k,j,i) = f;
         fc(m,CLF_N+2,k,j,i) = f;
+        // (clean_stag_freal_relax = ledger: the gas takes the faces' terms as if F were
+        // the solve's, the relaxation's momentum is the radiation's, CleanLzBook)
+        if (rzl) fc(m,CLF_N+1,k,j,i) -= (fc(m,rzs,k,j,i) - f)/(x.h*x.c*x.c);
         if (rfo) {
           const Real xl = x.w(m,e,k-dk,j-dj,i-di), xr = x.w(m,e,k,j,i);
           const Real cx = rcl*fmax(fmax(xl, xr), 1.0e-300)/rcp;
@@ -4590,6 +4598,84 @@ void RadiationM1::CleanStagFCsShared() {
   // (one MeshBlock along x1: not the x1 family's F, CleanStagFSolve)
   const int f0 = (pmy_pack->pmesh->nmb_rootx1 == 1 && !pmy_pack->pmesh->multilevel) ? 2 : 0;
   CleanGhostFill(cln_v, 9 + f0, 6 - f0, true, 0, 1, CleanFMask(f0));   // (as the F solve)
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagFRelax
+//! \brief clean_stag_freal_relax (cubed sphere, after CleanStagFCsShared): the solve's F
+//! of every interior face, in its streaming share w, relaxed toward the realisable
+//! streaming flux F_K = c (h+ E_L + h- E_R) (h+ in [0, 1], h- in [-1, 0], the face's half
+//! ranges of the energy flux; |F_K| <= c max(E_L, E_R) by construction):
+//!   F' = F - w (1 - a) (F - F_K),  a = min(1/(1 + h c/dx_f), a_c),
+//! the implicit relaxation at the streaming rate c/dx_f, and a_c the largest a with
+//! |F_K + a (F - F_K)| <= c max(E_L, E_R), so that F' is realisable where w = 1 (and its
+//! excess shrinks by w elsewhere); continuous in the state, no clip.  The removed
+//! momentum (F - F') V_f/c^2 goes to the gas through the faces' terms (gas), or is the
+//! radiation's, in the L_z ledger (ledger, CleanWriteBack).  The faces' F before it in
+//! slot cln_rzs; F' into the cells' slots, then the ghosts and CleanStagFCsShared again,
+//! so that a shared face has one F' (the lower gid's) to the bit
+
+void RadiationM1::CleanStagFRelax(const int e) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke, nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanArgs x = CleanMakeArgs();
+  auto v = cln_v;
+  const int rzs = cln_rzs;
+  const bool pr = (e == CLW_X);   // (the write-back's: counted and printed)
+  Kokkos::View<Real*> rc("m1_frz", 8);
+  for (int dir = 0; dir < 3; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    auto fc = x.fc[dir];
+    CleanFor("cln_frz", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real f = fc(m,CLF_N+2,k,j,i);
+      fc(m,rzs,k,j,i) = f;
+      if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
+      const int kl = k - dk, jl = j - dj, il = i - di;
+      const Real el = fmax(x.w(m,e,kl,jl,il), 0.0), er = fmax(x.w(m,e,k,j,i), 0.0);
+      const Real cm = x.c*fmax(el, er);
+      const Real fk = x.c*(fmin(fmax(fc(m,CLF_HP,k,j,i), 0.0), 1.0)*el +
+                           fmax(fmin(fc(m,CLF_HM,k,j,i), 0.0), -1.0)*er);
+      const Real w = fmin(fmax(fc(m,CLF_W,k,j,i), 0.0), 1.0);
+      Real a = 1.0/(1.0 + x.h*x.c/CleanCellFaceDistance(x, dir, m, k, j, i));
+      const bool out = !(fabs(f) <= cm);
+      if (out) a = fmin(a, (((f > 0.0) ? cm : -cm) - fk)/(f - fk));
+      const Real fn = f - w*(1.0 - a)*(f - fk);
+      const bool lin = (dir == 0) ? (i > is) : ((dir == 1) ? (j > js) : (k > ks));
+      const bool rin = (dir == 0) ? (i <= ie) : ((dir == 1) ? (j <= je) : (k <= ke));
+      if (lin) v(m,9+2*dir+1,kl,jl,il) = fn;
+      if (rin) v(m,9+2*dir,k,j,i) = fn;
+      if (!pr || !(lin && rin)) return;   // (counts: each interior face once)
+      Kokkos::atomic_add(&rc(0), 1.0);
+      if (out) Kokkos::atomic_add(&rc(1), 1.0);
+      if (!(fabs(fn) <= cm)) Kokkos::atomic_add(&rc(2), 1.0);
+      if (!(fabs(fn) <= cm) && w >= 1.0) Kokkos::atomic_add(&rc(3), 1.0);
+      Kokkos::atomic_max(&rc(4), fabs(f)/fmax(cm, 1.0e-300));
+      Kokkos::atomic_max(&rc(5), fabs(fn)/fmax(cm, 1.0e-300));
+      Kokkos::atomic_add(&rc(6), fabs(f - fn)*x.dxf[dir](m,k,j,i)*x.area[dir](m,k,j,i)/
+                                 (x.c*x.c));
+      if (w*(1.0 - a) > 0.5) Kokkos::atomic_add(&rc(7), 1.0);
+    });
+  }
+  const int f0 = (pmy_pack->pmesh->nmb_rootx1 == 1 && !pmy_pack->pmesh->multilevel) ? 2 : 0;
+  CleanGhostFill(cln_v, 9 + f0, 6 - f0, true, 0, 1, CleanFMask(f0));   // (as the F solve)
+  CleanStagFCsShared();
+  if (!pr) return;
+  auto hh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), rc);
+  Real h[8];
+  for (int n = 0; n < 8; ++n) h[n] = hh(n);
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, h, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &h[4], 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &h[6], 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  if (global_variable::my_rank == 0 && !cln_insteady) {
+    std::printf("CLEAN FRZ cycle %d t2s %d | faces %.0f: |F|>c maxE before %.0f after %.0f "
+                "(w=1 %.0f) | max |F|/c maxE before %.3e after %.3e | w(1-a)>.5 %.0f | "
+                "sum |dF| V/c^2 %.6e\n", pmy_pack->pmesh->ncycle, static_cast<int>(t2_solve),
+                h[0], h[1], h[2], h[3], h[4], h[5], h[7], h[6]);
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -5145,7 +5231,8 @@ void RadiationM1::CleanWriteBack() {
   const bool cls = xwb || kpb;   // (the closure in CLW_PW, printed below)
   px = CleanDevArgs(x, 0);   // (the F solve took the slots; xh changed)
   pxh = CleanDevArgs(xh, 1);
-  const bool lzb = cln_lzbook && feedback;
+  const bool lzb = cln_lzbook && feedback, rzl = (cln_frz == 2);
+  const int rzs = cln_rzs;
   DvceArray4D<Real> lzw;
   if (lzb) lzw = ScratchView<DvceArray4D<Real>>("cln_lzw", nmb1 + 1, u0.extent_int(2),
                                                  u0.extent_int(3), u0.extent_int(4));
@@ -5213,6 +5300,17 @@ void RadiationM1::CleanWriteBack() {
       if (fm) fmd(m,k,j,i) = CleanStagRadial(x, m, k, j, i, dm);
       if (x.vzero) dm[0] = dm[1] = dm[2] = dlz = 0.0;   // (frozen gas momentum)
       if (lzb) lzw(m,k,j,i) = dlz;   // (clean_cs_lz_abs = 2: CleanLzBook)
+      if (lzb && rzl && !x.vzero) {   // (clean_stag_freal_relax = ledger: the L_z of the
+        Real c[6], fv[3], q[3][3];    //  face momentum it took, CleanLzTotal's form)
+        for (int d = 0; d < 6; ++d) {
+          const int n = d/2, s = d%2, kk = k+s*(n == 2), jj = j+s*(n == 1), ii = i+s*(n == 0);
+          c[d] = x.fc[n](m,rzs,kk,jj,ii) - x.fc[n](m,CLF_N,kk,jj,ii);
+        }
+        CleanStagCellVector(x, m, k, j, i, c, fv);
+        CleanStagHydro(x, m, k, j, i, fv);
+        lzw(m,k,j,i) += CleanVol(x, m, k, j, i)*CleanCsFrame(x, m, k, j, i, q)*fv[2]/
+                        (x.c*x.c);
+      }
       // (clean_stag_kreal: the stage's deferred kick, CleanStagKReal; its own kinetic
       // energy wkr leaves the slopes, which are the stage's f)
       if (krl && !x.vzero) {

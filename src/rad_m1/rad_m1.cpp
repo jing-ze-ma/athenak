@@ -352,6 +352,21 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         pin->GetBoolean("rad_m1", "clean_stag_fchi_net")) {
       cln_fchi = 2;
     }
+    // realz2-1121 clean_stag_freal_relax = gas | ledger (read only when named; off): in
+    // the streaming share w the face momentum relaxes toward the realisable streaming flux
+    // F_K = c (h+ E_L + h- E_R) at the rate c/dx, and at least into |F| <= c max(E_L, E_R)
+    // (CleanStagFRelax); the momentum it takes goes to the gas (gas) or is booked as the
+    // radiation's (ledger: the L_z in the ledger of CleanLzBook)
+    if (!cln_cell && pin->DoesParameterExist("rad_m1", "clean_stag_freal_relax")) {
+      const std::string fr = pin->GetString("rad_m1", "clean_stag_freal_relax");
+      cln_frz = (fr == "gas") ? 1 : ((fr == "ledger") ? 2 : 0);
+      if (fr != "off" && (cln_frz == 0 || !pmy_pack->pmesh->use_cubed_sphere ||
+                          !cln_fsolve)) {
+        std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_freal_relax = off | gas | ledger,"
+                  << " the cubed sphere's F solve only" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     // clean_stag_csvec_radial (true, the only form): the cubed sphere's cell vector exact
     // for a radial field (CleanStagCsVector); false (the old least-squares fit) is gone
     cln_csvr = stag("clean_stag_csvec_radial", true);
@@ -425,6 +440,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       // momentum of CleanCsTorque and the radiation's L_z that of its face momenta, so
       // that the ledger holds the radial boundaries' torque alone
       cln_lzt = stag("clean_cs_lz_tel", false);
+      if (cln_lzt && cln_frz == 2) {
+        std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_freal_relax = ledger books the "
+                  << "cell vector's L_z, not clean_cs_lz_tel's" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
       if (cln_lzt && cln_lza != 2) {
         std::cout << "### FATAL ERROR: <rad_m1>/clean_cs_lz_tel needs the cubed sphere "
                   << "and clean_layout = staggered" << std::endl;

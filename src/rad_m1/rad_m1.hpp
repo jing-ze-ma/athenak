@@ -3139,6 +3139,7 @@ class RadiationM1 {
   int CleanStagRealizable();
   void CleanStagBracket();
   void CleanStagFSolve(const int e, const bool tie = true, const bool lat = true);
+  void CleanStagFRelax(const int e);
   void CleanDMem(const bool save);
   void CleanDInc(const bool two, const Real c1, const Real c2, const Real w1,
                  const Real w0);
@@ -3424,6 +3425,8 @@ class RadiationM1 {
   Real cln_psi_eps = 1.0e-12;   // clean_psi_eps: floor of the smoothness sensor
   int cln_nnreal = 0;           // cells with |F| > c E in the last cell-layout solve
   int cln_fchi = 0;             // realz: 1 clean_stag_fchi (w share), 2 _net
+  int cln_frz = 0;              // realz2: clean_stag_freal_relax, 1 gas, 2 ledger
+  int cln_rzs = -1;             // (its face slot: F of the solve before it)
   bool cln_fsolve = false;      // staggered: the face F of a separate F solve
   bool cln_fkin = false;        // staggered fsolve: streaming share of the rays' kinetic
                                 //   momentum flux
