@@ -2713,8 +2713,9 @@ void RadiationM1::CleanCellYDonor(const bool first) {
 //! \brief diagnostic (clean_diag_neg): the energy balance of the solve just written
 //! back, summed over the cells and ranks: sum V (E - E_old), sum V de_gas (the
 //! write-back's gas energy change, h K_EN) and h times the x1 face fluxes fE through the
-//! inner and outer faces of the mesh (A f0x1 at is of the blocks at x1min, at ie+1 of
-//! those at x1max).  A conservative solve has res = dE + de_gas + h (L_out - L_in) = 0;
+//! inner and outer faces of the mesh (at is of the blocks at x1min, at ie+1 of those at
+//! x1max), each as its cell's E row takes it: V g_E of CleanCellRows (h A/V fE, the
+//! cubed sphere's own face areas).  A conservative solve has res = dE + de_gas + h (L_out - L_in) = 0;
 //! the hst ledger books L_top and L_in at the end of the step instead.
 
 void RadiationM1::CleanCellDiagLedger() {
@@ -2725,7 +2726,7 @@ void RadiationM1::CleanCellDiagLedger() {
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   const Real h = dt_sub;
   auto vol = pmy_pack->pcoord->volume;
-  auto a1 = pmy_pack->pcoord->area.x1f;
+  CleanArgs x = CleanMakeArgs();
   auto w = cln_w;
   auto u0_ = u0;
   auto f1 = f0x1;
@@ -2750,8 +2751,16 @@ void RadiationM1::CleanCellDiagLedger() {
     const Real v = vol(m,k,j,i);
     a += v*(u0_(m,M1_E,k,j,i) - w(m,CLW_EO,k,j,i));
     if (slopes) b += v*h*kk(m,M1_T2_EN,k,j,i);
-    if (i == is && lo(m)) c += h*a1(m,k,j,i)*f1(m,k,j,i);
-    if (i == ie && hi(m)) d += h*a1(m,k,j,i+1)*f1(m,k,j,i+1);
+    if (i == is && lo(m)) {
+      Real f[4] = {f1(m,k,j,i), 0.0, 0.0, 0.0}, g[4];
+      CleanCellRows(x, 0, m, k, j, i, k, j, i, f, g);
+      c += v*g[0];
+    }
+    if (i == ie && hi(m)) {
+      Real f[4] = {f1(m,k,j,i+1), 0.0, 0.0, 0.0}, g[4];
+      CleanCellRows(x, 0, m, k, j, i+1, k, j, i, f, g);
+      d += v*g[0];
+    }
   }, Kokkos::Sum<Real>(se), Kokkos::Sum<Real>(sg), Kokkos::Sum<Real>(fi),
      Kokkos::Sum<Real>(fo));
   Real s[4] = {se, sg, fi, fo};
