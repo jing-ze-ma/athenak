@@ -280,42 +280,6 @@ constexpr int CLW_KR = 60;   // staggered clean_stag_kreal: the deferred kick (1
 constexpr int CLW_NR = 63;   //   the stage's gas momentum in the frame of y (3)
 
 //----------------------------------------------------------------------------------------
-//! \struct CleanFvI
-//! \brief the FV rays' intensities: cln_fvi, or cln_fvis in single precision
-//! (clean_fv_float).  Reads give Real, Set stores in the precision of the array, Round
-//! is a value as stored.
-
-struct CleanFvI {
-  DvceArray5D<Real> d;
-  DvceArray5D<float> f;
-  bool f32 = false;
-  KOKKOS_INLINE_FUNCTION
-  Real operator()(const int m, const int n, const int k, const int j, const int i) const {
-    return f32 ? static_cast<Real>(f(m,n,k,j,i)) : d(m,n,k,j,i);
-  }
-  KOKKOS_INLINE_FUNCTION
-  Real Round(const Real v) const {
-    return f32 ? static_cast<Real>(static_cast<float>(v)) : v;
-  }
-  KOKKOS_INLINE_FUNCTION
-  void Set(const int m, const int n, const int k, const int j, const int i,
-           const Real v) const {
-    if (f32) {
-      f(m,n,k,j,i) = static_cast<float>(v);
-    } else {
-      d(m,n,k,j,i) = v;
-    }
-  }
-  int extent_int(const int r) const {return f32 ? f.extent_int(r) : d.extent_int(r);}
-  // the intensities as they are held: with clean_fv_float, the doubles a restart read
-  // until the next sweep converts them
-  static CleanFvI Of(const DvceArray5D<Real> &d_, const DvceArray5D<float> &f_,
-                     const bool f32_) {
-    return CleanFvI{d_, f_, f32_ && d_.extent_int(1) == 0};
-  }
-};
-
-//----------------------------------------------------------------------------------------
 //! \struct CleanArgs
 //! \brief everything the device functions of the clean solve read
 
@@ -424,17 +388,6 @@ void CleanStOff(const int s, int &dk, int &dj, int &di) {   // (the offset of sl
     ((p == 2) ? dj : di) = d2;
   }
 }
-
-// the source moments of the FV rays (array cln_fvq; lld: all, else chi and S, CLQ_N0)
-constexpr int CLQ_X = 0;     // chi
-constexpr int CLQ_S0 = 1;    // S (every FV mode)
-constexpr int CLQ_N0 = 2;
-constexpr int CLQ_J = 2;     // J of the source
-constexpr int CLQ_E = 3;     // the gas's emission q = S - (1 - eps) J
-constexpr int CLQ_S = 4;     // slopes of S along x1, x2, x3 (+3)
-constexpr int CLQ_W = 7;     // 1 - eps
-constexpr int CLQ_C = 8;     // curvatures Q of S along x1, x2, x3 (+3)
-constexpr int CLQ_N = 11;
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanGasEint
@@ -864,9 +817,8 @@ Real CleanStagN(const CleanArgs &x, const int v, const int dir, const int m,
 //! mean area of its two faces of the family, the owner's, CLG_A), so that a free stream
 //! keeps A_d E_d (an isotropic field, s = 0, is unchanged; the signs, and with them the
 //! M-matrix, are kept).  Only where h+- are the cells' own, analytic or of point
-//! intensities (clean_rays = sc): the FV rays' (vet_gd, fv1 | fv | lld) are half-range
-//! fluxes through the face, which their own finite-volume transport already carries in
-//! area form, and so are the flux factors of clean_stag_gflux.
+//! intensities (clean_rays = sc): the flux factors of clean_stag_gflux are half-range
+//! fluxes through the face, already in area form.
 
 KOKKOS_INLINE_FUNCTION
 void CleanStagArea(const CleanArgs &x, const int dir, const int m, const int k,

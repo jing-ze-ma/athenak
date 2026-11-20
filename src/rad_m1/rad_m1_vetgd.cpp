@@ -1016,20 +1016,18 @@ void RadiationM1::VetGdInit() {
                    [&](const int a, const int b) {return vgd_x1lv[a] < vgd_x1lv[b];});
   Kokkos::deep_copy(vgd_x1mo, mo_h);
   if (vgd_nb1 > 1) {
-    // (the cubed sphere: the clean scheme's FV rays, CleanFvSweep, no sweep levels)
-    if ((vgd_csg && !(clean && cln_rfv > 0)) || vgd_async || vgd_twin || vgd_upf != 0 ||
-        vgd_pol || (!vgd_shl_on && !vgd_csg) || indcs.nx1 < 2) {
-      VgdFatal("several MeshBlocks along x1 need a wedge or (scheme = clean) the cubed "
-               "sphere, MeshBlock nx1 >= 2, vet_gd_shell_list and no vet_gd_async / "
-               "twin / upwind / full sphere");
+    if (vgd_csg || vgd_async || vgd_twin || vgd_upf != 0 ||
+        vgd_pol || !vgd_shl_on || indcs.nx1 < 2) {
+      VgdFatal("several MeshBlocks along x1 need a wedge, MeshBlock nx1 >= 2, "
+               "vet_gd_shell_list and no vet_gd_async / twin / upwind / full sphere");
     }
     vgd_hcomp = 0;   // the dense per-shell halo (the compact lists assume one level)
   }
-  // vet_gd_raw: the raw band where named true; unnamed, with the FV rays (no band) or
-  // where the exact-list band would clamp (below, after the reach): the two bands give
-  // the same values where nothing clamps
+  // vet_gd_raw: the raw band where named true; unnamed, where the exact-list band would
+  // clamp (below, after the reach): the two bands give the same values where nothing
+  // clamps
   const bool raw_ok = clean && !vgd_csg && !vgd_pol && !vgd_sth;
-  vgd_raw = raw_ok && (vgd_raw_named ? vgd_raw_par : cln_rfv > 0);
+  vgd_raw = raw_ok && vgd_raw_named && vgd_raw_par;
   // (nx3 = 1: the dense halo, the compact / exact lists mark 3-D band reads)
   if (!pm->three_d) {vgd_hcomp = 0;}
   auto raw_halo = [&]() {
@@ -1128,10 +1126,7 @@ void RadiationM1::VetGdInit() {
                                                      pmy_pack->pcoord->xx1f);
     // (pass 1: the raw band, where pass 0's exact lists would clamp; vet_gd_raw unnamed)
     for (int pass = 0; pass < 2; ++pass) {
-      // (the clean scheme's FV rays, CleanFvSweep, read the cells and ghosts only: no
-      // band)
-      const bool fvr = vgd_raw && cln_rfv > 0;
-      int nmax = vgd_raw ? (fvr ? 0 : std::numeric_limits<int>::max())
+      int nmax = vgd_raw ? std::numeric_limits<int>::max()
                          : (pm->three_d ? std::min(indcs.nx2, indcs.nx3) : indcs.nx2);
       // accpolar-1103 vet_gd_band_global: the band is filled from any block (global-
       // cell lists), so its depth is capped by the SPHERE (half a ring in phi, the theta
@@ -1191,7 +1186,7 @@ void RadiationM1::VetGdInit() {
         vgd_wsi = vgd_wsh;
         vgd_wso = vgd_wsh;
       }
-      vgd_capped = (vgd_w < wneed) && !fvr;
+      vgd_capped = (vgd_w < wneed);
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_m1> vet_gd: exact per-shell lateral halo, band " << vgd_w
                   << " cells (needed " << wneed << "), per-shell depth mean "
@@ -1248,7 +1243,7 @@ void RadiationM1::VetGdInit() {
     // (vgd_raw: every band value the sweep reads, from its exchange of this sweep)
     // (no silent fallback: without the cs compact lists the clean sc rays keep the full
     // ragged band, +18 GB/GPU on the RSG)
-    if (vgd_csg && clean && cln_rfv == 0 && vgd_hcomp == 0) {
+    if (vgd_csg && clean && vgd_hcomp == 0) {
       VgdFatal("vet_gd_halo_compact = 0 on the cubed sphere with the clean sc rays (no "
                "compact lists, no band ring: the full band); name vet_gd_halo_compact "
                "= 2");
@@ -1269,7 +1264,7 @@ void RadiationM1::VetGdInit() {
     // also on one rank (no band: the slabs are the shells' interiors)
     // (impl_beam_hr: the clean sp init turns it off, VetGdMoments skips it with vgd_pk)
     const std::pair<bool, const char *> pkc[] = {
-        {vgd_ring_par && clean && cln_rfv == 0 && sph_geom && pm->three_d,
+        {vgd_ring_par && clean && sph_geom && pm->three_d,
          "the clean sc rays on 3-D spherical polar with the band ring"},
         {vgd_raw, "the raw band"}, {vgd_nb1 == 1, "one x1 level"},
         {!cln_scmem && ibc_x1min != M1_IBC_REFLECT, "no reflecting x1 face"},
@@ -1303,7 +1298,7 @@ void RadiationM1::VetGdInit() {
   // sweeps and allocate no second array (e.g. the fused twin of the RSG decks; the clean
   // sc rays' ring, CleanRingMoments, sweeps one set at a time)
   if (vgd_xff && (vgd_xf_m > 0 || vgd_iter != 1 || vgd_twin || vgd_twfuse || vgd_async ||
-                  (clean && cln_ring && !(cln_rfuse && cln_ring == 1 && cln_rfv == 0 &&
+                  (clean && cln_ring && !(cln_rfuse && cln_ring == 1 &&
                                           ibc_x1max != M1_IBC_REFLECT)) ||
                   vgd_bandx || vgd_upf != 0 || (vgd_gband && !vgd_raw) || vgd_nb1 > 1 ||
                   (vgd_csg && vgd_cscomp && vgd_csxg > 1) ||
@@ -9932,8 +9927,7 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
   Kokkos::deep_copy(a.off, off_h);
   Kokkos::deep_copy(a.wi, wi_h);
   Kokkos::deep_copy(a.sb, sb_h);
-  // (the clean scheme's FV rays keep their own intensities, cln_fvi)
-  const int64_t nd = (clean && cln_rfv > 0) ? 0 : tot + 1;
+  const int64_t nd = tot + 1;
   if (!MemArenaVgd(a, nd)) {Kokkos::realloc(a.d, nd);}   // memcut-1113
   Kokkos::deep_copy(a.d, 0.0);
   Kokkos::deep_copy(a.oos, 0.0);

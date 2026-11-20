@@ -288,11 +288,8 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
       const int nct = pradm1->Time2RstNch();
       if (pradm1->rst_pack_mb) {
         // restart_pack_per_mb: one MeshBlock at a time (same bytes); the clean rays'
-        // intensities (the last nfv channels; doubles without clean_fv_lag = extrap)
-        // are copied to the host directly
-        const int nfv = (pradm1->cln_fvf32 || pradm1->cln_fvlag == 2 ||
-                         pradm1->cln_cssc) ? 0 :
-                        pradm1->CleanRstNfv(), nc0 = nct - nfv;
+        // intensities (the last nfv channels) are copied to the host directly
+        const int nfv = pradm1->cln_cssc ? 0 : pradm1->CleanRstNfv(), nc0 = nct - nfv;
         // (the staging of a MeshBlock in pinned host memory, which the device writes
         // directly: no device copy of its channels at a dump; where the host reads device
         // memory (MI300A, CPU builds) the device array itself, packed in place: no

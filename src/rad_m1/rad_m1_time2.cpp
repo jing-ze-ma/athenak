@@ -3260,8 +3260,7 @@ int RadiationM1::CleanRstNq() const {
 
 int RadiationM1::CleanRstNfv() const {
   if (!clean) return 0;
-  // (the FV rays, and the cubed sphere's sc rays; before the first sweep those a restart
-  // file holds)
+  // (the cubed sphere's sc rays; before the first sweep those a restart file holds)
   // (the sc rays' cln_fvi: their slots of the union on a ring, CleanGdFaceSums; version
   // 5: dense, CleanFvRstCopy)
   // (version 6, staggered: their face half ranges cln_fh instead, none where every
@@ -3271,7 +3270,7 @@ int RadiationM1::CleanRstNfv() const {
     return (cln_fvi.extent_int(0) > 0) ? CleanFvRstN() : t2_nfv;
   }
   if (cln_cssc && cln_fvi.extent_int(0) > 0) return cln_fvi.extent_int(1);
-  if (cln_rfv > 0 || cln_cssc) return (cln_fvn > 0) ? cln_fvb*cln_fvn : t2_nfv;
+  if (cln_cssc) return (cln_fvn > 0) ? cln_fvn : t2_nfv;
   return cln_scmem ? cln_top.extent_int(1) : 0;
 }
 
@@ -3330,7 +3329,7 @@ bool RadiationM1::Time2RstAccept(const int nfile, const int ver) {
   t2_rstd3 = (ver < 2) && clean && cln_fsolve && cln_fkin;
   t2_rstv = clean ? ver : 5;
   const int nb = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0);
-  t2_nfv = (clean && (cln_rfv > 0 || cln_cssc || cln_scmem)) ? nfile - nb : 0;
+  t2_nfv = (clean && (cln_cssc || cln_scmem)) ? nfile - nb : 0;
   return (nfile == nb + t2_nfv) && (t2_nfv >= 0);
 }
 int RadiationM1::Time2RstNch() {
@@ -3478,8 +3477,8 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
   // (a window that does not reach the rays' intensities: restart.cpp windows only a
   // record without them)
   if (w0 > 0 || w1 < c + CleanRstNfv()) return;
-  // clean_rays = fv1 | fv: the intensities the next sweep starts from, last (unless a
-  // has no room for them: restart.cpp copies them itself)
+  // the sc rays' intensities the next build reads, last (unless a has no room for them:
+  // restart.cpp copies them itself)
   if (a.extent_int(1) < c + CleanRstNfv()) return;
   if (cln_cssc && CleanRstNfv() > 0) {   // (version 6: cln_fh)
     auto af = Kokkos::subview(a, mb, std::make_pair(c, c + 12), AL, AL, AL);
@@ -3494,18 +3493,6 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
     Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c + CleanRstNfv()), AL, AL,
                                       AL),
                       Kokkos::subview(CleanRstFv(), ms, AL, AL, AL, AL));
-    CleanFvRstWrite(a, c, nmb, m0);
-  } else if (clean && cln_fvf32 && cln_fvis.extent_int(0) >= m0 + nmb) {
-    // (clean_fv_float: the single-precision intensities as doubles)
-    auto a_ = a;
-    auto fs = cln_fvis;
-    const int c0 = c, nv = cln_fvb*cln_fvn, mo = m0;
-    par_for("m1_t2_fvrst", DevExeSpace(), 0, nmb - 1, 0, nv - 1, 0, fs.extent_int(2) - 1,
-            0, fs.extent_int(3) - 1, 0, fs.extent_int(4) - 1,
-    KOKKOS_LAMBDA(const int m, const int v, const int k, const int j, const int i) {
-      a_(m,c0+v,k,j,i) = fs(mo+m,v,k,j,i);
-    });
-    CleanFvRstWrite(a, c, nmb, m0);
   }
 }
 
@@ -3524,7 +3511,7 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
       said = true;
     }
   };
-  // the last t2_nfv channels: the conservative rays' intensities (their number is not
+  // the last t2_nfv channels: the sc rays' intensities (their number is not
   // known before the first sweep, Time2RstAccept)
   const int nfv0 = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0);
   if (clean && cln_cssc && t2_rstv >= 6 && ch >= nfv0) {   // (cln_fh)
@@ -3541,13 +3528,12 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     CleanFvRstCopy(t, nfv0 - ch, nmb, 0, false);
     return;
   }
-  if (clean && (cln_rfv > 0 || cln_cssc || cln_scmem) && ch >= nfv0) {
+  if (clean && (cln_cssc || cln_scmem) && ch >= nfv0) {
     auto &fv = CleanRstFv();
     if (fv.extent_int(0) != nmb || fv.extent_int(1) != t2_nfv) {
       Kokkos::realloc(fv, nmb, t2_nfv, w.extent_int(1), w.extent_int(2), w.extent_int(3));
     }
     DeepCopyAcross(Kokkos::subview(fv, mb, ch - nfv0, AL, AL, AL), w);
-    cln_fvrst = true;
     return;
   }
   if (h2 && ch < M1_T2_NK) {
@@ -3895,10 +3881,6 @@ void RadiationM1::Time2Report() {
             << " (posfix " << t2w_fpfix << ") | their BE redo " << t2w_redo
             << " | auto_be steps " << t2w_abe << " | other BE steps " << t2w_be
             << " | discarded dt_retry attempts " << t2w_retry << std::endl;
-  if (clean && cln_fvnp[0] > 0) {
-    std::cout << "<rad_m1> clean FV rays: " << cln_fvnp[0] << " builds, " << cln_fvnp[1]
-              << " passes, " << cln_fvnp[2] << " wavefront levels" << std::endl;
-  }
 }
 
 }  // namespace radm1
@@ -3962,7 +3944,6 @@ void RadiationM1::RstFingerprint(const char *tag) {
   M1Fp("cln_fc3", cln_fc3, cy);
   M1Fp("cln_fref", cln_fref, cy); M1Fp("cln_mn", cln_mn, cy); M1Fp("cln_mp", cln_mp, cy);
   M1Fp("cln_mc", cln_mc, cy); M1Fp("cln_m1", cln_m1, cy); M1Fp("cln_fvi", cln_fvi, cy);
-  M1Fp("cln_fvq", cln_fvq, cy); M1Fp("cln_fvw", cln_fvw, cy);
   M1Fp("cln_fvd", cln_fvd, cy);
   M1Fp("cln_opb", cln_opb, cy); M1Fp("cln_gn", cln_gn.r, cy);
   M1Fp("cln_gn.a", cln_gn.a, cy);
@@ -3994,9 +3975,8 @@ void RadiationM1::RstFingerprint(const char *tag) {
                 "have %d %d %d %d cand_be %d\n", cy, cln_tn, cln_tp, cln_tm, cln_t1,
                 cln_have_n ? 1 : 0, cln_have_p ? 1 : 0, cln_have_c ? 1 : 0,
                 cln_have_1 ? 1 : 0, cln_cand_be ? 1 : 0);
-    std::printf("RSTFP cyc %d fv n %d full %d tc %.17e rst %d l0 %d icut %d "
-                "scut %d\n", cy, cln_fvn, cln_fvfull ? 1 : 0, cln_fvtc,
-                cln_fvrst ? 1 : 0, cln_fvl0, vlat_icut, vgd_scut);
+    std::printf("RSTFP cyc %d fv n %d icut %d scut %d\n", cy, cln_fvn, vlat_icut,
+                vgd_scut);
   }
 
 }
