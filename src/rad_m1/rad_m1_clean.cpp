@@ -4191,7 +4191,9 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
 //! high faces' to their other side.  The cubed sphere: T in CLF_PT (pt: the drag's),
 //! each face's three of the lower gid (CleanStagCsTie).
 
-void RadiationM1::CleanStagFaceTie(const int e, const int kd, const bool pt) {
+void RadiationM1::CleanStagFaceTie(const int e, const int kq, const bool pt) {
+  // (d's slope: clean_stag_fkin only; without it the face arrays end before CLF_KD)
+  const int kd = cln_fkin ? kq : 0;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
