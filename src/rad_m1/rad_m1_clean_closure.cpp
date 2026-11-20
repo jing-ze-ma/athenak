@@ -1475,8 +1475,13 @@ void RadiationM1::CleanRingMoments() {
         rr(m,nfr+2,k,j,i) = v ? 2.0 : 0.0;
       });
     } else if (full) {
-      // the whole union swept: the offsets of the older sets (their moments, above) from
-      // the current one
+      // a fill: within CleanSteadyStart (a fresh start's ring, built at the initial state
+      // and time) the offsets of the older sets from the current one (their moments,
+      // above); elsewhere the older sets start as the current one (zero offsets, J ratio 1)
+      // and enter one per block through the shifts: their sweep at a step's build would
+      // take a state one step on, at a time that depends on dt, into the window for K
+      // blocks, an O(dt) error (deck D with rotation 1st order, 2nd with this form)
+      const bool f0 = !cln_insteady;
       par_for("cln_ring_fill", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k0, const int j0, const int i0) {
         const int k = k0 - ks, j = j0 - js, i = i0 - is;
@@ -1487,7 +1492,8 @@ void RadiationM1::CleanRingMoments() {
             const int f = fr[n];
             if (f < 0) continue;
             const Real o = rr(m,r*nfr+f,k,j,i);
-            rr(m,r*nfr+f,k,j,i) = (n != CLN_J) ? o - rl(m,qb,n,k,j,i) :
+            rr(m,r*nfr+f,k,j,i) = f0 ? ((n != CLN_J) ? 0.0 : 1.0) : (n != CLN_J) ?
+                                  o - rl(m,qb,n,k,j,i) :
                                   ((jb > 0.0 && jb >= jm && o >= jm) ? o/jb : -1.0);
           }
         }
