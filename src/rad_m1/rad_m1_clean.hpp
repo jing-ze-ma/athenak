@@ -81,7 +81,9 @@ inline void CleanMaxRanks(Real *v, const int n) {
 // -19 ms/cycle (MB 2 -7), A100 MB 2 -20 ms/cycle (MB 3 +14, MB 1 +29).  HIP and the host
 // keep athena's par_for; on HIP a pass may ask for kHipMb blocks (kHipMb 4: a cap of 128
 // VGPRs, 4 waves per SIMD, for the face passes that fit it without spilling)
-#if defined(KOKKOS_ARCH_HOPPER90)
+#if defined(ATHENA_CLEAN_FOR_MB)   // h200-1120: build-time override (register cap only, bitwise)
+constexpr int kCleanForMb = ATHENA_CLEAN_FOR_MB;
+#elif defined(KOKKOS_ARCH_HOPPER90)
 constexpr int kCleanForMb = 3;
 #else
 constexpr int kCleanForMb = 2;
