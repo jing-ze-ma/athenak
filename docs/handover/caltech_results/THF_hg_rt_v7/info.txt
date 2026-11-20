@@ -1,0 +1,1 @@
+TAG=THF_hg_rt_v7 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_thinf_2aaaaa5d1 md5=d4d9ed4708794c11b7055bd5890fe255 RST=/resnick/groups/carnegie_poc/jingze/hgglob_1021/prodG/rst/hegiant.00139.rst N0=624961 NC=4 MODE=rt HOLDER=6133593 NODE=hpc-sm-01-11 NR=4 ENVX= EX=time/dt_retry_host=m1
