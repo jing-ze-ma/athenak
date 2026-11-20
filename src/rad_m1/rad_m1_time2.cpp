@@ -2123,7 +2123,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     int *const lb = zac ? zp + zS*(2 - zq) : nullptr;
     if (zac) {
       Kokkos::parallel_for("m1_t2_ffct_z0", Kokkos::RangePolicy<>(DevExeSpace(), 0, 1),
-      KOKKOS_LAMBDA(const int) {*zc = 0;});
+      KOKKOS_LAMBDA(const int) {zc[1] = zc[0]; zc[0] = 0;});   // (zc[1]: the read list's)
     }
     auto rnd = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
                              Real &a, Real &ab) {
@@ -2156,7 +2156,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
       AthReduce("m1_t2_ffct_ra", Kokkos::RangePolicy<>(DevExeSpace(), 0, 7*zn),
       KOKKOS_LAMBDA(const int t, Real &a, Real &ab) {
         const int q = t % 7;
-        if (((q == 3 || q == 4) && !tr2) || (q >= 5 && !tr3)) {return;}
+        if (t/7 >= zc[1] || ((q == 3 || q == 4) && !tr2) || (q >= 5 && !tr3)) {return;}
         int x = la[t/7];
         int i = x % zN1 + ((q == 1) ? -1 : ((q == 2) ? 1 : 0));
         x /= zN1;
@@ -2219,10 +2219,11 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
         const int n1 = ie - is + 1, n2 = je - js + 1, n3 = ke - ks + 1;
         const int f1 = n3*n2, f2 = tr2 ? n3*n1 : 0, f3 = tr3 ? n2*n1 : 0;
         const int nf = 2*(f1 + f2 + f3);
-        int ng = 0;
-        Kokkos::parallel_reduce("m1_t2_ffct_xs", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                                (nmb1 + 1)*nf),
-        KOKKOS_LAMBDA(const int t, int &g) {
+        // (no count read back: the next round's stencil kernel runs over the upper bound
+        // zloc + all face ghosts and reads the list's length on the device, zc[1])
+        Kokkos::parallel_for("m1_t2_ffct_xs", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                             (nmb1 + 1)*nf),
+        KOKKOS_LAMBDA(const int t) {
           const int m = t/nf;
           int u = t - m*nf, k, j, i;
           if (u < 2*f1) {
@@ -2246,10 +2247,9 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
           if (iw_(m,ca,k,j,i) != iw_(m,cb,k,j,i)) {
             iw_(m,cb,k,j,i) = iw_(m,ca,k,j,i);
             lb[Kokkos::atomic_fetch_add(zc, 1)] = ((m*zN3 + k)*zN2 + j)*zN1 + i;
-            g += 1;
           }
-        }, Kokkos::Sum<int>(ng));
-        zn += ng;
+        });
+        zn += (nmb1 + 1)*nf;
       } else if (zlr == 0) {   // (the other slot keeps the same ghosts)
         Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, sb,
                           Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw,

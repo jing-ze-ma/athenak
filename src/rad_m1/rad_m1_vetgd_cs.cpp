@@ -1241,7 +1241,7 @@ void RadiationM1::VetGdCsHaloC(const int pass, const int i, const bool two) {
     vgd_tmpi += tq.seconds();
   } else {
 #endif
-  Kokkos::fence();
+  DevExeSpace().fence();   // (the pack, on this stream: a stream fence)
   Kokkos::Timer tq;
   std::vector<MPI_Request> req;
   for (int p = 0; p < np; ++p) {
@@ -1380,7 +1380,7 @@ bool RadiationM1::VetGdCsHaloCX(const int pass, const int i, const int eb) {
       sbp[pos] = b ? b_(S_(e,0),d,S_(e,1),S_(e,2),i) : a_(S_(e,0),d,S_(e,1),S_(e,2),i);
     });
   }
-  Kokkos::fence();
+  DevExeSpace().fence();   // (the pack, on this stream: a stream fence)
   Kokkos::Timer tq;
   std::vector<MPI_Request> req;
   req.reserve(2*np);
@@ -1492,7 +1492,7 @@ void RadiationM1::VetGdCsHalo(V &a, const int nv, const int i0, const int i1,
               a_(S_(e,0),v,S_(e,1),S_(e,2),c0+ii);
         });
       }
-      Kokkos::fence();
+      DevExeSpace().fence();
       Kokkos::Timer tq;
       std::vector<MPI_Request> req;
       for (size_t p = 0; p < vgd_csprk.size(); ++p) {
