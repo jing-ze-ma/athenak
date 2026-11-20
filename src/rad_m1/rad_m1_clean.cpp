@@ -192,13 +192,16 @@ static Real CleanStagTorqueFace(const CleanArgs &x, const int e, const int d, co
 //! change of L_z = V R F_phi/c^2 of the radiation's cell vector F (CleanStagCsVector of
 //! the face momenta) and the torque h sum_f (M_f x (D E)_f n_f)_z of the stress through
 //! the faces (M_f = int x dA, (D E)_f the mean of the two cells; none on physical
-//! boundaries), so that gas plus radiation L_z changes only by round-off.
+//! boundaries), so that gas plus radiation L_z changes only by round-off.  With
+//! clean_cs_lz_abs the phi component is that of the faces' vector too (their absorption),
+//! dlz the L_z V R (dp_torque - dp) the gas then does not take.
 
 template <bool kFs = false>
 KOKKOS_INLINE_FUNCTION
 static void CleanStagMomentum(const CleanArgs &x, const int e, const int m, const int k,
                               const int j, const int i, Real dm[3], Real mag[3],
-                              const DvceArray5D<Real> &tzf = DvceArray5D<Real>()) {
+                              const DvceArray5D<Real> &tzf = DvceArray5D<Real>(),
+                              Real *dlz = nullptr) {
   Real cf[6], wf[6];
   for (int d = 0; d < 3; ++d) {
     mag[d] = 0.0;
@@ -229,8 +232,13 @@ static void CleanStagMomentum(const CleanArgs &x, const int e, const int m, cons
   const Real rc = CleanCsFrame(x, m, k, j, i, q);
   const Real dr = q[0][0]*dv[0] + q[0][1]*dv[1] + q[0][2]*dv[2];
   const Real dt = q[1][0]*dv[0] + q[1][1]*dv[1] + q[1][2]*dv[2];
-  const Real dp = -(q[2][0]*fd[0] + q[2][1]*fd[1] + q[2][2]*fd[2])/(x.c*x.c) -
-                  x.h*tz/(x.vol(m,k,j,i)*rc);
+  Real dp = -(q[2][0]*fd[0] + q[2][1]*fd[1] + q[2][2]*fd[2])/(x.c*x.c) -
+            x.h*tz/(x.vol(m,k,j,i)*rc);
+  if (x.lza) {
+    const Real da = q[2][0]*dv[0] + q[2][1]*dv[1] + q[2][2]*dv[2];
+    if (dlz) *dlz = (dp - da)*x.vol(m,k,j,i)*rc;
+    dp = da;
+  }
   for (int b = 0; b < 3; ++b) dm[b] = dr*q[0][b] + dt*q[1][b] + dp*q[2][b];
 }
 
@@ -379,6 +387,15 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
 
 void RadiationM1::CleanInit() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
+  // (clean_cs_lz_abs = 2 follows the gas momentum's increments as the slopes' sums: not
+  // the cell-wise scalings of these)
+  if (cln_lza == 2 && (t2_theta > 0.0 || t2_inckc > 0.0 || t2_flr_rho > 0.0 || cln_kreal ||
+                       cln_kpos || cln_cell)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "<rad_m1>/clean_cs_lz_abs = 2 needs no time2_stage_theta, time2_inc_kecap, "
+              << "time2_floor_eint, clean_stag_kreal, clean_stag_kpos (staggered)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   // (staggered on the cubed sphere: no clean_stag_vimp yet, CleanStagDrag's half-cell
   // masses and D_nn would be the resampled gas ghosts' and the Cartesian D_dd at a seam)
   if (pmy_pack->pmesh->use_cubed_sphere && !cln_cell && cln_vimp) {
@@ -1753,6 +1770,8 @@ void RadiationM1::CleanOldVector() {
   nn[0] = CleanReduce(nn[0], false);
   nn[1] = CleanReduce(nn[1], false);
   nn[2] = CleanReduce(nn[2], false);
+  // (clean_cs_lz_abs = 2: the increment's L_z, of the slopes' sums, Time2FormStage)
+  if (cln_lza == 2 && fluid && feedback && stage) CleanLzBook(cln_lzc, true);
   if (global_variable::my_rank == 0 && nn[2] > 0.0) {
     std::printf("CLEAN WARNING cycle %d t2s %d: stage start not finite in %.0f cells (gas or "
                 "E; the solve fails and the step is redone)\n", pmy_pack->pmesh->ncycle,
@@ -4586,6 +4605,33 @@ void RadiationM1::CleanStagDrag(const bool first, const bool vel, const bool lat
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanLzBook
+//! \brief clean_cs_lz_abs = 2: books the cells' sum s of the L_z the gas did not take (of
+//! a write-back, or with start of the stage start's increment) as the gas momentum it
+//! belongs to enters the step: a stage-1 part with the weight of the stage-1 state in the
+//! stage-2 start (Heun 1/2) and the stage-2 start pending until the stage-2 write-back (a
+//! backward-Euler redo from U^n drops them); the total and K1's sum in <rad_m1> (restart)
+
+void RadiationM1::CleanLzBook(const Real s, const bool start) {
+  if (t2_solve == M1_T2S_STAGE1) {
+    cln_lzp = (start ? 0.0 : cln_lzp) + ((t2_tab == 0 || t2_tab == 2) ? 0.5 : t2_w0)*s;
+    return;
+  }
+  if (t2_solve == M1_T2S_STAGE2 && start) {
+    cln_lzp += s;
+    return;
+  }
+  cln_lzl += ((t2_solve == M1_T2S_STAGE2) ? cln_lzp : 0.0) + s;
+  cln_lzp = 0.0;
+  cln_lzpin->SetReal("rad_m1", "clean_cs_lz_ledger", cln_lzl);
+  cln_lzpin->SetReal("rad_m1", "clean_cs_lz_k1", cln_lzs1);
+  if (global_variable::my_rank == 0 && !cln_insteady) {
+    std::printf("CLEAN LZ cycle %d t2s %d ledger %.16e\n", pmy_pack->pmesh->ncycle, t2_solve,
+                cln_lzl);
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanWriteBack
 //! \brief stores the solution: face fluxes, E, cell fluxes (face means), the gas momentum
 //! and energy, and the stage slopes K = (U - U_old)/h.  The gas takes exactly the momentum
@@ -4804,6 +4850,10 @@ void RadiationM1::CleanWriteBack() {
   const bool cls = xwb || kpb;   // (the closure in CLW_PW, printed below)
   px = CleanDevArgs(x, 0);   // (the F solve took the slots; xh changed)
   pxh = CleanDevArgs(xh, 1);
+  const bool lzb = (cln_lza == 2) && feedback;
+  DvceArray4D<Real> lzw;
+  if (lzb) lzw = ScratchView<DvceArray4D<Real>>("cln_lzw", nmb1 + 1, u0.extent_int(2),
+                                                 u0.extent_int(3), u0.extent_int(4));
   CleanFor("cln_wbcell", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     CLEAN_HIPX(const CleanArgs &x = *px, &xh = *pxh;)   // (in device memory)
@@ -4845,15 +4895,16 @@ void RadiationM1::CleanWriteBack() {
     Real den = 0.0, wsl = 0.0, wkr = 0.0;
     const Real d0 = x.w(m,CLW_JV,k,j,i);   // (the stage start's eint deficit, <= 0)
     if (feedback) {
-      Real mg[3], pg[3], rf[3];
-      CleanStagMomentum(xh, CLW_X, m, k, j, i, dm, mg);
+      Real mg[3], pg[3], rf[3], dlz = 0.0;
+      CleanStagMomentum(xh, CLW_X, m, k, j, i, dm, mg, DvceArray5D<Real>(), &dlz);
       CleanStagGasMomentum(x, uh, m, k, j, i, pg);
       CleanStagRefForce(x, fref, fr, aref, uh(m,IDN,k,j,i), m, k, j, i, rf);
       for (int n = 0; n < 3; ++n) {   // (force_reference)
         if (fref != M1_FREF_NONE) dm[n] -= h*rf[n];
       }
       if (fm) fmd(m,k,j,i) = CleanStagRadial(x, m, k, j, i, dm);
-      if (x.vzero) dm[0] = dm[1] = dm[2] = 0.0;   // (frozen gas momentum)
+      if (x.vzero) dm[0] = dm[1] = dm[2] = dlz = 0.0;   // (frozen gas momentum)
+      if (lzb) lzw(m,k,j,i) = dlz;   // (clean_cs_lz_abs = 2: CleanLzBook)
       // (clean_stag_kreal: the stage's deferred kick, CleanStagKReal; its own kinetic
       // energy wkr leaves the slopes, which are the stage's f)
       if (krl && !x.vzero) {
@@ -5031,6 +5082,11 @@ void RadiationM1::CleanWriteBack() {
       }
     }
   });
+  if (lzb) {   // (clean_cs_lz_abs = 2: the stage's L_z as its slope, then booked)
+    const Real s = CleanSumCells(lzw);
+    if (slopes) (t2_solve == M1_T2S_STAGE1 ? cln_lzs2 : cln_lzs1) = s/h;
+    CleanLzBook(s, false);
+  }
   if (cls) {   // (xt_exact / kpos: the stage's closure |dE + de + dK + h div Phi|
                //  over E + E_old + eint, max over the cells)
     auto w = cln_w;

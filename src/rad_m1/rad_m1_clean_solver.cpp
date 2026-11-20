@@ -118,6 +118,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.cseam = (pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::periodic)
             ? 0.5/tan(ms.x2min) + 0.5/tan(ms.x2max) : 0.0;   // (read on that wrap only)
   x.cub = pmy_pack->pmesh->use_cubed_sphere;
+  x.lza = x.cub ? cln_lza : 0;
   if (x.sph || (!x.cub && cln_rfv > 0)) {
     auto *pc = pmy_pack->pcoord;
     x.vol = pc->volume;
@@ -949,6 +950,18 @@ std::array<Real, 2> CleanSums(MeshBlockPack *pp, const char *name, const int n,
   MPI_Allreduce(MPI_IN_PLACE, d.data(), n, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
   return d;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::CleanSumCells
+//! \brief the sum of a over the active cells (CleanSums)
+
+Real RadiationM1::CleanSumCells(const DvceArray4D<Real> &a) {
+  auto a_ = a;
+  return CleanSums(pmy_pack, "cln_sumc", 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0, Real &s1) {
+    s0 += a_(m,k,j,i);
+  })[0];
 }
 
 //----------------------------------------------------------------------------------------

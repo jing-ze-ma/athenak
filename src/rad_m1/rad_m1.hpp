@@ -3218,6 +3218,7 @@ class RadiationM1 {
   std::array<Real, 2> CleanDots(CleanW w, const int nc, const int n,
                                 const std::array<int, 4> ab);
   Real CleanReduce(Real v, const bool max);
+  Real CleanSumCells(const DvceArray4D<Real> &a);
   // cell-centred layout (<rad_m1>/clean_layout = cell, rad_m1_clean_cell.cpp)
   void CleanCellOldVector();
   void CleanCellFaceCoefficients();
@@ -3333,6 +3334,14 @@ class RadiationM1 {
   int cln_kqs = -1;   // (kpos: 2 face slots, the moved flux's qL >= 0, qR <= 0)
   DvceArray4D<Real> cln_ky1;   // (kpos: E of the stage-1 solution, K2's reference)
   bool cln_kreal = false;   // (S3B kick bound: CLW_KS set in CleanOldVector)
+  int cln_lza = 0;          // clean_cs_lz_abs
+  // (clean_cs_lz_abs = 2: the L_z V R (dp_torque - dp) the gas does not take, booked as
+  // the radiation's, cln_lzl (<rad_m1>/clean_cs_lz_ledger); its sums over the cells as the
+  // gas momentum's slopes K1 (cln_lzs1, <rad_m1>/clean_cs_lz_k1), K2 (cln_lzs2) and stage
+  // start increment (cln_lzc), and the stage-1 part pending until stage 2 (cln_lzp))
+  Real cln_lzl = 0.0, cln_lzs1 = 0.0, cln_lzs2 = 0.0, cln_lzc = 0.0, cln_lzp = 0.0;
+  ParameterInput *cln_lzpin = nullptr;
+  void CleanLzBook(const Real s, const bool start);
   int cln_kmode = 0;        // (clean_stag_kpos: 1 faces, 2 cell, 3 redo, 4 delta)
   Real cln_ktau = 0.0;      // (delta: tau/h of the stage)
   void CleanStagKDelta();

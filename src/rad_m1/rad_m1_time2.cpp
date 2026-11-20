@@ -1274,6 +1274,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     if (two) {v += c2*k2_(m,n,k,j,i);}
     in_(m,n,k,j,i) = v;
   });
+  cln_lzc = c1*cln_lzs1 + (two ? c2*cln_lzs2 : 0.0);   // (clean_cs_lz_abs = 2)
   CleanDInc(two, c1, c2, heun ? 0.5 : w1, heun ? 0.5 : w0);
   cln_kc1 = c1;   // (clean_stag_kpos: the face part of the increment, CleanStagKPos)
   cln_kc2 = two ? c2 : 0.0;
@@ -2889,6 +2890,7 @@ bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
     KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
       in_(m,n,k,j,i) = c*k1_(m,n,k,j,i);
     });
+    cln_lzc = c*cln_lzs1;   // (clean_cs_lz_abs = 2)
     if (t2_ike && t2kei.extent_int(0) > nmb1) {   // rsglock-1112
       auto e1_ = t2ke1, ei_ = t2kei;
       par_for("m1_t2_ike_rcinc", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
@@ -2926,6 +2928,7 @@ bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
   const bool ok = !t2_fail;
   if (ok) {
     Kokkos::deep_copy(DevExeSpace(), t2k1, t2k2);
+    cln_lzs1 = cln_lzs2;   // (clean_cs_lz_abs = 2)
     if (t2_pfst && t2pf1.extent_int(0) > 0) {   // facebound-1112 step 1
       Kokkos::deep_copy(DevExeSpace(), t2pf1, t2pf2);
       t2pf1_ok = t2pf2_ok;

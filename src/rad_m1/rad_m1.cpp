@@ -372,6 +372,19 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         cln_kpos = (cln_kmode > 0);
       }
       cln_kreal = stag("clean_stag_kreal", false);
+      // clean_cs_lz_abs = 0 (default) | 1 | 2 (cubed sphere): the gas phi momentum is the
+      // faces' absorption as its r and theta (CleanStagMomentum), not the change of L_z of
+      // the radiation's cell vector less the stress torque; 2 books the L_z it no longer
+      // takes as the radiation's (CleanLzBook), so that the total stays exact
+      if (pmy_pack->pmesh->use_cubed_sphere &&
+          pin->DoesParameterExist("rad_m1", "clean_cs_lz_abs")) {
+        cln_lza = std::min(std::max(pin->GetInteger("rad_m1", "clean_cs_lz_abs"), 0), 2);
+      }
+      if (cln_lza == 2) {
+        cln_lzpin = pin;
+        cln_lzl = pin->GetOrAddReal("rad_m1", "clean_cs_lz_ledger", 0.0);
+        cln_lzs1 = pin->GetOrAddReal("rad_m1", "clean_cs_lz_k1", 0.0);
+      }
       cln_xpat = stag("clean_stag_xpat", false);
       // clean_xt_cons (default off): the first iterate's gas T with A's G = 1 - beta^2/2,
       // and after the first right-hand side T from the pass's gas row (its G and beta

@@ -394,6 +394,7 @@ struct CleanArgs {
   // the hydro's radius vector; vol, area, dxf and x1v, x1f as above, g the geometry
   // (CLG_*) of CleanCsGeometry
   bool cub;
+  int lza;    // (clean_cs_lz_abs, CleanStagMomentum)
   CleanGeo g;
   // the conserved gas energy also holds d phi (<hydro>/etotgrav) and |B|^2/2 (<mhd>)
   bool etg, mhd;
