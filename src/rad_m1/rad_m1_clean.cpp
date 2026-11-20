@@ -4956,18 +4956,19 @@ void RadiationM1::CleanWriteBack() {
     if (lzom != 0.0 && x.cub && feedback && !lzom_done) {
       lzom_done = true;
       const CleanArgs xo = x;
+      const Real om = lzom;   // (a static is not captured into device code)
       auto uo = uh;
       Kokkos::parallel_for("lzcs_om", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(),
                            {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         Real q[3][3], dh[3];
         const Real rc = CleanCsFrame(xo, m, k, j, i, q), d = uo(m,IDN,k,j,i);
-        const Real dmo[3] = {0.0, 0.0, d*lzom*rc};
+        const Real dmo[3] = {0.0, 0.0, d*om*rc};
         CleanGasChange(xo, m, k, j, i, dmo, dh);
         uo(m,IM1,k,j,i) += dh[0];
         uo(m,IM2,k,j,i) += dh[1];
         uo(m,IM3,k,j,i) += dh[2];
-        uo(m,IEN,k,j,i) += 0.5*d*SQR(lzom*rc);
+        uo(m,IEN,k,j,i) += 0.5*d*SQR(om*rc);
       });
       if (global_variable::my_rank == 0) std::printf("LZCS spin Omega %.6e given\n", lzom);
     }
