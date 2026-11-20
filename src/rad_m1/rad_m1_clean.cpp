@@ -3751,6 +3751,13 @@ void CleanStagFJoin(const Real p[8], const Real q[8], Real c[8], Real ya[3],
 //! and a static envelope would lose its balance on the panel-tangent faces).
 
 #if M1_TU_PART(2)
+// (the F slots 9 + 2 q + hi of cln_v that the ghosts of a face of family q take
+// (CleanGSeg::fm): its own family's, CleanFLine; f0 = 2: without the x1 family's)
+static std::array<uint32_t, 4> CleanFMask(const int f0) {
+  return (f0 > 0) ? std::array<uint32_t, 4>{0, 3, 014, 0}
+                  : std::array<uint32_t, 4>{3, 014, 060, 0};
+}
+
 void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool lat) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
@@ -3779,11 +3786,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
                  ? 2 : 0;
   auto yfill = [&](const int part) {
     if (cub) {   // (CleanFLine reads the faces' own cells, of the face's family, fm)
-      CleanGhostDefer(cln_v, 9 + f0, 6 - f0);
-      cln_hpend.back().dep = 1;
-      cln_hpend.back().fm = (f0 > 0) ? std::array<uint32_t, 4>{0, 3, 014, 0}
-                                     : std::array<uint32_t, 4>{3, 014, 060, 0};
-      CleanGhostFlush();
+      CleanGhostFill(cln_v, 9 + f0, 6 - f0, true, 0, 1, CleanFMask(f0));
       return;
     }
     if (x.nf == 3) CleanGhostDefer(cln_w, CLW_S, 1);
@@ -4437,7 +4440,7 @@ void RadiationM1::CleanStagFCsShared() {
   });
   // (one MeshBlock along x1: not the x1 family's F, CleanStagFSolve)
   const int f0 = (pmy_pack->pmesh->nmb_rootx1 == 1 && !pmy_pack->pmesh->multilevel) ? 2 : 0;
-  CleanGhostFill(cln_v, 9 + f0, 6 - f0, true, 0, 1);
+  CleanGhostFill(cln_v, 9 + f0, 6 - f0, true, 0, 1, CleanFMask(f0));   // (as the F solve)
 }
 
 //----------------------------------------------------------------------------------------
