@@ -1653,6 +1653,20 @@ Real CleanSourceDivergence(const CleanArgs &x, const int m, const int k, const i
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanCsArm
+//! \brief cubed sphere: the L_z arm of the lateral face (kf,jf,iff) normal to q (1, 2),
+//! lambda = (M x n)_z/A of its exact first moment M = int x dA (CLG_M): its momentum
+//! p n has the L_z lambda p (clean_cs_lz_tel, CleanCsTorque)
+
+KOKKOS_INLINE_FUNCTION
+Real CleanCsArm(const CleanArgs &x, const int q, const int m, const int kf, const int jf,
+                const int iff) {
+  return (x.g.At<CLG_M>(m,3*(q-1),kf,jf,iff)*x.g.At<CLG_N>(m,3*q+1,kf,jf,iff) -
+          x.g.At<CLG_M>(m,3*(q-1)+1,kf,jf,iff)*x.g.At<CLG_N>(m,3*q,kf,jf,iff))/
+         x.area[q](m,kf,jf,iff);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanStagCsVector
 //! \brief cubed sphere, staggered: the Cartesian vector u of cell (k,j,i) whose
 //! projections p on the unit normals n of its six faces (low and high face of family q at
@@ -1749,13 +1763,14 @@ Real CleanStagBetaE(const CleanArgs &xh, const int e, const int m, const int k,
 //! conservative form: at each face, minus the left side of the radiation flux equation,
 //! -[(F - G)/c^2 + h div(D E)], half of each face to each neighbour (clean_stag_split: in
 //! proportion to their chi, as the two half cells absorb).  E is work vector e.  With cf,
-//! wf set: the term of each face (low, high) and its weight wt.
+//! wf set: the term of each face (low, high) and its weight wt; with tq the face's whole
+//! term, before its weight (clean_cs_lz_tel, CleanCsTorque).
 
 template <bool kFs = false>
 KOKKOS_INLINE_FUNCTION
 Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const int m,
                          const int k, const int j, const int i, Real *mag = nullptr,
-                         Real *cf = nullptr, Real *wf = nullptr) {
+                         Real *cf = nullptr, Real *wf = nullptr, Real *tq = nullptr) {
   // (kFs: x.fs and x.fa known set, the face fluxes and terms read, none computed)
   const bool fs = kFs || x.fs, fa = kFs || x.fa;
   const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
@@ -1789,14 +1804,17 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
         cf[side] = db;
         wf[side] = 0.5;
       }
+      if (tq) tq[side] = 2.0*db;
       continue;
     }
     // (clean_stag_ftie: T of the face as its owner, the block whose low face it is,
     // computed it, CleanStagFaceTie)
-    Real t = wt*(x.tf ? x.w(m,CLW_L+3*dir,kf,jf,iff) :
-             (fa ? x.fc[dir](m,CLF_PT,kf,jf,iff) : ((f - g)/(x.c*x.c) +
-             x.h*CleanFaceStressCall(x, e, dir, m, kf, jf, iff, true) -
-             (fs ? x.h*x.fc[dir](m,CLF_N+1,kf,jf,iff) : 0.0))));
+    const Real tu = x.tf ? x.w(m,CLW_L+3*dir,kf,jf,iff) :
+                    (fa ? x.fc[dir](m,CLF_PT,kf,jf,iff) : ((f - g)/(x.c*x.c) +
+                    x.h*CleanFaceStressCall(x, e, dir, m, kf, jf, iff, true) -
+                    (fs ? x.h*x.fc[dir](m,CLF_N+1,kf,jf,iff) : 0.0)));
+    if (tq) tq[side] = tu;
+    Real t = wt*tu;
     // (mcl, the Newton passes: the conservative term equals the face's absorption
     // h chi_f F/c only where the iterate's F satisfies its equation; capped there at the
     // force of a realisable flux, |F| <= c E, as the production deposit, so that a lagged

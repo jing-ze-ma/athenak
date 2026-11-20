@@ -3332,6 +3332,7 @@ class RadiationM1 {
   bool cln_kreal = false;   // (S3B kick bound: CLW_KS set in CleanOldVector)
   int cln_lza = 0;          // clean_cs_lz_abs
   bool cln_lzbook = false;  // (the L_z ledger: cubed sphere, or 3-D spherical polar)
+  bool cln_lzt = false;     // clean_cs_lz_tel
   bool cln_thinf = false;   // clean_stag_thinf
   // (clean_cs_lz_abs = 2: the L_z V R (dp_torque - dp) the gas does not take, booked as
   // the radiation's, cln_lzl (<rad_m1>/clean_cs_lz_ledger); its sums over the cells as the
@@ -3342,7 +3343,7 @@ class RadiationM1 {
   Real cln_lzl = 0.0, cln_lzs1 = 0.0, cln_lzs2 = 0.0, cln_lzc = 0.0, cln_lzp = 0.0;
   ParameterInput *cln_lzpin = nullptr;
   void CleanLzBook(const Real s, const bool start);
-  Real CleanLzTotal();   // (the history's L_z: gas + radiation cell vector + ledger)
+  Real CleanLzTotal();   // (the history's L_z: gas + radiation + ledger)
   int cln_kmode = 0;        // (clean_stag_kpos: 1 faces, 2 cell, 3 redo, 4 delta)
   Real cln_ktau = 0.0;      // (delta: tau/h of the stage)
   void CleanStagKDelta();

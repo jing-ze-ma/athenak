@@ -984,7 +984,8 @@ Real RadiationM1::CleanSumCells(const DvceArray4D<Real> &a) {
 //! \fn Real RadiationM1::CleanLzTotal
 //! \brief the history's L_z about z: sum V R (p_phi + F_phi/c^2) of the gas and of the
 //! radiation's cell vector (the frame of y; R = x1v sin(theta), the cubed sphere's
-//! CleanCsFrame), plus the L_z ledger (CleanLzBook); 0 before the first solve
+//! CleanCsFrame), plus the L_z ledger (CleanLzBook); 0 before the first solve.  With
+//! clean_cs_lz_tel the radiation's is that of its face momenta (CleanCsTorque)
 
 Real RadiationM1::CleanLzTotal() {
   if (!clean || cln_cell || !cln_init || !(sph_geom || cs_geom)) return 0.0;
@@ -993,13 +994,28 @@ Real RadiationM1::CleanLzTotal() {
   const bool fo = fl.on;
   auto uh = fl.u0;
   auto ur = u0;
+  auto f2 = f0x2, f3 = f0x3;
+  const bool tel = cln_lzt;
   const Real ic2 = 1.0/(x.c*x.c);
   const Real s = CleanSums(pmy_pack, "cln_lztot", 1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0, Real &s1) {
     Real p[3] = {0.0, 0.0, 0.0}, q[3][3];
     if (fo) CleanGasMomentum(x, uh, m, k, j, i, p);
     const Real r = x.cub ? CleanCsFrame(x, m, k, j, i, q) : x.x1v(m,i)*x.tg(m,2,j);
-    s0 += CleanVol(x, m, k, j, i)*r*(p[2] + ur(m,M1_F3,k,j,i)*ic2);
+    const Real v = CleanVol(x, m, k, j, i);
+    if (!tel) {
+      s0 += v*r*(p[2] + ur(m,M1_F3,k,j,i)*ic2);
+      return;
+    }
+    Real lr = 0.0;   // (the cell's halves of its lateral faces' V F lambda/c^2)
+    for (int qd = 1; qd < 3; ++qd) {
+      for (int sd = 0; sd < 2; ++sd) {
+        const int kf = k + sd*(qd == 2), jf = j + sd*(qd == 1);
+        lr += 0.5*v*((qd == 1) ? f2(m,kf,jf,i) : f3(m,kf,jf,i))*ic2*
+              CleanCsArm(x, qd, m, kf, jf, i);
+      }
+    }
+    s0 += v*r*p[2] + lr;
   })[0];
   return s + (cln_lzbook ? cln_lzl + cln_lzp : 0.0);
 }

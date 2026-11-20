@@ -234,6 +234,63 @@ static void CleanStagMomentum(const CleanArgs &x, const int e, const int m, cons
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanCsTorque
+//! \brief cubed sphere, clean_cs_lz_tel: the L_z the gas of cell (k,j,i) takes over the
+//! stage in telescoping form, and in rl the change of the radiation's (its faces' momenta:
+//! the cell's halves of V F_f lambda_f/c^2, lambda_f = (M_f x n_f)_z/A_f of the lateral
+//! faces, 0 of the radial ones).  The gas takes the faces' absorption as their torque,
+//! V cf lambda, and in place of the faces' own stress torque, 1/2 V lambda (T - dF/c^2),
+//! the exact one of P = D E over the cell: the angular-momentum fluxes r_f A (n x P n)_z
+//! of its radial faces and (M_f x P n)_z of its lateral ones, P the two cells' mean (one
+//! sided at a radial boundary).  The interior faces cancel in the sum, so gas and
+//! radiation L_z change only by the radial boundaries' torque (CleanLzBook)
+
+KOKKOS_INLINE_FUNCTION
+static Real CleanCsTorque(const CleanArgs &x, const int e, const int m, const int k,
+                          const int j, const int i, Real &rl) {
+  const Real v = x.vol(m,k,j,i), ic2 = 1.0/(x.c*x.c);
+  Real gl = 0.0, tc = 0.0, p0[6];
+  rl = 0.0;
+  for (int q = 1; q < 3; ++q) {   // (the lateral faces' absorption and momenta)
+    Real cf[2], wf[2], tq[2];
+    CleanMomentumChange(x, e, q, m, k, j, i, nullptr, cf, wf, tq);
+    for (int s = 0; s < 2; ++s) {
+      const int kf = k + s*(q == 2), jf = j + s*(q == 1);
+      const Real f = x.fs ? x.fc[q](m,CLF_N,kf,jf,i) : CleanFaceFlux(x, e, q, m, kf, jf, i, true);
+      const Real df = (f - x.fc[q](m,CLF_G,kf,jf,i))*ic2;
+      const Real lam = CleanCsArm(x, q, m, kf, jf, i);
+      gl += v*lam*(cf[s] + 0.5*(tq[s] - df));
+      rl += 0.5*v*lam*df;
+    }
+  }
+  for (int n = 0; n < 6; ++n) p0[n] = x.cs(m,CLN_D11+n,k,j,i)*x.w(m,e,k,j,i);
+  for (int q = 0; q < 3; ++q) {   // (the stress torque through the cell's six faces)
+    const int dk = (q == 2), dj = (q == 1), di = (q == 0);
+    for (int s = 0; s < 2; ++s) {
+      const int o = 2*s - 1, kf = k + s*dk, jf = j + s*dj, iff = i + s*di;
+      const int ko = k + o*dk, jo = j + o*dj, io = i + o*di;
+      const bool bnd = CleanBoundaryFace(x, q, m, kf, jf, iff);
+      Real pf[6], a[3], t[2];
+      for (int n = 0; n < 6; ++n) {
+        pf[n] = bnd ? p0[n] : 0.5*(p0[n] + x.cs(m,CLN_D11+n,ko,jo,io)*x.w(m,e,ko,jo,io));
+      }
+      for (int c = 0; c < 3; ++c) {
+        a[c] = (q == 0) ? x.x1f(m,iff)*x.area[0](m,kf,jf,iff)*x.g.At<CLG_N>(m,c,kf,jf,iff)
+                        : x.g.At<CLG_M>(m,3*(q-1)+c,kf,jf,iff);
+      }
+      for (int b = 0; b < 2; ++b) {   // (P n, outward: its x and y components)
+        t[b] = 0.0;
+        for (int c = 0; c < 3; ++c) {
+          t[b] += o*pf[(b == c) ? b : 2 + b + c]*x.g.At<CLG_N>(m,3*q+c,kf,jf,iff);
+        }
+      }
+      tc += a[0]*t[1] - a[1]*t[0];
+    }
+  }
+  return gl - x.h*tc;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanVelocityCell
 //! \brief CleanVelocityUpdate's cell (k,j,i): the momentum change (CLW_DM), with fa the
 //! advective coefficients of the new velocity (CLW_A1), and the maxima of |dv|, |v| and
@@ -4941,6 +4998,7 @@ void RadiationM1::CleanWriteBack() {
   px = CleanDevArgs(x, 0);   // (the F solve took the slots; xh changed)
   pxh = CleanDevArgs(xh, 1);
   const bool lzb = cln_lzbook && feedback;
+  const bool lzt = cln_lzt && feedback;
   DvceArray4D<Real> lzw;
   if (lzb) lzw = ScratchView<DvceArray4D<Real>>("cln_lzw", nmb1 + 1, u0.extent_int(2),
                                                  u0.extent_int(3), u0.extent_int(4));
@@ -4986,6 +5044,15 @@ void RadiationM1::CleanWriteBack() {
     if (feedback) {
       Real mg[3], pg[3], rf[3], dlz = 0.0;
       CleanStagMomentum(xh, CLW_X, m, k, j, i, dm, mg, &dlz);
+      if (lzt) {   // (clean_cs_lz_tel: the gas phi momentum of CleanCsTorque)
+        Real q[3][3], rl;
+        const Real rc = CleanCsFrame(x, m, k, j, i, q);
+        const Real gl = CleanCsTorque(xh, CLW_X, m, k, j, i, rl);
+        const Real dp = gl/(x.vol(m,k,j,i)*rc) - (q[2][0]*dm[0] + q[2][1]*dm[1] +
+                                                   q[2][2]*dm[2]);
+        for (int n = 0; n < 3; ++n) dm[n] += dp*q[2][n];
+        dlz = -(gl + rl);
+      }
       CleanStagGasMomentum(x, uh, m, k, j, i, pg);
       CleanStagRefForce(x, fref, fr, aref, uh(m,IDN,k,j,i), m, k, j, i, rf);
       for (int n = 0; n < 3; ++n) {   // (force_reference)
