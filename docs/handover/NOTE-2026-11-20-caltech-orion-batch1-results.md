@@ -464,3 +464,7 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - LF_rsg (hpc-sm-02-11): rc=1 wall=10123 | cycles 589788 - 592698 | steady 3.385 s/cycle | GPU MiB max 109817 min 108847 | CW a 60 FATAL 1 |  
   FAILED: last 100 lines in caltech_results/LF_rsg/FAIL_tail100.txt
 - G_off_hg (hpc-sm-02-03): rc=0 wall=3194 | cycles 624961 - 625561 | steady 5.189 s/cycle | GPU MiB max 115141 min 114543 | CW a 10 FATAL 0 |  mean dt 97 | CW 10 FATAL 0
+- (14:18) Got bd0da2d46 + 259687daf:
+  * xcap 999d7afaa building; XCP8_hg, XCP2_hg (hg_thv7.keys), XCP8_rsg (rsg_thv7.keys + kappa 0.1), 1 node each, 100 cyc, run concurrently with the TG arms as nodes free (lines: CW kinds, retry lines, last cycle/dt, s/cycle, passes-per-stage histogram, XDONOR donor and cap sums).
+  * LFa_rsg, L0a_rsg (perturb 1e-15), LFb_rsg, L0b_rsg (1e-12) on v202, NR=4, 3000 cyc, TL 300, restart dumps every 250 cycles (output5/dcycle=250), dumps KEPT in /resnick/groups/carnegie_poc/jingze/orion_runs_1121/<TAG>/a/rst/ (not pushed; delete after 11-21). They start right after the TG/XCP arms; the G RSG pair and LX_rsg are held until all four seeds have started.
+  * (b) **No restart dumps exist for LF_rsg (died 592698) or L1_rsg_on (died 592299)**: both ran with only the final rst (FINALRST=0 = none) and armc deleted rst files; their run dirs contain no *.rst and rstsizes.txt is empty.
