@@ -12,3 +12,8 @@ FINALRST=0 NR=8 L2_hg_off  B_v201e HG 1500 hg_v20.keys time/dt_retry_host=m1 rad
 FINALRST=0 NR=8 L2_hg_on   B_v201e HG 1500 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_conv_max=9.9e-5 hydro/floor_pay=rad_column rad_m1/clean_cs_lz_tel=true rad_m1/time2_k1_xlim=0.1
 FINALRST=0 NR=4 L2_rsg_off B_v201e RSG 3000 rsg_v20.keys rad_m1/clean_conv_max=9.9e-5
 FINALRST=0 NR=4 L2_rsg_on  B_v201e RSG 3000 rsg_v20.keys rad_m1/clean_conv_max=9.9e-5 hydro/floor_pay=rad_column rad_m1/clean_cs_lz_tel=true rad_m1/time2_k1_xlim=0.1
+# added 2026-11-20 (NOTE bv): single-key attribution, HG, B_v201e, NR=8 on 2 nodes (same layout as L1_hg_*), 1000 cycles. ABOVE the L2 seeds.
+# Only two 2-node slots exist (hgGH3b 2 of 3 nodes, rsgEH2): run H_fp + H_tel together now, H_xl as soon as one finishes.
+FINALRST=0 NR=8 H_fp_hg  B_v201e HG 1000 hg_v20.keys time/dt_retry_host=m1 hydro/floor_pay=rad_column
+FINALRST=0 NR=8 H_tel_hg B_v201e HG 1000 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_cs_lz_tel=true
+FINALRST=0 NR=8 H_xl_hg  B_v201e HG 1000 hg_v20.keys time/dt_retry_host=m1 rad_m1/time2_k1_xlim=0.1
