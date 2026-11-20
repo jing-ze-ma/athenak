@@ -1,0 +1,101 @@
+== /resnick/groups/carnegie_poc/jingze/orion_runs_1121/AB6_rsg/a/run.log
+he_star_m1:   atm cell 391 r/R_ph 1.0353 rho 2.70122e-11 T [K] 3165.68 phi 1.00595 -> 1.00275, Gamma 0.000133525
+he_star_m1:   atm cell 392 r/R_ph 1.03597 rho 2.4883e-11 T [K] 3163.34 phi 1.00575 -> 1.00274, Gamma 0.000131015
+he_star_m1:   atm cell 393 r/R_ph 1.03665 rho 2.2886e-11 T [K] 3160.97 phi 1.00617 -> 1.00282, Gamma 0.000128561
+he_star_m1:   atm cell 394 r/R_ph 1.03734 rho 2.10139e-11 T [K] 3158.56 phi 1.00682 -> 1.00303, Gamma 0.000126154
+he_star_m1:   atm cell 395 r/R_ph 1.03805 rho 1.92599e-11 T [K] 3156.14 phi 1.00708 -> 1.0031, Gamma 0.000123857
+he_star_m1:   atm cell 396 r/R_ph 1.03878 rho 1.76178e-11 T [K] 3153.68 phi 1.00737 -> 1.00321, Gamma 0.000121664
+he_star_m1:   atm cell 397 r/R_ph 1.03952 rho 1.60821e-11 T [K] 3151.17 phi 1.00783 -> 1.00328, Gamma 0.000119581
+he_star_m1:   atm cell 398 r/R_ph 1.04029 rho 1.46473e-11 T [K] 3148.65 phi 1.00824 -> 1.00333, Gamma 0.000117596
+he_star_m1:   atm cell 399 r/R_ph 1.04107 rho 1.33088e-11 T [K] 3146.07 phi 1.00877 -> 1.00345, Gamma 0.000115677
+he_star_m1:   atm cell 400 r/R_ph 1.04187 rho 1.20619e-11 T [K] 3143.44 phi 1.00928 -> 1.00361, Gamma 0.000113816
+he_star_m1:   atm cell 401 r/R_ph 1.0427 rho 1.09024e-11 T [K] 3140.79 phi 1.00984 -> 1.00375, Gamma 0.000112026
+he_star_m1:   atm cell 402 r/R_ph 1.04355 rho 9.82616e-12 T [K] 3138.06 phi 1.01038 -> 1.00397, Gamma 0.000110297
+he_star_m1:   atm cell 403 r/R_ph 1.04443 rho 8.8294e-12 T [K] 3135.29 phi 1.01097 -> 1.00414, Gamma 0.000108657
+he_star_m1:   atm cell 404 r/R_ph 1.04533 rho 7.90847e-12 T [K] 3132.46 phi 1.01171 -> 1.00433, Gamma 0.000107108
+he_star_m1:   atm cell 405 r/R_ph 1.04626 rho 7.05979e-12 T [K] 3129.56 phi 1.01252 -> 1.00452, Gamma 0.00010566
+he_star_m1:   atm cell 406 r/R_ph 1.04722 rho 6.27987e-12 T [K] 3126.61 phi 1.01335 -> 1.00469, Gamma 0.000104317
+he_star_m1:   atm cell 407 r/R_ph 1.04822 rho 5.56538e-12 T [K] 3123.57 phi 1.01416 -> 1.00492, Gamma 0.000103072
+he_star_m1:   atm cell 408 r/R_ph 1.04924 rho 4.91293e-12 T [K] 3120.49 phi 1.01502 -> 1.00511, Gamma 0.000101931
+he_star_m1:   atm cell 409 r/R_ph 1.0503 rho 4.31928e-12 T [K] 3117.31 phi 1.01606 -> 1.00535, Gamma 0.000100883
+he_star_m1:   atm cell 410 r/R_ph 1.0514 rho 3.78112e-12 T [K] 3114.08 phi 1.01723 -> 1.00561, Gamma 9.99284e-05
+he_star_m1:   atm cell 411 r/R_ph 1.05254 rho 3.29525e-12 T [K] 3110.75 phi 1.01841 -> 1.0059, Gamma 9.90626e-05
+he_star_m1:   atm cell 412 r/R_ph 1.05371 rho 2.85844e-12 T [K] 3107.35 phi 1.01948 -> 1.00624, Gamma 9.82931e-05
+he_star_m1:   atm cell 413 r/R_ph 1.05493 rho 2.4675e-12 T [K] 3103.86 phi 1.02061 -> 1.00654, Gamma 9.76381e-05
+he_star_m1:   atm cell 414 r/R_ph 1.05618 rho 2.11927e-12 T [K] 3100.27 phi 1.02244 -> 1.00686, Gamma 9.70993e-05
+he_star_m1:   atm cell 415 r/R_ph 1.05749 rho 1.81061e-12 T [K] 3096.61 phi 1.02434 -> 1.0072, Gamma 9.66741e-05
+he_star_m1:   atm cell 416 r/R_ph 1.05884 rho 1.53848e-12 T [K] 3092.85 phi 1.02539 -> 1.00751, Gamma 9.63607e-05
+he_star_m1:   atm cell 417 r/R_ph 1.06024 rho 1.29985e-12 T [K] 3088.99 phi 1.02642 -> 1.00783, Gamma 9.61309e-05
+he_star_m1:   atm cell 418 r/R_ph 1.06169 rho 1.09179e-12 T [K] 3085.04 phi 1.02807 -> 1.00828, Gamma 9.5936e-05
+he_star_m1:   atm cell 419 r/R_ph 1.0632 rho 9.11465e-13 T [K] 3080.99 phi 1.03026 -> 1.00893, Gamma 9.57484e-05
+he_star_m1:   atm cell 420 r/R_ph 1.06476 rho 7.56145e-13 T [K] 3076.83 phi 1.03307 -> 1.00963, Gamma 9.56042e-05
+he_star_m1:   atm cell 421 r/R_ph 1.06637 rho 6.23221e-13 T [K] 3072.57 phi 1.03468 -> 1.01022, Gamma 9.55635e-05
+he_star_m1:   atm cell 422 r/R_ph 1.06805 rho 5.10223e-13 T [K] 3068.21 phi 1.03543 -> 1.01066, Gamma 9.56469e-05
+he_star_m1:   atm cell 423 r/R_ph 1.06978 rho 4.14827e-13 T [K] 3063.73 phi 1.03931 -> 1.0112, Gamma 9.57977e-05
+he_star_m1:   atm cell 424 r/R_ph 1.07158 rho 3.34867e-13 T [K] 3059.14 phi 1.04083 -> 1.01196, Gamma 9.59555e-05
+he_star_m1:   atm cell 425 r/R_ph 1.07344 rho 2.68338e-13 T [K] 3054.43 phi 1.04232 -> 1.01285, Gamma 9.61106e-05
+he_star_m1:   atm cell 426 r/R_ph 1.07537 rho 2.13405e-13 T [K] 3049.62 phi 1.04454 -> 1.01375, Gamma 9.62848e-05
+he_star_m1:   atm cell 427 r/R_ph 1.07738 rho 1.68403e-13 T [K] 3044.69 phi 1.04677 -> 1.01463, Gamma 9.6489e-05
+he_star_m1:   atm cell 428 r/R_ph 1.07945 rho 1.31833e-13 T [K] 3039.64 phi 1.04895 -> 1.01543, Gamma 9.6704e-05
+he_star_m1:   atm cell 429 r/R_ph 1.0816 rho 1.02363e-13 T [K] 3034.47 phi 1.05108 -> 1.01643, Gamma 9.68316e-05
+he_star_m1:   atm cell 430 r/R_ph 1.08382 rho 7.88148e-14 T [K] 3029.18 phi 32.7879 -> 0.831508, Gamma 9.67649e-05
+he_star_m1:   atm cell 431 r/R_ph 1.08612 rho 9.90353e-17 T [K] 3023.77 phi 1 -> 223.044, Gamma 8.82716e-05
+he_star_m1:   atm cell 432 r/R_ph 1.0885 rho 7.51431e-17 T [K] 3018.23 phi 1 -> 1.01922, Gamma 8.86624e-05
+he_star_m1:   atm cell 433 r/R_ph 1.09097 rho 5.63479e-17 T [K] 3012.57 phi 1 -> 1.02137, Gamma 8.91387e-05
+he_star_m1:   atm cell 434 r/R_ph 1.09352 rho 4.18665e-17 T [K] 3006.79 phi 1 -> 1.02259, Gamma 8.97195e-05
+he_star_m1:   atm cell 435 r/R_ph 1.09616 rho 3.08157e-17 T [K] 3000.88 phi 1 -> 1.02393, Gamma 9.04014e-05
+he_star_m1:   atm cell 436 r/R_ph 1.09889 rho 2.24652e-17 T [K] 2994.83 phi 1 -> 1.02532, Gamma 9.12095e-05
+he_star_m1:   atm cell 437 r/R_ph 1.10171 rho 1.62181e-17 T [K] 2988.66 phi 1 -> 1.02778, Gamma 9.2177e-05
+he_star_m1:   atm cell 438 r/R_ph 1.10463 rho 1.16001e-17 T [K] 2982.37 phi 1 -> 45.031, Gamma 9.3834e-05
+he_star_m1: he_ic_rad = sph1d (gas re_atm, hse on): r_b = 5.77891e+13 (tau 3.32704), blend tau 1 .. 3, 634 solve points + 64 core rays, 132 VET passes, 6 outer, g_top = H/J 0.977657, f_top = K/J 0.956011, 4.63917 s
+he_star_m1: he_ic_rad = sph1d: R_ph (tau_R 2/3, run kappa) 5.80029e+13 -> 5.80812e+13; max |E/E_col - 1| 0.0494228 at r = 5.78358e+13, |T/T_col - 1| 0.278732 at 6.41432e+13, |rho/rho_col - 1| 6371.01 at 6.29669e+13; HSE last max |dln rho| 2.31035e-07, residual 9.99201e-15, floor 1e-17 from r = 6.29676e+13, Gamma > 0.9 (clamped) in 0 fine cells, damped (0.5) from outer none
+he_star_m1:   r/R_ph 1: E/E_col 0.996065, T [K] 4114.09 (/T_col 0.999015), rho/rho_col 1.02185, F/(cE) 0.249533
+he_star_m1:   r/R_ph 1.003: E/E_col 0.997796, T [K] 3601.86 (/T_col 0.999449), rho/rho_col 1.34584, F/(cE) 0.422194
+he_star_m1:   r/R_ph 1.006: E/E_col 0.999139, T [K] 3411.37 (/T_col 0.999785), rho/rho_col 1.81614, F/(cE) 0.521563
+he_star_m1:   r/R_ph 1.01: E/E_col 0.999985, T [K] 3313.89 (/T_col 0.999996), rho/rho_col 2.74587, F/(cE) 0.581067
+he_star_m1:   r/R_ph 1.02: E/E_col 0.999942, T [K] 3229.63 (/T_col 0.999985), rho/rho_col 7.83379, F/(cE) 0.63155
+he_star_m1:   r/R_ph 1.05: E/E_col 0.999965, T [K] 3118.16 (/T_col 0.999991), rho/rho_col 176.669, F/(cE) 0.685882
+he_star_m1:   r/R_ph 1.1: E/E_col 0.999985, T [K] 2992.36 (/T_col 0.724333), rho/rho_col 1.97162, F/(cE) 0.736855
+he_star_m1:   r/R_ph 1.2: E/E_col 0.99999, T [K] 4131.19 (/T_col 1), rho/rho_col 1, F/(cE) 0.798196
+he_star_m1:   r/R_ph 1.5: E/E_col 0.999995, T [K] 4131.19 (/T_col 1), rho/rho_col 1, F/(cE) 0.884906
+he_star_m1:   r/R_ph 2: E/E_col 0.999997, T [K] 4131.19 (/T_col 1), rho/rho_col 1, F/(cE) 0.939374
+he_star_m1:   r/R_ph 2.5: E/E_col 0.999997, T [K] 4131.19 (/T_col 1), rho/rho_col 1, F/(cE) 0.962202
+he_star_m1:   r/R_ph 2.9: E/E_col 0.999997, T [K] 4131.19 (/T_col 1), rho/rho_col 1, F/(cE) 0.972226
+he_star_m1: IC column T(rho,eint)/T_col - 1: max 4.9738e-14 at r = 5.31619e+13 (he_ic_eint_from_t = true)
+he_star_m1: column inside the tables: log10 rho -17 .. -4.58238, log10 T 3.47417 .. 6.05963
+he_star_m1: he_gm_column: G m(r_in) = 1.48423e+27, G m(r_top) = 2.72896e+27 (G = 6.67408e-08 code), static monopole of the initial column
+he_star_m1: he_ic_balance cells: max |T/T_col - 1| = 8.84456e-06 at r = 5.7725e+13
+he_star_m1: he_ic_balance: max |rho/rho_col - 1| = 0.00160365 at r = 1.86108e+12, max face residual |PR/PL - 1| = 3.96905e-13, wall cells a_ref (module form), last change 4.65628e-13
+he_star_m1: mlt_flux_frozen: max F_MLT/F on the faces = 0.998992 at r = 5.68628e+13; F_MLT at the bottom/top faces = 4.56987e+10 / 0
+he_star_m1: mlt_ramp auto (start auto, time auto) from restart file (computed at the fresh start): start = 0 s (0 d), time = 9.09149e+06 s (105.226 d)
+he_star_m1: he_ic_equil: a_ref (cells is .. ie) and Phi_eff from the fresh start's equilibrium (restart trailer)
+he_star_m1: mlt_closure = adaptive, relax time 15000 s, every cycle, taper 0.01, update clock 9.092e+06, max L_sub = 6.74457e+38
+he_star_m1: mlt ramp start = 0, time = 9.09149e+06, w(t = 5.4648e+08) = 0, max L_MLT (unscaled) = 6.84801e+38
+he_star_m1: GM = 1.48423e+27, F_in = 1.75446e+13, tau(r_in) = 2.1596e+07, r_int (tau = 1) = 5.80078e+13, r_top = 1.76109e+14, sponge rate = 0.0001 above r = 1.58498e+14
+<time> dt_retry on: fac 0.5 max 8 ngood 20 grow 1.1 views minimal cap -1
+MLAT init: 0 non-uniform gas groups, 0 non-uniform radiation groups -> state kept
+<rad_m1> closure = vet_col: per-column 1-D formal solution, spherical p-rays (ncore 8, nsub 1, 557 rays, 548 shells), axis radial, rebuilt every 1 step(s); vet_col_order2 (quadratic mu, face core); vet_bc_diff = face; f_K >= 0; 40 shell(s) kept trapezoid weights; team build, 1 shells per chunk, team size AUTO; outer Marshak q = H(face)/J(top cell) in [0.001, 1]
+<rad_m1> vet_gd on the CUBED SPHERE (cs-vetgd-1017, stage S3): seam strip + vertex triangle upwind stencil, exact per-shell band copies (the sp halo lists / IPC / overlap keys do not apply), twin off; hand-over D_rr + D_r,lat in the operator (S4), no tangential part
+<rad_m1> vet_gd direction set: 120 directions; moment errors |sum w - 1| 3.77476e-15, |sum w n| 4.42354e-17, |sum w nn - I/3| 3.60822e-15 (rotated 2.66454e-15), 4th-moment anisotropy 4.13558e-15 (rotated 1.91513e-15)
+<rad_m1> vet_gd (cubed sphere): N = 128 per panel, narrowest cell spacing 0.00873064 rad, dense lateral band 66 cells (needed 66)
+<rad_m1> vet_gd (cubed sphere): rank 0 band copies on-rank 74752, sent 103424, received 103424 (cells per shell), partners 3; MPI band COMPACT (vet_gd_halo_compact > 0: per shell and pass only the read (cell, direction) values); list cache 4 sets
+<rad_m1> vet_gd_band_ring: compact intensities 13.0705 GB + 3 band slots 0.663828 GB on rank 0
+<rad_m1> vet_gd: ragged per-shell band intensity array 13.7343 GB on rank 0 (dense band 122.587 GB)
+<rad_m1> vet_gd_band_ring: compact intensities 13.0705 GB + 3 band slots 0.663828 GB on rank 0
+<rad_m1> vet_gd: ragged per-shell band intensity array 13.7343 GB on rank 0 (dense band 122.587 GB)
+<rad_m1> vet_gd_rotate_xfade_fuse: second-set intensities 13.7343 GB on rank 0
+<rad_m1> vet_gd: global-direction SC closure on the cubed sphere, product GL10x12 staggered (120 directions); 3-D rotation (quasi-random axis; angle = block key) every 22000.000000 in time (t0 0.000000, align on) (0 = fixed), first angle 49680; rank 0 wall ghost columns 0, direction maps exact 0 of 0 (the rest: nearest direction)
+<rad_m1> staggered on the cubed sphere: clean_stag_vimp = false
+### FATAL ERROR in ../../src/rad_m1/rad_m1_clean.cpp
+<rad_m1>/force_reference = wb_arad(_md) with scheme = clean needs the reference work given by the problem generator (force_reference_work = split)
+### FATAL ERROR in ../../src/rad_m1/rad_m1_clean.cpp
+<rad_m1>/force_reference = wb_arad(_md) with scheme = clean needs the reference work given by the problem generator (force_reference_work = split)
+### FATAL ERROR in ../../src/rad_m1/rad_m1_clean.cpp
+<rad_m1>/force_reference = wb_arad(_md) with scheme = clean needs the reference work given by the problem generator (force_reference_work = split)
+### FATAL ERROR in ../../src/rad_m1/rad_m1_clean.cpp
+<rad_m1>/force_reference = wb_arad(_md) with scheme = clean needs the reference work given by the problem generator (force_reference_work = split)
+srun: error: hpc-sm-01-11: tasks 0-2: Exited with exit code 1
+[2026-11-20T02:53:15.393] error:  mpi/pmix_v3: _errhandler: hpc-sm-01-11 [0]: pmixp_client_v2.c:219: Error handler invoked: status = -25, source = [slurm.pmix.6133593.35:0]
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+[2026-11-20T02:53:15.408] error: *** STEP 6133593.35 ON hpc-sm-01-11 CANCELLED AT 2026-11-20T02:53:15 DUE to SIGNAL Killed ***
+srun: error: hpc-sm-01-11: task 3: Exited with exit code 1

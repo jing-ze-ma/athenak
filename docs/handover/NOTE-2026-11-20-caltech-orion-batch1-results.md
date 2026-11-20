@@ -71,3 +71,9 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - LW1170_hg (hpc-sm-02-11): rc=0 wall=594 | cycles 624961 - 625061 | steady 5.023 s/cycle | GPU MiB max 115761 min 115163 | CW a 0 FATAL 0 |  (real.py runs when both LW arms are done)
 - LW260_hg (hpc-sm-02-04): rc=0 wall=668 | cycles 624961 - 625061 | steady 5.815 s/cycle | GPU MiB max 116343 min 115791 | CW a 0 FATAL 0 |  real.py -> caltech_results/LW_real.txt: LW1170_hg t50114000 5020740/4283389/3464277 max 26809180.00 | t50116000 5223392/4502883/3690951 max 64026220.00 | t50117900 5306397/4565043/3773074 max 77538000.00 | t50119800 5458910/4745484/3979947 max 149545088.00 | t50121800 5771095/5106550/4380722 max 132743576.00 | t50122400 5732220/5063369/43
 - LV_loc300k10_rsg (hpc-sm-02-03): rc=0 wall=1037 | cycles 589788 - 590088 | steady 3.220 s/cycle | GPU MiB max 109385 min 108415 | CW a 2 FATAL 0 |  npass: /resnick/groups/carnegie_poc/jingze/orion_runs_1121/LV_loc300k10_rsg/a/run.log: stages 598 passes mean 5.04 max 200 sum 3016 CW 2 | t2s1 4.50/5 t2s2 6
+- (02:50) 09cc73c0b real_diag: the LW bins were already deleted after real.py (per 21e item 3), before your NOTE arrived. LW1170_hg / LW260_hg
+  took only ~10 min each here, so I queued exact reruns (LWr1170_hg / LWr260_hg, same build v20f + keys, bins kept) at the end of
+  the main queue (before batch 4). real_diag.py runs on each in a holder step -> caltech_results/LW_real_diag.txt, then the bins go.
+- LV_ref300k10_rsg (hpc-sm-01-11): rc=0 wall=1436 | cycles 589788 - 590088 | steady 4.533 s/cycle | GPU MiB max 109385 min 108415 | CW a 17 FATAL 0 |  npass: /resnick/groups/carnegie_poc/jingze/orion_runs_1121/LV_ref300k10_rsg/a/run.log: stages 601 passes mean 5.78 max 200 sum 3474 CW 17 | t2s1 102.50/200 t
+- AB6_rsg (hpc-sm-01-11): rc=1 wall=38 |  | steady  s/cycle | GPU MiB max 77271 min 29151 | CW a 0 FATAL 4 |  
+  FAILED: last 100 lines in caltech_results/AB6_rsg/FAIL_tail100.txt
