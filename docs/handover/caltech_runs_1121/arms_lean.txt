@@ -1,0 +1,4 @@
+# LEAN vs v20g base (orion 2026-11-20), LOWEST priority. B_lean = caltech-runs/lean 425f2548f. Base side = existing V20G_rsg / V20GP_rsg / V20G_hg_ompio.
+FINALRST=1 MODE=rt NH=2              LN_rsg  B_lean RSG 4 rsg_v20.keys
+FINALRST=1 ENVX=CLEAN_POISON_GHOST=1 LNP_rsg B_lean RSG 4 rsg_v20.keys
+FINALRST=1 MODE=rt NH=2 ENVX=OMPI_MCA_io=ompio LN_hg B_lean HG 4 hg_v20.keys time/dt_retry_host=m1
