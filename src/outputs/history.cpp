@@ -13,6 +13,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -411,12 +412,14 @@ void HistoryOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   for (auto &data : hist_data) {
     // first, perform in-place sum over all MPI ranks
 #if MPI_PARALLEL_ENABLED
-    if (global_variable::my_rank == 0) {
-      MPI_Reduce(MPI_IN_PLACE, &(data.hdata[0]), data.nhist, MPI_ATHENA_REAL,
-         MPI_SUM, 0, MPI_COMM_WORLD);
-    } else {
-      MPI_Reduce(&(data.hdata[0]), &(data.hdata[0]), data.nhist,
-         MPI_ATHENA_REAL, MPI_SUM, 0, MPI_COMM_WORLD);
+    // (in rank order on the master, not by MPI_Reduce: its tree follows the placement of
+    // the ranks on the nodes, and the sums changed with it in the last bits)
+    const int nh = data.nhist, me = global_variable::my_rank;
+    std::vector<Real> all((me == 0) ? static_cast<size_t>(nh)*global_variable::nranks : 1);
+    MPI_Gather(&(data.hdata[0]), nh, MPI_ATHENA_REAL, all.data(), nh, MPI_ATHENA_REAL, 0,
+               MPI_COMM_WORLD);
+    for (int r = 1; r < global_variable::nranks && me == 0; ++r) {
+      for (int n = 0; n < nh; ++n) data.hdata[n] += all[static_cast<size_t>(r)*nh + n];
     }
 #endif
 
