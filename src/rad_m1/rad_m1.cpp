@@ -355,6 +355,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "cell vector) is gone" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // clean_stag_thinf (default off): the staggered bracket's ray correction in the face
+    // half ranges, realisable (CleanStagBracket), not as the gated lagged flux DG
+    cln_thinf = stag("clean_stag_thinf", false);
     // clean_stag_xdonor = off (default) | p1 | lag: the off-diagonal stress flux an
     // M-matrix term (CleanStagXDonor); clean_stag_xsrc (default off): also the face
     // sources past their explicit share; clean_stag_xsweep (default off): a monotone

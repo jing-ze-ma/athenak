@@ -3317,7 +3317,8 @@ void RadiationM1::CleanStagBracket() {
   x.consist = false;
   x.feedback = false;   // (the gas terms read the last iterate's work vectors)
   const Real efl = e_floor;
-  const bool rat = cln_rayratio;
+  const bool rat = cln_rayratio, thf = cln_thinf;
+  const Real rmn = cln_raymin;
   auto iw_ = iw;
   CleanFor("cln_rayj", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -3371,6 +3372,27 @@ void RadiationM1::CleanStagBracket() {
         return;
       }
       const Real fy = rat ? fr0/jd*((fr0 > 0.0) ? jl : jr) : fr0;
+      // (clean_stag_thinf: the rest of the rays' face flux, dd = F_y - h+ J_L - h- J_R, in
+      // the face half ranges, tilted in proportion to their sizes (the shrinking one at
+      // most to 0, the rest then on the other), per J of the donor, at least clean_ray_min
+      // E_old (a cell the rays hold almost nothing in), within g+ in [0, 1], g- in [-1, 0]:
+      // the thin share w c (g+ E_L + g- E_R) is linear in E with the upwind signs and
+      // within [-c E_R, c E_L], realisable by construction; no DG.  A face flux the cap
+      // cuts (a beam narrower than a cell, F_y > J_L) is carried by a higher E)
+      if (thf) {
+        const Real hl = x.fc[dir](m,CLF_HP,k,j,i)*jl, hr = x.fc[dir](m,CLF_HM,k,j,i)*jr;
+        const Real dd = fy - (hl + hr), fr = hl + hr + dd, s = hl - hr;
+        const Real tl = hl + dd*hl/s, tr = hr - dd*hr/s;
+        const bool cut = (tl < 0.0) || (tr > 0.0);
+        const Real hp = !(s > 0.0) ? hl : (cut ? ((tl < 0.0) ? 0.0 : fmax(fr, 0.0)) : tl);
+        const Real hm = !(s > 0.0) ? hr : (cut ? ((tl < 0.0) ? fmin(fr, 0.0) : 0.0) : tr);
+        const Real el = fmax(x.w(m,CLW_EO,k-dk,j-dj,i-di), 0.0);
+        const Real er = fmax(x.w(m,CLW_EO,k,j,i), 0.0);
+        if (jl > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = fmin(hp/fmax(jl, rmn*el), 1.0);
+        if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = fmax(hm/fmax(jr, rmn*er), -1.0);
+        x.fc[dir](m,x.fdg,k,j,i) = 0.0;
+        return;
+      }
       // (the old production's form, M1ThinFace implicit_thin_corr = hc: the cells' half
       // ranges h+- realisable, the rest of the rays' face flux the lagged flux DG/w = q c
       // (F_y - h+ J_L - h- J_R) of the face (CleanThinFaceDG), F_y clamped to [-J_R, J_L]
