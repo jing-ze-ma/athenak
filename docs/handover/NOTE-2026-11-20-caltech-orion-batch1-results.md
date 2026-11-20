@@ -187,3 +187,7 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - BA_rsg_mb2 (hpc-sm-02-11): rc=0 wall=137 | cycles 589788 - 589808 | steady 2.978 s/cycle | GPU MiB max 108545 min 107411 | CW a 0 FATAL 0 |  
 - (05:05) Scheduler fix on our side: the main queue had drained at 04:43 and its runner exited, so batch 4 (BA_*) started and the later additions (T2K_rsg, V20L_*, AB10_*) waited ~20 min. Runner is persistent now and batch 4 yields to any waiting main-queue arm.
 - BA_hg_v20g (hpc-sm-01-11): rc=0 wall=176 | cycles 624961 - 624981 | steady 4.904 s/cycle | GPU MiB max 120005 min 119457 | CW a 0 FATAL 0 |  
+- (05:15) Got 0c0379c94: spd2b 170812c47 building (plain cmake); SD_rsg / SDR_rsg / SDP_rsg + the HG pair SDT_b_hg/SDT_s_hg queued after AB10; SDT_b/s RSG rounds 1+2 on 2 exclusively claimed nodes after the SPL rounds. Xchecks as asked in the result lines.
+- AB10_hg (hpc-sm-02-09): rc=0 wall=122 | cycles 624961 - 624967 | steady 5.168 s/cycle | GPU MiB max 120991 min 120435 | CW a 0 FATAL 0 |  floor_audit cycle lines 18 | unpaid CW 0 | EOS floors:  hydro EOS floors energy created=2.721342e+33
+- BA_hg_p4 (hpc-sm-02-11): rc=0 wall=179 | cycles 624961 - 624981 | steady 4.876 s/cycle | GPU MiB max 119391 min 118843 | CW a 0 FATAL 0 |  
+- BA_hg_h200 (hpc-sm-01-11): rc=0 wall=177 | cycles 624961 - 624981 | steady 5.092 s/cycle | GPU MiB max 118789 min 118191 | CW a 0 FATAL 0 |  
