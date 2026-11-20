@@ -434,3 +434,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   FAILED: last 100 lines in caltech_results/BFXC19_rsg/FAIL_tail100.txt
 - BFXC13_rsg (hpc-sm-01-11): rc=1 wall=10 |  | steady  s/cycle | GPU MiB max 13352 min 23 | CW a 0 FATAL 4 |   | CW kinds:  | dt_retry lines 0 | energy created lines 0
   FAILED: last 100 lines in caltech_results/BFXC13_rsg/FAIL_tail100.txt
+- (13:13) **BFXC19_rsg and BFXC13_rsg FATAL at setup (10 s): `### FATAL ERROR <rad_m1>/clean_stag_xcorner = 0..4 needs clean_stag_xsrc (1, 3: not on the cubed sphere)`.** So every xcorner=3 arm as listed (BFXC19_hg, BFXC20_hg/_rsg) will stop the same way; they still run as queued (seconds each) unless you send corrected keys. Tails in caltech_results/BFXC19_rsg, BFXC13_rsg.
+  Got 48ed75bcf / eda7b1c2d / 413fe6fb3: BFXC13_hg dropped; beamfixc20 29f989379 and lztel3 74c8a8bb1 (plain) building. HG queue: BFXC19_hg, then G_on_hg (lztel3, no env), G_off_hg (lztel3; verdict vs L1_hg_off rows 0-999), BFXC20_hg, BFX16_hg, BFX15_hg, BFX5_hg, LX_hg, D_off_hg, LN2_hg, V201Dk_hg. Single nodes: BFXC20_rsg first, then the rest. G lines carry s/cycle, mean dt, CW/FATAL.
