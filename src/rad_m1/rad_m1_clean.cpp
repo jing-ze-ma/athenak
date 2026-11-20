@@ -3517,7 +3517,15 @@ void RadiationM1::CleanStagBracket() {
       };
       Real r = fmin(rq(eol, fmax(jl, 0.0)), rq(eor, fmax(jr, 0.0)));
       if (dgf == 2 || dgf == 3) r = fmin(rd(eol, jl), rd(eor, jr));
-      const Real q = (dgf == 1) ? 1.0 : ((dgf == 3) ? r : r*r);
+      // (9, 10: q = min(1, r/clean_ray_min)^2, the gate only where the rays do not describe
+      // a cell; 9 without the F_y clamp)
+      const Real rg = fmin(r/rmn, 1.0);
+      const Real q = (dgf == 1) ? 1.0 : ((dgf == 3) ? r : ((dgf >= 9) ? rg*rg : r*r));
+      if (dgf == 9) {
+        x.fc[dir](m,x.fdg,k,j,i) = q*x.c*(fy - x.fc[dir](m,CLF_HP,k,j,i)*jl
+                                           - x.fc[dir](m,CLF_HM,k,j,i)*jr);
+        return;
+      }
       const Real ml = (dgf == 1) ? fmin(jl, eol) : jl, mr = (dgf == 1) ? fmin(jr, eor) : jr;
       const Real hup = x.fc[dir](m,CLF_HP,k,j,i)*ml + x.fc[dir](m,CLF_HM,k,j,i)*mr;
       x.fc[dir](m,x.fdg,k,j,i) = q*x.c*(fmin(fmax(fy, -jr), jl) - hup);
