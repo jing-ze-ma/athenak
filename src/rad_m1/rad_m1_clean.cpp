@@ -3262,7 +3262,7 @@ Real RadiationM1::CleanConvDF(const bool first) {
     }
     a(m,k,j,i) = d;
   }, Kokkos::Max<Real>(dmax));
-  return CleanReduce(dmax, true);
+  return fmax(CleanReduce(dmax, true), 0.0);
 }
 
 //----------------------------------------------------------------------------------------
