@@ -18,3 +18,6 @@ FINALRST=0 NR=8 BFX5_hg  B_bfx12 HG 300 hg_v20.keys time/dt_retry_host=m1 rad_m1
 FINALRST=0 NR=4 BFX12_rsg B_bfx12 RSG 300 rsg_v20.keys rad_m1/clean_stag_dg_form=12
 FINALRST=0 NR=4 BFX11_rsg B_bfx12 RSG 300 rsg_v20.keys rad_m1/clean_stag_dg_form=11
 FINALRST=0 NR=4 BFX5_rsg  B_bfx12 RSG 300 rsg_v20.keys rad_m1/clean_stag_dg_form=5
+# added NOTE cj: B_bfx13 = caltech-runs/beamfix13 df0e4d19c2bf391df40b2fe326253a48ccd2d45c (B_bfx12 + form 13). HG order: BFX12_hg, BFX13_hg, BFX11_hg, BFX5_hg. RSG: BFX13_rsg right after BFX12_rsg.
+FINALRST=0 NR=8 BFX13_hg  B_bfx13 HG  300 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=13
+FINALRST=0 NR=4 BFX13_rsg B_bfx13 RSG 300 rsg_v20.keys rad_m1/clean_stag_dg_form=13
