@@ -352,7 +352,8 @@ static void CleanVelocityCell(const CleanArgs &x, const CleanArgs &xh, const Cle
 
 #if M1_TU_PART(0)
 void RadiationM1::CleanPreflight(ParameterInput *pin) {
-  // block/key (* ends a prefix): nullptr read, "" no effect, "!" fatal, else clean key
+  // block/key (* ends a prefix): nullptr read, "" no effect, "!" fatal unless off, "x"
+  // removed (fatal when named), else clean key
   static const char *tab[][2] = {
     {"rad_m1/implicit_bc_*", nullptr}, {"rad_m1/implicit_flux_x1m*", nullptr},
     {"rad_m1/implicit_ebath_*", nullptr}, {"rad_m1/implicit_beam*", nullptr},
@@ -362,7 +363,7 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/implicit_maxit", nullptr},   // (read by the old module's ImplicitInit; a
     {"rad_m1/implicit_tol_rel_max", nullptr},   // named other value than the clean key's
     {"rad_m1/implicit_lin_maxit", nullptr},   // prints a NOTE, rad_m1.cpp)
-    {"rad_m1/implicit_recon", "clean_recon"},
+    {"rad_m1/implicit_recon", ""},
     {"rad_m1/implicit_closure_lag", "clean_closure"},
     {"rad_m1/time2_vet", "clean_closure"}, {"rad_m1/time2_vet_col", "clean_closure"},
     {"rad_m1/time2_vet_sc", "clean_closure"},
@@ -391,7 +392,19 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     // round cap, the vet_col lateral posfix and the x2 vet fields: none under clean)
     {"rad_m1/time2_adm_poslim", ""}, {"rad_m1/time2_dtr_poslim", ""},
     {"rad_m1/zalesak_cap_rounds", ""}, {"rad_m1/vet_col_lat_posfix", ""},
-    {"rad_m1/time2_vet_x2_fields", ""}};
+    {"rad_m1/time2_vet_x2_fields", ""},
+    // (the keys of the cell layout, removed with it)
+    {"rad_m1/clean_alpha", "x"}, {"rad_m1/clean_recon", "x"},
+    {"rad_m1/clean_face_model", "x"}, {"rad_m1/clean_consistency_weight", "x"},
+    {"rad_m1/clean_psi_eps", "x"}, {"rad_m1/clean_pos_*", "x"},
+    {"rad_m1/clean_diag_cells", "x"}, {"rad_m1/clean_maxpos", "x"},
+    {"rad_m1/clean_vfreeze", "x"}, {"rad_m1/clean_gas_exact", "x"},
+    {"rad_m1/clean_yres", "x"}, {"rad_m1/clean_nl_efloor", "x"},
+    {"rad_m1/clean_pc", "x"}, {"rad_m1/clean_pc_sweeps", "x"},
+    {"rad_m1/clean_pc_factor*", "x"}, {"rad_m1/clean_pc_reuse", "x"},
+    {"rad_m1/clean_dissip_power", "x"},
+    {"rad_m1/clean_line_teams", "x"}, {"rad_m1/clean_line_solver", "x"},
+    {"rad_m1/clean_line_chunk", "x"}};
   const bool say = (global_variable::my_rank == 0);
   std::string none;
   std::vector<std::string> drop;
@@ -406,6 +419,10 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
         if (k.compare(0, n, p, 0, n) != 0 || (n == p.size() && k.size() != n)) continue;
         if (t[1] == nullptr) break;
         const std::string c(t[1]);
+        if (c == "x") {
+          CleanFatal("<" + k + "> belonged to the removed cell layout (clean_layout = "
+                     "staggered is the only one); remove it from the input");
+        }
         if (c == "!" && v != "false" && v != "0") {
           CleanFatal("<" + k + "> = " + v + " has no counterpart in scheme = clean");
         }
