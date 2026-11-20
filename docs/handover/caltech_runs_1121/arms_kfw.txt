@@ -1,0 +1,13 @@
+# KERN face-weight timing (orion 2026-11-20). B_kfw = caltech-runs/kern-fw 7ee3e80dd (v20l + 2 bitwise commits). 20 cycles, BA settings.
+# Each pair together on comparable nodes (not 02-16), round 2 with nodes swapped. hst md5 must be equal within each star.
+FINALRST=0 KF_rsg_b_1 B_v20l RSG 20 rsg_v20.keys
+FINALRST=0 KF_rsg_f_1 B_kfw  RSG 20 rsg_v20.keys
+FINALRST=0 KF_hg_b_1  B_v20l HG 20 hg_v20.keys
+FINALRST=0 KF_hg_f_1  B_kfw  HG 20 hg_v20.keys
+FINALRST=0 KF_rsg_b_2 B_v20l RSG 20 rsg_v20.keys
+FINALRST=0 KF_rsg_f_2 B_kfw  RSG 20 rsg_v20.keys
+FINALRST=0 KF_hg_b_2  B_v20l HG 20 hg_v20.keys
+FINALRST=0 KF_hg_f_2  B_kfw  HG 20 hg_v20.keys
+# optional, env only, B_v20l (bitwise expected): launch bound of m1_vgdcs_shell_xff
+FINALRST=0 ENVX=VGD_CS_LB=8 KL8_rsg B_v20l RSG 20 rsg_v20.keys
+FINALRST=0 ENVX=VGD_CS_LB=2 KL2_rsg B_v20l RSG 20 rsg_v20.keys
