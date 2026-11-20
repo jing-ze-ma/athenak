@@ -167,3 +167,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   T2_rsg (lzcs-tel, key on, 300 cyc): `FATAL <time> dt_retry: cycle 589864 failed 9 times (max 8), dt 3.681391e+00` at cycle N0+76 (19 CLEAN WARNINGs). Full log + tail sent.
 - (04:40) Got ec649bc78: T3K_hg (key off, 50 cyc) queued right after KC / AB9, prefers 02-11; its result line carries the per-cycle dt list.
 - CXQR_hg (hpc-sm-02-10): rc=0 wall=135 | cycles 624961 - 624967 | steady 5.051 s/cycle | GPU MiB max 116341 min 115785 | CW a 0 FATAL 0 |  k1_xpos: <rad_m1> time_scheme=hesdirk2: stage steps=6.000000e+00 backward-Euler steps=0.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 k1_xpos(th=1.000000e-01) cell-stages(rank 0)=3.243545e+06 face_fct calls=1.200000e+01 skipped(no face flux)=
+- CXQ_hg (hpc-sm-02-11): rc=1 wall=436 | cycles 624961 - 624965 | steady 17.722 s/cycle | GPU MiB max 115761 min 114973 | CW a 11 FATAL 1 |  k1_xpos: ### NOTE: parameter 'time2_k1_xpos' in block 'rad_m1' is absent from the restart's input: added from the command line (= 0.1)
+  FAILED: last 100 lines in caltech_results/CXQ_hg/FAIL_tail100.txt
