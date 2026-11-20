@@ -133,3 +133,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - CNX_hg (hpc-sm-01-17): rc=0 wall=180 | cycles 624961 - 624967 | steady 17.710 s/cycle | GPU MiB max 120151 min 119595 | CW a 2 FATAL 0 |  k1_xpos: 
 - (04:15) Got 1912abd32 / a07337754 / 6430ac473: KT HG trio, then KT RSG trio, now at the head of the queue (each trio starts together on 3 comparable nodes, not 02-16; full run.log.gz). SPG A/B moved behind the KT trios (its node claims released). lzcs2 b4ba38764 building; L1_rsg / L2_hg re-queued on it behind T1-T4.
 - GCA300_ref_rsg (hpc-sm-02-10): rc=0 wall=1437 | cycles 589788 - 590088 | steady 4.554 s/cycle | GPU MiB max 95621 min 94595 | CW a 17 FATAL 0 |  
+- KT1_hg (hpc-sm-01-11): rc=0 wall=193 | cycles 624961 - 624981 | steady 5.190 s/cycle | GPU MiB max 116353 min 115805 | CW a 0 FATAL 0 |  
+- KT01_hg (hpc-sm-02-10): rc=0 wall=197 | cycles 624961 - 624981 | steady 5.577 s/cycle | GPU MiB max 116353 min 115805 | CW a 0 FATAL 0 |  
