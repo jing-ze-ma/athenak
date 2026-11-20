@@ -2412,7 +2412,8 @@ void RadiationM1::CleanBndAcc(int stage, Real c1, Real c2, Real w, Real dt) {
   auto p1 = t2pf1, p2 = t2pf2;
   auto g1 = t2f1;
   auto iw_ = iw;
-  auto ar = pmy_pack->pcoord->area.x1f;
+  // (the x1 face area of the clean fluxes: the cubed sphere's own, CleanCsGeometry)
+  auto ar = pmy_pack->pmesh->use_cubed_sphere ? cln_ga[0] : pmy_pack->pcoord->area.x1f;
   const bool lim = t2_ffct && ok1;   // (the limiter's R in iw slot Time2FctSlot(0))
   const int sr = Time2FctSlot(0);
   const Real crp = chat/c_light, cc2 = two ? c2 : 0.0;
