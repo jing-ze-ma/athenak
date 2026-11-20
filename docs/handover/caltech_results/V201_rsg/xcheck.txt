@@ -1,0 +1,1 @@
+vs V20N_rsg/a: hst rsg.hydro.hst rows 4 differing cols (1-based) [3, 4, 5, 7, 8, 9, 10] first diff row 0 max rel 2.089e-16 hst rsg.user.hst rows 4 differing cols (1-based) [3, 4, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 20, 26, 27, 28, 29] first diff row 0 max rel 3.047e-16 
