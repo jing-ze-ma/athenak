@@ -1,0 +1,200 @@
+CLEAN XT cycle 52 t2s 3 write-back closure 4.720e-04
+elapsed=3.440360e+01 cycle=53 time=8.817834e+03 dt=1.675683e+02
+CLEAN ray cut cycle 53 shell 155 -> 148 (want 148, R)
+CLEAN cycle 53 t2s 2 it 7 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 53 t2s 2 write-back closure 2.539e-05
+CLEAN cycle 53 t2s 3 it 5 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 53 t2s 3 ledger 7.0570387161019047e+32
+CLEAN XT cycle 53 t2s 3 write-back closure 7.455e-06
+elapsed=3.485535e+01 cycle=54 time=8.985402e+03 dt=1.675697e+02
+CLEAN cycle 54 t2s 2 it 8 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 54 t2s 2 write-back closure 3.151e-06
+CLEAN cycle 54 t2s 3 it 4 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 54 t2s 3 ledger 7.0556655194114978e+32
+CLEAN XT cycle 54 t2s 3 write-back closure 8.436e-06
+elapsed=3.529989e+01 cycle=55 time=9.152972e+03 dt=1.675674e+02
+CLEAN ray cut cycle 55 shell 148 -> 145 (want 145, R)
+CLEAN cycle 55 t2s 2 it 8 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 55 t2s 2 write-back closure 1.231e-03
+CLEAN cycle 55 t2s 3 it 8 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 55 t2s 3 ledger 7.0511343413675381e+32
+CLEAN XT cycle 55 t2s 3 write-back closure 1.366e-04
+elapsed=3.566800e+01 cycle=56 time=9.320539e+03 dt=1.675686e+02
+CLEAN ray cut cycle 56 shell 145 -> 142 (want 142, R)
+CLEAN cycle 56 t2s 2 it 7 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 56 t2s 2 write-back closure 2.522e-04
+CLEAN cycle 56 t2s 3 it 10 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 56 t2s 3 ledger 7.0452086544069467e+32
+CLEAN XT cycle 56 t2s 3 write-back closure 3.334e-05
+elapsed=3.606341e+01 cycle=57 time=9.488108e+03 dt=1.675732e+02
+CLEAN ray cut cycle 57 shell 142 -> 139 (want 139, R)
+CLEAN cycle 57 t2s 2 it 11 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 57 t2s 2 write-back closure 3.793e-05
+CLEAN cycle 57 t2s 3 it 9 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 57 t2s 3 ledger 7.0407900105362968e+32
+CLEAN XT cycle 57 t2s 3 write-back closure 4.895e-04
+elapsed=3.644889e+01 cycle=58 time=9.655681e+03 dt=1.675813e+02
+CLEAN ray cut cycle 58 shell 139 -> 136 (want 136, R)
+CLEAN cycle 58 t2s 2 it 14 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 58 t2s 2 write-back closure 1.322e-05
+CLEAN cycle 58 t2s 3 it 13 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 58 t2s 3 ledger 7.0407465241599436e+32
+CLEAN XT cycle 58 t2s 3 write-back closure 6.909e-05
+elapsed=3.687393e+01 cycle=59 time=9.823262e+03 dt=1.675926e+02
+CLEAN ray cut cycle 59 shell 136 -> 133 (want 133, R)
+CLEAN cycle 59 t2s 2 it 12 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 59 t2s 2 write-back closure 3.593e-04
+CLEAN cycle 59 t2s 3 it 12 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 59 t2s 3 ledger 7.0399980333193018e+32
+CLEAN XT cycle 59 t2s 3 write-back closure 4.714e-04
+elapsed=3.730500e+01 cycle=60 time=9.990855e+03 dt=1.676067e+02
+CLEAN ray cut cycle 60 shell 133 -> 130 (want 130, R)
+CLEAN cycle 60 t2s 2 it 12 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 60 t2s 2 write-back closure 2.672e-04
+CLEAN cycle 60 t2s 3 it 12 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 60 t2s 3 ledger 7.0375042366262819e+32
+CLEAN XT cycle 60 t2s 3 write-back closure 2.134e-04
+elapsed=3.770571e+01 cycle=61 time=1.015846e+04 dt=1.676231e+02
+CLEAN ray cut cycle 61 shell 130 -> 127 (want 127, R)
+CLEAN cycle 61 t2s 2 it 12 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 61 t2s 2 write-back closure 7.275e-04
+CLEAN cycle 61 t2s 3 it 12 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 61 t2s 3 ledger 7.0372446975320991e+32
+CLEAN XT cycle 61 t2s 3 write-back closure 8.281e-05
+elapsed=3.810745e+01 cycle=62 time=1.032608e+04 dt=1.676410e+02
+CLEAN cycle 62 t2s 2 it 13 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 62 t2s 2 write-back closure 2.196e-05
+CLEAN cycle 62 t2s 3 it 13 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 62 t2s 3 ledger 7.0376010410808365e+32
+CLEAN XT cycle 62 t2s 3 write-back closure 5.427e-05
+elapsed=3.850594e+01 cycle=63 time=1.049373e+04 dt=1.676600e+02
+CLEAN cycle 63 t2s 2 it 12 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 63 t2s 2 write-back closure 2.085e-04
+CLEAN cycle 63 t2s 3 it 10 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 63 t2s 3 ledger 7.0361663024111525e+32
+CLEAN XT cycle 63 t2s 3 write-back closure 1.372e-04
+elapsed=3.892651e+01 cycle=64 time=1.066139e+04 dt=1.676793e+02
+CLEAN cycle 64 t2s 2 it 10 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 64 t2s 2 write-back closure 4.664e-05
+CLEAN cycle 64 t2s 3 it 10 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 64 t2s 3 ledger 7.0371859238835007e+32
+CLEAN XT cycle 64 t2s 3 write-back closure 2.308e-04
+elapsed=3.932257e+01 cycle=65 time=1.082907e+04 dt=1.676989e+02
+CLEAN cycle 65 t2s 2 it 8 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 65 t2s 2 write-back closure 4.198e-04
+CLEAN cycle 65 t2s 3 it 7 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 65 t2s 3 ledger 7.0318739783700876e+32
+CLEAN XT cycle 65 t2s 3 write-back closure 5.531e-05
+elapsed=3.968627e+01 cycle=66 time=1.099676e+04 dt=1.677187e+02
+CLEAN cycle 66 t2s 2 it 8 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 66 t2s 2 write-back closure 1.180e-05
+CLEAN cycle 66 t2s 3 it 8 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 66 t2s 3 ledger 7.0265783700678308e+32
+CLEAN XT cycle 66 t2s 3 write-back closure 1.257e-04
+elapsed=4.004910e+01 cycle=67 time=1.116448e+04 dt=1.677385e+02
+CLEAN cycle 67 t2s 2 it 7 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 67 t2s 2 write-back closure 1.416e-04
+CLEAN cycle 67 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 67 t2s 3 ledger 7.0246549446424968e+32
+CLEAN XT cycle 67 t2s 3 write-back closure 4.717e-05
+elapsed=4.040524e+01 cycle=68 time=1.133222e+04 dt=1.677583e+02
+CLEAN cycle 68 t2s 2 it 7 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 68 t2s 2 write-back closure 9.091e-05
+CLEAN cycle 68 t2s 3 it 8 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 68 t2s 3 ledger 7.0197901490034596e+32
+CLEAN XT cycle 68 t2s 3 write-back closure 2.608e-06
+elapsed=4.076163e+01 cycle=69 time=1.149998e+04 dt=1.677779e+02
+CLEAN cycle 69 t2s 2 it 7 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 69 t2s 2 write-back closure 5.769e-05
+CLEAN cycle 69 t2s 3 it 7 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 69 t2s 3 ledger 7.0151237468788332e+32
+CLEAN XT cycle 69 t2s 3 write-back closure 8.065e-06
+elapsed=4.111557e+01 cycle=70 time=1.166776e+04 dt=1.677975e+02
+CLEAN cycle 70 t2s 2 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 70 t2s 2 write-back closure 3.583e-05
+CLEAN cycle 70 t2s 3 it 7 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 70 t2s 3 ledger 7.0094559522700318e+32
+CLEAN XT cycle 70 t2s 3 write-back closure 1.041e-05
+elapsed=4.146826e+01 cycle=71 time=1.183555e+04 dt=1.678167e+02
+CLEAN ray cut cycle 71 shell 127 -> 154 (want 154, R)
+CLEAN cycle 71 t2s 2 it 8 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 71 t2s 2 write-back closure 1.022e-05
+CLEAN cycle 71 t2s 3 it 9 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 71 t2s 3 ledger 6.9985295247790223e+32
+CLEAN XT cycle 71 t2s 3 write-back closure 1.851e-05
+elapsed=4.185813e+01 cycle=72 time=1.200337e+04 dt=1.678351e+02
+CLEAN cycle 72 t2s 2 it 8 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 72 t2s 2 write-back closure 2.049e-04
+CLEAN cycle 72 t2s 3 it 4 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 72 t2s 3 ledger 6.9851585040743843e+32
+CLEAN XT cycle 72 t2s 3 write-back closure 1.529e-05
+elapsed=4.226969e+01 cycle=73 time=1.217121e+04 dt=1.678507e+02
+CLEAN ray cut cycle 73 shell 154 -> 147 (want 147, R)
+CLEAN cycle 73 t2s 2 it 4 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 73 t2s 2 write-back closure 5.982e-06
+CLEAN cycle 73 t2s 3 it 5 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 73 t2s 3 ledger 6.9733944860719524e+32
+CLEAN XT cycle 73 t2s 3 write-back closure 2.373e-05
+elapsed=4.273075e+01 cycle=74 time=1.233906e+04 dt=1.678608e+02
+CLEAN cycle 74 t2s 2 it 7 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 74 t2s 2 write-back closure 1.665e-05
+CLEAN cycle 74 t2s 3 it 6 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 74 t2s 3 ledger 6.9557588732060497e+32
+CLEAN XT cycle 74 t2s 3 write-back closure 5.938e-05
+<restart> rst/bsg3d.00001.rst: the cell and face variables written at 6.3 s
+<restart> rst/bsg3d.00001.rst: rad_m1 hesdirk2 slope written at 6.8 s
+<restart> rst/bsg3d.00001.rst: hydro w0 density and velocities written at 7.1 s
+<restart> rst/bsg3d.00001.rst: rad_signal_speed inputs written at 7.4 s
+<restart> rst/bsg3d.00001.rst: rad_m1 applied face flux written at 7.5 s
+<restart> rst/bsg3d.00001.rst: all (file closed) written at 7.5 s
+<time> dt_retry: 75 checkpoints (0.6 s, 1e+03 MB on rank 0), 0 retries, cap -1
+<time> counters_rollback: event counters of discarded attempts dropped: dt_retry 0, backward-Euler redo 0, hesdirk2 helper solves 0; E-floor created energy dropped (m1_pos_un, x volume) 0 / 0 / 0, vceil_de dropped 0 / 0 / 0
+<restart> rst/bsg3d.00002.rst: the cell and face variables written at 6.9 s
+<restart> rst/bsg3d.00002.rst: rad_m1 hesdirk2 slope written at 7.4 s
+<restart> rst/bsg3d.00002.rst: hydro w0 density and velocities written at 7.6 s
+<restart> rst/bsg3d.00002.rst: rad_signal_speed inputs written at 8.0 s
+<restart> rst/bsg3d.00002.rst: rad_m1 applied face flux written at 8.1 s
+<restart> rst/bsg3d.00002.rst: all (file closed) written at 8.1 s
+<hydro> EOS floors (all ranks, accepted steps, RK-weighted): mass created x vol=4e+22 energy created x vol=-3e+34 | FOFC first-order cell-stages=0
+elapsed=6.380675e+01 cycle=75 time=1.250692e+04 dt=1.678690e+02
+
+Terminating on cycle limit
+time=1.250692e+04 cycle=75
+tlim=1.000000e+30 nlim=75
+
+MeshBlock-cycles = 300
+cpu time used  = 5.026865e+01
+main loop time (before the final outputs) = 3.819188e+01
+zone-cycles/cpu_second = 2.503133e+07
+particle-updates/cpu_second = 0.000000e+00
+<hydro>/split_bval_fast: energy-only refreshes 0, full refreshes 0 (rank 0)
+<rad_m1> closure = vet_col: 0.000000e+00 tensor builds (0.000000e+00 skipped), 0.000000e+00 s (rank 0, fenced), 0.000000e+00 ms per build
+<rad_m1> vet_col_lat: 7.900000e+01 sweeps (incl. the first build's 3 inflow iterations), 0.000000e+00 s (rank 0, fenced), 0.000000e+00 ms per sweep; lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+<rad_m1> vet_gd: rank 0 fenced seconds: source 4.715182e-01, sweeps 1.466002e+00 (of which per-shell halo+walls 2.055765e-01, of which MPI wait 1.398022e-01), tables (rotation) 0.000000e+00, uniform twin 0.000000e+00, moments 1.566461e-01; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)
+<rad_m1> vet_gd halo (rank 0): exchanges 1.801300e+04, bytes sent 3.955608e+10 (2.195974e+06 per exchange), post 2.030281e-02 s, partners 3; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00
+<rad_m1> vet_gd vet_path = none: subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+<rad_m1> vet_gd ragged band (rank 0): out-of-slab accesses main 0.000000e+00 twin 0.000000e+00
+<rad_m1> vet_gd_band_ring (rank 0): sweeps 7.900000e+01, dense band saves 0.000000e+00, save store 5.316471e-02 GB
+<rad_m1> accel-1009 (rank 0): vet_gd_twin_fuse=0 vet_gd_twin_lowmem=0 vet_gd_twin_det=1 halo mask cache: 0.000000e+00 entries made, 0.000000e+00 MB of 0
+<rad_m1> vgdspeed-1009 (rank 0): vet_gd halo lists 0.000000e+00 made, 2.429273e+02 MB of 4.096000e+03 (key 4096, GPU: <= free/2); exchanges by list 1.761800e+04, dense 0.000000e+00
+<rad_m1> vgdfuse-1010 (rank 0): vet_gd_halo_exact lists made 3.120000e+02, fallbacks 0.000000e+00 (marked reads outside the masks' region 0.000000e+00), read ghosts with an unsent source 0.000000e+00; received values per list: exact/mask 0.000000e+00
+<rad_m1> vgdrot-1011 (rank 0): exact-list batches 3.120000e+02 (group 1, 1.867377e-01 s, list reallocs 1.330000e+03); table prefetch 1 swapped in 0.000000e+00 of the rotations
+<rad_m1> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_m1> consfix-1109: implicit_cons_final=1 solves=0.000000e+00 extra passes after a mode fallback=0.000000e+00
+<rad_m1> implicit_wb_vkick_reject=1.000000e+08: stages rejected=0.000000e+00 backward-Euler solves with kicks=0.000000e+00 (cells 0.000000e+00)
+<rad_m1> implicit transport: solves=0.000000e+00 Picard iterations mean=0.000000e+00 max=0.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> implicit_gas_newton_switch=10 (min pass 20): solves switched to the root find=0.000000e+00
+<rad_m1> m1-positivity: implicit_g0_exchange=1 implicit_g0_limit=1.000000e+00 clipped cell-passes=0.000000e+00 | implicit_pos_gas=1 (frac 1.000000e-03) cell-solves=0.000000e+00 energy moved rad->gas=0.000000e+00 | E floor raises cell-solves=0.000000e+00 energy from gas=0.000000e+00 energy created=0.000000e+00 (code units x volume) [in discarded attempts, rolled back: 0.000000e+00] of which solve undershoot (pos_floor_solve)=0.000000e+00 taken from the column's radiation (implicit_pos_floor_cons)=0.000000e+00 | |F| > c E scaled back cell-solves=0.000000e+00 sum(|F|/(cE) - 1)=0.000000e+00 | hydro EOS floors energy created=-2.866804e+34
+<rad_m1> implicit_face_mmat: checked passes=0.000000e+00 limited passes=0.000000e+00 limited cells=0.000000e+00 limited x1 faces=0.000000e+00 max rounds=0.000000e+00 left (b<=0 after the limit)=0.000000e+00 realisability-bound faces (|F_H| > c min E)=0.000000e+00 (rank 0: rounds=0.000000e+00 R exchanges=0.000000e+00 zalesak_halo_skip=on rowsel=on re-assembled rows=0.000000e+00 of 0.000000e+00 zalesak_active=on zalesak_cap_rounds=4 capped passes=0.000000e+00)
+<rad_m1> implicit transverse (bicgstab): final 7-point linear residual (max|r|/max|b|) mean=0.000000e+00 max=0.000000e+00
+<rad_m1>   (diagnostic; Picard test on it: no; lin_tol=1.000000e-10; inner stop: lin_tol relative to max|b|, loosened by Eisenstat-Walker ew_max=1.000000e-02)
+<rad_m1> bicgstab: outer passes=0.000000e+00 linear solves=0.000000e+00 inner iterations mean=0.000000e+00 max=0.000000e+00 total=0.000000e+00
+<rad_m1> bicgstab: breakdowns=0.000000e+00 line_jacobi fallbacks=0.000000e+00 global reductions=0.000000e+00 (0.000000e+00 per inner iteration)
+<rad_m1> gas coupling: newton=true eos_cache=false cell-passes=0.000000e+00 newton fallbacks=0.000000e+00 (0.000000e+00 per cell-pass)
+<rad_m1> FBLOCAL triggers 0.000000e+00 local 0.000000e+00 global 0.000000e+00 bad cells 0.000000e+00 masked cells 0.000000e+00
+<rad_m1> offdiag=none closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 (vet_col_lat 0.000000e+00) min E from the solve=1.000000e+300
+<rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=1.000000e+300 local kills=0.000000e+00 cells(rank 0)=0.000000e+00
+<rad_m1> floor clips (all ranks, every solve incl. BE): solved E <= e_floor cell-solves=0.000000e+00 written-back gas eint <= 0 cell-solves=0.000000e+00
+<rad_m1> time_scheme=hesdirk2: stage steps=7.400000e+01 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 face_fct calls=1.480000e+02 skipped(no face flux)=0.000000e+00 K1 flux from U^n=0.000000e+00 limited cells=1.088346e+06 max rounds=7.000000e+00 withheld E x vol=4.355402e+40 left (Q<=0)=0.000000e+00 emptied (E < 1.000000e-01 E^n) cells=0.000000e+00 min E/E^n=1.000000e-01 (rank 0: rounds=1.200000e+01 R exchanges=1.200000e+01) time2_vet_col=extrap2 fallbacks=0.000000e+00 time2_posfix: steps=0.000000e+00 re-solves=0.000000e+00 cells=0.000000e+00 accepted-with-fallback stages=0.000000e+00
+<rad_m1> time2_auto_be=16: skipped-stage BE steps=0.000000e+00 stage retries=0.000000e+00 (succeeded 0.000000e+00)
+<rad_m1> hesdirk2 wall split (rank 0 s): clean stage steps 2.766283e+01 (posfix 0.000000e+00) | failed stage attempts 0.000000e+00 (posfix 0.000000e+00) | their BE redo 0.000000e+00 | auto_be steps 0.000000e+00 | other BE steps 5.835663e-01 | discarded dt_retry attempts 0.000000e+00

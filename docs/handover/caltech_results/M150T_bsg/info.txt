@@ -1,0 +1,1 @@
+TAG=M150T_bsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v203_e688cb7bc md5=7df2b64833e40a77e8a8a04e6dc900ee DECK=/resnick/groups/carnegie_poc/jingze/fresh_prod_1120/fg_v2/decks/bsg_mu616_smoke_thinf.athinput md5=29e0fa78dc425c6f8d8778d47d57feb9 NC=150 HOLDER=6133593 NODE=hpc-sm-01-11 NR=4 EX=output2/dcycle=150 output3/dcycle=150 output5/dcycle=75
