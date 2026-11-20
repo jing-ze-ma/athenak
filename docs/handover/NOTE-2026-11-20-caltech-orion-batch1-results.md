@@ -39,3 +39,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - CS_rsg_ctl (hpc-sm-01-11): rc=0 wall=101 | cycles 589788 - 589796 | steady 2.859 s/cycle | GPU MiB max 110487 min 109355 | CW a 0 FATAL 0 |  
 - V20F_rsg (hpc-sm-02-11): rc=0 wall=154 rc=0 wall=147 rc=0 wall=152 | cycles 589788 - 589792 | steady 2.864 s/cycle | GPU MiB max 108763 min 107661 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF  xcheck vs V20F_rsg/a:
 - CS_rsg_tie (hpc-sm-02-10): rc=0 wall=103 | cycles 589788 - 589796 | steady 3.082 s/cycle | GPU MiB max 110517 min 109385 | CW a 0 FATAL 0 |  
+- CS_hg_ctl (hpc-sm-01-11): rc=0 wall=124 | cycles 624961 - 624969 | steady 5.322 s/cycle | GPU MiB max 121651 min 121095 | CW a 0 FATAL 0 |  

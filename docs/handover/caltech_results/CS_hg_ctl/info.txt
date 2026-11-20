@@ -1,0 +1,1 @@
+TAG=CS_hg_ctl BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_conserv-ctl2_5ca370ffc md5=6c298cb6b97f9ecf885dd273e18815cf RST=/resnick/groups/carnegie_poc/jingze/hgglob_1021/prodG/rst/hegiant.00139.rst N0=624961 NC=8 MODE=speed HOLDER=6133593 NODE=hpc-sm-01-11 NR=4 ENVX=CONSERV_L=1 PROF_U=1 EX=rad_m1/dbg_energy_audit=true output1/dt=1
