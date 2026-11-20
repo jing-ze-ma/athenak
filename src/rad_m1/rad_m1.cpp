@@ -345,6 +345,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (!cln_cell && pin->DoesParameterExist("rad_m1", "clean_stag_fidp")) {
       cln_fidp = std::min(std::max(pin->GetInteger("rad_m1", "clean_stag_fidp"), 0), 3);
     }
+    // clean_stag_thinf = 0 (default) | 1 | 2 | 3 (prototype): the thin share's half-range
+    // (kinetic) form; 1: the rays' face flux folded into the face half ranges h+- within
+    // [0, 1], [-1, 0] (no additive DG, CleanStagBracket); 2, 3: also the face momentum
+    // F = (1 - w) F_solve + w c (h+ E_L + h- E_R) (CleanStagFSolve), 2 the gas takes the
+    // change (exact), 3 the gas takes the absorption of that F, the rest booked (CLEAN FIDP)
+    if (!cln_cell && pin->DoesParameterExist("rad_m1", "clean_stag_thinf")) {
+      cln_thinf = std::min(std::max(pin->GetInteger("rad_m1", "clean_stag_thinf"), 0), 3);
+      if (cln_thinf >= 2) cln_fidp = (cln_thinf == 2) ? 2 : 1;
+    }
     // clean_stag_xdonor = off (default) | p1 | lag: the off-diagonal stress flux an
     // M-matrix term (CleanStagXDonor); clean_stag_xsrc (default off): also the face
     // sources past their explicit share; clean_stag_xsweep (default off): a monotone

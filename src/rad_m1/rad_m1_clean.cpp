@@ -3359,7 +3359,7 @@ void RadiationM1::CleanStagBracket() {
   x.consist = false;
   x.feedback = false;   // (the gas terms read the last iterate's work vectors)
   const Real efl = e_floor;
-  const bool rat = cln_rayratio;
+  const bool rat = cln_rayratio, thf = cln_thinf > 0;
   auto iw_ = iw;
   CleanFor("cln_rayj", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -3413,6 +3413,22 @@ void RadiationM1::CleanStagBracket() {
         return;
       }
       const Real fy = rat ? fr0/jd*((fr0 > 0.0) ? jl : jr) : fr0;
+      // (clean_stag_thinf: the face half ranges g+ in [0, 1], g- in [-1, 0] take the rays'
+      // face flux, g+ J_L + g- J_R = F_y clamped to [-J_R, J_L], tilted from h+- in
+      // proportion to their sizes and cut to that interval: the thin share w c (g+ E_L +
+      // g- E_R) is linear in E with the upwind signs, within [-c E_R, c E_L], and equal to
+      // w c F_y at E = J; no DG)
+      if (thf) {
+        const Real t = fmin(fmax(fy, -jr), jl);
+        const Real hl = x.fc[dir](m,CLF_HP,k,j,i)*jl, hr = x.fc[dir](m,CLF_HM,k,j,i)*jr;
+        const Real s = hl - hr, dd = t - hl - hr;
+        const Real a0 = (s > 0.0) ? hl + dd*hl/s : fmax(t, 0.0);
+        const Real a = fmin(fmax(a0, fmax(t, 0.0)), fmin(jl, t + jr));
+        if (jl > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = a/jl;
+        if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = (t - a)/jr;
+        x.fc[dir](m,x.fdg,k,j,i) = 0.0;
+        return;
+      }
       // (the old production's form, M1ThinFace implicit_thin_corr = hc: the cells' half
       // ranges h+- realisable, the rest of the rays' face flux the lagged flux DG/w = q c
       // (F_y - h+ J_L - h- J_R) of the face (CleanThinFaceDG), F_y clamped to [-J_R, J_L]
@@ -3774,6 +3790,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
   const bool fk = cln_fkin, dok = cln_dok, cub = x.cub;
   // (clean_stag_fidp: the write-back's sums, CLEAN FIDP)
   const int fid = cln_fidp;
+  const bool fkn = cln_thinf >= 2;   // (clean_stag_thinf: the kinetic F, not the clamp)
   const bool fst = fid > 0 && e == CLW_X;
   if (fst && cln_fids.extent_int(0) != 6) Kokkos::realloc(cln_fids, 6);
   if (fst) Kokkos::deep_copy(cln_fids, 0.0);
@@ -4095,7 +4112,12 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
         Real fv = f;
         if (fid > 0) {
           const Real el = fmax(x.w(m,e,k-dk,j-dj,i-di), 0.0), er = fmax(x.w(m,e,k,j,i), 0.0);
-          fv = fmin(fmax(f, -x.c*er), x.c*el);
+          if (!fkn) {
+            fv = fmin(fmax(f, -x.c*er), x.c*el);
+          } else {
+            const Real w = fc(m,CLF_W,k,j,i);
+            fv = (1.0 - w)*f + w*x.c*(fc(m,CLF_HP,k,j,i)*el + fc(m,CLF_HM,k,j,i)*er);
+          }
           const Real th = fc(m,CLF_TH,k,j,i);
           // (3: (fv - f)/(h c^2), the gas takes what it took of f; the radiation's change
           // booked)
