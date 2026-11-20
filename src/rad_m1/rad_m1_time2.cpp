@@ -1969,7 +1969,7 @@ void RadiationM1::Time2KSplit(int stage, Real c1, Real c2) {
     // Emin <= 0, F > c max E of the four cells of the line (2 beyond), F^H opposite to
     // the E gradient (F (E_L - E_R) < 0)
     {
-      constexpr int NS = 36, NM = 4;
+      constexpr int NS = 42, NM = 4;
       Kokkos::View<Real*> hm("m1_t2_realmap", NS*NM + 16);
       auto opr = opac;
       const Real r0 = t2_realmap_r0;
@@ -2015,6 +2015,13 @@ void RadiationM1::Time2KSplit(int stage, Real c1, Real c2) {
           const int bd = bin(log10(fmax(rho, 1.0e-300)), ed1, 5);
           const int bt = bin(log10(fmax(tu, 1.0e-300)), ed2, 5);
           const int bc = (emn > 0.0) ? bin(log10(emx/emn), ed3, 5) : 5;
+          // (absorption mean kappa_E over the transport opacity of F, max of the two cells)
+          const Real ed4[5] = {0.0, 1.0, 2.0, 3.0, 4.0};
+          auto kr = [&](const int kk, const int jj, const int ii) {
+            return opr(m,M1_OP_E,kk,jj,ii)/fmax(opr(m,M1_OP_T,kk,jj,ii), 1.0e-300);
+          };
+          const int bk = bin(log10(fmax(fmax(kr(k, j, i), kr(k-dk, j-dj, i-di)), 1.0e-300)),
+                             ed4, 5);
           const bool in[NM] = {true, rf > 1.0, rf > 10.0, rp > 1.0};
           for (int s = 0; s < NM; ++s) {
             if (!in[s]) continue;
@@ -2028,7 +2035,7 @@ void RadiationM1::Time2KSplit(int stage, Real c1, Real c2) {
             if (emn <= 0.0) Kokkos::atomic_add(&hm(o + 30), 1.0);
             if (fabs(crp*f) > cl*e4) Kokkos::atomic_add(&hm(o + 31), 1.0);
             if (f*(el - e) < 0.0) Kokkos::atomic_add(&hm(o + 32), 1.0);
-            if ((f > 0.0 ? el : e) < (f > 0.0 ? e : el)) Kokkos::atomic_add(&hm(o + 33), 1.0);
+            Kokkos::atomic_add(&hm(o + 34 + bk), 1.0);
           }
           // (the worst face: r/r0, rho, tau, E_L, E_R, F (c units), Phi, dir)
           if (rf >= 0.999999*rmx_ && rmx_ > 0.0) {
@@ -2057,11 +2064,12 @@ void RadiationM1::Time2KSplit(int stage, Real c1, Real c2) {
           std::printf("CLEAN REALMAP cycle %d %s | dir %.0f %.0f %.0f | r %.0f %.0f %.0f %.0f "
                       "%.0f %.0f %.0f %.0f | rho %.0f %.0f %.0f %.0f %.0f %.0f | tau %.0f %.0f "
                       "%.0f %.0f %.0f %.0f | con %.0f %.0f %.0f %.0f %.0f %.0f | Efl %.0f E<=0 "
-                      "%.0f >cE4 %.0f antigrad %.0f fromlow %.0f\n", pmy_pack->pmesh->ncycle,
+                      "%.0f >cE4 %.0f antigrad %.0f | kE/kT %.0f %.0f %.0f %.0f %.0f %.0f\n",
+                      pmy_pack->pmesh->ncycle,
                       nm[s], q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7], q[8], q[9], q[10],
                       q[11], q[12], q[13], q[14], q[15], q[16], q[17], q[18], q[19], q[20],
                       q[21], q[22], q[23], q[24], q[25], q[26], q[27], q[28], q[29], q[30],
-                      q[31], q[32], q[33]);
+                      q[31], q[32], q[34], q[35], q[36], q[37], q[38], q[39]);
         }
       }
       // (the worst faces live on one rank: each rank prints its own if it has them)
