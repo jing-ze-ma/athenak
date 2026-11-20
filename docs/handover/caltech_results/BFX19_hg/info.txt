@@ -1,0 +1,1 @@
+TAG=BFX19_hg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_bfxc20_29f989379 md5=a694ad336d05908dfa718c623b906d05 RST=/resnick/groups/carnegie_poc/jingze/hgglob_1021/prodG/rst/hegiant.00139.rst N0=624961 NC=100 MODE=speed HOLDER=6133591 NODE=hpc-sm-02-10 NR=4 ENVX= EX=time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=19
