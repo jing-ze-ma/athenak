@@ -1,0 +1,101 @@
+== /resnick/groups/carnegie_poc/jingze/orion_runs_1121/BFX20_hg/a/run.log
+CLEAN cycle 624997 t2s 2 it -3 (sum 312) pos 0 mark 0 all 0 neg 0 r1 0 r2 73437 first 0 73437 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624997 t2s 2 write-back closure 5.600e+01
+CLEAN WARNING cycle 624997 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN WARNING cycle 624997: backward-Euler solve not converged (dt_retry, 2 so far; last change 1.090e-03)
+CLEAN cycle 624997 t2s 1 it -2 (sum 299) pos 0 mark 0 all 0 neg 0 r1 0 r2 90330 first 0 90330 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 624997 t2s 1 ledger -1.9203020116539692e+43
+CLEAN XT cycle 624997 t2s 1 write-back closure 4.705e+01
+<rad_m1> dt_retry (csfix-1023): vet_gd tables back from angle 8.567000e+04 to the restored 8.566600e+04
+DT_RETRY cycle=624997 t=5.011578e+07 dt 1.344828e+01 -> 6.763006e+00 reason=NON-CONVERGED resid=-1.000000e+00 cut 4
+CLEAN ray cut cycle 624997 shell 145 -> 141 (want 141, R)
+CLEAN OLDVEC cycle 624997 t2s 2 eint<0 19093 (taken as 0) E<0 3564
+CLEAN cycle 624997 t2s 2 it -2 (sum 353) pos 0 mark 0 all 0 neg 0 r1 0 r2 105673 first 0 105673 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624997 t2s 2 write-back closure 2.413e+01
+CLEAN WARNING cycle 624997 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN WARNING cycle 624997: backward-Euler solve not converged (dt_retry, 2 so far; last change 8.494e-04)
+CLEAN cycle 624997 t2s 1 it -2 (sum 203) pos 0 mark 0 all 0 neg 0 r1 0 r2 69865 first 0 69865 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 624997 t2s 1 ledger -1.8345641543448322e+43
+CLEAN XT cycle 624997 t2s 1 write-back closure 3.455e+01
+<rad_m1> dt_retry (csfix-1023): vet_gd tables back from angle 8.567000e+04 to the restored 8.566600e+04
+DT_RETRY cycle=624997 t=5.011578e+07 dt 6.763006e+00 -> 3.391304e+00 reason=NON-CONVERGED resid=-1.000000e+00 cut 5
+CLEAN ray cut cycle 624997 shell 145 -> 141 (want 141, R)
+CLEAN OLDVEC cycle 624997 t2s 2 eint<0 2513 (taken as 0) E<0 3114
+CLEAN cycle 624997 t2s 2 it -2 (sum 202) pos 0 mark 0 all 0 neg 0 r1 0 r2 574049 first 0 574049 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624997 t2s 2 write-back closure 2.309e+01
+CLEAN WARNING cycle 624997 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN WARNING cycle 624997: backward-Euler solve not converged (dt_retry, 2 so far; last change 6.921e-04)
+CLEAN cycle 624997 t2s 1 it -2 (sum 204) pos 0 mark 0 all 0 neg 0 r1 0 r2 76653 first 0 76653 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 624997 t2s 1 ledger -1.7911346380222366e+43
+CLEAN XT cycle 624997 t2s 1 write-back closure 2.342e+01
+<rad_m1> dt_retry (csfix-1023): vet_gd tables back from angle 8.567000e+04 to the restored 8.566600e+04
+DT_RETRY cycle=624997 t=5.011578e+07 dt 3.391304e+00 -> 1.698113e+00 reason=NON-CONVERGED resid=-1.000000e+00 cut 6
+CLEAN ray cut cycle 624997 shell 145 -> 141 (want 141, R)
+CLEAN OLDVEC cycle 624997 t2s 2 eint<0 0 (taken as 0) E<0 3019
+CLEAN cycle 624997 t2s 2 it -2 (sum 200) pos 0 mark 0 all 0 neg 0 r1 0 r2 1983396 first 0 1983396 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624997 t2s 2 write-back closure 1.358e+01
+CLEAN WARNING cycle 624997 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN WARNING cycle 624997: backward-Euler solve not converged (dt_retry, 2 so far; last change 1.075e-03)
+CLEAN cycle 624997 t2s 1 it -2 (sum 205) pos 0 mark 0 all 0 neg 0 r1 0 r2 225735 first 0 225735 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 624997 t2s 1 ledger -1.7692829937589095e+43
+CLEAN XT cycle 624997 t2s 1 write-back closure 1.624e+01
+<rad_m1> dt_retry (csfix-1023): vet_gd tables back from angle 8.567000e+04 to the restored 8.566600e+04
+DT_RETRY cycle=624997 t=5.011578e+07 dt 1.698113e+00 -> 8.496732e-01 reason=NON-CONVERGED resid=-1.000000e+00 cut 7
+CLEAN ray cut cycle 624997 shell 145 -> 141 (want 141, R)
+CLEAN OLDVEC cycle 624997 t2s 2 eint<0 0 (taken as 0) E<0 2877
+CLEAN cycle 624997 t2s 2 it -2 (sum 200) pos 0 mark 0 all 0 neg 0 r1 0 r2 3612633 first 0 3612633 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624997 t2s 2 write-back closure 1.785e+01
+CLEAN WARNING cycle 624997 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN WARNING cycle 624997: backward-Euler solve not converged (dt_retry, 2 so far; last change 6.285e-05)
+CLEAN cycle 624997 t2s 1 it -2 (sum 201) pos 0 mark 0 all 0 neg 0 r1 0 r2 1317266 first 0 1317266 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 624997 t2s 1 ledger -1.7583355003001866e+43
+CLEAN XT cycle 624997 t2s 1 write-back closure 1.235e+01
+<rad_m1> dt_retry (csfix-1023): vet_gd tables back from angle 8.567000e+04 to the restored 8.566600e+04
+DT_RETRY cycle=624997 t=5.011578e+07 dt 8.496732e-01 -> 4.249909e-01 reason=NON-CONVERGED resid=-1.000000e+00 cut 8
+CLEAN ray cut cycle 624997 shell 145 -> 141 (want 141, R)
+CLEAN OLDVEC cycle 624997 t2s 2 eint<0 0 (taken as 0) E<0 2632
+CLEAN cycle 624997 t2s 2 it -2 (sum 200) pos 0 mark 0 all 0 neg 0 r1 0 r2 5208702 first 0 5208702 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624997 t2s 2 write-back closure 4.886e+01
+CLEAN WARNING cycle 624997 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN WARNING cycle 624997: backward-Euler solve not converged (dt_retry, 2 so far; last change 5.257e-06)
+CLEAN cycle 624997 t2s 1 it -2 (sum 200) pos 0 mark 0 all 0 neg 0 r1 0 r2 3549292 first 0 3549292 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 624997 t2s 1 ledger -1.7528629843259234e+43
+CLEAN XT cycle 624997 t2s 1 write-back closure 3.344e+01
+### FATAL ERROR: <time> dt_retry: cycle 624997 failed 9 times (max 8), dt 4.249909e-01
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 1 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 2 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 3 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 0 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+[2026-11-20T13:34:18.843] error: *** STEP 6133591.240 ON hpc-sm-02-09 CANCELLED AT 2026-11-20T13:34:18 DUE to SIGNAL Killed ***
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+[2026-11-20T13:34:20.714] error:  mpi/pmix_v3: _errhandler: hpc-sm-02-09 [0]: pmixp_client_v2.c:219: Error handler invoked: status = -25, source = [slurm.pmix.6133591.240:1]
+srun: error: hpc-sm-02-09: tasks 0-1,3: Killed
+srun: error: hpc-sm-02-09: task 2: Exited with exit code 1

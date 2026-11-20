@@ -1,0 +1,21 @@
+<rad_m1> implicit_pos_floor_cons: the E floor's uncovered raise is taken from the radiation of the same column (no energy created)
+<time> dt_retry on: fac 0.5 max 8 ngood 20 grow 1.1 views minimal cap -1
+<time> dt_retry checkpoint: 2425 members, 638 Views (13 copied, 6.016724e+03 MB on rank 0, dt_retry_host: 3.845822e+03 MB of it in pinned host memory): hyd.u0 8.349600e+02 hyd.w0 8.349600e+02 hyd.wder 3.339840e+02 hyd.wtemp 1.669920e+02 m1.esrc 1.669920e+02 m1.f0x1 1.672272e+02 m1.f0x2 1.693776e+02 m1.f0x3 1.693776e+02 m1.t2k1 1.335936e+03 m1.t2pf1 5.009760e+02 m1.u0 6.679680e+02 m1.opac 6.679680e+02 pgen.hs_fsub 5.688000e-03
+CLEAN WARNING cycle 624997: backward-Euler solve not converged (dt_retry, 2 so far; last change inf)
+<rad_m1> dt_retry (csfix-1023): vet_gd tables back from angle 8.567000e+04 to the restored 8.566600e+04
+CLEAN WARNING cycle 624997: backward-Euler solve not converged (dt_retry, 2 so far; last change inf)
+<rad_m1> dt_retry (csfix-1023): vet_gd tables back from angle 8.567000e+04 to the restored 8.566600e+04
+CLEAN WARNING cycle 624997: backward-Euler solve not converged (dt_retry, 2 so far; last change 1.031e-03)
+<rad_m1> dt_retry (csfix-1023): vet_gd tables back from angle 8.567000e+04 to the restored 8.566600e+04
+CLEAN WARNING cycle 624997: backward-Euler solve not converged (dt_retry, 2 so far; last change 1.090e-03)
+<rad_m1> dt_retry (csfix-1023): vet_gd tables back from angle 8.567000e+04 to the restored 8.566600e+04
+CLEAN WARNING cycle 624997: backward-Euler solve not converged (dt_retry, 2 so far; last change 8.494e-04)
+<rad_m1> dt_retry (csfix-1023): vet_gd tables back from angle 8.567000e+04 to the restored 8.566600e+04
+CLEAN WARNING cycle 624997: backward-Euler solve not converged (dt_retry, 2 so far; last change 6.921e-04)
+<rad_m1> dt_retry (csfix-1023): vet_gd tables back from angle 8.567000e+04 to the restored 8.566600e+04
+CLEAN WARNING cycle 624997: backward-Euler solve not converged (dt_retry, 2 so far; last change 1.075e-03)
+<rad_m1> dt_retry (csfix-1023): vet_gd tables back from angle 8.567000e+04 to the restored 8.566600e+04
+CLEAN WARNING cycle 624997: backward-Euler solve not converged (dt_retry, 2 so far; last change 6.285e-05)
+<rad_m1> dt_retry (csfix-1023): vet_gd tables back from angle 8.567000e+04 to the restored 8.566600e+04
+CLEAN WARNING cycle 624997: backward-Euler solve not converged (dt_retry, 2 so far; last change 5.257e-06)
+### FATAL ERROR: <time> dt_retry: cycle 624997 failed 9 times (max 8), dt 4.249909e-01
