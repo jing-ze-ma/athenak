@@ -106,3 +106,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - AB7_rsg (hpc-sm-02-09): rc=0 wall=278 | cycles 589788 - 589794 | steady 37.669 s/cycle | GPU MiB max 109605 min 108471 | CW a 0 FATAL 0 |  
 - CK1_hg (hpc-sm-02-09): rc=0 wall=152 | cycles 624961 - 624967 | steady 11.850 s/cycle | GPU MiB max 120151 min 119595 | CW a 1 FATAL 0 |  
 - CK1R_hg (hpc-sm-02-09): rc=0 wall=125 | cycles 624961 - 624967 | steady 5.019 s/cycle | GPU MiB max 120151 min 119595 | CW a 0 FATAL 0 |  
+- LV_loc8_300k10_rsg (hpc-sm-01-17): rc=0 wall=1020 | cycles 589788 - 590088 | steady 3.147 s/cycle | GPU MiB max 109425 min 108455 | CW a 2 FATAL 0 |  npass: /resnick/groups/carnegie_poc/jingze/orion_runs_1121/LV_loc8_300k10_rsg/a/run.log: stages 598 passes mean 4.83 max 200 sum 2886 CW 2 | t2s1 4.50/5 t2s2 | grep -ci retry run.log: 7
