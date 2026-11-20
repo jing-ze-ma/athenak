@@ -1252,8 +1252,12 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         // (clean_stag_sbimp: the first iterate's T in exchange with E_k and the beta
         // terms sb(E_k) the RHS just built, then the RHS of that T)
         // (clean_xt_cons: the same, the first iterate's T from the pass's gas row)
+        // (clean_xt_local: no root there, the pass has no solve yet)
         if (inl == 0 && (cln_sbimp || cln_xtcons) && cln_feedback) {
+          const bool xl0 = cln_xtloc;
+          cln_xtloc = false;
           CleanNewtonUpdate();
+          cln_xtloc = xl0;
           CleanRightHandSide();
         }
         CleanPreconditionerSetup();
@@ -2970,6 +2974,11 @@ Real RadiationM1::CleanNewtonUpdate() {
   const bool xte = (cln_xte > 0) && !cell && cln_feedback, x2 = xte && cln_xte == 2;
   const bool pdx = x2 && cln_xpat, pxe = xte && cln_xpat;
   const bool kpg = cln_kq_on;   // (clean_stag_kpos: the gas row's pd_g X)
+  // (clean_xt_local: the cell's root to 1e-2 of the next test's tolerance; none in the
+  // equilibrium relax of CleanSteadyStart, whose B has no exchange row)
+  const bool xlo = cln_xtloc && !cell && cln_feedback && !(icr_fmeas && cln_vzero);
+  if (xlo && !bud) CleanFatal("<rad_m1>/clean_xt_local needs clean_conv = budget");
+  const Real xtl = 1.0e-2*fmax(cln_tolb, fmax(cln_tol_nl, 10.0*cln_tol));
   Real change = 0.0, femax = 0.0, ermax = 0.0, xcl = 0.0;
   // (CUDA: 4 blocks of 256 per SM, A100 R136 -1.5 ms/cycle; the reduction keeps its
   // blocks and grid: bitwise)
@@ -2988,7 +2997,8 @@ Real RadiationM1::CleanNewtonUpdate() {
     const Real t_old = w(m,CLW_T,k,j,i);
     const Real x = w(m,CLW_X,k,j,i);
     const Real ex = fmax(x, 0.0);
-    const Real e = (cell || poslim) ? x : ex, g = w(m,CLW_GM,k,j,i);
+    Real e = (cell || poslim) ? x : ex, xl = x;
+    const Real g = w(m,CLW_GM,k,j,i), ep0 = w(m,CLW_EP,k,j,i);
     // (gflux: the gas takes the Doppler part hc kE dop E of sb at X, as the E row takes
     // it in r; at E_k it lagged a source of hc kE dop, in a moving opaque cell more than
     // the net exchange (1 - r) hc kE, and T and E drifted apart pass by pass; sbimp:
@@ -3007,12 +3017,56 @@ Real RadiationM1::CleanNewtonUpdate() {
       t = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i), hc*op(m,M1_OP_P,k,j,i)*g*arad_,
               w(m,CLW_EI,k,j,i) + (hcke + pg)*ex + w(m,CLW_EP,k,j,i), t_old, rtol);
     }
+    // clean_xt_local: the root of the cell's E row with the exact exchange, its
+    // neighbours at X and the pass's lagged terms, g(E) = (1 + L)(E - X) + K - hc kE (1 -
+    // r) X + hk E + jv E_k - hc kP a T(E)^4 = 0, K the row's linearised exchange (CLW_XA
+    // + sb), hk = hc kE - jv, jv the gas's Doppler slope (gflux), T(E) the gas root of
+    // e + hc kP a T^4 = EI - sb + jv E_k + hk E; g' >= 1 + L > 0: a unique root,
+    // bracketed in [0, the bound of hc kP a T^4 <= the gas row's rhs], so E >= 0; at the
+    // fixed point g(X) = 0 and there is no step (same solution, same test); the gas
+    // takes the Doppler part of sb at that E
+    if (xlo && x > 0.0) {
+      const Real d = uh(m,IDN,k,j,i), hp = hc*op(m,M1_OP_P,k,j,i)*g*arad_;
+      const Real hry = hcke*w(m,CLW_RY,k,j,i), a1 = w(m,CLW_A0,k,j,i) - hry;
+      const Real jv = gfd ? w(m,CLW_JV+1,k,j,i) : 0.0, hk = hcke - jv;
+      const Real c0 = w(m,CLW_XA,k,j,i) + ep0 - hry*x + jv*e_old;
+      const Real grc = w(m,CLW_EI,k,j,i) + ep0 + jv*e_old, ltol = xtl*w(m,CLW_SE,k,j,i);
+      Real ee = x, tt = t, lo = 0.0, hi = -1.0;
+      Real gv = a1*(ee - x) + c0 + hk*ee - hp*SQR(SQR(tt));
+      bool mv = false;
+      for (int it = 0; it < 40 && a1 > 0.0 && hk > 0.0; ++it) {
+        Real ev, p, chi_rho, chi_t, cv;
+        eos.ThermoAt(d, tt, ev, p, chi_rho, chi_t, cv);
+        const Real s4 = 4.0*hp*tt*tt*tt, re = (s4 > 0.0) ? s4/(d*cv + s4) : 0.0;
+        const Real st = gv/(a1 + hk*(1.0 - re));
+        if (it == 0 && fabs(st) <= ltol) break;
+        if (gv > 0.0) {
+          hi = ee;
+        } else {
+          lo = ee;
+          if (hi < 0.0) hi = fmax(x - (c0 - grc)/a1, ee);   // (P <= the gas row's rhs)
+        }
+        Real en = ee - st;
+        if (!(en > lo && en < hi)) en = 0.5*(lo + hi);
+        tt = CleanExchangeTemperature(eos, d, hp, grc + hk*en, tt, rtol);
+        gv = a1*(en - x) + c0 + hk*en - hp*SQR(SQR(tt));
+        const bool dn = fabs(en - ee) <= ltol;
+        ee = en;
+        mv = true;
+        if (dn) break;
+      }
+      if (mv) {
+        e = xl = ee;
+        t = tt;
+        w(m,CLW_EP,k,j,i) = ep0 - jv*(ee - e_old);
+      }
+    }
     if (xte) {
       const Real dg = 1.0 + hcke*w(m,CLW_RY,k,j,i) +
                       (pxe ? w(m,CLW_PD,k,j,i) : 0.0);
-      const Real ga = hc*op(m,M1_OP_P,k,j,i)*g*arad_*SQR(SQR(t)) - hcke*x -
+      const Real ga = hc*op(m,M1_OP_P,k,j,i)*g*arad_*SQR(SQR(t)) - hcke*xl -
                       w(m,CLW_EP,k,j,i);
-      xc = fmax(xc, fabs(w(m,CLW_XA,k,j,i) - (dg - 1.0)*x - ga)/fmax(fabs(x) +
+      xc = fmax(xc, fabs(w(m,CLW_XA,k,j,i) - (dg - 1.0)*xl - ga)/fmax(fabs(xl) +
                     fabs(w(m,CLW_EO,k,j,i)) + fabs(w(m,CLW_EI,k,j,i)), 1.0e-300));
     }
     w(m,CLW_EK,k,j,i) = e;
