@@ -1,0 +1,5 @@
+[]
+CW a 0 FATAL 4 retries []
+GPU mem peak MiB max 13353 min 23 (n=4)
+rc=1 wall=12
+DONE

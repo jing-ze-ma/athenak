@@ -430,3 +430,7 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - (13:07) Got abe66bc16: HG order set to BFXC19_hg, G_on_hg, BFXC13_hg, BFX16_hg, BFX15_hg, BFX5_hg, LX_hg, D_off_hg, LN2_hg, V201Dk_hg (G_on_hg is released right after BFXC19_hg starts); single-node queue unchanged.
 - G_rsg (hpc-sm-01-11): rc=0 wall=3839 | cycles 589788 - 590788 | steady 3.762 s/cycle | GPU MiB max 109569 min 108599 | CW a 34 FATAL 0 |  
 - LF_hg (hpc-sm-02-09,hpc-sm-02-10): rc=0 wall=4617 | cycles 624961 - 626461 | steady 3.034 s/cycle | GPU MiB max 60225 min 16549 | CW a 3 FATAL 0 |  
+- BFXC19_rsg (hpc-sm-01-11): rc=1 wall=12 |  | steady  s/cycle | GPU MiB max 13353 min 23 | CW a 0 FATAL 4 |   | CW kinds:  | dt_retry lines 0 | energy created lines 0
+  FAILED: last 100 lines in caltech_results/BFXC19_rsg/FAIL_tail100.txt
+- BFXC13_rsg (hpc-sm-01-11): rc=1 wall=10 |  | steady  s/cycle | GPU MiB max 13352 min 23 | CW a 0 FATAL 4 |   | CW kinds:  | dt_retry lines 0 | energy created lines 0
+  FAILED: last 100 lines in caltech_results/BFXC13_rsg/FAIL_tail100.txt
