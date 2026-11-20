@@ -1,6 +1,6 @@
 # EMA well-balanced ring test (orion 2026-11-20, NOTE dl, USER decision). B_emawb = caltech-runs/emawb a6845503c889d6e550ab718cfe606cd697ace4d7 (v20.2 a0c19e459 + vet_rotate_avg_ema_wb; read only when named, default = bitwise).
 # v20.2 production keys (+ floor_pay) with the EMA ring 128 named explicitly in BOTH arms of each pair (the wb key requires vet_rotate_avg_ema >= 1). NR=4, 1 node each, 300 cycles. After the current 8-arm batch, as nodes free.
-FINALRST=0 NR=4 EW_on_hg   B_emawb HG  300 hg_v20.keys  time/dt_retry_host=m1 hydro/floor_pay=rad_column rad_m1/vet_rotate_avg_ema=128 rad_m1/vet_rotate_avg_ema_wb=true
-FINALRST=0 NR=4 EW_off_hg  B_emawb HG  300 hg_v20.keys  time/dt_retry_host=m1 hydro/floor_pay=rad_column rad_m1/vet_rotate_avg_ema=128
-FINALRST=0 NR=4 EW_on_rsg  B_emawb RSG 300 rsg_v20.keys hydro/floor_pay=rad_column rad_m1/vet_rotate_avg_ema=128 rad_m1/vet_rotate_avg_ema_wb=true
-FINALRST=0 NR=4 EW_off_rsg B_emawb RSG 300 rsg_v20.keys hydro/floor_pay=rad_column rad_m1/vet_rotate_avg_ema=128
+FINALRST=0 NR=4 EW_on_hg   B_emawb HG  300 hg_v20.keys  time/dt_retry_host=m1 hydro/floor_pay=rad_column rad_m1/vet_rotate_avg_ema=128 rad_m1/vet_rotate_avg_ema_change_form=step rad_m1/vet_rotate_avg_ema_wb=true
+FINALRST=0 NR=4 EW_off_hg  B_emawb HG  300 hg_v20.keys  time/dt_retry_host=m1 hydro/floor_pay=rad_column rad_m1/vet_rotate_avg_ema=128 rad_m1/vet_rotate_avg_ema_change_form=step
+FINALRST=0 NR=4 EW_on_rsg  B_emawb RSG 300 rsg_v20.keys hydro/floor_pay=rad_column rad_m1/vet_rotate_avg_ema=128 rad_m1/vet_rotate_avg_ema_change_form=step rad_m1/vet_rotate_avg_ema_wb=true
+FINALRST=0 NR=4 EW_off_rsg B_emawb RSG 300 rsg_v20.keys hydro/floor_pay=rad_column rad_m1/vet_rotate_avg_ema=128 rad_m1/vet_rotate_avg_ema_change_form=step

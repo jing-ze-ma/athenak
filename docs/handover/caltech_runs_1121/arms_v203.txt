@@ -4,7 +4,7 @@
 FINALRST=1 MODE=rt NH=2              V203_rsg   B_v203 RSG 4 rsg_v20.keys hydro/floor_pay=rad_column
 FINALRST=1 MODE=rt NH=2              V203_hg    B_v203 HG  4 hg_v20.keys time/dt_retry_host=m1 hydro/floor_pay=rad_column
 # (2) + cs_lz_tel: pass = rt 5/5, 0 CW.
-FINALRST=1 MODE=rt NH=2              V203L_rsg  B_v203 RSG 4 rsg_v20.keys hydro/floor_pay=rad_column rad_m1/clean_cs_lz_tel=true
-FINALRST=1 MODE=rt NH=2              V203L_hg   B_v203 HG  4 hg_v20.keys time/dt_retry_host=m1 hydro/floor_pay=rad_column rad_m1/clean_cs_lz_tel=true
+FINALRST=1 MODE=rt NH=2              V203L_rsg  B_v203 RSG 4 rsg_v20.keys hydro/floor_pay=rad_column rad_m1/clean_cs_lz_tel=true rad_m1/vet_rotate_avg_ema=128 rad_m1/vet_rotate_avg_ema_change_form=step
+FINALRST=1 MODE=rt NH=2              V203L_hg   B_v203 HG  4 hg_v20.keys time/dt_retry_host=m1 hydro/floor_pay=rad_column rad_m1/clean_cs_lz_tel=true rad_m1/vet_rotate_avg_ema=128 rad_m1/vet_rotate_avg_ema_change_form=step
 # (3) poison: hst == V203L_rsg.
-FINALRST=1 ENVX=CLEAN_POISON_GHOST=2 V203LP_rsg B_v203 RSG 4 rsg_v20.keys hydro/floor_pay=rad_column rad_m1/clean_cs_lz_tel=true
+FINALRST=1 ENVX=CLEAN_POISON_GHOST=2 V203LP_rsg B_v203 RSG 4 rsg_v20.keys hydro/floor_pay=rad_column rad_m1/clean_cs_lz_tel=true rad_m1/vet_rotate_avg_ema=128 rad_m1/vet_rotate_avg_ema_change_form=step
