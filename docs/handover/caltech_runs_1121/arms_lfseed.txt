@@ -1,0 +1,7 @@
+# floor_pay RSG robustness seeds (orion 2026-11-20, NOTE dh). B_v202 (caltech-runs/v202 f4cefb181 = v20.2 source). 4 single-node arms, NR=4, 3000 cycles, CONCURRENT, right after the current beam arms.
+# Seeds via the diagnostic <mesh>/cs_vertex_cc_perturb (read only when named; multiplies the cs vertex corner block by 1+value). Layout is NOT a seed: hst is layout-invariant (G_off_hg NR=4 == L1_hg_off NR=8 bitwise).
+# Please keep restart dumps every 250 cycles on Caltech (no need to push) so a failing step can be replayed; delete them after 11-21.
+FINALRST=0 NR=4 LFa_rsg B_v202 RSG 3000 rsg_v20.keys hydro/floor_pay=rad_column mesh/cs_vertex_cc_perturb=1e-15
+FINALRST=0 NR=4 L0a_rsg B_v202 RSG 3000 rsg_v20.keys mesh/cs_vertex_cc_perturb=1e-15
+FINALRST=0 NR=4 LFb_rsg B_v202 RSG 3000 rsg_v20.keys hydro/floor_pay=rad_column mesh/cs_vertex_cc_perturb=1e-12
+FINALRST=0 NR=4 L0b_rsg B_v202 RSG 3000 rsg_v20.keys mesh/cs_vertex_cc_perturb=1e-12
