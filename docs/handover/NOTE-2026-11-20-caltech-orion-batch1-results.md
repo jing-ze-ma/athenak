@@ -221,3 +221,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - SDR_rsg (hpc-sm-01-11): rc=0 wall=159 rc=0 wall=149 rc=0 wall=150 | cycles 589788 - 589794 | steady 2.788 s/cycle | GPU MiB max 108711 min 107577 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF 
 - V20L_hg (hpc-sm-01-17): rc=0 wall=235 rc=0 wall=234 rc=0 wall=239 | cycles 624961 - 624965 | steady 4.175 s/cycle | GPU MiB max 116103 min 115315 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF xcheck: hegiant.hydro.hst==V20J_hg/a hegiant.user.hst==V20J_hg/a
 - BP_rsg_h200 (hpc-sm-02-10): rc=0 wall=156 | cycles 589788 - 589792 | steady 2.963 s/cycle | GPU MiB max 108697 min 107563 | CW a 0 FATAL 0 |  
+  **lztel2-study 79406ea57 does NOT compile** (same class as lzcs): `rad_m1_clean.cpp(5218): error: identifier "radm1::RadiationM1::CleanWriteBack()::lzt2" is undefined in device code` (rad_m1_clean_p2.cpp). ZS_hg / ZS_rsg parked until a fixed commit; Z1-Z4 (lztel2 a1874999f, built fine) are queued.
