@@ -2153,8 +2153,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
     };
     if (zsel) {   // the stencils of the read list (a cell whose inputs did not change
                   // gives the R it has)
-      Kokkos::parallel_reduce("m1_t2_ffct_ra", Kokkos::RangePolicy<>(DevExeSpace(), 0,
-                              7*zn),
+      AthReduce("m1_t2_ffct_ra", Kokkos::RangePolicy<>(DevExeSpace(), 0, 7*zn),
       KOKKOS_LAMBDA(const int t, Real &a, Real &ab) {
         const int q = t % 7;
         if (((q == 3 || q == 4) && !tr2) || (q >= 5 && !tr3)) {return;}

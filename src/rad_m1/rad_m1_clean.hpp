@@ -103,8 +103,8 @@ inline void CleanFor(const char *name, const int nmb1, const int ks, const int k
 #endif
   if constexpr (mb > 0) {
     const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
-    Kokkos::parallel_for(name, Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256,
-                         mb>>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+    AthFor(name, Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, mb>>(
+           DevExeSpace(), 0, (nmb1 + 1)*nkji),
     KOKKOS_LAMBDA(const int idx) {
       const int m = idx/nkji, k = (idx - m*nkji)/nji, j = (idx - m*nkji - k*nji)/ni;
       f(m, ks + k, js + j, is + idx - m*nkji - k*nji - j*ni);
