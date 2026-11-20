@@ -4,7 +4,9 @@
 #   env (optional): NR (default 4), TL (srun minutes, default 60), RT (1 = also do the restart arm b, default 1), KEEPBIN, MEMWRAP (default $H/../memwrap.sh)
 # a  = fresh start -> NC cycles straight;  b = fresh start -> NC/2 (rst) then restart -> NC;  resf.py compares hst rows NC/2+1..NC + cycle-NC bins (bitwise expected)
 TAG=$1; BIN=$2; DECK=$3; NC=$4; shift 4; EX="$*"
-: ${HOLDER:?} ${NODE:?} ${OUT:?} ${FRESH:?}; NR=${NR:-4}; H=$(dirname "$(readlink -f "$0")"); MW=${MEMWRAP:-$H/../memwrap.sh}
+: "${TAG:?}" "${BIN:?}" "${DECK:?}" "${NC:?}" "${HOLDER:?}" "${NODE:?}" "${OUT:?}" "${FRESH:?}"
+case "$TAG" in */*|.|..) echo "bad TAG $TAG"; exit 1;; esac; [ $(echo "$OUT" | tr -cd / | wc -c) -ge 2 ] || { echo "OUT $OUT too shallow"; exit 1; }
+NR=${NR:-4}; H=$(dirname "$(readlink -f "$0")"); MW=${MEMWRAP:-$H/../memwrap.sh}
 D=$OUT/$TAG; rm -rf $D; mkdir -p $D; cd $D
 sed "s#FRESH_DIR#$FRESH#g" $DECK > $D/deck.athinput; grep -q FRESH_DIR $D/deck.athinput && { echo "FRESH_DIR left" > res.txt; exit 1; }
 for f in $(grep -oE "$FRESH/[^ #]+" $D/deck.athinput | sort -u); do [ -s $f ] || { echo "MISSING $f" >> res.txt; exit 1; }; done
