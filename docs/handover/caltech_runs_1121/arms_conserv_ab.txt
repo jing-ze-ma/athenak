@@ -9,3 +9,5 @@ FINALRST=0 ENVX=PROF_U=1 AB7_rsg B_lzbook   RSG 6 rsg_v20.keys rad_m1/dbg_energy
 FINALRST=0 ENVX=PROF_U=1 AB6_rsg B_tie-prof RSG 6 rsg_v20.keys rad_m1/dbg_energy_audit=true output1/dt=1 rad_m1/force_reference_work=full
 # added 2026-11-20 (NOTE t): AB6 replacement
 FINALRST=0 ENVX=PROF_U=1 AB6b_rsg B_tie-prof RSG 6 rsg_v20.keys rad_m1/dbg_energy_audit=true output1/dt=1 rad_m1/force_reference=none
+# added 2026-11-20 (NOTE v): after AB7/AB6b
+FINALRST=0 ENVX=PROF_U=1 AB8_rsg B_tie-prof RSG 6 rsg_v20.keys rad_m1/dbg_energy_audit=true output1/dt=1 hydro/floor_pay=rad hydro/floor_audit=1
