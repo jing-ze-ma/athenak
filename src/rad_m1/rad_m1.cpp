@@ -337,18 +337,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_stag_csvec_radial (true, the only form): the cubed sphere's cell vector exact
     // for a radial field (CleanStagCsVector); false (the old least-squares fit) is gone
     cln_csvr = stag("clean_stag_csvec_radial", true);
-    // clean_ray_flux_in = momentum (default) | phi (prototype, the A/B of v20): the flux
-    // the rays' state takes (iw F, CleanClosureIterate / the stage closure): u0 F, the
-    // face momenta's, or the faces' Phi (cln_phic)
-    if (!cln_cell) {
-      const std::string rf = pin->GetOrAddString("rad_m1", "clean_ray_flux_in",
-                                                 "momentum");
-      if (rf != "momentum" && rf != "phi") {
-        std::cout << "### FATAL ERROR: <rad_m1>/clean_ray_flux_in = momentum | phi"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      cln_rfin = (rf == "phi") ? 1 : 0;
+    // (clean_ray_flux_in, the v20 A/B, is gone: the rays' state takes u0 F, the face
+    // momenta's, the only form)
+    if (pin->DoesParameterExist("rad_m1", "clean_ray_flux_in")) {
+      std::cout << "### FATAL ERROR: <rad_m1>/clean_ray_flux_in is gone (the rays' state "
+                << "takes the face momenta's cell flux, the only form)" << std::endl;
+      std::exit(EXIT_FAILURE);
     }
     if (!cln_cell && !cln_csvr) {
       std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_csvec_radial = false (the old "

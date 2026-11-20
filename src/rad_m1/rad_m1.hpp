@@ -3538,11 +3538,8 @@ class RadiationM1 {
   DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)
   DvceArray5D<Real> cln_fref;   // force_reference = clean: reference force (m,3,k,j,i)
   // staggered: the cell flux of the faces' energy flux Phi (m,3,k,j,i; the write-back,
-  // output m1_phi), u0 F holding the face momenta's (the radiation momentum);
-  // clean_ray_flux_in (prototype) = momentum (0, default) | phi (1): the rays' state's F
+  // output m1 as m1_phi), u0 F holding the face momenta's (the radiation momentum)
   DvceArray5D<Real> cln_phic;
-  int cln_rfin = 0;
-  bool cln_phiset = false;   // (cln_phic of a write-back of this run, not a restart)
   DvceArray5D<Real> cln_rstd;   // staggered fkin: the restart's d and its K1 (m,6,k,j,i)
   bool cln_fref_set = false;    // cln_fref holds the force of the first coupled solve
   bool cln_mdcap = false;       // wb_arad_md: the write-back captures cln_fref (steady)
