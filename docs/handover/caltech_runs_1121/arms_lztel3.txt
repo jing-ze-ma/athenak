@@ -5,6 +5,8 @@
 # Provenance: D_on hst must equal H_tel_hg rows 0-499 bitwise; D_off hst must equal L1_hg_off rows 0-299 bitwise.
 FINALRST=0 NR=8 ENVX=LZ3=1,ATHENA_DT_REPORT=1  D_on_hg  B_lztel3s HG 500  hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_cs_lz_tel=true
 FINALRST=0 NR=8 ENVX=LZ3=1,ATHENA_DT_REPORT=1  D_off_hg B_lztel3s HG 300  hg_v20.keys time/dt_retry_host=m1
-FINALRST=0 NR=8 ENVX=LZ3=1,ATHENA_DT_REPORT=10 G_on_hg  B_lztel3f HG 1000 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_cs_lz_tel=true
+# REPLACED (NOTE cq) FINALRST=0 NR=8 ENVX=LZ3=1,ATHENA_DT_REPORT=10 G_on_hg  B_lztel3f HG 1000 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_cs_lz_tel=true
 # only if a slot is free:
 FINALRST=0 NR=4 ENVX=LZ3=1,ATHENA_DT_REPORT=10 G_rsg    B_lztel3f RSG 1000 rsg_v20.keys rad_m1/clean_cs_lz_tel=true
+# NOTE cq: G_on_hg on the PLAIN fix binary for a clean speed number. B_lztel3 = caltech-runs/lztel3 74c8a8bb1cf0a3dfc237db1cdc82f9a8ff5ef40c (= v201e + the fix, no prints). No env. Layout of H_tel_hg / L1_hg_off.
+FINALRST=0 NR=8 G_on_hg B_lztel3 HG 1000 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_cs_lz_tel=true
