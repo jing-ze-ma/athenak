@@ -1,0 +1,3 @@
+# CONV2 K1 positivity (orion 2026-11-20). B_xpos = caltech-runs/xpos 3b2f1a25b. Normal priority.
+FINALRST=0 CXP_hg  B_xpos HG 6 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true rad_m1/clean_conv_kappa=0.01 rad_m1/time2_k1_xpos=0.1
+FINALRST=0 CXPR_hg B_xpos HG 6 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true rad_m1/time2_k1_xpos=0.1
