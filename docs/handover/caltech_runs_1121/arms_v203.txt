@@ -1,0 +1,10 @@
+# v20.3 GPU gate (orion 2026-11-20, NOTE do). B_v203 = caltech-runs/v203 e688cb7bc65c6650d8221454f062f1369093bdf7 (v20.2 + EMAWB key + FTIEFIX + LZTEL3 fix; USER adopted clean_cs_lz_tel=true for HG/RSG prod).
+# Short (4 cycles), 1 node each, V202 recipe/restarts. After the current long arms, as slots free.
+# (1) Expect hst == V202F_*/a bitwise (FTIE and EMA are production no-ops).
+FINALRST=1 MODE=rt NH=2              V203_rsg   B_v203 RSG 4 rsg_v20.keys hydro/floor_pay=rad_column
+FINALRST=1 MODE=rt NH=2              V203_hg    B_v203 HG  4 hg_v20.keys time/dt_retry_host=m1 hydro/floor_pay=rad_column
+# (2) + cs_lz_tel: pass = rt 5/5, 0 CW.
+FINALRST=1 MODE=rt NH=2              V203L_rsg  B_v203 RSG 4 rsg_v20.keys hydro/floor_pay=rad_column rad_m1/clean_cs_lz_tel=true
+FINALRST=1 MODE=rt NH=2              V203L_hg   B_v203 HG  4 hg_v20.keys time/dt_retry_host=m1 hydro/floor_pay=rad_column rad_m1/clean_cs_lz_tel=true
+# (3) poison: hst == V203L_rsg.
+FINALRST=1 ENVX=CLEAN_POISON_GHOST=2 V203LP_rsg B_v203 RSG 4 rsg_v20.keys hydro/floor_pay=rad_column rad_m1/clean_cs_lz_tel=true
