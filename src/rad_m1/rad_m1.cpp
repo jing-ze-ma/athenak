@@ -380,9 +380,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       // source past c E_old of a sub-cell beam's dark donor out of it in proportion to E
       // of the lit cell that feeds it (CleanStagXCorner)
       cln_xcn = cln_cell ? 0 : pin->GetOrAddInteger("rad_m1", "clean_stag_xcorner", 0);
-      if (cln_xcn && (!cln_xsrc || pmy_pack->pmesh->use_cubed_sphere)) {
-        std::cout << "### FATAL ERROR <rad_m1>/clean_stag_xcorner needs clean_stag_xsrc "
-                  << "(and no cubed sphere)" << std::endl;
+      if (cln_xcn < 0 || cln_xcn > 4 || (cln_xcn && !cln_xsrc) ||
+          ((cln_xcn & 1) && pmy_pack->pmesh->use_cubed_sphere)) {
+        std::cout << "### FATAL ERROR <rad_m1>/clean_stag_xcorner = 0..4 needs "
+                  << "clean_stag_xsrc (1, 3: not on the cubed sphere)" << std::endl;
         std::exit(EXIT_FAILURE);
       }
       // clean_stag_kpos = off (default) | faces (= true) | cell | redo: the stage increment
