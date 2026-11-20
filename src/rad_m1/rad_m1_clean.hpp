@@ -829,8 +829,12 @@ Real CleanStagMemUp(const CleanArgs &x, const int dir, const int m, const int k,
   if (g == 0.0) return 0.0;
   const bool up = (g > 0.0);   // (the donor: L for an outflow to R)
   const Real eo = up ? x.w(m,CLW_EO,kl,jl,il) : x.w(m,CLW_EO,k,j,i);
-  const Real out = x.h*fabs(g)*(up ? CleanDivW(x, dir, m, kl, jl, il, 1) :
-                                     CleanDivW(x, dir, m, k, j, i, 0));
+  // (cubed sphere: A_f over the owner's V, so that a seam face decides alike on both
+  // sides; a seam ghost's own V is this panel's extension, as CleanStagXSplit)
+  const Real out = x.h*fabs(g)*(!x.cub ? (up ? CleanDivW(x, dir, m, kl, jl, il, 1) :
+                                               CleanDivW(x, dir, m, k, j, i, 0)) :
+                   ((dir == 0) ? x.ae0 : x.area[dir])(m,k,j,i)/
+                   (up ? x.g(m,CLG_F+3,kl,jl,il) : x.g(m,CLG_F+3,k,j,i)));
   if (out <= CLN_MEMUP*eo) return 0.0;
   const Real q = (eo > 0.0) ? fmin(fabs(g)/eo, x.c) : x.c;
   return up ? q : -q;
