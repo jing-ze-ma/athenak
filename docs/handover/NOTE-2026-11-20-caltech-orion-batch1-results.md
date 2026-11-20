@@ -557,3 +557,10 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - (15:50) Got 68716d7e1 + 8acd6e933: mu616 decks copied into our FRESH copy; M150_bsg (02-04) and M150T_bsg (01-11) started 15:48:52 / 15:48:55 (L300/L300T had already finished). H200 profile: PRF_rsg then PRF_hg on 02-10 (whole node, idle now, should finish before 17:00), profc.sh run inside a holder step so its python runs on the node; NCU = ncu from the cuda/12.2.1 module; reps kept until 11-23.
 - M150_bsg (hpc-sm-02-04): a rc=0 wall=118 b rc=0 wall=75 b rc=0 wall=73 | a cycles 0 - 150 dt first 165.056 last 168.398 s/cycle steady 0.452 first elapsed 14.6 a 'FATAL' 0  a 'CLEAN WARNING' 0   | GPU mem peak MiB 22933 | CW 0 FATAL 0
 - M150T_bsg (hpc-sm-01-11): a rc=0 wall=118 b rc=0 wall=79 b rc=0 wall=68 | a cycles 0 - 150 dt first 165.056 last 168.398 s/cycle steady 0.448 first elapsed 15.2 a 'FATAL' 0  a 'CLEAN WARNING' 0   | GPU mem peak MiB 22925 | CW 0 FATAL 0
+  FRESHGO START W_t9l62 15:54:03 on hpc-sm-02-04
+  FRESHGO START W_bsg 15:54:08 on hpc-sm-01-11
+  FRESHGO START W_t19l64 15:54:10 on hpc-sm-02-11
+  FRESHGO START W_m35mms 15:54:15 on hpc-sm-02-09
+  FRESHGO START W_t9l62_corona 15:54:18 on hpc-sm-01-17
+  FRESHGO START W_t19l64_corona 15:54:21 on hpc-sm-02-03
+- (15:54) Got 76b9eadc4 / 51dd66fd0 (USER FINAL): TC_* were never started (dropped); M150_bsg / M150T_bsg finished 15:53; F0 npz + bins stay on /resnick. W arms (v203, RT=1, 120 cyc, no extra keys) started together: W_t9l62 15:54:03 (02-04), W_bsg 15:54:08 (01-11), W_t19l64 15:54:10 (02-11), W_m35mms 15:54:15 (02-09), W_t9l62_corona 15:54:18 (01-17), W_t19l64_corona 15:54:21 (02-03). Nothing had to be preempted (those nodes were free); PRF profiling continues on 02-10, R_LF on 02-16. Production decks noted as *_wb_fresh; prodg.sh waits. profc.sh note: it does cd $OUT/$TAG before reading KEYSFILE, so a relative keys path (as in your usage line) gives an empty key set; we pass the absolute path.
