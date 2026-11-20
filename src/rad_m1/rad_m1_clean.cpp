@@ -3675,14 +3675,17 @@ void RadiationM1::CleanStagBracket() {
       // (12: no clamp; a cell gates only where it holds more than the rays and that excess
       // is sourced by its gas: r = 1 - s (1 - J/E_old), s = min(1, a T^4/E_old); an excess
       // the gas cannot source (vacuum, cold gas) is numerical leak, corrected in full)
-      if (dgf == 12) {
-        auto rs = [&](const Real e, const Real jj, const Real t) {
+      // (13: = 12 with s times the cell's coupling over the stage, min(1, rho kappa_P c h))
+      if (dgf == 12 || dgf == 13) {
+        auto rs = [&](const Real e, const Real jj, const Real t, const Real kp) {
           if (!(e > jj && e > 0.0)) return 1.0;
-          const Real sg = fmin(1.0, ar_*SQR(SQR(fmax(t, 0.0)))/e);
+          const Real cp = (dgf == 13) ? fmin(1.0, fmax(kp, 0.0)*x.c*x.h) : 1.0;
+          const Real sg = cp*fmin(1.0, ar_*SQR(SQR(fmax(t, 0.0)))/e);
           return 1.0 - sg*(1.0 - jj/e);
         };
-        const Real r12 = fmin(rs(eol, jl, x.w(m,CLW_T,k-dk,j-dj,i-di)),
-                              rs(eor, jr, x.w(m,CLW_T,k,j,i)));
+        const Real r12 = fmin(rs(eol, jl, x.w(m,CLW_T,k-dk,j-dj,i-di),
+                                 x.op(m,M1_OP_P,k-dk,j-dj,i-di)),
+                              rs(eor, jr, x.w(m,CLW_T,k,j,i), x.op(m,M1_OP_P,k,j,i)));
         x.fc[dir](m,x.fdg,k,j,i) = r12*r12*x.c*(fy - x.fc[dir](m,CLF_HP,k,j,i)*jl
                                                  - x.fc[dir](m,CLF_HM,k,j,i)*jr);
         return;
