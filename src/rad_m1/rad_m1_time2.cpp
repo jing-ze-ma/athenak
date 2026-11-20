@@ -620,16 +620,14 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   // defaults-1114 (USER 11-13): DEFAULT true on the cubed sphere / spherical polar with
   // multi-D implicit transport and hesdirk2 (ffct14 above); false elsewhere and with
   // recipe none, as before.  Read only when named; an explicit key wins.  The clean
-  // scheme: off unless named, and not for the cell layout (its t2inc F channels are
-  // cell momenta, and scaling them alone breaks the momentum and angular-momentum
-  // balance with the gas); the staggered layout's are face F as here, and its solve
+  // scheme: off unless named; its t2inc F channels are face F as here, and its solve
   // stores the energy flux Phi that moved E (CleanWriteBack)
   t2_ffct = ffct14 && !clean;
   if (pin->DoesParameterExist("rad_m1", "time2_face_fct")) {
     t2_ffct = pin->GetBoolean("rad_m1", "time2_face_fct");
   }
-  t2_pfst = t2_ffct || (clean && !cln_cell);
-  t2_ffct_emin = (clean && !cln_cell) ? 0.1 : 0.0;   // (rad_m1.hpp)
+  t2_pfst = t2_ffct || clean;
+  t2_ffct_emin = clean ? 0.1 : 0.0;   // (rad_m1.hpp)
   if (pin->DoesParameterExist("rad_m1", "time2_face_fct_emin")) {
     t2_ffct_emin = pin->GetReal("rad_m1", "time2_face_fct_emin");
   }
@@ -2299,7 +2297,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
      Kokkos::Min<Real>(qmin));
   // (clean staggered: the face F is the radiation momentum, which the limiter leaves
   // alone, so momentum and L_z stay exact; the solve keeps |F| <= cE)
-  for (int d = 0; d < 3 && !(clean && !cln_cell); ++d) {
+  for (int d = 0; d < 3 && !clean; ++d) {
     if ((d == 1 && !tr2) || (d == 2 && !tr3)) {continue;}
     const int dk = (d == 2) ? 1 : 0, dj = (d == 1) ? 1 : 0, di = (d == 0) ? 1 : 0;
     par_for("m1_t2_ffct_f", DevExeSpace(), 0, nmb1, ks, ke + dk, js, je + dj, is, ie + di,
@@ -2332,7 +2330,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
 
 void RadiationM1::CleanBndAcc(int stage, Real c1, Real c2, Real w, Real dt) {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
-  if (!clean || cln_cell || !(sph_geom || cs_geom)) return;
+  if (!clean || !(sph_geom || cs_geom)) return;
   if (cln_lacc.extent_int(0) <= nmb1) {
     Kokkos::realloc(cln_lacc, nmb1 + 1, 4, u0.extent_int(2), u0.extent_int(3));
   }
@@ -3724,12 +3722,11 @@ int RadiationM1::Time2FctSlot(const int q) const {
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationM1::CleanRstNq
 //! \brief closure components per record in the restart files of the clean extrap history
-//! and clean_rot_ring, in push 16's order (CleanRstSlot): the cell layout writes the
-//! first CLN_N - 1 (push 16's files), the staggered layout all CLN_N (the last, CLN_JR,
-//! the rays' J below clean_ray_min, is staggered only)
+//! and clean_rot_ring, in push 16's order (CleanRstSlot): all CLN_N (the last, CLN_JR,
+//! the rays' J below clean_ray_min)
 
 int RadiationM1::CleanRstNq() const {
-  return cln_cell ? CLN_N - 1 : CLN_N;
+  return CLN_N;
 }
 
 int RadiationM1::CleanRstNfv() const {
@@ -3740,7 +3737,7 @@ int RadiationM1::CleanRstNfv() const {
   // 5: dense, CleanFvRstCopy)
   // (version 6, staggered: their face half ranges cln_fh instead, none where every
   // solve rebuilds them first, CleanFhBuilt)
-  if (cln_cssc && !cln_cell && t2_rstv >= 6) return CleanFhBuilt() ? 0 : 12;
+  if (cln_cssc && t2_rstv >= 6) return CleanFhBuilt() ? 0 : 12;
   if (cln_cssc && t2_rstv >= 5) {
     return (cln_fvi.extent_int(0) > 0) ? CleanFvRstN() : t2_nfv;
   }
@@ -3955,7 +3952,7 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
   // clean_rays = fv1 | fv: the intensities the next sweep starts from, last (unless a
   // has no room for them: restart.cpp copies them itself)
   if (a.extent_int(1) < c + CleanRstNfv()) return;
-  if (cln_cssc && !cln_cell && CleanRstNfv() > 0) {   // (version 6: cln_fh)
+  if (cln_cssc && CleanRstNfv() > 0) {   // (version 6: cln_fh)
     auto af = Kokkos::subview(a, mb, std::make_pair(c, c + 12), AL, AL, AL);
     if (cln_fh.extent_int(0) >= m0 + nmb) {
       Kokkos::deep_copy(af, Kokkos::subview(cln_fh, ms, AL, AL, AL, AL));
@@ -4001,7 +3998,7 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   // the last t2_nfv channels: the conservative rays' intensities (their number is not
   // known before the first sweep, Time2RstAccept)
   const int nfv0 = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0);
-  if (clean && cln_cssc && !cln_cell && t2_rstv >= 6 && ch >= nfv0) {   // (cln_fh)
+  if (clean && cln_cssc && t2_rstv >= 6 && ch >= nfv0) {   // (cln_fh)
     if (cln_fh.extent_int(0) != nmb) {
       Kokkos::realloc(cln_fh, nmb, 12, w.extent_int(1), w.extent_int(2), w.extent_int(3));
     }
@@ -4429,14 +4426,13 @@ void RadiationM1::RstFingerprint(const char *tag) {
   if (fl.on) {M1Fp("fl_u0", fl.u0, cy); M1Fp("fl_w0", fl.w0, cy);}
   M1Fp("cln_s", cln_s, cy); M1Fp("cln_v", cln_v, cy); M1Fp("cln_w", cln_w.s, cy);
   M1Fp("cln_wo", cln_w.o, cy);
-  M1Fp("cln_x", cln_x, cy); M1Fp("cln_dy", cln_dy, cy); M1Fp("cln_ff", cln_ff, cy);
   M1Fp("cln_fc1", cln_fc1, cy); M1Fp("cln_fc2", cln_fc2, cy);
   M1Fp("cln_fc3", cln_fc3, cy);
   M1Fp("cln_fref", cln_fref, cy); M1Fp("cln_mn", cln_mn, cy); M1Fp("cln_mp", cln_mp, cy);
   M1Fp("cln_mc", cln_mc, cy); M1Fp("cln_m1", cln_m1, cy); M1Fp("cln_fvi", cln_fvi, cy);
   M1Fp("cln_fvq", cln_fvq, cy); M1Fp("cln_fvw", cln_fvw, cy);
   M1Fp("cln_fvd", cln_fvd, cy);
-  M1Fp("cln_opb", cln_opb, cy); M1Fp("cln_lf", cln_lf, cy); M1Fp("cln_gn", cln_gn.r, cy);
+  M1Fp("cln_opb", cln_opb, cy); M1Fp("cln_gn", cln_gn.r, cy);
   M1Fp("cln_gn.a", cln_gn.a, cy);
   M1Fp("cln_rl", cln_rl, cy); M1Fp("cln_rr", cln_rr, cy); M1Fp("cln_rpd", cln_rpd, cy);
   M1Fp("cln_rnew", cln_rnew, cy);
@@ -4458,9 +4454,9 @@ void RadiationM1::RstFingerprint(const char *tag) {
                 t2_dtprev, t2_vprev ? 1 : 0, x2_ok ? 1 : 0, x2_t, t2_abe_len, t2_abe_left);
     std::fflush(stdout);
   }  if (global_variable::my_rank == 0) {
-    std::printf("RSTFP cyc %d clean init %d faces %d lf_ok %d havec %d tc %.17e "
+    std::printf("RSTFP cyc %d clean init %d faces %d havec %d tc %.17e "
                 "dtb %.17e fe %.17e fv %.17e\n", cy, cln_init ? 1 : 0,
-                cln_faces_set ? 1 : 0, cln_lf_ok ? 1 : 0, cln_havec ? 1 : 0, cln_tc,
+                cln_faces_set ? 1 : 0, cln_havec ? 1 : 0, cln_tc,
                 cln_dtb, cln_fe, cln_fv);
     std::printf("RSTFP cyc %d extrap tn %.17e tp %.17e tm %.17e t1 %.17e "
                 "have %d %d %d %d cand_be %d\n", cy, cln_tn, cln_tp, cln_tm, cln_t1,

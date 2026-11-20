@@ -1903,7 +1903,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // (staggered fkin: every clean file carries its state in that block, a file without
   // it is the old scheme's, CleanRstFaces; of the old block only its slope K1, the first
   // slabs: the first step is the stage step it would have taken)
-  const bool t2_old = (pradm1 != nullptr) && pradm1->clean && !pradm1->cln_cell &&
+  const bool t2_old = (pradm1 != nullptr) && pradm1->clean &&
                       pradm1->cln_fsolve && pradm1->cln_fkin && !t2_acc;
   if (pradm1 != nullptr) pradm1->cln_rstold = t2_old;
   if (t2_old) {   // (none of the clean block's layout applies)

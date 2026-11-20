@@ -137,9 +137,9 @@ void RadiationM1::MemArenaSeal() {
                                &krw, &aa_xc, &aa_fc, &aa_xp, &aa_fp};
   const char *nm[] = {"cln_wo", "ost", "fmm_t", "thw", "vmw", "thq", "odc", "d3w", "krw",
                       "aa_xc", "aa_fc", "aa_xp", "aa_fp"};
-  // (clean: the arena grows to the staggered layout's own work vectors where they
-  // outgrow the intensities, whatever vgd_i's layout makes of those)
-  if (clean && !cln_cell) MemArenaGrow(static_cast<int64_t>(cln_w.o.span()));
+  // (clean: the arena grows to the clean scheme's own work vectors where they outgrow
+  // the intensities, whatever vgd_i's layout makes of those)
+  if (clean) MemArenaGrow(static_cast<int64_t>(cln_w.o.span()));
   const int64_t have = static_cast<int64_t>(marena.extent(0));
   int64_t off = 0;
   std::string moved;
@@ -147,8 +147,8 @@ void RadiationM1::MemArenaSeal() {
   for (int q = 0; q < static_cast<int>(sizeof(cand)/sizeof(cand[0])); ++q) {
     DvceArray5D<Real> &a = *cand[q];
     const int64_t n = static_cast<int64_t>(a.span());
-    // (clean: the staggered layout's own work vectors only)
-    if ((clean && (q > 0 || cln_cell)) || a.data() == nullptr || n == 0 ||
+    // (clean: its own work vectors only)
+    if ((clean && q > 0) || a.data() == nullptr || n == 0 ||
         !a.span_is_contiguous() || off + n > have || a.data() == marena.data()) {
       // (cln_w.o already there, CleanWoBind)
       if (a.data() == marena.data() && n > 0) off += n + ((64 - (n % 64)) % 64);
@@ -217,7 +217,7 @@ void RadiationM1::MemcutPoison(const int where) {
     if (a.data() != nullptr && EnvListHas("MEMCUT_POISON", nm)) {Kokkos::deep_copy(a, v);}
   };
   // (clnw also at every VetGdBuild: a sweep writes the arena wherever it is called)
-  if ((where == 0 || where == 2) && !cln_cell) {p5(cln_w.o, "clnw"); p5(cln_w.s, "clnw");}
+  if (where == 0 || where == 2) {p5(cln_w.o, "clnw"); p5(cln_w.s, "clnw");}
   // (the stencil rows: dead across a build, CleanRingMoments' build scratch over them)
   if (where == 2 || where == 3) {p5(cln_st, "clnst"); p5(cln_csy, "clnst");}
   if (where == 3) {
