@@ -104,3 +104,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - V20G3_rsg (hpc-sm-02-11): rc=0 wall=157 rc=0 wall=145 rc=0 wall=142 | cycles 589788 - 589792 | steady 2.868 s/cycle | GPU MiB max 109195 min 108061 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF  xcheck V20G3_rsg/a vs V20G_rsg/a: V20G3_rsg/rsg.hydro.hst=same V20G3_rsg/rsg.user.hst=same
 - V20G3_hg (hpc-sm-02-16): rc=0 wall=245 rc=0 wall=238 rc=0 wall=226 | cycles 624961 - 624965 | steady 4.193 s/cycle | GPU MiB max 116703 min 115915 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF 
 - AB7_rsg (hpc-sm-02-09): rc=0 wall=278 | cycles 589788 - 589794 | steady 37.669 s/cycle | GPU MiB max 109605 min 108471 | CW a 0 FATAL 0 |  
+- CK1_hg (hpc-sm-02-09): rc=0 wall=152 | cycles 624961 - 624967 | steady 11.850 s/cycle | GPU MiB max 120151 min 119595 | CW a 1 FATAL 0 |  
