@@ -1,0 +1,101 @@
+== /resnick/groups/carnegie_poc/jingze/orion_runs_1121/RZ3lc001_hg/a/run.log
+CLEAN pass cycle 624965 t2s 1 pos 0 pass 181 it 1 de 9.469e-06 dv 4.223e-11
+CLEAN XDONOR cycle 624965 t2s 1 pass 182 xle0 0 minX/Eo 5.094e-02 donor 27691 cap 3356 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 624965 t2s 1 pass closure 2.567e-04
+CLEAN pass cycle 624965 t2s 1 pos 0 pass 182 it 1 de 9.337e-06 dv 4.223e-11
+CLEAN XDONOR cycle 624965 t2s 1 pass 183 xle0 0 minX/Eo 5.094e-02 donor 27692 cap 3357 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 624965 t2s 1 pass closure 2.485e-04
+CLEAN pass cycle 624965 t2s 1 pos 0 pass 183 it 1 de 9.469e-06 dv 4.223e-11
+CLEAN XDONOR cycle 624965 t2s 1 pass 184 xle0 0 minX/Eo 5.094e-02 donor 27691 cap 3356 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 624965 t2s 1 pass closure 2.567e-04
+CLEAN pass cycle 624965 t2s 1 pos 0 pass 184 it 1 de 9.337e-06 dv 4.223e-11
+CLEAN XDONOR cycle 624965 t2s 1 pass 185 xle0 0 minX/Eo 5.094e-02 donor 27692 cap 3357 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 624965 t2s 1 pass closure 2.485e-04
+CLEAN pass cycle 624965 t2s 1 pos 0 pass 185 it 1 de 9.469e-06 dv 4.223e-11
+CLEAN XDONOR cycle 624965 t2s 1 pass 186 xle0 0 minX/Eo 5.094e-02 donor 27691 cap 3356 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 624965 t2s 1 pass closure 2.567e-04
+CLEAN pass cycle 624965 t2s 1 pos 0 pass 186 it 1 de 9.337e-06 dv 4.223e-11
+CLEAN XDONOR cycle 624965 t2s 1 pass 187 xle0 0 minX/Eo 5.094e-02 donor 27692 cap 3357 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 624965 t2s 1 pass closure 2.485e-04
+CLEAN pass cycle 624965 t2s 1 pos 0 pass 187 it 1 de 9.469e-06 dv 4.223e-11
+CLEAN XDONOR cycle 624965 t2s 1 pass 188 xle0 0 minX/Eo 5.094e-02 donor 27691 cap 3356 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 624965 t2s 1 pass closure 2.567e-04
+CLEAN pass cycle 624965 t2s 1 pos 0 pass 188 it 1 de 9.337e-06 dv 4.223e-11
+CLEAN XDONOR cycle 624965 t2s 1 pass 189 xle0 0 minX/Eo 5.094e-02 donor 27692 cap 3357 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 624965 t2s 1 pass closure 2.485e-04
+CLEAN pass cycle 624965 t2s 1 pos 0 pass 189 it 1 de 9.469e-06 dv 4.223e-11
+CLEAN XDONOR cycle 624965 t2s 1 pass 190 xle0 0 minX/Eo 5.094e-02 donor 27691 cap 3356 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 624965 t2s 1 pass closure 2.567e-04
+CLEAN pass cycle 624965 t2s 1 pos 0 pass 190 it 1 de 9.337e-06 dv 4.223e-11
+CLEAN XDONOR cycle 624965 t2s 1 pass 191 xle0 0 minX/Eo 5.094e-02 donor 27692 cap 3357 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 624965 t2s 1 pass closure 2.485e-04
+CLEAN pass cycle 624965 t2s 1 pos 0 pass 191 it 1 de 9.469e-06 dv 4.223e-11
+CLEAN XDONOR cycle 624965 t2s 1 pass 192 xle0 0 minX/Eo 5.094e-02 donor 27691 cap 3356 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 624965 t2s 1 pass closure 2.567e-04
+CLEAN pass cycle 624965 t2s 1 pos 0 pass 192 it 1 de 9.337e-06 dv 4.223e-11
+CLEAN XDONOR cycle 624965 t2s 1 pass 193 xle0 0 minX/Eo 5.094e-02 donor 27692 cap 3357 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 624965 t2s 1 pass closure 2.485e-04
+CLEAN pass cycle 624965 t2s 1 pos 0 pass 193 it 1 de 9.469e-06 dv 4.223e-11
+CLEAN XDONOR cycle 624965 t2s 1 pass 194 xle0 0 minX/Eo 5.094e-02 donor 27691 cap 3356 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 624965 t2s 1 pass closure 2.567e-04
+CLEAN pass cycle 624965 t2s 1 pos 0 pass 194 it 1 de 9.337e-06 dv 4.223e-11
+CLEAN XDONOR cycle 624965 t2s 1 pass 195 xle0 0 minX/Eo 5.094e-02 donor 27692 cap 3357 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 624965 t2s 1 pass closure 2.485e-04
+CLEAN pass cycle 624965 t2s 1 pos 0 pass 195 it 1 de 9.469e-06 dv 4.223e-11
+CLEAN XDONOR cycle 624965 t2s 1 pass 196 xle0 0 minX/Eo 5.094e-02 donor 27691 cap 3356 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 624965 t2s 1 pass closure 2.567e-04
+CLEAN pass cycle 624965 t2s 1 pos 0 pass 196 it 1 de 9.337e-06 dv 4.223e-11
+CLEAN XDONOR cycle 624965 t2s 1 pass 197 xle0 0 minX/Eo 5.094e-02 donor 27692 cap 3357 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 624965 t2s 1 pass closure 2.485e-04
+CLEAN pass cycle 624965 t2s 1 pos 0 pass 197 it 1 de 9.469e-06 dv 4.223e-11
+CLEAN XDONOR cycle 624965 t2s 1 pass 198 xle0 0 minX/Eo 5.094e-02 donor 27691 cap 3356 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 624965 t2s 1 pass closure 2.567e-04
+CLEAN pass cycle 624965 t2s 1 pos 0 pass 198 it 1 de 9.337e-06 dv 4.223e-11
+CLEAN XDONOR cycle 624965 t2s 1 pass 199 xle0 0 minX/Eo 5.094e-02 donor 27692 cap 3357 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 624965 t2s 1 pass closure 2.485e-04
+CLEAN pass cycle 624965 t2s 1 pos 0 pass 199 it 1 de 9.469e-06 dv 4.223e-11
+CLEAN WARNING cycle 624965: backward-Euler solve not converged (dt_retry, 3 so far; last change 9.469e-06)
+CLEAN cycle 624965 t2s 1 it -2 (sum 200) pos 0 mark 0 all 0 neg 0 r1 0 r2 2649 first 0 2649 guard 0 solves 200 cwin 0
+CLEAN FRZ cycle 624965 t2s 1 | faces 205357056: |F|>c maxE before 22176683 after 1581046 (w=1 1539762) | max |F|/c maxE before 1.988e+03 after 9.643e+02 | w(1-a)>.5 48991 | sum |dF| V/c^2 1.324184e+28
+CLEAN REALF cycle 624965 t2s 1 >1 | n 1617424 | >cX: FH 1464482 thG 1394047 grad 278 src 0 G 1401018 | |F|>|FH| 153294 F.FH<0 949 Xfl 4 >cEO 248067 radial 176074 G>cEO 869047 w>.5 1586111 th>.9 1617200 lineFar>cX 1447931 FH,thG<=cX 130447 | max F 9.643e+02 FH 2.105e+03 thG 2.105e+03 grad 1.007e+01 src 1.082e-02 F/cEO 2.076e+06
+CLEAN REALF cycle 624965 t2s 1 >10 | n 128 | >cX: FH 128 thG 128 grad 1 src 0 G 128 | |F|>|FH| 3 F.FH<0 1 Xfl 2 >cEO 128 radial 92 G>cEO 128 w>.5 7 th>.9 127 lineFar>cX 108 FH,thG<=cX 0 | max F 9.643e+02 FH 2.105e+03 thG 2.105e+03 grad 1.445e+00 src 3.723e-04 F/cEO 2.312e+03
+CLEAN LZ cycle 624965 t2s 1 ledger 2.6507307487772620e+42
+CLEAN XT cycle 624965 t2s 1 write-back closure 3.714e-02
+### FATAL ERROR: <time> dt_retry: cycle 624965 failed 9 times (max 8), dt 4.259657e-01
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 1 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 2 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 3 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 0 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+[2026-11-20T08:49:47.774] error: *** STEP 5840650.68 ON hpc-sm-02-16 CANCELLED AT 2026-11-20T08:49:47 DUE to SIGNAL Killed ***
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+[2026-11-20T08:49:49.614] error:  mpi/pmix_v3: _errhandler: hpc-sm-02-16 [0]: pmixp_client_v2.c:219: Error handler invoked: status = -25, source = [slurm.pmix.5840650.68:3]
+srun: error: hpc-sm-02-16: tasks 0-2: Killed
+srun: error: hpc-sm-02-16: task 3: Exited with exit code 1
