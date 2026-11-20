@@ -6,3 +6,6 @@ FINALRST=0 NR=4 BFX4_rsg B_bfx RSG 300 rsg_v20.keys rad_m1/clean_stag_dg_form=4
 FINALRST=0 NR=4 BFX0_rsg B_bfx RSG 300 rsg_v20.keys rad_m1/clean_stag_dg_form=0
 FINALRST=0 NR=8 BFX4_hg  B_bfx HG  300 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=4
 FINALRST=0 NR=8 BFX0_hg  B_bfx HG  300 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=0
+# added NOTE cc: B_bfx7 = caltech-runs/beamfix7 45a26ad8cc876375adbc034c9016b3178ebcc1f6 (B_bfx + form 7; form 0 unchanged). Run BFX7 BEFORE BFX4 if BFX4 has not started. BFX0_* on B_bfx stays the control.
+FINALRST=0 NR=4 BFX7_rsg B_bfx7 RSG 300 rsg_v20.keys rad_m1/clean_stag_dg_form=7
+FINALRST=0 NR=8 BFX7_hg  B_bfx7 HG  300 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=7
