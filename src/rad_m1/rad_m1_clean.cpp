@@ -3772,6 +3772,12 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
   auto op = opac;
   const CleanFLine ln{cln_v, x.cub};
   const bool fk = cln_fkin, dok = cln_dok, cub = x.cub;
+  // (clean_stag_fidp: the write-back's sums, CLEAN FIDP)
+  const int fid = cln_fidp;
+  const bool fst = fid > 0 && e == CLW_X;
+  if (fst && cln_fids.extent_int(0) != 6) Kokkos::realloc(cln_fids, 6);
+  if (fst) Kokkos::deep_copy(cln_fids, 0.0);
+  auto fsv = cln_fids;
   const int kd = (t2_solve == M1_T2S_NONE) ? 0 :
                  ((t2_solve == M1_T2S_STAGE1) ? CLF_KD + 1 : CLF_KD);
   const Real c1lo = cln_c0, c1hi = cln_c1;
@@ -4082,17 +4088,39 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
         const Real f = cub ? fc(m,CLF_N+2,k,j,i) : x.w(m,CleanFLine::Cy(dir),k,j,i);
         fc(m,CLF_N+2,k,j,i) = fc(m,CLF_N,k,j,i);   // (F^H: the boundary's, kept)
         if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
+        // (clean_stag_fidp: fv, F within the free-streaming interval of its cells,
+        // [-c E_R, c E_L]; 1: the stress term moves with it, (fv - f)/(theta h c^2), so the
+        // row holds for fv and the gas takes its absorption; the dissipation and kinetic
+        // terms below stay those of f, the solve's)
+        Real fv = f;
+        if (fid > 0) {
+          const Real el = fmax(x.w(m,e,k-dk,j-dj,i-di), 0.0), er = fmax(x.w(m,e,k,j,i), 0.0);
+          fv = fmin(fmax(f, -x.c*er), x.c*el);
+          const Real th = fc(m,CLF_TH,k,j,i);
+          if (fid == 1 && fv != f) fc(m,CLF_N+1,k,j,i) += (fv - f)/(th*x.h*x.c*x.c);
+          if (fst && fv != f) {   // (the write-back's: the momentum the gas does not take)
+            const int ko = k - dk, jo = j - dj, io = i - di;
+            const Real vf = x.cub ? 0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,ko,jo,io)) :
+                (x.sph ? 0.5*(x.vol(m,k,j,i) + x.vol(m,ko,jo,io)) :
+                         1.0/(x.idx[0]*x.idx[1]*x.idx[2]));
+            const Real dq = vf*(fv - f)/(th*x.c*x.c);
+            Kokkos::atomic_add(&fsv(0), 1.0);
+            Kokkos::atomic_add(&fsv(1), fabs(dq));
+            Kokkos::atomic_add(&fsv(2+dir), dq);
+            Kokkos::atomic_max(&fsv(5), fabs(f)/(x.c*fmax((f > 0.0) ? el : er, 1.0e-300)));
+          }
+        }
         // (fkin, the solution's F solve: d = Phi^H - F, Phi^H = F^H + theta d the energy
         // flux's high-order part, whose memory is G + d (CleanFaceSource): its own
         // history, so that its steady state, F^H of G = F^H, does not depend on h)
         if (fk && e == CLW_X && dok) {   // (and its slope, CleanDInc)
-          const Real dd = fc(m,CLF_N,k,j,i) - f - (1.0 - fc(m,CLF_TH,k,j,i))*
+          const Real dd = fc(m,CLF_N,k,j,i) - fv - (1.0 - fc(m,CLF_TH,k,j,i))*
                           fc(m,CLF_N+3,k,j,i);
           fc(m,CLF_N+3,k,j,i) += dd;
           if (kd > 0) fc(m,kd,k,j,i) = dd/x.h;
         }
-        fc(m,CLF_N,k,j,i) = f;
-        fc(m,CLF_N+2,k,j,i) = f;
+        fc(m,CLF_N,k,j,i) = fv;
+        fc(m,CLF_N+2,k,j,i) = fv;
         Real tl[6], tr[6];
         ln.Cell(x, dir, m, k, j, i, k-dk, j-dj, i-di, tl);
         ln.Cell(x, dir, m, k, j, i, k, j, i, tr);
@@ -4126,6 +4154,19 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
     }
   }
   if (tie && tie_now && !cub) CleanStagFaceTie(e, kd);
+  if (fst) {
+    auto hs = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), cln_fids);
+    Real sv[5] = {hs(0), hs(1), hs(2), hs(3), hs(4)}, rm = hs(5);
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, sv, 5, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    rm = CleanReduce(rm, true);
+    if (global_variable::my_rank == 0) {
+      std::printf("CLEAN FIDP cycle %d t2s %d faces %.0f max |F|/cE_d %.3e dP %.4e "
+                  "(x1 %.4e x2 %.4e x3 %.4e)\n", pmy_pack->pmesh->ncycle, t2_solve,
+                  sv[0], rm, sv[1], sv[2], sv[3], sv[4]);
+    }
+  }
 }
 
 //----------------------------------------------------------------------------------------
