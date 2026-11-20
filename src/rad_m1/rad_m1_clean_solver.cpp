@@ -676,7 +676,7 @@ RadiationM1::CleanHaloList::Mask &RadiationM1::CleanHaloMask(
 //! \fn void RadiationM1::CleanHaloPost
 //! \brief clean_halo_direct, first half: receives posted (into the half of the receive
 //! buffer the previous exchange's unpack does not read), pack, wait for the pack (the
-//! stream holds nothing behind it), one send per neighbour rank, then the on-rank copy.
+//! stream holds nothing behind it), the on-rank copy, then one send per neighbour rank.
 //! Buffer entry p of component n (over the segments in order) at p nc + n
 
 template <typename T>
@@ -730,15 +730,9 @@ void RadiationM1::CleanHaloPost(const std::vector<CleanGSeg<T>> &sg) {
     o += s.nc;
   }
   if (q.ns > 0 || q.nr > 0) DevExeSpace().fence();
-  for (int s = 0; s < nseg; ++s) {
-    const int nss = msk ? mh->slm[s*q.ng + q.dcur - 1] : q.slend[s*q.ng + q.dcur - 1]*nc;
-    if (nss > 0) {
-      MPI_Isend(sb.data() + static_cast<size_t>(q.soff[s])*nc, nss,
-                MPI_ATHENA_REAL, q.rank[s], 4245, q.comm, &q.sq[s]);
-    }
-  }
 #endif
-  // (the ghosts deeper than dcur keep their values; CLEAN_POISON_GHOST: NaN)
+  // (the on-rank copy runs on the device while the sends are posted; the ghosts deeper
+  // than dcur keep their values; CLEAN_POISON_GHOST: NaN)
   const int dc = q.dcur;
   const bool pz = q.poison;
   const T nan = static_cast<T>(q.pval);
@@ -763,6 +757,15 @@ void RadiationM1::CleanHaloPost(const std::vector<CleanGSeg<T>> &sg) {
       a(m,c0+n,k,j,r - k*n21 - j*n1) = a(mg,c0+n,kg,jg,t - kg*n21 - jg*n1);
     });
   }
+#if MPI_PARALLEL_ENABLED
+  for (int s = 0; s < nseg; ++s) {
+    const int nss = msk ? mh->slm[s*q.ng + q.dcur - 1] : q.slend[s*q.ng + q.dcur - 1]*nc;
+    if (nss > 0) {
+      MPI_Isend(sb.data() + static_cast<size_t>(q.soff[s])*nc, nss,
+                MPI_ATHENA_REAL, q.rank[s], 4245, q.comm, &q.sq[s]);
+    }
+  }
+#endif
 }
 
 //----------------------------------------------------------------------------------------
