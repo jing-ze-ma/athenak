@@ -4,3 +4,4 @@ FINALRST=1 ENVX=CLEAN_POISON_GHOST=1 V201DP_rsg B_v201d RSG 4 rsg_v20.keys
 FINALRST=1 MODE=rt NH=2              V201D_hg   B_v201d HG  4 hg_v20.keys time/dt_retry_host=m1
 FINALRST=1 KEEPBIN=1 NR=4 LI4d_rsg B_v201d RSG 3 rsg_v20.keys output2/dt=950 output3/dt=950 output6/dt=950
 FINALRST=1 KEEPBIN=1 NR=8 LI8d_rsg B_v201d RSG 3 rsg_v20.keys output2/dt=950 output3/dt=950 output6/dt=950
+FINALRST=1 V201E_rsg B_v201e RSG 4 rsg_v20.keys   # B_v201e = caltech-runs/v201e 3efbbbd17 (v201d + LB8 default). hst must == V201D_rsg/a. After V20NK. (NOTE bp)
