@@ -446,6 +446,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                   << "and clean_layout = staggered" << std::endl;
         std::exit(EXIT_FAILURE);
       }
+      // clean_cs_lat_wb (default off): a lateral face projects its cells' lateral stress
+      // sums after the rotation of the cell's radial direction into the face plane, so
+      // that a spherically symmetric P gives no lateral face force (CleanStagCsLat)
+      cln_latwb = stag("clean_cs_lat_wb", false);
+      if (cln_latwb && cln_lza != 2) {
+        std::cout << "### FATAL ERROR: <rad_m1>/clean_cs_lat_wb needs the cubed sphere "
+                  << "and clean_layout = staggered" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
       if (cln_lzbook) {
         const bool cs = (cln_lza == 2);
         cln_lzpin = pin;
