@@ -297,3 +297,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - (06:53) Got 6041d6e66: KXR1_rsg/KSR1_rsg and KXH20_hg/KSH20_hg (ksplit7) queued as two together-pairs after KD001 (CW and k1_xlim counts, full run.log.gz).
 - KXR1_rsg (hpc-sm-02-11): rc=0 wall=124 | cycles 589788 - 589808 | steady 2.656 s/cycle | GPU MiB max 109209 min 108075 | CW a 0 FATAL 0 |  CW 0 | k1_xlim lines 2
 - KSR1_rsg (hpc-sm-01-11): rc=0 wall=125 | cycles 589788 - 589808 | steady 2.698 s/cycle | GPU MiB max 109209 min 108075 | CW a 0 FATAL 0 |  CW 0 | k1_xlim lines 0
+- KXH20_hg (hpc-sm-02-09): rc=0 wall=180 | cycles 624961 - 624981 | steady 4.688 s/cycle | GPU MiB max 116353 min 115805 | CW a 0 FATAL 0 |  CW 0 | k1_xlim lines 2
+- KSH20_hg (hpc-sm-02-10): rc=0 wall=187 | cycles 624961 - 624981 | steady 4.971 s/cycle | GPU MiB max 115775 min 115177 | CW a 0 FATAL 0 |  CW 0 | k1_xlim lines 0
