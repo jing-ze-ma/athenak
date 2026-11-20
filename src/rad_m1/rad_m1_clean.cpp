@@ -244,7 +244,7 @@ static void CleanStagMomentum(const CleanArgs &x, const int e, const int m, cons
 //! of its radial faces and (M_f x P n)_z of its lateral ones, P the two cells' mean (one
 //! sided at a radial boundary).  The interior faces cancel in the sum, so gas and
 //! radiation L_z change only by the radial boundaries' torque (CleanLzBook).  In xs the
-//! stress part, the exact torque less the faces' own: the radiation's (CleanWriteBack)
+//! stress part, the exact torque less the faces' own: its net the gas's (CleanWriteBack)
 
 KOKKOS_INLINE_FUNCTION
 static Real CleanCsTorque(const CleanArgs &x, const int e, const int m, const int k,
@@ -4919,61 +4919,40 @@ void RadiationM1::CleanWriteBack() {
   xh.tf = cln_ftie && !x.cub;
   xh.fa = cln_ftie && x.cub;   // (the cubed sphere's tied T: CLF_PT, CleanStagFaceTie)
 
-  // (clean_cs_lz_tel: the stress torque CleanCsTorque's xs is the radiation's, a defect of
-  // its momentum equation; as a force on that equation the implicit step gives the gas
-  // the absorbed share a = hc chi/(1 + hc chi) and leaves 1 - a in the face momenta, so
-  // the gas of a thin cell, whose small mass cannot hold the radiation's stress, takes
-  // what its opacity couples (rule 6).  tqv: (1 - a) xs over the cell's sum of
-  // V_f lambda_f^2, V_f the halves of its two cells (CleanLzTotal), then the gas's L_z
-  // and the ledger's)
+  // (clean_cs_lz_tel: the stress torque CleanCsTorque's xs, a defect of the radiation's
+  // momentum equation, is zero-sum noise per cell (sum |xs| ~1e5 its net); the gas takes
+  // its net X = sum xs only, as the solid-body rotation dOmega = X/I of least kinetic
+  // energy, I = sum rho V R^2, so no cell takes the per-cell defect (LZTEL3: a cell's
+  // share spun thin gas up, and in the faces it made F unrealisable).  tqv: the gas's
+  // L_z gl and the ledger's; lxs, lxi: xs and rho V R^2, lzs their sums X and I)
   const bool lzt = cln_lzt && feedback;
   DvceArray5D<Real> tqv;
+  Real lzs[2] = {0.0, 0.0};
   if (lzt) {
-    tqv = ScratchView<DvceArray5D<Real>>("cln_tqv", nmb1 + 1, 6, u0.extent_int(2),
+    tqv = ScratchView<DvceArray5D<Real>>("cln_tqv", nmb1 + 1, 3, u0.extent_int(2),
                                          u0.extent_int(3), u0.extent_int(4));
+    auto lxs = ScratchView<DvceArray4D<Real>>("cln_lxs", nmb1 + 1, u0.extent_int(2),
+                                              u0.extent_int(3), u0.extent_int(4));
+    auto lxi = ScratchView<DvceArray4D<Real>>("cln_lxi", nmb1 + 1, u0.extent_int(2),
+                                              u0.extent_int(3), u0.extent_int(4));
     px = CleanDevArgs(x, 0);   // (xh changed: the F solve's F)
     pxh = CleanDevArgs(xh, 1);
-    // (the cells' volumes, which the ghosts take: across a panel seam a ghost's own
-    // geometry is not that of the cell it copies)
-    CleanFor("cln_wbtqv", nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      CLEAN_HIPX(const CleanArgs &x = *px;)
-      tqv(m,3,k,j,i) = x.vol(m,k,j,i);
-    });
-    CleanGhostFill(tqv, 3, 1);
+    auto ug = FluidRef::Get(pmy_pack).u0;
     CleanFor("cln_wbtq", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       CLEAN_HIPX(const CleanArgs &x = *px, &xh = *pxh;)
-      Real rl, xs, sl = 0.0;
+      Real rl, xs, q[3][3];
       const Real gl = CleanCsTorque(xh, CLW_X, m, k, j, i, rl, xs);
-      const Real hc = h*x.c*x.op(m,M1_OP_T,k,j,i), qr = xs/(1.0 + hc);
-      for (int q = 1; q < 3; ++q) {
-        for (int s = 0; s < 2; ++s) {
-          const int kf = k + s*(q == 2), jf = j + s*(q == 1);
-          const int ko = k + (2*s - 1)*(q == 2), jo = j + (2*s - 1)*(q == 1);
-          sl += 0.5*(x.vol(m,k,j,i) + tqv(m,3,ko,jo,i))*SQR(CleanCsArm(x, q, m, kf, jf, i));
-        }
-      }
-      tqv(m,0,k,j,i) = (sl > 0.0) ? qr/sl : 0.0;
-      tqv(m,1,k,j,i) = gl - ((sl > 0.0) ? qr : 0.0);
+      const Real rc = CleanCsFrame(x, m, k, j, i, q);
+      lxs(m,k,j,i) = xs;
+      lxi(m,k,j,i) = ug(m,IDN,k,j,i)*x.vol(m,k,j,i)*rc*rc;
+      tqv(m,1,k,j,i) = gl - xs;   // (the absorption torque)
       tqv(m,2,k,j,i) = -(gl + rl);
     });
-    CleanGhostFill(tqv, 0, 1);
-    // (a face shared with another MeshBlock takes the lower gid's change, as its F,
-    // CleanStagCsTie: each cell puts that of its face of family q on its MeshBlock's
-    // boundary, else its high face, in slot 3 + q (q = 1, 2), which the ghosts take)
-    CleanFor("cln_wbtq2", nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      CLEAN_HIPX(const CleanArgs &x = *px;)
-      for (int q = 1; q < 3; ++q) {
-        const int u = (q == 1) ? (j == je) : (k == ke);
-        const int kf = k + u*(q == 2), jf = j + u*(q == 1);
-        tqv(m,3+q,k,j,i) = x.c*x.c*CleanCsArm(x, q, m, kf, jf, i)*
-                           (tqv(m,0,kf-(q == 2),jf-(q == 1),i) + tqv(m,0,kf,jf,i));
-      }
-    });
-    CleanGhostFill(tqv, 4, 2, true, 0, 1);
+    lzs[0] = CleanSumCells(lxs);
+    lzs[1] = CleanSumCells(lxi);
   }
+  const Real lzw_ = (lzs[1] > 0.0) ? lzs[0]/lzs[1] : 0.0;   // (dOmega)
 
   // face fluxes of the solution
   for (int dir = 0; dir < 3; ++dir) {
@@ -4986,20 +4965,6 @@ void RadiationM1::CleanWriteBack() {
     CleanFor("cln_wbface", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real f = fc(m,CLF_N,k,j,i);
-      if (lzt && dir > 0) {   // (the radiation's share of its two cells' stress torque)
-        CLEAN_HIPX(const CleanArgs &x = *px;)
-        const int kl = k - dk, jl = j - dj;
-        const bool lin = (dir == 1) ? (j > js) : (k > ks);
-        const bool rin = (dir == 1) ? (j <= je) : (k <= ke);
-        const int kg = lin ? k : kl, jg = lin ? j : jl, ko = lin ? kl : k, jo = lin ? jl : j;
-        Real s = 1.0, df = x.c*x.c*CleanCsArm(x, dir, m, k, j, i)*(tqv(m,0,kl,jl,i) +
-                                                                  tqv(m,0,k,j,i));
-        if (!(lin && rin) && x.g(m,CLG_F+7,kg,jg,i) < x.g(m,CLG_F+7,ko,jo,i)) {
-          const int q = CleanCsSlot(x, dir, m, k, j, i, kg, jg, i, false, s)/2;
-          df = s*tqv(m,3+q,kg,jg,i);
-        }
-        f += df;
-      }
       if (slopes) kk(m,tf,k,j,i) = (f - fc(m,CLF_G,k,j,i))/h;
       f0(m,k,j,i) = f;
     });
@@ -5115,8 +5080,8 @@ void RadiationM1::CleanWriteBack() {
       if (lzt) {   // (clean_cs_lz_tel: the gas phi momentum of CleanCsTorque, cln_wbtq)
         Real q[3][3];
         const Real rc = CleanCsFrame(x, m, k, j, i, q);
-        const Real dp = tqv(m,1,k,j,i)/(x.vol(m,k,j,i)*rc) - (q[2][0]*dm[0] +
-                        q[2][1]*dm[1] + q[2][2]*dm[2]);
+        const Real dp = tqv(m,1,k,j,i)/(x.vol(m,k,j,i)*rc) + lzw_*uh(m,IDN,k,j,i)*rc -
+                        (q[2][0]*dm[0] + q[2][1]*dm[1] + q[2][2]*dm[2]);
         for (int n = 0; n < 3; ++n) dm[n] += dp*q[2][n];
         dlz = tqv(m,2,k,j,i);
       }
