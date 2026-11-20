@@ -4484,9 +4484,7 @@ void RadiationM1::CleanStagCsLateral(const int e, const bool st, const int part)
     CleanGhostFill(cln_w, CLW_L, 9, part, 1, {0770, 0707, 0077, 0});
     return;
   }
-  par_for("cln_cslat", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, indcs.ks, indcs.ke,
-          indcs.js, indcs.je, indcs.is, indcs.ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+  auto f = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real p0[6];   // (the cell's own P, once)
     for (int n = 0; n < 6; ++n) p0[n] = x.cs(m,CLN_D11+n,k,j,i)*x.w(m,e,k,j,i);
     for (int q = 0; q < 3; ++q) {
@@ -4533,8 +4531,16 @@ void RadiationM1::CleanStagCsLateral(const int e, const bool st, const int part)
       }
       for (int b = 0; b < 3; ++b) x.w(m,CLW_L+3*q+b,k,j,i) = y[b];
     }
-  });
-  CleanGhostFill(cln_w, CLW_L, 9, 0, 1, {0770, 0707, 0077, 0});   // (as above)
+  };
+  // (the cells it sends first, its exchange in flight behind the inner ones)
+  const bool ov = (cln_hmax >= 9);
+  const std::function<void()> post = [&]() {
+    CleanGhostFill(cln_w, CLW_L, 9, ov ? 1 : 0, 1, {0770, 0707, 0077, 0});   // (as above)
+  };
+  const std::function<void()> fin = [&]() {
+    if (ov) CleanGhostFill(cln_w, CLW_L, 9, 2, 1);
+  };
+  CleanOverlapFor("cln_cslat", pmy_pack, ov, f, fin, -1, post);
 }
 
 //----------------------------------------------------------------------------------------
