@@ -1470,15 +1470,16 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
         const Real eg0 = ug(m,IEN,k,j,i) - ek0 - egr;
         const Real dex = in_(m,M1_T2_EN,k,j,i) - (ek1 - ek0);   // (the gas eint change)
         const Real e0 = u0_(m,M1_E,k,j,i), e1 = e0 + in_(m,M1_T2_E,k,j,i);
-        // (E low: the gas's whole energy increment, exchange and the kinetic energy of
-        // the radiation force's work, if its eint keeps > th of its start, else the
-        // exchange; eint low: the exchange)
+        // (eint low: the exchange; else E low: the gas's whole energy increment, exchange
+        // and the kinetic energy of the radiation force's work, if its eint keeps > th of
+        // its start, else the exchange.  eint first: E's test still holds the face
+        // transport, which FCT limits next, so E low and eint low together is transport)
         const Real den = in_(m,M1_T2_EN,k,j,i);
         Real mv = 0.0;
-        if (e0 > 0.0 && !(e1 > th*e0)) {
-          mv = (den > 0.0 && eg0 - (ek1 - ek0) > th*eg0) ? den : fmax(dex, 0.0);
-        } else if (dex < 0.0 && eg0 > 0.0 && !(eg0 + dex > th*eg0)) {
+        if (dex < 0.0 && eg0 > 0.0 && !(eg0 + dex > th*eg0)) {
           mv = dex;
+        } else if (e0 > 0.0 && !(e1 > th*e0)) {
+          mv = (den > 0.0 && eg0 - (ek1 - ek0) > th*eg0) ? den : fmax(dex, 0.0);
         }
         if (mv == 0.0) return;
         in_(m,M1_T2_EN,k,j,i) -= mv;
