@@ -1,0 +1,21 @@
+<rad_m1> implicit_pos_floor_cons: the E floor's uncovered raise is taken from the radiation of the same column (no energy created)
+<time> dt_retry on: fac 0.5 max 8 ngood 20 grow 1.1 views minimal cap -1
+<time> dt_retry checkpoint: 2423 members, 638 Views (13 copied, 3.008365e+03 MB on rank 0, dt_retry_host: 1.922911e+03 MB of it in pinned host memory): hyd.u0 4.174800e+02 hyd.w0 4.174800e+02 hyd.wder 1.669920e+02 hyd.wtemp 8.349600e+01 m1.esrc 8.349600e+01 m1.f0x1 8.361360e+01 m1.f0x2 8.468880e+01 m1.f0x3 8.468880e+01 m1.t2k1 6.679680e+02 m1.t2pf1 2.504880e+02 m1.u0 3.339840e+02 m1.opac 3.339840e+02 pgen.hs_fsub 5.688000e-03
+CLEAN WARNING cycle 624976: backward-Euler solve not converged (dt_retry, 2 so far; last change inf)
+CLEAN WARNING cycle 624976: backward-Euler solve not converged (dt_retry, 2 so far; last change 1.251e-01)
+CLEAN WARNING cycle 624976: backward-Euler solve not converged (dt_retry, 2 so far; last change 8.593e-05)
+CLEAN WARNING cycle 624976: backward-Euler solve not converged (dt_retry, 2 so far; last change 2.835e-01)
+CLEAN WARNING cycle 624976: backward-Euler solve not converged (dt_retry, 2 so far; last change 6.137e-05)
+CLEAN WARNING cycle 624976: backward-Euler solve not converged (dt_retry, 2 so far; last change 9.866e-05)
+CLEAN WARNING cycle 624976: backward-Euler solve not converged (dt_retry, 2 so far; last change 4.436e-03)
+CLEAN WARNING cycle 624976: backward-Euler solve not converged (dt_retry, 2 so far; last change 5.062e-03)
+CLEAN WARNING cycle 625050: backward-Euler solve not converged (dt_retry, 3 so far; last change 9.343e-04)
+CLEAN WARNING cycle 625050: backward-Euler solve not converged (dt_retry, 3 so far; last change 5.950e-02)
+CLEAN WARNING cycle 625050: backward-Euler solve not converged (dt_retry, 3 so far; last change 2.080e-05)
+CLEAN WARNING cycle 625050: backward-Euler solve not converged (dt_retry, 3 so far; last change 7.644e-05)
+CLEAN WARNING cycle 625050: backward-Euler solve not converged (dt_retry, 3 so far; last change 6.290e-05)
+CLEAN WARNING cycle 625050: backward-Euler solve not converged (dt_retry, 3 so far; last change 2.434e-04)
+CLEAN WARNING cycle 625050: backward-Euler solve not converged (dt_retry, 3 so far; last change 1.686e-04)
+CLEAN WARNING cycle 625050: backward-Euler solve not converged (dt_retry, 3 so far; last change 1.230e-05)
+CLEAN WARNING cycle 625050: backward-Euler solve not converged (dt_retry, 3 so far; last change 2.458e-05)
+### FATAL ERROR: <time> dt_retry: cycle 625050 failed 9 times (max 8), dt 2.678285e-01
