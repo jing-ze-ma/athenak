@@ -230,3 +230,6 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - SDT_s_2 (hpc-sm-02-03): rc=0 wall=99 | cycles 589788 - 589798 | steady 2.725 s/cycle | GPU MiB max 108711 min 107577 | CW a 0 FATAL 0 |  
 - KS001_hg (hpc-sm-02-09): rc=1 wall=412 | cycles 624961 - 624965 | steady 16.647 s/cycle | GPU MiB max 115761 min 114973 | CW a 11 FATAL 1 |  CLEAN KSPLIT lines 3 | CLEAN OLDVEC lines 4 | CLEAN REAL lines 0: 
   FAILED: last 100 lines in caltech_results/KS001_hg/FAIL_tail100.txt
+- LWl_hg (hpc-sm-01-11): rc=0 wall=287 | cycles 624961 - 625001 | steady 5.158 s/cycle | GPU MiB max 115715 min 115169 | CW a 0 FATAL 0 |  real_nb v2 -> caltech_results/LW_real_nb2.txt
+- LS_rsg_r2 (hpc-sm-01-17): rc=134 wall=44 |  | steady  s/cycle | GPU MiB max 113999 min 5 | CW a 0 FATAL 0 |  
+  FAILED: last 100 lines in caltech_results/LS_rsg_r2/FAIL_tail100.txt
