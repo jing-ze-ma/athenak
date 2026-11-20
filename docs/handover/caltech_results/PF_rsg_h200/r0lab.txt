@@ -1,0 +1,4 @@
+cycles 1.5 wall 2437.7 ms/cyc busy 2351.2 idle 86.6 MPI(host) 347.5 sync 2172.3 ms in 1971 calls; launches 9357; cycle-ends(ms) [35383, 647, 2123, 887, 2135, 773, 2176, 703, 2011, 758]
+label  gpu_ms/cyc  n/cyc  nvtx_wall_ms/cyc
+  ?                                                             2323.76  6111.3     0.00
+  ?[MEM]                                                          66.28  3245.3     0.00
