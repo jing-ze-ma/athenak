@@ -969,6 +969,22 @@ std::array<Real, 2> CleanSums(MeshBlockPack *pp, const char *name, const int n,
   return d;
 }
 
+// LZCS STUDY (never merge): component c of a summed over all, top (ie) and bottom (is) cells
+std::array<Real, 3> LzcsSum(MeshBlockPack *pp, const DvceArray5D<Real> &a, const int c) {
+  auto a_ = a;
+  const int is = pp->pmesh->mb_indcs.is, ie = pp->pmesh->mb_indcs.ie;
+  auto t = CleanSums(pp, "lzcs_s", 2,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0, Real &s1) {
+    s0 += a_(m,c,k,j,i);
+    s1 += (i == ie) ? a_(m,c,k,j,i) : 0.0;
+  });
+  auto b = CleanSums(pp, "lzcs_b", 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0, Real &s1) {
+    s0 += (i == is) ? a_(m,c,k,j,i) : 0.0;
+  });
+  return {t[0], t[1], b[0]};
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationM1::CleanSumCells
 //! \brief the sum of a over the active cells (CleanSums)

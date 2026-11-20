@@ -13,6 +13,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <iostream>
 #include <limits>
@@ -45,6 +46,8 @@
 #endif
 
 namespace radm1 {
+std::array<Real, 3> LzcsSum(MeshBlockPack *pp, const DvceArray5D<Real> &a, const int c);
+
 extern bool g_vra_adv;   // vet_rotate_advance (rad_m1_vetgd.cpp)
 // the policy of the heavy per-cell reductions: Kokkos' HIP backend compiles a plain
 // RangePolicy reduction for up to 1024 threads per block, which caps it at 128 VGPRs on
@@ -5024,6 +5027,12 @@ void RadiationM1::CleanWriteBack() {
   DvceArray4D<Real> lzw;
   if (lzb) lzw = ScratchView<DvceArray4D<Real>>("cln_lzw", nmb1 + 1, u0.extent_int(2),
                                                  u0.extent_int(3), u0.extent_int(4));
+  // LZCS STUDY (env LZCS, never merge): the cubed sphere's L_z split per write-back
+  static const bool lzcs_env = (std::getenv("LZCS") != nullptr);
+  const bool lzd = lzcs_env && lzb && x.cub;
+  DvceArray5D<Real> lzq;
+  if (lzd) lzq = DvceArray5D<Real>("lzcs_q", nmb1 + 1, 10, u0.extent_int(2),
+                                   u0.extent_int(3), u0.extent_int(4));
   CleanFor("cln_wbcell", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     CLEAN_HIPX(const CleanArgs &x = *px, &xh = *pxh;)   // (in device memory)
@@ -5066,6 +5075,66 @@ void RadiationM1::CleanWriteBack() {
     if (feedback) {
       Real mg[3], pg[3], rf[3], dlz = 0.0, dz = 0.0;
       CleanStagMomentum(xh, CLW_X, m, k, j, i, dm, mg, &dlz, &dz);
+      if (lzd) {   // (LZCS STUDY)
+        Real q[3][3], cf[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, wf[6] = {0.5, 0.5, 0.5, 0.5, 0.5, 0.5};
+        Real df[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+        const Real rc = CleanCsFrame(xh, m, k, j, i, q), vv = xh.vol(m,k,j,i);
+        const Real ic2 = 1.0/(xh.c*xh.c);
+        for (int n = 0; n < xh.nf; ++n) {
+          CleanMomentumChange(xh, CLW_X, n, m, k, j, i, nullptr, &cf[2*n], &wf[2*n]);
+          for (int sd = 0; sd < 2; ++sd) {
+            const int kf = k + sd*(n == 2), jf = j + sd*(n == 1), iff = i + sd*(n == 0);
+            const Real ff = xh.fs ? xh.fc[n](m,CLF_N,kf,jf,iff)
+                                  : CleanFaceFlux(xh, CLW_X, n, m, kf, jf, iff, true);
+            df[2*n+sd] = ff - xh.fc[n](m,CLF_G,kf,jf,iff);
+          }
+        }
+        const Real hw[6] = {0.5, 0.5, 0.5, 0.5, 0.5, 0.5}, one[6] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+        const Real cr[6] = {cf[0], cf[1], 0.0, 0.0, 0.0, 0.0};
+        const Real dr6[6] = {df[0], df[1], 0.0, 0.0, 0.0, 0.0};
+        Real v1[3], v2[3];
+        CleanStagCsVector(xh, m, k, j, i, cr, hw, v1);
+        CleanStagCsVector(xh, m, k, j, i, dr6, one, v2);
+        const Real gc = (q[2][0]*dm[0] + q[2][1]*dm[1] + q[2][2]*dm[2])*vv*rc;
+        lzq(m,0,k,j,i) = gc;
+        lzq(m,1,k,j,i) = (q[2][0]*v1[0] + q[2][1]*v1[1] + q[2][2]*v1[2])*vv*rc;
+        lzq(m,2,k,j,i) = -dlz - gc;
+        lzq(m,3,k,j,i) = (q[2][0]*v2[0] + q[2][1]*v2[1] + q[2][2]*v2[2])*ic2*vv*rc;
+        Real gf = 0.0, rf = 0.0, sf = 0.0;
+        for (int n = 1; n < xh.nf; ++n) {
+          for (int sd = 0; sd < 2; ++sd) {
+            const int kf = k + sd*(n == 2), jf = j + sd*(n == 1), iff = i + sd*(n == 0);
+            Real nn[3], mm[3];
+            for (int c = 0; c < 3; ++c) {
+              nn[c] = xh.g.At<CLG_N>(m,3*n+c,kf,jf,iff);
+              mm[c] = xh.g.At<CLG_M>(m,3*(n-1)+c,kf,jf,iff);
+            }
+            const Real lam = (mm[0]*nn[1] - mm[1]*nn[0])/xh.area[n](m,kf,jf,iff);
+            const Real tt = (wf[2*n+sd] > 0.0) ? -cf[2*n+sd]/wf[2*n+sd] : 0.0;
+            gf += vv*cf[2*n+sd]*lam;
+            rf += 0.5*vv*df[2*n+sd]*ic2*lam;
+            sf += 0.5*vv*(tt - df[2*n+sd]*ic2)*lam;
+          }
+        }
+        lzq(m,4,k,j,i) = gf;
+        lzq(m,5,k,j,i) = rf;
+        lzq(m,6,k,j,i) = sf;
+        Real pt = 0.0;
+        if (i == ie) {   // (escaping radiation's streaming L_z flux R F_r F_phi/(c^2 E) A h)
+          const Real c6[6] = {f1(m,k,j,i), f1(m,k,j,i+1), f2(m,k,j,i), f2(m,k,j+1,i),
+                              f3(m,k,j,i), f3(m,k+1,j,i)};
+          Real fv[3];
+          CleanStagCellVector(xh, m, k, j, i, c6, fv);
+          const Real fp = q[2][0]*fv[0] + q[2][1]*fv[1] + q[2][2]*fv[2];
+          const Real ee = xh.w(m,CLW_X,k,j,i);
+          const Real rt = rc*xh.x1f(m,i+1)/xh.x1v(m,i);
+          pt = (ee > 0.0) ? -h*xh.ae0(m,k,j,i+1)*rt*f1(m,k,j,i+1)*fp*ic2/ee : 0.0;
+        }
+        lzq(m,7,k,j,i) = pt;
+        lzq(m,8,k,j,i) = dlz;
+        lzq(m,9,k,j,i) = (xh.lzs < 0) ? 0.0 : (h*((i == ie) ? xh.fc[0](m,xh.lzs,k,j,ie+1) : 0.0)
+                         - h*((i == is) ? xh.fc[0](m,xh.lzs,k,j,is) : 0.0));
+      }
       CleanStagGasMomentum(x, uh, m, k, j, i, pg);
       CleanStagRefForce(x, fref, fr, aref, uh(m,IDN,k,j,i), m, k, j, i, rf);
       for (int n = 0; n < 3; ++n) {   // (force_reference)
@@ -5255,6 +5324,15 @@ void RadiationM1::CleanWriteBack() {
       }
     }
   });
+  if (lzd) {   // (LZCS STUDY)
+    for (int c = 0; c < 10; ++c) {
+      const std::array<Real, 3> r = LzcsSum(pmy_pack, lzq, c);
+      if (global_variable::my_rank == 0) {
+        std::printf("LZCS cycle %d t2s %d c %d all %.10e top %.10e bot %.10e\n",
+                    pmy_pack->pmesh->ncycle, t2_solve, c, r[0], r[1], r[2]);
+      }
+    }
+  }
   if (lzb) {   // (the L_z ledger: the stage's L_z as its slope, then booked)
     const Real s = CleanSumCells(lzw);
     if (slopes) (t2_solve == M1_T2S_STAGE1 ? cln_lzs2 : cln_lzs1) = s/h;
