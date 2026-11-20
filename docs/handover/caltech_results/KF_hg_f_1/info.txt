@@ -1,0 +1,1 @@
+TAG=KF_hg_f_1 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_kfw_7ee3e80dd md5=cbd650e73c9150a69cda75bea7713f46 RST=/resnick/groups/carnegie_poc/jingze/hgglob_1021/prodG/rst/hegiant.00139.rst N0=624961 NC=20 MODE=speed HOLDER=6133592 NODE=hpc-sm-01-17 NR=4 ENVX= EX=
