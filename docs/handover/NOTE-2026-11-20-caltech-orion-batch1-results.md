@@ -496,3 +496,8 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - BFX11_rsg (hpc-sm-02-04): rc=1 wall=1647 | cycles 589788 - 589952 | steady 8.377 s/cycle | GPU MiB max 108943 min 107973 | CW a 31 FATAL 1 |   | CW kinds:  17 cycl : backwardulr solv not convrgd (dt_; 14 cycl ts : stag solv faild, th stp is rd; | dt_retry lines 20 | energy created lines 1
   FAILED: last 100 lines in caltech_results/BFX11_rsg/FAIL_tail100.txt
 - BFX13_rsg (hpc-sm-01-11): rc=0 wall=2299 | cycles 589788 - 590088 | steady 7.433 s/cycle | GPU MiB max 108943 min 107973 | CW a 50 FATAL 0 |   | CW kinds:  23 cycl : backwardulr solv not convrgd (dt_; 27 cycl ts : stag solv faild, th stp is rd; | dt_retry lines 30 | energy created lines 3
+- (15:12) Got 4c31e5bc0 / 2d25ed1f6 / c78033d3a:
+  * CET1_rsg OOM explained: a second runner started TG4_rsg on 02-11 at the same second (15:00:22), so two arms shared the node. That runner is now stopped (one scheduler only). CET1_rsg is requeued; 02-04 and 01-11 were checked idle (nvidia-smi 0 MiB on all GPUs) and are running TGF_rsg and V203L_rsg now.
+  * BFX11_rsg / BFX13_rsg had finished (13:14-13:50) but their END markers were lost when an older runner was stopped; posted now.
+  * converr.sh runs automatically in a holder step (01-11, -c 8) when all 14 CONVERR arms are done; its four text files go to caltech_results/CONVERR/, then the CONVERR bins are deleted.
+  * FRESHGO: waiting for the NOTE. Its 6 smoke arms will go to the head and preempt CONVERR / LF seeds / EW / L2 / LX if needed (logged). Fresh production: prepared only; nothing launches until orion's explicit go NOTE AND the user's confirmation through the coordinator.
