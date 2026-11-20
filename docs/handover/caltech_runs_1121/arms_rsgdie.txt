@@ -3,3 +3,7 @@
 FINALRST=1 NR=4 R_LF  B_v201e RSG 2911 rsg_v20.keys hydro/floor_pay=rad_column rad_m1/clean_nl_print=true
 # R_off: L1_rsg_off + clean_nl_print, to cycle 590195 (covers off's 6-retry cascade at 590188).
 FINALRST=1 NR=4 R_off B_v201e RSG 407 rsg_v20.keys rad_m1/clean_nl_print=true
+# added NOTE dm: B_rsgdie = caltech-runs/rsgdie f1855eaa8dcbd094168fcee6790dc2236b7e6d23 (v20.2 f4cefb181 + rad_m1/clean_retry_budget (default off = bitwise) + diagnostic CLEAN WORST line). BUILD NOW.
+# Run once R_LF's dump at cycle 592690 exists: restart FROM THAT DUMP (not rsg.01295), NC 30, LF_rsg keys.
+FINALRST=0 NR=4 RST=<R_LF dump at 592690> RA_on  B_rsgdie RSG 30 rsg_v20.keys hydro/floor_pay=rad_column rad_m1/clean_retry_budget=true rad_m1/clean_nl_print=true
+FINALRST=0 NR=4 RST=<R_LF dump at 592690> RA_off B_rsgdie RSG 30 rsg_v20.keys hydro/floor_pay=rad_column rad_m1/clean_retry_budget=false rad_m1/clean_nl_print=true
