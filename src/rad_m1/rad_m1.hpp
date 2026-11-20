@@ -3404,6 +3404,7 @@ class RadiationM1 {
   bool cln_conv_est = false;    // clean_conv_est: stop on the estimated remaining change
   int cln_cdf = 0;   // clean_conv_df: the F solve's change in the E row's norm (1 print, 2 test)
   DvceArray4D<Real> cln_cdfa;   // (clean_conv_df: h div F of the last F solve)
+  bool cln_ewoff = false;   // clean_ew_off (study): the budget's linear solves to 0.1 tolb
   bool cln_xsticky = false;   // clean_xt_sticky: a cell's secant chord kept for the stage
   DvceArray4D<Real> cln_xsf;   // (clean_xt_sticky: 1 once the stage took the secant)
   bool cln_budget = false;      // clean_conv = budget (staggered default): CleanSolve

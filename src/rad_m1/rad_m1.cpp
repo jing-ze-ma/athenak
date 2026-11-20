@@ -616,6 +616,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_xt_sticky (study, default false): a cell whose exchange took the secant chord
     // through T_o keeps it for the rest of the stage solve (while T > T_o), so the choice
     // cannot switch back and forth between passes (a period-3 Picard cycle at tight tol)
+    if (pin->DoesParameterExist("rad_m1","clean_ew_off")) {
+      cln_ewoff = pin->GetBoolean("rad_m1","clean_ew_off");
+    }
     if (pin->DoesParameterExist("rad_m1","clean_xt_sticky")) {
       cln_xsticky = pin->GetBoolean("rad_m1","clean_xt_sticky");
     }
