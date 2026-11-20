@@ -3,3 +3,6 @@ FINALRST=0 ENVX=PROF_U=1 AB9_rsg  B_eleak RSG 6 rsg_v20.keys rad_m1/dbg_energy_a
 FINALRST=0 ENVX=PROF_U=1 AB9o_rsg B_eleak RSG 6 rsg_v20.keys rad_m1/dbg_energy_audit=true output1/dt=1 hydro/floor_audit=1
 # if time allows: restart bitwise (3+3)
 FINALRST=1 MODE=rt NH=3 ENVX=PROF_U=1 AB9rt_rsg B_eleak RSG 6 rsg_v20.keys rad_m1/dbg_energy_audit=true output1/dt=1 hydro/floor_pay=rad_column hydro/floor_audit=1
+# added 2026-11-20 (NOTE aq): B_eleak2 = caltech-runs/eleak at 8d8ed6e27. Low-medium priority (after v20l gate).
+FINALRST=0 ENVX=PROF_U=1 AB10_hg  B_eleak2 HG 6 hg_v20.keys rad_m1/dbg_energy_audit=true output1/dt=1 hydro/floor_pay=rad_column hydro/floor_audit=1
+FINALRST=0 ENVX=PROF_U=1 AB10o_hg B_eleak2 HG 6 hg_v20.keys rad_m1/dbg_energy_audit=true output1/dt=1 hydro/floor_audit=1
