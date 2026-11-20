@@ -1,0 +1,6 @@
+window cycles 1.5  syncs/cyc 3397 (2206 ms)  launches/cyc 6129
+kinds {'cudaStreamSynchronize': 1503, 'cudaEventSynchronize': 1218, 'cudaDeviceSynchronize': 571, 'cudaMemcpy': 103, 'cudaMemcpyToSymbol': 1}
+label                                                         sync/cy    ms/cy launch/cy
+?                                                                3397   2206.2     6129
+--- top launches
+?                                                                6129     3397
