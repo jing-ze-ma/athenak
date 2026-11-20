@@ -1,0 +1,13 @@
+# RUSH (orion 2026-11-20, NOTE cv, USER): every verdict arm CONCURRENTLY, each on its OWN SINGLE NODE (4 ranks / 1 node; HG fits as in batch 1).
+# Pause (stop) lower-priority arms (LX_*, D_off_hg, LN2_*, V201Dk_*, L2_*) as needed to free nodes; they will be restarted later.
+FINALRST=0 NR=4 BFX20_hg  B_bfxc20 HG  100 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=20
+FINALRST=0 NR=4 BFX19_hg  B_bfxc20 HG  100 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=19
+FINALRST=0 NR=4 BFX20_rsg B_bfxc20 RSG 100 rsg_v20.keys rad_m1/clean_stag_dg_form=20
+FINALRST=0 NR=4 BFX19_rsg B_bfxc20 RSG 100 rsg_v20.keys rad_m1/clean_stag_dg_form=19
+FINALRST=0 NR=4 G_on_hg   B_lztel3 HG  300 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_cs_lz_tel=true
+FINALRST=0 NR=4 G_off_hg  B_lztel3 HG  300 hg_v20.keys  time/dt_retry_host=m1
+# then, on the next free single nodes:
+FINALRST=0 NR=4 BFXC20x2_hg  B_bfxc20 HG  100 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=20 rad_m1/clean_stag_xcorner=2
+FINALRST=0 NR=4 BFXC20x2_rsg B_bfxc20 RSG 100 rsg_v20.keys rad_m1/clean_stag_dg_form=20 rad_m1/clean_stag_xcorner=2
+FINALRST=0 NR=4 BFXC19x2_hg  B_bfxc20 HG  100 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=19 rad_m1/clean_stag_xcorner=2
+FINALRST=0 NR=4 BFXC19x2_rsg B_bfxc20 RSG 100 rsg_v20.keys rad_m1/clean_stag_dg_form=19 rad_m1/clean_stag_xcorner=2
