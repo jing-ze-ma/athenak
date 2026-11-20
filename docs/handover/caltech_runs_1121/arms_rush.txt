@@ -4,8 +4,8 @@ FINALRST=0 NR=4 BFX20_hg  B_bfxc20 HG  100 hg_v20.keys  time/dt_retry_host=m1 ra
 FINALRST=0 NR=4 BFX19_hg  B_bfxc20 HG  100 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=19
 FINALRST=0 NR=4 BFX20_rsg B_bfxc20 RSG 100 rsg_v20.keys rad_m1/clean_stag_dg_form=20
 FINALRST=0 NR=4 BFX19_rsg B_bfxc20 RSG 100 rsg_v20.keys rad_m1/clean_stag_dg_form=19
-FINALRST=0 NR=4 G_on_hg   B_lztel3 HG  300 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_cs_lz_tel=true
-FINALRST=0 NR=4 G_off_hg  B_lztel3 HG  300 hg_v20.keys  time/dt_retry_host=m1
+FINALRST=0 NR=4 G_on_hg   B_lztel3 HG  600 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_cs_lz_tel=true
+FINALRST=0 NR=4 G_off_hg  B_lztel3 HG  600 hg_v20.keys  time/dt_retry_host=m1
 # then, on the next free single nodes:
 FINALRST=0 NR=4 BFXC20x2_hg  B_bfxc20 HG  100 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=20 rad_m1/clean_stag_xcorner=2
 FINALRST=0 NR=4 BFXC20x2_rsg B_bfxc20 RSG 100 rsg_v20.keys rad_m1/clean_stag_dg_form=20 rad_m1/clean_stag_xcorner=2
