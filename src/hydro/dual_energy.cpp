@@ -75,8 +75,9 @@ void DualEnergy::Read(ParameterInput *pin, const std::string &block, const EOS_D
   }
   if (global_variable::my_rank == 0) {
     std::cout << "<" << blk << "> duale-1112: dual_energy " << on << " (eta " << eta
-              << ", slots " << iden << "," << ivol << ") floor_pay " << (pay ? "rad" :
-              "none") << " fofc_retest " << retest << " floor_audit " << report
+              << ", slots " << iden << "," << ivol << ") floor_pay "
+              << (pay ? (pcol ? "rad_column" : "rad") : "none")
+              << " fofc_retest " << retest << " floor_audit " << report
               << std::endl;
   }
 }
@@ -377,8 +378,12 @@ void DualPayFromRad(MeshBlockPack *pp, DualEnergy &de, DvceArray5D<Real> &urad,
           const Real at = aa + ab;
           if (!(at > 0.0)) continue;
           const Real tk = fmin(def, at);
-          if (aa > 0.0) urad(m,ie,k,j,qa) = fmax(urad(m,ie,k,j,qa) - (tk*aa/at)/vol(qa), efl);
-          if (ab > 0.0) urad(m,ie,k,j,qb) = fmax(urad(m,ie,k,j,qb) - (tk*ab/at)/vol(qb), efl);
+          if (aa > 0.0) {
+            urad(m,ie,k,j,qa) = fmax(urad(m,ie,k,j,qa) - (tk*aa/at)/vol(qa), efl);
+          }
+          if (ab > 0.0) {
+            urad(m,ie,k,j,qb) = fmax(urad(m,ie,k,j,qb) - (tk*ab/at)/vol(qb), efl);
+          }
           def -= tk;
           sp += tk/ch_cl;
         }
