@@ -372,3 +372,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   progress 09:17: L1_hg_off:626039(CW 10) L1_hg_on:626193(CW 2) L1_rsg_off:590836(CW 15) L1_rsg_on:590861(CW 12)
 - RZ3ll001_hg (hpc-sm-02-04): rc=1 wall=432 | cycles 624961 - 624965 | steady 18.557 s/cycle | GPU MiB max 116241 min 115453 | CW a 11 FATAL 1 |  CW 11 | retry 20 | last CLEAN REAL cycle: CLEAN REAL cycle 624964 | faces 205357056: F^H/(c maxE) >1 15058017 >10 213974 max 9.991e+02 | Phi/(c maxE) >1 5439 >10 0 max 4.895e+00 | cells 69206016: |Fcell|/(cE) >1 16056047 >10 219761 max 5.288e+04 (>10 at floor 1)
   FAILED: last 100 lines in caltech_results/RZ3ll001_hg/FAIL_tail100.txt
+- (09:29) Got bbe664a78: RZ3m_rsg (rz3b) added at the end of the RZ3b list on 02-04 / 02-16.
+- L1_hg_on (hpc-sm-02-09,hpc-sm-02-10): rc=0 wall=4295 | cycles 624961 - 626461 | steady 2.825 s/cycle | GPU MiB max 60491 min 59789 | CW a 2 FATAL 0 |  CW 2 | retry 7 | last cycle cycle=626461
