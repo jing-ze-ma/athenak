@@ -313,7 +313,12 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/time2_k1_*", nullptr}, {"rad_m1/time2_face_fct*", nullptr},
     {"time/dt_retry_t2_be", nullptr},
     {"rad_m1/time2_accept_fallback", ""}, {"rad_m1/time2_posfix*", ""},
-    {"rad_m1/time2_inc_kecap", ""}};
+    {"rad_m1/time2_inc_kecap", ""},
+    // (the implicit solve's admissibility and dt_retry position limiters, its Zalesak
+    // round cap, the vet_col lateral posfix and the x2 vet fields: none under clean)
+    {"rad_m1/time2_adm_poslim", ""}, {"rad_m1/time2_dtr_poslim", ""},
+    {"rad_m1/zalesak_cap_rounds", ""}, {"rad_m1/vet_col_lat_posfix", ""},
+    {"rad_m1/time2_vet_x2_fields", ""}};
   const bool say = (global_variable::my_rank == 0);
   std::string none;
   std::vector<std::string> drop;
