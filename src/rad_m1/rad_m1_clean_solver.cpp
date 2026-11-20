@@ -95,6 +95,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.fre = cln_freal;
   x.fdg = cln_fdg;
   x.xq = cln_xd_on ? cln_xqs : -1;
+  x.xc = cln_xcs;
   x.kq = cln_kq_on ? cln_kqs : -1;
   x.kt = (cln_kq_on && cln_kmode == 4) ? cln_ktau : 0.0;
   x.pd = cln_kq_on || (cln_xpat && cln_wo_nc > CLW_PD - CLW_NS);

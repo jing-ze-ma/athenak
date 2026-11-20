@@ -501,7 +501,9 @@ void RadiationM1::CleanInit() {
   cln_fdg = (!cln_cell && cln_consist) ? nfc : -1;
   cln_xqs = cln_xd ? nfc + (cln_fdg >= 0) : -1;   // (clean_stag_xdonor's q)
   cln_kqs = cln_kpos ? nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0) : -1;   // (kpos: q)
-  const int nfx = nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0) + (cln_kpos ? 2 : 0);
+  const int nfx0 = nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0) + (cln_kpos ? 2 : 0);
+  cln_xcs = cln_xcn ? nfx0 : -1;   // (clean_stag_xcorner: excess, t, code)
+  const int nfx = nfx0 + (cln_xcn ? 3 : 0);
   if (cln_kpos || cln_xpat) {
     Kokkos::realloc(cln_kcnt, 2);
     Kokkos::deep_copy(cln_kcnt, 0.0);
@@ -2665,7 +2667,84 @@ static Real CleanStagAdvFace(const CleanArgs &x, const CleanArgs &xh, const int 
 //! (CleanApply, CleanStagBetaE) and B the same at E_k: the solution is that of the lagged
 //! terms
 
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagXCorner
+//! \brief clean_stag_xcorner: the face source a face f's donor d cannot carry under
+//! clean_stag_xsrc (its excess X = |S| - c E_old,d past q = c, CleanStagXSplit) is the
+//! rays' flux of a beam that only crosses a corner of d: it enters d from the lit cell u
+//! across a transverse face g of d and leaves through f within the step.  So f carries
+//! the excess as t E_u, the coefficient of the cell that feeds it:
+//!   t = min(X/E_old,u, a_g (A_g/A_f) X/X_d),
+//! a_g > 0 the coefficient of E_u in g's flux into d (CleanFaceWeights, the operator's
+//! own), X_d the sum of the excesses of d's outflow faces, g the transverse face of the
+//! largest inflow a_g A_g E_old,u.  d's row keeps its M-matrix (its E_u coefficient
+//! a_g A_g - t A_f >= 0 into d), r's gets t A_f E_u (an inflow), and u's is unchanged:
+//! conservative and positive by construction; at E = E_old f carries S where t is not
+//! capped.  Faces on a MeshBlock boundary or with g on a physical boundary carry none
+//! (u is then a ghost the other block cannot see); the code 2 b + s of g in slot xc + 2.
+
 #if M1_TU_PART(1)
+void RadiationM1::CleanStagXCorner() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanArgs x = CleanMakeArgs();
+  CLEAN_HIPX(const CleanArgs *px = CleanDevArgs(x, 0);)
+  for (int dir = 0; dir < x.nf; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    CleanFor("cln_xcorner", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      CLEAN_HIPX(const CleanArgs &x = *px;)   // (in device memory: no per-thread copy)
+      const auto &f = x.fc[dir];
+      const int xc = x.xc;
+      const Real xf = f(m,xc,k,j,i);
+      const int pos = (dir == 0) ? i : ((dir == 1) ? j : k);
+      const int lo = (dir == 0) ? x.is : ((dir == 1) ? x.js : x.ks);
+      const int hi = (dir == 0) ? x.ie + 1 : ((dir == 1) ? x.je + 1 : x.ke + 1);
+      f(m,xc+1,k,j,i) = 0.0;
+      f(m,xc+2,k,j,i) = 0.0;
+      if (xf == 0.0 || pos == lo || pos == hi) return;
+      const int dn = (xf > 0.0);   // (donor d: left)
+      const int kd = k - dn*dk, jd = j - dn*dj, id = i - dn*di;
+      // (X_d: the excesses of d's outflow faces)
+      Real xd = 0.0;
+      for (int b = 0; b < x.nf; ++b) {
+        for (int s = 0; s < 2; ++s) {
+          const Real e = x.fc[b](m,xc,kd+s*(b == 2),jd+s*(b == 1),id+s*(b == 0));
+          if ((s == 1 && e > 0.0) || (s == 0 && e < 0.0)) xd += fabs(e);
+        }
+      }
+      Real best = 0.0, ag = 0.0, eu = 0.0;
+      int code = -1;
+      for (int b = 0; b < x.nf; ++b) {
+        if (b == dir) continue;
+        for (int s = 0; s < 2; ++s) {
+          const int kg = kd + s*(b == 2), jg = jd + s*(b == 1), ig = id + s*(b == 0);
+          if (CleanBoundaryFace(x, b, m, kg, jg, ig)) continue;
+          Real al, ar;
+          CleanFaceWeights(x, b, m, kg, jg, ig, al, ar);
+          const Real a = (s == 0 ? al : -ar)*CleanDivW(x, b, m, kd, jd, id, s);
+          const int sg = 2*s - 1;
+          const Real e = x.w(m,CLW_EO,kd+sg*(b == 2),jd+sg*(b == 1),id+sg*(b == 0));
+          if (a > 0.0 && e > 0.0 && a*e > best) {
+            best = a*e;
+            ag = a;
+            eu = e;
+            code = 2*b + s;
+          }
+        }
+      }
+      if (code < 0) return;
+      const Real af = CleanDivW(x, dir, m, kd, jd, id, dn);
+      const Real t = fmin(fabs(xf)/eu, ag/af*fabs(xf)/xd);
+      f(m,xc+1,k,j,i) = (xf > 0.0) ? t : -t;
+      f(m,xc+2,k,j,i) = static_cast<Real>(code);
+    });
+  }
+}
+
 void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
@@ -2751,6 +2830,7 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
       if (af) x.fc[n](m,CLF_PT,k,j,i) = CleanStagAdvFace(x, xh, n, m, k, j, i);
     }
   });
+  if (x.xq >= 0 && x.xc >= 0) CleanStagXCorner();   // (the excesses of the split above)
   // (clean_stag_xdonor diagnostic: the row's terms, CleanStagXCount; clean_nl_print only)
   const bool xdd = cln_xd && cln_nlprint;
   if (xdd && cln_xdg.extent_int(0) < nmb1 + 1) {

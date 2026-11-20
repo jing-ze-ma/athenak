@@ -361,6 +361,8 @@ struct CleanArgs {
   int xq;                      // staggered, clean_stag_xdonor: face slots qL, qR of the
                                // lagged fluxes' donor part, their explicit part, C(E_k)
                                // (-1: the central cross flux)
+  int xc;                      // staggered, clean_stag_xcorner: face slots of the excess,
+                               // t and its code (-1: none; with xq only)
   bool pd;                     // staggered, kpos / xpat: the rows' diagonal CLW_PD
   Real kt;                     // staggered, clean_stag_kpos = delta: tau/h, the slopes'
                                // linear face flux tau (al E_L + ar E_R) implicit
@@ -1359,6 +1361,22 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void CleanXCornerCell
+//! \brief clean_stag_xcorner: the cell u whose E carries face (k,j,i)'s corner flux t E_u
+//! (CleanStagXCorner): the donor d (left for t > 0) and from it across its transverse
+//! face of code 2 b + s (slot xc + 2), u = d + (2 s - 1) e_b
+
+KOKKOS_INLINE_FUNCTION
+void CleanXCornerCell(const CleanArgs &x, const int dir, const int m, const int k,
+                      const int j, const int i, const Real t, int &uk, int &uj, int &ui) {
+  const int c = static_cast<int>(x.fc[dir](m,x.xc+2,k,j,i)), b = c/2, sg = 2*(c%2) - 1;
+  const int dn = (t > 0.0);
+  uk = k - dn*(dir == 2) + sg*(b == 2);
+  uj = j - dn*(dir == 1) + sg*(b == 1);
+  ui = i - dn*(dir == 0) + sg*(b == 0);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanStagXSplit
 //! \brief clean_stag_xdonor: the lagged fluxes of face (k,j,i) normal to dir for the pass,
 //! the cross flux C(E_k) (CleanStagXDonor, slot xq + 3) and the face source S (xr: as it
@@ -1378,7 +1396,7 @@ void CleanStagXSplit(const CleanArgs &x, const CleanArgs &xr, const int dir, con
                      const int k, const int j, const int i) {
   const auto &f = x.fc[dir];
   const Real sr = CleanFaceSource(xr, dir, m, k, j, i);
-  Real ql = 0.0, qr = 0.0, ex = 0.0;
+  Real ql = 0.0, qr = 0.0, ex = 0.0, xs = 0.0;   // (xs: xcorner's excess, signed)
   if (CleanBoundaryFace(x, dir, m, k, j, i)) {
     ex = sr;
   } else {
@@ -1406,6 +1424,8 @@ void CleanStagXSplit(const CleanArgs &x, const CleanArgs &xr, const int dir, con
       const int e = src ? CLW_EO : CLW_EK;
       const Real ed = up ? x.w(m,e,kl,jl,il) : x.w(m,e,k,j,i);
       const Real q = (fabs(li) < x.c*ed) ? fabs(li)/ed : x.c;
+      if (src && q == x.c) xs += up ? fabs(li) - x.c*fmax(ed, 0.0) :
+                                      x.c*fmax(ed, 0.0) - fabs(li);
       if (up) ql += q;
       if (!up) qr -= q;
     };
@@ -1427,6 +1447,7 @@ void CleanStagXSplit(const CleanArgs &x, const CleanArgs &xr, const int dir, con
   f(m,x.xq,k,j,i) = ql;
   f(m,x.xq+1,k,j,i) = qr;
   f(m,x.xq+2,k,j,i) = ex;
+  if (x.xc >= 0) f(m,x.xc,k,j,i) = xs;
 }
 
 //----------------------------------------------------------------------------------------
@@ -1443,6 +1464,14 @@ Real CleanFaceFlux(const CleanArgs &x, const int e, const int dir, const int m,
   Real f = CleanFaceCross(x, e, dir, m, k, j, i);
   if (al != 0.0) f += al*x.w(m,e,kl,jl,il);
   if (ar != 0.0) f += ar*x.w(m,e,k,j,i);
+  if (x.xc >= 0 && x.xq >= 0 && !x.hi) {   // (clean_stag_xcorner: t E_u, CleanStagXCorner)
+    const Real t = x.fc[dir](m,x.xc+1,k,j,i);
+    if (t != 0.0) {
+      int uk, uj, ui;
+      CleanXCornerCell(x, dir, m, k, j, i, t, uk, uj, ui);
+      f += t*x.w(m,e,uk,uj,ui);
+    }
+  }
   if (with_source) f += CleanFaceSource(x, dir, m, k, j, i, &phi);
   return f;
 }
@@ -1605,6 +1634,14 @@ void CleanStFace(const CleanArgs &x, const int m, const int k, const int j, cons
   const Real wd = (SD ? x.h : -x.h)*CleanDivW(x, D, m, k, j, i, SD);
   c[CleanStSlot((SD - 1)*ek, (SD - 1)*ej, (SD - 1)*ei)] += wd*x.fc[D](m,CLF_QL,kf,jf,iff);
   c[CleanStSlot(SD*ek, SD*ej, SD*ei)] += wd*x.fc[D](m,CLF_QL+1,kf,jf,iff);
+  if (x.xc >= 0 && x.xq >= 0) {   // (clean_stag_xcorner: t E_u, CleanFaceFlux)
+    const Real t = x.fc[D](m,x.xc+1,kf,jf,iff);
+    if (t != 0.0) {
+      int uk, uj, ui;
+      CleanXCornerCell(x, D, m, kf, jf, iff, t, uk, uj, ui);
+      c[CleanStSlot(uk - k, uj - j, ui - i)] += wd*t;
+    }
+  }
   // (the cubed sphere's lateral stress comes through its sums Y, CleanApply)
   if (!x.multi_d || x.cub || CleanBoundaryFace(x, D, m, kf, jf, iff)) return;
   const Real cr = wd*x.fc[D](m,CLF_QL+2,kf,jf,iff);

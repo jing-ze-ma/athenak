@@ -3322,6 +3322,13 @@ class RadiationM1 {
   // donor-cell coefficient of its face (CleanStagXDonor); its face slot, set in a solve
   bool cln_xd = false, cln_xd_on = false, cln_xlag = false, cln_xsrc = false;
   bool cln_xsw = false;
+  // clean_stag_xcorner (xsrc): a face source past the donor's c E_old carried out of the
+  // donor in proportion to E of the cell feeding it across a transverse face
+  // (CleanStagXCorner); 2 face slots, the excess and the coefficient t (code in its sign
+  // and a third slot)
+  bool cln_xcn = false;
+  int cln_xcs = -1;
+  void CleanStagXCorner();
   int cln_xqs = -1;   // (5 slots: qL >= 0, qR <= 0, the lagged explicit flux, C(E_k),
                     //  C's last change)
   Real cln_xd_ncap = 0.0;

@@ -376,6 +376,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_xlag = (xd == "lag");
       cln_xsrc = cln_xd && stag("clean_stag_xsrc", false);
       cln_xsw = cln_xd && stag("clean_stag_xsweep", false);
+      // clean_stag_xcorner (default off; xsrc only, not on the cubed sphere): the face
+      // source past c E_old of a sub-cell beam's dark donor out of it in proportion to E
+      // of the lit cell that feeds it (CleanStagXCorner)
+      cln_xcn = stag("clean_stag_xcorner", false);
+      if (cln_xcn && (!cln_xsrc || pmy_pack->pmesh->use_cubed_sphere)) {
+        std::cout << "### FATAL ERROR <rad_m1>/clean_stag_xcorner needs clean_stag_xsrc "
+                  << "(and no cubed sphere)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
       // clean_stag_kpos = off (default) | faces (= true) | cell | redo: the stage increment
       // in MPRK form (CleanStagKPos): faces, every slope face flux and the cell part
       // moved; cell, the cell part and the x1 boundary only, the face fluxes explicit;
