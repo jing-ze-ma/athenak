@@ -1,0 +1,1 @@
+/resnick/groups/carnegie_poc/jingze/orion_runs_1121/LV_ref300k01_rsg/a/run.log: stages 600 passes mean 5.98 max 17 sum 3590 CW 0 | t2s2 7.80/17 t2s3 4.16/6
