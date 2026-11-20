@@ -1997,11 +1997,11 @@ void RadiationM1::VetGdCsSweep() {
     const char *el = std::getenv("VGD_CS_LB");
     // defaults-1031: 6 (VGD_CS_LB=0: old launch); d6fast2-1112: 2 on HIP, where the
     // bound is min waves per EU and 6 spilled the body (HG small cs deck 13083259: vet_gd
-    // sweeps 5.08 -> 2.73 s, outputs bitwise)
+    // sweeps 5.08 -> 2.73 s, outputs bitwise); 8 on CUDA (H200 RSG -1.1 %, HG -0.8 %, bitwise)
 #if defined(KOKKOS_ENABLE_HIP)
     s_lb = (el != nullptr) ? std::atoi(el) : 2;
 #else
-    s_lb = (el != nullptr) ? std::atoi(el) : 6;
+    s_lb = (el != nullptr) ? std::atoi(el) : 8;
 #endif
   }
   VetGdRingSweepBegin(two || xffs);   // (xffuse-1113: the other set's array second)
