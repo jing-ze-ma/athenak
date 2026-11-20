@@ -2675,9 +2675,9 @@ static Real CleanStagAdvFace(const CleanArgs &x, const CleanArgs &xh, const int 
 //! rays' flux of a beam that only crosses a corner of d: it enters d from the lit cell u
 //! across a transverse face g of d and leaves through f within the step.  So f carries
 //! the excess as t E_u, the coefficient of the cell that feeds it:
-//!   t = min(X/E_old,u, a_g (A_g/A_f) X/X_d),
+//!   t = min(X/E_old,u, a_g (A_g/A_f) X/X_d,b),
 //! a_g > 0 the coefficient of E_u in g's flux into d (CleanFaceWeights, the operator's
-//! own), X_d the sum of the excesses of d's outflow faces, g the transverse face of the
+//! own), X_d,b the sum of the excesses of d's outflow faces not normal to b (g's), g the transverse face of the
 //! largest inflow a_g A_g E_old,u.  d's row keeps its M-matrix (its E_u coefficient
 //! a_g A_g - t A_f >= 0 into d), r's gets t A_f E_u (an inflow), and u's is unchanged:
 //! conservative and positive by construction; at E = E_old f carries S where t is not
@@ -2709,12 +2709,14 @@ void RadiationM1::CleanStagXCorner() {
       if (xf == 0.0 || pos == lo || pos == hi) return;
       const int dn = (xf > 0.0);   // (donor d: left)
       const int kd = k - dn*dk, jd = j - dn*dj, id = i - dn*di;
-      // (X_d: the excesses of d's outflow faces)
-      Real xd = 0.0;
-      for (int b = 0; b < x.nf; ++b) {
+      // (X_d,b: the excesses of d's outflow faces normal to n != b, those that may take a
+      // face g normal to b)
+      Real xd[3] = {0.0, 0.0, 0.0};
+      for (int n = 0; n < x.nf; ++n) {
         for (int s = 0; s < 2; ++s) {
-          const Real e = x.fc[b](m,xc,kd+s*(b == 2),jd+s*(b == 1),id+s*(b == 0));
-          if ((s == 1 && e > 0.0) || (s == 0 && e < 0.0)) xd += fabs(e);
+          const Real e = x.fc[n](m,xc,kd+s*(n == 2),jd+s*(n == 1),id+s*(n == 0));
+          if (!((s == 1 && e > 0.0) || (s == 0 && e < 0.0))) continue;
+          for (int b = 0; b < 3; ++b) xd[b] += (b != n) ? fabs(e) : 0.0;
         }
       }
       Real best = 0.0, ag = 0.0, eu = 0.0;
@@ -2739,7 +2741,7 @@ void RadiationM1::CleanStagXCorner() {
       }
       if (code < 0) return;
       const Real af = CleanDivW(x, dir, m, kd, jd, id, dn);
-      const Real t = fmin(fabs(xf)/eu, ag/af*fabs(xf)/xd);
+      const Real t = fmin(fabs(xf)/eu, ag/af*fabs(xf)/xd[code/2]);
       f(m,xc+1,k,j,i) = (xf > 0.0) ? t : -t;
       f(m,xc+2,k,j,i) = static_cast<Real>(code);
     });
