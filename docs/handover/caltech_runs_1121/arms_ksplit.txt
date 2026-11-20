@@ -20,3 +20,5 @@ FINALRST=0 KX001e_hg B_ksplit6 HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/cl
 # added 2026-11-20 (NOTE be): B_ksplit7 = caltech-runs/ksplit at 324176605. Replaces KX001e_hg if not started. In order:
 FINALRST=0 KX1f_hg   B_ksplit7 HG 6  hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/time2_k1_xlim=0.1
 FINALRST=0 KX001f_hg B_ksplit7 HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true rad_m1/time2_k1_xlim=0.1 rad_m1/clean_conv_kappa=0.01
+# added 2026-11-20 (NOTE bi): B_ksplitdiag = caltech-runs/ksplitdiag 0de311cd9. After KX1f_hg, before KX001f_hg.
+FINALRST=0 KD001_hg B_ksplitdiag HG 5 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_k1_xlim=0.1 rad_m1/clean_conv_kappa=0.01
