@@ -2334,6 +2334,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                   << " vacuum or extrap" << std::endl;
         std::exit(EXIT_FAILURE);
       }
+    } else if (vgd_on && clean && pmy_pack->pmesh->use_spherical_polar &&
+               !pmy_pack->pmesh->use_polar_boundary) {
+      // gdcheck-1120 (unnamed, scheme = clean): the rays' theta walls follow the mesh: a
+      // reflecting wall mirrors (as CleanFvWalls), a periodic one wraps (was CleanInit,
+      // which overrode a named vet_gd_theta_wall)
+      vgd_thmir = (cln_rfv == 0) && (pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x2] ==
+                                     BoundaryFlag::reflect);
     }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_seam_mask")) {
       vgd_seam = std::max(0, pin->GetInteger("rad_m1","vet_gd_seam_mask"));

@@ -682,13 +682,7 @@ void RadiationM1::CleanInit() {
                  "cell, clean_closure = sphere (no clean_consistency) or closure = "
                  "vet_col with vet_gd (vet_gd_twin = false, no vet_gd_async)");
     }
-    // the rays' theta walls follow the mesh: a reflecting wall mirrors (the conservative
-    // transport reflects specularly, CleanFvWalls), a periodic one wraps
-    if (vgd_on && !pm->use_polar_boundary) {
-      vgd_thmir = (cln_rfv == 0) &&
-                  (pm->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::reflect);
-      vgd_thvac = 0;
-    }
+    // (the rays' theta walls: rad_m1.cpp, vet_gd_theta_wall or, unnamed, the mesh's walls)
     // (the sweep starts at the first shell, the constructor's vlat_taucut)
     // (implicit_flux_beam = halfrange has no effect here: no clean solve reads the
     // half-range ratios vgd_hr, so they are neither made nor checkpointed)
