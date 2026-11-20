@@ -1,0 +1,7 @@
+# LEAN2 gate (orion 2026-11-20, NOTE ch). Priority: after BEAMFIX, LF/LX and LZTEL3; before the L2 seeds.
+# B_lean2 = caltech-runs/lean2 ac4b62c5574438bf734a7cf738820f745c6e2a44 (v20.1 src 25ea76366 = v201e + lean removals; same he_star_m1 H200 recipe).
+# Same recipe as LN_* / V201D_* (rt NH=2, 4 cycles, NR=4). Base: V201D_rsg/a, V201D_hg/a (== V201E_rsg).
+# Expect: hst and final bins bitwise == base (bin headers differ only in the parameter dump); poison == plain; 0 CW / FATAL.
+FINALRST=1 MODE=rt NH=2                        LN2_rsg  B_lean2 RSG 4 rsg_v20.keys
+FINALRST=1 ENVX=CLEAN_POISON_GHOST=2           LN2P_rsg B_lean2 RSG 4 rsg_v20.keys
+FINALRST=1 MODE=rt NH=2 ENVX=OMPI_MCA_io=ompio LN2_hg   B_lean2 HG  4 hg_v20.keys time/dt_retry_host=m1
