@@ -206,3 +206,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - Z4_rsg (hpc-sm-01-11): rc=0 wall=160 rc=0 wall=157 rc=0 wall=142 | cycles 589788 - 589794 | steady 2.855 s/cycle | GPU MiB max 109457 min 108323 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF CW 0
 - T2K_rsg (hpc-sm-02-11): rc=0 wall=1102 | cycles 589788 - 590088 | steady 3.433 s/cycle | GPU MiB max 108941 min 107971 | CW a 2 FATAL 0 |  
 - BR_hg_h200 (hpc-sm-02-10): rc=0 wall=240 rc=0 wall=229 rc=0 wall=243 | cycles 624961 - 624965 | steady 4.292 s/cycle | GPU MiB max 119731 min 118943 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF 
+- V20L_rsg (hpc-sm-02-03): rc=0 wall=155 rc=0 wall=134 rc=0 wall=146 | cycles 589788 - 589792 | steady 2.852 s/cycle | GPU MiB max 109025 min 107837 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF xcheck: rsg.hydro.hst==V20J_rsg/a rsg.user.hst==V20J_rsg/a
+- SD_rsg (hpc-sm-02-11): rc=0 wall=104 | cycles 589788 - 589798 | steady 2.738 s/cycle | GPU MiB max 108711 min 107577 | CW a 0 FATAL 0 |  SD vs SDT_b_1: xcheck: SDT_b_1 not done | SDP vs SD: xcheck: rsg.hydro.hst==SD_rsg/a rsg.user.hst==SD_rsg/a
