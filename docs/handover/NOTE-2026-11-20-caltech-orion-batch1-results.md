@@ -40,3 +40,8 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - V20F_rsg (hpc-sm-02-11): rc=0 wall=154 rc=0 wall=147 rc=0 wall=152 | cycles 589788 - 589792 | steady 2.864 s/cycle | GPU MiB max 108763 min 107661 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF  xcheck vs V20F_rsg/a:
 - CS_rsg_tie (hpc-sm-02-10): rc=0 wall=103 | cycles 589788 - 589796 | steady 3.082 s/cycle | GPU MiB max 110517 min 109385 | CW a 0 FATAL 0 |  
 - CS_hg_ctl (hpc-sm-01-11): rc=0 wall=124 | cycles 624961 - 624969 | steady 5.322 s/cycle | GPU MiB max 121651 min 121095 | CW a 0 FATAL 0 |  
+- (02:15) Got 03aa43e0b + bef7f30cc: v20g2 240d9eb32 building now; V20G2_hg / V20G2_rsg (rt NH=2, default romio321) are at the
+  top of the queue, then V20G_hg_ompio (OMPI_MCA_io=ompio cross-check). V20F_hg, THF_hg_rt_v7 and batch-4 BR_hg_h200 run with
+  ompio. Batch 4 is queued after everything (builds h200-p4/h200/h200mb2 under way; nsys 2023.2.3 is on the nodes; no Kokkos
+  nvtx connector found, so PF_* run without KOKKOS_TOOLS_LIBS). Starts are now staggered 30 s (RSG restart read is ~24 s).
+- CS_hg_tie (hpc-sm-02-09): rc=0 wall=135 | cycles 624961 - 624969 | steady 5.551 s/cycle | GPU MiB max 121663 min 121107 | CW a 0 FATAL 0 |  
