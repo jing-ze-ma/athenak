@@ -192,3 +192,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - BA_hg_p4 (hpc-sm-02-11): rc=0 wall=179 | cycles 624961 - 624981 | steady 4.876 s/cycle | GPU MiB max 119391 min 118843 | CW a 0 FATAL 0 |  
 - BA_hg_h200 (hpc-sm-01-11): rc=0 wall=177 | cycles 624961 - 624981 | steady 5.092 s/cycle | GPU MiB max 118789 min 118191 | CW a 0 FATAL 0 |  
 - AB10o_hg (hpc-sm-02-10): rc=0 wall=109 | cycles 624961 - 624967 | steady 5.160 s/cycle | GPU MiB max 120831 min 120275 | CW a 0 FATAL 0 |  floor_audit cycle lines 18 | unpaid CW 0 | EOS floors:  hydro EOS floors energy created=2.721292e+33
+- (05:25) Got 20af47b76: ksplit branch head = 1f9926b4982f (matches); building; KS1_hg then KS001_hg queued after the spd2b arms (KSPLIT/OLDVEC counts, full log). The LWr bins were already deleted after real_diag, so LWs1170_hg / LWs260_hg reruns are queued (low) for real_nb.py -> caltech_results/LW_real_nb.txt, then their bins go.
