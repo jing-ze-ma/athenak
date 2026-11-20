@@ -348,6 +348,7 @@ struct CleanArgs {
   bool fd;                     // staggered, clean_stag_fkin: the energy flux's
                                // G + F^H - F
   bool gf;                     // staggered, clean_stag_gflux: flux factors, low order
+  bool cvr;                    // cubed sphere, clean_stag_csvec_radial (CleanStagCsVector)
   bool fre;                    // staggered, clean_stag_freal: a realisable comoving sb
   int fdg;                     // staggered bracket: face slot of its lagged flux DG (-1)
   bool fs;                     // staggered, clean_stag_fsolve: the face F of the F solve
@@ -1663,6 +1664,9 @@ Real CleanSourceDivergence(const CleanArgs &x, const int m, const int k, const i
 //! (sum w n n^T) u = sum c n.  Exact for a uniform vector (p = n.u) on any cell: the face
 //! families are not orthogonal and the two faces of a family not parallel, so no face
 //! projection is a component of u in a basis (nor are the mean normals' projections).
+//! clean_stag_csvec_radial: the lateral faces' normals without their component along the
+//! cell's r_hat (a radial field has none on them, a uniform one does), so that a radial
+//! u is exact as well: else its fit is low by 1/(1 + 2 sin^2(dalpha/2)), 0.5 % at N = 16.
 
 KOKKOS_INLINE_FUNCTION
 void CleanStagCsVector(const CleanArgs &x, const int m, const int k, const int j,
@@ -1672,10 +1676,15 @@ void CleanStagCsVector(const CleanArgs &x, const int m, const int k, const int j
   for (int q = 0; q < 3; ++q) {
     for (int s = 0; s < 2; ++s) {
       const int kf = k + s*(q == 2), jf = j + s*(q == 1), iff = i + s*(q == 0);
+      Real n[3], nr = 0.0;
       for (int r = 0; r < 3; ++r) {
-        const Real nr = x.g.At<CLG_N>(m,3*q+r,kf,jf,iff);
-        b[r] += c[2*q+s]*nr;
-        for (int t = 0; t < 3; ++t) a[r][t] += w[2*q+s]*nr*x.g.At<CLG_N>(m,3*q+t,kf,jf,iff);
+        n[r] = x.g.At<CLG_N>(m,3*q+r,kf,jf,iff);
+        nr += n[r]*x.g(m,CLG_R+r,k,j,i);
+      }
+      for (int r = 0; r < 3; ++r) n[r] -= (x.cvr && q > 0) ? nr*x.g(m,CLG_R+r,k,j,i) : 0.0;
+      for (int r = 0; r < 3; ++r) {
+        b[r] += c[2*q+s]*n[r];
+        for (int t = 0; t < 3; ++t) a[r][t] += w[2*q+s]*n[r]*n[t];
       }
     }
   }

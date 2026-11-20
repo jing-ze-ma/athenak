@@ -209,8 +209,11 @@ static void CleanStagMomentum(const CleanArgs &x, const int e, const int m, cons
                                                   &cf[2*d], &wf[2*d]) : 0.0;
   }
   if (!x.cub) return;
+  // (clean_stag_csvec_radial: the cell takes the sum of its shares of the faces' changes,
+  // as on spherical polar, so that the gas momentum telescopes; not their weighted mean)
   Real dv[3], df[6], one[6], fd[3], q[3][3];
-  CleanStagCsVector(x, m, k, j, i, cf, wf, dv);
+  const Real hw[6] = {0.5, 0.5, 0.5, 0.5, 0.5, 0.5};
+  CleanStagCsVector(x, m, k, j, i, cf, x.cvr ? hw : wf, dv);
   Real tz = 0.0;
   for (int d = 0; d < 3; ++d) {
     const int dk = (d == 2), dj = (d == 1), di = (d == 0);
