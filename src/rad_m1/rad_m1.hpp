@@ -4062,8 +4062,8 @@ class RadiationM1 {
     int jw = -1;               // the ratio field weighting the sets (-1: equal)
   };
   int vra_k = 0;               // vet_rotate_avg (K; 0/1 off)
-  // raycorr-1108 <rad_m1>/vet_rotate_avg_ema = N >= 1 (read only when named; default off
-  // = bitwise): the K-window mean replaced by an exponential moving average over the
+  // raycorr-1108 <rad_m1>/vet_rotate_avg_ema = N >= 1 (default 128 when the direction set
+  // rotates, else read only when named; 0 = off, the K window): the K-window mean replaced by an exponential moving average over the
   // rotated sets, weight a = 1/N per rotation block, kept in the same offset form (ONE
   // slot: e = avg - g_b(now), r = Jbar/J_b, + an aux slot for the change test; vra_k = 3
   // internally): effective window
@@ -4082,7 +4082,7 @@ class RadiationM1 {
   void RotAvgEmaChange(const int ilo);
   Real vra_ema_eps = 0.05;     // vet_rotate_avg_ema_change (0: no change test)
   bool vra_ema_chj = true;     // vet_rotate_avg_ema_change_j: the J ratio in the test
-  bool vra_ema_chstep = false; // vet_rotate_avg_ema_change_form = step (default linear)
+  bool vra_ema_chstep = false; // vet_rotate_avg_ema_change_form = step (default) | linear
   // rotwb-1120 vet_rotate_avg_ema_wb (read only when named, default false = bitwise; clean
   // ring only): a = a_ch alone, no 1/N floor and no 1/(n + 1) count, so the pattern
   // average moves only where the field changed and a static state keeps its closure

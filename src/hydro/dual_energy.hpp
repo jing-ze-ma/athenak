@@ -8,8 +8,8 @@
 //! \file dual_energy.hpp
 //! \brief dual-energy selection of the internal energy, the per-cell audit of
 //! the energy floors, and the payment of the energy they create from the cell's own
-//! radiation (hydro and MHD, every geometry; general EOS only).  Every key is read only
-//! when named; absent, nothing here is allocated or called (bitwise).
+//! radiation (hydro and MHD, every geometry; general EOS only).  Every key but floor_pay
+//! is read only when named; absent, nothing here is allocated or called (bitwise).
 //!
 //! Keys (<hydro> or <mhd>):
 //!  dual_energy = true: two scalar slots after every other scalar, the internal energy
@@ -26,6 +26,8 @@
 //!    source terms and floors are all seen; only a ConToPrim that follows a hydro update
 //!    (armed by Fluxes) selects.
 //!  dual_energy_eta = 1e-3: the selection threshold e/E.
+//!  floor_pay = rad_column (default with eos = general and <rad_m1>; none otherwise, and
+//!    the only value without them) | rad | none.
 //!  floor_pay = rad: the energy the floors (and the dual selection) create in an active
 //!    cell, e_final - (E - KE), is taken from the cell's E_rad after the radiation stage
 //!    (RadiationM1::HydroConToPrim): gas + (c/chat) E_rad is exact per cell; what E_rad

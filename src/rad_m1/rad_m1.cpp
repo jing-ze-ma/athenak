@@ -88,9 +88,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_lcnorm = pin->GetOrAddReal("rad_m1","clean_lin_cnorm",1.0e-10);
     // the old production's keys an input names (its HG/RSG decks; read only when named):
     // implicit_maxit, implicit_lin_maxit and implicit_tol_rel_max are the defaults of
-    // clean_maxnl, clean_maxit and clean_conv_max (a linear solve then runs to it, without the stall test, and a pass
-    // goes on from its iterate, CleanSolve)
-    {int pm = 50, pl = 0;
+    // clean_maxnl, clean_maxit and clean_conv_max (a linear solve then runs to it,
+    // without the stall test, and a pass goes on from its iterate, CleanSolve);
+    // clean_maxit is read with clean_stag_thinf, which sets its default to 800
+    int pl = 0;
+    {int pm = 50;
     cln_prmax = -1.0;
     for (const InputBlock &ib : pin->block) {
       if (ib.block_name != "rad_m1") continue;
@@ -103,7 +105,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       }
     }
     cln_maxnl = pin->GetOrAddInteger("rad_m1","clean_maxnl",pm);
-    cln_maxit = pin->GetOrAddInteger("rad_m1","clean_maxit",(pl > 0) ? pl : 4000);
     cln_linpass = (pl > 0);}
     cln_tol_nl = pin->GetOrAddReal("rad_m1","clean_tol_nl",1.0e-11);
     // clean_pc = vcycle | x1line | prodmg (read only when named): the preconditioner of
@@ -357,9 +358,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "cell vector) is gone" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_stag_thinf (default off): the staggered bracket's ray correction in the face
-    // half ranges, realisable (CleanStagBracket), not as the gated lagged flux DG
-    cln_thinf = stag("clean_stag_thinf", false);
+    // clean_stag_thinf (default on): the staggered bracket's ray correction in the face
+    // half ranges, realisable (CleanStagBracket), not as the gated lagged flux DG; with
+    // it clean_maxit defaults to 800 (else implicit_lin_maxit, else 4000)
+    cln_thinf = stag("clean_stag_thinf", true);
+    cln_maxit = pin->GetOrAddInteger("rad_m1","clean_maxit",
+                                     cln_thinf ? 800 : ((pl > 0) ? pl : 4000));
     // clean_stag_xdonor = off (default) | p1 | lag: the off-diagonal stress flux an
     // M-matrix term (CleanStagXDonor); clean_stag_xsrc (default off): also the face
     // sources past their explicit share; clean_stag_xsweep (default off): a monotone
@@ -411,10 +415,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       }
       cln_lzbook = (cln_lza == 2) || (pmy_pack->pmesh->use_spherical_polar &&
                                       pmy_pack->pmesh->three_d);
-      // clean_cs_lz_tel (default off): the cubed sphere's L_z by telescoping, the gas phi
-      // momentum of CleanCsTorque and the radiation's L_z that of its face momenta, so
-      // that the ledger holds the radial boundaries' torque alone
-      cln_lzt = stag("clean_cs_lz_tel", false);
+      // clean_cs_lz_tel (default on for the staggered cubed sphere): its L_z by
+      // telescoping, the gas phi momentum of CleanCsTorque and the radiation's L_z that of
+      // its face momenta, so that the ledger holds the radial boundaries' torque alone
+      cln_lzt = stag("clean_cs_lz_tel", cln_lza == 2);
       if (cln_lzt && cln_lza != 2) {
         std::cout << "### FATAL ERROR: <rad_m1>/clean_cs_lz_tel needs the cubed sphere "
                   << "and clean_layout = staggered" << std::endl;
@@ -3357,68 +3361,69 @@ void RadiationM1::RotAvgParse(ParameterInput *pin) {
                 << "last " << vra_k << " rotated sets" << std::endl;
     }
   }
-  // raycorr-1108: vet_rotate_avg_ema = N (read only when named; see rad_m1.hpp): the
-  // exponential moving average over the rotated sets (one offset slot, vra_k = 2)
+  // raycorr-1108: vet_rotate_avg_ema = N (default 128 when the direction set rotates,
+  // else read only when named; 0 = off; see rad_m1.hpp): the exponential moving average
+  // over the rotated sets (one offset slot, vra_k = 2)
+  const bool erot = (vgd_on || vet_sc) && (vgd_on ? VgdRotOn() : vsc_rot);
+  if (erot || pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema")) {
+    vra_ema_n = pin->GetOrAddReal("rad_m1","vet_rotate_avg_ema",128.0);
+  }
   // rotwb-1120: vet_rotate_avg_ema_wb acts on the EMA ring only (no silent no-op)
-  if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_wb") &&
-      !(pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema") &&
-        pin->GetReal("rad_m1","vet_rotate_avg_ema") >= 1.0)) {
+  if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_wb") && vra_ema_n < 1.0) {
     std::cout << "### FATAL ERROR <rad_m1>/vet_rotate_avg_ema_wb needs "
               << "vet_rotate_avg_ema >= 1" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema")) {
-    vra_ema_n = pin->GetReal("rad_m1","vet_rotate_avg_ema");
-    if (vra_ema_n >= 1.0 && (vgd_on || vet_sc)) {
-      vra_ema = true;
-      vra_k = 3;   // slot 0 the EMA, slot 1 the change-test aux, slot 2 the Delta
-      if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_change")) {
-        vra_ema_eps = pin->GetReal("rad_m1","vet_rotate_avg_ema_change");
+  if (vra_ema_n >= 1.0 && (vgd_on || vet_sc)) {
+    vra_ema = true;
+    vra_k = 3;   // slot 0 the EMA, slot 1 the change-test aux, slot 2 the Delta
+    if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_change")) {
+      vra_ema_eps = pin->GetReal("rad_m1","vet_rotate_avg_ema_change");
+    }
+    if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_change_j")) {
+      vra_ema_chj = pin->GetBoolean("rad_m1","vet_rotate_avg_ema_change_j");
+    }
+    {
+      const std::string fm = pin->GetOrAddString("rad_m1",
+                                                 "vet_rotate_avg_ema_change_form","step");
+      if (fm.compare("step") == 0) {
+        vra_ema_chstep = true;
+      } else if (fm.compare("linear") != 0) {
+        std::cout << "### FATAL ERROR <rad_m1>/vet_rotate_avg_ema_change_form = '" << fm
+                  << "' is not a choice (linear | step)" << std::endl;
+        std::exit(EXIT_FAILURE);
       }
-      if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_change_j")) {
-        vra_ema_chj = pin->GetBoolean("rad_m1","vet_rotate_avg_ema_change_j");
-      }
-      if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_change_form")) {
-        const std::string fm = pin->GetString("rad_m1","vet_rotate_avg_ema_change_form");
-        if (fm.compare("step") == 0) {
-          vra_ema_chstep = true;
-        } else if (fm.compare("linear") != 0) {
-          std::cout << "### FATAL ERROR <rad_m1>/vet_rotate_avg_ema_change_form = '" << fm
-                    << "' is not a choice (linear | step)" << std::endl;
-          std::exit(EXIT_FAILURE);
-        }
-      }
-      if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_wb")) {
-        vra_ema_wb = pin->GetBoolean("rad_m1","vet_rotate_avg_ema_wb");
-      }
-      if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_dema")) {
-        vra_ema_dema = pin->GetBoolean("rad_m1","vet_rotate_avg_ema_dema");
-        if (vra_ema_dema) {vra_k = 4;}   // raycheap-1109: slot 2 = e2, slot 3 the Delta
-      }
-      if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_diag")) {
-        vra_ema_diag = pin->GetInteger("rad_m1","vet_rotate_avg_ema_diag");
-      }
-      vra_on = true;
-      if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_weight")) {
-        vra_eq = (pin->GetString("rad_m1","vet_rotate_avg_weight").compare("equal") == 0);
-      }
-      if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_tau")) {
-        vra_ema_tau = pin->GetReal("rad_m1","vet_rotate_avg_ema_tau");
-      }
-      if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_lc")) {
-        vra_ema_lc = pin->GetReal("rad_m1","vet_rotate_avg_ema_lc");
-      }
-      if (global_variable::my_rank == 0) {
-        std::cout << "<rad_m1> vet_rotate_avg_ema = " << vra_ema_n << " (raycorr-1108): "
-                  << "the closure is an exponential moving average over the rotated sets "
-                  << "(a = 1/N per block" << ((vra_ema_tau > 0.0) ? ", time window tau = "
-                  + std::to_string(vra_ema_tau) : "") << ((vra_ema_lc > 0.0) ?
-                  ", window = " + std::to_string(vra_ema_lc) + " x r/c" : "")
-                  << "; change test eps " << vra_ema_eps
-                  << ")" << (vra_ema_dema ? "; lag-corrected double EMA 2 e1 - e2 "
-                  "(raycheap-1109)" : "") << "; vet_rotate_avg is not used"
-                  << std::endl;
-      }
+    }
+    if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_wb")) {
+      vra_ema_wb = pin->GetBoolean("rad_m1","vet_rotate_avg_ema_wb");
+    }
+    if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_dema")) {
+      vra_ema_dema = pin->GetBoolean("rad_m1","vet_rotate_avg_ema_dema");
+      if (vra_ema_dema) {vra_k = 4;}   // raycheap-1109: slot 2 = e2, slot 3 the Delta
+    }
+    if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_diag")) {
+      vra_ema_diag = pin->GetInteger("rad_m1","vet_rotate_avg_ema_diag");
+    }
+    vra_on = true;
+    if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_weight")) {
+      vra_eq = (pin->GetString("rad_m1","vet_rotate_avg_weight").compare("equal") == 0);
+    }
+    if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_tau")) {
+      vra_ema_tau = pin->GetReal("rad_m1","vet_rotate_avg_ema_tau");
+    }
+    if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_lc")) {
+      vra_ema_lc = pin->GetReal("rad_m1","vet_rotate_avg_ema_lc");
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> vet_rotate_avg_ema = " << vra_ema_n << " (raycorr-1108): "
+                << "the closure is an exponential moving average over the rotated sets "
+                << "(a = 1/N per block" << ((vra_ema_tau > 0.0) ? ", time window tau = "
+                + std::to_string(vra_ema_tau) : "") << ((vra_ema_lc > 0.0) ?
+                ", window = " + std::to_string(vra_ema_lc) + " x r/c" : "")
+                << "; change test eps " << vra_ema_eps
+                << ")" << (vra_ema_dema ? "; lag-corrected double EMA 2 e1 - e2 "
+                "(raycheap-1109)" : "") << "; vet_rotate_avg is not used"
+                << std::endl;
     }
   }
 }
