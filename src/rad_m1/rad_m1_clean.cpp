@@ -3677,7 +3677,8 @@ void RadiationM1::CleanStagBracket() {
       // the gas cannot source (vacuum, cold gas) is numerical leak, corrected in full)
       // (13: = 12 with s times the cell's coupling over the stage, min(1, rho kappa_P c h);
       // 17: = 13, then each face's DG times its donor's R below)
-      if (dgf == 12 || dgf == 13 || dgf == 17 || dgf == 18 || dgf == 19 || dgf == 20) {
+      if (dgf == 12 || dgf == 13 || dgf == 17 || dgf == 18 || dgf == 19 || dgf == 20 ||
+          dgf == 21) {
         // (19: = 13, and the deficit side gated as v20.1, r = E_old/J)
         auto rs = [&](const Real e, const Real jj, const Real t, const Real kp) {
           if (dgf == 19 && jj > e && jj > 0.0) return e/jj;
@@ -3692,7 +3693,10 @@ void RadiationM1::CleanStagBracket() {
         // (20: = 13, and a deficit donor d (J_d > E_old,d, upwind of the rays' F_y) sends
         // the rays' flux only up to c E_old,d: times min(1, E_old,d/|F_y|), realisable)
         const Real ed = (fy > 0.0) ? eol : eor, jd2 = (fy > 0.0) ? jl : jr;
-        const Real qd = (dgf == 20 && jd2 > ed && fabs(fy) > ed) ? ed/fabs(fy) : 1.0;
+        // (21: = 13, and the deficit gate of v20.1 on the donor only, (E_old,d/J_d)^2: a
+        // filling cell downstream of a lit donor is not gated)
+        const Real qd = (dgf == 20 && jd2 > ed && fabs(fy) > ed) ? ed/fabs(fy) :
+                        ((dgf == 21 && jd2 > ed) ? SQR(ed/jd2) : 1.0);
         x.fc[dir](m,x.fdg,k,j,i) = qd*r12*r12*x.c*(fy - x.fc[dir](m,CLF_HP,k,j,i)*jl
                                                     - x.fc[dir](m,CLF_HM,k,j,i)*jr);
         return;
