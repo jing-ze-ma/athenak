@@ -1,3 +1,3 @@
-# LZCS cs L_z ledger split (orion 2026-11-20), output only. B_lzcs = caltech-runs/lzcs 8ea56557c. Same args as CS_*_ctl, env LZCS=1.
-FINALRST=0 ENVX=LZCS=1 L1_rsg B_lzcs RSG 6 rsg_v20.keys rad_m1/dbg_energy_audit=true output1/dt=1
-FINALRST=0 ENVX=LZCS=1 L2_hg  B_lzcs HG  6 hg_v20.keys  rad_m1/dbg_energy_audit=true output1/dt=1
+# LZCS cs L_z ledger split (orion 2026-11-20), output only. B_lzcs2 = caltech-runs/lzcs2 b4ba38764 (compile fix of lzcs). LOW priority, behind T1-T4.
+FINALRST=0 ENVX=LZCS=1 L1_rsg B_lzcs2 RSG 6 rsg_v20.keys rad_m1/dbg_energy_audit=true output1/dt=1
+FINALRST=0 ENVX=LZCS=1 L2_hg  B_lzcs2 HG  6 hg_v20.keys  rad_m1/dbg_energy_audit=true output1/dt=1
