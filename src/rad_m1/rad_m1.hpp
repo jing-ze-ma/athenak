@@ -3580,7 +3580,7 @@ class RadiationM1 {
     bool poison = false;
     Real pval = std::numeric_limits<Real>::quiet_NaN();
     std::vector<int> slend, rlend, nld;
-    DvceArray1D<int> rd, ldp;
+    DvceArray1D<int> rd, ldp, sdp;   // (sdp: the depth of each sent entry)
     // (device buffers on HIP too: the messages are MB-size, ROCm-aware MPI moves them
     // GPU to GPU; host-pinned staging (hmstage-1019) is CPU-copy bound on MI300A)
     DvceArray1D<Real> sbuf, rbuf;      // (rbuf: two halves, alternate exchanges)

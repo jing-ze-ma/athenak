@@ -607,6 +607,14 @@ void RadiationM1::CleanHaloInit(const int n3, const int n2, const int n1) {
     q.ldp = mk("cln_hdl_ldp", ldd);
     q.lf = mk("cln_hdl_lf", lfm);
     q.sf = mk("cln_hdl_sf", q.hsf);
+    std::vector<int> sdv(sc.size(), ng);   // (each message's entries in order of depth)
+    for (size_t s = 0; s < q.soff.size(); ++s) {
+      for (int e = 0, d = 1; e < q.slen[s]; ++e) {
+        while (d < ng && e >= q.slend[s*ng + d - 1]) ++d;
+        sdv[q.soff[s] + e] = d;
+      }
+    }
+    q.sdp = mk("cln_hdl_sdp", sdv);
     q.rf = mk("cln_hdl_rf", q.hrf);
     q.sbuf = decltype(q.sbuf)("cln_hdl_sbuf", std::max(q.ns, 1)*cln_hmax);
     q.rbuf = decltype(q.rbuf)("cln_hdl_rbuf", 2*std::max(q.nr, 1)*cln_hmax);
@@ -723,7 +731,8 @@ void RadiationM1::CleanHaloPost(const std::vector<CleanGSeg<T>> &sg) {
     }
   }
   auto sb = q.sbuf;
-  auto so = msk ? mh->so : q.sc, sf = q.sf;
+  auto so = msk ? mh->so : q.sc, sf = q.sf, sdp = q.sdp;
+  const int dsd = q.dcur;   // (entries deeper than the exchange are not sent: not packed)
   int o = 0;
   for (auto &s : sg) {
     auto a = s.a;
@@ -732,6 +741,7 @@ void RadiationM1::CleanHaloPost(const std::vector<CleanGSeg<T>> &sg) {
     if (q.ns > 0) {
       par_for("cln_hd_pack", DevExeSpace(), 0, q.ns-1, 0, s.nc-1,
       KOKKOS_LAMBDA(const int p, const int n) {
+        if (sdp(p) > dsd) return;
         const int f = e(p), m = f/n321, r = f - m*n321, k = r/n21, j = (r - k*n21)/n1;
         int b = p*nc + o + n;
         if (msk) {
