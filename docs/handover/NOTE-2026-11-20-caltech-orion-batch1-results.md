@@ -199,3 +199,6 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - BA_hg_mb2 (hpc-sm-02-10): rc=0 wall=185 | cycles 624961 - 624981 | steady 5.252 s/cycle | GPU MiB max 119215 min 118667 | CW a 0 FATAL 0 |  
 - BA_hg_v20g_m1 (hpc-sm-01-17): rc=0 wall=188 | cycles 624961 - 624981 | steady 4.977 s/cycle | GPU MiB max 116339 min 115791 | CW a 0 FATAL 0 |  
 - Z1_rsg (hpc-sm-01-17): rc=0 wall=90 | cycles 589788 - 589794 | steady 2.839 s/cycle | GPU MiB max 108279 min 107091 | CW a 0 FATAL 0 |  xcheck: rsg.hydro.hst==T1_rsg/a rsg.user.hst==T1_rsg/a | CW 0
+- LWs1170_hg (hpc-sm-01-11): rc=0 wall=584 | cycles 624961 - 625061 | steady 5.043 s/cycle | GPU MiB max 116347 min 115799 | CW a 0 FATAL 0 |  real_nb -> caltech_results/LW_real_nb.txt
+- LWs260_hg (hpc-sm-02-09): rc=0 wall=667 | cycles 624961 - 625061 | steady 5.817 s/cycle | GPU MiB max 116343 min 115791 | CW a 0 FATAL 0 |  real_nb -> caltech_results/LW_real_nb.txt
+- BR_rsg_h200 (hpc-sm-02-03): rc=0 wall=156 rc=0 wall=148 rc=0 wall=140 | cycles 589788 - 589792 | steady 2.927 s/cycle | GPU MiB max 108697 min 107563 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF 
