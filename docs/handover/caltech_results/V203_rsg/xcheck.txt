@@ -1,0 +1,1 @@
+hst vs V202F_rsg/a:  rsg.hydro.hst==V202F_rsg/a rsg.user.hst==V202F_rsg/a | CW 0 FATAL 0
