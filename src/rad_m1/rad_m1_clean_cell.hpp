@@ -1452,12 +1452,15 @@ void CleanBlockFactorSolve(const Real lu[4][4], const Real piv[4], Real r[4]) {
 //! then f over the other active cells.  ov = false (or MeshBlocks too thin): fin(), then f
 //! over all of them.  Each cell's value is the same either way.  fd >= 0: f over the
 //! faces normal to fd, the inner ones those whose two neighbour faces along fd are the
-//! block's (the F solve's, CleanStagFSolve)
+//! block's (the F solve's, CleanStagFSolve).  post (the producer's side): f over the
+//! other cells first, which the exchange sends, then post() (its first half), f over the
+//! inner ones while it is in flight, then fin()
 
 // (fin a std::function: nvcc takes no host lambda type in an extended lambda's parent)
 template <typename F>
 void CleanOverlapFor(const std::string &nm, MeshBlockPack *pp, const bool ov, const F &f,
-                     const std::function<void()> &fin, const int fd = -1) {
+                     const std::function<void()> &fin, const int fd = -1,
+                     const std::function<void()> &post = nullptr) {
   auto &id = pp->pmesh->mb_indcs;
   const int g = id.ng, nmb1 = pp->nmb_thispack - 1, is = id.is, js = id.js, ks = id.ks;
   const bool md = pp->pmesh->multi_d, td = pp->pmesh->three_d;
@@ -1472,20 +1475,24 @@ void CleanOverlapFor(const std::string &nm, MeshBlockPack *pp, const bool ov, co
   const CleanShell sh(n[2], n[1], n[0], 0, lo[0], hi[0], lo[1], hi[1], lo[2], hi[2],
                       true, true);
   if (!ov || sh.Empty()) {
-    fin();
+    if (!post) fin();
     par_for(nm, DevExeSpace(), 0, nmb1, ks, id.ke + (fd == 2), js, id.je + (fd == 1), is,
             id.ie + (fd == 0), f);
+    if (post) post(), fin();
     return;
   }
-  par_for(nm, DevExeSpace(), 0, nmb1, ks + sh.k0, ks + sh.k1, js + sh.j0, js + sh.j1,
-          is + sh.i0, is + sh.i1, f);
-  fin();
+  auto inner = [&]() {
+    par_for(nm, DevExeSpace(), 0, nmb1, ks + sh.k0, ks + sh.k1, js + sh.j0, js + sh.j1,
+            is + sh.i0, is + sh.i1, f);
+  };
+  if (!post) inner(), fin();
   par_for(nm + "_sh", DevExeSpace(), 0, nmb1, 0, sh.ncell-1,
   KOKKOS_LAMBDA(const int m, const int q) {
     int k, j, i;
     CleanShellCell(sh, q, k, j, i);
     f(m, ks + k, js + j, is + i);
   });
+  if (post) post(), inner(), fin();
 }
 
 }  // namespace radm1
