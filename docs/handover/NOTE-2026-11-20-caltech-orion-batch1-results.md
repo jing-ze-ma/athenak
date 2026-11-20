@@ -58,3 +58,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - CV_df2_rsg (hpc-sm-02-03): rc=0 wall=130 | cycles 589788 - 589808 | steady 3.058 s/cycle | GPU MiB max 109321 min 108187 | CW a 0 FATAL 0 |  
 - CV_estdf_hg (hpc-sm-01-17): rc=0 wall=223 | cycles 624961 - 624981 | steady 6.834 s/cycle | GPU MiB max 116499 min 115951 | CW a 0 FATAL 0 |  
 - CV_tight_hg (hpc-sm-02-09): rc=0 wall=276 | cycles 624961 - 624981 | steady 9.653 s/cycle | GPU MiB max 116499 min 115951 | CW a 4 FATAL 0 |  
+- AB1_rsg (hpc-sm-01-17): rc=0 wall=90 | cycles 589788 - 589794 | steady 2.999 s/cycle | GPU MiB max 109015 min 107829 | CW a 0 FATAL 0 |  
+- AB3_rsg (hpc-sm-02-09): rc=0 wall=93 | cycles 589788 - 589794 | steady 2.854 s/cycle | GPU MiB max 108391 min 107205 | CW a 0 FATAL 0 |  
