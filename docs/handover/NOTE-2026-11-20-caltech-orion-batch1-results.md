@@ -285,3 +285,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   * P3 PF_* nsys: r0lab/syncattr outputs in caltech_results/PF_*/ (no Kokkos nvtx connector on our side).
   * P4 TG GDR: aborts (IB local protection error), see above; LS_rsg_r8_rep = LS_rsg_r8 bitwise.
   * LEAN: LN_rsg / LNP_rsg / LN_hg lines above.
+- (06:33) Got 98341a1e8 / 17987a041 / f0cbcdf77: LI4_rsg (1x4) + LI8_rsg (2x4 in rsgEH2, GDR off) on v20n started now, with output2/3/6 bin_double=true (double bins), final rst + bins kept; licmp.py -> caltech_results/LI_cmp.txt after both. KX001e_hg had already run; ksplit7 = 324176605 building, KX1f_hg then KX001f_hg queued. kname.py done: caltech_results/PF_{rsg_v20g,rsg_h200,hg_h200}/kname.txt. No libkp_nvtx_connector built (no further nsys arms queued); will build kokkos-tools if you send more PF arms.
