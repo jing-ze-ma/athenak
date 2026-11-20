@@ -1897,7 +1897,83 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // their T enters the stencil of the edge cell, which is iterated.  The inner wall face
   // (wall_closed_ix1, mirror state) is then balanced by construction.  E and F_r keep the
   // column's values.  Rebuilt on a restart (the BCs read the balanced ghost profiles).
+  // With he_ic_linhao the column is his profile (rho, T, F_r incl. the inner ghosts);
+  // his seed then multiplies the balanced rho (isobaric, in his block below).
   hs_bal_ = pin->GetOrAddBoolean("problem","he_ic_balance",false);
+  // problem/he_ic_linhao (read only when named; default false = this
+  // IC bitwise, no key added to the input) replaces the initial state by L. Ma's
+  // Athena++ bsg_star.cpp construction (the block at the end of this function).  His
+  // profile is read here: problem/he_ic_balance re-marches it (also on a restart).
+  const bool hlin = pin->DoesParameterExist("problem","he_ic_linhao") &&
+                    pin->GetBoolean("problem","he_ic_linhao");
+  std::string lfn;
+  std::vector<Real> pr, pT, pd, pM, pF;
+  bool gxi = false;
+  Real lrmax = 0.0, ltmax = 0.0, ldmax = 0.0, lgmax = 0.0;
+  if (hlin && (hs_bal_ || !restart)) {
+    lfn = pin->GetString("problem","he_ic_linhao_file");
+    // Athena++ Constants::grav_const_cgs (his grav_rmax uses G and the file's M column)
+    const Real lG = pin->GetOrAddReal("problem","he_ic_linhao_gconst",6.67408e-8);
+    // he_ic_linhao_gext = r2 (default, his bsg_star.cpp:429 g = g(rmax)
+    // (r/rmax)^+2, as coded) | invsq (the run's point mass GM/r^2, hydrostatic; see
+    // below)
+    const std::string gxs = pin->GetOrAddString("problem","he_ic_linhao_gext","r2");
+    if (gxs != "r2" && gxs != "invsq") {
+      HsFatal("problem/he_ic_linhao_gext must be r2 or invsq", __LINE__);
+    }
+    gxi = (gxs == "invsq");
+    if (gxi && hs_gmc_) {
+      HsFatal("problem/he_ic_linhao_gext = invsq needs the point-mass gravity", __LINE__);
+    }
+    {
+      std::ifstream f(lfn);
+      if (!f.good()) HsFatal("cannot open problem/he_ic_linhao_file '" + lfn + "'",
+                             __LINE__);
+      std::string line;
+      while (std::getline(f, line)) {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream ss(line);
+        Real a, b, c, d, e, g;
+        if (!(ss >> a >> b >> c >> d >> e >> g)) continue;
+        pr.push_back(a); pT.push_back(b); pd.push_back(c); pM.push_back(d);
+        pF.push_back(g);
+      }
+    }
+    if (pr.size() < 2) HsFatal("problem/he_ic_linhao_file: fewer than 2 rows", __LINE__);
+    lrmax = pr.back(); ltmax = pT.back(); ldmax = pd.back();
+    lgmax = lG*pM.back()/(lrmax*lrmax);
+  }
+  // his profile at x1: r <= rmax rho, T [K], F_r LINEAR in r between the bracketing
+  // rows (bsg_star.cpp ProblemGenerator, his lleft/lright search, verbatim); r > rmax
+  // the atmosphere (see the he_ic_linhao block), F_r = 0
+  auto lprof = [&](const Real x1, Real &rho, Real &tem, Real &flx) {
+    const int np = static_cast<int>(pr.size());
+    flx = 0.0;
+    if (x1 > lrmax) {
+      tem = ltmax;
+      const Real tc = tem/hs_tk;   // P/rho of this EOS at T(rmax)
+      if (gxi) {
+        // he_ic_linhao_gext = invsq: the isothermal hydrostatic atmosphere of the
+        // run's own point mass, g = GM/r^2 (= g(rmax) (rmax/r)^2 with g(rmax) =
+        // GM/rmax^2): rho = rho(rmax) exp(-(GM/(P/rho)) (1/rmax - 1/r))
+        rho = ldmax*std::exp(-(hs_gm_/tc)*(1.0/lrmax - 1.0/x1));
+      } else {
+        const Real gl = lgmax*std::pow(x1/lrmax, 2.0);
+        rho = ldmax*std::exp(-gl*(x1 - lrmax)/tc);
+      }
+      rho = std::max(rho, eos.dfloor);
+      return;
+    }
+    int lleft = 0, lright = 1;
+    while ((x1 > pr[lright]) && (lright < np - 1)) lright = lright + 1;
+    if (lright - lleft > 1) lleft = lright - 1;
+    rho = pd[lleft]
+          + (x1 - pr[lleft])*(pd[lright] - pd[lleft])/(pr[lright] - pr[lleft]);
+    tem = pT[lleft]
+          + (x1 - pr[lleft])*(pT[lright] - pT[lleft])/(pr[lright] - pr[lleft]);
+    flx = pF[lleft]
+          + (x1 - pr[lleft])*(pF[lright] - pF[lleft])/(pr[lright] - pr[lleft]);
+  };
   if (hs_bal_ && hs_pm_) {
     HsFatal("problem/he_ic_balance = true needs the well-balanced pair (he_gravity = wb)",
             __LINE__);
@@ -1924,6 +2000,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     for (int i=0; i<n1; ++i) {
       dc[i] = logint(hd, hx1v(0,i));
       ec[i] = logint(he, hx1v(0,i));
+      if (hlin) {   // he_ic_linhao: his profile (rho, T) is the column
+        Real tl, fl, p, cr, ct, cv;
+        lprof(hx1v(0,i), dc[i], tl, fl);
+        eos.ThermoAt(dc[i], tl/hs_tk, ec[i], p, cr, ct, cv);
+      }
       tc[i] = eos.Temperature(dc[i], ec[i]);
       bd[i] = dc[i];
       be[i] = ec[i];
@@ -2039,7 +2120,35 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // rho g with the wall cell alone, v2/runs/mG3); the kink dies out within a few cells.
     // Iterated with the balance (a depends on rho); the face x1f(is+NW) keeps its
     // continuum Phi_eff, the cells below are rebuilt downward from it.
-    const int NW = std::min(4, ie - is);
+    // he_ic_linhao: a_ref = -(dPr/dr)/rho of his profile (Pr = a T^4/3 at the faces, his
+    // rho in the cell), the force of the steady start at his T, in every cell (no module
+    // form in the wall cells); Phi_eff rebuilt upward from the first face with it
+    if (hlin) {
+      auto har = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->arad_ref);
+      std::vector<Real> af(n1);
+      Real dl, tl, fl;
+      lprof(hx1f(0,0), dl, tl, fl);
+      Real prl = ar*SQR(SQR(tl/hs_tk))/3.0;
+      for (int i=0; i<n1; ++i) {
+        lprof(hx1f(0,i+1), dl, tl, fl);
+        const Real prr = ar*SQR(SQR(tl/hs_tk))/3.0;
+        af[i] = -(prr - prl)/(dc[i]*(hx1f(0,i+1) - hx1f(0,i)));
+        prl = prr;
+      }
+      for (int m=0; m<=nmb1; ++m) {
+        for (int k=0; k<=n3m1; ++k) {
+          for (int j=0; j<=n2m1; ++j) {
+            for (int i=0; i<n1; ++i) {
+              hpc(m,k,j,i) = hpf(m,k,j,i) + seg(af[i], hx1f(0,i), hx1v(0,i));
+              hpf(m,k,j,i+1) = hpf(m,k,j,i) + seg(af[i], hx1f(0,i), hx1f(0,i+1));
+              har(m,k,j,i) = af[i];
+            }
+          }
+        }
+      }
+      Kokkos::deep_copy(pm1->arad_ref, har);
+    }
+    const int NW = hlin ? 0 : std::min(4, ie - is);
     DvceArray1D<Real> kd_d("hs_kd", NW + 1), kt_d("hs_kt", NW + 1), kk_d("hs_kk", NW + 1);
     auto hkd = Kokkos::create_mirror_view(kd_d);
     auto hkt = Kokkos::create_mirror_view(kt_d);
@@ -2123,10 +2232,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         imax = i;
       }
     }
-    if (tcol_read && !wic && global_variable::my_rank == 0) {   // diagnostic only
+    if ((tcol_read || hlin) && !wic && global_variable::my_rank == 0) {   // diagnostic
       Real tdm = 0.0, rdm = 0.0;
       for (int i=is; i<=ie; ++i) {
-        const Real dv = fabs(tc[i]*hs_tk/logint(hTcol, hx1v(0,i)) - 1.0);
+        Real tr = 0.0, dl, fl;
+        if (hlin) lprof(hx1v(0,i), dl, tr, fl);
+        const Real dv = fabs(eos.Temperature(bd[i], be[i])*hs_tk
+                             /(hlin ? tr : logint(hTcol, hx1v(0,i))) - 1.0);
         if (dv > tdm) {
           tdm = dv;
           rdm = hx1v(0,i);
@@ -2153,6 +2265,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       std::cout << "he_star_m1: he_ic_balance: max |rho/rho_col - 1| = " << dmax
                 << " at r = " << hx1v(0,imax) << ", max face residual |PR/PL - 1| = "
                 << rmax << ", wall cells a_ref (module form), last change " << wchg
+                << "; wall ghost/edge rho " << bd[is-1]/bd[is] << " T " << tc[is-1]/tc[is]
                 << std::endl;
     }
   }
@@ -3109,12 +3222,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     return;
   }
 
-  // problem/he_ic_linhao (read only when named; default false = this
-  // IC bitwise, no key added to the input) replaces the initial state below by L. Ma's
-  // Athena++ bsg_star.cpp construction (see the block at the end of this function)
-  const bool hlin = pin->DoesParameterExist("problem","he_ic_linhao") &&
-                    pin->GetBoolean("problem","he_ic_linhao");
-
   // ---- the initial state (active + ghost cells)
   // problem/he_seed_band = n2 (default) | old.
   // old = the seed exactly as the keys below name it (he_seed default 0 = no seed).  n2 =
@@ -3445,67 +3552,21 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // Fresh starts only (a restart returned above).  The ghost cells are filled the same
   // way and then overwritten by the (unchanged) boundary conditions.
   {
-    if (hcs || wic || bal) {
-      HsFatal("problem/he_ic_linhao needs the spherical-polar wedge and no he_wind_ic / "
-              "he_ic_balance", __LINE__);
+    if (hcs || wic) {
+      HsFatal("problem/he_ic_linhao needs the spherical-polar wedge and no he_wind_ic",
+              __LINE__);
     }
     if (pmbp->punit != nullptr && (std::fabs(pmbp->punit->length_cgs() - 1.0) > 1.0e-12
         || std::fabs(pmbp->punit->density_cgs() - 1.0) > 1.0e-12)) {
       HsFatal("problem/he_ic_linhao needs <units> length_cgs = mass_cgs = 1 (cgs r, rho)",
               __LINE__);
     }
-    const std::string lfn = pin->GetString("problem","he_ic_linhao_file");
     const Real lamp = pin->GetOrAddReal("problem","he_ic_linhao_amp",0.05);
     // his threshold rho > 0.01 in HIS code units: rho_thr [cgs] = 0.01 rho_unit (his
     // input file, not supplied).  No default: the run states its assumption.
     const Real lthr = pin->GetReal("problem","he_ic_linhao_rho_thr");
     const int lrng = pin->GetOrAddInteger("problem","he_ic_linhao_rng",0);
-    // Athena++ Constants::grav_const_cgs (his grav_rmax uses G and the file's M column)
-    const Real lG = pin->GetOrAddReal("problem","he_ic_linhao_gconst",6.67408e-8);
-    // he_ic_linhao_gext = r2 (default, his bsg_star.cpp:429 g = g(rmax)
-    // (r/rmax)^+2, as coded) | invsq (the run's point mass GM/r^2, hydrostatic; see
-    // below)
-    const std::string gxs = pin->GetOrAddString("problem","he_ic_linhao_gext","r2");
-    if (gxs != "r2" && gxs != "invsq") {
-      HsFatal("problem/he_ic_linhao_gext must be r2 or invsq", __LINE__);
-    }
-    const bool gxi = (gxs == "invsq");
-    if (gxi && gmc) {
-      HsFatal("problem/he_ic_linhao_gext = invsq needs the point-mass gravity", __LINE__);
-    }
-    std::vector<Real> pr, pT, pd, pM, pF;
-    {
-      std::ifstream f(lfn);
-      if (!f.good()) HsFatal("cannot open problem/he_ic_linhao_file '" + lfn + "'",
-                             __LINE__);
-      std::string line;
-      while (std::getline(f, line)) {
-        if (line.empty() || line[0] == '#') continue;
-        std::istringstream ss(line);
-        Real a, b, c, d, e, g;
-        if (!(ss >> a >> b >> c >> d >> e >> g)) continue;
-        pr.push_back(a); pT.push_back(b); pd.push_back(c); pM.push_back(d);
-        pF.push_back(g);
-      }
-    }
     const int np = static_cast<int>(pr.size());
-    if (np < 2) HsFatal("problem/he_ic_linhao_file: fewer than 2 rows", __LINE__);
-    const Real rmax = pr[np-1], tmax = pT[np-1], dmax = pd[np-1];
-    const Real gmax = lG*pM[np-1]/(rmax*rmax);
-    const Real dfl = eos.dfloor;
-    // his interpolation (bsg_star.cpp ProblemGenerator, r <= rmax): returns rho, T [K],
-    // F_r
-    auto lint = [&](const Real x1, Real &rho, Real &tem, Real &flx) {
-      int lleft = 0, lright = 1;
-      while ((x1 > pr[lright]) && (lright < np - 1)) lright = lright + 1;
-      if (lright - lleft > 1) lleft = lright - 1;
-      rho = pd[lleft]
-            + (x1 - pr[lleft])*(pd[lright] - pd[lleft])/(pr[lright] - pr[lleft]);
-      tem = pT[lleft]
-            + (x1 - pr[lleft])*(pT[lright] - pT[lleft])/(pr[lright] - pr[lleft]);
-      flx = pF[lleft]
-            + (x1 - pr[lleft])*(pF[lright] - pF[lleft])/(pr[lright] - pr[lleft]);
-    };
     const int nm = nmb1 + 1, nc1 = n1m1 + 1;
     DualArray2D<Real> lD("hs_lin_d", nm, nc1), lE("hs_lin_eg", nm, nc1);
     DualArray2D<Real> lR("hs_lin_er", nm, nc1), lF("hs_lin_f", nm, nc1);
@@ -3521,23 +3582,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       lof.h_view(m,2) = static_cast<std::int64_t>(ll.lx3)*indcs.nx3;
       for (int i=0; i<nc1; ++i) {
         const Real x1 = hx1v(m,i);
-        Real rho, tem, flx = 0.0;
-        if (x1 > rmax) {
-          tem = tmax;
-          const Real tc = tem/tk;   // P/rho of this EOS at T(rmax)
-          if (gxi) {
-            // he_ic_linhao_gext = invsq: the isothermal hydrostatic atmosphere of the
-            // run's own point mass, g = GM/r^2 (= g(rmax) (rmax/r)^2 with g(rmax) =
-            // GM/rmax^2): rho = rho(rmax) exp(-(GM/(P/rho)) (1/rmax - 1/r))
-            rho = dmax*std::exp(-(hs_gm_/tc)*(1.0/rmax - 1.0/x1));
-          } else {
-            const Real gl = gmax*std::pow(x1/rmax, 2.0);
-            rho = dmax*std::exp(-gl*(x1 - rmax)/tc);
-          }
-          rho = std::max(rho, dfl);
-        } else {
-          lint(x1, rho, tem, flx);
-        }
+        Real rho, tem, flx;
+        lprof(x1, rho, tem, flx);
         Real ee, pp, cr, ct, cv;
         eos.ThermoAt(rho, tem/tk, ee, pp, cr, ct, cv);
         const Real tc = tem/tk;
@@ -3548,8 +3594,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
       for (int i=0; i<=nc1; ++i) {
         const Real x1 = hx1f(m,i);
-        Real rho, tem, flx = 0.0;
-        if (!(x1 > rmax)) lint(x1, rho, tem, flx);
+        Real rho, tem, flx;
+        lprof(x1, rho, tem, flx);
         lFf.h_view(m,i) = flx;
       }
     }
@@ -3599,7 +3645,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     par_for("hs_ic_linhao", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real r = x1v(m,i);
-      const Real d0 = ld(m,i);
+      const Real d0 = bal ? cbd(i) : ld(m,i), eg = bal ? cbe(i) : le(m,i);
       Real d = d0;
       if (d0 > lthr) {
         const std::int64_t gi = lo(m,0) + (i - lis) + ng;
@@ -3614,9 +3660,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       uh(m,IM2,k,j,i) = 0.0;
       uh(m,IM3,k,j,i) = 0.0;
       if (gmc) {
-        uh(m,IEN,k,j,i) = le(m,i) + d*HsLinInterp(pgc, rlo, dr, nf, r);
+        uh(m,IEN,k,j,i) = eg + d*HsLinInterp(pgc, rlo, dr, nf, r);
       } else {
-        uh(m,IEN,k,j,i) = le(m,i) + d*gm*(1.0/rin - 1.0/r);
+        uh(m,IEN,k,j,i) = eg + d*gm*(1.0/rin - 1.0/r);
       }
       ur(m,radm1::M1_E,k,j,i) = fmax(lr(m,i), efl);
       ur(m,radm1::M1_F1,k,j,i) = lf(m,i);
@@ -3637,9 +3683,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         if (pd[n] > lthr) nthr = n;
       }
       std::cout << "he_star_m1: he_ic_linhao: " << lfn << " (" << np << " rows, r "
-                << pr[0] << " .. rmax " << rmax << "), T(rmax) " << tmax
+                << pr[0] << " .. rmax " << lrmax << "), T(rmax) " << ltmax
                 << " K, rho(rmax) "
-                << dmax << ", g(rmax) " << gmax
+                << ldmax << ", g(rmax) " << lgmax
                 << (gxi ? " (gext invsq: hydrostatic in GM/r^2 above, GM = he_gm)"
                         : " (x (r/rmax)^2 above, as bsg_star.cpp)")
                 << "; perturbation amp " << lamp << " where rho > " << lthr
