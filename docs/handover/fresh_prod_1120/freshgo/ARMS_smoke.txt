@@ -1,0 +1,17 @@
+# FRESHGO smoke + block-shape arms (orion 2026-11-20 ~15:40 PST). Build B_v203 = caltech-runs/v203 e688cb7bc. 1 node (4 H200) per arm, NR=4.
+# Files: docs/handover/fresh_prod_1120/freshgo/{armg.sh,resf.py,decks/*.athinput}. FRESH = gunzipped copy of docs/handover/fresh_prod_1120 (all *.gz gunzipped in place).
+# Usage: HOLDER=<job> NODE=<host> OUT=<runroot>/freshgo FRESH=<fresh_prod_1120 dir> [RT=0] armg.sh TAG $B_v203 decks/<deck> NC [extra keys]
+# Order (T9 first). Smoke arms: fresh start, a = 50 cycles straight, b = 25 + restart + 25 (bitwise), mem log, keep hst + logs (bins deleted unless KEEPBIN=1).
+S_t9l62          decks/t9l62_smoke.athinput          50
+S_bsg            decks/bsg_smoke.athinput            50
+S_t19l64         decks/t19l64_smoke.athinput         50
+S_m35mms         decks/m35mms_smoke.athinput         50
+S_t9l62_corona   decks/t9l62_corona_smoke.athinput   50
+S_t19l64_corona  decks/t19l64_corona_smoke.athinput  50
+# Block-shape timing (RT=0, 8 cycles, same node class; the 128x128 baseline is the smoke arm). Full radial pencils always.
+RT=0 B4_t9l62    decks/t9l62_smoke.athinput   8 meshblock/nx2=128 meshblock/nx3=256   # 4 blocks, 1/GPU
+RT=0 B16_t9l62   decks/t9l62_smoke.athinput   8 meshblock/nx2=64  meshblock/nx3=128   # 16 blocks, 4/GPU
+RT=0 B8_bsg      decks/bsg_smoke.athinput     8 meshblock/nx2=64  meshblock/nx3=128   # 8 blocks, 2/GPU
+RT=0 B16_bsg     decks/bsg_smoke.athinput     8 meshblock/nx2=64  meshblock/nx3=64    # 16 blocks (viper's old BSG layout; hst rows 1-8 vs S_bsg = layout invariance)
+RT=0 B8_m35mms   decks/m35mms_smoke.athinput  8 meshblock/nx2=128 meshblock/nx3=64    # 8 blocks
+RT=0 B16_m35mms  decks/m35mms_smoke.athinput  8 meshblock/nx2=64  meshblock/nx3=64    # 16 blocks
