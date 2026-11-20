@@ -2,3 +2,7 @@
 FINALRST=0 KT1_hg   B_v20j HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true
 FINALRST=0 KT01_hg  B_v20j HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.1
 FINALRST=0 KT001_hg B_v20j HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.01
+# added 2026-11-20 (NOTE ai): RSG trio, right after the HG trio, same priority
+FINALRST=0 KT1_rsg   B_v20j RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true
+FINALRST=0 KT01_rsg  B_v20j RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.1
+FINALRST=0 KT001_rsg B_v20j RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.01
