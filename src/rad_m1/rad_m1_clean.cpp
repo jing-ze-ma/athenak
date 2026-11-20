@@ -2730,7 +2730,9 @@ void RadiationM1::CleanStagXCorner() {
           CleanFaceWeights(x, b, m, kg, jg, ig, al, ar);
           const Real a = (s == 0 ? al : -ar)*CleanDivW(x, b, m, kd, jd, id, s);
           const int sg = 2*s - 1;
-          const Real e = x.w(m,CLW_EO,kd+sg*(b == 2),jd+sg*(b == 1),id+sg*(b == 0));
+          const int ku = kd+sg*(b == 2), ju = jd+sg*(b == 1), iu = id+sg*(b == 0);
+          // (per max(E_old, J) of u, as the cancel of CleanStagXSplit)
+          const Real e = fmax(x.w(m,CLW_EO,ku,ju,iu), x.cs(m,CLN_JR,ku,ju,iu));
           if (a > 0.0 && e > 0.0 && a*e > best) {
             best = a*e;
             ag = a;

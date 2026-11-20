@@ -1436,13 +1436,16 @@ void CleanStagXSplit(const CleanArgs &x, const CleanArgs &xr, const int dir, con
       // cell): that cell's coefficient shrinks, at most to 0, so its outflow stays >= 0
       // (M-matrix); the rest xs, CleanStagXCorner)
       Real xe = fabs(li) - x.c*fmax(ed, 0.0);
+      // (per max(E_old, J) of the other cell: the correction is the rays', per their J
+      // where M1's E is still below it; never more than the excess at E_old)
       const Real eo = fmax(up ? x.w(m,CLW_EO,k,j,i) : x.w(m,CLW_EO,kl,jl,il), 0.0);
-      if (x.xcm >= 2 && eo > 0.0) {
+      const Real no = fmax(eo, up ? x.cs(m,CLN_JR,k,j,i) : x.cs(m,CLN_JR,kl,jl,il));
+      if (x.xcm >= 2 && no > 0.0) {
         const Real ow = up ? -arm : alm;   // (the other cell's outflow coefficient, >= 0)
-        const Real a = fmin(xe, fmax(ow, 0.0)*eo);
-        if (up) qr += a/eo;
-        if (!up) ql -= a/eo;
-        xe -= a;
+        const Real dq = fmin(xe/no, fmax(ow, 0.0));
+        if (up) qr += dq;
+        if (!up) ql -= dq;
+        xe -= dq*eo;
       }
       // (4: the rest on the donor past c, q = |li|/E_old: its outflow stays donor-implicit,
       // at most what it holds; a dark side cell of a sub-cell beam passes its inflow on)

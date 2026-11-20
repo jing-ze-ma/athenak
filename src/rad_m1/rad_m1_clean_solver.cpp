@@ -1447,6 +1447,25 @@ void RadiationM1::CleanPreconditionerSetup() {
       }
     }
     x.w(m,CLW_A0,k,j,i) = a0;
+    // (clean_stag_xcorner: a face's corner flux t E_u where u is a face neighbour of this
+    // cell (its donor d), in that coupling; on a diagonal neighbour (its receiver) none)
+    if (x.xc >= 0 && (x.xcm & 1) && x.xq >= 0) {
+      for (int d = 0; d < x.nf; ++d) {
+        for (int sd = 0; sd < 2; ++sd) {
+          const int kf = k + sd*(d == 2), jf = j + sd*(d == 1), iff = i + sd*(d == 0);
+          const Real t = x.fc[d](m,x.xc+1,kf,jf,iff);
+          if (t == 0.0) continue;
+          int uk, uj, ui;
+          CleanXCornerCell(x, d, m, kf, jf, iff, t, uk, uj, ui);
+          const int ok = uk - k, oj = uj - j, oi = ui - i;
+          if (ok*ok + oj*oj + oi*oi != 1) continue;
+          const Real wd = (sd ? x.h : -x.h)*CleanDivW(x, d, m, k, j, i, sd)*t;
+          if (oi != 0) x.w(m,(oi < 0) ? CLW_AM : CLW_AP,k,j,i) += wd;
+          if (mg && oj != 0) x.w(m,CLW_TM+(oj > 0),k,j,i) += wd;
+          if (mg && ok != 0) x.w(m,CLW_TM+2+(ok > 0),k,j,i) += wd;
+        }
+      }
+    }
   });
   if (mg) CleanStagCoarseSetup();
 }
