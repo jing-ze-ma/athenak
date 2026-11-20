@@ -5416,8 +5416,8 @@ void HeStarIcEquil(Mesh *pm) {
   std::vector<Real> a(ie - is + 1), an(ie - is + 1);
   for (int i=is; i<=ie; ++i) a[i - is] = above(i) ? fv[i]/bd[i] : ar0[i];
   std::vector<Real> ap(a);   // a of the previous pass (convergence of the passes)
-  int ilast = ie, npass = 0;
-  Real chg = 0.0, rmx = 0.0;
+  int ilast = ie, npass = 0, nstop = 0, istop = -1;   // (nstop: passes stopped early)
+  Real chg = 0.0, rmx = 0.0, rstop = 0.0;
   // Phi_eff of cell i for a trial a_i = f_i/d_i, the march's known face kept: inward
   // (face x1f(i+1) known) pc[i], pf[i] and pc[i-1] shifted with pf[i]; outward (face
   // x1f(i) known) pc[i], pf[i+1] and pc[i+1] shifted with pf[i+1].  Only differences
@@ -5474,6 +5474,11 @@ void HeStarIcEquil(Mesh *pm) {
       if (!std::isfinite(r.first) || !(exp(r.first) > dfl*(1.0 + 1.0e-6)) ||
           fabs(r.second) > 1.0e-10) {
         a[i - is] = asv;
+        if (!std::isfinite(r.first) || fabs(r.second) > 1.0e-10) {   // (not the floor)
+          ++nstop;
+          istop = i;
+          rstop = r.second;
+        }
         break;
       }
       rmx = std::max(rmx, fabs(r.second));
@@ -5538,6 +5543,13 @@ void HeStarIcEquil(Mesh *pm) {
                 "cells %d .. %d re-marched, %d passes (last max |da/a| %.3e, face "
                 "residual %.3e), max |drho/rho| %.3e at r %.5e\n", hs_eq_it_, ianc - is,
                 x1v[ianc], 0, ilast - is, npass, chg, rmx, dmx, rdm);
+  }
+  // (a march stopped below the floor: its cells above keep the column's rho and a_ref)
+  if (nstop > 0 && global_variable::my_rank == 0) {
+    std::printf("he_star_m1: WARNING he_ic_equil round %d: the march stopped at cell %d "
+                "(r %.5e) in %d of %d passes, no face solve (last residual %.3e); the "
+                "cells above keep the column\n", hs_eq_it_, istop - is, x1v[istop], nstop,
+                npass, rstop);
   }
   if (lastm && !(chg < 1.0e-12)) {
     HsFatal("problem/he_ic_equil: the last round's march did not converge", __LINE__);
