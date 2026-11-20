@@ -2533,6 +2533,13 @@ void RadiationM1::CleanFirstIterate() {
   const bool xtg = cln_xtcons;   // (clean_xt_cons: G = 1 - beta^2/2 of the gas)
   const Real cl = c_light;
   const bool kpg = cln_kq_on;   // (clean_stag_kpos: the gas row's pd_g E)
+  if (cln_xsticky && feedback && !cln_cell) {   // (clean_xt_sticky: none taken yet)
+    if (cln_xsf.extent_int(0) < nmb1 + 1) {
+      Kokkos::realloc(cln_xsf, nmb1 + 1, cln_w.s.extent_int(2), cln_w.s.extent_int(3),
+                      cln_w.s.extent_int(4));
+    }
+    Kokkos::deep_copy(cln_xsf, 0.0);
+  }
 
   CleanFor("cln_iter0", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -2707,6 +2714,8 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
   const bool krl = cln_krel_on && x.feedback;   // (clean_stag_kreal: CLW_KR)
   auto kc = cln_kcnt;
   if (pdo) Kokkos::deep_copy(Kokkos::subview(kc, 0), 0.0);
+  const bool xsk = cln_xsticky && x.feedback;   // (clean_xt_sticky)
+  auto xsf = cln_xsf;
   CleanParForLb<3>("cln_rhs", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
@@ -2803,7 +2812,11 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
       // the chord is far from the tangent (R136: +25 % passes from thin outer cells)
       Real s = 4.0*hckp*arad_*t*t*t, cg = d*cv;
       const Real ei = x.w(m,CLW_EI,k,j,i), eo = x.w(m,CLW_EO,k,j,i);
-      const bool sec = eg > ei && eo*(cg + s) + cg*hckp*arad_*SQR(SQR(t)) < s*(eg - ei);
+      bool sec = eg > ei && eo*(cg + s) + cg*hckp*arad_*SQR(SQR(t)) < s*(eg - ei);
+      if (xsk) {   // (clean_xt_sticky: once taken in the stage, kept while T > T_o)
+        sec = sec || (eg > ei && xsf(m,k,j,i) > 0.0);
+        if (sec) xsf(m,k,j,i) = 1.0;
+      }
       const Real to = sec ? eos.Temperature(d, ei, t) : t;
       if (sec && t - to > 1.0e-6*t) {
         cg = (eg - ei)/(t - to);
