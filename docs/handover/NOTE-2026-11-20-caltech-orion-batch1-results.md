@@ -383,3 +383,6 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   RZ3*/RZ3b* arms were already all done before 09:21 (lines above). The stopped 09:40 L2_hg runs now show as "stopped(requeued)" in the progress lines.
 - H_tel_hg (hpc-sm-02-09,hpc-sm-02-10): rc=0 wall=2978 | cycles 624961 - 625961 | steady 2.920 s/cycle | GPU MiB max 5910125 min 5 | CW a 0 FATAL 0 |  
 - H_fp_hg (hpc-sm-01-17,hpc-sm-02-03): rc=0 wall=3080 | cycles 624961 - 625961 | steady 3.018 s/cycle | GPU MiB max 60013 min 5 | CW a 3 FATAL 0 |  
+- (10:41) Got f161f65ca: LF_rsg / LX_rsg (3000 cyc, TL 300) queued on the single nodes after R_* / RZ3m / K_on_rsg and before L2_rsg; LF_hg / LX_hg (1500 cyc, 2x4, TL 180) take the 2-node slots after H_xl / K_on_hg, before the L2_hg pair. Reservation noted: from 11-21 13:00 PST ~2 nodes kept free (nothing will be started that runs past then); no production runs from our side.
+- L1_rsg_on (hpc-sm-01-11): rc=1 wall=8543 | cycles 589788 - 592299 | steady 3.222 s/cycle | GPU MiB max 110563 min 109593 | CW a 40 FATAL 1 |  CW 40 | retry 38 | last cycle cycle=592299
+  FAILED: last 100 lines in caltech_results/L1_rsg_on/FAIL_tail100.txt
