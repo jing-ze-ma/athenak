@@ -1,0 +1,1 @@
+xcheck: rsg.hydro.hst rows1-4 cols1-10 ==V20JR_rsg/a rsg.user.hst rows1-4 cols1-30 ==V20JR_rsg/a | CW 0

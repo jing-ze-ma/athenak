@@ -142,3 +142,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   FAILED: last 100 lines in caltech_results/KT001_hg/FAIL_tail100.txt
 - KT01_rsg (hpc-sm-02-10): rc=0 wall=136 | cycles 589788 - 589808 | steady 3.218 s/cycle | GPU MiB max 109209 min 108075 | CW a 0 FATAL 0 |  
   KT001_hg: ### FATAL ERROR: <time> dt_retry: cycle 624965 failed 9 times (max 8), dt 4.259657e-01 after 4 cycles (11 CLEAN WARNINGs, 17.5 s/cycle); same failure as CXP_hg. Full run.log.gz sent.
+- KT001_rsg (hpc-sm-02-03): rc=0 wall=161 | cycles 589788 - 589808 | steady 4.289 s/cycle | GPU MiB max 109209 min 108075 | CW a 0 FATAL 0 |  
+- T1_rsg (hpc-sm-01-11): rc=0 wall=97 | cycles 589788 - 589794 | steady 2.832 s/cycle | GPU MiB max 108711 min 107577 | CW a 0 FATAL 0 |  xcheck: rsg.hydro.hst rows1-4 cols1-10 ==V20JR_rsg/a rsg.user.hst rows1-4 cols1-30 ==V20JR_rsg/a | CW 0
