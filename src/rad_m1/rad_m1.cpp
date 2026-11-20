@@ -449,6 +449,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       // the pass's lagged terms kept (CleanNewtonUpdate): the exchange's nonlinearity
       // is not carried pass by pass; needs the row's exchange of clean_xt_exact = cons
       cln_xtloc = stag("clean_xt_local", false);
+      // clean_xt_local_passes (8): the cell root in a solve's first passes only; later ones
+      // are the plain passes (the same fixed point), so that a cell whose root and the
+      // linear solve undo each other cannot hold the iteration at a fixed change
+      if (pin->DoesParameterExist("rad_m1","clean_xt_local_passes")) {
+        cln_xtloc_n = pin->GetInteger("rad_m1","clean_xt_local_passes");
+      }
       if (cln_xtloc && (cln_xte != 1 || cln_kpos || cln_xpat)) {
         std::cout << "### FATAL ERROR <rad_m1>/clean_xt_local needs clean_xt_exact = cons "
                   << "and neither clean_stag_kpos nor xpat" << std::endl;

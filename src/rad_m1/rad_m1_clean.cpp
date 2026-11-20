@@ -1289,6 +1289,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       const bool lp = cln_linpass && !cell && nit < 0 && inl + 1 < maxnl;
       if (!iterate || (nit < 0 && !lp)) break;
       const bool fbl = lp;
+      cln_pass = inl;
       const Real de = cell ? CleanCellNewtonUpdate() : CleanNewtonUpdate();
       if (cln_bon) tol_nl = cln_tolb;
       if (lagged && inl < cln_maxpic) dpic = de;
@@ -2977,7 +2978,8 @@ Real RadiationM1::CleanNewtonUpdate() {
   // (clean_xt_local: the cell's root to 1e-2 of the next test's tolerance, in the row's
   // budget scale (strict: in E); none in the
   // equilibrium relax of CleanSteadyStart, whose B has no exchange row)
-  const bool xlo = cln_xtloc && !cell && cln_feedback && !(icr_fmeas && cln_vzero);
+  const bool xlo = cln_xtloc && !cell && cln_feedback && !(icr_fmeas && cln_vzero) &&
+                   cln_pass < cln_xtloc_n;
   const Real xtl = 1.0e-2*fmax(cln_tolb, fmax(cln_tol_nl, 10.0*cln_tol));
   Real change = 0.0, femax = 0.0, ermax = 0.0, xcl = 0.0;
   // (CUDA: 4 blocks of 256 per SM, A100 R136 -1.5 ms/cycle; the reduction keeps its
