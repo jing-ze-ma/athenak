@@ -41,6 +41,14 @@
 #include <mpi.h>
 #endif
 
+namespace {
+// <hydro|mhd>/floor_pay: a discarded attempt's floor payment is dropped with it
+void DualDiscard(Mesh *pm) {
+  if (pm->pmb_pack->phydro != nullptr) pm->pmb_pack->phydro->dual.Discard();
+  if (pm->pmb_pack->pmhd != nullptr) pm->pmb_pack->pmhd->dual.Discard();
+}
+}  // namespace
+
 //----------------------------------------------------------------------------------------
 // constructor, initializes data structures and parameters
 //
@@ -821,6 +829,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       if (m1t2fail && !dtr_now) {
         if (pctr_ != nullptr) {pctr_->Restore(pmesh, 1, 1);}
         pm1->Time2Restore(this);
+        DualDiscard(pmesh);   // (floor_pay: the failed stages' payment)
         // dbg_energy_audit: the put-back is no segment (EAUDIT D=)
         if (pm1->dbg_eaudit) {pm1->EAuditMark(6);}
         dtretry::PgenStageRestore();
@@ -897,6 +906,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
 #endif
         }
         if (pctr_ != nullptr) {pctr_->Restore(pmesh, 0, 0);}
+        DualDiscard(pmesh);
         dtr_retrying = true;
         continue;
       }

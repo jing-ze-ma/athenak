@@ -29,7 +29,9 @@
 //!  floor_pay = rad: the energy the floors (and the dual selection) create in an active
 //!    cell, e_final - (E - KE), is taken from the cell's E_rad after the radiation stage
 //!    (RadiationM1::HydroConToPrim): gas + (c/chat) E_rad is exact per cell; what E_rad
-//!    cannot cover (down to e_floor) is counted as unpaid.
+//!    cannot cover (down to e_floor) is counted as unpaid.  floor_pay = rad_column:
+//!    that rest is taken from the E_rad of the cell's radial column (MeshBlock, nearest
+//!    first, as implicit_pos_gas_cons); what is still left is created, CLEAN WARNING.
 //!  floor_audit = N: report the cumulative per-cell counters every N cycles (rank 0):
 //!    cells with E - KE <= 0, KE-dominated, below e(rho, tfloor), below the EOS table
 //!    edge, dual selected, floored (metric-correct on the cubed sphere), and the volume
@@ -60,7 +62,8 @@ enum DualCnt {
 
 struct DualEnergy {
   bool on = false;      // <blk>/dual_energy
-  bool pay = false;     // <blk>/floor_pay = rad
+  bool pay = false;     // <blk>/floor_pay = rad (or rad_column)
+  bool pcol = false;    // <blk>/floor_pay = rad_column: the rest from the radial column
   bool retest = false;  // <blk>/fofc_retest
   bool any = false;     // Pre/Post bookkeeping active
   bool armed = false;   // a hydro update evolved the slots since the last Post
@@ -87,6 +90,8 @@ struct DualEnergy {
   void Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real> &w0,
             DvceArray5D<Real> &wder, DvceArray4D<Real> &wtemp, const EOS_Data &eos);
   void Report(MeshBlockPack *pp);
+  // a discarded attempt (dt_retry, the hesdirk2 redo): its floors' payment goes too
+  void Discard() {if (pay && init) Kokkos::deep_copy(payv, 0.0);}
 };
 
 //! floor_pay = rad: pay `payv` of the fluid from E_rad (slot ie of urad) of the same
