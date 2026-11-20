@@ -1,0 +1,20 @@
+/resnick/groups/carnegie_poc/jingze/orion_runs_1121/LW1170_hg/a/bin:
+total 14330860
+-rw-r-----. 1 jingze hpc_carnegie_poc 1384510625 Nov 20 02:36 hegiant.hydro_w.01741.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 1938158776 Nov 20 02:30 hegiant.m1.01741.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 1938158776 Nov 20 02:31 hegiant.m1.01742.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 1938158777 Nov 20 02:33 hegiant.m1.01743.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 1938158777 Nov 20 02:34 hegiant.m1.01744.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 1938158777 Nov 20 02:36 hegiant.m1.01745.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 1938158777 Nov 20 02:36 hegiant.m1.01746.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 1661334707 Nov 20 02:36 hegiant.m1_vet.00117.bin
+
+/resnick/groups/carnegie_poc/jingze/orion_runs_1121/LW260_hg/a/bin:
+total 12438126
+-rw-r-----. 1 jingze hpc_carnegie_poc 1384510625 Nov 20 02:38 hegiant.hydro_w.01741.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 1938158776 Nov 20 02:31 hegiant.m1.01741.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 1938158417 Nov 20 02:33 hegiant.m1.01742.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 1938158777 Nov 20 02:35 hegiant.m1.01743.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 1938158418 Nov 20 02:37 hegiant.m1.01744.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 1938158777 Nov 20 02:38 hegiant.m1.01745.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 1661334707 Nov 20 02:38 hegiant.m1_vet.00117.bin
