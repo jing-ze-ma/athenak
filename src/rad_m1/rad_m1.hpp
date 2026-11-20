@@ -1981,6 +1981,12 @@ class RadiationM1 {
   // with relaxation k dt > s (Time2FormStage); 0 = off
   Real t2_k1stiff = 0.0;
   Real t2_k1stiff_n = 0.0;      // cell-steps changed (this rank, whole run)
+  // xpos-1120 time2_k1_xpos = th (read only when named; default 0 = off, bitwise): in a
+  // cell whose stage increment would take E or the gas eint of the old vector to <= th x
+  // its start value, the increment's exchange part (the gas eint change) goes back to E
+  // (ch/cl weighted: E + gas kept), so the implicit stage takes that exchange
+  Real t2_k1xpos = 0.0;
+  Real t2_k1xpos_n = 0.0;       // cell-stages changed (this rank, whole run)
   DvceArray4D<Real> t2ys;       // (m,k,j,i) radiation E at the stage-loop start
   void Time2Stash();
   // t2pos-1020: <rad_m1>/time2_posfix = N (read only when named; absent = 4 since

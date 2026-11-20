@@ -542,6 +542,9 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_k1_stiff")) {
     t2_k1stiff = pin->GetReal("rad_m1", "time2_k1_stiff");
   }
+  if (pin->DoesParameterExist("rad_m1", "time2_k1_xpos")) {   // xpos-1120
+    t2_k1xpos = pin->GetReal("rad_m1", "time2_k1_xpos");
+  }
   if (pin->DoesParameterExist("rad_m1", "time2_k1_fct")) {   // seamE-1106
     t2_k1fct = pin->GetReal("rad_m1", "time2_k1_fct");
   }
@@ -1424,6 +1427,56 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
         sum += 1.0;
       }, Kokkos::Sum<Real>(nf));
       t2_flr_n += nf;
+    }
+  }
+  // xpos-1120 time2_k1_xpos = th: the stage increment's exchange back to E where the
+  // old vector would leave E or eint <= th x its start.  The exchange part of a stiff
+  // FSAL slope is the last solve's relaxation rate, not this stage's: extrapolated over
+  // a21 dt (or with K2) it overshoots and takes E (or eint) of the old vector negative,
+  // which face FCT cannot limit (no face carries it) and which the Picard passes of the
+  // stage then chase in a limit cycle.  The gas keeps the kinetic part of its momentum
+  // increment (eint of the old vector = the stage start's), E the rest (ch/cl), so E +
+  // gas, momentum and the face fluxes are unchanged; the stage solve takes the exchange
+  // implicitly (L-stable).  Local, per cell; a cell above th is untouched (bitwise).
+  if (t2_k1xpos > 0.0) {
+    FluidRef flx = FluidRef::Get(pmy_pack);
+    if (flx.on) {
+      auto &id = pmy_pack->pmesh->mb_indcs;
+      const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
+      auto ug = flx.u0;
+      const bool etg = flx.use_etotgrav;
+      auto phc = etg ? flx.phicc0 : DvceArray4D<Real>();
+      const bool emh = flx.mhd;
+      auto emg = emag0;
+      const bool csk = cs_geom;
+      auto ccl = pmy_pack->pcoord->cos_cell;
+      const bool ikx = ike;
+      auto eix_ = t2kei;
+      const Real chcl = chat/c_light, th = t2_k1xpos;
+      Real nx = 0.0;
+      Kokkos::parallel_reduce("m1_t2_k1xpos", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+          DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sum) {
+        const Real dd = ug(m,IDN,k,j,i), idd = 1.0/fmax(dd, 1.0e-300);
+        const Real m1 = ug(m,IM1,k,j,i), m2 = ug(m,IM2,k,j,i), m3 = ug(m,IM3,k,j,i);
+        const Real cc = csk ? ccl(m,k,j) : 0.0;
+        const Real ek0 = CsKeMom(m1, m2, m3, cc)*idd;
+        const Real ek1 = CsKeMom(m1 + in_(m,M1_T2_M1,k,j,i), m2 + in_(m,M1_T2_M1+1,k,j,i),
+                                 m3 + in_(m,M1_T2_M1+2,k,j,i), cc)*idd;
+        Real egr = etg ? dd*phc(m,k,j,i) : 0.0;
+        if (emh) egr += emg(m,k,j,i);
+        const Real eg0 = ug(m,IEN,k,j,i) - ek0 - egr;
+        const Real dex = in_(m,M1_T2_EN,k,j,i) - (ek1 - ek0);   // (the gas eint change)
+        const Real e0 = u0_(m,M1_E,k,j,i), e1 = e0 + in_(m,M1_T2_E,k,j,i);
+        const bool bad = (dex > 0.0 && e0 > 0.0 && !(e1 > th*e0)) ||
+                         (dex < 0.0 && eg0 > 0.0 && !(eg0 + dex > th*eg0));
+        if (!bad) return;
+        in_(m,M1_T2_EN,k,j,i) -= dex;
+        in_(m,M1_T2_E,k,j,i) += chcl*dex;
+        if (ikx) {eix_(m,k,j,i) = 0.0;}
+        sum += 1.0;
+      }, Kokkos::Sum<Real>(nx));
+      t2_k1xpos_n += nx;
     }
   }
   if (t2_inckc > 0.0) {Time2IncKeCap(stage);}   // hgfix-1110 time2_inc_kecap
@@ -4256,6 +4309,9 @@ void RadiationM1::Time2Report() {
   if (t2_k1rd > 0.0) {
     std::cout << " k1_redist(th=" << t2_k1rd << ") cells(rank 0)=" << t2_k1rd_n
               << " unpaid=" << t2_k1rd_un;
+  }
+  if (t2_k1xpos > 0.0) {
+    std::cout << " k1_xpos(th=" << t2_k1xpos << ") cell-stages(rank 0)=" << t2_k1xpos_n;
   }
   if (t2_k1stiff > 0.0) {
     std::cout << " k1_stiff(s=" << t2_k1stiff << ") cells(rank 0)=" << t2_k1stiff_n;
