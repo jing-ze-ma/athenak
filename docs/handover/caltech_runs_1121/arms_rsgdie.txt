@@ -1,0 +1,5 @@
+# RSGDIE replays (orion 2026-11-20, NOTE di). Same binary as LF_rsg / L1_rsg_off: B_v201e (3efbbbd17). PRIORITY: R_LF ahead of the LFa/L0a/LFb/L0b seeds if nodes are short.
+# R_LF: exact LF_rsg + clean_nl_print (diagnostic only; hst should be bitwise to LF_rsg/a over common rows). Restart dumps at cycles 590230, 592500, 592690 (KEEP them on Caltech). Runs until it dies (~592698).
+FINALRST=1 NR=4 R_LF  B_v201e RSG 2911 rsg_v20.keys hydro/floor_pay=rad_column rad_m1/clean_nl_print=true
+# R_off: L1_rsg_off + clean_nl_print, to cycle 590195 (covers off's 6-retry cascade at 590188).
+FINALRST=1 NR=4 R_off B_v201e RSG 407 rsg_v20.keys rad_m1/clean_nl_print=true
