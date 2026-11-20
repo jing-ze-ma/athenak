@@ -1,0 +1,1 @@
+TAG=RF300_rsg_f1 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_realf_4d1904a7d md5=d4087d8176df8d82dc556da0a9b8b095 RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=300 MODE=speed HOLDER=5840649 NODE=hpc-sm-02-11 NR=4 ENVX= EX=rad_m1/clean_conv_kappa=0.1
