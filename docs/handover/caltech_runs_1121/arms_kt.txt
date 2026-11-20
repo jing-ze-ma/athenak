@@ -1,0 +1,4 @@
+# HG kappa trio on PRODUCTION keys (no clean_xt_local), orion 2026-11-20. HIGH priority. B_v20j (6b5388315). Run the 3 together on comparable nodes.
+FINALRST=0 KT1_hg   B_v20j HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true
+FINALRST=0 KT01_hg  B_v20j HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.1
+FINALRST=0 KT001_hg B_v20j HG 20 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.01
