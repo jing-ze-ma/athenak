@@ -102,10 +102,8 @@ const char *kDtrMinimal[] = {
   "m1.vgd_hr",
   // scheme = clean (not visited before: a retry read the failed attempt's): the face
   // arrays' clean_stag_fkin energy flux memory d and its slope K1 (CLF_N + 3, CLF_KD;
-  // copied to cln_rstd, RadiationM1::CleanDtrD), the rays' intensities a
-  // clean_rays = fv1 | fv | lld sweep starts from (cln_fvis in single precision), with
-  // cln_fref_set (force_reference = clean recaptures), and the clean_fv_lag = extrap
-  // inflow history (cln_fvgp with its times and count), and the sc rays' top shell a
+  // copied to cln_rstd, RadiationM1::CleanDtrD), the sc rays' intensities (cln_fvi), with
+  // cln_fref_set (force_reference = clean recaptures), and the sc rays' top shell a
   // reflecting top mirrors (cln_top).  The closure's extrap history is left alone: its
   // flags go with the handles the attempt swapped and, on a first cycle, with cln_init.
   // clean_rot_ring: the offsets and the pending Delta (a retried first step of a block
@@ -113,7 +111,7 @@ const char *kDtrMinimal[] = {
   // reads with cln_fvi (cln_fvd: the step's last build, at t + dt, rewrites them).
   // (cln_rstd itself is that checkpoint: written only by DtRetryQuiesce, CleanDtrD, so
   // it needs no clone of its own)
-  "m1.cln_fvi", "m1.cln_fh", "m1.cln_fvis", "m1.cln_fvgp", "m1.cln_top",
+  "m1.cln_fvi", "m1.cln_fh", "m1.cln_top",
   "m1.cln_rr", "m1.cln_rpd", "m1.cln_fvd",
   // (not visited before the generated visitor): vet_gd_rotate_xfade's G/A/Delta slots,
   // read by the next builds' estimate (RotXfEst); the old scheme's K1 of
@@ -617,7 +615,7 @@ void DtRetry::Build(Mesh *pm) {
     auto *m1 = pk->pradm1;
     // (on the cubed sphere too; their face half ranges cln_fh where every solve rebuilds
     // them first, CleanFhBuilt)
-    if (m1->clean && m1->cln_rfv == 0 && !m1->cln_scmem) {
+    if (m1->clean && !m1->cln_scmem) {
       sel.erase("m1.cln_fvi");
       if (!m1->cln_cssc || m1->CleanFhBuilt()) sel.erase("m1.cln_fh");
     }

@@ -128,39 +128,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     const bool pl = (ov[1] > 0.0);
     cln_linpass = pin->GetOrAddBoolean("rad_m1","clean_lin_pass",nw || pl);}
     cln_tol_nl = pin->GetOrAddReal("rad_m1","clean_tol_nl",1.0e-11);
-    // clean_fv_tol (read only when named, default 1e-10): the passes of the FV rays stop
-    // at this largest change over the largest intensity
-    if (pin->DoesParameterExist("rad_m1","clean_fv_tol")) {
-      cln_fvtol = pin->GetReal("rad_m1","clean_fv_tol");
-    }
-    // clean_fv_lag = off | lag | extrap (read only when named, default off): one pass of
-    // the FV rays per build, the inflow across MeshBlock faces and periodic seams that of
-    // the last build (lag) or extrapolated linearly in time from the last two (extrap)
-    if (pin->DoesParameterExist("rad_m1","clean_fv_lag")) {
-      std::string fl = pin->GetString("rad_m1","clean_fv_lag");
-      cln_fvlag = (fl.compare("extrap") == 0) ? 2 : ((fl.compare("lag") == 0) ? 1 : 0);
-      if (cln_fvlag == 0 && fl.compare("off") != 0) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-          << std::endl << "<rad_m1>/clean_fv_lag = off | lag | extrap" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-    }
-    // clean_fv_lag_tol (read only when named, default 1e-4): an extrap build stays at one
-    // pass while its extrapolated inflow missed the new one by at most this over the
-    // largest intensity, else it sweeps on until converged
-    if (pin->DoesParameterExist("rad_m1","clean_fv_lag_tol")) {
-      cln_fvlagtol = pin->GetReal("rad_m1","clean_fv_lag_tol");
-    }
     cln_raymin = pin->GetOrAddReal("rad_m1","clean_ray_min",1.0e-3);
-    // clean_rays = sc (the vet_gd default on sp and cs) | fv1 | fv | lld
-    if (pin->DoesParameterExist("rad_m1","clean_rays")) {
-      std::string cr = pin->GetString("rad_m1","clean_rays");
-      cln_rfv = (cr.compare("lld") == 0) ? 3 : (cr.compare("fv") == 0) ? 2 :
-                ((cr.compare("fv1") == 0) ? 1 : 0);
-      cln_fvb = (cln_rfv == 3) ? 4 : 1;
+    // clean_rays = sc (vet_gd's own sweep; the FV rays fv1 | fv | lld are removed)
+    if (pin->DoesParameterExist("rad_m1","clean_rays") &&
+        pin->GetString("rad_m1","clean_rays") != "sc") {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1>/clean_rays = sc (the FV rays fv1 | fv | lld were "
+        << "removed)" << std::endl;
+      std::exit(EXIT_FAILURE);
     }
     // clean_rot_ring = off | live | jump (read only when named; live wherever the vet_gd
-    // FV rays rotate with a cross-fade, CleanInit): a rotating union swept as the current
+    // rays rotate with a cross-fade, CleanInit): a rotating union swept as the current
     // set (+ the next one), the older ones carried as moment offsets (CleanRingMoments)
     // clean_rot_fuse (default on): the live ring's two sets
     // (b, b+1) of a build in one fused sweep (vet_gd_rotate_xfade_fuse; the raw sp band
@@ -191,12 +169,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // the swept sets b, b+1 (as production's ring)
     if (pin->DoesParameterExist("rad_m1","clean_ring_fields")) {
       cln_rcell = (pin->GetString("rad_m1","clean_ring_fields") == "closure");
-    }
-    // clean_fv_joint (read only when named): the fv1 sweep levels of all
-    // MeshBlocks of a rank at once, the upwind cell across a MeshBlock face read from its
-    // own block
-    if (pin->DoesParameterExist("rad_m1","clean_fv_joint")) {
-      cln_fvjoint = pin->GetBoolean("rad_m1","clean_fv_joint");
     }
     cln_fillpass = pin->GetOrAddInteger("rad_m1","clean_fill_passes",8);
     cln_pred = pin->GetOrAddBoolean("rad_m1","clean_predict",true);
@@ -274,31 +246,23 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "(clean_stag_ftie, fsweeps, mesh or MeshBlock size)" << std::endl;
     }}
     // the consistency term is the default on Cartesian meshes and, with the vet_gd
-    // rays transported conservatively (fv1) or swept by vet_gd (sc), on spherical polar;
-    // on the cubed sphere the default with vet_gd (well-balanced only with it)
+    // rays (sc), on spherical polar; on the cubed sphere the default with vet_gd
+    // (well-balanced only with it)
     const bool sp = pmy_pack->pmesh->use_spherical_polar;
     const bool cs = pmy_pack->pmesh->use_cubed_sphere;
     const bool vg = pin->DoesParameterExist("rad_m1","vet_gd") &&
                     pin->GetBoolean("rad_m1","vet_gd");
     const bool gd = sp && vg;
-    // (sp and cs, fresh: vet_gd's own sweep, sc, recorded so that a restart keeps it; a
-    // restart file without the key keeps fv1)
+    // (sp and cs, fresh: recorded so that a restart keeps it; a restart file without
+    // the key ran the removed FV rays fv1: FATAL unless the input names clean_rays)
     if ((gd || (cs && vg)) && !pin->DoesParameterExist("rad_m1","clean_rays")) {
-      const bool sc = !global_variable::restart_run;
-      cln_rfv = sc ? 0 : 1;
-      if (sc) pin->GetOrAddString("rad_m1","clean_rays","sc");
-    }
-    // clean_fv_float (read only when named): the fv1 rays' intensities in single
-    // precision (no effect without FV rays).  It degrades the well-balanced state
-    // (rhse_cs6 vcs_max 1e-9 -> 4e-8) and the exact L_z (3e-14 -> 1e-11): not for
-    // well-balanced or L_z-sensitive runs
-    if (pin->DoesParameterExist("rad_m1","clean_fv_float")) {
-      cln_fvf32 = pin->GetBoolean("rad_m1","clean_fv_float") && cln_rfv > 0;
-      if (cln_fvf32 && cln_rfv != 1) {
+      if (global_variable::restart_run) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-          << std::endl << "<rad_m1>/clean_fv_float needs clean_rays = fv1" << std::endl;
+          << std::endl << "<rad_m1>/clean_rays: the restart file ran the removed FV rays "
+          << "(fv1); name clean_rays = sc" << std::endl;
         std::exit(EXIT_FAILURE);
       }
+      pin->GetOrAddString("rad_m1","clean_rays","sc");
     }
     // (with the split energy flux, where the rays are not opt-in)
     cln_split = true;
@@ -1822,7 +1786,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // (a restart of the old production's averaged set, whose file has no cross-fade:
     // the sp sc rays take it, the live ring; without it the first steps from the
     // production state take the K-set closure's jumps, which its R136 restart cannot)
-    if (clean && sph_geom && global_variable::restart_run && cln_rfv == 0 &&
+    if (clean && sph_geom && global_variable::restart_run &&
         VgdRotOn() && pin->DoesParameterExist("rad_m1","vet_rotate_avg") &&
         pin->GetInteger("rad_m1","vet_rotate_avg") > 1 &&
         !pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade")) {
@@ -1869,8 +1833,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       }
     }
     // the cubed sphere with clean_rays = sc: vet_gd's own sweep (intensities to cln_fvi)
-    cln_cssc = clean && pmy_pack->pmesh->use_cubed_sphere && vgd_on && cln_rfv == 0;
-    // clean_rot_ring not named: live wherever the vet_gd rays (FV or sc) rotate in time
+    cln_cssc = clean && pmy_pack->pmesh->use_cubed_sphere && vgd_on;
+    // clean_rot_ring not named: live wherever the vet_gd rays rotate in time
     // with a cross-fade (decided here, before a restart file's channels are counted)
     if (clean && !cln_ring_named && vgd_on && vra_on && g_vra_adv &&
         vgd_xf && (vgd_rot_dt > 0.0 || vgd_rot_auto) && vgd_rot_align &&
@@ -2301,11 +2265,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       }
     } else if (vgd_on && clean && pmy_pack->pmesh->use_spherical_polar &&
                !pmy_pack->pmesh->use_polar_boundary) {
-      // gdcheck-1120 (unnamed, scheme = clean): the rays' theta walls follow the mesh: a
-      // reflecting wall mirrors (as CleanFvWalls), a periodic one wraps (was CleanInit,
-      // which overrode a named vet_gd_theta_wall)
-      vgd_thmir = (cln_rfv == 0) && (pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x2] ==
-                                     BoundaryFlag::reflect);
+      // (unnamed, scheme = clean): the rays' theta walls follow the mesh: a reflecting
+      // wall mirrors, a periodic one wraps
+      vgd_thmir = (pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x2] ==
+                   BoundaryFlag::reflect);
     }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_seam_mask")) {
       vgd_seam = std::max(0, pin->GetInteger("rad_m1","vet_gd_seam_mask"));
@@ -2740,15 +2703,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // Returns immediately with transport = explicit.
   ImplicitInit(pin);
   // clean sc rays with a reflecting top: its mirror reads the last build (rad_m1.hpp)
-  cln_scmem = clean && vgd_on && cln_rfv == 0 && sph_geom &&
-              ibc_x1max == M1_IBC_REFLECT;
+  cln_scmem = clean && vgd_on && sph_geom && ibc_x1max == M1_IBC_REFLECT;
   // clean_ray_cut (default on where it applies: the staggered layout's sc rays on 3-D
   // spherical polar or the cubed sphere, one MeshBlock along x1, no reflecting top, no
   // band_ring_inward; elsewhere not read, the log says so; naming it true there is
   // FATAL): CleanRayCut
   if (clean) {
     const Mesh *pm = ppack->pmesh;
-    const bool ok = vgd_on && cln_rfv == 0 && sph_geom &&
+    const bool ok = vgd_on && sph_geom &&
                     pm->three_d && !pm->multilevel && pm->mesh_indcs.nx1 == indcs.nx1 &&
                     !cln_scmem && !vgd_pk_par;
     cln_rcut_on = ok;

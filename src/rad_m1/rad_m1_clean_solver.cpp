@@ -96,7 +96,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.drag = cln_vimp && cln_feedback;
   x.upw = cln_upw;
   x.sbi = cln_sbimp && cln_feedback;
-  x.sar = !cln_gflux && !(vgd_on && cln_rfv > 0);
+  x.sar = !cln_gflux;
   x.op = opac;
   x.nf = pmy_pack->pmesh->three_d ? 3 : (pmy_pack->pmesh->multi_d ? 2 : 1);
   x.is = indcs.is;
@@ -113,7 +113,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
             ? 0.5/tan(ms.x2min) + 0.5/tan(ms.x2max) : 0.0;   // (read on that wrap only)
   x.cub = pmy_pack->pmesh->use_cubed_sphere;
   x.lwb = x.cub && cln_latwb;
-  if (x.sph || (!x.cub && cln_rfv > 0)) {
+  if (x.sph) {
     auto *pc = pmy_pack->pcoord;
     x.vol = pc->volume;
     x.area[0] = pc->area.x1f;

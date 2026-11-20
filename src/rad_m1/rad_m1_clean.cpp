@@ -405,6 +405,7 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/clean_dissip_power", "x"},
     {"rad_m1/clean_line_teams", "x"}, {"rad_m1/clean_line_solver", "x"},
     {"rad_m1/clean_line_chunk", "x"},
+    {"rad_m1/clean_fv_*", "x"},   // (the FV rays' keys, removed with them)
     // (the old solver's diagnostics, multi-rate, coupling split and K1 FCT: removed)
     {"rad_m1/dbg_energy_audit", "!"}, {"rad_m1/dbg_cs_metric_selftest", "!"},
     {"rad_m1/implicit_det_trace", "!"}, {"rad_m1/dbg_hydro_off", "!"},
@@ -425,8 +426,8 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
         if (t[1] == nullptr) break;
         const std::string c(t[1]);
         if (c == "x") {
-          CleanFatal("<" + k + "> belonged to the removed cell layout (clean_layout = "
-                     "staggered is the only one); remove it from the input");
+          CleanFatal("<" + k + "> belonged to a removed path (the cell layout or the FV "
+                     "rays); remove it from the input");
         }
         if (c == "!" && v != "false" && v != "0") {
           CleanFatal("<" + k + "> = " + v + " has no counterpart in scheme = clean");
@@ -610,48 +611,46 @@ void RadiationM1::CleanInit() {
                "reference is the steady start's force)");
   }
   if (vgd_on && VgdRotOn()) {
-    // the rotating FV rays (CleanFvSets): the closure is the J-weighted mean of the
+    // the rotating rays (CleanFvSets): the closure is the J-weighted mean of the
     // sets, continuous across the blocks with the cross-fade; no slope correction
-    const bool fixed = vra_on && !g_vra_adv;
     // (vet_rotate_avg_ema: production's EMA, only on clean_rot_ring = live; without
     // _dema, _tau, _lc and _diag, which CleanRingEma does not carry)
     const bool ema_ok = cln_ring == 1 && !vra_ema_dema && vra_ema_tau <= 0.0 &&
                         vra_ema_lc <= 0.0 && vra_ema_diag == 0;
     if ((vra_ema && !ema_ok) || vra_eq ||
         (vgd_xf && !(vgd_rot_dt > 0.0 || vgd_rot_auto)) ||
-        (cln_rfv == 2 && !fixed) || (vgd_rot3 && !pm->three_d)) {
+        (vgd_rot3 && !pm->three_d)) {
       CleanFatal("<rad_m1>/scheme = clean with a rotating vet_gd set: vet_rotate_avg = K "
                  "(J-weighted; _ema only with clean_rot_ring = live, no _dema, _tau, "
-                 "_lc, _diag), vet_gd_rotate_xfade with vet_gd_rotate_dt, clean_rays = "
-                 "fv only for a fixed union (vet_rotate_avg without vet_rotate_advance), "
-                 "and on a 2-D axisymmetric mesh the z axis");
+                 "_lc, _diag), vet_gd_rotate_xfade with vet_gd_rotate_dt, and on a "
+                 "2-D axisymmetric mesh the z axis");
     }
   }
   const bool ring_ok = vgd_on && vra_on && g_vra_adv &&
                        (vgd_rot_dt > 0.0 || vgd_rot_auto) && vgd_rot_align &&
                        vra_k <= M1_RA_NF;
   if (cln_ring && !(ring_ok && vgd_xf == (cln_ring == 1))) {
-    CleanFatal("<rad_m1>/clean_rot_ring needs vet_gd FV rays rotating in time: "
+    CleanFatal("<rad_m1>/clean_rot_ring needs vet_gd rays rotating in time: "
                "vet_rotate_avg = K with vet_rotate_advance, vet_gd_rotate_dt and "
                "_align, with vet_gd_rotate_xfade for live, without for jump");
   }
   // the sc rays sweep one set at a time: a mean or a cross-fade of sets is the ring's
-  if (vgd_on && VgdRotOn() && cln_rfv == 0 && (vra_on || vgd_xf) && !cln_ring) {
+  if (vgd_on && VgdRotOn() && (vra_on || vgd_xf) && !cln_ring) {
     CleanFatal("<rad_m1>/clean_rays = sc with vet_rotate_avg or vet_gd_rotate_xfade "
                "needs clean_rot_ring");
   }
   // jump: the first step of a block is a backward-Euler step (no slope of the old sets)
   if (cln_ring == 2) vgd_rot_slope = 2;
   if (pm->use_cubed_sphere) {
-    // the rays are vet_gd's directions transported conservatively (CleanFvSweep) or
-    // swept by vet_gd itself (clean_rays = sc: its band, VetGdCsSweep), or
-    // the analytic sphere (eddington: of infinite radius); an even panel resolution
-    // keeps the cell centres off the z axis (the frame of y, CleanCsFrame)
+    // the rays are vet_gd's, swept by vet_gd itself (clean_rays = sc: its band,
+    // VetGdCsSweep), or the analytic sphere (eddington: of infinite radius); an even
+    // panel resolution keeps the cell centres off the z axis (the frame of y,
+    // CleanCsFrame)
     if (!(cln_sphere || cln_edd || vgd_on) || (cln_consist && !vgd_on) ||
         vgd_twin || vgd_async || pm->mesh_indcs.nx2 % 2 != 0) {
       CleanFatal("<rad_m1>/scheme = clean on the cubed sphere needs "
                  "clean_closure = sphere | eddington (no clean_consistency) or closure = "
-                 "vet_col with vet_gd (clean_rays = fv1 | fv | sc, no twin or async) and "
+                 "vet_col with vet_gd (clean_rays = sc, no twin or async) and "
                  "an even <mesh>/nx2");
     }
     if (!vgd_on) {
@@ -687,63 +686,7 @@ void RadiationM1::CleanInit() {
   // the formal solution must provide the half-range sums and C1
   impl_beam_hr = true;
   thsw_c1 = true;
-  if (cln_rfv > 0) CleanCartGeometry();
   cln_init = true;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::CleanCartGeometry
-//! \brief Cartesian mesh with the FV rays (clean_rays = fv1 | fv | lld): the cell
-//! geometry the rays read through the curvilinear hooks (volumes, face areas, centre and
-//! face coordinates)
-
-void RadiationM1::CleanCartGeometry() {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  auto *pc = pmy_pack->pcoord;
-  const int nmb = pmy_pack->nmb_thispack, ng = indcs.ng;
-  const int c1 = indcs.nx1 + 2*ng, c2 = (indcs.nx2 > 1) ? indcs.nx2 + 2*ng : 1;
-  const int c3 = (indcs.nx3 > 1) ? indcs.nx3 + 2*ng : 1;
-  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
-  Kokkos::realloc(pc->volume, nmb, c3, c2, c1);
-  Kokkos::realloc(pc->area.x1f, nmb, c3, c2, c1 + 1);
-  Kokkos::realloc(pc->area.x2f, nmb, c3, c2 + 1, c1);
-  Kokkos::realloc(pc->area.x3f, nmb, c3 + 1, c2, c1);
-  Kokkos::realloc(pc->x1v, nmb, c1);
-  Kokkos::realloc(pc->x2v, nmb, c2);
-  Kokkos::realloc(pc->x3v, nmb, c3);
-  Kokkos::realloc(pc->xx1f, nmb, c1 + 1);
-  Kokkos::realloc(pc->xx2f, nmb, c2 + 1);
-  Kokkos::realloc(pc->xx3f, nmb, c3 + 1);
-  auto &size = pmy_pack->pmb->mb_size;
-  auto vol = pc->volume;
-  auto a1 = pc->area.x1f, a2 = pc->area.x2f, a3 = pc->area.x3f;
-  auto x1v = pc->x1v, x2v = pc->x2v, x3v = pc->x3v;
-  auto x1f = pc->xx1f, x2f = pc->xx2f, x3f = pc->xx3f;
-  par_for("cln_cart_geo", DevExeSpace(), 0, nmb - 1, 0, c3, 0, c2, 0, c1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real d1 = size.d_view(m).dx1, d2 = size.d_view(m).dx2, d3 = size.d_view(m).dx3;
-    const bool i_ = i < c1, j_ = j < c2, k_ = k < c3;
-    if (j_ && k_) a1(m,k,j,i) = d2*d3;
-    if (i_ && k_) a2(m,k,j,i) = d1*d3;
-    if (i_ && j_) a3(m,k,j,i) = d1*d2;
-    if (!(i_ && j_ && k_)) return;
-    vol(m,k,j,i) = d1*d2*d3;
-    if (j == 0 && k == 0) {
-      x1f(m,i) = size.d_view(m).x1min + (i - is)*d1;
-      x1v(m,i) = x1f(m,i) + 0.5*d1;
-      if (i == c1 - 1) x1f(m,c1) = x1f(m,i) + d1;
-    }
-    if (i == 0 && k == 0) {
-      x2f(m,j) = size.d_view(m).x2min + (j - js)*d2;
-      x2v(m,j) = x2f(m,j) + 0.5*d2;
-      if (j == c2 - 1) x2f(m,c2) = x2f(m,j) + d2;
-    }
-    if (i == 0 && j == 0) {
-      x3f(m,k) = size.d_view(m).x3min + (k - ks)*d3;
-      x3v(m,k) = x3f(m,k) + 0.5*d3;
-      if (k == c3 - 1) x3f(m,c3) = x3f(m,k) + d3;
-    }
-  });
 }
 
 //----------------------------------------------------------------------------------------
@@ -1155,7 +1098,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // solve of a restart, before any ray build)
   if (vgd_on && !tau_ready) VetColInit();
   // (the sc rays' ring on the cubed sphere: the union's directions and weights too)
-  if (vgd_on && (cln_rfv > 0 || (cln_cssc && cln_ring)) && cln_fvn == 0) {
+  if (vgd_on && cln_cssc && cln_ring && cln_fvn == 0) {
     CleanFvSets(pmy_pack->pmesh->time, pmy_pack->pmesh->ncycle - 1);
     // (the sc ring: its two sets, the intensities a restart file holds, or none from a
     // file of another ray method: zero, until the first build)

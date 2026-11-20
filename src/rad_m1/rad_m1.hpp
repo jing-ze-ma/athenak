@@ -2810,7 +2810,6 @@ class RadiationM1 {
   void CleanInit();
   void CleanPreflight(ParameterInput *pin);
   void CleanCsGeometry();
-  void CleanCartGeometry();
   void CleanSteadyStart(Driver *pdrive);
   void CleanInitFaceFluxes();
   void CleanRstFaces();
@@ -2830,15 +2829,6 @@ class RadiationM1 {
   void CleanGdFaceSums(const int s0 = -1, const int s1 = -1);
   DvceArray5D<Real> cln_gdrf;   // vgd_pk: the rays' r face fluxes of the sweep
   const CleanArgs *cln_gdx = nullptr;   // their CleanArgs in device memory (slot 3)
-  void CleanFvSweep();
-  void CleanFvSourceAlloc();
-  void CleanFvCartSource();
-  void CleanFvLevels();
-  int CleanFvJoint(const DvceArray1D<int> &mds, const int nq, DvceArray2D<int> lev,
-                   const DvceArray3D<Real> &xc);
-  void CleanFvPanelSlopes(const bool q);
-  void CleanFvSeams();
-  bool CleanFvWall(const int side);
   void CleanFvSets(const Real tc, const int cyc);
   void CleanRingMoments();
   void CleanRingShift(const int64_t b);
@@ -2848,8 +2838,6 @@ class RadiationM1 {
   void CleanRingPreShift();   // dt_retry: the shift before the checkpoint
   void CleanRingJump();
   void CleanRingSolveSet();
-  void CleanFvTables(const int d0, const int nd);
-  void CleanFvWalls(const bool top);
   void CleanClosureFill();
   void CleanClosureEddington();
   void CleanFaceCoefficients();
@@ -2899,8 +2887,9 @@ class RadiationM1 {
   // push 16's order (CleanRstSlot); the cell layout keeps its first CLN_N - 1, CLN_JR is
   // staggered only
   int CleanRstNq() const;
-  // the rays' intensity channels of the restart files: the FV rays' (cln_fvi), and the sc
-  // rays' last build when their reflecting top mirrors it (cln_scmem: its top shell)
+  // the rays' intensity channels of the restart files: the cubed sphere's sc rays'
+  // (cln_fvi), and their last build when a reflecting top mirrors it (cln_scmem: its top
+  // shell)
   int CleanRstNfv() const;
   void CleanScUnion2();
   void CleanFaceHalf(const DvceArray2D<Real> &dv, const int o, const bool zero,
@@ -2977,8 +2966,6 @@ class RadiationM1 {
   Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: Newton tolerance (relative dE, dT, dv)
   Real cln_tolrel = 0.0, cln_tolrmx = 1.0e-4;   // clean_tol_rel, clean_tol_rel_max
   bool cln_gtf = false;         // clean_gas_tfloor: gas T >= tfloor, energy to/from E
-  Real cln_fvtol = 1.0e-10;     // clean_fv_tol: pass stop of the FV rays
-  int cln_fvlag = 0;            // clean_fv_lag: 0 off, 1 lag, 2 extrap (CleanFvSweep)
   Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E
   // clean_ray_cut (CleanRayCut; default on where it applies): no rays below the shell
   // where every deeper cell is in the diffusion regime, R = |grad S|/(chi S) <
@@ -3118,54 +3105,7 @@ class RadiationM1 {
   Real cln_dtb = 0.0;           // dt of the closure build
   DvceArray5D<Real> cln_s;      // closure (CLN_*)
   bool cln_cssc = false;        // the cubed sphere, clean_rays = sc (vet_gd sweep)
-  int cln_rfv = 0;              // clean_rays = fv1 | fv | lld: the conservative sweep
-  int cln_fvb = 1;              // blocks of cln_fvi: lld 4 (average, slopes along x1..x3)
-  DvceArray5D<Real> cln_fvi;    // its intensities (m, b n + d, k, j, i)
-  DvceArray5D<float> cln_fvis;  // the same in single precision (clean_fv_float)
-  bool cln_fvf32 = false;       // clean_fv_float: cln_fvis instead of cln_fvi
-  DvceArray5D<Real> cln_fvq;    // lld: the source moments (m, CLQ_*, k, j, i)
-  DvceArray5D<Real> cln_fvp;    // fv: the intensities of the last build (downwind slopes)
-  DvceArray5D<Real> cln_fvx;    // 2-D axisymmetric: the intensities of the last pass
-  DvceArray2D<int8_t> cln_fvdue, cln_fvdone;   // fv1 passes: cells due (CleanFvSweep)
-  bool cln_fvjoint = false;     // clean_fv_joint: fv1 levels over the rank's MeshBlocks
-  bool cln_fvexact = false;     // joint: one pass is the exact sweep (all ranks)
-  bool cln_fvfull = true;       // clean_fv_lag: a new swept set this step (full sweep)
-  Real cln_fvtc = 0.0;          // clean_fv_lag: the closure time of this build
-  int cln_fvnv = 0;             // extrap: last builds of this set in the history (2)
-  Real cln_fvt1 = 0.0;          // extrap: closure time of the last build
-  Real cln_fvt2 = 0.0;          // extrap: closure time of the inflow in cln_fvgp
-  bool cln_fvrst = false;       // extrap: cln_fvi read from a restart (its record)
-  DvceArray3D<Real> cln_fvgp;   // extrap: the first ghost layer of the build before
-  DvceArray3D<Real> cln_fvgx;   // extrap: the inflow the pass took (extrapolated)
-  Real cln_fvlagtol = 1.0e-4;   // clean_fv_lag_tol: inflow miss of one extrap pass
-  Real CleanFvExtrapMiss();
-  bool CleanFvExtrap();
-  void CleanFvRstRead();
-  void CleanFvRstWrite(DvceArray5D<Real> &a, const int c, const int nmb, const int m0);
-  int cln_fvl0 = 0;             // joint: the first level a later pass takes
-  int cln_fvjn[2] = {0, 0};     // joint: the dropped inflows, the cells reading ghosts
-  bool cln_fvjoint_said = false;   // joint: the first build's counts printed
-  int64_t cln_fvnp[3] = {0, 0, 0};   // FV rays: builds, passes, levels swept (summary)
-  DvceArray2D<int> cln_fvcore;  // joint: the cycle segment of each cell (m n + d, c)
-  std::vector<std::array<int, 3>> cln_fvseg;   // joint: its levels and number
-  DvceArray4D<int> cln_fvsrc;   // joint: the local m nc + c of each ghost (-1 none)
-  DvceArray5D<Real> cln_fva;    // the outward vector areas of the six faces of a cell
-  DvceArray1D<int> cln_fvc;     // the cells of each m n + d by level (CleanFvLevels)
-  DvceArray2D<int> cln_fvg;     // the start of each m n + d in a level (level, m n + d)
-  DvceArray2D<int64_t> cln_fvo; // its offset in cln_fvc less that start (level, m n + d)
-  DvceArray1D<int> cln_fvk;     // the m n + d at every 64th entry of each level
-  std::vector<int64_t> cln_fvkl;   // the start of each level in cln_fvk
-  std::vector<std::vector<int>> cln_fvls;   // the level starts of each m n + d
-  std::vector<int> cln_fvlv;    // the number of cells of each level
-  std::vector<bool> cln_fvdo;   // the directions whose levels are due (CleanFvTables)
-  DvceArray4D<int> cln_fvm;     // the direction maps of the periodic seams (m, side, k, d)
-  DvceArray2D<Real> cln_fvt;    // scratch of CleanFvSeams
-  DvceArray4D<int> cln_fvwm;    // specular maps of reflecting theta walls (m,side,k,d)
-  DvceArray4D<Real> cln_fvwu;   // |n . theta_hat| there
-  DvceArray5D<int> cln_fvrm;    // those of reflecting x1 faces (m,side,k,j,d)
-  DvceArray5D<Real> cln_fvru;   // |n . r_hat| there
-  DvceArray5D<Real> cln_fvw;    // the walls' incoming intensities (m,side,k,i,b N + d;
-                                // sides 2, 3: the x1 faces, by j)
+  DvceArray5D<Real> cln_fvi;    // the sc rays' intensities (m, d, k, j, i)
   DvceArray2D<Real> cln_fvd;    // the swept directions (x, y, z, weight; CleanFvSets)
   int cln_fvn = 0;              // their number
   std::vector<Real> cln_fvkey;  // the set (block key) in each slot of a rotating union
