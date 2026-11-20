@@ -1,0 +1,9 @@
+# LZTEL2: clean_cs_lz_tel fix (orion 2026-11-20). After T2K_rsg / T3K_hg, normal-high priority.
+# B_lztel2  = caltech-runs/lztel2       a1874999f8454fd2622715e5b42eea91cb867636
+# B_lztel2s = caltech-runs/lztel2-study 79406ea5708f4cb5fd695a0b0362a34606bbe846 (env-gated prints)
+FINALRST=0 Z1_rsg B_lztel2 RSG 6 rsg_v20.keys
+FINALRST=0 Z2_rsg B_lztel2 RSG 300 rsg_v20.keys output1/dt=1 rad_m1/clean_cs_lz_tel=true
+FINALRST=0 Z3_hg  B_lztel2 HG 50 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_cs_lz_tel=true
+FINALRST=1 MODE=rt NH=3 Z4_rsg B_lztel2 RSG 6 rsg_v20.keys rad_m1/clean_cs_lz_tel=true
+FINALRST=0 ENVX=LZT2=1 ZS_hg  B_lztel2s HG 4 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_cs_lz_tel=true
+FINALRST=0 ENVX=LZT2=1 ZS_rsg B_lztel2s RSG 4 rsg_v20.keys rad_m1/clean_cs_lz_tel=true
