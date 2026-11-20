@@ -2694,6 +2694,13 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
   }
   auto xdg = cln_xdg;
   const bool xdd = cln_xd;
+  // (CLEAN PDIAG study: per cell the RHS terms, comps 0-11 this pass, 12-23 the last)
+  const bool pdr_ = cln_nlprint && cln_bon && x.feedback;
+  if (pdr_ && cln_pdr.extent_int(0) < nmb1 + 1) {
+    Kokkos::realloc(cln_pdr, nmb1 + 1, 24, cln_w.s.extent_int(2), cln_w.s.extent_int(3),
+                    cln_w.s.extent_int(4));
+  }
+  auto pdr = cln_pdr;
   // (clean_stag_kpos / xpat: the rows' Patankar diagonal CLW_PD; counts of this pass)
   const bool pdo = x.pd, xpd = cln_xpat;
   const bool xte = (cln_xte > 0) && x.feedback;   // (clean_xt_exact: CLW_XA, CLW_XW)
@@ -2708,7 +2715,7 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
     const Real hcke = x.h*x.c*op(m,M1_OP_E,k,j,i);
     Real rr = 0.0, work = 0.0, gm = 1.0, sb = 0.0, dop = 0.0, ek = 0.0, gres = 0.0;
     Real eg = 0.0;
-    bool gr = false;
+    bool gr = false, secf = false;
     if (x.feedback) {
       Real b2 = 0.0, ba = 0.0, by = 0.0, bp = 0.0, y2 = 0.0, fs[3] = {0.0, 0.0, 0.0};
       // (clean_stag_fwork: the F solve's F, which the gas takes)
@@ -2802,6 +2809,7 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
         cg = (eg - ei)/(t - to);
         s = hckp*arad_*(t + to)*(t*t + to*to);
       }
+      secf = sec && t - to > 1.0e-6*t;
       rr = (s > 0.0) ? s/(cg + s) : 0.0;   // (no exchange: none, also where T = 0)
       // (1 - r = cg/(cg + s) without cancellation, as implicit_src_stable)
       x.w(m,CLW_RY,k,j,i) = (s > 0.0) ? cg/(cg + s) : 1.0;
@@ -2838,6 +2846,14 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
       if (wpa) work += fra*wc(m,k,j,i);
     }
     x.w(m,CLW_RR,k,j,i) = rr;
+    if (pdr_) {
+      for (int q = 0; q < 12; ++q) pdr(m,12+q,k,j,i) = pdr(m,q,k,j,i);
+      pdr(m,0,k,j,i) = sb; pdr(m,1,k,j,i) = gres; pdr(m,2,k,j,i) = work;
+      pdr(m,3,k,j,i) = rr; pdr(m,4,k,j,i) = eg; pdr(m,5,k,j,i) = x.w(m,CLW_EI,k,j,i);
+      pdr(m,6,k,j,i) = hckp*arad_*SQR(SQR(t)); pdr(m,7,k,j,i) = t;
+      pdr(m,8,k,j,i) = x.w(m,CLW_EK,k,j,i); pdr(m,9,k,j,i) = hcke;
+      pdr(m,10,k,j,i) = (gr ? 1.0 : 0.0) + (secf ? 2.0 : 0.0);
+    }
     // (eqr: the exchange through the gas row of the root T, hckp a T^4 - r hcke E =
     // EI - e(T) - sb + (1 - r) hcke E, without the cancellation of its two terms, each
     // ~ hcke E, whose round-off at h -> infinity exceeds E in opaque cells)
@@ -2855,6 +2871,7 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
         + x.w(m,CLW_RY,k,j,i)*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) - sdv + hes :
         x.w(m,CLW_EO,k,j,i) + hckp*arad_*SQR(SQR(t))
         - rr*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) - work - sdv + sb + gres + hes;
+    if (pdr_) pdr(m,11,k,j,i) = sdv;
     // (clean_stag_sbimp: (1 - r) sb(E) in the operator as the cell layout's, Newton form)
     if (x.sbi) x.w(m,CLW_B,k,j,i) -= (1.0 - rr)*CleanStagBetaE(xh, CLW_EK, m, k, j, i);
     // (clean_stag_xpat: the exchange's removal R = r hcke E_k explicit while it leaves B >= th E_old (th = CLN_KPOS_TH),
@@ -3170,6 +3187,48 @@ void RadiationM1::CleanPassDiag(const DvceArray1D<Real> &pdg, const Real change,
   n1 = CleanReduce(n1, false);
   n10 = CleanReduce(n10, false);
   ng = CleanReduce(ng, false);
+  // (study: over the cells above tol, the count of secant rows and of sb changes, and
+  // the largest |change| of each lagged term between the last two RHS over the gas
+  // row's scale SG: sb, gres, work, sdv (over SE), and of the exchange P = hckp a T^4)
+  Real ns = 0.0, nsb = 0.0, msb = 0.0, mgr = 0.0, mwk = 0.0, msd = 0.0, mp = 0.0;
+  {
+    auto pdr = cln_pdr;
+    auto w = cln_w;
+    auto &ic = pmy_pack->pmesh->mb_indcs;
+    const int ks = ic.ks, js = ic.js, is = ic.is;
+    const bool hv = pdr.extent_int(0) >= nmb;
+    if (hv) {
+      Kokkos::parallel_reduce("cln_pdiag2", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+        nmb*nkji), KOKKOS_LAMBDA(const int idx, Real &a, Real &b, Real &c, Real &d,
+        Real &e, Real &f, Real &g) {
+        if (fabs(pdg(idx)) <= tol) return;
+        const int m = idx/nkji, k = ks + (idx%nkji)/nji, j = js + (idx%nji)/nx1;
+        const int i = is + idx%nx1;
+        const Real sg = w(m,CLW_SG,k,j,i), se = w(m,CLW_SE,k,j,i);
+        if (pdr(m,10,k,j,i) >= 2.0) a += 1.0;
+        const Real fl = pdr(m,10,k,j,i);
+        if (fl == 1.0 || fl == 3.0) b += 1.0;
+        c = fmax(c, fabs(pdr(m,0,k,j,i) - pdr(m,12,k,j,i))/sg);
+        d = fmax(d, fabs(pdr(m,1,k,j,i))/sg);
+        e = fmax(e, fabs(pdr(m,2,k,j,i) - pdr(m,14,k,j,i))/sg);
+        f = fmax(f, fabs(pdr(m,11,k,j,i) - pdr(m,23,k,j,i))/se);
+        g = fmax(g, fabs(pdr(m,6,k,j,i) - pdr(m,18,k,j,i))/sg);
+      }, Kokkos::Sum<Real>(ns), Kokkos::Sum<Real>(nsb), Kokkos::Max<Real>(msb),
+         Kokkos::Max<Real>(mgr), Kokkos::Max<Real>(mwk), Kokkos::Max<Real>(msd),
+         Kokkos::Max<Real>(mp));
+    }
+    ns = CleanReduce(ns, false);
+    nsb = CleanReduce(nsb, false);
+    Real mx[5] = {msb, mgr, mwk, msd, mp};
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, mx, 5, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::printf("CLEAN PDIAGT cycle %d t2s %d tail sec %.0f sbchg %.0f max dsb %.2e "
+                  "gres %.2e dwork %.2e dsdv %.2e dP %.2e\n", pmy_pack->pmesh->ncycle,
+                  t2_solve, ns, nsb, mx[0], mx[1], mx[2], mx[3], mx[4]);
+    }
+  }
   const int r0 = global_variable::my_rank;
   if (r0 == 0) {
     std::printf("CLEAN PDIAG cycle %d t2s %d d %.3e tol %.3e cells>tol %.0f (gas %.0f) "
@@ -3185,7 +3244,9 @@ void RadiationM1::CleanPassDiag(const DvceArray1D<Real> &pdg, const Real change,
   auto op = opac;
   auto w = cln_w;
   const Real hc = dt_sub*c_light;
-  DvceArray1D<Real> v("cln_pdv", 9);
+  DvceArray1D<Real> v("cln_pdv", 9 + 26);
+  auto pdr = cln_pdr;
+  const bool hv = pdr.extent_int(0) >= nmb;
   Kokkos::parallel_for("cln_pdv", Kokkos::RangePolicy<>(DevExeSpace(), 0, 1),
   KOKKOS_LAMBDA(const int) {
     v(0) = pdg(idx);
@@ -3197,6 +3258,9 @@ void RadiationM1::CleanPassDiag(const DvceArray1D<Real> &pdg, const Real change,
     v(6) = w(m,CLW_RY,k,j,i);
     v(7) = hc*op(m,M1_OP_T,k,j,i);
     v(8) = w(m,CLW_EO,k,j,i);
+    for (int q = 0; q < 24 && hv; ++q) v(9+q) = pdr(m,q,k,j,i);
+    v(33) = w(m,CLW_SG,k,j,i);
+    v(34) = w(m,CLW_SE,k,j,i);
   });
   auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), v);
   std::printf("CLEAN PDIAG max cycle %d t2s %d rank %d row %s gid %d k %d j %d i %d rho "
@@ -3204,6 +3268,12 @@ void RadiationM1::CleanPassDiag(const DvceArray1D<Real> &pdg, const Real change,
               pmy_pack->pmesh->ncycle, t2_solve, r0, (h(0) >= 0.0) ? "E" : "gas",
               pmy_pack->pmb->mb_gid.h_view(m), k, j, i, h(1), h(2), h(3), h(8), h(4), h(5),
               h(6), h(7));
+  std::printf("CLEAN PDIAGC cycle %d t2s %d SG %.3e SE %.3e | sb %.4e %.4e gres %.4e "
+              "%.4e work %.4e %.4e r %.6e %.6e eg %.4e %.4e ei %.4e P %.4e %.4e T %.5e "
+              "%.5e Ek %.4e %.4e hcke %.3e fl %.0f %.0f sdv %.4e %.4e\n",
+              pmy_pack->pmesh->ncycle, t2_solve, h(33), h(34), h(9), h(21), h(10), h(22),
+              h(11), h(23), h(12), h(24), h(13), h(25), h(14), h(15), h(27), h(16), h(28),
+              h(17), h(29), h(18), h(19), h(31), h(20), h(32));
 }
 
 //----------------------------------------------------------------------------------------
