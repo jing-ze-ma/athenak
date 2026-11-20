@@ -1,0 +1,1 @@
+TAG=V202FP_rsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v202_f4cefb181 md5=54c3df35aeb65bced81ad681e47a8020 RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=4 MODE=speed HOLDER=5840650 NODES=hpc-sm-02-16 NR=4 PPN=4 ENVX=CLEAN_POISON_GHOST=1 EX=hydro/floor_pay=rad_column UCX=UCX_IB_GPU_DIRECT_RDMA=no 

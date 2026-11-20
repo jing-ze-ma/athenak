@@ -452,3 +452,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - G_on_hg partial at cycle 625267 (N0+306): caltech_results/G_on_hg_p300/ (run.log.gz + hst); CW 0, mean dt 101, last elapsed elapsed=1.484678e+03
 - (13:45) Got b44e15497: BFX21_hg cancelled before it started; the beamfix21 build was stopped.
 - V202F_rsg (hpc-sm-02-16): rc=0 wall=156 rc=0 wall=151 rc=0 wall=147 | cycles 589788 - 589792 | steady 2.717 s/cycle | GPU MiB max 109587 min 108453 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF  | CW 0 FATAL 0 | s/cycle 2.717 vs V201D_rsg 2.762
+- V202_hg (hpc-sm-02-10): rc=0 wall=246 rc=0 wall=236 rc=0 wall=221 | cycles 624961 - 624965 | steady 3.894 s/cycle | GPU MiB max 116083 min 115295 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF hst vs V201D_hg/a:  hegiant.hydro.hst==V201D_hg/a hegiant.user.hst==V201D_hg/a | CW 0 FATAL 0 | s/cycle 3.894 vs V201D_hg 3.932
+- V202FP_rsg (hpc-sm-02-16): rc=0 wall=151 | cycles 589788 - 589792 | steady 2.725 s/cycle | GPU MiB max 109587 min 108453 | CW a 0 FATAL 0 |  poison vs V202F_rsg/a:  rsg.hydro.hst==V202F_rsg/a rsg.user.hst==V202F_rsg/a | CW 0 FATAL 0 | s/cycle 2.725 vs V201D_rsg 2.762
