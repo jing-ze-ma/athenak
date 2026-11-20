@@ -1,0 +1,1 @@
+xcheck: user cols1-26==SPG_g_1/a, hydro==SPG_g_1/a

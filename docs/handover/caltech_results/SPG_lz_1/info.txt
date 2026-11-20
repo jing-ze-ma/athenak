@@ -1,0 +1,1 @@
+TAG=SPG_lz_1 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_lzbook_fb7a8a27f md5=915c8e52a529842a92ded40da4ebc3d7 RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=10 MODE=speed HOLDER=6133592 NODE=hpc-sm-01-17 NR=4 ENVX= EX=

@@ -153,3 +153,14 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - (04:30) KC1c_hg / KC009_hg / KC1m_hg at the head of the queue (KT HG + RSG trios are done, above). ELEAK (20z + 20al): AB9_rsg / AB9o_rsg / AB9rt_rsg had not started; eleak built at a411520d7 and the three queued right after KC (result lines carry the floor_audit-cycle and CLEAN WARNING..unpaid counts).
 - KC1c_hg (hpc-sm-02-09): rc=0 wall=198 | cycles 624961 - 624981 | steady 5.183 s/cycle | GPU MiB max 116353 min 115805 | CW a 0 FATAL 0 |  
 - KC009_hg (hpc-sm-02-11): rc=0 wall=206 | cycles 624961 - 624981 | steady 5.616 s/cycle | GPU MiB max 116353 min 115805 | CW a 0 FATAL 0 |  
+- SPG_g_1 (hpc-sm-02-04): rc=0 wall=106 | cycles 589788 - 589798 | steady 2.740 s/cycle | GPU MiB max 109195 min 108061 | CW a 0 FATAL 0 |  xcheck: user cols1-26==SPG_g_1/a, hydro==SPG_g_1/a
+- SPG_p5_1 (hpc-sm-02-10): rc=0 wall=98 | cycles 589788 - 589798 | steady 2.792 s/cycle | GPU MiB max 108265 min 107077 | CW a 0 FATAL 0 |  xcheck: user cols1-26==SPG_g_1/a, hydro==SPG_g_1/a
+- SPG_lz_1 (hpc-sm-01-17): rc=0 wall=101 | cycles 589788 - 589798 | steady 2.725 s/cycle | GPU MiB max 109227 min 108075 | CW a 0 FATAL 0 |  xcheck: user cols1-26==SPG_g_1/a, hydro==SPG_g_1/a
+- SPG_j_1 (hpc-sm-02-03): rc=0 wall=103 | cycles 589788 - 589798 | steady 2.790 s/cycle | GPU MiB max 108279 min 107091 | CW a 0 FATAL 0 |  xcheck: user cols1-26==SPG_g_1/a, hydro==SPG_g_1/a
+- SPG_g_2 (hpc-sm-02-10): rc=0 wall=100 | cycles 589788 - 589798 | steady 2.735 s/cycle | GPU MiB max 109195 min 108061 | CW a 0 FATAL 0 |  xcheck: user cols1-26==SPG_g_1/a, hydro==SPG_g_1/a
+- SPG_p5_2 (hpc-sm-01-17): rc=0 wall=108 | cycles 589788 - 589798 | steady 2.801 s/cycle | GPU MiB max 108697 min 107563 | CW a 0 FATAL 0 |  xcheck: user cols1-26==SPG_g_1/a, hydro==SPG_g_1/a
+- SPG_lz_2 (hpc-sm-02-03): rc=0 wall=99 | cycles 589788 - 589798 | steady 2.728 s/cycle | GPU MiB max 108777 min 107589 | CW a 0 FATAL 0 |  xcheck: user cols1-26==SPG_g_1/a, hydro==SPG_g_1/a
+- SPG_j_2 (hpc-sm-02-04): rc=0 wall=102 | cycles 589788 - 589798 | steady 2.790 s/cycle | GPU MiB max 108711 min 107577 | CW a 0 FATAL 0 |  xcheck: user cols1-26==SPG_g_1/a, hydro==SPG_g_1/a
+- KC1m_hg (hpc-sm-02-09): rc=0 wall=196 | cycles 624961 - 624981 | steady 5.172 s/cycle | GPU MiB max 116353 min 115805 | CW a 0 FATAL 0 |  
+- T2_rsg (hpc-sm-01-11): rc=1 wall=830 | cycles 589788 - 589864 | steady 3.492 s/cycle | GPU MiB max 108941 min 107971 | CW a 19 FATAL 1 |  
+  FAILED: last 100 lines in caltech_results/T2_rsg/FAIL_tail100.txt
