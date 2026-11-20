@@ -3677,7 +3677,7 @@ void RadiationM1::CleanStagBracket() {
       // the gas cannot source (vacuum, cold gas) is numerical leak, corrected in full)
       // (13: = 12 with s times the cell's coupling over the stage, min(1, rho kappa_P c h);
       // 17: = 13, then each face's DG times its donor's R below)
-      if (dgf == 12 || dgf == 13 || dgf == 17 || dgf == 18 || dgf == 19) {
+      if (dgf == 12 || dgf == 13 || dgf == 17 || dgf == 18 || dgf == 19 || dgf == 20) {
         // (19: = 13, and the deficit side gated as v20.1, r = E_old/J)
         auto rs = [&](const Real e, const Real jj, const Real t, const Real kp) {
           if (dgf == 19 && jj > e && jj > 0.0) return e/jj;
@@ -3689,8 +3689,12 @@ void RadiationM1::CleanStagBracket() {
         const Real r12 = fmin(rs(eol, jl, x.w(m,CLW_T,k-dk,j-dj,i-di),
                                  x.op(m,M1_OP_P,k-dk,j-dj,i-di)),
                               rs(eor, jr, x.w(m,CLW_T,k,j,i), x.op(m,M1_OP_P,k,j,i)));
-        x.fc[dir](m,x.fdg,k,j,i) = r12*r12*x.c*(fy - x.fc[dir](m,CLF_HP,k,j,i)*jl
-                                                 - x.fc[dir](m,CLF_HM,k,j,i)*jr);
+        // (20: = 13, and a deficit donor d (J_d > E_old,d, upwind of the rays' F_y) sends
+        // the rays' flux only up to c E_old,d: times min(1, E_old,d/|F_y|), realisable)
+        const Real ed = (fy > 0.0) ? eol : eor, jd2 = (fy > 0.0) ? jl : jr;
+        const Real qd = (dgf == 20 && jd2 > ed && fabs(fy) > ed) ? ed/fabs(fy) : 1.0;
+        x.fc[dir](m,x.fdg,k,j,i) = qd*r12*r12*x.c*(fy - x.fc[dir](m,CLF_HP,k,j,i)*jl
+                                                    - x.fc[dir](m,CLF_HM,k,j,i)*jr);
         return;
       }
       // (15, 16, diagnosis: no clamp; 15 gates only the excess side (E_old > J: r = J/E),
