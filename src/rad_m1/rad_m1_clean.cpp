@@ -2770,6 +2770,33 @@ void RadiationM1::CleanStagXCorner() {
       }, a0, a1, a2, a3, a4);
       sx += a0; sc += a1; nx += a2; nn += a3; ncap += a4;
     }
+    if (std::getenv("BF2DBG2")) {   // (host loop: CPU builds only)
+      int cnt = 0;
+      for (int dir = 0; dir < x.nf && cnt < 12; ++dir) {
+        const int di = (dir == 0), dj = (dir == 1);
+        for (int j = js + 20; j <= je - 20 && cnt < 12; ++j) {
+          for (int i = is + 100; i <= is + 104 + di && cnt < 12; ++i) {
+            const Real xf = x.fc[dir](0,x.xc,ks,j,i), t = x.fc[dir](0,x.xc+1,ks,j,i);
+            if (xf == 0.0) continue;
+            const int dn = (xf > 0.0);
+            const int jd = j - dn*dj, id = i - dn*di;
+            int uk = ks, uj = jd, ui = id;
+            if (t != 0.0) CleanXCornerCell(x, dir, 0, ks, j, i, t, uk, uj, ui);
+            Real al, ar;
+            CleanFaceWeights(x, dir, 0, ks, j, i, al, ar);
+            std::printf("BF2F dir %d j %d i %d X %.3e t %.3e code %g EOd %.3e Jd %.3e "
+                        "EOu %.3e Ju %.3e Er %.3e Jr %.3e al %.3e ar %.3e ql %.3e qr %.3e ex %.3e\n",
+                        dir, j, i, xf, t, x.fc[dir](0,x.xc+2,ks,j,i), x.w(0,CLW_EO,ks,jd,id),
+                        x.cs(0,CLN_JR,ks,jd,id), x.w(0,CLW_EO,uk,uj,ui), x.cs(0,CLN_JR,uk,uj,ui),
+                        x.w(0,CLW_EO,ks,jd+dn*dj*2-dj,id+dn*di*2-di),
+                        x.cs(0,CLN_JR,ks,jd+dn*dj*2-dj,id+dn*di*2-di), al, ar,
+                        x.fc[dir](0,x.xq,ks,j,i), x.fc[dir](0,x.xq+1,ks,j,i),
+                        x.fc[dir](0,x.xq+2,ks,j,i));
+            ++cnt;
+          }
+        }
+      }
+    }
     std::printf("BF2DBG excess %.4e carried %.4e nfaces %g none %g capped %g\n", sx, sc, nx,
                 nn, ncap);
   }
