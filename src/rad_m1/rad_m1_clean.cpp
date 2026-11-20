@@ -3606,8 +3606,20 @@ void RadiationM1::CleanStagBracket() {
         const Real hm = !(s > 0.0) ? hr : (cut ? ((tl < 0.0) ? fmin(fr, 0.0) : 0.0) : tr);
         const Real el = fmax(x.w(m,CLW_EO,k-dk,j-dj,i-di), 0.0);
         const Real er = fmax(x.w(m,CLW_EO,k,j,i), 0.0);
-        if (jl > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = fmin(hp/fmax(jl, rmn*el), gmx);
-        if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = fmax(hm/fmax(jr, rmn*er), -gmx);
+        // (BEAMHG prototype, gmax < 0: g capped by E_f/E_d, the donor's face value of a
+        // minmod reconstruction of E_old over the face's upwind cells, |F_f| <= c E_f)
+        auto mm = [](const Real p, const Real q) {
+          return (p*q > 0.0) ? copysign(fmin(fabs(p), fabs(q)), p) : 0.0;
+        };
+        Real cl = gmx, cr = gmx;
+        if (gmx < 0.0) {
+          const Real ell = fmax(x.w(m,CLW_EO,k-2*dk,j-2*dj,i-2*di), 0.0);
+          const Real err = fmax(x.w(m,CLW_EO,k+dk,j+dj,i+di), 0.0);
+          cl = (el > 0.0) ? (el + 0.5*mm(el - ell, er - el))/el : 1.0;
+          cr = (er > 0.0) ? (er - 0.5*mm(er - el, err - er))/er : 1.0;
+        }
+        if (jl > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = fmin(hp/fmax(jl, rmn*el), cl);
+        if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = fmax(hm/fmax(jr, rmn*er), -cr);
         x.fc[dir](m,x.fdg,k,j,i) = 0.0;
         return;
       }
