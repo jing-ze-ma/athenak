@@ -417,3 +417,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   FAILED: last 100 lines in caltech_results/BFX4_rsg/FAIL_tail100.txt
   BFX4_rsg: stopped by its 60-min srun limit (rc 143) at cycle 589823 (35 of 300 cycles, 56.8 s/cycle; 2 CW 'stage solve failed, the step is redone'; 2 dt_retry lines; 1 energy-created line). The later BFX*_rsg arms have TL 120.
 - BFX7_hg (hpc-sm-01-17,hpc-sm-02-03): rc=0 wall=1762 | cycles 624961 - 625261 | steady 5.706 s/cycle | GPU MiB max 59453 min 58637 | CW a 56 FATAL 0 |   | CW kinds:  28 cycl : backwardulr solv not convrgd (dt_; 28 cycl ts : stag solv faild, th stp is rd; | dt_retry lines 35 | energy created lines 3
+- BFX12_hg (hpc-sm-01-17,hpc-sm-02-03): rc=1 wall=284 | cycles 624961 - 624973 | steady 4.602 s/cycle | GPU MiB max 59293 min 58627 | CW a 10 FATAL 1 |   | CW kinds:  9 cycl : backwardulr solv not convrgd (dt_; 1 cycl ts : stag solv faild, th stp is rd; | dt_retry lines 12 | energy created lines 1
+  FAILED: last 100 lines in caltech_results/BFX12_hg/FAIL_tail100.txt
