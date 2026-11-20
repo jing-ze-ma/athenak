@@ -1,0 +1,12 @@
+# CONV batch (orion 2026-11-20). One arm per line: [ENV=...] TAG BINARY(branch) RST NC KEYS [extra keys]
+# B_conv = build of caltech-runs/conv (9e8234b9b = v20f 23b99d15a + LAG clean_xt_local 0cdc5c058/b49351c58 + clean_conv_df study key)
+# Same-answer: every arm vs CV_tight (kappa 0.01); noise scale CV_k01 (kappa 0.1). Pass counts from 'CLEAN pass' lines; 'CLEAN DF' = F-solve change.
+FINALRST=0 CV_ref_rsg    B_conv RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true rad_m1/clean_conv_df=1
+FINALRST=0 CV_est_rsg    B_conv RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true rad_m1/clean_conv_df=1 rad_m1/clean_conv_est=true
+FINALRST=0 CV_estdf_rsg  B_conv RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true rad_m1/clean_conv_df=2 rad_m1/clean_conv_est=true
+FINALRST=0 CV_df2_rsg    B_conv RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true rad_m1/clean_conv_df=2
+FINALRST=0 CV_tight_rsg  B_conv RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true rad_m1/clean_conv_df=1 rad_m1/clean_conv_kappa=0.01
+FINALRST=0 CV_k01_rsg    B_conv RSG 20 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true rad_m1/clean_conv_df=1 rad_m1/clean_conv_kappa=0.1
+FINALRST=0 CV_ref_hg     B_conv HG  20 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true rad_m1/clean_conv_df=1
+FINALRST=0 CV_estdf_hg   B_conv HG  20 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true rad_m1/clean_conv_df=2 rad_m1/clean_conv_est=true
+FINALRST=0 CV_tight_hg   B_conv HG  20 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true rad_m1/clean_conv_df=1 rad_m1/clean_conv_kappa=0.01
