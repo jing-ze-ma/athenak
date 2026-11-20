@@ -1786,6 +1786,7 @@ void RadiationM1::CleanOldVector() {
   auto inc = t2inc;
   auto w = cln_w;
   CleanArgs x = CleanMakeArgs();
+  if (stage) CleanLz3Print("OV0");
 
   // (counted: gas eint < 0 of the stage start, which the exchange takes as 0 and the
   // write-back's implicit_pos_gas meets, and E < 0)
@@ -1826,6 +1827,7 @@ void RadiationM1::CleanOldVector() {
   nn[2] = CleanReduce(nn[2], false);
   // (clean_cs_lz_abs = 2: the increment's L_z, of the slopes' sums, Time2FormStage)
   if (cln_lzbook && fluid && feedback && stage) CleanLzBook(cln_lzc, true);
+  if (stage) {CleanLz3Print("SS"); CleanLz3Print("SS", true);}
   if (global_variable::my_rank == 0 && nn[2] > 0.0) {
     std::printf("CLEAN WARNING cycle %d t2s %d: stage start not finite in %.0f cells (gas or "
                 "E; the solve fails and the step is redone)\n", pmy_pack->pmesh->ncycle,
@@ -4781,6 +4783,7 @@ void RadiationM1::CleanLzBook(const Real s, const bool start) {
 //! conserved to round-off.
 
 void RadiationM1::CleanWriteBack() {
+  CleanLz3Print("WB0", true);
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -5436,6 +5439,7 @@ void RadiationM1::CleanWriteBack() {
                 "EOS floor (implicit_pos_gas off: the hydro's floor raises them, energy "
                 "created)\n", pmy_pack->pmesh->ncycle, t2_solve, nh);
   }
+  CleanLz3Print("WB1");
 }
 #endif  // M1_TU_PART(2)
 
