@@ -86,3 +86,6 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - FMM300_hg (hpc-sm-02-04): rc=0 wall=1532 | cycles 624961 - 625261 | steady 4.820 s/cycle | GPU MiB max 116305 min 115765 | CW a 0 FATAL 0 |  
 - AB6b_rsg (hpc-sm-02-11): rc=1 wall=28 |  | steady  s/cycle | GPU MiB max 29151 min 29151 | CW a 0 FATAL 4 |  
   FAILED: last 100 lines in caltech_results/AB6b_rsg/FAIL_tail100.txt
+  AB6b_rsg also FATALs at setup: `he_star_m1.cpp:638: he_star_m1: needs <rad_m1>/force_reference = wb_arad (the well-balanced pair carries the reference force of the initial column)`. Skipped.
+- (03:10) Got 6ea6452db + 2fc2377c5: AB8_rsg queued after AB7; xtloc 947c469d8 building; LV_loc8_300k01/k10 (pair) then LV_ref8_300k10
+  queued after the v20j gate. LV_* result lines now also carry `grep -c -i retry run.log`.
