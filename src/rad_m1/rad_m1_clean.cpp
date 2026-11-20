@@ -5045,9 +5045,9 @@ void RadiationM1::CleanWriteBack() {
     auto f2d = f0x2, f3d = f0x3;
     auto g2 = cln_fc2, g3 = cln_fc3;
     const int nx1 = ie - is + 1, nji = (je - js + 1)*nx1, nkji = (ke - ks + 1)*nji;
-    Real r[2] = {0.0, 0.0};
+    Real r[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     Kokkos::parallel_reduce("lzt2d", Kokkos::RangePolicy<DevExeSpace>(0, (nmb1 + 1)*nkji),
-    KOKKOS_LAMBDA(const int idx, Real &sd, Real &sq) {
+    KOKKOS_LAMBDA(const int idx, Real &sd, Real &sq, Real &di_, Real &ei_, Real &db_, Real &eb_) {
       const int m = idx/nkji, k = ks + (idx%nkji)/nji, j = js + (idx%nji)/nx1;
       const int i = is + idx%nx1;
       const Real v = x.vol(m,k,j,i);
@@ -5061,14 +5061,19 @@ void RadiationM1::CleanWriteBack() {
                                   : f3d(m,kf,jf,i) - g3(m,CLF_N,kf,jf,i);
           sd += 0.5*v*lam*d/(x.c*x.c);
           sl += 0.5*(v + x.vol(m,ko,jo,i))*lam*lam;
+          const Real ex = 0.5*v*lam*lam*(tqv(m,0,k,j,i) + tqv(m,0,ko,jo,i));
+          const bool bf = (q == 1) ? (jf == js || jf == je + 1) : (kf == ks || kf == ke + 1);
+          if (bf) {db_ += 0.5*v*lam*d/(x.c*x.c); eb_ += ex;}
+          else {di_ += 0.5*v*lam*d/(x.c*x.c); ei_ += ex;}
         }
       }
       sq += tqv(m,0,k,j,i)*sl;
-    }, Kokkos::Sum<Real>(r[0]), Kokkos::Sum<Real>(r[1]));
-    r[0] = CleanReduce(r[0], false);
-    r[1] = CleanReduce(r[1], false);
-    if (global_variable::my_rank == 0) std::printf("LZT2D cycle %d t2s %d deposit L %.10e sum qr %.10e\n",
-        pmy_pack->pmesh->ncycle, t2_solve, r[0], r[1]);
+    }, Kokkos::Sum<Real>(r[0]), Kokkos::Sum<Real>(r[1]), Kokkos::Sum<Real>(r[2]),
+       Kokkos::Sum<Real>(r[3]), Kokkos::Sum<Real>(r[4]), Kokkos::Sum<Real>(r[5]));
+    for (int n = 0; n < 6; ++n) r[n] = CleanReduce(r[n], false);
+    if (global_variable::my_rank == 0) std::printf("LZT2D cycle %d t2s %d deposit L %.10e sum qr %.10e "
+        "| int %.6e exp %.6e | bnd %.6e exp %.6e\n", pmy_pack->pmesh->ncycle, t2_solve, r[0],
+        r[1], r[2], r[3], r[4], r[5]);
   }
   // E, cell fluxes, gas
   FluidRef fl = FluidRef::Get(pmy_pack);
