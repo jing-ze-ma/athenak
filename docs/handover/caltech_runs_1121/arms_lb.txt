@@ -1,0 +1,9 @@
+# LB pair (orion 2026-11-20): VGD_CS_LB=8 vs default 6, both on B_kfw. Pairs together on comparable nodes; round 2 swapped. 20 cycles.
+FINALRST=0                 LB6_rsg_1 B_kfw RSG 20 rsg_v20.keys
+FINALRST=0 ENVX=VGD_CS_LB=8 LB8_rsg_1 B_kfw RSG 20 rsg_v20.keys
+FINALRST=0                 LB6_hg_1  B_kfw HG 20 hg_v20.keys
+FINALRST=0 ENVX=VGD_CS_LB=8 LB8_hg_1  B_kfw HG 20 hg_v20.keys
+FINALRST=0                 LB6_rsg_2 B_kfw RSG 20 rsg_v20.keys
+FINALRST=0 ENVX=VGD_CS_LB=8 LB8_rsg_2 B_kfw RSG 20 rsg_v20.keys
+FINALRST=0                 LB6_hg_2  B_kfw HG 20 hg_v20.keys
+FINALRST=0 ENVX=VGD_CS_LB=8 LB8_hg_2  B_kfw HG 20 hg_v20.keys
