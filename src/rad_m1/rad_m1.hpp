@@ -3199,7 +3199,13 @@ class RadiationM1 {
   void CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
                       const bool phys = true, const int part = 0, const int dep = 0);
   // (dep: the ghost layers its readers need, 0 = all ng; clean_halo_direct sends those)
-  template <typename T> struct CleanGSeg {DvceArray5D<T> a; int c0, nc; bool phys; int dep = 0;};
+  // (fm[f], clean_halo_direct: the components the ghosts of family f take, bit n for
+  // component c0 + n; f the axis of their face in the axes of the cells they copy, 3 at
+  // edges and corners (CleanHaloInit); the others keep their values, POISON: NaN)
+  template <typename T> struct CleanGSeg {
+    DvceArray5D<T> a; int c0, nc; bool phys; int dep = 0;
+    std::array<uint32_t, 4> fm = {~0u, ~0u, ~0u, ~0u};
+  };
   template <typename T>
   void CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg, const int part);
   template <typename T>
@@ -3564,6 +3570,16 @@ class RadiationM1 {
     // (device buffers on HIP too: the messages are MB-size, ROCm-aware MPI moves them
     // GPU to GPU; host-pinned staging (hmstage-1019) is CPU-copy bound on MI300A)
     DvceArray1D<Real> sbuf, rbuf;      // (rbuf: two halves, alternate exchanges)
+    // (CleanGSeg::fm: the family of each on-rank, sent and received ghost (hsf, hrf on
+    // the host); per mask set (its fm over all components, nc) each sent and received
+    // entry's buffer offset and the messages' lengths by depth)
+    DvceArray1D<int> lf, sf, rf;
+    std::vector<int> hsf, hrf;
+    struct Mask {
+      DvceArray1D<int> so, ro;
+      std::vector<int> slm, rlm;
+    };
+    std::map<std::array<uint32_t, 5>, Mask> mask;
 #if MPI_PARALLEL_ENABLED
     MPI_Comm comm = MPI_COMM_NULL;
     std::vector<MPI_Request> rq, sq;
@@ -3573,6 +3589,9 @@ class RadiationM1 {
   void CleanHaloInit(const int n3, const int n2, const int n1);
   template <typename T> void CleanHaloPost(const std::vector<CleanGSeg<T>> &sg);
   template <typename T> void CleanHaloFinish(const std::vector<CleanGSeg<T>> &sg);
+  template <typename T>
+  std::array<uint32_t, 5> CleanHaloKey(const std::vector<CleanGSeg<T>> &sg);
+  CleanHaloList::Mask &CleanHaloMask(const std::array<uint32_t, 5> &key);
   Real cln_nsolve = 0.0, cln_nit = 0.0, cln_nfail = 0.0, cln_nneg = 0.0;
   //! milestone 3b LIMIT 4: build the x1 stack topology of the gathered line solve
   void ImplicitPartitionInit();

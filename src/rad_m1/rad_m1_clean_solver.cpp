@@ -10,6 +10,7 @@
 //! BiCGStab.
 
 #include <algorithm>
+#include <bitset>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -471,8 +472,24 @@ void RadiationM1::CleanHaloInit(const int n3, const int n2, const int n1) {
       break;
     }
     auto hx = Kokkos::create_mirror_view_and_copy(HostMemSpace(), x);
-    std::vector<int> ld, ls;
-    std::vector<std::vector<int>> rg(nrk), rs(nrk);   // off-rank ghosts, their sources
+    std::vector<int> ld, ls, lfm;
+    std::vector<std::vector<int>> rg(nrk), rs(nrk), rf(nrk);   // off-rank ghosts, their
+                                                                // sources and families
+    // (the family of ghost (m,k,j,i), copy of id w: the axis along which the source of
+    // its neighbour one layer in (out at the first layer) differs, 3 at edges, corners)
+    auto fam = [&](const int m, const int k, const int j, const int i, const int64_t w) {
+      const int ox = (i < is || i > ie), oy = md && (j < js || j > je);
+      const int oz = td && (k < ks || k > ke);
+      if (ox + oy + oz != 1 || ng < 2) return 3;
+      const int a = oy ? 1 : (oz ? 2 : 0), c = (a == 0) ? i : ((a == 1) ? j : k);
+      const int lo = (a == 0) ? is : ((a == 1) ? js : ks);
+      const int d = (c < lo) ? lo - c : c - ((a == 0) ? ie : ((a == 1) ? je : ke));
+      const int t = ((c < lo) == (d > 1)) ? 1 : -1;
+      const int64_t v = static_cast<int64_t>(hx(m,0,k+t*(a == 2),j+t*(a == 1),
+                                                i+t*(a == 0)));
+      const int64_t dw = (v > w) ? v - w : w - v;
+      return (dw == 1) ? 0 : ((dw == n1) ? 1 : ((dw == n21) ? 2 : 3));
+    };
     for (int m = 0; m < nmb; ++m) {
       for (int k = 0; k < n3; ++k) {
         for (int j = 0; j < n2; ++j) {
@@ -491,9 +508,11 @@ void RadiationM1::CleanHaloInit(const int n3, const int n2, const int n1) {
             if (r == me) {
               ld.push_back(m*n321 + g);
               ls.push_back(ms*n321 + f);
+              lfm.push_back(fam(m, k, j, i, w));
             } else {
               rg[r].push_back(m*n321 + g);
               rs[r].push_back(ms*n321 + f);
+              rf[r].push_back(fam(m, k, j, i, w));
             }
           }
         }
@@ -506,37 +525,43 @@ void RadiationM1::CleanHaloInit(const int n3, const int n2, const int n1) {
       return std::min(std::max(d, 1), ng);
     };
     std::vector<int> nrd(static_cast<size_t>(nrk)*ng, 0), lrd, ldd;
-    auto srt = [&](std::vector<int> &g, std::vector<int> &c, int *n, std::vector<int> &dv) {
-      std::vector<int> o(g.size()), g2, c2;
+    auto srt = [&](std::vector<int> &g, std::vector<int> &c, std::vector<int> &fv, int *n,
+                   std::vector<int> &dv) {
+      std::vector<int> o(g.size()), g2, c2, f2;
       for (size_t a = 0; a < o.size(); ++a) o[a] = static_cast<int>(a);
       std::stable_sort(o.begin(), o.end(), [&](int a, int b) {return dep(g[a]) < dep(g[b]);});
       for (int a : o) {
         g2.push_back(g[a]);
         c2.push_back(c[a]);
+        f2.push_back(fv[a]);
         dv.push_back(dep(g[a]));
         for (int d = dv.back(); d <= ng; ++d) ++n[d-1];
       }
       g.swap(g2);
       c.swap(c2);
+      fv.swap(f2);
     };
     q.nld.assign(ng, 0);
-    srt(ld, ls, q.nld.data(), ldd);
-    for (int r = 0; r < nrk; ++r) srt(rg[r], rs[r], nrd.data() + r*ng, lrd);
+    srt(ld, ls, lfm, q.nld.data(), ldd);
+    for (int r = 0; r < nrk; ++r) srt(rg[r], rs[r], rf[r], nrd.data() + r*ng, lrd);
     std::vector<int> sc, rc;
 #if MPI_PARALLEL_ENABLED
     MPI_Comm_dup(MPI_COMM_WORLD, &q.comm);
     std::vector<int> nr(nrk), ns(nrk);
     for (int r = 0; r < nrk; ++r) nr[r] = static_cast<int>(rs[r].size());
     MPI_Alltoall(nr.data(), 1, MPI_INT, ns.data(), 1, MPI_INT, q.comm);
-    std::vector<std::vector<int>> ss(nrk);
+    std::vector<std::vector<int>> ss(nrk), sf(nrk);
     std::vector<MPI_Request> rq;
     for (int r = 0; r < nrk; ++r) {
       if (nr[r] == 0 && ns[r] == 0) continue;
       q.rank.push_back(r);
       ss[r].resize(ns[r]);
-      rq.resize(rq.size() + 2);
-      MPI_Irecv(ss[r].data(), ns[r], MPI_INT, r, 4244, q.comm, &rq[rq.size() - 2]);
-      MPI_Isend(rs[r].data(), nr[r], MPI_INT, r, 4244, q.comm, &rq[rq.size() - 1]);
+      sf[r].resize(ns[r]);
+      rq.resize(rq.size() + 4);
+      MPI_Irecv(ss[r].data(), ns[r], MPI_INT, r, 4244, q.comm, &rq[rq.size() - 4]);
+      MPI_Isend(rs[r].data(), nr[r], MPI_INT, r, 4244, q.comm, &rq[rq.size() - 3]);
+      MPI_Irecv(sf[r].data(), ns[r], MPI_INT, r, 4243, q.comm, &rq[rq.size() - 2]);
+      MPI_Isend(rf[r].data(), nr[r], MPI_INT, r, 4243, q.comm, &rq[rq.size() - 1]);
     }
     MPI_Waitall(static_cast<int>(rq.size()), rq.data(), MPI_STATUSES_IGNORE);
     std::vector<int> nsd(nrd.size());
@@ -547,9 +572,11 @@ void RadiationM1::CleanHaloInit(const int n3, const int n2, const int n1) {
       q.soff.push_back(static_cast<int>(sc.size()));
       q.slen.push_back(ns[r]);
       sc.insert(sc.end(), ss[r].begin(), ss[r].end());
+      q.hsf.insert(q.hsf.end(), sf[r].begin(), sf[r].end());
       q.roff.push_back(static_cast<int>(rc.size()));
       q.rlen.push_back(nr[r]);
       rc.insert(rc.end(), rg[r].begin(), rg[r].end());
+      q.hrf.insert(q.hrf.end(), rf[r].begin(), rf[r].end());
     }
 #endif
     auto mk = [](const char *nm, const std::vector<int> &v) {
@@ -567,6 +594,9 @@ void RadiationM1::CleanHaloInit(const int n3, const int n2, const int n1) {
     q.rc = mk("cln_hdl_rc", rc);
     q.rd = mk("cln_hdl_rd", lrd);   // (rg in rank order: rc's order)
     q.ldp = mk("cln_hdl_ldp", ldd);
+    q.lf = mk("cln_hdl_lf", lfm);
+    q.sf = mk("cln_hdl_sf", q.hsf);
+    q.rf = mk("cln_hdl_rf", q.hrf);
     q.sbuf = decltype(q.sbuf)("cln_hdl_sbuf", std::max(q.ns, 1)*cln_hmax);
     q.rbuf = decltype(q.rbuf)("cln_hdl_rbuf", 2*std::max(q.nr, 1)*cln_hmax);
   }
@@ -598,6 +628,51 @@ void RadiationM1::CleanHaloInit(const int n3, const int n2, const int n1) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn RadiationM1::CleanHaloKey, CleanHaloMask
+//! \brief clean_halo_direct, CleanGSeg::fm: the mask set of an exchange (fm of family
+//! f over all its components, nc), and its buffer layout: each entry's components in
+//! order of the mask, the messages' entries packed
+
+template <typename T>
+std::array<uint32_t, 5> RadiationM1::CleanHaloKey(const std::vector<CleanGSeg<T>> &sg) {
+  std::array<uint32_t, 5> k = {0, 0, 0, 0, 0};
+  for (auto &s : sg) {
+    const uint32_t a = (s.nc < 32) ? (1u << s.nc) - 1 : ~0u;
+    for (int f = 0; f < 4; ++f) k[f] |= (s.fm[f] & a) << k[4];
+    k[4] += s.nc;
+  }
+  return k;
+}
+
+RadiationM1::CleanHaloList::Mask &RadiationM1::CleanHaloMask(
+    const std::array<uint32_t, 5> &key) {
+  CleanHaloList &q = cln_hdl;
+  auto &h = q.mask[key];
+  if (h.so.extent(0) > 0) return h;
+  const int nc = static_cast<int>(key[4]), nseg = static_cast<int>(q.rank.size());
+  auto lay = [&](const std::vector<int> &fv, const std::vector<int> &off,
+                 const std::vector<int> &len, const std::vector<int> &lend,
+                 std::vector<int> &lm, const char *nm) {
+    std::vector<int> o(std::max(fv.size(), static_cast<size_t>(1)), 0), c;
+    lm.assign(static_cast<size_t>(nseg)*q.ng, 0);
+    for (int s = 0; s < nseg; ++s) {
+      c.assign(len[s] + 1, 0);
+      for (int e = 0; e < len[s]; ++e) {
+        o[off[s] + e] = off[s]*nc + c[e];
+        c[e+1] = c[e] + static_cast<int>(std::bitset<32>(key[fv[off[s] + e]]).count());
+      }
+      for (int d = 0; d < q.ng; ++d) lm[s*q.ng + d] = c[lend[s*q.ng + d]];
+    }
+    DvceArray1D<int> a(std::string(nm), o.size());
+    Kokkos::deep_copy(a, HostArray1D<int>(o.data(), o.size()));
+    return a;
+  };
+  h.so = lay(q.hsf, q.soff, q.slen, q.slend, h.slm, "cln_hdl_so");
+  h.ro = lay(q.hrf, q.roff, q.rlen, q.rlend, h.rlm, "cln_hdl_ro");
+  return h;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanHaloPost
 //! \brief clean_halo_direct, first half: receives posted (into the half of the receive
 //! buffer the previous exchange's unpack does not read), pack, wait for the pack (the
@@ -611,19 +686,27 @@ void RadiationM1::CleanHaloPost(const std::vector<CleanGSeg<T>> &sg) {
   for (auto &s : sg) nc += s.nc;
   const int n1 = q.n1, n21 = q.n2*q.n1, n321 = q.n3*n21;
   q.par = 1 - q.par;
+  // (fm: a ghost takes component b if bit b of its family's mask is set, msk)
+  const std::array<uint32_t, 5> ky = CleanHaloKey(sg);
+  const uint32_t k0 = ky[0], k1 = ky[1], k2 = ky[2], k3 = ky[3];
 #if MPI_PARALLEL_ENABLED
+  const uint32_t all = (nc < 32) ? (1u << nc) - 1 : ~0u;
+  const bool msk = (k0 & k1 & k2 & k3) != all;
+  CleanHaloList::Mask *mh = msk ? &CleanHaloMask(ky) : nullptr;
   const int nseg = static_cast<int>(q.rank.size());
   q.rq.assign(nseg, MPI_REQUEST_NULL);
   q.sq.assign(nseg, MPI_REQUEST_NULL);
   Real *rb = q.rbuf.data() + static_cast<size_t>(q.par)*std::max(q.nr, 1)*cln_hmax;
   for (int s = 0; s < nseg; ++s) {
-    const int nrs = q.rlend[s*q.ng + q.dcur - 1];   // (the entries of depth <= dcur)
+    // (the entries of depth <= dcur)
+    const int nrs = msk ? mh->rlm[s*q.ng + q.dcur - 1] : q.rlend[s*q.ng + q.dcur - 1]*nc;
     if (nrs > 0) {
-      MPI_Irecv(rb + static_cast<size_t>(q.roff[s])*nc, nrs*nc, MPI_ATHENA_REAL,
+      MPI_Irecv(rb + static_cast<size_t>(q.roff[s])*nc, nrs, MPI_ATHENA_REAL,
                 q.rank[s], 4245, q.comm, &q.rq[s]);
     }
   }
   auto sb = q.sbuf;
+  auto so = msk ? mh->so : q.sc, sf = q.sf;
   int o = 0;
   for (auto &s : sg) {
     auto a = s.a;
@@ -633,16 +716,24 @@ void RadiationM1::CleanHaloPost(const std::vector<CleanGSeg<T>> &sg) {
       par_for("cln_hd_pack", DevExeSpace(), 0, q.ns-1, 0, s.nc-1,
       KOKKOS_LAMBDA(const int p, const int n) {
         const int f = e(p), m = f/n321, r = f - m*n321, k = r/n21, j = (r - k*n21)/n1;
-        sb(p*nc + o + n) = a(m,c0+n,k,j,r - k*n21 - j*n1);
+        int b = p*nc + o + n;
+        if (msk) {
+          const int fp = sf(p);
+          const uint32_t w = (fp == 0) ? k0 : ((fp == 1) ? k1 : ((fp == 2) ? k2 : k3));
+          if (!((w >> (o + n)) & 1u)) return;
+          b = so(p);
+          for (int t = 0; t < o + n; ++t) b += (w >> t) & 1u;
+        }
+        sb(b) = a(m,c0+n,k,j,r - k*n21 - j*n1);
       });
     }
     o += s.nc;
   }
   if (q.ns > 0 || q.nr > 0) DevExeSpace().fence();
   for (int s = 0; s < nseg; ++s) {
-    const int nss = q.slend[s*q.ng + q.dcur - 1];
+    const int nss = msk ? mh->slm[s*q.ng + q.dcur - 1] : q.slend[s*q.ng + q.dcur - 1]*nc;
     if (nss > 0) {
-      MPI_Isend(sb.data() + static_cast<size_t>(q.soff[s])*nc, nss*nc,
+      MPI_Isend(sb.data() + static_cast<size_t>(q.soff[s])*nc, nss,
                 MPI_ATHENA_REAL, q.rank[s], 4245, q.comm, &q.sq[s]);
     }
   }
@@ -651,15 +742,20 @@ void RadiationM1::CleanHaloPost(const std::vector<CleanGSeg<T>> &sg) {
   const int dc = q.dcur;
   const bool pz = q.poison;
   const T nan = static_cast<T>(q.pval);
+  int oc = 0;
   for (auto &s : sg) {
     auto a = s.a;
-    auto d = q.ld, c = q.ls, dp = q.ldp;
-    const int c0 = s.c0;
+    auto d = q.ld, c = q.ls, dp = q.ldp, lf = q.lf;
+    const int c0 = s.c0, o = oc;
+    oc += s.nc;
     if (q.nl == 0) break;
     par_for("cln_hd_copy", DevExeSpace(), 0, (pz ? q.nl : q.nld[dc-1])-1, 0, s.nc-1,
     KOKKOS_LAMBDA(const int p, const int n) {
       const int f = d(p), m = f/n321, r = f - m*n321, k = r/n21, j = (r - k*n21)/n1;
-      if (dp(p) > dc) {
+      const int fp = lf(p);
+      const uint32_t w = (fp == 0) ? k0 : ((fp == 1) ? k1 : ((fp == 2) ? k2 : k3));
+      if (!((w >> (o + n)) & 1u) && !pz) return;
+      if (dp(p) > dc || !((w >> (o + n)) & 1u)) {
         a(m,c0+n,k,j,r - k*n21 - j*n1) = nan;
         return;
       }
@@ -683,6 +779,11 @@ void RadiationM1::CleanHaloFinish(const std::vector<CleanGSeg<T>> &sg) {
   const int n1 = q.n1, n21 = q.n2*q.n1, n321 = q.n3*n21;
   const int nseg = static_cast<int>(q.rank.size());
   MPI_Waitall(nseg, q.rq.data(), MPI_STATUSES_IGNORE);
+  const std::array<uint32_t, 5> ky = CleanHaloKey(sg);
+  const uint32_t all = (nc < 32) ? (1u << nc) - 1 : ~0u;
+  const bool msk = (ky[0] & ky[1] & ky[2] & ky[3]) != all;
+  const uint32_t k0 = ky[0], k1 = ky[1], k2 = ky[2], k3 = ky[3];
+  auto ro = msk ? CleanHaloMask(ky).ro : q.rc, rf = q.rf;
   auto rb = q.rbuf;
   const size_t b = static_cast<size_t>(q.par)*std::max(q.nr, 1)*cln_hmax;
   const int dc = q.dcur;
@@ -697,11 +798,18 @@ void RadiationM1::CleanHaloFinish(const std::vector<CleanGSeg<T>> &sg) {
       par_for("cln_hd_unpack", DevExeSpace(), 0, q.nr-1, 0, s.nc-1,
       KOKKOS_LAMBDA(const int p, const int n) {
         const int f = e(p), m = f/n321, r = f - m*n321, k = r/n21, j = (r - k*n21)/n1;
-        if (dp(p) > dc) {   // (not sent; CLEAN_POISON_GHOST: NaN)
+        int u = p*nc + o + n;
+        const int fp = rf(p);
+        const uint32_t w = (fp == 0) ? k0 : ((fp == 1) ? k1 : ((fp == 2) ? k2 : k3));
+        if (dp(p) > dc || !((w >> (o + n)) & 1u)) {   // (not sent; POISON: NaN)
           if (pz) a(m,c0+n,k,j,r - k*n21 - j*n1) = nan;
           return;
         }
-        a(m,c0+n,k,j,r - k*n21 - j*n1) = static_cast<T>(rb(b + p*nc + o + n));
+        if (msk) {
+          u = ro(p);
+          for (int t = 0; t < o + n; ++t) u += (w >> t) & 1u;
+        }
+        a(m,c0+n,k,j,r - k*n21 - j*n1) = static_cast<T>(rb(b + u));
       });
     }
     o += s.nc;

@@ -3749,9 +3749,13 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
   const int f0 = (cub && pmy_pack->pmesh->nmb_rootx1 == 1 && !pmy_pack->pmesh->multilevel)
                  ? 2 : 0;
   auto yfill = [&](const int part) {
-    if (cub) {
-      CleanGhostFill(cln_v, 9 + f0, 6 - f0, true, 0, 1);   // (CleanFLine reads the faces'
-      return;                                            // own cells)
+    if (cub) {   // (CleanFLine reads the faces' own cells, of the face's family, fm)
+      CleanGhostDefer(cln_v, 9 + f0, 6 - f0);
+      cln_hpend.back().dep = 1;
+      cln_hpend.back().fm = (f0 > 0) ? std::array<uint32_t, 4>{0, 3, 014, 0}
+                                     : std::array<uint32_t, 4>{3, 014, 060, 0};
+      CleanGhostFlush();
+      return;
     }
     if (x.nf == 3) CleanGhostDefer(cln_w, CLW_S, 1);
     CleanGhostFill(cln_w, CLW_Y, std::min(x.nf, 2), part);
@@ -3846,12 +3850,17 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
         v(m,15+dir,k,j,i) = -ac*wc*sr*sr*jc;
       });
       if (dir == x.nf - 1) {
-        if (cub && f0 > 0 && cln_hmax >= 12) {   // (one exchange, depth 1)
-          CleanGhostDefer(cln_v, 3, 6);
+        if (cub && f0 > 0 && cln_hmax >= 12) {   // (one exchange, depth 1; the ghosts of
+          CleanGhostDefer(cln_v, 3, 6);            // a face take its family's terms, fm)
           cln_hpend.back().dep = 1;
+          cln_hpend.back().fm = {0, 7, 070, 0};
           CleanGhostDefer(cln_v, 11, 4);
           cln_hpend.back().dep = 1;
-          CleanGhostFill(cln_v, 16, 2, true, 0, 1);
+          cln_hpend.back().fm = {0, 3, 014, 0};
+          CleanGhostDefer(cln_v, 16, 2);
+          cln_hpend.back().dep = 1;
+          cln_hpend.back().fm = {0, 1, 2, 0};
+          CleanGhostFlush();
         } else if (cub) {
           CleanGhostFill(cln_v, 0, 18, true, 0, 1);
         } else {
@@ -4340,9 +4349,15 @@ void RadiationM1::CleanStagFSchur() {
           }
         });
       }
-      if (r <= nrt) {
-        if (nd == 2) CleanGhostDefer(cln_w, CLW_BW, 2);
-        CleanGhostFill(cln_w, CLW_TM, (nd == 2) ? 4 : 3);
+      if (r <= nrt) {   // (the ghosts of a face take its line family's slots, CleanGSeg::fm)
+        std::array<uint32_t, 4> fa = {0, 0, 0, 0}, fb = fa;
+        for (int d = 0; d < x.nf; ++d) {
+          if (gr[d] == g) fa[d] = (gs[d] > 0) ? 3 : 0, fb[d] = (gs[d] > 0) ? 8 : 7;
+        }
+        if (nd == 2) CleanGhostDefer(cln_w, CLW_BW, 2), cln_hpend.back().fm = fa;
+        CleanGhostDefer(cln_w, CLW_TM, (nd == 2) ? 4 : 3);
+        cln_hpend.back().fm = fb;
+        CleanGhostFlush();
       }
     }
   }
