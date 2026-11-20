@@ -3443,11 +3443,17 @@ void RadiationM1::CleanStagBracket() {
       }
       if (thf) {
         // (thinf_v = -2: the interval of the state's old E, [-E_R, E_L], the rays as ratios)
-        const bool eo = (thv == -2);
-        const Real ul = eo ? fmax(x.w(m,CLW_EO,k-dk,j-dj,i-di), 0.0) : jl;
-        const Real ur = eo ? fmax(x.w(m,CLW_EO,k,j,i), 0.0) : jr;
-        const Real t = fmin(fmax(fy, -ur), ul);
+        // (-3: the target the bracket's, F_y - Phi(J)/c + h+ J_L + h- J_R (the thick share's
+        // flux of J included); -4: also the donors' floor J >= clean_ray_min E_old)
+        const bool eo = (thv == -2), fl = (thv == -4);
+        const Real ul = eo ? fmax(x.w(m,CLW_EO,k-dk,j-dj,i-di), 0.0) :
+            (fl ? fmax(jl, rmn*fmax(x.w(m,CLW_EO,k-dk,j-dj,i-di), 0.0)) : jl);
+        const Real ur = eo ? fmax(x.w(m,CLW_EO,k,j,i), 0.0) :
+            (fl ? fmax(jr, rmn*fmax(x.w(m,CLW_EO,k,j,i), 0.0)) : jr);
         const Real hl = x.fc[dir](m,CLF_HP,k,j,i)*ul, hr = x.fc[dir](m,CLF_HM,k,j,i)*ur;
+        const Real t0 = (thv <= -3) ? fy - pj/x.c + x.fc[dir](m,CLF_HP,k,j,i)*jl +
+                                      x.fc[dir](m,CLF_HM,k,j,i)*jr : fy;
+        const Real t = fmin(fmax(t0, -ur), ul);
         const Real s = hl - hr, dd = t - hl - hr;
         const Real a0 = (s > 0.0) ? hl + dd*hl/s : fmax(t, 0.0);
         const Real a = fmin(fmax(a0, fmax(t, 0.0)), fmin(ul, t + ur));
