@@ -607,6 +607,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_conv_est")) {
       cln_conv_est = pin->GetBoolean("rad_m1","clean_conv_est");
     }
+    // clean_conv_df (study, default 0): the change of the F solve's flux divergence h div F
+    // between passes over the E row's scale (budget: S_E; strict: |E|), the F the de/dv
+    // test does not see; 1 printed (CLEAN DF), 2 also in the stop test (and conv_est's)
+    if (pin->DoesParameterExist("rad_m1","clean_conv_df")) {
+      cln_cdf = pin->GetInteger("rad_m1","clean_conv_df");
+    }
     if (pin->DoesParameterExist("rad_m1","clean_nl_print")) {
       cln_nlprint = pin->GetBoolean("rad_m1","clean_nl_print");
     }

@@ -1294,6 +1294,10 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       if (lagged && inl < cln_maxpic) dpic = de;
       Real dv = 0.0;
       if (cln_feedback) dv = cell ? CleanCellVelocityUpdate() : CleanVelocityUpdate();
+      // (clean_conv_df: the F solve's change, the F the de/dv test does not see)
+      const bool cdf = cln_cdf > 0 && !cell && cln_feedback;
+      const Real df = cdf ? CleanConvDF(inl == 0) : 0.0;
+      if (cln_cdf > 1) dv = fmax(dv, df);
       dnl = fmax(de, dv);
       // (clean_tol_rel, as the old production's implicit_tol_rel: the strict test stops at
       // kappa times the first pass's change, at most clean_tol_rel_max)
@@ -1302,6 +1306,10 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       if (cln_nlprint && global_variable::my_rank == 0) {
         std::printf("CLEAN pass cycle %d t2s %d pos %d pass %d it %d de %.3e dv %.3e\n",
                     pmy_pack->pmesh->ncycle, t2_solve, ipos, inl, nit, de, dv);
+      }
+      if (cdf && global_variable::my_rank == 0) {
+        std::printf("CLEAN DF cycle %d t2s %d pass %d df %.3e tol %.3e\n",
+                    pmy_pack->pmesh->ncycle, t2_solve, inl, df, tol_nl);
       }
       if (fbl) {
         de0 = de;
@@ -3216,6 +3224,45 @@ Real RadiationM1::CleanVelocityUpdate() {
   vmax = fmax(vmax, 1.0e-300);
   cln_fv = std::numeric_limits<Real>::epsilon()*fvmax/vmax;
   return dvmax/vmax;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::CleanConvDF
+//! \brief clean_conv_df (study): h div F of the F solve's face fluxes (CLF_N) kept per
+//! cell; returns the max change since the last call over the E row's scale (budget: S_E,
+//! strict: |E_k|), 0 at the first call of a stage
+
+Real RadiationM1::CleanConvDF(const bool first) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  const int nmb = pmy_pack->nmb_thispack;
+  if (cln_cdfa.extent_int(0) < nmb) {
+    Kokkos::realloc(cln_cdfa, nmb, cln_w.s.extent_int(2), cln_w.s.extent_int(3),
+                    cln_w.s.extent_int(4));
+  }
+  CleanArgs x = CleanMakeArgs();
+  auto a = cln_cdfa;
+  const bool bud = cln_bon;
+  Real dmax = 0.0;
+  Kokkos::parallel_reduce("cln_cdf", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(),
+                          {0, ks, js, is}, {nmb, ke + 1, je + 1, ie + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &mx) {
+    Real d = 0.0;
+    for (int n = 0; n < x.nf; ++n) {
+      const int dk = (n == 2), dj = (n == 1), di = (n == 0);
+      d += CleanDivF(x, n, m, k, j, i, x.fc[n](m,CLF_N,k,j,i),
+                     x.fc[n](m,CLF_N,k+dk,j+dj,i+di));
+    }
+    d *= x.h;
+    if (!first) {
+      const Real sc = bud ? x.w(m,CLW_SE,k,j,i) : fmax(fabs(x.w(m,CLW_EK,k,j,i)), 1.0e-300);
+      mx = fmax(mx, fabs(d - a(m,k,j,i))/sc);
+    }
+    a(m,k,j,i) = d;
+  }, Kokkos::Max<Real>(dmax));
+  return CleanReduce(dmax, true);
 }
 
 //----------------------------------------------------------------------------------------

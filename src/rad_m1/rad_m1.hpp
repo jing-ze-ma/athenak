@@ -3131,6 +3131,7 @@ class RadiationM1 {
   int CleanBiCGStab();
   Real CleanNewtonUpdate();
   Real CleanVelocityUpdate();
+  Real CleanConvDF(const bool first);
   void CleanCopyIterate();
   int CleanCountNegative();
   int CleanStagRealizable();
@@ -3398,6 +3399,8 @@ class RadiationM1 {
   bool cln_pcf32 = false;       // clean_pc_factor_float: ... in single precision
   int cln_pcreuse = 1;          // clean_pc_reuse: preconditioner rebuilt every n passes
   bool cln_conv_est = false;    // clean_conv_est: stop on the estimated remaining change
+  int cln_cdf = 0;   // clean_conv_df: the F solve's change in the E row's norm (1 print, 2 test)
+  DvceArray4D<Real> cln_cdfa;   // (clean_conv_df: h div F of the last F solve)
   bool cln_budget = false;      // clean_conv = budget (staggered default): CleanSolve
   bool cln_bon = false;         // this solve takes it (Newton passes with a valid K1)
   Real cln_tolb = 0.0;          // its tolerance of the pass (kappa x time error)
