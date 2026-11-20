@@ -13,6 +13,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <iostream>
 #include <limits>
@@ -2742,6 +2743,33 @@ void RadiationM1::CleanStagXCorner() {
       f(m,xc+1,k,j,i) = (xf > 0.0) ? t : -t;
       f(m,xc+2,k,j,i) = static_cast<Real>(code);
     });
+  }
+  if (std::getenv("BF2DBG")) {   // (BEAMFIX2 scratch diagnostic)
+    Real sx = 0.0, sc = 0.0, nx = 0.0, nn = 0.0, ncap = 0.0;
+    for (int dir = 0; dir < x.nf; ++dir) {
+      const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+      const int f1 = ie-is+1+di, f2 = je-js+1+dj, f3 = ke-ks+1+dk;
+      Real a0 = 0, a1 = 0, a2 = 0, a3 = 0, a4 = 0;
+      Kokkos::parallel_reduce("bf2dbg", Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1+1)*f3*f2*f1),
+      KOKKOS_LAMBDA(const int idx, Real &q0, Real &q1, Real &q2, Real &q3, Real &q4) {
+        int m = idx/(f3*f2*f1), r = idx - m*f3*f2*f1;
+        int k = r/(f2*f1) + ks; r -= (k-ks)*f2*f1;
+        int j = r/f1 + js, i = r - (j-js)*f1 + is;
+        const auto &f = x.fc[dir];
+        const Real xf = fabs(f(m,x.xc,k,j,i)), t = fabs(f(m,x.xc+1,k,j,i));
+        if (xf == 0.0) return;
+        q0 += xf; q2 += 1.0;
+        if (t == 0.0) {q3 += 1.0; return;}
+        int uk, uj, ui;
+        CleanXCornerCell(x, dir, m, k, j, i, f(m,x.xc+1,k,j,i), uk, uj, ui);
+        const Real c = t*x.w(m,CLW_EO,uk,uj,ui);
+        q1 += c;
+        if (c < 0.999*xf) q4 += 1.0;
+      }, a0, a1, a2, a3, a4);
+      sx += a0; sc += a1; nx += a2; nn += a3; ncap += a4;
+    }
+    std::printf("BF2DBG excess %.4e carried %.4e nfaces %g none %g capped %g\n", sx, sc, nx,
+                nn, ncap);
   }
 }
 
