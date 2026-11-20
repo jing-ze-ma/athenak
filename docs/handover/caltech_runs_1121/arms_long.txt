@@ -26,3 +26,9 @@ FINALRST=0 NR=4 R_xl_rsg  B_v201e RSG 1000 rsg_v20.keys rad_m1/time2_k1_xlim=0.1
 FINALRST=0 NR=8 K_on_hg   B_v201e HG 1000 hg_v20.keys time/dt_retry_host=m1 rad_m1/time2_k1_stiff=1.0
 FINALRST=0 NR=4 K_on_rsg  B_v201e RSG 1000 rsg_v20.keys rad_m1/time2_k1_stiff=1.0
 # 3. then the L2_* seeds above
+# added 2026-11-20 (NOTE bx): longer single-key arms, after H_xl and the R_* RSG set (and before the L2 seeds). B_v201e.
+FINALRST=0 NR=4 LF_rsg B_v201e RSG 3000 rsg_v20.keys hydro/floor_pay=rad_column
+FINALRST=0 NR=8 LF_hg  B_v201e HG 1500 hg_v20.keys time/dt_retry_host=m1 hydro/floor_pay=rad_column
+# only if H_xl_hg finished with 0-few CW (orion will confirm in a NOTE; default = run them):
+FINALRST=0 NR=4 LX_rsg B_v201e RSG 3000 rsg_v20.keys rad_m1/time2_k1_xlim=0.1
+FINALRST=0 NR=8 LX_hg  B_v201e HG 1500 hg_v20.keys time/dt_retry_host=m1 rad_m1/time2_k1_xlim=0.1
