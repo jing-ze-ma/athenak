@@ -1,0 +1,1 @@
+xcheck: V20JP_rsg/rsg.hydro.hst==V20J_rsg/a V20JP_rsg/rsg.user.hst==V20J_rsg/a V20JR_rsg/rsg.hydro.hst==V20J_rsg/a V20JR_rsg/rsg.user.hst==V20J_rsg/a | rsg user cols1-26==V20G_rsg/a, hydro== (s/cycle 2.946 vs V20G_rsg 2.858)
