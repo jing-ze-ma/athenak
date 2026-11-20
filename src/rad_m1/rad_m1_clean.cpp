@@ -4978,6 +4978,38 @@ void RadiationM1::CleanWriteBack() {
     });
     CleanGhostFill(tqv, 4, 2, true, 0, 1);
   }
+  static const bool lzt2 = (std::getenv("LZT2") != nullptr);   // LZTEL2 STUDY
+  if (lzt && lzt2) {   // (the deposit's |dF|/(c E_f), faces with |F| > c E_f before/after)
+    for (int dir = 1; dir < 3; ++dir) {
+      auto fc = (dir == 1) ? cln_fc2 : cln_fc3;
+      const int dj = (dir == 1), dk = (dir == 2);
+      const int nx1 = ie - is + 1, nji = (je + dj - js + 1)*nx1, nkji = (ke + dk - ks + 1)*nji;
+      Real r[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+      Kokkos::parallel_reduce("lzt2f", Kokkos::RangePolicy<DevExeSpace>(0, (nmb1 + 1)*nkji),
+      KOKKOS_LAMBDA(const int idx, Real &mx, Real &n1, Real &nb, Real &na, Real &fb, Real &fa) {
+        const int m = idx/nkji, k = ks + (idx%nkji)/nji, j = js + (idx%nji)/nx1;
+        const int i = is + idx%nx1;
+        const Real f = fc(m,CLF_N,k,j,i);
+        const Real df = x.c*x.c*CleanCsArm(x, dir, m, k, j, i)*(tqv(m,0,k-dk,j-dj,i) +
+                        tqv(m,0,k,j,i));
+        const Real ce = x.c*fmax(0.5*(x.w(m,CLW_X,k,j,i) + x.w(m,CLW_X,k-dk,j-dj,i)), 1.0e-300);
+        mx = fmax(mx, fabs(df)/ce);
+        if (fabs(df) > 0.01*ce) n1 += 1.0;
+        if (fabs(f) > ce) nb += 1.0;
+        if (fabs(f + df) > ce) na += 1.0;
+        fb = fmax(fb, fabs(f)/ce);
+        fa = fmax(fa, fabs(f + df)/ce);
+      }, Kokkos::Max<Real>(r[0]), Kokkos::Sum<Real>(r[1]), Kokkos::Sum<Real>(r[2]),
+         Kokkos::Sum<Real>(r[3]), Kokkos::Max<Real>(r[4]), Kokkos::Max<Real>(r[5]));
+      r[0] = CleanReduce(r[0], true);
+      r[4] = CleanReduce(r[4], true);
+      r[5] = CleanReduce(r[5], true);
+      for (int n = 1; n < 4; ++n) r[n] = CleanReduce(r[n], false);
+      if (global_variable::my_rank == 0) std::printf("LZT2F cycle %d t2s %d dir %d max|dF|/cE %.3e "
+          ">0.01 %.0f |F|>cE before %.0f after %.0f max|F|/cE before %.6e after %.6e\n",
+          pmy_pack->pmesh->ncycle, t2_solve, dir, r[0], r[1], r[2], r[3], r[4], r[5]);
+    }
+  }
 
   // face fluxes of the solution
   for (int dir = 0; dir < 3; ++dir) {
@@ -5071,6 +5103,9 @@ void RadiationM1::CleanWriteBack() {
   px = CleanDevArgs(x, 0);   // (the F solve took the slots; xh changed)
   pxh = CleanDevArgs(xh, 1);
   const bool lzb = cln_lzbook && feedback;
+  DvceArray4D<Real> lzt2v;
+  if (lzt && lzt2) lzt2v = DvceArray4D<Real>("lzt2", nmb1 + 1, u0.extent_int(2), u0.extent_int(3),
+                                             u0.extent_int(4));
   DvceArray4D<Real> lzw;
   if (lzb) lzw = ScratchView<DvceArray4D<Real>>("cln_lzw", nmb1 + 1, u0.extent_int(2),
                                                  u0.extent_int(3), u0.extent_int(4));
@@ -5121,6 +5156,17 @@ void RadiationM1::CleanWriteBack() {
         const Real rc = CleanCsFrame(x, m, k, j, i, q);
         const Real dp = tqv(m,1,k,j,i)/(x.vol(m,k,j,i)*rc) - (q[2][0]*dm[0] +
                         q[2][1]*dm[1] + q[2][2]*dm[2]);
+        if (lzt2) {   // LZTEL2 STUDY: KE change of the correction / eint
+          Real pq[3], ko = 0.0, kn = 0.0;
+          CleanStagGasMomentum(x, uh, m, k, j, i, pq);
+          const Real dd = uh(m,IDN,k,j,i);
+          for (int n = 0; n < 3; ++n) {
+            ko += (pq[n] + 0.5*dm[n])*dm[n]/dd;
+            const Real dn = dm[n] + dp*q[2][n];
+            kn += (pq[n] + 0.5*dn)*dn/dd;
+          }
+          lzt2v(m,k,j,i) = (kn - ko)/fmax(x.w(m,CLW_EI,k,j,i), 1.0e-300);
+        }
         for (int n = 0; n < 3; ++n) dm[n] += dp*q[2][n];
         dlz = tqv(m,2,k,j,i);
       }
@@ -5304,6 +5350,25 @@ void RadiationM1::CleanWriteBack() {
       }
     }
   });
+  if (lzt && lzt2) {   // LZTEL2 STUDY
+    const int nx1 = ie - is + 1, nji = (je - js + 1)*nx1, nkji = (ke - ks + 1)*nji;
+    Real r[4] = {0.0, 0.0, 0.0, 0.0};
+    Kokkos::parallel_reduce("lzt2r", Kokkos::RangePolicy<DevExeSpace>(0, (nmb1 + 1)*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &n1, Real &n2, Real &n3, Real &mx) {
+      const int m = idx/nkji, k = ks + (idx%nkji)/nji, j = js + (idx%nji)/nx1;
+      const int i = is + idx%nx1;
+      const Real q = lzt2v(m,k,j,i);
+      if (q > 0.01) n1 += 1.0;
+      if (q > 0.1) n2 += 1.0;
+      if (q > 1.0) n3 += 1.0;
+      mx = fmax(mx, q);
+    }, Kokkos::Sum<Real>(r[0]), Kokkos::Sum<Real>(r[1]), Kokkos::Sum<Real>(r[2]),
+       Kokkos::Max<Real>(r[3]));
+    for (int n = 0; n < 3; ++n) r[n] = CleanReduce(r[n], false);
+    r[3] = CleanReduce(r[3], true);
+    if (global_variable::my_rank == 0) std::printf("LZT2 cycle %d t2s %d dKE/ei>0.01 %.0f >0.1 "
+        "%.0f >1 %.0f max %.3e\n", pmy_pack->pmesh->ncycle, t2_solve, r[0], r[1], r[2], r[3]);
+  }
   if (lzb) {   // (the L_z ledger: the stage's L_z as its slope, then booked)
     const Real s = CleanSumCells(lzw);
     if (slopes) (t2_solve == M1_T2S_STAGE1 ? cln_lzs2 : cln_lzs1) = s/h;
