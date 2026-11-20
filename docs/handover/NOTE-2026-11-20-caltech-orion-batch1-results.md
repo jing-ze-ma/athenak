@@ -530,3 +530,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   FRESHGO START S_t9l62_corona 15:32:00 on hpc-sm-01-11
 - V203_hg (hpc-sm-01-11): rc=0 wall=228 rc=0 wall=228 rc=0 wall=243 | cycles 624961 - 624965 | steady 3.919 s/cycle | GPU MiB max 117201 min 116413 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF hst vs V202F_hg/a:  hegiant.hydro.hst==V202F_hg/a hegiant.user.hst==V202F_hg/a | CW 0 FATAL 0
 - S_t19l64 (hpc-sm-02-09, started 15:24:49): a rc=0 wall=239 b rc=0 wall=167 b rc=0 wall=137 | a cycles 0 - 50 dt first 38.3541 last 38.0082 s/cycle steady 1.989 first elapsed 49.1 a 'FATAL' 0  a 'CLEAN WARNING' 2 CLEAN WARNING cycle 0: backward-Euler solve not converged (dt_retry, 2 so far; last change inf)  | GPU mem peak MiB 75755 | CW 2 FATAL 0
+  FRESHGO START S_t19l64_corona 15:34:50 on hpc-sm-02-09
+- T_m35mms (hpc-sm-01-17): a rc=0 wall=149 b rc=0 wall=92 b rc=0 wall=88 | a cycles 0 - 120 dt first 12.0076 last 11.2431 s/cycle steady 0.913 first elapsed 16.3 a 'FATAL' 0  a 'CLEAN WARNING' 0   | GPU mem peak MiB 26953 | CW 0 FATAL 0
