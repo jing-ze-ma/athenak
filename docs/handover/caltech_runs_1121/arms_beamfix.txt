@@ -22,8 +22,8 @@ FINALRST=0 NR=4 BFX5_rsg  B_bfx12 RSG 300 rsg_v20.keys rad_m1/clean_stag_dg_form
 FINALRST=0 NR=8 BFX13_hg  B_bfx13 HG  300 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=13
 FINALRST=0 NR=4 BFX13_rsg B_bfx13 RSG 300 rsg_v20.keys rad_m1/clean_stag_dg_form=13
 # added NOTE cl: B_bfx16 = caltech-runs/beamfix16 4ed45827f4198af91d0d1b25932e5e8fc073d690 (diagnostic forms 15/16). HG only. Ahead of BFX5_hg (G_on_hg keeps its slot). 60 cycles is enough if slots are tight.
-FINALRST=0 NR=8 BFX16_hg B_bfx16 HG 300 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=16
-FINALRST=0 NR=8 BFX15_hg B_bfx16 HG 300 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=15
+# DROPPED (NOTE db) FINALRST=0 NR=8 BFX16_hg B_bfx16 HG 300 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=16
+# DROPPED (NOTE db) FINALRST=0 NR=8 BFX15_hg B_bfx16 HG 300 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=15
 # added NOTE cn (USER priority): B_bfxc = caltech-runs/beamfixc 7d3d3c03608081843ca27b46dee9916d3737ba3d (xcorner + bracket forms). HEAD OF BOTH QUEUES, next free nodes, 100 cycles. BFXC19 first, then BFXC13; then BFX16_hg/BFX15_hg.
 # INVALID xcorner=3 (NOTE ct) FINALRST=0 NR=8 BFXC19_hg  B_bfxc HG  100 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=19 rad_m1/clean_stag_xcorner=3
 # INVALID xcorner=3 (NOTE ct) FINALRST=0 NR=4 BFXC19_rsg B_bfxc RSG 100 rsg_v20.keys rad_m1/clean_stag_dg_form=19 rad_m1/clean_stag_xcorner=3
