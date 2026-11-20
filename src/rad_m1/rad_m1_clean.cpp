@@ -13,6 +13,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <iostream>
 #include <limits>
@@ -4958,6 +4959,10 @@ void RadiationM1::CleanWriteBack() {
     });
     lzs[0] = CleanSumCells(lxs);
     lzs[1] = CleanSumCells(lxi);
+    if (std::getenv("LZ3") && global_variable::my_rank == 0) {
+      std::printf("LZ3X cycle %d t2s %d X %.10e I %.10e\n", pmy_pack->pmesh->ncycle,
+                  t2_solve, lzs[0], lzs[1]);
+    }
   }
   const Real lzw_ = (lzs[1] > 0.0) ? lzs[0]/lzs[1] : 0.0;   // (dOmega)
 
