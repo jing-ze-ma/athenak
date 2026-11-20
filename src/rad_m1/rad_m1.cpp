@@ -419,6 +419,18 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         cln_lzs1 = pin->GetOrAddReal("rad_m1", cs ? "clean_cs_lz_k1" : "clean_sp_lz_bnd_k1",
                                      0.0);
       }
+      // clean_cs_lz_tel (default false): the cubed sphere's gas phi momentum takes the
+      // radiation stress as angular-momentum fluxes through the faces
+      // (CleanStagCsTorque), L_z of the radiation the face form, so that L_z telescopes
+      // to the boundary torque
+      if (pin->GetOrAddBoolean("rad_m1", "clean_cs_lz_tel", false)) {
+        if (!pmy_pack->pmesh->use_cubed_sphere || cln_cell) {
+          std::cout << "### FATAL ERROR: <rad_m1>/clean_cs_lz_tel needs the staggered "
+                    << "layout on the cubed sphere" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        cln_lzts = 0;   // (its slot: CleanInit)
+      }
       cln_xpat = stag("clean_stag_xpat", false);
       // clean_xt_cons (default off): the first iterate's gas T with A's G = 1 - beta^2/2,
       // and after the first right-hand side T from the pass's gas row (its G and beta
@@ -1475,6 +1487,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       fref_hgam0[1] = 0.25;     fref_hbeta[1] = 0.25;
       fref_hgam0[2] = 2.0/3.0;  fref_hbeta[2] = 2.0/3.0;
     }
+  }
+  if (cln_lzts >= 0 && !(coupling && gas_feedback)) {
+    std::cout << "### FATAL ERROR: <rad_m1>/clean_cs_lz_tel needs coupling = true and "
+              << "gas_feedback = true" << std::endl;
+    std::exit(EXIT_FAILURE);
   }
   if (force_ref != M1_FREF_NONE && !(coupling && gas_feedback)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__

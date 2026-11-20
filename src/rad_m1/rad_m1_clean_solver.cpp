@@ -94,6 +94,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.cvr = cln_csvr;
   x.fre = cln_freal;
   x.fdg = cln_fdg;
+  x.lzs = cln_lzts;
   x.xq = cln_xd_on ? cln_xqs : -1;
   x.kq = cln_kq_on ? cln_kqs : -1;
   x.kt = (cln_kq_on && cln_kmode == 4) ? cln_ktau : 0.0;
@@ -984,22 +985,31 @@ Real RadiationM1::CleanSumCells(const DvceArray4D<Real> &a) {
 //! \fn Real RadiationM1::CleanLzTotal
 //! \brief the history's L_z about z: sum V R (p_phi + F_phi/c^2) of the gas and of the
 //! radiation's cell vector (the frame of y; R = x1v sin(theta), the cubed sphere's
-//! CleanCsFrame), plus the L_z ledger (CleanLzBook); 0 before the first solve
+//! CleanCsFrame), plus the L_z ledger (CleanLzBook); 0 before the first solve.
+//! clean_cs_lz_tel: the radiation's the face form, half of V lambda F/c^2 of each of the
+//! cell's lateral faces (CleanStagCsArm)
 
 Real RadiationM1::CleanLzTotal() {
   if (!clean || cln_cell || !cln_init || !(sph_geom || cs_geom)) return 0.0;
   CleanArgs x = CleanMakeArgs();
   FluidRef fl = FluidRef::Get(pmy_pack);
-  const bool fo = fl.on;
+  const bool fo = fl.on, lzt = (x.lzs >= 0);
   auto uh = fl.u0;
   auto ur = u0;
+  auto f2 = f0x2, f3 = f0x3;
   const Real ic2 = 1.0/(x.c*x.c);
   const Real s = CleanSums(pmy_pack, "cln_lztot", 1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0, Real &s1) {
     Real p[3] = {0.0, 0.0, 0.0}, q[3][3];
     if (fo) CleanGasMomentum(x, uh, m, k, j, i, p);
     const Real r = x.cub ? CleanCsFrame(x, m, k, j, i, q) : x.x1v(m,i)*x.tg(m,2,j);
-    s0 += CleanVol(x, m, k, j, i)*r*(p[2] + ur(m,M1_F3,k,j,i)*ic2);
+    Real lr = 0.0;
+    for (int d = 0; d < 4 && lzt; ++d) {
+      const int n = 1 + d/2, jf = j + (d%2)*(n == 1), kf = k + (d%2)*(n == 2);
+      lr += 0.5*CleanStagCsArm(x, n, m, kf, jf, i)*((n == 1) ? f2 : f3)(m,kf,jf,i);
+    }
+    const Real v = CleanVol(x, m, k, j, i);
+    s0 += lzt ? v*(r*p[2] + lr*ic2) : v*r*(p[2] + ur(m,M1_F3,k,j,i)*ic2);
   })[0];
   return s + (cln_lzbook ? cln_lzl + cln_lzp : 0.0);
 }

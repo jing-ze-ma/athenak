@@ -171,6 +171,60 @@ static void CleanStagRefForce(const CleanArgs &x, const int fref,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanStagCsTorque
+//! \brief cubed sphere, clean_cs_lz_tel: the z torque (M x P n)_z of the radiation stress
+//! P = D E (work vector e) through face (k,j,i) of family dir, n its unit normal (+dir),
+//! M its first moment int x dA (CLG_M; r_f A n on a radial face), the angular-momentum
+//! flux of a P uniform on the face.  P is the mean of its two cells' (one sided at a
+//! physical face), each turned by the least rotation of its r_hat to the face's (M/|M|),
+//! so that a spherically symmetric P gives p_t (M x n)_z, whose sum over a cell's faces
+//! is 0
+
+KOKKOS_INLINE_FUNCTION
+static Real CleanStagCsTorque(const CleanArgs &x, const int e, const int dir, const int m,
+                              const int k, const int j, const int i) {
+  const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+  Real nf[3], mf[3], pn[3] = {0.0, 0.0, 0.0};
+  for (int c = 0; c < 3; ++c) {
+    nf[c] = x.g.At<CLG_N>(m,3*dir+c,k,j,i);
+    mf[c] = (dir == 0) ? x.x1f(m,i)*x.area[0](m,k,j,i)*nf[c]
+                       : x.g.At<CLG_M>(m,3*(dir-1)+c,k,j,i);
+  }
+  const Real im = 1.0/std::sqrt(mf[0]*mf[0] + mf[1]*mf[1] + mf[2]*mf[2]);
+  const bool bf = CleanBoundaryFace(x, dir, m, k, j, i);
+  const bool bl = (dir == 0) ? (i == x.is) : ((dir == 1) ? (j == x.js) : (k == x.ks));
+  for (int s = 0; s < 2; ++s) {   // (the low and the high cell)
+    if (bf && (s == 1) != bl) continue;
+    const int kc = k - (1 - s)*dk, jc = j - (1 - s)*dj, ic = i - (1 - s)*di;
+    // (R v = v + t x v + t x (t x v)/(1 + a.b), t = a x b, a = r_hat, b = M/|M|; R^T: -t)
+    Real a[3], t[3], u[3], w[3];
+    for (int c = 0; c < 3; ++c) a[c] = x.g.At<CLG_R>(m,c,kc,jc,ic);
+    for (int c = 0; c < 3; ++c) {
+      t[c] = (a[(c+1)%3]*mf[(c+2)%3] - a[(c+2)%3]*mf[(c+1)%3])*im;
+    }
+    const Real ab = 1.0 + (a[0]*mf[0] + a[1]*mf[1] + a[2]*mf[2])*im;
+    auto rot = [&](const Real sg, const Real v[3], Real o[3]) {
+      Real tv[3];
+      for (int c = 0; c < 3; ++c) tv[c] = t[(c+1)%3]*v[(c+2)%3] - t[(c+2)%3]*v[(c+1)%3];
+      for (int c = 0; c < 3; ++c) {
+        o[c] = v[c] + sg*tv[c] + (t[(c+1)%3]*tv[(c+2)%3] - t[(c+2)%3]*tv[(c+1)%3])/ab;
+      }
+    };
+    rot(-1.0, nf, u);
+    const Real ee = (bf ? 1.0 : 0.5)*x.w(m,e,kc,jc,ic);
+    for (int b = 0; b < 3; ++b) {
+      w[b] = 0.0;
+      for (int c = 0; c < 3; ++c) {
+        w[b] += x.cs(m,CLN_D11+((b == c) ? b : 2 + b + c),kc,jc,ic)*ee*u[c];
+      }
+    }
+    rot(1.0, w, u);
+    for (int c = 0; c < 3; ++c) pn[c] += u[c];
+  }
+  return mf[0]*pn[1] - mf[1]*pn[0];
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanStagMomentum
 //! \brief staggered: the momentum the radiation gives to cell (k,j,i) over the stage
 //! (CleanMomentumChange of each face family, mag its terms' size) in the components of
@@ -183,13 +237,17 @@ static void CleanStagRefForce(const CleanArgs &x, const int fref,
 //! inner faces cancel in its sum).  3-D spherical polar: dlz the same of the phi faces'
 //! F; inside they telescope, so its sum is the L_z that crossed the boundaries, at an open
 //! or imposed radial boundary the one-sided torque form of the transverse stress
-//! (CleanFaceStress) less the F solve's dissipation there.
+//! (CleanFaceStress) less the F solve's dissipation there.  The cubed sphere with
+//! clean_cs_lz_tel (dlz set): the gas phi momentum is the cell's share (wt V lambda) of
+//! the face form's -dL_rad (lambda CleanStagCsArm, L_rad = sum V_f lambda F/c^2) less
+//! h times the torque of its faces (CleanStagCsTorque, face slot x.lzs), so that L_z
+//! telescopes: dlz = h torque, dz the change of the phi momentum.
 
 template <bool kFs = false>
 KOKKOS_INLINE_FUNCTION
 static void CleanStagMomentum(const CleanArgs &x, const int e, const int m, const int k,
                               const int j, const int i, Real dm[3], Real mag[3],
-                              Real *dlz = nullptr) {
+                              Real *dlz = nullptr, Real *dz = nullptr) {
   Real cf[6], wf[6];
   for (int d = 0; d < 3; ++d) {
     mag[d] = 0.0;
@@ -215,20 +273,30 @@ static void CleanStagMomentum(const CleanArgs &x, const int e, const int m, cons
   const Real rc = CleanCsFrame(x, m, k, j, i, q);
   const Real dr = q[0][0]*dv[0] + q[0][1]*dv[1] + q[0][2]*dv[2];
   const Real dt = q[1][0]*dv[0] + q[1][1]*dv[1] + q[1][2]*dv[2];
-  const Real dp = q[2][0]*dv[0] + q[2][1]*dv[1] + q[2][2]*dv[2];
+  Real dp = q[2][0]*dv[0] + q[2][1]*dv[1] + q[2][2]*dv[2];
   if (dlz) {
     const Real one[6] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
-    Real df[6], fd[3];
+    Real df[6], fd[3], lr = 0.0, tc = 0.0;
     for (int d = 0; d < 6; ++d) {
       const int n = d/2, kf = k + (d%2)*(n == 2), jf = j + (d%2)*(n == 1);
       const int iff = i + (d%2)*(n == 0);
       const Real f = (kFs || x.fs) ? x.fc[n](m,CLF_N,kf,jf,iff)
                                    : CleanFaceFlux(x, e, n, m, kf, jf, iff, true);
       df[d] = f - x.fc[n](m,CLF_G,kf,jf,iff);
+      if (x.lzs < 0) continue;
+      tc += ((d%2) ? 1.0 : -1.0)*x.fc[n](m,x.lzs,kf,jf,iff);
+      if (n > 0) lr += wf[d]*CleanStagCsArm(x, n, m, kf, jf, iff)*df[d];
     }
-    CleanStagCsVector(x, m, k, j, i, df, one, fd);
-    *dlz = (-(q[2][0]*fd[0] + q[2][1]*fd[1] + q[2][2]*fd[2])/(x.c*x.c) - dp)*
-           x.vol(m,k,j,i)*rc;
+    const Real v = x.vol(m,k,j,i);
+    if (x.lzs >= 0) {
+      const Real z = -(v*lr/(x.c*x.c) + x.h*tc)/(v*rc) - dp;
+      if (dz) *dz = z;
+      dp += z;
+      *dlz = x.h*tc;
+    } else {
+      CleanStagCsVector(x, m, k, j, i, df, one, fd);
+      *dlz = (-(q[2][0]*fd[0] + q[2][1]*fd[1] + q[2][2]*fd[2])/(x.c*x.c) - dp)*v*rc;
+    }
   }
   for (int b = 0; b < 3; ++b) dm[b] = dr*q[0][b] + dt*q[1][b] + dp*q[2][b];
 }
@@ -441,7 +509,8 @@ void RadiationM1::CleanInit() {
   cln_fdg = (!cln_cell && cln_consist) ? nfc : -1;
   cln_xqs = cln_xd ? nfc + (cln_fdg >= 0) : -1;   // (clean_stag_xdonor's q)
   cln_kqs = cln_kpos ? nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0) : -1;   // (kpos: q)
-  const int nfx = nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0) + (cln_kpos ? 2 : 0);
+  int nfx = nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0) + (cln_kpos ? 2 : 0);
+  if (cln_lzts >= 0) cln_lzts = nfx++;   // (clean_cs_lz_tel: CleanStagCsTorque)
   if (cln_kpos || cln_xpat) {
     Kokkos::realloc(cln_kcnt, 2);
     Kokkos::deep_copy(cln_kcnt, 0.0);
@@ -4862,6 +4931,17 @@ void RadiationM1::CleanWriteBack() {
   xh.fs = true;
   xh.tf = cln_ftie && !x.cub;
   xh.fa = cln_ftie && x.cub;   // (the cubed sphere's tied T: CLF_PT, CleanStagFaceTie)
+  if (x.lzs >= 0) {   // (clean_cs_lz_tel: each face's stress torque, the lower gid's)
+    for (int dir = 0; dir < 3; ++dir) {
+      auto fc = x.fc[dir];
+      const int lz = x.lzs;
+      CleanFor("cln_wblzt", nmb1, ks, ke+(dir == 2), js, je+(dir == 1), is, ie+(dir == 0),
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        fc(m,lz,k,j,i) = CleanStagCsTorque(x, CLW_X, dir, m, k, j, i);
+      });
+    }
+    CleanStagCsTie(1, x.lzs);
+  }
 
   // face fluxes of the solution
   for (int dir = 0; dir < 3; ++dir) {
@@ -4962,8 +5042,8 @@ void RadiationM1::CleanWriteBack() {
       pgx = (x.w(m,CLW_KM,k,j,i) - x.w(m,CLW_KF,k,j,i))*fmax(e, 0.0);
     }
     if (mdc) {
-      Real dr[3], mg[3], cf[2], wf[2];
-      CleanStagMomentum(xh, CLW_X, m, k, j, i, dr, mg);
+      Real dr[3], mg[3], cf[2], wf[2], dl;   // (dl: clean_cs_lz_tel's phi as the gas's)
+      CleanStagMomentum(xh, CLW_X, m, k, j, i, dr, mg, (x.lzs >= 0) ? &dl : nullptr);
       const Real d = uh(m,IDN,k,j,i), s = (phc(m,k,j,i) > phx) ? 0.0 : 1.0/(h*d);
       for (int n = 0; n < 3; ++n) {
         fr(m,n,k,j,i) = s*dr[n];
@@ -4984,15 +5064,15 @@ void RadiationM1::CleanWriteBack() {
     Real den = 0.0, wsl = 0.0, wkr = 0.0;
     const Real d0 = x.w(m,CLW_JV,k,j,i);   // (the stage start's eint deficit, <= 0)
     if (feedback) {
-      Real mg[3], pg[3], rf[3], dlz = 0.0;
-      CleanStagMomentum(xh, CLW_X, m, k, j, i, dm, mg, &dlz);
+      Real mg[3], pg[3], rf[3], dlz = 0.0, dz = 0.0;
+      CleanStagMomentum(xh, CLW_X, m, k, j, i, dm, mg, &dlz, &dz);
       CleanStagGasMomentum(x, uh, m, k, j, i, pg);
       CleanStagRefForce(x, fref, fr, aref, uh(m,IDN,k,j,i), m, k, j, i, rf);
       for (int n = 0; n < 3; ++n) {   // (force_reference)
         if (fref != M1_FREF_NONE) dm[n] -= h*rf[n];
       }
       if (fm) fmd(m,k,j,i) = CleanStagRadial(x, m, k, j, i, dm);
-      if (x.vzero) dm[0] = dm[1] = dm[2] = dlz = 0.0;   // (frozen gas momentum)
+      if (x.vzero) dm[0] = dm[1] = dm[2] = dlz = dz = 0.0;   // (frozen gas momentum)
       if (lzb) lzw(m,k,j,i) = dlz;   // (clean_cs_lz_abs = 2: CleanLzBook)
       // (clean_stag_kreal: the stage's deferred kick, CleanStagKReal; its own kinetic
       // energy wkr leaves the slopes, which are the stage's f)
@@ -5013,6 +5093,15 @@ void RadiationM1::CleanWriteBack() {
         wk += (pg[n] + 0.5*dm[n])*dm[n]/uh(m,IDN,k,j,i);
         if (wsp && !x.vzero) wr += h*rf[n]*(pg[n] + dm[n])/uh(m,IDN,k,j,i);
         dh[n] = dm[n];
+      }
+      // (clean_cs_lz_tel: the kinetic energy of the phi change dz comes from eint, E
+      // takes the exchange of the cell vector's, wk - wz, as without it)
+      Real wz = 0.0;
+      if (dz != 0.0) {
+        Real q[3][3], pz = 0.0;
+        CleanCsFrame(x, m, k, j, i, q);
+        for (int n = 0; n < 3; ++n) pz += (pg[n] + dm[n])*q[2][n];
+        wz = dz*(pz - 0.5*dz)/uh(m,IDN,k,j,i);
       }
       if (x.cub) {   // (the hydro's components of dm, from the frame of y)
         Real dy[3] = {dm[0], dm[1], dm[2]};
@@ -5069,10 +5158,10 @@ void RadiationM1::CleanWriteBack() {
         }
         // (clean_xt_exact: the work the row took and the gas's kinetic energy did not
         // receive to E whole, eint the heating only)
-        const Real dw = xwb ? x.w(m,CLW_XW,k,j,i) - wk - wp : 0.0;
-        const Real rd = (den - eg - wk - wp - dw)/(gtf ? 1.0 :
+        const Real dw = xwb ? x.w(m,CLW_XW,k,j,i) - (wk - wz) - wp : 0.0;
+        const Real rd = (den - eg - (wk - wz) - wp - dw)/(gtf ? 1.0 :
                         1.0 + x.h*x.c*x.op(m,M1_OP_E,k,j,i)*x.w(m,CLW_RY,k,j,i)) + dw;
-        if (cls) x.w(m,CLW_PW,k,j,i) = fabs(den - eg - wk - wp)/fmax(fabs(e) +
+        if (cls) x.w(m,CLW_PW,k,j,i) = fabs(den - eg - (wk - wz) - wp)/fmax(fabs(e) +
             fabs(x.w(m,CLW_EO,k,j,i)) + fabs(x.w(m,CLW_EI,k,j,i)), 1.0e-300);
         e += rd;
         den -= rd + wp;

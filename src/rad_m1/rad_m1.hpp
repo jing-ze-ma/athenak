@@ -3332,6 +3332,7 @@ class RadiationM1 {
   bool cln_kreal = false;   // (S3B kick bound: CLW_KS set in CleanOldVector)
   int cln_lza = 0;          // clean_cs_lz_abs
   bool cln_lzbook = false;  // (the L_z ledger: cubed sphere, or 3-D spherical polar)
+  int cln_lzts = -1;        // clean_cs_lz_tel: face slot of the stress torque (-1 off)
   bool cln_thinf = false;   // clean_stag_thinf
   // (clean_cs_lz_abs = 2: the L_z V R (dp_torque - dp) the gas does not take, booked as
   // the radiation's, cln_lzl (<rad_m1>/clean_cs_lz_ledger); its sums over the cells as the

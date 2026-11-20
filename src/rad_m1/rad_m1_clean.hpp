@@ -353,6 +353,8 @@ struct CleanArgs {
   bool cvr;                    // cubed sphere, clean_stag_csvec_radial (CleanStagCsVector)
   bool fre;                    // staggered, clean_stag_freal: a realisable comoving sb
   int fdg;                     // staggered bracket: face slot of its lagged flux DG (-1)
+  int lzs;                     // cubed sphere, clean_cs_lz_tel: face slot of the stress
+                               // torque (CleanStagCsTorque; -1 off)
   bool fs;                     // staggered, clean_stag_fsolve: the face F of the F solve
   bool tf;                     //   and each face's momentum exchange T of its owner block
                                // (CLF_N) with its dissipation term (CLF_N + 1)
@@ -1714,6 +1716,18 @@ void CleanStagCellVector(const CleanArgs &x, const int m, const int k, const int
     return;
   }
   for (int q = 0; q < 3; ++q) u[q] = 0.5*(c[2*q] + c[2*q+1]);
+}
+
+//! \brief cubed sphere: the arm (M x n)_z/A of L_z of a momentum along the unit normal n
+//! of the lateral face (k,j,i) of family dir (1, 2), M its first moment int x dA, A its
+//! area (am_transport's; clean_cs_lz_tel)
+
+KOKKOS_INLINE_FUNCTION
+Real CleanStagCsArm(const CleanArgs &x, const int dir, const int m, const int k,
+                    const int j, const int i) {
+  const int o = 3*(dir - 1);
+  return (x.g.At<CLG_M>(m,o,k,j,i)*x.g.At<CLG_N>(m,3*dir+1,k,j,i) -
+          x.g.At<CLG_M>(m,o+1,k,j,i)*x.g.At<CLG_N>(m,3*dir,k,j,i))/x.area[dir](m,k,j,i);
 }
 
 //----------------------------------------------------------------------------------------
