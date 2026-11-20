@@ -12,7 +12,7 @@ FINALRST=0 NR=4 BFX7_rsg B_bfx7 RSG 300 rsg_v20.keys rad_m1/clean_stag_dg_form=7
 # added NOTE cg: B_bfx12 = caltech-runs/beamfix12 8ba22894106c88e372bb7e6a28c0a7390b1f73d5 (forms 11/12/5; form 0 still v20.1). HG only for now.
 # BEAMFIX run order: BFX7_hg, BFX12_hg, BFX11_hg, BFX5_hg, then BFX7_rsg (the BFX0 controls as already scheduled).
 FINALRST=0 NR=8 BFX12_hg B_bfx12 HG 300 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=12
-FINALRST=0 NR=8 BFX11_hg B_bfx12 HG 300 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=11
+# DROPPED if not started (NOTE cl) FINALRST=0 NR=8 BFX11_hg B_bfx12 HG 300 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=11
 FINALRST=0 NR=8 BFX5_hg  B_bfx12 HG 300 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=5
 # added NOTE ci: RSG arms of forms 12/11/5 on B_bfx12, single-node pool NOW (parallel with the HG arms). BFX7_hg dropped. HG order: BFX12_hg, BFX11_hg, BFX5_hg.
 FINALRST=0 NR=4 BFX12_rsg B_bfx12 RSG 300 rsg_v20.keys rad_m1/clean_stag_dg_form=12
@@ -21,3 +21,6 @@ FINALRST=0 NR=4 BFX5_rsg  B_bfx12 RSG 300 rsg_v20.keys rad_m1/clean_stag_dg_form
 # added NOTE cj: B_bfx13 = caltech-runs/beamfix13 df0e4d19c2bf391df40b2fe326253a48ccd2d45c (B_bfx12 + form 13). HG order: BFX12_hg, BFX13_hg, BFX11_hg, BFX5_hg. RSG: BFX13_rsg right after BFX12_rsg.
 FINALRST=0 NR=8 BFX13_hg  B_bfx13 HG  300 hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=13
 FINALRST=0 NR=4 BFX13_rsg B_bfx13 RSG 300 rsg_v20.keys rad_m1/clean_stag_dg_form=13
+# added NOTE cl: B_bfx16 = caltech-runs/beamfix16 4ed45827f4198af91d0d1b25932e5e8fc073d690 (diagnostic forms 15/16). HG only. Ahead of BFX5_hg (G_on_hg keeps its slot). 60 cycles is enough if slots are tight.
+FINALRST=0 NR=8 BFX16_hg B_bfx16 HG 300 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=16
+FINALRST=0 NR=8 BFX15_hg B_bfx16 HG 300 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_stag_dg_form=15
