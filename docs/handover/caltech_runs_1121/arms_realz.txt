@@ -1,0 +1,3 @@
+# REALZ (orion 2026-11-20): where/why HG's face momentum F and stored Phi go unrealisable. B_realz = caltech-runs/realz e15e5bc52
+# (v20n 6d3da47b2 + CONV3 ksplit print 1f9926b49/c28cf2f41 + study prints CLEAN REALMAP / CLEAN REALF; with time2_ksplit only, changes nothing).
+FINALRST=0 RZ1_hg B_realz HG 12 hg_v20.keys time/dt_retry_host=m1 rad_m1/clean_nl_print=true rad_m1/time2_ksplit=true
