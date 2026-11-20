@@ -5027,6 +5027,31 @@ void RadiationM1::CleanWriteBack() {
   DvceArray4D<Real> lzw;
   if (lzb) lzw = ScratchView<DvceArray4D<Real>>("cln_lzw", nmb1 + 1, u0.extent_int(2),
                                                  u0.extent_int(3), u0.extent_int(4));
+  // LZCS STUDY (env LZCS_OMEGA, never merge): one solid-body spin Omega about z given to
+  // the gas at the first feedback write-back (frame of y phi momentum d Omega R, its KE)
+  {
+    static const Real lzom = std::getenv("LZCS_OMEGA") ? std::atof(std::getenv("LZCS_OMEGA"))
+                                                       : 0.0;
+    static bool lzom_done = false;
+    if (lzom != 0.0 && x.cub && feedback && !lzom_done) {
+      lzom_done = true;
+      const CleanArgs xo = x;
+      auto uo = uh;
+      Kokkos::parallel_for("lzcs_om", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(),
+                           {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        Real q[3][3], dh[3];
+        const Real rc = CleanCsFrame(xo, m, k, j, i, q), d = uo(m,IDN,k,j,i);
+        const Real dmo[3] = {0.0, 0.0, d*lzom*rc};
+        CleanGasChange(xo, m, k, j, i, dmo, dh);
+        uo(m,IM1,k,j,i) += dh[0];
+        uo(m,IM2,k,j,i) += dh[1];
+        uo(m,IM3,k,j,i) += dh[2];
+        uo(m,IEN,k,j,i) += 0.5*d*SQR(lzom*rc);
+      });
+      if (global_variable::my_rank == 0) std::printf("LZCS spin Omega %.6e given\n", lzom);
+    }
+  }
   // LZCS STUDY (env LZCS, never merge): the cubed sphere's L_z split per write-back
   static const bool lzcs_env = (std::getenv("LZCS") != nullptr);
   const bool lzd = lzcs_env && lzb && x.cub;
