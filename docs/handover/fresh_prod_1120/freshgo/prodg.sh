@@ -10,7 +10,7 @@ S=$(( $(date -d "$END" +%s) - $(date +%s) - 600 )); [ $S -gt 1800 ] || { echo "t
 WT=$(printf "%d:%02d:%02d" $((S/3600)) $((S%3600/60)) $((S%60)))
 R=$(ls -t $D/rst/*.rst 2>/dev/null | head -1); n=$(ls $D/log.* 2>/dev/null | wc -l)
 if [ -z "$R" ]; then sed "s#FRESH_DIR#$FRESH#g" $DECK > $D/deck.athinput; grep -q FRESH_DIR $D/deck.athinput && exit 1
-  for f in $(grep -oE "$FRESH/[^ #]+" $D/deck.athinput | sort -u); do [ -s $f ] || { echo "MISSING $f"; exit 1; }; done; A="-i $D/deck.athinput"
+  for f in $(sed "s/#.*//" $D/deck.athinput | grep -oE "$FRESH/[^ ]+" | sort -u); do [ -s $f ] || { echo "MISSING $f"; exit 1; }; done; A="-i $D/deck.athinput"
 else A="-r $R"; fi
 echo "$(date '+%F %T') chunk $n STAR=$STAR BIN=$BIN md5=$(md5sum < $BIN | cut -c1-32) DECK=$DECK md5=$(md5sum < $DECK | cut -c1-32) start=$A WT=$WT HOLDER=$HOLDER NODE=$NODE EX=$EX" >> $D/chunks.txt
 ( while sleep 600; do ls -t $D/rst/*.rst 2>/dev/null | tail -n +$(( ${KEEPRST:-3} + 1 )) | xargs -r rm -f; done ) & PR=$!

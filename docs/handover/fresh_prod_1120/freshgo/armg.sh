@@ -9,7 +9,7 @@ case "$TAG" in */*|.|..) echo "bad TAG $TAG"; exit 1;; esac; [ $(echo "$OUT" | t
 NR=${NR:-4}; H=$(dirname "$(readlink -f "$0")"); MW=${MEMWRAP:-$H/../memwrap.sh}
 D=$OUT/$TAG; rm -rf $D; mkdir -p $D; cd $D
 sed "s#FRESH_DIR#$FRESH#g" $DECK > $D/deck.athinput; grep -q FRESH_DIR $D/deck.athinput && { echo "FRESH_DIR left" > res.txt; exit 1; }
-for f in $(grep -oE "$FRESH/[^ #]+" $D/deck.athinput | sort -u); do [ -s $f ] || { echo "MISSING $f" >> res.txt; exit 1; }; done
+for f in $(sed "s/#.*//" $D/deck.athinput | grep -oE "$FRESH/[^ ]+" | sort -u); do [ -s $f ] || { echo "MISSING $f" >> res.txt; exit 1; }; done
 echo "TAG=$TAG BIN=$BIN md5=$(md5sum < $BIN | cut -c1-32) DECK=$DECK md5=$(md5sum < $DECK | cut -c1-32) NC=$NC HOLDER=$HOLDER NODE=$NODE NR=$NR EX=$EX" > info.txt
 run() { local d=$1 n=$2; shift 2; mkdir -p $D/$d; cd $D/$d; t0=$(date +%s)
   OMPI_MCA_io=romio321 srun --overlap --jobid=$HOLDER -w $NODE -N 1 -n $NR --mpi=pmix -t ${TL:-60} -J g_$TAG \
