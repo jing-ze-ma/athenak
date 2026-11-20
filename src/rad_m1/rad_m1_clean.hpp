@@ -363,7 +363,7 @@ struct CleanArgs {
                                // (-1: the central cross flux)
   int xc;                      // staggered, clean_stag_xcorner: face slots of the excess,
                                // t and its code (-1: none; with xq only)
-  int xcm;                     //   its mode: 1 corner, 2 cancel, 3 both
+  int xcm;                     //   its mode: 1 corner, 2 cancel, 3 both, 4 cancel + donor
   bool pd;                     // staggered, kpos / xpat: the rows' diagonal CLW_PD
   Real kt;                     // staggered, clean_stag_kpos = delta: tau/h, the slopes'
                                // linear face flux tau (al E_L + ar E_R) implicit
@@ -1443,6 +1443,13 @@ void CleanStagXSplit(const CleanArgs &x, const CleanArgs &xr, const int dir, con
         if (up) qr += a/eo;
         if (!up) ql -= a/eo;
         xe -= a;
+      }
+      // (4: the rest on the donor past c, q = |li|/E_old: its outflow stays donor-implicit,
+      // at most what it holds; a dark side cell of a sub-cell beam passes its inflow on)
+      if (x.xcm == 4 && ed > 0.0) {
+        if (up) ql += xe/ed;
+        if (!up) qr -= xe/ed;
+        xe = 0.0;
       }
       if (x.xcm & 1) xs += up ? xe : -xe;
     };
