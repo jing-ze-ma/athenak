@@ -1,17 +1,20 @@
 # FRESHGO smoke + block-shape arms (orion 2026-11-20 ~15:40 PST). Build B_v203 = caltech-runs/v203 e688cb7bc. 1 node (4 H200) per arm, NR=4.
 # Files: docs/handover/fresh_prod_1120/freshgo/{armg.sh,resf.py,decks/*.athinput}. FRESH = gunzipped copy of docs/handover/fresh_prod_1120 (all *.gz gunzipped in place).
 # Usage: HOLDER=<job> NODE=<host> OUT=<runroot>/freshgo FRESH=<fresh_prod_1120 dir> [RT=0] armg.sh TAG $B_v203 decks/<deck> NC [extra keys]
-# Order (T9 first). Smoke arms: fresh start, a = 50 cycles straight, b = 25 + restart + 25 (bitwise), mem log, keep hst + logs (bins deleted unless KEEPBIN=1).
+# Order: S_* and T_* first (T9 first), then the 2 B* arms. Smoke arms: fresh start, a = 50 cycles straight, b = 25 + restart + 25 (bitwise), mem log, keep hst + logs (bins deleted unless KEEPBIN=1).
 S_t9l62          decks/t9l62_smoke.athinput          50
 S_bsg            decks/bsg_smoke.athinput            50
 S_t19l64         decks/t19l64_smoke.athinput         50
 S_m35mms         decks/m35mms_smoke.athinput         50
 S_t9l62_corona   decks/t9l62_corona_smoke.athinput   50
 S_t19l64_corona  decks/t19l64_corona_smoke.athinput  50
-# Block-shape timing (RT=0, 8 cycles, same node class; the 128x128 baseline is the smoke arm). Full radial pencils always.
+# THINF variant (USER: beam fix in tonight's prod): binary B_v203thinf = caltech-runs/v203thinf (BEAMHG confirms the build), 100 cycles (a 100 straight, b 50 + rst + 50),
+# keys: rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_v=7 rad_m1/clean_maxit=800 (G = 1: no gmax key). Concurrent with the S_* arms.
+T_t9l62   B_v203thinf decks/t9l62_smoke.athinput   100 rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_v=7 rad_m1/clean_maxit=800
+T_bsg     B_v203thinf decks/bsg_smoke.athinput     100 rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_v=7 rad_m1/clean_maxit=800
+T_t19l64  B_v203thinf decks/t19l64_smoke.athinput  100 rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_v=7 rad_m1/clean_maxit=800
+T_m35mms  B_v203thinf decks/m35mms_smoke.athinput  100 rad_m1/clean_stag_thinf=true rad_m1/clean_stag_thinf_v=7 rad_m1/clean_maxit=800
+# Block-shape timing, REDUCED to 2 arms (RT=0, 8 cycles, B_v203; the 128x128 baseline is the S_* arm). Full radial pencils always.
 RT=0 B4_t9l62    decks/t9l62_smoke.athinput   8 meshblock/nx2=128 meshblock/nx3=256   # 4 blocks, 1/GPU
-RT=0 B16_t9l62   decks/t9l62_smoke.athinput   8 meshblock/nx2=64  meshblock/nx3=128   # 16 blocks, 4/GPU
-RT=0 B8_bsg      decks/bsg_smoke.athinput     8 meshblock/nx2=64  meshblock/nx3=128   # 8 blocks, 2/GPU
-RT=0 B16_bsg     decks/bsg_smoke.athinput     8 meshblock/nx2=64  meshblock/nx3=64    # 16 blocks (viper's old BSG layout; hst rows 1-8 vs S_bsg = layout invariance)
-RT=0 B8_m35mms   decks/m35mms_smoke.athinput  8 meshblock/nx2=128 meshblock/nx3=64    # 8 blocks
-RT=0 B16_m35mms  decks/m35mms_smoke.athinput  8 meshblock/nx2=64  meshblock/nx3=64    # 16 blocks
+RT=0 B16_bsg     decks/bsg_smoke.athinput     8 meshblock/nx2=64  meshblock/nx3=64    # 16 blocks, 4/GPU (viper's old BSG layout; hst rows 1-8 vs S_bsg = layout invariance)
+# DROPPED: B16_t9l62, B8_bsg, B8_m35mms, B16_m35mms
