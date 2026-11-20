@@ -93,3 +93,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - V20JR_rsg (hpc-sm-02-04): rc=0 wall=159 | cycles 589788 - 589792 | steady 2.938 s/cycle | GPU MiB max 108279 min 107091 | CW a 0 FATAL 0 |  xcheck:
 - AB8_rsg (hpc-sm-02-04): rc=0 wall=94 | cycles 589788 - 589794 | steady 3.043 s/cycle | GPU MiB max 110447 min 109315 | CW a 0 FATAL 0 |  
 - V20J_rsg (hpc-sm-02-11): rc=0 wall=160 rc=0 wall=151 rc=0 wall=153 | cycles 589788 - 589792 | steady 2.946 s/cycle | GPU MiB max 108711 min 107577 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF xcheck: V20JP_rsg/rsg.hydro.hst==V20J_rsg/a V20JP_rsg/rsg.user.hst==V20J_rsg/a V20JR_rsg/rsg.hydro.hst==V20J_rsg/a V20JR_rsg/rsg.user.hst==V20J_rsg/a | rsg user cols1-26==V20G_rsg/a, hydro== (s/cycle 2.946 vs V20G_rsg 2.858)
+- (03:20) Got 7d87e5d57: lzcs 8ea56557c building; L1_rsg / L2_hg queued after AB8 (GPU peak in their result lines). v20j and xtloc built (8-9 min each); lzbook (11 files incl. a widely included header) is still compiling, so AB7 waits for it.
+- CD_hg (hpc-sm-02-10): rc=0 wall=127 | cycles 624961 - 624963 | steady 33.763 s/cycle | GPU MiB max 120235 min 119677 | CW a 1 FATAL 0 |  
