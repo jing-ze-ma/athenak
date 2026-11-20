@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "athena.hpp"
+#include "globals.hpp"
 #include "utils/scratch_view.hpp"
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -44,6 +45,11 @@ namespace repro {
 //! MeshBlocks, never the MeshBlocks themselves).  false = "exact": every cell term
 //! deposited exactly.  Set once by the Mesh constructor.
 inline bool block_mode = true;
+//! <mesh>/layout_invariant: the history sums (HistSums) deposit their per-MeshBlock
+//! partials exactly and merge them over the ranks, so the history does not change with
+//! the rank count either (rank 0 holds the global value, the others 0: the history
+//! output's rank sum then adds zeros).  Set once by the Mesh constructor.
+inline bool hist_exact = false;
 
 constexpr int RS_K = 3;      // folds
 constexpr int RS_W = 32;     // bits per fold
@@ -303,7 +309,8 @@ void ShellSums(const char *name, const int nq, const int c1, const int nmb,
 //! terms of cell idx = m nkji + (k nx2 + j) nx1 + i into acc.  One thread per (m, k, j)
 //! row sums its nx1 cells in increasing i, one thread per (q, m) its MeshBlock's rows in
 //! order, the host the MeshBlocks in order: the result is a function of this rank's
-//! MeshBlocks alone (the reduce's join order changes with the thread count / backend).
+//! MeshBlocks alone (the reduce's join order changes with the thread count / backend);
+//! with hist_exact: the global sum of the MeshBlock partials (rank 0; any rank count).
 template <class F>
 void HistSums(const char *name, const int nmb, const int nkji, const int nx1, const F &fn,
               array_sum::GlobalSum &out) {
@@ -327,6 +334,17 @@ void HistSums(const char *name, const int nmb, const int nkji, const int nx1, co
     bp(q, m) = a;
   });
   auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), bp);
+  if (hist_exact) {
+    ReproSum v[nq];
+    for (int q = 0; q < nq; ++q) {
+      v[q].Init();
+      for (int m = 0; m < nmb; ++m) {v[q].Add(h(q, m));}
+    }
+    AllMerge(v, nq);
+    const bool r0 = (global_variable::my_rank == 0);
+    for (int q = 0; q < nq; ++q) {out.the_array[q] = r0 ? v[q].Value() : 0.0;}
+    return;
+  }
   for (int q = 0; q < nq; ++q) {
     out.the_array[q] = 0.0;
     for (int m = 0; m < nmb; ++m) {out.the_array[q] += h(q, m);}
