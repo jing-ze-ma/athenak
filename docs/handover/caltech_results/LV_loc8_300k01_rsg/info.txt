@@ -1,0 +1,1 @@
+TAG=LV_loc8_300k01_rsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_xtloc_947c469d8 md5=974830b75938f0a47cc4fe2c92bf1040 RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=300 MODE=speed HOLDER=6133593 NODE=hpc-sm-01-11 NR=4 ENVX= EX=rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true rad_m1/clean_conv_kappa=0.1
