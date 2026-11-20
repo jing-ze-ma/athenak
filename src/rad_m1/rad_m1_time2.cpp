@@ -537,6 +537,8 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
       t2_k1reset = pin->GetBoolean("rad_m1", "time2_k1_reset");
     }
   }
+  t2_ksplit = pin->DoesParameterExist("rad_m1", "time2_ksplit") &&
+              pin->GetBoolean("rad_m1", "time2_ksplit");   // ksplit-1120 (study)
   // stiffk1-1029: <rad_m1>/time2_k1_stiff = s (default 0 = off, bitwise)
   t2_k1stiff = 0.0;
   if (pin->DoesParameterExist("rad_m1", "time2_k1_stiff")) {
@@ -1427,6 +1429,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     }
   }
   if (t2_inckc > 0.0) {Time2IncKeCap(stage);}   // hgfix-1110 time2_inc_kecap
+  if (t2_ksplit) {Time2KSplit(stage, c1, c2);}   // ksplit-1120 (study print)
   if (t2_ffct) {Time2FaceFct(stage, c1, c2);}   // facebound-1112 step 1
   CleanBndAcc(stage, c1, c2, (stage == 1) ? 0.0 : (heun ? 0.5 : w0), dt);
   if (t2_theta > 0.0) {Time2StageTheta(stage, dt);}   // facebound-1112
@@ -1791,6 +1794,131 @@ void RadiationM1::Time2StageTheta(int stage, Real dt) {
     t2_th_s2 += sf;
   }
   t2_th_calls += 1;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::Time2KSplit
+//! \brief ksplit-1120 study print (<rad_m1>/time2_ksplit, read only when named): the split
+//! of the stage increment dE of E (before time2_face_fct) into the face part Fd (the
+//! divergence of the stored Phi, as Time2FaceFct reads it), the gas pair (Px = -(ch/cl)
+//! x the gas eint change, Pw = -(ch/cl) x the KE change of the momentum increment) and
+//! the rest mm = dE - Fd - Px - Pw (energy E's increment lost that no face and no gas
+//! took).  Cells with E + dE - Fd <= 0 (L: no face limiter can make them positive) are
+//! counted and their V-weighted terms summed.  Changes nothing.
+
+void RadiationM1::Time2KSplit(int stage, Real c1, Real c2) {
+  const bool two = (stage != 1);
+  if (!t2pf1_ok || (two && !t2pf2_ok) || t2pf1.extent_int(0) < pmy_pack->nmb_thispack) {
+    return;
+  }
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  if (!fl.on) return;
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto in_ = t2inc;
+  auto u0_ = u0;
+  auto p1_ = t2pf1;
+  auto p2_ = t2pf2;
+  const bool tr2 = trans_on, tr3 = trans_on && trans_x3;
+  auto &mbsize = pmy_pack->pmb->mb_size;
+  auto vol = pmy_pack->pcoord->volume;
+  auto ar1 = pmy_pack->pcoord->area.x1f;
+  auto ar2 = pmy_pack->pcoord->area.x2f;
+  auto ar3 = pmy_pack->pcoord->area.x3f;
+  const bool curv = (cs_geom || sph_geom) && vol.extent_int(0) > nmb1 &&
+                    vol.extent_int(3) > 1 && ar1.extent_int(0) > nmb1;
+  const Real cc1 = c1, cc2 = two ? c2 : 0.0, chcl = chat/c_light, efl = e_floor;
+  auto ug = fl.u0;
+  const bool etg = fl.use_etotgrav;
+  auto phc = etg ? fl.phicc0 : DvceArray4D<Real>();
+  const bool emh = fl.mhd;
+  auto emg = emag0;
+  const bool csk = cs_geom;
+  auto ccl = pmy_pack->pcoord->cos_cell;
+  constexpr int NA = 24;
+  Kokkos::View<Real*> acc("m1_t2_ksplit", NA);
+  auto gf = KOKKOS_LAMBDA(const int m, const int d, const int k, const int j,
+                          const int i) {
+    const Real phi = cc1*p1_(m,d,k,j,i) + cc2*p2_(m,d,k,j,i);
+    Real a;
+    if (curv) {
+      a = (d == 0) ? ar1(m,k,j,i) : ((d == 1) ? ar2(m,k,j,i) : ar3(m,k,j,i));
+    } else {
+      const auto &s = mbsize.d_view(m);
+      a = (d == 0) ? s.dx2*s.dx3 : ((d == 1) ? s.dx1*s.dx3 : s.dx1*s.dx2);
+    }
+    return a*phi;
+  };
+  par_for("m1_t2_ksplit", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const auto &s = mbsize.d_view(m);
+    const Real v = curv ? vol(m,k,j,i) : s.dx1*s.dx2*s.dx3;
+    Real g = 0.0;
+    for (int d = 0; d < 3; ++d) {
+      if ((d == 1 && !tr2) || (d == 2 && !tr3)) {continue;}
+      const int dk = (d == 2), dj = (d == 1), di = (d == 0);
+      g += gf(m, d, k, j, i) - gf(m, d, k+dk, j+dj, i+di);
+    }
+    const Real fd = g/v;
+    const Real dd = ug(m,IDN,k,j,i), idd = 1.0/fmax(dd, 1.0e-300);
+    const Real q1 = ug(m,IM1,k,j,i), q2 = ug(m,IM2,k,j,i), q3 = ug(m,IM3,k,j,i);
+    const Real cc = csk ? ccl(m,k,j) : 0.0;
+    const Real ek0 = CsKeMom(q1, q2, q3, cc)*idd;
+    const Real ek1 = CsKeMom(q1 + in_(m,M1_T2_M1,k,j,i), q2 + in_(m,M1_T2_M1+1,k,j,i),
+                             q3 + in_(m,M1_T2_M1+2,k,j,i), cc)*idd;
+    Real egr = etg ? dd*phc(m,k,j,i) : 0.0;
+    if (emh) egr += emg(m,k,j,i);
+    const Real eg0 = ug(m,IEN,k,j,i) - ek0 - egr;
+    const Real w = ek1 - ek0, de = in_(m,M1_T2_EN,k,j,i) - w;
+    const Real e0 = u0_(m,M1_E,k,j,i), dE = in_(m,M1_T2_E,k,j,i);
+    const Real sl = dE - fd, px = -chcl*de, pw = -chcl*w, mm = sl - px - pw;
+    // (all cells: the rest's V sum and the cells where it is not round-off)
+    if (fabs(mm) > 1.0e-10*(fabs(e0) + fabs(dE) + fabs(fd) + fabs(px) + fabs(pw))) {
+      Kokkos::atomic_add(&acc(0), 1.0);
+      Kokkos::atomic_add(&acc(1), v*mm);
+      Kokkos::atomic_add(&acc(2), v*fabs(mm));
+    }
+    if (!(e0 + dE > 0.0)) Kokkos::atomic_add(&acc(3), 1.0);
+    if (eg0 > 0.0 && !(eg0 + de > 0.0)) Kokkos::atomic_add(&acc(4), 1.0);
+    if (!(eg0 > 0.0)) Kokkos::atomic_add(&acc(5), 1.0);
+    if (e0 + sl > 0.0) return;
+    // L cells: the local part alone leaves E <= 0
+    Kokkos::atomic_add(&acc(6), 1.0);
+    Kokkos::atomic_add(&acc(7), v*e0);
+    Kokkos::atomic_add(&acc(8), v*fd);
+    Kokkos::atomic_add(&acc(9), v*px);
+    Kokkos::atomic_add(&acc(10), v*pw);
+    Kokkos::atomic_add(&acc(11), v*fmin(mm, 0.0));
+    Kokkos::atomic_add(&acc(12), v*fmax(mm, 0.0));
+    if (!(e0 + mm > 0.0)) Kokkos::atomic_add(&acc(13), 1.0);         // the rest alone
+    if (!(e0 + mm + pw > 0.0)) Kokkos::atomic_add(&acc(14), 1.0);    // without exchange
+    if (!(e0 + mm + px > 0.0)) Kokkos::atomic_add(&acc(15), 1.0);    // without work
+    if (!(e0 + px > 0.0)) Kokkos::atomic_add(&acc(16), 1.0);         // exchange alone
+    if (!(e0 + pw > 0.0)) Kokkos::atomic_add(&acc(17), 1.0);         // work alone
+    if (e0 <= 1.001*efl) Kokkos::atomic_add(&acc(18), 1.0);          // starts at the floor
+    if (!(e0 > 0.0)) Kokkos::atomic_add(&acc(19), 1.0);              // starts <= 0
+    if (!(eg0 + de > 0.0)) Kokkos::atomic_add(&acc(20), 1.0);        // eint too
+    Kokkos::atomic_add(&acc(21), v*(e0 + sl));                       // the deficit
+    if (fabs(mm) > fabs(px) && fabs(mm) > fabs(pw)) Kokkos::atomic_add(&acc(22), 1.0);
+    if (fabs(px) >= fabs(pw) && fabs(px) >= fabs(mm)) Kokkos::atomic_add(&acc(23), 1.0);
+  });
+  auto ah = Kokkos::create_mirror_view_and_copy(HostMemSpace(), acc);
+  Real a[NA];
+  for (int n = 0; n < NA; ++n) a[n] = ah(n);
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, a, NA, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  if (global_variable::my_rank == 0) {
+    std::printf("CLEAN KSPLIT cycle %d t2s %d | all: mm!=0 %.0f Vmm %.4e V|mm| %.4e "
+                "E+dE<=0 %.0f eint+de<=0 %.0f eint0<=0 %.0f | L(E+dE-Fd<=0) %.0f: VE0 %.4e "
+                "VFd %.4e VPx %.4e VPw %.4e Vmm- %.4e Vmm+ %.4e Vdef %.4e | E+mm<=0 %.0f "
+                "E+mm+Pw<=0 %.0f E+mm+Px<=0 %.0f E+Px<=0 %.0f E+Pw<=0 %.0f atfloor %.0f "
+                "E0<=0 %.0f eint<=0 %.0f dom mm %.0f Px %.0f\n", pmy_pack->pmesh->ncycle,
+                stage, a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], a[9], a[10],
+                a[11], a[12], a[21], a[13], a[14], a[15], a[16], a[17], a[18], a[19],
+                a[20], a[22], a[23]);
+  }
 }
 
 //----------------------------------------------------------------------------------------
