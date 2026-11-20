@@ -1,0 +1,26 @@
+a cycles 0 - 50 dt first 12.0076 last 8.98525 s/cycle steady 0.750 first elapsed 15.3
+a 'FATAL' 0 
+a 'CLEAN WARNING' 0 
+a 'DT_RETRY' 0 
+a 'WARNING' 4 ### WARNING: 12 input parameter(s) were never read by the code (typo, or a key AthenaK does not have?):
+a 'march' 0 
+a 'clean_init steady:' 1 <rad_m1> clean_init steady: converged after 3 passes, residual 6.583e-13 (tol 1.0e-08; 0 formal solutions); radiation E 9.4442341701e+43 -> 9.4442267677e+43, F/c 1.3324e+38 0.0000e+00 0.0000e+00 -> 8.9114e+37 -3.8541e+29 3.8294e+25 (volume sums)
+a 'he_star_m1: GM' 1 he_star_m1: GM = 4.64494e+27, F_in = 1.85871e+14, tau(r_in) = 3.35041e+06, r_int (tau = 1) = 9.53976e+11, r_top = 1.06412e+12, sponge rate = 0 above r = 9.53976e+11
+a 'he_seed_band = n2 BAND' 1 he_star_m1: he_seed_band = n2 BAND r 8.9756e+11 .. 9.34835e+11 (r/r_int 0.940862 - 0.979935, r_int 9.53976e+11), 29 cells 211..239; peak at r/r_int 0.966734: sigma 0.000598153 /s, 1/sigma 0.0193497 d, T 148318 K, Gamma1 1.37361, H_p/r 0.0168975; pi r/H_p 185.921, l_8 584.816 (8 cells per wavelength,
+a 'seed = ' 1 he_star_m1: seed = real spherical harmonics l 16..64 (3969 terms, all m), amplitude 0.001 (eint), r 8.9756e+11 .. 9.34835e+11, rng 1234
+a 'direction maps' 1 <rad_m1> vet_gd: global-direction SC closure on the sp wedge, level-symmetric LQ10 (120 directions); z-rotation every 0 cycle(s) (0 = fixed), first angle 0; rank 0 wall ghost columns 39680, direction maps exact 0 of 4761600 (the rest: nearest direction)
+a 'he_ic_equil' 0 
+b run.log CW 0 DT_RETRY 0 FATAL 0
+b run2.log CW 0 DT_RETRY 0 FATAL 0
+GPU mem peak MiB max 27133 min 27123 (n=4) = 18.9 % of 143771 MiB
+rt m35mms.hydro.hst rows a 51 b 51 last 25 rows IDENTICAL
+rt m35mms.user.hst rows a 51 b 51 last 25 rows IDENTICAL
+rt m35mms.hydro_w.00003.bin same
+rt m35mms.m1.00003.bin same
+rt m35mms.m1_face.00001.bin same
+rt m35mms.m1_vet.00001.bin same
+a rc=0 wall=92
+b rc=0 wall=70
+restart from /resnick/groups/carnegie_poc/jingze/orion_runs_1121/freshgo/S_m35mms/b/rst/m35mms.00002.rst
+b rc=0 wall=322
+DONE

@@ -1,0 +1,1 @@
+TAG=S_m35mms BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v203_e688cb7bc md5=7df2b64833e40a77e8a8a04e6dc900ee DECK=/resnick/groups/carnegie_poc/jingze/fresh_prod_1120/fg_v2/decks/m35mms_smoke.athinput md5=e80bb85a44cc59f579a19933a1799ad7 NC=50 HOLDER=6133592 NODE=hpc-sm-02-03 NR=4 EX=
