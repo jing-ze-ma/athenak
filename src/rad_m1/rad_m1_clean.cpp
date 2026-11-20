@@ -1090,6 +1090,7 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
 //! staggered layout (E in cells, F on faces) or the cell layout (E and F in cells)
 
 TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
+  if (dbg_eaudit) {EAuditMark(2);}   // PROF study (output only)
   if (!cln_init) CleanInit();
   // the vet_gd direction set before any use (the consistency term reads it at the first
   // solve of a restart, before any ray build)
@@ -1462,6 +1463,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     }
   }
   if (fpc) dbg_rst_fp_done = true;
+  if (dbg_eaudit) {EAuditMark(3);}   // PROF study (output only)
   return TaskStatus::complete;
 }
 
