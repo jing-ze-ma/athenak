@@ -171,49 +171,21 @@ static void CleanStagRefForce(const CleanArgs &x, const int fref,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real CleanStagTorqueFace
-//! \brief cubed sphere, staggered: the z torque (M_f x (D E)_f n_f)_z of the stress
-//! through face (kf,jf,iff) normal to d (CleanStagMomentum), (D E)_f the mean of its two
-//! cells; the same for both, so once per face
-
-KOKKOS_INLINE_FUNCTION
-static Real CleanStagTorqueFace(const CleanArgs &x, const int e, const int d, const int m,
-                                const int kf, const int jf, const int iff) {
-  const int dk = (d == 2), dj = (d == 1), di = (d == 0);
-  Real pn[3], mf[3], pf[6], nf[3];   // (each component's mean and the normal once)
-  for (int n = 0; n < 6; ++n) {
-    pf[n] = 0.5*(x.cs(m,CLN_D11+n,kf-dk,jf-dj,iff-di)*x.w(m,e,kf-dk,jf-dj,iff-di) +
-                 x.cs(m,CLN_D11+n,kf,jf,iff)*x.w(m,e,kf,jf,iff));
-  }
-  for (int c = 0; c < 3; ++c) nf[c] = x.g.At<CLG_N>(m,3*d+c,kf,jf,iff);
-  for (int b = 0; b < 3; ++b) {
-    pn[b] = 0.0;
-    for (int c = 0; c < 3; ++c) pn[b] += pf[(b == c) ? b : 2 + b + c]*nf[c];
-    mf[b] = (d == 0) ? x.x1f(m,iff)*x.area[0](m,kf,jf,iff)*x.g.At<CLG_N>(m,b,kf,jf,iff)
-                     : x.g.At<CLG_M>(m,3*(d-1)+b,kf,jf,iff);
-  }
-  return mf[0]*pn[1] - mf[1]*pn[0];
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn void CleanStagMomentum
 //! \brief staggered: the momentum the radiation gives to cell (k,j,i) over the stage
 //! (CleanMomentumChange of each face family, mag its terms' size) in the components of
-//! CleanStagGasMomentum.  On the cubed sphere the faces' changes (along their normals,
-//! shared by wt) give the vector of CleanStagCsVector, of which the gas takes the r and
-//! theta components; its phi component is the torque row of the cell layout's y_phi: the
-//! change of L_z = V R F_phi/c^2 of the radiation's cell vector F (CleanStagCsVector of
-//! the face momenta) and the torque h sum_f (M_f x (D E)_f n_f)_z of the stress through
-//! the faces (M_f = int x dA, (D E)_f the mean of the two cells; none on physical
-//! boundaries), so that gas plus radiation L_z changes only by round-off.  With
-//! clean_cs_lz_abs the phi component is that of the faces' vector too (their absorption),
-//! dlz the L_z V R (dp_torque - dp) the gas then does not take.
+//! CleanStagGasMomentum: the sum of the cell's shares of its faces' absorption.  On the
+//! cubed sphere the faces' changes (along their normals) give the vector of
+//! CleanStagCsVector of weights 1/2, their sum as on spherical polar.  Its lateral faces
+//! are no phi faces, so L_z does not telescope: dlz, minus the L_z V R (dF_phi/c^2 +
+//! dp_phi) of the radiation's cell vector F (CleanStagCsVector of the face momenta) and
+//! the gas, is booked as the radiation's (CleanLzBook; the stress torques through the
+//! inner faces cancel in its sum).
 
 template <bool kFs = false>
 KOKKOS_INLINE_FUNCTION
 static void CleanStagMomentum(const CleanArgs &x, const int e, const int m, const int k,
                               const int j, const int i, Real dm[3], Real mag[3],
-                              const DvceArray5D<Real> &tzf = DvceArray5D<Real>(),
                               Real *dlz = nullptr) {
   Real cf[6], wf[6];
   for (int d = 0; d < 3; ++d) {
@@ -222,38 +194,26 @@ static void CleanStagMomentum(const CleanArgs &x, const int e, const int m, cons
                                                   &cf[2*d], &wf[2*d]) : 0.0;
   }
   if (!x.cub) return;
-  // (clean_stag_csvec_radial: the cell takes the sum of its shares of the faces' changes,
-  // as on spherical polar, so that the gas momentum telescopes; not their weighted mean)
-  Real dv[3], df[6], one[6], fd[3], q[3][3];
+  Real dv[3], q[3][3];
   const Real hw[6] = {0.5, 0.5, 0.5, 0.5, 0.5, 0.5};
-  CleanStagCsVector(x, m, k, j, i, cf, x.cvr ? hw : wf, dv);
-  Real tz = 0.0;
-  for (int d = 0; d < 3; ++d) {
-    const int dk = (d == 2), dj = (d == 1), di = (d == 0);
-    for (int s = 0; s < 2; ++s) {
-      const int kf = k + s*dk, jf = j + s*dj, iff = i + s*di;
-      const Real f = (kFs || x.fs) ? x.fc[d](m,CLF_N,kf,jf,iff)
-                                   : CleanFaceFlux(x, e, d, m, kf, jf, iff, true);
-      df[2*d+s] = f - x.fc[d](m,CLF_G,kf,jf,iff);
-      one[2*d+s] = 1.0;
-      if (CleanBoundaryFace(x, d, m, kf, jf, iff)) continue;
-      if (tzf.data() != nullptr) {   // (the face's term, CleanStagTorqueFace)
-        tz += (s ? 1.0 : -1.0)*tzf(m,d,kf,jf,iff);
-        continue;
-      }
-      tz += (s ? 1.0 : -1.0)*CleanStagTorqueFace(x, e, d, m, kf, jf, iff);
-    }
-  }
-  CleanStagCsVector(x, m, k, j, i, df, one, fd);
+  CleanStagCsVector(x, m, k, j, i, cf, hw, dv);
   const Real rc = CleanCsFrame(x, m, k, j, i, q);
   const Real dr = q[0][0]*dv[0] + q[0][1]*dv[1] + q[0][2]*dv[2];
   const Real dt = q[1][0]*dv[0] + q[1][1]*dv[1] + q[1][2]*dv[2];
-  Real dp = -(q[2][0]*fd[0] + q[2][1]*fd[1] + q[2][2]*fd[2])/(x.c*x.c) -
-            x.h*tz/(x.vol(m,k,j,i)*rc);
-  if (x.lza) {
-    const Real da = q[2][0]*dv[0] + q[2][1]*dv[1] + q[2][2]*dv[2];
-    if (dlz) *dlz = (dp - da)*x.vol(m,k,j,i)*rc;
-    dp = da;
+  const Real dp = q[2][0]*dv[0] + q[2][1]*dv[1] + q[2][2]*dv[2];
+  if (dlz) {
+    const Real one[6] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+    Real df[6], fd[3];
+    for (int d = 0; d < 6; ++d) {
+      const int n = d/2, kf = k + (d%2)*(n == 2), jf = j + (d%2)*(n == 1);
+      const int iff = i + (d%2)*(n == 0);
+      const Real f = (kFs || x.fs) ? x.fc[n](m,CLF_N,kf,jf,iff)
+                                   : CleanFaceFlux(x, e, n, m, kf, jf, iff, true);
+      df[d] = f - x.fc[n](m,CLF_G,kf,jf,iff);
+    }
+    CleanStagCsVector(x, m, k, j, i, df, one, fd);
+    *dlz = (-(q[2][0]*fd[0] + q[2][1]*fd[1] + q[2][2]*fd[2])/(x.c*x.c) - dp)*
+           x.vol(m,k,j,i)*rc;
   }
   for (int b = 0; b < 3; ++b) dm[b] = dr*q[0][b] + dt*q[1][b] + dp*q[2][b];
 }
@@ -267,7 +227,7 @@ static void CleanStagMomentum(const CleanArgs &x, const int e, const int m, cons
 template <bool kFs>
 KOKKOS_INLINE_FUNCTION
 static void CleanVelocityCell(const CleanArgs &x, const CleanArgs &xh, const CleanArgs &xa,
-                              const DvceArray5D<Real> &uh, const DvceArray5D<Real> &tzf,
+                              const DvceArray5D<Real> &uh,
                               const int fref, const DvceArray5D<Real> &fr,
                               const DvceArray4D<Real> &aref, const bool cap,
                               const DvceArray5D<Real> &op, const Real arad_, const bool fa,
@@ -275,7 +235,7 @@ static void CleanVelocityCell(const CleanArgs &x, const CleanArgs &xh, const Cle
                               Real &dv_max, Real &v_max, Real &fv_max) {
   const Real d = uh(m,IDN,k,j,i);
   Real v2 = 0.0, dmv[3], mg[3], pg[3], rf[3];
-  CleanStagMomentum<kFs>(xh, CLW_EK, m, k, j, i, dmv, mg, tzf);
+  CleanStagMomentum<kFs>(xh, CLW_EK, m, k, j, i, dmv, mg);
   CleanStagGasMomentum(x, uh, m, k, j, i, pg);
   CleanStagRefForce(x, fref, fr, aref, d, m, k, j, i, rf);
   for (int dir = 0; dir < 3; ++dir) {
@@ -3150,23 +3110,6 @@ Real RadiationM1::CleanVelocityUpdate() {
   Real dvmax = 0.0, vmax = 0.0, fvmax = 0.0;
   CLEAN_HIPX(const CleanArgs *px = CleanDevArgs(x, 0), *pxh = CleanDevArgs(xh, 1);
              const CleanArgs *pxa = CleanDevArgs(xa, 4);)
-  // (cubed sphere: each face's torque term once, CleanStagTorqueFace; cln_xf's scratch)
-  DvceArray5D<Real> tzf;
-  if (x.cub) {
-    auto &w = cln_w.s;
-    tzf = ScratchView<DvceArray5D<Real>>("cln_xf", nmb, 3, w.extent_int(2),
-                                         w.extent_int(3), w.extent_int(4));
-    CLEAN_HIPX(const CleanArgs *pxt = CleanDevArgs(xh, 5);)
-    for (int d = 0; d < x.nf; ++d) {
-      CleanFor("cln_tzf", nmb - 1, ks, ks+nx3-1+(d == 2), js, js+nx2-1+(d == 1), is,
-               is+nx1-1+(d == 0),
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        CLEAN_HIPX(const CleanArgs &xh = *pxt;)
-        if (CleanBoundaryFace(xh, d, m, k, j, i)) return;
-        tzf(m,d,k,j,i) = CleanStagTorqueFace(xh, CLW_EK, d, m, k, j, i);
-      });
-    }
-  }
   // (with the F solve's F, fa: CleanStagMomentum<true> reads the faces' terms and
   // computes none, in a kernel of its own; on HIP at 256 VGPRs, 2 waves per SIMD)
 #if defined(KOKKOS_ENABLE_HIP)
@@ -3187,7 +3130,7 @@ Real RadiationM1::CleanVelocityUpdate() {
       CLEAN_HIPX(const CleanArgs &x = *px, &xh = *pxh, &xa = *pxa;)   // (device memory)
       int m, k, j, i;
       cell(idx, m, k, j, i);
-      CleanVelocityCell<true>(x, xh, xa, uh, tzf, fref, fr, aref, cap, op, arad_, true, m,
+      CleanVelocityCell<true>(x, xh, xa, uh, fref, fr, aref, cap, op, arad_, true, m,
                               k, j, i, dv_max, v_max, fv_max);
     }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax), Kokkos::Max<Real>(fvmax));
   } else {
@@ -3196,7 +3139,7 @@ Real RadiationM1::CleanVelocityUpdate() {
       CLEAN_HIPX(const CleanArgs &x = *px, &xh = *pxh, &xa = *pxa;)   // (device memory)
       int m, k, j, i;
       cell(idx, m, k, j, i);
-      CleanVelocityCell<false>(x, xh, xa, uh, tzf, fref, fr, aref, cap, op, arad_, false, m,
+      CleanVelocityCell<false>(x, xh, xa, uh, fref, fr, aref, cap, op, arad_, false, m,
                                k, j, i, dv_max, v_max, fv_max);
     }, Kokkos::Max<Real>(dvmax), Kokkos::Max<Real>(vmax), Kokkos::Max<Real>(fvmax));
   }
@@ -4918,7 +4861,7 @@ void RadiationM1::CleanWriteBack() {
     const Real d0 = x.w(m,CLW_JV,k,j,i);   // (the stage start's eint deficit, <= 0)
     if (feedback) {
       Real mg[3], pg[3], rf[3], dlz = 0.0;
-      CleanStagMomentum(xh, CLW_X, m, k, j, i, dm, mg, DvceArray5D<Real>(), &dlz);
+      CleanStagMomentum(xh, CLW_X, m, k, j, i, dm, mg, &dlz);
       CleanStagGasMomentum(x, uh, m, k, j, i, pg);
       CleanStagRefForce(x, fref, fr, aref, uh(m,IDN,k,j,i), m, k, j, i, rf);
       for (int n = 0; n < 3; ++n) {   // (force_reference)

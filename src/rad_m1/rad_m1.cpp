@@ -334,9 +334,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // the comoving part of sb at most 2 |beta| hc kE E_k and the faces of a restart from
     // the old scheme's file at most c E of their donor
     cln_freal = stag("clean_stag_freal", cln_gflux && cln_fsolve);
-    // clean_stag_csvec_radial (default off): the cubed sphere's cell vector exact for a
-    // radial field (CleanStagCsVector)
-    cln_csvr = stag("clean_stag_csvec_radial", false);
+    // clean_stag_csvec_radial (true, the only form): the cubed sphere's cell vector exact
+    // for a radial field (CleanStagCsVector); false (the old least-squares fit) is gone
+    cln_csvr = stag("clean_stag_csvec_radial", true);
+    if (!cln_cell && !cln_csvr) {
+      std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_csvec_radial = false (the old "
+                << "cell vector) is gone" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     // clean_stag_xdonor = off (default) | p1 | lag: the off-diagonal stress flux an
     // M-matrix term (CleanStagXDonor); clean_stag_xsrc (default off): also the face
     // sources past their explicit share; clean_stag_xsweep (default off): a monotone
@@ -375,13 +380,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         cln_kpos = (cln_kmode > 0);
       }
       cln_kreal = stag("clean_stag_kreal", false);
-      // clean_cs_lz_abs = 0 (default) | 1 | 2 (cubed sphere): the gas phi momentum is the
-      // faces' absorption as its r and theta (CleanStagMomentum), not the change of L_z of
-      // the radiation's cell vector less the stress torque; 2 books the L_z it no longer
-      // takes as the radiation's (CleanLzBook), so that the total stays exact
-      if (pmy_pack->pmesh->use_cubed_sphere &&
-          pin->DoesParameterExist("rad_m1", "clean_cs_lz_abs")) {
-        cln_lza = std::min(std::max(pin->GetInteger("rad_m1", "clean_cs_lz_abs"), 0), 2);
+      // clean_cs_lz_abs = 2 (the cubed sphere, the only form): the gas phi momentum is
+      // the faces' absorption as its r and theta (CleanStagMomentum), and the L_z it does
+      // not take is booked as the radiation's (CleanLzBook), so that the total stays
+      // exact; 0 | 1 (the torque row of the radiation's cell vector, no ledger) are gone
+      if (pmy_pack->pmesh->use_cubed_sphere) cln_lza = 2;
+      if (pin->DoesParameterExist("rad_m1", "clean_cs_lz_abs") &&
+          pin->GetInteger("rad_m1", "clean_cs_lz_abs") != 2) {
+        std::cout << "### FATAL ERROR: <rad_m1>/clean_cs_lz_abs = 0 | 1 (the old cubed-"
+                  << "sphere gas phi momentum) is gone; 2 is the only form" << std::endl;
+        std::exit(EXIT_FAILURE);
       }
       if (cln_lza == 2) {
         cln_lzpin = pin;
