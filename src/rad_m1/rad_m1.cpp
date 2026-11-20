@@ -345,7 +345,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // realz-1120 clean_stag_fchi (default false): the face momentum's extinction (theta)
     // at least the absorption mean of E, chi_f = max(op_T, op_E): sources keep
     // |F| <= c E (d(cE - |F|)/dt >= c^2 E (chi_F - kappa_E) at |F| = cE)
-    cln_fchi = stag("clean_stag_fchi", false);
+    // = 2 (net): chi_f >= the NET absorption kappa_E - kappa_P a T^4/E (0 at E = a T^4: the
+    // thick, equilibrium interior keeps Rosseland exactly), no w
+    cln_fchi = stag("clean_stag_fchi", false) ? 1 : 0;
+    if (!cln_cell && pin->DoesParameterExist("rad_m1", "clean_stag_fchi_net") &&
+        pin->GetBoolean("rad_m1", "clean_stag_fchi_net")) {
+      cln_fchi = 2;
+    }
     // clean_stag_csvec_radial (true, the only form): the cubed sphere's cell vector exact
     // for a radial field (CleanStagCsVector); false (the old least-squares fit) is gone
     cln_csvr = stag("clean_stag_csvec_radial", true);

@@ -1057,7 +1057,11 @@ void RadiationM1::CleanFaceCoefficients() {
   auto cs = cln_s;
   auto op = opac;
   auto inc = t2inc;
-  const bool fsk = cln_fsolve, fch = cln_fchi;
+  const bool fsk = cln_fsolve;
+  const int fch = cln_fchi;
+  const CleanArgs xa0 = CleanMakeArgs();
+  const CleanArgs *pxa = (fch == 2) ? CleanDevArgs(xa0, 0) : nullptr;
+  const Real ara = arad;
   // (cubed sphere: the opacities of seam ghosts are the neighbour's cells, not of the
   // resampled gas ghosts, as CleanCellFaceCoefficients: a seam face is single-valued)
   if (pmy_pack->pmesh->use_cubed_sphere) {
@@ -1086,9 +1090,22 @@ void RadiationM1::CleanFaceCoefficients() {
       fc(m,CLF_W,k,j,i) = CleanSmoothStep((c1 - c1lo)/(c1hi - c1lo));
       // (clean_stag_fchi: in the streaming share w the face momentum's extinction is at
       // least E's absorption mean; the thick share keeps the transport (Rosseland) one)
-      if (fch) {
+      if (fch == 1) {
         const Real ce = 0.5*(op(m,M1_OP_E,k,j,i) + op(m,M1_OP_E,kl,jl,il));
         chi += fc(m,CLF_W,k,j,i)*fmax(ce - chi, 0.0);
+      }
+      // (_net: each cell's net absorption kappa_E - kappa_P a T^4/E_old, the rate at which
+      // its E drains; F's extinction at least that, so the sources keep |F| <= c E)
+      if (fch == 2) {
+        const CleanArgs &xa = *pxa;
+        auto na = [&](const int kk, const int jj, const int ii) {
+          const Real t2 = SQR(xa.w(m,CLW_T,kk,jj,ii));
+          const Real eo = xa.w(m,CLW_EO,kk,jj,ii);
+          return (eo > 0.0) ? fmax(op(m,M1_OP_T,kk,jj,ii), op(m,M1_OP_E,kk,jj,ii) -
+                                   op(m,M1_OP_P,kk,jj,ii)*ara*t2*t2/eo)
+                            : op(m,M1_OP_T,kk,jj,ii);
+        };
+        chi = 0.5*(na(k, j, i) + na(kl, jl, il));
       }
       fc(m,CLF_TH,k,j,i) = 1.0/(1.0 + h*c*chi);
       fc(m,CLF_G,k,j,i) = f0(m,k,j,i) + (stage ? inc(m,tf,k,j,i) : 0.0);
