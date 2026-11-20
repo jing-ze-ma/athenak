@@ -146,3 +146,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - T1_rsg (hpc-sm-01-11): rc=0 wall=97 | cycles 589788 - 589794 | steady 2.832 s/cycle | GPU MiB max 108711 min 107577 | CW a 0 FATAL 0 |  xcheck: rsg.hydro.hst rows1-4 cols1-10 ==V20JR_rsg/a rsg.user.hst rows1-4 cols1-30 ==V20JR_rsg/a | CW 0
 - RF300_rsg_f1 (hpc-sm-02-11): rc=0 wall=1112 | cycles 589788 - 590088 | steady 3.448 s/cycle | GPU MiB max 94893 min 93915 | CW a 0 FATAL 0 |  
 - RF300_ref_rsg (hpc-sm-02-09): rc=0 wall=1093 | cycles 589788 - 590088 | steady 3.388 s/cycle | GPU MiB max 94893 min 93923 | CW a 0 FATAL 0 |  
+- T4_rsg (hpc-sm-02-16): rc=0 wall=162 rc=0 wall=152 rc=0 wall=151 | cycles 589788 - 589794 | steady 2.828 s/cycle | GPU MiB max 108711 min 107577 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF 
+- L1_rsg (hpc-sm-02-09): rc=0 wall=94 | cycles 589788 - 589794 | steady 2.824 s/cycle | GPU MiB max 109587 min 108453 | CW a 0 FATAL 0 |  
