@@ -361,6 +361,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // half ranges, realisable (CleanStagBracket), not as the gated lagged flux DG
     cln_thinf = stag("clean_stag_thinf", false);
     cln_dgform = pin->GetOrAddInteger("rad_m1", "clean_stag_dg_form", 0);
+    cln_thgmax = pin->GetOrAddReal("rad_m1", "clean_stag_thinf_gmax", 1.0);
     // clean_stag_xdonor = off (default) | p1 | lag: the off-diagonal stress flux an
     // M-matrix term (CleanStagXDonor); clean_stag_xsrc (default off): also the face
     // sources past their explicit share; clean_stag_xsweep (default off): a monotone

@@ -3534,6 +3534,7 @@ void RadiationM1::CleanStagBracket() {
   const Real efl = e_floor;
   const bool rat = cln_rayratio, thf = cln_thinf;
   const int dgf = cln_dgform;
+  const Real gmx = cln_thgmax;
   const Real ar_ = arad;
   const Real rmn = cln_raymin;
   auto iw_ = iw;
@@ -3605,8 +3606,8 @@ void RadiationM1::CleanStagBracket() {
         const Real hm = !(s > 0.0) ? hr : (cut ? ((tl < 0.0) ? fmin(fr, 0.0) : 0.0) : tr);
         const Real el = fmax(x.w(m,CLW_EO,k-dk,j-dj,i-di), 0.0);
         const Real er = fmax(x.w(m,CLW_EO,k,j,i), 0.0);
-        if (jl > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = fmin(hp/fmax(jl, rmn*el), 1.0);
-        if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = fmax(hm/fmax(jr, rmn*er), -1.0);
+        if (jl > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = fmin(hp/fmax(jl, rmn*el), gmx);
+        if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = fmax(hm/fmax(jr, rmn*er), -gmx);
         x.fc[dir](m,x.fdg,k,j,i) = 0.0;
         return;
       }
