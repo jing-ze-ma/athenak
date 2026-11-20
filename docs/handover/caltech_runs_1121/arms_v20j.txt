@@ -1,0 +1,5 @@
+# v20j GPU gate (orion 2026-11-20): TOP priority (after V20G3 if those are running), default io (romio321), 4 ranks / 1 node.
+FINALRST=1 MODE=rt NH=2              V20J_rsg  B_v20j RSG 4 rsg_v20.keys
+FINALRST=1 ENVX=CLEAN_POISON_GHOST=1 V20JP_rsg B_v20j RSG 4 rsg_v20.keys
+FINALRST=1                           V20JR_rsg B_v20j RSG 4 rsg_v20.keys
+FINALRST=1 MODE=rt NH=2              V20J_hg   B_v20j HG  4 hg_v20.keys time/dt_retry_host=m1
