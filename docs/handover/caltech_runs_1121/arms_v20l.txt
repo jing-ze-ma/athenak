@@ -1,0 +1,8 @@
+# v20l gate (orion 2026-11-20): v20k + CMake (P5 device bodies off). B_v20l = caltech-runs/v20l e067945c2. HIGH priority, default io (romio321).
+FINALRST=1 MODE=rt NH=2 V20L_rsg B_v20l RSG 4 rsg_v20.keys
+FINALRST=1 MODE=rt NH=2 V20L_hg  B_v20l HG  4 hg_v20.keys time/dt_retry_host=m1
+# speed pair: round 1 together on 2 same-type nodes (not 02-16), round 2 swapped
+FINALRST=0 SPL_g_1 B_v20g RSG 10 rsg_v20.keys
+FINALRST=0 SPL_l_1 B_v20l RSG 10 rsg_v20.keys
+FINALRST=0 SPL_g_2 B_v20g RSG 10 rsg_v20.keys
+FINALRST=0 SPL_l_2 B_v20l RSG 10 rsg_v20.keys
