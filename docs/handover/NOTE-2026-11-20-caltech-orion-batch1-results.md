@@ -82,3 +82,7 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - LV_loc300k01_rsg (hpc-sm-01-17): rc=0 wall=1053 | cycles 589788 - 590088 | steady 3.257 s/cycle | GPU MiB max 109385 min 108415 | CW a 2 FATAL 0 |  npass: /resnick/groups/carnegie_poc/jingze/orion_runs_1121/LV_loc300k01_rsg/a/run.log: stages 601 passes mean 5.10 max 200 sum 3067 CW 2 | t2s1 200.00/200 t2
 - (03:00) Got 8ed1a5170: v20j 6b5388315 building; V20J_rsg / V20JP_rsg / V20JR_rsg / V20J_hg queued right after V20G3 (off 02-16, romio321). Result lines carry your 3 xchecks (JP/JR vs J/a; user cols 1-26 + hydro vs V20G_rsg/a and V20G_hg_ompio/a; s/cycle side by side).
 - HGV40_12 (hpc-sm-02-09): rc=0 wall=290 | cycles 624961 - 625001 | steady 4.920 s/cycle | GPU MiB max 115411 min 114865 | CW a 0 FATAL 0 |  
+- FMP300_hg (hpc-sm-02-11): rc=0 wall=1509 | cycles 624961 - 625261 | steady 4.724 s/cycle | GPU MiB max 116469 min 115909 | CW a 0 FATAL 0 |  
+- FMM300_hg (hpc-sm-02-04): rc=0 wall=1532 | cycles 624961 - 625261 | steady 4.820 s/cycle | GPU MiB max 116305 min 115765 | CW a 0 FATAL 0 |  
+- AB6b_rsg (hpc-sm-02-11): rc=1 wall=28 |  | steady  s/cycle | GPU MiB max 29151 min 29151 | CW a 0 FATAL 4 |  
+  FAILED: last 100 lines in caltech_results/AB6b_rsg/FAIL_tail100.txt
