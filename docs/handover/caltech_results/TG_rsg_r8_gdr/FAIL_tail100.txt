@@ -1,0 +1,101 @@
+== /resnick/groups/carnegie_poc/jingze/orion_runs_1121/TG_rsg_r8_gdr/a/run.log
+CLEAN XDONOR cycle 589788 t2s 2 pass 1 xle0 0 minX/Eo 6.109e-02 donor 473597 cap 573 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 4
+CLEAN XT cycle 589788 t2s 2 pass closure 2.382e+00
+CLEAN XDONOR cycle 589788 t2s 2 pass 2 xle0 0 minX/Eo 5.769e-02 donor 473813 cap 564 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 589788 t2s 2 pass closure 1.524e+00
+CLEAN XDONOR cycle 589788 t2s 2 pass 3 xle0 0 minX/Eo 5.546e-02 donor 473737 cap 568 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 589788 t2s 2 pass closure 6.908e-01
+CLEAN XDONOR cycle 589788 t2s 2 pass 4 xle0 0 minX/Eo 5.398e-02 donor 473742 cap 567 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 589788 t2s 2 pass closure 3.185e-01
+CLEAN cycle 589788 t2s 2 it 1 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5 cwin 0
+CLEAN XT cycle 589788 t2s 2 write-back closure 3.255e-01
+CLEAN XT cycle 589788 t2s 3 pass closure 1.037e-05
+CLEAN XDONOR cycle 589788 t2s 3 pass 0 xle0 0 minX/Eo 5.064e-02 donor 461174 cap 510 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 589788 t2s 3 pass closure 3.647e-01
+CLEAN XDONOR cycle 589788 t2s 3 pass 1 xle0 0 minX/Eo 1.459e-01 donor 470851 cap 591 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 4
+CLEAN XT cycle 589788 t2s 3 pass closure 6.643e-02
+CLEAN XDONOR cycle 589788 t2s 3 pass 2 xle0 0 minX/Eo 1.460e-01 donor 471038 cap 589 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 2
+CLEAN XT cycle 589788 t2s 3 pass closure 1.616e-02
+CLEAN cycle 589788 t2s 3 it 2 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZ cycle 589788 t2s 3 ledger -4.5675607411415415e+45
+CLEAN XT cycle 589788 t2s 3 write-back closure 1.616e-02
+### WARNING: 1 input parameter(s) were never read by the code (typo, or a key AthenaK does not have?):
+###   job/final_restart = false  (command line)
+elapsed=4.110778e+01 cycle=589789 time=5.464810e+08 dt=9.565217e+02
+[hpc-sm-02-03:3742015:0:3742015] ib_mlx5_log.c:179  Local protection error on mlx5_2:1/IB (synd 0x4 vend 0x51 hw_synd 0/2)
+[hpc-sm-02-03:3742015:0:3742015] ib_mlx5_log.c:179  RC QP 0xeed wqe[17220]: RDMA_WRITE s-- [rva 0x7ef3e77142c0 rkey 0x1ade6b] [va 0x7ff5b7ef4a00 len 587200 lkey 0xe5e18] [rqpn 0x1cc43 dlid=810 sl=0 port=1 src_path_bits=0]
+==== backtrace (tid:3742015) ====
+ 0 0x00000000000248e0 uct_ib_mlx5_completion_with_err()  /build-result/src/hpcx-v2.17.1-gcc-mlnx_ofed-redhat9-cuda12-x86_64/ucx-02432d35d8228f44e9a3b809964cccdebc45703a/src/uct/ib/mlx5/ib_mlx5_log.c:179
+ 1 0x000000000003c66c uct_rc_mlx5_iface_handle_failure()  /build-result/src/hpcx-v2.17.1-gcc-mlnx_ofed-redhat9-cuda12-x86_64/ucx-02432d35d8228f44e9a3b809964cccdebc45703a/src/uct/ib/rc/accel/rc_mlx5_iface.c:299
+ 2 0x000000000003c66c uct_rc_iface_arbiter_dispatch()  /build-result/src/hpcx-v2.17.1-gcc-mlnx_ofed-redhat9-cuda12-x86_64/ucx-02432d35d8228f44e9a3b809964cccdebc45703a/src/uct/ib/rc/base/rc_iface.h:449
+ 3 0x000000000003c66c uct_rc_mlx5_iface_handle_failure()  /build-result/src/hpcx-v2.17.1-gcc-mlnx_ofed-redhat9-cuda12-x86_64/ucx-02432d35d8228f44e9a3b809964cccdebc45703a/src/uct/ib/rc/accel/rc_mlx5_iface.c:302
+ 4 0x0000000000025875 uct_ib_mlx5_check_completion()  /build-result/src/hpcx-v2.17.1-gcc-mlnx_ofed-redhat9-cuda12-x86_64/ucx-02432d35d8228f44e9a3b809964cccdebc45703a/src/uct/ib/mlx5/ib_mlx5.c:477
+ 5 0x000000000003e737 uct_ib_mlx5_poll_cq()  /build-result/src/hpcx-v2.17.1-gcc-mlnx_ofed-redhat9-cuda12-x86_64/ucx-02432d35d8228f44e9a3b809964cccdebc45703a/src/uct/ib/mlx5/ib_mlx5.inl:146
+ 6 0x000000000003e737 uct_rc_mlx5_iface_poll_tx()  /build-result/src/hpcx-v2.17.1-gcc-mlnx_ofed-redhat9-cuda12-x86_64/ucx-02432d35d8228f44e9a3b809964cccdebc45703a/src/uct/ib/rc/accel/rc_mlx5_iface.c:149
+ 7 0x000000000003e737 uct_rc_mlx5_iface_progress()  /build-result/src/hpcx-v2.17.1-gcc-mlnx_ofed-redhat9-cuda12-x86_64/ucx-02432d35d8228f44e9a3b809964cccdebc45703a/src/uct/ib/rc/accel/rc_mlx5_iface.c:189
+ 8 0x000000000003e737 uct_rc_mlx5_iface_progress_cyclic()  /build-result/src/hpcx-v2.17.1-gcc-mlnx_ofed-redhat9-cuda12-x86_64/ucx-02432d35d8228f44e9a3b809964cccdebc45703a/src/uct/ib/rc/accel/rc_mlx5_iface.c:194
+ 9 0x000000000004af3a ucs_callbackq_dispatch()  /build-result/src/hpcx-v2.17.1-gcc-mlnx_ofed-redhat9-cuda12-x86_64/ucx-02432d35d8228f44e9a3b809964cccdebc45703a/src/ucs/datastruct/callbackq.h:215
+10 0x000000000004af3a uct_worker_progress()  /build-result/src/hpcx-v2.17.1-gcc-mlnx_ofed-redhat9-cuda12-x86_64/ucx-02432d35d8228f44e9a3b809964cccdebc45703a/src/uct/api/uct.h:2787
+11 0x000000000004af3a ucp_worker_progress()  /build-result/src/hpcx-v2.17.1-gcc-mlnx_ofed-redhat9-cuda12-x86_64/ucx-02432d35d8228f44e9a3b809964cccdebc45703a/src/ucp/core/ucp_worker.c:2991
+12 0x000000000003740c opal_progress()  /build-result/src/hpcx-v2.17.1-gcc-mlnx_ofed-redhat9-cuda12-x86_64/ompi-821f7a18fb5f87c7840032d0251fb36675505a64/opal/runtime/opal_progress.c:231
+13 0x00000000000515bd sync_wait_st()  /build-result/src/hpcx-v2.17.1-gcc-mlnx_ofed-redhat9-cuda12-x86_64/ompi-821f7a18fb5f87c7840032d0251fb36675505a64/ompi/../opal/threads/wait_sync.h:83
+14 0x00000000000515bd ompi_request_default_wait_all()  /build-result/src/hpcx-v2.17.1-gcc-mlnx_ofed-redhat9-cuda12-x86_64/ompi-821f7a18fb5f87c7840032d0251fb36675505a64/ompi/request/req_wait.c:234
+15 0x000000000007b9bd PMPI_Waitall()  /build-result/src/hpcx-v2.17.1-gcc-mlnx_ofed-redhat9-cuda12-x86_64/ompi-821f7a18fb5f87c7840032d0251fb36675505a64/ompi/mpi/c/profile/pwaitall.c:80
+16 0x0000000001eb335b radm1::RadiationM1::CleanHaloFinish<double>()  ???:0
+17 0x0000000001ebf344 radm1::RadiationM1::CleanGhostExchange<double>()  ???:0
+18 0x0000000001ec1695 radm1::RadiationM1::CleanGhostFillT<double>()  ???:0
+19 0x0000000001e7b859 radm1::RadiationM1::CleanGhostFill()  ???:0
+20 0x0000000001e3c255 radm1::RadiationM1::CleanGdFaceSums()  ???:0
+21 0x0000000001d8ca82 radm1::RadiationM1::CleanRingMoments()  ???:0
+22 0x0000000001da08af radm1::RadiationM1::CleanRays()  ???:0
+23 0x0000000001da1072 radm1::RadiationM1::CleanClosure()  ???:0
+24 0x0000000001c280cb radm1::RadiationM1::CleanSolve()  ???:0
+25 0x0000000000953e46 Driver::ExecuteTaskList()  tmpxft_0038832d_00000000-6_driver.cudafe1.cpp:0
+26 0x000000000095ad8e Driver::Execute()  ???:0
+27 0x00000000005f2b7d main()  ???:0
+28 0x00000000000295d0 __libc_start_call_main()  ???:0
+29 0x0000000000029680 __libc_start_main_alias_2()  :0
+30 0x00000000006598b5 _start()  ???:0
+=================================
+[hpc-sm-02-03:3742015] *** Process received signal ***
+[hpc-sm-02-03:3742015] Signal: Aborted (6)
+[hpc-sm-02-03:3742015] Signal code:  (-6)
+[hpc-sm-02-03:3742015] [ 0] /lib64/libc.so.6(+0x3e730)[0x7ff83d43e730]
+[hpc-sm-02-03:3742015] [ 1] /lib64/libc.so.6(+0x8ba6c)[0x7ff83d48ba6c]
+[hpc-sm-02-03:3742015] [ 2] /lib64/libc.so.6(raise+0x16)[0x7ff83d43e686]
+[hpc-sm-02-03:3742015] [ 3] /lib64/libc.so.6(abort+0xd3)[0x7ff83d428833]
+[hpc-sm-02-03:3742015] [ 4] /resnick/software9/external/hpcx/2.17.1/ucx/lib/libucs.so.0(+0x5be17)[0x7ff837ed3e17]
+[hpc-sm-02-03:3742015] [ 5] /resnick/software9/external/hpcx/2.17.1/ucx/lib/libucs.so.0(ucs_log_default_handler+0xe14)[0x7ff837ed8d64]
+[hpc-sm-02-03:3742015] [ 6] /resnick/software9/external/hpcx/2.17.1/ucx/lib/libucs.so.0(ucs_log_dispatch+0xcc)[0x7ff837ed911c]
+[hpc-sm-02-03:3742015] [ 7] /resnick/software9/external/hpcx/2.17.1/ucx/lib/ucx/libuct_ib.so.0(uct_ib_mlx5_completion_with_err+0x5c0)[0x7ff8379988e0]
+[hpc-sm-02-03:3742015] [ 8] /resnick/software9/external/hpcx/2.17.1/ucx/lib/ucx/libuct_ib.so.0(+0x3c66c)[0x7ff8379b066c]
+[hpc-sm-02-03:3742015] [ 9] /resnick/software9/external/hpcx/2.17.1/ucx/lib/ucx/libuct_ib.so.0(uct_ib_mlx5_check_completion+0x35)[0x7ff837999875]
+[hpc-sm-02-03:3742015] [10] /resnick/software9/external/hpcx/2.17.1/ucx/lib/ucx/libuct_ib.so.0(+0x3e737)[0x7ff8379b2737]
+[hpc-sm-02-03:3742015] [11] /resnick/software9/external/hpcx/2.17.1/ucx/lib/libucp.so.0(ucp_worker_progress+0x2a)[0x7ff83c1b9f3a]
+[hpc-sm-02-03:3742015] [12] /resnick/software9/external/hpcx/2.17.1/ompi/lib/libopen-pal.so.40(opal_progress+0x2c)[0x7ff83da7240c]
+[hpc-sm-02-03:3742015] [13] /resnick/software9/external/hpcx/2.17.1/ompi/lib/libmpi.so.40(ompi_request_default_wait_all+0xed)[0x7ff83df395bd]
+[hpc-sm-02-03:3742015] [14] /resnick/software9/external/hpcx/2.17.1/ompi/lib/libmpi.so.40(PMPI_Waitall+0x1d)[0x7ff83df639bd]
+[hpc-sm-02-03:3742015] [15] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x1eb335b]
+[hpc-sm-02-03:3742015] [16] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x1ebf344]
+[hpc-sm-02-03:3742015] [17] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x1ec1695]
+[hpc-sm-02-03:3742015] [18] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x1e7b859]
+[hpc-sm-02-03:3742015] [19] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x1e3c255]
+[hpc-sm-02-03:3742015] [20] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x1d8ca82]
+[hpc-sm-02-03:3742015] [21] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x1da08af]
+[hpc-sm-02-03:3742015] [22] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x1da1072]
+[hpc-sm-02-03:3742015] [23] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x1c280cb]
+[hpc-sm-02-03:3742015] [24] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x953e46]
+[hpc-sm-02-03:3742015] [25] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x95ad8e]
+[hpc-sm-02-03:3742015] [26] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x5f2b7d]
+[hpc-sm-02-03:3742015] [27] /lib64/libc.so.6(+0x295d0)[0x7ff83d4295d0]
+[hpc-sm-02-03:3742015] [28] /lib64/libc.so.6(__libc_start_main+0x80)[0x7ff83d429680]
+[hpc-sm-02-03:3742015] [29] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x6598b5]
+[hpc-sm-02-03:3742015] *** End of error message ***
+srun: error: hpc-sm-02-03: task 4: Aborted (core dumped)
+[2026-11-20T06:05:57.688] error:  mpi/pmix_v3: _errhandler: hpc-sm-02-03 [1]: pmixp_client_v2.c:219: Error handler invoked: status = -25, source = [slurm.pmix.6133592.200:4]
+[2026-11-20T06:05:58.303] error: *** STEP 6133592.200 ON hpc-sm-01-17 CANCELLED AT 2026-11-20T06:05:58 DUE to SIGNAL Killed ***
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+srun: error: hpc-sm-02-03: tasks 6-7: Killed
+srun: error: hpc-sm-01-17: tasks 0,2-3: Killed
+srun: error: hpc-sm-02-03: task 5: Killed
+srun: error: hpc-sm-01-17: task 1: Killed

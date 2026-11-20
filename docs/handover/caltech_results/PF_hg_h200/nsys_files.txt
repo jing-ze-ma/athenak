@@ -1,0 +1,3 @@
+-rw-rw-r--. 1 jingze hpc_carnegie_poc 26960500 Nov 20 06:05 /resnick/groups/carnegie_poc/jingze/orion_runs_1121/PF_hg_h200/a/nsys_r0.nsys-rep
+-rw-r-----. 1 jingze hpc_carnegie_poc 69902336 Nov 20 06:06 /resnick/groups/carnegie_poc/jingze/orion_runs_1121/PF_hg_h200/a/nsys_r0.sqlite
+-rw-r-----. 1 jingze hpc_carnegie_poc      246 Nov 20 06:06 /resnick/groups/carnegie_poc/jingze/orion_runs_1121/PF_hg_h200/a/nsys_r0.sqlite.lab.json

@@ -1,0 +1,7 @@
+[]
+CW a 0 FATAL 0 retries []
+GPU mem peak MiB max 56677 min 55791 (n=4)
+rc=137 wall=63
+hstmd5 rsg.hydro.hst 8f4c3273d4b0f872f41fa23258fa9ad3 rows 1
+hstmd5 rsg.user.hst d0cde62e55dfc0aa57ea16ec9bcb3a11 rows 1
+DONE
