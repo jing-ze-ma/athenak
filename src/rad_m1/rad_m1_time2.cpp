@@ -2010,6 +2010,62 @@ void RadiationM1::Time2KSplit(int stage, Real c1, Real c2) {
     if (fabs(mm) > fabs(px) && fabs(mm) > fabs(pw)) Kokkos::atomic_add(&acc(22), 1.0);
     if (fabs(px) >= fabs(pw) && fabs(px) >= fabs(mm)) Kokkos::atomic_add(&acc(23), 1.0);
   });
+  // (stage 1: the realisability of the step's start state U^n: every interior face's
+  // momentum state F (f0x*) and stored energy flux Phi (t2pf1, the last solve's) against
+  // c max(E) of its two cells, and the cell vector of the faces (u0 F, the output m1_f*)
+  // against c E of the cell; counts > 1 and > 10, the max ratio, and the cells at the
+  // E floor among the cell vector's > 10)
+  if (stage == 1) {
+    auto g1_ = f0x1, g2_ = f0x2, g3_ = f0x3;
+    const Real cl = c_light, crp = chat/c_light;
+    constexpr int NR = 12;
+    Kokkos::View<Real*> rc("m1_t2_real", NR);
+    par_for("m1_t2_real", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real e = u0_(m,M1_E,k,j,i);
+      for (int d = 0; d < 3; ++d) {   // (the low face, interior only)
+        if ((d == 1 && !tr2) || (d == 2 && !tr3)) {continue;}
+        if ((d == 0 && i == is) || (d == 1 && j == js) || (d == 2 && k == ks)) continue;
+        const int dk = (d == 2), dj = (d == 1), di = (d == 0);
+        const Real em = fmax(fmax(e, u0_(m,M1_E,k-dk,j-dj,i-di)), 1.0e-300);
+        const Real f = (d == 0) ? g1_(m,k,j,i) : ((d == 1) ? g2_(m,k,j,i) : g3_(m,k,j,i));
+        const Real rf = fabs(crp*f)/(cl*em), rp = fabs(p1_(m,d,k,j,i))/(cl*em);
+        Kokkos::atomic_add(&rc(0), 1.0);
+        if (rf > 1.0) Kokkos::atomic_add(&rc(1), 1.0);
+        if (rf > 10.0) Kokkos::atomic_add(&rc(2), 1.0);
+        Kokkos::atomic_max(&rc(3), rf);
+        if (rp > 1.0) Kokkos::atomic_add(&rc(4), 1.0);
+        if (rp > 10.0) Kokkos::atomic_add(&rc(5), 1.0);
+        Kokkos::atomic_max(&rc(6), rp);
+      }
+      const Real fc = sqrt(SQR(u0_(m,M1_F1,k,j,i)) + SQR(u0_(m,M1_F1+1,k,j,i)) +
+                           SQR(u0_(m,M1_F1+2,k,j,i)));
+      const Real rv = crp*fc/(cl*fmax(e, 1.0e-300));
+      Kokkos::atomic_add(&rc(7), 1.0);
+      if (rv > 1.0) Kokkos::atomic_add(&rc(8), 1.0);
+      if (rv > 10.0) Kokkos::atomic_add(&rc(9), 1.0);
+      Kokkos::atomic_max(&rc(10), rv);
+      if (rv > 10.0 && e <= 1.001*efl) Kokkos::atomic_add(&rc(11), 1.0);
+    });
+    auto rh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), rc);
+    Real r[NR];
+    for (int n = 0; n < NR; ++n) r[n] = rh(n);
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, r, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &r[3], 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &r[4], 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &r[6], 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &r[7], 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &r[10], 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &r[11], 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::printf("CLEAN REAL cycle %d | faces %.0f: F^H/(c maxE) >1 %.0f >10 %.0f max %.3e | "
+                  "Phi/(c maxE) >1 %.0f >10 %.0f max %.3e | cells %.0f: |Fcell|/(cE) >1 %.0f "
+                  ">10 %.0f max %.3e (>10 at floor %.0f)\n", pmy_pack->pmesh->ncycle, r[0],
+                  r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11]);
+    }
+  }
   auto ah = Kokkos::create_mirror_view_and_copy(HostMemSpace(), acc);
   Real a[NA];
   for (int n = 0; n < NA; ++n) a[n] = ah(n);
