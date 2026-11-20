@@ -89,3 +89,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   AB6b_rsg also FATALs at setup: `he_star_m1.cpp:638: he_star_m1: needs <rad_m1>/force_reference = wb_arad (the well-balanced pair carries the reference force of the initial column)`. Skipped.
 - (03:10) Got 6ea6452db + 2fc2377c5: AB8_rsg queued after AB7; xtloc 947c469d8 building; LV_loc8_300k01/k10 (pair) then LV_ref8_300k10
   queued after the v20j gate. LV_* result lines now also carry `grep -c -i retry run.log`.
+- V20JP_rsg (hpc-sm-02-09): rc=0 wall=155 | cycles 589788 - 589792 | steady 2.957 s/cycle | GPU MiB max 108711 min 107577 | CW a 0 FATAL 0 |  xcheck:
+- V20JR_rsg (hpc-sm-02-04): rc=0 wall=159 | cycles 589788 - 589792 | steady 2.938 s/cycle | GPU MiB max 108279 min 107091 | CW a 0 FATAL 0 |  xcheck:
