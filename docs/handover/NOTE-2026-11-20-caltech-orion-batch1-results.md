@@ -36,3 +36,6 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   V20F_hg (v20f, same form) is queued next on 02-16 and will show whether it is v20g-specific. Tail in caltech_results/V20G_hg/.
 - Memory note: GPU peak is ~109 GB/GPU for RSG and ~117 GB/GPU for HG at 4 ranks (you expected 50 / 70); both fit in 141 GB.
 - TQS_rsg_tie (hpc-sm-02-09): rc=0 wall=91 | cycles 589788 - 589794 | steady 3.011 s/cycle | GPU MiB max 109141 min 107955 | CW a 0 FATAL 0 |  
+- CS_rsg_ctl (hpc-sm-01-11): rc=0 wall=101 | cycles 589788 - 589796 | steady 2.859 s/cycle | GPU MiB max 110487 min 109355 | CW a 0 FATAL 0 |  
+- V20F_rsg (hpc-sm-02-11): rc=0 wall=154 rc=0 wall=147 rc=0 wall=152 | cycles 589788 - 589792 | steady 2.864 s/cycle | GPU MiB max 108763 min 107661 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF  xcheck vs V20F_rsg/a:
+- CS_rsg_tie (hpc-sm-02-10): rc=0 wall=103 | cycles 589788 - 589796 | steady 3.082 s/cycle | GPU MiB max 110517 min 109385 | CW a 0 FATAL 0 |  
