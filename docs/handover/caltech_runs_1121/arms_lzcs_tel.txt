@@ -3,3 +3,5 @@ FINALRST=0 T1_rsg  B_lzcstel RSG 6   rsg_v20.keys
 FINALRST=0 T2_rsg  B_lzcstel RSG 300 rsg_v20.keys output1/dt=1 rad_m1/clean_cs_lz_tel=true
 FINALRST=0 T3_hg   B_lzcstel HG  50  hg_v20.keys  time/dt_retry_host=m1 rad_m1/clean_cs_lz_tel=true
 FINALRST=1 MODE=rt NH=3 T4_rsg B_lzcstel RSG 6 rsg_v20.keys rad_m1/clean_cs_lz_tel=true
+# added 2026-11-20 (NOTE am): HIGH priority, T3 with the key OFF; same node type as T3 (02-11 if free), not 02-16
+FINALRST=0 T3K_hg  B_lzcstel HG 50 hg_v20.keys time/dt_retry_host=m1
