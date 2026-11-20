@@ -4097,13 +4097,16 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
           const Real el = fmax(x.w(m,e,k-dk,j-dj,i-di), 0.0), er = fmax(x.w(m,e,k,j,i), 0.0);
           fv = fmin(fmax(f, -x.c*er), x.c*el);
           const Real th = fc(m,CLF_TH,k,j,i);
-          if (fid == 1 && fv != f) fc(m,CLF_N+1,k,j,i) += (fv - f)/(th*x.h*x.c*x.c);
+          // (3: (fv - f)/(h c^2), the gas takes what it took of f; the radiation's change
+          // booked)
+          const Real tq = (fid == 1) ? th : 1.0;
+          if (fid != 2 && fv != f) fc(m,CLF_N+1,k,j,i) += (fv - f)/(tq*x.h*x.c*x.c);
           if (fst && fv != f) {   // (the write-back's: the momentum the gas does not take)
             const int ko = k - dk, jo = j - dj, io = i - di;
             const Real vf = x.cub ? 0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,ko,jo,io)) :
                 (x.sph ? 0.5*(x.vol(m,k,j,i) + x.vol(m,ko,jo,io)) :
                          1.0/(x.idx[0]*x.idx[1]*x.idx[2]));
-            const Real dq = vf*(fv - f)/(th*x.c*x.c);
+            const Real dq = vf*(fv - f)/(tq*x.c*x.c);
             Kokkos::atomic_add(&fsv(0), 1.0);
             Kokkos::atomic_add(&fsv(1), fabs(dq));
             Kokkos::atomic_add(&fsv(2+dir), dq);
