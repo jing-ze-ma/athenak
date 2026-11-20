@@ -463,3 +463,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - (14:11) Noted 770336147: future v20.x baselines/controls = B_v202 (f4cefb181) with hydro/floor_pay=rad_column unless an arm line says otherwise (in the deck's <hydro> block for fresh starts). Queued/running arms keep their listed builds and keys.
 - LF_rsg (hpc-sm-02-11): rc=1 wall=10123 | cycles 589788 - 592698 | steady 3.385 s/cycle | GPU MiB max 109817 min 108847 | CW a 60 FATAL 1 |  
   FAILED: last 100 lines in caltech_results/LF_rsg/FAIL_tail100.txt
+- G_off_hg (hpc-sm-02-03): rc=0 wall=3194 | cycles 624961 - 625561 | steady 5.189 s/cycle | GPU MiB max 115141 min 114543 | CW a 10 FATAL 0 |  mean dt 97 | CW 10 FATAL 0
