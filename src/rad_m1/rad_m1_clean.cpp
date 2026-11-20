@@ -4933,7 +4933,7 @@ void RadiationM1::CleanWriteBack() {
   const bool lzt = cln_lzt && feedback;
   DvceArray5D<Real> tqv;
   if (lzt) {
-    tqv = ScratchView<DvceArray5D<Real>>("cln_tqv", nmb1 + 1, 3, u0.extent_int(2),
+    tqv = ScratchView<DvceArray5D<Real>>("cln_tqv", nmb1 + 1, 6, u0.extent_int(2),
                                          u0.extent_int(3), u0.extent_int(4));
     px = CleanDevArgs(x, 0);   // (xh changed: the F solve's F)
     pxh = CleanDevArgs(xh, 1);
@@ -4955,6 +4955,21 @@ void RadiationM1::CleanWriteBack() {
       tqv(m,2,k,j,i) = -(gl + rl);
     });
     CleanGhostFill(tqv, 0, 1);
+    // (a face shared with another MeshBlock takes the lower gid's change, as its F,
+    // CleanStagCsTie: each cell puts that of its face of family q on its MeshBlock's
+    // boundary, else its high face, in slot 3 + q, which the ghosts take)
+    CleanFor("cln_wbtq2", nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      CLEAN_HIPX(const CleanArgs &x = *px;)
+      tqv(m,3,k,j,i) = 0.0;
+      for (int q = 1; q < 3; ++q) {
+        const int u = (q == 1) ? (j == je) : (k == ke);
+        const int kf = k + u*(q == 2), jf = j + u*(q == 1);
+        tqv(m,3+q,k,j,i) = x.c*x.c*CleanCsArm(x, q, m, kf, jf, i)*
+                           (tqv(m,0,kf-(q == 2),jf-(q == 1),i) + tqv(m,0,kf,jf,i));
+      }
+    });
+    CleanGhostFill(tqv, 4, 2, true, 0, 1);
   }
 
   // face fluxes of the solution
@@ -4971,7 +4986,16 @@ void RadiationM1::CleanWriteBack() {
       if (lzt && dir > 0) {   // (the radiation's share of its two cells' stress torque)
         CLEAN_HIPX(const CleanArgs &x = *px;)
         const int kl = k - dk, jl = j - dj;
-        f += x.c*x.c*CleanCsArm(x, dir, m, k, j, i)*(tqv(m,0,kl,jl,i) + tqv(m,0,k,j,i));
+        const bool lin = (dir == 1) ? (j > js) : (k > ks);
+        const bool rin = (dir == 1) ? (j <= je) : (k <= ke);
+        const int kg = lin ? k : kl, jg = lin ? j : jl, ko = lin ? kl : k, jo = lin ? jl : j;
+        Real s = 1.0, df = x.c*x.c*CleanCsArm(x, dir, m, k, j, i)*(tqv(m,0,kl,jl,i) +
+                                                                  tqv(m,0,k,j,i));
+        if (!(lin && rin) && x.g(m,CLG_F+7,kg,jg,i) < x.g(m,CLG_F+7,ko,jo,i)) {
+          const int q = CleanCsSlot(x, dir, m, k, j, i, kg, jg, i, false, s)/2;
+          df = s*tqv(m,3+q,kg,jg,i);
+        }
+        f += df;
       }
       if (slopes) kk(m,tf,k,j,i) = (f - fc(m,CLF_G,k,j,i))/h;
       f0(m,k,j,i) = f;
