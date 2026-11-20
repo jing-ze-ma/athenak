@@ -412,13 +412,10 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/implicit_det_trace", "!"}, {"rad_m1/dbg_hydro_off", "!"},
     {"rad_m1/time2_k1_fct", "!"}, {"rad_m1/implicit_mr_every", "!"},
     {"rad_m1/coupling_split", "!"},
-    // (the vet_gd twin and its symmetric reference: removed, L4)
-    {"rad_m1/vet_gd_twin_state", "=mean"}, {"rad_m1/vet_gd_twin_weight", "=none"},
-    {"rad_m1/vet_gd_twin_full", "=false"}, {"rad_m1/vet_gd_twin_fuse", "=false"},
-    {"rad_m1/vet_gd_twin_lowmem", "=false"}, {"rad_m1/vet_gd_twin_det", ""},
-    {"rad_m1/vet_gd_twin_wq", ""}, {"rad_m1/vet_gd_twin_srw", "=false"},
-    {"rad_m1/vet_gd_twin", "=false"},
-    {"rad_m1/vet_gd_symref", "=none"}, {"rad_m1/vet_gd_symref_*", ""},
+    // (the vet_gd twin and its symmetric reference, removed, L4: the twin itself stops when
+    // on, as under clean before; its option keys were inert without it and stay so)
+    {"rad_m1/vet_gd_twin", "=false"}, {"rad_m1/vet_gd_twin_*", ""},
+    {"rad_m1/vet_gd_symref*", ""},
     {"rad_m1/vet_gd_async", "!"}, {"rad_m1/time2_stage_theta", "!"},
     {"rad_m1/time2_stage_local_be", "!"}};
   const bool say = (global_variable::my_rank == 0);
