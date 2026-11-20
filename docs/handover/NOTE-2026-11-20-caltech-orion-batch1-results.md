@@ -150,3 +150,6 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - L1_rsg (hpc-sm-02-09): rc=0 wall=94 | cycles 589788 - 589794 | steady 2.824 s/cycle | GPU MiB max 109587 min 108453 | CW a 0 FATAL 0 |  
 - L2_hg (hpc-sm-02-09): rc=0 wall=115 | cycles 624961 - 624967 | steady 5.003 s/cycle | GPU MiB max 121049 min 120491 | CW a 0 FATAL 0 |  
 - T3_hg (hpc-sm-02-11): rc=0 wall=345 | cycles 624961 - 625011 | steady 5.176 s/cycle | GPU MiB max 115715 min 115169 | CW a 0 FATAL 0 |  
+- (04:30) KC1c_hg / KC009_hg / KC1m_hg at the head of the queue (KT HG + RSG trios are done, above). ELEAK (20z + 20al): AB9_rsg / AB9o_rsg / AB9rt_rsg had not started; eleak built at a411520d7 and the three queued right after KC (result lines carry the floor_audit-cycle and CLEAN WARNING..unpaid counts).
+- KC1c_hg (hpc-sm-02-09): rc=0 wall=198 | cycles 624961 - 624981 | steady 5.183 s/cycle | GPU MiB max 116353 min 115805 | CW a 0 FATAL 0 |  
+- KC009_hg (hpc-sm-02-11): rc=0 wall=206 | cycles 624961 - 624981 | steady 5.616 s/cycle | GPU MiB max 116353 min 115805 | CW a 0 FATAL 0 |  
