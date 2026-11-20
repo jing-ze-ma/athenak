@@ -242,3 +242,7 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - (05:50) Got de2ae8c3c: KX001_hg had already started (05:40, on ksplit4 c28cf2f41), so it finishes and is sent. ksplit5 = c24692a3c building; KX1d_hg then KX001d_hg queued (same result-line fields as KX1).
 - LS_rsg_r8 (hpc-sm-01-17,hpc-sm-02-03): rc=0 wall=91 | cycles 589788 - 589808 | steady 1.666 s/cycle | GPU MiB max 56677 min 5 | CW a 0 FATAL 0 |  
 - LS_rsg_r12 (hpc-sm-01-17,hpc-sm-02-03,hpc-sm-02-04): rc=0 wall=75 | cycles 589788 - 589808 | steady 1.207 s/cycle | GPU MiB max 38473 min 0 | CW a 0 FATAL 0 |  
+- LS_hg_r2 (hpc-sm-02-11): rc=134 wall=74 |  | steady  s/cycle | GPU MiB max 93109 min 5 | CW a 0 FATAL 0 |  
+  FAILED: last 100 lines in caltech_results/LS_hg_r2/FAIL_tail100.txt
+- LS_hg_r3 (hpc-sm-02-11): rc=134 wall=69 |  | steady  s/cycle | GPU MiB max 142483 min 5 | CW a 0 FATAL 0 |  
+  FAILED: last 100 lines in caltech_results/LS_hg_r3/FAIL_tail100.txt

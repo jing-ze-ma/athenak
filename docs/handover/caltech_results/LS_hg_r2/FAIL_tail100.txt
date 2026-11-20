@@ -1,0 +1,101 @@
+== /resnick/groups/carnegie_poc/jingze/orion_runs_1121/LS_hg_r2/a/run.log
+he_star_m1:   atm cell 328 r/R_ph 1.03675 rho 6.06389e-14 T [K] 5760.68 phi 1.03938 -> 1.03798, Gamma 0.000617356
+he_star_m1:   atm cell 329 r/R_ph 1.03792 rho 4.0715e-14 T [K] 5753.44 phi 1.04048 -> 1.03915, Gamma 0.000620608
+he_star_m1:   atm cell 330 r/R_ph 1.03909 rho 2.7299e-14 T [K] 5746.33 phi 1.04146 -> 1.03998, Gamma 0.000622284
+he_star_m1:   atm cell 331 r/R_ph 1.04027 rho 1.82792e-14 T [K] 5739.26 phi 1.04246 -> 1.04132, Gamma 0.000622439
+he_star_m1:   atm cell 332 r/R_ph 1.04146 rho 1.22341e-14 T [K] 5732.27 phi 9.31667 -> 7.88399, Gamma 0.000622614
+he_star_m1: he_ic_rad = sph1d (gas re_atm, hse on): r_b = 7.92064e+12 (tau 2.97618), blend tau 1 .. 3, 675 solve points + 64 core rays, 96 VET passes, 6 outer, g_top = H/J 0.980488, f_top = K/J 0.961652, 0.840793 s
+he_star_m1: he_ic_rad = sph1d: R_ph (tau_R 2/3, run kappa) 7.9467e+12 -> 7.94683e+12; max |E/E_col - 1| 0.0685208 at r = 7.92824e+12, |T/T_col - 1| 0.157722 at 8.27649e+12, |rho/rho_col - 1| 0.195251 at 8.27545e+12; HSE last max |dln rho| 2.09322e-07, residual 9.99201e-15, floor 1e-14 from r = 8.27638e+12, Gamma > 0.9 (clamped) in 0 fine cells, damped (0.5) from outer none
+he_star_m1:   r/R_ph 1: E/E_col 0.995732, T [K] 7496.03 (/T_col 0.998931), rho/rho_col 0.995132, F/(cE) 0.250083
+he_star_m1:   r/R_ph 1.003: E/E_col 0.997013, T [K] 6628.39 (/T_col 0.999252), rho/rho_col 1.00562, F/(cE) 0.406608
+he_star_m1:   r/R_ph 1.006: E/E_col 0.999676, T [K] 6195.49 (/T_col 0.999919), rho/rho_col 1.01773, F/(cE) 0.529557
+he_star_m1:   r/R_ph 1.01: E/E_col 0.999387, T [K] 6016.38 (/T_col 0.999847), rho/rho_col 1.03626, F/(cE) 0.590783
+he_star_m1:   r/R_ph 1.02: E/E_col 0.999887, T [K] 5881.85 (/T_col 0.999972), rho/rho_col 1.08451, F/(cE) 0.634095
+he_star_m1:   r/R_ph 1.05: E/E_col 0.999961, T [K] 7527.5 (/T_col 1), rho/rho_col 1, F/(cE) 0.686061
+he_star_m1:   r/R_ph 1.1: E/E_col 0.999968, T [K] 7527.5 (/T_col 1), rho/rho_col 1, F/(cE) 0.736429
+he_star_m1:   r/R_ph 1.2: E/E_col 0.999982, T [K] 7527.5 (/T_col 1), rho/rho_col 1, F/(cE) 0.797251
+he_star_m1:   r/R_ph 1.5: E/E_col 0.999991, T [K] 7527.5 (/T_col 1), rho/rho_col 1, F/(cE) 0.883239
+he_star_m1:   r/R_ph 2: E/E_col 0.999995, T [K] 7527.5 (/T_col 1), rho/rho_col 1, F/(cE) 0.937216
+he_star_m1:   r/R_ph 2.5: E/E_col 0.999996, T [K] 7527.5 (/T_col 1), rho/rho_col 1, F/(cE) 0.960082
+he_star_m1:   r/R_ph 2.9: E/E_col 0.999997, T [K] 7527.5 (/T_col 1), rho/rho_col 1, F/(cE) 0.970579
+he_star_m1: IC column T(rho,eint)/T_col - 1: max 6.39488e-14 at r = 6.46213e+12 (he_ic_eint_from_t = true)
+he_star_m1: column inside the tables: log10 rho -14 .. -4.00046, log10 T 3.7583 .. 6.07596
+he_star_m1: he_gm_column: G m(r_in) = 3.61092e+26, G m(r_top) = 3.6585e+26 (G = 6.67408e-08 code), static monopole of the initial column
+he_star_m1: he_ic_balance cells: max |T/T_col - 1| = 3.26143e-06 at r = 7.90649e+12
+he_star_m1: he_ic_balance: max |rho/rho_col - 1| = 0.00239911 at r = 5.80778e+11, max face residual |PR/PL - 1| = 7.32747e-15, wall cells a_ref (module form), last change 3.37786e-10
+he_star_m1: mlt_flux_frozen: max F_MLT/F on the faces = 0.985272 at r = 7.88108e+12; F_MLT at the bottom/top faces = 4.5161e+11 / 0
+he_star_m1: mlt_ramp auto (start auto, time auto) from restart file (computed at the fresh start): start = 0 s (0 d), time = 1.15275e+06 s (13.342 d)
+he_star_m1: he_ic_equil: a_ref (cells is .. ie) and Phi_eff from the fresh start's equilibrium (restart trailer)
+he_star_m1: mlt_closure = adaptive, relax time 1500 s, every cycle, taper 0.01, update clock 1.15288e+06, max L_sub = 1.06945e+38
+he_star_m1: mlt ramp start = 0, time = 1.15275e+06, w(t = 5.0112e+07) = 0, max L_MLT (unscaled) = 1.40026e+38
+he_star_m1: GM = 3.61092e+26, F_in = 3.60602e+13, tau(r_in) = 2.68648e+06, r_int (tau = 1) = 7.93876e+12, r_top = 2.47391e+13, sponge rate = 0.001 above r = 2.22652e+13
+<time> dt_retry on: fac 0.5 max 8 ngood 20 grow 1.1 views minimal cap -1
+<rad_m1> closure = vet_col: per-column 1-D formal solution, spherical p-rays (ncore 8, nsub 1, 713 rays, 704 shells), axis radial, rebuilt every 1 step(s); vet_col_order2 (quadratic mu, face core); vet_bc_diff = face; f_K >= 0; 3 shell(s) kept trapezoid weights; team build, 1 shells per chunk, team size AUTO; outer Marshak q = H(face)/J(top cell) in [0.001, 1]
+<rad_m1> vet_gd on the CUBED SPHERE (cs-vetgd-1017, stage S3): seam strip + vertex triangle upwind stencil, exact per-shell band copies (the sp halo lists / IPC / overlap keys do not apply), twin off; hand-over D_rr + D_r,lat in the operator (S4), no tangential part
+<rad_m1> vet_gd direction set: 42 directions; moment errors |sum w - 1| 1.22125e-15, |sum w n| 3.81639e-17, |sum w nn - I/3| 3.88578e-16 (rotated 2.22045e-16), 4th-moment anisotropy 2.22045e-16 (rotated 1.11022e-16)
+<rad_m1> vet_gd (cubed sphere): N = 128 per panel, narrowest cell spacing 0.00873064 rad, dense lateral band 58 cells (needed 58)
+<rad_m1> vet_gd (cubed sphere): rank 0 band copies on-rank 186064, sent 113216, received 113216 (cells per shell), partners 1; MPI band COMPACT (vet_gd_halo_compact > 0: per shell and pass only the read (cell, direction) values); list cache 8 sets
+<rad_m1> vet_gd_band_ring: compact intensities 11.7257 GB + 3 band slots 0.39191 GB on rank 0
+<rad_m1> vet_gd: ragged per-shell band intensity array 12.1176 GB on rank 0 (dense band 92.7521 GB)
+<rad_m1> vet_gd_band_ring: compact intensities 11.7257 GB + 3 band slots 0.39191 GB on rank 0
+<rad_m1> vet_gd: ragged per-shell band intensity array 12.1176 GB on rank 0 (dense band 92.7521 GB)
+<rad_m1> vet_gd_rotate_xfade_fuse: second-set intensities 12.1176 GB on rank 0
+<rad_m1> vet_gd: global-direction SC closure on the cubed sphere, geodesic level 2 (42 directions); 3-D rotation (quasi-random axis; angle = block key) every 1170.000000 in time (t0 0.000000, align on) (0 = fixed), first angle 85660; rank 0 wall ghost columns 0, direction maps exact 0 of 0 (the rest: nearest direction)
+<rad_m1> staggered on the cubed sphere: clean_stag_vimp = false
+terminate called after throwing an instance of 'std::runtime_error'
+terminate called after throwing an instance of 'std::runtime_error'
+  what():  Kokkos ERROR: Cuda memory space failed to allocate 6.961 GiB (label="").
+  what():  Kokkos ERROR: Cuda memory space failed to allocate 6.961 GiB (label="").
+[hpc-sm-02-11:126626] *** Process received signal ***
+[hpc-sm-02-11:126625] *** Process received signal ***
+[hpc-sm-02-11:126625] Signal: Aborted (6)
+[hpc-sm-02-11:126625] Signal code:  (-6)
+[hpc-sm-02-11:126626] Signal: Aborted (6)
+[hpc-sm-02-11:126626] Signal code:  (-6)
+[hpc-sm-02-11:126626] [ 0] /lib64/libc.so.6(+0x3e730)[0x7f509763e730]
+[hpc-sm-02-11:126625] [ 0] /lib64/libc.so.6(+0x3e730)[0x7f9b6103e730]
+[hpc-sm-02-11:126626] [ 1] /lib64/libc.so.6(+0x8ba6c)[0x7f509768ba6c]
+[hpc-sm-02-11:126625] [ 1] /lib64/libc.so.6(+0x8ba6c)[0x7f9b6108ba6c]
+[hpc-sm-02-11:126626] [ 2] /lib64/libc.so.6(raise+0x16)[0x7f509763e686]
+[hpc-sm-02-11:126625] [ 2] /lib64/libc.so.6(raise+0x16)[0x7f9b6103e686]
+[hpc-sm-02-11:126626] [ 3] /lib64/libc.so.6(abort+0xd3)[0x7f5097628833]
+[hpc-sm-02-11:126625] [ 3] /lib64/libc.so.6(abort+0xd3)[0x7f9b61028833]
+[hpc-sm-02-11:126626] [ 4] /lib64/libstdc++.so.6(+0xa1b21)[0x7f5097aa1b21]
+[hpc-sm-02-11:126625] [ 4] /lib64/libstdc++.so.6(+0xa1b21)[0x7f9b614a1b21]
+[hpc-sm-02-11:126626] [ 5] /lib64/libstdc++.so.6(+0xad52c)[0x7f5097aad52c]
+[hpc-sm-02-11:126625] [ 5] /lib64/libstdc++.so.6(+0xad52c)[0x7f9b614ad52c]
+[hpc-sm-02-11:126626] [ 6] /lib64/libstdc++.so.6(+0xad597)[0x7f5097aad597]
+[hpc-sm-02-11:126626] [ 7] /lib64/libstdc++.so.6(+0xad7f9)[0x7f5097aad7f9]
+[hpc-sm-02-11:126625] [ 6] /lib64/libstdc++.so.6(+0xad597)[0x7f9b614ad597]
+[hpc-sm-02-11:126626] [ 8] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x5efb73]
+[hpc-sm-02-11:126626] [ 9] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x2839732]
+[hpc-sm-02-11:126626] [10] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x283d776]
+[hpc-sm-02-11:126626] [11] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x6c6863]
+[hpc-sm-02-11:126626] [12] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x1c16f54]
+[hpc-sm-02-11:126625] [ 7] /lib64/libstdc++.so.6(+0xad7f9)[0x7f9b614ad7f9]
+[hpc-sm-02-11:126625] [ 8] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x5efb73]
+[hpc-sm-02-11:126626] [13] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x1c223a0]
+[hpc-sm-02-11:126626] [14] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x1c244fd]
+[hpc-sm-02-11:126626] [15] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x957fb7]
+[hpc-sm-02-11:126626] [16] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x5f2b6c]
+[hpc-sm-02-11:126625] [ 9] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x2839732]
+[hpc-sm-02-11:126625] [10] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x283d776]
+[hpc-sm-02-11:126625] [11] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x6c6863]
+[hpc-sm-02-11:126625] [12] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x1c16f54]
+[hpc-sm-02-11:126625] [13] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x1c223a0]
+[hpc-sm-02-11:126625] [14] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x1c244fd]
+[hpc-sm-02-11:126625] [15] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x957fb7]
+[hpc-sm-02-11:126625] [16] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x5f2b6c]
+[hpc-sm-02-11:126626] [17] /lib64/libc.so.6(+0x295d0)[0x7f50976295d0]
+[hpc-sm-02-11:126626] [18] /lib64/libc.so.6(__libc_start_main+0x80)[0x7f5097629680]
+[hpc-sm-02-11:126625] [17] /lib64/libc.so.6(+0x295d0)[0x7f9b610295d0]
+[hpc-sm-02-11:126626] [19] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x6598b5]
+[hpc-sm-02-11:126626] *** End of error message ***
+[hpc-sm-02-11:126625] [18] /lib64/libc.so.6(__libc_start_main+0x80)[0x7f9b61029680]
+[hpc-sm-02-11:126625] [19] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v20g_6b48f352c[0x6598b5]
+[hpc-sm-02-11:126625] *** End of error message ***
+srun: error: hpc-sm-02-11: task 0: Aborted (core dumped)
+[2026-11-20T05:51:10.963] error:  mpi/pmix_v3: _errhandler: hpc-sm-02-11 [0]: pmixp_client_v2.c:219: Error handler invoked: status = -25, source = [slurm.pmix.5840649.81:0]
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+[2026-11-20T05:51:10.975] error: *** STEP 5840649.81 ON hpc-sm-02-11 CANCELLED AT 2026-11-20T05:51:10 DUE to SIGNAL Killed ***
+srun: error: hpc-sm-02-11: task 1: Aborted (core dumped)
