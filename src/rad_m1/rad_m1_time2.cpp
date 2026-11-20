@@ -1177,8 +1177,9 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     // for a re-solve, and a clean mask
     if (t2_pfix > 0) {
       FluidRef flp = FluidRef::Get(pmy_pack);
-      if (flp.on && t2_pfix_host) {
-        // gpumem-1022 time2_posfix_host: the copy in pinned host memory (stream-ordered)
+      if (flp.on && t2_pfix_host && !clean) {
+        // gpumem-1022 time2_posfix_host: the copy in pinned host memory (stream-ordered;
+        // clean: no stage-1 re-solve puts it back, the key has no effect)
         if (t2gsv_h.extent(0) != flp.u0.extent(0) || t2gsv_h.extent(1) != flp.u0.extent(1)
             || t2gsv_h.extent(2) != flp.u0.extent(2)
             || t2gsv_h.extent(3) != flp.u0.extent(3)
