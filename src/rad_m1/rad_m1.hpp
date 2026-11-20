@@ -3130,6 +3130,8 @@ class RadiationM1 {
   void CleanApply(const int src, const int dst);
   int CleanBiCGStab();
   Real CleanNewtonUpdate();
+  void CleanPassDiag(const DvceArray1D<Real> &pdg, const Real change, const int nmb,
+                     const int nkji, const int nji, const int nx1);
   Real CleanVelocityUpdate();
   Real CleanConvDF(const bool first);
   void CleanCopyIterate();
