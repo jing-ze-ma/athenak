@@ -462,6 +462,11 @@ void RadiationM1::RotAvgEmaChange(const int ilo) {
 }
 
 void RadiationM1::RotAvgEmaShift(const int ds) {
+  if (vra_ema_wb) {
+    std::cout << "### FATAL ERROR <rad_m1>/vet_rotate_avg_ema_wb needs scheme = clean "
+              << "(the ring)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   vra_gen += 1;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;

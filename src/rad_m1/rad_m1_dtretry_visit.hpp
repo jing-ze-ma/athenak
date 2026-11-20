@@ -1796,6 +1796,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vra_ema_eps", vra_ema_eps);
   v.value("vra_ema_chj", vra_ema_chj);
   v.value("vra_ema_chstep", vra_ema_chstep);
+  v.value("vra_ema_wb", vra_ema_wb);
   v.value("vra_ema_diag", vra_ema_diag);
   v.value("vra_ema_dema", vra_ema_dema);
   v.value("vra_ema_nsh", vra_ema_nsh);

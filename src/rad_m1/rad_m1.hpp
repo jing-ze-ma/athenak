@@ -4083,6 +4083,10 @@ class RadiationM1 {
   Real vra_ema_eps = 0.05;     // vet_rotate_avg_ema_change (0: no change test)
   bool vra_ema_chj = true;     // vet_rotate_avg_ema_change_j: the J ratio in the test
   bool vra_ema_chstep = false; // vet_rotate_avg_ema_change_form = step (default linear)
+  // rotwb-1120 vet_rotate_avg_ema_wb (read only when named, default false = bitwise; clean
+  // ring only): a = a_ch alone, no 1/N floor and no 1/(n + 1) count, so the pattern
+  // average moves only where the field changed and a static state keeps its closure
+  bool vra_ema_wb = false;
   int vra_ema_diag = 0;        // vet_rotate_avg_ema_diag = M: print the change weights
   // raycheap-1109 vet_rotate_avg_ema_dema (read only when named, default false): the lag-
   // corrected (double) EMA: slot 2 holds the EMA of the EMA (e2, same weights, same frame

@@ -3359,6 +3359,14 @@ void RadiationM1::RotAvgParse(ParameterInput *pin) {
   }
   // raycorr-1108: vet_rotate_avg_ema = N (read only when named; see rad_m1.hpp): the
   // exponential moving average over the rotated sets (one offset slot, vra_k = 2)
+  // rotwb-1120: vet_rotate_avg_ema_wb acts on the EMA ring only (no silent no-op)
+  if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_wb") &&
+      !(pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema") &&
+        pin->GetReal("rad_m1","vet_rotate_avg_ema") >= 1.0)) {
+    std::cout << "### FATAL ERROR <rad_m1>/vet_rotate_avg_ema_wb needs "
+              << "vet_rotate_avg_ema >= 1" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema")) {
     vra_ema_n = pin->GetReal("rad_m1","vet_rotate_avg_ema");
     if (vra_ema_n >= 1.0 && (vgd_on || vet_sc)) {
@@ -3379,6 +3387,9 @@ void RadiationM1::RotAvgParse(ParameterInput *pin) {
                     << "' is not a choice (linear | step)" << std::endl;
           std::exit(EXIT_FAILURE);
         }
+      }
+      if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_wb")) {
+        vra_ema_wb = pin->GetBoolean("rad_m1","vet_rotate_avg_ema_wb");
       }
       if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_dema")) {
         vra_ema_dema = pin->GetBoolean("rad_m1","vet_rotate_avg_ema_dema");

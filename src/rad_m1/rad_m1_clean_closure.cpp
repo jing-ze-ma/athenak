@@ -1003,7 +1003,8 @@ bool CleanRingEma(const CleanRingL &rl, const DvceArray5D<Real> &rr,
   const bool hist = nset > 0.5 && r > 0.0, sh = hist && jn > 0.0;
   Real jt = jn, fac = 0.0;
   if (sh) {
-    const Real aw = fmax(fmax(a0, fmin(pd(m,nfr,k,j,i), 1.0)), 1.0/(nset + 1.0));
+    const Real aw = (a0 < 0.0) ? fmax(0.0, fmin(pd(m,nfr,k,j,i), 1.0)) :
+                     fmax(fmax(a0, fmin(pd(m,nfr,k,j,i), 1.0)), 1.0/(nset + 1.0));
     const Real rq = r*jb/jn, r1 = (1.0 - aw)*rq + aw;
     fac = (1.0 - aw)*rq/r1;
     jt = jn*r1;
@@ -1073,7 +1074,7 @@ void RadiationM1::CleanRingShift(const int64_t b) {
     // (RotAvgEmaShift: the EMA moves on with the Delta and the change weight a_ch of the
     // boundary; the aux := the next set there.  No history or no Delta: the current set
     // alone)
-    const Real a0 = 1.0/vra_ema_n;
+    const Real a0 = vra_ema_wb ? -1.0 : 1.0/vra_ema_n;   // (rotwb-1120: < 0 = a_ch alone)
     par_for("cln_ring_eshift", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, 0,
             id.nx3 - 1, 0, id.nx2 - 1, 0, id.nx1 - 1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -1086,7 +1087,8 @@ void RadiationM1::CleanRingShift(const int64_t b) {
         rr(m,nf+2,k,j,i) = (R > 0.0) ? 1.0 : 0.0;
         return;
       }
-      const Real aw = fmax(fmax(a0, fmin(pd(m,nf,k,j,i), 1.0)), 1.0/(nset + 1.0));
+      const Real aw = (a0 < 0.0) ? fmax(0.0, fmin(pd(m,nf,k,j,i), 1.0)) :
+                      fmax(fmax(a0, fmin(pd(m,nf,k,j,i), 1.0)), 1.0/(nset + 1.0));
       const Real r1 = (1.0 - aw)*r/R + aw, fac = (1.0 - aw)*(r/R)/r1;
       for (int f = 0; f < nf; ++f) {
         rr(m,f,k,j,i) = (f == fj) ? r1 : fac*(rr(m,f,k,j,i) - pd(m,f,k,j,i));
@@ -1359,7 +1361,7 @@ void RadiationM1::CleanRingMoments() {
   // current set at the last boundary) and the set count n; pd also a_ch and the next
   // set's J and D11
   const bool ema = vra_ema, chj = vra_ema_chj, estep = vra_ema_chstep;
-  const Real a0 = ema ? 1.0/vra_ema_n : 1.0, eps = vra_ema_eps;
+  const Real a0 = ema ? (vra_ema_wb ? -1.0 : 1.0/vra_ema_n) : 1.0, eps = vra_ema_eps;
   std::vector<int> slot(nk + 2, -1);   // slot of block b - nk + 1 + p
   for (int q = 0; q < ns; ++q) {
     const int64_t p = cln_fvblk[q] - (b - nk + 1);
