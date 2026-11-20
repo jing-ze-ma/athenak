@@ -47,3 +47,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - CS_hg_tie (hpc-sm-02-09): rc=0 wall=135 | cycles 624961 - 624969 | steady 5.551 s/cycle | GPU MiB max 121663 min 121107 | CW a 0 FATAL 0 |  
 - V20FP_rsg (hpc-sm-02-11): rc=0 wall=159 | cycles 589788 - 589792 | steady 2.884 s/cycle | GPU MiB max 108763 min 107575 | CW a 0 FATAL 0 |   xcheck vs V20F_rsg/a: V20FP_rsg/rsg.hydro.hst=same V20FP_rsg/rsg.user.hst=same
 - V20G_hg_ompio (hpc-sm-01-11): rc=0 wall=239 rc=0 wall=232 rc=0 wall=231 | cycles 624961 - 624965 | steady 4.200 s/cycle | GPU MiB max 116703 min 115915 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF 
+- V20F_hg (hpc-sm-02-09): rc=0 wall=252 rc=0 wall=229 rc=0 wall=251 | cycles 624961 - 624965 | steady 4.184 s/cycle | GPU MiB max 116703 min 115915 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF 
+- CV_ref_rsg (hpc-sm-02-11): rc=0 wall=129 | cycles 589788 - 589808 | steady 2.622 s/cycle | GPU MiB max 109321 min 108187 | CW a 0 FATAL 0 |  
