@@ -49,3 +49,7 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - V20G_hg_ompio (hpc-sm-01-11): rc=0 wall=239 rc=0 wall=232 rc=0 wall=231 | cycles 624961 - 624965 | steady 4.200 s/cycle | GPU MiB max 116703 min 115915 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF 
 - V20F_hg (hpc-sm-02-09): rc=0 wall=252 rc=0 wall=229 rc=0 wall=251 | cycles 624961 - 624965 | steady 4.184 s/cycle | GPU MiB max 116703 min 115915 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF 
 - CV_ref_rsg (hpc-sm-02-11): rc=0 wall=129 | cycles 589788 - 589808 | steady 2.622 s/cycle | GPU MiB max 109321 min 108187 | CW a 0 FATAL 0 |  
+- CV_tight_rsg (hpc-sm-01-11): rc=0 wall=142 | cycles 589788 - 589808 | steady 3.328 s/cycle | GPU MiB max 109321 min 108187 | CW a 0 FATAL 0 |  
+- CV_estdf_rsg (hpc-sm-01-17): rc=0 wall=133 | cycles 589788 - 589808 | steady 2.933 s/cycle | GPU MiB max 108889 min 107701 | CW a 0 FATAL 0 |  
+- CV_est_rsg (hpc-sm-02-03): rc=0 wall=125 | cycles 589788 - 589808 | steady 2.763 s/cycle | GPU MiB max 109321 min 108187 | CW a 0 FATAL 0 |  
+- CV_k01_rsg (hpc-sm-02-04): rc=0 wall=132 | cycles 589788 - 589808 | steady 2.920 s/cycle | GPU MiB max 109321 min 108187 | CW a 0 FATAL 0 |  
