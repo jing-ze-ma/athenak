@@ -354,6 +354,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_xd = (xd != "off");
       cln_xlag = (xd == "lag");
       cln_xsrc = cln_xd && stag("clean_stag_xsrc", false);
+      // clean_stag_xcap_p (default 0 = the cap min(q, c)): the donor part's q of the split
+      // limited smoothly, c r/(1 + r^p)^(1/p) with r = q/c (CleanStagXSplit)
+      cln_xcp = cln_xd ? pin->GetOrAddInteger("rad_m1","clean_stag_xcap_p",0) : 0;
       cln_xsw = cln_xd && stag("clean_stag_xsweep", false);
       // clean_stag_kpos = off (default) | faces (= true) | cell | redo: the stage increment
       // in MPRK form (CleanStagKPos): faces, every slope face flux and the cell part

@@ -366,6 +366,7 @@ struct CleanArgs {
                                // moved increment flux (-1: none; the E rows only)
   bool xlag, xsrc;             //   lag: explicit up to the donor's share; xsrc: the
                                //   face sources too
+  int xcp;                     //   clean_stag_xcap_p: q limited smoothly (0: min(q, c))
   bool mcl;                    // staggered: a face's momentum term at most the force of
                                // a realisable flux, h chi_f E (the iterate's,
                                // CleanMomentumChange)
@@ -1380,7 +1381,12 @@ void CleanStagXSplit(const CleanArgs &x, const CleanArgs &xr, const int dir, con
       const bool up = (li > 0.0);
       const int e = src ? CLW_EO : CLW_EK;
       const Real ed = up ? x.w(m,e,kl,jl,il) : x.w(m,e,k,j,i);
-      const Real q = (fabs(li) < x.c*ed) ? fabs(li)/ed : x.c;
+      // (clean_stag_xcap_p: c r/(1 + r^p)^(1/p), r = |li|/(c E_donor), no kink at the cap,
+      // so the passes' fixed-point map has no switching set)
+      const Real r = fabs(li)/(x.c*ed);
+      const Real q = (x.xcp > 0 && r >= 0.0 && r < 1.0e30) ?
+                     x.c*r/pow(1.0 + pow(r, x.xcp), 1.0/x.xcp) :
+                     ((fabs(li) < x.c*ed) ? fabs(li)/ed : x.c);
       if (up) ql += q;
       if (!up) qr -= q;
     };

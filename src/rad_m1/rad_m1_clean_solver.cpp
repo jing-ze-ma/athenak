@@ -100,6 +100,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.pd = cln_kq_on || (cln_xpat && cln_wo_nc > CLW_PD - CLW_NS);
   x.xlag = cln_xlag;
   x.xsrc = cln_xsrc;
+  x.xcp = cln_xcp;
   x.drag = cln_vimp && cln_feedback;
   x.upw = cln_upw;
   x.sbi = cln_sbimp && cln_feedback;

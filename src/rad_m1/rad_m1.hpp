@@ -3341,6 +3341,7 @@ class RadiationM1 {
   bool cln_kreal = false;   // (S3B kick bound: CLW_KS set in CleanOldVector)
   int cln_lza = 0;          // clean_cs_lz_abs
   bool cln_thinf = false;   // clean_stag_thinf
+  int cln_xcp = 0;   // clean_stag_xcap_p
   // (clean_cs_lz_abs = 2: the L_z V R (dp_torque - dp) the gas does not take, booked as
   // the radiation's, cln_lzl (<rad_m1>/clean_cs_lz_ledger); its sums over the cells as the
   // gas momentum's slopes K1 (cln_lzs1, <rad_m1>/clean_cs_lz_k1), K2 (cln_lzs2) and stage
