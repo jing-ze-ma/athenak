@@ -1,0 +1,9 @@
+# speed A/B v20j +3% split (orion 2026-11-20). Round 1: 4 arms together (90 s apart) on 4 same-type nodes, not 02-16; round 2: same with nodes rotated.
+FINALRST=0 SPG_g_1 B_v20g RSG 10 rsg_v20.keys
+FINALRST=0 SPG_p5_1 B_h200 RSG 10 rsg_v20.keys
+FINALRST=0 SPG_lz_1 B_lzbook RSG 10 rsg_v20.keys
+FINALRST=0 SPG_j_1 B_v20j RSG 10 rsg_v20.keys
+FINALRST=0 SPG_g_2 B_v20g RSG 10 rsg_v20.keys
+FINALRST=0 SPG_p5_2 B_h200 RSG 10 rsg_v20.keys
+FINALRST=0 SPG_lz_2 B_lzbook RSG 10 rsg_v20.keys
+FINALRST=0 SPG_j_2 B_v20j RSG 10 rsg_v20.keys
