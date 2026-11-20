@@ -234,6 +234,12 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       }
     }
   }
+  if (ivar==171 && (pm->pmb_pack->pradm1 == nullptr || !pm->pmb_pack->pradm1->clean ||
+                    pm->pmb_pack->pradm1->cln_cell)) {
+    std::cout << "### FATAL ERROR: m1_phi output needs <rad_m1>/scheme = clean, "
+              << "clean_layout = staggered" << std::endl;
+    exit(EXIT_FAILURE);
+  }
   if (ivar==168 && (pm->pmb_pack->pradm1 == nullptr)) {
     std::cout << "### FATAL ERROR: m1_gdhr output needs a <rad_m1> block" << std::endl;
     exit(EXIT_FAILURE);
@@ -730,6 +736,18 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     }
     if (variable.compare("m1_f3") == 0 || variable.compare("m1") == 0) {
       outvars.emplace_back("m1_f3",radm1::M1_F3,&(pm->pmb_pack->pradm1->u0));
+    }
+    // staggered clean: the cell flux of the faces' energy flux Phi (m1_f: the momentum's)
+    if (variable.compare("m1_phi") == 0) {
+      auto *pr = pm->pmb_pack->pradm1;   // (CleanInit allocates it again, the same shape)
+      if (pr->cln_phic.extent_int(0) == 0) {
+        Kokkos::realloc(pr->cln_phic, pr->u0.extent_int(0), 3, pr->u0.extent_int(2),
+                        pr->u0.extent_int(3), pr->u0.extent_int(4));
+      }
+      for (int n = 0; n < 3; ++n) {
+        outvars.emplace_back("m1_phi" + std::to_string(n + 1), n,
+                             &(pm->pmb_pack->pradm1->cln_phic));
+      }
     }
 
     // the M1 closure's Eddington factor f_K (= chi along the closure axis) and the

@@ -387,6 +387,9 @@ void RadiationM1::CleanInit() {
   int nmb = pmy_pack->nmb_thispack;
   Kokkos::realloc(cln_s, nmb, CleanNs(cln_cell, pmy_pack->pmesh->use_cubed_sphere), n3,
                   n2, n1);
+  if (!cln_cell && cln_phic.extent_int(0) != nmb) {
+    Kokkos::realloc(cln_phic, nmb, 3, n3, n2, n1);
+  }
   // (staggered on the cubed sphere: the cell terms and faces of CleanStagFSolve)
   const bool stcs = pmy_pack->pmesh->use_cubed_sphere && !cln_cell;
   Kokkos::realloc(cln_v, nmb, stcs ? 18 : 3, n3, n2, n1);
@@ -4666,6 +4669,7 @@ void RadiationM1::CleanWriteBack() {
   // (xdonor: each face's central cross flux once, for the two cells that read it, in
   // cln_xf's scratch (dead here: its users write it before they read it); A100 R136
   // cln_wbdiv 1.6 -> 14.5 ms per launch with it evaluated twice per face)
+  auto phq = cln_phic;   // (the cell flux of the faces' Phi, output m1_phi)
   DvceArray5D<Real> xcv;
   if (xh.hi && x.xq >= 0) {
     xcv = ScratchView<DvceArray5D<Real>>("cln_xf", nmb1 + 1, 3, cln_w.s.extent_int(2),
@@ -4682,11 +4686,11 @@ void RadiationM1::CleanWriteBack() {
     const CleanArgs &x = *px, &xh = *pxh;   // (device memory: no copy)
     // (CleanFluxDivergence(Tie) with the faces' Phi of CleanStagRealizable, CLF_PT, but
     // on physical faces; with the tie the low faces' CLW_L and the high faces' owner's)
-    Real dv = 0.0;
+    Real dv = 0.0, pc[6];   // (the cubed sphere: each face's, CleanStagCellVector)
     for (int n = 0; n < 3; ++n) {
       const int dk = (n == 2), dj = (n == 1), di = (n == 0);
       if (n >= x.nf) {
-        if (xh.hi) u0_(m,M1_F1+n,k,j,i) = 0.0;
+        if (xh.hi) phq(m,n,k,j,i) = 0.0;
         continue;
       }
       const Real fl = tie ? x.w(m,CLW_L+n,k,j,i) : (CleanBoundaryFace(x, n, m, k, j, i) ?
@@ -4698,12 +4702,18 @@ void RadiationM1::CleanWriteBack() {
       dv += CleanDivF(x, n, m, k, j, i, fl, fh);
       // (clean_stag_kpos: the cell flux without the moved increment flux)
       if (xh.hi && x.xq >= 0) {
-        u0_(m,M1_F1+n,k,j,i) = 0.5*(xcv(m,n,k,j,i) + xcv(m,n,k+dk,j+dj,i+di) -
-                                    CleanKposFlux(x, CLW_X, n, m, k, j, i) -
-                                    CleanKposFlux(x, CLW_X, n, m, k+dk, j+dj, i+di));
+        phq(m,n,k,j,i) = 0.5*(xcv(m,n,k,j,i) + xcv(m,n,k+dk,j+dj,i+di) -
+                              CleanKposFlux(x, CLW_X, n, m, k, j, i) -
+                              CleanKposFlux(x, CLW_X, n, m, k+dk, j+dj, i+di));
       } else if (xh.hi) {
-        u0_(m,M1_F1+n,k,j,i) = 0.5*(fl + fu - CleanKposFlux(x, CLW_X, n, m, k, j, i) -
-                                    CleanKposFlux(x, CLW_X, n, m, k+dk, j+dj, i+di));
+        phq(m,n,k,j,i) = 0.5*(fl + fu - CleanKposFlux(x, CLW_X, n, m, k, j, i) -
+                              CleanKposFlux(x, CLW_X, n, m, k+dk, j+dj, i+di));
+      }
+      if (xh.hi && x.cub) {
+        pc[2*n] = ((x.xq >= 0) ? xcv(m,n,k,j,i) : fl) -
+                  CleanKposFlux(x, CLW_X, n, m, k, j, i);
+        pc[2*n+1] = ((x.xq >= 0) ? xcv(m,n,k+dk,j+dj,i+di) : fu) -
+                    CleanKposFlux(x, CLW_X, n, m, k+dk, j+dj, i+di);
       }
       // (clean_stag_kpos: the stored Phi without the moved increment flux)
       if (pfo) pf(m,n,k,j,i) = fl - CleanKposFlux(x, CLW_X, n, m, k, j, i);
@@ -4712,6 +4722,12 @@ void RadiationM1::CleanWriteBack() {
       if (pfo && (n == 0 ? i == x.ie : (n == 1 ? j == x.je : k == x.ke))) {
         pf(m,n,k+dk,j+dj,i+di) = fh - CleanKposFlux(x, CLW_X, n, m, k+dk, j+dj, i+di);
       }
+    }
+    if (xh.hi && x.cub) {   // (the cubed sphere: the faces' Phi's vector, frame of y)
+      Real fv[3];
+      CleanStagCellVector(x, m, k, j, i, pc, fv);
+      CleanStagHydro(x, m, k, j, i, fv);
+      for (int d = 0; d < 3; ++d) phq(m,d,k,j,i) = fv[d];
     }
     x.w(m,CLW_Q,k,j,i) = x.h*dv;
   });
@@ -5024,18 +5040,18 @@ void RadiationM1::CleanWriteBack() {
     }
     u0_(m,M1_E,k,j,i) = e;
     if (ky1s) ky1v(m,k,j,i) = e;   // (clean_stag_kpos: K2's reference, CleanStagKPos)
-    if (!xh.hi) {   // (clean_stag_split: the cell flux of Phi, above)
-      u0_(m,M1_F1,k,j,i) = 0.5*(f1(m,k,j,i) + f1(m,k,j,i+1));
-      u0_(m,M1_F1+1,k,j,i) = multi_d ? 0.5*(f2(m,k,j,i) + f2(m,k,j+1,i)) : 0.0;
-      u0_(m,M1_F1+2,k,j,i) = three_d ? 0.5*(f3(m,k,j,i) + f3(m,k+1,j,i)) : 0.0;
-    }
-    if (x.cub) {   // (cubed sphere: the face momenta's vector, CleanStagCellVector, in the
-      const Real c[6] = {f1(m,k,j,i), f1(m,k,j,i+1), f2(m,k,j,i),   //  frame of y: its L_z
-                         f2(m,k,j+1,i), f3(m,k,j,i), f3(m,k+1,j,i)};   //  CleanStagMomentum's)
+    {   // (the cell flux: the face momenta's cell vector, the radiation momentum on every
+        //  mesh, in the frame of y on the cubed sphere; Phi's in cln_phic, above)
+      const Real c[6] = {f1(m,k,j,i), f1(m,k,j,i+1), multi_d ? f2(m,k,j,i) : 0.0,
+                         multi_d ? f2(m,k,j+1,i) : 0.0, three_d ? f3(m,k,j,i) : 0.0,
+                         three_d ? f3(m,k+1,j,i) : 0.0};
       Real fv[3];
       CleanStagCellVector(x, m, k, j, i, c, fv);
       CleanStagHydro(x, m, k, j, i, fv);
-      for (int d = 0; d < 3; ++d) u0_(m,M1_F1+d,k,j,i) = fv[d];
+      for (int d = 0; d < 3; ++d) {
+        u0_(m,M1_F1+d,k,j,i) = fv[d];
+        if (!xh.hi) phq(m,d,k,j,i) = fv[d];   // (no split: Phi is the face momentum)
+      }
     }
   });
   if (lzb) {   // (clean_cs_lz_abs = 2: the stage's L_z as its slope, then booked)
