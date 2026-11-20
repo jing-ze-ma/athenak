@@ -1,0 +1,22 @@
+# Batch 1 (orion 2026-11-21). One arm per line: [ENV=...] TAG BINARY(branch) RST NC KEYS [extra keys]
+# B_<branch> = your build of that caltech-runs/<branch> commit; RSG = $J/rsg_E_1020/prodH/rst/rsg.01295.rst; HG = $J/hgglob_1021/prodG/rst/hegiant.00139.rst
+# P1 TIE (energy-leak diagnostics on the cs face tie)
+FINALRST=0 ENVX=TIE_CHECK=1 TQK_rsg       B_tie-check   RSG 6 rsg_v20.keys output1/dt=1
+FINALRST=0 ENVX=PROF_U=1    TQS_rsg_tie   B_tie-prof    RSG 6 rsg_v20.keys rad_m1/dbg_energy_audit=true output1/dt=1
+# P2 CONSERV ledgers (ctl vs tie)
+FINALRST=0 ENVX=CONSERV_L=1,PROF_U=1 CS_rsg_ctl B_conserv-ctl RSG 8 rsg_v20.keys rad_m1/dbg_energy_audit=true output1/dt=1
+FINALRST=0 ENVX=CONSERV_L=1,PROF_U=1 CS_rsg_tie B_conserv-tie RSG 8 rsg_v20.keys rad_m1/dbg_energy_audit=true output1/dt=1
+FINALRST=0 ENVX=CONSERV_L=1,PROF_U=1 CS_hg_ctl  B_conserv-ctl HG  8 hg_v20.keys  rad_m1/dbg_energy_audit=true output1/dt=1
+FINALRST=0 ENVX=CONSERV_L=1,PROF_U=1 CS_hg_tie  B_conserv-tie HG  8 hg_v20.keys  rad_m1/dbg_energy_audit=true output1/dt=1
+# P3 v20f restart checks (a vs b must be bitwise)
+FINALRST=1 MODE=rt                          V20F_rsg  B_v20f RSG 4 rsg_v20.keys
+FINALRST=1 ENVX=CLEAN_POISON_GHOST=1        V20FP_rsg B_v20f RSG 4 rsg_v20.keys
+FINALRST=1 MODE=rt                          V20F_hg   B_v20f HG  4 hg_v20.keys time/dt_retry_host=m1
+# P4 LAG HG rotation window (KEEP the bins)
+FINALRST=0 KEEPBIN=1 LW1170_hg B_v20f HG 100 hg_v20.keys time/dt_retry_host=m1 output3/dt=1950
+FINALRST=0 KEEPBIN=1 LW260_hg  B_v20f HG 100 hg_v20.keys time/dt_retry_host=m1 output3/dt=1950 rad_m1/vet_gd_rotate_dt=260
+# P5 LAG xt_local 300-cycle pairs (ref vs loc)
+FINALRST=0 LV_ref300k10_rsg B_lag20 RSG 300 rsg_v20.keys rad_m1/clean_nl_print=true
+FINALRST=0 LV_loc300k10_rsg B_lag20 RSG 300 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/clean_xt_local=true
+FINALRST=0 LV_ref300k01_rsg B_lag20 RSG 300 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.1
+FINALRST=0 LV_loc300k01_rsg B_lag20 RSG 300 rsg_v20.keys rad_m1/clean_nl_print=true rad_m1/clean_conv_kappa=0.1 rad_m1/clean_xt_local=true
