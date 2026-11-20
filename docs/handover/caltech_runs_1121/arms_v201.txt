@@ -1,0 +1,6 @@
+# v20.1 history fix gate (orion 2026-11-20). B_v201 = caltech-runs/v201 a3b72fdcc (v20n + exact HistSums). HIGH priority.
+# LI*b: exactly as LI4_rsg / LI8_rsg (bin_double on outputs 2/3/6, bins + final rst kept, LI8b on 2 nodes GDR off)
+FINALRST=1 KEEPBIN=1 NR=4 LI4b_rsg B_v201 RSG 3 rsg_v20.keys output2/dt=950 output3/dt=950 output6/dt=950
+FINALRST=1 KEEPBIN=1 NR=8 LI8b_rsg B_v201 RSG 3 rsg_v20.keys output2/dt=950 output3/dt=950 output6/dt=950
+FINALRST=1 MODE=rt NH=2 V201_rsg B_v201 RSG 4 rsg_v20.keys
+FINALRST=1 MODE=rt NH=2 V201_hg  B_v201 HG  4 hg_v20.keys time/dt_retry_host=m1
