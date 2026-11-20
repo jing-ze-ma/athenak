@@ -3330,6 +3330,7 @@ class RadiationM1 {
                     //  C's last change)
   Real cln_xd_ncap = 0.0;
   DvceArray5D<Real> cln_xdg;   // (diagnostic: -work, -r hcke E_k, sb, gres of the rows)
+  DvceArray5D<Real> cln_pdr;   // (CLEAN PDIAG study: the RHS terms of this and the last pass)
   // clean_stag_kpos (staggered, default off): the explicit stage increment of hesdirk2
   // limited to E_old >= th E_s, conservatively (CleanStagKPos); clean_stag_xpat
   // (default off): the exchange's removal -r hcke E_k past its share of the row in Patankar form (CleanRightHandSide)
