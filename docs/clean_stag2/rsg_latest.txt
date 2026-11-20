@@ -29,6 +29,7 @@ rad_m1/time2_k1_stiff=0
 time/restart_refill_ghosts=false
 rad_m1/clean_conv_kappa=1.0
 rad_m1/clean_rot_fuse=true
+hydro/floor_pay=rad_column
 rad_m1/cs_vertex_mono=true
 rad_m1/cs_cross_mono=true
 mesh/cs_seam_blockend=extend
