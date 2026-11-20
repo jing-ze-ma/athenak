@@ -1,0 +1,6 @@
+cycles 589788 - 589808 dt [956.5217] s/cycle(all) ['35.01', '2.78', '2.71', '2.69', '2.49', '2.38', '2.45', '2.91', '2.54', '2.54', '2.73', '2.39', '2.59', '2.61', '2.74', '2.55', '2.35', '2.56', '2.53', '6.34'] steady(excl first+last) 2.586 first elapsed 24.5 last elapsed 112.4
+['main loop time (before the final outputs) = 8.419602e+01']
+CW a 0 FATAL 0 retries ['<rad_m1> time2_auto_be=16: skipped-stage BE steps=0.000000e+00 stage retries=0.000000e+00 (succeeded 0.000000e+00)']
+GPU mem peak MiB max 108701 min 107567 (n=4)
+rc=0 wall=127
+DONE
