@@ -1,0 +1,6 @@
+# LZTEL cs L_z fix (orion 2026-11-20). B_lztel = caltech-runs/lztel 5f18abdc7. All env LZCS=1, hst every cycle (output1/dt=1).
+FINALRST=0 ENVX=LZCS=1 T1_rsg  B_lztel RSG 300 rsg_v20.keys output1/dt=1 rad_m1/clean_cs_lz_tel=true
+FINALRST=0 ENVX=LZCS=1 T0_rsg  B_lztel RSG 300 rsg_v20.keys output1/dt=1 rad_m1/clean_cs_lz_tel=false
+FINALRST=0 ENVX=LZCS=1 T2_hg   B_lztel HG  50  hg_v20.keys  output1/dt=1 time/dt_retry_host=m1 rad_m1/clean_cs_lz_tel=true
+FINALRST=1 MODE=rt NH=5 ENVX=LZCS=1 T1rt_rsg B_lztel RSG 10 rsg_v20.keys output1/dt=1 rad_m1/clean_cs_lz_tel=true
+FINALRST=1 ENVX=LZCS=1,CLEAN_POISON_GHOST=1 T1p_rsg B_lztel RSG 10 rsg_v20.keys output1/dt=1 rad_m1/clean_cs_lz_tel=true
