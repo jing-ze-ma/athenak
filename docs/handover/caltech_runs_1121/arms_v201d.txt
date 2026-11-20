@@ -1,0 +1,6 @@
+# v20.1d gate (orion 2026-11-20). B_v201d = caltech-runs/v201d 774262b56 (v201 + kern-fw + GHOSTGEO + xlim; all keys off). HIGH priority, romio.
+FINALRST=1 MODE=rt NH=2              V201D_rsg  B_v201d RSG 4 rsg_v20.keys
+FINALRST=1 ENVX=CLEAN_POISON_GHOST=1 V201DP_rsg B_v201d RSG 4 rsg_v20.keys
+FINALRST=1 MODE=rt NH=2              V201D_hg   B_v201d HG  4 hg_v20.keys time/dt_retry_host=m1
+FINALRST=1 KEEPBIN=1 NR=4 LI4d_rsg B_v201d RSG 3 rsg_v20.keys output2/dt=950 output3/dt=950 output6/dt=950
+FINALRST=1 KEEPBIN=1 NR=8 LI8d_rsg B_v201d RSG 3 rsg_v20.keys output2/dt=950 output3/dt=950 output6/dt=950
