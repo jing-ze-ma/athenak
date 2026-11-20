@@ -30,3 +30,8 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - TQK_rsg (hpc-sm-01-11): rc=0 wall=94 | cycles 589788 - 589794 | steady 3.021 s/cycle | GPU MiB max 109195 min 108061 | CW a 0 FATAL 0 |  
 - V20G_hg (hpc-sm-02-16): rc=137 wall=126 rc=137 wall=116 rc=137 wall=25 | cycles 624961 - 624964 | steady 3.919 s/cycle | GPU MiB max 116703 min 115915 | CW a 0 FATAL 1 | rt: 0 same, 5 DIFF 
   FAILED: last 100 lines in caltech_results/V20G_hg/FAIL_tail100.txt
+  **V20G_hg needs a fix from you**: every leg dies at an HG restart WRITE: `### FATAL ERROR in ../../src/outputs/restart.cpp at line 1654:
+  rad_m1 hesdirk2 slope not written correctly to rst file, restart file is broken.` (leg a at the final rst after reaching N0+3;
+  leg b at its N0+2 dump, so leg b2 reads a broken rst). RSG rst writes of the same build are fine (V20G_rsg rt 5/5 same).
+  V20F_hg (v20f, same form) is queued next on 02-16 and will show whether it is v20g-specific. Tail in caltech_results/V20G_hg/.
+- Memory note: GPU peak is ~109 GB/GPU for RSG and ~117 GB/GPU for HG at 4 ranks (you expected 50 / 70); both fit in 141 GB.
