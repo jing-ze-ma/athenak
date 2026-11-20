@@ -141,3 +141,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - KT001_hg (hpc-sm-01-17): rc=1 wall=431 | cycles 624961 - 624965 | steady 17.544 s/cycle | GPU MiB max 115761 min 114973 | CW a 11 FATAL 1 |  
   FAILED: last 100 lines in caltech_results/KT001_hg/FAIL_tail100.txt
 - KT01_rsg (hpc-sm-02-10): rc=0 wall=136 | cycles 589788 - 589808 | steady 3.218 s/cycle | GPU MiB max 109209 min 108075 | CW a 0 FATAL 0 |  
+  KT001_hg: ### FATAL ERROR: <time> dt_retry: cycle 624965 failed 9 times (max 8), dt 4.259657e-01 after 4 cycles (11 CLEAN WARNINGs, 17.5 s/cycle); same failure as CXP_hg. Full run.log.gz sent.
