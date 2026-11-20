@@ -112,3 +112,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - THF300_ref_rsg (hpc-sm-02-04): rc=0 wall=1099 | cycles 589788 - 590088 | steady 3.410 s/cycle | GPU MiB max 94893 min 93577 | CW a 0 FATAL 0 |  
 - THF100_ref_hg (hpc-sm-01-17): rc=0 wall=579 | cycles 624961 - 625061 | steady 4.944 s/cycle | GPU MiB max 112977 min 112453 | CW a 0 FATAL 0 |  
 - THF300_rsg (hpc-sm-02-03): rc=0 wall=1640 | cycles 589788 - 590088 | steady 5.228 s/cycle | GPU MiB max 94893 min 93867 | CW a 14 FATAL 0 |  
+- CXPR_hg (hpc-sm-01-17): rc=0 wall=132 | cycles 624961 - 624967 | steady 5.382 s/cycle | GPU MiB max 115761 min 114973 | CW a 0 FATAL 0 |  hesdirk2: k1_xpos(th=1.000000e-01) cell-stages(rank 0)=5.112400e+05 face_fct calls=1.200000e+01 skipped(no face flux)=0.000000e+00 K1 flux from U^n=1.000000e+00 limited cells=4.137338e+09 max rounds=1.612000e+0
