@@ -1,0 +1,41 @@
+# Batch 4 (orion H200 worker, 2026-11-20): H200 layout + launch tuning. Format as arms_batch1.txt, run with armc2.sh
+# (NODES=<comma list>, NR=<ranks>). RSG = rsg.01295 (N0 589788), HG = hegiant.00139 (N0 624961). Every multi-node arm:
+# UCX_IB_GPU_DIRECT_RDMA=no (your 10-21 finding). Timing arms: please NOT on hpc-sm-02-16 (r1H2), and one arm per node at a time.
+# Builds: B_v20g = caltech-runs/v20g 6b48f352c (v20f + cs face tie), B_p4 = caltech-runs/h200-p4 dbf6a3053, B_h200 = caltech-runs/h200 a774c43b3, B_h200mb2 = caltech-runs/h200 with
+#         -D Athena_EXTRA_DEFS=ATHENA_CLEAN_FOR_MB=2 added to the cmake line (same commit, one more build dir).
+#
+# HG arms run WITHOUT time/dt_retry_host=m1 (dt_retry clones on the device; H200 has the memory), except BA_hg_v20g_m1.
+# P1 GATE of the bitwise speed commits (1 node, 4 ranks): hst md5 of all four must be EQUAL; rt + poison bitwise/plain
+FINALRST=0 NR=4 BA_rsg_v20g    B_v20g    RSG 20 rsg_v20.keys
+FINALRST=0 NR=4 BA_rsg_p4      B_p4      RSG 20 rsg_v20.keys
+FINALRST=0 NR=4 BA_rsg_h200    B_h200    RSG 20 rsg_v20.keys
+FINALRST=0 NR=4 BA_rsg_mb2     B_h200mb2 RSG 20 rsg_v20.keys
+FINALRST=0 NR=4 BA_hg_v20g     B_v20g    HG  20 hg_v20.keys
+FINALRST=0 NR=4 BA_hg_p4       B_p4      HG  20 hg_v20.keys
+FINALRST=0 NR=4 BA_hg_h200     B_h200    HG  20 hg_v20.keys
+FINALRST=0 NR=4 BA_hg_mb2      B_h200mb2 HG  20 hg_v20.keys
+FINALRST=0 NR=4 BA_hg_v20g_m1  B_v20g    HG  20 hg_v20.keys time/dt_retry_host=m1
+FINALRST=1 NR=4 MODE=rt BR_rsg_h200 B_h200 RSG 4 rsg_v20.keys
+FINALRST=1 NR=4 MODE=rt BR_hg_h200  B_h200 HG  4 hg_v20.keys
+FINALRST=1 NR=4 ENVX=CLEAN_POISON_GHOST=1 BP_rsg_h200 B_h200 RSG 4 rsg_v20.keys
+# P2 LAYOUT SCAN (B_v20g; 24 MeshBlocks per star -> blocks/rank = 24/NR). hst md5 should agree across NR (layout_invariant=true).
+#    NR=2 may run out of memory (RSG ~100 GB, HG ~140 GB per GPU expected): an OOM line is a result, then go on.
+FINALRST=0 NR=2  LS_rsg_r2  B_v20g RSG 20 rsg_v20.keys
+FINALRST=0 NR=3  LS_rsg_r3  B_v20g RSG 20 rsg_v20.keys
+FINALRST=0 NR=6  LS_rsg_r6  B_v20g RSG 20 rsg_v20.keys
+FINALRST=0 NR=8  LS_rsg_r8  B_v20g RSG 20 rsg_v20.keys
+FINALRST=0 NR=12 LS_rsg_r12 B_v20g RSG 20 rsg_v20.keys
+FINALRST=0 NR=2  LS_hg_r2   B_v20g HG  20 hg_v20.keys
+FINALRST=0 NR=3  LS_hg_r3   B_v20g HG  20 hg_v20.keys
+FINALRST=0 NR=6  LS_hg_r6   B_v20g HG  20 hg_v20.keys
+FINALRST=0 NR=8  LS_hg_r8   B_v20g HG  20 hg_v20.keys
+FINALRST=0 NR=12 LS_hg_r12  B_v20g HG  20 hg_v20.keys
+# (NR=4 = BA_*_v20g above; NR=6 and 8 on 2 nodes (3 or 4 per node), NR=12 on 3 nodes = hgGH3b)
+# P3 PROFILE (only if nsys is at hand; if a Kokkos nvtx connector exists set KOKKOS_TOOLS_LIBS to it): rank 0 under nsys
+NSYS=1 FINALRST=0 NR=4 PF_rsg_v20g B_v20g RSG 5 rsg_v20.keys
+NSYS=1 FINALRST=0 NR=4 PF_rsg_h200 B_h200 RSG 5 rsg_v20.keys
+NSYS=1 FINALRST=0 NR=4 PF_hg_h200  B_h200 HG  5 hg_v20.keys
+# P4 TRANSPORT (2 nodes x 4, RSG): GPUDirect on (UCX default) vs off (= LS_rsg_r8). OPTIONAL and LAST: your 10-21 runs aborted in
+#    VetGdCsHalo with GDR on; if it aborts, send the last 50 lines and stop. Repeat LS_rsg_r8 once (run-to-run identical check).
+FINALRST=0 NR=8 ENVX=UCX_IB_GPU_DIRECT_RDMA=yes TG_rsg_r8_gdr B_v20g RSG 20 rsg_v20.keys
+FINALRST=0 NR=8 LS_rsg_r8_rep B_v20g RSG 20 rsg_v20.keys
