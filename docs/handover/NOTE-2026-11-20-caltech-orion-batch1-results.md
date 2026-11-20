@@ -526,3 +526,6 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - CEP0_rsg (hpc-sm-02-04): rc=0 wall=83 |  | steady  s/cycle | GPU MiB max 109073 min 108053 | CW a 0 FATAL 0 |  CW 0 FATAL 0 dt_retry 6 | nl_print (last):  | bins kept: /resnick/groups/carnegie_poc/jingze/orion_runs_1121/CEP0_rsg/a/bin (3 files, 6.1G) | eos table: /resnick/groups/carnegie_poc/jingze/orion_runs_1121/CEP0_rsg/a/eos_table.txt
 - V203_rsg (hpc-sm-02-11): rc=0 wall=158 rc=0 wall=137 rc=0 wall=142 | cycles 589788 - 589792 | steady 2.697 s/cycle | GPU MiB max 109587 min 108453 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF hst vs V202F_rsg/a:  rsg.hydro.hst==V202F_rsg/a rsg.user.hst==V202F_rsg/a | CW 0 FATAL 0
 - T_bsg (hpc-sm-01-17, started 15:24:43): a rc=0 wall=132 b rc=0 wall=86 b rc=0 wall=72 | a cycles 0 - 120 dt first 165.455 last 168.502 s/cycle steady 0.751 first elapsed 15.0 a 'FATAL' 0  a 'CLEAN WARNING' 0   | GPU mem peak MiB 22987 | CW 0 FATAL 0
+  FRESHGO START T_m35mms 15:30:27 on hpc-sm-01-17
+  FRESHGO START S_t9l62_corona 15:32:00 on hpc-sm-01-11
+- V203_hg (hpc-sm-01-11): rc=0 wall=228 rc=0 wall=228 rc=0 wall=243 | cycles 624961 - 624965 | steady 3.919 s/cycle | GPU MiB max 117201 min 116413 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF hst vs V202F_hg/a:  hegiant.hydro.hst==V202F_hg/a hegiant.user.hst==V202F_hg/a | CW 0 FATAL 0

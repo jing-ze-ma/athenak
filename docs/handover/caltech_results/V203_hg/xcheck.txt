@@ -1,0 +1,1 @@
+hst vs V202F_hg/a:  hegiant.hydro.hst==V202F_hg/a hegiant.user.hst==V202F_hg/a | CW 0 FATAL 0
