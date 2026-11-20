@@ -1,0 +1,1 @@
+TAG=R_fp_rsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v201e_3efbbbd17 md5=5c78f0ea63a63cf9ec5817e11bf8583d RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=1000 MODE=speed HOLDER=6133592 NODE=hpc-sm-02-04 NR=4 ENVX= EX=hydro/floor_pay=rad_column
