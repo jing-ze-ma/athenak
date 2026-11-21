@@ -876,3 +876,4 @@ B_br gate not passed; arms not started
 - (22:15) C1R_hg_c1 (B_br, hpc-sm-01-11, 100 cycles, keys c1r/keys/hg_c1.keys + time/dt_retry_host=m1): rc=0 wall=846 | passes/cycle 78.9 (over 100 cycles) | min dt (cycle lines) 3.403636e+00 | s/cycle 7.832 | CW 13 FATAL 0 | last cycle=625061 time=5.011764e+07
 - (22:16) J3 progress:
   J3_t19:  | KE_int  L_bot/L_in  L_top/L_in  (hst t ) | CW 0 FATAL 0 | FLIM 0 floorcap 1
+- (22:19) C1R_hg_v7 (B_br, hpc-sm-02-11, 100 cycles, keys c1r/keys/hg_v7.keys + time/dt_retry_host=m1): rc=0 wall=1083 | passes/cycle 132.5 (over 100 cycles) | min dt (cycle lines) 4.257952e-01 | s/cycle 10.216 | CW 20 FATAL 0 | last cycle=625061 time=5.011759e+07
