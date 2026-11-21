@@ -1,0 +1,1 @@
+TAG=W2_t19_off BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_opac_00ad333b7 md5=0d21a36ceecb0dd7803f62886217ff5b RST=/resnick/groups/carnegie_poc/jingze/prod_fresh_1121b/t19r/rst/t19l64.00001.rst N0=1070 NC=300 MODE=speed HOLDER=6133592 NODES=hpc-sm-02-04 NR=4 PPN=4 ENVX= EX=output1/dt=1e30 output1/dcycle=10 output5/dt=1e30 UCX=
