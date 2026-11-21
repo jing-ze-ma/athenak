@@ -569,3 +569,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   FRESHGO START W62_bsg 15:59:47 on hpc-sm-01-11
 - W_m35mms (hpc-sm-02-09): a rc=0 wall=145 b rc=0 wall=99 b rc=0 wall=84 | a cycles 0 - 120 dt first 12.0078 last 11.1868 s/cycle steady 0.898 first elapsed 15.3 a 'FATAL' 0  a 'CLEAN WARNING' 0   | GPU mem peak MiB 27945 | CW 0 FATAL 0
   FRESHGO START R_t9l62 16:00:01 on hpc-sm-02-09
+- (16:00) CONVERR first pass (existing arms; CET1_rsg rerun, CEP0 x2 and the 3c x4 still held behind FRESHGO): caltech_results/CONVERR/converr_rsg.txt, converr_hg.txt. Bins KEPT; the final pass + bin deletion follows when the remaining arms have run.
