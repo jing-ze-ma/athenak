@@ -1,0 +1,45 @@
+
+== orion hg: never-read parameters (grep -A40 'never read', a/run.log)
+### WARNING: 14 input parameter(s) were never read by the code (typo, or a key AthenaK does not have?):
+###   mesh/cs_seam_blockend = extend
+###   mesh/cs_vertex_3cell = true
+###   mesh/cs_seam_rho_guard = 4
+###   hydro/wb_cache_every = 0
+###   rad_m1/time2_pred_cap = 0.5
+###   rad_m1/vet_gd_twin_lowmem = true
+###   problem/he_ic_rad_gas = column
+###   problem/he_ic_rad_hse = false
+###   problem/user_bcs = true
+###   problem/he_ic_balance_rmax = 2.004505e+12
+###   output1/dt = 3600.0
+###   output2/dt = 10800.0
+###   output3/dt = 10800.0
+###   output5/dt = 43200.0
+elapsed=5.659607e+01 cycle=1 time=3.835405e+01 dt=3.835426e+01
+CLEAN OLDVEC cycle 1 t2s 2 eint<0 32835929 (taken as 0) E<0 0
+CLEAN cycle 1 t2s 2 it 2 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 2008 first 0 2008 guard 0 solves 4 cwin 0
+CLEAN XT cycle 1 t2s 2 write-back closure 1.216e-02
+CLEAN cycle 1 t2s 3 it 8 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 3982 first 0 3982 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 1 t2s 3 ledger 2.1721245832244364e+35
+CLEAN XT cycle 1 t2s 3 write-back closure 2.176e-02
+elapsed=5.895151e+01 cycle=2 time=7.670830e+01 dt=3.834828e+01
+CLEAN OLDVEC cycle 2 t2s 2 eint<0 47722016 (taken as 0) E<0 0
+CLEAN cycle 2 t2s 2 it 8 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 2 t2s 2 write-back closure 2.609e-05
+CLEAN cycle 2 t2s 3 it 0 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4 cwin 0
+CLEAN LZB cycle 2 t2s 3 ledger 5.0485361080761581e+35
+CLEAN XT cycle 2 t2s 3 write-back closure 1.196e-04
+elapsed=6.122450e+01 cycle=3 time=1.150566e+02 dt=3.834975e+01
+CLEAN OLDVEC cycle 3 t2s 2 eint<0 6626438 (taken as 0) E<0 0
+CLEAN cycle 3 t2s 2 it 6 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4 cwin 0
+CLEAN XT cycle 3 t2s 2 write-back closure 7.748e-06
+CLEAN cycle 3 t2s 3 it 5 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3 t2s 3 ledger 1.0244818816976000e+37
+CLEAN XT cycle 3 t2s 3 write-back closure 6.556e-05
+elapsed=6.351799e+01 cycle=4 time=1.534063e+02 dt=3.834989e+01
+CLEAN ray cut cycle 4 shell 95 -> 116 (want 116, R)
+CLEAN OLDVEC cycle 4 t2s 2 eint<0 1062 (taken as 0) E<0 0
+CLEAN cycle 4 t2s 2 it 0 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 4 cwin 0
+CLEAN XT cycle 4 t2s 2 write-back closure 6.931e-05
+== he_ic_balance lines (a/run.log)
+###   problem/he_ic_balance_rmax = 2.004505e+12

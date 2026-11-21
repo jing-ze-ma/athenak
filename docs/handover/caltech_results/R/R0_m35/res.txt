@@ -17,3 +17,6 @@ b rc=1 wall=24
 restart from 
 b rc=1 wall=9
 DONE
+
+== orion hg: never-read parameters (grep -A40 'never read', a/run.log)
+== he_ic_balance lines (a/run.log)

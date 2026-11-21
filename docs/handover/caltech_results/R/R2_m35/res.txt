@@ -12,3 +12,8 @@ a 'he_ic_equil' 0
 GPU mem peak MiB max 25895 min 25895 (n=4) = 18.0 % of 143771 MiB
 a rc=1 wall=24
 DONE
+
+== orion hg: never-read parameters (grep -A40 'never read', a/run.log)
+== he_ic_balance lines (a/run.log)
+he_star_m1: he_ic_balance cells: max |T/T_col - 1| = 7.54952e-15 at r = 9.99075e+11
+he_star_m1: he_ic_balance: max |rho/rho_col - 1| = 0.00147662 at r = 6.75093e+11, max face residual |PR/PL - 1| = 1.55431e-15, wall cells a_ref (module form), last change 0; wall ghost/edge rho 1.02076 T 1.0073
