@@ -1,0 +1,6 @@
+CLEAN WARNING cycle 624967 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN WARNING cycle 624967: backward-Euler solve not converged (dt_retry, 2 so far; last change 5.910e-03)
+CLEAN WARNING cycle 625001 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN WARNING cycle 625001: backward-Euler solve not converged (dt_retry, 2 so far; last change 1.955e-03)
+CLEAN WARNING cycle 625032 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN WARNING cycle 625032: backward-Euler solve not converged (dt_retry, 2 so far; last change 1.704e-03)
