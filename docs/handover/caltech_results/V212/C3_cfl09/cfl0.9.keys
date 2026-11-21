@@ -1,0 +1,4 @@
+rad_m1/clean_conv_max=1.0e-4
+rad_m1/clean_face_opac=harmonic
+rad_m1/clean_stag_opac_update=true
+time/cfl_number=0.9

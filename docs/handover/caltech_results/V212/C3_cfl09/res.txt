@@ -1,0 +1,15 @@
+C3_cfl09: cfl 0.9, B_opac3 772ee5ac6 (35416663), node hpc-sm-02-11, copy of t9l62 t9l62.t9l62.00029.rst (N0 26826), keys rst + conv_max 1e-4 + face harmonic + opac_update true (no damp, no thinf_held_gate), t_end 1269300, rst off
+rc: rc=0 wall=248 | cycles 26850-26918 (68 logged) | wall per simulated second 0.01272 s/s (elapsed 118.172 s over t 9288 s from the cycle lines) | s/cycle 2.36 | dt range 1.666102e+02 .. 1.971578e+02
+CW 0 FATAL 0 | DT_RETRY lines 0 | passes/stage 2.2 mean / 5 max (n=185)
+CW / dt_retry locations:
+series (user.hst every 10 cycles): t KE_int L_top L_in L_bot
+1.25339e+06 5.9117e+43 1.4898e+39 8.7637e+38 7.714e+38
+1.25522e+06 5.9139e+43 1.496e+39 8.7637e+38 7.5479e+38
+1.25713e+06 5.9156e+43 1.4954e+39 8.7637e+38 7.7889e+38
+1.25909e+06 5.9171e+43 1.4965e+39 8.7637e+38 8.3669e+38
+1.26102e+06 5.9187e+43 1.4974e+39 8.7637e+38 9.0306e+38
+1.26297e+06 5.9207e+43 1.4966e+39 8.7637e+38 9.6067e+38
+1.26473e+06 5.9229e+43 1.4981e+39 8.7637e+38 9.8445e+38
+1.26642e+06 5.9257e+43 1.4978e+39 8.7637e+38 9.8025e+38
+1.26808e+06 5.9291e+43 1.4989e+39 8.7637e+38 9.5521e+38
+1.2693e+06 5.9321e+43 1.5006e+39 8.7637e+38 9.2859e+38
