@@ -1,0 +1,19 @@
+W4c_hg_off: W4 HG hegiant.00139 (the C2F_hg restart), B_opac 00ad333b7 (0d21a36c), node hpc-sm-02-11, keys rst + rad_m1/scheme=clean rad_m1/clean_layout=staggered rad_m1/clean_rays=sc rad_m1/clean_rot_ring=live rad_m1/vet_gd_rotate_xfade=true rad_m1/vet_rotate_advance=true rad_m1/vet_gd_rotate_align=true rad_m1/time2_face_fct=true rad_m1/zalesak_active=true rad_m1/clean_xt_exact=cons rad_m1/implicit_pos_gas=true rad_m1/implicit_pos_floor_cons=true rad_m1/implicit_pos_floor_gas_keep=1 rad_m1/implicit_pos_gas_cons=true rad_m1/clean_stag_xdonor=lag rad_m1/clean_stag_xsrc=true rad_m1/clean_stag_mg_color=mirror rad_m1/time2_k1_redist=0 rad_m1/time2_auto_be=16 rad_m1/time2_stage_local_be=false rad_m1/implicit_predictor_tcap=1.1 rad_m1/vet_gd_tangential=true mesh/layout_invariant=true hydro/split_c2p_once=true hydro/wall_wb_onesided=true time/dt_retry=true time/cfl_number=0.3 rad_m1/time2_k1_stiff=0 time/restart_refill_ghosts=false rad_m1/clean_conv_kappa=1.0 rad_m1/clean_rot_fuse=true rad_m1/cs_vertex_mono=true rad_m1/cs_cross_mono=true mesh/cs_seam_blockend=extend mesh/cs_vertex_3cell=true mesh/cs_seam_rho_guard=4 rad_m1/vet_gd_gl_nmu=0 rad_m1/vet_gd_geo=2 rad_m1/vet_rotate_avg=8 problem/he_ic_file=@J@/hgglob_1021/files/hg145-prod-1018/ic_hegiant_14p5M_mk.txt problem/he_opac_table=@J@/hgglob_1021/files/hg145-prod-1018/rosseland_mesakap_afe2dd8da2bd.txt problem/he_planck_table=@J@/hgglob_1021/files/hg145-prod-1018/planck_ext2_x0.0009496_z0.0215304_416a61196c64.txt rad_m1/vet_gd_rotate_dt=1170 rad_m1/vet_gd_rotate_axis=3d hydro/eos_logt_max=8.0 time/tlim=1e30 time/ndiag=1 output2/dt=1e30 output3/dt=1e30 output4/dt=1e30 output5/dt=1e30 output6/dt=1e30 rad_m1/clean_init=given hydro/tfloor_kelvin=1000 hydro/eos_logt_min=2.9 hydro/floor_pay=rad_column rad_m1/vet_rotate_avg_ema=128 rad_m1/vet_rotate_avg_ema_change_form=step rad_m1/clean_cs_lz_tel=true rad_m1/clean_stag_thinf=true rad_m1/clean_maxit=800 rad_m1/clean_conv_max=1.0e-4 rad_m1/clean_stag_thinf_held_gate=true 
+rc: rc=0 wall=1241 | CW 20 FATAL 0 | solves/stage-pass 20.0 mean / 200 max (n=313) | dt range 4.257952e-01 .. 1.090909e+02 | wall/cycle 7.85 s
+series (user.hst, every 10 cycles): t  KE_int  L_top  L_in  L_bot
+5.01126e+07 1.6322e+44 1.2582e+38 1.4037e+38 2.2885e+38
+5.01127e+07 1.6322e+44 1.2314e+38 1.4037e+38 2.3472e+38
+5.01127e+07 1.6322e+44 1.2399e+38 1.4037e+38 2.4021e+38
+5.01129e+07 1.6322e+44 1.3757e+38 1.4037e+38 2.497e+38
+5.01132e+07 1.6322e+44 1.2613e+38 1.4037e+38 2.6304e+38
+5.01141e+07 1.6322e+44 1.5214e+38 1.4037e+38 2.4655e+38
+5.01151e+07 1.6323e+44 1.5889e+38 1.4037e+38 1.7032e+38
+5.01162e+07 1.6323e+44 1.537e+38 1.4037e+38 1.036e+38
+5.01173e+07 1.6324e+44 1.5245e+38 1.4037e+38 8.2373e+37
+5.01176e+07 1.6324e+44 1.5535e+38 1.4037e+38 8.525e+37
+5.01176e+07 1.6324e+44 1.5556e+38 1.4037e+38 8.5304e+37
+5.01176e+07 1.6324e+44 1.5547e+38 1.4037e+38 8.5372e+37
+5.01176e+07 1.6324e+44 1.5514e+38 1.4037e+38 8.5544e+37
+5.01176e+07 1.6324e+44 1.5494e+38 1.4037e+38 8.6013e+37
+5.01177e+07 1.6324e+44 1.5522e+38 1.4037e+38 8.7379e+37
+final bins kept in /resnick/groups/carnegie_poc/jingze/orion_runs_1121/v210/W4c_hg_off/a/bin
