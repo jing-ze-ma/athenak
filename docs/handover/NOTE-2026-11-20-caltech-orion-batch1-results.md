@@ -1039,3 +1039,5 @@ B_br gate not passed; arms not started
   CW i1_m35mms (log.0) cycle 7736 [cycle=7750 time=7.983394e+04 dt=6.054057e+00]: CLEAN WARNING cycle 7736 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 3)
   CW t19r (log.0) cycle 753 []: CLEAN WARNING cycle 753 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 25)
   CW t19r (log.0) cycle 756 []: CLEAN WARNING cycle 756 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 26)
+- (00:39) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW i1_m35mms (log.0) cycle 7867 []: CLEAN WARNING cycle 7867 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 4)
