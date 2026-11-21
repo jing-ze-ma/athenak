@@ -1,0 +1,9 @@
+V8c: m35mms successor-key preflight (B_v207 86d31021, restart from a copy of m35mms.00012.rst, t 259200, N0 ~33383, keys from the rst + conv_max 1e-4 + thinf_held_gate + pass_damp 1, 300 cycles, rst off), node hpc-sm-02-11
+rc: rc=0 wall=376 | cycles -
+CW  FATAL 
+solves/stage-pass: 
+dt test (every 50): 
+dt production (last 10 cycle lines): 35500:6.354 35550:6.252 35600:5.999 35650:5.839 35700:5.725 35750:5.782 35800:5.76 35850:5.841 35900:5.957 35950:6.105 
+user.hst test: [t 259804 KE 1.427e+39 Ltop/Lin 1.0146] [t 260405 KE 1.435e+39 Ltop/Lin 1.0148] [t 261007 KE 1.438e+39 Ltop/Lin 1.0063] 
+user.hst production, same t range: [t 259804 KE 1.427e+39 Ltop/Lin 1.0055] [t 260403 KE 1.435e+39 Ltop/Lin 1.0094] [t 261005 KE 1.438e+39 Ltop/Lin 1.0102] 
+wall/cycle: test  s | production (last 500 cycles) 1.28 s
