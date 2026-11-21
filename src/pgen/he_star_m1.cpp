@@ -164,7 +164,12 @@ Real hs_drv_d0_ = 1.0, hs_drv_e0_ = 1.0;
 // problem/he_sponge_dmax (default 0 = off): the sponge also acts, at its full rate, on
 // every cell with rho < he_sponge_dmax (the floor gas above the photosphere, which can
 // not be hydrostatic and falls freely)
-bool hs_bhse_ = false, hs_bhse_tg_ = false, hs_sp_rad_ = false;
+// problem/he_sponge_form (read only when named): exp (default) = u0 *= exp(-bdt rate w)
+// after each RK stage (1st order in time); lawson = the integrating-factor form of the
+// SSP-RK stages (exact for the decay, 2nd order, weights >= 0): the stage's u^n part
+// decays over c_s dt, the rest over (c_s - c_{s-1}) dt; w and the rho < dmax flag from
+// u^n (u1), the same on every stage
+bool hs_bhse_ = false, hs_bhse_tg_ = false, hs_sp_rad_ = false, hs_sp_law_ = false;
 // problem/he_bc_hse_flux = face (default on a fresh start) | cell: the radial flux in the
 // hse top's Gamma.  face = the transported comoving face flux (f0x1, mean of the top
 // cell's two x1 faces); cell = the old clipped lab-frame cell F1.  A restart whose
@@ -2887,6 +2892,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (pin->DoesParameterExist("problem","he_sponge_dmax")) {
     hs_sp_dmax_ = pin->GetReal("problem","he_sponge_dmax");
   }
+  if (pin->DoesParameterExist("problem","he_sponge_form")) {
+    const std::string sf = pin->GetString("problem","he_sponge_form");
+    if (sf != "exp" && sf != "lawson") {
+      HsFatal("problem/he_sponge_form must be exp|lawson", __LINE__);
+    }
+    hs_sp_law_ = (sf == "lawson");
+  }
   hs_rtop_ = rtop;
   if (pin->DoesParameterExist("problem","he_clump")) {
     hs_cl_on_ = pin->GetBoolean("problem","he_clump");
@@ -3788,15 +3800,40 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
   // he_sponge_mode = radial: only v_r (the transverse momenta are untouched)
   auto &x1v = pmbp->pcoord->x1v;
   const Real rate = hs_sp_rate_, r0 = hs_sp_r0_, rt = hs_rtop_, spd = hs_sp_dmax_;
+  // he_sponge_form = lawson: this stage's abscissa c (c_s = gam0_s c_{s-1} + beta_s)
+  // from the integrator's weights (found by beta_s dt = bdt): u0 = fa (u0 - g1 u^n) +
+  // fb g1 u^n, fa = exp(-ca rate w), fb = exp(-cb rate w)
+  const bool law = hs_sp_law_;
+  auto u1 = ph->u1;
+  Real ca = bdt, cb = bdt, g1 = 0.0;
+  if (law) {
+    Real c = 0.0, cp = 0.0;
+    int s = -1;
+    for (int q = 0; q < pm1->fref_hnst && s < 0; ++q) {
+      cp = c;
+      c = pm1->fref_hgam0[q]*c + pm1->fref_hbeta[q];
+      if (std::abs(bdt - pm1->fref_hbeta[q]*pm->dt) <= 1.0e-12*bdt) s = q;
+    }
+    if (s < 0) HsFatal("problem/he_sponge_form = lawson: no rk1/rk2/rk3 stage has this "
+                       "beta dt", __LINE__);
+    ca = (c - cp)*pm->dt;
+    cb = c*pm->dt;
+    g1 = 1.0 - pm1->fref_hgam0[s];
+  }
   if (hs_sp_rad_) {
     par_for("hs_sponge_r", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real r = x1v(m,i);
-      const bool low = (u0(m,IDN,k,j,i) < spd);
+      const bool low = ((law ? u1(m,IDN,k,j,i) : u0(m,IDN,k,j,i)) < spd);
       if (r <= r0 && !low) return;
       const Real w = low ? 1.0 : SQR((r - r0)/(rt - r0));
-      const Real f = exp(-bdt*rate*w);
+      const Real f = exp(-ca*rate*w);
       const Real ke1 = 0.5*SQR(u0(m,IM1,k,j,i))/u0(m,IDN,k,j,i);
+      if (law) {
+        u0(m,IM1,k,j,i) = f*u0(m,IM1,k,j,i) + (exp(-cb*rate*w) - f)*g1*u1(m,IM1,k,j,i);
+        u0(m,IEN,k,j,i) -= ke1 - 0.5*SQR(u0(m,IM1,k,j,i))/u0(m,IDN,k,j,i);
+        return;
+      }
       u0(m,IM1,k,j,i) *= f;
       u0(m,IEN,k,j,i) -= (1.0 - f*f)*ke1;
     });
@@ -3817,15 +3854,27 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
   par_for("hs_sponge", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real r = x1v(m,i);
-    const bool low = (u0(m,IDN,k,j,i) < spd);
+    const bool low = ((law ? u1(m,IDN,k,j,i) : u0(m,IDN,k,j,i)) < spd);
     if (r <= r0 && !low) return;
     const Real w = low ? 1.0 : SQR((r - r0)/(rt - r0));
-    const Real f = exp(-bdt*rate*w);
+    const Real f = exp(-ca*rate*w);
     const Real d = u0(m,IDN,k,j,i);
     const Real ke0 = hcsg ? HsKeCs(u0(m,IM1,k,j,i), u0(m,IM2,k,j,i), u0(m,IM3,k,j,i), d,
                                    hccl(m,k,j))
                           : 0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
                           + SQR(u0(m,IM3,k,j,i)))/d;
+    if (law) {
+      const Real fu = (exp(-cb*rate*w) - f)*g1;
+      const Real m1 = f*u0(m,IM1,k,j,i) + fu*u1(m,IM1,k,j,i);
+      const Real m2 = f*u0(m,IM2,k,j,i) + fu*u1(m,IM2,k,j,i);
+      const Real m3 = f*u0(m,IM3,k,j,i) + fu*u1(m,IM3,k,j,i);
+      u0(m,IM1,k,j,i) = m1;
+      u0(m,IM2,k,j,i) = m2;
+      u0(m,IM3,k,j,i) = m3;
+      u0(m,IEN,k,j,i) -= ke0 - (hcsg ? HsKeCs(m1, m2, m3, d, hccl(m,k,j))
+                                     : 0.5*(SQR(m1) + SQR(m2) + SQR(m3))/d);
+      return;
+    }
     u0(m,IM1,k,j,i) *= f;
     u0(m,IM2,k,j,i) *= f;
     u0(m,IM3,k,j,i) *= f;
