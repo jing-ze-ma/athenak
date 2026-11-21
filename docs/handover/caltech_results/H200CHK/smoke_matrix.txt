@@ -39,3 +39,56 @@ a rc=0 wall=14
 <rad_m1> clean_init steady pass 3: max(|dE|, |dF|/c)/max E = 2.280e-13
 <rad_m1> clean_init steady: converged after 4 passes, residual 2.280e-13 (tol 1.0e-08; 0 formal solutions); radiation E 4.1527620104e+45 -> 4.1609123298e+45, F/c 3.5094e+39 0.0000e+00 0.0000e+00 -> 1.5036e+41 1.4139e+34 -2.0679e+33 (volume sums)
 -- launch errors / memcheck
+=== H200S_v203n env: Kokkos_CUDA_MALLOC_ASYNC=OFF KOKKOS_CUDA_MALLOC_ASYNC=OFF OMP_NUM_THREADS=1 (bin /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v203n_e688cb7bc md5 8d3f469f; NR=1, nlim 1, mesh/nx2=32 mesh/nx3=32 meshblock/nx2=32 meshblock/nx3=32, node hpc-sm-02-11)
+a rc=0 wall=15
+<rad_m1> clean_init steady pass 0: max(|dE|, |dF|/c)/max E = 9.534e-02
+<rad_m1> clean_init steady pass 1: max(|dE|, |dF|/c)/max E = 4.020e-06
+<rad_m1> clean_init steady pass 2: max(|dE|, |dF|/c)/max E = 1.109e-06
+<rad_m1> clean_init steady pass 3: max(|dE|, |dF|/c)/max E = 2.281e-06
+<rad_m1> clean_init steady pass 4: max(|dE|, |dF|/c)/max E = 2.520e-06
+<rad_m1> clean_init steady pass 5: max(|dE|, |dF|/c)/max E = 2.379e-06
+<rad_m1> clean_init steady pass 6: max(|dE|, |dF|/c)/max E = 1.462e-06
+<rad_m1> clean_init steady pass 7: max(|dE|, |dF|/c)/max E = 1.983e-06
+<rad_m1> clean_init steady pass 8: max(|dE|, |dF|/c)/max E = 1.936e-06
+<rad_m1> clean_init steady pass 9: max(|dE|, |dF|/c)/max E = 2.075e-06
+<rad_m1> clean_init steady pass 10: max(|dE|, |dF|/c)/max E = 2.081e-06
+<rad_m1> clean_init steady pass 11: max(|dE|, |dF|/c)/max E = 2.474e-06
+<rad_m1> clean_init steady pass 12: max(|dE|, |dF|/c)/max E = 2.850e-06
+<rad_m1> clean_init steady pass 13: max(|dE|, |dF|/c)/max E = 2.908e-06
+<rad_m1> clean_init steady pass 14: max(|dE|, |dF|/c)/max E = 3.008e-06
+<rad_m1> clean_init steady pass 15: max(|dE|, |dF|/c)/max E = 2.932e-06
+<rad_m1> clean_init steady pass 16: max(|dE|, |dF|/c)/max E = 2.556e-06
+<rad_m1> clean_init steady pass 17: max(|dE|, |dF|/c)/max E = 2.771e-06
+<rad_m1> clean_init steady pass 18: max(|dE|, |dF|/c)/max E = 2.192e-06
+<rad_m1> clean_init steady pass 19: max(|dE|, |dF|/c)/max E = 2.847e-06
+<rad_m1> clean_init steady pass 20: max(|dE|, |dF|/c)/max E = 2.438e-06
+<rad_m1> clean_init steady pass 21: max(|dE|, |dF|/c)/max E = 2.586e-06
+<rad_m1> clean_init steady pass 22: max(|dE|, |dF|/c)/max E = 2.352e-06
+<rad_m1> clean_init steady pass 23: max(|dE|, |dF|/c)/max E = 2.290e-06
+<rad_m1> clean_init steady pass 24: max(|dE|, |dF|/c)/max E = 2.471e-06
+<rad_m1> clean_init steady pass 25: max(|dE|, |dF|/c)/max E = 2.254e-06
+<rad_m1> clean_init steady pass 26: max(|dE|, |dF|/c)/max E = 2.258e-06
+<rad_m1> clean_init steady pass 27: max(|dE|, |dF|/c)/max E = 1.859e-06
+<rad_m1> clean_init steady pass 28: max(|dE|, |dF|/c)/max E = 1.825e-06
+<rad_m1> clean_init steady pass 29: max(|dE|, |dF|/c)/max E = 2.144e-06
+<rad_m1> clean_init steady pass 30: max(|dE|, |dF|/c)/max E = 2.498e-06
+<rad_m1> clean_init steady pass 31: max(|dE|, |dF|/c)/max E = 2.595e-06
+<rad_m1> clean_init steady pass 32: max(|dE|, |dF|/c)/max E = 2.249e-06
+<rad_m1> clean_init steady pass 33: max(|dE|, |dF|/c)/max E = 2.059e-06
+<rad_m1> clean_init steady pass 34: max(|dE|, |dF|/c)/max E = 2.033e-06
+<rad_m1> clean_init steady pass 35: max(|dE|, |dF|/c)/max E = 1.871e-06
+<rad_m1> clean_init steady pass 36: max(|dE|, |dF|/c)/max E = 1.754e-06
+<rad_m1> clean_init steady pass 37: max(|dE|, |dF|/c)/max E = 2.474e-06
+<rad_m1> clean_init steady pass 38: max(|dE|, |dF|/c)/max E = 2.184e-06
+<rad_m1> clean_init steady pass 39: max(|dE|, |dF|/c)/max E = 1.848e-06
+<rad_m1> clean_init steady pass 40: max(|dE|, |dF|/c)/max E = 2.092e-06
+<rad_m1> clean_init steady pass 41: max(|dE|, |dF|/c)/max E = 2.233e-06
+<rad_m1> clean_init steady pass 42: max(|dE|, |dF|/c)/max E = 2.039e-06
+<rad_m1> clean_init steady pass 43: max(|dE|, |dF|/c)/max E = 1.914e-06
+<rad_m1> clean_init steady pass 44: max(|dE|, |dF|/c)/max E = 1.991e-06
+<rad_m1> clean_init steady pass 45: max(|dE|, |dF|/c)/max E = 2.155e-06
+<rad_m1> clean_init steady pass 46: max(|dE|, |dF|/c)/max E = 2.397e-06
+<rad_m1> clean_init steady pass 47: max(|dE|, |dF|/c)/max E = 2.896e-06
+<rad_m1> clean_init steady pass 48: max(|dE|, |dF|/c)/max E = 2.617e-06
+<rad_m1> clean_init steady pass 49: max(|dE|, |dF|/c)/max E = 2.697e-06
+<rad_m1> clean_init steady: NOT converged after 50 passes, residual 2.697e-06 (tol 1.0e-08; 0 formal solutions); radiation E 4.1527620104e+45 -> 4.1604261309e+45, F/c 3.5094e+39 0.0000e+00 0.0000e+00 -> 1.3589e+42 -5.3288e+39 2.2381e+36 (volume sums)
