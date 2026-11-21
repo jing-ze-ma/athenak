@@ -275,16 +275,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "(clean_stag_ftie, fsweeps, mesh or MeshBlock size)" << std::endl;
     }}
     // the consistency term is the default on Cartesian meshes and, with the vet_gd
-    // rays (sc), on spherical polar; on the cubed sphere the default with vet_gd
-    // (well-balanced only with it)
-    const bool sp = pmy_pack->pmesh->use_spherical_polar;
-    const bool cs = pmy_pack->pmesh->use_cubed_sphere;
+    // rays (sc), on spherical polar and the cubed sphere (well-balanced only with them)
+    const bool curv = pmy_pack->pmesh->use_spherical_polar ||
+                      pmy_pack->pmesh->use_cubed_sphere;
     const bool vg = pin->DoesParameterExist("rad_m1","vet_gd") &&
                     pin->GetBoolean("rad_m1","vet_gd");
-    const bool gd = sp && vg;
     // (sp and cs, fresh: recorded so that a restart keeps it; a restart file without
     // the key ran the removed FV rays fv1: FATAL unless the input names clean_rays)
-    if ((gd || (cs && vg)) && !pin->DoesParameterExist("rad_m1","clean_rays")) {
+    if (curv && vg && !pin->DoesParameterExist("rad_m1","clean_rays")) {
       if (global_variable::restart_run) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
           << std::endl << "<rad_m1>/clean_rays: the restart file ran the removed FV rays "
@@ -295,7 +293,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // (with the split energy flux, where the rays are not opt-in)
     cln_split = true;
-    cln_consist = pin->GetOrAddBoolean("rad_m1","clean_consistency", cs ? vg : !sp || gd);
+    cln_consist = pin->GetOrAddBoolean("rad_m1","clean_consistency", !curv || vg);
     // clean_gd_face_fuse (read only when named; default true): sp sc rays, both
     // lateral faces and the r face of a cell in one pass over the directions (cln_gd_fs,
     // bitwise the three kernels cln_gd_lat x2 + cln_gd_rf)
