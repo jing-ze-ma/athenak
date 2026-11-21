@@ -226,7 +226,7 @@ constexpr int M1_OPAC_TABLE    = 3;   // stellar Rosseland + Planck tables (mile
 
 // <rad_m1>/force_reference: what the momentum coupling SUBTRACTS from the radiative
 // force before handing it to the gas.  See RadiationM1::arad_ref and the bookkeeping
-// note at the head of rad_m1_coupling.cpp.
+// note at the head of rad_m1_fluid.cpp.
 constexpr int M1_FREF_NONE    = 0;
 constexpr int M1_FREF_WB_ARAD = 1;
 constexpr int M1_FREF_CLEAN   = 2;   // scheme = clean: its own force of the first solve
@@ -967,7 +967,7 @@ class RadiationM1 {
   bool dbg_hydro_skip_t2 = false;   // DIAGNOSTIC: the same on hesdirk2
   // force_reference_work (ke-dt-0926; read only when named, force_reference = wb_arad
   // only): `full` (default) = the solve hands the gas the work of the FULL force and the
-  // WB source none (rad_m1_coupling.cpp header; its internal-energy cancellation is
+  // WB source none (rad_m1_fluid.cpp header; its internal-energy cancellation is
   // O(dt^2) per step); `split` = the WB source gives the gas the work of rho arad_ref at
   // its own stage (the pgen reads fref_wsplit), the solve gives only the residual's
   // work, and the radiation pays both

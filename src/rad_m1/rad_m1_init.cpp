@@ -3,40 +3,11 @@
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
-//! \file rad_m1_implicit.cpp
-//! \brief IMPLICIT transport along x1 columns, <rad_m1>/transport = implicit_x1
-//! (milestone 3a of docs/dev/rad_m1_implicit_design.md).
-//!
-//! ONE backward-Euler solve per hydro step, at the TRUE speed of light, no sub-cycling
-//! and no PD-ARS.  The normal flux lives on the x1 FACES and is eliminated there, which
-//! turns the coupled (E, F) system into one tridiagonal M-matrix system for E per column:
-//!
-//!   F0'_f = theta_f [ F0^n_f - chat c dt (w_i E'_i - w_{i-1} E'_{i-1})/dx
-//!                     - chat dt v_f g0_f ],    theta_f = 1/(1 + chat dt (rho k_t)_f)
-//!   E'_i + (dt/dx)(chat/c)[ (F0' + A')_{i+1/2} - (F0' + A')_{i-1/2} ]
-//!        = E^n_i + dt chat (rho kappa_P a T'^4 - rho kappa_E E0'_i)
-//!
-//! with w = P_11/E from the LAGGED closure (= chi in 1-D), A = a E the enthalpy flux
-//! (a = v1 (1 + w)) upwinded with the face velocity, and the emission term linearised in
-//! T and eliminated into the diagonal (design sect. 2).  Both the diffusion and the
-//! upwind-advection off-diagonals are non-positive and the source adds
-//! dt chat rho kappa_E rho c_v/B >= 0 to the diagonal, so the matrix is an M-matrix and
-//! E' > 0 at any dt.
-//!
-//! OUTER LOOP: Picard on (w, theta, a, de0, g0, the upwind directions, optionally the
-//! opacities) plus the safeguarded scalar root find for T' at fixed E'.  At convergence
-//! the linearised emission correction vanishes identically, so the converged state
-//! satisfies the NONLINEAR backward-Euler equations (see the note above
-//! M1ImplTemperature).
-//!
-//! RESTRICTIONS of 3a, all fatal:
-//!   * exactly ONE MeshBlock along x1 (each column is solved by a plain Thomas sweep
-//!     inside one block; the partitioned line solve of two_stream_column_partition.hpp
-//!     is NOT used);
-//!   * nx2 = nx3 = 1 unless <rad_m1>/implicit_allow_multid = true, in which case the
-//!     columns are INDEPENDENT: there is no transport along x2/x3 in this mode and
-//!     F_2 = F_3 = 0 always;
-//!   * no SMR/AMR.
+//! \file rad_m1_init.cpp
+//! \brief set-up of the implicit radiation (<rad_m1>/transport = implicit): the key
+//! reading and checks (ImplicitInit), the x1 partition (ImplicitPartitionInit), the
+//! on-rank halo copies of the work array (ImplicitHalo*), the run-end report
+//! (ImplicitReport, EventTotals) and the face-flux restart slabs (FaxRst*).
 
 #include <float.h>
 

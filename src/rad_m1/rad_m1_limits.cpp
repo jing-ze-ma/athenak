@@ -3,26 +3,9 @@
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
-//! \file rad_m1_fluxes.cpp
-//! \brief closure/limit pass and the transport fluxes of the M1 moments.
-//!
-//! Design sect. 3: reconstruct (E, f_i = F_i/(c E)) and rebuild F = c E f, so that
-//! |f| <= 1 survives reconstruction (QUOKKA).  The face flux is then plain HLL with
-//! the Skinner & Ostriker (2013) closed-form wave speeds (thick_flux = none).
-//!
-//! MILESTONE 1c-B: <rad_m1>/reconstruct = dc | plm | ppm4 | ppmx | wenoz, using the
-//! scalar kernels of src/reconstruct/.  The three high-order ones read a 5-cell stencil
-//! per face state, so the face at i needs cells i-3..i+2 and <mesh>/nghost >= 3; dc and
-//! plm keep the 4-cell load of 1c-A and are bit-identical to it.  In the ap_hll flux
-//! only `dc` selects Berthon's form: every reconstruction that puts a second-order (or
-//! better) polynomial on the face makes the face jump O(dx^2) and needs the alpha2
-//! blend, exactly as plm does.
-//!
-//! MILESTONE 1c-B, the advective split: the velocity that builds the enthalpy flux
-//! A = v E + v.P is reconstructed to the face with the SAME method as (E, f_i) when
-//! <rad_m1>/split_vel = recon (the default), instead of each side's cell velocity
-//! (= split_vel is cell, the 1c-A behaviour).  The upwind direction is the mean of the
-//! two reconstructed face-normal velocities.
+//! \file rad_m1_limits.cpp
+//! \brief the closure-limit pass of the M1 moments (ApplyClosureLimits): E >= e_floor
+//! and |F| <= c E; scheme = clean keeps its solution.
 
 #include <math.h>
 

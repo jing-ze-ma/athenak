@@ -3,37 +3,10 @@
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
-//! \file rad_m1_coupling.cpp
-//! \brief the implicit local matter coupling of design sect. 4, called inside BOTH
-//! PD-ARS stages, and the gas half of the PD-ARS combination.
-//!
-//! Per cell, with (*) the state left by the explicit transport update of this stage:
-//!
-//!  (a) ENERGY EXCHANGE, implicit.  With E' = [E* + chat dt (rho kappa_P a T'^4
-//!      - rho kappa_E dE0)]/(1 + chat dt rho kappa_E), solve
-//!         y(T') = e_gas(rho,T') + (c/chat) E'(T') - [e_gas* + (c/chat) E*] = 0
-//!      by a bracketed Newton with bisection fallback.  T'^4 is NOT linearised: that is
-//!      what makes a tabulated EOS converge.  The gas energy is then SET algebraically
-//!      from the invariant rather than integrated, so e_gas + (c/chat) E is conserved to
-//!      round-off and not to the solver tolerance.  dE0 = E0* - E* is the O(beta)
-//!      velocity correction of the comoving energy density, taken EXPLICITLY at (*).
-//!  (b) FLUX, linear backward Euler:
-//!         F' = [F* + chat dt rho k_t (v E' + v.P') - chat c dt beta g0']/(1+chat dt k_t)
-//!         delta(rho v) = -(F' - F*)/(chat c),     g0' = (E* - E')/(chat dt)
-//!  (c) WORK, explicit: W = vbar.delta(rho v) with vbar the mean of the old and the new
-//!      velocity -- exactly the kinetic-energy change -- so u(IEN) += W leaves the gas
-//!      INTERNAL energy of (a) untouched, and E' -= (chat/c) W keeps the invariant.
-//!
-//! PD-ARS (design sect. 5, corrected for the gas).  With L the transport operator and S
-//! this solve, stage 1 is U1 = U^n + dt L(U^n) + dt S(U1) and stage 2
-//!   U^{n+1} = U^n + dt/2[L(U^n) + L(U1)] + dt/2 S(U1) + dt/2 S(U^{n+1}).
-//! The module's Heun weights already put U^n + dt/2[L(U^n)+L(U1)] + dt/2 S(U1) into the
-//! radiation array at the start of stage 2, because the stage-1 source increment is
-//! carried inside U1 and halved by the average.  The GAS has no transport update here,
-//! so the same average has to be formed explicitly: ugas1 holds the gas state at the
-//! start of the substep and stage 2 replaces g by (g + g^n)/2 before solving.  Without
-//! that the two halves of the invariant get different weights and conservation of
-//! e_gas + (c/chat) E breaks at O(dt).
+//! \file rad_m1_fluid.cpp
+//! \brief the fluid side of the M1 module: the ghost exchange and inversion after a write
+//! of the conserved fluid (HydroConToPrim, FluidRefresh), the near-floor gas cap
+//! (FloorGasCap) and |B|^2/2 (EmagBuild).
 //!
 //! THE REFERENCE FORCE, <rad_m1>/force_reference = wb_arad (milestone 2a).  When an
 //! external well-balanced scheme already carries part of the radiative support -- the

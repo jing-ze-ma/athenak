@@ -186,10 +186,10 @@ add_executable(
         pgen/tests/be_collapse.cpp
 
         rad_m1/rad_m1.cpp
-        rad_m1/rad_m1_coupling.cpp
+        rad_m1/rad_m1_fluid.cpp
         rad_m1/rad_m1_halo.cpp
-        rad_m1/rad_m1_fluxes.cpp
-        rad_m1/rad_m1_implicit.cpp
+        rad_m1/rad_m1_limits.cpp
+        rad_m1/rad_m1_init.cpp
         rad_m1/rad_m1_clean.cpp
         rad_m1/rad_m1_clean_p1.cpp
         rad_m1/rad_m1_clean_p2.cpp
