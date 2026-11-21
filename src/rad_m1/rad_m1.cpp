@@ -247,10 +247,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_stag_ftie")) {
       cln_ftie = pin->GetBoolean("rad_m1","clean_stag_ftie");
     }
-    // clean_stag_tie_gid (default false): spherical polar, Cartesian, the tie's T, d and
-    // Phi by the cubed sphere's rule (CleanStagCsTie): the lower gid's, a block with
-    // itself across a periodic wrap its low face's (F stays the low face's, its storage)
-    cln_tgid = pin->GetOrAddBoolean("rad_m1","clean_stag_tie_gid",false);
+    // clean_stag_tie_gid (default on for a fresh run on a uniform mesh, USER 11-21: one
+    // rule on every mesh; recorded, a restart file without it keeps the old default):
+    // spherical polar, Cartesian, the tie's T, d and Phi by the cubed sphere's rule
+    // (CleanStagCsTie): the lower gid's, a block with itself across a periodic wrap its
+    // low face's (F stays the low face's, its storage)
+    old("clean_stag_tie_gid", "false");
+    cln_tgid = pin->GetOrAddBoolean("rad_m1","clean_stag_tie_gid",
+                                    nw && !pmy_pack->pmesh->multilevel);
     if (cln_tgid && pmy_pack->pmesh->multilevel) {
       std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_tie_gid needs a uniform mesh"
                 << std::endl;
