@@ -2067,3 +2067,4 @@ B_br gate not passed; arms not started
     CLEAN WARNING cycle 624967 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
     CLEAN WARNING cycle 624967: backward-Euler solve not converged (dt_retry, 2 so far; last change 5.910e-03)
     
+- (12:54) W5a_off result: rc: rc=0 wall=337  | CW 0 FATAL 0 | s/cycle 1.95 | dt range 5.936832e+01 .. 6.717703e+01 | GPU mem peak MiB max 78931 min 78733 (n=4) | V211/W5a_off/res_summary.txt
