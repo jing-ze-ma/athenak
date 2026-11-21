@@ -220,15 +220,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     cln_hface = (fo == "harmonic");}
     // clean_stag_fs_line = pcr | thomas: the F solve's x1 lines on a GPU, on every mesh
-    // (the cubed sphere: with clean_stag_fschur); default pcr, thomas on the cubed
-    // sphere; unnamed, the old keys clean_stag_fs_pcr (true) and, on the cubed sphere,
-    // clean_stag_fs_pcr_cs (false) as before
+    // (the cubed sphere: with clean_stag_fschur); default pcr on a fresh run, USER 11-21,
+    // recorded; unnamed in a restart file, the old keys clean_stag_fs_pcr (true) and, on
+    // the cubed sphere, clean_stag_fs_pcr_cs (false: thomas, echoed)
     {const bool cs = pmy_pack->pmesh->use_cubed_sphere;
     auto named = [&](const char *k, const bool d) {
       return pin->DoesParameterExist("rad_m1", k) ? pin->GetBoolean("rad_m1", k) : d;
     };
+    if (cs) old("clean_stag_fs_line", "thomas");
     const bool pcr = named("clean_stag_fs_pcr", true) &&
-                     (!cs || named("clean_stag_fs_pcr_cs", false));
+                     (!cs || named("clean_stag_fs_pcr_cs", nw));
     const std::string fl = pin->GetOrAddString("rad_m1","clean_stag_fs_line",
                                                pcr ? "pcr" : "thomas");
     if (fl != "pcr" && fl != "thomas") {
