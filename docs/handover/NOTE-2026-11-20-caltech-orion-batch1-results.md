@@ -864,3 +864,4 @@ B_br gate not passed; arms not started
   C1R_rsg_ref: 38 cycles, 3.98 s/cycle | passes/cycle 21.2 (over 38 cycles) | min dt (cycle lines) 9.565217e+02 | CW 1 FATAL 0
   C1R_rsg_v7: 36 cycles, 4.09 s/cycle | passes/cycle 20.8 (over 36 cycles) | min dt (cycle lines) 9.565217e+02 | CW 1 FATAL 0
   C1R_rsg_c1: 38 cycles, 3.48 s/cycle | passes/cycle 13.8 (over 38 cycles) | min dt (cycle lines) 9.565217e+02 | CW 0 FATAL 0
+- (22:08) C1R_rsg_ref (B_br, hpc-sm-01-17, 100 cycles, keys c1r/keys/rsg_ref.keys + hydro/floor_pay=rad_column rad_m1/clean_cs_lz_tel=true rad_m1/vet_rotate_avg_ema=128 rad_m1/vet_rotate_avg_ema_change_form=step): rc=0 wall=383 | passes/cycle 18.0 (over 100 cycles) | min dt (cycle lines) 8.198758e+02 | s/cycle 3.152 | CW 1 FATAL 0 | last cycle=589888 time=5.465735e+08
