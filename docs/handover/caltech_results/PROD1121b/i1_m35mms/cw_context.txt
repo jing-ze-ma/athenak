@@ -75,3 +75,17 @@ CLEAN cycle 9555 t2s 2 it -4 (sum 586) pos 0 mark 0 all 0 neg 0 r1 0 r2 11 first
 CLEAN FLIM cycle 9555 t2s 2 faces 7270416 momentum cut sum |dF| V/c^2 4.180299e+27
 CLEAN XT cycle 9555 t2s 2 write-back closure 4.280e-01
 CLEAN WARNING cycle 9555 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 11)
+== 2026-11-21 01:18:07 log.0: CW 12-13 (grep -B5)
+CLEAN FLIM cycle 9589 t2s 3 faces 3821766 momentum cut sum |dF| V/c^2 4.314139e+27
+CLEAN cycle 9589 t2s 3 it -2 (sum 223) pos 0 mark 0 all 0 neg 0 r1 0 r2 10 first 0 10 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 9589 t2s 3 faces 3821766 momentum cut sum |dF| V/c^2 4.314139e+27
+CLEAN LZB cycle 9589 t2s 3 ledger 3.4559316046910130e+40
+CLEAN XT cycle 9589 t2s 3 write-back closure 4.895e-01
+CLEAN WARNING cycle 9589 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 12)
+
+CLEAN FLIM cycle 9605 t2s 3 faces 3812855 momentum cut sum |dF| V/c^2 4.573563e+27
+CLEAN cycle 9605 t2s 3 it -2 (sum 319) pos 0 mark 0 all 0 neg 0 r1 0 r2 5 first 0 5 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 9605 t2s 3 faces 3812855 momentum cut sum |dF| V/c^2 4.573563e+27
+CLEAN LZB cycle 9605 t2s 3 ledger 3.5288860477730399e+40
+CLEAN XT cycle 9605 t2s 3 write-back closure 4.759e-01
+CLEAN WARNING cycle 9605 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 13)
