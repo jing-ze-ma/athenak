@@ -56,7 +56,7 @@
 #include <limits>
 #include <map>
 #include <string>
-#include <thread>
+#include <thread>  // NOLINT(build/c++11)
 #include <utility>
 #include <vector>
 
