@@ -4250,17 +4250,32 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
                                CleanVol(x, m, k-dk, j-dj, i-di))/(x.c*x.c));
           }
         }
+        // (flim: the solution F, whose lines mix the neighbours' bounds, within the same
+        // range, booked as above; the kinetic stress below keeps the solution's f, of
+        // the equation it satisfied, so the gas term is again the absorption of fs)
+        Real fs = f;
+        if (flm) {
+          fs = fmin(fmax(f, -x.c*fmax(x.w(m,e,k,j,i), 0.0)),
+                    x.c*fmax(x.w(m,e,k-dk,j-dj,i-di), 0.0));
+          if (fs != f) {
+            const Real it = 1.0/fc(m,CLF_TH,k,j,i);
+            fc(m,CLF_N+1,k,j,i) -= (f - fs)*it/(x.h*x.c*x.c);
+            Kokkos::atomic_add(&flc(0), 1.0);
+            Kokkos::atomic_add(&flc(1), fabs(f - fs)*it*0.5*(CleanVol(x, m, k, j, i) +
+                               CleanVol(x, m, k-dk, j-dj, i-di))/(x.c*x.c));
+          }
+        }
         // (fkin, the solution's F solve: d = Phi^H - F, Phi^H = F^H + theta d the energy
         // flux's high-order part, whose memory is G + d (CleanFaceSource): its own
         // history, so that its steady state, F^H of G = F^H, does not depend on h)
         if (fk && e == CLW_X && dok) {   // (and its slope, CleanDInc)
-          const Real dd = fc(m,CLF_N,k,j,i) - f - (1.0 - fc(m,CLF_TH,k,j,i))*
+          const Real dd = fc(m,CLF_N,k,j,i) - fs - (1.0 - fc(m,CLF_TH,k,j,i))*
                           fc(m,CLF_N+3,k,j,i);
           fc(m,CLF_N+3,k,j,i) += dd;
           if (kd > 0) fc(m,kd,k,j,i) = dd/x.h;
         }
-        fc(m,CLF_N,k,j,i) = f;
-        fc(m,CLF_N+2,k,j,i) = f;
+        fc(m,CLF_N,k,j,i) = fs;
+        fc(m,CLF_N+2,k,j,i) = fs;
         Real tl[6], tr[6];
         ln.Cell(x, dir, m, k, j, i, k-dk, j-dj, i-di, tl);
         ln.Cell(x, dir, m, k, j, i, k, j, i, tr);
