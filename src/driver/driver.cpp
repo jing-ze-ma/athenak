@@ -1354,6 +1354,8 @@ void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         std::cout << std::endl << "Terminating on cycle limit" << std::endl;
       } else if (pmesh->time >= tlim) {
         std::cout << std::endl << "Terminating on time limit" << std::endl;
+      } else if (stop_ != 0 && stop_ != 2) {
+        std::cout << std::endl << "Terminating on stop request" << std::endl;
       } else {
         std::cout << std::endl << "Terminating on wall clock limit" << std::endl;
       }
