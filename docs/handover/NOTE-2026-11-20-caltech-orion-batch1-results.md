@@ -933,3 +933,4 @@ B_br gate not passed; arms not started
    bsg: cycle=1900 time=2.934666e+05 dt=1.459990e+02 | KE_int 1.1777931261238318e+40 L_bot/L_in 0.921 L_top/L_in 0.999 | CW 0 FATAL 0 | FLIM 15026 floorcap 156 | rst bsg3d.00003.rst
    i1_bsg: cycle=2350 time=3.963913e+05 dt=1.686746e+02 | KE_int 8.2254234571597339e+37 L_bot/L_in 0.994 L_top/L_in 0.972 | CW 0 FATAL 0 | FLIM 14706 floorcap 190 | rst bsg3d.00004.rst
    i1_m35mms: cycle=1550 time=1.812693e+04 dt=1.169500e+01 | KE_int 6.6531932239067646e+36 L_bot/L_in 1.009 L_top/L_in 0.953 | CW 0 FATAL 0 | FLIM 11495 floorcap 153 | rst m35mms.00000.rst
+- (23:24) I1 start: I1_t9 on hpc-sm-02-03 at 23:24:36 (B_j3 f71a22b6, icrel/t9l62.athinput copy (TEST) with ic_t9l62_thin4m_dfl20 gunzipped into fresh_prod_1120/icrel/ and the local tables, tlim 2.0e4)
