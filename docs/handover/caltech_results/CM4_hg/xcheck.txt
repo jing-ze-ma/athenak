@@ -1,0 +1,1 @@
+passes/cycle 139.3 (over 30 cycles) | min dt (cycle lines) 6.807273e+00 | s/cycle 12.039 | CW 8
