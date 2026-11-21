@@ -871,3 +871,4 @@ B_br gate not passed; arms not started
 - (22:15) C1R progress:
   C1R_hg_v7: 92 cycles, 7.75 s/cycle | passes/cycle 100.8 (over 93 cycles) | min dt (cycle lines) 6.807273e+00 | CW 12 FATAL 0
   C1R_hg_c1: 95 cycles, 8.05 s/cycle | passes/cycle 81.7 (over 95 cycles) | min dt (cycle lines) 3.403636e+00 | CW 13 FATAL 0
+- (22:15) J3 started (B_j3 f71a22b6, joint3 keys in <rad_m1> of each deck copy): 
