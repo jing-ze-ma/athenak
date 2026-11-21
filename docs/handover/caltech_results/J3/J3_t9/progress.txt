@@ -1,19 +1,19 @@
-== 2026-11-20 22:21:04 J3_t9
-last cycle line: cycle=74 time=7.167099e+03 dt=9.685219e+01
-user.hst last row: t 7.2639512845945492e+03 KE_int 7.0588392085662896e+38 L_bot/L_in 0.9239 L_top/L_in 0.9925
+== 2026-11-20 22:41:21 J3_t9
+last cycle line: cycle=104 time=1.000000e+04 dt=4.838463e+01
+user.hst last row: t 1.0000000000000000e+04 KE_int 1.1336504840018534e+39 L_bot/L_in 0.9360 L_top/L_in 0.9899
 CW 0 FATAL 0
--- CLEAN FLIM lines (last 5 of 535)
-CLEAN FLIM cycle 73 t2s 2 faces 10371436 momentum cut sum |dF| V/c^2 8.544940e+29
-CLEAN FLIM cycle 73 t2s 2 faces 10371436 momentum cut sum |dF| V/c^2 8.544940e+29
-CLEAN FLIM cycle 73 t2s 3 faces 8440067 momentum cut sum |dF| V/c^2 6.196734e+29
-CLEAN FLIM cycle 73 t2s 3 faces 8444032 momentum cut sum |dF| V/c^2 6.202154e+29
-CLEAN FLIM cycle 73 t2s 3 faces 8444032 momentum cut sum |dF| V/c^2 6.202154e+29
--- floorcap lines (last 5 of 6)
-<rad_m1> floorcap cycle 0 (cumulative, all calls): n_v 0.000000e+00 n_t 3.969701e+07 dKE 0.000000e+00 dEint 2.324588e+29 (erg, to E_rad) momentum removed |dp| 0.000000e+00 dL_z 0.000000e+00
-<rad_m1> floorcap cycle 25 (cumulative, all calls): n_v 0.000000e+00 n_t 1.317301e+09 dKE 0.000000e+00 dEint 8.331174e+33 (erg, to E_rad) momentum removed |dp| 0.000000e+00 dL_z 0.000000e+00
-<rad_m1> floorcap cycle 25 (cumulative, all calls): n_v 0.000000e+00 n_t 1.338168e+09 dKE 0.000000e+00 dEint 8.346266e+33 (erg, to E_rad) momentum removed |dp| 0.000000e+00 dL_z 0.000000e+00
-<rad_m1> floorcap cycle 50 (cumulative, all calls): n_v 0.000000e+00 n_t 2.395888e+09 dKE 0.000000e+00 dEint 9.404154e+33 (erg, to E_rad) momentum removed |dp| 0.000000e+00 dL_z 0.000000e+00
+-- CLEAN FLIM lines (last 5 of 756)
+CLEAN FLIM cycle 103 t2s 2 faces 8256829 momentum cut sum |dF| V/c^2 1.627880e+29
+CLEAN FLIM cycle 103 t2s 3 faces 7723418 momentum cut sum |dF| V/c^2 1.339467e+29
+CLEAN FLIM cycle 103 t2s 3 faces 7716538 momentum cut sum |dF| V/c^2 1.339485e+29
+CLEAN FLIM cycle 103 t2s 3 faces 7716538 momentum cut sum |dF| V/c^2 1.339485e+29
+CLEAN FLIM cycle 103 t2s 3 faces 7716538 momentum cut sum |dF| V/c^2 1.339485e+29
+-- floorcap lines (last 5 of 10)
 <rad_m1> floorcap cycle 50 (cumulative, all calls): n_v 0.000000e+00 n_t 2.416601e+09 dKE 0.000000e+00 dEint 9.420286e+33 (erg, to E_rad) momentum removed |dp| 0.000000e+00 dL_z 0.000000e+00
+<rad_m1> floorcap cycle 75 (cumulative, all calls): n_v 0.000000e+00 n_t 3.497607e+09 dKE 0.000000e+00 dEint 1.055817e+34 (erg, to E_rad) momentum removed |dp| 0.000000e+00 dL_z 0.000000e+00
+<rad_m1> floorcap cycle 75 (cumulative, all calls): n_v 0.000000e+00 n_t 3.519691e+09 dKE 0.000000e+00 dEint 1.057527e+34 (erg, to E_rad) momentum removed |dp| 0.000000e+00 dL_z 0.000000e+00
+<rad_m1> floorcap cycle 100 (cumulative, all calls): n_v 0.000000e+00 n_t 4.613137e+09 dKE 0.000000e+00 dEint 1.176138e+34 (erg, to E_rad) momentum removed |dp| 0.000000e+00 dL_z 0.000000e+00
+<rad_m1> floorcap cycle 100 (cumulative, all calls): n_v 0.000000e+00 n_t 4.635909e+09 dKE 0.000000e+00 dEint 1.177849e+34 (erg, to E_rad) momentum removed |dp| 0.000000e+00 dL_z 0.000000e+00
 -- never-read
 ### WARNING: 14 input parameter(s) were never read by the code (typo, or a key AthenaK does not have?):
 ###   mesh/cs_seam_blockend = extend

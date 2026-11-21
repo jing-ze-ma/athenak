@@ -1,0 +1,1 @@
+TAG=J3_t9 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_j3_a5257b7ee md5=f71a22b6ffcd2229950c7e4fb90de5c8 DECK=/resnick/groups/carnegie_poc/jingze/orion_runs_1121/j3/decks/J3_t9.athinput md5=6869eabed1e9657406c979035898fa49 NC=1000000 HOLDER=6133591 NODE=hpc-sm-02-09 NR=4 EX=time/tlim=1.0e4
