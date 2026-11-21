@@ -19,6 +19,7 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -1289,6 +1290,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     CleanStagXDonor(true, !(cln_vimp && cln_feedback));
     converged = !iterate;
     npic = 0;
+    cln_gpic = false;   // (clean_gas_newton_switch: the solve's history)
+    std::vector<Real> rhist;
     Real de0 = 1.0e300, dv0 = 1.0e300, trel = 0.0;
     for (int inl = 0; inl < maxnl; ++inl) {
       if (lagged && inl < cln_maxpic) ++npic;
@@ -1377,6 +1380,39 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       if (cln_feedback) dv = cell ? CleanCellVelocityUpdate() : CleanVelocityUpdate();
       dnl0 = (inl + 1 == maxnl) ? dnl : -1.0;
       dnl = fmax(de, dv);
+      // (clean_gas_newton_switch = W, the old production's implicit_gas_newton_switch: a
+      // solve whose change stalled, pass + 1 >= clean_gas_newton_switch_min and > W, its
+      // minimum over the last W passes >= clean_stall_fac x the one before and up at least
+      // twice in the window, drops the gas Newton slope for its remaining passes: the E
+      // row takes the exchange at the iterate's T, the gas T the bracketed root of its
+      // row, a contraction.  The Newton passes cycled where c_v jumps (H ionisation,
+      // rsg.01510: T 4300 <-> 11400 K at hc kE 1e4).  Deterministic in the solve's own
+      // passes, so restarts stay bitwise)
+      if (cln_gnsw > 0 && !cln_gpic) {
+        rhist.push_back(dnl);
+        const int nw = cln_gnsw;
+        if (inl + 1 >= cln_gnswmin && inl + 1 > nw) {
+          Real mwin = 1.0e300, mpre = 1.0e300;
+          int nup = 0;
+          for (int q = 0; q <= inl; ++q) {
+            if (q > inl - nw) {
+              mwin = fmin(mwin, rhist[q]);
+              if (rhist[q] > rhist[q-1]) ++nup;
+            } else {
+              mpre = fmin(mpre, rhist[q]);
+            }
+          }
+          if (mwin >= cln_stfac*mpre && nup >= 2) {
+            cln_gpic = true;
+            cln_ngnsw += 1.0;
+            if (global_variable::my_rank == 0) {
+              std::printf("CLEAN GNSW cycle %d t2s %d pass %d: stalled, the gas Newton "
+                          "slope off (%.0f so far)\n", pmy_pack->pmesh->ncycle, t2_solve,
+                          inl, cln_ngnsw);
+            }
+          }
+        }
+      }
       // (clean_tol_rel, as the old production's implicit_tol_rel: the strict test stops at
       // kappa times the first pass's change, at most clean_tol_rel_max)
       if (cln_tolrel > 0.0 && !cln_bon && inl == 0) trel = fmin(cln_tolrel*dnl, cln_tolrmx);
@@ -2831,6 +2867,7 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
   const bool pdo = x.pd, xpd = cln_xpat;
   const bool xte = (cln_xte > 0) && x.feedback;   // (clean_xt_exact: CLW_XA, CLW_XW)
   const bool krl = cln_krel_on && x.feedback;   // (clean_stag_kreal: CLW_KR)
+  const bool gpic = cln_gpic;   // (clean_gas_newton_switch)
   auto kc = cln_kcnt;
   if (pdo) Kokkos::deep_copy(Kokkos::subview(kc, 0), 0.0);
   CleanParForLb<3>("cln_rhs", nmb1, ks, ke, js, je, is, ie,
@@ -2938,6 +2975,12 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
       rr = (s > 0.0) ? s/(cg + s) : 0.0;   // (no exchange: none, also where T = 0)
       // (1 - r = cg/(cg + s) without cancellation, as implicit_src_stable)
       x.w(m,CLW_RY,k,j,i) = (s > 0.0) ? cg/(cg + s) : 1.0;
+      // (clean_gas_newton_switch: a stalled solve's remaining passes without the gas
+      // Newton slope, the Picard iteration on the bracketed root T of the gas row)
+      if (gpic) {
+        rr = 0.0;
+        x.w(m,CLW_RY,k,j,i) = 1.0;
+      }
       // the gas row's residual at the iterate with these sb (its T is the root with those
       // of the last pass), share r, as the old production's SRCR: a change of sb between
       // passes enters E with 1 - r, the exchange's share (radiation-dominated opaque

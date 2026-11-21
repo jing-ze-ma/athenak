@@ -3373,6 +3373,10 @@ class RadiationM1 {
   bool CleanStagKRedo();
   bool cln_xtnorm = false, cln_xtcons = false;   // (CleanFirstIterate, CleanSolve)
   int cln_xte = 0;   // (clean_xt_exact: 0 off, 1 cons, 2 x2)
+  int cln_gnsw = 0, cln_gnswmin = 20;   // clean_gas_newton_switch, _min
+  Real cln_stfac = 0.5;   // clean_stall_fac
+  bool cln_gpic = false;   // (a stalled solve's passes without the gas Newton slope)
+  Real cln_ngnsw = 0.0;   // (solves switched so far)
   // clean_stag_kreal (staggered, default off): the stage increment's momentum kick D at
   // the share s whose kinetic-energy work E can pay, the rest deferred into the stage's
   // implicit momentum change (CleanStagKReal); cln_krel_on: a cell was limited this

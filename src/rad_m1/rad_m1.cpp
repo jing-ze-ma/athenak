@@ -560,6 +560,19 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_gas_tfloor (staggered default true): the gas row's T bounded below by the EOS
     // tfloor, and the gas eint written back from that root (E takes the rest)
     cln_gtf = stag("clean_gas_tfloor", true);
+    // clean_gas_newton_switch (default 0 = off; W in [3, 64]), clean_gas_newton_switch_min
+    // (20), clean_stall_fac (0.5): the old production's implicit_gas_newton_switch, a
+    // stalled solve's remaining passes on the bracketed gas root without the Newton slope
+    cln_gnsw = pin->GetOrAddInteger("rad_m1","clean_gas_newton_switch",0);
+    cln_gnswmin = pin->GetOrAddInteger("rad_m1","clean_gas_newton_switch_min",20);
+    cln_stfac = pin->GetOrAddReal("rad_m1","clean_stall_fac",0.5);
+    if (cln_gnsw < 0 || cln_gnsw > 64 || (cln_gnsw > 0 && cln_gnsw < 3) ||
+        cln_gnswmin < 1 || !(cln_stfac > 0.0 && cln_stfac <= 1.0)) {
+      std::cout << "### FATAL ERROR <rad_m1>/clean_gas_newton_switch must be 0 or in "
+                << "[3, 64], clean_gas_newton_switch_min >= 1, clean_stall_fac in (0, 1]"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     {const std::string pc = pin->DoesParameterExist("rad_m1","clean_stag_pc") ?
                             pin->GetString("rad_m1","clean_stag_pc") : "mg";
     if (pc != "line" && pc != "mg") {
