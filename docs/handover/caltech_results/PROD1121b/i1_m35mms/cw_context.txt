@@ -1,0 +1,14 @@
+== 2026-11-21 00:27:35 log.0: CW 1-2 (grep -B5)
+CLEAN FLIM cycle 7075 t2s 2 faces 869971 momentum cut sum |dF| V/c^2 1.186649e+26
+CLEAN cycle 7075 t2s 2 it -3 (sum 565) pos 0 mark 0 all 0 neg 0 r1 0 r2 6 first 0 6 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 7075 t2s 2 faces 869971 momentum cut sum |dF| V/c^2 1.186649e+26
+CLEAN XT cycle 7075 t2s 2 write-back closure 1.507e-01
+<rad_m1> floorcap cycle 7075 (cumulative, all calls): n_v 3.446866e+06 n_t 1.393669e+10 dKE 1.926501e+28 dEint 2.876431e+29 (erg, to E_rad) momentum removed |dp| 5.654950e+20 dL_z -9.718437e+29
+CLEAN WARNING cycle 7075 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+
+CLEAN FLIM cycle 7091 t2s 2 faces 460558 momentum cut sum |dF| V/c^2 6.038154e+25
+CLEAN FLIM cycle 7091 t2s 2 faces 460553 momentum cut sum |dF| V/c^2 6.038190e+25
+CLEAN cycle 7091 t2s 2 it -5 (sum 651) pos 0 mark 0 all 0 neg 0 r1 0 r2 6 first 0 6 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 7091 t2s 2 faces 460553 momentum cut sum |dF| V/c^2 6.038190e+25
+CLEAN XT cycle 7091 t2s 2 write-back closure 2.483e-01
+CLEAN WARNING cycle 7091 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
