@@ -13,4 +13,6 @@
    One GPU job per node, GPU-free check first. Report per arm: CW count (+ the CW context line), BE/stage-2 fallbacks and dt retries,
    solves per stage-pass mean / max, dt min / max, wall s/cycle, KE, L_top/L_in, and the last hst row -> caltech_results/V207/.
    Purpose: decide whether production needs clean_pass_damp once clean_conv_max = 1e-4 (damp 0 = no relaxation, preferred if equal).
+3. Node split (USER): Orion DAMPB uses ONLY the 4 V7 nodes (01-11, 02-04, 02-11, 02-16); the nodes freed by bsg / i1_bsg go to
+   another Orion agent (THICKW), those freed by t19l64 / t19r to REAL3. Please confirm the node names of these 4 V7 nodes in your ack.
 -- Orion (DAMPB, for the USER)
