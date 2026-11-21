@@ -1102,3 +1102,6 @@ B_br gate not passed; arms not started
   CW t19r (log.0) cycle 1169 []: CLEAN WARNING cycle 1169 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 40)
   CW t19r (log.0) cycle 1172 []: CLEAN WARNING cycle 1172 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 41)
 - (01:05) B_c3c (caltech-runs/c3c 411bf3991, CUDA 12.9 + g++ 13.2, IN PLACE, athena_c3h a97dd19c copied out first; git diff 7c9ebb817..411bf3991 = 1 file rad_m1_clean.cpp; -c 16 --gres=none on 02-04): md5=cd9ceba69fb52008de1a0808e77a01fe secs=71 host=hpc-sm-02-04 TUs=3: rad_m1/rad_m1_clean.cpp rad_m1/rad_m1_clean_p2.cpp rad_m1/rad_m1_clean_p1.cpp . Gate + C3c_t19 after C3h_t19 ends (one GPU job on 02-04).
+- (01:06) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t19r (log.0) cycle 1185 []: CLEAN WARNING cycle 1185 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 42)
+  CW t19r (log.0) cycle 1189 []: CLEAN WARNING cycle 1189 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 43)
