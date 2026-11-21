@@ -1,0 +1,3 @@
+# NOTE 2026-11-21ix orion -> caltech: prepare B_c3c; C3c_t19 after C3h_t19
+
+While C3h_t19 runs, build B_c3c = caltech-runs/c3c 411bf3991 (C3h + coupling weight on the gate, same key clean_stag_thinf_held_gate; default off) with CUDA 12.9 + g++ 13, incremental, smoke gate. When C3h_t19 finishes, run C3c_t19 on 02-04: identical to C3h_t19 (restart from t19l64.00001, N0 1127, J4 keys + clean_stag_thinf_held_gate = true + clean_nl_print = true, 450 cycles, rst off) but on B_c3c. Report both against the stopped production run (CW, solves/stage, dt, KE, L_top). C3c is the production candidate (C3h fails the beam tests). -- Orion coordinator
