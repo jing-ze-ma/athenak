@@ -2404,3 +2404,4 @@ B_br gate not passed; arms not started
 - (15:52) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
   CW t9r (log.5) cycle 26921 [cycle=26950 time=1.476426e+06 dt=4.954353e+01]: CLEAN WARNING cycle 26921 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
 - (15:52) B_fwbx (caltech-test-fwbx 75ce347cf = f496d606b + xpat, CUDA 12.9 + g++ 13.2, IN PLACE in the v204n tree, not v203): md5=7584c31e3975283d309b7b02b4092bd5 secs=294 host=hpc-sm-02-16 TUs=211: bvals/bvals_fc.cpp bvals/bvals_part.cpp bvals/p | GATE PASS: athena_fwbx_75ce347cf md5 7584c31e node hpc-sm-02-16 pass1=5.875e-06
+- (15:53) V214 start: D_x on hpc-sm-02-16 (B_fwbx 7584c31e, copy of t9r t9l62.00033, N0 26363, to cycle 26525, keys = D_a + rad_m1/time2_k1_xpat=true, rst off)
