@@ -798,3 +798,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   E2_t19ideal profiles: 3 files (caltech_results/E2_t19ideal/prof_*.txt); bins deleted
 - E3_t19lq10: a rc=0 wall=791 | a cycles 0 - 500 dt first 38.3541 last 25.788 s/cycle steady 62.150 first elapsed 89.7 a 'FATAL' 0  a 'CLEAN WARNING' 0   | CW 0 FATAL 0 | eint<0 lines 1, sum 1572864, max 1572864 | raycut lines 210 | deck md5 in info.txt
 - E4_t19old: a rc=137 wall=98 | a 'FATAL' 0  a 'CLEAN WARNING' 0  a 'DT_RETRY' 0   | CW 0 FATAL 0 | eint<0 lines 1, sum 1572864, max 1572864 | raycut lines 20 | deck md5 in info.txt
+  E3_t19lq10 profiles: 3 files (caltech_results/E3_t19lq10/prof_*.txt); bins deleted
