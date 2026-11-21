@@ -1,0 +1,64 @@
+== startup lines
+he_star_m1: he_ic_rad_atm_force = module: atmosphere from cell 192 (lower face 6.1548e+12, R_ph 6.14484e+12 -> 6.16248e+12), 13 cells above the floor, 44 passes (last max |dphi| 9.18821e-13, march residual 3.9968e-15); phi max 9.05622 (old IC) -> 2.24296; the old IC's (phi - 1) Gamma max 2.23035 at r/R_ph 1.04727; floor from r = 6.71537e+12 (1.09285 R_ph)
+he_star_m1: he_ic_equil round 1: module residual max |a_net|/g = 4.063e-01 (r 6.26126e+12), WB face residual 5.696e-02 (r 6.11276e+12), max |L(face)/L_in - 1| = 3.968e-01 (r 6.15480e+12), L_in 8.7637046693e+38, L_top 8.7637188036e+38 (he_ic_equil_maxit: last round, march then STOP)
+he_star_m1: he_ic_equil round 1 update: anchor cell 0 (r 1.69091e+12), cells 0 .. 200 re-marched, 200 passes (last max |da/a| 4.974e-14, face residual 1.532e-13), max |drho/rho| 6.327e-01 at r 6.65965e+12
+<rad_m1> clean_init steady pass 0: max(|dE|, |dF|/c)/max E = 3.429e-06
+<rad_m1> clean_init steady pass 1: max(|dE|, |dF|/c)/max E = 3.468e-05
+<rad_m1> clean_init steady pass 2: max(|dE|, |dF|/c)/max E = 3.438e-04
+<rad_m1> clean_init steady pass 3: max(|dE|, |dF|/c)/max E = 3.179e-03
+<rad_m1> clean_init steady pass 4: max(|dE|, |dF|/c)/max E = 2.064e-02
+<rad_m1> clean_init steady pass 5: max(|dE|, |dF|/c)/max E = 7.382e-02
+<rad_m1> clean_init steady pass 6: max(|dE|, |dF|/c)/max E = 1.530e-01
+<rad_m1> clean_init steady pass 7: max(|dE|, |dF|/c)/max E = 4.933e-02
+<rad_m1> clean_init steady pass 8: max(|dE|, |dF|/c)/max E = 1.952e-02
+<rad_m1> clean_init steady pass 9: max(|dE|, |dF|/c)/max E = 7.955e-03
+<rad_m1> clean_init steady pass 10: max(|dE|, |dF|/c)/max E = 3.290e-03
+<rad_m1> clean_init steady pass 11: max(|dE|, |dF|/c)/max E = 1.375e-03
+<rad_m1> clean_init steady pass 12: max(|dE|, |dF|/c)/max E = 5.696e-04
+<rad_m1> clean_init steady pass 13: max(|dE|, |dF|/c)/max E = 2.410e-04
+<rad_m1> clean_init steady pass 14: max(|dE|, |dF|/c)/max E = 1.003e-04
+<rad_m1> clean_init steady pass 15: max(|dE|, |dF|/c)/max E = 4.198e-05
+<rad_m1> clean_init steady pass 16: max(|dE|, |dF|/c)/max E = 1.777e-05
+<rad_m1> clean_init steady pass 17: max(|dE|, |dF|/c)/max E = 7.313e-06
+<rad_m1> clean_init steady pass 18: max(|dE|, |dF|/c)/max E = 3.125e-06
+<rad_m1> clean_init steady pass 19: max(|dE|, |dF|/c)/max E = 1.293e-06
+<rad_m1> clean_init steady pass 20: max(|dE|, |dF|/c)/max E = 5.403e-07
+<rad_m1> clean_init steady pass 21: max(|dE|, |dF|/c)/max E = 2.312e-07
+<rad_m1> clean_init steady pass 22: max(|dE|, |dF|/c)/max E = 9.349e-08
+<rad_m1> clean_init steady pass 23: max(|dE|, |dF|/c)/max E = 4.065e-08
+<rad_m1> clean_init steady pass 24: max(|dE|, |dF|/c)/max E = 1.666e-08
+<rad_m1> clean_init steady pass 25: max(|dE|, |dF|/c)/max E = 6.926e-09
+<rad_m1> clean_init steady pass 26: max(|dE|, |dF|/c)/max E = 1.757e-09
+<rad_m1> clean_init steady: converged after 27 passes, residual 1.757e-09 (tol 1.0e-08; 0 formal solutions); radiation E 8.3122409070e+46 -> 1.1584668718e+47, F/c 1.5965e+42 0.0000e+00 0.0000e+00 -> 1.3261e+42 6.5485e+40 6.9687e+31 (volume sums)
+he_star_m1: he_ic_equil round 1: module residual max |a_net|/g = 4.063e-01 (r 6.26126e+12), WB face residual 5.696e-02 (r 6.11276e+12), max |L(face)/L_in - 1| = 3.968e-01 (r 6.15480e+12), L_in 8.7637046693e+38, L_top 8.7637188036e+38 (he_ic_equil_maxit: last round, march then STOP)
+he_star_m1: he_ic_equil: done after 1 rounds (deferred he_seed applied)
+he_star_m1: he_ic_equil round 1 update: anchor cell 0 (r 1.69091e+12), cells 0 .. 200 re-marched, 200 passes (last max |da/a| 4.974e-14, face residual 1.532e-13), max |drho/rho| 6.327e-01 at r 6.65965e+12
+== never-read
+### WARNING: 7 input parameter(s) were never read by the code (typo, or a key AthenaK does not have?):
+###   mesh/cs_seam_blockend = extend
+###   mesh/cs_vertex_3cell = true
+###   mesh/cs_seam_rho_guard = 4
+###   hydro/wb_cache_every = 0
+###   rad_m1/time2_pred_cap = 0.5
+###   rad_m1/vet_gd_twin_lowmem = true
+###   problem/user_bcs = true
+CLEAN FLIM cycle 1 t2s 2 faces 17594654 momentum cut sum |dF| V/c^2 7.279831e+29
+CLEAN FLIM cycle 1 t2s 2 faces 18188820 momentum cut sum |dF| V/c^2 7.372723e+29
+CLEAN FLIM cycle 1 t2s 2 faces 18188332 momentum cut sum |dF| V/c^2 7.372627e+29
+CLEAN cycle 1 t2s 2 it 3 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN FLIM cycle 1 t2s 2 faces 18188332 momentum cut sum |dF| V/c^2 7.372627e+29
+CLEAN XT cycle 1 t2s 2 write-back closure 2.244e-04
+CLEAN FLIM cycle 1 t2s 3 faces 19104886 momentum cut sum |dF| V/c^2 7.100428e+29
+CLEAN FLIM cycle 1 t2s 3 faces 19155686 momentum cut sum |dF| V/c^2 7.090925e+29
+CLEAN cycle 1 t2s 3 it 4 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN FLIM cycle 1 t2s 3 faces 19155686 momentum cut sum |dF| V/c^2 7.090925e+29
+CLEAN LZB cycle 1 t2s 3 ledger 5.1973565202448833e+31
+CLEAN XT cycle 1 t2s 3 write-back closure 1.810e-03
+CLEAN FLIM cycle 2 t2s 2 faces 19805790 momentum cut sum |dF| V/c^2 7.806337e+29
+== floorcap (last 5)
+<rad_m1> floorcap: rho < 1e-14: |v| <= 3e+07 (0 = no cap), T <= max(T_rad, 0 K) on, clipped KE -> E_rad
+<rad_m1> floorcap cycle 0 (cumulative, all calls): n_v 0.000000e+00 n_t 1.183507e+07 dKE 0.000000e+00 dEint 8.312944e+27 (erg, to E_rad) momentum removed |dp| 0.000000e+00 dL_z 0.000000e+00
+== FLIM (last 3)
+CLEAN FLIM cycle 19 t2s 2 faces 11274432 momentum cut sum |dF| V/c^2 7.557933e+29
+CLEAN FLIM cycle 19 t2s 2 faces 11274432 momentum cut sum |dF| V/c^2 7.557933e+29
+CLEAN FLIM cycle 19 t2s 3 faces 10422419 momentum cut sum |dF| V/c^2 6.416765e+29
