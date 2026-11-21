@@ -491,27 +491,7 @@
             } else if (typ == 2 && emi) {
               // sptests-1011 vet_gd_inner = emit: the inner boundary's emission at the
               // upwind point of the inner face, carried to the cell with the face source
-              Real ie0 = lhx ? lhxi_(m,k-ks,j-js) : iemit;   // linhao-prod-1104 per column
-              if (bm) {
-                ie0 = 0.0;
-                const int bq = (d == bdir0) ? 0 : ((nbm > 1 && d == bdir1) ? 1 : -1);
-                if (bq >= 0) {
-                  const Real bib = (bq == 0) ? bib0 : bib1;
-                  if (twn) {
-                    ie0 = bib*((bq == 0) ? bfp0 : bfp1);   // the twin: shell-mean inflow
-                  } else {
-                    Real tu = thu - mt0, pu = ph + dph - mp0;
-                    tu -= mtl*floor(tu/mtl);
-                    pu -= mpl*floor(pu/mpl);
-                    tu += mt0;
-                    pu += mp0;
-                    const bool in = (bq == 0) ?
-                      (tu >= b0t0 && tu <= b0t1 && pu >= b0p0 && pu <= b0p1) :
-                      (tu >= b1t0 && tu <= b1t1 && pu >= b1p0 && pu <= b1p1);
-                    if (in) {ie0 = bib;}
-                  }
-                }
-              }
+              const Real ie0 = lhx ? lhxi_(m,k-ks,j-js) : iemit;   // (per column)
               iv = VgdInnerFace(st4, fC, i, true, ie0, bfc, cx1f(m,i), cx1v(m,i),
                                 cx1v(m,i+1), p2, ch0, ds, s0);
             } else if (typ == 2 && imir) {
