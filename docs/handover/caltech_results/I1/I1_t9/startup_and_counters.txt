@@ -56,9 +56,12 @@ CLEAN LZB cycle 1 t2s 3 ledger 5.1973565202448833e+31
 CLEAN XT cycle 1 t2s 3 write-back closure 1.810e-03
 CLEAN FLIM cycle 2 t2s 2 faces 19805790 momentum cut sum |dF| V/c^2 7.806337e+29
 == floorcap (last 5)
-<rad_m1> floorcap: rho < 1e-14: |v| <= 3e+07 (0 = no cap), T <= max(T_rad, 0 K) on, clipped KE -> E_rad
-<rad_m1> floorcap cycle 0 (cumulative, all calls): n_v 0.000000e+00 n_t 1.183507e+07 dKE 0.000000e+00 dEint 8.312944e+27 (erg, to E_rad) momentum removed |dp| 0.000000e+00 dL_z 0.000000e+00
+<rad_m1> floorcap cycle 150 (cumulative, all calls): n_v 0.000000e+00 n_t 6.587057e+09 dKE 0.000000e+00 dEint 2.383384e+32 (erg, to E_rad) momentum removed |dp| 0.000000e+00 dL_z 0.000000e+00
+<rad_m1> floorcap cycle 175 (cumulative, all calls): n_v 0.000000e+00 n_t 7.657561e+09 dKE 0.000000e+00 dEint 2.815173e+32 (erg, to E_rad) momentum removed |dp| 0.000000e+00 dL_z 0.000000e+00
+<rad_m1> floorcap cycle 175 (cumulative, all calls): n_v 0.000000e+00 n_t 7.678051e+09 dKE 0.000000e+00 dEint 2.823589e+32 (erg, to E_rad) momentum removed |dp| 0.000000e+00 dL_z 0.000000e+00
+<rad_m1> floorcap cycle 200 (cumulative, all calls): n_v 0.000000e+00 n_t 8.749772e+09 dKE 0.000000e+00 dEint 3.289483e+32 (erg, to E_rad) momentum removed |dp| 0.000000e+00 dL_z 0.000000e+00
+<rad_m1> floorcap cycle 200 (cumulative, all calls): n_v 0.000000e+00 n_t 8.770461e+09 dKE 0.000000e+00 dEint 3.298505e+32 (erg, to E_rad) momentum removed |dp| 0.000000e+00 dL_z 0.000000e+00
 == FLIM (last 3)
-CLEAN FLIM cycle 19 t2s 2 faces 11274432 momentum cut sum |dF| V/c^2 7.557933e+29
-CLEAN FLIM cycle 19 t2s 2 faces 11274432 momentum cut sum |dF| V/c^2 7.557933e+29
-CLEAN FLIM cycle 19 t2s 3 faces 10422419 momentum cut sum |dF| V/c^2 6.416765e+29
+CLEAN FLIM cycle 214 t2s 3 faces 8693228 momentum cut sum |dF| V/c^2 1.333928e+29
+CLEAN FLIM cycle 214 t2s 3 faces 8685914 momentum cut sum |dF| V/c^2 1.331673e+29
+CLEAN FLIM cycle 214 t2s 3 faces 8685914 momentum cut sum |dF| V/c^2 1.331673e+29
