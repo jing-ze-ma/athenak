@@ -1,0 +1,74 @@
+CLEAN OLDVEC cycle 589813 t2s 2 eint<0 2431 (taken as 0) E<0 203
+CLEAN cycle 589813 t2s 2 it 1 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 152 first 0 152 guard 0 solves 9 cwin 0
+CLEAN XT cycle 589813 t2s 2 write-back closure 6.242e+01
+CLEAN cycle 589813 t2s 3 it -2 (sum 200) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 200 cwin 0
+CLEAN XT cycle 589813 t2s 3 write-back closure 1.141e+01
+CLEAN WARNING cycle 589813 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN WARNING cycle 589813: backward-Euler solve not converged (dt_retry, 2 so far; last change 8.323e-01)
+--
+CLEAN XT cycle 589813 t2s 1 write-back closure 3.690e+01
+DT_RETRY cycle=589813 t=5.465039e+08 dt 9.565217e+02 -> 4.782609e+02 reason=NON-CONVERGED resid=-1.000000e+00 cut 1
+CLEAN OLDVEC cycle 589813 t2s 2 eint<0 539 (taken as 0) E<0 151
+CLEAN cycle 589813 t2s 2 it -2 (sum 200) pos 0 mark 0 all 0 neg 0 r1 0 r2 140 first 0 140 guard 0 solves 200 cwin 0
+CLEAN XT cycle 589813 t2s 2 write-back closure 5.592e+00
+CLEAN WARNING cycle 589813 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN WARNING cycle 589813: backward-Euler solve not converged (dt_retry, 2 so far; last change 2.647e-05)
+--
+CLEAN XT cycle 589813 t2s 1 write-back closure 1.738e+01
+DT_RETRY cycle=589813 t=5.465039e+08 dt 4.782609e+02 -> 2.420115e+02 reason=NON-CONVERGED resid=-1.000000e+00 cut 2
+CLEAN OLDVEC cycle 589813 t2s 2 eint<0 141 (taken as 0) E<0 131
+CLEAN cycle 589813 t2s 2 it -2 (sum 200) pos 0 mark 0 all 0 neg 0 r1 0 r2 140 first 0 140 guard 0 solves 200 cwin 0
+CLEAN XT cycle 589813 t2s 2 write-back closure 2.965e+00
+CLEAN WARNING cycle 589813 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN WARNING cycle 589813: backward-Euler solve not converged (dt_retry, 2 so far; last change 8.691e-08)
+--
+CLEAN LZ cycle 589903 t2s 3 ledger 3.0829629977248775e+45
+<hydro> fofc_report t=5.465597e+08 cycle=589904 stages=8 fired cell-stages: at-floor=0 other=7019542 | per x1 bin [i0-i1] floor/other: [394-395] 0/1 [396-396] 0/4 [397-397] 0/4 [398-398] 0/4 [399-399] 0/6 [400-400] 0/6 [401-401] 0/4 [402-402] 0/4 [403-403] 0/8 [404-404] 0/4 [405-405] 0/11 [406-406] 0/10 [407-407] 0/6 [408-408] 0/14 [409-410] 0/8 [411-411] 0/24 [412-412] 0/16 [413-413] 0/4 [414-414] 0/8 [416-416] 0/1 [419-419] 0/2 [420-420] 0/10 [421-421] 0/25 [422-422] 0/27 [423-423] 0/25 [424-424] 0/32 [425-426] 0/127 [427-427] 0/71 [428-428] 0/131 [429-429] 0/201 [430-430] 0/246 [431-431] 0/290 [432-432] 0/359 [433-433] 0/512 [434-434] 0/570 [435-435] 0/688 [436-436] 0/707 [437-437] 0/769 [438-438] 0/830 [439-439] 0/767 [440-441] 0/1664 [442-442] 0/1002 [443-443] 0/1087 [444-444] 0/1351 [445-445] 0/1538 [446-446] 0/1739 [447-447] 0/1922 [448-448] 0/2197 [449-449] 0/2567 [450-450] 0/2923 [451-451] 0/3589 [452-452] 0/3946 [453-453] 0/4744 [454-454] 0/4965 [455-456] 0/12247 [457-457] 0/7575 [458-458] 0/8504 [459-459] 0/9904 [460-460] 0/11291 [461-461] 0/13159 [462-462] 0/15562 [463-463] 0/18262 [464-464] 0/21409 [465-465] 0/25101 [466-466] 0/29566 [467-467] 0/33665 [468-468] 0/38237 [469-469] 0/42472 [470-471] 0/96161 [472-472] 0/53435 [473-473] 0/57465 [474-474] 0/62299 [475-475] 0/67576 [476-476] 0/72728 [477-477] 0/77845 [478-478] 0/83689 [479-479] 0/88658 [480-480] 0/95896 [481-481] 0/104633 [482-482] 0/112855 [483-483] 0/122967 [484-484] 0/131145 [485-485] 0/139243 [486-487] 0/311747 [488-488] 0/165068 [489-489] 0/165387 [490-490] 0/160066 [491-491] 0/152502 [492-492] 0/143267 [493-493] 0/137359 [494-494] 0/132066 [495-495] 0/125121 [496-496] 0/116580 [497-497] 0/105464 [498-498] 0/97604 [499-499] 0/91638 [500-500] 0/87729 [501-502] 0/187358 [503-503] 0/93526 [504-504] 0/95289 [505-505] 0/98896 [506-506] 0/98973 [507-507] 0/98310 [508-508] 0/97793 [509-509] 0/96107 [510-510] 0/94476 [511-511] 0/92238 [512-512] 0/87707 [513-513] 0/83455 [514-514] 0/80156 [515-515] 0/78678 [516-517] 0/152970 [518-518] 0/73196 [519-519] 0/69541 [520-520] 0/66517 [521-521] 0/64775 [522-522] 0/61895 [523-523] 0/59046 [524-524] 0/56072 [525-525] 0/53120 [526-526] 0/51143 [527-527] 0/48082 [528-528] 0/44654 [529-529] 0/42216 [530-530] 0/40024 [531-532] 0/77568 [533-533] 0/37038 [534-534] 0/35237 [535-535] 0/37780 [536-536] 0/45447 [537-537] 0/59274 [538-538] 0/75110 [539-539] 0/92250 [540-540] 0/98637 [541-541] 0/98821 [542-542] 0/95705 [543-543] 0/86703 [544-544] 0/73520 [545-545] 0/56684 [546-547] 0/96638
+CLEAN OLDVEC cycle 589904 t2s 2 eint<0 3890 (taken as 0) E<0 127
+CLEAN cycle 589904 t2s 2 it -2 (sum 201) pos 0 mark 0 all 0 neg 0 r1 0 r2 152 first 0 152 guard 0 solves 200 cwin 0
+CLEAN XT cycle 589904 t2s 2 write-back closure 7.440e+01
+CLEAN WARNING cycle 589904 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+--
+CLEAN XT cycle 589906 t2s 3 write-back closure 2.421e+01
+CLEAN LZ cycle 589906 t2s 3 ledger 3.2423044895287103e+45
+CLEAN OLDVEC cycle 589907 t2s 2 eint<0 3693 (taken as 0) E<0 234
+CLEAN cycle 589907 t2s 2 it -2 (sum 202) pos 0 mark 0 all 0 neg 0 r1 0 r2 301 first 0 301 guard 0 solves 200 cwin 0
+CLEAN XT cycle 589907 t2s 2 write-back closure 1.903e+05
+CLEAN WARNING cycle 589907 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+--
+CLEAN LZ cycle 589908 t2s 1 ledger 3.3508633078456038e+45
+CLEAN XT cycle 589908 t2s 1 write-back closure 5.277e+01
+CLEAN OLDVEC cycle 589909 t2s 2 eint<0 2139 (taken as 0) E<0 317
+CLEAN cycle 589909 t2s 2 it -2 (sum 201) pos 0 mark 0 all 0 neg 0 r1 0 r2 396 first 0 396 guard 0 solves 200 cwin 0
+CLEAN XT cycle 589909 t2s 2 write-back closure 3.825e+01
+CLEAN WARNING cycle 589909 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 3)
+--
+<hydro> fofc_report t=5.465671e+08 cycle=589912 stages=9 fired cell-stages: at-floor=0 other=7719889 | per x1 bin [i0-i1] floor/other: [390-390] 0/2 [392-392] 0/4 [393-393] 0/5 [394-395] 0/17 [396-396] 0/13 [397-397] 0/12 [398-398] 0/10 [399-399] 0/12 [400-400] 0/11 [401-401] 0/11 [402-402] 0/7 [403-403] 0/7 [404-404] 0/16 [405-405] 0/10 [406-406] 0/14 [407-407] 0/7 [408-408] 0/8 [409-410] 0/8 [411-411] 0/14 [412-412] 0/5 [413-413] 0/9 [414-414] 0/8 [417-417] 0/1 [418-418] 0/8 [419-419] 0/12 [420-420] 0/18 [421-421] 0/24 [422-422] 0/25 [423-423] 0/29 [424-424] 0/41 [425-426] 0/142 [427-427] 0/92 [428-428] 0/153 [429-429] 0/213 [430-430] 0/297 [431-431] 0/406 [432-432] 0/467 [433-433] 0/563 [434-434] 0/649 [435-435] 0/787 [436-436] 0/842 [437-437] 0/895 [438-438] 0/936 [439-439] 0/881 [440-441] 0/1967 [442-442] 0/1138 [443-443] 0/1317 [444-444] 0/1610 [445-445] 0/1835 [446-446] 0/2017 [447-447] 0/2307 [448-448] 0/2585 [449-449] 0/3101 [450-450] 0/3399 [451-451] 0/4279 [452-452] 0/4649 [453-453] 0/5399 [454-454] 0/5698 [455-456] 0/13786 [457-457] 0/8501 [458-458] 0/9561 [459-459] 0/10850 [460-460] 0/12776 [461-461] 0/14933 [462-462] 0/17334 [463-463] 0/20086 [464-464] 0/23575 [465-465] 0/27799 [466-466] 0/32666 [467-467] 0/37425 [468-468] 0/42302 [469-469] 0/47028 [470-471] 0/106828 [472-472] 0/59212 [473-473] 0/63820 [474-474] 0/69411 [475-475] 0/75605 [476-476] 0/81607 [477-477] 0/87352 [478-478] 0/93543 [479-479] 0/99330 [480-480] 0/107020 [481-481] 0/116863 [482-482] 0/126347 [483-483] 0/137385 [484-484] 0/146169 [485-485] 0/154649 [486-487] 0/346769 [488-488] 0/183255 [489-489] 0/182645 [490-490] 0/174072 [491-491] 0/167079 [492-492] 0/157030 [493-493] 0/148554 [494-494] 0/141289 [495-495] 0/132159 [496-496] 0/121242 [497-497] 0/113268 [498-498] 0/107600 [499-499] 0/101066 [500-500] 0/95845 [501-502] 0/205760 [503-503] 0/102235 [504-504] 0/104684 [505-505] 0/108180 [506-506] 0/107752 [507-507] 0/106923 [508-508] 0/106747 [509-509] 0/105169 [510-510] 0/103710 [511-511] 0/101114 [512-512] 0/96491 [513-513] 0/92174 [514-514] 0/88675 [515-515] 0/87167 [516-517] 0/169253 [518-518] 0/81077 [519-519] 0/76905 [520-520] 0/73479 [521-521] 0/71212 [522-522] 0/68185 [523-523] 0/64894 [524-524] 0/61648 [525-525] 0/58054 [526-526] 0/55367 [527-527] 0/52059 [528-528] 0/48395 [529-529] 0/45257 [530-530] 0/43019 [531-532] 0/85275 [533-533] 0/41358 [534-534] 0/38755 [535-535] 0/41088 [536-536] 0/49013 [537-537] 0/64420 [538-538] 0/82187 [539-539] 0/100319 [540-540] 0/106898 [541-541] 0/107197 [542-542] 0/104905 [543-543] 0/95222 [544-544] 0/81028 [545-545] 0/63483 [546-547] 0/108528
+CLEAN ray cut cycle 589912 shell 244 -> 243 (want 243, R)
+CLEAN OLDVEC cycle 589912 t2s 2 eint<0 2372 (taken as 0) E<0 54
+CLEAN cycle 589912 t2s 2 it -2 (sum 202) pos 0 mark 0 all 0 neg 0 r1 0 r2 94 first 0 94 guard 0 solves 200 cwin 0
+CLEAN XT cycle 589912 t2s 2 write-back closure 1.016e+05
+CLEAN WARNING cycle 589912 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 4)
+CLEAN cycle 589912 t2s 1 it 1 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 5 first 0 5 guard 0 solves 7 cwin 0
+CLEAN LZ cycle 589912 t2s 1 ledger 3.5963410093555545e+45
+CLEAN XT cycle 589912 t2s 1 write-back closure 4.380e+01
+CLEAN WARNING cycle 589913: backward-Euler solve not converged (dt_retry, 5 so far; last change 8.323e-05)
+CLEAN cycle 589913 t2s 1 it -2 (sum 205) pos 0 mark 0 all 0 neg 0 r1 0 r2 8 first 0 8 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 589913 t2s 1 ledger 3.6607052055082010e+45
+CLEAN XT cycle 589913 t2s 1 write-back closure 4.455e+01
+<rad_m1> dt_retry (csfix-1023): vet_gd tables back from angle 4.969000e+04 to the restored 4.968600e+04
+DT_RETRY cycle=589913 t=5.465680e+08 dt 9.166667e+02 -> 4.583333e+02 reason=NON-CONVERGED resid=-1.000000e+00 cut 1
+CLEAN WARNING cycle 589913: backward-Euler solve not converged (dt_retry, 5 so far; last change 6.674e-07)
+CLEAN cycle 589913 t2s 1 it -2 (sum 228) pos 0 mark 0 all 0 neg 0 r1 0 r2 8 first 0 8 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 589913 t2s 1 ledger 3.6304039702899878e+45
+CLEAN XT cycle 589913 t2s 1 write-back closure 2.208e+01
+<rad_m1> dt_retry (csfix-1023): vet_gd tables back from angle 4.969000e+04 to the restored 4.968600e+04
+DT_RETRY cycle=589913 t=5.465680e+08 dt 4.583333e+02 -> 2.315789e+02 reason=NON-CONVERGED resid=-1.000000e+00 cut 2
+CLEAN WARNING cycle 589913: backward-Euler solve not converged (dt_retry, 5 so far; last change 6.679e-07)
+--
+CLEAN cycle 589913 t2s 1 it -2 (sum 292) pos 0 mark 0 all 0 neg 0 r1 0 r2 25 first 0 25 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 589913 t2s 1 ledger 3.6138930486646489e+45
+CLEAN XT cycle 589913 t2s 1 write-back closure 1.029e+01
+<rad_m1> dt_retry (csfix-1023): vet_gd tables back from angle 4.969000e+04 to the restored 4.968600e+04
+DT_RETRY cycle=589913 t=5.465680e+08 dt 2.315789e+02 -> 1.164021e+02 reason=NON-CONVERGED resid=-1.000000e+00 cut 3
+CLEAN WARNING cycle 589913: backward-Euler solve not converged (dt_retry, 5 so far; last change 1.579e-08)
