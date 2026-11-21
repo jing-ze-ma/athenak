@@ -1,0 +1,251 @@
+== /resnick/groups/carnegie_poc/jingze/orion_runs_1121/H2A_hg/a/run.log
+[hpc-sm-02-10:549154] [10] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2886986]
+[hpc-sm-02-10:549154] [11] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x681f39]
+[hpc-sm-02-10:549154] [12] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x21dd30d]
+[hpc-sm-02-10:549154] [13] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x21dd8de]
+[hpc-sm-02-10:549154] [14] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x22ffcd4]
+[hpc-sm-02-10:549154] [15] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x23097d6]
+[hpc-sm-02-10:549154] [16] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x218cbbc]
+[hpc-sm-02-10:549154] [17] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x178b368]
+[hpc-sm-02-10:549154] [18] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x95fca6]
+[hpc-sm-02-10:549154] [19] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f41cc]
+[hpc-sm-02-10:549154] [20] /lib64/libc.so.6(+0x295d0)[0x7ffae5a295d0]
+[hpc-sm-02-10:549155] [ 0] /lib64/libc.so.6(+0x3e730)[0x7f249843e730]
+[hpc-sm-02-10:549154] [21] /lib64/libc.so.6(__libc_start_main+0x80)[0x7ffae5a29680]
+[hpc-sm-02-10:549154] [22] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x65f915]
+[hpc-sm-02-10:549154] *** End of error message ***
+[hpc-sm-02-10:549155] [ 1] /lib64/libc.so.6(+0x8ba6c)[0x7f249848ba6c]
+[hpc-sm-02-10:549155] [ 2] /lib64/libc.so.6(raise+0x16)[0x7f249843e686]
+[hpc-sm-02-10:549155] [ 3] /lib64/libc.so.6(abort+0xd3)[0x7f2498428833]
+[hpc-sm-02-10:549155] [ 4] /lib64/libstdc++.so.6(+0xa1b21)[0x7f24988a1b21]
+[hpc-sm-02-10:549155] [ 5] /lib64/libstdc++.so.6(+0xad52c)[0x7f24988ad52c]
+[hpc-sm-02-10:549155] [ 6] /lib64/libstdc++.so.6(+0xad597)[0x7f24988ad597]
+[hpc-sm-02-10:549155] [ 7] /lib64/libstdc++.so.6(+0xad7f9)[0x7f24988ad7f9]
+[hpc-sm-02-10:549155] [ 8] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f11c5]
+[hpc-sm-02-10:549155] [ 9] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2882942]
+[hpc-sm-02-10:549155] [10] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2886986]
+[hpc-sm-02-10:549155] [11] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x681f39]
+[hpc-sm-02-10:549155] [12] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x21dd30d]
+[hpc-sm-02-10:549155] [13] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x21dd8de]
+[hpc-sm-02-10:549155] [14] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x22ffcd4]
+[hpc-sm-02-10:549155] [15] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x23097d6]
+[hpc-sm-02-10:549155] [16] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x218cbbc]
+[hpc-sm-02-10:549155] [17] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x178b368]
+[hpc-sm-02-10:549155] [18] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x95fca6]
+[hpc-sm-02-10:549155] [19] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f41cc]
+[hpc-sm-02-10:549155] [20] /lib64/libc.so.6(+0x295d0)[0x7f24984295d0]
+[hpc-sm-02-10:549155] [21] /lib64/libc.so.6(__libc_start_main+0x80)[0x7f2498429680]
+[hpc-sm-02-10:549155] [22] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x65f915]
+[hpc-sm-02-10:549155] *** End of error message ***
+terminate called after throwing an instance of 'std::runtime_error'
+  what():  Kokkos ERROR: Cuda memory space failed to allocate 11.29 GiB (label="m1_arena").
+[hpc-sm-02-10:549156] *** Process received signal ***
+[hpc-sm-02-10:549156] Signal: Aborted (6)
+[hpc-sm-02-10:549156] Signal code:  (-6)
+[hpc-sm-02-10:549156] [ 0] /lib64/libc.so.6(+0x3e730)[0x7fd39063e730]
+[hpc-sm-02-10:549156] [ 1] /lib64/libc.so.6(+0x8ba6c)[0x7fd39068ba6c]
+[hpc-sm-02-10:549156] [ 2] /lib64/libc.so.6(raise+0x16)[0x7fd39063e686]
+[hpc-sm-02-10:549156] [ 3] /lib64/libc.so.6(abort+0xd3)[0x7fd390628833]
+[hpc-sm-02-10:549156] [ 4] /lib64/libstdc++.so.6(+0xa1b21)[0x7fd390aa1b21]
+[hpc-sm-02-10:549156] [ 5] /lib64/libstdc++.so.6(+0xad52c)[0x7fd390aad52c]
+[hpc-sm-02-10:549156] [ 6] /lib64/libstdc++.so.6(+0xad597)[0x7fd390aad597]
+[hpc-sm-02-10:549156] [ 7] /lib64/libstdc++.so.6(+0xad7f9)[0x7fd390aad7f9]
+[hpc-sm-02-10:549156] [ 8] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f11c5]
+[hpc-sm-02-10:549156] [ 9] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2882942]
+[hpc-sm-02-10:549156] [10] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2886986]
+[hpc-sm-02-10:549156] [11] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x681f39]
+[hpc-sm-02-10:549156] [12] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x21dd30d]
+[hpc-sm-02-10:549156] [13] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x21dd8de]
+[hpc-sm-02-10:549156] [14] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x22ffcd4]
+[hpc-sm-02-10:549156] [15] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x23097d6]
+[hpc-sm-02-10:549156] [16] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x218cbbc]
+[hpc-sm-02-10:549156] [17] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x178b368]
+[hpc-sm-02-10:549156] [18] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x95fca6]
+[hpc-sm-02-10:549156] [19] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f41cc]
+[hpc-sm-02-10:549156] [20] /lib64/libc.so.6(+0x295d0)[0x7fd3906295d0]
+[hpc-sm-02-10:549156] [21] /lib64/libc.so.6(__libc_start_main+0x80)[0x7fd390629680]
+[hpc-sm-02-10:549156] [22] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x65f915]
+[hpc-sm-02-10:549156] *** End of error message ***
+terminate called after throwing an instance of 'std::runtime_error'
+  what():  Kokkos ERROR: Cuda memory space failed to allocate 11.29 GiB (label="m1_arena").
+[hpc-sm-02-10:549157] *** Process received signal ***
+[hpc-sm-02-10:549157] Signal: Aborted (6)
+[hpc-sm-02-10:549157] Signal code:  (-6)
+[hpc-sm-02-10:549157] [ 0] /lib64/libc.so.6(+0x3e730)[0x7f60fce3e730]
+[hpc-sm-02-10:549157] [ 1] /lib64/libc.so.6(+0x8ba6c)[0x7f60fce8ba6c]
+[hpc-sm-02-10:549157] [ 2] /lib64/libc.so.6(raise+0x16)[0x7f60fce3e686]
+[hpc-sm-02-10:549157] [ 3] /lib64/libc.so.6(abort+0xd3)[0x7f60fce28833]
+[hpc-sm-02-10:549157] [ 4] /lib64/libstdc++.so.6(+0xa1b21)[0x7f60fd2a1b21]
+[hpc-sm-02-10:549157] [ 5] /lib64/libstdc++.so.6(+0xad52c)[0x7f60fd2ad52c]
+[hpc-sm-02-10:549157] [ 6] /lib64/libstdc++.so.6(+0xad597)[0x7f60fd2ad597]
+[hpc-sm-02-10:549157] [ 7] /lib64/libstdc++.so.6(+0xad7f9)[0x7f60fd2ad7f9]
+[hpc-sm-02-10:549157] [ 8] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f11c5]
+[hpc-sm-02-10:549157] [ 9] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2882942]
+[hpc-sm-02-10:549157] [10] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2886986]
+[hpc-sm-02-10:549157] [11] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x681f39]
+[hpc-sm-02-10:549157] [12] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x21dd30d]
+[hpc-sm-02-10:549157] [13] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x21dd8de]
+[hpc-sm-02-10:549157] [14] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x22ffcd4]
+[hpc-sm-02-10:549157] [15] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x23097d6]
+[hpc-sm-02-10:549157] [16] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x218cbbc]
+[hpc-sm-02-10:549157] [17] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x178b368]
+[hpc-sm-02-10:549157] [18] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x95fca6]
+[hpc-sm-02-10:549157] [19] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f41cc]
+[hpc-sm-02-10:549157] [20] /lib64/libc.so.6(+0x295d0)[0x7f60fce295d0]
+[hpc-sm-02-10:549157] [21] /lib64/libc.so.6(__libc_start_main+0x80)[0x7f60fce29680]
+[hpc-sm-02-10:549157] [22] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x65f915]
+[hpc-sm-02-10:549157] *** End of error message ***
+[2026-11-20T18:17:10.981] error:  mpi/pmix_v3: _errhandler: hpc-sm-02-10 [0]: pmixp_client_v2.c:219: Error handler invoked: status = -25, source = [slurm.pmix.6133591.397:3]
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+[2026-11-20T18:17:10.995] error: *** STEP 6133591.397 ON hpc-sm-02-10 CANCELLED AT 2026-11-20T18:17:10 DUE to SIGNAL Killed ***
+srun: error: hpc-sm-02-10: tasks 0-3: Aborted (core dumped)
+== /resnick/groups/carnegie_poc/jingze/orion_runs_1121/H2A_hg/b/run2.log
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+Error: Unable to open restart file: output5/dt=1e30
+Error: Unable to open restart file: output5/dt=1e30
+Error: Unable to open restart file: output5/dt=1e30
+Error: Unable to open restart file: output5/dt=1e30
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 3 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 2 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 0 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 1 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+[2026-11-20T18:17:44.951] error: *** STEP 6133591.401 ON hpc-sm-02-10 CANCELLED AT 2026-11-20T18:17:44 DUE to SIGNAL Killed ***
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+srun: error: hpc-sm-02-10: task 3: Exited with exit code 1
+srun: error: hpc-sm-02-10: tasks 0-2: Killed
+== /resnick/groups/carnegie_poc/jingze/orion_runs_1121/H2A_hg/b/run.log
+terminate called after throwing an instance of 'std::runtime_error'
+  what():  Kokkos ERROR: Cuda memory space failed to allocate 13.22 GiB (label="rst-m1r-in").
+[hpc-sm-02-10:550521] *** Process received signal ***
+[hpc-sm-02-10:550521] Signal: Aborted (6)
+[hpc-sm-02-10:550521] Signal code:  (-6)
+[hpc-sm-02-10:550521] [ 0] /lib64/libc.so.6(+0x3e730)[0x7fa77603e730]
+[hpc-sm-02-10:550521] [ 1] /lib64/libc.so.6(+0x8ba6c)[0x7fa77608ba6c]
+[hpc-sm-02-10:550521] [ 2] /lib64/libc.so.6(raise+0x16)[0x7fa77603e686]
+[hpc-sm-02-10:550521] [ 3] /lib64/libc.so.6(abort+0xd3)[0x7fa776028833]
+[hpc-sm-02-10:550521] [ 4] /lib64/libstdc++.so.6(+0xa1b21)[0x7fa7764a1b21]
+[hpc-sm-02-10:550521] [ 5] /lib64/libstdc++.so.6(+0xad52c)[0x7fa7764ad52c]
+[hpc-sm-02-10:550521] [ 6] /lib64/libstdc++.so.6(+0xad597)[0x7fa7764ad597]
+[hpc-sm-02-10:550521] [ 7] /lib64/libstdc++.so.6(+0xad7f9)[0x7fa7764ad7f9]
+[hpc-sm-02-10:550521] [ 8] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f11c5]
+[hpc-sm-02-10:550521] [ 9] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2882942]
+[hpc-sm-02-10:550521] [10] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2886986]
+[hpc-sm-02-10:550521] [11] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x6cc8c3]
+[hpc-sm-02-10:550521] [12] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x1536d3a]
+[hpc-sm-02-10:550521] [13] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x152924e]
+[hpc-sm-02-10:550521] [14] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f4284]
+[hpc-sm-02-10:550521] [15] /lib64/libc.so.6(+0x295d0)[0x7fa7760295d0]
+[hpc-sm-02-10:550521] [16] /lib64/libc.so.6(__libc_start_main+0x80)[0x7fa776029680]
+[hpc-sm-02-10:550521] [17] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x65f915]
+[hpc-sm-02-10:550521] *** End of error message ***
+terminate called after throwing an instance of 'std::runtime_error'
+  what():  Kokkos ERROR: Cuda memory space failed to allocate 13.22 GiB (label="rst-m1r-in").
+[hpc-sm-02-10:550518] *** Process received signal ***
+[hpc-sm-02-10:550518] Signal: Aborted (6)
+[hpc-sm-02-10:550518] Signal code:  (-6)
+[hpc-sm-02-10:550518] [ 0] /lib64/libc.so.6(+0x3e730)[0x7f3e0ee3e730]
+[hpc-sm-02-10:550518] [ 1] /lib64/libc.so.6(+0x8ba6c)[0x7f3e0ee8ba6c]
+[hpc-sm-02-10:550518] [ 2] /lib64/libc.so.6(raise+0x16)[0x7f3e0ee3e686]
+[hpc-sm-02-10:550518] [ 3] /lib64/libc.so.6(abort+0xd3)[0x7f3e0ee28833]
+[hpc-sm-02-10:550518] [ 4] /lib64/libstdc++.so.6(+0xa1b21)[0x7f3e0f2a1b21]
+[hpc-sm-02-10:550518] [ 5] /lib64/libstdc++.so.6(+0xad52c)[0x7f3e0f2ad52c]
+[hpc-sm-02-10:550518] [ 6] /lib64/libstdc++.so.6(+0xad597)[0x7f3e0f2ad597]
+[hpc-sm-02-10:550518] [ 7] /lib64/libstdc++.so.6(+0xad7f9)[0x7f3e0f2ad7f9]
+[hpc-sm-02-10:550518] [ 8] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f11c5]
+[hpc-sm-02-10:550518] [ 9] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2882942]
+[hpc-sm-02-10:550518] [10] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2886986]
+[hpc-sm-02-10:550518] [11] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x6cc8c3]
+[hpc-sm-02-10:550518] [12] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x1536d3a]
+[hpc-sm-02-10:550518] [13] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x152924e]
+[hpc-sm-02-10:550518] [14] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f4284]
+[hpc-sm-02-10:550518] [15] /lib64/libc.so.6(+0x295d0)[0x7f3e0ee295d0]
+[hpc-sm-02-10:550518] [16] /lib64/libc.so.6(__libc_start_main+0x80)[0x7f3e0ee29680]
+[hpc-sm-02-10:550518] [17] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x65f915]
+[hpc-sm-02-10:550518] *** End of error message ***
+terminate called after throwing an instance of 'std::runtime_error'
+  what():  Kokkos ERROR: Cuda memory space failed to allocate 13.22 GiB (label="rst-m1r-in").
+[hpc-sm-02-10:550520] *** Process received signal ***
+[hpc-sm-02-10:550520] Signal: Aborted (6)
+[hpc-sm-02-10:550520] Signal code:  (-6)
+[hpc-sm-02-10:550520] [ 0] /lib64/libc.so.6(+0x3e730)[0x7fba8643e730]
+[hpc-sm-02-10:550520] [ 1] /lib64/libc.so.6(+0x8ba6c)[0x7fba8648ba6c]
+[hpc-sm-02-10:550520] [ 2] /lib64/libc.so.6(raise+0x16)[0x7fba8643e686]
+[hpc-sm-02-10:550520] [ 3] /lib64/libc.so.6(abort+0xd3)[0x7fba86428833]
+[hpc-sm-02-10:550520] [ 4] /lib64/libstdc++.so.6(+0xa1b21)[0x7fba868a1b21]
+[hpc-sm-02-10:550520] [ 5] /lib64/libstdc++.so.6(+0xad52c)[0x7fba868ad52c]
+[hpc-sm-02-10:550520] [ 6] /lib64/libstdc++.so.6(+0xad597)[0x7fba868ad597]
+[hpc-sm-02-10:550520] [ 7] /lib64/libstdc++.so.6(+0xad7f9)[0x7fba868ad7f9]
+[hpc-sm-02-10:550520] [ 8] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f11c5]
+[hpc-sm-02-10:550520] [ 9] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2882942]
+[hpc-sm-02-10:550520] [10] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2886986]
+[hpc-sm-02-10:550520] [11] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x6cc8c3]
+[hpc-sm-02-10:550520] [12] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x1536d3a]
+[hpc-sm-02-10:550520] [13] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x152924e]
+[hpc-sm-02-10:550520] [14] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f4284]
+[hpc-sm-02-10:550520] [15] /lib64/libc.so.6(+0x295d0)[0x7fba864295d0]
+[hpc-sm-02-10:550520] [16] /lib64/libc.so.6(__libc_start_main+0x80)[0x7fba86429680]
+[hpc-sm-02-10:550520] [17] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x65f915]
+[hpc-sm-02-10:550520] *** End of error message ***
+terminate called after throwing an instance of 'std::runtime_error'
+  what():  Kokkos ERROR: Cuda memory space failed to allocate 13.22 GiB (label="rst-m1r-in").
+[hpc-sm-02-10:550519] *** Process received signal ***
+[hpc-sm-02-10:550519] Signal: Aborted (6)
+[hpc-sm-02-10:550519] Signal code:  (-6)
+[hpc-sm-02-10:550519] [ 0] /lib64/libc.so.6(+0x3e730)[0x7fcfb643e730]
+[hpc-sm-02-10:550519] [ 1] /lib64/libc.so.6(+0x8ba6c)[0x7fcfb648ba6c]
+[hpc-sm-02-10:550519] [ 2] /lib64/libc.so.6(raise+0x16)[0x7fcfb643e686]
+[hpc-sm-02-10:550519] [ 3] /lib64/libc.so.6(abort+0xd3)[0x7fcfb6428833]
+[hpc-sm-02-10:550519] [ 4] /lib64/libstdc++.so.6(+0xa1b21)[0x7fcfb68a1b21]
+[hpc-sm-02-10:550519] [ 5] /lib64/libstdc++.so.6(+0xad52c)[0x7fcfb68ad52c]
+[hpc-sm-02-10:550519] [ 6] /lib64/libstdc++.so.6(+0xad597)[0x7fcfb68ad597]
+[hpc-sm-02-10:550519] [ 7] /lib64/libstdc++.so.6(+0xad7f9)[0x7fcfb68ad7f9]
+[hpc-sm-02-10:550519] [ 8] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f11c5]
+[hpc-sm-02-10:550519] [ 9] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2882942]
+[hpc-sm-02-10:550519] [10] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2886986]
+[hpc-sm-02-10:550519] [11] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x6cc8c3]
+[hpc-sm-02-10:550519] [12] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x1536d3a]
+[hpc-sm-02-10:550519] [13] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x152924e]
+[hpc-sm-02-10:550519] [14] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f4284]
+[hpc-sm-02-10:550519] [15] /lib64/libc.so.6(+0x295d0)[0x7fcfb64295d0]
+[hpc-sm-02-10:550519] [16] /lib64/libc.so.6(__libc_start_main+0x80)[0x7fcfb6429680]
+[hpc-sm-02-10:550519] [17] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x65f915]
+[hpc-sm-02-10:550519] *** End of error message ***
+[2026-11-20T18:17:34.217] error:  mpi/pmix_v3: _errhandler: hpc-sm-02-10 [0]: pmixp_client_v2.c:219: Error handler invoked: status = -25, source = [slurm.pmix.6133591.400:1]
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+[2026-11-20T18:17:34.230] error: *** STEP 6133591.400 ON hpc-sm-02-10 CANCELLED AT 2026-11-20T18:17:34 DUE to SIGNAL Killed ***
+srun: error: hpc-sm-02-10: tasks 0-3: Aborted (core dumped)
