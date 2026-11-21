@@ -1,0 +1,21 @@
+a cycles 0 - 120 dt first 97.8674 last 3.04292 s/cycle steady 2.680 first elapsed 91.3
+a 'FATAL' 0 
+a 'CLEAN WARNING' 0 
+a 'DT_RETRY' 0 
+a 'WARNING' 3 ### WARNING: 13 input parameter(s) were never read by the code (typo, or a key AthenaK does not have?):
+a 'march' 0 
+a 'clean_init steady:' 1 <rad_m1> clean_init steady: NOT converged after 50 passes, residual 5.883e-04 (tol 1.0e-08; 0 formal solutions); radiation E 8.2441512239e+46 -> 8.2029473448e+46, F/c 1.5972e+42 0.0000e+00 0.0000e+00 -> 1.2191e+43 6.3274e+44 -6.3647e+39 (volume sums)
+a 'he_star_m1: GM' 1 he_star_m1: GM = 7.40338e+27, F_in = 6.9466e+13, tau(r_in) = 7.78158e+06, r_int (tau = 1) = 6.52547e+12, r_top = 5.63216e+13, sponge rate = 0 above r = 6.52547e+12
+a 'he_seed_band = n2 BAND' 1 he_star_m1: he_seed_band = n2 BAND r 4.26549e+12 .. 5.76689e+12 (r/r_int 0.653667 - 0.88375, r_int 6.52547e+12), 43 cells 136..178; peak at r/r_int 0.813972: sigma 2.96168e-05 /s, 1/sigma 0.390794 d, T 142153 K, Gamma1 1.35133, H_p/r 0.118225; pi r/H_p 26.5731, l_8 180.467 (8 cells per wavelength, m
+a 'seed = ' 1 he_star_m1: seed = real spherical harmonics l 7..26 (680 terms, all m), amplitude 0.001 (eint), r 4.26549e+12 .. 5.76689e+12, rng 1234
+a 'direction maps' 1 <rad_m1> vet_gd: global-direction SC closure on the sp wedge, product GL7x18 staggered (126 directions); z-rotation every 0 cycle(s) (0 = fixed), first angle 0; rank 0 wall ghost columns 48678, direction maps exact 2657340 of 6133428 (the rest: nearest direction)
+a 'he_ic_equil' 0 
+GPU mem peak MiB max 78925 min 78761 (n=4) = 54.9 % of 143771 MiB
+rt t9l62.hydro.hst rows a 121 b 0 last 0 rows DIFF
+rt t9l62.user.hst rows a 121 b 0 last 0 rows DIFF
+rt t9l62.hydro_w.00005.bin DIFF/missing
+rt t9l62.m1.00005.bin DIFF/missing
+rt t9l62.m1_face.00001.bin DIFF/missing
+rt t9l62.m1_vet.00001.bin DIFF/missing
+a rc=0 wall=460
+DONE
