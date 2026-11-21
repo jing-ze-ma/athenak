@@ -3467,7 +3467,7 @@ void RadiationM1::CleanStagBracket() {
   // cell in CLW_V, a Krylov scratch slot, P the largest rays' flux out of one of its
   // faces: 1 where the rays carry the cell (as its closure, a beam's transit cell
   // included), down to 0 where they hold less than clean_ray_min of its E)
-  const bool thh = cln_thinh;
+  const bool thh = cln_thinh, thg = cln_thhg;
   if (thh) {
     CleanFor("cln_thheld", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -3480,7 +3480,12 @@ void RadiationM1::CleanStagBracket() {
         p = fmax(p, fmax(fh, -x.cs(m,n,k,j,i)));
       }
       const Real e = rmn*x.w(m,CLW_EO,k,j,i), h = fmax(x.cs(m,CLN_JR,k,j,i), p);
-      x.w(m,CLW_V,k,j,i) = (e > h) ? h/e : 1.0;
+      // (clean_stag_thinf_held_gate: times r^2, r = min(E_old/H, H/E_old), H = max(J, P),
+      // the old production's quasi-steadiness gate: a cell the rays reach far above its
+      // E_old (a dark floor cell a beam just hit) moves with its own half range)
+      const Real eo = fmax(x.w(m,CLW_EO,k,j,i), 0.0), hm = fmax(eo, h);
+      const Real r = thg ? ((hm > 0.0) ? fmin(eo, h)/hm : 1.0) : 1.0;
+      x.w(m,CLW_V,k,j,i) = ((e > h) ? h/e : 1.0)*r*r;
     });
     CleanGhostFill(cln_w, CLW_V, 1);
     CleanStagCsLateral(CLW_V);
