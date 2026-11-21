@@ -430,3 +430,10 @@ CLEAN WARNING cycle 26485 t2s 2: stage solve failed, the step is redone with bac
 CLEAN WARNING cycle 26485: backward-Euler solve not converged (dt_retry, 2 so far; last change 2.586e-06)
 == 2026-11-21 15:08:17 log.3: CW 7-7 (grep -B5)
 
+== 2026-11-21 15:49:47 log.5: CW 1-1 (grep -B5)
+CLEAN cycle 26889 t2s 2 it -2 (sum 224) pos 0 mark 0 all 0 neg 4 r1 4 r2 243 first 4 243 guard 0 solves 200 cwin 0
+CLEAN MCAP cycle 26889 t2s 2: 19004 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 26889 t2s 2 faces 8832673 momentum cut sum |dF| V/c^2 6.689297e+31
+CLEAN FWB cycle 26889 t2s 2 faces 105181105 radiation momentum sum |dp| 3.755305e+32 x1 faces sum dp -3.930549e+30
+CLEAN XT cycle 26889 t2s 2 write-back closure 2.139e+00
+CLEAN WARNING cycle 26889 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
