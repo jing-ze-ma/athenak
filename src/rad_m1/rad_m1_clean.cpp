@@ -3956,8 +3956,9 @@ static std::array<uint32_t, 4> CleanFMask(const int f0) {
 
 void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool lat) {
   // (clean_stag_fwb_stage: fwb's s of E_old (sm, the call with CLW_EO) before the first
-  // solve of a round, with its coefficients; then the caller's lateral sums of e again)
-  const int sw = cln_fwb ? cln_fwbs : -1;
+  // solve of a round, with its coefficients; then the caller's lateral sums of e again;
+  // clean_init steady: of each solve, whose fixed point is the steady state)
+  const int sw = (cln_fwb && !cln_insteady) ? cln_fwbs : -1;
   const bool sm = sw >= 0 && e == CLW_EO;
   if (sw >= 0 && !cln_fwbok) {
     cln_fwbok = true;
