@@ -1,0 +1,1 @@
+TAG=V7d BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v207_5ba73ecab md5=86d310214d0383dfe84f0182296a3b98 RST=/resnick/groups/carnegie_poc/jingze/prod_fresh_1121b/t19l64/rst/t19l64.00001.rst N0=1127 NC=600 MODE=speed HOLDER=5840649 NODES=hpc-sm-02-11 NR=4 PPN=4 ENVX= EX=output5/dt=1e30 UCX=
