@@ -2319,3 +2319,8 @@ B_br gate not passed; arms not started
   CW m35mms (log.1) cycle 43281 [cycle=43300 time=3.376944e+05 dt=3.465751e+00]: CLEAN WARNING cycle 43281 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
 - (14:49) PROD 1121b:
   ALERT dt collapse m35mms: max 23.3485 -> 2.16596 (last 200 cycle lines) at cycle=43400 time=3.379012e+05
+- (14:49) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW m35mms (log.1) cycle 43365 [cycle=43400 time=3.379012e+05 dt=2.165963e+00]: CLEAN WARNING cycle 43365 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 3)
+  CW m35mms (log.1) cycle 43373 [cycle=43400 time=3.379012e+05 dt=2.165963e+00]: CLEAN WARNING cycle 43373 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 4)
+  CW m35mms (log.1) cycle 43379 [cycle=43400 time=3.379012e+05 dt=2.165963e+00]: CLEAN WARNING cycle 43379 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
+  CW m35mms (log.1) cycle 43392 [cycle=43400 time=3.379012e+05 dt=2.165963e+00]: CLEAN WARNING cycle 43392 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 6)
