@@ -633,3 +633,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   FRESHGO START GF_t9l62_corona 17:00:53 on hpc-sm-02-09
   FRESHGO START GF_t19l64_corona 17:01:11 on hpc-sm-01-17
 - F_t19l64_corona (hpc-sm-01-17): a rc=1 wall=231 b rc=1 wall=230 b rc=1 wall=212 | a 'FATAL' 1 ### FATAL ERROR: <time> dt_retry: cycle 0 failed 9 times (max 8), dt 1.447709e-01 a 'CLEAN WARNING' 9 CLEAN WARNING cycle 0: backward-Euler solve not converged (dt_retry, 1 so far; last change inf) a 'DT_RETRY' 8 DT_RETRY cycle=0 t=0.000000e+00 dt 2.895419e-01 -> 1.447709e-01 reason=NON- | GPU mem peak MiB 79573 | CW 9 FATAL 3
+- F_t9l62 (hpc-sm-01-11): a rc=0 wall=387 b rc=0 wall=238 b rc=0 wall=209 | a cycles 0 - 120 dt first 97.8674 last 97.4615 s/cycle steady 2.410 first elapsed 44.7 a 'FATAL' 0  a 'CLEAN WARNING' 0   | GPU mem peak MiB 78229 | CW 0 FATAL 0
