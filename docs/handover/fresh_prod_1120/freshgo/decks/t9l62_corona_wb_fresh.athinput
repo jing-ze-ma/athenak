@@ -52,7 +52,7 @@ evolution  = dynamic
 integrator = rk2
 cfl_number = 0.3   # FRESHPREP
 nlim       = -1
-tlim                     = 2.88e6                 # 800 h (Jiang+2018 Fig 4 T9L6.2 axis 0-800 h, run to ~745 h)
+tlim = 2.682e6   # FRESHGO (USER 11-20): 745 h, end of the T9L6.2 curve in Jiang+2018 Fig 4 (T9L62_SETUP_1113.md:35)
 ndiag      = 50
 restart_refill_ghosts = false   # FRESHPREP
 <units>

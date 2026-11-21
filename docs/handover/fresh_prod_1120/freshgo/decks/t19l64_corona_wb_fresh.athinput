@@ -55,7 +55,7 @@ evolution  = dynamic
 integrator = rk2
 cfl_number = 0.3   # FRESHPREP
 nlim       = -1
-tlim                     = 1.0e30                 # [T19 11-19] USER 11-16 rule: tlim 1e30 on long runs (J18 Fig 4 T19L6.4 ~350 h)
+tlim = 1.26e6   # FRESHGO (USER 11-20): 350 h, end of the T19L6.4 curve in Jiang+2018 Fig 4 (viper t19l64.athinput comment)
 ndiag      = 50
 restart_refill_ghosts = false   # FRESHPREP
 <units>
