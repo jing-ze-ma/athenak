@@ -1541,12 +1541,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (dop_vstar) {
       if (impl_vimp && pin->DoesParameterExist("rad_m1","implicit_vimp") &&
           global_variable::my_rank == 0) {
-        std::cout << "<rad_m1> doppler_vel = vstar: implicit_vimp = true overridden to false"
+        std::cout << "<rad_m1> doppler_vel = vstar: implicit_vimp = true overridden to "
+                     "false"
                   << std::endl;
       }
       impl_vimp = false;
       if (global_variable::my_rank == 0) {
-        std::cout << "<rad_m1> doppler_vel = vstar (athpp-vstar-1105): v-terms at the Heun "
+        std::cout << "<rad_m1> doppler_vel = vstar (athpp-vstar-1105): v-terms at the "
+                     "Heun "
                   << "stage velocity before t2inc, implicit_vimp off" << std::endl;
       }
     }
@@ -1568,7 +1570,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       impl_vimp = false;
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_m1> doppler_face = central (doface-1105): x1 enthalpy flux "
-                  << "a E = v (1 + chi) E as the face mean 0.5 (a_L E_L + a_R E_R) (Athena++ "
+                  << "a E = v (1 + chi) E as the face mean 0.5 (a_L E_L + a_R E_R) "
+                     "(Athena++ "
                   << "DO near-central face), no donor / plm correction" << std::endl;
       }
     }
@@ -1848,7 +1851,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_pos_flr_cons = pin->GetBoolean("rad_m1","implicit_pos_floor_cons");
   }
   if (impl_pos_flr_cons && global_variable::my_rank == 0) {
-    std::cout << "<rad_m1> implicit_pos_floor_cons: the E floor's uncovered raise is taken "
+    std::cout << "<rad_m1> implicit_pos_floor_cons: the E floor's uncovered raise is "
+                 "taken "
               << "from the radiation of the same column (no energy created)" << std::endl;
   }
   // implicit_pos_gas_cons = true and implicit_pos_floor_gas_keep = 1: the defaults of a
@@ -1860,8 +1864,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (cnw || pin->DoesParameterExist("rad_m1","implicit_pos_floor_gas_keep")) {
     impl_pos_flr_gk = pin->GetOrAddReal("rad_m1","implicit_pos_floor_gas_keep",1.0);
     if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> implicit_pos_floor_gas_keep=" << impl_pos_flr_gk << ": the E "
-                << "floor's raise leaves the gas at least that share of its eint" << std::endl;
+      std::cout << "<rad_m1> implicit_pos_floor_gas_keep=" << impl_pos_flr_gk
+                << ": the E floor's raise leaves the gas at least that share of its eint"
+                << std::endl;
     }
   }
   // implicit_fclip_diag (rad_m1.hpp; read only when named)
@@ -2461,8 +2466,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (pin->DoesParameterExist("rad_m1","implicit_am_cs")) {
       impl_am_cs = pin->GetBoolean("rad_m1","implicit_am_cs");
     } else {
-      recipe::Log(std::string("<rad_m1>/implicit_am_cs = ") + (impl_am_cs ? "true" : "false")
-                  + " (cubed sphere: follows <hydro|mhd>/am_transport)");
+      recipe::Log(std::string("<rad_m1>/implicit_am_cs = ") +
+                  (impl_am_cs ? "true" : "false") +
+                  " (cubed sphere: follows <hydro|mhd>/am_transport)");
     }
     am_vec = impl_am_cs && (named("hydro","am_vector") || named("mhd","am_vector"));
     if (pin->DoesParameterExist("rad_m1","implicit_am_cs_diag")) {

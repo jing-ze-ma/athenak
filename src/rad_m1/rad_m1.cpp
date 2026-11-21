@@ -159,7 +159,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // zero-offset fill is the only form)
     if (pin->DoesParameterExist("rad_m1","clean_rot_ring_fill0") &&
         !pin->GetBoolean("rad_m1","clean_rot_ring_fill0")) {
-      std::cout << "### FATAL ERROR <rad_m1>/clean_rot_ring_fill0 = false (the ring fill's "
+      std::cout << "### FATAL ERROR <rad_m1>/clean_rot_ring_fill0 = false (the ring "
+                   "fill's "
                 << "sweep of the older sets) is removed" << std::endl;
       std::exit(EXIT_FAILURE);
     }
@@ -236,7 +237,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       if (cln_fschur && !ok) {
         std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_fschur needs clean_stag_ftie, "
                   << "clean_stag_fsweeps = 1, a uniform mesh, "
-                  << "nghost >= 3 and MeshBlocks of >= 3 cells along a line of two round a "
+                  << "nghost >= 3 and MeshBlocks of >= 3 cells along a line of two "
+                     "round a "
                   << "periodic one, >= 6 along longer or open ones" << std::endl;
         std::exit(EXIT_FAILURE);
       }
@@ -354,7 +356,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                              "off" : pin->GetString("rad_m1", "clean_stag_kpos");
       if (kp != "off" && kp != "false" && kp != "true" && kp != "faces" &&
           kp != "cell" && kp != "redo" && kp != "delta") {
-        std::cout << "### FATAL ERROR <rad_m1>/clean_stag_kpos = off | faces | cell | redo"
+        std::cout << "### FATAL ERROR <rad_m1>/clean_stag_kpos = off | faces | cell | "
+                     "redo"
                   << " | delta" << std::endl;
         std::exit(EXIT_FAILURE);
       }
@@ -707,7 +710,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       why += " mesh/use_grid_stretch_r_poly";
     }
     if (pm_->use_grid_stretch_theta && !full_ok) {
-      why += " mesh/use_grid_stretch_theta (needs transport = implicit on spherical polar)";
+      why += " mesh/use_grid_stretch_theta (needs transport = implicit on spherical "
+             "polar)";
     }
     if (ppack->pcoord != nullptr &&
         (ppack->pcoord->is_special_relativistic ||
@@ -720,7 +724,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         << std::endl << "<rad_m1> (explicit and implicit transport) supports a "
         << "uniform Cartesian mesh and, for the implicit solve only (stages S1, S2: "
         << "closure eddington | m1 | minerbo | kershaw), "
-        << "a spherical-polar wedge or (fullsph-1027 S1) the full sphere and (stage CS0: closure "
+        << "a spherical-polar wedge or (fullsph-1027 S1) the full sphere and (stage "
+           "CS0: closure "
         << "eddington only) the cubed sphere; this input sets:" << why << "."
         << std::endl
         << "The M1 kernels would run with Cartesian uniform-dx arithmetic on it.  See "
@@ -1923,7 +1928,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       if (vgd_on && fullsph && !pin->DoesParameterExist("rad_m1","vet_gd_band_global")) {
         if (recipe::NewDefaults(pin)) {
           pin->GetOrAddBoolean("rad_m1","vet_gd_band_global",true);
-          recipe::Log("<rad_m1>/vet_gd_band_global = true (default with vet_gd on a fresh sp "
+          recipe::Log("<rad_m1>/vet_gd_band_global = true (default with vet_gd on a "
+                      "fresh sp "
                       "full-sphere start)");
         } else {
           recipe::Log("<rad_m1>/vet_gd_band_global = false (" + std::string(
@@ -1945,7 +1951,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && !pin->DoesParameterExist("rad_m1","vet_gd_halo_compact")) {
       if (recipe::NewDefaults(pin)) {
         pin->GetOrAddInteger("rad_m1","vet_gd_halo_compact",2);
-        recipe::Log("<rad_m1>/vet_gd_halo_compact = 2 (default with vet_gd on a fresh start)");
+        recipe::Log("<rad_m1>/vet_gd_halo_compact = 2 (default with vet_gd on a fresh "
+                    "start)");
       } else {
         recipe::Log("<rad_m1>/vet_gd_halo_compact = 0 (" + std::string(
             recipe::GetMode(pin) == recipe::Mode::none ? "recipe none" :
