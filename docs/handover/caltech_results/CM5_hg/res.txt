@@ -1,0 +1,8 @@
+cycles 624961 - 624965 dt [68.96552, 100.5172, 106.3636] s/cycle(all) ['12.05', '28.18', '2.89', '29.19'] steady(excl first+last) 15.537 first elapsed 41.0 last elapsed 113.3
+[]
+CW a 11 FATAL 1 retries []
+GPU mem peak MiB max 101133 min 100483 (n=4)
+rc=1 wall=358
+hstmd5 hegiant.hydro.hst d6d6ae1d863c39f322ebd2d502e203c3 rows 4
+hstmd5 hegiant.user.hst 3144101fca5893dc67deef7b725a06ab rows 4
+DONE
