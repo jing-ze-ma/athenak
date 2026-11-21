@@ -1,0 +1,8 @@
+cycles 1150 - 1550 dt [38.03272, 38.25067, 38.25395, 38.27796, 38.30034, 38.31633, 38.34613, 38.39267, 38.51631] s/cycle(all) ['114.66', '114.51', '115.54', '113.35', '114.65', '120.56', '114.39', '114.10'] steady(excl first+last) 115.502 first elapsed 68.4 last elapsed 990.1
+[]
+CW a 0 FATAL 0 retries []
+GPU mem peak MiB max 78483 min 78257 (n=4)
+rc=137 wall=1056
+hstmd5 t19l64.hydro.hst 9904d5f337c0b0b054a7ba62d29674e3 rows 4
+hstmd5 t19l64.user.hst 3faf2234dd14cf37b21e288f875c4db0 rows 4
+DONE
