@@ -1,0 +1,9 @@
+V8a0: t9l62 damp-0 successor preflight (B_v207 86d31021, copy of t9l62.00022.rst, t 950400, N0 ~21365, keys rst + conv_max 1e-4 + thinf_held_gate + clean_pass_damp 0, 300 cycles, rst off), node hpc-sm-02-16
+rc: rc=0 wall=572 | cycles 21400-21665 (log lines every 50)
+CW 0 FATAL 0 | DT_RETRY lines 0, stage fallbacks 2
+solves/stage-pass: 2.0 mean / 2 max (n=601); >=200-solve stage-passes: 0
+dt test (every 50): 21400:55.69 21450:54.58 21500:53.3 21550:52.9 21600:51.05 21650:45.38 
+dt production (last 10 cycle lines): 22850:59.02 22900:63.58 22950:67.93 23000:57.04 23050:49.95 23100:47.77 23150:57.22 23200:58.72 23250:64.44 23300:62.76 
+user.hst test: [t 954016 KE 4.885e+43 Ltop/Lin 1.7188] [t 957639 KE 4.903e+43 Ltop/Lin 1.7370] [t 961253 KE 4.921e+43 Ltop/Lin 1.7552] [t 964824 KE 4.939e+43 Ltop/Lin 1.7736] 
+user.hst production, same t range: [t 954016 KE 4.885e+43 Ltop/Lin 1.7196] [t 957639 KE 4.903e+43 Ltop/Lin 1.7373] [t 961253 KE 4.921e+43 Ltop/Lin 1.7554] [t 964824 KE 4.939e+43 Ltop/Lin 1.7737] 
+wall/cycle: test 1.77 s | production (last 500 cycles) 1.93 s
