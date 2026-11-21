@@ -1929,9 +1929,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_exit")) {
       vgd_bandx = pin->GetBoolean("rad_m1","vet_gd_band_exit");
     }
-    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_smooth")) {
-      vgd_smooth = std::max(0, pin->GetInteger("rad_m1","vet_gd_smooth"));
-    }
     if (pin->DoesParameterExist("rad_m1","vet_gd_mms") &&
         pin->GetBoolean("rad_m1","vet_gd_mms") && !pmy_pack->pmesh->use_cubed_sphere) {
       VetGdMms();   // test only: the manufactured-solution check of div(E D), then exit
@@ -2999,7 +2996,6 @@ RadiationM1::~RadiationM1() {
   if (pbval_ea != nullptr) {delete pbval_ea;}
   if (pbval_fs != nullptr) {delete pbval_fs;}
   if (pbval_vs != nullptr) {delete pbval_vs;}
-  if (pbval_vt != nullptr) {delete pbval_vt;}
   if (pbval_hr != nullptr) {delete pbval_hr;}   // cs-s4-1017
   if (pbval_gd != nullptr) {delete pbval_gd;}
 }

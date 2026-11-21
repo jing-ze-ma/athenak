@@ -860,7 +860,6 @@ void RadiationM1::VetGdInit() {
     if (vgd_bandx) {bad += " vet_gd_band_exit;";}
     if (vet_path != 0) {bad += " vet_path = cells;";}
     if (vgd_seam > 0) {bad += " vet_gd_seam_mask (the sp theta seam);";}
-    if (vgd_smooth > 0) {bad += " vet_gd_smooth;";}
     if (vgd_ovl_g > 0) {bad += " vet_gd_overlap;";}
     if (vgd_fuse_h > 1) {bad += " vet_gd_fuse_shells > 1;";}
     if (vgd_iter > 1) {bad += " vet_gd_iter > 1;";}
@@ -895,7 +894,6 @@ void RadiationM1::VetGdInit() {
     if (vgd_thmir || vgd_thvac > 0) {bad += " vet_gd_theta_wall = mirror|vacuum|extrap;";}
     if (vgd_seam > 0) {bad += " vet_gd_seam_mask;";}
     if (vet_path != 0) {bad += " vet_path = cells;";}
-    if (vgd_smooth > 0) {bad += " vet_gd_smooth;";}
     if (vgd_ovl_g > 0) {bad += " vet_gd_overlap;";}
     if (vgd_fuse_h > 1) {bad += " vet_gd_fuse_shells > 1;";}
     if (!bad.empty()) {
@@ -7913,47 +7911,6 @@ void RadiationM1::VetGdMoments(const int i0, const int i1) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::VetGdSmooth
-//! \brief vet_gd_smooth = N > 0 (diagnostic, default 0): N passes of a lateral 1-2-1
-//! filter (theta, then phi) of the D_rr correction LAT0, ghosts exchanged before each
-//! direction (periodic walls: scalar copy)
-
-void RadiationM1::VetGdSmooth() {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie;
-  const int js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
-  const int nmb1 = pmy_pack->nmb_thispack - 1;
-  const int ilo = is + vlat_icut;
-  if (vgd_sm.extent(0) == 0) {
-    Kokkos::realloc(vgd_sm, pmy_pack->nmb_thispack, indcs.nx3 + 2*indcs.ng,
-                    indcs.nx2 + 2*indcs.ng, indcs.nx1 + 2*indcs.ng);
-  }
-  auto tt_ = tau_ten;
-  auto sm_ = vgd_sm;
-  const int c0 = M1_TT_LAT0;
-  for (int pass = 0; pass < vgd_smooth; ++pass) {
-    for (int dir = 0; dir < 2; ++dir) {
-      VetLatTTGhosts();
-      par_for("m1_vgd_sm", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        if (dir == 0) {
-          sm_(m,k,j,i) = 0.25*(tt_(m,c0,k,j-1,i) + 2.0*tt_(m,c0,k,j,i)
-                               + tt_(m,c0,k,j+1,i));
-        } else {
-          sm_(m,k,j,i) = 0.25*(tt_(m,c0,k-1,j,i) + 2.0*tt_(m,c0,k,j,i)
-                               + tt_(m,c0,k+1,j,i));
-        }
-      });
-      par_for("m1_vgd_smc", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        tt_(m,c0,k,j,i) = sm_(m,k,j,i);
-      });
-    }
-  }
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdSource
 //! \brief the source of a gd build: ln chi, ln S of every cell (VetLatSweep(0), with the
 //! first shell vlat_icut), copied into the band index space of vgd_cs and its lateral
@@ -8455,14 +8412,13 @@ void RadiationM1::VetGdRotAvgSetup() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdPost
-//! \brief after a sweep: the moments -> tau_ten LAT slots (+ twin, smooth, the operator
-//! bound of D_r,lat), then the clamp check over all ranks and the debug dump
+//! \brief after a sweep: the moments -> tau_ten LAT slots (+ the operator bound of
+//! D_r,lat), then the clamp check over all ranks and the debug dump
 
 void RadiationM1::VetGdPost() {
   Kokkos::Timer tm;
   // (the clean scheme on the cubed sphere reads the intensities: CleanClosureFromGd)
   if (!(clean && vgd_csg)) {VetGdMoments();}
-  if (vgd_smooth > 0) {VetGdSmooth();}
   // vgdxf-1112: the current set's raw fields G (before the EMA) for the cross-fade
   if (vgd_xf && !vra_raw) {
     VetGdRotAvgSetup();

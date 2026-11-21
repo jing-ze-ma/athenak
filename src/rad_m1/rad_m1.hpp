@@ -3395,8 +3395,6 @@ class RadiationM1 {
   DvceArray5D<Real> vlat_d_c;
   DvceArray5D<Real> vlat_cs;   // (m, 2, k, j, i): ln chi, ln S (ghosts exchanged)
   DvceArray5D<Real> vlat_cs_c;
-  DvceArray5D<Real> vlat_lx;    // (m, 2, k, j, i): D_rt, D_rp for their ghost exchange
-  DvceArray5D<Real> vlat_tt_c;  // its coarse twin
   DvceArray3D<Real> vlat_geo;  // (shell l, 2 a + dir, 0..3): per-shell ray geometry
   DvceArray1D<Real> vlat_mu;   // (a): Gauss nodes on [0, 1], descending
   DvceArray1D<Real> vlat_w;    // (a): hemisphere weights, sum 1/2 (J = sum w I)
@@ -3411,11 +3409,9 @@ class RadiationM1 {
   Real fsync_w = 1.0;   // <rad_m1>/sp_face_sync_relax
   void SphFaceSync();
   MeshBoundaryValuesCC *pbval_vs = nullptr;   // vlat_cs
-  MeshBoundaryValuesCC *pbval_vt = nullptr;   // tau_ten (all slots)
   void VetLatInit();
   void VetLatBuild();
   void VetLatSweep(const int stage);   // 0 twin, 1 3-D, 2 moments
-  void VetLatTTGhosts(DvceArray5D<Real> *src = nullptr);
   void VetLatOdMax();
   void VetLatExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
                       MeshBoundaryValuesCC *pb);
@@ -3443,8 +3439,6 @@ class RadiationM1 {
   void CsTanFrameInit(DvceArray5D<Real> &a, DvceArray5D<Real> &ac, MeshBoundaryValuesCC *pb);
   void CsTanDiag();
   int vgd_iter = 1;            // vet_gd_iter: sweeps per ordinary build
-  int vgd_smooth = 0;          // vet_gd_smooth: lateral 1-2-1 passes on dD_rr (diag.)
-  DvceArray4D<Real> vgd_sm;    // (m, k, j, i) scratch of VetGdSmooth
   bool vgd_bandx = false;      // vet_gd_band_exit: shortened segments for reads
                                // beyond the ghost band instead of clamping
   Real vgd_taumin = 0.0;       // vet_gd_thin_taumin > 0: lateral parts tapered to 0
@@ -4448,7 +4442,6 @@ class RadiationM1 {
   void VetGdSweep();
   void VetGdWall(const int i0, const int i1);
   void VetGdMoments(const int i0 = -1, const int i1 = -1);
-  void VetGdSmooth();
   // vet_gd_async (GD_ASYNC.md): the sweep of build n runs on its own device instance
   // and host thread while the rest of cycle n runs; the D of cycle n is the moments of
   // build n-1 (one cycle lag).  The pending build's source (vlat_cs) and cycle travel

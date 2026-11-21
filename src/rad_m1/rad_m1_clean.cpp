@@ -417,7 +417,9 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/vet_gd_twin*", ""},
     {"rad_m1/vet_gd_symref*", ""},
     {"rad_m1/vet_gd_async", "!"}, {"rad_m1/time2_stage_theta", "!"},
-    {"rad_m1/time2_stage_local_be", "!"}};
+    {"rad_m1/time2_stage_local_be", "!"},
+    // (study keys never named in production, removed, L4)
+    {"rad_m1/vet_gd_smooth", "!"}};
   const bool say = (global_variable::my_rank == 0);
   std::string none;
   std::vector<std::string> drop;
@@ -433,8 +435,8 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
         if (t[1] == nullptr) break;
         const std::string c(t[1]);
         if (c == "x") {
-          CleanFatal("<" + k + "> belonged to a removed path (the cell layout or the FV "
-                     "rays); remove it from the input");
+          CleanFatal("<" + k + "> belonged to a removed path (the cell layout, the FV rays "
+                     "or a retired study key); remove it from the input");
         }
         if (c[0] == '=' && v != c.substr(1) && !(c == "=false" && v == "0")) {
           CleanFatal("<" + k + "> = " + v + ": removed from this build (only " +

@@ -243,16 +243,6 @@ void RadiationM1::VetLatInit() {
   if (vlat_taumax > 0.0 || vlat_taumin > 0.0) {
     Kokkos::realloc(vlat_wt, nmb, c3, c2, c1);
   }
-  // the exchange of the off-diagonal slots only (slots 0-3 keep vet_col's ghosts)
-  // (vet_gd: also slot 0 after the fold and every LAT slot: the face diagonals and the
-  // tangential cross terms read their lateral ghosts)
-  const int nlx = vgd_on ? (1 + M1_TT_NLAT) : 2;
-  // (scheme = clean: vlat_lx and its exchange buffers made at the first VetLatTTGhosts,
-  // the fold of a fresh start's build; a restart never needs them)
-  const bool lxe = !clean;
-  if (lxe) {Kokkos::realloc(vlat_lx, nmb, nlx, c3, c2, c1);}
-  Kokkos::deep_copy(vlat_lx, 0.0);
-  Kokkos::realloc(vlat_tt_c, nmb, nlx, 1, 1, 1);
   Kokkos::realloc(vlat_geo, indcs.nx1, 2*vlat_nmu, 4);
   Kokkos::realloc(vlat_mu, vlat_nmu);
   Kokkos::realloc(vlat_w, vlat_nmu);
@@ -297,23 +287,9 @@ void RadiationM1::VetLatInit() {
   pbval_vs->InitializeBuffers(2);
   pbval_vs->SetVectorPairs(2, {});
   // m1blockend-1103: the resampled lateral-VET exchanges follow <mesh>/cs_seam_blockend
-  // as the moments' pbval_u does (the index-copy pbval_vt below needs nothing)
+  // as the moments' pbval_u does
   pbval_vl->cs_blockend_ext_ = pbval_u->cs_blockend_ext_;
   pbval_vs->cs_blockend_ext_ = pbval_u->cs_blockend_ext_;
-  pbval_vt = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
-  if (lxe) {pbval_vt->InitializeBuffers(nlx);}
-  // accsp-1102 (vet_gd on the full sphere): across a pole e_theta and e_phi both flip, so
-  // the hand-over pair (D_r,theta, D_r,phi) = lx slots (2, 3) flips; D_rr, the trace-free
-  // tangential D_tt, D_pp and D_tp (two flips) are scalars
-  if (vgd_on && vgd_pol) {
-    pbval_vt->SetVectorPairs(nlx, {{2, 3}});
-  } else {
-    pbval_vt->SetVectorPairs(nlx, {});
-  }
-  // cs-s4-1017: on the cubed sphere the tau_ten ghosts are the neighbour's own (mirror)
-  // cells, as the implicit operator's E and work-array ghosts (no along-seam resample):
-  // the Cartesian D_r,lat of M1CsLat0 / M1CsLatF pairs with the mirror E
-  if (pm->use_cubed_sphere) {pbval_vt->cs_noresample = true;}
   vlat_geo_icut = -1;
   vlat_ready = true;
   if (vgd_on) {VetGdInit(); return;}
@@ -405,41 +381,6 @@ void RadiationM1::VetLatOdMax() {
 #endif
     vlat_odmax = omx;
   }
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::VetLatTTGhosts
-//! \brief the lateral ghosts of the tau_ten slots the operator reads at neighbours,
-//! through a copy: D_rt, D_rp (vet_col_lat), or slot 0 and every LAT slot (vet_gd)
-
-void RadiationM1::VetLatTTGhosts(DvceArray5D<Real> *src) {
-  const int nmb1 = pmy_pack->nmb_thispack - 1;
-  auto tt_ = (src != nullptr) ? *src : tau_ten;   // meshfb-1106: or vlat_tt_loc
-  if (vlat_lx.extent_int(0) == 0) {   // (scheme = clean: made at its first use)
-    Kokkos::realloc(vlat_lx, nmb1 + 1, vlat_tt_c.extent_int(1), tt_.extent_int(2),
-                    tt_.extent_int(3), tt_.extent_int(4));
-    pbval_vt->InitializeBuffers(vlat_lx.extent_int(1));
-  }
-  auto lx_ = vlat_lx;
-  const int nlx = static_cast<int>(vlat_lx.extent(1));
-  const bool gd = vgd_on;
-  auto slot = [=] KOKKOS_FUNCTION (const int c) {
-    return gd ? ((c == 0) ? 0 : (M1_TT_LAT0 + c - 1)) : (M1_TT_LAT0 + 1 + c);
-  };
-  // copied in over ALL cells: cells the exchange does not fill (x1 and physical-boundary
-  // ghosts) come back unchanged
-  const int n3 = static_cast<int>(tt_.extent(2)) - 1;
-  const int n2 = static_cast<int>(tt_.extent(3)) - 1;
-  const int n1 = static_cast<int>(tt_.extent(4)) - 1;
-  par_for("m1_vlat_lxo", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, 0, n1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    for (int c = 0; c < nlx; ++c) {lx_(m,c,k,j,i) = tt_(m,slot(c),k,j,i);}
-  });
-  VetLatExchange(vlat_lx, vlat_tt_c, pbval_vt);
-  par_for("m1_vlat_lxi", DevExeSpace(), 0, nmb1, 0, n3, 0, n2, 0, n1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    for (int c = 0; c < nlx; ++c) {tt_(m,slot(c),k,j,i) = lx_(m,c,k,j,i);}
-  });
 }
 
 //----------------------------------------------------------------------------------------
