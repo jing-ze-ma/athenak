@@ -1946,3 +1946,4 @@ B_br gate not passed; arms not started
   V8b (t9r): CW 0 FATAL 0 | solves/stage-pass 3.7 mean / 8 max (n=601) | dt test 19750:60.93 19800:63.76 19850:68.85 19900:74.83 19950:69.54 20000:61.98  | wall/cycle test 2.19 s vs prod 1.76 s
   V8c (m35mms): CW 0 FATAL 0 | solves/stage-pass 6.6 mean / 8 max (n=601) | dt test 33400:8.249 33450:8.254 33500:7.722 33550:7.547 33600:7.483 33650:7.152  | wall/cycle test 1.19 s vs prod 1.28 s
   V8d (i1_m35mms_f1k): CW 0 FATAL 0 | solves/stage-pass 6.1 mean / 8 max (n=599) | dt test 30000:7.473 30050:6.947 30100:6.557 30150:6.312 30200:6.21 30250:6.165  | wall/cycle test 1.10 s vs prod 1.24 s
+- (11:10) V209 start: R2 on hpc-sm-02-04 (athena_v207_5ba73ecab 86d31021, restart rsg_E_1020/prodH/rst/rsg.01295.rst (our latest RSG rst), NR 4, 150 cycles, rst off, output1-6 dt 1e30, keys from the rst + jt list (v209/R2.keys))
