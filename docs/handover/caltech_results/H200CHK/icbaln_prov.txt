@@ -1,0 +1,311 @@
+B_icbaln provenance (orion hf c)
+binary: /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_icbaln_4a7f72334 md5 8ac1d0c6ecce928eac0e5de29e6edd5a
+worktree /resnick/groups/carnegie_poc/jingze/wt_orion1121/icbaln HEAD 4a7f723342c9a24f18e0de73e857a7756c4e0389
+git status --porcelain (build dirs excluded):
+CMakeCache: athena_SOURCE_DIR:STATIC=/resnick/groups/carnegie_poc/jingze/wt_orion1121/icbaln CMAKE_CACHEFILE_DIR:INTERNAL=/resnick/groups/carnegie_poc/jingze/wt_orion1121/icbaln/build_n CMAKE_HOME_DIRECTORY:INTERNAL=/resnick/groups/carnegie_poc/jingze/wt_orion1121/icbaln 
+toolchain: CUDA 12.9.0 + g++ 13.2.0 (module gcc/13.2.0-gcc-11.3.1-limvwj2 cuda/12.9.0-none-none-pfmzfdv), Kokkos_ARCH_HOPPER90 from the copied B_v203n cache
+== inc_icbaln.log
+changed files vs e688cb7bc: 1: src/pgen/he_star_m1.cpp
+prep secs 228
+-- Including user-specified problem generator file: he_star_m1
+-- -ffp-contract=off build: CUDA device code with --fmad=false
+-- Setting default Kokkos CXX standard to 17
+-- Kokkos version: 4.6.2
+-- The project name is: Kokkos
+-- Using internal gtest for testing
+-- Configured git information in /resnick/groups/carnegie_poc/jingze/wt_orion1121/icbaln/build_n/kokkos/generated/Kokkos_Version_Info.cpp
+-- Compiler Version: 12.9.41
+-- Using -std=c++17 for C++17 standard as feature
+-- Built-in Execution Spaces:
+--     Device Parallel: Kokkos::Cuda
+--     Host Parallel: NoTypeDefined
+--       Host Serial: SERIAL
+-- 
+-- Architectures:
+--  HOPPER90
+-- Using internal desul_atomics copy
+-- Experimental mdspan support is enabled
+-- Using internal mdspan directory /resnick/groups/carnegie_poc/jingze/wt_orion1121/icbaln/kokkos/tpls/mdspan/include
+-- Kokkos Backends: SERIAL;CUDA
+-- Configuring done (6.9s)
+-- Generating done (2.4s)
+-- Build files have been written to: /resnick/groups/carnegie_poc/jingze/wt_orion1121/icbaln/build_n
+INC_OK icbaln 4a7f72334 md5=8ac1d0c6ecce928eac0e5de29e6edd5a secs=986 host=hpc-sm-01-17 recompiled_TUs=271: [  0%] Building CXX object kokkos/simd/src/CMakeFiles/kokkossimd.dir/Kokkos_SIMD_dummy.cpp [  0%] Building CXX object kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_Abort.cpp [  1%] Building CXX object kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_Command_Line_Parsing.cpp [  1%] Building CXX object kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_CPUDiscovery.cpp [  1%] Building CXX object kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_Core.cpp [  1%] Building CXX object kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_ExecPolicy.cpp [  2%] Building CXX object kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_HostBarrier.cpp [  2%] Building CXX object kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_HostSpace_deepcopy.cpp [  4%] Building CXX object kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_Profiling.cpp [  4%] Building CXX object kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_Error.cpp [  5%] Building CXX object kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_Stacktrace.cpp [  6%] Building CXX object kokkos/core/src/CMakeFiles/kokkoscore.dir/Cuda/Kokkos_Cuda_Task.cpp [  5%] Building CXX object kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_MemoryPool.cpp [  5%] Building CXX object kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_hwloc.cpp [  5%] Building CXX object kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_HostSpace.cpp [  6%] Building CXX object kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_SharedAlloc.cpp [  6%] Building CXX object kokkos/core/src/CMakeFiles/kokkoscore.dir/Cuda/Kokkos_Cuda_Instance.cpp [  7%] Building CXX object kokkos/core/src/CMakeFiles/kokkoscore.dir/Serial/Kokkos_Serial_Task.cpp [  7%] Building CXX object kokkos/core/src/CMakeFiles/kokkoscore.dir/Cuda/Kokkos_CudaSpace.cpp [  7%] Building CXX object kokkos/core/src/CMakeFiles/kokkoscore.dir/__/__/tpls/desul/src/Lock_Array_CUDA.cpp [  7%] Building CXX object kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_HostThreadTeam.cpp [  7%] Building CXX object kokkos/core/src/CMakeFiles/kokkoscore.dir/Serial/Kokkos_Serial.cpp [  8%] Building CXX object kokkos/CMakeFiles/impl_git_version.dir/generated/Kokkos_Version_Info.cpp [ 10%] Building CXX object kokkos/containers/src/CMakeFiles/kokkoscontainers.dir/impl/Kokkos_UnorderedMap_impl.cpp main.cpp globals.cpp bvals/bvals_cc.cpp bvals/buffs_fc.cpp utils/recipe.cpp bvals/bvals.cpp bvals/bvals_fc.cpp bvals/buffs_cc.cpp parameter_input.cpp bvals/bvals_part.cpp bvals/bvals_tasks.cpp bvals/flux_seam_cc.cpp bvals/flux_correct_cc.cpp bvals/flux_correct_fc.cpp bvals/prolongation.cpp bvals/prolong_prims.cpp bvals/physics/radiation_bcs.cpp bvals/physics/bfield_bcs.cpp coordinates/adm.cpp bvals/physics/z4c_bcs.cpp bvals/physics/hydro_bcs.cpp diffusion/conduction_transverse.cpp coordinates/gnomonic_raisevel_frozen.cpp coordinates/coordinates.
+== recompiled TUs (make_icbaln.log, 271)
+kokkos/simd/src/CMakeFiles/kokkossimd.dir/Kokkos_SIMD_dummy.cpp.o
+kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_Abort.cpp.o
+kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_Command_Line_Parsing.cpp.o
+kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_CPUDiscovery.cpp.o
+kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_Core.cpp.o
+kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_ExecPolicy.cpp.o
+kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_HostBarrier.cpp.o
+kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_HostSpace_deepcopy.cpp.o
+kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_Profiling.cpp.o
+kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_Error.cpp.o
+kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_Stacktrace.cpp.o
+kokkos/core/src/CMakeFiles/kokkoscore.dir/Cuda/Kokkos_Cuda_Task.cpp.o
+kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_MemoryPool.cpp.o
+kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_hwloc.cpp.o
+kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_HostSpace.cpp.o
+kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_SharedAlloc.cpp.o
+kokkos/core/src/CMakeFiles/kokkoscore.dir/Cuda/Kokkos_Cuda_Instance.cpp.o
+kokkos/core/src/CMakeFiles/kokkoscore.dir/Serial/Kokkos_Serial_Task.cpp.o
+kokkos/core/src/CMakeFiles/kokkoscore.dir/Cuda/Kokkos_CudaSpace.cpp.o
+kokkos/core/src/CMakeFiles/kokkoscore.dir/__/__/tpls/desul/src/Lock_Array_CUDA.cpp.o
+kokkos/core/src/CMakeFiles/kokkoscore.dir/impl/Kokkos_HostThreadTeam.cpp.o
+kokkos/core/src/CMakeFiles/kokkoscore.dir/Serial/Kokkos_Serial.cpp.o
+kokkos/CMakeFiles/impl_git_version.dir/generated/Kokkos_Version_Info.cpp.o
+kokkos/containers/src/CMakeFiles/kokkoscontainers.dir/impl/Kokkos_UnorderedMap_impl.cpp.o
+src/CMakeFiles/athena.dir/main.cpp.o
+src/CMakeFiles/athena.dir/globals.cpp.o
+src/CMakeFiles/athena.dir/bvals/bvals_cc.cpp.o
+src/CMakeFiles/athena.dir/bvals/buffs_fc.cpp.o
+src/CMakeFiles/athena.dir/utils/recipe.cpp.o
+src/CMakeFiles/athena.dir/bvals/bvals.cpp.o
+src/CMakeFiles/athena.dir/bvals/bvals_fc.cpp.o
+src/CMakeFiles/athena.dir/bvals/buffs_cc.cpp.o
+src/CMakeFiles/athena.dir/parameter_input.cpp.o
+src/CMakeFiles/athena.dir/bvals/bvals_part.cpp.o
+src/CMakeFiles/athena.dir/bvals/bvals_tasks.cpp.o
+src/CMakeFiles/athena.dir/bvals/flux_seam_cc.cpp.o
+src/CMakeFiles/athena.dir/bvals/flux_correct_cc.cpp.o
+src/CMakeFiles/athena.dir/bvals/flux_correct_fc.cpp.o
+src/CMakeFiles/athena.dir/bvals/prolongation.cpp.o
+src/CMakeFiles/athena.dir/bvals/prolong_prims.cpp.o
+src/CMakeFiles/athena.dir/bvals/physics/radiation_bcs.cpp.o
+src/CMakeFiles/athena.dir/bvals/physics/bfield_bcs.cpp.o
+src/CMakeFiles/athena.dir/coordinates/adm.cpp.o
+src/CMakeFiles/athena.dir/bvals/physics/z4c_bcs.cpp.o
+src/CMakeFiles/athena.dir/bvals/physics/hydro_bcs.cpp.o
+src/CMakeFiles/athena.dir/diffusion/conduction_transverse.cpp.o
+src/CMakeFiles/athena.dir/coordinates/gnomonic_raisevel_frozen.cpp.o
+src/CMakeFiles/athena.dir/coordinates/coordinates.cpp.o
+src/CMakeFiles/athena.dir/diffusion/conduction.cpp.o
+src/CMakeFiles/athena.dir/coordinates/excision.cpp.o
+src/CMakeFiles/athena.dir/bvals/physics/rad_m1_bcs.cpp.o
+src/CMakeFiles/athena.dir/diffusion/viscosity.cpp.o
+src/CMakeFiles/athena.dir/diffusion/resistivity.cpp.o
+src/CMakeFiles/athena.dir/diffusion/resistivity_rkg_tasks.cpp.o
+src/CMakeFiles/athena.dir/diffusion/resistivity_ct.cpp.o
+src/CMakeFiles/athena.dir/diffusion/resistivity_update.cpp.o
+src/CMakeFiles/athena.dir/diffusion/resistivity_gnomonic.cpp.o
+src/CMakeFiles/athena.dir/diffusion/resistivity_rkgdt.cpp.o
+src/CMakeFiles/athena.dir/diffusion/ambipolar.cpp.o
+src/CMakeFiles/athena.dir/driver/driver.cpp.o
+src/CMakeFiles/athena.dir/driver/dt_retry.cpp.o
+src/CMakeFiles/athena.dir/dyn_grmhd/dyn_grmhd.cpp.o
+src/CMakeFiles/athena.dir/dyn_grmhd/dyn_grmhd_fluxes.cpp.o
+src/CMakeFiles/athena.dir/dyn_grmhd/dyn_grmhd_fofc.cpp.o
+src/CMakeFiles/athena.dir/eos/eos.cpp.o
+src/CMakeFiles/athena.dir/eos/general_hyd.cpp.o
+src/CMakeFiles/athena.dir/eos/eos_table.cpp.o
+src/CMakeFiles/athena.dir/eos/general_hyd_floors.cpp.o
+src/CMakeFiles/athena.dir/eos/general_hyd_frozen.cpp.o
+src/CMakeFiles/athena.dir/eos/general_mhd.cpp.o
+src/CMakeFiles/athena.dir/eos/general_mhd_frozen.cpp.o
+src/CMakeFiles/athena.dir/eos/ideal_hyd.cpp.o
+src/CMakeFiles/athena.dir/eos/ideal_hyd_floors.cpp.o
+src/CMakeFiles/athena.dir/eos/ideal_mhd.cpp.o
+src/CMakeFiles/athena.dir/eos/isothermal_hyd.cpp.o
+src/CMakeFiles/athena.dir/eos/isothermal_mhd.cpp.o
+src/CMakeFiles/athena.dir/eos/ideal_srhyd.cpp.o
+src/CMakeFiles/athena.dir/eos/ideal_grhyd.cpp.o
+src/CMakeFiles/athena.dir/eos/ideal_srmhd.cpp.o
+src/CMakeFiles/athena.dir/eos/ideal_grmhd.cpp.o
+src/CMakeFiles/athena.dir/eos/primitive-solver/piecewise_polytrope.cpp.o
+src/CMakeFiles/athena.dir/eos/primitive-solver/unit_system.cpp.o
+src/CMakeFiles/athena.dir/geodesic-grid/geodesic_grid.cpp.o
+src/CMakeFiles/athena.dir/geodesic-grid/spherical_grid.cpp.o
+src/CMakeFiles/athena.dir/geodesic-grid/gauss_legendre.cpp.o
+src/CMakeFiles/athena.dir/gravity/gravity.cpp.o
+src/CMakeFiles/athena.dir/gravity/mg_gravity.cpp.o
+src/CMakeFiles/athena.dir/hydro/hydro.cpp.o
+src/CMakeFiles/athena.dir/hydro/hydro_wellbalance.cpp.o
+src/CMakeFiles/athena.dir/hydro/hydro_wball.cpp.o
+src/CMakeFiles/athena.dir/hydro/hydro_fluxes.cpp.o
+src/CMakeFiles/athena.dir/hydro/hydro_fofc.cpp.o
+src/CMakeFiles/athena.dir/hydro/dual_energy.cpp.o
+src/CMakeFiles/athena.dir/hydro/fofc_etotgrav.cpp.o
+src/CMakeFiles/athena.dir/hydro/hydro_newdt.cpp.o
+src/CMakeFiles/athena.dir/hydro/hydro_tasks.cpp.o
+src/CMakeFiles/athena.dir/hydro/hydro_splitbval.cpp.o
+src/CMakeFiles/athena.dir/hydro/hydro_am.cpp.o
+src/CMakeFiles/athena.dir/hydro/hydro_mergelat.cpp.o
+src/CMakeFiles/athena.dir/hydro/hydro_ringavg.cpp.o
+src/CMakeFiles/athena.dir/hydro/hydro_ringfourier.cpp.o
+src/CMakeFiles/athena.dir/hydro/hydro_update.cpp.o
+src/CMakeFiles/athena.dir/hydro/hydro_etotgrav.cpp.o
+src/CMakeFiles/athena.dir/ion-neutral/ion-neutral.cpp.o
+src/CMakeFiles/athena.dir/ion-neutral/ion-neutral_tasks.cpp.o
+src/CMakeFiles/athena.dir/mesh/build_tree.cpp.o
+src/CMakeFiles/athena.dir/mesh/load_balance.cpp.o
+src/CMakeFiles/athena.dir/mesh/mesh.cpp.o
+src/CMakeFiles/athena.dir/mesh/meshblock.cpp.o
+src/CMakeFiles/athena.dir/mesh/meshblock_pack.cpp.o
+src/CMakeFiles/athena.dir/mesh/meshblock_tree.cpp.o
+src/CMakeFiles/athena.dir/mesh/mesh_refinement.cpp.o
+src/CMakeFiles/athena.dir/mesh/refinement_criteria.cpp.o
+src/CMakeFiles/athena.dir/multigrid/multigrid.cpp.o
+src/CMakeFiles/athena.dir/multigrid/multigrid_bvals.cpp.o
+src/CMakeFiles/athena.dir/multigrid/multigrid_driver.cpp.o
+src/CMakeFiles/athena.dir/multigrid/multigrid_tasks.cpp.o
+src/CMakeFiles/athena.dir/mhd/mhd.cpp.o
+src/CMakeFiles/athena.dir/mhd/mhd_corner_e.cpp.o
+src/CMakeFiles/athena.dir/mhd/mhd_cs_seam.cpp.o
+src/CMakeFiles/athena.dir/mhd/mhd_fluxes.cpp.o
+src/CMakeFiles/athena.dir/mhd/mhd_ct.cpp.o
+src/CMakeFiles/athena.dir/mhd/mhd_fofc.cpp.o
+src/CMakeFiles/athena.dir/mhd/mhd_newdt.cpp.o
+src/CMakeFiles/athena.dir/mhd/mhd_dtreport.cpp.o
+src/CMakeFiles/athena.dir/mhd/mhd_tasks.cpp.o
+src/CMakeFiles/athena.dir/mhd/mhd_splitbval.cpp.o
+src/CMakeFiles/athena.dir/mhd/mhd_tracers.cpp.o
+src/CMakeFiles/athena.dir/mhd/mhd_update.cpp.o
+src/CMakeFiles/athena.dir/mhd/mhd_etotgrav.cpp.o
+src/CMakeFiles/athena.dir/mhd/mhd_wellbalance.cpp.o
+src/CMakeFiles/athena.dir/mhd/mhd_wball.cpp.o
+src/CMakeFiles/athena.dir/outputs/io_wrapper.cpp.o
+src/CMakeFiles/athena.dir/outputs/async_io.cpp.o
+src/CMakeFiles/athena.dir/outputs/outputs.cpp.o
+src/CMakeFiles/athena.dir/outputs/basetype_output.cpp.o
+src/CMakeFiles/athena.dir/outputs/cartgrid.cpp.o
+src/CMakeFiles/athena.dir/outputs/derived_variables.cpp.o
+src/CMakeFiles/athena.dir/outputs/binary.cpp.o
+src/CMakeFiles/athena.dir/outputs/eventlog.cpp.o
+src/CMakeFiles/athena.dir/outputs/formatted_table.cpp.o
+src/CMakeFiles/athena.dir/outputs/history.cpp.o
+src/CMakeFiles/athena.dir/outputs/restart.cpp.o
+src/CMakeFiles/athena.dir/outputs/spherical_surface.cpp.o
+src/CMakeFiles/athena.dir/outputs/coarsened_binary.cpp.o
+src/CMakeFiles/athena.dir/outputs/track_prtcl.cpp.o
+src/CMakeFiles/athena.dir/outputs/vtk_mesh.cpp.o
+src/CMakeFiles/athena.dir/outputs/vtk_prtcl.cpp.o
+src/CMakeFiles/athena.dir/particles/particles.cpp.o
+src/CMakeFiles/athena.dir/particles/particles_pushers.cpp.o
+src/CMakeFiles/athena.dir/particles/particles_tasks.cpp.o
+src/CMakeFiles/athena.dir/outputs/pdf.cpp.o
+src/CMakeFiles/athena.dir/pgen/pgen.cpp.o
+src/CMakeFiles/athena.dir/pgen/pgen_eos_utils.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/advection.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/balsara_vortex.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/collapse.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/cpaw.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/cshock.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/diffusion.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/gr_bondi.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/gr_monopole.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/linear_wave.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/lw_implode.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/gresho_mhd.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/orszag_tang.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/mri3d.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/shock_tube.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/shwave.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/wb_atm.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/wb_all.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/am_wb.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/rad_beam.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/rad_diff2d.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/rad_m1_tests.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/rad_m1_tests2.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/rad_m1_wedge.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/rad_m1_rhse.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/rad_linear_wave.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/z4c_boosted_puncture.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/z4c_linear_wave.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/jeans_wave.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/binary_gravity.cpp.o
+src/CMakeFiles/athena.dir/pgen/tests/be_collapse.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_coupling.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_fluxes.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_implicit.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_clean.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_clean_p1.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_clean_p2.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_clean_cell.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_clean_cell_p1.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_clean_cell_p2.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_clean_closure.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_clean_closure_p1.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_clean_closure_p2.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_clean_solver.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_icrad.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_sph.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_krylov.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_launch.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_opcheck.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_precond.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_time2.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_lz.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_mr.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_newdt.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_opacity.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_tau.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_vetcol.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_vetlat.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_memarena.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_meshfb.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_vetgd.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_vetgd_sweep.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_vetgd_cs.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_rotavg.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_ringavg.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_tasks.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_update.cpp.o
+src/CMakeFiles/athena.dir/rad_m1/rad_m1_vet.cpp.o
+src/CMakeFiles/athena.dir/radiation/radiation.cpp.o
+src/CMakeFiles/athena.dir/radiation/radiation_fluxes.cpp.o
+src/CMakeFiles/athena.dir/radiation/radiation_newdt.cpp.o
+src/CMakeFiles/athena.dir/radiation/radiation_source.cpp.o
+src/CMakeFiles/athena.dir/radiation/radiation_tasks.cpp.o
+src/CMakeFiles/athena.dir/radiation/radiation_tetrad.cpp.o
+src/CMakeFiles/athena.dir/radiation/radiation_update.cpp.o
+src/CMakeFiles/athena.dir/shearing_box/orbital_advection.cpp.o
+src/CMakeFiles/athena.dir/shearing_box/orbital_advection_cc.cpp.o
+src/CMakeFiles/athena.dir/shearing_box/orbital_advection_fc.cpp.o
+src/CMakeFiles/athena.dir/shearing_box/orbital_advection_tasks.cpp.o
+src/CMakeFiles/athena.dir/shearing_box/shearing_box.cpp.o
+src/CMakeFiles/athena.dir/shearing_box/shearing_box_cc.cpp.o
+src/CMakeFiles/athena.dir/shearing_box/shearing_box_fc.cpp.o
+src/CMakeFiles/athena.dir/shearing_box/shearing_box_srcterms.cpp.o
+src/CMakeFiles/athena.dir/shearing_box/shearing_box_tasks.cpp.o
+src/CMakeFiles/athena.dir/srcterms/srcterms.cpp.o
+src/CMakeFiles/athena.dir/srcterms/srcterms_newdt.cpp.o
+src/CMakeFiles/athena.dir/srcterms/turb_driver.cpp.o
+src/CMakeFiles/athena.dir/tasklist/numerical_relativity.cpp.o
+src/CMakeFiles/athena.dir/units/units.cpp.o
+src/CMakeFiles/athena.dir/utils/c2p_track.cpp.o
+src/CMakeFiles/athena.dir/utils/change_rundir.cpp.o
+src/CMakeFiles/athena.dir/utils/derived_vars.cpp.o
+src/CMakeFiles/athena.dir/utils/show_config.cpp.o
+src/CMakeFiles/athena.dir/utils/lagrange_interpolator.cpp.o
+src/CMakeFiles/athena.dir/utils/tov/tov.cpp.o
+src/CMakeFiles/athena.dir/utils/tr_table.cpp.o
+src/CMakeFiles/athena.dir/utils/cart_grid.cpp.o
+src/CMakeFiles/athena.dir/utils/spherical_surface.cpp.o
+src/CMakeFiles/athena.dir/z4c/compact_object_tracker.cpp.o
+src/CMakeFiles/athena.dir/z4c/horizon_dump.cpp.o
+src/CMakeFiles/athena.dir/z4c/tmunu.cpp.o
+src/CMakeFiles/athena.dir/z4c/z4c.cpp.o
+src/CMakeFiles/athena.dir/z4c/z4c_adm.cpp.o
+src/CMakeFiles/athena.dir/z4c/z4c_calcrhs.cpp.o
+src/CMakeFiles/athena.dir/z4c/z4c_newdt.cpp.o
+src/CMakeFiles/athena.dir/z4c/z4c_tasks.cpp.o
+src/CMakeFiles/athena.dir/z4c/z4c_update.cpp.o
+src/CMakeFiles/athena.dir/z4c/z4c_gauge.cpp.o
+src/CMakeFiles/athena.dir/z4c/z4c_Sbc.cpp.o
+src/CMakeFiles/athena.dir/z4c/z4c_calculate_weyl_scalars.cpp.o
+src/CMakeFiles/athena.dir/z4c/z4c_wave_extr.cpp.o
+src/CMakeFiles/athena.dir/z4c/z4c_amr.cpp.o
+src/CMakeFiles/athena.dir/z4c/cce/cce.cpp.o
+src/CMakeFiles/athena.dir/pgen/he_star_m1.cpp.o
+src/CMakeFiles/athena.dir/pgen/star_wb_defaults.cpp.o
+src/CMakeFiles/athena.dir/pgen/he_strip_bg.cpp.o
+src/CMakeFiles/athena.dir/pgen/he_drive.cpp.o
+== tiny smoke gate
+GATE PASS: athena_icbaln_4a7f72334 md5 8ac1d0c6 node hpc-sm-01-17 pass1=4.020e-06
+<rad_m1> clean_init steady pass 0: max(|dE|, |dF|/c)/max E = 9.534e-02
+<rad_m1> clean_init steady pass 1: max(|dE|, |dF|/c)/max E = 4.020e-06
+<rad_m1> clean_init steady pass 2: max(|dE|, |dF|/c)/max E = 1.109e-06
+<rad_m1> clean_init steady pass 3: max(|dE|, |dF|/c)/max E = 2.281e-06
