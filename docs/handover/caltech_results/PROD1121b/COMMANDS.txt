@@ -1,0 +1,5 @@
+# PREPARED switch commands (orion ki / kj), NOT RUN: need the USER's yes via the coordinator. Fallback: replace 0.9 by 0.6.
+setsid nohup /resnick/groups/carnegie_poc/jingze/prod_fresh_1121b/switch_k9/switch_k9.sh t9l62 hpc-sm-02-09 6133591 0.9 > /resnick/groups/carnegie_poc/jingze/prod_fresh_1121b/switch_k9/t9l62.out 2>&1 < /dev/null &
+setsid nohup /resnick/groups/carnegie_poc/jingze/prod_fresh_1121b/switch_k9/switch_k9.sh t9r hpc-sm-02-03 6133592 0.9 > /resnick/groups/carnegie_poc/jingze/prod_fresh_1121b/switch_k9/t9r.out 2>&1 < /dev/null &
+setsid nohup /resnick/groups/carnegie_poc/jingze/prod_fresh_1121b/switch_k9/switch_k9.sh m35mms hpc-sm-02-10 6133591 0.9 > /resnick/groups/carnegie_poc/jingze/prod_fresh_1121b/switch_k9/m35mms.out 2>&1 < /dev/null &
+setsid nohup /resnick/groups/carnegie_poc/jingze/prod_fresh_1121b/switch_k9/switch_k9.sh i1_m35mms_f1k hpc-sm-01-17 6133592 0.9 > /resnick/groups/carnegie_poc/jingze/prod_fresh_1121b/switch_k9/i1_m35mms_f1k.out 2>&1 < /dev/null &
