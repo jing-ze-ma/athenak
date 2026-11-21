@@ -1133,3 +1133,5 @@ B_br gate not passed; arms not started
   CW i1_m35mms (log.0) cycle 9605 [cycle=9650 time=9.097331e+04 dt=6.009148e+00]: CLEAN WARNING cycle 9605 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 13)
   CW t19r (log.0) cycle 1255 []: CLEAN WARNING cycle 1255 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 55)
   CW t19r (log.0) cycle 1260 []: CLEAN WARNING cycle 1260 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 56)
+- (01:20) PROD 1121b:
+  CHUNK END i1_m35mms: 2026-11-21 01:18:49 chunk 0 rc=0 last: elapsed=8.057945e+03 cycle=9650 time=9.097331e+04 dt=6.009148e+00
