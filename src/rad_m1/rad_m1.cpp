@@ -391,6 +391,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // theta = min(1, max(J, P)/(clean_ray_min E_old)), P its largest ray outflow:
     // theta g(rays) + (1 - theta) h (its own half range); a ray-shadowed donor is no dam
     cln_thinh = cln_thinf && pin->GetOrAddBoolean("rad_m1","clean_stag_thinf_held",false);
+    // clean_stag_xdonor_freeze (default 0 = off): from this pass of a solve on, the xdonor
+    // cross flux C is held (CleanStagXDonor): its donor side and cap no longer switch
+    // from pass to pass (HG C2D: a 1-cell donor/cap flip, period-2 passes at 2e-4)
+    cln_xdfz = pin->GetOrAddInteger("rad_m1","clean_stag_xdonor_freeze",0);
     // clean_stag_xdonor = lag (default) | p1 | off: the off-diagonal stress flux an
     // M-matrix term (CleanStagXDonor); clean_stag_xsrc (default on): also the face
     // sources past their explicit share; clean_stag_xsweep (default off): a monotone

@@ -1210,6 +1210,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (cln_ring == 2) CleanRingSolveSet();
   CleanWoBind();
   CleanStagKReal();   // (clean_stag_kreal: the kick E can pay, the rest deferred)
+  cln_xdh = false;   // (clean_stag_xdonor_freeze: no hold before this solve's passes)
   CleanOldVector();
   CleanStagKPos();   // (clean_stag_kpos: the increment in Patankar form)
   if (cell) {
@@ -1317,7 +1318,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       } else {
         // (clean_stag_xdonor: q of the iterate; CLW_L holds E_k's lateral sums, those of
         // the velocity update, but where the closure moved D or the bracket took CLW_L)
-        if (inl > 0) CleanStagXDonor(false, clos || !cln_feedback);
+        if (inl > 0) CleanStagXDonor(false, clos || !cln_feedback,
+                                     cln_xdfz > 0 && inl >= cln_xdfz);
         // (after the xdonor: the lateral sums of E_k are its, CleanStagXDonor)
         CleanRightHandSide(false, !(inl > 0 && cln_xd_on));
         // (clean_stag_sbimp: the first iterate's T in exchange with E_k and the beta
@@ -1866,7 +1868,7 @@ void RadiationM1::CleanOldVector() {
 //! takes d/(1 - l), the fixed point of that mode (half the change for l = -1); C is
 //! unchanged at the fixed point.  first: the first iterate of a solve, no history.
 
-void RadiationM1::CleanStagXDonor(const bool first, const bool lat) {
+void RadiationM1::CleanStagXDonor(const bool first, const bool lat, const bool hold) {
   if (!cln_xd || cln_cell || !pmy_pack->pmesh->multi_d) return;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -1876,6 +1878,10 @@ void RadiationM1::CleanStagXDonor(const bool first, const bool lat) {
   CleanGhostDefer(cln_w, CLW_EK, 1);   // (one exchange)
   CleanGhostFill(cln_w, CLW_EO, 1);   // (the donors' E_old of the lag split)
   if (lat) CleanStagCsLateral(CLW_EK);
+  // (hold, clean_stag_xdonor_freeze: C and the right-hand side's split of it, its q and
+  // explicit part, kept as the last pass set them: donor and cap no longer switch)
+  cln_xdh = hold;
+  if (hold) {cln_xd_on = true; return;}
   CleanArgs x = CleanMakeArgs();   // (x.xq = -1: the central cross flux)
   const int xq = cln_xqs;
   for (int dir = 0; dir < x.nf; ++dir) {
@@ -2794,13 +2800,13 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
   const CleanArgs *pxr = CleanDevArgs(xr, 3);
   // each face's source once, for its two cells (CLF_SR), and with gflux its a E (CLF_PT)
   const int nf = x.nf;
-  const bool af = x.feedback && x.gf && !x.cub;
+  const bool af = x.feedback && x.gf && !x.cub, xsp = (x.xq >= 0) && !cln_xdh;
   CleanFor<4>("cln_rhsaf", nmb1, ks, ke+(nf > 2), js, je+(nf > 1), is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
     for (int n = 0; n < nf; ++n) {
       if (i > ie+(n == 0) || j > je+(n == 1) || k > ke+(n == 2)) continue;
-      if (x.xq >= 0) CleanStagXSplit(x, *pxr, n, m, k, j, i);
+      if (xsp) CleanStagXSplit(x, *pxr, n, m, k, j, i);
       x.fc[n](m,CLF_SR,k,j,i) = CleanFaceSource(x, n, m, k, j, i);
       if (fh) x.fc[n](m,CLF_N,k,j,i) = CleanFaceFlux(xh, CLW_EK, n, m, k, j, i, true);
       if (af) x.fc[n](m,CLF_PT,k,j,i) = CleanStagAdvFace(x, xh, n, m, k, j, i);

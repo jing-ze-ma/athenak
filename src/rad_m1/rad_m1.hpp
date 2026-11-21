@@ -3313,7 +3313,7 @@ class RadiationM1 {
   bool cln_rayratio = false;    // clean_stag_rayratio: the bracket of ray ratios x E
   bool cln_ringjmin = true;     // clean_ring_jmin: ring J ratios only of ray-held cells
   bool cln_linpass = false;   // clean_lin_pass: a pass goes on past a failed linear solve
-  void CleanStagXDonor(const bool first, const bool lat = true);
+  void CleanStagXDonor(const bool first, const bool lat = true, const bool hold = false);
   void CleanStagXCount(const int inl, const int nit);
   void CleanWorstCell(const Real dnl, const Real dnl0);
   void CleanStagXSweep();
@@ -3344,6 +3344,8 @@ class RadiationM1 {
   bool cln_flim = false;    // clean_stag_flim
   DvceArray1D<Real> cln_flimc;   // (flim: the cut faces, their momentum sum)
   bool cln_thinh = false;   // clean_stag_thinf_held
+  int cln_xdfz = 0;         // clean_stag_xdonor_freeze
+  bool cln_xdh = false;     // (its hold in this pass)
   // (clean_cs_lz_abs = 2: the L_z V R (dp_torque - dp) the gas does not take, booked as
   // the radiation's, cln_lzl (<rad_m1>/clean_cs_lz_ledger); its sums over the cells as the
   // gas momentum's slopes K1 (cln_lzs1, <rad_m1>/clean_cs_lz_k1), K2 (cln_lzs2) and stage
