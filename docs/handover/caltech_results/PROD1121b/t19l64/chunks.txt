@@ -1,1 +1,2 @@
 2026-11-20 23:02:53 chunk 0 STAR=t19l64 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_j3_a5257b7ee md5=f71a22b6ffcd2229950c7e4fb90de5c8 DECK=/resnick/groups/carnegie_poc/jingze/fresh_prod_1120/fg_v2/decks_prod1121/J4_t19l64.athinput md5=5465f5e26c14c57d0a40c42502b489ee start=-i /resnick/groups/carnegie_poc/jingze/prod_fresh_1121b/t19l64/deck.athinput WT=18:12:07 HOLDER=6133592 NODE=hpc-sm-02-04 EX=
+2026-11-21 00:38:50 chunk 0 rc=0 last: elapsed=5.638412e+03 cycle=1800 time=6.792978e+04 dt=2.845509e+01

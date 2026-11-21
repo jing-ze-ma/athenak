@@ -1047,3 +1047,13 @@ B_br gate not passed; arms not started
 - (00:41) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
   CW i1_m35mms (log.0) cycle 7924 [cycle=7950 time=8.103981e+04 dt=6.083839e+00]: CLEAN WARNING cycle 7924 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
   CW i1_m35mms (log.0) cycle 7968 []: CLEAN WARNING cycle 7968 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 6)
+- (00:43) PROD 1121b:
+  progress:
+   t19l64: cycle=1800 time=6.792978e+04 dt=2.845509e+01 | KE_int 2.6586579047201748e+42 L_bot/L_in 0.991 L_top/L_in 1.510 | CW 11 FATAL 0 | FLIM 21556 floorcap 147 | rst t19l64.00001.rst
+   t9l62: cycle=2750 time=2.663247e+05 dt=9.683979e+01 | KE_int 7.0840116784014696e+41 L_bot/L_in 0.989 L_top/L_in 1.019 | CW 0 FATAL 0 | FLIM 20580 floorcap 222 | rst t9l62.00006.rst
+   m35mms: cycle=7400 time=6.839839e+04 dt=5.539095e+00 | KE_int 2.0579441942063548e+39 L_bot/L_in 1.013 L_top/L_in 1.069 | CW 0 FATAL 0 | FLIM 57900 floorcap 594 | rst m35mms.00003.rst
+   bsg: cycle=10500 time=1.508739e+06 dt=1.497479e+02 | KE_int 9.9488189753456965e+41 L_bot/L_in 0.999 L_top/L_in 1.077 | CW 0 FATAL 0 | FLIM 81463 floorcap 842 | rst bsg3d.00017.rst
+   i1_bsg: cycle=11600 time=1.835552e+06 dt=1.555327e+02 | KE_int 8.1587874244277955e+41 L_bot/L_in 1.036 L_top/L_in 1.118 | CW 0 FATAL 0 | FLIM 77817 floorcap 932 | rst bsg3d.00021.rst
+   i1_m35mms: cycle=8050 time=8.166941e+04 dt=6.602799e+00 | KE_int 1.7179400454718774e+39 L_bot/L_in 0.996 L_top/L_in 1.098 | CW 9 FATAL 0 | FLIM 63742 floorcap 670 | rst m35mms.00003.rst
+   t9r: cycle=1750 time=1.633563e+05 dt=9.334569e+01 | KE_int 6.9171240291066989e+39 L_bot/L_in 1.005 L_top/L_in 0.990 | CW 0 FATAL 0 | FLIM 11932 floorcap 142 | rst t9l62.00003.rst
+   t19r: cycle=900 time=3.627760e+04 dt=4.093341e+01 | KE_int 1.9007399478850060e+40 L_bot/L_in 1.010 L_top/L_in 0.991 | CW 26 FATAL 0 | FLIM 14470 floorcap 73 | rst t19l64.00000.rst
