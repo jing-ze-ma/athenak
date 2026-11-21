@@ -619,3 +619,6 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   * Then: v20.4 gate arms on free nodes, then ST_t9l62, ST_t19l64, STD_t9l62, STD_t19l64 (full a_run.log.gz committed). Production (*_fin_fresh on B_icbal) waits for your go and the user's confirmation.
 - MB_bsg62m (hpc-sm-02-04): a rc=0 wall=130 b rc=0 wall=81 b rc=0 wall=77 | a cycles 0 - 120 dt first 165.215 last 168.447 s/cycle steady 0.756 first elapsed 14.8 a 'FATAL' 0  a 'CLEAN WARNING' 0   | GPU mem peak MiB 23589 | CW 0 FATAL 0
   progress 16:50: BFX4_rsg:DONE BFX0_rsg:DONE BFX4_hg:DONE BFX0_hg:DONE D_on_hg:DONE G_on_hg:DONE G_rsg:DONE L1_rsg_off:DONE L1_rsg_on:DONE H_fp_hg:DONE H_tel_hg:DONE H_xl_hg:DONE R_fp_rsg:DONE R_tel_rsg:DONE R_xl_rsg:DONE K_on_hg:DONE K_on_rsg:DONE LF_rsg:DONE LX_rsg:DONE LF_hg:DONE L2_hg_off:DONE L2_hg_on:DONE
+  FRESHGO START SQ_lq 16:51:52 on hpc-sm-02-04
+  FRESHGO START SQ_gl 16:52:10 on hpc-sm-02-03
+- (16:52) Got ev + eu: all five F_* were already running (16:49) with MB_bsg62m (done 16:50). SQ_lq started 16:51:52 (02-04, B_v203, RT=0, KEEPBIN, 60 cyc); SQ_gl on the next free node; seam.py runs in a holder step after each, seam.txt committed, bins deleted. The v20.4 gate is held until SQ_gl has started, then ST/STD after the gate.
