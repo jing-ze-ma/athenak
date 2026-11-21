@@ -327,3 +327,24 @@ CLEAN FLIM cycle 1225 t2s 2 faces 20781963 momentum cut sum |dF| V/c^2 8.813271e
 CLEAN XT cycle 1225 t2s 2 write-back closure 4.037e-03
 <rad_m1> floorcap cycle 1225 (cumulative, all calls): n_v 5.409029e+07 n_t 3.518791e+10 dKE 9.491350e+33 dEint 1.024748e+34 (erg, to E_rad) momentum removed |dp| 1.660947e+26 dL_z -4.481359e+37
 CLEAN WARNING cycle 1225 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 47)
+== 2026-11-21 01:13:23 log.0: CW 48-50 (grep -B5)
+CLEAN FLIM cycle 1229 t2s 2 faces 23326604 momentum cut sum |dF| V/c^2 1.588343e+30
+CLEAN FLIM cycle 1229 t2s 2 faces 23326603 momentum cut sum |dF| V/c^2 1.588343e+30
+CLEAN cycle 1229 t2s 2 it -5 (sum 670) pos 0 mark 0 all 0 neg 0 r1 0 r2 50 first 0 50 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 1229 t2s 2 faces 23326603 momentum cut sum |dF| V/c^2 1.588343e+30
+CLEAN XT cycle 1229 t2s 2 write-back closure 1.281e-03
+CLEAN WARNING cycle 1229 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 48)
+
+CLEAN FLIM cycle 1233 t2s 2 faces 23026307 momentum cut sum |dF| V/c^2 1.843978e+30
+CLEAN FLIM cycle 1233 t2s 2 faces 23026317 momentum cut sum |dF| V/c^2 1.843976e+30
+CLEAN cycle 1233 t2s 2 it -7 (sum 1173) pos 0 mark 0 all 0 neg 0 r1 0 r2 71 first 0 71 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 1233 t2s 2 faces 23026317 momentum cut sum |dF| V/c^2 1.843976e+30
+CLEAN XT cycle 1233 t2s 2 write-back closure 1.042e-02
+CLEAN WARNING cycle 1233 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 49)
+
+CLEAN FLIM cycle 1236 t2s 2 faces 23259219 momentum cut sum |dF| V/c^2 1.571725e+30
+CLEAN FLIM cycle 1236 t2s 2 faces 23259216 momentum cut sum |dF| V/c^2 1.571724e+30
+CLEAN cycle 1236 t2s 2 it -5 (sum 813) pos 0 mark 0 all 0 neg 0 r1 0 r2 62 first 0 62 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 1236 t2s 2 faces 23259216 momentum cut sum |dF| V/c^2 1.571724e+30
+CLEAN XT cycle 1236 t2s 2 write-back closure 6.953e-03
+CLEAN WARNING cycle 1236 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 50)
