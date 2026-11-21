@@ -3923,8 +3923,6 @@ class RadiationM1 {
   DvceArray4D<Real> vgd_fk0;   // (m, k, j, i): slot 0 before the fold
   Real vgd_nrb = 0.0, vgd_trb = 0.0;
   void VetGdIterRebuild();
-  void VetGdMms();
-  void VetGdMmsCs();   // cs-s4-1017 (rad_m1_vetgd_cs.cpp)
   // cs-s4-1017: the cs half-range data at the start of a solve (|H|/J, seam ghosts)
   void VetGdCsHrPrep();
   void VetGdSpHrHalo();   // vgdlay-1110: sp ghosts of vgd_hr

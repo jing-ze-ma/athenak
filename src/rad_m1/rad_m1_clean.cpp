@@ -422,7 +422,7 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/vet_gd_smooth", "!"}, {"rad_m1/vet_dump", "=none"},
     {"rad_m1/vet_dump_every", ""}, {"rad_m1/vet_gd_halo_cache_mb", "!"},
     {"rad_m1/vet_gd_beam", "!"}, {"rad_m1/vet_gd_beam_*", "x"},
-    {"rad_m1/vet_gd_beam2_*", "x"}};
+    {"rad_m1/vet_gd_beam2_*", "x"}, {"rad_m1/vet_gd_mms", "!"}};
   const bool say = (global_variable::my_rank == 0);
   std::string none;
   std::vector<std::string> drop;

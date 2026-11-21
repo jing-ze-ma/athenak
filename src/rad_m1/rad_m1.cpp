@@ -1894,11 +1894,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_exit")) {
       vgd_bandx = pin->GetBoolean("rad_m1","vet_gd_band_exit");
     }
-    if (pin->DoesParameterExist("rad_m1","vet_gd_mms") &&
-        pin->GetBoolean("rad_m1","vet_gd_mms") && !pmy_pack->pmesh->use_cubed_sphere) {
-      VetGdMms();   // test only: the manufactured-solution check of div(E D), then exit
-      std::exit(EXIT_SUCCESS);
-    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_allow_clamp")) {
       vgd_allow_clamp = pin->GetBoolean("rad_m1","vet_gd_allow_clamp");
     }
@@ -2533,12 +2528,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // E and F1 (radial) are scalars.  Stated explicitly, see SetVectorPairs.
   pbval_u->SetVectorPairs(M1_NVAR, {{M1_F2, M1_F3}});
   if (cs_geom) {CubedVecCheck(pin);}   // cs-s4-1017: test only, read when named
-  // cs-s4-1017: vet_gd_mms on the cubed sphere (test only): the D_r,lat terms, then exit
-  if (cs_geom && pin->DoesParameterExist("rad_m1","vet_gd_mms") &&
-      pin->GetBoolean("rad_m1","vet_gd_mms")) {
-    VetGdMmsCs();
-    std::exit(EXIT_SUCCESS);
-  }
 
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1>: c=" << c_light << " chat/c=" << chat_over_c
