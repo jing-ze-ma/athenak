@@ -30,8 +30,9 @@
 #include "rad_m1/rad_m1_clean.hpp"
 #include "utils/imex_sdirk2.hpp"
 #include "utils/scratch_view.hpp"
-// M1_TU_PART: this file is compiled as 3 translation units (rad_m1_clean_closure.cpp = part 0, rad_m1_clean_closure_p<k>.cpp
-// = part k, see split_tu.py); every member function below is in exactly one part.
+// M1_TU_PART: this file is compiled as 3 translation units (rad_m1_clean_closure.cpp =
+// part 0, rad_m1_clean_closure_p<k>.cpp = part k, see split_tu.py); every member function
+// below is in exactly one part.
 #ifndef M1_TU_PART_N
 #define M1_TU_PART_N 0
 #endif
@@ -156,9 +157,9 @@ Real CleanThickI(const Real e[3][3], const Real f[3], const Real en, const Real 
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanClosure
-//! \brief builds the closure for t^{n+1}.  Both stage solves and a backward-Euler redo end
-//! at t^{n+1}, so one closure serves the whole step; it is rebuilt for a new step or a
-//! new dt.  clean_closure = eddington takes the isotropic closure instead of the rays.
+//! \brief builds the closure for t^{n+1}.  Both stage solves and a backward-Euler redo
+//! end at t^{n+1}, so one closure serves the whole step; it is rebuilt for a new step or
+//! a new dt.  clean_closure = eddington takes the isotropic closure instead of the rays.
 
 #if M1_TU_PART(0)
 void RadiationM1::CleanClosure() {
@@ -840,10 +841,10 @@ bool CleanRingMix(const CleanRingL &rl, const DvceArray5D<Real> &rr,
 //----------------------------------------------------------------------------------------
 //! \fn bool CleanRingEma
 //! \brief clean_rot_ring with vet_rotate_avg_ema (production's form, RotAvgEma*,
-//! RotXfBlend): the raw moments q of (1 - s) A + s T in the normalised fields and J.
-//! A = the current set with the EMA offsets (e = rr's first nfr, its J entry the ratio
-//! r = J_avg/J_b), T = the next set with the EMA the coming boundary makes of this
-//! state's Delta (RotAvgEmaShift): aw = max(1/N, a_ch, 1/(n + 1)), r' = (1 - aw) r/R + aw, e' =
+//! RotXfBlend): the raw moments q of (1 - s) A + s T in the normalised fields and J. A =
+//! the current set with the EMA offsets (e = rr's first nfr, its J entry the ratio r =
+//! J_avg/J_b), T = the next set with the EMA the coming boundary makes of this state's
+//! Delta (RotAvgEmaShift): aw = max(1/N, a_ch, 1/(n + 1)), r' = (1 - aw) r/R + aw, e' =
 //! (1 - aw)(r/R)/r' (e - D), R = J_{b+1}/J_b; a_ch is this build's (pd's entry nfr), n
 //! rr's entry nfr + 2 (0: no history, A and T the sets themselves)
 
@@ -972,13 +973,13 @@ void RadiationM1::CleanRingShift(const int64_t b) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanRingPreShift
-//! \brief dt_retry checkpoint (DtRetryQuiesce): with clean_rot_ring = live, the cross-fade
-//! and vet_gd_rotate_align the build of a step lies in one block for every dt of its
-//! retries (a step ends on each boundary): a step that starts on the boundary of block
-//! cln_rb shifts the ring here, before the checkpoint, as its first build would.  The
-//! offsets then do not change within the cycle and the pending Delta is read by no build
-//! of it: the checkpoint skips both (cln_rfix).  Otherwise the build shifts and both are
-//! copied
+//! \brief dt_retry checkpoint (DtRetryQuiesce): with clean_rot_ring = live, the
+//! cross-fade and vet_gd_rotate_align the build of a step lies in one block for every dt
+//! of its retries (a step ends on each boundary): a step that starts on the boundary of
+//! block cln_rb shifts the ring here, before the checkpoint, as its first build would.
+//! The offsets then do not change within the cycle and the pending Delta is read by no
+//! build of it: the checkpoint skips both (cln_rfix).  Otherwise the build shifts and
+//! both are copied
 
 int64_t RadiationM1::CleanRingBlk(const Real dt) const {
   const Real tau = (pmy_pack->pmesh->time + dt - vgd_rot_t0)/vgd_rot_dt;
@@ -1334,10 +1335,10 @@ void RadiationM1::CleanRingMoments() {
     } else if (full) {
       // a fill: within CleanSteadyStart (a fresh start's ring, built at the initial state
       // and time) the offsets of the older sets from the current one (their moments,
-      // above); elsewhere the older sets start as the current one (zero offsets, J ratio 1)
-      // and enter one per block through the shifts: their sweep at a step's build would
-      // take a state one step on, at a time that depends on dt, into the window for K
-      // blocks, an O(dt) error (deck D with rotation 1st order, 2nd with this form)
+      // above); elsewhere the older sets start as the current one (zero offsets, J ratio
+      // 1) and enter one per block through the shifts: their sweep at a step's build
+      // would take a state one step on, at a time that depends on dt, into the window for
+      // K blocks, an O(dt) error (deck D with rotation 1st order, 2nd with this form)
       par_for("cln_ring_fill", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k0, const int j0, const int i0) {
         const int k = k0 - ks, j = j0 - js, i = i0 - is;
@@ -1697,8 +1698,8 @@ void RadiationM1::CleanClosureFromGd() {
   // vgd_i for the moments here and the face sums (CleanGdFaceSums)
   if (vgd_on && vlat_icut > 0) {
     const Real ic = 1.0/c_light;
-    // (one team per cell, its lanes along the directions: the stores of a warp contiguous;
-    // the same values)
+    // (one team per cell, its lanes along the directions: the stores of a warp
+    // contiguous; the same values)
     const int nc = vlat_icut, nj = je - js + 1, nk = ke - ks + 1;
     const int tsz = std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace> ? 1 : 32;
     Kokkos::parallel_for("cln_gd_thk",

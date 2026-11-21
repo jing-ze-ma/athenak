@@ -1942,9 +1942,9 @@ void RadiationM1::VetGdCsSweep() {
   static int s_lb = -1;   // cslb (see the shell kernel)
   if (s_lb < 0) {
     const char *el = std::getenv("VGD_CS_LB");
-    // 6 (VGD_CS_LB=0: old launch); 2 on HIP, where the
-    // bound is min waves per EU and 6 spilled the body (HG small cs deck 13083259: vet_gd
-    // sweeps 5.08 -> 2.73 s, outputs bitwise); 8 on CUDA (H200 RSG -1.1 %, HG -0.8 %, bitwise)
+    // 6 (VGD_CS_LB=0: old launch); 2 on HIP, where the bound is min waves per EU and 6
+    // spilled the body (HG small cs deck 13083259: vet_gd sweeps 5.08 -> 2.73 s, outputs
+    // bitwise); 8 on CUDA (H200 RSG -1.1 %, HG -0.8 %, bitwise)
 #if defined(KOKKOS_ENABLE_HIP)
     s_lb = (el != nullptr) ? std::atoi(el) : 2;
 #else
@@ -1995,10 +1995,10 @@ void RadiationM1::VetGdCsSweep() {
 #define M1_VGDCS_SHELL_NAME shell_
 #include "rad_m1_vetgd_cs_shell.inc"
 #undef M1_VGDCS_SHELL_NAME
-      // cs early send (env VGD_CS_EARLY, default on; compact lists, G = 1, no
-      // NCCL): the values this shell SENDS first, then their pack (pinned host buffer) and
-      // an event; the full shell kernel runs while the host exchanges (finished below at
-      // the halo point: event wait instead of a fence, MPI, unpack)
+      // cs early send (env VGD_CS_EARLY, default on; compact lists, G = 1, no NCCL): the
+      // values this shell SENDS first, then their pack (pinned host buffer) and an event;
+      // the full shell kernel runs while the host exchanges (finished below at the halo
+      // point: event wait instead of a fence, MPI, unpack)
       if (early) {
         const VgdCsCl &E = vgd_cscl[vgd_cscur];
         const int np = static_cast<int>(vgd_csprk.size());
@@ -2330,11 +2330,11 @@ void RadiationM1::VetGdCsSweep() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CsTanFrameInit
-//! \brief the per-cell orthonormal tangent frame cs_qf of Q: e1 = the normal
-//! of the x2 plane through the cell centre, e2 = the x3 plane's normal less its e1 part
-//! (both planes hold the radial line, so both are tangential).  Cartesian components,
-//! exchanged once through the tau_ten kind of exchange (a = at least 6 components, the
-//! same no-resample map as the slots): a seam ghost holds its mirror cell's frame, a cube-
+//! \brief the per-cell orthonormal tangent frame cs_qf of Q: e1 = the normal of the x2
+//! plane through the cell centre, e2 = the x3 plane's normal less its e1 part (both
+//! planes hold the radial line, so both are tangential).  Cartesian components, exchanged
+//! once through the tau_ten kind of exchange (a = at least 6 components, the same
+//! no-resample map as the slots): a seam ghost holds its mirror cell's frame, a cube-
 //! vertex corner ghost zeros, so Q contracts to zero there.
 
 void RadiationM1::CsTanFrameInit(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,

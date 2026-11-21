@@ -122,9 +122,9 @@ Real VetRelaxedSourceBQ(const EosT &eos, const Real d, const Real tb, const Real
   return s0 + w*(s1 - s0);
 }
 
-//! the 5864f189 relaxed source VERBATIM (VetRelaxedSource / VetRelaxedSourceB
-//! without qe), called whenever relaxed_esc is not named, so the relaxed default keeps its
-//! exact device code generation (A100 FMA contraction: the qe-generalised kernel changed
+//! the 5864f189 relaxed source VERBATIM (VetRelaxedSource / VetRelaxedSourceB without
+//! qe), called whenever relaxed_esc is not named, so the relaxed default keeps its exact
+//! device code generation (A100 FMA contraction: the qe-generalised kernel changed
 //! vet_source = relaxed runs at round-off, hg145 gbit); relaxed_esc calls the ...Q forms
 template <class EosT>
 KOKKOS_INLINE_FUNCTION

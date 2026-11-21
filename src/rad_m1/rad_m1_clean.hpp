@@ -116,10 +116,10 @@ inline void CleanFor(const char *name, const int nmb1, const int ks, const int k
   }
 }
 
-// on HIP, CleanFor with k fastest, then j, then i (the order of the rows in
-// a VgdRag slab of vgd_i: d fastest, then k, then j), so that adjacent lanes read adjacent
-// intensity rows, as prod's m1_vgd_mom; MI300A R136 -62 ms/cycle, A100 +6
-// (CUDA and the host keep CleanFor).  For passes whose cells are independent (bitwise)
+// on HIP, CleanFor with k fastest, then j, then i (the order of the rows in a VgdRag slab
+// of vgd_i: d fastest, then k, then j), so that adjacent lanes read adjacent intensity
+// rows, as prod's m1_vgd_mom; MI300A R136 -62 ms/cycle, A100 +6 (CUDA and the host keep
+// CleanFor).  For passes whose cells are independent (bitwise)
 template <typename F>
 inline void CleanForK(const char *name, const int nmb1, const int ks, const int ke,
                       const int js, const int je, const int is, const int ie,
@@ -206,7 +206,8 @@ constexpr int CLF_QL = CLF_N + 4;   // the operator's al, ar (CleanFaceWeights) 
                                     // factor -(1-w) theta h c^2 of the pass (3)
 constexpr int CLF_PT = CLF_QL;      // outside the linear solve (cln_fwc sets QL after
                                     // the RHS): the faces' momentum terms of the velocity
-                                    // update (CleanStagDrag) and the RHS's a E (cln_rhsaf)
+                                    // update (CleanStagDrag) and the RHS's a E
+                                    // (cln_rhsaf)
 constexpr int CLF_SR = CLF_QL + 1;  //   and the RHS's face sources (CleanFaceSource)
 constexpr int CLF_DS = CLF_N + 7;   // clean_stag_fkin: d of the stage-loop start
 constexpr int CLF_DB = CLF_N + 8;   // clean_stag_vimp: drag share b = beta/(1 + beta) and
@@ -225,7 +226,8 @@ constexpr int CLW_EO = 0;    // E of the old vector
 constexpr int CLW_EK = 1;    // Newton iterate of E
 constexpr int CLW_T = 2;     // gas temperature of the iterate
 constexpr int CLW_EI = 3;    // gas internal energy of the old vector
-constexpr int CLW_RR = 4;    // exchange linearisation r = s/(d cv + s), s = 4 h c kP a T^3
+// exchange linearisation r = s/(d cv + s), s = 4 h c kP a T^3
+constexpr int CLW_RR = 4;
 constexpr int CLW_A1 = 5;    // advective coefficients a_1, a_2, a_3
 constexpr int CLW_DM = 8;    // momentum change of the iterate (3)
 constexpr int CLW_B = 11;    // right-hand side
@@ -271,7 +273,8 @@ constexpr int CLW_NK = 56;   //   (allocated only with clean_stag_kpos / xpat)
 constexpr int CLW_XA = 56;   // staggered clean_xt_exact: B less its rest (the row's
 constexpr int CLW_XW = 57;   //   exchange as linearised), the row's work W
 constexpr int CLW_NX = 58;   //   (allocated only with clean_xt_exact)
-constexpr int CLW_KS = 58;   // staggered clean_stag_kpos / kreal: the momentum increment's
+// staggered clean_stag_kpos / kreal: the momentum increment's
+constexpr int CLW_KS = 58;
                              //   applied share s (CleanOldVector, kreal; 1 without),
 constexpr int CLW_KT = 59;   //   a donor's faces moved: 1 (redo: 2 the new ones; with
                              //   ghosts; CleanStagKPos, CleanStagKRedo)
@@ -303,7 +306,8 @@ struct CleanArgs {
   bool fd;                     // staggered, clean_stag_fkin: the energy flux's
                                // G + F^H - F
   bool gf;                     // staggered, clean_stag_gflux: flux factors, low order
-  bool cvr;                    // cubed sphere, clean_stag_csvec_radial (CleanStagCsVector)
+  // cubed sphere, clean_stag_csvec_radial (CleanStagCsVector)
+  bool cvr;
   bool fre;                    // staggered, clean_stag_freal: a realisable comoving sb
   int fdg;                     // staggered bracket: face slot of its lagged flux DG (-1)
   bool fs;                     // staggered, clean_stag_fsolve: the face F of the F solve
@@ -363,9 +367,9 @@ struct CleanArgs {
 // 0 the cell; 1 + 2 a + (d > 0) the faces along axis a (i, j, k); 7 + 4 p + 2 (d1 > 0) +
 // (d2 > 0) the edges in the plane p of axes (j, i), (k, i), (k, j), offsets d1, d2
 constexpr int CLN_ST = 19;
-// cubed sphere, clean_stag_stencil: the coefficients of the lateral stress sums Y_q,b of a
-// cell (CleanStagCsLateral) on E of its neighbour across face s of family q (slot
-// 3 (2 q + s) + b) and on its own E (18 + 3 q + b)
+// cubed sphere, clean_stag_stencil: the coefficients of the lateral stress sums Y_q,b of
+// a cell (CleanStagCsLateral) on E of its neighbour across face s of family q (slot 3 (2
+// q + s) + b) and on its own E (18 + 3 q + b)
 constexpr int CLN_CSY = 27;
 
 KOKKOS_INLINE_FUNCTION
@@ -503,8 +507,8 @@ constexpr int CLS_N = 10;
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanDuu
-//! \brief u.D.u of cln_s's Eddington tensor (Cartesian on the cubed sphere) along the unit
-//! vector u = g(m, gs..gs+2, k,j,i) of cln_gn (CLG_R, CLG_E, CLG_E + 3: the hydro's
+//! \brief u.D.u of cln_s's Eddington tensor (Cartesian on the cubed sphere) along the
+//! unit vector u = g(m, gs..gs+2, k,j,i) of cln_gn (CLG_R, CLG_E, CLG_E + 3: the hydro's
 //! directions), for <hydro>/rad_signal_speed
 
 KOKKOS_INLINE_FUNCTION
@@ -648,8 +652,8 @@ Real CleanVol(const CleanArgs &x, const int m, const int k, const int j, const i
 
 //----------------------------------------------------------------------------------------
 //! \fn bool CleanCsSeamFace
-//! \brief cubed sphere: true for a panel seam face (k,j,i) normal to dir, except next to a
-//! cube vertex (production's foot-only vertex)
+//! \brief cubed sphere: true for a panel seam face (k,j,i) normal to dir, except next to
+//! a cube vertex (production's foot-only vertex)
 
 KOKKOS_INLINE_FUNCTION
 bool CleanCsSeamFace(const CleanArgs &x, const int dir, const int m, const int k,
@@ -666,9 +670,9 @@ bool CleanCsSeamFace(const CleanArgs &x, const int dir, const int m, const int k
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanCsNormA
 //! \brief cubed sphere: the area A_n that weights the normal stress difference of the
-//! face-normal momentum of face (k,j,i) normal to dir over V_f, A_n (P_R - P_L)/V_f.  It is
-//! the face area, except on a panel seam face (CleanCsSeamFace): there the two cells are
-//! mirror images, their O(h) volume variation adds in V_f instead of cancelling, and
+//! face-normal momentum of face (k,j,i) normal to dir over V_f, A_n (P_R - P_L)/V_f.  It
+//! is the face area, except on a panel seam face (CleanCsSeamFace): there the two cells
+//! are mirror images, their O(h) volume variation adds in V_f instead of cancelling, and
 //! A_n = V_f/d with d the chord of the mirror pair's cell centres (where the cell values
 //! sit), d = 2 |X| |r_hat.n_f| of the cell on this side (production's two-point seam row
 //! over r angm, M1CsRowGeo / M1CsSeamGeom)
@@ -861,11 +865,11 @@ void CleanStagArea(const CleanArgs &x, const int dir, const int m, const int k,
 
 //----------------------------------------------------------------------------------------
 //! \fn void CleanFaceWeights
-//! \brief coefficients of E_L and E_R in the flux through face (k,j,i) normal to dir, i.e.
-//! everything but the off-diagonal Eddington terms and the old-vector flux G.  Physical
-//! boundaries (non-periodic) take the boundary flux of their form (none at a wall or an
-//! imposed flux, CleanFaceSource).  up (if given) is the donor-cell share phi of
-//! clean_stag_upwind.
+//! \brief coefficients of E_L and E_R in the flux through face (k,j,i) normal to dir,
+//! i.e. everything but the off-diagonal Eddington terms and the old-vector flux G.
+//! Physical boundaries (non-periodic) take the boundary flux of their form (none at a
+//! wall or an imposed flux, CleanFaceSource).  up (if given) is the donor-cell share phi
+//! of clean_stag_upwind.
 
 KOKKOS_INLINE_FUNCTION
 bool CleanBoundaryFace(const CleanArgs &x, const int dir, const int m, const int k,
@@ -968,8 +972,8 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
       ar -= o*phi*sr;
     }
   }
-  // (clean_stag_kpos = delta: the slopes' linear flux tau (al E_L + ar E_R) implicit on an
-  // interior face, the E rows only (the momentum's args carry kq = -1))
+  // (clean_stag_kpos = delta: the slopes' linear flux tau (al E_L + ar E_R) implicit on
+  // an interior face, the E rows only (the momentum's args carry kq = -1))
   if (x.kq >= 0 && x.kt != 0.0 && !CleanBoundaryFace(x, dir, m, k, j, i)) {
     al *= 1.0 + x.kt;
     ar *= 1.0 + x.kt;
@@ -998,7 +1002,8 @@ Real CleanKposFlux(const CleanArgs &x, const int e, const int dir, const int m,
   if (x.kq < 0) return 0.0;
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
   Real f = x.fc[dir](m,x.kq,k,j,i)*x.w(m,e,kl,jl,il) + x.fc[dir](m,x.kq+1,k,j,i)*x.w(m,e,k,j,i);
-  if (x.kt != 0.0 && !CleanBoundaryFace(x, dir, m, k, j, i)) {   // (delta: tau al/ar part)
+  // (delta: tau al/ar part)
+  if (x.kt != 0.0 && !CleanBoundaryFace(x, dir, m, k, j, i)) {
     CleanArgs y = x;
     y.kq = -1;
     y.xq = -1;
@@ -1239,7 +1244,8 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
     return (x.marshak ? -x.c*x.marshak_q*x.ebath[2*dir+1] : -0.25*x.c*x.ebath[2*dir+1]) +
            ab*x.ebath[2*dir+1];
   }
-  // (clean_stag_xdonor: the explicit share of the lagged fluxes of the pass, CleanStagXSplit)
+  // (clean_stag_xdonor: the explicit share of the lagged fluxes of the pass,
+  // CleanStagXSplit)
   if (x.xq >= 0 && !x.hi) return x.fc[dir](m,x.xq+2,k,j,i);
   const Real w = x.hi ? 0.0 : x.fc[dir](m,CLF_W,k,j,i);
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
@@ -1315,9 +1321,9 @@ void CleanStagXSplit(const CleanArgs &x, const CleanArgs &xr, const int dir, con
                      (up ? x.g(m,CLG_F+3,kl,jl,il) : x.g(m,CLG_F+3,k,j,i)));
       return (out > CLN_MEMUP*eo) ? CLN_MEMUP*eo/out : 1.0;
     };
-    // (a donor part li: q = |li|/E_donor at most c; the cross flux of E_k over E_k (at the
-    // fixed point exactly C), a face source, E-independent, over E_old as CleanStagMemUp
-    // (the donor-cell form in time, one linear map for the step))
+    // (a donor part li: q = |li|/E_donor at most c; the cross flux of E_k over E_k (at
+    // the fixed point exactly C), a face source, E-independent, over E_old as
+    // CleanStagMemUp (the donor-cell form in time, one linear map for the step))
     auto put = [&](const Real li, const bool src) {
       if (li == 0.0) return;
       const bool up = (li > 0.0);
@@ -1349,8 +1355,8 @@ void CleanStagXSplit(const CleanArgs &x, const CleanArgs &xr, const int dir, con
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanFaceFlux
-//! \brief flux through face (k,j,i) normal to dir for E in work vector e; with_source adds
-//! the E-independent part
+//! \brief flux through face (k,j,i) normal to dir for E in work vector e; with_source
+//! adds the E-independent part
 
 CLEAN_DEVICE_NOINLINE CLEAN_HIP_INLINE KOKKOS_INLINE_FUNCTION
 Real CleanFaceFlux(const CleanArgs &x, const int e, const int dir, const int m,
@@ -1951,8 +1957,8 @@ Real CleanCellFaceDistance(const CleanArgs &x, const int dir, const int m, const
 //! \fn void CleanOverlapFor
 //! \brief old production's implicit_halo_overlap: f(m,k,j,i) over the active cells
 //! CleanInner by ng while a ghost exchange is in flight, then fin() (its second half),
-//! then f over the other active cells.  ov = false (or MeshBlocks too thin): fin(), then f
-//! over all of them.  Each cell's value is the same either way.  fd >= 0: f over the
+//! then f over the other active cells.  ov = false (or MeshBlocks too thin): fin(), then
+//! f over all of them.  Each cell's value is the same either way.  fd >= 0: f over the
 //! faces normal to fd, the inner ones those whose two neighbour faces along fd are the
 //! block's (the F solve's, CleanStagFSolve).  post (the producer's side): f over the
 //! other cells first, which the exchange sends, then post() (its first half), f over the

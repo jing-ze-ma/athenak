@@ -347,17 +347,17 @@ void RadiationM1::VetGdRingGatherC(const int i0, const int i1) {
 }
 
 //----------------------------------------------------------------------------------------
-//! <rad_m1>/vet_gd_band_global: the band lists keyed on the GLOBAL cell
-//! (the cubed sphere's exact band copies, VetGdCsInit, on the full sphere's index space).
-//! Band position (kk, jj) of block (lx2, lx3) is the global cell J = lx2 nx2 + jj - w, K =
-//! lx3 nx3 + kk - w, continued beyond a pole in the extended chart (J -> -1 - J north,
-//! 2 nt2 - 1 - J south, K -> K + nx3t/2: the pole partner's reversed rows, as the slot
-//! halo), K periodic.  Every position at depth d >= 1 (Chebyshev distance from the
-//! interior) takes its owner's interior value: on-rank copies and one message per
-//! partner rank, both sorted by depth so that the per-shell halo of depth ws is a prefix
-//! (VetGdCsHalo with ws).  Every slot is marked remote (vgd_hloc = -1): the sweep reads
-//! every band position from the band (no direct neighbour reads, which reach one block).
-//! vgd_raw (a wedge): J and K periodic, each x1 level apart; vgd_own the on-rank owners.
+//! <rad_m1>/vet_gd_band_global: the band lists keyed on the GLOBAL cell (the cubed
+//! sphere's exact band copies, VetGdCsInit, on the full sphere's index space). Band
+//! position (kk, jj) of block (lx2, lx3) is the global cell J = lx2 nx2 + jj - w, K = lx3
+//! nx3 + kk - w, continued beyond a pole in the extended chart (J -> -1 - J north, 2 nt2
+//! - 1 - J south, K -> K + nx3t/2: the pole partner's reversed rows, as the slot halo), K
+//! periodic.  Every position at depth d >= 1 (Chebyshev distance from the interior) takes
+//! its owner's interior value: on-rank copies and one message per partner rank, both
+//! sorted by depth so that the per-shell halo of depth ws is a prefix (VetGdCsHalo with
+//! ws).  Every slot is marked remote (vgd_hloc = -1): the sweep reads every band position
+//! from the band (no direct neighbour reads, which reach one block). vgd_raw (a wedge): J
+//! and K periodic, each x1 level apart; vgd_own the on-rank owners.
 
 void RadiationM1::VetGdGlobalBandInit() {
   Mesh *pm = pmy_pack->pmesh;
@@ -811,11 +811,12 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
     }
   }
 #if defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP)
-  // vet_gd_halo_ipc (prod's GPU-driven form, VetGdHlBegin): the pack stores my kept values
-  // of partner p straight into its receive region of me, a flag kernel sets its arrival
-  // flag, a wait kernel waits for mine, the unpack reads my regions: all stream-ordered,
-  // no host wait and no MPI.  The same values in the same band positions (bitwise).
-  // Parity buffers: a partner's flag of exchange s follows its unpack of s - 1.
+  // vet_gd_halo_ipc (prod's GPU-driven form, VetGdHlBegin): the pack stores my kept
+  // values of partner p straight into its receive region of me, a flag kernel sets its
+  // arrival flag, a wait kernel waits for mine, the unpack reads my regions: all
+  // stream-ordered, no host wait and no MPI.  The same values in the same band positions
+  // (bitwise). Parity buffers: a partner's flag of exchange s follows its unpack of s -
+  // 1.
   if (vgd_raw && !cb.empty() && vgd_ipc_state == 1 && lean) {
     if (post) {++vgd_ipc_seq;}
     const long long seq = vgd_ipc_seq, par = seq & 1;

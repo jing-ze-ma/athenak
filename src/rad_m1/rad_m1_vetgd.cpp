@@ -131,12 +131,13 @@ inline bool VgdMomLds() {
 #endif
 
 namespace radm1 {
-// <rad_m1>/vet_gd_twin_srw (read only when named, default false = bitwise): the
-// twin's pattern subtraction (D_rr, lateral slots, half-range ratios) weighted per cell by the
-// symref weight w = min(J_twin/J, 1) (VgdSrW), as the reference shift is: a cell much brighter
-// than its shell's laterally uniform twin (a thick bump in a mostly thin shell, the accretor's
-// L1 tip) keeps its own D_gd instead of the thin shell's twin-minus-reference bias (D_rr 0.26,
-// D_tt 0.37 in tau > 30 cells without it); w = 1 cells are bitwise.  Parsed in rad_m1.cpp.
+// <rad_m1>/vet_gd_twin_srw (read only when named, default false = bitwise): the twin's
+// pattern subtraction (D_rr, lateral slots, half-range ratios) weighted per cell by the
+// symref weight w = min(J_twin/J, 1) (VgdSrW), as the reference shift is: a cell much
+// brighter than its shell's laterally uniform twin (a thick bump in a mostly thin shell,
+// the accretor's L1 tip) keeps its own D_gd instead of the thin shell's
+// twin-minus-reference bias (D_rr 0.26, D_tt 0.37 in tau > 30 cells without it); w = 1
+// cells are bitwise.  Parsed in rad_m1.cpp.
 #if !defined(M1_VGD_SWEEP_TU)
 // <rad_m1>/vet_rotate_advance (read only when named, default false = bitwise;
 // parsed in VetRotInit, one RadiationM1 per rank): with vet_rotate_avg = K the set of
@@ -1183,9 +1184,9 @@ void RadiationM1::VetGdInit() {
                     : vgd_csg ? (vgd_cscomp && vgd_hmpi)
                               : (vgd_hx_on && !vgd_bandx &&
                                  vgd_hmpi && (vgd_hcomp > 0) && (vgd_hl_mb > 0));
-    // (USER: speed over memory): the clean sc rays' raw band on spherical
-    // polar keeps every shell's band (no ring, no planb hook) unless vet_gd_band_ring is
-    // named: A100 R136 rotating -15 % sweep-stage wall, half -3.6 %, +2.3 GiB/GPU, bitwise
+    // (USER: speed over memory): the clean sc rays' raw band on spherical polar keeps
+    // every shell's band (no ring, no planb hook) unless vet_gd_band_ring is named: A100
+    // R136 rotating -15 % sweep-stage wall, half -3.6 %, +2.3 GiB/GPU, bitwise
     if (!vgd_ring_named && vgd_raw && !vgd_csg) {vgd_ring_par = false;}
     bool anyside = false;
     auto hl_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_hloc);
@@ -1316,8 +1317,8 @@ void RadiationM1::VetRotInit(ParameterInput *pin) {
          (pin->DoesParameterExist("rad_m1","vet_milne") &&
           pin->GetBoolean("rad_m1","vet_milne")));
     // a vet_sc set pinned by boundary beams (implicit_beam_n) or the Milne diagnostic
-    // gets no DEFAULT rotation, and a named rotation with it is FATAL (below) -- the beams
-    // are injected along fixed rays of the set
+    // gets no DEFAULT rotation, and a named rotation with it is FATAL (below) -- the
+    // beams are injected along fixed rays of the set
     const bool rot_cl = vgd_on || vet_sc;
     bool rot_phys = false;
     if (rot_cl && rdt_named) {
@@ -3873,7 +3874,8 @@ bool RadiationM1::VetGdHlBegin(V &a, const int nv, const int i0, const int ws) {
         constexpr int kT = 128;
         const int nt = std::max(ns_, nr + nw);
         const int nl = std::min((nt + kT - 1)/kT, 216);
-        // (light-weight: the body as kernel arguments, no host wait on the previous launch)
+        // (light-weight: the body as kernel arguments, no host wait on the previous
+        // launch)
         Kokkos::parallel_for("m1_vgd_ipc_x", Kokkos::Experimental::require(
             Kokkos::TeamPolicy<>(vgd_cur, nl, kT),
             Kokkos::Experimental::WorkItemProperty::HintLightWeight),
@@ -5952,9 +5954,9 @@ void RadiationM1::VetGdSweep() {
   const bool spl = vet_seg_split;   // vet_seg = split
   const int spe = VetSegMode();
   const int vim = vet_interp;   // vet_interp: 2 corner, 3 auto
-  // vet_path = cells.  the shell body takes it as an ARGUMENT and each
-  // launch passes a literal, so the default (none) kernel is compiled without the cells branch
-  // (the dormant branch cost ~7-9 % per sweep on A100); results bitwise either way
+  // vet_path = cells.  the shell body takes it as an ARGUMENT and each launch passes a
+  // literal, so the default (none) kernel is compiled without the cells branch (the
+  // dormant branch cost ~7-9 % per sweep on A100); results bitwise either way
   const bool vpa_h = (vet_path != 0);
   // vet_gd_inner = emit at the physical inner face (icut = 0): the
   // inner boundary's own emission (black sphere of flux F_in, Marshak bath)
@@ -6221,7 +6223,8 @@ void RadiationM1::VetGdSweep() {
       if (!gfast) {VgdFatal("vet_gd_rotate_xfade_fuse: the fused sweep needs the gx-false "
                             "shell kernel");}
 #if defined(KOKKOS_ENABLE_CUDA)
-      auto &bba = vgd_bbuf2;   // (the current set's closure: the buffer of its gx-false body)
+      // (the current set's closure: the buffer of its gx-false body)
+      auto &bba = vgd_bbuf2;
 #else
       auto &bba = vgd_bbuf0;
 #endif
@@ -6755,7 +6758,8 @@ void RadiationM1::VetGdSweep() {
           vgd_rg_pend.push_back(o);
         }
         VetGdRingFlush();
-        if (!inw && vgd_rg_refill) {   // the inward band again from its owners (unchanged)
+        // the inward band again from its owners (unchanged)
+        if (!inw && vgd_rg_refill) {
           vgd_hinw = true;
           VetGdHalo(vgd_i, n, i, i, vgd_wsi[i], true);
         }

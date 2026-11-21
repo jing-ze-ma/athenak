@@ -24,7 +24,8 @@ struct M1BcgVal {
 };
 
 constexpr int M1_DR_NT = 256;    // slots per team (a power of 2)
-constexpr int M1_LB_NS = 32768;  // block mode: level-1 slots per MeshBlock (fills the GPU)
+// block mode: level-1 slots per MeshBlock (fills the GPU)
+constexpr int M1_LB_NS = 32768;
 
 //----------------------------------------------------------------------------------------
 //! \fn M1GlobalMax

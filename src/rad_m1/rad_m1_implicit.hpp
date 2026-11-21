@@ -161,7 +161,8 @@ constexpr int M1_OD_NONE     = 2;  // drop them: P is taken DIAGONAL in the grid
 // which is super-luminal wherever rho kappa is tiny (the optically thin top of the 2-D
 // He slab, where |F_2|/(c E) saturates at the post-solve clip of 1).
 constexpr int M1_TLIM_NONE = 0;  // no limiter; the arithmetic of phase D, bit for bit.
-constexpr int M1_TLIM_LPR  = 2;  // realizability bound max(kt, |G|/(fmax E)), tapered by min(1, kt dx)
+// realizability bound max(kt, |G|/(fmax E)), tapered by min(1, kt dx)
+constexpr int M1_TLIM_LPR  = 2;
 constexpr int M1_TLIM_LP   = 1;  // add a lagged "limiter opacity" klim_f = |G_f|/(phi_f
                                  // E_f) to the face transport opacity, with G_f the face
                                  // pressure divergence the flux kernel already forms and
@@ -178,9 +179,9 @@ constexpr int M1_IBC_FLUX     = 1;   // imposed flux, F_f = implicit_flux_x1min/
 constexpr int M1_IBC_REFLECT  = 2;   // F_f = 0
 constexpr int M1_IBC_PERIODIC = 3;   // cyclic tridiagonal (Sherman-Morrison)
 constexpr int M1_IBC_EFIX     = 4;   // Dirichlet: the boundary CELL keeps the E it has
-// transverse (x2) OUTFLOW face, read only when named: the face carries the
-// edge cell's own outgoing x2 flux (zero gradient of F, outflow only; lagged in the Picard
-// pass), F_f = max(+-F2_cell, 0); never the default (auto stays reflect)
+// transverse (x2) OUTFLOW face, read only when named: the face carries the edge cell's
+// own outgoing x2 flux (zero gradient of F, outflow only; lagged in the Picard pass), F_f
+// = max(+-F2_cell, 0); never the default (auto stays reflect)
 constexpr int M1_IBC_OUTFLOW  = 5;
 // transverse (x2) IMPOSED-flux face (read only when named): F_f = ifx2_lo/hi(m,k,i)
 // from the problem generator (RadiationM1::SetX2FaceFlux)
@@ -326,7 +327,8 @@ constexpr int M1_IENTH_PLM     = 2;  // DEFAULT: a_f E_f, E_f the van Leer plm v
 // plm a_f and stencil rule, only E_f differs):
 constexpr int M1_IENTH_PLMC    = 3;  // E_f = mean of the two van Leer plm face values (no
                                      // upwind-side switch, limiter kept)
-constexpr int M1_IENTH_LIN     = 4;  // E_f the UNLIMITED linear (Fromm) value from the side
+// E_f the UNLIMITED linear (Fromm) value from the side
+constexpr int M1_IENTH_LIN     = 4;
                                      // upwind of a_f (side switch kept, no limiter)
 
 // <rad_m1>/implicit_vimp: the gas velocity v' of the enthalpy flux a(v') E' taken
@@ -392,7 +394,8 @@ constexpr int M1_POS_FCLIP  = 6;   // cell-solves whose |F| > c E was scaled bac
 constexpr int M1_POS_FCLIPM = 7;   // sum of (|F|/(c E) - 1) over those cell-solves
 constexpr int M1_POS_FLRS   = 8;   // F3: residual raise below 1e-6 e_floor (x volume)
 constexpr int M1_POS_FLR_MV = 9;   // implicit_pos_floor_cons: floor energy taken
-                                   // from the column's radiation (erg, gas units x volume)
+                                   // from the column's radiation (erg, gas units x
+                                   // volume)
 constexpr int M1_POS_N      = 10;
 constexpr int M1_IFW_AL  = 0;   // alpha, the asymptotic-preserving weight of F_HLL
 constexpr int M1_IFW_HCL = 1;   // alpha * (coefficient of E'_L in F_HLL), >= 0
@@ -513,7 +516,8 @@ constexpr int M1_NIW_HSF = 8;
 constexpr int M1_HSF_HP = 0;   // + 2 d: H+_d = sum w I max(mu_d, 0) (E units)
 constexpr int M1_HSF_HM = 1;   // + 2 d: H-_d = H_d - H+_d <= 0
 constexpr int M1_HSF_J  = 6;   // J of the formal solution
-constexpr int M1_HSF_JH = 7;   // Jh = max(J, max over the faces of the outgoing face SC flux)
+// Jh = max(J, max over the faces of the outgoing face SC flux)
+constexpr int M1_HSF_JH = 7;
 constexpr int M1_NIW_GAS = 5;
 constexpr int M1_IWG_BK = 0;   // B_k = rho c_v + 4 c dt rho kappa_P a T_k^3, the
                                // derivative d/dT of the LOCAL gas energy equation
@@ -666,10 +670,10 @@ void M1CsSeamGeom(const int q, const int n, Real &dth, Real &angm, Real &sfoot,
 
 //----------------------------------------------------------------------------------------
 //! \fn M1CsSeamDepth
-//! \brief depth of index c (active lo..hi, ghosts allowed) below the nearest
-//! block face along that axis that is a PANEL SEAM (slo / shi): 0 for the cell next to the
-//! seam and for the first ghost beyond it (the neighbour panel's seam cell), 1 one cell
-//! further, ...; a large number when neither face is a seam.
+//! \brief depth of index c (active lo..hi, ghosts allowed) below the nearest block face
+//! along that axis that is a PANEL SEAM (slo / shi): 0 for the cell next to the seam and
+//! for the first ghost beyond it (the neighbour panel's seam cell), 1 one cell further,
+//! ...; a large number when neither face is a seam.
 
 KOKKOS_INLINE_FUNCTION
 int M1CsSeamDepth(const int c, const int lo, const int hi, const bool slo,
@@ -1338,9 +1342,9 @@ Real M1CsTanFaceLag(const V &iw, const VT &tt, const int c0, const G &tg, const 
 
 //! \fn M1CsTanFaceOp: the same term as frozen coefficients on the 19-point stencil,
 //! vis(kq, jq, c) per cell of the column i (one body for VetLatOpCs and its stencil).  No
-//! foot-to-midpoint move at a seam and a first-order one-sided d_t next to a seam (neither
-//! fits the stencil): the operator is the implicit part only, the fixed point is the
-//! lagged form above (the right-hand side adds it and removes this one at E^k).
+//! foot-to-midpoint move at a seam and a first-order one-sided d_t next to a seam
+//! (neither fits the stencil): the operator is the implicit part only, the fixed point is
+//! the lagged form above (the right-hand side adds it and removes this one at E^k).
 template <class VT, class G, class F>
 KOKKOS_INLINE_FUNCTION
 void M1CsTanFaceOp(const VT &tt, const int c0, const G &tg, const int e, const int m,

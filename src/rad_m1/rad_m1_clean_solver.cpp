@@ -231,8 +231,9 @@ void RadiationM1::CleanGhostDefer(DvceArray5D<Real> a, const int c0, const int n
   if (np > cln_hmax) CleanGhostFlush();
   cln_hpend.push_back({a, c0, nc, true, dep});
   if (!cln_hdl.poison) return;
-  // (CLEAN_POISON_GHOST: the ghosts are poison until the exchange that takes them, so that
-  // a kernel reading them in between, before the flush, reads the poison, not old values)
+  // (CLEAN_POISON_GHOST: the ghosts are poison until the exchange that takes them, so
+  // that a kernel reading them in between, before the flush, reads the poison, not old
+  // values)
   auto &id = pmy_pack->pmesh->mb_indcs;
   const CleanShell sb(a.extent_int(2), a.extent_int(3), a.extent_int(4), 0, id.is, id.ie,
                       id.js, id.je, id.ks, id.ke, pmy_pack->pmesh->multi_d,
@@ -937,7 +938,8 @@ Real RadiationM1::CleanReduce(Real v, const bool max) {
 //! \fn std::array<Real, 2> CleanSums
 //! \brief the n <= 2 sums s0, s1 that f(m, k, j, i, s0, s1) adds over the active cells
 //! (it may also update the cell's vectors: a BiCGStab step and its dots in one pass), one
-//! reduction over the ranks; <mesh>/layout_invariant: M1LayReduce's (rank-count invariant)
+//! reduction over the ranks; <mesh>/layout_invariant: M1LayReduce's (rank-count
+//! invariant)
 
 template <typename F>
 std::array<Real, 2> CleanSums(MeshBlockPack *pp, const char *name, const int n,

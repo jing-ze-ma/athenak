@@ -192,11 +192,11 @@ void RadiationM1::RavState(const bool gas) {
   if (!gas) return;
   hydro::Hydro *ph = pmy_pack->phydro;
   if (prav->fourier) {
-    // polar_ring_avg_filter = fourier: the gas ring-filtered (smooth, no
-    // staircase); with polar_ring_avg_ke = rad its energy defect (the kinetic energy of the
-    // removed modes, incl. the intra-group kick spread) goes to E, ring-uniform (E stays
-    // group-uniform), else to gas heat.  A ring that fails the positivity test falls back
-    // to the group average (without the KE -> rad step).
+    // polar_ring_avg_filter = fourier: the gas ring-filtered (smooth, no staircase); with
+    // polar_ring_avg_ke = rad its energy defect (the kinetic energy of the removed modes,
+    // incl. the intra-group kick spread) goes to E, ring-uniform (E stays group-uniform),
+    // else to gas heat.  A ring that fails the positivity test falls back to the group
+    // average (without the KE -> rad step).
     prav->Filter(ph->u0, ph->nhydro + ph->nscalars, ph->phicc0, ph->use_etotgrav,
                  rav_ke_rad ? &u0 : nullptr, M1_E, chat/c_light);
     return;
@@ -206,21 +206,21 @@ void RadiationM1::RavState(const bool gas) {
 }
 
 //----------------------------------------------------------------------------------------
-//! n void RadiationM1::RavKeToRad
-//! rief floorheat-1029 <rad_m1>/polar_ring_avg_ke = rad.  The solve's write-back forms
-//! the gas kick from each FINE cell's F inside a phi group (the intra-group phi faces are
-//! the linear interpolation of the group's boundary faces), so the kicks vary linearly
-//! across the group (+-550 km/s per step measured in floor gas at rho 1e-8, where
-//! F/c^2 >> rho v) while their sum is the coarse cell's kick.  Each fine kick's work was
-//! paid by E.  The group average that follows (prav->Average, total energy averaged) then
-//! turns the kinetic energy of that spread, K_s = sum_k |m_k|^2/(2 rho_k) - |sum m|^2 /
-//! (2 sum rho), into gas heat: the floor gas above the poles reached 1e6-1e7 K and set dt.
-//! Here K_s is taken out of the gas total energy and given to E before the average, so
-//! the gas ends with the internal energy of the average of its internal energies and the
-//! kinetic energy of the average momentum; with a group-uniform state before the kick
-//! this is EXACTLY the write-back of the coarse kick (radiation pays the coarse work).
-//! Mass, momentum and gas + (c/chat) E are conserved.  Called after RavAvg (E is already
-//! group-uniform: a uniform increment keeps it so).
+//!  n void RadiationM1::RavKeToRad rief floorheat-1029 <rad_m1>/polar_ring_avg_ke = rad.
+//! The solve's write-back forms the gas kick from each FINE cell's F inside a phi group
+//! (the intra-group phi faces are the linear interpolation of the group's boundary
+//! faces), so the kicks vary linearly across the group (+-550 km/s per step measured in
+//! floor gas at rho 1e-8, where F/c^2 >> rho v) while their sum is the coarse cell's
+//! kick.  Each fine kick's work was paid by E.  The group average that follows
+//! (prav->Average, total energy averaged) then turns the kinetic energy of that spread,
+//! K_s = sum_k |m_k|^2/(2 rho_k) - |sum m|^2 / (2 sum rho), into gas heat: the floor gas
+//! above the poles reached 1e6-1e7 K and set dt. Here K_s is taken out of the gas total
+//! energy and given to E before the average, so the gas ends with the internal energy of
+//! the average of its internal energies and the kinetic energy of the average momentum;
+//! with a group-uniform state before the kick this is EXACTLY the write-back of the
+//! coarse kick (radiation pays the coarse work). Mass, momentum and gas + (c/chat) E are
+//! conserved.  Called after RavAvg (E is already group-uniform: a uniform increment keeps
+//! it so).
 
 void RadiationM1::RavKeToRad() {
   hydro::Hydro *ph = pmy_pack->phydro;

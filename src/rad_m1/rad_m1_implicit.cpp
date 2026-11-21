@@ -1154,12 +1154,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // point is the same: the term vanishes there).  <= 0 turns the guard off (the
   // unguarded rows of m1-perf-0928, bitwise).
   impl_opn_guard = pin->GetOrAddReal("rad_m1","implicit_opac_newton_guard",0.5);
-  // implicit_gas_newton_u4 (default false, opt-in study key): the gas Newton
-  // update of step (f) in a cell whose linearised row is EMISSION-dominated (4 c dt rho
-  // kappa_P a T^3 > rho c_v) moves u = T^4 by the Newton step, T' = (T^4 + 4 T^3 dT)^(1/4),
-  // instead of T by dT: then a T'^4 is exactly the emission the radiation row was built
-  // with, and a hot start (T >> T_eq in a tenuous cell: plain Newton on T^4 shrinks T by
-  // only 1/4 per pass) lands in one step.  Same fixed point (dT = 0 there).
+  // implicit_gas_newton_u4 (default false, opt-in study key): the gas Newton update of
+  // step (f) in a cell whose linearised row is EMISSION-dominated (4 c dt rho kappa_P a
+  // T^3 > rho c_v) moves u = T^4 by the Newton step, T' = (T^4 + 4 T^3 dT)^(1/4), instead
+  // of T by dT: then a T'^4 is exactly the emission the radiation row was built with, and
+  // a hot start (T >> T_eq in a tenuous cell: plain Newton on T^4 shrinks T by only 1/4
+  // per pass) lands in one step.  Same fixed point (dT = 0 there).
   impl_gn_u4 = pin->GetOrAddBoolean("rad_m1","implicit_gas_newton_u4",false);
   // implicit_opac_lag = none (default) | pred: pred evaluates the opacities
   // in passes 0 .. N-1 only (pass 0 at the predicted T of the step predictor, or T^n on a
@@ -1956,13 +1956,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       // consfix2: the hydro's dA as F0's explicit tendency (ImplicitCs2Shift) is opt-in;
       // off, it stays in the solve's dA (clean order 2 on rw_p10t100 / rsw / rlat)
       cs2_shift = pin->GetOrAddBoolean("rad_m1","implicit_cs2_shift",false);
-      // implicit_cs2_clip (read only when named): gas (default: the gas is
-      // charged with the realisability-limited cell flux, so the limiter's change of F --
-      // up to |F| - cE in free-streaming cells -- is a momentum kick to the gas: ~100 km/s
-      // in 1e-8 floor gas, v12lz accretor) | rad (the limit's change stays with the
-      // radiation, as on the matched path)
-      // (user 11-12): implicit_cs2_wbsolve DEFAULT true (recorded); name false
-      // for the 3 fixed-point passes of before
+      // implicit_cs2_clip (read only when named): gas (default: the gas is charged with
+      // the realisability-limited cell flux, so the limiter's change of F -- up to |F| -
+      // cE in free-streaming cells -- is a momentum kick to the gas: ~100 km/s in 1e-8
+      // floor gas, v12lz accretor) | rad (the limit's change stays with the radiation, as
+      // on the matched path) (user 11-12): implicit_cs2_wbsolve DEFAULT true (recorded);
+      // name false for the 3 fixed-point passes of before
       cs2_wbs = pin->GetOrAddBoolean("rad_m1","implicit_cs2_wbsolve",true);
       if (pin->DoesParameterExist("rad_m1","implicit_cs2_clip")) {
         const std::string cm = pin->GetString("rad_m1","implicit_cs2_clip");
@@ -2548,15 +2547,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(lz_d, 6);
     Kokkos::deep_copy(lz_d, 0.0);
   }
-  // implicit_lzx (rad_m1.hpp, LZPHYS_1113.md); it closes the solve's whole L_z
-  // budget, so the implicit_am_cs deposit (a partial closure, after the write-back) is off
-  // inert (message, no slot) on a Cartesian mesh and with the gas fixed: no gas +
-  // radiation L_z budget to close there; a D6 key set stays usable on every gate deck
-  // (USER 11-13): DEFAULT true where every prerequisite below holds (cs, or
-  // spherical polar with periodic x3; coupling + gas_feedback; 3-D implicit transport;
-  // implicit_gas_src conservative / conservative2; no implicit_hr_cmem, implicit_physflux
-  // or implicit_lz_form); false elsewhere and with recipe none (no new FATAL, no message
-  // for a deck that does not name it).  Read only when named; an explicit key wins.
+  // implicit_lzx (rad_m1.hpp, LZPHYS_1113.md); it closes the solve's whole L_z budget, so
+  // the implicit_am_cs deposit (a partial closure, after the write-back) is off inert
+  // (message, no slot) on a Cartesian mesh and with the gas fixed: no gas + radiation L_z
+  // budget to close there; a D6 key set stays usable on every gate deck (USER 11-13):
+  // DEFAULT true where every prerequisite below holds (cs, or spherical polar with
+  // periodic x3; coupling + gas_feedback; 3-D implicit transport; implicit_gas_src
+  // conservative / conservative2; no implicit_hr_cmem, implicit_physflux or
+  // implicit_lz_form); false elsewhere and with recipe none (no new FATAL, no message for
+  // a deck that does not name it).  Read only when named; an explicit key wins.
   auto bc3p = [pin](const char *k) {
     return pin->DoesParameterExist("mesh", k) && pin->GetString("mesh", k) == "periodic";
   };
@@ -2766,16 +2765,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         Kokkos::deep_copy(thx3, 0.0);
       }
     }
-    // the outer Marshak q of a half-range solve with ray data = h+_1 of the
-    // top cell (the vacuum sends nothing back), per column, in vcol_q
-    // (read only when named; default cell = bitwise): implicit_hr_q = col
-    // keeps the outer Marshak q of the closure's own surface estimate (vet_col_surface_q /
-    // vet_gd_replace: H at the FACE over J of the top cell) instead of the top cell's
-    // CENTRE ratio h+_1 = H+_N/J_N.  At tau_cell ~ 1 the centre value lies an optical
-    // depth tau_cell/2 below the vacuum face, where the outgoing intensity is far less
-    // one-sided (gda s1: h+ = 0.38 at tau 0.63), so c q E_N under-estimates the escaping
-    // flux by O(tau_cell): the plateau of ord1020 (PROD retains +1.2 % energy at s1/s2).
-    // Only with closure vet_col (+ vet_gd), whose surface q exists; vet_sc keeps h+_1
+    // the outer Marshak q of a half-range solve with ray data = h+_1 of the top cell (the
+    // vacuum sends nothing back), per column, in vcol_q (read only when named; default
+    // cell = bitwise): implicit_hr_q = col keeps the outer Marshak q of the closure's own
+    // surface estimate (vet_col_surface_q / vet_gd_replace: H at the FACE over J of the
+    // top cell) instead of the top cell's CENTRE ratio h+_1 = H+_N/J_N.  At tau_cell ~ 1
+    // the centre value lies an optical depth tau_cell/2 below the vacuum face, where the
+    // outgoing intensity is far less one-sided (gda s1: h+ = 0.38 at tau 0.63), so c q
+    // E_N under-estimates the escaping flux by O(tau_cell): the plateau of ord1020 (PROD
+    // retains +1.2 % energy at s1/s2). Only with closure vet_col (+ vet_gd), whose
+    // surface q exists; vet_sc keeps h+_1
     bool hrq_col = false;
     if (pin->DoesParameterExist("rad_m1","implicit_hr_q")) {
       const std::string sq = pin->GetString("rad_m1","implicit_hr_q");

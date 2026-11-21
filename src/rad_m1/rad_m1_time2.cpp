@@ -167,14 +167,14 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   // P = 100, tau_lambda = 1e5; `start` = plm a_f of the stage-start a plus the rest as a
   // face mean, also unstable there; `central` = a_f the mean of the two cells, E_f plm)
   t2_afmode = 2;
-  // time2_enth_be: with time2_enth_vel = central the stage solves build a_f
-  // as the mean of the two cells, but the backward-Euler solves of the same run (the start
-  // step, the time2_start slope probe, the rotation probe, the step after a failed stage)
-  // take implicit_enthalpy's own a_f (plm: the 4-point plm mean).  That changes the
-  // operator for one step of length dt, an O(dt) term of the T ladders (rw_p10t100 E /
-  // eint 1.78 / 1.84 at l 16-32).  true: those solves take the stage rule too.
-  // DEFAULT true on a fresh run; a restart whose file lacks the key keeps false
-  // (FIN3, bitwise) -- the same rule as implicit_cs2_vimp_npass (fresh 3, restart 0).
+  // time2_enth_be: with time2_enth_vel = central the stage solves build a_f as the mean
+  // of the two cells, but the backward-Euler solves of the same run (the start step, the
+  // time2_start slope probe, the rotation probe, the step after a failed stage) take
+  // implicit_enthalpy's own a_f (plm: the 4-point plm mean).  That changes the operator
+  // for one step of length dt, an O(dt) term of the T ladders (rw_p10t100 E / eint 1.78 /
+  // 1.84 at l 16-32).  true: those solves take the stage rule too. DEFAULT true on a
+  // fresh run; a restart whose file lacks the key keeps false (FIN3, bitwise) -- the same
+  // rule as implicit_cs2_vimp_npass (fresh 3, restart 0).
   t2_enth_be = pin->GetOrAddBoolean("rad_m1", "time2_enth_be",
                                     !global_variable::restart_run);
   if (pin->DoesParameterExist("rad_m1", "time2_enth_vel")) {
@@ -1222,8 +1222,8 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::Time2Stash
-//! \brief pgrst-1021 time2_k1_reset: the radiation E at the hesdirk2 stage-loop start (the
-//! state the FSAL slope K1 belongs to; the Driver calls it before the Heun stage 1)
+//! \brief pgrst-1021 time2_k1_reset: the radiation E at the hesdirk2 stage-loop start
+//! (the state the FSAL slope K1 belongs to; the Driver calls it before the Heun stage 1)
 
 void RadiationM1::Time2Stash() {
   t2_ys_ok = false;
@@ -1299,19 +1299,20 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
 //! \fn void RadiationM1::Time2K1XLim
 //! \brief xlim-1120 <rad_m1>/time2_k1_xlim = th (read only when named; default 0 = off,
 //! bitwise): the exchange pair of the stage increment (the gas eint change de and E's
-//! -(ch/cl) de) is scaled by theta in [0, 1] where it would take the old vector's E or gas
-//! eint to <= th x its stage start.  The FSAL exchange slope is the last solve's relaxation
-//! rate; extrapolated over a21 dt (with K2) it overshoots where radiation flowing in is
-//! absorbed (HG prod KSPLIT: in 98 % of the stage-1 cells whose increment leaves E <= 0
-//! without its inflow the exchange pair dominates), and once face FCT limits the donors the
-//! inflow no longer pays for it.  gas = true, before time2_face_fct, where the gas loses
-//! (de < 0): theta the largest with eint + theta de >= th eint, but no smaller than what
-//! keeps E + its local part (the increment without the faces' divergence, all FCT can
-//! fall back to) >= th E, so that FCT, which reads the result, can still keep E positive.
-//! gas = false, after FCT (the face part final), where E loses (de > 0): theta the largest
-//! with E + dE >= th E.  The scaled-away exchange is taken by the implicit stage
-//! (L-stable).  Per cell: E + gas energy exact ((c/ch) dE + dEgas = 0), momentum and faces
-//! unchanged, no new state (restart and dt_retry bitwise); untouched cells bitwise.
+//! -(ch/cl) de) is scaled by theta in [0, 1] where it would take the old vector's E or
+//! gas eint to <= th x its stage start.  The FSAL exchange slope is the last solve's
+//! relaxation rate; extrapolated over a21 dt (with K2) it overshoots where radiation
+//! flowing in is absorbed (HG prod KSPLIT: in 98 % of the stage-1 cells whose increment
+//! leaves E <= 0 without its inflow the exchange pair dominates), and once face FCT
+//! limits the donors the inflow no longer pays for it.  gas = true, before
+//! time2_face_fct, where the gas loses (de < 0): theta the largest with eint + theta de
+//! >= th eint, but no smaller than what keeps E + its local part (the increment without
+//! the faces' divergence, all FCT can fall back to) >= th E, so that FCT, which reads the
+//! result, can still keep E positive. gas = false, after FCT (the face part final), where
+//! E loses (de > 0): theta the largest with E + dE >= th E.  The scaled-away exchange is
+//! taken by the implicit stage (L-stable).  Per cell: E + gas energy exact ((c/ch) dE +
+//! dEgas = 0), momentum and faces unchanged, no new state (restart and dt_retry bitwise);
+//! untouched cells bitwise.
 
 void RadiationM1::Time2K1XLim(int stage, Real c1, Real c2, bool gas) {
   FluidRef flx = FluidRef::Get(pmy_pack);
@@ -2208,24 +2209,24 @@ bool RadiationM1::Time2StartProbe(Driver *pdrive, Real dt) {
 
 //----------------------------------------------------------------------------------------
 //! \fn bool RadiationM1::Time2RotCorrect
-//! \brief vet_gd_rotate_slope = correct (asked for by VetGdRotStep on the
-//! first step of a new vet_gd rotation block, with a valid FSAL slope K1 = f_old(U^n) of
-//! the OLD set): one stage-type solve of dt_c = vet_gd_rotate_slope_frac dt from U^n
-//! (radiation, faces, gas; no hydro) with the NEW set and the old vector U^n - dt_c K1
-//! (cell F: - dt_c csk1).  Its slope (Y - old)/dt_c = K1 + z/dt_c with, to first order in
-//! z = Y - U^n,  z = dt_c (I - dt_c A_new)^{-1} (f_new - f_old)(U^n): the stored slope is
-//! K1 + (I - dt_c A)^{-1} Delta f -- the closure jump of the slope where dt_c A is small
-//! (the thin regime, where keep leaves an O(dt Delta f) error per jump = first order), and
-//! keep's K1 where the cell is stiff (there the L-stable stages forget a stage-1 slope
-//! error and keep is second order; replacing all of K1 by a BE probe slope is what broke
-//! the stiff ladders).  Only the jump steps change, so an O(dt) error of the correction
-//! itself stays O(dt^2) globally.  The solve runs as a STAGE1 solve (its slope lands in
-//! t2k2 / csk2 and is copied to t2k1 / csk1); the predictor history is kept
-//! (implicit_predictor is off for this solve); U^n is put back.  With
-//! vet_gd_rotate_slope_reuse the stage-1 solve of the step keeps this solve's closure
-//! build (the same set, built by Time2VetColAt(1) at U^n + theta dt K1_old with the gas
-//! at U^n instead of after the Heun stage: an O(dt) state shift on the jump steps only).
-//! A failed correction solve keeps K1 (keep).  Returns true when a solve was taken.
+//! \brief vet_gd_rotate_slope = correct (asked for by VetGdRotStep on the first step of a
+//! new vet_gd rotation block, with a valid FSAL slope K1 = f_old(U^n) of the OLD set):
+//! one stage-type solve of dt_c = vet_gd_rotate_slope_frac dt from U^n (radiation, faces,
+//! gas; no hydro) with the NEW set and the old vector U^n - dt_c K1 (cell F: - dt_c
+//! csk1).  Its slope (Y - old)/dt_c = K1 + z/dt_c with, to first order in z = Y - U^n,  z
+//! = dt_c (I - dt_c A_new)^{-1} (f_new - f_old)(U^n): the stored slope is K1 + (I - dt_c
+//! A)^{-1} Delta f -- the closure jump of the slope where dt_c A is small (the thin
+//! regime, where keep leaves an O(dt Delta f) error per jump = first order), and keep's
+//! K1 where the cell is stiff (there the L-stable stages forget a stage-1 slope error and
+//! keep is second order; replacing all of K1 by a BE probe slope is what broke the stiff
+//! ladders).  Only the jump steps change, so an O(dt) error of the correction itself
+//! stays O(dt^2) globally.  The solve runs as a STAGE1 solve (its slope lands in t2k2 /
+//! csk2 and is copied to t2k1 / csk1); the predictor history is kept (implicit_predictor
+//! is off for this solve); U^n is put back.  With vet_gd_rotate_slope_reuse the stage-1
+//! solve of the step keeps this solve's closure build (the same set, built by
+//! Time2VetColAt(1) at U^n + theta dt K1_old with the gas at U^n instead of after the
+//! Heun stage: an O(dt) state shift on the jump steps only). A failed correction solve
+//! keeps K1 (keep).  Returns true when a solve was taken.
 
 bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
   if (!t2_rotcorr) return false;

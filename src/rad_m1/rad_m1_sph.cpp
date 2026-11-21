@@ -208,9 +208,9 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
-  // S1: the FULL sphere (polar x2 faces) and/or a theta stretch.  A polar
-  // face is a physical face of every implicit kernel (flag != block, periodic) with area 0,
-  // so it must be REFLECTING (F_theta = 0 there; auto resolves to reflect on a non-periodic
+  // S1: the FULL sphere (polar x2 faces) and/or a theta stretch.  A polar face is a
+  // physical face of every implicit kernel (flag != block, periodic) with area 0, so it
+  // must be REFLECTING (F_theta = 0 there; auto resolves to reflect on a non-periodic
   // face): marshak / outflow / flux would put a boundary flux on the axis.  Out of S1
   // scope on that mesh: implicit_offdiag = lagged (one-sided off-diagonal differences at
   // the axis untested), implicit_trans_limit = lpr; vet_col_lat / vet_gd (S2) are refused

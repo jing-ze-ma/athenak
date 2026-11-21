@@ -1877,10 +1877,10 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   // M1 state.  That intensity closes a lagged loop through the tensor: in the thin
   // diffuse-wall shadow the wall cell went to f = 1, E = 1.5-1.6 E_bath (exact 0.5) at
   // every dt and time scheme, and under hesdirk2 its stages failed every step.  Default
-  // true; a restart whose file lacks the key keeps the old boundary (false).
-  // vet_interp = auto | lin | log | corner, the upwind stencil of
-  // the SC segment (VetUpCorner, rad_m1_vetseg.hpp).  auto = corner at a material edge
-  // (stencil chi contrast > 4), log elsewhere (as vet_gd, which reads the same key).  DEFAULT auto on a fresh run; a
+  // true; a restart whose file lacks the key keeps the old boundary (false). vet_interp =
+  // auto | lin | log | corner, the upwind stencil of the SC segment (VetUpCorner,
+  // rad_m1_vetseg.hpp).  auto = corner at a material edge (stencil chi contrast > 4), log
+  // elsewhere (as vet_gd, which reads the same key).  DEFAULT auto on a fresh run; a
   // restart whose file lacks the key keeps lin (the old vet_sc form, bitwise).
   {
     const std::string vi = pin->GetOrAddString("rad_m1", "vet_interp",
@@ -2413,9 +2413,9 @@ void RadiationM1::VetRotSet(const Real beta) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetScRotAvgSetup
-//! \brief the vet_sc fields averaged by vet_rotate_avg (rad_m1_rotavg.cpp):
-//! J (ratio) and, normalised by J (kind 3), K_ab, H_a, the half-range sums (implicit_flux_
-//! beam = halfrange) and the C1 sum (thin switch fs*); the source, extinction and eps are
+//! \brief the vet_sc fields averaged by vet_rotate_avg (rad_m1_rotavg.cpp): J (ratio)
+//! and, normalised by J (kind 3), K_ab, H_a, the half-range sums (implicit_flux_ beam =
+//! halfrange) and the C1 sum (thin switch fs*); the source, extinction and eps are
 //! set-independent.  The uniaxial projection and the full tensor follow from the averaged
 //! K/J in VetShortCharSweep.
 
@@ -2739,7 +2739,8 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
       // every set VetRotBeta can give: double-Gauss beta = q 2 pi/nphi, ring beta =
       // 0.8 (q - 1/2) 2 pi/N, q in [0, 1]
       const int nsam = 512;
-      // a real copy (create_mirror, not _view: on a host build the mirror view IS vet_ang)
+      // a real copy (create_mirror, not _view: on a host build the mirror view IS
+      // vet_ang)
       auto keep = Kokkos::create_mirror(Kokkos::HostSpace(), vet_ang);
       Kokkos::deep_copy(keep, vet_ang);
       std::vector<Real> smn(2*st.nrl, 1.0e300), smx(2*st.nrl, -1.0e300);
@@ -4210,11 +4211,11 @@ void RadiationM1::VetShortCharSweep() {
     auto iwd_ = iw;
     auto vcd_ = vet_cell;
     const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
-    // the VET source rule of vet_col / vet_gd (VetLatSweep):
-    // vet_source = relaxed (srx: the state relaxed by a local backward-Euler exchange over
-    // the step, VetRelaxedSource) or gas (the state's own source); under time2_vet =
-    // predict | rebuild time2_vet_source = state | relaxed | blend (Time2VetColAt sets
-    // vcol_srelax / vcol_sbl for the build).  vet_sc before: always the state's source.
+    // the VET source rule of vet_col / vet_gd (VetLatSweep): vet_source = relaxed (srx:
+    // the state relaxed by a local backward-Euler exchange over the step,
+    // VetRelaxedSource) or gas (the state's own source); under time2_vet = predict |
+    // rebuild time2_vet_source = state | relaxed | blend (Time2VetColAt sets vcol_srelax
+    // / vcol_sbl for the build).  vet_sc before: always the state's source.
     const bool srx = thermal && vcol_srelax;
     const bool sbl = vcol_sbl;
     const Real sx0 = vcol_sx0;

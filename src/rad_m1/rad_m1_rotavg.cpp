@@ -129,8 +129,8 @@ void RadiationM1::RotAvgSnap(const int slot, const int ilo) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::RotAvgUpdate
-//! \brief init (the first build of a run): with the CURRENT set's raw fields in place, the
-//! raw snapshots S_j of the K-1 previous sets -> offsets S_j - g (ratio fields S_j/g)
+//! \brief init (the first build of a run): with the CURRENT set's raw fields in place,
+//! the raw snapshots S_j of the K-1 previous sets -> offsets S_j - g (ratio fields S_j/g)
 
 void RadiationM1::RotAvgUpdate(const int ilo) {
   if (vra_pend != 1) return;
