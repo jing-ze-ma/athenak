@@ -338,22 +338,28 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_stag_thinf (default on): the staggered bracket's ray correction in the face
     // half ranges, realisable (CleanStagBracket), not as the gated lagged flux DG
     cln_thinf = pin->GetOrAddBoolean("rad_m1","clean_stag_thinf",nw);
-    // clean_stag_flim (default on): a face F^H above its donor's c E dissipated in the
-    // stress (conservative), the solution F within 5/4 (clean_stag_fwb: 1) of
-    // [-c E_R, c E_L], the cut booked (CleanStagFSolve); every mesh: the face F is the
-    // momentum along the face's unit normal (the cubed sphere's too, CleanCsNormA)
-    cln_flim = pin->GetOrAddBoolean("rad_m1","clean_stag_flim",nw);
-    // clean_stag_fwb (default off): the F rows in deviation form about the rays' own
-    // state, so that it is their exact steady state (CleanStagFSolve)
-    cln_fwb = stag("clean_stag_fwb", false);
+    // clean_stag_flim (default off; fwb + fcone bound F instead, and keep free streaming,
+    // which flim cuts): a face F^H above its donor's c E dissipated in the stress
+    // (conservative), the solution F within 5/4 (clean_stag_fwb: 1) of [-c E_R, c E_L],
+    // the cut booked (CleanStagFSolve); every mesh: the face F is the momentum along the
+    // face's unit normal (the cubed sphere's too, CleanCsNormA)
+    cln_flim = pin->GetOrAddBoolean("rad_m1","clean_stag_flim",false);
+    // clean_stag_fwb (default on for a fresh run with the F solve and clean_consistency,
+    // recorded; a restart file without the key: off): the F rows in deviation form about
+    // the rays' own state, so that it is their exact steady state (CleanStagFSolve)
+    old("clean_stag_fwb", "false");
+    old("clean_stag_fcone", "false");
+    cln_fwb = pin->GetOrAddBoolean("rad_m1","clean_stag_fwb",
+                                   nw && cln_fsolve && cln_consist);
     if (cln_fwb && !(cln_fsolve && cln_consist)) {
       std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_fwb needs the staggered F solve "
                 << "with clean_consistency" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_stag_fcone (default off): every cell's flux vector within its realisable
-    // cone, |F| <= c E, by construction: the faces scaled towards 0 (CleanStagFCone)
-    cln_fcone = stag("clean_stag_fcone", false);
+    // clean_stag_fcone (default on for a fresh run with fwb, recorded; a restart file
+    // without the key: off): every cell's flux vector within its realisable cone,
+    // |F| <= c E, by construction: the faces scaled towards 0 (CleanStagFCone)
+    cln_fcone = pin->GetOrAddBoolean("rad_m1","clean_stag_fcone",nw && cln_fwb);
     if (cln_fcone && !cln_fsolve) {
       std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_fcone needs the staggered F "
                 << "solve" << std::endl;
