@@ -3484,9 +3484,13 @@ void RadiationM1::CleanStagBracket() {
       // the cell holds, H = max(J, P) > E_old (the old production's quasi-steadiness gate,
       // on the front side only): a dark floor cell a beam just hit moves with its own half
       // range; a cell the rays under-fill keeps C1's theta)
+      // weighted by the cell's absorption depth over the stage, tau_a = h c kappa_P: where
+      // the gas takes the radiation within the stage the step-start rays do not predict
+      // the cell being filled; a free-streaming front (tau_a ~ 0, a beam) keeps C1's theta)
       const Real eo = fmax(x.w(m,CLW_EO,k,j,i), 0.0);
       const Real r = (thg && h > eo) ? eo/h : 1.0;
-      x.w(m,CLW_V,k,j,i) = ((e > h) ? h/e : 1.0)*r*r;
+      const Real ta = thg ? fmin(x.h*x.c*x.op(m,M1_OP_P,k,j,i), 1.0) : 0.0;
+      x.w(m,CLW_V,k,j,i) = ((e > h) ? h/e : 1.0)*(1.0 - (1.0 - r*r)*ta);
     });
     CleanGhostFill(cln_w, CLW_V, 1);
     CleanStagCsLateral(CLW_V);
