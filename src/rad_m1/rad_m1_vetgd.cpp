@@ -6136,14 +6136,16 @@ void RadiationM1::VetGdSweep() {
   // a list-only preparation of this set (shell lists, exact halo lists)
   if (vgd_xff_prep) {return;}
   const bool xffs = vgd_xff_now;
-  // early send (env VGD_XFE, default 1): the fused sweep's merged
+  // early send (env VGD_XFE, default 0 since rsthip-1121: on, a fresh MI300A t9h run
+  // with another job on its GPUs differed run to run in 6 of 20, off in 0 of 16; off
+  // gives the same bits and cost no time on t9h): the fused sweep's merged
   // exchange (VetGdHlXff) with the send cells run and packed first on a second stream,
   // so the host exchanges while the fused kernel runs; not with the overlap, the lagged
   // exchange cadence or the mark-built lists (vet_gd_halo_exact = 2)
   static int s_xfe = -1;
   if (s_xfe < 0) {
     const char *ee = std::getenv("VGD_XFE");
-    s_xfe = (ee != nullptr) ? std::atoi(ee) : 1;
+    s_xfe = (ee != nullptr) ? std::atoi(ee) : 0;
   }
   const bool xfe = xffs && (s_xfe != 0) && vgd_xff_msg && vgd_hmpi && (vgd_ovl_g <= 0) &&
                    (vgd_fuse_h <= 1) && (vgd_hx_mode != 2) && !vgd_raw &&
