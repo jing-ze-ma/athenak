@@ -611,23 +611,6 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     }
   }
   t2_ys_ok = false;
-  // t2pos-1020: <rad_m1>/time2_posfix = N, time2_posfix_grow (read only when named;
-  // absent = the default below): the local stage-1 positivity re-solve
-  // (Time2PosFix).  <hydro>/am_vector puts the spin reservoir back with the gas
-  // (posfix-amvec-1022).  mhdfix-1025 <mhd>: the stage-1 start is saved after the MHD
-  // stage 1 and M1 never writes b0, so the conserved u0 (whose IEN carries the fixed
-  // |B|^2/2) is the whole put-back; the field and emag0 stay.
-  // defaults-1025 (USER 10-25): DEFAULT 4 (RSG E / HG production value), hydro and MHD
-  // (mhdfix-1025); a named key wins (0 = off, the old default)
-  t2_pfix = 4;
-  if (pin->DoesParameterExist("rad_m1", "time2_posfix")) {
-    t2_pfix = pin->GetInteger("rad_m1", "time2_posfix");
-    if (t2_pfix < 0) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_m1>/time2_posfix must be >= 0" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-  }
   // accfb-default-1022: time2_accept_fallback is DEFAULT true under hesdirk2 (this
   // reader returns above for be, where the key is unused); false only when named so
   t2_accfb = true;
@@ -658,18 +641,6 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   }
   if (pin->DoesParameterExist("rad_m1", "restart_pack_per_mb")) {
     rst_pack_mb = pin->GetBoolean("rad_m1", "restart_pack_per_mb");
-  }
-  if (pin->DoesParameterExist("rad_m1", "time2_posfix_host")) {
-    t2_pfix_host = pin->GetBoolean("rad_m1", "time2_posfix_host");
-  }
-  if (pin->DoesParameterExist("rad_m1", "time2_posfix_grow")) {
-    t2_pfix_grow = pin->GetInteger("rad_m1", "time2_posfix_grow");
-    if (t2_pfix_grow < 0 || t2_pfix_grow > 2) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_m1>/time2_posfix_grow must be 0, 1 or 2 (the ghost "
-                << "depth)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
   }
 
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -774,18 +745,8 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     Kokkos::realloc(vet_dbgclip, 1);
     Kokkos::deep_copy(vet_dbgclip, 0.0);
   }
-  if (t2_pfix > 0) {
-    Kokkos::realloc(t2pm, nmb, n3, n2, n1);
-    Kokkos::deep_copy(t2pm, 0.0);
-  }
   t2_ok = false;
   if (global_variable::my_rank == 0) {
-    if (t2_pfix > 0) {
-      std::cout << "<rad_m1> time2_posfix=" << t2_pfix << " time2_posfix_grow="
-                << t2_pfix_grow << ": local stage-1 positivity re-solve"
-                << (t2_pfix_host ? " (start copies in pinned host memory)" : "")
-                << std::endl;
-    }
     std::cout << "<rad_m1> time_scheme=hesdirk2 (g=" << kT2G << "; first step, restarts "
               << "without the slope and failed stages take backward Euler)" << std::endl;
     std::cout << "         time2_enth_be=" << (t2_enth_be ? "true" : "false")
@@ -1113,64 +1074,6 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       }
     }
     t2_ys_ok = false;
-    // t2pos-1020 time2_posfix: the stage-1 start of the gas (and of the closure memory)
-    // for a re-solve, and a clean mask
-    if (t2_pfix > 0) {
-      FluidRef flp = FluidRef::Get(pmy_pack);
-      if (flp.on && t2_pfix_host && !clean) {
-        // gpumem-1022 time2_posfix_host: the copy in pinned host memory (stream-ordered;
-        // clean: no stage-1 re-solve puts it back, the key has no effect)
-        if (t2gsv_h.extent(0) != flp.u0.extent(0) || t2gsv_h.extent(1) != flp.u0.extent(1)
-            || t2gsv_h.extent(2) != flp.u0.extent(2)
-            || t2gsv_h.extent(3) != flp.u0.extent(3)
-            || t2gsv_h.extent(4) != flp.u0.extent(4)) {
-          t2gsv_h = decltype(t2gsv_h)(Kokkos::view_alloc(std::string("t2gsv_h"),
-                                      Kokkos::WithoutInitializing), flp.u0.extent(0),
-                                      flp.u0.extent(1), flp.u0.extent(2),
-                                      flp.u0.extent(3), flp.u0.extent(4));
-        }
-        Kokkos::deep_copy(DevExeSpace(), t2gsv_h, flp.u0);
-      } else if (flp.on && !clean) {   // (clean: no stage-1 re-solve puts it back)
-        if (t2gsv.extent(0) != flp.u0.extent(0) || t2gsv.extent(1) != flp.u0.extent(1) ||
-            t2gsv.extent(2) != flp.u0.extent(2) || t2gsv.extent(3) != flp.u0.extent(3) ||
-            t2gsv.extent(4) != flp.u0.extent(4)) {
-          Kokkos::realloc(t2gsv, flp.u0.extent(0), flp.u0.extent(1), flp.u0.extent(2),
-                          flp.u0.extent(3), flp.u0.extent(4));
-        }
-        Kokkos::deep_copy(DevExeSpace(), t2gsv, flp.u0);
-      }
-      // posfix-amvec-1022 <hydro>/am_vector: the spin reservoir at the stage-1 start (the
-      // solve adds its increment aminc and the write-back's radial L to it)
-      if (am_vec) {
-        auto &spn = hydro::AmModuleOf(pmy_pack)->am_spin;
-        if (t2ssv.extent(0) != spn.extent(0) || t2ssv.extent(1) != spn.extent(1) ||
-            t2ssv.extent(2) != spn.extent(2) || t2ssv.extent(3) != spn.extent(3)) {
-          Kokkos::realloc(t2ssv, spn.extent(0), spn.extent(1), spn.extent(2),
-                          spn.extent(3));
-        }
-        Kokkos::deep_copy(DevExeSpace(), t2ssv, spn);
-      }
-      if (ctr_mem.extent(0) > 0 && t2_pfix_host) {
-        if (t2csv_h.extent(0) != ctr_mem.extent(0)) {
-          t2csv_h = decltype(t2csv_h)(Kokkos::view_alloc(std::string("t2csv_h"),
-                                      Kokkos::WithoutInitializing), ctr_mem.extent(0),
-                                      ctr_mem.extent(1), ctr_mem.extent(2),
-                                      ctr_mem.extent(3), ctr_mem.extent(4));
-        }
-        Kokkos::deep_copy(DevExeSpace(), t2csv_h, ctr_mem);
-      } else if (ctr_mem.extent(0) > 0) {
-        if (t2csv.extent(0) != ctr_mem.extent(0)) {
-          Kokkos::realloc(t2csv, ctr_mem.extent(0), ctr_mem.extent(1), ctr_mem.extent(2),
-                          ctr_mem.extent(3), ctr_mem.extent(4));
-        }
-        Kokkos::deep_copy(DevExeSpace(), t2csv, ctr_mem);
-      }
-      Kokkos::deep_copy(DevExeSpace(), t2pm, 0.0);
-      t2_pfix_n = 0;
-      t2_pfix_any = false;
-      t2_pfix_want = false;
-      t2_pfix_redo = false;
-    }
   } else {
     int nmb1 = static_cast<int>(u0.extent(0)) - 1;
     int n3 = static_cast<int>(u0.extent(2)), n2 = static_cast<int>(u0.extent(3));
@@ -1228,38 +1131,11 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       ei_(m,k,j,i) = v;
     });
   }
-  // t2pos-1020 time2_posfix: where stage 1 dropped its increment t2_a21 dt K1, stage 2
-  // takes it back with the weight of Y1 in its start state (heun: 1/2), so that the step
-  // is U^n + dt (b1 K1 + b2 K2 + g K3) with the tableau's b everywhere
-  const bool pcomp = two && (t2_pfix > 0) && t2_pfix_any;
-  const Real ccomp = t2_a21*dt*(heun ? 0.5 : w0);
-  if (pcomp) {
-    auto pm_ = t2pm;
-    const bool d2 = (n2 > 1), d3 = (n3 > 1);
-    par_for("m1_t2_pcomp", DevExeSpace(), 0, nmb1, 0, M1_T2_NK-1, 0, n3-1, 0, n2-1,
-            0, n1-1,
-    KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-      Real w = pm_(m,k,j,i);
-      if (n == M1_T2_F1 && i > 0) {w = fmax(w, pm_(m,k,j,i-1));}
-      if (n == M1_T2_F1+1) {w = d2 ? ((j > 0) ? fmax(w, pm_(m,k,j-1,i)) : w) : 0.0;}
-      if (n == M1_T2_F1+2) {w = d3 ? ((k > 0) ? fmax(w, pm_(m,k-1,j,i)) : w) : 0.0;}
-      if (w > 0.0) {in_(m,n,k,j,i) += ccomp*k1_(m,n,k,j,i);}
-    });
-    if (ike) {   // rsglock-1112: the KE part of the same K1 share
-      auto e1_ = t2ke1, ei_ = t2kei;
-      par_for("m1_t2_ike_pcomp", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        if (pm_(m,k,j,i) > 0.0) {ei_(m,k,j,i) += ccomp*e1_(m,k,j,i);}
-      });
-    }
-  }
   // rsglock-1112 time2_exch_split = psi: the carried exchange terms in bounded form
   if (t2_xsp && t2kx1.extent_int(0) > nmb1 && t2inc.extent_int(1) > M1_T2_EN) {
     auto x1_ = t2kx1, x2_ = t2kx2, l1_ = t2lx1, l2_ = t2lx2;
     auto ix_ = t2inc;
-    const bool pc = pcomp;
-    auto pmx_ = t2pm;
-    const Real cc1 = c1, cc2 = c2, ccx = ccomp, chcl = chat/c_light;
+    const Real cc1 = c1, cc2 = c2, chcl = chat/c_light;
     auto vlx = pmy_pack->pcoord->volume;
     const bool hvx = (vlx.extent_int(0) > nmb1);
     Real sde = 0.0, snc = 0.0;
@@ -1267,8 +1143,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
         DevExeSpace(), {0, 0, 0, 0}, {nmb1 + 1, n3, n2, n1}),
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sd,
                   Real &sn) {
-      Real a1 = cc1;
-      if (pc && pmx_(m,k,j,i) > 0.0) {a1 += ccx;}
+      const Real a1 = cc1;
       Real z = l1_(m,k,j,i)*a1;
       Real d = a1*(1.0/sqrt(1.0 + z*z) - 1.0)*x1_(m,k,j,i);
       if (two) {
@@ -1291,26 +1166,12 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     auto a1_ = amk1;
     auto a2_ = amk2;
     auto ai_ = aminc;
-    // posfix-amvec-1022: the spin's share of the stage-2 compensation (cell slot, as the
-    // gas momentum of t2inc above)
-    auto pma_ = t2pm;
-    const bool apc = pcomp && (t2pm.extent(0) >= aminc.extent(0)) &&
-                     (t2pm.extent(1) == aminc.extent(1)) &&
-                     (t2pm.extent(2) == aminc.extent(2)) &&
-                     (t2pm.extent(3) == aminc.extent(3));
-    if (pcomp && !apc) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "time2_posfix: t2pm and the am_vector spin differ"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     par_for("m1_t2_aminc", DevExeSpace(), 0, static_cast<int>(aminc.extent(0)) - 1, 0,
             static_cast<int>(aminc.extent(1)) - 1, 0, static_cast<int>(aminc.extent(2)) - 1,
             0, static_cast<int>(aminc.extent(3)) - 1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real v = c1*a1_(m,k,j,i);
       if (two) {v += c2*a2_(m,k,j,i);}
-      if (apc && pma_(m,k,j,i) > 0.0) {v += ccomp*a1_(m,k,j,i);}
       ai_(m,k,j,i) = v;
     });
   }
@@ -1321,12 +1182,10 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     auto ck1_ = csk1;
     auto ck2_ = csk2;
     auto ci_ = csinc;
-    auto pm_ = t2pm;
     par_for("m1_t2_csinc", DevExeSpace(), 0, nmb1, 0, 2, 0, n3-1, 0, n2-1, 0, n1-1,
     KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
       Real v = c1*ck1_(m,n,k,j,i);
       if (two) {v += c2*ck2_(m,n,k,j,i);}
-      if (pcomp && pm_(m,k,j,i) > 0.0) {v += ccomp*ck1_(m,n,k,j,i);}
       ci_(m,n,k,j,i) = v;
     });
     csinc_ok = true;
@@ -2132,173 +1991,6 @@ void RadiationM1::CleanBndAcc(int stage, Real c1, Real c2, Real w, Real dt) {
     const Real rd = lim ? iw_(m,sr,k,j,(g > 0.0) ? i - 1 : i) : 1.0;
     la(m,2+s,k,j) = w*la(m,s,k,j) + rd*g;
   });
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn bool RadiationM1::Time2PosFix
-//! \brief t2pos-1020 <rad_m1>/time2_posfix: the stage-1 solve (converged or not) left E,
-//! T or the written-back gas eint <= 0 in the cells it marked in t2pm (ImplicitSolve).
-//! In the thin, free-streaming floor shell (c dt/dr >> 1) the explicit part (1-g) dt K1
-//! of the old vector of H-ESDIRK2 stage 1 is a stiff extrapolation that the L-stable
-//! stage solve cannot undo there.
-//! The stage-1 start (radiation, faces, gas, closure memory) is
-//! put back, the marked set is grown by time2_posfix_grow face-neighbour layers, t2inc is
-//! dropped in it (cells; faces with a marked side), and stage 1 is solved again (at most
-//! time2_posfix times per step): in the set the stage is backward Euler of g dt from U^n,
-//! which is positive wherever the operator is an M-matrix.  Time2FormStage(2) puts the
-//! dropped increment back into the stage-2 old vector (weight of Y1 in its start), so the
-//! step keeps the weights b of the tableau (consistent, conservative; stage 1 is first
-//! order in the set only).  A step whose stage 1 is admissible is untouched.  Returns
-//! false when no re-solve is wanted (the caller then takes the usual rejection path).
-
-bool RadiationM1::Time2PosFix(Driver *pdrive) {
-  if (!t2_pfix_want) return false;
-  t2_pfix_want = false;
-  t2_pfix_n += 1;
-  CleanDMem(false);
-  Mesh *pmesh = pmy_pack->pmesh;
-  // the stage-1 start back: radiation U^n (u1, face copies), the gas after Heun stage 1
-  Kokkos::deep_copy(DevExeSpace(), u0, u1);
-  Kokkos::deep_copy(DevExeSpace(), f0x1, t2f1);
-  if (trans_on) {
-    Kokkos::deep_copy(DevExeSpace(), f0x2, t2f2);
-    if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), f0x3, t2f3);}
-  }
-  if (t2_pfix_host) {
-    // gpumem-1022 time2_posfix_host: the host copies (same bytes)
-    if (ctr_mem.extent(0) > 0 && t2csv_h.extent(0) == ctr_mem.extent(0)) {
-      Kokkos::deep_copy(DevExeSpace(), ctr_mem, t2csv_h);
-    }
-  } else if (ctr_mem.extent(0) > 0 && t2csv.extent(0) == ctr_mem.extent(0)) {
-    Kokkos::deep_copy(DevExeSpace(), ctr_mem, t2csv);
-  }
-  FluidRef fl = FluidRef::Get(pmy_pack);
-  if (fl.on) {
-    if (t2_pfix_host) {
-      Kokkos::deep_copy(DevExeSpace(), fl.u0, t2gsv_h);
-    } else {
-      Kokkos::deep_copy(DevExeSpace(), fl.u0, t2gsv);
-    }
-    FluidRefresh(pdrive);
-    // mhdfix-1025 <mhd>: b0 is the field of the saved start (M1 never writes it), so
-    // emag0 is rebuilt from the same faces (bitwise the value the first attempt used)
-    if (fl.mhd) EmagBuild(false);
-  }
-  // posfix-amvec-1022 <hydro>/am_vector: the spin reservoir back to the stage-1 start
-  const bool amp = am_vec && (t2ssv.extent_int(0) > 0);
-  if (amp) {
-    Kokkos::deep_copy(DevExeSpace(), hydro::AmModuleOf(pmy_pack)->am_spin, t2ssv);
-  }
-  // grow the marked set (face neighbours) and fill its ghosts: iw slot KZ (Krylov
-  // scratch, free between solves) carries it through the width-1 exchange; the ghosts of
-  // a physical boundary stay 0
-  auto &indcs = pmesh->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
-  const int nmb1 = pmy_pack->nmb_thispack - 1;
-  const int n1 = indcs.nx1 + 2*indcs.ng;
-  const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
-  const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
-  const bool d2 = (indcs.nx2 > 1), d3 = (indcs.nx3 > 1);
-  auto iw_ = iw;
-  auto pm_ = t2pm;
-  const int sl = Time2FctSlot(0);
-  auto to_slot = [&]() {
-    par_for("m1_t2p_ts", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const bool in = (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke);
-      iw_(m,sl,k,j,i) = in ? pm_(m,k,j,i) : 0.0;
-    });
-    ImplicitHaloExchange(1, sl);
-  };
-  for (int r = 0; r < t2_pfix_grow; ++r) {
-    to_slot();
-    par_for("m1_t2p_grow", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      Real w = fmax(iw_(m,sl,k,j,i), fmax(iw_(m,sl,k,j,i-1), iw_(m,sl,k,j,i+1)));
-      if (d2) {w = fmax(w, fmax(iw_(m,sl,k,j-1,i), iw_(m,sl,k,j+1,i)));}
-      if (d3) {w = fmax(w, fmax(iw_(m,sl,k-1,j,i), iw_(m,sl,k+1,j,i)));}
-      pm_(m,k,j,i) = w;
-    });
-  }
-  to_slot();
-  par_for("m1_t2p_back", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    pm_(m,k,j,i) = iw_(m,sl,k,j,i);
-  });
-  Real nc = 0.0;
-  par_reduce_flat("m1_t2p_cnt", 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &a) {
-    if (pm_(m,k,j,i) > 0.0) a += 1.0;
-  }, Kokkos::Sum<Real>(nc));
-#if MPI_PARALLEL_ENABLED
-  {Real g;
-  MPI_Allreduce(&nc, &g, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-  nc = g;}
-#endif
-  // drop the stage-1 increment in the set (cells; faces with a marked side)
-  auto in_ = t2inc;
-  {
-    const int q3 = static_cast<int>(t2inc.extent(2));
-    const int q2 = static_cast<int>(t2inc.extent(3));
-    const int q1 = static_cast<int>(t2inc.extent(4));
-    par_for("m1_t2p_drop", DevExeSpace(), 0, nmb1, 0, M1_T2_NK-1, 0, q3-1, 0, q2-1,
-            0, q1-1,
-    KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-      Real w = pm_(m,k,j,i);
-      if (n == M1_T2_F1 && i > 0) {w = fmax(w, pm_(m,k,j,i-1));}
-      if (n == M1_T2_F1+1) {w = d2 ? ((j > 0) ? fmax(w, pm_(m,k,j-1,i)) : w) : 0.0;}
-      if (n == M1_T2_F1+2) {w = d3 ? ((k > 0) ? fmax(w, pm_(m,k-1,j,i)) : w) : 0.0;}
-      if (w > 0.0) {in_(m,n,k,j,i) = 0.0;}
-    });
-    if (t2_ike && t2kei.extent_int(0) > nmb1) {   // rsglock-1112
-      auto ei_ = t2kei;
-      par_for("m1_t2p_ike_drop", DevExeSpace(), 0, nmb1, 0, q3-1, 0, q2-1, 0, q1-1,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        if (pm_(m,k,j,i) > 0.0) {ei_(m,k,j,i) = 0.0;}
-      });
-    }
-    if (csinc_ok) {
-      auto ci_ = csinc;
-      par_for("m1_t2p_dropc", DevExeSpace(), 0, nmb1, 0, 2, 0, q3-1, 0, q2-1, 0, q1-1,
-      KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-        if (pm_(m,k,j,i) > 0.0) {ci_(m,n,k,j,i) = 0.0;}
-      });
-    }
-    // posfix-amvec-1022: and the spin reservoir's increment (cells)
-    if (am_vec && aminc.extent_int(0) > 0) {
-      auto ai_ = aminc;
-      par_for("m1_t2p_dropa", DevExeSpace(), 0, static_cast<int>(aminc.extent(0)) - 1,
-              0, static_cast<int>(aminc.extent(1)) - 1,
-              0, static_cast<int>(aminc.extent(2)) - 1,
-              0, static_cast<int>(aminc.extent(3)) - 1,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        if (pm_(m,k,j,i) > 0.0) {ai_(m,k,j,i) = 0.0;}
-      });
-    }
-  }
-  t2_pfix_any = true;
-  t2_pfix_nsolve += 1.0;
-  t2_pfix_ncell += nc;
-  if (t2_pfix_n == 1) {t2_pfix_nstep += 1.0;}
-  if (global_variable::my_rank == 0) {
-    std::cout << "<rad_m1> time2_posfix: stage 1 re-solved at cycle " << pmesh->ncycle
-              << " (round " << t2_pfix_n << ", " << nc << " cells without the stage-1 "
-              << "increment)" << std::endl;
-  }
-  // the re-solve: a cold Picard start (the failed solve stored its increment), the
-  // stage-1 closure build of the first attempt is kept (same U^n; history-free)
-  pred_ok = false;
-  t2_solve = M1_T2S_STAGE1;
-  t2_fail = false;
-  nsub = 1;
-  dt_sub = kT2G*pmesh->dt;
-  t2_pfix_redo = true;
-  pdrive->ExecuteTaskList(pmesh, "m1_before_stagen", 1);
-  pdrive->ExecuteTaskList(pmesh, "m1_stagen", 1);
-  pdrive->ExecuteTaskList(pmesh, "m1_after_stagen", 1);
-  t2_pfix_redo = false;
-  return true;
 }
 
 //----------------------------------------------------------------------------------------
@@ -3370,11 +3062,11 @@ bool RadiationM1::Time2AutoBeBegin() {
 //! \brief autobe-1029: an ACCEPTED cycle of a hesdirk2 run.  kind 0 = stage step, 1 =
 //! stage fallback + BE redo, 2 = time2_auto_be step, 3 = other BE step (no slope),
 //! 4 = a discarded dt_retry attempt (timing only).  tw_a / tw_b: fenced wall seconds of
-//! (the attempt | the step) and (the redo); tw_pfix: posfix re-solves.
+//! (the attempt | the step) and (the redo).
 
-void RadiationM1::Time2AutoBeEnd(int kind, Real tw_a, Real tw_b, Real tw_pfix) {
-  if (kind == 0) {t2w_clean += tw_a; t2w_cpfix += tw_pfix;}
-  if (kind == 1) {t2w_fail += tw_a; t2w_fpfix += tw_pfix; t2w_redo += tw_b;}
+void RadiationM1::Time2AutoBeEnd(int kind, Real tw_a, Real tw_b) {
+  if (kind == 0) {t2w_clean += tw_a;}
+  if (kind == 1) {t2w_fail += tw_a; t2w_redo += tw_b;}
   if (kind == 2) {t2w_abe += tw_a;}
   if (kind == 3) {t2w_be += tw_a;}
   if (kind == 4) {t2w_retry += tw_a; return;}
@@ -3464,10 +3156,6 @@ void RadiationM1::Time2Report() {
               << vgd_rot_cfrac << ", reuse "
               << (vgd_rot_creuse ? "on" : "off") << ")";
   }
-  if (t2_pfix > 0) {
-    std::cout << " time2_posfix: steps=" << t2_pfix_nstep << " re-solves="
-              << t2_pfix_nsolve << " cells=" << t2_pfix_ncell;
-  }
   if (t2_accfb) {std::cout << " accepted-with-fallback stages=" << t2_accfb_n;}
   if (t2_adm_pl) {std::cout << " time2_adm_poslim admitted stages=" << t2_adm_pl_n;}
   if (t2_flr_rho > 0.0) {std::cout << " time2_floor_eint(rho<" << t2_flr_rho << ") cell-stages(rank 0)=" << t2_flr_n;}
@@ -3501,8 +3189,7 @@ void RadiationM1::Time2Report() {
   }
   // autobe-1029: the wall-time split (rank 0, fenced; accepted cycles by kind)
   std::cout << "<rad_m1> hesdirk2 wall split (rank 0 s): clean stage steps " << t2w_clean
-            << " (posfix " << t2w_cpfix << ") | failed stage attempts " << t2w_fail
-            << " (posfix " << t2w_fpfix << ") | their BE redo " << t2w_redo
+            << " | failed stage attempts " << t2w_fail << " | their BE redo " << t2w_redo
             << " | auto_be steps " << t2w_abe << " | other BE steps " << t2w_be
             << " | discarded dt_retry attempts " << t2w_retry << std::endl;
 }

@@ -681,7 +681,6 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       };
       const auto t2w0 = t2clk();
       auto t2wf = t2w0;
-      Real t2wp = 0.0;
 
       // Execute TaskLists
       // Work before time integrator indicated by "0" in stage
@@ -807,23 +806,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         hydro_stage(stage);
         if (m1t2) {
           pm1->Time2FormStage(stage, pmesh->dt);
-          if (stage == 1 && pm1->t2_pfix > 0 && pctr_ != nullptr) {pctr_->Save(pmesh, 2);}
-          if (stage == 1 && pm1->t2_pfix > 0) {dtretry::PgenSolveSave();}
           ExecuteTaskList(pmesh, "m1_before_stagen", 1);
           ExecuteTaskList(pmesh, "m1_stagen", 1);
           ExecuteTaskList(pmesh, "m1_after_stagen", 1);
-          // <rad_m1>/time2_posfix (off unless named): a stage 1 that is only
-          // not positive is solved again with its increment dropped where it failed
-          // (counters of the dropped attempt: slot 2)
-          if (pm1->t2_fail && pm1->t2_pfix_want) {
-            const auto t2wp0 = t2clk();
-            while (pm1->t2_fail && pm1->t2_pfix_want) {
-              if (pctr_ != nullptr) {pctr_->Restore(pmesh, 2, 2);}
-              dtretry::PgenSolveRestore();
-              (void) pm1->Time2PosFix(this);
-            }
-            t2wp += t2sec(t2wp0, t2clk());
-          }
           if (pm1->t2_fail) {
             m1t2fail = true;
             break;
@@ -898,7 +883,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // a module raised a failure in this cycle -> the checkpoint back, a
       // smaller dt, and the cycle again (nothing of the failed attempt is output)
       if (pdtr_ != nullptr && pdtr_->on && pdtr_->Failed(pmesh)) {
-        if (t2kind >= 0) {pm1->Time2AutoBeEnd(4, t2sec(t2w0, t2we), 0.0, 0.0);}
+        if (t2kind >= 0) {pm1->Time2AutoBeEnd(4, t2sec(t2w0, t2we), 0.0);}
         if (!pdtr_->Retry(pmesh, this)) {
 #if MPI_PARALLEL_ENABLED
           MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
@@ -918,9 +903,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // radiation stage (hydro/dual_energy.hpp)
       DualPay(pmesh);
       if (t2kind == 1) {
-        pm1->Time2AutoBeEnd(1, t2sec(t2w0, t2wf), t2sec(t2wf, t2we), t2wp);
+        pm1->Time2AutoBeEnd(1, t2sec(t2w0, t2wf), t2sec(t2wf, t2we));
       } else if (t2kind >= 0) {
-        pm1->Time2AutoBeEnd(t2kind, t2sec(t2w0, t2we), 0.0, t2wp);
+        pm1->Time2AutoBeEnd(t2kind, t2sec(t2w0, t2we), 0.0);
       }
 
       // Work after time integrator indicated by "1" in stage

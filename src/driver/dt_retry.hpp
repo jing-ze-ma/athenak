@@ -81,12 +81,6 @@ std::vector<std::unique_ptr<Entry>> &PgenStageEntries();
 void PgenStageSave();
 void PgenStageRestore();
 void PgenStageClear();   // the Driver drops the copies before Kokkos::finalize
-// a third copy, taken before the stage-1 radiation solve when
-// <rad_m1>/time2_posfix is on and put back before each local re-solve (the M1 post hook
-// of the discarded attempt booked into the registers)
-std::vector<std::unique_ptr<Entry>> &PgenSolveEntries();
-void PgenSolveSave();
-void PgenSolveRestore();
 
 template <class T>
 struct PgenValEntry : public Entry {
@@ -138,9 +132,6 @@ void RegisterValue(const char *name, T *p) {
   auto f = std::make_unique<PgenValEntry<T>>(p);   // stage-loop copy
   f->name = std::string("pgen.") + name;
   PgenStageEntries().push_back(std::move(f));
-  auto g = std::make_unique<PgenValEntry<T>>(p);   // solve copy
-  g->name = std::string("pgen.") + name;
-  PgenSolveEntries().push_back(std::move(g));
 }
 template <class V>
 void RegisterView(const char *name, V *p) {
@@ -150,9 +141,6 @@ void RegisterView(const char *name, V *p) {
   auto f = std::make_unique<PgenViewEntry<V>>(p);  // stage-loop copy
   f->name = std::string("pgen.") + name;
   PgenStageEntries().push_back(std::move(f));
-  auto g = std::make_unique<PgenViewEntry<V>>(p);  // solve copy
-  g->name = std::string("pgen.") + name;
-  PgenSolveEntries().push_back(std::move(g));
 }
 
 class DtRetry {

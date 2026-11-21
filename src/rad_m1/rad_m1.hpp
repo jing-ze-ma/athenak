@@ -1750,33 +1750,6 @@ class RadiationM1 {
   Real t2_k1xlim_n = 0.0;       // cell-stages changed (this rank, whole run)
   DvceArray4D<Real> t2ys;       // (m,k,j,i) radiation E at the stage-loop start
   void Time2Stash();
-  // t2pos-1020: <rad_m1>/time2_posfix = N (read only when named; absent = 4 since
-  // defaults-1025, <hydro> and <mhd>; 0 = off): a stage-1 solve that left E, T or the
-  // written-back eint <= 0 in some cells is solved again (up to N times) from the same
-  // start with the stage-1 increment t2inc dropped in those cells (+ time2_posfix_grow
-  // face-neighbour layers; faces with a marked side), i.e. a local backward-Euler g dt
-  // stage there.  The dropped part re-enters the stage-2 increment (weight of Y1 in the
-  // stage-2 start), so the step keeps the K1 weight b1 = 1/2: consistent and
-  // conservative.  Nothing changes in a step whose stage 1 is admissible.  See
-  // Time2PosFix (rad_m1_time2.cpp).
-  int t2_pfix = 0;              // max re-solves per step (0 off)
-  int t2_pfix_grow = 1;         // dilation (face-neighbour layers) of the marked set
-  int t2_pfix_n = 0;            // re-solves taken in this step
-  bool t2_pfix_want = false;    // the stage-1 solve just marked cells and asks a re-solve
-  bool t2_pfix_redo = false;    // the coming stage-1 solve is a re-solve (keeps build)
-  bool t2_pfix_any = false;     // this step's stage 1 was limited (stage-2 compensation)
-  Real t2_pfix_nstep = 0.0, t2_pfix_nsolve = 0.0, t2_pfix_ncell = 0.0;  // counters
-  DvceArray4D<Real> t2pm;       // (m,k,j,i) 1 = stage-1 increment dropped (incl. ghosts)
-  DvceArray5D<Real> t2gsv;      // the gas u0 at the stage-1 start (re-solve put-back)
-  DvceArray5D<Real> t2csv;      // ctr_mem at the stage-1 start (closure_thin_relax)
-  DvceArray4D<Real> t2ssv;      // posfix-amvec-1022: am_vector spin at the stage-1 start
-  // gpumem-1022 <rad_m1>/time2_posfix_host (read only when named; default false): the two
-  // start copies above live in pinned host memory instead (read only by a re-solve; the
-  // same bytes come back, bitwise); t2gsv/t2csv then stay empty
-  bool t2_pfix_host = false;
-  Kokkos::View<Real*****, Kokkos::LayoutRight, Kokkos::SharedHostPinnedSpace> t2gsv_h;
-  Kokkos::View<Real*****, Kokkos::LayoutRight, Kokkos::SharedHostPinnedSpace> t2csv_h;
-  bool Time2PosFix(Driver *pdrive);
   // mhdfix-1025 Ebnd (an energy-budget diagnostic, off unless a problem generator sets
   // ebnd_on; sph_wedge: <problem>/wg_hist_ebnd): the radiation energy the scheme put in
   // through the physical x1 faces (inner minus outer), summed over the accepted steps
@@ -1814,9 +1787,6 @@ class RadiationM1 {
   void EbndStart();
   void EbndStage1();
   void EbndAccept(Real dt, bool t2step);
-  // pgrst-posfix-1021: an operator positivity fallback (implicit_vimp, offdiag operator,
-  // vet_col_lat) of a stage-1 solve marks its E <= 0 cells in t2pm too, and such a stage
-  // asks for the local re-solve (the re-solve starts with the full operator again)
   // pgrst-posfix-1021 <rad_m1>/time2_accept_fallback (DEFAULT true under hesdirk2 since
   // accfb-default-1022; a run that never takes the fallback is bitwise): a stage whose
   // solve took an operator positivity fallback (implicit_vimp, offdiag operator) for the
@@ -1879,12 +1849,12 @@ class RadiationM1 {
   Real t2_abe_ntry = 0.0;       // stage retries after a skip run
   Real t2_abe_nok = 0.0;        // of which succeeded
   // autobe-1029: hesdirk2 wall-time split (rank 0, fenced, s; diagnostic only), accepted
-  // cycles by kind: clean stage steps (of which posfix re-solves), failed stage attempts,
-  // their backward-Euler redo, auto_be steps, other BE steps; discarded dt_retry attempts
-  Real t2w_clean = 0.0, t2w_cpfix = 0.0, t2w_fail = 0.0, t2w_fpfix = 0.0, t2w_redo = 0.0;
+  // cycles by kind: clean stage steps, failed stage attempts, their backward-Euler redo,
+  // auto_be steps, other BE steps; discarded dt_retry attempts
+  Real t2w_clean = 0.0, t2w_fail = 0.0, t2w_redo = 0.0;
   Real t2w_abe = 0.0, t2w_be = 0.0, t2w_retry = 0.0;
   bool Time2AutoBeBegin();
-  void Time2AutoBeEnd(int kind, Real tw_a, Real tw_b, Real tw_pfix);
+  void Time2AutoBeEnd(int kind, Real tw_a, Real tw_b);
   Real t2_dtprev{};             // the dt of the previous step (vet_sc extrapolation)
   bool t2_vprev{};              // vet_prev holds the tensor of the previous step
   bool t2_vext{};               // time2_vet_extrap (default false: D^n)
@@ -2666,8 +2636,8 @@ class RadiationM1 {
   // M1 chain since its last end, i.e. pgen hold/reset cells and closure-limit raises),
   // the boundary energy fluxes of the solve and its hesdirk2 old-vector increment; rank
   // 0 prints line EAUDIT at mark 5 (see EAuditMark)
-  // r136e-1107: mark 6 = the state was put back outside the M1 chain (Time2Restore,
-  // Time2PosFix): the change since the last mark (the discarded attempt) is summed here
+  // r136e-1107: mark 6 = the state was put back outside the M1 chain (Time2Restore):
+  // the change since the last mark (the discarded attempt) is summed here
   // instead of into a segment; printed as D= at mark 5
   // fixbundle-1009 F4: ApplyClosureLimits clips over ACTIVE cells (0 = E raised to
   // e_floor, 1 = |F| scaled to c E), every stage, and the event-log totals (collective)
