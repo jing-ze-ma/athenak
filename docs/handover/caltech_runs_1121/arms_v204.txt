@@ -1,0 +1,15 @@
+# v20.4 GPU gate (orion 2026-11-21, NOTE eo, INTEG8). B_v204 = caltech-runs/v204 305f11e06. AFTER fresh production is launched (production has priority).
+# Restarts rsg.01295 / hegiant.00139, 1 node, 4 cycles unless noted. HG arms carry time/dt_retry_host=m1 as in V203*_hg.
+# (1) rt 5/5, CW count, s/cycle.
+FINALRST=1 MODE=rt NH=2              V204_rsg   B_v204 RSG 4 rsg_v204.keys
+FINALRST=1 MODE=rt NH=2              V204_hg    B_v204 HG  4 hg_v204.keys time/dt_retry_host=m1
+# (2) poison: hst == V204_rsg.
+FINALRST=1 ENVX=CLEAN_POISON_GHOST=2 V204P_rsg  B_v204 RSG 4 rsg_v204.keys
+# (3) old settings: hst == V203L_rsg / V203L_hg bitwise (new defaults are fresh-run only).
+FINALRST=1 MODE=rt NH=2              V204O_rsg  B_v204 RSG 4 rsg_v203.keys rad_m1/clean_maxit=200 rad_m1/clean_conv_max=1e-4
+FINALRST=1 MODE=rt NH=2              V204O_hg   B_v204 HG  4 hg_v203.keys time/dt_retry_host=m1 rad_m1/clean_maxit=200 rad_m1/clean_conv_max=1e-4
+# (4) USER conv-ceiling check, 30 cycles, plain (no rt): passes/cycle (CLEAN it sums), s/cycle, CW, min dt.
+CM5_rsg B_v204 RSG 30 rsg_v204.keys
+CM5_hg  B_v204 HG  30 hg_v204.keys time/dt_retry_host=m1
+CM4_rsg B_v204 RSG 30 rsg_v204.keys rad_m1/clean_conv_max=1e-4
+CM4_hg  B_v204 HG  30 hg_v204.keys time/dt_retry_host=m1 rad_m1/clean_conv_max=1e-4
