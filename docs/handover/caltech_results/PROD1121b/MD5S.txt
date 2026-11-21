@@ -1,0 +1,6 @@
+I1P_bsg.athinput c16fff0f5b14bca4598a650c97e33187 tlim=4.9248e6 clean_init_dtfac=1.0e6 clean_stag_flim=true clean_stag_thinf_held=true floorcap_rho=1.0e-14 floorcap_v=3.0e7 floorcap_report=25 
+I1P_m35mms.athinput 93213185761d0e181521f7c622fab3e6 tlim=8.64e5 clean_init_dtfac=1.0e6 clean_stag_flim=true clean_stag_thinf_held=true floorcap_rho=1.0e-14 floorcap_v=3.0e7 floorcap_report=25 
+J4_bsg.athinput da972141928b292ae9d630b84ac2cfa0 tlim=4.9248e6 floorcap_report=25 floorcap_v=3e7 floorcap_rho=1e-14 clean_stag_thinf_held=true clean_stag_flim=true clean_init_dtfac=1.0e6 
+J4_m35mms.athinput 0336e7808db886a2181d502822a5faf0 tlim=8.64e5 floorcap_report=25 floorcap_v=3e7 floorcap_rho=1e-14 clean_stag_thinf_held=true clean_stag_flim=true clean_init_dtfac=1.0e6 
+J4_t19l64.athinput 5465f5e26c14c57d0a40c42502b489ee tlim=1.26e6 floorcap_report=25 floorcap_v=3e7 floorcap_rho=1e-14 clean_stag_thinf_held=true clean_stag_flim=true clean_init_dtfac=1.0e6 
+J4_t9l62.athinput fcc701b70751bea0c655327c64cc5a2b tlim=2.682e6 floorcap_report=25 floorcap_v=3e7 floorcap_rho=1e-14 clean_stag_thinf_held=true clean_stag_flim=true clean_init_dtfac=1.0e6 

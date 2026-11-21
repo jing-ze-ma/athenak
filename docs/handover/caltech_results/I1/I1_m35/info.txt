@@ -1,0 +1,1 @@
+TAG=I1_m35 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_j3_a5257b7ee md5=f71a22b6ffcd2229950c7e4fb90de5c8 DECK=/resnick/groups/carnegie_poc/jingze/fresh_prod_1120/fg_v2/decks/I1_m35mms.athinput md5=2109b502e334dcd2bcc270ced7fe66f0 NC=1000000 HOLDER=6133592 NODE=hpc-sm-01-17 NR=4 EX=time/tlim=3.0e4
