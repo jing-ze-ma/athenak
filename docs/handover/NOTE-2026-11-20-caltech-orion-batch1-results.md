@@ -800,3 +800,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - E4_t19old: a rc=137 wall=98 | a 'FATAL' 0  a 'CLEAN WARNING' 0  a 'DT_RETRY' 0   | CW 0 FATAL 0 | eint<0 lines 1, sum 1572864, max 1572864 | raycut lines 20 | deck md5 in info.txt
   E3_t19lq10 profiles: 3 files (caltech_results/E3_t19lq10/prof_*.txt); bins deleted
 - H2C_rsg (hpc-sm-02-11): rc=0 wall=103 | cycles 589788 - 589808 | steady 2.601 s/cycle | GPU MiB max 105807 min 104715 | CW a 0 FATAL 0 |  s/cycle 2.601
+- E1_t19nothinf: a rc=0 wall=754 | a cycles 0 - 500 dt first 38.3541 last 29.4939 s/cycle steady 62.639 first elapsed 50.7 a 'FATAL' 0  a 'CLEAN WARNING' 2 CLEAN WARNING cycle 0: backward-Euler solve not converged (dt_retry, 2 so far; last change inf)  | CW 2 FATAL 0 | eint<0 lines 1, sum 131072, max 131072 | raycut lines 227 | deck md5 in info.txt
