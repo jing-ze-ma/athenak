@@ -1,0 +1,2 @@
+  C2_cfl06 - C1 at t_end (1269300): t 1.2693e+06 vs 1.2693e+06 | dKE/KE -3.044e-05 dLtop/Ltop -3.293e-05 dLin/Lin 1.724e-16 dLbot/Lbot -7.595e-05
+  C3_cfl09 - C1 at t_end (1269300): t 1.2693e+06 vs 1.2693e+06 | dKE/KE -8.169e-05 dLtop/Ltop 3.771e-04 dLin/Lin 1.724e-16 dLbot/Lbot -2.670e-04

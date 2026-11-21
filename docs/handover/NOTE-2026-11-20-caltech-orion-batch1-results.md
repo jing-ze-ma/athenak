@@ -2118,3 +2118,6 @@ B_br gate not passed; arms not started
   | t19r_damp3_test (chunk ended) | cyc 1500 | t 4.999050e+04 | 49.99% of 1.0e5 | dt 1.317235e+01 | KE 1.15e+41 | Ltop/Lin 1.046 | Lbot/Lin 0.992 | solves/stage-pass (last 200 lines) 9.6 mean / 200 max | CW 11 FATAL 0 | last hst: [t 4.681e+04 KE 1.15e+41 Lt 1.046 Lb 0.992] 
 - (13:54) C2_cfl06 result: rc: rc=0 wall=332 | cycles 26850-26963 (113 logged) | wall per simulated second 0.01782 s/s (elapsed 218.126 s over t 12239 s from the cycle lines) | s/cycle 2.18 | dt range 1.092511e+02 .. 1.307212e+02 CW 0 FATAL 0 | DT_RETRY lines 0 | passes/stage 2.1 mean / 3 max (n=275)  -> V212/C2_cfl06/res.txt
 - (13:57) C1_cfl03 result: rc: rc=0 wall=580 | cycles 26850-27099 (249 logged) | wall per simulated second 0.03261 s/s (elapsed 403.501 s over t 12374 s from the cycle lines) | s/cycle 2.02 | dt range 5.582282e+01 .. 6.603466e+01 CW 0 FATAL 0 | DT_RETRY lines 0 | passes/stage 2.0 mean / 3 max (n=547)  -> V212/C1_cfl03/res.txt
+- (13:58) V212 differences at t_end vs C1 (cfl 0.3; last user.hst rows):
+  C2_cfl06 - C1 at t_end (1269300): t 1.2693e+06 vs 1.2693e+06 | dKE/KE -3.044e-05 dLtop/Ltop -3.293e-05 dLin/Lin 1.724e-16 dLbot/Lbot -7.595e-05
+  C3_cfl09 - C1 at t_end (1269300): t 1.2693e+06 vs 1.2693e+06 | dKE/KE -8.169e-05 dLtop/Ltop 3.771e-04 dLin/Lin 1.724e-16 dLbot/Lbot -2.670e-04
