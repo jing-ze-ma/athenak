@@ -773,6 +773,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("dbg_rst_fp_dump", dbg_rst_fp_dump);
   v.value("dbg_rst_fp_done", dbg_rst_fp_done);
   v.value("t2_nfv", t2_nfv);
+  v.value("t2_rskip", t2_rskip);
   v.value("t2_rstd3", t2_rstd3);
   v.value("t2_rstv", t2_rstv);
   v.value("rst_pack_mb", rst_pack_mb);
@@ -1054,9 +1055,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_xlag", cln_xlag);
   v.value("cln_xsrc", cln_xsrc);
   v.value("cln_xsw", cln_xsw);
-  v.value("cln_gnsw", cln_gnsw);
-  v.value("cln_gnswmin", cln_gnswmin);
-  v.value("cln_stfac", cln_stfac);
   v.value("cln_xqs", cln_xqs);
   v.value("cln_xd_ncap", cln_xd_ncap);
   v.view("cln_xdg", cln_xdg);
@@ -1102,6 +1100,11 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_xtnorm", cln_xtnorm);
   v.value("cln_xtcons", cln_xtcons);
   v.value("cln_xte", cln_xte);
+  v.value("cln_gnsw", cln_gnsw);
+  v.value("cln_gnswmin", cln_gnswmin);
+  v.value("cln_stfac", cln_stfac);
+  v.value("cln_gpic", cln_gpic);
+  v.value("cln_ngnsw", cln_ngnsw);
   v.value("cln_krel_on", cln_krel_on);
   v.value("cln_kc1", cln_kc1);
   v.value("cln_kc2", cln_kc2);
