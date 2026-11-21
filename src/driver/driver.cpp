@@ -6,6 +6,7 @@
 //! \file driver.cpp
 //  \brief implementation of functions in class Driver
 
+#include <sys/stat.h>  // graceful stop: the STOP file
 #include <iostream>
 #include <iomanip>    // std::setprecision()
 #include <limits>
@@ -16,6 +17,8 @@
 #include <utility>  // std::pair
 #include <chrono>   // hesdirk2 wall split
 #include <memory>
+#include <csignal>  // graceful stop: SIGTERM, SIGUSR1
+#include <cstdio>   // std::remove
 
 #include "utils/eint_ledger.hpp"
 #include "athena.hpp"
@@ -530,6 +533,12 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
 }
 
 
+namespace {
+// the signal that asked for a graceful stop (0 = none; Driver::StopCheck)
+volatile std::sig_atomic_t stop_signal = 0;
+void StopSignal(int sig) {stop_signal = sig;}
+}  // namespace
+
 //----------------------------------------------------------------------------------------
 //! \fn Driver::Execute()
 //! \brief Executes "main loop" by running all relevant task lists over all MeshBlockPacks
@@ -550,6 +559,8 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
     if (wall_time > 0.) {
       elapsed_time = UpdateWallClock();
     }
+    std::signal(SIGTERM, StopSignal);
+    std::signal(SIGUSR1, StopSignal);
     // a retried cycle starts from the checkpoint already in place
     bool dtr_retrying = false;
     // WARNING for input keys never read, once, after the first cycle
@@ -643,7 +654,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
               || ((dcycle_ > 0) && ((ncycle)%(dcycle_) == 0)));
     };
     while ((pmesh->time < tlim) && (pmesh->ncycle < nlim || nlim < 0) &&
-           (elapsed_time < wall_time)) {
+           (elapsed_time < wall_time) && stop_ == 0) {
       if (global_variable::my_rank == 0 && !dtr_retrying) {OutputCycleDiagnostics(pmesh);}
       // (floor_pay: what the conversions before the loop floored, e.g. a restart's, is
       // paid before the checkpoint, so that a discarded attempt drops only its own)
@@ -957,6 +968,8 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
             elapsed_time = UpdateWallClock();
             if (!(elapsed_time < wall_time)) {sync = true;}
           }
+          stop_ = StopCheck(elapsed_time);
+          if (stop_ != 0) {sync = true;}
           for (auto &out : pout->pout_list) {
             if (out_due_at(out, t_end, nc_end)) {sync = true;}
           }
@@ -1222,6 +1235,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       if (wall_time > 0. && !rkg_fuse) {
         elapsed_time = UpdateWallClock();
       }
+      if (!rkg_fuse) {stop_ = StopCheck(elapsed_time);}
     }  // end while
     // no cycle completed (nlim = 0, tlim reached, wall time): report now
     if (!unread_reported) {pin->ReportUnreadParameters();}
@@ -1282,7 +1296,7 @@ void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
   global_variable::final_outputs = !at_tlim;
   // <job>/final_restart (read only when named; default true): false skips this restart
   // file (timing and test runs; the scheduled ones are written as before)
-  const bool frst = !pin->DoesParameterExist("job", "final_restart") ||
+  const bool frst = stop_ != 0 || !pin->DoesParameterExist("job", "final_restart") ||
                     pin->GetBoolean("job", "final_restart");
   if (!frst && global_variable::my_rank == 0) {
     std::cout << "<job> final_restart = false: no restart file at the end of the run"
@@ -1293,6 +1307,15 @@ void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
     out->LoadOutputData(pmesh);
     out->WriteOutputFile(pmesh, pin);
     out->FreeOutputData();
+    if (stop_ != 0 && global_variable::my_rank == 0) {
+      char num[7];
+      std::snprintf(num, sizeof(num), ".%05d", out->out_params.file_number - 1);
+      std::cout << "stop requested (" << (stop_ == SIGTERM ? "SIGTERM" :
+                   (stop_ == SIGUSR1 ? "SIGUSR1" : (stop_ == 1 ? "STOP file" :
+                   "wall time"))) << ") at cycle " << pmesh->ncycle
+                << ": restart written rst/" << out->out_params.file_basename << num
+                << ".rst" << std::endl;
+    }
   }
   global_variable::final_outputs = false;
 
@@ -1416,6 +1439,28 @@ Real Driver::UpdateWallClock() {
   MPI_Bcast(&tnow, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 #endif
   return tnow;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn int Driver::StopCheck(Real elapsed_time)
+//! \brief The graceful stop (as Athena++'s SignalHandler), once per accepted cycle:
+//! SIGTERM or SIGUSR1 on any rank (returns the signal number), a file STOP in the run
+//! directory (1; rank 0 looks and removes it) or the -t wall time up (2).  One MAX
+//! reduction, so every rank leaves the loop after the same cycle; the run then ends as
+//! at nlim (Finalize writes the restart file, also with <job>/final_restart = false).
+
+int Driver::StopCheck(Real elapsed_time) {
+  int s = (wall_time > 0. && !(elapsed_time < wall_time)) ? 2 : 0;
+  struct stat sb;
+  if (global_variable::my_rank == 0 && stat("STOP", &sb) == 0) {
+    s = std::max(s, 1);
+    std::remove("STOP");
+  }
+  s = std::max(s, static_cast<int>(stop_signal));
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, &s, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+#endif
+  return s;
 }
 
 //----------------------------------------------------------------------------------------
