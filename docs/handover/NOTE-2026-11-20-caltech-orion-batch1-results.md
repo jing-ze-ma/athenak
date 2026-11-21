@@ -911,3 +911,4 @@ B_br gate not passed; arms not started
 - (22:57) I1 start: I1_m35 on hpc-sm-01-17 at 22:57:40 (B_j3 f71a22b6, icrel/m35mms.athinput copy with the IC gunzipped into fresh_prod_1120/icrel/ and the local tables, tlim 3.0e4)
 - (22:58) I1 start: I1_bsg on hpc-sm-02-11 at 22:58:08 (B_j3 f71a22b6, icrel/bsg.athinput copy with the IC gunzipped into fresh_prod_1120/icrel/ and the local tables, tlim 1.12e6)
 - (22:58) I1 start: I1_m35 on hpc-sm-01-17 at 22:58:33 (B_j3 f71a22b6, icrel/m35mms.athinput copy with the IC gunzipped into fresh_prod_1120/icrel/ and the local tables, tlim 3.0e4)
+- (22:58) 986673d22 ack: the first I1_bsg (02-11, started 22:5x with the old dtfac 1.0 deck) was stopped after ~2 min, moved to i1/I1_bsg_dtfac1_stopped. I1_bsg / I1_m35 are restarted from the UPDATED icrel decks (clean_init_dtfac = 1.0e6, clean_stag_flim = true; he_ic_file + tables repointed to fresh_prod_1120/icrel and the local tables). The I1 start lines above / below give node + time.
