@@ -226,6 +226,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_recon = (rc.compare("plm") == 0);
     cln_pcr = pin->GetOrAddBoolean("rad_m1","clean_stag_pcr",true);
     cln_sopt = pin->GetOrAddBoolean("rad_m1","clean_stag_opac_update",false);
+    {const std::string fo = pin->GetOrAddString("rad_m1","clean_face_opac","arith");
+    if (fo != "arith" && fo != "harmonic") {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/clean_face_opac = arith | harmonic"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    cln_hface = (fo == "harmonic");}
     // (clean_stag_fs_pcr: default on for staggered; it applies on a GPU, not on cs)
     cln_fspcr = pin->GetOrAddBoolean("rad_m1","clean_stag_fs_pcr",!cln_cell);
     // clean_stag_fs_pcr_cs (read only when named, default off): also on the cubed sphere

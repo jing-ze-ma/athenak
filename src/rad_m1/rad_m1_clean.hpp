@@ -963,6 +963,33 @@ void CleanStagArea(const CleanArgs &x, const int dir, const int m, const int k,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real CleanFaceChi
+//! \brief chi of face (k,j,i) normal to dir: the mean of its two cells; with
+//! clean_face_opac = harmonic an x1 face takes their distance-weighted harmonic mean (old
+//! production implicit_face_opac = harmonic): at an unresolved opacity jump the
+//! transparent side's mean free path limits the flux.  A MeshBlock face takes the
+//! neighbour's ghost like an interior face; a physical boundary face keeps the mean.
+
+KOKKOS_INLINE_FUNCTION
+Real CleanFaceChi(const DvceArray5D<Real> &op, const DvceArray2D<Real> &x1f,
+                  const DvceArray2D<BoundaryFlag> &bc, const bool hrm, const int dir,
+                  const int m, const int k, const int j, const int i, const int is,
+                  const int ie) {
+  const Real cl = op(m,M1_OP_T,k-(dir == 2),j-(dir == 1),i-(dir == 0));
+  const Real cr = op(m,M1_OP_T,k,j,i);
+  auto phys = [&](const int s) {
+    return bc(m,s) != BoundaryFlag::block && bc(m,s) != BoundaryFlag::periodic;
+  };
+  if (!hrm || dir != 0 || (i == is && phys(0)) || (i == ie + 1 && phys(1)) ||
+      !(cl > 0.0 && cr > 0.0)) {
+    return 0.5*(cl + cr);
+  }
+  if (x1f.extent_int(1) <= i + 1) return 2.0*cl*cr/(cl + cr);   // (Cartesian: uniform)
+  const Real hl = x1f(m,i) - x1f(m,i-1), hr = x1f(m,i+1) - x1f(m,i);
+  return (hl + hr)/(hl/cl + hr/cr);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanFaceWeights
 //! \brief coefficients of E_L and E_R in the flux through face (k,j,i) normal to dir, i.e.
 //! everything but the off-diagonal Eddington terms and the old-vector flux G.  Physical
