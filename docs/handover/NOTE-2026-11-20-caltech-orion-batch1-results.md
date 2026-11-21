@@ -2007,3 +2007,4 @@ B_br gate not passed; arms not started
 - (12:07) W1_t9l62_h result: rc: rc=0 wall=580 | CW 0 FATAL 0 | solves/stage-pass 2.0 mean / 3 max (n=599) | dt range 4.640683e+01 .. 5.460436e+01 | wall/cycle 1.83 s | series in V210/W1_t9l62_h/res.txt
 - (12:08) V210 start: W2_t19_o on hpc-sm-02-16 (B_opac, W2 T19 t19r t19l64.00001, N0 1070, keys rst + rad_m1/clean_conv_max=1.0e-4 rad_m1/clean_stag_thinf_held_gate=true rad_m1/clean_stag_opac_update=true , 300 cycles, hst every 10 cycles, rst off)
 - (12:08) W1_t9l62_oh result: rc: rc=0 wall=585 | CW 0 FATAL 0 | solves/stage-pass 2.0 mean / 2 max (n=599) | dt range 4.642453e+01 .. 5.460723e+01 | wall/cycle 1.85 s | series in V210/W1_t9l62_oh/res.txt
+- (12:08) V210 start: W2_t19_h on hpc-sm-01-11 (B_opac, W2 T19 t19r t19l64.00001, N0 1070, keys rst + rad_m1/clean_conv_max=1.0e-4 rad_m1/clean_stag_thinf_held_gate=true rad_m1/clean_face_opac=harmonic , 300 cycles, hst every 10 cycles, rst off)
