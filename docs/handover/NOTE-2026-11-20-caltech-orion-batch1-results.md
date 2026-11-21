@@ -1105,3 +1105,4 @@ B_br gate not passed; arms not started
 - (01:06) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
   CW t19r (log.0) cycle 1185 []: CLEAN WARNING cycle 1185 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 42)
   CW t19r (log.0) cycle 1189 []: CLEAN WARNING cycle 1189 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 43)
+- (01:06) C3h_t19 (B_c3h, 02-04, 450 cycles from t19l64.00001): rc=137 wall=626 | CW: C3h 0 | prod 1 solves: C3h 4.3 mean / 6 max solves per stage-pass line (n=302) | prod 5.3 mean / 200 max solves per stage-pass line (n=301)  | FATAL 0 | never-read: job/final_restart | dt / KE / L_top rows in C3H/C3h_t19/compare.txt

@@ -1,0 +1,6 @@
+CLEAN FLIM cycle 1311 t2s 2 faces 21971963 momentum cut sum |dF| V/c^2 2.129232e+30
+CLEAN pass cycle 1311 t2s 2 pos 0 pass 199 it 4 de 2.863e-05 dv 2.154e-11
+CLEAN cycle 1311 t2s 2 it -5 (sum 693) pos 0 mark 0 all 0 neg 0 r1 0 r2 14 first 0 14 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 1311 t2s 2 faces 21971963 momentum cut sum |dF| V/c^2 2.129232e+30
+CLEAN XT cycle 1311 t2s 2 write-back closure 4.176e-03
+CLEAN WARNING cycle 1311 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)

@@ -1,0 +1,7 @@
+C3h_t19 vs stopped production t19l64 over cycles 1150-1300 (t 4.409307e+04-4.983773e+04)
+CW: C3h 0 | prod 1
+solves: C3h 4.3 mean / 6 max solves per stage-pass line (n=302) | prod 5.3 mean / 200 max solves per stage-pass line (n=301)
+dt (every 50 cycles) C3h: 1150:3.834613e+01 1200:3.831633e+01 1250:3.827793e+01 1300:3.825069e+01 
+dt prod: 1150:3.834613e+01 1200:3.831680e+01 1250:3.828111e+01 1300:3.825763e+01 
+user.hst C3h: t 4.681e+04 KE 8.332e+40 Ltop/Lin 1.0344 | 
+user.hst prod: t 4.681e+04 KE 8.406e+40 Ltop/Lin 1.0424 | 
