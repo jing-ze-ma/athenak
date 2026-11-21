@@ -458,7 +458,11 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
     }
     Real dt_rst = pmesh->dt;
     pmesh->NewTimeStep(tlim);
-    if (res_flag && dt_rst > 0.0 && !dtfix) { pmesh->dt = dt_rst; }
+    // (rsthip-1121: only a dt_fixed that binds replaces it; an inert cap, e.g. the
+    // ORDER decks' dt_fixed = 1e30, keeps the restored dt, else the restart is not bitwise)
+    if (res_flag && dt_rst > 0.0 && !(dtfix && pmesh->dt_uncapped > pmesh->dt_cap)) {
+      pmesh->dt = dt_rst;
+    }
   }
 
   // a restart of the staggered clean scheme from the old scheme's file: its face fluxes
