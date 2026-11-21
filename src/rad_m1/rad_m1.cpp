@@ -190,9 +190,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_pcr = pin->GetOrAddBoolean("rad_m1","clean_stag_pcr",true);
-    // clean_stag_opac_update (default on for a fresh spherical-polar run, off on the
-    // cubed sphere and Cartesian) and clean_face_opac (default harmonic on a fresh run),
-    // USER 11-21, recorded; a restart file without a key keeps the old default (echoed)
+    // clean_stag_opac_update (default on for a fresh run, every mesh) and clean_face_opac
+    // (default harmonic on a fresh run), USER 11-21, recorded; a restart file without a
+    // key keeps the old default (echoed)
     auto old = [&](const char *k, const char *v) {
       if (!nw && !pin->DoesParameterExist("rad_m1", k)) {
         recipe::Log(std::string("<rad_m1>/") + k + " = " + v + " (a restart file "
@@ -201,9 +201,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     };
     old("clean_stag_opac_update", "false");
     old("clean_face_opac", "arith");
-    cln_opt = pin->GetOrAddBoolean("rad_m1","clean_stag_opac_update",
-                                   nw && pmy_pack->pmesh->use_spherical_polar &&
-                                   !pmy_pack->pmesh->use_cubed_sphere);
+    cln_opt = pin->GetOrAddBoolean("rad_m1","clean_stag_opac_update",nw);
     // (old production implicit_opac_lag = pred, implicit_opac_lag_passes: the opacities
     // of passes 0 .. N-1, then frozen: a change of the discretisation, order 2 for N >= 2)
     cln_optn = pin->GetOrAddInteger("rad_m1","clean_stag_opac_passes",3);
@@ -541,10 +539,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_gas_tfloor (default true): the gas row's T bounded below by the EOS
     // tfloor, and the gas eint written back from that root (E takes the rest)
     cln_gtf = stag("clean_gas_tfloor", true);
-    // clean_gas_newton_switch (default 0 = off; W in [3, 64]), clean_gas_newton_switch_min
-    // (20), clean_stall_fac (0.5): the old production's implicit_gas_newton_switch, a
-    // stalled solve's remaining passes on the bracketed gas root without the Newton slope
-    cln_gnsw = pin->GetOrAddInteger("rad_m1","clean_gas_newton_switch",0);
+    // clean_gas_newton_switch (default 10 on a fresh run, USER 11-21, recorded; 0 = off;
+    // W in [3, 64]), clean_gas_newton_switch_min (20), clean_stall_fac (0.5): the old
+    // production's implicit_gas_newton_switch, a stalled solve's remaining passes on the
+    // bracketed gas root without the Newton slope; a restart file without it keeps 0
+    if (!nw && !pin->DoesParameterExist("rad_m1","clean_gas_newton_switch")) {
+      recipe::Log("<rad_m1>/clean_gas_newton_switch = 0 (a restart file without the key: "
+                  "the old default)");
+    }
+    cln_gnsw = pin->GetOrAddInteger("rad_m1","clean_gas_newton_switch",nw ? 10 : 0);
     cln_gnswmin = pin->GetOrAddInteger("rad_m1","clean_gas_newton_switch_min",20);
     cln_stfac = pin->GetOrAddReal("rad_m1","clean_stall_fac",0.5);
     if (cln_gnsw < 0 || cln_gnsw > 64 || (cln_gnsw > 0 && cln_gnsw < 3) ||

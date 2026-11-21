@@ -2,7 +2,7 @@
 
 Branch clean-stag2-lean-v207 (v20.7 + lean). Every key the source reads, its default for a fresh run, the comment at
 the read and which decks name it. Restart files keep the values they recorded. Where a file lacks a key, the old
-default applies, so restarts are unchanged (clean_face_opac / clean_stag_opac_update: the defaults block says so).
+default applies, so restarts are unchanged (clean_face_opac / clean_stag_opac_update / clean_gas_newton_switch: the defaults block says so).
 
 ## 1. Fresh-run defaults = the production scheme (lean defaults flip)
 
@@ -18,7 +18,8 @@ A deck that leaves them out runs the production scheme.
 | clean_stag_thinf_held | false | **true** | |
 | clean_face_opac | arith | **harmonic** (recorded) | USER 11-21; every mesh (the x1 face chi, distance-weighted harmonic mean) |
 | vet_rotate_avg_ema_change_form | step (fresh, since v20.4) | **linear** (recorded) | USER 11-21; step costs the EMA ring's time order (deck D E/F p 1.66/1.39 vs 1.95/1.85); a restart keeps its recorded form: HG/RSG key files name linear |
-| clean_stag_opac_update | false | **true on spherical polar** (recorded); false on the cubed sphere and Cartesian | USER 11-21; oh3 with clean_stag_opac_passes = 3 (unchanged); acts only where the opacities depend on T |
+| clean_stag_opac_update | false | **true** (recorded), every mesh | USER 11-21 (uniform settings on every mesh); oh3 with clean_stag_opac_passes = 3 (unchanged); acts only where the opacities depend on T |
+| clean_gas_newton_switch | 0 | **10** (recorded), every mesh | USER 11-21; the old production's implicit_gas_newton_switch default; acts only on a stalled solve (the cubed sphere's refresh needs it, W4h) |
 
 These were already the fresh defaults: scheme = clean, clean_layout = staggered, clean_rays = sc, clean_xt_exact =
 cons, clean_stag_xdonor = lag, clean_stag_xsrc = true, clean_stag_mg_color = mirror, clean_conv_kappa = 1.0,
@@ -34,7 +35,6 @@ cs_cross_mono (cubed sphere), and <hydro>/floor_pay = rad_column (fresh, eos = g
 | clean_stag_thinf_held_gate | false | off: the production decks do not name it. With it on by default, fresh t9h (A100, fwb off, 100 cycles) made 2.1e5 E-floor raises, against 0 with it off (LEAN6 bisect). |
 | clean_stag_colflux | false | off (POS5: no gain; costs CW and dt on RSG) |
 | time2_k1_xlim | off | off (POS5: HG dt 56 vs 98) |
-| clean_gas_newton_switch | 0 | off (POS6: a stalled solve's remaining passes on the bracketed gas root; default pending) |
 | clean_stag_fwb | false | off for now (REAL3 realisability fix a206152a6: with flim, t9h cell max |F|/cE 1.35, 0 CW) |
 
 ## 3. Production keys that stay explicit (setup, not scheme)
