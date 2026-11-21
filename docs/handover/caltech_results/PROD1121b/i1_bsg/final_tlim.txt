@@ -1,0 +1,62 @@
+== ls -l rst
+total 27650080
+-rw-r-----. 1 jingze hpc_carnegie_poc 7078420078 Nov 21 04:00 bsg3d.00054.rst
+-rw-r-----. 1 jingze hpc_carnegie_poc 7078420388 Nov 21 04:05 bsg3d.00055.rst
+-rw-r-----. 1 jingze hpc_carnegie_poc 7078420388 Nov 21 04:11 bsg3d.00056.rst
+-rw-r-----. 1 jingze hpc_carnegie_poc 7078420078 Nov 21 04:16 bsg3d.00057.rst
+== chunks.txt
+2026-11-20 23:03:04 chunk 0 STAR=i1_bsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_j3_a5257b7ee md5=f71a22b6ffcd2229950c7e4fb90de5c8 DECK=/resnick/groups/carnegie_poc/jingze/fresh_prod_1120/fg_v2/decks_prod1121/I1P_bsg.athinput md5=c16fff0f5b14bca4598a650c97e33187 start=-i /resn
+2026-11-21 04:16:44 chunk 0 rc=0 last: time=5e+06 cycle=31984
+== last 40 log lines (/resnick/groups/carnegie_poc/jingze/prod_fresh_1121b/i1_bsg/log.0)
+Terminating on time limit
+time=5e+06 cycle=31984
+tlim=5e+06 nlim=-1
+
+MeshBlock-cycles = 127936
+cpu time used  = 2e+04
+main loop time (before the final outputs) = 2e+04
+zone-cycles/cpu_second = 3e+07
+particle-updates/cpu_second = 0
+<hydro>/split_bval_fast: energy-only refreshes 0, full refreshes 0 (rank 0)
+<rad_m1> closure = vet_col: 0 tensor builds (0 skipped), 0 s (rank 0, fenced), 0 ms per build
+<rad_m1> vet_col_lat: 3e+04 sweeps (incl. the first build's 3 inflow iterations), 0 s (rank 0, fenced), 0 ms per sweep; lateral reads clamped to the ghost band (rank 0, all sweeps): 0
+<rad_m1> vet_gd: rank 0 fenced seconds: source 2e+02, sweeps 2e+03 (of which per-shell halo+walls 8e+01, of which MPI wait 5e+01), tables (rotation) 0, uniform twin 0, moments 9e+01; in-solve rebuilds 0 (0 s)
+<rad_m1> vet_gd halo (rank 0): exchanges 8e+06, bytes sent 2e+13 (2e+06 per exchange), post 0.6 s, partners 3; band-clamped lateral reads (ALL ranks, all sweeps) 0
+<rad_m1> vet_gd vet_path = none: subdivided steps (ALL ranks, all sweeps) 0
+<rad_m1> vet_gd ragged band (rank 0): out-of-slab accesses main 0 twin 0
+<rad_m1> vet_gd_band_ring (rank 0): sweeps 3e+04, dense band saves 0, save store 0.07 GB
+<rad_m1> accel-1009 (rank 0): vet_gd_twin_fuse=0 vet_gd_twin_lowmem=0 vet_gd_twin_det=1 halo mask cache: 0 entries made, 0 MB of 0
+<rad_m1> vgdspeed-1009 (rank 0): vet_gd halo lists 0 made, 3e+02 MB of 4e+03 (key 4096, GPU: <= free/2); exchanges by list 8e+06, dense 0
+<rad_m1> vgdfuse-1010 (rank 0): vet_gd_halo_exact lists made 1e+03, fallbacks 0 (marked reads outside the masks' region 0), read ghosts with an unsent source 0; received values per list: exact/mask 0
+<rad_m1> vgdrot-1011 (rank 0): exact-list batches 1e+03 (group 1, 0.4 s, list reallocs 2e+03); table prefetch 1 swapped in 0 of the rotations
+<rad_m1> implicit energy solve: cells=0 iterations mean=0 max=0 FAILURES=0 (no bracket: 0)
+<rad_m1> consfix-1109: implicit_cons_final=1 solves=0 extra passes after a mode fallback=0
+<rad_m1> implicit_wb_vkick_reject=1e+08: stages rejected=0 backward-Euler solves with kicks=0 (cells 0)
+<rad_m1> implicit transport: solves=0 Picard iterations mean=0 max=0 NON-CONVERGED=0
+<rad_m1> implicit_gas_newton_switch=10 (min pass 20): solves switched to the root find=0
+<rad_m1> m1-positivity: implicit_g0_exchange=1 implicit_g0_limit=1 clipped cell-passes=0 | implicit_pos_gas=1 (frac 0.001) cell-solves=5e+09 energy moved rad->gas=1e+38 | E floor raises cell-solves=2e+04 energy from gas=0 energy created=0 (code units x volume) [in discarded attempts, rolled back: 0] of which solve undershoot (pos_floor_solve)=0 taken from the column's radiation (implicit_pos_floor_cons)=6e+35 | |F| > c E scaled back cell-solves=0 sum(|F|/(cE) - 1)=0 | hydro EOS floors energy created=3e+36
+<rad_m1> implicit_face_mmat: checked passes=0 limited passes=0 limited cells=0 limited x1 faces=0 max rounds=0 left (b<=0 after the limit)=0 realisability-bound faces (|F_H| > c min E)=0 (rank 0: rounds=0 R exchanges=0 zalesak_halo_skip=on rowsel=on re-assembled rows=0 of 0 zalesak_active=on zalesak_cap_rounds=4 capped passes=0)
+<rad_m1> implicit transverse (bicgstab): final 7-point linear residual (max|r|/max|b|) mean=0 max=0
+<rad_m1>   (diagnostic; Picard test on it: no; lin_tol=1e-10; inner stop: lin_tol relative to max|b|, loosened by Eisenstat-Walker ew_max=0.01)
+<rad_m1> bicgstab: outer passes=0 linear solves=0 inner iterations mean=0 max=0 total=0
+<rad_m1> bicgstab: breakdowns=0 line_jacobi fallbacks=0 global reductions=0 (0 per inner iteration)
+<rad_m1> gas coupling: newton=true eos_cache=false cell-passes=0 newton fallbacks=0 (0 per cell-pass)
+<rad_m1> FBLOCAL triggers 0 local 0 global 0 bad cells 0 masked cells 0
+<rad_m1> offdiag=none closure_relax=1 closure_lag=step positivity fallbacks=0 (vet_col_lat 0) min E from the solve=1e+300
+<rad_m1> implicit_vimp positivity fallbacks=0 min E from the solve=1e+300 local kills=0 cells(rank 0)=0
+<rad_m1> floor clips (all ranks, every solve incl. BE): solved E <= e_floor cell-solves=0 written-back gas eint <= 0 cell-solves=0
+<rad_m1> time_scheme=hesdirk2: stage steps=3e+04 backward-Euler steps=1 stage fallbacks=0 vet clips=0 face_fct calls=6e+04 skipped(no face flux)=0 K1 flux from U^n=0 limited cells=8e+11 max rounds=4e+02 withheld E x vol=3e+44 left (Q<=0)=1 emptied (E < 0.1 E^n) cells=6e+03 min E/E^n=-0.2 (rank 0: rounds=3e+06 R exchanges=3e+06) time2_vet_col=extrap2 fallbacks=0 time2_posfix: steps=0 re-solves=0 cells=0 accepted-with-fallback stages=0
+<rad_m1> time2_auto_be=16: skipped-stage BE steps=0 stage retries=0 (succeeded 0)
+<rad_m1> hesdirk2 wall split (rank 0 s): clean stage steps 2e+04 (posfix 0) | failed stage attempts 0 (posfix 0) | their BE redo 0 | auto_be steps 0 | other BE steps 0.5 | discarded dt_retry attempts 0
+== final user.hst rows
+#  [1]=time      [2]=dt       [3]=L_bot    [4]=L_mid    [5]=L_int    [6]=L_top    [7]=L_in    [8]=E_rad    [9]=e_gas    [10]=M_int    [11]=KE_int    [12]=KEr_int    [13]=Mr_int    [14]=PV_int    [15]=V_int    [16]=M_tot    [17]=Mdot_top    [18]=Mdot_bot    [19]=Etot    [20]=Min_top    [21]=v1sq_wall    [22]=Picard    [23]=P_esrc    [24]=P_sponge    [25]=M_hflx    [26]=E_hflx    [27]=Lz_hflx    [28]=Lz_tot    
+   4.9221252277695304e+06   1.5654199807904982e+02   4.6293062710435733e+37   4.6360547384725540e+37   3.8994501592790294e+37   4.6346681070979591e+37   4.6512174999145692e+37   4.3529177348226007e+45   5.1350802445067361e+45   3.1535361315757551e+31   1.1390806943315221e+42   4.1993753851766107e+41   1.2357172342882733e+33   3.4233868209963429e+45   1.5172664508952026e+37   3.1535365925378845e+31   9.0358546689978104e+09   0.0000000000000000e+00   1.6850442866820220e+46  -6.8128445347924080e+09   7.9481569190007215e+06   0.0000000000000000e+00   0.0000000000000000e+00   3.8437168791787152e+28   2.2162391561843581e+09   3.1699387480966056e+24  -4.1535864528350295e+27  -2.6432798019749538e+39
+   4.9230653401621431e+06   1.5681657141491115e+02   4.6286362511474513e+37   4.6365290816469649e+37   3.8969121639637995e+37   4.6362335047780438e+37   4.6512174999145692e+37   4.3529157873267331e+45   5.1350786002561523e+45   3.1535361274023779e+31   1.1391275560781649e+42   4.1989460577450936e+41   1.7257896710910910e+33   3.4233857247539125e+45   1.5172664508952026e+37   3.1535365925378823e+31   9.0529539112315292e+09   0.0000000000000000e+00   1.6850443025895906e+46  -6.8187616067353640e+09   7.8849934623275315e+06   0.0000000000000000e+00   0.0000000000000000e+00   4.8670327316984636e+28   2.2266880306638985e+09   3.1849193601034136e+24  -4.3213029307590858e+27  -2.6432783891177008e+39
+   4.9240074533633776e+06   1.5709687481419854e+02   4.6292141181148512e+37   4.6369550284305793e+37   3.8938149630276763e+37   4.6375498019770368e+37   4.6512174999145692e+37   4.3529135867251163e+45   5.1350767561846482e+45   3.1535361231583955e+31   1.1391794777845235e+42   4.1984708622836917e+41   2.2192353685282152e+33   3.4233844952945679e+45   1.5172664508952026e+37   3.1535365925378710e+31   9.0582325827690086e+09   0.0000000000000000e+00   1.6850443175228293e+46  -6.8220601753458261e+09   7.8202505557116512e+06   0.0000000000000000e+00   0.0000000000000000e+00   4.5650505566611968e+28   2.2272955294097443e+09   3.1857746952123638e+24  -4.4004810421166928e+27  -2.6432771018643201e+39
+   4.9248000000000000e+06   1.3106527255848050e+01   4.6307795459091666e+37   4.6370778783505704e+37   3.8951255864046581e+37   4.6372461437059576e+37   4.6512174999145692e+37   4.3529115413253401e+45   5.1350750491457081e+45   3.1535361195419041e+31   1.1392274629636131e+42   4.1980263501200845e+41   2.6365412075553862e+33   3.4233833572053851e+45   1.5172664508952026e+37   3.1535365925378728e+31   9.0417959159864902e+09   0.0000000000000000e+00   1.6850443295851541e+46  -6.8171435035035000e+09   7.7651510235239165e+06   0.0000000000000000e+00   0.0000000000000000e+00   4.6813620370095151e+28   2.2260426200520487e+09   3.1839828961618469e+24  -4.4680823530564380e+27  -2.6432764475015947e+39
+== final hydro.hst rows
+#  [1]=time      [2]=dt       [3]=mass    [4]=1-mom    [5]=2-mom    [6]=3-mom    [7]=tot-E    [8]=1-KE    [9]=2-KE    [10]=3-KE    
+   4.9221252277695304e+06   1.5654199807904982e+02   3.1535365925378845e+31   1.2369847182335920e+33  -2.4942411879895541e+32   3.3286145703894551e+33   1.2497525131997633e+46   4.1994115591925823e+41   4.1428279284199622e+41   3.0487608235434333e+41
+   4.9230653401621431e+06   1.5681657141491115e+02   3.1535365925378823e+31   1.7269948235783246e+33  -3.0442408697924688e+32   3.3416152963230987e+33   1.2497527238569196e+46   4.1989830055134700e+41   4.1427273132513202e+41   3.0497603653207528e+41
+   4.9240074533633776e+06   1.5709687481419854e+02   3.1535365925378710e+31   2.2203837595582716e+33  -3.6124488428294396e+32   3.3545409042655278e+33   1.2497529588503216e+46   4.1985086727382262e+41   4.1427378928853006e+41   3.0507451138376162e+41
+   4.9248000000000000e+06   1.3106527255848050e+01   3.1535365925378728e+31   2.6376459322992863e+33  -4.1031868531372229e+32   3.3653350608009734e+33   1.2497531754526192e+46   4.1980649376010835e+41   4.1428436005165178e+41   3.0515644869128619e+41
