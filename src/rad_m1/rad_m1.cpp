@@ -382,10 +382,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_stag_thinf (default on): the staggered bracket's ray correction in the face
     // half ranges, realisable (CleanStagBracket), not as the gated lagged flux DG
     cln_thinf = !cln_cell && pin->GetOrAddBoolean("rad_m1","clean_stag_thinf",nw);
-    // clean_stag_flim (default off): the F solve's face F^H and solution F within the
-    // donor's realisable range [-c E_R, c E_L] (CleanStagFSolve); every mesh: the face F is
-    // the momentum along the face's unit normal (the cubed sphere's too, CleanCsNormA)
-    cln_flim = stag("clean_stag_flim", false);
+    // clean_stag_flim (default on for a fresh run, recorded; a restart file without the
+    // key keeps off): the F solve's face F^H and solution F within the donor's realisable
+    // range [-c E_R, c E_L] (CleanStagFSolve); every mesh: the face F is the momentum
+    // along the face's unit normal (the cubed sphere's too, CleanCsNormA)
+    if (!cln_cell && nw && !pin->DoesParameterExist("rad_m1","clean_stag_flim"))
+      recipe::Log("<rad_m1>/clean_stag_flim = true (default of a fresh staggered run)");
+    cln_flim = !cln_cell && pin->GetOrAddBoolean("rad_m1","clean_stag_flim",nw);
     // clean_stag_thinf_held (default off): the thin flux factor of a donor blended by
     // theta = min(1, max(J, P)/(clean_ray_min E_old)), P its largest ray outflow:
     // theta g(rays) + (1 - theta) h (its own half range); a ray-shadowed donor is no dam
