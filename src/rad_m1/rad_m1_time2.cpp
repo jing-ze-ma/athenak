@@ -3886,7 +3886,7 @@ int RadiationM1::Time2RstNchWant() {
          M1_T2_NK + ((impl_pred && !sk) ? np : 0) + (vet_sc ? M1_T2_NVET : 0)
          + ((vet_sc && vsc_every > 1) ? 2*M1_T2_NVET : 0)    // vet_sc_every: D0, D1
          + ((vet_col && t2_vcmode == 4 && !sk) ? M1_X2_NCH : 0);   // rbfast-1021 extrap2
-  return nt + ((force_ref == M1_FREF_CLEAN) ? 4 : 0)         // the reference force, set
+  return nt + ((force_ref == M1_FREF_CLEAN) ? 4 + cln_lzt : 0)   // the reference, set
          + ((force_ref == M1_FREF_WB_MD) ? 10 : 0)           // wb_arad_md: 9, set
          + ((clean && cln_extrap > 0) ? 2*CleanRstNq() + 1 : 0)    // extrap history
          + ((clean && cln_ring) ? (t2_rstv < 4 ? vra_k*CleanRstNq() : CleanRingRstN()) + 1
@@ -3987,7 +3987,7 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
   // force_reference = clean (wb_arad_md): the reference force (and potentials) and
   // whether it is set
   if (force_ref == M1_FREF_CLEAN || force_ref == M1_FREF_WB_MD) {
-    const int nr = (force_ref == M1_FREF_WB_MD) ? 9 : 3;
+    const int nr = (force_ref == M1_FREF_WB_MD) ? 9 : 3 + cln_lzt;
     const bool have = (cln_fref.extent_int(0) >= m0 + nmb);
     if (have) put(c, nr, cln_fref, 0);
     one(c + nr, (have && cln_fref_set) ? 1.0 : 0.0);
@@ -4181,7 +4181,7 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     }
   }
   if (force_ref == M1_FREF_CLEAN || force_ref == M1_FREF_WB_MD) {
-    const int nr = (force_ref == M1_FREF_WB_MD) ? 9 : 3;
+    const int nr = (force_ref == M1_FREF_WB_MD) ? 9 : 3 + cln_lzt;
     if (ch < nr) {
       if (cln_fref.extent_int(0) != nmb) {
         Kokkos::realloc(cln_fref, nmb, nr, w.extent_int(1), w.extent_int(2),

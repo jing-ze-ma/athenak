@@ -534,7 +534,8 @@ void RadiationM1::CleanInit() {
   }
   if ((force_ref == M1_FREF_CLEAN || force_ref == M1_FREF_WB_MD) &&
       cln_fref.extent_int(0) != nmb) {   // (a restart has read it)
-    Kokkos::realloc(cln_fref, nmb, (force_ref == M1_FREF_WB_MD) ? 9 : 3, n3, n2, n1);
+    Kokkos::realloc(cln_fref, nmb, (force_ref == M1_FREF_WB_MD) ? 9 : 3 + cln_lzt, n3, n2,
+                    n1);
   }
   if (cln_stst) Kokkos::realloc(cln_st, nmb, CLN_ST, indcs.nx3, indcs.nx2, indcs.nx1);
   if (cln_stst && pmy_pack->pmesh->use_cubed_sphere) {
@@ -5037,6 +5038,7 @@ void RadiationM1::CleanWriteBack() {
   auto f1 = f0x1, f2 = f0x2, f3 = f0x3;
   const int fref = force_ref;
   const bool wsp = (fref == M1_FREF_WB_ARAD || fref == M1_FREF_WB_MD);
+  const bool fcap = (fref == M1_FREF_CLEAN) && !cln_fref_set && !cln_vzero;
   auto fr = cln_fref;
   auto aref = arad_ref;
   const bool wpa = wsp && FrefWaccOn();   // (fref_wacc: CleanRightHandSide)
@@ -5142,8 +5144,12 @@ void RadiationM1::CleanWriteBack() {
         const Real rc = CleanCsFrame(x, m, k, j, i, q);
         const Real dp = tqv(m,1,k,j,i)/(x.vol(m,k,j,i)*rc) + lzw_*uh(m,IDN,k,j,i)*rc -
                         (q[2][0]*dm[0] + q[2][1]*dm[1] + q[2][2]*dm[2]);
-        for (int n = 0; n < 3; ++n) dm[n] += dp*q[2][n];
-        dlz = tqv(m,2,k,j,i);
+        // (force_reference = clean: the reference withholds this phi row too, cln_fref 3,
+        // its torque booked as that of cln_fref 0..2)
+        const Real dw = (fref != M1_FREF_CLEAN) ? 0.0 : (fcap ? dp : h*fr(m,3,k,j,i));
+        if (fcap) fr(m,3,k,j,i) = dp/h;
+        for (int n = 0; n < 3; ++n) dm[n] += (dp - dw)*q[2][n];
+        dlz = tqv(m,2,k,j,i) + x.vol(m,k,j,i)*rc*dw;
       }
       CleanStagGasMomentum(x, uh, m, k, j, i, pg);
       CleanStagRefForce(x, fref, fr, aref, uh(m,IDN,k,j,i), m, k, j, i, rf);
