@@ -1,0 +1,1 @@
+TAG=C3c_t19 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_c3c_411bf3991 md5=cd9ceba69fb52008de1a0808e77a01fe RST=/resnick/groups/carnegie_poc/jingze/prod_fresh_1121b/t19l64/rst/t19l64.00001.rst N0=1127 NC=450 MODE=speed HOLDER=6133592 NODES=hpc-sm-02-04 NR=4 PPN=4 ENVX= EX=output5/dt=1e30 UCX=
