@@ -764,3 +764,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - PROD bsg chunk ended 19:00: 2026-11-20 18:55:04 chunk 0 rc=0 last: elapsed=4.487201e+03 cycle=10000 time=1.254093e+06 dt=1.044172e+02
 - PROD t9l62 chunk ended 19:00: 2026-11-20 18:55:04 chunk 0 rc=0 last: elapsed=4.502266e+03 cycle=3300 time=3.195857e+05 dt=9.683662e+01
 - PROD m35mms chunk ended 19:00: 2026-11-20 18:55:04 chunk 0 rc=0 last: elapsed=4.479448e+03 cycle=9100 time=7.484082e+04 dt=5.757379e+00
+- CM4_rsg (hpc-sm-01-17): rc=0 wall=148 | cycles 589788 - 589818 | steady 2.833 s/cycle | GPU MiB max 106007 min 104893 | CW a 0 FATAL 0 |  passes/cycle (sum of CLEAN it) 0.0 (over 30 cycles) | s/cycle 2.833 | CW 0 | min dt 0.000000e+00
+- V204S_hg (hpc-sm-01-11): rc=0 wall=139 | cycles 624961 - 624965 | steady 15.582 s/cycle | GPU MiB max 101133 min 100471 | CW a 2 FATAL 0 |  passes/cycle (sum of CLEAN it) 0.0 (over 4 cycles) | s/cycle 15.582 | CW 2

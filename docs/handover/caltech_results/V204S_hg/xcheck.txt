@@ -1,0 +1,1 @@
+passes/cycle (sum of CLEAN it) 0.0 (over 4 cycles) | s/cycle 15.582 | CW 2
