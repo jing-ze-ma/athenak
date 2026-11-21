@@ -2483,6 +2483,7 @@ void RadiationM1::CleanWorstCell(const Real dnl, const Real dnl0) {
               "DIVERGE" : (dnl > 0.5*dnl0 ? "STALL" : "SLOW"))), dnl, dnl0,
               ok ? pmy_pack->pmb->mb_gid.h_view(m) : -1, k, j, i, h(0), h(1), h(2), h(3),
               h(4));
+  std::fflush(stdout);   // (a rank's line before a FATAL dt_retry's MPI_Abort)
 }
 
 //----------------------------------------------------------------------------------------
