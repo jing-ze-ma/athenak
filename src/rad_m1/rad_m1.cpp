@@ -553,9 +553,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_vimp = stag("clean_stag_vimp", cln_split);
-    // (the cubed sphere: only with clean_stag_vimp_cs, default false)
+    // (the cubed sphere: only with clean_stag_vimp_cs, default on for a fresh run, USER
+    // 11-21, recorded; a restart file without the key keeps off, echoed)
+    if (cln_vimp && pmy_pack->pmesh->use_cubed_sphere) old("clean_stag_vimp_cs", "false");
     if (cln_vimp && pmy_pack->pmesh->use_cubed_sphere &&
-        !stag("clean_stag_vimp_cs", false)) {
+        !pin->GetOrAddBoolean("rad_m1","clean_stag_vimp_cs",nw)) {
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_m1> staggered on the cubed sphere: clean_stag_vimp = false"
                   << std::endl;
