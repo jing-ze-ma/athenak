@@ -2630,8 +2630,9 @@ int RadiationM1::CleanRstNq() const {
 // (clean_closure = iterate: the closure in place, the last iterate's, is state; none in
 // a file of another closure, Time2RstAccept)
 int RadiationM1::CleanRstNcl() const {
-  if (!clean || !cln_closit) return 0;
-  return (t2_rcl < 0) ? CleanNs(pmy_pack->pmesh->use_cubed_sphere) : t2_rcl;
+  if (!clean) return 0;
+  if (t2_rcl >= 0) return t2_rcl;   // (a file's, Time2RstAccept)
+  return cln_closit ? CleanNs(pmy_pack->pmesh->use_cubed_sphere) : 0;
 }
 
 int RadiationM1::CleanRstNfv() const {
@@ -2684,16 +2685,21 @@ bool RadiationM1::Time2RstAccept(const int nfile, const int ver) {
   t2_rcl = -1;
   int nb = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0);
   t2_nfv = (clean && (cln_cssc || cln_scmem)) ? nfile - nb : 0;
-  // (clean_closure = iterate from a file of another closure, which holds none: the first
-  // solve takes the predicted closure, CleanSolve)
-  const int ncl = CleanRstNcl();
-  if (ncl > 0 && (t2_nfv < 0 || (t2_nfv == 0 && nfile == nb - ncl))) {
-    t2_rcl = 0;
-    nb -= ncl;
-    t2_nfv = (clean && (cln_cssc || cln_scmem)) ? nfile - nb : 0;
+  // (a file of another clean_closure: the closure in place of an iterate run, CleanRstNcl,
+  // is skipped by another closure; without it, an iterate run's first solve takes the
+  // predicted closure, CleanSolve)
+  const int ns = CleanNs(pmy_pack->pmesh->use_cubed_sphere);
+  auto fits = [&](const int n) {
+    return cln_cssc ? (nfile - n == 0 || nfile - n == 12) : (nfile == n);
+  };
+  if (clean && !cln_scmem && !fits(nb) && fits(cln_closit ? nb - ns : nb + ns)) {
+    t2_rcl = cln_closit ? 0 : ns;
+    nb += cln_closit ? -ns : ns;
+    t2_nfv = cln_cssc ? nfile - nb : 0;
     if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> NOTE: restart with clean_closure = iterate from a file "
-                << "without its closure: the first solve takes the predicted one"
+      std::cout << "<rad_m1> NOTE: restart from a file of another clean_closure: "
+                << (cln_closit ? "no closure in it, the first solve takes the predicted "
+                    "one" : "its closure (clean_closure = iterate) is not read")
                 << std::endl;
     }
   }
@@ -3005,6 +3011,7 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   }
   if (CleanRstNcl() > 0) {   // (clean_closure = iterate: cln_s, with its ghosts)
     if (ch < CleanRstNcl()) {
+      if (!cln_closit) return;   // (an iterate run's file, read by another closure)
       if (cln_s.extent_int(0) != nmb) {
         Kokkos::realloc(cln_s, nmb, CleanRstNcl(), w.extent_int(1), w.extent_int(2),
                         w.extent_int(3));
