@@ -1,0 +1,78 @@
+###   job/final_restart = false  (command line)
+###   output1/dt = 1e30  (command line)
+CLEAN OLDVEC cycle 589789 t2s 2 eint<0 90 (taken as 0) E<0 53
+CLEAN cycle 589789 t2s 2 it -2 (sum 202) pos 0 mark 0 all 0 neg 0 r1 0 r2 1 first 0 1 guard 0 solves 200 cwin 0
+CLEAN XT cycle 589789 t2s 2 write-back closure 3.848e+01
+CLEAN WARNING cycle 589789 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+--
+CLEAN LZ cycle 589790 t2s 1 ledger 7.1814367094704685e+43
+CLEAN XT cycle 589790 t2s 1 write-back closure 7.867e+00
+CLEAN OLDVEC cycle 589791 t2s 2 eint<0 146 (taken as 0) E<0 34
+CLEAN cycle 589791 t2s 2 it -2 (sum 204) pos 0 mark 0 all 0 neg 0 r1 0 r2 54 first 0 54 guard 0 solves 200 cwin 0
+CLEAN XT cycle 589791 t2s 2 write-back closure 2.907e+01
+CLEAN WARNING cycle 589791 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+CLEAN WARNING cycle 589791: backward-Euler solve not converged (dt_retry, 3 so far; last change 4.047e-03)
+--
+CLEAN XT cycle 589791 t2s 1 write-back closure 5.867e+01
+DT_RETRY cycle=589791 t=5.46483e+08 dt 956.522 -> 478.261 reason=NON-CONVERGED resid=-1 cut 1
+CLEAN OLDVEC cycle 589791 t2s 2 eint<0 76 (taken as 0) E<0 24
+CLEAN cycle 589791 t2s 2 it -2 (sum 201) pos 0 mark 0 all 0 neg 0 r1 0 r2 81 first 0 81 guard 0 solves 200 cwin 0
+CLEAN XT cycle 589791 t2s 2 write-back closure 2.873e+01
+CLEAN WARNING cycle 589791 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+CLEAN WARNING cycle 589791: backward-Euler solve not converged (dt_retry, 3 so far; last change 2.040e-04)
+--
+CLEAN XT cycle 589791 t2s 1 write-back closure 5.116e+00
+DT_RETRY cycle=589791 t=5.46483e+08 dt 478.261 -> 242.157 reason=NON-CONVERGED resid=-1 cut 2
+CLEAN OLDVEC cycle 589791 t2s 2 eint<0 55 (taken as 0) E<0 15
+CLEAN cycle 589791 t2s 2 it -2 (sum 201) pos 0 mark 0 all 0 neg 0 r1 0 r2 116 first 0 116 guard 0 solves 200 cwin 0
+CLEAN XT cycle 589791 t2s 2 write-back closure 5.148e+01
+CLEAN WARNING cycle 589791 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+CLEAN WARNING cycle 589791: backward-Euler solve not converged (dt_retry, 3 so far; last change 5.528e-04)
+--
+CLEAN XT cycle 589791 t2s 1 write-back closure 3.256e+00
+DT_RETRY cycle=589791 t=5.46483e+08 dt 242.157 -> 121.85 reason=NON-CONVERGED resid=-1 cut 3
+CLEAN OLDVEC cycle 589791 t2s 2 eint<0 27 (taken as 0) E<0 12
+CLEAN cycle 589791 t2s 2 it -2 (sum 200) pos 0 mark 0 all 0 neg 0 r1 0 r2 146 first 0 146 guard 0 solves 200 cwin 0
+CLEAN XT cycle 589791 t2s 2 write-back closure 1.010e+01
+CLEAN WARNING cycle 589791 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+CLEAN WARNING cycle 589791: backward-Euler solve not converged (dt_retry, 3 so far; last change 1.686e-04)
+--
+CLEAN XT cycle 589791 t2s 1 write-back closure 2.067e+00
+DT_RETRY cycle=589791 t=5.46483e+08 dt 121.85 -> 61.1196 reason=NON-CONVERGED resid=-1 cut 4
+CLEAN OLDVEC cycle 589791 t2s 2 eint<0 11 (taken as 0) E<0 11
+CLEAN cycle 589791 t2s 2 it -2 (sum 201) pos 0 mark 0 all 0 neg 0 r1 0 r2 154 first 0 154 guard 0 solves 200 cwin 0
+CLEAN XT cycle 589791 t2s 2 write-back closure 5.262e-01
+CLEAN WARNING cycle 589791 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+CLEAN WARNING cycle 589791: backward-Euler solve not converged (dt_retry, 3 so far; last change 1.575e-04)
+--
+CLEAN XT cycle 589791 t2s 1 write-back closure 1.353e+00
+DT_RETRY cycle=589791 t=5.46483e+08 dt 61.1196 -> 30.6087 reason=NON-CONVERGED resid=-1 cut 5
+CLEAN OLDVEC cycle 589791 t2s 2 eint<0 0 (taken as 0) E<0 10
+CLEAN cycle 589791 t2s 2 it -2 (sum 200) pos 0 mark 0 all 0 neg 0 r1 0 r2 145 first 0 145 guard 0 solves 200 cwin 0
+CLEAN XT cycle 589791 t2s 2 write-back closure 4.604e-01
+CLEAN WARNING cycle 589791 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+CLEAN WARNING cycle 589791: backward-Euler solve not converged (dt_retry, 3 so far; last change 1.205e-07)
+--
+CLEAN XT cycle 589791 t2s 1 write-back closure 1.029e+00
+DT_RETRY cycle=589791 t=5.46483e+08 dt 30.6087 -> 15.3166 reason=NON-CONVERGED resid=-1 cut 6
+CLEAN OLDVEC cycle 589791 t2s 2 eint<0 0 (taken as 0) E<0 10
+CLEAN cycle 589791 t2s 2 it -2 (sum 200) pos 0 mark 0 all 0 neg 0 r1 0 r2 129 first 0 129 guard 0 solves 200 cwin 0
+CLEAN XT cycle 589791 t2s 2 write-back closure 3.752e-01
+CLEAN WARNING cycle 589791 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+CLEAN WARNING cycle 589791: backward-Euler solve not converged (dt_retry, 3 so far; last change 2.568e-05)
+--
+CLEAN XT cycle 589791 t2s 1 write-back closure 6.903e-01
+DT_RETRY cycle=589791 t=5.46483e+08 dt 15.3166 -> 7.66137 reason=NON-CONVERGED resid=-1 cut 7
+CLEAN OLDVEC cycle 589791 t2s 2 eint<0 0 (taken as 0) E<0 10
+CLEAN cycle 589791 t2s 2 it -2 (sum 200) pos 0 mark 0 all 0 neg 0 r1 0 r2 144 first 0 144 guard 0 solves 200 cwin 0
+CLEAN XT cycle 589791 t2s 2 write-back closure 3.151e-01
+CLEAN WARNING cycle 589791 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+CLEAN WARNING cycle 589791: backward-Euler solve not converged (dt_retry, 3 so far; last change 4.209e-06)
+--
+CLEAN XT cycle 589791 t2s 1 write-back closure 4.748e-01
+DT_RETRY cycle=589791 t=5.46483e+08 dt 7.66137 -> 3.83145 reason=NON-CONVERGED resid=-1 cut 8
+CLEAN OLDVEC cycle 589791 t2s 2 eint<0 0 (taken as 0) E<0 10
+CLEAN cycle 589791 t2s 2 it -2 (sum 200) pos 0 mark 0 all 0 neg 0 r1 0 r2 136 first 0 136 guard 0 solves 200 cwin 0
+CLEAN XT cycle 589791 t2s 2 write-back closure 2.529e-01
+CLEAN WARNING cycle 589791 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+CLEAN WARNING cycle 589791: backward-Euler solve not converged (dt_retry, 3 so far; last change 1.070e-05)
