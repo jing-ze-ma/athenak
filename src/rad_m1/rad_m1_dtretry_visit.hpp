@@ -1067,6 +1067,9 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("cln_flimc", cln_flimc);
   v.value("cln_thinh", cln_thinh);
   v.value("cln_xdfz", cln_xdfz);
+  v.value("cln_pdmp", cln_pdmp);
+  v.value("cln_pdn", cln_pdn);
+  v.value("cln_pdfst", cln_pdfst);
   v.value("cln_thhg", cln_thhg);
   v.value("cln_xdh", cln_xdh);
   v.value("cln_lzl", cln_lzl);
@@ -1787,6 +1790,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
 //   pin_cs_ : ParameterInput *
 //   cln_gdx : const CleanArgs *
 //   pin_rcut_ : ParameterInput *
+//   cln_pdh : DvceArray4D<Real> (protocol counter, kept monotonic)
 //   cln_lzpin : ParameterInput *
 //   cln_wci : DvceArray5D<Real> (protocol counter, kept monotonic)
 //   cln_halo : std::map<int, CleanHalo> (views over cln_hbuf, kept)

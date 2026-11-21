@@ -1213,6 +1213,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (fpc) RstFingerprint("cln_setup");
   Real dnl = 0.0, dnl0 = -1.0;   // (the last pass's change and the one before)
   for (int ipos = 0; ; ++ipos) {
+    cln_pdfst = true;   // (clean_pass_damp: no history before a solve's first pass)
+    cln_pdn = 0;
     CleanFirstIterate();
     cln_fsk = false;
     cln_csyok = false;   // (the lateral sums' coefficients once per closure)
@@ -1246,6 +1248,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       // (clean_xt_cons: the same, the first iterate's T from the pass's gas row)
       if (inl == 0 && (cln_sbimp || cln_xtcons) && cln_feedback) {
         CleanNewtonUpdate();
+        cln_pdfst = true;   // (clean_pass_damp: that update's X is the last solve's)
+        cln_pdn = 0;
         CleanRightHandSide();
       }
       CleanPreconditionerSetup();
@@ -1396,6 +1400,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       dtr_fail = true;
     }
     if (rt && dtr_t2be) dtr_t2hit = true;
+    if (cln_lzbook && cln_feedback && t2_solve == M1_T2S_STAGE2 && !t2_fail) {
+      CleanLzBook(0.0, false);   // (the accepted stage 2's L_z, pending until here)
+    }
   }
   // (K1 = f(U^n) for the next solve's predictor and time error: what an accepted
   // backward-Euler or stage-2 solve wrote; a failed one leaves none, the backward-Euler
@@ -2965,6 +2972,15 @@ Real RadiationM1::CleanNewtonUpdate() {
   const bool xte = (cln_xte > 0) && cln_feedback, x2 = xte && cln_xte == 2;
   const bool pdx = x2 && cln_xpat, pxe = xte && cln_xpat;
   const bool kpg = cln_kq_on;   // (clean_stag_kpos: the gas row's pd_g X)
+  const bool dmp = cln_pdmp > 0, dfst = cln_pdfst;
+  const bool dact = dmp && cln_pdn >= cln_pdmp;   // (from pass clean_pass_damp on)
+  ++cln_pdn;
+  if (dmp && cln_pdh.extent_int(0) < nmb) {
+    Kokkos::realloc(cln_pdh, nmb, cln_w.s.extent_int(2), cln_w.s.extent_int(3),
+                    cln_w.s.extent_int(4));
+  }
+  auto hd = cln_pdh;
+  cln_pdfst = false;
   Real change = 0.0, femax = 0.0, ermax = 0.0, xcl = 0.0;
   // (CUDA: 4 blocks of 256 per SM, A100 R136 -1.5 ms/cycle; the reduction keeps its
   // blocks and grid: bitwise)
@@ -2981,7 +2997,17 @@ Real RadiationM1::CleanNewtonUpdate() {
     i += is;
     const Real e_old = w(m,CLW_EK,k,j,i);
     const Real t_old = w(m,CLW_T,k,j,i);
-    const Real x = w(m,CLW_X,k,j,i);
+    Real x = w(m,CLW_X,k,j,i);
+    const Real xr = poslim ? x : fmax(x, 0.0);   // (the change: undamped)
+    // (clean_pass_damp: a change that turns back, l = d/d_last < 0, takes d/(1 - l), the
+    // fixed point of that mode, as CleanStagXDonor's C; the fixed point is unchanged;
+    // an iterate E <= 0 takes the solution whole, so that it leaves E < 0 at once)
+    if (dmp) {
+      const Real d = x - e_old, dp = dfst ? 0.0 : hd(m,k,j,i);
+      const Real l = (dact && d*dp < 0.0 && e_old > 0.0) ? d/dp : 0.0;
+      x = e_old + d/(1.0 - l);
+      hd(m,k,j,i) = x - e_old;
+    }
     const Real ex = fmax(x, 0.0);
     const Real e = poslim ? x : ex, g = w(m,CLW_GM,k,j,i);
     // (gflux: the gas takes the Doppler part hc kE dop E of sb at X, as the E row takes
@@ -3012,15 +3038,15 @@ Real RadiationM1::CleanNewtonUpdate() {
     }
     w(m,CLW_EK,k,j,i) = e;
     w(m,CLW_T,k,j,i) = t;
-    const Real de = ncell ? fabs(e - e_old)/fmax(fmax(fabs(e), fabs(e_old)), esc)
-                          : fabs(e - e_old)/fmax(fmax(fabs(e), fabs(e_old)), 1.0e-300);
+    const Real de = ncell ? fabs(xr - e_old)/fmax(fmax(fabs(xr), fabs(e_old)), esc)
+                          : fabs(xr - e_old)/fmax(fmax(fabs(xr), fabs(e_old)), 1.0e-300);
     const Real dt = fabs(t - t_old)/fmax(fmax(t, t_old), 1.0e-300);
     if (bud) {
       const Real d = uh(m,IDN,k,j,i), se = w(m,CLW_SE,k,j,i);
       Real e1, e0, p, chi_rho, chi_t, cv;
       eos.ThermoAt(d, t, e1, p, chi_rho, chi_t, cv);
       eos.ThermoAt(d, t_old, e0, p, chi_rho, chi_t, cv);
-      dmax = fmax(dmax, fmax(fabs(e - e_old)/se, fabs(e1 - e0)/w(m,CLW_SG,k,j,i)));
+      dmax = fmax(dmax, fmax(fabs(xr - e_old)/se, fabs(e1 - e0)/w(m,CLW_SG,k,j,i)));
       if (kok) er_max = fmax(er_max, 0.5*fabs(e - w(m,CLW_EO,k,j,i) -
                                               h*k1(m,M1_T2_E,k,j,i))/se);
     } else {
@@ -4741,10 +4767,11 @@ void RadiationM1::CleanStagDrag(const bool first, const bool vel, const bool lat
 //! \brief clean_cs_lz_abs = 2: books the cells' sum s of the L_z the gas did not take (of
 //! a write-back, or with start of the stage start's increment) as the gas momentum it
 //! belongs to enters the step: a stage-1 part with the weight of the stage-1 state in the
-//! stage-2 start (Heun 1/2) and the stage-2 start pending until the stage-2 write-back (a
-//! backward-Euler redo from U^n drops them); the total and K1's sum in <rad_m1>
-//! (restart). 3-D spherical polar: s is the L_z that crossed the boundaries
-//! (CleanStagMomentum's dlz), <rad_m1>/clean_sp_lz_bnd
+//! stage-2 start (Heun 1/2), the stage-2 start and write-back pending until the solve
+//! accepts stage 2 (s = 0; a backward-Euler redo from U^n drops them, Time2Restore); the
+//! total and K1's sum in <rad_m1> (restart).
+//! 3-D spherical polar: s is the L_z that crossed the boundaries (CleanStagMomentum's dlz),
+//! <rad_m1>/clean_sp_lz_bnd
 
 void RadiationM1::CleanLzBook(const Real s, const bool start) {
   if (t2_solve == M1_T2S_STAGE1) {
@@ -4755,7 +4782,7 @@ void RadiationM1::CleanLzBook(const Real s, const bool start) {
     cln_lzp += s;
     return;
   }
-  cln_lzl += ((t2_solve == M1_T2S_STAGE2) ? cln_lzp : 0.0) + s;
+  cln_lzl += (t2_solve == M1_T2S_STAGE2) ? cln_lzp : cln_lzp + s;
   cln_lzp = 0.0;
   const bool cs = (cln_lza == 2);
   cln_lzpin->SetReal("rad_m1", cs ? "clean_cs_lz_ledger" : "clean_sp_lz_bnd", cln_lzl);
@@ -5278,7 +5305,7 @@ void RadiationM1::CleanWriteBack() {
   if (lzb) {   // (the L_z ledger: the stage's L_z as its slope, then booked)
     const Real s = CleanSumCells(lzw);
     if (slopes) (t2_solve == M1_T2S_STAGE1 ? cln_lzs2 : cln_lzs1) = s/h;
-    CleanLzBook(s, false);
+    CleanLzBook(s, t2_solve == M1_T2S_STAGE2);
   }
   if (cls) {   // (xt_exact / kpos: the stage's closure |dE + de + dK + h div Phi|
                //  over E + E_old + eint, max over the cells)

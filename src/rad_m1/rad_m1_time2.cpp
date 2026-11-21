@@ -1274,6 +1274,7 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
     Kokkos::deep_copy(DevExeSpace(), pam->am_spin, pam->am_spin1);
   }
   CleanDMem(false);
+  cln_lzp = 0.0;   // (the L_z ledger: the failed stages' pending part, CleanLzBook)
   t2_fail = false;
   t2_ok = false;
   t2_nfall += 1.0;

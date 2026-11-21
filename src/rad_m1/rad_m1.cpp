@@ -321,6 +321,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // xdonor cross flux C is held (CleanStagXDonor): its donor side and cap no longer
     // switch from pass to pass (HG C2D: a 1-cell donor/cap flip, period-2 passes at 2e-4)
     cln_xdfz = pin->GetOrAddInteger("rad_m1","clean_stag_xdonor_freeze",0);
+    // clean_pass_damp (default 0 = off): from this pass of a solve on, a pass's change of
+    // E that turns back, l < 0, takes d/(1 - l) (CleanNewtonUpdate): period-2/3 pass
+    // cycles of the lagged exchange; a solve that converges before is unchanged
+    cln_pdmp = pin->GetOrAddInteger("rad_m1","clean_pass_damp",0);
     // clean_stag_thinf_held_gate (default off): theta of clean_stag_thinf_held times the
     // old production's quasi-steadiness gate r^2, r = min(E_old/H, H/E_old), H = max(J,
     // P)

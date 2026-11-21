@@ -2869,6 +2869,9 @@ class RadiationM1 {
   DvceArray1D<Real> cln_flimc;   // (flim: the cut faces, their momentum sum)
   bool cln_thinh = false;   // clean_stag_thinf_held
   int cln_xdfz = 0;         // clean_stag_xdonor_freeze
+  int cln_pdmp = 0, cln_pdn = 0;   // clean_pass_damp, the solve's pass count
+  bool cln_pdfst = true;
+  DvceArray4D<Real> cln_pdh;   // (clean_pass_damp: the last pass's change of E)
   bool cln_thhg = false;    // clean_stag_thinf_held_gate
   bool cln_xdh = false;     // (its hold in this pass)
   // (clean_cs_lz_abs = 2: the L_z V R (dp_torque - dp) the gas does not take, booked as
