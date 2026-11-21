@@ -87,13 +87,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_cnorm = pin->GetOrAddReal("rad_m1","clean_init_cnorm",1.0e-10);
     cln_lcnorm = pin->GetOrAddReal("rad_m1","clean_lin_cnorm",1.0e-10);
     // the old production's keys an input names (its HG/RSG decks; read only when named):
-    // implicit_maxit, implicit_lin_maxit and implicit_tol_rel_max are the defaults of
-    // clean_maxnl, clean_maxit and clean_conv_max (a linear solve then runs to it,
-    // without the stall test, and a pass goes on from its iterate, CleanSolve);
-    // clean_maxit is read with clean_stag_thinf, which sets its default to 800
-    int pl = 0;
-    {int pm = 50;
-    cln_prmax = -1.0;
+    // implicit_maxit is the default of clean_maxnl, and with implicit_lin_maxit a linear
+    // solve runs to clean_maxit without the stall test and a pass goes on from its
+    // iterate (CleanSolve).  clean_maxit (800) does not take implicit_lin_maxit (a named
+    // other value prints a NOTE), nor clean_conv_max (1e-5) implicit_tol_rel_max
+    // (CleanPreflight)
+    {int pm = 50, pl = 0;
     for (const InputBlock &ib : pin->block) {
       if (ib.block_name != "rad_m1") continue;
       for (const InputLine &ln : ib.line) {
@@ -101,10 +100,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         const std::string &k = ln.param_name;
         if (k == "implicit_maxit") pm = pin->GetInteger("rad_m1",k);
         if (k == "implicit_lin_maxit") pl = pin->GetInteger("rad_m1",k);
-        if (k == "implicit_tol_rel_max") cln_prmax = pin->GetReal("rad_m1",k);
       }
     }
+    const bool nmi = pin->DoesParameterExist("rad_m1","clean_maxit");
     cln_maxnl = pin->GetOrAddInteger("rad_m1","clean_maxnl",pm);
+    cln_maxit = pin->GetOrAddInteger("rad_m1","clean_maxit",800);
+    cln_bmax = pin->GetOrAddReal("rad_m1","clean_conv_max",1.0e-5);
+    if (global_variable::my_rank == 0 && pl > 0 && !nmi && pl != cln_maxit) {
+      std::cout << "### NOTE: <rad_m1>/implicit_lin_maxit = " << pl << ": the linear "
+                << "solves stop at clean_maxit = " << cln_maxit
+                << " (name clean_maxit to change it)" << std::endl;
+    }
     cln_linpass = (pl > 0);}
     cln_tol_nl = pin->GetOrAddReal("rad_m1","clean_tol_nl",1.0e-11);
     // clean_pc = vcycle | x1line | prodmg (read only when named): the preconditioner of
@@ -359,11 +365,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     // clean_stag_thinf (default on): the staggered bracket's ray correction in the face
-    // half ranges, realisable (CleanStagBracket), not as the gated lagged flux DG; with
-    // it clean_maxit defaults to 800 (else implicit_lin_maxit, else 4000)
+    // half ranges, realisable (CleanStagBracket), not as the gated lagged flux DG
     cln_thinf = stag("clean_stag_thinf", true);
-    cln_maxit = pin->GetOrAddInteger("rad_m1","clean_maxit",
-                                     cln_thinf ? 800 : ((pl > 0) ? pl : 4000));
     // clean_stag_xdonor = off (default) | p1 | lag: the off-diagonal stress flux an
     // M-matrix term (CleanStagXDonor); clean_stag_xsrc (default off): also the face
     // sources past their explicit share; clean_stag_xsweep (default off): a monotone
@@ -630,11 +633,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     cln_budget = !cln_cell && (cv == "budget");}
     cln_bkap = pin->GetOrAddReal("rad_m1","clean_conv_kappa",1.0);
-    // clean_conv_max: the tolerance's ceiling, default 1e-5.  The MeshBlock layout moves
-    // the answer to about it (a solve may stop a pass earlier or later), which a step
-    // dt_retry redoes amplifies (mpirej_retry, 1 vs 2 ranks: 1e-4 9.1e-2, 1e-5 9.2e-6)
-    cln_bmax = pin->GetOrAddReal("rad_m1","clean_conv_max",(cln_prmax > 0.0) ? cln_prmax :
-                                                                               1.0e-5);
+    // clean_conv_max (read above): the tolerance's ceiling, default 1e-5.  The MeshBlock
+    // layout moves the answer to about it (a solve may stop a pass earlier or later),
+    // which a step dt_retry redoes amplifies (mpirej_retry, 1 vs 2 ranks: 1e-4 9.1e-2,
+    // 1e-5 9.2e-6)
     // clean_retry_budget (default false): a step dt_retry redoes keeps the budget
     // tolerance, clean_conv_kappa x its time-error estimate at the cut dt, not the strict
     // one (RSGDIE: passes stalled at 1e-7..1e-5, which no dt cut lowers, failed the

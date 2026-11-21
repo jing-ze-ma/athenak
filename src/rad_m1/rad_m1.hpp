@@ -3265,7 +3265,7 @@ class RadiationM1 {
   Real cln_cnorm = 0.0;         // clean_init_cnorm: the steady start's per-cell test (0 off)
   bool cln_insteady = false;    // in CleanSteadyStart's passes
   Real cln_lcnorm = 0.0;        // clean_lin_cnorm: the steps' strict solves (0 off)
-  int cln_maxit = 4000;         // clean_maxit: BiCGStab iterations
+  int cln_maxit = 800;          // clean_maxit: BiCGStab iterations
   bool cln_pcr = true;          // clean_stag_pcr: PC line solves by PCR on a GPU
   bool cln_fspcr = false;      // clean_stag_fs_pcr: F solve x1 lines by PCR on a GPU
   bool cln_fspcs = false;      //   clean_stag_fs_pcr_cs: also on the cubed sphere
@@ -3311,7 +3311,6 @@ class RadiationM1 {
   bool cln_csvr = false;        // clean_stag_csvec_radial (CleanStagCsVector)
   bool cln_rayratio = false;    // clean_stag_rayratio: the bracket of ray ratios x E
   bool cln_ringjmin = true;     // clean_ring_jmin: ring J ratios only of ray-held cells
-  Real cln_prmax = -1.0;      // implicit_tol_rel_max named: clean_conv_max's default
   bool cln_linpass = false;   // implicit_lin_maxit named: a pass goes on past a failed solve
   void CleanStagXDonor(const bool first, const bool lat = true);
   void CleanStagXCount(const int inl, const int nit);

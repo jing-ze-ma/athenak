@@ -362,8 +362,8 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/implicit_mr_*", nullptr}, {"rad_m1/implicit_det_trace", nullptr},
     {"rad_m1/implicit_tol", "clean_tol_nl"}, {"rad_m1/implicit_lin_tol", "clean_tol"},
     {"rad_m1/implicit_maxit", nullptr},   // (clean_maxnl's default, rad_m1.cpp)
-    {"rad_m1/implicit_tol_rel_max", nullptr},   // (clean_conv_max's default)
-    {"rad_m1/implicit_lin_maxit", nullptr},   // (clean_maxit's default, rad_m1.cpp)
+    {"rad_m1/implicit_tol_rel_max", "clean_conv_max"},
+    {"rad_m1/implicit_lin_maxit", nullptr},   // (the linear pass form, rad_m1.cpp)
     {"rad_m1/implicit_recon", "clean_recon"},
     {"rad_m1/implicit_closure_lag", "clean_closure"},
     {"rad_m1/time2_vet", "clean_closure"}, {"rad_m1/time2_vet_col", "clean_closure"},
