@@ -1315,3 +1315,5 @@ B_br gate not passed; arms not started
   | t19r | cyc 3850 | t 7.290947e+04 | 5.79% of 1.26e6 | dt 1.364773e+01 | KE 2.06e+42 | Ltop/Lin 1.416 | Lbot/Lin 0.999 | CW 65 FATAL 0 | last hst: [t 6.482e+04 KE 1.52e+42 Lt 1.431 Lb 0.998] [t 6.841e+04 KE 1.83e+42 Lt 1.426 Lb 1.004] [t 7.201e+04 KE 2.06e+42 Lt 1.416 Lb 0.999] 
   | m35mms | cyc 14700 | t 1.212849e+05 | 14.04% of 8.64e5 | dt 6.318852e+00 | KE 1.35e+39 | Ltop/Lin 1.011 | Lbot/Lin 1.005 | CW 0 FATAL 0 | last hst: [t 1.2e+05 KE 1.34e+39 Lt 1.006 Lb 1.004] [t 1.206e+05 KE 1.35e+39 Lt 1.016 Lb 1.005] [t 1.212e+05 KE 1.35e+39 Lt 1.011 Lb 1.005] 
   | i1_m35mms_f1k | cyc 9150 | t 8.843567e+04 | 10.24% of 8.64e5 | dt 5.971377e+00 | KE 2.1e+39 | Ltop/Lin 1.074 | Lbot/Lin 1.004 | CW 0 FATAL 0 | last hst: [t 8.7e+04 KE 2.1e+39 Lt 1.078 Lb 1.002] [t 8.76e+04 KE 2.11e+39 Lt 1.075 Lb 1.004] [t 8.82e+04 KE 2.1e+39 Lt 1.074 Lb 1.004] 
+- (03:36) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t9r (log.0) cycle 6204 []: CLEAN WARNING cycle 6204 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
