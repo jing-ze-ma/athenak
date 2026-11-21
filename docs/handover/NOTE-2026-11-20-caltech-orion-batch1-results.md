@@ -1305,3 +1305,4 @@ B_br gate not passed; arms not started
   | i1_m35mms_f1k | cyc 8200 | t 8.270887e+04 | 9.57% of 8.64e5 | dt 6.613028e+00 | KE 1.86e+39 | Ltop/Lin 1.081 | Lbot/Lin 0.994 | CW 0 FATAL 0 | last hst: [t 8.16e+04 KE 1.72e+39 Lt 1.092 Lb 0.996] [t 8.22e+04 KE 1.8e+39 Lt 1.093 Lb 0.995] [t 8.28e+04 KE 1.86e+39 Lt 1.081 Lb 0.994] 
 - (03:07) PROD 1121b:
   ALERT dt collapse t9l62: max 96.8525 -> 6.62471 (last 200 cycle lines) at cycle=6600 time=4.794477e+05
+- (03:18) D_t19 (B_damp, 02-04, 450 cycles from t19l64.00001): rc=0 wall=1612 | CW: D 0 | prod 8 solves: D 7.2 mean / 10 max solves per stage-pass line (n=854) | prod 6.5 mean / 200 max solves per stage-pass line (n=847)  | FATAL 0 | never-read: job/final_restart | dt / KE / L_top rows in C3H/D_t19/compare.txt

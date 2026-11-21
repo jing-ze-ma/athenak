@@ -1,0 +1,9 @@
+rad_m1/clean_init_dtfac=1.0e6
+rad_m1/clean_stag_flim=true
+rad_m1/clean_stag_thinf_held=true
+rad_m1/floorcap_rho=1e-14
+rad_m1/floorcap_v=3e7
+rad_m1/floorcap_report=25
+rad_m1/clean_stag_thinf_held_gate=true
+rad_m1/clean_nl_print=true
+rad_m1/clean_pass_damp=true
