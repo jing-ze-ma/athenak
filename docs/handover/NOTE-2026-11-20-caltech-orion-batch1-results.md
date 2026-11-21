@@ -625,3 +625,7 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - SQ_lq (hpc-sm-02-04): a rc=0 wall=81 | a cycles 0 - 60 dt first 165.455 last 167.914 s/cycle steady 0.726 first elapsed 14.7 a 'FATAL' 0  a 'CLEAN WARNING' 0   | GPU mem peak MiB 23517 | CW 0 FATAL 0
 - SQ_gl (hpc-sm-02-03): a rc=0 wall=87 | a cycles 0 - 60 dt first 165.455 last 167.914 s/cycle steady 0.704 first elapsed 14.9 a 'FATAL' 0  a 'CLEAN WARNING' 0   | GPU mem peak MiB 23893 | CW 0 FATAL 0
 - F_m35mms (hpc-sm-02-10): a rc=0 wall=152 b rc=0 wall=99 b rc=0 wall=83 | a cycles 0 - 120 dt first 12.0051 last 11.1773 s/cycle steady 0.901 first elapsed 15.6 a 'FATAL' 0  a 'CLEAN WARNING' 0   | GPU mem peak MiB 27851 | CW 0 FATAL 0
+  FRESHGO START GF_t9l62 16:59:30 on hpc-sm-02-04
+  FRESHGO START GF_t19l64 16:59:40 on hpc-sm-02-10
+  FRESHGO START GF_m35mms 16:59:49 on hpc-sm-02-03
+- (17:00) Got 4370c1fd0: *_fing decks copied (md5 matches f54faabcb; inputs present). v20.4 gate / ST / STD runners stopped (none of their arms had started). GF_t9l62 16:59:30 (02-04), GF_t19l64 16:59:40 (02-10), GF_m35mms 16:59:49 (02-03); GF_t9l62_corona, GF_t19l64_corona, GF_bsg, GF_bsgnb take the four nodes of the F_* arms, which are in their restart legs and end within minutes. A GL FATAL at setup would show in the arm's line at once.
