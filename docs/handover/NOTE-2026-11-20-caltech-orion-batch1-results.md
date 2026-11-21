@@ -2069,3 +2069,4 @@ B_br gate not passed; arms not started
     
 - (12:54) W5a_off result: rc: rc=0 wall=337  | CW 0 FATAL 0 | s/cycle 1.95 | dt range 5.936832e+01 .. 6.717703e+01 | GPU mem peak MiB max 78931 min 78733 (n=4) | V211/W5a_off/res_summary.txt
 - (12:56) W5c_on_rt result: rc: rc=0 wall=156 rc=0 wall=128 rc=0 wall=130  | CW 0 FATAL 0 | s/cycle  | dt range 5.500000e+01 .. 5.500000e+01 | GPU mem peak MiB max 113157 min 112763 (n=4) | W5c bitwise: YES | V211/W5c_on_rt/res_summary.txt
+- (12:56) W5b_on result: rc: rc=0 wall=461  | CW 0 FATAL 0 | s/cycle 2.77 | dt range 5.500000e+01 .. 6.470588e+01 | GPU mem peak MiB max 113157 min 112763 (n=4) | V211/W5b_on/res_summary.txt

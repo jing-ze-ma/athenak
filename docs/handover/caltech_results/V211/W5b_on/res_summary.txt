@@ -1,0 +1,19 @@
+W5b_on: B_v207 86d31021, node hpc-sm-02-16, copy of t9l62 t9l62.t9l62.00027.rst (N0 25230), keys rst + rad_m1/clean_conv_max=1.0e-4 rad_m1/clean_stag_thinf_held_gate=true rad_m1/vet_gd_rotate_dt=1100 rad_m1/vet_rotate_avg=4 rad_m1/vet_rotate_avg_ema=128 rad_m1/vet_rotate_avg_ema_wb=true rad_m1/vet_rotate_avg_ema_change_form=step rad_m1/vet_gd_rotate_xfade=true rad_m1/vet_rotate_advance=true rad_m1/clean_rot_ring=live rad_m1/vet_gd_rotate_t0=1165850 , speed, 150 cycles
+rc: rc=0 wall=461  | CW 0 FATAL 0 | s/cycle 2.77 | dt range 5.500000e+01 .. 6.470588e+01 | GPU mem peak MiB max 113157 min 112763 (n=4)
+series (user.hst; every 10 cycles; W5c every cycle): t KE_int L_top L_mid Lz_tot
+1.16646e+06 5.702e+43 1.6718e+39 1.5864e+39 -9.5268e+43
+1.167e+06 5.7032e+43 1.6702e+39 1.5849e+39 -9.5447e+43
+1.16756e+06 5.7044e+43 1.6679e+39 1.5834e+39 -9.5618e+43
+1.16811e+06 5.7057e+43 1.6653e+39 1.5819e+39 -9.5772e+43
+1.16869e+06 5.7071e+43 1.6641e+39 1.5804e+39 -9.5928e+43
+1.16927e+06 5.7086e+43 1.6625e+39 1.5788e+39 -9.6083e+43
+1.16988e+06 5.7102e+43 1.6608e+39 1.5772e+39 -9.6274e+43
+1.17051e+06 5.7119e+43 1.6589e+39 1.5755e+39 -9.647e+43
+1.17116e+06 5.7138e+43 1.657e+39 1.5738e+39 -9.671e+43
+1.1718e+06 5.7157e+43 1.6551e+39 1.5721e+39 -9.6966e+43
+1.17245e+06 5.7177e+43 1.6531e+39 1.5704e+39 -9.7201e+43
+1.1731e+06 5.7198e+43 1.6512e+39 1.5688e+39 -9.742e+43
+1.17374e+06 5.7219e+43 1.6492e+39 1.5671e+39 -9.7602e+43
+1.17439e+06 5.7242e+43 1.6472e+39 1.5654e+39 -9.7802e+43
+1.17504e+06 5.7265e+43 1.6453e+39 1.5637e+39 -9.7998e+43
+1.17569e+06 5.7289e+43 1.6434e+39 1.5621e+39 -9.8176e+43
