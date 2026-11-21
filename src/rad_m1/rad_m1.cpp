@@ -190,11 +190,25 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_pcr = pin->GetOrAddBoolean("rad_m1","clean_stag_pcr",true);
-    cln_opt = pin->GetOrAddBoolean("rad_m1","clean_stag_opac_update",false);
+    // clean_stag_opac_update (default on for a fresh spherical-polar run, off on the
+    // cubed sphere and Cartesian) and clean_face_opac (default harmonic on a fresh run),
+    // USER 11-21, recorded; a restart file without a key keeps the old default (echoed)
+    auto old = [&](const char *k, const char *v) {
+      if (!nw && !pin->DoesParameterExist("rad_m1", k)) {
+        recipe::Log(std::string("<rad_m1>/") + k + " = " + v + " (a restart file "
+                    "without the key: the old default)");
+      }
+    };
+    old("clean_stag_opac_update", "false");
+    old("clean_face_opac", "arith");
+    cln_opt = pin->GetOrAddBoolean("rad_m1","clean_stag_opac_update",
+                                   nw && pmy_pack->pmesh->use_spherical_polar &&
+                                   !pmy_pack->pmesh->use_cubed_sphere);
     // (old production implicit_opac_lag = pred, implicit_opac_lag_passes: the opacities
     // of passes 0 .. N-1, then frozen: a change of the discretisation, order 2 for N >= 2)
     cln_optn = pin->GetOrAddInteger("rad_m1","clean_stag_opac_passes",3);
-    {const std::string fo = pin->GetOrAddString("rad_m1","clean_face_opac","arith");
+    {const std::string fo = pin->GetOrAddString("rad_m1","clean_face_opac",
+                                                nw ? "harmonic" : "arith");
     if (fo != "arith" && fo != "harmonic") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_m1>/clean_face_opac = arith | harmonic"
