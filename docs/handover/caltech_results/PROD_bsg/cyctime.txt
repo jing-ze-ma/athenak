@@ -18,3 +18,5 @@ elapsed=3.244991e+03 cycle=7950 time=1.092818e+06 dt=8.304325e+01
 elapsed=3.460725e+03 cycle=8450 time=1.124761e+06 dt=6.200499e+01
 elapsed=3.669923e+03 cycle=8950 time=1.159962e+06 dt=8.014273e+01
 elapsed=3.897193e+03 cycle=9350 time=1.194800e+06 dt=9.491766e+01
+DT_RETRY recovered cycle=9559 t=1.213418e+06 cap 1.142947e+02 >= CFL dt 1.036923e+02: cap off
+DT_RETRY cycle=9912 t=1.247984e+06 dt 2.729678e+01 -> 1.364839e+01 reason=NON-CONVERGED resid=-1.000000e+00 cut 3
