@@ -216,13 +216,24 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_hface = (fo == "harmonic");}
-    // (clean_stag_fs_pcr: default on; it applies on a GPU, not on cs)
-    cln_fspcr = pin->GetOrAddBoolean("rad_m1","clean_stag_fs_pcr",true);
-    // clean_stag_fs_pcr_cs (read only when named, default off): also on the cubed sphere
-    // (with clean_stag_fschur), the x1 lines by PCR as on spherical polar
-    if (pin->DoesParameterExist("rad_m1","clean_stag_fs_pcr_cs")) {
-      cln_fspcs = pin->GetBoolean("rad_m1","clean_stag_fs_pcr_cs");
+    // clean_stag_fs_line = pcr | thomas: the F solve's x1 lines on a GPU, on every mesh
+    // (the cubed sphere: with clean_stag_fschur); default pcr, thomas on the cubed
+    // sphere; unnamed, the old keys clean_stag_fs_pcr (true) and, on the cubed sphere,
+    // clean_stag_fs_pcr_cs (false) as before
+    {const bool cs = pmy_pack->pmesh->use_cubed_sphere;
+    auto named = [&](const char *k, const bool d) {
+      return pin->DoesParameterExist("rad_m1", k) ? pin->GetBoolean("rad_m1", k) : d;
+    };
+    const bool pcr = named("clean_stag_fs_pcr", true) &&
+                     (!cs || named("clean_stag_fs_pcr_cs", false));
+    const std::string fl = pin->GetOrAddString("rad_m1","clean_stag_fs_line",
+                                               pcr ? "pcr" : "thomas");
+    if (fl != "pcr" && fl != "thomas") {
+      std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_fs_line = pcr | thomas"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
     }
+    cln_fspcr = (fl == "pcr");}
     cln_stall_n = pin->GetOrAddInteger("rad_m1","clean_bicg_stall_its",
                                       cln_linpass ? 0 : 50);
     cln_stall_f = pin->GetOrAddReal("rad_m1","clean_bicg_stall_fac",0.99);
@@ -273,6 +284,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     } else if (!ok && global_variable::my_rank == 0) {
       std::cout << "<rad_m1> clean_stag_fschur off: the F solve's line ends lagged "
                 << "(clean_stag_ftie, fsweeps, mesh or MeshBlock size)" << std::endl;
+    }
+    // (the cubed sphere without it iterates its seams: clean_stag_fsweeps default 64,
+    // its lines by Thomas)
+    if (cs && !cln_fschur && !pin->DoesParameterExist("rad_m1","clean_stag_fsweeps")) {
+      cln_fsweeps = 64;
+    }
+    if (cs && !cln_fschur && cln_fspcr && global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> clean_stag_fs_line = pcr: thomas on the cubed sphere "
+                << "without clean_stag_fschur" << std::endl;
     }}
     // the consistency term is the default on Cartesian meshes and, with the vet_gd
     // rays (sc), on spherical polar and the cubed sphere (well-balanced only with them)

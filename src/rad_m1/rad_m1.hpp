@@ -2802,8 +2802,7 @@ class RadiationM1 {
   bool cln_pcr = true;          // clean_stag_pcr: PC line solves by PCR on a GPU
   int cln_optn = 3;             // clean_stag_opac_passes: refreshed in passes < N
   bool cln_hface = false;       // clean_face_opac = harmonic: the x1 face chi
-  bool cln_fspcr = false;      // clean_stag_fs_pcr: F solve x1 lines by PCR on a GPU
-  bool cln_fspcs = false;      //   clean_stag_fs_pcr_cs: also on the cubed sphere
+  bool cln_fspcr = false;      // clean_stag_fs_line = pcr: F solve x1 lines on a GPU
   bool cln_stst = false;        // clean_stag_stencil: the operator's rows stored per pass
   DvceArray5D<Real> cln_st;     //   (CLN_ST per active cell, CleanPreconditionerSetup)
   //   (cubed sphere: CLN_CSY coefficients of the lateral sums)

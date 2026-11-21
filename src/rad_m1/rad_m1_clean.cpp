@@ -3972,8 +3972,8 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
   const int kd = (t2_solve == M1_T2S_NONE) ? 0 :
                  ((t2_solve == M1_T2S_STAGE1) ? CLF_KD + 1 : CLF_KD);
   const Real c1lo = cln_c0, c1hi = cln_c1;
-  // (the cubed sphere with clean_stag_fs_pcr_cs and fschur: its x1 lines, in panel, too)
-  const bool fpcr = cln_fspcr && (!cub || (cln_fspcs && cln_fschur)) &&
+  // (clean_stag_fs_line = pcr; the cubed sphere with fschur: its x1 lines, in panel)
+  const bool fpcr = cln_fspcr && (!cub || cln_fschur) &&
       !std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>;
   // (the F of every direction, CLW_Y, CLW_Z, CLW_S or cln_v: one exchange; part 1:
   // started, the last one, which x1's F and dissipation term overlap) (cubed sphere, one
@@ -3993,8 +3993,8 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
   // its own al and F, so that each exchange serves all of them (clean_stag_fsweeps N:
   // the line solves up to N times, each with the line ends' F of the last, so that the
   // lines converge across MeshBlock faces and the periodic wrap)
-  // (the cubed sphere without clean_stag_fschur iterates its seams: up to 64 sweeps)
-  const int nsw = (cub && !cln_fschur) ? 64 : std::max(cln_fsweeps, 1);
+  // (the cubed sphere without clean_stag_fschur iterates its seams: 64 by default)
+  const int nsw = std::max(cln_fsweeps, 1);
   const bool tie = cub ? cln_fschur : cln_ftie;
   const bool fov = !cub && nsw == 1;
   Real fsd = 0.0, fsf = 0.0;
