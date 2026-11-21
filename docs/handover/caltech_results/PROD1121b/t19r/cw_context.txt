@@ -138,3 +138,17 @@ CLEAN cycle 691 t2s 2 it -7 (sum 886) pos 0 mark 0 all 0 neg 0 r1 0 r2 20 first 
 CLEAN FLIM cycle 691 t2s 2 faces 25094441 momentum cut sum |dF| V/c^2 3.738894e+30
 CLEAN XT cycle 691 t2s 2 write-back closure 4.510e-02
 CLEAN WARNING cycle 691 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 20)
+== 2026-11-21 00:32:01 log.0: CW 21-22 (grep -B5)
+CLEAN FLIM cycle 699 t2s 2 faces 27806307 momentum cut sum |dF| V/c^2 2.765414e+30
+CLEAN FLIM cycle 699 t2s 2 faces 27806303 momentum cut sum |dF| V/c^2 2.765413e+30
+CLEAN cycle 699 t2s 2 it -6 (sum 920) pos 0 mark 0 all 0 neg 0 r1 0 r2 86 first 0 86 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 699 t2s 2 faces 27806303 momentum cut sum |dF| V/c^2 2.765413e+30
+CLEAN XT cycle 699 t2s 2 write-back closure 4.648e-02
+CLEAN WARNING cycle 699 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 21)
+
+CLEAN FLIM cycle 702 t2s 2 faces 25823594 momentum cut sum |dF| V/c^2 1.765552e+30
+CLEAN FLIM cycle 702 t2s 2 faces 25823596 momentum cut sum |dF| V/c^2 1.765553e+30
+CLEAN cycle 702 t2s 2 it -4 (sum 596) pos 0 mark 0 all 0 neg 0 r1 0 r2 47 first 0 47 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 702 t2s 2 faces 25823596 momentum cut sum |dF| V/c^2 1.765553e+30
+CLEAN XT cycle 702 t2s 2 write-back closure 2.621e-02
+CLEAN WARNING cycle 702 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 22)
