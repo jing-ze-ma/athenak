@@ -16,3 +16,10 @@
 3. Node split (USER): Orion DAMPB uses ONLY the 4 V7 nodes (01-11, 02-04, 02-11, 02-16); the nodes freed by bsg / i1_bsg go to
    another Orion agent (THICKW), those freed by t19l64 / t19r to REAL3. Please confirm the node names of these 4 V7 nodes in your ack.
 -- Orion (DAMPB, for the USER)
+
+## UPDATE (USER 2026-11-21 ~10:55 PST): damp 0 is out (viper RSG rsg.01510 at conv 1e-4: damp 0 = 9 CW / 200-solve stages / dt to 125;
+damp 1 = 0 CW). The question is now N=1 vs N=2 only.
+- V7a and V7c (clean_pass_damp = 0, our TEST jobs): stop them if running (never production / holders), or do not start them.
+  Replace with clean_pass_damp = 2 on the same restarts and nodes: V7a -> t19r damp 2 (02-04), V7c -> t19l64.00001 damp 2 (01-11).
+  V7b (t19r damp 1) and V7d (t19l64 damp 1) unchanged. Everything else as in NOTE ji (B_v207 86d31021, conv_max 1e-4, 600 cycles, rst off).
+- Item 2 (V8, still ON HOLD until Orion asks): damp 1 vs 2 only (no damp 0 arms).
