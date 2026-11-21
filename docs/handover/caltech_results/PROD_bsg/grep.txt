@@ -4,3 +4,35 @@
 34:<rad_m1> implicit_pos_floor_gas_keep=1: the E floor's raise leaves the gas at least that share of its eint
 58:<time> dt_retry on: fac 0.5 max 8 ngood 10 grow 1.25 views minimal cap -1
 97:<time> dt_retry checkpoint: 2423 members, 638 Views (11 copied, 1.317958e+03 MB on rank 0): hyd.u0 1.881789e+02 hyd.w0 1.881789e+02 hyd.wder 7.527155e+01 hyd.wtemp 3.763578e+01 m1.f0x1 3.777942e+01 m1.f0x2 3.791664e+01 m1.f0x3 3.791664e+01 m1.t2k1 3.010862e+02 m1.t2pf1 1.129073e+02 m1.u0 1.505431e+02 m1.opac 1.505431e+02
+49923:CLEAN WARNING cycle 9178 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+49924:CLEAN WARNING cycle 9178: backward-Euler solve not converged (dt_retry, 2 so far; last change 1.754e-01)
+49928:DT_RETRY cycle=9178 t=1.179485e+06 dt 9.453927e+01 -> 4.726963e+01 reason=NON-CONVERGED resid=-1.000000e+00 cut 1
+49932:CLEAN WARNING cycle 9178 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+50007:DT_RETRY recovered cycle=9191 t=1.180138e+06 cap 9.232350e+01 >= CFL dt 9.033903e+01: cap off
+50537:CLEAN WARNING cycle 9273 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+50792:CLEAN WARNING cycle 9314 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 3)
+51170:CLEAN WARNING cycle 9375 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 4)
+51278:CLEAN WARNING cycle 9393 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
+51866:CLEAN WARNING cycle 9487 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 6)
+52118:CLEAN WARNING cycle 9525 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 7)
+52134:CLEAN WARNING cycle 9528 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 8)
+52144:CLEAN WARNING cycle 9530 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 9)
+52160:CLEAN WARNING cycle 9533 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 10)
+52161:CLEAN WARNING cycle 9533: backward-Euler solve not converged (dt_retry, 11 so far; last change 5.031e-01)
+52165:DT_RETRY cycle=9533 t=1.212942e+06 dt 1.029475e+02 -> 5.147377e+01 reason=NON-CONVERGED resid=-1.000000e+00 cut 1
+52169:CLEAN WARNING cycle 9533 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 10)
+52170:CLEAN WARNING cycle 9533: backward-Euler solve not converged (dt_retry, 11 so far; last change 5.502e-07)
+52174:DT_RETRY cycle=9533 t=1.212942e+06 dt 5.147377e+01 -> 2.573689e+01 reason=NON-CONVERGED resid=-1.000000e+00 cut 2
+52178:CLEAN WARNING cycle 9533 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 10)
+52179:CLEAN WARNING cycle 9533: backward-Euler solve not converged (dt_retry, 11 so far; last change 1.786e-07)
+52183:DT_RETRY cycle=9533 t=1.212942e+06 dt 2.573689e+01 -> 1.286844e+01 reason=NON-CONVERGED resid=-1.000000e+00 cut 3
+52187:CLEAN WARNING cycle 9533 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 10)
+52188:CLEAN WARNING cycle 9533: backward-Euler solve not converged (dt_retry, 11 so far; last change 1.291e-07)
+52192:DT_RETRY cycle=9533 t=1.212942e+06 dt 1.286844e+01 -> 6.434221e+00 reason=NON-CONVERGED resid=-1.000000e+00 cut 4
+52196:CLEAN WARNING cycle 9533 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 10)
+52197:CLEAN WARNING cycle 9533: backward-Euler solve not converged (dt_retry, 11 so far; last change 7.230e-08)
+52201:DT_RETRY cycle=9533 t=1.212942e+06 dt 6.434221e+00 -> 3.217111e+00 reason=NON-CONVERGED resid=-1.000000e+00 cut 5
+52229:CLEAN WARNING cycle 9537 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 10)
+52360:DT_RETRY recovered cycle=9559 t=1.213418e+06 cap 1.142947e+02 >= CFL dt 1.036923e+02: cap off
+52750:CLEAN WARNING cycle 9618 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 11)
+52836:CLEAN WARNING cycle 9632 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 12)
