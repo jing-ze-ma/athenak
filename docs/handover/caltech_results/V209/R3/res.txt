@@ -1,0 +1,9 @@
+R3 (athena_wbl_6653fdef4 486e1ebd, hpc-sm-01-11): restart rsg.01295.rst (rsg_E_1020/prodH, our latest RSG rst), 150 cycles, keys v209/R3.keys
+rc: rc=137 wall=200 | cycles 589792-589837
+CW 0 FATAL 0
+retries/fallbacks: DT_RETRY lines 0, 'stage fallback' 1, backward-Euler redo lines 0
+solves/stage-pass: 3.9 mean / 6 max (n=98); stage-pass lines with >= 200 solves: 0
+dt range (cycle lines): 9.565217e+02 .. 9.565217e+02
+wall/cycle:  s
+pos_floor raise lines: 3 | 'XT write-back closure' lines: 0
+never-read: job/final_restart 
