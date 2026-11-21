@@ -34,9 +34,10 @@ drwxr-s---. 2 jingze hpc_carnegie_poc   4096 Nov 20 17:49 rst
 -rw-r-----. 1 jingze hpc_carnegie_poc 1610757418 Nov 20 17:59 t9l62.m1_vet.00002.bin
 35G	/resnick/groups/carnegie_poc/jingze/prod_fresh_1121/t9l62/bin
 == rst/
-total 52920307
-drwxr-s---. 2 jingze hpc_carnegie_poc        4096 Nov 20 17:49 .
+total 58159630
+drwxr-s---. 2 jingze hpc_carnegie_poc        4096 Nov 20 17:59 .
 drwxr-s---. 2 jingze hpc_carnegie_poc        4096 Nov 20 17:40 ..
 -rw-r-----. 1 jingze hpc_carnegie_poc 26202279621 Nov 20 17:40 t9l62.00000.rst
 -rw-r-----. 1 jingze hpc_carnegie_poc 27988113439 Nov 20 17:50 t9l62.00001.rst
+-rw-r-----. 1 jingze hpc_carnegie_poc 25383775199 Nov 20 17:59 t9l62.00002.rst
 2026-11-20 17:39:44 chunk 0 STAR=t9l62 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v203_e688cb7bc md5=7df2b64833e40a77e8a8a04e6dc900ee DECK=/resnick/groups/carnegie_poc/jingze/fresh_prod_1120/fg_v2/decks/t9l62_wngl_fresh.athinput md5=7935a398882e09ef1711cd8c11890e20 start=-i /resnick/groups/carnegie_poc/jingze/prod_fresh_1121/t9l62/deck.athinput WT=23:35:16 HOLDER=5840649 NODE=hpc-sm-02-11 EX=

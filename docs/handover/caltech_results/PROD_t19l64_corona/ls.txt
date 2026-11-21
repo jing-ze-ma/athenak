@@ -1,10 +1,10 @@
-total 475
+total 477
 drwxr-s---. 2 jingze hpc_carnegie_poc   4096 Nov 20 17:40 .
 drwxr-s---. 2 jingze hpc_carnegie_poc   4096 Nov 20 17:39 ..
 drwxr-s---. 2 jingze hpc_carnegie_poc   4096 Nov 20 17:59 bin
 -rw-r-----. 1 jingze hpc_carnegie_poc    441 Nov 20 17:39 chunks.txt
 -rw-r-----. 1 jingze hpc_carnegie_poc  20249 Nov 20 17:39 deck.athinput
--rw-r-----. 1 jingze hpc_carnegie_poc 361685 Nov 20 17:59 log.0
+-rw-r-----. 1 jingze hpc_carnegie_poc 364177 Nov 20 17:59 log.0
 -rw-r-----. 1 jingze hpc_carnegie_poc  50980 Nov 20 17:59 mem.log
 drwxr-s---. 2 jingze hpc_carnegie_poc   4096 Nov 20 17:40 rst
 -rw-r-----. 1 jingze hpc_carnegie_poc   2666 Nov 20 17:59 t19cor.hydro.hst
