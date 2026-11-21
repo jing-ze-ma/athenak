@@ -390,9 +390,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_stag_thinf_held (default off): the thin flux factor of a donor blended by the
-    // share of its E the rays carry, theta = min(1, max(J, P)/E_old), P its largest ray
-    // outflow: theta g(rays) + (1 - theta) h (its own half range)
+    // clean_stag_thinf_held (default off): the thin flux factor of a donor blended by
+    // theta = min(1, max(J, P)/(clean_ray_min E_old)), P its largest ray outflow:
+    // theta g(rays) + (1 - theta) h (its own half range); a ray-shadowed donor is no dam
     cln_thinh = cln_thinf && pin->GetOrAddBoolean("rad_m1","clean_stag_thinf_held",false);
     // clean_stag_xdonor = lag (default) | p1 | off: the off-diagonal stress flux an
     // M-matrix term (CleanStagXDonor); clean_stag_xsrc (default on): also the face
