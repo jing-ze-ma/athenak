@@ -2111,9 +2111,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_ipc_on = (std::atoi(std::getenv("VGD_IPC")) != 0);
       vgd_ipc_mode = std::atoi(std::getenv("VGD_IPC"));
     }
-    if (std::getenv("VGD_MERGE") != nullptr) {
-      vgd_merge = (std::atoi(std::getenv("VGD_MERGE")) != 0);
-    }
     if (std::getenv("VGD_IPC_LEAN") != nullptr) {
       vgd_ipc_lean = (std::atoi(std::getenv("VGD_IPC_LEAN")) != 0);
     }

@@ -5,7 +5,7 @@
 //========================================================================================
 //! \file rad_m1_memarena.cpp
 //! \brief memcut-1113 <rad_m1>/mem_arena: the vet_gd intensity arrays (VgdRag::d of
-//! vgd_i, vgd_i_xb, vgd_itw) and the implicit solve's scratch arrays that are dead across
+//! vgd_i, vgd_i_xb) and the implicit solve's scratch arrays that are dead across
 //! a VetGdBuild (ost, fmm_t, thw, vmw, thq, odc, d3w, krw, aa_*) share ONE device
 //! allocation.  The intensities are written and read only inside VetGdBuild (sweep,
 //! moments, half-range, ring); those solve arrays are re-written after every build before
@@ -104,7 +104,7 @@ void RadiationM1::MemArenaGrow(const int64_t need, const bool keep) {
   if (have > 0 && keep) {
     Kokkos::deep_copy(Kokkos::subview(nb, std::make_pair(int64_t(0), have)), marena);
   }
-  VgdRag *bound[3] = {&vgd_i, &vgd_itw, &vgd_i_xb};
+  VgdRag *bound[2] = {&vgd_i, &vgd_i_xb};
   for (VgdRag *b : bound) {
     if (have > 0 && b->d.data() != nullptr && b->d.data() >= o0 && b->d.data() < o1) {
       b->d = DvceArray1D<Real>(nb.data() + (b->d.data() - o0), b->d.extent(0));
@@ -222,7 +222,7 @@ void RadiationM1::MemcutPoison(const int where) {
   if (where == 2 || where == 3) {p5(cln_st, "clnst"); p5(cln_csy, "clnst");}
   if (where == 3) {
     if (EnvListHas("MEMCUT_POISON", "vgdc")) {
-      VgdRag *bound[3] = {&vgd_i, &vgd_itw, &vgd_i_xb};
+      VgdRag *bound[2] = {&vgd_i, &vgd_i_xb};
       for (VgdRag *b : bound) {
         if (b->d.data() != nullptr) {Kokkos::deep_copy(b->d, v);}
       }
@@ -242,7 +242,7 @@ void RadiationM1::MemcutPoison(const int where) {
     p5(aa_xp, "aa");
     p5(aa_fp, "aa");
   } else if (EnvListHas("MEMCUT_POISON", "vgd")) {
-    VgdRag *bound[3] = {&vgd_i, &vgd_itw, &vgd_i_xb};
+    VgdRag *bound[2] = {&vgd_i, &vgd_i_xb};
     for (VgdRag *b : bound) {
       if (b->d.data() != nullptr) {Kokkos::deep_copy(b->d, v);}
     }

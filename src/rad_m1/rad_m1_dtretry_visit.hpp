@@ -400,12 +400,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("hr_q", hr_q);
   v.view("vgd_hr", vgd_hr);
   v.view("vgd_hrt", vgd_hrt);
-  v.view("vgd_hrm", vgd_hrm);
   v.value("vgd_thx", vgd_thx);
-  v.value("vgd_hr_tw", vgd_hr_tw);
-  v.view("vgd_hrm6", vgd_hrm6);
-  v.view("vgd_pin_hr", vgd_pin_hr);
-  v.view("vgd_pin_tw", vgd_pin_tw);
   v.view("vgd_pin_cnt", vgd_pin_cnt);
   v.view("ifw2", ifw2);
   v.view("ifw3", ifw3);
@@ -1424,7 +1419,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("vra_bk_q", vra_bk_q);
   v.view("vra_bk_vc", vra_bk_vc);
   v.value("vgd_tbath", vgd_tbath);
-  v.value("vgd_tws", vgd_tws);
   v.value("vgd_base", vgd_base);
   v.view("vgd_dir", vgd_dir);
   v.value("vgd_i", vgd_i);
@@ -1467,12 +1461,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("vgd_map", vgd_map);
   v.view("vgd_mr", vgd_mr);
   v.value("vgd_wint", vgd_wint);
-  v.value("vgd_sw2", vgd_sw2);
-  v.view("vgd_cst", vgd_cst);
-  v.value("vgd_itw", vgd_itw);
-  v.view("vgd_csb2", vgd_csb2);
-  v.view("vgd_crb2", vgd_crb2);
-  v.view("vgd_rbuf2", vgd_rbuf2);
   v.value("vgd_lg", vgd_lg);
   v.view("vgd_m3", vgd_m3);
   v.view("vgd_w3", vgd_w3);
@@ -1733,9 +1721,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_gbol", vgd_gbol);
   v.value("vgd_cnan", vgd_cnan);
   v.value("vgd_ipc_tfs", vgd_ipc_tfs);
-  v.value("vgd_merge", vgd_merge);
-  v.view("vgd_csbm", vgd_csbm);
-  v.view("vgd_crbm", vgd_crbm);
   v.value("vgd_ipc_lean", vgd_ipc_lean);
   v.value("vgd_ipc_fz", vgd_ipc_fz);
   v.value("vgd_ipc_mode", vgd_ipc_mode);

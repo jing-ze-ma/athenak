@@ -4,17 +4,11 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_m1_vetgd_cs_shell.inc
-//! \brief d6fast4-1112: the cs shell kernel body of RadiationM1::VetGdCsSweep (moved
-//! verbatim from rad_m1_vetgd_cs.cpp), included there once as shell_ and, on CUDA, a
-//! second time as shellf_ with M1_VGDCS_SHELL_FAST defined: two = false is then a
-//! compile-time constant inside, so nvcc drops the fused-twin branches (the same
-//! arithmetic on every path taken).
+//! \brief d6fast4-1112: the cs shell kernel body of RadiationM1::VetGdCsSweep, included
+//! there as shell_ (the current set) and shellx_ (the next set of a fused cross-fade).
 //! Needs M1_VGDCS_SHELL_NAME defined.
       auto M1_VGDCS_SHELL_NAME = KOKKOS_LAMBDA(const int m, const int k, const int j,
                                                const int d, const bool cnt) {
-#if defined(M1_VGDCS_SHELL_FAST)
-        constexpr bool two = false;
-#endif
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
         const Real mr = mr_(m,k,j,d);
         if (inw == (mr >= 0.0)) {return;}
@@ -22,9 +16,8 @@
         const Real r = cx1v(m,i);
         const Real zr = r*fabs(mr);
         const Real p2 = fmax(r*r - zr*zr, 0.0);
-        // cstwin-1031: the geometry (branch, upwind shell, chord, stencil) of the cell
-        // and direction, then the value of field f (main; the fused twin's from vgd_cst
-        // / vgd_itw) by the same code as the unfused sweep
+        // the geometry (branch, upwind shell, chord, stencil) of the cell and direction,
+        // then its value
         // br: 0 the top shell's inflow, 1 the radial ray at the outward turn, 2 upwind
         const int br = (inw && l == n1 - 1) ? 0 : ((!inw && zr < 1.0e-12*r) ? 1 : 2);
         int typ = 1;
@@ -45,8 +38,7 @@
           xu[2] /= ru;
           const bool sok = VgdCsStencil(xu, bl_(m,0), bl_(m,1), bl_(m,2), wb, c2b, c3b,
                                         nc, h, cm_, nb_, st);
-          // (counted per field swept, as the unfused twin's own sweep)
-          if (!sok && cnt) {Kokkos::atomic_add(&cnt_(0), two ? 2.0 : 1.0);}
+          if (!sok && cnt) {Kokkos::atomic_add(&cnt_(0), 1.0);}
           if (st.n == 0) {   // nothing in the band (counted): the own column
             st.n = 1;
             st.k[0] = k;
@@ -64,9 +56,8 @@
             all = all && ok[e];
           }
         }
-        for (int f = 0; f < (two ? 2 : 1); ++f) {
-        const DvceArray5D<Real> &cv = (f == 0) ? cs_ : ct_;   // ln chi, ln S of field f
-        const VgdIView &va = (f == 0) ? vi_ : vt_;            // its intensities
+        const DvceArray5D<Real> &cv = cs_;   // ln chi, ln S
+        const VgdIView &va = vi_;            // the intensities
         const Real ch0 = exp(cv(m,0,k,j,i));
         const Real s0 = exp(cv(m,1,k,j,i));
         Real iv;
@@ -127,5 +118,4 @@
           }
         }
         va(m,d,k,j,i) = iv;
-        }   // f
       };

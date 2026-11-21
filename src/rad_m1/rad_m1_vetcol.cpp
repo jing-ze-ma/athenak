@@ -165,17 +165,13 @@ void RadiationM1::VetColReport() {
                 << ": subdivided steps (ALL ranks, all sweeps) " << vgd_npath << std::endl;
       {
         // accel-1009 ragged band: accesses outside a shell's slab (must be 0)
-        Real no = 0.0, nt = 0.0;
+        Real no = 0.0;
         if (vgd_i.oos.extent(0) > 0) {
           auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_i.oos);
           no = h(0);
         }
-        if (vgd_itw.oos.extent(0) > 0) {
-          auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_itw.oos);
-          nt = h(0);
-        }
-        std::cout << "<rad_m1> vet_gd ragged band (rank 0): out-of-slab accesses main "
-                  << no << " twin " << nt << std::endl;
+        std::cout << "<rad_m1> vet_gd ragged band (rank 0): out-of-slab accesses "
+                  << no << std::endl;
         if (vgd_ring) {
           std::cout << "<rad_m1> vet_gd_band_ring (rank 0): sweeps " << vgd_rg_nk
                     << ", dense band saves " << vgd_rg_ndense << ", save store "

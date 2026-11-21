@@ -1265,13 +1265,10 @@ class RadiationM1 {
   double hsf_ncell = 0.0, hsf_nsf = 0.0;   // cell-solves, of which Jh > J (rank 0)
   bool hr_q = false;            // the per-column outer q from h+_1 (vcol_q)
   DvceArray5D<Real> vgd_hr, vgd_hrt;   // (m, 6, k, j, i): r+_r r-_r r+_t r-_t r+_p r-_p
-  DvceArray1D<Real> vgd_hrm;           // shell mean of one twin component
   // gdthin-1011: with implicit_thin_switch = fs* or an implicit_thin_corr (vgd_thx) vgd_hr
   // carries M1_VGD_HRNX components: + C1 = sum w |I - S|/J, eps, J (E units)
   bool vgd_thx = false;
-  bool vgd_hr_tw = false;              // stage 0 of the fused twin: S from vgd_cst
-  DvceArray1D<Real> vgd_hrm6;          // vgdrot-1011: the 6 shell means at once
-  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> vgd_pin_hr, vgd_pin_tw, vgd_pin_cnt;
+  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> vgd_pin_cnt;
   DvceArray5D<Real> ifw2, ifw3;
   // the partitioned (gathered) line solve, LIMIT 4.  Every rank that owns a piece of a
   // column sends its (a,b,c,r) rows to the column's ROOT rank, which runs the identical
@@ -3584,7 +3581,6 @@ class RadiationM1 {
   // the inner boundary's own emission (flux: black sphere I = 4 F_in/c; marshak: the bath)
   // instead of the diffusion intensity
   bool vgd_tbath = false;   // vgdbath-1011: the top (x1max Marshak) bath enters the sweep
-  bool vgd_tws = false;        // the unfused twin's sweep is running (its inflow)
   std::vector<double> vgd_base;   // the unrotated set (x, y, z, w)
   DvceArray2D<Real> vgd_dir;   // (d, 0..3): n_x, n_y, n_z, weight (sum 1)
   // (m, d, k, j, i): intensities, ghosts lagged.  accel-1009: LayoutLeft (i slowest), so
@@ -3678,7 +3674,7 @@ class RadiationM1 {
   bool vgd_ring_act = false;          // the ring runs in this sweep
   bool vgd_ring_poison = false;       // env VGD_RING_POISON=1: NaN in lent slabs (test)
   bool vgd_rg_refill = false;         // vet_gd_band_ring_refill (vgd_raw): no save store
-  bool vgd_rg_two = false;            // this sweep carries vgd_itw too
+  bool vgd_rg_two = false;            // this sweep carries a second array (vgd_i_xb)
   bool vgd_rg_xb = false;             // xffuse-1113: ... the other xfade set's array
   std::vector<int64_t> vgd_rg_sn2;    // xffuse-1113: (i) the other set's saved count
   bool vgd_rg_lastx = false;          // the last halo used an exact list
@@ -3712,12 +3708,6 @@ class RadiationM1 {
   // vet_gd_wall_interp (read only when named, default false): wall ghosts from the 3
   // nearest same-branch directions with weights (m, k, j, d, 3)
   bool vgd_wint = false;
-  // the cubed-sphere sweep's second field (vgd_sw2: the old fused twin's arrays; never
-  // set since the twin was removed)
-  bool vgd_sw2 = false;
-  DvceArray5D<Real> vgd_cst;
-  VgdIView vgd_itw;
-  DvceArray1D<Real> vgd_csb2, vgd_crb2, vgd_rbuf2;
   VgdLG vgd_lg;   // layinv-1105: the vet_gd sweep geometry from the global index
   Kokkos::View<int *****, LayoutWrapper, DevMemSpace> vgd_m3;
   DvceArray5D<Real> vgd_w3;
@@ -3880,7 +3870,7 @@ class RadiationM1 {
   Kokkos::View<int *, LayoutWrapper, DevMemSpace> vgd_csmiss;   // reads not in the mask
   double vgd_csnbuild = 0.0, vgd_cstbuild = 0.0, vgd_csvsent = 0.0, vgd_csvdense = 0.0;
   void VetGdCsCompact();
-  void VetGdCsHaloC(const int pass, const int i, const bool two);
+  void VetGdCsHaloC(const int pass, const int i);
   bool VetGdCsHaloCX(const int pass, const int i, const int eb);   // vgdsched-1113
   // xchg-1021 vet_gd_cs_xgroups = G > 1: the sweep's directions in G contiguous groups,
   // each (shell, group) its own kernel and compact exchange, software-pipelined (the
@@ -3930,7 +3920,7 @@ class RadiationM1 {
   Kokkos::View<int **, LayoutWrapper, DevMemSpace> vgd_pbd;   // (ws, 2 (np+1))
   std::vector<double> vgd_r1v, vgd_r1f;
   template <class V>
-  bool VetGdHaloCompact(V &a, const int nv, const int i0, const int ws, V *b = nullptr);
+  bool VetGdHaloCompact(V &a, const int nv, const int i0, const int ws);
   // vet_gd_halo_list_mb (vgdspeed-1009; read only when named; default 4096, 0 = off):
   // MB budget per rank of the compact-halo LISTS per (pass, shell), built from the masks
   // at the first exchange of a mask set (direction set, cut, depth) and used by every
@@ -4122,8 +4112,6 @@ class RadiationM1 {
   const VgdGboL &VgdGboList(const int pass, const int d);
   bool vgd_cnan = false;   // vet_gd_halo_compact_nan: unsent band positions NaN (gate)
   bool vgd_ipc_tfs = false;
-  bool vgd_merge = true;         // bsgaccel-1011: env VGD_MERGE=0: twin in own messages
-  DvceArray1D<Real> vgd_csbm, vgd_crbm;   // bsgaccel-1011: merged send / receive
   bool vgd_ipc_lean = true;      // bsgaccel-1011: env VGD_IPC_LEAN=0: the ack kernel k1
   bool vgd_ipc_fz = true;        // spdb-1119 vet_gd_halo_ipc_fuse (m1_vgd_ipc_x / _xff)
   int vgd_ipc_mode = 1;          // env VGD_IPC=2: local pack + peer copies
@@ -4145,9 +4133,8 @@ class RadiationM1 {
                     const std::vector<int> &sp, const std::vector<int> &rp);
   // the pending list-path exchange of the overlap (VetGdHlBegin / VetGdHlEnd)
   struct VgdHlPend {
-    bool on = false, two = false, xe = false;   // xe: X is an exact (vgd_hxe) entry
+    bool on = false, xe = false;                // xe: X is an exact (vgd_hxe) entry
     bool ipc = false;                           // vgdrot-1011: the IPC path
-    bool mrg = false;                           // bsgaccel-1011: merged twin messages
     bool nccl = false;                          // accel-1014: NCCL (stream-ordered) path
     // spdb-1119 (CUDA IPC, lean): VetGdHalo's begin + end as ONE kernel (pack, flags,
     // wait, scatter; env VGD_IPC_FUSE=0: the three kernels).  now: the end follows the
@@ -4156,8 +4143,8 @@ class RadiationM1 {
     Kokkos::View<int, DevMemSpace> cnt;
     long long seq = 0;
     int ex = -1, px = 0, i = -1;
-    std::array<std::vector<int64_t>, 2> *gwa = nullptr, *gwb = nullptr;
-    VgdRag a, b;
+    std::array<std::vector<int64_t>, 2> *gwa = nullptr;
+    VgdRag a;
 #if MPI_PARALLEL_ENABLED
     std::vector<MPI_Request> req;
 #endif
@@ -4171,13 +4158,13 @@ class RadiationM1 {
   void *acc_ncomm = nullptr;    // ncclComm_t
   bool VgdNcclOn();
   template <class V>
-  bool VetGdHlBegin(V &a, const int nv, const int i0, const int ws, V *b);
+  bool VetGdHlBegin(V &a, const int nv, const int i0, const int ws);
   void VetGdHlEnd();
   std::vector<int> vgd_wsh;    // (i): band depth the shell's data needs (<= vgd_w)
   std::vector<int> vgd_wsi, vgd_wso;   // (i): the same per pass (inward, outward)
   template <class V>
   void VetGdHalo(V &a, const int nv, const int i0, const int i1, const int ws,
-                 const bool mapd, V *b = nullptr);
+                 const bool mapd);
   // mem-1014: the multi-shell (ln chi, ln S) halo in chunks of shells that fit the
   // per-shell message buffers (the same values; the buffers sized for one shell of all
   // directions instead of all shells of the 2 source fields)

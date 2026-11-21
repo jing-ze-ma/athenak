@@ -55,10 +55,8 @@
         const Real sp = tg_(m,k-ks,j-js,2), cp = tg_(m,k-ks,j-js,3);
         const Real mr = nx*st*cp + ny*st*sp + nz*ct;
         if (inw == (mr >= 0.0)) {return;}
-        // vet_gd_twin_fuse: the same ray for the shell-mean (twin) field in the same
-        // thread; one launch and one halo per shell for both sweeps
-        auto solve = [&](const DvceArray5D<Real> &csx, const VgdIView &vix,
-                         const bool twn) -> Real {
+        // the ray of direction d through cell (k, j, i) on source csx, intensities vix
+        auto solve = [&](const DvceArray5D<Real> &csx, const VgdIView &vix) -> Real {
           auto rd0 = [&](int kk, const int jj, const int ii, int dq) -> Real {
             // axisymmetric (nx3 = 1): a phi band column is the own column, direction
             // rotated by the column's phi offset (the wall map of its interior row; the
@@ -105,17 +103,13 @@
               const bool hi = (jj >= wb + nx2b);
               // vet_gd_theta_wall = vacuum (flag 3): no intensity beyond the wall;
               // extrap (4): the edge row's, same direction (zero gradient)
-              // (main field only: the twin keeps the periodic read, rd0 below)
-              if (wl_(m,kk,jj) == 3) {
-                if (!twn) {return 0.0;}
-                return rd0(kk,jj,ii,dq);
-              }
+              if (wl_(m,kk,jj) == 3) {return 0.0;}
               if (wl_(m,kk,jj) == 4) {
                 // the edge value only when it is of the ghost's branch (the one the
                 // stencil selected it for): a turned ray reads its own shell, whose
                 // other branch is being written by this launch; else the periodic read
                 const int je = hi ? (wb + nx2b - 1) : wb;
-                if (!twn && ((mr_(m,kk,je,dq) < 0.0) == (mr_(m,kk,jj,dq) < 0.0))) {
+                if ((mr_(m,kk,je,dq) < 0.0) == (mr_(m,kk,jj,dq) < 0.0)) {
                   return rd0(kk,je,ii,dq);
                 }
                 return rd0(kk,jj,ii,dq);
@@ -295,7 +289,7 @@
             const bool vlo = (thu < mt0), vhi = (thu > mt0 + mtl);
             const int jrw = static_cast<int>(fmin(fmax(floor(fjg + 0.5) - sj_, Real(jlo)),
                                                   Real(jhi + 1)));
-            if (!twn && typ != 2 && (vlo || vhi) && wl_(m,k,jrw) == 3) {
+            if (typ != 2 && (vlo || vhi) && wl_(m,k,jrw) == 3) {
               const bool hi = vhi;
               const Real thw = hi ? (mt0 + mtl) : mt0;
               // the row next to the wall (the block's own edge row with one MeshBlock in
@@ -688,6 +682,5 @@
           }
           return iv;
         };
-        vi_(m,d,k,j,i) = solve(cs_, vi_, tws);
-        if (gx && two) {vt_(m,d,k,j,i) = solve(ct_, vt_, true);}
+        vi_(m,d,k,j,i) = solve(cs_, vi_);
       };
