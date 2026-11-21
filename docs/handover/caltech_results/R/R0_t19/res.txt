@@ -24,3 +24,48 @@ b rc=0 wall=924
 restart from /resnick/groups/carnegie_poc/jingze/orion_runs_1121/R/R0_t19/b/rst/t19l64.00011.rst
 b rc=0 wall=871
 DONE
+
+== orion hg: never-read parameters (grep -A40 'never read', a/run.log)
+### WARNING: 14 input parameter(s) were never read by the code (typo, or a key AthenaK does not have?):
+###   mesh/cs_seam_blockend = extend
+###   mesh/cs_vertex_3cell = true
+###   mesh/cs_seam_rho_guard = 4
+###   hydro/wb_cache_every = 0
+###   rad_m1/time2_pred_cap = 0.5
+###   rad_m1/vet_gd_twin_lowmem = true
+###   problem/he_ic_rad_gas = column
+###   problem/he_ic_rad_hse = false
+###   problem/user_bcs = true
+###   problem/he_ic_balance_rmax = 2.004505e+12
+###   output1/dt = 3600.0
+###   output2/dt = 10800.0
+###   output3/dt = 10800.0
+###   output5/dt = 43200.0
+elapsed=7.926629e+01 cycle=1 time=3.835405e+01 dt=3.835426e+01
+CLEAN OLDVEC cycle 1 t2s 2 eint<0 34678659 (taken as 0) E<0 0
+CLEAN cycle 1 t2s 2 it 5 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 1 t2s 2 write-back closure 1.082e-02
+CLEAN OLDVEC cycle 1 t2s 3 eint<0 67543 (taken as 0) E<0 0
+CLEAN cycle 1 t2s 3 it 4 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 1 t2s 3 ledger 3.8058654123452826e+34
+CLEAN XT cycle 1 t2s 3 write-back closure 3.600e-03
+elapsed=8.124243e+01 cycle=2 time=7.670830e+01 dt=9.105499e+00
+### dt COLLAPSE cycle=2 time=76.7083 dtold=38.3543 dt=9.1055 | hydro=9.1055 mhd=-1 cond=-1 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (0,15,73,134) gid = 2
+    r=2.29961e+12 rho=5e-19 T=1.58651e+16 p=0.00793256 cs=1.6261e+08 v=(756942,7.28017e+07,-2.73646e+08)
+CLEAN OLDVEC cycle 2 t2s 2 eint<0 5177932 (taken as 0) E<0 0
+CLEAN cycle 2 t2s 2 it 1 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 2 t2s 2 write-back closure 4.306e-04
+CLEAN OLDVEC cycle 2 t2s 3 eint<0 92567 (taken as 0) E<0 0
+CLEAN cycle 2 t2s 3 it 2 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 2 t2s 3 ledger 5.0823401274179068e+34
+CLEAN XT cycle 2 t2s 3 write-back closure 2.074e-04
+elapsed=8.299261e+01 cycle=3 time=8.581380e+01 dt=5.462834e-01
+### dt COLLAPSE cycle=3 time=85.8138 dtold=9.1055 dt=0.546283 | hydro=0.546283 mhd=-1 cond=-1 visc=-1 srcterms=-1  (rank 3)
+    hydro dt is set by cell (m,k,j,i) = (1,88,124,139) gid = 7
+    r=2.3708e+12 rho=9.02893e-19 T=2.06717e+19 p=18.6644 cs=5.86966e+09 v=(2.99938e+08,6.11847e+06,1818.36)
+CLEAN OLDVEC cycle 3 t2s 2 eint<0 477680 (taken as 0) E<0 0
+CLEAN cycle 3 t2s 2 it 0 (sum 3) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3 t2s 2 write-back closure 4.054e-06
+== he_ic_balance lines (a/run.log)
+###   problem/he_ic_balance_rmax = 2.004505e+12
