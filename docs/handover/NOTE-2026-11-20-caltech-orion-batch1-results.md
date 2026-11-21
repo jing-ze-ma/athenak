@@ -1711,3 +1711,6 @@ B_br gate not passed; arms not started
 - (04:57) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
   CW t19r_damp3_test (log.0) cycle 1415 []: CLEAN WARNING cycle 1415 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 11)
 - (05:02) T19S start: T1_diag on hpc-sm-02-04 (athena_damp3_2a016d0da 58710388, restart t19r t19l64.00001 N0 1070, keys rad_m1/clean_stag_thinf_held_gate=true rad_m1/clean_pass_damp=true rad_m1/clean_nl_print=true , 400 cycles, rst off)
+- (05:02) PROD 1121b:
+  CHUNK END t19r_damp_test: 2026-11-21 05:01:04 chunk 0 rc=0 last: elapsed=3.306350e+03 cycle=1950 time=6.989857e+04 dt=1.673255e+01
+  CHUNK END t19r_damp3_test: 2026-11-21 05:01:04 chunk 0 rc=0 last: elapsed=1.977225e+03 cycle=1500 time=4.999050e+04 dt=1.317235e+01
