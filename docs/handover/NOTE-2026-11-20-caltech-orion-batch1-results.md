@@ -1075,3 +1075,4 @@ B_br gate not passed; arms not started
   CW t19r (log.0) cycle 1084 []: CLEAN WARNING cycle 1084 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 31)
 - (00:56) correction: the 00:55 C3h start did not run (my restart wrapper needs the rst cycle for a non-standard rst; it aborted at once, nothing ran); bogus result line removed. Restarting now with N0 = 1127 (t19l64.00001 at t = 43200: cycle 1100 is t 4.2175e4, dt 38.35).
 - (00:56) C3h start on 02-04 (B_c3h a97dd19c, restart from t19l64.00001.rst, keys c3h.keys = J4 keys + clean_stag_thinf_held_gate + clean_nl_print, 450 cycles (orion iw), rst off)
+- (00:57) C3h_t19 RUNNING on 02-04 (B_c3h a97dd19c, restart from t19l64.00001, N0 1127, 450 cycles, J4 keys + thinf_held_gate + nl_print, rst off): first cycle lines: cycle=1150 time=4.409307e+04 dt=3.834613e+01  | FATAL 0 | never-read: job/final_restart 
