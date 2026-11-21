@@ -1514,6 +1514,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       dtr_fail = true;
     }
     if (rt && dtr_t2be) dtr_t2hit = true;
+    if (cln_lzbook && cln_feedback && t2_solve == M1_T2S_STAGE2 && !t2_fail) {
+      CleanLzBook(0.0, false);   // (the accepted stage 2's L_z, pending until here)
+    }
   }
   // (K1 = f(U^n) for the next solve's predictor and time error: what an accepted
   // backward-Euler or stage-2 solve wrote; a failed one leaves none, the backward-Euler
@@ -4881,8 +4884,9 @@ void RadiationM1::CleanStagDrag(const bool first, const bool vel, const bool lat
 //! \brief clean_cs_lz_abs = 2: books the cells' sum s of the L_z the gas did not take (of
 //! a write-back, or with start of the stage start's increment) as the gas momentum it
 //! belongs to enters the step: a stage-1 part with the weight of the stage-1 state in the
-//! stage-2 start (Heun 1/2) and the stage-2 start pending until the stage-2 write-back (a
-//! backward-Euler redo from U^n drops them); the total and K1's sum in <rad_m1> (restart).
+//! stage-2 start (Heun 1/2), the stage-2 start and write-back pending until the solve
+//! accepts stage 2 (s = 0; a backward-Euler redo from U^n drops them, Time2Restore); the
+//! total and K1's sum in <rad_m1> (restart).
 //! 3-D spherical polar: s is the L_z that crossed the boundaries (CleanStagMomentum's dlz),
 //! <rad_m1>/clean_sp_lz_bnd
 
@@ -4895,7 +4899,7 @@ void RadiationM1::CleanLzBook(const Real s, const bool start) {
     cln_lzp += s;
     return;
   }
-  cln_lzl += ((t2_solve == M1_T2S_STAGE2) ? cln_lzp : 0.0) + s;
+  cln_lzl += (t2_solve == M1_T2S_STAGE2) ? cln_lzp : cln_lzp + s;
   cln_lzp = 0.0;
   const bool cs = (cln_lza == 2);
   cln_lzpin->SetReal("rad_m1", cs ? "clean_cs_lz_ledger" : "clean_sp_lz_bnd", cln_lzl);
@@ -5417,7 +5421,7 @@ void RadiationM1::CleanWriteBack() {
   if (lzb) {   // (the L_z ledger: the stage's L_z as its slope, then booked)
     const Real s = CleanSumCells(lzw);
     if (slopes) (t2_solve == M1_T2S_STAGE1 ? cln_lzs2 : cln_lzs1) = s/h;
-    CleanLzBook(s, false);
+    CleanLzBook(s, t2_solve == M1_T2S_STAGE2);
   }
   if (cls) {   // (xt_exact / kpos: the stage's closure |dE + de + dK + h div Phi|
                //  over E + E_old + eint, max over the cells)
