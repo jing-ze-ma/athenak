@@ -1,0 +1,38 @@
+== 2026-11-20 22:21:04 J3_t9
+last cycle line: cycle=74 time=7.167099e+03 dt=9.685219e+01
+user.hst last row: t 7.2639512845945492e+03 KE_int 7.0588392085662896e+38 L_bot/L_in 0.9239 L_top/L_in 0.9925
+CW 0 FATAL 0
+-- CLEAN FLIM lines (last 5 of 535)
+CLEAN FLIM cycle 73 t2s 2 faces 10371436 momentum cut sum |dF| V/c^2 8.544940e+29
+CLEAN FLIM cycle 73 t2s 2 faces 10371436 momentum cut sum |dF| V/c^2 8.544940e+29
+CLEAN FLIM cycle 73 t2s 3 faces 8440067 momentum cut sum |dF| V/c^2 6.196734e+29
+CLEAN FLIM cycle 73 t2s 3 faces 8444032 momentum cut sum |dF| V/c^2 6.202154e+29
+CLEAN FLIM cycle 73 t2s 3 faces 8444032 momentum cut sum |dF| V/c^2 6.202154e+29
+-- floorcap lines (last 5 of 6)
+<rad_m1> floorcap cycle 0 (cumulative, all calls): n_v 0.000000e+00 n_t 3.969701e+07 dKE 0.000000e+00 dEint 2.324588e+29 (erg, to E_rad) momentum removed |dp| 0.000000e+00 dL_z 0.000000e+00
+<rad_m1> floorcap cycle 25 (cumulative, all calls): n_v 0.000000e+00 n_t 1.317301e+09 dKE 0.000000e+00 dEint 8.331174e+33 (erg, to E_rad) momentum removed |dp| 0.000000e+00 dL_z 0.000000e+00
+<rad_m1> floorcap cycle 25 (cumulative, all calls): n_v 0.000000e+00 n_t 1.338168e+09 dKE 0.000000e+00 dEint 8.346266e+33 (erg, to E_rad) momentum removed |dp| 0.000000e+00 dL_z 0.000000e+00
+<rad_m1> floorcap cycle 50 (cumulative, all calls): n_v 0.000000e+00 n_t 2.395888e+09 dKE 0.000000e+00 dEint 9.404154e+33 (erg, to E_rad) momentum removed |dp| 0.000000e+00 dL_z 0.000000e+00
+<rad_m1> floorcap cycle 50 (cumulative, all calls): n_v 0.000000e+00 n_t 2.416601e+09 dKE 0.000000e+00 dEint 9.420286e+33 (erg, to E_rad) momentum removed |dp| 0.000000e+00 dL_z 0.000000e+00
+-- never-read
+### WARNING: 14 input parameter(s) were never read by the code (typo, or a key AthenaK does not have?):
+###   mesh/cs_seam_blockend = extend
+###   mesh/cs_vertex_3cell = true
+###   mesh/cs_seam_rho_guard = 4
+###   hydro/wb_cache_every = 0
+###   rad_m1/time2_pred_cap = 0.5
+###   rad_m1/vet_gd_twin_lowmem = true
+###   problem/he_ic_rad_gas = column
+###   problem/he_ic_rad_hse = false
+###   problem/user_bcs = true
+###   problem/he_ic_balance_rmax = 6.003432e+12
+###   output1/dt = 3600.0
+###   output2/dt = 10800.0
+###   output3/dt = 10800.0
+###   output5/dt = 43200.0
+elapsed=5.663036e+01 cycle=1 time=9.685234e+01 dt=9.685235e+01
+CLEAN OLDVEC cycle 1 t2s 2 eint<0 1077542 (taken as 0) E<0 0
+CLEAN FLIM cycle 1 t2s 2 faces 26141744 momentum cut sum |dF| V/c^2 5.006691e+31
+CLEAN FLIM cycle 1 t2s 2 faces 25388178 momentum cut sum |dF| V/c^2 4.979899e+31
+CLEAN cycle 1 t2s 2 it 5 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN FLIM cycle 1 t2s 2 faces 25388178 momentum cut sum |dF| V/c^2 4.979899e+31
