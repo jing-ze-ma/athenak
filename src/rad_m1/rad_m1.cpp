@@ -308,14 +308,22 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_stag_thinf (default on): the staggered bracket's ray correction in the face
     // half ranges, realisable (CleanStagBracket), not as the gated lagged flux DG
     cln_thinf = pin->GetOrAddBoolean("rad_m1","clean_stag_thinf",nw);
-    // clean_stag_flim (default off): the F solve's face F^H and solution F within the
-    // donor's realisable range [-c E_R, c E_L] (CleanStagFSolve); every mesh: the face F is
-    // the momentum along the face's unit normal (the cubed sphere's too, CleanCsNormA)
+    // clean_stag_flim (default off): a face F^H above its donor's c E dissipated in the
+    // stress (conservative), the solution F within 5/4 of [-c E_R, c E_L], the cut booked
+    // (CleanStagFSolve); every mesh: the face F is the momentum along the face's unit
+    // normal (the cubed sphere's too, CleanCsNormA)
     cln_flim = stag("clean_stag_flim", false);
     // clean_stag_thinf_held (default off): the thin flux factor of a donor blended by
     // theta = min(1, max(J, P)/(clean_ray_min E_old)), P its largest ray outflow:
     // theta g(rays) + (1 - theta) h (its own half range); a ray-shadowed donor is no dam
     cln_thinh = cln_thinf && pin->GetOrAddBoolean("rad_m1","clean_stag_thinf_held",false);
+    // clean_stag_xdonor_freeze (default 0 = off): from this pass of a solve on, the xdonor
+    // cross flux C is held (CleanStagXDonor): its donor side and cap no longer switch
+    // from pass to pass (HG C2D: a 1-cell donor/cap flip, period-2 passes at 2e-4)
+    cln_xdfz = pin->GetOrAddInteger("rad_m1","clean_stag_xdonor_freeze",0);
+    // clean_stag_thinf_held_gate (default off): theta of clean_stag_thinf_held times the
+    // old production's quasi-steadiness gate r^2, r = min(E_old/H, H/E_old), H = max(J, P)
+    cln_thhg = cln_thinh && pin->GetOrAddBoolean("rad_m1","clean_stag_thinf_held_gate",false);
     // clean_stag_xdonor = lag (default) | p1 | off: the off-diagonal stress flux an
     // M-matrix term (CleanStagXDonor); clean_stag_xsrc (default on): also the face
     // sources past their explicit share; clean_stag_xsweep (default off): a monotone
@@ -353,6 +361,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_kpos = (cln_kmode > 0);
     }
     cln_kreal = stag("clean_stag_kreal", false);
+    cln_colf = stag("clean_stag_colflux", false);
     // clean_cs_lz_abs = 2 (the cubed sphere, the only form): the gas phi momentum is
     // the faces' absorption as its r and theta (CleanStagMomentum), and the L_z it does
     // not take is booked as the radiation's (CleanLzBook), so that the total stays

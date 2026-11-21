@@ -1146,6 +1146,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (cln_ring == 2) CleanRingSolveSet();
   CleanWoBind();
   CleanStagKReal();   // (clean_stag_kreal: the kick E can pay, the rest deferred)
+  cln_xdh = false;   // (clean_stag_xdonor_freeze: no hold before this solve's passes)
   CleanOldVector();
   CleanStagKPos();   // (clean_stag_kpos: the increment in Patankar form)
   CleanFaceCoefficients();
@@ -1217,7 +1218,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       }
       // (clean_stag_xdonor: q of the iterate; CLW_L holds E_k's lateral sums, those of
       // the velocity update, but where the closure moved D or the bracket took CLW_L)
-      if (inl > 0) CleanStagXDonor(false, clos || !cln_feedback);
+      if (inl > 0) CleanStagXDonor(false, clos || !cln_feedback,
+                                   cln_xdfz > 0 && inl >= cln_xdfz);
       // (after the xdonor: the lateral sums of E_k are its, CleanStagXDonor)
       CleanRightHandSide(false, !(inl > 0 && cln_xd_on));
       // (clean_stag_sbimp: the first iterate's T in exchange with E_k and the beta
@@ -1712,7 +1714,7 @@ void RadiationM1::CleanOldVector() {
 //! takes d/(1 - l), the fixed point of that mode (half the change for l = -1); C is
 //! unchanged at the fixed point.  first: the first iterate of a solve, no history.
 
-void RadiationM1::CleanStagXDonor(const bool first, const bool lat) {
+void RadiationM1::CleanStagXDonor(const bool first, const bool lat, const bool hold) {
   if (!cln_xd || !pmy_pack->pmesh->multi_d) return;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -1722,6 +1724,10 @@ void RadiationM1::CleanStagXDonor(const bool first, const bool lat) {
   CleanGhostDefer(cln_w, CLW_EK, 1);   // (one exchange)
   CleanGhostFill(cln_w, CLW_EO, 1);   // (the donors' E_old of the lag split)
   if (lat) CleanStagCsLateral(CLW_EK);
+  // (hold, clean_stag_xdonor_freeze: C and the right-hand side's split of it, its q and
+  // explicit part, kept as the last pass set them: donor and cap no longer switch)
+  cln_xdh = hold;
+  if (hold) {cln_xd_on = true; return;}
   CleanArgs x = CleanMakeArgs();   // (x.xq = -1: the central cross flux)
   const int xq = cln_xqs;
   for (int dir = 0; dir < x.nf; ++dir) {
@@ -2635,13 +2641,13 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
   const CleanArgs *pxr = CleanDevArgs(xr, 3);
   // each face's source once, for its two cells (CLF_SR), and with gflux its a E (CLF_PT)
   const int nf = x.nf;
-  const bool af = x.feedback && x.gf && !x.cub;
+  const bool af = x.feedback && x.gf && !x.cub, xsp = (x.xq >= 0) && !cln_xdh;
   CleanFor<4>("cln_rhsaf", nmb1, ks, ke+(nf > 2), js, je+(nf > 1), is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
     for (int n = 0; n < nf; ++n) {
       if (i > ie+(n == 0) || j > je+(n == 1) || k > ke+(n == 2)) continue;
-      if (x.xq >= 0) CleanStagXSplit(x, *pxr, n, m, k, j, i);
+      if (xsp) CleanStagXSplit(x, *pxr, n, m, k, j, i);
       x.fc[n](m,CLF_SR,k,j,i) = CleanFaceSource(x, n, m, k, j, i);
       if (fh) x.fc[n](m,CLF_N,k,j,i) = CleanFaceFlux(xh, CLW_EK, n, m, k, j, i, true);
       if (af) x.fc[n](m,CLF_PT,k,j,i) = CleanStagAdvFace(x, xh, n, m, k, j, i);
@@ -3297,7 +3303,7 @@ void RadiationM1::CleanStagBracket() {
   // cell in CLW_V, a Krylov scratch slot, P the largest rays' flux out of one of its
   // faces: 1 where the rays carry the cell (as its closure, a beam's transit cell
   // included), down to 0 where they hold less than clean_ray_min of its E)
-  const bool thh = cln_thinh;
+  const bool thh = cln_thinh, thg = cln_thhg;
   if (thh) {
     CleanFor("cln_thheld", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -3310,7 +3316,17 @@ void RadiationM1::CleanStagBracket() {
         p = fmax(p, fmax(fh, -x.cs(m,n,k,j,i)));
       }
       const Real e = rmn*x.w(m,CLW_EO,k,j,i), h = fmax(x.cs(m,CLN_JR,k,j,i), p);
-      x.w(m,CLW_V,k,j,i) = (e > h) ? h/e : 1.0;
+      // (clean_stag_thinf_held_gate: times r^2, r = E_old/H where the rays bring more than
+      // the cell holds, H = max(J, P) > E_old (the old production's quasi-steadiness gate,
+      // on the front side only): a dark floor cell a beam just hit moves with its own half
+      // range; a cell the rays under-fill keeps C1's theta)
+      // weighted by the cell's absorption depth over the stage, tau_a = h c kappa_P: where
+      // the gas takes the radiation within the stage the step-start rays do not predict
+      // the cell being filled; a free-streaming front (tau_a ~ 0, a beam) keeps C1's theta)
+      const Real eo = fmax(x.w(m,CLW_EO,k,j,i), 0.0);
+      const Real r = (thg && h > eo) ? eo/h : 1.0;
+      const Real ta = thg ? fmin(x.h*x.c*x.op(m,M1_OP_P,k,j,i), 1.0) : 0.0;
+      x.w(m,CLW_V,k,j,i) = ((e > h) ? h/e : 1.0)*(1.0 - (1.0 - r*r)*ta);
     });
     CleanGhostFill(cln_w, CLW_V, 1);
     CleanStagCsLateral(CLW_V);
@@ -3701,7 +3717,8 @@ void CleanStagFJoin(const Real p[8], const Real q[8], Real c[8], Real ya[3],
 //!     - h c (al_L F_{f-1} + al_R F_{f+1})/(2 dx_f)
 //!     = F^H/theta,
 //! al_i = max(A(tau_i)^2, w of its faces), 1 where a face of the cell has
-//! |F^H| > c E_donor.  al = 0 gives F^H (a face with al_L = al_R = 0 keeps it exactly).
+//! |F^H| > c E_donor (with fkin only under clean_stag_flim: al on the (1 - w) share).
+//! al = 0 gives F^H (a face with al_L = al_R = 0 keeps it exactly).
 //! The lines along each direction are tridiagonal (Thomas per MeshBlock line; the end
 //! faces next to other MeshBlocks or a periodic wrap take the neighbours' F lagged,
 //! iterated with the ghost exchange).  CLF_N holds F, CLF_N + 1 the dissipation term
@@ -3792,16 +3809,6 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
         const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
         fc(m,CLF_N,k,j,i) = CleanFaceFlux(xh, e, dir, m, k, j, i, true);
         fc(m,CLF_PT,k,j,i) = fc(m,CLF_N,k,j,i);   // (F^H for CleanStagDrag; QL is free)
-        // (clean_stag_flim: F^H within [-c E_R, c E_L], the transport's thin limit: the
-        // stress drive h c^2 [P_R - P_L]/dx_f only up to c E_donor.  A ray D at odds with
-        // the moment F (its lateral curl) drove a floor-gas face, chi ~ 1e-19, to
-        // -(c/chi) [P], |F| ~ 2e4 c E, T19HOT.  CLF_PT keeps the unlimited F^H until fs3,
-        // which books the cut so that the gas takes only the absorption of the limited F)
-        if (flm && !CleanBoundaryFace(x, dir, m, k, j, i)) {
-          const Real f = fc(m,CLF_N,k,j,i);
-          fc(m,CLF_N,k,j,i) = fmin(fmax(f, -x.c*fmax(x.w(m,e,k,j,i), 0.0)),
-                                   x.c*fmax(x.w(m,e,k-dk,j-dj,i-di), 0.0));
-        }
         fc(m,CLF_N+1,k,j,i) = 0.0;
         if (!fk || !x.sph || dir == 2 || CleanBoundaryFace(x, dir, m, k, j, i)) return;
         // (spherical polar: the w share's transverse pressures, the curvature of D E but
@@ -3831,7 +3838,9 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
           if (!fk) a = fmax(a, fc(m,CLF_W,kf,jf,iff));
           const Real f = fc(m,CLF_N,kf,jf,iff);
           const Real ed = (f > 0.0) ? x.w(m,e,kf-dk,jf-dj,iff-di) : x.w(m,e,kf,jf,iff);
-          if (!fk && !CleanBoundaryFace(x, dir, m, kf, jf, iff) &&
+          // (clean_stag_flim with fkin: the dissipation of a face's excess over its
+          // donor's c E, a stress, telescopes: momentum and L_z exact)
+          if ((!fk || flm) && !CleanBoundaryFace(x, dir, m, kf, jf, iff) &&
               !(fabs(f) <= (1.0 + 1.0e-12)*x.c*fmax(ed, 0.0))) a = 1.0;
           // (the cubed sphere's faces: the last F solve's)
           if (cub) v(m,9+2*dir+s,k,j,i) = fc(m,CLF_N+2,kf,jf,iff);
@@ -4070,29 +4079,22 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
         const Real f = cub ? fc(m,CLF_N+2,k,j,i) : x.w(m,CleanFLine::Cy(dir),k,j,i);
         fc(m,CLF_N+2,k,j,i) = fc(m,CLF_N,k,j,i);   // (F^H: the boundary's, kept)
         if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
-        // (clean_stag_flim: the cut dF = F^H - F^H_lim moved F's equation by -dF/theta;
-        // the gas term (F - G)/c^2 + h div P - h CLF_N+1 then takes h chi (F - A)/c of the
-        // limited F, the absorption, and not the cut: CLF_N+1 -= dF/(theta h c^2).  The
-        // radiation momentum V_f dF/(theta c^2) leaves the total: counted and printed.
-        // E and the gas energy stay exact (flux form; the work is that of the gas term))
-        if (flm) {
-          const Real df = fc(m,CLF_PT,k,j,i) - fc(m,CLF_N,k,j,i);
-          if (df != 0.0) {
-            const Real it = 1.0/fc(m,CLF_TH,k,j,i);
-            fc(m,CLF_N+1,k,j,i) -= df*it/(x.h*x.c*x.c);
-            fc(m,CLF_PT,k,j,i) = fc(m,CLF_N,k,j,i);
-            Kokkos::atomic_add(&flc(0), 1.0);
-            Kokkos::atomic_add(&flc(1), fabs(df)*it*0.5*(CleanVol(x, m, k, j, i) +
-                               CleanVol(x, m, k-dk, j-dj, i-di))/(x.c*x.c));
-          }
-        }
-        // (flim: the solution F, whose lines mix the neighbours' bounds, within the same
-        // range, booked as above; the kinetic stress below keeps the solution's f, of
-        // the equation it satisfied, so the gas term is again the absorption of fs)
+        // (clean_stag_flim: the solution F within 5/4 of its donor's realisable range,
+        // [-c E_R, c E_L]: in floor gas, chi ~ 1e-19, the lateral curl of a ray D at odds
+        // with the moment F drives F secularly, only chi damps it (|F| ~ 2e4 c E,
+        // T19HOT), and the dissipation above, on the (1 - w) share, does not reach it.
+        // The 1/4 is the bound's own discretisation (a face against its donor's mean E;
+        // free streaming in fs: up to 0.12): a resolved or streaming flow keeps its F.
+        // The cut f - fs moved F's equation by -(f - fs)/theta; the gas term
+        // (F - G)/c^2 + h div P - h CLF_N+1 then takes h chi (F - A)/c of fs, the
+        // absorption of the realisable flux, not the cut: CLF_N+1 -= (f - fs)/(theta h
+        // c^2).  Its radiation momentum leaves the total: counted and printed.  E and
+        // the gas energy stay exact (flux form; the work is that of the gas term).  The
+        // kinetic stress below keeps the solution's f, of the equation it satisfied)
         Real fs = f;
         if (flm) {
-          fs = fmin(fmax(f, -x.c*fmax(x.w(m,e,k,j,i), 0.0)),
-                    x.c*fmax(x.w(m,e,k-dk,j-dj,i-di), 0.0));
+          fs = fmin(fmax(f, -1.25*x.c*fmax(x.w(m,e,k,j,i), 0.0)),
+                    1.25*x.c*fmax(x.w(m,e,k-dk,j-dj,i-di), 0.0));
           if (fs != f) {
             const Real it = 1.0/fc(m,CLF_TH,k,j,i);
             fc(m,CLF_N+1,k,j,i) -= (f - fs)*it/(x.h*x.c*x.c);
@@ -5272,7 +5274,10 @@ void RadiationM1::CleanWriteBack() {
   cln_kpb = false;
   // (implicit_pos_floor_cons, the old production's column pass: the uncovered raise of a
   // cell from the radiation above e_floor of the nearest cells of its radial column, i -+
-  // d, the pair split by their energy above the floor; their stage slopes with it)
+  // d, the pair split by their energy above the floor; their stage slopes with it.
+  // clean_stag_colflux: the stored Phi carries each move as x1 face fluxes from q to i,
+  // so the slopes stay -div Phi + their cell pairs and time2_face_fct limits the moves)
+  const bool pfk = pfo && cln_colf;
   if (pfc) {
     par_for("cln_pos_flr_cons", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
@@ -5297,6 +5302,10 @@ void RadiationM1::CleanWriteBack() {
             const Real de = (tk*a/at)/vol(q);
             u0_(m,M1_E,k,j,q) = fmax(u0_(m,M1_E,k,j,q) - de, efl);
             if (slopes) kk(m,M1_T2_E,k,j,q) -= de/h;
+            for (int f = (sd ? i + 1 : qa + 1); pfk && f <= (sd ? qb : i); ++f) {
+              pf(m,0,k,j,f) += (sd ? -1.0 : 1.0)*de*vol(q)/
+                               (h*CleanDivW(x, 0, m, k, j, f, 0)*vol(f));
+            }
           }
           def -= tk;
           mv += tk;
@@ -5326,6 +5335,10 @@ void RadiationM1::CleanWriteBack() {
             const Real de = (tk*a/at)/vol(q);
             u0_(m,M1_E,k,j,q) = fmax(u0_(m,M1_E,k,j,q) - de, efl);
             if (slopes) kk(m,M1_T2_E,k,j,q) -= de/h;
+            for (int f = (sd ? i + 1 : qa + 1); pfk && f <= (sd ? qb : i); ++f) {
+              pf(m,0,k,j,f) += (sd ? -1.0 : 1.0)*de*vol(q)/
+                               (h*CleanDivW(x, 0, m, k, j, f, 0)*vol(f));
+            }
           }
           const Real dg = tk/vol(i);
           uh(m,IEN,k,j,i) += dg;
