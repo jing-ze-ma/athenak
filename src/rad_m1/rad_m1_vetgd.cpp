@@ -1032,6 +1032,21 @@ void RadiationM1::VetGdInit() {
     }
   }
   if (vgd_n > M1_VGD_NMAX) {VgdFatal("too many directions");}
+  if (vgd_rot_mir) {   // rotwb2-1121: the set must be its own mirror image (y -> -y)
+    if (vgd_rot3 || !vra_ema) {
+      VgdFatal("vet_gd_rotate_mirror needs vet_rotate_avg_ema and the z axis");
+    }
+    for (int q = 0; q < vgd_n; ++q) {
+      const double *u = &vgd_base[4*q];
+      bool hit = false;
+      for (int r = 0; r < vgd_n && !hit; ++r) {
+        const double *v = &vgd_base[4*r];
+        hit = std::fabs(u[0] - v[0]) + std::fabs(u[1] + v[1]) + std::fabs(u[2] - v[2]) +
+              std::fabs(u[3] - v[3]) < 1.0e-12;
+      }
+      if (!hit) {VgdFatal("vet_gd_rotate_mirror: the set is not symmetric in y -> -y");}
+    }
+  }
   const int n = vgd_n;
   Kokkos::realloc(vgd_dir, n, 4);
   Kokkos::realloc(vgd_x1b, nmb, std::max(n, 4)*indcs.nx3*indcs.nx2);
@@ -1426,6 +1441,10 @@ void RadiationM1::VetRotInit(ParameterInput *pin) {
         VgdFatal("vet_gd_rotate_seq must be r3 or random");
       }
     }
+    // rotwb2-1121 vet_gd_rotate_mirror (read only when named; checked in VetGdInit)
+    if (pin->DoesParameterExist("rad_m1","vet_gd_rotate_mirror")) {
+      vgd_rot_mir = pin->GetBoolean("rad_m1","vet_gd_rotate_mirror");
+    }
   }
 }
 
@@ -1457,11 +1476,17 @@ Real RadiationM1::VetGdAngleBlk(const int64_t blk) const {
       const int64_t z = (blk >= 0) ? 2*blk : (-2*blk - 1);
       return static_cast<Real>(z);
     }
+    // rotwb2-1121 vet_gd_rotate_mirror: the blocks 2k - 1 and 2k turn by -a_k and +a_k,
+    // mirror images under y -> -y (the set is), so the average is achiral in phi
     const double per = vgd_zper;
-    if (vgd_rot_rand) {return static_cast<Real>(per*VgdRotU(vgd_rot_seed, blk, 0));}
-    const double b = static_cast<double>(blk);
+    const int64_t kb = vgd_rot_mir ? static_cast<int64_t>(std::floor(0.5*(blk + 1.0)))
+                                   : blk;
+    const double b = static_cast<double>(kb);
     const double g = 0.5*(std::sqrt(5.0) - 1.0);
-    return static_cast<Real>(per*(b*g - std::floor(b*g)));
+    double a = vgd_rot_rand ? per*VgdRotU(vgd_rot_seed, kb, 0)
+                            : per*(b*g - std::floor(b*g));
+    if (vgd_rot_mir && (blk & 1) && a > 0.0) a = per - a;
+    return static_cast<Real>(a);
   }
   if (vgd_rot3) {
     int64_t r = blk;

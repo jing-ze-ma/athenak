@@ -3446,6 +3446,7 @@ class RadiationM1 {
   bool vra_ema = false;
   Real vra_ema_n = 0.0, vra_ema_tau = 0.0, vra_ema_lc = 0.0;
   bool vgd_rot_rand = false;
+  bool vgd_rot_mir = false;   // rotwb2-1121 vet_gd_rotate_mirror (VetGdAngleBlk)
   int64_t vgd_rot_seed = 0;
   void RotAvgEmaInit(const int ilo);
   void RotAvgEmaShift(const int ds);
