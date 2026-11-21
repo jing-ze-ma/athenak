@@ -3454,6 +3454,7 @@ void RadiationM1::CleanStagBracket() {
     CleanStagCsLateral(CLW_V);
   }
   CLEAN_HIPX(const CleanArgs *px = CleanDevArgs(x, 0);)
+  const bool hrm = cln_hface;
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
     const int n = (dir == 0) ? CLN_FX : ((dir == 1) ? CLN_F2 : CLN_F3);
@@ -3468,7 +3469,7 @@ void RadiationM1::CleanStagBracket() {
       // the model takes that bound, c J_f along -div(D J) (Larsen's max limiter; Wilson's
       // c/(chi_f + |div(D J)|/J_f) also changed it by 1/(1 + lambda) where it is valid)
       const Real w = x.fc[dir](m,CLF_W,k,j,i);
-      const Real chi = 0.5*(x.op(m,M1_OP_T,k,j,i) + x.op(m,M1_OP_T,k-dk,j-dj,i-di));
+      const Real chi = CleanFaceChi(x.op, x.x1f, x.mbc, hrm, dir, m, k, j, i, is, ie);
       const Real st = CleanFaceStress(x, CLW_Z, dir, m, k, j, i, true);
       const Real jf = 0.5*(x.w(m,CLW_Z,k,j,i) + x.w(m,CLW_Z,k-dk,j-dj,i-di));
       const Real cd = (jf > 0.0 && fabs(st) > chi*jf) ? x.c*jf/fabs(st) :

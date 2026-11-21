@@ -2798,6 +2798,7 @@ class RadiationM1 {
   Real cln_lcnorm = 0.0;        // clean_lin_cnorm: the steps' strict solves (0 off)
   int cln_maxit = 800;          // clean_maxit: BiCGStab iterations
   bool cln_pcr = true;          // clean_stag_pcr: PC line solves by PCR on a GPU
+  bool cln_hface = false;       // clean_face_opac = harmonic: the x1 face chi
   bool cln_fspcr = false;      // clean_stag_fs_pcr: F solve x1 lines by PCR on a GPU
   bool cln_fspcs = false;      //   clean_stag_fs_pcr_cs: also on the cubed sphere
   bool cln_stst = false;        // clean_stag_stencil: the operator's rows stored per pass
