@@ -1071,3 +1071,6 @@ B_br gate not passed; arms not started
   CW t19r (log.0) cycle 1071 []: CLEAN WARNING cycle 1071 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 29)
 - (00:55) C3h start on 02-04 (B_c3h a97dd19c, restart from t19l64.00001.rst, keys c3h.keys = J4 keys + clean_stag_thinf_held_gate + clean_nl_print, 450 cycles (orion iw), rst off)
 - (00:55) C3h_t19 (B_c3h, 02-04, 450 cycles from t19l64.00001):  | CW: C3h 0 | prod 0 solves: C3h  | prod   | FATAL  | never-read: | dt / KE / L_top rows in C3H/C3h_t19/compare.txt
+- (00:56) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t19r (log.0) cycle 1080 []: CLEAN WARNING cycle 1080 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 30)
+  CW t19r (log.0) cycle 1084 []: CLEAN WARNING cycle 1084 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 31)
