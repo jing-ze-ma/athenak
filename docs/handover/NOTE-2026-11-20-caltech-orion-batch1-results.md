@@ -1368,3 +1368,5 @@ B_br gate not passed; arms not started
   CHUNK END t19r: 2026-11-21 03:53:20 chunk 0 rc=0 last: DT_RETRY cycle=4429 t=7.946610e+04 dt 1.024715e-08 -> 5.123574e-09 reason=NON-CONVERGED resid=-1.000000e+00 cut 8
 - (03:56) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
   CW t9r (log.0) cycle 6517 []: CLEAN WARNING cycle 6517 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 13)
+- (03:58) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t9r (log.0) cycle 6541 [cycle=6550 time=6.086215e+05 dt=7.681879e+01]: CLEAN WARNING cycle 6541 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 14)
