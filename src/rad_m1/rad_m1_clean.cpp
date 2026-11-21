@@ -1116,6 +1116,8 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
                 ok ? "converged" : "NOT converged",
                 std::min(n + 1, cln_steady_n), d, cln_steady_tol, vet_ncall - nc0, t0[0],
                 t1[0], t0[1]/cl, t0[2]/cl, t0[3]/cl, t1[1]/cl, t1[2]/cl, t1[3]/cl);
+    if (!ok) std::printf("CLEAN WARNING clean_init steady: not converged (residual %.3e, "
+                         "tol %.1e)\n", d, cln_steady_tol);
   }
   // a last change that is not small is a diverged start, not an unconverged one
   if (!(d < 1.0e-2)) {
