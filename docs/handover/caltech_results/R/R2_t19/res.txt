@@ -19,3 +19,49 @@ rt t19l64.m1_face.00001.bin DIFF/missing
 rt t19l64.m1_vet.00001.bin DIFF/missing
 a rc=0 wall=1746
 DONE
+
+== orion hg: never-read parameters (grep -A40 'never read', a/run.log)
+### WARNING: 13 input parameter(s) were never read by the code (typo, or a key AthenaK does not have?):
+###   mesh/cs_seam_blockend = extend
+###   mesh/cs_vertex_3cell = true
+###   mesh/cs_seam_rho_guard = 4
+###   hydro/wb_cache_every = 0
+###   rad_m1/time2_pred_cap = 0.5
+###   rad_m1/vet_gd_twin_lowmem = true
+###   problem/he_ic_rad_gas = column
+###   problem/he_ic_rad_hse = false
+###   problem/user_bcs = true
+###   output1/dt = 3600.0
+###   output2/dt = 10800.0
+###   output3/dt = 10800.0
+###   output5/dt = 43200.0
+elapsed=8.271416e+01 cycle=1 time=3.706136e+01 dt=3.706047e+01
+CLEAN OLDVEC cycle 1 t2s 2 eint<0 34536418 (taken as 0) E<0 0
+CLEAN cycle 1 t2s 2 it 5 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 1 t2s 2 write-back closure 1.033e-02
+CLEAN OLDVEC cycle 1 t2s 3 eint<0 81482 (taken as 0) E<0 0
+CLEAN cycle 1 t2s 3 it 4 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 1 t2s 3 ledger 4.0149788402696937e+34
+CLEAN XT cycle 1 t2s 3 write-back closure 3.402e-03
+elapsed=8.466439e+01 cycle=2 time=7.412183e+01 dt=9.285934e+00
+CLEAN OLDVEC cycle 2 t2s 2 eint<0 5164631 (taken as 0) E<0 0
+CLEAN cycle 2 t2s 2 it 1 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 2 t2s 2 write-back closure 4.486e-04
+CLEAN OLDVEC cycle 2 t2s 3 eint<0 84000 (taken as 0) E<0 0
+CLEAN cycle 2 t2s 3 it 2 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 2 t2s 3 ledger 5.3690094738055027e+34
+CLEAN XT cycle 2 t2s 3 write-back closure 2.157e-04
+elapsed=8.641342e+01 cycle=3 time=8.340776e+01 dt=6.057791e-01
+### dt COLLAPSE cycle=3 time=83.4078 dtold=9.28593 dt=0.605779 | hydro=0.605779 mhd=-1 cond=-1 visc=-1 srcterms=-1  (rank 2)
+    hydro dt is set by cell (m,k,j,i) = (1,84,100,136) gid = 5
+    r=2.32783e+12 rho=9.1617e-19 T=2.04986e+19 p=18.7802 cs=5.84503e+09 v=(2.997e+08,1.34042e+07,8579.35)
+CLEAN OLDVEC cycle 3 t2s 2 eint<0 527661 (taken as 0) E<0 0
+CLEAN cycle 3 t2s 2 it 0 (sum 3) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3 t2s 2 write-back closure 4.679e-06
+CLEAN OLDVEC cycle 3 t2s 3 eint<0 1920 (taken as 0) E<0 0
+CLEAN cycle 3 t2s 3 it 0 (sum 3) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3 t2s 3 ledger 5.4388089632680492e+34
+CLEAN XT cycle 3 t2s 3 write-back closure 3.631e-06
+== he_ic_balance lines (a/run.log)
+he_star_m1: he_ic_balance cells: max |T/T_col - 1| = 7.10543e-15 at r = 2.86411e+12
+he_star_m1: he_ic_balance: max |rho/rho_col - 1| = 0.111415 at r = 1.70567e+12, max face residual |PR/PL - 1| = 1.77636e-15, wall cells a_ref (module form), last change 0; wall ghost/edge rho 1.11883 T 1.04183
