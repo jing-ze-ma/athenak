@@ -1317,3 +1317,6 @@ B_br gate not passed; arms not started
   | i1_m35mms_f1k | cyc 9150 | t 8.843567e+04 | 10.24% of 8.64e5 | dt 5.971377e+00 | KE 2.1e+39 | Ltop/Lin 1.074 | Lbot/Lin 1.004 | CW 0 FATAL 0 | last hst: [t 8.7e+04 KE 2.1e+39 Lt 1.078 Lb 1.002] [t 8.76e+04 KE 2.11e+39 Lt 1.075 Lb 1.004] [t 8.82e+04 KE 2.1e+39 Lt 1.074 Lb 1.004] 
 - (03:36) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
   CW t9r (log.0) cycle 6204 []: CLEAN WARNING cycle 6204 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+- (03:39) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t9r (log.0) cycle 6258 []: CLEAN WARNING cycle 6258 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+  CW t9r (log.0) cycle 6265 []: CLEAN WARNING cycle 6265 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 3)
