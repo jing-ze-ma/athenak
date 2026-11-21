@@ -1259,6 +1259,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       const bool opr = cln_opt && cln_feedback && inl > 0 && inl < cln_optn;
       if (opr) {
         CleanStageOpacity();
+        if (cln_optdr && cln_vimp) CleanStagDrag(false);
         CleanAdvectiveCoefficients();
       }
       // (clean_stag_xdonor: q of the iterate; CLW_L holds E_k's lateral sums, those of

@@ -207,6 +207,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // (old production implicit_opac_lag = pred, implicit_opac_lag_passes: the opacities
     // of passes 0 .. N-1, then frozen: a change of the discretisation, order 2 for N >= 2)
     cln_optn = pin->GetOrAddInteger("rad_m1","clean_stag_opac_passes",3);
+    // clean_stag_opac_drag (read only when named, default off): a refresh rebuilds the
+    // clean_stag_vimp drag share b and Q of the faces (CleanStagDrag) with its chi
+    if (pin->DoesParameterExist("rad_m1","clean_stag_opac_drag")) {
+      cln_optdr = pin->GetBoolean("rad_m1","clean_stag_opac_drag");
+    }
     {const std::string fo = pin->GetOrAddString("rad_m1","clean_face_opac",
                                                 nw ? "harmonic" : "arith");
     if (fo != "arith" && fo != "harmonic") {

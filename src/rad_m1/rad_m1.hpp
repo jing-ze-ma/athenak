@@ -2801,6 +2801,7 @@ class RadiationM1 {
   int cln_maxit = 800;          // clean_maxit: BiCGStab iterations
   bool cln_pcr = true;          // clean_stag_pcr: PC line solves by PCR on a GPU
   int cln_optn = 3;             // clean_stag_opac_passes: refreshed in passes < N
+  bool cln_optdr = false;       // clean_stag_opac_drag: the refresh rebuilds the drag
   bool cln_hface = false;       // clean_face_opac = harmonic: the x1 face chi
   bool cln_fspcr = false;      // clean_stag_fs_line = pcr: F solve x1 lines on a GPU
   bool cln_stst = false;        // clean_stag_stencil: the operator's rows stored per pass
