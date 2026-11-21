@@ -1,0 +1,25 @@
+a 'FATAL' 1 ### FATAL ERROR: <time> dt_retry: cycle 0 failed 9 times (max 8), dt 1.447709e-01
+a 'CLEAN WARNING' 9 CLEAN WARNING cycle 0: backward-Euler solve not converged (dt_retry, 1 so far; last change inf)
+a 'DT_RETRY' 8 DT_RETRY cycle=0 t=0.000000e+00 dt 2.895419e-01 -> 1.447709e-01 reason=NON-CONVERGED resid=-1.000000e+00 cut 8
+a 'WARNING' 11 CLEAN WARNING cycle 0: backward-Euler solve not converged (dt_retry, 1 so far; last change inf)
+a 'march' 0 
+a 'clean_init steady:' 1 <rad_m1> clean_init steady: converged after 4 passes, residual 4.915e-15 (tol 1.0e-08; 0 formal solutions); radiation E 7.9849349171e+45 -> 1.0466161388e+46, F/c 1.0631e+42 0.0000e+00 0.0000e+00 -> 6.0288e+43 1.4357e+30 4.5703e+29 (volume sums)
+a 'he_star_m1: GM' 1 he_star_m1: GM = 1.02688e+28, F_in = 3.01435e+14, tau(r_in) = 1.66228e+06, r_int (tau = 1) = 2.17881e+12, r_top = 2.34036e+13, sponge rate = 0.001 above r = 2.10632e+13
+a 'he_seed_band = n2 BAND' 1 he_star_m1: he_seed_band = n2 BAND r 1.86903e+12 .. 2.11145e+12 (r/r_int 0.857824 - 0.969085, r_int 2.17881e+12), 19 cells 98..116; peak at r/r_int 0.939985: sigma 0.000262379 /s, 1/sigma 0.0441121 d, T 139665 K, Gamma1 1.34373, H_p/r 0.0555194; pi r/H_p 56.5855, l_8 180.467 (8 cells per wavelength,
+a 'seed = ' 1 he_star_m1: seed = real spherical harmonics l 14..56 (3053 terms, all m), amplitude 0.001 (eint), r 1.86903e+12 .. 2.11145e+12, rng 1234
+a 'direction maps' 1 <rad_m1> vet_gd: global-direction SC closure on the sp wedge, level-symmetric LQ10 (120 directions); z-rotation every 0 cycle(s) (0 = fixed), first angle 0; rank 0 wall ghost columns 45144, direction maps exact 2358720 of 5417280 (the rest: nearest direction)
+a 'he_ic_equil' 0 
+b run.log CW 9 DT_RETRY 8 FATAL 1
+b run2.log CW 9 DT_RETRY 8 FATAL 1
+GPU mem peak MiB max 79573 min 79441 (n=4) = 55.3 % of 143771 MiB
+rt t19cor.hydro.hst rows a 1 b 1 last 0 rows DIFF
+rt t19cor.user.hst rows a 1 b 1 last 0 rows DIFF
+rt t19cor.hydro_w.00000.bin same
+rt t19cor.m1.00000.bin same
+rt t19cor.m1_face.00000.bin same
+rt t19cor.m1_vet.00000.bin same
+a rc=1 wall=231
+b rc=1 wall=230
+restart from /resnick/groups/carnegie_poc/jingze/orion_runs_1121/freshgo/F_t19l64_corona/b/rst/t19cor.00000.rst
+b rc=1 wall=212
+DONE
