@@ -2668,6 +2668,7 @@ class RadiationM1 {
   void CleanClosureExtrap();
   void CleanClosureAfterSolve();
   void CleanClosureIterate();
+  void CleanStageOpacity();
   void CleanRays();
   void CleanClosureFromRays();
   void CleanClosureFromGd();
@@ -2907,6 +2908,7 @@ class RadiationM1 {
   void CleanStagKPos();
   void CleanStagKEnd();
   int cln_fdg = -1;             // staggered bracket: face slot of its lagged flux DG
+  bool cln_opt = false;         // clean_stag_opac_update: opacities at the iterate's T
   bool cln_consist = false;     // clean_consistency: bracket C = F_ray - f(Ur), cell
   bool cln_gdfs = true;         // clean_gd_face_fuse (cln_gd_fs)
   bool cln_closit = false;      // clean_closure: predict | iterate

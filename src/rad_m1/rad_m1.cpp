@@ -190,6 +190,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_pcr = pin->GetOrAddBoolean("rad_m1","clean_stag_pcr",true);
+    cln_opt = pin->GetOrAddBoolean("rad_m1","clean_stag_opac_update",false);
     // (clean_stag_fs_pcr: default on; it applies on a GPU, not on cs)
     cln_fspcr = pin->GetOrAddBoolean("rad_m1","clean_stag_fs_pcr",true);
     // clean_stag_fs_pcr_cs (read only when named, default off): also on the cubed sphere

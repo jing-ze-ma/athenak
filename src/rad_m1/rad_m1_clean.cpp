@@ -31,6 +31,7 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1_clean.hpp"
+#include "rad_m1/rad_m1_opacity.hpp"
 #include "utils/scratch_view.hpp"
 
 #if MPI_PARALLEL_ENABLED
@@ -551,6 +552,10 @@ void RadiationM1::CleanInit() {
   cln_w.ns = CLW_NS;
   const int nfc = (cln_fsolve && cln_fkin) ? CLF_KD + 2 :
                   (cln_vimp ? CLF_DQ + 1 : CLF_QL + 3);
+  // (clean_stag_opac_update: only where the opacities depend on T, tables or the T
+  // exponent (bump) of powerlaw)
+  cln_opt = cln_opt && !opac_freeze && !opac_zero && (opacity_type == M1_OPAC_TABLE ||
+            (opacity_type != M1_OPAC_CONST && opac_b != 0.0));
   // (the staggered bracket's lagged flux DG in one more slot, CleanStagBracket)
   cln_fdg = cln_consist ? nfc : -1;
   cln_xqs = cln_xd ? nfc + (cln_fdg >= 0) : -1;   // (clean_stag_xdonor's q)
@@ -1227,6 +1232,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     CleanFirstIterate();
     cln_fsk = false;
     cln_csyok = false;   // (the lateral sums' coefficients once per closure)
+    if (cln_opt && cln_feedback) CleanStageOpacity();
     if (cln_feedback) CleanAdvectiveCoefficients();
     // (the first iterate's beta and emission for the drag's face flux, not the last
     // solve's: a restart, failed stage or discarded attempt does not carry those)
@@ -1245,6 +1251,10 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         CleanFaceCoefficients();
         if (cln_consist) CleanStagBracket();
         if (cln_feedback) CleanAdvectiveCoefficients();
+      }
+      if (cln_opt && cln_feedback && inl > 0) {   // the opacities of the iterate's T
+        CleanStageOpacity();
+        CleanAdvectiveCoefficients();
       }
       // (clean_stag_xdonor: q of the iterate; CLW_L holds E_k's lateral sums, those of
       // the velocity update, but where the closure moved D or the bracket took CLW_L)
@@ -2517,6 +2527,44 @@ void RadiationM1::CleanAdvectiveCoefficients() {
   });
   // (their ghosts are first read after the next exchange, the RHS's)
   CleanGhostDefer(cln_w, CLW_A1, 3);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStageOpacity
+//! \brief clean_stag_opac_update (old production implicit_opac_update): the opacities of
+//! the active cells at the gas temperature of the Newton iterate (the density is that of
+//! the stage), and the face coefficients (theta) and the bracket that take them
+
+void RadiationM1::CleanStageOpacity() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  FluidRef fl = FluidRef::Get(pmy_pack);
+  auto uh = fl.u0;
+  auto eos = fl.eos;
+  auto op = opac;
+  auto w = cln_w;
+  const int otype = opacity_type;
+  const M1OpacTab ot = otab;
+  const Real kp = kappa_p, kev = kappa_e, kf = kappa_f, ks_ = kappa_s;
+  const Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
+  const bool osc = vscat;
+  par_for("cln_opac", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real d = uh(m,IDN,k,j,i);
+    Real o[4];
+    M1CellOpacities(otype, ot, eos, d, w(m,CLW_T,k,j,i), kp, kev, kf, ks_, rref, tref, aa,
+                    bb, o[0], o[1], o[2], o[3]);
+    op(m,M1_OP_P,k,j,i) = d*o[0];
+    op(m,M1_OP_E,k,j,i) = d*o[1];
+    op(m,M1_OP_T,k,j,i) = d*(o[2] + o[3]);
+    if (osc) op(m,M1_OP_S,k,j,i) = d*o[3];
+  });
+  CleanGhostFill(opac, 0, opac.extent_int(1), false);
+  CleanFaceCoefficients();
+  if (cln_consist) CleanStagBracket();
 }
 
 //----------------------------------------------------------------------------------------
