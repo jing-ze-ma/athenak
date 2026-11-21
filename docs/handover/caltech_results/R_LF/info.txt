@@ -1,0 +1,1 @@
+TAG=R_LF BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v201e_3efbbbd17 md5=5c78f0ea63a63cf9ec5817e11bf8583d RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=2911 MODE=split(590230,592500,592690) HOLDER=5840650 NODES=hpc-sm-02-16 NR=4 EX=hydro/floor_pay=rad_column rad_m1/clean_nl_print=true

@@ -1,0 +1,101 @@
+== /resnick/groups/carnegie_poc/jingze/orion_runs_1121/RA_off/a/run.log
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 180 it 1 de 6.809e-04 dv 5.204e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 181 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4138 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 5.070e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 181 it 1 de 8.618e-04 dv 1.730e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 182 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4135 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 7.729e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 182 it 1 de 6.809e-04 dv 5.189e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 183 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4138 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 8.445e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 183 it 1 de 8.618e-04 dv 5.204e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 184 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4135 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 4.229e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 184 it 1 de 6.809e-04 dv 1.730e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 185 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4138 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 7.729e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 185 it 1 de 8.618e-04 dv 5.188e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 186 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4135 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 8.445e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 186 it 1 de 6.809e-04 dv 5.203e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 187 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4138 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 5.070e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 187 it 1 de 8.618e-04 dv 1.730e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 188 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4135 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 7.729e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 188 it 1 de 6.809e-04 dv 5.189e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 189 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4138 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 8.445e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 189 it 1 de 8.618e-04 dv 5.204e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 190 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4135 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 4.229e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 190 it 1 de 6.809e-04 dv 1.730e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 191 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4138 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 7.729e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 191 it 1 de 8.618e-04 dv 5.189e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 192 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4135 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 8.445e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 192 it 1 de 6.809e-04 dv 5.204e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 193 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4138 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 5.070e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 193 it 1 de 8.618e-04 dv 1.730e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 194 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4135 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 7.729e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 194 it 1 de 6.809e-04 dv 5.189e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 195 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4138 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 8.445e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 195 it 1 de 8.618e-04 dv 5.204e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 196 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4135 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 4.229e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 196 it 1 de 6.809e-04 dv 1.730e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 197 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4138 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 7.729e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 197 it 1 de 8.618e-04 dv 5.188e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 198 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4135 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 8.445e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 198 it 1 de 6.809e-04 dv 5.203e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 199 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4138 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 5.070e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 199 it 1 de 8.618e-04 dv 1.730e-14
+CLEAN WARNING cycle 592698: backward-Euler solve not converged (dt_retry, 4 so far; last change 8.618e-04)
+CLEAN cycle 592698 t2s 1 it -2 (sum 200) pos 0 mark 0 all 0 neg 0 r1 0 r2 302 first 0 302 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 592698 t2s 1 ledger -7.4609272759283172e+48
+CLEAN XT cycle 592698 t2s 1 write-back closure 2.058e-02
+### FATAL ERROR: <time> dt_retry: cycle 592698 failed 9 times (max 8), dt 4.016064e+00
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 0 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 3 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 1 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 2 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+[2026-11-20T17:51:49.639] error: *** STEP 6133592.452 ON hpc-sm-02-03 CANCELLED AT 2026-11-20T17:51:49 DUE to SIGNAL Killed ***
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+srun: error: hpc-sm-02-03: task 0: Exited with exit code 1
+srun: error: hpc-sm-02-03: tasks 2-3: Killed
+srun: error: hpc-sm-02-03: task 1: Killed

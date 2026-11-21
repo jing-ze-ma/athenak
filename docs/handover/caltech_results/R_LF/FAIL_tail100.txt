@@ -1,0 +1,404 @@
+== /resnick/groups/carnegie_poc/jingze/orion_runs_1121/R_LF/a/run2.log
+CLEAN XDONOR cycle 592499 t2s 2 pass 1 xle0 34 minX/Eo -4.721e+00 donor 5939730 cap 29583 b<0 111 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 1 exch 11 sb 18 gres 4 it 2
+CLEAN XT cycle 592499 t2s 2 pass closure 7.409e+02
+CLEAN pass cycle 592499 t2s 2 pos 0 pass 1 it 2 de 3.203e-04 dv 4.970e-11
+CLEAN XDONOR cycle 592499 t2s 2 pass 2 xle0 9 minX/Eo -9.284e+00 donor 5915240 cap 25822 b<0 109 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 7 sb 1 gres 1 it 1
+CLEAN XT cycle 592499 t2s 2 pass closure 2.526e+03
+CLEAN pass cycle 592499 t2s 2 pos 0 pass 2 it 1 de 2.505e-04 dv 4.281e-11
+CLEAN XDONOR cycle 592499 t2s 2 pass 3 xle0 1 minX/Eo -2.495e-02 donor 5908657 cap 23917 b<0 109 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 1 gres 0 it 1
+CLEAN XT cycle 592499 t2s 2 pass closure 1.386e+03
+CLEAN pass cycle 592499 t2s 2 pos 0 pass 3 it 1 de 1.106e-04 dv 4.248e-11
+CLEAN XDONOR cycle 592499 t2s 2 pass 4 xle0 0 minX/Eo 7.517e-03 donor 5907976 cap 24121 b<0 111 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592499 t2s 2 pass closure 2.723e+02
+CLEAN pass cycle 592499 t2s 2 pos 0 pass 4 it 1 de 7.434e-05 dv 8.728e-11
+CLEAN XDONOR cycle 592499 t2s 2 pass 5 xle0 0 minX/Eo 5.345e-03 donor 5907611 cap 24120 b<0 110 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 2
+CLEAN XT cycle 592499 t2s 2 pass closure 6.147e+01
+CLEAN pass cycle 592499 t2s 2 pos 0 pass 5 it 2 de 2.728e-05 dv 1.284e-10
+CLEAN XDONOR cycle 592499 t2s 2 pass 6 xle0 0 minX/Eo 4.147e-03 donor 5907385 cap 24068 b<0 107 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 2
+CLEAN XT cycle 592499 t2s 2 pass closure 1.286e+01
+CLEAN pass cycle 592499 t2s 2 pos 0 pass 6 it 2 de 1.087e-05 dv 1.558e-10
+CLEAN cycle 592499 t2s 2 it 2 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 11 first 0 11 guard 0 solves 7 cwin 0
+CLEAN XT cycle 592499 t2s 2 write-back closure 1.284e+01
+CLEAN OLDVEC cycle 592499 t2s 3 eint<0 4 (taken as 0) E<0 1
+CLEAN XT cycle 592499 t2s 3 pass closure 7.406e-05
+CLEAN XDONOR cycle 592499 t2s 3 pass 0 xle0 508 minX/Eo -2.017e+02 donor 6435826 cap 23406 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 508 sb 0 gres 0 it 1
+CLEAN XT cycle 592499 t2s 3 pass closure 1.029e+01
+CLEAN pass cycle 592499 t2s 3 pos 0 pass 0 it 1 de 3.929e-04 dv 3.563e-09
+CLEAN XDONOR cycle 592499 t2s 3 pass 1 xle0 7 minX/Eo -4.160e+00 donor 6422611 cap 26659 b<0 3 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 1 exch 0 sb 5 gres 1 it 2
+CLEAN XT cycle 592499 t2s 3 pass closure 1.960e+00
+CLEAN pass cycle 592499 t2s 3 pos 0 pass 1 it 2 de 2.045e-04 dv 4.687e-11
+CLEAN XDONOR cycle 592499 t2s 3 pass 2 xle0 1 minX/Eo -6.777e-01 donor 6412955 cap 26445 b<0 5 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 1 gres 0 it 2
+CLEAN XT cycle 592499 t2s 3 pass closure 9.836e-01
+CLEAN pass cycle 592499 t2s 3 pos 0 pass 2 it 2 de 6.839e-05 dv 1.265e-11
+CLEAN XDONOR cycle 592499 t2s 3 pass 3 xle0 0 minX/Eo 8.003e-02 donor 6409909 cap 25486 b<0 6 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 3
+CLEAN XT cycle 592499 t2s 3 pass closure 1.297e-01
+CLEAN pass cycle 592499 t2s 3 pos 0 pass 3 it 3 de 2.451e-05 dv 1.179e-12
+CLEAN XDONOR cycle 592499 t2s 3 pass 4 xle0 0 minX/Eo 8.003e-02 donor 6409606 cap 25613 b<0 5 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 2
+CLEAN XT cycle 592499 t2s 3 pass closure 9.044e-03
+CLEAN pass cycle 592499 t2s 3 pos 0 pass 4 it 2 de 5.739e-06 dv 4.692e-13
+CLEAN cycle 592499 t2s 3 it 2 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 5 cwin 0
+CLEAN LZ cycle 592499 t2s 3 ledger -8.3878727625302008e+48
+CLEAN XT cycle 592499 t2s 3 write-back closure 1.479e+00
+<time> dt_retry: 2270 checkpoints (9.722779e+00 s, 4.694791e+03 MB on rank 0), 14 retries, cap -1.000000e+00
+<time> dt_retry: 4540 View copies skipped (unwritten since the last copy, dt_retry_host; not written in the cycle, SetSkip)
+<time> dt_retry: 27 cycles took the backward-Euler redo (time2_reject = retry, dt_retry_t2_be 0)
+<time> counters_rollback: event counters of discarded attempts dropped: dt_retry 14, backward-Euler redo 15, hesdirk2 helper solves 0; E-floor created energy dropped (m1_pos_un, x volume) inf / 0.000000e+00 / 0.000000e+00, vceil_de dropped 0.000000e+00 / 0.000000e+00 / 0.000000e+00
+<restart> rst/rsg.01297.rst: the cell and face variables written at 36.4 s
+<restart> rst/rsg.01297.rst: rad_m1 hesdirk2 slope written at 60.4 s
+<restart> rst/rsg.01297.rst: hydro w0 density and velocities written at 61.3 s
+<restart> rst/rsg.01297.rst: rad_signal_speed inputs written at 62.5 s
+<restart> rst/rsg.01297.rst: rad_m1 applied face flux written at 63.0 s
+<restart> rst/rsg.01297.rst: all (file closed) written at 63.0 s
+<hydro> EOS floors (all ranks, accepted steps, RK-weighted): mass created x vol=0 energy created x vol=4e+38 | FOFC first-order cell-stages=0
+elapsed=7.638683e+03 cycle=592500 time=5.490280e+08 dt=1.000000e+03
+
+Terminating on cycle limit
+time=5.490280e+08 cycle=592500
+tlim=1.000000e+30 nlim=592500
+
+MeshBlock-cycles = 54480
+cpu time used  = 7.601309e+03
+main loop time (before the final outputs) = 7.529046e+03
+zone-cycles/cpu_second = 1.608752e+07
+particle-updates/cpu_second = 0.000000e+00
+<hydro>/split_bval_fast: energy-only refreshes 0, full refreshes 0 (rank 0)
+<rad_m1> closure = vet_col: 0.000000e+00 tensor builds (0.000000e+00 skipped), 0.000000e+00 s (rank 0, fenced), 0.000000e+00 ms per build
+<rad_m1> vet_col_lat: 0.000000e+00 sweeps (incl. the first build's 3 inflow iterations), 0.000000e+00 s (rank 0, fenced), 0.000000e+00 ms per sweep; lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+<rad_m1> vet_gd: rank 0 fenced seconds: source 0.000000e+00, sweeps 0.000000e+00 (of which per-shell halo+walls 1.092570e+03, of which MPI wait 2.019144e+02), tables (rotation) 0.000000e+00, uniform twin 0.000000e+00, moments 0.000000e+00; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)
+<rad_m1> vet_rotate_avg = 4: snapshot sweeps 0.000000e+00 (rotations 0.000000e+00, inits 0.000000e+00), 0.000000e+00 s incl. offsets (rank 0, fenced)
+<rad_m1> vet_gd halo (rank 0): exchanges 2.268884e+06, bytes sent 2.719191e+12 (1.198471e+06 per exchange), post 0.000000e+00 s, partners 0; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00
+<rad_m1> vet_gd cs band (rank 0): compact, intensity values sent 8.258821e+10 of dense 2.787712e+13 (2.962580e-03); list builds 9.900000e+01 (5.369232e+02 s)
+<rad_m1> raycheap-1109 cs list builds (rank 0 s): mask kernel 6.422677e+01, download+check 2.960507e+01, mark exchange 1.164341e+02, host lists 3.224211e+02, upload 7.858948e+00; mask stride 65760 (padded)
+<rad_m1> vet_gd vet_path = none: subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+<rad_m1> vet_gd ragged band (rank 0): out-of-slab accesses main 0.000000e+00 twin 0.000000e+00
+<rad_m1> vet_gd_band_ring (rank 0): sweeps 2.270000e+03, dense band saves 0.000000e+00, save store 6.284291e-01 GB
+<rad_m1> vet_gd_rotate_xfade_fuse (rank 0): fused builds 2.270000e+03, two-sweep fallbacks 0.000000e+00, merged exchanges 0.000000e+00, out-of-slab accesses (other set) 0.000000e+00, early-sent shells 0.000000e+00
+<rad_m1> accel-1009 (rank 0): vet_gd_twin_fuse=0 vet_gd_twin_lowmem=0 vet_gd_twin_det=1 halo mask cache: 0.000000e+00 entries made, 0.000000e+00 MB of 0
+<rad_m1> vgdspeed-1009 (rank 0): vet_gd halo lists 0.000000e+00 made, 0.000000e+00 MB of 0.000000e+00 (key 4096, GPU: <= free/2); exchanges by list 0.000000e+00, dense 0.000000e+00
+<rad_m1> vgdrot-1011 (rank 0): exact-list batches 0.000000e+00 (group 0, 0.000000e+00 s, list reallocs 0.000000e+00); table prefetch 1 swapped in 0.000000e+00 of the rotations
+<rad_m1> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_m1> consfix-1109: implicit_cons_final=1 solves=0.000000e+00 extra passes after a mode fallback=0.000000e+00
+<rad_m1> cubed sphere: seam face averages 0, largest change of an x2 face value (rank 0) 0.000000e+00 of max|F0|
+<rad_m1> implicit transport: solves=0.000000e+00 Picard iterations mean=0.000000e+00 max=0.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> implicit_opac_lag=pred passes=2: lagged solves=0.000000e+00
+<rad_m1> implicit_tol_rel=1.000000e-01: predicted solves 0.000000e+00, mean tol_eff 0.000000e+00
+<rad_m1> implicit_gas_newton_switch=10 (min pass 20): solves switched to the root find=0.000000e+00
+<rad_m1> implicit_opac_newton_guard=5.000000e-01: Newton face terms dropped (all ranks, all passes)=0.000000e+00 per solve=0.000000e+00
+<rad_m1> m1-positivity: implicit_g0_exchange=1 implicit_g0_limit=1.000000e+00 clipped cell-passes=0.000000e+00 | implicit_pos_gas=1 (frac 1.000000e-03) cell-solves=4.851319e+09 energy moved rad->gas=5.494697e+42 | E floor raises cell-solves=2.673996e+07 energy from gas=0.000000e+00 energy created=0.000000e+00 (code units x volume) [in discarded attempts, rolled back: inf] of which solve undershoot (pos_floor_solve)=0.000000e+00 taken from the column's radiation (implicit_pos_floor_cons)=1.644864e+42 | |F| > c E scaled back cell-solves=0.000000e+00 sum(|F|/(cE) - 1)=0.000000e+00 | hydro EOS floors energy created=3.981476e+38
+<rad_m1> implicit_face_mmat: checked passes=0.000000e+00 limited passes=0.000000e+00 limited cells=0.000000e+00 limited x1 faces=0.000000e+00 max rounds=0.000000e+00 left (b<=0 after the limit)=0.000000e+00 realisability-bound faces (|F_H| > c min E)=0.000000e+00 (rank 0: rounds=0.000000e+00 R exchanges=0.000000e+00 zalesak_halo_skip=on rowsel=on re-assembled rows=0.000000e+00 of 0.000000e+00 zalesak_active=on zalesak_cap_rounds=4 capped passes=0.000000e+00)
+<rad_m1> implicit transverse (bicgstab): final 7-point linear residual (max|r|/max|b|) mean=0.000000e+00 max=0.000000e+00
+<rad_m1>   (diagnostic; Picard test on it: no; lin_tol=1.000000e-10; inner stop: cnorm=1.000000e-10, loosened by Eisenstat-Walker ew_max=1.000000e-02)
+<rad_m1> bicgstab: outer passes=0.000000e+00 linear solves=0.000000e+00 inner iterations mean=0.000000e+00 max=0.000000e+00 total=0.000000e+00
+<rad_m1> bicgstab: breakdowns=0.000000e+00 line_jacobi fallbacks=0.000000e+00 global reductions=0.000000e+00 (0.000000e+00 per inner iteration)
+<rad_m1> gas coupling: newton=true eos_cache=false cell-passes=0.000000e+00 newton fallbacks=0.000000e+00 (0.000000e+00 per cell-pass)
+<rad_m1> FBLOCAL triggers 0.000000e+00 local 0.000000e+00 global 0.000000e+00 bad cells 0.000000e+00 masked cells 0.000000e+00
+<rad_m1> offdiag=none closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 (vet_col_lat 0.000000e+00) min E from the solve=1.000000e+300
+<rad_m1> vet_gd_tangential (cubed sphere): Q active in 0.000000e+00 of 0.000000e+00 transverse assemblies (rank 0); positivity fallbacks (vet_col_lat) 0.000000e+00
+<rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=1.000000e+300 local kills=0.000000e+00 cells(rank 0)=0.000000e+00
+<rad_m1> floor clips (all ranks, every solve incl. BE): solved E <= e_floor cell-solves=0.000000e+00 written-back gas eint <= 0 cell-solves=0.000000e+00
+<rad_m1> time_scheme=hesdirk2: stage steps=2.243000e+03 backward-Euler steps=2.700000e+01 stage fallbacks=8.000000e+00 vet clips=0.000000e+00 face_fct calls=4.494000e+03 skipped(no face flux)=0.000000e+00 K1 flux from U^n=0.000000e+00 limited cells=2.650957e+10 max rounds=1.551000e+03 withheld E x vol=5.679391e+44 left (Q<=0)=1.448250e+05 emptied (E < 1.000000e-01 E^n) cells=1.484960e+05 min E/E^n=-2.082518e+09 (rank 0: rounds=6.167730e+05 R exchanges=5.324080e+05) time2_vet_col=extrap2 fallbacks=0.000000e+00 time2_posfix: steps=0.000000e+00 re-solves=0.000000e+00 cells=0.000000e+00 accepted-with-fallback stages=0.000000e+00 rotate_align shortened dt=1.998000e+03 clean_rot_ring guard cells=2.222329e+08 off-boundary shifts=0.000000e+00
+<rad_m1> time2_auto_be=16: skipped-stage BE steps=1.900000e+01 stage retries=8.000000e+00 (succeeded 5.000000e+00)
+<rad_m1> hesdirk2 wall split (rank 0 s): clean stage steps 6.767259e+03 (posfix 0.000000e+00) | failed stage attempts 1.706993e+02 (posfix 0.000000e+00) | their BE redo 8.483089e+00 | auto_be steps 4.116889e+01 | other BE steps 0.000000e+00 | discarded dt_retry attempts 0.000000e+00
+== /resnick/groups/carnegie_poc/jingze/orion_runs_1121/R_LF/a/run3.log
+CLEAN XT cycle 592688 t2s 1 pass closure 8.228e-05
+CLEAN XDONOR cycle 592688 t2s 1 pass 0 xle0 2953 minX/Eo -2.451e+03 donor 12150790 cap 272511 b<0 1 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 2953 sb 0 gres 0 it 1
+CLEAN XT cycle 592688 t2s 1 pass closure 2.302e+06
+CLEAN pass cycle 592688 t2s 1 pos 0 pass 0 it 1 de 4.911e-04 dv 1.473e-08
+CLEAN XDONOR cycle 592688 t2s 1 pass 1 xle0 1974 minX/Eo -6.763e+03 donor 12149752 cap 241860 b<0 2 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 80 exch 1487 sb 117 gres 290 it 1
+CLEAN XT cycle 592688 t2s 1 pass closure 4.155e+03
+CLEAN pass cycle 592688 t2s 1 pos 0 pass 1 it 1 de 3.093e-04 dv 9.015e-09
+CLEAN XDONOR cycle 592688 t2s 1 pass 2 xle0 951 minX/Eo -2.651e+00 donor 12148783 cap 243249 b<0 3 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 949 sb 0 gres 2 it 10
+CLEAN XT cycle 592688 t2s 1 pass closure 7.823e+00
+CLEAN pass cycle 592688 t2s 1 pos 0 pass 2 it 10 de 2.806e-04 dv 6.552e-09
+CLEAN XDONOR cycle 592688 t2s 1 pass 3 xle0 0 minX/Eo 3.737e-03 donor 12147125 cap 248126 b<0 2 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 4
+CLEAN XT cycle 592688 t2s 1 pass closure 5.992e+00
+CLEAN pass cycle 592688 t2s 1 pos 0 pass 3 it 4 de 7.211e-05 dv 5.310e-09
+CLEAN XDONOR cycle 592688 t2s 1 pass 4 xle0 0 minX/Eo 3.686e-03 donor 12146581 cap 246836 b<0 3 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592688 t2s 1 pass closure 2.423e+00
+CLEAN pass cycle 592688 t2s 1 pos 0 pass 4 it 1 de 1.333e-05 dv 4.619e-09
+CLEAN cycle 592688 t2s 1 it 1 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 15 first 0 15 guard 0 solves 5 cwin 0
+CLEAN LZ cycle 592688 t2s 1 ledger -7.4800409039959568e+48
+CLEAN XT cycle 592688 t2s 1 write-back closure 1.841e+01
+elapsed=1.007691e+03 cycle=592689 time=5.492120e+08 dt=1.000000e+03
+<hydro> fofc_report t=5.492120e+08 cycle=592689 stages=8 fired cell-stages: at-floor=0 other=6499432 | per x1 bin [i0-i1] floor/other: [382-382] 0/1 [398-398] 0/2 [400-400] 0/8 [401-401] 0/10 [402-402] 0/12 [403-403] 0/21 [404-404] 0/12 [405-405] 0/19 [406-406] 0/11 [407-407] 0/16 [408-408] 0/20 [409-410] 0/19 [411-411] 0/59 [412-412] 0/42 [413-413] 0/52 [414-414] 0/60 [415-415] 0/64 [416-416] 0/94 [417-417] 0/83 [418-418] 0/125 [419-419] 0/106 [420-420] 0/136 [421-421] 0/167 [422-422] 0/182 [423-423] 0/217 [424-424] 0/236 [425-426] 0/617 [427-427] 0/385 [428-428] 0/402 [429-429] 0/443 [430-430] 0/448 [431-431] 0/458 [432-432] 0/425 [433-433] 0/490 [434-434] 0/503 [435-435] 0/602 [436-436] 0/662 [437-437] 0/783 [438-438] 0/917 [439-439] 0/1089 [440-441] 0/2231 [442-442] 0/1408 [443-443] 0/1739 [444-444] 0/1873 [445-445] 0/2293 [446-446] 0/2501 [447-447] 0/3048 [448-448] 0/3443 [449-449] 0/4199 [450-450] 0/4835 [451-451] 0/5402 [452-452] 0/6016 [453-453] 0/6355 [454-454] 0/7221 [455-456] 0/15941 [457-457] 0/9304 [458-458] 0/10633 [459-459] 0/11855 [460-460] 0/13349 [461-461] 0/15143 [462-462] 0/17256 [463-463] 0/19230 [464-464] 0/21178 [465-465] 0/23793 [466-466] 0/26393 [467-467] 0/29887 [468-468] 0/33352 [469-469] 0/37135 [470-471] 0/87807 [472-472] 0/51195 [473-473] 0/55920 [474-474] 0/60111 [475-475] 0/64427 [476-476] 0/67199 [477-477] 0/69703 [478-478] 0/72134 [479-479] 0/75636 [480-480] 0/78885 [481-481] 0/83863 [482-482] 0/88124 [483-483] 0/92982 [484-484] 0/97765 [485-485] 0/103658 [486-487] 0/217602 [488-488] 0/112933 [489-489] 0/118192 [490-490] 0/118896 [491-491] 0/118911 [492-492] 0/116389 [493-493] 0/110903 [494-494] 0/105640 [495-495] 0/98387 [496-496] 0/88098 [497-497] 0/83239 [498-498] 0/80370 [499-499] 0/77584 [500-500] 0/76903 [501-502] 0/161851 [503-503] 0/83369 [504-504] 0/84925 [505-505] 0/86525 [506-506] 0/87156 [507-507] 0/86675 [508-508] 0/87810 [509-509] 0/87762 [510-510] 0/87494 [511-511] 0/84175 [512-512] 0/80799 [513-513] 0/77882 [514-514] 0/74391 [515-515] 0/72089 [516-517] 0/141082 [518-518] 0/69026 [519-519] 0/67240 [520-520] 0/66434 [521-521] 0/67081 [522-522] 0/67785 [523-523] 0/67290 [524-524] 0/66830 [525-525] 0/66214 [526-526] 0/65241 [527-527] 0/64309 [528-528] 0/63938 [529-529] 0/62993 [530-530] 0/61722 [531-532] 0/122348 [533-533] 0/59900 [534-534] 0/58198 [535-535] 0/57467 [536-536] 0/60098 [537-537] 0/67688 [538-538] 0/77793 [539-539] 0/88076 [540-540] 0/87756 [541-541] 0/88654 [542-542] 0/91801 [543-543] 0/90519 [544-544] 0/88931 [545-545] 0/86286 [546-547] 0/113362
+CLEAN XT cycle 592689 t2s 1 pass closure 9.902e-05
+CLEAN XDONOR cycle 592689 t2s 1 pass 0 xle0 1759 minX/Eo -3.702e+03 donor 11953830 cap 245213 b<0 5 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 1759 sb 0 gres 0 it 1
+CLEAN XT cycle 592689 t2s 1 pass closure 5.332e+02
+CLEAN pass cycle 592689 t2s 1 pos 0 pass 0 it 1 de 5.341e-04 dv 1.421e-08
+CLEAN XDONOR cycle 592689 t2s 1 pass 1 xle0 392 minX/Eo -8.264e+00 donor 11950284 cap 209339 b<0 18 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 9 exch 340 sb 6 gres 37 it 5
+CLEAN XT cycle 592689 t2s 1 pass closure 1.527e+01
+CLEAN pass cycle 592689 t2s 1 pos 0 pass 1 it 5 de 5.740e-04 dv 6.262e-09
+CLEAN XDONOR cycle 592689 t2s 1 pass 2 xle0 0 minX/Eo 1.015e-02 donor 11947329 cap 213554 b<0 16 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 2
+CLEAN XT cycle 592689 t2s 1 pass closure 9.747e+00
+CLEAN pass cycle 592689 t2s 1 pos 0 pass 2 it 2 de 2.509e-04 dv 4.192e-09
+CLEAN XDONOR cycle 592689 t2s 1 pass 3 xle0 0 minX/Eo 9.112e-03 donor 11946596 cap 211814 b<0 15 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 5
+CLEAN XT cycle 592689 t2s 1 pass closure 3.925e+00
+CLEAN pass cycle 592689 t2s 1 pos 0 pass 3 it 5 de 4.770e-05 dv 3.533e-09
+CLEAN XDONOR cycle 592689 t2s 1 pass 4 xle0 0 minX/Eo 1.206e-02 donor 11946408 cap 212959 b<0 18 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 4
+CLEAN XT cycle 592689 t2s 1 pass closure 1.907e+00
+CLEAN pass cycle 592689 t2s 1 pos 0 pass 4 it 4 de 6.718e-06 dv 3.392e-09
+CLEAN cycle 592689 t2s 1 it 4 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 8 first 0 8 guard 0 solves 5 cwin 0
+CLEAN LZ cycle 592689 t2s 1 ledger -7.4779577352956000e+48
+CLEAN XT cycle 592689 t2s 1 write-back closure 7.246e+00
+<time> dt_retry: 190 checkpoints (8.617714e-01 s, 4.694791e+03 MB on rank 0), 0 retries, cap -1.000000e+00
+<time> dt_retry: 380 View copies skipped (unwritten since the last copy, dt_retry_host; not written in the cycle, SetSkip)
+<time> dt_retry: 67 cycles took the backward-Euler redo (time2_reject = retry, dt_retry_t2_be 0)
+<time> counters_rollback: event counters of discarded attempts dropped: dt_retry 0, backward-Euler redo 16, hesdirk2 helper solves 0; E-floor created energy dropped (m1_pos_un, x volume) 0.000000e+00 / 0.000000e+00 / 0.000000e+00, vceil_de dropped 0.000000e+00 / 7.858622e-02 / 0.000000e+00
+<restart> rst/rsg.01298.rst: the cell and face variables written at 33.4 s
+<restart> rst/rsg.01298.rst: rad_m1 hesdirk2 slope written at 57.7 s
+<restart> rst/rsg.01298.rst: hydro w0 density and velocities written at 58.5 s
+<restart> rst/rsg.01298.rst: rad_signal_speed inputs written at 59.8 s
+<restart> rst/rsg.01298.rst: rad_m1 applied face flux written at 60.3 s
+<restart> rst/rsg.01298.rst: all (file closed) written at 60.3 s
+<hydro> EOS floors (all ranks, accepted steps, RK-weighted): mass created x vol=0 energy created x vol=9e+37 | FOFC first-order cell-stages=0
+elapsed=1.079224e+03 cycle=592690 time=5.492130e+08 dt=1.000000e+03
+
+Terminating on cycle limit
+time=5.492130e+08 cycle=592690
+tlim=1.000000e+30 nlim=592690
+
+MeshBlock-cycles = 4560
+cpu time used  = 1.041285e+03
+main loop time (before the final outputs) = 9.718581e+02
+zone-cycles/cpu_second = 9.829595e+06
+particle-updates/cpu_second = 0.000000e+00
+<hydro>/split_bval_fast: energy-only refreshes 0, full refreshes 0 (rank 0)
+<rad_m1> closure = vet_col: 0.000000e+00 tensor builds (0.000000e+00 skipped), 0.000000e+00 s (rank 0, fenced), 0.000000e+00 ms per build
+<rad_m1> vet_col_lat: 0.000000e+00 sweeps (incl. the first build's 3 inflow iterations), 0.000000e+00 s (rank 0, fenced), 0.000000e+00 ms per sweep; lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+<rad_m1> vet_gd: rank 0 fenced seconds: source 0.000000e+00, sweeps 0.000000e+00 (of which per-shell halo+walls 1.019946e+02, of which MPI wait 1.963380e+01), tables (rotation) 0.000000e+00, uniform twin 0.000000e+00, moments 0.000000e+00; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)
+<rad_m1> vet_rotate_avg = 4: snapshot sweeps 0.000000e+00 (rotations 0.000000e+00, inits 0.000000e+00), 0.000000e+00 s incl. offsets (rank 0, fenced)
+<rad_m1> vet_gd halo (rank 0): exchanges 2.181160e+05, bytes sent 2.338357e+11 (1.072070e+06 per exchange), post 0.000000e+00 s, partners 0; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00
+<rad_m1> vet_gd cs band (rank 0): compact, intensity values sent 7.692444e+09 of dense 2.683431e+12 (2.866645e-03); list builds 1.100000e+01 (6.105276e+01 s)
+<rad_m1> raycheap-1109 cs list builds (rank 0 s): mask kernel 6.727795e+00, download+check 3.656258e+00, mark exchange 1.398594e+01, host lists 3.581260e+01, upload 8.635857e-01; mask stride 65760 (padded)
+<rad_m1> vet_gd vet_path = none: subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+<rad_m1> vet_gd ragged band (rank 0): out-of-slab accesses main 0.000000e+00 twin 0.000000e+00
+<rad_m1> vet_gd_band_ring (rank 0): sweeps 1.900000e+02, dense band saves 0.000000e+00, save store 6.263186e-01 GB
+<rad_m1> vet_gd_rotate_xfade_fuse (rank 0): fused builds 1.900000e+02, two-sweep fallbacks 0.000000e+00, merged exchanges 0.000000e+00, out-of-slab accesses (other set) 0.000000e+00, early-sent shells 0.000000e+00
+<rad_m1> accel-1009 (rank 0): vet_gd_twin_fuse=0 vet_gd_twin_lowmem=0 vet_gd_twin_det=1 halo mask cache: 0.000000e+00 entries made, 0.000000e+00 MB of 0
+<rad_m1> vgdspeed-1009 (rank 0): vet_gd halo lists 0.000000e+00 made, 0.000000e+00 MB of 0.000000e+00 (key 4096, GPU: <= free/2); exchanges by list 0.000000e+00, dense 0.000000e+00
+<rad_m1> vgdrot-1011 (rank 0): exact-list batches 0.000000e+00 (group 0, 0.000000e+00 s, list reallocs 0.000000e+00); table prefetch 1 swapped in 0.000000e+00 of the rotations
+<rad_m1> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_m1> consfix-1109: implicit_cons_final=1 solves=0.000000e+00 extra passes after a mode fallback=0.000000e+00
+<rad_m1> cubed sphere: seam face averages 0, largest change of an x2 face value (rank 0) 0.000000e+00 of max|F0|
+<rad_m1> implicit transport: solves=0.000000e+00 Picard iterations mean=0.000000e+00 max=0.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> implicit_opac_lag=pred passes=2: lagged solves=0.000000e+00
+<rad_m1> implicit_tol_rel=1.000000e-01: predicted solves 0.000000e+00, mean tol_eff 0.000000e+00
+<rad_m1> implicit_gas_newton_switch=10 (min pass 20): solves switched to the root find=0.000000e+00
+<rad_m1> implicit_opac_newton_guard=5.000000e-01: Newton face terms dropped (all ranks, all passes)=0.000000e+00 per solve=0.000000e+00
+<rad_m1> m1-positivity: implicit_g0_exchange=1 implicit_g0_limit=1.000000e+00 clipped cell-passes=0.000000e+00 | implicit_pos_gas=1 (frac 1.000000e-03) cell-solves=2.656226e+08 energy moved rad->gas=8.252043e+41 | E floor raises cell-solves=6.798200e+05 energy from gas=0.000000e+00 energy created=0.000000e+00 (code units x volume) [in discarded attempts, rolled back: 0.000000e+00] of which solve undershoot (pos_floor_solve)=0.000000e+00 taken from the column's radiation (implicit_pos_floor_cons)=1.514082e+42 | |F| > c E scaled back cell-solves=0.000000e+00 sum(|F|/(cE) - 1)=0.000000e+00 | hydro EOS floors energy created=8.508272e+37
+<rad_m1> implicit_face_mmat: checked passes=0.000000e+00 limited passes=0.000000e+00 limited cells=0.000000e+00 limited x1 faces=0.000000e+00 max rounds=0.000000e+00 left (b<=0 after the limit)=0.000000e+00 realisability-bound faces (|F_H| > c min E)=0.000000e+00 (rank 0: rounds=0.000000e+00 R exchanges=0.000000e+00 zalesak_halo_skip=on rowsel=on re-assembled rows=0.000000e+00 of 0.000000e+00 zalesak_active=on zalesak_cap_rounds=4 capped passes=0.000000e+00)
+<rad_m1> implicit transverse (bicgstab): final 7-point linear residual (max|r|/max|b|) mean=0.000000e+00 max=0.000000e+00
+<rad_m1>   (diagnostic; Picard test on it: no; lin_tol=1.000000e-10; inner stop: cnorm=1.000000e-10, loosened by Eisenstat-Walker ew_max=1.000000e-02)
+<rad_m1> bicgstab: outer passes=0.000000e+00 linear solves=0.000000e+00 inner iterations mean=0.000000e+00 max=0.000000e+00 total=0.000000e+00
+<rad_m1> bicgstab: breakdowns=0.000000e+00 line_jacobi fallbacks=0.000000e+00 global reductions=0.000000e+00 (0.000000e+00 per inner iteration)
+<rad_m1> gas coupling: newton=true eos_cache=false cell-passes=0.000000e+00 newton fallbacks=0.000000e+00 (0.000000e+00 per cell-pass)
+<rad_m1> FBLOCAL triggers 0.000000e+00 local 0.000000e+00 global 0.000000e+00 bad cells 0.000000e+00 masked cells 0.000000e+00
+<rad_m1> offdiag=none closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 (vet_col_lat 0.000000e+00) min E from the solve=1.000000e+300
+<rad_m1> vet_gd_tangential (cubed sphere): Q active in 0.000000e+00 of 0.000000e+00 transverse assemblies (rank 0); positivity fallbacks (vet_col_lat) 0.000000e+00
+<rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=1.000000e+300 local kills=0.000000e+00 cells(rank 0)=0.000000e+00
+<rad_m1> floor clips (all ranks, every solve incl. BE): solved E <= e_floor cell-solves=0.000000e+00 written-back gas eint <= 0 cell-solves=0.000000e+00
+<rad_m1> time_scheme=hesdirk2: stage steps=1.230000e+02 backward-Euler steps=6.700000e+01 stage fallbacks=1.600000e+01 vet clips=0.000000e+00 face_fct calls=2.620000e+02 skipped(no face flux)=0.000000e+00 K1 flux from U^n=0.000000e+00 limited cells=1.406584e+09 max rounds=3.610000e+02 withheld E x vol=3.391547e+43 left (Q<=0)=3.215900e+04 emptied (E < 1.000000e-01 E^n) cells=3.281200e+04 min E/E^n=-1.046168e+09 (rank 0: rounds=3.627400e+04 R exchanges=3.127400e+04) time2_vet_col=extrap2 fallbacks=0.000000e+00 time2_posfix: steps=0.000000e+00 re-solves=0.000000e+00 cells=0.000000e+00 accepted-with-fallback stages=0.000000e+00 rotate_align shortened dt=1.820000e+02 clean_rot_ring guard cells=8.955459e+06 off-boundary shifts=0.000000e+00
+<rad_m1> time2_auto_be=16: skipped-stage BE steps=5.100000e+01 stage retries=1.500000e+01 (succeeded 6.000000e+00)
+<rad_m1> hesdirk2 wall split (rank 0 s): clean stage steps 4.389822e+02 (posfix 0.000000e+00) | failed stage attempts 3.309253e+02 (posfix 0.000000e+00) | their BE redo 2.027733e+01 | auto_be steps 1.776455e+02 | other BE steps 0.000000e+00 | discarded dt_retry attempts 0.000000e+00
+== /resnick/groups/carnegie_poc/jingze/orion_runs_1121/R_LF/a/run4.log
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 180 it 1 de 6.809e-04 dv 5.204e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 181 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4138 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 5.070e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 181 it 1 de 8.618e-04 dv 1.730e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 182 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4135 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 7.729e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 182 it 1 de 6.809e-04 dv 5.189e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 183 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4138 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 8.445e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 183 it 1 de 8.618e-04 dv 5.204e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 184 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4135 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 4.229e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 184 it 1 de 6.809e-04 dv 1.730e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 185 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4138 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 7.729e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 185 it 1 de 8.618e-04 dv 5.188e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 186 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4135 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 8.445e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 186 it 1 de 6.809e-04 dv 5.203e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 187 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4138 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 5.070e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 187 it 1 de 8.618e-04 dv 1.730e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 188 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4135 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 7.729e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 188 it 1 de 6.809e-04 dv 5.189e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 189 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4138 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 8.445e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 189 it 1 de 8.618e-04 dv 5.204e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 190 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4135 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 4.229e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 190 it 1 de 6.809e-04 dv 1.730e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 191 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4138 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 7.729e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 191 it 1 de 8.618e-04 dv 5.189e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 192 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4135 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 8.445e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 192 it 1 de 6.809e-04 dv 5.204e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 193 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4138 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 5.070e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 193 it 1 de 8.618e-04 dv 1.730e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 194 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4135 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 7.729e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 194 it 1 de 6.809e-04 dv 5.189e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 195 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4138 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 8.445e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 195 it 1 de 8.618e-04 dv 5.204e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 196 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4135 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 4.229e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 196 it 1 de 6.809e-04 dv 1.730e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 197 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4138 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 7.729e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 197 it 1 de 8.618e-04 dv 5.188e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 198 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4135 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 8.445e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 198 it 1 de 6.809e-04 dv 5.203e-14
+CLEAN XDONOR cycle 592698 t2s 1 pass 199 xle0 0 minX/Eo 4.520e-03 donor 7188 cap 4138 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 592698 t2s 1 pass closure 5.070e-03
+CLEAN pass cycle 592698 t2s 1 pos 0 pass 199 it 1 de 8.618e-04 dv 1.730e-14
+CLEAN WARNING cycle 592698: backward-Euler solve not converged (dt_retry, 4 so far; last change 8.618e-04)
+CLEAN cycle 592698 t2s 1 it -2 (sum 200) pos 0 mark 0 all 0 neg 0 r1 0 r2 302 first 0 302 guard 0 solves 200 cwin 0
+CLEAN LZ cycle 592698 t2s 1 ledger -7.4609272759283172e+48
+CLEAN XT cycle 592698 t2s 1 write-back closure 2.058e-02
+### FATAL ERROR: <time> dt_retry: cycle 592698 failed 9 times (max 8), dt 4.016064e+00
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 0 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 1 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 3 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 2 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+[2026-11-20T17:51:13.419] error: *** STEP 5840650.130 ON hpc-sm-02-16 CANCELLED AT 2026-11-20T17:51:13 DUE to SIGNAL Killed ***
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+srun: error: hpc-sm-02-16: task 0: Exited with exit code 1
+srun: error: hpc-sm-02-16: tasks 1,3: Killed
+srun: error: hpc-sm-02-16: task 2: Killed
+== /resnick/groups/carnegie_poc/jingze/orion_runs_1121/R_LF/a/run.log
+CLEAN XT cycle 590228 t2s 3 write-back closure 3.955e+00
+elapsed=1.429475e+03 cycle=590229 time=5.468923e+08 dt=9.565217e+02
+CLEAN OLDVEC cycle 590229 t2s 2 eint<0 2526 (taken as 0) E<0 160
+CLEAN XT cycle 590229 t2s 2 pass closure 1.452e-02
+CLEAN XDONOR cycle 590229 t2s 2 pass 0 xle0 14522 minX/Eo -2.243e+04 donor 6031972 cap 108548 b<0 49 (with X<=0 5; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 14522 sb 0 gres 0 it 1
+CLEAN XT cycle 590229 t2s 2 pass closure 1.257e+09
+CLEAN pass cycle 590229 t2s 2 pos 0 pass 0 it 1 de 9.643e-04 dv 3.257e-07
+CLEAN XDONOR cycle 590229 t2s 2 pass 1 xle0 1201 minX/Eo -1.673e+03 donor 5968944 cap 34536 b<0 99 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 32 exch 764 sb 231 gres 174 it 1
+CLEAN XT cycle 590229 t2s 2 pass closure 8.509e+07
+CLEAN pass cycle 590229 t2s 2 pos 0 pass 1 it 1 de 4.658e-04 dv 2.729e-08
+CLEAN XDONOR cycle 590229 t2s 2 pass 2 xle0 0 minX/Eo 8.565e-05 donor 5931857 cap 24320 b<0 113 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 5
+CLEAN XT cycle 590229 t2s 2 pass closure 4.869e+06
+CLEAN pass cycle 590229 t2s 2 pos 0 pass 2 it 5 de 4.361e-04 dv 6.111e-08
+CLEAN XDONOR cycle 590229 t2s 2 pass 3 xle0 0 minX/Eo 2.046e-04 donor 5906886 cap 20224 b<0 122 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 590229 t2s 2 pass closure 6.535e+04
+CLEAN pass cycle 590229 t2s 2 pos 0 pass 3 it 1 de 1.684e-04 dv 4.477e-08
+CLEAN XDONOR cycle 590229 t2s 2 pass 4 xle0 0 minX/Eo 2.051e-04 donor 5905442 cap 19556 b<0 125 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 3
+CLEAN XT cycle 590229 t2s 2 pass closure 6.431e+03
+CLEAN pass cycle 590229 t2s 2 pos 0 pass 4 it 3 de 2.353e-05 dv 4.433e-08
+CLEAN cycle 590229 t2s 2 it 3 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 129 first 0 129 guard 0 solves 5 cwin 0
+CLEAN XT cycle 590229 t2s 2 write-back closure 6.370e+07
+CLEAN XT cycle 590229 t2s 3 pass closure 8.058e-05
+CLEAN XDONOR cycle 590229 t2s 3 pass 0 xle0 3470 minX/Eo -3.896e+03 donor 6422020 cap 18832 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 3470 sb 0 gres 0 it 1
+CLEAN XT cycle 590229 t2s 3 pass closure 3.663e+02
+CLEAN pass cycle 590229 t2s 3 pos 0 pass 0 it 1 de 6.667e-04 dv 3.123e-07
+CLEAN XDONOR cycle 590229 t2s 3 pass 1 xle0 0 minX/Eo 2.447e-03 donor 6415207 cap 22132 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 4
+CLEAN XT cycle 590229 t2s 3 pass closure 2.349e+00
+CLEAN pass cycle 590229 t2s 3 pos 0 pass 1 it 4 de 3.165e-04 dv 1.062e-08
+CLEAN XDONOR cycle 590229 t2s 3 pass 2 xle0 0 minX/Eo 2.063e-02 donor 6395605 cap 22449 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 2
+CLEAN XT cycle 590229 t2s 3 pass closure 1.059e+00
+CLEAN pass cycle 590229 t2s 3 pos 0 pass 2 it 2 de 2.767e-04 dv 9.277e-09
+CLEAN XDONOR cycle 590229 t2s 3 pass 3 xle0 0 minX/Eo 1.226e-02 donor 6388171 cap 20332 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 3
+CLEAN XT cycle 590229 t2s 3 pass closure 8.401e-01
+CLEAN pass cycle 590229 t2s 3 pos 0 pass 3 it 3 de 3.911e-05 dv 5.744e-09
+CLEAN XDONOR cycle 590229 t2s 3 pass 4 xle0 0 minX/Eo 8.742e-03 donor 6388156 cap 20466 b<0 4 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 2
+CLEAN XT cycle 590229 t2s 3 pass closure 1.159e+00
+CLEAN pass cycle 590229 t2s 3 pos 0 pass 4 it 2 de 8.593e-06 dv 2.562e-09
+CLEAN cycle 590229 t2s 3 it 2 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 1 first 0 1 guard 0 solves 5 cwin 0
+CLEAN LZ cycle 590229 t2s 3 ledger -2.2563080787937235e+48
+CLEAN XT cycle 590229 t2s 3 write-back closure 2.059e+00
+<time> dt_retry: 442 checkpoints (1.955920e+00 s, 4.694791e+03 MB on rank 0), 0 retries, cap -1.000000e+00
+<time> dt_retry: 884 View copies skipped (unwritten since the last copy, dt_retry_host; not written in the cycle, SetSkip)
+<time> dt_retry: 7 cycles took the backward-Euler redo (time2_reject = retry, dt_retry_t2_be 0)
+<time> counters_rollback: event counters of discarded attempts dropped: dt_retry 0, backward-Euler redo 3, hesdirk2 helper solves 0; E-floor created energy dropped (m1_pos_un, x volume) 0.000000e+00 / 0.000000e+00 / 0.000000e+00, vceil_de dropped 0.000000e+00 / 0.000000e+00 / 0.000000e+00
+<restart> rst/rsg.01296.rst: the cell and face variables written at 27.4 s
+<restart> rst/rsg.01296.rst: rad_m1 hesdirk2 slope written at 58.8 s
+<restart> rst/rsg.01296.rst: hydro w0 density and velocities written at 59.5 s
+<restart> rst/rsg.01296.rst: rad_signal_speed inputs written at 60.7 s
+<restart> rst/rsg.01296.rst: rad_m1 applied face flux written at 61.2 s
+<restart> rst/rsg.01296.rst: all (file closed) written at 61.2 s
+<hydro> EOS floors (all ranks, accepted steps, RK-weighted): mass created x vol=0 energy created x vol=1e+38 | FOFC first-order cell-stages=0
+elapsed=1.502548e+03 cycle=590230 time=5.468932e+08 dt=9.565217e+02
+
+Terminating on cycle limit
+time=5.468932e+08 cycle=590230
+tlim=1.000000e+30 nlim=590230
+
+MeshBlock-cycles = 10608
+cpu time used  = 1.477929e+03
+main loop time (before the final outputs) = 1.407649e+03
+zone-cycles/cpu_second = 1.611092e+07
+particle-updates/cpu_second = 0.000000e+00
+<hydro>/split_bval_fast: energy-only refreshes 0, full refreshes 0 (rank 0)
+<rad_m1> closure = vet_col: 0.000000e+00 tensor builds (0.000000e+00 skipped), 0.000000e+00 s (rank 0, fenced), 0.000000e+00 ms per build
+<rad_m1> vet_col_lat: 0.000000e+00 sweeps (incl. the first build's 3 inflow iterations), 0.000000e+00 s (rank 0, fenced), 0.000000e+00 ms per sweep; lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+<rad_m1> vet_gd: rank 0 fenced seconds: source 0.000000e+00, sweeps 0.000000e+00 (of which per-shell halo+walls 2.115822e+02, of which MPI wait 4.971583e+01), tables (rotation) 0.000000e+00, uniform twin 0.000000e+00, moments 0.000000e+00; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)
+<rad_m1> vet_rotate_avg = 4: snapshot sweeps 0.000000e+00 (rotations 0.000000e+00, inits 0.000000e+00), 0.000000e+00 s incl. offsets (rank 0, fenced)
+<rad_m1> vet_gd halo (rank 0): exchanges 4.258000e+05, bytes sent 5.269003e+11 (1.237436e+06 per exchange), post 0.000000e+00 s, partners 0; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00
+<rad_m1> vet_gd cs band (rank 0): compact, intensity values sent 1.576064e+10 of dense 5.229697e+12 (3.013682e-03); list builds 2.300000e+01 (1.267397e+02 s)
+<rad_m1> raycheap-1109 cs list builds (rank 0 s): mask kernel 1.404239e+01, download+check 7.967824e+00, mark exchange 2.780175e+01, host lists 7.503801e+01, upload 1.878424e+00; mask stride 65760 (padded)
+<rad_m1> vet_gd vet_path = none: subdivided steps (ALL ranks, all sweeps) 0.000000e+00
+<rad_m1> vet_gd ragged band (rank 0): out-of-slab accesses main 0.000000e+00 twin 0.000000e+00
+<rad_m1> vet_gd_band_ring (rank 0): sweeps 4.460000e+02, dense band saves 0.000000e+00, save store 6.145773e-01 GB
+<rad_m1> vet_gd_rotate_xfade_fuse (rank 0): fused builds 4.410000e+02, two-sweep fallbacks 0.000000e+00, merged exchanges 0.000000e+00, out-of-slab accesses (other set) 0.000000e+00, early-sent shells 0.000000e+00
+<rad_m1> accel-1009 (rank 0): vet_gd_twin_fuse=0 vet_gd_twin_lowmem=0 vet_gd_twin_det=1 halo mask cache: 0.000000e+00 entries made, 0.000000e+00 MB of 0
+<rad_m1> vgdspeed-1009 (rank 0): vet_gd halo lists 0.000000e+00 made, 0.000000e+00 MB of 0.000000e+00 (key 4096, GPU: <= free/2); exchanges by list 0.000000e+00, dense 0.000000e+00
+<rad_m1> vgdrot-1011 (rank 0): exact-list batches 0.000000e+00 (group 0, 0.000000e+00 s, list reallocs 0.000000e+00); table prefetch 1 swapped in 0.000000e+00 of the rotations
+<rad_m1> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_m1> consfix-1109: implicit_cons_final=1 solves=0.000000e+00 extra passes after a mode fallback=0.000000e+00
+<rad_m1> cubed sphere: seam face averages 0, largest change of an x2 face value (rank 0) 0.000000e+00 of max|F0|
+<rad_m1> implicit transport: solves=0.000000e+00 Picard iterations mean=0.000000e+00 max=0.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> implicit_opac_lag=pred passes=2: lagged solves=0.000000e+00
+<rad_m1> implicit_tol_rel=1.000000e-01: predicted solves 0.000000e+00, mean tol_eff 0.000000e+00
+<rad_m1> implicit_gas_newton_switch=10 (min pass 20): solves switched to the root find=0.000000e+00
+<rad_m1> implicit_opac_newton_guard=5.000000e-01: Newton face terms dropped (all ranks, all passes)=0.000000e+00 per solve=0.000000e+00
+<rad_m1> m1-positivity: implicit_g0_exchange=1 implicit_g0_limit=1.000000e+00 clipped cell-passes=0.000000e+00 | implicit_pos_gas=1 (frac 1.000000e-03) cell-solves=1.070897e+09 energy moved rad->gas=8.317649e+41 | E floor raises cell-solves=8.478159e+06 energy from gas=0.000000e+00 energy created=0.000000e+00 (code units x volume) [in discarded attempts, rolled back: 0.000000e+00] of which solve undershoot (pos_floor_solve)=0.000000e+00 taken from the column's radiation (implicit_pos_floor_cons)=2.164419e+41 | |F| > c E scaled back cell-solves=0.000000e+00 sum(|F|/(cE) - 1)=0.000000e+00 | hydro EOS floors energy created=1.434109e+38
+<rad_m1> implicit_face_mmat: checked passes=0.000000e+00 limited passes=0.000000e+00 limited cells=0.000000e+00 limited x1 faces=0.000000e+00 max rounds=0.000000e+00 left (b<=0 after the limit)=0.000000e+00 realisability-bound faces (|F_H| > c min E)=0.000000e+00 (rank 0: rounds=0.000000e+00 R exchanges=0.000000e+00 zalesak_halo_skip=on rowsel=on re-assembled rows=0.000000e+00 of 0.000000e+00 zalesak_active=on zalesak_cap_rounds=4 capped passes=0.000000e+00)
+<rad_m1> implicit transverse (bicgstab): final 7-point linear residual (max|r|/max|b|) mean=0.000000e+00 max=0.000000e+00
+<rad_m1>   (diagnostic; Picard test on it: no; lin_tol=1.000000e-10; inner stop: cnorm=1.000000e-10, loosened by Eisenstat-Walker ew_max=1.000000e-02)
+<rad_m1> bicgstab: outer passes=0.000000e+00 linear solves=0.000000e+00 inner iterations mean=0.000000e+00 max=0.000000e+00 total=0.000000e+00
+<rad_m1> bicgstab: breakdowns=0.000000e+00 line_jacobi fallbacks=0.000000e+00 global reductions=0.000000e+00 (0.000000e+00 per inner iteration)
+<rad_m1> gas coupling: newton=true eos_cache=false cell-passes=0.000000e+00 newton fallbacks=0.000000e+00 (0.000000e+00 per cell-pass)
+<rad_m1> FBLOCAL triggers 0.000000e+00 local 0.000000e+00 global 0.000000e+00 bad cells 0.000000e+00 masked cells 0.000000e+00
+<rad_m1> offdiag=none closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 (vet_col_lat 0.000000e+00) min E from the solve=1.000000e+300
+<rad_m1> vet_gd_tangential (cubed sphere): Q active in 0.000000e+00 of 0.000000e+00 transverse assemblies (rank 0); positivity fallbacks (vet_col_lat) 0.000000e+00
+<rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=1.000000e+300 local kills=0.000000e+00 cells(rank 0)=0.000000e+00
+<rad_m1> floor clips (all ranks, every solve incl. BE): solved E <= e_floor cell-solves=0.000000e+00 written-back gas eint <= 0 cell-solves=0.000000e+00
+<rad_m1> time_scheme=hesdirk2: stage steps=4.350000e+02 backward-Euler steps=7.000000e+00 stage fallbacks=3.000000e+00 vet clips=0.000000e+00 face_fct calls=8.730000e+02 skipped(no face flux)=0.000000e+00 K1 flux from U^n=1.000000e+00 limited cells=6.013925e+09 max rounds=4.470000e+02 withheld E x vol=1.116409e+44 left (Q<=0)=3.118000e+04 emptied (E < 1.000000e-01 E^n) cells=3.150500e+04 min E/E^n=-8.312132e+08 (rank 0: rounds=1.309620e+05 R exchanges=1.143860e+05) time2_vet_col=extrap2 fallbacks=0.000000e+00 time2_posfix: steps=0.000000e+00 re-solves=0.000000e+00 cells=0.000000e+00 accepted-with-fallback stages=0.000000e+00 rotate_align shortened dt=2.150000e+02 clean_rot_ring guard cells=2.098730e+07 off-boundary shifts=0.000000e+00
+<rad_m1> time2_auto_be=16: skipped-stage BE steps=4.000000e+00 stage retries=3.000000e+00 (succeeded 2.000000e+00)
+<rad_m1> hesdirk2 wall split (rank 0 s): clean stage steps 1.319393e+03 (posfix 0.000000e+00) | failed stage attempts 6.191071e+01 (posfix 0.000000e+00) | their BE redo 3.048215e+00 | auto_be steps 1.458809e+01 | other BE steps 0.000000e+00 | discarded dt_retry attempts 0.000000e+00

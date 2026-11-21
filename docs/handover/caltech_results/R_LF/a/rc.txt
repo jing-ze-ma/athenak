@@ -1,0 +1,7 @@
+rc=0 wall=1520 leg_end=590230
+restart dump for cycle 590230: /resnick/groups/carnegie_poc/jingze/orion_runs_1121/R_LF/a/rst/rsg.01296.rst
+rc=0 wall=7654 leg_end=592500
+restart dump for cycle 592500: /resnick/groups/carnegie_poc/jingze/orion_runs_1121/R_LF/a/rst/rsg.01297.rst
+rc=0 wall=1091 leg_end=592690
+restart dump for cycle 592690: /resnick/groups/carnegie_poc/jingze/orion_runs_1121/R_LF/a/rst/rsg.01298.rst
+rc=1 wall=351 leg_end=592699

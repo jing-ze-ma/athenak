@@ -1,0 +1,8 @@
+cycles 592690 - 592698 dt [1000.0] s/cycle(all) ['20.47', '21.64', '2.10', '22.49', '2.14', '3.00', '21.82', '3.02'] steady(excl first+last) 12.200 first elapsed 33.3 last elapsed 130.0
+[]
+CW a 12 FATAL 1 retries []
+GPU mem peak MiB max 108497 min 107499 (n=4)
+rc=1 wall=350
+hstmd5 rsg.hydro.hst 8d67814adef445be2efccb091366eba7 rows 8
+hstmd5 rsg.user.hst c0ac42e2b23a4363e056617a11a5659f rows 8
+DONE
