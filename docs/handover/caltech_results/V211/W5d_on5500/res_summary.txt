@@ -17,3 +17,4 @@ series (user.hst; every 10 cycles; W5c every cycle): t KE_int L_top L_mid Lz_tot
 1.17478e+06 5.7256e+43 1.6461e+39 1.5645e+39 -9.7911e+43
 1.17546e+06 5.7281e+43 1.6441e+39 1.5627e+39 -9.8104e+43
 1.17614e+06 5.7307e+43 1.642e+39 1.561e+39 -9.8293e+43
+vs W5a: s/cycle 1.95, dt range 59.4-67.2 (W5a_off res_summary). vet_gd_rotate_t0 = 1163650 = t_rst (1166400, t9l62.00027) - 2750
