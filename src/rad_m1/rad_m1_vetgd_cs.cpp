@@ -51,6 +51,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <limits>
 #include <map>
@@ -1927,6 +1928,32 @@ void RadiationM1::VetGdCsSweep() {
 #endif
   if (early && vgd_cscl[vgd_cscur].ng != 1) {early = false;}
   if (xffs) {early = false;}   // (the early send: one set per shell kernel)
+#if defined(KOKKOS_ENABLE_HIP) && MPI_PARALLEL_ENABLED
+  // rsthip-1121: MI300A, ROCm 7.2: more than 2 ranks on one GPU with the default
+  // GPU_MAX_HW_QUEUES (4: 5/5, 3: 1/1) hang in the early send's event wait (hgs 6 ranks,
+  // 2 MI300A; GPU_MAX_HW_QUEUES=2 or VGD_CS_EARLY=0 run, with the same bits)
+  const char *hq = std::getenv("GPU_MAX_HW_QUEUES");
+  static bool s_hqchk = false;
+  if (early && !s_hqchk && (hq == nullptr || std::atoi(hq) > 2)) {
+    s_hqchk = true;
+    char bus[32] = {0};
+    (void) hipDeviceGetPCIBusId(bus, sizeof(bus), Kokkos::device_id());
+    MPI_Comm nc;
+    MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL, &nc);
+    int nn = 1, sh = 0;
+    MPI_Comm_size(nc, &nn);
+    std::vector<char> all(32*static_cast<size_t>(nn));
+    MPI_Allgather(bus, 32, MPI_CHAR, all.data(), 32, MPI_CHAR, nc);
+    MPI_Comm_free(&nc);
+    for (int q = 0; q < nn; ++q) {sh += (std::strncmp(bus, &all[32*q], 32) == 0);}
+    MPI_Allreduce(MPI_IN_PLACE, &sh, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+    if (sh > 2) {
+      VgdCsFatal(std::to_string(sh) + " ranks share one GPU: the early send hangs "
+                 "there (HIP hardware queues); set GPU_MAX_HW_QUEUES=2 (same bits) or "
+                 "VGD_CS_EARLY=0, or use at most 2 ranks per GPU");
+    }
+  }
+#endif
   // the early send's cells are not computed twice: m1_vgdcs_estamp stamps
   // each (m, k, j, d) m1_vgdcs_eshell computes (vgd_est[0], stamp vgd_esid of the shell;
   // eshell counts the clamps itself) and the shell kernel skips the stamped ones: the
