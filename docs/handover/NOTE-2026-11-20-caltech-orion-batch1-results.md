@@ -1272,3 +1272,5 @@ B_br gate not passed; arms not started
   | t19r | cyc 2100 | t 5.296576e+04 | 4.20% of 1.26e6 | dt 4.008022e+00 | KE 2.75e+41 | Ltop/Lin 1.109 | Lbot/Lin 1.005 | CW 65 FATAL 0 | last hst: [t 4.323e+04 KE 5.3e+40 Lt 0.963 Lb 0.984] [t 4.681e+04 KE 1.15e+41 Lt 1.024 Lb 0.993] [t 5.043e+04 KE 2.75e+41 Lt 1.109 Lb 1.005] 
   | m35mms | cyc 11000 | t 9.424215e+04 | 10.91% of 8.64e5 | dt 8.003906e+00 | KE 1.4e+39 | Ltop/Lin 0.988 | Lbot/Lin 0.993 | CW 0 FATAL 0 | last hst: [t 9.301e+04 KE 1.41e+39 Lt 0.980 Lb 0.987] [t 9.36e+04 KE 1.41e+39 Lt 0.979 Lb 0.989] [t 9.42e+04 KE 1.4e+39 Lt 0.988 Lb 0.993] 
   | i1_m35mms_f1k | cyc 3550 | t 4.151663e+04 | 4.81% of 8.64e5 | dt 1.169484e+01 | KE 2.89e+37 | Ltop/Lin 0.980 | Lbot/Lin 0.977 | CW 0 FATAL 0 | last hst: [t 4.021e+04 KE 1.56e+37 Lt 0.975 Lb 0.979] [t 4.08e+04 KE 2.23e+37 Lt 0.977 Lb 0.978] [t 4.141e+04 KE 2.89e+37 Lt 0.980 Lb 0.977] 
+- (02:09) PROD 1121b:
+  ALERT dt collapse t19r: max 40.937 -> 4.01361 (last 200 cycle lines) at cycle=2250 time=5.362033e+04
