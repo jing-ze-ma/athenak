@@ -1,0 +1,6 @@
+21:<hydro> duale-1112: dual_energy 0 (eta 0.001, slots -1,-1) floor_pay rad_column fofc_retest 0 floor_audit 0
+22:rad_m1: vet_scatter on, form ma, J (relaxed source) relaxed (default), table split kappa_e = const (kappa_e 0.34, floor 1e-05, sigma_T/m_u 0.40062, code units)
+32:<rad_m1> implicit_pos_floor_cons: the E floor's uncovered raise is taken from the radiation of the same column (no energy created)
+33:<rad_m1> implicit_pos_floor_gas_keep=1: the E floor's raise leaves the gas at least that share of its eint
+61:<time> dt_retry on: fac 0.5 max 8 ngood 10 grow 1.25 views minimal cap -1
+95:<time> dt_retry checkpoint: 2423 members, 638 Views (11 copied, 5.211185e+03 MB on rank 0): hyd.u0 7.440966e+02 hyd.w0 7.440966e+02 hyd.wder 2.976387e+02 hyd.wtemp 1.488193e+02 m1.f0x1 1.491066e+02 m1.f0x2 1.499299e+02 m1.f0x3 1.499299e+02 m1.t2k1 1.190555e+03 m1.t2pf1 4.464580e+02 m1.u0 5.952773e+02 m1.opac 5.952773e+02
