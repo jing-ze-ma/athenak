@@ -1,0 +1,26 @@
+a cycles 0 - 120 dt first 37.0513 last 39.0569 s/cycle steady 2.425 first elapsed 43.2
+a 'FATAL' 0 
+a 'CLEAN WARNING' 0 
+a 'DT_RETRY' 0 
+a 'WARNING' 4 ### WARNING: 13 input parameter(s) were never read by the code (typo, or a key AthenaK does not have?):
+a 'march' 0 
+a 'clean_init steady:' 1 <rad_m1> clean_init steady: converged after 3 passes, residual 7.900e-12 (tol 1.0e-08; 0 formal solutions); radiation E 7.9851317838e+45 -> 7.8476939676e+45, F/c 1.0631e+42 0.0000e+00 0.0000e+00 -> 1.7075e+41 1.1036e+30 5.0437e+29 (volume sums)
+a 'he_star_m1: GM' 1 he_star_m1: GM = 1.02688e+28, F_in = 3.01435e+14, tau(r_in) = 1.66451e+06, r_int (tau = 1) = 2.17878e+12, r_top = 2.34036e+13, sponge rate = 0.001 above r = 2.10632e+13
+a 'he_seed_band = n2 BAND' 1 he_star_m1: he_seed_band = n2 BAND r 1.87364e+12 .. 2.11592e+12 (r/r_int 0.859952 - 0.97115, r_int 2.17878e+12), 19 cells 99..117; peak at r/r_int 0.942061: sigma 0.000264297 /s, 1/sigma 0.0437919 d, T 137881 K, Gamma1 1.34517, H_p/r 0.0483091; pi r/H_p 65.0311, l_8 180.467 (8 cells per wavelength, 
+a 'seed = ' 1 he_star_m1: seed = real spherical harmonics l 16..64 (3969 terms, all m), amplitude 0.001 (eint), r 1.87364e+12 .. 2.11592e+12, rng 1234
+a 'direction maps' 1 <rad_m1> vet_gd: global-direction SC closure on the sp wedge, level-symmetric LQ10 (120 directions); z-rotation every 0 cycle(s) (0 = fixed), first angle 0; rank 0 wall ghost columns 45144, direction maps exact 2358720 of 5417280 (the rest: nearest direction)
+a 'he_ic_equil' 0 
+b run.log CW 0 DT_RETRY 0 FATAL 0
+b run2.log CW 0 DT_RETRY 0 FATAL 0
+GPU mem peak MiB max 78377 min 78169 (n=4) = 54.5 % of 143771 MiB
+rt t19l64.hydro.hst rows a 121 b 121 last 60 rows IDENTICAL
+rt t19l64.user.hst rows a 121 b 121 last 60 rows IDENTICAL
+rt t19l64.hydro_w.00005.bin same
+rt t19l64.m1.00005.bin same
+rt t19l64.m1_face.00001.bin same
+rt t19l64.m1_vet.00001.bin same
+a rc=0 wall=388
+b rc=0 wall=243
+restart from /resnick/groups/carnegie_poc/jingze/orion_runs_1121/freshgo/STD_t19l64/b/rst/t19l64.00003.rst
+b rc=0 wall=216
+DONE
