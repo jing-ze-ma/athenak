@@ -1086,3 +1086,13 @@ B_br gate not passed; arms not started
 - (01:02) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
   CW t19r (log.0) cycle 1135 [cycle=1150 time=4.577219e+04 dt=7.658110e+00]: CLEAN WARNING cycle 1135 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 37)
   CW t19r (log.0) cycle 1147 [cycle=1150 time=4.577219e+04 dt=7.658110e+00]: CLEAN WARNING cycle 1147 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 38)
+- (01:03) PROD 1121b:
+  progress:
+   t19l64: cycle=1800 time=6.792978e+04 dt=2.845509e+01 | KE_int 2.6586579047201748e+42 L_bot/L_in 0.991 L_top/L_in 1.510 | CW 11 FATAL 0 | FLIM 21556 floorcap 147 | rst t19l64.00001.rst
+   t9l62: cycle=3250 time=3.147443e+05 dt=9.683831e+01 | KE_int 5.2408427786155970e+42 L_bot/L_in 0.990 L_top/L_in 1.082 | CW 0 FATAL 0 | FLIM 24668 floorcap 264 | rst t9l62.00007.rst
+   m35mms: cycle=8350 time=7.468043e+04 dt=7.793225e+00 | KE_int 1.7426261805899665e+39 L_bot/L_in 0.998 L_top/L_in 1.009 | CW 0 FATAL 0 | FLIM 68329 floorcap 670 | rst m35mms.00003.rst
+   bsg: cycle=11850 time=1.690608e+06 dt=1.258467e+02 | KE_int 1.0553052644278290e+42 L_bot/L_in 1.003 L_top/L_in 1.079 | CW 0 FATAL 0 | FLIM 95686 floorcap 950 | rst bsg3d.00019.rst
+   i1_bsg: cycle=13000 time=2.043121e+06 dt=1.643329e+02 | KE_int 7.1659348158694459e+41 L_bot/L_in 1.010 L_top/L_in 1.025 | CW 0 FATAL 0 | FLIM 91087 floorcap 1044 | rst bsg3d.00023.rst
+   i1_m35mms: cycle=9000 time=8.740338e+04 dt=5.910649e+00 | KE_int 2.0905753949256081e+39 L_bot/L_in 1.003 L_top/L_in 1.082 | CW 10 FATAL 0 | FLIM 74645 floorcap 748 | rst m35mms.00004.rst
+   t9r: cycle=2300 time=2.146964e+05 dt=9.334531e+01 | KE_int 1.1098932685926535e+40 L_bot/L_in 0.993 L_top/L_in 0.982 | CW 0 FATAL 0 | FLIM 16033 floorcap 186 | rst t9l62.00004.rst
+   t19r: cycle=1150 time=4.577219e+04 dt=7.658110e+00 | KE_int 5.2963585386510146e+40 L_bot/L_in 0.984 L_top/L_in 0.963 | CW 39 FATAL 0 | FLIM 20099 floorcap 92 | rst t19l64.00001.rst
