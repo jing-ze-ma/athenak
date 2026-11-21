@@ -44,6 +44,18 @@ bool NewDefaults(ParameterInput *pin) {
 
 void Log(const std::string &line) {Lines().push_back(line);}
 
+void CleanDefaults(ParameterInput *pin) {
+  if (global_variable::restart_run || !pin->DoesBlockExist("rad_m1") ||
+      pin->DoesParameterExist("time", "cfl_number")) return;
+  const std::string sc = pin->DoesParameterExist("rad_m1", "scheme") ?
+      pin->GetString("rad_m1", "scheme") :
+      ((pin->DoesParameterExist("rad_m1", "transport") &&
+        pin->GetString("rad_m1", "transport") == "implicit") ? "clean" : "default");
+  if (sc != "clean") return;
+  pin->GetOrAddReal("time", "cfl_number", 0.3);
+  Log("<time>/cfl_number = 0.3 (the default of a fresh clean M1 run)");
+}
+
 void PrintLog() {
   auto &v = Lines();
   if (global_variable::my_rank == 0 && !v.empty()) {

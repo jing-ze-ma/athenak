@@ -559,6 +559,7 @@ int main(int argc, char *argv[]) {
   if (res_flag) CheckRestartPotentialKeys(pinput, rst_potential_keys);
   // the problem generator's pre-physics fresh-start defaults (recipe.hpp)
   recipe::PgenEarlyDefaults(pinput);
+  recipe::CleanDefaults(pinput);
 
   // Dump input parameters and quit if code was run with -n option.
   if (narg_flag) {

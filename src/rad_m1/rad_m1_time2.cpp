@@ -622,14 +622,16 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   // facebound-1112 step 1 <rad_m1>/time2_face_fct (rad_m1.hpp; read only when named)
   // defaults-1114 (USER 11-13): DEFAULT true on the cubed sphere / spherical polar with
   // multi-D implicit transport and hesdirk2 (ffct14 above); false elsewhere and with
-  // recipe none, as before.  Read only when named; an explicit key wins.  The clean
-  // scheme: off unless named, and not for the cell layout (its t2inc F channels are
-  // cell momenta, and scaling them alone breaks the momentum and angular-momentum
-  // balance with the gas); the staggered layout's are face F as here, and its solve
-  // stores the energy flux Phi that moved E (CleanWriteBack)
-  t2_ffct = ffct14 && !clean;
-  if (pin->DoesParameterExist("rad_m1", "time2_face_fct")) {
-    t2_ffct = pin->GetBoolean("rad_m1", "time2_face_fct");
+  // recipe none, as before.  An explicit key wins.  The clean scheme: on for a fresh
+  // staggered run (v20.4, recorded; a restart file without the key keeps off), never by
+  // default for the cell layout (its t2inc F channels are cell momenta, and scaling them
+  // alone breaks the momentum and angular-momentum balance with the gas); the staggered
+  // layout's are face F as here, and its solve stores the energy flux Phi that moved E
+  // (CleanWriteBack)
+  const bool cfd = clean && !cln_cell && !global_variable::restart_run;
+  t2_ffct = (ffct14 && !clean) || cfd;
+  if (pin->DoesParameterExist("rad_m1", "time2_face_fct") || cfd) {
+    t2_ffct = pin->GetOrAddBoolean("rad_m1", "time2_face_fct", t2_ffct);
   }
   t2_pfst = t2_ffct || (clean && !cln_cell);
   t2_ffct_emin = (clean && !cln_cell) ? 0.1 : 0.0;   // (rad_m1.hpp)

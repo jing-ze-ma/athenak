@@ -3311,7 +3311,7 @@ class RadiationM1 {
   bool cln_csvr = false;        // clean_stag_csvec_radial (CleanStagCsVector)
   bool cln_rayratio = false;    // clean_stag_rayratio: the bracket of ray ratios x E
   bool cln_ringjmin = true;     // clean_ring_jmin: ring J ratios only of ray-held cells
-  bool cln_linpass = false;   // implicit_lin_maxit named: a pass goes on past a failed solve
+  bool cln_linpass = false;   // clean_lin_pass: a pass goes on past a failed linear solve
   void CleanStagXDonor(const bool first, const bool lat = true);
   void CleanStagXCount(const int inl, const int nit);
   void CleanWorstCell(const Real dnl, const Real dnl0);
@@ -4064,9 +4064,10 @@ class RadiationM1 {
     int jw = -1;               // the ratio field weighting the sets (-1: equal)
   };
   int vra_k = 0;               // vet_rotate_avg (K; 0/1 off)
-  // raycorr-1108 <rad_m1>/vet_rotate_avg_ema = N >= 1 (default 128 when the direction set
-  // rotates, else read only when named; 0 = off, the K window): the K-window mean replaced by an exponential moving average over the
-  // rotated sets, weight a = 1/N per rotation block, kept in the same offset form (ONE
+  // raycorr-1108 <rad_m1>/vet_rotate_avg_ema = N >= 1 (default 128 on a fresh run whose
+  // set rotates, else read only when named; 0 = off, the K window): the K-window mean
+  // replaced by an exponential moving average over the rotated sets, weight a = 1/N per
+  // rotation block, kept in the same offset form (ONE
   // slot: e = avg - g_b(now), r = Jbar/J_b, + an aux slot for the change test; vra_k = 3
   // internally): effective window
   // ~2N - 1 sets at the memory of K = 2.  vet_rotate_avg_ema_tau > 0 (physical time) and

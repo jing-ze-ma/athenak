@@ -2888,11 +2888,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     std::cout << "<rad_m1> implicit_pos_floor_cons: the E floor's uncovered raise is taken "
               << "from the radiation of the same column (no energy created)" << std::endl;
   }
-  if (pin->DoesParameterExist("rad_m1","implicit_pos_gas_cons")) {
-    impl_pos_gas_cons = pin->GetBoolean("rad_m1","implicit_pos_gas_cons");
+  // implicit_pos_gas_cons = true and implicit_pos_floor_gas_keep = 1: the defaults of a
+  // fresh clean run (v20.4, recorded; a restart file without them keeps the old off)
+  const bool cnw = clean && !global_variable::restart_run;
+  if (cnw || pin->DoesParameterExist("rad_m1","implicit_pos_gas_cons")) {
+    impl_pos_gas_cons = pin->GetOrAddBoolean("rad_m1","implicit_pos_gas_cons",true);
   }
-  if (pin->DoesParameterExist("rad_m1","implicit_pos_floor_gas_keep")) {
-    impl_pos_flr_gk = pin->GetReal("rad_m1","implicit_pos_floor_gas_keep");
+  if (cnw || pin->DoesParameterExist("rad_m1","implicit_pos_floor_gas_keep")) {
+    impl_pos_flr_gk = pin->GetOrAddReal("rad_m1","implicit_pos_floor_gas_keep",1.0);
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> implicit_pos_floor_gas_keep=" << impl_pos_flr_gk << ": the E "
                 << "floor's raise leaves the gas at least that share of its eint" << std::endl;
@@ -3640,8 +3643,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","zalesak_colsweep")) {
     zl_colsweep = pin->GetBoolean("rad_m1","zalesak_colsweep");
   }
-  if (pin->DoesParameterExist("rad_m1","zalesak_active")) {
-    zl_active = pin->GetBoolean("rad_m1","zalesak_active") && (zl_local == 0) &&
+  // (zalesak_active: default on for a fresh clean run, v20.4, recorded)
+  if ((clean && !global_variable::restart_run) ||
+      pin->DoesParameterExist("rad_m1","zalesak_active")) {
+    zl_active = pin->GetOrAddBoolean("rad_m1","zalesak_active",true) && (zl_local == 0) &&
                 !zl_colsweep;
   }
   zl_prof = (std::getenv("M1_FCT_PROF") != nullptr);

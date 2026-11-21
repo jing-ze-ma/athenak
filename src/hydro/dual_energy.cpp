@@ -45,8 +45,10 @@ void DualEnergy::Read(ParameterInput *pin, const std::string &block, const EOS_D
                       int nfluid, int du_off) {
   blk = block;
   on = Named(pin, blk, "dual_energy") && pin->GetBoolean(blk, "dual_energy");
-  // floor_pay: default rad_column with eos = general and <rad_m1>, else none
-  const bool rad = eos.IsGeneral() && pin->DoesBlockExist("rad_m1");
+  // floor_pay: default rad_column for a fresh run with eos = general and <rad_m1>
+  // (recorded; a restart file without the key keeps none), else none
+  const bool rad = eos.IsGeneral() && pin->DoesBlockExist("rad_m1") &&
+                   !global_variable::restart_run;
   if (rad || Named(pin, blk, "floor_pay")) {
     const std::string s = pin->GetOrAddString(blk, "floor_pay", "rad_column");
     if (s == "rad" || s == "rad_column") {

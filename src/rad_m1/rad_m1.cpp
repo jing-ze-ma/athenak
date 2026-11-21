@@ -76,8 +76,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     std::exit(EXIT_FAILURE);
   }
   }
-  // ---- <rad_m1>/scheme = clean (clean-1114): the clean stage solve (rad_m1_clean.cpp)
-  {std::string sc = pin->GetOrAddString("rad_m1","scheme","default");
+  // ---- <rad_m1>/scheme = clean (clean-1114): the clean stage solve (rad_m1_clean.cpp),
+  // the default of a fresh implicit run (v20.4).  The production values below are the
+  // defaults of a fresh clean run; a restart file without a key keeps its old default
+  const bool nw = !global_variable::restart_run;
+  {const bool scd = nw && (transport == M1_TRANSPORT_IMPLICIT);
+  if (scd && !pin->DoesParameterExist("rad_m1","scheme")) {
+    recipe::Log("<rad_m1>/scheme = clean (the default with transport = implicit)");
+  }
+  std::string sc = pin->GetOrAddString("rad_m1","scheme",scd ? "clean" : "default");
   if (sc.compare("clean") == 0) {
     clean = true;
     CleanPreflight(pin);
@@ -86,24 +93,25 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_tol = pin->GetOrAddReal("rad_m1","clean_tol",1.0e-10);
     cln_cnorm = pin->GetOrAddReal("rad_m1","clean_init_cnorm",1.0e-10);
     cln_lcnorm = pin->GetOrAddReal("rad_m1","clean_lin_cnorm",1.0e-10);
-    // the old production's keys an input names (its HG/RSG decks; read only when named):
-    // implicit_maxit is the default of clean_maxnl, and with implicit_lin_maxit a linear
-    // solve runs to clean_maxit without the stall test and a pass goes on from its
-    // iterate (CleanSolve).  clean_maxit (800) does not take implicit_lin_maxit (a named
-    // other value prints a NOTE), nor clean_conv_max (1e-5) implicit_tol_rel_max
-    // (CleanPreflight)
-    {int pm = 50, pl = 0;
+    // clean_maxnl (200), clean_maxit (800) and clean_conv_max (1e-5) do not take the old
+    // production's implicit_maxit, implicit_lin_maxit and implicit_tol_rel_max
+    // (CleanPreflight names the clean keys; a named implicit_lin_maxit prints a NOTE).
+    // clean_lin_pass (default on, the old production's form): a linear solve that ends
+    // at clean_maxit leaves its iterate to the next pass, without the stall test
+    // (CleanSolve); a restart file without the key keeps the form a named
+    // implicit_lin_maxit set
+    {int pl = 0;
     for (const InputBlock &ib : pin->block) {
       if (ib.block_name != "rad_m1") continue;
       for (const InputLine &ln : ib.line) {
         if (ln.param_comment == ParameterInput::default_comment) continue;
-        const std::string &k = ln.param_name;
-        if (k == "implicit_maxit") pm = pin->GetInteger("rad_m1",k);
-        if (k == "implicit_lin_maxit") pl = pin->GetInteger("rad_m1",k);
+        if (ln.param_name == "implicit_lin_maxit") {
+          pl = pin->GetInteger("rad_m1","implicit_lin_maxit");
+        }
       }
     }
     const bool nmi = pin->DoesParameterExist("rad_m1","clean_maxit");
-    cln_maxnl = pin->GetOrAddInteger("rad_m1","clean_maxnl",pm);
+    cln_maxnl = pin->GetOrAddInteger("rad_m1","clean_maxnl",200);
     cln_maxit = pin->GetOrAddInteger("rad_m1","clean_maxit",800);
     cln_bmax = pin->GetOrAddReal("rad_m1","clean_conv_max",1.0e-5);
     if (global_variable::my_rank == 0 && pl > 0 && !nmi && pl != cln_maxit) {
@@ -111,7 +119,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "solves stop at clean_maxit = " << cln_maxit
                 << " (name clean_maxit to change it)" << std::endl;
     }
-    cln_linpass = (pl > 0);}
+    cln_linpass = pin->GetOrAddBoolean("rad_m1","clean_lin_pass",nw || pl > 0);}
     cln_tol_nl = pin->GetOrAddReal("rad_m1","clean_tol_nl",1.0e-11);
     // clean_pc = vcycle | x1line | prodmg (read only when named): the preconditioner of
     // the cell layout (CleanCellPrecondition)
@@ -158,14 +166,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_rot_ring = off | live | jump (read only when named; live wherever the vet_gd
     // FV rays rotate with a cross-fade, CleanInit): a rotating union swept as the current
     // set (+ the next one), the older ones carried as moment offsets (CleanRingMoments)
-    // clean_rot_fuse (read only when named; default false): the live ring's two sets
+    // clean_rot_fuse (default on): the live ring's two sets
     // (b, b+1) of a build in one fused sweep (vet_gd_rotate_xfade_fuse; the raw sp band
     // and the cubed sphere's compact lists: one message per partner, VetGdGbHaloX /
     // VetGdCsHaloCX), the closure of each from its own intensities: bitwise the two
     // sweeps; a second intensity array
-    if (pin->DoesParameterExist("rad_m1","clean_rot_fuse")) {
-      cln_rfuse = pin->GetBoolean("rad_m1","clean_rot_fuse");
-    }
+    cln_rfuse = pin->GetOrAddBoolean("rad_m1","clean_rot_fuse",nw);
     if (pin->DoesParameterExist("rad_m1","clean_rot_ring")) {
       std::string rr = pin->GetString("rad_m1","clean_rot_ring");
       cln_ring = (rr.compare("live") == 0) ? 1 : ((rr.compare("jump") == 0) ? 2 : 0);
@@ -204,7 +210,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                   pin->GetString("rad_m1","implicit_predictor") == "none");
     {std::string bf = pin->GetOrAddString("rad_m1","clean_bc","halfrange");
     cln_bdry_form = (bf.compare("marshak") == 0) ? 1 : 0;}
-    {std::string ly = pin->GetOrAddString("rad_m1","clean_layout","cell");
+    // clean_layout = staggered (default) | cell
+    {std::string ly = pin->GetOrAddString("rad_m1","clean_layout",
+                                          nw ? "staggered" : "cell");
     std::string al = pin->GetOrAddString("rad_m1","clean_alpha","tau");
     std::string rc = pin->GetOrAddString("rad_m1","clean_recon","plm");
     cln_cell = (ly.compare("cell") == 0);
@@ -366,13 +374,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // clean_stag_thinf (default on): the staggered bracket's ray correction in the face
     // half ranges, realisable (CleanStagBracket), not as the gated lagged flux DG
-    cln_thinf = stag("clean_stag_thinf", true);
-    // clean_stag_xdonor = off (default) | p1 | lag: the off-diagonal stress flux an
-    // M-matrix term (CleanStagXDonor); clean_stag_xsrc (default off): also the face
+    cln_thinf = !cln_cell && pin->GetOrAddBoolean("rad_m1","clean_stag_thinf",nw);
+    // clean_stag_xdonor = lag (default) | p1 | off: the off-diagonal stress flux an
+    // M-matrix term (CleanStagXDonor); clean_stag_xsrc (default on): also the face
     // sources past their explicit share; clean_stag_xsweep (default off): a monotone
     // line-Jacobi sweep after each linear solve
     if (!cln_cell) {
-      const std::string xd = pin->GetOrAddString("rad_m1","clean_stag_xdonor","off");
+      const std::string xd = pin->GetOrAddString("rad_m1","clean_stag_xdonor",
+                                                 nw ? "lag" : "off");
       if (xd != "off" && xd != "p1" && xd != "lag") {
         std::cout << "### FATAL ERROR <rad_m1>/clean_stag_xdonor = off | p1 | lag"
                   << std::endl;
@@ -380,7 +389,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       }
       cln_xd = (xd != "off");
       cln_xlag = (xd == "lag");
-      cln_xsrc = cln_xd && stag("clean_stag_xsrc", false);
+      cln_xsrc = cln_xd && pin->GetOrAddBoolean("rad_m1","clean_stag_xsrc",nw);
       cln_xsw = cln_xd && stag("clean_stag_xsweep", false);
       // clean_stag_kpos = off (default) | faces (= true) | cell | redo: the stage increment
       // in MPRK form (CleanStagKPos): faces, every slope face flux and the cell part
@@ -421,7 +430,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       // clean_cs_lz_tel (default on for the staggered cubed sphere): its L_z by
       // telescoping, the gas phi momentum of CleanCsTorque and the radiation's L_z that of
       // its face momenta, so that the ledger holds the radial boundaries' torque alone
-      cln_lzt = stag("clean_cs_lz_tel", cln_lza == 2);
+      if (!cln_cell && (cln_lza == 2 || pin->DoesParameterExist("rad_m1",
+                                                                 "clean_cs_lz_tel"))) {
+        cln_lzt = pin->GetOrAddBoolean("rad_m1","clean_cs_lz_tel",nw);
+      }
       if (cln_lzt && cln_lza != 2) {
         std::cout << "### FATAL ERROR: <rad_m1>/clean_cs_lz_tel needs the cubed sphere "
                   << "and clean_layout = staggered" << std::endl;
@@ -442,14 +454,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       // clean_xt_norm (default off, study): the local exchange with E responding,
       // e(T) + A T^4/(1 + hc kE) = eint + hc kE E/(1 + hc kE)
       cln_xtcons = stag("clean_xt_cons", false);
-      // clean_xt_exact = off | cons | x2 (default off): the exchange's bookkeeping with one
+      // clean_xt_exact = cons (default) | off | x2: the exchange's bookkeeping with one
       // A' per cell and pass (CleanRightHandSide): cons, the first iterate's T from the
       // pass's gas row (clean_xt_cons), the work the row and the gas's kinetic energy
       // differ by to E whole (eint takes the heating only), the closure printed (CLEAN
       // XT); x2 also every T root from the local 2x2 of the E and gas rows, E + e kept
       {
-        const std::string xe = pin->DoesParameterExist("rad_m1", "clean_xt_exact") ?
-                               pin->GetString("rad_m1", "clean_xt_exact") : "off";
+        const std::string xe = pin->GetOrAddString("rad_m1","clean_xt_exact",
+                                                   nw ? "cons" : "off");
         if (xe != "off" && xe != "cons" && xe != "x2") {
           std::cout << "### FATAL ERROR <rad_m1>/clean_xt_exact = off | cons | x2"
                     << std::endl;
@@ -505,10 +517,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl << "<rad_m1>/clean_stag_pc = mg | line" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_stag_mg_color = parity (default) | mirror (read only when named): the mg's
-    // line colours, (j + k) parity or mirror-symmetric (CleanStagLineSolve)
-    const std::string mc = pin->DoesParameterExist("rad_m1","clean_stag_mg_color") ?
-                           pin->GetString("rad_m1","clean_stag_mg_color") : "parity";
+    // clean_stag_mg_color = mirror (default) | parity: the mg's line colours,
+    // mirror-symmetric or (j + k) parity (CleanStagLineSolve)
+    const std::string mc = pin->GetOrAddString("rad_m1","clean_stag_mg_color",
+                                               nw ? "mirror" : "parity");
     if (mc != "parity" && mc != "mirror") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_m1>/clean_stag_mg_color = parity | mirror"
@@ -3368,10 +3380,11 @@ void RadiationM1::RotAvgParse(ParameterInput *pin) {
                 << "last " << vra_k << " rotated sets" << std::endl;
     }
   }
-  // raycorr-1108: vet_rotate_avg_ema = N (default 128 when the direction set rotates,
-  // else read only when named; 0 = off; see rad_m1.hpp): the exponential moving average
-  // over the rotated sets (one offset slot, vra_k = 2)
-  const bool erot = (vgd_on || vet_sc) && (vgd_on ? VgdRotOn() : vsc_rot);
+  // raycorr-1108: vet_rotate_avg_ema = N (default 128 + change_form step for a fresh run
+  // whose direction set rotates, recorded; else read only when named; 0 = off; see
+  // rad_m1.hpp): the exponential moving average over the rotated sets (one offset slot)
+  const bool nw = !global_variable::restart_run;
+  const bool erot = nw && (vgd_on || vet_sc) && (vgd_on ? VgdRotOn() : vsc_rot);
   if (erot || pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema")) {
     vra_ema_n = pin->GetOrAddReal("rad_m1","vet_rotate_avg_ema",128.0);
   }
@@ -3392,7 +3405,8 @@ void RadiationM1::RotAvgParse(ParameterInput *pin) {
     }
     {
       const std::string fm = pin->GetOrAddString("rad_m1",
-                                                 "vet_rotate_avg_ema_change_form","step");
+                                                 "vet_rotate_avg_ema_change_form",
+                                                 nw ? "step" : "linear");
       if (fm.compare("step") == 0) {
         vra_ema_chstep = true;
       } else if (fm.compare("linear") != 0) {
