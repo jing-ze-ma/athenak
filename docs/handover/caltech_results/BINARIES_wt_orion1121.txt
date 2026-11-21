@@ -1,0 +1,78 @@
+  binaries in /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/ (name | md5 | date | source commit (worktree HEAD) | extra defines):
+    athena_bfx12_8ba228941 | ddc3f5232d458fc7c4e55841a03f5692 | 2026-11-20 12:02 | 8ba228941 rad_m1 clean staggered: BEAMFIX prototype dg_form 11 (excess | 
+    athena_bfx13_df0e4d19c | 0b2d63c26bd7e4328fb7a1c99a04cea9 | 2026-11-20 12:18 | df0e4d19c rad_m1 clean staggered: BEAMFIX prototype dg_form 13 (form 1 | 
+    athena_bfx16_4ed45827f | 4c9f1ba816ea10108a544e5fc2f0e3ed | 2026-11-20 12:59 | 4ed45827f rad_m1 clean staggered: BEAMFIX diagnosis dg_form 15/16 (one | 
+    athena_bfx21_ffa952015 | 256158cb16f65665a2e081dae944815d | 2026-11-20 13:43 | ffa952015 rad_m1 clean staggered: BEAMHG prototype dg_form 21 (13 + v2 | 
+    athena_bfx_3a67711b9 | 03cc0fa19495e16b75534ecb185549e3 | 2026-11-20 11:27 | 3a67711b9 rad_m1 clean staggered: BEAMFIX prototype key clean_stag_dg_ | 
+    athena_bfx7_45a26ad8c | 3d695c5c2e74586845bd0cc432cbe0b1 | 2026-11-20 11:45 | 45a26ad8c rad_m1 clean staggered: BEAMFIX prototype dg_form 5 (ungated | 
+    athena_bfxc20_29f989379 | a694ad336d05908dfa718c623b906d05 | 2026-11-20 13:16 | 29f989379 rad_m1 clean staggered: BEAMFIX prototype dg_form 20 (13 + r | 
+    athena_bfxc_7d3d3c036 | bc94625d6af22ef30d9e0cc254def9e7 | 2026-11-20 13:11 | 7d3d3c036 rad_m1 clean staggered: BEAMFIX prototype dg_form 17/18 (don | 
+    athena_bfxf_6ad6817aa | 811cbc42dd3bac14dd8528d5267c76e6 | 2026-11-20 15:02 | 6ad6817aa rad_m1 clean staggered: BEAMHG prototype clean_stag_thinf_gm | 
+    athena_bfxg_e07e164a8 | e1c435a22178e9f2d9bdce8eefaae315 | 2026-11-20 14:16 | e07e164a8 rad_m1 clean staggered: BEAMHG prototype key clean_stag_thin | 
+    athena_conserv-ctl2_5ca370ffc | 6c298cb6b97f9ecf885dd273e18815cf | 2026-11-20 01:52 | 5ca370ffc CONSERV study: env CONSERV_ZB drops the sp phi-face torque f | 
+    athena_conserv-ctl_e973b3cbd | 84c6ba01164f3816947ee046dc39e2d4 | 2026-11-20 01:57 | e973b3cbd CONSERV study: CAUD Lbnd, the sp torque form's open radial b | 
+    athena_conserv-tie_43b937662 | ec67688e2e98ce35e2ddddf2bdf95ed9 | 2026-11-20 01:57 | 43b937662 CONSERV study: CAUD mass / momentum / L_z segment sums aroun | 
+    athena_conv_9e8234b9b | 79e01d099df3fb834e36f00bd224b48c | 2026-11-20 01:55 | 9e8234b9b rad_m1 clean: clean_conv_df's first call returns 0 (the empt | 
+    athena_convdiag_0fbbe9f91 | cad9c778ae734183365fb7aa75a09f2b | 2026-11-20 03:14 | 0fbbe9f91 study: clean_ew_off (diag branch) | 
+    athena_eleak2_8d8ed6e27 | 831ce3bd32cb14f773e73def9304ffd2 | 2026-11-20 04:44 | 8d8ed6e27 floor_pay: what the conversions before the step floored (a r | 
+    athena_eleak_a411520d7 | be1ab2a5d15c17a25366460b7f95d48d | 2026-11-20 04:34 | a411520d7 floor_audit: the report lines carry 10 digits (their own str | 
+    athena_emawb_a6845503c | afe69fbc9fd532b7a4b0a4d4597f1594 | 2026-11-20 15:01 | a6845503c rad_m1 clean ring EMA: the fill0 form for the EMA init outsi | 
+    athena_geom-ca_25ed67139 | ad8366c4cd6189529d7d499a205a2533 | 2026-11-20 01:53 | 25ed67139 rad_m1 clean: the cubed sphere's radial energy flux through  | 
+    athena_geom-fm2_ae8ead451 | afb68e3adc1617ca09c31ccd791cb2a0 | 2026-11-20 01:52 | ae8ead451 rad_m1 clean: clean_ray_flux_in = phi from the run's first w | 
+    athena_h200_a774c43b3 | 85b03bc9e9c30526cc2fe9c0e9f6b6df | 2026-11-20 02:48 | a774c43b3 CUDA launch diet (he_star_m1): bodies >= 512 B launch from d | 
+    athena_h200mb2_a774c43b3 | 8d433d581578b67578fa73f77c8ef17b | 2026-11-20 02:56 | a774c43b3 CUDA launch diet (he_star_m1): bodies >= 512 B launch from d | Athena_EXTRA_DEFS:UNINITIALIZED=ATHENA_CLEAN_FOR_MB=2
+    athena_h200-p4_dbf6a3053 | 6ec49ecfa8402f7a0fef3b889fbf54b3 | 2026-11-20 02:39 | dbf6a3053 rad_m1 clean: the clean_stag_xdonor diagnostic (CleanStagXCo | 
+    athena_h2a_105e3db5c | 762aa0495eea6b41a8b888abe29cdadd | 2026-11-20 17:48 | 105e3db5c rad_m1 clean: cln_wbxc with the face flux for a compile-time | 
+    athena_h2c_875cb2033 | ee431bbf82d6c0b18629bba268be0cf8 | 2026-11-20 17:51 | 875cb2033 rad_m1 clean: build knob ATHENA_CLEAN_FORK_KFAST, CleanForK' | 
+    athena_h2k_875cb2033 | b9e6d88227cb58833b4fa7f9bcfd00af | 2026-11-20 18:31 | 875cb2033 rad_m1 clean: build knob ATHENA_CLEAN_FORK_KFAST, CleanForK' | Athena_EXTRA_DEFS:UNINITIALIZED=ATHENA_CLEAN_FORK_KFAST=1
+    athena_icbal_4a7f72334 | 8d3fd9e236bc9ceb1bb7ffe724f1ded7 | 2026-11-20 16:45 | 4a7f72334 he_star_m1: problem/he_ic_balance_aref = file | dpr for the  | 
+    athena_kfw_7ee3e80dd | cbd650e73c9150a69cda75bea7713f46 | 2026-11-20 07:00 | 7ee3e80dd clean_halo_direct: the pack skips the entries deeper than th | 
+    athena_ksplit_1f9926b49 | be43b4f1caff9da9ba1a42aa6383a18c | 2026-11-20 05:33 | 1f9926b49 study: time2_ksplit (CLEAN KSPLIT print): the stage incremen | 
+    athena_ksplit4_c28cf2f41 | 645d57d71f1d180f406a9f8798bcb167 | 2026-11-20 05:37 | c28cf2f41 study: time2_ksplit also prints CLEAN REAL at stage 1: reali | 
+    athena_ksplit5_c24692a3c | cb86042a660abbb1a36c1ecb97fa5d50 | 2026-11-20 05:52 | c24692a3c rad_m1 time2: time2_k1_xlim acts after time2_face_fct on the | 
+    athena_ksplit6_f909195e0 | 1db02bbcae653fcfbe3d4ece5b007237 | 2026-11-20 06:12 | f909195e0 rad_m1 time2: time2_k1_xlim, gas side: theta no smaller than | 
+    athena_ksplit7_324176605 | cd83da4ad4e756464f0c5fff0006a2c7 | 2026-11-20 06:41 | 324176605 rad_m1 time2: time2_k1_xlim in two passes (Time2K1XLim): gas | 
+    athena_ksplitdiag_0de311cd9 | eb1330fd4e1c249b02631727d2279cdf | 2026-11-20 06:59 | 0de311cd9 rad_m1 clean: CLEAN PDIAGT/PDIAGC study diagnostic: per pass | 
+    athena_lag20_50a417bc4 | 2d1a64e9c67162ca5322aac25bfa4170 | 2026-11-20 01:49 | 50a417bc4 rad_m1 clean: clean_stag_sbown (default off): the beta terms | 
+    athena_lean2_ac4b62c55 | 59c9006ae4914ae0dd66b6a0643124d1 | 2026-11-20 12:14 | ac4b62c55 rad_m1 clean: remove the FV rays (clean_rays = fv1 | fv | ll | 
+    athena_lean_425f2548f | 6120328ac879b3d6dfc2ded799f2b80e | 2026-11-20 03:31 | 425f2548f rad_m1 clean: the keys of the removed cell layout are FATAL  | 
+    athena_lzbook_fb7a8a27f | 915c8e52a529842a92ded40da4ebc3d7 | 2026-11-20 03:20 | fb7a8a27f rad_m1 clean + hydro: L_z / mass / energy budgets that close | 
+    athena_lzcs2_b4ba38764 | e54147aa43648ecf7e7eb35e72db7c56 | 2026-11-20 04:08 | b4ba38764 LZCS STUDY: LZCS_OMEGA, a local copy of the static for the d | 
+    athena_lzcstel_61a578136 | cdbd1d11a14ed679cfe4963bedf502f2 | 2026-11-20 04:10 | 61a578136 rad_m1 clean: force_reference = clean books the reference fo | 
+    athena_lztel2_a1874999f | 7a19115105126dcf67b709515265a057 | 2026-11-20 05:16 | a1874999f rad_m1 clean: clean_cs_lz_tel: the deposit's weights with th | 
+    athena_lztel3_74c8a8bb1 | 03b4c85f3d7b5be86454894219effbb0 | 2026-11-20 13:16 | 74c8a8bb1 rad_m1 clean_cs_lz_tel: the gas takes the net stress defect  | 
+    athena_lztel3f_90c471510 | 394f963d52717585cfccd9ccff9f2304 | 2026-11-20 11:37 | 90c471510 LZTEL3 study: LZ3X prints X, I | 
+    athena_lztel3s_3b22ddd2f | 517a315b4b27a3cf939130428d6cfcb3 | 2026-11-20 11:35 | 3b22ddd2f LZTEL3 study (never merge): env LZ3 prints gas / face radiat | 
+    athena_realf_4d1904a7d | d4087d8176df8d82dc556da0a9b8b095 | 2026-11-20 01:53 | 4d1904a7d rad_m1 clean: clean_stag_fidp = 3 (prototype): the gas takes | 
+    athena_realz2_e7d97c6a9 | 5c70ba76ce06bd7704d6d41ddc076b11 | 2026-11-20 06:30 | e7d97c6a9 rad_m1 clean: clean_stag_fchi acts in the streaming share on | 
+    athena_realz_f959d9535 | f91dccabf42815fe9b4fb2802c3f4442 | 2026-11-20 06:17 | f959d9535 study: CLEAN REALMAP also bins kappa_E/kappa_T (absorption m | 
+    athena_rsgdie_f1855eaa8 | aaa8517dc34640b07c1de8f5ff0f6da6 | 2026-11-20 15:00 | f1855eaa8 rad_m1 clean: clean_retry_budget (a redone step keeps the bu | 
+    athena_rz2_94805ca84 | 076753bf53c9bb91ccf5fb35a2639c39 | 2026-11-20 07:59 | 94805ca84 rad_m1 clean: clean_stag_freal_relax comment wrap (no code c | 
+    athena_rz3_7dcda602a | 6a92a0265ea3bf09176369e88587008f | 2026-11-20 08:36 | 7dcda602a rad_m1 clean: clean_stag_freal_relax = gas_cone | ledger_con | 
+    athena_rz3b_4c684f37b | 620e0f8514a3629288075613a2a1e8a0 | 2026-11-20 09:07 | 4c684f37b rad_m1 clean: clean_stag_freal_lat (default false, read only | 
+    athena_spd2b_170812c47 | d98f6af0243a9740aecb87efdff305fc | 2026-11-20 05:28 | 170812c47 rad_m1: two host syncs fewer per face-FCT round and per ray  | 
+    athena_speedhead_fe6e94f03 | 5081dc74b3932d799801664c815ed686 | 2026-11-20 01:55 | fe6e94f03 rad_m1: time2_face_fct_form = donor removed (the one-pass do | 
+    athena_thinf_2aaaaa5d1 | d4d9ed4708794c11b7055bd5890fe255 | 2026-11-20 01:51 | 2aaaaa5d1 thinf prototype: thinf_v -3/-4, the bracket's target in the  | 
+    athena_tie-check_b8cb577ab | 9fe38751ef0c3329fd143496caa5e376 | 2026-11-20 01:57 | b8cb577ab TIE study: areas as CleanDivW | 
+    athena_tie-prof_2ae22f2c4 | d9ac46d3c3cf1cf04beae1244049b819 | 2026-11-20 01:57 | 2ae22f2c4 PROF study: PROF I per-stage sum V t2inc and booked la slots | 
+    athena_v201_a3b72fdcc | 5d662f7fab00bf56809015283f9392f7 | 2026-11-20 07:16 | a3b72fdcc history: with <mesh>/layout_invariant the HistSums per-MeshB | 
+    athena_v201b_873db9965 | 487d4eaa96b105f519fe14bd9592ef8d | 2026-11-20 08:09 | 873db9965 CleanStagMemUp: on the cubed sphere the donor's outflow over | 
+    athena_v201d_774262b56 | 5472e5f5880e062a87a160fd92a4baf2 | 2026-11-20 07:38 | 774262b56 rad_m1 time2: time2_k1_xlim = th (default 0 = off, read only | 
+    athena_v201e_3efbbbd17 | 5c78f0ea63a63cf9ec5817e11bf8583d | 2026-11-20 07:58 | 3efbbbd17 rad_m1 vet_gd cs: the shell kernel's launch bound 8 by defau | 
+    athena_v202_f4cefb181 | 54c3df35aeb65bced81ad681e47a8020 | 2026-11-20 13:27 | f4cefb181 pgen rhse: the history maxima (vcs_max, vr/vlat max/deep) ar | 
+    athena_v203_e688cb7bc | 7df2b64833e40a77e8a8a04e6dc900ee | 2026-11-20 15:01 | e688cb7bc rad_m1 clean_cs_lz_tel: the gas takes the net stress defect  | 
+    athena_v204_305f11e06 | 49020ecd0e1ecba497e56e681e50d1b9 | 2026-11-20 17:18 | 305f11e06 v20.4 defaults of a fresh clean run (USER 2026-11-20): schem | 
+    athena_v204c_efb083142 | 2063c5ef2053ce39b10760d342215a66 | 2026-11-20 17:47 | efb083142 he_star_m1: problem/he_ic_balance_aref = file | dpr for the  | 
+    athena_v20b_694a3f9aa | cf536ce85e55cabbe571be43c6de911b | 2026-11-20 01:54 | 694a3f9aa rad_m1 clean: the m1 output carries the cell flux of the fac | 
+    athena_v20f_23b99d15a | c795d816ab41f14346323a2222744304 | 2026-11-20 01:51 | 23b99d15a rad_m1 clean: a ring fill outside CleanSteadyStart starts th | 
+    athena_v20g3_35a5b37e6 | 2cb103bdff1bec455f0ed87d3beeff72 | 2026-11-20 03:14 | 35a5b37e6 restart: the tail read-ahead buffer starts at one slab per M | 
+    athena_v20g_6b48f352c | dcda4fb0cf556deb57f0098d863344fb | 2026-11-20 01:50 | 6b48f352c rad_m1 clean: the cubed sphere's face tie (clean_stag_ftie,  | 
+    athena_v20j_6b5388315 | 7f897ea9f3f1299067cf035afe61e470 | 2026-11-20 03:06 | 6b5388315 CUDA launch diet (he_star_m1): bodies >= 512 B launch from d | 
+    athena_v20l_e067945c2 | d83925e068f677c08aabb89d0b3cb33c | 2026-11-20 05:20 | e067945c2 CMake he_star_m1: ATHENA_CUDA_BODY_GLOBAL off by default (H2 | 
+    athena_v20m_cf584d3a6 | e82f3e3031d69953b35f6ceb5ba22c01 | 2026-11-20 06:00 | cf584d3a6 floor_pay: what the conversions before the step floored (a r | 
+    athena_v20n_6d3da47b2 | 762890f793b8f4dd0ee32d5edfe95299 | 2026-11-20 06:08 | 6d3da47b2 rad_m1 clean: clean_cs_lz_tel: the deposit's weights with th | 
+    athena_v20nk_b9c0d1739 | b710a8f5095e45d891e450fc2c3f11da | 2026-11-20 07:46 | b9c0d1739 clean_halo_direct: the pack skips the entries deeper than th | 
+    athena_xcap_999d7afaa | 5de4239e0bb93f763c99c90756bef6d8 | 2026-11-20 14:26 | 999d7afaa rad_m1 clean: clean_stag_xcap_p (default 0 = min(q, c)): the | 
+    athena_xpos2_330120901 | c754ea9148ba5c9890eb9e80ac6f97ea | 2026-11-20 04:03 | 330120901 rad_m1 time2: time2_k1_xpos, flagged cells (E or eint of the | 
+    athena_xpos_3b2f1a25b | 4daf42035f00351c1faff46d57082ecc | 2026-11-20 03:47 | 3b2f1a25b rad_m1 time2: time2_k1_xpos, E low: E takes back the gas's w | 
+    athena_xtloc_947c469d8 | 974830b75938f0a47cc4fe2c92bf1040 | 2026-11-20 03:15 | 947c469d8 rad_m1 clean: clean_xt_local_passes (8): the cell root in a  | 
