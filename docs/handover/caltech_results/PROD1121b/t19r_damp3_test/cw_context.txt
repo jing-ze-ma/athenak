@@ -40,3 +40,17 @@ CLEAN cycle 1351 t2s 2 it -3 (sum 413) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 
 CLEAN FLIM cycle 1351 t2s 2 faces 24920394 momentum cut sum |dF| V/c^2 4.277376e+29
 CLEAN XT cycle 1351 t2s 2 write-back closure 1.609e+00
 CLEAN WARNING cycle 1351 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 6)
+== 2026-11-21 04:50:51 log.0: CW 7-8 (grep -B5)
+CLEAN FLIM cycle 1355 t2s 2 faces 27316341 momentum cut sum |dF| V/c^2 9.893974e+29
+CLEAN FLIM cycle 1355 t2s 2 faces 27316342 momentum cut sum |dF| V/c^2 9.893974e+29
+CLEAN cycle 1355 t2s 2 it -6 (sum 933) pos 0 mark 0 all 0 neg 0 r1 0 r2 2 first 0 2 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 1355 t2s 2 faces 27316342 momentum cut sum |dF| V/c^2 9.893974e+29
+CLEAN XT cycle 1355 t2s 2 write-back closure 3.729e+00
+CLEAN WARNING cycle 1355 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 7)
+
+CLEAN FLIM cycle 1358 t2s 2 faces 27253821 momentum cut sum |dF| V/c^2 9.851771e+29
+CLEAN XT cycle 1358 t2s 2 write-back closure 2.059e+03
+### dt COLLAPSE cycle=1359 time=48429.1 dtold=15.4478 dt=3.44368 | hydro=3.44368 mhd=-1 cond=-1 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (0,101,118,139) gid = 2
+    r=2.3708e+12 rho=1.6032e-18 T=3.19246e+17 p=0.511815 cs=7.29436e+08 v=(8.28338e+06,-35840.8,-5.34122e+08)
+CLEAN WARNING cycle 1358 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 8)
