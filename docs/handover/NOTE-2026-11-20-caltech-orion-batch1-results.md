@@ -1120,3 +1120,9 @@ B_br gate not passed; arms not started
   CW t19r (log.0) cycle 1233 []: CLEAN WARNING cycle 1233 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 49)
   CW t19r (log.0) cycle 1236 []: CLEAN WARNING cycle 1236 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 50)
 - (01:13) C3c_t19 RUNNING on 02-04 since ~01:12 (correction: my 01:09 line said 'started', but the launch had failed on a missing exec bit; relaunched 01:12). B_c3c cd9ceba6, restart t19l64.00001, N0 1127, 450 cycles, J4 keys + thinf_held_gate + nl_print, rst off. First cycle lines: cycle=1150 time=4.409307e+04 dt=3.834613e+01 | FATAL 0 | never-read: job/final_restart 
+- (01:15) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW i1_m35mms (log.0) cycle 9555 []: CLEAN WARNING cycle 9555 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 11)
+  CW t19r (log.0) cycle 1239 [cycle=1250 time=4.879597e+04 dt=3.327470e+01]: CLEAN WARNING cycle 1239 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 51)
+  CW t19r (log.0) cycle 1242 [cycle=1250 time=4.879597e+04 dt=3.327470e+01]: CLEAN WARNING cycle 1242 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 52)
+  CW t19r (log.0) cycle 1247 [cycle=1250 time=4.879597e+04 dt=3.327470e+01]: CLEAN WARNING cycle 1247 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 53)
+  CW t19r (log.0) cycle 1251 []: CLEAN WARNING cycle 1251 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 54)
