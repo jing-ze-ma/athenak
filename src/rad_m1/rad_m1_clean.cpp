@@ -5113,7 +5113,7 @@ void RadiationM1::CleanStagDrag(const bool first, const bool vel, const bool lat
 //! accepts stage 2 (s = 0; a backward-Euler redo from U^n drops them, Time2Restore); the
 //! total and K1's sum in <rad_m1> (restart).
 //! 3-D spherical polar: s is the L_z that crossed the boundaries (CleanStagMomentum's
-//! dlz), <rad_m1>/clean_sp_lz_bnd
+//! dlz), <rad_m1>/clean_lz_ledger (M1LzKey)
 
 void RadiationM1::CleanLzBook(const Real s, const bool start) {
   if (t2_solve == M1_T2S_STAGE1) {
@@ -5127,8 +5127,8 @@ void RadiationM1::CleanLzBook(const Real s, const bool start) {
   cln_lzl += (t2_solve == M1_T2S_STAGE2) ? cln_lzp : cln_lzp + s;
   cln_lzp = 0.0;
   const bool cs = (cln_lza == 2);
-  cln_lzpin->SetReal("rad_m1", cs ? "clean_cs_lz_ledger" : "clean_sp_lz_bnd", cln_lzl);
-  cln_lzpin->SetReal("rad_m1", cs ? "clean_cs_lz_k1" : "clean_sp_lz_bnd_k1", cln_lzs1);
+  cln_lzpin->SetReal("rad_m1", M1LzKey(cln_lzpin, cs, false), cln_lzl);
+  cln_lzpin->SetReal("rad_m1", M1LzKey(cln_lzpin, cs, true), cln_lzs1);
   if (global_variable::my_rank == 0 && !cln_insteady) {
     std::printf("CLEAN LZ%s cycle %d t2s %d ledger %.16e\n", cs ? "" : "B",
                 pmy_pack->pmesh->ncycle, t2_solve, cln_lzl);

@@ -475,10 +475,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (cln_lzbook) {
       const bool cs = (cln_lza == 2);
       cln_lzpin = pin;
-      cln_lzl = pin->GetOrAddReal("rad_m1", cs ? "clean_cs_lz_ledger" : "clean_sp_lz_bnd",
-                                  0.0);
-      cln_lzs1 = pin->GetOrAddReal("rad_m1", cs ? "clean_cs_lz_k1" : "clean_sp_lz_bnd_k1",
-                                   0.0);
+      cln_lzl = pin->GetOrAddReal("rad_m1", M1LzKey(pin, cs, false), 0.0);
+      cln_lzs1 = pin->GetOrAddReal("rad_m1", M1LzKey(pin, cs, true), 0.0);
     }
     cln_xpat = stag("clean_stag_xpat", false);
     // clean_xt_cons (default off): the first iterate's gas T with A's G = 1 - beta^2/2,
@@ -1373,6 +1371,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     if (pin->DoesParameterExist("rad_m1","floorcap_report")) {
       fcap_report = pin->GetInteger("rad_m1","floorcap_report");
+    }
+    // floorcap_mesh_vol (read only when named, default off; scheme = clean): the
+    // counters weighted by the mesh's cell volume, |dp| and L_z of the gas momentum
+    // in the frame of y on every mesh (CleanVol, CleanLzArm); the state is the same
+    if (pin->DoesParameterExist("rad_m1","floorcap_mesh_vol")) {
+      fcap_mvol = pin->GetBoolean("rad_m1","floorcap_mesh_vol");
+      if (fcap_mvol && !clean) {
+        std::cout << "### FATAL ERROR: <rad_m1>/floorcap_mesh_vol needs scheme = clean"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
     }
     if (fcap_rho > 0.0 && (!coupling || !(arad > 0.0))) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__

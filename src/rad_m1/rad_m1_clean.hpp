@@ -1862,6 +1862,14 @@ Real CleanCsFrame(const CleanArgs &x, const int m, const int k, const int j, con
   return x.x1v(m,i)*rho;
 }
 
+//! \brief the arm R of L_z = R p_phi of a cell vector p in the frame of y: spherical
+//! polar x1v sin(theta), the cubed sphere CleanCsFrame's; 0 on Cartesian
+KOKKOS_INLINE_FUNCTION
+Real CleanLzArm(const CleanArgs &x, const int m, const int k, const int j, const int i) {
+  Real q[3][3];
+  return x.cub ? CleanCsFrame(x, m, k, j, i, q) : (x.sph ? x.x1v(m,i)*x.tg(m,2,j) : 0.0);
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn void CleanCsFamily
 //! \brief cubed sphere: the normals n_d of the face families of cell (k,j,i) for the

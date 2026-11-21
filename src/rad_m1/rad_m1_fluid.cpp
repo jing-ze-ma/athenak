@@ -44,6 +44,7 @@
 #include "hydro/hydro_mergelat.hpp"
 #include "mhd/mhd.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_clean.hpp"
 #include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
 #include "pgen/pgen.hpp"
@@ -131,13 +132,16 @@ void RadiationM1::FloorGasCap() {
   const bool tc = fcap_t, kr = fcap_ke_rad;
   const Real tmin = fcap_tmin/otab.tunit;   // code temperature
   const Real ar = arad;
+  const bool mv = fcap_mvol;
+  CleanArgs x;
+  if (mv) x = CleanMakeArgs();
   par_for("m1_floorcap", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real dd = uh(m,IDN,k,j,i);
     if (!(dd < rc) || !(dd > 0.0)) return;
-    const Real wv = hv ? ((x1f(m,i+1)*x1f(m,i+1)*x1f(m,i+1) - x1f(m,i)*x1f(m,i)*x1f(m,i))
-                          /3.0*(cos(x2f(m,j)) - cos(x2f(m,j+1)))*(x3f(m,k+1) - x3f(m,k)))
-                       : 1.0;
+    const Real wv = mv ? CleanVol(x, m, k, j, i) :
+        (hv ? ((x1f(m,i+1)*x1f(m,i+1)*x1f(m,i+1) - x1f(m,i)*x1f(m,i)*x1f(m,i))
+               /3.0*(cos(x2f(m,j)) - cos(x2f(m,j+1)))*(x3f(m,k+1) - x3f(m,k))) : 1.0);
     Real m1 = uh(m,IM1,k,j,i), m2 = uh(m,IM2,k,j,i), m3 = uh(m,IM3,k,j,i);
     const Real msq = m1*m1 + m2*m2 + m3*m3;
     Real ekin = 0.5*msq/dd;
@@ -147,9 +151,15 @@ void RadiationM1::FloorGasCap() {
     if (vc > 0.0 && msq > SQR(vc*dd)) {
       const Real fs = vc*dd/sqrt(msq);
       const Real dke = (1.0 - fs*fs)*ekin;
-      // (the momentum removed, booked: |dp| V and, spherical polar, its L_z)
-      Kokkos::atomic_add(&cnt_.d_view(4), (1.0 - fs)*sqrt(msq)*wv);
-      if (hv) {
+      // (the momentum removed, booked: |dp| V and, spherical polar or with
+      // floorcap_mesh_vol on every mesh, its L_z)
+      Real p[3] = {m1, m2, m3};
+      if (mv) CleanGasMomentum(x, uh, m, k, j, i, p);
+      Kokkos::atomic_add(&cnt_.d_view(4), (1.0 - fs)*(mv ? sqrt(p[0]*p[0] + p[1]*p[1] +
+                         p[2]*p[2]) : sqrt(msq))*wv);
+      if (mv) {
+        Kokkos::atomic_add(&cnt_.d_view(5), (1.0 - fs)*CleanLzArm(x, m, k, j, i)*p[2]*wv);
+      } else if (hv) {
         Kokkos::atomic_add(&cnt_.d_view(5), (1.0 - fs)*m3*0.5*(x1f(m,i) + x1f(m,i+1))*
                            sin(0.5*(x2f(m,j) + x2f(m,j+1)))*wv);
       }

@@ -76,6 +76,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("fcap_t", fcap_t);
   v.value("fcap_ke_rad", fcap_ke_rad);
   v.value("fcap_report", fcap_report);
+  v.value("fcap_mvol", fcap_mvol);
   v.dual("fcap_cnt", fcap_cnt);
   v.value("rsla_warn", rsla_warn);
   v.value("rsla_vmax", rsla_vmax);

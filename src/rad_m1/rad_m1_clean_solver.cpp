@@ -1008,9 +1008,9 @@ Real RadiationM1::CleanLzTotal() {
   const Real ic2 = 1.0/(x.c*x.c);
   const Real s = CleanSums(pmy_pack, "cln_lztot", 1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &s0, Real &s1) {
-    Real p[3] = {0.0, 0.0, 0.0}, q[3][3];
+    Real p[3] = {0.0, 0.0, 0.0};
     if (fo) CleanGasMomentum(x, uh, m, k, j, i, p);
-    const Real r = x.cub ? CleanCsFrame(x, m, k, j, i, q) : x.x1v(m,i)*x.tg(m,2,j);
+    const Real r = CleanLzArm(x, m, k, j, i);
     const Real v = CleanVol(x, m, k, j, i);
     if (!tel) {
       s0 += v*r*(p[2] + ur(m,M1_F3,k,j,i)*ic2);

@@ -159,6 +159,15 @@ inline std::string M1KeyName(ParameterInput *pin, const std::string &canon,
   return canon;
 }
 
+//! clean_lz_ledger, clean_lz_ledger_k1: the clean L_z ledger and K1's sum (restart), one
+//! name on every mesh; a file with the old one (cubed sphere clean_cs_lz_ledger /
+//! clean_cs_lz_k1, spherical polar clean_sp_lz_bnd / _k1) keeps it (M1KeyName)
+inline std::string M1LzKey(ParameterInput *pin, const bool cs, const bool k1) {
+  return M1KeyName(pin, k1 ? "clean_lz_ledger_k1" : "clean_lz_ledger",
+                   {cs ? (k1 ? "clean_cs_lz_k1" : "clean_cs_lz_ledger")
+                       : (k1 ? "clean_sp_lz_bnd_k1" : "clean_sp_lz_bnd")});
+}
+
 // components of the per-cell opacity array, all stored as rho*kappa (inverse length)
 // components of RadiationM1::vet_cell (closure = vet_sc)
 constexpr int M1_VET_CHX = 0;   // extinction rho (kappa_F + kappa_s) [1/length]
@@ -486,8 +495,10 @@ class RadiationM1 {
   Real fcap_rho = 0.0, fcap_v = 0.0, fcap_tmin = 0.0;
   bool fcap_t = true, fcap_ke_rad = true;
   int fcap_report = 0;
+  bool fcap_mvol = false;   // floorcap_mesh_vol: counters by CleanVol and CleanLzArm
   DualArray1D<Real> fcap_cnt;   // 0 n_v, 1 n_t, 2 dKE, 3 dEint (energy units x volume),
-                                // 4 |dp| V, 5 dL_z V (spherical polar) removed
+                                // 4 |dp| V, 5 dL_z V (spherical polar;
+                                // floorcap_mesh_vol: every mesh) removed
   void FloorGasCap();
 
   // RSLA start-up check (design sect. 2): v_max*tau_max/chat, evaluated once, on the
@@ -2885,12 +2896,11 @@ class RadiationM1 {
   bool cln_thhg = false;    // clean_stag_thinf_held_gate
   bool cln_xdh = false;     // (its hold in this pass)
   // (clean_cs_lz_abs = 2: the L_z V R (dp_torque - dp) the gas does not take, booked as
-  // the radiation's, cln_lzl (<rad_m1>/clean_cs_lz_ledger); its sums over the cells as
-  // the gas momentum's slopes K1 (cln_lzs1, <rad_m1>/clean_cs_lz_k1), K2 (cln_lzs2) and
-  // stage start increment (cln_lzc), and the stage-1 part pending until stage 2
+  // the radiation's, cln_lzl (<rad_m1>/clean_lz_ledger); its sums over the cells as
+  // the gas momentum's slopes K1 (cln_lzs1, <rad_m1>/clean_lz_ledger_k1), K2 (cln_lzs2)
+  // and stage start increment (cln_lzc), and the stage-1 part pending until stage 2
   // (cln_lzp). 3-D spherical polar: the same ledger, whose cells' sum there is the L_z
-  // that crossed the boundaries, the open or imposed radial ones
-  // (<rad_m1>/clean_sp_lz_bnd, _k1))
+  // that crossed the boundaries, the open or imposed radial ones (M1LzKey))
   Real cln_lzl = 0.0, cln_lzs1 = 0.0, cln_lzs2 = 0.0, cln_lzc = 0.0, cln_lzp = 0.0;
   ParameterInput *cln_lzpin = nullptr;
   void CleanLzBook(const Real s, const bool start);
