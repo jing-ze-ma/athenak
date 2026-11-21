@@ -139,8 +139,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("dbg_opac_x1hi", dbg_opac_x1hi);
   v.value("dbg_opac_x2lo", dbg_opac_x2lo);
   v.value("dbg_opac_x2hi", dbg_opac_x2hi);
-  v.value("vet_dump_every", vet_dump_every);
-  v.value("vet_dump", vet_dump);
   v.value("vet_time", vet_time);
   v.value("vet_itime", vet_itime);
   v.value("vet_ncall", vet_ncall);
@@ -1360,8 +1358,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("vlat_d_c", vlat_d_c);
   v.view("vlat_cs", vlat_cs);
   v.view("vlat_cs_c", vlat_cs_c);
-  v.view("vlat_lx", vlat_lx);
-  v.view("vlat_tt_c", vlat_tt_c);
   v.view("vlat_geo", vlat_geo);
   v.view("vlat_mu", vlat_mu);
   v.view("vlat_w", vlat_w);
@@ -1378,8 +1374,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cstan_na", cstan_na);
   v.view("cs_qf", cs_qf);
   v.value("vgd_iter", vgd_iter);
-  v.value("vgd_smooth", vgd_smooth);
-  v.view("vgd_sm", vgd_sm);
   v.value("vgd_bandx", vgd_bandx);
   v.value("vgd_taumin", vgd_taumin);
   v.value("vgd_replace", vgd_replace);
@@ -1483,18 +1477,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("vra_bk_hr", vra_bk_hr);
   v.view("vra_bk_q", vra_bk_q);
   v.view("vra_bk_vc", vra_bk_vc);
-  v.value("vgd_emit", vgd_emit);
   v.value("vgd_tbath", vgd_tbath);
-  v.value("vgd_beam", vgd_beam);
-  v.value("vgd_nbeam", vgd_nbeam);
-  v.value("vgd_bdir", vgd_bdir);
-  v.value("vgd_bib", vgd_bib);
-  v.value("vgd_bfp", vgd_bfp);
-  v.value("vgd_bth", vgd_bth);
-  v.value("vgd_bph", vgd_bph);
-  v.value("vgd_bang", vgd_bang);
-  v.value("vgd_be", vgd_be);
-  v.view("vgd_bfx", vgd_bfx);
   v.value("vgd_tws", vgd_tws);
   v.value("vgd_base", vgd_base);
   v.view("vgd_dir", vgd_dir);
@@ -1670,10 +1653,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_htag", vgd_htag);
   v.value("vgd_hlast", vgd_hlast);
   v.value("vgd_hsweep", vgd_hsweep);
-  v.value("vgd_hc_mb", vgd_hc_mb);
-  v.value("vgd_hce", vgd_hce);
-  v.value("vgd_hc_bytes", vgd_hc_bytes);
-  v.value("vgd_hc_nmade", vgd_hc_nmade);
   v.value("vgd_hnext", vgd_hnext);
   v.value("vgd_hpipe", vgd_hpipe);
   v.view("vgd_pbd", vgd_pbd);
@@ -1916,7 +1895,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
 //   pbval_ea : MeshBoundaryValuesCC *
 //   pbval_fs : MeshBoundaryValuesCC *
 //   pbval_vs : MeshBoundaryValuesCC *
-//   pbval_vt : MeshBoundaryValuesCC *
 //   pin_rot_ : ParameterInput *
 //   vgd_es2 : DevExeSpace
 //   vgd_es2_made : bool (vgd_es2 made, kept)
