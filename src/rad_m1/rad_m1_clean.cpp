@@ -3967,6 +3967,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
   if (fwb && cln_fwbc.extent_int(0) != 3) Kokkos::realloc(cln_fwbc, 3);
   if (fwb) Kokkos::deep_copy(cln_fwbc, 0.0);
   auto fwc = cln_fwbc;
+  const bool wbc = e == CLW_X;
   const int kd = (t2_solve == M1_T2S_NONE) ? 0 :
                  ((t2_solve == M1_T2S_STAGE1) ? CLF_KD + 1 : CLF_KD);
   const Real c1lo = cln_c0, c1hi = cln_c1;
@@ -4167,6 +4168,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
             fd(m,CLF_N+1,k,j,i) += s/(x.h*x.c*x.c);
             const Real p = fd(m,CLF_TH,k,j,i)*s*0.5*(CleanVol(x, m, k, j, i) +
                            CleanVol(x, m, k-ek, j-ej, i-ei))/(x.c*x.c);
+            if (!wbc) return;   // (the counters: the write-back's solve, as printed)
             Kokkos::atomic_add(&fwc(0), 1.0);
             Kokkos::atomic_add(&fwc(1), fabs(p));
             if (d == 0) Kokkos::atomic_add(&fwc(2), p);
@@ -4458,7 +4460,7 @@ void RadiationM1::CleanStagFCone(const int e, const int kd) {
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke, nmb1 = pmy_pack->nmb_thispack - 1;
   CleanArgs x = CleanMakeArgs();
-  const bool cub = x.cub, dd = cln_fkin && e == CLW_X && cln_dok;
+  const bool cub = x.cub, dd = cln_fkin && e == CLW_X && cln_dok, wbc = e == CLW_X;
   if (cln_fconc.extent_int(0) != 2) Kokkos::realloc(cln_fconc, 2);
   Kokkos::deep_copy(cln_fconc, 0.0);
   auto fcc = cln_fconc;
@@ -4527,6 +4529,7 @@ void RadiationM1::CleanStagFCone(const int e, const int kd) {
         if (kd > 0) fc(m,kd,k,j,i) += (f - fs)/x.h;
       }
       fc(m,CLF_N,k,j,i) = fs;
+      if (!wbc) return;   // (the counters: the write-back's, as printed)
       Kokkos::atomic_add(&fcc(0), 1.0);
       Kokkos::atomic_add(&fcc(1), fabs(f - fs)*it*0.5*(CleanVol(x, m, k, j, i) +
                          CleanVol(x, m, k-dk, j-dj, i-di))/(x.c*x.c));
