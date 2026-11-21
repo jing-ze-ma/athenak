@@ -1,0 +1,110 @@
+CLEAN XDONOR cycle 26484 t2s 2 pass 1 xle0 0 minX/Eo 5.995e-02 donor 1350414 cap 49 b<0 507 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 6
+CLEAN XT cycle 26484 t2s 2 pass closure 4.885e+01
+CLEAN pass cycle 26484 t2s 2 pos 0 pass 1 it 6 de 2.763e-02 dv 8.999e-07
+CLEAN XDONOR cycle 26484 t2s 2 pass 2 xle0 0 minX/Eo 6.000e-02 donor 1291972 cap 27 b<0 500 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 7
+CLEAN XT cycle 26484 t2s 2 pass closure 3.629e-01
+CLEAN pass cycle 26484 t2s 2 pos 0 pass 2 it 7 de 3.526e-03 dv 2.873e-07
+CLEAN XDONOR cycle 26484 t2s 2 pass 3 xle0 0 minX/Eo 6.000e-02 donor 1284304 cap 28 b<0 500 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 2
+CLEAN XT cycle 26484 t2s 2 pass closure 3.964e-02
+CLEAN pass cycle 26484 t2s 2 pos 0 pass 3 it 2 de 1.286e-04 dv 8.595e-09
+CLEAN XDONOR cycle 26484 t2s 2 pass 4 xle0 0 minX/Eo 6.000e-02 donor 1284351 cap 29 b<0 500 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 3
+CLEAN XT cycle 26484 t2s 2 pass closure 1.153e-02
+CLEAN pass cycle 26484 t2s 2 pos 0 pass 4 it 3 de 2.949e-06 dv 6.859e-10
+CLEAN cycle 26484 t2s 2 it 3 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 26 first 0 26 guard 0 solves 5 cwin 0
+CLEAN MCAP cycle 26484 t2s 2: 1336 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 26484 t2s 2 faces 3371745 momentum cut sum |dF| V/c^2 5.247440e+30
+CLEAN FWB cycle 26484 t2s 2 faces 75650426 radiation momentum sum |dp| 8.106716e+31 x1 faces sum dp 4.896411e+29
+CLEAN XT cycle 26484 t2s 2 write-back closure 2.033e-01
+CLEAN OLDVEC cycle 26484 t2s 3 eint<0 85 (taken as 0) E<0 3
+CLEAN XT cycle 26484 t2s 3 pass closure 8.174e+02
+CLEAN XDONOR cycle 26484 t2s 3 pass 0 xle0 0 minX/Eo 7.886e-02 donor 628082 cap 72 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 26484 t2s 3 pass closure 6.689e+02
+CLEAN pass cycle 26484 t2s 3 pos 0 pass 0 it 1 de 1.542e-01 dv 9.824e-06
+CLEAN XDONOR cycle 26484 t2s 3 pass 1 xle0 0 minX/Eo 7.728e-02 donor 546994 cap 56 b<0 7 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 7
+CLEAN XT cycle 26484 t2s 3 pass closure 5.358e-01
+CLEAN pass cycle 26484 t2s 3 pos 0 pass 1 it 7 de 4.132e-02 dv 2.004e-06
+CLEAN XDONOR cycle 26484 t2s 3 pass 2 xle0 0 minX/Eo 7.596e-02 donor 531144 cap 34 b<0 7 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 26484 t2s 3 pass closure 3.380e-01
+CLEAN pass cycle 26484 t2s 3 pos 0 pass 2 it 1 de 2.651e-02 dv 5.718e-07
+CLEAN XDONOR cycle 26484 t2s 3 pass 3 xle0 0 minX/Eo 7.588e-02 donor 529688 cap 32 b<0 6 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 26484 t2s 3 pass closure 1.763e-01
+CLEAN pass cycle 26484 t2s 3 pos 0 pass 3 it 1 de 6.095e-04 dv 4.040e-08
+CLEAN XDONOR cycle 26484 t2s 3 pass 4 xle0 0 minX/Eo 7.587e-02 donor 529703 cap 33 b<0 6 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 5
+CLEAN XT cycle 26484 t2s 3 pass closure 1.549e-01
+CLEAN pass cycle 26484 t2s 3 pos 0 pass 4 it 5 de 8.142e-06 dv 1.673e-08
+CLEAN cycle 26484 t2s 3 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 22 first 0 22 guard 0 solves 5 cwin 0
+CLEAN MCAP cycle 26484 t2s 3: 442 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 26484 t2s 3 faces 2119516 momentum cut sum |dF| V/c^2 3.850670e+29
+CLEAN FWB cycle 26484 t2s 3 faces 75650426 radiation momentum sum |dp| 4.958828e+31 x1 faces sum dp 8.014991e+29
+CLEAN XT cycle 26484 t2s 3 write-back closure 1.552e-01
+CLEAN LZB cycle 26484 t2s 3 ledger -nan
+CLEAN OLDVEC cycle 26485 t2s 2 eint<0 176 (taken as 0) E<0 18
+CLEAN XT cycle 26485 t2s 2 pass closure 8.659e+02
+CLEAN XDONOR cycle 26485 t2s 2 pass 0 xle0 9 minX/Eo -4.457e-03 donor 266137 cap 2109 b<0 27 (with X<=0 9; Eo<0 9, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 26485 t2s 2 pass closure 3.629e+03
+CLEAN pass cycle 26485 t2s 2 pos 0 pass 0 it 1 de 3.787e-01 dv 1.151e-05
+CLEAN XDONOR cycle 26485 t2s 2 pass 1 xle0 9 minX/Eo -2.276e-02 donor 603977 cap 2028 b<0 84 (with X<=0 9; Eo<0 9, Eo<hdivS 0) most-neg work 0 exch 3 sb 0 gres 6 it 8
+CLEAN XT cycle 26485 t2s 2 pass closure 7.322e+04
+CLEAN pass cycle 26485 t2s 2 pos 0 pass 1 it 8 de 1.493e-02 dv 1.304e-06
+CLEAN XDONOR cycle 26485 t2s 2 pass 2 xle0 9 minX/Eo -3.107e-03 donor 610969 cap 1831 b<0 114 (with X<=0 9; Eo<0 9, Eo<hdivS 0) most-neg work 4 exch 1 sb 4 gres 0 it 1
+CLEAN XT cycle 26485 t2s 2 pass closure 1.044e+04
+CLEAN pass cycle 26485 t2s 2 pos 0 pass 2 it 1 de 2.160e-02 dv 7.830e-07
+CLEAN XDONOR cycle 26485 t2s 2 pass 3 xle0 10 minX/Eo -6.460e-03 donor 609684 cap 1813 b<0 109 (with X<=0 10; Eo<0 10, Eo<hdivS 0) most-neg work 3 exch 1 sb 6 gres 0 it 1
+CLEAN XT cycle 26485 t2s 2 pass closure 1.056e+01
+CLEAN pass cycle 26485 t2s 2 pos 0 pass 3 it 1 de 7.330e-03 dv 3.077e-07
+CLEAN XDONOR cycle 26485 t2s 2 pass 4 xle0 10 minX/Eo -6.256e-03 donor 609697 cap 1815 b<0 110 (with X<=0 10; Eo<0 10, Eo<hdivS 0) most-neg work 4 exch 0 sb 6 gres 0 it 6
+CLEAN XT cycle 26485 t2s 2 pass closure 7.846e+01
+CLEAN pass cycle 26485 t2s 2 pos 0 pass 4 it 6 de 1.314e-03 dv 9.499e-08
+CLEAN XDONOR cycle 26485 t2s 2 pass 5 xle0 10 minX/Eo -6.254e-03 donor 609692 cap 1812 b<0 109 (with X<=0 10; Eo<0 10, Eo<hdivS 0) most-neg work 4 exch 0 sb 6 gres 0 it 1
+CLEAN XT cycle 26485 t2s 2 pass closure 7.859e+01
+CLEAN pass cycle 26485 t2s 2 pos 0 pass 5 it 1 de 7.378e-05 dv 8.775e-08
+CLEAN cycle 26485 t2s 2 it 1 (sum 18) pos 0 mark 0 all 0 neg 9 r1 9 r2 1057 first 9 1057 guard 0 solves 6 cwin 0
+CLEAN MCAP cycle 26485 t2s 2: 140 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 26485 t2s 2 faces 2535253 momentum cut sum |dF| V/c^2 6.449282e+29
+CLEAN FWB cycle 26485 t2s 2 faces 74509344 radiation momentum sum |dp| 5.856221e+31 x1 faces sum dp 3.885149e+29
+CLEAN XT cycle 26485 t2s 2 write-back closure 4.332e+00
+CLEAN OLDVEC cycle 26485 t2s 3 eint<0 86 (taken as 0) E<0 83
+CLEAN XT cycle 26485 t2s 3 pass closure 8.981e+01
+CLEAN XDONOR cycle 26485 t2s 3 pass 0 xle0 0 minX/Eo 1.104e-01 donor 161921 cap 1512 b<0 63 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 26485 t2s 3 pass closure 1.236e+03
+CLEAN pass cycle 26485 t2s 3 pos 0 pass 0 it 1 de 1.536e-01 dv 7.709e-06
+CLEAN XDONOR cycle 26485 t2s 3 pass 1 xle0 0 minX/Eo 1.377e-01 donor 220779 cap 1496 b<0 73 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 2
+CLEAN XT cycle 26485 t2s 3 pass closure 1.036e+00
+CLEAN pass cycle 26485 t2s 3 pos 0 pass 1 it 2 de 4.843e-02 dv 9.691e-07
+CLEAN XDONOR cycle 26485 t2s 3 pass 2 xle0 2 minX/Eo -3.150e+08 donor 220314 cap 1319 b<0 78 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 2 sb 0 gres 0 it 1
+CLEAN XT cycle 26485 t2s 3 pass closure 2.916e+04
+CLEAN pass cycle 26485 t2s 3 pos 0 pass 2 it 1 de 4.488e-02 dv 3.510e-06
+CLEAN XDONOR cycle 26485 t2s 3 pass 3 xle0 0 minX/Eo 1.391e-01 donor 220022 cap 1300 b<0 77 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 26485 t2s 3 pass closure 3.902e+01
+CLEAN pass cycle 26485 t2s 3 pos 0 pass 3 it 1 de 4.606e-02 dv 1.608e-06
+CLEAN XDONOR cycle 26485 t2s 3 pass 4 xle0 0 minX/Eo 1.390e-01 donor 219975 cap 1291 b<0 77 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 5
+CLEAN XT cycle 26485 t2s 3 pass closure 2.861e+00
+CLEAN pass cycle 26485 t2s 3 pos 0 pass 4 it 5 de 2.812e-03 dv 2.996e-07
+CLEAN XDONOR cycle 26485 t2s 3 pass 5 xle0 0 minX/Eo 1.390e-01 donor 219886 cap 1296 b<0 78 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 26485 t2s 3 pass closure 7.586e-02
+CLEAN pass cycle 26485 t2s 3 pos 0 pass 5 it 1 de 5.222e-04 dv 3.208e-08
+CLEAN XDONOR cycle 26485 t2s 3 pass 6 xle0 0 minX/Eo 1.390e-01 donor 219891 cap 1296 b<0 78 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 26485 t2s 3 pass closure 1.569e-01
+CLEAN pass cycle 26485 t2s 3 pos 0 pass 6 it 1 de 1.118e-04 dv 2.331e-08
+CLEAN XDONOR cycle 26485 t2s 3 pass 7 xle0 0 minX/Eo 1.391e-01 donor 219891 cap 1297 b<0 78 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 26485 t2s 3 pass closure 3.979e-02
+CLEAN pass cycle 26485 t2s 3 pos 0 pass 7 it 1 de 1.199e-04 dv 1.127e-08
+CLEAN XDONOR cycle 26485 t2s 3 pass 8 xle0 0 minX/Eo 1.391e-01 donor 219890 cap 1297 b<0 78 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 26485 t2s 3 pass closure 3.862e-01
+CLEAN pass cycle 26485 t2s 3 pos 0 pass 8 it 1 de 1.119e-04 dv 2.100e-08
+CLEAN XDONOR cycle 26485 t2s 3 pass 9 xle0 0 minX/Eo 1.391e-01 donor 219892 cap 1298 b<0 78 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 26485 t2s 3 pass closure 6.448e-02
+CLEAN pass cycle 26485 t2s 3 pos 0 pass 9 it 1 de 1.250e-04 dv 1.344e-08
+CLEAN XDONOR cycle 26485 t2s 3 pass 10 xle0 0 minX/Eo 1.391e-01 donor 219890 cap 1299 b<0 78 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 26485 t2s 3 pass closure 3.256e-01
+CLEAN GNSW cycle 26485 t2s 3 pass 10: stalled, the gas Newton slope off (1 so far)
+CLEAN pass cycle 26485 t2s 3 pos 0 pass 10 it 1 de 1.122e-04 dv 2.087e-08
+CLEAN XDONOR cycle 26485 t2s 3 pass 11 xle0 0 minX/Eo 1.391e-01 donor 219891 cap 1298 b<0 0 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 1
+CLEAN XT cycle 26485 t2s 3 pass closure 1.091e+01
+CLEAN pass cycle 26485 t2s 3 pos 0 pass 11 it 1 de 2.065e-06 dv 1.838e-10
+CLEAN cycle 26485 t2s 3 it 1 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 12 cwin 0
+CLEAN MCAP cycle 26485 t2s 3: 188 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 26485 t2s 3 faces 2005933 momentum cut sum |dF| V/c^2 9.099582e+28
+CLEAN FWB cycle 26485 t2s 3 faces 74509344 radiation momentum sum |dp| 4.078163e+31 x1 faces sum dp 7.706316e+29
+CLEAN XT cycle 26485 t2s 3 write-back closure 1.091e+01
+CLEAN LZB cycle 26485 t2s 3 ledger -nan

@@ -1,0 +1,6 @@
+101:<time> dt_retry on: fac 0.5 max 8 ngood 10 grow 1.25 views minimal cap -1
+105:<time> dt_retry checkpoint: 1905 members, 472 Views (11 copied, 5211.18 MB on rank 0): hyd.u0 744.097 hyd.w0 744.097 hyd.wder 297.639 hyd.wtemp 148.819 m1.f0x1 149.107 m1.f0x2 149.93 m1.f0x3 149.93 m1.t2k1 1190.55 m1.t2pf1 446.458 m1.u0 595.277 m1.opac 595.277
+7334:CLEAN WARNING cycle 26516 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+7376:<time> dt_retry: 154 checkpoints (1.689427e+00 s, 5.211185e+03 MB on rank 0), 0 retries, cap -1.000000e+00
+7377:<time> counters_rollback: event counters of discarded attempts dropped: dt_retry 0, backward-Euler redo 1, hesdirk2 helper solves 0; E-floor created energy dropped (m1_pos_un, x volume) 0.000000e+00 / 0.000000e+00 / 0.000000e+00, vceil_de dropped 0.000000e+00 / 5.997898e+07 / 0.000000e+00
+7418:<rad_m1> hesdirk2 wall split (rank 0 s): clean stage steps 4.840284e+02 | failed stage attempts 2.183647e+01 | their BE redo 1.874840e+00 | auto_be steps 0.000000e+00 | other BE steps 0.000000e+00 | discarded dt_retry attempts 0.000000e+00
