@@ -1,0 +1,1 @@
+TAG=GF_t19l64 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_icbal_4a7f72334 md5=8d3fd9e236bc9ceb1bb7ffe724f1ded7 DECK=/resnick/groups/carnegie_poc/jingze/fresh_prod_1120/fg_v2/decks/t19l64_fing_smoke.athinput md5=99ad78fd413dba954b7d69bb1322701b NC=100 HOLDER=6133591 NODE=hpc-sm-02-10 NR=4 EX=
