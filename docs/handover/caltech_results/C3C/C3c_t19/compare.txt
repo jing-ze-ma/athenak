@@ -3,5 +3,5 @@ CW: C3c 5 | prod 8
 solves: C3c 5.5 mean / 200 max solves per stage-pass line (n=849) | prod 6.5 mean / 200 max solves per stage-pass line (n=847)
 dt (every 50 cycles) C3c: 1150:3.834613e+01 1200:3.831633e+01 1250:3.827793e+01 1300:3.825084e+01 1350:3.825345e+01 1400:3.829772e+01 1450:3.838844e+01 1500:3.851102e+01 1550:3.803968e+01 
 dt prod: 1150:3.834613e+01 1200:3.831680e+01 1250:3.828111e+01 1300:3.825763e+01 1350:3.826537e+01 1400:3.831555e+01 1450:3.354096e+01 1500:3.853858e+01 1550:3.815913e+01 
-user.hst C3c: 
-user.hst prod: 
+user.hst C3c (t 4.4e4-6.0e4): t 4.681e+04 KE 8.33e+40 Ltop/Lin 1.035 | t 5.043e+04 KE 2.04e+41 Ltop/Lin 1.136 | t 5.403e+04 KE 4.62e+41 Ltop/Lin 1.270 | t 5.76e+04 KE 8.77e+41 Ltop/Lin 1.510 | 
+user.hst prod (t 4.4e4-6.0e4): t 4.681e+04 KE 8.41e+40 Ltop/Lin 1.042 | t 5.041e+04 KE 2.04e+41 Ltop/Lin 1.115 | t 5.401e+04 KE 4.62e+41 Ltop/Lin 1.366 | t 5.761e+04 KE 8.83e+41 Ltop/Lin 1.550 | 
