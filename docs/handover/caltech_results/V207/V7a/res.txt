@@ -1,7 +1,6 @@
 []
 CW a 0 FATAL 0 retries []
-GPU mem peak MiB max 78343 min 78121 (n=4)
-rc=137 wall=282
-hstmd5 t19l64.hydro.hst bb45e77a58de4ca9f774ea83e0521f2d rows 1
-hstmd5 t19l64.user.hst 6083dec3d72b32af520a8813009af9e8 rows 1
+GPU mem peak MiB max 78313 min 78091 (n=4)
+rc=137 wall=238
+hstmd5 *.hst d41d8cd98f00b204e9800998ecf8427e rows 
 DONE
