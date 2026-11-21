@@ -745,3 +745,6 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - DF_t19nocut: a rc=0 wall=683 | a cycles 0 - 500 dt first 38.354 last 3.72402 s/cycle steady 55.156 first elapsed 47.4 a 'FATAL' 0  a 'CLEAN WARNING' 0   | CW 0 FATAL 0 | eint<0 lines 1, sum 1572864, max 1572864 | raycut lines 0 | deck md5 in info.txt
 - (18:41) Got f92bcd1c7: t19l64_wngl_cutr_diag deck copied (md5 dad46e45); DG_t19cutr is at the head of the test queue (next free test node, ahead of DD/DE), RT=0 KEEPBIN, nlim 520, only the common output overrides; lines: hst, raycut.txt, eint<0 summary, log tail, deck md5 in info.txt, then fj profiles and bin deletion.
   DF_t19nocut profiles: 2 files (caltech_results/DF_t19nocut/prof_*.txt); bins deleted
+- DA_t19cfl (hpc-sm-02-09): a rc=0 wall=1335 | last cycle=1000 time=1.962439e+04 dt=1.838843e+01 | 1.341 s/cycle | CW 0 FATAL 0 DT_RETRY(events) 1 | eint<0 lines 1, sum 1572864, max 1572864 | raycut lines 366 | profiles: 4 files
+- DD_t19conv (hpc-sm-02-04): a rc=0 wall=847 | last cycle=500 time=1.875472e+04 dt=2.680854e+01 | 1.446 s/cycle | CW 0 FATAL 0 DT_RETRY(events) 1 | eint<0 lines 1, sum 1572864, max 1572864 | raycut lines 205 | profiles: 4 files
+  DIAG START DE_t19noseed 18:42:32 on hpc-sm-02-04
