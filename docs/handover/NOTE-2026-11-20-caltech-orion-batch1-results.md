@@ -907,3 +907,4 @@ B_br gate not passed; arms not started
 - (22:52) J3 continuation progress:  J3_m35: cycle=1796 time=2.156567e+04 dt=1.200760e+01 | KE_int 1.0939137808120126e+36 L_bot/L_in 1.000 L_top/L_in 1.000 (hst t 2.1565673160244198e+04) | CW 0 FATAL 0 | FLIM 11263 floorcap 144 | rst kept: m35mms.00000.rst 
 - (22:52) J3 continuation progress:  J3_bsg: cycle=2706 time=4.057357e+05 dt=1.263395e+02 | KE_int 7.3880001715293400e+39 L_bot/L_in 1.014 L_top/L_in 1.003 (hst t 4.0573569643638376e+05) | CW 0 FATAL 0 | FLIM 14044 floorcap 153 | rst kept: 
 - (22:52) J3 continuation progress:  J3_t19: cycle=555 time=2.128061e+04 dt=3.831908e+01 | KE_int 5.6702936962097277e+39 L_bot/L_in 0.900 L_top/L_in 0.962 (hst t 2.1280610449918033e+04) | CW 0 FATAL 0 | FLIM 4023 floorcap 33 | rst kept: 
+- (22:57) I1 start: I1_bsg on hpc-sm-02-11 at 22:57:14 (B_j3 f71a22b6, icrel/bsg.athinput copy with the IC gunzipped into fresh_prod_1120/icrel/ and the local tables, tlim 1.12e6)
