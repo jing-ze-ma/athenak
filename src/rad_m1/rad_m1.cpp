@@ -743,8 +743,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       };
       cln_steady_n = pin->GetOrAddInteger("rad_m1","clean_init_n",
           static_cast<int>(eqk("he_ic_equil_relax_n", heq ? 40.0 : 50.0)));
+      // (clean_init_dtfac: 1 on a fresh start under the default recipe, recorded; 1e6
+      // drove the thin floor gas's F to -(c/chi) div P, |F|/cE ~ 2e4, T19HOT 11-21)
+      const bool dt1 = recipe::NewDefaults(pin) && !global_variable::restart_run &&
+                       !pin->DoesParameterExist("rad_m1","clean_init_dtfac");
       cln_steady_dtfac = pin->GetOrAddReal("rad_m1","clean_init_dtfac",
-                                           eqk("he_ic_equil_dtfac", 1.0e6));
+                                           eqk("he_ic_equil_dtfac", dt1 ? 1.0 : 1.0e6));
+      if (dt1) recipe::Log("<rad_m1>/clean_init_dtfac = " + std::to_string(cln_steady_dtfac)
+                           + " (default on a fresh start)");
       cln_steady_tol = pin->GetOrAddReal("rad_m1","clean_init_tol",1.0e-8);
     }
     if (transport != M1_TRANSPORT_IMPLICIT) {
