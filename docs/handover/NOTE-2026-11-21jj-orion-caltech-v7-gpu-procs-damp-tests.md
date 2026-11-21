@@ -5,7 +5,7 @@
    T1_diag / T2_v206 / T3_v206 / T4_conv, D_t19, damp tests, smoke gates) that you reported as finished. NEVER kill production runs
    (t9l62, t9r, m35mms, i1_m35mms_f1k, ...) or GPU holders; if a process is production / a holder / unknown, leave it and report it.
    Then start V7a-d as in NOTE ji (B_v207 86d31021, conv_max 1e-4, damp 0 vs 1).
-2. After each V7 arm finishes, on the node it frees, TESTS (not production), B_v207, rst off (no restart dumps), ~800 cycles each
+2. ON HOLD (USER 2026-11-21 ~10:45 PST: minimum tests; run ONLY if Orion asks after V7, otherwise skip): after V7, TESTS (not production), B_v207, rst off (no restart dumps), ~800 cycles each
    (stop at 1000 or 2 h wall), all with rad_m1/clean_conv_max = 1.0e-4 and the production keys from each run's restart file:
    - V8a: t9l62 latest rst, clean_pass_damp = 0      - V8b: same, clean_pass_damp = 1
    - V8c: t9r latest rst, clean_pass_damp = 0        - V8d: same, clean_pass_damp = 1
