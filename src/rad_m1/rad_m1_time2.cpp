@@ -509,9 +509,11 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     t2_k1xlim = pin->GetReal("rad_m1", "time2_k1_xlim");
   }
   // <rad_m1>/time2_k1_xpat (default false, read only when named): Time2K1XLim's theta in
-  // Patankar form, positive by construction with no threshold (rad_m1.hpp)
+  // Patankar form, positive by construction with no threshold (rad_m1.hpp); = pos: only
+  // where the unlimited loss exceeds 0.99 of the loser's holding (Time2K1XLim)
   if (pin->DoesParameterExist("rad_m1", "time2_k1_xpat")) {
-    t2_k1xpat = pin->GetBoolean("rad_m1", "time2_k1_xpat");
+    t2_k1xpos = pin->GetString("rad_m1", "time2_k1_xpat") == "pos";
+    t2_k1xpat = t2_k1xpos || pin->GetBoolean("rad_m1", "time2_k1_xpat");
   }
   // <rad_m1>/time2_k1_stiff = s (default 0 = off, bitwise)
   t2_k1stiff = 0.0;
@@ -1327,7 +1329,11 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
 //! untouched cells bitwise.  time2_k1_xpat: theta = P/(P + L) instead, P what the loser
 //! holds without the exchange pair (E: E + its increment's other parts after FCT; gas:
 //! eint), L its loss: the old vector's P^2/(P + L) > 0 for every P > 0, theta = 1 -
-//! O(L/P) where the exchange is not stiff (Patankar-Euler weight, MPRK; no threshold)
+//! O(L/P) where the exchange is not stiff (Patankar-Euler weight, MPRK; no threshold).
+//! time2_k1_xpat = pos: theta = 1 where L <= a P, a = 0.99 (the unlimited loser keeps
+//! >= 0.01 P: untouched, bitwise as xpat off), else the loser keeps (1 - a)^2 P^2/(L -
+//! (2a - 1) P) > 0, C1 in L at L = a P (theta = x - (1 - a)^2 x^2/(1 - (2a - 1) x),
+//! x = P/L); positive by construction where the unlimited pair would leave <= 0
 
 void RadiationM1::Time2K1XLim(int stage, Real c1, Real c2, bool gas) {
   FluidRef flx = FluidRef::Get(pmy_pack);
@@ -1361,7 +1367,8 @@ void RadiationM1::Time2K1XLim(int stage, Real c1, Real c2, bool gas) {
                     vol.extent_int(3) > 1 && ar1.extent_int(0) > nmb1;
   const Real cc1 = c1, cc2 = two ? c2 : 0.0;
   const Real chcl = chat/c_light, th = t2_k1xpat ? 0.0 : t2_k1xlim;
-  const bool pat = t2_k1xpat;
+  const bool pat = t2_k1xpat, pos = t2_k1xpos;
+  const Real pa = 0.99, pb2 = SQR(1.0 - pa), pc = 2.0*pa - 1.0;   // (xpat = pos)
   Real nx = 0.0;
   Kokkos::parallel_reduce("m1_t2_k1xlim", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
       DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
@@ -1379,8 +1386,9 @@ void RadiationM1::Time2K1XLim(int stage, Real c1, Real c2, bool gas) {
       if (!(de > 0.0)) return;
       const Real need = th*e0 - e0 - in_(m,M1_T2_E,k,j,i);
       if (pat) {   // (P = E + the increment's parts but the exchange)
-        const Real pe = -need + chcl*de;
-        tq = (pe > 0.0) ? pe/(pe + chcl*de) : 0.0;
+        const Real pe = -need + chcl*de, x = pe/(chcl*de);
+        if (pos && !(chcl*de > pa*pe)) return;
+        tq = (pe > 0.0) ? (pos ? x - pb2*x*x/(1.0 - pc*x) : pe/(pe + chcl*de)) : 0.0;
       } else if (!(e0 > 0.0)) {
         tq = 0.0;
       } else if (need > 0.0) {
@@ -1391,8 +1399,12 @@ void RadiationM1::Time2K1XLim(int stage, Real c1, Real c2, bool gas) {
       Real egr = etg ? dd*phc(m,k,j,i) : 0.0;
       if (emh) egr += emg(m,k,j,i);
       const Real eg0 = ug(m,IEN,k,j,i) - ek0 - egr;
-      if (!(eg0 > 0.0) || (!pat && eg0 + de > th*eg0)) return;
-      tq = pat ? eg0/(eg0 - de) : fmax((1.0 - th)*eg0/(-de), 0.0);
+      if (!(eg0 > 0.0) || (!pat && eg0 + de > th*eg0) || (pos && !(-de > pa*eg0))) {
+        return;
+      }
+      const Real x = eg0/(-de);
+      tq = pat ? (pos ? x - pb2*x*x/(1.0 - pc*x) : eg0/(eg0 - de))
+               : fmax((1.0 - th)*eg0/(-de), 0.0);
       Real fd = 0.0;
       if (fdo) {
         Real g = 0.0;
@@ -3192,7 +3204,8 @@ void RadiationM1::Time2Report() {
     std::cout << " k1_stiff(s=" << t2_k1stiff << ") cells(rank 0)=" << t2_k1stiff_n;
   }
   if (t2_k1xlim > 0.0 || t2_k1xpat) {
-    std::cout << " k1_xlim(th=" << t2_k1xlim << (t2_k1xpat ? " xpat" : "")
+    std::cout << " k1_xlim(th=" << t2_k1xlim
+              << (t2_k1xpos ? " xpat=pos" : (t2_k1xpat ? " xpat" : ""))
               << ") cell-stages(rank 0)=" << t2_k1xlim_n;
   }
   if (t2_ffct) {   // step 1 (global sums)
