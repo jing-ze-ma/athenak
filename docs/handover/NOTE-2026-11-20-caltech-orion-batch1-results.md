@@ -1107,3 +1107,6 @@ B_br gate not passed; arms not started
   CW t19r (log.0) cycle 1189 []: CLEAN WARNING cycle 1189 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 43)
 - (01:06) C3h_t19 (B_c3h, 02-04, 450 cycles from t19l64.00001): rc=137 wall=626 | CW: C3h 0 | prod 1 solves: C3h 4.3 mean / 6 max solves per stage-pass line (n=302) | prod 5.3 mean / 200 max solves per stage-pass line (n=301)  | FATAL 0 | never-read: job/final_restart | dt / KE / L_top rows in C3H/C3h_t19/compare.txt
 - (01:07) B_c3c gate: GATE PASS: athena_c3c_411bf3991 md5 cd9ceba6 node hpc-sm-02-04 pass1=4.020e-06
+- (01:08) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t19r (log.0) cycle 1200 [cycle=1200 time=4.704324e+04 dt=3.660774e+01]: CLEAN WARNING cycle 1200 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 44)
+  CW t19r (log.0) cycle 1208 []: CLEAN WARNING cycle 1208 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 45)
