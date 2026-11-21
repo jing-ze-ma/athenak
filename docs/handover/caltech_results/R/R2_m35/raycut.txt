@@ -1,0 +1,2 @@
+CLEAN ray cut cycle 0 shell -1 -> 232 (want 232, R)
+CLEAN ray cut cycle 0 shell 232 -> 238 (want 238, R)

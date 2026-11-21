@@ -1,0 +1,55 @@
+<rad_m1> clean_init steady pass 0: max(|dE|, |dF|/c)/max E = 8.410e-05
+<rad_m1> clean_init steady pass 1: max(|dE|, |dF|/c)/max E = 7.210e-05
+<rad_m1> clean_init steady pass 2: max(|dE|, |dF|/c)/max E = 1.079e-04
+<rad_m1> clean_init steady pass 3: max(|dE|, |dF|/c)/max E = 1.156e-04
+<rad_m1> clean_init steady pass 4: max(|dE|, |dF|/c)/max E = 1.417e-04
+<rad_m1> clean_init steady pass 5: max(|dE|, |dF|/c)/max E = 1.308e-04
+<rad_m1> clean_init steady pass 6: max(|dE|, |dF|/c)/max E = 1.677e-04
+<rad_m1> clean_init steady pass 7: max(|dE|, |dF|/c)/max E = 2.349e-04
+<rad_m1> clean_init steady pass 8: max(|dE|, |dF|/c)/max E = 1.504e-04
+<rad_m1> clean_init steady pass 9: max(|dE|, |dF|/c)/max E = 3.014e-04
+<rad_m1> clean_init steady pass 10: max(|dE|, |dF|/c)/max E = 4.237e-04
+<rad_m1> clean_init steady pass 11: max(|dE|, |dF|/c)/max E = 6.981e-04
+<rad_m1> clean_init steady pass 12: max(|dE|, |dF|/c)/max E = 1.062e-03
+<rad_m1> clean_init steady pass 13: max(|dE|, |dF|/c)/max E = 1.333e-03
+<rad_m1> clean_init steady pass 14: max(|dE|, |dF|/c)/max E = 1.533e-03
+<rad_m1> clean_init steady pass 15: max(|dE|, |dF|/c)/max E = 1.974e-03
+<rad_m1> clean_init steady pass 16: max(|dE|, |dF|/c)/max E = 2.528e-03
+<rad_m1> clean_init steady pass 17: max(|dE|, |dF|/c)/max E = 2.617e-03
+<rad_m1> clean_init steady pass 18: max(|dE|, |dF|/c)/max E = 3.092e-03
+<rad_m1> clean_init steady pass 19: max(|dE|, |dF|/c)/max E = 3.886e-03
+<rad_m1> clean_init steady pass 20: max(|dE|, |dF|/c)/max E = 4.107e-03
+<rad_m1> clean_init steady pass 21: max(|dE|, |dF|/c)/max E = 4.869e-03
+<rad_m1> clean_init steady pass 22: max(|dE|, |dF|/c)/max E = 4.983e-03
+<rad_m1> clean_init steady pass 23: max(|dE|, |dF|/c)/max E = 5.867e-03
+<rad_m1> clean_init steady pass 24: max(|dE|, |dF|/c)/max E = 6.444e-03
+<rad_m1> clean_init steady pass 25: max(|dE|, |dF|/c)/max E = 7.774e-03
+<rad_m1> clean_init steady pass 26: max(|dE|, |dF|/c)/max E = 8.444e-03
+<rad_m1> clean_init steady pass 27: max(|dE|, |dF|/c)/max E = 9.805e-03
+<rad_m1> clean_init steady pass 28: max(|dE|, |dF|/c)/max E = 1.051e-02
+<rad_m1> clean_init steady pass 29: max(|dE|, |dF|/c)/max E = 1.159e-02
+<rad_m1> clean_init steady pass 30: max(|dE|, |dF|/c)/max E = 1.226e-02
+<rad_m1> clean_init steady pass 31: max(|dE|, |dF|/c)/max E = 1.304e-02
+<rad_m1> clean_init steady pass 32: max(|dE|, |dF|/c)/max E = 1.355e-02
+clean_init steady: the last pass changed E or F/c by 0.012655 of max E (diverged: clean_init_dtfac, _n)
+clean_init steady: the last pass changed E or F/c by 0.012655 of max E (diverged: clean_init_dtfac, _n)
+clean_init steady: the last pass changed E or F/c by 0.012655 of max E (diverged: clean_init_dtfac, _n)
+<rad_m1> clean_init steady pass 33: max(|dE|, |dF|/c)/max E = 1.363e-02
+<rad_m1> clean_init steady pass 34: max(|dE|, |dF|/c)/max E = 1.398e-02
+<rad_m1> clean_init steady pass 35: max(|dE|, |dF|/c)/max E = 1.394e-02
+<rad_m1> clean_init steady pass 36: max(|dE|, |dF|/c)/max E = 1.430e-02
+<rad_m1> clean_init steady pass 37: max(|dE|, |dF|/c)/max E = 1.409e-02
+<rad_m1> clean_init steady pass 38: max(|dE|, |dF|/c)/max E = 1.402e-02
+<rad_m1> clean_init steady pass 39: max(|dE|, |dF|/c)/max E = 1.314e-02
+<rad_m1> clean_init steady pass 40: max(|dE|, |dF|/c)/max E = 1.457e-02
+<rad_m1> clean_init steady pass 41: max(|dE|, |dF|/c)/max E = 1.493e-02
+<rad_m1> clean_init steady pass 42: max(|dE|, |dF|/c)/max E = 1.550e-02
+<rad_m1> clean_init steady pass 43: max(|dE|, |dF|/c)/max E = 1.573e-02
+<rad_m1> clean_init steady pass 44: max(|dE|, |dF|/c)/max E = 1.553e-02
+<rad_m1> clean_init steady pass 45: max(|dE|, |dF|/c)/max E = 1.557e-02
+<rad_m1> clean_init steady pass 46: max(|dE|, |dF|/c)/max E = 1.464e-02
+<rad_m1> clean_init steady pass 47: max(|dE|, |dF|/c)/max E = 1.445e-02
+<rad_m1> clean_init steady pass 48: max(|dE|, |dF|/c)/max E = 1.298e-02
+<rad_m1> clean_init steady pass 49: max(|dE|, |dF|/c)/max E = 1.266e-02
+<rad_m1> clean_init steady: NOT converged after 50 passes, residual 1.266e-02 (tol 1.0e-08; 0 formal solutions); radiation E 9.4442341701e+43 -> 9.4442283680e+43, F/c 1.3324e+38 0.0000e+00 0.0000e+00 -> 1.4809e+38 -1.4663e+38 -7.6077e+28 (volume sums)
+clean_init steady: the last pass changed E or F/c by 0.012655 of max E (diverged: clean_init_dtfac, _n)

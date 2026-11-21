@@ -1,0 +1,1 @@
+TAG=R2_m35 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_icbaln_4a7f72334 md5=8ac1d0c6ecce928eac0e5de29e6edd5a DECK=/resnick/groups/carnegie_poc/jingze/orion_runs_1121/R/decks/R2_m35.athinput md5=96a562904cf2a3e357ccdafb465c738d NC=120 HOLDER=6133593 NODE=hpc-sm-01-11 NR=4 EX=

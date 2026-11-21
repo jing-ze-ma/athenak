@@ -1,0 +1,190 @@
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+
+Root grid = 1 x 2 x 2 MeshBlocks
+Total number of MeshBlocks = 4
+Number of logical  levels of refinement = 1 (2 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 4
+  Rank = 0: 1 MeshBlocks, cost = 1
+  Rank = 1: 1 MeshBlocks, cost = 1
+  Rank = 2: 1 MeshBlocks, cost = 1
+  Rank = 3: 1 MeshBlocks, cost = 1
+Load Balancing:
+  Maximum normalized cost = 1, Average = 1
+<hydro> duale-1112: dual_energy 0 (eta 0.001, slots -1,-1) floor_pay rad_column fofc_retest 0 floor_audit 0
+rad_m1: vet_scatter on, form ma, J (relaxed source) relaxed (default), table split kappa_e = const (kappa_e 0.34, floor 1e-05, sigma_T/m_u 0.40062, code units)
+<rad_m1>/c_light = 2.99792e+10 [code] ; <units> implies 2.99792e+10 (c in code velocity), rel. diff 0
+<rad_m1>/arad = 2.36199e-47 [code] ; <units> implies 1.58312e-46 (a_rad T_unit^4 / p_unit), rel. diff 0.850802  <-- WARNING: inconsistent with <units>
+<rad_m1>/temp_unit_kelvin = 7.47493e-09 [code] ; <units> implies 1.20272e-08 (K per code temperature), rel. diff 0.3785  <-- WARNING: inconsistent with <units>
+<rad_m1>/rho_unit_cgs = 1 [code] ; <units> implies 1 (g/cm^3 per code density), rel. diff 0
+<rad_m1>/kappa_unit = 1 [code] ; <units> implies 1 (code opacity per cm^2/g), rel. diff 0
+<rad_m1> vet_rotate_advance = true (rotadv-1102): with vet_rotate_avg the rotated sets do not repeat; the averaged last-K window advances (no effect without vet_rotate_avg)
+<rad_m1> implicit_precond = mg
+<rad_m1> implicit_mg_x3line = false
+<rad_m1>/implicit_face_weight = distance (default)
+<rad_m1> implicit_pos_floor_cons: the E floor's uncovered raise is taken from the radiation of the same column (no energy created)
+<rad_m1> implicit_pos_floor_gas_keep=1: the E floor's raise leaves the gas at least that share of its eint
+<rad_m1> implicit_face_mmat = true: x1 face flux lam F_H + (1-lam) F_L, lam = Zalesak factor of the explicit face flux (facemmat-1112)
+<rad_m1>: transport=implicit (3-D) solver=bicgstab lin_tol=1e-10 lin_maxit=200
+         implicit_cfl=-1 tol=1e-08 maxit=200 opac_update=true marshak_q=0.5
+         implicit_flux=central implicit_recon=dc implicit_partition=none
+         implicit_vimp=true (v' of the enthalpy flux implicit)
+         implicit_enthalpy=plm (deferred correction)
+         implicit_bc_advect=true (Marshak x1 end carries A E)
+         implicit_offdiag=operator (auto) closure_relax=1 closure_lag=step trans_limit=none
+         implicit_accel=none
+         implicit_gas_newton=true implicit_eos_cache=false
+         x1 boundaries: min=1 max=0 (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=1.85871e+14 flux_max=0
+<rad_m1> time2_auto_be=16: after a stage fallback the next 1, 2, 4, ... 16 steps take the backward-Euler redo path at once
+<rad_m1> time2_posfix=4 time2_posfix_grow=1: local stage-1 positivity re-solve
+<rad_m1> time_scheme=hesdirk2 (g=0.292893; first step, restarts without the slope and failed stages take backward Euler)
+         time2_enth_be=true implicit_cs2_vimp_npass=3
+<rad_m1>: spherical-polar wedge (stage S2: chi(f) closure, radial integrating factor, lagged curvature, offdiag none; implicit with areas/volumes/face distances from Coordinates (stretched radial grid)
+<rad_m1>: c=2.99792e+10 chat/c=1 cfl_rad=0.4 thick_flux=none ap_form=alpha2 recon=plm advect_split=false split_vel=recon source_form=full closure=vet_col subcycle=false
+         kappa_p=0 kappa_e=0 kappa_f=0 kappa_s=0 coupling=true gas_feedback=true arad=2.36199e-47
+         opacity=table force_reference=wb_arad temp_unit_kelvin=7.47493e-09 rho_unit_cgs=1
+he_star_m1: IC column T(rho,eint)/T_col - 1: max 4.44089e-16 at r = 6.91118e+11 (he_ic_eint_from_t = true)
+he_star_m1: column inside the tables: log10 rho -17 .. -3.71035, log10 T 4.51065 .. 6.23566
+he_star_m1: he_ic_balance cells: max |T/T_col - 1| = 7.54952e-15 at r = 9.99075e+11
+he_star_m1: he_ic_balance: max |rho/rho_col - 1| = 0.00147662 at r = 6.75093e+11, max face residual |PR/PL - 1| = 1.55431e-15, wall cells a_ref (module form), last change 0; wall ghost/edge rho 1.02076 T 1.0073
+he_star_m1: mlt_ramp auto (start auto, time auto) from mlt_flux_frozen = false: NO ramp: start = -1 s (-1.15741e-05 d), time = 0 s (0 d)
+he_star_m1: GM = 4.64494e+27, F_in = 1.85871e+14, tau(r_in) = 3.35041e+06, r_int (tau = 1) = 9.53976e+11, r_top = 1.06412e+12, sponge rate = 0 above r = 9.53976e+11
+he_star_m1: he_seed_band = n2: sigma_max (all cells below r_int) = 0.000598153 /s (1/sigma 0.0193497 d); runs with sigma >= 0.3 sigma_max (gaps <= 2 closed):
+  run r/r_int 0.942139 - 0.978607 (29 cells), peak 1/sigma 0.0193497 d at r/r_int 0.966734
+he_star_m1: he_seed_band = n2 BAND r 8.9756e+11 .. 9.34835e+11 (r/r_int 0.940862 - 0.979935, r_int 9.53976e+11), 29 cells 211..239; peak at r/r_int 0.966734: sigma 0.000598153 /s, 1/sigma 0.0193497 d, T 148318 K, Gamma1 1.37361, H_p/r 0.0168975; pi r/H_p 185.921, l_8 584.816 (8 cells per wavelength, min dx_lat/r 0.00134298) -> l_lo 16, l_hi 64
+### WARNING he_star_m1: he_seed_band = n2: l_hi clipped to the cap 64
+he_star_m1: seed = real spherical harmonics l 16..64 (3969 terms, all m), amplitude 0.001 (eint), r 8.9756e+11 .. 9.34835e+11, rng 1234
+<time> dt_retry on: fac 0.5 max 8 ngood 10 grow 1.25 views minimal cap -1
+--- defaults (<job>/recipe sets the default set: prod1019 | none) ---
+  <rad_m1>/vet_rotate_advance = true (default on a fresh vet_gd run)
+  <rad_m1>/implicit_solver = bicgstab (default)
+--- end defaults ---
+<rad_m1> RSLA check: chat = c, no reduced speed of light (tau_max=4.06421e+06, measured v_max=0)
+<rad_m1> closure = vet_col: per-column 1-D formal solution, spherical p-rays (ncore 8, nsub 1, 345 rays, 336 shells), axis radial, rebuilt every 1 step(s); vet_col_order2 (quadratic mu, face core); vet_bc_diff = face; f_K >= 0; 276 shell(s) kept trapezoid weights; team build, 2 shells per chunk, team size AUTO; outer Marshak q = H(face)/J(top cell) in [0.001, 1]
+<rad_m1> vet_gd direction set: 126 directions; moment errors |sum w - 1| 6.66134e-16, |sum w n| 1.99493e-17, |sum w nn - I/3| 2.77556e-16 (rotated 1.11022e-16), 4th-moment anisotropy 2.498e-16 (rotated 1.11022e-16)
+<rad_m1> vet_gd: exact per-shell lateral halo, band 80 cells (needed 80), per-shell depth mean 79.9315
+<rad_m1> vet_gd_band_ring: compact intensities 5.64815 GB + 3 band slots 0.250823 GB on rank 0
+<rad_m1> vet_gd: ragged per-shell band intensity array 5.89898 GB on rank 0 (dense band 28.5938 GB)
+<rad_m1> vet_gd: global-direction SC closure on the sp wedge, product GL7x18 staggered (126 directions); z-rotation every 0 cycle(s) (0 = fixed), first angle 0; rank 0 wall ghost columns 39680, direction maps exact 2096640 of 4999680 (the rest: nearest direction)
+CLEAN ray cut cycle 0 shell -1 -> 232 (want 232, R)
+<rad_m1> vgdrot-1011: vet_gd_halo_exact lists made in groups of 1 shells (pool 159.961 MB per rank)
+<rad_m1> clean_halo_direct: ON, rank 0 copies 0 ghosts, sends 528192 cells, receives 528192 in 3 messages; on-rank ghosts by depth 0 0 0, clean_halo_depth 0
+CLEAN cycle 0 t2s 0 it 21 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 0: max(|dE|, |dF|/c)/max E = 8.410e-05
+CLEAN cycle 0 t2s 0 it 23 (sum 23) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 1: max(|dE|, |dF|/c)/max E = 7.210e-05
+CLEAN cycle 0 t2s 0 it 21 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 2: max(|dE|, |dF|/c)/max E = 1.079e-04
+CLEAN cycle 0 t2s 0 it 22 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 3: max(|dE|, |dF|/c)/max E = 1.156e-04
+CLEAN cycle 0 t2s 0 it 22 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 4: max(|dE|, |dF|/c)/max E = 1.417e-04
+CLEAN cycle 0 t2s 0 it 20 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 5: max(|dE|, |dF|/c)/max E = 1.308e-04
+CLEAN cycle 0 t2s 0 it 21 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 6: max(|dE|, |dF|/c)/max E = 1.677e-04
+CLEAN cycle 0 t2s 0 it 19 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 7: max(|dE|, |dF|/c)/max E = 2.349e-04
+CLEAN cycle 0 t2s 0 it 21 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 8: max(|dE|, |dF|/c)/max E = 1.504e-04
+CLEAN cycle 0 t2s 0 it 20 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 9: max(|dE|, |dF|/c)/max E = 3.014e-04
+CLEAN ray cut cycle 0 shell 232 -> 238 (want 238, R)
+CLEAN cycle 0 t2s 0 it 19 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 10: max(|dE|, |dF|/c)/max E = 4.237e-04
+CLEAN cycle 0 t2s 0 it 20 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 11: max(|dE|, |dF|/c)/max E = 6.981e-04
+CLEAN cycle 0 t2s 0 it 19 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 12: max(|dE|, |dF|/c)/max E = 1.062e-03
+CLEAN cycle 0 t2s 0 it 21 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 13: max(|dE|, |dF|/c)/max E = 1.333e-03
+CLEAN cycle 0 t2s 0 it 20 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 14: max(|dE|, |dF|/c)/max E = 1.533e-03
+CLEAN cycle 0 t2s 0 it 21 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 15: max(|dE|, |dF|/c)/max E = 1.974e-03
+CLEAN cycle 0 t2s 0 it 20 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 16: max(|dE|, |dF|/c)/max E = 2.528e-03
+CLEAN cycle 0 t2s 0 it 20 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 17: max(|dE|, |dF|/c)/max E = 2.617e-03
+CLEAN cycle 0 t2s 0 it 20 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 18: max(|dE|, |dF|/c)/max E = 3.092e-03
+CLEAN cycle 0 t2s 0 it 21 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 19: max(|dE|, |dF|/c)/max E = 3.886e-03
+CLEAN cycle 0 t2s 0 it 21 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 20: max(|dE|, |dF|/c)/max E = 4.107e-03
+CLEAN cycle 0 t2s 0 it 22 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 21: max(|dE|, |dF|/c)/max E = 4.869e-03
+CLEAN cycle 0 t2s 0 it 21 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 22: max(|dE|, |dF|/c)/max E = 4.983e-03
+CLEAN cycle 0 t2s 0 it 20 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 23: max(|dE|, |dF|/c)/max E = 5.867e-03
+CLEAN cycle 0 t2s 0 it 22 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 24: max(|dE|, |dF|/c)/max E = 6.444e-03
+CLEAN cycle 0 t2s 0 it 21 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 25: max(|dE|, |dF|/c)/max E = 7.774e-03
+CLEAN cycle 0 t2s 0 it 22 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 26: max(|dE|, |dF|/c)/max E = 8.444e-03
+CLEAN cycle 0 t2s 0 it 20 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 27: max(|dE|, |dF|/c)/max E = 9.805e-03
+CLEAN cycle 0 t2s 0 it 20 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 28: max(|dE|, |dF|/c)/max E = 1.051e-02
+CLEAN cycle 0 t2s 0 it 19 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 29: max(|dE|, |dF|/c)/max E = 1.159e-02
+CLEAN cycle 0 t2s 0 it 19 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 30: max(|dE|, |dF|/c)/max E = 1.226e-02
+CLEAN cycle 0 t2s 0 it 20 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 31: max(|dE|, |dF|/c)/max E = 1.304e-02
+CLEAN cycle 0 t2s 0 it 19 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 32: max(|dE|, |dF|/c)/max E = 1.355e-02
+### FATAL ERROR in /resnick/groups/carnegie_poc/jingze/wt_orion1121/icbaln/src/rad_m1/rad_m1_clean.cpp
+clean_init steady: the last pass changed E or F/c by 0.012655 of max E (diverged: clean_init_dtfac, _n)
+### FATAL ERROR in /resnick/groups/carnegie_poc/jingze/wt_orion1121/icbaln/src/rad_m1/rad_m1_clean.cpp
+clean_init steady: the last pass changed E or F/c by 0.012655 of max E (diverged: clean_init_dtfac, _n)
+### FATAL ERROR in /resnick/groups/carnegie_poc/jingze/wt_orion1121/icbaln/src/rad_m1/rad_m1_clean.cpp
+clean_init steady: the last pass changed E or F/c by 0.012655 of max E (diverged: clean_init_dtfac, _n)
+CLEAN cycle 0 t2s 0 it 20 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 33: max(|dE|, |dF|/c)/max E = 1.363e-02
+CLEAN cycle 0 t2s 0 it 20 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 34: max(|dE|, |dF|/c)/max E = 1.398e-02
+CLEAN cycle 0 t2s 0 it 21 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 35: max(|dE|, |dF|/c)/max E = 1.394e-02
+CLEAN cycle 0 t2s 0 it 20 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 36: max(|dE|, |dF|/c)/max E = 1.430e-02
+CLEAN cycle 0 t2s 0 it 21 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 37: max(|dE|, |dF|/c)/max E = 1.409e-02
+CLEAN cycle 0 t2s 0 it 20 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 38: max(|dE|, |dF|/c)/max E = 1.402e-02
+CLEAN cycle 0 t2s 0 it 21 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 39: max(|dE|, |dF|/c)/max E = 1.314e-02
+CLEAN cycle 0 t2s 0 it 20 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 40: max(|dE|, |dF|/c)/max E = 1.457e-02
+CLEAN cycle 0 t2s 0 it 21 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 41: max(|dE|, |dF|/c)/max E = 1.493e-02
+CLEAN cycle 0 t2s 0 it 21 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 42: max(|dE|, |dF|/c)/max E = 1.550e-02
+CLEAN cycle 0 t2s 0 it 20 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 43: max(|dE|, |dF|/c)/max E = 1.573e-02
+CLEAN cycle 0 t2s 0 it 21 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 44: max(|dE|, |dF|/c)/max E = 1.553e-02
+CLEAN cycle 0 t2s 0 it 21 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 45: max(|dE|, |dF|/c)/max E = 1.557e-02
+CLEAN cycle 0 t2s 0 it 21 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 46: max(|dE|, |dF|/c)/max E = 1.464e-02
+CLEAN cycle 0 t2s 0 it 21 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 47: max(|dE|, |dF|/c)/max E = 1.445e-02
+CLEAN cycle 0 t2s 0 it 21 (sum 21) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 48: max(|dE|, |dF|/c)/max E = 1.298e-02
+CLEAN cycle 0 t2s 0 it 22 (sum 22) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_m1> clean_init steady pass 49: max(|dE|, |dF|/c)/max E = 1.266e-02
+<rad_m1> clean_init steady: NOT converged after 50 passes, residual 1.266e-02 (tol 1.0e-08; 0 formal solutions); radiation E 9.4442341701e+43 -> 9.4442283680e+43, F/c 1.3324e+38 0.0000e+00 0.0000e+00 -> 1.4809e+38 -1.4663e+38 -7.6077e+28 (volume sums)
+### FATAL ERROR in /resnick/groups/carnegie_poc/jingze/wt_orion1121/icbaln/src/rad_m1/rad_m1_clean.cpp
+clean_init steady: the last pass changed E or F/c by 0.012655 of max E (diverged: clean_init_dtfac, _n)
+[2026-11-20T20:52:01.012] error:  mpi/pmix_v3: _errhandler: hpc-sm-01-11 [0]: pmixp_client_v2.c:219: Error handler invoked: status = -25, source = [slurm.pmix.6133593.244:2]
+srun: error: hpc-sm-01-11: tasks 0-3: Exited with exit code 1
