@@ -412,9 +412,9 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/implicit_det_trace", "!"}, {"rad_m1/dbg_hydro_off", "!"},
     {"rad_m1/time2_k1_fct", "!"}, {"rad_m1/implicit_mr_every", "!"},
     {"rad_m1/coupling_split", "!"},
-    // (the vet_gd twin and its symmetric reference, removed, L4: the twin itself stops when
-    // on, as under clean before; its option keys were inert without it and stay so)
-    {"rad_m1/vet_gd_twin", "=false"}, {"rad_m1/vet_gd_twin_*", ""},
+    // (the vet_gd twin and its symmetric reference, removed, L4: with vet_gd on the twin
+    // stops when named true (rad_m1.cpp), as under clean before; otherwise inert)
+    {"rad_m1/vet_gd_twin*", ""},
     {"rad_m1/vet_gd_symref*", ""},
     {"rad_m1/vet_gd_async", "!"}, {"rad_m1/time2_stage_theta", "!"},
     {"rad_m1/time2_stage_local_be", "!"}};

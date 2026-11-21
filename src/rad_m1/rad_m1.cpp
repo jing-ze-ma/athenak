@@ -2018,6 +2018,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       // xchg-1021: speed only (bitwise any value); 1 = the plain per-shell exchange
       vgd_csxg = std::max(1, pin->GetInteger("rad_m1","vet_gd_cs_xgroups"));
     }
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_twin") &&
+        pin->GetBoolean("rad_m1","vet_gd_twin")) {
+      std::cout << "### FATAL ERROR <rad_m1>/vet_gd_twin = true: the twin is not in this "
+                << "build" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     // mem2-1014 vet_gd_band_ring (read only when named; default true where it applies,
     // bitwise; VetGdInit): the band intensities lent per shell from a few wide slabs
     // vet_gd_raw (read only when named): the clean sc rays' band on spherical polar
