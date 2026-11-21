@@ -4847,7 +4847,10 @@ void RadiationM1::CleanWriteBack() {
     for (int n = 0; n < x.nf; ++n) {
       CleanFor("cln_wbxc", nmb1, ks, ke+(n == 2), js, je+(n == 1), is, ie+(n == 0),
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        xcv(m,n,k,j,i) = CleanFaceFlux(*pxc, CLW_X, n, m, k, j, i, true);
+        CleanDirCase(n, [&](auto d) {
+          constexpr int nd = decltype(d)::value;
+          xcv(m,nd,k,j,i) = CleanFaceFlux<nd>(*pxc, CLW_X, nd, m, k, j, i, true);
+        });
       });
     }
   }
