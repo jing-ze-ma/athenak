@@ -2743,6 +2743,7 @@ class RadiationM1 {
   DvceArray5D<Real> &CleanRstFv() {return (cln_scmem && !cln_cssc) ? cln_top : cln_fvi;}
   void CleanStagDrag(const bool first, const bool vel = false, const bool lat = true);
   void CleanStagFCsShared();
+  void CleanStagFCone(const int e, const int kd);
   void CleanStagFaceTie(const int e, const int kd, const bool pt = false);
   void CleanStagCsTie(const int nc, const int c0, const int c1 = 0, const int c2 = 0);
   Real CleanStagFSweepChange();
@@ -2873,6 +2874,8 @@ class RadiationM1 {
   DvceArray1D<Real> cln_mclc;    // (the Newton passes' momentum cap: the terms it moved)
   bool cln_fwb = false;     // clean_stag_fwb
   DvceArray1D<Real> cln_fwbc;    // (fwb: the faces, their momentum sums |dp|, x1 dp)
+  bool cln_fcone = false;   // clean_stag_fcone
+  DvceArray1D<Real> cln_fconc;   // (fcone: the faces scaled, their momentum sum)
   bool cln_thinh = false;   // clean_stag_thinf_held
   int cln_xdfz = 0;         // clean_stag_xdonor_freeze
   int cln_pdmp = 0, cln_pdn = 0;   // clean_pass_damp, the solve's pass count

@@ -4375,6 +4375,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
       CleanOverlapFor("cln_fs3", pmy_pack, ov, f3, fin, dir);
     }
   }
+  if (cln_fcone) CleanStagFCone(e, kd);
   if (cln_ftie && tie_now) CleanStagFaceTie(e, kd);
   if (fwb && e == CLW_X) {   // (clean_stag_fwb: the radiation momentum of the residuals)
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_fwbc);
@@ -4391,6 +4392,108 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
     const Real n = CleanReduce(h(0), false), p = CleanReduce(h(1), false);
     if (global_variable::my_rank == 0 && n > 0.0) {
       std::printf("CLEAN FLIM cycle %d t2s %d faces %.0f momentum cut sum |dF| V/c^2 "
+                  "%.6e\n", pmy_pack->pmesh->ncycle, t2_solve, n, p);
+    }
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagFCone
+//! \brief clean_stag_fcone: the cell flux vector (CleanStagCellVector, a linear map of
+//! the cell's face momenta, F_i = sum_f F_f u_f) within the cell's realisable cone,
+//! |F_i| <= c E_i (E of work vector e), by construction.  Each face is scaled towards the
+//! realisable state 0 by l_f = min(l_L, l_R), l_i = min(1, c E_i/S_i), S_i = sum_f |F_f|
+//! |u_f| >= |F_i|: then |F_i| <= sum_f l_f |F_f| |u_f| <= l_i S_i <= c E_i.  A face has
+//! one value for both its cells (the cubed sphere: its lower gid's, CleanStagFCsShared),
+//! so the momentum stays in flux form; a radial beam (S_i = |F_i|) is cut only where its
+//! cell holds less than c E_i.  As clean_stag_flim's cut, the gas takes the absorption
+//! of the scaled F (CLF_N + 1), the energy flux's memory G + d is kept, the radiation
+//! momentum cut is booked and printed (CLEAN FCONE); E is unchanged
+
+void RadiationM1::CleanStagFCone(const int e, const int kd) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke, nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanArgs x = CleanMakeArgs();
+  const bool cub = x.cub, dd = cln_fkin && e == CLW_X && cln_dok;
+  if (cln_fconc.extent_int(0) != 2) Kokkos::realloc(cln_fconc, 2);
+  Kokkos::deep_copy(cln_fconc, 0.0);
+  auto fcc = cln_fconc;
+  CleanFor("cln_fcone_l", nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real s = 0.0;
+    for (int d = 0; d < 2*x.nf; ++d) {
+      const int q = d/2, h = d%2;
+      Real c[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, u[3];
+      c[d] = 1.0;
+      CleanStagCellVector(x, m, k, j, i, c, u);
+      s += fabs(x.fc[q](m,CLF_N,k+h*(q == 2),j+h*(q == 1),i+h*(q == 0)))*
+           sqrt(SQR(u[0]) + SQR(u[1]) + SQR(u[2]));
+    }
+    const Real ce = x.c*fmax(x.w(m,e,k,j,i), 0.0);
+    x.w(m,CLW_CP,k,j,i) = (s > ce) ? ce/s : 1.0;
+  });
+  CleanGhostFill(cln_w, CLW_CP, 1);
+  for (int d = 0; d < x.nf; ++d) {
+    const int dk = (d == 2), dj = (d == 1), di = (d == 0);
+    auto fc = x.fc[d];
+    CleanFor("cln_fcone_f", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      // (a physical boundary face: its inner cell's l, after the cubed sphere's tie; an
+      // opaque face, tau_f = chi_f dx_f, keeps its share tau/(1 + tau) of F: a diffusion
+      // front's face mean is no free-streaming excess, and its absorption is the gas's)
+      const bool bd = CleanBoundaryFace(x, d, m, k, j, i);
+      const Real tau = 0.5*(x.op(m,M1_OP_T,k,j,i) + x.op(m,M1_OP_T,k-dk,j-dj,i-di))*
+                       CleanCellFaceDistance(x, d, m, k, j, i);
+      const Real l = fmin(x.w(m,CLW_CP,k-dk,j-dj,i-di), x.w(m,CLW_CP,k,j,i));
+      fc(m,CLF_N+2,k,j,i) = (bd ? 1.0 : 1.0 - (1.0 - l)/(1.0 + tau))*fc(m,CLF_N,k,j,i);
+    });
+  }
+  if (cub) {   // (a face two MeshBlocks share: its lower gid's value)
+    auto v = cln_v;
+    CleanFor("cln_fcone_v", nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int q = 0; q < 3; ++q) {
+        v(m,9+2*q,k,j,i) = x.fc[q](m,CLF_N+2,k,j,i);
+        v(m,9+2*q+1,k,j,i) = x.fc[q](m,CLF_N+2,k+(q == 2),j+(q == 1),i+(q == 0));
+      }
+    });
+    const int f0 = (pmy_pack->pmesh->nmb_rootx1 == 1 && !pmy_pack->pmesh->multilevel)
+                   ? 2 : 0;
+    CleanGhostFill(cln_v, 9 + f0, 6 - f0, true, 0, 1, CleanFMask(f0));
+    CleanStagFCsShared();
+  }
+  for (int d = 0; d < x.nf; ++d) {
+    const int dk = (d == 2), dj = (d == 1), di = (d == 0);
+    auto fc = x.fc[d];
+    CleanFor("cln_fcone_b", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      // (a physical boundary face has no F equation: the gas takes its half cell's
+      // absorption of fs, CleanMomentumChange)
+      const bool bd = CleanBoundaryFace(x, d, m, k, j, i);
+      const bool lin = (d == 0) ? (i > is) : ((d == 1) ? (j > js) : (k > ks));
+      const Real f = fc(m,CLF_N,k,j,i);
+      const Real fs = !bd ? fc(m,CLF_N+2,k,j,i) :
+                      x.w(m,CLW_CP,k-lin*dk,j-lin*dj,i-lin*di)*f;
+      fc(m,CLF_N+2,k,j,i) = fs;
+      if (fs == f) return;
+      const Real it = 1.0/fc(m,CLF_TH,k,j,i);
+      if (!bd) fc(m,CLF_N+1,k,j,i) -= (f - fs)*it/(x.h*x.c*x.c);
+      if (dd && !bd) {   // (the energy flux's memory G + d kept, as clean_stag_flim's)
+        fc(m,CLF_N+3,k,j,i) += f - fs;
+        if (kd > 0) fc(m,kd,k,j,i) += (f - fs)/x.h;
+      }
+      fc(m,CLF_N,k,j,i) = fs;
+      Kokkos::atomic_add(&fcc(0), 1.0);
+      Kokkos::atomic_add(&fcc(1), fabs(f - fs)*it*0.5*(CleanVol(x, m, k, j, i) +
+                         CleanVol(x, m, k-dk, j-dj, i-di))/(x.c*x.c));
+    });
+  }
+  if (e == CLW_X) {
+    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_fconc);
+    const Real n = CleanReduce(h(0), false), p = CleanReduce(h(1), false);
+    if (global_variable::my_rank == 0 && n > 0.0) {
+      std::printf("CLEAN FCONE cycle %d t2s %d faces %.0f momentum cut sum |dF| V/c^2 "
                   "%.6e\n", pmy_pack->pmesh->ncycle, t2_solve, n, p);
     }
   }

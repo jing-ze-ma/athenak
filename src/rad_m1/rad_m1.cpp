@@ -337,6 +337,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "with clean_consistency" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // clean_stag_fcone (default off): every cell's flux vector within its realisable
+    // cone, |F| <= c E, by construction: the faces scaled towards 0 (CleanStagFCone)
+    cln_fcone = stag("clean_stag_fcone", false);
+    if (cln_fcone && !cln_fsolve) {
+      std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_fcone needs the staggered F "
+                << "solve" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     // clean_stag_thinf_held (default on): the thin flux factor of a donor blended by
     // theta = min(1, max(J, P)/(clean_ray_min E_old)), P its largest ray outflow:
     // theta g(rays) + (1 - theta) h (its own half range); a ray-shadowed donor is no dam
