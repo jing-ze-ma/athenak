@@ -434,12 +434,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       }
       cln_lzbook = (cln_lza == 2) || (pmy_pack->pmesh->use_spherical_polar &&
                                       pmy_pack->pmesh->three_d);
-      // clean_cs_lz_tel (default off: its rigid counter-spin of the lateral-stress defect
-      // breaks the cubed sphere's hydrostatic rest, rhse_cs6 v/c_s 4e-9 -> 1e-3): the
-      // cubed sphere's L_z by telescoping, the gas phi momentum of CleanCsTorque and the
-      // radiation's L_z that of its face momenta, so that the ledger holds the radial
-      // boundaries' torque alone
-      cln_lzt = stag("clean_cs_lz_tel", false);
+      // clean_cs_lz_tel (default on for a fresh staggered cubed-sphere run, recorded):
+      // its L_z by telescoping, the gas phi momentum of CleanCsTorque and the radiation's
+      // L_z that of its face momenta, so that the ledger holds the radial boundaries'
+      // torque alone (force_reference = clean withholds its phi row, CleanCsTorque)
+      if (!cln_cell && (cln_lza == 2 || pin->DoesParameterExist("rad_m1",
+                                                                 "clean_cs_lz_tel"))) {
+        cln_lzt = pin->GetOrAddBoolean("rad_m1","clean_cs_lz_tel",nw);
+      }
       if (cln_lzt && cln_lza != 2) {
         std::cout << "### FATAL ERROR: <rad_m1>/clean_cs_lz_tel needs the cubed sphere "
                   << "and clean_layout = staggered" << std::endl;
