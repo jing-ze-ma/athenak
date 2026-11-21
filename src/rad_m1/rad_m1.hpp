@@ -2824,6 +2824,8 @@ class RadiationM1 {
   //   (cubed sphere: CLN_CSY coefficients of the lateral sums)
   DvceArray5D<Real> cln_csy;
   bool cln_csyok = false;       //   cln_csy is of the current closure (no rebuild)
+  bool cln_ysum = false;        // clean_stag_lat_sums: the sums Y off the cubed sphere
+  DvceArray5D<Real> cln_yl;     //   (in their own array: CLW_L is the F solve's scratch)
   int cln_stall_n = 0;          // clean_bicg_stall_its: stall window (0 = off)
   int cln_fsweeps = 1;          // clean_stag_fsweeps: line-solve sweeps of the F solve
   bool cln_fschur = false;      // clean_stag_fschur: the F lines exact across MeshBlocks

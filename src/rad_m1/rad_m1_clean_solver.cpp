@@ -113,6 +113,8 @@ CleanArgs RadiationM1::CleanMakeArgs() {
             ? 0.5/tan(ms.x2min) + 0.5/tan(ms.x2max) : 0.0;   // (read on that wrap only)
   x.cub = pmy_pack->pmesh->use_cubed_sphere;
   x.lwb = x.cub && cln_latwb;
+  x.ys = !x.cub && cln_ysum;
+  x.yl = cln_yl;
   if (x.sph) {
     auto *pc = pmy_pack->pcoord;
     x.vol = pc->volume;

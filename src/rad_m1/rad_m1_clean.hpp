@@ -356,6 +356,8 @@ struct CleanArgs {
   // CleanCsGeometry
   bool cub;
   bool lwb = false;   // clean_cs_lat_wb (CleanStagCsLat)
+  bool ys = false;    // clean_stag_lat_sums: the lateral sums Y off the cubed sphere
+  DvceArray5D<Real> yl;   //   (cln_yl: CLW_L + 3 q on the cubed sphere)
   DvceArray4D<Real> ae0;   // (the cubed sphere: pcoord's radial face area, CleanDivW)
   CleanGeo g;
   // the conserved gas energy also holds d phi (<hydro>/etotgrav) and |B|^2/2 (<mhd>)
@@ -793,10 +795,10 @@ int CleanCsSlot(const CleanArgs &x, const int dir, const int m, const int kf,
 KOKKOS_INLINE_FUNCTION
 Real CleanStagCsLat(const CleanArgs &x, const int dir, const int m, const int kf,
                     const int jf, const int iff, const int k, const int j, const int i) {
-  Real s, d = 0.0, n[3];
-  const int q = CleanCsSlot(x, dir, m, kf, jf, iff, k, j, i, false, s)/2;
+  Real s, d = 0.0, n[3];   // (off the cubed sphere, clean_stag_lat_sums: q = dir, e_q)
+  const int q = x.cub ? CleanCsSlot(x, dir, m, kf, jf, iff, k, j, i, false, s)/2 : dir;
   const int p = (q == 0) ? 1 : 0, pp = (q == 2) ? 1 : 2;
-  for (int c = 0; c < 3; ++c) n[c] = x.g.At<CLG_N>(m,3*dir+c,kf,jf,iff);
+  for (int c = 0; c < 3; ++c) n[c] = x.cub ? x.g.At<CLG_N>(m,3*dir+c,kf,jf,iff) : (c == q);
   if (x.lwb && dir > 0) {   // (n R = n - w x n + w x (w x n)/(1 + a.b), w = a x b)
     Real a[3], b[3], aa = 0.0, an = 0.0, bb = 0.0, ab = 0.0;
     for (int c = 0; c < 3; ++c) {
@@ -817,7 +819,8 @@ Real CleanStagCsLat(const CleanArgs &x, const int dir, const int m, const int kf
     for (int c = 0; c < 3; ++c) n[c] += v[c]/(1.0 + ab) - u[c];
   }
   for (int c = 0; c < 3; ++c) {
-    d += n[c]*(x.w(m,CLW_L+3*p+c,k,j,i) + x.w(m,CLW_L+3*pp+c,k,j,i));
+    d += n[c]*(x.cub ? x.w(m,CLW_L+3*p+c,k,j,i) + x.w(m,CLW_L+3*pp+c,k,j,i)
+                     : x.yl(m,3*p+c,k,j,i) + x.yl(m,3*pp+c,k,j,i));
   }
   return d;
 }
@@ -1145,6 +1148,13 @@ Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m
                       x.cs(m,CLN_D11+dir,kl,jl,il)*x.w(m,e,kl,jl,il));
   }
   if (!x.multi_d || CleanBoundaryFace(x, dir, m, k, j, i)) return div;
+  // (clean_stag_lat_sums: the lateral sums Y of the two cells over V_f, as the cubed
+  // sphere's; spherical polar phi faces keep the torque form below)
+  if (x.ys && !(x.sph && dir == 2)) {
+    const Real vf = x.sph ? 0.5*(x.vol(m,k,j,i) + x.vol(m,kl,jl,il)) : 1.0;
+    return div + (CleanStagCsLat(x, dir, m, k, j, i, kl, jl, il) +
+                  CleanStagCsLat(x, dir, m, k, j, i, k, j, i))/vf;
+  }
   for (int b = 0; b < 3; ++b) {
     if (b == dir || (b == 1 && !x.multi_d) || (b == 2 && !x.three_d)) continue;
     const int ab = (dir + b == 1) ? 3 : ((dir + b == 2) ? 4 : 5);   // D12, D13, D23

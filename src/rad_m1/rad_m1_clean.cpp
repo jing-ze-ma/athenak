@@ -586,6 +586,7 @@ void RadiationM1::CleanInit() {
   if (cln_stst && pmy_pack->pmesh->use_cubed_sphere) {
     Kokkos::realloc(cln_csy, nmb, CLN_CSY, indcs.nx3, indcs.nx2, indcs.nx1);
   }
+  if (cln_ysum) Kokkos::realloc(cln_yl, nmb, 9, n3, n2, n1);
   // multigrid levels of clean_stag_pc = mg: halve x2 and x3 where even (>= 4), two
   // coarse levels at most (x1 is never halved)
   if (cln_stagmg) {
@@ -4968,11 +4969,15 @@ void RadiationM1::CleanStagCsTie(const int nc, const int c0, const int c1, const
 //! and the ghosts take it, so that a seam face sees the neighbour's true geometry.
 
 void RadiationM1::CleanStagCsLateral(const int e, const bool st, const int part) {
-  if (!pmy_pack->pmesh->use_cubed_sphere) return;
+  if (!pmy_pack->pmesh->use_cubed_sphere && !cln_ysum) return;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   CleanArgs x = CleanMakeArgs();
   const int ks = indcs.ks, js = indcs.js, is = indcs.is;
   auto cy = cln_csy;
+  // (the sums' array and first slot: off the cubed sphere cln_yl, x.yl)
+  const bool cub = pmy_pack->pmesh->use_cubed_sphere, wl = (CLW_L < cln_w.ns);
+  auto ya = !cub ? cln_yl : (wl ? cln_w.s : cln_w.o);
+  const int y0 = !cub ? 0 : (wl ? CLW_L : CLW_L - cln_w.ns);
   // (st: from the coefficients of the pass, cln_csyb, CleanPreconditionerSetup)
   if (st) {
     par_for("cln_cslst", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, indcs.ks, indcs.ke,
@@ -5012,18 +5017,20 @@ void RadiationM1::CleanStagCsLateral(const int e, const bool st, const int part)
       // other's weight doubled)
       const bool o2 = (vl + vh == 1) && x.mbc(m,2*q+vl) == BoundaryFlag::panel;
       const Real wq = (vl + vh == 2 || o2) ? 0.25 : 0.5;
-      for (int s = -1; s <= 1; s += 2) {
+      // (clean_stag_lat_sums off the cubed sphere: A/V of a Cartesian face 1/dx, V = 1;
+      // no family past the mesh's dimension)
+      for (int s = -1; s <= 1 && q < x.nf; s += 2) {
         const int kf = k + (s > 0)*dk, jf = j + (s > 0)*dj, iff = i + (s > 0)*di;
         const bool ex = o2 && !CleanTransSide(x, q, m, k, j, i, s > 0);
         if (!ex && !CleanTransSide(x, q, m, k, j, i, s > 0)) continue;
-        const Real a = wq*s*x.area[q](m,kf,jf,iff);
+        const Real a = wq*s*((x.cub || x.sph) ? x.area[q](m,kf,jf,iff) : x.idx[q]);
         if (!ex) {   // (each component's P(s) - P(0) and the normal once)
           Real dp[6], nf[3];
           for (int n = 0; n < 6; ++n) {
             dp[n] = x.cs(m,CLN_D11+n,k+s*dk,j+s*dj,i+s*di)*x.w(m,e,k+s*dk,j+s*dj,i+s*di) -
                     p0[n];
           }
-          for (int c = 0; c < 3; ++c) nf[c] = x.g.At<CLG_N>(m,3*q+c,kf,jf,iff);
+          for (int c = 0; c < 3; ++c) nf[c] = CleanNf(x, c, q, m, kf, jf, iff);
           for (int b = 0; b < 3; ++b) {
             for (int c = 0; c < 3; ++c) y[b] += a*nf[c]*dp[(b == c) ? b : 2 + b + c];
           }
@@ -5042,16 +5049,16 @@ void RadiationM1::CleanStagCsLateral(const int e, const bool st, const int part)
           }
         }
       }
-      for (int b = 0; b < 3; ++b) x.w(m,CLW_L+3*q+b,k,j,i) = y[b];
+      for (int b = 0; b < 3; ++b) ya(m,y0+3*q+b,k,j,i) = y[b];
     }
   };
   // (the cells it sends first, its exchange in flight behind the inner ones)
   const bool ov = (cln_hmax >= 9);
   const std::function<void()> post = [&]() {
-    CleanGhostFill(cln_w, CLW_L, 9, ov ? 1 : 0, 1, {0770, 0707, 0077, 0});   // (as above)
+    CleanGhostFill(ya, y0, 9, true, ov ? 1 : 0, 1, {0770, 0707, 0077, 0});   // (as above)
   };
   const std::function<void()> fin = [&]() {
-    if (ov) CleanGhostFill(cln_w, CLW_L, 9, 2, 1);
+    if (ov) CleanGhostFill(ya, y0, 9, true, 2, 1);
   };
   CleanOverlapFor("cln_cslat", pmy_pack, ov, f, fin, -1, post);
 }
