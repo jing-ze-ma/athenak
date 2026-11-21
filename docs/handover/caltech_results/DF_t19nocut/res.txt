@@ -1,0 +1,14 @@
+a 'FATAL' 4 ### FATAL ERROR in ../../src/parameter_input.cpp at line 435
+a 'CLEAN WARNING' 0 
+a 'DT_RETRY' 0 
+a 'WARNING' 0 
+a 'march' 0 
+a 'clean_init steady:' 0 
+a 'he_star_m1: GM' 0 
+a 'he_seed_band = n2 BAND' 0 
+a 'seed = ' 0 
+a 'direction maps' 0 
+a 'he_ic_equil' 0 
+GPU mem peak MiB max 23 min 23 (n=4) = 0.0 % of 143771 MiB
+a rc=1 wall=14
+DONE

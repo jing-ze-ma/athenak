@@ -1,0 +1,23 @@
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+### FATAL ERROR in ../../src/parameter_input.cpp at line 435
+Parameter 'clean_ray_cut' in block 'rad_m1' on command line not found
+### FATAL ERROR in ../../src/parameter_input.cpp at line 435
+Parameter 'clean_ray_cut' in block 'rad_m1' on command line not found
+Kokkos::Cuda ERROR: Failed to call Kokkos::Cuda::finalize()
+### FATAL ERROR in ../../src/parameter_input.cpp at line 435
+Parameter 'clean_ray_cut' in block 'rad_m1' on command line not found
+### FATAL ERROR in ../../src/parameter_input.cpp at line 435
+Parameter 'clean_ray_cut' in block 'rad_m1' on command line not found
+Kokkos::Cuda ERROR: Failed to call Kokkos::Cuda::finalize()
+Kokkos::Cuda ERROR: Failed to call Kokkos::Cuda::finalize()
+Kokkos::Cuda ERROR: Failed to call Kokkos::Cuda::finalize()
+srun: error: hpc-sm-02-16: tasks 1-3: Exited with exit code 1
+[2026-11-20T18:15:48.744] error:  mpi/pmix_v3: _errhandler: hpc-sm-02-16 [0]: pmixp_client_v2.c:219: Error handler invoked: status = -25, source = [slurm.pmix.5840650.145:2]
+srun: error: hpc-sm-02-16: task 0: Exited with exit code 1
