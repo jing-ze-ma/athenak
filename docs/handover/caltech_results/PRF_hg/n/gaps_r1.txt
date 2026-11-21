@@ -1,0 +1,21 @@
+/resnick/groups/carnegie_poc/jingze/orion_runs_1121/PRF_hg/n/nsys_r1.sqlite: cycles 4 wall 4997.2 ms/cyc  GPU idle 725.7 ms/cyc (14.5 %)  gaps 22384/cyc
+idle by host activity (ms/cyc): MPI 594.6  sync(part) 36.8  memcpy-api(part) 28.8  sync 21.9  launch(part) 19.7  MPI(part) 9.1  launch 7.0  memcpy-api 3.2  host-compute 1.6  cuda-other(part) 1.5  cuda-other 1.3
+idle by gap size   (ms/cyc, n/cyc): <10us 42.6 (15685)  10-100us 120.3 (6619)  0.1-1ms 10.0 (42)  >1ms 552.7 (38)
+memcpy (kind: n/cyc, MB/cyc, ms/cyc; 1=HtoD 2=DtoH 8=DtoD 10=PtoP): 1: 3816, 68.7, 6.19  2: 161, 4002.8, 82.80  8: 21, 6350.7, 3.03  10: 4404, 15945.2, 152.10
+host time in (ms/cyc, overlapping GPU work or not): sync 3935.9  MPI 1258.8
+largest gaps (us, host activity, previous kernel -> next):
+  1713450.3 MPI            M -> M
+   245639.4 MPI            M1::VetGdCsHaloCX#1 -> M1::VetGdCsHaloCX#2
+    15345.0 sync(part)     M -> M
+    14318.8 memcpy-api(part) M -> M
+    11598.1 memcpy-api(part) S -> M
+     7927.5 MPI            M -> M
+     6286.2 MPI            M -> M
+     4854.7 memcpy-api(part) M -> M
+     4594.6 memcpy-api(part) M -> M
+     4298.8 memcpy-api(part) M -> M
+     3928.7 memcpy-api(part) M -> M
+     3390.7 MPI            M -> M
+     3333.4 MPI            M -> M
+     1481.6 MPI            M1::CleanOldVector#1 -> void
+     1289.8 MPI            void -> void

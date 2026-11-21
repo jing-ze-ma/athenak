@@ -1,0 +1,61 @@
+TAG=PRF_rsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v203_e688cb7bc md5=7df2b64833e40a77e8a8a04e6dc900ee RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=5 HOLDER=6133591 NODE=hpc-sm-02-10 NR=4 EX= NSYS=/central/software9/spack/opt/spack/linux-rhel9-x86_64/gcc-11.3.1/cuda-12.2.1-sdqrj2e27zthklon7x75amyvx6aiosbq/bin/nsys (NVIDIA Nsight Systems version 2023.2.3.1001-32894139v0) NCU=/central/software9/spack/opt/spack/linux-rhel9-x86_64/gcc-11.3.1/cuda-12.2.1-sdqrj2e27zthklon7x75amyvx6aiosbq/bin/ncu (Version 2025.2.1.0 (build 35987062) (public-release))
+NVIDIA H200, 143771 MiB, 1980 MHz, 3201 MHz
+NVIDIA H200, 143771 MiB, 1980 MHz, 3201 MHz
+NVIDIA H200, 143771 MiB, 1980 MHz, 3201 MHz
+NVIDIA H200, 143771 MiB, 1980 MHz, 3201 MHz
+CW 0 FATAL 0
+main loop time (before the final outputs) = 3.321386e+01
+elapsed=2.584639e+01 cycle=589788
+elapsed=4.836673e+01 cycle=589789
+elapsed=5.107030e+01 cycle=589790
+elapsed=5.382002e+01 cycle=589791
+elapsed=5.638829e+01 cycle=589792
+elapsed=6.353441e+01 cycle=589793
+/resnick/groups/carnegie_poc/jingze/orion_runs_1121/PRF_rsg/n/nsys_r0.sqlite: cycles 4 wall 2674.6 ms/cyc  busy 2497.8  kernel sum 2497.8  launches 7878/cyc  keys 136
+  ms/cyc     %   n/cyc    us/l  reg  blk     grid lmem  label | key
+  356.93  14.3     436   818.7   64  128    23049    0   | M1::VetGdCsSweep#4
+/resnick/groups/carnegie_poc/jingze/orion_runs_1121/PRF_rsg/n/nsys_r0.sqlite: cycles 4 wall 2674.6 ms/cyc  GPU idle 137.8 ms/cyc (5.2 %)  gaps 10200/cyc
+idle by host activity (ms/cyc): MPI 78.9  sync 11.8  sync(part) 10.9  MPI(part) 9.3  memcpy-api(part) 9.2  launch(part) 9.1  launch 3.1  memcpy-api 2.0  cuda-other 1.8  cuda-other(part) 1.4  host-compute 0.3
+idle by gap size   (ms/cyc, n/cyc): <10us 19.8 (7538)  10-100us 51.3 (2614)  0.1-1ms 8.8 (35)  >1ms 57.9 (14)
+memcpy (kind: n/cyc, MB/cyc, ms/cyc; 1=HtoD 2=DtoH 8=DtoD 10=PtoP): 1: 1758, 2.1, 1.86  2: 93, 0.0, 0.20  8: 30, 7956.3, 3.82  10: 2029, 7749.3, 72.65
+host time in (ms/cyc, overlapping GPU work or not): sync 2388.9  MPI 475.4
+largest gaps (us, host activity, previous kernel -> next):
+     8950.4 MPI(part)      M -> M
+     8639.2 MPI            M1::CleanRightHandSide#1 -> M1::CleanRightHandSide#4
+     8588.2 MPI            M1::CleanRightHandSide#1 -> M1::CleanRightHandSide#4
+     8528.1 MPI            M1::CleanRightHandSide#1 -> M1::CleanRightHandSide#4
+     8519.6 MPI            M1::CleanRightHandSide#1 -> M1::CleanRightHandSide#4
+     8237.7 MPI            M1::CleanRightHandSide#1 -> M1::CleanRightHandSide#4
+run rc=0 wall=95
+k1 M1::VetGdCsSweep#4 356.9ms skip=0
+run_k1 rc=0 wall=126
+k2 M1::CleanRightHandSide#2 253.4ms skip=10
+run_k2 rc=0 wall=160
+k3 M1::CleanStagFSolve#1 182.1ms skip=30
+run_k3 rc=0 wall=124
+k4 void 132.6ms skip=404
+run_k4 rc=0 wall=122
+k5 M1::CleanFaceHalf#1 121.6ms skip=6
+run_k5 rc=0 wall=128
+k6 M1::CleanClosureFromGd#1 85.7ms skip=3
+run_k6 rc=0 wall=135
+k7 M1::CleanGdFaceSums#1 84.6ms skip=3
+run_k7 rc=0 wall=138
+k8 M1::CleanStagLineSolve#1 84.0ms skip=162
+run_k8 rc=0 wall=119
+k9 M1::CleanStagFSolve#2 72.2ms skip=30
+run_k9 rc=0 wall=123
+k10 M1::CleanRightHandSide#3 67.9ms skip=10
+run_k10 rc=0 wall=127
+k    key                                      us DRAM GB/s   %pk   SM%  occA  occT  reg  fp64%  L1hit  L2hit sec/req      lmemB  stalls
+k1   M1::VetGdCsSweep#4 356.9ms           115520 902058725762  18.4  57.4  46.5  50.0   64   21.9   85.2   70.1     6.8          0  long_scoreboard:5.8 wait:2.8 not_selected:1.1
+k2   M1::CleanRightHandSide#2 253.4ms   63272640 373397502617   7.6  21.4  35.5  37.5   80    2.5   59.7   79.6     2.1          0  no_instruction:18.1 long_scoreboard:4.6 wait:2.0
+k3   M1::CleanStagFSolve#1 182.1ms       6745408 629421330778  12.8  38.5  36.0  37.5   80    4.3   71.0   51.3     2.1          0  no_instruction:7.4 long_scoreboard:3.6 wait:1.9
+k4   void 132.6ms                          15168 1282295358650  26.1  67.6  84.8 100.0   30    0.0    3.1   18.8     4.4          0  not_selected:5.3 wait:2.6 long_scoreboard:2.6
+k5   M1::CleanFaceHalf#1 121.6ms        18989600 706828461895  14.4  13.7  36.3  37.5   79   10.1   85.2   44.8    11.2          0  long_scoreboard:35.2 lg_throttle:3.9 wait:1.7
+k6   M1::CleanClosureFromGd#1 85.7ms    39249056 526985224205  10.7  26.2  34.2  37.5   80   22.5   82.3   94.9     6.6          0  long_scoreboard:16.6 wait:2.5 selected:1.0
+k7   M1::CleanGdFaceSums#1 84.6ms       45480320 546365630497  11.1  11.6   9.2  12.5  208    4.7   71.5   30.4     4.1          0  long_scoreboard:7.3 wait:2.5 selected:1.0
+k8   M1::CleanStagLineSolve#1 84.0ms     1315840 203001361868   4.1  37.7  24.5  25.0  118   13.5   41.2   47.8     8.6          0  wait:3.1 barrier:2.6 long_scoreboard:1.6
+k9   M1::CleanStagFSolve#2 72.2ms        2229920 643134103466  13.1   9.5   9.0  37.5   80    1.7   77.5   78.4    32.0          0  long_scoreboard:10.2 wait:2.7 selected:1.0
+k10  M1::CleanRightHandSide#3 67.9ms     6559488 1321993911720  26.9  46.5  37.0  37.5   80   17.7   63.8   61.3     2.9          0  long_scoreboard:7.2 wait:2.5 selected:1.0
+DONE

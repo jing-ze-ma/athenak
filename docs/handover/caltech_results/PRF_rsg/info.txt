@@ -1,0 +1,5 @@
+TAG=PRF_rsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v203_e688cb7bc md5=7df2b64833e40a77e8a8a04e6dc900ee RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=5 HOLDER=6133591 NODE=hpc-sm-02-10 NR=4 EX= NSYS=/central/software9/spack/opt/spack/linux-rhel9-x86_64/gcc-11.3.1/cuda-12.2.1-sdqrj2e27zthklon7x75amyvx6aiosbq/bin/nsys (NVIDIA Nsight Systems version 2023.2.3.1001-32894139v0) NCU=/central/software9/spack/opt/spack/linux-rhel9-x86_64/gcc-11.3.1/cuda-12.2.1-sdqrj2e27zthklon7x75amyvx6aiosbq/bin/ncu (Version 2025.2.1.0 (build 35987062) (public-release))
+NVIDIA H200, 143771 MiB, 1980 MHz, 3201 MHz
+NVIDIA H200, 143771 MiB, 1980 MHz, 3201 MHz
+NVIDIA H200, 143771 MiB, 1980 MHz, 3201 MHz
+NVIDIA H200, 143771 MiB, 1980 MHz, 3201 MHz

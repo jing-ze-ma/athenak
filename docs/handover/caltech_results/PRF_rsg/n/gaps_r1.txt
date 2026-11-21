@@ -1,0 +1,21 @@
+/resnick/groups/carnegie_poc/jingze/orion_runs_1121/PRF_rsg/n/nsys_r1.sqlite: cycles 4 wall 2674.6 ms/cyc  GPU idle 179.4 ms/cyc (6.7 %)  gaps 10040/cyc
+idle by host activity (ms/cyc): MPI 129.5  sync 11.9  launch(part) 8.5  memcpy-api(part) 8.3  sync(part) 7.4  MPI(part) 5.5  launch 3.0  cuda-other 2.1  memcpy-api 2.1  cuda-other(part) 0.9  host-compute 0.3
+idle by gap size   (ms/cyc, n/cyc): <10us 19.9 (7357)  10-100us 66.8 (2592)  0.1-1ms 13.1 (76)  >1ms 79.7 (14)
+memcpy (kind: n/cyc, MB/cyc, ms/cyc; 1=HtoD 2=DtoH 8=DtoD 10=PtoP): 1: 1758, 2.1, 1.86  2: 93, 0.0, 0.20  8: 30, 7956.3, 3.82  10: 2029, 7760.6, 74.14
+host time in (ms/cyc, overlapping GPU work or not): sync 2348.9  MPI 581.6
+largest gaps (us, host activity, previous kernel -> next):
+    21409.5 MPI            M1::CleanRightHandSide#1 -> M1::CleanRightHandSide#4
+    21270.5 MPI            M1::CleanRightHandSide#1 -> M1::CleanRightHandSide#4
+    21066.4 MPI            M1::CleanRightHandSide#1 -> M1::CleanRightHandSide#4
+    18220.2 MPI            M1::CleanRightHandSide#1 -> M1::CleanRightHandSide#4
+    13086.9 MPI            M1::CleanRightHandSide#1 -> M1::CleanRightHandSide#4
+    13027.8 MPI            M1::CleanRightHandSide#1 -> M1::CleanRightHandSide#4
+     8951.0 MPI            M -> M
+     8492.1 MPI            M1::CleanRightHandSide#1 -> M1::CleanRightHandSide#4
+     8426.6 MPI            M1::CleanRightHandSide#1 -> M1::CleanRightHandSide#4
+     8410.2 MPI            M1::CleanRightHandSide#1 -> M1::CleanRightHandSide#4
+     4331.0 MPI            void -> void
+     4320.4 MPI            void -> void
+     4315.6 MPI            void -> void
+     4313.8 MPI            void -> void
+     4309.7 MPI            void -> void

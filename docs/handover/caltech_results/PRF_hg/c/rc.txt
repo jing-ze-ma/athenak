@@ -1,0 +1,20 @@
+k1 M1::CleanRightHandSide#2 391.4ms skip=10
+run_k1 rc=0 wall=174
+k2 M1::CleanStagFSolve#1 356.0ms skip=30
+run_k2 rc=0 wall=135
+k3 M1::VetGdCsSweep#4 296.3ms skip=0
+run_k3 rc=0 wall=137
+k4 void 209.2ms skip=375
+run_k4 rc=0 wall=131
+k5 M1::CleanStagLineSolve#1 159.1ms skip=180
+run_k5 rc=0 wall=135
+k6 M1::Time2FaceFct#1 150.3ms skip=60
+run_k6 rc=0 wall=132
+k7 M1::CleanStagFSolve#2 149.0ms skip=30
+run_k7 rc=0 wall=134
+k8 M1::CleanRightHandSide#3 146.0ms skip=10
+run_k8 rc=0 wall=150
+k9 M1::CleanVelocityUpdate#1 142.0ms skip=8
+run_k9 rc=0 wall=135
+k10 M1::CleanNewtonUpdate#1 137.4ms skip=10
+run_k10 rc=0 wall=135
