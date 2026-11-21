@@ -3137,10 +3137,11 @@ Real RadiationM1::CleanNewtonUpdate() {
     Real x = w(m,CLW_X,k,j,i);
     const Real xr = (cell || poslim) ? x : fmax(x, 0.0);   // (the change: undamped)
     // (clean_pass_damp: a change that turns back, l = d/d_last < 0, takes d/(1 - l), the
-    // fixed point of that mode, as CleanStagXDonor's C; the fixed point is unchanged)
+    // fixed point of that mode, as CleanStagXDonor's C; the fixed point is unchanged;
+    // an iterate E <= 0 takes the solution whole, so that it leaves E < 0 at once)
     if (dmp) {
       const Real d = x - e_old, dp = dfst ? 0.0 : hd(m,k,j,i);
-      const Real l = (d*dp < 0.0) ? d/dp : 0.0;
+      const Real l = (d*dp < 0.0 && e_old > 0.0) ? d/dp : 0.0;
       x = e_old + d/(1.0 - l);
       hd(m,k,j,i) = x - e_old;
     }
