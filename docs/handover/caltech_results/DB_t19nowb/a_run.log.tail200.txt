@@ -1,0 +1,25 @@
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+### FATAL ERROR in ../../src/parameter_input.cpp at line 435
+Parameter 'clean_conv_max' in block 'rad_m1' on command line not found
+Kokkos::Cuda ERROR: Failed to call Kokkos::Cuda::finalize()
+### FATAL ERROR in ../../src/parameter_input.cpp at line 435
+Parameter 'clean_conv_max' in block 'rad_m1' on command line not found
+Kokkos::Cuda ERROR: Failed to call Kokkos::Cuda::finalize()
+### FATAL ERROR in ../../src/parameter_input.cpp at line 435
+Parameter 'clean_conv_max' in block 'rad_m1' on command line not found
+Kokkos::Cuda ERROR: Failed to call Kokkos::Cuda::finalize()
+### FATAL ERROR in ../../src/parameter_input.cpp at line 435
+Parameter 'clean_conv_max' in block 'rad_m1' on command line not found
+Kokkos::Cuda ERROR: Failed to call Kokkos::Cuda::finalize()
+srun: error: hpc-sm-02-04: tasks 0-2: Exited with exit code 1
+[2026-11-20T18:19:30.585] error:  mpi/pmix_v3: _errhandler: hpc-sm-02-04 [0]: pmixp_client_v2.c:219: Error handler invoked: status = -25, source = [slurm.pmix.6133592.483:1]
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+[2026-11-20T18:19:30.598] error: *** STEP 6133592.483 ON hpc-sm-02-04 CANCELLED AT 2026-11-20T18:19:30 DUE to SIGNAL Killed ***
+srun: error: hpc-sm-02-04: task 3: Exited with exit code 1
