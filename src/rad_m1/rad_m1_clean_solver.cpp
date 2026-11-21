@@ -1184,7 +1184,7 @@ void RadiationM1::CleanApply(const int src, const int dst) {
         if (ps == 1 && yov) CleanGhostFill(cln_w, CLW_L, 9, 2, 1);
         const bool xon0 = x.multi_d && !(x.xq >= 0 && !x.hi);
         if (ps == 1 || !xon0) {
-          // spdb-1119: the cln_xfe faces of every direction in ONE launch (were one per
+          // the cln_xfe faces of every direction in ONE launch (were one per
           // plane or direction, up to 9 per apply): pass 1 the end planes, pass 0 (no
           // inner kernel) the inner faces; the same CleanFaceCross per face
           const int ne[3] = {ie - is + 1, je - js + 1, ke - ks + 1};
@@ -1348,7 +1348,7 @@ void RadiationM1::CleanPreconditionerSetup() {
       CleanStencilRow(x, m, k, j, i, c);
       for (int s = 0; s < CLN_ST; ++s) st(m,s,k-ks,j-js,i-is) = c[s];
     });
-    // (the lateral stress sums' coefficients, CleanStagCsLateral; spdb-1119: of the
+    // (the lateral stress sums' coefficients, CleanStagCsLateral; of the
     // geometry and the closure alone, so built once per closure of a solve, cln_csyok)
     if (x.cub && !cln_csyok) {
       cln_csyok = true;

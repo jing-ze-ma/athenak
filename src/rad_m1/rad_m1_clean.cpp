@@ -1212,7 +1212,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   for (int ipos = 0; ; ++ipos) {
     CleanFirstIterate();
     cln_fsk = false;
-    cln_csyok = false;   // (spdb-1119: the lateral sums' coefficients once per closure)
+    cln_csyok = false;   // (the lateral sums' coefficients once per closure)
     if (cln_feedback) CleanAdvectiveCoefficients();
     // (the first iterate's beta and emission for the drag's face flux, not the last
     // solve's: a restart, failed stage or discarded attempt does not carry those)
@@ -1386,7 +1386,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     t2_fail = (nit < 0) || (nneg > 0 && !flr) || (cln_feedback && cln_neint > 0) ||
               (t2_solve == M1_T2S_STAGE1 && pmy_pack->pmesh->ncycle == t2_dbg_fail);
     // time2_reject = retry: the cycle again at a smaller dt instead of the backward-Euler
-    // redo; after dt_retry_t2_be such cuts the redo (as ImplicitSolve's t2retry-1020)
+    // redo; after dt_retry_t2_be such cuts the redo (as ImplicitSolve's)
     const bool rt = t2_fail && t2_reject == 1 && dtr_on && !t2_inprobe;
     if (rt && !dtr_t2be) {
       if (!dtr_fail) {dtr_why = 5; dtr_resid = -1.0;}

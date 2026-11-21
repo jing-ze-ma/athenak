@@ -712,7 +712,7 @@ void RadiationM1::CleanClosureSphere() {
 //! which would make the closure depend on dt).
 
 void RadiationM1::CleanRays() {
-  MemcutPoison(2);   // memcut-1113 diagnostic (env MEMCUT_POISON)
+  MemcutPoison(2);   // diagnostic (env MEMCUT_POISON)
   vcol_srelax = false;
   vcol_sbl = false;
   vcol_sesc = false;
@@ -929,7 +929,7 @@ void RadiationM1::CleanRingShift(const int64_t b) {
     // (RotAvgEmaShift: the EMA moves on with the Delta and the change weight a_ch of the
     // boundary; the aux := the next set there.  No history or no Delta: the current set
     // alone)
-    const Real a0 = vra_ema_wb ? -1.0 : 1.0/vra_ema_n;   // (rotwb-1120: < 0 = a_ch alone)
+    const Real a0 = vra_ema_wb ? -1.0 : 1.0/vra_ema_n;   // (< 0 = a_ch alone)
     par_for("cln_ring_eshift", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, 0,
             id.nx3 - 1, 0, id.nx2 - 1, 0, id.nx1 - 1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -1650,7 +1650,7 @@ void RadiationM1::CleanRayCut() {
 }
 #endif  // M1_TU_PART(1)
 
-// post2-1117: the directions of one cell as a strided row, the accessor's address once
+// the directions of one cell as a strided row, the accessor's address once
 // per cell instead of per direction (the same values; out of the slab: its dummy)
 struct CleanRow {
   Real *p;
@@ -2056,7 +2056,7 @@ void RadiationM1::CleanGdFaceSums() {
       q[1+b] += w*(dir_(d,0)*e[b][0] + dir_(d,1)*e[b][1] + dir_(d,2)*e[b][2]);
     }
   };
-  // post2-1117: the same sums with the momentum in Cartesian components, projected on
+  // the same sums with the momentum in Cartesian components, projected on
   // the face's basis and divided by its area ar once per face (CleanGdFaceSums' lateral
   // and r faces: 8 flops per direction instead of 26 and a division)
   auto addc = [=] KOKKOS_FUNCTION (const int d, const Real f, Real s[4]) {
@@ -2086,7 +2086,7 @@ void RadiationM1::CleanGdFaceSums() {
     q[0] = 0.0;
     for (int b = 0; b < 3; ++b) q[1+b] = wn*nf[b];
   };
-  // spdb-1119: sp, the raw rows (gl), a whole build: both lateral faces and the r face of
+  // sp, the raw rows (gl), a whole build: both lateral faces and the r face of
   // a cell in one pass over the directions (cln_gd_fs below; clean_gd_face_fuse = false:
   // the three kernels), each sum its own terms in the same order (bitwise)
   const bool fs = cln_gdfs && gl && x.sph && !x.cub && !axi;

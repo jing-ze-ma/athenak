@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_m1_vetseg.hpp
-//! \brief segfix-1011: <rad_m1>/vet_seg = split, the short-characteristics segment from
+//! \brief <rad_m1>/vet_seg = split, the short-characteristics segment from
 //! the upwind point u to the cell centre 0 integrated as TWO sub-segments split at the
 //! cell face: the upwind part with chi_u (optical depth hu), the own part with chi_0
 //! (h0).
@@ -63,7 +63,7 @@ void VetSegW(const Real dtau, Real &ex, Real &w0, Real &wu) {
   }
 }
 
-// vgdrot-1011 / cslight-1031: a range policy whose functor rides as a KERNEL ARGUMENT
+// a range policy whose functor rides as a KERNEL ARGUMENT
 // (HintLightWeight, as VetFor in rad_m1_vet.cpp) for the per-shell vet_gd sweep kernels
 // (sp and cs: shell, pack, scatter/unpack); without it the 0.5-4 kB functors take the
 // constant-memory launch with a host wait on the previous such launch (the same
@@ -73,12 +73,12 @@ inline auto VgdLight(const DevExeSpace &ex, const int a, const int b) {
                                        Kokkos::Experimental::WorkItemProperty::HintLightWeight);
 }
 
-// vgdshell-1113: the vet_gd shell kernel's policy (VgdLight with launch bounds on HIP).
+// the vet_gd shell kernel's policy (VgdLight with launch bounds on HIP).
 // Kokkos compiles a plain HIP RangePolicy kernel for up to 1024 threads per block, which
 // caps it at 128 VGPRs on gfx942 and spills the shell body to scratch; it launches 256
 // per block anyway.  LaunchBounds<256, M1_VGD_LB> lets the register allocator use up to
 // 512 / M1_VGD_LB VGPRs.  The arithmetic is unchanged (register allocation only).
-// d6fast2-1112: 1 (was 2): R136 D6 apudev 13084234, vet_gd sweeps 5.40 -> 5.09 s, main
+// 1 (was 2): R136 D6 apudev 13084234, vet_gd sweeps 5.40 -> 5.09 s, main
 // loop medians 20.53 -> 20.33 s, output md5 identical
 #ifndef M1_VGD_LB
 #define M1_VGD_LB 1
@@ -93,8 +93,8 @@ inline auto VgdShellPol(const DevExeSpace &ex, const int a, const int b) {
 #endif
 }
 
-// d6fast4-1112: the CUDA gx-false shell kernel, launch bounds <T, B> (env VGD_CUDA_LB;
-// 0 = the plain VgdShellPol launch).  rayspd-1118: default 2 = <128, 5> on A100 (96
+// the CUDA gx-false shell kernel, launch bounds <T, B> (env VGD_CUDA_LB;
+// 0 = the plain VgdShellPol launch).  default 2 = <128, 5> on A100 (96
 // registers, 5 blocks per SM instead of 4; R136 r136.00097 4x1 -26 ms/cycle, hst
 // identical); 0 elsewhere (not measured)
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -113,7 +113,7 @@ inline auto VgdLbPol(const DevExeSpace &ex, const int a, const int b) {
 }
 #endif
 
-// speedup-1109 vet_gd_body_global: copy a (host-side) kernel closure byte-wise into the
+// vet_gd_body_global: copy a (host-side) kernel closure byte-wise into the
 // device buffer buf (grown when too small) and return its device address.  The per-shell
 // kernels then call the closure through this pointer instead of carrying it as a kernel
 // argument: a ~2.7 kB argument whose operator() is called is copied by nvcc from the
@@ -139,7 +139,7 @@ inline const F *VgdClosureToDevice(const F &f, DvceArray1D<char> &buf) {
   std::_Exit(EXIT_FAILURE);
 }
 
-// share-1031: the vet_gd_replace surface q (vet_col_surface_q) of the top cell ie of
+// the vet_gd_replace surface q (vet_col_surface_q) of the top cell ie of
 // column (m,k,j), one kernel body for sp (VetGdMoments) and cs (VetGdCsMoments): the
 // geometry RH gives the projection a = n_d . r_hat of direction d (VgdRhatSp: the sp
 // cell centre angles; VgdRhatCs: the cs cell's tabulated r_hat), term for term as the
@@ -231,7 +231,7 @@ Real VetSegSplit(const Real iu, const Real su, const Real s0, const Real hu,
   return ia*ex0 + wu0*sf + w00*s0;
 }
 
-// unify-sc-gd-1012 (#6): one SC segment from the upwind point (I_u, chi_u, S_u) to the
+// one SC segment from the upwind point (I_u, chi_u, S_u) to the
 // cell centre (chi_0, S_0) over the path length hl = dx1/|mu1|, vet_seg split or mean;
 // ifc (if given) takes the intensity at the face (half the path)
 KOKKOS_INLINE_FUNCTION
@@ -245,7 +245,7 @@ Real VetSegOne(const Real iu, const Real su, const Real s0, const Real cu, const
   return iu*ex + wu*su + w0*s0;
 }
 
-// unify-sc-gd-1012 (#6) vet_interp: the upwind segment from the (bi)linear stencil of
+// vet_interp: the upwind segment from the (bi)linear stencil of
 // the upwind plane, weights w[4] (sum 1), corner intensities, extinctions, sources.
 //   1 log:    I_u = sum w I_q, chi_u and S_u geometric (sum w ln), one segment (vet_gd's
 //             interpolation);
@@ -359,7 +359,7 @@ Real VetSegCross(const Real ib, const Real cc, const Real sc, const Real s0,
   return VetSegSplit(ib*ex + sc*(1.0 - ex), sc, s0, 0.0, 0.5*c0*hl, spe, ifc);
 }
 
-// open-od-1013: vet_path = cells.  The x1-plane sweep steps ONE x1 column per segment; a
+// vet_path = cells.  The x1-plane sweep steps ONE x1 column per segment; a
 // ray steeper than the cell diagonal (|sh2| = dx1|mu2|/(|mu1| dx2) > 1, or |sh3| > 1)
 // jumps |sh| rows in that one segment and sees chi and S only at its two ends, so an
 // opaque body narrower than the jump is invisible to it (the single opaque disc: the

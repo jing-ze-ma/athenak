@@ -7,7 +7,7 @@
 //========================================================================================
 //! \file rad_m1_parfor.hpp
 //! \brief par_for_lb: the 4-D athena par_for (same flattening, same index arithmetic)
-//! with Kokkos::LaunchBounds<256,2> (m1-fast4, tests_m1/runs_5r_fast4; lb2-1031: min 2 blocks
+//! with Kokkos::LaunchBounds<256,2> (m1-fast4, tests_m1/runs_5r_fast4; min 2 blocks
 //! of 256 per SM, i.e. a register cap of 128 on CUDA -- the heavy pass kernels ran at
 //! 12-18 % occupancy with 154-255 registers; same arithmetic, RSG pass_setup -11 %).
 //!
@@ -57,7 +57,7 @@ inline void par_for_lb(const std::string &name, ExeSpace exec_space,
   });
 }
 
-//! par_reduce_flat (bsgaccel-1011): a 4-D (m, k, j, i) parallel_reduce on the flattened
+//! par_reduce_flat: a 4-D (m, k, j, i) parallel_reduce on the flattened
 //! 1-D RangePolicy of par_for, in place of Kokkos::MDRangePolicy<Rank<4>> (whose CUDA
 //! reduction ran ~50x below bandwidth: 0.9 ms for one 2M-cell field on A100).  The cell
 //! set and the body are unchanged; only the order in which the partial results are
@@ -89,7 +89,7 @@ inline void par_reduce_flat(const std::string &name, const int &nl, const int &n
   }, reducer);
 }
 
-//! par_reduce_flat2 (fast2nd-1112): par_reduce_flat with two reducers in one pass
+//! par_reduce_flat2: par_reduce_flat with two reducers in one pass
 template <typename Function, typename Reducer1, typename Reducer2>
 inline void par_reduce_flat2(const std::string &name, const int &nl, const int &nu,
                              const int &kl, const int &ku, const int &jl, const int &ju,

@@ -53,7 +53,7 @@ namespace radm1 {
 
 void RadiationM1::MRInit(ParameterInput *pin) {
   // vet_sc_every (read only when named): see VscSkip below
-  // unify-sc-gd-1012 (#13): the canonical key vet_every, vet_sc_every its alias
+  // the canonical key vet_every, vet_sc_every its alias
   vsc_every = 1;
   const std::string kev = M1KeyName(pin, "vet_every", {"vet_sc_every"});
   if (vet_sc && pin->DoesParameterExist("rad_m1", kev)) {
@@ -80,7 +80,7 @@ void RadiationM1::MRInit(ParameterInput *pin) {
     }
   }
   mr_every = 1;
-  if (pin->DoesParameterExist("rad_m1", "dbg_hydro_skip_t2")) {   // raycheap2-1109
+  if (pin->DoesParameterExist("rad_m1", "dbg_hydro_skip_t2")) {
     dbg_hydro_skip_t2 = pin->GetBoolean("rad_m1", "dbg_hydro_skip_t2");
   }
 }

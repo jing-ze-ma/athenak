@@ -94,7 +94,7 @@ namespace radm1 {
 //! the inversion.
 
 TaskStatus RadiationM1::HydroConToPrim(Driver *pdrive, int stage) {
-  // mrglat-1019 <hydro>/merge_lat_rad = true: the radiation E, F of the merged lateral
+  // <hydro>/merge_lat_rad = true: the radiation E, F of the merged lateral
   // groups replaced by their group values after the solve (hydro_mergelat.hpp)
   {
     hydro::Hydro *phm = pmy_pack->phydro;
@@ -103,19 +103,19 @@ TaskStatus RadiationM1::HydroConToPrim(Driver *pdrive, int stage) {
       phm->pmlat->Average(u0, M1_NVAR, M1_NVAR, 1, nophi, false);
     }
   }
-  // ringavg-1029 <rad_m1>/polar_ring_avg: E, F and the gas the coupling wrote to their
+  // <rad_m1>/polar_ring_avg: E, F and the gas the coupling wrote to their
   // phi-group averages (rad_m1_ringavg.cpp), before the fluid refresh below
   if (rav_on) {
     RavState(coupling && gas_feedback && fl_on && pmy_pack->phydro != nullptr);
   }
-  eint_ledger::Mark(pmy_pack->pmesh, "m1_ravg");   // floorheat-1029
+  eint_ledger::Mark(pmy_pack->pmesh, "m1_ravg");
   if (!coupling || !gas_feedback) return TaskStatus::complete;
   if (!fl_on) return TaskStatus::complete;
   if (pmy_pack->pmesh->pgen->user_m1post_func != nullptr) {
     (pmy_pack->pmesh->pgen->user_m1post_func)(pmy_pack->pmesh);
   }
   eint_ledger::Mark(pmy_pack->pmesh, "m1_post");
-  // fastfloor-1109; not on the state of a failed solve, which dt_retry discards (its
+  // not on the state of a failed solve, which dt_retry discards (its
   // inf / NaN cells made the cap's energy counters inf for the rest of the run)
   if (fcap_rho > 0.0 && !dtr_fail) {FloorGasCap();}
   FluidRefresh(pdrive);
@@ -126,7 +126,7 @@ TaskStatus RadiationM1::HydroConToPrim(Driver *pdrive, int stage) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::FloorGasCap
-//! \brief fastfloor-1109: cap |v| and T_gas of near-floor gas (rho < fcap_rho) after
+//! \brief cap |v| and T_gas of near-floor gas (rho < fcap_rho) after
 //! the implicit solve, active cells, on the conserved state (FluidRefresh follows).
 //! The cap acts where the gas carries a negligible share of the energy (rho 4+ decades
 //! below the photosphere) and only there sets the CFL dt (hot, fast floor pockets).
@@ -258,7 +258,7 @@ void RadiationM1::FluidRefresh(Driver *pdrive) {
   }
   hydro::Hydro *ph = pmy_pack->phydro;
   if (ph == nullptr) return;
-  // mrglat-1019: the gas the solve wrote, back to group values (hydro_mergelat.hpp)
+  // the gas the solve wrote, back to group values (hydro_mergelat.hpp)
   if (ph->pmlat != nullptr && ph->pmlat->on) {
     ph->pmlat->Average(ph->u0, ph->nhydro, ph->nhydro + ph->nscalars, 0, ph->phicc0,
                        ph->use_etotgrav);
@@ -301,7 +301,7 @@ void RadiationM1::EmagBuild(bool un) {
   auto &x3v = pmy_pack->pcoord->x3v;
   auto &x3f = pmy_pack->pcoord->xx3f;
   if (csr) {
-    // cs-open-1018: the cubed sphere's |B|^2 is that of the ORTHONORMAL triple the MHD
+    // the cubed sphere's |B|^2 is that of the ORTHONORMAL triple the MHD
     // C2P builds (Coordinates::GnomonicEquiangleRaiseVelMHD): the faces hold the
     // projections B.nhat (nhat_xi.nhat_eta = -c), bx = B.rhat (CellCenteredRadialFld),
     // by = B.e_xi = (b_xi + c b_eta)/s, bz = B.(e_eta - c e_xi)/s = b_eta; the plain

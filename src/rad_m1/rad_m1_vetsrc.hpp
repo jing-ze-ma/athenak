@@ -8,7 +8,7 @@
 //! \file rad_m1_vetsrc.hpp
 //! \brief the relaxed / blended VET source of one cell, shared by every formal solution
 //! (vet_col, vet_col_lat, vet_gd, vet_sc): vet_source = relaxed and
-//! time2_vet_source = blend (unify-sc-gd-1012 #3).
+//! time2_vet_source = blend (#3).
 
 #include "athena.hpp"
 #include "rad_m1/rad_m1.hpp"
@@ -18,7 +18,7 @@ namespace radm1 {
 
 //----------------------------------------------------------------------------------------
 //! \fn VetRelaxedSource
-//! unify-sc-gd-1012 (#3): ONE copy for vet_col, vet_col_lat / vet_gd and vet_sc (was
+//! ONE copy for vet_col, vet_col_lat / vet_gd and vet_sc (was
 //! VcolRelaxedSource / VlatRelaxedSource, term for term the same).
 //! \brief vet_col_source = relaxed: the thermal source eth a T*^4 + (1 - eth) E* of one
 //! cell, T* and E* the state after a LOCAL backward-Euler gas-radiation exchange over the
@@ -39,7 +39,7 @@ namespace radm1 {
 //! -(c/chi) E d(f)/dr (the he_presn wedge instability, 0929).  Where the exchange is weak
 //! (x, c dt rho kappa_P small) T* -> T_b and E* -> E_b: the old source.
 //!
-//! vetsrc-1020, vet_source = relaxed_esc (qe > 0; qe = 0 is relaxed, bitwise): the same
+//! vet_source = relaxed_esc (qe > 0; qe = 0 is relaxed, bitwise): the same
 //! exchange with the cell's photon ESCAPE to its neighbours, which hold the radiation at
 //! the current J ~ E_b over the step:
 //!   E* - E_b = chat dt (rho kappa_P a T*^4 - rho kappa_E E*) - y (E* - E_b)
@@ -65,7 +65,7 @@ Real VetRelaxedSourceQ(const EosT &eos, const Real d, const Real tb, const Real 
                        const Real cl, const Real ch, const Real dt,
                        const int sf, const Real chi, const Real rkes,
                        const Real qe = 0.0) {
-  // vetsrc-1020 relaxed_esc: y = chat dt qe (the escape over the step, see above)
+  // relaxed_esc: y = chat dt qe (the escape over the step, see above)
   const bool esc = (qe > 0.0);
   const Real y = ch*dt*qe;
   const Real ix = esc ? (1.0 + y)/(1.0 + ch*dt*rke + y) : 1.0/(1.0 + ch*dt*rke);
@@ -74,7 +74,7 @@ Real VetRelaxedSourceQ(const EosT &eos, const Real d, const Real tb, const Real 
   th(d, tb, ee, cv);
   Real ts = tb;
   bool ok = true;
-  // vetsrc-1020: cl = 0 from the callers when the gas is a PRESCRIBED background
+  // cl = 0 from the callers when the gas is a PRESCRIBED background
   // (<rad_m1>/gas_feedback = false: the solve does not heat it), T* = T_b
   if (cl > 0.0) {
     (void) M1ImplTemperatureT(th, d, tb, ee, cl*dt*rkp*ar*ix, cl*dt*rke*eb*ix, ts, ok);
@@ -94,11 +94,11 @@ Real VetRelaxedSourceQ(const EosT &eos, const Real d, const Real tb, const Real 
   return eth*ar*t4 + (1.0 - eth)*es;
 }
 
-// sporder-1012, time2_vet_col_source = blend: S = S*(0) + w (S*(dt) - S*(0)),
+// time2_vet_col_source = blend: S = S*(0) + w (S*(dt) - S*(0)),
 // w = x^2/(x0^2 + x^2), x = x_E + x_g the cell's exchange stiffness over the step,
 // x_E = chat dt rho kappa_E, x_g = c dt rho kappa_P 4 a T^3/((1 + x_E) rho c_v).  The
 // relaxed source of the PREDICTED state (~ t^{n+1}) relaxes it by a further dt: O(dt)
-// error where the exchange is resolved (first order in time, vcpred-1010).  blend is the
+// error where the exchange is resolved (first order in time).  blend is the
 // state's own source there (O(x^3) from it) and the relaxed source where the exchange is
 // stiff (x >> x0, w -> 1: no current-J vet_scatter source, which state amplifies).
 template <class EosT>
@@ -122,7 +122,7 @@ Real VetRelaxedSourceBQ(const EosT &eos, const Real d, const Real tb, const Real
   return s0 + w*(s1 - s0);
 }
 
-//! amdef-1019: the 5864f189 relaxed source VERBATIM (VetRelaxedSource / VetRelaxedSourceB
+//! the 5864f189 relaxed source VERBATIM (VetRelaxedSource / VetRelaxedSourceB
 //! without qe), called whenever relaxed_esc is not named, so the relaxed default keeps its
 //! exact device code generation (A100 FMA contraction: the qe-generalised kernel changed
 //! vet_source = relaxed runs at round-off, hg145 gbit); relaxed_esc calls the ...Q forms
@@ -153,11 +153,11 @@ Real VetRelaxedSource(const EosT &eos, const Real d, const Real tb, const Real e
   return eth*ar*t4 + (1.0 - eth)*es;
 }
 
-// sporder-1012, time2_vet_col_source = blend: S = S*(0) + w (S*(dt) - S*(0)),
+// time2_vet_col_source = blend: S = S*(0) + w (S*(dt) - S*(0)),
 // w = x^2/(x0^2 + x^2), x = x_E + x_g the cell's exchange stiffness over the step,
 // x_E = chat dt rho kappa_E, x_g = c dt rho kappa_P 4 a T^3/((1 + x_E) rho c_v).  The
 // relaxed source of the PREDICTED state (~ t^{n+1}) relaxes it by a further dt: O(dt)
-// error where the exchange is resolved (first order in time, vcpred-1010).  blend is the
+// error where the exchange is resolved (first order in time).  blend is the
 // state's own source there (O(x^3) from it) and the relaxed source where the exchange is
 // stiff (x >> x0, w -> 1: no current-J vet_scatter source, which state amplifies).
 template <class EosT>

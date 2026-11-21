@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_m1_vgdray.hpp
-//! \brief share3-1031: the ONE upwind core of the vet_gd ray solve, shared by the sp sweep
+//! \brief the ONE upwind core of the vet_gd ray solve, shared by the sp sweep
 //! (rad_m1_vetgd_body.inc, VetGdSweep) and the cubed-sphere sweep (VetGdCsSweep): the
 //! branch / chord geometry of a (cell, direction), the top-face inflow, the inner-face
 //! value (vet_gd_inner = emit | diffusion), the upwind intensity over the stencil
@@ -72,7 +72,7 @@ void VgdRayChord(const bool inw, const int l, const int lcut, const int m, const
 
 //----------------------------------------------------------------------------------------
 // from the vacuum top face (the end cell's S extrapolated, as vet_col_lat), or with the
-// top bath (vgdbath-1011) its incident intensity attenuated; sbl = S of the shell below
+// top bath its incident intensity attenuated; sbl = S of the shell below
 KOKKOS_INLINE_FUNCTION
 Real VgdTopInflow(const Real ch0, const Real ds, const Real s0, const Real sbl,
                   const bool tbh, const Real itop) {
@@ -110,7 +110,7 @@ Real VgdInnerFace(const A &acc, const FC &fC, const int i, const bool emi,
   const Real muf = sqrt(fmax(1.0 - p2/(rf*rf), 0.0));
   auto ib = [&](const int kk, const int jj) {
     const Real sa = exp(fC(1,kk,jj,i)), sb = exp(fC(1,kk,jj,i1));
-    // hrsplit-1110 vet_gd_inner_reflect = zeroflux (zf): at a reflecting inner x1 the
+    // vet_gd_inner_reflect = zeroflux (zf): at a reflecting inner x1 the
     // diffusion start without the gradient term (H = 0 at the zero-flux face)
     const Real g0 = zf ? 0.0 : -(sb - sa)/(rb - ra)/exp(fC(0,kk,jj,i));
     return (bfc ? (1.5*sa - 0.5*sb) : sa) + g0*muf;

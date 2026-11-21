@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_m1_vgdtheta.hpp
-//! \brief accsp-1102: the device helpers of vet_gd on a STRETCHED theta and on the FULL
+//! \brief the device helpers of vet_gd on a STRETCHED theta and on the FULL
 //! sphere (RadiationM1::vgd_sth / vgd_pol, rad_m1_vetgd_sph2.inc).
 //!
 //! The band rows of a block carry the node table tn(m, jb) (the face midpoint of band row
@@ -19,7 +19,7 @@
 
 #include "athena.hpp"
 
-// accsp-1102: stencil row codes >= VGD_RB0 address the polar ring buffers (sph2.inc)
+// stencil row codes >= VGD_RB0 address the polar ring buffers (sph2.inc)
 constexpr int VGD_RB0 = 1 << 24;
 
 // fractional band row of theta thu; jb = a starting guess (the cell's own row: upwind
@@ -31,7 +31,7 @@ Real VgdThFj(const T &tn, const int m, const int jb, const Real thu, const int c
   int j0 = (jb < 0) ? 0 : ((jb > c2w - 2) ? (c2w - 2) : jb);
   while (j0 < c2w - 2 && tn(m,j0+1) <= thu) {++j0;}
   while (j0 > 0 && tn(m,j0) > thu) {--j0;}
-  // layinv-1105: sh = the global row offset of band row 0 (0: the old value, bitwise);
+  // sh = the global row offset of band row 0 (0: the old value, bitwise);
   // the result is then the GLOBAL fractional row (the caller subtracts sh from its
   // integer part), so the fraction rounds the same on every MeshBlock layout
   return (j0 + sh) + (thu - tn(m,j0))/(tn(m,j0+1) - tn(m,j0));

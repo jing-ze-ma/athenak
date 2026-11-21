@@ -83,7 +83,7 @@ inline void CleanMaxRanks(Real *v, const int n) {
 // -19 ms/cycle (MB 2 -7), A100 MB 2 -20 ms/cycle (MB 3 +14, MB 1 +29).  HIP and the host
 // keep athena's par_for; on HIP a pass may ask for kHipMb blocks (kHipMb 4: a cap of 128
 // VGPRs, 4 waves per SIMD, for the face passes that fit it without spilling)
-#if defined(ATHENA_CLEAN_FOR_MB)   // h200-1120: build-time override (register cap only, bitwise)
+#if defined(ATHENA_CLEAN_FOR_MB)   // build-time override (register cap only, bitwise)
 constexpr int kCleanForMb = ATHENA_CLEAN_FOR_MB;
 #elif defined(KOKKOS_ARCH_HOPPER90)
 constexpr int kCleanForMb = 3;
@@ -116,9 +116,9 @@ inline void CleanFor(const char *name, const int nmb1, const int ks, const int k
   }
 }
 
-// rayspd-1118: on HIP, CleanFor with k fastest, then j, then i (the order of the rows in
+// on HIP, CleanFor with k fastest, then j, then i (the order of the rows in
 // a VgdRag slab of vgd_i: d fastest, then k, then j), so that adjacent lanes read adjacent
-// intensity rows, as prod's m1_vgd_mom (d6fast2-1112); MI300A R136 -62 ms/cycle, A100 +6
+// intensity rows, as prod's m1_vgd_mom; MI300A R136 -62 ms/cycle, A100 +6
 // (CUDA and the host keep CleanFor).  For passes whose cells are independent (bitwise)
 template <typename F>
 inline void CleanForK(const char *name, const int nmb1, const int ks, const int ke,
@@ -132,7 +132,7 @@ inline void CleanForK(const char *name, const int nmb1, const int ks, const int 
 #endif
 }
 
-// spd6-1119: a pass of columns (one thread per (m, k, j), marching in i): on HIP blocks
+// a pass of columns (one thread per (m, k, j), marching in i): on HIP blocks
 // of 64 with k fastest (blocks of 256 put the HG level's 12k columns on 48 of the 228
 // MI300A CUs); CUDA and the host keep par_for.  The same arithmetic per column
 template <typename F>
@@ -710,7 +710,7 @@ Real CleanStagDnn(const CleanArgs &x, const int dir, const int m, const int kf,
 //! \fn Real CleanStagMemUp
 //! \brief clean_stag_gflux: the memory (1 - w) theta (G + d) of the energy flux through
 //! face (k,j,i) normal to dir taken implicitly upwind, as q E_donor with q = memory/E_old
-//! of the donor, |q| <= c (the donor-cell form of production's postr-1031): on a
+//! of the donor, |q| <= c (the donor-cell form of production's): on a
 //! low-order face, and wherever its explicit outflow over the stage, h A/V |memory|,
 //! would take more than CLN_MEMUP of the donor's E_old.  Returns q (> 0: from L, < 0:
 //! from R), 0 where the memory stays explicit.  At E = E_old it is the explicit memory.

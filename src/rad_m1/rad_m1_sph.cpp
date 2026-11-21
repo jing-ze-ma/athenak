@@ -97,18 +97,18 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     why += " more than one MeshBlock along x1 (meshblock/nx1 must equal mesh/nx1);";
   }
   if (transport == M1_TRANSPORT_IMPLICIT) {
-    // sp-blend-1008: berthon | blend on the radial faces (the wedge only; ImplicitInit
+    // berthon | blend on the radial faces (the wedge only; ImplicitInit
     // refuses them on the cubed sphere and the tau-only weight everywhere multi-D)
     if (impl_flux != M1_IFLUX_CENTRAL && impl_flux != M1_IFLUX_BERTHON &&
         impl_flux != M1_IFLUX_BLEND) {
       why += " implicit_flux = ap_hll;";
     }
-    // rad-beam-1008: the plm deferred correction of the berthon part (plm_dc) on the
+    // the plm deferred correction of the berthon part (plm_dc) on the
     // radial faces, with berthon | blend only (central has no upwind part to correct)
     if (impl_recon != M1_IRECON_DC && impl_flux == M1_IFLUX_CENTRAL) {
       why += " implicit_recon != dc;";
     }
-    // m1lpr-1019: lpr (the realizability bound) is allowed on the wedge, lp is not; the
+    // lpr (the realizability bound) is allowed on the wedge, lp is not; the
     // cubed sphere refuses both (its skewed rows do not read thx2/thx3)
     if (impl_tlim == M1_TLIM_LP || (impl_tlim != M1_TLIM_NONE && cs_geom)) {
       why += " implicit_trans_limit != none (lpr only, wedge only);";
@@ -152,14 +152,14 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     // implicit_vimp too (its cs form: ImplicitVimpBuild, the face-normal work row)
     // (scheme = clean: its own solve and preconditioner; the old one's keys are not read)
     if (impl_solver != M1_ISOLV_BICGSTAB && !clean) {wcs += " implicit_solver != bicgstab;";}
-    // cs-port-1016 (CS_VETGD.md S2): implicit_precond = mg as well.  mg is algebraic and
+    // (CS_VETGD.md S2): implicit_precond = mg as well.  mg is algebraic and
     // block-local (x1 line solves, one red-black transverse sweep, Galerkin 2x2
     // aggregates inside a MeshBlock, rad_m1_precond.cpp): it reads no geometry, and its
     // only communication, the z0 halo of the fine residual, is ImplicitKrylovHalo, i.e.
     // the cs seam (no-resample, mirror-pair) exchange of the Krylov vector itself.
     // mg_gc / mg_gf stay refused (band / Fourier coarse spaces of a periodic x2/x3 mesh;
     // the cs analogue is mg_ylm, stage 3 list).  The cs DEFAULT stays rbgs_fwd.
-    // layoutfix-1106: <rad_m1>/cs_precond_line = true admits implicit_precond = line on cs
+    // <rad_m1>/cs_precond_line = true admits implicit_precond = line on cs
     // (opt-in, a layout-gate arm, not a production choice): the x1 line solves read no
     // geometry and no neighbour, so the deck's other layout dependences show up bitwise
     const bool cs_line_ok = (impl_prec == 0) &&
@@ -167,10 +167,10 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     if (impl_prec != 2 && impl_prec != 3 && !cs_line_ok && !clean) {
       wcs += " implicit_precond != rbgs_fwd | mg;";
     }
-    if (impl_prec_fb >= 0 && !clean) {   // precond-fb-1023: rbgs / line refused on cs
+    if (impl_prec_fb >= 0 && !clean) {   // rbgs / line refused on cs
       wcs += " implicit_precond_fallback != none;";
     }
-    // cs-s4-1017 (USER 10-18: production sp keys must run on cs): implicit_halo_mpi
+    // (USER 10-18: production sp keys must run on cs): implicit_halo_mpi
     // (and its overlap) is a communication layout, not a method; on cs it falls back to
     // the ordinary seam-aware exchange (the same numbers), as implicit_halo_direct does
     if (impl_halo_mpi) {
@@ -208,7 +208,7 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
-  // fullsph-1027 S1: the FULL sphere (polar x2 faces) and/or a theta stretch.  A polar
+  // S1: the FULL sphere (polar x2 faces) and/or a theta stretch.  A polar
   // face is a physical face of every implicit kernel (flag != block, periodic) with area 0,
   // so it must be REFLECTING (F_theta = 0 there; auto resolves to reflect on a non-periodic
   // face): marshak / outflow / flux would put a boundary flux on the axis.  Out of S1
@@ -382,7 +382,7 @@ void RadiationM1::CubedS1Init() {
       }
     });
   }
-  // cs-s4-1017: the planar face normals, nhat_xi = (a - tan(xi_f) n)/sqrt(1 + tan^2) and
+  // the planar face normals, nhat_xi = (a - tan(xi_f) n)/sqrt(1 + tan^2) and
   // nhat_eta = (b - tan(eta_f) n)/sqrt(1 + tan^2) (gradient directions of xi, eta; the
   // face plane xi = xi_f holds the origin, so its normal is the same along the column)
   {
@@ -446,7 +446,7 @@ void RadiationM1::CubedS1Init() {
   if (pbval_th != nullptr) {
     pbval_th->cs_noresample = true;
     // STAGE CS2: (N2,N3), (A2,A3), (V2,V3) of the work array are face-normal components
-    // (cs-s4-1017: re-expressed on the destination's face normals at a seam,
+    // (re-expressed on the destination's face normals at a seam,
     // bvals_cc.cpp)
     pbval_th->cs_perm_pairs = true;
   }
@@ -471,7 +471,7 @@ void RadiationM1::CubedS1Init() {
 //!      is compared with the exact s and v . e_a at the GHOST's own position in this
 //!      block's chart;
 //!  (2) the implicit work array through pbval_th (V2, V3 = FACE-NORMAL components v .
-//!      nhat_xi, v . nhat_eta, no resample; cs-s4-1017: re-expressed on the destination's
+//!      nhat_xi, v . nhat_eta, no resample; re-expressed on the destination's
 //!      face normals, before it the signed axis permutation of CS2): a seam ghost is
 //!      compared with (A) the exact face-normal components at the ghost position
 //!      and (B) at the no-resample donor's position (the mirror image of this block's own

@@ -153,7 +153,7 @@ void RadiationM1::ImplicitHaloMPIInit() {
   const int nseg = static_cast<int>(hm_rank.size());
   hm_soff.assign(nseg, 0); hm_slen.assign(nseg, 0);
   hm_roff.assign(nseg, 0); hm_rlen.assign(nseg, 0);
-  // share-1104 G5: the ghost depth of the lists = <rad_m1>/implicit_halo_depth where it
+  // G5: the ghost depth of the lists = <rad_m1>/implicit_halo_depth where it
   // applies (the spherical-polar wedge: the same layers the implicit kernels read,
   // poisoned-ghost gate), else all ng layers as before
   const int dg = (impl_hdepth > 0 && impl_hdepth < ng) ? impl_hdepth : ng;
@@ -289,14 +289,14 @@ void RadiationM1::ImplicitHaloMPIPost(int nq, int c0) {
   rq.assign(nseg, MPI_REQUEST_NULL);
   sq.assign(nseg, MPI_REQUEST_NULL);
 #if defined(KOKKOS_ENABLE_HIP)
-  // d6fast3-1112: the pack kernel writes the pinned host send buffer itself
+  // the pack kernel writes the pinned host send buffer itself
   auto sbuf = hm_shost;
 #else
   auto sbuf = hm_sbuf;
   auto rbuf = hm_rbuf;
 #endif
   constexpr int tag = 4242;
-  // hrdet-1009: the receive buffer is still being read by the PREVIOUS exchange's unpack
+  // the receive buffer is still being read by the PREVIOUS exchange's unpack
   // kernel until that kernel has run; a receive posted now lets a fast neighbour's
   // message (GPU-aware MPI, IPC) overwrite it first, so that unpack hands the ghosts the
   // NEXT component.  Back-to-back exchanges with no host sync in between (the three
@@ -306,7 +306,7 @@ void RadiationM1::ImplicitHaloMPIPost(int nq, int c0) {
     M1EvtU().wait();
     M1HmUnpackPending() = false;
   }
-  // hmstage-1019: on HIP the messages go through host copies (ImplicitHaloMPIFinish)
+  // on HIP the messages go through host copies (ImplicitHaloMPIFinish)
 #if defined(KOKKOS_ENABLE_HIP)
   Real *rdst = hm_rhost.data();
 #else
@@ -362,7 +362,7 @@ void RadiationM1::ImplicitHaloMPIFinish(int nq, int c0) {
   auto &rq = M1HmReqR();
   auto &sq = M1HmReqS();
 #if defined(KOKKOS_ENABLE_HIP)
-  // d6fast3-1112: the unpack kernel reads the pinned host receive buffer itself
+  // the unpack kernel reads the pinned host receive buffer itself
   auto rbuf = hm_rhost;
 #else
   auto sbuf = hm_sbuf;
@@ -376,12 +376,12 @@ void RadiationM1::ImplicitHaloMPIFinish(int nq, int c0) {
   auto iw_ = iw;
   auto segs = hm_segs.d_view;
   M1EvtB().wait();   // the pack kernel is done: the send buffer may go out
-  // hmstage-1019: on HIP (MI300A) the GPU-aware MPI path delivered these device buffers
+  // on HIP (MI300A) the GPU-aware MPI path delivered these device buffers
   // corrupted (942 of 2140 messages of a 2-rank accretor run had a receive checksum !=
   // the sender's, with the send buffer fenced and complete; wrong and run-to-run random
   // ghosts), so MPI is handed host copies there.  CUDA builds keep the device buffers.
 #if defined(KOKKOS_ENABLE_HIP)
-  // d6fast3-1112: the pack kernel wrote hm_shost (pinned host) and is complete (event
+  // the pack kernel wrote hm_shost (pinned host) and is complete (event
   // above), so the messages go out of it as they did out of the staging copy (was a
   // D2H deep_copy here and an H2D one after the receives: d6fast2-1112 had cut them to
   // the [0, n*nq) prefix); the same values cross, the ghosts are bitwise

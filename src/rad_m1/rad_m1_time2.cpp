@@ -59,7 +59,7 @@ namespace radm1 {
 using deep_copy_across::DeepCopyAcross;
 
 namespace {
-const Real kT2G = imex_sdirk2::Gamma();   // ckhesdirk-1102: shared tableau
+const Real kT2G = imex_sdirk2::Gamma();   // shared tableau
 }  // namespace
 
 //----------------------------------------------------------------------------------------
@@ -83,14 +83,14 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
-  // hg262-drive-1113: the flux table is applied at the stage times (Time2FormStage)
+  // the flux table is applied at the stage times (Time2FormStage)
   if (ftab_on && time_scheme != M1_TIME_HESDIRK2 && !t2_beonly) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
               << std::endl << "<rad_m1>/implicit_flux_x1min_table needs time_scheme = "
               << "hesdirk2 (the flux is set at the stage times)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // bematch-1030: plain be with t2_beonly (ImplicitInit) runs as hesdirk2, every step on
+  // plain be with t2_beonly (ImplicitInit) runs as hesdirk2, every step on
   // the backward-Euler path (Time2AutoBeBegin)
   if (time_scheme == M1_TIME_BE && t2_beonly) {
     time_scheme = M1_TIME_HESDIRK2;
@@ -134,7 +134,7 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
         std::exit(EXIT_FAILURE);
       }
     }
-    // ckhesdirk-1102: the coefficients from the shared tableau (utils/imex_sdirk2.hpp,
+    // the coefficients from the shared tableau (utils/imex_sdirk2.hpp,
     // the same expressions), also used by <problem>/ck_time_scheme = hesdirk2
     const imex_sdirk2::Tableau tb = imex_sdirk2::Make(t2_tab);
     (void) g;
@@ -167,13 +167,13 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   // P = 100, tau_lambda = 1e5; `start` = plm a_f of the stage-start a plus the rest as a
   // face mean, also unstable there; `central` = a_f the mean of the two cells, E_f plm)
   t2_afmode = 2;
-  // open-ot-1013 time2_enth_be: with time2_enth_vel = central the stage solves build a_f
+  // time2_enth_be: with time2_enth_vel = central the stage solves build a_f
   // as the mean of the two cells, but the backward-Euler solves of the same run (the start
   // step, the time2_start slope probe, the rotation probe, the step after a failed stage)
   // take implicit_enthalpy's own a_f (plm: the 4-point plm mean).  That changes the
   // operator for one step of length dt, an O(dt) term of the T ladders (rw_p10t100 E /
   // eint 1.78 / 1.84 at l 16-32).  true: those solves take the stage rule too.
-  // fin4-1014: DEFAULT true on a fresh run; a restart whose file lacks the key keeps false
+  // DEFAULT true on a fresh run; a restart whose file lacks the key keeps false
   // (FIN3, bitwise) -- the same rule as implicit_cs2_vimp_npass (fresh 3, restart 0).
   t2_enth_be = pin->GetOrAddBoolean("rad_m1", "time2_enth_be",
                                     !global_variable::restart_run);
@@ -199,7 +199,7 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_vet_extrap")) {
     t2_vext = pin->GetBoolean("rad_m1", "time2_vet_extrap");
   }
-  // time2_vet_sc (torder-1010, read only when named; default lag): when the vet_sc
+  // time2_vet_sc (read only when named; default lag): when the vet_sc
   // tensor of the two stage solves is built.  Both stages sit at t^{n+1} (c = 1), so
   // D(U^n) is an O(dt) lag and the step is FIRST order in time wherever the tensor
   // changes (torder_1010: pulse_k12.8 T 1.05 1.03 1.02; eddington or the extrapolated
@@ -208,11 +208,11 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   //   predict : ONE formal solution per step at P = (stage-1 start) + dt K1, i.e. at
   //             t^{n+1} + O(dt^2); same cost as lag
   //   rebuild : predict for stage 1, a second formal solution at Y1 for stage 2
-  // unify-1012: DEFAULT predict on a fresh run (as time2_vet_col on the wedge), unless
+  // DEFAULT predict on a fresh run (as time2_vet_col on the wedge), unless
   // time2_vet_extrap = true or vet_sc_every > 1 (which predict excludes: lag, silently);
-  // a restart whose file lacks the key keeps lag (echoed).  torder-1010: lag is first
+  // a restart whose file lacks the key keeps lag (echoed).  lag is first
   // order in time wherever the tensor changes (pulse_k12.8 T 1.05), predict 2.0.
-  // unify-sc-gd-1012 (#13): ONE key time2_vet for both formal solutions (lag | predict |
+  // ONE key time2_vet for both formal solutions (lag | predict |
   // rebuild | extrap); the old spellings time2_vet_sc (vet_sc) and time2_vet_col (vet_col
   // / vet_gd) are read as aliases of their own closure (M1KeyName), so an input or a
   // restart file that names only the old key is unchanged.  vet_sc: extrap = lag with
@@ -269,12 +269,12 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   // order in time (rsw_u_T: 1.00, E/T/gas 1.9-2.0).  Default true on the spherical-polar
   // wedge (a restart whose file lacks the key keeps false, echoed); elsewhere false
   // unless named.
-  // unify-1012: default true on every mesh (was the wedge only): the Cartesian vet_sc
-  // ladders need it as much (torder-1010 cenPvs: rw_t10a F1 1.58 2.32 1.97 vs 1.07 1.04
+  // default true on every mesh (was the wedge only): the Cartesian vet_sc
+  // ladders need it as much (cenPvs: rw_t10a F1 1.58 2.32 1.97 vs 1.07 1.04
   // 1.02 without); a restart whose file lacks the key keeps false (echoed)
   t2_vcmode = 0;
   if (vet_col) {
-    // defaults-1025 (USER 10-25): the sph fresh-start default is extrap2 (was predict;
+    // (USER 10-25): the sph fresh-start default is extrap2 (was predict;
     // RSG E / HG production value); a restart whose file lacks the key keeps lag
     const bool vdef = sph_geom && !global_variable::restart_run;
     const std::string kvc = M1KeyName(pin, "time2_vet", {"time2_vet_col"});
@@ -290,7 +290,7 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     } else if (vm.compare("extrap") == 0) {
       t2_vcmode = 3;
     } else if (vm.compare("extrap2") == 0) {
-      t2_vcmode = 4;   // rbfast-1021 (rad_m1.hpp Time2VetColExtrap2)
+      t2_vcmode = 4;   // (rad_m1.hpp Time2VetColExtrap2)
       x2_fields = pin->GetOrAddInteger("rad_m1", "time2_vet_x2_fields", 9);
     } else {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -308,14 +308,14 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     // time2_vet_source (was time2_vet_col_source): Time2VetSourceInit
     Time2VetSourceInit(pin, t2_vcmode == 1 || t2_vcmode == 2, true);
   }
-  // unify-sc-gd-1012 (#3): vet_sc reads the same time2_vet_source (its builds take the
+  // vet_sc reads the same time2_vet_source (its builds take the
   // VET source rule of vet_col / vet_gd, rad_m1_vet.cpp).  A restart whose file lacks the
   // key keeps vet_sc's old source of the predicted state (state); the old spelling
   // time2_vet_col_source is vet_col's own (a vet_sc file may name it, inert there).
   if (vet_sc) {
     Time2VetSourceInit(pin, t2_vsmode == 1 || t2_vsmode == 2, false);
   }
-  // time2_pred_cap (predfix-1011): the predicted state of time2_vet_sc / time2_vet_col =
+  // time2_pred_cap: the predicted state of time2_vet_sc / time2_vet_col =
   // predict | rebuild is P = U^n + theta dt K1 with, per cell,
   //   theta = min(1, cap/r),  r = max(|dt K1_E|/E^n, |eint(P) - eint_b|/eint_b),
   // eint_b the gas internal energy of the stage start without the coupling's K1.  K1 is
@@ -370,7 +370,7 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // time2_start / time2_start_frac (h2order-1011, rad_m1.hpp; read only when named):
+  // time2_start / time2_start_frac (rad_m1.hpp; read only when named):
   // be (default, bitwise) | slope.  The Lie-split backward-Euler first step leaves an
   // O(dt) start-up error that the second-order steps after it carry along as a free
   // mode (h2order_1011: P = 10 linear wave, tau 100, v 1.1 1.2 1.0 -> see NOTE).
@@ -407,7 +407,7 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   // and every result stay bitwise): for the first N non-admissible hesdirk2 stages print
   // which quantity went <= 0 (solved E, solved T, written-back gas eint) and, for each,
   // the cell of its minimum with the stage OLD vector (E, eint) and the stage start E
-  // rsglock-1112 time2_inc_energy = gas | rad (rad_m1.hpp; read only when named)
+  // time2_inc_energy = gas | rad (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1", "time2_inc_energy")) {
     const std::string ie = pin->GetString("rad_m1", "time2_inc_energy");
     if (ie != "gas" && ie != "rad") {
@@ -424,7 +424,7 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
                 << "exact, no cap)" << std::endl;
     }
   }
-  // rsglock-1112 time2_exch_split = none | psi (rad_m1.hpp; read only when named)
+  // time2_exch_split = none | psi (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1", "time2_exch_split")) {
     const std::string xs = pin->GetString("rad_m1", "time2_exch_split");
     if (xs != "none" && xs != "psi") {
@@ -441,7 +441,7 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
                 << "energy exact" << std::endl;
     }
   }
-  // rsglock-1112 time2_inc_exch = none | relax (rad_m1.hpp; read only when named)
+  // time2_inc_exch = none | relax (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1", "time2_inc_exch")) {
     const std::string ie = pin->GetString("rad_m1", "time2_inc_exch");
     if (ie != "none" && ie != "relax") {
@@ -460,7 +460,7 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
                 << "blended in by y^2/(y^2+y0^2); E pays the difference" << std::endl;
     }
   }
-  // t2retry-1020: <rad_m1>/time2_reject = be | retry (read only when named; default be =
+  // <rad_m1>/time2_reject = be | retry (read only when named; default be =
   // the backward-Euler redo, bitwise).  retry needs <time>/dt_retry = true (checked at
   // the first rejection: without it the step falls back to backward Euler as before)
   t2_reject = 0;
@@ -476,13 +476,13 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     }
   }
 
-  // pgrst-1021: <rad_m1>/time2_k1_reset (see rad_m1.hpp)
+  // <rad_m1>/time2_k1_reset (see rad_m1.hpp)
   t2_k1reset = false;
   rst_ext = true;   // USER 11-07 make some defaults: <rad_m1>/rst_state_ext default true
-  if (pin->DoesParameterExist("rad_m1", "rst_state_ext")) {   // rstbit-1107
+  if (pin->DoesParameterExist("rad_m1", "rst_state_ext")) {
     rst_ext = pin->GetBoolean("rad_m1", "rst_state_ext");
   }
-  if (pin->DoesParameterExist("rad_m1", "dbg_rst_fp")) {   // rstbit-1107
+  if (pin->DoesParameterExist("rad_m1", "dbg_rst_fp")) {
     dbg_rst_fp = pin->GetInteger("rad_m1", "dbg_rst_fp");
   }
   // dbg_rst_fp_cycle = C (read only when named): the first clean solve of cycle C also
@@ -503,18 +503,18 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
       t2_k1reset = pin->GetBoolean("rad_m1", "time2_k1_reset");
     }
   }
-  if (pin->DoesParameterExist("rad_m1", "time2_k1_xlim")) {   // xlim-1120
+  if (pin->DoesParameterExist("rad_m1", "time2_k1_xlim")) {
     t2_k1xlim = pin->GetReal("rad_m1", "time2_k1_xlim");
   }
-  // stiffk1-1029: <rad_m1>/time2_k1_stiff = s (default 0 = off, bitwise)
+  // <rad_m1>/time2_k1_stiff = s (default 0 = off, bitwise)
   t2_k1stiff = 0.0;
   if (pin->DoesParameterExist("rad_m1", "time2_k1_stiff")) {
     t2_k1stiff = pin->GetReal("rad_m1", "time2_k1_stiff");
   }
-  // prod-1108 (USER 11-08 "make some defaults", r8 key set): DEFAULT 0.1 where it is
+  // (USER 11-08 "make some defaults", r8 key set): DEFAULT 0.1 where it is
   // legal (one radial MeshBlock; column-local), else 0 = the old default, logged; recipe
   // none keeps 0.  Read only when named as before.
-  // defaults-1114 (USER 11-13 "make some defaults", the R136/HG/RSG key set): where
+  // (USER 11-13 "make some defaults", the R136/HG/RSG key set): where
   // time2_face_fct is on by default (cubed sphere / spherical polar, multi-D implicit
   // transport, hesdirk2; below) the face limiter replaces the redistribution and the
   // DEFAULT is 0; elsewhere (Cartesian, 1-D) the prod-1108 rule above stays.  The clean
@@ -542,8 +542,8 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // facebound-1112 step 1 <rad_m1>/time2_face_fct (rad_m1.hpp; read only when named)
-  // defaults-1114 (USER 11-13): DEFAULT true on the cubed sphere / spherical polar with
+  // step 1 <rad_m1>/time2_face_fct (rad_m1.hpp; read only when named)
+  // (USER 11-13): DEFAULT true on the cubed sphere / spherical polar with
   // multi-D implicit transport and hesdirk2 (ffct14 above); false elsewhere and with
   // recipe none, as before.  An explicit key wins.  The clean scheme: on for a fresh
   // run (v20.4, recorded; a restart file without the key keeps off); its t2inc F
@@ -594,21 +594,21 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     }
   }
   t2_ys_ok = false;
-  // accfb-default-1022: time2_accept_fallback is DEFAULT true under hesdirk2 (this
+  // time2_accept_fallback is DEFAULT true under hesdirk2 (this
   // reader returns above for be, where the key is unused); false only when named so
   t2_accfb = true;
   if (pin->DoesParameterExist("rad_m1", "time2_accept_fallback")) {
     t2_accfb = pin->GetBoolean("rad_m1", "time2_accept_fallback");
   }
-  // csacc-1031: <rad_m1>/time2_floor_eint (rad_m1.hpp; read only when named)
+  // <rad_m1>/time2_floor_eint (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1", "time2_floor_eint")) {
     t2_flr_rho = pin->GetReal("rad_m1", "time2_floor_eint");
   }
-  // csacc-1031: <rad_m1>/time2_adm_poslim (rad_m1.hpp; read only when named)
+  // <rad_m1>/time2_adm_poslim (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1", "time2_adm_poslim")) {
     t2_adm_pl = pin->GetBoolean("rad_m1", "time2_adm_poslim");
   }
-  // autobe-1029: <rad_m1>/time2_auto_be = N (rad_m1.hpp; read only when named)
+  // <rad_m1>/time2_auto_be = N (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1", "time2_auto_be")) {
     t2_abe = pin->GetInteger("rad_m1", "time2_auto_be");
     if (t2_abe < 0) {
@@ -641,7 +641,7 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   Kokkos::deep_copy(t2k1, 0.0);
   Kokkos::deep_copy(t2k2, 0.0);
   Kokkos::deep_copy(t2inc, 0.0);
-  if (t2_xsp) {   // rsglock-1112 time2_exch_split
+  if (t2_xsp) {   // time2_exch_split
     Kokkos::realloc(t2kx1, nmb, n3, n2, n1);
     Kokkos::realloc(t2kx2, nmb, n3, n2, n1);
     Kokkos::realloc(t2lx1, nmb, n3, n2, n1);
@@ -651,11 +651,11 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     Kokkos::deep_copy(t2lx1, 0.0);
     Kokkos::deep_copy(t2lx2, 0.0);
   }
-  if (t2_iex) {   // rsglock-1112 time2_inc_exch
+  if (t2_iex) {   // time2_inc_exch
     Kokkos::realloc(t2ixd, nmb, n3, n2, n1);
     Kokkos::deep_copy(t2ixd, 0.0);
   }
-  if (t2_pfst) {   // facebound-1112 step 1: zero = no face flux known (restart, start)
+  if (t2_pfst) {   // step 1: zero = no face flux known (restart, start)
     Kokkos::realloc(t2pf1, nmb, 3, n3, n2, n1);
     Kokkos::realloc(t2pf2, nmb, 3, n3, n2, n1);
     Kokkos::deep_copy(t2pf1, 0.0);
@@ -663,7 +663,7 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     t2pf1_ok = false;
     t2pf2_ok = false;
   }
-  if (t2_ike) {   // rsglock-1112
+  if (t2_ike) {
     Kokkos::realloc(t2ke1, nmb, n3, n2, n1);
     Kokkos::realloc(t2ke2, nmb, n3, n2, n1);
     Kokkos::realloc(t2kei, nmb, n3, n2, n1);
@@ -757,7 +757,7 @@ bool RadiationM1::Time2Active() {
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationM1::InnerFluxAt
 //! \brief the inner face flux of the time hooks at time t: the table value
-//! (hg262-drive-1113, ftab_on) or the constant F0, times the sine / tanh factors when
+//! (ftab_on) or the constant F0, times the sine / tanh factors when
 //! named (the arithmetic of the raycheap2-1109 hooks, unchanged)
 
 Real RadiationM1::InnerFluxAt(const Real t) const {
@@ -767,21 +767,21 @@ Real RadiationM1::InnerFluxAt(const Real t) const {
   return f;
 }
 
-//! \brief hg262-drive-1113: the exact integral of the TABLE flux over [t0, t1] (the
+//! \brief the exact integral of the TABLE flux over [t0, t1] (the
 //! energy budget's int F dt; table only, no sine / tanh factors)
 Real RadiationM1::InnerFluxIntegral(const Real t0, const Real t1) const {
   return ftab_scale*ftab.Integral(0, t0 - ftab_t0, t1 - ftab_t0);
 }
 
 void RadiationM1::Time2FormStage(int stage, Real dt) {
-  if (fmod_per > 0.0 || fmod_rw > 0.0 || ftab_on) {   // raycheap2-1109: inner flux
+  if (fmod_per > 0.0 || fmod_rw > 0.0 || ftab_on) {   // inner flux
     // hesdirk2 / sdirk2: both stage solves end at t_n + dt (c2 = a21 + g = 1, c3 = 1);
     // trbdf2: the stage-1 solve ends at t_n + 2 g dt (c2 = 2g)
     const Real cst = (stage == 1 && t2_tab == 1) ? 2.0*kT2G : 1.0;
     const Real ts = pmy_pack->pmesh->time + cst*dt;
     iflux_x1min = InnerFluxAt(ts);
   }
-  if (dbg_rst_fp > 0 && stage == 1) {dbg_rst_fp -= 1; RstFingerprint("formstage1");}   // rstbit-1107
+  if (dbg_rst_fp > 0 && stage == 1) {dbg_rst_fp -= 1; RstFingerprint("formstage1");}
   const Real g = kT2G;
   const Real w0 = t2_w0, w1 = t2_w1;
   // hesdirk2 and sdirk2 both use the Heun stage start (tab 0's original expression,
@@ -794,7 +794,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
   if (stage == 1) {
     Kokkos::deep_copy(DevExeSpace(), u1, u0);
     Kokkos::deep_copy(DevExeSpace(), t2f1, f0x1);
-    if (impl_hr_cmem && fax1.extent_int(0) > 0) {   // accbook-1113 (booking only)
+    if (impl_hr_cmem && fax1.extent_int(0) > 0) {   // (booking only)
       if (t2fa1.extent(0) != fax1.extent(0) || t2fa1.extent(3) != fax1.extent(3)) {
         Kokkos::realloc(t2fa1, fax1.extent(0), fax1.extent(1), fax1.extent(2),
                         fax1.extent(3));
@@ -807,7 +807,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     }
     c1 = t2_a21*dt;
     c2 = 0.0;
-    // pgrst-1021 time2_k1_reset: no K1 where E was overwritten since the stage-loop start
+    // time2_k1_reset: no K1 where E was overwritten since the stage-loop start
     if (t2_k1reset && t2_ys_ok && t2ys.extent_int(0) >= pmy_pack->nmb_thispack) {
       auto &id = pmy_pack->pmesh->mb_indcs;
       const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
@@ -815,7 +815,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       auto ys_ = t2ys;
       auto k1r_ = t2k1;
       const int ncell = M1_T2_F1;   // E, gas momentum (3), gas energy
-      // k1dir-1110: Coordinates::volume is allocated (and filled) only on the cubed
+      // Coordinates::volume is allocated (and filled) only on the cubed
       // sphere / spherical polar; elsewhere it is 1x1x1x1 and vol(m,k,j,i) read out of
       // bounds.  Cartesian: the uniform cell volume of the MeshBlock.
       auto &vol = pmy_pack->pcoord->volume;
@@ -883,7 +883,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       t2_k1reset_de = 0.0;
       t2_ys_face = false;
     }
-    // stiffk1-1029 time2_k1_stiff = s (> 0): in cells whose gas-radiation relaxation
+    // time2_k1_stiff = s (> 0): in cells whose gas-radiation relaxation
     // rate k = ch rho kappa_E + 4 cl rho kappa_P a T^3/(rho c_v) (rho c_v ~ eint/T) has
     // k dt > s, the EXCHANGE part of the FSAL slope K1 is moved from the gas energy to
     // the radiation E (ch/cl weighted, so the solve's total energy is unchanged): the
@@ -982,7 +982,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       const int nmbr = pmy_pack->nmb_thispack - 1;
       auto k1d_ = t2k1;
       auto ue_ = u0;
-      // k1dir-1110 FIX: pcoord->volume exists only on cs / sp (1x1x1x1 elsewhere: the
+      // FIX: pcoord->volume exists only on cs / sp (1x1x1x1 elsewhere: the
       // old vol(m,k,j,i) read out of bounds on Cartesian decks, so needs and donor rooms
       // were garbage: beams drained or blown up, results changed run to run).  Cartesian:
       // the uniform cell volume of the MeshBlock (a column is inside one block).
@@ -1104,7 +1104,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
   CleanDInc(two, c1, c2, heun ? 0.5 : w1, heun ? 0.5 : w0);
   cln_kc1 = c1;   // (clean_stag_kpos: the face part of the increment, CleanStagKPos)
   cln_kc2 = two ? c2 : 0.0;
-  const bool ike = t2_ike && (t2kei.extent_int(0) > nmb1);   // rsglock-1112
+  const bool ike = t2_ike && (t2kei.extent_int(0) > nmb1);
   if (ike) {
     auto e1_ = t2ke1, e2_ = t2ke2, ei_ = t2kei;
     par_for("m1_t2_ike_inc", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
@@ -1114,7 +1114,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       ei_(m,k,j,i) = v;
     });
   }
-  // rsglock-1112 time2_exch_split = psi: the carried exchange terms in bounded form
+  // time2_exch_split = psi: the carried exchange terms in bounded form
   if (t2_xsp && t2kx1.extent_int(0) > nmb1 && t2inc.extent_int(1) > M1_T2_EN) {
     auto x1_ = t2kx1, x2_ = t2kx2, l1_ = t2lx1, l2_ = t2lx2;
     auto ix_ = t2inc;
@@ -1144,7 +1144,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     t2_xsp_cells += snc;
     t2_xsp_calls += 1;
   }
-  // cs-open-1018 <hydro>/am_vector: the spin reservoir's increment from its slopes
+  // <hydro>/am_vector: the spin reservoir's increment from its slopes
   if (am_vec && aminc.extent_int(0) > 0) {
     auto a1_ = amk1;
     auto a2_ = amk2;
@@ -1158,7 +1158,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       ai_(m,k,j,i) = v;
     });
   }
-  // consrc-1011 (implicit_gas_src = conservative): the same increment of the stored
+  // (implicit_gas_src = conservative): the same increment of the stored
   // cell F, from its slopes (the old vector of the write-back's F^old)
   csinc_ok = false;
   if (impl_gas_src_cons && csk1_ok && csk1.extent(0) == t2k1.extent(0)) {
@@ -1173,7 +1173,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     });
     csinc_ok = true;
   }
-  // csacc-1031 time2_floor_eint (rad_m1.hpp): floor-class cells keep the stage start's
+  // time2_floor_eint (rad_m1.hpp): floor-class cells keep the stage start's
   // eint in the old vector; the explicit exchange part moves to E
   if (t2_flr_rho > 0.0) {
     FluidRef flf = FluidRef::Get(pmy_pack);
@@ -1204,15 +1204,15 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
         in_(m,M1_T2_M1+2,k,j,i) = 0.0;
         in_(m,M1_T2_E,k,j,i) += (ch/cl)*dex;
         if (amz) {ai_(m,k,j,i) = 0.0;}
-        if (ikf) {eif_(m,k,j,i) = 0.0;}   // rsglock-1112
+        if (ikf) {eif_(m,k,j,i) = 0.0;}
         sum += 1.0;
       }, Kokkos::Sum<Real>(nf));
       t2_flr_n += nf;
     }
   }
-  if (t2_k1xlim > 0.0) {Time2K1XLim(stage, c1, c2, true);}   // xlim-1120 (gas side)
-  if (t2_ffct) {Time2FaceFct(stage, c1, c2);}   // facebound-1112 step 1
-  if (t2_k1xlim > 0.0) {Time2K1XLim(stage, c1, c2, false);}   // xlim-1120 (E side)
+  if (t2_k1xlim > 0.0) {Time2K1XLim(stage, c1, c2, true);}   // (gas side)
+  if (t2_ffct) {Time2FaceFct(stage, c1, c2);}   // step 1
+  if (t2_k1xlim > 0.0) {Time2K1XLim(stage, c1, c2, false);}   // (E side)
   CleanBndAcc(stage, c1, c2, (stage == 1) ? 0.0 : (heun ? 0.5 : w0), dt);
   t2_solve = (stage == 1) ? M1_T2S_STAGE1 : M1_T2S_STAGE2;
   t2_fail = false;
@@ -1266,7 +1266,7 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
     FluidRefresh(pdrive);
     if (fl.mhd) EmagBuild(false);
   }
-  // posfix-amvec-1022 <hydro>/am_vector: the spin reservoir back to U^n too (am_spin1,
+  // <hydro>/am_vector: the spin reservoir back to U^n too (am_spin1,
   // taken by the hydro's stage 1 and untouched since); the redo's hydro stage 1 copies
   // am_spin into am_spin1 again
   if (am_vec) {
@@ -1560,7 +1560,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
   int sa = ca, sb = cb;
   Real ncell = 0.0;
   int nround = 0;
-  // fast2nd-1112 (rad_m1.hpp zalesak_halo_skip): exchange R only after a round that
+  // (rad_m1.hpp zalesak_halo_skip): exchange R only after a round that
   // changed a cell within 2 ng of a MeshBlock face; the first exchange always runs
   const int zd = 2*id.ng;
   const bool zx2 = pmy_pack->pmesh->multi_d, zx3 = pmy_pack->pmesh->three_d;
@@ -1568,8 +1568,8 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
   bool zfirst = true;
   std::chrono::steady_clock::time_point zt0;
   if (zl_prof) {Kokkos::fence(); zt0 = std::chrono::steady_clock::now();}
-  const int zlr = zl_local;   // zlocal-1113 (rad_m1.hpp zalesak_local_rounds)
-  const bool zac = zl_active;   // zlocal-1113 (rad_m1.hpp zalesak_active)
+  const int zlr = zl_local;   // (rad_m1.hpp zalesak_local_rounds)
+  const bool zac = zl_active;   // (rad_m1.hpp zalesak_active)
   // zalesak_active: zl_chg holds the claim marks (slab 0), two lists of cells (slabs 1,
   // 2: the cells whose R changed in the last round, then the ghosts the exchange
   // changed) and their counter (slab 3); a round evaluates the 7-point stencils of the
@@ -1980,7 +1980,7 @@ void RadiationM1::CleanBndAcc(int stage, Real c1, Real c2, Real w, Real dt) {
 //! \fn Real RadiationM1::EbndFluxX1
 //! \brief mhdfix-1025 Ebnd: L = sum A F1 over the physical inner x1 faces minus the outer
 //! ones (the radiation energy flux into the domain through x1, all ranks).
-//! hg262-drive-1113: side = 1 only the inner faces, side = 2 only the outer faces with
+//! side = 1 only the inner faces, side = 2 only the outer faces with
 //! the sign flipped (outward positive); side = 0 is the original sum (bitwise).
 
 Real RadiationM1::EbndFluxX1(const int side) {
@@ -1990,7 +1990,7 @@ Real RadiationM1::EbndFluxX1(const int side) {
   auto ff = f0x1;
   auto &a1 = pmy_pack->pcoord->area.x1f;
   auto &bcs = pmy_pack->pmb->mb_bcs;
-  // lzphys-1113 ebnd_adv (problem/am_hist_ebnd): + the advective end-face flux
+  // ebnd_adv (problem/am_hist_ebnd): + the advective end-face flux
   const bool adv = ebnd_adv && impl_bc_advect;
   const int bclo = ibc_x1min, bchi = ibc_x1max;
   const bool mfl = impl_mface_lin, sqf = vcol_sqf;
@@ -2014,7 +2014,7 @@ Real RadiationM1::EbndFluxX1(const int side) {
     const bool phi = (side != 1) && phys(bcs.d_view(m, BoundaryFace::outer_x1));
     if (plo) {sum += a1(m,k,j,is)*ff(m,k,j,is);}
     if (phi) {sum -= a1(m,k,j,ie+1)*ff(m,k,j,ie+1);}
-    // lzphys-1113 ebnd_adv: the advective enthalpy flux A E of implicit_bc_advect through
+    // ebnd_adv: the advective enthalpy flux A E of implicit_bc_advect through
     // a Marshak end face, with the E the row takes (ImplicitSolve's x1 rows): outflow the
     // face E (implicit_marshak_face = linear) or the end cell's, inflow the bath
     if (adv && plo && bclo == M1_IBC_MARSHAK) {
@@ -2138,7 +2138,7 @@ void RadiationM1::EbndAccept(Real dt, bool t2step) {
 
 //----------------------------------------------------------------------------------------
 //! \fn bool RadiationM1::Time2StartProbe
-//! \brief time2_start = slope (h2order-1011): on a hesdirk2 step without a stored slope,
+//! \brief time2_start = slope: on a hesdirk2 step without a stored slope,
 //! a backward-Euler probe solve of dt_p = time2_start_frac dt from U^n (radiation, faces
 //! and gas; no hydro) stores K1 = (Y_p - U^n)/dt_p = f_I(U^n) + O(dt_p); U^n is then put
 //! back and the step runs the two stages, so no step of the run is Lie split.  Returns
@@ -2146,9 +2146,9 @@ void RadiationM1::EbndAccept(Real dt, bool t2step) {
 //! only moves Picard starting points).
 
 bool RadiationM1::Time2StartProbe(Driver *pdrive, Real dt) {
-  // vgdrot2-1012: VetGdRotStep asks for the probe at a rotation (any time2_start)
+  // VetGdRotStep asks for the probe at a rotation (any time2_start)
   if (time_scheme != M1_TIME_HESDIRK2 || (t2_start != 1 && !t2_rotprobe)) return false;
-  // autobe-1029 time2_auto_be: a skipped step takes the backward-Euler path, which stores
+  // time2_auto_be: a skipped step takes the backward-Euler path, which stores
   // a fresh slope (of the new rotation set too); no probe
   if (t2_abe_now) {
     t2_rotprobe = false;
@@ -2165,7 +2165,7 @@ bool RadiationM1::Time2StartProbe(Driver *pdrive, Real dt) {
     if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), t2f3, f0x3);}
   }
   if (fl.on) {Kokkos::deep_copy(DevExeSpace(), fl.u1, fl.u0);}
-  // mhdfix-1025 <mhd>: U^n = (u1, b1) for the solve (emag1, Time2VetStart); b1 still
+  // <mhd>: U^n = (u1, b1) for the solve (emag1, Time2VetStart); b1 still
   // holds the last step's start here (the MHD stage 1 copies b0 into it again)
   if (fl.on && fl.mhd) {
     Kokkos::deep_copy(DevExeSpace(), fl.pm->b1.x1f, fl.pm->b0.x1f);
@@ -2194,7 +2194,7 @@ bool RadiationM1::Time2StartProbe(Driver *pdrive, Real dt) {
   if (fl.on) {
     Kokkos::deep_copy(DevExeSpace(), fl.u0, fl.u1);
     FluidRefresh(pdrive);
-    if (fl.mhd) EmagBuild(false);   // mhdfix-1025: b0 untouched; same faces
+    if (fl.mhd) EmagBuild(false);   // b0 untouched; same faces
   }
   t2_solve = M1_T2S_NONE;
   t2_fail = false;
@@ -2208,7 +2208,7 @@ bool RadiationM1::Time2StartProbe(Driver *pdrive, Real dt) {
 
 //----------------------------------------------------------------------------------------
 //! \fn bool RadiationM1::Time2RotCorrect
-//! \brief rotslope-1012, vet_gd_rotate_slope = correct (asked for by VetGdRotStep on the
+//! \brief vet_gd_rotate_slope = correct (asked for by VetGdRotStep on the
 //! first step of a new vet_gd rotation block, with a valid FSAL slope K1 = f_old(U^n) of
 //! the OLD set): one stage-type solve of dt_c = vet_gd_rotate_slope_frac dt from U^n
 //! (radiation, faces, gas; no hydro) with the NEW set and the old vector U^n - dt_c K1
@@ -2241,7 +2241,7 @@ bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
     if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), t2f3, f0x3);}
   }
   if (fl.on) {Kokkos::deep_copy(DevExeSpace(), fl.u1, fl.u0);}
-  // mhdfix-1025 <mhd>: U^n = (u1, b1) for the solve (emag1, Time2VetStart); b1 still
+  // <mhd>: U^n = (u1, b1) for the solve (emag1, Time2VetStart); b1 still
   // holds the last step's start here (the MHD stage 1 copies b0 into it again)
   if (fl.on && fl.mhd) {
     Kokkos::deep_copy(DevExeSpace(), fl.pm->b1.x1f, fl.pm->b0.x1f);
@@ -2262,7 +2262,7 @@ bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
       in_(m,n,k,j,i) = c*k1_(m,n,k,j,i);
     });
     cln_lzc = c*cln_lzs1;   // (clean_cs_lz_abs = 2)
-    if (t2_ike && t2kei.extent_int(0) > nmb1) {   // rsglock-1112
+    if (t2_ike && t2kei.extent_int(0) > nmb1) {
       auto e1_ = t2ke1, ei_ = t2kei;
       par_for("m1_t2_ike_rcinc", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -2300,14 +2300,14 @@ bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
   if (ok) {
     Kokkos::deep_copy(DevExeSpace(), t2k1, t2k2);
     cln_lzs1 = cln_lzs2;   // (clean_cs_lz_abs = 2)
-    if (t2_pfst && t2pf1.extent_int(0) > 0) {   // facebound-1112 step 1
+    if (t2_pfst && t2pf1.extent_int(0) > 0) {   // step 1
       Kokkos::deep_copy(DevExeSpace(), t2pf1, t2pf2);
       t2pf1_ok = t2pf2_ok;
     }
-    if (t2_ike && t2ke1.extent_int(0) > 0) {   // rsglock-1112
+    if (t2_ike && t2ke1.extent_int(0) > 0) {
       Kokkos::deep_copy(DevExeSpace(), t2ke1, t2ke2);
     }
-    if (t2_xsp && t2kx1.extent_int(0) > 0) {   // rsglock-1112 time2_exch_split
+    if (t2_xsp && t2kx1.extent_int(0) > 0) {   // time2_exch_split
       Kokkos::deep_copy(DevExeSpace(), t2kx1, t2kx2);
       Kokkos::deep_copy(DevExeSpace(), t2lx1, t2lx2);
     }
@@ -2330,7 +2330,7 @@ bool RadiationM1::Time2RotCorrect(Driver *pdrive, Real dt) {
   if (fl.on) {
     Kokkos::deep_copy(DevExeSpace(), fl.u0, fl.u1);
     FluidRefresh(pdrive);
-    if (fl.mhd) EmagBuild(false);   // mhdfix-1025: b0 untouched; same faces
+    if (fl.mhd) EmagBuild(false);   // b0 untouched; same faces
   }
   t2_solve = M1_T2S_NONE;
   t2_fail = false;
@@ -2380,7 +2380,7 @@ void M1T2VcpLaunch(const Ctx &ctx_, Idl) {
   auto mhd = std::get<31>(ctx_);
   auto emag_ = std::get<32>(ctx_);
   auto osc = std::get<33>(ctx_);   // vet_scatter: rho kappa_e -> opac(M1_OP_S)
-  auto lim = std::get<34>(ctx_);   // time2_pred_cap: theta per cell (predfix-1011)
+  auto lim = std::get<34>(ctx_);   // time2_pred_cap: theta per cell
   auto th_ = std::get<35>(ctx_);
   auto vcb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
                                   const int i) M1_INL {
@@ -2446,9 +2446,9 @@ void M1T2VcpLaunch(const Ctx &ctx_, Idl) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::Time2VetSourceInit
-//! \brief time2_vet_source = relaxed | state | blend (vcpred-1010, sporder-1012; was
+//! \brief time2_vet_source = relaxed | state | blend (was
 //! time2_vet_col_source, its alias on vet_col): the VET source of the predict / rebuild
-//! build, for every formal solution (unify-sc-gd-1012 #3).  vet_source = relaxed relaxes
+//! build, for every formal solution (#3).  vet_source = relaxed relaxes
 //! the build state's gas and E by a local backward-Euler exchange over dt, i.e. it moves
 //! the source one step AHEAD of the state it is given.  At U^n (lag, backward Euler)
 //! that is the step's end; at the predicted P = U^n + dt K1, already at t^{n+1} +
@@ -2456,7 +2456,7 @@ void M1T2VcpLaunch(const Ctx &ctx_, Idl) {
 //! the exchange is resolved and out of equilibrium (vcpred_1010 neq1_u_T: E 1.71 1.57
 //! 1.40, T 1.67 1.47 1.23).  state = the source of P itself (eps B + (1 - eps) E, or
 //! VetScatterMix with J = E_P under vet_scatter): 1.92 1.87 1.91 / 1.96 1.98 1.99.
-//! blend (sporder-1012) = S*(0) + w (S*(dt) - S*(0)), w = x^2/(x0^2 + x^2) with x the
+//! blend = S*(0) + w (S*(dt) - S*(0)), w = x^2/(x0^2 + x^2) with x the
 //! cell's exchange stiffness c dt rho kappa (radiation + gas temperature): the state's
 //! own source where the exchange is resolved (x << x0, O(dt^3) from it), the relaxed
 //! source where it is stiff (VetRelaxedSourceB); time2_vet_source_x0 (alias
@@ -2469,7 +2469,7 @@ void RadiationM1::Time2VetSourceInit(ParameterInput *pin, const bool act, const 
   const std::string key = col ? M1KeyName(pin, "time2_vet_source", {"time2_vet_col_source"})
                               : std::string("time2_vet_source");
   if (!act && !pin->DoesParameterExist("rad_m1", key)) {return;}
-  // unify-sc-gd-1012 #3 (OPEN, rad_m1_vet.cpp VetInit): vet_sc keeps state (fresh and
+  // #3 (OPEN, rad_m1_vet.cpp VetInit): vet_sc keeps state (fresh and
   // restart), vet_col / vet_gd blend (restart lacking the key: relaxed)
   const char *dflt = col ? (global_variable::restart_run ? "relaxed" : "blend") : "state";
   std::string vs = act ?
@@ -2509,7 +2509,7 @@ void RadiationM1::Time2VetColExtrap2() {
   const Real dtn = pmy_pack->pmesh->dt;
   const Real r = (x2_ok && tn > x2_t) ? dtn/(tn - x2_t) : 0.0;
   // the vet_gd fields only within one rotated direction set
-  // (vgdxf-1112 vet_gd_rotate_xfade: the cross-faded closure is continuous across the
+  // (vet_gd_rotate_xfade: the cross-faded closure is continuous across the
   // set changes, so its fields are extrapolated across them too)
   const Real rg = (vgd_on && (vgd_alpha == x2_alpha || vgd_xf)) ? r : 0.0;
   const int xf = x2_fields;
@@ -2631,7 +2631,7 @@ int RadiationM1::Time2RstNchWant() {
   const int nt = (time_scheme != M1_TIME_HESDIRK2) ? 0 :
          M1_T2_NK + ((impl_pred && !sk) ? np : 0) + (vet_sc ? M1_T2_NVET : 0)
          + ((vet_sc && vsc_every > 1) ? 2*M1_T2_NVET : 0)    // vet_sc_every: D0, D1
-         + ((vet_col && t2_vcmode == 4 && !sk) ? M1_X2_NCH : 0);   // rbfast-1021 extrap2
+         + ((vet_col && t2_vcmode == 4 && !sk) ? M1_X2_NCH : 0);   // extrap2
   return nt + ((force_ref == M1_FREF_CLEAN) ? 4 + cln_lzt : 0)   // the reference, set
          + ((force_ref == M1_FREF_WB_MD) ? 10 : 0)           // wb_arad_md: 9, set
          + ((clean && cln_extrap > 0) ? 2*CleanRstNq() + 1 : 0)    // extrap history
@@ -2657,7 +2657,7 @@ int RadiationM1::Time2RstNch() {
   return (t2_ok || clean || time_scheme != M1_TIME_HESDIRK2) ? Time2RstNchWant() : 0;
 }
 
-// gpumem-1022: m0 > 0 packs MeshBlocks m0 .. m0+nmb-1 into a(0 .. nmb-1) (per-MB staging)
+// m0 > 0 packs MeshBlocks m0 .. m0+nmb-1 into a(0 .. nmb-1) (per-MB staging)
 void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
   auto mb = std::make_pair(0, nmb);
   auto ms = std::make_pair(m0, m0 + nmb);
@@ -2773,7 +2773,7 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
     }
     c += 6;
   }
-  // rbfast-1021 extrap2: the raw builds of the last step, q at i = 0, time, alpha
+  // extrap2: the raw builds of the last step, q at i = 0, time, alpha
   if (h2 && vet_col && t2_vcmode == 4 && !noh) {
     put(c, M1_X2_NTT, x2_tt, 0);
     put(c + M1_X2_NTT, M1_X2_NHR, x2_hr, 0);
@@ -2985,7 +2985,7 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     }
     ch -= nd;
   }
-  // rbfast-1021 extrap2 (Time2RstPack)
+  // extrap2 (Time2RstPack)
   // (clean_skip_time2_hist: no extrap2 history kept, x2_ok stays false)
   if (h2 && vet_col && t2_vcmode == 4 && clean && cln_not2h) skip();
   if (h2 && vet_col && t2_vcmode == 4 && !(clean && cln_not2h)) {
@@ -3023,7 +3023,7 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
 
 bool RadiationM1::Time2AutoBeBegin() {
   t2_abe_now = false;
-  // bematch-1030 t2_beonly: every step (the first too) is a skip step
+  // t2_beonly: every step (the first too) is a skip step
   const bool bo = t2_beonly && (time_scheme == M1_TIME_HESDIRK2);
   if (!bo && (t2_abe <= 0 || time_scheme != M1_TIME_HESDIRK2 || t2_abe_left <= 0)) {
     return false;
@@ -3042,7 +3042,7 @@ bool RadiationM1::Time2AutoBeBegin() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::Time2AutoBeEnd
-//! \brief autobe-1029: an ACCEPTED cycle of a hesdirk2 run.  kind 0 = stage step, 1 =
+//! \brief an ACCEPTED cycle of a hesdirk2 run.  kind 0 = stage step, 1 =
 //! stage fallback + BE redo, 2 = time2_auto_be step, 3 = other BE step (no slope),
 //! 4 = a discarded dt_retry attempt (timing only).  tw_a / tw_b: fenced wall seconds of
 //! (the attempt | the step) and (the redo).
@@ -3094,7 +3094,7 @@ void RadiationM1::Time2Report() {
   if (t2_k1xlim > 0.0) {
     std::cout << " k1_xlim(th=" << t2_k1xlim << ") cell-stages(rank 0)=" << t2_k1xlim_n;
   }
-  if (t2_ffct) {   // facebound-1112 step 1 (global sums)
+  if (t2_ffct) {   // step 1 (global sums)
     std::cout << " face_fct calls=" << t2_ffct_calls << " skipped(no face flux)="
               << t2_ffct_nop << " K1 flux from U^n=" << t2_ffct_fill << " limited cells="
               << t2_ffct_cells << " max rounds="
@@ -3149,17 +3149,17 @@ void RadiationM1::Time2Report() {
               << " off-boundary shifts=" << cln_roff_sum;
   }
   std::cout << std::endl;
-  if (t2_xsp) {   // rsglock-1112 time2_exch_split (rank 0)
+  if (t2_xsp) {   // time2_exch_split (rank 0)
     std::cout << "<rad_m1> time2_exch_split=psi (rank 0): stages " << t2_xsp_calls
               << " cells corrected " << t2_xsp_cells << " sum |dEN| x V moved to E "
               << t2_xsp_de << std::endl;
   }
-  if (t2_iex) {   // rsglock-1112 time2_inc_exch (rank 0)
+  if (t2_iex) {   // time2_inc_exch (rank 0)
     std::cout << "<rad_m1> time2_inc_exch=relax (rank 0): sum (eint given x V, E paid) "
               << t2_iex_de << " cell-solves " << t2_iex_cells
               << " cells with E_old <= 0 after paying " << t2_iex_neg << std::endl;
   }
-  if (t2_ike) {   // rsglock-1112 (Time2Report runs on rank 0 only: rank-0 values)
+  if (t2_ike) {   // (Time2Report runs on rank 0 only: rank-0 values)
     std::cout << "<rad_m1> time2_inc_energy=rad (rank 0): solves " << t2_ike_calls
               << " sum (KE remainder x V) to E " << t2_ike_de << " sum |.| x V "
               << t2_ike_dp << " cells with E_old <= 0 and remainder > 0 " << t2_ike_neg
@@ -3170,7 +3170,7 @@ void RadiationM1::Time2Report() {
               << t2_abe_n << " stage retries=" << t2_abe_ntry << " (succeeded "
               << t2_abe_nok << ")" << std::endl;
   }
-  // autobe-1029: the wall-time split (rank 0, fenced; accepted cycles by kind)
+  // the wall-time split (rank 0, fenced; accepted cycles by kind)
   std::cout << "<rad_m1> hesdirk2 wall split (rank 0 s): clean stage steps " << t2w_clean
             << " | failed stage attempts " << t2w_fail << " | their BE redo " << t2w_redo
             << " | auto_be steps " << t2w_abe << " | other BE steps " << t2w_be
@@ -3181,7 +3181,7 @@ void RadiationM1::Time2Report() {
 
 namespace radm1 {
 //----------------------------------------------------------------------------------------
-//! \fn RadiationM1::RstFingerprint (rstbit-1107, DIAGNOSTIC <rad_m1>/dbg_rst_fp = N)
+//! \fn RadiationM1::RstFingerprint (DIAGNOSTIC <rad_m1>/dbg_rst_fp = N)
 //! Sum and sum of squares of every persistent array (per component of the 5-D ones), all
 //! ranks, printed by rank 0: run A (straight) and run B (restarted) are diffed line by
 //! line at the same cycle to find the state a restart does not carry.  Moves no state.

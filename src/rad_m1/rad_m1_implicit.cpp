@@ -86,12 +86,12 @@
 #endif
 
 namespace radm1 {
-// csacc-1031 reset-sector exemption of the hesdirk2 admissibility (rad_m1_t2reset.hpp)
+// reset-sector exemption of the hesdirk2 admissibility (rad_m1_t2reset.hpp)
 bool g_t2_reset_on = false;
 DvceArray4D<Real> g_t2_reset;
 double g_t2_reset_nskip = 0.0;
 static int M1HaloDepthEnv(MeshBlockPack *pp, ParameterInput *pin);   // (below)
-// DEBUG <rad_m1>/dbg_eint_cells (accretor-sector-light-1017; file scope so the class
+// DEBUG <rad_m1>/dbg_eint_cells (file scope so the class
 // layout is unchanged): 0 = off
 static int g_dbg_eint_n = 0;
 
@@ -155,13 +155,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   {auto *pmh = pmy_pack->pmesh;
   const std::string integ = pin->DoesParameterExist("time","integrator") ?
                             pin->GetString("time","integrator") : "rk2";
-  // cs-open-1018 (USER: second order in time on cs too): the cubed sphere takes the same
+  // (USER: second order in time on cs too): the cubed sphere takes the same
   // hesdirk2 default as sp (was excluded; W1 measured hesdirk2 on cs at 1.95-1.99)
   const bool h2def = full && !pmh->use_polar_boundary &&
                      (!tau_closure || vet_col) && (integ.compare("rk2") == 0) &&
                      !global_variable::restart_run;
   (void) pin->GetOrAddString("rad_m1","time_scheme", h2def ? "hesdirk2" : "be");
-  // bematch-1030: plain be = the hesdirk2 backward-Euler path (t2_beonly, rad_m1.hpp)
+  // plain be = the hesdirk2 backward-Euler path (t2_beonly, rad_m1.hpp)
   // wherever hesdirk2 is accepted (the h2def conditions without the restart rule);
   // <rad_m1>/be_legacy = true keeps the old step.  time2_be_only = true: the same path
   // under time_scheme = hesdirk2.  defaults-1030 (USER 10-30): this is the be default on
@@ -187,7 +187,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   trans_x3 = false;
   impl_cfl = pin->GetOrAddReal("rad_m1","implicit_cfl",-1.0);
   impl_tol = pin->GetOrAddReal("rad_m1","implicit_tol",1.0e-8);
-  // picard-1014 implicit_tol_rel = kappa (default 0 = off; opt-in study key).  A solve
+  // implicit_tol_rel = kappa (default 0 = off; opt-in study key).  A solve
   // that starts from the step predictor measures its first change r_0 = max |x_1 -
   // x_pred|/x: the predictor (an extrapolation of the last increments, O(dt^3) off
   // under predictor_order 2) misses the fixed point by about the local truncation
@@ -200,13 +200,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_tol_rel < 0.0 || impl_tol_rel >= 1.0) {
     ImplFatal("<rad_m1>/implicit_tol_rel must lie in [0,1)");
   }
-  // picres-1017 implicit_final_resid_log (DIAGNOSTIC, read only when named so that a
+  // implicit_final_resid_log (DIAGNOSTIC, read only when named so that a
   // run without it has the parameter dump of the run before the key)
   if (pin->DoesParameterExist("rad_m1","implicit_final_resid_log")) {
     impl_frlog = pin->GetBoolean("rad_m1","implicit_final_resid_log");
   }
-  // picstop-1017 (rad_m1.hpp): the guarded contraction estimate and the residual stop,
-  // read only when named (a run without them has the parameter dump of picres-1017)
+  // (rad_m1.hpp): the guarded contraction estimate and the residual stop,
+  // read only when named (a run without them has the parameter dump of)
   if (pin->DoesParameterExist("rad_m1","implicit_conv_est_guard")) {
     impl_ce_guard = pin->GetReal("rad_m1","implicit_conv_est_guard");
     if (impl_ce_guard < 0.0) {
@@ -232,7 +232,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_maxit = pin->GetOrAddInteger("rad_m1","implicit_maxit", full ? 200 : 30);
   impl_lin_tol = pin->GetOrAddReal("rad_m1","implicit_lin_tol",1.0e-10);
   impl_lin_maxit = pin->GetOrAddInteger("rad_m1","implicit_lin_maxit",200);
-  // amdef-1019 (USER 10-19): default bicgstab under the new default set
+  // (USER 10-19): default bicgstab under the new default set
   // (utils/recipe.hpp); a restart whose input lacks the key / recipe none: line_jacobi
   if (!pin->DoesParameterExist("rad_m1","implicit_solver")) {
     const bool nd = recipe::NewDefaults(pin);
@@ -304,7 +304,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                                      global_variable::restart_run ? 0.0 : 1.5);
   } else if (pin->DoesParameterExist("rad_m1","implicit_closure_thin_relax")) {
     impl_ctrelax = pin->GetReal("rad_m1","implicit_closure_thin_relax");
-    // accel-1009 (memory): a fixed-tensor closure (eddington, vet_sc, tau, vet_col) never
+    // (memory): a fixed-tensor closure (eddington, vet_sc, tau, vet_col) never
     // relaxes (impl_lag_kernel: ctr && !edd && !vetsc && !tkeep && !tauc), so the 4-slab
     // closure memory stayed all-zero and was still written to every restart: off
     if (!chif) {impl_ctrelax = 0.0;}
@@ -322,7 +322,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   } else if (st.compare("lp") == 0) {
     impl_tlim = M1_TLIM_LP;
   } else if (st.compare("lpr") == 0) {
-    impl_tlim = M1_TLIM_LPR;   // m1lpr-1019
+    impl_tlim = M1_TLIM_LPR;
   } else {
     ImplFatal("<rad_m1>/implicit_trans_limit = '" + st
               + "' is not a choice (none | lp | lpr)");
@@ -356,7 +356,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                                          full && !global_variable::restart_run);
   impl_eos_cache = pin->GetOrAddBoolean("rad_m1","implicit_eos_cache",false);
   dbg_etally = pin->GetOrAddBoolean("rad_m1","dbg_energy_tally",false);
-  // accbook-1021: read only when named (an input without it is unchanged, also in the
+  // read only when named (an input without it is unchanged, also in the
   // parameters a restart file records)
   impl_ecnt = pin->GetOrAddInteger("rad_m1","implicit_eos_cache_nt",2);
   impl_eccheck = pin->GetOrAddBoolean("rad_m1","implicit_eos_cache_check",true);
@@ -520,13 +520,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   auto *pmq = pmy_pack->pmesh;
   const bool kdev_named = pin->DoesParameterExist("rad_m1","implicit_krylov_dev") &&
                           pin->GetInteger("rad_m1","implicit_krylov_dev") > 0;
-  // defaults-1009 (user 10-09): mg also on the spherical-polar wedge (the AG Car A and He
+  // (user 10-09): mg also on the spherical-polar wedge (the AG Car A and He
   // giant productions name it there); the cubed sphere, polar boundaries, SMR/AMR, 1-D,
   // krylov_dev and the non-fast path keep their old default
   const bool mgdef = !pmq->use_cubed_sphere && !pmq->use_polar_boundary &&
                      !pmq->multilevel && pmq->multi_d && !kdev_named &&
                      !global_variable::restart_run;
-  // defaults-1030 (USER 10-30): mg_gc on a spherical-polar mesh WITH polar boundaries
+  // (USER 10-30): mg_gc on a spherical-polar mesh WITH polar boundaries
   // (the full-sphere accretor; fullsph_1027/mgsm_check) on a fresh single-level 3-D run;
   // every other mesh keeps its default above, a named key wins, and a restart whose file
   // lacks the key keeps rbgs_fwd (bitwise)
@@ -585,11 +585,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (gf_k < 0 || gf_k > 3) {ImplFatal("<rad_m1>/implicit_gf_modes must be 0..3");}
     gf_on = true;
   }
-  // mgsm-1030 (rad_m1_precond.cpp): the smoother keys of mg / mg_gc / mg_gf, each read
+  // (rad_m1_precond.cpp): the smoother keys of mg / mg_gc / mg_gf, each read
   // only when named (default false = the old map, bitwise); mesh-dependent checks in
   // ImplicitMGBuild
   mg_x3line = false; mg_sym = false; mg_frows = false;
-  // defaults-1030 (USER 10-30): implicit_mg_x3line DEFAULT true under mg / mg_gc / mg_gf
+  // (USER 10-30): implicit_mg_x3line DEFAULT true under mg / mg_gc / mg_gf
   // on a spherical-polar 3-D mesh WITH polar boundaries on a fresh run (the full-sphere
   // accretor: the coarse polar phi rings); elsewhere false; a named key wins; a restart
   // whose file lacks the key keeps false (bitwise)
@@ -614,8 +614,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     mg_frows = pin->GetBoolean("rad_m1","implicit_mg_full_rows");
   }
   tmr_x3 = pin->DoesParameterExist("rad_m1","implicit_timers_mg_x3") &&
-           pin->GetBoolean("rad_m1","implicit_timers_mg_x3");   // mgx3fast-1030
-  mg_x3halo = 1;   // mgx3fast-1030
+           pin->GetBoolean("rad_m1","implicit_timers_mg_x3");
+  mg_x3halo = 1;
   if (pin->DoesParameterExist("rad_m1","implicit_mg_x3line_halo")) {
     mg_x3halo = pin->GetInteger("rad_m1","implicit_mg_x3line_halo");
     if (mg_x3halo != 1 && mg_x3halo != 2) {
@@ -810,7 +810,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // flags).  Read only when named; prints only; no number of the solve changes.
   impl_ncdump = pin->DoesParameterExist("rad_m1","implicit_nc_dump") ?
                 pin->GetInteger("rad_m1","implicit_nc_dump") : 0;
-  // DEBUG (accretor-sector-light-1017): dbg_eint_cells = N > 0 prints, in every solve
+  // DEBUG: dbg_eint_cells = N > 0 prints, in every solve
   // whose gas write-back gives eint <= 0 somewhere, up to N of those cells per rank with
   // their state.  Read only when named; prints only; no number of the solve changes.
   g_dbg_eint_n = pin->DoesParameterExist("rad_m1","dbg_eint_cells") ?
@@ -879,7 +879,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_realisable_coupling")) {
     impl_real_couple = pin->GetBoolean("rad_m1","implicit_realisable_coupling");
   }
-  // csmetric-1112 implicit_cs_e0_metric (cubed sphere; read only when named): the work
+  // implicit_cs_e0_metric (cubed sphere; read only when named): the work
   //    array's transverse v and F are FACE-NORMAL components (v.n_xi, v.n_eta) on the
   //    skew panel basis, n_xi.n_eta = -cos_cell.  Their Euclidean products miss the
   //    metric G^-1 = [[1, c], [c, 1]]/(1 - c^2) in beta.F, beta^2 and beta.P.beta of
@@ -887,7 +887,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   //    the same metric as the work v^a dm_a and the KE of the write-back.
   //    prod-1114 (user 11-12): DEFAULT true (recorded); name false for the old E0.
   impl_cs_e0m = pin->GetOrAddBoolean("rad_m1","implicit_cs_e0_metric",true);
-  // csmetric-1112 (read only when named):
+  // (read only when named):
   //  implicit_cs_closure_metric (cs): |F|, f and the unit n of a chi(f) closure with the
   //    panel metric, and A = v + D.v, beta.D.beta with D the MIXED tensor on face-normal
   //    components (the n = F/|F| closures; vet_col's n = r is unchanged by it)
@@ -924,7 +924,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   //    value (or a non-finite resid or lin_resid) is a diverged solve: FATAL before its
   //    state spreads (BSG production 10-01: one 200-pass solve with resid 1.2e6 at
   //    t = 2.91e5 s, the whole domain NaN ~15 cycles later).  0 = off.  DEFAULT 1e2
-  //    since defaults-1002 (/viper/ptmp2/jinma/defaults_gate_1002/item5): the largest
+  // (/viper/ptmp2/jinma/defaults_gate_1002/item5): the largest
   //    NON-CONVERGED resid of a run that went on cleanly was 0.997 (He presn onv128;
   //    scout64 0.37); every resid > 1e3 seen came from a run that was failing.  A restart
   //    whose file lacks the key keeps the old default (off) and says so; the resolved
@@ -935,7 +935,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       ImplFatal("<rad_m1>/implicit_resid_fatal must be >= 0");
     }
   } else if (recipe::NewDefaults(pin)) {
-    // amdef-1019 (USER 10-19): 1e-2 under the new default set (utils/recipe.hpp)
+    // (USER 10-19): 1e-2 under the new default set (utils/recipe.hpp)
     impl_res_fatal = pin->GetOrAddReal("rad_m1","implicit_resid_fatal",1.0e-2);
     recipe::Log("<rad_m1>/implicit_resid_fatal = 1e-2 (default)");
   } else if (global_variable::restart_run) {
@@ -992,7 +992,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_m1>/implicit_lin_cnorm must be >= 0 and needs "
               "implicit_bcg_sync >= 1");
   }
-  // implicit_bcg_max_restarts / implicit_bcg_fallback (sp-blend2-1008; defaults 2 / line
+  // implicit_bcg_max_restarts / implicit_bcg_fallback (defaults 2 / line
   // = the original, bitwise).  After more than max_restarts breakdowns (a vanishing
   // rho / omega / rhat.v, or a recurrence residual that met the tolerance while the true
   // residual did not) the fused BiCGStab gives up.  `line` then DISCARDS the Krylov
@@ -1015,7 +1015,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_bcg_maxrst < 0) {
     ImplFatal("<rad_m1>/implicit_bcg_max_restarts must be >= 0");
   }
-  // implicit_precond_fallback (precond-fb-1023; default none = bitwise the old path).
+  // implicit_precond_fallback (default none = bitwise the old path).
   // A linear solve whose BiCGStab stops at implicit_lin_maxit without meeting its test
   // (not a breakdown: that is implicit_bcg_fallback) is redone ONCE with this
   // preconditioner, from the same initial guess (the Picard iterate) and with the same
@@ -1041,7 +1041,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_m1>/implicit_precond_fallback = rbgs needs "
               "implicit_krylov_fuse >= 1");
   }
-  // implicit_face_opac_n (fixbundle-1009 F2): rad_m1.hpp.  defaults-1009 (user 10-09):
+  // implicit_face_opac_n (F2): rad_m1.hpp.  defaults-1009 (user 10-09):
   // default true on a fresh run; a restart whose file lacks the key keeps false
   impl_face_ktn = pin->GetOrAddBoolean("rad_m1","implicit_face_opac_n",
                                        !global_variable::restart_run);
@@ -1090,14 +1090,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_m1>/implicit_predictor = '" + pr
               + "' is not a choice (none | step)");
   }
-  // unify-sc-gd-1012 (#10) implicit_predictor_frozen: with a fixed-tensor closure the
+  // implicit_predictor_frozen: with a fixed-tensor closure the
   // step predictor was switched off under berthon / blend + implicit_recon_lag = step
   // except on the sp wedge (spfx: the face reduced flux is f(D_rr) of the lagged
   // closure there, not the iterate's).  Under implicit_flux_beam = halfrange with an
   // implicit_thin_switch every face coefficient is built from the formal solution and
   // E^n alone (M1ThinFace), on every mesh, so the predictor moves only the starting
   // point there as on the wedge.  true: that rule on every mesh (opt-in); false: the old
-  // sp-only gate (DEFAULT, fresh and restart; echoed).  fin3-1012: the fresh default true
+  // sp-only gate (DEFAULT, fresh and restart; echoed).  the fresh default true
   // left a Picard-tolerance error at implicit_tol 1e-12 that does not shrink with dt (the
   // Cartesian rw_p10t1 / rw_p10t100 T ladders lost their order: E 1.92 -> 0.65 at l 2-4;
   // clean at tol 1e-14 or with false), so FIN3 keeps the old gate.
@@ -1138,7 +1138,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // implicit_gas_newton on; hydro or MHD (FluidRef), Cartesian or sp rows.  False on a
   // restart whose file lacks the key (the implicit_gas_newton convention).  Named true
   // without its two prerequisites it is fatal (below).
-  // prod-1108 (USER 11-08 "make some defaults", r8 key set): DEFAULT false (fresh and
+  // (USER 11-08 "make some defaults", r8 key set): DEFAULT false (fresh and
   // restart); recipe none keeps the old rule above
   const bool rcp_none = recipe::GetMode(pin) == recipe::Mode::none;
   impl_opac_newton = pin->GetOrAddBoolean("rad_m1","implicit_opac_newton",
@@ -1154,18 +1154,18 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // point is the same: the term vanishes there).  <= 0 turns the guard off (the
   // unguarded rows of m1-perf-0928, bitwise).
   impl_opn_guard = pin->GetOrAddReal("rad_m1","implicit_opac_newton_guard",0.5);
-  // picard-1014 implicit_gas_newton_u4 (default false, opt-in study key): the gas Newton
+  // implicit_gas_newton_u4 (default false, opt-in study key): the gas Newton
   // update of step (f) in a cell whose linearised row is EMISSION-dominated (4 c dt rho
   // kappa_P a T^3 > rho c_v) moves u = T^4 by the Newton step, T' = (T^4 + 4 T^3 dT)^(1/4),
   // instead of T by dT: then a T'^4 is exactly the emission the radiation row was built
   // with, and a hot start (T >> T_eq in a tenuous cell: plain Newton on T^4 shrinks T by
   // only 1/4 per pass) lands in one step.  Same fixed point (dT = 0 there).
   impl_gn_u4 = pin->GetOrAddBoolean("rad_m1","implicit_gas_newton_u4",false);
-  // picard-1014 implicit_opac_lag = none (default) | pred: pred evaluates the opacities
+  // implicit_opac_lag = none (default) | pred: pred evaluates the opacities
   // in passes 0 .. N-1 only (pass 0 at the predicted T of the step predictor, or T^n on a
   // cold start; N = implicit_opac_lag_passes, default 1) and freezes them (and drops the
   // opac_newton face terms) for the remaining passes -- a change of the discretisation,
-  // not only of the iteration (oplag-1014: N = 2 keeps order 2 also without a predictor).
+  // not only of the iteration (N = 2 keeps order 2 also without a predictor).
   {const std::string ol = pin->GetOrAddString("rad_m1","implicit_opac_lag","none");
   if (ol.compare("none") == 0) {
     impl_opac_lagp = false;
@@ -1174,12 +1174,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   } else {
     ImplFatal("<rad_m1>/implicit_opac_lag = '" + ol + "' is not a choice (none | pred)");
   }
-  // prod-1108 (r8 key set): DEFAULT 3 (was 1; recipe none keeps 1)
+  // (r8 key set): DEFAULT 3 (was 1; recipe none keeps 1)
   impl_opac_lagn = pin->GetOrAddInteger("rad_m1","implicit_opac_lag_passes",
                      (recipe::GetMode(pin) == recipe::Mode::none) ? 1 : 3);
   if (impl_opac_lagn < 1) {ImplFatal("<rad_m1>/implicit_opac_lag_passes must be >= 1");}
   }
-  // m1-positivity set: DEFAULT ON since defaults-1002 (implicit_g0_exchange = true,
+  // m1-positivity set: DEFAULT ON (implicit_g0_exchange = true,
   // implicit_g0_limit = 1, implicit_pos_gas = true, implicit_pos_floor = true and
   // implicit_opac_newton_guard_mode = 6 below; every he_star_m1 production ran this set;
   // He box / wedge IDENT, BSG column within the 1-ulp twin spread:
@@ -1207,9 +1207,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   pbool("implicit_g0_exchange", impl_g0_exch);
   pbool("implicit_pos_gas", impl_pos_gas);
   pbool("implicit_pos_floor", impl_pos_floor);
-  // defaults-1009 (user 10-09): default = implicit_pos_floor on a fresh run (it needs
+  // (user 10-09): default = implicit_pos_floor on a fresh run (it needs
   // it); a restart whose file lacks the key keeps false
-  // consfix-1109 (c): a restart whose file lacks the key is no longer silently false: a
+  // (c): a restart whose file lacks the key is no longer silently false: a
   // WARN line says so, and <rad_m1>/implicit_pos_floor_solve_rst_default = true (read
   // only when named) gives such a restart the fresh-run default instead
   {const bool pfsn = pin->DoesParameterExist("rad_m1","implicit_pos_floor_solve");
@@ -1230,16 +1230,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_pos_floor_s2 = pin->GetOrAddBoolean("rad_m1","implicit_pos_floor_solve",
                                            impl_pos_floor && (!rst || pfs_rd));
   }
-  // consfix-1109 (a) implicit_cons_final, dbg_cons_ledger (rad_m1.hpp): read only when
+  // (a) implicit_cons_final, dbg_cons_ledger (rad_m1.hpp): read only when
   // named; the solver checks are made at the first solve
-  // prod-1112-cand: implicit_cons_final DEFAULT true (name false for the prod-1111
+  // prod-1112-cand: implicit_cons_final DEFAULT true (name false for the
   // behaviour, bitwise).  Not recorded when absent: a deck that cannot take it (no
   // implicit_pos_floor here; line_jacobi multi-D or polar_ring_avg at the first solve)
   // falls back to off with a one-line notice; only a NAMED true is fatal there.
   cf_named = pin->DoesParameterExist("rad_m1","implicit_cons_final");
   impl_cons_final = cf_named ? pin->GetBoolean("rad_m1","implicit_cons_final") : true;
   impl_lin_tolcap = pin->DoesParameterExist("rad_m1","implicit_lin_tolcap") ?
-                    pin->GetReal("rad_m1","implicit_lin_tolcap") : 0.0;   // lintol-1109
+                    pin->GetReal("rad_m1","implicit_lin_tolcap") : 0.0;
   if (impl_lin_tolcap < 0.0) {ImplFatal("<rad_m1>/implicit_lin_tolcap must be >= 0");}
   impl_lin_tcstage = pin->DoesParameterExist("rad_m1","implicit_lin_tolcap_stage") ?
                      pin->GetInteger("rad_m1","implicit_lin_tolcap_stage") : 0;
@@ -1274,7 +1274,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   Kokkos::realloc(pos_cnt_d, M1_POS_N);
   Kokkos::deep_copy(pos_cnt_d, 0.0);
-  // r136e-1107 implicit_wb_vkick_reject (rad_m1.hpp).  prod-1109 (USER 11-08): DEFAULT ON
+  // implicit_wb_vkick_reject (rad_m1.hpp).  prod-1109 (USER 11-08): DEFAULT ON
   // with V = the fluid's velocity ceiling <hydro|mhd>/vceil when the key is absent (0 =
   // no ceiling = off); name implicit_wb_vkick_reject = 0 for the prod-1108 behaviour
   // (bitwise).  Read only when named otherwise; recipe none keeps 0.  Acts on sp and
@@ -1301,7 +1301,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(vkick_cnt_d, 2);
     Kokkos::deep_copy(vkick_cnt_d, 0.0);
   }
-  // hgkmom-1110 implicit_am_cs_kecap (rad_m1.hpp; read only when named)
+  // implicit_am_cs_kecap (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1","implicit_am_cs_kecap")) {
     impl_am_kecap = pin->GetReal("rad_m1","implicit_am_cs_kecap");
     if (!(impl_am_kecap >= 0.0 && impl_am_kecap <= 1.0)) {
@@ -1348,7 +1348,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_am_cons_diag = pin->GetInteger("rad_m1","implicit_am_cs_cons_diag");
     if (impl_am_cons_diag > 0) {Kokkos::realloc(amcd_d, 24);}
   }
-  // amlz-1112 implicit_am_cs_fold (rad_m1.hpp; read only when named)
+  // implicit_am_cs_fold (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1","implicit_am_cs_fold")) {
     const std::string af = pin->GetString("rad_m1","implicit_am_cs_fold");
     if (af == "applied") {
@@ -1362,7 +1362,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                 << std::endl;
     }
   }
-  // amvec-1111 implicit_am_cs_deposit (rad_m1.hpp; read only when named)
+  // implicit_am_cs_deposit (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1","implicit_am_cs_deposit")) {
     const std::string ad = pin->GetString("rad_m1","implicit_am_cs_deposit");
     if (ad == "local") {
@@ -1385,7 +1385,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       }
     }
   }
-  // hgfix-1110 implicit_clip_kecap (rad_m1.hpp; read only when named)
+  // implicit_clip_kecap (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1","implicit_clip_kecap")) {
     impl_clip_kecap = pin->GetReal("rad_m1","implicit_clip_kecap");
     if (!(impl_clip_kecap >= 0.0 && impl_clip_kecap <= 1.0)) {
@@ -1403,7 +1403,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       }
     }
   }
-  // r136e-1107 implicit_wb_vcap (rad_m1.hpp; read only when named)
+  // implicit_wb_vcap (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1","implicit_wb_vcap")) {
     impl_wb_vcap = pin->GetReal("rad_m1","implicit_wb_vcap");
     if (!(impl_wb_vcap >= 0.0)) {
@@ -1423,12 +1423,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // implicit_opac_newton_guard_mode: 0 = the diagonal test alone; + 1 = also the
   // right-hand side, + 2 = also the sign of the neighbour entry (M1OpnGuardFace; He presn
   // wedge gate: 7 floor clips with the diagonal alone, 0 with both), + 4 (m1-positivity)
-  // = also the row diagonal dominance (m1_impl_asm).  DEFAULT 6 since defaults-1002 (the
+  // = also the row diagonal dominance (m1_impl_asm).  DEFAULT 6 (the
   // positivity set above); 2 on a restart whose file lacks the key (files written since
   // 09-29 record it).
   impl_opn_guard_mode = pin->GetOrAddInteger("rad_m1","implicit_opac_newton_guard_mode",
                                              global_variable::restart_run ? 2 : 6);
-  // opacnewt-cliff-1007: implicit_opac_newton_slope_off / _slope_max (read only when
+  // implicit_opac_newton_slope_off / _slope_max (read only when
   // named; 0 = off).  At an opacity cliff (He recombination: |d ln kappa/d ln T| ~ 5-14
   // in the TOPS tables) the d(rho kappa_T)/dT term of a strongly coupled cell makes the E
   // iterate cycle (He giant N897 photosphere, HEGIANT_PICARD.md: 77 passes, NON-CONV);
@@ -1524,9 +1524,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_enth = M1_IENTH_CENTRAL;
   } else if (sen.compare("plm") == 0) {
     impl_enth = M1_IENTH_PLM;
-  } else if (sen.compare("plmc") == 0) {   // open-ot-1013 diagnostic (rad_m1_implicit.hpp)
+  } else if (sen.compare("plmc") == 0) {   // diagnostic (rad_m1_implicit.hpp)
     impl_enth = M1_IENTH_PLMC;
-  } else if (sen.compare("lin") == 0) {    // open-ot-1013 diagnostic (rad_m1_implicit.hpp)
+  } else if (sen.compare("lin") == 0) {    // diagnostic (rad_m1_implicit.hpp)
     impl_enth = M1_IENTH_LIN;
   } else {
     ImplFatal("<rad_m1>/implicit_enthalpy = '" + sen
@@ -1538,7 +1538,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // a multi-D mesh with implicit_solver = bicgstab, nghost >= 2, hydro with coupling,
   // gas_feedback and dbg_gas_force.  Otherwise off, silently.  A restart whose file lacks
   // the key (read only when named before) keeps off; the resolved value is echoed;
-  // explicit input overrides.  defaults-1012: only where the gas is LIVE, <time>/
+  // explicit input overrides.  only where the gas is LIVE, <time>/
   // evolution = dynamic (a kinematic or static medium never takes the solve's radiative
   // kick, so the implicit velocity has nothing to predict; the validated test decks name
   // false there).  Before defaults-1012 such a fresh deck took true.
@@ -1552,7 +1552,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                     coupling && gas_feedback && dbg_gas_force &&
                     !global_variable::restart_run;
   impl_vimp = pin->GetOrAddBoolean("rad_m1","implicit_vimp",vdef);}
-  // athpp-vstar-1105 <rad_m1>/doppler_vel = stage | vstar (rad_m1.hpp dop_vstar)
+  // <rad_m1>/doppler_vel = stage | vstar (rad_m1.hpp dop_vstar)
   if (pin->DoesParameterExist("rad_m1","doppler_vel")) {
     const std::string dv = pin->GetString("rad_m1","doppler_vel");
     if (dv == "vstar") {
@@ -1560,7 +1560,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     } else if (dv == "vstar_n") {
       dop_vstar = true;
       dop_vstar_n = true;
-    } else if (dv == "vstar_nbe") {   // vstarfix-1106
+    } else if (dv == "vstar_nbe") {
       dop_vstar = true;
       dop_vstar_n = true;
       dop_vstar_nbe = true;
@@ -1580,7 +1580,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       }
     }
   }
-  // doface-1105 <rad_m1>/doppler_face = donor | central (rad_m1.hpp dop_face; read only
+  // <rad_m1>/doppler_face = donor | central (rad_m1.hpp dop_face; read only
   // when named, default donor = bitwise)
   if (pin->DoesParameterExist("rad_m1","doppler_face")) {
     const std::string df = pin->GetString("rad_m1","doppler_face");
@@ -1602,7 +1602,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       }
     }
   }
-  {  // vphi-1021 (USER defaults group 1): DEFAULT true; inert unless a pgen marks hold_m
+  {  // (USER defaults group 1): DEFAULT true; inert unless a pgen marks hold_m
     impl_hold = pin->GetOrAddBoolean("rad_m1","implicit_hold",true);
     if (impl_hold) {
       auto &idh = pmy_pack->pmesh->mb_indcs;
@@ -1617,13 +1617,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_vimp_kill")) {
     vimp_kill = pin->GetBoolean("rad_m1","implicit_vimp_kill");
   }
-  if (pin->DoesParameterExist("rad_m1","implicit_vimp_lag_local")) {   // hgdt-1113
+  if (pin->DoesParameterExist("rad_m1","implicit_vimp_lag_local")) {
     vimp_lag_local = pin->GetBoolean("rad_m1","implicit_vimp_lag_local");
   }
-  if (pin->DoesParameterExist("rad_m1","time2_dtr_poslim")) {   // hgdt-1113
+  if (pin->DoesParameterExist("rad_m1","time2_dtr_poslim")) {
     t2_dtr_pl = pin->GetBoolean("rad_m1","time2_dtr_poslim");
   }
-  if (pin->DoesParameterExist("rad_m1","implicit_pos_transport")) {   // postr-1031
+  if (pin->DoesParameterExist("rad_m1","implicit_pos_transport")) {
     const std::string pt = pin->GetString("rad_m1","implicit_pos_transport");
     if (pt == "none") {
       impl_pos_trans = 0;
@@ -1785,7 +1785,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_m1>/implicit_gas_newton_switch must be 0 or lie in [3,64], "
               "implicit_gas_newton_switch_min >= 1 and implicit_stall_fac in (0,1]");
   }
-  // sp-blend-1008: on the multi-D wedge berthon | blend default to `step`.  The lagged
+  // on the multi-D wedge berthon | blend default to `step`.  The lagged
   // reduced flux of a cell is the MEAN of its two faces' upwind ratios, and in free
   // streaming the upwind berthon flux reproduces any lagged f (F_f = c f E_up), so
   // recomputing the coefficients every Picard pass only AVERAGES f between neighbours,
@@ -1798,9 +1798,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   std::string slg = pin->GetOrAddString("rad_m1","implicit_recon_lag",
                                         splag ? "step" : "picard");
   impl_recon_freeze = (slg.compare("step") == 0);
-  if (pin->DoesParameterExist("rad_m1","implicit_lag_restage")) {   // raycheap2-1109
+  if (pin->DoesParameterExist("rad_m1","implicit_lag_restage")) {
     impl_lag_restage = pin->GetBoolean("rad_m1","implicit_lag_restage");
-  } else if (impl_aphll_mem) {   // aphll-time-1110
+  } else if (impl_aphll_mem) {
     impl_lag_restage = true;
   }
   // MILESTONE 3c: freeze the deferred correction, and with it the plm limiter's choice,
@@ -1822,33 +1822,33 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // which gave that cell 1.5 face-shares of radiative force: He column bottom-cell |v1|
   // 10.3 -> 0.47 v_MLT).  The key is kept so that `false` reproduces runs_3a/RESULTS.txt.
   impl_bmom_half = pin->GetOrAddBoolean("rad_m1","implicit_bmom_half",true);
-  // moveq-1011: the moving-medium fixes (rad_m1.hpp); every one off reproduces a61c1e75
-  // cs-open-1018: the same default on the cubed sphere (the transverse deposit and the
+  // the moving-medium fixes (rad_m1.hpp); every one off reproduces a61c1e75
+  // the same default on the cubed sphere (the transverse deposit and the
   // fixed point are the cs blocks of the write-back; cs-s4-1017 had false there)
   impl_rad_inertia = pin->GetOrAddBoolean("rad_m1","implicit_rad_inertia",true);
-  // h2order2-1011: implicit_rad_inertia_solve (read only when named; rad_m1.hpp)
+  // implicit_rad_inertia_solve (read only when named; rad_m1.hpp)
   if (pin->DoesParameterExist("rad_m1","implicit_rad_inertia_solve")) {
     impl_rinr_solve = pin->GetBoolean("rad_m1","implicit_rad_inertia_solve");
   }
   impl_nofb_work = pin->GetOrAddBoolean("rad_m1","implicit_nofb_work",true);
-  // kick581-1024 implicit_work_fix (read only when named; rad_m1.hpp; DEFAULT true since
-  // defaults-1025, USER 10-25; false = the old write-back)
+  // implicit_work_fix (read only when named; rad_m1.hpp; DEFAULT true since
+  // USER 10-25; false = the old write-back)
   if (pin->DoesParameterExist("rad_m1","implicit_work_fix")) {
     impl_wk_fix = pin->GetBoolean("rad_m1","implicit_work_fix");
   }
-  // vtxfix-1029 cs_vertex_mono / cs_vertex_mono_n (read only when named; rad_m1.hpp;
-  // DEFAULT true on the cubed sphere since defaults-1029, USER 10-29)
+  // cs_vertex_mono / cs_vertex_mono_n (read only when named; rad_m1.hpp;
+  // DEFAULT true on the cubed sphere, USER 10-29)
   cs_vtx_mono = cs_geom;
   if (pin->DoesParameterExist("rad_m1","cs_vertex_mono")) {
     cs_vtx_mono = pin->GetBoolean("rad_m1","cs_vertex_mono") && cs_geom;
   }
-  if (pin->DoesParameterExist("rad_m1","implicit_tstart_old")) {   // rsgdiag-1107
+  if (pin->DoesParameterExist("rad_m1","implicit_tstart_old")) {
     impl_tstart_old = pin->GetBoolean("rad_m1","implicit_tstart_old");
   }
-  if (pin->DoesParameterExist("rad_m1","implicit_predictor_ecap")) {   // rsgdiag-1107
+  if (pin->DoesParameterExist("rad_m1","implicit_predictor_ecap")) {
     impl_pred_ecap = pin->GetReal("rad_m1","implicit_predictor_ecap");
   }
-  // prod-1108 (USER 11-08 "make some defaults", r8 key set): implicit_predictor_tcap
+  // (USER 11-08 "make some defaults", r8 key set): implicit_predictor_tcap
   // DEFAULT 1.1 (was 2) and cs_cross_mono DEFAULT true (was false; cubed sphere only, see
   // xmono); read only when named as before; recipe none keeps the old values
   const bool rcp_none8 = recipe::GetMode(pin) == recipe::Mode::none;
@@ -1871,8 +1871,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
-  // vtxfix-1029 implicit_pos_floor_cons (read only when named; rad_m1.hpp; DEFAULT true
-  // since defaults-1029, USER 10-29; false = the old floor that creates energy)
+  // implicit_pos_floor_cons (read only when named; rad_m1.hpp; DEFAULT true
+  // (USER 10-29); false = the old floor that creates energy)
   if (pin->DoesParameterExist("rad_m1","implicit_pos_floor_cons")) {
     impl_pos_flr_cons = pin->GetBoolean("rad_m1","implicit_pos_floor_cons");
   }
@@ -1893,7 +1893,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                 << "floor's raise leaves the gas at least that share of its eint" << std::endl;
     }
   }
-  // facebound-1112 implicit_fclip_diag (rad_m1.hpp; read only when named)
+  // implicit_fclip_diag (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1","implicit_fclip_diag") &&
       pin->GetBoolean("rad_m1","implicit_fclip_diag")) {
     impl_fclip_diag = true;
@@ -1905,13 +1905,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               << " cell(s) of the 8 cube vertices (no skew cross term, seam foot values, "
               << "D_r,lat = 0 within " << cs_vtx_n + 1 << ")" << std::endl;
   }
-  // consrc-1011: the gas source of the coupled solve (rad_m1.hpp, NOTE-consrc.md).
-  // defaults-1012 (user sign-off of method-1012): DEFAULT conservative2 (with its
+  // the gas source of the coupled solve (rad_m1.hpp, NOTE-consrc.md).
+  // (user sign-off of): DEFAULT conservative2 (with its
   // implicit_cs2_hll = drag, implicit_cs2_shift = false) on a FRESH run with gas coupling
   // (hydro, coupling, gas_feedback); matched without it and on a restart whose file
-  // lacks the key (files since consrc-1011 echo it).  Explicit input overrides.
+  // lacks the key (files echo it).  Explicit input overrides.
   {
-    // cs-open-1018: the same default on the cubed sphere (the conservative sources are
+    // the same default on the cubed sphere (the conservative sources are
     // ported: cs blocks of the write-back, face-normal A^old / dA, m1bcs, the paired dA
     // exchange; cs-s4-1017 had matched there)
     const bool gsdef = !global_variable::restart_run && fl_on && coupling &&
@@ -1929,17 +1929,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       impl_gas_src_cons = true;
       impl_gas_src_full = true;
     } else if (gs.compare("conservative2") == 0) {
-      // consfix-1011: conservative + the theta split of the whole dA + the vimp
+      // conservative + the theta split of the whole dA + the vimp
       // prediction of the conservative velocity (rad_m1.hpp)
       impl_gas_src_cons = true;
       impl_gas_src_cs2 = true;
       cs2_dbg = pin->GetOrAddInteger("rad_m1","implicit_cs2_dbg",0);
-      // open-ot-1013 implicit_cs2_vimp: the vimp prediction of the conservative
+      // implicit_cs2_vimp: the vimp prediction of the conservative
       // write-back velocity (ImplicitCs2Vimp, (b) in rad_m1.hpp).  DEFAULT true (FIN3);
       // false (diagnostic, bitwise implicit_cs2_dbg = 2) drops it: rw_p10t1 gas order 2
       // but rw_p10t100 E 1.75 at l 16-32, so not adopted.
       cs2_vimp = pin->GetOrAddBoolean("rad_m1","implicit_cs2_vimp",true);
-      // open-ot-1013 implicit_cs2_vimp_npass: the prediction lags the neighbours' dA
+      // implicit_cs2_vimp_npass: the prediction lags the neighbours' dA
       // and the cross terms by one Picard pass, and the solves stop at 2 passes, so the
       // E rows' dv misses the write-back's by O(dt) relative (implicit_cs2_dbg bit 32:
       // 2.7e-3 / 1.4e-3 at rw_p10t1 l 1 / 2): a PER-STEP O(dt) term (rw_p10t1 hesdirk2 T
@@ -1956,12 +1956,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       // consfix2: the hydro's dA as F0's explicit tendency (ImplicitCs2Shift) is opt-in;
       // off, it stays in the solve's dA (clean order 2 on rw_p10t100 / rsw / rlat)
       cs2_shift = pin->GetOrAddBoolean("rad_m1","implicit_cs2_shift",false);
-      // cs2clip-1020 implicit_cs2_clip (read only when named): gas (default: the gas is
+      // implicit_cs2_clip (read only when named): gas (default: the gas is
       // charged with the realisability-limited cell flux, so the limiter's change of F --
       // up to |F| - cE in free-streaming cells -- is a momentum kick to the gas: ~100 km/s
       // in 1e-8 floor gas, v12lz accretor) | rad (the limit's change stays with the
       // radiation, as on the matched path)
-      // prod-1114 (user 11-12): implicit_cs2_wbsolve DEFAULT true (recorded); name false
+      // (user 11-12): implicit_cs2_wbsolve DEFAULT true (recorded); name false
       // for the 3 fixed-point passes of before
       cs2_wbs = pin->GetOrAddBoolean("rad_m1","implicit_cs2_wbsolve",true);
       if (pin->DoesParameterExist("rad_m1","implicit_cs2_clip")) {
@@ -1972,7 +1972,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
           ImplFatal("<rad_m1>/implicit_cs2_clip = '" + cm + "' is not a choice (gas | rad)");
         }
       }
-      // gsdrag-1021 implicit_cs2_dacap (read only when named; rad_m1.hpp)
+      // implicit_cs2_dacap (read only when named; rad_m1.hpp)
       if (pin->DoesParameterExist("rad_m1","implicit_cs2_dacap")) {
         cs2_cap = pin->GetReal("rad_m1","implicit_cs2_dacap");
         if (!(cs2_cap >= 0.0)) {
@@ -2041,7 +2041,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (!clean && (ibc_x1min == M1_IBC_OUTFLOW || ibc_x1max == M1_IBC_OUTFLOW)) {
     ImplFatal("<rad_m1>/implicit_bc_x1min|max = outflow needs scheme = clean");
   }
-  // bubbles-1012: the transverse faces (read only when named; auto = the old rule)
+  // the transverse faces (read only when named; auto = the old rule)
   {
     auto tbc = [&](const char *key, const BoundaryFace f) -> int {
       const bool per = (mbcs[static_cast<int>(f)] == BoundaryFlag::periodic);
@@ -2051,7 +2051,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       int r = -1;
       if (v.compare("reflect") == 0) {r = M1_IBC_REFLECT;}
       if (v.compare("marshak") == 0) {r = M1_IBC_MARSHAK;}
-      // acc3d-1017: zero-gradient outgoing flux, x2 faces only
+      // zero-gradient outgoing flux, x2 faces only
       if (v.compare("outflow") == 0 && (f == BoundaryFace::inner_x2 ||
                                         f == BoundaryFace::outer_x2)) {r = M1_IBC_OUTFLOW;}
       if (v.compare("flux") == 0 && (f == BoundaryFace::inner_x2 ||
@@ -2071,7 +2071,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ibc_x3max = tbc("implicit_bc_x3max", BoundaryFace::outer_x3);
   }
   iflux_x1min = pin->GetOrAddReal("rad_m1","implicit_flux_x1min",0.0);
-  // raycheap2-1109 (read only when named; test only): implicit_flux_x1min_mod_amp = A,
+  // (read only when named; test only): implicit_flux_x1min_mod_amp = A,
   // implicit_flux_x1min_mod_period = P > 0: the inner face flux F0 (1 + A sin(2 pi t/P)),
   // F0 = implicit_flux_x1min, set before each hesdirk2 stage solve at its time
   // (Time2FormStage: t_n + dt), so the forcing of a time-order test is time-consistent
@@ -2080,7 +2080,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     fmod_amp = pin->GetReal("rad_m1","implicit_flux_x1min_mod_amp");
     fmod_f0 = iflux_x1min;
   }
-  // raycheap2-1109 (read only when named; test only): implicit_flux_x1min_ramp_t0 = t0,
+  // (read only when named; test only): implicit_flux_x1min_ramp_t0 = t0,
   // implicit_flux_x1min_ramp_w = w > 0: the inner flux times 0.5 (1 + tanh((t - t0)/w)),
   // a smooth switch-on (no start-up discontinuity), also at the stage times; the value at
   // the start time is set here
@@ -2093,7 +2093,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       iflux_x1min = fmod_f0*0.5*(1.0 + std::tanh((t - fmod_rt0)/fmod_rw));
     }
   }
-  // hg262-drive-1113 (read only when named; absent = bitwise): the inner face flux from
+  // (read only when named; absent = bitwise): the inner face flux from
   // a (t, F or L) table (rad_m1.hpp ftab_on), set here at the start time and at the
   // stage times by the hooks above
   if (pin->DoesParameterExist("rad_m1","implicit_flux_x1min_table")) {
@@ -2126,7 +2126,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   iflux_x1max = pin->GetOrAddReal("rad_m1","implicit_flux_x1max",0.0);
   iebath_x1min = pin->GetOrAddReal("rad_m1","implicit_ebath_x1min",0.0);
   iebath_x1max = pin->GetOrAddReal("rad_m1","implicit_ebath_x1max",0.0);
-  if (pin->DoesParameterExist("rad_m1","athena_face_diss")) {   // linhao-prod-1104 col1d A7
+  if (pin->DoesParameterExist("rad_m1","athena_face_diss")) {   // col1d A7
     afd_on = pin->GetBoolean("rad_m1","athena_face_diss");
     if (afd_on) {
       afd_force = pin->GetOrAddBoolean("rad_m1","athena_face_diss_force",false);
@@ -2162,8 +2162,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // before 5c9e4432) the old value false is kept; files since then echo their value.
   impl_bc_advect = pin->GetOrAddBoolean("rad_m1","implicit_bc_advect",
                                         !global_variable::restart_run);
-  // h2order-1011 implicit_vimp_bc (ImplicitVimpBuild).  DEFAULT true since
-  // vimpbcdef-1011 where implicit_vimp is on (the only place it acts): a fresh run takes
+  // implicit_vimp_bc (ImplicitVimpBuild).  DEFAULT true since
+  // where implicit_vimp is on (the only place it acts): a fresh run takes
   // true, a restart whose file lacks the key keeps the old value false; the resolved
   // value is echoed (later restarts keep it); explicit input overrides.  Without
   // implicit_vimp the key is read only when named (default false, not echoed).
@@ -2219,13 +2219,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       }
     }
   }
-  // blendall-1009: which faces carry the per-face beam-vector coefficients
+  // which faces carry the per-face beam-vector coefficients
   blat_on = full && trans_on && impl_flux_all;
   bvec_x1 = full && impl_flux_all && !sph_geom;
   if (impl_flux_all && full && (impl_recon == M1_IRECON_PLMDC)) {
     ImplFatal("<rad_m1>/implicit_flux_faces = all takes implicit_recon = dc only");
   }
-  // cs-s4-1017 (stage S4): halfrange on the cubed sphere too, with vet_gd (VetGdHalfRange
+  // (stage S4): halfrange on the cubed sphere too, with vet_gd (VetGdHalfRange
   // about the cs axes, VetGdCsHrPrep, ImplicitLatFaceCoefCs)
   if (impl_beam_hr && (part_nblk > 1 || impl_recon == M1_IRECON_PLMDC)) {
     ImplFatal("<rad_m1>/implicit_flux_beam = halfrange needs one MeshBlock along x1 and "
@@ -2280,8 +2280,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // not made; the keys that name them have no effect there)
   if (!clean) {Kokkos::realloc(f0x1n, nmb, ncells3, ncells2, ncells1+1);}
   Kokkos::deep_copy(f0x1n, 0.0);
-  // rc18-1110: without the half-range beam the stored flux has no blend: inert (echoed)
-  // aphll-time-1110: also the berthon | blend AP-HLL faces (the lagged reduced flux of
+  // without the half-range beam the stored flux has no blend: inert (echoed)
+  // also the berthon | blend AP-HLL faces (the lagged reduced flux of
   // the face coefficients is then F_c/(c E_up), evolved by the face equation, instead of
   // the applied flux's own ratio, which has no F^n memory at w = 1: a per-STEP map)
   if (impl_hr_cmem && !impl_beam_hr && impl_flux == M1_IFLUX_CENTRAL) {
@@ -2295,8 +2295,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                 << "halfrange" << std::endl;
     }
   }
-  if (impl_hr_cmem) {   // rc18-1110: the applied face flux (F_c lives in f0x1)
-    // aphll-time-1110: implicit_vimp reads the APPLIED fluxes fax* (ImplicitVimpBuild)
+  if (impl_hr_cmem) {   // the applied face flux (F_c lives in f0x1)
+    // implicit_vimp reads the APPLIED fluxes fax* (ImplicitVimpBuild)
     // the conservative gas source (Z_f) and implicit_rad_inertia take f0x* = F_c as the
     // face's old flux: exact without gas momentum exchange (static / no feedback
     // tests); with feedback the face momentum budget is off by (1 - w)(F_c^n - F_a^n)
@@ -2313,18 +2313,18 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(fax1, nmb, ncells3, ncells2, ncells1+1);
     Kokkos::deep_copy(fax1, 0.0);
     impl_cm_fainit = pin->DoesParameterExist("rad_m1","implicit_hr_cmem_fainit") &&
-                     pin->GetBoolean("rad_m1","implicit_hr_cmem_fainit");   // vkdiag-1111
+                     pin->GetBoolean("rad_m1","implicit_hr_cmem_fainit");
     impl_cm_rst = pin->DoesParameterExist("rad_m1","implicit_hr_cmem_rst") &&
-                  pin->GetBoolean("rad_m1","implicit_hr_cmem_rst");   // vkdiag-1111
-    // vgdhr-1110 implicit_hr_cmem_gas_fa
+                  pin->GetBoolean("rad_m1","implicit_hr_cmem_rst");
+    // implicit_hr_cmem_gas_fa
     impl_cmgfa = pin->DoesParameterExist("rad_m1","implicit_hr_cmem_gas_fa") &&
                  pin->GetBoolean("rad_m1","implicit_hr_cmem_gas_fa");
-    if (impl_pf_fa && !impl_pf_zfc) {impl_cmgfa = true;}   // physflux-1111 mom = fa
+    if (impl_pf_fa && !impl_pf_zfc) {impl_cmgfa = true;}   // mom = fa
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> implicit_hr_cmem = true: separate central-branch face "
                 << "memory F_c (applied flux in fax*)" << std::endl;
     }
-    // cmemimpl-1112 implicit_hr_cmem_implicit (rad_m1.hpp)
+    // implicit_hr_cmem_implicit (rad_m1.hpp)
     impl_cmi = pin->DoesParameterExist("rad_m1","implicit_hr_cmem_implicit") &&
                pin->GetBoolean("rad_m1","implicit_hr_cmem_implicit");
     if (impl_cmi) {
@@ -2366,7 +2366,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(gcz1, nmb, ncells3, ncells2, ncells1+1);
     Kokkos::deep_copy(gcz1, 0.0);
   }
-  if ((impl_gas_src_cs2 || impl_rinr_solve) && !clean) {   // consfix-1011: dA face means in F0^n
+  if ((impl_gas_src_cs2 || impl_rinr_solve) && !clean) {   // dA face means in F0^n
     Kokkos::realloc(cs2f1, nmb, ncells3, ncells2, ncells1+1);
     Kokkos::deep_copy(cs2f1, 0.0);
     if (trans_on) {
@@ -2430,13 +2430,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     iw_muscl = niw;
     niw += M1_NIW_MUSCL;
   }
-  if (impl_hr_sfgd != 0) {vgd_thx = true;}   // unify-sc-gd-1012 (#4): J in vgd_hr
+  if (impl_hr_sfgd != 0) {vgd_thx = true;}   // J in vgd_hr
   iw_hsf = -1;
-  if (impl_hr_sf) {   // cbfix-1011
+  if (impl_hr_sf) {
     iw_hsf = niw;
     niw += M1_NIW_HSF;
   }
-  // kirch-1022 <rad_m1>/implicit_face_opac = arith (default: the cell mean of
+  // <rad_m1>/implicit_face_opac = arith (default: the cell mean of
   // M1FaceAvgX1, bitwise) | kirchhoff: every interior x1 face takes the Kirchhoff mean
   //   1/(rho kappa_T)_f = int_{T_L}^{T_R} T^3/(rho_f kappa_T(rho_f,T)) dT / int T^3 dT,
   // rho_f = sqrt(rho_L rho_R) (implicit_face_opac_ng Gauss points, default 8), so the
@@ -2456,7 +2456,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       ImplFatal("<rad_m1>/implicit_face_opac_ng must be in [2, 8]");
     }
   } else if (sfo.compare("harmonic") == 0) {
-    // harm-1022: distance-weighted harmonic mean of the cell rho kappa_T (= the
+    // distance-weighted harmonic mean of the cell rho kappa_T (= the
     // distance-weighted arithmetic mean of the diffusivity 1/(rho kappa_T)); no lookups
     iw_kir = niw;
     niw += 1;
@@ -2467,13 +2467,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   }
   iw_cs2 = -1;
-  // cs-open-1018: the conservative gas sources run on the cubed sphere (were refused
-  // since cs-port-1016): the write-back's conservative loop re-forms the cell F inside
+  // the conservative gas sources run on the cubed sphere (were refused
+  // before): the write-back's conservative loop re-forms the cell F inside
   // the loop (cs block), A^old / dA are face-normal (ImplicitCs2DeltaA cs correction),
   // the theta split reads m1bcs (a seam is an interior face) and the transverse dA
   // pair crosses a seam on the destination's face normals (ImplicitCsPairHalo).  Only
   // the opt-in implicit_cs2_shift (stage-start velocity shift) is not ported.
-  // cs-open-1018 <rad_m1>/implicit_am_cs (read only when named; default true on the cubed
+  // <rad_m1>/implicit_am_cs (read only when named; default true on the cubed
   // sphere when <hydro>/am_transport is on): the gas's zonal momentum takes the torque
   // that makes the radiation-gas exchange conserve L_z = sum V r x (m + F/(c chat)) to
   // round-off (ImplicitSolve, after the write-back)
@@ -2499,13 +2499,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_m1>/implicit_cs2_shift = true is not ported to the cubed sphere "
               "(cs-open-1018); use the default false");
   }
-  if (impl_gas_src_cs2 || impl_rinr_solve) {   // consfix-1011: A^old (3), dA (3)
+  if (impl_gas_src_cs2 || impl_rinr_solve) {   // A^old (3), dA (3)
     iw_cs2 = niw;
     niw += 9;   // + the per-axis mean face-equation weight om (implicit_cs2_hll = drag)
-    if (impl_gas_src_cs2 && cs2_cap > 0.0) {niw += 1;}   // gsdrag-1021: s (iw_cs2 + 9)
+    if (impl_gas_src_cs2 && cs2_cap > 0.0) {niw += 1;}   // s (iw_cs2 + 9)
   }
-  // facemmat-1112 implicit_face_mmat (rad_m1.hpp)
-  // defaults-1114 (USER 11-13 "make some defaults": the key set R136, HG and RSG all
+  // implicit_face_mmat (rad_m1.hpp)
+  // (USER 11-13 "make some defaults": the key set R136, HG and RSG all
   // name): DEFAULT true on the cubed sphere / spherical polar with multi-D implicit
   // transport and none of its excluded options (implicit_pos_transport = upwind,
   // athena_face_diss, implicit_hr_damp); false elsewhere (Cartesian) and with recipe
@@ -2516,7 +2516,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_face_mmat")) {
     impl_fmm = pin->GetBoolean("rad_m1","implicit_face_mmat");
   }
-  // radlz-1113 implicit_lz_form (rad_m1.hpp, AM_CONSERVING_CS_1112.md sect. 10)
+  // implicit_lz_form (rad_m1.hpp, AM_CONSERVING_CS_1112.md sect. 10)
   if (pin->DoesParameterExist("rad_m1","implicit_lz_form") &&
       pin->GetBoolean("rad_m1","implicit_lz_form")) {
     impl_lz = true;
@@ -2548,11 +2548,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(lz_d, 6);
     Kokkos::deep_copy(lz_d, 0.0);
   }
-  // lzphys-1113 implicit_lzx (rad_m1.hpp, LZPHYS_1113.md); it closes the solve's whole L_z
+  // implicit_lzx (rad_m1.hpp, LZPHYS_1113.md); it closes the solve's whole L_z
   // budget, so the implicit_am_cs deposit (a partial closure, after the write-back) is off
   // inert (message, no slot) on a Cartesian mesh and with the gas fixed: no gas +
   // radiation L_z budget to close there; a D6 key set stays usable on every gate deck
-  // defaults-1114 (USER 11-13): DEFAULT true where every prerequisite below holds (cs, or
+  // (USER 11-13): DEFAULT true where every prerequisite below holds (cs, or
   // spherical polar with periodic x3; coupling + gas_feedback; 3-D implicit transport;
   // implicit_gas_src conservative / conservative2; no implicit_hr_cmem, implicit_physflux
   // or implicit_lz_form); false elsewhere and with recipe none (no new FATAL, no message
@@ -2614,14 +2614,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     iw_lzx = niw;
     niw += 1;
   }
-  // fast2nd-1112 (rad_m1.hpp): halo exchange of the Zalesak R only when it can change
+  // (rad_m1.hpp): halo exchange of the Zalesak R only when it can change
   if (pin->DoesParameterExist("rad_m1","zalesak_halo_skip")) {
     zl_hskip = pin->GetBoolean("rad_m1","zalesak_halo_skip");
   }
   if (pin->DoesParameterExist("rad_m1","zalesak_local_rounds")) {
     zl_local = pin->GetInteger("rad_m1","zalesak_local_rounds");
   }
-  // defaults-1114 (USER 11-13): zalesak_cap_rounds DEFAULT 4 on the cubed sphere /
+  // (USER 11-13): zalesak_cap_rounds DEFAULT 4 on the cubed sphere /
   // spherical polar (inert without implicit_face_mmat); 0 on Cartesian and with recipe
   // none, as before.  Read only when named.
   if (!rnone14 && sph_geom) {zl_cap = 4;}
@@ -2641,7 +2641,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_fmm && pin->DoesParameterExist("rad_m1","implicit_face_mmat_rowsel")) {
     fmm_rowsel = pin->GetBoolean("rad_m1","implicit_face_mmat_rowsel");
   }
-  if (impl_fmm && fmm_rowsel) {   // fast2nd-1112 (rad_m1.hpp)
+  if (impl_fmm && fmm_rowsel) {   // (rad_m1.hpp)
     Kokkos::realloc(fmm_rf, nmb, ncells3, ncells2, ncells1);
     Kokkos::realloc(fmm_ns, nmb, ncells3, ncells2, ncells1);
     Kokkos::deep_copy(fmm_ns, 0);
@@ -2687,7 +2687,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(ecache, nmb, impl_nec, ncells3, ncells2, ncells1);
     Kokkos::deep_copy(ecache, -1.0);
   }
-  if (impl_cmi) {iw_cmi = niw; niw += 1;}   // cmemimpl-1112: the donor factor lam
+  if (impl_cmi) {iw_cmi = niw; niw += 1;}   // the donor factor lam
   MemArenaInit(pin, nmb, clean ? niw_clean : niw, ncells3, ncells2, ncells1);
   if (impl_thin_frz > 0.0 && !clean) {
     Kokkos::realloc(thin_frz, nmb, ncells3, ncells2, ncells1);
@@ -2727,7 +2727,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // (scheme = clean: the face work arrays ifw, ifw2, ifw3 are ImplicitSolve's; not made)
   if (!clean) {Kokkos::realloc(ifw, nmb, M1_NIFW, ncells3, ncells2, ncells1+1);}
   Kokkos::deep_copy(ifw, 0.0);
-  if (impl_pos_trans != 0 && sph_geom && pt_gam > 0.0) {   // postr-1031
+  if (impl_pos_trans != 0 && sph_geom && pt_gam > 0.0) {
     Kokkos::realloc(ptq1, nmb, ncells3, ncells2, ncells1+1);
     Kokkos::deep_copy(ptq1, 0.0);
   }
@@ -2766,9 +2766,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         Kokkos::deep_copy(thx3, 0.0);
       }
     }
-    // hrup-1009: the outer Marshak q of a half-range solve with ray data = h+_1 of the
+    // the outer Marshak q of a half-range solve with ray data = h+_1 of the
     // top cell (the vacuum sends nothing back), per column, in vcol_q
-    // hrq-1020 (read only when named; default cell = bitwise): implicit_hr_q = col
+    // (read only when named; default cell = bitwise): implicit_hr_q = col
     // keeps the outer Marshak q of the closure's own surface estimate (vet_col_surface_q /
     // vet_gd_replace: H at the FACE over J of the top cell) instead of the top cell's
     // CENTRE ratio h+_1 = H+_N/J_N.  At tau_cell ~ 1 the centre value lies an optical
@@ -2792,7 +2792,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       Kokkos::deep_copy(vcol_q, marshak_q);
     }
     if (blat_on && !clean) {
-      // thinsw-1010: implicit_thin_switch also keeps the lagged face flux DG there
+      // implicit_thin_switch also keeps the lagged face flux DG there
       const int nfw = (impl_thsw != M1_THSW_NONE) ? M1_NIFW : 3;
       Kokkos::realloc(ifw2, nmb, nfw, ncells3, ncells2+1, ncells1);
       Kokkos::deep_copy(ifw2, 0.0);
@@ -2802,7 +2802,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       }
     }
     if (impl_tlim == M1_TLIM_LPR && !blat_on && !clean) {
-      // m1lpr-1019: the sp rows (M1SphTransRow, the face/cell kernels' blend terms) read
+      // the sp rows (M1SphTransRow, the face/cell kernels' blend terms) read
       // the limited face theta thx2/thx3 through their blend flag; with no blend its
       // weights stay identically zero (AL = HCL = HCR = 0), so only theta changes
       Kokkos::realloc(ifw2, nmb, 3, ncells3, ncells2+1, ncells1);
@@ -2833,8 +2833,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (!clean) {Kokkos::realloc(thw, nmb, M1_NHALO_T, ncells3, ncells2, ncells1);}
     Kokkos::realloc(thw_c, nmb, M1_NHALO_T, 1, 1, 1);
     pbval_th = new MeshBoundaryValuesCC(pmy_pack, pin, false);
-    pbval_th->exch_depth = M1HaloDepthEnv(pmy_pack, pin);   // implhalo-1031
-    impl_hdepth = pbval_th->exch_depth;   // share-1104 G5: also the halo_mpi cell lists
+    pbval_th->exch_depth = M1HaloDepthEnv(pmy_pack, pin);
+    impl_hdepth = pbval_th->exch_depth;   // G5: also the halo_mpi cell lists
     if (!clean) {pbval_th->InitializeBuffers(M1_NHALO_T);}   // (clean: with thw)
     // COMPONENT ROLES of the scratch halos (SetVectorPairs).  Slots 2,3 hold F1 and KT,
     // SCALARS under the polar flip and the seam transform; the real tangential pairs
@@ -2861,7 +2861,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::deep_copy(thq, 0.0);
     Kokkos::realloc(thq_c, nmb, M1_NHALO_Q, 1, 1, 1);
     pbval_tq = new MeshBoundaryValuesCC(pmy_pack, pin, false);
-    pbval_tq->exch_depth = M1HaloDepthEnv(pmy_pack, pin);   // implhalo-1031
+    pbval_tq->exch_depth = M1HaloDepthEnv(pmy_pack, pin);
     if (!clean) {pbval_tq->InitializeBuffers(M1_NHALO_Q);}   // (clean: with thq)
     pbval_tq->SetVectorPairs(M1_NHALO_Q, {});   // E', G0, F1, KT: all scalars
     // the deep interior of the scratch arrays is neither read by a send nor written by a
@@ -2871,7 +2871,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     // skip it.  SMR/AMR is already a fatal above.
     halo_shell = !(pmy_pack->pmesh->multilevel || pmy_pack->pmesh->use_cubed_sphere ||
                    pmy_pack->pmesh->use_polar_boundary);
-    // implhalo-1031 (test switch, env M1_CS_HALO_SHELL=1): the shell copy on the cubed
+    // (test switch, env M1_CS_HALO_SHELL=1): the shell copy on the cubed
     // sphere too (the seam resample and the corner fill read the outermost ng active
     // cells only, which the shell holds; gate bitwise before use)
     {
@@ -2895,7 +2895,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       Kokkos::deep_copy(krw, 0.0);
       Kokkos::realloc(krw_c, nmb, 1, 1, 1, 1);
       pbval_kr = new MeshBoundaryValuesCC(pmy_pack, pin, false);
-      pbval_kr->exch_depth = M1HaloDepthEnv(pmy_pack, pin);   // implhalo-1031
+      pbval_kr->exch_depth = M1HaloDepthEnv(pmy_pack, pin);
     pbval_kr->InitializeBuffers(1);
       pbval_kr->SetVectorPairs(1, {});   // one scalar Krylov vector
       // implicit_vimp: the per-pass exchange of the Jacobian rows and dv^k (same
@@ -2906,20 +2906,20 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         Kokkos::deep_copy(vmw, 0.0);
         Kokkos::realloc(vmw_c, nmb, M1_NVIMP_X, 1, 1, 1);
         pbval_vm = new MeshBoundaryValuesCC(pmy_pack, pin, false);
-        pbval_vm->exch_depth = M1HaloDepthEnv(pmy_pack, pin);   // implhalo-1031
+        pbval_vm->exch_depth = M1HaloDepthEnv(pmy_pack, pin);
     pbval_vm->InitializeBuffers(M1_NVIMP_X);
         // (DV2, DV3) is the tangential pair; the nine per-direction Jacobian rows P are
         // treated as scalars (their proper curvilinear treatment is a later stage)
         pbval_vm->SetVectorPairs(M1_NVIMP_X, {{M1_IV_DV + 1, M1_IV_DV + 2}});
       }
-      // cs-open-1018: the (scalar, face-normal pair) exchange of the conservative
+      // the (scalar, face-normal pair) exchange of the conservative
       // sources' dA on the cubed sphere (ImplicitCsPairHalo)
       if (cs_geom && !clean) {
         Kokkos::realloc(d3w, nmb, 3, ncells3, ncells2, ncells1);
         Kokkos::deep_copy(d3w, 0.0);
         Kokkos::realloc(d3w_c, nmb, 3, 1, 1, 1);
         pbval_d3 = new MeshBoundaryValuesCC(pmy_pack, pin, false);
-        pbval_d3->exch_depth = M1HaloDepthEnv(pmy_pack, pin);   // implhalo-1031
+        pbval_d3->exch_depth = M1HaloDepthEnv(pmy_pack, pin);
         pbval_d3->InitializeBuffers(3);
         pbval_d3->SetVectorPairs(3, {{1, 2}});
         pbval_d3->cs_noresample = true;
@@ -3033,10 +3033,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               << " flux_max=" << iflux_x1max << std::endl;
   }
   if (vet_sc) {VetInit(pin);}
-  ImplBeamInit(pin);   // littests-1011 (rad_m1_vet.cpp)
+  ImplBeamInit(pin);   // (rad_m1_vet.cpp)
   Time2Init(pin);
   MRInit(pin);         // implicit_mr_every (rad_m1_mr.cpp)
-  // accel-1009 (memory): u1 is used only by the explicit stage copy, hesdirk2 and the
+  // (memory): u1 is used only by the explicit stage copy, hesdirk2 and the
   // multi-rate step; a backward-Euler implicit run without multi-rate frees it
   if (transport >= M1_TRANSPORT_IMPLICIT_X1 && time_scheme == M1_TIME_BE &&
       mr_every <= 1) {
@@ -3195,13 +3195,13 @@ void RadiationM1::ImplicitPartitionInit() {
   }
 }
 
-// defaults-1031: the depth of the implicit scratch exchanges on the cubed sphere,
+// the depth of the implicit scratch exchanges on the cubed sphere,
 // <rad_m1>/implicit_halo_depth (default 2; 0 or >= ng = all ng layers, the old
 // behaviour), env M1_HALO_DEPTH overrides.  The implicit kernels read 2 ghost layers
 // (the vimp enthalpy stencil +-2; poisoned-ghost gate M1_POISON_GHOST: NaN beyond depth
 // 2 leaves the outputs identical, beyond depth 1 does not), so depth 2 sends the same
 // values that are read with 2/3 of the bytes (RSG 2-node loop -2.5 %, bitwise).
-// share-1104 G5 (USER 11-04): also on the spherical-polar mesh (wedge and full sphere:
+// G5 (USER 11-04): also on the spherical-polar mesh (wedge and full sphere:
 // the pole partner's rows are reversed within the strip, so a depth-2 strip fills the
 // 2 ghost rows next to the pole; poisoned-ghost gate incl. the polar rows) when x1 is
 // one MeshBlock (the gate poisons x2/x3 ghosts only; every sp production is x1-unsplit);
@@ -3263,7 +3263,7 @@ void RadiationM1::ImplicitHaloCopy(DvceArray5D<Real> &sc, int nq, int c0, bool t
   const bool pack_ = topack;
   auto iw_ = iw;
   auto sc_ = sc;
-  // implhalo-1031 test switches (env): M1_HCOPY_CELL=1 the one-thread-per-cell copy for
+  // test switches (env): M1_HCOPY_CELL=1 the one-thread-per-cell copy for
   // every exchange (the same copies); M1_POISON_GHOST=1 (gate only, NOT a run mode): on
   // the way back, every ghost cell more than ONE cell outside the active range in x2 or
   // x3 is set to NaN (if the outputs stay identical, no implicit kernel reads those
@@ -3284,7 +3284,7 @@ void RadiationM1::ImplicitHaloCopy(DvceArray5D<Real> &sc, int nq, int c0, bool t
     // same shell copy with ONE thread per cell (coalesced along i) instead of one per
     // row -- the row loop runs ~13k threads with strided rows on the 3-D box.
 #if defined(KOKKOS_ENABLE_HIP)
-    // d6fast6-1113 (HIP): one 64-lane vector per (m,n,k,j) row, 4 rows per team, i.e.
+    // (HIP): one 64-lane vector per (m,n,k,j) row, 4 rows per team, i.e.
     // the same cells, each copied by the same assignment, with the index division paid
     // per row instead of per cell (rocprofv3, HG small cs deck: m1_impl_hcpyf 0.40 s,
     // 7466 launches, ~2.6 TB/s).  Bitwise (plain copies).  Env M1_HCOPY_TEAM=0 restores
@@ -3413,7 +3413,7 @@ void RadiationM1::ImplicitHaloExchange(int nq, int c0) {
   ImplicitHaloCopy(*pa, nq, c0, false);
   // STAGE CS2 (C3): (N2, N3) of the work array are FACE-NORMAL components (as A and V)
   // and cross a seam re-expressed on the destination's face normals (cs_perm_pairs,
-  // CubedS1Init; cs-s4-1017, was the signed axis permutation); it is renormalised in the
+  // CubedS1Init; was the signed axis permutation); it is renormalised in the
   // ghost cells all the same (a no-op for the cs closures: n = 0 or rhat),
   // so that a later change of the seam map cannot hand the closure a non-unit n.  A zero
   // n (eddington; vet_col about r_hat has n = r_hat) is left alone.
@@ -3532,7 +3532,7 @@ void RadiationM1::ImplicitHaloDirect(int nq, int c0) {
 //! ghost value is multiplied by zero and never read in anger.
 
 void RadiationM1::ImplicitKrylovHalo(int comp) {
-  const int kir_ = iw_kir;   // kirch-1022 (-1 = off)
+  const int kir_ = iw_kir;   // (-1 = off)
   auto cx1f_k = pmy_pack->pcoord->xx1f; (void) cx1f_k;
   ImplicitHaloExchange(1, comp);
 }
@@ -3601,7 +3601,7 @@ void RadiationM1::EventTotals(Real *v) {
 void RadiationM1::ImplicitReport() {
   if (transport < M1_TRANSPORT_IMPLICIT_X1) return;
   if ((impl_lin_tolcap > 0.0 || impl_lin_sktrue > 0.0) &&
-      global_variable::my_rank == 0) {   // lintol-1109
+      global_variable::my_rank == 0) {
     std::cout << "<rad_m1> implicit_lin_tolcap=" << impl_lin_tolcap
               << " tolcap_last=" << impl_lin_tclast << " capped passes (rank 0)="
               << impl_tclast_n << " stage=" << impl_lin_tcstage << " skip_true="
@@ -3656,7 +3656,7 @@ void RadiationM1::ImplicitReport() {
 #endif
   // the Picard iteration count is MPI_MAX-reduced every step (see ImplicitSolve), so
   // every rank holds the same three numbers and no reduction is needed here
-  // hgkmom-1110 implicit_am_cs_kecap: the capped am_cs deposits
+  // implicit_am_cs_kecap: the capped am_cs deposits
   if (impl_am_kecap > 0.0 && amkc_d.extent_int(0) == 4) {
     auto ha = Kokkos::create_mirror_view_and_copy(HostMemSpace(), amkc_d);
     Real av[4] = {ha(0), ha(1), ha(2), ha(3)};
@@ -3688,7 +3688,7 @@ void RadiationM1::ImplicitReport() {
                 << std::endl;
     }
   }
-  // amvec-1111 implicit_am_cs_deposit = patch: the patch / column bookkeeping
+  // implicit_am_cs_deposit = patch: the patch / column bookkeeping
   if (impl_am_dep == 1 && amvp_d.extent_int(0) == 8) {
     auto hp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), amvp_d);
     Real pv[8];
@@ -3707,7 +3707,7 @@ void RadiationM1::ImplicitReport() {
                 << " (code units x volume, all attempts)" << std::endl;
     }
   }
-  // hgfix-1110 implicit_clip_kecap: the capped clip cell-solves
+  // implicit_clip_kecap: the capped clip cell-solves
   if (impl_clip_kecap > 0.0 && clkc_d.extent_int(0) == 3) {
     auto hc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), clkc_d);
     Real cv[3] = {hc(0), hc(1), hc(2)};
@@ -3723,7 +3723,7 @@ void RadiationM1::ImplicitReport() {
                 << std::endl;
     }
   }
-  // r136e-1107 implicit_wb_vcap: the capped cell-solves and the energy returned to E
+  // implicit_wb_vcap: the capped cell-solves and the energy returned to E
   if (impl_wb_vcap > 0.0 && vcap_cnt_d.extent_int(0) == 4) {
     auto hv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vcap_cnt_d);
     Real vv[3] = {hv(0), hv(1), hv(3)};
@@ -3753,7 +3753,7 @@ void RadiationM1::ImplicitReport() {
     }
     std::cout << std::endl;
   }
-  if (impl_fclip_diag && fcd_cnt_d.extent_int(0) == 20) {   // facebound-1112
+  if (impl_fclip_diag && fcd_cnt_d.extent_int(0) == 20) {
     auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fcd_cnt_d);
     Real fv[20];
     for (int q = 0; q < 20; ++q) {fv[q] = hf(q);}
@@ -3796,7 +3796,7 @@ void RadiationM1::ImplicitReport() {
                           "pass_setup", "krylov", "pass_post", "solve_end", "hyd_c2p",
                           "m1_bvals", "mg_x3"};
     std::cout << "<rad_m1> timers(s):";
-    // mgx3fast-1030: mg_x3 = the x3 line sweeps (out of krylov) under implicit_timers_mg_x3
+    // mg_x3 = the x3 line sweeps (out of krylov) under implicit_timers_mg_x3
     const int ntm = (mg_x3line && tmr_x3) ? 12 : 11;
     for (int q = 0; q < ntm; ++q) {std::cout << " " << nm[q] << "=" << tmr_acc[q];}
     std::cout << std::endl;
@@ -3816,7 +3816,7 @@ void RadiationM1::ImplicitReport() {
               << ((impl_tolr_n > 0.0) ? impl_tolr_sum/impl_tolr_n : 0.0) << std::endl;
   }
   if (impl_frlog) {
-    // picres-1017 implicit_final_resid_log: the per-run sums of ImplicitFinalResid
+    // implicit_final_resid_log: the per-run sums of ImplicitFinalResid
     const Real *S = impl_fr_sum;
     std::cout << "<rad_m1> implicit_final_resid_log: solves=" << S[0]
               << " max rc=" << S[14] << " max rT=" << S[15]
@@ -3831,7 +3831,7 @@ void RadiationM1::ImplicitReport() {
               << " s, snapshot " << S[10] << " s" << std::endl;
   }
   if (impl_frs_on || impl_ce_guard > 0.0 || impl_ce_nofl) {
-    // picstop-1017: the guarded contraction estimate and the residual stop
+    // the guarded contraction estimate and the residual stop
     const Real *P = impl_frs_sum;
     std::cout << "<rad_m1> picstop: implicit_final_resid_stop=" << impl_frs << " (rel "
               << impl_frs_rel << " x tol_eff) checks=" << P[0] << " failed+continued="
@@ -3878,7 +3878,7 @@ void RadiationM1::ImplicitReport() {
               << " sum(|F|/(cE) - 1)=" << pos_cnt[M1_POS_FCLIPM]
               << " | hydro EOS floors energy created=" << hfl << std::endl;
   }
-  if (impl_fmm) {   // facemmat-1112 (all ranks, all passes)
+  if (impl_fmm) {   // (all ranks, all passes)
     std::cout << "<rad_m1> implicit_face_mmat: checked passes=" << fmm_pass
               << " limited passes=" << fmm_lpass << " limited cells=" << fmm_cells
               << " limited x1 faces=" << fmm_faces << " max rounds=" << fmm_rmax
@@ -3942,7 +3942,7 @@ void RadiationM1::ImplicitReport() {
               << "): final 7-point linear "
               << "residual (max|r|/max|b|) mean=" << lmean << " max=" << impl_linmax
               << std::endl;
-    // vgdspeed-1009: say which test stopped the solves.  The max|r|/max|b| above is
+    // say which test stopped the solves.  The max|r|/max|b| above is
     // compared with implicit_lin_tol only when implicit_lres_test is on (default off for
     // the fixed closures: eddington, vet_sc, tau / vet_col); the inner BiCGStab stops on
     // implicit_lin_cnorm (per-cell |r|/(s E)) when > 0, else on |r|/max|b| < lin_tol,
@@ -4023,7 +4023,7 @@ void RadiationM1::ImplicitReport() {
               << " of " << cstan_np << " transverse assemblies (rank 0); positivity "
               << "fallbacks (vet_col_lat) " << vlat_nfall << std::endl;
   }
-  if (vlat_posfix_lag) {   // csmetric-1112
+  if (vlat_posfix_lag) {
     std::cout << "<rad_m1> vet_col_lat_posfix = lag: triggers moved to the lagged "
               << "lateral form " << vlat_nlag << ", dropped after a second trigger "
               << vlat_nfall
@@ -4037,23 +4037,23 @@ void RadiationM1::ImplicitReport() {
     }
     std::cout << std::endl;
   }
-  if (vimp_lag_local) {   // hgdt-1113
+  if (vimp_lag_local) {
     std::cout << "<rad_m1> implicit_vimp_lag_local: lag-path triggers with the vimp kick"
               << " dropped locally (not for the whole solve)=" << vimp_lag_local_n
               << std::endl;
   }
-  if (t2_dtr_pl) {   // hgdt-1113
+  if (t2_dtr_pl) {
     std::cout << "<rad_m1> time2_dtr_poslim: BE-type solves with written-back eint <= 0"
               << " all covered by implicit_pos_gas (no dt_retry cut)=" << t2_dtr_pl_n
               << std::endl;
   }
-  if (impl_pos_trans != 0 && pt_cnt.extent_int(0) >= 2) {   // postr-1031
+  if (impl_pos_trans != 0 && pt_cnt.extent_int(0) >= 2) {
     auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), pt_cnt);
     std::cout << "<rad_m1> implicit_pos_transport = upwind (rank 0):"
               << " lagged positive x1 off-diagonals=" << h(1)
               << " memory-upwinded x1 face passes=" << h(0) << std::endl;
   }
-  if (impl_cmi && cmi_cnt.extent_int(0) >= 3) {   // cmemimpl-1112
+  if (impl_cmi && cmi_cnt.extent_int(0) >= 3) {
     auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), cmi_cnt);
     std::cout << "<rad_m1> implicit_hr_cmem_implicit (rank 0): cell-passes with an "
               << "explicit memory outflow=" << h(1) << " limited (lam < 1)=" << h(0)
@@ -4077,7 +4077,7 @@ void RadiationM1::ImplicitReport() {
             << flr_ng << std::endl;
 }
 //----------------------------------------------------------------------------------------
-//! vkdiag-1111 implicit_hr_cmem_rst: fax1..3 to / from cell-sized restart slabs
+//! implicit_hr_cmem_rst: fax1..3 to / from cell-sized restart slabs
 //! (rad_m1.hpp).  Slab 2d: face d indices 0..n-1; slab 2d+1: face n in the first plane.
 
 void RadiationM1::FaxRstPack(DvceArray5D<Real> out, int nmb) {

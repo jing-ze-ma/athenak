@@ -34,7 +34,7 @@
 #endif
 
 namespace radm1 {
-// csacc-1031 <rad_m1>/vet_gd_twin_srw (defined in rad_m1_vetgd.cpp)
+// <rad_m1>/vet_gd_twin_srw (defined in rad_m1_vetgd.cpp)
 extern bool g_vra_adv;   // vet_rotate_advance (rad_m1_vetgd.cpp)
 //----------------------------------------------------------------------------------------
 // constructor, initializes data structures and parameters
@@ -75,7 +75,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     std::exit(EXIT_FAILURE);
   }
   }
-  // ---- <rad_m1>/scheme = clean (clean-1114): the clean stage solve (rad_m1_clean.cpp),
+  // ---- <rad_m1>/scheme = clean: the clean stage solve (rad_m1_clean.cpp),
   // the default of a fresh implicit run (v20.4).  The production values below are the
   // defaults of a fresh clean run; a restart file without a key keeps its old default
   const bool nw = !global_variable::restart_run;
@@ -266,7 +266,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // (with the split energy flux, where the rays are not opt-in)
     cln_split = true;
     cln_consist = pin->GetOrAddBoolean("rad_m1","clean_consistency", cs ? vg : !sp || gd);
-    // spdb-1119 clean_gd_face_fuse (read only when named; default true): sp sc rays, both
+    // clean_gd_face_fuse (read only when named; default true): sp sc rays, both
     // lateral faces and the r face of a cell in one pass over the directions (cln_gd_fs,
     // bitwise the three kernels cln_gd_lat x2 + cln_gd_rf)
     if (pin->DoesParameterExist("rad_m1","clean_gd_face_fuse")) {
@@ -676,7 +676,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (cs_ && transport != M1_TRANSPORT_IMPLICIT) {
       why += " mesh/use_cubed_sphere with transport != implicit";
     }
-    // fullsph-1027 S1: the FULL sphere (mesh/use_polar_boundary, ix2_bc = ox2_bc = polar)
+    // S1: the FULL sphere (mesh/use_polar_boundary, ix2_bc = ox2_bc = polar)
     // and the theta stretch (mesh/use_grid_stretch_theta, e.g. mesh/theta_plateau) are
     // allowed for transport = implicit on sp.  Every implicit kernel takes a polar face as
     // a PHYSICAL face (flag != block, periodic) and the pole face has area 0
@@ -941,7 +941,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       << "be positive" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // <rad_m1>/opac_abs_rho_max (accretor-rhd-1008; read only when named, default 0 = off,
+  // <rad_m1>/opac_abs_rho_max (read only when named, default 0 = off,
   // bitwise inert): an ABSORPTION MASK of the table opacity for tenuous gas.  Cells with a
   // CODE density below it get kappa_P = kappa_E = 0 (no emission, no absorption) and the
   // transport opacity <rad_m1>/opac_abs_kappa_s [cm^2/g] (electron scattering, default
@@ -983,7 +983,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   opac_zero = (kappa_p == 0.0 && kappa_e == 0.0 && kappa_f == 0.0 && kappa_s == 0.0 &&
                opacity_type != M1_OPAC_USER && opacity_type != M1_OPAC_TABLE);
-  // vet_scatter (vet-scatter-1006; read only when named, default off = bitwise): ONE
+  // vet_scatter (read only when named, default off = bitwise): ONE
   // switch for electron scattering across the module.
   //  (i) the opacity split.  opacity = table: os = kappa_e, of = kappa_a = kappa_R -
   //      kappa_e (Ma+2026 sect. 2.2.4, guarded so that kappa_a >= vet_kappa_floor), with
@@ -997,7 +997,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   //      (rad_m1.hpp), form vet_scatter_form = ma (Jiang 2021 eq. 6) | absorption,
   //      J next to B* vet_scatter_j = relaxed (default) | current (absorption only;
   //      ma + current FATALs below).
-  // defaults-1009 (user 10-09): on a FRESH run with a VET closure that carries ray data
+  // (user 10-09): on a FRESH run with a VET closure that carries ray data
   // (closure = vet_sc, or vet_col with vet_gd = true), opacity = table and a tabulated
   // general EOS (which supplies kappa_e from its Saha x_e), vet_scatter defaults ON with
   // vet_scatter_kappa_e = eos; everything else (M1 / eddington / tau / vet_col without
@@ -1065,7 +1065,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     std::string km = "const";
     if (opacity_type == M1_OPAC_TABLE) {
-      // defaults-1009: eos where a tabulated general EOS supplies x_e (fresh runs)
+      // eos where a tabulated general EOS supplies x_e (fresh runs)
       km = pin->GetOrAddString("rad_m1","vet_scatter_kappa_e",
                                (fresh && gen_eos_tab) ? "eos" : "const");
       if (km.compare("const") == 0) {
@@ -1110,7 +1110,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       << "supported: the module couples to ONE fluid" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // cs-open-1018: <mhd> on the cubed sphere too (EmagBuild takes the C2P's orthonormal
+  // <mhd> on the cubed sphere too (EmagBuild takes the C2P's orthonormal
   // |B|^2 there; the momentum layout is the hydro one: covariant on the panel basis)
   const std::string fblk = have_mhd ? "mhd" : "hydro";
   fl_on = have_hydro;
@@ -1254,7 +1254,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   } else {
     arad = pin->GetOrAddReal("rad_m1","arad",0.0);
   }
-  // fastfloor-1109: floor-gas cap (rad_m1.hpp; read only when named)
+  // floor-gas cap (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1","floorcap_rho")) {
     fcap_rho = pin->GetReal("rad_m1","floorcap_rho");
     if (pin->DoesParameterExist("rad_m1","floorcap_v")) {
@@ -1372,7 +1372,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
   }
-  // force_reference_work_pay (fref-split-cons-1006; read only when named): exact
+  // force_reference_work_pay (read only when named): exact
   // (default) = with split and time_scheme = be, E pays the reference work the gas got
   // in the hydro stages (fref_wacc); post = the old v' dt rho a_ref
   fref_pay_post = false;
@@ -1387,7 +1387,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
   }
-  // accbook-1021 time2_fref_wacc (default true, USER 10-22; false = the old payment):
+  // time2_fref_wacc (default true, USER 10-22; false = the old payment):
   // the exact payment above also for the backward-Euler steps of a hesdirk2 run, which
   // otherwise pay v' dt rho a_ref (B deck, first step: +76 energy units created, rE jump)
   fref_wacc_t2 = pin->GetOrAddBoolean("rad_m1", "time2_fref_wacc", true);
@@ -1482,9 +1482,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // 1-D branch) keeps Levermore's
     eddington = false;
     vet_sc = true;
-    VetRotInit(pin);   // bubbles-1012: the vet_gd rotation keys and defaults
-    RotAvgParse(pin);  // rotavg-1012: vet_rotate_avg (shared key)
-    // blendall-1009: vet_source_noesrc for vet_sc too (rad_m1_vet.cpp).  unify-sc-gd-1012
+    VetRotInit(pin);   // the vet_gd rotation keys and defaults
+    RotAvgParse(pin);  // vet_rotate_avg (shared key)
+    // vet_source_noesrc for vet_sc too (rad_m1_vet.cpp).
     // (#11): DEFAULT true on a fresh run, as on vet_col / vet_gd (the VET source of a
     // backward-Euler solve reads the physical E^n, not E^n + dt (chat/c) esrc); a restart
     // whose file lacks the key keeps false (echoed).  Bitwise wherever esrc = 0.
@@ -1504,7 +1504,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     vcol_nc = pin->GetOrAddInteger("rad_m1","vet_col_ncore",8);
     vcol_np = pin->GetOrAddInteger("rad_m1","vet_col_nsub",1);
     vcol_nmu = pin->GetOrAddInteger("rad_m1","vet_col_nmu",4);
-    // unify-sc-gd-1012 (#13): the canonical key vet_every, vet_col_every its alias
+    // the canonical key vet_every, vet_col_every its alias
     vcol_every = pin->GetOrAddInteger("rad_m1",
                                       M1KeyName(pin, "vet_every", {"vet_col_every"}), 1);
     // vet_col_fk_min (m1-sp-order2b): the lower clamp of f_K.  Sp default 0 (a restart
@@ -1547,9 +1547,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     vcol_qmin = pin->GetOrAddReal("rad_m1","vet_col_surface_qmin",1.0e-3);
     vcol_qmax = pin->GetOrAddReal("rad_m1","vet_col_surface_qmax",1.0);
     {
-      // unify-sc-gd-1012 (#3): the canonical key vet_source (vet_col_source its alias),
+      // the canonical key vet_source (vet_col_source its alias),
       // read by vet_sc too (VetInit)
-      // vetsrc-1020 (USER 10-20): DEFAULT relaxed_esc under the new default set
+      // (USER 10-20): DEFAULT relaxed_esc under the new default set
       // (utils/recipe.hpp: a fresh run, or <job>/recipe = prod1019); a restart whose input
       // names neither key, or recipe = none, keeps the old default relaxed
       const std::string vk = M1KeyName(pin, "vet_source", {"vet_col_source"});
@@ -1565,7 +1565,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vs.compare("relaxed") == 0) {
       vcol_srelax = true;
     } else if (vs.compare("relaxed_esc") == 0) {
-      // vetsrc-1020 (opt-in): relaxed with the cell's photon escape (rad_m1_vetsrc.hpp)
+      // (opt-in): relaxed with the cell's photon escape (rad_m1_vetsrc.hpp)
       vcol_srelax = true;
       vcol_sesc = true;
     } else if (vs.compare("gas") == 0) {
@@ -1580,11 +1580,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","vet_source_noesrc")) {
       vsrc_noes = pin->GetBoolean("rad_m1","vet_source_noesrc");
     }
-    // vet_bc_diff (gdface-1011; the vet_sc key, rad_m1_vet.cpp): the inner diffusion
+    // vet_bc_diff (the vet_sc key, rad_m1_vet.cpp): the inner diffusion
     // intensity of the formal solutions at the FACE (face) or from the first CELL (cell):
     // vet_gd / vet_col_lat start S + mu(-dS/dtau) with S of the face, 1.5 S_a - 0.5 S_b
     // (the S their half-cell carry starts from), vet_col's core rays E + (S_f - S_0)
-    // (vet_col_order2 keeps its own face start).  DEFAULT face (gdface-1011); a restart
+    // (vet_col_order2 keeps its own face start).  DEFAULT face; a restart
     // whose file lacks the key keeps cell; cell reproduces older runs bitwise.
     {
       const char *bdd = global_variable::restart_run ? "cell" : "face";
@@ -1600,14 +1600,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
-    // vet_seg (segfix-1011): mean (bitwise older runs) integrates the SC segment
+    // vet_seg: mean (bitwise older runs) integrates the SC segment
     // upwind point -> cell centre with chi = (chi_u + chi_0)/2 and S linear in tau; split
     // integrates its two parts at the cell face with chi_u, chi_0 and a face S limited
     // toward S_u at an opaque -> thin interface (rad_m1_vetseg.hpp); emit applies that
     // limiter only where S_u > S_0; jump (coreL-1012) adds the opaque -> thin jump
-    // term.  DEFAULT emit since prodfinal-1011, jump since defaults-1012 (fresh runs); a
+    // term.  DEFAULT emit, jump (fresh runs); a
     // restart whose file lacks the key keeps mean (bitwise older runs); files since
-    // prodfinal-1011 echo their value.
+    // echo their value.
     {
       const char *sgd = global_variable::restart_run ? "mean" : "jump";
       std::string sg = pin->GetOrAddString("rad_m1","vet_seg",sgd);
@@ -1650,7 +1650,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","vet_col_lat")) {
       vlat_on = pin->GetBoolean("rad_m1","vet_col_lat");
     }
-    // vgd-latuni-1017: Athena++ x2rat / x3rat (not AthenaK keys) noted for VetLatInit
+    // Athena++ x2rat / x3rat (not AthenaK keys) noted for VetLatInit
     for (const char *rk : {"x2rat", "x3rat"}) {
       if (pin->DoesParameterExist("mesh", rk) && pin->GetReal("mesh", rk) != 1.0) {
         vlat_rat_keys += std::string(" mesh/") + rk + " = " + pin->GetString("mesh", rk);
@@ -1661,9 +1661,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_on = pin->GetBoolean("rad_m1","vet_gd");
       if (vgd_on) {vlat_on = true;}
     }
-    // geodef-1117 (USER 11-17): the DEFAULT set of a FRESH start that names no set key,
+    // (USER 11-17): the DEFAULT set of a FRESH start that names no set key,
     // recorded for restarts; a restart whose input names none keeps HEALPix nside 3.
-    // geodef5-1117 (USER: <= 120 rays, rotation as in production; RAYSET2): the geodesic
+    // (USER: <= 120 rays, rotation as in production; RAYSET2): the geodesic
     // set vet_gd_geo = 3 (92 directions), averaged over 4 rotated sets (geodef7 below):
     // the accuracy of the fixed geo 4 at 92 rays.  A 2-D axisymmetric mesh with a phi
     // extent below 2 pi, which must rotate the set onto itself (the icosahedral set has
@@ -1707,7 +1707,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                    ", stagger (default on 2-D axisymmetric sp: exact phi walls)"
                  : std::string("<rad_m1>/vet_gd_geo = 3 (default)")));
     }
-    // geodef7-1117 (USER: "rotate with averaging"): a FRESH vet_gd run whose set rotates
+    // (USER: "rotate with averaging"): a FRESH vet_gd run whose set rotates
     // (vet_gd_rotate_dt unnamed, i.e. auto, or > 0; or vet_gd_rotate_every > 0) and that
     // names no vet_rotate_avg averages 4 rotated sets (on the time clock of scheme =
     // clean with vet_gd_rotate_xfade = true: the live ring); never one rotating set alone
@@ -1738,7 +1738,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_ls")) {
       vgd_ls = pin->GetInteger("rad_m1","vet_gd_ls");
     }
-    // geo-1031: <rad_m1>/vet_gd_geo = n: the geodesic set (vgd_ls = -n; needs
+    // <rad_m1>/vet_gd_geo = n: the geodesic set (vgd_ls = -n; needs
     // vet_gd_gl_nmu = 0 and no vet_gd_ls)
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_geo")) {
       const int ng_ = pin->GetInteger("rad_m1","vet_gd_geo");
@@ -1747,8 +1747,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rotate_every")) {
       vgd_rot = pin->GetInteger("rad_m1","vet_gd_rotate_every");
     }
-    // vgdrot2-1012: the rotation on a physical-time clock (absent or 0 = the cycle clock of
-    // vet_gd_rotate_every, bitwise).  defaults-1012: vet_gd_rotate_dt = <dt_rot> | auto.
+    // the rotation on a physical-time clock (absent or 0 = the cycle clock of
+    // vet_gd_rotate_every, bitwise).  vet_gd_rotate_dt = <dt_rot> | auto.
     // auto = 20 x the FIRST step's dt (the dt of the first Mesh::NewTimeStep, after its
     // global min, so the same on every rank), fixed for the run and recorded in the
     // parameters as the number (VetGdAlignDt), so a restart keeps it.  DEFAULT auto on a
@@ -1756,10 +1756,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // named = explicit input, kept) and has no vet_gd_beam / vet_gd_async (which exclude a
     // rotation); a restart whose file lacks both keys keeps the old default (no rotation).
     // The sub-keys are read (and echoed) with the physical clock: vet_gd_rotate_t0 (0),
-    // _align (true), _stretch (0.02 on a fresh run since defaults-1012, 0 on a restart
-    // whose file lacks it), _slope (correct on a fresh run since defaults2-1012, keep on a
+    // _align (true), _stretch (0.02 on a fresh run, 0 on a restart
+    // whose file lacks it), _slope (correct on a fresh run, keep on a
     // restart whose file lacks it).
-    VetRotInit(pin);   // bubbles-1012: shared with vet_sc (rad_m1_vetgd.cpp)
+    VetRotInit(pin);   // shared with vet_sc (rad_m1_vetgd.cpp)
     // clean staggered sp and cs, fresh, with a rotating set on the time clock: the set
     // time-averaged by default, vet_rotate_avg = 4 with the cross-fade (clean_rot_ring
     // live), recorded so that a restart keeps them; a restart file without the keys keeps
@@ -1779,14 +1779,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         !pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade")) {
       pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_xfade",true);
     }
-    RotAvgParse(pin);   // rotavg-1012 (also after vet_sc's VetRotInit)
+    RotAvgParse(pin);   // (also after vet_sc's VetRotInit)
     // scheme = clean: no slope correction of a rotating set (the closure of CleanFvSets),
     // set before the first VetGdRotStep (a restart on a block boundary acts at once).
     // clean_rot_ring = jump: a block's first step is backward Euler from the first step
     // on (a restart on a block boundary too)
     if (clean && vgd_on && VgdRotOn()) vgd_rot_slope = 0;
     if (cln_ring == 2) vgd_rot_slope = 2;
-    // vgdxf-1112: vet_gd_rotate_xfade (read only when named; rad_m1.hpp)
+    // vet_gd_rotate_xfade (read only when named; rad_m1.hpp)
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade")) {
       // (a fixed set has nothing to cross-fade: the key is inert there)
       vgd_xf = pin->GetBoolean("rad_m1","vet_gd_rotate_xfade") && VgdRotOn();
@@ -1800,7 +1800,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       if (vgd_xf_lean && pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade_pen")) {
         vgd_xf_lpen = pin->GetBoolean("rad_m1","vet_gd_rotate_xfade_pen");
       }
-      // xffuse-1113: the fused two-set sweep (read only when named; default true)
+      // the fused two-set sweep (read only when named; default true)
       if (vgd_xf) {
         vgd_xff = true;
         if (pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade_fuse")) {
@@ -1828,7 +1828,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         vra_k <= M1_RA_NF) {
       cln_ring = 1;
     }
-    // vgdbath-1011: the inward rays of the top shell start from the incident bath
+    // the inward rays of the top shell start from the incident bath
     // implicit_ebath_x1max of a MARSHAK outer x1 (vet_sc's vet_bc_bath, the same key and
     // default: true on a fresh run; a restart whose file lacks the key keeps the vacuum
     // top).  With implicit_ebath_x1max = 0 (production) the sweep is unchanged, bitwise.
@@ -1836,10 +1836,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_tbath = pin->GetOrAddBoolean("rad_m1", "vet_bc_bath",
                                        !global_variable::restart_run);
     }
-    // sptests-1011: vet_gd_inner = diff | emit, vet_gd_beam* (read only when named).
-    // unify-sc-gd-1012 (#2): vet_bc_inner / vet_bc_reflect, shared with vet_sc
+    // vet_gd_inner = diff | emit, vet_gd_beam* (read only when named).
+    // vet_bc_inner / vet_bc_reflect, shared with vet_sc
     // (VetBcInit); vet_gd_inner is read as the alias of vet_bc_inner
-    // unify-sc-gd-1012 (#6): vet_interp = auto | log | corner, shared with vet_sc (lin
+    // vet_interp = auto | log | corner, shared with vet_sc (lin
     // is vet_sc's old form only).  vet_gd: log = its old bilinear in ln chi, ln S;
     // corner = one segment per stencil corner (VetGdSweep); auto = corner where the
     // stencil's chi contrast exceeds kVetCornerRatio, log elsewhere (as vet_sc).  DEFAULT
@@ -1860,7 +1860,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
-    // open-od-1013: vet_path = cells | none, shared with vet_sc (VetInit): the step of a
+    // vet_path = cells | none, shared with vet_sc (VetInit): the step of a
     // ray that jumps more than one lateral cell subdivided at the theta-row / phi-layer
     // nodes where its cells have a chi (or non-thin S) contrast > kVetCornerRatio
     // (VetGdSweep).  OPT-IN: DEFAULT none (fresh and restart; bitwise 281dd686), cells
@@ -1885,7 +1885,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_allow_clamp")) {
       vgd_allow_clamp = pin->GetBoolean("rad_m1","vet_gd_allow_clamp");
     }
-    // accsp-1102 (read only when named): the full sphere's band depth uses sin of this
+    // (read only when named): the full sphere's band depth uses sin of this
     // colatitude (deg) instead of sin(0) (rad_m1_vetgd_sph2.inc); default 30
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_colat")) {
       vgd_bcolat = pin->GetReal("rad_m1","vet_gd_band_colat");
@@ -1896,13 +1896,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
-    // accsp-1102 (read only when named): the polar ring buffers of the full sphere (exact
+    // (read only when named): the polar ring buffers of the full sphere (exact
     // whole-ring reads in the polar zone; default off: ~3 s/cycle more on the 4-H200
     // accretor with 8 rows, and the T6a pole test is unchanged by them) and their zone
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_pole_ring")) {
       vgd_rbkey = pin->GetBoolean("rad_m1","vet_gd_pole_ring");
     }
-    // accpolar-1103 (read only when named, default false = bitwise): the band keyed on
+    // (read only when named, default false = bitwise): the band keyed on
     // the global cell + the cell-window clamp (layout-independent sweep; sph2.inc)
     // prod1103d default (USER 11-03): vet_gd_band_global = true on a FRESH spherical-polar
     // FULL-SPHERE start with vet_gd on (polar boundaries at both poles, x3 periodic over
@@ -1950,17 +1950,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_compact")) {
       vgd_hcomp = pin->GetInteger("rad_m1","vet_gd_halo_compact");
     }
-    // raycheap-1109 vet_gd_cs_list_pad (read only when named, default false): the cs read
+    // vet_gd_cs_list_pad (read only when named, default false): the cs read
     // mask strides every receive entry by n*nx1 rounded up to 16 values, so the compact
     // lists are always made on the packed-word path (n*nx1 % 16 != 0, e.g. geo2 on
     // nx1 548, took the byte path: ~4x slower).  The same lists (bitwise)
-    // prod-1111: DEFAULT true (bitwise, same lists); name false for prod-1110
+    // DEFAULT true (bitwise, same lists); name false for
     vgd_cspad = vgd_on;
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_cs_list_pad")) {
       vgd_cspad = pin->GetBoolean("rad_m1","vet_gd_cs_list_pad");
     }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_cs_xgroups")) {
-      // xchg-1021: speed only (bitwise any value); 1 = the plain per-shell exchange
+      // speed only (bitwise any value); 1 = the plain per-shell exchange
       vgd_csxg = std::max(1, pin->GetInteger("rad_m1","vet_gd_cs_xgroups"));
     }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_twin") &&
@@ -1969,7 +1969,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "build" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // mem2-1014 vet_gd_band_ring (read only when named; default true where it applies,
+    // vet_gd_band_ring (read only when named; default true where it applies,
     // bitwise; VetGdInit): the band intensities lent per shell from a few wide slabs
     // vet_gd_raw (read only when named): the clean sc rays' band on spherical polar
     // keyed on the global cell (2226d2203); false = the exact-list band of production
@@ -1995,7 +1995,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     vgd_ring_poison = (std::getenv("VGD_RING_POISON") != nullptr) &&
                       (std::atoi(std::getenv("VGD_RING_POISON")) != 0);
-    // unify-sc-gd-1012 (#11): the same fresh default for a plain vet_col (no vet_gd), as
+    // the same fresh default for a plain vet_col (no vet_gd), as
     // vet_sc.  vet_gd without the twin keeps false: there the pair is needed together
     // (NOTE-2026-10-09-viper-sp-seam-mass-leak: noesrc alone exposes the gd ray effect)
     if (!vgd_on && fresh && !pin->DoesParameterExist("rad_m1","vet_source_noesrc")) {
@@ -2007,7 +2007,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_wall_interp")) {
       vgd_wint = pin->GetBoolean("rad_m1","vet_gd_wall_interp");
     }
-    // wallbug-1027 vet_gd_theta_wall (read only when named): periodic (default, the old
+    // vet_gd_theta_wall (read only when named): periodic (default, the old
     // theta periodicity of the sweep) | mirror (specular theta walls) | vacuum (no
     // incoming intensity at a physical theta wall) | extrap (zero gradient); vetgd.cpp
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_theta_wall")) {
@@ -2049,7 +2049,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rebuild_every")) {
       vgd_rbe = std::max(0, pin->GetInteger("rad_m1","vet_gd_rebuild_every"));
     }
-    // hrsplit-1110 vet_gd_inner_reflect = diff | zeroflux (read only when named)
+    // vet_gd_inner_reflect = diff | zeroflux (read only when named)
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_inner_reflect")) {
       const std::string ir = pin->GetString("rad_m1","vet_gd_inner_reflect");
       if (ir == "zeroflux") {
@@ -2066,7 +2066,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_list_mb")) {
       vgd_hl_mb = std::max(0, pin->GetInteger("rad_m1","vet_gd_halo_list_mb"));
     }
-    // vgdfuse-1010 (read only when named): vet_gd_overlap = G (default 0 = off; bitwise)
+    // (read only when named): vet_gd_overlap = G (default 0 = off; bitwise)
     // and its memory cap vet_gd_overlap_mb (default 1024), vet_gd_fuse_shells = H
     // (default 1; H > 1 is a lagged exchange, NOT bitwise); rad_m1_vetgd.cpp VetGdSweep
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_overlap")) {
@@ -2087,7 +2087,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_hx_mode = 2;
     }
     vgd_hx_on = (vgd_hx_mode > 0);
-    // vgdrot-1011 vet_gd_halo_ipc (default below); env VGD_IPC
+    // vet_gd_halo_ipc (default below); env VGD_IPC
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_overlap")) {
       vgd_gbo = pin->GetBoolean("rad_m1","vet_gd_halo_overlap");
     }
@@ -2114,7 +2114,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (std::getenv("VGD_IPC_LEAN") != nullptr) {
       vgd_ipc_lean = (std::atoi(std::getenv("VGD_IPC_LEAN")) != 0);
     }
-    // spdb-1119 vet_gd_halo_ipc_fuse (read only when named; default true; CUDA lean IPC):
+    // vet_gd_halo_ipc_fuse (read only when named; default true; CUDA lean IPC):
     // an exchange's pack, flags, wait and scatter in one kernel (bitwise the three)
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_ipc_fuse")) {
       vgd_ipc_fz = pin->GetBoolean("rad_m1","vet_gd_halo_ipc_fuse");
@@ -2125,10 +2125,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_pipe")) {
       vgd_hpipe = pin->GetBoolean("rad_m1","vet_gd_halo_pipe");
     }
-    // prod-1110: vet_gd_body_global DEFAULT true (bitwise); name false for prod-1109
+    // vet_gd_body_global DEFAULT true (bitwise); name false for
     vgd_bglob = vgd_on;
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_body_global")) {
-      vgd_bglob = pin->GetBoolean("rad_m1","vet_gd_body_global");   // speedup-1109
+      vgd_bglob = pin->GetBoolean("rad_m1","vet_gd_body_global");
     }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_iter")) {
       vgd_iter = std::max(1, pin->GetInteger("rad_m1","vet_gd_iter"));
@@ -2139,7 +2139,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_replace")) {
       vgd_replace = pin->GetBoolean("rad_m1","vet_gd_replace");
     }
-    // defaults-1114 (USER 11-13 "make some defaults", the R136/HG/RSG key set): the
+    // (USER 11-13 "make some defaults", the R136/HG/RSG key set): the
     // full tensor is the DEFAULT on the cubed sphere too (vgd_cstan; sp already had
     // vgd_tan = true); recipe none keeps the old cs default false.  Name false for D_rr
     // only.
@@ -2147,10 +2147,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         recipe::GetMode(pin) != recipe::Mode::none) {vgd_cstan = true;}
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_tangential")) {
       vgd_tan = pin->GetBoolean("rad_m1","vet_gd_tangential");
-      // cs-tan-1106: the tangential anisotropy on the skew cs faces
+      // the tangential anisotropy on the skew cs faces
       if (pmy_pack->pmesh->use_cubed_sphere) {vgd_cstan = vgd_tan;}
     }
-    // cs-vetgd-1017 (stage S3): on the cubed sphere the default is false (D_rr only)
+    // (stage S3): on the cubed sphere the default is false (D_rr only)
     if (vgd_on && pmy_pack->pmesh->use_cubed_sphere) {vgd_tan = false;}
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_nside")) {
       vgd_nside = pin->GetInteger("rad_m1","vet_gd_nside");
@@ -2174,7 +2174,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       // scheme = clean: its rays sweep from the first shell (no depth cut), decided here
       // so that every build, also one before the first solve (CleanInit), uses it
       if (clean) vlat_taucut = std::numeric_limits<Real>::max();
-      // unify-sc-gd-1012: vet_col_lat_cut_thin (VetLatCsFinish).  DEFAULT 1 on a fresh
+      // vet_col_lat_cut_thin (VetLatCsFinish).  DEFAULT 1 on a fresh
       // run; a restart whose file lacks the key keeps 0 (the depth cut alone, bitwise)
       vlat_cut_thin = pin->GetOrAddReal("rad_m1","vet_col_lat_cut_thin",
                                         global_variable::restart_run ? 0.0 : 1.0);
@@ -2199,7 +2199,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
           std::exit(EXIT_FAILURE);
         }
       }
-      // csmetric-1112 vet_col_lat_posfix = drop (default, bitwise) | lag (read only when
+      // vet_col_lat_posfix = drop (default, bitwise) | lag (read only when
       // named): what the positivity trigger does to the lateral D_r,lat / Q operator
       // terms (rad_m1.hpp vlat_posfix_lag)
       if (pin->DoesParameterExist("rad_m1","vet_col_lat_posfix")) {
@@ -2213,7 +2213,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
           std::exit(EXIT_FAILURE);
         }
       }
-      // cs-s4-1017 (stage S4, USER 10-18): on the cubed sphere D_r,lat is the Cartesian
+      // (stage S4, USER 10-18): on the cubed sphere D_r,lat is the Cartesian
       // vector v (VetGdCsMoments) in the cs forms M1CsLat0 / M1CsLatF (VetLatOpCs /
       // VetLatStencilAddCs): the default is the sp one (operator)
     }
@@ -2305,7 +2305,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
   Kokkos::realloc(u0, nmb, M1_NVAR, ncells3, ncells2, ncells1);
   Kokkos::realloc(u1, nmb, M1_NVAR, ncells3, ncells2, ncells1);
-  // accel-1009 (memory): the face fluxes are the explicit stage's (CalculateFluxes,
+  // (memory): the face fluxes are the explicit stage's (CalculateFluxes,
   // RKUpdate, flux correction); the implicit task list never adds them
   {const bool expl = (transport < M1_TRANSPORT_IMPLICIT_X1);
   const int f3 = expl ? ncells3 : 1, f2 = expl ? ncells2 : 1, f1 = expl ? ncells1 : 1;
@@ -2386,7 +2386,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       pin_rcut_ = pin;
     }
   }
-  RavInit(pin);     // ringavg-1029 <rad_m1>/polar_ring_avg (rad_m1_ringavg.cpp)
+  RavInit(pin);     // <rad_m1>/polar_ring_avg (rad_m1_ringavg.cpp)
 
   if (sph_geom) {SphericalS1Check(pin);}
   if (cs_geom) {
@@ -2396,7 +2396,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
 
   // (5) boundary buffers
   pbval_u = new MeshBoundaryValuesCC(ppack, pin, false);
-  // m1blockend-1103: <mesh>/cs_seam_blockend = extend also on the radiation moments
+  // <mesh>/cs_seam_blockend = extend also on the radiation moments
   // (E, F; the quadratic along-seam resample of bvals_cc.cpp): the shared second pass of
   // RecvAndUnpackCC, clamped to the PANEL at an interior block end (default clamp, bitwise)
   pbval_u->cs_blockend_ext_ = CsSeamBlockendExtend(ppack, pin);
@@ -2404,7 +2404,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // (F2, F3) is the tangential pair (what the default (IVY, IVZ) rule gives by luck);
   // E and F1 (radial) are scalars.  Stated explicitly, see SetVectorPairs.
   pbval_u->SetVectorPairs(M1_NVAR, {{M1_F2, M1_F3}});
-  if (cs_geom) {CubedVecCheck(pin);}   // cs-s4-1017: test only, read when named
+  if (cs_geom) {CubedVecCheck(pin);}   // test only, read when named
 
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1>: c=" << c_light << " chat/c=" << chat_over_c
@@ -2483,7 +2483,7 @@ void RadiationM1::SetX1maxBathColumns(const DvceArray3D<Real> &eb) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::SetX2FaceFlux
-//! \brief acc3d-1017: the imposed x2-face fluxes (m,k,i) of implicit_bc_x2min|max = flux
+//! \brief the imposed x2-face fluxes (m,k,i) of implicit_bc_x2min|max = flux
 
 void RadiationM1::SetX2FaceFlux(const DvceArray3D<Real> &flo, const DvceArray3D<Real> &fhi) {
   ifx2_lo = flo;
@@ -2497,7 +2497,7 @@ void RadiationM1::SetX2FaceFlux(const DvceArray3D<Real> &flo, const DvceArray3D<
 //! reference work the gas receives in the hydro stages (rad_m1.hpp, fref_wacc)
 
 bool RadiationM1::FrefWaccOn() const {
-  // accbook-1021 time2_fref_wacc: also the backward-Euler steps of a hesdirk2 run (no
+  // time2_fref_wacc: also the backward-Euler steps of a hesdirk2 run (no
   // valid slope: the first step, a redo; not a helper solve, not multi-rate / csplit)
   const bool t2be = fref_wacc_t2 && (time_scheme == M1_TIME_HESDIRK2) &&
                     (!t2_ok || FrefWaccStage()) && !t2_inprobe && (csplit == 0);
@@ -2553,7 +2553,7 @@ int RadiationM1::RssMode() const {
 }
 
 int RadiationM1::RssRstNch(int mode) const {
-  // rstbit-1107 <rad_m1>/rst_state_ext (mode + 16): also the other opacity components
+  // <rad_m1>/rst_state_ext (mode + 16): also the other opacity components
   // and, with the tau closure, the tensor's lateral slots (both are read before the first
   // rebuild of a step: time2_k1_stiff reads opac P/E at the stage formation)
   if (mode >= 16) {
@@ -2568,7 +2568,7 @@ int RadiationM1::RssRstNch(int mode) const {
 }
 
 void RadiationM1::RssSlot(int mode, int n, DvceArray5D<Real> *&a, int &c) {
-  if (mode >= 16) {   // rstbit-1107: the base slots, then opac (all but T), then tau_ten 4..
+  if (mode >= 16) {   // the base slots, then opac (all but T), then tau_ten 4..
     const int b = mode - 16, nb = RssRstNch(b), nop = opac.extent_int(1) - 1;
     if (n < nb) {RssSlot(b, n, a, c); return;}
     const int k = n - nb;
@@ -2613,7 +2613,7 @@ void RadiationM1::RssRstPack(DvceArray5D<Real> &dst, int nmb, int mode, int m0) 
 
 void RadiationM1::RssPrime(bool restart) {
   if (rss_stage_mode >= 16) {
-    // rstbit-1107: the extended record; the tensor slots only into the same closure
+    // the extended record; the tensor slots only into the same closure
     const int mode = rss_stage_mode, b = mode - 16, nb = RssRstNch(b);
     const bool tens = (b == 2 && tau_closure) || (b == 5 && RssMode() == 5) ||
                       ((b == 3 || b == 4) && vet_sc && vet_cell.extent(0) > 0 &&
@@ -2682,7 +2682,7 @@ void RadiationM1::RssPrime(bool restart) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetBcInit
-//! \brief unify-sc-gd-1012 (#2): the x1 boundary intensity of the formal solutions, ONE
+//! \brief the x1 boundary intensity of the formal solutions, ONE
 //! rule for vet_sc and vet_gd.
 //!   vet_bc_inner = auto | diff | emit (alias vet_gd_inner on vet_gd), the rays entering
 //!     at a MARSHAK or FLUX inner x1 face: diff = the diffusion intensity of the bottom
@@ -2772,7 +2772,7 @@ void RadiationM1::VetBcInit(ParameterInput *pin, const bool gd) {
 
 //----------------------------------------------------------------------------------------
 //! \fn bool RadiationM1::VetBcEmit
-//! \brief unify-sc-gd-1012 (#2): vet_bc_inner resolves to emit at the current inner x1
+//! \brief vet_bc_inner resolves to emit at the current inner x1
 //! face (emit: a Marshak or flux face; auto: a Marshak face)
 
 bool RadiationM1::VetBcEmit() const {
@@ -2785,10 +2785,10 @@ bool RadiationM1::VetBcEmit() const {
 }
 
 RadiationM1::~RadiationM1() {
-  if (vgd_tab_state == 1) {vgd_tabf.wait();}   // vgdrot-1011: the table prefetch
+  if (vgd_tab_state == 1) {vgd_tabf.wait();}   // the table prefetch
   if (vgd_tab_state == 3) {vgd_tex.fence();}
 #if defined(KOKKOS_ENABLE_CUDA)
-  if (vgd_ipc_state == 1) {     // vgdrot-1011 vet_gd_halo_ipc
+  if (vgd_ipc_state == 1) {     // vet_gd_halo_ipc
     (void)cudaDeviceSynchronize();
     for (void *q : vgd_ipc_open) {if (q != nullptr) {(void)cudaIpcCloseMemHandle(q);}}
     (void)cudaFree(vgd_ipc_rbuf);
@@ -2797,7 +2797,7 @@ RadiationM1::~RadiationM1() {
   }
 #endif
 #if defined(KOKKOS_ENABLE_HIP)
-  if (vgd_ipc_state == 1) {     // d6fast5-1112: the HIP port
+  if (vgd_ipc_state == 1) {     // the HIP port
     (void)hipDeviceSynchronize();
     for (void *q : vgd_ipc_open) {if (q != nullptr) {(void)hipIpcCloseMemHandle(q);}}
     (void)hipFree(vgd_ipc_rbuf);
@@ -2821,7 +2821,7 @@ RadiationM1::~RadiationM1() {
   if (pbval_vl != nullptr) {delete pbval_vl;}
   if (pbval_ea != nullptr) {delete pbval_ea;}
   if (pbval_vs != nullptr) {delete pbval_vs;}
-  if (pbval_hr != nullptr) {delete pbval_hr;}   // cs-s4-1017
+  if (pbval_hr != nullptr) {delete pbval_hr;}
   if (pbval_gd != nullptr) {delete pbval_gd;}
 }
 
@@ -2880,11 +2880,11 @@ int RadiationM1::SetSubsteps(Real dt_mesh) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::RotAvgParse
-//! \brief rotavg-1012: <rad_m1>/vet_rotate_avg (+ _weight), after the rotation keys of
+//! \brief <rad_m1>/vet_rotate_avg (+ _weight), after the rotation keys of
 //! the closure (vet_gd: in the vet_col block; vet_sc: in its closure branch)
 
 void RadiationM1::RotAvgParse(ParameterInput *pin) {
-  // rotavg-1012: vet_rotate_avg = K (read only when named; absent or < 2 = off, bitwise;
+  // vet_rotate_avg = K (read only when named; absent or < 2 = off, bitwise;
   // a restart whose file lacks the key keeps the old behaviour): the closure averaged
   // over the last K rotated direction sets (rad_m1_rotavg.cpp).  The key is shared by
   // every rotating closure; vet_gd: needs vet_gd_rotate_dt or _every (inert otherwise)
@@ -2922,7 +2922,7 @@ void RadiationM1::RotAvgParse(ParameterInput *pin) {
                 << "last " << vra_k << " rotated sets" << std::endl;
     }
   }
-  // raycorr-1108: vet_rotate_avg_ema = N (default 128 + change_form step for a fresh run
+  // vet_rotate_avg_ema = N (default 128 + change_form step for a fresh run
   // whose direction set rotates, recorded; else read only when named; 0 = off; see
   // rad_m1.hpp): the exponential moving average over the rotated sets (one offset slot)
   const bool nw = !global_variable::restart_run;
@@ -2930,7 +2930,7 @@ void RadiationM1::RotAvgParse(ParameterInput *pin) {
   if (erot || pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema")) {
     vra_ema_n = pin->GetOrAddReal("rad_m1","vet_rotate_avg_ema",128.0);
   }
-  // rotwb-1120: vet_rotate_avg_ema_wb acts on the EMA ring only (no silent no-op)
+  // vet_rotate_avg_ema_wb acts on the EMA ring only (no silent no-op)
   if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_wb") && vra_ema_n < 1.0) {
     std::cout << "### FATAL ERROR <rad_m1>/vet_rotate_avg_ema_wb needs "
               << "vet_rotate_avg_ema >= 1" << std::endl;
@@ -2962,7 +2962,7 @@ void RadiationM1::RotAvgParse(ParameterInput *pin) {
     }
     if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_dema")) {
       vra_ema_dema = pin->GetBoolean("rad_m1","vet_rotate_avg_ema_dema");
-      if (vra_ema_dema) {vra_k = 4;}   // raycheap-1109: slot 2 = e2, slot 3 the Delta
+      if (vra_ema_dema) {vra_k = 4;}   // slot 2 = e2, slot 3 the Delta
     }
     if (pin->DoesParameterExist("rad_m1","vet_rotate_avg_ema_diag")) {
       vra_ema_diag = pin->GetInteger("rad_m1","vet_rotate_avg_ema_diag");

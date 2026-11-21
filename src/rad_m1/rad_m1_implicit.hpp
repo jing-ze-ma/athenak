@@ -55,7 +55,7 @@ constexpr char kM1OnePassRstMagic[8] = {'M', '1', 'O', 'N', 'E', 'P', '0', '1'};
 // implicit_mr_every > 1 or vet_sc_every > 1 (rad_m1_mr.cpp): the multi-rate window and
 // tensor-cadence state, behind the one-pass header: 10 Reals, no slabs
 constexpr char kM1MRRstMagic[8] = {'M', '1', 'M', 'R', 'W', 'I', 'N', '1'};
-// rstabe-1109: the hesdirk2 time2_auto_be back-off state (int32 len, int32 left), written
+// the hesdirk2 time2_auto_be back-off state (int32 len, int32 left), written
 // only when a skip run is active (len > 0 or left > 0), behind the multi-rate header; a
 // file without it restarts in stage mode, as before (and stays readable by older builds)
 constexpr char kM1AutoBeRstMagic[8] = {'M', '1', 'A', 'U', 'T', 'O', 'B', 'E'};
@@ -77,24 +77,24 @@ constexpr char kM1RssRstMagic[8] = {'M', '1', 'R', 'S', 'S', 'I', 'G', '1'};
 // only when vet_gd_async is on with a pending build; a file without it restarts with a
 // synchronous first build (D of the restart cycle unlagged: not bitwise).
 constexpr char kM1VgdRstMagic[8] = {'M', '1', 'V', 'G', 'D', 'A', 'S', '1'};
-// <rad_m1>/vet_rotate_avg (rotavg-rst-1012): the averaging history (the ring of offsets,
+// <rad_m1>/vet_rotate_avg: the averaging history (the ring of offsets,
 // the pending Delta and the scalars), header behind the vet_gd_async one: int64 x
 // RadiationM1::M1_RA_RST_NH (RotAvgRstHdr); its nslab slabs are the LAST of each
 // MeshBlock record.  Written only with a complete history; a file without it restarts
 // re-measuring the history at the first build (not bitwise).
-// <rad_m1>/implicit_gas_src = conservative(2) with hesdirk2 (rotavg-rst-1012): the stored
+// <rad_m1>/implicit_gas_src = conservative(2) with hesdirk2: the stored
 // cell-F slope csk1 of the write-back's F^old increment and the first-solve flag, header
 // behind the vet_gd_async one: int32 have = 1, nch (3 or 0), csk1_ok, 0; its nch slabs
 // follow the vet_gd_async ones.  Written once a conservative solve has run; a file
 // without it restarts with the cold-start F^old (gcs_first) and the face/E increments
 // (not bitwise).
 constexpr char kM1CskRstMagic[8] = {'M', '1', 'C', 'S', 'K', '1', 'S', '1'};
-// vkdiag-1111 implicit_hr_cmem_rst: the applied face fluxes fax* (RadiationM1::FaxRst*)
+// implicit_hr_cmem_rst: the applied face fluxes fax* (RadiationM1::FaxRst*)
 constexpr char kM1FaxRstMagic[8] = {'M', '1', 'F', 'A', 'X', 'R', 'S', '1'};
 constexpr char kM1RaRstMagic[8] = {'M', '1', 'R', 'O', 'T', 'A', 'V', '1'};
-// rstbit-1112 time2_stage_local_be: the carried stage-2 drop of old files (not read)
+// time2_stage_local_be: the carried stage-2 drop of old files (not read)
 constexpr char kM1ThcRstMagic[8] = {'M', '1', 'T', 'H', 'C', 'R', 'S', '1'};
-// t9rst-1113 vet_gd_rotate_xfade: the cross-fade state (vgd_xf_d + its block/time
+// vet_gd_rotate_xfade: the cross-fade state (vgd_xf_d + its block/time
 // scalars, RadiationM1::XfdRst*), behind the thc slabs.  A file without it restarts
 // the cross-fade cold (not bitwise inside a rotation block)
 constexpr char kM1XfdRstMagic[8] = {'M', '1', 'X', 'F', 'D', 'R', 'S', '1'};
@@ -161,7 +161,7 @@ constexpr int M1_OD_NONE     = 2;  // drop them: P is taken DIAGONAL in the grid
 // which is super-luminal wherever rho kappa is tiny (the optically thin top of the 2-D
 // He slab, where |F_2|/(c E) saturates at the post-solve clip of 1).
 constexpr int M1_TLIM_NONE = 0;  // no limiter; the arithmetic of phase D, bit for bit.
-constexpr int M1_TLIM_LPR  = 2;  // m1lpr-1019: realizability bound max(kt, |G|/(fmax E)), tapered by min(1, kt dx)
+constexpr int M1_TLIM_LPR  = 2;  // realizability bound max(kt, |G|/(fmax E)), tapered by min(1, kt dx)
 constexpr int M1_TLIM_LP   = 1;  // add a lagged "limiter opacity" klim_f = |G_f|/(phi_f
                                  // E_f) to the face transport opacity, with G_f the face
                                  // pressure divergence the flux kernel already forms and
@@ -178,11 +178,11 @@ constexpr int M1_IBC_FLUX     = 1;   // imposed flux, F_f = implicit_flux_x1min/
 constexpr int M1_IBC_REFLECT  = 2;   // F_f = 0
 constexpr int M1_IBC_PERIODIC = 3;   // cyclic tridiagonal (Sherman-Morrison)
 constexpr int M1_IBC_EFIX     = 4;   // Dirichlet: the boundary CELL keeps the E it has
-// acc3d-1017: transverse (x2) OUTFLOW face, read only when named: the face carries the
+// transverse (x2) OUTFLOW face, read only when named: the face carries the
 // edge cell's own outgoing x2 flux (zero gradient of F, outflow only; lagged in the Picard
 // pass), F_f = max(+-F2_cell, 0); never the default (auto stays reflect)
 constexpr int M1_IBC_OUTFLOW  = 5;
-// acc3d-1017: transverse (x2) IMPOSED-flux face (read only when named): F_f = ifx2_lo/hi(m,k,i)
+// transverse (x2) IMPOSED-flux face (read only when named): F_f = ifx2_lo/hi(m,k,i)
 // from the problem generator (RadiationM1::SetX2FaceFlux)
 constexpr int M1_IBC_X2FLUX   = 6;
                                      // at the start of every step, i.e. it is frozen at
@@ -259,15 +259,15 @@ constexpr int M1_IBLEND_F    = 1;    // w = smoothstep((f_face - f_lo)/(f_hi - f
                                      // DIFFUSE field (f -> 1/2, which is what a grey
                                      // surface with marshak_q = 1/2 has) stays central, a
                                      // beam or a front (f -> 1) goes upwind.
-constexpr int M1_IBLEND_IDF = 5;     // hrup-1009: idort x smoothstep(|H|/J)
-constexpr int M1_IBLEND_IDA = 6;     // hrup-1009: idort x smoothstep(h asymmetry)
-constexpr int M1_IBLEND_KN = 4;      // hrup-1009 (half-range only): Knudsen x tau
-constexpr int M1_IBLEND_IDORT = 3;   // hrup-1009 (half-range only): w = 1/(1 + x + x^2/
+constexpr int M1_IBLEND_IDF = 5;     // idort x smoothstep(|H|/J)
+constexpr int M1_IBLEND_IDA = 6;     // idort x smoothstep(h asymmetry)
+constexpr int M1_IBLEND_KN = 4;      // (half-range only): Knudsen x tau
+constexpr int M1_IBLEND_IDORT = 3;   // (half-range only): w = 1/(1 + x + x^2/
                                      // tau0), x = implicit_blend_alpha tau_face
 constexpr int M1_IBLEND_TAUF = 2;    // the product of the two: upwind only where the face
                                      // is thin AND the field is beamed.
 
-// thinsw-1010: <rad_m1>/implicit_thin_switch, the dt-free per-face weight of the
+// <rad_m1>/implicit_thin_switch, the dt-free per-face weight of the
 // half-range blend (M1ThinFace, rad_m1_implicit.cpp); none keeps implicit_blend/xthin.
 constexpr int M1_THSW_NONE = 0;
 constexpr int M1_THSW_HJ   = 1;   // smoothstep of the formal-solution |H|/J
@@ -322,7 +322,7 @@ constexpr int M1_IENTH_CENTRAL = 1;  // a_f (E_L + E_R)/2, a_f = (a_L + a_R)/2
 constexpr int M1_IENTH_PLM     = 2;  // DEFAULT: a_f E_f, E_f the van Leer plm value from
                                      // the side upwind of a_f; central where the 4-cell
                                      // stencil is not available on both sides of the face
-// open-ot-1013 HIDDEN TERM diagnostics (read only when named; every mode >= PLM takes the
+// HIDDEN TERM diagnostics (read only when named; every mode >= PLM takes the
 // plm a_f and stencil rule, only E_f differs):
 constexpr int M1_IENTH_PLMC    = 3;  // E_f = mean of the two van Leer plm face values (no
                                      // upwind-side switch, limiter kept)
@@ -354,7 +354,7 @@ constexpr int M1_NIW_VIMP = 26;
 // DA_d = a_d(old vector) - a_d(stage start) = dv_d + (D dv)_d, dv = t2inc momentum/rho
 constexpr int M1_IV_DA    = 26;
 constexpr int M1_NIW_VIMP_T2 = 3;
-// <rad_m1>/implicit_hr_recon = plm (xthinfix-1009 Fix B): the half-range face values
+// <rad_m1>/implicit_hr_recon = plm (Fix B): the half-range face values
 // E_L + s_L/2, E_R - s_R/2 with the limited slope s_c = sig_c (E_c+1 - E_c-1)/2, sig_c
 // in [0, 1] the van Leer limiter of the Picard-lagged E, frozen for the pass, applied
 // as a linear operator outside the 7-point row (M1MusclRow): sig per direction, then
@@ -391,7 +391,7 @@ constexpr int M1_POS_FLR_UN = 5;   // floor energy NOT covered by the gas (creat
 constexpr int M1_POS_FCLIP  = 6;   // cell-solves whose |F| > c E was scaled back
 constexpr int M1_POS_FCLIPM = 7;   // sum of (|F|/(c E) - 1) over those cell-solves
 constexpr int M1_POS_FLRS   = 8;   // F3: residual raise below 1e-6 e_floor (x volume)
-constexpr int M1_POS_FLR_MV = 9;   // vtxfix-1029 implicit_pos_floor_cons: floor energy taken
+constexpr int M1_POS_FLR_MV = 9;   // implicit_pos_floor_cons: floor energy taken
                                    // from the column's radiation (erg, gas units x volume)
 constexpr int M1_POS_N      = 10;
 constexpr int M1_IFW_AL  = 0;   // alpha, the asymptotic-preserving weight of F_HLL
@@ -507,7 +507,7 @@ constexpr int M1_NIW_K = 48;
 // The five components below are APPENDED after whichever base component count the solve
 // uses (M1_NIW_X1 / M1_NIW / M1_NIW_K), so the base indices above never move; the offset
 // of the block is RadiationM1::iw_gas, a runtime int the kernels capture.
-// cbfix-1011 (implicit_hr_face = sf): per cell, the formal-solution half-range fluxes
+// (implicit_hr_face = sf): per cell, the formal-solution half-range fluxes
 // H+_d, H-_d (d = 1..3), J and the donor scale Jh (M1HrSf), appended like the gas block
 constexpr int M1_NIW_HSF = 8;
 constexpr int M1_HSF_HP = 0;   // + 2 d: H+_d = sum w I max(mu_d, 0) (E units)
@@ -655,7 +655,7 @@ void M1CsSeamGeom(const int q, const int n, Real &dth, Real &angm, Real &sfoot,
 
 //----------------------------------------------------------------------------------------
 //! \fn M1CsSeamMid
-//! \brief cs-open-1018: the value at the face MIDPOINT (smid, slot 3 of the seam geometry
+//! \brief the value at the face MIDPOINT (smid, slot 3 of the seam geometry
 //! g = csg2 / csg3) of a seam quantity known at the FEET of the mirror-pair chords
 //! (sfoot, slot 2) of the seam faces c-1, c, c+1 along the seam: the quadratic through
 //! the three foot values (one-sided c, c+1, c+2 / c-2, c-1, c at a cube vertex, where
@@ -666,7 +666,7 @@ void M1CsSeamGeom(const int q, const int n, Real &dth, Real &angm, Real &sfoot,
 
 //----------------------------------------------------------------------------------------
 //! \fn M1CsSeamDepth
-//! \brief vtxfix-1029: depth of index c (active lo..hi, ghosts allowed) below the nearest
+//! \brief depth of index c (active lo..hi, ghosts allowed) below the nearest
 //! block face along that axis that is a PANEL SEAM (slo / shi): 0 for the cell next to the
 //! seam and for the first ghost beyond it (the neighbour panel's seam cell), 1 one cell
 //! further, ...; a large number when neither face is a seam.
@@ -683,7 +683,7 @@ int M1CsSeamDepth(const int c, const int lo, const int hi, const bool slo,
   return d;
 }
 
-//! \brief vtxfix-1029: Chebyshev distance of cell (k,j) to the cube vertex of its block
+//! \brief Chebyshev distance of cell (k,j) to the cube vertex of its block
 //! (both tangential depths finite only in a block holding a panel corner)
 
 KOKKOS_INLINE_FUNCTION
@@ -745,7 +745,7 @@ Real M1CsTanMono(const Real d, const Real s1, const Real q0, const Real q1, cons
   return (d < lo) ? lo : ((d > hi) ? hi : d);
 }
 
-// cs-tan-1106: the derivative itself, of any cell field q(o) at offset o along the axis,
+// the derivative itself, of any cell field q(o) at offset o along the axis,
 // with h(o) the arc between offsets o-1 and o (shared by M1CsTanDer and M1CsTanFaceLag)
 template <class Q, class H>
 KOKKOS_INLINE_FUNCTION
@@ -778,7 +778,7 @@ Real M1CsAxisDer(const Q &q, const H &h, const int c, const int lo, const int hi
 //! has filled it, and the active range at a PHYSICAL boundary, where the difference
 //! silently becomes one-sided (the divisor counts the cells actually used).
 
-//! cornerfix-1103 <mesh>/cs_vertex_3cell (vx.on): at a CUBE VERTEX the ng x ng corner
+//! <mesh>/cs_vertex_3cell (vx.on): at a CUBE VERTEX the ng x ng corner
 //! ghost block has no physical counterpart.  A seam GHOST cell (column j outside
 //! [js,je], or row k outside [ks,ke]) next to a vertex corner takes the derivative ALONG
 //! its seam one-sided, from the cell itself and its in-range neighbour, instead of the
@@ -866,7 +866,7 @@ Real M1SphPab(const V &iw, const int m, const int a, const int b, const int k,
          *iw(m,M1_IW_N1+b,k,j,i)*iw(m,ec,k,j,i);
 }
 
-//! tensor-sp-1108: the overload with x2t takes sin / cot of the cell from x2t (the theta
+//! the overload with x2t takes sin / cot of the cell from x2t (the theta
 //! of the data the row holds, RadiationM1::VtanX2t; see M1SphTan): at a theta-PERIODIC
 //! seam the d = 1 curvature cot (P_tt - P_pp)/r of a ghost row is then the value of its
 //! source cell, and the seam face of the two blocks carries one flux.  Coordinate
@@ -1011,7 +1011,7 @@ Real M1SphLat(const V &iw, const V &tt, const int c0, const A &x1v, const A &x2v
 //!   d = 1:  2 cot a E / r + (1/(r sin)) d_ph P_tp
 //!   d = 2:  (1/(r sin^2)) d_th (sin^2 P_tp)
 //! centred over the coordinate distances, one-sided at a physical boundary as M1SphLat.
-//! tensor-sp-1108: the trigonometric factors (sin, cot, sin^2) take the theta of the cell
+//! the trigonometric factors (sin, cot, sin^2) take the theta of the cell
 //! whose DATA the slot holds, x2t (RadiationM1::VtanX2t: = x2v, except in the ghost rows
 //! of a theta-PERIODIC wedge's x2min/x2max blocks, where it is the theta of the periodic
 //! source cell).  With the plain x2v the two blocks at the theta seam evaluated the same
@@ -1090,13 +1090,13 @@ Real M1CsLat0(const V &iw, const V &tt, const int c0, const VV &cvol, const VF &
   auto seam2 = [&](const int jf, const int sd, const Real *nf) {
     auto fv = [&](const int kq) {return 0.5*(wn(kq,jf-1,nf) + wn(kq,jf,nf));};
     const bool up = !(k == ke && b3hi), dn = !(k == ks && b3lo);
-    // cs-open-1018: the quadratic through the foot values, at the face midpoint
+    // the quadratic through the foot values, at the face midpoint
     return M1CsSeamMid(fv, g2, m, k, sd, up, dn);
   };
   auto seam3 = [&](const int kf, const int sd, const Real *nf) {
     auto fv = [&](const int jq) {return 0.5*(wn(kf-1,jq,nf) + wn(kf,jq,nf));};
     const bool up = !(j == je && b2hi), dn = !(j == js && b2lo);
-    // cs-open-1018: the quadratic through the foot values, at the face midpoint
+    // the quadratic through the foot values, at the face midpoint
     return M1CsSeamMid(fv, g3, m, j, sd, up, dn);
   };
   Real s = 0.0;
@@ -1119,7 +1119,7 @@ Real M1CsLat0(const V &iw, const V &tt, const int c0, const VV &cvol, const VF &
 
 //----------------------------------------------------------------------------------------
 //! \fn M1CsLatF
-//! \brief cs-s4-1017: the counterpart of M1SphLat (d = 1, 2) for the lateral face with
+//! \brief the counterpart of M1SphLat (d = 1, 2) for the lateral face with
 //! the planar unit normal nf: (1/r^3) d_r (r^3 (nf . v) E) at cell (k,j) of the column,
 //! centred over i -+ 1 and one-sided at a physical x1 boundary exactly as M1SphLat.
 //! nhat_f is a fixed Cartesian vector along the radial line (the face plane holds the
@@ -1197,7 +1197,7 @@ Real M1CsQab(const VT &tt, const int c0, const VQ &qf, const int m, const int k,
   return tt(m,c0+4,k,j,i)*(a1*b1 - a2*b2) + tt(m,c0+5,k,j,i)*(a1*b2 + a2*b1);
 }
 
-//! \fn M1LatDx (csmetric-1112 implicit_comoving_lat): the lateral (D_r,lat) and the
+//! \fn M1LatDx (implicit_comoving_lat): the lateral (D_r,lat) and the
 //! tangential trace-free (cs Q; sp a = D_tt - (1 - D_rr)/2, D_tp) part of the VET tensor
 //! applied to a vector x given in the work array's components (cs: FACE-NORMAL, x_a =
 //! x.cn_a; sp: orthonormal r, theta, phi).  o = D_lat x in the same components; returns

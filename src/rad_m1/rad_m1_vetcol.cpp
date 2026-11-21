@@ -146,7 +146,7 @@ void RadiationM1::VetColReport() {
                 << vgd_prk.size() << "; band-clamped lateral reads (ALL ranks, all "
                 << "sweeps) "
                 << vgd_nclamp_all << std::endl;
-      if (vgd_csg || vgd_gbc) {   // cs-s3b-1017 (share-1104: + the sp global band)
+      if (vgd_csg || vgd_gbc) {   // (+ the sp global band)
         std::cout << "<rad_m1> vet_gd " << (vgd_csg ? "cs" : "global") << " band (rank 0): "
                   << ((vgd_cscomp || vgd_gbc) ? "compact" : "dense") << ", intensity values sent "
                   << vgd_csvsent << " of dense " << vgd_csvdense << " ("
@@ -154,7 +154,7 @@ void RadiationM1::VetColReport() {
                   << "); list builds " << vgd_csnbuild << " (" << vgd_cstbuild << " s)"
                   << std::endl;
       }
-      if (vgd_csg && vgd_cscomp) {   // raycheap-1109: where the list builds go
+      if (vgd_csg && vgd_cscomp) {   // where the list builds go
         std::cout << "<rad_m1> raycheap-1109 cs list builds (rank 0 s): mask kernel "
                   << vgd_cstb_k << ", download+check " << vgd_cstb_d << ", mark exchange "
                   << vgd_cstb_m << ", host lists " << vgd_cstb_h << ", upload "
@@ -164,7 +164,7 @@ void RadiationM1::VetColReport() {
       std::cout << "<rad_m1> vet_gd vet_path = " << ((vet_path != 0) ? "cells" : "none")
                 << ": subdivided steps (ALL ranks, all sweeps) " << vgd_npath << std::endl;
       {
-        // accel-1009 ragged band: accesses outside a shell's slab (must be 0)
+        // ragged band: accesses outside a shell's slab (must be 0)
         Real no = 0.0;
         if (vgd_i.oos.extent(0) > 0) {
           auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_i.oos);

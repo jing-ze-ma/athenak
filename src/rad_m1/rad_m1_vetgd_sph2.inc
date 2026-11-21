@@ -73,7 +73,7 @@ double RadiationM1::VetGdThetaDmin() const {
   const double smin = vgd_pol ? std::sin(vgd_bcolat*M_PI/180.0)
                               : std::min(std::sin(t0), std::sin(t1));
   auto &mbs = pmy_pack->pmb->mb_size;
-  return std::min(dth, smin*vgd_lg.Dx3H(mbs, 0));   // layinv-1105
+  return std::min(dth, smin*vgd_lg.Dx3H(mbs, 0));
 }
 
 //----------------------------------------------------------------------------------------
@@ -347,7 +347,7 @@ void RadiationM1::VetGdRingGatherC(const int i0, const int i1) {
 }
 
 //----------------------------------------------------------------------------------------
-//! accpolar-1103 <rad_m1>/vet_gd_band_global: the band lists keyed on the GLOBAL cell
+//! <rad_m1>/vet_gd_band_global: the band lists keyed on the GLOBAL cell
 //! (the cubed sphere's exact band copies, VetGdCsInit, on the full sphere's index space).
 //! Band position (kk, jj) of block (lx2, lx3) is the global cell J = lx2 nx2 + jj - w, K =
 //! lx3 nx3 + kk - w, continued beyond a pole in the extended chart (J -> -1 - J north,
@@ -427,7 +427,7 @@ void RadiationM1::VetGdGlobalBandInit() {
   // buckets by depth (1..w): on-rank (6 ints), per partner rank send / recv (3 ints)
   std::vector<std::vector<int>> lb(w + 1);
   std::map<int, std::vector<std::vector<int>>> sb, rb;
-  // share-1104 G1: the source cell's global (J, K) of every send / receive entry, in the
+  // G1: the source cell's global (J, K) of every send / receive entry, in the
   // same order (the compact halo's keep test is evaluated from them on both sides)
   std::map<int, std::vector<std::vector<int>>> sbj, rbj;
   for (int gr = 0; gr < ngb; ++gr) {
@@ -579,7 +579,7 @@ void RadiationM1::VetGdGlobalBandInit() {
     }
     Kokkos::deep_copy(vgd_phc, ph_h);
   }
-  // share-1104 G1: the compact global band (vet_gd_halo_compact > 0, an MPI band)
+  // G1: the compact global band (vet_gd_halo_compact > 0, an MPI band)
   // (a rotating set's kept lists: remade per new set, swapped with the cross-fade's)
   vgd_gbc = (vgd_hcomp > 0) && vgd_hmpi;
   if (vgd_gbc) {
@@ -663,7 +663,7 @@ void RadiationM1::VetGdGlobalBandInit() {
 }
 
 //----------------------------------------------------------------------------------------
-//! share-1104 G1 (USER 11-04): vet_gd_halo_compact > 0 with vet_gd_band_global (the full
+//! G1 (USER 11-04): vet_gd_halo_compact > 0 with vet_gd_band_global (the full
 //! sphere, stretched theta).  The per-shell exchange of VetGdCsHalo (depth-ws prefix of
 //! the global-cell lists), sending only the (entry, direction) values that pass the keep
 //! test of the slot halo (VgdHaloKeepTP), evaluated on BOTH sides from the source cell's
@@ -900,7 +900,7 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
     });
   }
   // (lean: the host waits for the pack alone, an event behind it on the sweep's stream,
-  // as prod's VetGdHlBegin, d6fast3-1112; not a device-wide fence)
+  // as prod's VetGdHlBegin, not a device-wide fence)
   if (post && lean) {
     VgdPackEvtRecord(DevExeSpace());
     VgdPackEvtWait(DevExeSpace());

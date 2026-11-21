@@ -68,7 +68,7 @@ TaskStatus RadiationM1::ApplyClosureLimits(Driver *pdrive, int stage) {
   // STAGE CS2: on the cubed sphere (f2, f3) are covariant: the metric norm
   const bool csl = pmy_pack->pmesh->use_cubed_sphere;
   auto ccl = pmy_pack->pcoord->cos_cell;
-  // fixbundle-1009 F4: clip counters over the active cells (output only)
+  // F4: clip counters over the active cells (output only)
   if (acl_cnt_d.extent_int(0) != 2) {
     Kokkos::realloc(acl_cnt_d, 2);
     Kokkos::deep_copy(acl_cnt_d, 0.0);

@@ -104,7 +104,7 @@ void RadiationM1::RavInit(ParameterInput *pin) {
   prav = ph->pravg;
   // the coarse phi distance (study key)
   rav_dist = pin->GetOrAddBoolean("rad_m1", "polar_ring_avg_dist", true);
-  // floorheat-1029: polar_ring_avg_ke = gas | rad.  defaults-1030 (USER 10-30): DEFAULT
+  // polar_ring_avg_ke = gas | rad.  defaults-1030 (USER 10-30): DEFAULT
   // rad on a fresh run (the floor-heating fix every accretor run names); a named key
   // wins; a restart whose file lacks the key keeps gas (bitwise)
   {
@@ -192,7 +192,7 @@ void RadiationM1::RavState(const bool gas) {
   if (!gas) return;
   hydro::Hydro *ph = pmy_pack->phydro;
   if (prav->fourier) {
-    // ringsmooth-1102 polar_ring_avg_filter = fourier: the gas ring-filtered (smooth, no
+    // polar_ring_avg_filter = fourier: the gas ring-filtered (smooth, no
     // staircase); with polar_ring_avg_ke = rad its energy defect (the kinetic energy of the
     // removed modes, incl. the intra-group kick spread) goes to E, ring-uniform (E stays
     // group-uniform), else to gas heat.  A ring that fails the positivity test falls back

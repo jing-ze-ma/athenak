@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_m1_rotavg.cpp
-//! \brief rotavg-1012, <rad_m1>/vet_rotate_avg = K >= 2: the closure averaged over the
+//! \brief <rad_m1>/vet_rotate_avg = K >= 2: the closure averaged over the
 //! last K rotated direction sets (closure-agnostic; vet_gd registers its fields in
 //! VetGdRotAvgSetup, rad_m1_vetgd.cpp).
 //!
@@ -49,7 +49,7 @@
 #include "globals.hpp"
 #include "mesh/mesh.hpp"
 #include "rad_m1/rad_m1.hpp"
-#include "rad_m1/rad_m1_implicit.hpp"   // t9rst-1113 kM1XfdRst*
+#include "rad_m1/rad_m1_implicit.hpp"   // kM1XfdRst*
 
 namespace radm1 {
 
@@ -99,7 +99,7 @@ bool RaGet(const RaArr &a, const Tab &t, const int f, const int ie, const int m,
 //! `slot`, with the validity of each cell
 
 void RadiationM1::RotAvgSnap(const int slot, const int ilo) {
-  vra_gen += 1;   // gpumem-1022: vra_d may change (dt_retry_host skips clean saves)
+  vra_gen += 1;   // vra_d may change (dt_retry_host skips clean saves)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -138,7 +138,7 @@ void RadiationM1::RotAvgUpdate(const int ilo) {
     RotAvgEmaInit(ilo);
     return;
   }
-  vra_gen += 1;   // gpumem-1022: vra_d may change (dt_retry_host skips clean saves)
+  vra_gen += 1;   // vra_d may change (dt_retry_host skips clean saves)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -182,7 +182,7 @@ void RadiationM1::RotAvgUpdate(const int ilo) {
 
 void RadiationM1::RotAvgDelta(const int slot, const int ilo) {
   if (vra_ema) {RotAvgEmaChange(ilo);}
-  vra_gen += 1;   // gpumem-1022: vra_d may change (dt_retry_host skips clean saves)
+  vra_gen += 1;   // vra_d may change (dt_retry_host skips clean saves)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -218,7 +218,7 @@ void RadiationM1::RotAvgShift(const int ds) {
     RotAvgEmaShift(ds);
     return;
   }
-  vra_gen += 1;   // gpumem-1022: vra_d may change (dt_retry_host skips clean saves)
+  vra_gen += 1;   // vra_d may change (dt_retry_host skips clean saves)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -329,7 +329,7 @@ void RadiationM1::RotAvgApply(const int ilo) {
 }
 
 //----------------------------------------------------------------------------------------
-//! raycorr-1108 vet_rotate_avg_ema = N: the exponential moving average over the rotated
+//! vet_rotate_avg_ema = N: the exponential moving average over the rotated
 //! sets in the offset form of the K-window (one ring slot, vra_k = 2).  With weights
 //! w_j = a (1 - a)^j over the sets b - j (J-weighted as the K-window: the normalised
 //! moments of the weighted union of the sets' intensities), slot 0 holds
@@ -400,7 +400,7 @@ void RadiationM1::RotAvgEmaInit(const int ilo) {
       if (RaGet(a, t, f, ie, m, k, j, i, jr, g)) d_(m,o1+f,kk,jj,ii) = g;
     }
     d_(m,o1+t.nf,kk,jj,ii) = -1.0;
-    // raycheap-1109 dema: the second EMA starts equal to the first (2 e1 - e2 = e1)
+    // dema: the second EMA starts equal to the first (2 e1 - e2 = e1)
     if (dema) {
       const int o2 = 2*(t.nf + 1);
       for (int f = 0; f <= t.nf; ++f) {d_(m,o2+f,kk,jj,ii) = d_(m,f,kk,jj,ii);}
@@ -409,7 +409,7 @@ void RadiationM1::RotAvgEmaInit(const int ilo) {
   vra_pend = 0;
 }
 
-//! raycorr-1108: the change test on the LAST build of a block, before RotAvgDelta turns
+//! the change test on the LAST build of a block, before RotAvgDelta turns
 //! the Delta slot (vra_k - 1, holding the current set b's raw fields g_b(now)) into the
 //! Delta: the same set at the previous boundary is in the aux slot 1 (it was the "next"
 //! set there).  c = max(|ln J_b(now)/J_b(then)|, |D_b(now) - D_b(then)|) (J = the
@@ -483,7 +483,7 @@ void RadiationM1::RotAvgEmaShift(const int ds) {
                                       : static_cast<Real>(std::max(vgd_rot, 1))*pm->dt;
   auto &size = pmy_pack->pmb->mb_size;
   const int nx1 = indcs.nx1;
-  // raycorr-1108 vet_rotate_avg_ema_diag = M > 0: every M-th boundary, the change
+  // vet_rotate_avg_ema_diag = M > 0: every M-th boundary, the change
   // weights of the cells with a history (mean, fraction > 1/N, fraction >= 0.5), printed
   vra_ema_nsh += 1;
   if (vra_ema_diag > 0 && vra_ema_nsh % vra_ema_diag == 0) {
@@ -548,7 +548,7 @@ void RadiationM1::RotAvgEmaShift(const int ds) {
       const Real r1 = (1.0 - aw)*r0/R + aw;
       fac = (1.0 - aw)*(r0/R)/r1;
     }
-    // raycheap-1109 dema: the second EMA, of the new first one, in the same frame, with
+    // dema: the second EMA, of the new first one, in the same frame, with
     // the same (J-) weights: r2' = (1 - aw) r2/R + aw r1', e2' = fac2 (e2 - D) + w1 e1'
     Real fac2 = 1.0 - aw, w1 = aw;
     if (dema && t.jw >= 0) {
@@ -591,7 +591,7 @@ void RadiationM1::RotAvgEmaApply(const int ilo) {
     const int kk = k - ks, jj = j - js, ii = i - is;
     if (!(d_(m,t.nf,kk,jj,ii) > 0.5)) return;
     const Real jr = RaJ(a, t, m, k, j, i);
-    // raycheap-1109 dema: the lag-corrected offset 2 e1 - e2 (ratios 2 r1 - r2 in
+    // dema: the lag-corrected offset 2 e1 - e2 (ratios 2 r1 - r2 in
     // [r1/4, 4 r1]); without dema the EMA itself
     auto off = [&](const int f) -> Real {
       const Real e1 = d_(m,f,kk,jj,ii);
@@ -620,7 +620,7 @@ void RadiationM1::RotAvgEmaApply(const int ilo) {
 }
 
 //----------------------------------------------------------------------------------------
-//! rotavg-rst-1012: the averaging state in the restart file (radm1::kM1RaRstMagic), so a
+//! the averaging state in the restart file (radm1::kM1RaRstMagic), so a
 //! restart with vet_rotate_avg = K is a bitwise continuation.  The header (int64 x
 //! M1_RA_RST_NH): have = 1, nslab, K, nf, closure (1 vet_gd, 2 vet_sc), head, pend,
 //! nslot (ring slots written: K-1, or K with the Delta slot when pend = 3), blk, the
@@ -628,11 +628,11 @@ void RadiationM1::RotAvgEmaApply(const int ilo) {
 //! per MeshBlock) are packed densely into nslab slabs of the record's (ghosted) slab
 //! size, the LAST of each MeshBlock record, so the history moves with its MeshBlock (any
 //! rank count / distribution).  Written only with a complete history (vra_state = 1).
-//! rotavg-rst2-1013: only the radial range i >= i0 is written, i0 = the first interior
+//! only the radial range i >= i0 is written, i0 = the first interior
 //! i (over all MeshBlocks and ranks) where a written slot is valid: the closure's shells
 //! (vet_gd: i >= is + vlat_icut).  Cells below are invalid in every slot and never read;
 //! they load as zero (flag 0).  Header entry 10 = i0 (a 10-entry header: i0 = 0, the
-//! full range, as written by rotavg-rst-1012).
+//! full range, as written by).
 
 // the registered field count of the history: the table's, or (a restart written before
 // the first build of the run, e.g. a 0-step restart) the one loaded from the file
@@ -690,7 +690,7 @@ void RadiationM1::RotAvgRstHdr(int64_t *h) const {
   h[0] = 1;
   h[2] = vra_k;
   h[3] = RotAvgNf();
-  h[4] = (vgd_on ? 1 : 2) + (vra_ema ? 16 : 0);   // raycorr-1108: EMA history
+  h[4] = (vgd_on ? 1 : 2) + (vra_ema ? 16 : 0);   // EMA history
   h[5] = vra_head;
   h[6] = vra_pend;
   h[7] = (vra_pend == 3) ? vra_k : vra_k - 1;
@@ -714,7 +714,7 @@ void RaRstCopy(const DvceArray5D<Real> &d, const DvceArray5D<Real> &sl, const in
   const int64_t ncout = static_cast<int64_t>(n1)*n2*n3;
   const int64_t nv = ncomp*ncint;
   const int64_t ntot = static_cast<int64_t>(sl.extent_int(1))*ncout;
-  // fin51-1014: one MeshBlock per launch, and launches of at most 2^30 values (the
+  // one MeshBlock per launch, and launches of at most 2^30 values (the
   // index range is int; a block's record can exceed 2^31 values); one launch = as before
   const int64_t nch = int64_t(1) << 30;
   for (int m = 0; m < nmb; ++m) {
@@ -748,7 +748,7 @@ void RaRstCopy(const DvceArray5D<Real> &d, const DvceArray5D<Real> &sl, const in
 }
 }  // namespace
 
-//! mem-1014: the same record straight into the host array of the restart output
+//! the same record straight into the host array of the restart output
 //! (nmb, nslab, n3, n2, n1), through a device buffer of at most nsc slabs of one
 //! MeshBlock instead of the whole (nmb, nslab) record: every element is the value
 //! RaRstCopy(dir 0) puts there (the same index map), so the file is byte-identical
@@ -820,7 +820,7 @@ bool RadiationM1::RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src,
     return false;
   }
   const int nf = static_cast<int>(h[3]);
-  vra_gen += 1;   // gpumem-1022: vra_d may change (dt_retry_host skips clean saves)
+  vra_gen += 1;   // vra_d may change (dt_retry_host skips clean saves)
   Kokkos::realloc(vra_d, nmb, vra_k*(nf + 1), indcs.nx3, indcs.nx2, indcs.nx1);
   Kokkos::deep_copy(vra_d, 0.0);
   RaRstCopy(vra_d, src, nmb, static_cast<int>(h[7])*(nf + 1), 1, static_cast<int>(h[10]));
@@ -905,7 +905,7 @@ void RadiationM1::RotXfSnap(const int slot, const int ilo) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::RotXfBlend
-//! \brief vgdxf-1112: the registered fields hold the NEXT set's raw sweep S at this
+//! \brief the registered fields hold the NEXT set's raw sweep S at this
 //! state; vgd_xf_d holds G (slot 0) and A (slot 1).  T = the closure of the first build
 //! of the next block at this state: S, or with the EMA history S + fac (e - Delta) (ratio
 //! fields S ((1 - aw) r/x + aw)), Delta = S - G (x = S/G), exactly RotAvgEmaShift's
@@ -1088,7 +1088,7 @@ void RadiationM1::RotXfBlend(const Real s, const bool last, const int ilo,
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::RotXfPre
-//! \brief vgdxf-1112, the LAST build of a block, before RotAvgDelta: the boundary
+//! \brief the LAST build of a block, before RotAvgDelta: the boundary
 //! quantities at the boundary time t_k instead of this build's t_k - dt (an O(dt) offset
 //! the EMA / K-window would carry into the whole next block): the current set's raw
 //! fields (the Delta slot and G) and the next set's sweep (the fields) extrapolated
@@ -1330,7 +1330,7 @@ void RadiationM1::RotXfEst(const int ilo, const Real r) {
 //! \brief t9rst-1113 vet_gd_rotate_xfade: vgd_xf_d (G, A, the last Delta / G of the
 //! block) and the block/time scalars of the cross-fade travel in the restart file
 //! (kM1XfdRstMagic).  Without them a restart inside a rotation block blends against an
-//! empty A and is not a bitwise continuation (HG262 c5 restart, rstbit-1113).  vgd_xf_d
+//! empty A and is not a bitwise continuation (HG262 c5 restart).  vgd_xf_d
 //! (LayoutRight, interior cells) is copied flat per MeshBlock into nslab slabs of ncell.
 
 int RadiationM1::XfdRstNslab(const int ncell) const {

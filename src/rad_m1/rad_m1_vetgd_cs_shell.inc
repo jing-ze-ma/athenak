@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_m1_vetgd_cs_shell.inc
-//! \brief d6fast4-1112: the cs shell kernel body of RadiationM1::VetGdCsSweep, included
+//! \brief the cs shell kernel body of RadiationM1::VetGdCsSweep, included
 //! there as shell_ (the current set) and shellx_ (the next set of a fused cross-fade).
 //! Needs M1_VGDCS_SHELL_NAME defined.
       auto M1_VGDCS_SHELL_NAME = KOKKOS_LAMBDA(const int m, const int k, const int j,
@@ -61,7 +61,7 @@
         const Real ch0 = exp(cv(m,0,k,j,i));
         const Real s0 = exp(cv(m,1,k,j,i));
         Real iv;
-        // share3-1031: the stencil and the field reads of the shared upwind core
+        // the stencil and the field reads of the shared upwind core
         const VgdCsA acc{st};
         auto fC = [&](const int c, const int kk, const int jj, const int ii) -> Real {
           return cv(m,c,kk,jj,ii);

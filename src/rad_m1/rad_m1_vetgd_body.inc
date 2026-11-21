@@ -4,13 +4,13 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_m1_vetgd_body.inc
-//! \brief wallbug-1027: the shell kernel body of RadiationM1::VetGdSweep (moved verbatim
+//! \brief the shell kernel body of RadiationM1::VetGdSweep (moved verbatim
 //! from rad_m1_vetgd.cpp), included twice there: M1_VGD_BODY_MIR 0 (the default kernel,
 //! the code as before) and 1 (vet_gd_theta_wall = mirror: theta ghosts read their mirror
 //! row).  Two kernels, so that the mirror read costs the default nothing (compiled into
 //! the one kernel it cost +3.6 % GPU time on the accretor deck, 12414551 vs 12414756).
 //! Needs M1_VGD_BODY_NAME (the lambda's name) and M1_VGD_BODY_MIR defined.
-//! vgdshell-1113: vpa and gx are deduced (generic lambda): a launch passes a bool (the
+//! vpa and gx are deduced (generic lambda): a launch passes a bool (the
 //! runtime value; gx true) or std::false_type, which compiles the branches they gate out
 //! of that kernel (gx false: no polar rings, band exit or fused
 //! twin; VetGdSweep launches it only when those are off).  The arithmetic of every path
@@ -18,7 +18,7 @@
 
 // nvcc rejects generic __host__ __device__ lambdas: on CUDA vpa / gx are plain bools (a
 // std::false_type converts; the gated branches are then runtime-false, not compiled out)
-// d6fast4-1112: on CUDA, M1_VGD_BODY_GX0 defined gives the gx-false kernel instead: vpa
+// on CUDA, M1_VGD_BODY_GX0 defined gives the gx-false kernel instead: vpa
 // and gx are compile-time false inside (the arguments are ignored), so the gated branches
 // are compiled out there too (as the std::false_type launch does on HIP)
 #if defined(KOKKOS_ENABLE_CUDA) && defined(M1_VGD_BODY_GX0)
@@ -43,13 +43,13 @@
         const int lcb = (x1f_(m) & 1) ? lcut : -1;
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
         // the face midpoints (uniform in index space, as the bilinear reads assume)
-        // accsp-1102: a stretched theta / the full sphere: the row's node (sph2.inc)
+        // a stretched theta / the full sphere: the row's node (sph2.inc)
         const Real th = sth_ ? thn_(m,j)
                              : lg_.Th(mbsize, m, j, js);
-        // accpolar-1103 vet_gd_band_global: phi from the global index (layout exact)
+        // vet_gd_band_global: phi from the global index (layout exact)
         const Real ph = gphb_ ? phcb_(m, gpwb_ + k - ks)
                               : lg_.Ph(mbsize, m, k, ks);
-        // vgdfuse-1010: sin / cos of the cell's (theta, phi) from the per-cell table (the
+        // sin / cos of the cell's (theta, phi) from the per-cell table (the
         // same expressions, evaluated once per cell instead of once per direction)
         const Real st = tg_(m,k-ks,j-js,0), ct = tg_(m,k-ks,j-js,1);
         const Real sp = tg_(m,k-ks,j-js,2), cp = tg_(m,k-ks,j-js,3);
@@ -78,7 +78,7 @@
               // the band copy (the unpack applied the wall map)
               return vix(m,dq,kk,jj,ii);
             }
-            // accsp-1102: an on-rank pole partner: its rows reversed about the pole
+            // an on-rank pole partner: its rows reversed about the pole
             const int jn = raw_ ? ((ow < 0) ? jj : own_(m,kk,jj,2))
                                 : ((hp_(sl) != 0) ? VgdPoleRow(jj, wb, nx2b)
                                                   : (jj - ej*nx2b));
@@ -95,7 +95,7 @@
           };
           // (rdq: direction dq at the cell's stencil, rd the thread's own direction d)
           auto rdq = [&](const int kk, const int jj, const int ii, const int dq) -> Real {
-            // wallbug-1027: a theta ghost of vet_gd_theta_wall = mirror (wall flag 2)
+            // a theta ghost of vet_gd_theta_wall = mirror (wall flag 2)
             // reads its mirror row (then as any read, e.g. a phi wall) through its own
             // wall tables; no extra capture (the closure stays below the launch limit)
 #if M1_VGD_BODY_MIR
@@ -138,7 +138,7 @@
           Real iv;
           if (inw && l == n1 - 1 && (x1f_(m) & 2)) {
             // from the vacuum top face (the end cell's S extrapolated, as vet_col_lat),
-            // or with the top bath (vgdbath-1011) or a reflecting top (the mirrored
+            // or with the top bath or a reflecting top (the mirrored
             // intensity in the ghost shell, VetGdTopMirror) its inflow attenuated
             const Real rtop = cx1f(m,ie+1);
             const Real ds = sqrt(fmax(rtop*rtop - p2, 0.0)) - zr;
@@ -161,10 +161,10 @@
             Real thu = acos(fmin(fmax(zu/ru, -1.0), 1.0));
             Real dph = atan2(yu, xu) - ph;
             dph -= twopi*floor((dph + M_PI)/twopi);
-            // accsp-1102: behind the polar axis -> the extended chart; the fractional
+            // behind the polar axis -> the extended chart; the fractional
             // row from the node table (rad_m1_vgdtheta.hpp)
             VgdPoleChart(pol_, th, thu, dph);
-            // layinv-1105: the fractional upwind index at its GLOBAL magnitude (fjg, fkg;
+            // the fractional upwind index at its GLOBAL magnitude (fjg, fkg;
             // sj_ = sk_ = 0 without <mesh>/layout_invariant: the old fj, fk exactly); the
             // stencil base and the bilinear fractions come from it, so they are the same
             // numbers on every MeshBlock layout
@@ -177,7 +177,7 @@
             int k0 = static_cast<int>(floor(fkg)) - sk_;
             Real uj = fjg - floor(fjg), uk = fkg - floor(fkg);
             bool clp = false;
-            // accsp-1102 polar RING (sph2.inc): both stencil rows inside a polar zone ->
+            // polar RING (sph2.inc): both stencil rows inside a polar zone ->
             // the corners are (global phi K, ring code RB0 + 2 (p nzr + q) + across-axis)
             // read from the gathered ring buffers at their true phi (no band, no clamp)
             bool rng = false;
@@ -228,7 +228,7 @@
               khi_ = wb + nx3b + wu - 2;
               jlo_ = wb - wu;
               jhi_ = wb + nx2b + wu - 2;
-              // accpolar-1103 vet_gd_band_global: the CELL's window (the same cells for
+              // vet_gd_band_global: the CELL's window (the same cells for
               // every layout; inside the block's band since wb <= k, j < wb + nx)
               if (pol_ == 2) {
                 klo_ = k - wu;
@@ -248,9 +248,9 @@
             if (rng) {
               j0 = rj0; j1 = rj1; k0 = rk0; k1 = rk1; uk = ruk;
             }
-            // share3-1031: the stencil and the field reads of the shared upwind core
+            // the stencil and the field reads of the shared upwind core
             const VgdSt4 st4{k0, k1, j0, j1, uj, uk};
-            // accsp-1102: a ring code (jj >= VGD_RB0) reads the ring buffers
+            // a ring code (jj >= VGD_RB0) reads the ring buffers
             auto rkp = [&](const int kk, const int jj) -> int {
               return (kk + ((jj - VGD_RB0) & 1)*(nx3t_/2)) % nx3t_;
             };
@@ -280,7 +280,7 @@
             };
             bool bdone = false;
 #if M1_VGD_BODY_MIR
-            // wallbug-1027 vet_gd_theta_wall = vacuum: the upwind point lies beyond a
+            // vet_gd_theta_wall = vacuum: the upwind point lies beyond a
             // physical vacuum theta wall (the mesh's theta limits; flag 3 on the band row
             // nearest the point).  The ray starts at its wall crossing (the cone theta =
             // theta_wall, exact) with I = 0, as from the vacuum top face; chi, S there
@@ -418,7 +418,7 @@
             if (bdone) {
               // done: the shortened segment from the band edge
             } else if (typ == 2 && emi) {
-              // sptests-1011 vet_gd_inner = emit: the inner boundary's emission at the
+              // vet_gd_inner = emit: the inner boundary's emission at the
               // upwind point of the inner face, carried to the cell with the face source
               iv = VgdInnerFace(st4, fC, i, true, iemit, bfc, cx1f(m,i), cx1v(m,i),
                                 cx1v(m,i+1), p2, ch0, ds, s0);
@@ -450,7 +450,7 @@
                                 bfc, cx1f(m,i), cx1v(m,i), cx1v(m,i+1), p2, ch0, ds, s0);
             } else if (typ == 2) {
               // the diffusion intensity at the inner face of the first shell,
-              // S + mu (-dS/dtau_r); vet_bc_diff = face (gdface-1011): S of the FACE,
+              // S + mu (-dS/dtau_r); vet_bc_diff = face: S of the FACE,
               // 1.5 S_a - 0.5 S_b (the S the half-cell carry below starts from), not of
               // the first shell's cell (O(dtau_cell) low isotropic part otherwise)
               iv = VgdInnerFace(st4, fC, i, false, 0.0, bfc, cx1f(m,i), cx1v(m,i),
@@ -480,7 +480,7 @@
               const Real chu = exp(lin(0));
               const Real su = exp(lin(1));
               const Real rfi = cx1f(m,i);
-              // open-od-1013 vet_path = cells (vet_sc's VetPathStep, rad_m1_vetseg.hpp):
+              // vet_path = cells (vet_sc's VetPathStep, rad_m1_vetseg.hpp):
               // a ray whose segment jumps more than one lateral cell (|fj - j| or
               // |fk - k| > 1: dr tan(psi)/(r dtheta) > 1) sees chi and S only at its two
               // ends and misses a lateral material edge narrower than the jump.  Where
@@ -502,7 +502,7 @@
               bool pdone = false;
               if (vpa && !clp && !(spl && spe == 2 && typ == 3 && l > lcb &&
                                    p2 < rfi*rfi)) {
-                const Real gj = fjg - (j + sj_), gk = fkg - (k + sk_);   // layinv-1105
+                const Real gj = fjg - (j + sj_), gk = fkg - (k + sk_);
                 const Real a2 = fabs(gj), a3 = fabs(gk);
                 const int n2 = (a2 > 1.0) ? (static_cast<int>(ceil(a2)) - 1) : 0;
                 const int n3 = (a3 > 1.0) ? (static_cast<int>(ceil(a3)) - 1) : 0;
@@ -563,7 +563,7 @@
                     const Real s3 = (t3 < n3) ? (1.0 - (n3 - t3)/a3) : 2.0;
                     if (s2 <= s3) {
                       sn = s2;
-                      // layinv-1105: yj, yk at the global magnitude (node() and the
+                      // yj, yk at the global magnitude (node() and the
                       // gate subtract sj_, sk_ from their integer parts)
                       yj = (j + sj_) + g2*(n2 - t2);
                       yk = (k + sk_) + gk*(1.0 - sn);
@@ -600,7 +600,7 @@
                       next(t2, t3, sn, yj, yk);
                       const Real q = (1.0 - sn)*ds;
                       const int ih = (own3 || q < dso) ? i : iu;
-                      const int jn = static_cast<int>(floor(yj)) - sj_;   // layinv-1105
+                      const int jn = static_cast<int>(floor(yj)) - sj_;
                       const int kn = static_cast<int>(floor(yk)) - sk_;
                       const int jh = jn + ((yj - floor(yj) < 0.5) ? 0 : 1);
                       const int kh = kn + ((yk - floor(yk) < 0.5) ? 0 : 1);

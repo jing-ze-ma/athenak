@@ -48,7 +48,7 @@ inline void M1GlobalMax(Real &a) {
 //! for every MeshBlock layout, rank count, thread schedule and backend.
 
 //!
-//! prod-1108 block mode (<mesh>/layout_invariant_mode = block, the default;
+//! block mode (<mesh>/layout_invariant_mode = block, the default;
 //! repro::block_mode): idx = m*nkji + q (M1BcgIdx).  Each MeshBlock's partial is taken in
 //! a fixed code-set order (M1_LB_NS strided slots, then one team per MeshBlock with the
 //! fixed pairwise tree of M1DetReduce), a function of the MeshBlock alone (any team size,

@@ -128,7 +128,7 @@ void VlatLabel(const std::vector<double> &nd, const double mu, double &a0, doubl
 
 void RadiationM1::VetLatInit() {
   Mesh *pm = pmy_pack->pmesh;
-  // cs-vetgd-1017 (CS_VETGD.md stage S3): vet_gd runs on the cubed sphere (its own
+  // (CS_VETGD.md stage S3): vet_gd runs on the cubed sphere (its own
   // sweep, rad_m1_vetgd_cs.cpp); the vet_col_lat SC correction itself does not
   if (pm->use_cubed_sphere && !vgd_on) {
     VlatFatal("the cubed sphere: only through vet_gd (stage S3); the vet_col_lat SC "
@@ -137,10 +137,10 @@ void RadiationM1::VetLatInit() {
   if (!sph_geom) {
     VlatFatal("needs the spherical-polar wedge (Cartesian: closure = vet_sc)");
   }
-  // fullsph-1027 S1: rad_m1 runs on the full sphere (polar x2 faces) with vet_col only.
+  // S1: rad_m1 runs on the full sphere (polar x2 faces) with vet_col only.
   // The SC reads of vet_col_lat / vet_gd wrap theta periodically at block level, their
   // band formula has 1/sin(theta_min) and no pole partner map: stage S2 (latitude cap).
-  // accsp-1102: vet_gd on the spherical-polar mesh takes a stretched theta and the full
+  // vet_gd on the spherical-polar mesh takes a stretched theta and the full
   // sphere through its node table (rad_m1_vetgd_sph2.inc); vet_col_lat keeps both
   // refusals.  env VGD_THTAB=1 forces the table path on a uniform wedge (round-off gate)
   if (vgd_on && !pm->use_cubed_sphere) {
@@ -154,14 +154,14 @@ void RadiationM1::VetLatInit() {
               " on the FULL sphere (mesh/use_polar_boundary) is stage S2 (not "
               "implemented): use closure = vet_col without vet_gd / vet_col_lat");
   }
-  // vgd-latuni-1017 (USER 10-17): the SC upwind interpolation of vet_col_lat / vet_gd is
+  // (USER 10-17): the SC upwind interpolation of vet_col_lat / vet_gd is
   // bilinear in (theta, phi) INDEX space, which is exact only for UNIFORM lateral
   // spacing (a radial stretch is fine: the sweep uses the physical radii).  The only
   // lateral stretch of this code is mesh/use_grid_stretch_theta (rad_m1.cpp refuses it
   // for every M1 run today; refused here again so lifting that guard cannot silently
   // re-enable it); the Athena++ keys x2rat / x3rat are not read by AthenaK; and the
   // built face arrays xx2f / xx3f are checked so that any future lateral map is caught.
-  // cs-vetgd-1017: on the cubed sphere xx2f / xx3f are the panel coordinates on [-1, 1]
+  // on the cubed sphere xx2f / xx3f are the panel coordinates on [-1, 1]
   // (equiangular: xi = pi/4 x2, coordinates.cpp), uniform by construction, and the cs
   // sweep's reads are bilinear in each panel's equiangular INDEX space: the same
   // requirement, so the same check applies unchanged (it cannot fire on a cs mesh).
@@ -196,7 +196,7 @@ void RadiationM1::VetLatInit() {
     MPI_Allreduce(MPI_IN_PLACE, dmin, 2, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, dmax, 2, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 #endif
-    for (int a = (vgd_sth ? 1 : 0); a < 2; ++a) {   // accsp-1102: theta via the table
+    for (int a = (vgd_sth ? 1 : 0); a < 2; ++a) {   // theta via the table
       const double rtol = (sizeof(Real) == 4) ? 1.0e-3 : 1.0e-9;  // LeftEdgeX round-off
       if (!(dmin[a] > 0.0) || dmax[a] - dmin[a] > rtol*dmax[a]) {
         char buf[256];
@@ -227,7 +227,7 @@ void RadiationM1::VetLatInit() {
   const int c2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
   const int c3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
   const int nd = vgd_on ? 1 : 2*vlat_nmu*vlat_npsi;   // vet_gd: own arrays (VetGdInit)
-  // accel-1009 (memory): under vet_gd the vet_col_lat sweep arrays are never touched
+  // (memory): under vet_gd the vet_col_lat sweep arrays are never touched
   const int s3 = vgd_on ? 1 : c3, s2 = vgd_on ? 1 : c2, s1 = vgd_on ? 1 : c1;
   Kokkos::realloc(vlat_i, nmb, nd, s3, s2, s1);
   Kokkos::deep_copy(vlat_i, 0.0);
@@ -286,7 +286,7 @@ void RadiationM1::VetLatInit() {
   pbval_vs = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
   pbval_vs->InitializeBuffers(2);
   pbval_vs->SetVectorPairs(2, {});
-  // m1blockend-1103: the resampled lateral-VET exchanges follow <mesh>/cs_seam_blockend
+  // the resampled lateral-VET exchanges follow <mesh>/cs_seam_blockend
   // as the moments' pbval_u does
   pbval_vl->cs_blockend_ext_ = pbval_u->cs_blockend_ext_;
   pbval_vs->cs_blockend_ext_ = pbval_u->cs_blockend_ext_;
@@ -325,10 +325,10 @@ void RadiationM1::VetLatOdMax() {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   auto tt_ = tau_ten;
   const bool tn = vgd_on && vgd_tan && vgd_tanop;   // + the tangential slots (vet_gd)
-  // cs-s4-1017: on the cubed sphere D_r,lat is the Cartesian vector in LAT1..LAT3
+  // on the cubed sphere D_r,lat is the Cartesian vector in LAT1..LAT3
   const bool c3 = cs_geom;
-  const bool cst = vgd_cstan;   // cs-tan-1106: + Q (LAT4, LAT5)
-  // vtxfix-1029 cs_vertex_mono (rad_m1.hpp): D_r,lat (LAT1..3) = 0 in the cells within
+  const bool cst = vgd_cstan;   // + Q (LAT4, LAT5)
+  // cs_vertex_mono (rad_m1.hpp): D_r,lat (LAT1..3) = 0 in the cells within
   // cs_vertex_mono_n + 1 of a cube vertex, set after every build and before the ghost
   // exchange (the callers), so the operator, its stencil, the lagged assembly and the
   // time2 slot extrapolation all see the same zero, and every face of a cell within
@@ -421,7 +421,7 @@ void RadiationM1::VetLatCsFinish() {
   // there (one global min); the shells below keep dD = 0
   {
     const Real tcut = vlat_taucut;
-    // unify-sc-gd-1012 (opaque surfaces): vet_col_lat_cut_thin = t > 0 also keeps every
+    // (opaque surfaces): vet_col_lat_cut_thin = t > 0 also keeps every
     // cell of optical thickness < t inside the sweep: the cut never lies above a locally
     // THIN cell (a cavity under an opaque shell, a gap below a cold layer), whose faces
     // would otherwise get no half-range data from the formal solution (central faces:
@@ -494,13 +494,13 @@ void RadiationM1::VetLatSweep(const int stage) {
   // (1) ln chi, ln S of every active cell (vet_col's extinction and source), ghosts
   const bool thermal = fl_on && coupling && !opac_zero;
   const bool srx = thermal && vcol_srelax;
-  const bool sbl = vcol_sbl;   // sporder-1012: time2_vet_col_source = blend
+  const bool sbl = vcol_sbl;   // time2_vet_col_source = blend
   const Real sx0 = vcol_sx0;
-  // vetsrc-1020 (vet_source = relaxed_esc): the column-axis cell width for the escape
+  // (vet_source = relaxed_esc): the column-axis cell width for the escape
   const bool sesc = srx && vcol_sesc;
   const Real clq = gas_feedback ? c_light : 0.0;   // held gas: T* = T_b
   const bool hsp = sph_geom;
-  // vet_source_noesrc (fixbundle-1009 F1): the physical E^n = u0 (see VetColBuild)
+  // vet_source_noesrc (F1): the physical E^n = u0 (see VetColBuild)
   const bool noes = VsrcNoes();   // rad_m1.hpp
   auto ur_ = u0;
   const int vsf = vscat ? vscat_form : 0;   // vet_scatter
@@ -525,7 +525,7 @@ void RadiationM1::VetLatSweep(const int stage) {
       Real eth = fmin(opac_(m,M1_OP_P,k,j,i)/chi, 1.0);
       const Real rks = (vsf != 0) ? opac_(m,M1_OP_S,k,j,i) : 0.0;
       if (srx) {
-        // vetsrc-1020 relaxed_esc: the escape rate of the cell (0 = relaxed)
+        // relaxed_esc: the escape rate of the cell (0 = relaxed)
         const Real qe = VetEscapeRate(sesc, chi, hsp ? (cx1f(m,i+1) - cx1f(m,i))
                                                      : mbsize.d_view(m).dx1);
         s = sesc ? (sbl ? VetRelaxedSourceBQ(eos, uh(m,IDN,k,j,i), tg, e,
@@ -620,8 +620,8 @@ void RadiationM1::VetLatSweep(const int stage) {
   const int klo = thrd ? (ks - ng) : ks, khi = thrd ? (ke + ng - 1) : ks;
   const Real twopi = 2.0*M_PI;
   const bool tw = (stage == 0);
-  const bool bfc = vet_bc_face;   // gdface-1011: vet_bc_diff = face
-  const bool spl = vet_seg_split;   // segfix-1011: vet_seg = split
+  const bool bfc = vet_bc_face;   // vet_bc_diff = face
+  const bool spl = vet_seg_split;   // vet_seg = split
   const int spe = VetSegMode();
   auto vd_ = vlat_d;
   for (int pass = 0; pass < 2; ++pass) {
@@ -687,7 +687,7 @@ void RadiationM1::VetLatSweep(const int stage) {
           const int ja = tw ? j : j0, jb = tw ? j : (j0 + 1);
           if (typ == VL_START) {
             // the diffusion intensity at the inner face of shell icut (sc_he.py);
-            // vet_bc_diff = face (gdface-1011): S of the face, 1.5 S_a - 0.5 S_b
+            // vet_bc_diff = face: S of the face, 1.5 S_a - 0.5 S_b
             const Real muf = geo_(l, 2*a+dir, 3);
             const int i1 = i + 1;
             auto ib = [&](const int kk, const int jj) {
@@ -760,7 +760,7 @@ void RadiationM1::VetLatSweep(const int stage) {
             const Real chu = exp(lin(0));
             const Real su = exp(lin(1));
             if (spl) {
-              // segfix-1011 (vet_seg = split): the two parts at the radial face shared
+              // (vet_seg = split): the two parts at the radial face shared
               // with the upwind shell (VL_TURN: half the chord)
               Real dso = 0.5*ds;
               if (typ == VL_NORM) {

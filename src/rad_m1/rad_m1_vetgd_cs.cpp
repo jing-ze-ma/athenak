@@ -70,7 +70,7 @@
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_vetseg.hpp"
 #include "rad_m1/rad_m1_vgdray.hpp"
-// csnccl-1031: the compact per-shell exchange over NCCL (build -DM1_VGD_NCCL, env
+// the compact per-shell exchange over NCCL (build -DM1_VGD_NCCL, env
 // ACC_NCCL=1; as the sp list halo, VgdNcclOn in rad_m1_vetgd.cpp)
 #if defined(M1_VGD_NCCL) && MPI_PARALLEL_ENABLED && defined(KOKKOS_ENABLE_CUDA)
 #include <nccl.h>
@@ -85,7 +85,7 @@
 
 namespace radm1 {
 
-// csfix-1023: build generation of each compact-list cache entry (NOT a class member, so
+// build generation of each compact-list cache entry (NOT a class member, so
 // the dt-retry checkpoint does not restore it): DtRetryAfterRestore drops an entry that
 // the failed attempt rebuilt in place (its restored key would name the old set)
 int64_t g_vgd_csgen[16] = {0};        // (M1_VGD_CSCL_MAX)
@@ -93,7 +93,7 @@ int64_t g_vgd_csgen_save[16] = {0};
 
 namespace {
 
-// xchg-1021: a stream event of the default device instance (the sweep's stream): record
+// a stream event of the default device instance (the sweep's stream): record
 // after a kernel, query from the host without a full fence.  No device backend: fence
 struct VgdCsEv {
   VgdCsEv() = default;
@@ -155,7 +155,7 @@ struct VgdCsSt {
   Real w[4];
 };
 
-// share3-1031: the stencil accessor of the shared upwind core (rad_m1_vgdray.hpp): the
+// the stencil accessor of the shared upwind core (rad_m1_vgdray.hpp): the
 // weighted sum over the stencil cells, in their order
 struct VgdCsA {
   const VgdCsSt &st;
@@ -691,7 +691,7 @@ void RadiationM1::VetGdCsInit() {
   Kokkos::deep_copy(vgd_hloc, -1);
   vgd_hrank.assign(8*nmb, me);
   vgd_hlid.assign(8*nmb, -1);
-  // cs-s3b-1017: the compact lists (vet_gd_halo_compact > 0 with an MPI band): the
+  // the compact lists (vet_gd_halo_compact > 0 with an MPI band): the
   // receive entry of every band position (-1: own interior, on-rank owner or no cell)
   vgd_cscomp = (vgd_hcomp > 0) && vgd_hmpi;
   Kokkos::realloc(vgd_csrix, nmb, c3w, c2w);
@@ -702,14 +702,14 @@ void RadiationM1::VetGdCsInit() {
     Kokkos::deep_copy(vgd_csrix, x_h);
   }
   Kokkos::realloc(vgd_csmiss, 1);
-  // cslru-1031: one cache entry per set of vet_rotate_avg (the K sets cycle; 2 before:
+  // one cache entry per set of vet_rotate_avg (the K sets cycle; 2 before:
   // every rotation rebuilt its lists); the entries beyond vgd_csncl stay unallocated
   vgd_csncl = 2;
   if (vgd_cscomp) {
     vgd_csncl = std::min(std::max(2, vra_k), static_cast<int>(M1_VGD_CSCL_MAX));
   }
   vgd_csper = static_cast<int64_t>(vgd_n)*indcs.nx1;
-  if (vgd_cspad) {vgd_csper = 16*((vgd_csper + 15)/16);}   // raycheap-1109
+  if (vgd_cspad) {vgd_csper = 16*((vgd_csper + 15)/16);}
   for (int c = 0; c < vgd_csncl; ++c) {
     vgd_cscl[c].alpha = -9.0;
     vgd_cscl[c].use = 0;
@@ -727,7 +727,7 @@ void RadiationM1::VetGdCsInit() {
               << "; list cache " << vgd_csncl << " sets" << std::endl;
   }
 #if M1_VGDCS_NCCL
-  // csnccl-1031: the NCCL communicator now (collective: every rank), not at the first
+  // the NCCL communicator now (collective: every rank), not at the first
   // exchange (a rank without partners never exchanges)
   if (global_variable::nranks > 1) {
     if (VgdNcclOn() && me == 0) {
@@ -740,8 +740,8 @@ void RadiationM1::VetGdCsInit() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdCsCompact
-//! \brief cs-s3b-1017: the compact lists of the current direction set (vgd_alpha), from
-//! an LRU cache of max(2, vet_rotate_avg) entries (cslru-1031; was 2: the current and
+//! \brief the compact lists of the current direction set (vgd_alpha), from
+//! an LRU cache of max(2, vet_rotate_avg) entries (was 2: the current and
 //! the next set).  (1) the read mask:
 //! a kernel replays the sweep's upwind geometry (VetGdCsSweep, term for term) for every
 //! interior (cell, direction) and shell, and marks every REMOTE band value (receive
@@ -811,7 +811,7 @@ void RadiationM1::VetGdCsCompact() {
   const Real h = 0.5*M_PI/nc;
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
-  const int64_t per_ = vgd_csper;   // raycheap-1109: n*n1, or padded to 16
+  const int64_t per_ = vgd_csper;   // n*n1, or padded to 16
   Kokkos::Timer tsub;
   // (1) the read mask (VetGdCsSweep's geometry; the values never matter)
   par_for("m1_vgdcs_rmask", DevExeSpace(), 0, nmb1, ks, ke, js, je, 0, n - 1,
@@ -883,7 +883,7 @@ void RadiationM1::VetGdCsCompact() {
   const int np = static_cast<int>(vgd_csprk.size());
   const size_t per = static_cast<size_t>(per_);
   // (3) the lists: counts per (pass, shell, group, partner), offsets, fill in (entry, d)
-  // order (xchg-1021: G = vgd_csxg contiguous direction groups; G = 1 as before)
+  // order (G = vgd_csxg contiguous direction groups; G = 1 as before)
   const int ng = vgd_csxg;
   std::vector<int> dg(n);
   for (int d = 0; d < n; ++d) {dg[d] = (d*ng)/n;}   // group of d: d in [g n/G, (g+1) n/G)
@@ -891,12 +891,12 @@ void RadiationM1::VetGdCsCompact() {
   std::vector<int> sl_h, rl_h;
   int64_t ts = 0, tr = 0;
   if (per % 16 == 0) {
-    // xchg-1021: the lists straight from the packed 2-bit words (partner blocks of
+    // the lists straight from the packed 2-bit words (partner blocks of
     // entries are word aligned when n*n1 % 16 == 0): zero words skipped, the marks sent
     // as packed words (8x fewer bytes); the same lists in the same (t-increasing) order
     // as the byte path below
     const size_t wpe = per/16;   // words per entry
-    // mpirace-1101: the host copies of the marks in PERSISTENT buffers (grown, never
+    // the host copies of the marks in PERSISTENT buffers (grown, never
     // freed), not a fresh mirror / vector per build.  RSG E 10-31: under an LD_PRELOAD
     // profiler (nsys osrt / cpu sampling) UCX's registration cache missed the munmap of
     // the previous build's buffer, the new buffer reused its addresses and the rendezvous
@@ -925,7 +925,7 @@ void RadiationM1::VetGdCsCompact() {
     uint32_t *smw = vgd_csmw_r.data();
 #if MPI_PARALLEL_ENABLED
     {
-      // mpirace-1101: own tags (7107 marks, 7108 their checksums; 7105 is the fused
+      // own tags (7107 marks, 7108 their checksums; 7105 is the fused
       // twin's sweep exchange) and a checksum per message: a block that arrives other
       // than it was sent is FATAL here, never a silent wrong list
       auto hsum = [](const uint32_t *a, const size_t nw) {
@@ -1034,7 +1034,7 @@ void RadiationM1::VetGdCsCompact() {
     ts = buildw(smw, vgd_csps, vgd_cspn, E.so, sl_h);
     tr = buildw(mp, vgd_cspr, vgd_cspm, E.ro, rl_h);
   } else {
-    // memcut-1020: the packed mask expanded on the host (1 byte per value, as before)
+    // the packed mask expanded on the host (1 byte per value, as before)
     std::vector<uint8_t> mh(static_cast<size_t>(std::max(vgd_csnrcv, 1))*per, 0);
     {
       auto mp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), msk_);
@@ -1119,7 +1119,7 @@ void RadiationM1::VetGdCsCompact() {
   }
   vgd_cstb_h += tsub.seconds();
   tsub.reset();
-  // xchg-1021: the largest (pass, shell, group) slice (the pipelined slot size)
+  // the largest (pass, shell, group) slice (the pipelined slot size)
   for (size_t q = 0; q < nsl; ++q) {
     vgd_csxmax = std::max(vgd_csxmax, E.so[q*(np + 1) + np] - E.so[q*(np + 1)]);
     vgd_csxmax = std::max(vgd_csxmax, E.ro[q*(np + 1) + np] - E.ro[q*(np + 1)]);
@@ -1141,7 +1141,7 @@ void RadiationM1::VetGdCsCompact() {
   E.ng = ng;
   E.use = ++vgd_csuse;
   vgd_cscur = c;
-  g_vgd_csgen[c] += 1;   // csfix-1023
+  g_vgd_csgen[c] += 1;
   vgd_csnbuild += 1.0;
   vgd_cstbuild += tb.seconds();
   if (global_variable::my_rank == 0 && vgd_csnbuild <= 1.0) {
@@ -1155,7 +1155,7 @@ void RadiationM1::VetGdCsCompact() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdCsHaloC
-//! \brief cs-s3b-1017: the compact exchange of shell i after pass `pass` of the sweep:
+//! \brief the compact exchange of shell i after pass `pass` of the sweep:
 //! the listed (entry, direction) values of every partner (VetGdCsCompact)
 
 void RadiationM1::VetGdCsHaloC(const int pass, const int i) {
@@ -1182,7 +1182,7 @@ void RadiationM1::VetGdCsHaloC(const int pass, const int i) {
       static_cast<int64_t>(rb_.extent(0)) < nr) {
     VgdCsFatal("VetGdCsHaloC: message buffer too small");
   }
-  // csnccl-1031: with NCCL the device buffers (vgd_csdsb / vgd_csdrb) and no host
+  // with NCCL the device buffers (vgd_csdsb / vgd_csdrb) and no host
   // fence: pack, the NCCL group and the unpack all stream-ordered on the sweep's stream
   bool ncl = false;
 #if M1_VGDCS_NCCL
@@ -1266,15 +1266,15 @@ void RadiationM1::VetGdCsHaloC(const int pass, const int i) {
 #endif
 }
 
-// vgdsched-1113: the per-partner offsets of the merged two-set exchange (VetGdCsHaloCX)
+// the per-partner offsets of the merged two-set exchange (VetGdCsHaloCX)
 namespace {
 constexpr int VGD_CSX_NS = 32;
 struct VgdCsXIdx {int v[VGD_CSX_NS + 1];};
 }   // namespace
 //----------------------------------------------------------------------------------------
 //! \fn bool RadiationM1::VetGdCsHaloCX
-//! \brief vgdsched-1113: the compact exchanges of shell i after pass `pass` of a fused
-//! two-set sweep (xffuse-1113) in ONE round: one pack kernel, one host fence, ONE message
+//! \brief the compact exchanges of shell i after pass `pass` of a fused
+//! two-set sweep in ONE round: one pack kernel, one host fence, ONE message
 //! per partner (piece p = [current set's values of p | next set's values of p], tag
 //! 7107), one unpack kernel.  The values are those of the two VetGdCsHaloC calls (the
 //! same copies into the same band cells: bitwise).  false (nothing done) with NCCL,
@@ -1411,7 +1411,7 @@ bool RadiationM1::VetGdCsHaloCX(const int pass, const int i, const int eb) {
 //! \fn void RadiationM1::VetGdCsHalo
 //! \brief fill every band position of a(m, v, k, j, i), v in [0, nv), shells [i0, i1],
 //! with its owner's interior value (exact copies; the shell range chunked to the buffer).
-//! accpolar-1103: ws >= 0 with the depth-sorted lists of vet_gd_band_global (the full
+//! ws >= 0 with the depth-sorted lists of vet_gd_band_global (the full
 //! sphere, VetGdGlobalBandInit): only the positions within depth ws (a prefix of the
 //! on-rank list and of every partner's segment); ws < 0 (the cubed sphere): all
 
@@ -1435,7 +1435,7 @@ void RadiationM1::VetGdCsHalo(V &a, const int nv, const int i0, const int i1,
 #if MPI_PARALLEL_ENABLED
   if (vgd_hmpi) {
     const int nent = std::max(std::max(vgd_csnsnd, vgd_csnrcv), 1);
-    // accpolar-1103: the full-sphere global band packs into DEVICE buffers (vgd_sbuf /
+    // the full-sphere global band packs into DEVICE buffers (vgd_sbuf /
     // vgd_rbuf, CUDA-aware MPI as the sp slot halo); the cubed sphere keeps pinned host
     const int cap = static_cast<int>((dp ? vgd_sbuf.extent(0) : vgd_cssb.extent(0))/nent);
     const int nich = std::max(1, cap/nv);
@@ -1454,7 +1454,7 @@ void RadiationM1::VetGdCsHalo(V &a, const int nv, const int i0, const int i1,
       Real *sbp = dp ? gsb_.data() : sb_.data();
       Real *rbp = dp ? grb_.data() : rb_.data();
       if (vgd_csnsnd > 0 && dp) {
-        // accpolar-1103: the depth-ws prefix of every partner segment (same offsets)
+        // the depth-ws prefix of every partner segment (same offsets)
         par_for("m1_vgdgb_pack", DevExeSpace(), 0, vgd_csnsnd - 1, 0, nv - 1, 0, ni - 1,
         KOKKOS_LAMBDA(const int e, const int v, const int ii) {
           if (DS_(e) > wq) {return;}
@@ -1567,8 +1567,8 @@ void RadiationM1::VetGdCsTab(const std::vector<double> &d) {
 //! VetGdSweep body with the cs upwind stencil; every band value from VetGdCsHalo)
 
 void RadiationM1::VetGdCsSweep() {
-  if (vgd_xff_prep) {return;}   // xffuse-1113: nothing to prepare (lists made below)
-  // xffuse-1113 vet_gd_rotate_xfade_fuse: the next set swept in the same shell kernels
+  if (vgd_xff_prep) {return;}   // nothing to prepare (lists made below)
+  // vet_gd_rotate_xfade_fuse: the next set swept in the same shell kernels
   // (its intensities vgd_i_xb, tables vgd_tabd, compact lists and pass lists its own)
   const bool xffs = vgd_xff_now;
   Mesh *pm = pmy_pack->pmesh;
@@ -1608,11 +1608,11 @@ void RadiationM1::VetGdCsSweep() {
   auto cx1f = pmy_pack->pcoord->xx1f;
   const Real lcr = log(kVetCornerRatio);
   vgd_hsweep += xffs ? 2 : 1;
-  // cs-s3b-1017: the compact lists of this set (built on its first sweep); every remote
+  // the compact lists of this set (built on its first sweep); every remote
   // read is checked against the read mask (a miss would be a value the lists did not
   // send: FATAL below, never silent)
   const bool ccl = vgd_cscomp;
-  int xcurb = -1;   // xffuse-1113: the next set's compact-list entry
+  int xcurb = -1;   // the next set's compact-list entry
   if (ccl) {
     VetGdCsCompact();
     if (xffs) {
@@ -1634,8 +1634,8 @@ void RadiationM1::VetGdCsSweep() {
   auto msk_ = vgd_cscl[vgd_cscur].msk;
   auto rx_ = vgd_csrix;
   auto miss_ = vgd_csmiss;
-  const int64_t per_ = vgd_csper;   // raycheap-1109: the mask stride per entry
-  // memcut-1020 vet_gd_band_ring on the cubed sphere (VgdRagAlloc / VetGdInit: with the
+  const int64_t per_ = vgd_csper;   // the mask stride per entry
+  // vet_gd_band_ring on the cubed sphere (VgdRagAlloc / VetGdInit: with the
   // compact lists and an MPI band): the sp ring of rad_m1_vetgd.cpp (VetGdRingFlush, the
   // same slab operations in the same places of the shell loop), its saved inward band
   // values = the receive list of each shell's inward compact exchange.  The record of
@@ -1648,14 +1648,14 @@ void RadiationM1::VetGdCsSweep() {
   if (xffs && ccl && vgd_csxg > 1) {
     VgdCsFatal("vet_gd_rotate_xfade_fuse: not with direction groups (VetGdXffOk)");
   }
-  // (xffuse-1113: the next set's records in vgd_hxe_alt, unused on the cubed sphere
+  // (the next set's records in vgd_hxe_alt, unused on the cubed sphere
   // otherwise, from its own compact lists; the ring's second array is its intensities)
   auto ringrec = [&](std::vector<VgdHlEntry> &hxe, const VgdCsCl &E, const Real alr) {
     const int n1c = indcs.nx1 + 2*indcs.ng;
     if (static_cast<int>(hxe.size()) != 2*n1c) {hxe.resize(2*n1c);}
     const int np = static_cast<int>(vgd_csprk.size());
     const int64_t a0 = E.ro[0];
-    const int G = E.ng;   // xchg-1021: the shell's groups are contiguous in the list
+    const int G = E.ng;   // the shell's groups are contiguous in the list
     const int64_t a1 = E.ro[(static_cast<size_t>(n1 - 1)*G + G - 1)*(np + 1) + np];
     const int64_t na = a1 - a0;
     if (static_cast<int64_t>(pmy_pack->nmb_thispack)*n*c3b*c2b >= INT32_MAX ||
@@ -1699,7 +1699,7 @@ void RadiationM1::VetGdCsSweep() {
     if (xffs) {ringrec(vgd_hxe_alt, vgd_cscl[xcurb], vgd_xf_alt);}
   }
   if (rga) {vgd_cur = DevExeSpace();}   // the ring's copy kernel: this sweep's stream
-  // xchg-1021 vet_gd_cs_xgroups = G > 1 (compact lists, MPI band): per (shell, group)
+  // vet_gd_cs_xgroups = G > 1 (compact lists, MPI band): per (shell, group)
   // one kernel and one exchange, pipelined; the shell kernel itself is the same code
   // over a direction range (every (cell, d) value from the same inputs: bitwise G = 1)
 #if MPI_PARALLEL_ENABLED
@@ -1842,7 +1842,7 @@ void RadiationM1::VetGdCsSweep() {
     }
   };
 #endif
-  // cslist-1031: per pass the codes ((m k) j) d of the (cell, direction) pairs of that
+  // per pass the codes ((m k) j) d of the (cell, direction) pairs of that
   // pass's branch (inward: n.r_hat < 0), in the flat range's order; the shell kernel runs
   // over the list (half the range: the other branch's threads only returned, and a warp
   // of mixed branches cost the whole warp).  Made each sweep from vgd_mr (one scan per
@@ -1879,7 +1879,7 @@ void RadiationM1::VetGdCsSweep() {
     }
   }
   auto lst_ = vgd_cslst;
-  // xffuse-1113: the next set's pass lists (the same scan over its own n . r_hat)
+  // the next set's pass lists (the same scan over its own n . r_hat)
   int nlistb[2] = {0, 0};
   if (xffs) {
     if (!usel) {VgdCsFatal("vet_gd_rotate_xfade_fuse needs the pass lists (G = 1)");}
@@ -1911,7 +1911,7 @@ void RadiationM1::VetGdCsSweep() {
     }
   }
   auto lstb_ = vgd_cslst_xb;
-  // speed2-1031 cs early send (see the shell loop)
+  // cs early send (see the shell loop)
   static int s_early = -1;
   if (s_early < 0) {
     const char *ee = std::getenv("VGD_CS_EARLY");
@@ -1925,8 +1925,8 @@ void RadiationM1::VetGdCsSweep() {
   if (VgdNcclOn()) {early = false;}
 #endif
   if (early && vgd_cscl[vgd_cscur].ng != 1) {early = false;}
-  if (xffs) {early = false;}   // xffuse-1113 (the early send: one set per shell kernel)
-  // spdb-1119: the early send's cells are not computed twice: m1_vgdcs_estamp stamps
+  if (xffs) {early = false;}   // (the early send: one set per shell kernel)
+  // the early send's cells are not computed twice: m1_vgdcs_estamp stamps
   // each (m, k, j, d) m1_vgdcs_eshell computes (vgd_est[0], stamp vgd_esid of the shell;
   // eshell counts the clamps itself) and the shell kernel skips the stamped ones: the
   // same values from the same code, written once (bitwise)
@@ -1939,10 +1939,10 @@ void RadiationM1::VetGdCsSweep() {
   auto est_ = vgd_est[0];
   int esid = 0;   // (0: no early cells; never a stamp)
   VgdCsEv eev, efork;
-  static int s_lb = -1;   // speed2-1031 cslb (see the shell kernel)
+  static int s_lb = -1;   // cslb (see the shell kernel)
   if (s_lb < 0) {
     const char *el = std::getenv("VGD_CS_LB");
-    // defaults-1031: 6 (VGD_CS_LB=0: old launch); d6fast2-1112: 2 on HIP, where the
+    // 6 (VGD_CS_LB=0: old launch); 2 on HIP, where the
     // bound is min waves per EU and 6 spilled the body (HG small cs deck 13083259: vet_gd
     // sweeps 5.08 -> 2.73 s, outputs bitwise); 8 on CUDA (H200 RSG -1.1 %, HG -0.8 %, bitwise)
 #if defined(KOKKOS_ENABLE_HIP)
@@ -1951,7 +1951,7 @@ void RadiationM1::VetGdCsSweep() {
     s_lb = (el != nullptr) ? std::atoi(el) : 8;
 #endif
   }
-  VetGdRingSweepBegin(xffs);   // (xffuse-1113: the other set's array second)
+  VetGdRingSweepBegin(xffs);   // (the other set's array second)
   for (int pass = 0; pass < 2; ++pass) {
     const bool inw = (pass == 0);
     const int nsh = n1 - lcut;
@@ -1981,13 +1981,13 @@ void RadiationM1::VetGdCsSweep() {
         vgd_thalo += tf.seconds();
       }
 #endif
-      // cslight-1031: flat (m, k, j, d) range, d fastest (as the MDRange before);
+      // flat (m, k, j, d) range, d fastest (as the MDRange before);
       // cstwin-geo: with the fused twin one thread computes the geometry once and the
       // values of both fields
       const int nkk = ke - ks + 1, njj = je - js + 1, ndd = d1 - d0;
       const int nper = usel ? nlist[pass] : (nmb1 + 1)*nkk*njj*ndd;
       const int lo = pass*nlt;
-      // speed2-1031 (cs early send): the body of the shell kernel for one (cell, direction)
+      // (cs early send): the body of the shell kernel for one (cell, direction)
       // as a device lambda, run by the shell kernel over the pass's list and (early send)
       // first over the shell's compact SEND list alone; cnt = false there: the clamped /
       // miss counters are counted once, by the shell kernel (which recomputes the same
@@ -1995,7 +1995,7 @@ void RadiationM1::VetGdCsSweep() {
 #define M1_VGDCS_SHELL_NAME shell_
 #include "rad_m1_vetgd_cs_shell.inc"
 #undef M1_VGDCS_SHELL_NAME
-      // speed2-1031 cs early send (env VGD_CS_EARLY, default on; compact lists, G = 1, no
+      // cs early send (env VGD_CS_EARLY, default on; compact lists, G = 1, no
       // NCCL): the values this shell SENDS first, then their pack (pinned host buffer) and
       // an event; the full shell kernel runs while the host exchanges (finished below at
       // the halo point: event wait instead of a fence, MPI, unpack)
@@ -2019,7 +2019,7 @@ void RadiationM1::VetGdCsSweep() {
             const int e = x/n, d = x - e*n;
             est_(S_(e,0), S_(e,1) - ks, S_(e,2) - js, d) = sid_;
           });
-          // rays-1120: the send cells and their pack on the second stream, concurrent
+          // the send cells and their pack on the second stream, concurrent
           // with the shell kernel (which skips them); the sweep stream waits for them
           // after the shell kernel (efork / eev)
           VgdEs2Make();
@@ -2044,7 +2044,7 @@ void RadiationM1::VetGdCsSweep() {
         }
         eev.Record((esid != 0) ? vgd_es2 : DevExeSpace());
       }
-      // xffuse-1113: the fused two-set shell kernel: this pass's list of the current set,
+      // the fused two-set shell kernel: this pass's list of the current set,
       // then the next set's, one launch; the next set's body is the include above with
       // that set's names (direction table, n . r_hat, intensities, read mask)
 #define M1_VGDCS_LAUNCHN(F, N) \
@@ -2100,7 +2100,7 @@ void RadiationM1::VetGdCsSweep() {
       } else {
 #if defined(KOKKOS_ENABLE_CUDA)
       auto mainf_ = KOKKOS_LAMBDA(const int c) {
-        int t = usel ? lst_(lo + c) : c;   // cslist-1031 (d0 = 0, ndd = n with the list)
+        int t = usel ? lst_(lo + c) : c;   // (d0 = 0, ndd = n with the list)
         const int d = d0 + t % ndd;
         t /= ndd;
         const int j = js + t % njj;
@@ -2135,7 +2135,7 @@ void RadiationM1::VetGdCsSweep() {
 #undef M1_VGDCS_LAUNCH
 #else
       auto mainf_ = KOKKOS_LAMBDA(const int c) {
-        int t = usel ? lst_(lo + c) : c;   // cslist-1031 (d0 = 0, ndd = n with the list)
+        int t = usel ? lst_(lo + c) : c;   // (d0 = 0, ndd = n with the list)
         const int d = d0 + t % ndd;
         t /= ndd;
         const int j = js + t % njj;
@@ -2145,7 +2145,7 @@ void RadiationM1::VetGdCsSweep() {
         if (esid_ != 0 && est_(m, k - ks, j - js, d) == esid_) {return;}
         shell_(m, k, j, d, true);
       };
-      // speed2-1031 cslb: the shell kernel is latency bound at 25 % occupancy (114
+      // cslb: the shell kernel is latency bound at 25 % occupancy (114
       // registers, 4 blocks of 128 per SM; ncu: DRAM 4 %, issue 43 %); env VGD_CS_LB = 6
       // or 8 launches it with LaunchBounds<128, LB> (register cap, same code)
       if (s_lb == 8) {
@@ -2157,7 +2157,7 @@ void RadiationM1::VetGdCsSweep() {
             Kokkos::RangePolicy<Kokkos::LaunchBounds<128, 6>>(DevExeSpace(), 0, nper),
             Kokkos::Experimental::WorkItemProperty::HintLightWeight), mainf_);
       } else if (s_lb == 2) {
-        // d6fast2-1112: on HIP the second bound is the minimum waves per EU, so 6 caps
+        // on HIP the second bound is the minimum waves per EU, so 6 caps
         // the body at 80 VGPRs + 800 B scratch per thread (rocprofv3 13082414); 2 and 1
         // allow 256 / 512 (register allocation only, the same code)
         Kokkos::parallel_for("m1_vgdcs_shell", Kokkos::Experimental::require(
@@ -2172,7 +2172,7 @@ void RadiationM1::VetGdCsSweep() {
       }
 #endif
       }   // !xffs
-      if (esid_ != 0) {eev.StreamWait(DevExeSpace());}   // rays-1120 (the send cells)
+      if (esid_ != 0) {eev.StreamWait(DevExeSpace());}   // (the send cells)
 #undef M1_VGDCS_LAUNCHN
 #if MPI_PARALLEL_ENABLED
       if (pipe) {
@@ -2209,11 +2209,11 @@ void RadiationM1::VetGdCsSweep() {
       }
       Kokkos::Timer th;
       if (pipe) {
-        // xchg-1021: this shell's exchanges are in flight (finished before the next
+        // this shell's exchanges are in flight (finished before the next
         // shell's kernels of the same group, or at the end of the pass)
       } else if (early) {
 #if MPI_PARALLEL_ENABLED
-        // speed2-1031 cs early send: the pack has run (event), the shell kernel may still
+        // cs early send: the pack has run (event), the shell kernel may still
         // be running; the messages of VetGdCsHaloC, then its unpack (stream order: after
         // the shell kernel)
         const VgdCsCl &E = vgd_cscl[vgd_cscur];
@@ -2265,12 +2265,12 @@ void RadiationM1::VetGdCsSweep() {
         }
 #endif
       } else if (ccl) {
-        // vgdsched-1113: in a fused sweep both sets' exchanges in one round (one message
+        // in a fused sweep both sets' exchanges in one round (one message
         // per partner, VetGdCsHaloCX); else the two exchanges
         if (!(xffs && VetGdCsHaloCX(pass, i, xcurb))) {
-          VetGdCsHaloC(pass, i);          // cs-s3b-1017: the read values only
+          VetGdCsHaloC(pass, i);          // the read values only
           if (xffs) {
-            // xffuse-1113: the next set's exchange (its own compact lists and array)
+            // the next set's exchange (its own compact lists and array)
             const int ca = vgd_cscur;
             vgd_cscur = xcurb;
             std::swap(vgd_i, vgd_i_xb);
@@ -2281,7 +2281,7 @@ void RadiationM1::VetGdCsSweep() {
         }
       } else {
         VetGdCsHalo(vgd_i, n, i, i, false);  // remote band only (on-rank: read direct)
-        if (xffs) {VetGdCsHalo(vgd_i_xb, n, i, i, false);}   // xffuse-1113
+        if (xffs) {VetGdCsHalo(vgd_i_xb, n, i, i, false);}
       }
       if (rga && inw) {
         // the record of the values to save from this shell's inward band: the receive
@@ -2330,7 +2330,7 @@ void RadiationM1::VetGdCsSweep() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CsTanFrameInit
-//! \brief cs-tan-1106: the per-cell orthonormal tangent frame cs_qf of Q: e1 = the normal
+//! \brief the per-cell orthonormal tangent frame cs_qf of Q: e1 = the normal
 //! of the x2 plane through the cell centre, e2 = the x3 plane's normal less its e1 part
 //! (both planes hold the radial line, so both are tangential).  Cartesian components,
 //! exchanged once through the tau_ten kind of exchange (a = at least 6 components, the
@@ -2371,11 +2371,11 @@ void RadiationM1::CsTanFrameInit(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetGdCsMoments
 //! \brief part 0: D_rr = K_rr/J about the cell's r_hat -> LAT0 = D_rr - f_K (LAT1..3 the
-//! Cartesian D_r,lat; LAT4, LAT5 = 0, or Q under vet_gd_tangential: cs-tan-1106);
+//! Cartesian D_r,lat; LAT4, LAT5 = 0, or Q under vet_gd_tangential:);
 //! part 1: the vet_gd_replace surface q of the top cell
 
 namespace {
-// d6fast5-1112: see VgdMomLds (rad_m1_vetgd.cpp); env VGD_MOM_LDS=0: the par_for kernels
+// see VgdMomLds (rad_m1_vetgd.cpp); env VGD_MOM_LDS=0: the par_for kernels
 constexpr int VGD_LDS_TS = 64;
 constexpr int VGD_LDS_DC = 16;
 inline bool VgdMomLdsCs() {
@@ -2406,11 +2406,11 @@ void RadiationM1::VetGdCsMoments(const int part) {
   auto tt_ = tau_ten;
   auto cr_ = vgd_csr;
   if (part == 0) {
-    // cs-tan-1106 vet_gd_tangential: Q in LAT4, LAT5 about the frame cs_qf (M1CsQab)
+    // vet_gd_tangential: Q in LAT4, LAT5 about the frame cs_qf (M1CsQab)
     const bool ctan = vgd_cstan;
     auto qf_ = cs_qf;
     if (VgdMomLdsCs()) {
-      // d6fast5-1112: LDS-staged (rad_m1_vetgd.cpp VgdMomLds); same cells, sums, outputs
+      // LDS-staged (rad_m1_vetgd.cpp VgdMomLds); same cells, sums, outputs
       const int nk = ke - ks + 1, nj = je - js + 1, ni = ie - is + 1;
       const int ncell = (nmb1 + 1)*ni*nj*nk;
       const int nlg = (ncell + VGD_LDS_TS - 1)/VGD_LDS_TS;
@@ -2525,7 +2525,7 @@ void RadiationM1::VetGdCsMoments(const int part) {
           tt_(m,M1_TT_LAT0+5,k,j,i) = q12/jm;
         }
         tt_(m,M1_TT_LAT0,k,j,i) = rr/jm - tt_(m,0,k,j,i);
-        // cs-s4-1017: v = D.rhat - D_rr rhat (CARTESIAN, tangential) -> LAT1..LAT3, the
+        // v = D.rhat - D_rr rhat (CARTESIAN, tangential) -> LAT1..LAT3, the
         // D_r,lat of the cs operator (M1CsLat0 / M1CsLatF); read only with
         // vet_col_lat_offdiag = lagged | operator
         const Real dr = rr/jm;
