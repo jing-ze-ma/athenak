@@ -517,15 +517,6 @@ void RadiationM1::CleanInit() {
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // (staggered on the cubed sphere: no clean_stag_vimp yet, CleanStagDrag's half-cell
-  // masses and D_nn would be the resampled gas ghosts' and the Cartesian D_dd at a seam)
-  if (pmy_pack->pmesh->use_cubed_sphere && cln_vimp) {
-    if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> staggered on the cubed sphere: clean_stag_vimp = false"
-                << std::endl;
-    }
-    cln_vimp = false;
-  }
   int n1 = indcs.nx1 + 2*indcs.ng;
   int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
   int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
@@ -3305,7 +3296,7 @@ Real RadiationM1::CleanVelocityUpdate() {
   if (fa) {
     CleanGhostDefer(cln_w, CLW_A1, 3);   // (as CleanAdvectiveCoefficients)
   } else {
-    if (cln_vimp) CleanStagDrag(false);   // (with the coefficients of this dm)
+    if (cln_vimp) CleanStagDrag(false, false, false);   // (this dm's coefficients)
     CleanAdvectiveCoefficients();
   }
   vmax = fmax(vmax, 1.0e-300);
@@ -5123,11 +5114,19 @@ void RadiationM1::CleanStagDrag(const bool first, const bool vel, const bool lat
       const Real q = !lag ? fc(m,CLF_G,k,j,i) :
                      (vel ? fq : CleanFaceFlux(xh, CLW_EK, dir, m, k, j, i, true)) +
                      x.h*x.c*x.c*s;
-      const Real xl = x.op(m,M1_OP_T,k-dk,j-dj,i-di), xs = xl + x.op(m,M1_OP_T,k,j,i);
-      const Real wl = (xs > 0.0) ? xl/xs : 0.5;
+      // (cubed sphere: n.D.n, and the half cells of the owners' V as CleanMomentumChange,
+      // a seam ghost's rho the hydro's resampled one; b sets only the passes' rate)
+      auto vo = [&](const int kk, const int jj, const int ii) {
+        return x.cub ? x.g(m,CLG_F+3,kk,jj,ii) : 1.0;
+      };
+      const Real vl = vo(k-dk, j-dj, i-di), vr = vo(k, j, i);
+      const Real xl = x.op(m,M1_OP_T,k-dk,j-dj,i-di)*vl;
+      const Real xs = xl + x.op(m,M1_OP_T,k,j,i)*vr, wl = (xs > 0.0) ? xl/xs : 0.5;
       auto ce = [&](const int kk, const int jj, const int ii) {
-        return (1.0 + x.cs(m,CLN_D11+dir,kk,jj,ii))*fmax(x.w(m,CLW_EK,kk,jj,ii), 0.0)/
-               uh(m,IDN,kk,jj,ii);
+        const Real d = x.cub ? CleanStagDnn(x, dir, m, k, j, i, kk, jj, ii)
+                             : x.cs(m,CLN_D11+dir,kk,jj,ii);
+        return (1.0 + d)*fmax(x.w(m,CLW_EK,kk,jj,ii), 0.0)*0.5*(vl + vr)/
+               (vo(kk, jj, ii)*uh(m,IDN,kk,jj,ii));
       };
       const Real bt = off ? 0.0 : (1.0 - fc(m,CLF_TH,k,j,i))*(wl*ce(k-dk, j-dj, i-di) +
                       (1.0 - wl)*ce(k, j, i))/(x.c*x.c);
