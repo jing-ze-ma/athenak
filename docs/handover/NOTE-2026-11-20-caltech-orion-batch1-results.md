@@ -2294,3 +2294,4 @@ B_br gate not passed; arms not started
   CW t19r_damp3_test (log.0) cycle 1382 [cycle=1400 time=4.886108e+04 dt=7.953913e+00]: CLEAN WARNING cycle 1382 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 9)
   CW t19r_damp3_test (log.0) cycle 1409 [cycle=1450 time=4.941231e+04 dt=9.758313e+00]: CLEAN WARNING cycle 1409 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 10)
   CW t19r_damp3_test (log.0) cycle 1415 [cycle=1450 time=4.941231e+04 dt=9.758313e+00]: CLEAN WARNING cycle 1415 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 11)
+- (14:17) W4g_rsg_opaccs result: rc: rc=0 wall=616 | CW 4 FATAL 0 | solves/stage-pass 7.3 mean / 200 max (n=303) | dt range 4.782609e+02 .. 9.565217e+02 | wall/cycle 3.35 s | series in V210/W4g_rsg_opaccs/res.txt

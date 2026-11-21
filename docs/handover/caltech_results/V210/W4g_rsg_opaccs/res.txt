@@ -1,0 +1,19 @@
+W4g_rsg_opaccs: W4g RSG rsg.01295, W4f keys (face harmonic + opac_update), B_opaccs, athena_opaccs_58517aae5 (46acc3ce), node hpc-sm-02-04, keys rst + hydro/eos_logt_min=2.9 hydro/floor_pay=rad_column hydro/merge_lat_blockend=exchange hydro/split_c2p_once=true hydro/tfloor_kelvin=1000 hydro/wall_wb_onesided=true mesh/cs_seam_blockend=extend mesh/cs_seam_rho_guard=4 mesh/cs_vertex_3cell=true mesh/layout_invariant=true problem/he_ic_equil=false rad_m1/clean_conv_kappa=1.0 rad_m1/clean_conv_max=1.0e-4 rad_m1/clean_cs_lz_tel=true rad_m1/clean_init=steady rad_m1/clean_layout=staggered rad_m1/clean_maxit=800 rad_m1/clean_rays=sc rad_m1/clean_rot_fuse=true rad_m1/clean_rot_ring=live rad_m1/clean_stag_mg_color=mirror rad_m1/clean_stag_thinf_held_gate=true rad_m1/clean_stag_thinf_held=true rad_m1/clean_stag_thinf=true rad_m1/clean_stag_xdonor=lag rad_m1/clean_stag_xsrc=true rad_m1/clean_xt_exact=cons rad_m1/cs_cross_mono=true rad_m1/cs_vertex_mono=true rad_m1/floorcap_report=25 rad_m1/floorcap_rho=1e-14 rad_m1/floorcap_v=3e7 rad_m1/implicit_pos_floor_cons=true rad_m1/implicit_pos_floor_gas_keep=1 rad_m1/implicit_pos_gas_cons=true rad_m1/implicit_pos_gas=true rad_m1/implicit_predictor_tcap=1.1 rad_m1/scheme=clean rad_m1/time2_auto_be=16 rad_m1/time2_face_fct=true rad_m1/time2_k1_redist=0 rad_m1/time2_k1_stiff=0 rad_m1/time2_stage_local_be=false rad_m1/vet_gd_rotate_align=true rad_m1/vet_gd_rotate_xfade=true rad_m1/vet_gd_tangential=true rad_m1/vet_rotate_advance=true rad_m1/vet_rotate_avg_ema=128 rad_m1/vet_rotate_avg_ema_change_form=step rad_m1/zalesak_active=true time/cfl_number=0.3 time/dt_retry_t2_be=0 time/dt_retry=true time/restart_refill_ghosts=false rad_m1/clean_face_opac=harmonic rad_m1/clean_stag_opac_update=true 
+rc: rc=0 wall=616 | CW 4 FATAL 0 | solves/stage-pass 7.3 mean / 200 max (n=303) | dt range 4.782609e+02 .. 9.565217e+02 | wall/cycle 3.35 s
+series (user.hst, every 10 cycles): t  KE_int  L_top  L_in  L_bot
+5.46482e+08 1.561e+46 6.5653e+38 6.8371e+38 2.3161e+39
+5.46489e+08 1.5608e+46 5.9804e+38 6.8371e+38 1.4468e+39
+5.46493e+08 1.5607e+46 6.6535e+38 6.8371e+38 4.0147e+38
+5.46499e+08 1.5606e+46 7.2039e+38 6.8371e+38 6.6698e+38
+5.46508e+08 1.5605e+46 8.0873e+38 6.8371e+38 1.2347e+39
+5.46517e+08 1.5603e+46 8.1012e+38 6.8371e+38 8.0945e+38
+5.46527e+08 1.5601e+46 7.903e+38 6.8371e+38 8.4614e+38
+5.46536e+08 1.5599e+46 7.9937e+38 6.8371e+38 8.5604e+38
+5.46545e+08 1.5597e+46 7.9199e+38 6.8371e+38 9.2132e+38
+5.46554e+08 1.5595e+46 8.027e+38 6.8371e+38 9.2448e+38
+5.46563e+08 1.5593e+46 7.9854e+38 6.8371e+38 9.1388e+38
+5.46573e+08 1.5592e+46 7.969e+38 6.8371e+38 1.0394e+39
+5.46582e+08 1.559e+46 7.9457e+38 6.8371e+38 8.3507e+38
+5.46591e+08 1.5588e+46 7.7077e+38 6.8371e+38 8.8511e+38
+5.466e+08 1.5586e+46 7.8726e+38 6.8371e+38 8.6999e+38
+final bins kept in /resnick/groups/carnegie_poc/jingze/orion_runs_1121/v210/W4g_rsg_opaccs/a/bin
