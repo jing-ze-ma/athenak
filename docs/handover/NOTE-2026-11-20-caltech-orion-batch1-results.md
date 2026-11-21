@@ -740,3 +740,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - H2A_hg (hpc-sm-02-10): rc=134 wall=74 rc=134 wall=23 rc=1 wall=11 |  | steady  s/cycle | GPU MiB max 133453 min 132791 | CW a 0 FATAL 0 |  hst vs V203L_hg:  (V203L ran 4 cycles; bins not kept) | s/cycle 
   FAILED: last 100 lines in caltech_results/H2A_hg/FAIL_tail100.txt
 - H2S_hg_b (hpc-sm-02-10): rc=0 wall=177 | cycles 624961 - 624981 | steady 4.509 s/cycle | GPU MiB max 134411 min 133749 | CW a 0 FATAL 0 |  steady s/cycle (excl first+last): B_h2a 4.653 vs B_v203 4.509 | hst H2S_hg_a vs H2S_hg_b:  hegiant.hydro.hst==H2S_hg_b/a hegiant.user.hst==H2S_hg_b/a
+- DC_t19r256 (hpc-sm-02-04): a rc=0 wall=421 | last cycle=500 time=2.249761e+04 dt=2.650043e+01 | 0.702 s/cycle | CW 0 FATAL 0 DT_RETRY(events) 1 | eint<0 lines 11, sum 2224192, max 1441792 | raycut lines 111 | profiles: 4 files
