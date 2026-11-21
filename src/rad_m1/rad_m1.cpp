@@ -380,10 +380,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "solve" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_stag_thinf_held (default on): the thin flux factor of a donor blended by
-    // theta = min(1, max(J, P)/(clean_ray_min E_old)), P its largest ray outflow:
-    // theta g(rays) + (1 - theta) h (its own half range); a ray-shadowed donor is no dam
-    cln_thinh = cln_thinf && pin->GetOrAddBoolean("rad_m1","clean_stag_thinf_held",nw);
+    // clean_stag_thinf_held (default off, the v20.7 value, USER 11-21): the thin flux
+    // factor of a donor blended by theta = min(1, max(J, P)/(clean_ray_min E_old)), P its
+    // largest ray outflow: theta g(rays) + (1 - theta) h (its own half range); a
+    // ray-shadowed donor is no dam
+    cln_thinh = cln_thinf && pin->GetOrAddBoolean("rad_m1","clean_stag_thinf_held",false);
     // clean_stag_xdonor_freeze (default 0 = off): from this pass of a solve on, the
     // xdonor cross flux C is held (CleanStagXDonor): its donor side and cap no longer
     // switch from pass to pass (HG C2D: a 1-cell donor/cap flip, period-2 passes at 2e-4)
