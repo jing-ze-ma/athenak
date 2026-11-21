@@ -10,3 +10,11 @@ FINALRST=1 MODE=rt NH=2 H2A_hg   B_h2a  HG  10 hg_v203.keys time/dt_retry_host=m
 H2S_hg_a   B_h2a  HG  20 hg_v203.keys time/dt_retry_host=m1
 H2S_hg_b   B_v203 HG  20 hg_v203.keys time/dt_retry_host=m1
 # (4) optional: profc.sh ncu of CleanRightHandSide (cln_rhsaf) on B_h2a rsg; compare IPC / no_instruction stall / inst per launch with PRF_rsg c/
+# ---- extension (NOTE fe): builds of caltech-runs/h200spd head 875cb2033 (= 105e3db5c + 3a05dc7dc threaded cs compact-list host build + 875cb2033 KFAST knob, default off). B_h2a stays 105e3db5c.
+#   B_h2c = 875cb2033 plain;  B_h2k = + -D Athena_EXTRA_DEFS=ATHENA_CLEAN_FORK_KFAST=1;  B_h2m = + -D Athena_EXTRA_DEFS=ATHENA_CLEAN_FOR_MB=4
+# (5) HG rt over 22 cycles (2 ray rotations at 11-cycle cadence); hst == V203L_hg / H2A_hg common rows; report "raycheap-1109 cs list builds (rank 0 s): ... host lists X" and per-cycle times of the rotation cycles
+FINALRST=1 MODE=rt NH=2 H2C_hg  B_h2c HG  22 hg_v203.keys time/dt_retry_host=m1
+# (6) RSG speed triple, SAME node, back to back, 20 straight cycles each; s/cycle + hst equal across all three (bitwise expected)
+H2C_rsg B_h2c RSG 20 rsg_v203.keys
+H2K_rsg B_h2k RSG 20 rsg_v203.keys
+H2M_rsg B_h2m RSG 20 rsg_v203.keys
