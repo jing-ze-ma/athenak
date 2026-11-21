@@ -964,3 +964,31 @@ CLEAN FLIM cycle 4429 t2s 1 faces 7164795 momentum cut sum |dF| V/c^2 -nan
 CLEAN FLIM cycle 4429 t2s 1 faces 7164797 momentum cut sum |dF| V/c^2 -nan
 CLEAN FLIM cycle 4429 t2s 1 faces 7164795 momentum cut sum |dF| V/c^2 -nan
 CLEAN WARNING cycle 4429: backward-Euler solve not converged (dt_retry, 67 so far; last change inf)
+== 2026-11-21 03:54:12 log.0: CW 77-80 (grep -B5)
+CLEAN FLIM cycle 4429 t2s 1 faces 7223036 momentum cut sum |dF| V/c^2 -nan
+CLEAN FLIM cycle 4429 t2s 1 faces 7223031 momentum cut sum |dF| V/c^2 1.286191e+229
+CLEAN FLIM cycle 4429 t2s 1 faces 7223036 momentum cut sum |dF| V/c^2 -nan
+CLEAN FLIM cycle 4429 t2s 1 faces 7223031 momentum cut sum |dF| V/c^2 1.286191e+229
+CLEAN FLIM cycle 4429 t2s 1 faces 7223036 momentum cut sum |dF| V/c^2 -nan
+CLEAN WARNING cycle 4429: backward-Euler solve not converged (dt_retry, 67 so far; last change inf)
+
+CLEAN FLIM cycle 4429 t2s 1 faces 6222332 momentum cut sum |dF| V/c^2 -nan
+CLEAN FLIM cycle 4429 t2s 1 faces 6222339 momentum cut sum |dF| V/c^2 -nan
+CLEAN FLIM cycle 4429 t2s 1 faces 6222337 momentum cut sum |dF| V/c^2 -nan
+CLEAN FLIM cycle 4429 t2s 1 faces 6222339 momentum cut sum |dF| V/c^2 -nan
+CLEAN FLIM cycle 4429 t2s 1 faces 6222337 momentum cut sum |dF| V/c^2 -nan
+CLEAN WARNING cycle 4429: backward-Euler solve not converged (dt_retry, 67 so far; last change inf)
+
+CLEAN FLIM cycle 4429 t2s 1 faces 6266340 momentum cut sum |dF| V/c^2 -nan
+CLEAN FLIM cycle 4429 t2s 1 faces 6266337 momentum cut sum |dF| V/c^2 -nan
+CLEAN FLIM cycle 4429 t2s 1 faces 6266340 momentum cut sum |dF| V/c^2 -nan
+CLEAN FLIM cycle 4429 t2s 1 faces 6266337 momentum cut sum |dF| V/c^2 -nan
+CLEAN FLIM cycle 4429 t2s 1 faces 6266342 momentum cut sum |dF| V/c^2 -nan
+CLEAN WARNING cycle 4429: backward-Euler solve not converged (dt_retry, 67 so far; last change inf)
+
+CLEAN FLIM cycle 4429 t2s 1 faces 6285212 momentum cut sum |dF| V/c^2 -nan
+CLEAN FLIM cycle 4429 t2s 1 faces 6285209 momentum cut sum |dF| V/c^2 -nan
+CLEAN FLIM cycle 4429 t2s 1 faces 6285212 momentum cut sum |dF| V/c^2 -nan
+CLEAN FLIM cycle 4429 t2s 1 faces 6285209 momentum cut sum |dF| V/c^2 -nan
+CLEAN FLIM cycle 4429 t2s 1 faces 6285212 momentum cut sum |dF| V/c^2 -nan
+CLEAN WARNING cycle 4429: backward-Euler solve not converged (dt_retry, 67 so far; last change inf)
