@@ -1,4 +1,74 @@
-# LATEST_KEYS (INTEG, 2026-11-21: v20.3): production keys for HG / RSG / R136 runs on clean-cc-stag2-latest
+# LATEST_KEYS (INTEG8, 2026-11-21: v20.4): production keys for HG / RSG / R136 runs on clean-cc-stag2-latest
+
+**Code:** LATEST v20.4 = **207fab564** (INTEG8; awaiting the USER's push decision; push target origin/clean-stagger2-latest, fast-forward from v20.3 d4b08dae4). v20.4 = v20.3 + code defaults (USER 2026-11-20) + three gated pieces (keys off):
+- **Code defaults (USER 2026-11-20 ~15:55-17:25 PST).** One rule: a default applies to a FRESH run and is recorded in the run's input, so its restart files carry it. A restart file without the key keeps its old default, so running chains continue bitwise. Exception: clean_maxit and clean_conv_max are plain defaults, so the old production restarts take them (USER). The old behaviour is available by naming the old value; no silent fallback.
+  - The clean scheme is the default:
+    - `rad_m1/scheme = clean` when `transport = implicit` (logged in the start-up defaults block).
+    - `clean_layout = staggered`.
+  - Beam fix (THINF v7, g <= 1):
+    - `clean_stag_thinf = true`.
+    - `clean_maxit = 800`. Old production restarts carry implicit_lin_maxit = 200, which a NOTE now reports; it no longer sets clean_maxit.
+  - `clean_conv_max = 1e-5`. It no longer comes from implicit_tol_rel_max (1e-4 in the restarts; NOTE).
+  - `clean_maxnl = 200` (production's value; it no longer comes from implicit_maxit).
+  - New key `clean_lin_pass` (default true = the old production's linear-pass form; before, naming implicit_lin_maxit switched it on).
+  - Floor payment: `hydro/floor_pay = rad_column` with eos = general and a `<rad_m1>` block (none otherwise; eos = ideal cannot pay).
+  - Rotating ray sets: `vet_rotate_avg_ema = 128` + `vet_rotate_avg_ema_change_form = step` whenever the direction set rotates. Fixed-ray runs are unaffected. A named `vet_rotate_avg = K` needs `vet_rotate_avg_ema = 0` to take effect.
+  - Production scheme keys that are now defaults:
+    - `clean_stag_xdonor = lag`, `clean_stag_xsrc = true`
+    - `clean_stag_mg_color = mirror`, `clean_xt_exact = cons`, `clean_rot_fuse = true`
+    - `time2_face_fct = true` (staggered only)
+    - `zalesak_active = true`, `implicit_pos_gas_cons = true`, `implicit_pos_floor_gas_keep = 1`
+    - `<time>/cfl_number = 0.3` (fresh clean M1 runs, unnamed only; recipe::CleanDefaults)
+  - The other common production keys already defaulted to the production value: clean_rays sc, clean_rot_ring live, vet_gd_tangential, implicit_pos_floor_cons, time2_k1_redist 0, time2_auto_be 16, time2_stage_local_be false, implicit_predictor_tcap 1.1, time2_k1_stiff 0, cs_vertex_mono, cs_cross_mono, time/dt_retry, mesh/cs_vertex_3cell.
+  - `clean_cs_lz_tel = true` for a fresh staggered cubed-sphere run (USER 2026-11-20). This needed LZWB 8127c2e94: force_reference = clean withholds the key's phi row. Without it, the rigid counter-spin of the lateral-stress defect broke the cubed sphere's hydrostatic rest: rhse_cs6 max v/c_s 3.7e-9 -> 7e-4 (2e-4 with clean_cs_lat_wb). With it, rhse_cs6/cs24 are at the key-off level, 5.6e-9. R136 is spherical polar and must not name the key (FATAL).
+  - `clean_pc_sweep = sym` (PCSYM 7c4f624f5, USER 2026-11-20): beams take 0.36-0.56x the iterations; stars neutral on CPU. The H200 timing (PCS_hg/rsg) is pending; this is the top commit, so it can be dropped if H200 says no.
+- **Gated pieces, keys off:**
+  - RSGDIE `clean_retry_budget` (f1855eaa8): a redone step keeps the budget tolerance; CLEAN WORST names the failing cell.
+  - LZ4 `clean_cs_lat_wb` (bfc6e0723): projection of the cubed-sphere lateral stress sums; G1-G4 pass; rsgs 600 cycles 0 CW, Lz +6e-12.
+  - FRESHGO icbal (8f585d5b9, 4a7f72334): he_ic_balance with he_ic_linhao, problem/he_ic_balance_aref.
+  - LZWB 8127c2e94 (above).
+  - Bench / test only: the AmHistory budget gains Lz_tot = CleanLzTotal. The cs feed1 row's ct.py budget reads it (LZWB: the old row mixed the cell-form radiation L_z with the face-form ledger under lz_tel).
+  - Non-MPI build fix (M1_TU_PART outside `#if MPI_PARALLEL_ENABLED`).
+  - Preflight: implicit_maxit / implicit_tol_rel_max stay in a fresh run's input, because the old module's ImplicitInit reads them; dropping them moved the IDORT beams.
+- **Keys v20.4: TWO prepared options, NONE applied (USER 2026-11-20: decide after the CLOSE closure fix).**
+  - **Option B, apply_v204_v203keys.sh:** the v20.3 behaviour named: clean_stag_thinf=false, clean_maxit=200, clean_conv_max=1e-4, clean_pc_sweep=rb, clean_maxnl=200, clean_lin_pass=true; EMA and lz_tel as v20.3. Verified: v20.3 keys + maxit 200 + conv 1e-4 on v20.4 are bitwise to v20.3 (Caltech V204O_rsg, Raven V204Oc_r136h).
+  - **Option A, apply_v204.sh, the beam-fix keys:** common_scheme.txt gains a v20.4 block that names, for all three stars: clean_stag_thinf=true, clean_maxit=800, clean_conv_max=1e-5, clean_maxnl=200, clean_lin_pass=true, vet_rotate_avg_ema=128, change_form=step. EMA moves from hg/rsg_problem.txt to common; clean_cs_lz_tel=true stays in hg/rsg_problem.txt.
+  - **Option A Caltech evidence (B_v204c; passes/cycle, s/cycle, CW, min dt):**
+    - RSG 1e-4: 14.3 / 2.83 / 0. RSG 1e-5: 43.9 / 4.05 (+43 %) / 1.
+    - **HG 1e-4: 139 / 12.0 / 8, dt down to 6.8. HG 1e-5: FATAL dt_retry at cycle 624965** (V204_hg 4 cycles: 15.5 s, CW 2 BE redos; V203_hg ~3.9 s).
+    - So THINF on the restarted HG is broken, and the 1e-5 ceiling costs RSG +43 %.
+  - **Result changes of option A vs v20.3:**
+    - HG/RSG: THINF + clean_maxit 800 (was 200 through implicit_lin_maxit) + clean_conv_max 1e-5 (was 1e-4).
+    - R136: the same, plus EMA 128/step (was the K4 window).
+    - The BEAMHG note applies: on HG, THINF gives a stronger outer outflow and smaller dt (beamfix/BEAMFIX.md §7). The USER chose it anyway.
+- **Gate (207fab564; code == 7cbc13437 apart from the AmHistory column):**
+CPU:
+  - k20 bench, old values named (lay.py LAYOLD): every lay row bitwise to v20.3 Si7v2030. Changed rows:
+    - the rows that cannot take keys: 6 cc ladders, gtg thin_r/pulse0, wb.sh;
+    - mass (hst count +1, the new feed1 hst);
+    - cs feed1 (now measured from Lz_tot: 5.8e-17 vs -8.7e-17).
+  - k20 bench, defaults (re-baseline Sl8d): 34 rows changed, GATES FAIL 10 = the 8 known + pulse0 and hcyl (THINF). rhse_cs6/cs24 WB 5.6e-9 PASS, cs feed1 Lz 0 PASS.
+  - IDORT (7cbc13437): old-values arm 20/20 data-identical to SK; defaults arms re-baseline; 0 CW in all 60 runs. The 28 runs that ended in the quota fault window were rerun.
+  - Fresh stars rsgs_tf/hgs (7cbc13437):
+    - every production scheme key stripped == all named == poison, bitwise hst;
+    - old values named == k20ref, plain and poison;
+    - defaults plain == poison.
+  - pzgate (7cbc13437):
+    - rotation off 10/10 PASS (poison 1-3, ranks 4 = 12, restart 6 -> 12);
+    - rotating with EMA/lz unnamed (defaults) 10/10 PASS;
+    - pz0: rotating deck with every default named == unnamed (bitwise hst); v20.3 values named == v20.3 gate i7v203pk3 (bitwise hst).
+  - Non-MPI CPU build compiles.
+GPU:
+  - viper MI300A (7cbc13437 HIP): fresh rsgs_tf defaults == named (hst identical); rotating hgs (EMA default) restart test bitwise; 0 CW.
+  - Raven A100 R136 (edd841085 = 98cb57434 tree; the later commits are fresh-run defaults, and R136 is sp):
+    - option-A keys: rt 5/5 bitwise, 0 CW, EMA active (result change);
+    - v20.3 keys + maxit 200 + conv 1e-4: == V203 hst bitwise.
+  - Caltech H200 (B_v204c efb083142; restarts; CUDA 12.2 builds at Caltech miscompiled the closure, so these are to be redone on B_v204n, CUDA 12.9):
+    - V204_rsg rt 5/5, 0 CW. V204P_rsg == V204_rsg. V204O_rsg == V203L bitwise.
+    - V204_hg rt 5/5 but 15.5 s/cycle, 2 BE redos.
+    - CM table above.
+
+### v20.3 block (superseded by v20.4 above)
 
 **Code:** LATEST v20.3 = **e688cb7bc** (INTEG7, awaiting the USER's push decision; push target origin/clean-stagger2-latest, fast-forward from v20.2 a0c19e459). v20.3 = v20.2 + four commits + three key changes (HG/RSG):
 - **L_z fix, key ON for HG/RSG (USER 2026-11-20 ~14:55 PST): `rad_m1/clean_cs_lz_tel=true`** with the LZTEL3 form 74c8a8bb1 (here e688cb7bc). Cubed sphere + staggered only (FATAL otherwise); default false = bitwise to v20.2. The radiation's L_z is that of its face momenta, and the gas takes the face-form absorption torque. The net lateral-stress torque defect X = sum xs (a truncation defect of the cs lateral face stress) goes back to the gas each solve as the least-kinetic-energy solid-body spin dOmega = X/I (I = sum rho V R^2). L_z of gas + radiation + ledger is then exact; the ledger holds only the radial boundary torque. **Caveat:** this is a global conservation fixer, not a local source fix. X moves between radii: on RSG X ~ -2e46 per solve, always negative, which is a deep rigid counter-spin of ~2.7 m/s at R_ph per 1000 cycles (~300 m/s per 1e5 cycles) balanced by the outer layers. The well-balanced lateral-stress source fix (LZ4) will replace it. Compare Lz_tot only within one setting: the radiation L_z changes definition at the switch. Evidence: CPU Lz closure 1e-11 per cycle, restart bitwise; Caltech 600 cycles HG dt 107.7 vs 96.4, CW 0 vs 10, Lz 3e-12; RSG CW 10 vs 13, s/cyc -0.5 %, L_top and Mdot equal to off; G_rsg 1000 cycles Lz -1.5e-11. Cost: two global sums per write-back, no measurable s/cyc change.
