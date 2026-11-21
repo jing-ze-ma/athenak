@@ -21,6 +21,7 @@
 
 #include <cmath>
 #include <limits>
+#include <type_traits>
 
 #include "athena.hpp"
 #include "bvals/bvals.hpp"
@@ -1430,13 +1431,33 @@ void CleanStagXSplit(const CleanArgs &x, const CleanArgs &xr, const int dir, con
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void CleanDirCase
+//! \brief f(D) with direction dir as the compile-time constant D, for a face pass
+//! launched per direction: the face code without the run-time dir's index and branch
+//! arithmetic, and only the branch taken is fetched (the same arithmetic: bitwise)
+
+template <typename F>
+KOKKOS_FORCEINLINE_FUNCTION
+void CleanDirCase(const int dir, const F &f) {
+  if (dir == 0) {
+    f(std::integral_constant<int, 0>());
+  } else if (dir == 1) {
+    f(std::integral_constant<int, 1>());
+  } else {
+    f(std::integral_constant<int, 2>());
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real CleanFaceFlux
 //! \brief flux through face (k,j,i) normal to dir for E in work vector e; with_source adds
-//! the E-independent part
+//! the E-independent part; D >= 0: dir = D at compile time (CleanDirCase)
 
+template <int D = -1>
 CLEAN_DEVICE_NOINLINE CLEAN_HIP_INLINE KOKKOS_INLINE_FUNCTION
-Real CleanFaceFlux(const CleanArgs &x, const int e, const int dir, const int m,
+Real CleanFaceFlux(const CleanArgs &x, const int e, const int dn, const int m,
                    const int k, const int j, const int i, const bool with_source) {
+  const int dir = (D < 0) ? dn : D;
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
   Real al, ar, phi = 0.0;   // (phi: the source's upwind share, weights once)
   CleanFaceWeights(x, dir, m, k, j, i, al, ar, &phi);
