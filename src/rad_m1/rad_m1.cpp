@@ -94,32 +94,39 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_cnorm = pin->GetOrAddReal("rad_m1","clean_init_cnorm",1.0e-10);
     cln_lcnorm = pin->GetOrAddReal("rad_m1","clean_lin_cnorm",1.0e-10);
     // clean_maxnl (200), clean_maxit (800) and clean_conv_max (1e-5) do not take the old
-    // production's implicit_maxit, implicit_lin_maxit and implicit_tol_rel_max
-    // (CleanPreflight names the clean keys; a named implicit_lin_maxit prints a NOTE).
-    // clean_lin_pass (default on, the old production's form): a linear solve that ends
-    // at clean_maxit leaves its iterate to the next pass, without the stall test
-    // (CleanSolve); a restart file without the key keeps the form a named
-    // implicit_lin_maxit set
-    {int pl = 0;
+    // production's implicit_maxit, implicit_lin_maxit and implicit_tol_rel_max (a named
+    // other value prints a NOTE).  clean_lin_pass (default on, the old production's
+    // form): a linear solve that ends at clean_maxit leaves its iterate to the next pass,
+    // without the stall test (CleanSolve); a restart file without the key keeps the form
+    // a named implicit_lin_maxit set
+    {Real ov[3] = {0.0, 0.0, 0.0};   // named implicit_maxit, _lin_maxit, _tol_rel_max
+    const char *ok[3] = {"implicit_maxit", "implicit_lin_maxit", "implicit_tol_rel_max"};
+    const char *ck[3] = {"clean_maxnl", "clean_maxit", "clean_conv_max"};
     for (const InputBlock &ib : pin->block) {
       if (ib.block_name != "rad_m1") continue;
       for (const InputLine &ln : ib.line) {
         if (ln.param_comment == ParameterInput::default_comment) continue;
-        if (ln.param_name == "implicit_lin_maxit") {
-          pl = pin->GetInteger("rad_m1","implicit_lin_maxit");
+        for (int n = 0; n < 3; ++n) {
+          if (ln.param_name == ok[n]) ov[n] = pin->GetReal("rad_m1", ok[n]);
         }
       }
     }
-    const bool nmi = pin->DoesParameterExist("rad_m1","clean_maxit");
+    bool nck[3];
+    for (int n = 0; n < 3; ++n) nck[n] = pin->DoesParameterExist("rad_m1", ck[n]);
     cln_maxnl = pin->GetOrAddInteger("rad_m1","clean_maxnl",200);
     cln_maxit = pin->GetOrAddInteger("rad_m1","clean_maxit",800);
     cln_bmax = pin->GetOrAddReal("rad_m1","clean_conv_max",1.0e-5);
-    if (global_variable::my_rank == 0 && pl > 0 && !nmi && pl != cln_maxit) {
-      std::cout << "### NOTE: <rad_m1>/implicit_lin_maxit = " << pl << ": the linear "
-                << "solves stop at clean_maxit = " << cln_maxit
-                << " (name clean_maxit to change it)" << std::endl;
+    const Real cv[3] = {static_cast<Real>(cln_maxnl), static_cast<Real>(cln_maxit),
+                        cln_bmax};
+    for (int n = 0; n < 3; ++n) {
+      if (global_variable::my_rank == 0 && ov[n] > 0.0 && !nck[n] && ov[n] != cv[n]) {
+        std::cout << "### NOTE: <rad_m1>/" << ok[n] << " = " << ov[n] << " is not the "
+                  << "clean solve's: " << ck[n] << " = " << cv[n] << " (name " << ck[n]
+                  << " to change it)" << std::endl;
+      }
     }
-    cln_linpass = pin->GetOrAddBoolean("rad_m1","clean_lin_pass",nw || pl > 0);}
+    const bool pl = (ov[1] > 0.0);
+    cln_linpass = pin->GetOrAddBoolean("rad_m1","clean_lin_pass",nw || pl);}
     cln_tol_nl = pin->GetOrAddReal("rad_m1","clean_tol_nl",1.0e-11);
     // clean_pc = vcycle | x1line | prodmg (read only when named): the preconditioner of
     // the cell layout (CleanCellPrecondition)
