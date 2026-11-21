@@ -92,3 +92,10 @@ a rc=0 wall=15
 <rad_m1> clean_init steady pass 48: max(|dE|, |dF|/c)/max E = 2.617e-06
 <rad_m1> clean_init steady pass 49: max(|dE|, |dF|/c)/max E = 2.697e-06
 <rad_m1> clean_init steady: NOT converged after 50 passes, residual 2.697e-06 (tol 1.0e-08; 0 formal solutions); radiation E 4.1527620104e+45 -> 4.1604261309e+45, F/c 3.5094e+39 0.0000e+00 0.0000e+00 -> 1.3589e+42 -5.3288e+39 2.2381e+36 (volume sums)
+=== H200S_v203r env: Kokkos_CUDA_MALLOC_ASYNC=OFF KOKKOS_CUDA_MALLOC_ASYNC=OFF OMP_NUM_THREADS=1 (bin /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v203r_e688cb7bc md5 d9cdfcfa; NR=1, nlim 1, mesh/nx2=32 mesh/nx3=32 meshblock/nx2=32 meshblock/nx3=32, node hpc-sm-01-11)
+a rc=0 wall=10
+<rad_m1> clean_init steady pass 0: max(|dE|, |dF|/c)/max E = 9.534e-02
+<rad_m1> clean_init steady pass 1: max(|dE|, |dF|/c)/max E = 3.499e-08
+<rad_m1> clean_init steady pass 2: max(|dE|, |dF|/c)/max E = 7.111e-11
+<rad_m1> clean_init steady pass 3: max(|dE|, |dF|/c)/max E = 2.280e-13
+<rad_m1> clean_init steady: converged after 4 passes, residual 2.280e-13 (tol 1.0e-08; 0 formal solutions); radiation E 4.1527620104e+45 -> 4.1609123298e+45, F/c 3.5094e+39 0.0000e+00 0.0000e+00 -> 1.5036e+41 1.4139e+34 -2.0679e+33 (volume sums)

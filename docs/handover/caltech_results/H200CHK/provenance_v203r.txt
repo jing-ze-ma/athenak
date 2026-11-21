@@ -1,0 +1,22 @@
+grep: build_r/CMakeCache.txt: No such file or directory
+BUILD_OK v203r e688cb7bc md5=d9cdfcfa761f1fc63bba2dd11b74cd26 secs=2391 host=hpc-sm-01-11 launcher=
+== git (tree /resnick/groups/carnegie_poc/jingze/wt_orion1121/v203, build dir build_r, fresh cmake, NO compiler launcher/ccache)
+e688cb7bc65c6650d8221454f062f1369093bdf7
+Athena_DEVICE_FMA:BOOL=OFF
+Athena_ENABLE_MPI:BOOL=ON
+Athena_M1_VGD_NMAX:UNINITIALIZED=512
+CMAKE_BUILD_TYPE:STRING=Release
+CMAKE_CXX_FLAGS:STRING=-ffp-contract=off
+Kokkos_ARCH_HOPPER90:BOOL=On
+Kokkos_ENABLE_CUDA:BOOL=On
+Kokkos_ENABLE_IMPL_CUDA_MALLOC_ASYNC:BOOL=OFF
+PROBLEM:STRING=he_star_m1
+CXX_DEFINES = -DKOKKOS_DEPENDENCE -DM1_VGD_NMAX_BUILD=512
+CXX_FLAGS = -ffp-contract=off --fmad=false -O3 -DNDEBUG -std=c++17 -extended-lambda -Wext-lambda-captures-this -arch=sm_90
+#define KOKKOS_ENABLE_CUDA
+/* #undef KOKKOS_ENABLE_CUDA_RELOCATABLE_DEVICE_CODE */
+/* #undef KOKKOS_ENABLE_CUDA_UVM */
+#define KOKKOS_ENABLE_CUDA_LAMBDA  // deprecated
+/* #undef KOKKOS_ENABLE_CUDA_CONSTEXPR */
+#define KOKKOS_ARCH_HOPPER
+#define KOKKOS_ARCH_HOPPER90
