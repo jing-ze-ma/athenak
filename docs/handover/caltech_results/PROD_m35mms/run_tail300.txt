@@ -1,300 +1,300 @@
-CLEAN cycle 2302 t2s 2 it 5 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2302 t2s 2 write-back closure 8.361e-07
-CLEAN cycle 2302 t2s 3 it 7 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 2302 t2s 3 ledger -7.1182517801965922e+32
-CLEAN XT cycle 2302 t2s 3 write-back closure 5.694e-05
-CLEAN cycle 2303 t2s 2 it 5 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2303 t2s 2 write-back closure 4.884e-07
-CLEAN cycle 2303 t2s 3 it 8 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 2303 t2s 3 ledger -7.1212207652552728e+32
-CLEAN XT cycle 2303 t2s 3 write-back closure 1.301e-05
-CLEAN cycle 2304 t2s 2 it 5 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2304 t2s 2 write-back closure 2.857e-07
-CLEAN cycle 2304 t2s 3 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2304 t2s 3 ledger -7.1241917413213619e+32
-CLEAN XT cycle 2304 t2s 3 write-back closure 2.291e-07
-CLEAN cycle 2305 t2s 2 it 5 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2305 t2s 2 write-back closure 1.767e-07
-CLEAN cycle 2305 t2s 3 it 6 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 2305 t2s 3 ledger -7.1271668999638518e+32
-CLEAN XT cycle 2305 t2s 3 write-back closure 1.300e-05
-CLEAN cycle 2306 t2s 2 it 5 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2306 t2s 2 write-back closure 2.574e-07
-CLEAN cycle 2306 t2s 3 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2306 t2s 3 ledger -7.1301416625836357e+32
-CLEAN XT cycle 2306 t2s 3 write-back closure 1.863e-07
-CLEAN cycle 2307 t2s 2 it 5 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2307 t2s 2 write-back closure 3.546e-07
-CLEAN cycle 2307 t2s 3 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2307 t2s 3 ledger -7.1331136302079091e+32
-CLEAN XT cycle 2307 t2s 3 write-back closure 6.637e-08
-CLEAN cycle 2308 t2s 2 it 5 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2308 t2s 2 write-back closure 2.466e-07
-CLEAN cycle 2308 t2s 3 it 4 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2308 t2s 3 ledger -7.1360807990862942e+32
-CLEAN XT cycle 2308 t2s 3 write-back closure 1.511e-07
-CLEAN cycle 2309 t2s 2 it 5 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2309 t2s 2 write-back closure 8.905e-07
-CLEAN cycle 2309 t2s 3 it 3 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2309 t2s 3 ledger -7.1390471197183462e+32
-CLEAN XT cycle 2309 t2s 3 write-back closure 3.657e-07
-CLEAN cycle 2310 t2s 2 it 5 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2310 t2s 2 write-back closure 1.547e-07
-CLEAN cycle 2310 t2s 3 it 4 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2310 t2s 3 ledger -7.1420160015748666e+32
-CLEAN XT cycle 2310 t2s 3 write-back closure 1.156e-07
-CLEAN cycle 2311 t2s 2 it 5 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2311 t2s 2 write-back closure 1.489e-07
-CLEAN cycle 2311 t2s 3 it 4 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2311 t2s 3 ledger -7.1449858543262275e+32
-CLEAN XT cycle 2311 t2s 3 write-back closure 6.052e-07
-CLEAN cycle 2312 t2s 2 it 5 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2312 t2s 2 write-back closure 2.053e-07
-CLEAN cycle 2312 t2s 3 it 4 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2312 t2s 3 ledger -7.1479530638880305e+32
-CLEAN XT cycle 2312 t2s 3 write-back closure 2.641e-07
-CLEAN cycle 2313 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2313 t2s 2 write-back closure 1.227e-07
-CLEAN cycle 2313 t2s 3 it 5 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2313 t2s 3 ledger -7.1509183382692678e+32
-CLEAN XT cycle 2313 t2s 3 write-back closure 3.517e-07
-CLEAN cycle 2314 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2314 t2s 2 write-back closure 1.478e-07
-CLEAN cycle 2314 t2s 3 it 5 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2314 t2s 3 ledger -7.1538861932276213e+32
-CLEAN XT cycle 2314 t2s 3 write-back closure 7.196e-07
-CLEAN cycle 2315 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2315 t2s 2 write-back closure 1.421e-07
-CLEAN cycle 2315 t2s 3 it 3 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2315 t2s 3 ledger -7.1568552627670805e+32
-CLEAN XT cycle 2315 t2s 3 write-back closure 3.295e-07
-CLEAN cycle 2316 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2316 t2s 2 write-back closure 1.439e-07
-CLEAN cycle 2316 t2s 3 it 3 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2316 t2s 3 ledger -7.1598245080307584e+32
-CLEAN XT cycle 2316 t2s 3 write-back closure 4.791e-07
-CLEAN cycle 2317 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2317 t2s 2 write-back closure 1.420e-07
-CLEAN cycle 2317 t2s 3 it 3 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2317 t2s 3 ledger -7.1627951927448168e+32
-CLEAN XT cycle 2317 t2s 3 write-back closure 2.686e-07
-CLEAN cycle 2318 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2318 t2s 2 write-back closure 1.412e-07
-CLEAN cycle 2318 t2s 3 it 4 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2318 t2s 3 ledger -7.1657658786078695e+32
-CLEAN XT cycle 2318 t2s 3 write-back closure 6.643e-07
-CLEAN cycle 2319 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2319 t2s 2 write-back closure 1.385e-07
-CLEAN cycle 2319 t2s 3 it 4 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2319 t2s 3 ledger -7.1687369537407306e+32
-CLEAN XT cycle 2319 t2s 3 write-back closure 3.767e-07
-CLEAN cycle 2320 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2320 t2s 2 write-back closure 1.382e-07
-CLEAN cycle 2320 t2s 3 it 5 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2320 t2s 3 ledger -7.1717108364469023e+32
-CLEAN XT cycle 2320 t2s 3 write-back closure 3.702e-07
-<restart> rst/m35mms.00001.rst: the cell and face variables written at 9.4 s
-<restart> rst/m35mms.00001.rst: rad_m1 hesdirk2 slope written at 10.1 s
-<restart> rst/m35mms.00001.rst: hydro w0 density and velocities written at 10.5 s
-<restart> rst/m35mms.00001.rst: rad_signal_speed inputs written at 10.9 s
-<restart> rst/m35mms.00001.rst: rad_m1 applied face flux written at 11.1 s
-<restart> rst/m35mms.00001.rst: all (file closed) written at 11.1 s
-CLEAN cycle 2321 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2321 t2s 2 write-back closure 1.415e-07
-CLEAN cycle 2321 t2s 3 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2321 t2s 3 ledger -7.1746818664726030e+32
-CLEAN XT cycle 2321 t2s 3 write-back closure 3.905e-07
-CLEAN cycle 2322 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2322 t2s 2 write-back closure 1.450e-07
-CLEAN cycle 2322 t2s 3 it 3 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2322 t2s 3 ledger -7.1776488085635128e+32
-CLEAN XT cycle 2322 t2s 3 write-back closure 3.209e-07
-CLEAN cycle 2323 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2323 t2s 2 write-back closure 1.470e-07
-CLEAN cycle 2323 t2s 3 it 4 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2323 t2s 3 ledger -7.1806193649171765e+32
-CLEAN XT cycle 2323 t2s 3 write-back closure 4.095e-07
-CLEAN cycle 2324 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2324 t2s 2 write-back closure 1.528e-07
-CLEAN cycle 2324 t2s 3 it 4 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2324 t2s 3 ledger -7.1835949144779118e+32
-CLEAN XT cycle 2324 t2s 3 write-back closure 2.112e-07
-CLEAN cycle 2325 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2325 t2s 2 write-back closure 1.581e-07
-CLEAN cycle 2325 t2s 3 it 4 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2325 t2s 3 ledger -7.1865687235620183e+32
-CLEAN XT cycle 2325 t2s 3 write-back closure 5.086e-07
-CLEAN cycle 2326 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2326 t2s 2 write-back closure 1.584e-07
-CLEAN cycle 2326 t2s 3 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2326 t2s 3 ledger -7.1895442882149082e+32
-CLEAN XT cycle 2326 t2s 3 write-back closure 5.618e-07
-CLEAN cycle 2327 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2327 t2s 2 write-back closure 1.564e-07
-CLEAN cycle 2327 t2s 3 it 5 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2327 t2s 3 ledger -7.1925213251249492e+32
-CLEAN XT cycle 2327 t2s 3 write-back closure 3.983e-07
-CLEAN cycle 2328 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2328 t2s 2 write-back closure 1.584e-07
-CLEAN cycle 2328 t2s 3 it 4 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2328 t2s 3 ledger -7.1955007563363529e+32
-CLEAN XT cycle 2328 t2s 3 write-back closure 3.106e-07
-CLEAN cycle 2329 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2329 t2s 2 write-back closure 1.581e-07
-CLEAN cycle 2329 t2s 3 it 4 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2329 t2s 3 ledger -7.1984796272633115e+32
-CLEAN XT cycle 2329 t2s 3 write-back closure 5.832e-07
-CLEAN cycle 2330 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2330 t2s 2 write-back closure 1.589e-07
-CLEAN cycle 2330 t2s 3 it 6 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2330 t2s 3 ledger -7.2014602630244325e+32
-CLEAN XT cycle 2330 t2s 3 write-back closure 4.742e-08
-CLEAN cycle 2331 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2331 t2s 2 write-back closure 1.625e-07
-CLEAN cycle 2331 t2s 3 it 6 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2331 t2s 3 ledger -7.2044456432529161e+32
-CLEAN XT cycle 2331 t2s 3 write-back closure 4.401e-08
-CLEAN cycle 2332 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2332 t2s 2 write-back closure 1.639e-07
-CLEAN cycle 2332 t2s 3 it 4 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2332 t2s 3 ledger -7.2074276930877390e+32
-CLEAN XT cycle 2332 t2s 3 write-back closure 3.921e-07
-CLEAN cycle 2333 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2333 t2s 2 write-back closure 1.621e-07
-CLEAN cycle 2333 t2s 3 it 4 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2333 t2s 3 ledger -7.2104163813070663e+32
-CLEAN XT cycle 2333 t2s 3 write-back closure 3.740e-07
-CLEAN cycle 2334 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2334 t2s 2 write-back closure 1.549e-07
-CLEAN cycle 2334 t2s 3 it 4 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2334 t2s 3 ledger -7.2134129355533464e+32
-CLEAN XT cycle 2334 t2s 3 write-back closure 7.003e-08
-CLEAN cycle 2335 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2335 t2s 2 write-back closure 1.405e-07
-CLEAN cycle 2335 t2s 3 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2335 t2s 3 ledger -7.2164056002626853e+32
-CLEAN XT cycle 2335 t2s 3 write-back closure 1.246e-07
-CLEAN cycle 2336 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2336 t2s 2 write-back closure 1.738e-07
-CLEAN cycle 2336 t2s 3 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2336 t2s 3 ledger -7.2193898189245919e+32
-CLEAN XT cycle 2336 t2s 3 write-back closure 7.381e-08
-CLEAN cycle 2337 t2s 2 it 6 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2337 t2s 2 write-back closure 2.422e-07
-CLEAN cycle 2337 t2s 3 it 6 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2337 t2s 3 ledger -7.2223742039625616e+32
-CLEAN XT cycle 2337 t2s 3 write-back closure 5.242e-08
-CLEAN cycle 2338 t2s 2 it 6 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2338 t2s 2 write-back closure 1.447e-06
-CLEAN cycle 2338 t2s 3 it 6 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2338 t2s 3 ledger -7.2253647459573333e+32
-CLEAN XT cycle 2338 t2s 3 write-back closure 8.240e-08
-CLEAN cycle 2339 t2s 2 it 5 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2339 t2s 2 write-back closure 1.125e-06
-CLEAN cycle 2339 t2s 3 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2339 t2s 3 ledger -7.2283614795546090e+32
-CLEAN XT cycle 2339 t2s 3 write-back closure 4.250e-07
-CLEAN cycle 2340 t2s 2 it 6 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2340 t2s 2 write-back closure 1.497e-06
-CLEAN cycle 2340 t2s 3 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2340 t2s 3 ledger -7.2313552715158123e+32
-CLEAN XT cycle 2340 t2s 3 write-back closure 1.093e-07
-CLEAN cycle 2341 t2s 2 it 6 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2341 t2s 2 write-back closure 1.432e-06
-CLEAN cycle 2341 t2s 3 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2341 t2s 3 ledger -7.2343493195018741e+32
-CLEAN XT cycle 2341 t2s 3 write-back closure 1.132e-07
-CLEAN cycle 2342 t2s 2 it 6 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2342 t2s 2 write-back closure 2.321e-07
-CLEAN cycle 2342 t2s 3 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2342 t2s 3 ledger -7.2373463475832964e+32
-CLEAN XT cycle 2342 t2s 3 write-back closure 1.161e-07
-CLEAN cycle 2343 t2s 2 it 6 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2343 t2s 2 write-back closure 2.297e-07
-CLEAN cycle 2343 t2s 3 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2343 t2s 3 ledger -7.2403419766961793e+32
-CLEAN XT cycle 2343 t2s 3 write-back closure 1.184e-07
-CLEAN cycle 2344 t2s 2 it 6 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2344 t2s 2 write-back closure 2.265e-07
-CLEAN cycle 2344 t2s 3 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2344 t2s 3 ledger -7.2433373889496389e+32
-CLEAN XT cycle 2344 t2s 3 write-back closure 1.150e-07
-CLEAN cycle 2345 t2s 2 it 6 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2345 t2s 2 write-back closure 2.230e-07
-CLEAN cycle 2345 t2s 3 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2345 t2s 3 ledger -7.2463351538926433e+32
-CLEAN XT cycle 2345 t2s 3 write-back closure 1.331e-07
-CLEAN cycle 2346 t2s 2 it 6 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2346 t2s 2 write-back closure 2.158e-07
-CLEAN cycle 2346 t2s 3 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2346 t2s 3 ledger -7.2493332134108679e+32
-CLEAN XT cycle 2346 t2s 3 write-back closure 1.853e-07
-CLEAN cycle 2347 t2s 2 it 6 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2347 t2s 2 write-back closure 1.227e-06
-CLEAN cycle 2347 t2s 3 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2347 t2s 3 ledger -7.2523298706453706e+32
-CLEAN XT cycle 2347 t2s 3 write-back closure 2.609e-07
-CLEAN cycle 2348 t2s 2 it 6 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2348 t2s 2 write-back closure 1.005e-06
-CLEAN cycle 2348 t2s 3 it 6 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2348 t2s 3 ledger -7.2553236889150061e+32
-CLEAN XT cycle 2348 t2s 3 write-back closure 5.504e-08
-CLEAN cycle 2349 t2s 2 it 6 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2349 t2s 2 write-back closure 3.748e-07
-CLEAN cycle 2349 t2s 3 it 6 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2349 t2s 3 ledger -7.2583148163061963e+32
-CLEAN XT cycle 2349 t2s 3 write-back closure 6.236e-08
-elapsed=1.163477e+03 cycle=2350 time=2.187070e+04 dt=9.089027e+00
-CLEAN cycle 2350 t2s 2 it 6 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2350 t2s 2 write-back closure 8.287e-07
-CLEAN cycle 2350 t2s 3 it 6 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2350 t2s 3 ledger -7.2613076427952044e+32
-CLEAN XT cycle 2350 t2s 3 write-back closure 6.890e-08
-CLEAN cycle 2351 t2s 2 it 6 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2351 t2s 2 write-back closure 6.580e-07
-CLEAN cycle 2351 t2s 3 it 6 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2351 t2s 3 ledger -7.2643024168609973e+32
-CLEAN XT cycle 2351 t2s 3 write-back closure 3.655e-08
-CLEAN cycle 2352 t2s 2 it 7 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN XT cycle 2352 t2s 2 write-back closure 1.922e-05
-CLEAN cycle 2352 t2s 3 it 6 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2352 t2s 3 ledger -7.2672979402485542e+32
-CLEAN XT cycle 2352 t2s 3 write-back closure 4.843e-08
-CLEAN cycle 2353 t2s 2 it 7 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN XT cycle 2353 t2s 2 write-back closure 2.879e-05
-CLEAN cycle 2353 t2s 3 it 6 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2353 t2s 3 ledger -7.2702916351372616e+32
-CLEAN XT cycle 2353 t2s 3 write-back closure 6.962e-08
-CLEAN cycle 2354 t2s 2 it 7 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN XT cycle 2354 t2s 2 write-back closure 1.282e-05
-CLEAN cycle 2354 t2s 3 it 5 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2354 t2s 3 ledger -7.2732832793282329e+32
-CLEAN XT cycle 2354 t2s 3 write-back closure 3.698e-07
-CLEAN cycle 2355 t2s 2 it 6 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN XT cycle 2355 t2s 2 write-back closure 2.156e-05
-CLEAN cycle 2355 t2s 3 it 5 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2355 t2s 3 ledger -7.2762749212019760e+32
-CLEAN XT cycle 2355 t2s 3 write-back closure 4.474e-08
-CLEAN cycle 2356 t2s 2 it 4 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2356 t2s 2 write-back closure 5.590e-07
-CLEAN cycle 2356 t2s 3 it 6 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2356 t2s 3 ledger -7.2792667967618272e+32
-CLEAN XT cycle 2356 t2s 3 write-back closure 1.607e-07
-CLEAN cycle 2357 t2s 2 it 7 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN XT cycle 2357 t2s 2 write-back closure 1.344e-05
-CLEAN cycle 2357 t2s 3 it 6 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2357 t2s 3 ledger -7.2822611111232804e+32
-CLEAN XT cycle 2357 t2s 3 write-back closure 3.198e-08
-CLEAN cycle 2358 t2s 2 it 9 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN XT cycle 2358 t2s 2 write-back closure 1.976e-05
-CLEAN cycle 2358 t2s 3 it 4 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2358 t2s 3 ledger -7.2852574716469573e+32
-CLEAN XT cycle 2358 t2s 3 write-back closure 2.789e-07
-CLEAN cycle 2359 t2s 2 it 6 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2359 t2s 2 write-back closure 5.820e-07
-CLEAN cycle 2359 t2s 3 it 5 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN LZB cycle 2359 t2s 3 ledger -7.2882538688730920e+32
-CLEAN XT cycle 2359 t2s 3 write-back closure 6.179e-08
-CLEAN cycle 2360 t2s 2 it 4 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 2360 t2s 2 write-back closure 3.437e-07
-CLEAN cycle 2360 t2s 3 it 5 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3551 t2s 2 write-back closure 6.580e-08
+CLEAN cycle 3551 t2s 3 it 4 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3551 t2s 3 ledger -1.0157708594084728e+33
+CLEAN XT cycle 3551 t2s 3 write-back closure 2.829e-07
+CLEAN cycle 3552 t2s 2 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3552 t2s 2 write-back closure 4.985e-07
+CLEAN cycle 3552 t2s 3 it 4 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3552 t2s 3 ledger -1.0160509277836395e+33
+CLEAN XT cycle 3552 t2s 3 write-back closure 1.238e-07
+CLEAN cycle 3553 t2s 2 it 5 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3553 t2s 2 write-back closure 1.964e-07
+CLEAN cycle 3553 t2s 3 it 4 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3553 t2s 3 ledger -1.0163312749912067e+33
+CLEAN XT cycle 3553 t2s 3 write-back closure 2.312e-07
+CLEAN cycle 3554 t2s 2 it 5 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3554 t2s 2 write-back closure 6.132e-07
+CLEAN cycle 3554 t2s 3 it 8 (sum 20) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3554 t2s 3 ledger -1.0166119233238488e+33
+CLEAN XT cycle 3554 t2s 3 write-back closure 1.953e-08
+CLEAN cycle 3555 t2s 2 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3555 t2s 2 write-back closure 4.532e-07
+CLEAN cycle 3555 t2s 3 it 9 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3555 t2s 3 ledger -1.0168922719336159e+33
+CLEAN XT cycle 3555 t2s 3 write-back closure 7.423e-06
+CLEAN cycle 3556 t2s 2 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3556 t2s 2 write-back closure 2.529e-07
+CLEAN cycle 3556 t2s 3 it 5 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3556 t2s 3 ledger -1.0171730723290119e+33
+CLEAN XT cycle 3556 t2s 3 write-back closure 1.575e-07
+CLEAN cycle 3557 t2s 2 it 6 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3557 t2s 2 write-back closure 1.797e-07
+CLEAN cycle 3557 t2s 3 it 6 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3557 t2s 3 ledger -1.0174541697765219e+33
+CLEAN XT cycle 3557 t2s 3 write-back closure 6.934e-05
+CLEAN cycle 3558 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3558 t2s 2 write-back closure 5.827e-07
+CLEAN cycle 3558 t2s 3 it 7 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3558 t2s 3 ledger -1.0177353880327197e+33
+CLEAN XT cycle 3558 t2s 3 write-back closure 3.635e-08
+CLEAN cycle 3559 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3559 t2s 2 write-back closure 1.690e-07
+CLEAN cycle 3559 t2s 3 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3559 t2s 3 ledger -1.0180166312281003e+33
+CLEAN XT cycle 3559 t2s 3 write-back closure 1.749e-07
+CLEAN cycle 3560 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3560 t2s 2 write-back closure 2.487e-07
+CLEAN cycle 3560 t2s 3 it 6 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3560 t2s 3 ledger -1.0182984536396646e+33
+CLEAN XT cycle 3560 t2s 3 write-back closure 1.256e-07
+CLEAN cycle 3561 t2s 2 it 7 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3561 t2s 2 write-back closure 2.289e-07
+CLEAN cycle 3561 t2s 3 it 8 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3561 t2s 3 ledger -1.0185806948626728e+33
+CLEAN XT cycle 3561 t2s 3 write-back closure 2.955e-06
+CLEAN cycle 3562 t2s 2 it 7 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3562 t2s 2 write-back closure 1.424e-07
+CLEAN cycle 3562 t2s 3 it 6 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3562 t2s 3 ledger -1.0188628856764059e+33
+CLEAN XT cycle 3562 t2s 3 write-back closure 1.282e-07
+CLEAN cycle 3563 t2s 2 it 5 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3563 t2s 2 write-back closure 2.114e-07
+CLEAN cycle 3563 t2s 3 it 6 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3563 t2s 3 ledger -1.0191453810093719e+33
+CLEAN XT cycle 3563 t2s 3 write-back closure 8.461e-08
+CLEAN cycle 3564 t2s 2 it 5 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3564 t2s 2 write-back closure 6.581e-08
+CLEAN cycle 3564 t2s 3 it 6 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3564 t2s 3 ledger -1.0194275667062945e+33
+CLEAN XT cycle 3564 t2s 3 write-back closure 3.790e-08
+CLEAN cycle 3565 t2s 2 it 6 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3565 t2s 2 write-back closure 6.649e-07
+CLEAN cycle 3565 t2s 3 it 5 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3565 t2s 3 ledger -1.0197098834207188e+33
+CLEAN XT cycle 3565 t2s 3 write-back closure 1.886e-07
+CLEAN ray cut cycle 3566 shell 203 -> 204 (want 204, R)
+CLEAN cycle 3566 t2s 2 it 7 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 3566 t2s 2 write-back closure 1.940e-04
+CLEAN cycle 3566 t2s 3 it 8 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3566 t2s 3 ledger -1.0199927624429795e+33
+CLEAN XT cycle 3566 t2s 3 write-back closure 9.326e-06
+CLEAN cycle 3567 t2s 2 it 7 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 3567 t2s 2 write-back closure 3.600e-04
+CLEAN cycle 3567 t2s 3 it 6 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3567 t2s 3 ledger -1.0202758578156056e+33
+CLEAN XT cycle 3567 t2s 3 write-back closure 6.112e-05
+CLEAN cycle 3568 t2s 2 it 6 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 3568 t2s 2 write-back closure 7.468e-05
+CLEAN cycle 3568 t2s 3 it 9 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3568 t2s 3 ledger -1.0205601078696969e+33
+CLEAN XT cycle 3568 t2s 3 write-back closure 2.987e-06
+CLEAN cycle 3569 t2s 2 it 8 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 3569 t2s 2 write-back closure 7.767e-06
+CLEAN cycle 3569 t2s 3 it 8 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3569 t2s 3 ledger -1.0208451539816746e+33
+CLEAN XT cycle 3569 t2s 3 write-back closure 6.705e-06
+CLEAN cycle 3570 t2s 2 it 9 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 3570 t2s 2 write-back closure 2.429e-06
+CLEAN cycle 3570 t2s 3 it 8 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3570 t2s 3 ledger -1.0211284091013091e+33
+CLEAN XT cycle 3570 t2s 3 write-back closure 1.497e-05
+CLEAN cycle 3571 t2s 2 it 8 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 3571 t2s 2 write-back closure 4.869e-05
+CLEAN cycle 3571 t2s 3 it 8 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3571 t2s 3 ledger -1.0214120214400432e+33
+CLEAN XT cycle 3571 t2s 3 write-back closure 1.728e-05
+CLEAN cycle 3572 t2s 2 it 10 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 3572 t2s 2 write-back closure 3.006e-06
+CLEAN cycle 3572 t2s 3 it 8 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3572 t2s 3 ledger -1.0216963392853903e+33
+CLEAN XT cycle 3572 t2s 3 write-back closure 8.369e-06
+CLEAN cycle 3573 t2s 2 it 9 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 3573 t2s 2 write-back closure 1.618e-06
+CLEAN cycle 3573 t2s 3 it 8 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3573 t2s 3 ledger -1.0219805693007585e+33
+CLEAN XT cycle 3573 t2s 3 write-back closure 1.373e-05
+CLEAN cycle 3574 t2s 2 it 8 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 3574 t2s 2 write-back closure 7.993e-05
+CLEAN cycle 3574 t2s 3 it 9 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3574 t2s 3 ledger -1.0222646947521645e+33
+CLEAN XT cycle 3574 t2s 3 write-back closure 2.899e-06
+CLEAN cycle 3575 t2s 2 it 10 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 3575 t2s 2 write-back closure 2.145e-05
+CLEAN cycle 3575 t2s 3 it 9 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3575 t2s 3 ledger -1.0225491051783694e+33
+CLEAN XT cycle 3575 t2s 3 write-back closure 5.467e-06
+CLEAN cycle 3576 t2s 2 it 10 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 3576 t2s 2 write-back closure 7.973e-06
+CLEAN cycle 3576 t2s 3 it 10 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3576 t2s 3 ledger -1.0228333169537169e+33
+CLEAN XT cycle 3576 t2s 3 write-back closure 2.889e-06
+CLEAN cycle 3577 t2s 2 it 8 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 3577 t2s 2 write-back closure 1.388e-05
+CLEAN cycle 3577 t2s 3 it 4 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3577 t2s 3 ledger -1.0231176557239611e+33
+CLEAN XT cycle 3577 t2s 3 write-back closure 1.492e-07
+CLEAN cycle 3578 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3578 t2s 2 write-back closure 7.126e-08
+CLEAN cycle 3578 t2s 3 it 5 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3578 t2s 3 ledger -1.0234021321657651e+33
+CLEAN XT cycle 3578 t2s 3 write-back closure 5.570e-08
+CLEAN cycle 3579 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3579 t2s 2 write-back closure 2.284e-07
+CLEAN cycle 3579 t2s 3 it 4 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3579 t2s 3 ledger -1.0236868035315000e+33
+CLEAN XT cycle 3579 t2s 3 write-back closure 3.638e-07
+CLEAN cycle 3580 t2s 2 it 4 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3580 t2s 2 write-back closure 1.932e-07
+CLEAN cycle 3580 t2s 3 it 7 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3580 t2s 3 ledger -1.0239713781265703e+33
+CLEAN XT cycle 3580 t2s 3 write-back closure 7.094e-06
+CLEAN cycle 3581 t2s 2 it 6 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3581 t2s 2 write-back closure 5.097e-08
+CLEAN cycle 3581 t2s 3 it 7 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3581 t2s 3 ledger -1.0242558306153673e+33
+CLEAN XT cycle 3581 t2s 3 write-back closure 8.878e-08
+CLEAN cycle 3582 t2s 2 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3582 t2s 2 write-back closure 3.235e-07
+CLEAN cycle 3582 t2s 3 it 6 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3582 t2s 3 ledger -1.0245402735105852e+33
+CLEAN XT cycle 3582 t2s 3 write-back closure 1.325e-07
+CLEAN cycle 3583 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3583 t2s 2 write-back closure 4.460e-07
+CLEAN cycle 3583 t2s 3 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3583 t2s 3 ledger -1.0248245989278803e+33
+CLEAN XT cycle 3583 t2s 3 write-back closure 2.763e-07
+CLEAN cycle 3584 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3584 t2s 2 write-back closure 3.223e-07
+CLEAN cycle 3584 t2s 3 it 6 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3584 t2s 3 ledger -1.0251094246267379e+33
+CLEAN XT cycle 3584 t2s 3 write-back closure 2.865e-07
+CLEAN cycle 3585 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3585 t2s 2 write-back closure 4.167e-07
+CLEAN cycle 3585 t2s 3 it 6 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3585 t2s 3 ledger -1.0253942902917399e+33
+CLEAN XT cycle 3585 t2s 3 write-back closure 5.616e-08
+CLEAN cycle 3586 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3586 t2s 2 write-back closure 3.558e-07
+CLEAN cycle 3586 t2s 3 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3586 t2s 3 ledger -1.0256791545349173e+33
+CLEAN XT cycle 3586 t2s 3 write-back closure 3.102e-07
+CLEAN cycle 3587 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3587 t2s 2 write-back closure 3.840e-07
+CLEAN cycle 3587 t2s 3 it 6 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3587 t2s 3 ledger -1.0259640556996416e+33
+CLEAN XT cycle 3587 t2s 3 write-back closure 6.081e-08
+CLEAN cycle 3588 t2s 2 it 5 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3588 t2s 2 write-back closure 2.780e-07
+CLEAN cycle 3588 t2s 3 it 6 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3588 t2s 3 ledger -1.0262491560170765e+33
+CLEAN XT cycle 3588 t2s 3 write-back closure 1.078e-07
+CLEAN cycle 3589 t2s 2 it 6 (sum 19) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3589 t2s 2 write-back closure 5.828e-08
+CLEAN cycle 3589 t2s 3 it 6 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3589 t2s 3 ledger -1.0265341774194961e+33
+CLEAN XT cycle 3589 t2s 3 write-back closure 1.784e-07
+CLEAN cycle 3590 t2s 2 it 7 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3590 t2s 2 write-back closure 7.341e-08
+CLEAN cycle 3590 t2s 3 it 5 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3590 t2s 3 ledger -1.0268189392087216e+33
+CLEAN XT cycle 3590 t2s 3 write-back closure 1.581e-07
+CLEAN cycle 3591 t2s 2 it 4 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3591 t2s 2 write-back closure 1.013e-07
+CLEAN cycle 3591 t2s 3 it 5 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3591 t2s 3 ledger -1.0271040102948499e+33
+CLEAN XT cycle 3591 t2s 3 write-back closure 2.296e-07
+CLEAN cycle 3592 t2s 2 it 5 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3592 t2s 2 write-back closure 1.368e-07
+CLEAN cycle 3592 t2s 3 it 5 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3592 t2s 3 ledger -1.0273895043802364e+33
+CLEAN XT cycle 3592 t2s 3 write-back closure 9.696e-08
+CLEAN cycle 3593 t2s 2 it 5 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3593 t2s 2 write-back closure 2.068e-07
+CLEAN cycle 3593 t2s 3 it 4 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3593 t2s 3 ledger -1.0276750753184929e+33
+CLEAN XT cycle 3593 t2s 3 write-back closure 1.177e-07
+CLEAN cycle 3594 t2s 2 it 7 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3594 t2s 2 write-back closure 5.970e-07
+CLEAN cycle 3594 t2s 3 it 4 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3594 t2s 3 ledger -1.0279607890014019e+33
+CLEAN XT cycle 3594 t2s 3 write-back closure 9.211e-08
+CLEAN ray cut cycle 3595 shell 204 -> 205 (want 205, R)
+CLEAN cycle 3595 t2s 2 it 7 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 3595 t2s 2 write-back closure 4.151e-04
+CLEAN cycle 3595 t2s 3 it 8 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3595 t2s 3 ledger -1.0282467128392650e+33
+CLEAN XT cycle 3595 t2s 3 write-back closure 8.163e-05
+CLEAN cycle 3596 t2s 2 it 7 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 3596 t2s 2 write-back closure 2.126e-05
+CLEAN cycle 3596 t2s 3 it 6 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3596 t2s 3 ledger -1.0285325361547399e+33
+CLEAN XT cycle 3596 t2s 3 write-back closure 5.466e-05
+CLEAN cycle 3597 t2s 2 it 6 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 3597 t2s 2 write-back closure 5.419e-05
+CLEAN cycle 3597 t2s 3 it 6 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3597 t2s 3 ledger -1.0288181918337825e+33
+CLEAN XT cycle 3597 t2s 3 write-back closure 4.631e-05
+CLEAN cycle 3598 t2s 2 it 9 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 3598 t2s 2 write-back closure 2.344e-05
+CLEAN cycle 3598 t2s 3 it 10 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3598 t2s 3 ledger -1.0291044190573845e+33
+CLEAN XT cycle 3598 t2s 3 write-back closure 1.833e-06
+CLEAN cycle 3599 t2s 2 it 11 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 3599 t2s 2 write-back closure 8.391e-07
+CLEAN cycle 3599 t2s 3 it 8 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3599 t2s 3 ledger -1.0293908260464790e+33
+CLEAN XT cycle 3599 t2s 3 write-back closure 4.518e-05
+elapsed=1.771224e+03 cycle=3600 time=3.100587e+04 dt=8.604725e+00
+CLEAN cycle 3600 t2s 2 it 7 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 3600 t2s 2 write-back closure 2.501e-05
+CLEAN cycle 3600 t2s 3 it 9 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3600 t2s 3 ledger -1.0296772446779601e+33
+CLEAN XT cycle 3600 t2s 3 write-back closure 2.832e-06
+CLEAN cycle 3601 t2s 2 it 3 (sum 18) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3601 t2s 2 write-back closure 2.343e-07
+CLEAN cycle 3601 t2s 3 it 4 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3601 t2s 3 ledger -1.0299638498955211e+33
+CLEAN XT cycle 3601 t2s 3 write-back closure 1.478e-07
+CLEAN cycle 3602 t2s 2 it 5 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3602 t2s 2 write-back closure 7.689e-07
+CLEAN cycle 3602 t2s 3 it 8 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3602 t2s 3 ledger -1.0302504963859045e+33
+CLEAN XT cycle 3602 t2s 3 write-back closure 1.618e-05
+CLEAN cycle 3603 t2s 2 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3603 t2s 2 write-back closure 1.067e-06
+CLEAN cycle 3603 t2s 3 it 10 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3603 t2s 3 ledger -1.0305372386498031e+33
+CLEAN XT cycle 3603 t2s 3 write-back closure 1.064e-06
+CLEAN cycle 3604 t2s 2 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3604 t2s 2 write-back closure 3.331e-07
+CLEAN cycle 3604 t2s 3 it 7 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3604 t2s 3 ledger -1.0308241982930574e+33
+CLEAN XT cycle 3604 t2s 3 write-back closure 2.237e-05
+CLEAN cycle 3605 t2s 2 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3605 t2s 2 write-back closure 9.514e-08
+CLEAN cycle 3605 t2s 3 it 7 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3605 t2s 3 ledger -1.0311112905762752e+33
+CLEAN XT cycle 3605 t2s 3 write-back closure 3.086e-05
+CLEAN cycle 3606 t2s 2 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3606 t2s 2 write-back closure 7.425e-07
+CLEAN cycle 3606 t2s 3 it 8 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3606 t2s 3 ledger -1.0313986900524413e+33
+CLEAN XT cycle 3606 t2s 3 write-back closure 2.691e-05
+CLEAN cycle 3607 t2s 2 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3607 t2s 2 write-back closure 2.278e-07
+CLEAN cycle 3607 t2s 3 it 8 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 3607 t2s 3 ledger -1.0316861480098800e+33
+CLEAN XT cycle 3607 t2s 3 write-back closure 2.977e-05
+CLEAN cycle 3608 t2s 2 it 5 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3608 t2s 2 write-back closure 4.123e-07
+CLEAN cycle 3608 t2s 3 it 7 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3608 t2s 3 ledger -1.0319738027609890e+33
+CLEAN XT cycle 3608 t2s 3 write-back closure 1.040e-07
+CLEAN cycle 3609 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3609 t2s 2 write-back closure 5.292e-07
+CLEAN cycle 3609 t2s 3 it 7 (sum 17) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN LZB cycle 3609 t2s 3 ledger -1.0322617639304996e+33
+CLEAN XT cycle 3609 t2s 3 write-back closure 2.349e-08
+CLEAN cycle 3610 t2s 2 it 6 (sum 15) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 3610 t2s 2 write-back closure 5.281e-07
+CLEAN cycle 3610 t2s 3 it 6 (sum 16) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0

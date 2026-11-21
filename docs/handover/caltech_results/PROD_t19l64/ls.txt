@@ -1,15 +1,15 @@
-total 477
+total 571
 drwxr-s---. 2 jingze hpc_carnegie_poc   4096 Nov 20 17:40 .
 drwxr-s---. 2 jingze hpc_carnegie_poc   4096 Nov 20 17:39 ..
 drwxr-s---. 2 jingze hpc_carnegie_poc   4096 Nov 20 17:53 bin
--rw-r-----. 1 jingze hpc_carnegie_poc    420 Nov 20 17:39 chunks.txt
+-rw-r-----. 1 jingze hpc_carnegie_poc    525 Nov 20 18:03 chunks.txt
 -rw-r-----. 1 jingze hpc_carnegie_poc  19996 Nov 20 17:39 deck.athinput
--rw-r-----. 1 jingze hpc_carnegie_poc 364154 Nov 20 17:59 log.0
--rw-r-----. 1 jingze hpc_carnegie_poc  52300 Nov 20 17:59 mem.log
+-rw-r-----. 1 jingze hpc_carnegie_poc 447521 Nov 20 18:03 log.0
+-rw-r-----. 1 jingze hpc_carnegie_poc  63828 Nov 20 18:03 mem.log
 drwxr-s---. 2 jingze hpc_carnegie_poc   4096 Nov 20 17:40 rst
--rw-r-----. 1 jingze hpc_carnegie_poc   2164 Nov 20 17:56 t19l64.hydro.hst
--rw-r-----. 1 jingze hpc_carnegie_poc   1199 Nov 20 17:51 t19l64.log
--rw-r-----. 1 jingze hpc_carnegie_poc   6045 Nov 20 17:56 t19l64.user.hst
+-rw-r-----. 1 jingze hpc_carnegie_poc   2415 Nov 20 18:00 t19l64.hydro.hst
+-rw-r-----. 1 jingze hpc_carnegie_poc   1499 Nov 20 18:02 t19l64.log
+-rw-r-----. 1 jingze hpc_carnegie_poc   6746 Nov 20 18:00 t19l64.user.hst
 -rw-r-----. 1 jingze hpc_carnegie_poc  39319 Nov 20 17:39 t19l64.x1grid.txt
 == bin/
 total 12059754
@@ -30,3 +30,4 @@ drwxr-s---. 2 jingze hpc_carnegie_poc        4096 Nov 20 17:40 .
 drwxr-s---. 2 jingze hpc_carnegie_poc        4096 Nov 20 17:40 ..
 -rw-r-----. 1 jingze hpc_carnegie_poc 26202280143 Nov 20 17:40 t19l64.00000.rst
 2026-11-20 17:39:41 chunk 0 STAR=t19l64 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v203_e688cb7bc md5=7df2b64833e40a77e8a8a04e6dc900ee DECK=/resnick/groups/carnegie_poc/jingze/fresh_prod_1120/fg_v2/decks/t19l64_wngl_fresh.athinput md5=22d054ad38940f28f40b2539bdf1269a start=-i /resnick/groups/carnegie_poc/jingze/prod_fresh_1121/t19l64/deck.athinput WT=23:35:19 HOLDER=6133591 NODE=hpc-sm-02-09 EX=
+2026-11-20 18:03:56 chunk 0 rc=0 last: elapsed=1.386240e+03 cycle=1050 time=3.036360e+04 dt=1.365951e+01
