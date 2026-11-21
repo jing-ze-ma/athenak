@@ -508,11 +508,15 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_k1_xlim")) {
     t2_k1xlim = pin->GetReal("rad_m1", "time2_k1_xlim");
   }
-  // <rad_m1>/time2_k1_xpat (default false, read only when named): Time2K1XLim's theta in
-  // Patankar form, positive by construction with no threshold (rad_m1.hpp)
-  if (pin->DoesParameterExist("rad_m1", "time2_k1_xpat")) {
-    t2_k1xpat = pin->GetBoolean("rad_m1", "time2_k1_xpat");
+  // <rad_m1>/time2_k1_xpat (default on for a fresh run, USER 11-21, recorded; a restart
+  // file without the key keeps it off, echoed): Time2K1XLim's theta in Patankar form,
+  // positive by construction with no threshold (rad_m1.hpp)
+  const bool rst = global_variable::restart_run;
+  if (rst && !pin->DoesParameterExist("rad_m1", "time2_k1_xpat")) {
+    recipe::Log("<rad_m1>/time2_k1_xpat = false (a restart file without the key: the "
+                "old default)");
   }
+  t2_k1xpat = pin->GetOrAddBoolean("rad_m1", "time2_k1_xpat", !rst);
   // <rad_m1>/time2_k1_stiff = s (default 0 = off, bitwise)
   t2_k1stiff = 0.0;
   if (pin->DoesParameterExist("rad_m1", "time2_k1_stiff")) {
