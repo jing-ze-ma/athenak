@@ -1,0 +1,3 @@
+<rad_m1>: c=2.99792e+10 chat/c=1 cfl_rad=0.4 thick_flux=none ap_form=alpha2 recon=plm advect_split=false split_vel=recon source_form=full closure=vet_col subcycle=false
+elapsed=6.325458e+02 cycle=450 time=1.710196e+04 dt=3.971617e+01
+elapsed=1.234775e+03 cycle=950 time=3.388883e+04 dt=2.129258e+01
