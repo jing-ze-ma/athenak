@@ -1938,3 +1938,4 @@ B_br gate not passed; arms not started
 - (11:05) V207 rerun start: V7a on hpc-sm-02-16 (damp 0, as ji; overwrites V207/V7a)
 - (11:05) V207 rerun start: V7c on hpc-sm-02-11 (damp 0, as ji; overwrites V207/V7c)
 - (11:06) V8a result: rc: rc=0 wall=739 | cycles - CW  FATAL  solves/stage-pass:   | wall/cycle test  vs prod 1.98 s | full: caltech_results/V208/V8a/res.txt
+- (11:06) V8b result: rc: rc=0 wall=697 | cycles - CW  FATAL  solves/stage-pass:   | wall/cycle test  vs prod 1.76 s | full: caltech_results/V208/V8b/res.txt
