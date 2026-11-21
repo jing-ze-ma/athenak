@@ -1,0 +1,1 @@
+TAG=C2_cfl06 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_opac3_772ee5ac6 md5=3541666326ecc8b62fa14547f5ffd5b2 RST=/resnick/groups/carnegie_poc/jingze/orion_runs_1121/v210/rst/t9l62.t9l62.00029.rst N0=26826 NC=100000 MODE=speed HOLDER=5840650 NODES=hpc-sm-02-16 NR=4 PPN=4 ENVX= EX=time/tlim=1269300 output1/dt=1e30 output1/dcycle=10 output5/dt=1e30 UCX=
