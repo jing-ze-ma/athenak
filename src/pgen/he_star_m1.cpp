@@ -2120,18 +2120,24 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // rho g with the wall cell alone, v2/runs/mG3); the kink dies out within a few cells.
     // Iterated with the balance (a depends on rho); the face x1f(is+NW) keeps its
     // continuum Phi_eff, the cells below are rebuilt downward from it.
-    // he_ic_linhao: a_ref = -(dPr/dr)/rho of his profile (Pr = a T^4/3 at the faces, his
-    // rho in the cell), the force of the steady start at his T, in every cell (no module
-    // form in the wall cells); Phi_eff rebuilt upward from the first face with it
-    if (hlin) {
+    // problem/he_ic_balance_aref = file (default; read only when named) | dpr (implied by
+    // he_ic_linhao): a_ref = -(dPr/dr)/rho of the column (Pr = a T^4/3 at the faces, the
+    // column's rho in the cell), the discrete force of the steady start at the column's
+    // T, in every cell (no module form in the wall cells); Phi_eff rebuilt upward from
+    // the first face with it.  file = kt F_file/c (above)
+    const bool adpr = hlin || (pin->DoesParameterExist("problem","he_ic_balance_aref") &&
+                               pin->GetString("problem","he_ic_balance_aref") == "dpr");
+    auto tfc = [&](const Real r) {   // the column's code T at a face
+      Real dl, tl, fl;
+      if (hlin) {lprof(r, dl, tl, fl); return tl/hs_tk;}
+      return eos.Temperature(logint(hd, r), logint(he, r));
+    };
+    if (adpr) {
       auto har = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->arad_ref);
       std::vector<Real> af(n1);
-      Real dl, tl, fl;
-      lprof(hx1f(0,0), dl, tl, fl);
-      Real prl = ar*SQR(SQR(tl/hs_tk))/3.0;
+      Real prl = ar*SQR(SQR(tfc(hx1f(0,0))))/3.0;
       for (int i=0; i<n1; ++i) {
-        lprof(hx1f(0,i+1), dl, tl, fl);
-        const Real prr = ar*SQR(SQR(tl/hs_tk))/3.0;
+        const Real prr = ar*SQR(SQR(tfc(hx1f(0,i+1))))/3.0;
         af[i] = -(prr - prl)/(dc[i]*(hx1f(0,i+1) - hx1f(0,i)));
         prl = prr;
       }
@@ -2148,7 +2154,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
       Kokkos::deep_copy(pm1->arad_ref, har);
     }
-    const int NW = hlin ? 0 : std::min(4, ie - is);
+    const int NW = adpr ? 0 : std::min(4, ie - is);
     DvceArray1D<Real> kd_d("hs_kd", NW + 1), kt_d("hs_kt", NW + 1), kk_d("hs_kk", NW + 1);
     auto hkd = Kokkos::create_mirror_view(kd_d);
     auto hkt = Kokkos::create_mirror_view(kt_d);
