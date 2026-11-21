@@ -1,0 +1,8 @@
+cycles 589788 - 589791 dt [956.5217] s/cycle(all) ['37.12', '7.24', '19.87'] steady(excl first+last) 7.239 first elapsed 25.9 last elapsed 90.1
+['main loop time (before the final outputs) = 5.823199e+01']
+CW a 0 FATAL 0 retries ['<rad_m1> time2_auto_be=16: skipped-stage BE steps=0.000000e+00 stage retries=0.000000e+00 (succeeded 0.000000e+00)']
+GPU mem peak MiB max 109653 min 108465 (n=4)
+rc=0 wall=105
+hstmd5 rsg.hydro.hst 7840730c4a40fba2278a81adeeb9ed12 rows 3
+hstmd5 rsg.user.hst 46e8fd66a8b93bf55a97952c33e22c48 rows 3
+DONE
