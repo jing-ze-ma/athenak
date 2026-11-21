@@ -370,6 +370,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // the rays' own state, so that it is their exact steady state (CleanStagFSolve)
     old("clean_stag_fwb", "false");
     old("clean_stag_fcone", "false");
+    old("clean_stag_fwb_stage", "false");
     cln_fwb = pin->GetOrAddBoolean("rad_m1","clean_stag_fwb",
                                    nw && cln_fsolve && cln_consist);
     if (cln_fwb && !(cln_fsolve && cln_consist)) {
@@ -377,6 +378,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "with clean_consistency" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // clean_stag_fwb_stage (default on for a fresh run with fwb, recorded; a restart
+    // file without the key: off): fwb's residual s of the stage-old state, once per stage
+    // (CleanStagFSolve), not of each solve's E (F_ray already is E_old's)
+    cln_fwbst = cln_fwb && pin->GetOrAddBoolean("rad_m1","clean_stag_fwb_stage",nw);
     // clean_stag_fcone (default on for a fresh run with fwb, recorded; a restart file
     // without the key: off): every cell's flux vector within its realisable cone,
     // |F| <= c E, by construction: the faces scaled towards 0 (CleanStagFCone)
