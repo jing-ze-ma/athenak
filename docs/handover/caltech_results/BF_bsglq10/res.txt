@@ -1,0 +1,21 @@
+a cycles 0 - 3900 dt first 165.455 last 169.447 s/cycle steady 20.294 first elapsed 15.8
+a 'FATAL' 0 
+a 'CLEAN WARNING' 0 
+a 'DT_RETRY' 0 
+a 'WARNING' 3 ### WARNING: 10 input parameter(s) were never read by the code (typo, or a key AthenaK does not have?):
+a 'march' 0 
+a 'clean_init steady:' 1 <rad_m1> clean_init steady: converged after 4 passes, residual 2.280e-13 (tol 1.0e-08; 0 formal solutions); radiation E 4.1527620104e+45 -> 4.1608742711e+45, F/c 3.5094e+39 0.0000e+00 0.0000e+00 -> 1.5036e+41 2.6767e+32 2.4414e+33 (volume sums)
+a 'he_star_m1: GM' 1 he_star_m1: GM = 2.62502e+27, F_in = 2.29421e+13, tau(r_in) = 5.53012e+06, r_int (tau = 1) = 3.67803e+12, r_top = 5.5656e+12, sponge rate = 0 above r = 3.67803e+12
+a 'he_seed_band = n2 BAND' 0 
+a 'seed = ' 0 
+a 'direction maps' 1 <rad_m1> vet_gd: global-direction SC closure on the sp wedge, level-symmetric LQ10 (120 directions); z-rotation every 0 cycle(s) (0 = fixed), first angle 0; rank 0 wall ghost columns 57324, direction maps exact 0 of 6878880 (the rest: nearest direction)
+a 'he_ic_equil' 0 
+GPU mem peak MiB max 23591 min 23577 (n=4) = 16.4 % of 143771 MiB
+rt bsg3d.hydro.hst rows a 605 b 0 last 0 rows DIFF
+rt bsg3d.user.hst rows a 605 b 0 last 0 rows DIFF
+rt bsg3d.hydro_w.00014.bin DIFF/missing
+rt bsg3d.m1.00014.bin DIFF/missing
+rt bsg3d.m1_face.00003.bin DIFF/missing
+rt bsg3d.m1_vet.00003.bin DIFF/missing
+a rc=137 wall=1627
+DONE
