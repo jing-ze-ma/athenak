@@ -1187,7 +1187,8 @@ void RadiationM1::VetGdCsHaloC(const int pass, const int i) {
   bool ncl = false;
 #if M1_VGDCS_NCCL
   ncl = VgdNcclOn();
-  if (ncl && static_cast<int64_t>(vgd_csdsb.extent(0)) < static_cast<int64_t>(sb_.extent(0))) {
+  if (ncl && static_cast<int64_t>(vgd_csdsb.extent(0)) <
+             static_cast<int64_t>(sb_.extent(0))) {
     Kokkos::realloc(vgd_csdsb, sb_.extent(0));
     Kokkos::realloc(vgd_csdrb, rb_.extent(0));
   }
@@ -2008,7 +2009,8 @@ void RadiationM1::VetGdCsSweep() {
         if (ens > 0) {
           auto si_ = E.si;
           auto S_ = vgd_cssl;
-          vgd_esid = (vgd_esid >= std::numeric_limits<int>::max() - 1) ? 1 : (vgd_esid + 1);
+          vgd_esid = (vgd_esid >= std::numeric_limits<int>::max() - 1) ? 1
+                                                                       : (vgd_esid + 1);
           if (vgd_esid == 1) {Kokkos::deep_copy(est_, 0);}   // (first use or wrapped)
           esid = vgd_esid;
           const int sid_ = esid;

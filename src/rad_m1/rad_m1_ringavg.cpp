@@ -109,7 +109,8 @@ void RadiationM1::RavInit(ParameterInput *pin) {
   // wins; a restart whose file lacks the key keeps gas (bitwise)
   {
     const std::string ke = pin->GetOrAddString("rad_m1", "polar_ring_avg_ke",
-                                               global_variable::restart_run ? "gas" : "rad");
+                                               global_variable::restart_run ? "gas"
+                                                                            : "rad");
     if (ke == "rad") {
       rav_ke_rad = true;
     } else if (ke != "gas") {
@@ -118,7 +119,8 @@ void RadiationM1::RavInit(ParameterInput *pin) {
     if (global_variable::my_rank == 0) {
       if (rav_ke_rad) {
         std::cout << "<rad_m1> polar_ring_avg_ke = rad: the gas kinetic-energy spread of "
-                  << "the after-solve group average goes to E (floorheat-1029)" << std::endl;
+                  << "the after-solve group average goes to E (floorheat-1029)"
+                  << std::endl;
       } else {
         std::cout << "<rad_m1> polar_ring_avg_ke = gas" << std::endl;
       }

@@ -69,8 +69,9 @@ void VetSegW(const Real dtau, Real &ex, Real &w0, Real &wu) {
 // constant-memory launch with a host wait on the previous such launch (the same
 // kernels, the same numbers)
 inline auto VgdLight(const DevExeSpace &ex, const int a, const int b) {
-  return Kokkos::Experimental::require(Kokkos::RangePolicy<>(ex, a, b),
-                                       Kokkos::Experimental::WorkItemProperty::HintLightWeight);
+  return Kokkos::Experimental::require(
+      Kokkos::RangePolicy<>(ex, a, b),
+      Kokkos::Experimental::WorkItemProperty::HintLightWeight);
 }
 
 // the vet_gd shell kernel's policy (VgdLight with launch bounds on HIP).
@@ -250,12 +251,12 @@ Real VetSegOne(const Real iu, const Real su, const Real s0, const Real cu, const
 //   1 log:    I_u = sum w I_q, chi_u and S_u geometric (sum w ln), one segment (vet_gd's
 //             interpolation);
 //   2 corner: one segment per corner, I = sum w I(segment from corner q): the OUTCOME is
-//             interpolated.  At a sharp opaque edge the plain interpolation (0 lin: chi_u,
-//             S_u linear, one segment) puts the opaque chi_u on a ray that passes the
-//             edge and replaces its intensity by the interpolated S_u (a ray grazing an
-//             opaque disc of S = B loses the limb: L_fs 0.58-0.66 of exact, resolution
-//             independent, scemu.py); corner keeps the thin corner's intensity with its
-//             weight (0.95-1.0).  Smooth fields: corner - lin = O(dx^2).
+//             interpolated.  At a sharp opaque edge the plain interpolation (0 lin:
+//             chi_u, S_u linear, one segment) puts the opaque chi_u on a ray that passes
+//             the edge and replaces its intensity by the interpolated S_u (a ray grazing
+//             an opaque disc of S = B loses the limb: L_fs 0.58-0.66 of exact,
+//             resolution independent, scemu.py); corner keeps the thin corner's intensity
+//             with its weight (0.95-1.0).  Smooth fields: corner - lin = O(dx^2).
 //   3 auto:   corner where the stencil's extinction contrast max/min chi exceeds
 //             kVetCornerRatio (a material edge), log elsewhere (a smooth field: the two
 //             agree to O(dx^2) there, and log costs one segment instead of up to four)

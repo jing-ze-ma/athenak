@@ -742,7 +742,8 @@ Real M1CsSeamMid(const F &fv, const G &g, const int m, const int c, const int sd
 KOKKOS_INLINE_FUNCTION
 Real M1CsTanMono(const Real d, const Real s1, const Real q0, const Real q1, const Real q2,
                  const Real fk) {
-  const Real a0 = (q0 < 0.0) ? -q0 : q0, a1 = (q1 < 0.0) ? -q1 : q1, a2 = (q2 < 0.0) ? -q2 : q2;
+  const Real a0 = (q0 < 0.0) ? -q0 : q0, a1 = (q1 < 0.0) ? -q1 : q1,
+             a2 = (q2 < 0.0) ? -q2 : q2;
   const Real c2 = q0 - 2.0*q1 + q2;
   if ((c2 < 0.0 ? -c2 : c2) <= (fk/3.0)*(a0 + a1 + a2)) {return d;}
   const Real lo = (s1 > 0.0) ? 0.0 : 2.0*s1, hi = (s1 > 0.0) ? 2.0*s1 : 0.0;
@@ -765,7 +766,8 @@ Real M1CsAxisDer(const Q &q, const H &h, const int c, const int lo, const int hi
     const Real h1 = h(0), h2 = h(-1);
     const Real d = ((2.0*h1 + h2)/(h1*(h1 + h2)))*q(0) - ((h1 + h2)/(h1*h2))*q(-1)
                    + (h1/(h2*(h1 + h2)))*q(-2);
-    return (mono >= 0.0) ? M1CsTanMono(d, (q(0) - q(-1))/h1, q(0), q(-1), q(-2), mono) : d;
+    return (mono >= 0.0) ? M1CsTanMono(d, (q(0) - q(-1))/h1, q(0), q(-1), q(-2), mono)
+                         : d;
   }
   return (q(1) - q(-1))/(h(0) + h(1));
 }
@@ -1152,7 +1154,8 @@ Real M1CsLatF(const V &iw, const V &tt, const int c0, const A &x1v, const Real *
 //! part Q of the vet_gd tensor, the cs counterpart of M1SphTan.  Q . r_hat = 0, tr Q = 0,
 //! so a cell holds two numbers in tau_ten slots c0+4, c0+5 about an orthonormal tangent
 //! frame (e1, e2) of THAT cell (qf, Cartesian, (m, 6, k, j), ghosts exchanged like the
-//! slots, so a seam ghost holds its mirror cell's frame next to its mirror cell's values):
+//! slots, so a seam ghost holds its mirror cell's frame next to its mirror cell's
+//! values):
 //!   Q = s1 (e1 e1 - e2 e2) + s2 (e1 e2 + e2 e1).
 //! Contractions with fixed Cartesian vectors need no rotation at a seam or a vertex.  At
 //! the face midpoint, with the face's planar normal n (Cartesian, constant on the face)
@@ -1163,8 +1166,8 @@ Real M1CsLatF(const V &iw, const V &tt, const int c0, const A &x1v, const Real *
 //! M1SphTan (2 cot a E / r, ...) are in the variation of the Cartesian contractions.  The
 //! normal derivative is the compact two-point one (the wide centred difference is what
 //! drove the sp thin-top L_top runaway, fc693cbe1), corrected for the skew like the
-//! isotropic gradient, d_n = (d_a - cos d_t)/sin; at a seam the mirror pair, moved from the
-//! chord's foot to the face midpoint by M1CsSeamMid.
+//! isotropic gradient, d_n = (d_a - cos d_t)/sin; at a seam the mirror pair, moved from
+//! the chord's foot to the face midpoint by M1CsSeamMid.
 
 template <class VQ, class VF, class VS, class VG, class VB, class VN, class VX>
 struct M1CsTanGeo {
@@ -1296,7 +1299,8 @@ Real M1CsTanFaceLag(const V &iw, const VT &tt, const int c0, const G &tg, const 
   auto ck = [&](const int s, const int q) {return (e == 1) ? q : (k - 1 + s);};
   auto cj = [&](const int s, const int q) {return (e == 1) ? (j - 1 + s) : q;};
   auto pq = [&](const int s, const int q, const Real *a) {
-    return M1CsQab(tt, c0, tg.qf, m, ck(s,q), cj(s,q), i, a, n)*iw(m,ec,ck(s,q),cj(s,q),i);
+    return M1CsQab(tt, c0, tg.qf, m, ck(s,q), cj(s,q), i, a, n)*
+           iw(m,ec,ck(s,q),cj(s,q),i);
   };
   const int c = (e == 1) ? k : j;
   const int lo = (e == 1) ? tg.ks : tg.js, hi = (e == 1) ? tg.ke : tg.je;

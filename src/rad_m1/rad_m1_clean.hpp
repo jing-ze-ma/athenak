@@ -807,9 +807,12 @@ Real CleanStagCsLat(const CleanArgs &x, const int dir, const int m, const int kf
     aa = 1.0/std::sqrt(aa);
     bb = 1.0/std::sqrt(bb);
     for (int c = 0; c < 3; ++c) {a[c] *= aa; b[c] *= bb; ab += a[c]*b[c];}
-    const Real w[3] = {a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2], a[0]*b[1] - a[1]*b[0]};
-    const Real u[3] = {w[1]*n[2] - w[2]*n[1], w[2]*n[0] - w[0]*n[2], w[0]*n[1] - w[1]*n[0]};
-    const Real v[3] = {w[1]*u[2] - w[2]*u[1], w[2]*u[0] - w[0]*u[2], w[0]*u[1] - w[1]*u[0]};
+    const Real w[3] = {a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2],
+                       a[0]*b[1] - a[1]*b[0]};
+    const Real u[3] = {w[1]*n[2] - w[2]*n[1], w[2]*n[0] - w[0]*n[2],
+                       w[0]*n[1] - w[1]*n[0]};
+    const Real v[3] = {w[1]*u[2] - w[2]*u[1], w[2]*u[0] - w[0]*u[2],
+                       w[0]*u[1] - w[1]*u[0]};
     for (int c = 0; c < 3; ++c) n[c] += v[c]/(1.0 + ab) - u[c];
   }
   for (int c = 0; c < 3; ++c) {
@@ -854,7 +857,8 @@ void CleanStagArea(const CleanArgs &x, const int dir, const int m, const int k,
   const int kd = k - d*(dir == 2);
   Real sd, a;
   if (x.cub) {
-    a = x.g.At<CLG_A>(m,CleanCsSlot(x, dir, m, k, j, i, kd, jd, id, false, sd)/2,kd,jd,id)/
+    a = x.g.At<CLG_A>(m,CleanCsSlot(x, dir, m, k, j, i, kd, jd, id, false, sd)/2,
+                      kd,jd,id)/
         x.area[dir](m,k,j,i);
   } else {
     a = (dir == 0) ? x.x1v(m,id)*x.x1v(m,id)/(x.x1f(m,i)*x.x1f(m,i))
@@ -1001,7 +1005,8 @@ Real CleanKposFlux(const CleanArgs &x, const int e, const int dir, const int m,
                    const int k, const int j, const int i) {
   if (x.kq < 0) return 0.0;
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
-  Real f = x.fc[dir](m,x.kq,k,j,i)*x.w(m,e,kl,jl,il) + x.fc[dir](m,x.kq+1,k,j,i)*x.w(m,e,k,j,i);
+  Real f = x.fc[dir](m,x.kq,k,j,i)*x.w(m,e,kl,jl,il) +
+           x.fc[dir](m,x.kq+1,k,j,i)*x.w(m,e,k,j,i);
   // (delta: tau al/ar part)
   if (x.kt != 0.0 && !CleanBoundaryFace(x, dir, m, k, j, i)) {
     CleanArgs y = x;
@@ -1089,8 +1094,9 @@ Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m
   Real div = 0.0;
   if (x.cub) {   // (cubed sphere: n.div(D E) of the two half cells, the normal stress
     if (normal) {  //  and the lateral sums CleanStagCsLat, over V_f)
-      div = CleanCsNormA(x, dir, m, k, j, i)*(CleanStagDnn(x, dir, m, k, j, i, k, j, i)*x.w(m,e,k,j,i)
-            - CleanStagDnn(x, dir, m, k, j, i, kl, jl, il)*x.w(m,e,kl,jl,il));
+      div = CleanCsNormA(x, dir, m, k, j, i)*
+            (CleanStagDnn(x, dir, m, k, j, i, k, j, i)*x.w(m,e,k,j,i)
+             - CleanStagDnn(x, dir, m, k, j, i, kl, jl, il)*x.w(m,e,kl,jl,il));
     }
     // (a seam face takes no lateral sums: its mirror chord is normal to the face, so the
     // two-point term is the whole n.div(D E), as production's seam row)
@@ -1284,9 +1290,9 @@ Real CleanFaceSource(const CleanArgs &x, const int dir, const int m, const int k
 
 //----------------------------------------------------------------------------------------
 //! \fn void CleanStagXSplit
-//! \brief clean_stag_xdonor: the lagged fluxes of face (k,j,i) normal to dir for the pass,
-//! the cross flux C(E_k) (CleanStagXDonor, slot xq + 3) and the face source S (xr: as it
-//! is), into a donor-cell part and an explicit part:
+//! \brief clean_stag_xdonor: the lagged fluxes of face (k,j,i) normal to dir for the
+//! pass, the cross flux C(E_k) (CleanStagXDonor, slot xq + 3) and the face source S (xr:
+//! as it is), into a donor-cell part and an explicit part:
 //!   p1:  C donor-implicit; with xsrc S as lag below, else S explicit;
 //!   lag: L = C (+ S with xsrc) explicit up to its share s of the donor, where its
 //!        outflow over the stage h (A/V) |L| exceeds CLN_MEMUP E_old,donor (>= 0): the
@@ -1596,7 +1602,8 @@ void CleanStagCsVector(const CleanArgs &x, const int m, const int k, const int j
         n[r] = x.g.At<CLG_N>(m,3*q+r,kf,jf,iff);
         nr += n[r]*x.g(m,CLG_R+r,k,j,i);
       }
-      for (int r = 0; r < 3; ++r) n[r] -= (x.cvr && q > 0) ? nr*x.g(m,CLG_R+r,k,j,i) : 0.0;
+      for (int r = 0; r < 3; ++r)
+        n[r] -= (x.cvr && q > 0) ? nr*x.g(m,CLG_R+r,k,j,i) : 0.0;
       for (int r = 0; r < 3; ++r) {
         b[r] += c[2*q+s]*n[r];
         for (int t = 0; t < 3; ++t) a[r][t] += w[2*q+s]*n[r]*n[t];
@@ -1936,7 +1943,8 @@ void CleanGasChange(const CleanArgs &x, const int m, const int k, const int j,
   CleanCsFrame(x, m, k, j, i, q);
   for (int b = 0; b < 3; ++b) dt[b] = dm[1]*q[1][b] + dm[2]*q[2][b];
   for (int a = 1; a < 3; ++a) {
-    dh[a] = dt[0]*x.g.At<CLG_E>(m,3*(a-1),k,j,i) + dt[1]*x.g.At<CLG_E>(m,3*(a-1)+1,k,j,i) +
+    dh[a] = dt[0]*x.g.At<CLG_E>(m,3*(a-1),k,j,i) +
+            dt[1]*x.g.At<CLG_E>(m,3*(a-1)+1,k,j,i) +
             dt[2]*x.g.At<CLG_E>(m,3*(a-1)+2,k,j,i);
   }
 }

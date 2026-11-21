@@ -460,7 +460,8 @@ void RadiationM1::CleanHaloInit(const int n3, const int n2, const int n1) {
   const int ng = indcs.ng, dcap = q.dcap;
   q.ng = ng;
   q.dcap = 0;   // (the lists and their check: all ng layers)
-  DvceArray5D<Real> x("cln_hdl_x", nmb, 1, n3, n2, n1), y("cln_hdl_y", nmb, 1, n3, n2, n1);
+  DvceArray5D<Real> x("cln_hdl_x", nmb, 1, n3, n2, n1),
+                    y("cln_hdl_y", nmb, 1, n3, n2, n1);
   const std::vector<CleanGSeg<Real>> sx = {{x, 0, 1, false}}, sy = {{y, 0, 1, false}};
   // (pass 0: the ids; pass 1: other values, the check)
   for (int pass = 0; pass < 2; ++pass) {
@@ -535,7 +536,8 @@ void RadiationM1::CleanHaloInit(const int n3, const int n2, const int n1) {
                    std::vector<int> &dv) {
       std::vector<int> o(g.size()), g2, c2, f2;
       for (size_t a = 0; a < o.size(); ++a) o[a] = static_cast<int>(a);
-      std::stable_sort(o.begin(), o.end(), [&](int a, int b) {return dep(g[a]) < dep(g[b]);});
+      std::stable_sort(o.begin(), o.end(),
+                       [&](int a, int b) {return dep(g[a]) < dep(g[b]);});
       for (int a : o) {
         g2.push_back(g[a]);
         c2.push_back(c[a]);
@@ -587,7 +589,8 @@ void RadiationM1::CleanHaloInit(const int n3, const int n2, const int n1) {
 #endif
     auto mk = [](const char *nm, const std::vector<int> &v) {
       DvceArray1D<int> a(std::string(nm), std::max(v.size(), static_cast<size_t>(1)));
-      Kokkos::deep_copy(Kokkos::subview(a, std::make_pair(static_cast<size_t>(0), v.size())),
+      Kokkos::deep_copy(Kokkos::subview(a, std::make_pair(static_cast<size_t>(0),
+                                                          v.size())),
                         HostArray1D<int>(const_cast<int *>(v.data()), v.size()));
       return a;
     };
@@ -1336,7 +1339,8 @@ void RadiationM1::CleanPreconditionerSetup() {
       CleanFaceWeights(x, dir, m, k, j, i, fc(m,CLF_QL,k,j,i), fc(m,CLF_QL+1,k,j,i));
       const Real t0 = fc(m,CLF_TH,k,j,i);   // (clean_stag_vimp: theta_d, CleanFaceCross)
       const Real th = t0 + (x.drag ? fc(m,CLF_DB,k,j,i) : 0.0)*(1.0 - t0);
-      fc(m,CLF_QL+2,k,j,i) = (x.xq >= 0) ? 0.0 : -(1.0 - fc(m,CLF_W,k,j,i))*th*x.h*x.c*x.c;
+      fc(m,CLF_QL+2,k,j,i) = (x.xq >= 0) ? 0.0
+                                         : -(1.0 - fc(m,CLF_W,k,j,i))*th*x.h*x.c*x.c;
     });
   }
   x.fwc = true;
@@ -1587,9 +1591,11 @@ void RadiationM1::CleanStagLineSolve(const CleanLevel &lv, const int src, const 
         Real r = w(m,src,k,j,i);
         if (col >= 1) {
           if (pj > 0 && cl(pj-1, pk) != c0) r -= w(m,l.sm[1],k,j,i)*w(m,dst,k,j-1,i);
-          if (pj < l.n[1] - 1 && cl(pj+1, pk) != c0) r -= w(m,l.sp[1],k,j,i)*w(m,dst,k,j+1,i);
+          if (pj < l.n[1] - 1 && cl(pj+1, pk) != c0)
+            r -= w(m,l.sp[1],k,j,i)*w(m,dst,k,j+1,i);
           if (pk > 0 && cl(pj, pk-1) != c0) r -= w(m,l.sm[2],k,j,i)*w(m,dst,k-1,j,i);
-          if (pk < l.n[2] - 1 && cl(pj, pk+1) != c0) r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
+          if (pk < l.n[2] - 1 && cl(pj, pk+1) != c0)
+            r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
         }
         sw(q) = (q > 0) ? w(m,l.sm[0],k,j,i) : 0.0;
         sw(nx + q) = w(m,l.a0,k,j,i);
@@ -1671,9 +1677,11 @@ void RadiationM1::CleanStagLineSolve(const CleanLevel &lv, const int src, const 
       Real r = w(m,src,k,j,i);
       if (col >= 1) {
         if (pj > 0 && cl(pj-1, pk) != c0) r -= w(m,l.sm[1],k,j,i)*w(m,dst,k,j-1,i);
-        if (pj < l.n[1] - 1 && cl(pj+1, pk) != c0) r -= w(m,l.sp[1],k,j,i)*w(m,dst,k,j+1,i);
+        if (pj < l.n[1] - 1 && cl(pj+1, pk) != c0)
+          r -= w(m,l.sp[1],k,j,i)*w(m,dst,k,j+1,i);
         if (pk > 0 && cl(pj, pk-1) != c0) r -= w(m,l.sm[2],k,j,i)*w(m,dst,k-1,j,i);
-        if (pk < l.n[2] - 1 && cl(pj, pk+1) != c0) r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
+        if (pk < l.n[2] - 1 && cl(pj, pk+1) != c0)
+          r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
       }
       const Real den = w(m,l.a0,k,j,i) - am*cprev;
       cprev = ap/den;

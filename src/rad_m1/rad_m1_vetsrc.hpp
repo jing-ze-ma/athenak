@@ -44,11 +44,12 @@ namespace radm1 {
 //! the current J ~ E_b over the step:
 //!   E* - E_b = chat dt (rho kappa_P a T*^4 - rho kappa_E E*) - y (E* - E_b)
 //!   rho e(T*) + c dt rho kappa_P a T*^4 (1+y)/(1+x+y) = rho e(T_b) + c dt rho kappa_E
-//!               E_b (1+y)/(1+x+y),      E* = [(1+y) E_b + chat dt rho kappa_P a T*^4]/(1+x+y)
+//!               E_b (1+y)/(1+x+y),
+//!   E* = [(1+y) E_b + chat dt rho kappa_P a T*^4]/(1+x+y)
 //! y = chat dt qe, qe = 1/(h (2 + chi h/3)) (VetEscapeRate) the escape rate of a cell of
 //! width h along the column axis, per unit chat: c/(2h) free streaming out of a thin
-//! slab, c/(3 chi h^2) ~ the diffusion rate pi^2 c/(3 chi h^2) of the cell-scale mode in a
-//! thick one.  x/y = tau_a (2 + tau/3), tau = chi h, tau_a = rho kappa_E h: the cell's
+//! slab, c/(3 chi h^2) ~ the diffusion rate pi^2 c/(3 chi h^2) of the cell-scale mode in
+//! a thick one.  x/y = tau_a (2 + tau/3), tau = chi h, tau_a = rho kappa_E h: the cell's
 //! thermalization depth, ~ (h/L_th)^2 with L_th = 1/sqrt(3 chi rho kappa_a) when thick.
 //! Thin or effectively thin (scattering-dominated, h < L_th): E* -> E_b, the formal
 //! solution keeps the NON-LOCAL J (the NLTE atmosphere, nlte2/nltek: relaxed drove E*

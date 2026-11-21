@@ -147,8 +147,9 @@ void RadiationM1::VetColReport() {
                 << "sweeps) "
                 << vgd_nclamp_all << std::endl;
       if (vgd_csg || vgd_gbc) {   // (+ the sp global band)
-        std::cout << "<rad_m1> vet_gd " << (vgd_csg ? "cs" : "global") << " band (rank 0): "
-                  << ((vgd_cscomp || vgd_gbc) ? "compact" : "dense") << ", intensity values sent "
+        std::cout << "<rad_m1> vet_gd " << (vgd_csg ? "cs" : "global")
+                  << " band (rank 0): " << ((vgd_cscomp || vgd_gbc) ? "compact" : "dense")
+                  << ", intensity values sent "
                   << vgd_csvsent << " of dense " << vgd_csvdense << " ("
                   << ((vgd_csvdense > 0.0) ? vgd_csvsent/vgd_csvdense : 0.0)
                   << "); list builds " << vgd_csnbuild << " (" << vgd_cstbuild << " s)"
@@ -162,7 +163,8 @@ void RadiationM1::VetColReport() {
                   << (vgd_cspad ? " (padded)" : "") << std::endl;
       }
       std::cout << "<rad_m1> vet_gd vet_path = " << ((vet_path != 0) ? "cells" : "none")
-                << ": subdivided steps (ALL ranks, all sweeps) " << vgd_npath << std::endl;
+                << ": subdivided steps (ALL ranks, all sweeps) " << vgd_npath
+                << std::endl;
       {
         // ragged band: accesses outside a shell's slab (must be 0)
         Real no = 0.0;

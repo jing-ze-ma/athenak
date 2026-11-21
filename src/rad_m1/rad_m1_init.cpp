@@ -1939,7 +1939,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         if (cm.compare("rad") == 0) {
           cs2_clip_rad = true;
         } else if (cm.compare("gas") != 0) {
-          ImplFatal("<rad_m1>/implicit_cs2_clip = '" + cm + "' is not a choice (gas | rad)");
+          ImplFatal("<rad_m1>/implicit_cs2_clip = '" + cm + "' is not a choice "
+                    "(gas | rad)");
         }
       }
       // implicit_cs2_dacap (read only when named; rad_m1.hpp)
@@ -2023,7 +2024,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       if (v.compare("marshak") == 0) {r = M1_IBC_MARSHAK;}
       // zero-gradient outgoing flux, x2 faces only
       if (v.compare("outflow") == 0 && (f == BoundaryFace::inner_x2 ||
-                                        f == BoundaryFace::outer_x2)) {r = M1_IBC_OUTFLOW;}
+                                        f == BoundaryFace::outer_x2)) {
+        r = M1_IBC_OUTFLOW;
+      }
       if (v.compare("flux") == 0 && (f == BoundaryFace::inner_x2 ||
                                      f == BoundaryFace::outer_x2)) {r = M1_IBC_X2FLUX;}
       if (r < 0 || per) {
@@ -2104,8 +2107,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       afd_mu1 = pin->GetOrAddReal("rad_m1","athena_face_mu1",0.5063576644955016);
       afd_taumin = pin->GetOrAddReal("rad_m1","athena_face_taumin",0.0);
       if (global_variable::my_rank == 0) {
-        std::cout << "<rad_m1> athena_face_diss: Athena++ HLL tau-factor dissipation at every "
-                  << "interior x1 face, taucell " << afd_tc << ", <mu>_+ " << afd_mu1 << ", tau_cell min " << afd_taumin
+        std::cout << "<rad_m1> athena_face_diss: Athena++ HLL tau-factor dissipation at "
+                  << "every interior x1 face, taucell " << afd_tc << ", <mu>_+ "
+                  << afd_mu1 << ", tau_cell min " << afd_taumin
                   << (afd_force ? ", in the face flux (force consistent)"
                                 : ", energy row only (no matching force)") << std::endl;
       }
@@ -2499,8 +2503,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                 "conservative2 (Z_f books the face transport)");
     }
     if (impl_hr_cmem || impl_physflux) {
-      ImplFatal("<rad_m1>/implicit_lz_form is not combined (yet) with implicit_hr_cmem or "
-                "implicit_physflux (their momentum face F_c is not the applied flux)");
+      ImplFatal("<rad_m1>/implicit_lz_form is not combined (yet) with implicit_hr_cmem "
+                "or implicit_physflux (their momentum face F_c is not the applied flux)");
     }
     iw_lz = niw;
     niw += 1;
@@ -2975,7 +2979,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                 << (impl_crelax_thin ? " (thin faces only)" : "")
                 << " closure_lag=" << (impl_clag_step ? "step" : "pass")
                 << " trans_limit="
-                << ((impl_tlim == M1_TLIM_LP) ? "lp" : ((impl_tlim == M1_TLIM_LPR) ? "lpr" : "none"))
+                << ((impl_tlim == M1_TLIM_LP) ? "lp"
+                    : ((impl_tlim == M1_TLIM_LPR) ? "lpr" : "none"))
                 << ((impl_tlim == M1_TLIM_LP)
                     ? (" fmax=" + std::to_string(impl_tfmax)) : std::string(""))
                 << std::endl;

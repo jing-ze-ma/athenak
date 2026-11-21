@@ -1081,7 +1081,8 @@ struct VetRayK {
       }
       if (vpath) {   // vet_path = cells (VetPathStep)
         const Real sh3p = thrd ? (-dx1*m3/(am1*dx3)) : 0.0;
-        auto acc = [&](const int c, const int dk, const int dj, Real &cv, Real &sv) -> bool {
+        auto acc = [&](const int c, const int dk, const int dj, Real &cv,
+                       Real &sv) -> bool {
           const int lc = (c == 0) ? li : li0;
           const int kq = thrd ? (kk + dk) : kk;
           cv = cs(m,lc,0,kq,jj + dj);
@@ -1094,8 +1095,8 @@ struct VetRayK {
                             cs(m,li,0,kb,jb)};
         const Real sq[4] = {cs(m,li,1,ka,ja), cs(m,li,1,ka,jb), cs(m,li,1,kb,ja),
                             cs(m,li,1,kb,jb)};
-        VetPathStep(acc, vim, wq, iq, cq, sq, iup_v, cu, su, s0, c0, dx1/am1, spl, spe, sh2,
-                    sh3p, iv);
+        VetPathStep(acc, vim, wq, iq, cq, sq, iup_v, cu, su, s0, c0, dx1/am1, spl, spe,
+                    sh2, sh3p, iv);
       }
     }
     ivo = fmax(iv, 0.0);
@@ -2129,7 +2130,8 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "vet_ring")) {
     vring = pin->GetInteger("rad_m1", "vet_ring");
     vrgrp = pin->GetOrAddInteger("rad_m1", "vet_ring_groups", 1);
-    if (vring < 4 || vring % 4 != 0) VetFatal("<rad_m1>/vet_ring must be a multiple of 4");
+    if (vring < 4 || vring % 4 != 0)
+      VetFatal("<rad_m1>/vet_ring must be a multiple of 4");
     if (vrgrp != 1 && vrgrp != 2) VetFatal("<rad_m1>/vet_ring_groups must be 1 or 2");
     vet_nray = vring*((vrgrp == 2) ? 3 : 1);
   }
@@ -4246,13 +4248,15 @@ void RadiationM1::VetShortCharSweep() {
           const Real rks = (vsf != 0) ? opd_(m,M1_OP_S,k,j,i) : 0.0;
           // relaxed_esc: the escape rate of the cell (0 = relaxed)
           const Real qe = VetEscapeRate(sesc, chx, mbs_.d_view(m).dx1);
-          s = sesc ? (sbl ? VetRelaxedSourceBQ(eos, uh(m,IDN,k,j,i), tg, e, opd_(m,M1_OP_P,k,j,i),
+          s = sesc ? (sbl ? VetRelaxedSourceBQ(eos, uh(m,IDN,k,j,i), tg, e,
+                                      opd_(m,M1_OP_P,k,j,i),
                                       opd_(m,M1_OP_E,k,j,i), eth, ar, clq, chs, dts, vsr,
                                       chx, rks, sx0, qe)
                   : VetRelaxedSourceQ(eos, uh(m,IDN,k,j,i), tg, e, opd_(m,M1_OP_P,k,j,i),
                                      opd_(m,M1_OP_E,k,j,i), eth, ar, clq, chs, dts, vsr,
                                      chx, rks, qe))
-               : (sbl ? VetRelaxedSourceB(eos, uh(m,IDN,k,j,i), tg, e, opd_(m,M1_OP_P,k,j,i),
+               : (sbl ? VetRelaxedSourceB(eos, uh(m,IDN,k,j,i), tg, e,
+                                      opd_(m,M1_OP_P,k,j,i),
                                       opd_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
                                       chx, rks, sx0)
                   : VetRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opd_(m,M1_OP_P,k,j,i),

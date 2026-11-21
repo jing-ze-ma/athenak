@@ -89,7 +89,8 @@ KOKKOS_INLINE_FUNCTION
 void CleanFaceVector(const CleanArgs &x, const DvceArray2D<Real> &x3f, const int dir,
                      const int m, const int k, const int j, const int i, Real a[3]) {
   if (x.cub) {   // the exact closed face vectors of CleanCsGeometry
-    for (int c = 0; c < 3; ++c) a[c] = x.area[dir](m,k,j,i)*x.g.At<CLG_N>(m,3*dir+c,k,j,i);
+    for (int c = 0; c < 3; ++c)
+      a[c] = x.area[dir](m,k,j,i)*x.g.At<CLG_N>(m,3*dir+c,k,j,i);
     return;
   }
   if (!x.sph) {
@@ -1701,7 +1702,8 @@ void RadiationM1::CleanClosureFromGd() {
     // (one team per cell, its lanes along the directions: the stores of a warp
     // contiguous; the same values)
     const int nc = vlat_icut, nj = je - js + 1, nk = ke - ks + 1;
-    const int tsz = std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace> ? 1 : 32;
+    const int tsz =
+        std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace> ? 1 : 32;
     Kokkos::parallel_for("cln_gd_thk",
                          Kokkos::TeamPolicy<>(DevExeSpace(), (nmb1 + 1)*nk*nj*nc, tsz),
     KOKKOS_LAMBDA(TeamMember_t tm) {

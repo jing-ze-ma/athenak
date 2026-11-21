@@ -2376,8 +2376,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     } else if (!ok && global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> clean_ray_cut: not applicable here (staggered sc rays on 3-D "
-                << "spherical polar or the cubed sphere, one MeshBlock along x1 only)"
+      std::cout << "<rad_m1> clean_ray_cut: not applicable here (staggered sc rays on "
+                << "3-D spherical polar or the cubed sphere, one MeshBlock along x1 only)"
                 << std::endl;
     }
     if (cln_rcut_on) {
@@ -2490,7 +2490,8 @@ void RadiationM1::SetX1maxBathColumns(const DvceArray3D<Real> &eb) {
 //! \fn void RadiationM1::SetX2FaceFlux
 //! \brief the imposed x2-face fluxes (m,k,i) of implicit_bc_x2min|max = flux
 
-void RadiationM1::SetX2FaceFlux(const DvceArray3D<Real> &flo, const DvceArray3D<Real> &fhi) {
+void RadiationM1::SetX2FaceFlux(const DvceArray3D<Real> &flo,
+                                const DvceArray3D<Real> &fhi) {
   ifx2_lo = flo;
   ifx2_hi = fhi;
   ifx2_on = true;
@@ -2705,11 +2706,12 @@ void RadiationM1::RssPrime(bool restart) {
 //!     intensity at x1min, VACUUM at x1max: inconsistent with the zero-flux M1 face).
 //!     auto = the diffusion intensity at a reflecting x1min (consistent with H = 0; the
 //!     sp/Cartesian twin pair rswt_r1000 / rswt_cart agrees better with it) and the
-//!     mirror at a reflecting x1max on vet_sc; vet_gd cannot mirror (FORCED: its direction
-//!     set is global, so the specular image of a direction is not in the set; the vet_col
-//!     column of the hybrid mirrors at a reflecting x1min, vet_col_order2, and vet_gd
-//!     refuses a reflecting x1max).  DEFAULT auto on a fresh run; a restart whose file lacks the
-//!     key keeps open.  vet_sc mirror: single MeshBlock along x1 (VetShortChar).
+//!     mirror at a reflecting x1max on vet_sc; vet_gd cannot mirror (FORCED: its
+//!     direction set is global, so the specular image of a direction is not in the set;
+//!     the vet_col column of the hybrid mirrors at a reflecting x1min, vet_col_order2,
+//!     and vet_gd refuses a reflecting x1max).  DEFAULT auto on a fresh run; a restart
+//!     whose file lacks the key keeps open.  vet_sc mirror: single MeshBlock along x1
+//!     (VetShortChar).
 
 void RadiationM1::VetBcInit(ParameterInput *pin, const bool gd) {
   const bool rst = global_variable::restart_run;

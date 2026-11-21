@@ -34,8 +34,9 @@
 //! averaged as X/J, handed back as (X/J)_avg J_avg.
 //!
 //! VALIDITY.  A cell is valid in a set when i >= the closure's first shell (ilo) and the
-//! flag field (if any) is >= 0 (and the J field > 0 when kind-3 fields exist); an offset is kept only where both sweeps were valid, and
-//! the mean runs over the valid offsets (+ the current set).
+//! flag field (if any) is >= 0 (and the J field > 0 when kind-3 fields exist); an offset
+//! is kept only where both sweeps were valid, and the mean runs over the valid offsets
+//! (+ the current set).
 //!
 //! COST.  One extra sweep per rotation block (+ K-1 sweeps at the first build); memory
 //! (K-1)(nf+1) reals per active cell.
@@ -162,8 +163,9 @@ void RadiationM1::RotAvgUpdate(const int ilo) {
           Real g;
           if (!RaGet(a, t, f, ie, m, k, j, i, jr, g)) continue;
           const Real sv = d_(m,o+f,kk,jj,ii);
-          d_(m,o+f,kk,jj,ii) = (t.kind[f] == 2) ? ((v && g > 0.0 && sv > 0.0) ? sv/g : 1.0)
-                                                : (v ? (sv - g) : 0.0);
+          d_(m,o+f,kk,jj,ii) = (t.kind[f] == 2)
+                               ? ((v && g > 0.0 && sv > 0.0) ? sv/g : 1.0)
+                               : (v ? (sv - g) : 0.0);
         }
         d_(m,o+t.nf,kk,jj,ii) = v ? 1.0 : 0.0;
       }
@@ -752,7 +754,8 @@ void RaRstCopy(const DvceArray5D<Real> &d, const DvceArray5D<Real> &sl, const in
 //! (nmb, nslab, n3, n2, n1), through a device buffer of at most nsc slabs of one
 //! MeshBlock instead of the whole (nmb, nslab) record: every element is the value
 //! RaRstCopy(dir 0) puts there (the same index map), so the file is byte-identical
-void RadiationM1::RotAvgRstPackHost(HostArray5D<Real> &out, const int nmb, const int nsc) {
+void RadiationM1::RotAvgRstPackHost(HostArray5D<Real> &out, const int nmb,
+                                    const int nsc) {
   const DvceArray5D<Real> d = vra_d;
   const int ncomp = ((vra_pend == 3) ? vra_k : vra_k - 1)*(RotAvgNf() + 1);
   const int i0 = RotAvgRstI0();
@@ -812,9 +815,10 @@ bool RadiationM1::RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src,
                   h[10] >= 0 && h[10] < indcs.nx1;
   if (!ok) {
     if (global_variable::my_rank == 0) {
-      std::cout << "### WARNING: the <rad_m1> vet_rotate_avg history of this restart file "
-                << "does not fit this run (K " << h[2] << ", closure " << h[4] << "); it "
-                << "is re-measured at the first build and this restart is not bitwise."
+      std::cout << "### WARNING: the <rad_m1> vet_rotate_avg history of this restart "
+                << "file does not fit this run (K " << h[2] << ", closure " << h[4]
+                << "); it is re-measured at the first build and this restart is not "
+                << "bitwise."
                 << std::endl;
     }
     return false;

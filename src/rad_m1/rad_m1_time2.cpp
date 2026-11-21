@@ -144,7 +144,8 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     t2_c31 = tb.c31;
     t2_c32 = tb.c32;
     if (t2_tab == 2 && global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> time2_tableau = sdirk2: no explicit K1, Heun hydro" << std::endl;
+      std::cout << "<rad_m1> time2_tableau = sdirk2: no explicit K1, Heun hydro"
+                << std::endl;
     }
     if (t2_tab == 1) {
       if (global_variable::my_rank == 0) {
@@ -229,7 +230,8 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   }
   if (vet_sc && (vs_named || (!t2_vext && !vs_every))) {
     std::string vm = pin->GetOrAddString("rad_m1", kvs,
-                                         global_variable::restart_run ? "lag" : "predict");
+                                         global_variable::restart_run ? "lag"
+                                                                      : "predict");
     if (vm.compare("lag") == 0 || vm.compare("extrap") == 0) {
       t2_vsmode = 0;
     } else if (vm.compare("predict") == 0) {
@@ -589,7 +591,8 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     t2_k1grow = pin->GetInteger("rad_m1", "time2_k1_reset_grow");
     if (t2_k1grow < 0 || t2_k1grow > 1) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_m1>/time2_k1_reset_grow must be 0 or 1" << std::endl;
+                << std::endl << "<rad_m1>/time2_k1_reset_grow must be 0 or 1"
+                << std::endl;
       std::exit(EXIT_FAILURE);
     }
   }
@@ -1050,8 +1053,9 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
         t2_k1rd_calls += 1;
         if (global_variable::my_rank == 0 && t2_k1rd_calls % 50 == 0) {
           std::cout << "<rad_m1> K1RD calls " << t2_k1rd_calls << " cells/call "
-                    << t2_k1rd_n/t2_k1rd_calls << " unpaid/call " << t2_k1rd_un/t2_k1rd_calls
-                    << " moved rate " << t2_k1rd_mv/t2_k1rd_calls << " mean cells moved "
+                    << t2_k1rd_n/t2_k1rd_calls << " unpaid/call "
+                    << t2_k1rd_un/t2_k1rd_calls << " moved rate "
+                    << t2_k1rd_mv/t2_k1rd_calls << " mean cells moved "
                     << t2_k1rd_mx/fmax(t2_k1rd_mv, 1.0e-300) << std::endl;
         }
       }
@@ -1150,7 +1154,8 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     auto a2_ = amk2;
     auto ai_ = aminc;
     par_for("m1_t2_aminc", DevExeSpace(), 0, static_cast<int>(aminc.extent(0)) - 1, 0,
-            static_cast<int>(aminc.extent(1)) - 1, 0, static_cast<int>(aminc.extent(2)) - 1,
+            static_cast<int>(aminc.extent(1)) - 1, 0,
+            static_cast<int>(aminc.extent(2)) - 1,
             0, static_cast<int>(aminc.extent(3)) - 1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real v = c1*a1_(m,k,j,i);
@@ -1280,9 +1285,9 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
   t2_nfall += 1.0;
   // (rule 9: the backward-Euler redo that carries the step is counted, not silent)
   if (global_variable::my_rank == 0) {
-    std::printf("CLEAN WARNING cycle %d t2s %d: stage solve failed, the step is redone with "
-                "backward Euler (stage fallback %.0f)\n", pmy_pack->pmesh->ncycle, t2_solve,
-                t2_nfall);
+    std::printf("CLEAN WARNING cycle %d t2s %d: stage solve failed, the step is redone "
+                "with backward Euler (stage fallback %.0f)\n", pmy_pack->pmesh->ncycle,
+                t2_solve, t2_nfall);
   }
   // m1-h2div (tests_m1/runs_5j_h2div): the predictor increments were stored by the
   // stage solve that just FAILED (the store precedes the admissibility test), and the
@@ -1764,7 +1769,9 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
             if (zsk && (i < is + zd || i > ie - zd ||
                         (zx2 && (j < js + zd || j > je - zd)) ||
                         (zx3 && (k < ks + zd || k > ke - zd)))) {ab += 1.0;}
-            if (zac) {lb[Kokkos::atomic_fetch_add(zc, 1)] = ((m*zN3 + k)*zN2 + j)*zN1 + i;}
+            if (zac) {
+              lb[Kokkos::atomic_fetch_add(zc, 1)] = ((m*zN3 + k)*zN2 + j)*zN1 + i;
+            }
           }
         }
       }
@@ -2467,8 +2474,10 @@ void M1T2VcpLaunch(const Ctx &ctx_, Idl) {
 //! acts), relaxed on a restart whose file lacks the key; vet_sc: state (its old source;
 //! OPEN, see VetInit); the resolved value is echoed; explicit input overrides.
 
-void RadiationM1::Time2VetSourceInit(ParameterInput *pin, const bool act, const bool col) {
-  const std::string key = col ? M1KeyName(pin, "time2_vet_source", {"time2_vet_col_source"})
+void RadiationM1::Time2VetSourceInit(ParameterInput *pin, const bool act,
+                                     const bool col) {
+  const std::string key = col ? M1KeyName(pin, "time2_vet_source",
+                                          {"time2_vet_col_source"})
                               : std::string("time2_vet_source");
   if (!act && !pin->DoesParameterExist("rad_m1", key)) {return;}
   // #3 (OPEN, rad_m1_vet.cpp VetInit): vet_sc keeps state (fresh and
@@ -2674,7 +2683,8 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
     if (lo < hi) {
       Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(lo - w0, hi - w0), AL, AL,
                                         AL),
-                        Kokkos::subview(src, ms, std::make_pair(s0 + lo - c0, s0 + hi - c0),
+                        Kokkos::subview(src, ms,
+                                        std::make_pair(s0 + lo - c0, s0 + hi - c0),
                                         AL, AL, AL));
     }
   };
@@ -2731,7 +2741,8 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
     const Real v0 = cln_tn, v1 = cln_tm, v2 = (have && cln_have_n) ? 1.0 : 0.0;
     const Real v3 = (have && cln_have_c) ? 1.0 : 0.0, v4 = cln_cand_be ? 1.0 : 0.0;
     if (cq >= 0 && cq < nw) {
-      par_for("m1_t2_clnrst", DevExeSpace(), 0, nmb - 1, 0, na3 - 1, 0, na2 - 1, 0, na1 - 1,
+      par_for("m1_t2_clnrst", DevExeSpace(), 0, nmb - 1, 0, na3 - 1, 0, na2 - 1, 0,
+              na1 - 1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         a_(m,cq,k,j,i) = (i == 0) ? v0 : ((i == 1) ? v1 : ((i == 2) ? v2 :
                          ((i == 3) ? v3 : ((i == 4) ? v4 : 0.0))));
@@ -3143,7 +3154,10 @@ void RadiationM1::Time2Report() {
   }
   if (t2_accfb) {std::cout << " accepted-with-fallback stages=" << t2_accfb_n;}
   if (t2_adm_pl) {std::cout << " time2_adm_poslim admitted stages=" << t2_adm_pl_n;}
-  if (t2_flr_rho > 0.0) {std::cout << " time2_floor_eint(rho<" << t2_flr_rho << ") cell-stages(rank 0)=" << t2_flr_n;}
+  if (t2_flr_rho > 0.0) {
+    std::cout << " time2_floor_eint(rho<" << t2_flr_rho << ") cell-stages(rank 0)="
+              << t2_flr_n;
+  }
   // VetGdAlignDt calls that shortened dt (NewTimeStep calls, incl. the start-up ones)
   if (vgd_rot_align) {std::cout << " rotate_align shortened dt=" << vgd_rot_nalign;}
   if (cln_ring) {
@@ -3257,10 +3271,11 @@ void RadiationM1::RstFingerprint(const char *tag) {
     std::fclose(fo);
   }
   if (global_variable::my_rank == 0) {
-    std::printf("RSTFP cyc %d scalars pred_ok %d pred_dt %.17e pred2_ok %d pred2_dt %.17e "
-                "t2_ok %d t2_dtprev %.17e t2_vprev %d x2_ok %d x2_t %.17e abe %d %d\n", cy,
-                pred_ok ? 1 : 0, pred_dt, pred2_ok ? 1 : 0, pred2_dt, t2_ok ? 1 : 0,
-                t2_dtprev, t2_vprev ? 1 : 0, x2_ok ? 1 : 0, x2_t, t2_abe_len, t2_abe_left);
+    std::printf("RSTFP cyc %d scalars pred_ok %d pred_dt %.17e pred2_ok %d "
+                "pred2_dt %.17e t2_ok %d t2_dtprev %.17e t2_vprev %d x2_ok %d x2_t %.17e "
+                "abe %d %d\n", cy, pred_ok ? 1 : 0, pred_dt, pred2_ok ? 1 : 0, pred2_dt,
+                t2_ok ? 1 : 0, t2_dtprev, t2_vprev ? 1 : 0, x2_ok ? 1 : 0, x2_t,
+                t2_abe_len, t2_abe_left);
     std::fflush(stdout);
   }  if (global_variable::my_rank == 0) {
     std::printf("RSTFP cyc %d clean init %d faces %d havec %d tc %.17e "

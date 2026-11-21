@@ -99,9 +99,9 @@ struct CleanGeo {
   static constexpr int Slot(const int n) {   // a: n >= 0, r: -1 - n
     // (a table, not a chain of branches on n: with n a loop index, the face kernels keep
     // their registers on the GPU)
-    constexpr signed char t[CLG_NV] = {0, 1, 2, 3, 4, 5, 6, 7, 8, -1, -2, -3, 9, 10, 11, 12,
-      13, 14, 15, 16, 17, -4, -5, -6, -7, -8, -9, 18, 19, 20, -10, 21, 22, 23, -11, -12,
-      -13, -14, CLG_NA - 1};
+    constexpr signed char t[CLG_NV] = {0, 1, 2, 3, 4, 5, 6, 7, 8, -1, -2, -3, 9, 10, 11,
+      12, 13, 14, 15, 16, 17, -4, -5, -6, -7, -8, -9, 18, 19, 20, -10, 21, 22, 23, -11,
+      -12, -13, -14, CLG_NA - 1};
     return t[n];
   }
   // component B + o, B known at compile time, o < the run of components from B that lie
@@ -3333,7 +3333,8 @@ class RadiationM1 {
   bool vgd_cstan = false;
   Real cstan_np = 0.0, cstan_na = 0.0;   // assemblies, assemblies with Q on (log only)
   DvceArray4D<Real> cs_qf;
-  void CsTanFrameInit(DvceArray5D<Real> &a, DvceArray5D<Real> &ac, MeshBoundaryValuesCC *pb);
+  void CsTanFrameInit(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
+                      MeshBoundaryValuesCC *pb);
   int vgd_iter = 1;            // vet_gd_iter: sweeps per ordinary build
   bool vgd_bandx = false;      // vet_gd_band_exit: shortened segments for reads
                                // beyond the ghost band instead of clamping

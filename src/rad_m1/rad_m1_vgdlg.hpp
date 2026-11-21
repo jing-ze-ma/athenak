@@ -12,9 +12,9 @@
 //! The sweep places the band rows/columns at x2min_b + (j - js + 0.5) dx2_b of its block
 //! b (uniform in index space).  The block bounds and dx2_b = (x2max_b - x2min_b)/nx2 are
 //! rounded per block, so the same global cell gets positions differing in the last bit
-//! between MeshBlock layouts; the ray geometry (and a tangent cell's branch test) follows.
-//! With on: x2a + (J + 0.5) dx2 with the global row J and the MESH spacing (the same
-//! numbers for every layout); off: the old per-block expressions, bitwise.
+//! between MeshBlock layouts; the ray geometry (and a tangent cell's branch test)
+//! follows.  With on: x2a + (J + 0.5) dx2 with the global row J and the MESH spacing
+//! (the same numbers for every layout); off: the old per-block expressions, bitwise.
 
 #include "athena.hpp"
 
@@ -47,8 +47,12 @@ struct VgdLG {
               : js + floor((t - mb.d_view(m).x2min)/mb.d_view(m).dx2 + 0.5);
   }
   // the band-row / column offset to the global index (0 when off)
-  KOKKOS_INLINE_FUNCTION int Sj(const int m, const int js) const {return on ? o(m,0) - js : 0;}
-  KOKKOS_INLINE_FUNCTION int Sk(const int m, const int ks) const {return on ? o(m,1) - ks : 0;}
+  KOKKOS_INLINE_FUNCTION int Sj(const int m, const int js) const {
+    return on ? o(m,0) - js : 0;
+  }
+  KOKKOS_INLINE_FUNCTION int Sk(const int m, const int ks) const {
+    return on ? o(m,1) - ks : 0;
+  }
   // the fractional index j + d with the integer part at its global magnitude (exact
   // removal): the same rounding of d on every layout; s = 0 gives j + d, bitwise
   KOKKOS_INLINE_FUNCTION static Real Fs(const int j, const int s, const Real d) {

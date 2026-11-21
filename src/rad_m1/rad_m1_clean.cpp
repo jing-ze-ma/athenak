@@ -257,7 +257,8 @@ static Real CleanCsTorque(const CleanArgs &x, const int e, const int m, const in
     CleanMomentumChange(x, e, q, m, k, j, i, nullptr, cf, wf, tq);
     for (int s = 0; s < 2; ++s) {
       const int kf = k + s*(q == 2), jf = j + s*(q == 1);
-      const Real f = x.fs ? x.fc[q](m,CLF_N,kf,jf,i) : CleanFaceFlux(x, e, q, m, kf, jf, i, true);
+      const Real f = x.fs ? x.fc[q](m,CLF_N,kf,jf,i)
+                          : CleanFaceFlux(x, e, q, m, kf, jf, i, true);
       const Real df = (f - x.fc[q](m,CLF_G,kf,jf,i))*ic2;
       const Real lam = CleanCsArm(x, q, m, kf, jf, i);
       gl += v*lam*cf[s];
@@ -301,11 +302,13 @@ static Real CleanCsTorque(const CleanArgs &x, const int e, const int m, const in
 
 template <bool kFs>
 KOKKOS_INLINE_FUNCTION
-static void CleanVelocityCell(const CleanArgs &x, const CleanArgs &xh, const CleanArgs &xa,
+static void CleanVelocityCell(const CleanArgs &x, const CleanArgs &xh,
+                              const CleanArgs &xa,
                               const DvceArray5D<Real> &uh,
                               const int fref, const DvceArray5D<Real> &fr,
                               const DvceArray4D<Real> &aref, const bool cap,
-                              const DvceArray5D<Real> &op, const Real arad_, const bool fa,
+                              const DvceArray5D<Real> &op, const Real arad_,
+                              const bool fa,
                               const int m, const int k, const int j, const int i,
                               Real &dv_max, Real &v_max, Real &fv_max) {
   const Real d = uh(m,IDN,k,j,i);
@@ -378,12 +381,14 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     // gas source, the Marshak face, the predictor order, the hold, the fused kernels, the
     // floor solve's pairing with implicit_pos_floor)
     {"rad_m1/implicit_enthalpy", nullptr}, {"rad_m1/implicit_gas_src", nullptr},
-    {"rad_m1/implicit_marshak_face", nullptr}, {"rad_m1/implicit_predictor_order", nullptr},
+    {"rad_m1/implicit_marshak_face", nullptr},
+    {"rad_m1/implicit_predictor_order", nullptr},
     {"rad_m1/implicit_hold", nullptr}, {"rad_m1/implicit_fast_kernels", nullptr},
     {"rad_m1/implicit_pos_floor_solve", nullptr},
     {"rad_m1/implicit_pos_gas*", nullptr}, {"rad_m1/implicit_pos_floor", nullptr},
     {"rad_m1/implicit_pos_floor_cons", nullptr},
-    {"rad_m1/implicit_pos_floor_gas_keep", nullptr}, {"rad_m1/implicit_pos_gas_cons", nullptr},
+    {"rad_m1/implicit_pos_floor_gas_keep", nullptr},
+    {"rad_m1/implicit_pos_gas_cons", nullptr},
     {"rad_m1/implicit_*", ""},
     // (the hesdirk2 stage formation the clean solve shares, Time2FormStage / Time2Stash,
     // and dt_retry: read; ImplicitSolve's acceptance and posfix and the KE cap: none)
@@ -459,8 +464,8 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
         if (t[1] == nullptr) break;
         const std::string c(t[1]);
         if (c == "x") {
-          CleanFatal("<" + k + "> belonged to a removed path (the cell layout, the FV rays "
-                     "or a retired study key); remove it from the input");
+          CleanFatal("<" + k + "> belonged to a removed path (the cell layout, the FV "
+                     "rays or a retired study key); remove it from the input");
         }
         if (c[0] == '=' && v != c.substr(1) && !(c == "=false" && v == "0")) {
           CleanFatal("<" + k + "> = " + v + ": removed from this build (only " +
@@ -506,7 +511,8 @@ void RadiationM1::CleanInit() {
   if (cln_lzbook && (t2_flr_rho > 0.0 || cln_kreal || cln_kpos)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "<rad_m1> the L_z ledger (cubed sphere, 3-D spherical polar) needs no "
-              << "time2_floor_eint, clean_stag_kreal, clean_stag_kpos (staggered)" << std::endl;
+              << "time2_floor_eint, clean_stag_kreal, clean_stag_kpos (staggered)"
+              << std::endl;
     std::exit(EXIT_FAILURE);
   }
   // (staggered on the cubed sphere: no clean_stag_vimp yet, CleanStagDrag's half-cell
@@ -868,7 +874,8 @@ void RadiationM1::CleanCsGeometry() {
   auto gr = cln_gn.r;
   auto gt = cln_gn.a;
   int nbad = 0;
-  Kokkos::parallel_reduce("cln_csgeo2", Kokkos::MDRangePolicy<Kokkos::Rank<4>, DevExeSpace>(
+  Kokkos::parallel_reduce("cln_csgeo2",
+      Kokkos::MDRangePolicy<Kokkos::Rank<4>, DevExeSpace>(
       {0, 0, 0, 0}, {nmb1 + 1, n3, n2, n1}),
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, int &nb) {
     for (int n = 0; n < CLG_NV; ++n) {
@@ -1289,7 +1296,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       dnl = fmax(de, dv);
       // (clean_tol_rel, as the old production's implicit_tol_rel: the strict test stops
       // at kappa times the first pass's change, at most clean_tol_rel_max)
-      if (cln_tolrel > 0.0 && !cln_bon && inl == 0) trel = fmin(cln_tolrel*dnl, cln_tolrmx);
+      if (cln_tolrel > 0.0 && !cln_bon && inl == 0)
+        trel = fmin(cln_tolrel*dnl, cln_tolrmx);
       tol_nl = fmax(tol_nl, trel);
       if (cln_nlprint && global_variable::my_rank == 0) {
         std::printf("CLEAN pass cycle %d t2s %d pos %d pass %d it %d de %.3e dv %.3e\n",
@@ -1674,8 +1682,9 @@ void RadiationM1::CleanOldVector() {
   // write-back's implicit_pos_gas meets, and E < 0)
   // (a flat range, as cln_newton: A100 ran the 4-D MDRange reduction at 39 ms; the
   // counts are whole numbers, exact in any order)
-  // (and a stage start that is not finite: a NaN the hydro stage left, which eint = max(e0,
-  // 0) would hide; the solve then fails and the step is redone, CLEAN WARNING, rule 9)
+  // (and a stage start that is not finite: a NaN the hydro stage left, which
+  // eint = max(e0, 0) would hide; the solve then fails and the step is redone, CLEAN
+  // WARNING, rule 9)
   Real nn[3] = {0.0, 0.0, 0.0};
   const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
   Kokkos::parallel_reduce("cln_old", CleanRp256(DevExeSpace(), 0, (nmb1 + 1)*nkji),
@@ -1710,9 +1719,9 @@ void RadiationM1::CleanOldVector() {
   // (clean_cs_lz_abs = 2: the increment's L_z, of the slopes' sums, Time2FormStage)
   if (cln_lzbook && fluid && feedback && stage) CleanLzBook(cln_lzc, true);
   if (global_variable::my_rank == 0 && nn[2] > 0.0) {
-    std::printf("CLEAN WARNING cycle %d t2s %d: stage start not finite in %.0f cells (gas or "
-                "E; the solve fails and the step is redone)\n", pmy_pack->pmesh->ncycle,
-                t2_solve, nn[2]);
+    std::printf("CLEAN WARNING cycle %d t2s %d: stage start not finite in %.0f cells "
+                "(gas or E; the solve fails and the step is redone)\n",
+                pmy_pack->pmesh->ncycle, t2_solve, nn[2]);
   }
   if (global_variable::my_rank == 0 && (nn[0] > 0.0 || nn[1] > 0.0)) {
     std::printf("CLEAN OLDVEC cycle %d t2s %d eint<0 %.0f (taken as 0) E<0 %.0f\n",
@@ -1861,7 +1870,8 @@ void RadiationM1::CleanStagKPos() {
     auto fc = x.fc[dir];
     Real nd[2] = {0.0, 0.0};
     Kokkos::parallel_reduce("cln_kpos_q", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-        DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + dk + 1, je + dj + 1, ie + di + 1}),
+        DevExeSpace(), {0, ks, js, is},
+        {nmb1 + 1, ke + dk + 1, je + dj + 1, ie + di + 1}),
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &n, Real &nc) {
       Real ql = 0.0, qr = 0.0;
       // (each slope's G over its own reference of the donor)
@@ -2069,8 +2079,8 @@ void RadiationM1::CleanStagKPos() {
   if (global_variable::my_rank == 0) {
     std::printf("CLEAN KPOS cycle %d t2s %d faces %.0f cells pd %.0f guard %.0f/%.0f "
                 "gas-limited %.0f Eo<0 %.0f (eint<0 at the stage start %.0f)\n",
-                pmy_pack->pmesh->ncycle, t2_solve, nq[0], nn[0], nq[1], nn[2], nn[1], nn[3],
-                nn[4]);
+                pmy_pack->pmesh->ncycle, t2_solve, nq[0], nn[0], nq[1], nn[2], nn[1],
+                nn[3], nn[4]);
   }
 }
 
@@ -2109,7 +2119,8 @@ void RadiationM1::CleanStagKDelta() {
     auto fc = x.fc[dir];
     Real nd[2] = {0.0, 0.0};
     Kokkos::parallel_reduce("cln_kdelta", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-        DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + dk + 1, je + dj + 1, ie + di + 1}),
+        DevExeSpace(), {0, ks, js, is},
+        {nmb1 + 1, ke + dk + 1, je + dj + 1, ie + di + 1}),
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &n, Real &nc) {
       Real ql = 0.0, qr = 0.0;
       if (!CleanBoundaryFace(y, dir, m, k, j, i)) {
@@ -2166,9 +2177,9 @@ bool RadiationM1::CleanStagKRedo() {
   // (the last round, all faces: the cap, or a round that did not lower the count of
   // X <= 0 cells (a receiver cascade; cheaper than more rounds))
   const bool cap = (cln_kredo + 1 >= CLN_KPOS_REDO);
-  // 1. the cells X <= 0 (counted), then the new donors (KT = 2): X <= 0 there or at a face
-  //    neighbour (one layer: the receivers that would lose a moved inflow move with it),
-  //    not moved yet; the last round all
+  // 1. the cells X <= 0 (counted), then the new donors (KT = 2): X <= 0 there or at a
+  //    face neighbour (one layer: the receivers that would lose a moved inflow move with
+  //    it), not moved yet; the last round all
   CleanGhostFill(cln_w, CLW_X, 1);
   CleanArgs xa = CleanMakeArgs();
   const int nf = xa.nf;
@@ -2189,7 +2200,8 @@ bool RadiationM1::CleanStagKRedo() {
     bool nb = neg;
     for (int d = 0; d < nf && !nb; ++d) {
       const int dk = (d == 2), dj = (d == 1), di = (d == 0);
-      nb = (!CleanBoundaryFace(xa, d, m, k, j, i) && !(w(m,CLW_X,k-dk,j-dj,i-di) > 0.0)) ||
+      nb = (!CleanBoundaryFace(xa, d, m, k, j, i) &&
+            !(w(m,CLW_X,k-dk,j-dj,i-di) > 0.0)) ||
            (!CleanBoundaryFace(xa, d, m, k+dk, j+dj, i+di) &&
             !(w(m,CLW_X,k+dk,j+dj,i+di) > 0.0));
     }
@@ -2456,8 +2468,8 @@ void RadiationM1::CleanStagXCount(const int inl, const int nit) {
     std::printf("CLEAN XDONOR cycle %d t2s %d pass %d xle0 %.0f minX/Eo %.3e donor %.0f "
                 "cap %.0f b<0 %.0f (with X<=0 %.0f; Eo<0 %.0f, Eo<hdivS %.0f) most-neg "
                 "work %.0f exch %.0f sb %.0f gres %.0f it %d\n",
-                pmy_pack->pmesh->ncycle, t2_solve, inl, nn, xmin, nd, cln_xd_ncap, nb, nbx,
-                neo, nsd, tw, te, ts, tg, nit);
+                pmy_pack->pmesh->ncycle, t2_solve, inl, nn, xmin, nd, cln_xd_ncap, nb,
+                nbx, neo, nsd, tw, te, ts, tg, nit);
   }
 }
 
@@ -2540,7 +2552,8 @@ void RadiationM1::CleanFirstIterate() {
       w(m,CLW_EP,k,j,i) = 0.0;   // (the beta terms of this T, CleanRightHandSide)
       const Real fe = xtn ? 1.0/(1.0 + hc*op(m,M1_OP_E,k,j,i)) : 1.0;
       const Real gm = xtg ? 1.0 - 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
-                                       SQR(uh(m,IM3,k,j,i)))/SQR(uh(m,IDN,k,j,i)*cl) : 1.0;
+                                       SQR(uh(m,IM3,k,j,i)))/SQR(uh(m,IDN,k,j,i)*cl)
+                          : 1.0;
       const Real pg = kpg ? w(m,CLW_KM,k,j,i) - w(m,CLW_KF,k,j,i) : 0.0;
       w(m,CLW_T,k,j,i) = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
                              hc*op(m,M1_OP_P,k,j,i)*arad_*fe*gm,
@@ -3022,7 +3035,8 @@ Real RadiationM1::CleanNewtonUpdate() {
       const Real sr = x*dg - w(m,CLW_XA,k,j,i);
       t = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
               hc*op(m,M1_OP_P,k,j,i)*g*arad_/(1.0 + hcke),
-              w(m,CLW_EI,k,j,i) + (hcke*sr + w(m,CLW_EP,k,j,i))/(1.0 + hcke), t_old, rtol);
+              w(m,CLW_EI,k,j,i) + (hcke*sr + w(m,CLW_EP,k,j,i))/(1.0 + hcke), t_old,
+              rtol);
     } else {
       const Real pg = kpg ? w(m,CLW_KM,k,j,i) - w(m,CLW_KF,k,j,i) : 0.0;   // (kpos)
       t = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i), hc*op(m,M1_OP_P,k,j,i)*g*arad_,
@@ -3444,7 +3458,8 @@ void RadiationM1::CleanStagBracket() {
         // (clean_stag_thinf_held: the share theta of the donor's E the rays carry moves
         // with their flux factor, the rest with the donor's own half range: a convex
         // blend, realisable; a ray-shadowed donor (J << E) is no dam)
-        const Real gp = fmin(hp/fmax(jl, rmn*el), 1.0), gm = fmax(hm/fmax(jr, rmn*er), -1.0);
+        const Real gp = fmin(hp/fmax(jl, rmn*el), 1.0),
+                   gm = fmax(hm/fmax(jr, rmn*er), -1.0);
         const Real ql = thh ? x.w(m,CLW_V,k-dk,j-dj,i-di) : 1.0;
         const Real qr = thh ? x.w(m,CLW_V,k,j,i) : 1.0;
         auto &fp = x.fc[dir](m,CLF_HP,k,j,i), &fm = x.fc[dir](m,CLF_HM,k,j,i);
@@ -4539,7 +4554,8 @@ void RadiationM1::CleanStagFCsShared() {
     }
   });
   // (one MeshBlock along x1: not the x1 family's F, CleanStagFSolve)
-  const int f0 = (pmy_pack->pmesh->nmb_rootx1 == 1 && !pmy_pack->pmesh->multilevel) ? 2 : 0;
+  const int f0 =
+      (pmy_pack->pmesh->nmb_rootx1 == 1 && !pmy_pack->pmesh->multilevel) ? 2 : 0;
   CleanGhostFill(cln_v, 9 + f0, 6 - f0, true, 0, 1, CleanFMask(f0));   // (as the F solve)
 }
 
@@ -4770,8 +4786,8 @@ void RadiationM1::CleanStagDrag(const bool first, const bool vel, const bool lat
 //! stage-2 start (Heun 1/2), the stage-2 start and write-back pending until the solve
 //! accepts stage 2 (s = 0; a backward-Euler redo from U^n drops them, Time2Restore); the
 //! total and K1's sum in <rad_m1> (restart).
-//! 3-D spherical polar: s is the L_z that crossed the boundaries (CleanStagMomentum's dlz),
-//! <rad_m1>/clean_sp_lz_bnd
+//! 3-D spherical polar: s is the L_z that crossed the boundaries (CleanStagMomentum's
+//! dlz), <rad_m1>/clean_sp_lz_bnd
 
 void RadiationM1::CleanLzBook(const Real s, const bool start) {
   if (t2_solve == M1_T2S_STAGE1) {
@@ -5055,7 +5071,8 @@ void RadiationM1::CleanWriteBack() {
   auto pgd = pgc_def;
   const bool ky1s = cln_kpos && t2_solve == M1_T2S_STAGE1;
   if (ky1s && cln_ky1.extent_int(0) != nmb1 + 1) {
-    Kokkos::realloc(cln_ky1, nmb1 + 1, u0.extent_int(2), u0.extent_int(3), u0.extent_int(4));
+    Kokkos::realloc(cln_ky1, nmb1 + 1, u0.extent_int(2), u0.extent_int(3),
+                    u0.extent_int(4));
   }
   auto ky1v = cln_ky1;
   const bool xwb = (cln_xte > 0) && feedback && !cln_vzero;
@@ -5319,8 +5336,8 @@ void RadiationM1::CleanWriteBack() {
     }, Kokkos::Max<Real>(cm));
     cm = CleanReduce(cm, true);
     if (global_variable::my_rank == 0) {
-      std::printf("CLEAN %s cycle %d t2s %d write-back closure %.3e\n", xwb ? "XT" : "KPOS",
-                  pmy_pack->pmesh->ncycle, t2_solve, cm);
+      std::printf("CLEAN %s cycle %d t2s %d write-back closure %.3e\n",
+                  xwb ? "XT" : "KPOS", pmy_pack->pmesh->ncycle, t2_solve, cm);
     }
   }
   cln_kpb = false;

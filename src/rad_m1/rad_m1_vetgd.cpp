@@ -699,7 +699,8 @@ void VgdMomentCheck(const std::vector<double> &d, double e[4]) {
       e[2] = std::max(e[2], std::fabs(m2[i][j] - ((i == j) ? 1.0/3.0 : 0.0)));
       for (int k = 0; k < 3; ++k) {
         for (int l = 0; l < 3; ++l) {
-          const double iso = ((i == j && k == l) + (i == k && j == l) + (i == l && j == k))/15.0;
+          const double iso = ((i == j && k == l) + (i == k && j == l) +
+                              (i == l && j == k))/15.0;
           e[3] = std::max(e[3], std::fabs(m4[i][j][k][l] - iso));
         }
       }
@@ -846,7 +847,8 @@ void RadiationM1::VetGdInit() {
     for (int m = 0; m < pmy_pack->nmb_thispack; ++m) {
       const auto &ll = pm->lloc_eachmb[pmy_pack->gids + m];
       if (ll.level != pm->root_level) {
-        VgdFatal("layout_invariant: the global vet_gd geometry needs a single-level mesh");
+        VgdFatal("layout_invariant: the global vet_gd geometry needs a single-level "
+                 "mesh");
       }
       vgd_lg.oh(m,0) = static_cast<int>(ll.lx2)*pm->mb_indcs.nx2;
       vgd_lg.oh(m,1) = static_cast<int>(ll.lx3)*pm->mb_indcs.nx3;
@@ -894,7 +896,8 @@ void RadiationM1::VetGdInit() {
     if (vgd_ovl_g > 0) {bad += " vet_gd_overlap;";}
     if (vgd_fuse_h > 1) {bad += " vet_gd_fuse_shells > 1;";}
     if (!bad.empty()) {
-      VgdFatal("not available on a stretched theta / the full sphere (accsp-1102):" + bad);
+      VgdFatal("not available on a stretched theta / the full sphere (accsp-1102):" +
+               bad);
     }
     // G1: with vet_gd_band_global (the full-sphere fresh default) the compact
     // halo is the keep-tested global-band exchange (VetGdGbHaloC, sph2.inc); the slot
@@ -1001,7 +1004,8 @@ void RadiationM1::VetGdInit() {
     }
     VgdMomentCheck(rb, er);
     std::cout << "<rad_m1> vet_gd direction set: " << vgd_base.size()/4
-              << " directions; moment errors |sum w - 1| " << e[0] << ", |sum w n| " << e[1]
+              << " directions; moment errors |sum w - 1| " << e[0] << ", |sum w n| "
+              << e[1]
               << ", |sum w nn - I/3| " << e[2] << " (rotated " << er[2]
               << "), 4th-moment anisotropy " << e[3] << " (rotated " << er[3] << ")"
               << std::endl;
@@ -1198,8 +1202,9 @@ void RadiationM1::VetGdInit() {
     // (VetGdCsSweep's ringrec)
     if (vgd_ring_named && vgd_ring_par && !vgd_ring && global_variable::my_rank == 0) {
       std::cout << "<rad_m1> vet_gd_band_ring: does not apply here (needs the exact halo "
-                << "lists, no vet_gd_overlap / fuse_shells / async / band_exit, MPI band; "
-                << "cubed sphere: vet_gd_halo_compact > 0 with an MPI band)" << std::endl;
+                << "lists, no vet_gd_overlap / fuse_shells / async / band_exit, MPI "
+                << "band; cubed sphere: vet_gd_halo_compact > 0 with an MPI band)"
+                << std::endl;
     }
   }
   VgdRagAlloc(vgd_i);   // after the halo init: the band sides follow vgd_hloc
@@ -1291,8 +1296,8 @@ void RadiationM1::VetRotInit(ParameterInput *pin) {
       pin->GetOrAddBoolean("rad_m1","vet_rotate_advance",true);
       recipe::Log("<rad_m1>/vet_rotate_advance = true (default on a fresh vet_gd run)");
     } else {
-      recipe::Log("<rad_m1>/vet_rotate_advance = false (restart input has no key: the old "
-                  "default kept; set it true or <job>/recipe = prod1019 to switch)");
+      recipe::Log("<rad_m1>/vet_rotate_advance = false (restart input has no key: the "
+                  "old default kept; set it true or <job>/recipe = prod1019 to switch)");
     }
   }
   if (pin->DoesParameterExist("rad_m1","vet_rotate_advance")) {
@@ -1339,7 +1344,8 @@ void RadiationM1::VetRotInit(ParameterInput *pin) {
     if (rot_phys && vet_sc && sc_pin) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_m1>/vet_gd_rotate_dt: the vet_sc set is pinned by "
-                << "boundary beams (implicit_beam_n) or vet_milne; no rotation" << std::endl;
+                << "boundary beams (implicit_beam_n) or vet_milne; no rotation"
+                << std::endl;
       std::exit(EXIT_FAILURE);
     }
     if (rot_phys) {
@@ -2094,7 +2100,8 @@ void RadiationM1::VgdTabAlloc(const bool dev) {
     H.dir = Kokkos::View<Real **, LayoutWrapper, PS>("m1_vgd_tab_dir", vgd_dir.extent(0),
                                                      vgd_dir.extent(1));
     H.w = Kokkos::View<int ***, LayoutWrapper, PS>("m1_vgd_tab_w", vgd_wall.extent(0),
-                                                   vgd_wall.extent(1), vgd_wall.extent(2));
+                                                   vgd_wall.extent(1),
+                                                   vgd_wall.extent(2));
     H.mp = Kokkos::View<int ****, LayoutWrapper, PS>("m1_vgd_tab_mp", vgd_map.extent(0),
                                                      vgd_map.extent(1), vgd_map.extent(2),
                                                      vgd_map.extent(3));
@@ -2444,7 +2451,8 @@ bool RadiationM1::VetGdHlXff(const int i, const int ws, const int mode) {
   }
   const int px = vgd_hinw ? 0 : 1;
   const int ex = px*n1c + i;
-  if (ex >= static_cast<int>(vgd_hxe.size()) || ex >= static_cast<int>(vgd_hxe_alt.size())) {
+  if (ex >= static_cast<int>(vgd_hxe.size()) ||
+      ex >= static_cast<int>(vgd_hxe_alt.size())) {
     return false;
   }
   const VgdHlEntry &XA = vgd_hxe[ex];
@@ -2455,7 +2463,8 @@ bool RadiationM1::VetGdHlXff(const int i, const int ws, const int mode) {
   if (!okx(XA, vgd_alpha) || !okx(XB, vgd_xf_alt)) {return false;}
   const int np = static_cast<int>(vgd_prk.size());
   if (np > VGD_IPC_NS || static_cast<int>(XA.sp.size()) != np + 1 ||
-      static_cast<int>(XB.sp.size()) != np + 1 || static_cast<int>(XA.rp.size()) != np + 1 ||
+      static_cast<int>(XB.sp.size()) != np + 1 ||
+      static_cast<int>(XA.rp.size()) != np + 1 ||
       static_cast<int>(XB.rp.size()) != np + 1) {
     return false;
   }
@@ -6215,13 +6224,17 @@ void RadiationM1::VetGdSweep() {
     if (gfast && bdp != nullptr) {bgp = VgdClosureToDevice(bodyg, vgd_bbuf2);}
 #endif
     // both sets' gx-false closures in device memory (VetGdXffOk: gfast)
-    using VgdXb0T = decltype(mkx0(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3, vgd_i));
-    using VgdXb1T = decltype(mkx1(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3, vgd_i));
+    using VgdXb0T = decltype(mkx0(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3,
+                                  vgd_i));
+    using VgdXb1T = decltype(mkx1(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3,
+                                  vgd_i));
     const VgdXb0T *xa0 = nullptr, *xq0 = nullptr;
     const VgdXb1T *xa1 = nullptr, *xq1 = nullptr;
     if (xffs) {
-      if (!gfast) {VgdFatal("vet_gd_rotate_xfade_fuse: the fused sweep needs the gx-false "
-                            "shell kernel");}
+      if (!gfast) {
+        VgdFatal("vet_gd_rotate_xfade_fuse: the fused sweep needs the gx-false shell "
+                 "kernel");
+      }
 #if defined(KOKKOS_ENABLE_CUDA)
       // (the current set's closure: the buffer of its gx-false body)
       auto &bba = vgd_bbuf2;
@@ -7820,7 +7833,8 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
         int64_t mx = 0;
         for (int i = 0; i < c1; ++i) {
           const int wl = wi_h(i);
-          mx = std::max(mx, static_cast<int64_t>(a.n)*(a.nx3 + (sb_h(m,0) + sb_h(m,1))*wl)*
+          mx = std::max(mx, static_cast<int64_t>(a.n)*
+                            (a.nx3 + (sb_h(m,0) + sb_h(m,1))*wl)*
                             (a.nx2 + (sb_h(m,2) + sb_h(m,3))*wl));
         }
         vgd_rg_soff[static_cast<size_t>(s)*a.nmb + m] = tot;
@@ -7840,7 +7854,9 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
     auto oc_h = Kokkos::create_mirror_view(vgd_rg_doffc);
     auto so_h = Kokkos::create_mirror_view(vgd_rg_dsoff);
     for (int m = 0; m < a.nmb; ++m) {
-      for (int i = 0; i < c1; ++i) {oc_h(m,i) = vgd_rg_offc[static_cast<size_t>(m)*c1 + i];}
+      for (int i = 0; i < c1; ++i) {
+        oc_h(m,i) = vgd_rg_offc[static_cast<size_t>(m)*c1 + i];
+      }
       for (int s = 0; s < vgd_rg_k; ++s) {
         so_h(s,m) = vgd_rg_soff[static_cast<size_t>(s)*a.nmb + m];
       }
@@ -7848,8 +7864,8 @@ void RadiationM1::VgdRagAlloc(VgdRag &a) {
     Kokkos::deep_copy(vgd_rg_doffc, oc_h);
     Kokkos::deep_copy(vgd_rg_dsoff, so_h);
     if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> vet_gd_band_ring: compact intensities " << ncomp*sizeof(Real)/1.0e9
-                << " GB + "
+      std::cout << "<rad_m1> vet_gd_band_ring: compact intensities "
+                << ncomp*sizeof(Real)/1.0e9 << " GB + "
                 << vgd_rg_k << " band slots "
                 << (tot - ncomp)*sizeof(Real)/1.0e9 << " GB on rank 0" << std::endl;
     }
@@ -7954,8 +7970,8 @@ struct VgdRingK {
       const bool b2 = (t >= svn);
       const int64_t tl = b2 ? (t - svn) : t;
       int m, v, kb, jb;
-      if (!Rec(svk, svw, b2 ? svdl2 : svdl, b2 ? svdw2 : svdw, b2 ? svnr2 : svnr, tl, m, v,
-               kb, jb)) {return;}
+      if (!Rec(svk, svw, b2 ? svdl2 : svdl, b2 ? svdw2 : svdw, b2 ? svnr2 : svnr, tl,
+               m, v, kb, jb)) {return;}
       const int64_t q = Wadr(svs, svw, m, v, kb, jb);
       if (q < 0) {return;}
       st[svso + t] = b2 ? db[q] : da[q];
@@ -8002,8 +8018,8 @@ struct VgdRingK {
       const bool b2 = (t >= rsn);
       const int64_t tl = b2 ? (t - rsn) : t;
       int m, v, kb, jb;
-      if (!Rec(rsk, aqw, b2 ? rsdl2 : rsdl, b2 ? rsdw2 : rsdw, b2 ? rsnr2 : rsnr, tl, m, v,
-               kb, jb)) {return;}
+      if (!Rec(rsk, aqw, b2 ? rsdl2 : rsdl, b2 ? rsdw2 : rsdw, b2 ? rsnr2 : rsnr, tl,
+               m, v, kb, jb)) {return;}
       const int64_t q = Wadr(aqs, aqw, m, v, kb, jb);
       if (q < 0) {return;}
       if (b2) {
@@ -8110,7 +8126,8 @@ void RadiationM1::VetGdRingFlush() {
     VgdRingOp sv, rl, aq;
     while (p < vgd_rg_pend.size()) {
       const VgdRingOp &o = vgd_rg_pend[p];
-      if ((o.kind == 1 && sv.kind) || (o.kind == 2 && rl.kind) || (o.kind == 3 && aq.kind)) {
+      if ((o.kind == 1 && sv.kind) || (o.kind == 2 && rl.kind) ||
+          (o.kind == 3 && aq.kind)) {
         break;
       }
       if (o.kind == 1) {
