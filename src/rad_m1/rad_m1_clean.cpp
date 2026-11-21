@@ -3135,6 +3135,7 @@ Real RadiationM1::CleanNewtonUpdate() {
     const Real e_old = w(m,CLW_EK,k,j,i);
     const Real t_old = w(m,CLW_T,k,j,i);
     Real x = w(m,CLW_X,k,j,i);
+    const Real xr = (cell || poslim) ? x : fmax(x, 0.0);   // (the change: undamped)
     // (clean_pass_damp: a change that turns back, l = d/d_last < 0, takes d/(1 - l), the
     // fixed point of that mode, as CleanStagXDonor's C; the fixed point is unchanged)
     if (dmp) {
@@ -3173,15 +3174,15 @@ Real RadiationM1::CleanNewtonUpdate() {
     }
     w(m,CLW_EK,k,j,i) = e;
     w(m,CLW_T,k,j,i) = t;
-    const Real de = ncell ? fabs(e - e_old)/fmax(fmax(fabs(e), fabs(e_old)), esc)
-                          : fabs(e - e_old)/fmax(fmax(fabs(e), fabs(e_old)), 1.0e-300);
+    const Real de = ncell ? fabs(xr - e_old)/fmax(fmax(fabs(xr), fabs(e_old)), esc)
+                          : fabs(xr - e_old)/fmax(fmax(fabs(xr), fabs(e_old)), 1.0e-300);
     const Real dt = fabs(t - t_old)/fmax(fmax(t, t_old), 1.0e-300);
     if (bud) {
       const Real d = uh(m,IDN,k,j,i), se = w(m,CLW_SE,k,j,i);
       Real e1, e0, p, chi_rho, chi_t, cv;
       eos.ThermoAt(d, t, e1, p, chi_rho, chi_t, cv);
       eos.ThermoAt(d, t_old, e0, p, chi_rho, chi_t, cv);
-      dmax = fmax(dmax, fmax(fabs(e - e_old)/se, fabs(e1 - e0)/w(m,CLW_SG,k,j,i)));
+      dmax = fmax(dmax, fmax(fabs(xr - e_old)/se, fabs(e1 - e0)/w(m,CLW_SG,k,j,i)));
       if (kok) er_max = fmax(er_max, 0.5*fabs(e - w(m,CLW_EO,k,j,i) -
                                               h*k1(m,M1_T2_E,k,j,i))/se);
     } else {
