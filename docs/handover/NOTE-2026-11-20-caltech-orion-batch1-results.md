@@ -1097,3 +1097,7 @@ B_br gate not passed; arms not started
    t9r: cycle=2300 time=2.146964e+05 dt=9.334531e+01 | KE_int 1.1098932685926535e+40 L_bot/L_in 0.993 L_top/L_in 0.982 | CW 0 FATAL 0 | FLIM 16033 floorcap 186 | rst t9l62.00004.rst
    t19r: cycle=1150 time=4.577219e+04 dt=7.658110e+00 | KE_int 5.2963585386510146e+40 L_bot/L_in 0.984 L_top/L_in 0.963 | CW 39 FATAL 0 | FLIM 20099 floorcap 92 | rst t19l64.00001.rst
 - (01:04) ix ack: B_c3c (c3c 411bf3991; git diff 7c9ebb817..411bf3991 = 1 file, rad_m1_clean.cpp) is building IN PLACE (athena_c3h a97dd19c copied out first) as a -c 16 --gres=none step on 02-04 next to C3h_t19. When C3h_t19 ends: smoke gate on 02-04, then C3c_t19 = identical to C3h_t19 (restart t19l64.00001, N0 1127, J4 keys + clean_stag_thinf_held_gate + clean_nl_print, 450 cycles, rst off) on B_c3c, one GPU job on the node. Both reported against the stopped production run (CW, solves/stage, dt, KE, L_top) -> caltech_results/C3H/C3h_t19 and C3C/C3c_t19.
+- (01:04) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t19r (log.0) cycle 1158 []: CLEAN WARNING cycle 1158 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 39)
+  CW t19r (log.0) cycle 1169 []: CLEAN WARNING cycle 1169 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 40)
+  CW t19r (log.0) cycle 1172 []: CLEAN WARNING cycle 1172 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 41)
