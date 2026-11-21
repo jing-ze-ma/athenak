@@ -1532,3 +1532,6 @@ B_br gate not passed; arms not started
 - (04:20) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
   CW t19r_damp_test (log.0) cycle 1257 []: CLEAN WARNING cycle 1257 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 4)
   CW t19r_damp_test (log.0) cycle 1279 []: CLEAN WARNING cycle 1279 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
+- (04:22) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t19r_damp_test (log.0) cycle 1286 [cycle=1300 time=5.225796e+04 dt=4.006724e+01]: CLEAN WARNING cycle 1286 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 6)
+  CW t19r_damp_test (log.0) cycle 1295 [cycle=1300 time=5.225796e+04 dt=4.006724e+01]: CLEAN WARNING cycle 1295 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 7)
