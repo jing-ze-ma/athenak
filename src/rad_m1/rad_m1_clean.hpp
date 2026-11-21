@@ -328,6 +328,7 @@ struct CleanArgs {
   bool mcl;                    // staggered: a face's momentum term at most the force of
                                // a realisable flux, h chi_f E (the iterate's,
                                // CleanMomentumChange)
+  DvceArray1D<Real> mclc;      // (mcl: the face terms the cap moved, counted)
   bool fa;                     // staggered: the faces' momentum terms of the pass stored
                                // (CLF_PT, CleanStagDrag)
   bool drag;                   // staggered, clean_stag_vimp: implicit gas velocity
@@ -1734,7 +1735,9 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
     if (x.mcl) {
       const Real cap = wt*(1.0/x.fc[dir](m,CLF_TH,kf,jf,iff) - 1.0)/x.c*
                        fmax(fmax(x.w(m,e,kf,jf,iff), x.w(m,e,kf-dk,jf-dj,iff-di)), 0.0);
-      t = fmin(fmax(t, -cap), cap);
+      const Real tc = fmin(fmax(t, -cap), cap);
+      if (tc != t) Kokkos::atomic_add(&x.mclc(0), 1.0);
+      t = tc;
     }
     dm -= t;
     if (cf) {

@@ -1381,6 +1381,14 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
                 pmy_pack->pmesh->ncycle, t2_solve, nit, nit_sum, nneg, cln_nr1, cln_nr2,
                 nfirst[0], nfirst[1], cln_nguard, nsolve, cln_ncwin);
   }
+  if (cln_mclc.extent_int(0) == 1) {   // (the last pass's face momentum terms at the cap)
+    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_mclc);
+    const Real n = CleanReduce(h(0), false);
+    if (global_variable::my_rank == 0 && n > 0.0) {
+      std::printf("CLEAN MCAP cycle %d t2s %d: %.0f face momentum terms at the cap h chi_f "
+                  "E in the last pass\n", pmy_pack->pmesh->ncycle, t2_solve, n);
+    }
+  }
 
   // 5. new state: face fluxes, E, cell fluxes, gas, stage slopes
   // (a failed solve or a probe does not change the energy flux's memory)
@@ -3127,6 +3135,9 @@ Real RadiationM1::CleanVelocityUpdate() {
   xh.hi = cln_split;
   xh.kq = -1;
   xh.mcl = true;
+  if (cln_mclc.extent_int(0) != 1) Kokkos::realloc(cln_mclc, 1);
+  Kokkos::deep_copy(cln_mclc, 0.0);
+  xh.mclc = cln_mclc;
   // (the F solve's face tie after the drag, which evaluates the same face T: CLF_PT)
   const bool td = cln_fwork && cln_ftie;
   if (cln_fwork) {   // (clean_stag_fwork: the momentum of the

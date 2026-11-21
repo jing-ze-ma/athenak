@@ -2867,6 +2867,7 @@ class RadiationM1 {
   bool cln_thinf = false;   // clean_stag_thinf
   bool cln_flim = false;    // clean_stag_flim
   DvceArray1D<Real> cln_flimc;   // (flim: the cut faces, their momentum sum)
+  DvceArray1D<Real> cln_mclc;    // (the Newton passes' momentum cap: the terms it moved)
   bool cln_thinh = false;   // clean_stag_thinf_held
   int cln_xdfz = 0;         // clean_stag_xdonor_freeze
   int cln_pdmp = 0, cln_pdn = 0;   // clean_pass_damp, the solve's pass count
