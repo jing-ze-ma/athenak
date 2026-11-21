@@ -970,3 +970,13 @@ B_br gate not passed; arms not started
   CW t19l64 (log.0) cycle 689 [cycle=700 time=2.684637e+04 dt=3.840572e+01]: CLEAN WARNING cycle 689 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
   CW t19l64 (log.0) cycle 782 [cycle=800 time=3.068351e+04 dt=3.832741e+01]: CLEAN WARNING cycle 782 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
   CW t19l64 (log.0) cycle 1069 [cycle=1100 time=4.217541e+04 dt=3.835618e+01]: CLEAN WARNING cycle 1069 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 3)
+- (00:02) PROD 1121b:
+  progress:
+   t19l64: cycle=1200 time=4.600972e+04 dt=3.831680e+01 | KE_int 3.5861871245498709e+40 L_bot/L_in 0.994 L_top/L_in 1.021 | CW 3 FATAL 0 | FLIM 13022 floorcap 98 | rst t19l64.00001.rst
+   t9l62: cycle=1650 time=1.597988e+05 dt=9.684408e+01 | KE_int 9.2969971423142003e+39 L_bot/L_in 0.983 L_top/L_in 1.000 | CW 0 FATAL 0 | FLIM 12228 floorcap 134 | rst t9l62.00003.rst
+   m35mms: cycle=5450 time=5.722913e+04 dt=6.324401e+00 | KE_int 1.2873024351817900e+39 L_bot/L_in 1.008 L_top/L_in 1.081 | CW 0 FATAL 0 | FLIM 36208 floorcap 438 | rst m35mms.00002.rst
+   bsg: cycle=6350 time=9.296472e+05 dt=1.394478e+02 | KE_int 3.7494843763767674e+41 L_bot/L_in 1.002 L_top/L_in 1.054 | CW 0 FATAL 0 | FLIM 47398 floorcap 512 | rst bsg3d.00010.rst
+   i1_bsg: cycle=7500 time=1.265043e+06 dt=1.686659e+02 | KE_int 4.4698711596889335e+41 L_bot/L_in 0.992 L_top/L_in 1.035 | CW 0 FATAL 0 | FLIM 46217 floorcap 602 | rst bsg3d.00014.rst
+   i1_m35mms: cycle=5050 time=5.905877e+04 dt=1.169481e+01 | KE_int 4.0446955874928832e+38 L_bot/L_in 0.997 L_top/L_in 0.982 | CW 0 FATAL 0 | FLIM 36436 floorcap 433 | rst m35mms.00002.rst
+   t9r: cycle=500 time=4.667368e+04 dt=9.334679e+01 | KE_int 5.3389128963679409e+39 L_bot/L_in 0.979 L_top/L_in 1.006 | CW 0 FATAL 0 | FLIM 3425 floorcap 42 | rst t9l62.00001.rst
+   t19r: cycle=350 time=1.395730e+04 dt=4.015058e+01 | KE_int 4.3268748184611398e+39 L_bot/L_in 0.995 L_top/L_in 1.089 | CW 0 FATAL 0 | FLIM 3663 floorcap 30 | rst t19l64.00000.rst
