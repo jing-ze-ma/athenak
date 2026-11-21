@@ -497,7 +497,8 @@ class RadiationM1 {
   Real fcap_rho = 0.0, fcap_v = 0.0, fcap_tmin = 0.0;
   bool fcap_t = true, fcap_ke_rad = true;
   int fcap_report = 0;
-  DualArray1D<Real> fcap_cnt;   // 0 n_v, 1 n_t, 2 dKE, 3 dEint (energy units x volume)
+  DualArray1D<Real> fcap_cnt;   // 0 n_v, 1 n_t, 2 dKE, 3 dEint (energy units x volume),
+                                // 4 |dp| V, 5 dL_z V (spherical polar) removed
   void FloorGasCap();
 
   // RSLA start-up check (design sect. 2): v_max*tau_max/chat, evaluated once, on the
