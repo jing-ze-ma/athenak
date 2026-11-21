@@ -1,14 +1,21 @@
-a 'FATAL' 4 ### FATAL ERROR in ../../src/parameter_input.cpp at line 435
+a cycles 0 - 500 dt first 38.3541 last 32.3527 s/cycle steady 59.393 first elapsed 46.6
+a 'FATAL' 0 
 a 'CLEAN WARNING' 0 
 a 'DT_RETRY' 0 
-a 'WARNING' 0 
+a 'WARNING' 3 ### WARNING: 8 input parameter(s) were never read by the code (typo, or a key AthenaK does not have?):
 a 'march' 0 
-a 'clean_init steady:' 0 
-a 'he_star_m1: GM' 0 
-a 'he_seed_band = n2 BAND' 0 
-a 'seed = ' 0 
-a 'direction maps' 0 
+a 'clean_init steady:' 1 <rad_m1> clean_init steady: converged after 3 passes, residual 7.233e-12 (tol 1.0e-08; 0 formal solutions); radiation E 7.9849349171e+45 -> 7.8475411579e+45, F/c 1.0631e+42 0.0000e+00 0.0000e+00 -> 1.6860e+41 1.2248e+30 -2.9755e+29 (volume sums)
+a 'he_star_m1: GM' 1 he_star_m1: GM = 1.02688e+28, F_in = 3.01435e+14, tau(r_in) = 1.66228e+06, r_int (tau = 1) = 2.17881e+12, r_top = 2.34036e+13, sponge rate = 0.001 above r = 2.10632e+13
+a 'he_seed_band = n2 BAND' 1 he_star_m1: he_seed_band = n2 BAND r 1.86903e+12 .. 2.11145e+12 (r/r_int 0.857824 - 0.969085, r_int 2.17881e+12), 19 cells 98..116; peak at r/r_int 0.939985: sigma 0.000262379 /s, 1/sigma 0.0441121 d, T 139665 K, Gamma1 1.34373, H_p/r 0.0555194; pi r/H_p 56.5855, l_8 180.467 (8 cells per wavelength,
+a 'seed = ' 1 he_star_m1: seed = real spherical harmonics l 14..56 (3053 terms, all m), amplitude 0.001 (eint), r 1.86903e+12 .. 2.11145e+12, rng 1234
+a 'direction maps' 1 <rad_m1> vet_gd: global-direction SC closure on the sp wedge, product GL7x18 staggered (126 directions); z-rotation every 0 cycle(s) (0 = fixed), first angle 0; rank 0 wall ghost columns 45144, direction maps exact 2476656 of 5688144 (the rest: nearest direction)
 a 'he_ic_equil' 0 
-GPU mem peak MiB max 23 min 23 (n=4) = 0.0 % of 143771 MiB
-a rc=1 wall=9
+GPU mem peak MiB max 76515 min 76255 (n=4) = 53.2 % of 143771 MiB
+rt t19l64.hydro.hst rows a 35 b 0 last 0 rows DIFF
+rt t19l64.user.hst rows a 35 b 0 last 0 rows DIFF
+rt t19l64.hydro_w.00002.bin DIFF/missing
+rt t19l64.m1.00001.bin DIFF/missing
+rt t19l64.m1_face.00001.bin DIFF/missing
+rt t19l64.m1_vet.00001.bin DIFF/missing
+a rc=0 wall=715
 DONE
