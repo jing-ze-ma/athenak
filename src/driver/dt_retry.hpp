@@ -226,6 +226,7 @@ class CounterKeep {
     std::int64_t ni[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};   // its integer counters
     DvceArray1D<Real> pos, acl, opn, fcp;   // (fcp: <rad_m1>/floorcap's fcap_cnt)
     bool hpos = false, hacl = false, hopn = false, hfcp = false;
+    Real lz[2] = {0, 0};   // (<rad_m1>'s L_z ledger cln_lzl and its pending cln_lzp)
   };
   Snap s_[3];   // slot 2: the stage-1 start of a time2_posfix re-solve
   std::int64_t nrb_[3] = {0, 0, 0};

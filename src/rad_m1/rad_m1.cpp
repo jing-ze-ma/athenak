@@ -499,8 +499,19 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (cln_lzbook) {
       const bool cs = (cln_lza == 2);
       cln_lzpin = pin;
-      cln_lzl = pin->GetOrAddReal("rad_m1", M1LzKey(pin, cs, false), 0.0);
-      cln_lzs1 = pin->GetOrAddReal("rad_m1", M1LzKey(pin, cs, true), 0.0);
+      for (int k1 = 0; k1 < 2; ++k1) {   // (a restart file's non-finite value: NOTE, 0)
+        const std::string key = M1LzKey(pin, cs, k1 == 1);
+        Real &v = (k1 == 1) ? cln_lzs1 : cln_lzl;
+        v = pin->GetOrAddReal("rad_m1", key, 0.0);
+        if (std::isfinite(v)) continue;
+        if (global_variable::my_rank == 0) {
+          std::cout << "### NOTE: <rad_m1>/" << key << " = " << v << " in the restart "
+                    << "file is not finite: reset to 0 (the L_z ledger restarts from 0)"
+                    << std::endl;
+        }
+        v = 0.0;
+        pin->SetReal("rad_m1", key, 0.0);
+      }
     }
     cln_xpat = stag("clean_stag_xpat", false);
     // clean_xt_cons (default off): the first iterate's gas T with A's G = 1 - beta^2/2,
