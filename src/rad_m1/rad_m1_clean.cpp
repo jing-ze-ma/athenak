@@ -3882,7 +3882,10 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
   xh.kq = -1;
   auto op = opac;
   const CleanFLine ln{cln_v, x.cub};
-  const bool fk = cln_fkin, dok = cln_dok, cub = x.cub;
+  const bool fk = cln_fkin, dok = cln_dok, cub = x.cub, flm = cln_flim;
+  if (flm && cln_flimc.extent_int(0) != 2) Kokkos::realloc(cln_flimc, 2);
+  if (flm) Kokkos::deep_copy(cln_flimc, 0.0);
+  auto flc = cln_flimc;
   const int kd = (t2_solve == M1_T2S_NONE) ? 0 :
                  ((t2_solve == M1_T2S_STAGE1) ? CLF_KD + 1 : CLF_KD);
   const Real c1lo = cln_c0, c1hi = cln_c1;
@@ -3923,6 +3926,23 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
         fc(m,CLF_N,k,j,i) = CleanFaceFlux(xh, e, dir, m, k, j, i, true);
+        // (clean_stag_flim: F^H within [-c E_R, c E_L], the transport's thin limit: the
+        // stress drive h c^2 [P_R - P_L]/dx_f only up to c E_donor.  A ray D at odds with
+        // the moment F (its lateral curl) drove a floor-gas face, chi ~ 1e-19, to
+        // -(c/chi) [P], |F| ~ 2e4 c E, T19HOT.  E and the gas energy stay exact (F enters
+        // as face fluxes); the gas takes chi (F - A) of the limited F; the radiation
+        // momentum cut, |dF| V_f/c^2, is counted and printed, not given to the gas)
+        if (flm && !CleanBoundaryFace(x, dir, m, k, j, i)) {
+          const Real f = fc(m,CLF_N,k,j,i);
+          const Real fl = fmin(fmax(f, -x.c*fmax(x.w(m,e,k,j,i), 0.0)),
+                               x.c*fmax(x.w(m,e,k-dk,j-dj,i-di), 0.0));
+          if (fl != f) {
+            fc(m,CLF_N,k,j,i) = fl;
+            Kokkos::atomic_add(&flc(0), 1.0);
+            Kokkos::atomic_add(&flc(1), fabs(f - fl)*0.5*(CleanVol(x, m, k, j, i) +
+                               CleanVol(x, m, k-dk, j-dj, i-di))/(x.c*x.c));
+          }
+        }
         fc(m,CLF_PT,k,j,i) = fc(m,CLF_N,k,j,i);   // (F^H for CleanStagDrag; QL is free)
         fc(m,CLF_N+1,k,j,i) = 0.0;
         if (!fk || !x.sph || dir == 2 || CleanBoundaryFace(x, dir, m, k, j, i)) return;
@@ -4236,6 +4256,14 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
     }
   }
   if (cln_ftie && tie_now) CleanStagFaceTie(e, kd);
+  if (flm) {   // (clean_stag_flim: the faces cut and their radiation momentum, booked)
+    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_flimc);
+    const Real n = CleanReduce(h(0), false), p = CleanReduce(h(1), false);
+    if (global_variable::my_rank == 0 && n > 0.0) {
+      std::printf("CLEAN FLIM cycle %d t2s %d faces %.0f momentum cut sum |dF| V/c^2 "
+                  "%.6e\n", pmy_pack->pmesh->ncycle, t2_solve, n, p);
+    }
+  }
 }
 
 //----------------------------------------------------------------------------------------
