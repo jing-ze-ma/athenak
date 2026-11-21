@@ -1,0 +1,28 @@
+GPUCMP h200_n4: node hpc-sm-02-04 (holder 6133592), B_v207 86d310214d0383dfe84f0182296a3b98, deck t9h_gpucmp.athinput (DATA_DIR -> /resnick/groups/carnegie_poc/jingze/fresh_prod_1120: ic ea9164342f67e7343e4df9ab5e49c82a, rosseland d81b7a468b0d9470a09fd43ef03273d5, planck 99d668f69b16a502f50f1ec555fb0cd1)
+4 ranks, 1 per H200, KOKKOS_MAP_DEVICE_ID_BY=mpi_rank OMP_NUM_THREADS=1; cmdline: -i t9h_gpucmp.athinput time/nlim=100 job/final_restart=false output2/dcycle=1000000 output3/dcycle=1000000 output6/dcycle=1000000
+rc 0, srun wall 28 s; 
+== elapsed/cycle lines
+elapsed=6.861271e+00 cycle=0 time=0.000000e+00 dt=1.365512e+02
+elapsed=7.842647e+00 cycle=10 time=1.365516e+03 dt=1.365521e+02
+elapsed=8.762382e+00 cycle=20 time=2.731038e+03 dt=1.365521e+02
+elapsed=9.722828e+00 cycle=30 time=4.096557e+03 dt=1.365516e+02
+elapsed=1.071398e+01 cycle=40 time=5.462071e+03 dt=1.365513e+02
+elapsed=1.169412e+01 cycle=50 time=6.827583e+03 dt=1.365510e+02
+elapsed=1.267719e+01 cycle=60 time=8.193091e+03 dt=1.365507e+02
+elapsed=1.364932e+01 cycle=70 time=9.558598e+03 dt=1.365505e+02
+elapsed=1.463587e+01 cycle=80 time=1.092410e+04 dt=1.365502e+02
+elapsed=1.561846e+01 cycle=90 time=1.228960e+04 dt=1.365500e+02
+elapsed=1.685666e+01 cycle=100 time=1.365510e+04 dt=1.365497e+02
+== main loop time
+cpu time used  = 9.995287e+00
+main loop time (before the final outputs) = 9.731087e+00
+zone-cycles/cpu_second = 9.179366e+06
+== peak memory per GPU (MiB, from mem.csv)
+GPU : 
+GPU 0: 10025
+GPU 1: 10025
+GPU 2: 10025
+GPU 3: 10025
+== hst md5 (data rows)
+t9l62.hydro.hst 2ae85d017917382a46a51fd6f7134af3 rows 11
+t9l62.user.hst b42c07e68652e4a94d7b9b6b32b275e6 rows 11
