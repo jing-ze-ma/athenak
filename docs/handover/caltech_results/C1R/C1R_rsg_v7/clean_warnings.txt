@@ -1,0 +1,4 @@
+CLEAN WARNING cycle 589821 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN WARNING cycle 589834 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+CLEAN WARNING cycle 589843 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 3)
+CLEAN WARNING cycle 589874 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 4)
