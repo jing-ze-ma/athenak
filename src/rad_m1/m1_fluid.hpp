@@ -8,7 +8,7 @@
 //! \file m1_fluid.hpp
 //! \brief m1-mhd (docs/dev/m1_mhd_0927.md): ONE accessor for the fluid the grey M1
 //! module couples to -- <hydro> or <mhd> -- so that every M1 kernel and the two M1
-//! problem generators (box_convection, rad_m1_wedge) run one code path.
+//! problem generators (box_convection, rad_m1_beam) run one code path.
 //!
 //! FluidRef is a host-side value built by FluidRef::Get(pmbp) each time it is needed:
 //! shallow copies of the fluid's Views (a Kokkos View assignment copies the handle, not

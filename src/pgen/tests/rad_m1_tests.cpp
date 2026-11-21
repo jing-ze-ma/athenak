@@ -154,12 +154,11 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
   }
 
   std::string test = pin->GetOrAddString("problem","m1_test","beam");
-  // m1-mhd: sph_wedge has an <mhd> mode (rad_m1_wedge.cpp); m1-mhd2: so do the
-  // uniform-gas tests below and radwave (FluidRef, optional uniform field
-  // problem/m1_b0_1..3).  The others (jump, advect_pulse, advect_shear and the rest of
-  // rad_m1_tests2.cpp) read phydro directly.
-  const bool mhd_ok = (test.compare("sph_wedge") == 0 || test.compare("beam") == 0 ||
-                       test.compare("pulse1d") == 0 || test.compare("equil") == 0 ||
+  // m1-mhd2: the uniform-gas tests below and radwave have an <mhd> mode (FluidRef,
+  // optional uniform field problem/m1_b0_1..3).  The others (jump, advect_pulse,
+  // advect_shear and the rest of rad_m1_tests2.cpp) read phydro directly.
+  const bool mhd_ok = (test.compare("beam") == 0 || test.compare("pulse1d") == 0 ||
+                       test.compare("equil") == 0 ||
                        test.compare("marshak") == 0 || test.compare("thick_pulse") == 0 ||
                        test.compare("tophat") == 0 || test.compare("radwave") == 0 ||
                        test.compare("advect_uniform") == 0 ||
@@ -167,7 +166,7 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
   if (pmbp->pmhd != nullptr && !mhd_ok) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<problem>/m1_test = '" << test << "' is hydro only; with <mhd> "
-      << "only sph_wedge, beam, pulse1d, equil, marshak, thick_pulse, tophat, "
+      << "only beam, pulse1d, equil, marshak, thick_pulse, tophat, "
       << "radwave and advect_uniform (and the box_convection pgen) are supported"
       << std::endl;
     std::exit(EXIT_FAILURE);
@@ -181,7 +180,7 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
       << std::endl << "problem/m1_b0_* needs an <mhd> block" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  if (pmbp->pmhd != nullptr && test.compare("sph_wedge") != 0) {
+  if (pmbp->pmhd != nullptr) {
     const Real bx = pin->GetOrAddReal("problem", "m1_b0_1", 0.0);
     const Real by = pin->GetOrAddReal("problem", "m1_b0_2", 0.0);
     const Real bz = pin->GetOrAddReal("problem", "m1_b0_3", 0.0);
@@ -194,8 +193,7 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
     }
   }
   if (test.compare("beam") != 0 && test.compare("pulse1d") != 0 &&
-      test.compare("sph_wedge") != 0 && pmbp->phydro == nullptr &&
-      pmbp->pmhd == nullptr) {
+      pmbp->phydro == nullptr && pmbp->pmhd == nullptr) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<problem>/m1_test = '" << test << "' needs a <hydro> block"
       << std::endl;

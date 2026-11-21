@@ -11,9 +11,8 @@
 //!
 //! LEAN by design: a point mass, the well-balanced x1 gravity, the <rad_m1> hookup and
 //! nothing else.  No two-stream, no MLT closure, no rt_* keys, no conduction operator,
-//! no MHD (refused).  Derived from the sph_wedge test pgen (tests/rad_m1_wedge.cpp,
-//! which still serves grey and box-sized tests) with the features this star does not
-//! need removed and the ones it does need added:
+//! no MHD (refused).  Derived from the former sph_wedge test pgen with the features this
+//! star does not need removed and the ones it does need added:
 //!   * the gas-only tabulated EOS (<hydro>/eos_radiation = false, enforced by the module)
 //!     or an ideal gas (eos = ideal; <units>/mu sets its kelvin scale, which
 //!     <rad_m1>/temp_unit_kelvin must equal; no EOS range check then)

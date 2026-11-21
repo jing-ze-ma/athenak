@@ -1357,7 +1357,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   // force_reference_work (m1-keydefault-0927): with force_reference = wb_arad the
   // default is `auto` = split when the problem generator gives the gas the reference
-  // work (it sets fref_wsplit_ok before SetForceReference: box_convection, sph_wedge),
+  // work (it sets fref_wsplit_ok before SetForceReference: box_convection, he_star_m1),
   // else full; resolved and echoed in SetForceReference.  `full` keeps the pre-0927
   // scheme.  Without wb_arad the key is read only when named and has no effect.
   fref_wsplit = false;

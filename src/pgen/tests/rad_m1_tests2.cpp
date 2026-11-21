@@ -1585,9 +1585,6 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
         ff0(m,k,j,i) = fin*rin*rin/(r*r);
       });
     }
-  } else if (test.compare("sph_wedge") == 0) {
-    // branch m1-wedge: the gravity-bearing sp rad-hydro wedge, rad_m1_wedge.cpp
-    RadiationM1Wedge(pin, restart);
   } else if (test.compare("rhse") == 0) {
     RadiationM1Rhse(pin, restart);   // rad_m1_rhse.cpp
   } else {
@@ -1595,7 +1592,7 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       << std::endl << "<problem>/m1_test = '" << test << "' not implemented "
       << "(beam | pulse1d | thick_pulse | tophat | jump | equil | advect_pulse "
       << "| advect_uniform | advect_shear | marshak | shadow | radshock "
-      << "| atmosphere | radwave | sph_shell | sph_atm | sph_wedge | rhse)" << std::endl;
+      << "| atmosphere | radwave | sph_shell | sph_atm | rhse)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   return;

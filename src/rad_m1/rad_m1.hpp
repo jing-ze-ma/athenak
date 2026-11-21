@@ -1743,7 +1743,7 @@ class RadiationM1 {
   DvceArray4D<Real> t2ys;       // (m,k,j,i) radiation E at the stage-loop start
   void Time2Stash();
   // Ebnd (an energy-budget diagnostic, off unless a problem generator sets
-  // ebnd_on; sph_wedge: <problem>/wg_hist_ebnd): the radiation energy the scheme put in
+  // ebnd_on; sph_shell: <problem>/am_hist_ebnd): the radiation energy the scheme put in
   // through the physical x1 faces (inner minus outer), summed over the accepted steps
   // since the run start or restart.  A hesdirk2 step applies the face flux
   // L = sum A F1 of its three slopes with the tableau weights of U^{n+1} (K1 = the step
