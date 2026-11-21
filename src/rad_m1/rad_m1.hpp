@@ -3973,39 +3973,15 @@ class RadiationM1 {
     bool exact = false;
   };
   int vgd_hl_mb = 4096;
-  // vet_gd_shell_list (vgdspeed-1009; read only when named; default true; bitwise): the
-  // shell kernel runs over the (m, k, j, d) of the pass's branch only (VetGdSweep)
-  bool vgd_shl_on = true;
+  // the shell kernel runs over the (m, k, j, d) of the pass's branch only (VetGdSweep)
   DvceArray1D<int> vgd_shl[2];
   int vgd_shn[2] = {0, 0};
   Real vgd_shl_alpha = -3.0;
-  // vetgdup-1110 vet_gd_upwind (read only when named; default bilinear = the code before,
-  // bitwise): the upwind intensity of a stencil cell q shifted by the shell's mean
-  // angular profile Ibar_iu(mu) (per-bin quadratic fits in mu = n_d . r_hat over the
-  // shell, made after each shell kernel, every block in gid order): 1 shellmean, I_q +
-  // Ibar(mu_u) - Ibar(mu_q); 2 taylor, I_q + dmu Ibar'(mu_q) + dmu^2 Ibar''(mu_q)/2
-  // (dmu = mu_u - mu_q).
-  // vet_gd_upwind_nbin: bins per half range of mu (default 32)
-  int vgd_upf = 0, vgd_upk = 32;
-  // vet_gd_upwind_tol: a bin whose fit leaves an rms residual > tol x its rms intensity,
-  // or two bins whose fits disagree by > tol at mu, give no shift (unresolved profile)
-  Real vgd_uptol = 0.25;
-  bool vgd_upwall = false;   // vet_gd_upwind_wall: wall ghost reads shifted (sp)
-  Real vgd_up_alpha = -3.0;
-  DvceArray1D<int> vgd_up_ofs, vgd_up_code;   // per (m, bin): codes ((k, j) local, d)
-  DvceArray3D<Real> vgd_up_part;              // (m, bin, 9): per-block moment sums
-  DvceArray3D<Real> vgd_up_prof;              // (i, bin, 4): a0, a1, a2 in t, valid flag
-  DvceArray3D<Real> vgd_up_gall;              // (gid, bin, 9): every block sums (MPI)
-  HostArray3D<Real> vgd_up_galh;
-  double vgd_up_time = 0.0;
   // hrsplit-1110 vet_gd_inner_reflect = diff | zeroflux (read only when named; default
   // diff = the code before): zeroflux drops the gradient term of vet_gd's diffusion start
   // at a REFLECTING inner x1 (I = S_face isotropic, H = 0 as the M1 face; vet_col mirrors)
   bool vgd_izf = false;
   DvceArray5D<Real> vcol_hr;     // (m, 3, k, j, i): vet_col h+_r, h-_r, f_K (unclamped)
-  void VetGdUpPrep();
-  void VetGdUpShell(const int i, const bool inw, const int f);
-  DvceArray3D<Real> vgd_up_prof2;             // the fused twin's profiles
   std::vector<VgdHlEntry> vgd_hle;
   size_t vgd_hl_bytes = 0, vgd_hl_cap = 0;   // cap: bytes (set at the first build)
   int64_t vgd_hl_gen = 0;

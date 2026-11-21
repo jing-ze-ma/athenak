@@ -6,14 +6,13 @@
 //! \file rad_m1_vetgd_cs_shell.inc
 //! \brief d6fast4-1112: the cs shell kernel body of RadiationM1::VetGdCsSweep (moved
 //! verbatim from rad_m1_vetgd_cs.cpp), included there once as shell_ and, on CUDA, a
-//! second time as shellf_ with M1_VGDCS_SHELL_FAST defined: upf_ = 0 and two = false
-//! are then compile-time constants inside, so nvcc drops the upwind-profile and
-//! fused-twin branches (the same arithmetic on every path taken).
+//! second time as shellf_ with M1_VGDCS_SHELL_FAST defined: two = false is then a
+//! compile-time constant inside, so nvcc drops the fused-twin branches (the same
+//! arithmetic on every path taken).
 //! Needs M1_VGDCS_SHELL_NAME defined.
       auto M1_VGDCS_SHELL_NAME = KOKKOS_LAMBDA(const int m, const int k, const int j,
                                                const int d, const bool cnt) {
 #if defined(M1_VGDCS_SHELL_FAST)
-        constexpr int upf_ = 0;
         constexpr bool two = false;
 #endif
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
@@ -31,7 +30,6 @@
         int typ = 1;
         int iu = i + 1;
         Real ds = 0.0, dso = 0.0;
-        Real muu = 0.0;   // vetgdup-1110: n . r_hat at the upwind point
         VgdCsSt st;
         if (br == 0) {
           const Real rtop = cx1f(m,ie+1);
@@ -45,7 +43,6 @@
           xu[0] /= ru;
           xu[1] /= ru;
           xu[2] /= ru;
-          muu = nx*xu[0] + ny*xu[1] + nz*xu[2];
           const bool sok = VgdCsStencil(xu, bl_(m,0), bl_(m,1), bl_(m,2), wb, c2b, c3b,
                                         nc, h, cm_, nb_, st);
           // (counted per field swept, as the unfused twin's own sweep)
@@ -102,25 +99,7 @@
               }
               return va(ow_(m,kk,jj,0),d,ow_(m,kk,jj,1),ow_(m,kk,jj,2),iu);
             };
-            // vetgdup-1110 vet_gd_upwind (rad_m1_vgdray.hpp VgdUpCorr): the stencil
-            // cells' intensities shifted along the shell's mean angular profile (main
-            // field only; off: no shift)
-            Real cq_[4] = {0.0, 0.0, 0.0, 0.0};
-            bool upo = false;
-            if (upf_ == 1 || upf_ == 2) {   // main and fused twin, each its own profile
-              auto mqe = [&](const int e) -> Real {return mr_(m,st.k[e],st.j[e],d);};
-              auto iqe = [&](const int e) -> Real {return rdi(st.k[e], st.j[e]);};
-              upo = VgdUpCorr((f == 0) ? upp_ : upp2_, iu, upk_, inw || (typ == 3), upf_,
-                              upt_, muu, acc,
-                              mqe, iqe, ok, all, cq_);
-            }
-            auto rdc = [&](const int kk, const int jj) -> Real {
-              if (!upo) {return rdi(kk,jj);}
-              int e = 0;
-              while (e < st.n - 1 && !(st.k[e] == kk && st.j[e] == jj)) {++e;}
-              return rdi(kk,jj) + cq_[e];
-            };
-            const Real ivu = VgdUpwindI(acc, rdc, ok, all);
+            const Real ivu = VgdUpwindI(acc, rdi, ok, all);
             auto lin = [&](const int c, const int ii) {
               Real s = 0.0;
               for (int e = 0; e < st.n; ++e) {s += st.w[e]*cv(m,c,st.k[e],st.j[e],ii);}
@@ -143,7 +122,7 @@
             auto edgef = [&]() {return edge;};
             // the closing segment (vet_seg = jump below the inner face, vet_interp =
             // corner, vet_seg = split, the plain segment: rad_m1_vgdray.hpp)
-            iv = VgdSegFinish(acc, rdc, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0, s0,
+            iv = VgdSegFinish(acc, rdi, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0, s0,
                               ds, dso, spl, spe, typ, l, lcut, p2, rfi, zr, vim);
           }
         }

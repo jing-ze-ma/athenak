@@ -436,7 +436,10 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/polar_ring_avg_lump", "!"}, {"rad_m1/polar_ring_avg_gz", "!"},
     {"rad_m1/time2_vstage", ""}, {"rad_m1/vet_col_order2", ""},
     {"rad_m1/vet_col_team", ""}, {"rad_m1/vet_col_team_size", ""},
-    {"rad_m1/vet_col_chunk", ""}, {"rad_m1/vet_col_spread", ""}};
+    {"rad_m1/vet_col_chunk", ""}, {"rad_m1/vet_col_spread", ""},
+    // (the vet_gd upwind profile shift and the dense shell launch, removed)
+    {"rad_m1/vet_gd_upwind", "=bilinear"}, {"rad_m1/vet_gd_upwind_*", ""},
+    {"rad_m1/vet_gd_shell_list", "=true"}};
   const bool say = (global_variable::my_rank == 0);
   std::string none;
   std::vector<std::string> drop;

@@ -1615,12 +1615,6 @@ void RadiationM1::VetGdCsSweep() {
   auto dir_ = vgd_dir;
   auto cnt_ = vlat_cnt;
   auto mr_ = vgd_mr;
-  // vetgdup-1110 vet_gd_upwind: the shell profiles (VetGdUpShell after each shell)
-  if (vgd_upf != 0) {VetGdUpPrep();}
-  auto upp_ = vgd_up_prof;
-  auto upp2_ = vgd_up_prof2;   // the fused twin's profiles
-  const int upk_ = vgd_upk, upf_ = vgd_upf;
-  const Real upt_ = vgd_uptol;
   auto cr_ = vgd_csr;
   auto bl_ = vgd_csblk;
   auto cm_ = vgd_cscm;
@@ -1679,9 +1673,9 @@ void RadiationM1::VetGdCsSweep() {
   // values of the dense-band layout (bitwise)
   const bool rga = vgd_ring && ccl;
   if (vgd_ring && !ccl) {VgdCsFatal("vet_gd_band_ring without the compact lists");}
-  if (xffs && (two || upf_ != 0 || (ccl && vgd_csxg > 1))) {
-    VgdCsFatal("vet_gd_rotate_xfade_fuse: not with the fused twin / upwind profile / "
-               "direction groups (VetGdXffOk)");
+  if (xffs && (two || (ccl && vgd_csxg > 1))) {
+    VgdCsFatal("vet_gd_rotate_xfade_fuse: not with the fused twin / direction groups "
+               "(VetGdXffOk)");
   }
   // (xffuse-1113: the next set's records in vgd_hxe_alt, unused on the cubed sphere
   // otherwise, from its own compact lists; the ring's second array is its intensities)
@@ -2048,7 +2042,7 @@ void RadiationM1::VetGdCsSweep() {
 #include "rad_m1_vetgd_cs_shell.inc"
 #undef M1_VGDCS_SHELL_NAME
 #if defined(KOKKOS_ENABLE_CUDA)
-      // d6fast4-1112: shellf_ = the same body with upf_ = 0, two = false compiled in
+      // d6fast4-1112: shellf_ = the same body with two = false compiled in
 #define M1_VGDCS_SHELL_NAME shellf_
 #define M1_VGDCS_SHELL_FAST
 #include "rad_m1_vetgd_cs_shell.inc"
@@ -2197,8 +2191,8 @@ void RadiationM1::VetGdCsSweep() {
         if (esid_ != 0 && est_(m, k - ks, j - js, d) == esid_) {return;}
         shellf_(m, k, j, d, true);
       };
-      // d6fast4-1112: the shellf_ kernel when the upwind profile and the fused twin are
-      // off (env VGD_CS_FAST=0: always shell_); the same launch variants (VGD_CS_LB)
+      // d6fast4-1112: the shellf_ kernel when the fused twin is off (env VGD_CS_FAST=0:
+      // always shell_); the same launch variants (VGD_CS_LB)
       static int s_fast = -1;
       if (s_fast < 0) {
         const char *ef = std::getenv("VGD_CS_FAST");
@@ -2224,7 +2218,7 @@ void RadiationM1::VetGdCsSweep() {
       } else {                                                                         \
         Kokkos::parallel_for("m1_vgdcs_shell", VgdLight(DevExeSpace(), 0, nper), F);   \
       }
-      if (s_fast && upf_ != 1 && upf_ != 2 && !two) {
+      if (s_fast && !two) {
         M1_VGDCS_LAUNCH(mainff_)
       } else {
         M1_VGDCS_LAUNCH(mainf_)
@@ -2279,11 +2273,6 @@ void RadiationM1::VetGdCsSweep() {
       }
 #endif
       }   // g
-      // vetgdup-1110 vet_gd_upwind: this shell's profile on the pass's half range
-      if (vgd_upf != 0) {
-        VetGdUpShell(i, inw, 0);
-        if (two) {VetGdUpShell(i, inw, 1);}   // the fused twin: its own profile
-      }
       if (rga) {
         // the previous shell of the pass has been read (stream order): its inward band
         // values saved (inward pass), its interior back to the compact slab; the next
