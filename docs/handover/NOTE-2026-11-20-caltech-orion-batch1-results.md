@@ -992,3 +992,10 @@ B_br gate not passed; arms not started
   CW t19l64 (log.0) cycle 1449 [cycle=1450 time=5.558324e+04 dt=3.354096e+01]: CLEAN WARNING cycle 1449 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 7)
   CW t19r (log.0) cycle 604 []: CLEAN WARNING cycle 604 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 3)
   CW t19r (log.0) cycle 609 []: CLEAN WARNING cycle 609 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 4)
+- (00:20) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t19l64 (log.0) cycle 1455 []: CLEAN WARNING cycle 1455 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 8)
+  CW t19l64 (log.0) cycle 1457 []: CLEAN WARNING cycle 1457 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 9)
+  CW t19l64 (log.0) cycle 1466 []: CLEAN WARNING cycle 1466 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 10)
+  CW t19r (log.0) cycle 615 []: CLEAN WARNING cycle 615 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
+  CW t19r (log.0) cycle 619 []: CLEAN WARNING cycle 619 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 6)
+  CW t19r (log.0) cycle 621 []: CLEAN WARNING cycle 621 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 7)
