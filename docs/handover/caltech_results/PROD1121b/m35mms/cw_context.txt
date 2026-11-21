@@ -1,0 +1,7 @@
+== 2026-11-21 14:45:19 log.1: CW 1-1 (grep -B5)
+CLEAN cycle 43235 t2s 2 it -4 (sum 563) pos 0 mark 0 all 0 neg 0 r1 0 r2 17 first 0 17 guard 0 solves 200 cwin 0
+CLEAN MCAP cycle 43235 t2s 2: 4060 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 43235 t2s 2 faces 7224895 momentum cut sum |dF| V/c^2 7.545503e+26
+CLEAN FWB cycle 43235 t2s 2 faces 18338196 radiation momentum sum |dp| 6.021741e+27 x1 faces sum dp -1.059938e+26
+CLEAN XT cycle 43235 t2s 2 write-back closure 3.162e-02
+CLEAN WARNING cycle 43235 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
