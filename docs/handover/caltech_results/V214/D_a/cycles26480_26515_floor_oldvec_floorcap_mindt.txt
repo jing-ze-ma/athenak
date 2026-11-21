@@ -68,3 +68,4 @@ CLEAN OLDVEC cycle 26513 t2s 2 eint<0 295 (taken as 0) E<0 0
 CLEAN OLDVEC cycle 26513 t2s 3 eint<0 1 (taken as 0) E<0 0
 CLEAN OLDVEC cycle 26514 t2s 2 eint<0 9 (taken as 0) E<0 112
 CLEAN OLDVEC cycle 26515 t2s 2 eint<0 5 (taken as 0) E<0 0
+CLEAN OLDVEC cycle 26516 t2s 2 eint<0 6 (taken as 0) E<0 0
