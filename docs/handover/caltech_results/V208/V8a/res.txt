@@ -1,0 +1,9 @@
+V8a: t9l62 successor-key preflight (B_v207 86d31021, restart from a copy of t9l62.00022.rst, t 950400, N0 ~21365, keys from the rst + conv_max 1e-4 + thinf_held_gate + pass_damp 1, 300 cycles, rst off), node hpc-sm-02-04
+rc: rc=0 wall=739 | cycles -
+CW  FATAL 
+solves/stage-pass: 
+dt test (every 50): 
+dt production (last 10 cycle lines): 22200:62.34 22250:68.05 22300:67.92 22350:64.14 22400:64.72 22450:68.68 22500:68.09 22550:64.73 22600:62.65 22650:59.85 
+user.hst test: [t 954016 KE 4.885e+43 Ltop/Lin 1.7188] [t 957639 KE 4.903e+43 Ltop/Lin 1.7370] [t 961253 KE 4.921e+43 Ltop/Lin 1.7551] [t 964824 KE 4.939e+43 Ltop/Lin 1.7736] 
+user.hst production, same t range: [t 954016 KE 4.885e+43 Ltop/Lin 1.7196] [t 957639 KE 4.903e+43 Ltop/Lin 1.7373] [t 961253 KE 4.921e+43 Ltop/Lin 1.7554] [t 964824 KE 4.939e+43 Ltop/Lin 1.7737] 
+wall/cycle: test  s | production (last 500 cycles) 1.98 s
