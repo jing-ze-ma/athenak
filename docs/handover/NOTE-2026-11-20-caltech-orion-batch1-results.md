@@ -1941,3 +1941,8 @@ B_br gate not passed; arms not started
 - (11:06) V8b result: rc: rc=0 wall=697 | cycles - CW  FATAL  solves/stage-pass:   | wall/cycle test  vs prod 1.76 s | full: caltech_results/V208/V8b/res.txt
 - (11:09) V7c rerun (hpc-sm-02-11, damp 0): rc=137 wall=207 | last  | CW  FATAL  | solves/stage-pass  | dt every 50:  | user.hst 
 - (11:09) V7a rerun (hpc-sm-02-16, damp 0): rc=137 wall=238 | last  | CW  FATAL  | solves/stage-pass  | dt every 50:  | user.hst 
+- (11:09) jt item 3: V8 res.txt RE-PARSED (bug: my post-processing set the log path in the same 'local' statement as the run dir, so it read an empty path). Corrected numbers (res.txt files updated in caltech_results/V208/<arm>/):
+  V8a (t9l62): CW 0 FATAL 0 | solves/stage-pass 4.1 mean / 6 max (n=601) | dt test 21400:55.69 21450:54.58 21500:53.3 21550:52.9 21600:51.05 21650:45.38  | wall/cycle test 2.34 s vs prod 1.98 s
+  V8b (t9r): CW 0 FATAL 0 | solves/stage-pass 3.7 mean / 8 max (n=601) | dt test 19750:60.93 19800:63.76 19850:68.85 19900:74.83 19950:69.54 20000:61.98  | wall/cycle test 2.19 s vs prod 1.76 s
+  V8c (m35mms): CW 0 FATAL 0 | solves/stage-pass 6.6 mean / 8 max (n=601) | dt test 33400:8.249 33450:8.254 33500:7.722 33550:7.547 33600:7.483 33650:7.152  | wall/cycle test 1.19 s vs prod 1.28 s
+  V8d (i1_m35mms_f1k): CW 0 FATAL 0 | solves/stage-pass 6.1 mean / 8 max (n=599) | dt test 30000:7.473 30050:6.947 30100:6.557 30150:6.312 30200:6.21 30250:6.165  | wall/cycle test 1.10 s vs prod 1.24 s
