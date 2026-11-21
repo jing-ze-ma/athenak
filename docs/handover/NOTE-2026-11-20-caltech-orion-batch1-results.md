@@ -2420,3 +2420,5 @@ B_br gate not passed; arms not started
   | i1_m35mms_f1k | cyc 41300 | t 3.524673e+05 | 40.79% of 8.64e5 | dt 2.174835e+01 | KE 1.37e+39 | Ltop/Lin 0.976 | Lbot/Lin 0.997 | solves/stage-pass (last 200 lines) 4.0 mean / 6 max | CW 2 FATAL 0 | last hst: [t 3.51e+05 KE 1.39e+39 Lt 0.973 Lb 1.006] [t 3.516e+05 KE 1.38e+39 Lt 0.975 Lb 1.001] [t 3.522e+05 KE 1.37e+39 Lt 0.976 Lb 0.997] 
   | t19r_damp_test (chunk ended) | cyc 1950 | t 6.989857e+04 | 69.90% of 1.0e5 | dt 1.673255e+01 | KE 1.84e+42 | Ltop/Lin 1.408 | Lbot/Lin 1.004 | solves/stage-pass (last 200 lines) 7.1 mean / 9 max | CW 7 FATAL 0 | last hst: [t 6.122e+04 KE 1.19e+42 Lt 1.472 Lb 0.991] [t 6.48e+04 KE 1.52e+42 Lt 1.427 Lb 0.998] [t 6.841e+04 KE 1.84e+42 Lt 1.408 Lb 1.004] 
   | t19r_damp3_test (chunk ended) | cyc 1500 | t 4.999050e+04 | 49.99% of 1.0e5 | dt 1.317235e+01 | KE 1.15e+41 | Ltop/Lin 1.046 | Lbot/Lin 0.992 | solves/stage-pass (last 200 lines) 9.6 mean / 200 max | CW 11 FATAL 0 | last hst: [t 4.681e+04 KE 1.15e+41 Lt 1.046 Lb 0.992] 
+- (15:58) PROD 1121b:
+  ALERT dt collapse t9l62: max 208.471 -> 0.563426 (last 200 cycle lines) at cycle=29301 time=1.49991e+06
