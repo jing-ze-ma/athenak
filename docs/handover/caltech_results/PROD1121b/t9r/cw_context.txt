@@ -404,3 +404,27 @@ CLEAN FCONE cycle 26420 t2s 2 faces 5498642 momentum cut sum |dF| V/c^2 1.870424
 CLEAN FWB cycle 26420 t2s 2 faces 59236805 radiation momentum sum |dp| 2.445965e+31 x1 faces sum dp 3.104206e+29
 CLEAN XT cycle 26420 t2s 2 write-back closure 6.405e+01
 CLEAN WARNING cycle 26420 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+== 2026-11-21 15:06:00 log.3: CW 1-6 (grep -B5)
+CLEAN cycle 26485 t2s 3 it -2 (sum 205) pos 0 mark 0 all 0 neg 0 r1 0 r2 520 first 0 520 guard 0 solves 200 cwin 0
+CLEAN MCAP cycle 26485 t2s 3: 188 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 26485 t2s 3 faces 2005933 momentum cut sum |dF| V/c^2 9.099975e+28
+CLEAN FWB cycle 26485 t2s 3 faces 74509344 radiation momentum sum |dp| 4.078163e+31 x1 faces sum dp 7.706316e+29
+CLEAN XT cycle 26485 t2s 3 write-back closure 4.546e-01
+CLEAN WARNING cycle 26485 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN WARNING cycle 26485: backward-Euler solve not converged (dt_retry, 2 so far; last change 4.323e-01)
+
+CLEAN cycle 26485 t2s 2 it -2 (sum 313) pos 0 mark 0 all 0 neg 9 r1 9 r2 1161 first 9 1161 guard 0 solves 200 cwin 0
+CLEAN MCAP cycle 26485 t2s 2: 214 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 26485 t2s 2 faces 2101218 momentum cut sum |dF| V/c^2 1.594223e+29
+CLEAN FWB cycle 26485 t2s 2 faces 72898305 radiation momentum sum |dp| 2.576316e+31 x1 faces sum dp 1.673285e+29
+CLEAN XT cycle 26485 t2s 2 write-back closure 2.223e-01
+CLEAN WARNING cycle 26485 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN WARNING cycle 26485: backward-Euler solve not converged (dt_retry, 2 so far; last change 8.960e-06)
+
+CLEAN cycle 26485 t2s 2 it -2 (sum 207) pos 0 mark 0 all 0 neg 8 r1 8 r2 2051 first 8 2051 guard 0 solves 200 cwin 0
+CLEAN MCAP cycle 26485 t2s 2: 460 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 26485 t2s 2 faces 1764721 momentum cut sum |dF| V/c^2 1.208797e+29
+CLEAN FWB cycle 26485 t2s 2 faces 71239086 radiation momentum sum |dp| 1.174765e+31 x1 faces sum dp 1.037584e+29
+CLEAN XT cycle 26485 t2s 2 write-back closure 1.232e-01
+CLEAN WARNING cycle 26485 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN WARNING cycle 26485: backward-Euler solve not converged (dt_retry, 2 so far; last change 2.586e-06)

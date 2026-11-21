@@ -2334,3 +2334,10 @@ B_br gate not passed; arms not started
   | i1_m35mms_f1k | cyc 39900 | t 3.262876e+05 | 37.76% of 8.64e5 | dt 2.138723e+01 | KE 1.47e+39 | Ltop/Lin 1.005 | Lbot/Lin 0.984 | solves/stage-pass (last 200 lines) 3.8 mean / 6 max | CW 0 FATAL 0 | last hst: [t 3.252e+05 KE 1.48e+39 Lt 1.003 Lb 0.989] [t 3.258e+05 KE 1.47e+39 Lt 1.003 Lb 0.985] [t 3.264e+05 KE 1.47e+39 Lt 1.005 Lb 0.984] 
   | t19r_damp_test (chunk ended) | cyc 1950 | t 6.989857e+04 | 69.90% of 1.0e5 | dt 1.673255e+01 | KE 1.84e+42 | Ltop/Lin 1.408 | Lbot/Lin 1.004 | solves/stage-pass (last 200 lines) 7.1 mean / 9 max | CW 7 FATAL 0 | last hst: [t 6.122e+04 KE 1.19e+42 Lt 1.472 Lb 0.991] [t 6.48e+04 KE 1.52e+42 Lt 1.427 Lb 0.998] [t 6.841e+04 KE 1.84e+42 Lt 1.408 Lb 1.004] 
   | t19r_damp3_test (chunk ended) | cyc 1500 | t 4.999050e+04 | 49.99% of 1.0e5 | dt 1.317235e+01 | KE 1.15e+41 | Ltop/Lin 1.046 | Lbot/Lin 0.992 | solves/stage-pass (last 200 lines) 9.6 mean / 200 max | CW 11 FATAL 0 | last hst: [t 4.681e+04 KE 1.15e+41 Lt 1.046 Lb 0.992] 
+- (15:06) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t9r (log.3) cycle 26485 []: CLEAN WARNING cycle 26485 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+  CW t9r (log.3) cycle 26485 []: CLEAN WARNING cycle 26485: backward-Euler solve not converged (dt_retry, 2 so far; last change 4.323e-01)
+  CW t9r (log.3) cycle 26485 []: CLEAN WARNING cycle 26485 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+  CW t9r (log.3) cycle 26485 []: CLEAN WARNING cycle 26485: backward-Euler solve not converged (dt_retry, 2 so far; last change 8.960e-06)
+  CW t9r (log.3) cycle 26485 []: CLEAN WARNING cycle 26485 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+  CW t9r (log.3) cycle 26485 []: CLEAN WARNING cycle 26485: backward-Euler solve not converged (dt_retry, 2 so far; last change 2.586e-06)
