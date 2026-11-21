@@ -3480,11 +3480,12 @@ void RadiationM1::CleanStagBracket() {
         p = fmax(p, fmax(fh, -x.cs(m,n,k,j,i)));
       }
       const Real e = rmn*x.w(m,CLW_EO,k,j,i), h = fmax(x.cs(m,CLN_JR,k,j,i), p);
-      // (clean_stag_thinf_held_gate: times r^2, r = min(E_old/H, H/E_old), H = max(J, P),
-      // the old production's quasi-steadiness gate: a cell the rays reach far above its
-      // E_old (a dark floor cell a beam just hit) moves with its own half range)
-      const Real eo = fmax(x.w(m,CLW_EO,k,j,i), 0.0), hm = fmax(eo, h);
-      const Real r = thg ? ((hm > 0.0) ? fmin(eo, h)/hm : 1.0) : 1.0;
+      // (clean_stag_thinf_held_gate: times r^2, r = E_old/H where the rays bring more than
+      // the cell holds, H = max(J, P) > E_old (the old production's quasi-steadiness gate,
+      // on the front side only): a dark floor cell a beam just hit moves with its own half
+      // range; a cell the rays under-fill keeps C1's theta)
+      const Real eo = fmax(x.w(m,CLW_EO,k,j,i), 0.0);
+      const Real r = (thg && h > eo) ? eo/h : 1.0;
       x.w(m,CLW_V,k,j,i) = ((e > h) ? h/e : 1.0)*r*r;
     });
     CleanGhostFill(cln_w, CLW_V, 1);
