@@ -1,0 +1,12 @@
+# H200SPD (orion 2026-11-21, NOTE ez). B_h2a = caltech-runs/h200spd 105e3db5c (= v20.3 d4b08dae4 + 2 commits: face-flux kernels with compile-time direction, CleanDirCase; bitwise by construction).
+# FREE NODES ONLY, after the launch smokes and the v20.4c gate; production has priority. V203L recipe (rsg_v203.keys / hg_v203.keys; HG + time/dt_retry_host=m1), NR=4, 1 node.
+# (1) bitwise vs V203L_rsg (hst + final bins) + s/cycle
+FINALRST=1 MODE=rt NH=2 H2A_rsg  B_h2a  RSG 10 rsg_v203.keys
+# (2) speed pair, SAME node, back to back, 20 straight cycles each; s/cycle steady excluding first+last
+H2S_rsg_a  B_h2a  RSG 20 rsg_v203.keys
+H2S_rsg_b  B_v203 RSG 20 rsg_v203.keys
+# (3) bitwise vs V203L_hg + s/cycle; then (if a node is free) the HG pair, same node, back to back
+FINALRST=1 MODE=rt NH=2 H2A_hg   B_h2a  HG  10 hg_v203.keys time/dt_retry_host=m1
+H2S_hg_a   B_h2a  HG  20 hg_v203.keys time/dt_retry_host=m1
+H2S_hg_b   B_v203 HG  20 hg_v203.keys time/dt_retry_host=m1
+# (4) optional: profc.sh ncu of CleanRightHandSide (cln_rhsaf) on B_h2a rsg; compare IPC / no_instruction stall / inst per launch with PRF_rsg c/
