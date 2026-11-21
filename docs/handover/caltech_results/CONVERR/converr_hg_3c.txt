@@ -1,0 +1,63 @@
+REF /resnick/groups/carnegie_poc/jingze/orion_runs_1121/CET3c_hg (EOS /resnick/groups/carnegie_poc/jingze/orion_runs_1121/CET3c_hg/a/eos_table.txt: 1001 x 1276 nodes)
+  REF bin hegiant.hydro_w.01741.bin time 50112300 size of variable 8
+  REF bin hegiant.m1.01741.bin time 50112300 size of variable 8
+  mesh: cubed sphere, 24 MeshBlocks, coordinate arrays yes
+  total solid angle / 4pi = 1.000000 (cell-volume check; 1 = full sphere)
+  shells: r 5.6491e+11 .. 2.4455e+13 cm; f_sh(0) 2.93e-07; r(f_sh>0.03) 7.6062e+12, r(f_sh>0.1) 7.8075e+12, r(f_sh>0.3) 8.0217e+12
+
+=== RUN /resnick/groups/carnegie_poc/jingze/orion_runs_1121/CEPc_hg vs REF
+  time REF 50112300 RUN 50112300 (SAME); cycle 624964 vs 624964
+  cells 69206016; identical E 0, identical T 0
+  ALL |dE|/E       mean 1.54e-01 med 7.97e-02 p90 3.84e-01 p99 8.56e-01 p99.9 3.17e+00 max 9.53e+02 | vol-wt 1.15e-01 | E-wt 5.67e-06
+  ALL |dT|/T       mean 3.80e-02 med 1.98e-02 p90 9.89e-02 p99 2.50e-01 p99.9 4.41e-01 max 4.55e+00 | vol-wt 2.97e-02 | eint-wt 1.56e-05 | mass-wt 8.61e-04
+  ALL |dF|/(cE)    mean 5.62e-01 med 1.51e-01 p90 7.65e-01 p99 4.93e+00 p99.9 4.48e+01 max 2.34e+04 | vol-wt 1.83e-01 | E-wt 3.70e-06
+  ALL |drho|/rho   mean 1.13e-05 med 3.19e-07 p90 1.14e-05 p99 1.55e-04 p99.9 1.38e-03 max 8.75e-01 | vol-wt 1.27e-06 | mass-wt 8.01e-06
+  ALL |deint|/eint mean 4.57e-02 med 2.24e-02 p90 1.13e-01 p99 3.07e-01 p99.9 9.77e-01 max 6.76e+01 | vol-wt 3.13e-02 | eint-wt 4.02e-05
+    max dE/E 9.53e+02 at r 7.6335e+12 (shell 245, f_sh 3.54e-02, T 2.857e+03 K, rho 1.93e-10, E 5.03e-01, |F|/cE 4.02e+01)
+    max dT/T 4.55e+00 at r 7.6335e+12 (shell 245, f_sh 3.54e-02, T 2.857e+03 K, rho 1.93e-10, E 5.03e-01, |F|/cE 4.02e+01)
+    max dF/cE 2.34e+04 at r 7.6537e+12 (shell 248, f_sh 3.97e-02, T 2.337e+03 K, rho 8.79e-11, E 2.21e-01, |F|/cE 1.97e+04)
+  by region (REF shell flux ratio f_sh):
+   [interior f<1e-3 (tau>~300)] cells 18284544, r 5.649e+11..6.846e+12, T 2.65e+03..8.96e+05 K
+      dE/E  mean 4.33e-03 med 7.90e-07 p90 7.44e-06 p99 1.27e-01 p99.9 5.86e-01 max 3.22e+01 | vol-wt 1.25e-02 | E-wt 3.16e-06
+      dT/T  mean 1.02e-03 med 1.98e-07 p90 1.86e-06 p99 3.15e-02 p99.9 1.38e-01 max 1.40e+00 | vol-wt 2.96e-03 | eint-wt 6.81e-06
+      dF/cE mean 1.29e-02 med 5.13e-10 p90 1.55e-08 p99 2.83e-01 p99.9 2.16e+00 max 4.69e+02 | vol-wt 3.68e-02 | E-wt 1.90e-07
+   [envelope 1e-3..0.03] cells 5406720, r 6.879e+12..7.599e+12, T 1.22e+03..4.97e+04 K
+      dE/E  mean 1.85e-01 med 6.86e-02 p90 3.81e-01 p99 1.75e+00 p99.9 8.46e+00 max 4.13e+02 | vol-wt 1.60e-01 | E-wt 5.72e-03
+      dT/T  mean 3.75e-02 med 1.70e-02 p90 9.25e-02 p99 3.13e-01 p99.9 7.52e-01 max 3.52e+00 | vol-wt 3.33e-02 | eint-wt 7.60e-03
+      dF/cE mean 1.00e+00 med 1.32e-01 p90 1.40e+00 p99 1.32e+01 p99.9 8.85e+01 max 7.04e+03 | vol-wt 8.07e-01 | E-wt 4.56e-03
+   [photosphere 0.03..0.3 (tau~1-10)] cells 5799936, r 7.606e+12..8.014e+12, T 1.08e+03..3.36e+04 K
+      dE/E  mean 2.43e-01 med 1.19e-01 p90 4.38e-01 p99 1.98e+00 p99.9 1.06e+01 max 9.53e+02 | vol-wt 2.37e-01 | E-wt 4.80e-02
+      dT/T  mean 4.87e-02 med 2.90e-02 p90 1.08e-01 p99 3.36e-01 p99.9 8.38e-01 max 4.55e+00 | vol-wt 4.78e-02 | eint-wt 1.97e-02
+      dF/cE mean 1.70e+00 med 2.95e-01 p90 1.66e+00 p99 1.95e+01 p99.9 1.81e+02 max 2.34e+04 | vol-wt 1.61e+00 | E-wt 1.21e-01
+   [wind/thin f>0.3] cells 39714816, r 8.022e+12..2.445e+13, T 1.05e+03..2.59e+04 K
+      dE/E  mean 2.06e-01 med 1.47e-01 p90 4.50e-01 p99 8.48e-01 p99.9 2.13e+00 max 4.57e+02 | vol-wt 1.16e-01 | E-wt 1.27e-01
+      dT/T  mean 5.35e-02 med 3.64e-02 p90 1.23e-01 p99 2.59e-01 p99.9 3.66e-01 max 3.62e+00 | vol-wt 3.01e-02 | eint-wt 1.81e-02
+      dF/cE mean 5.88e-01 med 2.41e-01 p90 8.46e-01 p99 4.21e+00 p99.9 3.50e+01 max 1.54e+04 | vol-wt 1.74e-01 | E-wt 2.04e-01
+  by log r bin (8 bins):
+   r 5.649e+11..9.048e+11 (shells 1-40, f_sh 2.9e-07..1.0e-06, T_sh 5.10e+05..8.52e+05): dE/E mean 3.40e-06 p99 2.20e-05 max 3.97e-04 | dT/T mean 8.50e-07 p99 5.51e-06 max 9.93e-05 | dF/cE mean 7.98e-10 max 2.61e-07
+   r 9.048e+11..1.449e+12 (shells 41-65, f_sh 1.0e-06..4.4e-06, T_sh 3.20e+05..5.03e+05): dE/E mean 2.85e-06 p99 2.57e-05 max 5.38e-04 | dT/T mean 7.13e-07 p99 6.43e-06 max 1.34e-04 | dF/cE mean 1.32e-09 max 1.52e-07
+   r 1.449e+12..2.321e+12 (shells 66-89, f_sh 4.5e-06..7.6e-06, T_sh 1.96e+05..3.14e+05): dE/E mean 1.74e-06 p99 1.78e-05 max 3.78e-04 | dT/T mean 4.34e-07 p99 4.46e-06 max 9.44e-05 | dF/cE mean 8.21e-10 max 1.35e-07
+   r 2.321e+12..3.717e+12 (shells 90-118, f_sh 7.6e-06..1.6e-05, T_sh 1.16e+05..1.92e+05): dE/E mean 9.01e-07 p99 8.03e-06 max 2.20e-03 | dT/T mean 2.25e-07 p99 2.01e-06 max 5.49e-04 | dF/cE mean 3.24e-10 max 3.33e-07
+   r 3.717e+12..5.953e+12 (shells 119-163, f_sh 1.7e-05..1.1e-04, T_sh 4.54e+04..1.14e+05): dE/E mean 7.57e-04 p99 3.41e-04 max 3.13e+01 | dT/T mean 1.82e-04 p99 8.52e-05 max 5.63e-01 | dF/cE mean 7.04e-04 max 9.82e+00
+   r 5.953e+12..9.534e+12 (shells 164-457, f_sh 1.2e-04..7.7e-01, T_sh 4.72e+03..4.38e+04): dE/E mean 2.14e-01 p99 1.33e+00 max 9.53e+02 | dT/T mean 4.80e-02 p99 2.90e-01 max 4.55e+00 | dF/cE mean 1.09e+00 max 2.34e+04
+   r 9.534e+12..1.527e+13 (shells 458-672, f_sh 7.8e-01..9.4e-01, T_sh 3.73e+03..4.72e+03): dE/E mean 1.96e-01 p99 7.55e-01 max 2.65e+00 | dT/T mean 5.45e-02 p99 2.52e-01 max 4.02e-01 | dF/cE mean 3.29e-01 max 1.24e+03
+   r 1.527e+13..2.445e+13 (shells 673-703, f_sh 9.4e-01..9.8e-01, T_sh 2.94e+03..3.71e+03): dE/E mean 1.10e-01 p99 4.43e-01 max 1.66e+00 | dT/T mean 2.81e-02 p99 1.23e-01 max 4.11e-01 | dF/cE mean 1.50e-01 max 1.83e+01
+  hst hegiant.hydro.hst last row (time 5.0112270000000000e+07 vs 5.0112270000000000e+07): 1-mom 2.22e-05, 2-KE 2.78e-06, 1-KE 2.62e-06, 3-KE 2.43e-06, 3-mom 3.86e-07, 2-mom 1.88e-07, tot-E 1.58e-07, mass 7.64e-16
+  hst hegiant.user.hst last row (time 5.0112270000000000e+07 vs 5.0112270000000000e+07): Lz_hflx 2.00e+00, Mdot_top 1.76e+00, L_mid 1.64e-01, L_int 1.46e-01, E_hflx 5.12e-02, M_hflx 5.12e-02, Min_top 2.31e-02, L_top 7.07e-03
+  run.log: CW 0 FATAL 0 dt_retry retries 0; cycle lines cycle=624961 cycle=624962 cycle=624963 cycle=624964
+  CLEAN pass: 6 solves, passes/solve [3, 5, 8, 5, 12, 5] (total 38)
+    cycle 624961 t2s 2 pos 0: 3 passes, last de/dv(it): 8.5e-04/5.4e-07(1) 1.1e-04/2.6e-09(4) 4.2e-05/2.2e-10(3)
+    cycle 624961 t2s 3 pos 0: 5 passes, last de/dv(it): 7.0e-03/1.0e-06(1) 3.1e-03/1.9e-07(2) 4.1e-04/5.4e-08(2) 2.3e-05/8.3e-09(3)
+    cycle 624962 t2s 2 pos 0: 8 passes, last de/dv(it): 1.1e-03/1.3e-06(2) 2.5e-04/9.4e-07(2) 2.6e-04/7.2e-07(1) 8.6e-05/4.0e-07(1)
+    cycle 624962 t2s 3 pos 0: 5 passes, last de/dv(it): 7.1e-03/1.8e-06(1) 2.0e-03/1.6e-06(2) 3.8e-04/1.2e-06(2) 5.4e-05/6.5e-07(3)
+    cycle 624963 t2s 2 pos 0: 12 passes, last de/dv(it): 2.0e-04/1.5e-05(1) 1.3e-04/1.4e-05(1) 1.1e-04/4.3e-06(1) 6.8e-05/1.6e-05(1)
+    cycle 624963 t2s 3 pos 0: 5 passes, last de/dv(it): 7.5e-03/2.2e-06(1) 2.6e-03/1.8e-06(2) 3.9e-04/1.5e-06(2) 9.4e-05/1.3e-06(2)
+
+=== REF passes
+  run.log: CW 1 FATAL 0 dt_retry retries 0; cycle lines cycle=624961 cycle=624962 cycle=624963 cycle=624964
+  CLEAN pass: 5 solves, passes/solve [14, 11, 200, 18, 18] (total 261)
+    cycle 624961 t2s 2 pos 0: 14 passes, last de/dv(it): 1.4e-09/9.9e-14(3) 4.6e-10/1.0e-13(2) 1.5e-10/1.0e-13(2) 4.7e-11/8.9e-14(2)
+    cycle 624961 t2s 3 pos 0: 11 passes, last de/dv(it): 3.0e-09/7.2e-11(1) 8.9e-10/7.0e-11(3) 2.0e-10/7.0e-11(2) 4.6e-11/7.5e-11(2)
+    cycle 624962 t2s 2 pos 0: 200 passes, last de/dv(it): 1.8e-05/2.1e-08(1) 4.5e-05/2.1e-08(1) 2.9e-05/2.1e-08(2) 3.2e-05/2.1e-08(1)
+    cycle 624962 t2s 1 pos 0: 18 passes, last de/dv(it): 1.2e-09/2.9e-10(4) 4.8e-10/2.8e-10(6) 2.0e-10/2.9e-10(3) 8.5e-11/2.8e-10(4)
+    cycle 624963 t2s 1 pos 0: 18 passes, last de/dv(it): 8.9e-10/3.2e-10(3) 3.5e-10/2.9e-10(4) 1.4e-10/3.0e-10(2) 5.6e-11/3.0e-10(2)
