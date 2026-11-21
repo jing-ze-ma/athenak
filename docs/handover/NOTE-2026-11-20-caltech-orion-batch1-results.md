@@ -1306,3 +1306,4 @@ B_br gate not passed; arms not started
 - (03:07) PROD 1121b:
   ALERT dt collapse t9l62: max 96.8525 -> 6.62471 (last 200 cycle lines) at cycle=6600 time=4.794477e+05
 - (03:18) D_t19 (B_damp, 02-04, 450 cycles from t19l64.00001): rc=0 wall=1612 | CW: D 0 | prod 8 solves: D 7.2 mean / 10 max solves per stage-pass line (n=854) | prod 6.5 mean / 200 max solves per stage-pass line (n=847)  | FATAL 0 | never-read: job/final_restart | dt / KE / L_top rows in C3H/D_t19/compare.txt
+  D_t19 vs C3c_t19 over cycles 1150-1577: CW D 0 / C3c 5 | solves per stage-pass D 7.2 mean / 10 max (n=854) / C3c 5.5 mean / 200 max (n=849) (production in the line above; dt / KE / L_top rows for all three in C3H/D_t19/compare.txt)
