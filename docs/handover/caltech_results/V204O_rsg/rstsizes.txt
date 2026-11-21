@@ -1,0 +1,3 @@
+-rw-r-----. 1 jingze hpc_carnegie_poc 45360595068 Nov 20 18:11 /resnick/groups/carnegie_poc/jingze/orion_runs_1121/V204O_rsg/a/rst/rsg.01296.rst
+-rw-r-----. 1 jingze hpc_carnegie_poc 45360595068 Nov 20 18:13 /resnick/groups/carnegie_poc/jingze/orion_runs_1121/V204O_rsg/b/rst/rsg.01296.rst
+-rw-r-----. 1 jingze hpc_carnegie_poc 45360595068 Nov 20 18:15 /resnick/groups/carnegie_poc/jingze/orion_runs_1121/V204O_rsg/b/rst/rsg.01297.rst

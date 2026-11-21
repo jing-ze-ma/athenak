@@ -1,0 +1,18 @@
+cycles 589788 - 589792 dt [956.5217] s/cycle(all) ['21.81', '2.64', '2.67', '58.07'] steady(excl first+last) 2.655 first elapsed 24.1 last elapsed 109.3
+['main loop time (before the final outputs) = 2.962827e+01']
+CW a 0 FATAL 0 retries ['<rad_m1> time2_auto_be=16: skipped-stage BE steps=0.000000e+00 stage retries=0.000000e+00 (succeeded 0.000000e+00)']
+GPU mem peak MiB max 106551 min 105459 (n=4)
+rt rsg.hydro.hst last row same
+rt rsg.user.hst last row same
+rt rsg.hydro_w.06326.bin same
+rt rsg.m1.06326.bin same
+rt rsg.m1_vet.01266.bin same
+CW b /run.log 0
+CW b run2.log 0
+rc=0 wall=127
+rc=0 wall=117
+restart from /resnick/groups/carnegie_poc/jingze/orion_runs_1121/V204O_rsg/b/rst/rsg.01296.rst
+rc=0 wall=121
+hstmd5 rsg.hydro.hst 59ffd65357b7a4ee472949c5e1252733 rows 4
+hstmd5 rsg.user.hst cf52b105acebd1970a369d71f0cf9d39 rows 4
+DONE

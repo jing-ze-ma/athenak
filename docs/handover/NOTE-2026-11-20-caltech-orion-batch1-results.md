@@ -693,3 +693,7 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - H2S_rsg_b (hpc-sm-02-10): rc=0 wall=116 | cycles 589788 - 589808 | steady 2.585 s/cycle | GPU MiB max 106247 min 105209 | CW a 0 FATAL 0 |  steady s/cycle (excl first+last): B_h2a 2.606 vs B_v203 2.585 | hst H2S_rsg_a vs H2S_rsg_b:  rsg.hydro.hst==H2S_rsg_b/a rsg.user.hst==H2S_rsg_b/a
   DIAG START DF_t19nocut 18:15:26 on hpc-sm-02-16
 - DF_t19nocut (hpc-sm-02-16): a rc=1 wall=14 | last  |  s/cycle | CW 0 FATAL 4 DT_RETRY(events) 0 | eint<0 lines 0, sum 0, max 0 | raycut lines 0 | profiles: 1 files
+- H2A_rsg (hpc-sm-02-10): rc=137 wall=44 rc=134 wall=34 rc=1 wall=6 |  | steady  s/cycle | GPU MiB max 143117 min 142887 | CW a 0 FATAL 0 |  hst vs V203L_rsg:  (V203L ran 4 cycles; its bins were not kept, so the bin check is n/a) | s/cycle 
+  FAILED: last 100 lines in caltech_results/H2A_rsg/FAIL_tail100.txt
+- V204O_rsg (hpc-sm-02-03): rc=0 wall=127 rc=0 wall=117 rc=0 wall=121 | cycles 589788 - 589792 | steady 2.655 s/cycle | GPU MiB max 106551 min 105459 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF hst vs V203L_rsg/a:  rsg.hydro.hst==V203L_rsg/a rsg.user.hst==V203L_rsg/a | CW 0
+- H2S_hg_a (hpc-sm-02-10): rc=0 wall=160 | cycles 624961 - 624981 | steady 4.653 s/cycle | GPU MiB max 142911 min 142463 | CW a 0 FATAL 0 |  steady s/cycle 4.653

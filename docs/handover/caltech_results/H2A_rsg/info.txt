@@ -1,0 +1,1 @@
+TAG=H2A_rsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c md5=762aa0495eea6b41a8b888abe29cdadd RST=/resnick/groups/carnegie_poc/jingze/rsg_E_1020/prodH/rst/rsg.01295.rst N0=589788 NC=10 MODE=rt HOLDER=6133591 NODES=hpc-sm-02-10 NR=4 PPN=4 ENVX= EX= UCX=

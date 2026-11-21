@@ -1,0 +1,3 @@
+rc=134 wall=34
+restart from 
+rc=1 wall=6

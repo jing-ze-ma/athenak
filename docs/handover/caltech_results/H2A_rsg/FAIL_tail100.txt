@@ -1,0 +1,251 @@
+== /resnick/groups/carnegie_poc/jingze/orion_runs_1121/H2A_rsg/a/run.log
+he_star_m1: he_gm_column: G m(r_in) = 1.48423e+27, G m(r_top) = 2.72896e+27 (G = 6.67408e-08 code), static monopole of the initial column
+he_star_m1: he_ic_balance cells: max |T/T_col - 1| = 8.84456e-06 at r = 5.7725e+13
+he_star_m1: he_ic_balance: max |rho/rho_col - 1| = 0.00160365 at r = 1.86108e+12, max face residual |PR/PL - 1| = 3.96905e-13, wall cells a_ref (module form), last change 4.65628e-13
+he_star_m1: mlt_flux_frozen: max F_MLT/F on the faces = 0.998992 at r = 5.68628e+13; F_MLT at the bottom/top faces = 4.56987e+10 / 0
+he_star_m1: mlt_ramp auto (start auto, time auto) from restart file (computed at the fresh start): start = 0 s (0 d), time = 9.09149e+06 s (105.226 d)
+he_star_m1: he_ic_equil: a_ref (cells is .. ie) and Phi_eff from the fresh start's equilibrium (restart trailer)
+he_star_m1: mlt_closure = adaptive, relax time 15000 s, every cycle, taper 0.01, update clock 9.092e+06, max L_sub = 6.74457e+38
+he_star_m1: mlt ramp start = 0, time = 9.09149e+06, w(t = 5.4648e+08) = 0, max L_MLT (unscaled) = 6.84801e+38
+he_star_m1: GM = 1.48423e+27, F_in = 1.75446e+13, tau(r_in) = 2.1596e+07, r_int (tau = 1) = 5.80078e+13, r_top = 1.76109e+14, sponge rate = 0.0001 above r = 1.58498e+14
+<time> dt_retry on: fac 0.5 max 8 ngood 20 grow 1.1 views minimal cap -1
+MLAT init: 0 non-uniform gas groups, 0 non-uniform radiation groups -> state kept
+<rad_m1> closure = vet_col: per-column 1-D formal solution, spherical p-rays (ncore 8, nsub 1, 557 rays, 548 shells), axis radial, rebuilt every 1 step(s); vet_col_order2 (quadratic mu, face core); vet_bc_diff = face; f_K >= 0; 40 shell(s) kept trapezoid weights; team build, 1 shells per chunk, team size AUTO; outer Marshak q = H(face)/J(top cell) in [0.001, 1]
+<rad_m1> vet_gd on the CUBED SPHERE (cs-vetgd-1017, stage S3): seam strip + vertex triangle upwind stencil, exact per-shell band copies (the sp halo lists / IPC / overlap keys do not apply), twin off; hand-over D_rr + D_r,lat in the operator (S4), no tangential part
+<rad_m1> vet_gd direction set: 120 directions; moment errors |sum w - 1| 3.77476e-15, |sum w n| 4.42354e-17, |sum w nn - I/3| 3.60822e-15 (rotated 2.66454e-15), 4th-moment anisotropy 4.13558e-15 (rotated 1.91513e-15)
+<rad_m1> vet_gd (cubed sphere): N = 128 per panel, narrowest cell spacing 0.00873064 rad, dense lateral band 66 cells (needed 66)
+<rad_m1> vet_gd (cubed sphere): rank 0 band copies on-rank 74752, sent 103424, received 103424 (cells per shell), partners 3; MPI band COMPACT (vet_gd_halo_compact > 0: per shell and pass only the read (cell, direction) values); list cache 3 sets
+<rad_m1> vet_gd_band_ring: compact intensities 13.0705 GB + 3 band slots 0.663828 GB on rank 0
+<rad_m1> vet_gd: ragged per-shell band intensity array 13.7343 GB on rank 0 (dense band 122.587 GB)
+<rad_m1> vet_gd_band_ring: compact intensities 13.0705 GB + 3 band slots 0.663828 GB on rank 0
+<rad_m1> vet_gd: ragged per-shell band intensity array 13.7343 GB on rank 0 (dense band 122.587 GB)
+<rad_m1> vet_gd_rotate_xfade_fuse: second-set intensities 13.7343 GB on rank 0
+<rad_m1> vet_gd: global-direction SC closure on the cubed sphere, product GL10x12 staggered (120 directions); 3-D rotation (quasi-random axis; angle = block key) every 22000.000000 in time (t0 0.000000, align on) (0 = fixed), first angle 49680; rank 0 wall ghost columns 0, direction maps exact 0 of 0 (the rest: nearest direction)
+<rad_m1> staggered on the cubed sphere: clean_stag_vimp = false
+<rad_m1> clean_halo_direct: ON, rank 0 copies 1292184 ghosts, sends 1327196 cells, receives 1329394 in 3 messages; on-rank ghosts by depth 424152 854880 1292184, clean_halo_depth 0
+<rad_m1> clean_stag_freal RESTART CONVERSION (one time, not a deposit): faces of the old scheme's file above c E_donor taken at it=595, radiation momentum removed sum |dF| V/c^2=3.82467e+28 (its energy equivalent c sum |dF| V/c^2=1.14661e+39; E unchanged)
+<rad_m1> clean restart from a file without the clean state: the faces take its enthalpy flux a E (lab-frame F)
+
+Setup complete, executing task list(s)...
+
+elapsed=2.482749e+01 cycle=589788 time=5.464800e+08 dt=9.565217e+02
+<rad_m1> mem_arena: intensities 2.746866e+01 GB in one allocation; solve scratch moved over them (4.430227e+00 GB on rank 0):
+<time> dt_retry checkpoint: 2423 members, 638 Views (13 copied, 4.694791e+03 MB on rank 0): hyd.u0 6.515040e+02 hyd.w0 6.515040e+02 hyd.wder 2.606016e+02 hyd.wtemp 1.303008e+02 m1.esrc 1.303008e+02 m1.f0x1 1.305360e+02 m1.f0x2 1.321622e+02 m1.f0x3 1.321622e+02 m1.t2k1 1.042406e+03 m1.t2pf1 3.909024e+02 m1.u0 5.212032e+02 m1.opac 5.212032e+02 pgen.hs_fsub 4.440000e-03
+<rad_m1> RSLA check: chat = c, no reduced speed of light (tau_max=1.559106e+08, measured v_max=8.457186e+06)
+CLEAN ray cut cycle 589788 shell -1 -> 330 (want 330, R)
+<rad_m1> vet_gd (cubed sphere) compact lists: rank 0 sends 50723541 values per sweep (dense 1.360232e+10: 3.729035e-03), receives 51221760; built in 6.084121e+00 s (once per direction set)
+terminate called after throwing an instance of 'std::runtime_error'
+terminate called after throwing an instance of 'std::runtime_error'
+  what():  Kokkos ERROR: Cuda memory space failed to allocate 298.3 MiB (label="").
+  what():  Kokkos ERROR: Cuda memory space failed to allocate 302.3 MiB (label="").
+[hpc-sm-02-10:546174] *** Process received signal ***
+[hpc-sm-02-10:546174] Signal: Aborted (6)
+[hpc-sm-02-10:546174] Signal code:  (-6)
+[hpc-sm-02-10:546173] *** Process received signal ***
+[hpc-sm-02-10:546173] Signal: Aborted (6)
+[hpc-sm-02-10:546173] Signal code:  (-6)
+[hpc-sm-02-10:546174] [ 0] /lib64/libc.so.6(+0x3e730)[0x7fe068c3e730]
+[hpc-sm-02-10:546174] [ 1] /lib64/libc.so.6(+0x8ba6c)[0x7fe068c8ba6c]
+[hpc-sm-02-10:546173] [ 0] /lib64/libc.so.6(+0x3e730)[0x7f407203e730]
+[hpc-sm-02-10:546174] [ 2] /lib64/libc.so.6(raise+0x16)[0x7fe068c3e686]
+[hpc-sm-02-10:546174] [ 3] /lib64/libc.so.6(abort+0xd3)[0x7fe068c28833]
+[hpc-sm-02-10:546173] [ 1] /lib64/libc.so.6(+0x8ba6c)[0x7f407208ba6c]
+[hpc-sm-02-10:546173] [ 2] /lib64/libc.so.6(raise+0x16)[0x7f407203e686]
+[hpc-sm-02-10:546174] [ 4] /lib64/libstdc++.so.6(+0xa1b21)[0x7fe0690a1b21]
+[hpc-sm-02-10:546173] [ 3] /lib64/libc.so.6(abort+0xd3)[0x7f4072028833]
+[hpc-sm-02-10:546174] [ 5] /lib64/libstdc++.so.6(+0xad52c)[0x7fe0690ad52c]
+[hpc-sm-02-10:546173] [ 4] /lib64/libstdc++.so.6(+0xa1b21)[0x7f40724a1b21]
+[hpc-sm-02-10:546173] [ 5] /lib64/libstdc++.so.6(+0xad52c)[0x7f40724ad52c]
+[hpc-sm-02-10:546173] [ 6] /lib64/libstdc++.so.6(+0xad597)[0x7f40724ad597]
+[hpc-sm-02-10:546174] [ 6] /lib64/libstdc++.so.6(+0xad597)[0x7fe0690ad597]
+[hpc-sm-02-10:546174] [ 7] /lib64/libstdc++.so.6(+0xad7f9)[0x7fe0690ad7f9]
+[hpc-sm-02-10:546174] [ 8] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f11c5]
+[hpc-sm-02-10:546174] [ 9] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2882942]
+[hpc-sm-02-10:546173] [ 7] /lib64/libstdc++.so.6(+0xad7f9)[0x7f40724ad7f9]
+[hpc-sm-02-10:546173] [ 8] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f11c5]
+[hpc-sm-02-10:546173] [ 9] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2882942]
+[hpc-sm-02-10:546173] [10] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2886986]
+[hpc-sm-02-10:546173] [11] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x22bf708]
+[hpc-sm-02-10:546174] [10] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2886986]
+[hpc-sm-02-10:546174] [11] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x22bf708]
+[hpc-sm-02-10:546174] [12] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x22cb5a4]
+[hpc-sm-02-10:546174] [13] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x24a89cd]
+[hpc-sm-02-10:546174] [14] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x1da8114]
+[hpc-sm-02-10:546174] [15] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x1dbbd97]
+[hpc-sm-02-10:546174] [16] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x1dbc592]
+[hpc-sm-02-10:546174] [17] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x1c3ed6b]
+[hpc-sm-02-10:546174] [18] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x95aad6]
+[hpc-sm-02-10:546174] [19] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x9622de]
+[hpc-sm-02-10:546174] [20] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f41dd]
+[hpc-sm-02-10:546173] [12] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x22cb5a4]
+[hpc-sm-02-10:546173] [13] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x24a89cd]
+[hpc-sm-02-10:546173] [14] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x1da8114]
+[hpc-sm-02-10:546173] [15] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x1dbbd97]
+[hpc-sm-02-10:546173] [16] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x1dbc592]
+[hpc-sm-02-10:546173] [17] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x1c3ed6b]
+[hpc-sm-02-10:546173] [18] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x95aad6]
+[hpc-sm-02-10:546173] [19] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x9622de]
+[hpc-sm-02-10:546173] [20] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f41dd]
+[hpc-sm-02-10:546174] [21] /lib64/libc.so.6(+0x295d0)[0x7fe068c295d0]
+[hpc-sm-02-10:546174] [22] /lib64/libc.so.6(__libc_start_main+0x80)[0x7fe068c29680]
+[hpc-sm-02-10:546174] [23] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x65f915]
+[hpc-sm-02-10:546174] *** End of error message ***
+[hpc-sm-02-10:546173] [21] /lib64/libc.so.6(+0x295d0)[0x7f40720295d0]
+[hpc-sm-02-10:546173] [22] /lib64/libc.so.6(__libc_start_main+0x80)[0x7f4072029680]
+[hpc-sm-02-10:546173] [23] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x65f915]
+[hpc-sm-02-10:546173] *** End of error message ***
+srun: error: hpc-sm-02-10: tasks 2-3: Aborted (core dumped)
+[2026-11-20T18:13:43.225] error:  mpi/pmix_v3: _errhandler: hpc-sm-02-10 [0]: pmixp_client_v2.c:219: Error handler invoked: status = -25, source = [slurm.pmix.6133591.388:3]
+[2026-11-20T18:13:43.233] error: *** STEP 6133591.388 ON hpc-sm-02-10 CANCELLED AT 2026-11-20T18:13:43 DUE to SIGNAL Killed ***
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+srun: error: hpc-sm-02-10: tasks 0-1: Killed
+== /resnick/groups/carnegie_poc/jingze/orion_runs_1121/H2A_rsg/b/run2.log
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+Error: Unable to open restart file: output5/dt=1e30
+Error: Unable to open restart file: output5/dt=1e30
+Error: Unable to open restart file: output5/dt=1e30
+Error: Unable to open restart file: output5/dt=1e30
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 0 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 3 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 2 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+--------------------------------------------------------------------------
+MPI_ABORT was invoked on rank 1 in communicator MPI_COMM_WORLD
+with errorcode 1.
+
+NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.
+You may or may not see output from other processes, depending on
+exactly when Open MPI kills them.
+--------------------------------------------------------------------------
+[2026-11-20T18:14:23.154] error: *** STEP 6133591.392 ON hpc-sm-02-10 CANCELLED AT 2026-11-20T18:14:23 DUE to SIGNAL Killed ***
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+srun: error: hpc-sm-02-10: task 0: Exited with exit code 1
+srun: error: hpc-sm-02-10: tasks 1-3: Killed
+== /resnick/groups/carnegie_poc/jingze/orion_runs_1121/H2A_rsg/b/run.log
+[hpc-sm-02-10:547083] [ 5] /lib64/libstdc++.so.6(+0xad52c)[0x7f22ddaad52c]
+[hpc-sm-02-10:547083] [ 6] /lib64/libstdc++.so.6(+0xad597)[0x7f22ddaad597]
+[hpc-sm-02-10:547083] [ 7] /lib64/libstdc++.so.6(+0xad7f9)[0x7f22ddaad7f9]
+[hpc-sm-02-10:547083] [ 8] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f11c5]
+[hpc-sm-02-10:547083] [ 9] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2882942]
+[hpc-sm-02-10:547083] [10] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2886986]
+[hpc-sm-02-10:547083] [11] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x681f39]
+[hpc-sm-02-10:547083] [12] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x21dd30d]
+[hpc-sm-02-10:547083] [13] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x21dd8de]
+[hpc-sm-02-10:547083] [14] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x22ffcd4]
+[hpc-sm-02-10:547084] [ 5] /lib64/libstdc++.so.6(+0xad52c)[0x7f0159aad52c]
+[hpc-sm-02-10:547084] [ 6] /lib64/libstdc++.so.6(+0xad597)[0x7f0159aad597]
+[hpc-sm-02-10:547084] [ 7] /lib64/libstdc++.so.6(+0xad7f9)[0x7f0159aad7f9]
+[hpc-sm-02-10:547084] [ 8] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f11c5]
+[hpc-sm-02-10:547084] [ 9] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2882942]
+[hpc-sm-02-10:547083] [15] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x23071d1]
+[hpc-sm-02-10:547083] [16] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x218cbbc]
+[hpc-sm-02-10:547083] [17] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x178b368]
+[hpc-sm-02-10:547083] [18] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x95fca6]
+[hpc-sm-02-10:547083] [19] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f41cc]
+[hpc-sm-02-10:547084] [10] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2886986]
+[hpc-sm-02-10:547084] [11] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x681f39]
+[hpc-sm-02-10:547084] [12] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x21dd30d]
+[hpc-sm-02-10:547084] [13] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x21dd8de]
+[hpc-sm-02-10:547083] [20] /lib64/libc.so.6(+0x295d0)[0x7f22dd6295d0]
+[hpc-sm-02-10:547084] [14] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x22ffcd4]
+[hpc-sm-02-10:547084] [15] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x23071d1]
+[hpc-sm-02-10:547084] [16] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x218cbbc]
+[hpc-sm-02-10:547084] [17] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x178b368]
+[hpc-sm-02-10:547084] [18] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x95fca6]
+[hpc-sm-02-10:547083] [21] /lib64/libc.so.6(__libc_start_main+0x80)[0x7f22dd629680]
+[hpc-sm-02-10:547083] [22] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x65f915]
+[hpc-sm-02-10:547083] *** End of error message ***
+[hpc-sm-02-10:547084] [19] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f41cc]
+[hpc-sm-02-10:547084] [20] /lib64/libc.so.6(+0x295d0)[0x7f01596295d0]
+[hpc-sm-02-10:547084] [21] /lib64/libc.so.6(__libc_start_main+0x80)[0x7f0159629680]
+[hpc-sm-02-10:547084] [22] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x65f915]
+[hpc-sm-02-10:547084] *** End of error message ***
+terminate called after throwing an instance of 'std::runtime_error'
+  what():  Kokkos ERROR: Cuda memory space failed to allocate 12.79 GiB (label="m1_arena").
+[hpc-sm-02-10:547086] *** Process received signal ***
+[hpc-sm-02-10:547086] Signal: Aborted (6)
+[hpc-sm-02-10:547086] Signal code:  (-6)
+[hpc-sm-02-10:547086] [ 0] /lib64/libc.so.6(+0x3e730)[0x7fabafe3e730]
+[hpc-sm-02-10:547086] [ 1] /lib64/libc.so.6(+0x8ba6c)[0x7fabafe8ba6c]
+[hpc-sm-02-10:547086] [ 2] /lib64/libc.so.6(raise+0x16)[0x7fabafe3e686]
+[hpc-sm-02-10:547086] [ 3] /lib64/libc.so.6(abort+0xd3)[0x7fabafe28833]
+[hpc-sm-02-10:547086] [ 4] /lib64/libstdc++.so.6(+0xa1b21)[0x7fabb02a1b21]
+[hpc-sm-02-10:547086] [ 5] /lib64/libstdc++.so.6(+0xad52c)[0x7fabb02ad52c]
+[hpc-sm-02-10:547086] [ 6] /lib64/libstdc++.so.6(+0xad597)[0x7fabb02ad597]
+[hpc-sm-02-10:547086] [ 7] /lib64/libstdc++.so.6(+0xad7f9)[0x7fabb02ad7f9]
+[hpc-sm-02-10:547086] [ 8] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f11c5]
+[hpc-sm-02-10:547086] [ 9] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2882942]
+[hpc-sm-02-10:547086] [10] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2886986]
+[hpc-sm-02-10:547086] [11] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x681f39]
+terminate called after throwing an instance of 'std::runtime_error'
+[hpc-sm-02-10:547086] [12] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x21dd30d]
+[hpc-sm-02-10:547086] [13] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x21dd8de]
+[hpc-sm-02-10:547086] [14] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x22ffcd4]
+[hpc-sm-02-10:547086] [15] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x23071d1]
+[hpc-sm-02-10:547086] [16] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x218cbbc]
+[hpc-sm-02-10:547086] [17] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x178b368]
+[hpc-sm-02-10:547086] [18] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x95fca6]
+[hpc-sm-02-10:547086] [19] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f41cc]
+  what():  Kokkos ERROR: Cuda memory space failed to allocate 12.79 GiB (label="m1_arena").
+[hpc-sm-02-10:547086] [20] /lib64/libc.so.6(+0x295d0)[0x7fabafe295d0]
+[hpc-sm-02-10:547086] [21] /lib64/libc.so.6(__libc_start_main+0x80)[0x7fabafe29680]
+[hpc-sm-02-10:547086] [22] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x65f915]
+[hpc-sm-02-10:547085] *** Process received signal ***
+[hpc-sm-02-10:547086] *** End of error message ***
+[hpc-sm-02-10:547085] Signal: Aborted (6)
+[hpc-sm-02-10:547085] Signal code:  (-6)
+[hpc-sm-02-10:547085] [ 0] /lib64/libc.so.6(+0x3e730)[0x7f44f223e730]
+[hpc-sm-02-10:547085] [ 1] /lib64/libc.so.6(+0x8ba6c)[0x7f44f228ba6c]
+[hpc-sm-02-10:547085] [ 2] /lib64/libc.so.6(raise+0x16)[0x7f44f223e686]
+[hpc-sm-02-10:547085] [ 3] /lib64/libc.so.6(abort+0xd3)[0x7f44f2228833]
+[hpc-sm-02-10:547085] [ 4] /lib64/libstdc++.so.6(+0xa1b21)[0x7f44f26a1b21]
+[hpc-sm-02-10:547085] [ 5] /lib64/libstdc++.so.6(+0xad52c)[0x7f44f26ad52c]
+[hpc-sm-02-10:547085] [ 6] /lib64/libstdc++.so.6(+0xad597)[0x7f44f26ad597]
+[hpc-sm-02-10:547085] [ 7] /lib64/libstdc++.so.6(+0xad7f9)[0x7f44f26ad7f9]
+[hpc-sm-02-10:547085] [ 8] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f11c5]
+[hpc-sm-02-10:547085] [ 9] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2882942]
+[hpc-sm-02-10:547085] [10] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x2886986]
+[hpc-sm-02-10:547085] [11] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x681f39]
+[hpc-sm-02-10:547085] [12] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x21dd30d]
+[hpc-sm-02-10:547085] [13] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x21dd8de]
+[hpc-sm-02-10:547085] [14] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x22ffcd4]
+[hpc-sm-02-10:547085] [15] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x23071d1]
+[hpc-sm-02-10:547085] [16] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x218cbbc]
+[hpc-sm-02-10:547085] [17] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x178b368]
+[hpc-sm-02-10:547085] [18] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x95fca6]
+[hpc-sm-02-10:547085] [19] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x5f41cc]
+[hpc-sm-02-10:547085] [20] /lib64/libc.so.6(+0x295d0)[0x7f44f22295d0]
+[hpc-sm-02-10:547085] [21] /lib64/libc.so.6(__libc_start_main+0x80)[0x7f44f2229680]
+[hpc-sm-02-10:547085] [22] /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_h2a_105e3db5c[0x65f915]
+[hpc-sm-02-10:547085] *** End of error message ***
+[2026-11-20T18:14:18.077] error:  mpi/pmix_v3: _errhandler: hpc-sm-02-10 [0]: pmixp_client_v2.c:219: Error handler invoked: status = -25, source = [slurm.pmix.6133591.390:2]
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+[2026-11-20T18:14:18.090] error: *** STEP 6133591.390 ON hpc-sm-02-10 CANCELLED AT 2026-11-20T18:14:18 DUE to SIGNAL Killed ***
+srun: error: hpc-sm-02-10: tasks 0-3: Aborted (core dumped)

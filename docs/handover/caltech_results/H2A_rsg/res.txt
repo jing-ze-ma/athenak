@@ -1,0 +1,11 @@
+[]
+CW a 0 FATAL 0 retries []
+GPU mem peak MiB max 143117 min 142887 (n=4)
+CW b /run.log 0
+CW b run2.log 0
+rc=137 wall=44
+rc=134 wall=34
+restart from 
+rc=1 wall=6
+hstmd5 *.hst d41d8cd98f00b204e9800998ecf8427e rows 
+DONE
