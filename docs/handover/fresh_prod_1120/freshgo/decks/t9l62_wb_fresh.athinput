@@ -183,6 +183,7 @@ vet_rotate_avg = 0   # FRESHPREP
 vet_gd_rotate_dt = 0   # FRESHPREP
 force_reference_work = split   # FRESHPREP
 clean_maxit = 800   # FRESHPREP
+clean_conv_max = 1.0e-5   # FRESHPREP
 <problem>
 he_seed_band             = n2                     # [NS] seed not stated: AthenaK default n2 band seed (amplitude 1e-3)
 # (removed: BSG-only) he_seed                  = 0.0            # LI: the 1e-6 T seed is REPLACED by the Linhao perturbation

@@ -224,6 +224,7 @@ clean_cs_lz_tel = false   # FRESHPREP
 vet_gd_ls = 10   # FRESHPREP
 force_reference_work = split   # FRESHPREP
 clean_maxit = 800   # FRESHPREP
+clean_conv_max = 1.0e-5   # FRESHPREP
 <problem>
 he_seed_band = old   # FRESHPREP
 he_seed = 0.0   # FRESHPREP
