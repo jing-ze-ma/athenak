@@ -1,0 +1,8 @@
+bsg3d.m1.00001.bin ok
+bsg3d.m1_vet.00001.bin ok
+bsg3d.m1.00012.bin ok
+bsg3d.m1_vet.00012.bin ok
+bsg3d.m1.00020.bin ok
+bsg3d.m1_vet.00020.bin ok
+bsg3d.m1.00026.bin ok
+bsg3d.m1_vet.00026.bin ok
