@@ -1,0 +1,18 @@
+['main loop time (before the final outputs) = 6.158897e+01']
+CW a 0 FATAL 0 retries ['<rad_m1> time2_auto_be=16: skipped-stage BE steps=0.000000e+00 stage retries=0.000000e+00 (succeeded 0.000000e+00)']
+GPU mem peak MiB max 113157 min 112763 (n=4)
+rt t9l62.hydro.hst last row same
+rt t9l62.user.hst last row same
+rt t9l62.hydro_w.00109.bin same
+rt t9l62.m1.00109.bin same
+rt t9l62.m1_face.00028.bin same
+rt t9l62.m1_vet.00028.bin same
+CW b /run.log 0
+CW b run2.log 0
+rc=0 wall=156
+rc=0 wall=128
+restart from /resnick/groups/carnegie_poc/jingze/orion_runs_1121/v211/W5c_on_rt/b/rst/t9l62.00028.rst
+rc=0 wall=130
+hstmd5 t9l62.hydro.hst 1c7e53c271de33cdda5f01a2e8d77149 rows 21
+hstmd5 t9l62.user.hst fb4a593a4d47eba481f2e446d01becae rows 21
+DONE
