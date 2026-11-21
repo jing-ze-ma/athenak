@@ -1,6 +1,12 @@
 # LATEST_KEYS (INTEG11, 2026-11-21: v20.7): production keys for HG / RSG / R136 runs on clean-cc-stag2-latest
 
 **Code:** LATEST v20.7 candidate = **5ba73ecab** (INTEG11; awaiting the USER's push decision; fast-forward from v20.6 989dfd32b, which carries v20.6 and is itself not pushed; origin is v20.5 1ae0e57c0). v20.7 = v20.6 + two gated pieces; no default changes (key off = bitwise to v20.6; production restarts unchanged):
+- **UNIFY flips (branch clean-stag2-unify-s3910, USER 11-21 "uniform settings on different geometries", for INTEG8):** fresh-run defaults, recorded; a restart file without a key keeps the old value (echoed):
+  - `clean_stag_fs_line` = pcr on every mesh (cs with fschur; was thomas on cs: clean_stag_fs_pcr_cs). cs round-off; A100 hgs/rsgs_tf 2-3 % faster.
+  - `clean_stag_vimp_cs` = true (clean_stag_vimp on the cubed sphere as on sp). Cost: rsgs_tf passes 37 -> 40 per 10 cycles.
+  - `clean_stag_opac_drag` = true (the drag share after an opacity refresh). t9h +1.3 % s/cycle.
+  - `floorcap_mesh_vol` = true (scheme = clean; floorcap counters only).
+  - L_z ledger key: one name `clean_lz_ledger` / `clean_lz_ledger_k1`; files with clean_cs_lz_ledger / clean_cs_lz_k1 or clean_sp_lz_bnd / _k1 keep their spelling (read and written under it).
 - **LEDGER (1a27596aa, no key):** a stage solve's L_z write-back (clean_cs_lz_ledger / clean_sp_lz_bnd) is booked only when the solve accepts the stage: a stage-2 fallback no longer books the discarded attempt (NaN when it diverged) plus the backward-Euler redo. CounterKeep also rolls back floorcap's fcap_cnt on a redo. Bitwise when no fallback happens.
 - **STALL2 `rad_m1/clean_pass_damp` = N** (e1242a145..6241cce78; int, default 0 = off): from pass N of a solve on, a cell's pass-to-pass change of E that turns back, l = d/d_last < 0, takes d/(1 - l) (the fixed point of that mode); the convergence test measures the undamped change; an iterate E <= 0 takes the solution whole. Breaks the period-2/3 pass cycles of the lagged gas exchange (RSG/T19 200-solve stage stalls). The USER chooses N (1 or 2); not named in the keys.
 - dt_retry visitor regenerated (cln_pdmp, cln_pdn, cln_pdfst; cln_pdh skipped as solve scratch, like cln_wci).
