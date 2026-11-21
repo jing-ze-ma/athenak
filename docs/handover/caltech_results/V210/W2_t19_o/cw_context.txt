@@ -1,0 +1,6 @@
+CLEAN FLIM cycle 1183 t2s 2 faces 11824033 momentum cut sum |dF| V/c^2 9.427356e+29
+CLEAN FLIM cycle 1183 t2s 2 faces 11823746 momentum cut sum |dF| V/c^2 9.427369e+29
+CLEAN cycle 1183 t2s 2 it -5 (sum 930) pos 0 mark 0 all 0 neg 0 r1 0 r2 90 first 0 90 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 1183 t2s 2 faces 11823746 momentum cut sum |dF| V/c^2 9.427369e+29
+CLEAN XT cycle 1183 t2s 2 write-back closure 7.221e-02
+CLEAN WARNING cycle 1183 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)

@@ -2023,3 +2023,4 @@ B_br gate not passed; arms not started
 - (12:20) W2_t19_h result: rc: rc=0 wall=706 | CW 0 FATAL 0 | solves/stage-pass 3.1 mean / 5 max (n=601) | dt range 3.915387e+01 .. 4.073335e+01 | wall/cycle 2.20 s | series in V210/W2_t19_h/res.txt
 - (12:20) W2_t19_off result: rc: rc=0 wall=757 | CW 0 FATAL 0 | solves/stage-pass 3.4 mean / 5 max (n=601) | dt range 3.907446e+01 .. 4.073442e+01 | wall/cycle 2.34 s | series in V210/W2_t19_off/res.txt
 - (12:21) W2_t19_oh result: rc: rc=0 wall=746 | CW 0 FATAL 0 | solves/stage-pass 3.5 mean / 5 max (n=601) | dt range 3.915052e+01 .. 4.073328e+01 | wall/cycle 2.35 s | series in V210/W2_t19_oh/res.txt
+- (12:22) W2_t19_o result: rc: rc=0 wall=844 | CW 1 FATAL 0 | solves/stage-pass 4.2 mean / 200 max (n=600) | dt range 3.588403e+01 .. 4.073436e+01 | wall/cycle 2.68 s | series in V210/W2_t19_o/res.txt
