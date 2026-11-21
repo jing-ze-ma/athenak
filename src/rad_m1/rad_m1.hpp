@@ -600,8 +600,6 @@ class RadiationM1 {
   // inhomogeneous absorber that casts a shadow (full-tensor VET test)
   Real dbg_opac_patch{}, dbg_opac_x1lo{}, dbg_opac_x1hi{}, dbg_opac_x2lo{},
        dbg_opac_x2hi{};
-  int vet_dump_every = 0;    // column dump every N calls (0 = the first call only)
-  std::string vet_dump;      // column dump file stem ("" = no dump)
   Real vet_time{}, vet_itime{}, vet_ncall{}; // SC seconds, implicit-solve seconds, calls
   DvceArray2D<Real> vet_ang;   // (nray, 4): mu1, mu2, mu3, weight (sum of weights = 1)
   DvceArray5D<Real> vet_cell;  // (nmb, M1_VET_NC, k, j, i): see M1_VET_* below
@@ -2737,7 +2735,6 @@ class RadiationM1 {
   //! VET, vet_tensor = full: the guarded D = K/J (and its ghosts) for the solve
   void VetFullTensor();
   //! VET: write the column of j = js (m = 0) of the last formal solution to `fname`
-  void VetDump(const std::string &fname);
   //! VET: cost line at the end of the run
   void VetReport();
   //! VET, several MeshBlocks: allocate the banded buffers and neighbour tables

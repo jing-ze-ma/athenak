@@ -2005,9 +2005,6 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   // the last part of the upwind half-segment takes the chi and S of the cell it crosses
   // (VetSegCross; with vet_interp != lin)
   vet_xcr = pin->GetOrAddBoolean("rad_m1", "vet_seg_cross", false);
-  vet_dump = pin->GetOrAddString("rad_m1", "vet_dump", "none");
-  if (vet_dump.compare("none") == 0) {vet_dump = "";}
-  vet_dump_every = pin->GetOrAddInteger("rad_m1", "vet_dump_every", 0);
   {std::string ax = pin->GetOrAddString("rad_m1", "vet_axis", "flux");
   if (ax.compare("flux") == 0) {
     vet_axis_flux = true;
@@ -4789,16 +4786,6 @@ void RadiationM1::VetShortCharSweep() {
   if (vet_full) {VetFullTensor();}
   Kokkos::fence();
   vet_time += timer.seconds();
-
-  // column dumps (diagnostic, outside the timer)
-  if (!vet_dump.empty()) {
-    int nc = static_cast<int>(vet_ncall);
-    if (nc == 0 || (vet_dump_every > 0 && (nc % vet_dump_every) == 0)) {
-      char buf[32];
-      std::snprintf(buf, sizeof(buf), ".%06d.txt", nc);
-      VetDump(vet_dump + std::string(buf));
-    }
-  }
   vet_ncall += 1.0;
 }
 
@@ -4971,93 +4958,6 @@ void RadiationM1::VetFullTensor() {
   vet_ncell += static_cast<Real>(nc);
   vet_guard_max = std::max(vet_guard_max, gmax);
   vet_d11_min = std::min(vet_d11_min, dmin);
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::VetDump
-
-void RadiationM1::VetDump(const std::string &fname) {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie, js = indcs.js, ks = indcs.ks;
-  auto vh = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vet_cell);
-  auto ih = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), iw);
-  Real dx1 = pmy_pack->pmb->mb_size.h_view(0).dx1;
-  Real x1m = pmy_pack->pmb->mb_size.h_view(0).x1min;
-  // the whole (j, i) plane at k = ks: raw K/J, the uniaxial projection and, under
-  // vet_tensor = full, the guarded D the solve reads.  Several MeshBlocks: one file per
-  // local block, `.plane.g<gid>`, with GLOBAL (i, j) and 17 digits.
-  const int nmbd = (vet_mbs != nullptr) ? pmy_pack->nmb_thispack : 1;
-  for (int m = 0; m < nmbd; ++m) {
-    const int je = indcs.je;
-    std::string gname = fname + ".plane";
-    int i0 = 0, j0 = 0;
-    if (vet_mbs != nullptr) {
-      const int gid = pmy_pack->gids + m;
-      char gb[16];
-      std::snprintf(gb, sizeof(gb), ".g%05d", gid);
-      gname += gb;
-      LogicalLocation &ll = pmy_pack->pmesh->lloc_eachmb[gid];
-      i0 = ll.lx1*indcs.nx1;
-      j0 = ll.lx2*indcs.nx2;
-    }
-    std::ofstream g(gname);
-    g << "# closure = vet_sc plane dump, m = " << m << ", k = ks; call "
-      << static_cast<int>(vet_ncall) << (vet_full ? " (full)" : " (uniaxial)") << "\n"
-      << "# 1 i  2 j  3 J  4-9 K/J 11 22 33 12 13 23  10-12 H/J  13 chi  14-16 n  "
-      << "17-22 D_guarded 11 22 33 12 13 23 (0 unless full)  23 E_m1  24 chi_ext"
-      << (impl_beam_hr ? "  25-27 H+/J 1 2 3 (halfrange)" : "") << "\n";
-    // hrmb-1009: 17 digits also under implicit_flux_beam = halfrange (single- vs multi-
-    // block comparisons of the sweep)
-    g << std::setprecision((vet_mbs != nullptr || impl_beam_hr) ? 17 : 10);
-    for (int j = js; j <= je; ++j) {
-      for (int i = is; i <= ie; ++i) {
-        Real jj = vh(m,M1_VET_J,ks,j,i);
-        Real ij = (jj > 0.0) ? 1.0/jj : 0.0;
-        g << i - is + i0 << " " << j - js + j0 << " " << jj;
-        for (int n = 0; n < 6; ++n) {g << " " << vh(m,M1_VET_K11+n,ks,j,i)*ij;}
-        for (int n = 0; n < 3; ++n) {g << " " << vh(m,M1_VET_H1+n,ks,j,i)*ij;}
-        for (int n = 0; n < 4; ++n) {g << " " << vh(m,M1_VET_CHI+n,ks,j,i);}
-        for (int n = 0; n < 6; ++n) {
-          g << " " << (vet_full ? vh(m,M1_VET_D11+n,ks,j,i) : 0.0);
-        }
-        g << " " << ih(m,M1_IW_EN,ks,j,i) << " " << vh(m,M1_VET_CHX,ks,j,i);
-        if (impl_beam_hr) {
-          for (int n = 0; n < 3; ++n) {g << " " << vh(m,M1_VET_HP1+n,ks,j,i)*ij;}
-        }
-        g << "\n";
-      }
-    }
-  }
-  if (global_variable::my_rank != 0) return;
-  std::ofstream f(fname);
-  f << "# closure = vet_sc column dump, m = 0, k = ks, j = js; call "
-    << static_cast<int>(vet_ncall) << "\n"
-    << "# 1 i  2 x1  3 tau_top(centre)  4 chi_ext  5 S  6 J_sc  7 K11/J  8 K22/J  "
-    << "9 K33/J  10 K12/J  11 H1/J (=F1/cE)  12 chi_proj  13 n1  14 n2  15 E_m1  "
-    << "16 F1/(c E)_m1  17 K/J Milne-exact (tau+q_inf)/(3(tau+q(tau)))\n";
-  f << std::setprecision(10);
-  Real tau = 0.0;
-  std::vector<Real> tc(ie + 1);
-  for (int i = ie; i >= is; --i) {
-    Real chx = vh(0,M1_VET_CHX,ks,js,i);
-    tc[i] = tau + 0.5*chx*dx1;
-    tau += chx*dx1;
-  }
-  for (int i = is; i <= ie; ++i) {
-    Real jj = vh(0,M1_VET_J,ks,js,i);
-    Real ij = (jj > 0.0) ? 1.0/jj : 0.0;
-    Real t = tc[i];
-    Real qh = 0.710446 - 0.133054*std::exp(-3.4488*t);
-    Real exact = (t + 0.710446)/(3.0*(t + qh));
-    Real e = ih(0,M1_IW_EN,ks,js,i);
-    f << i - is << " " << x1m + (i - is + 0.5)*dx1 << " " << t << " "
-      << vh(0,M1_VET_CHX,ks,js,i) << " " << vh(0,M1_VET_SRC,ks,js,i) << " " << jj
-      << " " << vh(0,M1_VET_K11,ks,js,i)*ij << " " << vh(0,M1_VET_K11+1,ks,js,i)*ij
-      << " " << vh(0,M1_VET_K11+2,ks,js,i)*ij << " " << vh(0,M1_VET_K11+3,ks,js,i)*ij
-      << " " << vh(0,M1_VET_H1,ks,js,i)*ij << " " << vh(0,M1_VET_CHI,ks,js,i)
-      << " " << vh(0,M1_VET_N1,ks,js,i) << " " << vh(0,M1_VET_N1+1,ks,js,i)
-      << " " << e << " " << ih(0,M1_IW_F1,ks,js,i)/(c_light*e) << " " << exact << "\n";
-  }
 }
 
 //----------------------------------------------------------------------------------------

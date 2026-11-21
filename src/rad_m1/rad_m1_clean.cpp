@@ -419,7 +419,8 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/vet_gd_async", "!"}, {"rad_m1/time2_stage_theta", "!"},
     {"rad_m1/time2_stage_local_be", "!"},
     // (study keys never named in production, removed, L4)
-    {"rad_m1/vet_gd_smooth", "!"}};
+    {"rad_m1/vet_gd_smooth", "!"}, {"rad_m1/vet_dump", "=none"},
+    {"rad_m1/vet_dump_every", ""}};
   const bool say = (global_variable::my_rank == 0);
   std::string none;
   std::vector<std::string> drop;
