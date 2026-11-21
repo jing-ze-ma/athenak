@@ -1,0 +1,7 @@
+== 2026-11-21 04:32:01 log.0: CW 1-1 (grep -B5)
+CLEAN FLIM cycle 1102 t2s 2 faces 24093026 momentum cut sum |dF| V/c^2 1.952465e+30
+CLEAN FLIM cycle 1102 t2s 2 faces 24093025 momentum cut sum |dF| V/c^2 1.952466e+30
+CLEAN cycle 1102 t2s 2 it -5 (sum 809) pos 0 mark 0 all 0 neg 0 r1 0 r2 93 first 0 93 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 1102 t2s 2 faces 24093025 momentum cut sum |dF| V/c^2 1.952466e+30
+CLEAN XT cycle 1102 t2s 2 write-back closure 2.212e-02
+CLEAN WARNING cycle 1102 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
