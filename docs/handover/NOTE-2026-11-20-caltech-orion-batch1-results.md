@@ -773,3 +773,8 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   DG_t19cutr profiles: 3 files (caltech_results/DG_t19cutr/prof_*.txt); bins deleted
 - E1_t19nothinf: |  | CW 2 FATAL 0 | eint<0 lines 1, sum 131072, max 131072 | raycut lines 108 | deck md5 in info.txt
   E1_t19nothinf profiles: 1 files (caltech_results/E1_t19nothinf/prof_*.txt); bins deleted
+- CM5_rsg (hpc-sm-02-10): rc=0 wall=183 | cycles 589788 - 589818 | steady 4.049 s/cycle | GPU MiB max 106007 min 104893 | CW a 1 FATAL 0 |  passes/cycle 43.9 (over 30 cycles) | min dt (cycle lines) 9.565217e+02 | s/cycle 4.049 | CW 1
+- CM5_hg (hpc-sm-02-10): rc=1 wall=358 | cycles 624961 - 624965 | steady 15.537 s/cycle | GPU MiB max 101133 min 100483 | CW a 11 FATAL 1 |  passes/cycle 488.2 (over 5 cycles) | min dt (cycle lines) 6.896552e+01 | s/cycle 15.537 | CW 11
+  FAILED: last 100 lines in caltech_results/CM5_hg/FAIL_tail100.txt
+- CM4_rsg (hpc-sm-01-17): rc=0 wall=148 | cycles 589788 - 589818 | steady 2.833 s/cycle | GPU MiB max 106007 min 104893 | CW a 0 FATAL 0 |  passes/cycle 14.3 (over 30 cycles) | min dt (cycle lines) 9.565217e+02 | s/cycle 2.833 | CW 0
+- V204S_hg (hpc-sm-01-11): rc=0 wall=139 | cycles 624961 - 624965 | steady 15.582 s/cycle | GPU MiB max 101133 min 100471 | CW a 2 FATAL 0 |  passes/cycle 139.8 (over 4 cycles) | min dt (cycle lines) 6.896552e+01 | s/cycle 15.582 | CW 2
