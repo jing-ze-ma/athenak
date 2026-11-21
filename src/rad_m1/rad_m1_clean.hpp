@@ -118,12 +118,14 @@ inline void CleanFor(const char *name, const int nmb1, const int ks, const int k
 // rayspd-1118: on HIP, CleanFor with k fastest, then j, then i (the order of the rows in
 // a VgdRag slab of vgd_i: d fastest, then k, then j), so that adjacent lanes read adjacent
 // intensity rows, as prod's m1_vgd_mom (d6fast2-1112); MI300A R136 -62 ms/cycle, A100 +6
-// (CUDA and the host keep CleanFor).  For passes whose cells are independent (bitwise)
+// (CUDA and the host keep CleanFor; h200spd: the build knob ATHENA_CLEAN_FORK_KFAST
+// gives CUDA the k-fastest order too).  For passes whose cells are independent (bitwise)
 template <typename F>
 inline void CleanForK(const char *name, const int nmb1, const int ks, const int ke,
                       const int js, const int je, const int is, const int ie,
                       const F &f) {
-#if defined(KOKKOS_ENABLE_HIP)
+#if defined(KOKKOS_ENABLE_HIP) || \
+    (defined(KOKKOS_ENABLE_CUDA) && defined(ATHENA_CLEAN_FORK_KFAST))
   par_for(name, DevExeSpace(), 0, nmb1, is, ie, js, je, ks, ke,
   KOKKOS_LAMBDA(const int m, const int i, const int j, const int k) {f(m, k, j, i);});
 #else
