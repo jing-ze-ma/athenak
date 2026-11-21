@@ -2044,3 +2044,5 @@ B_br gate not passed; arms not started
   | t19r_damp3_test (chunk ended) | cyc 1500 | t 4.999050e+04 | 49.99% of 1.0e5 | dt 1.317235e+01 | KE 1.15e+41 | Ltop/Lin 1.046 | Lbot/Lin 0.992 | solves/stage-pass (last 200 lines) 9.6 mean / 200 max | CW 11 FATAL 0 | last hst: [t 4.681e+04 KE 1.15e+41 Lt 1.046 Lb 0.992] 
 - (12:44) W4c_hg_off result: rc: rc=0 wall=1241 | CW 20 FATAL 0 | solves/stage-pass 20.0 mean / 200 max (n=313) | dt range 4.257952e-01 .. 1.090909e+02 | wall/cycle 7.85 s | series in V210/W4c_hg_off/res.txt
 - (12:47) W4d_hg_oh result: rc: rc=1 wall=869 | CW 22 FATAL 1 | solves/stage-pass 75.4 mean / 200 max (n=66) | dt range 2.010345e+01 .. 1.063636e+02 | wall/cycle 9.87 s | series in V210/W4d_hg_oh/res.txt
+- (12:48) W5 (kc): restart file t9l62.00027.rst at t = 1166400 s, so rad_m1/vet_gd_rotate_t0 = 1165850 (t - 550) for W5b / W5c
+- (12:48) V211 start: W5a_off on hpc-sm-02-04 (B_v207 86d31021, copy of t9l62 t9l62.t9l62.00027.rst, N0 25230, keys rst + rad_m1/clean_conv_max=1.0e-4 rad_m1/clean_stag_thinf_held_gate=true , MODE speed, 150 cycles)
