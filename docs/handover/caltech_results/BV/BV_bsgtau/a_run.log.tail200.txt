@@ -1,200 +1,200 @@
-CLEAN XT cycle 7221 t2s 2 write-back closure 6.156e-04
-CLEAN OLDVEC cycle 7221 t2s 3 eint<0 6 (taken as 0) E<0 0
-CLEAN cycle 7221 t2s 3 it 5 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7221 t2s 3 ledger 1.3974282646754201e+41
-CLEAN XT cycle 7221 t2s 3 write-back closure 2.278e-02
-CLEAN OLDVEC cycle 7222 t2s 2 eint<0 1029 (taken as 0) E<0 0
-CLEAN cycle 7222 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7222 t2s 2 write-back closure 4.908e-04
-CLEAN OLDVEC cycle 7222 t2s 3 eint<0 4 (taken as 0) E<0 0
-CLEAN cycle 7222 t2s 3 it 5 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7222 t2s 3 ledger 1.3975991150156420e+41
-CLEAN XT cycle 7222 t2s 3 write-back closure 1.922e-02
-CLEAN OLDVEC cycle 7223 t2s 2 eint<0 937 (taken as 0) E<0 0
-CLEAN cycle 7223 t2s 2 it 3 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7223 t2s 2 write-back closure 6.140e-04
-CLEAN cycle 7223 t2s 3 it 5 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7223 t2s 3 ledger 1.3982548686321024e+41
-CLEAN XT cycle 7223 t2s 3 write-back closure 1.299e-02
-CLEAN OLDVEC cycle 7224 t2s 2 eint<0 1074 (taken as 0) E<0 0
-CLEAN cycle 7224 t2s 2 it 5 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7224 t2s 2 write-back closure 2.021e-04
-CLEAN OLDVEC cycle 7224 t2s 3 eint<0 3 (taken as 0) E<0 0
-CLEAN cycle 7224 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7224 t2s 3 ledger 1.3985143034586810e+41
-CLEAN XT cycle 7224 t2s 3 write-back closure 3.238e-03
-CLEAN OLDVEC cycle 7225 t2s 2 eint<0 1108 (taken as 0) E<0 0
-CLEAN cycle 7225 t2s 2 it 3 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7225 t2s 2 write-back closure 5.660e-04
-CLEAN OLDVEC cycle 7225 t2s 3 eint<0 1 (taken as 0) E<0 0
-CLEAN cycle 7225 t2s 3 it 5 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7225 t2s 3 ledger 1.3992677388808845e+41
-CLEAN XT cycle 7225 t2s 3 write-back closure 1.045e-02
-CLEAN OLDVEC cycle 7226 t2s 2 eint<0 957 (taken as 0) E<0 0
-CLEAN cycle 7226 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7226 t2s 2 write-back closure 6.669e-04
-CLEAN OLDVEC cycle 7226 t2s 3 eint<0 8 (taken as 0) E<0 0
-CLEAN cycle 7226 t2s 3 it 5 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7226 t2s 3 ledger 1.3994785403041918e+41
-CLEAN XT cycle 7226 t2s 3 write-back closure 1.804e-02
-CLEAN OLDVEC cycle 7227 t2s 2 eint<0 971 (taken as 0) E<0 0
-CLEAN cycle 7227 t2s 2 it 3 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7227 t2s 2 write-back closure 5.122e-04
-CLEAN OLDVEC cycle 7227 t2s 3 eint<0 1 (taken as 0) E<0 0
-CLEAN cycle 7227 t2s 3 it 5 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7227 t2s 3 ledger 1.4001519038782325e+41
-CLEAN XT cycle 7227 t2s 3 write-back closure 1.896e-02
-CLEAN OLDVEC cycle 7228 t2s 2 eint<0 934 (taken as 0) E<0 0
-CLEAN cycle 7228 t2s 2 it 5 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7228 t2s 2 write-back closure 2.013e-04
-CLEAN OLDVEC cycle 7228 t2s 3 eint<0 4 (taken as 0) E<0 0
-CLEAN cycle 7228 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7228 t2s 3 ledger 1.4004374800193882e+41
-CLEAN XT cycle 7228 t2s 3 write-back closure 2.680e-03
-CLEAN OLDVEC cycle 7229 t2s 2 eint<0 974 (taken as 0) E<0 0
-CLEAN cycle 7229 t2s 2 it 3 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7229 t2s 2 write-back closure 5.018e-04
-CLEAN OLDVEC cycle 7229 t2s 3 eint<0 2 (taken as 0) E<0 0
-CLEAN cycle 7229 t2s 3 it 5 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7229 t2s 3 ledger 1.4010387372437106e+41
-CLEAN XT cycle 7229 t2s 3 write-back closure 8.932e-03
-CLEAN OLDVEC cycle 7230 t2s 2 eint<0 907 (taken as 0) E<0 0
-CLEAN cycle 7230 t2s 2 it 5 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7230 t2s 2 write-back closure 2.390e-04
-CLEAN OLDVEC cycle 7230 t2s 3 eint<0 8 (taken as 0) E<0 0
-CLEAN cycle 7230 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7230 t2s 3 ledger 1.4013691708534196e+41
-CLEAN XT cycle 7230 t2s 3 write-back closure 2.695e-03
-CLEAN OLDVEC cycle 7231 t2s 2 eint<0 864 (taken as 0) E<0 0
-CLEAN cycle 7231 t2s 2 it 3 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7231 t2s 2 write-back closure 4.872e-04
-CLEAN OLDVEC cycle 7231 t2s 3 eint<0 3 (taken as 0) E<0 0
-CLEAN cycle 7231 t2s 3 it 5 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7231 t2s 3 ledger 1.4020924588742434e+41
-CLEAN XT cycle 7231 t2s 3 write-back closure 9.944e-03
-CLEAN OLDVEC cycle 7232 t2s 2 eint<0 933 (taken as 0) E<0 0
-CLEAN cycle 7232 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7232 t2s 2 write-back closure 6.066e-04
-CLEAN OLDVEC cycle 7232 t2s 3 eint<0 3 (taken as 0) E<0 0
-CLEAN cycle 7232 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7232 t2s 3 ledger 1.4024405935447414e+41
-CLEAN XT cycle 7232 t2s 3 write-back closure 2.809e-03
-CLEAN OLDVEC cycle 7233 t2s 2 eint<0 811 (taken as 0) E<0 0
-CLEAN cycle 7233 t2s 2 it 3 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7233 t2s 2 write-back closure 3.948e-04
-CLEAN OLDVEC cycle 7233 t2s 3 eint<0 6 (taken as 0) E<0 0
-CLEAN cycle 7233 t2s 3 it 5 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7233 t2s 3 ledger 1.4030124226391530e+41
-CLEAN XT cycle 7233 t2s 3 write-back closure 1.020e-02
-CLEAN OLDVEC cycle 7234 t2s 2 eint<0 918 (taken as 0) E<0 0
-CLEAN cycle 7234 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7234 t2s 2 write-back closure 4.667e-04
-CLEAN OLDVEC cycle 7234 t2s 3 eint<0 3 (taken as 0) E<0 0
-CLEAN cycle 7234 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7234 t2s 3 ledger 1.4033385903268907e+41
-CLEAN XT cycle 7234 t2s 3 write-back closure 3.186e-03
-CLEAN OLDVEC cycle 7235 t2s 2 eint<0 842 (taken as 0) E<0 0
-CLEAN cycle 7235 t2s 2 it 3 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7235 t2s 2 write-back closure 4.501e-04
-CLEAN OLDVEC cycle 7235 t2s 3 eint<0 2 (taken as 0) E<0 0
-CLEAN cycle 7235 t2s 3 it 5 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7235 t2s 3 ledger 1.4038618350796740e+41
-CLEAN XT cycle 7235 t2s 3 write-back closure 1.518e-02
-CLEAN OLDVEC cycle 7236 t2s 2 eint<0 887 (taken as 0) E<0 0
-CLEAN cycle 7236 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7236 t2s 2 write-back closure 3.765e-04
-CLEAN OLDVEC cycle 7236 t2s 3 eint<0 4 (taken as 0) E<0 0
-CLEAN cycle 7236 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7236 t2s 3 ledger 1.4041631035962077e+41
-CLEAN XT cycle 7236 t2s 3 write-back closure 5.150e-03
-CLEAN OLDVEC cycle 7237 t2s 2 eint<0 861 (taken as 0) E<0 0
-CLEAN cycle 7237 t2s 2 it 3 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7237 t2s 2 write-back closure 4.413e-04
-CLEAN OLDVEC cycle 7237 t2s 3 eint<0 1 (taken as 0) E<0 0
-CLEAN cycle 7237 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7237 t2s 3 ledger 1.4046725655941616e+41
-CLEAN XT cycle 7237 t2s 3 write-back closure 2.639e-03
-CLEAN OLDVEC cycle 7238 t2s 2 eint<0 854 (taken as 0) E<0 0
-CLEAN cycle 7238 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7238 t2s 2 write-back closure 3.367e-04
-CLEAN OLDVEC cycle 7238 t2s 3 eint<0 6 (taken as 0) E<0 0
-CLEAN cycle 7238 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7238 t2s 3 ledger 1.4049939811882230e+41
-CLEAN XT cycle 7238 t2s 3 write-back closure 3.196e-03
-CLEAN OLDVEC cycle 7239 t2s 2 eint<0 818 (taken as 0) E<0 0
-CLEAN cycle 7239 t2s 2 it 3 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7239 t2s 2 write-back closure 4.785e-04
-CLEAN OLDVEC cycle 7239 t2s 3 eint<0 3 (taken as 0) E<0 0
-CLEAN cycle 7239 t2s 3 it 5 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7239 t2s 3 ledger 1.4054426975166534e+41
-CLEAN XT cycle 7239 t2s 3 write-back closure 1.026e-02
-CLEAN OLDVEC cycle 7240 t2s 2 eint<0 817 (taken as 0) E<0 0
-CLEAN cycle 7240 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7240 t2s 2 write-back closure 4.892e-04
-CLEAN OLDVEC cycle 7240 t2s 3 eint<0 4 (taken as 0) E<0 0
-CLEAN cycle 7240 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7240 t2s 3 ledger 1.4056493190326888e+41
-CLEAN XT cycle 7240 t2s 3 write-back closure 3.619e-03
-CLEAN OLDVEC cycle 7241 t2s 2 eint<0 810 (taken as 0) E<0 0
-CLEAN cycle 7241 t2s 2 it 6 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN XT cycle 7241 t2s 2 write-back closure 1.177e-02
-CLEAN OLDVEC cycle 7241 t2s 3 eint<0 4 (taken as 0) E<0 0
-CLEAN cycle 7241 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7241 t2s 3 ledger 1.4060420031503731e+41
-CLEAN XT cycle 7241 t2s 3 write-back closure 3.088e-03
-CLEAN OLDVEC cycle 7242 t2s 2 eint<0 798 (taken as 0) E<0 0
-CLEAN cycle 7242 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7242 t2s 2 write-back closure 4.828e-04
-CLEAN OLDVEC cycle 7242 t2s 3 eint<0 2 (taken as 0) E<0 0
-CLEAN cycle 7242 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7242 t2s 3 ledger 1.4063116861401203e+41
-CLEAN XT cycle 7242 t2s 3 write-back closure 4.714e-03
-CLEAN OLDVEC cycle 7243 t2s 2 eint<0 810 (taken as 0) E<0 0
-CLEAN cycle 7243 t2s 2 it 6 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN XT cycle 7243 t2s 2 write-back closure 1.522e-02
-CLEAN OLDVEC cycle 7243 t2s 3 eint<0 1 (taken as 0) E<0 0
-CLEAN cycle 7243 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7243 t2s 3 ledger 1.4065747104204598e+41
-CLEAN XT cycle 7243 t2s 3 write-back closure 2.951e-03
-CLEAN OLDVEC cycle 7244 t2s 2 eint<0 824 (taken as 0) E<0 0
-CLEAN cycle 7244 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7244 t2s 2 write-back closure 4.285e-04
-CLEAN OLDVEC cycle 7244 t2s 3 eint<0 2 (taken as 0) E<0 0
-CLEAN cycle 7244 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7244 t2s 3 ledger 1.4067011561830838e+41
-CLEAN XT cycle 7244 t2s 3 write-back closure 4.615e-03
-CLEAN OLDVEC cycle 7245 t2s 2 eint<0 763 (taken as 0) E<0 0
-CLEAN cycle 7245 t2s 2 it 5 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN XT cycle 7245 t2s 2 write-back closure 4.735e-02
-CLEAN OLDVEC cycle 7245 t2s 3 eint<0 1 (taken as 0) E<0 0
-CLEAN cycle 7245 t2s 3 it 8 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7245 t2s 3 ledger 1.4070490367429406e+41
-CLEAN XT cycle 7245 t2s 3 write-back closure 2.098e-03
-CLEAN OLDVEC cycle 7246 t2s 2 eint<0 729 (taken as 0) E<0 0
-CLEAN cycle 7246 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7246 t2s 2 write-back closure 5.554e-04
-CLEAN OLDVEC cycle 7246 t2s 3 eint<0 5 (taken as 0) E<0 0
-CLEAN cycle 7246 t2s 3 it 6 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7246 t2s 3 ledger 1.4072837326446815e+41
-CLEAN XT cycle 7246 t2s 3 write-back closure 6.864e-03
-CLEAN OLDVEC cycle 7247 t2s 2 eint<0 737 (taken as 0) E<0 0
-CLEAN cycle 7247 t2s 2 it 5 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN XT cycle 7247 t2s 2 write-back closure 2.569e-02
-CLEAN OLDVEC cycle 7247 t2s 3 eint<0 3 (taken as 0) E<0 0
-CLEAN cycle 7247 t2s 3 it 7 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7247 t2s 3 ledger 1.4074376452489010e+41
-CLEAN XT cycle 7247 t2s 3 write-back closure 2.382e-03
-CLEAN OLDVEC cycle 7248 t2s 2 eint<0 751 (taken as 0) E<0 0
-CLEAN cycle 7248 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN XT cycle 7248 t2s 2 write-back closure 6.742e-04
-CLEAN OLDVEC cycle 7248 t2s 3 eint<0 4 (taken as 0) E<0 0
-CLEAN cycle 7248 t2s 3 it 4 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7248 t2s 3 ledger 1.4074626939354194e+41
-CLEAN XT cycle 7248 t2s 3 write-back closure 1.889e-02
-CLEAN OLDVEC cycle 7249 t2s 2 eint<0 736 (taken as 0) E<0 0
-CLEAN cycle 7249 t2s 2 it 5 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN XT cycle 7249 t2s 2 write-back closure 4.611e-02
-CLEAN cycle 7249 t2s 3 it 7 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
-CLEAN LZB cycle 7249 t2s 3 ledger 1.4075592636596025e+41
-CLEAN XT cycle 7249 t2s 3 write-back closure 2.198e-03
-elapsed=3.584062e+03 cycle=7250 time=1.044949e+06 dt=1.349048e+02
+CLEAN XT cycle 7785 t2s 2 write-back closure 8.071e-02
+CLEAN cycle 7785 t2s 3 it 6 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7785 t2s 3 ledger 1.3695540735774090e+41
+CLEAN XT cycle 7785 t2s 3 write-back closure 1.430e-02
+CLEAN OLDVEC cycle 7786 t2s 2 eint<0 148 (taken as 0) E<0 0
+CLEAN cycle 7786 t2s 2 it 5 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 7786 t2s 2 write-back closure 3.261e-02
+CLEAN cycle 7786 t2s 3 it 6 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7786 t2s 3 ledger 1.3663971076300398e+41
+CLEAN XT cycle 7786 t2s 3 write-back closure 2.201e-02
+CLEAN OLDVEC cycle 7787 t2s 2 eint<0 96 (taken as 0) E<0 0
+CLEAN cycle 7787 t2s 2 it 4 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7787 t2s 2 write-back closure 9.027e-02
+CLEAN cycle 7787 t2s 3 it 6 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7787 t2s 3 ledger 1.3643831237087525e+41
+CLEAN XT cycle 7787 t2s 3 write-back closure 1.173e-02
+CLEAN OLDVEC cycle 7788 t2s 2 eint<0 172 (taken as 0) E<0 0
+CLEAN cycle 7788 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7788 t2s 2 write-back closure 3.217e-04
+CLEAN cycle 7788 t2s 3 it 5 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7788 t2s 3 ledger 1.3611341246076940e+41
+CLEAN XT cycle 7788 t2s 3 write-back closure 1.192e-02
+CLEAN OLDVEC cycle 7789 t2s 2 eint<0 140 (taken as 0) E<0 0
+CLEAN cycle 7789 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7789 t2s 2 write-back closure 6.751e-02
+CLEAN cycle 7789 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7789 t2s 3 ledger 1.3590320848915002e+41
+CLEAN XT cycle 7789 t2s 3 write-back closure 3.315e-03
+CLEAN ray cut cycle 7790 shell 128 -> 129 (want 129, tau_top)
+CLEAN OLDVEC cycle 7790 t2s 2 eint<0 156 (taken as 0) E<0 0
+CLEAN cycle 7790 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7790 t2s 2 write-back closure 3.147e-04
+CLEAN cycle 7790 t2s 3 it 5 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7790 t2s 3 ledger 1.3554024473816821e+41
+CLEAN XT cycle 7790 t2s 3 write-back closure 1.009e-02
+CLEAN OLDVEC cycle 7791 t2s 2 eint<0 112 (taken as 0) E<0 0
+CLEAN cycle 7791 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7791 t2s 2 write-back closure 4.599e-02
+CLEAN cycle 7791 t2s 3 it 6 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7791 t2s 3 ledger 1.3532782425196459e+41
+CLEAN XT cycle 7791 t2s 3 write-back closure 6.502e-03
+CLEAN OLDVEC cycle 7792 t2s 2 eint<0 150 (taken as 0) E<0 0
+CLEAN cycle 7792 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7792 t2s 2 write-back closure 2.782e-04
+CLEAN cycle 7792 t2s 3 it 5 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7792 t2s 3 ledger 1.3494248434204593e+41
+CLEAN XT cycle 7792 t2s 3 write-back closure 8.559e-03
+CLEAN OLDVEC cycle 7793 t2s 2 eint<0 136 (taken as 0) E<0 0
+CLEAN cycle 7793 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7793 t2s 2 write-back closure 4.905e-02
+CLEAN cycle 7793 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7793 t2s 3 ledger 1.3473691633523413e+41
+CLEAN XT cycle 7793 t2s 3 write-back closure 2.980e-03
+CLEAN OLDVEC cycle 7794 t2s 2 eint<0 136 (taken as 0) E<0 0
+CLEAN cycle 7794 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7794 t2s 2 write-back closure 4.428e-04
+CLEAN cycle 7794 t2s 3 it 5 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7794 t2s 3 ledger 1.3434299366413335e+41
+CLEAN XT cycle 7794 t2s 3 write-back closure 2.830e-03
+CLEAN OLDVEC cycle 7795 t2s 2 eint<0 96 (taken as 0) E<0 0
+CLEAN cycle 7795 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7795 t2s 2 write-back closure 4.431e-02
+CLEAN cycle 7795 t2s 3 it 7 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7795 t2s 3 ledger 1.3413549484949944e+41
+CLEAN XT cycle 7795 t2s 3 write-back closure 1.124e-03
+CLEAN OLDVEC cycle 7796 t2s 2 eint<0 140 (taken as 0) E<0 0
+CLEAN cycle 7796 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7796 t2s 2 write-back closure 7.228e-04
+CLEAN cycle 7796 t2s 3 it 5 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7796 t2s 3 ledger 1.3377084151675497e+41
+CLEAN XT cycle 7796 t2s 3 write-back closure 2.337e-03
+CLEAN OLDVEC cycle 7797 t2s 2 eint<0 160 (taken as 0) E<0 0
+CLEAN cycle 7797 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7797 t2s 2 write-back closure 3.621e-02
+CLEAN cycle 7797 t2s 3 it 4 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7797 t2s 3 ledger 1.3357342851857849e+41
+CLEAN XT cycle 7797 t2s 3 write-back closure 1.877e-02
+CLEAN OLDVEC cycle 7798 t2s 2 eint<0 152 (taken as 0) E<0 0
+CLEAN cycle 7798 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7798 t2s 2 write-back closure 2.429e-03
+CLEAN cycle 7798 t2s 3 it 5 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7798 t2s 3 ledger 1.3323500861300807e+41
+CLEAN XT cycle 7798 t2s 3 write-back closure 6.026e-03
+CLEAN OLDVEC cycle 7799 t2s 2 eint<0 128 (taken as 0) E<0 0
+CLEAN cycle 7799 t2s 2 it 5 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7799 t2s 2 write-back closure 5.802e-02
+CLEAN cycle 7799 t2s 3 it 4 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7799 t2s 3 ledger 1.3303920797094743e+41
+CLEAN XT cycle 7799 t2s 3 write-back closure 1.580e-02
+elapsed=3.824957e+03 cycle=7800 time=1.118719e+06 dt=1.319571e+02
+CLEAN OLDVEC cycle 7800 t2s 2 eint<0 128 (taken as 0) E<0 0
+CLEAN cycle 7800 t2s 2 it 4 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7800 t2s 2 write-back closure 1.918e-03
+CLEAN cycle 7800 t2s 3 it 6 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7800 t2s 3 ledger 1.3271559875778269e+41
+CLEAN XT cycle 7800 t2s 3 write-back closure 1.496e-02
+CLEAN OLDVEC cycle 7801 t2s 2 eint<0 156 (taken as 0) E<0 0
+CLEAN cycle 7801 t2s 2 it 5 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7801 t2s 2 write-back closure 2.609e-02
+CLEAN cycle 7801 t2s 3 it 4 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7801 t2s 3 ledger 1.3250237129383864e+41
+CLEAN XT cycle 7801 t2s 3 write-back closure 1.205e-02
+CLEAN OLDVEC cycle 7802 t2s 2 eint<0 152 (taken as 0) E<0 0
+CLEAN cycle 7802 t2s 2 it 4 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7802 t2s 2 write-back closure 1.475e-03
+CLEAN cycle 7802 t2s 3 it 7 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7802 t2s 3 ledger 1.3216943723867584e+41
+CLEAN XT cycle 7802 t2s 3 write-back closure 4.871e-04
+CLEAN OLDVEC cycle 7803 t2s 2 eint<0 116 (taken as 0) E<0 0
+CLEAN cycle 7803 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7803 t2s 2 write-back closure 8.046e-03
+CLEAN cycle 7803 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7803 t2s 3 ledger 1.3191478709482503e+41
+CLEAN XT cycle 7803 t2s 3 write-back closure 1.758e-03
+CLEAN OLDVEC cycle 7804 t2s 2 eint<0 156 (taken as 0) E<0 0
+CLEAN cycle 7804 t2s 2 it 4 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7804 t2s 2 write-back closure 1.231e-03
+CLEAN cycle 7804 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7804 t2s 3 ledger 1.3157696111701409e+41
+CLEAN XT cycle 7804 t2s 3 write-back closure 1.766e-03
+CLEAN OLDVEC cycle 7805 t2s 2 eint<0 160 (taken as 0) E<0 0
+CLEAN cycle 7805 t2s 2 it 5 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7805 t2s 2 write-back closure 3.122e-02
+CLEAN cycle 7805 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7805 t2s 3 ledger 1.3131243042911318e+41
+CLEAN XT cycle 7805 t2s 3 write-back closure 4.263e-04
+CLEAN OLDVEC cycle 7806 t2s 2 eint<0 172 (taken as 0) E<0 0
+CLEAN cycle 7806 t2s 2 it 4 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7806 t2s 2 write-back closure 7.915e-04
+CLEAN cycle 7806 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7806 t2s 3 ledger 1.3096938205187951e+41
+CLEAN XT cycle 7806 t2s 3 write-back closure 8.924e-04
+CLEAN OLDVEC cycle 7807 t2s 2 eint<0 112 (taken as 0) E<0 0
+CLEAN cycle 7807 t2s 2 it 5 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7807 t2s 2 write-back closure 2.320e-02
+CLEAN cycle 7807 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7807 t2s 3 ledger 1.3070986361707039e+41
+CLEAN XT cycle 7807 t2s 3 write-back closure 9.386e-04
+CLEAN OLDVEC cycle 7808 t2s 2 eint<0 132 (taken as 0) E<0 0
+CLEAN cycle 7808 t2s 2 it 4 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN XT cycle 7808 t2s 2 write-back closure 7.808e-04
+CLEAN cycle 7808 t2s 3 it 6 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7808 t2s 3 ledger 1.3036851793896904e+41
+CLEAN XT cycle 7808 t2s 3 write-back closure 1.260e-03
+CLEAN OLDVEC cycle 7809 t2s 2 eint<0 95 (taken as 0) E<0 0
+CLEAN cycle 7809 t2s 2 it 5 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN XT cycle 7809 t2s 2 write-back closure 5.479e-02
+CLEAN cycle 7809 t2s 3 it 5 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN LZB cycle 7809 t2s 3 ledger 1.3016284390688319e+41
+CLEAN XT cycle 7809 t2s 3 write-back closure 1.694e-03
+<time> dt_retry: 7810 checkpoints (5.397165e+01 s, 1.317958e+03 MB on rank 0), 0 retries, cap -1.000000e+00
+<time> counters_rollback: event counters of discarded attempts dropped: dt_retry 0, backward-Euler redo 0, hesdirk2 helper solves 0; E-floor created energy dropped (m1_pos_un, x volume) 0.000000e+00 / 0.000000e+00 / 0.000000e+00, vceil_de dropped 0.000000e+00 / 0.000000e+00 / 0.000000e+00
+<restart> rst/bsg3d.00001.rst: the cell and face variables written at 6.8 s
+<restart> rst/bsg3d.00001.rst: rad_m1 hesdirk2 slope written at 7.4 s
+<restart> rst/bsg3d.00001.rst: hydro w0 density and velocities written at 7.7 s
+<restart> rst/bsg3d.00001.rst: rad_signal_speed inputs written at 8.0 s
+<restart> rst/bsg3d.00001.rst: rad_m1 applied face flux written at 8.1 s
+<restart> rst/bsg3d.00001.rst: all (file closed) written at 8.1 s
+<hydro> EOS floors (all ranks, accepted steps, RK-weighted): mass created x vol=2e+25 energy created x vol=-8e+38 | FOFC first-order cell-stages=0
+
+Terminating on time limit
+time=1e+06 cycle=7810
+tlim=1e+06 nlim=1000000
+
+MeshBlock-cycles = 31240
+cpu time used  = 4e+03
+main loop time (before the final outputs) = 4e+03
+zone-cycles/cpu_second = 3e+07
+particle-updates/cpu_second = 0
+<hydro>/split_bval_fast: energy-only refreshes 0, full refreshes 0 (rank 0)
+<rad_m1> closure = vet_col: 0 tensor builds (0 skipped), 0 s (rank 0, fenced), 0 ms per build
+<rad_m1> vet_col_lat: 8e+03 sweeps (incl. the first build's 3 inflow iterations), 0 s (rank 0, fenced), 0 ms per sweep; lateral reads clamped to the ghost band (rank 0, all sweeps): 0
+<rad_m1> vet_gd: rank 0 fenced seconds: source 4e+01, sweeps 6e+02 (of which per-shell halo+walls 2e+01, of which MPI wait 1e+01), tables (rotation) 0, uniform twin 0, moments 2e+01; in-solve rebuilds 0 (0 s)
+<rad_m1> vet_gd halo (rank 0): exchanges 2e+06, bytes sent 4e+12 (2e+06 per exchange), post 0.1 s, partners 3; band-clamped lateral reads (ALL ranks, all sweeps) 0
+<rad_m1> vet_gd vet_path = none: subdivided steps (ALL ranks, all sweeps) 0
+<rad_m1> vet_gd ragged band (rank 0): out-of-slab accesses main 0 twin 0
+<rad_m1> vet_gd_band_ring (rank 0): sweeps 8e+03, dense band saves 0, save store 0.07 GB
+<rad_m1> accel-1009 (rank 0): vet_gd_twin_fuse=0 vet_gd_twin_lowmem=0 vet_gd_twin_det=1 halo mask cache: 0 entries made, 0 MB of 0
+<rad_m1> vgdspeed-1009 (rank 0): vet_gd halo lists 0 made, 3e+02 MB of 4e+03 (key 4096, GPU: <= free/2); exchanges by list 2e+06, dense 0
+<rad_m1> vgdfuse-1010 (rank 0): vet_gd_halo_exact lists made 3e+02, fallbacks 0 (marked reads outside the masks' region 0), read ghosts with an unsent source 0; received values per list: exact/mask 0
+<rad_m1> vgdrot-1011 (rank 0): exact-list batches 3e+02 (group 1, 0.2 s, list reallocs 1e+03); table prefetch 1 swapped in 0 of the rotations
+<rad_m1> implicit energy solve: cells=0 iterations mean=0 max=0 FAILURES=0 (no bracket: 0)
+<rad_m1> consfix-1109: implicit_cons_final=1 solves=0 extra passes after a mode fallback=0
+<rad_m1> implicit_wb_vkick_reject=1e+08: stages rejected=0 backward-Euler solves with kicks=0 (cells 0)
+<rad_m1> implicit transport: solves=0 Picard iterations mean=0 max=0 NON-CONVERGED=0
+<rad_m1> implicit_gas_newton_switch=10 (min pass 20): solves switched to the root find=0
+<rad_m1> m1-positivity: implicit_g0_exchange=1 implicit_g0_limit=1 clipped cell-passes=0 | implicit_pos_gas=1 (frac 0.001) cell-solves=2e+06 energy moved rad->gas=2e+36 | E floor raises cell-solves=0 energy from gas=0 energy created=0 (code units x volume) [in discarded attempts, rolled back: 0] of which solve undershoot (pos_floor_solve)=0 taken from the column's radiation (implicit_pos_floor_cons)=0 | |F| > c E scaled back cell-solves=0 sum(|F|/(cE) - 1)=0 | hydro EOS floors energy created=-8e+38
+<rad_m1> implicit_face_mmat: checked passes=0 limited passes=0 limited cells=0 limited x1 faces=0 max rounds=0 left (b<=0 after the limit)=0 realisability-bound faces (|F_H| > c min E)=0 (rank 0: rounds=0 R exchanges=0 zalesak_halo_skip=on rowsel=on re-assembled rows=0 of 0 zalesak_active=on zalesak_cap_rounds=4 capped passes=0)
+<rad_m1> implicit transverse (bicgstab): final 7-point linear residual (max|r|/max|b|) mean=0 max=0
+<rad_m1>   (diagnostic; Picard test on it: no; lin_tol=1e-10; inner stop: lin_tol relative to max|b|, loosened by Eisenstat-Walker ew_max=0.01)
+<rad_m1> bicgstab: outer passes=0 linear solves=0 inner iterations mean=0 max=0 total=0
+<rad_m1> bicgstab: breakdowns=0 line_jacobi fallbacks=0 global reductions=0 (0 per inner iteration)
+<rad_m1> gas coupling: newton=true eos_cache=false cell-passes=0 newton fallbacks=0 (0 per cell-pass)
+<rad_m1> FBLOCAL triggers 0 local 0 global 0 bad cells 0 masked cells 0
+<rad_m1> offdiag=none closure_relax=1 closure_lag=step positivity fallbacks=0 (vet_col_lat 0) min E from the solve=1e+300
+<rad_m1> implicit_vimp positivity fallbacks=0 min E from the solve=1e+300 local kills=0 cells(rank 0)=0
+<rad_m1> floor clips (all ranks, every solve incl. BE): solved E <= e_floor cell-solves=0 written-back gas eint <= 0 cell-solves=0
+<rad_m1> time_scheme=hesdirk2: stage steps=8e+03 backward-Euler steps=1 stage fallbacks=0 vet clips=0 face_fct calls=2e+04 skipped(no face flux)=0 K1 flux from U^n=0 limited cells=1e+11 max rounds=4e+02 withheld E x vol=1e+44 left (Q<=0)=0 emptied (E < 0.1 E^n) cells=3e+02 min E/E^n=0.1 (rank 0: rounds=3e+05 R exchanges=3e+05) time2_vet_col=extrap2 fallbacks=0 time2_posfix: steps=0 re-solves=0 cells=0 accepted-with-fallback stages=0
+<rad_m1> time2_auto_be=16: skipped-stage BE steps=0 stage retries=0 (succeeded 0)
+<rad_m1> hesdirk2 wall split (rank 0 s): clean stage steps 4e+03 (posfix 0) | failed stage attempts 0 (posfix 0) | their BE redo 0 | auto_be steps 0 | other BE steps 0.7 | discarded dt_retry attempts 0
