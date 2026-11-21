@@ -2047,8 +2047,8 @@ class RadiationM1 {
   bool Time2RstAccept(const int nfile, const int ver);   // a file's channels fit (sets
                                 // t2_nfv, t2_rstd3)
   int t2_nfv = 0;               // conservative-ray intensity channels of the file
-  int t2_rcl = -1;              // clean_closure = iterate: the closure's channels of the
-                                // file (0: a file of another closure; -1: all, CleanNs)
+  int t2_rcl = -1;              // the closure channels of the file read (clean_closure =
+                                // iterate, CleanRstNcl; -1: this run's own layout)
   int t2_rskip = 0;             // a file's clean_rot_ring channels read with the ring off
   bool t2_rstd3 = false;        // a version-1 file: the fkin block is d only (no K1_d)
   int t2_rstv = 5;              // the clean file's version: <= 3 zero predictor / extrap2

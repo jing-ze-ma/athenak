@@ -1322,7 +1322,9 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     auto prm = pm->pmb_pack->pradm1;
     auto cs_ = prm->cln_s;
     auto gn_ = prm->cln_gn;
-    const bool have = (prm->cln_tc > -1.0e299) && (cs_.extent_int(0) >= nmb) &&
+    // (clean_closure = iterate: the closure in place, also one a restart file holds)
+    const bool have = (prm->cln_tc > -1.0e299 || (prm->cln_closit && prm->cln_cip)) &&
+                      (cs_.extent_int(0) >= nmb) &&
                       (cs_.extent_int(1) > radm1::CLN_D11 + 5);
     // (D = I/3 is the same in every frame)
     const bool rot = have && prm->cs_geom && (gn_.a.extent_int(0) >= nmb);

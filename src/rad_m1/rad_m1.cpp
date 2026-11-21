@@ -2718,8 +2718,9 @@ int RadiationM1::RssRstMode() const {return RssMode() + (rst_ext ? 16 : 0);}
 
 int RadiationM1::RssMode() const {
   // (scheme = clean: its own current Eddington tensor, cln_s, which the stage solve
-  // rebuilds every step; tau_ten is not rebuilt there)
-  if (clean && cln_s.extent(0) > 0) return 5;
+  // rebuilds every step; tau_ten is not rebuilt there; not before CleanInit: a restart's
+  // closure, clean_closure = iterate, precedes the cubed sphere's geometry cln_gn)
+  if (clean && cln_s.extent(0) > 0 && cln_init) return 5;
   if (tau_closure && tau_ten.extent(0) > 0) return 2;
   if (vet_sc && vet_cell.extent(0) > 0) return vet_full ? 4 : 3;
   if (!eddington && !tau_closure && !vet_sc) return 1;
