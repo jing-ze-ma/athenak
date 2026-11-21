@@ -2926,17 +2926,22 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
   // each face's source once, for its two cells (CLF_SR), and with gflux its a E (CLF_PT)
   const int nf = x.nf;
   const bool af = x.feedback && x.gf && !x.cub, xsp = (x.xq >= 0) && !cln_xdh;
-  CleanFor<4>("cln_rhsaf", nmb1, ks, ke+(nf > 2), js, je+(nf > 1), is, ie+1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
-    for (int n = 0; n < nf; ++n) {
-      if (i > ie+(n == 0) || j > je+(n == 1) || k > ke+(n == 2)) continue;
-      if (xsp) CleanStagXSplit(x, *pxr, n, m, k, j, i);
-      x.fc[n](m,CLF_SR,k,j,i) = CleanFaceSource(x, n, m, k, j, i);
-      if (fh) x.fc[n](m,CLF_N,k,j,i) = CleanFaceFlux(xh, CLW_EK, n, m, k, j, i, true);
-      if (af) x.fc[n](m,CLF_PT,k,j,i) = CleanStagAdvFace(x, xh, n, m, k, j, i);
-    }
-  });
+  // (one launch per direction, its face code for a compile-time direction, CleanDirCase)
+  for (int dir = 0; dir < nf; ++dir) {
+    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    CleanFor<4>("cln_rhsaf", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
+      CleanDirCase(dir, [&](auto d) {
+        constexpr int n = decltype(d)::value;
+        if (xsp) CleanStagXSplit(x, *pxr, n, m, k, j, i);
+        x.fc[n](m,CLF_SR,k,j,i) = CleanFaceSource(x, n, m, k, j, i);
+        if (fh) x.fc[n](m,CLF_N,k,j,i) = CleanFaceFlux<n>(xh, CLW_EK, n, m, k, j, i,
+                                                          true);
+        if (af) x.fc[n](m,CLF_PT,k,j,i) = CleanStagAdvFace(x, xh, n, m, k, j, i);
+      });
+    });
+  }
   // (clean_stag_xdonor diagnostic: the row's terms, CleanStagXCount; clean_nl_print only)
   const bool xdd = cln_xd && cln_nlprint;
   if (xdd && cln_xdg.extent_int(0) < nmb1 + 1) {
@@ -4320,7 +4325,10 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
       CleanFor<4>("cln_fs0", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
-        fc(m,CLF_N,k,j,i) = CleanFaceFlux(xh, e, dir, m, k, j, i, true);
+        CleanDirCase(dir, [&](auto d) {
+          constexpr int n = decltype(d)::value;
+          fc(m,CLF_N,k,j,i) = CleanFaceFlux<n>(xh, e, n, m, k, j, i, true);
+        });
         fc(m,CLF_PT,k,j,i) = fc(m,CLF_N,k,j,i);   // (F^H for CleanStagDrag; QL is free)
         fc(m,CLF_N+1,k,j,i) = (sw >= 0 && !sm) ? fc(m,sw,k,j,i) : 0.0;
         if (sm) fc(m,sw,k,j,i) = 0.0;
