@@ -1328,6 +1328,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         // (clean_xt_cons: the same, the first iterate's T from the pass's gas row)
         if (inl == 0 && (cln_sbimp || cln_xtcons) && cln_feedback) {
           CleanNewtonUpdate();
+          cln_pdfst = true;   // (clean_pass_damp: that update's X is the last solve's)
           CleanRightHandSide();
         }
         CleanPreconditionerSetup();
