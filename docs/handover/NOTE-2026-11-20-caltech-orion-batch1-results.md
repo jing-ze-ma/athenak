@@ -999,3 +999,18 @@ B_br gate not passed; arms not started
   CW t19r (log.0) cycle 615 []: CLEAN WARNING cycle 615 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
   CW t19r (log.0) cycle 619 []: CLEAN WARNING cycle 619 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 6)
   CW t19r (log.0) cycle 621 []: CLEAN WARNING cycle 621 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 7)
+- (00:22) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t19r (log.0) cycle 632 [cycle=650 time=2.609127e+04 dt=4.069272e+01]: CLEAN WARNING cycle 632 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 8)
+  CW t19r (log.0) cycle 638 [cycle=650 time=2.609127e+04 dt=4.069272e+01]: CLEAN WARNING cycle 638 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 9)
+  CW t19r (log.0) cycle 643 [cycle=650 time=2.609127e+04 dt=4.069272e+01]: CLEAN WARNING cycle 643 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 10)
+  CW t19r (log.0) cycle 647 [cycle=650 time=2.609127e+04 dt=4.069272e+01]: CLEAN WARNING cycle 647 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 11)
+- (00:22) PROD 1121b:
+  progress:
+   t19l64: cycle=1500 time=5.745558e+04 dt=3.853858e+01 | KE_int 8.8279323022706529e+41 L_bot/L_in 0.965 L_top/L_in 1.550 | CW 10 FATAL 0 | FLIM 18005 floorcap 121 | rst t19l64.00001.rst
+   t9l62: cycle=2200 time=2.130623e+05 dt=9.684164e+01 | KE_int 9.0670733915205738e+40 L_bot/L_in 0.994 L_top/L_in 1.010 | CW 0 FATAL 0 | FLIM 16282 floorcap 180 | rst t9l62.00005.rst
+   m35mms: cycle=6450 time=6.286403e+04 dt=5.400780e+00 | KE_int 1.8840925880677516e+39 L_bot/L_in 0.989 L_top/L_in 1.130 | CW 0 FATAL 0 | FLIM 47207 floorcap 518 | rst m35mms.00002.rst
+   bsg: cycle=8750 time=1.259473e+06 dt=1.450079e+02 | KE_int 1.1822874828623964e+42 L_bot/L_in 1.056 L_top/L_in 1.336 | CW 0 FATAL 0 | FLIM 65470 floorcap 702 | rst bsg3d.00014.rst
+   i1_bsg: cycle=9850 time=1.584595e+06 dt=1.265059e+02 | KE_int 1.1654810946933176e+42 L_bot/L_in 1.279 L_top/L_in 1.265 | CW 0 FATAL 0 | FLIM 62925 floorcap 790 | rst bsg3d.00018.rst
+   i1_m35mms: cycle=6850 time=7.469011e+04 dt=5.640069e+00 | KE_int 1.1124751466965490e+39 L_bot/L_in 0.997 L_top/L_in 1.061 | CW 0 FATAL 0 | FLIM 49252 floorcap 575 | rst m35mms.00003.rst
+   t9r: cycle=1100 time=1.026814e+05 dt=9.334654e+01 | KE_int 3.9987763411047647e+39 L_bot/L_in 1.003 L_top/L_in 1.005 | CW 0 FATAL 0 | FLIM 7674 floorcap 90 | rst t9l62.00002.rst
+   t19r: cycle=650 time=2.609127e+04 dt=4.069272e+01 | KE_int 9.5621127936964932e+39 L_bot/L_in 0.987 L_top/L_in 1.007 | CW 11 FATAL 0 | FLIM 8875 floorcap 54 | rst t19l64.00000.rst
