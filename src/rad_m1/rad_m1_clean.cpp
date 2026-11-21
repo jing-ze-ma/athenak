@@ -2736,6 +2736,7 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
   const bool eqr = icr_fmeas && x.vzero && x.feedback && !x.sbi;
 
   if (x.feedback) {
+    const bool rx = x.cub && cln_vimp;
     CLEAN_HIPX(const CleanArgs *pxb = CleanDevArgs(x, 0);)
     CleanFor<0, 3>("cln_beta", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -2754,11 +2755,12 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
       eos.ThermoAt(d, t, e, pg, chi_rho, chi_t, cv);
       const Real s = 4.0*x.h*x.c*op(m,M1_OP_P,k,j,i)*(1.0 - 0.5*b2)*arad_*t*t*t;
       x.w(m,CLW_GX,k,j,i) = (s > 0.0) ? s/(d*cv + s) : 0.0;
+      if (rx) x.w(m,CLW_JV+2,k,j,i) = d;   // (CleanStagDrag's rho: a seam ghost's own)
     });
     // (E_k's ghosts: those of its last change; BT, RE and GX in one exchange, before the
     // lateral sums, which read what an earlier fill deferred)
     CleanGhostDefer(cln_w, CLW_BT, 4);
-    CleanGhostFill(cln_w, CLW_GX, 1);
+    CleanGhostFill(cln_w, rx ? CLW_JV+2 : CLW_GX, rx ? 2 : 1);
     if (lat) CleanStagCsLateral(CLW_EK);
   }
   if (beta) return;
@@ -5114,8 +5116,9 @@ void RadiationM1::CleanStagDrag(const bool first, const bool vel, const bool lat
       const Real q = !lag ? fc(m,CLF_G,k,j,i) :
                      (vel ? fq : CleanFaceFlux(xh, CLW_EK, dir, m, k, j, i, true)) +
                      x.h*x.c*x.c*s;
-      // (cubed sphere: n.D.n, and the half cells of the owners' V as CleanMomentumChange,
-      // a seam ghost's rho the hydro's resampled one; b sets only the passes' rate)
+      // (cubed sphere: n.D.n, the half cells of the owners' V as CleanMomentumChange, and
+      // the radiation exchange's rho, CLW_JV + 2: a seam ghost is the neighbour's own
+      // cell, not the hydro's resample, so that both sides build one b)
       auto vo = [&](const int kk, const int jj, const int ii) {
         return x.cub ? x.g(m,CLG_F+3,kk,jj,ii) : 1.0;
       };
@@ -5126,7 +5129,7 @@ void RadiationM1::CleanStagDrag(const bool first, const bool vel, const bool lat
         const Real d = x.cub ? CleanStagDnn(x, dir, m, k, j, i, kk, jj, ii)
                              : x.cs(m,CLN_D11+dir,kk,jj,ii);
         return (1.0 + d)*fmax(x.w(m,CLW_EK,kk,jj,ii), 0.0)*0.5*(vl + vr)/
-               (vo(kk, jj, ii)*uh(m,IDN,kk,jj,ii));
+               (vo(kk, jj, ii)*(x.cub ? x.w(m,CLW_JV+2,kk,jj,ii) : uh(m,IDN,kk,jj,ii)));
       };
       const Real bt = off ? 0.0 : (1.0 - fc(m,CLF_TH,k,j,i))*(wl*ce(k-dk, j-dj, i-di) +
                       (1.0 - wl)*ce(k, j, i))/(x.c*x.c);
