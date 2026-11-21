@@ -1,0 +1,8 @@
+# PCSYM (orion 2026-11-21, NOTE ff). B_pcsym = caltech-runs/pcsym 7c4f624f5 (= v20.3 d4b08dae4 + key rad_m1/clean_pc_sweep = rb (default, bitwise) | sym).
+# FREE NODES ONLY, lowest priority (after the H200SPD arms); production preempts. Restarts rsg.01295 / hegiant.00139, NR=4, 1 node, V203L recipe keys.
+# Report per arm: steady s/cycle, main loop time, total CLEAN iterations (sum of '(sum N)' in CLEAN cycle lines), CW, hst md5.
+# rb must be hst-bitwise to V203L_* (B_v203) on common rows; sym differs at solver tolerance.
+MODE=speed PCS_hg_rb   B_pcsym HG  100 hg_v203.keys time/dt_retry_host=m1 rad_m1/clean_pc_sweep=rb
+MODE=speed PCS_hg_sym  B_pcsym HG  100 hg_v203.keys time/dt_retry_host=m1 rad_m1/clean_pc_sweep=sym
+MODE=speed PCS_rsg_rb  B_pcsym RSG 100 rsg_v203.keys rad_m1/clean_pc_sweep=rb
+MODE=speed PCS_rsg_sym B_pcsym RSG 100 rsg_v203.keys rad_m1/clean_pc_sweep=sym
