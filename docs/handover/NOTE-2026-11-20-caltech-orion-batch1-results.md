@@ -623,3 +623,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   FRESHGO START SQ_gl 16:52:10 on hpc-sm-02-03
 - (16:52) Got ev + eu: all five F_* were already running (16:49) with MB_bsg62m (done 16:50). SQ_lq started 16:51:52 (02-04, B_v203, RT=0, KEEPBIN, 60 cyc); SQ_gl on the next free node; seam.py runs in a holder step after each, seam.txt committed, bins deleted. The v20.4 gate is held until SQ_gl has started, then ST/STD after the gate.
 - SQ_lq (hpc-sm-02-04): a rc=0 wall=81 | a cycles 0 - 60 dt first 165.455 last 167.914 s/cycle steady 0.726 first elapsed 14.7 a 'FATAL' 0  a 'CLEAN WARNING' 0   | GPU mem peak MiB 23517 | CW 0 FATAL 0
+- SQ_gl (hpc-sm-02-03): a rc=0 wall=87 | a cycles 0 - 60 dt first 165.455 last 167.914 s/cycle steady 0.704 first elapsed 14.9 a 'FATAL' 0  a 'CLEAN WARNING' 0   | GPU mem peak MiB 23893 | CW 0 FATAL 0
