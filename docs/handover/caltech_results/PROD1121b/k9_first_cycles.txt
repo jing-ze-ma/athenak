@@ -1,0 +1,32 @@
+# first cycles on the new settings, 11-21 14:38
+== t9l62 log.2 (start=-r /resnick/groups/carnegie_poc/jingze/prod_fresh_1121b/t9l62/rst/t9l62.00031.rst cfl_number=0.9 ) CW=0 FATAL=0 DT_RETRY=0 COLLAPSE=0
+cycle=28250 time=1.348493e+06 dt=2.084718e+02
+cycle=28300 time=1.358603e+06 dt=1.717352e+02
+cycle=28350 time=1.366123e+06 dt=1.600475e+02
+cycle=28400 time=1.374797e+06 dt=1.751443e+02
+cycle=28450 time=1.383533e+06 dt=1.663016e+02
+cycle=28500 time=1.390825e+06 dt=1.156709e+02
+== t9r log.2 (start=-r /resnick/groups/carnegie_poc/jingze/prod_fresh_1121b/t9r/rst/t9l62.00033.rst cfl_number=0.6 ) CW=0 FATAL=0 DT_RETRY=0 COLLAPSE=0
+== m35mms log.1 (start=-r /resnick/groups/carnegie_poc/jingze/prod_fresh_1121b/m35mms/rst/m35mms.00015.rst cfl_number=0.9 ) CW=0 FATAL=0 DT_RETRY=0 COLLAPSE=1
+cycle=42450 time=3.241219e+05 dt=1.649871e+01
+cycle=42500 time=3.250393e+05 dt=2.082095e+01
+cycle=42550 time=3.259075e+05 dt=2.183047e+01
+cycle=42600 time=3.268691e+05 dt=2.078112e+01
+cycle=42650 time=3.277752e+05 dt=1.653800e+01
+cycle=42700 time=3.286749e+05 dt=9.796537e+00
+cycle=42750 time=3.296175e+05 dt=2.086218e+01
+cycle=42800 time=3.305159e+05 dt=1.419094e+01
+cycle=42850 time=3.314226e+05 dt=1.765079e+01
+cycle=42900 time=3.322314e+05 dt=1.828546e+01
+== i1_m35mms_f1k log.1 (start=-r /resnick/groups/carnegie_poc/jingze/prod_fresh_1121b/i1_m35mms_f1k/rst/m35mms.00014.rst cfl_number=0.9 ) CW=0 FATAL=0 DT_RETRY=0 COLLAPSE=0
+cycle=38650 time=3.031312e+05 dt=2.378336e+01
+cycle=38700 time=3.041959e+05 dt=2.122895e+01
+cycle=38750 time=3.051496e+05 dt=1.990600e+01
+cycle=38800 time=3.060965e+05 dt=1.822535e+01
+cycle=38850 time=3.070169e+05 dt=2.097941e+01
+cycle=38900 time=3.080520e+05 dt=2.102567e+01
+cycle=38950 time=3.089593e+05 dt=1.850250e+01
+cycle=39000 time=3.098563e+05 dt=2.055068e+01
+cycle=39050 time=3.107261e+05 dt=1.984455e+01
+cycle=39100 time=3.116144e+05 dt=1.708403e+01
+cycle=39150 time=3.124074e+05 dt=1.412377e+01
