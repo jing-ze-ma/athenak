@@ -2106,11 +2106,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rebuild_every")) {
       vgd_rbe = std::max(0, pin->GetInteger("rad_m1","vet_gd_rebuild_every"));
     }
-    // vet_gd_halo_cache_mb (accel-1009; read only when named; 0 = off = bitwise path):
-    // per-rank MB budget of the compact-halo mask cache (rad_m1_vetgd.cpp VetGdHcGet)
-    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_cache_mb")) {
-      vgd_hc_mb = std::max(0, pin->GetInteger("rad_m1","vet_gd_halo_cache_mb"));
-    }
     // vet_gd_halo_list_mb (vgdspeed-1009; read only when named; default 4096; 0 = off):
     // per-rank MB budget of the compact-halo lists (rad_m1_vetgd.cpp VetGdHlBuild);
     // bitwise either way

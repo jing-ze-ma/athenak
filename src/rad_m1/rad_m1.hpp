@@ -4067,20 +4067,6 @@ class RadiationM1 {
   int vgd_htag[2][5] = {{-1, -1, -1, -1, -1}, {-1, -1, -1, -1, -1} };
   int vgd_hlast = 1, vgd_hsweep = 0;
   // vet_gd_halo_cache_mb (accel-1009; default 0 = off): byte budget (MB per rank) of a
-  // cache of the compact-halo masks per (pass, shell), valid while the direction set,
-  // the cut and the depth are unchanged (one prep per shell per rotation window instead
-  // of one per shell per sweep); bitwise the same masks
-  struct VgdHcEntry {
-    DvceArray1D<int> fs, fr;
-    Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> pb;
-    Real alpha = -2.0;
-    int scut = -1, ws = -1;
-  };
-  int vgd_hc_mb = 0;
-  std::vector<VgdHcEntry> vgd_hce;
-  size_t vgd_hc_bytes = 0;
-  Real vgd_hc_nmade = 0.0;
-  int VetGdHcGet(const int i, const bool inw, const int ws);
   int vgd_hnext[3] = {-1, 0, 0};
   bool vgd_hpipe = true;
   void VetGdHcPrep(const int slot, const int i0, const bool inw0, const int ws);

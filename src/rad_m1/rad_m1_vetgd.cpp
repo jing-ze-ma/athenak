@@ -3586,49 +3586,6 @@ void RadiationM1::VetGdHcPrep(const int slot, const int i0, const bool inw0,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn int RadiationM1::VetGdHcGet
-//! \brief vet_gd_halo_cache_mb (accel-1009): the cache entry of the compact-halo masks of
-//! shell i of pass inw at band depth ws, (re)made by VetGdHcPrep when the direction set
-//! (vgd_alpha), the cut or the depth changed; -1 when the byte budget is used up (the
-//! caller then preps a pipeline slot as before).  The masks are the same numbers either
-//! way, so the sweep is bitwise unchanged.
-
-int RadiationM1::VetGdHcGet(const int i, const bool inw, const int ws) {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int n1 = indcs.nx1 + 2*indcs.ng;
-  if (vgd_hce.empty()) {vgd_hce.resize(2*n1);}
-  const int e = (inw ? 0 : n1) + i;
-  if (e < 0 || e >= static_cast<int>(vgd_hce.size())) {return -1;}
-  VgdHcEntry &c = vgd_hce[e];
-  if (c.alpha == vgd_alpha && c.scut == vgd_scut && c.ws == ws) {return e;}
-  if (c.fs.extent(0) == 0) {
-    const size_t need = (vgd_hfs[0].extent(0) + vgd_hfr[0].extent(0) +
-                         vgd_hpb[0].extent(0))*sizeof(int);
-    if (vgd_hc_bytes + need > (static_cast<size_t>(vgd_hc_mb) << 20)) {return -1;}
-    Kokkos::realloc(c.fs, vgd_hfs[0].extent(0));
-    Kokkos::realloc(c.fr, vgd_hfr[0].extent(0));
-    c.pb = Kokkos::View<int*, Kokkos::SharedHostPinnedSpace>("m1_vgd_hc_pb",
-                                                             vgd_hpb[0].extent(0));
-    vgd_hc_bytes += need;
-  }
-  // prep into slot 0's place with the entry's arrays swapped in, then swap back (slot
-  // 0's own arrays and tag are then stale: the tag is cleared)
-  std::swap(vgd_hfs[0], c.fs);
-  std::swap(vgd_hfr[0], c.fr);
-  std::swap(vgd_hpb[0], c.pb);
-  VetGdHcPrep(0, i, inw, ws);
-  std::swap(vgd_hfs[0], c.fs);
-  std::swap(vgd_hfr[0], c.fr);
-  std::swap(vgd_hpb[0], c.pb);
-  vgd_htag[0][0] = -1;
-  c.alpha = vgd_alpha;
-  c.scut = vgd_scut;
-  c.ws = ws;
-  vgd_hc_nmade += 1.0;
-  return e;
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn bool RadiationM1::VetGdHlBuild
 //! \brief vet_gd_halo_list_mb (vgdspeed-1009): entry e (pass inw, shell i, depth ws)
 //! made from the compact masks fs / fr (flag -> position after the exclusive scans) and
@@ -5762,22 +5719,17 @@ bool RadiationM1::VetGdHaloCompact(V &a, const int nv, const int i0, const int w
            vgd_htag[sl][4] == vgd_hsweep;
   };
   int slot = -1;
-  // vet_gd_halo_cache_mb > 0: the masks of this (pass, shell) from the cache (made at
-  // the first sweep of the direction set, cut and depth), no per-shell prep
-  const int ce = (vgd_hc_mb > 0) ? VetGdHcGet(i, inw, ws) : -1;
-  if (ce < 0) {
-    if (vgd_hpipe) {
-      if (tagged(0)) {slot = 0;}
-      if (tagged(1)) {slot = 1;}
-    }
-    if (slot < 0) {
-      slot = vgd_hpipe ? (1 - vgd_hlast) : 0;
-      VetGdHcPrep(slot, i, inw, ws);
-    }
-    vgd_hlast = slot;
+  if (vgd_hpipe) {
+    if (tagged(0)) {slot = 0;}
+    if (tagged(1)) {slot = 1;}
   }
-  auto fs_ = (ce >= 0) ? vgd_hce[ce].fs : vgd_hfs[slot];
-  auto fr_ = (ce >= 0) ? vgd_hce[ce].fr : vgd_hfr[slot];
+  if (slot < 0) {
+    slot = vgd_hpipe ? (1 - vgd_hlast) : 0;
+    VetGdHcPrep(slot, i, inw, ws);
+  }
+  vgd_hlast = slot;
+  auto fs_ = vgd_hfs[slot];
+  auto fr_ = vgd_hfr[slot];
   // (3) compact pack
   par_for("m1_vgd_hc_pack", vgd_cur, 0, nmb1, 0, 7, 0, mx - 1,
   KOKKOS_LAMBDA(const int m, const int o, const int t) {
@@ -5801,7 +5753,7 @@ bool RadiationM1::VetGdHaloCompact(V &a, const int nv, const int i0, const int w
   vgd_cur.fence();
   std::vector<int> sp(np + 1), rp_(np + 1);
   {
-    auto pbh = (ce >= 0) ? vgd_hce[ce].pb : vgd_hpb[slot];
+    auto pbh = vgd_hpb[slot];
     for (int p = 0; p <= np; ++p) {
       sp[p] = pbh(p);
       rp_[p] = pbh(np + 1 + p);
@@ -5864,15 +5816,7 @@ bool RadiationM1::VetGdHaloCompact(V &a, const int nv, const int i0, const int w
   vgd_tpost += tq.seconds();
   // vet_gd_halo_pipe: the next shell's mask on the device while the messages travel
   if (vgd_hpipe && vgd_hnext[0] >= 0) {
-    // (with the cache: the next shell's entry, made only when it is not valid)
-    if (vgd_hc_mb > 0 &&
-        VetGdHcGet(vgd_hnext[0], vgd_hnext[1] != 0, vgd_hnext[2]) >= 0) {
-    } else if (ce >= 0) {
-      VetGdHcPrep(1 - vgd_hlast, vgd_hnext[0], vgd_hnext[1] != 0, vgd_hnext[2]);
-      vgd_hlast = 1 - vgd_hlast;
-    } else {
-      VetGdHcPrep(1 - slot, vgd_hnext[0], vgd_hnext[1] != 0, vgd_hnext[2]);
-    }
+    VetGdHcPrep(1 - slot, vgd_hnext[0], vgd_hnext[1] != 0, vgd_hnext[2]);
   }
   std::vector<MPI_Status> stat(req.size());
   MPI_Waitall(static_cast<int>(req.size()), req.data(), stat.data());
@@ -9508,15 +9452,14 @@ void RadiationM1::DtRetryAfterRestore() {
     vgd_tex.fence();
     vgd_tab_state = 0;
     vgd_tabh.alpha = -9.0;
-    // fin51-r-fix: the halo caches of the sweep (compact masks vgd_hce, lists vgd_hle,
+    // fin51-r-fix: the halo caches of the sweep (lists vgd_hle,
     // exact lists vgd_hxe, the pipelined mask slots vgd_htag, the overlap groups) are
     // records whose KEY (direction set, cut, depth, build id, sweep) is a checkpointed
     // value while their arrays are remade IN PLACE (capacity kept) and are not: a failed
     // attempt that remade a record for another cut (vlat_icut moves between the builds
     // of a cycle) left the restored key naming the other cut's lists.  Every record is
-    // dropped here; the next sweep remakes the ones it needs (VetGdHxBatch, VetGdHcGet,
+    // dropped here; the next sweep remakes the ones it needs (VetGdHxBatch,
     // VetGdHlBuild: the same lists from the same masks, so the same numbers).
-    for (auto &c : vgd_hce) {c.alpha = -9.0; c.scut = -9; c.ws = -9;}
     for (auto &x : vgd_hle) {x.gen = -1; x.alpha = -9.0; x.nofit = false;}
     for (auto &x : vgd_hxe) {x.gen = -1; x.alpha = -9.0; x.nofit = false;}
     for (auto &x : vgd_hxe_alt) {x.gen = -1; x.alpha = -9.0; x.nofit = false;}
