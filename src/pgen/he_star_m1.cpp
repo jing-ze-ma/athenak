@@ -164,7 +164,8 @@ Real hs_drv_d0_ = 1.0, hs_drv_e0_ = 1.0;
 // problem/he_sponge_dmax (default 0 = off): the sponge also acts, at its full rate, on
 // every cell with rho < he_sponge_dmax (the floor gas above the photosphere, which can
 // not be hydrostatic and falls freely)
-// problem/he_sponge_form (read only when named): exp (default) = u0 *= exp(-bdt rate w)
+// problem/he_sponge_form (default lawson on a fresh start, USER 11-21, recorded; a restart
+// file without the key keeps exp, NOTE): exp = u0 *= exp(-bdt rate w)
 // after each RK stage (1st order in time); lawson = the integrating-factor form of the
 // SSP-RK stages (exact for the decay, 2nd order, weights >= 0): the stage's u^n part
 // decays over c_s dt, the rest over (c_s - c_{s-1}) dt; w and the rho < dmax flag from
@@ -252,7 +253,9 @@ Real hs_ad_tau_ = 1500.0, hs_ad_taper_ = 0.01, hs_ad_tl_ = 0.0;
 Real hs_ad_dout_ = 0.0, hs_ad_tout_ = 0.0, hs_lsub_ = 0.0;
 int hs_ad_cyc_ = -1;
 DvceArray1D<Real> hs_fsub_;
-// problem/mlt_src_time (read only when named): start (default) = the ramp w and the
+// problem/mlt_src_time (default stage on a fresh start, USER 11-21, recorded; start on a
+// hesdirk2 run with another tableau, and a restart file without the key keeps start,
+// NOTE): start = the ramp w and the
 // adaptive esrc at the step start (1st order in time); stage = 2nd order: esrc at the
 // time of the implicit stages, t + dt (hesdirk2: c2 = c3 = 1, and the FSAL slope K1
 // carries this step's esrc into the next step's weight 1/2: the trapezoid of esrc over
@@ -337,6 +340,15 @@ Real HsLinhaoU(const std::uint64_t idx, const std::uint64_t seed) {
             << "he_star_m1: " << msg << std::endl;
   // (_Exit: no static destructors behind live Kokkos views, as VgdFatalAt)
   std::_Exit(EXIT_FAILURE);
+}
+
+//! a restart file without problem/<key>: the old default v applies (NOTE)
+void HsOldDefault(ParameterInput *pin, const char *key, const char *v) {
+  if (global_variable::restart_run && !pin->DoesParameterExist("problem", key) &&
+      global_variable::my_rank == 0) {
+    std::cout << "he_star_m1: NOTE problem/" << key << " = " << v << " (a restart file "
+              << "without the key: the old default)" << std::endl;
+  }
 }
 
 //! the merged opacity table format of box_convection.cpp's ReadOpacityTable (comment
@@ -2677,16 +2689,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     hs_ad_ = (mc == "adaptive" || mc == "pressure");
     hs_adp_ = (mc == "pressure");
-    if (pin->DoesParameterExist("problem","mlt_src_time")) {
-      const std::string tc = pin->GetString("problem","mlt_src_time");
-      if (tc != "start" && tc != "stage") {
-        HsFatal("problem/mlt_src_time must be start|stage", __LINE__);
-      }
-      hs_mtc_ = (tc == "stage");
-      if (hs_mtc_ && pm1->time_scheme == radm1::M1_TIME_HESDIRK2 && pm1->t2_tab != 0) {
-        HsFatal("problem/mlt_src_time = stage needs the hesdirk2 tableau (stage times "
-                "t + dt)", __LINE__);
-      }
+    const bool tab2 = pm1->time_scheme == radm1::M1_TIME_HESDIRK2 && pm1->t2_tab != 0;
+    HsOldDefault(pin, "mlt_src_time", "start");
+    const std::string tc = pin->GetOrAddString("problem","mlt_src_time",
+        (!global_variable::restart_run && !tab2) ? "stage" : "start");
+    if (tc != "start" && tc != "stage") {
+      HsFatal("problem/mlt_src_time must be start|stage", __LINE__);
+    }
+    hs_mtc_ = (tc == "stage");
+    if (hs_mtc_ && tab2) {
+      HsFatal("problem/mlt_src_time = stage needs the hesdirk2 tableau (stage times "
+              "t + dt)", __LINE__);
     }
   }
   // problem/hs_ad_dead_skip (default true; acts only under mesh/layout_invariant)
@@ -2931,13 +2944,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (pin->DoesParameterExist("problem","he_sponge_dmax")) {
     hs_sp_dmax_ = pin->GetReal("problem","he_sponge_dmax");
   }
-  if (pin->DoesParameterExist("problem","he_sponge_form")) {
-    const std::string sf = pin->GetString("problem","he_sponge_form");
-    if (sf != "exp" && sf != "lawson") {
-      HsFatal("problem/he_sponge_form must be exp|lawson", __LINE__);
-    }
-    hs_sp_law_ = (sf == "lawson");
+  {HsOldDefault(pin, "he_sponge_form", "exp");
+  const std::string sf = pin->GetOrAddString("problem","he_sponge_form",
+                                             global_variable::restart_run ? "exp" : "lawson");
+  if (sf != "exp" && sf != "lawson") {
+    HsFatal("problem/he_sponge_form must be exp|lawson", __LINE__);
   }
+  hs_sp_law_ = (sf == "lawson");}
   hs_rtop_ = rtop;
   if (pin->DoesParameterExist("problem","he_clump")) {
     hs_cl_on_ = pin->GetBoolean("problem","he_clump");
