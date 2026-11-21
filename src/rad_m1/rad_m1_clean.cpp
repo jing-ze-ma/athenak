@@ -5438,7 +5438,10 @@ void RadiationM1::CleanWriteBack() {
   cln_kpb = false;
   // (implicit_pos_floor_cons, the old production's column pass: the uncovered raise of a
   // cell from the radiation above e_floor of the nearest cells of its radial column, i -+
-  // d, the pair split by their energy above the floor; their stage slopes with it)
+  // d, the pair split by their energy above the floor; their stage slopes with it.
+  // clean_stag_colflux: the stored Phi carries each move as x1 face fluxes from q to i,
+  // so the slopes stay -div Phi + their cell pairs and time2_face_fct limits the moves)
+  const bool pfk = pfo && cln_colf;
   if (pfc) {
     par_for("cln_pos_flr_cons", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
@@ -5463,6 +5466,10 @@ void RadiationM1::CleanWriteBack() {
             const Real de = (tk*a/at)/vol(q);
             u0_(m,M1_E,k,j,q) = fmax(u0_(m,M1_E,k,j,q) - de, efl);
             if (slopes) kk(m,M1_T2_E,k,j,q) -= de/h;
+            for (int f = (sd ? i + 1 : qa + 1); pfk && f <= (sd ? qb : i); ++f) {
+              pf(m,0,k,j,f) += (sd ? -1.0 : 1.0)*de*vol(q)/
+                               (h*CleanDivW(x, 0, m, k, j, f, 0)*vol(f));
+            }
           }
           def -= tk;
           mv += tk;
@@ -5492,6 +5499,10 @@ void RadiationM1::CleanWriteBack() {
             const Real de = (tk*a/at)/vol(q);
             u0_(m,M1_E,k,j,q) = fmax(u0_(m,M1_E,k,j,q) - de, efl);
             if (slopes) kk(m,M1_T2_E,k,j,q) -= de/h;
+            for (int f = (sd ? i + 1 : qa + 1); pfk && f <= (sd ? qb : i); ++f) {
+              pf(m,0,k,j,f) += (sd ? -1.0 : 1.0)*de*vol(q)/
+                               (h*CleanDivW(x, 0, m, k, j, f, 0)*vol(f));
+            }
           }
           const Real dg = tk/vol(i);
           uh(m,IEN,k,j,i) += dg;

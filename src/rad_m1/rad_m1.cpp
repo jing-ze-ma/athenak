@@ -437,6 +437,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         cln_kpos = (cln_kmode > 0);
       }
       cln_kreal = stag("clean_stag_kreal", false);
+      cln_colf = stag("clean_stag_colflux", false);
       // clean_cs_lz_abs = 2 (the cubed sphere, the only form): the gas phi momentum is
       // the faces' absorption as its r and theta (CleanStagMomentum), and the L_z it does
       // not take is booked as the radiation's (CleanLzBook), so that the total stays
