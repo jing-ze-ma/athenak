@@ -2659,7 +2659,27 @@ bool RadiationM1::Time2RstAccept(const int nfile, const int ver) {
   t2_rstv = clean ? ver : 5;
   const int nb = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0);
   t2_nfv = (clean && (cln_cssc || cln_scmem)) ? nfile - nb : 0;
-  return (nfile == nb + t2_nfv) && (t2_nfv >= 0);
+  // rotwb2-1121: on the cubed sphere (version 6) the face half ranges are the last 0 or
+  // 12 channels (cln_fh).  A surplus beyond them is a file written with clean_rot_ring:
+  // read with the ring off its ring channels are skipped (they were read into cln_fh
+  // beyond its 12 channels), anything else is refused
+  t2_rskip = 0;
+  if (clean && cln_cssc && ver >= 6 && t2_nfv > 12) {
+    t2_rskip = cln_ring ? -1 : CleanRingRstN() + 1;
+    const int nh = t2_nfv - t2_rskip;
+    if (t2_rskip < 0 || (nh != 0 && nh != 12)) {
+      std::cout << "### FATAL ERROR <rad_m1> restart: the clean block has " << nfile
+                << " channels, not this run's layout (" << nb << " + 0 or 12) nor it "
+                << "with the ring's offsets" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    t2_nfv = nh;
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> NOTE: restart with clean_rot_ring off: the file's ring "
+                << "offsets (" << t2_rskip << " channels) are not read" << std::endl;
+    }
+  }
+  return (nfile == nb + t2_nfv + t2_rskip) && (t2_nfv >= 0);
 }
 int RadiationM1::Time2RstNch() {
   t2_rstv = 7;   // (the writer: version 7, after a restart from an older file too)
@@ -2844,7 +2864,7 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   };
   // the last t2_nfv channels: the sc rays' intensities (their number is not
   // known before the first sweep, Time2RstAccept)
-  const int nfv0 = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0);
+  const int nfv0 = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0) + t2_rskip;
   if (clean && cln_cssc && t2_rstv >= 6 && ch >= nfv0) {   // (cln_fh)
     if (cln_fh.extent_int(0) != nmb) {
       Kokkos::realloc(cln_fh, nmb, 12, w.extent_int(1), w.extent_int(2), w.extent_int(3));
@@ -2938,6 +2958,10 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
       return;
     }
     ch -= 2*nq + 1;
+  }
+  if (t2_rskip > 0) {   // (rotwb2-1121: the file's ring with the ring off, not read)
+    if (ch < t2_rskip) return;
+    ch -= t2_rskip;
   }
   if (clean && cln_ring && t2_rstv >= 4) {   // (version 4, CleanRingRstCopy)
     if (ch < CleanRingRstN()) {

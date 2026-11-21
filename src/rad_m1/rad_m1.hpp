@@ -2035,6 +2035,7 @@ class RadiationM1 {
   bool Time2RstAccept(const int nfile, const int ver);   // a file's channels fit (sets
                                 // t2_nfv, t2_rstd3)
   int t2_nfv = 0;               // conservative-ray intensity channels of the file
+  int t2_rskip = 0;             // a file's clean_rot_ring channels read with the ring off
   bool t2_rstd3 = false;        // a version-1 file: the fkin block is d only (no K1_d)
   int t2_rstv = 5;              // the clean file's version: <= 3 zero predictor / extrap2
                                 // channels and the ring in CLN_N ghosted slabs per
