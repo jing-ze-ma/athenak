@@ -637,12 +637,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_stag_lat_sums (default off): spherical polar / Cartesian, the lateral stress
-    // of the faces from the cells' sums Y (CleanStagCsLateral), the cubed sphere's form
-    // (spherical polar phi faces: the torque form); with clean_stag_xdonor, whose cross
-    // flux reads them, and no clean_stag_sbimp (the operator keeps the central rows)
-    cln_ysum = stag("clean_stag_lat_sums", false) && pmy_pack->pmesh->multi_d &&
-               !pmy_pack->pmesh->use_cubed_sphere;
+    // clean_stag_lat_sums: spherical polar / Cartesian, the lateral stress of the faces
+    // from the cells' sums Y (CleanStagCsLateral), the cubed sphere's form (spherical
+    // polar phi faces: the torque form); with clean_stag_xdonor, whose cross flux reads
+    // them, and no clean_stag_sbimp (the operator keeps the central rows).  Default on
+    // for a fresh run with those, USER 11-21 uniform settings, recorded; a restart file
+    // without the key keeps the 4-cell central differences (echoed)
+    old("clean_stag_lat_sums", "false");
+    cln_ysum = pin->GetOrAddBoolean("rad_m1","clean_stag_lat_sums",
+                                    nw && cln_xd && !cln_sbimp) &&
+               pmy_pack->pmesh->multi_d && !pmy_pack->pmesh->use_cubed_sphere;
     if (cln_ysum && (!cln_xd || cln_sbimp)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_m1>/clean_stag_lat_sums: with clean_stag_xdonor = "

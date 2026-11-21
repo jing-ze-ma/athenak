@@ -3,7 +3,7 @@
 Branch clean-stag2-lean-v207 (v20.7 + lean). Every key the source reads, its default for a fresh run, the comment at
 the read and which decks name it. Restart files keep the values they recorded. Where a file lacks a key, the old
 default applies, so restarts are unchanged (clean_face_opac / clean_stag_opac_update / clean_gas_newton_switch / clean_stag_fs_line /
-clean_stag_vimp_cs / clean_stag_opac_drag / floorcap_mesh_vol: echoed in the log).
+clean_stag_vimp_cs / clean_stag_opac_drag / floorcap_mesh_vol / clean_stag_lat_sums: echoed in the log).
 
 ## 1. Fresh-run defaults = the production scheme (lean defaults flip)
 
@@ -31,6 +31,7 @@ A deck that leaves them out runs the production scheme.
 | clean_stag_opac_drag | false | **true** (recorded) | USER 11-21 (UNIFY S9): a refresh rebuilds the drag share b and Q (CleanStagDrag); acts where clean_stag_opac_update and clean_stag_vimp run. t9h oh3: +1.3 % s/cycle, change ~1e-9 L1, 100x below the dt error, order unchanged |
 | floorcap_mesh_vol | false | **true** with scheme = clean (recorded) | USER 11-21 (UNIFY S10c): the floorcap counters by the mesh volume, abs(dp) and L_z on every mesh (diagnostic; state bitwise) |
 | clean_lz_ledger, clean_lz_ledger_k1 | clean_cs_lz_ledger / clean_cs_lz_k1 (cs), clean_sp_lz_bnd / _k1 (3-D sp) | **one name on every mesh** | UNIFY S10a (M1LzKey): a file or deck with an old spelling is read and written under it (old restarts bitwise) |
+| clean_stag_lat_sums | false (central 4-cell lateral stress on sp / Cartesian) | **true** (recorded) with clean_stag_xdonor and no clean_stag_sbimp | USER 11-21 uniform settings (S8): the cubed sphere's lateral sums Y on sp / Cartesian (sp phi faces keep the torque form, L_z). Physics unchanged: bench WB rhse_sp2 / beams cb, cbg, ws66, shd = , deck D orders identical, t9h 300 cyc hst 4e-6..9e-4; cost +0.9 % A100 t9h, +3-6 % CPU deck D; a restart file without the key keeps false (echoed) |
 
 These were already the fresh defaults: scheme = clean, clean_layout = staggered, clean_rays = sc, clean_xt_exact =
 cons, clean_stag_xdonor = lag, clean_stag_xsrc = true, clean_stag_mg_color = mirror, clean_conv_kappa = 1.0,

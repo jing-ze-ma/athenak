@@ -1,5 +1,7 @@
 # LATEST_KEYS (INTEG11, 2026-11-21: v20.7): production keys for HG / RSG / R136 runs on clean-cc-stag2-latest
 
+**Fresh-run default after v20.7 (S8, USER 11-21):** `clean_stag_lat_sums` = true (recorded) on sp / Cartesian; production restarts without the key keep false (bitwise). See KEY_TABLE section 1.
+
 **Code:** LATEST v20.7 candidate = **5ba73ecab** (INTEG11; awaiting the USER's push decision; fast-forward from v20.6 989dfd32b, which carries v20.6 and is itself not pushed; origin is v20.5 1ae0e57c0). v20.7 = v20.6 + two gated pieces; no default changes (key off = bitwise to v20.6; production restarts unchanged):
 - **UNIFY flips (branch clean-stag2-unify-s3910, USER 11-21 "uniform settings on different geometries", for INTEG8):** fresh-run defaults, recorded; a restart file without a key keeps the old value (echoed):
   - `clean_stag_fs_line` = pcr on every mesh (cs with fschur; was thomas on cs: clean_stag_fs_pcr_cs). cs round-off; A100 hgs/rsgs_tf 2-3 % faster.
