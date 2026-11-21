@@ -252,6 +252,16 @@ Real hs_ad_tau_ = 1500.0, hs_ad_taper_ = 0.01, hs_ad_tl_ = 0.0;
 Real hs_ad_dout_ = 0.0, hs_ad_tout_ = 0.0, hs_lsub_ = 0.0;
 int hs_ad_cyc_ = -1;
 DvceArray1D<Real> hs_fsub_;
+// problem/mlt_src_time (read only when named): start (default) = the ramp w and the
+// adaptive esrc at the step start (1st order in time); stage = 2nd order: esrc at the
+// time of the implicit stages, t + dt (hesdirk2: c2 = c3 = 1, and the FSAL slope K1
+// carries this step's esrc into the next step's weight 1/2: the trapezoid of esrc over
+// the step), w(t + dt); adaptive: F_sub^n = F^{n-1} + a(t^n - t^{n-1}) ((tgt^{n-1} +
+// tgt^n)/2 - F^{n-1}) (exponential trapezoid; hs_tgp_ = tgt^{n-1}, restart state behind
+// F_sub, hdr[1] = 1) and esrc from F^{n+1} = F^n + a(dt) (tgt^n - F^n) (hs_fsrc_)
+bool hs_mtc_ = false;
+int hs_tgp_ok_ = 0;
+DvceArray1D<Real> hs_tgp_, hs_fsrc_;
 DvceArray2D<Real> hs_shs_;
 std::vector<Real> hs_tap_, hs_r2o_;
 char hs_ad_file_[1024] = {0};
@@ -282,6 +292,8 @@ Real HsMltW(const Real t) {
   if (hs_mrt_ <= 0.0 || t >= hs_mrs_ + hs_mrt_) return 0.0;
   return 0.5*(1.0 + cos(M_PI*(t - hs_mrs_)/hs_mrt_));
 }
+//! the time the step's MLT source is taken at (mlt_src_time)
+Real HsMltTc(const Mesh *pm) {return hs_mtc_ ? pm->time + pm->dt : pm->time;}
 
 //! log-linear interpolation on the fine grid, clamped to its end nodes
 KOKKOS_INLINE_FUNCTION
@@ -2665,6 +2677,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     hs_ad_ = (mc == "adaptive" || mc == "pressure");
     hs_adp_ = (mc == "pressure");
+    if (pin->DoesParameterExist("problem","mlt_src_time")) {
+      const std::string tc = pin->GetString("problem","mlt_src_time");
+      if (tc != "start" && tc != "stage") {
+        HsFatal("problem/mlt_src_time must be start|stage", __LINE__);
+      }
+      hs_mtc_ = (tc == "stage");
+      if (hs_mtc_ && pm1->time_scheme == radm1::M1_TIME_HESDIRK2 && pm1->t2_tab != 0) {
+        HsFatal("problem/mlt_src_time = stage needs the hesdirk2 tableau (stage times "
+                "t + dt)", __LINE__);
+      }
+    }
   }
   // problem/hs_ad_dead_skip (default true; acts only under mesh/layout_invariant)
   hs_ad_dskip_ = true;
@@ -2688,6 +2711,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const int nfc = n1m1 + 2;
     Kokkos::realloc(hs_fsub_, nfc);
     Kokkos::deep_copy(hs_fsub_, hs_fm_);
+    if (hs_mtc_) {
+      Kokkos::realloc(hs_tgp_, nfc);
+      Kokkos::realloc(hs_fsrc_, nfc);
+    }
     Kokkos::realloc(hs_shs_, nfc, 8);
     if (hs_adp_) {
       // the IC's F_MLT/F against ln P_tot (P_gas(rho, T) + E/3 of the start-up column,
@@ -2743,19 +2770,31 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       } else {
         std::int32_t hdr[2];
         std::memcpy(&(hdr[0]), blk.data(), sizeof(hdr));
-        if (hdr[0] != nfc ||
-            blk.size() != sizeof(hdr) + sizeof(Real) + nfc*sizeof(Real)) {
+        const int ntg = (hdr[1] == 1) ? nfc : 0;   // tgt^{n-1} (mlt_src_time)
+        if (hdr[0] != nfc || (hdr[1] != 0 && hdr[1] != 1) ||
+            blk.size() != sizeof(hdr) + (nfc + 1 + ntg)*sizeof(Real)) {
           HsFatal("the restart file's adaptive MLT profile does not match this radial "
                   "grid", __LINE__);
         }
-        std::vector<Real> tmp(nfc + 1);
-        std::memcpy(tmp.data(), blk.data() + sizeof(hdr), (nfc + 1)*sizeof(Real));
+        std::vector<Real> tmp(nfc + 1 + ntg);
+        std::memcpy(tmp.data(), blk.data() + sizeof(hdr), tmp.size()*sizeof(Real));
         hs_ad_tl_ = hs_rmp ? pmy_mesh_->time : tmp[0];
         auto hf = Kokkos::create_mirror_view(hs_fsub_);
         for (int i=0; i<nfc; ++i) hf(i) = tmp[i+1];
         Kokkos::deep_copy(hs_fsub_, hf);
+        if (hs_mtc_ && ntg > 0 && !hs_rmp) {
+          auto hp = Kokkos::create_mirror_view(hs_tgp_);
+          for (int i=0; i<nfc; ++i) hp(i) = tmp[nfc+1+i];
+          Kokkos::deep_copy(hs_tgp_, hp);
+          hs_tgp_ok_ = 1;
+        }
+      }
+      if (hs_mtc_ && hs_tgp_ok_ == 0 && global_variable::my_rank == 0) {
+        std::cout << "he_star_m1: NOTE mlt_src_time = stage: no tgt^{n-1} in the restart "
+                  << "file, the first update takes tgt^n for both ends" << std::endl;
       }
     }
+    if (hs_mtc_) Kokkos::deep_copy(hs_fsrc_, hs_fsub_);
     {
       auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_fsub_);
       hs_lsub_ = 0.0;
@@ -2935,6 +2974,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   dtretry::RegisterValue("hs_ad_tout", &hs_ad_tout_);
   dtretry::RegisterValue("hs_lsub", &hs_lsub_);
   dtretry::RegisterView("hs_fsub", &hs_fsub_);
+  if (hs_mtc_ && hs_ad_) {
+    dtretry::RegisterView("hs_tgp", &hs_tgp_);
+    dtretry::RegisterValue("hs_tgp_ok", &hs_tgp_ok_);
+  }
   user_bcs_func = HeStarBC;
   user_hist_func = HeStarHist;
   // (read only when named): problem/am_hist = true takes the history to
@@ -3589,13 +3632,14 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
   // cadence kept: the update runs and writes its lines)
   if (hs_ad_ && pm->ncycle != hs_ad_cyc_) {
     hs_ad_cyc_ = pm->ncycle;
-    const bool off = (hs_mrs_ >= 0.0 && HsMltW(pm->time) == 0.0 && hs_mw_ == 0.0);
+    const bool off = (hs_mrs_ >= 0.0 && HsMltW(HsMltTc(pm)) == 0.0 && hs_mw_ == 0.0);
     const bool dout = (hs_ad_dout_ > 0.0 && pm->time >= hs_ad_tout_);
     if (!off || dout) HsAdaptiveUpdate(pm);
   }
-  // the frozen-MLT ramp: w at the step's start time (the same on every stage)
+  // the frozen-MLT ramp: w at the step's start (mlt_src_time = stage: t + dt) time,
+  // the same on every stage
   if (hs_mlt_ && hs_mrs_ >= 0.0) {
-    const Real w = HsMltW(pm->time);
+    const Real w = HsMltW(HsMltTc(pm));
     if (w != hs_mw_) HsApplyMltW(pm, w);
   }
   // he_clump (TEST): re-impose the fixed cold clump (rho, eint, v = 0)
@@ -4420,7 +4464,7 @@ void HsApplyMltW(Mesh *pm, const Real w) {
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmbp->nmb_thispack - 1;
   auto es = pmbp->pradm1->esrc;
-  auto fmd = hs_ad_ ? hs_fsub_ : hs_fm_;
+  auto fmd = hs_ad_ ? (hs_mtc_ ? hs_fsrc_ : hs_fsub_) : hs_fm_;
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &volume = pmbp->pcoord->volume;
   auto &x1v = pmbp->pcoord->x1v;
@@ -4633,6 +4677,17 @@ void HsAdaptiveUpdate(Mesh *pm) {
   const Real a = 1.0 - exp(-(t - hs_ad_tl_)/hs_ad_tau_);
   hs_ad_tl_ = t;
   auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_fsub_);
+  // mlt_src_time = stage: the trapezoid of tgt^{n-1}, tgt^n; hp keeps tgt^n
+  auto hp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_tgp_);
+  if (hs_mtc_) {
+    for (int i=0; i<nfc; ++i) {
+      const Real tn = tgt[i];
+      if (hs_tgp_ok_) tgt[i] = 0.5*(hp(i) + tn);
+      hp(i) = tn;
+    }
+    Kokkos::deep_copy(hs_tgp_, hp);
+    hs_tgp_ok_ = 1;
+  }
   hs_lsub_ = 0.0;
   for (int i=0; i<nfc; ++i) {
     Real f = hf(i) + a*(tgt[i] - hf(i));
@@ -4640,7 +4695,16 @@ void HsAdaptiveUpdate(Mesh *pm) {
     hs_lsub_ = std::max(hs_lsub_, hf(i)*hs_r2o_[i]);
   }
   Kokkos::deep_copy(hs_fsub_, hf);
-  HsApplyMltW(pm, HsMltW(t));
+  if (hs_mtc_) {   // esrc from F^{n+1}
+    const Real am = 1.0 - exp(-pm->dt/hs_ad_tau_);
+    auto hm = Kokkos::create_mirror_view(hs_fsrc_);
+    for (int i=0; i<nfc; ++i) {
+      const Real f = hf(i) + am*(hp(i) - hf(i));
+      hm(i) = (f > 0.0) ? f : 0.0;
+    }
+    Kokkos::deep_copy(hs_fsrc_, hm);
+  }
+  HsApplyMltW(pm, HsMltW(HsMltTc(pm)));
   // profiles (problem/mlt_closure_dout > 0): rank 0 appends, per output, three lines
   // "t <kind> values over the faces is..ie+1" in units of L_in: fsub (w A F_sub),
   // lrad, lconv; and one "t fmlt" line (A F_MLT) at the first output
@@ -4725,13 +4789,19 @@ std::vector<char> HsAdaptiveRstWrite() {
   }
   const int nfc = hs_fsub_.extent_int(0);
   auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_fsub_);
-  const std::int32_t hdr[2] = {static_cast<std::int32_t>(nfc), 0};
-  std::vector<Real> tmp(nfc + 1);
+  // hdr[1] = 1: tgt^{n-1} follows F_sub (mlt_src_time = stage, once it is known)
+  const int ntg = (hs_mtc_ && hs_tgp_ok_) ? nfc : 0;
+  const std::int32_t hdr[2] = {static_cast<std::int32_t>(nfc), (ntg > 0) ? 1 : 0};
+  std::vector<Real> tmp(nfc + 1 + ntg);
   tmp[0] = hs_ad_tl_;
   for (int i=0; i<nfc; ++i) tmp[i+1] = hf(i);
-  out.resize(sizeof(hdr) + (nfc + 1)*sizeof(Real));
+  if (ntg > 0) {
+    auto hp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_tgp_);
+    for (int i=0; i<nfc; ++i) tmp[nfc+1+i] = hp(i);
+  }
+  out.resize(sizeof(hdr) + tmp.size()*sizeof(Real));
   std::memcpy(out.data(), &(hdr[0]), sizeof(hdr));
-  std::memcpy(out.data() + sizeof(hdr), tmp.data(), (nfc + 1)*sizeof(Real));
+  std::memcpy(out.data() + sizeof(hdr), tmp.data(), tmp.size()*sizeof(Real));
   pic();
   dic();
   rmp();
@@ -5554,6 +5624,8 @@ void HeStarFinal(ParameterInput *pin, Mesh *pm) {
   hs_bd_ = DvceArray1D<Real>();
   hs_fm_ = DvceArray1D<Real>();
   hs_fsub_ = DvceArray1D<Real>();
+  hs_tgp_ = DvceArray1D<Real>();
+  hs_fsrc_ = DvceArray1D<Real>();
   hs_shs_ = DvceArray2D<Real>();
   hs_shp_ = DvceArray2D<Real>();
   hs_be_ = DvceArray1D<Real>();
