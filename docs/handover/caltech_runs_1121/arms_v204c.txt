@@ -13,3 +13,8 @@ CM5_rsg B_v204c RSG 30 rsg_v204.keys
 CM5_hg  B_v204c HG  30 hg_v204.keys time/dt_retry_host=m1
 CM4_rsg B_v204c RSG 30 rsg_v204.keys rad_m1/clean_conv_max=1e-4
 CM4_hg  B_v204c HG  30 hg_v204.keys time/dt_retry_host=m1 rad_m1/clean_conv_max=1e-4
+# ---- HG same-node speed recheck (NOTE fp, INTEG8): ALL FOUR ON ONE NODE, back to back, right after the remaining v204c arms; 4 cycles each; report passes/cycle (sum of CLEAN 'it') + s/cycle + CW
+V204S_hg B_v204c HG 4 hg_v204.keys time/dt_retry_host=m1
+V203S_hg B_v203  HG 4 hg_v203.keys time/dt_retry_host=m1
+V204T_hg B_v204c HG 4 hg_v204.keys time/dt_retry_host=m1 rad_m1/clean_conv_max=1e-4
+V204U_hg B_v204c HG 4 hg_v203.keys time/dt_retry_host=m1 rad_m1/clean_maxit=200 rad_m1/clean_conv_max=1e-4
