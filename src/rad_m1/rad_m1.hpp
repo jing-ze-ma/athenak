@@ -836,58 +836,6 @@ class RadiationM1 {
   // implicit in E of the first cell (a heat bath through the diffusion conductance)
   bool impl_ghx = false;
   Real impl_ghx_e = 0.0;
-  // fin4-linhao-bc (set by the problem generator, problem/he_bc_linhao; default false):
-  // L. Ma's Athena++ inner radiation BC (bsg_star.cpp Inflow_rad_X1).  Nothing is imposed
-  // at the inner x1 face (implicit_bc_x1min = flux is required but its flux is unused):
-  // the face is built by the INTERIOR face formula of the solve (m1_impl_asm sp row,
-  // m1_impl_face) between the first cell and the x1 ghosts, whose state the problem
-  // generator's BC sets in every ghost layer (E = a T_g^4 and F_r of his profile at the
-  // ghost radius, boosted to the lab frame with the ghost velocity).  The ghost side of
-  // the formula: E of ghosts 1 and 2 (u0), kappa_T of ghost 1 (opac), its v_r, the
-  // isotropic Eddington tensor of his two-zone intensities (D = 1/3, no curvature / lateral
-  // term), a = (4/3) v_r and the pointwise g0 of the ghost; lbath_g(m, q, k, j) holds them
-  // per solve (q: 0 E1, 1 E2, 2 kT1, 3 v1, 4 g0, 5 a1, 6 a2).
-  bool impl_lbath = false;
-  // the wall flux diagnostic (history L_in): lbath_f(m, 0, k, j) = the lab flux of the
-  // last solve through the wall face of column (k, j) (comoving face flux + the row's
-  // donor enthalpy flux and its plm correction).  lbath_l1 / lbath_l2: the wall
-  // luminosity (sum of area x flux, all ranks) of the solve before a hesdirk2 stage-1
-  // solve (the FSAL
-  // slope's) and of stage 1; lbath_t2 = the kind of the last solve.  Step-effective:
-  // after stage 2  L1/2 + b2 L(stage 1) + g L(stage 2) (ESDIRK weights of the energy
-  // update), else L.  lbath_l1 is restored from the pgen restart trailer (lbath_rst).
-  DvceArray4D<Real> lbath_f;
-  int lbath_t2 = 0;
-  Real lbath_l1 = 0.0, lbath_l2 = 0.0, lbath_rstl = 0.0;
-  bool lbath_rst = false;
-  // linhao-prod-1104 problem/he_bc_linhao_rad = halfrange (set by the he_star pgen; off =
-  // the interior-face formula above, bitwise): the inner face carries the DISCRETE-
-  // ORDINATES UPWIND flux of L. Ma's ghost intensities (bsg_star.cpp Inflow_rad_X1): the
-  // half-range (two-stream, isotropic per hemisphere) intensities of the ghost (E_g, F_g,
-  // comoving, fixed: lbath_heg, lbath_hfg) go out, those of the first cell (E_is, F_is)
-  // come in, F = 0.5 (c <mu>_+ (E_g - E_is) + F_g + F_is), <mu>_+ = lbath_mu1 of the
-  // quadrature (rad_m1_implicit.cpp m1_impl_asm); the advective enthalpy flux as before.
-  // vgd_lhx_ie > 0: the VET formal solutions (vet_gd, vet_col) start their outward rays at
-  // the physical inner face from his I_+ = E_g + F_g/(c <mu>_+) (E units) instead of the
-  // vet_bc_inner rule.
-  bool impl_lbath_hr = false;
-  Real lbath_mu1 = 0.5, lbath_heg = 0.0, lbath_hfg = 0.0;
-  // the dissipative (E-jump) part of the face flux is scaled by s(tau_c) as in a modified-HLLE
-  // DO flux (Jiang 2014/2021): lbath_dmode 0 upwind s = 1, 1 s = (1 - e^-x)/x with x = tau_c,
-  // 2 with x = tau_c^2/2; tau_c = lbath_alpha kappa_T dr_g (ghost-1 to first cell)
-  int lbath_dmode = 2;
-  // vstarfix-1106 problem/he_bc_linhao_fis = lagged (default, bitwise) | iter, halfrange only.
-  // F_is of the wall face F = 0.5 (F_g + F_is + ...).  lagged: F_is = the face mean of the OLD
-  // vector f0x1n, whose interior face i = is+1 carries the conservative2 shift -dA
-  // (ImplicitCs2Pass) and, on the first solve, ImplicitF0Init's -aE: harmless on an interior
-  // face (it is multiplied by theta ~ 1/(chat dt rho k), here 1e-6), but taken raw at the wall,
-  // where the whole wall-half deposit dt (rho k) F0_wall/(2c) follows it (F0_wall 19 L at the
-  // first step of vstar_n, then a growing odd-even wall-cell oscillation).  iter: F_is = the
-  // face mean of the previous Picard iterate f0x1, i.e. the physical comoving flux the first
-  // cell has (his I-_is at the current Jacobi iterate); no shift, implicit at convergence.
-  bool lbath_fis_iter = false;
-  Real lbath_alpha = 1.0;
-  Real vgd_lhx_ie = -1.0;
   // linhao-prod-1104 col1d A7/A7b (rad_m1/athena_face_diss, default false = bitwise): Athena++'s
   // implicit DO HLL tau-factor dissipation at EVERY interior x1 face, F_d = s(tau) 0.5 c <mu>_+
   // (E_L - E_R) (M1LbathDiss mode 3, tau = athena_face_taucell (kT dx_L + kT dx_R)); in the
@@ -896,9 +844,6 @@ class RadiationM1 {
   bool afd_on = false, afd_force = false;
   Real afd_tc = 4.0, afd_mu1 = 0.5063576644955016;
   Real afd_taumin = 0.0;   // athena_face_taumin: only faces with min(kT dx) of the two cells >= it
-  // per column (m, k - ks, j - js): his I_+ normalised over the CURRENT (rotated) vet_gd set,
-  // 0.5 (E_g/sum_{n.r>0} w + (F_g/c)/sum_{n.r>0} w n.r), rebuilt every sweep (VetGdSweep)
-  DvceArray3D<Real> vgd_lhx_iec;
   // littests-1011 (implicit_beam_n > 0, vet_sc only): up to 2 collimated beams entering
   // through the x1min face on an x2 patch, carried by one SC ray (2-D: the +-mu3 mirror
   // pair).  ibm_i(m,q,k,j): the entering intensity of beam ray q at column (k,j) (local,

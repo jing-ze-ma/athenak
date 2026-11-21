@@ -2098,8 +2098,8 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanBndAcc
 //! \brief the history's x1 boundary energy (rad_m1.hpp cln_lacc), production's rule of
-//! booking the flux that moved E (he_bc_linhao lbath_f, l1, l2): stage 0 starts a
-//! backward-Euler step (its solves add h A Phi, CleanWriteBack); stage 1 / 2 the old
+//! booking the flux that moved E: stage 0 starts a backward-Euler step (its solves add
+//! h A Phi, CleanWriteBack); stage 1 / 2 the old
 //! vector of a hesdirk2 stage, whose face part is w x (the energy of Y2, in the Heun
 //! start) + A (c1 t2pf1 + c2 t2pf2), each face at its donor's limiter R
 //! (time2_face_fct, as Time2FaceFct applies it); the stage solve adds g dt A Phi

@@ -1237,8 +1237,7 @@ void RadiationM1::VetGdInit() {
                   vgd_bandx || vgd_upf != 0 || (vgd_gband && !vgd_raw) || vgd_nb1 > 1 ||
                   (vgd_csg && vgd_cscomp && vgd_csxg > 1) ||
                   (!vgd_csg && (!vgd_shl_on || vgd_ovl_g > 0 || vgd_fuse_h > 1 ||
-                                vet_path != 0 || vgd_lhx_ie > 0.0 ||
-                                !vgd_gfast)))) {
+                                vet_path != 0 || !vgd_gfast)))) {
     vgd_xff = false;
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> vet_gd_rotate_xfade_fuse: not covered here ("
@@ -2424,8 +2423,7 @@ bool RadiationM1::VetGdXffOk() {
            (vgd_i_xb.d.extent(0) == vgd_i.d.extent(0));
   }
   if (!vgd_shl_on || vgd_ovl_g > 0 || vgd_fuse_h > 1 || vgd_upf != 0 || vgd_rbon ||
-      vet_path != 0 || (vgd_gband && !vgd_raw) || vgd_lhx_ie > 0.0 ||
-      !vgd_gfast) {
+      vet_path != 0 || (vgd_gband && !vgd_raw) || !vgd_gfast) {
     return false;
   }
   // (the IPC halo: one set per exchange; the raw band's merged one, VetGdGbHaloX;
@@ -6144,38 +6142,8 @@ void RadiationM1::VetGdSweep() {
   // sptests-1011: vet_gd_inner = emit at the physical inner face (icut = 0): the
   // inner boundary's own emission (black sphere of flux F_in, Marshak bath)
   // unify-sc-gd-1012 (#2): vet_bc_inner (VetBcEmit: emit, or auto at a Marshak face)
-  // linhao-prod-1104 he_bc_linhao_rad = halfrange (vgd_lhx_ie > 0, rad_m1.hpp): the
-  // outward rays at the physical inner face start from his ghost I_+
-  const bool lhx = (vgd_lhx_ie > 0.0) && (lcut == 0);
-  const bool emi = lhx || (VetBcEmit() && (lcut == 0) && ibc_x1min != M1_IBC_REFLECT);
-  const Real iemit = lhx ? vgd_lhx_ie : VetBathLo();
-  // linhao-prod-1104 (user 11-04 "mimic his inner BC with the rotating rays"): I_+ per column
-  // with the half-range sums of the CURRENT direction set about the column's radial
-  // direction, so the outward ghost moments are exactly E_g and F_g at any orientation
-  if (lhx) {
-    const int nmbq = pmy_pack->nmb_thispack, n3q = indcs.nx3, n2q = indcs.nx2;
-    if (vgd_lhx_iec.extent_int(0) != nmbq || vgd_lhx_iec.extent_int(1) != n3q ||
-        vgd_lhx_iec.extent_int(2) != n2q) {
-      Kokkos::realloc(vgd_lhx_iec, nmbq, n3q, n2q);
-    }
-    auto liec = vgd_lhx_iec;
-    auto ldir = vgd_dir;
-    auto ltg = vgd_trig;
-    const int ndq = vgd_dir.extent_int(0);
-    const Real leg = lbath_heg, lfg = lbath_hfg/c_light;
-    par_for("m1_vgd_lhx_iec", DevExeSpace(), 0, nmbq - 1, 0, n3q - 1, 0, n2q - 1,
-    KOKKOS_LAMBDA(const int m, const int k, const int j) {
-      const Real st = ltg(m,k,j,0), ct = ltg(m,k,j,1), sp = ltg(m,k,j,2), cp = ltg(m,k,j,3);
-      const Real rx = st*cp, ry = st*sp, rz = ct;
-      Real sa = 0.0, sb = 0.0;
-      for (int d = 0; d < ndq; ++d) {
-        const Real mu = ldir(d,0)*rx + ldir(d,1)*ry + ldir(d,2)*rz;
-        if (mu > 0.0) {sa += ldir(d,3); sb += ldir(d,3)*mu;}
-      }
-      liec(m,k,j) = (sa > 0.0 && sb > 0.0) ? 0.5*(leg/sa + lfg/sb) : leg;
-    });
-  }
-  auto lhxi_ = vgd_lhx_iec;
+  const bool emi = VetBcEmit() && (lcut == 0) && ibc_x1min != M1_IBC_REFLECT;
+  const Real iemit = VetBathLo();
   // vgdbath-1011: the top bath (vet_bc_bath with a MARSHAK outer x1 and a nonzero
   // implicit_ebath_x1max): the inward ray of the top shell carries it, attenuated over
   // the path from the top face, as vet_sc's downward rays (ib*ex + wu*S_u + w0*S_0)

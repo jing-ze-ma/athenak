@@ -491,8 +491,7 @@
             } else if (typ == 2 && emi) {
               // sptests-1011 vet_gd_inner = emit: the inner boundary's emission at the
               // upwind point of the inner face, carried to the cell with the face source
-              const Real ie0 = lhx ? lhxi_(m,k-ks,j-js) : iemit;   // (per column)
-              iv = VgdInnerFace(st4, fC, i, true, ie0, bfc, cx1f(m,i), cx1v(m,i),
+              iv = VgdInnerFace(st4, fC, i, true, iemit, bfc, cx1f(m,i), cx1v(m,i),
                                 cx1v(m,i+1), p2, ch0, ds, s0);
             } else if (typ == 2 && imir) {
               // a reflecting inner face (scheme = clean): the inflow at the face point is

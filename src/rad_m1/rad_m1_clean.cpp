@@ -606,9 +606,8 @@ void RadiationM1::CleanInit() {
                  "reflect | periodic, flux (x1); not efix");
     }
   }
-  if (impl_lbath || iebath_hi_col_on) {
-    CleanFatal("scheme = clean has no ghost-built inner face (problem/he_bc_linhao) and "
-               "no per-column outer bath");
+  if (iebath_hi_col_on) {
+    CleanFatal("scheme = clean has no per-column outer bath");
   }
   if ((force_ref == M1_FREF_WB_ARAD || force_ref == M1_FREF_WB_MD) && !fref_wsplit) {
     CleanFatal("<rad_m1>/force_reference = wb_arad(_md) with scheme = clean needs the "
