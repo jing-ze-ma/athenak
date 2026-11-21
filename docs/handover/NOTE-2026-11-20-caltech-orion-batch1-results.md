@@ -1681,3 +1681,5 @@ B_br gate not passed; arms not started
 - (04:28) TEST t19r_damp3_test started on 02-04 (6133592; 0 GPU processes before): B_damp3 58710388 copied into t19r_damp3_test/bin (md5 58710388), restart from t19r's t19l64.00001 (t 4.32e4) via hard link, P_t19r keys + clean_stag_thinf_held_gate + clean_pass_damp, tlim 1e5, rst every 1e4, KEEPRST 3, END 17:25. Step: 6133592.614 p_t19r_damp3_test . In the PROD table next to t19r_damp_test (v1, 02-16).
 - (04:32) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
   CW t19r_damp3_test (log.0) cycle 1102 []: CLEAN WARNING cycle 1102 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+- (04:34) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t19r_damp3_test (log.0) cycle 1135 [cycle=1150 time=4.614715e+04 dt=4.017203e+00]: CLEAN WARNING cycle 1135 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
