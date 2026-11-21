@@ -3457,6 +3457,27 @@ void RadiationM1::CleanStagBracket() {
   });
   CleanGhostFill(cln_w, CLW_Z, 1);
   CleanStagCsLateral(CLW_Z);
+  // (clean_stag_thinf_held: theta = min(1, max(J, P)/E_old) of every cell in CLW_V, a
+  // Krylov scratch slot, P the largest rays' flux out of one of its faces: the share of
+  // its E the rays carry, a transit cell of a beam included)
+  const bool thh = cln_thinh;
+  if (thh) {
+    CleanFor("cln_thheld", nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real p = 0.0;
+      for (int d = 0; d < x.nf; ++d) {
+        const int n = (d == 0) ? CLN_FX : ((d == 1) ? CLN_F2 : CLN_F3);
+        const bool up = x.cub && d > 0 && ((d == 1) ? j == x.je : k == x.ke);
+        const Real fh = up ? x.cs(m,CLN_FH+4*(d-1),k,j,i) :
+                        x.cs(m,n,k+(d == 2),j+(d == 1),i+(d == 0));
+        p = fmax(p, fmax(fh, -x.cs(m,n,k,j,i)));
+      }
+      const Real e = x.w(m,CLW_EO,k,j,i), h = fmax(x.cs(m,CLN_JR,k,j,i), p);
+      x.w(m,CLW_V,k,j,i) = (e > h) ? h/e : 1.0;
+    });
+    CleanGhostFill(cln_w, CLW_V, 1);
+    CleanStagCsLateral(CLW_V);
+  }
   CLEAN_HIPX(const CleanArgs *px = CleanDevArgs(x, 0);)
   for (int dir = 0; dir < x.nf; ++dir) {
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
@@ -3519,8 +3540,15 @@ void RadiationM1::CleanStagBracket() {
         const Real hm = !(s > 0.0) ? hr : (cut ? ((tl < 0.0) ? fmin(fr, 0.0) : 0.0) : tr);
         const Real el = fmax(x.w(m,CLW_EO,k-dk,j-dj,i-di), 0.0);
         const Real er = fmax(x.w(m,CLW_EO,k,j,i), 0.0);
-        if (jl > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = fmin(hp/fmax(jl, rmn*el), 1.0);
-        if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = fmax(hm/fmax(jr, rmn*er), -1.0);
+        // (clean_stag_thinf_held: the share theta of the donor's E the rays carry moves
+        // with their flux factor, the rest with the donor's own half range: a convex
+        // blend, realisable; a ray-shadowed donor (J << E) is no dam)
+        const Real gp = fmin(hp/fmax(jl, rmn*el), 1.0), gm = fmax(hm/fmax(jr, rmn*er), -1.0);
+        const Real ql = thh ? x.w(m,CLW_V,k-dk,j-dj,i-di) : 1.0;
+        const Real qr = thh ? x.w(m,CLW_V,k,j,i) : 1.0;
+        auto &fp = x.fc[dir](m,CLF_HP,k,j,i), &fm = x.fc[dir](m,CLF_HM,k,j,i);
+        if (jl > 0.0) fp = thh ? ql*gp + (1.0 - ql)*fp : gp;
+        if (jr > 0.0) fm = thh ? qr*gm + (1.0 - qr)*fm : gm;
         x.fc[dir](m,x.fdg,k,j,i) = 0.0;
         return;
       }
