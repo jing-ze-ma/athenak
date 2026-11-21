@@ -3496,8 +3496,7 @@ void RadiationM1::CleanStagBracket() {
       const Real ta = thg ? fmin(x.h*x.c*x.op(m,M1_OP_P,k,j,i), 1.0) : 0.0;
       x.w(m,CLW_V,k,j,i) = ((e > h) ? h/e : 1.0)*(1.0 - (1.0 - r*r)*ta);
     });
-    CleanGhostFill(cln_w, CLW_V, 1);
-    CleanStagCsLateral(CLW_V);
+    CleanGhostFill(cln_w, CLW_V, 1);   // (its lateral sums: none, CLW_L keeps J's)
   }
   CLEAN_HIPX(const CleanArgs *px = CleanDevArgs(x, 0);)
   const bool hrm = cln_hface;
