@@ -3457,9 +3457,10 @@ void RadiationM1::CleanStagBracket() {
   });
   CleanGhostFill(cln_w, CLW_Z, 1);
   CleanStagCsLateral(CLW_Z);
-  // (clean_stag_thinf_held: theta = min(1, max(J, P)/E_old) of every cell in CLW_V, a
-  // Krylov scratch slot, P the largest rays' flux out of one of its faces: the share of
-  // its E the rays carry, a transit cell of a beam included)
+  // (clean_stag_thinf_held: theta = min(1, max(J, P)/(clean_ray_min E_old)) of every
+  // cell in CLW_V, a Krylov scratch slot, P the largest rays' flux out of one of its
+  // faces: 1 where the rays carry the cell (as its closure, a beam's transit cell
+  // included), down to 0 where they hold less than clean_ray_min of its E)
   const bool thh = cln_thinh;
   if (thh) {
     CleanFor("cln_thheld", nmb1, ks, ke, js, je, is, ie,
@@ -3472,7 +3473,7 @@ void RadiationM1::CleanStagBracket() {
                         x.cs(m,n,k+(d == 2),j+(d == 1),i+(d == 0));
         p = fmax(p, fmax(fh, -x.cs(m,n,k,j,i)));
       }
-      const Real e = x.w(m,CLW_EO,k,j,i), h = fmax(x.cs(m,CLN_JR,k,j,i), p);
+      const Real e = rmn*x.w(m,CLW_EO,k,j,i), h = fmax(x.cs(m,CLN_JR,k,j,i), p);
       x.w(m,CLW_V,k,j,i) = (e > h) ? h/e : 1.0;
     });
     CleanGhostFill(cln_w, CLW_V, 1);
