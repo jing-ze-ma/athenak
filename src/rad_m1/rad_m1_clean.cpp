@@ -651,7 +651,7 @@ void RadiationM1::CleanInit() {
     CleanFatal("<rad_m1>/force_reference = wb_arad_md needs clean_init = steady (its "
                "reference is the steady start's force)");
   }
-  if (vgd_on && VgdRotOn()) {
+  if ((vgd_on || (vsc_rot && cln_ring)) && VgdRotOn()) {
     // the rotating rays (CleanFvSets): the closure is the J-weighted mean of the
     // sets, continuous across the blocks with the cross-fade; no slope correction
     // (vet_rotate_avg_ema: production's EMA, only on clean_rot_ring = live; without
@@ -667,11 +667,11 @@ void RadiationM1::CleanInit() {
                  "2-D axisymmetric mesh the z axis");
     }
   }
-  const bool ring_ok = vgd_on && vra_on && g_vra_adv &&
+  const bool ring_ok = (vgd_on || vsc_rot) && vra_on && g_vra_adv &&
                        (vgd_rot_dt > 0.0 || vgd_rot_auto) && vgd_rot_align &&
                        vra_k <= M1_RA_NF;
   if (cln_ring && !(ring_ok && vgd_xf == (cln_ring == 1))) {
-    CleanFatal("<rad_m1>/clean_rot_ring needs vet_gd rays rotating in time: "
+    CleanFatal("<rad_m1>/clean_rot_ring needs vet_gd or vet_sc rays rotating in time: "
                "vet_rotate_avg = K with vet_rotate_advance, vet_gd_rotate_dt and "
                "_align, with vet_gd_rotate_xfade for live, without for jump");
   }

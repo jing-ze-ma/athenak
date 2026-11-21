@@ -719,6 +719,15 @@ void RadiationM1::CleanRays() {
   vcol_sbl = false;
   vcol_sesc = false;
   vscat_jrel = false;
+  // (the closure's time: a step at least one rotation block long, the steady start's
+  // large steps, takes the sets of its start, as VetGdBlock)
+  const Real dt = pmy_pack->pmesh->dt, tc = pmy_pack->pmesh->time +
+                  ((vgd_rot_dt > 0.0 && dt >= vgd_rot_dt) ? 0.0 : dt);
+  if (!vgd_on && cln_ring) {   // (the rotating vet_sc set: CleanRingMoments sweeps it)
+    CleanFvSets(tc, pmy_pack->pmesh->ncycle);
+    CleanRingMoments();
+    return;
+  }
   if (!vgd_on) {
     VetShortChar();
     CleanClosureFromRays();
@@ -728,10 +737,6 @@ void RadiationM1::CleanRays() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   auto iw_ = iw;
   auto opac_ = opac;
-  // (the closure's time: a step at least one rotation block long, the steady start's
-  // large steps, takes the sets of its start, as VetGdBlock)
-  const Real dt = pmy_pack->pmesh->dt, tc = pmy_pack->pmesh->time +
-                  ((vgd_rot_dt > 0.0 && dt >= vgd_rot_dt) ? 0.0 : dt);
   par_for("cln_gd_chi", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, indcs.ks, indcs.ke,
           indcs.js, indcs.je, indcs.is, indcs.ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -1247,8 +1252,8 @@ void RadiationM1::CleanRingMoments() {
   // (VetGdSweep with vgd_xff_now: each set's own tables and intensities, vgd_i and
   // vgd_i_xb), their lists made first; the loop below then takes each set's moments, its
   // tables and intensities brought back by VgdXfTables (not with a reflecting top)
-  const bool fuse = cln_rfuse && !cln_scmem && ns == 2 && !fill && VetGdXffOk();
-  if (cln_rfuse && !fuse && ns == 2 && !fill && !cln_rfuse_said &&
+  const bool fuse = vgd_on && cln_rfuse && !cln_scmem && ns == 2 && !fill && VetGdXffOk();
+  if (vgd_on && cln_rfuse && !fuse && ns == 2 && !fill && !cln_rfuse_said &&
       global_variable::my_rank == 0) {
     std::cout << "<rad_m1> clean_rot_fuse: not taken (needs the sc rays, no "
               << "reflecting top and a fused-sweep configuration, VetGdXffOk): two "
@@ -1275,19 +1280,25 @@ void RadiationM1::CleanRingMoments() {
     const bool older = (p >= 0 && p < nr);
     const bool keep = (older && fill) || p == nr || p == nk;
     if (older && fill) vra_gen += 1;
-    cln_fvd = cln_fvdm[q];
-    // the sc rays: set q swept alone (its tables, its own weights)
-    cln_rq = q;
-    cln_rqm = static_cast<int>(cln_fvblk[q] & 1);
-    VgdXfTables(cln_fvkey[q]);
-    vgd_scut = vlat_icut;
-    if (!fuse) VetGdSweep();
-    if (cln_scmem) VetGdTopCopy();
-    CleanClosureFromGd();
-    if (cln_consist || cln_cssc) CleanGdFaceSums();
-    if (cln_cssc && (p == nr || p == nk)) {
-      CleanFaceHalf(dfull, cln_rqm*vgd_n, fh0, 0);
-      fh0 = false;
+    if (!vgd_on) {   // (vet_sc on a Cartesian mesh: the set of block cln_fvblk[q] alone)
+      VetRotSet(VetRotBeta(cln_fvblk[q]));   // (no RotAvg: VetShortChar is not run)
+      VetShortCharSweep();
+      CleanClosureFromRays();
+    } else {
+      cln_fvd = cln_fvdm[q];
+      // the sc rays: set q swept alone (its tables, its own weights)
+      cln_rq = q;
+      cln_rqm = static_cast<int>(cln_fvblk[q] & 1);
+      VgdXfTables(cln_fvkey[q]);
+      vgd_scut = vlat_icut;
+      if (!fuse) VetGdSweep();
+      if (cln_scmem) VetGdTopCopy();
+      CleanClosureFromGd();
+      if (cln_consist || cln_cssc) CleanGdFaceSums();
+      if (cln_cssc && (p == nr || p == nk)) {
+        CleanFaceHalf(dfull, cln_rqm*vgd_n, fh0, 0);
+        fh0 = false;
+      }
     }
     const int sl = (p == nk) ? 1 : 0;   // (the slot of a live set)
     if (!keep || (!older && sl == ol)) continue;

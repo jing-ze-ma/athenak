@@ -1588,6 +1588,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     vet_sc = true;
     VetRotInit(pin);   // the vet_gd rotation keys and defaults
     RotAvgParse(pin);  // vet_rotate_avg (shared key)
+    // scheme = clean with clean_rot_ring named: the rotating set on the clean ring, as
+    // vet_gd's (vet_gd_rotate_xfade, default false; no slope correction)
+    if (clean && vsc_rot && cln_ring) {
+      vgd_xf = pin->GetOrAddBoolean("rad_m1","vet_gd_rotate_xfade",false) && VgdRotOn();
+      vgd_rot_slope = 0;
+    }
     // vet_source_noesrc for vet_sc too (rad_m1_vet.cpp).
     // (#11): DEFAULT true on a fresh run, as on vet_col / vet_gd (the VET source of a
     // backward-Euler solve reads the physical E^n, not E^n + dt (chat/c) esrc); a restart
