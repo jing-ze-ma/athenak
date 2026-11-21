@@ -508,6 +508,11 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_k1_xlim")) {
     t2_k1xlim = pin->GetReal("rad_m1", "time2_k1_xlim");
   }
+  // <rad_m1>/time2_k1_xpat (default false, read only when named): Time2K1XLim's theta in
+  // Patankar form, positive by construction with no threshold (rad_m1.hpp)
+  if (pin->DoesParameterExist("rad_m1", "time2_k1_xpat")) {
+    t2_k1xpat = pin->GetBoolean("rad_m1", "time2_k1_xpat");
+  }
   // <rad_m1>/time2_k1_stiff = s (default 0 = off, bitwise)
   t2_k1stiff = 0.0;
   if (pin->DoesParameterExist("rad_m1", "time2_k1_stiff")) {
@@ -1215,9 +1220,10 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
       t2_flr_n += nf;
     }
   }
-  if (t2_k1xlim > 0.0) {Time2K1XLim(stage, c1, c2, true);}   // (gas side)
+  const bool xlm = (t2_k1xlim > 0.0) || t2_k1xpat;
+  if (xlm) {Time2K1XLim(stage, c1, c2, true);}   // (gas side)
   if (t2_ffct) {Time2FaceFct(stage, c1, c2);}   // step 1
-  if (t2_k1xlim > 0.0) {Time2K1XLim(stage, c1, c2, false);}   // (E side)
+  if (xlm) {Time2K1XLim(stage, c1, c2, false);}   // (E side)
   CleanBndAcc(stage, c1, c2, (stage == 1) ? 0.0 : (heun ? 0.5 : w0), dt);
   t2_solve = (stage == 1) ? M1_T2S_STAGE1 : M1_T2S_STAGE2;
   t2_fail = false;
@@ -1318,7 +1324,10 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
 //! E loses (de > 0): theta the largest with E + dE >= th E.  The scaled-away exchange is
 //! taken by the implicit stage (L-stable).  Per cell: E + gas energy exact ((c/ch) dE +
 //! dEgas = 0), momentum and faces unchanged, no new state (restart and dt_retry bitwise);
-//! untouched cells bitwise.
+//! untouched cells bitwise.  time2_k1_xpat: theta = P/(P + L) instead, P what the loser
+//! holds without the exchange pair (E: E + its increment's other parts after FCT; gas:
+//! eint), L its loss: the old vector's P^2/(P + L) > 0 for every P > 0, theta = 1 -
+//! O(L/P) where the exchange is not stiff (Patankar-Euler weight, MPRK; no threshold)
 
 void RadiationM1::Time2K1XLim(int stage, Real c1, Real c2, bool gas) {
   FluidRef flx = FluidRef::Get(pmy_pack);
@@ -1351,7 +1360,8 @@ void RadiationM1::Time2K1XLim(int stage, Real c1, Real c2, bool gas) {
   const bool curv = (cs_geom || sph_geom) && vol.extent_int(0) > nmb1 &&
                     vol.extent_int(3) > 1 && ar1.extent_int(0) > nmb1;
   const Real cc1 = c1, cc2 = two ? c2 : 0.0;
-  const Real chcl = chat/c_light, th = t2_k1xlim;
+  const Real chcl = chat/c_light, th = t2_k1xpat ? 0.0 : t2_k1xlim;
+  const bool pat = t2_k1xpat;
   Real nx = 0.0;
   Kokkos::parallel_reduce("m1_t2_k1xlim", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
       DevExeSpace(), {0, ks, js, is}, {nmb1 + 1, ke + 1, je + 1, ie + 1}),
@@ -1368,7 +1378,10 @@ void RadiationM1::Time2K1XLim(int stage, Real c1, Real c2, bool gas) {
     if (!gas) {   // E loses: E + dE >= th E
       if (!(de > 0.0)) return;
       const Real need = th*e0 - e0 - in_(m,M1_T2_E,k,j,i);
-      if (!(e0 > 0.0)) {
+      if (pat) {   // (P = E + the increment's parts but the exchange)
+        const Real pe = -need + chcl*de;
+        tq = (pe > 0.0) ? pe/(pe + chcl*de) : 0.0;
+      } else if (!(e0 > 0.0)) {
         tq = 0.0;
       } else if (need > 0.0) {
         tq = fmax(1.0 - need/(chcl*de), 0.0);
@@ -1378,8 +1391,8 @@ void RadiationM1::Time2K1XLim(int stage, Real c1, Real c2, bool gas) {
       Real egr = etg ? dd*phc(m,k,j,i) : 0.0;
       if (emh) egr += emg(m,k,j,i);
       const Real eg0 = ug(m,IEN,k,j,i) - ek0 - egr;
-      if (!(eg0 > 0.0) || eg0 + de > th*eg0) return;
-      tq = fmax((1.0 - th)*eg0/(-de), 0.0);
+      if (!(eg0 > 0.0) || (!pat && eg0 + de > th*eg0)) return;
+      tq = pat ? eg0/(eg0 - de) : fmax((1.0 - th)*eg0/(-de), 0.0);
       Real fd = 0.0;
       if (fdo) {
         Real g = 0.0;
@@ -1406,7 +1419,10 @@ void RadiationM1::Time2K1XLim(int stage, Real c1, Real c2, bool gas) {
       // (E keeps the gain its local part needs: E + local part >= th E)
       const Real el = e0 + in_(m,M1_T2_E,k,j,i) - fd;
       const Real tqe = (el > th*e0) ? 1.0 - (el - th*e0)/(chcl*(-de)) : 1.0;
-      tq = fmin(fmax(tq, tqe), 1.0);
+      // (xpat: where the gas's weight leaves E's local part at or below 0, the middle of
+      // the open range (tqe, eg0/L) in which E and eint both stay > 0)
+      const Real thi = fmin(eg0/(-de), 1.0);
+      tq = (pat && !(tq > tqe) && tqe < thi) ? 0.5*(tqe + thi) : fmin(fmax(tq, tqe), 1.0);
     }
     if (!(tq < 1.0)) return;
     const Real mv = (1.0 - tq)*de;   // (the exchange taken back: the stage solve's)
@@ -3128,8 +3144,9 @@ void RadiationM1::Time2Report() {
   if (t2_k1stiff > 0.0) {
     std::cout << " k1_stiff(s=" << t2_k1stiff << ") cells(rank 0)=" << t2_k1stiff_n;
   }
-  if (t2_k1xlim > 0.0) {
-    std::cout << " k1_xlim(th=" << t2_k1xlim << ") cell-stages(rank 0)=" << t2_k1xlim_n;
+  if (t2_k1xlim > 0.0 || t2_k1xpat) {
+    std::cout << " k1_xlim(th=" << t2_k1xlim << (t2_k1xpat ? " xpat" : "")
+              << ") cell-stages(rank 0)=" << t2_k1xlim_n;
   }
   if (t2_ffct) {   // step 1 (global sums)
     std::cout << " face_fct calls=" << t2_ffct_calls << " skipped(no face flux)="

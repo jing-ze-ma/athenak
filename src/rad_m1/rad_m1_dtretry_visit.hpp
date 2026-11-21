@@ -648,6 +648,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("t2_k1stiff", t2_k1stiff);
   v.value("t2_k1stiff_n", t2_k1stiff_n);
   v.value("t2_k1xlim", t2_k1xlim);
+  v.value("t2_k1xpat", t2_k1xpat);
   v.value("t2_k1xlim_n", t2_k1xlim_n);
   v.view("t2ys", t2ys);
   v.value("ebnd_on", ebnd_on);
