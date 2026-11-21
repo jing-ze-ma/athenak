@@ -5198,6 +5198,8 @@ void RadiationM1::CleanWriteBack() {
   }
   auto ky1v = cln_ky1;
   const bool xwb = (cln_xte > 0) && feedback && !cln_vzero;
+  const bool wbl = cln_wbl && xwb;   // (clean_wb_local)
+  const Real rtol = cln_trtol;
   const bool krl = cln_krel_on && feedback;   // (clean_stag_kreal: CLW_KR)
   const bool kpb = cln_kpb && feedback;
   const bool cls = xwb || kpb;   // (the closure in CLW_PW, printed below)
@@ -5309,8 +5311,24 @@ void RadiationM1::CleanWriteBack() {
       // (clean_stag_split: the faces store F^H, E moved by the energy flux)
       // (and esrc, the radiation's external source: the gas takes the exchange only)
       // (kpos: the Cartesian face F carries no moved flux, the boundary's pd_b X leaves)
-      den = -(e - x.w(m,CLW_EO,k,j,i)) - ((xh.hi || x.sph || x.cub) ?
-            x.w(m,CLW_Q,k,j,i) : h*div + hdq) + (eso ? h*es(m,k,j,i) : 0.0) - pbx;
+      const Real qf = (xh.hi || x.sph || x.cub) ? x.w(m,CLW_Q,k,j,i) : h*div + hdq;
+      const Real hs = eso ? h*es(m,k,j,i) : 0.0;
+      // (clean_wb_local: E and the gas T the local 2x2 of the E and gas rows, e(T) +
+      // A T^4/(1 + hc kE) = eint + (hc kE s - sb)/(1 + hc kE), E (1 + hc kE) = s + A T^4
+      // + sb, with s = E + e - eint what the written faces and the row's work leave the
+      // cell: the stage's energy exact, and the solve's residual, ~tol S >> E where hc kE
+      // >> 1, shared by E and the gas as their exchange does, not left to E alone; the
+      // same at the fixed point)
+      if (wbl) {
+        const Real hcke = h*x.c*x.op(m,M1_OP_E,k,j,i), ep = x.w(m,CLW_EP,k,j,i);
+        const Real ap = h*x.c*x.op(m,M1_OP_P,k,j,i)*x.w(m,CLW_GM,k,j,i)*arad_;
+        const Real sr = x.w(m,CLW_EO,k,j,i) - qf + hs - pbx - x.w(m,CLW_XW,k,j,i);
+        const Real t = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i), ap/(1.0 + hcke),
+            x.w(m,CLW_EI,k,j,i) + (hcke*sr + ep)/(1.0 + hcke), x.w(m,CLW_T,k,j,i), rtol);
+        e = (sr + ap*SQR(SQR(t)) - ep)/(1.0 + hcke);
+        x.w(m,CLW_T,k,j,i) = t;
+      }
+      den = -(e - x.w(m,CLW_EO,k,j,i)) - qf + hs - pbx;
       if (x.vzero) {   // (steady start: the eint of the iterate's T, not the residual of
         Real ei, p, chi_rho, chi_t, cv;   //  a step h -> infinity, as the cell layout)
         eos.ThermoAt(uh(m,IDN,k,j,i), x.w(m,CLW_T,k,j,i), ei, p, chi_rho, chi_t, cv);

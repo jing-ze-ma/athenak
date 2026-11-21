@@ -515,6 +515,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
       cln_xtnorm = stag("clean_xt_norm", false);
+      // clean_wb_local (default off): the write-back's E and gas T from the local 2x2 of
+      // the E and gas rows with the solve's transport (CleanWriteBack); needs xt_exact
+      cln_wbl = stag("clean_wb_local", false);
+      if (cln_wbl && (cln_xte == 0 || cln_kpos)) {
+        std::cout << "### FATAL ERROR <rad_m1>/clean_wb_local needs clean_xt_exact = cons "
+                  << "| x2 and no clean_stag_kpos" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
     }
     // clean_stag_rayratio (default off): the bracket reads the rays only as ratios (their
     // face flux over the donor's ray J, the model flux of E), times the state's E
