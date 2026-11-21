@@ -889,3 +889,4 @@ B_br gate not passed; arms not started
 - (22:35) C2D_hg_c1diag (B_br, hpc-sm-01-17, 45 cycles, keys hg_c2d.keys + time/dt_retry_host=m1): rc=0 wall=645 | passes/cycle 154.4 (over 45 cycles) | min dt (cycle lines) 3.403636e+00 | s/cycle 12.521 | CW 13 FATAL 0 | never-read: job/final_restart 
 - (22:35) J3D start: J3D_t19 on hpc-sm-02-11 (B_j3, J3_t19 deck copy + clean_init_dtfac = 1.0e6, tlim 6e3 s)
 - (22:36) C2B_hg_v7 (B_br, hpc-sm-02-16, 100 cycles, keys hg_c2b_v7.keys + time/dt_retry_host=m1): rc=0 wall=694 | passes/cycle 62.5 (over 100 cycles) | min dt (cycle lines) 4.680000e+01 | s/cycle 6.136 | CW 6 FATAL 0 | never-read: job/final_restart 
+- (22:36) J3D start: J3D_t9 on hpc-sm-01-17 (B_j3, J3_t9 deck copy + clean_init_dtfac = 1.0e6, tlim 6e3 s)
