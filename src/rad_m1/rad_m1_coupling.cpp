@@ -474,6 +474,12 @@ void RadiationM1::FloorGasCap() {
     if (vc > 0.0 && msq > SQR(vc*dd)) {
       const Real fs = vc*dd/sqrt(msq);
       const Real dke = (1.0 - fs*fs)*ekin;
+      // (the momentum removed, booked: |dp| V and, spherical polar, its L_z)
+      Kokkos::atomic_add(&cnt_.d_view(4), (1.0 - fs)*sqrt(msq)*wv);
+      if (hv) {
+        Kokkos::atomic_add(&cnt_.d_view(5), (1.0 - fs)*m3*0.5*(x1f(m,i) + x1f(m,i+1))*
+                           sin(0.5*(x2f(m,j) + x2f(m,j+1)))*wv);
+      }
       m1 *= fs; m2 *= fs; m3 *= fs;
       uh(m,IM1,k,j,i) = m1; uh(m,IM2,k,j,i) = m2; uh(m,IM3,k,j,i) = m3;
       ekin -= dke;
@@ -512,16 +518,16 @@ void RadiationM1::FloorGasCap() {
   if (rep > 0 && (cyc % rep) == 0) {
     fcap_cnt.modify_device();
     fcap_cnt.sync_host();
-    Real c[4];
-    for (int n = 0; n < 4; ++n) c[n] = fcap_cnt.h_view(n);
+    Real c[6];
+    for (int n = 0; n < 6; ++n) c[n] = fcap_cnt.h_view(n);
 #if MPI_PARALLEL_ENABLED
-    MPI_Allreduce(MPI_IN_PLACE, c, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, c, 6, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> floorcap cycle " << cyc << " (cumulative, all calls): n_v "
                 << c[0] << " n_t " << c[1] << " dKE " << c[2] << " dEint " << c[3]
                 << " (erg, to E_rad" << (kr ? "" : "; KE thermalised") << ")"
-                << std::endl;
+                << " momentum removed |dp| " << c[4] << " dL_z " << c[5] << std::endl;
     }
   }
 }

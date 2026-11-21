@@ -1428,7 +1428,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    Kokkos::realloc(fcap_cnt, 4);
+    Kokkos::realloc(fcap_cnt, 6);
     if (global_variable::my_rank == 0 && fcap_rho > 0.0) {
       std::cout << "<rad_m1> floorcap: rho < " << fcap_rho << ": |v| <= " << fcap_v
                 << " (0 = no cap), T <= max(T_rad, " << fcap_tmin << " K) "
