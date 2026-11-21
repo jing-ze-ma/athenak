@@ -1000,7 +1000,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cs_seam_dmax", cs_seam_dmax);
   v.value("dbg_etally", dbg_etally);
   v.view("acl_cnt_d", acl_cnt_d);
-  v.view("cln_gdrf", cln_gdrf);
   v.value("cln_fvgf", cln_fvgf);
   v.value("clean", clean);
   v.value("cln_c0", cln_c0);
@@ -1464,11 +1463,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_rg_pend", vgd_rg_pend);
   v.value("vgd_rg_nk", vgd_rg_nk);
   v.value("vgd_rg_ndense", vgd_rg_ndense);
-  v.value("vgd_pk", vgd_pk);
-  v.value("vgd_pk_par", vgd_pk_par);
-  v.value("vgd_pk_mom", vgd_pk_mom);
-  v.value("vgd_pk_cap", vgd_pk_cap);
-  v.view("vgd_pk_p", vgd_pk_p);
   v.view("vgd_wall", vgd_wall);
   v.view("vgd_map", vgd_map);
   v.view("vgd_mr", vgd_mr);

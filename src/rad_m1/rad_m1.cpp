@@ -1993,11 +1993,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (std::getenv("VGD_RING") != nullptr) {
       vgd_ring_par = (std::atoi(std::getenv("VGD_RING")) != 0);
     }
-    // planb-1117 vet_gd_band_ring_inward (read only when named; default false: -2.4 to
-    // -2.9 GB on MI300A but the hook's 8-shell batches cost +0.4 s/cycle on R136
-    // rotating; bitwise; VetGdInit)
-    vgd_pk_par = vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_ring_inward") &&
-                 pin->GetBoolean("rad_m1","vet_gd_band_ring_inward");
     vgd_ring_poison = (std::getenv("VGD_RING_POISON") != nullptr) &&
                       (std::atoi(std::getenv("VGD_RING_POISON")) != 0);
     // unify-sc-gd-1012 (#11): the same fresh default for a plain vet_col (no vet_gd), as
@@ -2361,22 +2356,21 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // clean sc rays with a reflecting top: its mirror reads the last build (rad_m1.hpp)
   cln_scmem = clean && vgd_on && sph_geom && ibc_x1max == M1_IBC_REFLECT;
   // clean_ray_cut (default on where it applies: the staggered layout's sc rays on 3-D
-  // spherical polar or the cubed sphere, one MeshBlock along x1, no reflecting top, no
-  // band_ring_inward; elsewhere not read, the log says so; naming it true there is
-  // FATAL): CleanRayCut
+  // spherical polar or the cubed sphere, one MeshBlock along x1, no reflecting top;
+  // elsewhere not read, the log says so; naming it true there is FATAL): CleanRayCut
   if (clean) {
     const Mesh *pm = ppack->pmesh;
     const bool ok = vgd_on && sph_geom &&
                     pm->three_d && !pm->multilevel && pm->mesh_indcs.nx1 == indcs.nx1 &&
-                    !cln_scmem && !vgd_pk_par;
+                    !cln_scmem;
     cln_rcut_on = ok;
     if (pin->DoesParameterExist("rad_m1","clean_ray_cut")) {
       cln_rcut_on = pin->GetBoolean("rad_m1","clean_ray_cut");
       if (cln_rcut_on && !ok) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
           << std::endl << "<rad_m1>/clean_ray_cut = true needs the staggered layout's sc "
-          << "rays on 3-D spherical polar or the cubed sphere, one MeshBlock along x1, no "
-          << "reflecting top and no vet_gd_band_ring_inward" << std::endl;
+          << "rays on 3-D spherical polar or the cubed sphere, one MeshBlock along x1, "
+          << "no reflecting top" << std::endl;
         std::exit(EXIT_FAILURE);
       }
     } else if (!ok && global_variable::my_rank == 0) {

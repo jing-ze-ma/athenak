@@ -439,7 +439,9 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/vet_col_chunk", ""}, {"rad_m1/vet_col_spread", ""},
     // (the vet_gd upwind profile shift and the dense shell launch, removed)
     {"rad_m1/vet_gd_upwind", "=bilinear"}, {"rad_m1/vet_gd_upwind_*", ""},
-    {"rad_m1/vet_gd_shell_list", "=true"}};
+    {"rad_m1/vet_gd_shell_list", "=true"},
+    // (the inward-only band ring slabs and their per-shell hook, removed)
+    {"rad_m1/vet_gd_band_ring_inward", "!"}};
   const bool say = (global_variable::my_rank == 0);
   std::string none;
   std::vector<std::string> drop;

@@ -2665,12 +2665,9 @@ class RadiationM1 {
   void CleanClosureIterate();
   void CleanRays();
   void CleanClosureFromRays();
-  // (i0..i1 / s0..s1: shells of VetGdPkHook; else the whole mesh, or with vgd_pk
-  // only what the hook leaves)
-  void CleanClosureFromGd(const int i0 = -1, const int i1 = -1);
+  void CleanClosureFromGd();
   void CleanRayCut();
-  void CleanGdFaceSums(const int s0 = -1, const int s1 = -1);
-  DvceArray5D<Real> cln_gdrf;   // vgd_pk: the rays' r face fluxes of the sweep
+  void CleanGdFaceSums();
   const CleanArgs *cln_gdx = nullptr;   // their CleanArgs in device memory (slot 3)
   void CleanFvSets(const Real tc, const int cyc);
   void CleanRingMoments();
@@ -3670,12 +3667,11 @@ class RadiationM1 {
   // (bitwise).  One extra small kernel per shell (copies), launched while the shell's
   // halo messages travel.
   static constexpr int VGD_RING_K = 3;
-  int vgd_rg_k = VGD_RING_K;          // the slots of this allocation (vgd_pk: more)
+  int vgd_rg_k = VGD_RING_K;          // the slots of this allocation
   struct VgdRingOp {
     int kind = 0;      // 1 save (inward band -> store), 2 release, 3 acquire
     int i = -1, slot = -1;
     bool copyin = false, restore = false;
-    bool nocp = false;   // release: no copy back (vgd_pk: the outward pass)
   };
   bool vgd_ring = false;              // the ring layout is allocated (both arrays)
   bool vgd_ring_named = false, vgd_ring_par = true;
@@ -3707,21 +3703,6 @@ class RadiationM1 {
   std::vector<VgdRingOp> vgd_rg_pend;
   Real vgd_rg_nk = 0.0, vgd_rg_ndense = 0.0;
   void VetGdRingFlush();
-  // planb-1117 vet_gd_band_ring_inward (read only when named; default true where it
-  // applies: the clean sc rays on sp, raw band, one x1 level, no reflecting x1 face, no
-  // twin / fused cross-fade): the compact slabs keep only each column's INWARD
-  // directions (n . r_hat < 1e-12 at the column, a superset of those the inward kernel
-  // writes), packed (vgd_pk_p: (m, kb, jb, d) -> place in the block's slab, -1 none);
-  // the outward pass releases a shell without a copy.  Everything that reads the
-  // intensities after the sweep runs in the outward loop instead, every VGD_PK_B shells
-  // over those (VetGdPkHook: moments, closure, face sums of shells i0..i1 while i0 - 1
-  // .. i1 are lent: VGD_PK_B + 2 slots; per shell the kernels would be latency-bound)
-  static constexpr int VGD_PK_B = 8;
-  bool vgd_pk = false, vgd_pk_par = false, vgd_pk_mom = false;
-  int64_t vgd_pk_cap = 0;               // the packed slab of one (block, shell)
-  DvceArray1D<int> vgd_pk_p;
-  void VetGdPkMask();
-  void VetGdPkHook(const int i0, const int i1);
   void VetGdRingSweepBegin(const bool two);
   void VetGdRingSweepEnd();
   int VetGdRingFreeSlot(const int avoid) const;
@@ -4246,7 +4227,7 @@ class RadiationM1 {
   void VetGdBuild();
   void VetGdSweep();
   void VetGdWall(const int i0, const int i1);
-  void VetGdMoments(const int i0 = -1, const int i1 = -1);
+  void VetGdMoments();
   // vet_gd_async (GD_ASYNC.md): the sweep of build n runs on its own device instance
   // and host thread while the rest of cycle n runs; the D of cycle n is the moments of
   // build n-1 (one cycle lag).  The pending build's source (vlat_cs) and cycle travel
