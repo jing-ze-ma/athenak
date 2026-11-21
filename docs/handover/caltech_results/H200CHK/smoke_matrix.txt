@@ -1,0 +1,41 @@
+=== H200S_plain env: DUMMY_ENV=0 (bin /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v203_e688cb7bc md5 7df2b648; NR=1, nlim 1, mesh/nx2=32 mesh/nx3=32 meshblock/nx2=32 meshblock/nx3=32, node hpc-sm-02-09)
+a rc=0 wall=8
+-- clean_init steady lines
+<rad_m1> clean_init steady pass 0: max(|dE|, |dF|/c)/max E = 9.534e-02
+<rad_m1> clean_init steady pass 1: max(|dE|, |dF|/c)/max E = 3.499e-08
+<rad_m1> clean_init steady pass 2: max(|dE|, |dF|/c)/max E = 7.111e-11
+<rad_m1> clean_init steady pass 3: max(|dE|, |dF|/c)/max E = 2.280e-13
+<rad_m1> clean_init steady: converged after 4 passes, residual 2.280e-13 (tol 1.0e-08; 0 formal solutions); radiation E 4.1527620104e+45 -> 4.1609123298e+45, F/c 3.5094e+39 0.0000e+00 0.0000e+00 -> 1.5036e+41 1.4139e+34 -2.0679e+33 (volume sums)
+-- launch errors / memcheck
+=== H200S_clb env: CUDA_LAUNCH_BLOCKING=1 (bin /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v203_e688cb7bc md5 7df2b648; NR=1, nlim 1, mesh/nx2=32 mesh/nx3=32 meshblock/nx2=32 meshblock/nx3=32, node hpc-sm-02-09)
+a rc=0 wall=14
+-- clean_init steady lines
+<rad_m1> clean_init steady pass 0: max(|dE|, |dF|/c)/max E = 9.534e-02
+<rad_m1> clean_init steady pass 1: max(|dE|, |dF|/c)/max E = 3.499e-08
+<rad_m1> clean_init steady pass 2: max(|dE|, |dF|/c)/max E = 7.111e-11
+<rad_m1> clean_init steady pass 3: max(|dE|, |dF|/c)/max E = 2.280e-13
+<rad_m1> clean_init steady: converged after 4 passes, residual 2.280e-13 (tol 1.0e-08; 0 formal solutions); radiation E 4.1527620104e+45 -> 4.1609123298e+45, F/c 3.5094e+39 0.0000e+00 0.0000e+00 -> 1.5036e+41 1.4139e+34 -2.0679e+33 (volume sums)
+-- launch errors / memcheck
+=== H200S_csan env: DUMMY_ENV=0 (bin /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v203_e688cb7bc md5 7df2b648; NR=1, nlim 1, mesh/nx2=32 mesh/nx3=32 meshblock/nx2=32 meshblock/nx3=32, node hpc-sm-02-09)
+a rc=0 wall=18
+-- clean_init steady lines
+<rad_m1> clean_init steady pass 0: max(|dE|, |dF|/c)/max E = 9.534e-02
+<rad_m1> clean_init steady pass 1: max(|dE|, |dF|/c)/max E = 3.499e-08
+<rad_m1> clean_init steady pass 2: max(|dE|, |dF|/c)/max E = 7.111e-11
+<rad_m1> clean_init steady pass 3: max(|dE|, |dF|/c)/max E = 2.280e-13
+<rad_m1> clean_init steady: converged after 4 passes, residual 2.280e-13 (tol 1.0e-08; 0 formal solutions); radiation E 4.1527620104e+45 -> 4.1609123298e+45, F/c 3.5094e+39 0.0000e+00 0.0000e+00 -> 1.5036e+41 1.4139e+34 -2.0679e+33 (volume sums)
+-- launch errors / memcheck
+2:========= Program hit CUDA_ERROR_INVALID_CONTEXT (error 201) due to "invalid device context" on CUDA API call to cuCtxGetDevice.
+37:========= Program hit CUDA_ERROR_INVALID_CONTEXT (error 201) due to "invalid device context" on CUDA API call to cuCtxGetDevice.
+72:========= Program hit CUDA_ERROR_INVALID_CONTEXT (error 201) due to "invalid device context" on CUDA API call to cuCtxGetDevice.
+103:========= Program hit CUDA_ERROR_INVALID_CONTEXT (error 201) due to "invalid device context" on CUDA API call to cuCtxGetDevice.
+282:========= ERROR SUMMARY: 4 errors
+=== H200S_lb0 env: VGD_CS_LB=0 (bin /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v203_e688cb7bc md5 7df2b648; NR=1, nlim 1, mesh/nx2=32 mesh/nx3=32 meshblock/nx2=32 meshblock/nx3=32, node hpc-sm-02-09)
+a rc=0 wall=14
+-- clean_init steady lines
+<rad_m1> clean_init steady pass 0: max(|dE|, |dF|/c)/max E = 9.534e-02
+<rad_m1> clean_init steady pass 1: max(|dE|, |dF|/c)/max E = 3.499e-08
+<rad_m1> clean_init steady pass 2: max(|dE|, |dF|/c)/max E = 7.111e-11
+<rad_m1> clean_init steady pass 3: max(|dE|, |dF|/c)/max E = 2.280e-13
+<rad_m1> clean_init steady: converged after 4 passes, residual 2.280e-13 (tol 1.0e-08; 0 formal solutions); radiation E 4.1527620104e+45 -> 4.1609123298e+45, F/c 3.5094e+39 0.0000e+00 0.0000e+00 -> 1.5036e+41 1.4139e+34 -2.0679e+33 (volume sums)
+-- launch errors / memcheck
