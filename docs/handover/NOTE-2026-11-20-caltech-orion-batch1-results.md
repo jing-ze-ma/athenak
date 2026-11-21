@@ -1891,3 +1891,4 @@ B_br gate not passed; arms not started
 - (10:19) B_v207 (caltech-runs/v207 5ba73ecab, CUDA 12.9 + g++ 13.2, IN PLACE, athena_v206d 9d9a80d6 copied out first; git diff 6241cce78..5ba73ecab = 5 src files): md5=86d310214d0383dfe84f0182296a3b98 secs=734 host=hpc-sm-02-04 TUs=232: main.cpp bvals/bvals.cpp bvals/bvals_cc.cpp bvals/buffs_fc.cpp bvals/buffs_cc.cpp bvals/bvals_fc.cpp bvals/bvals_part.cpp bvals | GATE PASS: athena_v207_5ba73ecab md5 86d31021 node hpc-sm-02-04 pass1=4.020e-06
 - (10:19) V7a NOT started: GPU processes on hpc-sm-02-04
 - (10:19) V7b NOT started: GPU processes on hpc-sm-02-16
+- (10:19) V7c NOT started: GPU processes on hpc-sm-01-11
