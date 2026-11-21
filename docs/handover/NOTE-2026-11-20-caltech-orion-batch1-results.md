@@ -1685,3 +1685,5 @@ B_br gate not passed; arms not started
   CW t19r_damp3_test (log.0) cycle 1135 [cycle=1150 time=4.614715e+04 dt=4.017203e+00]: CLEAN WARNING cycle 1135 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
 - (04:34) PROD 1121b:
   LAUNCH t19r_damp3_test: 2026-11-21 04:27:27 chunk 0 STAR=t19r_damp3_test BIN=/resnick/groups/carnegie_poc/jingze/prod_fresh_1121b/t19r_damp3_test/bin/athena_damp3_2a016d0da md5=587103887d7dcaab7f4edb6800a0ab30 DECK=/resnick/groups/carnegie_poc/jingze/fresh_prod_1120/fg_v2/decks_prod1121/P_t19r.athinput md5=8790ad589e68e452c5b983c9f9bd9668 start=-r /resnick/groups/carnegie_poc/jingze/prod_fresh_1121b/t19r_damp3_test/rst/t19l64.00001.rst WT=1 | first cycles: cycle=1100 time=4.445017e+04 dt=4.073442e+01 cycle=1150 time=4.614715e+04 dt=4.017203e+00  | 
+- (04:44) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t19r_damp3_test (log.0) cycle 1307 []: CLEAN WARNING cycle 1307 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 3)
