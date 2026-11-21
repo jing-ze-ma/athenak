@@ -868,3 +868,6 @@ B_br gate not passed; arms not started
 - (22:08) C1R_rsg_c1 (B_br, hpc-sm-02-16, 100 cycles, keys c1r/keys/rsg_c1.keys + hydro/floor_pay=rad_column rad_m1/clean_cs_lz_tel=true rad_m1/vet_rotate_avg_ema=128 rad_m1/vet_rotate_avg_ema_change_form=step): rc=0 wall=364 | passes/cycle 14.4 (over 100 cycles) | min dt (cycle lines) 8.198758e+02 | s/cycle 3.036 | CW 0 FATAL 0 | last cycle=589888 time=5.465735e+08
 - (22:09) C1R_rsg_v7 (B_br, hpc-sm-02-03, 100 cycles, keys c1r/keys/rsg_v7.keys + hydro/floor_pay=rad_column rad_m1/clean_cs_lz_tel=true rad_m1/vet_rotate_avg_ema=128 rad_m1/vet_rotate_avg_ema_change_form=step): rc=0 wall=450 | passes/cycle 24.4 (over 100 cycles) | min dt (cycle lines) 8.198758e+02 | s/cycle 3.916 | CW 4 FATAL 0 | last cycle=589888 time=5.465735e+08
 - (22:10) C1R_hg_ref (B_br, hpc-sm-02-10, 100 cycles, keys c1r/keys/hg_ref.keys + time/dt_retry_host=m1): rc=0 wall=535 | passes/cycle 30.2 (over 100 cycles) | min dt (cycle lines) 6.896552e+01 | s/cycle 4.592 | CW 0 FATAL 0 | last cycle=625061 time=5.012241e+07
+- (22:15) C1R progress:
+  C1R_hg_v7: 92 cycles, 7.75 s/cycle | passes/cycle 100.8 (over 93 cycles) | min dt (cycle lines) 6.807273e+00 | CW 12 FATAL 0
+  C1R_hg_c1: 95 cycles, 8.05 s/cycle | passes/cycle 81.7 (over 95 cycles) | min dt (cycle lines) 3.403636e+00 | CW 13 FATAL 0
