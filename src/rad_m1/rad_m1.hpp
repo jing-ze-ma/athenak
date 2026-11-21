@@ -3345,11 +3345,6 @@ class RadiationM1 {
   int vlat_geo_icut = -1;       // the first shell vlat_geo was built for
   MeshBoundaryValuesCC *pbval_vl = nullptr;   // vlat_i
   MeshBoundaryValuesCC *pbval_ea = nullptr;   // tsp-1108 EAUDITF diagnostic
-  // seamsync-1108 <rad_m1>/sp_face_sync (SphFaceSync, rad_m1_sph.cpp)
-  bool sp_face_sync = false;
-  MeshBoundaryValuesCC *pbval_fs = nullptr;
-  Real fsync_w = 1.0;   // <rad_m1>/sp_face_sync_relax
-  void SphFaceSync();
   MeshBoundaryValuesCC *pbval_vs = nullptr;   // vlat_cs
   void VetLatInit();
   void VetLatBuild();
@@ -4054,40 +4049,11 @@ class RadiationM1 {
   DvceArray3D<Real> vgd_up_gall;              // (gid, bin, 9): every block sums (MPI)
   HostArray3D<Real> vgd_up_galh;
   double vgd_up_time = 0.0;
-  // hrsplit-1110 vet_gd_hr_split = col (read only when named; default none = the code
-  // before, bitwise): the RADIAL half-range ratios r+-_r of vgd_hr split into vet_col's
-  // column solution plus vet_gd's lateral deviation (VetGdHrSplit, rad_m1_vetgd.cpp):
-  //   h = h_col + D g S_sig[(h_gd - h_col) - <h_gd - h_col>_shell]
-  // (D = 1: <h_col> + h_gd - <h_gd>; D = 0: h_col).  vet_gd_hr_split_d = D (default 1);
-  // (with vet_gd_replace the column solve is then run too, for vcol_hr only);
-  // vet_gd_hr_split_sig = sig (default 0): soft threshold S_sig(x) = sign(x) max(|x| -
-  // sig, 0) in h units; vet_gd_hr_split_res = rho (default 0 = off): the profile
-  // resolution weight g = clamp((th - rho dl)/(rho dl), 0, 1), th = sqrt(1 - f_K) the rms
-  // angular width of the column intensity about r, dl = sqrt(4 pi/n) the spacing of the
-  // n vet_gd directions (angular information only)
-  int vgd_hrs = 0;
   // hrsplit-1110 vet_gd_inner_reflect = diff | zeroflux (read only when named; default
   // diff = the code before): zeroflux drops the gradient term of vet_gd's diffusion start
   // at a REFLECTING inner x1 (I = S_face isotropic, H = 0 as the M1 face; vet_col mirrors)
   bool vgd_izf = false;
-  Real vgd_hrs_d = 1.0, vgd_hrs_sig = 0.0, vgd_hrs_res = 0.0;
   DvceArray5D<Real> vcol_hr;     // (m, 3, k, j, i): vet_col h+_r, h-_r, f_K (unclamped)
-  DvceArray1D<Real> vgd_hrs_m;   // (q c1 + i): <h_gd - h_col>_shell, q = 0, 1
-  void VetGdHrSplit();
-  // vgdh-1110 vet_gd_hr_latfit = L (read only when named; default -1 = off, bitwise): the
-  // radial half-range ratios r+-_r of vgd_hr (components 0, 1; after the twin, rotation
-  // average and vet_gd_hr_split) replaced shell by shell by their least-squares fit with
-  // the real spherical harmonics of degree <= L (L = 0: the solid-angle-weighted shell
-  // mean) over the cells of the shell (VetGdHrLatFit): lateral ray noise of the fixed
-  // direction set is removed before the ratios enter the radial faces.
-  // vet_gd_hr_latfit_d = D (default 0): h = fit + D (h - fit).  vet_gd_hr_latfit_g = true
-  // (default false): on the cubed sphere the |H|/J of the thin switch is formed with the
-  // lateral net ratios dropped as well (the lateral part of the same ray noise)
-  int vgd_hlf = -1;
-  Real vgd_hlf_d = 0.0;
-  bool vgd_hlf_g = false;
-  DvceArray4D<Real> vgd_hlf_y;   // (m, k, j, 16): the basis at the cell centre x dOmega
-  void VetGdHrLatFit();
   void VetGdUpPrep();
   void VetGdUpShell(const int i, const bool inw, const int f);
   DvceArray3D<Real> vgd_up_prof2;             // the fused twin's profiles

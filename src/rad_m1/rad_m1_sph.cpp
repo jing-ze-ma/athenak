@@ -459,28 +459,6 @@ void RadiationM1::CubedS1Init() {
   }
 }
 
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationM1::SphFaceSync
-//! \brief seamsync-1108 <rad_m1>/sp_face_sync (spherical polar, default false, read only
-//! when named): make the stored transverse face fluxes f0x2/f0x3 single valued on every
-//! lateral face two MeshBlocks share (the theta-/phi-periodic seams included), each block
-//! keeping the mean 0.5 (F_mine + F_neighbour) (commutative: both blocks get the same
-//! bits).  Called at the start of each implicit step, before f0x* is copied to the face
-//! memory f0x*n.  Why: the face equation carries its old value, F^{n+1} = th (F^n + ...),
-//! and in thin cells th -> 1, so ANY step in which the two copies of a shared face
-//! differed (the pre-fix theta-seam tangential term, tensor-sp-1108) is remembered for
-//! ~1/(1 - th) steps and the E update stays non-conservative at that face long after the
-//! cause is gone (He wedge restart from the damaged he_tan ONwi state: 0.31 L_in, all of
-//! it at the theta seam, EAUDITF).  The cubed sphere has its own seam average
-//! (CubedSeamFaceAverage).  The exchange uses a dedicated cell-centred boundary object
-//! (4 components: x2 lower/upper and x3 lower/upper boundary-row faces in the cells).
-
-KOKKOS_INLINE_FUNCTION
-bool M1FsShared(const BoundaryFlag bf) {
-  return (bf == BoundaryFlag::block) || (bf == BoundaryFlag::periodic);
-}
-
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CubedVecCheck
 //! \brief cs-s4-1017 (TEST ONLY, cubed sphere, <rad_m1>/cs_vec_check = true read only

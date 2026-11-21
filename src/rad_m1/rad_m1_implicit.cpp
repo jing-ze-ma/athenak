@@ -359,19 +359,6 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   dbg_etally = pin->GetOrAddBoolean("rad_m1","dbg_energy_tally",false);
   // accbook-1021: read only when named (an input without it is unchanged, also in the
   // parameters a restart file records)
-  // seamsync-1108: <rad_m1>/sp_face_sync (read only when named; off = bitwise)
-  sp_face_sync = sph_geom && !cs_geom &&
-                 pin->DoesParameterExist("rad_m1", "sp_face_sync") &&
-                 pin->GetBoolean("rad_m1", "sp_face_sync");
-  if (sp_face_sync && pin->DoesParameterExist("rad_m1", "sp_face_sync_relax")) {
-    fsync_w = pin->GetReal("rad_m1", "sp_face_sync_relax");
-    if (!(fsync_w > 0.0 && fsync_w <= 1.0)) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_m1>/sp_face_sync_relax must be in (0, 1]"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-  }
   impl_ecnt = pin->GetOrAddInteger("rad_m1","implicit_eos_cache_nt",2);
   impl_eccheck = pin->GetOrAddBoolean("rad_m1","implicit_eos_cache_check",true);
   // the check is a MEASUREMENT only (nothing reads igm or ec_emax/ec_tmax but the final

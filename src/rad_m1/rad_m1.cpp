@@ -2119,53 +2119,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
-    // vgdh-1110 vet_gd_hr_latfit = L (read only when named; -1 = off, rad_m1.hpp)
-    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_hr_latfit")) {
-      vgd_hlf = pin->GetInteger("rad_m1","vet_gd_hr_latfit");
-      if (vgd_hlf > 3) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "rad_m1/vet_gd_hr_latfit = " << vgd_hlf
-                  << " (-1 off, 0..3 the spherical-harmonic degree)" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      if (pin->DoesParameterExist("rad_m1","vet_gd_hr_latfit_d")) {
-        vgd_hlf_d = pin->GetReal("rad_m1","vet_gd_hr_latfit_d");
-      }
-      if (pin->DoesParameterExist("rad_m1","vet_gd_hr_latfit_g")) {
-        vgd_hlf_g = pin->GetBoolean("rad_m1","vet_gd_hr_latfit_g");
-      }
-    }
-    // hrsplit-1110 vet_gd_hr_split = none | col (read only when named; rad_m1.hpp)
-    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_hr_split")) {
-      const std::string hs = pin->GetString("rad_m1","vet_gd_hr_split");
-      if (hs == "none") {
-        vgd_hrs = 0;
-      } else if (hs == "col") {
-        vgd_hrs = 1;
-      } else {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "rad_m1/vet_gd_hr_split = " << hs << " (none | col)"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      if (vgd_hrs != 0) {
-        if (pin->DoesParameterExist("rad_m1","vet_gd_hr_split_d")) {
-          vgd_hrs_d = pin->GetReal("rad_m1","vet_gd_hr_split_d");
-        }
-        if (pin->DoesParameterExist("rad_m1","vet_gd_hr_split_sig")) {
-          vgd_hrs_sig = std::max(0.0, pin->GetReal("rad_m1","vet_gd_hr_split_sig"));
-        }
-        if (pin->DoesParameterExist("rad_m1","vet_gd_hr_split_res")) {
-          vgd_hrs_res = std::max(0.0, pin->GetReal("rad_m1","vet_gd_hr_split_res"));
-        }
-        if (!vet_col || !vcol_team) {
-          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << "rad_m1/vet_gd_hr_split = col needs closure = vet_col"
-                    << " (vet_col_team = true)" << std::endl;
-          std::exit(EXIT_FAILURE);
-        }
-      }
-    }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_halo_list_mb")) {
       vgd_hl_mb = std::max(0, pin->GetInteger("rad_m1","vet_gd_halo_list_mb"));
     }
@@ -2943,7 +2896,6 @@ RadiationM1::~RadiationM1() {
   if (pbval_sg != nullptr) {delete pbval_sg;}
   if (pbval_vl != nullptr) {delete pbval_vl;}
   if (pbval_ea != nullptr) {delete pbval_ea;}
-  if (pbval_fs != nullptr) {delete pbval_fs;}
   if (pbval_vs != nullptr) {delete pbval_vs;}
   if (pbval_hr != nullptr) {delete pbval_hr;}   // cs-s4-1017
   if (pbval_gd != nullptr) {delete pbval_gd;}
