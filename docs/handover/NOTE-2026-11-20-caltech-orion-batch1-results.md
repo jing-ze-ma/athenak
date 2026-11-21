@@ -749,3 +749,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - DD_t19conv (hpc-sm-02-04): a rc=0 wall=847 | last cycle=500 time=1.875472e+04 dt=2.680854e+01 | 1.446 s/cycle | CW 0 FATAL 0 DT_RETRY(events) 1 | eint<0 lines 1, sum 1572864, max 1572864 | raycut lines 205 | profiles: 4 files
   DIAG START DE_t19noseed 18:42:32 on hpc-sm-02-04
 - DB_t19nowb: a rc=0 wall=715 | a cycles 0 - 500 dt first 38.3541 last 32.3527 s/cycle steady 59.393 first elapsed 46.6 a 'FATAL' 0  a 'CLEAN WARNING' 0   | CW 0 FATAL 0 | eint<0 lines 1, sum 1572864, max 1572864 | raycut lines 273 | deck md5 in info.txt
+  DB_t19nowb profiles: 3 files (caltech_results/DB_t19nowb/prof_*.txt); bins deleted
