@@ -982,3 +982,5 @@ B_br gate not passed; arms not started
    t19r: cycle=350 time=1.395730e+04 dt=4.015058e+01 | KE_int 4.3268748184611398e+39 L_bot/L_in 0.995 L_top/L_in 1.089 | CW 0 FATAL 0 | FLIM 3663 floorcap 30 | rst t19l64.00000.rst
 - (00:05) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
   CW t19l64 (log.0) cycle 1234 []: CLEAN WARNING cycle 1234 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 4)
+- (00:09) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t19l64 (log.0) cycle 1301 []: CLEAN WARNING cycle 1301 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
