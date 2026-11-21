@@ -1413,11 +1413,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","floorcap_report")) {
       fcap_report = pin->GetInteger("rad_m1","floorcap_report");
     }
-    // floorcap_mesh_vol (read only when named, default off; scheme = clean): the
-    // counters weighted by the mesh's cell volume, |dp| and L_z of the gas momentum
-    // in the frame of y on every mesh (CleanVol, CleanLzArm); the state is the same
-    if (pin->DoesParameterExist("rad_m1","floorcap_mesh_vol")) {
-      fcap_mvol = pin->GetBoolean("rad_m1","floorcap_mesh_vol");
+    // floorcap_mesh_vol (scheme = clean; default on for a fresh run, USER 11-21,
+    // recorded; a restart file without the key keeps off, echoed): the counters
+    // weighted by the mesh's cell volume, |dp| and L_z of the gas momentum in the frame
+    // of y on every mesh (CleanVol, CleanLzArm); the state is the same
+    if (clean || pin->DoesParameterExist("rad_m1","floorcap_mesh_vol")) {
+      if (clean && !nw && !pin->DoesParameterExist("rad_m1","floorcap_mesh_vol")) {
+        recipe::Log("<rad_m1>/floorcap_mesh_vol = false (a restart file without the "
+                    "key: the old default)");
+      }
+      fcap_mvol = pin->GetOrAddBoolean("rad_m1","floorcap_mesh_vol",nw);
       if (fcap_mvol && !clean) {
         std::cout << "### FATAL ERROR: <rad_m1>/floorcap_mesh_vol needs scheme = clean"
                   << std::endl;
