@@ -766,3 +766,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - PROD m35mms chunk ended 19:00: 2026-11-20 18:55:04 chunk 0 rc=0 last: elapsed=4.479448e+03 cycle=9100 time=7.484082e+04 dt=5.757379e+00
 - CM4_rsg (hpc-sm-01-17): rc=0 wall=148 | cycles 589788 - 589818 | steady 2.833 s/cycle | GPU MiB max 106007 min 104893 | CW a 0 FATAL 0 |  passes/cycle (sum of CLEAN it) 0.0 (over 30 cycles) | s/cycle 2.833 | CW 0 | min dt 0.000000e+00
 - V204S_hg (hpc-sm-01-11): rc=0 wall=139 | cycles 624961 - 624965 | steady 15.582 s/cycle | GPU MiB max 101133 min 100471 | CW a 2 FATAL 0 |  passes/cycle (sum of CLEAN it) 0.0 (over 4 cycles) | s/cycle 15.582 | CW 2
+- DG_t19cutr: a rc=0 wall=813 | a cycles 0 - 500 dt first 38.3541 last 38.1396 s/cycle steady 69.791 first elapsed 51.2 a 'FATAL' 0  a 'CLEAN WARNING' 0   | CW 0 FATAL 0 | eint<0 lines 1, sum 1572864, max 1572864 | raycut lines 34 | deck md5 in info.txt
