@@ -1,0 +1,5 @@
+GATE PASS: athena_wbl_6653fdef4 md5 486e1ebd node hpc-sm-01-11 pass1=4.020e-06
+<rad_m1> clean_init steady pass 0: max(|dE|, |dF|/c)/max E = 9.534e-02
+<rad_m1> clean_init steady pass 1: max(|dE|, |dF|/c)/max E = 4.020e-06
+<rad_m1> clean_init steady pass 2: max(|dE|, |dF|/c)/max E = 1.109e-06
+<rad_m1> clean_init steady pass 3: max(|dE|, |dF|/c)/max E = 2.281e-06
