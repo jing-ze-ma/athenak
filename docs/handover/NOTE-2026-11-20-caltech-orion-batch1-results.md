@@ -1355,3 +1355,5 @@ B_br gate not passed; arms not started
   CW t19r (log.0) cycle 4429 []: CLEAN WARNING cycle 4429: backward-Euler solve not converged (dt_retry, 67 so far; last change inf)
   CW t19r (log.0) cycle 4429 []: CLEAN WARNING cycle 4429: backward-Euler solve not converged (dt_retry, 67 so far; last change inf)
   CW t19r (log.0) cycle 4429 []: CLEAN WARNING cycle 4429: backward-Euler solve not converged (dt_retry, 67 so far; last change inf)
+- (03:52) PROD 1121b:
+  ALERT CW burst t19r: 6 new CLEAN WARNING in ~2 min (total 77); last: CLEAN WARNING cycle 4429: backward-Euler solve not converged (dt_retry, 67 so far; last change inf)
