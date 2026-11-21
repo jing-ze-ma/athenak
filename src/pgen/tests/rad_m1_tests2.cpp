@@ -2317,6 +2317,13 @@ void RadM1AmHistory(HistoryData *pdata, Mesh *pm) {
   if (m1_am_ebnd) {
     pdata->hdata[14] = (global_variable::my_rank == 0) ? pmbp->pradm1->ebnd_acc : 0.0;
   }
+  // Lz_tot: gas + radiation + ledger L_z of the clean scheme (CleanLzTotal; with
+  // clean_cs_lz_tel the radiation's is that of its face momenta), last column
+  const int nl = pdata->nhist;
+  const Real lzt = pmbp->pradm1->CleanLzTotal();   // (collective)
+  pdata->label[nl] = "Lz_tot";
+  pdata->hdata[nl] = (global_variable::my_rank == 0) ? lzt : 0.0;
+  pdata->nhist = nl + 1;
 }
 
 //----------------------------------------------------------------------------------------
