@@ -1,1 +1,1 @@
-passes/cycle (sum of CLEAN it) 0.0 (over 4 cycles) | s/cycle 15.582 | CW 2
+passes/cycle 139.8 (over 4 cycles) | min dt (cycle lines) 6.896552e+01 | s/cycle 15.582 | CW 2

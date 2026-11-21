@@ -1,1 +1,1 @@
-passes/cycle (sum of CLEAN it) 0.0 (over 30 cycles) | s/cycle 2.833 | CW 0 | min dt 0.000000e+00
+passes/cycle 14.3 (over 30 cycles) | min dt (cycle lines) 9.565217e+02 | s/cycle 2.833 | CW 0
