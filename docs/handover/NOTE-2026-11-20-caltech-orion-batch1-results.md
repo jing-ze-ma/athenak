@@ -2058,3 +2058,12 @@ B_br gate not passed; arms not started
   | i1_m35mms_f1k | cyc 36300 | t 2.853518e+05 | 33.03% of 8.64e5 | dt 8.194074e+00 | KE 1.42e+39 | Ltop/Lin 0.977 | Lbot/Lin 1.014 | solves/stage-pass (last 200 lines) 4.4 mean / 5 max | CW 0 FATAL 0 | last hst: [t 2.838e+05 KE 1.43e+39 Lt 0.997 Lb 1.007] [t 2.844e+05 KE 1.42e+39 Lt 0.990 Lb 1.011] [t 2.85e+05 KE 1.42e+39 Lt 0.977 Lb 1.014] 
   | t19r_damp_test (chunk ended) | cyc 1950 | t 6.989857e+04 | 69.90% of 1.0e5 | dt 1.673255e+01 | KE 1.84e+42 | Ltop/Lin 1.408 | Lbot/Lin 1.004 | solves/stage-pass (last 200 lines) 7.1 mean / 9 max | CW 7 FATAL 0 | last hst: [t 6.122e+04 KE 1.19e+42 Lt 1.472 Lb 0.991] [t 6.48e+04 KE 1.52e+42 Lt 1.427 Lb 0.998] [t 6.841e+04 KE 1.84e+42 Lt 1.408 Lb 1.004] 
   | t19r_damp3_test (chunk ended) | cyc 1500 | t 4.999050e+04 | 49.99% of 1.0e5 | dt 1.317235e+01 | KE 1.15e+41 | Ltop/Lin 1.046 | Lbot/Lin 0.992 | solves/stage-pass (last 200 lines) 9.6 mean / 200 max | CW 11 FATAL 0 | last hst: [t 4.681e+04 KE 1.15e+41 Lt 1.046 Lb 0.992] 
+- (12:53) kd ack: B_opac3 (caltech-test-opac 772ee5ac6, + clean_stag_opac_passes default 3) building IN PLACE on 01-11 (athena_opac 00ad333b7 copied out first), then gate; then W4e RSG h (W4a setup + clean_face_opac harmonic) and W4f RSG oh3 (+ clean_stag_opac_update, passes 3 = default) on the next free test nodes, parallel to W5 (W5a / W5b / W5c running on 02-04 / 02-16 / 02-11); 150 cycles, rst off, no damping -> V210. No further HG arms. W4c HG off first CW (grep -B5, from caltech_results/V210/W4c_hg_off/cw_context.txt):
+    CLEAN LZ cycle 624966 t2s 3 ledger 2.1239402789816916e+41
+    elapsed=8.366014e+01 cycle=624967 time=5.011259e+07 dt=1.063636e+02
+    CLEAN OLDVEC cycle 624967 t2s 2 eint<0 135818 (taken as 0) E<0 2881
+    CLEAN cycle 624967 t2s 2 it -2 (sum 693) pos 0 mark 0 all 0 neg 0 r1 0 r2 3581 first 0 3581 guard 0 solves 200 cwin 0
+    CLEAN XT cycle 624967 t2s 2 write-back closure 1.038e+04
+    CLEAN WARNING cycle 624967 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+    CLEAN WARNING cycle 624967: backward-Euler solve not converged (dt_retry, 2 so far; last change 5.910e-03)
+    
