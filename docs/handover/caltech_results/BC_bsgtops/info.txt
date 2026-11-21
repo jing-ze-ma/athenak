@@ -1,0 +1,1 @@
+TAG=BC_bsgtops BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v203_e688cb7bc md5=7df2b64833e40a77e8a8a04e6dc900ee DECK=/resnick/groups/carnegie_poc/jingze/fresh_prod_1120/fg_v2/decks/bsg_diag_tops.athinput md5=b2fbc98314dd8212fe702fa4738ce661 NC=1000000 HOLDER=6133592 NODE=hpc-sm-02-03 NR=4 EX=

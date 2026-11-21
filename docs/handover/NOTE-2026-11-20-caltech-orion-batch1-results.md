@@ -817,3 +817,12 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - BB_bsgcutr: a rc=137 wall=2167 | a cycles 0 - 5100 dt first 165.455 last 169.491 s/cycle steady 20.898 first elapsed 14.8 a 'FATAL' 0  a 'CLEAN WARNING' 0   | CW 0 FATAL 0 | eint<0 lines 387, sum 791061, max 55304 | raycut lines 839 | deck md5 in info.txt
 - BD_bsgthinf0: a rc=137 wall=2309 | a cycles 0 - 5300 dt first 165.455 last 146.851 s/cycle steady 21.358 first elapsed 15.3 a 'FATAL' 0  a 'CLEAN WARNING' 0   | CW 0 FATAL 0 | eint<0 lines 336, sum 2674598, max 24739 | raycut lines 1195 | deck md5 in info.txt
 - BF_bsglq10: a rc=137 wall=1627 | a cycles 0 - 3900 dt first 165.455 last 169.447 s/cycle steady 20.294 first elapsed 15.8 a 'FATAL' 0  a 'CLEAN WARNING' 0   | CW 0 FATAL 0 | eint<0 lines 330, sum 3156185, max 55821 | raycut lines 858 | deck md5 in info.txt
+  BB_bsgcutr stopped at cycle=5100 time=8.405053e+05; partial hst + raycut_full + oldvec_full + log tail committed; own bins/rst deleted (0 files)
+  BD_bsgthinf0 stopped at cycle=5300 time=7.852412e+05; partial hst + raycut_full + oldvec_full + log tail committed; own bins/rst deleted (0 files)
+  BC_bsgtops stopped at cycle=5100 time=7.633103e+05; partial hst + raycut_full + oldvec_full + log tail committed; own bins/rst deleted (0 files)
+  BE_bsgideal stopped at cycle=4200 time=6.431843e+05; partial hst + raycut_full + oldvec_full + log tail committed; own bins/rst deleted (40 files)
+  BF_bsglq10 stopped at cycle=3900 time=6.002536e+05; partial hst + raycut_full + oldvec_full + log tail committed; own bins/rst deleted (38 files)
+  BG_bsgold stopped at cycle=2950 time=4.659143e+05; partial hst + raycut_full + oldvec_full + log tail committed; own bins/rst deleted (28 files)
+  BH_bsgnowb stopped at cycle=2600 time=3.965936e+05; partial hst + raycut_full + oldvec_full + log tail committed; own bins/rst deleted (26 files)
+  BI_bsgtau1000 stopped at cycle=1700 time=2.641451e+05; partial hst + raycut_full + oldvec_full + log tail committed; own bins/rst deleted (18 files)
+  DGL_t19cutr stopped at cycle=750 time=2.872841e+04; partial hst + raycut_full + oldvec_full + log tail committed; own bins/rst deleted (0 files)
