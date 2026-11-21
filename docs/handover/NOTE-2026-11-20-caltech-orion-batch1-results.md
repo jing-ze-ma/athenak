@@ -754,3 +754,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - **PROD TRIP bsg NaN** 18:50: CLEAN LZB cycle 9178 t2s 1 ledger -nan
 - **PROD TRIP bsg CW burst** 18:50: 24 new in 10 min: CLEAN WARNING cycle 9632 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 12)
   BSG trip detail (read-only, 18:52): the 'NaN' is in 2 diagnostic ledger lines only ('CLEAN LZB cycle 9178 t2s 1 ledger -nan' and one more), no NaN in state/hst/cycle lines; CW so far 28 (22 'stage solve failed -> backward Euler', 6 'backward-Euler not converged (dt_retry)'), all since cycle ~9.2k; dt 168.9 (start) -> 87-99 now (cycle 9800); the run keeps going. Files in PROD_bsg/ (trip commit).
+- CM5_rsg (hpc-sm-02-10): rc=0 wall=183 | cycles 589788 - 589818 | steady 4.049 s/cycle | GPU MiB max 106007 min 104893 | CW a 1 FATAL 0 |  passes/cycle (sum of CLEAN it) 0.0 (over 30 cycles) | s/cycle 4.049 | CW 1 | min dt 0.000000e+00
