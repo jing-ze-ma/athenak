@@ -1,0 +1,99 @@
+    hydro dt is set by cell (m,k,j,i) = (2,66,3,236) gid = 14
+    r=7.54977e+12 rho=3.84952e-13 T=8.31446e+10 p=0.00822871 cs=188750 v=(-9.99871e+07,1.7789e+06,-1.31085e+06)
+CLEAN OLDVEC cycle 624962 t2s 2 eint<0 17735 (taken as 0) E<0 14542
+CLEAN cycle 624962 t2s 2 it -2 (sum 202) pos 0 mark 0 all 0 neg 0 r1 0 r2 12415 first 0 12415 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624962 t2s 2 write-back closure 5.261e+02
+CLEAN WARNING cycle 624962 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+--
+CLEAN LZ cycle 624978 t2s 3 ledger 6.0479617578325306e+41
+elapsed=1.916687e+02 cycle=624979 time=5.011293e+07 dt=1.010324e+02
+CLEAN OLDVEC cycle 624979 t2s 2 eint<0 162326 (taken as 0) E<0 12145
+CLEAN cycle 624979 t2s 2 it -2 (sum 203) pos 0 mark 0 all 0 neg 0 r1 0 r2 5859 first 0 5859 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624979 t2s 2 write-back closure 4.157e+02
+CLEAN WARNING cycle 624979 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+--
+CLEAN LZ cycle 624981 t2s 3 ledger 9.3257204569511738e+41
+elapsed=2.289413e+02 cycle=624982 time=5.011324e+07 dt=1.010324e+02
+CLEAN OLDVEC cycle 624982 t2s 2 eint<0 159163 (taken as 0) E<0 27604
+CLEAN cycle 624982 t2s 2 it -2 (sum 203) pos 0 mark 0 all 0 neg 0 r1 0 r2 5725 first 0 5725 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624982 t2s 2 write-back closure 9.109e+04
+CLEAN WARNING cycle 624982 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 3)
+--
+CLEAN LZ cycle 624984 t2s 3 ledger 1.2331522169416135e+42
+elapsed=2.671466e+02 cycle=624985 time=5.011355e+07 dt=1.063636e+02
+CLEAN OLDVEC cycle 624985 t2s 2 eint<0 248859 (taken as 0) E<0 51249
+CLEAN cycle 624985 t2s 2 it -2 (sum 204) pos 0 mark 0 all 0 neg 0 r1 0 r2 7050 first 0 7050 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624985 t2s 2 write-back closure 3.705e+02
+CLEAN WARNING cycle 624985 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 4)
+--
+CLEAN XT cycle 624986 t2s 1 write-back closure 1.590e+02
+elapsed=2.997205e+02 cycle=624987 time=5.011376e+07 dt=1.063636e+02
+CLEAN OLDVEC cycle 624987 t2s 2 eint<0 92989 (taken as 0) E<0 68449
+CLEAN cycle 624987 t2s 2 it -2 (sum 326) pos 0 mark 0 all 0 neg 0 r1 0 r2 7522 first 0 7522 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624987 t2s 2 write-back closure 1.412e+02
+CLEAN WARNING cycle 624987 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
+CLEAN WARNING cycle 624987: backward-Euler solve not converged (dt_retry, 6 so far; last change 4.794e-03)
+--
+CLEAN XT cycle 624987 t2s 1 write-back closure 1.043e+02
+DT_RETRY cycle=624987 t=5.011376e+07 dt 1.063636e+02 -> 5.318182e+01 reason=NON-CONVERGED resid=-1.000000e+00 cut 1
+CLEAN OLDVEC cycle 624987 t2s 2 eint<0 43032 (taken as 0) E<0 51994
+CLEAN cycle 624987 t2s 2 it -2 (sum 314) pos 0 mark 0 all 0 neg 0 r1 0 r2 5619 first 0 5619 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624987 t2s 2 write-back closure 3.875e+01
+CLEAN WARNING cycle 624987 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
+CLEAN WARNING cycle 624987: backward-Euler solve not converged (dt_retry, 6 so far; last change 6.534e-02)
+--
+CLEAN XT cycle 624987 t2s 1 write-back closure 7.948e+02
+DT_RETRY cycle=624987 t=5.011376e+07 dt 5.318182e+01 -> 2.659091e+01 reason=NON-CONVERGED resid=-1.000000e+00 cut 2
+CLEAN OLDVEC cycle 624987 t2s 2 eint<0 20106 (taken as 0) E<0 40371
+CLEAN cycle 624987 t2s 2 it -2 (sum 209) pos 0 mark 0 all 0 neg 0 r1 0 r2 4702 first 0 4702 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624987 t2s 2 write-back closure 2.600e+01
+CLEAN WARNING cycle 624987 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
+CLEAN WARNING cycle 624987: backward-Euler solve not converged (dt_retry, 6 so far; last change 1.221e-02)
+--
+CLEAN XT cycle 624987 t2s 1 write-back closure 2.975e+01
+DT_RETRY cycle=624987 t=5.011376e+07 dt 2.659091e+01 -> 1.350649e+01 reason=NON-CONVERGED resid=-1.000000e+00 cut 3
+CLEAN OLDVEC cycle 624987 t2s 2 eint<0 8425 (taken as 0) E<0 34577
+CLEAN cycle 624987 t2s 2 it -2 (sum 204) pos 0 mark 0 all 0 neg 0 r1 0 r2 4379 first 0 4379 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624987 t2s 2 write-back closure 1.949e+01
+CLEAN WARNING cycle 624987 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
+CLEAN WARNING cycle 624987: backward-Euler solve not converged (dt_retry, 6 so far; last change 2.654e-03)
+--
+CLEAN XT cycle 624987 t2s 1 write-back closure 1.094e+01
+DT_RETRY cycle=624987 t=5.011376e+07 dt 1.350649e+01 -> 6.807273e+00 reason=NON-CONVERGED resid=-1.000000e+00 cut 4
+CLEAN OLDVEC cycle 624987 t2s 2 eint<0 1577 (taken as 0) E<0 31309
+CLEAN cycle 624987 t2s 2 it -2 (sum 202) pos 0 mark 0 all 0 neg 0 r1 0 r2 4391 first 0 4391 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624987 t2s 2 write-back closure 1.115e+01
+CLEAN WARNING cycle 624987 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
+CLEAN WARNING cycle 624987: backward-Euler solve not converged (dt_retry, 6 so far; last change 3.400e-04)
+--
+CLEAN XT cycle 624987 t2s 1 write-back closure 6.306e+00
+DT_RETRY cycle=624987 t=5.011376e+07 dt 6.807273e+00 -> 3.417306e+00 reason=NON-CONVERGED resid=-1.000000e+00 cut 5
+CLEAN OLDVEC cycle 624987 t2s 2 eint<0 2 (taken as 0) E<0 28249
+CLEAN cycle 624987 t2s 2 it -2 (sum 210) pos 0 mark 0 all 0 neg 0 r1 0 r2 4428 first 0 4428 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624987 t2s 2 write-back closure 3.587e+00
+CLEAN WARNING cycle 624987 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
+CLEAN WARNING cycle 624987: backward-Euler solve not converged (dt_retry, 6 so far; last change 4.930e-04)
+--
+CLEAN XT cycle 624987 t2s 1 write-back closure 4.610e+00
+DT_RETRY cycle=624987 t=5.011376e+07 dt 3.417306e+00 -> 1.712091e+00 reason=NON-CONVERGED resid=-1.000000e+00 cut 6
+CLEAN OLDVEC cycle 624987 t2s 2 eint<0 0 (taken as 0) E<0 23912
+CLEAN cycle 624987 t2s 2 it -4 (sum 394) pos 0 mark 0 all 0 neg 0 r1 0 r2 4443 first 0 4443 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624987 t2s 2 write-back closure 3.337e+00
+CLEAN WARNING cycle 624987 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
+CLEAN WARNING cycle 624987: backward-Euler solve not converged (dt_retry, 6 so far; last change 1.708e-04)
+--
+CLEAN XT cycle 624987 t2s 1 write-back closure 3.886e+00
+DT_RETRY cycle=624987 t=5.011376e+07 dt 1.712091e+00 -> 8.569074e-01 reason=NON-CONVERGED resid=-1.000000e+00 cut 7
+CLEAN OLDVEC cycle 624987 t2s 2 eint<0 0 (taken as 0) E<0 17720
+CLEAN cycle 624987 t2s 2 it -2 (sum 205) pos 0 mark 0 all 0 neg 0 r1 0 r2 5399 first 0 5399 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624987 t2s 2 write-back closure 2.932e+00
+CLEAN WARNING cycle 624987 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
+CLEAN WARNING cycle 624987: backward-Euler solve not converged (dt_retry, 6 so far; last change 1.024e-04)
+--
+CLEAN XT cycle 624987 t2s 1 write-back closure 3.685e+00
+DT_RETRY cycle=624987 t=5.011376e+07 dt 8.569074e-01 -> 4.286696e-01 reason=NON-CONVERGED resid=-1.000000e+00 cut 8
+CLEAN OLDVEC cycle 624987 t2s 2 eint<0 0 (taken as 0) E<0 11708
+CLEAN cycle 624987 t2s 2 it -2 (sum 203) pos 0 mark 0 all 0 neg 0 r1 0 r2 6296 first 0 6296 guard 0 solves 200 cwin 0
+CLEAN XT cycle 624987 t2s 2 write-back closure 2.539e+00
+CLEAN WARNING cycle 624987 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
+CLEAN WARNING cycle 624987: backward-Euler solve not converged (dt_retry, 6 so far; last change 7.485e-05)
