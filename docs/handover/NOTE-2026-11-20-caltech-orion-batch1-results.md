@@ -1119,3 +1119,4 @@ B_br gate not passed; arms not started
   CW t19r (log.0) cycle 1229 []: CLEAN WARNING cycle 1229 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 48)
   CW t19r (log.0) cycle 1233 []: CLEAN WARNING cycle 1233 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 49)
   CW t19r (log.0) cycle 1236 []: CLEAN WARNING cycle 1236 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 50)
+- (01:13) C3c_t19 RUNNING on 02-04 since ~01:12 (correction: my 01:09 line said 'started', but the launch had failed on a missing exec bit; relaunched 01:12). B_c3c cd9ceba6, restart t19l64.00001, N0 1127, 450 cycles, J4 keys + thinf_held_gate + nl_print, rst off. First cycle lines: cycle=1150 time=4.409307e+04 dt=3.834613e+01 | FATAL 0 | never-read: job/final_restart 
