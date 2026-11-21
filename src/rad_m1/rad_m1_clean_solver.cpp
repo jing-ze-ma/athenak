@@ -1176,12 +1176,13 @@ void RadiationM1::CleanApply(const int src, const int dst) {
     auto w = cln_w;
     auto st = cln_st;
     const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
-    // (cubed sphere: the lateral stress of every face from the sums Y, CleanFaceCross)
-    const bool cub = x.cub;
-    const CleanArgs *px = cub ? CleanDevArgs(x, 0) : nullptr;
+    // (cubed sphere: the lateral stress of every face from the sums Y, CleanFaceCross;
+    // none with the xdonor, which takes the cross terms out of the operator)
+    const bool cub = x.cub, cxf = cub && !(x.xq >= 0 && !x.hi);
+    const CleanArgs *px = cxf ? CleanDevArgs(x, 0) : nullptr;
     // (the cubed sphere: each face's cross term once, not once per cell beside it)
     DvceArray5D<Real> xf;
-    if (cub) {
+    if (cxf) {
       const int ie = indcs.ie, je = indcs.je, ke = indcs.ke;
       xf = ScratchView<DvceArray5D<Real>>("cln_xf", pmy_pack->nmb_thispack, 3,
                                           w.s.extent_int(2), w.s.extent_int(3),
@@ -1287,7 +1288,7 @@ void RadiationM1::CleanApply(const int src, const int dst) {
         }
         a += st(m,s,k-ks,j-js,i-is)*w(m,src,k+dk,j+dj,i+di);
       }
-      if (cub) {
+      if (cxf) {
         const CleanArgs &x = *px;   // (in device memory: no per-thread copy)
         for (int d = 0; d < 3; ++d) {
           for (int sd = 0; sd < 2 && d < x.nf; ++sd) {
