@@ -3317,7 +3317,6 @@ class RadiationM1 {
   Real cstan_np = 0.0, cstan_na = 0.0;   // assemblies, assemblies with Q on (log only)
   DvceArray4D<Real> cs_qf;
   void CsTanFrameInit(DvceArray5D<Real> &a, DvceArray5D<Real> &ac, MeshBoundaryValuesCC *pb);
-  void CsTanDiag();
   int vgd_iter = 1;            // vet_gd_iter: sweeps per ordinary build
   bool vgd_bandx = false;      // vet_gd_band_exit: shortened segments for reads
                                // beyond the ghost band instead of clamping
@@ -3823,7 +3822,6 @@ class RadiationM1 {
   void VetGdCsSweep();
   void VetGdCsMoments(const int part);   // 0: D_rr -> LAT0, 1: surface q
   void VetGdCsTab(const std::vector<double> &d);   // into vgd_tabh (walls off, mr)
-  void VetGdCsDump(const char *env);
   template <class V>
   void VetGdCsHalo(V &a, const int nv, const int i0, const int i1, const bool loc,
                    const int ws = -1);

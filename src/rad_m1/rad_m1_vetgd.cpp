@@ -6544,10 +6544,6 @@ void RadiationM1::VetGdSweep() {
       auto O_ = vgd_ovl[pass];
       const size_t off = static_cast<size_t>(g)*vgd_ovl_cap[pass];
       const int q0 = g*ovg, q1 = std::min((g + 1)*ovg, nsh);
-      // env VGD_OVL_DEBUG = 1: every item remote (no overlap; bitwise by construction),
-      // 2: every item local (a deliberate race; diagnostic only)
-      const int dbg = (std::getenv("VGD_OVL_DEBUG") != nullptr) ?
-                      std::atoi(std::getenv("VGD_OVL_DEBUG")) : 0;
       Kokkos::parallel_for("m1_vgd_ovl_flag", Kokkos::RangePolicy<>(vgd_cur, 0, nl),
       KOKKOS_LAMBDA(const int c) {
         int t = L_(c);
@@ -6578,7 +6574,7 @@ void RadiationM1::VetGdSweep() {
             }
           });
         }
-        F_(c) = (dbg == 1) ? 1 : ((dbg == 2) ? 0 : rem);
+        F_(c) = rem;
       });
       Kokkos::parallel_scan("m1_vgd_ovl_scan", Kokkos::RangePolicy<>(vgd_cur, 0, nl + 1),
       KOKKOS_LAMBDA(const int c, int &acc, const bool fin) {
@@ -7703,7 +7699,6 @@ void RadiationM1::VetGdPost() {
     }
     vgd_nclamp_seen = vgd_nclamp_all;
   }
-  if (vgd_csg) {VetGdCsDump("VGD_CS_DUMP");}   // cs-vetgd-1017 gate dump
   // debug (gate): VGD_DUMP_I=<file>: rank 0's intensities incl. ghosts, first build
   const char *fi = std::getenv("VGD_DUMP_I");
   if (fi != nullptr && vlat_nbuild == 0 && global_variable::my_rank == 0) {
