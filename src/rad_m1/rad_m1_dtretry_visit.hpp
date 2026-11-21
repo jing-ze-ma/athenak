@@ -1074,6 +1074,9 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_fwb", cln_fwb);
   v.view("cln_fwbc", cln_fwbc);
   v.value("cln_fcone", cln_fcone);
+  v.value("cln_fwbst", cln_fwbst);
+  v.value("cln_fwbs", cln_fwbs);
+  v.value("cln_fwbok", cln_fwbok);
   v.view("cln_fconc", cln_fconc);
   v.value("cln_thinh", cln_thinh);
   v.value("cln_xdfz", cln_xdfz);

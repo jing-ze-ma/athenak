@@ -561,7 +561,8 @@ void RadiationM1::CleanInit() {
   cln_fdg = cln_consist ? nfc : -1;
   cln_xqs = cln_xd ? nfc + (cln_fdg >= 0) : -1;   // (clean_stag_xdonor's q)
   cln_kqs = cln_kpos ? nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0) : -1;   // (kpos: q)
-  const int nfx = nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0) + (cln_kpos ? 2 : 0);
+  int nfx = nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0) + (cln_kpos ? 2 : 0);
+  cln_fwbs = cln_fwbst ? nfx++ : -1;
   if (cln_kpos || cln_xpat) {
     Kokkos::realloc(cln_kcnt, 2);
     Kokkos::deep_copy(cln_kcnt, 0.0);
@@ -1232,6 +1233,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     cln_pdn = 0;
     CleanFirstIterate();
     cln_fsk = false;
+    cln_fwbok = false;
     cln_csyok = false;   // (the lateral sums' coefficients once per closure)
     if (cln_opt && cln_feedback) CleanStageOpacity();
     if (cln_feedback) CleanAdvectiveCoefficients();
@@ -3947,6 +3949,15 @@ static std::array<uint32_t, 4> CleanFMask(const int f0) {
 }
 
 void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool lat) {
+  // (clean_stag_fwb_stage: fwb's s of E_old (sm, the call with CLW_EO) before the first
+  // solve of a round, with its coefficients; then the caller's lateral sums of e again)
+  const int sw = cln_fwb ? cln_fwbs : -1;
+  const bool sm = sw >= 0 && e == CLW_EO;
+  if (sw >= 0 && !cln_fwbok) {
+    cln_fwbok = true;
+    CleanStagFSolve(CLW_EO, false, true);
+    if (!lat) CleanStagCsLateral(e);
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -3965,7 +3976,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
   auto flc = cln_flimc;
   const bool fwb = cln_fwb;
   if (fwb && cln_fwbc.extent_int(0) != 3) Kokkos::realloc(cln_fwbc, 3);
-  if (fwb) Kokkos::deep_copy(cln_fwbc, 0.0);
+  if (fwb && (sw < 0 || sm)) Kokkos::deep_copy(cln_fwbc, 0.0);
   auto fwc = cln_fwbc;
   const bool wbc = e == CLW_X;
   const int kd = (t2_solve == M1_T2S_NONE) ? 0 :
@@ -4009,7 +4020,8 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
         const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
         fc(m,CLF_N,k,j,i) = CleanFaceFlux(xh, e, dir, m, k, j, i, true);
         fc(m,CLF_PT,k,j,i) = fc(m,CLF_N,k,j,i);   // (F^H for CleanStagDrag; QL is free)
-        fc(m,CLF_N+1,k,j,i) = 0.0;
+        fc(m,CLF_N+1,k,j,i) = (sw >= 0 && !sm) ? fc(m,sw,k,j,i) : 0.0;
+        if (sm) fc(m,sw,k,j,i) = 0.0;
         if (!fk || !x.sph || dir == 2 || CleanBoundaryFace(x, dir, m, k, j, i)) return;
         // (spherical polar: the w share's transverse pressures, the curvature of D E but
         // that of the normal stress (q = 4), are the rays' own (CLN_G) where the cell
@@ -4121,7 +4133,8 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
     // photosphere at large h).  The residual s enters CLF_N + 1: the gas takes the
     // absorption of F, not s, whose s V/c^2 is the radiation's, booked (L_z: the
     // ledger's dlz).  E and the energy flux's memory G + d are unchanged)
-    if (fwb && q == x.nf) {
+    // (clean_stag_fwb_stage: s once per round, sm, into slot sw, which ph 0 adds)
+    if (fwb && q == x.nf && (sw < 0 || sm)) {
       const CleanArgs *pw = CleanDevArgs(x, 0);
       // the F slots of the lines (CleanFLine) hold F_ray, then the solve's start again
       for (int pass = 0; pass < 2; ++pass) {
@@ -4165,10 +4178,10 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
                              CleanCellFaceDistance(x, d, m, k, j, i);
             const Real s = fd(m,CLF_W,k,j,i)/(1.0 + tau)*
                 (lo*fm + dg*f0 + hi*fp - r - (1.0 - qd)*(f0 - fd(m,CLF_G,k,j,i)));
-            fd(m,CLF_N+1,k,j,i) += s/(x.h*x.c*x.c);
+            fd(m,sm ? sw : CLF_N+1,k,j,i) += s/(x.h*x.c*x.c);
             const Real p = fd(m,CLF_TH,k,j,i)*s*0.5*(CleanVol(x, m, k, j, i) +
                            CleanVol(x, m, k-ek, j-ej, i-ei))/(x.c*x.c);
-            if (!wbc) return;   // (the counters: the write-back's solve, as printed)
+            if (!wbc && !sm) return;   // (the counters: the printed s, the write-back's)
             Kokkos::atomic_add(&fwc(0), 1.0);
             Kokkos::atomic_add(&fwc(1), fabs(p));
             if (d == 0) Kokkos::atomic_add(&fwc(2), p);
@@ -4176,6 +4189,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
         }
       }
     }
+    if (sm && q == x.nf) return;
     if (cln_fschur && q == x.nf) CleanStagFSchur();
     const int n = (dir == 0) ? ie - is + 1 : ((dir == 1) ? je - js + 1 : ke - ks + 1);
     const int na = (dir == 0) ? je - js + 1 : ie - is + 1;
