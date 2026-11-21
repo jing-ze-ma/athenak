@@ -1256,13 +1256,15 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         if (cln_feedback) CleanAdvectiveCoefficients();
       }
       // the opacities of the iterate's T, in the passes < clean_stag_opac_passes
-      if (cln_opt && cln_feedback && inl > 0 && inl < cln_optn) {
+      const bool opr = cln_opt && cln_feedback && inl > 0 && inl < cln_optn;
+      if (opr) {
         CleanStageOpacity();
         CleanAdvectiveCoefficients();
       }
       // (clean_stag_xdonor: q of the iterate; CLW_L holds E_k's lateral sums, those of
-      // the velocity update, but where the closure moved D or the bracket took CLW_L)
-      if (inl > 0) CleanStagXDonor(false, clos || !cln_feedback,
+      // the velocity update, but where the closure moved D or the bracket took CLW_L:
+      // the closure's, or the opacity refresh's, CleanStageOpacity; the cubed sphere)
+      if (inl > 0) CleanStagXDonor(false, clos || opr || !cln_feedback,
                                    cln_xdfz > 0 && inl >= cln_xdfz);
       // (after the xdonor: the lateral sums of E_k are its, CleanStagXDonor)
       CleanRightHandSide(false, !(inl > 0 && cln_xd_on));
