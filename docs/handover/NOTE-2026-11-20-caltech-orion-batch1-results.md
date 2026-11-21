@@ -582,3 +582,8 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - R_bsg62 (hpc-sm-01-11): a rc=0 wall=249 b rc=0 wall=139 b rc=0 wall=142 | a cycles 0 - 120 dt first 167 last 37.9545 s/cycle steady 1.556 first elapsed 27.5 a 'FATAL' 0  a 'CLEAN WARNING' 4 CLEAN WARNING cycle 111: backward-Euler solve not converged (dt_retry, 2 so far; last change inf)  | GPU mem peak MiB 31209 | CW 4 FATAL 0
 - R_t19l64 (hpc-sm-02-11): a rc=137 wall=407 |  | GPU mem peak MiB 103851 | CW 0 FATAL 0
 - R_t9l62 (hpc-sm-02-09): a rc=0 wall=752 b rc=137 wall=198 |  | GPU mem peak MiB 104227 | CW 5 FATAL 0
+  FRESHGO START WN_t9l62 16:16:56 on hpc-sm-01-11
+  FRESHGO START WN_t19l64 16:16:59 on hpc-sm-02-11
+  FRESHGO START WE_t9l62 16:17:05 on hpc-sm-02-09
+  FRESHGO START WE_t19l64 16:17:08 on hpc-sm-01-17
+- (16:17) Got 12766e255 + 693b7011a: **R_t9l62 (02-09) and R_t19l64 (02-11) stopped at 16:15:53** (steps cancelled, their runners killed so no restart leg followed; their auto-posted lines are stopped runs). R_m35mms continues; R_bsg62 had finished. wbnb / wbeq decks copied (inputs present); WN_t9l62, WN_t19l64, WE_t9l62, WE_t19l64 started together (times/nodes in the START lines). *_wb_fresh not used for T9/T19/coronas; production waits.
