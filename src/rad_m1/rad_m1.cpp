@@ -247,6 +247,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_stag_ftie")) {
       cln_ftie = pin->GetBoolean("rad_m1","clean_stag_ftie");
     }
+    // clean_stag_tie_gid (default false): spherical polar, Cartesian, the tie's T, d and
+    // Phi by the cubed sphere's rule (CleanStagCsTie): the lower gid's, a block with
+    // itself across a periodic wrap its low face's (F stays the low face's, its storage)
+    cln_tgid = pin->GetOrAddBoolean("rad_m1","clean_stag_tie_gid",false);
+    if (cln_tgid && pmy_pack->pmesh->multilevel) {
+      std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_tie_gid needs a uniform mesh"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     // clean_stag_fsweeps N (read only when named, default 1): the staggered F solve's
     // line solves up to N times, the line ends taking the neighbours' F of the last sweep
     if (pin->DoesParameterExist("rad_m1","clean_stag_fsweeps")) {

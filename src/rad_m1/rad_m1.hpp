@@ -2828,6 +2828,7 @@ class RadiationM1 {
   int cln_fsweeps = 1;          // clean_stag_fsweeps: line-solve sweeps of the F solve
   bool cln_fschur = false;      // clean_stag_fschur: the F lines exact across MeshBlocks
   bool cln_ftie = false;        // clean_stag_ftie: a shared face's T, d of its owner
+  bool cln_tgid = false;        // clean_stag_tie_gid: sp/C owner the lower gid (cs tie)
   Real cln_stall_f = 0.99;      // clean_bicg_stall_fac: least residual drop per window
   int cln_maxnl = 50;           // clean_maxnl: Newton iterations
   Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: Newton tolerance (relative dE, dT, dv)
