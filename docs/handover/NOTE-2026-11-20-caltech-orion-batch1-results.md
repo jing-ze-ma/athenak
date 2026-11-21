@@ -1346,3 +1346,12 @@ B_br gate not passed; arms not started
   CW t19r (log.0) cycle 4428 []: CLEAN WARNING cycle 4428: backward-Euler solve not converged (dt_retry, 67 so far; last change 3.104e-03)
 - (03:50) PROD 1121b:
   ALERT dt collapse t19r: max 40.937 -> 1.31163e-06 (last 200 cycle lines) at cycle=4429 time=7.946610e+04
+- (03:52) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t9r (log.0) cycle 6472 []: CLEAN WARNING cycle 6472 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 11)
+  CW t19r (log.0) cycle 4428 []: CLEAN WARNING cycle 4428 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 66)
+  CW t19r (log.0) cycle 4428 []: CLEAN WARNING cycle 4428: floor_pay = rad_column left 8.488586e+34 of the fluid floors' energy unpaid (created)
+  CW t19r (log.0) cycle 4429 []: CLEAN WARNING cycle 4429: backward-Euler solve not converged (dt_retry, 67 so far; last change inf)
+  CW t19r (log.0) cycle 4429 []: CLEAN WARNING cycle 4429: backward-Euler solve not converged (dt_retry, 67 so far; last change inf)
+  CW t19r (log.0) cycle 4429 []: CLEAN WARNING cycle 4429: backward-Euler solve not converged (dt_retry, 67 so far; last change inf)
+  CW t19r (log.0) cycle 4429 []: CLEAN WARNING cycle 4429: backward-Euler solve not converged (dt_retry, 67 so far; last change inf)
+  CW t19r (log.0) cycle 4429 []: CLEAN WARNING cycle 4429: backward-Euler solve not converged (dt_retry, 67 so far; last change inf)
