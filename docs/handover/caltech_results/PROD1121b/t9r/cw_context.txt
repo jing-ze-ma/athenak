@@ -437,3 +437,10 @@ CLEAN FCONE cycle 26889 t2s 2 faces 8832673 momentum cut sum |dF| V/c^2 6.689297
 CLEAN FWB cycle 26889 t2s 2 faces 105181105 radiation momentum sum |dp| 3.755305e+32 x1 faces sum dp -3.930549e+30
 CLEAN XT cycle 26889 t2s 2 write-back closure 2.139e+00
 CLEAN WARNING cycle 26889 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+== 2026-11-21 15:52:05 log.5: CW 2-2 (grep -B5)
+CLEAN cycle 26921 t2s 2 it -2 (sum 206) pos 0 mark 0 all 0 neg 0 r1 0 r2 142 first 0 142 guard 0 solves 200 cwin 0
+CLEAN MCAP cycle 26921 t2s 2: 11806 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 26921 t2s 2 faces 6333210 momentum cut sum |dF| V/c^2 3.709111e+31
+CLEAN FWB cycle 26921 t2s 2 faces 102307648 radiation momentum sum |dp| 2.939635e+32 x1 faces sum dp -3.143474e+30
+CLEAN XT cycle 26921 t2s 2 write-back closure 1.055e+00
+CLEAN WARNING cycle 26921 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)

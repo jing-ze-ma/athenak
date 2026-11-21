@@ -2401,3 +2401,5 @@ B_br gate not passed; arms not started
   CW t9r (log.5) cycle 26889 [cycle=26900 time=1.474022e+06 dt=5.519158e+01]: CLEAN WARNING cycle 26889 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
 - (15:49) PROD 1121b:
   ALERT dt collapse t9l62: max 208.471 -> 0.30166 (last 200 cycle lines) at cycle=29171 time=1.48435e+06
+- (15:52) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t9r (log.5) cycle 26921 [cycle=26950 time=1.476426e+06 dt=4.954353e+01]: CLEAN WARNING cycle 26921 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
