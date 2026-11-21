@@ -1363,3 +1363,6 @@ B_br gate not passed; arms not started
   CW t19r (log.0) cycle 4429 []: CLEAN WARNING cycle 4429: backward-Euler solve not converged (dt_retry, 67 so far; last change inf)
   CW t19r (log.0) cycle 4429 []: CLEAN WARNING cycle 4429: backward-Euler solve not converged (dt_retry, 67 so far; last change inf)
   CW t19r (log.0) cycle 4429 []: CLEAN WARNING cycle 4429: backward-Euler solve not converged (dt_retry, 67 so far; last change inf)
+- (03:54) PROD 1121b:
+  ALERT FATAL t19r: --------------------------------------------------------------------------
+  CHUNK END t19r: 2026-11-21 03:53:20 chunk 0 rc=0 last: DT_RETRY cycle=4429 t=7.946610e+04 dt 1.024715e-08 -> 5.123574e-09 reason=NON-CONVERGED resid=-1.000000e+00 cut 8
