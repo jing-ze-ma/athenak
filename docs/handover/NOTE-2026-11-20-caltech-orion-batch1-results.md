@@ -944,3 +944,4 @@ B_br gate not passed; arms not started
 - (23:37) b8715cade / 15e0c4e81 ack: V5a / V5b / V5c dropped from the Caltech queue (none had started). Test nodes 02-16 / 02-03: B_j4d gate (build finishing on 02-16) -> C2X_hg_c1 + C2X_hg_v7 -> I1_t19. Production (6 nodes) unchanged. I1_t9 ended 23:36 (rc 0, posted).
 - (23:40) B_j4d (caltech-runs/joint4d 0e91c4f3b, CUDA 12.9 + g++ 13.2, in place in the B_j3 tree; athena_v205 058c13eb copied out before): md5=b0bb8e6c8dc03a377dfa10531247d3dc secs=656 host=hpc-sm-02-16 TUs=64: bvals/physics/rad_m1_bcs.cpp driver/dt_retry.cpp driver/driver.cpp hydro/hydro_wball.cpp hydro/hydro_fofc.cpp hydro/hydro_newdt.cpp hydro/hydro_am.cpp hydro/hydro_tasks.cpp mesh/mesh.cpp hydro/hydro_update.cpp mesh/load_balance. | GATE PASS: athena_j4d_0e91c4f3b md5 b0bb8e6c node hpc-sm-02-16 pass1=4.020e-06
 - (23:40) test-queue start: C2X_hg_c1 on hpc-sm-02-16
+- (23:41) test-queue start: C2X_hg_v7 on hpc-sm-02-03
