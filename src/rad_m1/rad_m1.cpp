@@ -704,6 +704,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     cln_budget = !cln_cell && (cv == "budget");}
     cln_bkap = pin->GetOrAddReal("rad_m1","clean_conv_kappa",1.0);
+    // clean_conv_ew_max (0.1): the budget passes' Eisenstat-Walker forcing at most this,
+    // and their linear solves to at least this times the pass's tolerance
+    cln_ewm = pin->GetOrAddReal("rad_m1","clean_conv_ew_max",0.1);
     // clean_conv_max (read above): the tolerance's ceiling, default 1e-5.  The MeshBlock
     // layout moves the answer to about it (a solve may stop a pass earlier or later),
     // which a step dt_retry redoes amplifies (mpirej_retry, 1 vs 2 ranks: 1e-4 9.1e-2,

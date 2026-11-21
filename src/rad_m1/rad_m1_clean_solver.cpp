@@ -1870,11 +1870,11 @@ int RadiationM1::CleanBiCGStab() {
     if (cln_ewr > 0.0) {
       eta = 0.9*SQR(r0/cln_ewr);
       if (0.9*SQR(cln_eta) > 0.1) eta = fmax(eta, 0.9*SQR(cln_eta));
-      eta = fmin(eta, 0.1);
+      eta = fmin(eta, cln_ewm);
     }
     cln_ewr = r0;
     cln_eta = eta;
-    tol = fmax(eta*r0, 0.1*cln_tolb);
+    tol = fmax(fmin(eta, cln_ewm)*r0, cln_ewm*cln_tolb);
   }
   // clean_init_cnorm > 0, the steady start's solves, and clean_lin_cnorm > 0, the steps'
   // strict ones (as the old production's implicit_lin_cnorm; the budget's passes keep
