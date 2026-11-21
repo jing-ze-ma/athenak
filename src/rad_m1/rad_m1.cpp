@@ -3023,9 +3023,11 @@ void RadiationM1::RotAvgParse(ParameterInput *pin) {
       vra_ema_chj = pin->GetBoolean("rad_m1","vet_rotate_avg_ema_change_j");
     }
     {
+      // (linear, the fresh default again since USER 11-21: step costs the ring's time
+      // order, E/F p 1.66/1.39 vs 1.95/1.85 on deck D; a restart keeps its recorded form)
       const std::string fm = pin->GetOrAddString("rad_m1",
                                                  "vet_rotate_avg_ema_change_form",
-                                                 nw ? "step" : "linear");
+                                                 "linear");
       if (fm.compare("step") == 0) {
         vra_ema_chstep = true;
       } else if (fm.compare("linear") != 0) {
