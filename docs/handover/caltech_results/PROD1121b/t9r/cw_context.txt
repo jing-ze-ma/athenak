@@ -19,3 +19,10 @@ CLEAN cycle 6265 t2s 2 it -3 (sum 399) pos 0 mark 0 all 0 neg 0 r1 0 r2 70950 fi
 CLEAN FLIM cycle 6265 t2s 2 faces 51926287 momentum cut sum |dF| V/c^2 -nan
 CLEAN XT cycle 6265 t2s 2 write-back closure inf
 CLEAN WARNING cycle 6265 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 3)
+== 2026-11-21 03:41:18 log.0: CW 4-4 (grep -B5)
+CLEAN FLIM cycle 6285 t2s 2 faces 57806258 momentum cut sum |dF| V/c^2 -nan
+CLEAN FLIM cycle 6285 t2s 2 faces 57806275 momentum cut sum |dF| V/c^2 -nan
+CLEAN cycle 6285 t2s 2 it -3 (sum 402) pos 0 mark 0 all 0 neg 0 r1 0 r2 98428 first 0 98428 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 6285 t2s 2 faces 57806276 momentum cut sum |dF| V/c^2 -nan
+CLEAN XT cycle 6285 t2s 2 write-back closure inf
+CLEAN WARNING cycle 6285 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 4)
