@@ -186,6 +186,7 @@ void RadiationM1::CleanClosure() {
   cln_tc = time;
   cln_dtb = dt;
   cln_havec = true;
+  cln_cip = true;
 }
 
 //----------------------------------------------------------------------------------------
@@ -243,6 +244,7 @@ void RadiationM1::CleanClosureIterate() {
   CleanClosureFill();
   CleanGhostFill(cln_s, 0, cln_s.extent_int(1));
   cln_havec = false;
+  cln_cip = true;
 }
 
 //----------------------------------------------------------------------------------------

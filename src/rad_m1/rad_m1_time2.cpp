@@ -2627,6 +2627,13 @@ int RadiationM1::CleanRstNq() const {
   return CLN_N;
 }
 
+// (clean_closure = iterate: the closure in place, the last iterate's, is state; none in
+// a file of another closure, Time2RstAccept)
+int RadiationM1::CleanRstNcl() const {
+  if (!clean || !cln_closit) return 0;
+  return (t2_rcl < 0) ? CleanNs(pmy_pack->pmesh->use_cubed_sphere) : t2_rcl;
+}
+
 int RadiationM1::CleanRstNfv() const {
   if (!clean) return 0;
   // (the cubed sphere's sc rays; before the first sweep those a restart file holds)
@@ -2662,6 +2669,7 @@ int RadiationM1::Time2RstNchWant() {
   return nt + ((force_ref == M1_FREF_CLEAN) ? 4 + cln_lzt : 0)   // the reference, set
          + ((force_ref == M1_FREF_WB_MD) ? 10 : 0)           // wb_arad_md: 9, set
          + ((clean && cln_extrap > 0) ? 2*CleanRstNq() + 1 : 0)    // extrap history
+         + CleanRstNcl()                                     // iterate: the closure
          + ((clean && cln_ring) ? (t2_rstv < 4 ? vra_k*CleanRstNq() : CleanRingRstN()) + 1
                                 : 0)                          // clean_rot_ring
          + ((clean && cln_fsolve && cln_fkin) ? 6 : 0)       // stag fkin: d and its K1
@@ -2673,8 +2681,22 @@ bool RadiationM1::Time2RstAccept(const int nfile, const int ver) {
   // 0 and a backward-Euler first step)
   t2_rstd3 = (ver < 2) && clean && cln_fsolve && cln_fkin;
   t2_rstv = clean ? ver : 5;
-  const int nb = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0);
+  t2_rcl = -1;
+  int nb = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0);
   t2_nfv = (clean && (cln_cssc || cln_scmem)) ? nfile - nb : 0;
+  // (clean_closure = iterate from a file of another closure, which holds none: the first
+  // solve takes the predicted closure, CleanSolve)
+  const int ncl = CleanRstNcl();
+  if (ncl > 0 && (t2_nfv < 0 || (t2_nfv == 0 && nfile == nb - ncl))) {
+    t2_rcl = 0;
+    nb -= ncl;
+    t2_nfv = (clean && (cln_cssc || cln_scmem)) ? nfile - nb : 0;
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> NOTE: restart with clean_closure = iterate from a file "
+                << "without its closure: the first solve takes the predicted one"
+                << std::endl;
+    }
+  }
   // rotwb2-1121: on the cubed sphere (version 6) the face half ranges are the last 0 or
   // 12 channels (cln_fh).  A surplus beyond them is a file written with clean_rot_ring:
   // read with the ring off its ring channels are skipped (they were read into cln_fh
@@ -2699,6 +2721,7 @@ bool RadiationM1::Time2RstAccept(const int nfile, const int ver) {
 }
 int RadiationM1::Time2RstNch() {
   t2_rstv = 7;   // (the writer: version 7, after a restart from an older file too)
+  t2_rcl = -1;
   // (the clean scheme always: its state, and K1 with cln_k1ok, also in backward-Euler
   // steps; restart.cpp stores t2_ok)
   return (t2_ok || clean || time_scheme != M1_TIME_HESDIRK2) ? Time2RstNchWant() : 0;
@@ -2785,6 +2808,11 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
       });
     }
     c += 2*nq + 1;
+  }
+  // clean_closure = iterate: the closure in place, the last iterate's (CleanRstNcl)
+  if (CleanRstNcl() > 0) {
+    if (cln_s.extent_int(0) >= m0 + nmb) put(c, CleanRstNcl(), cln_s, 0);
+    c += CleanRstNcl();
   }
   // clean_rot_ring: the offsets and the pending Delta of the fields the ring carries
   // (interior cells, dense: CleanRingRstCopy), then the ring's flag, block, the pending
@@ -2974,6 +3002,18 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
       return;
     }
     ch -= 2*nq + 1;
+  }
+  if (CleanRstNcl() > 0) {   // (clean_closure = iterate: cln_s, with its ghosts)
+    if (ch < CleanRstNcl()) {
+      if (cln_s.extent_int(0) != nmb) {
+        Kokkos::realloc(cln_s, nmb, CleanRstNcl(), w.extent_int(1), w.extent_int(2),
+                        w.extent_int(3));
+      }
+      DeepCopyAcross(Kokkos::subview(cln_s, mb, ch, AL, AL, AL), w);
+      cln_cip = true;
+      return;
+    }
+    ch -= CleanRstNcl();
   }
   if (t2_rskip > 0) {   // (rotwb2-1121: the file's ring with the ring off, not read)
     if (ch < t2_rskip) return;

@@ -2047,6 +2047,8 @@ class RadiationM1 {
   bool Time2RstAccept(const int nfile, const int ver);   // a file's channels fit (sets
                                 // t2_nfv, t2_rstd3)
   int t2_nfv = 0;               // conservative-ray intensity channels of the file
+  int t2_rcl = -1;              // clean_closure = iterate: the closure's channels of the
+                                // file (0: a file of another closure; -1: all, CleanNs)
   int t2_rskip = 0;             // a file's clean_rot_ring channels read with the ring off
   bool t2_rstd3 = false;        // a version-1 file: the fkin block is d only (no K1_d)
   int t2_rstv = 5;              // the clean file's version: <= 3 zero predictor / extrap2
@@ -2750,6 +2752,7 @@ class RadiationM1 {
   // (cln_fvi), and their last build when a reflecting top mirrors it (cln_scmem: its top
   // shell)
   int CleanRstNfv() const;
+  int CleanRstNcl() const;   // clean_closure = iterate: the closure in place (cln_s)
   void CleanScUnion2();
   void CleanFaceHalf(const DvceArray2D<Real> &dv, const int o, const bool zero,
                      const int fo);
@@ -2982,6 +2985,8 @@ class RadiationM1 {
   bool cln_faces_set = false;   // starting face fluxes set
   bool cln_rstold = false;      // restart from a file without the clean state
   bool cln_havec = false;       // a closure has been built
+  bool cln_cip = false;         // a closure is in place (clean_closure = iterate: the
+                                // last iterate's, restart state)
   // opac holds predicted opacities during the formal solution
   bool cln_opsaved = false;
   Real cln_tc = -1.0e300;       // time of the closure build

@@ -530,8 +530,11 @@ void RadiationM1::CleanInit() {
   int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
   int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
   int nmb = pmy_pack->nmb_thispack;
-  Kokkos::realloc(cln_s, nmb, CleanNs(pmy_pack->pmesh->use_cubed_sphere), n3,
-                  n2, n1);
+  // (clean_closure = iterate: not the closure a restart file holds, Time2RstSet)
+  if (!cln_cip) {
+    Kokkos::realloc(cln_s, nmb, CleanNs(pmy_pack->pmesh->use_cubed_sphere), n3,
+                    n2, n1);
+  }
   if (cln_phic.extent_int(0) != nmb) {
     Kokkos::realloc(cln_phic, nmb, 3, n3, n2, n1);
   }
@@ -1171,10 +1174,11 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   }
 
   // 2. closure (from the gas before the stage increments are added), old vector, face
-  //    coefficients
+  //    coefficients.  clean_closure = iterate: the first solve with no closure in place
+  //    (a fresh start, a restart from a file of another closure) takes the predicted one
   if (cln_extrap > 0) {
     CleanClosureExtrap();
-  } else if (!cln_closit) {
+  } else if (!cln_closit || !cln_cip) {
     CleanClosure();
   }
   if (cln_ring == 2) CleanRingSolveSet();
