@@ -190,7 +190,7 @@ void RadiationM1::CleanCellFaceSpeeds() {
 //! \fn void RadiationM1::CleanCellOpacity
 //! \brief opacities of the active cells at the gas temperature of the Newton iterate (an
 //! opacity law that depends on T; the density is that of the stage), with the
-//! derivatives of rho kappa_P and rho kappa_E with T (CLW_DK, one-sided differences) for
+//! derivatives of rho kappa_P and rho kappa_E with T (cell layout: CLW_DK, one-sided) for
 //! the exchange linearisation of CleanCellRightHandSide, so that the converged iterate
 //! solves the stage with the opacities of its own temperature
 
@@ -209,7 +209,7 @@ void RadiationM1::CleanCellOpacity() {
   const M1OpacTab ot = otab;
   const Real kp = kappa_p, kev = kappa_e, kf = kappa_f, ks_ = kappa_s;
   const Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
-  const bool osc = vscat;
+  const bool osc = vscat, cell = cln_cell;
   par_for("clc_opac", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = uh(m,IDN,k,j,i), t = w(m,CLW_T,k,j,i), dt = 1.0e-6*t;
@@ -222,11 +222,27 @@ void RadiationM1::CleanCellOpacity() {
     op(m,M1_OP_E,k,j,i) = d*o[0][1];
     op(m,M1_OP_T,k,j,i) = d*(o[0][2] + o[0][3]);
     if (osc) op(m,M1_OP_S,k,j,i) = d*o[0][3];
-    for (int n = 0; n < 2; ++n) {
+    for (int n = 0; n < 2 && cell; ++n) {
       w(m,CLW_DK+n,k,j,i) = (dt > 0.0) ? d*(o[1][n] - o[0][n])/dt : 0.0;
     }
   });
   CleanGhostFill(opac, 0, opac.extent_int(1), false);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStageOpacity
+//! \brief the opacities at the iterate's T (cln_opt; old production implicit_opac_update)
+//! and what the layout takes from them: the cell layout's face speeds, the staggered
+//! face coefficients (theta) and bracket
+
+void RadiationM1::CleanStageOpacity() {
+  CleanCellOpacity();
+  if (cln_cell) {
+    CleanCellFaceSpeeds();
+    return;
+  }
+  CleanFaceCoefficients();
+  if (cln_consist) CleanStagBracket();
 }
 
 //----------------------------------------------------------------------------------------

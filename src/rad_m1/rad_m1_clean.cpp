@@ -493,8 +493,9 @@ void RadiationM1::CleanInit() {
                            cln_cell ? (cln_fsolve ? CLF_N + 4 : 0) :
                            ((cln_fsolve && cln_fkin) ? CLF_KD + 2 :
                            (cln_vimp ? CLF_DQ + 1 : CLF_QL + 3)));
-  // the opacities depend on T: tables, or the T exponent (bump) of powerlaw (user)
-  cln_opt = cln_cell && !opac_freeze && !opac_zero &&
+  // the opacities depend on T: tables, or the T exponent (bump) of powerlaw (user);
+  // staggered with clean_stag_opac_update
+  cln_opt = (cln_cell || cln_sopt) && !opac_freeze && !opac_zero &&
             (opacity_type == M1_OPAC_TABLE ||
             (opacity_type != M1_OPAC_CONST && opac_b != 0.0));
   // (the staggered bracket's lagged flux DG in one more slot, CleanStagBracket)
@@ -1277,10 +1278,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     cln_fsk = false;
     cln_csyok = false;   // (spdb-1119: the lateral sums' coefficients once per closure)
     if (cell) CleanCellFirstIterate();
-    if (cln_opt && cln_feedback) {
-      CleanCellOpacity();
-      CleanCellFaceSpeeds();
-    }
+    if (cln_opt && cln_feedback) CleanStageOpacity();
     if (cln_feedback) CleanAdvectiveCoefficients();
     // (the first iterate's beta and emission for the drag's face flux, not the last
     // solve's: a restart, failed stage or discarded attempt does not carry those)
@@ -1307,8 +1305,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         if (cln_feedback) CleanAdvectiveCoefficients();
       }
       if (cln_opt && cln_feedback && inl > 0) {   // the opacities of the iterate's T
-        CleanCellOpacity();
-        CleanCellFaceSpeeds();
+        CleanStageOpacity();
+        if (!cell) CleanAdvectiveCoefficients();
       }
       if (cell) {
         if (cln_hk && (inl == 0 || clos || (cln_opt && cln_feedback))) {

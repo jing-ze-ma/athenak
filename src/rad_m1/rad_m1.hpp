@@ -3090,6 +3090,7 @@ class RadiationM1 {
   void CleanClosureIterate();
   void CleanCellFaceSpeeds();
   void CleanCellOpacity();
+  void CleanStageOpacity();
   void CleanRays();
   void CleanClosureFromRays();
   // (i0..i1 / s0..s1: shells of VetGdPkHook; else the whole mesh, or with vgd_pk
@@ -3268,6 +3269,7 @@ class RadiationM1 {
   Real cln_lcnorm = 0.0;        // clean_lin_cnorm: the steps' strict solves (0 off)
   int cln_maxit = 800;          // clean_maxit: BiCGStab iterations
   bool cln_pcr = true;          // clean_stag_pcr: PC line solves by PCR on a GPU
+  bool cln_sopt = false;        // clean_stag_opac_update: staggered as cln_opt
   bool cln_fspcr = false;      // clean_stag_fs_pcr: F solve x1 lines by PCR on a GPU
   bool cln_fspcs = false;      //   clean_stag_fs_pcr_cs: also on the cubed sphere
   bool cln_stst = false;        // clean_stag_stencil: the operator's rows stored per pass
@@ -3385,7 +3387,8 @@ class RadiationM1 {
   bool cln_posghost = false;    // clean_pos_ghost: marked boundary faces, upwind ghost
   bool cln_all_low = false;     // the solve has every interior face low-order
   bool cln_hk = false;          // CleanCellConsistency fills the face half ranges CLF_HK
-  bool cln_opt = false;         // cell layout: opacities at the iterate's T (a T law)
+  bool cln_opt = false;         // opacities at the iterate's T (a T law; staggered:
+                                // clean_stag_opac_update)
   bool cln_consist = false;     // clean_consistency: bracket C = F_ray - f(Ur), cell
   bool cln_gdfs = true;         // spdb-1119 clean_gd_face_fuse (cln_gd_fs)
   bool cln_conswt = false;      // clean_consistency_weight: bracket times w(C1)

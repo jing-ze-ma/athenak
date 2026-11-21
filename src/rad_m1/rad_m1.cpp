@@ -225,6 +225,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_cell = (ly.compare("cell") == 0);
     cln_recon = (rc.compare("plm") == 0);
     cln_pcr = pin->GetOrAddBoolean("rad_m1","clean_stag_pcr",true);
+    cln_sopt = pin->GetOrAddBoolean("rad_m1","clean_stag_opac_update",false);
     // (clean_stag_fs_pcr: default on for staggered; it applies on a GPU, not on cs)
     cln_fspcr = pin->GetOrAddBoolean("rad_m1","clean_stag_fs_pcr",!cln_cell);
     // clean_stag_fs_pcr_cs (read only when named, default off): also on the cubed sphere
