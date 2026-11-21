@@ -226,6 +226,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_recon = (rc.compare("plm") == 0);
     cln_pcr = pin->GetOrAddBoolean("rad_m1","clean_stag_pcr",true);
     cln_sopt = pin->GetOrAddBoolean("rad_m1","clean_stag_opac_update",false);
+    // (old production implicit_opac_lag = pred, implicit_opac_lag_passes: the opacities
+    // of passes 0 .. N-1, then frozen: a change of the discretisation, order 2 for N >= 2)
+    cln_optn = pin->GetOrAddInteger("rad_m1","clean_stag_opac_passes",3);
     {const std::string fo = pin->GetOrAddString("rad_m1","clean_face_opac","arith");
     if (fo != "arith" && fo != "harmonic") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__

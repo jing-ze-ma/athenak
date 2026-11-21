@@ -3270,6 +3270,7 @@ class RadiationM1 {
   int cln_maxit = 800;          // clean_maxit: BiCGStab iterations
   bool cln_pcr = true;          // clean_stag_pcr: PC line solves by PCR on a GPU
   bool cln_sopt = false;        // clean_stag_opac_update: staggered as cln_opt
+  int cln_optn = 3;             // clean_stag_opac_passes: refreshed in passes < N
   bool cln_hface = false;       // clean_face_opac = harmonic: the x1 face chi
   bool cln_fspcr = false;      // clean_stag_fs_pcr: F solve x1 lines by PCR on a GPU
   bool cln_fspcs = false;      //   clean_stag_fs_pcr_cs: also on the cubed sphere

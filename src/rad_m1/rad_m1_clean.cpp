@@ -1304,7 +1304,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         }
         if (cln_feedback) CleanAdvectiveCoefficients();
       }
-      if (cln_opt && cln_feedback && inl > 0) {   // the opacities of the iterate's T
+      // the opacities of the iterate's T (staggered: in passes < clean_stag_opac_passes)
+      if (cln_opt && cln_feedback && inl > 0 && (cell || inl < cln_optn)) {
         CleanStageOpacity();
         if (!cell) CleanAdvectiveCoefficients();
       }
