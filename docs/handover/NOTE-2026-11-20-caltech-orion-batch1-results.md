@@ -1895,3 +1895,4 @@ B_br gate not passed; arms not started
 - (10:20) V7d NOT started: GPU processes on hpc-sm-02-11
 - (10:27) V207 start: V7a on hpc-sm-02-04 (B_v207 86d31021, restart t19r/t19l64.00001.rst N0 1070, keys in rst + rad_m1/clean_stag_thinf_held_gate=true rad_m1/clean_pass_damp=0 rad_m1/clean_conv_max=1.0e-4 , 600 cycles, rst off)
 - (10:28) V207 start: V7b on hpc-sm-02-16 (B_v207 86d31021, restart t19r/t19l64.00001.rst N0 1070, keys in rst + rad_m1/clean_stag_thinf_held_gate=true rad_m1/clean_pass_damp=1 rad_m1/clean_conv_max=1.0e-4 , 600 cycles, rst off)
+- (10:28) V207 start: V7c on hpc-sm-01-11 (B_v207 86d31021, restart t19l64/t19l64.00001.rst N0 1127, keys in rst + rad_m1/clean_stag_thinf_held_gate=true rad_m1/clean_pass_damp=0 rad_m1/clean_conv_max=1.0e-4 , 600 cycles, rst off)
