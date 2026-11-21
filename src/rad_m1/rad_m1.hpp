@@ -3418,6 +3418,7 @@ class RadiationM1 {
   bool cln_lf_ok = false;       // cln_lf holds the factors of the current blocks
   int cln_stagmg = 0;           // clean_stag_pc = mg: the old production mg (staggered);
                                 //   2: its line colours mirror (clean_stag_mg_color)
+  int cln_pcsweep = 0;          // clean_pc_sweep: +1 a second red pass, +2 post-sweep
   bool cln_steady = false;      // clean_init = steady: radiation relaxed before step 1
   int cln_steady_n = 50;        // clean_init_n: most pre-solve passes
   Real cln_steady_dtfac = 1.0e6, cln_steady_tol = 1.0e-8;  // clean_init_dtfac, _tol

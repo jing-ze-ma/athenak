@@ -1546,7 +1546,8 @@ void RadiationM1::CleanStagCoarseSetup() {
 //! \brief u(dst) = L^{-1} u(src) on a level of the staggered preconditioner, L its
 //! x1-line tridiagonal part: Thomas solve along the x1 lines of colour col (-1: every
 //! line; 0: the lines of even j + k; 1: the odd ones, with the couplings to u(dst) of the
-//! even neighbours inside the level on the right-hand side).  clean_stag_mg_color =
+//! even neighbours inside the level on the right-hand side; 2: the even ones, with the
+//! odd neighbours' on the right-hand side).  clean_stag_mg_color =
 //! mirror: j, k are a line's distance from the nearer MeshBlock edge along x2, x3, so
 //! that the colours, and the sweep, mirror with the mesh about its x2 and x3 midplanes
 //! (rule 7; j + k colours an even line count's mirror lines oppositely: asymmetry at the
@@ -1563,6 +1564,7 @@ void RadiationM1::CleanStagLineSolve(const CleanLevel &lv, const int src, const 
   auto w = l.u;
   const int n1 = l.n[1], n2 = l.n[2];
   const bool mir = (cln_stagmg == 2);
+  const int c0 = col & 1;   // (the colour solved; col >= 1: the other one's on the rhs)
   auto cl = KOKKOS_LAMBDA(const int pj, const int pk) {   // (the line's colour)
     return (((mir && 2*pj >= n1) ? n1 - 1 - pj : pj) +
             ((mir && 2*pk >= n2) ? n2 - 1 - pk : pk)) % 2;
@@ -1583,16 +1585,16 @@ void RadiationM1::CleanStagLineSolve(const CleanLevel &lv, const int src, const 
     KOKKOS_LAMBDA(TeamMember_t tm) {
       const int m = tm.league_rank()/n32, pk = (tm.league_rank() - m*n32)/n2;
       const int pj = tm.league_rank() - m*n32 - pk*n2, k = l.o[2] + pk, j = l.o[1] + pj;
-      if (col >= 0 && cl(pj, pk) != col) return;   // (team-uniform)
+      if (col >= 0 && cl(pj, pk) != c0) return;   // (team-uniform)
       ScrArray1D<Real> sw(tm.team_scratch(lv0), (inp ? 4 : 8)*nx);
       Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int q) {
         const int i = is + q;
         Real r = w(m,src,k,j,i);
-        if (col == 1) {
-          if (pj > 0 && !cl(pj-1, pk)) r -= w(m,l.sm[1],k,j,i)*w(m,dst,k,j-1,i);
-          if (pj < l.n[1] - 1 && !cl(pj+1, pk)) r -= w(m,l.sp[1],k,j,i)*w(m,dst,k,j+1,i);
-          if (pk > 0 && !cl(pj, pk-1)) r -= w(m,l.sm[2],k,j,i)*w(m,dst,k-1,j,i);
-          if (pk < l.n[2] - 1 && !cl(pj, pk+1)) r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
+        if (col >= 1) {
+          if (pj > 0 && cl(pj-1, pk) != c0) r -= w(m,l.sm[1],k,j,i)*w(m,dst,k,j-1,i);
+          if (pj < l.n[1] - 1 && cl(pj+1, pk) != c0) r -= w(m,l.sp[1],k,j,i)*w(m,dst,k,j+1,i);
+          if (pk > 0 && cl(pj, pk-1) != c0) r -= w(m,l.sm[2],k,j,i)*w(m,dst,k-1,j,i);
+          if (pk < l.n[2] - 1 && cl(pj, pk+1) != c0) r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
         }
         sw(q) = (q > 0) ? w(m,l.sm[0],k,j,i) : 0.0;
         sw(nx + q) = w(m,l.a0,k,j,i);
@@ -1666,17 +1668,17 @@ void RadiationM1::CleanStagLineSolve(const CleanLevel &lv, const int src, const 
           l.o[1], l.o[1]+l.n[1]-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     const int pj = j - l.o[1], pk = k - l.o[2];
-    if (col >= 0 && cl(pj, pk) != col) return;
+    if (col >= 0 && cl(pj, pk) != c0) return;
     Real cprev = 0.0, dprev = 0.0;
     for (int i = is; i <= ie; ++i) {
       const Real am = (i > is) ? w(m,l.sm[0],k,j,i) : 0.0;
       const Real ap = (i < ie) ? w(m,l.sp[0],k,j,i) : 0.0;
       Real r = w(m,src,k,j,i);
-      if (col == 1) {
-        if (pj > 0 && !cl(pj-1, pk)) r -= w(m,l.sm[1],k,j,i)*w(m,dst,k,j-1,i);
-        if (pj < l.n[1] - 1 && !cl(pj+1, pk)) r -= w(m,l.sp[1],k,j,i)*w(m,dst,k,j+1,i);
-        if (pk > 0 && !cl(pj, pk-1)) r -= w(m,l.sm[2],k,j,i)*w(m,dst,k-1,j,i);
-        if (pk < l.n[2] - 1 && !cl(pj, pk+1)) r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
+      if (col >= 1) {
+        if (pj > 0 && cl(pj-1, pk) != c0) r -= w(m,l.sm[1],k,j,i)*w(m,dst,k,j-1,i);
+        if (pj < l.n[1] - 1 && cl(pj+1, pk) != c0) r -= w(m,l.sp[1],k,j,i)*w(m,dst,k,j+1,i);
+        if (pk > 0 && cl(pj, pk-1) != c0) r -= w(m,l.sm[2],k,j,i)*w(m,dst,k-1,j,i);
+        if (pk < l.n[2] - 1 && cl(pj, pk+1) != c0) r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
       }
       const Real den = w(m,l.a0,k,j,i) - am*cprev;
       cprev = ap/den;
@@ -1697,12 +1699,16 @@ void RadiationM1::CleanStagLineSolve(const CleanLevel &lv, const int src, const 
 //! solves (the even lines, then the odd ones with the even z0 on the right-hand side);
 //! r1 = R (r - A7 z0), the residual of the level's rows inside the MeshBlock summed over
 //! each aggregate (with the cell volumes from a curvilinear mesh); z = z0 + P z1, z1 the
-//! same on level l+1.  The coarsest level takes the sweep alone; no post-smoothing.
+//! same on level l+1.  The coarsest level takes the sweep alone.  clean_pc_sweep adds a
+//! second even pass with the odd z0 on the right-hand side (rbr), and a post-sweep
+//! after the coarse correction, the odd lines then the even ones with the other
+//! colour's z on the right-hand side (sym).
 
 void RadiationM1::CleanStagVCycle(const int l, const int src, const int dst) {
   const CleanLevel f = CleanStagLevel(l);
   CleanStagLineSolve(f, src, dst, 0);
   CleanStagLineSolve(f, src, dst, 1);
+  if (cln_pcsweep & 1) CleanStagLineSolve(f, src, dst, 2);
   if (l == static_cast<int>(cln_mg.size())) return;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const CleanLevel c = CleanStagLevel(l+1);
@@ -1736,6 +1742,10 @@ void RadiationM1::CleanStagVCycle(const int l, const int src, const int dst) {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     f.u(m,dst,k,j,i) += c.u(m,CLS_X,(k - f.o[2])/r[2],(j - f.o[1])/r[1],i - f.o[0]);
   });
+  if (cln_pcsweep & 2) {
+    CleanStagLineSolve(f, src, dst, 1);
+    CleanStagLineSolve(f, src, dst, 2);
+  }
 }
 
 //----------------------------------------------------------------------------------------

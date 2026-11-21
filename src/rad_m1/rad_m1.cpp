@@ -508,7 +508,19 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    cln_stagmg = (!cln_cell && (pc == "mg")) ? ((mc == "mirror") ? 2 : 1) : 0;}
+    cln_stagmg = (!cln_cell && (pc == "mg")) ? ((mc == "mirror") ? 2 : 1) : 0;
+    // clean_pc_sweep = rb (default) | rbr | sym | rbrsym: the mg's smoothing on each
+    // level, a forward red-black sweep, + a second red pass (rbr), + a black-red
+    // post-sweep after the coarse correction (sym) (CleanStagVCycle); read only when named
+    const std::string sw = pin->DoesParameterExist("rad_m1","clean_pc_sweep") ?
+                           pin->GetString("rad_m1","clean_pc_sweep") : "rb";
+    cln_pcsweep = (sw == "rbr") + 2*(sw == "sym") + 3*(sw == "rbrsym");
+    if (!cln_pcsweep && sw != "rb") {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/clean_pc_sweep = rb | rbr | sym | rbrsym"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }}
     // clean_stag_stencil: the operator applied from its rows (CleanStencilRow), built
     // once per pass (default, as production's implicit_op_stencil; on the cubed sphere the
     // rows without the lateral stress, which the stored coefficients of its sums add,
