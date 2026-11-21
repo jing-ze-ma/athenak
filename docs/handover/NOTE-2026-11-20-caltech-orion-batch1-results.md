@@ -1240,3 +1240,5 @@ B_br gate not passed; arms not started
 - (01:30) PROD 1121b:
   ALERT dt collapse t19r: max 40.937 -> 3.75056 (last 200 cycle lines) at cycle=1400 time=5.074953e+04
 - (01:31) C3c progress: cycle=1450 time=5.556348e+04 dt=3.838844e+01 | CW 5 FATAL 0 | last stage solves: 4 5 4 5 4  | KE_int 4.6223288113319663e+41 L_top/L_in 1.270 (hst t 5.4029614657321246e+04)
+- (01:35) PROD 1121b:
+  ALERT dt collapse t19r: max 40.937 -> 1.6061 (last 200 cycle lines) at cycle=1500 time=5.111126e+04
