@@ -1618,14 +1618,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // the canonical key vet_every, vet_col_every its alias
     vcol_every = pin->GetOrAddInteger("rad_m1",
                                       M1KeyName(pin, "vet_every", {"vet_col_every"}), 1);
-    // vet_col_fk_min (m1-sp-order2b): the lower clamp of f_K.  Sp default 0 (a restart
-    // whose file lacks the key keeps 1/3, echoed); elsewhere 1/3 unless named.
-    if (sph_geom) {
-      vcol_fkmin = pin->GetOrAddReal("rad_m1","vet_col_fk_min",
-                                     global_variable::restart_run ? (1.0/3.0) : 0.0);
-    } else if (pin->DoesParameterExist("rad_m1","vet_col_fk_min")) {
-      vcol_fkmin = pin->GetReal("rad_m1","vet_col_fk_min");
-    }
+    // vet_col_fk_min (m1-sp-order2b): the lower clamp of f_K, default 0 on every mesh (a
+    // restart whose file lacks the key keeps 1/3, echoed)
+    vcol_fkmin = pin->GetOrAddReal("rad_m1","vet_col_fk_min",
+                                   global_variable::restart_run ? (1.0/3.0) : 0.0);
     if (!(vcol_fkmin >= 0.0 && vcol_fkmin <= 1.0/3.0 + 1.0e-12)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_m1>/vet_col_fk_min must be in [0, 1/3]"
