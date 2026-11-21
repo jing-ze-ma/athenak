@@ -1,0 +1,82 @@
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+
+Root grid = 1 x 2 x 4 MeshBlocks
+Total number of MeshBlocks = 8
+Number of logical  levels of refinement = 2 (3 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 4
+  Rank = 0: 2 MeshBlocks, cost = 2
+  Rank = 1: 2 MeshBlocks, cost = 2
+  Rank = 2: 2 MeshBlocks, cost = 2
+  Rank = 3: 2 MeshBlocks, cost = 2
+Load Balancing:
+  Maximum normalized cost = 1, Average = 1
+<hydro> duale-1112: dual_energy 0 (eta 0.001, slots -1,-1) floor_pay rad_column fofc_retest 0 floor_audit 0
+rad_m1: vet_scatter on, form ma, J (relaxed source) relaxed (default), table split kappa_e = const (kappa_e 0.34, floor 1e-05, sigma_T/m_u 0.40062, code units)
+<rad_m1>/c_light = 2.99792e+10 [code] ; <units> implies 2.99792e+10 (c in code velocity), rel. diff 0
+<rad_m1>/arad = 3.26704e-47 [code] ; <units> implies 1.58312e-46 (a_rad T_unit^4 / p_unit), rel. diff 0.793633  <-- WARNING: inconsistent with <units>
+<rad_m1>/temp_unit_kelvin = 8.10636e-09 [code] ; <units> implies 1.20272e-08 (K per code temperature), rel. diff 0.326  <-- WARNING: inconsistent with <units>
+<rad_m1>/rho_unit_cgs = 1 [code] ; <units> implies 1 (g/cm^3 per code density), rel. diff 0
+<rad_m1>/kappa_unit = 1 [code] ; <units> implies 1 (code opacity per cm^2/g), rel. diff 0
+<rad_m1> vet_rotate_advance = true (rotadv-1102): with vet_rotate_avg the rotated sets do not repeat; the averaged last-K window advances (no effect without vet_rotate_avg)
+<rad_m1> vet_rotate_avg = 8: the vet_gd closure is the mean over the last 8 rotated sets
+<rad_m1> vet_rotate_avg_ema = 128 (raycorr-1108): the closure is an exponential moving average over the rotated sets (a = 1/N per block; change test eps 0.05); vet_rotate_avg is not used
+<rad_m1> vet_gd_rotate_xfade = true (vgdxf-1112): the closure is cross-faded from the current to the next ray set over each rotation block (two sweeps per build)
+<rad_m1> implicit_precond = mg
+<rad_m1> implicit_mg_x3line = false
+<rad_m1>/implicit_face_weight = distance (default)
+<rad_m1> implicit_pos_floor_cons: the E floor's uncovered raise is taken from the radiation of the same column (no energy created)
+<rad_m1> implicit_pos_floor_gas_keep=1: the E floor's raise leaves the gas at least that share of its eint
+<rad_m1> implicit_face_mmat = true: x1 face flux lam F_H + (1-lam) F_L, lam = Zalesak factor of the explicit face flux (facemmat-1112)
+<rad_m1>: transport=implicit (3-D) solver=bicgstab lin_tol=1e-10 lin_maxit=200
+         implicit_cfl=-1 tol=1e-08 maxit=200 opac_update=true marshak_q=0.5
+         implicit_flux=central implicit_recon=dc implicit_partition=none
+         implicit_vimp=true (v' of the enthalpy flux implicit)
+         implicit_enthalpy=plm (deferred correction)
+         implicit_bc_advect=true (Marshak x1 end carries A E)
+         implicit_offdiag=operator (auto) closure_relax=1 closure_lag=step trans_limit=none
+         implicit_accel=none
+         implicit_gas_newton=true implicit_eos_cache=false
+         x1 boundaries: min=1 max=0 (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=3.01435e+14 flux_max=0
+<rad_m1> time2_auto_be=16: after a stage fallback the next 1, 2, 4, ... 16 steps take the backward-Euler redo path at once
+<rad_m1> time2_posfix=4 time2_posfix_grow=1: local stage-1 positivity re-solve
+<rad_m1> time_scheme=hesdirk2 (g=0.292893; first step, restarts without the slope and failed stages take backward Euler)
+         time2_enth_be=true implicit_cs2_vimp_npass=3
+<rad_m1>: spherical-polar wedge (stage S2: chi(f) closure, radial integrating factor, lagged curvature, offdiag none; implicit with areas/volumes/face distances from Coordinates (stretched radial grid)
+<rad_m1>: c=2.99792e+10 chat/c=1 cfl_rad=0.4 thick_flux=none ap_form=alpha2 recon=plm advect_split=false split_vel=recon source_form=full closure=vet_col subcycle=false
+         kappa_p=0 kappa_e=0 kappa_f=0 kappa_s=0 coupling=true gas_feedback=true arad=3.26704e-47
+         opacity=table force_reference=wb_arad temp_unit_kelvin=8.10636e-09 rho_unit_cgs=1
+he_star_m1: IC column T(rho,eint)/T_col - 1: max 4.44089e-16 at r = 1.0491e+12 (he_ic_eint_from_t = true)
+he_star_m1: column inside the tables: log10 rho -18.301 .. -3.85738, log10 T 4.5072 .. 6.27951
+he_star_m1: he_ic_balance cells: max |T/T_col - 1| = 7.10543e-15 at r = 2.86411e+12
+he_star_m1: he_ic_balance: max |rho/rho_col - 1| = 0.138365 at r = 1.06007e+12, max face residual |PR/PL - 1| = 1.77636e-15, wall cells a_ref (module form), last change 7.88451e-10
+he_star_m1: mlt_ramp auto (start auto, time auto) from mlt_flux_frozen = false: NO ramp: start = -1 s (-1.15741e-05 d), time = 0 s (0 d)
+he_star_m1: GM = 1.02688e+28, F_in = 3.01435e+14, tau(r_in) = 1.66228e+06, r_int (tau = 1) = 2.17881e+12, r_top = 2.34036e+13, sponge rate = 0.001 above r = 2.10632e+13
+he_star_m1: he_seed_band = n2: sigma_max (all cells below r_int) = 0.000262379 /s (1/sigma 0.0441121 d); runs with sigma >= 0.3 sigma_max (gaps <= 2 closed):
+  run r/r_int 0.86307 - 0.963193 (19 cells), peak 1/sigma 0.0441121 d at r/r_int 0.939985
+he_star_m1: he_seed_band = n2 BAND r 1.86903e+12 .. 2.11145e+12 (r/r_int 0.857824 - 0.969085, r_int 2.17881e+12), 19 cells 98..116; peak at r/r_int 0.939985: sigma 0.000262379 /s, 1/sigma 0.0441121 d, T 139665 K, Gamma1 1.34373, H_p/r 0.0555194; pi r/H_p 56.5855, l_8 180.467 (8 cells per wavelength, min dx_lat/r 0.00435204) -> l_lo 14, l_hi 56
+he_star_m1: seed = real spherical harmonics l 14..56 (3053 terms, all m), amplitude 0.001 (eint), r 1.86903e+12 .. 2.11145e+12, rng 1234
+<time> dt_retry on: fac 0.5 max 8 ngood 10 grow 1.25 views minimal cap -1
+--- defaults (<job>/recipe sets the default set: prod1019 | none) ---
+  <rad_m1>/implicit_solver = bicgstab (default)
+--- end defaults ---
+<rad_m1> RSLA check: chat = c, no reduced speed of light (tau_max=9.43311e+06, measured v_max=0)
+<rad_m1> closure = vet_col: per-column 1-D formal solution, spherical p-rays (ncore 8, nsub 1, 521 rays, 512 shells), axis radial, rebuilt every 1 step(s); vet_col_order2 (quadratic mu, face core); vet_bc_diff = face; f_K >= 0; 447 shell(s) kept trapezoid weights; team build, 1 shells per chunk, team size AUTO; outer Marshak q = H(face)/J(top cell) in [0.001, 1]
+<rad_m1> vet_gd direction set: 120 directions; moment errors |sum w - 1| 0, |sum w n| 3.46945e-18, |sum w nn - I/3| 3.88578e-16 (rotated 2.77556e-16), 4th-moment anisotropy 3.33067e-16 (rotated 2.498e-16)
+<rad_m1> vet_gd: exact per-shell lateral halo, band 54 cells (needed 54), per-shell depth mean 53.9707
+<rad_m1> vet_gd_band_ring: compact intensities 16.2949 GB + 3 band slots 0.320809 GB on rank 0
+<rad_m1> vet_gd: ragged per-shell band intensity array 16.6157 GB on rank 0 (dense band 55.393 GB)
+<rad_m1> vet_gd_band_ring: compact intensities 16.2949 GB + 3 band slots 0.320809 GB on rank 0
+<rad_m1> vet_gd: ragged per-shell band intensity array 16.6157 GB on rank 0 (dense band 55.393 GB)
+<rad_m1> vet_gd_rotate_xfade_fuse: second-set intensities 16.6157 GB on rank 0
+<rad_m1> vet_gd: global-direction SC closure on the sp wedge, level-symmetric LQ10 (120 directions); 3-D rotation (quasi-random axis; angle = block key) every 390.000000 in time (t0 0.000000, align on) (0 = fixed), first angle 0; rank 0 wall ghost columns 45144, direction maps exact 2358720 of 5417280 (the rest: nearest direction)
+CLEAN ray cut cycle 0 shell -1 -> 95 (want 95, R)
+<rad_m1> vgdrot-1011: vet_gd_halo_exact lists made in groups of 2 shells (pool 233.35 MB per rank)
+<rad_m1> clean_halo_direct: ON, rank 0 copies 786432 ghosts, sends 823296 cells, receives 823296 in 2 messages; on-rank ghosts by depth 262144 524288 786432, clean_halo_depth 0
