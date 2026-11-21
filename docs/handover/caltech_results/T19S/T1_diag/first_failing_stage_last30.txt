@@ -1,0 +1,30 @@
+CLEAN XDONOR cycle 1102 t2s 2 pass 193 xle0 0 minX/Eo 1.851e-02 donor 46591 cap 165 b<0 541 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 4
+CLEAN XT cycle 1102 t2s 2 pass closure 3.050e-03
+CLEAN FLIM cycle 1102 t2s 2 faces 24093025 momentum cut sum |dF| V/c^2 1.952466e+30
+CLEAN pass cycle 1102 t2s 2 pos 0 pass 193 it 4 de 2.043e-05 dv 4.847e-12
+CLEAN XDONOR cycle 1102 t2s 2 pass 194 xle0 0 minX/Eo 1.851e-02 donor 46592 cap 167 b<0 541 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 4
+CLEAN XT cycle 1102 t2s 2 pass closure 1.330e-03
+CLEAN FLIM cycle 1102 t2s 2 faces 24093024 momentum cut sum |dF| V/c^2 1.952465e+30
+CLEAN pass cycle 1102 t2s 2 pos 0 pass 194 it 4 de 3.191e-05 dv 2.917e-12
+CLEAN XDONOR cycle 1102 t2s 2 pass 195 xle0 0 minX/Eo 1.851e-02 donor 46591 cap 166 b<0 541 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 3
+CLEAN XT cycle 1102 t2s 2 pass closure 1.990e-03
+CLEAN FLIM cycle 1102 t2s 2 faces 24093025 momentum cut sum |dF| V/c^2 1.952465e+30
+CLEAN pass cycle 1102 t2s 2 pos 0 pass 195 it 3 de 1.896e-05 dv 4.441e-12
+CLEAN XDONOR cycle 1102 t2s 2 pass 196 xle0 0 minX/Eo 1.851e-02 donor 46591 cap 166 b<0 541 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 6
+CLEAN XT cycle 1102 t2s 2 pass closure 6.730e-04
+CLEAN FLIM cycle 1102 t2s 2 faces 24093026 momentum cut sum |dF| V/c^2 1.952465e+30
+CLEAN pass cycle 1102 t2s 2 pos 0 pass 196 it 6 de 3.059e-05 dv 2.772e-12
+CLEAN XDONOR cycle 1102 t2s 2 pass 197 xle0 0 minX/Eo 1.851e-02 donor 46591 cap 166 b<0 541 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 4
+CLEAN XT cycle 1102 t2s 2 pass closure 2.796e-04
+CLEAN FLIM cycle 1102 t2s 2 faces 24093026 momentum cut sum |dF| V/c^2 1.952465e+30
+CLEAN pass cycle 1102 t2s 2 pos 0 pass 197 it 4 de 1.174e-05 dv 1.388e-12
+CLEAN XDONOR cycle 1102 t2s 2 pass 198 xle0 0 minX/Eo 1.851e-02 donor 46592 cap 166 b<0 541 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 4
+CLEAN XT cycle 1102 t2s 2 pass closure 2.258e-04
+CLEAN FLIM cycle 1102 t2s 2 faces 24093026 momentum cut sum |dF| V/c^2 1.952465e+30
+CLEAN pass cycle 1102 t2s 2 pos 0 pass 198 it 4 de 2.504e-05 dv 1.127e-12
+CLEAN XDONOR cycle 1102 t2s 2 pass 199 xle0 0 minX/Eo 1.851e-02 donor 46591 cap 165 b<0 541 (with X<=0 0; Eo<0 0, Eo<hdivS 0) most-neg work 0 exch 0 sb 0 gres 0 it 4
+CLEAN XT cycle 1102 t2s 2 pass closure 3.053e-03
+CLEAN FLIM cycle 1102 t2s 2 faces 24093025 momentum cut sum |dF| V/c^2 1.952466e+30
+CLEAN pass cycle 1102 t2s 2 pos 0 pass 199 it 4 de 2.044e-05 dv 4.849e-12
+CLEAN FLIM cycle 1102 t2s 2 faces 24093025 momentum cut sum |dF| V/c^2 1.952466e+30
+CLEAN XT cycle 1102 t2s 2 write-back closure 2.212e-02

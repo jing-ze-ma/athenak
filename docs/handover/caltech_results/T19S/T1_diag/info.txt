@@ -1,0 +1,1 @@
+TAG=T1_diag BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_damp3_2a016d0da md5=587103887d7dcaab7f4edb6800a0ab30 RST=/resnick/groups/carnegie_poc/jingze/prod_fresh_1121b/t19r/rst/t19l64.00001.rst N0=1070 NC=400 MODE=speed HOLDER=6133592 NODES=hpc-sm-02-04 NR=4 PPN=4 ENVX= EX=output5/dt=1e30 UCX=
