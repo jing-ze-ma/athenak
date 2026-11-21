@@ -16,7 +16,6 @@ A deck that leaves them out runs the production scheme.
 | clean_conv_max | 1e-5 | **1e-4** | USER 11-21 |
 | clean_stag_flim | false (read only when named) | **true** (recorded) | realisability of the face F |
 | clean_stag_thinf_held | false | **true** | |
-| clean_stag_thinf_held_gate | false | **true** | C3c |
 
 These were already the fresh defaults: scheme = clean, clean_layout = staggered, clean_rays = sc, clean_xt_exact =
 cons, clean_stag_xdonor = lag, clean_stag_xsrc = true, clean_stag_mg_color = mirror, clean_conv_kappa = 1.0,
@@ -29,6 +28,7 @@ cs_cross_mono (cubed sphere), and <hydro>/floor_pay = rad_column (fresh, eos = g
 | key | default | status |
 |---|---|---|
 | clean_pass_damp | 0 | **deprecated: do not use (USER 2026-11-21).** Do not name it in any deck or key file. The code stays until the USER decides. |
+| clean_stag_thinf_held_gate | false | off: the production decks do not name it. With it on by default, fresh t9h (A100, fwb off, 100 cycles) made 2.1e5 E-floor raises, against 0 with it off (LEAN6 bisect). |
 | clean_stag_colflux | false | off (POS5: no gain; costs CW and dt on RSG) |
 | time2_k1_xlim | off | off (POS5: HG dt 56 vs 98) |
 | clean_stag_fwb | false | off for now (realisability fix, REAL3; comes with its port onto this branch) |

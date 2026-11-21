@@ -337,11 +337,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // E that turns back, l < 0, takes d/(1 - l) (CleanNewtonUpdate): period-2/3 pass
     // cycles of the lagged exchange; a solve that converges before is unchanged
     cln_pdmp = pin->GetOrAddInteger("rad_m1","clean_pass_damp",0);
-    // clean_stag_thinf_held_gate (default on): theta of clean_stag_thinf_held times the
+    // clean_stag_thinf_held_gate (default off): theta of clean_stag_thinf_held times the
     // old production's quasi-steadiness gate r^2, r = min(E_old/H, H/E_old), H = max(J,
     // P)
     cln_thhg = cln_thinh && pin->GetOrAddBoolean("rad_m1","clean_stag_thinf_held_gate",
-                                                 nw);
+                                                 false);
     // clean_stag_xdonor = lag (default) | p1 | off: the off-diagonal stress flux an
     // M-matrix term (CleanStagXDonor); clean_stag_xsrc (default on): also the face
     // sources past their explicit share; clean_stag_xsweep (default off): a monotone
