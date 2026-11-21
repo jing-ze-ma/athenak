@@ -1934,3 +1934,5 @@ B_br gate not passed; arms not started
 - (10:58) V208 start: V8c on hpc-sm-02-11 (B_v207 86d31021; COPY of m35mms/rst/m35mms.00012.rst (t 259200, cycle ~33383 from the production log) in orion_runs_1121/v208/rst/m35mms; keys from the rst + conv_max 1e-4 + thinf_held_gate + pass_damp 1; 300 cycles, rst off)
 - (10:58) V208 start: V8d on hpc-sm-02-16 (B_v207 86d31021; COPY of i1_m35mms_f1k/rst/m35mms.00011.rst (t 237600, cycle ~29981 from the production log) in orion_runs_1121/v208/rst/i1_m35mms_f1k; keys from the rst + conv_max 1e-4 + thinf_held_gate + pass_damp 1; 300 cycles, rst off)
 - (11:04) V8c result: rc: rc=0 wall=376 | cycles - CW  FATAL  solves/stage-pass:   | wall/cycle test  vs prod 1.28 s | full: caltech_results/V208/V8c/res.txt
+- (11:04) V8d result: rc: rc=0 wall=350 | cycles - CW  FATAL  solves/stage-pass:   | wall/cycle test  vs prod 1.24 s | full: caltech_results/V208/V8d/res.txt
+- (11:05) V207 rerun start: V7a on hpc-sm-02-16 (damp 0, as ji; overwrites V207/V7a)
