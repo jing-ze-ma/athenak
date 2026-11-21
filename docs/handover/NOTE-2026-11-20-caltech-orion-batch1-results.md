@@ -805,3 +805,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   E1_t19nothinf: fj profiles 3 files, m1prof_00001.txt (m1 bin at ~3 h: t19l64.m1.00001.bin); bins deleted
   E4_t19old: fj profiles 1 files, m1prof_00001.txt (m1 bin at ~3 h: ); bins deleted
 - (19:27) CONVERR final: caltech_results/CONVERR/converr_{rsg,hg,rsg_3c,hg_3c}.txt. HG 3c, CEPc vs CET3c at the same time and cycle (50112300 s, cycle 624964): |dE|/E mean 0.154, median 0.080, p99 0.86, E-weighted 5.7e-6; |dT|/T mean 0.038, median 0.020, mass-weighted 8.6e-4. CE* bins deleted.
+- DGL_t19cutr: a rc=137 wall=1080 | a cycles 0 - 750 dt first 38.3541 last 38.389 s/cycle steady 67.018 first elapsed 48.9 a 'FATAL' 0  a 'CLEAN WARNING' 0   | CW 0 FATAL 0 | eint<0 lines 1, sum 1572864, max 1572864 | raycut lines 72 | deck md5 in info.txt
