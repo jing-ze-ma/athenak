@@ -1,0 +1,7 @@
+cycle=0 time=0.000000e+00 dt=9.685234e+01
+cycle=20 time=4.734865e+02 dt=1.683088e+01
+cycle=40 time=7.499387e+02 dt=2.371678e+00
+cycle=60 time=9.773711e+02 dt=1.691634e+01
+cycle=80 time=1.188991e+03 dt=1.641949e+01
+cycle=100 time=1.399020e+03 dt=8.470939e+00
+cycle=120 time=1.587778e+03 dt=1.118076e+00
