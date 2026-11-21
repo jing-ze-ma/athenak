@@ -1,0 +1,9 @@
+V8c0: m35mms damp-0 successor preflight (B_v207 86d31021, copy of m35mms.00012.rst, t 259200, N0 ~33383, keys rst + conv_max 1e-4 + thinf_held_gate + clean_pass_damp 0, 300 cycles, rst off), node hpc-sm-02-04
+rc: rc=0 wall=324 | cycles 33400-33683 (log lines every 50)
+CW 0 FATAL 0 | DT_RETRY lines 0, stage fallbacks 2
+solves/stage-pass: 3.6 mean / 4 max (n=601); >=200-solve stage-passes: 0
+dt test (every 50): 33400:8.249 33450:8.254 33500:7.722 33550:7.546 33600:7.483 33650:7.153 
+dt production (last 10 cycle lines): 36550:6.275 36600:6.311 36650:6.506 36700:6.663 36750:6.678 36800:6.865 36850:6.9 36900:7.101 36950:7.103 37000:7.175 
+user.hst test: [t 259804 KE 1.427e+39 Ltop/Lin 1.0126] [t 260405 KE 1.435e+39 Ltop/Lin 1.0170] [t 261007 KE 1.438e+39 Ltop/Lin 1.0019] 
+user.hst production, same t range: [t 259804 KE 1.427e+39 Ltop/Lin 1.0055] [t 260403 KE 1.435e+39 Ltop/Lin 1.0094] [t 261005 KE 1.438e+39 Ltop/Lin 1.0102] 
+wall/cycle: test 1.02 s | production (last 500 cycles) 1.31 s
