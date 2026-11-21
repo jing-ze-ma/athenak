@@ -551,16 +551,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_gas_tfloor (default true): the gas row's T bounded below by the EOS
     // tfloor, and the gas eint written back from that root (E takes the rest)
     cln_gtf = stag("clean_gas_tfloor", true);
-    // clean_gas_newton_switch (default 10 on a fresh run, USER 11-21, recorded; 0 = off;
-    // W in [3, 64]), clean_gas_newton_switch_min (20), clean_stall_fac (0.5): the old
-    // production's implicit_gas_newton_switch, a stalled solve's remaining passes on the
-    // bracketed gas root without the Newton slope; a restart file without it keeps 0
+    // clean_gas_newton_switch (default W = 4 on a fresh run, USER 11-21, recorded; 0 = off;
+    // W in [3, 64]), clean_gas_newton_switch_min (default 6 on a fresh run, else 20),
+    // clean_stall_fac (0.5): the old production's implicit_gas_newton_switch, a stalled
+    // solve's remaining passes on the bracketed gas root without the Newton slope; a
+    // restart file without the keys keeps 0 / 20
     if (!nw && !pin->DoesParameterExist("rad_m1","clean_gas_newton_switch")) {
       recipe::Log("<rad_m1>/clean_gas_newton_switch = 0 (a restart file without the key: "
                   "the old default)");
     }
-    cln_gnsw = pin->GetOrAddInteger("rad_m1","clean_gas_newton_switch",nw ? 10 : 0);
-    cln_gnswmin = pin->GetOrAddInteger("rad_m1","clean_gas_newton_switch_min",20);
+    cln_gnsw = pin->GetOrAddInteger("rad_m1","clean_gas_newton_switch",nw ? 4 : 0);
+    cln_gnswmin = pin->GetOrAddInteger("rad_m1","clean_gas_newton_switch_min",nw ? 6 : 20);
     cln_stfac = pin->GetOrAddReal("rad_m1","clean_stall_fac",0.5);
     if (cln_gnsw < 0 || cln_gnsw > 64 || (cln_gnsw > 0 && cln_gnsw < 3) ||
         cln_gnswmin < 1 || !(cln_stfac > 0.0 && cln_stfac <= 1.0)) {
