@@ -796,3 +796,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - V204O_hg (hpc-sm-02-03): rc=0 wall=159 rc=0 wall=141 rc=0 wall=134 | cycles 624961 - 624965 | steady 4.360 s/cycle | GPU MiB max 102089 min 101427 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF hst vs V203L_hg/a:  hegiant.hydro.hst==V203L_hg/a hegiant.user.hst==V203L_hg/a | CW 0
 - E2_t19ideal: a rc=0 wall=720 | a cycles 0 - 500 dt first 38.3784 last 26.5142 s/cycle steady 60.055 first elapsed 41.5 a 'FATAL' 0  a 'CLEAN WARNING' 0   | CW 0 FATAL 0 | eint<0 lines 1, sum 1572864, max 1572864 | raycut lines 204 | deck md5 in info.txt
   E2_t19ideal profiles: 3 files (caltech_results/E2_t19ideal/prof_*.txt); bins deleted
+- E3_t19lq10: a rc=0 wall=791 | a cycles 0 - 500 dt first 38.3541 last 25.788 s/cycle steady 62.150 first elapsed 89.7 a 'FATAL' 0  a 'CLEAN WARNING' 0   | CW 0 FATAL 0 | eint<0 lines 1, sum 1572864, max 1572864 | raycut lines 210 | deck md5 in info.txt
