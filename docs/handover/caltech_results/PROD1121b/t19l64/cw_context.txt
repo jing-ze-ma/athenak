@@ -75,3 +75,80 @@ CLEAN cycle 1530 t2s 2 it -6 (sum 1127) pos 0 mark 0 all 0 neg 0 r1 0 r2 5 first
 CLEAN FLIM cycle 1530 t2s 2 faces 25398765 momentum cut sum |dF| V/c^2 5.521317e+30
 CLEAN XT cycle 1530 t2s 2 write-back closure 9.267e-03
 CLEAN WARNING cycle 1530 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 11)
+== 2026-11-21 01:24:22 log.0: CW 1-11 (grep -B5)
+CLEAN FLIM cycle 689 t2s 2 faces 23617842 momentum cut sum |dF| V/c^2 2.205925e+30
+CLEAN FLIM cycle 689 t2s 2 faces 23617839 momentum cut sum |dF| V/c^2 2.205923e+30
+CLEAN cycle 689 t2s 2 it -5 (sum 821) pos 0 mark 0 all 0 neg 0 r1 0 r2 23 first 0 23 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 689 t2s 2 faces 23617839 momentum cut sum |dF| V/c^2 2.205923e+30
+CLEAN XT cycle 689 t2s 2 write-back closure 8.801e-02
+CLEAN WARNING cycle 689 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+
+CLEAN FLIM cycle 782 t2s 2 faces 23200687 momentum cut sum |dF| V/c^2 1.923075e+30
+CLEAN FLIM cycle 782 t2s 2 faces 23200689 momentum cut sum |dF| V/c^2 1.923076e+30
+CLEAN cycle 782 t2s 2 it -4 (sum 615) pos 0 mark 0 all 0 neg 0 r1 0 r2 5 first 0 5 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 782 t2s 2 faces 23200689 momentum cut sum |dF| V/c^2 1.923076e+30
+CLEAN XT cycle 782 t2s 2 write-back closure 3.268e-02
+CLEAN WARNING cycle 782 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+
+CLEAN FLIM cycle 1069 t2s 2 faces 23985297 momentum cut sum |dF| V/c^2 1.972659e+30
+CLEAN FLIM cycle 1069 t2s 2 faces 23985300 momentum cut sum |dF| V/c^2 1.972659e+30
+CLEAN cycle 1069 t2s 2 it -4 (sum 622) pos 0 mark 0 all 0 neg 0 r1 0 r2 3 first 0 3 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 1069 t2s 2 faces 23985300 momentum cut sum |dF| V/c^2 1.972659e+30
+CLEAN XT cycle 1069 t2s 2 write-back closure 5.875e-03
+CLEAN WARNING cycle 1069 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 3)
+
+CLEAN FLIM cycle 1234 t2s 2 faces 23826365 momentum cut sum |dF| V/c^2 2.455735e+30
+CLEAN FLIM cycle 1234 t2s 2 faces 23826365 momentum cut sum |dF| V/c^2 2.455737e+30
+CLEAN cycle 1234 t2s 2 it -6 (sum 963) pos 0 mark 0 all 0 neg 0 r1 0 r2 32 first 0 32 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 1234 t2s 2 faces 23826365 momentum cut sum |dF| V/c^2 2.455737e+30
+CLEAN XT cycle 1234 t2s 2 write-back closure 1.546e-02
+CLEAN WARNING cycle 1234 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 4)
+
+CLEAN FLIM cycle 1301 t2s 2 faces 22480613 momentum cut sum |dF| V/c^2 2.408748e+30
+CLEAN FLIM cycle 1301 t2s 2 faces 22480614 momentum cut sum |dF| V/c^2 2.408747e+30
+CLEAN cycle 1301 t2s 2 it -6 (sum 902) pos 0 mark 0 all 0 neg 0 r1 0 r2 35 first 0 35 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 1301 t2s 2 faces 22480614 momentum cut sum |dF| V/c^2 2.408747e+30
+CLEAN XT cycle 1301 t2s 2 write-back closure 4.861e-03
+CLEAN WARNING cycle 1301 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
+
+CLEAN FLIM cycle 1385 t2s 2 faces 22804164 momentum cut sum |dF| V/c^2 2.789214e+30
+CLEAN FLIM cycle 1385 t2s 2 faces 22804158 momentum cut sum |dF| V/c^2 2.789214e+30
+CLEAN cycle 1385 t2s 2 it -6 (sum 1117) pos 0 mark 0 all 0 neg 0 r1 0 r2 31 first 0 31 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 1385 t2s 2 faces 22804158 momentum cut sum |dF| V/c^2 2.789214e+30
+CLEAN XT cycle 1385 t2s 2 write-back closure 8.452e-03
+CLEAN WARNING cycle 1385 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 6)
+
+CLEAN FLIM cycle 1449 t2s 2 faces 23872478 momentum cut sum |dF| V/c^2 3.810551e+30
+CLEAN FLIM cycle 1449 t2s 2 faces 23872475 momentum cut sum |dF| V/c^2 3.810552e+30
+CLEAN cycle 1449 t2s 2 it -5 (sum 738) pos 0 mark 0 all 0 neg 0 r1 0 r2 10 first 0 10 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 1449 t2s 2 faces 23872475 momentum cut sum |dF| V/c^2 3.810552e+30
+CLEAN XT cycle 1449 t2s 2 write-back closure 2.205e-01
+CLEAN WARNING cycle 1449 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 7)
+
+CLEAN FLIM cycle 1455 t2s 2 faces 21806232 momentum cut sum |dF| V/c^2 3.479363e+30
+CLEAN FLIM cycle 1455 t2s 2 faces 21806239 momentum cut sum |dF| V/c^2 3.479364e+30
+CLEAN cycle 1455 t2s 2 it -5 (sum 960) pos 0 mark 0 all 0 neg 0 r1 0 r2 7 first 0 7 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 1455 t2s 2 faces 21806239 momentum cut sum |dF| V/c^2 3.479364e+30
+CLEAN XT cycle 1455 t2s 2 write-back closure 1.556e-02
+CLEAN WARNING cycle 1455 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 8)
+
+CLEAN FLIM cycle 1457 t2s 2 faces 22200577 momentum cut sum |dF| V/c^2 2.564073e+30
+CLEAN FLIM cycle 1457 t2s 2 faces 22200578 momentum cut sum |dF| V/c^2 2.564074e+30
+CLEAN cycle 1457 t2s 2 it -6 (sum 984) pos 0 mark 0 all 0 neg 0 r1 0 r2 5 first 0 5 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 1457 t2s 2 faces 22200578 momentum cut sum |dF| V/c^2 2.564074e+30
+CLEAN XT cycle 1457 t2s 2 write-back closure 1.741e-02
+CLEAN WARNING cycle 1457 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 9)
+
+CLEAN FLIM cycle 1466 t2s 2 faces 23810851 momentum cut sum |dF| V/c^2 5.080600e+30
+CLEAN FLIM cycle 1466 t2s 2 faces 23810852 momentum cut sum |dF| V/c^2 5.080599e+30
+CLEAN cycle 1466 t2s 2 it -5 (sum 856) pos 0 mark 0 all 0 neg 0 r1 0 r2 7 first 0 7 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 1466 t2s 2 faces 23810852 momentum cut sum |dF| V/c^2 5.080599e+30
+CLEAN XT cycle 1466 t2s 2 write-back closure 8.425e-03
+CLEAN WARNING cycle 1466 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 10)
+
+CLEAN FLIM cycle 1530 t2s 2 faces 25398765 momentum cut sum |dF| V/c^2 5.521315e+30
+CLEAN FLIM cycle 1530 t2s 2 faces 25398765 momentum cut sum |dF| V/c^2 5.521317e+30
+CLEAN cycle 1530 t2s 2 it -6 (sum 1127) pos 0 mark 0 all 0 neg 0 r1 0 r2 5 first 0 5 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 1530 t2s 2 faces 25398765 momentum cut sum |dF| V/c^2 5.521317e+30
+CLEAN XT cycle 1530 t2s 2 write-back closure 9.267e-03
+CLEAN WARNING cycle 1530 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 11)
