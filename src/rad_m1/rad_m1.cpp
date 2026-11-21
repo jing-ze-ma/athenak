@@ -61,6 +61,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   chat = chat_over_c*c_light;
   // ---- MILESTONE 3a hook: which transport scheme runs.  Everything the implicit one
   // needs is read and allocated by ImplicitInit at the end of this constructor.
+  // (a fresh run's default implicit is set before, recipe::CleanDefaults; a restart file
+  // without the key ran explicit)
   {std::string tr = pin->GetOrAddString("rad_m1","transport","explicit");
   if (tr.compare("explicit") == 0) {
     transport = M1_TRANSPORT_EXPLICIT;
@@ -92,7 +94,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_tol = pin->GetOrAddReal("rad_m1","clean_tol",1.0e-10);
     cln_cnorm = pin->GetOrAddReal("rad_m1","clean_init_cnorm",1.0e-10);
     cln_lcnorm = pin->GetOrAddReal("rad_m1","clean_lin_cnorm",1.0e-10);
-    // clean_maxnl (200), clean_maxit (800) and clean_conv_max (1e-5) do not take the old
+    // clean_maxnl (200), clean_maxit (800) and clean_conv_max (1e-4) do not take the old
     // production's implicit_maxit, implicit_lin_maxit and implicit_tol_rel_max (a named
     // other value prints a NOTE).  clean_lin_pass (default on, the old production's
     // form): a linear solve that ends at clean_maxit leaves its iterate to the next pass,
@@ -114,7 +116,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     for (int n = 0; n < 3; ++n) nck[n] = pin->DoesParameterExist("rad_m1", ck[n]);
     cln_maxnl = pin->GetOrAddInteger("rad_m1","clean_maxnl",200);
     cln_maxit = pin->GetOrAddInteger("rad_m1","clean_maxit",800);
-    cln_bmax = pin->GetOrAddReal("rad_m1","clean_conv_max",1.0e-5);
+    cln_bmax = pin->GetOrAddReal("rad_m1","clean_conv_max",nw ? 1.0e-4 : 1.0e-5);
     const Real cv[3] = {static_cast<Real>(cln_maxnl), static_cast<Real>(cln_maxit),
                         cln_bmax};
     for (int n = 0; n < 3; ++n) {
@@ -310,15 +312,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_stag_thinf (default on): the staggered bracket's ray correction in the face
     // half ranges, realisable (CleanStagBracket), not as the gated lagged flux DG
     cln_thinf = pin->GetOrAddBoolean("rad_m1","clean_stag_thinf",nw);
-    // clean_stag_flim (default off): a face F^H above its donor's c E dissipated in the
+    // clean_stag_flim (default on): a face F^H above its donor's c E dissipated in the
     // stress (conservative), the solution F within 5/4 of [-c E_R, c E_L], the cut booked
     // (CleanStagFSolve); every mesh: the face F is the momentum along the face's unit
     // normal (the cubed sphere's too, CleanCsNormA)
-    cln_flim = stag("clean_stag_flim", false);
-    // clean_stag_thinf_held (default off): the thin flux factor of a donor blended by
+    cln_flim = pin->GetOrAddBoolean("rad_m1","clean_stag_flim",nw);
+    // clean_stag_thinf_held (default on): the thin flux factor of a donor blended by
     // theta = min(1, max(J, P)/(clean_ray_min E_old)), P its largest ray outflow:
     // theta g(rays) + (1 - theta) h (its own half range); a ray-shadowed donor is no dam
-    cln_thinh = cln_thinf && pin->GetOrAddBoolean("rad_m1","clean_stag_thinf_held",false);
+    cln_thinh = cln_thinf && pin->GetOrAddBoolean("rad_m1","clean_stag_thinf_held",nw);
     // clean_stag_xdonor_freeze (default 0 = off): from this pass of a solve on, the
     // xdonor cross flux C is held (CleanStagXDonor): its donor side and cap no longer
     // switch from pass to pass (HG C2D: a 1-cell donor/cap flip, period-2 passes at 2e-4)
@@ -327,10 +329,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // E that turns back, l < 0, takes d/(1 - l) (CleanNewtonUpdate): period-2/3 pass
     // cycles of the lagged exchange; a solve that converges before is unchanged
     cln_pdmp = pin->GetOrAddInteger("rad_m1","clean_pass_damp",0);
-    // clean_stag_thinf_held_gate (default off): theta of clean_stag_thinf_held times the
+    // clean_stag_thinf_held_gate (default on): theta of clean_stag_thinf_held times the
     // old production's quasi-steadiness gate r^2, r = min(E_old/H, H/E_old), H = max(J,
     // P)
-    cln_thhg = cln_thinh && pin->GetOrAddBoolean("rad_m1","clean_stag_thinf_held_gate",false);
+    cln_thhg = cln_thinh && pin->GetOrAddBoolean("rad_m1","clean_stag_thinf_held_gate",
+                                                 nw);
     // clean_stag_xdonor = lag (default) | p1 | off: the off-diagonal stress flux an
     // M-matrix term (CleanStagXDonor); clean_stag_xsrc (default on): also the face
     // sources past their explicit share; clean_stag_xsweep (default off): a monotone
@@ -573,7 +576,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // through the faces, exchange, work, beta terms), so that a change or residual is
     // the fraction of the energy the cell exchanges in the step.  Its tolerance is
     // clean_conv_kappa (1.0) x the step's time-error estimate in the same weights,
-    // between clean_tol_nl (10 clean_tol) and clean_conv_max (1e-5), and BiCGStab in
+    // between clean_tol_nl (10 clean_tol) and clean_conv_max (1e-4), and BiCGStab in
     // that norm with Eisenstat-Walker forcing; strict: E, T relative to themselves,
     // clean_tol_nl
     {const std::string cv = pin->GetOrAddString("rad_m1","clean_conv","budget");
@@ -584,7 +587,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     cln_budget = (cv == "budget");}
     cln_bkap = pin->GetOrAddReal("rad_m1","clean_conv_kappa",1.0);
-    // clean_conv_max (read above): the tolerance's ceiling, default 1e-5.  The MeshBlock
+    // clean_conv_max (read above): the tolerance's ceiling, default 1e-4.  The MeshBlock
     // layout moves the answer to about it (a solve may stop a pass earlier or later),
     // which a step dt_retry redoes amplifies (mpirej_retry, 1 vs 2 ranks: 1e-4 9.1e-2,
     // 1e-5 9.2e-6)

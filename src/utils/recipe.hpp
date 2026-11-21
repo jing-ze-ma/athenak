@@ -34,9 +34,10 @@ void PrintLog();                          // the start-up block (rank 0), then c
 // exists (main.cpp, before the Mesh); pgen/<problem>_defaults.cpp or the no-op
 // pgen/early_defaults_none.cpp
 void PgenEarlyDefaults(ParameterInput *pin);
-// a fresh clean M1 run's defaults of keys read before <rad_m1> exists (main.cpp, after
-// PgenEarlyDefaults): <time>/cfl_number = 0.3 (scheme = clean, named or the default with
-// transport = implicit; rad_m1.cpp holds the rest)
+// a fresh M1 run's defaults of keys read before <rad_m1> exists (main.cpp, after
+// PgenEarlyDefaults): <rad_m1>/transport = implicit; with scheme = clean (named or
+// the default with transport = implicit) closure = vet_col + vet_gd on spherical polar
+// and the cubed sphere and <time>/cfl_number = 0.3 (rad_m1.cpp holds the rest)
 void CleanDefaults(ParameterInput *pin);
 }  // namespace recipe
 
