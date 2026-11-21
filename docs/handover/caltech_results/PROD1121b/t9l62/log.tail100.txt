@@ -1,100 +1,100 @@
-CLEAN FLIM cycle 488 t2s 2 faces 17176220 momentum cut sum |dF| V/c^2 1.991711e+30
-CLEAN FLIM cycle 488 t2s 2 faces 16230779 momentum cut sum |dF| V/c^2 1.915244e+30
-CLEAN FLIM cycle 488 t2s 2 faces 16229588 momentum cut sum |dF| V/c^2 1.915054e+30
-CLEAN cycle 488 t2s 2 it 4 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN FLIM cycle 488 t2s 2 faces 16229588 momentum cut sum |dF| V/c^2 1.915054e+30
-CLEAN XT cycle 488 t2s 2 write-back closure 1.035e-02
-CLEAN FLIM cycle 488 t2s 3 faces 9538588 momentum cut sum |dF| V/c^2 8.842416e+29
-CLEAN FLIM cycle 488 t2s 3 faces 9595078 momentum cut sum |dF| V/c^2 9.250908e+29
-CLEAN FLIM cycle 488 t2s 3 faces 9595018 momentum cut sum |dF| V/c^2 9.250796e+29
-CLEAN cycle 488 t2s 3 it 3 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN FLIM cycle 488 t2s 3 faces 9595018 momentum cut sum |dF| V/c^2 9.250796e+29
-CLEAN LZB cycle 488 t2s 3 ledger -6.5422217591781367e+42
-CLEAN XT cycle 488 t2s 3 write-back closure 1.872e-03
-CLEAN FLIM cycle 489 t2s 2 faces 17329381 momentum cut sum |dF| V/c^2 2.033971e+30
-CLEAN FLIM cycle 489 t2s 2 faces 16363744 momentum cut sum |dF| V/c^2 1.936098e+30
-CLEAN FLIM cycle 489 t2s 2 faces 16362753 momentum cut sum |dF| V/c^2 1.935992e+30
-CLEAN cycle 489 t2s 2 it 4 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN FLIM cycle 489 t2s 2 faces 16362753 momentum cut sum |dF| V/c^2 1.935992e+30
-CLEAN XT cycle 489 t2s 2 write-back closure 4.746e-02
-CLEAN FLIM cycle 489 t2s 3 faces 9590583 momentum cut sum |dF| V/c^2 8.787627e+29
-CLEAN FLIM cycle 489 t2s 3 faces 9645206 momentum cut sum |dF| V/c^2 9.171851e+29
-CLEAN FLIM cycle 489 t2s 3 faces 9645010 momentum cut sum |dF| V/c^2 9.171730e+29
-CLEAN cycle 489 t2s 3 it 3 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN FLIM cycle 489 t2s 3 faces 9645010 momentum cut sum |dF| V/c^2 9.171730e+29
-CLEAN LZB cycle 489 t2s 3 ledger -6.4632169972882599e+42
-CLEAN XT cycle 489 t2s 3 write-back closure 3.616e-03
-CLEAN OLDVEC cycle 490 t2s 2 eint<0 22 (taken as 0) E<0 0
-CLEAN FLIM cycle 490 t2s 2 faces 17183239 momentum cut sum |dF| V/c^2 1.999302e+30
-CLEAN FLIM cycle 490 t2s 2 faces 16277739 momentum cut sum |dF| V/c^2 1.920747e+30
-CLEAN FLIM cycle 490 t2s 2 faces 16277105 momentum cut sum |dF| V/c^2 1.920606e+30
-CLEAN cycle 490 t2s 2 it 3 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN FLIM cycle 490 t2s 2 faces 16277105 momentum cut sum |dF| V/c^2 1.920606e+30
-CLEAN XT cycle 490 t2s 2 write-back closure 8.424e-03
-CLEAN FLIM cycle 490 t2s 3 faces 9608755 momentum cut sum |dF| V/c^2 8.777802e+29
-CLEAN FLIM cycle 490 t2s 3 faces 9666882 momentum cut sum |dF| V/c^2 9.164930e+29
-CLEAN FLIM cycle 490 t2s 3 faces 9667031 momentum cut sum |dF| V/c^2 9.164861e+29
-CLEAN cycle 490 t2s 3 it 3 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN FLIM cycle 490 t2s 3 faces 9667031 momentum cut sum |dF| V/c^2 9.164861e+29
-CLEAN LZB cycle 490 t2s 3 ledger -6.4194184323705508e+42
-CLEAN XT cycle 490 t2s 3 write-back closure 1.723e-03
-CLEAN FLIM cycle 491 t2s 2 faces 17329642 momentum cut sum |dF| V/c^2 2.019725e+30
-CLEAN FLIM cycle 491 t2s 2 faces 16342386 momentum cut sum |dF| V/c^2 1.911059e+30
-CLEAN FLIM cycle 491 t2s 2 faces 16340064 momentum cut sum |dF| V/c^2 1.910813e+30
-CLEAN cycle 491 t2s 2 it 4 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN FLIM cycle 491 t2s 2 faces 16340064 momentum cut sum |dF| V/c^2 1.910813e+30
-CLEAN XT cycle 491 t2s 2 write-back closure 7.682e-03
-CLEAN FLIM cycle 491 t2s 3 faces 9555124 momentum cut sum |dF| V/c^2 8.583752e+29
-CLEAN FLIM cycle 491 t2s 3 faces 9586383 momentum cut sum |dF| V/c^2 8.910840e+29
-CLEAN FLIM cycle 491 t2s 3 faces 9586122 momentum cut sum |dF| V/c^2 8.910651e+29
-CLEAN cycle 491 t2s 3 it 3 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN FLIM cycle 491 t2s 3 faces 9586122 momentum cut sum |dF| V/c^2 8.910651e+29
-CLEAN LZB cycle 491 t2s 3 ledger -6.4355885686531130e+42
-CLEAN XT cycle 491 t2s 3 write-back closure 3.884e-03
-CLEAN OLDVEC cycle 492 t2s 2 eint<0 2 (taken as 0) E<0 0
-CLEAN FLIM cycle 492 t2s 2 faces 17123818 momentum cut sum |dF| V/c^2 1.988870e+30
-CLEAN FLIM cycle 492 t2s 2 faces 16205898 momentum cut sum |dF| V/c^2 1.899695e+30
-CLEAN FLIM cycle 492 t2s 2 faces 16205379 momentum cut sum |dF| V/c^2 1.899628e+30
-CLEAN cycle 492 t2s 2 it 3 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN FLIM cycle 492 t2s 2 faces 16205379 momentum cut sum |dF| V/c^2 1.899628e+30
-CLEAN XT cycle 492 t2s 2 write-back closure 8.025e-02
-CLEAN FLIM cycle 492 t2s 3 faces 9581095 momentum cut sum |dF| V/c^2 8.647919e+29
-CLEAN FLIM cycle 492 t2s 3 faces 9635697 momentum cut sum |dF| V/c^2 9.011456e+29
-CLEAN FLIM cycle 492 t2s 3 faces 9635867 momentum cut sum |dF| V/c^2 9.011462e+29
-CLEAN cycle 492 t2s 3 it 3 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN FLIM cycle 492 t2s 3 faces 9635867 momentum cut sum |dF| V/c^2 9.011462e+29
-CLEAN LZB cycle 492 t2s 3 ledger -6.3128456871843302e+42
-CLEAN XT cycle 492 t2s 3 write-back closure 2.085e-03
-CLEAN FLIM cycle 493 t2s 2 faces 17256563 momentum cut sum |dF| V/c^2 2.018676e+30
-CLEAN FLIM cycle 493 t2s 2 faces 16278536 momentum cut sum |dF| V/c^2 1.908046e+30
-CLEAN FLIM cycle 493 t2s 2 faces 16276919 momentum cut sum |dF| V/c^2 1.907870e+30
-CLEAN cycle 493 t2s 2 it 4 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN FLIM cycle 493 t2s 2 faces 16276919 momentum cut sum |dF| V/c^2 1.907870e+30
-CLEAN XT cycle 493 t2s 2 write-back closure 8.245e-03
-CLEAN FLIM cycle 493 t2s 3 faces 9485829 momentum cut sum |dF| V/c^2 8.553385e+29
-CLEAN FLIM cycle 493 t2s 3 faces 9534672 momentum cut sum |dF| V/c^2 8.912128e+29
-CLEAN FLIM cycle 493 t2s 3 faces 9534317 momentum cut sum |dF| V/c^2 8.912023e+29
-CLEAN cycle 493 t2s 3 it 3 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN FLIM cycle 493 t2s 3 faces 9534317 momentum cut sum |dF| V/c^2 8.912023e+29
-CLEAN LZB cycle 493 t2s 3 ledger -6.2916387837171063e+42
-CLEAN XT cycle 493 t2s 3 write-back closure 2.985e-03
-CLEAN OLDVEC cycle 494 t2s 2 eint<0 1 (taken as 0) E<0 0
-CLEAN FLIM cycle 494 t2s 2 faces 17036579 momentum cut sum |dF| V/c^2 1.973307e+30
-CLEAN FLIM cycle 494 t2s 2 faces 16105366 momentum cut sum |dF| V/c^2 1.888201e+30
-CLEAN FLIM cycle 494 t2s 2 faces 16104942 momentum cut sum |dF| V/c^2 1.888090e+30
-CLEAN cycle 494 t2s 2 it 4 (sum 9) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN FLIM cycle 494 t2s 2 faces 16104942 momentum cut sum |dF| V/c^2 1.888090e+30
-CLEAN XT cycle 494 t2s 2 write-back closure 8.451e-03
-CLEAN FLIM cycle 494 t2s 3 faces 9512500 momentum cut sum |dF| V/c^2 8.623242e+29
-CLEAN FLIM cycle 494 t2s 3 faces 9575514 momentum cut sum |dF| V/c^2 8.994641e+29
-CLEAN FLIM cycle 494 t2s 3 faces 9575595 momentum cut sum |dF| V/c^2 8.994522e+29
-CLEAN cycle 494 t2s 3 it 3 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN FLIM cycle 494 t2s 3 faces 9575595 momentum cut sum |dF| V/c^2 8.994522e+29
-CLEAN LZB cycle 494 t2s 3 ledger -6.2528906814826264e+42
-CLEAN XT cycle 494 t2s 3 write-back closure 3.575e-03
-CLEAN FLIM cycle 495 t2s 2 faces 17000631 momentum cut sum |dF| V/c^2 1.983733e+30
-CLEAN FLIM cycle 495 t2s 2 faces 16040922 momentum cut sum |dF| V/c^2 1.891920e+30
-CLEAN FLIM cycle 495 t2s 2 faces 16039812 momentum cut sum |dF| V/c^2 1.891807e+30
-CLEAN cycle 495 t2s 2 it 4 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
-CLEAN FLIM cycle 495 t2s 2 faces 16039812 momentum cut sum |dF| V/c^2 1.891807e+30
-CLEAN XT cycle 495 t2s 2 write-back closure 1.899e-02
+CLEAN FLIM cycle 1076 t2s 2 faces 18732865 momentum cut sum |dF| V/c^2 1.609940e+30
+CLEAN FLIM cycle 1076 t2s 2 faces 18700095 momentum cut sum |dF| V/c^2 1.604175e+30
+CLEAN cycle 1076 t2s 2 it 6 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN FLIM cycle 1076 t2s 2 faces 18700095 momentum cut sum |dF| V/c^2 1.604175e+30
+CLEAN XT cycle 1076 t2s 2 write-back closure 5.052e-02
+CLEAN FLIM cycle 1076 t2s 3 faces 13157670 momentum cut sum |dF| V/c^2 7.183882e+29
+CLEAN FLIM cycle 1076 t2s 3 faces 13046553 momentum cut sum |dF| V/c^2 7.170843e+29
+CLEAN cycle 1076 t2s 3 it 4 (sum 5) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN FLIM cycle 1076 t2s 3 faces 13046553 momentum cut sum |dF| V/c^2 7.170843e+29
+CLEAN LZB cycle 1076 t2s 3 ledger -1.1627218017755765e+43
+CLEAN XT cycle 1076 t2s 3 write-back closure 2.112e-02
+CLEAN FLIM cycle 1077 t2s 2 faces 21809441 momentum cut sum |dF| V/c^2 2.044381e+30
+CLEAN FLIM cycle 1077 t2s 2 faces 18728046 momentum cut sum |dF| V/c^2 1.495118e+30
+CLEAN FLIM cycle 1077 t2s 2 faces 18701087 momentum cut sum |dF| V/c^2 1.490418e+30
+CLEAN cycle 1077 t2s 2 it 5 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN FLIM cycle 1077 t2s 2 faces 18701087 momentum cut sum |dF| V/c^2 1.490418e+30
+CLEAN XT cycle 1077 t2s 2 write-back closure 2.186e-02
+CLEAN FLIM cycle 1077 t2s 3 faces 13344282 momentum cut sum |dF| V/c^2 6.765546e+29
+CLEAN FLIM cycle 1077 t2s 3 faces 13233518 momentum cut sum |dF| V/c^2 6.705937e+29
+CLEAN cycle 1077 t2s 3 it 4 (sum 5) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN FLIM cycle 1077 t2s 3 faces 13233518 momentum cut sum |dF| V/c^2 6.705937e+29
+CLEAN LZB cycle 1077 t2s 3 ledger -1.1656663893183511e+43
+CLEAN XT cycle 1077 t2s 3 write-back closure 2.970e-02
+CLEAN FLIM cycle 1078 t2s 2 faces 21620033 momentum cut sum |dF| V/c^2 2.160336e+30
+CLEAN FLIM cycle 1078 t2s 2 faces 18734247 momentum cut sum |dF| V/c^2 1.617781e+30
+CLEAN FLIM cycle 1078 t2s 2 faces 18702226 momentum cut sum |dF| V/c^2 1.611921e+30
+CLEAN cycle 1078 t2s 2 it 6 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN FLIM cycle 1078 t2s 2 faces 18702226 momentum cut sum |dF| V/c^2 1.611921e+30
+CLEAN XT cycle 1078 t2s 2 write-back closure 4.442e-02
+CLEAN FLIM cycle 1078 t2s 3 faces 13163653 momentum cut sum |dF| V/c^2 7.177526e+29
+CLEAN FLIM cycle 1078 t2s 3 faces 13050643 momentum cut sum |dF| V/c^2 7.163111e+29
+CLEAN cycle 1078 t2s 3 it 4 (sum 5) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN FLIM cycle 1078 t2s 3 faces 13050643 momentum cut sum |dF| V/c^2 7.163111e+29
+CLEAN LZB cycle 1078 t2s 3 ledger -1.1633312589590731e+43
+CLEAN XT cycle 1078 t2s 3 write-back closure 3.426e-02
+CLEAN FLIM cycle 1079 t2s 2 faces 21784604 momentum cut sum |dF| V/c^2 2.044074e+30
+CLEAN FLIM cycle 1079 t2s 2 faces 18709745 momentum cut sum |dF| V/c^2 1.491507e+30
+CLEAN FLIM cycle 1079 t2s 2 faces 18681836 momentum cut sum |dF| V/c^2 1.486679e+30
+CLEAN cycle 1079 t2s 2 it 5 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN FLIM cycle 1079 t2s 2 faces 18681836 momentum cut sum |dF| V/c^2 1.486679e+30
+CLEAN XT cycle 1079 t2s 2 write-back closure 1.048e-01
+CLEAN FLIM cycle 1079 t2s 3 faces 13313172 momentum cut sum |dF| V/c^2 6.749046e+29
+CLEAN FLIM cycle 1079 t2s 3 faces 13199826 momentum cut sum |dF| V/c^2 6.689103e+29
+CLEAN cycle 1079 t2s 3 it 4 (sum 5) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN FLIM cycle 1079 t2s 3 faces 13199826 momentum cut sum |dF| V/c^2 6.689103e+29
+CLEAN LZB cycle 1079 t2s 3 ledger -1.1650154516502655e+43
+CLEAN XT cycle 1079 t2s 3 write-back closure 3.725e-02
+CLEAN FLIM cycle 1080 t2s 2 faces 21619015 momentum cut sum |dF| V/c^2 2.153344e+30
+CLEAN FLIM cycle 1080 t2s 2 faces 18724206 momentum cut sum |dF| V/c^2 1.610899e+30
+CLEAN FLIM cycle 1080 t2s 2 faces 18691508 momentum cut sum |dF| V/c^2 1.605101e+30
+CLEAN cycle 1080 t2s 2 it 6 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN FLIM cycle 1080 t2s 2 faces 18691508 momentum cut sum |dF| V/c^2 1.605101e+30
+CLEAN XT cycle 1080 t2s 2 write-back closure 2.283e-02
+CLEAN FLIM cycle 1080 t2s 3 faces 13149262 momentum cut sum |dF| V/c^2 7.188109e+29
+CLEAN FLIM cycle 1080 t2s 3 faces 13039335 momentum cut sum |dF| V/c^2 7.173229e+29
+CLEAN cycle 1080 t2s 3 it 4 (sum 5) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN FLIM cycle 1080 t2s 3 faces 13039335 momentum cut sum |dF| V/c^2 7.173229e+29
+CLEAN LZB cycle 1080 t2s 3 ledger -1.1630536950665789e+43
+CLEAN XT cycle 1080 t2s 3 write-back closure 2.800e-02
+CLEAN FLIM cycle 1081 t2s 2 faces 21794614 momentum cut sum |dF| V/c^2 2.046021e+30
+CLEAN FLIM cycle 1081 t2s 2 faces 18721149 momentum cut sum |dF| V/c^2 1.494607e+30
+CLEAN FLIM cycle 1081 t2s 2 faces 18694379 momentum cut sum |dF| V/c^2 1.489926e+30
+CLEAN cycle 1081 t2s 2 it 6 (sum 11) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN FLIM cycle 1081 t2s 2 faces 18694379 momentum cut sum |dF| V/c^2 1.489926e+30
+CLEAN XT cycle 1081 t2s 2 write-back closure 2.182e-02
+CLEAN FLIM cycle 1081 t2s 3 faces 13327277 momentum cut sum |dF| V/c^2 6.755088e+29
+CLEAN FLIM cycle 1081 t2s 3 faces 13216165 momentum cut sum |dF| V/c^2 6.695320e+29
+CLEAN cycle 1081 t2s 3 it 4 (sum 5) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN FLIM cycle 1081 t2s 3 faces 13216165 momentum cut sum |dF| V/c^2 6.695320e+29
+CLEAN LZB cycle 1081 t2s 3 ledger -1.1662368499218659e+43
+CLEAN XT cycle 1081 t2s 3 write-back closure 2.803e-02
+CLEAN FLIM cycle 1082 t2s 2 faces 21628584 momentum cut sum |dF| V/c^2 2.156074e+30
+CLEAN FLIM cycle 1082 t2s 2 faces 18737253 momentum cut sum |dF| V/c^2 1.614201e+30
+CLEAN FLIM cycle 1082 t2s 2 faces 18704955 momentum cut sum |dF| V/c^2 1.608401e+30
+CLEAN cycle 1082 t2s 2 it 6 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN FLIM cycle 1082 t2s 2 faces 18704955 momentum cut sum |dF| V/c^2 1.608401e+30
+CLEAN XT cycle 1082 t2s 2 write-back closure 2.273e-02
+CLEAN FLIM cycle 1082 t2s 3 faces 13161327 momentum cut sum |dF| V/c^2 7.172940e+29
+CLEAN FLIM cycle 1082 t2s 3 faces 13049909 momentum cut sum |dF| V/c^2 7.158985e+29
+CLEAN cycle 1082 t2s 3 it 4 (sum 5) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN FLIM cycle 1082 t2s 3 faces 13049909 momentum cut sum |dF| V/c^2 7.158985e+29
+CLEAN LZB cycle 1082 t2s 3 ledger -1.1628929391996679e+43
+CLEAN XT cycle 1082 t2s 3 write-back closure 3.015e-02
+CLEAN FLIM cycle 1083 t2s 2 faces 21826393 momentum cut sum |dF| V/c^2 2.048663e+30
+CLEAN FLIM cycle 1083 t2s 2 faces 18744513 momentum cut sum |dF| V/c^2 1.495155e+30
+CLEAN FLIM cycle 1083 t2s 2 faces 18716708 momentum cut sum |dF| V/c^2 1.490300e+30
+CLEAN cycle 1083 t2s 2 it 5 (sum 10) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN FLIM cycle 1083 t2s 2 faces 18716708 momentum cut sum |dF| V/c^2 1.490300e+30
+CLEAN XT cycle 1083 t2s 2 write-back closure 5.688e-02
+CLEAN FLIM cycle 1083 t2s 3 faces 13333080 momentum cut sum |dF| V/c^2 6.757033e+29
+CLEAN FLIM cycle 1083 t2s 3 faces 13220241 momentum cut sum |dF| V/c^2 6.697709e+29
+CLEAN cycle 1083 t2s 3 it 4 (sum 5) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 2 cwin 0
+CLEAN FLIM cycle 1083 t2s 3 faces 13220241 momentum cut sum |dF| V/c^2 6.697709e+29
+CLEAN LZB cycle 1083 t2s 3 ledger -1.1645309325270276e+43
+CLEAN XT cycle 1083 t2s 3 write-back closure 3.282e-02
+CLEAN FLIM cycle 1084 t2s 2 faces 21618912 momentum cut sum |dF| V/c^2 2.152427e+30
+CLEAN FLIM cycle 1084 t2s 2 faces 18731823 momentum cut sum |dF| V/c^2 1.609577e+30
+CLEAN FLIM cycle 1084 t2s 2 faces 18699536 momentum cut sum |dF| V/c^2 1.603782e+30
+CLEAN cycle 1084 t2s 2 it 6 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN FLIM cycle 1084 t2s 2 faces 18699536 momentum cut sum |dF| V/c^2 1.603782e+30
