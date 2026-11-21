@@ -719,3 +719,5 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
 - ST_t19l64 (hpc-sm-02-09): a rc=0 wall=396 b rc=0 wall=247 b rc=0 wall=219 | a cycles 0 - 120 dt first 38.3481 last 40.4067 s/cycle steady 2.474 first elapsed 45.7 a 'FATAL' 0  a 'CLEAN WARNING' 0   | GPU mem peak MiB 78441 | CW 0 FATAL 0
   DIAG START DA_t19cfl 18:19:28 on hpc-sm-02-09
 - DB_t19nowb (hpc-sm-02-04): a rc=1 wall=9 | last  |  s/cycle | CW 0 FATAL 4 DT_RETRY(events) 0 | eint<0 lines 0, sum 0, max 0 | raycut lines 0 | profiles: 1 files
+  DIAG START DC_t19r256 18:19:46 on hpc-sm-02-04
+  progress 18:21: BFX4_rsg:DONE BFX0_rsg:DONE BFX4_hg:DONE BFX0_hg:DONE D_on_hg:DONE G_on_hg:DONE G_rsg:DONE L1_rsg_off:DONE L1_rsg_on:DONE H_fp_hg:DONE H_tel_hg:DONE H_xl_hg:DONE R_fp_rsg:DONE R_tel_rsg:DONE R_xl_rsg:DONE K_on_hg:DONE K_on_rsg:DONE LF_rsg:DONE LX_rsg:DONE LF_hg:DONE L2_hg_off:DONE L2_hg_on:DONE
