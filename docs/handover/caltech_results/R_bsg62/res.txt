@@ -1,0 +1,26 @@
+a cycles 0 - 120 dt first 167 last 37.9545 s/cycle steady 1.556 first elapsed 27.5
+a 'FATAL' 0 
+a 'CLEAN WARNING' 4 CLEAN WARNING cycle 111: backward-Euler solve not converged (dt_retry, 2 so far; last change inf)
+a 'DT_RETRY' 3 DT_RETRY cycle=111 t=1.002000e+04 dt 7.590909e+01 -> 3.795455e+01 reason=NON-CONVERGED resid=-1.000000e+00 cut 1
+a 'WARNING' 7 CLEAN WARNING cycle 111: backward-Euler solve not converged (dt_retry, 2 so far; last change inf)
+a 'march' 0 
+a 'clean_init steady:' 1 <rad_m1> clean_init steady: converged after 4 passes, residual 1.851e-12 (tol 1.0e-08; 0 formal solutions); radiation E 4.1527620104e+45 -> 4.1608848713e+45, F/c 3.5094e+39 0.0000e+00 0.0000e+00 -> 1.5270e+41 -2.1171e+33 2.3538e+33 (volume sums)
+a 'he_star_m1: GM' 1 he_star_m1: GM = 2.62502e+27, F_in = 2.29421e+13, tau(r_in) = 5.83786e+06, r_int (tau = 1) = 3.67986e+12, r_top = 5.5656e+12, sponge rate = 0 above r = 3.67986e+12
+a 'he_seed_band = n2 BAND' 0 
+a 'seed = ' 0 
+a 'direction maps' 1 <rad_m1> vet_gd: global-direction SC closure on the sp wedge, level-symmetric LQ10 (120 directions); 3-D rotation (quasi-random axis; angle = block key) every 1670.000000 in time (t0 0.000000, align on) (0 = fixed), first angle 0; rank 0 wall ghost columns 57324, direction maps exact 0 of 6878880 (t
+a 'he_ic_equil' 0 
+b run.log CW 0 DT_RETRY 0 FATAL 0
+b run2.log CW 4 DT_RETRY 3 FATAL 0
+GPU mem peak MiB max 31209 min 31099 (n=4) = 21.7 % of 143771 MiB
+rt bsg3d.hydro.hst rows a 121 b 121 last 60 rows IDENTICAL
+rt bsg3d.user.hst rows a 121 b 121 last 60 rows IDENTICAL
+rt bsg3d.hydro_w.00005.bin same
+rt bsg3d.m1.00005.bin same
+rt bsg3d.m1_face.00001.bin same
+rt bsg3d.m1_vet.00001.bin same
+a rc=0 wall=249
+b rc=0 wall=139
+restart from /resnick/groups/carnegie_poc/jingze/orion_runs_1121/freshgo/R_bsg62/b/rst/bsg3d.00003.rst
+b rc=0 wall=142
+DONE
