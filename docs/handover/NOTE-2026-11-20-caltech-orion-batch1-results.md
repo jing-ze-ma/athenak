@@ -1961,3 +1961,4 @@ B_br gate not passed; arms not started
 - (11:11) V207 rerun start: V7a on hpc-sm-02-16 (damp 0, as ji; overwrites V207/V7a)
 - (11:12) V207 rerun start: V7c on hpc-sm-02-11 (damp 0, as ji; overwrites V207/V7c)
 - (11:17) V208 damp-0 start: V8a0 on hpc-sm-02-16 (B_v207 86d31021; COPY of t9l62/rst/t9l62.00022.rst (same rst as jp; t 950400, cycle ~21365); keys from the rst + conv_max 1e-4 + thinf_held_gate + clean_pass_damp 0; 300 cycles, rst off)
+- (11:17) V208 damp-0 start: V8b0 on hpc-sm-02-11 (B_v207 86d31021; COPY of t9r/rst/t9l62.00024.rst (same rst as jp; t 1036800, cycle ~19715); keys from the rst + conv_max 1e-4 + thinf_held_gate + clean_pass_damp 0; 300 cycles, rst off)
