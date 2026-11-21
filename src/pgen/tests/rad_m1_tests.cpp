@@ -6,9 +6,8 @@
 //! \file rad_m1_tests.cpp
 //! \brief test problems for the grey photon M1 module, selected by <problem>/m1_test.
 //!
-//!   beam    (design sect. 8, T1): 2-D unit box, no opacity, a beam entering at 45
-//!           degrees through a patch of the inner-x1 face.  The rest of the domain
-//!           starts (and the other faces stay) at the vacuum floor.
+//!   beam    (design sect. 8, T1): 2-D unit box, no opacity, at the vacuum floor; with
+//!           beam_packet a free-streaming Gaussian packet travelling at beam_angle.
 //!   pulse1d (convergence check): 1-D periodic Gaussian in E with f = |F|/(cE) = 1
 //!           EXACTLY.  At f = 1 the M1 closure gives chi = 1, P = E, the two
 //!           eigenvalues merge at +c, and the system reduces to dE/dt + c dE/dx = 0:
@@ -17,8 +16,8 @@
 //!           that is exactly solvable under M1 (with f < 1 the profile spreads), which
 //!           is why f = 1 is used here rather than 0.9.
 //!
-//! MILESTONE 1b (design sect. 8, T3/T3b/T3c/T5).  All four carry a <hydro> block, which
-//! is where rho -- and so rho*kappa -- comes from; the three static ones run with
+//! MILESTONE 1b (design sect. 8, T3/T3c/T5).  All three carry a <hydro> block, which
+//! is where rho -- and so rho*kappa -- comes from; the two static ones run with
 //! <rad_m1>/gas_feedback = false, which is what "static gas" means here: the radiation
 //! feels the opacity, the gas is not pushed or heated by it.
 //!
@@ -26,12 +25,6 @@
 //!                     variance must grow at 2D, D = c/(3 rho kappa), at every
 //!                     tau_cell = rho kappa dx.  `nyquist_amp` seeds the odd-even mode
 //!                     on top, whose decay rate is the second half of the gate.
-//!   jump        (T3b) constant-flux steady state across a jump in rho*kappa_F (Bloch
-//!                     et al. 2021 sect. 5.2).  The gas carries the jump as a density
-//!                     step at CONSTANT pressure, so hydro itself stays in equilibrium.
-//!                     The analytic steady state is the initial condition and the
-//!                     boundaries hold E fixed (user BC below), so the run only has to
-//!                     relax the discrete solution.
 //!   tophat      (T3c) top-hat in E at tau_cell = 1e4: the limiter-clipped extremum at
 //!                     which the uncorrected HLL flux is ~tau_cell times too diffusive.
 //!   equil       (T5)  uniform single-zone equilibration, HERACLES/Turner & Stone
@@ -47,8 +40,8 @@
 //!   advect_uniform (T4b) uniform medium at v, initialised at the EXACT fixed point of
 //!                        the sect. 1 sources (F0 = 0, E0 = arad T^4): the gas
 //!                        temperature must not move.  Tests the SOURCE form.
-//!   marshak        (T6)  cold slab heated by a radiation bath held in the inner-x1
-//!                        ghosts; CONSTANT c_v, not Su-Olson (see the input file).
+//!   marshak        (T6)  cold slab heated by a radiation bath at x1min (the <rad_m1>
+//!                        x1 boundary); CONSTANT c_v, not Su-Olson (see the input file).
 
 #include <math.h>
 
@@ -70,39 +63,17 @@
 #include "pgen/pgen.hpp"
 
 namespace {
-// beam parameters, needed by the user boundary function
+// beam packet parameters
 Real m1_beam_e = 1.0;
 Real m1_beam_n1 = 1.0/M_SQRT2;
 Real m1_beam_n2 = 1.0/M_SQRT2;
 Real m1_beam_f = 1.0 - 1.0e-6;
-Real m1_beam_y0 = 0.0;
-Real m1_beam_y1 = 0.125;
-int  m1_test_id = 0;   // 0 = beam, 1 = pulse1d, 2 = jump
-// advect_shear (T4c, milestone 1c-B): the PRESCRIBED gas state, re-imposed every hydro
-// stage by RadM1ShearGas so that the velocity field really is held fixed
-Real m1_sh_t0 = 1.0, m1_sh_t1 = 1.0, m1_sh_w = 1.0, m1_sh_x0 = 0.0;
-Real m1_sh_v = 0.0, m1_sh_amp = 0.0, m1_sh_ar = 0.0, m1_sh_ptot = 1.0;
-Real m1_sh_gm1 = 1.0, m1_sh_xl = 0.0, m1_sh_len = 1.0;
-// jump test: the two boundary values of E held fixed in the ghost zones
-Real m1_jump_el = 1.0;
-Real m1_jump_er = 0.0;
-// MILESTONE 1d: the analytic dE/dx to continue into the GHOST cells of RadM1FixedEBC,
-// times dx.  Zero (the default, and the only value before 1d) fills every ghost with the
-// end value itself, i.e. it imposes E at the boundary FACE in the ghost cell CENTRE: a
-// half-cell offset that costs the steady state dE_total/nx1 of driving, which is the
-// bulk of the "absolute flux 1.4 % low" of design sect. 11.  See sect. 13.
-Real m1_jump_dl = 0.0;
-Real m1_jump_dr = 0.0;
+int  m1_test_id = 0;   // 0 = beam, 1 = pulse1d, 2 = thick_pulse
 // m1-mhd2: a UNIFORM field problem/m1_b0_1..3 under <mhd> (force free, div B = 0), so
 // that the uniform-gas tests (equil, marshak, thick_pulse/tophat, advect_uniform) run the
 // |B|^2/2 bookkeeping of every M1 temperature; 0 under <hydro> (never read)
 Real m1_emag = 0.0;
 } // namespace
-
-// prototypes for the user BCs
-void RadM1BeamBC(Mesh *pm);
-void RadM1FixedEBC(Mesh *pm);
-void RadM1ShearGas(Mesh *pm, const Real bdt);
 
 namespace {
 //----------------------------------------------------------------------------------------
@@ -155,8 +126,8 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
 
   std::string test = pin->GetOrAddString("problem","m1_test","beam");
   // m1-mhd2: the uniform-gas tests below and radwave have an <mhd> mode (FluidRef,
-  // optional uniform field problem/m1_b0_1..3).  The others (jump, advect_pulse,
-  // advect_shear and the rest of rad_m1_tests2.cpp) read phydro directly.
+  // optional uniform field problem/m1_b0_1..3).  The others (advect_pulse and the rest
+  // of rad_m1_tests2.cpp) read phydro directly.
   const bool mhd_ok = (test.compare("beam") == 0 || test.compare("pulse1d") == 0 ||
                        test.compare("equil") == 0 ||
                        test.compare("marshak") == 0 || test.compare("thick_pulse") == 0 ||
@@ -216,22 +187,18 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
 
   if (test.compare("beam") == 0) {
     m1_test_id = 0;
-    // beam direction and patch, all optional
+    // beam direction, amplitude and reduced flux, all optional
     Real theta = pin->GetOrAddReal("problem","beam_angle",0.25*M_PI);
     m1_beam_n1 = cos(theta);
     m1_beam_n2 = sin(theta);
     m1_beam_e = pin->GetOrAddReal("problem","beam_e",1.0);
     m1_beam_f = pin->GetOrAddReal("problem","beam_f",1.0-1.0e-6);
-    m1_beam_y0 = pin->GetOrAddReal("problem","beam_y0",0.0);
-    m1_beam_y1 = pin->GetOrAddReal("problem","beam_y1",0.125);
-    user_bcs_func = RadM1BeamBC;
 
     if (restart) return;
-    // problem/beam_packet = true (default off, read only when named): instead of the
-    // inflow patch, a free-streaming Gaussian PACKET travelling along (n1, n2) with
-    // reduced flux beam_f, for transports that cannot take a patch inflow (the implicit
-    // one).  Transverse 1/e half-width packet_w, longitudinal packet_l, centre
-    // (packet_x0, packet_y0).  Use periodic or outflow boundaries with user_bcs = false.
+    // problem/beam_packet = true (default off, read only when named): a free-streaming
+    // Gaussian PACKET travelling along (n1, n2) with reduced flux beam_f.  Transverse
+    // 1/e half-width packet_w, longitudinal packet_l, centre (packet_x0, packet_y0).
+    // Use periodic or outflow boundaries.
     if (pin->DoesParameterExist("problem","beam_packet") &&
         pin->GetBoolean("problem","beam_packet")) {
       Real px0 = pin->GetReal("problem","packet_x0");
@@ -360,60 +327,6 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
       u0(m,radm1::M1_F2,k,j,i) = 0.0;
       u0(m,radm1::M1_F3,k,j,i) = 0.0;
     });
-  } else if (test.compare("jump") == 0) {
-    // T3b.  rho jumps by jump_ratio at x = x_jump at CONSTANT gas pressure; with
-    // opacity = const that is a jump of the same ratio in rho*kappa_F.  E is initialised
-    // with the analytic constant-flux steady state, piecewise linear with slopes in the
-    // ratio of the two opacities, and its two end values are held in the ghost zones.
-    m1_test_id = 4;
-    Real xj = pin->GetOrAddReal("problem","x_jump",0.5);
-    Real ratio = pin->GetOrAddReal("problem","jump_ratio",1.0e3);
-    Real dgas = pin->GetOrAddReal("problem","gas_rho",1.0);
-    Real pgas = pin->GetOrAddReal("problem","gas_pres",1.0);
-    Real e_l = pin->GetOrAddReal("problem","e_left",1.0);
-    Real flux = pin->GetOrAddReal("problem","jump_flux",1.0e-3);
-    Real kf = pmbp->pradm1->kappa_f + pmbp->pradm1->kappa_s;
-    Real x1l = pmy_mesh_->mesh_size.x1min;
-    Real x1r = pmy_mesh_->mesh_size.x1max;
-    // dE/dx = -3 rho kappa F/c on each side of the jump
-    Real s_l = -3.0*dgas*kf*flux/cl;
-    Real s_r = ratio*s_l;
-    Real ej = e_l + s_l*(xj - x1l);
-    m1_jump_el = e_l;
-    m1_jump_er = ej + s_r*(x1r - xj);
-    // <problem>/exact_ghost continues the analytic slope into the ghost cells instead
-    // of repeating the end value (milestone 1d; default false = the 1c behaviour)
-    Real dxm = (x1r - x1l)/static_cast<Real>(pmy_mesh_->mesh_indcs.nx1);
-    if (pin->GetOrAddBoolean("problem","exact_ghost",false)) {
-      m1_jump_dl = s_l*dxm;
-      m1_jump_dr = s_r*dxm;
-    } else {
-      m1_jump_dl = 0.0;
-      m1_jump_dr = 0.0;
-    }
-    user_bcs_func = RadM1FixedEBC;
-
-    Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
-    Real eint = pgas/gm1;
-    if (restart) return;
-    auto uh = pmbp->phydro->u0;
-    par_for("m1_jump_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
-    KOKKOS_LAMBDA(int m, int k, int j, int i) {
-      Real &x1min = size.d_view(m).x1min;
-      Real &x1max = size.d_view(m).x1max;
-      Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
-      Real d = (x1v < xj) ? dgas : (ratio*dgas);
-      uh(m,IDN,k,j,i) = d;
-      uh(m,IM1,k,j,i) = 0.0;
-      uh(m,IM2,k,j,i) = 0.0;
-      uh(m,IM3,k,j,i) = 0.0;
-      uh(m,IEN,k,j,i) = eint;
-      Real e = (x1v < xj) ? (e_l + s_l*(x1v - x1l)) : (ej + s_r*(x1v - xj));
-      u0(m,radm1::M1_E,k,j,i) = fmax(e, efl);
-      u0(m,radm1::M1_F1,k,j,i) = flux;
-      u0(m,radm1::M1_F2,k,j,i) = 0.0;
-      u0(m,radm1::M1_F3,k,j,i) = 0.0;
-    });
   } else if (test.compare("advect_pulse") == 0) {
     // T4.  Krumholz, Klein & McKee (2007) Sect. 4.3 / QUOKKA AP paper (2404.08247)
     // Sect. 5 advecting radiation pulse, in code units with T = P/rho (so the cgs
@@ -461,70 +374,6 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
       uh(m,IM2,k,j,i) = 0.0;
       uh(m,IM3,k,j,i) = 0.0;
       uh(m,IEN,k,j,i) = d*tt/gm1 + 0.5*d*vx*vx;
-      u0(m,radm1::M1_E,k,j,i) = fmax(e, efl);
-      u0(m,radm1::M1_F1,k,j,i) = ff;
-      u0(m,radm1::M1_F2,k,j,i) = 0.0;
-      u0(m,radm1::M1_F3,k,j,i) = 0.0;
-    });
-  } else if (test.compare("advect_shear") == 0) {
-    // T4c (milestone 1c-B).  The T4 dynamic pulse in a velocity field that VARIES
-    // along x,  v(x) = v0 [1 + shear_amp sin(2 pi (x - x1min)/L)],  prescribed and held
-    // fixed: RadM1ShearGas re-imposes the whole gas state (rho, rho v, E_gas) at the
-    // end of every hydro stage, and <rad_m1>/gas_feedback = false keeps the coupling
-    // from writing it back.  The enthalpy flux A = v E + v.P then has a face value that
-    // the CELL velocity of either side gets wrong at first order, which is what
-    // <rad_m1>/split_vel = recon fixes.  There is no closed-form solution (the
-    // prescribed v is not divergence free), so the gate is convergence to a 4x finer
-    // run of the same problem.
-    m1_test_id = 9;
-    Real t0 = pin->GetReal("problem","pulse_t0");
-    Real t1 = pin->GetReal("problem","pulse_t1");
-    Real d0 = pin->GetReal("problem","gas_rho");
-    Real wid = pin->GetReal("problem","pulse_width");
-    Real x0 = pin->GetOrAddReal("problem","pulse_x0",0.0);
-    Real vx = pin->GetOrAddReal("problem","pulse_v",0.0);
-    Real amp = pin->GetOrAddReal("problem","shear_amp",0.2);
-    Real ar = pmbp->pradm1->arad;
-    Real kap = pmbp->pradm1->kappa_f + pmbp->pradm1->kappa_s;
-    Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
-    Real ptot = d0*t0 + ar*t0*t0*t0*t0/3.0;
-    Real xl = pmy_mesh_->mesh_size.x1min;
-    Real len = pmy_mesh_->mesh_size.x1max - xl;
-    m1_sh_t0 = t0;
-    m1_sh_t1 = t1;
-    m1_sh_w = wid;
-    m1_sh_x0 = x0;
-    m1_sh_v = vx;
-    m1_sh_amp = amp;
-    m1_sh_ar = ar;
-    m1_sh_ptot = ptot;
-    m1_sh_gm1 = gm1;
-    m1_sh_xl = xl;
-    m1_sh_len = len;
-    user_srcs_func = RadM1ShearGas;
-
-    if (restart) return;
-    auto uh = pmbp->phydro->u0;
-    par_for("m1_shear_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
-    KOKKOS_LAMBDA(int m, int k, int j, int i) {
-      Real &x1min = size.d_view(m).x1min;
-      Real &x1max = size.d_view(m).x1max;
-      Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
-      Real s = (x1v - x0)/wid;
-      Real g = exp(-0.5*s*s);
-      Real tt = t0 + (t1 - t0)*g;
-      Real t4 = tt*tt*tt*tt;
-      Real d = (ptot - ar*t4/3.0)/tt;
-      Real e = ar*t4;
-      Real vv = vx*(1.0 + amp*sin(2.0*M_PI*(x1v - xl)/len));
-      Real dtdx = -(t1 - t0)*g*(x1v - x0)/(wid*wid);
-      Real dedx = 4.0*ar*tt*tt*tt*dtdx;
-      Real ff = (4.0/3.0)*vv*e - cl*dedx/(3.0*d*kap);
-      uh(m,IDN,k,j,i) = d;
-      uh(m,IM1,k,j,i) = d*vv;
-      uh(m,IM2,k,j,i) = 0.0;
-      uh(m,IM3,k,j,i) = 0.0;
-      uh(m,IEN,k,j,i) = d*tt/gm1 + 0.5*d*vv*vv;
       u0(m,radm1::M1_E,k,j,i) = fmax(e, efl);
       u0(m,radm1::M1_F1,k,j,i) = ff;
       u0(m,radm1::M1_F2,k,j,i) = 0.0;
@@ -591,12 +440,8 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
     m1_test_id = 8;
     Real dgas = pin->GetOrAddReal("problem","gas_rho",1.0);
     Real tini = pin->GetReal("problem","gas_temp");
-    Real ebath = pin->GetReal("problem","e_bath");
     Real ar = pmbp->pradm1->arad;
     Real gm1 = radm1::FluidRef::Get(pmbp).eos.gamma - 1.0;   // m1-mhd2
-    m1_jump_el = ebath;              // held in the inner-x1 ghost zones
-    m1_jump_er = ar*tini*tini*tini*tini;
-    user_bcs_func = RadM1FixedEBC;
     Real e_ini = fmax(ar*tini*tini*tini*tini, efl);
     if (restart) return;
     M1SetUniformGas(pmbp, dgas, dgas*tini/gm1);
@@ -683,146 +528,5 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
     // owns the "not implemented" fatal
     RadiationM1Tests2(pin, restart);
   }
-  return;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadM1ShearGas()
-//! \brief advect_shear (T4c): re-impose the PRESCRIBED gas state everywhere, ghost
-//! zones included, at the end of every hydro stage.  Enrolled as user_srcs_func, which
-//! the hydro stage chain calls after the RK update and before the ghost exchange and
-//! the inversion, so the gas the radiation module sees is the analytic one to the last
-//! bit -- in the active cells and in the ghosts, on every MeshBlock.  bdt is unused:
-//! this is not a source term, it is a constraint.
-
-void RadM1ShearGas(Mesh *pm, const Real bdt) {
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  if (pmbp->phydro == nullptr) return;
-  auto &indcs = pm->mb_indcs;
-  int &ng = indcs.ng;
-  int n1 = indcs.nx1 + 2*ng;
-  int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
-  int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
-  int &is = indcs.is;
-  int nx1 = indcs.nx1;
-  int nmb1 = (pmbp->nmb_thispack - 1);
-  auto &size = pmbp->pmb->mb_size;
-  auto uh = pmbp->phydro->u0;
-  Real t0 = m1_sh_t0, t1 = m1_sh_t1, wid = m1_sh_w, x0 = m1_sh_x0;
-  Real vx = m1_sh_v, amp = m1_sh_amp, ar = m1_sh_ar, ptot = m1_sh_ptot;
-  Real gm1 = m1_sh_gm1, xl = m1_sh_xl, len = m1_sh_len;
-
-  par_for("m1_shear_reset", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
-  KOKKOS_LAMBDA(int m, int k, int j, int i) {
-    Real &x1min = size.d_view(m).x1min;
-    Real &x1max = size.d_view(m).x1max;
-    Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
-    Real s = (x1v - x0)/wid;
-    Real g = exp(-0.5*s*s);
-    Real tt = t0 + (t1 - t0)*g;
-    Real d = (ptot - ar*tt*tt*tt*tt/3.0)/tt;
-    Real vv = vx*(1.0 + amp*sin(2.0*M_PI*(x1v - xl)/len));
-    uh(m,IDN,k,j,i) = d;
-    uh(m,IM1,k,j,i) = d*vv;
-    uh(m,IM2,k,j,i) = 0.0;
-    uh(m,IM3,k,j,i) = 0.0;
-    uh(m,IEN,k,j,i) = d*tt/gm1 + 0.5*d*vv*vv;
-  });
-  return;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadM1FixedEBC()
-//! \brief Dirichlet in E, zero-gradient in F, on both x1 faces: the steady state of T3b
-//! is set by the two end values of E, while F has to be free for the solution to find
-//! its own constant flux.
-
-void RadM1FixedEBC(Mesh *pm) {
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  if (pmbp->pradm1 == nullptr) return;
-  auto &indcs = pm->mb_indcs;
-  int &ng = indcs.ng;
-  int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
-  int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
-  int &is = indcs.is;
-  int &ie = indcs.ie;
-  int nmb1 = (pmbp->nmb_thispack - 1);
-  auto &mb_bcs = pmbp->pmb->mb_bcs;
-  auto u0 = pmbp->pradm1->u0;
-  Real el = m1_jump_el, er = m1_jump_er;
-  Real dl = m1_jump_dl, dr = m1_jump_dr;
-
-  par_for("m1_fixede_bc", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),
-  KOKKOS_LAMBDA(int m, int k, int j) {
-    if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
-      for (int i=0; i<ng; ++i) {
-        u0(m,radm1::M1_E,k,j,is-i-1) = el - dl*(static_cast<Real>(i) + 0.5);
-        u0(m,radm1::M1_F1,k,j,is-i-1) = u0(m,radm1::M1_F1,k,j,is);
-        u0(m,radm1::M1_F2,k,j,is-i-1) = 0.0;
-        u0(m,radm1::M1_F3,k,j,is-i-1) = 0.0;
-      }
-    }
-    if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
-      for (int i=0; i<ng; ++i) {
-        u0(m,radm1::M1_E,k,j,ie+i+1) = er + dr*(static_cast<Real>(i) + 0.5);
-        u0(m,radm1::M1_F1,k,j,ie+i+1) = u0(m,radm1::M1_F1,k,j,ie);
-        u0(m,radm1::M1_F2,k,j,ie+i+1) = 0.0;
-        u0(m,radm1::M1_F3,k,j,ie+i+1) = 0.0;
-      }
-    }
-  });
-  return;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadM1BeamBC()
-//! \brief inner-x1 inflow PATCH for the beam test: inside [beam_y0, beam_y1] the ghost
-//! cells hold E = beam_e and F = c E f n (f just below 1, so the closure is at chi ~ 1
-//! without ever dividing by a vanishing sqrt(4-3f^2)); outside the patch, and on the
-//! inner-x2 face, they hold the vacuum floor so nothing enters.  Outer faces are left to
-//! the <rad_m1> physical BCs (vacuum) set in the input file.
-
-void RadM1BeamBC(Mesh *pm) {
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  if (pmbp->pradm1 == nullptr) return;
-  auto &indcs = pm->mb_indcs;
-  int &ng = indcs.ng;
-  int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
-  int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
-  int &is = indcs.is;
-  int &js = indcs.js;
-  int nx2 = indcs.nx2;
-  int nmb1 = (pmbp->nmb_thispack - 1);
-  auto &size = pmbp->pmb->mb_size;
-  auto &mb_bcs = pmbp->pmb->mb_bcs;
-  auto u0 = pmbp->pradm1->u0;
-
-  Real cl = pmbp->pradm1->c_light;
-  Real efl = pmbp->pradm1->e_floor;
-  Real be = m1_beam_e, bf = m1_beam_f, bn1 = m1_beam_n1, bn2 = m1_beam_n2;
-  Real by0 = m1_beam_y0, by1 = m1_beam_y1;
-
-  par_for("m1_beam_bc", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),
-  KOKKOS_LAMBDA(int m, int k, int j) {
-    if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
-      Real &x2min = size.d_view(m).x2min;
-      Real &x2max = size.d_view(m).x2max;
-      Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
-      bool inbeam = (x2v >= by0 && x2v <= by1);
-      for (int i=0; i<ng; ++i) {
-        if (inbeam) {
-          u0(m,radm1::M1_E,k,j,is-i-1) = be;
-          u0(m,radm1::M1_F1,k,j,is-i-1) = cl*be*bf*bn1;
-          u0(m,radm1::M1_F2,k,j,is-i-1) = cl*be*bf*bn2;
-          u0(m,radm1::M1_F3,k,j,is-i-1) = 0.0;
-        } else {
-          u0(m,radm1::M1_E,k,j,is-i-1) = efl;
-          u0(m,radm1::M1_F1,k,j,is-i-1) = 0.0;
-          u0(m,radm1::M1_F2,k,j,is-i-1) = 0.0;
-          u0(m,radm1::M1_F3,k,j,is-i-1) = 0.0;
-        }
-      }
-    }
-  });
   return;
 }
