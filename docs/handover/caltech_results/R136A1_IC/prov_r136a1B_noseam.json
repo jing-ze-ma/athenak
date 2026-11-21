@@ -1,0 +1,185 @@
+{
+ "spec": {
+  "composition": {
+   "mixture": "AGSS09 (TOPS number fractions in tops/mix_x0.58_z0.0064_a09.txt)",
+   "a_metal": 16.0,
+   "X": 0.58,
+   "Y": 0.4136,
+   "Z": 0.0064
+  },
+  "mlt": {
+   "alpha": 2.0,
+   "mlt_option": "Cox",
+   "alt_scale_height": true,
+   "mltpp": "mesa_gated",
+   "use_mltpp": false,
+   "f1": 0.0001,
+   "f2": 0.001,
+   "lambda1": 1.0,
+   "beta1": 0.35,
+   "lambda2": 0.5,
+   "beta2": 0.25,
+   "dlambda": 0.1,
+   "dbeta": 0.1,
+   "xa1_center": 0.0,
+   "max_logT": 8.0,
+   "pp_alpha": 1.0,
+   "pp_form": "mesa",
+   "pp_tol": 0.002
+  },
+  "grid": {
+   "dlnr": 0.0002,
+   "drn_atm_rph": 0.0002,
+   "fl_step": 50.0,
+   "tauj": 3.0,
+   "rtol": 1e-12,
+   "rho_lo": 1e-14,
+   "rho_hi": 1e-07,
+   "atm_rad": 0,
+   "scheme": "agcar_ge"
+  },
+  "r_in": {
+   "rule": "explicit",
+   "n_hp": 4.5,
+   "rlo_fac": 0.95,
+   "cz_fmlt": 0.01,
+   "explore_tmax": 3000000.0,
+   "l_flat_tol": 0.01,
+   "r_rsun": 19.45,
+   "bottom_rsun": 18.5
+  },
+  "r_top": {
+   "rtop_fac": 3.0,
+   "col_top_fac": 1.15,
+   "x1max_cm": 6957000000000.0
+  },
+  "background": {
+   "rho_floor_rule": "rel_rhoph",
+   "rho_floor_rel": 4e-06,
+   "dmax_rel": 2.0,
+   "dfloor_rel": 0.0001,
+   "sponge_rate_rel": 80.0,
+   "sponge_r0_rel": 0.9,
+   "tfloor_rel": 0.76,
+   "wb_rmax_rel": 1.1,
+   "pfloor_rel": 6e-08,
+   "vceil_rel": 4.3,
+   "balance_rmax_rel": 0.8808
+  },
+  "ramp": {
+   "start_turnovers": 2.0,
+   "time_turnovers": 10.0
+  },
+  "taper": {
+   "enable": false,
+   "tau_lo": 3.0,
+   "tau_hi": 30.0
+  },
+  "seam": {
+   "enable": false,
+   "deck": null,
+   "binary": "/raven/ptmp/jinma/icstd_1016/bin/athena_he_cpu_b16b66db",
+   "tol_cells": 0.1,
+   "maxit": 8,
+   "omp": 36,
+   "timeout": 7200,
+   "launcher": [
+    "bash",
+    "-lc",
+    "module purge >/dev/null 2>&1; module load gcc/13 openmpi/5.0; exec \"$0\" \"$@\""
+   ]
+  },
+  "startup": {
+   "re_zone": "hopf"
+  },
+  "eos": {
+   "logd_min": -21.0,
+   "logd_max": -1.0,
+   "logt_max": 6.8,
+   "dlog": 0.02,
+   "logt_min": 3.3,
+   "binary": "/resnick/groups/carnegie_poc/jingze/builds_rstfixx/bin/athena_cpu_built_in_pgens_prod_18bfdeb9_fmadoff"
+  },
+  "opacity": {
+   "ld_ext": -21.0,
+   "rosseland": "/resnick/groups/carnegie_poc/jingze/r136a1_1104/opac/rosseland_mesakap_a09_x0.58_z0.0064_topsbase_T7.txt",
+   "planck": "/resnick/groups/carnegie_poc/jingze/r136a1_1104/opac/planck_tops_x0.58_z0.0064_a09_T7.txt"
+  },
+  "_comment": "r136a1_1104 (USER 11-04): R136a1, Keszthelyi+2025 TS (MLT++) v200 281.8 Msun midMS profile, tools/ic_star mode mesa (RSG E / HG / bsgsp way). Pass A (seam off) -> grid design; pass B (seam on, deck = the r136a1 deck) = production column. Opacity: Rosseland = MESA a09 X0.58 Z0.0064 (TOPS same-composition outside MESA's log R box), Planck = TOPS X0.58 Z0.0064 AGSS09 (LANL 11-04). x1min = r(log T 6.0) of the profile, x1max = 3 R_ph(MESA). DEEP (USER 11-04 late): x1min 19.45 Rsun (log T 6.50, MESA radiative, below the MLT++ envelope CZ base 20.6 Rsun), x1max 100 Rsun, grid leanB (USER: variant B).",
+  "name": "r136a1B_noseam",
+  "star": {
+   "L": "mesa",
+   "R_ph": "mesa",
+   "M": "mesa"
+  },
+  "mesa_profile": {
+   "path": "/resnick/groups/carnegie_poc/jingze/r136a1_1104/model/r136a1_ke25_282_v200_mltpp_midMS.data",
+   "format": "mesa"
+  },
+  "config": {
+   "cache": "/resnick/groups/carnegie_poc/jingze/r136a1_1104/ic_cache",
+   "eos_binary": "/resnick/groups/carnegie_poc/jingze/builds_rstfixx/bin/athena_cpu_built_in_pgens_prod_18bfdeb9_fmadoff"
+  },
+  "_cfg": {
+   "cache": "/resnick/groups/carnegie_poc/jingze/r136a1_1104/ic_cache",
+   "eos_binary": "/resnick/groups/carnegie_poc/jingze/builds_rstfixx/bin/athena_cpu_built_in_pgens_prod_18bfdeb9_fmadoff"
+  },
+  "_file": "/resnick/groups/carnegie_poc/jingze/r136a1_1104/ic/r136a1B_noseam.json"
+ },
+ "star": {
+  "L": 2.6044612015793185e+40,
+  "GM": 3.105699992629203e+28,
+  "R": 1732690508044.7898,
+  "Teff": 59069.538084291904
+ },
+ "star_src": {
+  "L": "MESA photosphere_L",
+  "GM": "G m(x1min) of the column (he_gm_column = true)",
+  "R": "MESA photosphere_r"
+ },
+ "x1min": 1353136500000.0,
+ "x1max": 6957000000000.0,
+ "r_bot": 1287045000000.0,
+ "F_rin": 1118195611129734.6,
+ "ic": "/resnick/groups/carnegie_poc/jingze/r136a1_1104/ic/AB/ic_r136a1B_noseam.txt",
+ "ic_md5": "6540714f04e932cb363c0b55f03a7ba2",
+ "tables": {
+  "opacity": {
+   "ross": "/resnick/groups/carnegie_poc/jingze/r136a1_1104/opac/rosseland_mesakap_a09_x0.58_z0.0064_topsbase_T7.txt",
+   "planck": "/resnick/groups/carnegie_poc/jingze/r136a1_1104/opac/planck_tops_x0.58_z0.0064_a09_T7.txt",
+   "hash": null,
+   "mixture": null,
+   "built": false,
+   "fields": null,
+   "note": "explicit tables from the spec (no build)"
+  },
+  "eos": {
+   "dump": "/resnick/groups/carnegie_poc/jingze/r136a1_1104/ic_cache/tables/eos_8f658626c61e/eos_dump.txt",
+   "hash": "8f658626c61e",
+   "note": "cache",
+   "deck": "/resnick/groups/carnegie_poc/jingze/r136a1_1104/ic_cache/tables/eos_8f658626c61e/dump.athinput"
+  }
+ },
+ "background": {
+  "rho_floor": 1e-13,
+  "he_sponge_dmax": 2e-13,
+  "dfloor": 1e-17,
+  "he_sponge_rate": 0.1,
+  "he_sponge_r0": 6261300000000.0,
+  "T_rad_x1max": 21788.69793649953,
+  "tfloor_kelvin": 16500.0,
+  "eos_logt_min": 4.2,
+  "pfloor": 1e-08,
+  "vceil": 1000000000.0,
+  "wb_rmax": 1916180648017.3418,
+  "he_ic_balance_rmax": 1534338104339.704,
+  "nu_ph": 0.003811010327562511,
+  "g_ph": 10221.702798268154,
+  "cs_ph": 2682150.380003264,
+  "v_esc": 188711560.0439712,
+  "rho_ph": 1.2705459721995657e-08
+ },
+ "t_turn": 743.9740612005467,
+ "git": "83d97f8c9c6c4376aa347da34c776a0398a4bf11",
+ "scripts_md5": "c6b515ef3fd6360b7c91195178479d37"
+}

@@ -1,0 +1,10 @@
+    code pass: /resnick/groups/carnegie_poc/jingze/r136a1_1104/ic/BB/pass_0/run.log; HSE last max |dln rho| 3.31714e-07, Gamma-clamped fine cells 1336
+  seam pass 0: R_ph(column) 1.74358000e+12 -> R_ph(sph1d) 1.76639000e+12: dR 2.2810e+10 cm = 29.1259 cells (dr 7.8315e+08)
+    code pass: /resnick/groups/carnegie_poc/jingze/r136a1_1104/ic/BB/pass_1/run.log; HSE last max |dln rho| 3.96084e-07, Gamma-clamped fine cells 817
+  seam pass 1: R_ph(column) 1.76638000e+12 -> R_ph(sph1d) 1.76653000e+12: dR 1.5000e+08 cm = 0.1915 cells (dr 7.8315e+08)
+    code pass: /resnick/groups/carnegie_poc/jingze/r136a1_1104/ic/BB/pass_2/run.log; HSE last max |dln rho| 2.27445e-07, Gamma-clamped fine cells 824
+  seam pass 2: R_ph(column) 1.76653000e+12 -> R_ph(sph1d) 1.76662000e+12: dR 9.0000e+07 cm = 0.1149 cells (dr 7.8315e+08)
+    code pass: /resnick/groups/carnegie_poc/jingze/r136a1_1104/ic/BB/pass_3/run.log; HSE last max |dln rho| 1.61754e-07, Gamma-clamped fine cells 828
+  seam pass 3: R_ph(column) 1.76661000e+12 -> R_ph(sph1d) 1.76667000e+12: dR 6.0000e+07 cm = 0.0766 cells (dr 7.8315e+08)
+SEAM_DONE /resnick/groups/carnegie_poc/jingze/r136a1_1104/ic/BB/col_3.txt [[0, 1743580000000.0, 1766390000000.0, 783152391.2299805], [1, 1766380000000.0, 1766530000000.0, 783152391.2299805], [2, 1766530000000.0, 1766620000000.0, 783152391.2299805], [3, 1766610000000.0, 1766670000000.0, 783152391.2299805]]
+RC=0

@@ -1,0 +1,121 @@
+# make_star_ic.py /resnick/groups/carnegie_poc/jingze/r136a1_1104/ic/r136a1B_noseam.json (git 83d97f8c9c6c4376aa347da34c776a0398a4bf11, scripts md5 c6b515ef3fd6360b7c91195178479d37)
+MESA profile /resnick/groups/carnegie_poc/jingze/r136a1_1104/model/r136a1_ke25_282_v200_mltpp_midMS.data (md5 0f452a8091a55e06c20f4546092cf2c8): MESA header: Teff 59069.538083811516, photosphere_L 6803712.647803862 Lsun, photosphere_r 24.90571378532111 Rsun, M 233.932 Msun
+MODE mesa (MESA T(P) structure, our EOS/kappa/gravity)
+star r136a1B_noseam: L 2.60446120e+40 erg/s (log L/Lsun 6.8327; MESA photosphere_L), GM 3.10569999e+28 (G_code x MESA total mass), R_ph 1.73269051e+12 cm = 24.9057 Rsun (MESA photosphere_r), Teff 59069.54 K, T_ph(Hopf, tau 2/3) 59403.16 K
+tables:
+  EOS: cached /resnick/groups/carnegie_poc/jingze/r136a1_1104/ic_cache/tables/eos_8f658626c61e/eos_dump.txt
+  Rosseland /resnick/groups/carnegie_poc/jingze/r136a1_1104/opac/rosseland_mesakap_a09_x0.58_z0.0064_topsbase_T7.txt md5 c5f783e0adc9777f704380e00e543afb
+  Planck    /resnick/groups/carnegie_poc/jingze/r136a1_1104/opac/planck_tops_x0.58_z0.0064_a09_T7.txt md5 06dbbaea6929c8e39dfeb184daedaaf6
+  EOS dump  /resnick/groups/carnegie_poc/jingze/r136a1_1104/ic_cache/tables/eos_8f658626c61e/eos_dump.txt md5 39e73db84cb6c5cbe931ddb318a9f3df (cache)
+MLT: alpha 2, Cox, H_p min(P/(rho g), sqrt(P/G)/rho) (MESA alt_scale_height); MLT++ MESA-gated (use_mltpp False; f1 0.0001 f2 0.001; lambda1/beta1 1/0.35 lambda2/beta2 0.5/0.25 dlambda/dbeta 0.1/0.1; xa1_center 0)
+  EOS dump composition (X Y Z H2 ion metal_ion mh): 0.58 0.4136 0.0064 0 1 0 0; spec X 0.58 Y 0.4136 Z 0.0064
+column floor: rule decade(4e-06 rho_ph) applied after the build (our rho_ph)
+x1min 1.3531365000e+12 (19.4500 Rsun, explicit); column bottom 1.2870450000e+12 (18.5000 Rsun); x1max 6.9570000000e+12 (4.0151 R_ph); column top 8.000550e+12
+  mode mesa: tau-3 join at r_j 1.74174603e+12 (1.0052 R_MESA), T 76094.28 K, rho 6.2553e-09, m 4.653417e+35
+column floor 1.0e-13 = decade(4e-06 x rho_ph 1.2705e-08) (rule)
+table check: every column row inside the EOS dump (with margin) and the opacity grid
+column (mesa): 1898 rows, 37 s; rho_ph 1.270546e-08, tau-3 join 1.741746e+12 (1.00523 R_ph), floor from 1.750286e+12 (1.0102 R_ph)
+startup re_zone hopf: he_ic_rad_taua 1, he_ic_rad_taub 3 (tauj): the code's startup re-solves RE only at tau_R < 3 (from the mesh top) and keeps the column's T, scaffold and (below r_b) rho; this column: tau_R(R_ph 1.741982e+12) 14.14, tau_R(r_j 1.741746e+12) 18.48
+taper: off
+seam: off (no seam.deck)
+wrote /resnick/groups/carnegie_poc/jingze/r136a1_1104/ic/AB/ic_r136a1B_noseam.txt (md5 6540714f04e932cb363c0b55f03a7ba2)
+wrote /resnick/groups/carnegie_poc/jingze/r136a1_1104/ic/AB/deck_r136a1B_noseam.athinput
+---- coverage
+  column log T 4.7726..6.5846, log rho -13.0000..-3.3180
+  EOS dump grid log T 3.300..6.800, log rho -21.000..-1.000: column INSIDE; builder clamped calls 0 of 89946
+  deck EOS range (eos_logt 3.30..6.80, eos_logd -21.0..-1.0): column inside (he_star_m1 fatals outside)
+  Rosseland grid (with he_opac_logd_min -21) log T 3.500..7.001, log rho -22.022..1.000: column inside
+  opacity: explicit table, source map n/a (explicit tables from the spec (no build))
+---- structure (rows below R_ph)
+  r/R_ph   r[Rsun]     T[K]       rho       kappa  nabla   n_ad   n_rad  FMLT/F Gam_L  Gam_rad  Hp[Rsun]  tau
+  0.7388    18.500 3.8420e+06 4.8083e-04  0.318  0.247  0.253  0.250  0.014  0.709  0.700    1.236 1.530e+07
+  0.7589    19.003 3.4707e+06 3.4669e-04  0.320  0.246  0.252  0.249  0.012  0.712  0.704    1.196 1.072e+07
+  0.7791    19.507 3.1242e+06 2.4598e-04  0.322  0.245  0.252  0.249  0.016  0.717  0.705    1.158 7.416e+06
+  0.7991    20.009 2.8028e+06 1.7295e-04  0.326  0.247  0.252  0.250  0.012  0.726  0.717    1.114 5.074e+06
+  0.8192    20.511 2.4991e+06 1.2083e-04  0.332  0.250  0.252  0.254  0.015  0.740  0.728    1.055 3.407e+06
+  0.8392    21.014 2.2047e+06 8.4169e-05  0.345  0.254  0.252  0.265  0.041  0.770  0.739    0.966 2.207e+06
+  0.8594    21.520 1.9179e+06 5.6459e-05  0.361  0.251  0.252  0.279  0.100  0.805  0.725    0.870 1.341e+06
+  0.8794    22.020 1.6431e+06 3.6259e-05  0.372  0.254  0.252  0.289  0.121  0.830  0.730    0.768 7.552e+05
+  0.8995    22.524 1.3747e+06 2.1774e-05  0.368  0.253  0.252  0.288  0.120  0.820  0.722    0.661 3.825e+05
+  0.9197    23.029 1.1118e+06 1.1867e-05  0.357  0.252  0.253  0.281  0.104  0.796  0.713    0.547 1.722e+05
+  0.9398    23.532 8.5533e+05 5.6150e-06  0.356  0.252  0.253  0.284  0.110  0.793  0.706    0.428 6.683e+04
+  0.9598    24.032 6.0338e+05 2.0776e-06  0.371  0.253  0.253  0.301  0.159  0.827  0.696    0.303 2.099e+04
+  0.9799    24.537 3.4708e+05 4.3224e-07  0.608  0.254  0.253  0.507  0.500  1.355  0.678    0.171 4.785e+03
+  1.0000    25.039 5.9245e+04 1.2705e-08  2.435  5.349  0.282  5.349  0.000  5.428  5.428    0.014 1.418e+01
+---- convection and the wall
+  Fe opacity peak: r 24.8478 Rsun (0.9924 R_ph) T 1.8340e+05 rho 7.1737e-08 kappa 1.5348, convective
+  Fe CZ (F_MLT/F > 0.01): 20.2909-25.0324 Rsun (0.8104-0.9997 R_ph)
+    convective layer 18.5000-18.8097 Rsun, max F_MLT/F 0.018
+    convective layer 18.8473-19.5656 Rsun, max F_MLT/F 0.021
+    convective layer 19.5969-19.6754 Rsun, max F_MLT/F 0.017
+    convective layer 19.6951-19.7899 Rsun, max F_MLT/F 0.020
+    convective layer 19.8216-19.9848 Rsun, max F_MLT/F 0.018
+    convective layer 20.0008-20.2665 Rsun, max F_MLT/F 0.021
+    convective layer 20.2909-25.0324 Rsun, max F_MLT/F 0.810
+  H_p buffer below the CZ base: from x1min 0.747 H_p, from the column bottom 1.540
+  Schwarzschild CZ base 20.2909 Rsun; x1min..there: 0.747 H_p, max nabla_rad/nabla_ad 0.9968 -> RADIATIVE; nabla_rad/nabla_ad at x1min 0.9862
+  WARNING: buffer 0.75 H_p < 4 (standard: >= 4-5 H_p)
+  t_Fe = H_p/v_MLT (textbook alpha 2) at r 24.848 Rsun: 7.4397e+02 s -> mlt_ramp_start 1.4879e+03, mlt_ramp_time 7.4397e+03
+  at x1min: T 3.1621e+06 rho 2.5586e-04 nabla_rad/nabla_ad 0.9862 F_MLT/F 1.21e-02 tau 7.7354e+06
+  ghost margin: the column starts 0.9500 Rsun below x1min; he_star_m1 needs it to cover x1min - 3 dx1(wall) - 2 dx1 -> the grid must have dx1(wall) < ~0.1727 Rsun
+  implicit_flux_x1min = F_r(x1min) 1.118195611130e+15; L/(4 pi x1min^2) 1.131943656797e+15 (ratio 0.98785448)
+  envelope mass x1min..R_ph 5.9199e+32 g = 0.2977 Msun (point-mass GM: M_env/M 1.274e-03)
+---- luminosity consistency
+  4 pi r^2 (F_r + F_MLT)/L - 1: max |.| 2.22e-16 (x1min..R_ph)
+  tau at x1min 7.7354e+06; tau(R_ph) of the column 14.1782 (2/3 = the shot); R_ph 1.741982e+12
+---- background / floor layer (rules: README)
+  rho_ph 1.2705e-08, T_ph 59403.16 K, g_ph 1.0222e+04, c_s,iso 2.6822e+06 -> g/c_s 3.8110e-03 /s; v_esc 1.8871e+08
+  column floor 1.0e-13 from r 1.750286e+12 (1.0048 R_ph) to the column top: floor layer 1.0048-3.9937 R_ph in the domain
+  sponge: dmax 2.0e-13 > column floor 1.0e-13 -> ACTIVE on the floor gas; gas with rho < dmax from r 1.0046 R_ph; r0 3.5944 R_ph; rate 1.0e-01 /s = 26.2 g/c_s (1/rate = 1.00e+01 s; dynamical time at R_ph 1.305e+04 s)
+  dfloor 1.0e-17, tfloor 16500 K (T_rad(x1max) 21788.7 K, Teff 58911.8), eos_logt_min 3.3, pfloor 1.0e-08, vceil 1.0e+09, wb_rmax 1.100 R_ph, balance_rmax 0.8808 R_ph (tau-3 join 0.9999)
+---- regime flags
+  FLAG: super-Eddington Gamma_L max 5.43 below R_ph (MLT++ carries the excess)
+---- MESA comparison (/resnick/groups/carnegie_poc/jingze/r136a1_1104/model/r136a1_ke25_282_v200_mltpp_midMS.data)
+  MESA L_ph 2.604461e+40 (column L/L_MESA 1.000000), M 4.653375e+35 g (GM/(G M) 0.998737), R_ph 1.732691e+12 (column R/R_MESA 1.005363), Teff 59069.538083811516
+  L_MESA(x1min)/L_ph = 1.00003 (FLAT, tol 0.01); m_MESA(x1min) 4.647576e+35 g
+  r/R_ph   T_col/T_MESA  rho_col/rho_MESA
+   0.7388    1.0000    0.9801
+   0.7621    1.0024    0.9881
+   0.7853    1.0050    0.9969
+   0.8086    1.0082    1.0063
+   0.8319    1.0124    1.0167
+   0.8552    1.0180    1.0324
+   0.8784    1.0256    1.0538
+   0.9017    1.0368    1.0883
+   0.9249    1.0551    1.1433
+   0.9481    1.0900    1.2542
+   0.9713    1.1846    1.5859
+   0.9947    2.5475   13.0229
+  envelope mass above x1min: MESA 5.7993e+32 g (column above, x1min..R_ph, see above)
+---- mode mesa checks
+  R_ph ours 1.741982e+12 vs MESA 1.732691e+12: ratio 1.00536
+  Teff ours 58911.79 vs MESA 59069.54: ratio 0.99733; T_ph(tau 2/3) 59244.51
+  m(x1min) ours 4.64749970e+35 vs MESA 4.64757616e+35 (-1.65e-05 rel); m_env(x1min..tau_j) ours 5.91688e+32 g = 0.29756 Msun vs MESA (to its top) 5.79927e+32 g = 0.29164 Msun: ratio 1.0203
+  deck: he_gm = G m(x1min) = 3.1017784815e+28, he_gm_column = true
+  F_rad(our kappa) <= F everywhere (no clipping)
+  Gamma_rad = kappa F_r/(c g), x1min..r_j: column scaffold max 0.7391 at 20.672 Rsun (0 rows > 0.9); MESA's own F_MLT/F at the same P with OUR kappa would give max 0.7466 at 20.688 Rsun (0 rows > 1: sub-Eddington)
+  startup re_zone hopf: he_ic_rad_taua 1, he_ic_rad_taub 3 (deck block)
+  convective zones (F_MLT/F > 0.01), ours (our kappa on MESA T(P)):
+    18.5000-18.8097 Rsun max 0.018
+    18.8473-19.5656 Rsun max 0.021
+    19.5969-19.6754 Rsun max 0.017
+    19.6951-19.7899 Rsun max 0.020
+    19.8216-19.9848 Rsun max 0.018
+    20.0008-20.2665 Rsun max 0.021
+    20.2909-25.0324 Rsun max 0.810
+  MESA's own (MESA kappa):
+    20.7015-24.9057 Rsun max 0.807
+  r[Rsun]   T/T_MESA  rho/rho_MESA  m/m_MESA
+    18.500   1.00000   0.98014   0.9999997
+    19.213   1.00294   0.99007   0.9999855
+    19.925   1.00636   1.00111   0.9999824
+    20.635   1.01096   1.01202   0.9999847
+    21.348   1.01727   1.03033   0.9999895
+    22.060   1.02657   1.05815   0.9999954
+    22.768   1.04177   1.10297   1.0000010
+    23.481   1.07118   1.19315   1.0000054
+    24.196   1.15249   1.46808   1.0000080
+    24.908   2.54745  13.02286   1.0000088
+wrote /resnick/groups/carnegie_poc/jingze/r136a1_1104/ic/AB/diag_r136a1B_noseam.png
+total 47 s
+RC=0

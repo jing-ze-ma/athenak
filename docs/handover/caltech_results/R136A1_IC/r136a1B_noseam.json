@@ -1,0 +1,55 @@
+{
+ "_comment": "r136a1_1104 (USER 11-04): R136a1, Keszthelyi+2025 TS (MLT++) v200 281.8 Msun midMS profile, tools/ic_star mode mesa (RSG E / HG / bsgsp way). Pass A (seam off) -> grid design; pass B (seam on, deck = the r136a1 deck) = production column. Opacity: Rosseland = MESA a09 X0.58 Z0.0064 (TOPS same-composition outside MESA's log R box), Planck = TOPS X0.58 Z0.0064 AGSS09 (LANL 11-04). x1min = r(log T 6.0) of the profile, x1max = 3 R_ph(MESA). DEEP (USER 11-04 late): x1min 19.45 Rsun (log T 6.50, MESA radiative, below the MLT++ envelope CZ base 20.6 Rsun), x1max 100 Rsun, grid leanB (USER: variant B).",
+ "name": "r136a1B_noseam",
+ "star": {
+  "L": "mesa",
+  "R_ph": "mesa",
+  "M": "mesa"
+ },
+ "composition": {
+  "X": 0.58,
+  "Y": 0.4136,
+  "Z": 0.0064,
+  "mixture": "AGSS09 (TOPS number fractions in tops/mix_x0.58_z0.0064_a09.txt)",
+  "a_metal": 16.0
+ },
+ "mesa_profile": {
+  "path": "/resnick/groups/carnegie_poc/jingze/r136a1_1104/model/r136a1_ke25_282_v200_mltpp_midMS.data",
+  "format": "mesa"
+ },
+ "opacity": {
+  "rosseland": "/resnick/groups/carnegie_poc/jingze/r136a1_1104/opac/rosseland_mesakap_a09_x0.58_z0.0064_topsbase_T7.txt",
+  "planck": "/resnick/groups/carnegie_poc/jingze/r136a1_1104/opac/planck_tops_x0.58_z0.0064_a09_T7.txt",
+  "ld_ext": -21.0
+ },
+ "eos": {
+  "logd_min": -21.0,
+  "logd_max": -1.0,
+  "logt_min": 3.3,
+  "logt_max": 6.8,
+  "dlog": 0.02,
+  "binary": "/resnick/groups/carnegie_poc/jingze/builds_rstfixx/bin/athena_cpu_built_in_pgens_prod_18bfdeb9_fmadoff"
+ },
+ "r_in": {
+  "rule": "explicit",
+  "r_rsun": 19.45,
+  "bottom_rsun": 18.5
+ },
+ "r_top": {
+  "x1max_cm": 6957000000000.0,
+  "col_top_fac": 1.15
+ },
+ "startup": {
+  "re_zone": "hopf"
+ },
+ "taper": {
+  "enable": false
+ },
+ "seam": {
+  "enable": false
+ },
+ "config": {
+  "cache": "/resnick/groups/carnegie_poc/jingze/r136a1_1104/ic_cache",
+  "eos_binary": "/resnick/groups/carnegie_poc/jingze/builds_rstfixx/bin/athena_cpu_built_in_pgens_prod_18bfdeb9_fmadoff"
+ }
+}
