@@ -545,11 +545,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_stagmg = (!cln_cell && (pc == "mg")) ? ((mc == "mirror") ? 2 : 1) : 0;
-    // clean_pc_sweep = rb (default) | rbr | sym | rbrsym: the mg's smoothing on each
-    // level, a forward red-black sweep, + a second red pass (rbr), + a black-red
-    // post-sweep after the coarse correction (sym) (CleanStagVCycle); read only when named
-    const std::string sw = pin->DoesParameterExist("rad_m1","clean_pc_sweep") ?
-                           pin->GetString("rad_m1","clean_pc_sweep") : "rb";
+    // clean_pc_sweep = sym (default of a fresh run, recorded; a restart file without the
+    // key keeps rb) | rb | rbr | rbrsym: the mg's smoothing on each level, a forward
+    // red-black sweep, + a second red pass (rbr), + a black-red post-sweep after the
+    // coarse correction (sym) (CleanStagVCycle)
+    const std::string sw = pin->GetOrAddString("rad_m1","clean_pc_sweep",
+                                               nw ? "sym" : "rb");
     cln_pcsweep = (sw == "rbr") + 2*(sw == "sym") + 3*(sw == "rbrsym");
     if (!cln_pcsweep && sw != "rb") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
