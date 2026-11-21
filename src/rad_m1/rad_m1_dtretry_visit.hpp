@@ -1606,25 +1606,11 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_r1v", vgd_r1v);
   v.value("vgd_r1f", vgd_r1f);
   v.value("vgd_hl_mb", vgd_hl_mb);
-  v.value("vgd_shl_on", vgd_shl_on);
   for (int q0_ = 0; q0_ < 2; ++q0_) {v.view("vgd_shl[]", vgd_shl[q0_]);}
   v.value("vgd_shn", vgd_shn);
   v.value("vgd_shl_alpha", vgd_shl_alpha);
-  v.value("vgd_upf", vgd_upf);
-  v.value("vgd_upk", vgd_upk);
-  v.value("vgd_uptol", vgd_uptol);
-  v.value("vgd_upwall", vgd_upwall);
-  v.value("vgd_up_alpha", vgd_up_alpha);
-  v.view("vgd_up_ofs", vgd_up_ofs);
-  v.view("vgd_up_code", vgd_up_code);
-  v.view("vgd_up_part", vgd_up_part);
-  v.view("vgd_up_prof", vgd_up_prof);
-  v.view("vgd_up_gall", vgd_up_gall);
-  v.view("vgd_up_galh", vgd_up_galh);
-  v.value("vgd_up_time", vgd_up_time);
   v.value("vgd_izf", vgd_izf);
   v.view("vcol_hr", vcol_hr);
-  v.view("vgd_up_prof2", vgd_up_prof2);
   v.value("vgd_hle", vgd_hle);
   v.value("vgd_hl_bytes", vgd_hl_bytes);
   v.value("vgd_hl_cap", vgd_hl_cap);
