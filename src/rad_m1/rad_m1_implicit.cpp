@@ -355,7 +355,6 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_gas_newton = pin->GetOrAddBoolean("rad_m1","implicit_gas_newton",
                                          full && !global_variable::restart_run);
   impl_eos_cache = pin->GetOrAddBoolean("rad_m1","implicit_eos_cache",false);
-  pin_report_newton_fb = pin->GetOrAddBoolean("rad_m1","report_newton_fb",false);
   dbg_etally = pin->GetOrAddBoolean("rad_m1","dbg_energy_tally",false);
   // accbook-1021: read only when named (an input without it is unchanged, also in the
   // parameters a restart file records)
@@ -817,11 +816,6 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   g_dbg_eint_n = pin->DoesParameterExist("rad_m1","dbg_eint_cells") ?
                pin->GetInteger("rad_m1","dbg_eint_cells") : 0;
   // ...and with time_scheme = be, where Time2Init returns before reading it, the
-  // existing dbg_t2_admiss = N listing (the cells and their E rows by term) of the
-  // first N solves that end with E <= e_floor or eint_wb <= 0 (read only when named)
-  if (g_dbg_eint_n > 0 && pin->DoesParameterExist("rad_m1","dbg_t2_admiss")) {
-    t2_dbg_adm = pin->GetInteger("rad_m1","dbg_t2_admiss");
-  }
   // DEBUG (he_estall_1003): implicit_stall_trace = N > 0: in a solve still unconverged at
   // pass implicit_stall_trace_p0 (default 40), fix each rank's worst cell of that pass
   // and print its NCD line (tag 3) before step (c) and (tag 2) after the residual of
@@ -1132,8 +1126,6 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // (m1-keydefault-0927, docs/dev/ke_dt_0926.md 8), false otherwise
   impl_opac_update = pin->GetOrAddBoolean("rad_m1","implicit_opac_update",
                                           force_ref == M1_FREF_WB_ARAD);
-  // DIAGNOSTIC (m1-perf-0928): which opacities the Picard-loop update moves
-  dbg_opac_part = pin->GetOrAddInteger("rad_m1","dbg_opac_part",0);
   // implicit_opac_newton (m1-perf-0928): the Picard loop under implicit_opac_update is a
   // fixed-point iteration on the FLUX opacity rho kappa_T(T) of the x1 face terms, and
   // it converges only linearly (~0.17 per pass on the He box: 6.8 passes per solve at
@@ -1560,9 +1552,6 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                     coupling && gas_feedback && dbg_gas_force &&
                     !global_variable::restart_run;
   impl_vimp = pin->GetOrAddBoolean("rad_m1","implicit_vimp",vdef);}
-  if (pin->DoesParameterExist("rad_m1","doppler_vel_dbg")) {
-    dop_dbg = pin->GetInteger("rad_m1","doppler_vel_dbg");
-  }
   // athpp-vstar-1105 <rad_m1>/doppler_vel = stage | vstar (rad_m1.hpp dop_vstar)
   if (pin->DoesParameterExist("rad_m1","doppler_vel")) {
     const std::string dv = pin->GetString("rad_m1","doppler_vel");

@@ -102,14 +102,8 @@ void RadiationM1::RavInit(ParameterInput *pin) {
   if (!impl_stencil) RavM1Fatal("needs implicit_op_stencil = true");
   if (impl_kfuse > 1) RavM1Fatal("needs implicit_krylov_fuse = 0 or 1");
   prav = ph->pravg;
-  // study keys: (3) the lumped preconditioner rows, (2) the coarse phi distance
-  rav_lump = pin->GetOrAddBoolean("rad_m1", "polar_ring_avg_lump", false);
+  // the coarse phi distance (study key)
   rav_dist = pin->GetOrAddBoolean("rad_m1", "polar_ring_avg_dist", true);
-  // ringsmooth-1102: the intra-group phi-face momentum deposit (RavFaces); read only when
-  // named, default false (bitwise)
-  if (pin->DoesParameterExist("rad_m1", "polar_ring_avg_gz")) {
-    rav_gz = pin->GetBoolean("rad_m1", "polar_ring_avg_gz");
-  }
   // floorheat-1029: polar_ring_avg_ke = gas | rad.  defaults-1030 (USER 10-30): DEFAULT
   // rad on a fresh run (the floor-heating fix every accretor run names); a named key
   // wins; a restart whose file lacks the key keeps gas (bitwise)

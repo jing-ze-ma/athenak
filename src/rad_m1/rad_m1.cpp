@@ -733,7 +733,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   impl_tol = 1.0e-8;
   impl_maxit = 30;
   impl_opac_update = false;
-  dbg_opac_part = 0;
   impl_opac_newton = false;
   impl_halo_ipc = false;
   hi_state = 0;
@@ -816,8 +815,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   t2_solve = 0;
   t2_fail = false;
   t2_dbg_fail = -1;
-  t2_dbg_adm = 0;
-  t2_dbg_adm_n = 0;
   t2_nstep = 0.0;
   t2_nbe = 0.0;
   t2_nfall = 0.0;
@@ -827,9 +824,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   t2_nclip = 0.0;
   pred2_ok = false;
   pred2_dt = 0.0;
-  t2_lin_tol = -1.0;
   t2_lin_save = 0.0;
-  t2_lin_fac = 1.0;
   t2_onep_s = -1.0;
   impl_crelax = 1.0;
   impl_crelax_thin = false;
@@ -1180,7 +1175,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   dbg_gas_force = pin->GetOrAddBoolean("rad_m1","dbg_gas_force",true);
   dbg_gas_heat = pin->GetOrAddBoolean("rad_m1","dbg_gas_heat",true);
   dbg_gas_force_trans = pin->GetOrAddBoolean("rad_m1","dbg_gas_force_trans",true);
-  dbg_trans_memory = pin->GetOrAddReal("rad_m1","dbg_trans_memory",1.0);
   // DIAGNOSTIC, VET scaffolding (tests_m1/runs_3i_tensor): the Eddington tensor of the
   // multi-D implicit solve is NOT taken from the cell's own flux.
   //   frozen  computed once from the initial state (selected closure), never updated
@@ -1468,10 +1462,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   vcol_built = false;
   vcol_time = vcol_ncall = vcol_nskip = 0.0;
   vcol_sq = false;
-  vcol_team = false;
   vcol_qmin = vcol_qmax = 0.0;
   vcol_lc = 1;
-  vcol_ts = vcol_lcin = 0;
   {std::string cl = pin->GetOrAddString("rad_m1","closure","m1");
   chi_kind = M1_CHI_LEVERMORE;
   if (cl.compare("m1") == 0) {
@@ -1515,16 +1507,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // unify-sc-gd-1012 (#13): the canonical key vet_every, vet_col_every its alias
     vcol_every = pin->GetOrAddInteger("rad_m1",
                                       M1KeyName(pin, "vet_every", {"vet_col_every"}), 1);
-    // vet_col_order2 (m1-sp-order2, tests_m1/runs_5o_sporder2); see rad_m1_vetcol.cpp.
-    // DEFAULT true on the spherical-polar wedge since m1-sp-order2b
-    // (tests_m1/runs_5q_sporder2b); a restart whose file lacks the key keeps false, the
-    // resolved value is echoed.  Elsewhere read only when named (parameter dump kept).
-    if (sph_geom) {
-      vcol_o2 = pin->GetOrAddBoolean("rad_m1","vet_col_order2",
-                                     !global_variable::restart_run);
-    } else if (pin->DoesParameterExist("rad_m1","vet_col_order2")) {
-      vcol_o2 = pin->GetBoolean("rad_m1","vet_col_order2");
-    }
     // vet_col_fk_min (m1-sp-order2b): the lower clamp of f_K.  Sp default 0 (a restart
     // whose file lacks the key keeps 1/3, echoed); elsewhere 1/3 unless named.
     if (sph_geom) {
@@ -1648,9 +1630,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
-    vcol_team =pin->GetOrAddBoolean("rad_m1","vet_col_team",true);
-    vcol_ts = pin->GetOrAddInteger("rad_m1","vet_col_team_size",0);
-    vcol_lcin = pin->GetOrAddInteger("rad_m1","vet_col_chunk",0);
     std::string ax = pin->GetOrAddString("rad_m1","vet_col_axis","radial");
     if (ax.compare("flux") == 0) {
       vcol_axis_flux = true;
@@ -2281,25 +2260,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
           std::exit(EXIT_FAILURE);
         }
       }
-      // DEBUG (csmetric-1112, read only when named): vet_col_lat_posfix_force = N treats
-      // the first positivity check of cycle N as a trigger (tests the fallback path)
-      if (pin->DoesParameterExist("rad_m1","vet_col_lat_posfix_force")) {
-        vlat_pf_force = pin->GetInteger("rad_m1","vet_col_lat_posfix_force");
-      }
       // cs-s4-1017 (stage S4, USER 10-18): on the cubed sphere D_r,lat is the Cartesian
       // vector v (VetGdCsMoments) in the cs forms M1CsLat0 / M1CsLatF (VetLatOpCs /
       // VetLatStencilAddCs): the default is the sp one (operator)
-      if (pin->DoesParameterExist("rad_m1","vet_col_lat_dump")) {
-        vlat_dump = pin->GetString("rad_m1","vet_col_lat_dump");
-        if (vlat_dump.compare("none") == 0) {vlat_dump = "";}
-      }
-      if (pin->DoesParameterExist("rad_m1","vet_col_lat_dump_every")) {
-        vlat_dump_every = pin->GetInteger("rad_m1","vet_col_lat_dump_every");
-      }
-    }
-    // vet_col_spread = N (STAGE CS2, read only when named): VetColSpread
-    if (pin->DoesParameterExist("rad_m1","vet_col_spread")) {
-      vcol_spread = pin->GetInteger("rad_m1","vet_col_spread");
     }
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__

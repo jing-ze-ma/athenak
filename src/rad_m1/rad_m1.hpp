@@ -608,7 +608,6 @@ class RadiationM1 {
   // neighbour tables and the exchange state of the exact layer-by-layer sweep; null on
   // one MeshBlock (the single-block sweep above is then run unchanged)
   VetMBState *vet_mbs;
-  Real dbg_trans_memory{};   // DIAGNOSTIC (3b phase G): weight of the F^n memory term
                        // of the transverse face flux; 1 = backward Euler (bitwise)
   bool dbg_gas_force_trans{}; // 3b phase E, transport = implicit only:
                        // <rad_m1>/dbg_gas_force_trans = false keeps the x1 radiative
@@ -671,7 +670,6 @@ class RadiationM1 {
   Real impl_frs_sum[12] = {};
   int impl_maxit{};             // maximum Picard iterations per solve
   bool impl_opac_update{};      // re-evaluate the opacities inside the Picard loop
-  int dbg_opac_part{};          // DIAGNOSTIC: 0 all, 1 only flux (KT), 2 only P/E
   bool impl_opac_newton{};      // implicit_opac_newton: d(rho kappa_T)/dT in the x1 rows
   // implicit_opac_newton_guard (m1-opn-guard, default 0.5; <= 0 = off): a face's Newton
   // term is dropped from a row whose diagonal it would take below guard x its value
@@ -962,10 +960,6 @@ class RadiationM1 {
   int csplit = 0;
   bool dbg_hydro_off = false;   // DIAGNOSTIC (ke-dt-0926): the Driver skips hydro stages
   bool dbg_hydro_skip_t2 = false;   // raycheap2-1109 DIAGNOSTIC: the same on hesdirk2
-  // DIAGNOSTIC <rad_m1>/dbg_cell_lo, dbg_cell_hi (read only when named; default off):
-  // the implicit write-back prints the per-cell energy budget of active x1 cells
-  // lo..hi (offsets from is) of the first (k, j) column of MeshBlock 0
-  int dbg_cell_lo = -1, dbg_cell_hi = -1;
   // force_reference_work (ke-dt-0926; read only when named, force_reference = wb_arad
   // only): `full` (default) = the solve hands the gas the work of the FULL force and the
   // WB source none (rad_m1_coupling.cpp header; its internal-energy cancellation is
@@ -1710,8 +1704,6 @@ class RadiationM1 {
   int t2_dbg_fail{};            // DEBUG time2_dbg_fail: fail stage 1 at this cycle
   int dbg_nonconv = -1;         // DEBUG dbg_nonconv: the solves of this cycle's first
                                 // attempt report non-converged (dt_retry tests)
-  int t2_dbg_adm{};             // DEBUG dbg_t2_admiss: report the first N non-admissible
-  int t2_dbg_adm_n{};           // stages (which quantity <= 0, where); 0 = off
   // t2retry-1020: <rad_m1>/time2_reject = be (default) | retry (read only when named): a
   // non-admissible hesdirk2 stage raises the dt_retry flag (reason time2_reject) instead
   // of the backward-Euler redo, so the cycle is taken again at a smaller dt with hesdirk2
@@ -1866,11 +1858,8 @@ class RadiationM1 {
   // t2inc = dt (t2_c31 K1 + t2_c32 K2); the diagonal is g = 1 - 1/sqrt 2 in both.
   int t2_tab = 0;
   Real t2_a21 = 0.0, t2_w0 = 0.5, t2_w1 = 0.5, t2_c31 = 0.0, t2_c32 = 0.0;
-  Real t2_lin_tol{};            // time2_lin_tol: stage solves' implicit_lin_tol (<= 0:
-                                // implicit_lin_tol x t2_lin_fac)
   Real t2_onep_s{};             // time2_one_pass_safety: implicit_one_pass_safety of the
                                 // stage solves (0: implicit_one_pass_safety)
-  Real t2_lin_fac{};            // time2_lin_tol_fac (default 1)
   Real t2_lin_save{};           // the implicit_lin_tol put back after a stage solve
   Real t2_nclip{};              // vet_sc cells whose extrapolated tensor was clipped
   DvceArray5D<Real> t2k1;       // (m,M1_T2_NK,k,j,i) the FSAL slope K1 (restart state)
@@ -1919,7 +1908,6 @@ class RadiationM1 {
   // at the stage-1 solution Y1 for stage 2) | extrap (DIAGNOSTIC: D^n + r (D^n -
   // D^{n-1}), history in memory only, not in the restart)
   int t2_vcmode = 0;
-  bool t2_fvnew = false;        // time2_vstage (rad_m1_time2.cpp)
   // time2_vstage: the gas work in the E row (slot: into iw KZ, implicit_work_fix)
   // kick581-1024 <rad_m1>/implicit_work_fix (default false: bitwise the old code).  true:
   // (1) when the E rows carried the gas work w^k of the last pass (t2_wk), the write-back
@@ -2164,7 +2152,6 @@ class RadiationM1 {
   // face (tau_scheme 1 HLL, f -> 1/tau in thick cells) applied to the cell-centred lab
   // flux (4/3) v E.  Forces implicit_vimp = false.  Athena++ reproduction only.
   int dop_face = 0;
-  int dop_dbg = 0;        // <rad_m1>/doppler_vel_dbg = N (read only when named): every N-th solve
   // pgrst-vimp-1021 <rad_m1>/implicit_vimp_ewf (read only when named; default false =
   // bitwise): the lagged enthalpy-work term of a face, E_f (1 + D_f) dv_f with dv_f the
   // face mean of the two cells' predicted kicks, is taken as
@@ -2447,7 +2434,6 @@ class RadiationM1 {
                                 // rad_m1_implicit.hpp); < 0 when neither option is on
   int impl_nec{};               // components of `ecache`
   DvceArray5D<Real> ecache;     // (m,nec,k,j,i) the frozen-density e(T) cache
-  bool pin_report_newton_fb = false;   // <rad_m1>/report_newton_fb: print fallback cells
   Real newt_nfb{};              // Newton fallbacks to the bracketed root find, whole run
   Real gas_ncell{};             // cell-passes of the gas solve, whole run (the scale the
                                 // two counters above and below are read against)
@@ -2590,8 +2576,7 @@ class RadiationM1 {
   // ringavg-1029 <rad_m1>/polar_ring_avg (rad_m1_ringavg.cpp): the implicit transport of
   // the polar rows on the coarse phi groups of <mesh>/polar_ring_avg (hydro's table)
   bool rav_on = false;
-  bool rav_lump = false, rav_dist = true;   // polar_ring_avg_lump / _dist (study keys)
-  bool rav_gz = false;   // ringsmooth-1102 polar_ring_avg_gz (RavFaces: intra-group Z_f)
+  bool rav_dist = true;   // polar_ring_avg_dist (study key)
   // floorheat-1029 <rad_m1>/polar_ring_avg_ke = rad: the gas kinetic-energy spread the
   // after-solve group average removes goes back to E (the coarse cell's kick), not to heat
   bool rav_ke_rad = false;
@@ -3186,10 +3171,6 @@ class RadiationM1 {
   bool vcol_sph{};             // spherical rays (sp) or plane-parallel (Cartesian)
   bool vcol_axis_flux{};       // vet_col_axis = flux: n = the M1 cell flux direction
   int vcol_nc{}, vcol_np{}, vcol_nmu{}, vcol_every{}, vcol_nray{};
-  // vet_col_order2 (m1-sp-order2, default false): sp quadratic mu quadrature, S and chi
-  // linear in r along the segments, the core rays from E and F at the inner face (the
-  // mirrored incoming intensity at a reflecting inner x1)
-  bool vcol_o2 = false;
   // vet_col_fk_min (m1-sp-order2b): the lower bound of f_K = K/J.  1/3 (the old clamp,
   // inherited from vet_sc's eigen/flux projection) or 0 (sp default: f_K < 1/3 is
   // physical behind a radiating front and D = diag(f, (1-f)/2, (1-f)/2) stays
@@ -3234,15 +3215,12 @@ class RadiationM1 {
   std::string vcol_dump;       // vet_col_dump: file prefix of the column dump
   Real vcol_time{}, vcol_ncall{}, vcol_nskip{};
   // vet_col_surface_q (runs_5e): the outer-x1 Marshak q per column from the formal
-  // solution, q = H(top face)/J(top cell), lagged like the tensor; vet_col_team: the
-  // build as one team per column (rays over the team's threads, fixed-order moments)
-  bool vcol_sq{}, vcol_team{};
+  // solution, q = H(top face)/J(top cell), lagged like the tensor
+  bool vcol_sq{};
   Real vcol_qmin{}, vcol_qmax{};
   int vcol_lc{};               // shells per chunk of the team build (scratch budget)
-  int vcol_ts{}, vcol_lcin{};  // vet_col_team_size (0 = AUTO), vet_col_chunk (0 = auto)
   DvceArray3D<Real> vcol_q;    // (m, k, j): the column's Marshak q at the top face
   void VetColInit();           // checks, tau_ten, vcol_q (first TauClosureInit)
-  int vcol_spread = 0;
   void VetColReport();
 
   // ---- <rad_m1>/vet_col_lat (m1-vetcol-lat, rad_m1_vetlat.cpp; design
@@ -3280,7 +3258,6 @@ class RadiationM1 {
   bool vlat_posfix_lag = false;
   bool vlat_lagfb = false;     // this step: the lateral terms lagged after a trigger
   Real vlat_nlag = 0.0;        // triggers that moved the terms to the lagged form
-  int vlat_pf_force = -1;      // DEBUG vet_col_lat_posfix_force: one forced trigger
   // meshfb-1106 (rad_m1_meshfb.cpp): implicit_fb_diag, implicit_fb_local
   bool fbl_any = false;
   DvceArray5D<Real> vlat_tt_loc;
@@ -3301,8 +3278,6 @@ class RadiationM1 {
   bool vlat_ready = false;     // VetLatInit done
   int vlat_nbuild = 0;         // builds done (the first one iterates vlat_iinit times)
   Real vlat_time = 0.0, vlat_ncall = 0.0, vlat_nclamp = 0.0;
-  std::string vlat_dump;       // vet_col_lat_dump: per-rank dump prefix (gate c)
-  int vlat_dump_every = 0;     // vet_col_lat_dump_every (0: the first build only)
   DvceArray5D<Real> vlat_i;    // (m, 2 nmu npsi, k, j, i): 3-D intensities
   DvceArray5D<Real> vlat_t;    // (m, 2 nmu npsi, k, j, i): twin intensities
   DvceArray5D<Real> vlat_t_c;

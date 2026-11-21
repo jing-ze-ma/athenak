@@ -425,7 +425,18 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/vet_gd_beam2_*", "x"}, {"rad_m1/vet_gd_mms", "!"},
     {"rad_m1/vet_gd_hr_split", "=none"}, {"rad_m1/vet_gd_hr_split_*", ""},
     {"rad_m1/vet_gd_hr_latfit", "=-1"}, {"rad_m1/vet_gd_hr_latfit_*", ""},
-    {"rad_m1/sp_face_sync", "!"}, {"rad_m1/sp_face_sync_relax", ""}};
+    {"rad_m1/sp_face_sync", "!"}, {"rad_m1/sp_face_sync_relax", ""},
+    // (keys of the removed old solver's diagnostics and of the vet_col build: debug ones
+    // stop the run unless off, the rest have no effect)
+    {"rad_m1/report_newton_fb", "!"}, {"rad_m1/dbg_t2_admiss", "!"},
+    {"rad_m1/dbg_opac_part", "!"}, {"rad_m1/doppler_vel_dbg", "!"},
+    {"rad_m1/dbg_trans_memory", "=1"}, {"rad_m1/dbg_cell_lo", "x"},
+    {"rad_m1/dbg_cell_hi", "x"}, {"rad_m1/vet_col_lat_posfix_force", "x"},
+    {"rad_m1/vet_col_lat_dump", "=none"}, {"rad_m1/vet_col_lat_dump_every", ""},
+    {"rad_m1/polar_ring_avg_lump", "!"}, {"rad_m1/polar_ring_avg_gz", "!"},
+    {"rad_m1/time2_vstage", ""}, {"rad_m1/vet_col_order2", ""},
+    {"rad_m1/vet_col_team", ""}, {"rad_m1/vet_col_team_size", ""},
+    {"rad_m1/vet_col_chunk", ""}, {"rad_m1/vet_col_spread", ""}};
   const bool say = (global_variable::my_rank == 0);
   std::string none;
   std::vector<std::string> drop;

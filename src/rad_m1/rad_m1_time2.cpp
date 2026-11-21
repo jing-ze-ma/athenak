@@ -272,8 +272,6 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   // unify-1012: default true on every mesh (was the wedge only): the Cartesian vet_sc
   // ladders need it as much (torder-1010 cenPvs: rw_t10a F1 1.58 2.32 1.97 vs 1.07 1.04
   // 1.02 without); a restart whose file lacks the key keeps false (echoed)
-  t2_fvnew = pin->GetOrAddBoolean("rad_m1", "time2_vstage",
-                                  !global_variable::restart_run);
   t2_vcmode = 0;
   if (vet_col) {
     // defaults-1025 (USER 10-25): the sph fresh-start default is extrap2 (was predict;
@@ -359,16 +357,6 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   // sph_wedge, MI300A).  Opt-in by name.  A restart whose file records the key keeps its
   // value; one that does not gets 1 (as before).
   const bool rs = global_variable::restart_run;
-  t2_lin_tol = -1.0;
-  if (pin->DoesParameterExist("rad_m1", "time2_lin_tol")) {
-    t2_lin_tol = pin->GetReal("rad_m1", "time2_lin_tol");
-  }
-  t2_lin_fac = pin->GetOrAddReal("rad_m1", "time2_lin_tol_fac", 1.0);
-  if (!(t2_lin_fac > 0.0)) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "<rad_m1>/time2_lin_tol_fac must be > 0" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
   // time2_one_pass_safety (tests_m1/runs_5f_h2fast): the implicit_one_pass safety factor
   // of the stage solves.  One-pass acceptance leaves a Picard error ~ tol/safety where
   // the two-pass test leaves ~ q tol; the radwave G1 order at implicit_tol = 1e-11 needs
@@ -419,11 +407,6 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   // and every result stay bitwise): for the first N non-admissible hesdirk2 stages print
   // which quantity went <= 0 (solved E, solved T, written-back gas eint) and, for each,
   // the cell of its minimum with the stage OLD vector (E, eint) and the stage start E
-  t2_dbg_adm = 0;
-  t2_dbg_adm_n = 0;
-  if (pin->DoesParameterExist("rad_m1", "dbg_t2_admiss")) {
-    t2_dbg_adm = pin->GetInteger("rad_m1", "dbg_t2_admiss");
-  }
   // rsglock-1112 time2_inc_energy = gas | rad (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1", "time2_inc_energy")) {
     const std::string ie = pin->GetString("rad_m1", "time2_inc_energy");

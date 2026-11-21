@@ -80,10 +80,6 @@ void RadiationM1::MRInit(ParameterInput *pin) {
     }
   }
   mr_every = 1;
-  if (pin->DoesParameterExist("rad_m1", "dbg_cell_lo")) {
-    dbg_cell_lo = pin->GetInteger("rad_m1", "dbg_cell_lo");
-    dbg_cell_hi = pin->GetInteger("rad_m1", "dbg_cell_hi");
-  }
   if (pin->DoesParameterExist("rad_m1", "dbg_hydro_skip_t2")) {   // raycheap2-1109
     dbg_hydro_skip_t2 = pin->GetBoolean("rad_m1", "dbg_hydro_skip_t2");
   }
