@@ -1,0 +1,427 @@
+gpuhealth 2026-11-20 19:55:13; bin /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v203_e688cb7bc md5 7df2b648; bsg_wngl_smoke, mesh/nx2=32 mesh/nx3=32 meshblock/nx2=32 meshblock/nx3=32, NR=1, nlim 1
+
+=== hpc-sm-02-03 smoke (GPU 0 = rank 0 default)
+a rc=0 wall=8
+<rad_m1> clean_init steady pass 0: max(|dE|, |dF|/c)/max E = 9.534e-02
+<rad_m1> clean_init steady pass 1: max(|dE|, |dF|/c)/max E = 3.499e-08
+<rad_m1> clean_init steady pass 2: max(|dE|, |dF|/c)/max E = 7.111e-11
+<rad_m1> clean_init steady pass 3: max(|dE|, |dF|/c)/max E = 2.280e-13
+<rad_m1> clean_init steady: converged after 4 passes, residual 2.280e-13 (tol 1.0e-08; 0 formal solutions); radiation E 4.1527620104e+45 -> 4.1609123298e+45, F/c 3.5094e+39 0.0000e+00 0.0000e+00 -> 1.5036e+41 1.4139e+34 -2.0679e+33 (volume sums)
+--- hpc-sm-02-03 nvidia-smi
+
+=== hpc-sm-02-16 smoke (GPU 0 = rank 0 default)
+a rc=0 wall=13
+<rad_m1> clean_init steady pass 0: max(|dE|, |dF|/c)/max E = 9.534e-02
+<rad_m1> clean_init steady pass 1: max(|dE|, |dF|/c)/max E = 3.499e-08
+<rad_m1> clean_init steady pass 2: max(|dE|, |dF|/c)/max E = 7.111e-11
+<rad_m1> clean_init steady pass 3: max(|dE|, |dF|/c)/max E = 2.280e-13
+<rad_m1> clean_init steady: converged after 4 passes, residual 2.280e-13 (tol 1.0e-08; 0 formal solutions); radiation E 4.1527620104e+45 -> 4.1609123298e+45, F/c 3.5094e+39 0.0000e+00 0.0000e+00 -> 1.5036e+41 1.4139e+34 -2.0679e+33 (volume sums)
+--- hpc-sm-02-16 nvidia-smi
+index, name, driver_version, vbios_version, pci.bus_id, serial
+0, NVIDIA H200, 580.126.16, 96.00.D0.00.0D, 00000000:06:00.0, 1654924066731
+1, NVIDIA H200, 580.126.16, 96.00.D0.00.0D, 00000000:26:00.0, 1655024009011
+2, NVIDIA H200, 580.126.16, 96.00.D0.00.0D, 00000000:A6:00.0, 1654924061947
+3, NVIDIA H200, 580.126.16, 96.00.D0.00.0D, 00000000:C6:00.0, 1655024004464
+[GPU 0]
+        Pending                                        : Disabled
+        Pending                                        : N/A
+        ECC Object                                     : 7.16
+        Pending                                        : N/A
+        Pending                                        : N/A
+    ECC Mode
+        Pending                                        : Enabled
+    ECC Errors
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+        Aggregate Uncorrectable SRAM Sources
+        Channel Repair Pending                         : No
+        TPC Repair Pending                             : No
+    Retired Pages
+        Single Bit ECC                                 : N/A
+        Double Bit ECC                                 : N/A
+        Pending Page Blacklist                         : N/A
+    Remapped Rows
+        Correctable Error                              : 0
+        Uncorrectable Error                            : 0
+        Pending                                        : No
+        Remapping Failure Occurred                     : No
+            Incorrect Configuration                    : N/A
+[GPU 1]
+index, name, driver_version, vbios_version, pci.bus_id, serial
+0, NVIDIA H200, 580.126.16, 96.00.D0.00.0D, 00000000:06:00.0, 1654324149471
+1, NVIDIA H200, 580.126.16, 96.00.D0.00.0D, 00000000:26:00.0, 1654524155510
+2, NVIDIA H200, 580.126.16, 96.00.D0.00.0D, 00000000:A6:00.0, 1654524014575
+3, NVIDIA H200, 580.126.16, 96.00.D0.00.0D, 00000000:C6:00.0, 1654324146008
+[GPU 0]
+        Pending                                        : Disabled
+        Pending                                        : N/A
+        ECC Object                                     : 7.16
+        Pending                                        : N/A
+        Pending                                        : N/A
+    ECC Mode
+        Pending                                        : Enabled
+    ECC Errors
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+        Aggregate Uncorrectable SRAM Sources
+        Channel Repair Pending                         : No
+        TPC Repair Pending                             : No
+    Retired Pages
+        Single Bit ECC                                 : N/A
+        Double Bit ECC                                 : N/A
+        Pending Page Blacklist                         : N/A
+    Remapped Rows
+        Correctable Error                              : 0
+        Uncorrectable Error                            : 0
+        Pending                                        : No
+        Remapping Failure Occurred                     : No
+            Incorrect Configuration                    : N/A
+[GPU 2]
+        Pending                                        : Disabled
+        Pending                                        : N/A
+        ECC Object                                     : 7.16
+        Pending                                        : N/A
+        Pending                                        : N/A
+    ECC Mode
+        Pending                                        : Enabled
+    ECC Errors
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+        Aggregate Uncorrectable SRAM Sources
+        Channel Repair Pending                         : No
+        TPC Repair Pending                             : No
+    Retired Pages
+        Single Bit ECC                                 : N/A
+        Double Bit ECC                                 : N/A
+        Pending Page Blacklist                         : N/A
+    Remapped Rows
+        Correctable Error                              : 0
+        Uncorrectable Error                            : 0
+        Pending                                        : No
+        Remapping Failure Occurred                     : No
+            Incorrect Configuration                    : N/A
+[GPU 1]
+        Pending                                        : Disabled
+        Pending                                        : N/A
+        ECC Object                                     : 7.16
+        Pending                                        : N/A
+        Pending                                        : N/A
+    ECC Mode
+        Pending                                        : Enabled
+    ECC Errors
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+        Aggregate Uncorrectable SRAM Sources
+        Channel Repair Pending                         : No
+        TPC Repair Pending                             : No
+    Retired Pages
+        Single Bit ECC                                 : N/A
+        Double Bit ECC                                 : N/A
+        Pending Page Blacklist                         : N/A
+    Remapped Rows
+        Correctable Error                              : 0
+        Uncorrectable Error                            : 0
+        Pending                                        : No
+        Remapping Failure Occurred                     : No
+            Incorrect Configuration                    : N/A
+[GPU 3]
+        Pending                                        : Disabled
+        Pending                                        : N/A
+        ECC Object                                     : 7.16
+        Pending                                        : N/A
+        Pending                                        : N/A
+    ECC Mode
+        Pending                                        : Enabled
+    ECC Errors
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+        Aggregate Uncorrectable SRAM Sources
+        Channel Repair Pending                         : No
+        TPC Repair Pending                             : No
+    Retired Pages
+        Single Bit ECC                                 : N/A
+        Double Bit ECC                                 : N/A
+        Pending Page Blacklist                         : N/A
+    Remapped Rows
+        Correctable Error                              : 0
+        Uncorrectable Error                            : 0
+        Pending                                        : No
+        Remapping Failure Occurred                     : No
+            Incorrect Configuration                    : N/A
+[GPU 2]
+        Pending                                        : Disabled
+        Pending                                        : N/A
+        ECC Object                                     : 7.16
+        Pending                                        : N/A
+        Pending                                        : N/A
+    ECC Mode
+        Pending                                        : Enabled
+    ECC Errors
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+        Aggregate Uncorrectable SRAM Sources
+        Channel Repair Pending                         : No
+        TPC Repair Pending                             : No
+    Retired Pages
+        Single Bit ECC                                 : N/A
+        Double Bit ECC                                 : N/A
+        Pending Page Blacklist                         : N/A
+    Remapped Rows
+        Correctable Error                              : 0
+        Uncorrectable Error                            : 0
+        Pending                                        : No
+        Remapping Failure Occurred                     : No
+            Incorrect Configuration                    : N/A
+        Pending                                        : Disabled
+        Pending                                        : N/A
+        ECC Object                                     : 7.16
+        Pending                                        : N/A
+        Pending                                        : N/A
+    ECC Mode
+        Pending                                        : Enabled
+    ECC Errors
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+        Aggregate Uncorrectable SRAM Sources
+        Channel Repair Pending                         : No
+        TPC Repair Pending                             : No
+    Retired Pages
+        Single Bit ECC                                 : N/A
+        Double Bit ECC                                 : N/A
+        Pending Page Blacklist                         : N/A
+    Remapped Rows
+        Correctable Error                              : 0
+        Uncorrectable Error                            : 0
+        Pending                                        : No
+        Remapping Failure Occurred                     : No
+            Incorrect Configuration                    : N/A
+[GPU 3]
+        Pending                                        : Disabled
+        Pending                                        : N/A
+        ECC Object                                     : 7.16
+        Pending                                        : N/A
+        Pending                                        : N/A
+    ECC Mode
+        Pending                                        : Enabled
+    ECC Errors
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+        Aggregate Uncorrectable SRAM Sources
+        Channel Repair Pending                         : No
+        TPC Repair Pending                             : No
+    Retired Pages
+        Single Bit ECC                                 : N/A
+        Double Bit ECC                                 : N/A
+        Pending Page Blacklist                         : N/A
+    Remapped Rows
+        Correctable Error                              : 0
+        Uncorrectable Error                            : 0
+        Pending                                        : No
+        Remapping Failure Occurred                     : No
+            Incorrect Configuration                    : N/A
+
+=== hpc-sm-02-09 smoke (CUDA_VISIBLE_DEVICES=3)
+a rc=0 wall=8
+<rad_m1> clean_init steady pass 0: max(|dE|, |dF|/c)/max E = 9.534e-02
+<rad_m1> clean_init steady pass 1: max(|dE|, |dF|/c)/max E = 3.499e-08
+<rad_m1> clean_init steady pass 2: max(|dE|, |dF|/c)/max E = 7.111e-11
+<rad_m1> clean_init steady pass 3: max(|dE|, |dF|/c)/max E = 2.280e-13
+<rad_m1> clean_init steady: converged after 4 passes, residual 2.280e-13 (tol 1.0e-08; 0 formal solutions); radiation E 4.1527620104e+45 -> 4.1609123298e+45, F/c 3.5094e+39 0.0000e+00 0.0000e+00 -> 1.5036e+41 1.4139e+34 -2.0679e+33 (volume sums)
+--- hpc-sm-02-09 nvidia-smi
+index, name, driver_version, vbios_version, pci.bus_id, serial
+0, NVIDIA H200, 580.126.16, 96.00.D0.00.0D, 00000000:06:00.0, 1655224052240
+1, NVIDIA H200, 580.126.16, 96.00.D0.00.0D, 00000000:26:00.0, 1654924032836
+2, NVIDIA H200, 580.126.16, 96.00.D0.00.0D, 00000000:A6:00.0, 1654924157354
+3, NVIDIA H200, 580.126.16, 96.00.D0.00.0D, 00000000:C6:00.0, 1654924122122
+[GPU 0]
+        Pending                                        : Disabled
+        Pending                                        : N/A
+        ECC Object                                     : 7.16
+        Pending                                        : N/A
+        Pending                                        : N/A
+    ECC Mode
+        Pending                                        : Enabled
+    ECC Errors
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+        Aggregate Uncorrectable SRAM Sources
+        Channel Repair Pending                         : No
+        TPC Repair Pending                             : No
+    Retired Pages
+        Single Bit ECC                                 : N/A
+        Double Bit ECC                                 : N/A
+        Pending Page Blacklist                         : N/A
+    Remapped Rows
+        Correctable Error                              : 0
+        Uncorrectable Error                            : 0
+        Pending                                        : No
+        Remapping Failure Occurred                     : No
+            Incorrect Configuration                    : N/A
+[GPU 1]
+        Pending                                        : Disabled
+        Pending                                        : N/A
+        ECC Object                                     : 7.16
+        Pending                                        : N/A
+        Pending                                        : N/A
+    ECC Mode
+        Pending                                        : Enabled
+    ECC Errors
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+        Aggregate Uncorrectable SRAM Sources
+        Channel Repair Pending                         : No
+        TPC Repair Pending                             : No
+    Retired Pages
+        Single Bit ECC                                 : N/A
+        Double Bit ECC                                 : N/A
+        Pending Page Blacklist                         : N/A
+    Remapped Rows
+        Correctable Error                              : 0
+        Uncorrectable Error                            : 0
+        Pending                                        : No
+        Remapping Failure Occurred                     : No
+            Incorrect Configuration                    : N/A
+[GPU 2]
+        Pending                                        : Disabled
+        Pending                                        : N/A
+        ECC Object                                     : 7.16
+        Pending                                        : N/A
+        Pending                                        : N/A
+    ECC Mode
+        Pending                                        : Enabled
+    ECC Errors
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+        Aggregate Uncorrectable SRAM Sources
+        Channel Repair Pending                         : No
+        TPC Repair Pending                             : No
+    Retired Pages
+        Single Bit ECC                                 : N/A
+        Double Bit ECC                                 : N/A
+        Pending Page Blacklist                         : N/A
+    Remapped Rows
+        Correctable Error                              : 0
+        Uncorrectable Error                            : 0
+        Pending                                        : No
+        Remapping Failure Occurred                     : No
+            Incorrect Configuration                    : N/A
+[GPU 3]
+        Pending                                        : Disabled
+        Pending                                        : N/A
+        ECC Object                                     : 7.16
+        Pending                                        : N/A
+        Pending                                        : N/A
+    ECC Mode
+        Pending                                        : Enabled
+    ECC Errors
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+            SRAM Correctable                           : 0
+            SRAM Uncorrectable Parity                  : 0
+            SRAM Uncorrectable SEC-DED                 : 0
+            DRAM Correctable                           : 0
+            DRAM Uncorrectable                         : 0
+        Aggregate Uncorrectable SRAM Sources
+        Channel Repair Pending                         : No
+        TPC Repair Pending                             : No
+    Retired Pages
+        Single Bit ECC                                 : N/A
+        Double Bit ECC                                 : N/A
+        Pending Page Blacklist                         : N/A
+    Remapped Rows
+        Correctable Error                              : 0
+        Uncorrectable Error                            : 0
+        Pending                                        : No
+        Remapping Failure Occurred                     : No
+            Incorrect Configuration                    : N/A
