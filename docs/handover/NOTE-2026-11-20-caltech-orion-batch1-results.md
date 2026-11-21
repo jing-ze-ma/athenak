@@ -697,3 +697,14 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   FAILED: last 100 lines in caltech_results/H2A_rsg/FAIL_tail100.txt
 - V204O_rsg (hpc-sm-02-03): rc=0 wall=127 rc=0 wall=117 rc=0 wall=121 | cycles 589788 - 589792 | steady 2.655 s/cycle | GPU MiB max 106551 min 105459 | CW a 0 FATAL 0 | rt: 5 same, 0 DIFF hst vs V203L_rsg/a:  rsg.hydro.hst==V203L_rsg/a rsg.user.hst==V203L_rsg/a | CW 0
 - H2S_hg_a (hpc-sm-02-10): rc=0 wall=160 | cycles 624961 - 624981 | steady 4.653 s/cycle | GPU MiB max 142911 min 142463 | CW a 0 FATAL 0 |  steady s/cycle 4.653
+- (18:17) Got fp / fq / fr. **No production rst was deleted by us and no deletion loop was started** (fp item 1 was never acted on). prodg.sh prunes itself: KEEPRST default 3 (no override in our launch), a sleep-600 loop keeps the newest 3. Read-only listing now:
+  bsg rst/: bsg3d.00005.rst 7078414910 17:59; bsg3d.00006.rst 7078414910 18:03; bsg3d.00007.rst 7078414910 18:06; bsg3d.00008.rst 7078414910 18:10; bsg3d.00009.rst 7078414910 18:14; 
+    cadence:  | rst file times above give the wall cadence
+  t9l62 rst/: t9l62.00001.rst 27988113439 17:50; t9l62.00002.rst 27988113439 17:59; t9l62.00003.rst 27988113439 18:09; 
+    cadence: dt = 43200.0 # rst every 12 h | rst file times above give the wall cadence
+  m35mms rst/: m35mms.00000.rst 8650011254 17:40; m35mms.00001.rst 9239544529 17:59; 
+    cadence: dt = 21600.0 # rst every 6 h | rst file times above give the wall cadence
+  df -h /resnick/groups (now): size 6.1P, used 4.1P, avail 2.0P, 68% (the mount reports 6.1P/2.0P free from here; your 594T/54T figure may be a quota or another mount view).
+- V204_hg (15.5 s/cycle vs ~3.9): **no other job was on 02-03** while it ran (17:57:58-18:06:51; it followed V204_rsg and was followed by V204P_rsg on the same node, one arm at a time). Its CW lines in full: `CLEAN WARNING cycle 624962 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)` and `CLEAN WARNING cycle 624964 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)` (leg a; the b legs show the same two). The backward-Euler redos explain the slower cycles. HG same-node recheck V204S/V203S/V204T/V204U_hg queued on one free node after the remaining v204c arms.
+- CONVERR: CET3c_hg had already run (18:08-18:10, bins kept); the final converr.sh + converr.py CET3c_hg vs CEPc_hg is running now (holder step on 02-03); the 4 converr_*.txt follow, then all CE*/a/bin are deleted.
+- fr: diagnosis reordered: DF_t19nocut started 18:15:26 on 02-16 (first free non-production node); DB_t19nowb takes the first of 02-09/02-04 when ST/STD_t19l64 finish, then DA+DC, then DD+DE.
