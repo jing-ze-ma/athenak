@@ -1348,8 +1348,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("vlat_cnt", vlat_cnt);
   v.value("vlat_nodes", vlat_nodes);
   v.value("vlat_geo_icut", vlat_geo_icut);
-  v.value("sp_face_sync", sp_face_sync);
-  v.value("fsync_w", fsync_w);
   v.value("vgd_on", vgd_on);
   v.value("vgd_nside", vgd_nside);
   v.value("vgd_tan", vgd_tan);
@@ -1659,17 +1657,8 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("vgd_up_gall", vgd_up_gall);
   v.view("vgd_up_galh", vgd_up_galh);
   v.value("vgd_up_time", vgd_up_time);
-  v.value("vgd_hrs", vgd_hrs);
   v.value("vgd_izf", vgd_izf);
-  v.value("vgd_hrs_d", vgd_hrs_d);
-  v.value("vgd_hrs_sig", vgd_hrs_sig);
-  v.value("vgd_hrs_res", vgd_hrs_res);
   v.view("vcol_hr", vcol_hr);
-  v.view("vgd_hrs_m", vgd_hrs_m);
-  v.value("vgd_hlf", vgd_hlf);
-  v.value("vgd_hlf_d", vgd_hlf_d);
-  v.value("vgd_hlf_g", vgd_hlf_g);
-  v.view("vgd_hlf_y", vgd_hlf_y);
   v.view("vgd_up_prof2", vgd_up_prof2);
   v.value("vgd_hle", vgd_hle);
   v.value("vgd_hl_bytes", vgd_hl_bytes);
@@ -1877,7 +1866,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
 //   vtan_x2t_src : const Real *
 //   pbval_vl : MeshBoundaryValuesCC *
 //   pbval_ea : MeshBoundaryValuesCC *
-//   pbval_fs : MeshBoundaryValuesCC *
 //   pbval_vs : MeshBoundaryValuesCC *
 //   pin_rot_ : ParameterInput *
 //   vgd_es2 : DevExeSpace
