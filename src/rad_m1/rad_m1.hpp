@@ -1739,6 +1739,7 @@ class RadiationM1 {
   // time2_k1_xlim = th (read only when named; 0 = off): the stage increment's
   // exchange pair limited so the old vector's E and gas eint keep >= th (Time2K1XLim)
   Real t2_k1xlim = 0.0;
+  bool t2_k1xpat = false;       // time2_k1_xpat (Time2K1XLim)
   Real t2_k1xlim_n = 0.0;       // cell-stages changed (this rank, whole run)
   DvceArray4D<Real> t2ys;       // (m,k,j,i) radiation E at the stage-loop start
   void Time2Stash();
