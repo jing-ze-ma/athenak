@@ -1,7 +1,0 @@
-C3h_t19 vs stopped production t19l64 over cycles - (t -)
-CW: C3h 0 | prod 0
-solves: C3h  | prod 
-dt (every 50 cycles) C3h: 
-dt prod: 
-user.hst C3h: 
-user.hst prod: 
