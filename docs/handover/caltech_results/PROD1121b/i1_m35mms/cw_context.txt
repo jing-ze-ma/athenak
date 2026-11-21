@@ -26,3 +26,17 @@ CLEAN FLIM cycle 7867 t2s 3 faces 2130897 momentum cut sum |dF| V/c^2 1.057228e+
 CLEAN LZB cycle 7867 t2s 3 ledger 3.4036494216800673e+39
 CLEAN XT cycle 7867 t2s 3 write-back closure 3.759e-01
 CLEAN WARNING cycle 7867 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 4)
+== 2026-11-21 00:41:15 log.0: CW 5-6 (grep -B5)
+CLEAN FLIM cycle 7924 t2s 2 faces 4248378 momentum cut sum |dF| V/c^2 1.460711e+27
+CLEAN FLIM cycle 7924 t2s 2 faces 4248379 momentum cut sum |dF| V/c^2 1.460711e+27
+CLEAN cycle 7924 t2s 2 it -4 (sum 515) pos 0 mark 0 all 0 neg 0 r1 0 r2 19 first 0 19 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 7924 t2s 2 faces 4248379 momentum cut sum |dF| V/c^2 1.460711e+27
+CLEAN XT cycle 7924 t2s 2 write-back closure 5.885e-01
+CLEAN WARNING cycle 7924 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
+
+CLEAN FLIM cycle 7968 t2s 2 faces 4341731 momentum cut sum |dF| V/c^2 1.519959e+27
+CLEAN FLIM cycle 7968 t2s 2 faces 4341752 momentum cut sum |dF| V/c^2 1.519971e+27
+CLEAN cycle 7968 t2s 2 it -4 (sum 588) pos 0 mark 0 all 0 neg 0 r1 0 r2 17 first 0 17 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 7968 t2s 2 faces 4341752 momentum cut sum |dF| V/c^2 1.519971e+27
+CLEAN XT cycle 7968 t2s 2 write-back closure 4.005e-01
+CLEAN WARNING cycle 7968 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 6)
