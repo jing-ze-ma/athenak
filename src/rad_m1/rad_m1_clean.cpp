@@ -3955,24 +3955,17 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
         fc(m,CLF_N,k,j,i) = CleanFaceFlux(xh, e, dir, m, k, j, i, true);
+        fc(m,CLF_PT,k,j,i) = fc(m,CLF_N,k,j,i);   // (F^H for CleanStagDrag; QL is free)
         // (clean_stag_flim: F^H within [-c E_R, c E_L], the transport's thin limit: the
         // stress drive h c^2 [P_R - P_L]/dx_f only up to c E_donor.  A ray D at odds with
         // the moment F (its lateral curl) drove a floor-gas face, chi ~ 1e-19, to
-        // -(c/chi) [P], |F| ~ 2e4 c E, T19HOT.  E and the gas energy stay exact (F enters
-        // as face fluxes); the gas takes chi (F - A) of the limited F; the radiation
-        // momentum cut, |dF| V_f/c^2, is counted and printed, not given to the gas)
+        // -(c/chi) [P], |F| ~ 2e4 c E, T19HOT.  CLF_PT keeps the unlimited F^H until fs3,
+        // which books the cut so that the gas takes only the absorption of the limited F)
         if (flm && !CleanBoundaryFace(x, dir, m, k, j, i)) {
           const Real f = fc(m,CLF_N,k,j,i);
-          const Real fl = fmin(fmax(f, -x.c*fmax(x.w(m,e,k,j,i), 0.0)),
-                               x.c*fmax(x.w(m,e,k-dk,j-dj,i-di), 0.0));
-          if (fl != f) {
-            fc(m,CLF_N,k,j,i) = fl;
-            Kokkos::atomic_add(&flc(0), 1.0);
-            Kokkos::atomic_add(&flc(1), fabs(f - fl)*0.5*(CleanVol(x, m, k, j, i) +
-                               CleanVol(x, m, k-dk, j-dj, i-di))/(x.c*x.c));
-          }
+          fc(m,CLF_N,k,j,i) = fmin(fmax(f, -x.c*fmax(x.w(m,e,k,j,i), 0.0)),
+                                   x.c*fmax(x.w(m,e,k-dk,j-dj,i-di), 0.0));
         }
-        fc(m,CLF_PT,k,j,i) = fc(m,CLF_N,k,j,i);   // (F^H for CleanStagDrag; QL is free)
         fc(m,CLF_N+1,k,j,i) = 0.0;
         if (!fk || !x.sph || dir == 2 || CleanBoundaryFace(x, dir, m, k, j, i)) return;
         // (spherical polar: the w share's transverse pressures, the curvature of D E but
@@ -4241,6 +4234,22 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
         const Real f = cub ? fc(m,CLF_N+2,k,j,i) : x.w(m,CleanFLine::Cy(dir),k,j,i);
         fc(m,CLF_N+2,k,j,i) = fc(m,CLF_N,k,j,i);   // (F^H: the boundary's, kept)
         if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
+        // (clean_stag_flim: the cut dF = F^H - F^H_lim moved F's equation by -dF/theta;
+        // the gas term (F - G)/c^2 + h div P - h CLF_N+1 then takes h chi (F - A)/c of the
+        // limited F, the absorption, and not the cut: CLF_N+1 -= dF/(theta h c^2).  The
+        // radiation momentum V_f dF/(theta c^2) leaves the total: counted and printed.
+        // E and the gas energy stay exact (flux form; the work is that of the gas term))
+        if (flm) {
+          const Real df = fc(m,CLF_PT,k,j,i) - fc(m,CLF_N,k,j,i);
+          if (df != 0.0) {
+            const Real it = 1.0/fc(m,CLF_TH,k,j,i);
+            fc(m,CLF_N+1,k,j,i) -= df*it/(x.h*x.c*x.c);
+            fc(m,CLF_PT,k,j,i) = fc(m,CLF_N,k,j,i);
+            Kokkos::atomic_add(&flc(0), 1.0);
+            Kokkos::atomic_add(&flc(1), fabs(df)*it*0.5*(CleanVol(x, m, k, j, i) +
+                               CleanVol(x, m, k-dk, j-dj, i-di))/(x.c*x.c));
+          }
+        }
         // (fkin, the solution's F solve: d = Phi^H - F, Phi^H = F^H + theta d the energy
         // flux's high-order part, whose memory is G + d (CleanFaceSource): its own
         // history, so that its steady state, F^H of G = F^H, does not depend on h)
