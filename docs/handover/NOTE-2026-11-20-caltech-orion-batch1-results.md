@@ -2384,3 +2384,8 @@ B_br gate not passed; arms not started
   | t19r_damp3_test (chunk ended) | cyc 1500 | t 4.999050e+04 | 49.99% of 1.0e5 | dt 1.317235e+01 | KE 1.15e+41 | Ltop/Lin 1.046 | Lbot/Lin 0.992 | solves/stage-pass (last 200 lines) 9.6 mean / 200 max | CW 11 FATAL 0 | last hst: [t 4.681e+04 KE 1.15e+41 Lt 1.046 Lb 0.992] 
 - (15:37) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
   CW t9l62 (log.3) cycle 29001 []: CLEAN WARNING cycle 29001 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 4)
+- (15:41) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t9l62 (log.3) cycle 29057 []: CLEAN WARNING cycle 29057 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
+  CW t9l62 (log.3) cycle 29059 []: CLEAN WARNING cycle 29059 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 6)
+  CW i1_m35mms_f1k (log.2) cycle 40576 [cycle=40600 time=3.385812e+05 dt=2.063288e+01]: CLEAN WARNING cycle 40576 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+  CW i1_m35mms_f1k (log.2) cycle 40612 [cycle=40650 time=3.395357e+05 dt=2.204850e+01]: CLEAN WARNING cycle 40612 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 2)
