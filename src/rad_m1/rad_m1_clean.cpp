@@ -1272,6 +1272,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   Real dnl = 0.0, dnl0 = -1.0;   // (the last pass's change and the one before)
   for (int ipos = 0; ; ++ipos) {
     cln_pdfst = true;   // (clean_pass_damp: no history before a solve's first pass)
+    cln_pdn = 0;
     CleanFirstIterate();
     cln_fsk = false;
     cln_csyok = false;   // (spdb-1119: the lateral sums' coefficients once per closure)
@@ -1329,6 +1330,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         if (inl == 0 && (cln_sbimp || cln_xtcons) && cln_feedback) {
           CleanNewtonUpdate();
           cln_pdfst = true;   // (clean_pass_damp: that update's X is the last solve's)
+          cln_pdn = 0;
           CleanRightHandSide();
         }
         CleanPreconditionerSetup();
@@ -3112,7 +3114,9 @@ Real RadiationM1::CleanNewtonUpdate() {
   const bool xte = (cln_xte > 0) && !cell && cln_feedback, x2 = xte && cln_xte == 2;
   const bool pdx = x2 && cln_xpat, pxe = xte && cln_xpat;
   const bool kpg = cln_kq_on;   // (clean_stag_kpos: the gas row's pd_g X)
-  const bool dmp = cln_pdmp && !cell, dfst = cln_pdfst;
+  const bool dmp = (cln_pdmp > 0) && !cell, dfst = cln_pdfst;
+  const bool dact = dmp && cln_pdn >= cln_pdmp;   // (from pass clean_pass_damp on)
+  ++cln_pdn;
   if (dmp && cln_pdh.extent_int(0) < nmb) {
     Kokkos::realloc(cln_pdh, nmb, cln_w.s.extent_int(2), cln_w.s.extent_int(3),
                     cln_w.s.extent_int(4));
@@ -3142,7 +3146,7 @@ Real RadiationM1::CleanNewtonUpdate() {
     // an iterate E <= 0 takes the solution whole, so that it leaves E < 0 at once)
     if (dmp) {
       const Real d = x - e_old, dp = dfst ? 0.0 : hd(m,k,j,i);
-      const Real l = (d*dp < 0.0 && e_old > 0.0) ? d/dp : 0.0;
+      const Real l = (dact && d*dp < 0.0 && e_old > 0.0) ? d/dp : 0.0;
       x = e_old + d/(1.0 - l);
       hd(m,k,j,i) = x - e_old;
     }
