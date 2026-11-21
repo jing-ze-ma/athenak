@@ -1271,6 +1271,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
                                               Kokkos::ALL, Kokkos::ALL), 0.0);
   Real dnl = 0.0, dnl0 = -1.0;   // (the last pass's change and the one before)
   for (int ipos = 0; ; ++ipos) {
+    cln_pdfst = true;   // (clean_pass_damp: no history before a solve's first pass)
     CleanFirstIterate();
     cln_fsk = false;
     cln_csyok = false;   // (spdb-1119: the lateral sums' coefficients once per closure)
@@ -3110,6 +3111,13 @@ Real RadiationM1::CleanNewtonUpdate() {
   const bool xte = (cln_xte > 0) && !cell && cln_feedback, x2 = xte && cln_xte == 2;
   const bool pdx = x2 && cln_xpat, pxe = xte && cln_xpat;
   const bool kpg = cln_kq_on;   // (clean_stag_kpos: the gas row's pd_g X)
+  const bool dmp = cln_pdmp && !cell, dfst = cln_pdfst;
+  if (dmp && cln_pdh.extent_int(0) < nmb) {
+    Kokkos::realloc(cln_pdh, nmb, cln_w.s.extent_int(2), cln_w.s.extent_int(3),
+                    cln_w.s.extent_int(4));
+  }
+  auto hd = cln_pdh;
+  cln_pdfst = false;
   Real change = 0.0, femax = 0.0, ermax = 0.0, xcl = 0.0;
   // (CUDA: 4 blocks of 256 per SM, A100 R136 -1.5 ms/cycle; the reduction keeps its
   // blocks and grid: bitwise)
@@ -3126,7 +3134,15 @@ Real RadiationM1::CleanNewtonUpdate() {
     i += is;
     const Real e_old = w(m,CLW_EK,k,j,i);
     const Real t_old = w(m,CLW_T,k,j,i);
-    const Real x = w(m,CLW_X,k,j,i);
+    Real x = w(m,CLW_X,k,j,i);
+    // (clean_pass_damp: a change that turns back, l = d/d_last < 0, takes d/(1 - l), the
+    // fixed point of that mode, as CleanStagXDonor's C; the fixed point is unchanged)
+    if (dmp) {
+      const Real d = x - e_old, dp = dfst ? 0.0 : hd(m,k,j,i);
+      const Real l = (d*dp < 0.0) ? d/dp : 0.0;
+      x = e_old + d/(1.0 - l);
+      hd(m,k,j,i) = x - e_old;
+    }
     const Real ex = fmax(x, 0.0);
     const Real e = (cell || poslim) ? x : ex, g = w(m,CLW_GM,k,j,i);
     // (gflux: the gas takes the Doppler part hc kE dop E of sb at X, as the E row takes
