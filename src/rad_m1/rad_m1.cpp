@@ -382,14 +382,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_stag_thinf (default on): the staggered bracket's ray correction in the face
     // half ranges, realisable (CleanStagBracket), not as the gated lagged flux DG
     cln_thinf = !cln_cell && pin->GetOrAddBoolean("rad_m1","clean_stag_thinf",nw);
-    // clean_stag_flim (default off): the F solve's face predictor F^H within the donor's
-    // realisable range [-c E_R, c E_L] (CleanStagFSolve); spherical polar and Cartesian
+    // clean_stag_flim (default off): the F solve's face F^H and solution F within the
+    // donor's realisable range [-c E_R, c E_L] (CleanStagFSolve); every mesh: the face F is
+    // the momentum along the face's unit normal (the cubed sphere's too, CleanCsNormA)
     cln_flim = stag("clean_stag_flim", false);
-    if (cln_flim && pmy_pack->pmesh->use_cubed_sphere) {
-      std::cout << "### FATAL ERROR <rad_m1>/clean_stag_flim: not on the cubed sphere"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     // clean_stag_thinf_held (default off): the thin flux factor of a donor blended by
     // theta = min(1, max(J, P)/(clean_ray_min E_old)), P its largest ray outflow:
     // theta g(rays) + (1 - theta) h (its own half range); a ray-shadowed donor is no dam
