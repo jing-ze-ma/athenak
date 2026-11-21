@@ -56,6 +56,7 @@
 #include <limits>
 #include <map>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -975,12 +976,20 @@ void RadiationM1::VetGdCsCompact() {
 #endif
     vgd_cstb_m += tsub.seconds();
     tsub.reset();
+    // (each partner's counts and fills on its own host thread: disjoint slots and list
+    // ranges, the same lists; h200spd: the host lists were ~1.1 s of each ~2 s build)
+    auto parts = [np](const auto &f) {
+      std::vector<std::thread> th;
+      for (int p = 1; p < np; ++p) th.emplace_back(f, p);
+      if (np > 0) f(0);
+      for (auto &t : th) t.join();
+    };
     auto buildw = [&](const uint32_t *mk, const std::vector<int> &st0,
                       const std::vector<int> &cnt, std::vector<int64_t> &off,
                       std::vector<int> &lst) {
       std::vector<int64_t> nn(nsl*np, 0);
       std::vector<std::vector<size_t>> nzw(np);   // the nonzero words of each partner
-      for (int p = 0; p < np; ++p) {
+      parts([&](const int p) {
         const size_t w0 = static_cast<size_t>(st0[p])*wpe;
         const size_t w1 = w0 + static_cast<size_t>(cnt[p])*wpe;
         for (size_t w = w0; w < w1; ++w) {
@@ -997,7 +1006,7 @@ void RadiationM1::VetGdCsCompact() {
             nn[((static_cast<size_t>(v - 1)*n1 + sh)*ng + dg[d])*np + p] += 1;
           }
         }
-      }
+      });
       off.assign(nsl*(np + 1), 0);
       int64_t t = 0;
       for (size_t sl = 0; sl < nsl; ++sl) {
@@ -1012,7 +1021,7 @@ void RadiationM1::VetGdCsCompact() {
       for (size_t sl = 0; sl < nsl; ++sl) {
         for (int p = 0; p < np; ++p) {cur[sl*np + p] = off[sl*(np + 1) + p];}
       }
-      for (int p = 0; p < np; ++p) {
+      parts([&](const int p) {
         const size_t wb0 = static_cast<size_t>(st0[p])*wpe;
         for (const size_t w : nzw[p]) {
           uint32_t x = mk[w];
@@ -1029,11 +1038,13 @@ void RadiationM1::VetGdCsCompact() {
                 e*n + d;
           }
         }
-      }
+      });
       return t;
     };
+    // (the send and receive lists at once)
+    std::thread tl([&]() {tr = buildw(mp, vgd_cspr, vgd_cspm, E.ro, rl_h);});
     ts = buildw(smw, vgd_csps, vgd_cspn, E.so, sl_h);
-    tr = buildw(mp, vgd_cspr, vgd_cspm, E.ro, rl_h);
+    tl.join();
   } else {
     // the packed mask expanded on the host (1 byte per value, as before)
     std::vector<uint8_t> mh(static_cast<size_t>(std::max(vgd_csnrcv, 1))*per, 0);
