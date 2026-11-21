@@ -576,3 +576,4 @@ below as each finishes; per-arm files in `docs/handover/caltech_results/<TAG>/`.
   FRESHGO START R_t19l64 16:09:05 on hpc-sm-02-11
 - W_t9l62 (hpc-sm-02-04): a rc=0 wall=390 b rc=0 wall=249 b rc=0 wall=229 | a cycles 0 - 120 dt first 100.709 last 98.8983 s/cycle steady 2.481 first elapsed 44.7 a 'FATAL' 0  a 'CLEAN WARNING' 0   | GPU mem peak MiB 78229 | CW 0 FATAL 0
   FRESHGO START R_m35mms 16:09:09 on hpc-sm-02-04
+- W_t19l64_corona (hpc-sm-02-03): a rc=0 wall=392 b rc=0 wall=257 b rc=0 wall=226 | a cycles 0 - 120 dt first 39.0809 last 41.6424 s/cycle steady 2.499 first elapsed 45.3 a 'FATAL' 0  a 'CLEAN WARNING' 0   | GPU mem peak MiB 78381 | CW 0 FATAL 0
