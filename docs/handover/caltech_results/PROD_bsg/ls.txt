@@ -1,43 +1,43 @@
-total 2453
+total 4762
 drwxr-s---. 2 jingze hpc_carnegie_poc    4096 Nov 20 17:39 .
 drwxr-s---. 2 jingze hpc_carnegie_poc    4096 Nov 20 17:39 ..
-drwxr-s---. 2 jingze hpc_carnegie_poc    4096 Nov 20 18:08 bin
--rw-r-----. 1 jingze hpc_carnegie_poc  170836 Nov 20 18:09 bsg3d.hydro.hst
--rw-r-----. 1 jingze hpc_carnegie_poc   20581 Nov 20 18:09 bsg3d.log
--rw-r-----. 1 jingze hpc_carnegie_poc  477117 Nov 20 18:09 bsg3d.user.hst
+drwxr-s---. 2 jingze hpc_carnegie_poc    4096 Nov 20 18:37 bin
+-rw-r-----. 1 jingze hpc_carnegie_poc  288304 Nov 20 18:39 bsg3d.hydro.hst
+-rw-r-----. 1 jingze hpc_carnegie_poc   34619 Nov 20 18:39 bsg3d.log
+-rw-r-----. 1 jingze hpc_carnegie_poc  805185 Nov 20 18:39 bsg3d.user.hst
 -rw-r-----. 1 jingze hpc_carnegie_poc   19863 Nov 20 17:39 bsg3d.x1grid.txt
 -rw-r-----. 1 jingze hpc_carnegie_poc     411 Nov 20 17:39 chunks.txt
 -rw-r-----. 1 jingze hpc_carnegie_poc   20980 Nov 20 17:39 deck.athinput
--rw-r-----. 1 jingze hpc_carnegie_poc 1721828 Nov 20 18:09 log.0
--rw-r-----. 1 jingze hpc_carnegie_poc   78788 Nov 20 18:09 mem.log
-drwxr-s---. 2 jingze hpc_carnegie_poc    4096 Nov 20 18:09 rst
+-rw-r-----. 1 jingze hpc_carnegie_poc 3546384 Nov 20 18:39 log.0
+-rw-r-----. 1 jingze hpc_carnegie_poc  158868 Nov 20 18:39 mem.log
+drwxr-s---. 2 jingze hpc_carnegie_poc    4096 Nov 20 18:39 rst
 == bin/
--rw-r-----. 1 jingze hpc_carnegie_poc 939624559 Nov 20 17:47 bsg3d.m1.00004.bin
--rw-r-----. 1 jingze hpc_carnegie_poc 939624559 Nov 20 17:49 bsg3d.m1.00005.bin
--rw-r-----. 1 jingze hpc_carnegie_poc 939624559 Nov 20 17:51 bsg3d.m1.00006.bin
--rw-r-----. 1 jingze hpc_carnegie_poc 939624559 Nov 20 17:53 bsg3d.m1.00007.bin
--rw-r-----. 1 jingze hpc_carnegie_poc 939624258 Nov 20 17:55 bsg3d.m1.00008.bin
--rw-r-----. 1 jingze hpc_carnegie_poc 939624258 Nov 20 17:57 bsg3d.m1.00009.bin
--rw-r-----. 1 jingze hpc_carnegie_poc 939624559 Nov 20 17:58 bsg3d.m1.00010.bin
--rw-r-----. 1 jingze hpc_carnegie_poc 939624559 Nov 20 18:00 bsg3d.m1.00011.bin
--rw-r-----. 1 jingze hpc_carnegie_poc 939624559 Nov 20 18:02 bsg3d.m1.00012.bin
--rw-r-----. 1 jingze hpc_carnegie_poc 939624559 Nov 20 18:04 bsg3d.m1.00013.bin
--rw-r-----. 1 jingze hpc_carnegie_poc 939624559 Nov 20 18:06 bsg3d.m1.00014.bin
--rw-r-----. 1 jingze hpc_carnegie_poc 939624559 Nov 20 18:08 bsg3d.m1.00015.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 939624559 Nov 20 18:21 bsg3d.m1.00021.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 939624258 Nov 20 18:23 bsg3d.m1.00022.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 939624559 Nov 20 18:26 bsg3d.m1.00023.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 939624582 Nov 20 18:28 bsg3d.m1.00024.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 939624601 Nov 20 18:32 bsg3d.m1.00025.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 939624601 Nov 20 18:37 bsg3d.m1.00026.bin
 -rw-r-----. 1 jingze hpc_carnegie_poc 536969291 Nov 20 17:39 bsg3d.m1_face.00000.bin
 -rw-r-----. 1 jingze hpc_carnegie_poc 536971354 Nov 20 17:47 bsg3d.m1_face.00001.bin
 -rw-r-----. 1 jingze hpc_carnegie_poc 536971053 Nov 20 17:55 bsg3d.m1_face.00002.bin
 -rw-r-----. 1 jingze hpc_carnegie_poc 536971354 Nov 20 18:02 bsg3d.m1_face.00003.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 536971354 Nov 20 18:10 bsg3d.m1_face.00004.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 536971354 Nov 20 18:19 bsg3d.m1_face.00005.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 536971366 Nov 20 18:28 bsg3d.m1_face.00006.bin
 -rw-r-----. 1 jingze hpc_carnegie_poc 805404746 Nov 20 17:39 bsg3d.m1_vet.00000.bin
 -rw-r-----. 1 jingze hpc_carnegie_poc 805406825 Nov 20 17:47 bsg3d.m1_vet.00001.bin
 -rw-r-----. 1 jingze hpc_carnegie_poc 805406524 Nov 20 17:55 bsg3d.m1_vet.00002.bin
 -rw-r-----. 1 jingze hpc_carnegie_poc 805406825 Nov 20 18:02 bsg3d.m1_vet.00003.bin
-30G	/resnick/groups/carnegie_poc/jingze/prod_fresh_1121/bsg/bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 805406825 Nov 20 18:10 bsg3d.m1_vet.00004.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 805406825 Nov 20 18:19 bsg3d.m1_vet.00005.bin
+-rw-r-----. 1 jingze hpc_carnegie_poc 805406837 Nov 20 18:28 bsg3d.m1_vet.00006.bin
+50G	/resnick/groups/carnegie_poc/jingze/prod_fresh_1121/bsg/bin
 == rst/
 total 20737545
-drwxr-s---. 2 jingze hpc_carnegie_poc       4096 Nov 20 18:09 .
+drwxr-s---. 2 jingze hpc_carnegie_poc       4096 Nov 20 18:39 .
 drwxr-s---. 2 jingze hpc_carnegie_poc       4096 Nov 20 17:39 ..
--rw-r-----. 1 jingze hpc_carnegie_poc 7078414910 Nov 20 17:59 bsg3d.00005.rst
--rw-r-----. 1 jingze hpc_carnegie_poc 7078414910 Nov 20 18:03 bsg3d.00006.rst
--rw-r-----. 1 jingze hpc_carnegie_poc 7078414910 Nov 20 18:06 bsg3d.00007.rst
+-rw-r-----. 1 jingze hpc_carnegie_poc 7078414609 Nov 20 18:23 bsg3d.00011.rst
+-rw-r-----. 1 jingze hpc_carnegie_poc 7078414947 Nov 20 18:29 bsg3d.00012.rst
+-rw-r-----. 1 jingze hpc_carnegie_poc 7078414947 Nov 20 18:37 bsg3d.00013.rst
 2026-11-20 17:39:40 chunk 0 STAR=bsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_v203_e688cb7bc md5=7df2b64833e40a77e8a8a04e6dc900ee DECK=/resnick/groups/carnegie_poc/jingze/fresh_prod_1120/fg_v2/decks/bsg_wngl_fresh.athinput md5=d4ab303f9292f01c6346f8d26c60f23f start=-i /resnick/groups/carnegie_poc/jingze/prod_fresh_1121/bsg/deck.athinput WT=23:35:20 HOLDER=6133592 NODE=hpc-sm-01-17 EX=
