@@ -1,0 +1,8 @@
+cycles 624961 - 624964 dt [68.96552, 100.5172, 106.3636] s/cycle(all) ['28.74', '29.82', '12.23'] steady(excl first+last) 29.818 first elapsed 49.3 last elapsed 120.1
+['main loop time (before the final outputs) = 6.263106e+01']
+CW a 1 FATAL 0 retries ['<rad_m1> time2_auto_be=16: skipped-stage BE steps=1.000000e+00 stage retries=0.000000e+00 (succeeded 0.000000e+00)']
+GPU mem peak MiB max 117441 min 116899 (n=4)
+rc=0 wall=131
+hstmd5 hegiant.hydro.hst a153c9cbf960e91ecb1a0cd717bc878e rows 3
+hstmd5 hegiant.user.hst 79e65fc839cd08efaa541b827b3949db rows 3
+DONE
