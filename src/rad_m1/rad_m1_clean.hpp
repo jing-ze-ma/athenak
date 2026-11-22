@@ -341,6 +341,7 @@ struct CleanArgs {
   bool fwc;                    // staggered: al, ar and the cross factor from CLF_QL
   bool sbi;                    // staggered, clean_stag_sbimp: E-row beta terms implicit
   bool sar;                    // staggered: the streaming share's net flux in area form
+  bool bar;                    // clean_bc_area: an open x1 end's h+- E in area form too
                                // (CleanStagArea)
   DvceArray5D<Real> op;        // opacities (M1_OP_*)
   int nf;                      // number of flux components (dimensions)
@@ -883,7 +884,20 @@ Real CleanStagN(const CleanArgs &x, const int v, const int dir, const int m,
 //! keeps A_d E_d (an isotropic field, s = 0, is unchanged; the signs, and with them the
 //! M-matrix, are kept).  Only where h+- are the cells' own, analytic or of point
 //! intensities (clean_rays = sc): the flux factors of clean_stag_gflux are half-range
-//! fluxes through the face, already in area form.
+//! fluxes through the face, already in area form.  CleanAreaRatio: A_d/A_f of donor
+//! (kd,jd,id) and face (k,j,i).
+
+KOKKOS_INLINE_FUNCTION
+Real CleanAreaRatio(const CleanArgs &x, const int dir, const int m, const int k,
+                    const int j, const int i, const int kd, const int jd, const int id) {
+  if (x.cub) {
+    Real sd;
+    return x.g.At<CLG_A>(m,CleanCsSlot(x, dir, m, k, j, i, kd, jd, id, false, sd)/2,
+                         kd,jd,id)/x.area[dir](m,k,j,i);
+  }
+  return (dir == 0) ? x.x1v(m,id)*x.x1v(m,id)/(x.x1f(m,i)*x.x1f(m,i))
+                    : x.tg(m,2,jd)/x.tg(m,3,j);
+}
 
 KOKKOS_INLINE_FUNCTION
 void CleanStagArea(const CleanArgs &x, const int dir, const int m, const int k,
@@ -892,16 +906,7 @@ void CleanStagArea(const CleanArgs &x, const int dir, const int m, const int k,
   const Real s = w*x.c*(x.fc[dir](m,CLF_HP,k,j,i) + x.fc[dir](m,CLF_HM,k,j,i));
   const int d = (s > 0.0) ? 1 : 0, id = i - d*(dir == 0), jd = j - d*(dir == 1);
   const int kd = k - d*(dir == 2);
-  Real sd, a;
-  if (x.cub) {
-    a = x.g.At<CLG_A>(m,CleanCsSlot(x, dir, m, k, j, i, kd, jd, id, false, sd)/2,
-                      kd,jd,id)/
-        x.area[dir](m,k,j,i);
-  } else {
-    a = (dir == 0) ? x.x1v(m,id)*x.x1v(m,id)/(x.x1f(m,i)*x.x1f(m,i))
-                   : x.tg(m,2,jd)/x.tg(m,3,j);
-  }
-  ((d == 1) ? pl : pr) += s*(a - 1.0);
+  ((d == 1) ? pl : pr) += s*(CleanAreaRatio(x, dir, m, k, j, i, kd, jd, id) - 1.0);
 }
 
 //----------------------------------------------------------------------------------------
@@ -957,11 +962,14 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
   const int hi = (dir == 0) ? x.ie + 1 : ((dir == 1) ? x.je + 1 : x.ke + 1);
   al = 0.0;
   ar = 0.0;
+  // (clean_bc_area: an open r end's h+- E of the end cell's point intensities, x A_d/A_f)
+  const bool ba = x.bar && !x.marshak && dir == 0 && (x.sph || x.cub);
   if (pos == lo && CleanBc(x, m, 2*dir) != M1_IBC_PERIODIC) {
     if (!CleanOpen(x, m, 2*dir)) return;   // (a wall; an imposed flux is all source)
     const bool beam = x.use_beam && dir == 0 && x.beam(m,k-x.ks,j-x.js) > 0.0;
     if (beam && x.marshak) return;
     ar = x.marshak ? -x.c*x.marshak_q : x.c*x.cs(m,CLN_HM+dir,k,j,i);
+    if (ba) ar *= CleanAreaRatio(x, 0, m, k, j, i, k, j, i);
     // (clean_stag_upwind: an open end carries the advective flux a E of the energy, the
     // end cell's when it flows out, the bath's when in, CleanFaceSource)
     if (x.upw && x.feedback && !x.hi && CleanOpen(x, m, 2*dir) && !beam) {
@@ -972,6 +980,7 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
   if (pos == hi && CleanBc(x, m, 2*dir+1) != M1_IBC_PERIODIC) {
     if (!CleanOpen(x, m, 2*dir+1)) return;
     al = x.marshak ? x.c*x.marshak_q : x.c*x.cs(m,CLN_HP+dir,kl,jl,il);
+    if (ba) al *= CleanAreaRatio(x, 0, m, k, j, i, kl, jl, il);
     if (x.upw && x.feedback && !x.hi && CleanOpen(x, m, 2*dir+1)) {
       al += fmax(CleanStagN(x, CLW_A1, dir, m, k, j, i, kl, jl, il), 0.0);
     }

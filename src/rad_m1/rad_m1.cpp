@@ -108,9 +108,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_face_hclat (default off): the bracket's F_y on the lateral faces of sp / cs is
     // the mean of the two cells' H (old production hc with implicit_thin_hcface_gd = x1)
     cln_hclat = pin->GetOrAddBoolean("rad_m1","clean_face_hclat",false);
-    // clean_face_area (default off): the cubed sphere's streaming share in area form
+    // clean_face_area (default off): the sp / cs streaming share in area form
     // (CleanStagArea) also under clean_stag_gflux: its h+- are the donor cell's rays
     cln_farea = pin->GetOrAddBoolean("rad_m1","clean_face_area",false);
+    // clean_bc_area (default off): an open x1 end's half-range flux c h+- E of the end
+    // cell's point intensities in area form, A_cell/A_face (old: Marshak q = H_f/J)
+    cln_bcarea = pin->GetOrAddBoolean("rad_m1","clean_bc_area",false);
     // clean_ray_source_relaxed (default off): the rays' source the vet_source /
     // vet_scatter_j form (relaxed_esc: the local exchange with escape, its relaxed pair)
     cln_rsrel = pin->GetOrAddBoolean("rad_m1","clean_ray_source_relaxed",false);
