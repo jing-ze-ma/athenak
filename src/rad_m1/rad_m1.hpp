@@ -2762,6 +2762,8 @@ class RadiationM1 {
   void CleanStagDrag(const bool first, const bool vel = false, const bool lat = true);
   void CleanStagFCsShared();
   void CleanStagFCone(const int e, const int kd);
+  void CleanStagFwbProject(const int d, const int slot, const DvceArray4D<Real> &rs,
+                           const DvceArray4D<Real> &rw, const bool cnt);
   void CleanStagFaceTie(const int e, const int kd, const bool pt = false);
   void CleanStagCsTie(const int nc, const int c0, const int c1 = 0, const int c2 = 0);
   Real CleanStagFSweepChange();
@@ -2901,6 +2903,7 @@ class RadiationM1 {
   DvceArray1D<Real> cln_fwbc;    // (fwb: the faces, their momentum sums |dp|, x1 dp)
   bool cln_fcone = false;   // clean_stag_fcone
   bool cln_fwbst = false;   // clean_stag_fwb_stage
+  bool cln_fwbpj[3] = {false, false, false};   // clean_stag_fwb_line, -, _ring
   int cln_fwbs = -1;        // (fwb_stage: the face slot of s; cln_fwbok: s is the round's)
   bool cln_fwbok = false;
   bool cln_fwbt2 = false;   // clean_stag_fwb_t2

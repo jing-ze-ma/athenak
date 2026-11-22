@@ -406,6 +406,24 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_fwbt2 = cln_fwbt2 && cln_fwbst;
+    // clean_stag_fwb_line, clean_stag_fwb_ring (default off): fwb's s of the x1 faces
+    // less its line mean, of the phi faces (3-D spherical polar, periodic x3) less its
+    // ring mean, in proportion to the streaming share: no net radial force on a line, no
+    // torque on a ring, momentum and L_z exact without a ledger (CleanStagFwbProject)
+    cln_fwbpj[0] = cln_fwb && stag("clean_stag_fwb_line", false);
+    cln_fwbpj[2] = cln_fwb && stag("clean_stag_fwb_ring", false);
+    if ((cln_fwbpj[0] || cln_fwbpj[2]) && pmy_pack->pmesh->multilevel) {
+      std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_fwb_line, _ring need a uniform "
+                << "mesh" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (cln_fwbpj[2] && !(pmy_pack->pmesh->use_spherical_polar &&
+        pmy_pack->pmesh->three_d &&
+        pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x3] == BoundaryFlag::periodic)) {
+      std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_fwb_ring needs 3-D spherical "
+                << "polar with a periodic x3" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     // clean_stag_fcone (default on for a fresh run with fwb, recorded; a restart file
     // without the key: off): every cell's flux vector within its realisable cone,
     // |F| <= c E, by construction: the faces scaled towards 0 (CleanStagFCone)

@@ -4170,6 +4170,15 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
     // (clean_stag_fwb_stage: s once per round, sm, into slot sw, which ph 0 adds)
     if (fwb && q == x.nf && (sw < 0 || sm)) {
       const CleanArgs *pw = CleanDevArgs(x, 0);
+      // (clean_stag_fwb_line, _ring: s and its weight of the projected faces, which
+      // CleanStagFwbProject adds)
+      DvceArray4D<Real> rs, rw;
+      if (cln_fwbpj[0] || cln_fwbpj[2]) {
+        rs = ScratchView<DvceArray4D<Real>>("cln_fwrs", nmb1 + 1, u0.extent_int(2),
+                                            u0.extent_int(3), u0.extent_int(4));
+        rw = ScratchView<DvceArray4D<Real>>("cln_fwrw", nmb1 + 1, u0.extent_int(2),
+                                            u0.extent_int(3), u0.extent_int(4));
+      }
       // the F slots of the lines (CleanFLine) hold F_ray, then the solve's start again
       for (int pass = 0; pass < 2; ++pass) {
         for (int d = 0; d < x.nf; ++d) {
@@ -4198,6 +4207,11 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
         for (int d = 0; d < x.nf; ++d) {
           const int ek = (d == 2), ej = (d == 1), ei = (d == 0);
           auto fd = x.fc[d];
+          const bool pj = cln_fwbpj[d];
+          if (pj) {
+            Kokkos::deep_copy(rs, 0.0);
+            Kokkos::deep_copy(rw, 0.0);
+          }
           CleanFor("cln_fwb", nmb1, ks, ke+ek, js, je+ej, is, ie+ei,
           KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
             const CleanArgs &x = *pw;
@@ -4212,6 +4226,11 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
                              CleanCellFaceDistance(x, d, m, k, j, i);
             const Real s = fd(m,CLF_W,k,j,i)/(1.0 + tau)*
                 (lo*fm + dg*f0 + hi*fp - r - (1.0 - qd)*(f0 - fd(m,CLF_G,k,j,i)));
+            if (pj) {
+              rs(m,k,j,i) = s;
+              rw(m,k,j,i) = fd(m,CLF_W,k,j,i)/(1.0 + tau);
+              return;
+            }
             fd(m,sm ? sw : CLF_N+1,k,j,i) += s/(x.h*x.c*x.c);
             const Real p = fd(m,CLF_TH,k,j,i)*s*0.5*(CleanVol(x, m, k, j, i) +
                            CleanVol(x, m, k-ek, j-ej, i-ei))/(x.c*x.c);
@@ -4220,6 +4239,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
             Kokkos::atomic_add(&fwc(1), fabs(p));
             if (d == 0) Kokkos::atomic_add(&fwc(2), p);
           });
+          if (pj) CleanStagFwbProject(d, sm ? sw : CLF_N + 1, rs, rw, wbc || sm);
         }
       }
     }
@@ -4591,6 +4611,106 @@ void RadiationM1::CleanStagFCone(const int e, const int kd) {
                   "%.6e\n", pmy_pack->pmesh->ncycle, t2_solve, n, p);
     }
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagFwbProject
+//! \brief clean_stag_fwb_line (d = 0), clean_stag_fwb_ring (d = 2): fwb's residual s of
+//! the faces along d (rs, its weight w/(1 + tau) rw, CleanStagFSolve) less mu rw,
+//! mu = sum V_f s/sum V_f rw over the whole line through the mesh (a radial line, a phi
+//! ring), added to face slot slot.  A radial line's faces share their direction, a
+//! ring's their lever arm R sin(theta): the net s V of each line is 0, so fwb gives no
+//! momentum along it and no L_z.  A line across MeshBlocks: each block's sums at its
+//! position along d in one mesh-wide array, summed over the ranks (every slot from one
+//! block, the others 0: exact), then over the positions in order, so mu does not depend
+//! on the rank count (one MeshBlock along d: the block's own sums)
+
+void RadiationM1::CleanStagFwbProject(const int d, const int slot,
+                                      const DvceArray4D<Real> &rs,
+                                      const DvceArray4D<Real> &rw, const bool cnt) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks, nmb = pmy_pack->nmb_thispack;
+  Mesh *pm = pmy_pack->pmesh;
+  const int nx[3] = {indcs.nx1, indcs.nx2, indcs.nx3};
+  const int nr[3] = {pm->nmb_rootx1, pm->nmb_rootx2, pm->nmb_rootx3};
+  const int da = (d == 0) ? 1 : 0, db = (d == 2) ? 1 : 2;   // (the transverse dirs)
+  const int n = nx[d], na = nx[da], nb = nx[db];
+  const int dk = (d == 2), dj = (d == 1), di = (d == 0);
+  const bool wrap = nr[d] == 1 && pm->mesh_bcs[2*d] == BoundaryFlag::periodic;
+  CleanArgs x = CleanMakeArgs();
+  auto fc = x.fc[d];
+  auto fwc = cln_fwbc;
+  auto mu = ScratchView<DvceArray4D<Real>>("cln_fwmu" + std::to_string(d), nmb, nb, na,
+                                           2);
+  auto face = KOKKOS_LAMBDA(const int t, const int a, const int b, int &k, int &j,
+                            int &i) {
+    i = is + ((d == 0) ? t : ((da == 0) ? a : b));
+    j = js + ((d == 1) ? t : ((da == 1) ? a : b));
+    k = ks + ((d == 2) ? t : b);
+  };
+  par_for("cln_fwbp", DevExeSpace(), 0, nmb - 1, 0, nb - 1, 0, na - 1,
+  KOKKOS_LAMBDA(const int m, const int b, const int a) {
+    Real ss = 0.0, sw = 0.0;
+    for (int t = 0; t < n; ++t) {   // (V_f: the face's weight, a block's own faces)
+      int k, j, i;
+      face(t, a, b, k, j, i);
+      const Real vf = CleanVol(x, m, k, j, i) + CleanVol(x, m, k-dk, j-dj, i-di);
+      ss += vf*rs(m,k,j,i);
+      sw += vf*rw(m,k,j,i);
+    }
+    mu(m,b,a,0) = ss;
+    mu(m,b,a,1) = sw;
+  });
+  if (nr[d] > 1) {
+    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), mu);
+    const int ga = nr[da]*na, gb = nr[db]*nb;
+    std::vector<Real> g(static_cast<size_t>(nr[d])*gb*ga*2, 0.0);
+    auto at = [&](const int m, const int p, const int b, const int a) {
+      const LogicalLocation &l = pm->lloc_eachmb[pmy_pack->pmb->mb_gid.h_view(m)];
+      const int lx[3] = {l.lx1, l.lx2, l.lx3};
+      return ((static_cast<size_t>(p < 0 ? lx[d] : p)*gb + lx[db]*nb + b)*ga +
+              lx[da]*na + a)*2;
+    };
+    for (int m = 0; m < nmb; ++m) {
+      for (int b = 0; b < nb; ++b) {
+        for (int a = 0; a < na; ++a) {
+          for (int c = 0; c < 2; ++c) g[at(m, -1, b, a) + c] = h(m,b,a,c);
+        }
+      }
+    }
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, g.data(), static_cast<int>(g.size()), MPI_ATHENA_REAL,
+                  MPI_SUM, MPI_COMM_WORLD);
+#endif
+    for (int m = 0; m < nmb; ++m) {
+      for (int b = 0; b < nb; ++b) {
+        for (int a = 0; a < na; ++a) {
+          for (int c = 0; c < 2; ++c) {
+            h(m,b,a,c) = 0.0;
+            for (int p = 0; p < nr[d]; ++p) h(m,b,a,c) += g[at(m, p, b, a) + c];
+          }
+        }
+      }
+    }
+    Kokkos::deep_copy(mu, h);
+  }
+  par_for("cln_fwbq", DevExeSpace(), 0, nmb - 1, 0, nb - 1, 0, na - 1,
+  KOKKOS_LAMBDA(const int m, const int b, const int a) {
+    const Real q = (mu(m,b,a,1) > 0.0) ? mu(m,b,a,0)/mu(m,b,a,1) : 0.0;
+    for (int t = 0; t <= n; ++t) {   // (one MeshBlock round a periodic wrap: low face)
+      int k, j, i, kr, jr, ir;
+      face(t, a, b, k, j, i);
+      face((wrap && t == n) ? 0 : t, a, b, kr, jr, ir);
+      const Real s = rs(m,kr,jr,ir) - q*rw(m,kr,jr,ir);
+      fc(m,slot,k,j,i) += s/(x.h*x.c*x.c);
+      if (!cnt || t == n) continue;   // (the counters: the printed s, the write-back's)
+      const Real p = fc(m,CLF_TH,k,j,i)*s*0.5*(CleanVol(x, m, k, j, i) +
+                     CleanVol(x, m, k-dk, j-dj, i-di))/(x.c*x.c);
+      Kokkos::atomic_add(&fwc(0), 1.0);
+      Kokkos::atomic_add(&fwc(1), fabs(p));
+      if (d == 0) Kokkos::atomic_add(&fwc(2), p);
+    }
+  });
 }
 
 //----------------------------------------------------------------------------------------
