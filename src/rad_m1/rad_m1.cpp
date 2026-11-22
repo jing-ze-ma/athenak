@@ -613,13 +613,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // where both sets' J are at least clean_ray_min E (a ratio of two ray-shadowed J is
     // no ray pattern); elsewhere the offset is invalid (left out of the mix)
     cln_ringjmin = pin->GetOrAddBoolean("rad_m1","clean_ring_jmin",true);
-    // clean_source_convex (default off): the rays' vet_scatter source of the clean scheme
+    // clean_source_convex (default on): the rays' vet_scatter source of the clean scheme
     // (the state's own, CleanRays) with the absorption share kappa_P/chi at most 1, as
     // the thermal source without vet_scatter: S = J + min(kappa_P/chi, 1) (B - J) between
     // J and B (kappa_P > chi, a cool envelope's Planck mean above its Rosseland
     // extinction, made S = J + 750 (B - J) < 0 there: floored to 1e-300, a source hole in
     // the rays)
-    cln_srccvx = pin->GetOrAddBoolean("rad_m1","clean_source_convex",false);
+    cln_srccvx = pin->GetOrAddBoolean("rad_m1","clean_source_convex",true);
     if (cln_freal && !(cln_gflux && cln_fsolve)) {
       std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_freal needs clean_consistency "
                 << "(the F solve and gflux)" << std::endl;
@@ -747,7 +747,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_predict_pos")) {
       cln_psmooth = (pin->GetString("rad_m1","clean_predict_pos") == "smooth");
     }
-    {std::string cl = pin->GetOrAddString("rad_m1","clean_closure","predict");
+    // clean_closure (default extrap1: the rays' source from converged states; predict's
+    // explicit K1 state patterns the cs photosphere, STAGFIX5)
+    {std::string cl = pin->GetOrAddString("rad_m1","clean_closure","extrap1");
     cln_closit = (cl.compare("iterate") == 0);
     cln_extrap = (cl.compare("extrap") == 0) ? 1 : ((cl.compare("extrap2") == 0) ? 2 :
                  ((cl.compare("extrap1") == 0) ? 3 : 0));
@@ -1869,11 +1871,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // integrates its two parts at the cell face with chi_u, chi_0 and a face S limited
     // toward S_u at an opaque -> thin interface (rad_m1_vetseg.hpp); emit applies that
     // limiter only where S_u > S_0; jump (coreL-1012) adds the opaque -> thin jump
-    // term.  DEFAULT emit, jump (fresh runs); a
+    // term.  DEFAULT emit, jump (fresh runs; mean under scheme = clean); a
     // restart whose file lacks the key keeps mean (bitwise older runs); files since
     // echo their value.
     {
-      const char *sgd = global_variable::restart_run ? "mean" : "jump";
+      const char *sgd = (global_variable::restart_run || clean) ? "mean" : "jump";
       std::string sg = pin->GetOrAddString("rad_m1","vet_seg",sgd);
       if (sg.compare("split") == 0) {
         vet_seg_split = true;

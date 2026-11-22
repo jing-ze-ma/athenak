@@ -1980,11 +1980,11 @@ void RadiationM1::VetInit(ParameterInput *pin) {
     }
   }
   // vet_seg = mean | split | emit | jump (rad_m1_vetseg.hpp).  DEFAULT emit
-  // (fresh runs: jump); a restart whose file
+  // (fresh runs: jump; mean under scheme = clean); a restart whose file
   // lacks the key keeps mean (bitwise older runs).
   {
-    std::string sg = pin->GetOrAddString("rad_m1", "vet_seg",
-                                         global_variable::restart_run ? "mean" : "jump");
+    const char *sgd = (global_variable::restart_run || clean) ? "mean" : "jump";
+    std::string sg = pin->GetOrAddString("rad_m1", "vet_seg", sgd);
     if (sg.compare("split") == 0) {
       vet_seg_split = true;
       vet_seg_emit = false;
