@@ -2435,3 +2435,9 @@ B_br gate not passed; arms not started
   CW t9r (log.5) cycle 27021 []: CLEAN WARNING cycle 27021 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 4)
   CW t9r (log.5) cycle 27021 []: CLEAN WARNING cycle 27021: backward-Euler solve not converged (dt_retry, 5 so far; last change 4.444e-01)
 - (16:03) D_x result: rc=0 wall=568 | cycles 26363-26524 | CW 0 DT_RETRY 0 FATAL 0 | min dt 1.472648e+02 | OLDVEC eint<0 / E<0 per stage: max eint<0 7, max E<0 1 (10 lines in oldvec_per_stage.txt) | floor_audit lines 0 -> V214/D_x/ (compare D_a: CW 7, DT_RETRY 4, min dt 7.9e-3)
+- (16:04) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t9l62 (log.3) cycle 29384 [cycle=29400 time=1.508520e+06 dt=6.618497e+01]: CLEAN WARNING cycle 29384 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 13)
+  CW t9l62 (log.3) cycle 29399 [cycle=29400 time=1.508520e+06 dt=6.618497e+01]: CLEAN WARNING cycle 29399 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 14)
+  CW i1_m35mms_f1k (log.2) cycle 41714 []: CLEAN WARNING cycle 41714 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 3)
+  CW t9r (log.5) cycle 27071 [cycle=27100 time=1.482278e+06 dt=2.988926e+01]: CLEAN WARNING cycle 27071 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 4)
+  CW t9r (log.5) cycle 27087 [cycle=27100 time=1.482278e+06 dt=2.988926e+01]: CLEAN WARNING cycle 27087 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
