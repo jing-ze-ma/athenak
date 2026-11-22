@@ -2429,3 +2429,8 @@ B_br gate not passed; arms not started
   CW t9r (log.5) cycle 27021 []: CLEAN WARNING cycle 27021: backward-Euler solve not converged (dt_retry, 5 so far; last change 2.985e-04)
 - (16:00) PROD 1121b:
   ALERT CW burst t9r: 6 new CLEAN WARNING in ~2 min (total 11); last: CLEAN WARNING cycle 27021: backward-Euler solve not converged (dt_retry, 5 so far; last change 4.444e-01)
+- (16:00) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t9r (log.5) cycle 27021 []: CLEAN WARNING cycle 27021 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 4)
+  CW t9r (log.5) cycle 27021 []: CLEAN WARNING cycle 27021: backward-Euler solve not converged (dt_retry, 5 so far; last change 9.664e-05)
+  CW t9r (log.5) cycle 27021 []: CLEAN WARNING cycle 27021 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 4)
+  CW t9r (log.5) cycle 27021 []: CLEAN WARNING cycle 27021: backward-Euler solve not converged (dt_retry, 5 so far; last change 4.444e-01)
