@@ -3515,7 +3515,7 @@ void RadiationM1::CleanStagBracket() {
   x.feedback = false;   // (the gas terms read the last iterate's work vectors)
   const Real efl = e_floor;
   const bool rat = cln_rayratio, thf = cln_thinf, tdn = cln_tdn;
-  const bool hct = cln_hctau;
+  const bool hct = cln_hctau, hcl = cln_hclat;
   const Real rmn = cln_raymin;
   auto iw_ = iw;
   CleanFor("cln_rayj", nmb1, ks, ke, js, je, is, ie,
@@ -3624,6 +3624,19 @@ void RadiationM1::CleanStagBracket() {
         Real wl, wr;
         CleanHcTauW(x, dir, m, k, j, i, wl, wr);
         fy = wl*hc(k-dk, j-dj, il) + wr*hc(k, j, i);
+      }
+      // (clean_face_hclat: the lateral faces of sp / cs the mean of the two cells' H along
+      // the face normal, the old production's hc face value there (implicit_thin_hcface_gd
+      // = x1); a cubed-sphere seam ghost's H from its own axes, CleanCsSlot)
+      if (hcl && dir > 0 && (x.sph || x.cub)) {
+        auto hn = [&](const int kk, const int jj, const int ii) {
+          Real sg = 1.0;
+          const int q = x.cub ? CleanCsSlot(x, dir, m, k, j, i, kk, jj, ii, false, sg)/2
+                              : dir;
+          return sg*(x.cs(m,CLN_HP+q,kk,jj,ii) + x.cs(m,CLN_HM+q,kk,jj,ii))*
+                 x.cs(m,CLN_JR,kk,jj,ii);
+        };
+        fy = 0.5*(hn(k-dk, j-dj, i) + hn(k, j, i));
       }
       // (clean_stag_thinf: the rest of the rays' face flux, dd = F_y - h+ J_L - h- J_R,
       // in the face half ranges, tilted in proportion to their sizes (the shrinking one
