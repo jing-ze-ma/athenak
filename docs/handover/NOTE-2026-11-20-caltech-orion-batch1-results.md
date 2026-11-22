@@ -2769,3 +2769,6 @@ B_br gate not passed; arms not started
   | t19r_damp3_test (chunk ended) | cyc 1500 | t 4.999050e+04 | 49.99% of 1.0e5 | dt 1.317235e+01 | KE 1.15e+41 | Ltop/Lin 1.046 | Lbot/Lin 0.992 | solves/stage-pass (last 200 lines) 9.6 mean / 200 max | CW 11 FATAL 0 | last hst: [t 4.681e+04 KE 1.15e+41 Lt 1.046 Lb 0.992] 
 - (22:46) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
   CW t9l62 (log.8) cycle 33458 []: CLEAN WARNING cycle 33458 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+- (22:48) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t9l62 (log.8) cycle 33461 []: CLEAN WARNING cycle 33461 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+  CW t9l62 (log.8) cycle 33461 []: CLEAN WARNING cycle 33461: backward-Euler solve not converged (dt_retry, 3 so far; last change 5.173e-01)
