@@ -2532,3 +2532,5 @@ B_br gate not passed; arms not started
   CW t9r (log.5) cycle 27304 []: CLEAN WARNING cycle 27304: backward-Euler solve not converged (dt_retry, 8 so far; last change 2.112e-01)
   CW t9r (log.5) cycle 27304 []: CLEAN WARNING cycle 27304 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 7)
   CW t9r (log.5) cycle 27304 []: CLEAN WARNING cycle 27304: backward-Euler solve not converged (dt_retry, 8 so far; last change 3.770e-05)
+- (16:27) PROD 1121b:
+  ALERT CW burst t9r: 6 new CLEAN WARNING in ~2 min (total 36); last: CLEAN WARNING cycle 27304: backward-Euler solve not converged (dt_retry, 8 so far; last change 7.704e-06)
