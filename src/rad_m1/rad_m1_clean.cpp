@@ -3514,7 +3514,7 @@ void RadiationM1::CleanStagBracket() {
   CleanArgs x = CleanMakeArgs();
   x.feedback = false;   // (the gas terms read the last iterate's work vectors)
   const Real efl = e_floor;
-  const bool rat = cln_rayratio, thf = cln_thinf;
+  const bool rat = cln_rayratio, thf = cln_thinf, tdn = cln_tdn;
   const Real rmn = cln_raymin;
   auto iw_ = iw;
   CleanFor("cln_rayj", nmb1, ks, ke, js, je, is, ie,
@@ -3592,6 +3592,11 @@ void RadiationM1::CleanStagBracket() {
       const Real fr0 = up ? x.cs(m,CLN_FH+4*(dir-1),k-dk,j-dj,i-di) : x.cs(m,n,k,j,i);
       const bool bf = CleanBoundaryFace(x, dir, m, k, j, i);
       if (bf) return;
+      // (clean_thin_donor: the thin share is its donors' own, no rays' flux DG)
+      if (tdn) {
+        x.fc[dir](m,x.fdg,k,j,i) = 0.0;
+        return;
+      }
       // (the rays' J also where it is below clean_ray_min E: their face flux passes
       // through cells they hold almost nothing in, the side cells of a diagonal beam;
       // rayratio: E, and the rays' flux per J of its donor times the donor's E)
