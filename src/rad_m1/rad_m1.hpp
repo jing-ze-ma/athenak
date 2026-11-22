@@ -2756,6 +2756,7 @@ class RadiationM1 {
   int CleanRstNfv() const;
   int CleanRstNcl() const;   // clean_closure = iterate: the closure in place (cln_s)
   void CleanScUnion2();
+  void CleanCellHalf(const DvceArray2D<Real> &dv);
   void CleanFaceHalf(const DvceArray2D<Real> &dv, const int o, const bool zero,
                      const int fo);
   DvceArray5D<Real> &CleanRstFv() {return (cln_scmem && !cln_cssc) ? cln_top : cln_fvi;}
@@ -3014,6 +3015,7 @@ class RadiationM1 {
   Real cln_dtb = 0.0;           // dt of the closure build
   DvceArray5D<Real> cln_s;      // closure (CLN_*)
   bool cln_cssc = false;        // the cubed sphere, clean_rays = sc (vet_gd sweep)
+  bool cln_rfh = false;         // clean_ring_fh (CLN_HO, CleanCellHalf)
   DvceArray5D<Real> cln_fvi;    // the sc rays' intensities (m, d, k, j, i)
   DvceArray2D<Real> cln_fvd;    // the swept directions (x, y, z, weight; CleanFvSets)
   int cln_fvn = 0;              // their number

@@ -2623,7 +2623,7 @@ int RadiationM1::CleanRstNq() const {
 int RadiationM1::CleanRstNcl() const {
   if (!clean) return 0;
   if (t2_rcl >= 0) return t2_rcl;   // (a file's, Time2RstAccept)
-  return cln_closit ? CleanNs(pmy_pack->pmesh->use_cubed_sphere) : 0;
+  return cln_closit ? CleanNs(pmy_pack->pmesh->use_cubed_sphere, cln_rfh) : 0;
 }
 
 int RadiationM1::CleanRstNfv() const {
@@ -2679,7 +2679,7 @@ bool RadiationM1::Time2RstAccept(const int nfile, const int ver) {
   // (a file of another clean_closure: the closure in place of an iterate run, CleanRstNcl,
   // is skipped by another closure; without it, an iterate run's first solve takes the
   // predicted closure, CleanSolve)
-  const int ns = CleanNs(pmy_pack->pmesh->use_cubed_sphere);
+  const int ns = CleanNs(pmy_pack->pmesh->use_cubed_sphere, cln_rfh);
   auto fits = [&](const int n) {
     return cln_cssc ? (nfile - n == 0 || nfile - n == 12) : (nfile == n);
   };

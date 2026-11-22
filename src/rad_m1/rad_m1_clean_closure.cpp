@@ -58,7 +58,8 @@ void CleanStoreMoments(const DvceArray5D<Real> &cs, const DvceArray5D<Real> &val
       cs(m,CLN_HP+a,k,j,i) = fmax(q[CLN_HP+a]*ij, 0.0);
       cs(m,CLN_HM+a,k,j,i) = fmin(q[CLN_HM+a]*ij, 0.0);
     }
-    for (int a = 0; a < 9 && ns > CLN_KP; ++a) cs(m,CLN_KP+a,k,j,i) = q[CLN_KP+a]*ij;
+    // (k+, or clean_ring_fh's h+- of the faces, CLN_HO)
+    for (int a = 0; a < 9 && CLN_KP + a < ns; ++a) cs(m,CLN_KP+a,k,j,i) = q[CLN_KP+a]*ij;
     cs(m,CLN_C1,k,j,i) = fmax(q[CLN_C1]*ij, 0.0);
     cs(m,CLN_J,k,j,i) = q[CLN_J];
     valid(m,0,k,j,i) = 1.0;
@@ -69,8 +70,9 @@ void CleanStoreMoments(const DvceArray5D<Real> &cs, const DvceArray5D<Real> &val
       cs(m,CLN_HP+a,k,j,i) = 0.25;
       cs(m,CLN_HM+a,k,j,i) = -0.25;
     }
-    for (int a = 0; a < 9 && ns > CLN_KP; ++a) {
-      cs(m,CLN_KP+a,k,j,i) = (a%4 == 0) ? 1.0/6.0 : 0.0;
+    for (int a = 0; a < 9 && CLN_KP + a < ns; ++a) {
+      cs(m,CLN_KP+a,k,j,i) = (ns == CLN_NHO) ? ((a < 3) ? 0.25 : -0.25) :
+                             ((a%4 == 0) ? 1.0/6.0 : 0.0);
     }
     cs(m,CLN_C1,k,j,i) = 1.0;
     cs(m,CLN_J,k,j,i) = 0.0;
@@ -212,7 +214,7 @@ void RadiationM1::CleanClosureEddington() {
       cs(m,CLN_HP+a,k,j,i) = 0.25;
       cs(m,CLN_HM+a,k,j,i) = -0.25;
     }
-    for (int a = 0; a < 9 && cs.extent_int(1) > CLN_KP; ++a) {
+    for (int a = 0; a < 9 && CLN_KP + a < cs.extent_int(1); ++a) {
       cs(m,CLN_KP+a,k,j,i) = (a%4 == 0) ? 1.0/6.0 : 0.0;
     }
     cs(m,CLN_C1,k,j,i) = 0.0;
@@ -671,7 +673,7 @@ void RadiationM1::CleanClosureSphere() {
     }
     cs(m,CLN_C1,k,j,i) = c1;
     cs(m,CLN_J,k,j,i) = 1.0;
-    const bool kp = cs.extent_int(1) > CLN_KP;
+    const bool kp = cs.extent_int(1) > CLN_KP + 8;   // (k+, not CLN_HO)
     if (kp) {
       for (int a = 0; a < 9; ++a) cs(m,CLN_KP+a,k,j,i) = 0.0;
       cs(m,CLN_KP,k,j,i) = krr;
@@ -749,7 +751,8 @@ void RadiationM1::CleanRays() {
     // (clean_rays = sc on the cubed sphere: also the intensities cln_fvi of the face half
     // ranges, CleanFaceHalf)
     if (cln_consist || cln_cssc) CleanGdFaceSums();
-    if (cln_cssc) CleanFaceHalf(vgd_dir, 0, true, 0);
+    if (cln_cssc && cln_rfh) CleanCellHalf(vgd_dir);
+    if (cln_cssc && !cln_rfh) CleanFaceHalf(vgd_dir, 0, true, 0);
     if (cln_cssc) cln_fvi = DvceArray5D<Real>();   // (build scratch)
   }
   MemcutPoison(3);
@@ -896,7 +899,7 @@ bool CleanRingEma(const CleanRingL &rl, const DvceArray5D<Real> &rr,
 #if M1_TU_PART(0)
 int RadiationM1::CleanRingFields(int *fm, const bool ring, const bool file) const {
   const bool cub = pmy_pack->pmesh->use_cubed_sphere;
-  const int ns = CleanNs(cub);   // (the slots of cln_s)
+  const int ns = CleanNs(cub, cln_rfh);   // (the slots of cln_s)
   int nf = 0;
   for (int n = 0; n < CLN_N; ++n) {
     const bool fs = (n >= CLN_F2 && n < CLN_G && (n - CLN_F2)%4 != 0) ||   // (stress
@@ -996,8 +999,8 @@ bool RadiationM1::CleanRingTwo() const {
 // every solve builds the closure first and every build sweeps all the sets they read,
 // else they are state: the dt_retry checkpoint and the restart files keep them)
 bool RadiationM1::CleanFhBuilt() const {
-  return cln_cssc && cln_extrap == 0 && !cln_closit && !cln_edd &&
-         !cln_sphere && (!cln_ring || CleanRingTwo());
+  return cln_rfh || (cln_cssc && cln_extrap == 0 && !cln_closit && !cln_edd &&
+                     !cln_sphere && (!cln_ring || CleanRingTwo()));
 }
 
 void RadiationM1::CleanRingPreShift() {
@@ -1288,7 +1291,8 @@ void RadiationM1::CleanRingMoments() {
       if (cln_scmem) VetGdTopCopy();
       CleanClosureFromGd();
       if (cln_consist || cln_cssc) CleanGdFaceSums();
-      if (cln_cssc && (p == nr || p == nk)) {
+      if (cln_rfh) CleanCellHalf(cln_fvd);   // (every swept set: the ring's moments)
+      if (cln_cssc && !cln_rfh && (p == nr || p == nk)) {
         CleanFaceHalf(dfull, cln_rqm*vgd_n, fh0, 0);
         fh0 = false;
       }
@@ -1872,6 +1876,47 @@ void RadiationM1::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanCellHalf
+//! \brief clean_ring_fh: CleanFaceHalf's half ranges per cell instead of per face, each
+//! about the normal of the face it leaves through: CLN_HO + q = h+ out of the high face
+//! of family q, CLN_HO + 3 + q = h- out of the low one (over the cell's J of the set dv,
+//! its own weights).  The ring carries them as the cell moments (its offsets, the EMA),
+//! and a face takes the two cells' (a ghost's in its own axes, CleanCsSlot): each value
+//! is its owner's, the same on both sides of a seam and for any MeshBlock layout
+
+void RadiationM1::CleanCellHalf(const DvceArray2D<Real> &dv) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks, n = vgd_n;
+  auto cs = cln_s;
+  auto gn = cln_gn;
+  const CleanGdI gi{vgd_i, cln_gdgl, vgd_w - ks, vgd_w - indcs.ng, ks, js, true,
+                    indcs.ke, indcs.je, is, indcs.ie};
+  CleanForK("cln_cellhalf", pmy_pack->nmb_thispack - 1, ks, indcs.ke, js, indcs.je, is,
+            indcs.ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real jc = 0.0, h[6] = {0.0};
+    const CleanRow r = gi.At(m, k, j, i);
+    for (int e = 0; e < n; ++e) {
+      const Real w = dv(e,3)*r[e];
+      jc += w;
+      for (int q = 0; q < 3; ++q) {
+        Real mh = 0.0, ml = 0.0;
+        for (int b = 0; b < 3; ++b) {
+          mh += dv(e,b)*gn.At<CLG_N>(m,3*q+b,k+(q == 2),j+(q == 1),i+(q == 0));
+          ml += dv(e,b)*gn.At<CLG_N>(m,3*q+b,k,j,i);
+        }
+        if (mh > 0.0) h[q] += w*mh;
+        if (!(ml > 0.0)) h[3+q] += w*ml;
+      }
+    }
+    const bool ok = cs(m,CLN_J,k,j,i) > 0.0 && jc > 0.0;
+    for (int a = 0; a < 6; ++a) {
+      cs(m,CLN_HO+a,k,j,i) = ok ? h[a]/jc : ((a < 3) ? 0.25 : -0.25);
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanGdFaceSums
 //! \brief the vet_gd rays' face fluxes for clean_consistency (CLN_FX, CLN_F2, CLN_F3,
 //! CLN_F1: sum_d w (n_d . A_f) I_f / A_f and the stress columns in the face's local
@@ -2413,7 +2458,7 @@ void RadiationM1::CleanClosureFromRays() {
         cs(m,CLN_HP+a,k,j,i) = fmax(hp, 0.0);
         cs(m,CLN_HM+a,k,j,i) = fmin(h - hp, 0.0);
       }
-      for (int a = 0; a < 9 && cs.extent_int(1) > CLN_KP; ++a) {
+      for (int a = 0; a < 9 && CLN_KP + a < cs.extent_int(1); ++a) {
         cs(m,CLN_KP+a,k,j,i) = vc(m,M1_VET_KP+a,k,j,i)/jr;
       }
       cs(m,CLN_C1,k,j,i) = fmax(vc(m,M1_VET_NL,k,j,i)/jr, 0.0);
@@ -2427,7 +2472,7 @@ void RadiationM1::CleanClosureFromRays() {
         cs(m,CLN_HP+a,k,j,i) = 0.25;
         cs(m,CLN_HM+a,k,j,i) = -0.25;
       }
-      for (int a = 0; a < 9 && cs.extent_int(1) > CLN_KP; ++a) {
+      for (int a = 0; a < 9 && CLN_KP + a < cs.extent_int(1); ++a) {
         cs(m,CLN_KP+a,k,j,i) = (a%4 == 0) ? 1.0/6.0 : 0.0;
       }
       cs(m,CLN_C1,k,j,i) = 1.0;
@@ -2453,7 +2498,7 @@ void RadiationM1::CleanClosureFill() {
   auto cs = cln_s;
   auto valid = cln_v;
   // (D, h+- and, where held, k+: the slots t < CLN_C1, then CLN_KP + t - CLN_C1)
-  const int nfl = (cln_s.extent_int(1) > CLN_KP) ? CLN_C1 + 9 : CLN_C1;
+  const int nfl = CLN_C1 + std::max(std::min(cln_s.extent_int(1) - CLN_KP, 9), 0);
 
   for (int pass = 0; pass < cln_fillpass; ++pass) {
     // (the last chunk of cln_s and the marks in one exchange: the same ghosts)

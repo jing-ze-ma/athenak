@@ -1083,6 +1083,8 @@ void RadiationM1::CleanFaceCoefficients() {
   auto mbc = pmy_pack->pmb->mb_bcs.d_view;
   const bool hrm = cln_hface;
   const bool fsc = cln_cssc;   // (the sc rays: their folded sums, CleanFaceHalf)
+  const bool fho = cln_rfh;    // (clean_ring_fh: the cells' own, CleanCellHalf)
+  const CleanArgs *px = fho ? CleanDevArgs(CleanMakeArgs(), 0) : nullptr;
   const int nd = pmy_pack->pmesh->use_cubed_sphere ? cln_fvn : 0;
 
   for (int dir = 0; dir < 3; ++dir) {
@@ -1126,6 +1128,16 @@ void RadiationM1::CleanFaceCoefficients() {
       // (cubed sphere: about the face's own normal from the FV intensities of L and R,
       // so that a seam face takes the same h+- on both sides)
       // (J_L, J_R, H+_L, H-_R as scalars: nvcc -O3 miscompiles a runtime-indexed local)
+      if (fho) {   // (each cell's value out through this face, in its own axes)
+        Real s;
+        const int nl = CleanCsSlot(*px, dir, m, k, j, i, kl, jl, il, false, s);
+        const int nr = CleanCsSlot(*px, dir, m, k, j, i, k, j, i, false, s);
+        fc(m,CLF_HP,k,j,i) = (nl & 1) ? cs(m,CLN_HO+nl/2,kl,jl,il)
+                                      : -cs(m,CLN_HO+3+nl/2,kl,jl,il);
+        fc(m,CLF_HM,k,j,i) = (nr & 1) ? -cs(m,CLN_HO+nr/2,k,j,i)
+                                      : cs(m,CLN_HO+3+nr/2,k,j,i);
+        return;
+      }
       Real jl0 = 0.0, jr0 = 0.0, hp0 = 0.0, hm0 = 0.0;
       if (fsc) {
         jl0 = fh(m,4*dir,k,j,i);

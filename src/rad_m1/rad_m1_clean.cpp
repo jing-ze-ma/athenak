@@ -528,8 +528,8 @@ void RadiationM1::CleanInit() {
   int nmb = pmy_pack->nmb_thispack;
   // (clean_closure = iterate: not the closure a restart file holds, Time2RstSet)
   if (!cln_cip) {
-    Kokkos::realloc(cln_s, nmb, CleanNs(pmy_pack->pmesh->use_cubed_sphere), n3,
-                    n2, n1);
+    Kokkos::realloc(cln_s, nmb, CleanNs(pmy_pack->pmesh->use_cubed_sphere, cln_rfh),
+                    n3, n2, n1);
   }
   if (cln_phic.extent_int(0) != nmb) {
     Kokkos::realloc(cln_phic, nmb, 3, n3, n2, n1);

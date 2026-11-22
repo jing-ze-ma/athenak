@@ -2085,9 +2085,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // the cubed sphere with clean_rays = sc: vet_gd's own sweep (intensities to cln_fvi)
     cln_cssc = clean && pmy_pack->pmesh->use_cubed_sphere && vgd_on;
+    // clean_ring_fh (default off, read only when named): the cs face half ranges from the
+    // cells' own (CLN_HO), so that the rotating ring's offsets carry them as the closure
+    cln_rfh = cln_cssc && pin->DoesParameterExist("rad_m1","clean_ring_fh") &&
+              pin->GetBoolean("rad_m1","clean_ring_fh");
     // rotwb2-1121: vet_rotate_avg_ema_wb keeps the ring's closure of a static state, but
     // the cs face half ranges (cln_fh, CleanFaceHalf) are the two swept sets' (no offset)
-    if (cln_cssc && vra_ema_wb && global_variable::my_rank == 0) {
+    if (cln_cssc && vra_ema_wb && !cln_rfh && global_variable::my_rank == 0) {
       std::cout << "### NOTE <rad_m1>/vet_rotate_avg_ema_wb on the cubed sphere with "
                 << "clean_rays = sc: the face half ranges follow the two swept sets, so "
                 << "a static state is not kept to round-off" << std::endl;
