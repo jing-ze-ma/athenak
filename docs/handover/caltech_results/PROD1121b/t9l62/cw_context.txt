@@ -370,3 +370,17 @@ CLEAN LZB cycle 33434 t2s 1 ledger 4.0793057207213113e+44
 CLEAN XT cycle 33434 t2s 1 write-back closure 7.763e+00
 DT_RETRY cycle=33434 t=1.647189e+06 dt 1.622109e+01 -> 8.110544e+00 reason=NON-CONVERGED resid=-1.000000e+00 cut 1
 CLEAN WARNING cycle 33434: backward-Euler solve not converged (dt_retry, 2 so far; last change 2.528e-07)
+== 2026-11-21 23:28:38 log.11: CW 4-5 (grep -B5)
+CLEAN cycle 33455 t2s 2 it -3 (sum 400) pos 0 mark 0 all 0 neg 0 r1 0 r2 3672 first 0 3672 guard 0 solves 200 cwin 0
+CLEAN MCAP cycle 33455 t2s 2: 1242108 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 33455 t2s 2 faces 1896287 momentum cut sum |dF| V/c^2 -nan
+CLEAN FWB cycle 33455 t2s 2 faces 54735746 radiation momentum sum |dp| 1.031063e+31 x1 faces sum dp -3.157069e+30
+CLEAN XT cycle 33455 t2s 2 write-back closure inf
+CLEAN WARNING cycle 33455 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+
+CLEAN cycle 33457 t2s 2 it -3 (sum 463) pos 0 mark 0 all 0 neg 0 r1 0 r2 2716 first 0 2716 guard 0 solves 200 cwin 0
+CLEAN MCAP cycle 33457 t2s 2: 290 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 33457 t2s 2 faces 1055554 momentum cut sum |dF| V/c^2 9.533641e+32
+CLEAN FWB cycle 33457 t2s 2 faces 54204514 radiation momentum sum |dp| 6.221040e+32 x1 faces sum dp -6.051543e+28
+CLEAN XT cycle 33457 t2s 2 write-back closure 1.065e+07
+CLEAN WARNING cycle 33457 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 3)
