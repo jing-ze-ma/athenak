@@ -111,6 +111,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_face_area (default off): the cubed sphere's streaming share in area form
     // (CleanStagArea) also under clean_stag_gflux: its h+- are the donor cell's rays
     cln_farea = pin->GetOrAddBoolean("rad_m1","clean_face_area",false);
+    // clean_ray_source_relaxed (default off): the rays' source the vet_source /
+    // vet_scatter_j form (relaxed_esc: the local exchange with escape, its relaxed pair)
+    cln_rsrel = pin->GetOrAddBoolean("rad_m1","clean_ray_source_relaxed",false);
     cln_tol = pin->GetOrAddReal("rad_m1","clean_tol",1.0e-10);
     cln_cnorm = pin->GetOrAddReal("rad_m1","clean_init_cnorm",1.0e-10);
     cln_lcnorm = pin->GetOrAddReal("rad_m1","clean_lin_cnorm",1.0e-10);

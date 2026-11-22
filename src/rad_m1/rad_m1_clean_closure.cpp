@@ -710,10 +710,12 @@ void RadiationM1::CleanClosureSphere() {
 
 void RadiationM1::CleanRays() {
   MemcutPoison(2);   // diagnostic (env MEMCUT_POISON)
-  vcol_srelax = false;
   vcol_sbl = false;
-  vcol_sesc = false;
-  vscat_jrel = false;
+  if (!cln_rsrel) {   // (clean_ray_source_relaxed: the vet_source / vet_scatter_j form)
+    vcol_srelax = false;
+    vcol_sesc = false;
+    vscat_jrel = false;
+  }
   // (the closure's time: a step at least one rotation block long, the steady start's
   // large steps, takes the sets of its start, as VetGdBlock)
   const Real dt = pmy_pack->pmesh->dt, tc = pmy_pack->pmesh->time +
