@@ -1070,6 +1070,8 @@ struct VetRayK {
       auto s2 = [&](const int kq, const int jq) {return juu ? cs(m,lu2,1,kq,jq) : 0.0;};
       const Real squ[4] = {s2(ka,ja), s2(ka,jb), s2(kb,ja), s2(kb,jb)};
       const Real *suq = juu ? squ : nullptr;
+      // and the own cell's S one x1 layer downstream (VetSegSplit)
+      const Real sdd = juu ? cs(m,up ? (li0 + 1) : (li0 - 1),1,kk,jj) : -1.0;
       if (vim != 0) {   // vet_interp: log | corner
         const Real wq[4] = {waa, wab, wba, wbb};
         const Real iq[4] = {iaa, iab, iba, ibb};
@@ -1077,12 +1079,13 @@ struct VetRayK {
                             cs(m,li,0,kb,jb)};
         const Real sq[4] = {cs(m,li,1,ka,ja), cs(m,li,1,ka,jb), cs(m,li,1,kb,ja),
                             cs(m,li,1,kb,jb)};
-        iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe, nullptr, suq);
+        iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe, nullptr, suq,
+                         sdd);
       } else if (spl) {
         // vet_seg = split, the two halves at the x1 face
         iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe, nullptr,
                          juu ? (waa*squ[0] + wab*squ[1] + wba*squ[2] + wbb*squ[3])
-                             : -1.0);
+                             : -1.0, sdd);
       } else {
         const Real dtau = 0.5*(cu + c0)*dx1/am1;
         Real ex, w0, wu;
@@ -1703,6 +1706,9 @@ void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
         auto s2 = [&](const int kq, const int jq) {return juu ? gc_(iu2,1,kq,jq) : 0.0;};
         const Real squ[4] = {s2(ka,ja), s2(ka,jb), s2(kb,ja), s2(kb,jb)};
         const Real *suq = juu ? squ : nullptr;
+        const int id2 = up ? (i + 1) : (i - 1);   // the own cell's S downstream
+        const Real sdd = (spl && spe == 2 && id2 >= 0 && id2 < nx1g) ? gc_(id2,1,k,j)
+                                                                      : -1.0;
         if (vim != 0) {   // vet_interp: log | corner
           const Real wq[4] = {waa, wab, wba, wbb};
           const Real iq[4] = {gp_(pr,rr,ka,ja) + dv, gp_(pr,rr,ka,jb) + dv,
@@ -1711,12 +1717,13 @@ void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
                               gc_(iup,0,kb,jb)};
           const Real sq[4] = {gc_(iup,1,ka,ja), gc_(iup,1,ka,jb), gc_(iup,1,kb,ja),
                               gc_(iup,1,kb,jb)};
-          iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe, nullptr, suq);
+          iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe, nullptr, suq,
+                           sdd);
         } else if (spl) {
           // vet_seg = split, the two halves at the x1 face
           iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe, nullptr,
                            juu ? (waa*squ[0] + wab*squ[1] + wba*squ[2] + wbb*squ[3])
-                               : -1.0);
+                               : -1.0, sdd);
         } else {
           const Real dtau = 0.5*(cu + c0)*dx1/am1;
           Real ex, w0, wu;
@@ -3812,6 +3819,8 @@ void RadiationM1::VetSweepMB(bool lagged) {
             };
             const Real squ[4] = {s2(ka,ja), s2(ka,jb), s2(kb,ja), s2(kb,jb)};
             const Real *suq = juu ? squ : nullptr;
+            // and the own cell's S one x1 layer downstream (VetSegSplit)
+            const Real sdd = juu ? cs_(m,up ? (li + 2) : (li - 2),1,kc,jc) : -1.0;
             if (vim != 0) {   // vet_interp: log | corner
               const Real wq[4] = {waa, wab, wba, wbb};
               const Real iq[4] = {ip_(m,pr,r,ka,ja) + dv, ip_(m,pr,r,ka,jb) + dv,
@@ -3821,7 +3830,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
               const Real sq[4] = {cs_(m,li,1,ka,ja), cs_(m,li,1,ka,jb), cs_(m,li,1,kb,ja),
                                   cs_(m,li,1,kb,jb)};
               iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe,
-                               f2s_ ? &ifc : nullptr, suq);
+                               f2s_ ? &ifc : nullptr, suq, sdd);
               int r2 = 0, r3 = 0;
               const Real f = xcr ? fmin(VetCrossFrac(sh2, r2),
                                         thrd ? VetCrossFrac(sh3, r3) : 1.0) : 1.0;
@@ -3829,18 +3838,18 @@ void RadiationM1::VetSweepMB(bool lagged) {
                 // vet_seg_cross: the stencil over 1 - f, then the cell crossed
                 Real ib;
                 (void) VetUpCorner(vim, wq, iq, cq, sq, s0, c0, (1.0 - f)*dx1/am1, spl,
-                                   spe, &ib, suq);
+                                   spe, &ib, suq, sdd);
                 iv = VetSegCross(ib, cs_(m,li,0,kc + r3,jc + r2),
                                  cs_(m,li,1,kc + r3,jc + r2), s0, c0, dx1/am1, f, spe,
                                  f2s_ ? &ifc : nullptr,
-                                 juu ? s2(kc + r3,jc + r2) : -1.0);
+                                 juu ? s2(kc + r3,jc + r2) : -1.0, sdd);
               }
             } else if (spl) {
               // vet_seg = split, the two halves at the x1 face
               iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe,
                                f2s_ ? &ifc : nullptr,
                                juu ? (waa*squ[0] + wab*squ[1] + wba*squ[2] + wbb*squ[3])
-                                   : -1.0);
+                                   : -1.0, sdd);
             } else {
               const Real dtau = 0.5*(cu + c0)*dx1/am1;
               Real ex, w0, wu;
@@ -4606,6 +4615,11 @@ void RadiationM1::VetShortCharSweep() {
         };
         const Real squ[4] = {s2(ka,ja), s2(ka,jb), s2(kb,ja), s2(kb,jb)};
         const Real *suq = juu ? squ : nullptr;
+        // and the own cell's S one x1 cell downstream (VetSegSplit; active cells only)
+        int idn = up ? (i + 1) : (i - 1);
+        if (x1per) idn = is + VetWrap(idn - is, nx1);
+        const Real sdd = (spl && spe == 2 && idn >= is && idn <= ie)
+                         ? vc_(m,M1_VET_SRC,k,j,idn) : -1.0;
         if (vim != 0) {   // vet_interp: log | corner
           const Real wq[4] = {waa, wab, wba, wbb};
           // a corner outside a vacuum face carries I = 0 (gate exactly 1
@@ -4617,7 +4631,7 @@ void RadiationM1::VetShortCharSweep() {
           const Real sq[4] = {vc_(m,M1_VET_SRC,ka,ja,iup), vc_(m,M1_VET_SRC,ka,jb,iup),
                               vc_(m,M1_VET_SRC,kb,ja,iup), vc_(m,M1_VET_SRC,kb,jb,iup)};
           iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe,
-                           f2s_ ? &ifc : nullptr, suq);
+                           f2s_ ? &ifc : nullptr, suq, sdd);
           int r2 = 0, r3 = 0;
           Real f = xcr ? fmin(VetCrossFrac(sh2, r2),
                               thrd ? VetCrossFrac(sh3, r3) : 1.0) : 1.0;
@@ -4628,17 +4642,17 @@ void RadiationM1::VetShortCharSweep() {
             // vet_seg_cross: the stencil over 1 - f, then the cell crossed
             Real ib;
             (void) VetUpCorner(vim, wq, iq, cq, sq, s0, c0, (1.0 - f)*dx1/am1, spl, spe,
-                               &ib, suq);
+                               &ib, suq, sdd);
             iv = VetSegCross(ib, vc_(m,M1_VET_CHX,kq,jq,iup),
                              vc_(m,M1_VET_SRC,kq,jq,iup), s0, c0, dx1/am1, f, spe,
-                             f2s_ ? &ifc : nullptr, juu ? s2(kq,jq) : -1.0);
+                             f2s_ ? &ifc : nullptr, juu ? s2(kq,jq) : -1.0, sdd);
           }
         } else if (spl) {
           // vet_seg = split, the two halves at the x1 face
           iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe,
                            f2s_ ? &ifc : nullptr,
                            juu ? (waa*squ[0] + wab*squ[1] + wba*squ[2] + wbb*squ[3])
-                               : -1.0);
+                               : -1.0, sdd);
         } else {
           const Real dtau = 0.5*(cu + c0)*dx1/am1;
           Real ex, w0, wu;

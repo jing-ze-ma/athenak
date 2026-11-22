@@ -248,12 +248,13 @@ Real VetSegSplit(const Real iu, const Real su, const Real s0, const Real hu,
 
 // one SC segment from the upwind point (I_u, chi_u, S_u) to the
 // cell centre (chi_0, S_0) over the path length hl = dx1/|mu1|, vet_seg split or mean;
-// ifc (if given) takes the intensity at the face (half the path); suu: VetSegFace
+// ifc (if given) takes the intensity at the face (half the path); suu, sdd: VetSegFace,
+// VetSegSplit
 KOKKOS_INLINE_FUNCTION
 Real VetSegOne(const Real iu, const Real su, const Real s0, const Real cu, const Real c0,
                const Real hl, const bool spl, const int spe, Real *ifc = nullptr,
-               const Real suu = -1.0) {
-  if (spl) {return VetSegSplit(iu, su, s0, 0.5*cu*hl, 0.5*c0*hl, spe, ifc, suu);}
+               const Real suu = -1.0, const Real sdd = -1.0) {
+  if (spl) {return VetSegSplit(iu, su, s0, 0.5*cu*hl, 0.5*c0*hl, spe, ifc, suu, sdd);}
   if (ifc != nullptr) *ifc = VetSegFaceI(iu, su, s0, 0.5*cu*hl, 0.5*c0*hl, 0);
   Real ex, w0, wu;
   VetSegW(0.5*(cu + c0)*hl, ex, w0, wu);
@@ -275,14 +276,15 @@ Real VetSegOne(const Real iu, const Real su, const Real s0, const Real cu, const
 //             kVetCornerRatio (a material edge), log elsewhere (a smooth field: the two
 //             agree to O(dx^2) there, and log costs one segment instead of up to four)
 // ifc (if given) takes the intensity at the face; suq (if given) the corners' S one
-// x1 cell further upwind (vet_seg = jump, VetSegFace), interpolated as sq.
+// x1 cell further upwind (vet_seg = jump, VetSegFace), interpolated as sq; sdd the own
+// cell's S one x1 cell downstream (VetSegSplit).
 constexpr Real kVetCornerRatio = 4.0;
 
 KOKKOS_INLINE_FUNCTION
 Real VetUpCorner(int mode, const Real w[4], const Real iq[4], const Real cq[4],
                  const Real sq[4], const Real s0, const Real c0, const Real hl,
                  const bool spl, const int spe, Real *ifc = nullptr,
-                 const Real *suq = nullptr) {
+                 const Real *suq = nullptr, const Real sdd = -1.0) {
   if (mode == 3) {
     Real cmn = 1.0e300, cmx = 0.0;
     for (int q = 0; q < 4; ++q) {
@@ -297,7 +299,7 @@ Real VetUpCorner(int mode, const Real w[4], const Real iq[4], const Real cq[4],
       if (!(w[q] > 0.0)) continue;
       iv += w[q]*VetSegOne(iq[q], sq[q], s0, cq[q], c0, hl, spl, spe,
                            (ifc != nullptr) ? &fq : nullptr,
-                           (suq != nullptr) ? suq[q] : -1.0);
+                           (suq != nullptr) ? suq[q] : -1.0, sdd);
       if (ifc != nullptr) *ifc += w[q]*fq;
     }
     return iv;
@@ -310,7 +312,7 @@ Real VetUpCorner(int mode, const Real w[4], const Real iq[4], const Real cq[4],
     if (suq != nullptr) lu += w[q]*log(fmax(suq[q], 1.0e-300));
   }
   return VetSegOne(iu, exp(ls), s0, exp(lc), c0, hl, spl, spe, ifc,
-                   (suq != nullptr) ? exp(lu) : -1.0);
+                   (suq != nullptr) ? exp(lu) : -1.0, sdd);
 }
 
 // scheme = clean: the second-order foot of the transverse interpolation, the PLM remap
@@ -371,13 +373,13 @@ bool VetCrossEdge(const Real w[4], const Real cq[4], const Real cc) {
 // other than the foot's: the stencil outcome ib at the entry into C, then C's chi and S
 // (constant) up to the face, then the own half as VetSegSplit (exact for a piecewise
 // constant field); ifc (if given) takes the intensity at the face; suu: S of the cell
-// one x1 cell upwind of C (VetSegFace)
+// one x1 cell upwind of C (VetSegFace), sdd: VetSegSplit
 KOKKOS_INLINE_FUNCTION
 Real VetSegCross(const Real ib, const Real cc, const Real sc, const Real s0,
                  const Real c0, const Real hl, const Real f, const int spe,
-                 Real *ifc = nullptr, const Real suu = -1.0) {
+                 Real *ifc = nullptr, const Real suu = -1.0, const Real sdd = -1.0) {
   const Real ex = exp(-0.5*f*cc*hl);
-  return VetSegSplit(ib*ex + sc*(1.0 - ex), sc, s0, 0.0, 0.5*c0*hl, spe, ifc, suu);
+  return VetSegSplit(ib*ex + sc*(1.0 - ex), sc, s0, 0.0, 0.5*c0*hl, spe, ifc, suu, sdd);
 }
 
 // vet_path = cells.  The x1-plane sweep steps ONE x1 column per segment; a

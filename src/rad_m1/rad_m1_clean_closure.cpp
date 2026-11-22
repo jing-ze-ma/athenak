@@ -1841,10 +1841,15 @@ void RadiationM1::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
   const bool fv = cln_fvi.extent_int(0) > 0;
   const CleanGdI gi{vgd_i, cln_gdgl, vgd_w - ks, vgd_w - indcs.ng, ks, js, true, ke, je,
                     is, ie};
+  const bool fht = cln_fht;   // (clean_face_half_tau)
+  auto op = opac;
   for (int dir = 0; dir < 3; ++dir) {
     if (dir == 1 && !pmy_pack->pmesh->multi_d) continue;
     if (dir == 2 && !pmy_pack->pmesh->three_d) continue;
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
+    auto dxd = (dir == 0) ? pmy_pack->pcoord->dx1
+                          : ((dir == 1) ? pmy_pack->pcoord->dx2
+                                        : pmy_pack->pcoord->dx3);
     CleanForK("cln_facehalf", nmb1, ks, ke+dk, js, je+dj, is, ie+di,   // (HIP: k fastest)
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int kl = k - dk, jl = j - dj, il = i - di;
@@ -1854,6 +1859,9 @@ void RadiationM1::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
       // (the two cells' intensity rows once, not an index per direction)
       const CleanRow gl_ = fv ? CleanRow{nullptr, 0} : gi.At(m, kl, jl, il);
       const CleanRow gr_ = fv ? CleanRow{nullptr, 0} : gi.At(m, k, j, i);
+      // (clean_face_half_tau: each donor's transmission through its half cell)
+      const Real al = fht ? exp(-0.5*op(m,M1_OP_T,kl,jl,il)*dxd(m,kl,jl,il)) : 1.0;
+      const Real ar = fht ? exp(-0.5*op(m,M1_OP_T,k,j,i)*dxd(m,k,j,i)) : 1.0;
 #pragma unroll 4   // (rays in flight: hipcc kept one at a time since 089efb501)
       for (int e = 0; e < n; ++e) {
         const int d = o + e;
@@ -1864,8 +1872,8 @@ void RadiationM1::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
         const Real wl = dv(d,3)*il_, wr = dv(d,3)*ir_;
         jl0 += wl;
         jr0 += wr;
-        if (mu > 0.0) hp0 += wl*mu;
-        if (!(mu > 0.0)) hm0 += wr*mu;
+        if (mu > 0.0) hp0 += (al*wl + (1.0 - al)*wr)*mu;
+        if (!(mu > 0.0)) hm0 += (ar*wr + (1.0 - ar)*wl)*mu;
       }
       fh(m,4*dir,k,j,i) = jl0;
       fh(m,4*dir+1,k,j,i) = jr0;
