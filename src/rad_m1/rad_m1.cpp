@@ -108,6 +108,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_face_hclat (default off): the bracket's F_y on the lateral faces of sp / cs is
     // the mean of the two cells' H (old production hc with implicit_thin_hcface_gd = x1)
     cln_hclat = pin->GetOrAddBoolean("rad_m1","clean_face_hclat",false);
+    // clean_face_area (default off): the cubed sphere's streaming share in area form
+    // (CleanStagArea) also under clean_stag_gflux: its h+- are the donor cell's rays
+    cln_farea = pin->GetOrAddBoolean("rad_m1","clean_face_area",false);
     cln_tol = pin->GetOrAddReal("rad_m1","clean_tol",1.0e-10);
     cln_cnorm = pin->GetOrAddReal("rad_m1","clean_init_cnorm",1.0e-10);
     cln_lcnorm = pin->GetOrAddReal("rad_m1","clean_lin_cnorm",1.0e-10);

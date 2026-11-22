@@ -3022,6 +3022,7 @@ class RadiationM1 {
   bool cln_hctau = false;       // clean_face_hctau
   bool cln_jse = false;         // clean_face_jse
   bool cln_hclat = false;       // clean_face_hclat
+  bool cln_farea = false;       // clean_face_area
   bool cln_fht = false;         // clean_face_half_tau
   bool cln_tdn = false;         // clean_thin_donor
   DvceArray5D<Real> cln_fvi;    // the sc rays' intensities (m, d, k, j, i)
