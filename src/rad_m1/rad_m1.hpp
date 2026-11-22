@@ -2844,7 +2844,6 @@ class RadiationM1 {
   Real cln_tolrel = 0.0, cln_tolrmx = 1.0e-4;   // clean_tol_rel, clean_tol_rel_max
   bool cln_gtf = false;         // clean_gas_tfloor: gas T >= tfloor, energy to/from E
   bool cln_rtf = false;         // clean_ray_tfloor: the rays' source of floor-held gas
-  bool cln_srcj = false;        // clean_source_jray: the rays' source with their own J
   bool cln_wbfct = false;       // clean_wb_fct
   Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E
   // clean_ray_cut (CleanRayCut; default on where it applies): no rays below the shell

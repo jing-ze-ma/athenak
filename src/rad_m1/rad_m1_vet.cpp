@@ -106,7 +106,6 @@
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_vetseg.hpp"
 #include "rad_m1/rad_m1_vetsrc.hpp"
-#include "rad_m1/rad_m1_clean.hpp"
 #include "utils/recipe.hpp"
 
 #if MPI_PARALLEL_ENABLED
@@ -4233,10 +4232,7 @@ void RadiationM1::VetShortCharSweep() {
     // so where it would cool it emits what it absorbs, kP B = kE E (1e-6: the EOS
     // inversion's round-off at the floor)
     const Real rtf = cln_rtf ? (1.0 + 1.0e-6)*eos.tfloor : 0.0;
-    // clean_source_jray: the absorbed part with the rays' own lagged J (CLN_J; else E)
-    const bool sjr = clean && cln_srcj && cln_s.extent_int(0) > nmb1;
     const bool cvx = clean && cln_srccvx && !srx;   // clean_source_convex
-    auto cjs = cln_s;
     auto uh = flv.u0;
     const Real chs = chat;
     const Real dts = mr_on ? mr_dt : pmy_pack->pmesh->dt;
@@ -4272,11 +4268,10 @@ void RadiationM1::VetShortCharSweep() {
                                      opd_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
                                      chx, rks));
         } else if (vsf != 0) {   // vet_scatter (VetScatterMix, rad_m1.hpp)
-          const Real jr = (sjr && cjs(m,CLN_J,k,j,i) > 0.0) ? cjs(m,CLN_J,k,j,i) : e;
           const Real rkp = cvx ? fmin(opd_(m,M1_OP_P,k,j,i), chx) : opd_(m,M1_OP_P,k,j,i);
           s = VetScatterMix(vsf, rkp, chx, opd_(m,M1_OP_S,k,j,i),
-                            (tg < rtf) ? fmin(ar*t2*t2, opd_(m,M1_OP_E,k,j,i)*jr/
-                                fmax(opd_(m,M1_OP_P,k,j,i), 1.0e-300)) : ar*t2*t2, jr);
+                            (tg < rtf) ? fmin(ar*t2*t2, opd_(m,M1_OP_E,k,j,i)*e/
+                                fmax(opd_(m,M1_OP_P,k,j,i), 1.0e-300)) : ar*t2*t2, e);
         } else {
           Real eth = fmin(opd_(m,M1_OP_P,k,j,i)/chx, 1.0);
           s = eth*ar*t2*t2 + (1.0 - eth)*e;
