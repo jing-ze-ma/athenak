@@ -3592,9 +3592,8 @@ void RadiationM1::CleanStagBracket() {
       const Real fr0 = up ? x.cs(m,CLN_FH+4*(dir-1),k-dk,j-dj,i-di) : x.cs(m,n,k,j,i);
       const bool bf = CleanBoundaryFace(x, dir, m, k, j, i);
       if (bf) return;
-      // (clean_thin_donor: the lateral thin share is its donors' own, no rays' flux DG;
-      // an x1 face keeps the rest of the rays' flux, the old production's radial form)
-      if (tdn && dir > 0) {
+      // (clean_thin_donor: the thin share is its donors' own, no rays' flux DG)
+      if (tdn) {
         x.fc[dir](m,x.fdg,k,j,i) = 0.0;
         return;
       }
