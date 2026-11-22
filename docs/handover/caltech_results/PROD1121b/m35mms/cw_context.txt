@@ -202,3 +202,10 @@ CLEAN FWB cycle 45505 t2s 3 faces 18142201 radiation momentum sum |dp| 7.355428e
 CLEAN XT cycle 45505 t2s 3 write-back closure 9.643e+06
 CLEAN LZB cycle 45505 t2s 3 ledger -1.1289637837822301e+42
 CLEAN WARNING cycle 45505: floor_pay = rad_column left 1.446214e+33 of the fluid floors' energy unpaid (created)
+== 2026-11-21 16:52:31 log.3: CW 2-2 (grep -B5)
+CLEAN cycle 45729 t2s 2 it -3 (sum 398) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 200 cwin 0
+CLEAN MCAP cycle 45729 t2s 2: 1730766 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 45729 t2s 2 faces 16705572 momentum cut sum |dF| V/c^2 6.739648e+113
+CLEAN FWB cycle 45729 t2s 2 faces 18214110 radiation momentum sum |dp| 2.907854e+41 x1 faces sum dp -7.269970e+40
+CLEAN XT cycle 45729 t2s 2 write-back closure 2.584e+172
+CLEAN WARNING cycle 45729 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)

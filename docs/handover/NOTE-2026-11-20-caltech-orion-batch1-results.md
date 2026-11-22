@@ -2566,3 +2566,5 @@ B_br gate not passed; arms not started
   CW i1_m35mms_f1k (log.3) cycle 43395 [cycle=43400 time=3.924872e+05 dt=1.553259e+01]: CLEAN WARNING cycle 43395 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 1)
 - (16:48) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
   CW m35mms (log.3) cycle 45505 []: CLEAN WARNING cycle 45505: floor_pay = rad_column left 1.446214e+33 of the fluid floors' energy unpaid (created)
+- (16:52) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW m35mms (log.3) cycle 45729 [cycle=45750 time=3.756759e+05 dt=2.700664e+00]: CLEAN WARNING cycle 45729 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
