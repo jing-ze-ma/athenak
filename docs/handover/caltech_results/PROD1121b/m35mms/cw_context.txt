@@ -195,3 +195,10 @@ CLEAN WARNING cycle 45706 t2s 2: stage solve failed, the step is redone with bac
 CLEAN WARNING cycle 45706: backward-Euler solve not converged (dt_retry, 10 so far; last change 2.825e-07)
 == 2026-11-21 16:17:42 log.2: CW 28-33 (grep -B5)
 
+== 2026-11-21 16:48:12 log.3: CW 1-1 (grep -B5)
+CLEAN MCAP cycle 45505 t2s 3: 127010 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 45505 t2s 3 faces 15577062 momentum cut sum |dF| V/c^2 7.635302e+30
+CLEAN FWB cycle 45505 t2s 3 faces 18142201 radiation momentum sum |dp| 7.355428e+29 x1 faces sum dp 7.450352e+27
+CLEAN XT cycle 45505 t2s 3 write-back closure 9.643e+06
+CLEAN LZB cycle 45505 t2s 3 ledger -1.1289637837822301e+42
+CLEAN WARNING cycle 45505: floor_pay = rad_column left 1.446214e+33 of the fluid floors' energy unpaid (created)
