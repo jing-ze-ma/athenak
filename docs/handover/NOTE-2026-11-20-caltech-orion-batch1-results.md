@@ -2497,3 +2497,13 @@ B_br gate not passed; arms not started
   ALERT FATAL m35mms: --------------------------------------------------------------------------
   ALERT CW burst m35mms: 8 new CLEAN WARNING in ~2 min (total 33); last: CLEAN WARNING cycle 45706: backward-Euler solve not converged (dt_retry, 10 so far; last change 1.105e-06)
   CHUNK END m35mms: 2026-11-21 16:16:10 chunk 2 rc=0 last: DT_RETRY cycle=45706 t=3.753895e+05 dt 6.130196e-02 -> 3.065098e-02 reason=NON-CONVERGED resid=-1.000000e+00 cut 8
+- (16:17) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t9l62 (log.3) cycle 29558 []: CLEAN WARNING cycle 29558 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 18)
+  CW m35mms (log.2) cycle 45706 []: CLEAN WARNING cycle 45706 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 9)
+  CW m35mms (log.2) cycle 45706 []: CLEAN WARNING cycle 45706: backward-Euler solve not converged (dt_retry, 10 so far; last change 4.362e-07)
+  CW m35mms (log.2) cycle 45706 []: CLEAN WARNING cycle 45706 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 9)
+  CW m35mms (log.2) cycle 45706 []: CLEAN WARNING cycle 45706: backward-Euler solve not converged (dt_retry, 10 so far; last change 7.042e-07)
+  CW m35mms (log.2) cycle 45706 []: CLEAN WARNING cycle 45706 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 9)
+  CW m35mms (log.2) cycle 45706 []: CLEAN WARNING cycle 45706: backward-Euler solve not converged (dt_retry, 10 so far; last change 1.105e-06)
+  CW t9r (log.5) cycle 27221 [cycle=27250 time=1.487616e+06 dt=3.960441e+01]: CLEAN WARNING cycle 27221 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 7)
+  CW t9r (log.5) cycle 27221 [cycle=27250 time=1.487616e+06 dt=3.960441e+01]: CLEAN WARNING cycle 27221: backward-Euler solve not converged (dt_retry, 8 so far; last change 7.718e-01)

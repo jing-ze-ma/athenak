@@ -193,3 +193,5 @@ CLEAN FWB cycle 45706 t2s 2 faces 17764566 radiation momentum sum |dp| 2.110113e
 CLEAN XT cycle 45706 t2s 2 write-back closure 1.095e-02
 CLEAN WARNING cycle 45706 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 9)
 CLEAN WARNING cycle 45706: backward-Euler solve not converged (dt_retry, 10 so far; last change 2.825e-07)
+== 2026-11-21 16:17:42 log.2: CW 28-33 (grep -B5)
+
