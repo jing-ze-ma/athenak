@@ -396,22 +396,31 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // file without the key: off): fwb's residual s of the stage-old state, once per stage
     // (CleanStagFSolve), not of each solve's E (F_ray already is E_old's)
     cln_fwbst = cln_fwb && pin->GetOrAddBoolean("rad_m1","clean_stag_fwb_stage",nw);
-    // clean_stag_fwb_t2 (default off): fwb_stage's s of the stage-time state
+    // clean_stag_fwb_t2 (default on for a fresh run with fwb_stage, USER 11-21, recorded;
+    // a restart file without the key: off): fwb_stage's s of the stage-time state
     // E_old + h K, K the last slope (CleanStagFSolve): second order in time (no-op
     // without fwb; FATAL with fwb but without fwb_stage)
-    cln_fwbt2 = pin->GetOrAddBoolean("rad_m1","clean_stag_fwb_t2",false);
+    old("clean_stag_fwb_t2", "false");
+    cln_fwbt2 = pin->GetOrAddBoolean("rad_m1","clean_stag_fwb_t2",nw && cln_fwbst);
     if (cln_fwbt2 && cln_fwb && !cln_fwbst) {
       std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_fwb_t2 needs "
                 << "clean_stag_fwb_stage" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     cln_fwbt2 = cln_fwbt2 && cln_fwbst;
-    // clean_stag_fwb_line, clean_stag_fwb_ring (default off): fwb's s of the x1 faces
+    // clean_stag_fwb_line (default off), clean_stag_fwb_ring (default on for a fresh run
+    // with fwb on a uniform 3-D spherical polar mesh with periodic x3, USER 11-21,
+    // recorded; a restart file without the key: off): fwb's s of the x1 faces
     // less its line mean, of the phi faces (3-D spherical polar, periodic x3) less its
     // ring mean, in proportion to the streaming share: no net radial force on a line, no
     // torque on a ring, momentum and L_z exact without a ledger (CleanStagFwbProject)
     cln_fwbpj[0] = cln_fwb && stag("clean_stag_fwb_line", false);
-    cln_fwbpj[2] = cln_fwb && stag("clean_stag_fwb_ring", false);
+    const bool ring_ok = pmy_pack->pmesh->use_spherical_polar && pmy_pack->pmesh->three_d &&
+        !pmy_pack->pmesh->multilevel &&
+        pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x3] == BoundaryFlag::periodic;
+    old("clean_stag_fwb_ring", "false");
+    cln_fwbpj[2] = cln_fwb && pin->GetOrAddBoolean("rad_m1","clean_stag_fwb_ring",
+                                                   nw && cln_fwb && ring_ok);
     if ((cln_fwbpj[0] || cln_fwbpj[2]) && pmy_pack->pmesh->multilevel) {
       std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_fwb_line, _ring need a uniform "
                 << "mesh" << std::endl;
