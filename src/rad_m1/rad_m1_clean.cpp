@@ -5821,7 +5821,7 @@ void RadiationM1::CleanWriteBack() {
   // (prb, clean_wb_fct's probe: no side effects, each cell's E without its face
   // transport, e + qf, into cln_wbfp 3 for CleanWbFct, before the cells' write-back)
   auto wbc = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
-                           const bool prb) {
+                           const bool prb) CLEAN_HIP_INLINE {
     CLEAN_HIPX(const CleanArgs &x = *px, &xh = *pxh;)   // (in device memory)
     Real e = x.w(m,CLW_X,k,j,i);
     // (clean_stag_kpos: h div of the moved increment flux, the diagonal's boundary part
