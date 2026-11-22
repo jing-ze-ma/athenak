@@ -3954,21 +3954,49 @@ static std::array<uint32_t, 4> CleanFMask(const int f0) {
 }
 
 void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool lat) {
-  // (clean_stag_fwb_stage: fwb's s of E_old (sm, the call with CLW_EO) before the first
-  // solve of a round, with its coefficients; then the caller's lateral sums of e again;
-  // clean_init steady: of each solve, whose fixed point is the steady state)
-  const int sw = (cln_fwb && !cln_insteady) ? cln_fwbs : -1;
-  const bool sm = sw >= 0 && e == CLW_EO;
-  if (sw >= 0 && !cln_fwbok) {
-    cln_fwbok = true;
-    CleanStagFSolve(CLW_EO, false, true);
-    if (!lat) CleanStagCsLateral(e);
-  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
+  // (clean_stag_fwb_stage: fwb's s of E_old (sm, the call with CLW_EO) before the first
+  // solve of a round, with its coefficients; then the caller's lateral sums of e again;
+  // clean_init steady: of each solve, whose fixed point is the steady state)
+  // (clean_stag_fwb_t2: all of s of the stage-time state E* = E_old + h K in CLW_EO, K
+  // the last slope (stage 1 the FSAL K1, stage 2 K2), positive (CleanPredictE): F_ray
+  // and s second order in time, fixed within the stage; E_old is kept in CLW_V (Krylov
+  // scratch) with its ghosts and copied back; at rest K = 0 and E* = E_old)
+  const int sw = (cln_fwb && !cln_insteady) ? cln_fwbs : -1;
+  const bool sm = sw >= 0 && e == CLW_EO;
+  if (sw >= 0 && !cln_fwbok) {
+    cln_fwbok = true;
+    const bool st = cln_fwbt2 && (t2_solve == M1_T2S_STAGE2 ||
+                                  (t2_solve == M1_T2S_STAGE1 && t2_ok));
+    auto w = cln_w;
+    auto kv = (t2_solve == M1_T2S_STAGE1) ? t2k1 : t2k2;
+    const Real h = dt_sub;
+    const int ng = indcs.ng, n1 = indcs.nx1 + 2*ng;
+    const int n2 = (indcs.nx2 > 1) ? indcs.nx2 + 2*ng : 1;
+    const int n3 = (indcs.nx3 > 1) ? indcs.nx3 + 2*ng : 1;
+    if (st) {
+      CleanFor("cln_fwbt2", nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real eo = w(m,CLW_EO,k,j,i);
+        w(m,CLW_V,k,j,i) = eo;
+        if (k < ks || k > ke || j < js || j > je || i < is || i > ie) return;
+        w(m,CLW_EO,k,j,i) = CleanPredictE(eo, h*kv(m,M1_T2_E,k,j,i), false);
+      });
+      CleanGhostFill(cln_w, CLW_EO, 1);
+    }
+    CleanStagFSolve(CLW_EO, false, true);
+    if (st) {
+      CleanFor("cln_fwbt2r", nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        w(m,CLW_EO,k,j,i) = w(m,CLW_V,k,j,i);
+      });
+    }
+    if (!lat) CleanStagCsLateral(e);
+  }
   // (lat false: the caller's are those of e, CLW_L as they were)
   if (lat) CleanStagCsLateral(e);
   CleanArgs x = CleanMakeArgs(), xh = x;

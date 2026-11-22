@@ -2903,6 +2903,7 @@ class RadiationM1 {
   bool cln_fwbst = false;   // clean_stag_fwb_stage
   int cln_fwbs = -1;        // (fwb_stage: the face slot of s; cln_fwbok: s is the round's)
   bool cln_fwbok = false;
+  bool cln_fwbt2 = false;   // clean_stag_fwb_t2
   DvceArray1D<Real> cln_fconc;   // (fcone: the faces scaled, their momentum sum)
   bool cln_thinh = false;   // clean_stag_thinf_held
   int cln_xdfz = 0;         // clean_stag_xdonor_freeze

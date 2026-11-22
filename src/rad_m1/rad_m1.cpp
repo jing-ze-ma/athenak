@@ -396,6 +396,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // file without the key: off): fwb's residual s of the stage-old state, once per stage
     // (CleanStagFSolve), not of each solve's E (F_ray already is E_old's)
     cln_fwbst = cln_fwb && pin->GetOrAddBoolean("rad_m1","clean_stag_fwb_stage",nw);
+    // clean_stag_fwb_t2 (default off): fwb_stage's s of the stage-time state
+    // E_old + h K, K the last slope (CleanStagFSolve): second order in time (no-op
+    // without fwb; FATAL with fwb but without fwb_stage)
+    cln_fwbt2 = pin->GetOrAddBoolean("rad_m1","clean_stag_fwb_t2",false);
+    if (cln_fwbt2 && cln_fwb && !cln_fwbst) {
+      std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_fwb_t2 needs "
+                << "clean_stag_fwb_stage" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    cln_fwbt2 = cln_fwbt2 && cln_fwbst;
     // clean_stag_fcone (default on for a fresh run with fwb, recorded; a restart file
     // without the key: off): every cell's flux vector within its realisable cone,
     // |F| <= c E, by construction: the faces scaled towards 0 (CleanStagFCone)

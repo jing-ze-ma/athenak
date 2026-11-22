@@ -2059,5 +2059,17 @@ void CleanOverlapFor(const std::string &nm, MeshBlockPack *pp, const bool ov, co
   if (post) post(), inner(), fin();
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn Real CleanPredictE
+//! \brief the predicted E = e0 + de kept positive: linear down to 0 and e0 exp(de/e0)
+//! below (cut: a jump to e0/e at e0 + de = 0), or e0 exp(de/e0) for every de < 0
+//! (smooth, clean_predict_pos: continuous, e0 + de to first order)
+
+KOKKOS_INLINE_FUNCTION
+Real CleanPredictE(const Real e0, const Real de, const bool smooth) {
+  if (smooth) return (de >= 0.0) ? e0 + de : ((e0 > 0.0) ? e0*exp(de/e0) : 0.0);
+  return (e0 + de > 0.0) ? e0 + de : ((e0 > 0.0) ? e0*exp(de/e0) : 0.0);
+}
+
 }  // namespace radm1
 #endif  // RAD_M1_RAD_M1_CLEAN_HPP_

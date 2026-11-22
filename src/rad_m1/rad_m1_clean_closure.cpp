@@ -484,18 +484,6 @@ void RadiationM1::CleanClosureExtrap() {
 #endif  // M1_TU_PART(0)
 
 //----------------------------------------------------------------------------------------
-//! \fn Real CleanPredictE
-//! \brief the predicted E = e0 + de kept positive: linear down to 0 and e0 exp(de/e0)
-//! below (cut: a jump to e0/e at e0 + de = 0), or e0 exp(de/e0) for every de < 0
-//! (smooth, clean_predict_pos: continuous, e0 + de to first order)
-
-KOKKOS_INLINE_FUNCTION
-Real CleanPredictE(const Real e0, const Real de, const bool smooth) {
-  if (smooth) return (de >= 0.0) ? e0 + de : ((e0 > 0.0) ? e0*exp(de/e0) : 0.0);
-  return (e0 + de > 0.0) ? e0 + de : ((e0 > 0.0) ? e0*exp(de/e0) : 0.0);
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanPredictState
 //! \brief the state at t^{n+1} predicted from the physics of this step, as input of the
 //! formal solution (iw: E, T, F) and, for temperature-dependent opacities, opac.
