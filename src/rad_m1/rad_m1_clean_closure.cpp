@@ -1291,7 +1291,7 @@ void RadiationM1::CleanRingMoments() {
       if (cln_scmem) VetGdTopCopy();
       CleanClosureFromGd();
       if (cln_consist || cln_cssc) CleanGdFaceSums();
-      if (cln_rfh) CleanCellHalf(cln_fvd);   // (every swept set: the ring's moments)
+      if (cln_rfh) CleanCellHalf(vgd_dir);   // (every swept set: the ring's moments)
       if (cln_cssc && !cln_rfh && (p == nr || p == nk)) {
         CleanFaceHalf(dfull, cln_rqm*vgd_n, fh0, 0);
         fh0 = false;
