@@ -2507,3 +2507,6 @@ B_br gate not passed; arms not started
   CW m35mms (log.2) cycle 45706 []: CLEAN WARNING cycle 45706: backward-Euler solve not converged (dt_retry, 10 so far; last change 1.105e-06)
   CW t9r (log.5) cycle 27221 [cycle=27250 time=1.487616e+06 dt=3.960441e+01]: CLEAN WARNING cycle 27221 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 7)
   CW t9r (log.5) cycle 27221 [cycle=27250 time=1.487616e+06 dt=3.960441e+01]: CLEAN WARNING cycle 27221: backward-Euler solve not converged (dt_retry, 8 so far; last change 7.718e-01)
+- (16:19) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t9l62 (log.3) cycle 29599 [cycle=29600 time=1.529723e+06 dt=9.081199e+01]: CLEAN WARNING cycle 29599 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 19)
+  CW t9l62 (log.3) cycle 29618 []: CLEAN WARNING cycle 29618 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 20)
