@@ -440,3 +440,10 @@ CLEAN FLIM cycle 33461 t2s 3 faces 212217 momentum cut sum |dF| V/c^2 1.811065e+
 CLEAN LZB cycle 33461 t2s 3 ledger 4.6400109213362482e+44
 CLEAN XT cycle 33461 t2s 3 write-back closure 2.796e-02
 CLEAN WARNING cycle 33461 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+== 2026-11-21 23:43:26 log.12: CW 5-5 (grep -B5)
+CLEAN FLIM cycle 33461 t2s 1 faces 222437 momentum cut sum |dF| V/c^2 6.200167e+28
+CLEAN FLIM cycle 33461 t2s 1 faces 222437 momentum cut sum |dF| V/c^2 6.200167e+28
+CLEAN FLIM cycle 33461 t2s 1 faces 222437 momentum cut sum |dF| V/c^2 6.200167e+28
+CLEAN FLIM cycle 33461 t2s 1 faces 222437 momentum cut sum |dF| V/c^2 6.200167e+28
+CLEAN FLIM cycle 33461 t2s 1 faces 222437 momentum cut sum |dF| V/c^2 6.200167e+28
+CLEAN WARNING cycle 33461: backward-Euler solve not converged (dt_retry, 3 so far; last change 4.129e-01)
