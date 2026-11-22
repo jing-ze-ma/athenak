@@ -360,6 +360,7 @@ struct CleanArgs {
   // radius vector; vol, area, dxf and x1v, x1f as above, g the geometry (CLG_*) of
   // CleanCsGeometry
   bool cub;
+  bool tdn = false;   // clean_thin_donor (CleanStagFRay)
   bool lwb = false;   // clean_cs_lat_wb (CleanStagCsLat)
   bool ys = false;    // clean_stag_lat_sums: the lateral sums Y off the cubed sphere
   bool lzbf = false;  // clean_lz_bnd_free on spherical polar (CleanFaceStress)

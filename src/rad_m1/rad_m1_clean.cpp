@@ -3882,7 +3882,9 @@ bool CleanStagFRow(const CleanArgs &x, const CleanFLine &ln, const FC &fc, const
 //! two round-offs is no flux factor), times the E (work vector e) of its donor (as
 //! clean_stag_rayratio) plus the advective a E of the face's a = v + v.D, upwind (the
 //! cubed sphere: a lateral MeshBlock's high face from its last cell, CLN_FH); false
-//! (f unchanged) where the donor holds no rays
+//! (f unchanged) where the donor holds no rays.  clean_thin_donor: the thin share's own
+//! energy flux, c (h+ E_L + h- E_R) of the donors' half ranges, so that the thin limit's
+//! momentum is the energy flux it carries
 
 KOKKOS_INLINE_FUNCTION
 bool CleanStagFRay(const CleanArgs &x, const int e, const int dir, const int m,
@@ -3896,6 +3898,11 @@ bool CleanStagFRay(const CleanArgs &x, const int e, const int dir, const int m,
   const Real jd = x.cs(m,CLN_J,kf-u*ek,jf-u*ej,iff-u*ei);
   const Real a = 0.5*(CleanStagN(x, CLW_A1, dir, m, kf, jf, iff, kf-ek, jf-ej, iff-ei) +
                       CleanStagN(x, CLW_A1, dir, m, kf, jf, iff, kf, jf, iff));
+  if (x.tdn) {
+    f = x.c*(x.fc[dir](m,CLF_HP,kf,jf,iff)*ec(1) + x.fc[dir](m,CLF_HM,kf,jf,iff)*ec(0)) +
+        a*ec(a > 0.0);
+    return true;
+  }
   if (jd > 0.0) f = x.c*fmin(fmax(g/jd, -1.0), 1.0)*ec(u) + a*ec(a > 0.0);
   return jd > 0.0;
 }
