@@ -929,7 +929,7 @@ struct VetRayK {
   Real bblo, bbhi;             // the x1 bath intensities (vet_bc_bath; bblo < 0: off)
   bool bfc;                    // vet_bc_diff = face (bottom E at the face)
   bool spl;                    // vet_seg = split
-  int spe;                     // VetSegMode(): 0 split, 1 emit, 2 jump
+  int spe;                     // VetSegMode(): 0 split, 1 emit, 2 / 3 jump
   int vim = 0;                 // vet_interp: 0 lin 1 log 2 corner 3 auto
   bool vpath = false;          // vet_path = cells
   bool plm = false;            // scheme = clean: second-order foot (VetPlmFoot)
@@ -2021,6 +2021,7 @@ void RadiationM1::VetInit(ParameterInput *pin) {
       vet_seg_split = true;
       vet_seg_emit = true;
       vet_seg_jump = true;
+      vet_seg_plateau = pin->GetOrAddBoolean("rad_m1", "vet_seg_plateau", true);
     } else if (sg.compare("mean") == 0) {
       vet_seg_split = false;
     } else {
@@ -2240,6 +2241,8 @@ void RadiationM1::VetInit(ParameterInput *pin) {
               << ", vet_seg = "
               << (vet_seg_jump ? "jump" : (vet_seg_emit ? "emit"
                   : (vet_seg_split ? "split" : "mean")))
+              << ((vet_seg_jump && !vet_seg_plateau) ? " without the plateau weights"
+                                                     : "")
               << std::endl;
   }
 }

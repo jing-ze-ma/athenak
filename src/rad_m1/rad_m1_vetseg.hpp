@@ -185,7 +185,8 @@ Real VgdSurfaceQ(const RH &rh, const VD &dir_, const VI &vi_, const int n, const
   return (jq > 0.0) ? fmin(fmax(hf/jq, qlo), qhi) : q0;
 }
 
-// the face source S_f of the split segment (see above); emit: 0 split, 1 emit, 2 jump
+// the face source S_f of the split segment (see above); emit: 0 split, 1 emit, 2 jump,
+// 3 jump without the plateau weights (q = q0 = 1: the caller passes no S_uu, S_dd)
 KOKKOS_INLINE_FUNCTION
 Real VetSegFace(const Real iu, const Real su, const Real s0, const Real hu,
                 const Real h0, const int emit, const Real suu = -1.0) {
@@ -196,7 +197,7 @@ Real VetSegFace(const Real iu, const Real su, const Real s0, const Real hu,
   if (hu > h0 && (!emit || su > s0)) {
     const Real gb = su - iu;
     const Real mm = (gb*gf > 0.0) ? ((fabs(gb) < fabs(gf)) ? gb : gf) : 0.0;
-    if (emit == 2) {
+    if (emit >= 2) {
       // coreL-1012 jump: the contrast moves S_f to the upwind cell's own value, as far
       // as that cell is a plateau: q = 1 - (S_uu - S_u)/(S_u - S_0) in [0, 1] (S_uu the
       // source one cell further upwind; q = 1 without one); only the slope estimate gb
@@ -233,7 +234,7 @@ Real VetSegSplit(const Real iu, const Real su, const Real s0, const Real hu,
   VetSegW(h0, ex0, w00, wu0);
   const Real ia = iu*exu + wuu*su + w0u*sf;
   if (ifc != nullptr) *ifc = ia;
-  if (emit == 2 && h0 > hu && s0 > su) {
+  if (emit >= 2 && h0 > hu && s0 > su) {
     // coreL-1012 jump: the OWN cell the thicker and the hotter (a ray entering an
     // emitting body): its side of the face keeps S_0 by the contrast (S may jump at
     // the face; the upwind part keeps S_u -> S_f), as far as the own cell is a plateau:

@@ -1910,6 +1910,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         vet_seg_split = true;
         vet_seg_emit = true;
         vet_seg_jump = true;
+        vet_seg_plateau = pin->GetOrAddBoolean("rad_m1", "vet_seg_plateau", true);
       } else if (sg.compare("mean") == 0) {
         vet_seg_split = false;
       } else {

@@ -563,9 +563,13 @@ class RadiationM1 {
   bool vet_seg_emit = false;   // vet_seg = emit: split, limiter only where S_u > S_0
                                // as two sub-segments split at the face
   bool vet_seg_jump = false;   // vet_seg = jump (coreL-1012): emit + the contrast rule
+  bool vet_seg_plateau = true;  // vet_seg_plateau: jump's contrast only across a plateau
   bool vet_xcr = false;        // vet_seg_cross: the cell crossed before the x1 face
-  // the segment mode VetSegSplit takes: 0 split, 1 emit, 2 jump (rad_m1_vetseg.hpp)
-  int VetSegMode() const {return vet_seg_emit ? (vet_seg_jump ? 2 : 1) : 0;}
+  // the segment mode VetSegSplit takes: 0 split, 1 emit, 2 jump with the plateau weights,
+  // 3 jump without them (rad_m1_vetseg.hpp)
+  int VetSegMode() const {
+    return vet_seg_emit ? (vet_seg_jump ? (vet_seg_plateau ? 2 : 3) : 1) : 0;
+  }
   bool vet_x1per = false;    // vet_x1_periodic (default false): periodic x1 sweep
   int vet_x1npass = 0;       // ...and its number of passes (runs_3r_radwave)
   // adaptive periodic sweep: stop when the estimated error of the entry plane

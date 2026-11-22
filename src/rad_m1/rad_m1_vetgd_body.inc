@@ -500,7 +500,7 @@
               // on a clamped foot or on the turned ray that dips below its inner face
               // (vet_seg = jump branch below: piecewise per cell in radius already).
               bool pdone = false;
-              if (vpa && !clp && !(spl && spe == 2 && typ == 3 && l > lcb &&
+              if (vpa && !clp && !(spl && spe >= 2 && typ == 3 && l > lcb &&
                                    p2 < rfi*rfi)) {
                 const Real gj = fjg - (j + sj_), gk = fkg - (k + sk_);
                 const Real a2 = fabs(gj), a3 = fabs(gk);

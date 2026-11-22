@@ -142,7 +142,7 @@ Real VgdUpwindI(const A &acc, const FI &fI, const bool *ok, const bool all) {
 //----------------------------------------------------------------------------------------
 // the closing segment from the upwind point (I = ivu, chi = chu, S = su; ivu < 0: none)
 // to the cell (ch0, s0) over the chord ds (own part dso):
-//  * vet_seg = jump (spe 2) on a turned ray (typ 3, l > lcut) that dips below its own
+//  * vet_seg = jump (spe 2, 3) on a turned ray (typ 3, l > lcut) that dips below its own
 //    inner face rfi: piecewise constant per cell (the chord below the face takes chi, S
 //    of the cell below, log-mean of the own column and the upwind point);
 //  * vet_interp = corner (vim 2, or 3 at a material edge, edgef()): one segment per
@@ -167,7 +167,7 @@ Real VgdSegFinish(const A &acc, const FI &fI, const FC &fC, const FE &edgef,
   const bool hu2 = (spl && spe == 2 && typ == 1 && iuu != iu);
   const Real sdd = (spl && spe == 2 && typ == 1 && idd != i) ? exp(fC(1, k, j, idd))
                                                               : -1.0;
-  if (spl && spe == 2 && typ == 3 && l > lcut && p2 < rfi*rfi) {
+  if (spl && spe >= 2 && typ == 3 && l > lcut && p2 < rfi*rfi) {
     auto lind = [&](const int c) {
       const Real a = acc.Interp([&](const int kk, const int jj) {
         return fC(c, kk, jj, i - 1);
