@@ -5338,7 +5338,10 @@ void RadiationM1::CleanLzBook(const Real s, const bool start) {
 //! and E's round-off) plus its inflow, P its outflow, h CleanDivW Phi per volume.  A
 //! cell whose Q - R P is not > 0 takes R = min(1, (1 - 1e-12) Q/P) (0, counted 'left',
 //! where Q <= 0); each face is scaled by its donor's R, so its two cells see one flux;
-//! rounds until no R falls, as Time2FaceFct (its iw slots and exchange).  The limited
+//! rounds until no R falls, as Time2FaceFct (its iw slots and exchange).  A round reads
+//! one slot and writes the other; an R that fell is written with its sign bit set, and
+//! the next round evaluates only the cells next to one (the others would see the same Q
+//! and P: the same R as rounds over every cell, cheaper).  The limited
 //! faces' (1 - s) Phi leave qf (CLW_Q), the stored Phi pf and the x1 boundary ledger.
 //! The face F (the momentum, solved from X) is not touched: momentum and L_z exact.
 
@@ -5357,9 +5360,9 @@ void RadiationM1::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
     Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, c, Kokkos::ALL,
                       Kokkos::ALL, Kokkos::ALL), 1.0);
   }
-  // (a cell's Q and P at the donors' R in slot ca; a face's scale, its donor's R)
-  auto qp = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &q,
-                          Real &po) {
+  // (a cell's Q and P at the donors' R in slot c; a face's scale, its donor's R in ca)
+  auto qp = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, const int c,
+                          Real &q, Real &po) {
     const CleanArgs &x = *px;
     q = fp(m,3,k,j,i);
     po = 0.0;
@@ -5367,8 +5370,8 @@ void RadiationM1::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
       const int dk = (n == 2), dj = (n == 1), di = (n == 0);
       const Real gl = x.h*CleanDivW(x, n, m, k, j, i, 0)*fp(m,n,k,j,i);   // (+ = in)
       const Real gh = x.h*CleanDivW(x, n, m, k, j, i, 1)*fp(m,n,k+dk,j+dj,i+di);
-      if (gl > 0.0) {q += iw_(m,ca,k-dk,j-dj,i-di)*gl;} else {po -= gl;}
-      if (gh > 0.0) {po += gh;} else {q -= iw_(m,ca,k+dk,j+dj,i+di)*gh;}
+      if (gl > 0.0) {q += fabs(iw_(m,c,k-dk,j-dj,i-di))*gl;} else {po -= gl;}
+      if (gh > 0.0) {po += gh;} else {q -= fabs(iw_(m,c,k+dk,j+dj,i+di))*gh;}
     }
   };
   auto sf = KOKKOS_LAMBDA(const int n, const int m, const int k, const int j,
@@ -5378,26 +5381,41 @@ void RadiationM1::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
                        ((f < 0.0) ? iw_(m,ca,k,j,i) : 1.0);
   };
   const int n1 = ie - is + 1, nji = (je - js + 1)*n1, nkji = (ke - ks + 1)*nji;
-  int nr = 0;
+  int nr = 0, sa = ca, sb = cb;
   for (; nr < 4096; ++nr) {   // (R only falls: until no cell is newly limited)
     Real nv = 0.0;
+    const bool all = (nr == 0);
     Kokkos::parallel_reduce("cln_wbfr", CleanRp256(DevExeSpace(), 0, (nmb1 + 1)*nkji),
     KOKKOS_LAMBDA(const int idx, Real &a) {
       const int m = idx/nkji, k = ks + (idx%nkji)/nji, j = js + (idx%nji)/n1;
       const int i = is + idx%n1;
-      Real q, po;
-      qp(m, k, j, i, q, po);
-      const Real rc = iw_(m,ca,k,j,i);
-      const Real rq = (q > 0.0 && po > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/po) : 0.0;
-      const bool lo = !(q - rc*po > 0.0) && rq < rc;
-      iw_(m,cb,k,j,i) = lo ? rq : rc;
-      if (lo) a += 1.0;
+      const Real rc = fabs(iw_(m,sa,k,j,i));
+      bool act = all;
+      for (int n = 0; n < nf && !act; ++n) {
+        const int dk = (n == 2), dj = (n == 1), di = (n == 0);
+        act = Kokkos::signbit(iw_(m,sa,k-dk,j-dj,i-di)) ||
+              Kokkos::signbit(iw_(m,sa,k+dk,j+dj,i+di));
+      }
+      Real r = rc;
+      if (act) {
+        Real q, po;
+        qp(m, k, j, i, sa, q, po);
+        const Real rq = (q > 0.0 && po > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/po) : 0.0;
+        if (!(q - rc*po > 0.0) && rq < rc) {
+          r = -rq;
+          a += 1.0;
+        }
+      }
+      iw_(m,sb,k,j,i) = r;
     }, Kokkos::Sum<Real>(nv));
+    Time2FctHalo(sb);
+    std::swap(sa, sb);
     if (!(CleanReduce(nv, false) > 0.0)) break;
+  }
+  if (sa != ca) {   // (the last round's R, no sign bit set, ghosts too)
     Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, ca, Kokkos::ALL,
-                      Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw, Kokkos::ALL, cb,
+                      Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw, Kokkos::ALL, sa,
                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
-    Time2FctHalo(ca);
   }
   if (nr == 0) return;   // (nothing limited: bitwise)
   Real lv[2] = {0.0, 0.0};   // ('left': not > 0 at R; the outflow the limit kept)
@@ -5407,7 +5425,7 @@ void RadiationM1::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
     const int m = idx/nkji, k = ks + (idx%nkji)/nji, j = js + (idx%nji)/n1;
     const int i = is + idx%n1;
     Real q, po;
-    qp(m, k, j, i, q, po);
+    qp(m, k, j, i, ca, q, po);
     const Real rc = iw_(m,ca,k,j,i);
     if (!(q - rc*po > 0.0)) a += 1.0;
     b += (1.0 - rc)*po*CleanVol(x, m, k, j, i);
