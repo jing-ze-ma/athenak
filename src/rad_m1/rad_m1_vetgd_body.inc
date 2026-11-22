@@ -678,8 +678,11 @@
                 // vet_seg = jump's plateau test: the shell one further upwind (in the block)
                 const int iu2 = 2*iu - i;
                 const int iuu = (typ == 1 && iu2 >= is && iu2 <= ie) ? iu2 : iu;
+                const int id2 = 2*i - iu;
+                const int idd = (typ == 1 && id2 >= is && id2 <= ie) ? id2 : i;
                 iv = VgdSegFinish(st4, fIu, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0,
-                                  s0, ds, dso, spl, spe, typ, l, lcb, p2, rfi, zr, vim, iuu);
+                                  s0, ds, dso, spl, spe, typ, l, lcb, p2, rfi, zr, vim, iuu,
+                                  idd);
               }
             }
           }

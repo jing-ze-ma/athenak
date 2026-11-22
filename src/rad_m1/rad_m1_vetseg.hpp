@@ -226,7 +226,7 @@ Real VetSegFaceI(const Real iu, const Real su, const Real s0, const Real hu,
 KOKKOS_INLINE_FUNCTION
 Real VetSegSplit(const Real iu, const Real su, const Real s0, const Real hu,
                  const Real h0, const int emit, Real *ifc = nullptr,
-                 const Real suu = -1.0) {
+                 const Real suu = -1.0, const Real sdd = -1.0) {
   const Real sf = VetSegFace(iu, su, s0, hu, h0, emit, suu);
   Real exu, w0u, wuu, ex0, w00, wu0;
   VetSegW(hu, exu, w0u, wuu);
@@ -236,8 +236,11 @@ Real VetSegSplit(const Real iu, const Real su, const Real s0, const Real hu,
   if (emit == 2 && h0 > hu && s0 > su) {
     // coreL-1012 jump: the OWN cell the thicker and the hotter (a ray entering an
     // emitting body): its side of the face keeps S_0 by the contrast (S may jump at
-    // the face; the upwind part keeps S_u -> S_f)
-    const Real sf0 = sf + (h0 - hu)/(h0 + hu)*(s0 - sf);
+    // the face; the upwind part keeps S_u -> S_f), as far as the own cell is a plateau:
+    // q0 = 1 - (S_dd - S_0)/(S_0 - S_u) in [0, 1] (S_dd the source one cell further
+    // downstream; q0 = 1 without one), the mirror of VetSegFace's q
+    const Real q0 = (sdd > s0) ? fmax(1.0 - (sdd - s0)/(s0 - su), 0.0) : 1.0;
+    const Real sf0 = sf + (h0 - hu)/(h0 + hu)*q0*(s0 - sf);
     return ia*ex0 + wu0*sf0 + w00*s0;
   }
   return ia*ex0 + wu0*sf + w00*s0;

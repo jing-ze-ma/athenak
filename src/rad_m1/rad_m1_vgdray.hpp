@@ -150,8 +150,9 @@ Real VgdUpwindI(const A &acc, const FI &fI, const bool *ok, const bool all) {
 //    the right branch;
 //  * vet_seg = split / the plain linear-in-tau segment.
 // (k, j): the own column (its shell below, i - 1, for the jump branch); iuu: the shell
-// one further upwind of a typ 1 segment (iu where the band has none: vet_seg = jump's
-// plateau test, VetSegFace)
+// one further upwind of a typ 1 segment (iu where the band has none), idd the own
+// column's shell one further downstream (i where none): vet_seg = jump's plateau tests
+// (VetSegFace, VetSegSplit)
 template <typename A, typename FI, typename FC, typename FE>
 KOKKOS_INLINE_FUNCTION
 Real VgdSegFinish(const A &acc, const FI &fI, const FC &fC, const FE &edgef,
@@ -160,9 +161,12 @@ Real VgdSegFinish(const A &acc, const FI &fI, const FC &fC, const FE &edgef,
                   const Real ch0, const Real s0, const Real ds, const Real dso,
                   const bool spl, const int spe, const int typ, const int l,
                   const int lcut, const Real p2, const Real rfi, const Real zr,
-                  const int vim, const int iuu) {
-  // vet_seg = jump: S of the shell one further upwind (iuu; -1 where the band has none)
+                  const int vim, const int iuu, const int idd) {
+  // vet_seg = jump: S of the shell one further upwind (iuu) and of the own column one
+  // further downstream (idd); -1 where the band has none
   const bool hu2 = (spl && spe == 2 && typ == 1 && iuu != iu);
+  const Real sdd = (spl && spe == 2 && typ == 1 && idd != i) ? exp(fC(1, k, j, idd))
+                                                              : -1.0;
   if (spl && spe == 2 && typ == 3 && l > lcut && p2 < rfi*rfi) {
     auto lind = [&](const int c) {
       const Real a = acc.Interp([&](const int kk, const int jj) {
@@ -186,7 +190,7 @@ Real VgdSegFinish(const A &acc, const FI &fI, const FC &fC, const FE &edgef,
       Real vq;
       if (spl) {
         vq = VetSegSplit(iq, sq, s0, cq*(ds - dso), ch0*dso, spe, nullptr,
-                         hu2 ? exp(fC(1,kk,jj,iuu)) : -1.0);
+                         hu2 ? exp(fC(1,kk,jj,iuu)) : -1.0, sdd);
       } else {
         Real ex, w0, wu;
         VetSegW(0.5*(cq + ch0)*ds, ex, w0, wu);
@@ -201,7 +205,7 @@ Real VgdSegFinish(const A &acc, const FI &fI, const FC &fC, const FE &edgef,
       return fC(1, kk, jj, iuu);
     })) : -1.0;
     return fmax(VetSegSplit((ivu < 0.0) ? su : ivu, su, s0, chu*(ds - dso), ch0*dso, spe,
-                            nullptr, suu), 0.0);
+                            nullptr, suu, sdd), 0.0);
   } else {
     Real ex, w0, wu;
     VetSegW(0.5*(chu + ch0)*ds, ex, w0, wu);
