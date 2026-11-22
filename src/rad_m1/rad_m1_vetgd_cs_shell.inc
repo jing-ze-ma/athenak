@@ -113,8 +113,11 @@
             auto edgef = [&]() {return edge;};
             // the closing segment (vet_seg = jump below the inner face, vet_interp =
             // corner, vet_seg = split, the plain segment: rad_m1_vgdray.hpp)
+            // vet_seg = jump's plateau test: the shell one further upwind (in the block)
+            const int iu2 = 2*iu - i;
+            const int iuu = (typ == 1 && iu2 >= is && iu2 <= ie) ? iu2 : iu;
             iv = VgdSegFinish(acc, rdi, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0, s0,
-                              ds, dso, spl, spe, typ, l, lcut, p2, rfi, zr, vim);
+                              ds, dso, spl, spe, typ, l, lcut, p2, rfi, zr, vim, iuu);
           }
         }
         va(m,d,k,j,i) = iv;

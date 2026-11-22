@@ -31,11 +31,14 @@
 //! the unresolved skin is near the incident field) keeps the mean face value.
 //! vet_seg = jump (coreL-1012, opt-in; emit = 2): the face value of a material
 //! discontinuity is set by the chi CONTRAST, not by the upwind cell's opacity: with
-//! th = (hu - h0)/(hu + h0) p, p = (1 - e^-hu)/hu (S_u > S_0 as emit) S_f = S_u + hu*(gf
-//! + th*((1 - e^-hu) mm - gf)): p, the half cell's escape probability, is 1 for a
-//! resolved surface and 1/hu at an unresolved diffusion photosphere (hu >> 1), whose
-//! skin has S linear in tau to the face (the mean face value: S_u there made the emergent
-//! intensity ~S_u, the HG/RSG restarts 16-47 % overluminous, STAGFIX5): a thin edge cell
+//! th = (hu - h0)/(hu + h0) q (S_u > S_0 as emit) S_f = S_u + hu*(gf + th*((1 - e^-hu)
+//! mm - gf)).  q = 1 - (S_uu - S_u)/(S_u - S_0) in [0, 1], S_uu the source of the cell
+//! one further upwind (rad_m1_vgdray.hpp; q = 1 where the sweep has none): an
+//! isothermal body (S_uu = S_u) or a single hot cell keeps S_u to the face, while a
+//! resolved monotone temperature gradient over an unresolved optical depth (an old-prod
+//! photosphere: tau per cell ~300 -> 0.005 within 2 cells, S_uu - S_u >= S_u - S_0)
+//! is a radiative-diffusion skin, S linear in tau to the face (the mean face value; S_u
+//! there made the HG/RSG restarts 16-47 % overluminous, STAGFIX5).  A thin edge cell
 //! of an emitting body keeps its own S up to the face (emit
 //! fell back to the mean ramp S_u -> S_0 there, losing half of the outer half-cell's
 //! emission: the T6b core luminosity of the formal solution -6 % at tau_cell 0.13 and
@@ -185,7 +188,7 @@ Real VgdSurfaceQ(const RH &rh, const VD &dir_, const VI &vi_, const int n, const
 // the face source S_f of the split segment (see above); emit: 0 split, 1 emit, 2 jump
 KOKKOS_INLINE_FUNCTION
 Real VetSegFace(const Real iu, const Real su, const Real s0, const Real hu,
-                const Real h0, const int emit) {
+                const Real h0, const int emit, const Real suu = -1.0) {
   const Real ht = hu + h0;
   if (!(ht > 0.0)) {return su;}
   const Real gf = (s0 - su)/ht;
@@ -194,14 +197,13 @@ Real VetSegFace(const Real iu, const Real su, const Real s0, const Real hu,
     const Real gb = su - iu;
     const Real mm = (gb*gf > 0.0) ? ((fabs(gb) < fabs(gf)) ? gb : gf) : 0.0;
     if (emit == 2) {
-      // coreL-1012 jump: the contrast moves S_f to the upwind cell's own value over the
-      // part of the half cell the face sees, its escape probability (1 - e^-hu)/hu: a
-      // half cell thick in tau (an unresolved diffusion photosphere) emits from a skin
-      // whose S is linear in tau to the face (Eddington-Barbier, the mean face value);
-      // only the slope estimate gb (valid in an opaque cell) keeps the factor 1 - e^-hu
-      const Real eh = 1.0 - exp(-hu);
-      const Real th = (hu - h0)/ht*((hu > 1.0e-3) ? eh/hu : 1.0 - 0.5*hu);
-      g = gf + th*(eh*mm - gf);
+      // coreL-1012 jump: the contrast moves S_f to the upwind cell's own value, as far
+      // as that cell is a plateau: q = 1 - (S_uu - S_u)/(S_u - S_0) in [0, 1] (S_uu the
+      // source one cell further upwind; q = 1 without one); only the slope estimate gb
+      // (valid in an opaque cell) keeps the factor 1 - e^-hu
+      const Real q = (suu > su) ? fmax(1.0 - (suu - su)/(su - s0), 0.0) : 1.0;
+      const Real th = (hu - h0)/ht*q;
+      g = gf + th*((1.0 - exp(-hu))*mm - gf);
     } else {
       const Real th = (hu - h0)/ht*(1.0 - exp(-hu));
       g = gf + th*(mm - gf);
@@ -223,8 +225,9 @@ Real VetSegFaceI(const Real iu, const Real su, const Real s0, const Real hu,
 // ifc (if given) takes the intensity at the face
 KOKKOS_INLINE_FUNCTION
 Real VetSegSplit(const Real iu, const Real su, const Real s0, const Real hu,
-                 const Real h0, const int emit, Real *ifc = nullptr) {
-  const Real sf = VetSegFace(iu, su, s0, hu, h0, emit);
+                 const Real h0, const int emit, Real *ifc = nullptr,
+                 const Real suu = -1.0) {
+  const Real sf = VetSegFace(iu, su, s0, hu, h0, emit, suu);
   Real exu, w0u, wuu, ex0, w00, wu0;
   VetSegW(hu, exu, w0u, wuu);
   VetSegW(h0, ex0, w00, wu0);

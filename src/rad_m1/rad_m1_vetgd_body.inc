@@ -675,8 +675,11 @@
                                  const int ii) -> Real {return fC(c,kk,jj,ii);};
                   return VgdCornerEdge(csr, m, k0, k1, j0, j1, iu, uk, uj);
                 };
+                // vet_seg = jump's plateau test: the shell one further upwind (in the block)
+                const int iu2 = 2*iu - i;
+                const int iuu = (typ == 1 && iu2 >= is && iu2 <= ie) ? iu2 : iu;
                 iv = VgdSegFinish(st4, fIu, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0,
-                                  s0, ds, dso, spl, spe, typ, l, lcb, p2, rfi, zr, vim);
+                                  s0, ds, dso, spl, spe, typ, l, lcb, p2, rfi, zr, vim, iuu);
               }
             }
           }
