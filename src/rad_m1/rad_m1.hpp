@@ -2891,6 +2891,7 @@ class RadiationM1 {
   int cln_lza = 0;          // clean_cs_lz_abs
   bool cln_lzbook = false;  // (the L_z ledger: cubed sphere, or 3-D spherical polar)
   bool cln_lzt = false;     // clean_cs_lz_tel
+  bool cln_lzbf = false;    // clean_cs_lz_bnd_free
   bool cln_latwb = false;   // clean_cs_lat_wb
   bool cln_thinf = false;   // clean_stag_thinf
   bool cln_flim = false;    // clean_stag_flim

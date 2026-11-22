@@ -246,11 +246,15 @@ static void CleanStagMomentum(const CleanArgs &x, const int e, const int m, cons
 //! mean (one sided at a radial boundary).  The interior faces cancel in the sum, so gas
 //! and radiation L_z change only by the radial boundaries' torque (CleanLzBook).  In xs
 //! the stress part, the exact torque less the faces' own: its net the gas's
-//! (CleanWriteBack)
+//! (CleanWriteBack).  bf (clean_cs_lz_bnd_free): a radial boundary face takes no stress
+//! torque.  Its lever arm is along n, so only the lateral P n of the one-sided boundary
+//! cell (ray noise of the rotated sets) would torque, while its momentum is radial
+//! (CleanMomentumChange): gas and radiation L_z are then exact, with no ledger
 
 KOKKOS_INLINE_FUNCTION
 static Real CleanCsTorque(const CleanArgs &x, const int e, const int m, const int k,
-                          const int j, const int i, Real &rl, Real &xs) {
+                          const int j, const int i, Real &rl, Real &xs,
+                          const bool bf) {
   const Real v = x.vol(m,k,j,i), ic2 = 1.0/(x.c*x.c);
   Real gl = 0.0, gs = 0.0, tc = 0.0, p0[6];
   rl = 0.0;
@@ -275,6 +279,7 @@ static Real CleanCsTorque(const CleanArgs &x, const int e, const int m, const in
       const int o = 2*s - 1, kf = k + s*dk, jf = j + s*dj, iff = i + s*di;
       const int ko = k + o*dk, jo = j + o*dj, io = i + o*di;
       const bool bnd = CleanBoundaryFace(x, q, m, kf, jf, iff);
+      if (bf && bnd && q == 0) continue;
       Real pf[6], a[3], t[2];
       for (int n = 0; n < 6; ++n) {
         pf[n] = bnd ? p0[n] : 0.5*(p0[n] + x.cs(m,CLN_D11+n,ko,jo,io)*x.w(m,e,ko,jo,io));
@@ -5480,11 +5485,12 @@ void RadiationM1::CleanWriteBack() {
     px = CleanDevArgs(x, 0);   // (xh changed: the F solve's F)
     pxh = CleanDevArgs(xh, 1);
     auto ug = FluidRef::Get(pmy_pack).u0;
+    const bool bf = cln_lzbf;
     CleanFor("cln_wbtq", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       CLEAN_HIPX(const CleanArgs &x = *px, &xh = *pxh;)
       Real rl, xs, q[3][3];
-      const Real gl = CleanCsTorque(xh, CLW_X, m, k, j, i, rl, xs);
+      const Real gl = CleanCsTorque(xh, CLW_X, m, k, j, i, rl, xs, bf);
       const Real rc = CleanCsFrame(x, m, k, j, i, q);
       lxs(m,k,j,i) = xs;
       lxi(m,k,j,i) = ug(m,IDN,k,j,i)*x.vol(m,k,j,i)*rc*rc;

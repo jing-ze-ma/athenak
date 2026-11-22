@@ -482,6 +482,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (cln_lza == 2 || pin->DoesParameterExist("rad_m1", "clean_cs_lz_tel")) {
       cln_lzt = pin->GetOrAddBoolean("rad_m1","clean_cs_lz_tel",nw);
     }
+    // clean_cs_lz_bnd_free (with clean_cs_lz_tel, default on for a fresh run, recorded):
+    // no stress torque through the radial boundaries (CleanCsTorque)
+    if (cln_lzt) cln_lzbf = pin->GetOrAddBoolean("rad_m1","clean_cs_lz_bnd_free",nw);
     if (cln_lzt && cln_lza != 2) {
       std::cout << "### FATAL ERROR: <rad_m1>/clean_cs_lz_tel needs the cubed sphere "
                 << "and clean_layout = staggered" << std::endl;
