@@ -4026,9 +4026,12 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
   // solve of a round, with its coefficients; then the caller's lateral sums of e again;
   // clean_init steady: of each solve, whose fixed point is the steady state)
   // (clean_stag_fwb_t2: all of s of the stage-time state E* = E_old + h K in CLW_EO, K
-  // the last slope (stage 1 the FSAL K1, stage 2 K2), positive (CleanPredictE): F_ray
-  // and s second order in time, fixed within the stage; E_old is kept in CLW_V (Krylov
-  // scratch) with its ghosts and copied back; at rest K = 0 and E* = E_old)
+  // the last slope (stage 1 the FSAL K1, stage 2 K2), positive (CleanPredictE), where it
+  // stays within the first iterate's cap (implicit_predictor_tcap^4, CleanFirstIterate;
+  // E_old beyond: an uncapped E* in the floor gas's fast cells doubled its E-floor
+  // raises, t9h +7 % wall): F_ray and s second order in time, fixed within the stage;
+  // E_old is kept in CLW_V (Krylov scratch) with its ghosts and copied back; at rest
+  // K = 0 and E* = E_old)
   const int sw = (cln_fwb && !cln_insteady) ? cln_fwbs : -1;
   const bool sm = sw >= 0 && e == CLW_EO;
   if (sw >= 0 && !cln_fwbok) {
@@ -4037,7 +4040,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
                                   (t2_solve == M1_T2S_STAGE1 && t2_ok));
     auto w = cln_w;
     auto kv = (t2_solve == M1_T2S_STAGE1) ? t2k1 : t2k2;
-    const Real h = dt_sub;
+    const Real h = dt_sub, ecap = SQR(SQR(impl_pred_tcap));
     const int ng = indcs.ng, n1 = indcs.nx1 + 2*ng;
     const int n2 = (indcs.nx2 > 1) ? indcs.nx2 + 2*ng : 1;
     const int n3 = (indcs.nx3 > 1) ? indcs.nx3 + 2*ng : 1;
@@ -4047,7 +4050,8 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
         const Real eo = w(m,CLW_EO,k,j,i);
         w(m,CLW_V,k,j,i) = eo;
         if (k < ks || k > ke || j < js || j > je || i < is || i > ie) return;
-        w(m,CLW_EO,k,j,i) = CleanPredictE(eo, h*kv(m,M1_T2_E,k,j,i), false);
+        const Real ep = CleanPredictE(eo, h*kv(m,M1_T2_E,k,j,i), false);
+        w(m,CLW_EO,k,j,i) = (ep > eo/ecap && ep < eo*ecap) ? ep : eo;
       });
       CleanGhostFill(cln_w, CLW_EO, 1);
     }
