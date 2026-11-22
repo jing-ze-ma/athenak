@@ -3608,30 +3608,35 @@ void RadiationM1::CleanStagBracket() {
         x.fc[dir](m,x.fdg,k,j,i) = 0.0;
         return;
       }
-      // (clean_face_hctau: old production implicit_thin_hcface = tau: the face value
-      // of the rays' flux interpolated linearly in optical depth between the two cell
-      // centres, H_f = (tau_R H_L + tau_L H_R)/(tau_L + tau_R), tau the half-cell depths,
-      // H r^2 on the radial faces of sp / cs (exact for a free stream); x1 faces of sp /
-      // cs, every face of a Cartesian mesh.  An opaque cell next to a thin one: H_f -> the
-      // thin cell's H, the flux the surface emits, not the rays' value at the kink)
+      // (clean_face_hctau: old production implicit_thin_hcface = tau: the cells' H
+      // interpolated linearly in optical depth between the two centres, H_f = (tau_R H_L
+      // + tau_L H_R)/(tau_L + tau_R), tau the half-cell depths, H r^2 on radial faces
+      // (exact for a free stream).  It replaces the rays' face value in proportion to the
+      // face's opacity step s = (tau_b - tau_a)/(tau_b + tau_a) min(1, tau_b), tau_b >=
+      // tau_a: at an unresolved opaque -> thin step H_f -> the thin cell's H (the flux
+      // the surface emits); equal depths (a resolved body, a beam in a thin medium) keep
+      // F_y)
       Real fy = rat ? fr0/jd*((fr0 > 0.0) ? jl : jr) : fr0;
-      if (hct && (dir == 0 || !(x.sph || x.cub))) {
+      if (hct) {
         const int il = i - di;
         auto hc = [&](const int kk, const int jj, const int ii) {
           return (x.cs(m,CLN_HP+dir,kk,jj,ii) + x.cs(m,CLN_HM+dir,kk,jj,ii))*
                  x.cs(m,CLN_JR,kk,jj,ii);
         };
         const bool rad = (dir == 0 && (x.sph || x.cub));
-        const Real dl = rad ? x.x1f(m,i) - x.x1v(m,il) : 1.0;
-        const Real dr = rad ? x.x1v(m,i) - x.x1f(m,i) : 1.0;
+        const Real hd = 0.5*CleanCellFaceDistance(x, dir, m, k, j, i);
+        const Real dl = rad ? x.x1f(m,i) - x.x1v(m,il) : hd;
+        const Real dr = rad ? x.x1v(m,i) - x.x1f(m,i) : hd;
         const Real tl = fmax(x.op(m,M1_OP_T,k-dk,j-dj,il), 0.0)*dl;
         const Real tr = fmax(x.op(m,M1_OP_T,k,j,i), 0.0)*dr;
+        const Real ta = fmin(tl, tr), tb = fmax(tl, tr);
+        const Real sw = (tb > 0.0) ? (tb - ta)/(tb + ta)*fmin(tb, 1.0) : 0.0;
         Real wl = (tl + tr > 0.0) ? tr/(tl + tr) : 0.5, wr = 1.0 - wl;
         if (rad) {
           wl *= SQR(x.x1v(m,il)/x.x1f(m,i));
           wr *= SQR(x.x1v(m,i)/x.x1f(m,i));
         }
-        fy = wl*hc(k-dk, j-dj, il) + wr*hc(k, j, i);
+        fy += sw*(wl*hc(k-dk, j-dj, il) + wr*hc(k, j, i) - fy);
       }
       // (clean_stag_thinf: the rest of the rays' face flux, dd = F_y - h+ J_L - h- J_R,
       // in the face half ranges, tilted in proportion to their sizes (the shrinking one
