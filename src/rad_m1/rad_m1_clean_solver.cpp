@@ -1088,6 +1088,7 @@ void RadiationM1::CleanFaceCoefficients() {
   const bool thr = cln_thr;    // (clean_cs_thin_radial)
   const bool tdn = cln_tdn;    // (clean_thin_donor)
   const bool wmn = cln_wmin;   // (clean_w_face_min)
+  const bool wfs = cln_wfse;   // (clean_w_fse)
   const CleanArgs *px = fho ? CleanDevArgs(CleanMakeArgs(), 0) : nullptr;
   const int nd = pmy_pack->pmesh->use_cubed_sphere ? cln_fvn : 0;
 
@@ -1103,8 +1104,19 @@ void RadiationM1::CleanFaceCoefficients() {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int kl = k - dk, jl = j - dj, il = i - di;
       const Real chi = CleanFaceChi(op, x1f, mbc, hrm, dir, m, k, j, i, is, ie);
-      const Real c1 = wmn ? fmin(cs(m,CLN_C1,k,j,i), cs(m,CLN_C1,kl,jl,il))
-                          : fmax(cs(m,CLN_C1,k,j,i), cs(m,CLN_C1,kl,jl,il));
+      // (clean_w_fse: g = max(|H|/J, eps C1/1.5) of the cell, else its C1)
+      auto gw = [&](const int kk, const int jj, const int ii) {
+        if (!wfs) return cs(m,CLN_C1,kk,jj,ii);
+        Real h2 = 0.0;
+        for (int a = 0; a < 3; ++a) {
+          h2 += SQR(cs(m,CLN_HP+a,kk,jj,ii) + cs(m,CLN_HM+a,kk,jj,ii));
+        }
+        const Real ct = op(m,M1_OP_T,kk,jj,ii);
+        const Real ep = (ct > 0.0) ? fmin(op(m,M1_OP_P,kk,jj,ii)/ct, 1.0) : 1.0;
+        return fmax(sqrt(h2), ep*cs(m,CLN_C1,kk,jj,ii)/1.5);
+      };
+      const Real c1 = wmn ? fmin(gw(k, j, i), gw(kl, jl, il))
+                          : fmax(gw(k, j, i), gw(kl, jl, il));
       fc(m,CLF_W,k,j,i) = (thr && dir > 0) ? 0.0
                                            : CleanSmoothStep((c1 - c1lo)/(c1hi - c1lo));
       fc(m,CLF_TH,k,j,i) = 1.0/(1.0 + h*c*chi);

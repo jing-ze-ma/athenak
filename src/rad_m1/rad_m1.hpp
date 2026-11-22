@@ -3018,6 +3018,7 @@ class RadiationM1 {
   bool cln_rfh = false;         // clean_ring_fh (CLN_HO, CleanCellHalf)
   bool cln_thr = false;         // clean_cs_thin_radial
   bool cln_wmin = false;        // clean_w_face_min
+  bool cln_wfse = false;        // clean_w_fse
   bool cln_fht = false;         // clean_face_half_tau
   bool cln_tdn = false;         // clean_thin_donor
   DvceArray5D<Real> cln_fvi;    // the sc rays' intensities (m, d, k, j, i)

@@ -2107,6 +2107,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // intensities, which a diffusive donor (C1 ~ 0, h+- ~ +-1/4) does not have; at an
     // unresolved photosphere its isotropic partial current c E/4 is ~10x the flux
     cln_wmin = pin->GetOrAddBoolean("rad_m1","clean_w_face_min",false);
+    // clean_w_fse (default off): the thin share's thinness is the old production's
+    // (implicit_thin_switch = fse): g = max(|H|/J, eps C1/1.5), eps = min(kappa_P/chi,
+    // 1), w = smoothstep((g - c0)/(c1 - c0)) with c0, c1 = 0.3, 0.6 unless named.
+    // Upwind streaming holds where the field is anisotropic (|H|/J), not where it is
+    // merely non-local (C1 of an unresolved opaque photosphere cell, I != S across it,
+    // isotropic field); eps removes the non-locality of scattering
+    cln_wfse = pin->GetOrAddBoolean("rad_m1","clean_w_fse",false);
+    if (cln_wfse && !pin->DoesParameterExist("rad_m1","clean_w_c0")) cln_c0 = 0.3;
+    if (cln_wfse && !pin->DoesParameterExist("rad_m1","clean_w_c1")) cln_c1 = 0.6;
     // clean_face_half_tau (default off): a cs face's half ranges are those AT the face:
     // the donor's partial current crosses its half cell with transmission a = e^-tau
     // (tau = chi dx/2 along the face normal), the rest is the other cell's, which the
