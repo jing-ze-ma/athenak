@@ -627,10 +627,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_gas_tfloor (default true): the gas row's T bounded below by the EOS
     // tfloor, and the gas eint written back from that root (E takes the rest)
     cln_gtf = stag("clean_gas_tfloor", true);
-    // clean_wb_fct (default false): the write-back's Zalesak limit on the written faces'
-    // energy flux, E > 0 by construction (CleanWbFct); its budget is the gas row's of
-    // clean_gas_tfloor with clean_xt_exact's work
-    cln_wbfct = stag("clean_wb_fct", false);
+    // clean_wb_fct (default on for a fresh run with clean_gas_tfloor and clean_xt_exact,
+    // USER 11-21, recorded; a restart file without the key: off, echoed): the
+    // write-back's Zalesak limit on the written faces' energy flux, E > 0 by construction
+    // (CleanWbFct); its budget is the gas row's of clean_gas_tfloor with
+    // clean_xt_exact's work
+    old("clean_wb_fct", "false");
+    cln_wbfct = pin->GetOrAddBoolean("rad_m1","clean_wb_fct",
+                                     nw && cln_gtf && cln_xte > 0);
     if (cln_wbfct && !(cln_gtf && cln_xte > 0)) {
       std::cout << "### FATAL ERROR <rad_m1>/clean_wb_fct needs clean_gas_tfloor and "
                 << "clean_xt_exact = cons | x2" << std::endl;
