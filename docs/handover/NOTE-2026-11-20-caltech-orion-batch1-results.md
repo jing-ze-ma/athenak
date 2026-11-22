@@ -2775,3 +2775,5 @@ B_br gate not passed; arms not started
 - (22:51) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
   CW t9l62 (log.8) cycle 33461 []: CLEAN WARNING cycle 33461 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 2)
   CW t9l62 (log.8) cycle 33461 []: CLEAN WARNING cycle 33461: backward-Euler solve not converged (dt_retry, 3 so far; last change 4.129e-01)
+- (22:57) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t9l62 (log.8) cycle 33625 []: CLEAN WARNING cycle 33625 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
