@@ -471,3 +471,5 @@ CLEAN WARNING cycle 27021: backward-Euler solve not converged (dt_retry, 5 so fa
 
 == 2026-11-21 16:04:49 log.5: CW 12-13 (grep -B5)
 
+== 2026-11-21 16:09:04 log.5: CW 14-14 (grep -B5)
+

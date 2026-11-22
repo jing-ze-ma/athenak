@@ -2443,3 +2443,6 @@ B_br gate not passed; arms not started
   CW t9r (log.5) cycle 27087 [cycle=27100 time=1.482278e+06 dt=2.988926e+01]: CLEAN WARNING cycle 27087 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
 - (16:08) PROD 1121b:
   ALERT dt collapse m35mms: max 22.7205 -> 0.00115639 (last 200 cycle lines) at cycle=45506 time=374741
+- (16:09) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW m35mms (log.2) cycle 45505 []: CLEAN WARNING cycle 45505: floor_pay = rad_column left 1.446214e+33 of the fluid floors' energy unpaid (created)
+  CW t9r (log.5) cycle 27180 []: CLEAN WARNING cycle 27180 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 6)
