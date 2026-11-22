@@ -2441,3 +2441,5 @@ B_br gate not passed; arms not started
   CW i1_m35mms_f1k (log.2) cycle 41714 []: CLEAN WARNING cycle 41714 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 3)
   CW t9r (log.5) cycle 27071 [cycle=27100 time=1.482278e+06 dt=2.988926e+01]: CLEAN WARNING cycle 27071 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 4)
   CW t9r (log.5) cycle 27087 [cycle=27100 time=1.482278e+06 dt=2.988926e+01]: CLEAN WARNING cycle 27087 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
+- (16:08) PROD 1121b:
+  ALERT dt collapse m35mms: max 22.7205 -> 0.00115639 (last 200 cycle lines) at cycle=45506 time=374741
