@@ -357,5 +357,13 @@ if (DEFINED Athena_M1_VGD_NCCL_DIR AND NOT "${Athena_M1_VGD_NCCL_DIR}" STREQUAL 
       -Wl,-rpath,${Athena_M1_VGD_NCCL_DIR}/lib)
 endif()
 
+# HIP: the clean RHS / Newton translation unit without VGPR spills to AGPRs.  On gfx942
+# the AGPRs share the register file: cln_rhs's 32 AGPR spill slots left it 1 wave per SIMD
+# (2 with its spills in scratch).  The arithmetic is unchanged (bitwise)
+if (Kokkos_ENABLE_HIP)
+  set_source_files_properties(rad_m1/rad_m1_clean_p1.cpp
+      PROPERTIES COMPILE_OPTIONS "-mllvm;-amdgpu-spill-vgpr-to-agpr=0")
+endif()
+
 # enable include of header files with /src/ as root of path
 target_include_directories(athena PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
