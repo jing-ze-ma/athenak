@@ -2108,6 +2108,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // the lateral faces take the closure's flux alone (CLF_W = 0)
     cln_thr = cln_cssc && pin->DoesParameterExist("rad_m1","clean_cs_thin_radial") &&
               pin->GetBoolean("rad_m1","clean_cs_thin_radial");
+    // clean_w_face_min (default off): a face's thin share w from the THINNER of its two
+    // cells' C1, not the thicker: the half-range form streams each donor's own
+    // intensities, which a diffusive donor (C1 ~ 0, h+- ~ +-1/4) does not have; at an
+    // unresolved photosphere its isotropic partial current c E/4 is ~10x the flux
+    cln_wmin = pin->GetOrAddBoolean("rad_m1","clean_w_face_min",false);
     // rotwb2-1121: vet_rotate_avg_ema_wb keeps the ring's closure of a static state, but
     // the cs face half ranges (cln_fh, CleanFaceHalf) are the two swept sets' (no offset)
     if (cln_cssc && vra_ema_wb && !cln_rfh && global_variable::my_rank == 0) {

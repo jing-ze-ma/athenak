@@ -1087,6 +1087,7 @@ void RadiationM1::CleanFaceCoefficients() {
   const bool fho = cln_rfh;    // (clean_ring_fh: the cells' own, CleanCellHalf)
   const bool thr = cln_thr;    // (clean_cs_thin_radial)
   const bool tdn = cln_tdn;    // (clean_thin_donor)
+  const bool wmn = cln_wmin;   // (clean_w_face_min)
   const CleanArgs *px = fho ? CleanDevArgs(CleanMakeArgs(), 0) : nullptr;
   const int nd = pmy_pack->pmesh->use_cubed_sphere ? cln_fvn : 0;
 
@@ -1102,7 +1103,8 @@ void RadiationM1::CleanFaceCoefficients() {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int kl = k - dk, jl = j - dj, il = i - di;
       const Real chi = CleanFaceChi(op, x1f, mbc, hrm, dir, m, k, j, i, is, ie);
-      const Real c1 = fmax(cs(m,CLN_C1,k,j,i), cs(m,CLN_C1,kl,jl,il));
+      const Real c1 = wmn ? fmin(cs(m,CLN_C1,k,j,i), cs(m,CLN_C1,kl,jl,il))
+                          : fmax(cs(m,CLN_C1,k,j,i), cs(m,CLN_C1,kl,jl,il));
       fc(m,CLF_W,k,j,i) = (thr && dir > 0) ? 0.0
                                            : CleanSmoothStep((c1 - c1lo)/(c1hi - c1lo));
       fc(m,CLF_TH,k,j,i) = 1.0/(1.0 + h*c*chi);
