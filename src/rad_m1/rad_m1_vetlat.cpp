@@ -80,6 +80,7 @@
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_vetseg.hpp"
 #include "rad_m1/rad_m1_vetsrc.hpp"
+#include "rad_m1/rad_m1_clean.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -511,6 +512,10 @@ void RadiationM1::VetLatSweep(const int stage) {
   // so where it would cool it emits what it absorbs, kP B = kE E (1e-6: the EOS
   // inversion's round-off at the floor)
   const Real rtf = cln_rtf ? (1.0 + 1.0e-6)*eos.tfloor : 0.0;
+  // clean_source_jray: the absorbed part of the vet_scatter source with the rays' own
+  // lagged J (cln_s CLN_J; E where they have none), not E
+  const bool sjr = clean && cln_srcj && cln_s.extent_int(0) > nmb1;
+  auto cjs = cln_s;
   auto uh = flv.u0;
   const Real chs = chat;
   const Real dts = (vsrc_dt > 0.0) ? vsrc_dt : (mr_on ? mr_dt : pm->dt);
@@ -546,9 +551,10 @@ void RadiationM1::VetLatSweep(const int stage) {
                                     chi, rks));
       } else if (vsf != 0) {
         const Real rkp = cvx ? fmin(opac_(m,M1_OP_P,k,j,i), chi) : opac_(m,M1_OP_P,k,j,i);
+        const Real jr = (sjr && cjs(m,CLN_J,k,j,i) > 0.0) ? cjs(m,CLN_J,k,j,i) : e;
         s = VetScatterMix(vsf, rkp, chi, rks, (tg < rtf) ? fmin(ar*t2*t2,
-                          opac_(m,M1_OP_E,k,j,i)*e/fmax(opac_(m,M1_OP_P,k,j,i), 1.0e-300))
-                          : ar*t2*t2, e);
+                          opac_(m,M1_OP_E,k,j,i)*jr/fmax(opac_(m,M1_OP_P,k,j,i), 1.0e-300))
+                          : ar*t2*t2, jr);
       } else {
         s = eth*ar*t2*t2 + (1.0 - eth)*e;
       }

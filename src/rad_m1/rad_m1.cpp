@@ -620,6 +620,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // extinction, made S = J + 750 (B - J) < 0 there: floored to 1e-300, a source hole in
     // the rays)
     cln_srccvx = pin->GetOrAddBoolean("rad_m1","clean_source_convex",false);
+    // clean_source_jray (default off): that source's absorbed part with the rays' own
+    // lagged J, S = J_r + (kappa_P/chi)(B - J_r) (CLN_J; E where the rays have none): the
+    // gas emits kP B and absorbs kP J of the field the rays carry, not of E
+    cln_srcj = pin->GetOrAddBoolean("rad_m1","clean_source_jray",false);
     if (cln_freal && !(cln_gflux && cln_fsolve)) {
       std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_freal needs clean_consistency "
                 << "(the F solve and gflux)" << std::endl;
