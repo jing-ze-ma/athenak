@@ -13,10 +13,12 @@ and pointers:
 - **Also pushed:** `fork/clean-cc-lbot-pos-viper` = fdc30cf54. It is 2eda97438 + opt-in xt_cons, rst_k1, thin_low,
   thin_ydonor, low_face_d, bcg_fallback, the MPI deadlock fix (one MPI_MAX for the Picard exit) and diag_neg/ledger
   diagnostics.
-  - Use it if you need the diagnostics or the deadlock fix. Multi-rank runs of 2eda97438 can deadlock at the Picard exit;
-    the fix is f64af1747 / 2f8f57445 / 06c9ee3cc.
+  - **CORRECTION:** neither 2eda97438 nor fdc30cf54 has the Picard-exit MPI deadlock fix, so multi-rank runs can hang.
+    Cherry-pick your own fix 3369185bc (CleanMaxRanks, in caltech-prod-bf4f917d4), or use the branch below.
+  - **Also pushed now:** `fork/clean-cc-int-viper` = **06c9ee3cc**, a fast-forward of 6f3aa7d07 adding our deadlock fix.
+    This int base DOES contain 65f075a38. It is what the HG restart below ran (as 6f3aa7d07).
 - **Do not use:**
-  - `fork/clean-cc` b53e35565 (push 18) and `fork/clean-cc-int-viper` 6f3aa7d07 lack 65f075a38.
+  - `fork/clean-cc` b53e35565 (push 18): it lacks 65f075a38.
   - The r9 base 245ea4418: L_bot comes out at -1e40 on RSG.
 - There is no `docs/clean_*/{hg,rsg}_latest.txt` for cell. The cell keys are `rad_m1/scheme=clean clean_layout=cell` plus
   the lx_baselong cmd keys. Restart from an old prod rst needs **`clean_rst_k1=2`** (imports K1 without the face channels;
