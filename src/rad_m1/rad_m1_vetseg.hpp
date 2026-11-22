@@ -245,11 +245,12 @@ Real VetSegSplit(const Real iu, const Real su, const Real s0, const Real hu,
 
 // one SC segment from the upwind point (I_u, chi_u, S_u) to the
 // cell centre (chi_0, S_0) over the path length hl = dx1/|mu1|, vet_seg split or mean;
-// ifc (if given) takes the intensity at the face (half the path)
+// ifc (if given) takes the intensity at the face (half the path); suu: VetSegFace
 KOKKOS_INLINE_FUNCTION
 Real VetSegOne(const Real iu, const Real su, const Real s0, const Real cu, const Real c0,
-               const Real hl, const bool spl, const int spe, Real *ifc = nullptr) {
-  if (spl) {return VetSegSplit(iu, su, s0, 0.5*cu*hl, 0.5*c0*hl, spe, ifc);}
+               const Real hl, const bool spl, const int spe, Real *ifc = nullptr,
+               const Real suu = -1.0) {
+  if (spl) {return VetSegSplit(iu, su, s0, 0.5*cu*hl, 0.5*c0*hl, spe, ifc, suu);}
   if (ifc != nullptr) *ifc = VetSegFaceI(iu, su, s0, 0.5*cu*hl, 0.5*c0*hl, 0);
   Real ex, w0, wu;
   VetSegW(0.5*(cu + c0)*hl, ex, w0, wu);
@@ -270,13 +271,15 @@ Real VetSegOne(const Real iu, const Real su, const Real s0, const Real cu, const
 //   3 auto:   corner where the stencil's extinction contrast max/min chi exceeds
 //             kVetCornerRatio (a material edge), log elsewhere (a smooth field: the two
 //             agree to O(dx^2) there, and log costs one segment instead of up to four)
-// ifc (if given) takes the intensity at the face.
+// ifc (if given) takes the intensity at the face; suq (if given) the corners' S one
+// x1 cell further upwind (vet_seg = jump, VetSegFace), interpolated as sq.
 constexpr Real kVetCornerRatio = 4.0;
 
 KOKKOS_INLINE_FUNCTION
 Real VetUpCorner(int mode, const Real w[4], const Real iq[4], const Real cq[4],
                  const Real sq[4], const Real s0, const Real c0, const Real hl,
-                 const bool spl, const int spe, Real *ifc = nullptr) {
+                 const bool spl, const int spe, Real *ifc = nullptr,
+                 const Real *suq = nullptr) {
   if (mode == 3) {
     Real cmn = 1.0e300, cmx = 0.0;
     for (int q = 0; q < 4; ++q) {
@@ -290,18 +293,21 @@ Real VetUpCorner(int mode, const Real w[4], const Real iq[4], const Real cq[4],
     for (int q = 0; q < 4; ++q) {
       if (!(w[q] > 0.0)) continue;
       iv += w[q]*VetSegOne(iq[q], sq[q], s0, cq[q], c0, hl, spl, spe,
-                           (ifc != nullptr) ? &fq : nullptr);
+                           (ifc != nullptr) ? &fq : nullptr,
+                           (suq != nullptr) ? suq[q] : -1.0);
       if (ifc != nullptr) *ifc += w[q]*fq;
     }
     return iv;
   }
-  Real iu = 0.0, lc = 0.0, ls = 0.0;
+  Real iu = 0.0, lc = 0.0, ls = 0.0, lu = 0.0;
   for (int q = 0; q < 4; ++q) {
     iu += w[q]*iq[q];
     lc += w[q]*log(fmax(cq[q], 1.0e-300));
     ls += w[q]*log(fmax(sq[q], 1.0e-300));
+    if (suq != nullptr) lu += w[q]*log(fmax(suq[q], 1.0e-300));
   }
-  return VetSegOne(iu, exp(ls), s0, exp(lc), c0, hl, spl, spe, ifc);
+  return VetSegOne(iu, exp(ls), s0, exp(lc), c0, hl, spl, spe, ifc,
+                   (suq != nullptr) ? exp(lu) : -1.0);
 }
 
 // scheme = clean: the second-order foot of the transverse interpolation, the PLM remap
@@ -361,13 +367,14 @@ bool VetCrossEdge(const Real w[4], const Real cq[4], const Real cc) {
 // vet_seg_cross: the segment when the last part f of its upwind half lies in a cell C
 // other than the foot's: the stencil outcome ib at the entry into C, then C's chi and S
 // (constant) up to the face, then the own half as VetSegSplit (exact for a piecewise
-// constant field); ifc (if given) takes the intensity at the face
+// constant field); ifc (if given) takes the intensity at the face; suu: S of the cell
+// one x1 cell upwind of C (VetSegFace)
 KOKKOS_INLINE_FUNCTION
 Real VetSegCross(const Real ib, const Real cc, const Real sc, const Real s0,
                  const Real c0, const Real hl, const Real f, const int spe,
-                 Real *ifc = nullptr) {
+                 Real *ifc = nullptr, const Real suu = -1.0) {
   const Real ex = exp(-0.5*f*cc*hl);
-  return VetSegSplit(ib*ex + sc*(1.0 - ex), sc, s0, 0.0, 0.5*c0*hl, spe, ifc);
+  return VetSegSplit(ib*ex + sc*(1.0 - ex), sc, s0, 0.0, 0.5*c0*hl, spe, ifc, suu);
 }
 
 // vet_path = cells.  The x1-plane sweep steps ONE x1 column per segment; a
@@ -435,14 +442,15 @@ bool VetPathNode(const A &acc, const int vim, const Real s, const int dj0, const
 }
 
 // the subdivided step (see above): returns false (iv untouched) where the step has no
-// node; iul, cul, sul: the lin (vet_interp = lin) upwind values; hl = dx1/|mu1|
+// node; iul, cul, sul: the lin (vet_interp = lin) upwind values; hl = dx1/|mu1|; suq:
+// as VetUpCorner, for the first sub-segment only (the others start at interior nodes)
 template <class A>
 KOKKOS_INLINE_FUNCTION
 bool VetPathStep(const A &acc, const int vim, const Real w[4], const Real iq[4],
                  const Real cq[4], const Real sq[4], const Real iul, const Real cul,
                  const Real sul, const Real s0, const Real c0, const Real hl,
                  const bool spl, const int spe, const Real sh2, const Real sh3,
-                 Real &iv) {
+                 Real &iv, const Real *suq = nullptr) {
   const Real a2 = fabs(sh2), a3 = fabs(sh3);
   const int n2 = (a2 > 1.0) ? (static_cast<int>(ceil(a2)) - 1) : 0;
   const int n3 = (a3 > 1.0) ? (static_cast<int>(ceil(a3)) - 1) : 0;
@@ -517,8 +525,12 @@ bool VetPathStep(const A &acc, const int vim, const Real w[4], const Real iq[4],
       ++t3;
     }
     if (first) {
-      ivc = (vim != 0) ? VetUpCorner(vim, w, iq, cq, sq, snv, cn, hl*sn, spl, spe)
-                       : VetSegOne(iul, sul, snv, cul, cn, hl*sn, spl, spe);
+      const Real suul = (suq != nullptr) ? (w[0]*suq[0] + w[1]*suq[1] + w[2]*suq[2]
+                                            + w[3]*suq[3]) : -1.0;
+      ivc = (vim != 0) ? VetUpCorner(vim, w, iq, cq, sq, snv, cn, hl*sn, spl, spe,
+                                     nullptr, suq)
+                       : VetSegOne(iul, sul, snv, cul, cn, hl*sn, spl, spe, nullptr,
+                                   suul);
       first = false;
     } else {
       ivc = VetSegOne(ivc, spv, snv, cp, cn, hl*(sn - sp), spl, spe);

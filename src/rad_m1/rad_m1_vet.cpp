@@ -362,8 +362,9 @@ struct VetMBState {
   std::vector<int> hgid, hrank, xgid, xrank;
   std::vector<int> gid0;       // (nranks) first global id of each rank
   bool hmpi = false, xmpi = false;   // some horizontal / x1 neighbour is remote
-  DvceArray5D<Real> csw;       // (nmb, nx1+2, 2, n3w, n2w) extinction and source, banded,
-                               // layers 0 and nx1+1 = the x1 neighbours' face layers
+  DvceArray5D<Real> csw;       // (nmb, nx1+4, 2, n3w, n2w) extinction and source, banded,
+                               // layers 0, 1 and nx1+2, nx1+3 = the x1 neighbours' two
+                               // face layers (0 beyond a physical x1 face)
   DvceArray5D<Real> ipl;       // (nmb, nring, nray, n3w, n2w) I of the last layers
   DvceArray5D<Real> spl;       // (nmb, 4, NFS, n3w, n2w) clean_consistency: face sums
                                // of the x1 neighbours' cells, for the lower (0) and the
@@ -987,7 +988,7 @@ struct VetRayK {
     const Real dx1 = dx(m,0);
     const Real dx2 = dx(m,1);
     const Real dx3 = dx(m,2);
-    const int li0 = (up ? lu : ld) + 1;   // csw layer of the cell
+    const int li0 = (up ? lu : ld) + 2;   // csw layer of the cell
     const Real am1 = fabs(m1);
     const Real c0 = cs(m,li0,0,kk,jj);
     const Real s0 = cs(m,li0,1,kk,jj);
@@ -1062,6 +1063,13 @@ struct VetRayK {
                       + wba*cs(m,li,0,kb,ja) + wbb*cs(m,li,0,kb,jb);
       const Real su = waa*cs(m,li,1,ka,ja) + wab*cs(m,li,1,ka,jb)
                       + wba*cs(m,li,1,kb,ja) + wbb*cs(m,li,1,kb,jb);
+      // vet_seg = jump: the corners' S one x1 layer further upwind (VetSegFace; 0 beyond
+      // a physical x1 face: q = 1, the boundary cell keeps jump)
+      const bool juu = spl && spe == 2;
+      const int lu2 = up ? (li - 1) : (li + 1);
+      auto s2 = [&](const int kq, const int jq) {return juu ? cs(m,lu2,1,kq,jq) : 0.0;};
+      const Real squ[4] = {s2(ka,ja), s2(ka,jb), s2(kb,ja), s2(kb,jb)};
+      const Real *suq = juu ? squ : nullptr;
       if (vim != 0) {   // vet_interp: log | corner
         const Real wq[4] = {waa, wab, wba, wbb};
         const Real iq[4] = {iaa, iab, iba, ibb};
@@ -1069,10 +1077,12 @@ struct VetRayK {
                             cs(m,li,0,kb,jb)};
         const Real sq[4] = {cs(m,li,1,ka,ja), cs(m,li,1,ka,jb), cs(m,li,1,kb,ja),
                             cs(m,li,1,kb,jb)};
-        iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe);
+        iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe, nullptr, suq);
       } else if (spl) {
         // vet_seg = split, the two halves at the x1 face
-        iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe);
+        iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe, nullptr,
+                         juu ? (waa*squ[0] + wab*squ[1] + wba*squ[2] + wbb*squ[3])
+                             : -1.0);
       } else {
         const Real dtau = 0.5*(cu + c0)*dx1/am1;
         Real ex, w0, wu;
@@ -1096,7 +1106,7 @@ struct VetRayK {
         const Real sq[4] = {cs(m,li,1,ka,ja), cs(m,li,1,ka,jb), cs(m,li,1,kb,ja),
                             cs(m,li,1,kb,jb)};
         VetPathStep(acc, vim, wq, iq, cq, sq, iup_v, cu, su, s0, c0, dx1/am1, spl, spe,
-                    sh2, sh3p, iv);
+                    sh2, sh3p, iv, suq);
       }
     }
     ivo = fmax(iv, 0.0);
@@ -1686,6 +1696,13 @@ void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
                         + wba*gc_(iup,0,kb,ja) + wbb*gc_(iup,0,kb,jb);
         const Real su = waa*gc_(iup,1,ka,ja) + wab*gc_(iup,1,ka,jb)
                         + wba*gc_(iup,1,kb,ja) + wbb*gc_(iup,1,kb,jb);
+        // vet_seg = jump: the corners' S one x1 layer further upwind (VetSegFace; none
+        // beyond the physical x1 face: q = 1, the boundary cell keeps jump)
+        const int iu2 = up ? (iup - 1) : (iup + 1);
+        const bool juu = spl && spe == 2 && iu2 >= 0 && iu2 < nx1g;
+        auto s2 = [&](const int kq, const int jq) {return juu ? gc_(iu2,1,kq,jq) : 0.0;};
+        const Real squ[4] = {s2(ka,ja), s2(ka,jb), s2(kb,ja), s2(kb,jb)};
+        const Real *suq = juu ? squ : nullptr;
         if (vim != 0) {   // vet_interp: log | corner
           const Real wq[4] = {waa, wab, wba, wbb};
           const Real iq[4] = {gp_(pr,rr,ka,ja) + dv, gp_(pr,rr,ka,jb) + dv,
@@ -1694,10 +1711,12 @@ void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
                               gc_(iup,0,kb,jb)};
           const Real sq[4] = {gc_(iup,1,ka,ja), gc_(iup,1,ka,jb), gc_(iup,1,kb,ja),
                               gc_(iup,1,kb,jb)};
-          iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe);
+          iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe, nullptr, suq);
         } else if (spl) {
           // vet_seg = split, the two halves at the x1 face
-          iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe);
+          iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe, nullptr,
+                           juu ? (waa*squ[0] + wab*squ[1] + wba*squ[2] + wbb*squ[3])
+                               : -1.0);
         } else {
           const Real dtau = 0.5*(cu + c0)*dx1/am1;
           Real ex, w0, wu;
@@ -1723,7 +1742,7 @@ void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
           const Real sq[4] = {gc_(iup,1,ka,ja), gc_(iup,1,ka,jb), gc_(iup,1,kb,ja),
                               gc_(iup,1,kb,jb)};
           VetPathStep(acc, vim, wq, iq, cq, sq, iup_v, cu, su, s0, c0, dx1/am1, spl, spe,
-                      sh2, sh3p, iv);
+                      sh2, sh3p, iv, suq);
         }
       }
       gp_(pw,rr,k,j) = fmax(iv, 0.0);
@@ -2703,7 +2722,7 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
     st.oj[o] = st.ok[o] = 0;
   }
   st.maxreg = thrd ? std::max(std::max(st.b2*nx3, nx2*st.b3), st.b2*st.b3) : st.b2;
-  st.maxcnt = std::max(st.nrl, 2*(nx1 + 2))*st.maxreg;
+  st.maxcnt = std::max(st.nrl, 2*(nx1 + 4))*st.maxreg;
   // the per-ray band of the intensity planes: cells a ray reads beyond the active area
   // per layer, below and above in x2 (x3): floor of the foot offset (one more cell when
   // the offset is within round-off of an integer, where blocks might floor differently).
@@ -2959,7 +2978,7 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
   };
   if (st.agg) {
     std::vector<int> csP(8, 0), crP(8, 0), csB(8, 0), crB(8, 0);
-    const int nab = 2*(nx1 + 2);
+    const int nab = 2*(nx1 + 4);
     for (int o = 0; o < st.nof; ++o) {
       csP[o] = st.cnts[o];
       crP[o] = st.cntr[o];
@@ -3022,7 +3041,7 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
   Kokkos::realloc(st.mom, nsb, nmo, nx1, nx3e, nx2);
   Kokkos::deep_copy(st.mom, 0.0);
 
-  Kokkos::realloc(st.csw, nsb, nx1 + 2, 2, st.n3w, st.n2w);
+  Kokkos::realloc(st.csw, nsb, nx1 + 4, 2, st.n3w, st.n2w);
   Kokkos::deep_copy(st.csw, 0.0);
   Kokkos::realloc(st.ipl, nsb, st.nring, st.nrl, st.n3w, st.n2w);
   Kokkos::deep_copy(st.ipl, 0.0);
@@ -3327,7 +3346,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
 #endif
 
   // (a) the moments start from zero (VetShortChar zeroes them; a repeated sweep of
-  // vet_mb_lag zeroes them here); the banded extinction/source planes, layer i - is + 1,
+  // vet_mb_lag zeroes them here); the banded extinction/source planes, layer i - is + 2,
   // and the bottom E, F
   if (!hyb) {
     par_for("m1_vet_mb_csw", DevExeSpace(), 0, nmb-1, is, ie, ks, ke, js, je,
@@ -3337,8 +3356,8 @@ void RadiationM1::VetSweepMB(bool lagged) {
           vc_(m,n,k,j,i) = 0.0;
         }
       }
-      cs_(m,i-is+1,0,k-ks+w3,j-js+w2) = vc_(m,M1_VET_CHX,k,j,i);
-      cs_(m,i-is+1,1,k-ks+w3,j-js+w2) = vc_(m,M1_VET_SRC,k,j,i);
+      cs_(m,i-is+2,0,k-ks+w3,j-js+w2) = vc_(m,M1_VET_CHX,k,j,i);
+      cs_(m,i-is+2,1,k-ks+w3,j-js+w2) = vc_(m,M1_VET_SRC,k,j,i);
       if (i == is) {
         bw_(m,0,k-ks,j-js) = esv_(m,esc_,k,j,i);
         bw_(m,1,k-ks,j-js) = iw_(m,M1_IW_F1,k,j,i);
@@ -3405,7 +3424,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
         const int k = q/(nx2*nx1);
         q -= k*nx2*nx1;
         const int j = q/nx1, i = q - j*nx1;
-        cs_(s,i + 1,c,k + w3,j + w2) = gb_(t);
+        cs_(s,i + 2,c,k + w3,j + w2) = gb_(t);
       } else {
         q -= 2*ncb;
         const int c = q/npb;
@@ -3416,9 +3435,13 @@ void RadiationM1::VetSweepMB(bool lagged) {
     });
     Kokkos::deep_copy(st.mom, 0.0);
   }
+  // the neighbours' two face layers, the nearer first (with nx1 = 1 the farther one is
+  // the neighbour's own face layer from ITS neighbour)
+  VetX1Move(st, st.csw, 0, -2, 1, nx1 + 1, 0, 2, nsb);
   VetX1Move(st, st.csw, 0, -2, 0, nx1, 0, 2, nsb);
-  VetX1Move(st, st.csw, 1, -2, nx1 + 1, 1, 0, 2, nsb);
-  VetBandExchange(st, st.csw, 0, nx1 + 2, 0, 2, nsb, nx2, nx3);
+  VetX1Move(st, st.csw, 1, -2, nx1 + 2, 2, 0, 2, nsb);
+  VetX1Move(st, st.csw, 1, -2, nx1 + 3, 3, 0, 2, nsb);
+  VetBandExchange(st, st.csw, 0, nx1 + 4, 0, 2, nsb, nx2, nx3);
 
   auto hs_ = st.hist;
   auto hx_ = st.histx;
@@ -3724,8 +3747,8 @@ void RadiationM1::VetSweepMB(bool lagged) {
             VetSegW(dtau, ex, w0, wu);
             iv = ib*ex + wu*su + w0*s0;
           } else {
-            // the upwind plane: banded layer i -+ 1 (0 and nx1+1 = the neighbour's face)
-            const int li = up ? (i - is) : (i - is + 2);
+            // the upwind plane: banded layer i -+ 1 (1 and nx1+2 = the neighbour's face)
+            const int li = up ? (i - is + 1) : (i - is + 3);
             const Real sh2 = -dx1*m2/(am1*dx2);
             const Real fl2 = floor(sh2);
             const Real a2 = sh2 - fl2;
@@ -3780,6 +3803,15 @@ void RadiationM1::VetSweepMB(bool lagged) {
                             + wba*cs_(m,li,0,kb,ja) + wbb*cs_(m,li,0,kb,jb);
             const Real su = waa*cs_(m,li,1,ka,ja) + wab*cs_(m,li,1,ka,jb)
                             + wba*cs_(m,li,1,kb,ja) + wbb*cs_(m,li,1,kb,jb);
+            // vet_seg = jump: the corners' S one x1 layer further upwind (VetSegFace; 0
+            // beyond a physical x1 face: q = 1, the boundary cell keeps jump)
+            const bool juu = spl && spe == 2;
+            const int lu2 = up ? (li - 1) : (li + 1);
+            auto s2 = [&](const int kq, const int jq) {
+              return juu ? cs_(m,lu2,1,kq,jq) : 0.0;
+            };
+            const Real squ[4] = {s2(ka,ja), s2(ka,jb), s2(kb,ja), s2(kb,jb)};
+            const Real *suq = juu ? squ : nullptr;
             if (vim != 0) {   // vet_interp: log | corner
               const Real wq[4] = {waa, wab, wba, wbb};
               const Real iq[4] = {ip_(m,pr,r,ka,ja) + dv, ip_(m,pr,r,ka,jb) + dv,
@@ -3789,7 +3821,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
               const Real sq[4] = {cs_(m,li,1,ka,ja), cs_(m,li,1,ka,jb), cs_(m,li,1,kb,ja),
                                   cs_(m,li,1,kb,jb)};
               iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe,
-                               f2s_ ? &ifc : nullptr);
+                               f2s_ ? &ifc : nullptr, suq);
               int r2 = 0, r3 = 0;
               const Real f = xcr ? fmin(VetCrossFrac(sh2, r2),
                                         thrd ? VetCrossFrac(sh3, r3) : 1.0) : 1.0;
@@ -3797,15 +3829,18 @@ void RadiationM1::VetSweepMB(bool lagged) {
                 // vet_seg_cross: the stencil over 1 - f, then the cell crossed
                 Real ib;
                 (void) VetUpCorner(vim, wq, iq, cq, sq, s0, c0, (1.0 - f)*dx1/am1, spl,
-                                   spe, &ib);
+                                   spe, &ib, suq);
                 iv = VetSegCross(ib, cs_(m,li,0,kc + r3,jc + r2),
                                  cs_(m,li,1,kc + r3,jc + r2), s0, c0, dx1/am1, f, spe,
-                                 f2s_ ? &ifc : nullptr);
+                                 f2s_ ? &ifc : nullptr,
+                                 juu ? s2(kc + r3,jc + r2) : -1.0);
               }
             } else if (spl) {
               // vet_seg = split, the two halves at the x1 face
               iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe,
-                               f2s_ ? &ifc : nullptr);
+                               f2s_ ? &ifc : nullptr,
+                               juu ? (waa*squ[0] + wab*squ[1] + wba*squ[2] + wbb*squ[3])
+                                   : -1.0);
             } else {
               const Real dtau = 0.5*(cu + c0)*dx1/am1;
               Real ex, w0, wu;
@@ -3818,7 +3853,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
             if (f2s_) add4(up ? f2u + 8 : fnd + 8, wr*m1*fmax(ifc, 0.0));
             if (vpath) {   // vet_path = cells (VetPathStep)
               const Real sh3p = thrd ? (-dx1*m3/(am1*dx3)) : 0.0;
-              const int lo = i - is + 1;   // the own banded layer
+              const int lo = i - is + 2;   // the own banded layer
               auto acc = [&](const int c, const int dk, const int dj, Real &cv, Real &sv)
                              -> bool {
                 const int lc = (c == 0) ? li : lo;
@@ -3835,7 +3870,7 @@ void RadiationM1::VetSweepMB(bool lagged) {
               const Real sq[4] = {cs_(m,li,1,ka,ja), cs_(m,li,1,ka,jb), cs_(m,li,1,kb,ja),
                                   cs_(m,li,1,kb,jb)};
               VetPathStep(acc, vim, wq, iq, cq, sq, iup_v, cu, su, s0, c0, dx1/am1, spl,
-                          spe, sh2, sh3p, iv);
+                          spe, sh2, sh3p, iv, suq);
             }
           }
           iv = fmax(iv, 0.0);
@@ -4556,6 +4591,21 @@ void RadiationM1::VetShortCharSweep() {
                         + wab*vc_(m,M1_VET_SRC,ka,jb,iup)
                         + wba*vc_(m,M1_VET_SRC,kb,ja,iup)
                         + wbb*vc_(m,M1_VET_SRC,kb,jb,iup);
+        // vet_seg = jump: the corners' S one x1 cell further upwind (VetSegFace), its
+        // periodic or mirror image beyond an x1 end; none (q = 1: the boundary cell keeps
+        // jump) beyond an open one (vet_cell holds no ghost CHX, SRC)
+        int iuu = up ? (i - 2) : (i + 2);
+        if (x1per) {
+          iuu = is + VetWrap(iuu - is, nx1);
+        } else if (up ? (iuu < is && mrlo) : (iuu > ie && mrhi)) {
+          iuu = up ? (2*is - 1 - iuu) : (2*ie + 1 - iuu);
+        }
+        const bool juu = spl && spe == 2 && iuu >= is && iuu <= ie;
+        auto s2 = [&](const int kq, const int jq) {
+          return juu ? vc_(m,M1_VET_SRC,kq,jq,iuu) : 0.0;
+        };
+        const Real squ[4] = {s2(ka,ja), s2(ka,jb), s2(kb,ja), s2(kb,jb)};
+        const Real *suq = juu ? squ : nullptr;
         if (vim != 0) {   // vet_interp: log | corner
           const Real wq[4] = {waa, wab, wba, wbb};
           // a corner outside a vacuum face carries I = 0 (gate exactly 1
@@ -4567,7 +4617,7 @@ void RadiationM1::VetShortCharSweep() {
           const Real sq[4] = {vc_(m,M1_VET_SRC,ka,ja,iup), vc_(m,M1_VET_SRC,ka,jb,iup),
                               vc_(m,M1_VET_SRC,kb,ja,iup), vc_(m,M1_VET_SRC,kb,jb,iup)};
           iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe,
-                           f2s_ ? &ifc : nullptr);
+                           f2s_ ? &ifc : nullptr, suq);
           int r2 = 0, r3 = 0;
           Real f = xcr ? fmin(VetCrossFrac(sh2, r2),
                               thrd ? VetCrossFrac(sh3, r3) : 1.0) : 1.0;
@@ -4578,15 +4628,17 @@ void RadiationM1::VetShortCharSweep() {
             // vet_seg_cross: the stencil over 1 - f, then the cell crossed
             Real ib;
             (void) VetUpCorner(vim, wq, iq, cq, sq, s0, c0, (1.0 - f)*dx1/am1, spl, spe,
-                               &ib);
+                               &ib, suq);
             iv = VetSegCross(ib, vc_(m,M1_VET_CHX,kq,jq,iup),
                              vc_(m,M1_VET_SRC,kq,jq,iup), s0, c0, dx1/am1, f, spe,
-                             f2s_ ? &ifc : nullptr);
+                             f2s_ ? &ifc : nullptr, juu ? s2(kq,jq) : -1.0);
           }
         } else if (spl) {
           // vet_seg = split, the two halves at the x1 face
           iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe,
-                           f2s_ ? &ifc : nullptr);
+                           f2s_ ? &ifc : nullptr,
+                           juu ? (waa*squ[0] + wab*squ[1] + wba*squ[2] + wbb*squ[3])
+                               : -1.0);
         } else {
           const Real dtau = 0.5*(cu + c0)*dx1/am1;
           Real ex, w0, wu;
@@ -4634,7 +4686,7 @@ void RadiationM1::VetShortCharSweep() {
           const Real sq[4] = {vc_(m,M1_VET_SRC,ka,ja,iup), vc_(m,M1_VET_SRC,ka,jb,iup),
                               vc_(m,M1_VET_SRC,kb,ja,iup), vc_(m,M1_VET_SRC,kb,jb,iup)};
           VetPathStep(acc, vim, wq, iq, cq, sq, iup_v, cu, su, s0, c0, dx1/am1, spl, spe,
-                      sh2, sh3p, iv);
+                      sh2, sh3p, iv, suq);
         }
       }
       if (dbgc && iv < 0.0) {Kokkos::atomic_add(&dcl_(0), 1.0);}   // DEBUG
