@@ -58,6 +58,12 @@ void DualEnergy::Read(ParameterInput *pin, const std::string &block, const EOS_D
       Fatal("<" + blk + ">/floor_pay = " + s + ": use rad, rad_column or none");
     }
   }
+  // floor_pay_retry (read only when named; default false): energy the radiation cannot
+  // pay is not created, the cycle is taken again with a smaller dt (time/dt_retry)
+  if (Named(pin, blk, "floor_pay_retry")) {
+    pretry = pin->GetBoolean(blk, "floor_pay_retry");
+    if (pretry && !pay) Fatal("<" + blk + ">/floor_pay_retry needs floor_pay = rad*");
+  }
   retest = Named(pin, blk, "fofc_retest") && pin->GetBoolean(blk, "fofc_retest");
   if (Named(pin, blk, "floor_audit")) report = pin->GetInteger(blk, "floor_audit");
   if (Named(pin, blk, "dual_energy_eta")) eta = pin->GetReal(blk, "dual_energy_eta");
@@ -316,9 +322,9 @@ void DualEnergy::Report(MeshBlockPack *pp) {
 //----------------------------------------------------------------------------------------
 //! \fn void DualPayFromRad
 
-void DualPayFromRad(MeshBlockPack *pp, DualEnergy &de, DvceArray5D<Real> &urad,
+Real DualPayFromRad(MeshBlockPack *pp, DualEnergy &de, DvceArray5D<Real> &urad,
                     const int ie, const Real ch_cl, const Real efl) {
-  if (!de.pay || !de.init) return;
+  if (!de.pay || !de.init) return 0.0;
   auto &indcs = pp->pmesh->mb_indcs;
   const int is = indcs.is, ie_ = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -401,21 +407,25 @@ void DualPayFromRad(MeshBlockPack *pp, DualEnergy &de, DvceArray5D<Real> &urad,
     paid += cp;
     unpaid += cu;
   }
-  // (no silent fallback: energy the column could not give is created, reported)
-  if (col) {
-    Real ug = unpaid;
+  // (no silent fallback: energy the column could not give is created, reported; with
+  // floor_pay_retry the Driver takes the cycle again instead)
+  Real ug = 0.0;
+  if (col || de.pretry) {
+    ug = unpaid;
 #if MPI_PARALLEL_ENABLED
     MPI_Allreduce(MPI_IN_PLACE, &ug, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
     if (ug > 0.0 && global_variable::my_rank == 0) {
       std::printf("CLEAN WARNING cycle %d: floor_pay = rad_column left %.6e of the fluid "
-                  "floors' energy unpaid (created)\n", pp->pmesh->ncycle, ug);
+                  "floors' energy unpaid (%s)\n", pp->pmesh->ncycle, ug,
+                  de.pretry ? "the cycle is taken again" : "created");
     }
   }
   de.hc[DC_PAID] += paid;
   de.hc[DC_UNPAID] += unpaid;
   de.hc[DC_NPAY] += npay;
   de.hc[DC_GIVEN] += given;
+  return ug;
 }
 
 }  // namespace fluid

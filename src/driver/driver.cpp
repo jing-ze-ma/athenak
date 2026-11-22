@@ -52,16 +52,19 @@ void DualDiscard(Mesh *pm) {
 }
 // <hydro|mhd>/floor_pay = rad: the energy the fluid floors and dual selection created
 // is taken from E_rad of the same cell (hydro/dual_energy.hpp)
-void DualPay(Mesh *pm) {
-  auto *pm1 = pm->pmb_pack->pradm1;
+fluid::DualEnergy *DualPayer(Mesh *pm) {
   auto *ph = pm->pmb_pack->phydro;
   auto *pmh = pm->pmb_pack->pmhd;
-  fluid::DualEnergy *pde = (ph != nullptr && ph->dual.pay) ? &(ph->dual) :
-      ((pmh != nullptr && pmh->dual.pay) ? &(pmh->dual) : nullptr);
-  if (pm1 != nullptr && pde != nullptr) {
-    fluid::DualPayFromRad(pm->pmb_pack, *pde, pm1->u0, radm1::M1_E,
-                          pm1->chat/pm1->c_light, pm1->e_floor);
-  }
+  return (ph != nullptr && ph->dual.pay) ? &(ph->dual) :
+         ((pmh != nullptr && pmh->dual.pay) ? &(pmh->dual) : nullptr);
+}
+// (returns the energy left unpaid, see DualPayFromRad)
+Real DualPay(Mesh *pm) {
+  auto *pm1 = pm->pmb_pack->pradm1;
+  fluid::DualEnergy *pde = DualPayer(pm);
+  if (pm1 == nullptr || pde == nullptr) return 0.0;
+  return fluid::DualPayFromRad(pm->pmb_pack, *pde, pm1->u0, radm1::M1_E,
+                               pm1->chat/pm1->c_light, pm1->e_floor);
 }
 }  // namespace
 
@@ -891,6 +894,18 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       const auto t2we = t2clk();
       const int t2kind = !t2wall ? -1 :
                          (m1t2 ? (m1t2fail ? 1 : 0) : (pm1->t2_abe_now ? 2 : 3));
+      // <hydro|mhd>/floor_pay_retry: the payment before the cycle is accepted; energy
+      // the radiation cannot pay fails the cycle (dt_retry) instead of being created
+      const bool dpre = (DualPayer(pmesh) != nullptr) && DualPayer(pmesh)->pretry &&
+                        (pm1 != nullptr);
+      if (dpre && !(pdtr_ != nullptr && pdtr_->on)) {
+        std::cout << "### FATAL ERROR floor_pay_retry needs <time>/dt_retry" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (dpre && DualPay(pmesh) > 0.0 && !pm1->dtr_fail) {
+        pm1->dtr_fail = true;
+        pm1->dtr_why = 7;
+      }
       // a module raised a failure in this cycle -> the checkpoint back, a
       // smaller dt, and the cycle again (nothing of the failed attempt is output)
       if (pdtr_ != nullptr && pdtr_->on && pdtr_->Failed(pmesh)) {
@@ -912,7 +927,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // <hydro|mhd>/floor_pay = rad: the energy this step's fluid floors and
       // dual selection created is taken from E_rad of the same cell, once, after every
       // radiation stage (hydro/dual_energy.hpp)
-      DualPay(pmesh);
+      if (!dpre) {DualPay(pmesh);}
       if (t2kind == 1) {
         pm1->Time2AutoBeEnd(1, t2sec(t2w0, t2wf), t2sec(t2wf, t2we));
       } else if (t2kind >= 0) {

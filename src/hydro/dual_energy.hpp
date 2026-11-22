@@ -68,6 +68,7 @@ struct DualEnergy {
   bool on = false;      // <blk>/dual_energy
   bool pay = false;     // <blk>/floor_pay = rad (or rad_column)
   bool pcol = false;    // <blk>/floor_pay = rad_column: the rest from the radial column
+  bool pretry = false;  // <blk>/floor_pay_retry: unpaid energy fails the cycle (dt_retry)
   bool retest = false;  // <blk>/fofc_retest
   bool any = false;     // Pre/Post bookkeeping active
   bool armed = false;   // a hydro update evolved the slots since the last Post
@@ -101,8 +102,9 @@ struct DualEnergy {
 //! floor_pay = rad: pay `payv` of the fluid from E_rad (slot ie of urad) of the same
 //! cell (every cell, ghosts mirror their neighbour); ch_cl = chat/c; efl = e_floor.
 //! Called ONCE PER STEP by the Driver after every radiation stage (so no RK / time2
-//! register of the radiation re-weights or drops the payment); resets payv.
-void DualPayFromRad(MeshBlockPack *pp, DualEnergy &de, DvceArray5D<Real> &urad,
+//! register of the radiation re-weights or drops the payment); resets payv.  Returns
+//! the energy left unpaid (all ranks; 0 unless rad_column or floor_pay_retry).
+Real DualPayFromRad(MeshBlockPack *pp, DualEnergy &de, DvceArray5D<Real> &urad,
                     const int ie, const Real ch_cl, const Real efl);
 
 }  // namespace fluid

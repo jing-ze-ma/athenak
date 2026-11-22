@@ -812,9 +812,11 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   pm->dt = dtn;
   // the words the production link scripts STOP on (DIVERGED, nan, NON-CONVERGED=) are not
   // used here: a retried cycle is not a failed run
+  // (7: the Driver's floor_pay_retry)
   static const char *whys[] = {"?", "NON-CONVERGED", "resid>implicit_resid_fatal",
                                "masked_resid>implicit_resid_fatal_masked", "eint<=0",
-                               "time2_reject", "vkick", "?", "?", "forced"};
+                               "time2_reject", "vkick", "floor_pay_unpaid", "?",
+                               "forced"};
   if (global_variable::my_rank == 0) {
     std::cout << "DT_RETRY cycle=" << pm->ncycle << " t=" << pm->time << " dt " << dto
               << " -> " << dtn << " reason=" << whys[std::min(std::max(why, 0), 9)]
