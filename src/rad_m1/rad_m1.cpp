@@ -1871,11 +1871,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // integrates its two parts at the cell face with chi_u, chi_0 and a face S limited
     // toward S_u at an opaque -> thin interface (rad_m1_vetseg.hpp); emit applies that
     // limiter only where S_u > S_0; jump (coreL-1012) adds the opaque -> thin jump
-    // term.  DEFAULT emit, jump (fresh runs; mean under scheme = clean); a
+    // term.  DEFAULT emit, jump (fresh runs); a
     // restart whose file lacks the key keeps mean (bitwise older runs); files since
     // echo their value.
     {
-      const char *sgd = (global_variable::restart_run || clean) ? "mean" : "jump";
+      const char *sgd = global_variable::restart_run ? "mean" : "jump";
       std::string sg = pin->GetOrAddString("rad_m1","vet_seg",sgd);
       if (sg.compare("split") == 0) {
         vet_seg_split = true;

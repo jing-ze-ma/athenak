@@ -31,8 +31,12 @@
 //! the unresolved skin is near the incident field) keeps the mean face value.
 //! vet_seg = jump (coreL-1012, opt-in; emit = 2): the face value of a material
 //! discontinuity is set by the chi CONTRAST, not by the upwind cell's opacity: with
-//! th = (hu - h0)/(hu + h0) (S_u > S_0 as emit) S_f = S_u + hu*(gf + th*((1 - e^-hu) mm
-//! - gf)): a thin edge cell of an emitting body keeps its own S up to the face (emit
+//! th = (hu - h0)/(hu + h0) p, p = (1 - e^-hu)/hu (S_u > S_0 as emit) S_f = S_u + hu*(gf
+//! + th*((1 - e^-hu) mm - gf)): p, the half cell's escape probability, is 1 for a
+//! resolved surface and 1/hu at an unresolved diffusion photosphere (hu >> 1), whose
+//! skin has S linear in tau to the face (the mean face value: S_u there made the emergent
+//! intensity ~S_u, the HG/RSG restarts 16-47 % overluminous, STAGFIX5): a thin edge cell
+//! of an emitting body keeps its own S up to the face (emit
 //! fell back to the mean ramp S_u -> S_0 there, losing half of the outer half-cell's
 //! emission: the T6b core luminosity of the formal solution -6 % at tau_cell 0.13 and
 //! not first order).  And where the OWN cell is the thicker and S_0 > S_u (a ray
@@ -190,10 +194,14 @@ Real VetSegFace(const Real iu, const Real su, const Real s0, const Real hu,
     const Real gb = su - iu;
     const Real mm = (gb*gf > 0.0) ? ((fabs(gb) < fabs(gf)) ? gb : gf) : 0.0;
     if (emit == 2) {
-      // coreL-1012 jump: the contrast alone moves S_f to the upwind cell's own value;
+      // coreL-1012 jump: the contrast moves S_f to the upwind cell's own value over the
+      // part of the half cell the face sees, its escape probability (1 - e^-hu)/hu: a
+      // half cell thick in tau (an unresolved diffusion photosphere) emits from a skin
+      // whose S is linear in tau to the face (Eddington-Barbier, the mean face value);
       // only the slope estimate gb (valid in an opaque cell) keeps the factor 1 - e^-hu
-      const Real th = (hu - h0)/ht;
-      g = gf + th*((1.0 - exp(-hu))*mm - gf);
+      const Real eh = 1.0 - exp(-hu);
+      const Real th = (hu - h0)/ht*((hu > 1.0e-3) ? eh/hu : 1.0 - 0.5*hu);
+      g = gf + th*(eh*mm - gf);
     } else {
       const Real th = (hu - h0)/ht*(1.0 - exp(-hu));
       g = gf + th*(mm - gf);
@@ -239,8 +247,7 @@ KOKKOS_INLINE_FUNCTION
 Real VetSegOne(const Real iu, const Real su, const Real s0, const Real cu, const Real c0,
                const Real hl, const bool spl, const int spe, Real *ifc = nullptr) {
   if (spl) {return VetSegSplit(iu, su, s0, 0.5*cu*hl, 0.5*c0*hl, spe, ifc);}
-  const Real hh = 0.25*(cu + c0)*hl;
-  if (ifc != nullptr) *ifc = VetSegFaceI(iu, su, s0, hh, hh, 0);
+  if (ifc != nullptr) *ifc = VetSegFaceI(iu, su, s0, 0.5*cu*hl, 0.5*c0*hl, 0);
   Real ex, w0, wu;
   VetSegW(0.5*(cu + c0)*hl, ex, w0, wu);
   return iu*ex + wu*su + w0*s0;

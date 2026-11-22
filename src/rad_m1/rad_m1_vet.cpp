@@ -1980,10 +1980,10 @@ void RadiationM1::VetInit(ParameterInput *pin) {
     }
   }
   // vet_seg = mean | split | emit | jump (rad_m1_vetseg.hpp).  DEFAULT emit
-  // (fresh runs: jump; mean under scheme = clean); a restart whose file
+  // (fresh runs: jump); a restart whose file
   // lacks the key keeps mean (bitwise older runs).
   {
-    const char *sgd = (global_variable::restart_run || clean) ? "mean" : "jump";
+    const char *sgd = global_variable::restart_run ? "mean" : "jump";
     std::string sg = pin->GetOrAddString("rad_m1", "vet_seg", sgd);
     if (sg.compare("split") == 0) {
       vet_seg_split = true;
@@ -3811,7 +3811,9 @@ void RadiationM1::VetSweepMB(bool lagged) {
               Real ex, w0, wu;
               VetSegW(dtau, ex, w0, wu);
               iv = iup_v*ex + wu*su + w0*s0;
-              if (f2s_) ifc = VetSegFaceI(iup_v, su, s0, 0.5*dtau, 0.5*dtau, 0);
+              // the face crossing at the face (0.5 chi_u hl from u), not at half the tau
+              if (f2s_) ifc = VetSegFaceI(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1,
+                                          0);
             }
             if (f2s_) add4(up ? f2u + 8 : fnd + 8, wr*m1*fmax(ifc, 0.0));
             if (vpath) {   // vet_path = cells (VetPathStep)
@@ -4590,7 +4592,9 @@ void RadiationM1::VetShortCharSweep() {
           Real ex, w0, wu;
           VetSegW(dtau, ex, w0, wu);
           iv = iup_v*ex + wu*su + w0*s0;
-          if (f2s_) ifc = VetSegFaceI(iup_v, su, s0, 0.5*dtau, 0.5*dtau, 0);
+          // the face crossing at the face (0.5 chi_u hl from u), not at half the tau
+          if (f2s_) ifc = VetSegFaceI(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1,
+                                      0);
         }
         // the face crossing of the single segment, also with vet_path = cells: a face
         // flux, so the conservation of the update does not depend on the path
