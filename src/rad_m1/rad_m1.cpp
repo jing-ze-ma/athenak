@@ -2114,6 +2114,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // merely non-local (C1 of an unresolved opaque photosphere cell, I != S across it,
     // isotropic field); eps removes the non-locality of scattering
     cln_wfse = pin->GetOrAddBoolean("rad_m1","clean_w_fse",false);
+    // clean_face_hctau (default off): the bracket's rays' face flux F_y interpolated in
+    // optical depth between the cell centres (old production implicit_thin_hcface = tau,
+    // CleanStagBracket)
+    cln_hctau = pin->GetOrAddBoolean("rad_m1","clean_face_hctau",false);
     if (cln_wfse && !pin->DoesParameterExist("rad_m1","clean_w_c0")) cln_c0 = 0.3;
     if (cln_wfse && !pin->DoesParameterExist("rad_m1","clean_w_c1")) cln_c1 = 0.6;
     // clean_face_half_tau (default off): a cs face's half ranges are those AT the face:
