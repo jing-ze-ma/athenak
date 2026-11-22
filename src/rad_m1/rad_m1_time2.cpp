@@ -515,6 +515,18 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     t2_k1xpos = pin->GetString("rad_m1", "time2_k1_xpat") == "pos";
     t2_k1xpat = t2_k1xpos || pin->GetBoolean("rad_m1", "time2_k1_xpat");
   }
+  // <rad_m1>/time2_k1_xpat_work (default false, read only when named; needs xpat = pos):
+  // E's loss L of the E side is the whole local pair, the exchange and the work that
+  // pays the gas KE change, (ch/c)(de + w); the part taken back is the gas eint's
+  // (momentum unchanged), at most what keeps 0.01 of its eint
+  if (pin->DoesParameterExist("rad_m1", "time2_k1_xpat_work")) {
+    t2_k1xwork = pin->GetBoolean("rad_m1", "time2_k1_xpat_work");
+    if (t2_k1xwork && !t2_k1xpos) {
+      std::cout << "### FATAL ERROR <rad_m1>/time2_k1_xpat_work needs time2_k1_xpat = pos"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
   // <rad_m1>/time2_k1_stiff = s (default 0 = off, bitwise)
   t2_k1stiff = 0.0;
   if (pin->DoesParameterExist("rad_m1", "time2_k1_stiff")) {
@@ -1334,6 +1346,10 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
 //! >= 0.01 P: untouched, bitwise as xpat off), else the loser keeps (1 - a)^2 P^2/(L -
 //! (2a - 1) P) > 0, C1 in L at L = a P (theta = x - (1 - a)^2 x^2/(1 - (2a - 1) x),
 //! x = P/L); positive by construction where the unlimited pair would leave <= 0
+//! time2_k1_xpat_work (with pos): on the E side L is E's whole local loss to the gas,
+//! the exchange and the work w that pays the gas KE change, (ch/c)(de + w) (t9h: every
+//! stage-start E < 0 left by xpat = pos is the work's); the part taken back comes from
+//! the gas eint (its gain, then at most 0.99 of what it holds), the momentum unchanged
 
 void RadiationM1::Time2K1XLim(int stage, Real c1, Real c2, bool gas) {
   FluidRef flx = FluidRef::Get(pmy_pack);
@@ -1367,7 +1383,7 @@ void RadiationM1::Time2K1XLim(int stage, Real c1, Real c2, bool gas) {
                     vol.extent_int(3) > 1 && ar1.extent_int(0) > nmb1;
   const Real cc1 = c1, cc2 = two ? c2 : 0.0;
   const Real chcl = chat/c_light, th = t2_k1xpat ? 0.0 : t2_k1xlim;
-  const bool pat = t2_k1xpat, pos = t2_k1xpos;
+  const bool pat = t2_k1xpat, pos = t2_k1xpos, xw = t2_k1xwork && !gas;
   const Real pa = 0.99, pb2 = SQR(1.0 - pa), pc = 2.0*pa - 1.0;   // (xpat = pos)
   Real nx = 0.0;
   Kokkos::parallel_reduce("m1_t2_k1xlim", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
@@ -1382,13 +1398,14 @@ void RadiationM1::Time2K1XLim(int stage, Real c1, Real c2, bool gas) {
     const Real de = in_(m,M1_T2_EN,k,j,i) - w;
     const Real e0 = u0_(m,M1_E,k,j,i);
     Real tq = 1.0;
+    const Real ls = xw ? de + w : de;   // (E's loss to the gas: the pair, + the work)
     if (!gas) {   // E loses: E + dE >= th E
-      if (!(de > 0.0)) return;
+      if (!(ls > 0.0)) return;
       const Real need = th*e0 - e0 - in_(m,M1_T2_E,k,j,i);
       if (pat) {   // (P = E + the increment's parts but the exchange)
-        const Real pe = -need + chcl*de, x = pe/(chcl*de);
-        if (pos && !(chcl*de > pa*pe)) return;
-        tq = (pe > 0.0) ? (pos ? x - pb2*x*x/(1.0 - pc*x) : pe/(pe + chcl*de)) : 0.0;
+        const Real pe = -need + chcl*ls, x = pe/(chcl*ls);
+        if (pos && !(chcl*ls > pa*pe)) return;
+        tq = (pe > 0.0) ? (pos ? x - pb2*x*x/(1.0 - pc*x) : pe/(pe + chcl*ls)) : 0.0;
       } else if (!(e0 > 0.0)) {
         tq = 0.0;
       } else if (need > 0.0) {
@@ -1437,7 +1454,13 @@ void RadiationM1::Time2K1XLim(int stage, Real c1, Real c2, bool gas) {
       tq = (pat && !(tq > tqe) && tqe < thi) ? 0.5*(tqe + thi) : fmin(fmax(tq, tqe), 1.0);
     }
     if (!(tq < 1.0)) return;
-    const Real mv = (1.0 - tq)*de;   // (the exchange taken back: the stage solve's)
+    Real mv = (1.0 - tq)*ls;   // (the exchange taken back: the stage solve's)
+    if (xw) {   // (the gas eint pays at most all its gain and 0.99 of what it holds)
+      Real egr = etg ? dd*phc(m,k,j,i) : 0.0;
+      if (emh) egr += emg(m,k,j,i);
+      const Real eg0 = ug(m,IEN,k,j,i) - ek0 - egr;
+      mv = fmin(mv, fmax(de, 0.0) + pa*fmax(eg0 + fmin(de, 0.0), 0.0));
+    }
     in_(m,M1_T2_EN,k,j,i) -= mv;
     in_(m,M1_T2_E,k,j,i) += chcl*mv;
     sum += 1.0;
