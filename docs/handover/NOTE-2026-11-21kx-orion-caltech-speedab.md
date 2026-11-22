@@ -19,7 +19,7 @@ C0. Each pair uses the SAME file for both arms.
 ## Keys
 The key files are in docs/handover/speedab_1121/:
 - {hg,rsg}_old.keys = the old viper production command lines;
-- {hg,rsg}_new.keys = the current production .keys.
+- {hg,rsg}_new.keys = the current production .keys (v2, 16:10 PST: no hydro/tfloor_kelvin, hydro/eos_logt_min or problem/he_ic_equil override; the restart's values are used).
 
 In those files, replace TABLEDIR with your copies of the tables, and check the md5s:
 
