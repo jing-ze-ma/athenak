@@ -2446,3 +2446,14 @@ B_br gate not passed; arms not started
 - (16:09) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
   CW m35mms (log.2) cycle 45505 []: CLEAN WARNING cycle 45505: floor_pay = rad_column left 1.446214e+33 of the fluid floors' energy unpaid (created)
   CW t9r (log.5) cycle 27180 []: CLEAN WARNING cycle 27180 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 6)
+- (16:11) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t9l62 (log.3) cycle 29469 []: CLEAN WARNING cycle 29469 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 15)
+  CW t9l62 (log.3) cycle 29471 []: CLEAN WARNING cycle 29471 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 16)
+  CW m35mms (log.2) cycle 45550 [cycle=45550 time=3.748999e+05 dt=3.814577e+00]: CLEAN WARNING cycle 45550 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 6)
+  CW m35mms (log.2) cycle 45596 []: CLEAN WARNING cycle 45596 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 7)
+  CW m35mms (log.2) cycle 45597 []: CLEAN WARNING cycle 45597: backward-Euler solve not converged (dt_retry, 8 so far; last change 3.401e-04)
+  CW m35mms (log.2) cycle 45597 []: CLEAN WARNING cycle 45597: backward-Euler solve not converged (dt_retry, 8 so far; last change 1.404e-04)
+  CW m35mms (log.2) cycle 45597 []: CLEAN WARNING cycle 45597: backward-Euler solve not converged (dt_retry, 8 so far; last change 2.333e-04)
+  CW m35mms (log.2) cycle 45597 []: CLEAN WARNING cycle 45597: backward-Euler solve not converged (dt_retry, 8 so far; last change 4.241e-04)
+  CW t9r (log.5) cycle 27185 []: CLEAN WARNING cycle 27185 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 7)
+  CW t9r (log.5) cycle 27185 []: CLEAN WARNING cycle 27185: backward-Euler solve not converged (dt_retry, 8 so far; last change 7.191e-01)
