@@ -649,6 +649,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_gas_tfloor (default true): the gas row's T bounded below by the EOS
     // tfloor, and the gas eint written back from that root (E takes the rest)
     cln_gtf = stag("clean_gas_tfloor", true);
+    // clean_ray_tfloor (default off): in the rays' source, gas the clean gas row holds
+    // at tfloor emits what it absorbs (kP B <= kE E), not B(T) of gas the row does not
+    // let cool
+    cln_rtf = stag("clean_ray_tfloor", false) && cln_gtf;
     // clean_wb_fct (default on for a fresh run with clean_gas_tfloor and clean_xt_exact,
     // USER 11-21, recorded; a restart file without the key: off, echoed): the
     // write-back's Zalesak limit on the written faces' energy flux, E > 0 by construction

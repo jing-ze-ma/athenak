@@ -4228,6 +4228,10 @@ void RadiationM1::VetShortCharSweep() {
     const int vsr = (vsf != 0 && vscat_jrel) ? (vsf + 2) : vsf;   // relaxed J
     FluidRef flv = FluidRef::Get(pmy_pack);
     auto eos = flv.eos;
+    // clean_ray_tfloor: gas below the floor is held there by the clean gas row (E pays),
+    // so where it would cool it emits what it absorbs, kP B = kE E (1e-6: the EOS
+    // inversion's round-off at the floor)
+    const Real rtf = cln_rtf ? (1.0 + 1.0e-6)*eos.tfloor : 0.0;
     auto uh = flv.u0;
     const Real chs = chat;
     const Real dts = mr_on ? mr_dt : pmy_pack->pmesh->dt;
@@ -4264,7 +4268,8 @@ void RadiationM1::VetShortCharSweep() {
                                      chx, rks));
         } else if (vsf != 0) {   // vet_scatter (VetScatterMix, rad_m1.hpp)
           s = VetScatterMix(vsf, opd_(m,M1_OP_P,k,j,i), chx, opd_(m,M1_OP_S,k,j,i),
-                            ar*t2*t2, e);
+                            (tg < rtf) ? fmin(ar*t2*t2, opd_(m,M1_OP_E,k,j,i)*e/
+                                fmax(opd_(m,M1_OP_P,k,j,i), 1.0e-300)) : ar*t2*t2, e);
         } else {
           Real eth = fmin(opd_(m,M1_OP_P,k,j,i)/chx, 1.0);
           s = eth*ar*t2*t2 + (1.0 - eth)*e;

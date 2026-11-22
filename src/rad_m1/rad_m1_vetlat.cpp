@@ -507,6 +507,10 @@ void RadiationM1::VetLatSweep(const int stage) {
   const int vsr = (vsf != 0 && vscat_jrel) ? (vsf + 2) : vsf;   // relaxed J
   FluidRef flv = FluidRef::Get(pmy_pack);
   auto eos = flv.eos;
+  // clean_ray_tfloor: gas below the floor is held there by the clean gas row (E pays),
+  // so where it would cool it emits what it absorbs, kP B = kE E (1e-6: the EOS
+  // inversion's round-off at the floor)
+  const Real rtf = cln_rtf ? (1.0 + 1.0e-6)*eos.tfloor : 0.0;
   auto uh = flv.u0;
   const Real chs = chat;
   const Real dts = (vsrc_dt > 0.0) ? vsrc_dt : (mr_on ? mr_dt : pm->dt);
@@ -542,7 +546,9 @@ void RadiationM1::VetLatSweep(const int stage) {
                                     chi, rks));
       } else if (vsf != 0) {
         const Real rkp = cvx ? fmin(opac_(m,M1_OP_P,k,j,i), chi) : opac_(m,M1_OP_P,k,j,i);
-        s = VetScatterMix(vsf, rkp, chi, rks, ar*t2*t2, e);
+        s = VetScatterMix(vsf, rkp, chi, rks, (tg < rtf) ? fmin(ar*t2*t2,
+                          opac_(m,M1_OP_E,k,j,i)*e/fmax(opac_(m,M1_OP_P,k,j,i), 1.0e-300))
+                          : ar*t2*t2, e);
       } else {
         s = eth*ar*t2*t2 + (1.0 - eth)*e;
       }
