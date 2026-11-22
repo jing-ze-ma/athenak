@@ -2794,3 +2794,6 @@ B_br gate not passed; arms not started
   CW t9l62 (log.10) cycle 33391 []: CLEAN WARNING cycle 33391 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 3)
   CW t9l62 (log.10) cycle 33391 []: CLEAN WARNING cycle 33391: backward-Euler solve not converged (dt_retry, 4 so far; last change inf)
   CW t9l62 (log.10) cycle 33391 []: CLEAN WARNING cycle 33391 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 3)
+- (23:13) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t9l62 (log.10) cycle 33402 []: CLEAN WARNING cycle 33402: floor_pay = rad_column left 6.443655e+37 of the fluid floors' energy unpaid (created)
+  CW t9l62 (log.10) cycle 33414 []: CLEAN WARNING cycle 33414 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 4)
