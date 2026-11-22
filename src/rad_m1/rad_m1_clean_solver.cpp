@@ -114,6 +114,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.cub = pmy_pack->pmesh->use_cubed_sphere;
   x.lwb = x.cub && cln_latwb;
   x.ys = !x.cub && cln_ysum;
+  x.lzbf = !x.cub && cln_lzbf;
   x.yl = cln_yl;
   if (x.sph) {
     auto *pc = pmy_pack->pcoord;

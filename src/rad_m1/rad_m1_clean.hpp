@@ -357,6 +357,7 @@ struct CleanArgs {
   bool cub;
   bool lwb = false;   // clean_cs_lat_wb (CleanStagCsLat)
   bool ys = false;    // clean_stag_lat_sums: the lateral sums Y off the cubed sphere
+  bool lzbf = false;  // clean_lz_bnd_free on spherical polar (CleanFaceStress)
   DvceArray5D<Real> yl;   //   (cln_yl: CLW_L + 3 q on the cubed sphere)
   DvceArray4D<Real> ae0;   // (the cubed sphere: pcoord's radial face area, CleanDivW)
   CleanGeo g;
@@ -1191,9 +1192,12 @@ Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m
         const int jw = (jo < j && !dn) ? j : jo, iw = (io < i && !dn) ? i : io;
         return 0.25*(de(k,jh,ih) + de(k-1,jh,ih) + de(k,jw,iw) + de(k-1,jw,iw));
       };
-      if (b == 0) {
-        div += (x.area[0](m,k,j,i+1)*x.x1f(m,i+1)*pe(j,i+1) -
-                x.area[0](m,k,j,i)*x.x1f(m,i)*pe(j,i))*x.tg(m,2,j)/vr;
+      if (b == 0) {   // (clean_lz_bnd_free: no torque through a radial boundary)
+        auto tq = [&](const int ii) {
+          return (x.lzbf && CleanBoundaryFace(x, 0, m, k, j, ii)) ? 0.0 :
+                 x.area[0](m,k,j,ii)*x.x1f(m,ii)*pe(j,ii);
+        };
+        div += (tq(i+1) - tq(i))*x.tg(m,2,j)/vr;
       } else {
         div += (x.area[1](m,k,j+1,i)*x.tg(m,3,j+1)*pe(j+1,i) -
                 x.area[1](m,k,j,i)*x.tg(m,3,j)*pe(j,i))*x.x1v(m,i)/vr;
@@ -1503,8 +1507,11 @@ void CleanStCross(const CleanArgs &x, const int m, const int k, const int j, con
       const Real vr = x.vol(m,kf,jf,iff)*x.x1v(m,iff)*x.tg(m,2,jf);
       if constexpr (B == 0) {
         const Real s = x.tg(m,2,jf)/vr*cr*0.25;
-        const Real fp = x.area[0](m,kf,jf,iff+1)*x.x1f(m,iff+1)*s;
-        const Real fm = -x.area[0](m,kf,jf,iff)*x.x1f(m,iff)*s;
+        auto bf = [&](const int ii) {   // (clean_lz_bnd_free, CleanFaceStress)
+          return x.lzbf && CleanBoundaryFace(x, 0, m, kf, jf, ii);
+        };
+        const Real fp = bf(iff+1) ? 0.0 : x.area[0](m,kf,jf,iff+1)*x.x1f(m,iff+1)*s;
+        const Real fm = bf(iff) ? 0.0 : -x.area[0](m,kf,jf,iff)*x.x1f(m,iff)*s;
         const Real f0 = (up ? fp : 2.0*fp) + (dn ? fm : 2.0*fm);
         CleanStAdd<rk, 0, 1>(x, ab, m, k, j, i, up ? fp : 0.0, c);
         CleanStAdd<lk, 0, 1>(x, ab, m, k, j, i, up ? fp : 0.0, c);

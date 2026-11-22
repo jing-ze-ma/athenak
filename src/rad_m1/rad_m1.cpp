@@ -530,9 +530,20 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (cln_lza == 2 || pin->DoesParameterExist("rad_m1", "clean_cs_lz_tel")) {
       cln_lzt = pin->GetOrAddBoolean("rad_m1","clean_cs_lz_tel",nw);
     }
-    // clean_cs_lz_bnd_free (with clean_cs_lz_tel, default on for a fresh run, recorded):
-    // no stress torque through the radial boundaries (CleanCsTorque)
+    // clean_lz_bnd_free: no radiation stress torque through the radial boundaries, on the
+    // cubed sphere (CleanCsTorque; with clean_cs_lz_tel, default on for a fresh run,
+    // recorded as clean_cs_lz_bnd_free) and 3-D spherical polar (CleanFaceStress's torque
+    // form; default off, read only when named)
     if (cln_lzt) cln_lzbf = pin->GetOrAddBoolean("rad_m1","clean_cs_lz_bnd_free",nw);
+    if (pin->DoesParameterExist("rad_m1","clean_lz_bnd_free")) {
+      cln_lzbf = pin->GetBoolean("rad_m1","clean_lz_bnd_free");
+      if (cln_lzbf && !cln_lzt && !(pmy_pack->pmesh->use_spherical_polar &&
+                                    pmy_pack->pmesh->three_d && cln_split)) {
+        std::cout << "### FATAL ERROR: <rad_m1>/clean_lz_bnd_free needs clean_cs_lz_tel "
+                  << "or a staggered 3-D spherical polar mesh" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     if (cln_lzt && cln_lza != 2) {
       std::cout << "### FATAL ERROR: <rad_m1>/clean_cs_lz_tel needs the cubed sphere "
                 << "and clean_layout = staggered" << std::endl;
