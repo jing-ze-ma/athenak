@@ -1,0 +1,10 @@
+CLEAN OLDVEC cycle 26474 t2s 2 eint<0 1 (taken as 0) E<0 0
+CLEAN OLDVEC cycle 26475 t2s 2 eint<0 1 (taken as 0) E<0 0
+CLEAN OLDVEC cycle 26481 t2s 2 eint<0 1 (taken as 0) E<0 0
+CLEAN OLDVEC cycle 26482 t2s 2 eint<0 2 (taken as 0) E<0 0
+CLEAN OLDVEC cycle 26492 t2s 2 eint<0 2 (taken as 0) E<0 0
+CLEAN OLDVEC cycle 26493 t2s 2 eint<0 2 (taken as 0) E<0 0
+CLEAN OLDVEC cycle 26503 t2s 2 eint<0 7 (taken as 0) E<0 1
+CLEAN OLDVEC cycle 26505 t2s 2 eint<0 1 (taken as 0) E<0 0
+CLEAN OLDVEC cycle 26506 t2s 2 eint<0 1 (taken as 0) E<0 0
+CLEAN OLDVEC cycle 26516 t2s 2 eint<0 2 (taken as 0) E<0 0

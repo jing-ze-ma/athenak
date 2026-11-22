@@ -1,0 +1,11 @@
+rad_m1/clean_conv_max=1.0e-4
+rad_m1/clean_face_opac=harmonic
+rad_m1/clean_stag_opac_update=true
+rad_m1/clean_stag_flim=false
+rad_m1/clean_stag_fwb=true
+rad_m1/clean_stag_fcone=true
+rad_m1/clean_stag_fwb_stage=true
+rad_m1/clean_stag_thinf_held=false
+time/cfl_number=0.9
+rad_m1/clean_nl_print=true
+rad_m1/time2_k1_xpat=true

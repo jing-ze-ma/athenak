@@ -1,0 +1,10 @@
+CLEAN OLDVEC cycle 26481 t2s 2 eint<0 1 (taken as 0) E<0 0
+CLEAN OLDVEC cycle 26482 t2s 2 eint<0 2 (taken as 0) E<0 0
+CLEAN OLDVEC cycle 26492 t2s 2 eint<0 2 (taken as 0) E<0 0
+CLEAN OLDVEC cycle 26493 t2s 2 eint<0 2 (taken as 0) E<0 0
+<rad_m1> floorcap cycle 26500 (cumulative, all calls): n_v 8.285060e+05 n_t 1.533086e+09 dKE 2.748000e+38 dEint 3.168537e+35 (erg, to E_rad) momentum removed |dp| 9.108473e+30 dL_z -5.416909e+42
+<rad_m1> floorcap cycle 26500 (cumulative, all calls): n_v 8.315110e+05 n_t 1.538727e+09 dKE 2.755794e+38 dEint 3.178374e+35 (erg, to E_rad) momentum removed |dp| 9.134354e+30 dL_z -5.432927e+42
+CLEAN OLDVEC cycle 26503 t2s 2 eint<0 7 (taken as 0) E<0 1
+CLEAN OLDVEC cycle 26505 t2s 2 eint<0 1 (taken as 0) E<0 0
+CLEAN OLDVEC cycle 26506 t2s 2 eint<0 1 (taken as 0) E<0 0
+CLEAN OLDVEC cycle 26516 t2s 2 eint<0 2 (taken as 0) E<0 0
