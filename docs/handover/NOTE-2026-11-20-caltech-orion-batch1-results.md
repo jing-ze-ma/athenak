@@ -2520,3 +2520,8 @@ B_br gate not passed; arms not started
   CW t9r (log.5) cycle 27261 []: CLEAN WARNING cycle 27261: backward-Euler solve not converged (dt_retry, 8 so far; last change 6.214e-06)
 - (16:23) PROD 1121b:
   ALERT dt collapse t9l62: max 208.471 -> 0.019556 (last 200 cycle lines) at cycle=29666 time=1.53478e+06
+- (16:24) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t9l62 (log.3) cycle 29662 []: CLEAN WARNING cycle 29662 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 22)
+  CW t9l62 (log.3) cycle 29665 []: CLEAN WARNING cycle 29665 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 23)
+  CW t9r (log.5) cycle 27261 [cycle=27300 time=1.488753e+06 dt=3.818772e+01]: CLEAN WARNING cycle 27261 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 7)
+  CW t9r (log.5) cycle 27261 [cycle=27300 time=1.488753e+06 dt=3.818772e+01]: CLEAN WARNING cycle 27261: backward-Euler solve not converged (dt_retry, 8 so far; last change 1.615e-05)
