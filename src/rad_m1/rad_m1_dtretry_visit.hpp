@@ -1345,7 +1345,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_on", vgd_on);
   v.value("vgd_nside", vgd_nside);
   v.value("vgd_tan", vgd_tan);
-  v.value("vgd_cstan", vgd_cstan);
   v.value("cstan_np", cstan_np);
   v.value("cstan_na", cstan_na);
   v.view("cs_qf", cs_qf);

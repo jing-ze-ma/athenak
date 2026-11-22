@@ -324,10 +324,10 @@ void RadiationM1::VetLatOdMax() {
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   auto tt_ = tau_ten;
-  const bool tn = vgd_on && vgd_tan && vgd_tanop;   // + the tangential slots (vet_gd)
-  // on the cubed sphere D_r,lat is the Cartesian vector in LAT1..LAT3
+  // + the tangential slots (vet_gd); on the cubed sphere D_r,lat is the Cartesian
+  // vector in LAT1..LAT3, + Q (LAT4, LAT5)
   const bool c3 = cs_geom;
-  const bool cst = vgd_cstan;   // + Q (LAT4, LAT5)
+  const bool tn = vgd_on && vgd_tan && vgd_tanop && !c3, cst = vgd_on && vgd_tan && c3;
   // cs_vertex_mono (rad_m1.hpp): D_r,lat (LAT1..3) = 0 in the cells within
   // cs_vertex_mono_n + 1 of a cube vertex, set after every build and before the ghost
   // exchange (the callers), so the operator, its stencil, the lagged assembly and the

@@ -3966,7 +3966,7 @@ void RadiationM1::ImplicitReport() {
               << " (vet_col_lat " << vlat_nfall << ")"
               << " min E from the solve=" << od_emin << std::endl;
   }
-  if (vgd_cstan) {
+  if (vgd_on && vgd_tan && cs_geom) {
     std::cout << "<rad_m1> vet_gd_tangential (cubed sphere): Q active in " << cstan_na
               << " of " << cstan_np << " transverse assemblies (rank 0); positivity "
               << "fallbacks (vet_col_lat) " << vlat_nfall << std::endl;

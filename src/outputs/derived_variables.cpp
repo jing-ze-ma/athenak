@@ -1438,9 +1438,8 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     auto vlk = prm->VlatTT();
     const int c0 = radm1::M1_TT_LAT0, ntt = vlk.extent_int(1);
     const bool lat = prm->vlat_now && prm->vlat_ready && (ntt > c0 + 3);
-    const bool tan = prm->vlat_ready &&
-                     (cs ? (prm->vgd_cstan && prm->vlat_now && ntt > c0 + 5)
-                         : (prm->vgd_on && prm->vgd_tan && ntt > c0 + 4));
+    const bool tan = prm->vlat_ready && prm->vgd_on && prm->vgd_tan &&
+                     (cs ? (prm->vlat_now && ntt > c0 + 5) : ntt > c0 + 4);
     const bool usel = ok && prm->sph_geom && (lat || tan);
     auto cn2 = prm->cs_cn2;
     auto cn3 = prm->cs_cn3;

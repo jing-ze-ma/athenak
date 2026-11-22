@@ -2401,19 +2401,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_replace")) {
       vgd_replace = pin->GetBoolean("rad_m1","vet_gd_replace");
     }
-    // (USER 11-13 "make some defaults", the R136/HG/RSG key set): the
-    // full tensor is the DEFAULT on the cubed sphere too (vgd_cstan; sp already had
-    // vgd_tan = true); recipe none keeps the old cs default false.  Name false for D_rr
-    // only.
+    // (USER 11-13 "make some defaults", the R136/HG/RSG key set): the full tensor is
+    // the default on every mesh; recipe none keeps the old cubed sphere default false
+    // (D_rr only).  Name false for D_rr only.
     if (vgd_on && pmy_pack->pmesh->use_cubed_sphere &&
-        recipe::GetMode(pin) != recipe::Mode::none) {vgd_cstan = true;}
+        recipe::GetMode(pin) == recipe::Mode::none) {vgd_tan = false;}
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_tangential")) {
       vgd_tan = pin->GetBoolean("rad_m1","vet_gd_tangential");
-      // the tangential anisotropy on the skew cs faces
-      if (pmy_pack->pmesh->use_cubed_sphere) {vgd_cstan = vgd_tan;}
     }
-    // (stage S3): on the cubed sphere the default is false (D_rr only)
-    if (vgd_on && pmy_pack->pmesh->use_cubed_sphere) {vgd_tan = false;}
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_nside")) {
       vgd_nside = pin->GetInteger("rad_m1","vet_gd_nside");
     }

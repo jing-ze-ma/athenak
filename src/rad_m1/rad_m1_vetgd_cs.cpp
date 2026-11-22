@@ -2436,7 +2436,7 @@ void RadiationM1::VetGdCsMoments(const int part) {
   auto cr_ = vgd_csr;
   if (part == 0) {
     // vet_gd_tangential: Q in LAT4, LAT5 about the frame cs_qf (M1CsQab)
-    const bool ctan = vgd_cstan;
+    const bool ctan = vgd_on && vgd_tan;
     auto qf_ = cs_qf;
     if (VgdMomLdsCs()) {
       // LDS-staged (rad_m1_vetgd.cpp VgdMomLds); same cells, sums, outputs
