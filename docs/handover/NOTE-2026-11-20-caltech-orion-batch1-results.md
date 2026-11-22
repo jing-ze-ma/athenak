@@ -2493,3 +2493,7 @@ B_br gate not passed; arms not started
   | i1_m35mms_f1k | cyc 42250 | t 3.711994e+05 | 42.96% of 8.64e5 | dt 2.226492e+01 | KE 1.53e+39 | Ltop/Lin 1.008 | Lbot/Lin 1.002 | solves/stage-pass (last 200 lines) 4.1 mean / 9 max | CW 3 FATAL 0 | last hst: [t 3.696e+05 KE 1.54e+39 Lt 0.988 Lb 1.006] [t 3.702e+05 KE 1.54e+39 Lt 0.973 Lb 1.004] [t 3.708e+05 KE 1.53e+39 Lt 1.008 Lb 1.002] 
   | t19r_damp_test (chunk ended) | cyc 1950 | t 6.989857e+04 | 69.90% of 1.0e5 | dt 1.673255e+01 | KE 1.84e+42 | Ltop/Lin 1.408 | Lbot/Lin 1.004 | solves/stage-pass (last 200 lines) 7.1 mean / 9 max | CW 7 FATAL 0 | last hst: [t 6.122e+04 KE 1.19e+42 Lt 1.472 Lb 0.991] [t 6.48e+04 KE 1.52e+42 Lt 1.427 Lb 0.998] [t 6.841e+04 KE 1.84e+42 Lt 1.408 Lb 1.004] 
   | t19r_damp3_test (chunk ended) | cyc 1500 | t 4.999050e+04 | 49.99% of 1.0e5 | dt 1.317235e+01 | KE 1.15e+41 | Ltop/Lin 1.046 | Lbot/Lin 0.992 | solves/stage-pass (last 200 lines) 9.6 mean / 200 max | CW 11 FATAL 0 | last hst: [t 4.681e+04 KE 1.15e+41 Lt 1.046 Lb 0.992] 
+- (16:17) PROD 1121b:
+  ALERT FATAL m35mms: --------------------------------------------------------------------------
+  ALERT CW burst m35mms: 8 new CLEAN WARNING in ~2 min (total 33); last: CLEAN WARNING cycle 45706: backward-Euler solve not converged (dt_retry, 10 so far; last change 1.105e-06)
+  CHUNK END m35mms: 2026-11-21 16:16:10 chunk 2 rc=0 last: DT_RETRY cycle=45706 t=3.753895e+05 dt 6.130196e-02 -> 3.065098e-02 reason=NON-CONVERGED resid=-1.000000e+00 cut 8
