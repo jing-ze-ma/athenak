@@ -76,7 +76,10 @@ void CleanStoreMoments(const DvceArray5D<Real> &cs, const DvceArray5D<Real> &val
     cs(m,CLN_J,k,j,i) = 0.0;
     valid(m,0,k,j,i) = 0.0;
   }
-  for (int n = CLN_F2; n < CLN_KP && n < ns; ++n) cs(m,n,k,j,i) = q[n];
+  // (a fixed trip count: q's indices known at compile time, q in registers)
+  for (int n = CLN_F2; n < CLN_KP; ++n) {
+    if (n < ns) cs(m,n,k,j,i) = q[n];
+  }
 }
 
 //----------------------------------------------------------------------------------------
