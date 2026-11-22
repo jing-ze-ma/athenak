@@ -2459,3 +2459,12 @@ B_br gate not passed; arms not started
   CW t9r (log.5) cycle 27185 []: CLEAN WARNING cycle 27185: backward-Euler solve not converged (dt_retry, 8 so far; last change 7.191e-01)
 - (16:12) PROD 1121b:
   ALERT CW burst m35mms: 6 new CLEAN WARNING in ~2 min (total 15); last: CLEAN WARNING cycle 45660 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 8)
+- (16:13) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t9l62 (log.3) cycle 29476 [cycle=29500 time=1.519267e+06 dt=1.297215e+02]: CLEAN WARNING cycle 29476 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 17)
+  CW m35mms (log.2) cycle 45597 [cycle=45600 time=3.751844e+05 dt=9.472107e-03]: CLEAN WARNING cycle 45597: backward-Euler solve not converged (dt_retry, 8 so far; last change 8.556e-05)
+  CW m35mms (log.2) cycle 45597 [cycle=45600 time=3.751844e+05 dt=9.472107e-03]: CLEAN WARNING cycle 45597: backward-Euler solve not converged (dt_retry, 8 so far; last change 9.995e-05)
+  CW m35mms (log.2) cycle 45660 [cycle=45700 time=3.753684e+05 dt=2.792568e+00]: CLEAN WARNING cycle 45660 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 8)
+  CW t9r (log.5) cycle 27185 [cycle=27200 time=1.485982e+06 dt=1.356865e+01]: CLEAN WARNING cycle 27185 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 7)
+  CW t9r (log.5) cycle 27185 [cycle=27200 time=1.485982e+06 dt=1.356865e+01]: CLEAN WARNING cycle 27185: backward-Euler solve not converged (dt_retry, 8 so far; last change 2.882e-05)
+  CW t9r (log.5) cycle 27185 [cycle=27200 time=1.485982e+06 dt=1.356865e+01]: CLEAN WARNING cycle 27185 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 7)
+  CW t9r (log.5) cycle 27185 [cycle=27200 time=1.485982e+06 dt=1.356865e+01]: CLEAN WARNING cycle 27185: backward-Euler solve not converged (dt_retry, 8 so far; last change 8.396e-05)

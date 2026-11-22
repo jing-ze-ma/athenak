@@ -124,3 +124,24 @@ CLEAN LZB cycle 45597 t2s 1 ledger -1.0968431501924544e+42
 CLEAN XT cycle 45597 t2s 1 write-back closure 2.401e-01
 DT_RETRY cycle=45597 t=3.751844e+05 dt 1.515537e-01 -> 7.577686e-02 reason=NON-CONVERGED resid=-1.000000e+00 cut 3
 CLEAN WARNING cycle 45597: backward-Euler solve not converged (dt_retry, 8 so far; last change 4.241e-04)
+== 2026-11-21 16:13:26 log.2: CW 13-15 (grep -B5)
+CLEAN FCONE cycle 45597 t2s 1 faces 4034638 momentum cut sum |dF| V/c^2 6.645823e+25
+CLEAN FWB cycle 45597 t2s 1 faces 17928747 radiation momentum sum |dp| 3.686712e+26 x1 faces sum dp -1.139865e+25
+CLEAN LZB cycle 45597 t2s 1 ledger -1.0968436022507384e+42
+CLEAN XT cycle 45597 t2s 1 write-back closure 1.102e-01
+DT_RETRY cycle=45597 t=3.751844e+05 dt 7.577686e-02 -> 3.788843e-02 reason=NON-CONVERGED resid=-1.000000e+00 cut 4
+CLEAN WARNING cycle 45597: backward-Euler solve not converged (dt_retry, 8 so far; last change 8.556e-05)
+
+CLEAN FCONE cycle 45597 t2s 1 faces 3092588 momentum cut sum |dF| V/c^2 4.699030e+25
+CLEAN FWB cycle 45597 t2s 1 faces 17928841 radiation momentum sum |dp| 1.952406e+26 x1 faces sum dp -5.319288e+24
+CLEAN LZB cycle 45597 t2s 1 ledger -1.0968437015205648e+42
+CLEAN XT cycle 45597 t2s 1 write-back closure 2.892e-02
+DT_RETRY cycle=45597 t=3.751844e+05 dt 3.788843e-02 -> 1.894421e-02 reason=NON-CONVERGED resid=-1.000000e+00 cut 5
+CLEAN WARNING cycle 45597: backward-Euler solve not converged (dt_retry, 8 so far; last change 9.995e-05)
+
+CLEAN cycle 45660 t2s 3 it -3 (sum 1246) pos 0 mark 0 all 0 neg 0 r1 0 r2 1203138 first 0 1203138 guard 0 solves 200 cwin 0
+CLEAN MCAP cycle 45660 t2s 3: 59552060 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 45660 t2s 3 faces 23748101 momentum cut sum |dF| V/c^2 -nan
+CLEAN FWB cycle 45660 t2s 3 faces 17722238 radiation momentum sum |dp| 1.620250e+29 x1 faces sum dp 1.411063e+29
+CLEAN XT cycle 45660 t2s 3 write-back closure inf
+CLEAN WARNING cycle 45660 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 8)
