@@ -2829,3 +2829,6 @@ B_br gate not passed; arms not started
 - (23:33) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
   CW t9l62 (log.11) cycle 33497 [cycle=33500 time=1.649341e+06 dt=3.842271e-01]: CLEAN WARNING cycle 33497 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 6)
   CW t9l62 (log.11) cycle 33517 []: CLEAN WARNING cycle 33517 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 7)
+- (23:39) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW t9l62 (log.12) cycle 33458 []: CLEAN WARNING cycle 33458 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+  CW t9l62 (log.12) cycle 33461 []: CLEAN WARNING cycle 33461 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 2)
