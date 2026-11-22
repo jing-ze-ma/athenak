@@ -1197,7 +1197,7 @@ class RadiationM1 {
   Real zl_sub[2] = {0.0, 0.0};
   // <rad_m1>/zalesak_active (default false): a Zalesak round evaluates only
   // the cells whose 7-point stencil changed in the previous round or in the R exchange
-  // after it (time2 face FCT: lists of those cells and claim marks in zl_chg).  A cell
+  // after it (time2 face FCT: those next to an R that fell, its sign bit set).  A cell
   // whose inputs did not change cannot be newly limited (it was evaluated with the same
   // inputs before): BITWISE.
   bool zl_active = false;
@@ -1211,7 +1211,6 @@ class RadiationM1 {
   // (see ImplicitFaceMmat).  Positivity kept; more clipping where chains were cut.
   int zl_cap = 0;
   Real zl_capped = 0.0;
-  DvceArray4D<int> zl_chg;
   Real zl_xwall[2] = {0.0, 0.0};   // fenced exchange seconds (M1_FCT_PROF)
   Real zl_rounds[2] = {0.0, 0.0}, zl_halos[2] = {0.0, 0.0}, zl_wall[2] = {0.0, 0.0};
   bool zl_prof = false;
