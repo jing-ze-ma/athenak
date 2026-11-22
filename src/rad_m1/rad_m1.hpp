@@ -2966,6 +2966,9 @@ class RadiationM1 {
   int cln_wo_nc = 0;            // the slots of cln_w.o (CleanWoBind)
   int cln_hmax = 16;            // clean_halo_vars: most variables of one ghost exchange
   bool cln_conv_est = false;    // clean_conv_est: stop on the estimated remaining change
+  bool cln_cestf = false;       // clean_conv_est_f: that stop with the F solve's F change
+  Real cln_dfp = 0.0;           //   the change of the last velocity update's F solve
+  DvceArray5D<Real> cln_fpv;    //   and its F per face (3 directions)
   bool cln_budget = false;      // clean_conv = budget (staggered default): CleanSolve
   bool cln_bon = false;         // this solve takes it (Newton passes with a valid K1)
   Real cln_tolb = 0.0;          // its tolerance of the pass (kappa x time error)

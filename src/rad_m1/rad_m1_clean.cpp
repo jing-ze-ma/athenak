@@ -1248,7 +1248,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     converged = !iterate;
     cln_gpic = false;   // (clean_gas_newton_switch: the solve's history)
     std::vector<Real> rhist;
-    Real de0 = 1.0e300, dv0 = 1.0e300, trel = 0.0;
+    Real de0 = 1.0e300, dv0 = 1.0e300, df0 = 1.0e300, trel = 0.0;
     for (int inl = 0; inl < maxnl; ++inl) {
       const bool clos = (cln_closit && inl < cln_maxpic) || (clos1 && inl == 1);
       if (clos) {
@@ -1355,12 +1355,15 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         trel = fmin(cln_tolrel*dnl, cln_tolrmx);
       tol_nl = fmax(tol_nl, trel);
       if (cln_nlprint && global_variable::my_rank == 0) {
-        std::printf("CLEAN pass cycle %d t2s %d pos %d pass %d it %d de %.3e dv %.3e\n",
+        std::printf("CLEAN pass cycle %d t2s %d pos %d pass %d it %d de %.3e dv %.3e",
                     pmy_pack->pmesh->ncycle, t2_solve, ipos, inl, nit, de, dv);
+        if (cln_cestf) std::printf(" df %.3e", cln_dfp);
+        std::printf("\n");
       }
       if (fbl) {
         de0 = de;
         dv0 = dv;
+        df0 = cln_dfp;
         continue;
       }
       // the remaining change of a contraction q < 1/2 is q/(1-q) times that of the pass
@@ -1368,8 +1371,16 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         const Real q = d/d0;
         return (q < 0.5) ? q/(1.0 - q)*d : d;
       };
-      if (cln_conv_est && inl > 0 && est(de, de0) < tol_nl && est(dv, dv0) < tol_nl &&
-          !(clos1 && inl == 0)) {
+      // (clean_conv_est_f: also the F solve's F, its own ratio from the third pass, the
+      // larger of de's and dv's before)
+      const Real df = cln_dfp;
+      auto estf = [&]() {
+        const Real q = (inl > 1) ? df/df0 : fmax(de/de0, dv/dv0);
+        return ((q < 0.5) ? q/(1.0 - q)*df : df) < tol_nl;
+      };
+      const bool cef = cln_cestf && cln_bon;
+      if ((cln_conv_est || cef) && inl > 0 && est(de, de0) < tol_nl &&
+          est(dv, dv0) < tol_nl && (!cef || estf()) && !(clos1 && inl == 0)) {
         converged = true;
         break;
       }
@@ -1379,6 +1390,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       }
       de0 = de;
       dv0 = dv;
+      df0 = df;
     }
     if (iterate) CleanCopyIterate();
     // (clean_stag_xpat: the counts of the passes)
@@ -3238,6 +3250,8 @@ Real RadiationM1::CleanVelocityUpdate() {
   if (cln_mclc.extent_int(0) != 1) Kokkos::realloc(cln_mclc, 1);
   Kokkos::deep_copy(cln_mclc, 0.0);
   xh.mclc = cln_mclc;
+  // (clean_conv_est_f: the stage's first F solve has no last pass's F to compare)
+  const bool fv = cln_fsk;
   // (the F solve's face tie after the drag, which evaluates the same face T: CLF_PT)
   const bool td = cln_fwork && cln_ftie;
   if (cln_fwork) {   // (clean_stag_fwork: the momentum of the
@@ -3245,6 +3259,42 @@ Real RadiationM1::CleanVelocityUpdate() {
     xh.fs = true;                                //  the gas, for the work W of the E row)
     xh.tf = cln_ftie && !x.cub && !cln_tgid;
     cln_fsk = true;
+  }
+  // (clean_conv_est_f: the change of each face's F since the last pass's F solve, h A_f
+  // |dF| over V S of each of its active cells, the budget's norm of CleanNewtonUpdate;
+  // then the F kept for the next pass)
+  if (cln_cestf && cln_fwork) {
+    auto &fc1 = cln_fc1;
+    if (cln_fpv.extent_int(0) != nmb) {
+      Kokkos::realloc(cln_fpv, nmb, 3, fc1.extent_int(2), fc1.extent_int(3),
+                      fc1.extent_int(4));
+    }
+    auto fp = cln_fpv;
+    const int nf = x.nf, ie = is + nx1 - 1, je = js + nx2 - 1, ke = ks + nx3 - 1;
+    const int n1 = nx1 + 1, n2 = nx2 + (nf > 1), n3 = nx3 + (nf > 2);
+    const int n21 = n2*n1, n321 = n3*n21;
+    const CleanArgs *pf = CleanDevArgs(x, 0);
+    const Real inf = std::numeric_limits<Real>::infinity();
+    Real dfm = 0.0;
+    Kokkos::parallel_reduce("cln_dfch", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*n321),
+    KOKKOS_LAMBDA(const int idx, Real &dmax) {
+      const CleanArgs &x = *pf;
+      const int m = idx/n321, k = (idx%n321)/n21 + ks, j = (idx%n21)/n1 + js;
+      const int i = idx%n1 + is;
+      for (int d = 0; d < nf; ++d) {
+        const int dk = (d == 2), dj = (d == 1), di = (d == 0);
+        if (i > ie + di || j > je + dj || k > ke + dk) continue;
+        const Real f = x.fc[d](m,CLF_N,k,j,i);
+        const Real df = fv ? x.h*x.area[d](m,k,j,i)*fabs(f - fp(m,d,k,j,i)) : inf;
+        fp(m,d,k,j,i) = f;
+        for (int s = 0; s < 2; ++s) {
+          const int kc = k - (1 - s)*dk, jc = j - (1 - s)*dj, ic = i - (1 - s)*di;
+          if (kc < ks || kc > ke || jc < js || jc > je || ic < is || ic > ie) continue;
+          dmax = fmax(dmax, df/(CleanVol(x, m, kc, jc, ic)*x.w(m,CLW_SE,kc,jc,ic)));
+        }
+      }
+    }, Kokkos::Max<Real>(dfm));
+    cln_dfp = CleanReduce(dfm, true);
   }
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;

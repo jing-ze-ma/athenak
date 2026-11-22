@@ -765,6 +765,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_conv_est")) {
       cln_conv_est = pin->GetBoolean("rad_m1","clean_conv_est");
     }
+    // clean_conv_est_f (default false): that stop, in the budget's passes only, with the
+    // F solve's face F too, the change h A_f |dF_f|/(V S) of its cells since the last
+    // pass's (from the second pass; the first takes the de/dv ratio), so that a stop does
+    // not leave the next pass's F move (needs clean_stag_fwork)
+    cln_cestf = pin->GetOrAddBoolean("rad_m1","clean_conv_est_f",false);
+    if (cln_cestf && !cln_fwork) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/clean_conv_est_f = true needs the F solve's F "
+                << "(clean_stag_fwork)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     if (pin->DoesParameterExist("rad_m1","clean_nl_print")) {
       cln_nlprint = pin->GetBoolean("rad_m1","clean_nl_print");
     }

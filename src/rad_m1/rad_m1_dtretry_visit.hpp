@@ -774,6 +774,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("dbg_rst_fp_dump", dbg_rst_fp_dump);
   v.value("dbg_rst_fp_done", dbg_rst_fp_done);
   v.value("t2_nfv", t2_nfv);
+  v.value("t2_rcl", t2_rcl);
   v.value("t2_rskip", t2_rskip);
   v.value("t2_rstd3", t2_rstd3);
   v.value("t2_rstv", t2_rstv);
@@ -1081,6 +1082,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("cln_fwbc", cln_fwbc);
   v.value("cln_fcone", cln_fcone);
   v.value("cln_fwbst", cln_fwbst);
+  v.value("cln_fwbpj", cln_fwbpj);
   v.value("cln_fwbs", cln_fwbs);
   v.value("cln_fwbok", cln_fwbok);
   v.value("cln_fwbt2", cln_fwbt2);
@@ -1130,6 +1132,8 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_wo_nc", cln_wo_nc);
   v.value("cln_hmax", cln_hmax);
   v.value("cln_conv_est", cln_conv_est);
+  v.value("cln_cestf", cln_cestf);
+  v.value("cln_dfp", cln_dfp);
   v.value("cln_budget", cln_budget);
   v.value("cln_bon", cln_bon);
   v.value("cln_tolb", cln_tolb);
@@ -1820,6 +1824,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
 //   pin_rcut_ : ParameterInput *
 //   cln_pdh : DvceArray4D<Real> (protocol counter, kept monotonic)
 //   cln_lzpin : ParameterInput *
+//   cln_fpv : DvceArray5D<Real> (protocol counter, kept monotonic)
 //   cln_wci : DvceArray5D<Real> (protocol counter, kept monotonic)
 //   cln_halo : std::map<int, CleanHalo> (views over cln_hbuf, kept)
 //   cln_hpb : std::unique_ptr<MeshBoundaryValuesCC> (made at first use, kept)
