@@ -4235,6 +4235,7 @@ void RadiationM1::VetShortCharSweep() {
     const Real rtf = cln_rtf ? (1.0 + 1.0e-6)*eos.tfloor : 0.0;
     // clean_source_jray: the absorbed part with the rays' own lagged J (CLN_J; else E)
     const bool sjr = clean && cln_srcj && cln_s.extent_int(0) > nmb1;
+    const bool cvx = clean && cln_srccvx && !srx;   // clean_source_convex
     auto cjs = cln_s;
     auto uh = flv.u0;
     const Real chs = chat;
@@ -4272,7 +4273,8 @@ void RadiationM1::VetShortCharSweep() {
                                      chx, rks));
         } else if (vsf != 0) {   // vet_scatter (VetScatterMix, rad_m1.hpp)
           const Real jr = (sjr && cjs(m,CLN_J,k,j,i) > 0.0) ? cjs(m,CLN_J,k,j,i) : e;
-          s = VetScatterMix(vsf, opd_(m,M1_OP_P,k,j,i), chx, opd_(m,M1_OP_S,k,j,i),
+          const Real rkp = cvx ? fmin(opd_(m,M1_OP_P,k,j,i), chx) : opd_(m,M1_OP_P,k,j,i);
+          s = VetScatterMix(vsf, rkp, chx, opd_(m,M1_OP_S,k,j,i),
                             (tg < rtf) ? fmin(ar*t2*t2, opd_(m,M1_OP_E,k,j,i)*jr/
                                 fmax(opd_(m,M1_OP_P,k,j,i), 1.0e-300)) : ar*t2*t2, jr);
         } else {
