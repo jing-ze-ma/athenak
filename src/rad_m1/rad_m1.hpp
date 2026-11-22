@@ -3039,6 +3039,7 @@ class RadiationM1 {
   DvceArray5D<Real> cln_rnew;   // jump: the moments of block b+1's window at the boundary
   bool cln_rfix = false;        // no build of this cycle shifts (CleanRingPreShift)
   bool cln_rok = false;         // the ring holds the offsets of the sets before cln_rb
+  bool cln_rhist = false;       // the restart file's EMA history is converged
   int64_t cln_rb = 0;           // the current set of the ring (rotation block)
   int64_t cln_rpb = 0;          // the block of the pending Delta
   Real cln_rpt = 0.0;           // its time (the block boundary)

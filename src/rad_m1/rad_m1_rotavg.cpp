@@ -805,7 +805,12 @@ bool RadiationM1::RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src,
                                 const int nmb) {
   // (a run that never averages through vra_d: no rotation, or the clean scheme's own
   // ring; the history would only hold device memory)
-  if (!VgdRotOn() || (clean && cln_ring)) {return false;}
+  // (an old scheme's EMA history under the clean ring: its fields are not the ring's,
+  // but the closure it averaged is converged, CleanRingMoments)
+  if (!VgdRotOn() || (clean && cln_ring)) {
+    cln_rhist = clean && cln_ring && vra_ema && h[0] == 1;
+    return false;
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int64_t ncint = static_cast<int64_t>(indcs.nx1)*indcs.nx2*indcs.nx3;
   const int64_t close = (vgd_on ? 1 : 2) + (vra_ema ? 16 : 0);

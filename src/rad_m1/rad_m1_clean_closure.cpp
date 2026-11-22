@@ -1323,7 +1323,12 @@ void RadiationM1::CleanRingMoments() {
     } else if (full && ema) {
       // RotAvgEmaInit: the J-weighted equal mix of the current and the previous set (its
       // moments in rr's offsets, above); the aux := the current set.  Outside the steady
-      // start the fill0 form (as the window's fill below): the current set alone, count 1
+      // start the fill0 form (as the window's fill below): the current set alone, count
+      // 1; a restart from a file whose averaged closure had converged (an old scheme's
+      // EMA history, cln_rhist) count N: the run continues an average, no warm-up, the
+      // next boundary takes the weight max(1/N, a_ch) instead of 1/2
+      const Real n0 = cln_rhist ? vra_ema_n : 1.0;
+      cln_rhist = false;
       par_for("cln_ring_einit", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k0, const int j0, const int i0) {
         const int k = k0 - ks, j = j0 - js, i = i0 - is;
@@ -1339,7 +1344,7 @@ void RadiationM1::CleanRingMoments() {
         }
         rr(m,nfr,k,j,i) = jb;
         rr(m,nfr+1,k,j,i) = rl(m,qb,CLN_D11,k,j,i);
-        rr(m,nfr+2,k,j,i) = v ? 2.0 : ((f0 && jb > 0.0 && jb >= jm) ? 1.0 : 0.0);
+        rr(m,nfr+2,k,j,i) = v ? 2.0 : ((f0 && jb > 0.0 && jb >= jm) ? n0 : 0.0);
       });
     } else if (full) {
       // a fill: within CleanSteadyStart (a fresh start's ring, built at the initial state
