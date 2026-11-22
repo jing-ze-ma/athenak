@@ -447,3 +447,10 @@ CLEAN FLIM cycle 33461 t2s 1 faces 222437 momentum cut sum |dF| V/c^2 6.200167e+
 CLEAN FLIM cycle 33461 t2s 1 faces 222437 momentum cut sum |dF| V/c^2 6.200167e+28
 CLEAN FLIM cycle 33461 t2s 1 faces 222437 momentum cut sum |dF| V/c^2 6.200167e+28
 CLEAN WARNING cycle 33461: backward-Euler solve not converged (dt_retry, 3 so far; last change 4.129e-01)
+== 2026-11-21 23:49:43 log.12: CW 6-6 (grep -B5)
+CLEAN FLIM cycle 33625 t2s 2 faces 386831 momentum cut sum |dF| V/c^2 2.794181e+29
+CLEAN cycle 33625 t2s 2 it -2 (sum 206) pos 0 mark 0 all 0 neg 51 r1 51 r2 881 first 51 881 guard 0 solves 200 cwin 0
+CLEAN FLIM cycle 33625 t2s 2 faces 386831 momentum cut sum |dF| V/c^2 2.794181e+29
+CLEAN XT cycle 33625 t2s 2 write-back closure 8.681e+00
+<rad_m1> floorcap cycle 33625 (cumulative, all calls): n_v 2.612321e+07 n_t 1.504152e+09 dKE 1.324033e+39 dEint 2.468059e+34 (erg, to E_rad) momentum removed |dp| 4.383494e+31 dL_z 1.279635e+43
+CLEAN WARNING cycle 33625 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
