@@ -3016,6 +3016,7 @@ class RadiationM1 {
   DvceArray5D<Real> cln_s;      // closure (CLN_*)
   bool cln_cssc = false;        // the cubed sphere, clean_rays = sc (vet_gd sweep)
   bool cln_rfh = false;         // clean_ring_fh (CLN_HO, CleanCellHalf)
+  bool cln_thr = false;         // clean_cs_thin_radial
   DvceArray5D<Real> cln_fvi;    // the sc rays' intensities (m, d, k, j, i)
   DvceArray2D<Real> cln_fvd;    // the swept directions (x, y, z, weight; CleanFvSets)
   int cln_fvn = 0;              // their number

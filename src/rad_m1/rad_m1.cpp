@@ -2089,6 +2089,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // cells' own (CLN_HO), so that the rotating ring's offsets carry them as the closure
     cln_rfh = cln_cssc && pin->DoesParameterExist("rad_m1","clean_ring_fh") &&
               pin->GetBoolean("rad_m1","clean_ring_fh");
+    // clean_cs_thin_radial (default off, read only when named): on the cubed sphere the
+    // thin share only on the radial faces, as production's thin face (M1HrCell, dir 0);
+    // the lateral faces take the closure's flux alone (CLF_W = 0)
+    cln_thr = cln_cssc && pin->DoesParameterExist("rad_m1","clean_cs_thin_radial") &&
+              pin->GetBoolean("rad_m1","clean_cs_thin_radial");
     // rotwb2-1121: vet_rotate_avg_ema_wb keeps the ring's closure of a static state, but
     // the cs face half ranges (cln_fh, CleanFaceHalf) are the two swept sets' (no offset)
     if (cln_cssc && vra_ema_wb && !cln_rfh && global_variable::my_rank == 0) {

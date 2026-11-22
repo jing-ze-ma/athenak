@@ -1084,6 +1084,7 @@ void RadiationM1::CleanFaceCoefficients() {
   const bool hrm = cln_hface;
   const bool fsc = cln_cssc;   // (the sc rays: their folded sums, CleanFaceHalf)
   const bool fho = cln_rfh;    // (clean_ring_fh: the cells' own, CleanCellHalf)
+  const bool thr = cln_thr;    // (clean_cs_thin_radial)
   const CleanArgs *px = fho ? CleanDevArgs(CleanMakeArgs(), 0) : nullptr;
   const int nd = pmy_pack->pmesh->use_cubed_sphere ? cln_fvn : 0;
 
@@ -1100,7 +1101,8 @@ void RadiationM1::CleanFaceCoefficients() {
       const int kl = k - dk, jl = j - dj, il = i - di;
       const Real chi = CleanFaceChi(op, x1f, mbc, hrm, dir, m, k, j, i, is, ie);
       const Real c1 = fmax(cs(m,CLN_C1,k,j,i), cs(m,CLN_C1,kl,jl,il));
-      fc(m,CLF_W,k,j,i) = CleanSmoothStep((c1 - c1lo)/(c1hi - c1lo));
+      fc(m,CLF_W,k,j,i) = (thr && dir > 0) ? 0.0
+                                           : CleanSmoothStep((c1 - c1lo)/(c1hi - c1lo));
       fc(m,CLF_TH,k,j,i) = 1.0/(1.0 + h*c*chi);
       fc(m,CLF_G,k,j,i) = f0(m,k,j,i) + (stage ? inc(m,tf,k,j,i) : 0.0);
       if (fsk) fc(m,CLF_N+2,k,j,i) = fc(m,CLF_G,k,j,i);   // (fsolve: start of its F)
