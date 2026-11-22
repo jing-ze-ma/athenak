@@ -180,3 +180,24 @@ CLEAN FCONE cycle 29689 t2s 2 faces 39543525 momentum cut sum |dF| V/c^2 -nan
 CLEAN FWB cycle 29689 t2s 2 faces 55617358 radiation momentum sum |dp| 1.539102e+33 x1 faces sum dp -2.914290e+32
 CLEAN XT cycle 29689 t2s 2 write-back closure inf
 CLEAN WARNING cycle 29689 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 26)
+== 2026-11-21 16:31:07 log.3: CW 27-29 (grep -B5)
+CLEAN cycle 29694 t2s 2 it -3 (sum 1265) pos 0 mark 0 all 0 neg 0 r1 0 r2 5722756 first 0 5722756 guard 0 solves 200 cwin 0
+CLEAN MCAP cycle 29694 t2s 2: 150806878 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 29694 t2s 2 faces 68056183 momentum cut sum |dF| V/c^2 -nan
+CLEAN FWB cycle 29694 t2s 2 faces 54310478 radiation momentum sum |dp| 3.985185e+31 x1 faces sum dp 6.331756e+30
+CLEAN XT cycle 29694 t2s 2 write-back closure 2.438e+209
+CLEAN WARNING cycle 29694 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 27)
+
+CLEAN cycle 29696 t2s 2 it -3 (sum 409) pos 0 mark 0 all 0 neg 0 r1 0 r2 13034 first 0 13034 guard 0 solves 200 cwin 0
+CLEAN MCAP cycle 29696 t2s 2: 6381462 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 29696 t2s 2 faces 4473673 momentum cut sum |dF| V/c^2 -nan
+CLEAN FWB cycle 29696 t2s 2 faces 54249741 radiation momentum sum |dp| 6.990977e+31 x1 faces sum dp -1.675031e+31
+CLEAN XT cycle 29696 t2s 2 write-back closure inf
+CLEAN WARNING cycle 29696 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 28)
+
+CLEAN cycle 29704 t2s 2 it -3 (sum 495) pos 0 mark 0 all 0 neg 0 r1 0 r2 2061405 first 0 2061405 guard 0 solves 200 cwin 0
+CLEAN MCAP cycle 29704 t2s 2: 78514372 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 29704 t2s 2 faces 36151424 momentum cut sum |dF| V/c^2 -nan
+CLEAN FWB cycle 29704 t2s 2 faces 54289605 radiation momentum sum |dp| 3.670840e+31 x1 faces sum dp 4.968561e+29
+CLEAN XT cycle 29704 t2s 2 write-back closure inf
+CLEAN WARNING cycle 29704 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 29)
