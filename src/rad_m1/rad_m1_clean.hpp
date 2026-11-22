@@ -2039,6 +2039,30 @@ Real CleanCellFaceDistance(const CleanArgs &x, const int dir, const int m, const
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void CleanHcTauW
+//! \brief clean_face_hctau / clean_face_jse (old production implicit_thin_hcface = tau):
+//! the weights of a cell value interpolated linearly in optical depth from the two cell
+//! centres to face (k,j,i) normal to dir, wl = tau_R/(tau_L + tau_R), tau the half-cell
+//! depths, x (r/r_f)^2 on the radial faces of sp / cs (exact for a free stream)
+
+KOKKOS_INLINE_FUNCTION
+void CleanHcTauW(const CleanArgs &x, const int dir, const int m, const int k, const int j,
+                 const int i, Real &wl, Real &wr) {
+  const int il = i - (dir == 0), jl = j - (dir == 1), kl = k - (dir == 2);
+  const bool rad = (dir == 0 && (x.sph || x.cub));
+  const Real dl = rad ? x.x1f(m,i) - x.x1v(m,il) : 1.0;
+  const Real dr = rad ? x.x1v(m,i) - x.x1f(m,i) : 1.0;
+  const Real tl = fmax(x.op(m,M1_OP_T,kl,jl,il), 0.0)*dl;
+  const Real tr = fmax(x.op(m,M1_OP_T,k,j,i), 0.0)*dr;
+  wl = (tl + tr > 0.0) ? tr/(tl + tr) : 0.5;
+  wr = 1.0 - wl;
+  if (rad) {
+    wl *= SQR(x.x1v(m,il)/x.x1f(m,i));
+    wr *= SQR(x.x1v(m,i)/x.x1f(m,i));
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CleanOverlapFor
 //! \brief old production's implicit_halo_overlap: f(m,k,j,i) over the active cells
 //! CleanInner by ng while a ghost exchange is in flight, then fin() (its second half),

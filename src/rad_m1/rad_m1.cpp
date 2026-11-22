@@ -102,6 +102,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // optical depth between the cell centres (old production implicit_thin_hcface = tau,
     // CleanStagBracket)
     cln_hctau = pin->GetOrAddBoolean("rad_m1","clean_face_hctau",false);
+    // clean_face_jse (default off): the face half ranges in the shape of the cells'
+    // half-range fluxes at the face (old production implicit_thin_recon = jse)
+    cln_jse = pin->GetOrAddBoolean("rad_m1","clean_face_jse",false);
     cln_tol = pin->GetOrAddReal("rad_m1","clean_tol",1.0e-10);
     cln_cnorm = pin->GetOrAddReal("rad_m1","clean_init_cnorm",1.0e-10);
     cln_lcnorm = pin->GetOrAddReal("rad_m1","clean_lin_cnorm",1.0e-10);

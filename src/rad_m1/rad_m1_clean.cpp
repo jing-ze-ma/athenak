@@ -3621,16 +3621,8 @@ void RadiationM1::CleanStagBracket() {
           return (x.cs(m,CLN_HP+dir,kk,jj,ii) + x.cs(m,CLN_HM+dir,kk,jj,ii))*
                  x.cs(m,CLN_JR,kk,jj,ii);
         };
-        const bool rad = (dir == 0 && (x.sph || x.cub));
-        const Real dl = rad ? x.x1f(m,i) - x.x1v(m,il) : 1.0;
-        const Real dr = rad ? x.x1v(m,i) - x.x1f(m,i) : 1.0;
-        const Real tl = fmax(x.op(m,M1_OP_T,k-dk,j-dj,il), 0.0)*dl;
-        const Real tr = fmax(x.op(m,M1_OP_T,k,j,i), 0.0)*dr;
-        Real wl = (tl + tr > 0.0) ? tr/(tl + tr) : 0.5, wr = 1.0 - wl;
-        if (rad) {
-          wl *= SQR(x.x1v(m,il)/x.x1f(m,i));
-          wr *= SQR(x.x1v(m,i)/x.x1f(m,i));
-        }
+        Real wl, wr;
+        CleanHcTauW(x, dir, m, k, j, i, wl, wr);
         fy = wl*hc(k-dk, j-dj, il) + wr*hc(k, j, i);
       }
       // (clean_stag_thinf: the rest of the rays' face flux, dd = F_y - h+ J_L - h- J_R,

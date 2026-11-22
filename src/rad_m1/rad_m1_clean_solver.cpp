@@ -1089,7 +1089,8 @@ void RadiationM1::CleanFaceCoefficients() {
   const bool tdn = cln_tdn;    // (clean_thin_donor)
   const bool wmn = cln_wmin;   // (clean_w_face_min)
   const bool wfs = cln_wfse;   // (clean_w_fse)
-  const CleanArgs *px = fho ? CleanDevArgs(CleanMakeArgs(), 0) : nullptr;
+  const bool fjs = cln_jse;    // (clean_face_jse)
+  const CleanArgs *px = (fho || fjs) ? CleanDevArgs(CleanMakeArgs(), 0) : nullptr;
   const int nd = pmy_pack->pmesh->use_cubed_sphere ? cln_fvn : 0;
 
   for (int dir = 0; dir < 3; ++dir) {
@@ -1144,7 +1145,37 @@ void RadiationM1::CleanFaceCoefficients() {
                                        : cs(m,CLN_HP+dir,kl,jl,il);
       fc(m,CLF_HM,k,j,i) = (jr_ > 0.0) ? fmax(fmin(hmf/jr_, 0.0), -1.0)
                                        : cs(m,CLN_HM+dir,k,j,i);
-      if (nd == 0) return;
+      // (clean_face_jse: old production implicit_thin_recon = jse, M1ThinJs: h+- of the
+      // face take the shape of the cells' half-range fluxes, h+ x H+_f/H+_L with H+_f =
+      // wl H+_L + wr H+_R the clean_face_hctau interpolation (h- likewise), the factor
+      // within [1/2, 2], in proportion to the thermal fraction eps = min(kappa_P/chi, 1)
+      // of the face (the smaller of the two cells): where E ~ J the upwind part is the
+      // rays' own face flux; radial faces of sp / cs, every face of a Cartesian mesh)
+      auto jse = [&]() {
+        if (!fjs || !(dir == 0 || !(px->sph || px->cub))) return;
+        auto ep = [&](const int kk, const int jj, const int ii) {
+          const Real ct = op(m,M1_OP_T,kk,jj,ii);
+          return (ct > 0.0) ? fmin(op(m,M1_OP_P,kk,jj,ii)/ct, 1.0) : 1.0;
+        };
+        const Real wt = fmin(ep(kl,jl,il), ep(k,j,i));
+        Real wl, wr;
+        CleanHcTauW(*px, dir, m, k, j, i, wl, wr);
+        const Real ppl = hp(kl,jl,il), ppr = fmax(hp(k,j,i), 0.0);
+        const Real mml = fmin(hm(kl,jl,il), 0.0), mmr = hm(k,j,i);
+        auto &fp = fc(m,CLF_HP,k,j,i), &fm = fc(m,CLF_HM,k,j,i);
+        if (ppl > 0.0 && fp > 0.0) {
+          const Real ph = fmin(fmax(wl + wr*ppr/ppl, 0.5), 2.0);
+          fp += wt*(fmin(fp*ph, 1.0) - fp);
+        }
+        if (mmr < 0.0 && fm < 0.0) {
+          const Real ph = fmin(fmax(wr + wl*mml/mmr, 0.5), 2.0);
+          fm += wt*(fmax(fm*ph, -1.0) - fm);
+        }
+      };
+      if (nd == 0) {
+        jse();
+        return;
+      }
       // (cubed sphere: about the face's own normal from the FV intensities of L and R,
       // so that a seam face takes the same h+- on both sides)
       // (J_L, J_R, H+_L, H-_R as scalars: nvcc -O3 miscompiles a runtime-indexed local)
@@ -1176,6 +1207,7 @@ void RadiationM1::CleanFaceCoefficients() {
       }
       fc(m,CLF_HP,k,j,i) = (jl0 > 0.0) ? hp0/jl0 : 0.25;
       fc(m,CLF_HM,k,j,i) = (jr0 > 0.0) ? hm0/jr0 : -0.25;
+      jse();
     });
   }
 }
