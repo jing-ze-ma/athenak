@@ -2694,6 +2694,16 @@ bool RadiationM1::Time2RstAccept(const int nfile, const int ver) {
                 << std::endl;
     }
   }
+  // (clean_ring_fh: its half ranges are ring fields, no cln_fh channels; until the
+  // layout records the key, only a file of a run with it fits exactly, and a file of
+  // one is refused without it: 1 .. 11 channels over)
+  const bool fho = cln_rfh ? t2_nfv != 0 : (t2_nfv > 0 && t2_nfv < 12);
+  if (clean && cln_cssc && ver >= 6 && fho) {
+    std::cout << "### FATAL ERROR <rad_m1> restart: a file " << (cln_rfh ? "not " : "")
+              << "written with clean_ring_fh (" << t2_nfv << " channels over)"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   // rotwb2-1121: on the cubed sphere (version 6) the face half ranges are the last 0 or
   // 12 channels (cln_fh).  A surplus beyond them is a file written with clean_rot_ring:
   // read with the ring off its ring channels are skipped (they were read into cln_fh
