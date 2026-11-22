@@ -1102,11 +1102,9 @@ void RadiationM1::CleanFaceCoefficients() {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int kl = k - dk, jl = j - dj, il = i - di;
       const Real chi = CleanFaceChi(op, x1f, mbc, hrm, dir, m, k, j, i, is, ie);
-      auto wc = [&](const Real a) {return CleanSmoothStep((a - c1lo)/(c1hi - c1lo));};
-      const Real wl = wc(cs(m,CLN_C1,kl,jl,il)), wr = wc(cs(m,CLN_C1,k,j,i));
-      fc(m,CLF_W,k,j,i) = (thr && dir > 0) ? 0.0 : fmax(wl, wr);
-      // (clean_thin_donor: the thin share w_d h_d of each donor, as w h with w the face's)
-      const Real ql = (tdn && wl < wr) ? wl/wr : 1.0, qr = (tdn && wr < wl) ? wr/wl : 1.0;
+      const Real c1 = fmax(cs(m,CLN_C1,k,j,i), cs(m,CLN_C1,kl,jl,il));
+      fc(m,CLF_W,k,j,i) = (thr && dir > 0) ? 0.0
+                                           : CleanSmoothStep((c1 - c1lo)/(c1hi - c1lo));
       fc(m,CLF_TH,k,j,i) = 1.0/(1.0 + h*c*chi);
       fc(m,CLF_G,k,j,i) = f0(m,k,j,i) + (stage ? inc(m,tf,k,j,i) : 0.0);
       if (fsk) fc(m,CLF_N+2,k,j,i) = fc(m,CLF_G,k,j,i);   // (fsolve: start of its F)
@@ -1128,10 +1126,10 @@ void RadiationM1::CleanFaceCoefficients() {
       const Real hmf = tdn ? hmr : hmr - 0.5*minmod(hmr - hm(kl,jl,il),
                                                     hm(k+dk,j+dj,i+di) - hmr);
       const Real jl_ = cs(m,CLN_J,kl,jl,il), jr_ = cs(m,CLN_J,k,j,i);
-      fc(m,CLF_HP,k,j,i) = ql*((jl_ > 0.0) ? fmin(fmax(hpf/jl_, 0.0), 1.0)
-                                           : cs(m,CLN_HP+dir,kl,jl,il));
-      fc(m,CLF_HM,k,j,i) = qr*((jr_ > 0.0) ? fmax(fmin(hmf/jr_, 0.0), -1.0)
-                                           : cs(m,CLN_HM+dir,k,j,i));
+      fc(m,CLF_HP,k,j,i) = (jl_ > 0.0) ? fmin(fmax(hpf/jl_, 0.0), 1.0)
+                                       : cs(m,CLN_HP+dir,kl,jl,il);
+      fc(m,CLF_HM,k,j,i) = (jr_ > 0.0) ? fmax(fmin(hmf/jr_, 0.0), -1.0)
+                                       : cs(m,CLN_HM+dir,k,j,i);
       if (nd == 0) return;
       // (cubed sphere: about the face's own normal from the FV intensities of L and R,
       // so that a seam face takes the same h+- on both sides)
@@ -1140,10 +1138,10 @@ void RadiationM1::CleanFaceCoefficients() {
         Real s;
         const int nl = CleanCsSlot(*px, dir, m, k, j, i, kl, jl, il, false, s);
         const int nr = CleanCsSlot(*px, dir, m, k, j, i, k, j, i, false, s);
-        fc(m,CLF_HP,k,j,i) = ql*((nl & 1) ? cs(m,CLN_HO+nl/2,kl,jl,il)
-                                          : -cs(m,CLN_HO+3+nl/2,kl,jl,il));
-        fc(m,CLF_HM,k,j,i) = qr*((nr & 1) ? -cs(m,CLN_HO+nr/2,k,j,i)
-                                          : cs(m,CLN_HO+3+nr/2,k,j,i));
+        fc(m,CLF_HP,k,j,i) = (nl & 1) ? cs(m,CLN_HO+nl/2,kl,jl,il)
+                                      : -cs(m,CLN_HO+3+nl/2,kl,jl,il);
+        fc(m,CLF_HM,k,j,i) = (nr & 1) ? -cs(m,CLN_HO+nr/2,k,j,i)
+                                      : cs(m,CLN_HO+3+nr/2,k,j,i);
         return;
       }
       Real jl0 = 0.0, jr0 = 0.0, hp0 = 0.0, hm0 = 0.0;

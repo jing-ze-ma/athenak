@@ -2088,10 +2088,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_ring_fh (default off, read only when named): the cs face half ranges from the
     // cells' own (CLN_HO), so that the rotating ring's offsets carry them as the closure
     // clean_thin_donor (default off): the thin share w c h E of every face from its
-    // donor alone, w and the half range h out through the face the donor's own (its
-    // rays about the face normal: the six faces partition the donor's free-streaming
-    // outflow by projected area), no lagged rays' flux DG; on the cubed sphere with
-    // clean_ring_fh's cell half ranges
+    // donor alone, the half range h out through the face the donor's own (its rays
+    // about the face normal: the six faces partition the donor's free-streaming
+    // outflow by projected area, w <= 1 keeps it below), no lagged rays' flux DG; on
+    // the cubed sphere with clean_ring_fh's cell half ranges
     cln_tdn = pin->GetOrAddBoolean("rad_m1","clean_thin_donor",false);
     cln_rfh = cln_cssc && (cln_tdn || (pin->DoesParameterExist("rad_m1","clean_ring_fh") &&
                                        pin->GetBoolean("rad_m1","clean_ring_fh")));
