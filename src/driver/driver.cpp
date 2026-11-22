@@ -462,6 +462,7 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
     // ORDER decks' dt_fixed = 1e30, keeps the restored dt, else the restart is not bitwise)
     if (res_flag && dt_rst > 0.0 && !(dtfix && pmesh->dt_uncapped > pmesh->dt_cap)) {
       pmesh->dt = dt_rst;
+      dt_rst_ = dt_rst;   // checked at the first cycle (Execute)
     }
   }
 
@@ -657,6 +658,12 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
     while ((pmesh->time < tlim) && (pmesh->ncycle < nlim || nlim < 0) &&
            (elapsed_time < wall_time) && stop_ == 0) {
       if (global_variable::my_rank == 0 && !dtr_retrying) {OutputCycleDiagnostics(pmesh);}
+      // a restart's first cycle takes the file's dt (Initialize), else it is not bitwise
+      if (dt_rst_ > 0.0 && pmesh->dt != dt_rst_ && global_variable::my_rank == 0) {
+        std::printf("CLEAN WARNING restart: first dt %.17g != the file's dt %.17g\n",
+                    pmesh->dt, dt_rst_);
+      }
+      dt_rst_ = 0.0;
       // (floor_pay: what the conversions before the loop floored, e.g. a restart's, is
       // paid before the checkpoint, so that a discarded attempt drops only its own)
       if (!dtr_retrying) {DualPay(pmesh);}

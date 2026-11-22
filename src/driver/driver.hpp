@@ -68,6 +68,7 @@ class Driver {
   std::uint64_t npart_updated_; // running total of particles updated during run
   float lb_efficiency_;         // measure of how efficient was load balancing
   int stop_ = 0;                // graceful stop requested (Driver::StopCheck)
+  Real dt_rst_ = 0.0;           // a restart's file dt, checked at its first cycle
   void OutputCycleDiagnostics(Mesh *pm);
   Real UpdateWallClock();
   int StopCheck(Real elapsed_time);
