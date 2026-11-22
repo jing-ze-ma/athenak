@@ -697,12 +697,14 @@ Real CleanCsNormA(const CleanArgs &x, const int dir, const int m, const int k,
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanStagDnn
-//! \brief cubed sphere: n.D.n of cell (k,j,i), n the unit normal of face (kf,jf,iff)
-//! normal to dir (D Cartesian), the normal stress of the face-normal momentum
+//! \brief n.D.n of cell (k,j,i), n the unit normal of face (kf,jf,iff) normal to dir,
+//! the normal stress of the face-normal momentum: D_dir,dir on Cartesian and spherical
+//! polar meshes (n = e_dir), on the cubed sphere with D Cartesian
 
 KOKKOS_INLINE_FUNCTION
 Real CleanStagDnn(const CleanArgs &x, const int dir, const int m, const int kf,
                   const int jf, const int iff, const int k, const int j, const int i) {
+  if (!x.cub) return x.cs(m,CLN_D11+dir,k,j,i);
   Real d = 0.0;
   for (int a = 0; a < 3; ++a) {
     for (int b = 0; b < 3; ++b) {
@@ -711,6 +713,30 @@ Real CleanStagDnn(const CleanArgs &x, const int dir, const int m, const int kf,
     }
   }
   return d;
+}
+
+//----------------------------------------------------------------------------------------
+//! \struct CleanFaceMet
+//! \brief the metric of the momentum row of face (k,j,i) normal to dir on every mesh: the
+//! normal stress difference of the cells is a (P_R - P_L)/v + s (P_R + P_L), plus (curved
+//! meshes) hr (h_L P_L + h_R P_R) with the curvature coefficients h of CleanStagSph:
+//!   Cartesian:       a = 1/dx, v = 1, s = hr = 0;
+//!   spherical polar: a = CleanStagSph q = 0, v = 1, s its q = 4, hr half its q = 1;
+//!   cubed sphere:    a = A_n (CleanCsNormA), v = V_f of the owners' half cells, s = hr = 0
+
+struct CleanFaceMet {Real a, v, s, hr;};
+
+KOKKOS_INLINE_FUNCTION
+CleanFaceMet CleanFaceMetric(const CleanArgs &x, const int dir, const int m, const int k,
+                             const int j, const int i) {
+  const int kl = k - (dir == 2), jl = j - (dir == 1);
+  if (x.cub) {
+    return {CleanCsNormA(x, dir, m, k, j, i),
+            0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,kl,jl,i - (dir == 0))), 0.0, 0.0};
+  }
+  if (!x.sph) return {x.idx[dir], 1.0, 0.0, 0.0};
+  return {CleanStagSph(x, 0, dir, m, k, j, i), 1.0, CleanStagSph(x, 4, dir, m, k, j, i),
+          0.5*CleanStagSph(x, 1, dir, m, k, j, i)};
 }
 
 //----------------------------------------------------------------------------------------
@@ -949,24 +975,20 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
   // flux 1 - theta_d and the beta term theta (1 - b), CleanStagDrag)
   const Real t0 = x.fc[dir](m,CLF_TH,k,j,i);
   const Real qd = x.drag ? x.fc[dir](m,CLF_DB,k,j,i) : 0.0, th = t0 + qd*(1.0 - t0);
-  const Real g = (1.0 - w)*th*x.h*x.c*x.c*x.idx[dir];
-  al = g*x.cs(m,CLN_D11+dir,kl,jl,il) + w*x.c*x.fc[dir](m,CLF_HP,k,j,i);
-  ar = -g*x.cs(m,CLN_D11+dir,k,j,i) + w*x.c*x.fc[dir](m,CLF_HM,k,j,i);
-  if (x.sph) {   // (centre distance and the curvature terms, CleanStagSph)
-    const Real gs = (1.0 - w)*th*x.h*x.c*x.c, id = CleanStagSph(x, 0, dir, m, k, j, i);
-    const Real hr = 0.5*CleanStagSph(x, 1, dir, m, k, j, i);
-    al = gs*(id*x.cs(m,CLN_D11+dir,kl,jl,il) - hr*CleanStagSph(x, 2, dir, m, k, j, i)) +
-         w*x.c*x.fc[dir](m,CLF_HP,k,j,i);
-    ar = -gs*(id*x.cs(m,CLN_D11+dir,k,j,i) + hr*CleanStagSph(x, 3, dir, m, k, j, i)) +
-         w*x.c*x.fc[dir](m,CLF_HM,k,j,i);
+  // (the face-normal momentum's stress a n.D.n E/v, curved: and its curvature terms)
+  const CleanFaceMet fm = CleanFaceMetric(x, dir, m, k, j, i);
+  const Real dl = CleanStagDnn(x, dir, m, k, j, i, kl, jl, il);
+  const Real dr = CleanStagDnn(x, dir, m, k, j, i, k, j, i);
+  const Real gs = (1.0 - w)*th*x.h*x.c*x.c;
+  if (x.sph) {
+    al = gs*(fm.a*dl - fm.hr*CleanStagSph(x, 2, dir, m, k, j, i));
+    ar = -gs*(fm.a*dr + fm.hr*CleanStagSph(x, 3, dir, m, k, j, i));
+  } else {
+    al = gs*fm.a/fm.v*dl;
+    ar = -(gs*fm.a/fm.v)*dr;
   }
-  if (x.cub) {   // (cubed sphere: the face-normal momentum, A n.D.n E over V_f)
-    const Real gs = (1.0 - w)*th*x.h*x.c*x.c*CleanCsNormA(x, dir, m, k, j, i)/
-                    (0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,kl,jl,il)));
-    al = gs*CleanStagDnn(x, dir, m, k, j, i, kl, jl, il) +
-         w*x.c*x.fc[dir](m,CLF_HP,k,j,i);
-    ar = -gs*CleanStagDnn(x, dir, m, k, j, i, k, j, i) + w*x.c*x.fc[dir](m,CLF_HM,k,j,i);
-  }
+  al += w*x.c*x.fc[dir](m,CLF_HP,k,j,i);
+  ar += w*x.c*x.fc[dir](m,CLF_HM,k,j,i);
   CleanStagArea(x, dir, m, k, j, i, w, al, ar);
   const Real q = CleanStagMemUp(x, dir, m, k, j, i);
   if (q > 0.0) al += q;
@@ -1123,29 +1145,23 @@ Real CleanFaceStress(const CleanArgs &x, const int e, const int dir, const int m
                      const int k, const int j, const int i, const bool normal) {
   const int kl = k - (dir == 2), jl = j - (dir == 1), il = i - (dir == 0);
   Real div = 0.0;
-  if (x.cub) {   // (cubed sphere: n.div(D E) of the two half cells, the normal stress
-    if (normal) {  //  and the lateral sums CleanStagCsLat, over V_f)
-      div = CleanCsNormA(x, dir, m, k, j, i)*
-            (CleanStagDnn(x, dir, m, k, j, i, k, j, i)*x.w(m,e,k,j,i)
-             - CleanStagDnn(x, dir, m, k, j, i, kl, jl, il)*x.w(m,e,kl,jl,il));
+  const CleanFaceMet fm = CleanFaceMetric(x, dir, m, k, j, i);
+  if (normal) {   // (the normal stress of the two (half) cells, CleanFaceMet)
+    div = fm.a*(CleanStagDnn(x, dir, m, k, j, i, k, j, i)*x.w(m,e,k,j,i) -
+                CleanStagDnn(x, dir, m, k, j, i, kl, jl, il)*x.w(m,e,kl,jl,il));
+    if (x.sph) {
+      div += fm.hr*(CleanStagSph(x, 2, dir, m, k, j, i)*x.w(m,e,kl,jl,il) +
+                    CleanStagSph(x, 3, dir, m, k, j, i)*x.w(m,e,k,j,i));
     }
-    // (a seam face takes no lateral sums: its mirror chord is normal to the face, so the
-    // two-point term is the whole n.div(D E), as production's seam row)
+  }
+  if (x.cub) {   // (cubed sphere: the lateral sums CleanStagCsLat, all over V_f; a seam
+    // face takes none: its mirror chord is normal to the face, so the two-point term is
+    // the whole n.div(D E), as production's seam row)
     if (!CleanBoundaryFace(x, dir, m, k, j, i) && !CleanCsSeamFace(x, dir, m, k, j, i)) {
       div += CleanStagCsLat(x, dir, m, k, j, i, kl, jl, il) +
              CleanStagCsLat(x, dir, m, k, j, i, k, j, i);
     }
-    return div/(0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,kl,jl,il)));
-  }
-  if (normal && x.sph) {
-    div = CleanStagSph(x, 0, dir, m, k, j, i)*(x.cs(m,CLN_D11+dir,k,j,i)*x.w(m,e,k,j,i) -
-          x.cs(m,CLN_D11+dir,kl,jl,il)*x.w(m,e,kl,jl,il)) +
-          0.5*CleanStagSph(x, 1, dir, m, k, j, i)*
-          (CleanStagSph(x, 2, dir, m, k, j, i)*x.w(m,e,kl,jl,il) +
-           CleanStagSph(x, 3, dir, m, k, j, i)*x.w(m,e,k,j,i));
-  } else if (normal) {
-    div = x.idx[dir]*(x.cs(m,CLN_D11+dir,k,j,i)*x.w(m,e,k,j,i) -
-                      x.cs(m,CLN_D11+dir,kl,jl,il)*x.w(m,e,kl,jl,il));
+    return div/fm.v;
   }
   if (!x.multi_d || CleanBoundaryFace(x, dir, m, k, j, i)) return div;
   // (clean_stag_lat_sums: the lateral sums Y of the two cells over V_f, as the cubed

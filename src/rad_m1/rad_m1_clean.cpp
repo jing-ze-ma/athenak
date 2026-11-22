@@ -3855,14 +3855,10 @@ bool CleanStagFRow(const CleanArgs &x, const CleanFLine &ln, const FC &fc, const
     const Real g = 0.5*x.h*x.c/CleanCellFaceDistance(x, dir, m, k, j, i);
     const Real it_ = 1.0/fc(m,CLF_TH,k,j,i);
     // (fkin: h c^2 [w P_kin]_L^R/dx, P_kin = (h+ F_lo + h- F_hi)/c of a cell)
-    Real q, qs = 0.0, ag = 1.0;
-    if (x.cub) {
-      q = x.h*x.c/(0.5*(x.g(m,CLG_F+3,k,j,i) + x.g(m,CLG_F+3,k-dk,j-dj,i-di)));
-      ag = CleanCsNormA(x, dir, m, k, j, i);
-    } else {
-      q = x.h*x.c*(x.sph ? CleanStagSph(x, 0, dir, m, k, j, i) : x.idx[dir]);
-      qs = x.sph ? x.h*x.c*CleanStagSph(x, 4, dir, m, k, j, i) : 0.0;
-    }
+    // (CleanFaceMet; the cubed sphere's cells carry their area pressures A P)
+    const CleanFaceMet fm = CleanFaceMetric(x, dir, m, k, j, i);
+    const Real q = x.h*x.c*(x.cub ? 1.0 : fm.a)/fm.v, qs = x.h*x.c*fm.s;
+    const Real ag = x.cub ? fm.a : 1.0;
     lo = -g*tl[0] - q*tl[2]*tl[3] + qs*tl[2]*tl[3];
     hi = -g*tr[0] + q*tr[2]*tr[4] + qs*tr[2]*tr[4];
     const Real sq = q*(tr[2]*(tr[3] + tr[4]) - tl[2]*(tl[3] + tl[4]));
@@ -5353,8 +5349,7 @@ void RadiationM1::CleanStagDrag(const bool first, const bool vel, const bool lat
       const Real xl = x.op(m,M1_OP_T,k-dk,j-dj,i-di)*vl;
       const Real xs = xl + x.op(m,M1_OP_T,k,j,i)*vr, wl = (xs > 0.0) ? xl/xs : 0.5;
       auto ce = [&](const int kk, const int jj, const int ii) {
-        const Real d = x.cub ? CleanStagDnn(x, dir, m, k, j, i, kk, jj, ii)
-                             : x.cs(m,CLN_D11+dir,kk,jj,ii);
+        const Real d = CleanStagDnn(x, dir, m, k, j, i, kk, jj, ii);
         return (1.0 + d)*fmax(x.w(m,CLW_EK,kk,jj,ii), 0.0)*0.5*(vl + vr)/
                (vo(kk, jj, ii)*(x.cub ? x.w(m,CLW_JV+2,kk,jj,ii) : uh(m,IDN,kk,jj,ii)));
       };
