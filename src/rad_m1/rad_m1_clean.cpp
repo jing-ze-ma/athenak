@@ -3526,8 +3526,9 @@ void RadiationM1::CleanStagBracket() {
   // (clean_stag_thinf_held: theta = min(1, max(J, P)/(clean_ray_min E_old)) of every
   // cell in CLW_V, a Krylov scratch slot, P the largest rays' flux out of one of its
   // faces: 1 where the rays carry the cell (as its closure, a beam's transit cell
-  // included), down to 0 where they hold less than clean_ray_min of its E)
-  const bool thh = cln_thinh, thg = cln_thhg;
+  // included), down to 0 where they hold less than clean_ray_min of its E;
+  // clean_stag_thinf_own: min(1, max(J, P)/E_old))
+  const bool own = cln_thown, thh = cln_thinh || own, thg = cln_thhg;
   if (thh) {
     CleanFor("cln_thheld", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -3539,7 +3540,8 @@ void RadiationM1::CleanStagBracket() {
                         x.cs(m,n,k+(d == 2),j+(d == 1),i+(d == 0));
         p = fmax(p, fmax(fh, -x.cs(m,n,k,j,i)));
       }
-      const Real e = rmn*x.w(m,CLW_EO,k,j,i), h = fmax(x.cs(m,CLN_JR,k,j,i), p);
+      const Real e = (own ? 1.0 : rmn)*x.w(m,CLW_EO,k,j,i);
+      const Real h = fmax(x.cs(m,CLN_JR,k,j,i), p);
       // (clean_stag_thinf_held_gate: times r^2, r = E_old/H where the rays bring more
       // than the cell holds, H = max(J, P) > E_old (the old production's quasi-steadiness
       // gate, on the front side only): a dark floor cell a beam just hit moves with its
@@ -3620,14 +3622,25 @@ void RadiationM1::CleanStagBracket() {
         const Real er = fmax(x.w(m,CLW_EO,k,j,i), 0.0);
         // (clean_stag_thinf_held: the share theta of the donor's E the rays carry moves
         // with their flux factor, the rest with the donor's own half range: a convex
-        // blend, realisable; a ray-shadowed donor (J << E) is no dam)
+        // blend, realisable; a ray-shadowed donor (J << E) is no dam;
+        // clean_stag_thinf_own: the rest with its own stage-old face flux factor where
+        // that is the larger)
         const Real gp = fmin(hp/fmax(jl, rmn*el), 1.0),
                    gm = fmax(hm/fmax(jr, rmn*er), -1.0);
         const Real ql = thh ? x.w(m,CLW_V,k-dk,j-dj,i-di) : 1.0;
         const Real qr = thh ? x.w(m,CLW_V,k,j,i) : 1.0;
         auto &fp = x.fc[dir](m,CLF_HP,k,j,i), &fm = x.fc[dir](m,CLF_HM,k,j,i);
-        if (jl > 0.0) fp = thh ? ql*gp + (1.0 - ql)*fp : gp;
-        if (jr > 0.0) fm = thh ? qr*gm + (1.0 - qr)*fm : gm;
+        const Real g0 = x.fc[dir](m,CLF_G,k,j,i);
+        const Real ol = (g0 > 0.0 && el > 0.0) ? fmin(g0/(x.c*el), 1.0) : 0.0;
+        const Real orr = (g0 < 0.0 && er > 0.0) ? fmax(g0/(x.c*er), -1.0) : 0.0;
+        if (jl > 0.0) {
+          fp = own ? gp + (1.0 - ql)*fmax(ol - gp, 0.0)
+                   : (thh ? ql*gp + (1.0 - ql)*fp : gp);
+        }
+        if (jr > 0.0) {
+          fm = own ? gm + (1.0 - qr)*fmin(orr - gm, 0.0)
+                   : (thh ? qr*gm + (1.0 - qr)*fm : gm);
+        }
         x.fc[dir](m,x.fdg,k,j,i) = 0.0;
         return;
       }

@@ -1550,9 +1550,10 @@ void RadiationM1::CleanStagCoarseSetup() {
 //! \fn void RadiationM1::CleanStagLineSolve
 //! \brief u(dst) = L^{-1} u(src) on a level of the staggered preconditioner, L its
 //! x1-line tridiagonal part: Thomas solve along the x1 lines of colour col (-1: every
-//! line; 0: the lines of even j + k; 1: the odd ones, with the couplings to u(dst) of the
-//! even neighbours inside the level on the right-hand side; 2: the even ones, with the
-//! odd neighbours' on the right-hand side).  clean_stag_mg_color =
+//! line), (j + k) mod nc, with the couplings to u(dst) of the neighbours inside the level
+//! of another colour up to lim on the right-hand side (red-black: nc = 2, the even lines
+//! (0, -1), the odd ones (1, 1), the even ones again (0, 1); clean_pc_sweep = wave: nc
+//! past the largest j + k, a line's colour its wavefront).  clean_stag_mg_color =
 //! mirror: j, k are a line's distance from the nearer MeshBlock edge along x2, x3, so
 //! that the colours, and the sweep, mirror with the mesh about its x2 and x3 midplanes
 //! (rule 7; j + k colours an even line count's mirror lines oppositely: asymmetry at the
@@ -1562,17 +1563,21 @@ void RadiationM1::CleanStagCoarseSetup() {
 //! production line solves (M1PCRMG); the host keeps Thomas.
 
 void RadiationM1::CleanStagLineSolve(const CleanLevel &lv, const int src, const int dst,
-                                     const int col) {
+                                     const int col, const int lim, const int nc) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const CleanLevel l = lv;
   const int is = l.o[0], ie = l.o[0] + l.n[0] - 1, cp = l.a0 + 2;
   auto w = l.u;
   const int n1 = l.n[1], n2 = l.n[2];
   const bool mir = (cln_stagmg == 2);
-  const int c0 = col & 1;   // (the colour solved; col >= 1: the other one's on the rhs)
+  const int c0 = col;
   auto cl = KOKKOS_LAMBDA(const int pj, const int pk) {   // (the line's colour)
     return (((mir && 2*pj >= n1) ? n1 - 1 - pj : pj) +
-            ((mir && 2*pk >= n2) ? n2 - 1 - pk : pk)) % 2;
+            ((mir && 2*pk >= n2) ? n2 - 1 - pk : pk)) % nc;
+  };
+  auto on = KOKKOS_LAMBDA(const int pj, const int pk) {   // (a neighbour on the rhs)
+    const int c = cl(pj, pk);
+    return c != c0 && c <= lim;
   };
 
   if (!std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace> && cln_pcr) {
@@ -1595,13 +1600,11 @@ void RadiationM1::CleanStagLineSolve(const CleanLevel &lv, const int src, const 
       Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int q) {
         const int i = is + q;
         Real r = w(m,src,k,j,i);
-        if (col >= 1) {
-          if (pj > 0 && cl(pj-1, pk) != c0) r -= w(m,l.sm[1],k,j,i)*w(m,dst,k,j-1,i);
-          if (pj < l.n[1] - 1 && cl(pj+1, pk) != c0)
-            r -= w(m,l.sp[1],k,j,i)*w(m,dst,k,j+1,i);
-          if (pk > 0 && cl(pj, pk-1) != c0) r -= w(m,l.sm[2],k,j,i)*w(m,dst,k-1,j,i);
-          if (pk < l.n[2] - 1 && cl(pj, pk+1) != c0)
-            r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
+        if (lim >= 0) {
+          if (pj > 0 && on(pj-1, pk)) r -= w(m,l.sm[1],k,j,i)*w(m,dst,k,j-1,i);
+          if (pj < l.n[1] - 1 && on(pj+1, pk)) r -= w(m,l.sp[1],k,j,i)*w(m,dst,k,j+1,i);
+          if (pk > 0 && on(pj, pk-1)) r -= w(m,l.sm[2],k,j,i)*w(m,dst,k-1,j,i);
+          if (pk < l.n[2] - 1 && on(pj, pk+1)) r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
         }
         sw(q) = (q > 0) ? w(m,l.sm[0],k,j,i) : 0.0;
         sw(nx + q) = w(m,l.a0,k,j,i);
@@ -1681,13 +1684,11 @@ void RadiationM1::CleanStagLineSolve(const CleanLevel &lv, const int src, const 
       const Real am = (i > is) ? w(m,l.sm[0],k,j,i) : 0.0;
       const Real ap = (i < ie) ? w(m,l.sp[0],k,j,i) : 0.0;
       Real r = w(m,src,k,j,i);
-      if (col >= 1) {
-        if (pj > 0 && cl(pj-1, pk) != c0) r -= w(m,l.sm[1],k,j,i)*w(m,dst,k,j-1,i);
-        if (pj < l.n[1] - 1 && cl(pj+1, pk) != c0)
-          r -= w(m,l.sp[1],k,j,i)*w(m,dst,k,j+1,i);
-        if (pk > 0 && cl(pj, pk-1) != c0) r -= w(m,l.sm[2],k,j,i)*w(m,dst,k-1,j,i);
-        if (pk < l.n[2] - 1 && cl(pj, pk+1) != c0)
-          r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
+      if (lim >= 0) {
+        if (pj > 0 && on(pj-1, pk)) r -= w(m,l.sm[1],k,j,i)*w(m,dst,k,j-1,i);
+        if (pj < l.n[1] - 1 && on(pj+1, pk)) r -= w(m,l.sp[1],k,j,i)*w(m,dst,k,j+1,i);
+        if (pk > 0 && on(pj, pk-1)) r -= w(m,l.sm[2],k,j,i)*w(m,dst,k-1,j,i);
+        if (pk < l.n[2] - 1 && on(pj, pk+1)) r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
       }
       const Real den = w(m,l.a0,k,j,i) - am*cprev;
       cprev = ap/den;
@@ -1715,9 +1716,22 @@ void RadiationM1::CleanStagLineSolve(const CleanLevel &lv, const int src, const 
 
 void RadiationM1::CleanStagVCycle(const int l, const int src, const int dst) {
   const CleanLevel f = CleanStagLevel(l);
-  CleanStagLineSolve(f, src, dst, 0);
-  CleanStagLineSolve(f, src, dst, 1);
-  if (cln_pcsweep & 1) CleanStagLineSolve(f, src, dst, 2);
+  // (wave: the lines by wavefronts j + k, from the edges in, then back out, each with the
+  // couplings to the lines solved before it: a symmetric Gauss-Seidel in the line order,
+  // exact for a donor-cell transport along +-x2, x3 inside the MeshBlock)
+  const bool wv = (cln_pcsweep == 4), mir = (cln_stagmg == 2);
+  const int nw = mir ? (f.n[1] - 1)/2 + (f.n[2] - 1)/2 + 1 : f.n[1] + f.n[2] - 1;
+  auto sweep = [&](const bool all) {
+    for (int c = 0; c < nw; ++c) CleanStagLineSolve(f, src, dst, c, all ? nw : c - 1, nw);
+    for (int c = nw - 1; c >= 0; --c) CleanStagLineSolve(f, src, dst, c, nw, nw);
+  };
+  if (wv) {
+    sweep(false);
+  } else {
+    CleanStagLineSolve(f, src, dst, 0, -1);
+    CleanStagLineSolve(f, src, dst, 1, 1);
+    if (cln_pcsweep & 1) CleanStagLineSolve(f, src, dst, 0, 1);
+  }
   if (l == static_cast<int>(cln_mg.size())) return;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const CleanLevel c = CleanStagLevel(l+1);
@@ -1751,9 +1765,11 @@ void RadiationM1::CleanStagVCycle(const int l, const int src, const int dst) {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     f.u(m,dst,k,j,i) += c.u(m,CLS_X,(k - f.o[2])/r[2],(j - f.o[1])/r[1],i - f.o[0]);
   });
-  if (cln_pcsweep & 2) {
-    CleanStagLineSolve(f, src, dst, 1);
-    CleanStagLineSolve(f, src, dst, 2);
+  if (wv) {
+    sweep(true);
+  } else if (cln_pcsweep & 2) {
+    CleanStagLineSolve(f, src, dst, 1, 1);
+    CleanStagLineSolve(f, src, dst, 0, 1);
   }
 }
 

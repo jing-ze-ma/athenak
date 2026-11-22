@@ -447,6 +447,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // largest ray outflow: theta g(rays) + (1 - theta) h (its own half range); a
     // ray-shadowed donor is no dam
     cln_thinh = cln_thinf && pin->GetOrAddBoolean("rad_m1","clean_stag_thinf_held",false);
+    // clean_stag_thinf_own (default off): the donor's share 1 - theta of its E_old that
+    // the rays do not explain, theta = min(1, max(J, P)/E_old), moves with its own
+    // stage-old face flux factor G_f/(c E_old) where that is faster than the rays': g +
+    // (1 - theta) max(G_f/(c E_old) - g, 0), upwind, in [0, 1] (or [-1, 0]); a ray-dark
+    // donor is no dam, and nothing moves slower than the rays carry it (not with held)
+    cln_thown = cln_thinf && pin->GetOrAddBoolean("rad_m1","clean_stag_thinf_own",false);
+    if (cln_thown && cln_thinh) {
+      std::cout << "### FATAL ERROR <rad_m1>/clean_stag_thinf_own: not with "
+                << "clean_stag_thinf_held" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     // clean_stag_xdonor_freeze (default 0 = off): from this pass of a solve on, the
     // xdonor cross flux C is held (CleanStagXDonor): its donor side and cap no longer
     // switch from pass to pass (HG C2D: a 1-cell donor/cap flip, period-2 passes at 2e-4)
@@ -678,15 +689,18 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     cln_stagmg = (pc == "mg") ? ((mc == "mirror") ? 2 : 1) : 0;
     // clean_pc_sweep = sym (default of a fresh run, recorded; a restart file without the
-    // key keeps rb) | rb | rbr | rbrsym: the mg's smoothing on each level, a forward
-    // red-black sweep, + a second red pass (rbr), + a black-red post-sweep after the
-    // coarse correction (sym) (CleanStagVCycle)
+    // key keeps rb) | rb | rbr | rbrsym | wave: the mg's smoothing on each level, a
+    // forward red-black sweep, + a second red pass (rbr), + a black-red post-sweep after
+    // the coarse correction (sym); wave: symmetric Gauss-Seidel over the x1 lines in
+    // wavefronts from the MeshBlock edges in and back out, before and after the coarse
+    // correction (a ray-dark region's donor-cell transport across x2, x3)
+    // (CleanStagVCycle)
     const std::string sw = pin->GetOrAddString("rad_m1","clean_pc_sweep",
                                                nw ? "sym" : "rb");
-    cln_pcsweep = (sw == "rbr") + 2*(sw == "sym") + 3*(sw == "rbrsym");
+    cln_pcsweep = (sw == "rbr") + 2*(sw == "sym") + 3*(sw == "rbrsym") + 4*(sw == "wave");
     if (!cln_pcsweep && sw != "rb") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_m1>/clean_pc_sweep = rb | rbr | sym | rbrsym"
+                << std::endl << "<rad_m1>/clean_pc_sweep = rb | rbr | sym | rbrsym | wave"
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }}
