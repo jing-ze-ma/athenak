@@ -2732,6 +2732,7 @@ class RadiationM1 {
   // time2_face_fct's two scratch slots of iw (scheme = clean: the line-solve slots, its
   // iw ends before the Krylov vectors)
   int Time2FctSlot(const int q) const;
+  void Time2FctHalo(const int c);
   int CleanRingRstN() const;            // ... in the restart files (version 4)
   // (vet_rotate_avg_ema, production's EMA: a fill takes 2 sets; cln_rr = the EMA offsets
   // e, the aux J and D11 and the set count n, cln_rpd = the Delta, a_ch and the next
@@ -2767,6 +2768,8 @@ class RadiationM1 {
   void CleanStagFSchur();
   void CleanStagCsLateral(const int e, const bool st = false, const int part = 0);
   void CleanWriteBack();
+  void CleanWbFct(const CleanArgs &x, const CleanArgs *px, const DvceArray5D<Real> &fp,
+                  const bool pfo, const DvceArray5D<Real> &pf);
   CleanArgs CleanMakeArgs();
   const void *CleanDevCopy(const void *p, const size_t n, const int s);
   template <class T> const T *CleanDev(const T &x, const int s) {
@@ -2837,6 +2840,7 @@ class RadiationM1 {
   Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: Newton tolerance (relative dE, dT, dv)
   Real cln_tolrel = 0.0, cln_tolrmx = 1.0e-4;   // clean_tol_rel, clean_tol_rel_max
   bool cln_gtf = false;         // clean_gas_tfloor: gas T >= tfloor, energy to/from E
+  bool cln_wbfct = false;       // clean_wb_fct
   Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E
   // clean_ray_cut (CleanRayCut; default on where it applies): no rays below the shell
   // where every deeper cell is in the diffusion regime, R = |grad S|/(chi S) <

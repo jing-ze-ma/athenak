@@ -587,6 +587,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_gas_tfloor (default true): the gas row's T bounded below by the EOS
     // tfloor, and the gas eint written back from that root (E takes the rest)
     cln_gtf = stag("clean_gas_tfloor", true);
+    // clean_wb_fct (default false): the write-back's Zalesak limit on the written faces'
+    // energy flux, E > 0 by construction (CleanWbFct); its budget is the gas row's of
+    // clean_gas_tfloor with clean_xt_exact's work
+    cln_wbfct = stag("clean_wb_fct", false);
+    if (cln_wbfct && !(cln_gtf && cln_xte > 0)) {
+      std::cout << "### FATAL ERROR <rad_m1>/clean_wb_fct needs clean_gas_tfloor and "
+                << "clean_xt_exact = cons | x2" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     // clean_gas_newton_switch (default W = 4 on a fresh run, USER 11-21, recorded; 0 = off;
     // W in [3, 64]), clean_gas_newton_switch_min (default 6 on a fresh run, else 20),
     // clean_stall_fac (0.5): the old production's implicit_gas_newton_switch, a stalled

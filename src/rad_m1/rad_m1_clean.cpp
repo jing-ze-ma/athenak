@@ -5178,6 +5178,121 @@ void RadiationM1::CleanLzBook(const Real s, const bool start) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanWbFct
+//! \brief clean_wb_fct: Zalesak limit of the written faces' energy flux Phi (cln_wbdiv's,
+//! fp 0..2), so that E > e_floor after the write-back by construction.  A cell's E is
+//! Q - P: Q its E without face transport (the probe of cln_wbcell, fp 3, less e_floor
+//! and E's round-off) plus its inflow, P its outflow, h CleanDivW Phi per volume.  A
+//! cell whose Q - R P is not > 0 takes R = min(1, (1 - 1e-12) Q/P) (0, counted 'left',
+//! where Q <= 0); each face is scaled by its donor's R, so its two cells see one flux;
+//! rounds until no R falls, as Time2FaceFct (its iw slots and exchange).  The limited
+//! faces' (1 - s) Phi leave qf (CLW_Q), the stored Phi pf and the x1 boundary ledger.
+//! The face F (the momentum, solved from X) is not touched: momentum and L_z exact.
+
+void RadiationM1::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
+                             const DvceArray5D<Real> &fp, const bool pfo,
+                             const DvceArray5D<Real> &pf) {
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1, nf = x.nf;
+  if (iw.extent_int(1) <= Time2FctSlot(1)) {
+    CleanFatal("<rad_m1>/clean_wb_fct needs time2_face_fct's iw slots");
+  }
+  auto iw_ = iw;
+  const int ca = Time2FctSlot(0), cb = Time2FctSlot(1);
+  for (const int c : {ca, cb}) {   // (R = 1, ghosts too: physical ones stay unlimited)
+    Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, c, Kokkos::ALL,
+                      Kokkos::ALL, Kokkos::ALL), 1.0);
+  }
+  // (a cell's Q and P at the donors' R in slot ca; a face's scale, its donor's R)
+  auto qp = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &q,
+                          Real &po) {
+    const CleanArgs &x = *px;
+    q = fp(m,3,k,j,i);
+    po = 0.0;
+    for (int n = 0; n < nf; ++n) {
+      const int dk = (n == 2), dj = (n == 1), di = (n == 0);
+      const Real gl = x.h*CleanDivW(x, n, m, k, j, i, 0)*fp(m,n,k,j,i);   // (+ = in)
+      const Real gh = x.h*CleanDivW(x, n, m, k, j, i, 1)*fp(m,n,k+dk,j+dj,i+di);
+      if (gl > 0.0) {q += iw_(m,ca,k-dk,j-dj,i-di)*gl;} else {po -= gl;}
+      if (gh > 0.0) {po += gh;} else {q -= iw_(m,ca,k+dk,j+dj,i+di)*gh;}
+    }
+  };
+  auto sf = KOKKOS_LAMBDA(const int n, const int m, const int k, const int j,
+                          const int i) {
+    const Real f = fp(m,n,k,j,i);
+    return (f > 0.0) ? iw_(m,ca,k-(n == 2),j-(n == 1),i-(n == 0)) :
+                       ((f < 0.0) ? iw_(m,ca,k,j,i) : 1.0);
+  };
+  const int n1 = ie - is + 1, nji = (je - js + 1)*n1, nkji = (ke - ks + 1)*nji;
+  int nr = 0;
+  for (; nr < 4096; ++nr) {   // (R only falls: until no cell is newly limited)
+    Real nv = 0.0;
+    Kokkos::parallel_reduce("cln_wbfr", CleanRp256(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &a) {
+      const int m = idx/nkji, k = ks + (idx%nkji)/nji, j = js + (idx%nji)/n1;
+      const int i = is + idx%n1;
+      Real q, po;
+      qp(m, k, j, i, q, po);
+      const Real rc = iw_(m,ca,k,j,i);
+      const Real rq = (q > 0.0 && po > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/po) : 0.0;
+      const bool lo = !(q - rc*po > 0.0) && rq < rc;
+      iw_(m,cb,k,j,i) = lo ? rq : rc;
+      if (lo) a += 1.0;
+    }, Kokkos::Sum<Real>(nv));
+    if (!(CleanReduce(nv, false) > 0.0)) break;
+    Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, ca, Kokkos::ALL,
+                      Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw, Kokkos::ALL, cb,
+                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+    Time2FctHalo(ca);
+  }
+  if (nr == 0) return;   // (nothing limited: bitwise)
+  Real lv[2] = {0.0, 0.0};   // ('left': not > 0 at R; the outflow the limit kept)
+  Kokkos::parallel_reduce("cln_wbfl", CleanRp256(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &a, Real &b) {
+    const CleanArgs &x = *px;
+    const int m = idx/nkji, k = ks + (idx%nkji)/nji, j = js + (idx%nji)/n1;
+    const int i = is + idx%n1;
+    Real q, po;
+    qp(m, k, j, i, q, po);
+    const Real rc = iw_(m,ca,k,j,i);
+    if (!(q - rc*po > 0.0)) a += 1.0;
+    b += (1.0 - rc)*po*CleanVol(x, m, k, j, i);
+    Real dq = 0.0;   // (qf less the limited faces' share)
+    for (int n = 0; n < nf; ++n) {
+      const int dk = (n == 2), dj = (n == 1), di = (n == 0);
+      dq += CleanDivF(x, n, m, k, j, i, (1.0 - sf(n, m, k, j, i))*fp(m,n,k,j,i),
+                      (1.0 - sf(n, m, k+dk, j+dj, i+di))*fp(m,n,k+dk,j+dj,i+di));
+    }
+    x.w(m,CLW_Q,k,j,i) -= x.h*dq;
+  }, Kokkos::Sum<Real>(lv[0]), Kokkos::Sum<Real>(lv[1]));
+  lv[0] = CleanReduce(lv[0], false);
+  lv[1] = CleanReduce(lv[1], false);
+  if (global_variable::my_rank == 0) {
+    std::printf("CLEAN WBFCT cycle %d t2s %d rounds %d left %.0f kept %.6e\n",
+                pmy_pack->pmesh->ncycle, t2_solve, nr, lv[0], lv[1]);
+  }
+  for (int n = 0; n < nf && pfo; ++n) {   // (the stored Phi: what moved E)
+    CleanFor("cln_wbfs", nmb1, ks, ke+(n == 2), js, je+(n == 1), is, ie+(n == 0),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      pf(m,n,k,j,i) -= (1.0 - sf(n, m, k, j, i))*fp(m,n,k,j,i);
+    });
+  }
+  if (cln_lacc.extent_int(0) > nmb1) {   // (the history's boundary energy, cln_wbbnd)
+    auto la = cln_lacc;
+    auto ar = pmy_pack->pcoord->area.x1f;
+    const Real h = x.h;
+    par_for("cln_wbfb", DevExeSpace(), 0, nmb1, 0, 1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int s, const int k, const int j) {
+      const int i = s ? ie + 1 : is;
+      if (CleanBoundaryFace(*px, 0, m, k, j, i)) {
+        la(m,s,k,j) -= h*ar(m,k,j,i)*(1.0 - sf(0, m, k, j, i))*fp(m,0,k,j,i);
+      }
+    });
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanWriteBack
 //! \brief stores the solution: face fluxes, E, cell fluxes (face means), the gas momentum
 //! and energy, and the stage slopes K = (U - U_old)/h.  The gas takes exactly the
@@ -5259,6 +5374,11 @@ void RadiationM1::CleanWriteBack() {
       });
     }
   }
+  // (clean_wb_fct: each face's Phi for CleanWbFct, components 0..2 of cln_wbfp)
+  const bool wf = cln_wbfct && feedback && !x.vzero;
+  const DvceArray5D<Real> wfp = !wf ? DvceArray5D<Real>() :
+      ScratchView<DvceArray5D<Real>>("cln_wbfp", nmb1 + 1, 4, u0.extent_int(2),
+                                     u0.extent_int(3), u0.extent_int(4));
   CleanFor("cln_wbdiv", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px, &xh = *pxh;   // (device memory: no copy)
@@ -5278,6 +5398,12 @@ void RadiationM1::CleanWriteBack() {
                            x.fc[n](m,CLF_PT,k+dk,j+dj,i+di);
       const Real fh = (tie && !bh) ? x.w(m,CLW_L+n,k+dk,j+dj,i+di) : fu;
       dv += CleanDivF(x, n, m, k, j, i, fl, fh);
+      if (wf) {
+        wfp(m,n,k,j,i) = fl;
+        if (n == 0 ? i == x.ie : (n == 1 ? j == x.je : k == x.ke)) {
+          wfp(m,n,k+dk,j+dj,i+di) = fh;
+        }
+      }
       // (clean_stag_kpos: the cell flux without the moved increment flux)
       if (xh.hi && x.xq >= 0) {
         phq(m,n,k,j,i) = 0.5*(xcv(m,n,k,j,i) + xcv(m,n,k+dk,j+dj,i+di) -
@@ -5453,8 +5579,10 @@ void RadiationM1::CleanWriteBack() {
   DvceArray4D<Real> lzw;
   if (lzb) lzw = ScratchView<DvceArray4D<Real>>("cln_lzw", nmb1 + 1, u0.extent_int(2),
                                                  u0.extent_int(3), u0.extent_int(4));
-  CleanFor("cln_wbcell", nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+  // (prb, clean_wb_fct's probe: no side effects, each cell's E without its face
+  // transport, e + qf, into cln_wbfp 3 for CleanWbFct, before the cells' write-back)
+  auto wbc = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
+                           const bool prb) {
     CLEAN_HIPX(const CleanArgs &x = *px, &xh = *pxh;)   // (in device memory)
     Real e = x.w(m,CLW_X,k,j,i);
     // (clean_stag_kpos: h div of the moved increment flux, the diagonal's boundary part
@@ -5546,7 +5674,7 @@ void RadiationM1::CleanWriteBack() {
         CleanStagHydro(x, m, k, j, i, dy);
         CleanGasChange(x, m, k, j, i, dy, dh);
       }
-      for (int n = 0; n < 3; ++n) uh(m,IM1+n,k,j,i) += dh[n];
+      for (int n = 0; n < 3 && !prb; ++n) uh(m,IM1+n,k,j,i) += dh[n];
       // gas energy: exactly what the radiation gives up besides its flux divergence, so
       // that total energy changes only by the face fluxes
       Real div = x.idx[0]*(f1(m,k,j,i+1) - f1(m,k,j,i));
@@ -5586,7 +5714,7 @@ void RadiationM1::CleanWriteBack() {
           Real ei, p, chi_rho, chi_t, cv;
           eos.ThermoAt(uh(m,IDN,k,j,i), fmax(t, tgf), ei, p, chi_rho, chi_t, cv);
           eg = ei - x.w(m,CLW_EI,k,j,i);
-          if (t < tgf) {
+          if (t < tgf && !prb) {
             Real e0;
             eos.ThermoAt(uh(m,IDN,k,j,i), t, e0, p, chi_rho, chi_t, cv);
             const Real vol = CleanVol(x, m, k, j, i);
@@ -5602,6 +5730,12 @@ void RadiationM1::CleanWriteBack() {
         if (cls) x.w(m,CLW_PW,k,j,i) = fabs(den - eg - wk - wp)/fmax(fabs(e) +
             fabs(x.w(m,CLW_EO,k,j,i)) + fabs(x.w(m,CLW_EI,k,j,i)), 1.0e-300);
         e += rd;
+        if (prb) {   // (less E's round-off and e_floor: a limited cell stays above it)
+          const Real q = x.w(m,CLW_Q,k,j,i);
+          wfp(m,3,k,j,i) = e + q - efl - 1.0e-12*(fabs(e) + fabs(q) + fabs(eg) + fabs(wk) +
+              fabs(wp) + fabs(x.w(m,CLW_X,k,j,i)) + fabs(x.w(m,CLW_EO,k,j,i)));
+          return;
+        }
         den -= rd + wp;
         wsl = wex ? wp : wp - wr;
         // (implicit_pos_gas, as the old production's write-back: a gas eint below e_min =
@@ -5686,6 +5820,17 @@ void RadiationM1::CleanWriteBack() {
         if (!xh.hi) phq(m,d,k,j,i) = fv[d];   // (no split: Phi is the face momentum)
       }
     }
+  };
+  if (wf) {
+    CleanFor("cln_wbprb", nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      wbc(m, k, j, i, true);
+    });
+    CleanWbFct(x, px, wfp, pfo, pf);
+  }
+  CleanFor("cln_wbcell", nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    wbc(m, k, j, i, false);
   });
   if (lzb) {   // (the L_z ledger: the stage's L_z as its slope, then booked)
     const Real s = CleanSumCells(lzw);
