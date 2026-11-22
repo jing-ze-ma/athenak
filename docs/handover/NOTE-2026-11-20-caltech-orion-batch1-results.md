@@ -2582,3 +2582,5 @@ B_br gate not passed; arms not started
   | t19r_damp3_test (chunk ended) | cyc 1500 | t 4.999050e+04 | 49.99% of 1.0e5 | dt 1.317235e+01 | KE 1.15e+41 | Ltop/Lin 1.046 | Lbot/Lin 0.992 | solves/stage-pass (last 200 lines) 9.6 mean / 200 max | CW 11 FATAL 0 | last hst: [t 4.681e+04 KE 1.15e+41 Lt 1.046 Lb 0.992] 
 - (16:58) PROD 1121b:
   ALERT dt collapse m35mms: max 22.7205 -> 0.342067 (last 200 cycle lines) at cycle=46105 time=376710
+- (17:02) PROD CW lines (new since the last push; each with grep -B5 context in caltech_results/PROD1121b/<run>/cw_context.txt):
+  CW i1_m35mms_f1k (log.3) cycle 44231 [cycle=44250 time=4.087326e+05 dt=2.471785e+01]: CLEAN WARNING cycle 44231 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 2)
