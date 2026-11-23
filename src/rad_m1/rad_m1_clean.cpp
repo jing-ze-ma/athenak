@@ -4575,15 +4575,15 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
           if (kd > 0) fc(m,kd,k,j,i) = dd/x.h;
           // (clean_rst_mshare, the first solution after a restart from an old scheme's
           // file: the memory G + d at the fixed point of Phi^H = theta (G + d) + B of
-          // this E, the M1 share's steady flux B/(1 - theta), realisable (at most c E of
-          // its donor, counted): G + d = F_old left the share's relaxation at c chi to it
-          // as a transient)
+          // this E, the M1 share's own steady flux B/(1 - theta), exact (an M1 share above
+          // c E of its donor, a thin face's, is counted): G + d = F_old left the share's
+          // relaxation at c chi to it as a transient, R136's restart dip)
           if (rms && th < 1.0) {
             const Real ms = (fc(m,CLF_N,k,j,i) - th*fc(m,CLF_G,k,j,i))/(1.0 - th);
-            const Real mc = fmin(fmax(ms, -x.c*fmax(x.w(m,e,k,j,i), 0.0)),
-                                 x.c*fmax(x.w(m,e,k-dk,j-dj,i-di), 0.0));
-            if (mc != ms) Kokkos::atomic_add(&rmc(0), 1.0);
-            fc(m,CLF_N+3,k,j,i) = mc - fs;
+            if (fabs(ms) > x.c*fmax(x.w(m,e,k,j,i), x.w(m,e,k-dk,j-dj,i-di))) {
+              Kokkos::atomic_add(&rmc(0), 1.0);
+            }
+            fc(m,CLF_N+3,k,j,i) = ms - fs;
           }
         }
         fc(m,CLF_N,k,j,i) = fs;
@@ -4646,7 +4646,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
     const Real n = CleanReduce(h(0), false);
     if (global_variable::my_rank == 0) {
       std::printf("<rad_m1> clean_rst_mshare RESTART CONVERSION (one time): the M1 share's "
-                  "memory at its steady flux, faces at c E of the donor %.0f\n", n);
+                  "memory at its steady flux (faces above c E of the donor: %.0f)\n", n);
     }
   }
 }
