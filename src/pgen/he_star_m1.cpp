@@ -4320,15 +4320,18 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   const int nb = hs_mlt_ ? 22 : 20;
   // L_midE, L_intE: the clean energy flux Phi of the step's last solve (t2pf1, what
   // moved E; c/chat its stored chat/c) through the L_mid / L_int faces; L_mid / L_int
-  // are the faces' F (clean staggered: the face momentum, not the energy flux)
-  pdata->nhist = nb + 8;
-  const char *lab[30] = {"L_bot", "L_mid", "L_int", "L_top", "L_in", "E_rad", "e_gas",
+  // are the faces' F (clean staggered: the face momentum, not the energy flux).
+  // L_midC, L_intC: the comoving part Phi - (4/3) v E of the same flux (v, E the face
+  // means; thick D = 1/3), what old's L_mid / L_int sum (old f0x1 = F - a E)
+  pdata->nhist = nb + 10;
+  const char *lab[32] = {"L_bot", "L_mid", "L_int", "L_top", "L_in", "E_rad", "e_gas",
                          "M_int", "KE_int", "KEr_int", "Mr_int", "PV_int", "V_int",
                          "M_tot", "Mdot_top", "Mdot_bot", "Etot", "Min_top",
                          "v1sq_wall", "Picard", "w_mlt", "L_MLT", "P_esrc", "P_sponge",
-                         "M_hflx", "E_hflx", "Lz_hflx", "Lz_tot", "L_midE", "L_intE"};
+                         "M_hflx", "E_hflx", "Lz_hflx", "Lz_tot", "L_midE", "L_intE",
+                         "L_midC", "L_intC"};
   for (int n=0; n<nb; ++n) pdata->label[n] = lab[n];
-  for (int n=0; n<8; ++n) pdata->label[nb+n] = lab[22+n];
+  for (int n=0; n<10; ++n) pdata->label[nb+n] = lab[22+n];
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, nx1 = indcs.nx1;
   const int js = indcs.js, nx2 = indcs.nx2, ks = indcs.ks, nx3 = indcs.nx3;
@@ -4386,9 +4389,13 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
       }
       if (i == ie) h.the_array[3] = ff0(m,k,j,i+1)*area1(m,k,j,i+1);
     }
+    const Real cof = (w0(m,IVX,k,j,i-1) + w0(m,IVX,k,j,i))*(ur(m,radm1::M1_E,k,j,i-1) +
+                     ur(m,radm1::M1_E,k,j,i))*area1(m,k,j,i)/3.0;
     if (hpf && i == imid) h.the_array[24] = icc*pf1(m,0,k,j,i)*area1(m,k,j,i);
+    if (hpf && i == imid) h.the_array[26] = h.the_array[24] - cof;
     if (hpf && x1f(m,i) <= rint && x1f(m,i+1) > rint) {
       h.the_array[25] = icc*pf1(m,0,k,j,i)*area1(m,k,j,i);
+      h.the_array[27] = h.the_array[25] - cof;
     }
     if (i == ie && lac) h.the_array[3] = lacc(m,1,k,j)*ildt;
     if (i == is) h.the_array[4] = lac ? lacc(m,0,k,j)*ildt : fin*area1(m,k,j,i);
@@ -4441,6 +4448,8 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   // M_hflx, E_hflx, Lz_hflx: the step's am_bflx over its dt (0 without the module)
   pdata->hdata[nb+6] = sum_this.the_array[24];
   pdata->hdata[nb+7] = sum_this.the_array[25];
+  pdata->hdata[nb+8] = sum_this.the_array[26];
+  pdata->hdata[nb+9] = sum_this.the_array[27];
   for (int n=0; n<3; ++n) pdata->hdata[nb+2+n] = 0.0;
   hydro::AmModule *pam = hydro::AmModuleOf(pmbp);
   if (pam != nullptr && pam->am_bflx.extent_int(0) > 0 && pam->am_bdt > 0.0) {
