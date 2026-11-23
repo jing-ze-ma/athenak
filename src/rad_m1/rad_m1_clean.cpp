@@ -1267,6 +1267,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       const bool clos = (cln_closit && inl < cln_maxpic) || (clos1 && inl == 1);
       if (clos) {
         cln_csyok = false;
+        // (sdirk2 / trbdf2: fwb's s of the stage's own closure; the pass-0 closure is the
+        // last step's, O(dt) off the stage time, CleanClosureExtrap)
+        if (clos1 && t2_tab != 0) cln_fwbok = false;
         CleanClosureIterate();
         CleanFaceCoefficients();
         if (cln_consist) CleanStagBracket();
