@@ -310,12 +310,38 @@ void ShellSums(const char *name, const int nq, const int c1, const int nmb,
 //! row sums its nx1 cells in increasing i, one thread per (q, m) its MeshBlock's rows in
 //! order, the host the MeshBlocks in order: the result is a function of this rank's
 //! MeshBlocks alone (the reduce's join order changes with the thread count / backend);
-//! with hist_exact: the global sum of the MeshBlock partials (rank 0; any rank count).
+//! with hist_exact: the global sum of the MeshBlock partials (rank 0; any rank count);
+//! and not block_mode (layout_invariant_mode = exact): of every cell's terms, deposited
+//! exactly, so the history is also the same for every MeshBlock layout.
 template <class F>
 void HistSums(const char *name, const int nmb, const int nkji, const int nx1, const F &fn,
               array_sum::GlobalSum &out) {
   constexpr int nq = NREDUCTION_VARIABLES;
   const int nr = nkji/nx1;
+  if (hist_exact && !block_mode) {
+    auto rx = ScratchView<Kokkos::View<ReproSum**, DevMemSpace>>(std::string(name) +
+                                                                 "_rx", nmb*nr, nq);
+    Kokkos::parallel_for(std::string(name) + "_rx",
+                         Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nmb*nr),
+    KOKKOS_LAMBDA(const int r) {
+      for (int q = 0; q < nq; ++q) {rx(r, q).Init();}
+      for (int i = 0; i < nx1; ++i) {
+        array_sum::GlobalSum t;   // (zeroed: 0 + term = term)
+        fn(r*nx1 + i, t);
+        for (int q = 0; q < nq; ++q) {rx(r, q).Add(t.the_array[q]);}
+      }
+    });
+    auto hx = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), rx);
+    ReproSum v[nq];
+    for (int q = 0; q < nq; ++q) {
+      v[q].Init();
+      for (int r = 0; r < nmb*nr; ++r) {v[q].Join(hx(r, q));}
+    }
+    AllMerge(v, nq);
+    const bool r0 = (global_variable::my_rank == 0);
+    for (int q = 0; q < nq; ++q) {out.the_array[q] = r0 ? v[q].Value() : 0.0;}
+    return;
+  }
   auto rp = ScratchView<DvceArray2D<Real>>(std::string(name) + "_row", nmb*nr, nq);
   auto bp = ScratchView<DvceArray2D<Real>>(std::string(name) + "_blk", nq, nmb);
   Kokkos::parallel_for(std::string(name) + "_row",
