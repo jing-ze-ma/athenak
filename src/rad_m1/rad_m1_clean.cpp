@@ -4973,7 +4973,7 @@ void RadiationM1::CleanStagFSchur() {
       const bool fin = (r == nrt + 1);
       for (int dir = 0; dir < x.nf; ++dir) {
         const int rl = nr[dir][0], rr = nr[dir][1];
-        if (gr[dir] != g || (!fin && r > rl && r != rr + 1)) continue;
+        if (gr[dir] != g || (!fin && (rl == 0 || (r > rl && r != rr + 1)))) continue;
         const int n = nn[dir], na = (dir == 0) ? nn[1] : nn[0];
         const int nb = (dir == 2) ? nn[1] : nn[2];
         auto fc = x.fc[dir];
@@ -5029,10 +5029,13 @@ void RadiationM1::CleanStagFSchur() {
           const bool hl = r > 1 && rl > 0 && !bl, hr = r > 1 && rr > 0 && !bh;
           Real o[8], sl[8], sr[8], c[8], cr[8], ya[3], xb[3], yr[3], xr[3];
           // (the own segment once, kept for the rounds in cells 0, 1 of four scratch
-          // slots of the E solve, a set for each direction of the group)
-          for (int q = 0; q < 8 && r > 1; ++q) o[q] = keepo(q);
-          if (r == 1) CleanStagFOwn(x, ln, fc, dir, m, a, b, n, o);
-          for (int q = 0; q < 8 && r == 1 && !fin; ++q) keepo(q) = o[q];
+          // slots of the E solve, a set for each direction of the group; a line of one
+          // MeshBlock round a periodic wrap, which sends nothing, only in the last round:
+          // its set is another direction's)
+          const bool r1 = r == 1 || rl == 0;
+          for (int q = 0; q < 8 && !r1; ++q) o[q] = keepo(q);
+          if (r1) CleanStagFOwn(x, ln, fc, dir, m, a, b, n, o);
+          for (int q = 0; q < 8 && r1 && !fin; ++q) keepo(q) = o[q];
           // (the segment to the left, in the ghosts; to the right, kept after rr: at the
           // start, on the cubed sphere in the line's faces' CLF_N + 2, free here, as both
           // ends send for rl rounds there, for a neighbour that runs the other way)
