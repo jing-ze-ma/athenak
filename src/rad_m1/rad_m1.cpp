@@ -631,14 +631,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       }
       cln_xte = (xe == "cons") ? 1 : ((xe == "x2") ? 2 : 0);
       if (cln_xte > 0) cln_xtcons = true;
-      if (cln_xte == 2) cln_xtnorm = true;
     }
     if (cln_kpos && cln_xte == 2) {   // (x2's local 2x2 has no kpos gas term)
       std::cout << "### FATAL ERROR <rad_m1>/clean_stag_kpos with clean_xt_exact = x2 "
                 << "is not implemented" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    cln_xtnorm = stag("clean_xt_norm", false);
+    cln_xtnorm = stag("clean_xt_norm", false) || cln_xte == 2;
     // clean_stag_rayratio (default off): the bracket reads the rays only as ratios (their
     // face flux over the donor's ray J, the model flux of E), times the state's E
     cln_rayratio = pin->GetOrAddBoolean("rad_m1","clean_stag_rayratio",false) &&
