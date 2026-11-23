@@ -984,8 +984,22 @@ void RadiationM1::CleanSteadyStart(Driver *pdrive) {
       t[c] = CleanReduce(a, false);
     }
   };
-  // u0 <-> uo, ghosts included
+  // u0 <-> uo, ghosts included; the faces' F and the write-back's captures (cln_fref,
+  // icr_dm), which an undone pass also restores
+  DvceArray4D<Real> fo[4];
+  DvceArray5D<Real> ro;
   auto copy = [&](const bool save) {
+    DvceArray4D<Real> fv[4] = {f0x1, f0x2, f0x3, icr_dm};
+    for (int d = 0; d < 4; ++d) {
+      if (fo[d].size() != fv[d].size()) fo[d] = DvceArray4D<Real>("cln_steady_f",
+                                                                  fv[d].layout());
+      if (save) Kokkos::deep_copy(fo[d], fv[d]);
+      if (!save) Kokkos::deep_copy(fv[d], fo[d]);
+    }
+    if (cln_mdcap && ro.size() != cln_fref.size()) {
+      ro = DvceArray5D<Real>("cln_steady_r", cln_fref.layout());
+    }
+    if (cln_mdcap) Kokkos::deep_copy(save ? ro : cln_fref, save ? cln_fref : ro);
     Kokkos::parallel_for("cln_steady_copy", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                          uo.size()),
     KOKKOS_LAMBDA(const int q) {
