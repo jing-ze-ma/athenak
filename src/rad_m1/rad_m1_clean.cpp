@@ -6301,6 +6301,10 @@ void RadiationM1::CleanWriteBack() {
   const Real pgf = impl_pos_gas_frac, efl = e_floor, pgk = impl_pos_flr_gk;
   auto pc_ = pos_cnt_d;
   const bool pflr = impl_pos_floor, pfc = pflr && impl_pos_flr_cons;
+  // (rule 9: the E floor's raise neither the gas nor the column covered, created, M1_POS_
+  // FLR_UN: its change in this write-back, CLEAN WARNING below)
+  Real un0 = 0.0;
+  if (pflr) Kokkos::deep_copy(un0, Kokkos::subview(pc_, M1_POS_FLR_UN));
   if (pfc && pfc_def.extent_int(0) != nmb1 + 1) {
     auto &icp = pmy_pack->pmesh->mb_indcs;
     Kokkos::realloc(pfc_def, nmb1 + 1, icp.nx3 + 2*icp.ng, icp.nx2 + 2*icp.ng,
@@ -6686,6 +6690,16 @@ void RadiationM1::CleanWriteBack() {
       }
       if (gm > 0.0) Kokkos::atomic_add(&pc_(M1_POS_GAS_DE), gm);
     });
+  }
+  if (pflr) {
+    Real un = 0.0;
+    Kokkos::deep_copy(un, Kokkos::subview(pc_, M1_POS_FLR_UN));
+    un = CleanReduce(un - un0, false);
+    if (un > 0.0 && global_variable::my_rank == 0) {
+      std::printf("CLEAN WARNING cycle %d t2s %d: implicit_pos_floor created %.6e of E "
+                  "(neither the gas nor the column covered the raise)\n",
+                  pmy_pack->pmesh->ncycle, t2_solve, un);
+    }
   }
   // cells the write-back left with gas eint < 0, or below the EOS floor, by lowering it
   // (the solve is then not accepted; an eint the hydro left there is not the solve's)
