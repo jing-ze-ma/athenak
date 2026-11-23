@@ -1,0 +1,1 @@
+| m35mms (IA9 FINAL, stopped 10:17 by STOP) | cycle=15850 | t 1.274101e+05 | 14.75% of 8.64e5 | dt 7.322320e+00 | Ltop/Lin 0.9880 | Lbot/Lin 1.0002 | CW 0 fallbacks 0 DT_RETRY 0 MCAP 9683 FATAL 0 |

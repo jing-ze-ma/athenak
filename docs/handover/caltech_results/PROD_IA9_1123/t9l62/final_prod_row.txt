@@ -1,0 +1,1 @@
+| t9l62 (IA9 FINAL, stopped 10:17 by STOP) | cycle=6450 | t 4.757564e+05 | 17.74% of 2.682e6 | dt 4.955454e+00 | Ltop/Lin 2.5505 | Lbot/Lin 0.5059 | CW 2 fallbacks 0 DT_RETRY 0 MCAP 12781 FATAL 0 |

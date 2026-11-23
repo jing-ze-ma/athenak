@@ -1,1 +1,2 @@
 2026-11-23 05:27:08 chunk 0 STAR=m35mms BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia9_77551e823 md5=bb0f2fbe7030a0cb19f0bd054cfa6de7 DECK=/resnick/groups/carnegie_poc/jingze/prod_ia9_1123/decks_final/IA9_m35mms.athinput md5=52da13977d139de0ebd58f8a468ce873 start=-i /resnick/groups/carnegie_poc/jingze/prod_ia9_1123/m35mms/deck.athinput WT=71:23:52 HOLDER=7333072 NODE=hpc-sm-02-03 EX=
+2026-11-23 10:17:23 chunk 0 rc=0 last: time=1e+05 cycle=15866

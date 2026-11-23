@@ -1,0 +1,1 @@
+| bsg (IA9 FINAL, stopped 10:17 by STOP) | cycle=22500 | t 3.431394e+06 | 69.68% of 4.9248e6 | dt 1.534941e+02 | Ltop/Lin 1.0237 | Lbot/Lin 1.0102 | CW 0 fallbacks 0 DT_RETRY 0 MCAP 1280 FATAL 0 |
