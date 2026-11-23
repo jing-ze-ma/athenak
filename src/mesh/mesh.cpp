@@ -184,13 +184,17 @@ Mesh::Mesh(ParameterInput *pin) :
                      pin->GetBoolean("mesh", "layout_invariant");
   if (layout_invariant) {
     const std::string lim = pin->GetOrAddString("mesh", "layout_invariant_mode", "block");
-    if (lim != "block" && lim != "exact") {
+    // tile (with <mesh>/layout_tile N): block mode with fixed N x N (x2, x3) tiles of the
+    // mesh in place of MeshBlocks (repro::tile_n; one MeshBlock along x1, checked with
+    // the MeshBlock size by rad_m1), and the history and shell sums exact
+    if (lim != "block" && lim != "exact" && lim != "tile") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<mesh>/layout_invariant_mode = '" << lim
-                << "' is not a choice (block | exact)" << std::endl;
+                << "' is not a choice (block | exact | tile)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    repro::block_mode = (lim == "block");
+    repro::block_mode = (lim != "exact");
+    if (lim == "tile") repro::tile_n = pin->GetInteger("mesh", "layout_tile");
     repro::hist_exact = true;
   }
   cs_seam_fc_nolimit = use_cubed_sphere &&

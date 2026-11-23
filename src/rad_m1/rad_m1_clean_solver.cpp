@@ -963,11 +963,12 @@ std::array<Real, 2> CleanSums(MeshBlockPack *pp, const char *name, const int n,
   if (pp->pmesh->layout_invariant) {   // (old production's sums: M1LayReduce, any ranks)
     M1BcgVal v;
     auto *r = pp->pradm1;
+    const int nxb[3] = {nx1, nx2, nx3};   // (layout_invariant_mode = tile)
     M1LayReduce(name, nmb*nkji, nkji, r->lay_part, r->lay_part_h,
     KOKKOS_LAMBDA(const int idx, M1BcgVal &a) {
       int m = idx/nkji, k = (idx - m*nkji)/nji, j = (idx - m*nkji - k*nji)/nx1;
       f(m, k+ks, j+js, idx - m*nkji - k*nji - j*nx1 + is, a.s0, a.s1);
-    }, v);
+    }, v, nxb);
     return {v.s0, v.s1};
   }
   Kokkos::parallel_reduce(name, Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*nkji),

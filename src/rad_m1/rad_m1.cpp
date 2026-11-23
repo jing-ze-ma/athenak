@@ -28,6 +28,7 @@
 #include "rad_m1/rad_m1_closure.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "utils/recipe.hpp"
+#include "utils/repro_sum.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -790,15 +791,18 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // size (line colours, couplings kept, coarse aggregates inside a tile), so that its
     // action, and the solve, are the same for every MeshBlock layout whose MeshBlocks
     // are whole tiles (CleanStagLineSolve; one MeshBlock along x1)
-    if (pin->DoesParameterExist("rad_m1","clean_stag_mg_tile")) {
-      const int nt = pin->GetInteger("rad_m1","clean_stag_mg_tile");
+    // (layout_invariant_mode = tile: the mesh's layout_tile, its sums' tiles)
+    if (pin->DoesParameterExist("rad_m1","clean_stag_mg_tile") || repro::tile_n > 0) {
+      const int nt = (repro::tile_n > 0) ? repro::tile_n
+                                         : pin->GetInteger("rad_m1","clean_stag_mg_tile");
       const auto &mi = pmy_pack->pmesh->mb_indcs;
       const bool d3 = pmy_pack->pmesh->three_d;
       if (nt < 1 || mi.nx2 % nt != 0 || (d3 && mi.nx3 % nt != 0) ||
-          pmy_pack->pmesh->nmb_rootx1 != 1 || !cln_stagmg) {
+          pmy_pack->pmesh->nmb_rootx1 != 1 || (!cln_stagmg && repro::tile_n == 0)) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_m1>/clean_stag_mg_tile N needs clean_stag_pc = "
-                  << "mg, N dividing meshblock nx2 (and nx3) and one MeshBlock along x1"
+                  << std::endl << "<rad_m1>/clean_stag_mg_tile N (or <mesh>/layout_tile)"
+                  << " needs clean_stag_pc = mg, N dividing meshblock nx2 (and nx3) and "
+                  << "one MeshBlock along x1"
                   << std::endl;
         std::exit(EXIT_FAILURE);
       }

@@ -61,14 +61,21 @@ inline void M1GlobalMax(Real &a) {
 template <class F>
 void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real> &bpart,
                  Kokkos::View<Real*, Kokkos::HostSpace> &hpart, const F &fn,
-                 M1BcgVal &out) {
+                 M1BcgVal &out, const int *nxb = nullptr) {
   if (repro::block_mode) {
     // level 1: M1_LB_NS slots per MeshBlock (independent of nmb), slot s accumulates
     // q = s, s + M1_LB_NS, ... (coalesced over s); level 2: one team per MeshBlock, slot
     // t of M1_DR_NT accumulates the level-1 slots t, t + M1_DR_NT, ... in order, then
     // the fixed pairwise tree.  Every order is set by the code.
-    const int nmb = n/nkji;
-    const int ns = M1_LB_NS;
+    // (tile mode, nxb the MeshBlock's cells: the units are the N x N (x2, x3) tiles
+    // instead, slot s the x1 row (k, j) = (s / t2, s % t2) of its tile, i in order)
+    const bool tl = repro::tile_n > 0 && nxb != nullptr;
+    const int t2 = (tl && nxb[1] > 1) ? repro::tile_n : 1;
+    const int t3 = (tl && nxb[2] > 1) ? repro::tile_n : 1;
+    const int n1 = tl ? nxb[0] : 1, n2 = tl ? nxb[1] : 1, nt2 = n2/t2;
+    const int ntb = tl ? nt2*(nxb[2]/t3) : 1;
+    const int nmb = (n/nkji)*ntb;   // (the units)
+    const int ns = tl ? t2*t3 : M1_LB_NS;
     const int off2 = 4*nmb*ns;
     if (bpart.extent_int(0) < off2 + 4*nmb) {
       bpart = DvceArray1D<Real>(
@@ -83,7 +90,13 @@ void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real
       const int m = idx/ns, sl = idx - m*ns;
       M1BcgVal v;
       v.s0 = v.s1 = v.s2 = v.mx = 0.0;
-      for (int q = sl; q < nkji; q += ns) {fn(m*nkji + q, v);}
+      if (tl) {
+        const int b = m/ntb, u = m - b*ntb;
+        const int k = (u/nt2)*t3 + sl/t2, j = (u%nt2)*t2 + sl%t2;
+        for (int i = 0; i < n1; ++i) {fn(b*nkji + (k*n2 + j)*n1 + i, v);}
+      } else {
+        for (int q = sl; q < nkji; q += ns) {fn(m*nkji + q, v);}
+      }
       part(4*idx) = v.s0;
       part(4*idx + 1) = v.s1;
       part(4*idx + 2) = v.s2;

@@ -45,6 +45,10 @@ namespace repro {
 //! MeshBlocks, never the MeshBlocks themselves).  false = "exact": every cell term
 //! deposited exactly.  Set once by the Mesh constructor.
 inline bool block_mode = true;
+//! layout_invariant_mode = tile (<mesh>/layout_tile N): block mode with the partials
+//! of fixed N x N (x2, x3) tiles of the mesh in place of MeshBlocks (M1LayReduce), the
+//! history and shell sums exact: the same for every layout of whole-tile MeshBlocks
+inline int tile_n = 0;
 //! <mesh>/layout_invariant: the history sums (HistSums) deposit their per-MeshBlock
 //! partials exactly and merge them over the ranks, so the history does not change with
 //! the rank count either (rank 0 holds the global value, the others 0: the history
@@ -243,7 +247,7 @@ void ShellSums(const char *name, const int nq, const int c1, const int nmb,
                const int ihi, const F &f, std::vector<Real> &out) {
   // (persistent scratch, ScratchView: every element is written below before it is read)
   auto rs = ScratchView<Kokkos::View<ReproSum**, DevMemSpace>>(std::string(name), nq, c1);
-  if (block_mode) {
+  if (block_mode && tile_n == 0) {
     auto bp = ScratchView<Kokkos::View<Real***, DevMemSpace>>(std::string(name) + "_blk",
                                                               nq, nmb, c1);
     const int nqm = nq*nmb;
@@ -318,7 +322,7 @@ void HistSums(const char *name, const int nmb, const int nkji, const int nx1, co
               array_sum::GlobalSum &out) {
   constexpr int nq = NREDUCTION_VARIABLES;
   const int nr = nkji/nx1;
-  if (hist_exact && !block_mode) {
+  if (hist_exact && (!block_mode || tile_n > 0)) {
     auto rx = ScratchView<Kokkos::View<ReproSum**, DevMemSpace>>(std::string(name) +
                                                                  "_rx", nmb*nr, nq);
     Kokkos::parallel_for(std::string(name) + "_rx",
