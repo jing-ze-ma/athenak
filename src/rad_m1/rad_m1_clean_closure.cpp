@@ -291,7 +291,8 @@ void RadiationM1::CleanRayMoments(DvceArray5D<Real> dst, const bool solve) {
 //! solve of a step gives the moments at t^{n+1} (used from the next step on); with
 //! extrap2 the stage-1 solve gives those at the stage-1 time.  With extrap1 only a
 //! backward-Euler step runs the formal solution here; after a stage step the closure of
-//! the stage-1 solve (rays of its first iterate, a state at t^{n+1}) gives the moments.
+//! the stage-1 solve (rays of its first iterate, a state at the stage-1 time t^n + (a21 +
+//! g) dt: t^{n+1} for hesdirk2, t^n + g dt for sdirk2) gives the moments.
 
 void RadiationM1::CleanClosureAfterSolve() {
   const Real time = pmy_pack->pmesh->time;
@@ -301,7 +302,8 @@ void RadiationM1::CleanClosureAfterSolve() {
   if (cln_extrap == 3 && t2_solve == M1_T2S_STAGE1) {
     if (cln_mshare) cln_have_p = false;
     CleanRayMoments(cln_mc, false);
-    cln_tm = time + dt;
+    const imex_sdirk2::Tableau tb = imex_sdirk2::Make(t2_tab);
+    cln_tm = time + ((t2_tab == 0) ? dt : (tb.a21 + tb.g)*dt);
     cln_have_c = true;
     cln_cand_be = false;
     CleanRingJump();
@@ -400,16 +402,31 @@ bool CleanRealizable(const CleanArgs &x, const Real *q, const int m, const int k
 //! a restart and backward-Euler solves use the moments at t^n alone; without any (first
 //! step, restart) the closure of the state at t^n is built (CleanClosure).  With extrap1
 //! the moments are those of the stage-1 closures and stage 2 keeps the stage-1 closure.
+//! Where the stage-1 solve ends before t^{n+1} (sdirk2, trbdf2) the stage-1 moments are
+//! those of the stage-1 times: stage 1 takes the last step's alone (its pass 1 takes the
+//! closure of its own iterate), and stage 2 the line through the last step's and this
+//! step's stage-1 moments at t^{n+1} (keeping the stage-1 closure is O(dt) late).  The
+//! line is drawn only between two stage-1 sets, and never into a stage-1 pass 0: at c dt
+//! >> dx the sets are successive closure iterates of a quasi-static field, not samples of
+//! a smooth history, and a line fed back into the next set over-relaxes that iteration.
+//! For the same reason the stage-2 line is weighted 1/(1 + z) in each cell, z = c dt/dx
+//! its light crossings per step: 1 - O(dt) where the radiation is resolved in time (the
+//! order unchanged), 0 where it is quasi-static and the closure follows the stage-1 one.
 
 #if M1_TU_PART(0)
 void RadiationM1::CleanClosureExtrap() {
   const Real time = pmy_pack->pmesh->time;
   const Real dt = pmy_pack->pmesh->dt;
   cln_nguard = 0;
-  if (cln_extrap == 3 && t2_solve == M1_T2S_STAGE2) return;
+  const bool sx = (cln_extrap == 3 && t2_tab != 0);   // (stage-1 moments before t^n+1)
+  // (stage 2 of sx: the line through two stage-1 sets, the last step's not of a
+  // backward-Euler step, a restart's start or a clean_rot_ring jump: cln_tn < time)
+  const bool usec = sx && t2_solve == M1_T2S_STAGE2 && cln_have_c && !cln_cand_be &&
+                    cln_have_n && cln_tn < time && cln_tm > cln_tn;
+  if (cln_extrap == 3 && t2_solve == M1_T2S_STAGE2 && !usec) return;
 
-  // a new step: the end of the last step becomes t^n
-  if (cln_have_c && cln_tm == time) {
+  // a new step: the end of the last step (sx: its stage-1 time) becomes t^n
+  if (cln_have_c && (cln_tm == time || (sx && cln_tm < time))) {
     std::swap(cln_mp, cln_mn);
     if (cln_mshare) {
       cln_mc = cln_mp;
@@ -417,13 +434,13 @@ void RadiationM1::CleanClosureExtrap() {
       std::swap(cln_mn, cln_mc);
     }
     cln_tp = cln_tn;
-    cln_tn = time;
+    cln_tn = cln_tm;
     cln_have_p = cln_have_n && !cln_cand_be;
     cln_have_n = true;
     cln_have_c = false;
     cln_have_1 = false;
   }
-  if (!cln_have_n || cln_tn != time) {
+  if (!cln_have_n || !(cln_tn == time || (sx && cln_tn < time))) {
     CleanClosure();
     return;
   }
@@ -437,13 +454,13 @@ void RadiationM1::CleanClosureExtrap() {
   }
   const bool use1 = (cln_extrap == 2) && (t2_solve == M1_T2S_STAGE2) && cln_have_1 &&
                     (cln_t1 > cln_tn);
-  const bool line = stage && (use1 || cln_have_p);
-  auto ma = use1 ? cln_mn : cln_mp;
-  auto mb = use1 ? cln_m1 : cln_mn;
-  const Real tb = use1 ? cln_t1 : cln_tn;
-  const Real ta = use1 ? cln_tn : cln_tp;
+  const bool line = stage && (use1 || usec || (cln_have_p && !sx));
+  auto ma = (use1 || usec) ? cln_mn : cln_mp;
+  auto mb = use1 ? cln_m1 : (usec ? cln_mc : cln_mn);
+  const Real tb = use1 ? cln_t1 : (usec ? cln_tm : cln_tn);
+  const Real ta = (use1 || usec) ? cln_tn : cln_tp;
   const Real wx = line ? (ts - tb)/(tb - ta) : 0.0;
-  auto mn = cln_mn;
+  auto mn = usec ? cln_mc : cln_mn;   // (a guarded cell: the latest moments)
 
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
@@ -462,9 +479,16 @@ void RadiationM1::CleanClosureExtrap() {
     const int j = js + (t/ni)%nj;
     const int k = ks + (t/(ni*nj))%nk;
     const int m = t/(ni*nj*nk);
+    // (stage 2 of sx: the line times 1/(1 + z), z = c dt / dx the light crossings of the
+    // cell's thinnest direction in a step)
+    Real z = 0.0;
+    for (int d = 0; d < x.nf && usec; ++d) {
+      z = fmax(z, x.c*dt*CleanDivF(x, d, m, k, j, i, 0.0, 1.0));
+    }
+    const Real wc = wx/(1.0 + z);
     Real q[CLN_N];
     for (int n = 0; n < CLN_N; ++n) {
-      q[n] = mb(m,n,k,j,i) + wx*(mb(m,n,k,j,i) - ma(m,n,k,j,i));
+      q[n] = mb(m,n,k,j,i) + wc*(mb(m,n,k,j,i) - ma(m,n,k,j,i));
     }
     // the extrapolated moments must be those of a non-negative intensity
     const bool ok = line && ma(m,CLN_J,k,j,i) > 0.0 && q[CLN_J] > 0.0 &&
