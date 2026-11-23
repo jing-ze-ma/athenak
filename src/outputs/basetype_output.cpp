@@ -823,7 +823,8 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       outvars.emplace_back("m1_fx1o",1,&(derived_var));
       outvars.emplace_back("m1_fx2",2,&(derived_var));
       outvars.emplace_back("m1_fx3",3,&(derived_var));
-      out_params.n_derived += 4;
+      outvars.emplace_back("m1_ex1",4,&(derived_var));
+      out_params.n_derived += 5;
     }
 
     // the moments of the vet_gd formal solution of the LAST build (closure = vet_col with

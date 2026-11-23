@@ -1519,14 +1519,20 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
                     (fx2.extent_int(2) > je);
     const bool h3 = prm->trans_on && prm->trans_x3 && (fx3.extent_int(0) >= nmb) &&
                     (fx3.extent_int(1) > ke);
+    // m1_ex1: clean, the x1 energy flux Phi of the step's last solve (t2pf1 x c/chat;
+    // f0x1 is then the face momentum F, as the he_star_m1 hst L_midE)
+    auto pf1 = prm->t2pf1;
+    const bool he = prm->clean && prm->t2pf1_ok && (pf1.extent_int(0) >= nmb);
+    const Real icc = prm->c_light/prm->chat;
     par_for("m1_face_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       dv(m,i_dv  ,k,j,i) = h1 ? fx1(m,k,j,i) : 0.0;
       dv(m,i_dv+1,k,j,i) = h1 ? fx1(m,k,j,i+1) : 0.0;
       dv(m,i_dv+2,k,j,i) = h2 ? fx2(m,k,j,i) : 0.0;
       dv(m,i_dv+3,k,j,i) = h3 ? fx3(m,k,j,i) : 0.0;
+      dv(m,i_dv+4,k,j,i) = he ? icc*pf1(m,0,k,j,i) : 0.0;
     });
-    i_dv += 4;
+    i_dv += 5;
   }
 
   // m1_gw: x1-face g_L, g_R and weight AL at the left face of cell i
