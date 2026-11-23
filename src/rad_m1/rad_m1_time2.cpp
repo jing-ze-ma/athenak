@@ -147,6 +147,12 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
       std::cout << "<rad_m1> time2_tableau = sdirk2: no explicit K1, Heun hydro"
                 << std::endl;
     }
+    if (t2_tab == 2 && coupling && pmy_pack->pmhd != nullptr) {   // (Time2GasTime)
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_tableau = sdirk2 is not wired for mhd"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     if (t2_tab == 1) {
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_m1> time2_tableau = trbdf2: TR-BDF2 implicit stages (stage "
@@ -793,6 +799,48 @@ Real RadiationM1::InnerFluxAt(const Real t) const {
 //! energy budget's int F dt; table only, no sine / tanh factors)
 Real RadiationM1::InnerFluxIntegral(const Real t0, const Real t1) const {
   return ftab_scale*ftab.Integral(0, t0 - ftab_t0, t1 - ftab_t0);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::Time2GasTime
+//! \brief time2_tableau = sdirk2 with the Heun hydro (c_E = (0, 1), b_E = (1/2, 1/2)):
+//! the IMEX coupling conditions b_E.c_I = b_I.c_E = 1/2 hold when each stage has one
+//! time for both parts.  which = 1, before the stage-1 solve: the gas U* of Heun stage 1
+//! (t^{n+1}) is kept in t2hs and the solve takes S = U^n + g (U* - U^n), the gas at
+//! t^n + g dt (convex, so positive).  which = 2, after it (gas Y = S + d): the hydro's
+//! stage-2 flux is taken at U* + d/g (t^{n+1}, the exchange over the full dt) and its
+//! register keeps U* + d (the explicit U* with the implicit g dt K2), so the stage-2
+//! increment of Time2FormStage and the exchange, booked once in d, are unchanged.  All
+//! cells: u1, U* and the solve's Y carry valid ghosts.
+
+void RadiationM1::Time2GasTime(Driver *pdrive, int which) {
+  hydro::Hydro *ph = pmy_pack->phydro;
+  if (t2_tab != 2 || !coupling || ph == nullptr) return;
+  auto u0_ = ph->u0;
+  auto u1_ = ph->u1;
+  const int nmb = u0_.extent_int(0), nv = u0_.extent_int(1);
+  const int n3 = u0_.extent_int(2), n2 = u0_.extent_int(3), n1 = u0_.extent_int(4);
+  if (t2hs.extent_int(0) != nmb || t2hs.extent_int(1) != nv) {
+    Kokkos::realloc(t2hs, nmb, nv, n3, n2, n1);
+  }
+  auto hs_ = t2hs;
+  const Real g = kT2G, e = 1.0/kT2G - 1.0;
+  par_for("m1_t2_gtime", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    for (int n = 0; n < nv; ++n) {
+      const Real us = (which == 1) ? u0_(m,n,k,j,i) : hs_(m,n,k,j,i);
+      const Real s = u1_(m,n,k,j,i) + g*(us - u1_(m,n,k,j,i));
+      const Real d = u0_(m,n,k,j,i) - s;   // (which = 2: 0 where the solve left it)
+      u0_(m,n,k,j,i) = (which == 1) ? s : us + d/g;
+      hs_(m,n,k,j,i) = (which == 1) ? us : e*d;
+    }
+  });
+  if (which == 1) return;
+  (void) ph->ConToPrim(pdrive, 0);   // w0 of the flux state; its floors stay in u0
+  par_for("m1_t2_gtime2", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    for (int n = 0; n < nv; ++n) {u0_(m,n,k,j,i) -= hs_(m,n,k,j,i);}
+  });
 }
 
 void RadiationM1::Time2FormStage(int stage, Real dt) {

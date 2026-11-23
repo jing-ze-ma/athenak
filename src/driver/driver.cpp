@@ -819,6 +819,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       for (int stage=1; stage<=(nexp_stages); ++stage) {
         hydro_stage(stage);
         if (m1t2) {
+          if (stage == 1) {pm1->Time2GasTime(this, 1);}   // (sdirk2 only)
           pm1->Time2FormStage(stage, pmesh->dt);
           ExecuteTaskList(pmesh, "m1_before_stagen", 1);
           ExecuteTaskList(pmesh, "m1_stagen", 1);
@@ -827,7 +828,10 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
             m1t2fail = true;
             break;
           }
-          if (stage == 1) {pm1->EbndStage1();}
+          if (stage == 1) {
+            pm1->Time2GasTime(this, 2);
+            pm1->EbndStage1();
+          }
         }
       }
       // a stage that raised the retry flag is not redone here (the retry
