@@ -191,6 +191,9 @@ class Hydro {
   // <hydro>/rad_signal_speed: the CFL signal speed includes the radiation pressure of
   // the M1 field in optically thick cells (hydro_newdt.cpp). Read only when named.
   bool rad_signal_speed = false;
+  // <hydro>/rad_signal_speed_inertia (read only when named; default false): the
+  // radiation enthalpy (E + P_dd)/c^2 joins rho as the inertia of that speed
+  bool rss_inertia = false;
 
   // following used for FOFC
   DvceArray4D<bool> fofc;  // flag for each cell to indicate if FOFC is needed

@@ -148,7 +148,11 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   // Before the first step they come from RadiationM1::RssPrime (Driver::Initialize):
   // the restart file's copy, or opac of the initial state on a fresh start.
   // Off: no change.
-  const bool rss_ = rad_signal_speed;
+  // rad_signal_speed_inertia: the relativistic sound speed of gas + radiation, the
+  // radiation enthalpy w_r = (E + P_dd)/c^2 in the inertia (Mihalas & Mihalas 1984, sect.
+  // 101): c_eq^2 -> c_eq^2/(1 + w_r/rho), at most c^2/3 + c_g^2 where the radiation
+  // dominates (a floored cell beside a bright field: 127 c without it, t9l62 IA9 6705)
+  const bool rss_ = rad_signal_speed, rsi_ = rss_inertia;
   DvceArray5D<Real> erad_, kopc_, tten_, vcel_;
   radm1::CleanGeo gn_;
   int rss_mode = 0;          // 0 isotropic E/3, 1 M1Chi, 2 tau_ten, 3 vet_sc, 4 vet full
@@ -324,6 +328,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
             } else {
               ceq2 = cg2 + (4.0/3.0)*pr/d;
             }
+            if (rsi_) ceq2 /= 1.0 + (er + pr)/(d*rss_cl*rss_cl);
             const Real dc2 = fmax(ceq2 - cg2, 0.0);
             csd[a] = sqrt(cg2 + dc2*(1.0 - exp(-kt*h[a])));
           }

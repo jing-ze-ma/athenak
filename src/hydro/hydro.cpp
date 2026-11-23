@@ -455,6 +455,9 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   if (pin->DoesParameterExist("hydro","rad_signal_speed")) {
     rad_signal_speed = pin->GetBoolean("hydro","rad_signal_speed");
   }
+  if (pin->DoesParameterExist("hydro","rad_signal_speed_inertia")) {
+    rss_inertia = pin->GetBoolean("hydro","rad_signal_speed_inertia");
+  }
   // allocate array of flags used with etotgrav
   if (use_etotgrav || use_wellbalance_dynamic) {
     auto &indcs = pmy_pack->pmesh->mb_indcs;

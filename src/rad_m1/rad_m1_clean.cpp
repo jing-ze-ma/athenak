@@ -1478,7 +1478,30 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // 5. new state: face fluxes, E, cell fluxes, gas, stage slopes
   // (a failed solve or a probe does not change the energy flux's memory)
   cln_dok = (nit >= 0) && !t2_inprobe;
+  // (clean_wb_floor_fail: the E floor's energy not from the cell's gas, this write-back)
+  const bool wff = cln_wbff && !t2_inprobe;
+  auto ftk = [&]() {
+    auto hc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pos_cnt_d);
+    return hc(M1_POS_FLR_MV) + hc(M1_POS_FLR_UN);
+  };
+  const Real ft0 = wff ? ftk() : 0.0;
   CleanWriteBack();
+  const Real ftw = wff ? CleanReduce(ftk() - ft0, false) : 0.0;
+  const bool ffl = ftw > 0.0 && (t2stage || (dtr_on && dtr_ncut < dtr_maxcut));
+  if (ftw > 0.0 && !t2stage && dtr_on && ffl) {
+    if (!dtr_fail) {
+      dtr_why = 8;   // (efloor_column)
+      dtr_resid = ftw;
+    }
+    dtr_fail = true;
+  }
+  if (ftw > 0.0 && !ffl) cln_wbffn += 1.0;
+  if (ftw > 0.0 && global_variable::my_rank == 0) {
+    std::printf("CLEAN %s cycle %d t2s %d: the E floor took %.6e not from the cells' "
+                "gas (%s)\n", ffl ? "WBFLOOR" : "WARNING", pmy_pack->pmesh->ncycle,
+                t2_solve, ftw, ffl ? (t2stage ? "stage fails" : "dt_retry") :
+                "accepted: last cut or no dt_retry");
+  }
   // a write-back that leaves gas eint < 0 (energy for the fluid floor to create) is
   // rejected like a failed solve (the stage is redone by backward Euler, a
   // backward-Euler step by dt_retry)
@@ -1494,7 +1517,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     // conservative write-back floor raises does not fail the stage; the floor is counted)
     const bool flr = impl_pos_floor && impl_pos_flr_cons;
     t2_fail = (nit < 0) || (nneg > 0 && !flr) || (cln_feedback && cln_neint > 0) ||
-              (t2_solve == M1_T2S_STAGE1 && pmy_pack->pmesh->ncycle == t2_dbg_fail);
+              (t2_solve == M1_T2S_STAGE1 && pmy_pack->pmesh->ncycle == t2_dbg_fail) ||
+              ffl;
     // time2_reject = retry: the cycle again at a smaller dt instead of the backward-Euler
     // redo; after dt_retry_t2_be such cuts the redo (as ImplicitSolve's)
     const bool rt = t2_fail && t2_reject == 1 && dtr_on && !t2_inprobe;

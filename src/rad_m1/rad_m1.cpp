@@ -777,6 +777,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "clean_xt_exact = cons | x2" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // clean_wb_floor_fail (read only when named; default false): a write-back whose E
+    // floor takes energy the cell's own gas does not give (from the radial column or
+    // created, M1_POS_FLR_MV + M1_POS_FLR_UN) is not admissible: the stage fails (the
+    // backward-Euler redo), a backward-Euler step fails into dt_retry (reason
+    // efloor_column); at the last cut the step is accepted, counted, CLEAN WARNING
+    if (pin->DoesParameterExist("rad_m1","clean_wb_floor_fail")) {
+      cln_wbff = pin->GetBoolean("rad_m1","clean_wb_floor_fail");
+    }
     // clean_gas_newton_switch (default W = 4 on a fresh run, USER 11-21, recorded; 0 = off;
     // W in [3, 64]), clean_gas_newton_switch_min (default 6 on a fresh run, else 20),
     // clean_stall_fac (0.5): the old production's implicit_gas_newton_switch, a stalled

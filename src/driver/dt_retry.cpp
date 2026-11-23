@@ -818,7 +818,7 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
   // (7: the Driver's floor_pay_retry)
   static const char *whys[] = {"?", "NON-CONVERGED", "resid>implicit_resid_fatal",
                                "masked_resid>implicit_resid_fatal_masked", "eint<=0",
-                               "time2_reject", "vkick", "floor_pay_unpaid", "?",
+                               "time2_reject", "vkick", "floor_pay_unpaid", "efloor_column",
                                "forced"};
   if (global_variable::my_rank == 0) {
     std::cout << "DT_RETRY cycle=" << pm->ncycle << " t=" << pm->time << " dt " << dto
