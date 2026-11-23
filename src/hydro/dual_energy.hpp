@@ -38,7 +38,9 @@
 //!    momentum the inversion changed (dfloor, vceil): their total energy change
 //!    E_after - E_before (kinetic energy removed, the floors) is given to / taken from
 //!    E_rad the same way, so gas + radiation is exact there too.  Off (default), it is
-//!    only counted (floor_audit skip_de / skip_dm, the run totals at the end).
+//!    only counted: floor_audit skip_de (+ under etotgrav the floor mass's
+//!    (d_after - d_before) Phi, as Etot counts it; never paid, it depends on the zero of
+//!    Phi) and skip_dm, the run totals at the end.
 //!  floor_audit = N: report the cumulative per-cell counters every N cycles (rank 0):
 //!    cells with E - KE <= 0, KE-dominated, below e(rho, tfloor), below the EOS table
 //!    edge, dual selected, floored (metric-correct on the cubed sphere), and the volume
@@ -90,6 +92,7 @@ struct DualEnergy {
   DvceArray5D<Real> pre;    // (nmb, 3, n3, n2, n1): E, d, |m|^2 before the ConToPrim
   DvceArray4D<Real> pst;    // pressure of the last resynced state
   DvceArray4D<Real> payv;   // energy created in active cells, not yet paid (per volume)
+  DvceArray4D<Real> phi;    // <hydro>/etotgrav: the potential, rho*Phi of a floor's mass
   Real hc[DC_NCNT] = {};    // this rank's cumulative counters
 
   // read the keys; `nfluid` = nhydro or nmhd, `du_off` = tracers.DuOff()

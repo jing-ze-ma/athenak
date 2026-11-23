@@ -167,6 +167,8 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
   auto pre_ = pre;
   auto pst_ = pst;
   auto payv_ = payv;
+  const bool grv_ = (phi.extent_int(0) > 0);
+  auto phi_ = phi;
   auto eos_ = eos;
   const Real tfl_ = eos.tfloor;
   const Real tmin_ = eos.TableTempMin();
@@ -251,14 +253,18 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
       // ghosts then stay consistent without another exchange)
       if (pay_) payv_(m,k,j,i) += wst_*(efin - econs);
     } else {
-      // a density floor / velocity ceiling cell: its total energy and mass change
+      // a density floor / velocity ceiling cell: its total energy (with the floor mass's
+      // potential energy under etotgrav) and mass change
+      const Real dd = d - pre_(m,1,k,j,i);
+      const Real de = etpost - etpre + (grv_ ? dd*phi_(m,k,j,i) : 0.0);
       if (act) {
         const Real vol = curv ? vol_(m,k,j,i)
                               : size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
         s8 += 1.0;
-        s14 += wst_*(etpost - etpre)*vol;
-        s15 += wst_*(d - pre_(m,1,k,j,i))*vol;
+        s14 += wst_*de*vol;
+        s15 += wst_*dd*vol;
       }
+      // (the floor mass's Phi is counted, not paid: it depends on the potential's zero)
       if (psk_) payv_(m,k,j,i) += wst_*(etpost - etpre);
     }
     if (rs_) {

@@ -1003,6 +1003,7 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
     }
   }
   // dual selection, floor audit / payment record, slot resync
+  if (dual.any && use_etotgrav) dual.phi = phicc0;
   if (dual.any) dual.Post(pmy_pack, u0, w0, wder, wtemp, peos->eos_data);
   if (use_etotgrav) {
     AddGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
