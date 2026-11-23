@@ -2729,17 +2729,21 @@ class RadiationM1 {
   void CleanStagFSolve(const int e, const bool tie = true, const bool lat = true);
   void CleanDMem(const bool save);
   // the rays' history a failed stage's builds change (intensities, face half ranges, the
-  // mirrored top, the ring, the cross-fade slots): kept at the stage-loop start, put
-  // back with U^n (Time2Stash, Time2Restore): the backward-Euler redo builds from the
-  // step's
+  // mirrored top, the ring, the cross-fade slots, the swept sets' tables, the ray cut, a
+  // restart's first-fill flags): kept at the stage-loop start, put back with U^n
+  // (Time2Stash, Time2Restore): the backward-Euler redo builds from the step's.  Also
+  // where the sets are not built yet (a restart's first step): the redo builds them anew
   struct CleanRayKeep {
     DvceArray5D<Real> v[7];
     DvceArray2D<Real> fvd;
+    std::vector<DvceArray2D<Real>> fvdm;
+    std::vector<Real> fvkey;
     std::vector<int64_t> fvblk;
     int64_t rb = 0, rpb = 0, rbld = 0;
     Real rpt = 0.0, rs = 0.0, rg = 0.0, ro = 0.0;
-    int rns = 0;
-    bool rok = false, rfix = false, rlast = false, rjump = false;
+    int rns = 0, fvn = 0, rcut = -1, rcut_n = 0;
+    bool rok = false, rfix = false, rlast = false, rjump = false, rfdone = false,
+         rhist = false;
   } cln_rk;
   void CleanRayHistory(const bool save);
   void CleanDInc(const bool two, const Real c1, const Real c2, const Real w1,

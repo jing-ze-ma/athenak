@@ -1292,11 +1292,17 @@ void RadiationM1::CleanRayHistory(const bool save) {
   };
   for (int q = 0; q < 7; ++q) save ? cp(k.v[q], *a[q]) : cp(*a[q], k.v[q]);
   save ? cp(k.fvd, cln_fvd) : cp(cln_fvd, k.fvd);
+  save ? k.fvdm.resize(cln_fvdm.size()) : cln_fvdm.resize(k.fvdm.size());
+  for (std::size_t q = 0; q < k.fvdm.size(); ++q) {
+    save ? cp(k.fvdm[q], cln_fvdm[q]) : cp(cln_fvdm[q], k.fvdm[q]);
+  }
   auto sw = [&](auto &x, auto &y) {if (save) {y = x;} else {x = y;}};
   sw(cln_fvblk, k.fvblk); sw(cln_rb, k.rb); sw(cln_rpb, k.rpb); sw(cln_rbld, k.rbld);
   sw(cln_rpt, k.rpt); sw(cln_rs, k.rs); sw(cln_rguard_sum, k.rg); sw(cln_roff_sum, k.ro);
   sw(cln_rns, k.rns); sw(cln_rok, k.rok); sw(cln_rfix, k.rfix); sw(cln_rlast, k.rlast);
-  sw(cln_rjump, k.rjump);
+  sw(cln_rjump, k.rjump); sw(cln_fvn, k.fvn); sw(cln_fvkey, k.fvkey);
+  sw(cln_rcut, k.rcut); sw(cln_rcut_n, k.rcut_n); sw(cln_rfdone, k.rfdone);
+  sw(cln_rhist, k.rhist);
 }
 
 //----------------------------------------------------------------------------------------
