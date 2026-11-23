@@ -1204,6 +1204,30 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // (the donors' E_old, memory; the bracket's gate q)
   if (cln_gflux || cln_consist) CleanGhostFill(cln_w, CLW_EO, 1);
   if (cln_consist) CleanStagBracket();
+  // clean_rst_mshare: the first solve after a restart from an old scheme's file starts
+  // the M1 share's memory G + d at the share of the file's face flux F = (1 - w) M + w S,
+  // M = (F - w S)/(1 - w), S = c (h+ E_L + h- E_R) of E_old and the bracket's h+- (with
+  // d = 0, M started at the blended F and relaxed to the M1 flux at c chi: a transient)
+  if (cln_rmsh && cln_rstold && !cln_rmdone && cln_fsolve && cln_fkin) {
+    cln_rmdone = true;
+    const CleanArgs x = CleanMakeArgs(), *px = CleanDevArgs(x, 0);
+    auto &id = pmy_pack->pmesh->mb_indcs;
+    for (int dir = 0; dir < x.nf; ++dir) {
+      auto fc = x.fc[dir];
+      const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
+      par_for("cln_rmsh", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, id.ks, id.ke + dk,
+              id.js, id.je + dj, id.is, id.ie + di,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const CleanArgs &x = *px;
+        const Real w = fc(m,CLF_W,k,j,i);
+        if (CleanBoundaryFace(x, dir, m, k, j, i) || !(w < 1.0)) return;
+        const Real s = x.c*(fc(m,CLF_HP,k,j,i)*fmax(x.w(m,CLW_EO,k-dk,j-dj,i-di), 0.0) +
+                            fc(m,CLF_HM,k,j,i)*fmax(x.w(m,CLW_EO,k,j,i), 0.0));
+        fc(m,CLF_N+3,k,j,i) = w*(fc(m,CLF_G,k,j,i) - s)/(1.0 - w);
+        fc(m,CLF_DS,k,j,i) = fc(m,CLF_N+3,k,j,i);
+      });
+    }
+  }
 
   // 3. Newton iteration on the gas coupling and Picard passes on the lagged quantities:
   //    the slopes (reconstruction) and, with clean_closure = iterate, the closure from
