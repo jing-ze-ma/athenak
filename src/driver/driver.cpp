@@ -1346,6 +1346,16 @@ void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
                 << "created x vol=" << fl[0] << " energy created x vol=" << fl[1]
                 << " | FOFC first-order cell-stages=" << fl[2] << std::endl;
     }
+    if (pmesh->pmb_pack->phydro != nullptr && pmesh->pmb_pack->phydro->use_dfl) {
+      Real dn = pmesh->pmb_pack->phydro->dfl_n;
+#if MPI_PARALLEL_ENABLED
+      MPI_Allreduce(MPI_IN_PLACE, &dn, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+      if (global_variable::my_rank == 0) {
+        std::cout << "<hydro> dfloor_flux_limit: outflow-limited cell-stages (all "
+                  << "attempts)=" << dn << std::endl;
+      }
+    }
     // the density floor / velocity ceiling cells floor_pay skips: their total energy and
     // mass change (hydro/dual_energy.cpp, all attempts, RK-weighted, x vol)
     fluid::DualEnergy *pde = DualPayer(pmesh);

@@ -603,6 +603,13 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     use_fofc = pin->GetOrAddBoolean("hydro","fofc",fofc_dflt);
     if (use_fofc) {fofc_rep.Init(pin, "hydro");}
+    if (pin->DoesParameterExist("hydro", "dfloor_flux_limit")) {
+      use_dfl = pin->GetBoolean("hydro", "dfloor_flux_limit");
+    }
+    if (use_dfl) {
+      pbval_dfl = new MeshBoundaryValuesCC(ppack, pin, false);
+      pbval_dfl->SetVectorPairs(1, {});   // (the factor is a scalar)
+    }
 
     // select reconstruction method (default PLM)
     std::string xorder = pin->GetOrAddString("hydro","reconstruct","plm");

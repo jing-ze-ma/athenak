@@ -765,4 +765,123 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
   return;
 }
 
+namespace {
+//! the outflow limiter's face correction: the mass flux at a face whose donor cell has
+//! the factor th < 1 is scaled by th, and the momentum, energy (with the potential under
+//! etotgrav) and scalars that mass carries leave with it, in the donor's specific values;
+//! the pressure part of the flux is left alone (well-balanced)
+KOKKOS_INLINE_FUNCTION
+void DflFace(const DvceArray5D<Real> &f, const DvceArray5D<Real> &w,
+             const DvceArray5D<Real> &wd, const DvceArray5D<Real> &th, const int nvar,
+             const bool gen, const Real gm1, const Real phif, const int m, const int k,
+             const int j, const int i, const int kl, const int jl, const int il) {
+  const Real fd = f(m,IDN,k,j,i);
+  const int kd = (fd > 0.0) ? kl : k, jd = (fd > 0.0) ? jl : j, id = (fd > 0.0) ? il : i;
+  const Real t = th(m,0,kd,jd,id);
+  if (!(t < 1.0)) return;
+  const Real df = (1.0 - t)*fd, d = w(m,IDN,kd,jd,id);
+  const Real vx = w(m,IVX,kd,jd,id), vy = w(m,IVY,kd,jd,id), vz = w(m,IVZ,kd,jd,id);
+  const Real e = w(m,IEN,kd,jd,id), p = gen ? wd(m,IDPR,kd,jd,id) : gm1*e;
+  f(m,IDN,k,j,i) -= df;
+  f(m,IM1,k,j,i) -= df*vx;
+  f(m,IM2,k,j,i) -= df*vy;
+  f(m,IM3,k,j,i) -= df*vz;
+  f(m,IEN,k,j,i) -= df*((e + p)/d + 0.5*(vx*vx + vy*vy + vz*vz) + phif);
+  for (int n = IEN + 1; n < nvar; ++n) f(m,n,k,j,i) -= df*w(m,n,kd,jd,id);
+}
+}  // namespace
+
+//----------------------------------------------------------------------------------------
+//! \fn void Hydro::DfloorFluxLimit
+//! \brief <hydro>/dfloor_flux_limit: the stage's outflows of every cell are scaled so
+//! that the RK update cannot take rho below dfloor (inflows ignored, so the bound holds
+//! for any inflow; convex RK combinations keep it).  Per cell,
+//! th = min(1, (gam0 rho0 + gam1 rho1 - dfloor)/(beta dt sum_out A F/V)); the factors
+//! go to the ghosts by one exchange, and every face takes its donor cell's factor, so
+//! the two blocks of a block face hold the same flux and mass, momentum and energy stay
+//! exact (no mass is created).  Runs on the final fluxes (after every flux addition).
+
+void Hydro::DfloorFluxLimit(Driver *pdrive, int stage) {
+  auto *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke, ng = indcs.ng;
+  const int nmb = pmy_pack->nmb_thispack;
+  const bool md = pm->multi_d, td = pm->three_d;
+  if (dfl_th.extent_int(0) != nmb) {
+    if (pm->multilevel || pm->use_cubed_sphere || nhydro != 5) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << std::endl << "<hydro>/"
+                << "dfloor_flux_limit: uniform cartesian / spherical polar, adiabatic hydro only"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    Kokkos::realloc(dfl_th, nmb, 1, td ? indcs.nx3 + 2*ng : 1, md ? indcs.nx2 + 2*ng : 1,
+                    indcs.nx1 + 2*ng);
+    Kokkos::realloc(dfl_thc, nmb, 1, 1, 1, 1);
+    pbval_dfl->InitializeBuffers(1);
+  }
+  const Real g0 = pdrive->gam0[stage-1], g1 = pdrive->gam1[stage-1];
+  const Real bdt = pdrive->beta[stage-1]*pm->dt;
+  const Real dfl = peos->eos_data.dfloor;
+  const bool curv = pm->use_spherical_polar;
+  auto &vol = pmy_pack->pcoord->volume;
+  auto &a1 = pmy_pack->pcoord->area.x1f;
+  auto &a2 = pmy_pack->pcoord->area.x2f;
+  auto &a3 = pmy_pack->pcoord->area.x3f;
+  auto &size = pmy_pack->pmb->mb_size;
+  auto f1 = uflx.x1f, f2 = uflx.x2f, f3 = uflx.x3f;
+  auto u0_ = u0, u1_ = u1, th = dfl_th;
+  Kokkos::deep_copy(th, 1.0);
+  Real nlim = 0.0;
+  Kokkos::parallel_reduce("dfl_th", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(),
+                          {0, ks, js, is}, {nmb, ke + 1, je + 1, ie + 1}),
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sn) {
+    const auto &sz = size.d_view(m);
+    const Real w1 = curv ? 1.0 : 1.0/sz.dx1, w2 = curv ? 1.0 : 1.0/sz.dx2;
+    const Real w3 = curv ? 1.0 : 1.0/sz.dx3;
+    Real q = (fmax(f1(m,IDN,k,j,i+1), 0.0)*(curv ? a1(m,k,j,i+1) : w1) +
+              fmax(-f1(m,IDN,k,j,i), 0.0)*(curv ? a1(m,k,j,i) : w1));
+    if (md) q += (fmax(f2(m,IDN,k,j+1,i), 0.0)*(curv ? a2(m,k,j+1,i) : w2) +
+                  fmax(-f2(m,IDN,k,j,i), 0.0)*(curv ? a2(m,k,j,i) : w2));
+    if (td) q += (fmax(f3(m,IDN,k+1,j,i), 0.0)*(curv ? a3(m,k+1,j,i) : w3) +
+                  fmax(-f3(m,IDN,k,j,i), 0.0)*(curv ? a3(m,k,j,i) : w3));
+    q *= bdt/(curv ? vol(m,k,j,i) : 1.0);
+    const Real room = g0*u0_(m,IDN,k,j,i) + g1*u1_(m,IDN,k,j,i) - dfl;
+    if (q > room) {
+      th(m,0,k,j,i) = (room > 0.0) ? room/q : 0.0;
+      sn += 1.0;
+    }
+  }, Kokkos::Sum<Real>(nlim));
+  dfl_n += nlim;
+  while (pbval_dfl->InitRecv(1) == TaskStatus::incomplete) {}
+  while (pbval_dfl->PackAndSendCC(dfl_th, dfl_thc) == TaskStatus::incomplete) {}
+  while (pbval_dfl->RecvAndUnpackCC(dfl_th, dfl_thc) == TaskStatus::incomplete) {}
+  while (pbval_dfl->ClearSend() == TaskStatus::incomplete) {}
+  while (pbval_dfl->ClearRecv() == TaskStatus::incomplete) {}
+  auto w0_ = w0, wd = wder;
+  const int nvar = nhydro + nscalars;
+  const bool gen = peos->eos_data.IsGeneral(), eg = use_etotgrav;
+  const Real gm1 = peos->eos_data.gamma - 1.0;
+  auto p1 = phi0.x1f, p2 = phi0.x2f, p3 = phi0.x3f;
+  par_for("dfl_f1", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie + 1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    DflFace(f1, w0_, wd, th, nvar, gen, gm1, eg ? p1(m,k,j,i) : 0.0, m, k, j, i, k, j,
+            i - 1);
+  });
+  if (md) {
+    par_for("dfl_f2", DevExeSpace(), 0, nmb - 1, ks, ke, js, je + 1, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      DflFace(f2, w0_, wd, th, nvar, gen, gm1, eg ? p2(m,k,j,i) : 0.0, m, k, j, i, k,
+              j - 1, i);
+    });
+  }
+  if (td) {
+    par_for("dfl_f3", DevExeSpace(), 0, nmb - 1, ks, ke + 1, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      DflFace(f3, w0_, wd, th, nvar, gen, gm1, eg ? p3(m,k,j,i) : 0.0, m, k, j, i,
+              k - 1, j, i);
+    });
+  }
+}
+
 } // namespace hydro

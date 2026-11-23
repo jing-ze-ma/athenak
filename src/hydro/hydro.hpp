@@ -439,6 +439,14 @@ class Hydro {
 
   // first-order flux correction
   void FOFC(Driver *d, int stage);
+  // <hydro>/dfloor_flux_limit (read only when named; default false): the outflow
+  // limiter that keeps rho >= dfloor by construction (hydro_fofc.cpp); dfl_n counts the
+  // limited cell-stages
+  bool use_dfl = false;
+  Real dfl_n = 0.0;
+  MeshBoundaryValuesCC *pbval_dfl = nullptr;
+  DvceArray5D<Real> dfl_th, dfl_thc;
+  void DfloorFluxLimit(Driver *d, int stage);
 
   void AddGravFlux(const DvceFaceFld4D<Real> &phi0, DvceFaceFld5D<Real> &flx);
   void AddGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons,
