@@ -1051,6 +1051,8 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_csvr", cln_csvr);
   v.value("cln_rayratio", cln_rayratio);
   v.value("cln_ringjmin", cln_ringjmin);
+  v.value("cln_rfrst", cln_rfrst);
+  v.value("cln_rfdone", cln_rfdone);
   v.value("cln_linpass", cln_linpass);
   v.value("cln_srccvx", cln_srccvx);
   v.value("cln_freal", cln_freal);

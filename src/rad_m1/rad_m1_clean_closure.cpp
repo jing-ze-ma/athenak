@@ -1319,7 +1319,10 @@ void RadiationM1::CleanRingMoments() {
   const int qb = 0, qn = (slot[nk] >= 0) ? 1 : 0;
   auto pd = cln_rpd;
   if (!cln_rok || b != cln_rb) {
-    const bool f0 = !cln_insteady;   // (a fill outside the steady start: below)
+    // (a fill outside the steady start: below; clean_rot_ring_fill_rst: the first fill
+    // of a restart from an old scheme's file as the steady start's, at the file's state)
+    const bool f0 = !cln_insteady && !(cln_rfrst && cln_rstold && !cln_rfdone && full);
+    cln_rfdone = cln_rfdone || (cln_rstold && full);
     if (shift) {
       CleanRingShift(b);
     } else if (full && ema) {
@@ -1346,7 +1349,7 @@ void RadiationM1::CleanRingMoments() {
         }
         rr(m,nfr,k,j,i) = jb;
         rr(m,nfr+1,k,j,i) = rl(m,qb,CLN_D11,k,j,i);
-        rr(m,nfr+2,k,j,i) = v ? 2.0 : ((f0 && jb > 0.0 && jb >= jm) ? n0 : 0.0);
+        rr(m,nfr+2,k,j,i) = v ? fmax(2.0, n0) : ((f0 && jb > 0.0 && jb >= jm) ? n0 : 0.0);
       });
     } else if (full) {
       // a fill: within CleanSteadyStart (a fresh start's ring, built at the initial state

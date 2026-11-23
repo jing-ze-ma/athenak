@@ -2869,6 +2869,8 @@ class RadiationM1 {
   bool cln_csvr = false;        // clean_stag_csvec_radial (CleanStagCsVector)
   bool cln_rayratio = false;    // clean_stag_rayratio: the bracket of ray ratios x E
   bool cln_ringjmin = true;     // clean_ring_jmin: ring J ratios only of ray-held cells
+  bool cln_rfrst = false;       // clean_rot_ring_fill_rst: full window at an old restart
+  bool cln_rfdone = false;      // its fill taken
   bool cln_linpass = false;   // clean_lin_pass: a pass goes on past a failed linear solve
   void CleanStagXDonor(const bool first, const bool lat = true, const bool hold = false);
   void CleanStagXCount(const int inl, const int nit);

@@ -639,6 +639,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // where both sets' J are at least clean_ray_min E (a ratio of two ray-shadowed J is
     // no ray pattern); elsewhere the offset is invalid (left out of the mix)
     cln_ringjmin = pin->GetOrAddBoolean("rad_m1","clean_ring_jmin",true);
+    // clean_rot_ring_fill_rst (default off): the ring's fill at a restart from a file
+    // without the clean state (cln_rstold: an old scheme's, whose closure averaged a
+    // full window) takes the older sets' offsets swept at the restart state, as the
+    // steady start (CleanRingMoments)
+    cln_rfrst = pin->GetOrAddBoolean("rad_m1","clean_rot_ring_fill_rst",false);
     // clean_source_convex (default on): the rays' vet_scatter source of the clean scheme
     // (the state's own, CleanRays) with the absorption share kappa_P/chi at most 1, as
     // the thermal source without vet_scatter: S = J + min(kappa_P/chi, 1) (B - J) between
