@@ -105,9 +105,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_face_jse (default on): the face half ranges in the shape of the cells'
     // half-range fluxes at the face (old production implicit_thin_recon = jse)
     cln_jse = pin->GetOrAddBoolean("rad_m1","clean_face_jse",true);
-    // clean_face_jse_cell (default on): its factor on the donor cell's h+- (old
+    // clean_face_jse_cell (default off): its factor on the donor cell's h+- (old
     // M1ThinJs), not on the reconstructed face value
-    cln_jsec = pin->GetOrAddBoolean("rad_m1","clean_face_jse_cell",true);
+    cln_jsec = pin->GetOrAddBoolean("rad_m1","clean_face_jse_cell",false);
     // clean_face_hclat (default off): the bracket's F_y on the lateral faces of sp / cs is
     // the mean of the two cells' H (old production hc with implicit_thin_hcface_gd = x1)
     cln_hclat = pin->GetOrAddBoolean("rad_m1","clean_face_hclat",false);
