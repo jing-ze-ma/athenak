@@ -563,7 +563,7 @@ class RadiationM1 {
   bool vet_seg_emit = false;   // vet_seg = emit: split, limiter only where S_u > S_0
                                // as two sub-segments split at the face
   bool vet_seg_jump = false;   // vet_seg = jump (coreL-1012): emit + the contrast rule
-  bool vet_seg_plateau = true;  // vet_seg_plateau: jump's contrast only across a plateau
+  bool vet_seg_plateau = false; // vet_seg_plateau: jump's contrast only across a plateau
   bool vet_xcr = false;        // vet_seg_cross: the cell crossed before the x1 face
   // the segment mode VetSegSplit takes: 0 split, 1 emit, 2 jump with the plateau weights,
   // 3 jump without them (rad_m1_vetseg.hpp)
@@ -1854,14 +1854,14 @@ class RadiationM1 {
   // <rad_m1>/time2_be_only = true (the reference); <rad_m1>/be_legacy = true keeps the
   // old Lie-split be step
   bool t2_beonly = false;
-  // <rad_m1>/time2_cfl_post = true (default false, bitwise): the hydro / MHD CFL dt
+  // <rad_m1>/time2_cfl_post (default true, false = old): the hydro / MHD CFL dt
   // of the next step is taken again after the radiation update, on the gas it wrote.
   // Without it the dt is the stage-2 hydro CFL of the gas BEFORE the coupling: a
   // backward-Euler step (first step, stage fallback redo, time2_auto_be) kicks the gas
   // by a whole dt of the radiation force after it, and the next step ran past its CFL
   // (flz qFB cfl 0.31: x1 CFL dt 1.06 of the kicked gas, step 2.16; a ring emptied to
   // gas E < 0 and the hydro EOS floor created dE/E 1.8e-6, EBUG)
-  bool t2_cfl_post = false;
+  bool t2_cfl_post = true;
   Real t2_abe_n = 0.0;          // steps taken by time2_auto_be (counter)
   Real t2_abe_ntry = 0.0;       // stage retries after a skip run
   Real t2_abe_nok = 0.0;        // of which succeeded

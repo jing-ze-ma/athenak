@@ -89,25 +89,25 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   if (sc.compare("clean") == 0) {
     clean = true;
     CleanPreflight(pin);
-    // clean_w_fse (default off): the thin share's thinness is the old production's
+    // clean_w_fse (default on): the thin share's thinness is the old production's
     // (implicit_thin_switch = fse): g = max(|H|/J, eps C1/1.5), eps = min(kappa_P/chi,
     // 1), w = smoothstep((g - c0)/(c1 - c0)) with c0, c1 = 0.3, 0.6 unless named.
     // Upwind streaming holds where the field is anisotropic (|H|/J), not where it is
     // merely non-local (C1 of an unresolved opaque photosphere cell, I != S across it,
     // isotropic field); eps removes the non-locality of scattering
-    cln_wfse = pin->GetOrAddBoolean("rad_m1","clean_w_fse",false);
+    cln_wfse = pin->GetOrAddBoolean("rad_m1","clean_w_fse",true);
     cln_c0 = pin->GetOrAddReal("rad_m1","clean_w_c0",cln_wfse ? 0.3 : 0.1);
     cln_c1 = pin->GetOrAddReal("rad_m1","clean_w_c1",cln_wfse ? 0.6 : 0.5);
     // clean_face_hctau (default off): the bracket's rays' face flux F_y interpolated in
     // optical depth between the cell centres (old production implicit_thin_hcface = tau,
     // CleanStagBracket)
     cln_hctau = pin->GetOrAddBoolean("rad_m1","clean_face_hctau",false);
-    // clean_face_jse (default off): the face half ranges in the shape of the cells'
+    // clean_face_jse (default on): the face half ranges in the shape of the cells'
     // half-range fluxes at the face (old production implicit_thin_recon = jse)
-    cln_jse = pin->GetOrAddBoolean("rad_m1","clean_face_jse",false);
-    // clean_face_jse_cell (default off): its factor on the donor cell's h+- (old
+    cln_jse = pin->GetOrAddBoolean("rad_m1","clean_face_jse",true);
+    // clean_face_jse_cell (default on): its factor on the donor cell's h+- (old
     // M1ThinJs), not on the reconstructed face value
-    cln_jsec = pin->GetOrAddBoolean("rad_m1","clean_face_jse_cell",false);
+    cln_jsec = pin->GetOrAddBoolean("rad_m1","clean_face_jse_cell",true);
     // clean_face_hclat (default off): the bracket's F_y on the lateral faces of sp / cs is
     // the mean of the two cells' H (old production hc with implicit_thin_hcface_gd = x1)
     cln_hclat = pin->GetOrAddBoolean("rad_m1","clean_face_hclat",false);
@@ -502,10 +502,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "clean_stag_thinf_held" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_stag_xdonor_freeze (default 0 = off): from this pass of a solve on, the
+    // clean_stag_xdonor_freeze (default 4; 0 = off): from this pass of a solve on, the
     // xdonor cross flux C is held (CleanStagXDonor): its donor side and cap no longer
     // switch from pass to pass (HG C2D: a 1-cell donor/cap flip, period-2 passes at 2e-4)
-    cln_xdfz = pin->GetOrAddInteger("rad_m1","clean_stag_xdonor_freeze",0);
+    cln_xdfz = pin->GetOrAddInteger("rad_m1","clean_stag_xdonor_freeze",4);
     // clean_pass_damp (default 0 = off): from this pass of a solve on, a pass's change of
     // E that turns back, l < 0, takes d/(1 - l) (CleanNewtonUpdate): period-2/3 pass
     // cycles of the lagged exchange; a solve that converges before is unchanged
@@ -656,15 +656,15 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // where both sets' J are at least clean_ray_min E (a ratio of two ray-shadowed J is
     // no ray pattern); elsewhere the offset is invalid (left out of the mix)
     cln_ringjmin = pin->GetOrAddBoolean("rad_m1","clean_ring_jmin",true);
-    // clean_rot_ring_fill_rst (default off): the ring's fill at a restart from a file
+    // clean_rot_ring_fill_rst (default on): the ring's fill at a restart from a file
     // without the clean state (cln_rstold: an old scheme's, whose closure averaged a
     // full window) takes the older sets' offsets swept at the restart state, as the
     // steady start (CleanRingMoments)
-    cln_rfrst = pin->GetOrAddBoolean("rad_m1","clean_rot_ring_fill_rst",false);
-    // clean_rst_mshare (default off): at a restart from a file without the clean state
+    cln_rfrst = pin->GetOrAddBoolean("rad_m1","clean_rot_ring_fill_rst",true);
+    // clean_rst_mshare (default on): at a restart from a file without the clean state
     // the M1 share's memory starts at its steady flux of the first solution
     // (CleanStagFSolve)
-    cln_rmsh = pin->GetOrAddBoolean("rad_m1","clean_rst_mshare",false);
+    cln_rmsh = pin->GetOrAddBoolean("rad_m1","clean_rst_mshare",true);
     // clean_source_convex (default on): the rays' vet_scatter source of the clean scheme
     // (the state's own, CleanRays) with the absorption share kappa_P/chi at most 1, as
     // the thermal source without vet_scatter: S = J + min(kappa_P/chi, 1) (B - J) between
@@ -1939,7 +1939,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         vet_seg_split = true;
         vet_seg_emit = true;
         vet_seg_jump = true;
-        vet_seg_plateau = pin->GetOrAddBoolean("rad_m1", "vet_seg_plateau", true);
+        vet_seg_plateau = pin->GetOrAddBoolean("rad_m1", "vet_seg_plateau", false);
       } else if (sg.compare("mean") == 0) {
         vet_seg_split = false;
       } else {

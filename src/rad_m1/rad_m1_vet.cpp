@@ -2021,7 +2021,7 @@ void RadiationM1::VetInit(ParameterInput *pin) {
       vet_seg_split = true;
       vet_seg_emit = true;
       vet_seg_jump = true;
-      vet_seg_plateau = pin->GetOrAddBoolean("rad_m1", "vet_seg_plateau", true);
+      vet_seg_plateau = pin->GetOrAddBoolean("rad_m1", "vet_seg_plateau", false);
     } else if (sg.compare("mean") == 0) {
       vet_seg_split = false;
     } else {
