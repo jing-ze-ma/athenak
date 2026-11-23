@@ -3061,6 +3061,7 @@ class RadiationM1 {
   bool cln_thr = false;         // clean_cs_thin_radial
   bool cln_wmin = false;        // clean_w_face_min
   bool cln_wfse = false;        // clean_w_fse
+  bool cln_wfst = false;        // clean_w_fse_tau
   bool cln_hctau = false;       // clean_face_hctau
   bool cln_jse = false;         // clean_face_jse
   bool cln_hclat = false;       // clean_face_hclat

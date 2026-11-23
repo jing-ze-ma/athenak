@@ -1091,9 +1091,10 @@ void RadiationM1::CleanFaceCoefficients() {
   const bool tdn = cln_tdn;    // (clean_thin_donor)
   const bool wmn = cln_wmin;   // (clean_w_face_min)
   const bool wfs = cln_wfse;   // (clean_w_fse)
+  const bool wft = cln_wfst;   // (clean_w_fse_tau)
   const bool fjs = cln_jse;    // (clean_face_jse)
   const bool fjc = cln_jsec;   // (clean_face_jse_cell)
-  const CleanArgs *px = (fho || fjs) ? CleanDevArgs(CleanMakeArgs(), 0) : nullptr;
+  const CleanArgs *px = (fho || fjs || wft) ? CleanDevArgs(CleanMakeArgs(), 0) : nullptr;
   const int nd = pmy_pack->pmesh->use_cubed_sphere ? cln_fvn : 0;
 
   for (int dir = 0; dir < 3; ++dir) {
@@ -1116,7 +1117,12 @@ void RadiationM1::CleanFaceCoefficients() {
           h2 += SQR(cs(m,CLN_HP+a,kk,jj,ii) + cs(m,CLN_HM+a,kk,jj,ii));
         }
         const Real ct = op(m,M1_OP_T,kk,jj,ii);
-        const Real ep = (ct > 0.0) ? fmin(op(m,M1_OP_P,kk,jj,ii)/ct, 1.0) : 1.0;
+        Real ep = (ct > 0.0) ? fmin(op(m,M1_OP_P,kk,jj,ii)/ct, 1.0) : 1.0;
+        if (wft && ep < 1.0) {   // (clean_w_fse_tau: tau_d = chi V/A_f, the faces' mean)
+          const Real td = 2.0*ct/(CleanDivW(*px, dir, m, kk, jj, ii, 0) +
+                                  CleanDivW(*px, dir, m, kk, jj, ii, 1));
+          ep = 1.0 - (1.0 - ep)*(1.0 - exp(-td));
+        }
         return fmax(sqrt(h2), ep*cs(m,CLN_C1,kk,jj,ii)/1.5);
       };
       const Real c1 = wmn ? fmin(gw(k, j, i), gw(kl, jl, il))

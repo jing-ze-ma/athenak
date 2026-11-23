@@ -96,6 +96,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // merely non-local (C1 of an unresolved opaque photosphere cell, I != S across it,
     // isotropic field); eps removes the non-locality of scattering
     cln_wfse = pin->GetOrAddBoolean("rad_m1","clean_w_fse",true);
+    // clean_w_fse_tau: scattering isotropises only over the cell's optical depth tau_d =
+    // chi V/A_f, so eps -> 1 - (1 - eps)(1 - exp(-tau_d)) (a thin or empty cell keeps C1)
+    cln_wfst = cln_wfse && pin->GetOrAddBoolean("rad_m1","clean_w_fse_tau",false);
     cln_c0 = pin->GetOrAddReal("rad_m1","clean_w_c0",cln_wfse ? 0.3 : 0.1);
     cln_c1 = pin->GetOrAddReal("rad_m1","clean_w_c1",cln_wfse ? 0.6 : 0.5);
     // clean_face_hctau (default off): the bracket's rays' face flux F_y interpolated in
