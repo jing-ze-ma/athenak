@@ -325,8 +325,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     const bool cs = pm->use_cubed_sphere;
     bool ok = (cln_ftie || cs) && cln_fsweeps == 1 && !pm->multilevel, lag = false;
     for (int d = 0; d < 3; ++d) {
-      const int n = (d == 0) ? pm->mb_indcs.nx1 : ((d == 1) ? pm->mb_indcs.nx2 :
-                                                   pm->mb_indcs.nx3);
+      // (layout_invariant_mode = tile: as on MeshBlocks of a tile, CleanStagFSchurTile)
+      const int n = (d > 0 && repro::tile_n > 0) ? repro::tile_n :
+          ((d == 0) ? pm->mb_indcs.nx1 :
+                      ((d == 1) ? pm->mb_indcs.nx2 : pm->mb_indcs.nx3));
       const int nb = ((cs && d > 0) ? 4 : 1)*((d == 0) ? pm->mesh_indcs.nx1 :
                      ((d == 1) ? pm->mesh_indcs.nx2 : pm->mesh_indcs.nx3))/n;
       const bool per = (cs && d > 0) || (pm->mesh_bcs[2*d] == BoundaryFlag::periodic);
@@ -354,6 +356,19 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     } else if (!ok && global_variable::my_rank == 0) {
       std::cout << "<rad_m1> clean_stag_fschur off: the F solve's line ends lagged "
                 << "(clean_stag_ftie, fsweeps, mesh or MeshBlock size)" << std::endl;
+    }
+    // (layout_invariant_mode = tile: the join of a periodic line in whole MeshBlocks,
+    // CleanStagFSchurTile)
+    for (int d = 1; d < 3 && cln_fschur && repro::tile_n > 0 && !cs; ++d) {
+      const int nx = (d == 1) ? pm->mb_indcs.nx2 : pm->mb_indcs.nx3;
+      const int nbm = ((d == 1) ? pm->mesh_indcs.nx2 : pm->mesh_indcs.nx3)/nx;
+      if (nx > repro::tile_n && nbm%2 == 1 && nbm > 1 &&
+          pm->mesh_bcs[2*d] == BoundaryFlag::periodic) {
+        std::cout << "### FATAL ERROR: <mesh>/layout_tile with clean_stag_fschur: a "
+                  << "periodic line of MeshBlocks of more than one tile needs an even "
+                  << "number of them (or one)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
     }
     // (the cubed sphere without it iterates its seams: clean_stag_fsweeps default 64,
     // its lines by Thomas)

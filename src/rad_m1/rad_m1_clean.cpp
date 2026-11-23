@@ -33,6 +33,7 @@
 #include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1_clean.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
+#include "utils/repro_sum.hpp"
 #include "utils/scratch_view.hpp"
 
 #if MPI_PARALLEL_ENABLED
@@ -4112,24 +4113,29 @@ bool CleanStagFRay(const CleanArgs &x, const int e, const int dir, const int m,
 //! face (CleanFLine::Own), the one beyond it), and s3 = 1 - s1 - s2,
 //! s7 = 1 - s5 - s6 from the row sums (the response to a uniform F: near 0 on a nearly
 //! singular line, h c/dx >> 1/theta, which 1 - s1 - s2 would lose); by a Thomas sweep
-//! up for y and one down for x
+//! up for y and one down for x.  layout_invariant_mode = tile: the tile of n cells from
+//! cell o of the line, il / ih its low / high end inside the MeshBlock, the face there
+//! owned as between MeshBlocks (the cubed sphere: the low tile's, the lower gid; else
+//! the high tile's)
 
 template <class FC>
 KOKKOS_INLINE_FUNCTION
 void CleanStagFOwn(const CleanArgs &x, const CleanFLine &ln, const FC &fc, const int dir,
-                   const int m, const int a, const int b, const int n, Real s[8]) {
+                   const int m, const int a, const int b, const int n, Real s[8],
+                   const int o = 0, const bool il = false, const bool ih = false) {
   auto face = [&](const int t, int &k, int &j, int &i) {
-    k = (dir == 2) ? x.ks + t : x.ks + b;
-    j = (dir == 1) ? x.js + t : ((dir == 2) ? x.js + b : x.js + a);
-    i = (dir == 0) ? x.is + t : x.is + a;
+    k = (dir == 2) ? x.ks + o + t : x.ks + b;
+    j = (dir == 1) ? x.js + o + t : ((dir == 2) ? x.js + b : x.js + a);
+    i = (dir == 0) ? x.is + o + t : x.is + a;
   };
   int k, j, i;
   Real lo, hi, dg, r, sm;
   face(0, k, j, i);
-  const int t0 = ln.Own(x, dir, m, k, j, i, 0, n, true) ? 0 : 1;
+  const int t0 = (il ? !x.cub : ln.Own(x, dir, m, k, j, i, 0, n, true)) ? 0 : 1;
   face(n, k, j, i);
-  const bool bh = CleanBoundaryFace(x, dir, m, k, j, i);   // (F^H)
-  const int t1 = (x.cub && !bh && ln.Own(x, dir, m, k, j, i, n, n, true)) ? n : n - 1;
+  const bool bh = !ih && CleanBoundaryFace(x, dir, m, k, j, i);   // (F^H)
+  const int t1 = (x.cub && !bh && (ih || ln.Own(x, dir, m, k, j, i, n, n, true))) ? n
+                                                                                : n - 1;
   const Real fh = bh ? fc(m,CLF_N,k,j,i) : 0.0, wh = bh ? 1.0 : 0.0;
   Real cp = 0.0, dc = 0.0, dl = 1.0, dw = 0.0;   // (F_{-1} = yL)
   for (int t = t0; t <= t1; ++t) {
@@ -4212,6 +4218,14 @@ void CleanStagFJoin(const Real p[8], const Real q[8], Real c[8], Real ya[3],
 //! and a static envelope would lose its balance on the panel-tangent faces).
 
 #if M1_TU_PART(2)
+// (layout_invariant_mode = tile: per line of a MeshBlock along a direction of nk tiles,
+// the tiles' segments, the folds kept from the left and the right (8 nk each) and the
+// tiles' ends (2 nk): CleanStagFSchurTile, the line solve)
+static void CleanFsjt(DvceArray3D<Real> &v, const int nmb, const int nl, const int nk) {
+  if (v.extent_int(0) == nmb && v.extent_int(1) == nl && v.extent_int(2) == 26*nk) return;
+  v = DvceArray3D<Real>("cln_fsjt", nmb, nl, 26*nk);
+}
+
 // (the F slots 9 + 2 q + hi of cln_v that the ghosts of a face of family q take
 // (CleanGSeg::fm): its own family's, CleanFLine; f0 = 2: without the x1 family's)
 static std::array<uint32_t, 4> CleanFMask(const int f0) {
@@ -4612,44 +4626,72 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
       // one exact Thomas solve per line; the faces beyond a line end of a MeshBlock or
       // a periodic wrap are the last F solve's (lagged); on the cubed sphere the largest
       // change of a face and the largest F (a reduction only there: no fence elsewhere)
+      // (layout_invariant_mode = tile: each of the nk tiles of a lateral line solved as
+      // the line of a MeshBlock of a tile, its ends inside the MeshBlock from cln_fsjt,
+      // joined (CleanStagFSchurTile) or the last sweep's, read first; a face two tiles
+      // share is the identity row of its non-owner, CleanStagFOwn)
+      const int nk = (dir > 0 && repro::tile_n > 0) ? n/repro::tile_n : 1, nt = n/nk;
+      if (nk > 1) CleanFsjt(cln_fsjt[dir], nmb1 + 1, na*nb, nk);
+      auto jt = cln_fsjt[dir];
+      const bool fsc = cln_fschur, olo = !(cub && tie), ohi = cub || !tie;
       auto line = KOKKOS_LAMBDA(const int idx, Real &d_max, Real &f_max) {
-        const int m = idx/(na*nb), a = idx%na, b = (idx/na)%nb;
+        const int m = idx/(na*nb), a = idx%na, b = (idx/na)%nb, l = idx%(na*nb);
         auto face = [&](const int t, int &k, int &j, int &i) {
           if (dir == 0) {i = is + t; j = js + a; k = ks + b;}
           if (dir == 1) {j = js + t; i = is + a; k = ks + b;}
           if (dir == 2) {k = ks + t; i = is + a; j = js + b;}
         };
-        Real dp = 0.0, cp = 0.0;
-        for (int t = 0; t <= n; ++t) {
+        for (int u = 1; u < nk && !fsc; ++u) {
           int k, j, i;
-          face(t, k, j, i);
-          Real den = x.w(m,CLW_A0,k,j,i);   // (dg)
-          // (the faces beyond a MeshBlock line end: the neighbours', lagged)
-          const bool eq = x.w(m,CLW_P,k,j,i) > 0.0;
-          den -= ((eq && t == 0) ? 0.0 : x.w(m,CLW_AM,k,j,i))*cp;
-          cp = ((eq && t == n) ? 0.0 : x.w(m,CLW_AP,k,j,i))/den;
-          x.w(m,CLW_CP,k,j,i) = cp;
-          Real r = (x.w(m,CLW_P,k,j,i) < 0.0) ?
-              ln.Near(x, dir, m, k, j, i, k-(t == 0)*dk, j-(t == 0)*dj, i-(t == 0)*di) :
-              x.w(m,CLW_R0,k,j,i);
-          if (x.w(m,CLW_P,k,j,i) > 0.0) {
-            if (t == 0) r -= x.w(m,CLW_AM,k,j,i)*ln.Far(x, dir, m, k, j, i, k-dk, j-dj,
-                                                         i-di);
-            if (t == n) r -= x.w(m,CLW_AP,k,j,i)*ln.Far(x, dir, m, k, j, i, k, j, i);
-          }
-          dp = (r - ((t == 0) ? 0.0 : x.w(m,CLW_AM,k,j,i))*dp)/den;
-          x.w(m,CLW_R,k,j,i) = dp;
+          face(u*nt, k, j, i);
+          jt(m,l,25*nk+u-1) = ohi ? ln.Far(x, dir, m, k, j, i, k, j, i)
+                                  : ln.Near(x, dir, m, k, j, i, k, j, i);
+          jt(m,l,24*nk+u) = olo ? ln.Far(x, dir, m, k, j, i, k-dk, j-dj, i-di)
+                                : ln.Near(x, dir, m, k, j, i, k-dk, j-dj, i-di);
         }
-        Real fn = 0.0;
-        for (int t = n; t >= 0; --t) {   // (the last face's slot is a ghost: the
-          int k, j, i;                   //  neighbour's or a physical face)
-          face(t, k, j, i);
-          fn = x.w(m,CLW_R,k,j,i) - ((t < n) ? x.w(m,CLW_CP,k,j,i)*fn : 0.0);
-          if (cub) {
-            d_max = fmax(d_max, fabs(fn - ln.Get(x, dir, m, k, j, i, t)));
-            f_max = fmax(f_max, fmax(fabs(fn), 1.0e-8*x.c*fabs(x.w(m,e,k,j,i))));
+        for (int u = 0; u < nk; ++u) {
+          const int o = u*nt;
+          const bool il = u > 0, ih = u < nk - 1;
+          Real dp = 0.0, cp = 0.0;
+          for (int t = 0; t <= nt; ++t) {
+            int k, j, i;
+            face(o + t, k, j, i);
+            const bool ie = (il && t == 0) || (ih && t == nt);
+            const bool io = ie && !((t == 0) ? olo : ohi);
+            const Real ee = ie ? jt(m,l,((t == 0) ? 24*nk : 25*nk)+u) : 0.0;
+            const Real am = io ? 0.0 : x.w(m,CLW_AM,k,j,i);
+            const Real ap = io ? 0.0 : x.w(m,CLW_AP,k,j,i);
+            const Real pp = io ? -1.0 : x.w(m,CLW_P,k,j,i);
+            Real den = io ? 1.0 : x.w(m,CLW_A0,k,j,i);   // (dg)
+            // (the faces beyond a MeshBlock line end: the neighbours', lagged)
+            const bool eq = pp > 0.0;
+            den -= ((eq && t == 0) ? 0.0 : am)*cp;
+            cp = ((eq && t == nt) ? 0.0 : ap)/den;
+            x.w(m,CLW_CP,k,j,i) = cp;
+            const int t0 = (t == 0) ? 1 : 0;
+            Real r = (pp < 0.0) ? (ie ? ee : ln.Near(x, dir, m, k, j, i, k-t0*dk, j-t0*dj,
+                                                     i-t0*di)) :
+                x.w(m,CLW_R0,k,j,i);
+            if (pp > 0.0) {
+              if (t == 0) {
+                r -= am*(il ? ee : ln.Far(x, dir, m, k, j, i, k-dk, j-dj, i-di));
+              }
+              if (t == nt) r -= ap*(ih ? ee : ln.Far(x, dir, m, k, j, i, k, j, i));
+            }
+            dp = (r - ((t == 0) ? 0.0 : am)*dp)/den;
+            x.w(m,CLW_R,k,j,i) = dp;
           }
-          ln.Put(x, dir, m, k, j, i, t, n, fn);
+          Real fn = 0.0;
+          for (int t = nt; t >= 0; --t) {   // (the last face's slot is a ghost: the
+            int k, j, i;                    //  neighbour's or a physical face)
+            face(o + t, k, j, i);
+            fn = x.w(m,CLW_R,k,j,i) - ((t < nt) ? x.w(m,CLW_CP,k,j,i)*fn : 0.0);
+            if (cub) {
+              d_max = fmax(d_max, fabs(fn - ln.Get(x, dir, m, k, j, i, t)));
+              f_max = fmax(f_max, fmax(fabs(fn), 1.0e-8*x.c*fabs(x.w(m,e,k,j,i))));
+            }
+            ln.Put(x, dir, m, k, j, i, t, nt, fn);
+          }
         }
       };
       // (one warp or wavefront per block: the x1 lines are few, one thread each,
@@ -5156,6 +5198,12 @@ void RadiationM1::CleanStagFSchur() {
     gr[d] = (nr[d][0] > 0) ? ngd/2 : ((per[d]) ? 0 : -1);
     gs[d] = (nr[d][0] > 0) ? 3*(ngd++%2) : 0;
   }
+  // (layout_invariant_mode = tile, a lateral line of more than one tile)
+  const int tn = repro::tile_n;
+  if (tn > 0 && (nn[1] > tn || (x.nf == 3 && nn[2] > tn))) {
+    CleanStagFSchurTile(gr, gs, per, ngd);
+    return;
+  }
   for (int g = 0; g == 0 || 2*g < ngd; ++g) {
     int nrt = 0, nd = 0;
     for (int d = 0; d < x.nf; ++d) {
@@ -5299,6 +5347,236 @@ void RadiationM1::CleanStagFSchur() {
         CleanGhostFlush();
       }
     }
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanStagFSchurTile
+//! \brief layout_invariant_mode = tile: CleanStagFSchur with the nk tiles of a lateral
+//! MeshBlock line as MeshBlocks, so that the F solve is the same for every layout of
+//! whole-tile MeshBlocks.  Between MeshBlocks of a tile, the whole line of tile g is
+//! join(join(L, o_g), R): o_g its segment (CleanStagFOwn), L the left fold of the nt/2
+//! segments before it (a periodic line, a ring of nt tiles; else all of them), R the
+//! right fold of the (nt - 1)/2 after it (all), then the closure.  Joins do not
+//! associate in round-off, so the folds are formed in that order: in pass p, each
+//! MeshBlock sends to the right the left fold from its tile p, and to the left the right
+//! fold to its tile nk - 1 - p (read reversed across a cubed-sphere seam: from tile p),
+//! and each MeshBlock they pass extends them by its tiles.  After nb/2 rounds (the right
+//! fold of tile 0: nb/2 - 1) tile p keeps the fold from the left, tile nk - p the one
+//! from the right (an open line: one pass, nb - 1 rounds, all tiles).  Last, the folds
+//! are extended by the MeshBlock's own tiles and joined as in CleanStagFSchur.  The ends
+//! of the tiles inside the MeshBlock go to cln_fsjt (the line solve's), the MeshBlock's
+//! to the ghosts
+
+void RadiationM1::CleanStagFSchurTile(const int gr[3], const int gs[3], const bool per[3],
+                                      const int ngd) {
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  CleanArgs x = CleanMakeArgs();
+  const CleanFLine ln{cln_v, x.cub};
+  const bool cub = x.cub;
+  const int nn[3] = {indcs.nx1, indcs.nx2, indcs.nx3};
+  const int nm[3] = {pm->mesh_indcs.nx1, pm->mesh_indcs.nx2, pm->mesh_indcs.nx3};
+  const int fs[6] = {CLW_TM, CLW_TM+1, CLW_TM+2, CLW_TM+3, CLW_BW, CLW_PW};
+  const int g1 = gs[1], g2 = gs[2];
+  int nk[3] = {1, 1, 1}, nbk[3] = {1, 1, 1};
+  for (int d = 0; d < x.nf; ++d) {
+    if (d > 0) nk[d] = nn[d]/repro::tile_n;
+    nbk[d] = ((cub && d > 0) ? 4 : 1)*nm[d]/nn[d];
+  }
+  // the tiles' segments
+  for (int dir = 0; dir < x.nf; ++dir) {
+    if (nk[dir] == 1 && gr[dir] < 0) continue;
+    const int nkd = nk[dir], nt = nn[dir]/nkd, na = (dir == 0) ? nn[1] : nn[0];
+    const int nb = (dir == 2) ? nn[1] : nn[2];
+    CleanFsjt(cln_fsjt[dir], nmb1 + 1, na*nb, nkd);
+    auto jt = cln_fsjt[dir];
+    auto fc = x.fc[dir];
+    AthFor("cln_fsjo", Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*na*nb),
+    KOKKOS_LAMBDA(const int idx) {
+      const int m = idx/(na*nb), a = idx%na, b = (idx/na)%nb, l = idx%(na*nb);
+      for (int u = 0; u < nkd; ++u) {
+        Real s[8];
+        CleanStagFOwn(x, ln, fc, dir, m, a, b, nt, s, u*nt, u > 0, u < nkd - 1);
+        for (int q = 0; q < 8; ++q) jt(m,l,8*u+q) = s[q];
+      }
+    });
+  }
+  // the passes of rounds of each group of directions (CleanStagFSchur)
+  for (int g = 0; g == 0 || 2*g < ngd; ++g) {
+    int np = 0, nrt = 0, nd = 0;
+    for (int d = 0; d < x.nf; ++d) {
+      if (gr[d] != g || nbk[d] < 2) continue;
+      np = std::max(np, per[d] ? nk[d] : 1);
+      nrt = std::max(nrt, per[d] ? nbk[d]/2 : nbk[d] - 1);
+      ++nd;
+    }
+    for (int p = 0; p < np; ++p) {
+      for (int r = 1; r <= nrt + 1; ++r) {
+        for (int dir = 0; dir < x.nf; ++dir) {
+          const bool pd = per[dir];
+          const int nkd = nk[dir], ns = pd ? nbk[dir]/2 : nbk[dir] - 1;
+          if (gr[dir] != g || nbk[dir] < 2 || p >= (pd ? nkd : 1) || r > ns + 1) continue;
+          const int ul = pd ? p : 0, ur = pd ? (nkd - p)%nkd : 0;
+          // (the round the fold from the right is kept: tile 0 of a periodic line has
+          // (nt - 1)/2 tiles after it)
+          const int rk = (pd && p == 0) ? ((nbk[dir]*nkd - 1)/2)/nkd + 1 : ns + 1;
+          const int n = nn[dir], na = (dir == 0) ? nn[1] : nn[0];
+          const int nb = (dir == 2) ? nn[1] : nn[2];
+          const int c0 = fs[gs[dir]], c1 = fs[gs[dir]+1], c2 = fs[gs[dir]+2];
+          const int gd = gs[dir];
+          auto jt = cln_fsjt[dir];
+          AthFor("cln_fsjr", Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*na*nb),
+          KOKKOS_LAMBDA(const int idx) {
+            const int m = idx/(na*nb), a = idx%na, b = (idx/na)%nb, l = idx%(na*nb);
+            auto cell = [&](const int t, int &k, int &j, int &i) {
+              k = (dir == 2) ? x.ks + t : x.ks + b;
+              j = (dir == 1) ? x.js + t : ((dir == 2) ? x.js + b : x.js + a);
+              i = (dir == 0) ? x.is + t : x.is + a;
+            };
+            auto slot = [&](const int t0, const int sg, const int q) -> Real & {
+              int k, j, i;
+              cell(t0 + sg*(q%3), k, j, i);
+              return x.w(m,(q < 3) ? c0 : ((q < 6) ? c1 : c2),k,j,i);
+            };
+            auto ghost = [&](const bool he, Real g[8]) {   // (as CleanStagFSchur)
+              int k, j, i, kc, jc, ic;
+              cell(he ? n : -1, k, j, i);
+              cell(he ? n : 0, kc, jc, ic);
+              Real sg = 1.0;
+              const int fq = cub ? CleanCsSlot(x, dir, m, kc, jc, ic, k, j, i, false,
+                                               sg)/2 : dir;
+              const int o = (fq == dir) ? gd : ((fq == 1) ? g1 : g2);
+              for (int q = 0; q < 8; ++q) {
+                cell(he ? n + q%3 : -1 - q%3, k, j, i);
+                g[q] = x.w(m,fs[o + q/3],k,j,i);
+              }
+              if (sg > 0.0) return;
+              const Real h[8] = {g[0], g[1], g[2], g[3], g[4], g[5], g[6], g[7]};
+              g[0] = -h[4], g[1] = h[6], g[2] = h[5], g[3] = h[7];
+              g[4] = -h[0], g[5] = h[2], g[6] = h[1], g[7] = h[3];
+            };
+            int k, j, i;
+            cell(0, k, j, i);
+            const bool xl = r > 1 && !CleanBoundaryFace(x, dir, m, k, j, i);
+            cell(n, k, j, i);
+            const bool xr = r > 1 && !CleanBoundaryFace(x, dir, m, k, j, i);
+            Real sl[8], sr[8], f[8], h[8], s[8], ya[3], xb[3];
+            if (xl) ghost(false, sl);
+            if (xr) ghost(true, sr);
+            for (int q = 0; q < 8; ++q) {
+              if (xl && r == ns + 1) jt(m,l,8*nkd+8*ul+q) = sl[q];
+              if (xr && r == rk) jt(m,l,16*nkd+8*ur+q) = sr[q];
+            }
+            if (r > ns) return;
+            // to the right: the left fold from tile ul (or the one from the left
+            // extended), to the left: the right fold to tile nk - 1 - ul (or extended)
+            const int u0 = xl ? 0 : ul, u1 = xr ? nkd - 1 : nkd - 1 - ul;
+            for (int q = 0; q < 8; ++q) f[q] = xl ? sl[q] : jt(m,l,8*u0+q);
+            for (int u = xl ? 0 : u0 + 1; u < nkd; ++u) {
+              for (int q = 0; q < 8; ++q) s[q] = jt(m,l,8*u+q);
+              CleanStagFJoin(f, s, h, ya, xb);
+              for (int q = 0; q < 8; ++q) f[q] = h[q];
+            }
+            for (int q = 0; q < 8; ++q) slot(n - 1, -1, q) = f[q];
+            for (int q = 0; q < 8; ++q) f[q] = xr ? sr[q] : jt(m,l,8*u1+q);
+            for (int u = xr ? nkd - 1 : u1 - 1; u >= 0; --u) {
+              for (int q = 0; q < 8; ++q) s[q] = jt(m,l,8*u+q);
+              CleanStagFJoin(s, f, h, ya, xb);
+              for (int q = 0; q < 8; ++q) f[q] = h[q];
+            }
+            for (int q = 0; q < 8; ++q) slot(0, 1, q) = f[q];
+          });
+        }
+        if (r <= nrt) {   // (as CleanStagFSchur)
+          std::array<uint32_t, 4> fa = {0, 0, 0, 0}, fb = fa;
+          for (int d = 0; d < x.nf; ++d) {
+            if (gr[d] == g) fa[d] = (gs[d] > 0) ? 3 : 0, fb[d] = (gs[d] > 0) ? 8 : 7;
+          }
+          if (nd == 2) CleanGhostDefer(cln_w, CLW_BW, 2), cln_hpend.back().fm = fa;
+          CleanGhostDefer(cln_w, CLW_TM, (nd == 2) ? 4 : 3);
+          cln_hpend.back().fm = fb;
+          CleanGhostFlush();
+        }
+      }
+    }
+  }
+  // each tile's whole line, its ends
+  for (int dir = 0; dir < x.nf; ++dir) {
+    if (nk[dir] == 1 && gr[dir] < 0) continue;
+    const bool pd = per[dir];
+    const int nkd = nk[dir], n = nn[dir], nbd = nbk[dir], na = (dir == 0) ? nn[1] : nn[0];
+    const int nb = (dir == 2) ? nn[1] : nn[2];
+    auto jt = cln_fsjt[dir];
+    AthFor("cln_fsjf", Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*na*nb),
+    KOKKOS_LAMBDA(const int idx) {
+      const int m = idx/(na*nb), a = idx%na, b = (idx/na)%nb, l = idx%(na*nb);
+      auto cell = [&](const int t, int &k, int &j, int &i) {
+        k = (dir == 2) ? x.ks + t : x.ks + b;
+        j = (dir == 1) ? x.js + t : ((dir == 2) ? x.js + b : x.js + a);
+        i = (dir == 0) ? x.is + t : x.is + a;
+      };
+      int k, j, i, kf, jf, iff;
+      cell(0, k, j, i);
+      const bool bl = CleanBoundaryFace(x, dir, m, k, j, i);
+      cell(n, k, j, i);
+      const bool bh = CleanBoundaryFace(x, dir, m, k, j, i);
+      for (int u = 0; u < nkd; ++u) {
+        Real lf[8], rf[8], s[8], h[8], c[8], cr[8], ya[3], xb[3], yr[3], xr[3];
+        Real yd[3], xd[3];
+        bool hl = false, hr = false;
+        auto addl = [&](const int o) {   // (L = join(L, the segment at o))
+          for (int q = 0; q < 8; ++q) s[q] = jt(m,l,o+q);
+          if (hl) CleanStagFJoin(lf, s, h, yd, xd);
+          for (int q = 0; q < 8; ++q) lf[q] = hl ? h[q] : s[q];
+          hl = true;
+        };
+        auto addr = [&](const int o) {   // (R = join(the segment at o, R))
+          for (int q = 0; q < 8; ++q) s[q] = jt(m,l,o+q);
+          if (hr) CleanStagFJoin(s, rf, h, yd, xd);
+          for (int q = 0; q < 8; ++q) rf[q] = hr ? h[q] : s[q];
+          hr = true;
+        };
+        if (pd && nbd == 1) {   // (round the wrap of one MeshBlock)
+          for (int t = u - nkd/2; t < u; ++t) addl(8*((t + nkd)%nkd));
+          for (int t = u + (nkd - 1)/2; t > u; --t) addr(8*(t%nkd));
+        } else {
+          if (pd || !bl) addl(8*nkd + 8*(pd ? u : 0));
+          for (int t = 0; t < u; ++t) addl(8*t);
+          if (pd ? (u > 0 || (nbd*nkd - 1)/2 >= nkd) : !bh) addr(16*nkd + 8*(pd ? u : 0));
+          for (int t = nkd - 1; t > u; --t) addr(8*t);
+        }
+        for (int q = 0; q < 8; ++q) s[q] = jt(m,l,8*u+q), c[q] = s[q];
+        if (hl) CleanStagFJoin(lf, s, c, ya, xb);
+        for (int q = 0; q < 8; ++q) cr[q] = c[q];
+        if (hr) CleanStagFJoin(c, rf, cr, yr, xr);
+        Real xo = 0.0, yo = 0.0;
+        if (pd) {
+          const Real det = cr[3]*(cr[6] + cr[7]) + cr[1]*cr[7];
+          xo = (cr[0]*(cr[6] + cr[7]) + cr[1]*cr[4])/det;
+          yo = (cr[4]*(cr[1] + cr[3]) + cr[6]*cr[0])/det;
+        }
+        const Real gR = hr ? xr[0] + xr[1]*yo + xr[2]*xo : xo;
+        const Real gL = hl ? ya[0] + ya[1]*yo + ya[2]*gR : yo;
+        if (u > 0) jt(m,l,24*nkd+u) = gL;
+        if (u < nkd - 1) jt(m,l,25*nkd+u) = gR;
+        Real sg;
+        cell(n, k, j, i);
+        if (u == nkd - 1 && !bh) {   // (cell n, as CleanStagFSchur)
+          const bool on = ln.Own(x, dir, m, k, j, i, n, n, true);
+          Real &f = ln.Slot(x, dir, m, k, j, i, k, j, i, on, sg);
+          f = sg*gR;
+        }
+        cell(0, kf, jf, iff);
+        cell(-1, k, j, i);
+        if (u == 0 && !bl) {
+          const bool on = ln.Own(x, dir, m, kf, jf, iff, 0, n, true);
+          Real &f = ln.Slot(x, dir, m, kf, jf, iff, k, j, i, on, sg);
+          f = sg*gL;
+        }
+      }
+    });
   }
 }
 

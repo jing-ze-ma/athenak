@@ -2805,6 +2805,8 @@ class RadiationM1 {
   void CleanStagCsTie(const int nc, const int c0, const int c1 = 0, const int c2 = 0);
   Real CleanStagFSweepChange();
   void CleanStagFSchur();
+  void CleanStagFSchurTile(const int gr[3], const int gs[3], const bool per[3],
+                           const int ngd);
   void CleanStagCsLateral(const int e, const bool st = false, const int part = 0);
   void CleanWriteBack();
   void CleanWbFct(const CleanArgs &x, const CleanArgs *px, const DvceArray5D<Real> &fp,
@@ -2947,6 +2949,7 @@ class RadiationM1 {
   DvceArray1D<Real> cln_flimc;   // (flim: the cut faces, their momentum sum)
   DvceArray1D<Real> cln_mclc;    // (the Newton passes' momentum cap: the terms it moved)
   bool cln_fwb = false;     // clean_stag_fwb
+  DvceArray3D<Real> cln_fsjt[3];   // (layout tile: the F join per tile, CleanFsjt)
   DvceArray1D<Real> cln_fwbc;    // (fwb: the faces, their momentum sums |dp|, x1 dp)
   bool cln_fcone = false;   // clean_stag_fcone
   bool cln_fwbst = false;   // clean_stag_fwb_stage
