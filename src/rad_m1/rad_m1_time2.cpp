@@ -143,9 +143,12 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     t2_w1 = tb.w1;
     t2_c31 = tb.c31;
     t2_c32 = tb.c32;
-    if (t2_tab == 2 && global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> time2_tableau = sdirk2: no explicit K1, Heun hydro"
-                << std::endl;
+    if (t2_tab == 2) {
+      t2_gtm = pin->GetOrAddBoolean("rad_m1", "time2_gtime_mom", true);
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1> time2_tableau = sdirk2: no explicit K1, Heun hydro"
+                  << (t2_gtm ? "" : ", time2_gtime_mom = false") << std::endl;
+      }
     }
     if (t2_tab == 2 && coupling && pmy_pack->pmhd != nullptr) {   // (Time2GasTime)
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -818,7 +821,11 @@ Real RadiationM1::InnerFluxIntegral(const Real t0, const Real t1) const {
 //! the floor cap and the refresh act on it as they did on Y.  which = 3, after the stage
 //! tasks: the hydro's stage-2 flux state U* + f d (t^{n+1}, the exchange over the full
 //! dt: f = 1/g non-stiff, -> 1 stiff, below) is refreshed into w0 (its floors stay in
-//! u0), then u0 is U* + d again.
+//! u0), then u0 is U* + d again.  time2_gtime_mom (default true): the momentum's f is
+//! 1/g in every cell (the radiation force is no relaxation of v; the energy's f -> 1 left
+//! the stiff cells' flux velocity a (1 - g) dt share of the residual force short, an
+//! O(dt) wall drift, CALQ t9l62 L_bot), and the flux state's IEN takes the kinetic-energy
+//! change, so its gas eint is that of the energy's f.
 
 void RadiationM1::Time2GasTime(Driver *pdrive, int which) {
   hydro::Hydro *ph = pmy_pack->phydro;
@@ -845,6 +852,7 @@ void RadiationM1::Time2GasTime(Driver *pdrive, int which) {
   auto ccl = pmy_pack->pcoord->cos_cell;
   const bool etg = ph->use_etotgrav, csk = cs_geom;
   const Real g = kT2G, cl = c_light, ch = chat, ar = arad, dt = pmy_pack->pmesh->dt;
+  const bool gm = t2_gtm;
   par_for("m1_t2_gtime", DevExeSpace(), 0, nmb-1, kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real e = 0.0;
@@ -866,10 +874,18 @@ void RadiationM1::Time2GasTime(Driver *pdrive, int which) {
       } else if (which == 2) {
         const Real d = u - (un + g*(us - un));   // (0 where the solve left it)
         u0_(m,n,k,j,i) = us + d;
-        hs_(m,n,k,j,i) = e*d;
+        hs_(m,n,k,j,i) = ((gm && n >= IM1 && n <= IM3) ? 1.0/g - 1.0 : e)*d;
       } else {
         u0_(m,n,k,j,i) = u + us;
       }
+    }
+    if (which == 2 && gm) {   // (IEN: the kinetic energy of the momentum's f, not of e)
+      const Real c = csk ? ccl(m,k,j) : 0.0, r = u0_(m,IDN,k,j,i) + hs_(m,IDN,k,j,i);
+      auto ke = [&](const Real s) {
+        return CsKeMom(u0_(m,IM1,k,j,i) + s*hs_(m,IM1,k,j,i), u0_(m,IM2,k,j,i) +
+                       s*hs_(m,IM2,k,j,i), u0_(m,IM3,k,j,i) + s*hs_(m,IM3,k,j,i), c)/r;
+      };
+      hs_(m,IEN,k,j,i) += ke(1.0) - ke(e*g/(1.0 - g));
     }
   });
   if (which != 3) return;

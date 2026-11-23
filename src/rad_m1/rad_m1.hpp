@@ -1910,6 +1910,7 @@ class RadiationM1 {
   void Time2GasTime(Driver *pdrive, int which);
   DvceArray5D<Real> t2hs;
   int t2_gt = 0;   // the last Time2GasTime step of this stage loop
+  bool t2_gtm = true;   // time2_gtime_mom: the flux state's momentum f = 1/g
   void Time2Restore(Driver *pdrive);
   // time2_start (read only when named, default be = bitwise): how a step
   // without a stored slope K1 (the first step, a restart without the slope) starts.
