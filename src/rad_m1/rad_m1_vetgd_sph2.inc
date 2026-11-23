@@ -445,9 +445,12 @@ void RadiationM1::VetGdGlobalBandInit() {
         if (rr != me && ro != me) {continue;}
         const int jg = pm->lloc_eachmb[go].lx2*nx2 + jo - w;
         const int kg = pm->lloc_eachmb[go].lx3*nx3 + ko - w;
-        // (a theta-periodic image keeps every direction of its branch: no geometric map)
+        // (an image across a wedge wall keeps every direction of its branch, as the slot
+        // halo's wall slots: a theta image has no geometric map, and a phi image's wall
+        // map reads other directions than the reach test's)
         const int jr = pm->lloc_eachmb[gr].lx2*nx2 + jj - w;
-        const int tw = (!vgd_pol && (jr < 0 || jr >= nt2)) ? 1 : 0;
+        const int kr = pm->lloc_eachmb[gr].lx3*nx3 + kk - w;
+        const int tw = (!vgd_pol && (jr < 0 || jr >= nt2 || kr < 0 || kr >= nt3)) ? 1 : 0;
         if (rr == me && ro == me) {
           lb[d].insert(lb[d].end(), {gr - g0, kk, jj, go - g0, ko, jo, d});
         } else if (rr == me) {
