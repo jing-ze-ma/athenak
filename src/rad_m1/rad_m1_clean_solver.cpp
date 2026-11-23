@@ -1558,6 +1558,11 @@ CleanLevel RadiationM1::CleanStagLevel(const int l) {
     }
     lv.a0 = CLS_A0;
   }
+  const int nb[3] = {pmy_pack->pmesh->mb_indcs.nx1, pmy_pack->pmesh->mb_indcs.nx2,
+                     pmy_pack->pmesh->mb_indcs.nx3};
+  for (int d = 0; d < 3; ++d) {   // (clean_stag_mg_tile; default the MeshBlock)
+    lv.t[d] = cln_mgt[0] ? cln_mgt[d]*lv.n[d]/nb[d] : lv.n[d];
+  }
   const int tm = (l == 0) ? CLW_TM : CLS_TM;
   lv.sm[0] = lv.a0 - 1;
   lv.sp[0] = lv.a0 + 1;
@@ -1645,10 +1650,12 @@ void RadiationM1::CleanStagLineSolve(const CleanLevel &lv, const int src, const 
   const CleanLevel l = lv;
   const int is = l.o[0], ie = l.o[0] + l.n[0] - 1, cp = l.a0 + 2;
   auto w = l.u;
-  const int n1 = l.n[1], n2 = l.n[2];
+  const int n1 = l.t[1], n2 = l.t[2];   // (positions in the line's tile)
   const bool mir = (cln_stagmg == 2);
   const int c0 = col;
-  auto cl = KOKKOS_LAMBDA(const int pj, const int pk) {   // (the line's colour)
+  auto cl = KOKKOS_LAMBDA(int pj, int pk) {   // (the line's colour)
+    pj %= n1;
+    pk %= n2;
     return (((mir && 2*pj >= n1) ? n1 - 1 - pj : pj) +
             ((mir && 2*pk >= n2) ? n2 - 1 - pk : pk)) % nc;
   };
@@ -1678,10 +1685,10 @@ void RadiationM1::CleanStagLineSolve(const CleanLevel &lv, const int src, const 
         const int i = is + q;
         Real r = w(m,src,k,j,i);
         if (lim >= 0) {
-          if (pj > 0 && on(pj-1, pk)) r -= w(m,l.sm[1],k,j,i)*w(m,dst,k,j-1,i);
-          if (pj < l.n[1] - 1 && on(pj+1, pk)) r -= w(m,l.sp[1],k,j,i)*w(m,dst,k,j+1,i);
-          if (pk > 0 && on(pj, pk-1)) r -= w(m,l.sm[2],k,j,i)*w(m,dst,k-1,j,i);
-          if (pk < l.n[2] - 1 && on(pj, pk+1)) r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
+          if (pj%n1 > 0 && on(pj-1, pk)) r -= w(m,l.sm[1],k,j,i)*w(m,dst,k,j-1,i);
+          if (pj%n1 < n1 - 1 && on(pj+1, pk)) r -= w(m,l.sp[1],k,j,i)*w(m,dst,k,j+1,i);
+          if (pk%n2 > 0 && on(pj, pk-1)) r -= w(m,l.sm[2],k,j,i)*w(m,dst,k-1,j,i);
+          if (pk%n2 < n2 - 1 && on(pj, pk+1)) r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
         }
         sw(q) = (q > 0) ? w(m,l.sm[0],k,j,i) : 0.0;
         sw(nx + q) = w(m,l.a0,k,j,i);
@@ -1762,10 +1769,10 @@ void RadiationM1::CleanStagLineSolve(const CleanLevel &lv, const int src, const 
       const Real ap = (i < ie) ? w(m,l.sp[0],k,j,i) : 0.0;
       Real r = w(m,src,k,j,i);
       if (lim >= 0) {
-        if (pj > 0 && on(pj-1, pk)) r -= w(m,l.sm[1],k,j,i)*w(m,dst,k,j-1,i);
-        if (pj < l.n[1] - 1 && on(pj+1, pk)) r -= w(m,l.sp[1],k,j,i)*w(m,dst,k,j+1,i);
-        if (pk > 0 && on(pj, pk-1)) r -= w(m,l.sm[2],k,j,i)*w(m,dst,k-1,j,i);
-        if (pk < l.n[2] - 1 && on(pj, pk+1)) r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
+        if (pj%n1 > 0 && on(pj-1, pk)) r -= w(m,l.sm[1],k,j,i)*w(m,dst,k,j-1,i);
+        if (pj%n1 < n1 - 1 && on(pj+1, pk)) r -= w(m,l.sp[1],k,j,i)*w(m,dst,k,j+1,i);
+        if (pk%n2 > 0 && on(pj, pk-1)) r -= w(m,l.sm[2],k,j,i)*w(m,dst,k-1,j,i);
+        if (pk%n2 < n2 - 1 && on(pj, pk+1)) r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
       }
       const Real den = w(m,l.a0,k,j,i) - am*cprev;
       cprev = ap/den;
@@ -1797,7 +1804,7 @@ void RadiationM1::CleanStagVCycle(const int l, const int src, const int dst) {
   // couplings to the lines solved before it: a symmetric Gauss-Seidel in the line order,
   // exact for a donor-cell transport along +-x2, x3 inside the MeshBlock)
   const bool wv = (cln_pcsweep == 4), mir = (cln_stagmg == 2);
-  const int nw = mir ? (f.n[1] - 1)/2 + (f.n[2] - 1)/2 + 1 : f.n[1] + f.n[2] - 1;
+  const int nw = mir ? (f.t[1] - 1)/2 + (f.t[2] - 1)/2 + 1 : f.t[1] + f.t[2] - 1;
   auto sweep = [&](const bool all) {
     for (int c = 0; c < nw; ++c) CleanStagLineSolve(f, src, dst, c, all ? nw : c - 1, nw);
     for (int c = nw - 1; c >= 0; --c) CleanStagLineSolve(f, src, dst, c, nw, nw);
@@ -1824,12 +1831,12 @@ void RadiationM1::CleanStagVCycle(const int l, const int src, const int dst) {
       for (int a1 = 0; a1 < r[1]; ++a1) {
         const int k = f.o[2] + r[2]*kc + a2, j = f.o[1] + r[1]*jc + a1;
         const int i = f.o[0] + ic;
-        const int pos[3] = {ic, j - f.o[1], k - f.o[2]};
+        const int pos[3] = {ic, (j - f.o[1])%f.t[1], (k - f.o[2])%f.t[2]};
         Real y = f.u(m,f.a0,k,j,i)*f.u(m,dst,k,j,i);
         for (int d = 0; d < 3; ++d) {
           const int dk = (d == 2), dj = (d == 1), di = (d == 0);
           if (pos[d] > 0) y += f.u(m,f.sm[d],k,j,i)*f.u(m,dst,k-dk,j-dj,i-di);
-          if (pos[d] < f.n[d] - 1) y += f.u(m,f.sp[d],k,j,i)*f.u(m,dst,k+dk,j+dj,i+di);
+          if (pos[d] < f.t[d] - 1) y += f.u(m,f.sp[d],k,j,i)*f.u(m,dst,k+dk,j+dj,i+di);
         }
         s += (vw ? vol(m,k,j,i) : 1.0)*(f.u(m,src,k,j,i) - y);
       }

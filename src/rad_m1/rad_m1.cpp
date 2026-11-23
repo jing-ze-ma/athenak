@@ -785,6 +785,25 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_stagmg = (pc == "mg") ? ((mc == "mirror") ? 2 : 1) : 0;
+    // clean_stag_mg_tile N (read only when named; default 0, the MeshBlock): the mg
+    // acts on fixed tiles of N x N (x2, x3) cells of the mesh, as on MeshBlocks of that
+    // size (line colours, couplings kept, coarse aggregates inside a tile), so that its
+    // action, and the solve, are the same for every MeshBlock layout whose MeshBlocks
+    // are whole tiles (CleanStagLineSolve; one MeshBlock along x1)
+    if (pin->DoesParameterExist("rad_m1","clean_stag_mg_tile")) {
+      const int nt = pin->GetInteger("rad_m1","clean_stag_mg_tile");
+      const auto &mi = pmy_pack->pmesh->mb_indcs;
+      const bool d3 = pmy_pack->pmesh->three_d;
+      if (nt < 1 || mi.nx2 % nt != 0 || (d3 && mi.nx3 % nt != 0) ||
+          pmy_pack->pmesh->nmb_rootx1 != 1 || !cln_stagmg) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/clean_stag_mg_tile N needs clean_stag_pc = "
+                  << "mg, N dividing meshblock nx2 (and nx3) and one MeshBlock along x1"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      cln_mgt = {mi.nx1, nt, d3 ? nt : 1};
+    }
     // clean_pc_sweep = sym (default of a fresh run, recorded; a restart file without the
     // key keeps rb) | rb | rbr | rbrsym | wave: the mg's smoothing on each level, a
     // forward red-black sweep, + a second red pass (rbr), + a black-red post-sweep after

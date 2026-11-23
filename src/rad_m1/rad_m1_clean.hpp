@@ -506,6 +506,7 @@ struct CleanLevel {
   CleanW u;                    // blocks and vectors (m, slot, k, j, i)
   int o[3];                    // index of the first active cell along x1, x2, x3
   int n[3];                    // active cells along x1, x2, x3
+  int t[3];                    // cells of a tile along x1, x2, x3 (clean_stag_mg_tile)
   int a0;                      // diagonal block
   int sm[3], sp[3];            // blocks of the lower and upper neighbour along each dir
 };

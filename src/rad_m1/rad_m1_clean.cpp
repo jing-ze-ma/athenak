@@ -592,15 +592,18 @@ void RadiationM1::CleanInit() {
     Kokkos::realloc(cln_csy, nmb, CLN_CSY, indcs.nx3, indcs.nx2, indcs.nx1);
   }
   if (cln_ysum) Kokkos::realloc(cln_yl, nmb, 9, n3, n2, n1);
-  // multigrid levels of clean_stag_pc = mg: halve x2 and x3 where even (>= 4), two
-  // coarse levels at most (x1 is never halved)
+  // multigrid levels of clean_stag_pc = mg: halve x2 and x3 where the tile's are even
+  // (>= 4), two coarse levels at most (x1 is never halved)
   if (cln_stagmg) {
     std::array<int, 3> nc = {indcs.nx1, indcs.nx2, indcs.nx3};
+    if (cln_mgt[0] == 0) cln_mgt = nc;   // (clean_stag_mg_tile: the tiles' cells)
+    std::array<int, 3> tc = cln_mgt;
     while (cln_mgn.size() != 2) {
       bool coarser = false;
       for (int d = 1; d < 3; ++d) {
-        if (nc[d] >= 4 && nc[d] % 2 == 0) {
+        if (tc[d] >= 4 && tc[d] % 2 == 0) {
           nc[d] /= 2;
+          tc[d] /= 2;
           coarser = true;
         }
       }
