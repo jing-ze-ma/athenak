@@ -201,8 +201,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_fillpass = pin->GetOrAddInteger("rad_m1","clean_fill_passes",8);
     cln_pred = pin->GetOrAddBoolean("rad_m1","clean_predict",true);
     // implicit_predictor (step unless named none): the stage solve starts from the
-    // predicted E (CleanFirstIterate), as the old production's step predictor
+    // predicted E (CleanFirstIterate), as the old production's step predictor (a
+    // restart file's default "none", which ImplicitInit adds, is not named)
     cln_kpred = !(pin->DoesParameterExist("rad_m1","implicit_predictor") &&
+                  !pin->IsParameterDefaulted("rad_m1","implicit_predictor") &&
                   pin->GetString("rad_m1","implicit_predictor") == "none");
     {std::string bf = pin->GetOrAddString("rad_m1","clean_bc","halfrange");
     cln_bdry_form = (bf.compare("marshak") == 0) ? 1 : 0;}
