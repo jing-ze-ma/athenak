@@ -7,7 +7,7 @@
 #   --build      configure and build a CPU binary in <repo>/build_m1test first (the
 #                recipe of docs/m1_clean/BUILD.md); without --exe or --build the script
 #                uses <repo>/build_m1test/src/athena if it exists, else builds it
-#   --quick      the short subset (~10 min on 16 cores)
+#   --quick      the short subset (8 tests, ~1.5 min on 16 cores)
 # Exit status 0 if every test passes.
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
