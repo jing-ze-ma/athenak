@@ -812,8 +812,9 @@ Real RadiationM1::InnerFluxIntegral(const Real t0, const Real t1) const {
 //! gas becomes U* + d (the explicit U* with the implicit g dt K2, so the stage-2
 //! increment and the exchange, booked once in d, are unchanged), before the ring average,
 //! the floor cap and the refresh act on it as they did on Y.  which = 3, after the stage
-//! tasks: the hydro's stage-2 flux state U* + d/g (t^{n+1}, the exchange over the full
-//! dt) is refreshed into w0 (its floors stay in u0), then u0 is U* + d again.
+//! tasks: the hydro's stage-2 flux state U* + f d (t^{n+1}, the exchange over the full
+//! dt: f = 1/g non-stiff, -> 1 stiff, below) is refreshed into w0 (its floors stay in
+//! u0), then u0 is U* + d again.
 
 void RadiationM1::Time2GasTime(Driver *pdrive, int which) {
   hydro::Hydro *ph = pmy_pack->phydro;
@@ -831,9 +832,28 @@ void RadiationM1::Time2GasTime(Driver *pdrive, int which) {
     Kokkos::realloc(t2hs, nmb, nv, n3, n2, n1);
   }
   auto hs_ = t2hs;
-  const Real g = kT2G, e = 1.0/kT2G - 1.0;
+  // the flux state's factor on d: 1/g + O(k dt) (the ARK conditions), 1 where the
+  // exchange is stiff (k dt >> 1: the backward-Euler ratio of a full dt to g dt of a
+  // linear relaxation at rate k = ch rho kappa_E + 4 cl rho kappa_P a T^3/(rho c_v))
+  auto op_ = opac;
+  auto eos = ph->peos->eos_data;
+  auto phc = ph->phicc0;
+  auto ccl = pmy_pack->pcoord->cos_cell;
+  const bool etg = ph->use_etotgrav, csk = cs_geom;
+  const Real g = kT2G, cl = c_light, ch = chat, ar = arad, dt = pmy_pack->pmesh->dt;
   par_for("m1_t2_gtime", DevExeSpace(), 0, nmb-1, kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real e = 0.0;
+    if (which == 2) {
+      const Real dd = u0_(m,IDN,k,j,i);
+      const Real eg = u0_(m,IEN,k,j,i) - CsKeMom(u0_(m,IM1,k,j,i), u0_(m,IM2,k,j,i),
+                      u0_(m,IM3,k,j,i), csk ? ccl(m,k,j) : 0.0)/dd -
+                      (etg ? dd*phc(m,k,j,i) : 0.0);
+      const Real tk = (eg > 0.0) ? eos.Temperature(dd, eg) : 0.0;
+      const Real z = dt*(ch*op_(m,M1_OP_E,k,j,i) + ((eg > 0.0) ?
+                     4.0*cl*op_(m,M1_OP_P,k,j,i)*ar*SQR(SQR(tk))/eg : 0.0));
+      e = (1.0 + g*z)/(g*(1.0 + z)) - 1.0;
+    }
     for (int n = 0; n < nv; ++n) {
       const Real un = u1_(m,n,k,j,i), us = hs_(m,n,k,j,i), u = u0_(m,n,k,j,i);
       if (which == 1) {
