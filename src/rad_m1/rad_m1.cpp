@@ -100,7 +100,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_c1 = pin->GetOrAddReal("rad_m1","clean_w_c1",cln_wfse ? 0.6 : 0.5);
     // clean_face_hctau (default off): the bracket's rays' face flux F_y interpolated in
     // optical depth between the cell centres (old production implicit_thin_hcface = tau,
-    // CleanStagBracket)
+    // CleanStagBracket), the rays' face flux kept where the cells' H jump (beams)
     cln_hctau = pin->GetOrAddBoolean("rad_m1","clean_face_hctau",false);
     // clean_face_jse (default on): the face half ranges in the shape of the cells'
     // half-range fluxes at the face (old production implicit_thin_recon = jse)
