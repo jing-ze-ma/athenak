@@ -1854,6 +1854,14 @@ class RadiationM1 {
   // <rad_m1>/time2_be_only = true (the reference); <rad_m1>/be_legacy = true keeps the
   // old Lie-split be step
   bool t2_beonly = false;
+  // <rad_m1>/time2_cfl_post = true (default false, bitwise): the hydro / MHD CFL dt
+  // of the next step is taken again after the radiation update, on the gas it wrote.
+  // Without it the dt is the stage-2 hydro CFL of the gas BEFORE the coupling: a
+  // backward-Euler step (first step, stage fallback redo, time2_auto_be) kicks the gas
+  // by a whole dt of the radiation force after it, and the next step ran past its CFL
+  // (flz qFB cfl 0.31: x1 CFL dt 1.06 of the kicked gas, step 2.16; a ring emptied to
+  // gas E < 0 and the hydro EOS floor created dE/E 1.8e-6, EBUG)
+  bool t2_cfl_post = false;
   Real t2_abe_n = 0.0;          // steps taken by time2_auto_be (counter)
   Real t2_abe_ntry = 0.0;       // stage retries after a skip run
   Real t2_abe_nok = 0.0;        // of which succeeded

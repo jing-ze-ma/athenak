@@ -890,6 +890,16 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         }
       }
 
+      // <rad_m1>/time2_cfl_post: the fluid's CFL dt again, of the state the radiation
+      // update left (hydro stage 2 took it before the coupling wrote the gas)
+      if (pm1 != nullptr && pm1->t2_cfl_post && !dtr_now) {
+        if (pmesh->pmb_pack->phydro != nullptr) {
+          (void) pmesh->pmb_pack->phydro->NewTimeStep(this, nexp_stages);
+        }
+        if (pmesh->pmb_pack->pmhd != nullptr) {
+          (void) pmesh->pmb_pack->pmhd->NewTimeStep(this, nexp_stages);
+        }
+      }
       // the cycle's kind for the wall split / time2_auto_be run state
       const auto t2we = t2clk();
       const int t2kind = !t2wall ? -1 :
