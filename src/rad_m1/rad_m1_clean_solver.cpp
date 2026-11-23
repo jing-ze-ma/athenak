@@ -1091,6 +1091,7 @@ void RadiationM1::CleanFaceCoefficients() {
   const bool wmn = cln_wmin;   // (clean_w_face_min)
   const bool wfs = cln_wfse;   // (clean_w_fse)
   const bool fjs = cln_jse;    // (clean_face_jse)
+  const bool fjc = cln_jsec;   // (clean_face_jse_cell)
   const CleanArgs *px = (fho || fjs) ? CleanDevArgs(CleanMakeArgs(), 0) : nullptr;
   const int nd = pmy_pack->pmesh->use_cubed_sphere ? cln_fvn : 0;
 
@@ -1151,7 +1152,9 @@ void RadiationM1::CleanFaceCoefficients() {
       // wl H+_L + wr H+_R the clean_face_hctau interpolation (h- likewise), the factor
       // within [1/2, 2], in proportion to the thermal fraction eps = min(kappa_P/chi, 1)
       // of the face (the smaller of the two cells): where E ~ J the upwind part is the
-      // rays' own face flux; radial faces of sp / cs, every face of a Cartesian mesh)
+      // rays' own face flux; radial faces of sp / cs, every face of a Cartesian mesh;
+      // clean_face_jse_cell: the factor on the donor cell's h+- (old M1ThinJs), not on
+      // the face value, which already carries the reconstruction)
       auto jse = [&]() {
         if (!fjs || !(dir == 0 || !(px->sph || px->cub))) return;
         auto ep = [&](const int kk, const int jj, const int ii) {
@@ -1166,11 +1169,11 @@ void RadiationM1::CleanFaceCoefficients() {
         auto &fp = fc(m,CLF_HP,k,j,i), &fm = fc(m,CLF_HM,k,j,i);
         if (ppl > 0.0 && fp > 0.0) {
           const Real ph = fmin(fmax(wl + wr*ppr/ppl, 0.5), 2.0);
-          fp += wt*(fmin(fp*ph, 1.0) - fp);
+          fp += wt*(fmin((fjc ? cs(m,CLN_HP+dir,kl,jl,il) : fp)*ph, 1.0) - fp);
         }
         if (mmr < 0.0 && fm < 0.0) {
           const Real ph = fmin(fmax(wr + wl*mml/mmr, 0.5), 2.0);
-          fm += wt*(fmax(fm*ph, -1.0) - fm);
+          fm += wt*(fmax((fjc ? cs(m,CLN_HM+dir,k,j,i) : fm)*ph, -1.0) - fm);
         }
       };
       if (nd == 0) {
