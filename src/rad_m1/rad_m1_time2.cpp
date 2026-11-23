@@ -878,9 +878,9 @@ void RadiationM1::Time2GasTime(Driver *pdrive, int which) {
 
 void RadiationM1::Time2FormStage(int stage, Real dt) {
   if (fmod_per > 0.0 || fmod_rw > 0.0 || ftab_on) {   // inner flux
-    // hesdirk2 / sdirk2: both stage solves end at t_n + dt (c2 = a21 + g = 1, c3 = 1);
-    // trbdf2: the stage-1 solve ends at t_n + 2 g dt (c2 = 2g)
-    const Real cst = (stage == 1 && t2_tab == 1) ? 2.0*kT2G : 1.0;
+    // the stage-1 solve ends at t_n + (a21 + g) dt: hesdirk2 t_n + dt, trbdf2 t_n + 2 g
+    // dt, sdirk2 t_n + g dt; the stage-2 solve at t_n + dt
+    const Real cst = (stage == 1 && t2_tab != 0) ? t2_a21 + kT2G : 1.0;
     const Real ts = pmy_pack->pmesh->time + cst*dt;
     iflux_x1min = InnerFluxAt(ts);
   }
