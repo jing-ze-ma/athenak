@@ -1430,6 +1430,11 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
     auto dv = derived_var;
     auto prm = pm->pmb_pack->pradm1;
+    if (prm->clean) {   // (ImplicitSolve's iw slots, which scheme = clean does not fill)
+      std::cout << "### FATAL ERROR: output variable m1_comov is not filled under "
+                << "<rad_m1>/scheme = clean" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     auto iw_ = prm->iw;
     const bool ok = (prm->transport != radm1::M1_TRANSPORT_EXPLICIT) && prm->trans_on &&
                     (prm->impl_nstep > 0.0) && (iw_.extent_int(1) > radm1::M1_IW_N3);

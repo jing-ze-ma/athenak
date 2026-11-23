@@ -2138,10 +2138,33 @@ void RadiationM1::EbndAccept(Real dt, bool t2step) {
     }
     return dt*l3;
   };
+  // (clean: f0x1 is the face momentum and the iw slots are not filled; the energy its
+  // solves put through the physical x1 faces is CleanBndAcc's, inner and outer)
+  Real lc[2] = {0.0, 0.0};
+  if (clean && !(cln_ldt > 0.0) && global_variable::my_rank == 0) {
+    std::printf("CLEAN WARNING cycle %d: Ebnd without the step's boundary energy "
+                "(CleanBndAcc), its faces take 0\n", pmy_pack->pmesh->ncycle);
+  }
+  if (clean && cln_ldt > 0.0) {
+    auto la = cln_lacc;
+    auto &bcs = pmy_pack->pmb->mb_bcs;
+    auto &id = pmy_pack->pmesh->mb_indcs;
+    Kokkos::parallel_reduce("m1_ebnd_cln", Kokkos::MDRangePolicy<Kokkos::Rank<3>>(
+        DevExeSpace(), {0, id.ks, id.js}, {pmy_pack->nmb_thispack, id.ke + 1, id.je + 1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, Real &si, Real &so) {
+      for (int s = 0; s < 2; ++s) {
+        const BoundaryFlag f = bcs.d_view(m, s ? BoundaryFace::outer_x1 :
+                                                 BoundaryFace::inner_x1);
+        if (f == BoundaryFlag::block || f == BoundaryFlag::periodic) continue;
+        (s ? so : si) += la(m,s,k,j);
+      }
+    }, Kokkos::Sum<Real>(lc[0]), Kokkos::Sum<Real>(lc[1]));
+    for (int s = 0; s < 2; ++s) lc[s] = CleanReduce(lc[s], false);
+  }
   if (ebnd_split) {
-    const Real l3i = EbndFluxX1(1), l3o = EbndFluxX1(2);
-    ebnd_acc_in += applied(ebnd_l1i, ebnd_l2i, l3i);
-    ebnd_acc_out += applied(ebnd_l1o, ebnd_l2o, l3o);
+    const Real l3i = clean ? 0.0 : EbndFluxX1(1), l3o = clean ? 0.0 : EbndFluxX1(2);
+    ebnd_acc_in += clean ? lc[0] : applied(ebnd_l1i, ebnd_l2i, l3i);
+    ebnd_acc_out += clean ? lc[1] : applied(ebnd_l1o, ebnd_l2o, l3o);
     const Real s3 = EbndEsrc();
     ebnd_acc_src += applied(ebnd_s1, ebnd_s2, s3);
     ebnd_s3 = s3;
@@ -2149,7 +2172,7 @@ void RadiationM1::EbndAccept(Real dt, bool t2step) {
     ebnd_acc = ebnd_acc_in - ebnd_acc_out;
     return;
   }
-  ebnd_acc += applied(ebnd_l1, ebnd_l2, EbndFluxX1());
+  ebnd_acc += clean ? lc[0] - lc[1] : applied(ebnd_l1, ebnd_l2, EbndFluxX1());
 }
 
 //----------------------------------------------------------------------------------------
