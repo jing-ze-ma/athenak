@@ -799,7 +799,7 @@ void DflFace(const DvceArray5D<Real> &f, const DvceArray5D<Real> &w,
 //! th = min(1, (gam0 rho0 + gam1 rho1 - dfloor)/(beta dt sum_out A F/V)); the factors
 //! go to the ghosts by one exchange, and every face takes its donor cell's factor, so
 //! the two blocks of a block face hold the same flux and mass, momentum and energy stay
-//! exact (no mass is created).  Runs on the final fluxes (after every flux addition).
+//! exact (no mass is created).  Called by RKUpdate, on the final fluxes.
 
 void Hydro::DfloorFluxLimit(Driver *pdrive, int stage) {
   auto *pm = pmy_pack->pmesh;

@@ -493,7 +493,6 @@ TaskStatus Hydro::Fluxes(Driver *pdrive, int stage) {
   if (pmy_pack->pmesh->pgen->user_hydro_flux_func != nullptr) {
     (pmy_pack->pmesh->pgen->user_hydro_flux_func)(pmy_pack->pmesh);
   }
-  if (use_dfl) {DfloorFluxLimit(pdrive, stage);}
 
   return TaskStatus::complete;
 }
