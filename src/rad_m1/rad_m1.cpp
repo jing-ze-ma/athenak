@@ -216,6 +216,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_kpred = !(pin->DoesParameterExist("rad_m1","implicit_predictor") &&
                   !pin->IsParameterDefaulted("rad_m1","implicit_predictor") &&
                   pin->GetString("rad_m1","implicit_predictor") == "none");
+    // clean_pred_stage (default false): sdirk2's stage-2 solve starts from E_old + h K1 of
+    // this step's stage 1 (E^n + dt K1), not of the last step's stage 2
+    cln_pst = pin->GetOrAddBoolean("rad_m1","clean_pred_stage",false);
     {std::string bf = pin->GetOrAddString("rad_m1","clean_bc","halfrange");
     cln_bdry_form = (bf.compare("marshak") == 0) ? 1 : 0;}
     // clean_layout = staggered, the only layout (the cell layout was removed; a restart

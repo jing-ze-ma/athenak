@@ -2660,7 +2660,8 @@ void RadiationM1::CleanFirstIterate() {
   auto eos = fl.eos;
   auto op = opac;
   auto w = cln_w;
-  auto k1 = t2k1;
+  // (clean_pred_stage: sdirk2's stage 2 from the stage-1 slope of this step, E^n + dt K1)
+  auto k1 = (cln_pst && t2_tab == 2 && t2_solve == M1_T2S_STAGE2) ? t2k2 : t2k1;
   const bool pred = cln_kpred && (t2_ok || cln_k1ok) &&
                     t2_solve != M1_T2S_NONE && !cln_vzero && t2k1.extent_int(0) > nmb1;
   const Real h = dt_sub, ecap = SQR(SQR(impl_pred_tcap)), rtol = cln_trtol;
