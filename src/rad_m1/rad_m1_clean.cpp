@@ -4100,7 +4100,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
   // K = 0 and E* = E_old)
   const int sw = (cln_fwb && !cln_insteady) ? cln_fwbs : -1;
   const bool sm = sw >= 0 && e == CLW_EO;
-  const int ef = sm ? CLW_EO : e;   // (F_ray's E: fwb_stage's E_old, else the solve's)
+  const int ef = cln_fwbst ? CLW_EO : e;   // (F_ray's E: fwb_stage's E_old, as IA9)
   if (sw >= 0 && !cln_fwbok) {
     cln_fwbok = true;
     const bool st = cln_fwbt2 && (t2_solve == M1_T2S_STAGE2 ||
