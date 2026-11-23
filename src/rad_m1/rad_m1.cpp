@@ -114,10 +114,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_face_area (default off): the sp / cs streaming share in area form
     // (CleanStagArea) also under clean_stag_gflux: its h+- are the donor cell's rays
     cln_farea = pin->GetOrAddBoolean("rad_m1","clean_face_area",false);
-    // clean_bc_area (default off): an open x1 end's half-range flux c h+- E of the end
+    // clean_bc_area (default on): an open x1 end's half-range flux c h+- E of the end
     // cell's point intensities in area form: its net outward stream h+ + h- x A_c/A_f
     // (an isotropic field none: the bath balances; old: Marshak q = H_f/J)
-    cln_bcarea = pin->GetOrAddBoolean("rad_m1","clean_bc_area",false);
+    cln_bcarea = pin->GetOrAddBoolean("rad_m1","clean_bc_area",true);
     // clean_ray_source_relaxed (default off): the rays' source the vet_source /
     // vet_scatter_j form (relaxed_esc: the local exchange with escape, its relaxed pair)
     cln_rsrel = pin->GetOrAddBoolean("rad_m1","clean_ray_source_relaxed",false);
