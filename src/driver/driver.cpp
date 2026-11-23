@@ -829,7 +829,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
             break;
           }
           if (stage == 1) {
-            pm1->Time2GasTime(this, 2);
+            pm1->Time2GasTime(this, 3);
             pm1->EbndStage1();
           }
         }

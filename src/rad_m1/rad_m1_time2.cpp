@@ -805,39 +805,52 @@ Real RadiationM1::InnerFluxIntegral(const Real t0, const Real t1) const {
 //! \fn void RadiationM1::Time2GasTime
 //! \brief time2_tableau = sdirk2 with the Heun hydro (c_E = (0, 1), b_E = (1/2, 1/2)):
 //! the IMEX coupling conditions b_E.c_I = b_I.c_E = 1/2 hold when each stage has one
-//! time for both parts.  which = 1, before the stage-1 solve: the gas U* of Heun stage 1
-//! (t^{n+1}) is kept in t2hs and the solve takes S = U^n + g (U* - U^n), the gas at
-//! t^n + g dt (convex, so positive).  which = 2, after it (gas Y = S + d): the hydro's
-//! stage-2 flux is taken at U* + d/g (t^{n+1}, the exchange over the full dt) and its
-//! register keeps U* + d (the explicit U* with the implicit g dt K2), so the stage-2
-//! increment of Time2FormStage and the exchange, booked once in d, are unchanged.  All
-//! cells: u1, U* and the solve's Y carry valid ghosts.
+//! time for both parts (c = (0, g, 1, 1), the hydro's stage-2 flux an explicit stage).
+//! which = 1, before the stage-1 solve: the gas U* of Heun stage 1 (t^{n+1}) is kept in
+//! t2hs and the solve takes S = U^n + g (U* - U^n), the gas at t^n + g dt (convex, so
+//! positive; all cells).  which = 2, first in its HydroConToPrim (gas Y = S + d): the
+//! gas becomes U* + d (the explicit U* with the implicit g dt K2, so the stage-2
+//! increment and the exchange, booked once in d, are unchanged), before the ring average,
+//! the floor cap and the refresh act on it as they did on Y.  which = 3, after the stage
+//! tasks: the hydro's stage-2 flux state U* + d/g (t^{n+1}, the exchange over the full
+//! dt) is refreshed into w0 (its floors stay in u0), then u0 is U* + d again.
 
 void RadiationM1::Time2GasTime(Driver *pdrive, int which) {
   hydro::Hydro *ph = pmy_pack->phydro;
-  if (t2_tab != 2 || !coupling || ph == nullptr) return;
+  if (t2_tab != 2 || !coupling || ph == nullptr || (which > 1 && t2_gt != which - 1)) return;
+  t2_gt = (which == 3) ? 0 : which;
   auto u0_ = ph->u0;
   auto u1_ = ph->u1;
+  auto &id = pmy_pack->pmesh->mb_indcs;
   const int nmb = u0_.extent_int(0), nv = u0_.extent_int(1);
   const int n3 = u0_.extent_int(2), n2 = u0_.extent_int(3), n1 = u0_.extent_int(4);
+  const bool all = (which == 1);
+  const int il = all ? 0 : id.is, iu = all ? n1-1 : id.ie, jl = all ? 0 : id.js;
+  const int ju = all ? n2-1 : id.je, kl = all ? 0 : id.ks, ku = all ? n3-1 : id.ke;
   if (t2hs.extent_int(0) != nmb || t2hs.extent_int(1) != nv) {
     Kokkos::realloc(t2hs, nmb, nv, n3, n2, n1);
   }
   auto hs_ = t2hs;
   const Real g = kT2G, e = 1.0/kT2G - 1.0;
-  par_for("m1_t2_gtime", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
+  par_for("m1_t2_gtime", DevExeSpace(), 0, nmb-1, kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     for (int n = 0; n < nv; ++n) {
-      const Real us = (which == 1) ? u0_(m,n,k,j,i) : hs_(m,n,k,j,i);
-      const Real s = u1_(m,n,k,j,i) + g*(us - u1_(m,n,k,j,i));
-      const Real d = u0_(m,n,k,j,i) - s;   // (which = 2: 0 where the solve left it)
-      u0_(m,n,k,j,i) = (which == 1) ? s : us + d/g;
-      hs_(m,n,k,j,i) = (which == 1) ? us : e*d;
+      const Real un = u1_(m,n,k,j,i), us = hs_(m,n,k,j,i), u = u0_(m,n,k,j,i);
+      if (which == 1) {
+        hs_(m,n,k,j,i) = u;
+        u0_(m,n,k,j,i) = un + g*(u - un);
+      } else if (which == 2) {
+        const Real d = u - (un + g*(us - un));   // (0 where the solve left it)
+        u0_(m,n,k,j,i) = us + d;
+        hs_(m,n,k,j,i) = e*d;
+      } else {
+        u0_(m,n,k,j,i) = u + us;
+      }
     }
   });
-  if (which == 1) return;
-  (void) ph->ConToPrim(pdrive, 0);   // w0 of the flux state; its floors stay in u0
-  par_for("m1_t2_gtime2", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
+  if (which != 3) return;
+  FluidRefresh(pdrive, false);   // ghosts + w0 of the flux state
+  par_for("m1_t2_gtime3", DevExeSpace(), 0, nmb-1, kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     for (int n = 0; n < nv; ++n) {u0_(m,n,k,j,i) -= hs_(m,n,k,j,i);}
   });
@@ -1354,6 +1367,7 @@ void RadiationM1::CleanRayHistory(const bool save) {
 //! Heun stages and takes the step with backward Euler.
 
 void RadiationM1::Time2Restore(Driver *pdrive) {
+  t2_gt = 0;   // (Time2GasTime)
   Kokkos::deep_copy(DevExeSpace(), u0, u1);
   Kokkos::deep_copy(DevExeSpace(), f0x1, t2f1);
   if (trans_on) {
