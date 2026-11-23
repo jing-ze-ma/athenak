@@ -302,7 +302,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     {Mesh *pm = pmy_pack->pmesh;
     // (the cubed sphere: a lateral line is a ring of four panels' MeshBlocks)
     const bool cs = pm->use_cubed_sphere;
-    bool ok = (cln_ftie || cs) && cln_fsweeps == 1 && !pm->multilevel;
+    bool ok = (cln_ftie || cs) && cln_fsweeps == 1 && !pm->multilevel, lag = false;
     for (int d = 0; d < 3; ++d) {
       const int n = (d == 0) ? pm->mb_indcs.nx1 : ((d == 1) ? pm->mb_indcs.nx2 :
                                                    pm->mb_indcs.nx3);
@@ -312,6 +312,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       const int nlong = (cs && per && nb%2 == 0) ? 7 : 6;   // (cs: the kept segment)
       const int nmin = (nb > 2 || (nb == 2 && !per)) ? nlong : ((nb == 2) ? 3 : 0);
       ok = ok && n >= nmin && (nmin == 0 || pm->mb_indcs.ng >= 3);
+      lag = lag || nmin > 0;
     }
     cln_fschur = ok;
     if (pin->DoesParameterExist("rad_m1","clean_stag_fschur")) {
@@ -324,6 +325,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                   << "periodic one, >= 6 along longer or open ones" << std::endl;
         std::exit(EXIT_FAILURE);
       }
+    } else if (!ok && lag && !cs && cln_fsweeps == 1) {   // (no silent lagged ends)
+      std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_fschur cannot take this mesh "
+                << "(nghost >= 3, MeshBlock size, uniform mesh): name clean_stag_fsweeps "
+                << "(line ends iterated) or clean_stag_fschur = false" << std::endl;
+      std::exit(EXIT_FAILURE);
     } else if (!ok && global_variable::my_rank == 0) {
       std::cout << "<rad_m1> clean_stag_fschur off: the F solve's line ends lagged "
                 << "(clean_stag_ftie, fsweeps, mesh or MeshBlock size)" << std::endl;
