@@ -339,6 +339,7 @@ struct CleanArgs {
   bool drag;                   // staggered, clean_stag_vimp: implicit gas velocity
   bool upw;                    // staggered, clean_stag_upwind: donor-cell advective flux
   bool ucen;                   //   clean_stag_upwind_central: its lagged rest central
+  bool ucp;                    //   clean_stag_central: plain central, work on the diagonal
   bool fwc;                    // staggered: al, ar and the cross factor from CLF_QL
   bool sbi;                    // staggered, clean_stag_sbimp: E-row beta terms implicit
   bool sar;                    // staggered: the streaming share's net flux in area form
@@ -1283,6 +1284,7 @@ Real CleanStagAdvectCorr(const CleanArgs &x, const int dir, const int m, const i
   auto e = [&](const int o) {return x.w(m,CLW_EK,k+o*dk,j+o*dj,i+o*di);};
   const Real ul = CleanStagN(x, CLW_A1, dir, m, k, j, i, k-dk, j-dj, i-di);
   const Real ur = CleanStagN(x, CLW_A1, dir, m, k, j, i, k, j, i);
+  if (x.ucp) return 0.5*((ul + ur > 0.0) ? ur*e(0) - ul*e(-1) : ul*e(-1) - ur*e(0));
   if (x.ucen) {   // (sl: the limited E_down - E_up; up, the upwind cell)
     const bool fw = (ul + ur > 0.0);
     const Real eu = fw ? e(-1) : e(0), df = (fw ? e(0) : e(-1)) - eu;

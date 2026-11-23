@@ -90,12 +90,13 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.xq = cln_xd_on ? cln_xqs : -1;
   x.kq = cln_kq_on ? cln_kqs : -1;
   x.kt = (cln_kq_on && cln_kmode == 4) ? cln_ktau : 0.0;
-  x.pd = cln_kq_on || (cln_xpat && cln_wo_nc > CLW_PD - CLW_NS);
+  x.pd = cln_kq_on || cln_ucp || (cln_xpat && cln_wo_nc > CLW_PD - CLW_NS);
   x.xlag = cln_xlag;
   x.xsrc = cln_xsrc;
   x.drag = cln_vimp && cln_feedback;
   x.upw = cln_upw;
   x.ucen = cln_ucen;
+  x.ucp = cln_ucp;
   x.sbi = cln_sbimp && cln_feedback;
   x.sar = !cln_gflux || cln_farea;
   x.bar = cln_bcarea;

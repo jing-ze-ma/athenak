@@ -406,6 +406,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // central mean of the cells' a E within the TVD bound (CleanStagAdvectCorr), the old
     // production's cell flux a E
     cln_ucen = stag("clean_stag_upwind_central", false);
+    // clean_stag_central (default off): the rest that of the plain central mean, the
+    // radiation work's drain on the E rows' diagonal and the gas's kick in the same
+    // Patankar weight (CleanStagAdvectCorr, CleanRightHandSide, CleanStagMprkWeight)
+    cln_ucp = stag("clean_stag_central", false);
+    cln_ucen = cln_ucen || cln_ucp;
     // clean_stag_csvec_radial (true, the only form): the cubed sphere's cell vector exact
     // for a radial field (CleanStagCsVector); false (the old least-squares fit) is gone
     cln_csvr = stag("clean_stag_csvec_radial", true);
@@ -650,6 +655,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       }
       cln_xte = (xe == "cons") ? 1 : ((xe == "x2") ? 2 : 0);
       if (cln_xte > 0) cln_xtcons = true;
+    }
+    if (cln_ucp && (cln_kpos || cln_xpat || cln_xte != 1)) {   // (CLW_PD: the work's q)
+      std::cout << "### FATAL ERROR <rad_m1>/clean_stag_central needs clean_xt_exact = "
+                << "cons, without clean_stag_kpos / xpat" << std::endl;
+      std::exit(EXIT_FAILURE);
     }
     if (cln_kpos && cln_xte == 2) {   // (x2's local 2x2 has no kpos gas term)
       std::cout << "### FATAL ERROR <rad_m1>/clean_stag_kpos with clean_xt_exact = x2 "

@@ -562,7 +562,7 @@ void RadiationM1::CleanInit() {
   cln_kqs = cln_kpos ? nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0) : -1;   // (kpos: q)
   int nfx = nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0) + (cln_kpos ? 2 : 0);
   cln_fwbs = cln_fwbst ? nfx++ : -1;
-  if (cln_kpos || cln_xpat) {
+  if (cln_kpos || cln_xpat || cln_ucp) {
     Kokkos::realloc(cln_kcnt, 2);
     Kokkos::deep_copy(cln_kcnt, 0.0);
   }
@@ -2846,7 +2846,7 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
     const Real t = x.w(m,CLW_T,k,j,i);
     const Real hcke = x.h*x.c*op(m,M1_OP_E,k,j,i);
     Real rr = 0.0, work = 0.0, gm = 1.0, sb = 0.0, dop = 0.0, ek = 0.0, gres = 0.0;
-    Real eg = 0.0;
+    Real eg = 0.0, wq = 0.0;
     bool gr = false;
     if (x.feedback) {
       Real b2 = 0.0, ba = 0.0, by = 0.0, bp = 0.0, y2 = 0.0, fs[3] = {0.0, 0.0, 0.0};
@@ -2981,6 +2981,12 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
         if (wsp && !wpa) work += x.h*rf[n]*(pg[n] + dm)/d;
       }
       if (wpa) work += fra*wc(m,k,j,i);
+      // (clean_stag_central: the drain W > 0 as q X on the diagonal, q = W/E_k, the same
+      // fixed point; b >= 0, X > 0; the write-back books q X; a source stays in B)
+      if (x.ucp && work > 0.0 && ek > 0.0) {
+        wq = work/ek;
+        work = 0.0;
+      }
     }
     x.w(m,CLW_RR,k,j,i) = rr;
     // (eqr: the exchange through the gas row of the root T, hckp a T^4 - r hcke E =
@@ -3019,7 +3025,7 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
           Kokkos::atomic_add(&kc(1), 1.0);
         }
       }
-      x.w(m,CLW_PD,k,j,i) = pd;
+      x.w(m,CLW_PD,k,j,i) = pd + wq;
     }
     // (clean_xt_exact: the row's exchange as linearised, B less its rest, and its work)
     if (xte) {
@@ -6057,7 +6063,9 @@ void RadiationM1::CleanWriteBack() {
         }
         // (clean_xt_exact: the work the row took and the gas's kinetic energy did not
         // receive to E whole, eint the heating only)
-        const Real dw = xwb ? x.w(m,CLW_XW,k,j,i) - wk - wp : 0.0;
+        // (clean_stag_central: and q X, the work's drain on the diagonal)
+        const Real dw = xwb ? x.w(m,CLW_XW,k,j,i) - wk - wp + (x.ucp ?
+                        x.w(m,CLW_PD,k,j,i)*x.w(m,CLW_X,k,j,i) : 0.0) : 0.0;
         const Real rd = (den - eg - wk - wp - dw)/(gtf ? 1.0 :
                         1.0 + x.h*x.c*x.op(m,M1_OP_E,k,j,i)*x.w(m,CLW_RY,k,j,i)) + dw;
         if (cls) x.w(m,CLW_PW,k,j,i) = fabs(den - eg - wk - wp)/fmax(fabs(e) +
