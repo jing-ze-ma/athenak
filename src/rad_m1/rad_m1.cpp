@@ -440,10 +440,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "with clean_consistency" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_stag_fwb_stage (default on for a fresh run with fwb, recorded; a restart
-    // file without the key: off): fwb's residual s of the stage-old state, once per stage
-    // (CleanStagFSolve), not of each solve's E (F_ray already is E_old's)
-    cln_fwbst = cln_fwb && pin->GetOrAddBoolean("rad_m1","clean_stag_fwb_stage",nw);
+    // clean_stag_fwb_stage (default off, recorded): fwb's residual s of the stage-old
+    // state, once per stage (CleanStagFSolve); off: of each solve's E, F_ray too, so that
+    // the thin rows' F is the rays' flux factor times the E they leave (old prod's
+    // c (h+ E_L + h- E_R) of E^{n+1}); E_old's carried the stage slopes' O(h K) into F
+    // (HG: a flux dipole at the opaque photosphere, FDIP)
+    cln_fwbst = cln_fwb && pin->GetOrAddBoolean("rad_m1","clean_stag_fwb_stage",false);
     // clean_stag_fwb_t2 (default on for a fresh run with fwb_stage, USER 11-21, recorded;
     // a restart file without the key: off): fwb_stage's s of the stage-time state
     // E_old + h K, K the last slope (CleanStagFSolve): second order in time (no-op

@@ -4100,6 +4100,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
   // K = 0 and E* = E_old)
   const int sw = (cln_fwb && !cln_insteady) ? cln_fwbs : -1;
   const bool sm = sw >= 0 && e == CLW_EO;
+  const int ef = sm ? CLW_EO : e;   // (F_ray's E: fwb_stage's E_old, else the solve's)
   if (sw >= 0 && !cln_fwbok) {
     cln_fwbok = true;
     const bool st = cln_fwbt2 && (t2_solve == M1_T2S_STAGE2 ||
@@ -4327,7 +4328,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
               Real f = cub ? fd(m,CLF_N+2,kf,jf,iff)
                            : fd(m,(fk && x.multi_d) ? CLF_N+2 : CLF_N,k,j,i);
               if (pass == 0 && !CleanBoundaryFace(x, d, m, kf, jf, iff)) {
-                CleanStagFRay(x, CLW_EO, d, m, kf, jf, iff, f);
+                CleanStagFRay(x, ef, d, m, kf, jf, iff, f);
               }
               if (cub) {
                 ln.v(m,9+2*d+s,k,j,i) = f;
@@ -4352,7 +4353,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
             const CleanArgs &x = *pw;
             Real lo, hi, dg, r, f0;
             if (CleanBoundaryFace(x, d, m, k, j, i) ||
-                !CleanStagFRay(x, CLW_EO, d, m, k, j, i, f0)) return;
+                !CleanStagFRay(x, ef, d, m, k, j, i, f0)) return;
             if (!CleanStagFRow(x, ln, fd, d, m, k, j, i, lo, hi, dg, r)) return;
             const Real fm = ln.Far(x, d, m, k, j, i, k-ek, j-ej, i-ei);
             const Real fp = ln.Far(x, d, m, k, j, i, k, j, i);
