@@ -4015,6 +4015,7 @@ class RadiationM1 {
   // vet_gd_halo_compact = 0 (off), 1 (pass branch), 2 (+ ray reach): compact messages
   int vgd_hcomp = 0;
   bool vgd_capped = false, vgd_allow_clamp = false;
+  bool vgd_rset = false;   // vet_gd_reach = set
   Real vgd_nclamp_seen = 0.0;
   Real vgd_npath = 0.0;   // vet_path subdivided steps (ALL ranks, all sweeps)
   bool vgd_hinw = true;

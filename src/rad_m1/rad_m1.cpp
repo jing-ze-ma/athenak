@@ -2256,6 +2256,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_allow_clamp")) {
       vgd_allow_clamp = pin->GetBoolean("rad_m1","vet_gd_allow_clamp");
     }
+    // vet_gd_reach = bound (default) | set: the lateral band depth from the bound over
+    // all directions, or from the fixed set's own directions at the cell centres (VetGdInit)
+    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_reach")) {
+      const std::string vr = pin->GetString("rad_m1","vet_gd_reach");
+      if (vr != "bound" && vr != "set") {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_m1>/vet_gd_reach = bound | set" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      vgd_rset = (vr == "set");
+    }
     // (read only when named): the full sphere's band depth uses sin of this
     // colatitude (deg) instead of sin(0) (rad_m1_vetgd_sph2.inc); default 30
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_colat")) {

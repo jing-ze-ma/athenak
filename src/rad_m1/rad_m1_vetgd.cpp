@@ -1075,6 +1075,66 @@ void RadiationM1::VetGdInit() {
     // angular offset <= chord / r_lo; + 2 cells for the bilinear stencil and rounding
     auto x1f_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
                                                      pmy_pack->pcoord->xx1f);
+    // vet_gd_reach = set (a fixed set): the cosines mu = n . r_hat of the set's
+    // directions at the mesh's cell centres, mu > 0 and |mu| of mu < 0, sorted; a shell's
+    // reach is then the angle to the upwind point of the mu nearest the tangent (the ray
+    // geometry of VgdRayChord: ds falls with mu on a NORM segment, rises on a TURN one)
+    std::vector<double> mup, mun;
+    if (vgd_rset) {
+      if (vgd_sth || vgd_pol || VgdRotOn() || vra_on) {
+        VgdFatal("vet_gd_reach = set needs a fixed direction set (no rotation, no "
+                 "vet_rotate_avg) on a uniform-theta wedge");
+      }
+      const auto &ms = pm->mesh_size;
+      const int nt2 = pm->mesh_indcs.nx2, nt3 = pm->mesh_indcs.nx3;
+      for (int kg = 0; kg < nt3; ++kg) {
+        const double ph = ms.x3min + (kg + 0.5)*(ms.x3max - ms.x3min)/nt3;
+        for (int jg = 0; jg < nt2; ++jg) {
+          const double th = ms.x2min + (jg + 0.5)*(ms.x2max - ms.x2min)/nt2;
+          for (size_t q = 0; q < vgd_base.size()/4; ++q) {
+            const double *u = &vgd_base[4*q];
+            const double mu = u[0]*std::sin(th)*std::cos(ph) +
+                              u[1]*std::sin(th)*std::sin(ph) + u[2]*std::cos(th);
+            (mu >= 0.0 ? mup : mun).push_back(std::fabs(mu));
+          }
+        }
+      }
+      std::sort(mup.begin(), mup.end());
+      std::sort(mun.begin(), mun.end());
+    }
+    // the angle at the centre between radius r and the upwind point ds back along a ray
+    // of cosine mu (> 0 outward: inward of r; < 0 inward)
+    auto gam = [](const double r, const double mu, const double ds) {
+      return std::atan2(ds*std::sqrt(std::max(1.0 - mu*mu, 0.0)), r - ds*mu);
+    };
+    // the set's deepest angle: (a) inward from rd (its smallest |mu|) to r, (b) outward
+    // from r: TURN in r (largest mu with p2 > rd^2), NORM to rd (smallest mu with p2 <=
+    // rd^2: the inner face), (c) outward NORM from ru to r
+    auto gset = [&](const double rd, const double r, const double ru, const bool up,
+                    double &gi, double &go) {
+      gi = 0.0;
+      go = 0.0;
+      if (!mun.empty()) {
+        const double mu = mun.front(), p2 = rd*rd*(1.0 - mu*mu);
+        gi = gam(rd, -mu, std::sqrt(std::max(r*r - p2, 0.0)) - rd*mu);
+      }
+      const double mc = std::sqrt(std::max(1.0 - rd*rd*(1.0 + 1.0e-13)/(r*r), 0.0));
+      const auto it = std::lower_bound(mup.begin(), mup.end(), mc);
+      if (it != mup.begin()) {gi = std::max(gi, gam(r, *(it - 1), 2.0*r*(*(it - 1))));}
+      if (it != mup.end()) {
+        const double mu = *it;
+        gi = std::max(gi, gam(r, mu, r*mu - std::sqrt(std::max(rd*rd - r*r*(1.0 - mu*mu),
+                                                               0.0))));
+      }
+      if (up) {
+        const double mo = std::sqrt(std::max(1.0 - r*r*(1.0 + 1.0e-13)/(ru*ru), 0.0));
+        const auto io = std::lower_bound(mup.begin(), mup.end(), mo);
+        if (io != mup.end()) {
+          const double mu = *io;
+          go = gam(ru, mu, ru*mu - std::sqrt(std::max(r*r - ru*ru*(1.0 - mu*mu), 0.0)));
+        }
+      }
+    };
     // (pass 1: the raw band, where pass 0's exact lists would clamp; vet_gd_raw unnamed)
     for (int pass = 0; pass < 2; ++pass) {
       int nmax = vgd_raw ? std::numeric_limits<int>::max()
@@ -1092,7 +1152,7 @@ void RadiationM1::VetGdInit() {
       vgd_wsh.assign(indcs.nx1 + 2*indcs.ng, 0);
       vgd_wsi.assign(indcs.nx1 + 2*indcs.ng, 0);
       vgd_wso.assign(indcs.nx1 + 2*indcs.ng, 0);
-      int wneed = 0;
+      int wneed = 0, wset = 0;
       for (int m = 0; m < ((vgd_nb1 > 1) ? nmb : 1); ++m) {
         // (the shells next to another level: its radii from the x1 ghosts)
         const bool lo = (xf_h(m) & 1), hi = (xf_h(m) & 2);
@@ -1113,8 +1173,22 @@ void RadiationM1::VetGdInit() {
           const double aout = up ? std::sqrt(x1v_h(m,l+1)*x1v_h(m,l+1) - r*r) : 0.0;
           vgd_wsi[l] = std::min(static_cast<int>(std::ceil(ain/(rlo*dmin))) + 2, nmax);
           vgd_wso[l] = std::min(static_cast<int>(std::ceil(aout/(rlo*dmin))) + 2, nmax);
+          if (vgd_rset) {
+            // (both inner radii: the shell below and the inner face, whose ray (typ 2)
+            // reads the shell in the outward pass)
+            double gi, go, gf, gf2;
+            gset(x1v_h(m,l-1), r, up ? x1v_h(m,l+1) : r, up, gi, go);
+            gset(x1f_h(m,l), r, r, false, gf, gf2);
+            const int wi = static_cast<int>(std::ceil(std::max(gi, gf)/dmin)) + 2;
+            const int wo = static_cast<int>(std::ceil(std::max(go, gf)/dmin)) + 2;
+            wset = std::max(wset, std::max(wi, wo));
+            vgd_wsh[l] = std::min(std::max(wi, wo), nmax);
+            vgd_wsi[l] = std::min(wi, nmax);
+            vgd_wso[l] = std::min(wo, nmax);
+          }
         }
       }
+      if (vgd_rset) {wneed = wset;}
   #if MPI_PARALLEL_ENABLED
       if (vgd_nb1 > 1) {
         MPI_Allreduce(MPI_IN_PLACE, &wneed, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
@@ -1140,7 +1214,8 @@ void RadiationM1::VetGdInit() {
       vgd_capped = (vgd_w < wneed);
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_m1> vet_gd: exact per-shell lateral halo, band " << vgd_w
-                  << " cells (needed " << wneed << "), per-shell depth mean "
+                  << " cells (needed " << wneed << (vgd_rset ? ", the set's reach" : "")
+                  << "), per-shell depth mean "
                   << std::accumulate(vgd_wsh.begin(), vgd_wsh.end(), 0.0)/indcs.nx1
                   << (vgd_capped ? ": MeshBlocks too small, the deepest near-tangent "
                                    "reads are clamped (counted)" : "") << std::endl;
@@ -7730,7 +7805,7 @@ void RadiationM1::VetGdPost() {
   // sweep).  Checked at every build: FATAL unless vet_gd_allow_clamp = true (warning)
   // (on the cubed sphere every clamped read counts: the band depth
   // there is a bound with a margin, not an exact reach)
-  if ((vgd_capped || vgd_csg) && vgd_nclamp_all > vgd_nclamp_seen) {
+  if ((vgd_capped || vgd_csg || vgd_rset) && vgd_nclamp_all > vgd_nclamp_seen) {
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> vet_gd: " << (vgd_nclamp_all - vgd_nclamp_seen)
                 << " lateral reads were CLAMPED to the band (all ranks) at cycle "
