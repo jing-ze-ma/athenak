@@ -963,14 +963,17 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
   const int hi = (dir == 0) ? x.ie + 1 : ((dir == 1) ? x.je + 1 : x.ke + 1);
   al = 0.0;
   ar = 0.0;
-  // (clean_bc_area: an open r end's h+- E of the end cell's point intensities, x A_d/A_f)
+  // (clean_bc_area: an open r end's outgoing c h+- E in area form as CleanStagArea, the
+  // end cell the donor: its net stream s = h+ + h- out of the domain takes A_d/A_f, the
+  // part the bath's isotropic inflow balances (and a net inflow, the bath donor) none)
   const bool ba = x.bar && !x.marshak && dir == 0 && (x.sph || x.cub);
   if (pos == lo && CleanBc(x, m, 2*dir) != M1_IBC_PERIODIC) {
     if (!CleanOpen(x, m, 2*dir)) return;   // (a wall; an imposed flux is all source)
     const bool beam = x.use_beam && dir == 0 && x.beam(m,k-x.ks,j-x.js) > 0.0;
     if (beam && x.marshak) return;
     ar = x.marshak ? -x.c*x.marshak_q : x.c*x.cs(m,CLN_HM+dir,k,j,i);
-    if (ba) ar *= CleanAreaRatio(x, 0, m, k, j, i, k, j, i);
+    if (ba) ar += x.c*fmin(x.cs(m,CLN_HP,k,j,i) + x.cs(m,CLN_HM,k,j,i), 0.0)*
+                  (CleanAreaRatio(x, 0, m, k, j, i, k, j, i) - 1.0);
     // (clean_stag_upwind: an open end carries the advective flux a E of the energy, the
     // end cell's when it flows out, the bath's when in, CleanFaceSource)
     if (x.upw && x.feedback && !x.hi && CleanOpen(x, m, 2*dir) && !beam) {
@@ -981,7 +984,8 @@ void CleanFaceWeights(const CleanArgs &x, const int dir, const int m, const int 
   if (pos == hi && CleanBc(x, m, 2*dir+1) != M1_IBC_PERIODIC) {
     if (!CleanOpen(x, m, 2*dir+1)) return;
     al = x.marshak ? x.c*x.marshak_q : x.c*x.cs(m,CLN_HP+dir,kl,jl,il);
-    if (ba) al *= CleanAreaRatio(x, 0, m, k, j, i, kl, jl, il);
+    if (ba) al += x.c*fmax(x.cs(m,CLN_HP,kl,jl,il) + x.cs(m,CLN_HM,kl,jl,il), 0.0)*
+                  (CleanAreaRatio(x, 0, m, k, j, i, kl, jl, il) - 1.0);
     if (x.upw && x.feedback && !x.hi && CleanOpen(x, m, 2*dir+1)) {
       al += fmax(CleanStagN(x, CLW_A1, dir, m, k, j, i, kl, jl, il), 0.0);
     }
