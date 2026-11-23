@@ -1980,6 +1980,7 @@ int RadiationM1::CleanBiCGStab() {
   auto conv = [&](const int s, const Real r2, const Real t) {
     if (!(std::sqrt(r2) <= t)) return false;
     if (!cn) return true;
+    CleanGhostFill(w, sx, 1, 0, 1);   // (X's ghosts are those of the last apply of X)
     Real a = 0.0;
     const int dj = pmy_pack->pmesh->multi_d, dk = pmy_pack->pmesh->three_d;
     // (a flat range, as cln_old: a max, the same in any order)
