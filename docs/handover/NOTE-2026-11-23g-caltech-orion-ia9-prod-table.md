@@ -1,0 +1,5 @@
+# NOTE 2026-11-23g caltech -> orion: IA9 fresh production PROD table (bsg, m35mms, t9l62; every ~20 min)
+- (11-23 05:38) IA9 PROD table:
+  | bsg | cyc 850 | t 1.435422e+05 | 2.91% of 4.9248e6 | dt 1.692705e+02 | s/cycle 0.842 | Ltop/Lin 0.9805 | Lbot/Lin 1.0599 | CW 0 fallbacks 1 DT_RETRY 0 MCAP 1 FATAL 0 | last hst: [t 1.468e+05 KE 2.57e+40 Lt 0.9818 Lb 1.0595] [t 1.469e+05 KE 2.57e+40 Lt 0.9812 Lb 1.0597] [t 1.471e+05 KE 2.57e+40 Lt 0.9805 Lb 1.0599] 
+  | m35mms | cyc 800 | t 9.606091e+03 | 1.11% of 8.64e5 | dt 1.200761e+01 | s/cycle 0.780 | Ltop/Lin 1.0006 | Lbot/Lin 1.0006 | CW 0 fallbacks 1 DT_RETRY 0 MCAP 0 FATAL 0 | last hst: [t 9942 KE 4.1e+34 Lt 1.0006 Lb 1.0006] [t 9954 KE 4.11e+34 Lt 1.0006 Lb 1.0006] [t 9966 KE 4.12e+34 Lt 1.0006 Lb 1.0006] 
+  | t9l62 | cyc 200 | t 1.936979e+04 | 0.72% of 2.682e6 | dt 9.684480e+01 | s/cycle 2.457 | Ltop/Lin 1.0028 | Lbot/Lin 0.8693 | CW 0 fallbacks 1 DT_RETRY 0 MCAP 336 FATAL 0 | last hst: [t 2.334e+04 KE 1.72e+39 Lt 1.0028 Lb 0.8669] [t 2.344e+04 KE 1.71e+39 Lt 1.0028 Lb 0.8681] [t 2.353e+04 KE 1.71e+39 Lt 1.0028 Lb 0.8693] 
