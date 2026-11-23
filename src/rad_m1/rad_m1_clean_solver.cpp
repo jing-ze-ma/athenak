@@ -23,6 +23,7 @@
 
 #include "athena.hpp"
 #include "globals.hpp"
+#include "coordinates/cell_locations.hpp"
 #include "coordinates/coordinates.hpp"
 #include "mesh/mesh.hpp"
 #include "rad_m1/m1_fluid.hpp"
@@ -37,12 +38,30 @@
 
 namespace radm1 {
 //----------------------------------------------------------------------------------------
+//! \fn Real RadiationM1::MeshBlock0Dx
+//! \brief the cell width along x(d+1) of the mesh's MeshBlock 0, as MeshBlock sets
+//! it, the same on every rank (a rank's first MeshBlock's differs from it by round-off:
+//! the answer depended on the MeshBlocks of a rank, one layout on other rank counts)
+
+Real RadiationM1::MeshBlock0Dx(const int d) const {
+  auto *pm = pmy_pack->pmesh;
+  auto &ms = pm->mesh_size;
+  auto &id = pm->mb_indcs;
+  const int lv = pm->lloc_eachmb[0].level - pm->root_level;
+  const int nr = ((d == 0) ? pm->nmb_rootx1 :
+                  ((d == 1) ? pm->nmb_rootx2 : pm->nmb_rootx3)) << lv;
+  const Real a = (d == 0) ? ms.x1min : ((d == 1) ? ms.x2min : ms.x3min);
+  const Real b = (d == 0) ? ms.x1max : ((d == 1) ? ms.x2max : ms.x3max);
+  const int n = (d == 0) ? id.nx1 : ((d == 1) ? id.nx2 : id.nx3);
+  return (((nr > 1) ? LeftEdgeX(1, nr, a, b) : b) - a)/static_cast<Real>(n);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn CleanArgs RadiationM1::CleanMakeArgs
 //! \brief collects the arrays and constants the device functions need
 
 CleanArgs RadiationM1::CleanMakeArgs() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  auto &size = pmy_pack->pmb->mb_size;
   CleanArgs x;
   x.cs = cln_s;
   x.w = cln_w;
@@ -53,9 +72,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.bstress = ibm_s;
   x.h = dt_sub;
   x.c = c_light;
-  x.idx[0] = 1.0/size.h_view(0).dx1;
-  x.idx[1] = 1.0/size.h_view(0).dx2;
-  x.idx[2] = 1.0/size.h_view(0).dx3;
+  for (int d = 0; d < 3; ++d) x.idx[d] = 1.0/MeshBlock0Dx(d);
   const int bc[6] = {ibc_x1min, ibc_x1max, ibc_x2min, ibc_x2max, ibc_x3min, ibc_x3max};
   // an outflow face is the open one without an entering bath
   for (int s = 0; s < 6; ++s) {

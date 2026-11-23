@@ -2572,9 +2572,7 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
 
   // the band: the largest horizontal reach of a ray per layer, in cells
   auto ah = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vet_ang);
-  const Real dx1 = pmy_pack->pmb->mb_size.h_view(0).dx1;
-  const Real dx2 = pmy_pack->pmb->mb_size.h_view(0).dx2;
-  const Real dx3 = pmy_pack->pmb->mb_size.h_view(0).dx3;
+  const Real dx1 = MeshBlock0Dx(0), dx2 = MeshBlock0Dx(1), dx3 = MeshBlock0Dx(2);
   Real s2 = 0.0, s3 = 0.0;
   for (int r = 0; r < vet_nray; ++r) {
     s2 = std::max(s2, dx1*std::fabs(ah(r,1))/(std::fabs(ah(r,0))*dx2));

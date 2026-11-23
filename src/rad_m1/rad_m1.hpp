@@ -2812,6 +2812,7 @@ class RadiationM1 {
   void CleanWbFct(const CleanArgs &x, const CleanArgs *px, const DvceArray5D<Real> &fp,
                   const bool pfo, const DvceArray5D<Real> &pf);
   CleanArgs CleanMakeArgs();
+  Real MeshBlock0Dx(const int d) const;
   const void *CleanDevCopy(const void *p, const size_t n, const int s);
   template <class T> const T *CleanDev(const T &x, const int s) {
     return static_cast<const T *>(CleanDevCopy(&x, sizeof(T), s));
