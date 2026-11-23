@@ -95,6 +95,7 @@ CleanArgs RadiationM1::CleanMakeArgs() {
   x.xsrc = cln_xsrc;
   x.drag = cln_vimp && cln_feedback;
   x.upw = cln_upw;
+  x.ucen = cln_ucen;
   x.sbi = cln_sbimp && cln_feedback;
   x.sar = !cln_gflux || cln_farea;
   x.bar = cln_bcarea;

@@ -395,6 +395,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // construction, the comoving part of sb at most 2 |beta| hc kE E_k and the faces of a
     // restart from the old scheme's file at most c E of their donor
     cln_freal = stag("clean_stag_freal", cln_gflux && cln_fsolve);
+    // clean_stag_upwind_central (default off): an upwind face's fixed point carries the
+    // central mean of the cells' a E within the TVD bound (CleanStagAdvectCorr), the old
+    // production's cell flux a E
+    cln_ucen = stag("clean_stag_upwind_central", false);
     // clean_stag_csvec_radial (true, the only form): the cubed sphere's cell vector exact
     // for a radial field (CleanStagCsVector); false (the old least-squares fit) is gone
     cln_csvr = stag("clean_stag_csvec_radial", true);

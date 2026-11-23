@@ -338,6 +338,7 @@ struct CleanArgs {
                                // (CLF_PT, CleanStagDrag)
   bool drag;                   // staggered, clean_stag_vimp: implicit gas velocity
   bool upw;                    // staggered, clean_stag_upwind: donor-cell advective flux
+  bool ucen;                   //   clean_stag_upwind_central: its lagged rest central
   bool fwc;                    // staggered: al, ar and the cross factor from CLF_QL
   bool sbi;                    // staggered, clean_stag_sbimp: E-row beta terms implicit
   bool sar;                    // staggered: the streaming share's net flux in area form
@@ -1262,6 +1263,14 @@ Real CleanFaceCross(const CleanArgs &x, const int e, const int dir, const int m,
 //! the van Leer value from the upwind side (src/reconstruct/plm.hpp).  At the fixed point
 //! the face carries a_f E_f, second order in smooth flows and monotone at jumps; the
 //! rest (all of it where the M-matrix holds) stays central.
+//! clean_stag_upwind_central: the face carries a_f E_up + a_down m/2, m = minmod(2
+//! (E_up - E_upup), E_down - E_up): the central mean of the cells' a E, (a_L E_L + a_R
+//! E_R)/2 (the old production's cell flux a E), wherever (E_up - E_upup)/(E_down - E_up)
+//! >= 1/2 (Sweby's TVD bound), and a_f E_up at an extremum of E.  The van Leer a_f E_f
+//! is not central at r != 1, an upwind-biased O(dx^2) term whose up- and downflow parts
+//! do not cancel in a convective zone: +10 % of the net advective flux at cell Peclet >
+//! 1, the RSG/HG deep L +1.5-3.8 % of old's at 0.2-0.75 R_ph (both the energy flux and
+//! F^H)
 
 KOKKOS_INLINE_FUNCTION
 Real CleanStagAdvectCorr(const CleanArgs &x, const int dir, const int m, const int k,
@@ -1270,6 +1279,13 @@ Real CleanStagAdvectCorr(const CleanArgs &x, const int dir, const int m, const i
   auto e = [&](const int o) {return x.w(m,CLW_EK,k+o*dk,j+o*dj,i+o*di);};
   const Real ul = CleanStagN(x, CLW_A1, dir, m, k, j, i, k-dk, j-dj, i-di);
   const Real ur = CleanStagN(x, CLW_A1, dir, m, k, j, i, k, j, i);
+  if (x.ucen) {   // (sl: the limited E_down - E_up; up, the upwind cell)
+    const bool fw = (ul + ur > 0.0);
+    const Real eu = fw ? e(-1) : e(0), df = (fw ? e(0) : e(-1)) - eu;
+    const Real du = 2.0*(eu - (fw ? e(-2) : e(1)));
+    const Real sl = (df*du > 0.0) ? ((fabs(df) < fabs(du)) ? df : du) : 0.0;
+    return 0.5*((fw ? ur - ul : ul - ur)*eu + (fw ? ur : ul)*sl);
+  }
   Real ef, dum;
   if (ul + ur > 0.0) {
     PLM(e(-2), e(-1), e(0), ef, dum);
