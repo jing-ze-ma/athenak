@@ -6,6 +6,8 @@
 //! \file hydro_fofc.cpp
 //! \brief Implements functions for first-order flux correction (FOFC) algorithm.
 
+#include <cfloat>
+
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
 #include "driver/driver.hpp"
@@ -874,7 +876,9 @@ void Hydro::DfloorFluxLimit(Driver *pdrive, int stage) {
     if (td) q += (fmax(f3(m,IDN,k+1,j,i), 0.0)*(curv ? a3(m,k+1,j,i) : w3) +
                   fmax(-f3(m,IDN,k,j,i), 0.0)*(curv ? a3(m,k,j,i) : w3));
     q *= bdt/(curv ? vol(m,k,j,i) : 1.0);
-    const Real room = g0*u0_(m,IDN,k,j,i) + g1*u1_(m,IDN,k,j,i) - dfl;
+    // (less the round-off of the update itself, so the stored rho is >= dfloor)
+    const Real tot = g0*u0_(m,IDN,k,j,i) + g1*u1_(m,IDN,k,j,i);
+    const Real room = tot - dfl - 8.0*DBL_EPSILON*(tot + q);
     if (q > room) {
       th(m,0,k,j,i) = (room > 0.0) ? room/q : 0.0;
       sn += 1.0;
