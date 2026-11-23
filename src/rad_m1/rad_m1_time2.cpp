@@ -636,6 +636,10 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_adm_poslim")) {
     t2_adm_pl = pin->GetBoolean("rad_m1", "time2_adm_poslim");
   }
+  // <rad_m1>/time2_cfl_post (rad_m1.hpp; read only when named)
+  if (pin->DoesParameterExist("rad_m1", "time2_cfl_post")) {
+    t2_cfl_post = pin->GetBoolean("rad_m1", "time2_cfl_post");
+  }
   // <rad_m1>/time2_auto_be = N (rad_m1.hpp; read only when named)
   if (pin->DoesParameterExist("rad_m1", "time2_auto_be")) {
     t2_abe = pin->GetInteger("rad_m1", "time2_auto_be");
