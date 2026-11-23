@@ -5432,6 +5432,7 @@ void RadiationM1::CleanStagDrag(const bool first, const bool vel, const bool lat
 //! dlz), <rad_m1>/clean_lz_ledger (M1LzKey)
 
 void RadiationM1::CleanLzBook(const Real s, const bool start) {
+  if (t2_inprobe) return;   // (a helper solve, put back: Time2StartProbe, RotCorrect)
   if (t2_solve == M1_T2S_STAGE1) {
     cln_lzp = (start ? 0.0 : cln_lzp) + ((t2_tab == 0 || t2_tab == 2) ? 0.5 : t2_w0)*s;
     return;
