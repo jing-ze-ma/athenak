@@ -484,7 +484,7 @@ class RadiationM1 {
   // exchange (u only), physical BCs, prolongate, ConToPrim.  Hydro: the hydro task calls
   // verbatim.  MHD: the u-only exchange through pbval_u -- MHD::InitRecv/ClearRecv(-1)
   // would post and then wait on B receives that nobody sends here (deadlock on > 1 rank).
-  void FluidRefresh(Driver *pdrive);
+  void FluidRefresh(Driver *pdrive, bool lat = true);
   // <rad_m1>/floorcap_rho (read only when named; 0 = off = bitwise):
   // FLOOR-GAS CAP after the implicit solve, active cells with rho < floorcap_rho only.
   // |v| <= floorcap_v (0 = no velocity cap) and T_gas <= max(T_rad, floorcap_tmin_kelvin)
@@ -1897,6 +1897,11 @@ class RadiationM1 {
   void Time2Init(ParameterInput *pin);
   bool Time2Active();           // the next step runs the stages (else BE)
   void Time2FormStage(int stage, Real dt);
+  // sdirk2 with the Heun hydro: the stage-1 solve on the gas at t^n + g dt, the hydro's
+  // stage-2 flux at t^{n+1} (Time2GasTime; t2hs the gas U* of Heun stage 1)
+  void Time2GasTime(Driver *pdrive, int which);
+  DvceArray5D<Real> t2hs;
+  int t2_gt = 0;   // the last Time2GasTime step of this stage loop
   void Time2Restore(Driver *pdrive);
   // time2_start (read only when named, default be = bitwise): how a step
   // without a stored slope K1 (the first step, a restart without the slope) starts.

@@ -147,6 +147,12 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
       std::cout << "<rad_m1> time2_tableau = sdirk2: no explicit K1, Heun hydro"
                 << std::endl;
     }
+    if (t2_tab == 2 && coupling && pmy_pack->pmhd != nullptr) {   // (Time2GasTime)
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_tableau = sdirk2 is not wired for mhd"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     if (t2_tab == 1) {
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_m1> time2_tableau = trbdf2: TR-BDF2 implicit stages (stage "
@@ -795,6 +801,81 @@ Real RadiationM1::InnerFluxIntegral(const Real t0, const Real t1) const {
   return ftab_scale*ftab.Integral(0, t0 - ftab_t0, t1 - ftab_t0);
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::Time2GasTime
+//! \brief time2_tableau = sdirk2 with the Heun hydro (c_E = (0, 1), b_E = (1/2, 1/2)):
+//! the IMEX coupling conditions b_E.c_I = b_I.c_E = 1/2 hold when each stage has one
+//! time for both parts (c = (0, g, 1, 1), the hydro's stage-2 flux an explicit stage).
+//! which = 1, before the stage-1 solve: the gas U* of Heun stage 1 (t^{n+1}) is kept in
+//! t2hs and the solve takes S = U^n + g (U* - U^n), the gas at t^n + g dt (convex, so
+//! positive; all cells).  which = 2, first in its HydroConToPrim (gas Y = S + d): the
+//! gas becomes U* + d (the explicit U* with the implicit g dt K2, so the stage-2
+//! increment and the exchange, booked once in d, are unchanged), before the ring average,
+//! the floor cap and the refresh act on it as they did on Y.  which = 3, after the stage
+//! tasks: the hydro's stage-2 flux state U* + f d (t^{n+1}, the exchange over the full
+//! dt: f = 1/g non-stiff, -> 1 stiff, below) is refreshed into w0 (its floors stay in
+//! u0), then u0 is U* + d again.
+
+void RadiationM1::Time2GasTime(Driver *pdrive, int which) {
+  hydro::Hydro *ph = pmy_pack->phydro;
+  if (t2_tab != 2 || !coupling || ph == nullptr || (which > 1 && t2_gt != which - 1)) return;
+  t2_gt = (which == 3) ? 0 : which;
+  auto u0_ = ph->u0;
+  auto u1_ = ph->u1;
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int nmb = u0_.extent_int(0), nv = u0_.extent_int(1);
+  const int n3 = u0_.extent_int(2), n2 = u0_.extent_int(3), n1 = u0_.extent_int(4);
+  const bool all = (which == 1);
+  const int il = all ? 0 : id.is, iu = all ? n1-1 : id.ie, jl = all ? 0 : id.js;
+  const int ju = all ? n2-1 : id.je, kl = all ? 0 : id.ks, ku = all ? n3-1 : id.ke;
+  if (t2hs.extent_int(0) != nmb || t2hs.extent_int(1) != nv) {
+    Kokkos::realloc(t2hs, nmb, nv, n3, n2, n1);
+  }
+  auto hs_ = t2hs;
+  // the flux state's factor on d: 1/g + O(k dt) (the ARK conditions), 1 where the
+  // exchange is stiff (k dt >> 1: the backward-Euler ratio of a full dt to g dt of a
+  // linear relaxation at rate k = ch rho kappa_E + 4 cl rho kappa_P a T^3/(rho c_v))
+  auto op_ = opac;
+  auto eos = ph->peos->eos_data;
+  auto phc = ph->phicc0;
+  auto ccl = pmy_pack->pcoord->cos_cell;
+  const bool etg = ph->use_etotgrav, csk = cs_geom;
+  const Real g = kT2G, cl = c_light, ch = chat, ar = arad, dt = pmy_pack->pmesh->dt;
+  par_for("m1_t2_gtime", DevExeSpace(), 0, nmb-1, kl, ku, jl, ju, il, iu,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real e = 0.0;
+    if (which == 2) {
+      const Real dd = u0_(m,IDN,k,j,i);
+      const Real eg = u0_(m,IEN,k,j,i) - CsKeMom(u0_(m,IM1,k,j,i), u0_(m,IM2,k,j,i),
+                      u0_(m,IM3,k,j,i), csk ? ccl(m,k,j) : 0.0)/dd -
+                      (etg ? dd*phc(m,k,j,i) : 0.0);
+      const Real tk = (eg > 0.0) ? eos.Temperature(dd, eg) : 0.0;
+      const Real z = dt*(ch*op_(m,M1_OP_E,k,j,i) + ((eg > 0.0) ?
+                     4.0*cl*op_(m,M1_OP_P,k,j,i)*ar*SQR(SQR(tk))/eg : 0.0));
+      e = (1.0 + g*z)/(g*(1.0 + z)) - 1.0;
+    }
+    for (int n = 0; n < nv; ++n) {
+      const Real un = u1_(m,n,k,j,i), us = hs_(m,n,k,j,i), u = u0_(m,n,k,j,i);
+      if (which == 1) {
+        hs_(m,n,k,j,i) = u;
+        u0_(m,n,k,j,i) = un + g*(u - un);
+      } else if (which == 2) {
+        const Real d = u - (un + g*(us - un));   // (0 where the solve left it)
+        u0_(m,n,k,j,i) = us + d;
+        hs_(m,n,k,j,i) = e*d;
+      } else {
+        u0_(m,n,k,j,i) = u + us;
+      }
+    }
+  });
+  if (which != 3) return;
+  FluidRefresh(pdrive, false);   // ghosts + w0 of the flux state
+  par_for("m1_t2_gtime3", DevExeSpace(), 0, nmb-1, kl, ku, jl, ju, il, iu,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    for (int n = 0; n < nv; ++n) {u0_(m,n,k,j,i) -= hs_(m,n,k,j,i);}
+  });
+}
+
 void RadiationM1::Time2FormStage(int stage, Real dt) {
   if (fmod_per > 0.0 || fmod_rw > 0.0 || ftab_on) {   // inner flux
     // hesdirk2 / sdirk2: both stage solves end at t_n + dt (c2 = a21 + g = 1, c3 = 1);
@@ -1312,6 +1393,7 @@ void RadiationM1::CleanRayHistory(const bool save) {
 //! Heun stages and takes the step with backward Euler.
 
 void RadiationM1::Time2Restore(Driver *pdrive) {
+  t2_gt = 0;   // (Time2GasTime)
   Kokkos::deep_copy(DevExeSpace(), u0, u1);
   Kokkos::deep_copy(DevExeSpace(), f0x1, t2f1);
   if (trans_on) {

@@ -68,6 +68,7 @@ namespace radm1 {
 //! the inversion.
 
 TaskStatus RadiationM1::HydroConToPrim(Driver *pdrive, int stage) {
+  Time2GasTime(pdrive, 2);   // (sdirk2: the gas of the stage-1 solve at t^{n+1})
   // <hydro>/merge_lat_rad = true: the radiation E, F of the merged lateral
   // groups replaced by their group values after the solve (hydro_mergelat.hpp)
   {
@@ -224,8 +225,9 @@ void RadiationM1::FloorGasCap() {
 //! MHD::ClearRecv(-1) MPI_Waits on them, and no B is sent here -- a deadlock on more
 //! than one rank.  MHD::ApplyPhysicalBCs re-applies the B BCs to an unchanged b0
 //! (harmless) and the pgen's user BC, Prolongate and ConToPrim rebuild bcc0 and w0.
+//! lat = false: without the merged lateral groups' average (Time2GasTime's flux state).
 
-void RadiationM1::FluidRefresh(Driver *pdrive) {
+void RadiationM1::FluidRefresh(Driver *pdrive, bool lat) {
   if (pmy_pack->pmhd != nullptr) {
     mhd::MHD *pm = pmy_pack->pmhd;
     (void) pm->RestrictU(pdrive, 0);
@@ -242,7 +244,7 @@ void RadiationM1::FluidRefresh(Driver *pdrive) {
   hydro::Hydro *ph = pmy_pack->phydro;
   if (ph == nullptr) return;
   // the gas the solve wrote, back to group values (hydro_mergelat.hpp)
-  if (ph->pmlat != nullptr && ph->pmlat->on) {
+  if (lat && ph->pmlat != nullptr && ph->pmlat->on) {
     ph->pmlat->Average(ph->u0, ph->nhydro, ph->nhydro + ph->nscalars, 0, ph->phicc0,
                        ph->use_etotgrav);
   }
