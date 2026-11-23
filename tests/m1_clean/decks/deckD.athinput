@@ -1,0 +1,130 @@
+# "Deck D": a radiation shell diffusing in a 3-D spherical-polar wedge, kinematic gas,
+# Marshak walls; the time-convergence ladder halves time/dt_fixed. Used by: order_time.
+#
+# The <rad_m1> block starts with the scheme keys that production pins (the values of the
+# production star decks); the rest are this test's physics, grid and solver set-up.
+
+<job>
+basename = to
+
+<mesh>
+layout_invariant = true
+nghost = 2
+nx1 = 32
+x1min = 1.0
+x1max = 5.0
+ix1_bc = outflow
+ox1_bc = outflow
+nx2 = 8
+x2min = 1.1707963267948966
+x2max = 1.9707963267948967
+ix2_bc = reflect
+ox2_bc = reflect
+nx3 = 8
+x3min = 0.0
+x3max = 1.5707963267948966
+ix3_bc = periodic
+ox3_bc = periodic
+use_spherical_polar = true
+
+<meshblock>
+nx1 = 32
+nx2 = 8
+nx3 = 8
+
+<time>
+evolution = kinematic
+integrator = rk2
+cfl_number = 10.0
+nlim = -1
+tlim = 1.0
+dt_fixed = 0.0625
+dt_retry = false
+ndiag = 1000000
+
+<hydro>
+eos = ideal
+reconstruct = plm
+rsolver = advect
+gamma = 1.666666666666667
+rad_signal_speed = false
+
+<rad_m1>
+# --- production scheme keys ---
+zalesak_active = true
+clean_stag_xdonor = lag
+clean_stag_xsrc = true
+implicit_pos_floor_gas_keep = 1
+implicit_pos_gas_cons = true
+clean_stag_mg_color = mirror
+time2_k1_redist = 0
+time2_tableau = sdirk2
+clean_face_hctau = true
+clean_stag_upwind_central = true
+clean_w_fse_tau = true
+clean_stag_fwb_stage = false
+clean_stag_fwb_t2 = false
+time2_gtime_mom = true
+time2_k1_stiff = 0
+clean_pred_stage = false
+clean_stag_central = true
+clean_stag_kpat = false
+clean_stag_eicarry = true
+# --- this test ---
+clean_layout = staggered
+c_light = 1.0
+chat_over_c = 1.0
+e_floor = 1.0e-30
+opacity = const
+kappa_p = 0.02
+kappa_e = 0.02
+kappa_f = 0.0
+kappa_s = 0.02
+arad = 1.0e7
+coupling = true
+gas_feedback = true
+dbg_gas_force = false
+transport = implicit
+implicit_cfl = 16.0
+time_scheme = hesdirk2
+scheme = clean
+clean_tol = 1.0e-14
+clean_tol_nl = 1.0e-13
+clean_maxnl = 60
+closure = vet_col
+vet_col_lat = true
+vet_gd = true
+vet_gd_gl_nmu = 2
+vet_gd_gl_nphi = 4
+vet_gd_allow_clamp = true
+vet_gd_theta_wall = vacuum
+vet_gd_rotate_dt = 0
+implicit_bc_x1min = marshak
+implicit_bc_x1max = marshak
+implicit_ebath_x1min = 0.1
+implicit_ebath_x1max = 0.1
+
+<problem>
+pgen_name = rad_m1_beam
+m1_test = sph_shell
+gas_rho = 10.0
+gas_temp = 0.01
+e_out = 0.1
+e_amp = 1.0
+r0 = 3.0
+width = 0.5
+lat_amp = 0.6
+lat_l2 = 1.0
+lat_l3 = 1.0
+
+<output1>
+file_type = bin
+bin_double = true
+variable = m1
+dt = 1.0e30
+
+<output2>
+file_type = bin
+bin_double = true
+variable = hydro_w
+dt = 1.0e30
