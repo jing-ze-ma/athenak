@@ -525,6 +525,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "solve" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // clean_stag_fcone_gas (default off): the gas takes the momentum fcone cuts, at the
+    // face, as its share of the face's conservative term (the cut F's absorption not
+    // withheld), so gas + radiation momentum and L_z are exact; E pays the kinetic energy
+    cln_fcgas = cln_fcone && pin->GetOrAddBoolean("rad_m1","clean_stag_fcone_gas",false);
     // clean_stag_thinf_held (default off, the v20.7 value, USER 11-21): the thin flux
     // factor of a donor blended by theta = min(1, max(J, P)/(clean_ray_min E_old)), P its
     // largest ray outflow: theta g(rays) + (1 - theta) h (its own half range); a

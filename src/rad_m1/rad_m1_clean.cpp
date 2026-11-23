@@ -4882,6 +4882,7 @@ void RadiationM1::CleanStagFCone(const int e, const int kd) {
   const int ks = indcs.ks, ke = indcs.ke, nmb1 = pmy_pack->nmb_thispack - 1;
   CleanArgs x = CleanMakeArgs();
   const bool cub = x.cub, dd = cln_fkin && e == CLW_X && cln_dok, wbc = e == CLW_X;
+  const bool fg = cln_fcgas;   // (clean_stag_fcone_gas)
   if (cln_fconc.extent_int(0) != 2) Kokkos::realloc(cln_fconc, 2);
   Kokkos::deep_copy(cln_fconc, 0.0);
   auto fcc = cln_fconc;
@@ -4944,7 +4945,7 @@ void RadiationM1::CleanStagFCone(const int e, const int kd) {
       fc(m,CLF_N+2,k,j,i) = fs;
       if (fs == f) return;
       const Real it = 1.0/fc(m,CLF_TH,k,j,i);
-      if (!bd) fc(m,CLF_N+1,k,j,i) -= (f - fs)*it/(x.h*x.c*x.c);
+      if (!bd && !fg) fc(m,CLF_N+1,k,j,i) -= (f - fs)*it/(x.h*x.c*x.c);
       if (dd && !bd) {   // (the energy flux's memory G + d kept, as clean_stag_flim's)
         fc(m,CLF_N+3,k,j,i) += f - fs;
         if (kd > 0) fc(m,kd,k,j,i) += (f - fs)/x.h;
