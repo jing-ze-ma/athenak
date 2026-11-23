@@ -199,6 +199,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_rcell = (pin->GetString("rad_m1","clean_ring_fields") == "closure");
     }
     cln_fillpass = pin->GetOrAddInteger("rad_m1","clean_fill_passes",8);
+    // clean_fill_cs_remap (default off): the fill's h+- of a cubed-sphere seam neighbour
+    // in our face families (CleanClosureFill)
+    cln_fillcs = pin->GetOrAddBoolean("rad_m1","clean_fill_cs_remap",false);
     cln_pred = pin->GetOrAddBoolean("rad_m1","clean_predict",true);
     // implicit_predictor (step unless named none): the stage solve starts from the
     // predicted E (CleanFirstIterate), as the old production's step predictor (a

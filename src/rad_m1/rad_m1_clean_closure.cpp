@@ -2525,6 +2525,11 @@ void RadiationM1::CleanClosureFill() {
   auto valid = cln_v;
   // (D, h+- and, where held, k+: the slots t < CLN_C1, then CLN_KP + t - CLN_C1)
   const int nfl = CLN_C1 + std::max(std::min(cln_s.extent_int(1) - CLN_KP, 9), 0);
+  // (clean_fill_cs_remap: on the cubed sphere a lateral neighbour's h+- of the face
+  // family across a seam in our axes (CleanCsSlot), its other lateral family left out
+  // where the seam turns the axes, diagonal neighbours across a seam too)
+  const bool rmp = cln_fillcs && pmy_pack->pmesh->use_cubed_sphere;
+  CleanArgs x = CleanMakeArgs();
 
   for (int pass = 0; pass < cln_fillpass; ++pass) {
     // (the last chunk of cln_s and the marks in one exchange: the same ghosts)
@@ -2545,15 +2550,38 @@ void RadiationM1::CleanClosureFill() {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       valid(m,1,k,j,i) = valid(m,0,k,j,i);
       if (valid(m,0,k,j,i) > 0.0) return;
-      Real sum[CLN_C1 + 9] = {0.0};
+      Real sum[CLN_C1 + 9] = {0.0}, nh[6] = {0.0};
       int nv = 0;
       for (int kk = k-dk; kk <= k+dk; ++kk) {
         for (int jj = j-dj; jj <= j+dj; ++jj) {
           for (int ii = i-1; ii <= i+1; ++ii) {
             if (valid(m,0,kk,jj,ii) <= 0.0) continue;
             ++nv;
+            // (rmp: the families q[a] of its h+- slots in our axes, sign sg[a], -1: none)
+            int q[3] = {0, 1, 2};
+            Real sg[3] = {1.0, 1.0, 1.0};
+            for (int d = 1; d < 3 && rmp; ++d) {
+              const int o = (d == 1) ? jj - j : kk - k;
+              if (o == 0) continue;
+              Real sd;
+              const int n = CleanCsSlot(x, d, m, k + (d == 2 && o > 0),
+                                        j + (d == 1 && o > 0), i, kk, jj, ii, false,
+                                        sd)/2;
+              if (n == d && sd > 0.0) continue;
+              const bool dg = (jj != j) && (kk != k);
+              q[d] = dg ? -1 : n, sg[d] = sd, q[3 - d] = -1;
+            }
             for (int t = 0; t < nfl; ++t) {
-              sum[t] += cs(m,(t < CLN_C1) ? t : CLN_KP + t - CLN_C1,kk,jj,ii);
+              const int a = (t >= CLN_HP && t < CLN_HP + 6) ? (t - CLN_HP)%3 : -1;
+              if (a < 0) {
+                sum[t] += cs(m,(t < CLN_C1) ? t : CLN_KP + t - CLN_C1,kk,jj,ii);
+                continue;
+              }
+              if (q[a] < 0) continue;
+              const bool hp = t < CLN_HM;   // (a reversed axis: h+ = -h- of the other)
+              const int u = ((hp == (sg[a] > 0.0)) ? CLN_HP : CLN_HM) + q[a];
+              sum[t] += sg[a]*cs(m,u,kk,jj,ii);
+              nh[t - CLN_HP] += 1.0;
             }
           }
         }
@@ -2561,7 +2589,10 @@ void RadiationM1::CleanClosureFill() {
       if (nv == 0) return;
       valid(m,1,k,j,i) = 1.0;
       for (int t = 0; t < nfl; ++t) {
-        cs(m,(t < CLN_C1) ? t : CLN_KP + t - CLN_C1,k,j,i) = sum[t]/nv;
+        const bool h = rmp && t >= CLN_HP && t < CLN_HP + 6;
+        if (h && nh[t - CLN_HP] == 0.0) continue;
+        cs(m,(t < CLN_C1) ? t : CLN_KP + t - CLN_C1,k,j,i) =
+            sum[t]/(h ? nh[t - CLN_HP] : nv);
       }
     });
     par_for("cln_fill_mark", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,

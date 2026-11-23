@@ -2873,6 +2873,7 @@ class RadiationM1 {
   int cln_rcut_wait = 10, cln_rcut = -1, cln_rcut_n = 0;
   ParameterInput *pin_rcut_ = nullptr;
   int cln_fillpass = 8;         // clean_fill_passes: closure fill layers
+  bool cln_fillcs = false;      // clean_fill_cs_remap (CleanClosureFill)
   bool cln_pred = true;         // clean_predict: closure of the predicted state
   bool cln_kpred = true;        // implicit_predictor: the solve starts from E + h K1_E
   bool cln_k1ok = false;        // K1 = f(U^n) valid (an accepted solve wrote it): the
