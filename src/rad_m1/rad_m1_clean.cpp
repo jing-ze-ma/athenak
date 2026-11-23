@@ -2774,6 +2774,14 @@ void RadiationM1::CleanFirstIterate() {
   auto w = cln_w;
   // (clean_pred_stage: sdirk2's stage 2 from the stage-1 slope of this step, E^n + dt K1)
   auto k1 = (cln_pst && t2_tab == 2 && t2_solve == M1_T2S_STAGE2) ? t2k2 : t2k1;
+  // (clean_pred_xch: sdirk2's stage 2 from (K1 + z K2^{n-1})/(1 + z), K1 this step's
+  // stage-1 slope, K2^{n-1} the last step's stage-2 slope, z = h (ch kE + 4 c kP a T^4/e)
+  // the cell's exchange stiffness (Time2GasTime's z): where the exchange is stiff the
+  // stage-2 state lies on the slow equilibrium manifold, whose drift the same-stage slope
+  // of the last step carries; where it is slow, the latest slope)
+  const bool pxc = cln_pxc && t2_tab == 2 && t2_solve == M1_T2S_STAGE2;
+  auto ks1 = t2k2, ks2 = t2k1;   // (sdirk2 stage 2: K1 of this step, K2 of the last)
+  const Real ch = chat;
   const bool pred = cln_kpred && (t2_ok || cln_k1ok) &&
                     t2_solve != M1_T2S_NONE && !cln_vzero && t2k1.extent_int(0) > nmb1;
   const Real h = dt_sub, ecap = SQR(SQR(impl_pred_tcap)), rtol = cln_trtol;
@@ -2785,7 +2793,14 @@ void RadiationM1::CleanFirstIterate() {
   CleanFor("cln_iter0", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real eo = fmax(w(m,CLW_EO,k,j,i), 0.0);
-    const Real ep = pred ? eo + h*k1(m,M1_T2_E,k,j,i) : eo;
+    Real ep = pred ? eo + h*k1(m,M1_T2_E,k,j,i) : eo;
+    if (pred && pxc) {
+      const Real ei = feedback ? w(m,CLW_EI,k,j,i) : 0.0;
+      const Real tk = (ei > 0.0) ? eos.Temperature(uh(m,IDN,k,j,i), ei) : 0.0;
+      const Real z = h*ch*op(m,M1_OP_E,k,j,i) +
+                     ((ei > 0.0) ? 4.0*hc*op(m,M1_OP_P,k,j,i)*arad_*SQR(SQR(tk))/ei : 0.0);
+      ep = eo + h*(ks1(m,M1_T2_E,k,j,i) + z*ks2(m,M1_T2_E,k,j,i))/(1.0 + z);
+    }
     const Real e = (ep > eo/ecap && ep < eo*ecap) ? ep : eo;
     w(m,CLW_EK,k,j,i) = e;
     w(m,CLW_RR,k,j,i) = 0.0;
