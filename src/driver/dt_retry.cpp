@@ -609,6 +609,9 @@ void DtRetry::Build(Mesh *pm) {
     }
     // (and the rays' source vlat_cs, each build's, written before it is read)
     if (m1->clean) sel.erase("m1.vlat_cs");
+    // (clean_extrap_share: the step's moments overwrite the array of those at
+    // t^{n-1}, the cycle start's cln_mn, which the retry's line reads again)
+    if (m1->clean && m1->cln_mshare) sel.insert("m1.cln_mn");
     Binder b{&ent_, "m1.", &sel, all_views_, host_ || hm1_};
     m1->DtRetryVisit(b);
   }
