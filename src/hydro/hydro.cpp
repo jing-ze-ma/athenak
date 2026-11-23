@@ -609,6 +609,10 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     if (use_dfl) {
       pbval_dfl = new MeshBoundaryValuesCC(ppack, pin, false);
       pbval_dfl->SetVectorPairs(1, {});   // (the factor is a scalar)
+      if (ppack->pmesh->use_cubed_sphere) {   // the seam record (hydro_fofc.cpp)
+        pbval_dfs = new MeshBoundaryValuesCC(ppack, pin, false);
+        pbval_dfs->seam_raw = true;
+      }
     }
 
     // select reconstruction method (default PLM)
