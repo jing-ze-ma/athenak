@@ -2934,6 +2934,7 @@ class RadiationM1 {
   DvceArray4D<Real> cln_ky1;   // (kpos: E of the stage-1 solution, K2's reference)
   bool cln_kreal = false;   // (S3B kick bound: CLW_KS set in CleanOldVector)
   bool cln_kpat = false;    // clean_stag_kpat (CleanStagKPat)
+  bool cln_eicry = false;   // clean_stag_eicarry (CleanOldVector)
   bool cln_colf = false;    // (clean_stag_colflux: column moves in the stored Phi)
   int cln_lza = 0;          // clean_cs_lz_abs
   bool cln_lzbook = false;  // (the L_z ledger: cubed sphere, or 3-D spherical polar)

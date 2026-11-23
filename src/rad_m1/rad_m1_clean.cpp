@@ -1864,7 +1864,7 @@ void RadiationM1::CleanOldVector() {
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const bool stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
-  const bool feedback = cln_feedback;
+  const bool feedback = cln_feedback, cry = cln_eicry;
   FluidRef fl = FluidRef::Get(pmy_pack);
   const bool fluid = fl.on;
   auto uh = fl.u0;
@@ -1897,10 +1897,13 @@ void RadiationM1::CleanOldVector() {
       Real p[3];
       CleanGasMomentum(x, uh, m, k, j, i, p);
       const Real ekin = 0.5*(SQR(p[0]) + SQR(p[1]) + SQR(p[2]))/d;
-      const Real e0 = CleanGasEint(x, uh, ekin, m, k, j, i), eint = fmax(e0, 0.0);
+      // (clean_stag_eicarry: a deficit e0 < 0 the gas row's own, paid by its implicit
+      // exchange, e(T) > 0 by construction; else taken as 0, CLW_JV for the write-back)
+      const Real e0 = CleanGasEint(x, uh, ekin, m, k, j, i);
+      const Real eint = cry ? e0 : fmax(e0, 0.0);
       if (e0 < 0.0) ng += 1.0;
       if (!(Kokkos::isfinite(e0) && Kokkos::isfinite(d))) nf += 1.0;
-      t = eos.Temperature(d, eint);
+      t = eos.Temperature(d, fmax(eint, 0.0));
       w(m,CLW_EI,k,j,i) = eint;
       w(m,CLW_JV,k,j,i) = e0 - eint;   // (the gas's deficit below 0: CleanWriteBack)
     }
@@ -1920,8 +1923,9 @@ void RadiationM1::CleanOldVector() {
                 pmy_pack->pmesh->ncycle, t2_solve, nn[2]);
   }
   if (global_variable::my_rank == 0 && (nn[0] > 0.0 || nn[1] > 0.0)) {
-    std::printf("CLEAN OLDVEC cycle %d t2s %d eint<0 %.0f (taken as 0) E<0 %.0f\n",
-                pmy_pack->pmesh->ncycle, t2_solve, nn[0], nn[1]);
+    std::printf("CLEAN OLDVEC cycle %d t2s %d eint<0 %.0f (%s) E<0 %.0f\n",
+                pmy_pack->pmesh->ncycle, t2_solve, nn[0], cry ? "carried" : "taken as 0",
+                nn[1]);
   }
 }
 
@@ -3039,7 +3043,8 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
       // e(T_k)) << 0).  The secant everywhere above T_o converged only linearly where
       // the chord is far from the tangent (R136: +25 % passes from thin outer cells)
       Real s = 4.0*hckp*arad_*t*t*t, cg = d*cv;
-      const Real ei = x.w(m,CLW_EI,k,j,i), eo = x.w(m,CLW_EO,k,j,i);
+      // (clean_stag_eicarry: a carried deficit eint < 0, the chord's T_o that of 0)
+      const Real ei = fmax(x.w(m,CLW_EI,k,j,i), 0.0), eo = x.w(m,CLW_EO,k,j,i);
       const bool sec = eg > ei && eo*(cg + s) + cg*hckp*arad_*SQR(SQR(t)) < s*(eg - ei);
       const Real to = sec ? eos.Temperature(d, ei, t) : t;
       if (sec && t - to > 1.0e-6*t) {
@@ -6383,6 +6388,7 @@ void RadiationM1::CleanWriteBack() {
   // (the solve is then not accepted; an eint the hydro left there is not the solve's)
   cln_neint = 0;
   if (!feedback) return;
+  const bool cry = cln_eicry;   // (a carried deficit left below: its E could not pay)
   auto &id = pmy_pack->pmesh->mb_indcs;
   const int nx1 = id.nx1, nx2 = id.nx2, nx3 = id.nx3, nji = nx2*nx1, nkji = nx3*nji;
   Real nb = 0.0, nh = 0.0;
@@ -6409,6 +6415,7 @@ void RadiationM1::CleanWriteBack() {
                                       uh(m,IDN,k,j,i) + uh(m,IEN,k,j,i) + ke);
     const bool low = !(CleanGasEint(x, uh, ke, m, k, j, i) > ef - tz);
     if ((low && !(x.w(m,CLW_JV,k,j,i) >= 0.0) && x.w(m,CLW_EI,k,j,i) > ef + tz) ||
+        (low && cry && x.w(m,CLW_EI,k,j,i) < 0.0) ||
         u0_(m,M1_E,k,j,i) < 0.0 || !fin) n += 1.0;
     // (without implicit_pos_gas: an eint the hydro's floor will raise, counted)
     if (low && !pgas) nf += 1.0;

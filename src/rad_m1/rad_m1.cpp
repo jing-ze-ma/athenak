@@ -570,6 +570,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_stag_kpat (default off): the stage increment's gas kick in Patankar form, the
     // start's E and gas eint >= 0, the momentum rest in the faces' F (CleanStagKPat)
     cln_kpat = stag("clean_stag_kpat", false);
+    // clean_stag_eicarry (default off): the stage start's gas eint < 0 enters the gas row
+    // as is, paid by its implicit exchange, not taken as 0 (CleanOldVector)
+    cln_eicry = stag("clean_stag_eicarry", false);
     if (cln_kpat && cln_kreal) {
       std::cout << "### FATAL ERROR <rad_m1>/clean_stag_kpat with clean_stag_kreal is not "
                 << "implemented" << std::endl;
