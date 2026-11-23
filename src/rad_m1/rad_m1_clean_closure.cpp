@@ -2460,9 +2460,11 @@ void RadiationM1::CleanClosureFromRays() {
   Real ray_min = cln_raymin;
 
   const bool f2 = cln_consist;
+  DvceArray1D<Real> nb("cln_raynan", 1);   // (a ray J not finite: counted, no silent D)
   CleanFor("cln_rays", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real jr = vc(m,M1_VET_J,k,j,i);
+    if (!Kokkos::isfinite(jr)) Kokkos::atomic_add(&nb(0), 1.0);
     for (int n = 0; n < M1_VET_NFS; ++n) {   // (F2, F1, FX, F3)
       const int c = (n < 4) ? CLN_F2 + n : ((n < 8) ? CLN_F1 + n - 4 : CLN_FX + n - 8);
       if (c < cs.extent_int(1)) cs(m,c,k,j,i) = f2 ? vc(m,M1_VET_F2+n,k,j,i) : 0.0;
@@ -2498,6 +2500,12 @@ void RadiationM1::CleanClosureFromRays() {
       valid(m,0,k,j,i) = 0.0;
     }
   });
+  const Real nn = CleanReduce(Kokkos::create_mirror_view_and_copy(HostMemSpace(), nb)(0),
+                              false);
+  if (nn > 0.0 && global_variable::my_rank == 0) {
+    std::printf("CLEAN WARNING cycle %d: %.0f cells with a ray J not finite "
+                "(isotropic)\n", pmy_pack->pmesh->ncycle, nn);
+  }
 }
 
 //----------------------------------------------------------------------------------------
