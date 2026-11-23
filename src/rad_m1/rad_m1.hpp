@@ -2895,6 +2895,7 @@ class RadiationM1 {
   bool cln_jsec = false;        // clean_face_jse_cell (CleanFaceCoefficients)
   bool cln_pred = true;         // clean_predict: closure of the predicted state
   bool cln_pst = false;         // clean_pred_stage (CleanFirstIterate)
+  int cln_gsec = 0;             // clean_gas_secant (CleanRightHandSide)
   bool cln_kpred = true;        // implicit_predictor: the solve starts from E + h K1_E
   bool cln_k1ok = false;        // K1 = f(U^n) valid (an accepted solve wrote it): the
                                 // predictor and the budget's time error also in BE steps

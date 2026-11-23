@@ -2949,6 +2949,8 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
   const bool xte = (cln_xte > 0) && x.feedback;   // (clean_xt_exact: CLW_XA, CLW_XW)
   const bool krl = cln_krel_on && x.feedback;   // (clean_stag_kreal: CLW_KR)
   const bool gpic = cln_gpic;   // (clean_gas_newton_switch)
+  // (clean_gas_secant: CLW_RR holds the last pass's T)
+  const bool gsc = cln_gsec == 1 || (cln_gsec == 2 && t2_solve == M1_T2S_STAGE2);
   auto kc = cln_kcnt;
   if (pdo) Kokkos::deep_copy(Kokkos::subview(kc, 0), 0.0);
   CleanParForLb<3>("cln_rhs", nmb1, ks, ke, js, je, is, ie,
@@ -3054,6 +3056,16 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
         cg = (eg - ei)/(t - to);
         s = hckp*arad_*(t + to)*(t*t + to*to);
       }
+      // (clean_gas_secant: elsewhere the chord through the last pass's T, the secant
+      // step on e(T) and a T^4, where the tangent at a c_v jump (H ionisation) sent the
+      // passes cycling between the jump's two sides; the root is unchanged)
+      const Real tp = x.w(m,CLW_RR,k,j,i);
+      if (gsc && !sec && tp > 0.0 && tp != t) {
+        Real ep, pp, crp, ctp, cvp;
+        eos.ThermoAt(d, tp, ep, pp, crp, ctp, cvp);
+        cg = (eg - ep)/(t - tp);
+        s = hckp*arad_*(t + tp)*(t*t + tp*tp);
+      }
       rr = (s > 0.0) ? s/(cg + s) : 0.0;   // (no exchange: none, also where T = 0)
       // (1 - r = cg/(cg + s) without cancellation, as implicit_src_stable)
       x.w(m,CLW_RY,k,j,i) = (s > 0.0) ? cg/(cg + s) : 1.0;
@@ -3101,7 +3113,7 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
         work = 0.0;
       }
     }
-    x.w(m,CLW_RR,k,j,i) = rr;
+    x.w(m,CLW_RR,k,j,i) = gsc ? t : rr;
     // (eqr: the exchange through the gas row of the root T, hckp a T^4 - r hcke E =
     // EI - e(T) - sb + (1 - r) hcke E, without the cancellation of its two terms, each
     // ~ hcke E, whose round-off at h -> infinity exceeds E in opaque cells)

@@ -220,6 +220,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_pred_stage (default false): sdirk2's stage-2 solve starts from E_old + h K1 of
     // this step's stage 1 (E^n + dt K1), not of the last step's stage 2
     cln_pst = pin->GetOrAddBoolean("rad_m1","clean_pred_stage",false);
+    // clean_gas_secant = false (default) | true | stage2: the exchange's slopes from the
+    // chord through the last pass's gas T (CleanRightHandSide), in every solve or in the
+    // stage-2 solves only
+    {const std::string gs = pin->GetOrAddString("rad_m1","clean_gas_secant","false");
+    cln_gsec = (gs == "true") ? 1 : ((gs == "stage2") ? 2 : 0);}
     {std::string bf = pin->GetOrAddString("rad_m1","clean_bc","halfrange");
     cln_bdry_form = (bf.compare("marshak") == 0) ? 1 : 0;}
     // clean_layout = staggered, the only layout (the cell layout was removed; a restart
