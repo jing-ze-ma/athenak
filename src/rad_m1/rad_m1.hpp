@@ -2728,6 +2728,20 @@ class RadiationM1 {
   void CleanStagBracket();
   void CleanStagFSolve(const int e, const bool tie = true, const bool lat = true);
   void CleanDMem(const bool save);
+  // the rays' history a failed stage's builds change (intensities, face half ranges, the
+  // mirrored top, the ring, the cross-fade slots): kept at the stage-loop start, put
+  // back with U^n (Time2Stash, Time2Restore): the backward-Euler redo builds from the
+  // step's
+  struct CleanRayKeep {
+    DvceArray5D<Real> v[7];
+    DvceArray2D<Real> fvd;
+    std::vector<int64_t> fvblk;
+    int64_t rb = 0, rpb = 0, rbld = 0;
+    Real rpt = 0.0, rs = 0.0, rg = 0.0, ro = 0.0;
+    int rns = 0;
+    bool rok = false, rfix = false, rlast = false, rjump = false;
+  } cln_rk;
+  void CleanRayHistory(const bool save);
   void CleanDInc(const bool two, const Real c1, const Real c2, const Real w1,
                  const Real w0);
   void CleanDtrD(const bool save);   // dt_retry: d to / from cln_rstd

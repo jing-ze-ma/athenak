@@ -1253,6 +1253,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
 void RadiationM1::Time2Stash() {
   t2_ys_ok = false;
   CleanDMem(true);
+  CleanRayHistory(true);
   if (!t2_k1reset || t2ys.extent_int(0) < pmy_pack->nmb_thispack) return;
   auto ys_ = t2ys;
   auto u_ = u0;
@@ -1263,6 +1264,39 @@ void RadiationM1::Time2Stash() {
     ys_(m,k,j,i) = u_(m,M1_E,k,j,i);
   });
   t2_ys_ok = true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::CleanRayHistory
+//! \brief save: keep the rays' history (CleanRayKeep) at the stage-loop start; else put
+//! it back (a stage failed)
+
+void RadiationM1::CleanRayHistory(const bool save) {
+  if (!clean) return;
+  DvceArray5D<Real> *a[7] = {&cln_fvi, &cln_fh, &cln_top, &cln_rr, &cln_rpd, &cln_rnew,
+                             &vgd_xf_d};
+  auto &k = cln_rk;
+  auto cp = [](auto &d, const auto &s) {
+    if (s.size() == 0) {
+      d = std::remove_reference_t<decltype(d)>();
+      return;
+    }
+    bool same = d.size() == s.size();
+    for (unsigned r = 0; r < s.rank(); ++r) same = same && d.extent(r) == s.extent(r);
+    if (!same) {
+      d = std::remove_reference_t<decltype(d)>(
+          Kokkos::view_alloc(std::string("cln_rk"), Kokkos::WithoutInitializing),
+          s.layout());
+    }
+    Kokkos::deep_copy(d, s);
+  };
+  for (int q = 0; q < 7; ++q) save ? cp(k.v[q], *a[q]) : cp(*a[q], k.v[q]);
+  save ? cp(k.fvd, cln_fvd) : cp(cln_fvd, k.fvd);
+  auto sw = [&](auto &x, auto &y) {if (save) {y = x;} else {x = y;}};
+  sw(cln_fvblk, k.fvblk); sw(cln_rb, k.rb); sw(cln_rpb, k.rpb); sw(cln_rbld, k.rbld);
+  sw(cln_rpt, k.rpt); sw(cln_rs, k.rs); sw(cln_rguard_sum, k.rg); sw(cln_roff_sum, k.ro);
+  sw(cln_rns, k.rns); sw(cln_rok, k.rok); sw(cln_rfix, k.rfix); sw(cln_rlast, k.rlast);
+  sw(cln_rjump, k.rjump);
 }
 
 //----------------------------------------------------------------------------------------
@@ -1299,6 +1333,7 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
     Kokkos::deep_copy(DevExeSpace(), pam->am_spin, pam->am_spin1);
   }
   CleanDMem(false);
+  CleanRayHistory(false);
   cln_lzp = 0.0;   // (the L_z ledger: the failed stages' pending part, CleanLzBook)
   t2_fail = false;
   t2_ok = false;
