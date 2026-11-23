@@ -323,24 +323,53 @@ void HistSums(const char *name, const int nmb, const int nkji, const int nx1, co
   constexpr int nq = NREDUCTION_VARIABLES;
   const int nr = nkji/nx1;
   if (hist_exact && (!block_mode || tile_n > 0)) {
+    // one team per row: its lanes take the terms of nq cells at a time into team
+    // scratch, then lane q deposits quantity q of those cells in increasing i; the rows'
+    // accumulators are joined in row order on the device (one thread per q), and only
+    // the nq totals come to the host: the same Add and Join sequence per quantity as
+    // one thread per row with a host join (bitwise), ~nq times the parallelism
+    const int nrow = nmb*nr;
     auto rx = ScratchView<Kokkos::View<ReproSum**, DevMemSpace>>(std::string(name) +
-                                                                 "_rx", nmb*nr, nq);
+                                                                 "_rx", nrow, nq);
+    auto vx = ScratchView<Kokkos::View<ReproSum*, DevMemSpace>>(std::string(name) +
+                                                                "_vx", nq);
+    using TP = Kokkos::TeamPolicy<DevExeSpace>;
+    using SV = Kokkos::View<Real*, DevExeSpace::scratch_memory_space,
+                            Kokkos::MemoryTraits<Kokkos::Unmanaged>>;
     Kokkos::parallel_for(std::string(name) + "_rx",
-                         Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nmb*nr),
-    KOKKOS_LAMBDA(const int r) {
-      for (int q = 0; q < nq; ++q) {rx(r, q).Init();}
-      for (int i = 0; i < nx1; ++i) {
-        array_sum::GlobalSum t;   // (zeroed: 0 + term = term)
-        fn(r*nx1 + i, t);
-        for (int q = 0; q < nq; ++q) {rx(r, q).Add(t.the_array[q]);}
+                         TP(DevExeSpace(), nrow, Kokkos::AUTO)
+                             .set_scratch_size(0, Kokkos::PerTeam(SV::shmem_size(nq*nq))),
+    KOKKOS_LAMBDA(const TP::member_type &tm) {
+      const int r = tm.league_rank();
+      SV sc(tm.team_scratch(0), nq*nq);
+      Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nq), [&](const int q) {
+        rx(r, q).Init();
+      });
+      for (int i0 = 0; i0 < nx1; i0 += nq) {
+        const int nc = (nx1 - i0 < nq) ? (nx1 - i0) : nq;
+        tm.team_barrier();
+        Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nc), [&](const int c) {
+          array_sum::GlobalSum t;   // (zeroed: 0 + term = term)
+          fn(r*nx1 + i0 + c, t);
+          for (int q = 0; q < nq; ++q) {sc(c*nq + q) = t.the_array[q];}
+        });
+        tm.team_barrier();
+        Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nq), [&](const int q) {
+          for (int c = 0; c < nc; ++c) {rx(r, q).Add(sc(c*nq + q));}
+        });
       }
     });
-    auto hx = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), rx);
+    Kokkos::parallel_for(std::string(name) + "_vx",
+                         Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nq),
+    KOKKOS_LAMBDA(const int q) {
+      ReproSum a;
+      a.Init();
+      for (int r = 0; r < nrow; ++r) {a.Join(rx(r, q));}
+      vx(q) = a;
+    });
+    auto hv = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vx);
     ReproSum v[nq];
-    for (int q = 0; q < nq; ++q) {
-      v[q].Init();
-      for (int r = 0; r < nmb*nr; ++r) {v[q].Join(hx(r, q));}
-    }
+    for (int q = 0; q < nq; ++q) {v[q] = hv(q);}
     AllMerge(v, nq);
     const bool r0 = (global_variable::my_rank == 0);
     for (int q = 0; q < nq; ++q) {out.the_array[q] = r0 ? v[q].Value() : 0.0;}
