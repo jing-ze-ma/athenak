@@ -542,12 +542,12 @@ int main(int argc, char *argv[]) {
       // hydro/rad_signal_speed (hydro_newdt.cpp) on the command line of a restart whose
       // embedded input predates the key: register it so the override can switch it
       // (the value written here is replaced by ModifyFromCmdline right below)
-      if (std::string(argv[i]).find("hydro/rad_signal_speed") == 0 &&
+      if (std::string(argv[i]).find("hydro/rad_signal_speed=") == 0 &&
           pinput->DoesBlockExist("hydro")) {
         pinput->GetOrAddBoolean("hydro", "rad_signal_speed", false);
       }
       // mhd/rad_signal_speed (mhd_newdt.cpp): the same
-      if (std::string(argv[i]).find("mhd/rad_signal_speed") == 0 &&
+      if (std::string(argv[i]).find("mhd/rad_signal_speed=") == 0 &&
           pinput->DoesBlockExist("mhd")) {
         pinput->GetOrAddBoolean("mhd", "rad_signal_speed", false);
       }
