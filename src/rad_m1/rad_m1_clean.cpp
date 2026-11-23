@@ -1204,31 +1204,6 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // (the donors' E_old, memory; the bracket's gate q)
   if (cln_gflux || cln_consist) CleanGhostFill(cln_w, CLW_EO, 1);
   if (cln_consist) CleanStagBracket();
-  // clean_rst_mshare: the first solve after a restart from an old scheme's file starts
-  // the M1 share's memory G + d at the share of the file's face flux F = (1 - w) M + w S,
-  // M = (F - w S)/(1 - w), S = c (h+ E_L + h- E_R) of E_old and the bracket's h+- (with
-  // d = 0, M started at the blended F and relaxed to the M1 flux at c chi: a transient)
-  if (cln_rmsh && cln_rstold && !cln_rmdone && cln_fsolve && cln_fkin) {
-    cln_rmdone = true;
-    const CleanArgs x = CleanMakeArgs(), *px = CleanDevArgs(x, 0);
-    auto &id = pmy_pack->pmesh->mb_indcs;
-    for (int dir = 0; dir < x.nf; ++dir) {
-      auto fc = x.fc[dir];
-      const int dk = (dir == 2), dj = (dir == 1), di = (dir == 0);
-      par_for("cln_rmsh", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, id.ks, id.ke + dk,
-              id.js, id.je + dj, id.is, id.ie + di,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        const CleanArgs &x = *px;
-        const Real w = fc(m,CLF_W,k,j,i);
-        if (CleanBoundaryFace(x, dir, m, k, j, i) || !(w < 1.0)) return;
-        const Real s = x.c*(fc(m,CLF_HP,k,j,i)*fmax(x.w(m,CLW_EO,k-dk,j-dj,i-di), 0.0) +
-                            fc(m,CLF_HM,k,j,i)*fmax(x.w(m,CLW_EO,k,j,i), 0.0));
-        fc(m,CLF_N+3,k,j,i) = w*(fc(m,CLF_G,k,j,i) - s)/(1.0 - w);
-        fc(m,CLF_DS,k,j,i) = fc(m,CLF_N+3,k,j,i);
-      });
-    }
-  }
-
   // 3. Newton iteration on the gas coupling and Picard passes on the lagged quantities:
   //    the slopes (reconstruction) and, with clean_closure = iterate, the closure from
   //    the rays of the iterate (at most clean_maxpic, then they are frozen and only the
@@ -4151,6 +4126,8 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
   if (flm && cln_flimc.extent_int(0) != 2) Kokkos::realloc(cln_flimc, 2);
   if (flm) Kokkos::deep_copy(cln_flimc, 0.0);
   auto flc = cln_flimc;
+  const bool rms = cln_rmsh && cln_rstold && !cln_rmdone && fk && e == CLW_X && dok;
+  DvceArray1D<Real> rmc("cln_rmc", 1);
   const bool fwb = cln_fwb;
   if (fwb && cln_fwbc.extent_int(0) != 3) Kokkos::realloc(cln_fwbc, 3);
   if (fwb && (sw < 0 || sm)) Kokkos::deep_copy(cln_fwbc, 0.0);
@@ -4592,10 +4569,22 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
         // flux's high-order part, whose memory is G + d (CleanFaceSource): its own
         // history, so that its steady state, F^H of G = F^H, does not depend on h)
         if (fk && e == CLW_X && dok) {   // (and its slope, CleanDInc)
-          const Real dd = fc(m,CLF_N,k,j,i) - fs - (1.0 - fc(m,CLF_TH,k,j,i))*
-                          fc(m,CLF_N+3,k,j,i);
+          const Real th = fc(m,CLF_TH,k,j,i);
+          const Real dd = fc(m,CLF_N,k,j,i) - fs - (1.0 - th)*fc(m,CLF_N+3,k,j,i);
           fc(m,CLF_N+3,k,j,i) += dd;
           if (kd > 0) fc(m,kd,k,j,i) = dd/x.h;
+          // (clean_rst_mshare, the first solution after a restart from an old scheme's
+          // file: the memory G + d at the fixed point of Phi^H = theta (G + d) + B of
+          // this E, the M1 share's steady flux B/(1 - theta), realisable (at most c E of
+          // its donor, counted): G + d = F_old left the share's relaxation at c chi to it
+          // as a transient)
+          if (rms && th < 1.0) {
+            const Real ms = (fc(m,CLF_N,k,j,i) - th*fc(m,CLF_G,k,j,i))/(1.0 - th);
+            const Real mc = fmin(fmax(ms, -x.c*fmax(x.w(m,e,k,j,i), 0.0)),
+                                 x.c*fmax(x.w(m,e,k-dk,j-dj,i-di), 0.0));
+            if (mc != ms) Kokkos::atomic_add(&rmc(0), 1.0);
+            fc(m,CLF_N+3,k,j,i) = mc - fs;
+          }
         }
         fc(m,CLF_N,k,j,i) = fs;
         fc(m,CLF_N+2,k,j,i) = fs;
@@ -4649,6 +4638,15 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
     if (global_variable::my_rank == 0 && n > 0.0) {
       std::printf("CLEAN FLIM cycle %d t2s %d faces %.0f momentum cut sum |dF| V/c^2 "
                   "%.6e\n", pmy_pack->pmesh->ncycle, t2_solve, n, p);
+    }
+  }
+  if (rms) {   // (clean_rst_mshare: once, at the old file's first solution)
+    cln_rmdone = true;
+    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), rmc);
+    const Real n = CleanReduce(h(0), false);
+    if (global_variable::my_rank == 0) {
+      std::printf("<rad_m1> clean_rst_mshare RESTART CONVERSION (one time): the M1 share's "
+                  "memory at its steady flux, faces at c E of the donor %.0f\n", n);
     }
   }
 }

@@ -658,7 +658,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // steady start (CleanRingMoments)
     cln_rfrst = pin->GetOrAddBoolean("rad_m1","clean_rot_ring_fill_rst",false);
     // clean_rst_mshare (default off): at a restart from a file without the clean state
-    // the M1 share's memory starts at the share of the file's face flux (CleanSolve)
+    // the M1 share's memory starts at its steady flux of the first solution
+    // (CleanStagFSolve)
     cln_rmsh = pin->GetOrAddBoolean("rad_m1","clean_rst_mshare",false);
     // clean_source_convex (default on): the rays' vet_scatter source of the clean scheme
     // (the state's own, CleanRays) with the absorption share kappa_P/chi at most 1, as
