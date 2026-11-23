@@ -1510,7 +1510,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   // (force_reference = clean: the reference is the force of the converged, accepted
   // first coupled solve, every iterate of which recaptures it; a failed one is redone)
   if (force_ref == M1_FREF_CLEAN && cln_feedback && !cln_vzero && nit >= 0 &&
-      nneg == 0 && !(t2stage && t2_fail) && !dtr_fail) cln_fref_set = true;
+      nneg == 0 && !(t2stage && t2_fail) && !dtr_fail && !t2_inprobe) cln_fref_set = true;
 
   cln_xd_on = false;   // (clean_stag_xdonor: q is of this solve's passes only)
   cln_kq_on = false;   // (clean_stag_kpos: q, pd of this stage)
