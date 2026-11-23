@@ -409,6 +409,9 @@ bool CleanRealizable(const CleanArgs &x, const Real *q, const int m, const int k
 //! line is drawn only between two stage-1 sets, and never into a stage-1 pass 0: at c dt
 //! >> dx the sets are successive closure iterates of a quasi-static field, not samples of
 //! a smooth history, and a line fed back into the next set over-relaxes that iteration.
+//! For the same reason the stage-2 line is weighted 1/(1 + z) in each cell, z = c dt/dx
+//! its light crossings per step: 1 - O(dt) where the radiation is resolved in time (the
+//! order unchanged), 0 where it is quasi-static and the closure follows the stage-1 one.
 
 #if M1_TU_PART(0)
 void RadiationM1::CleanClosureExtrap() {
@@ -476,9 +479,16 @@ void RadiationM1::CleanClosureExtrap() {
     const int j = js + (t/ni)%nj;
     const int k = ks + (t/(ni*nj))%nk;
     const int m = t/(ni*nj*nk);
+    // (stage 2 of sx: the line times 1/(1 + z), z = c dt / dx the light crossings of the
+    // cell's thinnest direction in a step)
+    Real z = 0.0;
+    for (int d = 0; d < x.nf && usec; ++d) {
+      z = fmax(z, x.c*dt*CleanDivF(x, d, m, k, j, i, 0.0, 1.0));
+    }
+    const Real wc = wx/(1.0 + z);
     Real q[CLN_N];
     for (int n = 0; n < CLN_N; ++n) {
-      q[n] = mb(m,n,k,j,i) + wx*(mb(m,n,k,j,i) - ma(m,n,k,j,i));
+      q[n] = mb(m,n,k,j,i) + wc*(mb(m,n,k,j,i) - ma(m,n,k,j,i));
     }
     // the extrapolated moments must be those of a non-negative intensity
     const bool ok = line && ma(m,CLN_J,k,j,i) > 0.0 && q[CLN_J] > 0.0 &&
