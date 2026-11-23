@@ -1346,6 +1346,22 @@ void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
                 << "created x vol=" << fl[0] << " energy created x vol=" << fl[1]
                 << " | FOFC first-order cell-stages=" << fl[2] << std::endl;
     }
+    // the density floor / velocity ceiling cells floor_pay skips: their total energy and
+    // mass change (hydro/dual_energy.cpp, all attempts, RK-weighted, x vol)
+    fluid::DualEnergy *pde = DualPayer(pmesh);
+    if (pde != nullptr) {
+      using fluid::DC_SKIP_DE; using fluid::DC_SKIP_DM; using fluid::DC_REFRESH;
+      Real sk[2] = {pde->hc[DC_SKIP_DE] + pde->hc[DC_SKIP_DE + DC_REFRESH],
+                    pde->hc[DC_SKIP_DM] + pde->hc[DC_SKIP_DM + DC_REFRESH]};
+#if MPI_PARALLEL_ENABLED
+      MPI_Allreduce(MPI_IN_PLACE, sk, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+      if (global_variable::my_rank == 0) {
+        std::cout << "<hydro> floor_pay skip cells (dfloor/vceil, all attempts, "
+                  << "RK-weighted): energy change x vol=" << sk[0] << " mass change x vol="
+                  << sk[1] << std::endl;
+      }
+    }
     if (global_variable::my_rank == 0) {
       // Print diagnostic messages related to the end of the simulation
       OutputCycleDiagnostics(pmesh);

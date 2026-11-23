@@ -61,7 +61,8 @@ enum DualCnt {
   DC_PAID = 24, DC_UNPAID = 25, DC_NPAY = 26, DC_RETEST = 27, DC_UNFLAG = 28,
   DC_GIVEN = 29, DC_TOPE_U = 30, DC_TOPE_R = 31,
   DC_FLR_R = 32, DC_FLR_RDE = 33,   // (+ DC_REFRESH = 44, 45: refresh) sum r, sum de r
-  DC_NCNT = 46
+  DC_SKIP_DE = 34, DC_SKIP_DM = 35,  // (+ 46, 47) the skip cells' E and mass change x vol
+  DC_NCNT = 48
 };
 
 struct DualEnergy {
