@@ -4318,14 +4318,17 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   // esrc V) and P_sponge (kinetic-energy loss rate of the top sponge at this state), the
   // two non-flux terms of d Etot/dt = L_in - L_top + P_esrc - P_sponge
   const int nb = hs_mlt_ ? 22 : 20;
-  pdata->nhist = nb + 6;
-  const char *lab[28] = {"L_bot", "L_mid", "L_int", "L_top", "L_in", "E_rad", "e_gas",
+  // L_midE, L_intE: the clean energy flux Phi of the step's last solve (t2pf1, what
+  // moved E; c/chat its stored chat/c) through the L_mid / L_int faces; L_mid / L_int
+  // are the faces' F (clean staggered: the face momentum, not the energy flux)
+  pdata->nhist = nb + 8;
+  const char *lab[30] = {"L_bot", "L_mid", "L_int", "L_top", "L_in", "E_rad", "e_gas",
                          "M_int", "KE_int", "KEr_int", "Mr_int", "PV_int", "V_int",
                          "M_tot", "Mdot_top", "Mdot_bot", "Etot", "Min_top",
                          "v1sq_wall", "Picard", "w_mlt", "L_MLT", "P_esrc", "P_sponge",
-                         "M_hflx", "E_hflx", "Lz_hflx", "Lz_tot"};
+                         "M_hflx", "E_hflx", "Lz_hflx", "Lz_tot", "L_midE", "L_intE"};
   for (int n=0; n<nb; ++n) pdata->label[n] = lab[n];
-  for (int n=0; n<6; ++n) pdata->label[nb+n] = lab[22+n];
+  for (int n=0; n<8; ++n) pdata->label[nb+n] = lab[22+n];
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, nx1 = indcs.nx1;
   const int js = indcs.js, nx2 = indcs.nx2, ks = indcs.ks, nx3 = indcs.nx3;
@@ -4349,6 +4352,9 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   // clean staggered: L_in / L_top = the energy the step's solves put through the x1
   // faces over dt (CleanBndAcc), the flux that moved E
   const bool lac = pm1->cln_ldt > 0.0 && pm1->cln_lacc.extent_int(0) > 0;
+  const bool hpf = pm1->clean && pm1->t2pf1_ok && pm1->t2pf1.extent_int(0) > 0;
+  auto pf1 = pm1->t2pf1;
+  const Real icc = pm1->c_light/pm1->chat;
   auto lacc = pm1->cln_lacc;
   const Real ildt = lac ? 1.0/pm1->cln_ldt : 0.0;
   // v1sq_wall: mean v_r^2 over the wall (first active) cells of the whole mesh
@@ -4379,6 +4385,10 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
         h.the_array[2] = ff0(m,k,j,i)*area1(m,k,j,i);
       }
       if (i == ie) h.the_array[3] = ff0(m,k,j,i+1)*area1(m,k,j,i+1);
+    }
+    if (hpf && i == imid) h.the_array[24] = icc*pf1(m,0,k,j,i)*area1(m,k,j,i);
+    if (hpf && x1f(m,i) <= rint && x1f(m,i+1) > rint) {
+      h.the_array[25] = icc*pf1(m,0,k,j,i)*area1(m,k,j,i);
     }
     if (i == ie && lac) h.the_array[3] = lacc(m,1,k,j)*ildt;
     if (i == is) h.the_array[4] = lac ? lacc(m,0,k,j)*ildt : fin*area1(m,k,j,i);
@@ -4429,6 +4439,8 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   pdata->hdata[nb] = sum_this.the_array[22];
   pdata->hdata[nb+1] = sum_this.the_array[23];
   // M_hflx, E_hflx, Lz_hflx: the step's am_bflx over its dt (0 without the module)
+  pdata->hdata[nb+6] = sum_this.the_array[24];
+  pdata->hdata[nb+7] = sum_this.the_array[25];
   for (int n=0; n<3; ++n) pdata->hdata[nb+2+n] = 0.0;
   hydro::AmModule *pam = hydro::AmModuleOf(pmbp);
   if (pam != nullptr && pam->am_bflx.extent_int(0) > 0 && pam->am_bdt > 0.0) {
