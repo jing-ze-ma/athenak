@@ -46,9 +46,11 @@ namespace repro {
 //! deposited exactly.  Set once by the Mesh constructor.
 inline bool block_mode = true;
 //! layout_invariant_mode = tile (<mesh>/layout_tile N): block mode with the partials
-//! of fixed N x N (x2, x3) tiles of the mesh in place of MeshBlocks (M1LayReduce), the
-//! history and shell sums exact: the same for every layout of whole-tile MeshBlocks
-inline int tile_n = 0;
+//! of fixed N x N (x2, x3) tiles of the mesh in place of MeshBlocks (M1LayReduce,
+//! HistSums, ShellSums): the same for every layout of whole-tile MeshBlocks, and a tile
+//! of the MeshBlock's size is the MeshBlock (block mode, bitwise); tile_nx2: the
+//! MeshBlock's nx2 (the Mesh constructor)
+inline int tile_n = 0, tile_nx2 = 0;
 //! <mesh>/layout_invariant: the history sums (HistSums) deposit their per-MeshBlock
 //! partials exactly and merge them over the ranks, so the history does not change with
 //! the rank count either (rank 0 holds the global value, the others 0: the history
@@ -247,22 +249,27 @@ void ShellSums(const char *name, const int nq, const int c1, const int nmb,
                const int ihi, const F &f, std::vector<Real> &out) {
   // (persistent scratch, ScratchView: every element is written below before it is read)
   auto rs = ScratchView<Kokkos::View<ReproSum**, DevMemSpace>>(std::string(name), nq, c1);
-  if (block_mode && tile_n == 0) {
+  if (block_mode) {
+    // (tile mode: the units are the tiles, (k, j) in increasing order in the tile)
+    const int nk = ke - ks + 1, nj = je - js + 1;
+    const int t2 = (tile_n > 0 && nj > 1) ? tile_n : nj;
+    const int t3 = (tile_n > 0 && nk > 1) ? tile_n : nk, nt2 = nj/t2, nu = nmb*nt2*(nk/t3);
     auto bp = ScratchView<Kokkos::View<Real***, DevMemSpace>>(std::string(name) + "_blk",
-                                                              nq, nmb, c1);
-    const int nqm = nq*nmb;
+                                                              nq, nu, c1);
+    const int nqm = nq*nu;
     Kokkos::parallel_for(std::string(name) + "_blk",
                          Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nqm*c1),
     KOKKOS_LAMBDA(const int idx) {
       const int i = idx % c1, qm = idx/c1;
-      const int q = qm/nmb, m = qm - q*nmb;
+      const int q = qm/nu, mu = qm - q*nu, m = mu/(nu/nmb), u = mu - m*(nu/nmb);
+      const int k0 = ks + (u/nt2)*t3, j0 = js + (u%nt2)*t2;
       Real a = 0.0;
       if (i >= ilo && i <= ihi) {
-        for (int k = ks; k <= ke; ++k) {
-          for (int j = js; j <= je; ++j) {a += f(q, m, k, j, i);}
+        for (int k = k0; k < k0 + t3; ++k) {
+          for (int j = j0; j < j0 + t2; ++j) {a += f(q, m, k, j, i);}
         }
       }
-      bp(q, m, i) = a;
+      bp(q, mu, i) = a;
     });
     Kokkos::parallel_for(std::string(name) + "_dep",
                          Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nq*c1),
@@ -270,7 +277,7 @@ void ShellSums(const char *name, const int nq, const int c1, const int nmb,
       const int q = idx/c1, i = idx % c1;
       ReproSum acc;
       acc.Init();
-      for (int m = 0; m < nmb; ++m) {acc.Add(bp(q, m, i));}
+      for (int m = 0; m < nu; ++m) {acc.Add(bp(q, m, i));}
       rs(q, i) = acc;
     });
   } else {
@@ -322,7 +329,7 @@ void HistSums(const char *name, const int nmb, const int nkji, const int nx1, co
               array_sum::GlobalSum &out) {
   constexpr int nq = NREDUCTION_VARIABLES;
   const int nr = nkji/nx1;
-  if (hist_exact && (!block_mode || tile_n > 0)) {
+  if (hist_exact && !block_mode) {
     // one team per row: its lanes take the terms of nq cells at a time into team
     // scratch, then lane q deposits quantity q of those cells in increasing i; the rows'
     // accumulators are joined in row order on the device (one thread per q), and only
@@ -375,8 +382,12 @@ void HistSums(const char *name, const int nmb, const int nkji, const int nx1, co
     for (int q = 0; q < nq; ++q) {out.the_array[q] = r0 ? v[q].Value() : 0.0;}
     return;
   }
+  // (tile mode: the units are the tiles, their rows in increasing order)
+  const int n2 = (tile_n > 0) ? tile_nx2 : nr, n3 = nr/n2;
+  const int t2 = (tile_n > 0 && n2 > 1) ? tile_n : n2;
+  const int t3 = (tile_n > 0 && n3 > 1) ? tile_n : n3, nt2 = n2/t2, ntb = nt2*(n3/t3);
   auto rp = ScratchView<DvceArray2D<Real>>(std::string(name) + "_row", nmb*nr, nq);
-  auto bp = ScratchView<DvceArray2D<Real>>(std::string(name) + "_blk", nq, nmb);
+  auto bp = ScratchView<DvceArray2D<Real>>(std::string(name) + "_blk", nq, nmb*ntb);
   Kokkos::parallel_for(std::string(name) + "_row",
                        Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nmb*nr),
   KOKKOS_LAMBDA(const int r) {
@@ -385,19 +396,22 @@ void HistSums(const char *name, const int nmb, const int nkji, const int nx1, co
     for (int q = 0; q < nq; ++q) {rp(r, q) = a.the_array[q];}
   });
   Kokkos::parallel_for(std::string(name) + "_blk",
-                       Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nq*nmb),
+                       Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nq*nmb*ntb),
   KOKKOS_LAMBDA(const int idx) {
-    const int q = idx/nmb, m = idx - q*nmb;
+    const int q = idx/(nmb*ntb), mu = idx - q*nmb*ntb, m = mu/ntb, u = mu - m*ntb;
+    const int r0 = m*nr + (u/nt2)*t3*n2 + (u%nt2)*t2;
     Real a = 0.0;
-    for (int r = m*nr; r < (m + 1)*nr; ++r) {a += rp(r, q);}
-    bp(q, m) = a;
+    for (int k = 0; k < t3; ++k) {
+      for (int j = 0; j < t2; ++j) {a += rp(r0 + k*n2 + j, q);}
+    }
+    bp(q, mu) = a;
   });
   auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), bp);
   if (hist_exact) {
     ReproSum v[nq];
     for (int q = 0; q < nq; ++q) {
       v[q].Init();
-      for (int m = 0; m < nmb; ++m) {v[q].Add(h(q, m));}
+      for (int m = 0; m < nmb*ntb; ++m) {v[q].Add(h(q, m));}
     }
     AllMerge(v, nq);
     const bool r0 = (global_variable::my_rank == 0);
@@ -406,7 +420,7 @@ void HistSums(const char *name, const int nmb, const int nkji, const int nx1, co
   }
   for (int q = 0; q < nq; ++q) {
     out.the_array[q] = 0.0;
-    for (int m = 0; m < nmb; ++m) {out.the_array[q] += h(q, m);}
+    for (int m = 0; m < nmb*ntb; ++m) {out.the_array[q] += h(q, m);}
   }
 }
 

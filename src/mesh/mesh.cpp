@@ -186,7 +186,7 @@ Mesh::Mesh(ParameterInput *pin) :
     const std::string lim = pin->GetOrAddString("mesh", "layout_invariant_mode", "block");
     // tile (with <mesh>/layout_tile N): block mode with fixed N x N (x2, x3) tiles of the
     // mesh in place of MeshBlocks (repro::tile_n; one MeshBlock along x1, checked with
-    // the MeshBlock size by rad_m1), and the history and shell sums exact
+    // the MeshBlock size by rad_m1)
     if (lim != "block" && lim != "exact" && lim != "tile") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<mesh>/layout_invariant_mode = '" << lim
@@ -878,6 +878,7 @@ Mesh::Mesh(ParameterInput *pin) :
   } else {
     mb_indcs.nx3 = mesh_indcs.nx3;
   }
+  repro::tile_nx2 = mb_indcs.nx2;   // (layout_invariant_mode = tile: HistSums)
 
   // error check consistency of the block and mesh
   if (mesh_indcs.nx1 % mb_indcs.nx1 != 0 ||

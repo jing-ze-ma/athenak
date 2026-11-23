@@ -68,14 +68,16 @@ void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real
     // t of M1_DR_NT accumulates the level-1 slots t, t + M1_DR_NT, ... in order, then
     // the fixed pairwise tree.  Every order is set by the code.
     // (tile mode, nxb the MeshBlock's cells: the units are the N x N (x2, x3) tiles
-    // instead, slot s the x1 row (k, j) = (s / t2, s % t2) of its tile, i in order)
+    // instead, q the cell's index in its tile: a tile of the MeshBlock's size is the
+    // MeshBlock's partial, bitwise)
     const bool tl = repro::tile_n > 0 && nxb != nullptr;
     const int t2 = (tl && nxb[1] > 1) ? repro::tile_n : 1;
     const int t3 = (tl && nxb[2] > 1) ? repro::tile_n : 1;
     const int n1 = tl ? nxb[0] : 1, n2 = tl ? nxb[1] : 1, nt2 = n2/t2;
     const int ntb = tl ? nt2*(nxb[2]/t3) : 1;
     const int nmb = (n/nkji)*ntb;   // (the units)
-    const int ns = tl ? t2*t3 : M1_LB_NS;
+    const int ntc = n1*t2*t3;   // (tile mode: the tile's cells)
+    const int ns = (tl && ntc < M1_LB_NS) ? ntc : M1_LB_NS;
     const int off2 = 4*nmb*ns;
     if (bpart.extent_int(0) < off2 + 4*nmb) {
       bpart = DvceArray1D<Real>(
@@ -91,9 +93,11 @@ void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real
       M1BcgVal v;
       v.s0 = v.s1 = v.s2 = v.mx = 0.0;
       if (tl) {
-        const int b = m/ntb, u = m - b*ntb;
-        const int k = (u/nt2)*t3 + sl/t2, j = (u%nt2)*t2 + sl%t2;
-        for (int i = 0; i < n1; ++i) {fn(b*nkji + (k*n2 + j)*n1 + i, v);}
+        const int b = m/ntb, u = m - b*ntb, k0 = (u/nt2)*t3, j0 = (u%nt2)*t2;
+        for (int q = sl; q < ntc; q += ns) {
+          const int r = q/n1, k = k0 + r/t2, j = j0 + r%t2;
+          fn(b*nkji + (k*n2 + j)*n1 + q - r*n1, v);
+        }
       } else {
         for (int q = sl; q < nkji; q += ns) {fn(m*nkji + q, v);}
       }
