@@ -785,6 +785,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_wb_floor_fail")) {
       cln_wbff = pin->GetBoolean("rad_m1","clean_wb_floor_fail");
     }
+    // clean_wb_exch_local (read only when named; default false; needs clean_gas_tfloor
+    // and an EOS tfloor > 0): the write-back's cell exchange solved exactly from the
+    // transported E (CleanWriteBack): E > 0 and the gas >= e(rho, tfloor) by
+    // construction, energy exact; the face FCT limits the transported E
+    if (pin->DoesParameterExist("rad_m1","clean_wb_exch_local")) {
+      cln_wbxl = pin->GetBoolean("rad_m1","clean_wb_exch_local");
+    }
     // clean_wb_floor_diag N (diagnostic, read only when named): the terms of the first
     // N cells of each write-back whose E the floor raises (CLEAN WBFDIAG)
     if (pin->DoesParameterExist("rad_m1","clean_wb_floor_diag")) {

@@ -2884,6 +2884,7 @@ class RadiationM1 {
   bool cln_gtf = false;         // clean_gas_tfloor: gas T >= tfloor, energy to/from E
   bool cln_wbfct = false;       // clean_wb_fct
   bool cln_wbff = false;        // clean_wb_floor_fail
+  bool cln_wbxl = false;        // clean_wb_exch_local
   Real cln_wbffn = 0.0;         // its steps accepted at the last cut
   int cln_wbfdg = 0;            // clean_wb_floor_diag (diagnostic)
   Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E

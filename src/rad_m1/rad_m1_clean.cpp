@@ -6337,7 +6337,8 @@ void RadiationM1::CleanWriteBack() {
   auto cx3 = pmy_pack->pcoord->x3v, cf1 = pmy_pack->pcoord->xx1f;
   auto cf2 = pmy_pack->pcoord->xx2f, cf3 = pmy_pack->pcoord->xx3f;
   const Real tgf = cln_gtf ? eos.tfloor : 0.0;   // (clean_gas_tfloor)
-  const bool gtf = cln_gtf, pgas = impl_pos_gas;
+  const bool gtf = cln_gtf, pgas = impl_pos_gas, lex = cln_wbxl && feedback && gtf;
+  if (lex && !(tgf > 0.0)) CleanFatal("<rad_m1>/clean_wb_exch_local needs a tfloor > 0");
   const Real pgf = impl_pos_gas_frac, efl = e_floor, pgk = impl_pos_flr_gk;
   // (clean_wb_floor_diag N: the first N floored cells of each write-back, their terms)
   const int fdn = cln_wbfdg;
@@ -6512,7 +6513,43 @@ void RadiationM1::CleanWriteBack() {
         // passes; a root below it raises the gas to e(rho, tfloor) with E's energy,
         // counted as implicit_pos_gas)
         Real eg = x.w(m,CLW_EP,k,j,i) - ex + pgx;   // (kpos: the gas's pd_g X)
-        if (gtf) {
+        // (clean_wb_exch_local: the cell's exchange solved exactly from the transported
+        // E* = X + den - wk - wp at the solve's opacities, G and beta terms s = EP (+ the
+        // kpos pd_g X): the root T >= tfloor of (1 + b)(e(rho, T) - eint) + c4 T^4 -
+        // b E* - s (b = h c kE, c4 = h c kP G a), increasing in T, so unique; E = (E* -
+        // s + c4 T^4)/(1 + b) > 0 for E* - s > 0 and the gas takes E* - E; the face
+        // FCT's probe keeps the iterate's T)
+        const Real es = x.w(m,CLW_X,k,j,i) + den - wk - wp;
+        const Real sp = x.w(m,CLW_EP,k,j,i) + pgx;
+        const Real lb = x.h*x.c*x.op(m,M1_OP_E,k,j,i);
+        if (gtf && lex && !prb) {
+          const Real d = uh(m,IDN,k,j,i), e0 = x.w(m,CLW_EI,k,j,i);
+          const Real c4 = x.h*x.c*x.op(m,M1_OP_P,k,j,i)*x.w(m,CLW_GM,k,j,i)*arad_;
+          auto fx = [&](const Real tt, Real &df) {
+            Real ee, p, chi_rho, chi_t, cv;
+            eos.ThermoAt(d, tt, ee, p, chi_rho, chi_t, cv);
+            df = (1.0 + lb)*d*cv + 4.0*c4*tt*tt*tt;
+            return (1.0 + lb)*(ee - e0) + c4*SQR(SQR(tt)) - lb*es - sp;
+          };
+          Real df, tl = tgf, th = fmax(t, tgf), tr = tgf;
+          const bool flo = !(fx(tl, df) < 0.0);
+          if (!flo) {
+            for (int n = 0; n < 2100 && fx(th, df) < 0.0; ++n) {tl = th; th *= 2.0;}
+            tr = th;
+            Real fr = fx(tr, df);
+            for (int n = 0; n < 200 && fr != 0.0 && th - tl > 4.0e-16*th; ++n) {
+              if (fr > 0.0) {th = tr;} else {tl = tr;}
+              const Real tn = tr - fr/df;
+              tr = (tn > tl && tn < th) ? tn : 0.5*(tl + th);
+              fr = fx(tr, df);
+            }
+          }
+          // (a root at tfloor: the exchange at T = tfloor; the gas's rest to e(rho,
+          // tfloor) is implicit_pos_gas's raise, below)
+          Real ei, p, chi_rho, chi_t, cv;
+          eos.ThermoAt(d, tr, ei, p, chi_rho, chi_t, cv);
+          eg = flo ? (lb*es + sp - c4*SQR(SQR(tgf)))/(1.0 + lb) : ei - e0;
+        } else if (gtf) {
           Real ei, p, chi_rho, chi_t, cv;
           eos.ThermoAt(uh(m,IDN,k,j,i), fmax(t, tgf), ei, p, chi_rho, chi_t, cv);
           eg = ei - x.w(m,CLW_EI,k,j,i);
@@ -6537,7 +6574,8 @@ void RadiationM1::CleanWriteBack() {
         if (fdn > 0) {dg[0] = eg; dg[1] = wk; dg[2] = wp; dg[3] = dw; dg[4] = rd;}
         if (prb) {   // (less E's round-off and e_floor: a limited cell stays above it)
           const Real q = x.w(m,CLW_Q,k,j,i);
-          wfp(m,3,k,j,i) = e + q - efl - 1.0e-12*(fabs(e) + fabs(q) + fabs(eg) + fabs(wk) +
+          wfp(m,3,k,j,i) = e + q - efl -
+              1.0e-12*(fabs(e) + fabs(q) + fabs(eg) + fabs(wk) +
               fabs(wp) + fabs(x.w(m,CLW_X,k,j,i)) + fabs(x.w(m,CLW_EO,k,j,i)));
           return;
         }
