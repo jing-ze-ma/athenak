@@ -64,6 +64,11 @@ void DualEnergy::Read(ParameterInput *pin, const std::string &block, const EOS_D
     pretry = pin->GetBoolean(blk, "floor_pay_retry");
     if (pretry && !pay) Fatal("<" + blk + ">/floor_pay_retry needs floor_pay = rad*");
   }
+  // floor_pay_skip (read only when named; default false): the dfloor / vceil cells too
+  if (Named(pin, blk, "floor_pay_skip")) {
+    pskip = pin->GetBoolean(blk, "floor_pay_skip");
+    if (pskip && !pay) Fatal("<" + blk + ">/floor_pay_skip needs floor_pay = rad*");
+  }
   retest = Named(pin, blk, "fofc_retest") && pin->GetBoolean(blk, "fofc_retest");
   if (Named(pin, blk, "floor_audit")) report = pin->GetInteger(blk, "floor_audit");
   if (Named(pin, blk, "dual_energy_eta")) eta = pin->GetReal(blk, "dual_energy_eta");
@@ -155,7 +160,7 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
   auto vol_ = curv ? pp->pcoord->volume : DvceArray4D<Real>("duale_v", 1, 1, 1, 1);
   auto &size = pp->pmb->mb_size;
   const bool sel_ = on && armed && valid;
-  const bool rs_ = on, pay_ = pay, edg_ = (report > 0);
+  const bool rs_ = on, pay_ = pay, psk_ = pay && pskip, edg_ = (report > 0);
   const Real eta_ = eta;
   const Real wst_ = wst;   // energies are counted and paid with their end-of-step weight
   const int iden_ = iden, ivol_ = ivol;
@@ -245,13 +250,16 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
       // same selection and floors, so its payment mirrors the neighbour's (the radiation
       // ghosts then stay consistent without another exchange)
       if (pay_) payv_(m,k,j,i) += wst_*(efin - econs);
-    } else if (act) {
+    } else {
       // a density floor / velocity ceiling cell: its total energy and mass change
-      const Real vol = curv ? vol_(m,k,j,i)
-                            : size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
-      s8 += 1.0;
-      s14 += wst_*(etpost - etpre)*vol;
-      s15 += wst_*(d - pre_(m,1,k,j,i))*vol;
+      if (act) {
+        const Real vol = curv ? vol_(m,k,j,i)
+                              : size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
+        s8 += 1.0;
+        s14 += wst_*(etpost - etpre)*vol;
+        s15 += wst_*(d - pre_(m,1,k,j,i))*vol;
+      }
+      if (psk_) payv_(m,k,j,i) += wst_*(etpost - etpre);
     }
     if (rs_) {
       u0(m,iden_,k,j,i) = efin;

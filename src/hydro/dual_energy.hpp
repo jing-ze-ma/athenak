@@ -34,6 +34,11 @@
 //!    cannot cover (down to e_floor) is counted as unpaid.  floor_pay = rad_column:
 //!    that rest is taken from the E_rad of the cell's radial column (MeshBlock, nearest
 //!    first, as implicit_pos_gas_cons); what is still left is created, CLEAN WARNING.
+//!  floor_pay_skip = true (needs floor_pay = rad*): also the cells whose density or
+//!    momentum the inversion changed (dfloor, vceil): their total energy change
+//!    E_after - E_before (kinetic energy removed, the floors) is given to / taken from
+//!    E_rad the same way, so gas + radiation is exact there too.  Off (default), it is
+//!    only counted (floor_audit skip_de / skip_dm, the run totals at the end).
 //!  floor_audit = N: report the cumulative per-cell counters every N cycles (rank 0):
 //!    cells with E - KE <= 0, KE-dominated, below e(rho, tfloor), below the EOS table
 //!    edge, dual selected, floored (metric-correct on the cubed sphere), and the volume
@@ -70,6 +75,7 @@ struct DualEnergy {
   bool pay = false;     // <blk>/floor_pay = rad (or rad_column)
   bool pcol = false;    // <blk>/floor_pay = rad_column: the rest from the radial column
   bool pretry = false;  // <blk>/floor_pay_retry: unpaid energy fails the cycle (dt_retry)
+  bool pskip = false;   // <blk>/floor_pay_skip: the density floor / velocity ceiling too
   bool retest = false;  // <blk>/fofc_retest
   bool any = false;     // Pre/Post bookkeeping active
   bool armed = false;   // a hydro update evolved the slots since the last Post
