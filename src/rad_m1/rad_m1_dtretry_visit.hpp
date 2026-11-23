@@ -1182,6 +1182,17 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("cln_s", cln_s);
   v.value("cln_cssc", cln_cssc);
   v.value("cln_rfh", cln_rfh);
+  v.value("cln_thr", cln_thr);
+  v.value("cln_wmin", cln_wmin);
+  v.value("cln_wfse", cln_wfse);
+  v.value("cln_hctau", cln_hctau);
+  v.value("cln_jse", cln_jse);
+  v.value("cln_hclat", cln_hclat);
+  v.value("cln_farea", cln_farea);
+  v.value("cln_bcarea", cln_bcarea);
+  v.value("cln_rsrel", cln_rsrel);
+  v.value("cln_fht", cln_fht);
+  v.value("cln_tdn", cln_tdn);
   v.view("cln_fvi", cln_fvi);
   v.view("cln_fvd", cln_fvd);
   v.value("cln_fvn", cln_fvn);
@@ -1196,6 +1207,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("cln_rnew", cln_rnew);
   v.value("cln_rfix", cln_rfix);
   v.value("cln_rok", cln_rok);
+  v.value("cln_rhist", cln_rhist);
   v.value("cln_rb", cln_rb);
   v.value("cln_rpb", cln_rpb);
   v.value("cln_rpt", cln_rpt);
