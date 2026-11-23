@@ -3627,7 +3627,14 @@ void RadiationM1::CleanStagBracket() {
       // centres, H_f = (tau_R H_L + tau_L H_R)/(tau_L + tau_R), tau the half-cell depths,
       // H r^2 on the radial faces of sp / cs (exact for a free stream); x1 faces of sp /
       // cs, every face of a Cartesian mesh.  An opaque cell next to a thin one: H_f -> the
-      // thin cell's H, the flux the surface emits, not the rays' value at the kink)
+      // thin cell's H, the flux the surface emits, not the rays' value at the kink.
+      // The rays' own face flux F_ray (x (r_d/r_f)^2 of its donor d on sp / cs, a free
+      // stream; 0 for an isotropic field) keeps the share e = (1 - min/max of the two
+      // cells' r^2 H) e^-tau_d: where the cells' H jump (a beam edge, a shadow, one cell
+      // dark) the mean of the cell values smears it and F_ray is the transport solution;
+      // where they agree (diffusion, a smooth free stream) or the donor is opaque the
+      // interpolation holds.  A convex blend of two face values within [-J_R, J_L] after
+      // the clamp below: single-valued per face (conservative), no new state)
       Real fy = rat ? fr0/jd*((fr0 > 0.0) ? jl : jr) : fr0;
       if (hct && (dir == 0 || !(x.sph || x.cub))) {
         const int il = i - di;
@@ -3635,9 +3642,14 @@ void RadiationM1::CleanStagBracket() {
           return (x.cs(m,CLN_HP+dir,kk,jj,ii) + x.cs(m,CLN_HM+dir,kk,jj,ii))*
                  x.cs(m,CLN_JR,kk,jj,ii);
         };
-        Real wl, wr;
-        CleanHcTauW(x, dir, m, k, j, i, wl, wr);
-        fy = wl*hc(k-dk, j-dj, il) + wr*hc(k, j, i);
+        Real wl, wr, tg[4];
+        CleanHcTauW(x, dir, m, k, j, i, wl, wr, tg);
+        const Real hl = hc(k-dk, j-dj, il), hr = hc(k, j, i);
+        const Real al = fabs(tg[2]*hl), ar = fabs(tg[3]*hr);
+        const Real e = ((hl*hr > 0.0) ? 1.0 - fmin(al, ar)/fmax(al, ar) : 1.0)*
+                       exp(-tg[(fr0 > 0.0) ? 0 : 1]);
+        const Real ga = (tg[(fr0 > 0.0) ? 2 : 3] - 1.0)*fy;
+        fy = (1.0 - e)*(wl*hl + wr*hr) + e*(fy + ga);
       }
       // (clean_face_hclat: the lateral faces of sp / cs the mean of the two cells' H along
       // the face normal, the old production's hc face value there (implicit_thin_hcface_gd

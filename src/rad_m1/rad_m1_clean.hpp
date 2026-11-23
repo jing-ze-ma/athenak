@@ -2052,11 +2052,12 @@ Real CleanCellFaceDistance(const CleanArgs &x, const int dir, const int m, const
 //! \brief clean_face_hctau / clean_face_jse (old production implicit_thin_hcface = tau):
 //! the weights of a cell value interpolated linearly in optical depth from the two cell
 //! centres to face (k,j,i) normal to dir, wl = tau_R/(tau_L + tau_R), tau the half-cell
-//! depths, x (r/r_f)^2 on the radial faces of sp / cs (exact for a free stream)
+//! depths, x (r/r_f)^2 on the radial faces of sp / cs (exact for a free stream);
+//! tg (if given): tau_L, tau_R and the two factors (r/r_f)^2 (1 off the sp / cs x1 faces)
 
 KOKKOS_INLINE_FUNCTION
 void CleanHcTauW(const CleanArgs &x, const int dir, const int m, const int k, const int j,
-                 const int i, Real &wl, Real &wr) {
+                 const int i, Real &wl, Real &wr, Real *tg = nullptr) {
   const int il = i - (dir == 0), jl = j - (dir == 1), kl = k - (dir == 2);
   const bool rad = (dir == 0 && (x.sph || x.cub));
   const Real dl = rad ? x.x1f(m,i) - x.x1v(m,il) : 1.0;
@@ -2065,10 +2066,11 @@ void CleanHcTauW(const CleanArgs &x, const int dir, const int m, const int k, co
   const Real tr = fmax(x.op(m,M1_OP_T,k,j,i), 0.0)*dr;
   wl = (tl + tr > 0.0) ? tr/(tl + tr) : 0.5;
   wr = 1.0 - wl;
-  if (rad) {
-    wl *= SQR(x.x1v(m,il)/x.x1f(m,i));
-    wr *= SQR(x.x1v(m,i)/x.x1f(m,i));
-  }
+  const Real gl = rad ? SQR(x.x1v(m,il)/x.x1f(m,i)) : 1.0;
+  const Real gr = rad ? SQR(x.x1v(m,i)/x.x1f(m,i)) : 1.0;
+  wl *= gl;
+  wr *= gr;
+  if (tg) tg[0] = tl, tg[1] = tr, tg[2] = gl, tg[3] = gr;
 }
 
 //----------------------------------------------------------------------------------------
