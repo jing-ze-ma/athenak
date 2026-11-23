@@ -1,0 +1,332 @@
+# Production star deck template: 35 Msun main-sequence star envelope.
+# The scheme keys are those of the 2026-11-23 production runs (commit 512cf768a), tile
+# layout mode (layout_tile = the lateral MeshBlock size; change both together).
+# Before running: replace TABLES/ in the he_* table / profile / IC file keys by the
+# directory of your copies (the files are not in the repository), and set the run
+# length and outputs.
+# Needs a binary built with -D PROBLEM=he_star_m1 (docs/m1_clean/BUILD.md).
+# Key meanings: docs/m1_clean/KEYS.md.  Restart rule: docs/m1_clean/RUN.md.
+
+<job>
+basename = m35mms
+
+<mesh>
+nghost = 3
+nx1 = 336
+x1min = 6.7463500000e+11
+x1max = 1.0641150000e+12
+ix1_bc = user
+ox1_bc = user
+nx2 = 256
+x2min = 1.39626340159546358
+x2max = 1.74532925199432953
+ix2_bc = periodic
+ox2_bc = periodic
+nx3 = 256
+x3min = 0.0
+x3max = 0.34906585039886590
+ix3_bc = periodic
+ox3_bc = periodic
+use_spherical_polar = true
+use_grid_stretch_r = true
+f_stretch_r = -0.455726942889053
+layout_invariant = true
+layout_invariant_mode = tile
+layout_tile = 128
+cs_seam_blockend = extend
+cs_vertex_3cell = true
+cs_seam_rho_guard = 4
+
+<meshblock>
+nx1 = 336
+nx2 = 128
+nx3 = 128
+
+<time>
+dt_retry = true
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim = -1
+tlim = 8.64e5
+ndiag = 50
+restart_refill_ghosts = false
+dt_retry_fac = 0.5
+dt_retry_fac_t2 = 0.9
+dt_retry_grow = 1.1
+dt_retry_host = false
+dt_retry_max = 8
+dt_retry_ngood = 20
+dt_retry_views = minimal
+dt_retry_t2_be = 0
+nan_check_cycles = 100
+
+<units>
+length_cgs = 1.0
+mass_cgs = 1.0
+time_cgs = 1.0
+mu = 0.6215
+
+<hydro>
+split_c2p_once = true
+am_transport = true
+sp_x2_periodic_image = true
+eos = general
+rad_signal_speed = true
+gamma = 1.6666666666666667
+reconstruct = plm
+rsolver = hllc
+fofc = false
+etotgrav = true
+wellbalance_dynamic = true
+dfloor = 1.0e-17
+pfloor = 1.0e-12
+dfloor_keep_velocity = true
+vceil = 3.0e8
+wall_wb_onesided = true
+floor_pay = rad_column
+general_eos = gamma
+tfloor = 133780565496.86447
+wb_x1 = true
+wb_option = polytropic
+wb_cache_every = 0
+wb_rmax = 1.097072e+12
+
+<rad_m1>
+floorcap_report = 25
+floorcap_v = 3e7
+floorcap_rho = 1e-14
+clean_stag_thinf_held = false
+clean_stag_flim = false
+clean_init_dtfac = 1.0e6
+vet_gd_gl_nmu = 7
+vet_gd_gl_nphi = 18
+vet_gd_gl_stagger = true
+clean_stag_thinf = false
+time2_enth_be = true
+time2_fref_wacc = true
+vet_interp = auto
+vet_col_lat_cut_thin = 1.0
+vet_bc_inner = auto
+vet_bc_reflect = auto
+vet_source = relaxed_esc
+time2_start = be
+time2_vet_col_source = blend
+implicit_gas_src = conservative2
+vet_seg = jump
+vet_bc_diff = face
+vet_source_noesrc_h2be = true
+vet_gd_allow_clamp = true
+vet_gd_halo_ipc = false
+implicit_pos_floor_solve = true
+vet_scatter_form = ma
+vet_scatter_j = relaxed
+vet_scatter_kappa_e = const
+c_light = 2.99792458e10
+arad = 2.3619941258e-47
+chat_over_c = 1.0
+closure = vet_col
+vet_gd = true
+vet_scatter = true
+vet_gd_replace = true
+vet_col_lat_taucut = 30.0
+vet_col_lat_offdiag = operator
+vet_gd_tangential = true
+vet_gd_wall_interp = true
+vet_gd_halo_compact = 2
+opacity = table
+temp_unit_kelvin = 7.4749268633e-09
+rho_unit_cgs = 1.0
+kappa_unit = 1.0
+e_floor = 1.0e-4
+coupling = true
+gas_feedback = true
+force_reference = wb_arad
+transport = implicit
+implicit_lin_maxit = 200
+implicit_resid_fatal = 1.0e-2
+implicit_maxit = 200
+implicit_enthalpy = plm
+implicit_predictor = step
+implicit_pos_gas = true
+implicit_pos_floor = true
+time_scheme = hesdirk2
+vet_col_every = 1
+marshak_q = 0.5
+implicit_bc_x1min = flux
+implicit_flux_x1min = 1.8587122274e+14
+implicit_bc_x1max = marshak
+implicit_flux_x1max = 0.0
+implicit_predictor_tcap = 1.1
+time2_face_fct = true
+time2_k1_redist = 0
+time2_stage_local_be = false
+scheme = clean
+clean_layout = staggered
+clean_rays = sc
+zalesak_active = true
+clean_xt_exact = cons
+implicit_pos_floor_cons = true
+implicit_pos_floor_gas_keep = 1
+implicit_pos_gas_cons = true
+clean_stag_xdonor = lag
+clean_stag_xsrc = true
+clean_stag_mg_color = mirror
+time2_auto_be = 16
+time2_k1_stiff = 0
+clean_conv_kappa = 1.0
+cs_vertex_mono = true
+cs_cross_mono = true
+clean_init = steady
+vet_rotate_avg_ema = 0
+clean_cs_lz_tel = false
+vet_gd_ls = 10
+vet_rotate_avg = 0
+vet_gd_rotate_dt = 0
+force_reference_work = split
+clean_maxit = 200
+clean_conv_max = 1.0e-5
+time2_tableau = sdirk2
+time2_gtime_mom = true
+clean_stag_xdonor_freeze = 4
+time2_cfl_post = true
+clean_w_fse = true
+clean_w_fse_tau = true
+clean_pred_stage = false
+clean_stag_central = true
+clean_stag_kpat = false
+clean_stag_eicarry = true
+clean_face_hctau = true
+clean_face_jse = true
+clean_face_jse_cell = false
+clean_bc_area = true
+clean_stag_upwind_central = true
+vet_seg_plateau = false
+clean_rot_ring_fill_rst = true
+clean_rst_mshare = true
+clean_bc = halfrange
+clean_bicg_stall_fac = 0.99
+clean_bicg_stall_its = 0
+clean_closure = extrap1
+clean_consistency = 1
+clean_conv = budget
+clean_conv_est_f = 0
+clean_face_area = 0
+clean_face_hclat = 0
+clean_face_opac = harmonic
+clean_fill_cs_remap = 0
+clean_fill_passes = 8
+clean_gas_newton_switch = 4
+clean_gas_newton_switch_min = 6
+clean_halo_direct = 1
+clean_init_cnorm = 1e-10
+clean_lin_cnorm = 1e-10
+clean_lin_pass = true
+clean_maxnl = 200
+clean_maxpic = 12
+clean_nl_norm = global
+clean_pass_damp = 0
+clean_pc_sweep = rb
+clean_predict = 1
+clean_ray_cut_margin = 10
+clean_ray_cut_r = 0.01
+clean_ray_cut_taumin = 0
+clean_ray_cut_wait = 10
+clean_ray_min = 0.001
+clean_ray_source_relaxed = 0
+clean_retry_budget = 0
+clean_ring_jmin = 1
+clean_rot_fuse = true
+clean_rot_ring = off
+clean_source_convex = 1
+clean_stag_fcone = true
+clean_stag_fwb = true
+clean_stag_fwb_ring = 0
+clean_stag_fwb_stage = false
+clean_stag_fwb_t2 = false
+clean_stag_lat_sums = 0
+clean_stag_opac_drag = 0
+clean_stag_opac_passes = 3
+clean_stag_opac_update = true
+clean_stag_pcr = 1
+clean_stag_rayratio = 0
+clean_stag_tie_gid = 0
+clean_stall_fac = 0.5
+clean_thin_donor = 0
+clean_tol = 1e-10
+clean_tol_nl = 1e-11
+clean_troot_rtol = 1e-13
+clean_w_c0 = 0.3
+clean_w_c1 = 0.6
+clean_w_face_min = 0
+clean_wb_fct = true
+vet_gd_rotate_align = true
+vet_gd_rotate_xfade = true
+vet_rotate_advance = true
+vet_rotate_avg_ema_change_form = linear
+clean_stag_fs_line = pcr
+floorcap_mesh_vol = 0
+
+<problem>
+he_ic_balance = false
+he_seed_band = n2
+he_ic_linhao = false
+he_bc_linhao = false
+he_ic_rad_gas = column
+he_ic_rad_hse = false
+he_ic_rad = file
+he_ic_eint_from_t = true
+user_srcs = true
+user_bcs = true
+user_hist = true
+he_gm = 4.6449357021e+27
+he_gravity = wb
+he_ic_file = TABLES/m35mms/ic_m35mms.txt
+he_opac_table = TABLES/tables/rosseland_mesakap_gs98_x0.70_z0.02.txt
+he_planck_table = TABLES/tables/planck_ext2_gs98_x0.70_z0.02.txt
+he_nfine = 262144
+he_tau_int = 1.0
+he_ic_cols = 5
+he_wall_zero_flux = true
+mlt_flux_frozen = false
+he_wall_closed = true
+mlt_closure = frozen
+he_grid_dump = true
+he_bc_outer = copy
+he_bc_outer_r2 = false
+he_bc_inner = wall
+he_ic_balance_rmax = 8.776579e+11
+
+<output1>
+file_type = hst
+dt = 0
+dcycle = 1
+data_format = %24.16e
+
+<output2>
+file_type = bin
+variable = hydro_w
+dt = 1800.0
+
+<output3>
+file_type = bin
+variable = m1
+dt = 1800.0
+
+<output4>
+file_type = log
+dt = 1.0e4
+
+<output5>
+file_type = rst
+dt = 21600.0
+
+<output6>
+file_type = bin
+variable = m1_vet
+dt = 43200
+
+<output7>
+file_type = bin
+variable = m1_face
+dt = 43200
