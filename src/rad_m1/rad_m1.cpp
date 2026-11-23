@@ -785,6 +785,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_wb_floor_fail")) {
       cln_wbff = pin->GetBoolean("rad_m1","clean_wb_floor_fail");
     }
+    // clean_wb_floor_diag N (diagnostic, read only when named): the terms of the first
+    // N cells of each write-back whose E the floor raises (CLEAN WBFDIAG)
+    if (pin->DoesParameterExist("rad_m1","clean_wb_floor_diag")) {
+      cln_wbfdg = pin->GetInteger("rad_m1","clean_wb_floor_diag");
+    }
     // clean_gas_newton_switch (default W = 4 on a fresh run, USER 11-21, recorded; 0 = off;
     // W in [3, 64]), clean_gas_newton_switch_min (default 6 on a fresh run, else 20),
     // clean_stall_fac (0.5): the old production's implicit_gas_newton_switch, a stalled

@@ -6339,6 +6339,11 @@ void RadiationM1::CleanWriteBack() {
   const Real tgf = cln_gtf ? eos.tfloor : 0.0;   // (clean_gas_tfloor)
   const bool gtf = cln_gtf, pgas = impl_pos_gas;
   const Real pgf = impl_pos_gas_frac, efl = e_floor, pgk = impl_pos_flr_gk;
+  // (clean_wb_floor_diag N: the first N floored cells of each write-back, their terms)
+  const int fdn = cln_wbfdg;
+  DvceArray1D<Real> fdc;
+  if (fdn > 0) fdc = DvceArray1D<Real>("cln_wbfdc", 1);
+  const int fcy = pmy_pack->pmesh->ncycle, fts = t2_solve;
   auto pc_ = pos_cnt_d;
   const bool pflr = impl_pos_floor, pfc = pflr && impl_pos_flr_cons;
   // (rule 9: the E floor's raise neither the gas nor the column covered, created, M1_POS_
@@ -6415,6 +6420,7 @@ void RadiationM1::CleanWriteBack() {
     }
     Real dm[3] = {0.0, 0.0, 0.0}, dh[3] = {0.0, 0.0, 0.0}, dkr[3] = {0.0, 0.0, 0.0};
     Real den = 0.0, wsl = 0.0, wkr = 0.0;
+    Real dg[5] = {0.0, 0.0, 0.0, 0.0, 0.0};   // (clean_wb_floor_diag: eg wk wp dw rd)
     const Real d0 = x.w(m,CLW_JV,k,j,i);   // (the stage start's eint deficit, <= 0)
     if (feedback) {
       Real mg[3], pg[3], rf[3], dlz = 0.0;
@@ -6528,6 +6534,7 @@ void RadiationM1::CleanWriteBack() {
         if (cls) x.w(m,CLW_PW,k,j,i) = fabs(den - eg - wk - wp)/fmax(fabs(e) +
             fabs(x.w(m,CLW_EO,k,j,i)) + fabs(x.w(m,CLW_EI,k,j,i)), 1.0e-300);
         e += rd;
+        if (fdn > 0) {dg[0] = eg; dg[1] = wk; dg[2] = wp; dg[3] = dw; dg[4] = rd;}
         if (prb) {   // (less E's round-off and e_floor: a limited cell stays above it)
           const Real q = x.w(m,CLW_Q,k,j,i);
           wfp(m,3,k,j,i) = e + q - efl - 1.0e-12*(fabs(e) + fabs(q) + fabs(eg) + fabs(wk) +
@@ -6591,6 +6598,14 @@ void RadiationM1::CleanWriteBack() {
         pfd(m,k,j,i) = (efl - e - take)*vol;
       } else {
         Kokkos::atomic_add(&pc_(M1_POS_FLR_UN), (efl - e - take)*vol);
+      }
+      if (fdn > 0 && Kokkos::atomic_fetch_add(&fdc(0), 1.0) < fdn) {
+        printf("CLEAN WBFDIAG cycle %d t2s %d m %d kji %d %d %d rho %.4e T %.4e EO %.4e "
+               "X %.4e E %.4e Q %.4e EI %.4e d0 %.4e eg %.4e wk %.4e wp %.4e dw %.4e "
+               "rd %.4e den %.4e take %.4e dm %.4e %.4e %.4e vol %.4e\n", fcy, fts, m, k,
+               j, i, uh(m,IDN,k,j,i), x.w(m,CLW_T,k,j,i), x.w(m,CLW_EO,k,j,i),
+               x.w(m,CLW_X,k,j,i), e, x.w(m,CLW_Q,k,j,i), x.w(m,CLW_EI,k,j,i), d0, dg[0],
+               dg[1], dg[2], dg[3], dg[4], den, take, dm[0], dm[1], dm[2], vol);
       }
       e = efl;
       Kokkos::atomic_add(&pc_(M1_POS_FLR), 1.0);
