@@ -687,6 +687,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("t2_abe_left", t2_abe_left);
   v.value("t2_abe_now", t2_abe_now);
   v.value("t2_beonly", t2_beonly);
+  v.value("t2_cfl_post", t2_cfl_post);
   v.value("t2_abe_n", t2_abe_n);
   v.value("t2_abe_ntry", t2_abe_ntry);
   v.value("t2_abe_nok", t2_abe_nok);
@@ -722,6 +723,9 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("vet_prev", vet_prev);
   v.view("vet_now", vet_now);
   v.view("vet_opac", vet_opac);
+  v.view("t2hs", t2hs);
+  v.value("t2_gt", t2_gt);
+  v.value("t2_gtm", t2_gtm);
   v.value("t2_start", t2_start);
   v.value("impl_vimp_bc", impl_vimp_bc);
   v.value("t2_start_frac", t2_start_frac);
@@ -1002,6 +1006,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cs_seam_dmax", cs_seam_dmax);
   v.value("dbg_etally", dbg_etally);
   v.view("acl_cnt_d", acl_cnt_d);
+  v.value("cln_rk", cln_rk);
   v.value("cln_fvgf", cln_fvgf);
   v.value("clean", clean);
   v.value("cln_c0", cln_c0);
@@ -1034,6 +1039,10 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_tolrmx", cln_tolrmx);
   v.value("cln_gtf", cln_gtf);
   v.value("cln_wbfct", cln_wbfct);
+  v.value("cln_wbff", cln_wbff);
+  v.value("cln_wbxl", cln_wbxl);
+  v.value("cln_wbffn", cln_wbffn);
+  v.value("cln_wbfdg", cln_wbfdg);
   v.value("cln_raymin", cln_raymin);
   v.value("cln_rcut_on", cln_rcut_on);
   v.value("cln_rcut_r", cln_rcut_r);
@@ -1043,7 +1052,12 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_rcut", cln_rcut);
   v.value("cln_rcut_n", cln_rcut_n);
   v.value("cln_fillpass", cln_fillpass);
+  v.value("cln_fillcs", cln_fillcs);
+  v.value("cln_jsec", cln_jsec);
   v.value("cln_pred", cln_pred);
+  v.value("cln_pst", cln_pst);
+  v.value("cln_gsec", cln_gsec);
+  v.value("cln_pxc", cln_pxc);
   v.value("cln_kpred", cln_kpred);
   v.value("cln_k1ok", cln_k1ok);
   v.value("cln_bdry_form", cln_bdry_form);
@@ -1054,6 +1068,8 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_ringjmin", cln_ringjmin);
   v.value("cln_rfrst", cln_rfrst);
   v.value("cln_rfdone", cln_rfdone);
+  v.value("cln_rmsh", cln_rmsh);
+  v.value("cln_rmdone", cln_rmdone);
   v.value("cln_linpass", cln_linpass);
   v.value("cln_srccvx", cln_srccvx);
   v.value("cln_freal", cln_freal);
@@ -1072,6 +1088,8 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_kqs", cln_kqs);
   v.view("cln_ky1", cln_ky1);
   v.value("cln_kreal", cln_kreal);
+  v.value("cln_kpat", cln_kpat);
+  v.value("cln_eicry", cln_eicry);
   v.value("cln_colf", cln_colf);
   v.value("cln_lza", cln_lza);
   v.value("cln_lzbook", cln_lzbook);
@@ -1083,6 +1101,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.view("cln_flimc", cln_flimc);
   v.view("cln_mclc", cln_mclc);
   v.value("cln_fwb", cln_fwb);
+  for (int q0_ = 0; q0_ < 3; ++q0_) {v.view("cln_fsjt[]", cln_fsjt[q0_]);}
   v.view("cln_fwbc", cln_fwbc);
   v.value("cln_fcone", cln_fcone);
   v.value("cln_fcgas", cln_fcgas);
@@ -1166,6 +1185,8 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_fsk", cln_fsk);
   v.value("cln_vimp", cln_vimp);
   v.value("cln_upw", cln_upw);
+  v.value("cln_ucp", cln_ucp);
+  v.value("cln_ucen", cln_ucen);
   v.value("cln_sbimp", cln_sbimp);
   v.value("cln_split", cln_split);
   v.value("cln_nr1", cln_nr1);
@@ -1177,7 +1198,6 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_init", cln_init);
   v.value("cln_faces_set", cln_faces_set);
   v.value("cln_rstold", cln_rstold);
-  v.value("cln_rmdone", cln_rmdone);
   v.value("cln_havec", cln_havec);
   v.value("cln_cip", cln_cip);
   v.value("cln_opsaved", cln_opsaved);
@@ -1189,6 +1209,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("cln_thr", cln_thr);
   v.value("cln_wmin", cln_wmin);
   v.value("cln_wfse", cln_wfse);
+  v.value("cln_wfst", cln_wfst);
   v.value("cln_hctau", cln_hctau);
   v.value("cln_jse", cln_jse);
   v.value("cln_hclat", cln_hclat);
@@ -1613,6 +1634,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_hcomp", vgd_hcomp);
   v.value("vgd_capped", vgd_capped);
   v.value("vgd_allow_clamp", vgd_allow_clamp);
+  v.value("vgd_rset", vgd_rset);
   v.value("vgd_nclamp_seen", vgd_nclamp_seen);
   v.value("vgd_npath", vgd_npath);
   v.value("vgd_hinw", vgd_hinw);

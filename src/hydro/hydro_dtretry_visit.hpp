@@ -44,6 +44,7 @@ void hydro::Hydro::DtRetryVisit(V &v) {
   v.value("dt_diag_valid", dt_diag_valid);
   v.value("dtnew_prev", dtnew_prev);
   v.value("rad_signal_speed", rad_signal_speed);
+  v.value("rss_inertia", rss_inertia);
   v.view("fofc", fofc);
   v.value("use_fofc", use_fofc);
   v.view("fofc_cnt", fofc_cnt);
@@ -114,6 +115,11 @@ void hydro::Hydro::DtRetryVisit(V &v) {
   v.view("pfacewb.x1f", pfacewb.x1f);
   v.view("pfacewb.x2f", pfacewb.x2f);
   v.view("pfacewb.x3f", pfacewb.x3f);
+  v.value("use_dfl", use_dfl);
+  v.value("dfl_n", dfl_n);
+  v.view("dfl_th", dfl_th);
+  v.view("dfl_thc", dfl_thc);
+  v.view("dfl_sm", dfl_sm);
 }
 
 // not visited (pointers, const, threads, timers, MPI, ...):
@@ -134,6 +140,9 @@ void hydro::Hydro::DtRetryVisit(V &v) {
 //   pbval_ml : MeshBoundaryValuesCC *
 //   pmlfs : DvceFaceFld5D<Real> *
 //   id : HydroTaskIDs
+//   pbval_dfl : MeshBoundaryValuesCC *
+//   pbval_dfs : MeshBoundaryValuesCC *
+//   pdfl_fs : DvceFaceFld5D<Real> *
 //   pmy_pack : MeshBlockPack *
 
 #endif  // HYDRO_HYDRO_DTRETRY_VISIT_HPP_
