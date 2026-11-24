@@ -186,35 +186,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   }
   }
   dbg_etally = pin->GetOrAddBoolean("rad_vet","dbg_energy_tally",false);
-  // the fast set of the fixed-tensor closures (eddington, vet_sc, tau) with bicgstab and
-  // ONE MeshBlock along x1: implicit_krylov_fuse (3; 1 with implicit_lin_cnorm > 0) and
-  // implicit_op_stencil (not with a periodic x1 wrap).  A key the input names keeps its
-  // value.
   const bool fixcl = eddington || vet_sc || tau_closure;
-  const bool fdef = fixcl && (impl_solver == M1_ISOLV_BICGSTAB) &&
-                    (pmy_pack->pmesh->mesh_indcs.nx1 == pmy_pack->pmesh->mb_indcs.nx1);
-  const bool cn_def = pin->DoesParameterExist("rad_vet","implicit_lin_cnorm") &&
-                      pin->GetReal("rad_vet","implicit_lin_cnorm") > 0.0;
-  // the x1 wrap as the boundary parsing below will read it (same keys, same defaults)
-  const bool x1per = (ImplBCFromString(
-      pin->GetOrAddString("rad_vet","implicit_bc_x1min","auto"),
-      pmy_pack->pmesh->mesh_bcs[static_cast<int>(BoundaryFace::inner_x1)])
-      == M1_IBC_PERIODIC);
-  impl_kfuse = pin->GetOrAddInteger("rad_vet","implicit_krylov_fuse",
-                                    fdef ? (cn_def ? 1 : 3) : 0);
-  // a restart file written without cnorm echoes the defaulted fuse 3: with cnorm named
-  // now it runs fuse 1, echoed
-  if (impl_kfuse == 3 && cn_def &&
-      pin->IsParameterDefaulted("rad_vet","implicit_krylov_fuse")) {
-    impl_kfuse = 1;
-    pin->SetInteger("rad_vet","implicit_krylov_fuse",1);
-    std::cout << "rad_vet: implicit_krylov_fuse 3 (defaulted in the restart file) -> 1, "
-              << "since implicit_lin_cnorm > 0" << std::endl;
-  }
-  if (impl_kfuse < 0 || impl_kfuse > 3) {
-    ImplFatal("<rad_vet>/implicit_krylov_fuse must be 0, 1, 2 or 3");
-  }
-  impl_stencil = pin->GetOrAddBoolean("rad_vet","implicit_op_stencil",fdef && !x1per);
   impl_onep = 0;
   for (int t = 0; t < 3; ++t) {
     onep_qa[t] = -1.0;
@@ -563,8 +535,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   iflux_x1max = pin->GetOrAddReal("rad_vet","implicit_flux_x1max",0.0);
   iebath_x1min = pin->GetOrAddReal("rad_vet","implicit_ebath_x1min",0.0);
   iebath_x1max = pin->GetOrAddReal("rad_vet","implicit_ebath_x1max",0.0);
-  impl_bc_advect = pin->GetOrAddBoolean("rad_vet","implicit_bc_advect",
-                                        !global_variable::restart_run);
   if ((ibc_x1min == M1_IBC_PERIODIC) != (ibc_x1max == M1_IBC_PERIODIC)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_vet> implicit x1 boundaries: periodic must be set on BOTH "

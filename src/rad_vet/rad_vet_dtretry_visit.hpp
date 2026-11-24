@@ -168,7 +168,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("ibm_f", ibm_f);
   v.view("ibm_s", ibm_s);
   v.value("impl_mface_lin", impl_mface_lin);
-  v.value("impl_bc_advect", impl_bc_advect);
   v.view("f0x1", f0x1);
   v.view("iw", iw);
   v.value("impl_nstep", impl_nstep);
@@ -258,7 +257,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("impl_prec_fb", impl_prec_fb);
   v.value("bcg_capped", bcg_capped);
   v.view("odc", odc);
-  v.value("impl_stencil", impl_stencil);
   v.view("ost", ost);
   v.value("st_edges", st_edges);
   v.value("impl_onep", impl_onep);
@@ -270,7 +268,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("onep_actr", onep_actr);
   v.value("onep_prb", onep_prb);
   v.value("impl_pord", impl_pord);
-  v.value("impl_kfuse", impl_kfuse);
   v.value("impl_prec", impl_prec);
   v.view("gc_part", gc_part);
   v.view("gc_x", gc_x);

@@ -1088,9 +1088,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   aa_hasp = false;
   aa_fnp = -1.0;
   // ---- milestone 3g: the gas-radiation energy coupling
-  impl_stencil = false;
   st_edges = true;
-  impl_kfuse = 0;
   impl_prec = 0;
   // ---- end of the 3a hook
   e_floor = pin->GetOrAddReal("rad_vet","e_floor",(FLT_MIN));

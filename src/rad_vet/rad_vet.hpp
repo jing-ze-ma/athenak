@@ -668,9 +668,6 @@ class RadiationVet {
   // the cell form under vet_col_surface_q, whose q = H(face)/J(top cell) is built for
   // the cell E.
   bool impl_mface_lin = false;
-  // implicit_bc_advect: a MARSHAK x1 end also carries the advected enthalpy flux
-  // A E (outflow: the end cell's E; inflow: the bath).  Default off (bitwise).
-  bool impl_bc_advect{};
                                 // energy density, F_f = +-c q (E - E_bath);
                                 // 0 is the plain free surface
   DvceArray4D<Real> f0x1;       // face-normal comoving flux on x1 faces, (m,k,j,i);
@@ -955,8 +952,6 @@ class RadiationVet {
   // ---- GPU cost of the Krylov iteration (bench/m1_fast_0923).  Every key defaults OFF;
   // off, nothing below is allocated or referenced and the path is bitwise HEAD.
   DvceArray5D<Real> odc;        // (m,3,k,j,i) that cache
-  bool impl_stencil{};          // <rad_vet>/implicit_op_stencil: the operator of each
-                                // Picard pass as a 19-point stencil, built once
   DvceArray5D<Real> ost;        // (m,19,k,j,i) that stencil
   bool st_edges{};              // ...and whether any edge coefficient is non-zero
   int impl_onep{};              // <rad_vet>/implicit_one_pass: check period N (0 = off;
@@ -971,11 +966,6 @@ class RadiationVet {
   Real onep_prb[3]{};           // 1: on as a re-probe, not yet confirmed by an acceptance
   int impl_pord{};              // <rad_vet>/implicit_predictor_order: 1 or 2 (default 2
                                 // for be, see ImplicitInit)
-  int impl_kfuse{};             // <rad_vet>/implicit_krylov_fuse: 1 = the preconditioner
-                                // reads/writes the Krylov vectors directly and carries
-                                // the p / s updates (bitwise); 2 = 1 plus the (rhat,v)
-                                // and (t,s),(t,t) reductions inside the operator kernel;
-                                // 3 = 2 with two blocking reductions per iteration
   int impl_prec{};              // <rad_vet>/implicit_precond: 0 = x1 line Jacobi (the
                                 // original), 1 = symmetric red-black transverse line
                                 // Gauss-Seidel, block-local (no communication), 2 = its
