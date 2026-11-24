@@ -1,0 +1,5 @@
+2026-11-23 17:47:03 start BIN md5=9b4e69b95745378ec87bbbfe2287667c deck md5=e5b340282c3be1abada554c4abdf063e
+2026-11-23 17:47:24 rc=0 last: 
+2026-11-23 17:51:39 previous start cancelled after 10 s (m35mms dt diag first, orion 23zg); restarting fresh
+2026-11-23 17:51:39 start BIN md5=9b4e69b95745378ec87bbbfe2287667c deck md5=e5b340282c3be1abada554c4abdf063e
+2026-11-23 19:22:03 rc=0 last: elapsed=5.413671e+03 cycle=15900 time=3.620612e+04 dt=1.709693e+00
