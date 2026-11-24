@@ -114,10 +114,9 @@ const char *kDtrMinimal[] = {
   // it needs no clone of its own)
   "m1.cln_fvi", "m1.cln_fh", "m1.cln_top",
   "m1.cln_rr", "m1.cln_rpd", "m1.cln_fvd",
-  // (not visited before the generated visitor): vet_gd_rotate_xfade's G/A/Delta slots,
-  // read by the next builds' estimate (RotXfEst); and the cumulative counters of the
-  // run report
-  "m1.vgd_xf_d", "m1.cmi_cnt", "m1.fcd_cnt_d",
+  // (not visited before the generated visitor): the cumulative counters of the run
+  // report
+  "m1.cmi_cnt", "m1.fcd_cnt_d",
 };
 
 // the Views of kDtrMinimal that <rad_m1>/scheme = clean does not write

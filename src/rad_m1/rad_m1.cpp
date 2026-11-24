@@ -1886,24 +1886,21 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade")) {
       // (a fixed set has nothing to cross-fade: the key is inert there)
       vgd_xf = pin->GetBoolean("rad_m1","vet_gd_rotate_xfade") && VgdRotOn();
-      // (the combination checks: VetGdXfade, after every key is read)
-      if (vgd_xf && pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade_m")) {
-        vgd_xf_m = pin->GetInteger("rad_m1","vet_gd_rotate_xfade_m");
-      }
-      if (vgd_xf_m > 0 && pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade_lean")) {
-        vgd_xf_lean = pin->GetBoolean("rad_m1","vet_gd_rotate_xfade_lean");
-      }
-      if (vgd_xf_lean && pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade_pen")) {
-        vgd_xf_lpen = pin->GetBoolean("rad_m1","vet_gd_rotate_xfade_pen");
+      // (vet_gd_rotate_xfade_m > 0 and its _lean, _pen: the old scheme's sparse
+      // next-set sweeps, removed)
+      if (vgd_xf && pin->DoesParameterExist("rad_m1","vet_gd_rotate_xfade_m") &&
+          pin->GetInteger("rad_m1","vet_gd_rotate_xfade_m") != 0) {
+        std::cout << "### FATAL ERROR <rad_m1>/vet_gd_rotate_xfade_m = "
+                  << pin->GetInteger("rad_m1","vet_gd_rotate_xfade_m")
+                  << " was removed (only 0)" << std::endl;
+        std::exit(EXIT_FAILURE);
       }
       // the fused two-set sweep (VetGdXffOk decides where it applies)
       if (vgd_xf) {vgd_xff = true;}
       if (vgd_xf && global_variable::my_rank == 0) {
         std::cout << "<rad_m1> vet_gd_rotate_xfade = true: the closure is "
                   << "cross-faded from the current to the next ray set over each "
-                  << "rotation block (" << ((vgd_xf_m > 0) ? std::to_string(vgd_xf_m) +
-                     " + 2 next-set sweeps per block)" : "two sweeps per build)")
-                  << std::endl;
+                  << "rotation block (two sweeps per build)" << std::endl;
       }
     }
     // the cubed sphere with clean_rays = sc: vet_gd's own sweep (intensities to cln_fvi)

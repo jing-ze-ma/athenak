@@ -2388,30 +2388,11 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       std::cout << "<rad_m1> restart: time2_stage_local_be carry (" << nthc_file
                 << " slabs) IGNORED (local_be is not in this build)" << std::endl;
     }
-    // the vet_gd_rotate_xfade state (kM1XfdRstMagic), last of the record
-    if (nxfd_file > 0) {
-      int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
-                  + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
-                  + nwpv_file
-                  + nck_file + nctr_file + nrss_file + nvgd_file + ncsk_file + nra_file
-                  + nams_file + npgs_file + nfax_file + nthc_file;
-      offset_myrank = tail0 + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3
-                              *sizeof(Real);
-      myoffset = offset_myrank;
-      DvceArray5D<Real> xfdin("rst-xfd-in", nmb, nxfd_file, nout3, nout2, nout1);
-      for (int n=0; n<nxfd_file; ++n) {
-        read_slab("rad_m1 xfade state");
-        DeepCopyAcross(Kokkos::subview(xfdin, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
-                       Kokkos::ALL), wtin);
-      }
-      const bool got = (pradm1 != nullptr) &&
-                       pradm1->XfdRstUnpack(xfdin, nmb, xfd_hi, xfd_hr);
-      if (global_variable::my_rank == 0) {
-        std::cout << "<rad_m1> restart: vet_gd_rotate_xfade state (" << nxfd_file
-                  << " slabs) "
-                  << (got ? "restored" : "IGNORED (xfade off or other shape)")
-                  << std::endl;
-      }
+    // the old scheme's vet_gd_rotate_xfade state (kM1XfdRstMagic), last of the record:
+    // not used (the clean ring keeps no cross-fade state)
+    if (nxfd_file > 0 && global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> restart: vet_gd_rotate_xfade state (" << nxfd_file
+                << " slabs) IGNORED (the old scheme's cross-fade)" << std::endl;
     }
   }
 

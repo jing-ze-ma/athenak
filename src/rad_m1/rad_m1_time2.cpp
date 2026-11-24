@@ -1079,8 +1079,7 @@ void RadiationM1::Time2Stash() {
 
 void RadiationM1::CleanRayHistory(const bool save) {
   if (!clean) return;
-  DvceArray5D<Real> *a[7] = {&cln_fvi, &cln_fh, &cln_top, &cln_rr, &cln_rpd, &cln_rnew,
-                             &vgd_xf_d};
+  DvceArray5D<Real> *a[6] = {&cln_fvi, &cln_fh, &cln_top, &cln_rr, &cln_rpd, &cln_rnew};
   auto &k = cln_rk;
   auto cp = [](auto &d, const auto &s) {
     if (s.size() == 0) {
@@ -1096,7 +1095,7 @@ void RadiationM1::CleanRayHistory(const bool save) {
     }
     Kokkos::deep_copy(d, s);
   };
-  for (int q = 0; q < 7; ++q) save ? cp(k.v[q], *a[q]) : cp(*a[q], k.v[q]);
+  for (int q = 0; q < 6; ++q) save ? cp(k.v[q], *a[q]) : cp(*a[q], k.v[q]);
   save ? cp(k.fvd, cln_fvd) : cp(cln_fvd, k.fvd);
   save ? k.fvdm.resize(cln_fvdm.size()) : cln_fvdm.resize(k.fvdm.size());
   for (std::size_t q = 0; q < k.fvdm.size(); ++q) {

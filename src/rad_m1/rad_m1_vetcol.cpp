@@ -129,12 +129,6 @@ void RadiationM1::VetColReport() {
                 << "), tables (rotation) " << vgd_ttab
                 << ", moments " << vgd_tmom << "; in-solve rebuilds " << vgd_nrb << " ("
                 << vgd_trb << " s)" << std::endl;
-      if (vra_on) {
-        std::cout << "<rad_m1> vet_rotate_avg = " << vra_k << ": snapshot sweeps "
-                  << vra_nsweep << " (rotations " << vra_nrot << ", inits " << vra_ninit
-                  << "), " << vra_time << " s incl. offsets (rank 0, fenced)"
-                  << std::endl;
-      }
       std::cout << "<rad_m1> vet_gd halo (rank 0): exchanges " << vgd_nexch
                 << ", bytes sent "
                 << vgd_nbyte << " (" << ((vgd_nexch > 0.0) ? vgd_nbyte/vgd_nexch : 0.0)

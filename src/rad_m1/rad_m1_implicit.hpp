@@ -94,9 +94,8 @@ constexpr char kM1FaxRstMagic[8] = {'M', '1', 'F', 'A', 'X', 'R', 'S', '1'};
 constexpr char kM1RaRstMagic[8] = {'M', '1', 'R', 'O', 'T', 'A', 'V', '1'};
 // time2_stage_local_be: the carried stage-2 drop of old files (not read)
 constexpr char kM1ThcRstMagic[8] = {'M', '1', 'T', 'H', 'C', 'R', 'S', '1'};
-// vet_gd_rotate_xfade: the cross-fade state (vgd_xf_d + its block/time
-// scalars, RadiationM1::XfdRst*), behind the thc slabs.  A file without it restarts
-// the cross-fade cold (not bitwise inside a rotation block)
+// vet_gd_rotate_xfade: the old scheme's cross-fade state, behind the thc slabs.  Read
+// past; no longer written
 constexpr char kM1XfdRstMagic[8] = {'M', '1', 'X', 'F', 'D', 'R', 'S', '1'};
 constexpr int kM1XfdRstNi = 24;   // int64 header words
 constexpr int kM1XfdRstNr = 8;    // Real header words
