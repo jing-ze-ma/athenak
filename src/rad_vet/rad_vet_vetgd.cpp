@@ -103,7 +103,6 @@ inline bool VgdMomLds() {
 #include "rad_vet/rad_vet_implicit.hpp"
 #include "rad_vet/rad_vet_vetseg.hpp"
 #include "rad_vet/rad_vet_vgdray.hpp"
-#include "rad_vet/rad_vet_vgdtheta.hpp"
 #include "utils/recipe.hpp"
 #include "coordinates/grid_stretch.hpp"
 #if defined(KOKKOS_ENABLE_CUDA)

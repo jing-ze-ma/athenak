@@ -211,4 +211,47 @@ Real VgdSegFinish(const A &acc, const FI &fI, const FC &fC, const FE &edgef,
   }
 }
 
+// fractional band row of theta thu; jb = a starting guess (the cell's own row: upwind
+// points lie a few rows away, so the walk is short)
+template <typename T>
+KOKKOS_INLINE_FUNCTION
+Real VgdThFj(const T &tn, const int m, const int jb, const Real thu, const int c2w,
+             const int sh = 0) {
+  int j0 = (jb < 0) ? 0 : ((jb > c2w - 2) ? (c2w - 2) : jb);
+  while (j0 < c2w - 2 && tn(m,j0+1) <= thu) {++j0;}
+  while (j0 > 0 && tn(m,j0) > thu) {--j0;}
+  // sh = the global row offset of band row 0 (0: the old value, bitwise);
+  // the result is then the GLOBAL fractional row (the caller subtracts sh from its
+  // integer part), so the fraction rounds the same on every MeshBlock layout
+  return (j0 + sh) + (thu - tn(m,j0))/(tn(m,j0+1) - tn(m,j0));
+}
+
+// the full sphere: an upwind point BEHIND the polar axis (|dphi| > pi/2 from the cell)
+// is taken in the extended chart of the cell's hemisphere: (theta, phi) -> (-theta,
+// phi + pi) north, (2 pi - theta, phi + pi) south; the band rows beyond the pole hold
+// the pole partner's reversed rows at exactly those positions
+KOKKOS_INLINE_FUNCTION
+void VgdPoleChart(const bool pol, const Real th, Real &thu, Real &dph) {
+  if (!pol || !(fabs(dph) > 0.5*M_PI)) {return;}
+  thu = (th < 0.5*M_PI) ? -thu : (2.0*M_PI - thu);
+  dph += (dph > 0.0) ? -M_PI : M_PI;
+}
+
+// the band row a pole-slot read takes in its on-rank partner: rows reversed about the
+// pole (north: band row jj < w -> interior row 2 w - 1 - jj; south: jj >= w + nx2 ->
+// 2 (w + nx2) - 1 - jj)
+KOKKOS_INLINE_FUNCTION
+int VgdPoleRow(const int jj, const int w, const int nx2) {
+  return (jj < w) ? (2*w - 1 - jj) : (2*(w + nx2) - 1 - jj);
+}
+
+// vet_gd_theta_wall = mirror: the interior row a theta ghost g rows beyond its wall (hi:
+// the upper one) reads, reflected at the walls as often as it takes (a band deeper than
+// nx2 reaches past the far wall: two reflections there)
+KOKKOS_INLINE_FUNCTION
+int VgdMirRow(const int g, const bool hi, const int w, const int nx2) {
+  const int p = g % nx2;
+  return (hi == ((g/nx2) % 2 == 0)) ? (w + nx2 - 1 - p) : (w + p);
+}
+
 #endif  // RAD_VET_RAD_VET_VGDRAY_HPP_

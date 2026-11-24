@@ -20,12 +20,14 @@
 //!   E (1 + h c kE) + h div F = E_old + h c kP a T^4.
 
 #include <cmath>
+#include <cstdio>
 #include <functional>
 #include <limits>
 #include <string>
 #include <type_traits>
 
 #include "athena.hpp"
+#include "globals.hpp"
 #include "bvals/bvals.hpp"
 #include "eos/eos.hpp"
 #include "rad_vet/rad_vet_implicit.hpp"
@@ -2049,4 +2051,18 @@ Real CleanPredictE(const Real e0, const Real de) {
 }
 
 }  // namespace radvet
+
+namespace radvet {
+
+//! \brief the Zalesak rounds stopped at their cap with R still falling: the limited E is
+//! then not bounded (never silent)
+inline void ZalesakCapWarn(const char *who, const int cycle, const int t2s) {
+  if (global_variable::my_rank == 0) {
+    std::printf("CLEAN WARNING cycle %d t2s %d: %s Zalesak rounds at the cap 4096, R not "
+                "converged (E above the floor not guaranteed)\n", cycle, t2s, who);
+  }
+}
+
+} // namespace radvet
+
 #endif  // RAD_VET_RAD_VET_CLEAN_HPP_

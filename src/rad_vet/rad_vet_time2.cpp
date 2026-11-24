@@ -51,7 +51,6 @@
 #include "rad_vet/rad_vet_implicit.hpp"
 #include "rad_vet/rad_vet_clean.hpp"
 #include "rad_vet/rad_vet_opacity.hpp"
-#include "rad_vet/rad_vet_zalesak.hpp"
 #include "utils/eint_from_cons.hpp"
 #include "utils/imex_sdirk2.hpp"
 

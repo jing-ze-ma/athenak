@@ -33,7 +33,6 @@
 #include "rad_vet/vet_fluid.hpp"
 #include "rad_vet/rad_vet_clean.hpp"
 #include "rad_vet/rad_vet_opacity.hpp"
-#include "rad_vet/rad_vet_zalesak.hpp"
 #include "utils/repro_sum.hpp"
 #include "utils/scratch_view.hpp"
 
