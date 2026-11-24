@@ -98,6 +98,7 @@ clean_tol = 1.0e-14
 clean_tol_nl = 1.0e-13
 clean_maxnl = 60
 vet_gd = true
+vet_gd_replace = true
 vet_gd_gl_nmu = 8
 vet_gd_gl_nphi = 16
 vet_gd_rotate_dt = 0

@@ -101,6 +101,7 @@ vet_gd_gl_nphi = 32
 vet_gd_allow_clamp = true
 vet_col_lat = true
 vet_gd = true
+vet_gd_replace = true
 vet_gd_rotate_dt = 0
 clean_sphere_radius = 100.0
 

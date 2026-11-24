@@ -97,6 +97,7 @@ clean_maxnl = 60
 closure = vet_col
 vet_col_lat = true
 vet_gd = true
+vet_gd_replace = true
 vet_gd_gl_nmu = 2
 vet_gd_gl_nphi = 4
 vet_gd_allow_clamp = true
