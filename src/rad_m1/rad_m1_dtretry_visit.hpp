@@ -1837,6 +1837,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("vgd_tabh.nwall", vgd_tabh.nwall);
   v.value("vgd_tabh.nexact", vgd_tabh.nexact);
   v.value("vgd_tabh.nmap", vgd_tabh.nmap);
+  v.value("vgd_tabh.nphx", vgd_tabh.nphx);
   v.view("vgd_tabd.dir", vgd_tabd.dir);
   v.view("vgd_tabd.wall", vgd_tabd.wall);
   v.view("vgd_tabd.map", vgd_tabd.map);
