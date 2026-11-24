@@ -68,7 +68,6 @@ time2_gtime_mom = true
 time2_k1_stiff = 0
 clean_pred_stage = false
 clean_stag_central = true
-clean_stag_kpat = false
 clean_stag_eicarry = true
 clean_gas_secant = max_stage2
 clean_pred_xch = true

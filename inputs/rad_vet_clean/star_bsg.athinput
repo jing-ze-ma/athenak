@@ -127,7 +127,6 @@ vet_bc_diff = face
 vet_source_noesrc_h2be = true
 vet_gd_allow_clamp = false
 vet_gd_halo_ipc = true
-implicit_pos_floor_solve = true
 vet_scatter_form = ma
 vet_scatter_j = relaxed
 vet_scatter_kappa_e = const
