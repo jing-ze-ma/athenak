@@ -61,3 +61,10 @@ must be contiguous and have the same layout.
   The K0rc1 arm (m35mms, same binary, no floor_audit_worst / floor_from_ekin) runs normally, so the trigger is in WD's extra keys.
 - The 'CW 0 ... FATAL 0' WD line above is just the counts of a 1-cycle log; the run did NOT complete. The echo checks did pass: floor_from_ekin = true, floor_audit_worst = true and clean_gas_secant = max_stage2 are all 'added from the command line'; the never-read list is empty.
 - Files: caltech_results/IA121_T9L62/arm_WD/crash_context.txt (startup tail + backtrace), log.0.gz, run.log, grep.txt. I did not retry and did not patch anything. hpc-sm-02-11 is free again.
+
+## K0 finished (11-23 23:24)
+- K0rc1: 2026-11-23 23:22:59 rc=0 last: elapsed=6.100928e+02 cycle=38550 time=3.043792e+05 dt=1.200603e+01; CW 0, stage fallbacks 0, DT_RETRY 0, FATAL 0; s/cyc 3.6004 (c38400-38550)
+- K0ia122: 2026-11-23 23:23:34 rc=0 last: elapsed=6.391209e+02 cycle=38550 time=3.043792e+05 dt=1.200603e+01; CW 0, stage fallbacks 0, DT_RETRY 0, FATAL 0; s/cyc 3.7778 (c38400-38550)
+- user.hst rc1 vs IA12.2: BITWISE identical (200 rows)
+- hydro.hst rc1 vs IA12.2: BITWISE identical (200 rows)
+- Both ran side by side on hpc-sm-01-17 (2+2 H200, 2 blocks/GPU), so the s/cyc ratio is the comparison, not the absolute rate. Files: caltech_results/IA123_K0/{K0rc1,K0ia122}/.
