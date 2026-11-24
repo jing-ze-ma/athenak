@@ -97,3 +97,9 @@ Kokkos::Cuda ERROR: Failed to call Kokkos::Cuda::finalize()
 ```
 - So the GPU binary (PROBLEM=he_star_vet, he_star's hydro setup) FATALs on the test deck's nghost = 2: 'FOFC and plm reconstruction requires at least 3 ghost zones'. This is the test-binary mismatch you named, not the fixes. Full logs: arm_WD/rerun_8197e0c4f/vet_clean_*_run.log.
 - The WD rerun on athena_ia123rc1wd_8197e0c4f has been running since 23:28:36 (step 7333073.35, hpc-sm-02-11). There is no crash so far: no 'terminate called'. Its grep comes when it finishes.
+
+## (11-23 23:32) WD rerun on rc1-wd finished
+- 2026-11-23 23:28:36 start WD BIN=athena_ia123rc1wd_8197e0c4f md5=438f78cba817222ba1929faf88abd70f NODE=hpc-sm-02-11 HOLDER=7333073 GPUS=0,1,2,3 ARGS: -r /resnick/groups/carnegie_poc/jingze/prod_ia11_1123/t9l62/rst_keep/t9l62.00012.rst rad_vet/clean_pred_stage=
+- CW 5, stage fallbacks 2, DT_RETRY 2, pos_floor created 0, FATAL 0, 'terminate called' 0, floor_audit_worst lines 319
+- Echo: 'clean_gas_secant' in block 'rad_vet' is absent from the restart's input: added from the command line (= max_stage2);'floor_from_ekin' in block 'hydro' is absent from the restart's input: added from the command line (= true);'floor_audit_worst' in block 'hydro' is absent from the restart's input: added from the command line (= true);
+- Files: caltech_results/IA121_T9L62/arm_WD/rerun_8197e0c4f/ (grep.txt = `grep -E "floor_audit|DT_RETRY|CLEAN WARNING|FALLBACK"`, 420 lines; run.log, log.0.gz, hst; vet_clean.out).
