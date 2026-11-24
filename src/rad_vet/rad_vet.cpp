@@ -569,7 +569,13 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // dt_retry redoes strictly, as its budget)
     cln_c1b = pin->DoesParameterExist("rad_vet","clean_clos1_budget") &&
               pin->GetBoolean("rad_vet","clean_clos1_budget");
-    // clean_gas_tfloor: gas row's T bounded below by the EOS tfloor (E takes the rest)
+    // clean_vel_settled (read only when named; false, the default: every pass): the
+    // velocity update (its F solve) only in a pass that can end the solve, one whose E
+    // change settled; the others leave v, F to the next pass (the same fixed point)
+    cln_vset = pin->DoesParameterExist("rad_vet","clean_vel_settled") &&
+               pin->GetBoolean("rad_vet","clean_vel_settled");
+    // clean_gas_tfloor (default true): the gas row's T bounded below by the EOS
+    // tfloor, and the gas eint written back from that root (E takes the rest)
     cln_gtf = stag("clean_gas_tfloor", true);
     // clean_wb_fct: the write-back's Zalesak limit on the written faces' energy flux,
     // E > 0 by construction (CleanWbFct)

@@ -1280,7 +1280,12 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
       const Real de = CleanNewtonUpdate();
       if (cln_bon) tol_nl = cln_tolb;
       Real dv = 0.0;
-      if (cln_feedback) dv = CleanVelocityUpdate();
+      // (clean_vel_settled: a pass that cannot end the solve keeps v and F; CLW_L the
+      // lateral sums of E_k, as the velocity update leaves them)
+      const bool vs = cln_vset && !lp &&
+                      (!settled(de, de0, cln_fe) || (clos1 && inl == 0));
+      if (cln_feedback && vs) CleanStagCsLateral(CLW_EK);
+      if (cln_feedback && !vs) dv = CleanVelocityUpdate();
       dnl0 = (inl + 1 == maxnl) ? dnl : -1.0;
       dnl = fmax(de, dv);
       // clean_gas_newton_switch = W: a stalled solve (pass + 1 >= _min and > W, the
@@ -1326,7 +1331,7 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
         break;
       }
       de0 = de;
-      dv0 = dv;
+      if (!vs) dv0 = dv;
     }
     if (iterate) CleanCopyIterate();
     // R1, R2 of the solution, counted
