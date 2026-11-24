@@ -41,7 +41,7 @@ import athena_read  # noqa
 athena_read.check_nan_flag = True
 logger = logging.getLogger('athena' + __name__[7:])  # set logger name
 
-_input = 'tests/mhd_eos_electrons.athinput'
+_input = 'eos_tests/mhd_eos_electrons.athinput'
 
 # The wave's temperature, which the input file has made the table's grid centre. Used only
 # to turn the banner's x_e into an expected eta.

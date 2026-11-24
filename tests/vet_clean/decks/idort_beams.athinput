@@ -1,7 +1,7 @@
 # Crossing beams in vacuum (Ma et al. 2025 IDORT sec. 4.1.1; Jiang 2021 ApJS 253 49 sec. 4.2), rotated:
-# the beams enter at x1min (the paper y) at +-45 deg; x2 (the paper x) is periodic; ring of 4 rays
-# per beam direction (vet_ring = 4). E against the exact straight beams. Used by: idort_beams,
-# idort_beams_mb.
+# the beams, 4 cells wide, enter at x1min (the paper y) at +-45 deg; x2 (the paper x) is
+# periodic; ring of 4 rays per beam direction (vet_ring = 4). E against the exact straight
+# beams. Used by: idort_beams, idort_beams_mb.
 #
 # The <rad_vet> block starts with the scheme keys that production pins (the values of the
 # production star decks); the rest are this test's physics, grid and solver set-up.
@@ -121,11 +121,11 @@ implicit_beam_n = 2
 implicit_beam0_e = 1.0
 implicit_beam0_ang = -45.0
 implicit_beam0_y0 = -0.109375
-implicit_beam0_y1 = -0.09375
+implicit_beam0_y1 = -0.046875
 implicit_beam1_e = 1.0
 implicit_beam1_ang = 45.0
 implicit_beam1_y0 = 0.09375
-implicit_beam1_y1 = 0.109375
+implicit_beam1_y1 = 0.15625
 
 <problem>
 pgen_name = rad_vet_beam

@@ -35,7 +35,7 @@ _flux_close = ['hlle']          # differs by construction, only required to be c
 _flux = _flux_exact + _flux_close
 _eos = ['ideal', 'general']
 _grid = ['uniform', 'smr']
-_input = 'tests/linear_wave_hydro_geneos.athinput'
+_input = 'eos_tests/linear_wave_hydro_geneos.athinput'
 
 # roe under a general EOS must abort rather than silently produce a wrong answer
 _roe_refused = None

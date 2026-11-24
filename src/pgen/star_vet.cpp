@@ -6,7 +6,7 @@
 //! \file star_vet.cpp
 //! \brief Problem generator for the 4.0 Msun presupernova He star (Woosley 2019) on a
 //! spherical-polar WEDGE with the implicit grey M1 module (<rad_vet>), used with
-//! `cmake -D PROBLEM=star_vet`.  Inputs: inputs/rad_vet_clean/star_*.athinput,
+//! `cmake -D PROBLEM=star_vet`.  Inputs: inputs/stars/star_*.athinput,
 //! star3d_*.athinput.
 //!
 //! LEAN by design: a point mass, the well-balanced x1 gravity, the <rad_vet> hookup and

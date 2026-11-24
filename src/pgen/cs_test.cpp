@@ -650,7 +650,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // balance, carried by the flow), 1 scales p the same way (an isothermal hole the
   // flow fills).  Put it on a seam or a cube vertex to stress the seam flux and the
   // vertex halo with a cell far emptier than its neighbours.  cav_d = 1 (default) is
-  // bitwise the old test.  inputs/tests/cubed_sphere_cavity.athinput is the reproducer.
+  // bitwise the old test.  Reproducer: inputs/cubed_sphere_tests/cubed_sphere_cavity.
   cs_cavd = pin->GetOrAddReal("problem", "cav_d", 1.0);
   if (cs_cavd < 1.0) {
     cs_cavx = pin->GetOrAddReal("problem", "cav_x", 1.0);

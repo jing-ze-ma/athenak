@@ -474,7 +474,7 @@ class Conduction {
   // multiply the same mu~_j.
   //
   // BITWISE identical to the global-s loop when every plane has the same s_i (a state
-  // uniform in x1, e.g. inputs/tests/rad_transverse_gauss.athinput).
+  // uniform in x1, e.g. tst/inputs/rad_transverse_gauss.athinput).
   //
   // NOT available with rad_sts_all: the 7-point stencil has x1 faces, which couple the
   // planes, and the substage count then has to be global.  It is silently ignored there.

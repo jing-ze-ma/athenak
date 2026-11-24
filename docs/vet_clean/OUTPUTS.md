@@ -1,7 +1,7 @@
 # Outputs of a clean VET star run: history columns, energy check, warnings
 
 This page describes what a production star run (problem generator `star_vet`, decks
-`inputs/rad_vet_clean/star_bsg`, `star_m35mms`, `star_t9l62`) writes as history data and as run-time messages,
+`inputs/stars/star_bsg`, `star_m35mms`, `star_t9l62`) writes as history data and as run-time messages,
 and how to check energy and mass conservation from the history file. The input keys are described in `KEYS.md`.
 
 Units: the decks set `<units>` length, mass and time to 1, so code units are cgs (cm, g, s,
