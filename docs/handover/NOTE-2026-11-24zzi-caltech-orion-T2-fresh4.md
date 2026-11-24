@@ -27,3 +27,4 @@
 - s/cyc 2.4333 (c50-300); dt c0/c100/c200/c300: 96.852 96.852 96.851 96.849 ; L_top/L_in, L_bot/L_in at c300: 1.00341 0.99779; BiCGStab it 4.59, solves 2.39 per stage line
 - binder (last DTREP): c300 dt_hyd 96.85 gasonly 123.3 dir 3 r 1.6909e+12 rho 9.984e-05 T 1.923e+14 v 7.524e-02 ceff 2.279e+07 tauT_h 3.74e+05
 
+- bsg (11-24 11:30): at its first periodic rst (bsg3d.00002.rst) relaunched without DTREP (hydro/dt_report=0): `2026-11-24 11:28:13 chunk 1 STAR=bsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc4v_262affd6f md5=7d7c4a71a07d3dc3878e7dea1403df23 DECK=/resnick/groups/carnegie_poc/jingze/p`
