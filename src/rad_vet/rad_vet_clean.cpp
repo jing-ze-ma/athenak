@@ -339,7 +339,7 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
   // block/key (* ends a prefix): nullptr read, "" no effect, "!" fatal unless off, "x"
   // removed (fatal when named), "=v" fatal unless v (old restart value), else clean key
   static const char *tab[][2] = {
-    {"rad_vet/implicit_bc_*", nullptr},
+    {"rad_vet/implicit_bc_advect", ""}, {"rad_vet/implicit_bc_*", nullptr},
     // inner-flux time hooks: removed
     {"rad_vet/implicit_flux_x1min_mod_*", "x"},
     {"rad_vet/implicit_flux_x1min_ramp_*", "x"},
@@ -377,7 +377,7 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     // ImplicitSolve's acceptance, posfix and KE cap: none
     {"rad_vet/time2_k1_reset", "!"},   // K1 reset of held cells: removed
     {"rad_vet/time2_k1_*", nullptr}, {"rad_vet/time2_face_fct*", nullptr},
-    {"time/dt_retry_t2_be", nullptr},
+    {"time/dt_retry_t2_be", nullptr}, {"time/dt_retry_max", ""},
     {"rad_vet/time2_accept_fallback", ""}, {"rad_vet/time2_posfix*", ""},
     {"rad_vet/time2_inc_kecap", ""}, {"rad_vet/time2_pred_cap", ""},
     // implicit solve's position limiters, Zalesak round cap, vet_col lateral posfix and
@@ -481,16 +481,18 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
   const bool say = (global_variable::my_rank == 0);
   std::string none;
   std::vector<std::string> drop;
-  for (const InputBlock &ib : pin->block) {
+  for (InputBlock &ib : pin->block) {
     if (ib.block_name != "rad_vet" && ib.block_name != "time") continue;
-    for (const InputLine &ln : ib.line) {
-      if (ln.param_comment == ParameterInput::default_comment) continue;
+    for (InputLine &ln : ib.line) {
       const std::string k = ib.block_name + "/" + ln.param_name, &v = ln.param_value;
       for (const auto &t : tab) {
         const std::string p(t[0]);
         const size_t n = p.size() - (p.back() == '*');
         if (k.compare(0, n, p, 0, n) != 0 || (n == p.size() && k.size() != n)) continue;
         if (t[1] == nullptr) break;
+        // handled here: never reported as unread (a default-echo line: no message)
+        ln.accessed = true;
+        if (ln.param_comment == ParameterInput::default_comment) break;
         const std::string c(t[1]);
         if (c == "x") {
           CleanFatal("<" + k + "> belonged to a removed path (the cell layout, the FV "
@@ -504,7 +506,7 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
         if (c == "!" && v != "false" && v != "0" && v != "off") {
           CleanFatal("<" + k + "> = " + v + " has no counterpart in scheme = clean");
         }
-        if (c.empty()) none += " " + k;
+        if (c.empty() || c == "!" || c[0] == '=') none += " " + k;   // (accepted value)
         if (c != "!" && c[0] != '=' && k.compare(0, 17, "rad_vet/implicit_") == 0) {
           drop.push_back(ln.param_name);
         }
