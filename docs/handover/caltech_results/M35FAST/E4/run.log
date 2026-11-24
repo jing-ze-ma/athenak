@@ -1,0 +1,2 @@
+2026-11-23 22:48:38 start E4 BIN md5=3f6ddd68a04b87199ca91196d7641327 NODE=hpc-sm-02-09 HOLDER=7333072 RST=/resnick/groups/carnegie_poc/jingze/prod_ia11_1123/m35mms/rst_keep/m35mms.00010.rst EX: rad_m1/vet_gd_theta_seam_sym=true rad_m1/vet_gd_wall_sym=true rad_m1/clean_clos1_budget=true rad_m1/clean_vel_settled=true rad_m1/clean_bud_maxnorm=true
+2026-11-23 23:22:57 rc=0 last: elapsed=1.999515e+03 cycle=23900 time=1.962650e+05 dt=1.200577e+01

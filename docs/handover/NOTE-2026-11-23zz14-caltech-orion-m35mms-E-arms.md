@@ -16,3 +16,10 @@
 - s/cycle 1.260 (c21950-23900); dt first 12.0064 / min 11.9780 / last 12.0058; mean solves/stage 3.91; mean Krylov its per CLEAN cycle line 10.08
 - Ltop/Lin 0.9772-1.0052 (end 1.0012), Lbot/Lin 0.9907-1.0084 (end 1.0019)
 - max GPU memory 36371 MiB per GPU (mem.log)
+
+## E4 (EX: rad_m1/vet_gd_theta_seam_sym=true rad_m1/vet_gd_wall_sym=true rad_m1/clean_clos1_budget=true rad_m1/clean_vel_settled=true rad_m1/clean_bud_maxnorm=true)
+- 2026-11-23 23:22:57 rc=0 last: elapsed=1.999515e+03 cycle=23900 time=1.962650e+05 dt=1.200577e+01
+- CLEAN WARNING 0, CLEAN FALLBACK 2000, stage fallbacks 0, DT_RETRY 0, FATAL 0; DTREP/DTREG lines 480
+- s/cycle 1.014 (c21950-23900); dt first 12.0064 / min 11.9541 / last 12.0058; mean solves/stage 4.00; mean Krylov its per CLEAN cycle line 6.99
+- Ltop/Lin 0.9772-1.0052 (end 1.0012), Lbot/Lin 0.9907-1.0084 (end 1.0019)
+- max GPU memory 36415 MiB per GPU (mem.log)
