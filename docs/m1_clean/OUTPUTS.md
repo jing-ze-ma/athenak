@@ -232,9 +232,9 @@ handled but that the user should know about.
 ### 4.2 Other per-cycle lines of the clean scheme
 
 With `<rad_m1>/clean_verbose = 0` (default) the code prints the `CLEAN cycle` lines, the
-`CLEAN WARNING` lines and the event lines (`CLEAN WORST`, `GNSW`, `BICGSTAB`, `RETRY`, `KPOS`
+`CLEAN WARNING` lines and the event lines (`CLEAN WORST`, `GNSW`, `BICGSTAB`, `KPOS`
 without a face slope). `clean_verbose = 1` adds the per-solve diagnostics (`CLEAN MCAP`,
-`OLDVEC`, `FWB`, `FLIM`, `FCONE`, `LZ`/`LZB`, `WBFCT`, `KPOS`, `KREAL`, `XPAT`, the `XT`
+`OLDVEC`, `FWB`, `FCONE`, `LZ`/`LZB`, `WBFCT`, `KPOS`, `KREAL`, `XPAT`, the `XT`
 write-back closure, the ray cut). `CLEAN WARNING` lines always print.
 
 | line | meaning | what to look at |
