@@ -238,3 +238,10 @@ max|ef/es-1| per 50 cycles (S2Lon): 0.12 0.14 0.15 0.24 0.29 0.47 0.38 0.34 0.36
 - **PASS** (rule: extra CW/fallback/BE/retry, ef<=0, dt mean < 0.95 off, s per sim s > 1.05 off, |L_top| > 1 %) 
 - ends: S5Foff: 2026-11-24 15:16:21 rc=0 wall=977 s CW 0 FATAL 0 inf 0 DT_RETRY 0 | S5Fon: 2026-11-24 15:16:08 rc=0 wall=964 s CW 0 FATAL 0 inf 0 DT_RETRY 0
 - ef<=0 per 50 cycles (post-cap) off/on: 502890 1 1 1 0 0 ; 0 0 0 0 0 0 ; 
+
+## S5F matched-time remark
+- S5F on vs off at matched time (300 rows): L_top rel end 4.504e-05 max 2.270e-04
+- S5F on vs off at matched time (300 rows): L_bot rel end -5.123e-07 max 1.182e-05
+- S5F on vs off at matched time (300 rows): KE_int rel end -3.420e-05 max 3.420e-05
+- model time advanced: off 9848.7 s on 11598.1 s
+- The 'last common row' line of the S5F table compares the 300th rows, which sit at different model times (dt differs by 18 %), so its -8.4e-3 in L_top mixes evolution; the lines above are the matched-time numbers. The off arm's ef<=0 502823 / max ratio 951 are printed with the key off (the print uses the key's state).  Both are stated as measured; the meaning of the post-cap counter in the off arm is yours to judge.
