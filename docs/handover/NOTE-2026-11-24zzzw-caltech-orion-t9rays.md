@@ -61,3 +61,45 @@ srun: error: hpc-sm-02-11: task 0: Exited with exit code 1
 ```
 
 - Boxes (.npz per cycle, with 2 cells each side): caltech_results/T9RAYS/{G1,G2}/. The local indices are read as 0-based, gid 0 = first block in the dump (lx stored). The full dumps are deleted after extraction.
+
+## Correction (11-24 13:47): G2 (13x36) did NOT run
+- My NOTE above reported the 13x36 preflight and G2 as rc=0. That was wrong: my scripts printed the exit code of date, not of the run (fixed). Slurm shows both steps aborted: `Kokkos ERROR: Cuda memory space failed to allocate 60.41 GiB (label=vet_arena)` after 'direction set: 468 directions' (4 GPUs, 41-82 GB already used). G1 (7x18) ran to its cycle limit (audited from the log; CW 0, FATAL 0). No other arm of the batch is affected: all ended with 'Terminating on cycle limit' (C2, C1rb on the stop request).
+- Per your rule: 7x36 (252) instead; preflight ok=yes (2026-11-24 13:47:12 rc=0 wall=71 s CW 0 FATAL 0). 
+
+## G2b = 7x36 (252 directions)
+- 2026-11-24 13:49:46 rc=0 wall=154 s CW 0 FATAL 0; ended: Terminating on cycle limit; CW 0, FATAL 0, DT_RETRY 0
+- startup lines:
+```
+<rad_vet> vet_gd direction set: 252 directions; moment errors |sum w - 1| 3.33067e-15, |sum w n| 5.22585e-17, |sum w nn - I/3| 2.22045e-16 (rotated 3.33067e-16), 4th-moment anisotropy 5.82867e-16 (rotated 1.66533e-16)
+<rad_vet> vet_gd: exact per-shell lateral halo, band 57 cells (needed 57), per-shell depth mean 56.9688
+<rad_vet> vet_gd: ragged per-shell band intensity array 34.9276 GB on rank 0 (dense band 122.315 GB)
+<rad_vet> vet_gd halo (rank 0): exchanges 7528, bytes sent 9.56955e+09 (1.27119e+06 per exchange), post 0.106043 s, partners 2; band-clamped lateral reads (ALL ranks, all sweeps) 0
+```
+- box stats:
+```
+dump names ['cycle', 'dens', 'dt', 'eint', 'lx', 'nblk', 'time', 'velx', 'vely', 'velz', 'vet_d11', 'vet_d12', 'vet_d13', 'vet_d22', 'vet_d23', 'vet_d33', 'vet_e', 'vet_ex1', 'vet_f1', 'vet_f2', 'vet_f3', 'vet_fx1', 'vet
+cycle t dt | cells rho<1e-11 | max|v| p99|v| (rho<1e-11) | n fast (|v|>5e7) | kF0/c median p90 [cm/s^2] | F0/(cE) median p90
+5280 4.75224e+05 13.94 | 15 | 2.346e+08 2.195e+08 | 15 | 5.962e+05 2.486e+06 | 4.370e-02 1.833e-01
+5281 4.75246e+05 21.75 | 15 | 2.213e+08 2.084e+08 | 14 | 6.538e+05 2.337e+06 | 4.775e-02 1.722e-01
+5282 4.75265e+05 18.71 | 15 | 1.395e+08 1.379e+08 | 14 | 8.234e+05 1.977e+06 | 6.009e-02 1.452e-01
+5283 4.75286e+05 21.29 | 14 | 1.561e+08 1.520e+08 | 12 | 9.542e+05 1.907e+06 | 6.988e-02 1.403e-01
+5284 4.75307e+05 21.21 | 14 | 1.535e+08 1.501e+08 | 11 | 9.940e+05 2.000e+06 | 7.295e-02 1.457e-01
+5285 4.75330e+05 22.34 | 13 | 1.327e+08 1.307e+08 | 10 | 7.264e+05 1.203e+06 | 5.303e-02 8.798e-02
+5286 4.75353e+05 23.19 | 13 | 1.362e+08 1.347e+08 | 9 | 8.291e+05 9.696e+05 | 6.064e-02 7.116e-02
+5287 4.75377e+05 24.23 | 13 | 1.379e+08 1.374e+08 | 9 | 7.392e+05 9.086e+05 | 5.410e-02 6.649e-02
+ASSUMPTIONS: kappa 0.34; F0 = F - (4/3) E v (isotropic pressure; the exact form with D from vet_vet is in the npz for Orion). unit check F/E max = 6.617e+08 (F energy flux if > 1)
+```
+- G1 box stats for comparison:
+```
+dump names ['cycle', 'dens', 'dt', 'eint', 'lx', 'nblk', 'time', 'velx', 'vely', 'velz', 'vet_d11', 'vet_d12', 'vet_d13', 'vet_d22', 'vet_d23', 'vet_d33', 'vet_e', 'vet_ex1', 'vet_f1', 'vet_f2', 'vet_f3', 'vet_fx1', 'vet
+cycle t dt | cells rho<1e-11 | max|v| p99|v| (rho<1e-11) | n fast (|v|>5e7) | kF0/c median p90 [cm/s^2] | F0/(cE) median p90
+5280 4.75224e+05 13.94 | 15 | 2.319e+08 2.174e+08 | 15 | 7.219e+05 2.651e+06 | 5.323e-02 1.944e-01
+5281 4.75245e+05 20.99 | 15 | 1.683e+08 1.623e+08 | 15 | 7.002e+05 2.513e+06 | 5.184e-02 1.842e-01
+5282 4.75267e+05 21.75 | 16 | 1.496e+08 1.473e+08 | 16 | 6.879e+05 2.253e+06 | 5.103e-02 1.652e-01
+5283 4.75293e+05 25.9 | 16 | 1.536e+08 1.532e+08 | 14 | 7.205e+05 1.791e+06 | 5.282e-02 1.297e-01
+5284 4.75318e+05 24.6 | 14 | 1.231e+08 1.227e+08 | 9 | 6.725e+05 1.909e+06 | 5.022e-02 1.383e-01
+5285 4.75345e+05 27.12 | 14 | 1.198e+08 1.190e+08 | 9 | 8.524e+05 1.957e+06 | 6.125e-02 1.418e-01
+5286 4.75373e+05 28.21 | 14 | 1.235e+08 1.234e+08 | 11 | 1.014e+06 2.041e+06 | 7.285e-02 1.494e-01
+5287 4.75401e+05 28.57 | 13 | 1.431e+08 1.418e+08 | 10 | 1.325e+06 2.176e+06 | 9.583e-02 1.573e-01
+ASSUMPTIONS: kappa 0.34; F0 = F - (4/3) E v (isotropic pressure; the exact form with D from vet_vet is in the npz for Orion). unit check F/E max = 1.468e+09 (F energy flux if > 1)
+```
