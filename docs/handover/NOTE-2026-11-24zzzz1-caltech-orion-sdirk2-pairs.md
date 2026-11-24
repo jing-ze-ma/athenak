@@ -184,3 +184,30 @@ srun: error: hpc-sm-01-15: task 0: Exited with exit code 1
 - last common row 900: L_top -6.83e-07 L_in 0.00e+00 KE 1.79e-04 Etot -2.97e-11 M 9.92e-16 Lz 1.03e-03 (on - off relative)
 - **PASS** (rule: extra CW/fallback/BE/retry, ef<=0, dt mean < 0.95 off, s per sim s > 1.05 off, |L_top| > 1 %) 
 - ends: S2Loff: 2026-11-24 14:08:11 end: t_S2Loff|COMPLETED|0:0|00:04:44; log: Terminating on cycle limit CW 0 FATAL 0 DT_RETRY 0 ; S2Lon: 2026-11-24 14:10:52 rc=0 wall=287 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+
+### S2 / S2L log ends (zzzzf): last 3 lines of log.0 and Slurm exit status
+- **S2off**: t_S2off|COMPLETED|0:0|00:01:53
+```
+<rad_vet> time_scheme=hesdirk2: stage steps=3.000000e+02 backward-Euler steps=0.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 face_fct calls=6.000000e+02 skipped(no face flux)=0.00000
+<rad_vet> time2_auto_be=16: skipped-stage BE steps=0.000000e+00 stage retries=0.000000e+00 (succeeded 0.000000e+00)
+<rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 8.812223e+01 | failed stage attempts 0.000000e+00 | their BE redo 0.000000e+00 | auto_be steps 0.000000e+00 | other BE steps 0.000000e+00 | 
+```
+- **S2on**: t_S2on|COMPLETED|0:0|00:01:52
+```
+<rad_vet> time_scheme=hesdirk2: stage steps=3.000000e+02 backward-Euler steps=0.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 face_fct calls=6.000000e+02 skipped(no face flux)=0.00000
+<rad_vet> time2_auto_be=16: skipped-stage BE steps=0.000000e+00 stage retries=0.000000e+00 (succeeded 0.000000e+00)
+<rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 8.863439e+01 | failed stage attempts 0.000000e+00 | their BE redo 0.000000e+00 | auto_be steps 0.000000e+00 | other BE steps 0.000000e+00 | 
+```
+- **S2Loff**: t_S2Loff|COMPLETED|0:0|00:04:44
+```
+<rad_vet> time_scheme=hesdirk2: stage steps=9.000000e+02 backward-Euler steps=0.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 face_fct calls=1.800000e+03 skipped(no face flux)=0.00000
+<rad_vet> time2_auto_be=16: skipped-stage BE steps=0.000000e+00 stage retries=0.000000e+00 (succeeded 0.000000e+00)
+<rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 2.543673e+02 | failed stage attempts 0.000000e+00 | their BE redo 0.000000e+00 | auto_be steps 0.000000e+00 | other BE steps 0.000000e+00 | 
+```
+- **S2Lon**: t_S2Lon|COMPLETED|0:0|00:04:46
+```
+<rad_vet> time_scheme=hesdirk2: stage steps=9.000000e+02 backward-Euler steps=0.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 face_fct calls=1.800000e+03 skipped(no face flux)=0.00000
+<rad_vet> time2_auto_be=16: skipped-stage BE steps=0.000000e+00 stage retries=0.000000e+00 (succeeded 0.000000e+00)
+<rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 2.530778e+02 | failed stage attempts 0.000000e+00 | their BE redo 0.000000e+00 | auto_be steps 0.000000e+00 | other BE steps 0.000000e+00 | 
+```
+max|ef/es-1| per 50 cycles (S2Lon): 0.12 0.14 0.15 0.24 0.29 0.47 0.38 0.34 0.36 0.30 0.32 0.25 0.19 0.32 0.40 0.28 0.33 0.47 
