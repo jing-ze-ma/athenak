@@ -109,3 +109,9 @@
 - FATAL 0 
 - CW 0, stage fallbacks 0, DT_RETRY 0, pos_floor created 0; s/cycle 3.471 (c30100-31050); dt min 59.65 at t 1.634272e+06; skip_de per cycle: max abs 4.222e+18 at c31081; 0 cycles > 1e41
 - first DTREP: `DTREP cycle=30085 time=1.57756e+06 cfl*dt_hyd=107.368 cfl*dt_gasonly=187.657 rank=2 gid=5 kji=34,3,146 dir=1 r=4.5059e+12 rho=2.89929e-11 T=1.67374e+13 pg=485.265 G1=1.66667 cgas=5.28164e+06 v=-3.96447e+07 ceff=1.32938e+08 h=3.08832e+10 tauT_h=0.595814 Erad=2.56419e+06 Ddd=0.333333 cdt_kP=5083.75 frz=-1 sc=1 cell_dt=178.947 cell_dt_gas=687.417 theta_deg=90.1758 phi=1.76408`
+
+## T0h (11-23 22:55)
+- 2026-11-23 22:52:15 rc=0 last: elapsed=3.105832e+03 cycle=31050 time=1.607408e+06 dt=3.700442e+01 
+- FATAL 0 
+- CW 0, stage fallbacks 0, DT_RETRY 0, pos_floor created 0; s/cycle 3.194 (c30100-31050); dt min 26.08 at t 1.589055e+06; skip_de per cycle: max abs 1.115e+18 at c31084; 0 cycles > 1e41
+- first DTREP: `DTREP cycle=30085 time=1.57756e+06 cfl*dt_hyd=26.842 cfl*dt_gasonly=46.9142 rank=2 gid=5 kji=34,3,146 dir=1 r=4.5059e+12 rho=2.89929e-11 T=1.67374e+13 pg=485.265 G1=1.66667 cgas=5.28164e+06 v=-3.96447e+07 ceff=1.32938e+08 h=3.08832e+10 tauT_h=0.595814 Erad=2.56419e+06 Ddd=0.333333 cdt_kP=5083.75 frz=-1 sc=1 cell_dt=178.947 cell_dt_gas=687.417 theta_deg=90.1758 phi=1.76408`
