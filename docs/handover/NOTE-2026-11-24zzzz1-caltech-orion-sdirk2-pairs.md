@@ -157,3 +157,13 @@ Traceback (most recent call last):
 KeyError: 'vet_f1'
 srun: error: hpc-sm-01-15: task 0: Exited with exit code 1
 ```
+
+## S1 (bsg, bsg3d.pre-compton.rst) (11-24 14:03)
+| arm | rows | s/cyc (cycles) | dt min/mean/max | its t2s2 (sum, solves) | t2s3 | L_top/L_in end | L_bot/L_in end | KE | dE/E | dM/M | CW/FATAL/inf/DT_RETRY | fallbacks/BE/retries | SDO: lines, K1K2<0 mean share, max ratio, cells>0.1, >1, ef<=0 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| S1off | 300 | 0.6436 (c6950-7200) | 146.7 / 152.8 / 164.7 | 15.0, 3.39 | 14.3, 3.92 | 1.15812 | 1.01394 | 1.31656e+42 | -1.53e-05 | -2.95e-15 | 0 / 0 / 0 / 0 | 0 / 0 / 0 | 300, 0.5943, 9.863e-05, 0, 0, 0 |
+| S1on | 300 | 0.6427 (c6950-7200) | 146.7 / 152.8 / 164.7 | 14.9, 3.39 | 14.3, 3.92 | 1.15813 | 1.01395 | 1.31667e+42 | -1.53e-05 | -3.10e-16 | 0 / 0 / 0 / 0 | 0 / 0 / 0 | 300, 0.5941, 4.047e-01, 11, 0, 0 |
+
+- last common row 300: L_top 4.78e-06 L_in 0.00e+00 KE 8.45e-05 Etot -2.84e-10 M 2.33e-15 Lz -1.71e-04 (on - off relative)
+- **PASS** (rule: extra CW/fallback/BE/retry, ef<=0, dt mean < 0.95 off, s per sim s > 1.05 off, |L_top| > 1 %) 
+- ends: S1off: 2026-11-24 13:59:52 rc=0 wall=222 s CW 0 FATAL 0 inf 0 DT_RETRY 0 ; S1on: 2026-11-24 14:03:40 rc=0 wall=228 s CW 0 FATAL 0 inf 0 DT_RETRY 0
