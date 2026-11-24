@@ -1,0 +1,11 @@
+clean VET test suite: 8 tests, full, 4 at a time x 1 threads, binary /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc3bip_af836f5a3
+PASS restart_sp           47 s  files 4 maxdiff 0
+PASS dt_retry             59 s  files 6 maxdiff 0 retries_fac1 1 retries_fac05 1
+PASS layout_tile         107 s  maxdiff_1x2 0 maxrel_1x2 0 maxdiff_2x2 7.9e-12 maxrel_2x2 3.11e-10 maxdiff_dfl 0 dE_dfl 2.22e-16 dM_dfl 1.8e-16 dLz_dfl 1.96e-16
+PASS conservation_lz     110 s  sp_dE 2.22e-16 sp_dM 8.99e-16 sp_dLz 1.96e-16 sp_dLz_gr 3.91e-16 cs_dE 1.2e-16 cs_dM 2.61e-16 cs_dLz 1.17e-16 cs_dLz_gr 6.24e-05 restart_maxdiff 0 retry_maxdiff 0 warnings 0
+PASS floor_pay            54 s  dE 2.22e-16 dE0 2.22e-16 paid 0.286 unpaid 0 warnings 0 worst_lines 196 worst_bitwise True ekin_dE 1.11e-16 ekin_dM 7.19e-16 ekin_dLz 1.96e-16
+PASS inf_reject            5 s  dE 2.22e-16 nonfinite 0 rejected 1
+PASS wedge_sym            72 s  fphi [1.22e-09 1.18e-10 8.25e-10] warnings 0 wedge_fatal 1 fth 8.06e-15 theta_fatal 1
+PASS ceiling_metric       14 s  sp_dvphi 0 sp_dcap 0 sp_vtheta 0 sp_scale_ok 1 sp_capped 1408 cs_dvphi 6.31e-16 cs_dcap 6.31e-16 cs_vtheta 1.5e-16 cs_scale_ok 1 cs_capped 2928
+8 passed, 0 failed, 121 s
+rc=0

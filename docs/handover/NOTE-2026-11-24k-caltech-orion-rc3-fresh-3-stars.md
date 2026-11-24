@@ -37,3 +37,19 @@ GATE PASS (seam+wall sym deck copy): athena_ia123rc3_af836f5a3 md5 09f50abe node
 - FATAL 0, CLEAN WARNING 0, stage fallbacks 0, DT_RETRY 0, created inf 0; never-read: ### mesh/cs_seam_blockend = extend;### mesh/cs_vertex_3cell = true;### mesh/cs_seam_rho_guard = 4;### time/dt_retry_max = 8;### hydro/merge_lat_mom = rigid;### hydro/wb_cache_every = 0;### rad_vet/clean_stag_thinf_held = false;### rad_vet/time2_stage_local_be = false;### rad_vet/vet_gd_rotate_align 
 - s/cyc 0.6644 (c50-200); row 200 (cycle 200): t 3.359495e+04 dt 168.721 L_top/L_in 1.054684 L_bot/L_in 1.534098
 - md5 of the first 201 non-# rows (cycles 0-200): user.hst f907df1f36dc5a8d11439e43ab157a5c, hydro.hst 446533081340295d2a239eb200762c9b (rows in caltech_results/PROD_RC3_1124/bsg/user_hst_first201rows.txt)
+
+## GPU key tests, 1 H200 (hpc-sm-02-17), built_in_pgens binary (11-24 00:29)
+- BIP_BUILD_OK 00:24:52 md5=8dc36df51c211522cb96f26f1c25edcb wall=295 s (cold, shared FS)
+```
+clean VET test suite: 8 tests, full, 4 at a time x 1 threads, binary /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc3bip_af836f5a3
+PASS restart_sp           47 s  files 4 maxdiff 0
+PASS dt_retry             59 s  files 6 maxdiff 0 retries_fac1 1 retries_fac05 1
+PASS layout_tile         107 s  maxdiff_1x2 0 maxrel_1x2 0 maxdiff_2x2 7.9e-12 maxrel_2x2 3.11e-10 maxdiff_dfl 0 dE_dfl 2.22e-16 dM_dfl 1.8e-16 dLz_dfl 1.96e-16
+PASS conservation_lz     110 s  sp_dE 2.22e-16 sp_dM 8.99e-16 sp_dLz 1.96e-16 sp_dLz_gr 3.91e-16 cs_dE 1.2e-16 cs_dM 2.61e-16 cs_dLz 1.17e-16 cs_dLz_gr 6.24e-05 restart_maxdiff 0 retry_maxdiff 0 warnings 0
+PASS floor_pay            54 s  dE 2.22e-16 dE0 2.22e-16 paid 0.286 unpaid 0 warnings 0 worst_lines 196 worst_bitwise True ekin_dE 1.11e-16 ekin_dM 7.19e-16 ekin_dLz 1.96e-16
+PASS inf_reject            5 s  dE 2.22e-16 nonfinite 0 rejected 1
+PASS wedge_sym            72 s  fphi [1.22e-09 1.18e-10 8.25e-10] warnings 0 wedge_fatal 1 fth 8.06e-15 theta_fatal 1
+PASS ceiling_metric       14 s  sp_dvphi 0 sp_dcap 0 sp_vtheta 0 sp_scale_ok 1 sp_capped 1408 cs_dvphi 6.31e-16 cs_dcap 6.31e-16 cs_vtheta 1.5e-16 cs_scale_ok 1 cs_capped 2928
+8 passed, 0 failed, 121 s
+```
+- Full output + record: caltech_results/RC3_KEYTESTS/.
