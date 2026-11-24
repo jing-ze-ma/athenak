@@ -1,0 +1,6 @@
+### NOTE: parameter 'floor_audit' in block 'hydro' is absent from the restart's input: added from the command line (= 1)
+### NOTE: parameter 'floor_audit_worst' in block 'hydro' is absent from the restart's input: added from the command line (= true)
+<hydro> dual_energy 0 (eta 0.001, slots -1,-1) floor_pay rad_column fofc_retest 0 floor_audit 1
+<hydro> floor_audit cycle 6457 [update] cell-c2p 0 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 0 skip_de 0 skip_dm 0 above_table_top 0
+<hydro> floor_audit cycle 6457 [refresh] cell-c2p 67108864 e_c<=0 0 kedom 9 sub_tfloor 12178 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 0 skip_de 0 skip_dm 0 above_table_top 0
+<hydro> floor_audit cycle 6457 pay: paid 0 unpaid 0 given_to_rad 0 cells 0 | fofc_retest: retested 0 unflagged 0
