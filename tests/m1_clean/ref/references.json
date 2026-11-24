@@ -32,8 +32,10 @@
   }
  },
  "layout_tile": {
+  "equal": {
+   "maxdiff_1x2": 0.0
+  },
   "max": {
-   "maxrel_1x2": 1e-08,
    "maxrel_2x2": 1e-08
   }
  },
@@ -115,6 +117,48 @@
  "momentum_box": {
   "_about": "a report: dP_max / dP_cyc are recorded, not bounded; the test passes when the run completes with finite dP and no CLEAN WARNING",
   "equal": {
+   "warnings": 0
+  }
+ },
+ "radwave": {
+  "_about": "per case (thin, mid, one, trapped): |c_ph/c_ph,exact - 1|, |d(damping)|/omega and the damping per radian (> 0: no growth); dt_gain: dt with / without hydro/rad_signal_speed_diff at x = 0.01",
+  "max": {
+   "err_cph": 0.003,
+   "err_damp": 0.005
+  },
+  "min": {
+   "damp": 1e-06
+  },
+  "near": {
+   "dt_gain": [
+    2.77,
+    0.02
+   ]
+  },
+  "equal": {
+   "warnings": 0
+  }
+ },
+ "wedge_sym": {
+  "_about": "fphi = |sum F_phi| / sum |F_r| on the 20 deg (exact), 3.7 and 7.3 deg (vet_gd_wall_sym) wedges; wedge_fatal = 1: the narrow wedge without the key stops with the FATAL",
+  "max": {
+   "fphi": 1e-08
+  },
+  "equal": {
+   "wedge_fatal": 1,
+   "warnings": 0
+  }
+ },
+ "floor_pay": {
+  "_about": "dE from cycle 1 on; dE0 (the t = 0 -> 1 jump: the initial floor energy paid after the t = 0 output) is reported, not bounded",
+  "max": {
+   "dE": 1e-13
+  },
+  "min": {
+   "paid": 1e-06
+  },
+  "equal": {
+   "unpaid": 0.0,
    "warnings": 0
   }
  }

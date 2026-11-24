@@ -6,6 +6,8 @@
 - make_deck(src, dst, overrides): copy an input deck, setting block/key = value pairs.
 - run(...): run the code in a directory, return (rc, wall seconds, log text).
 - compare_dirs(a, b): largest absolute difference over every .bin and .hst file pair.
+- radwave_root(...): the analytic linear radiation-acoustic wave (frequency, eigenvector).
+- lm_fit(res, p): a small Levenberg-Marquardt least-squares fit.
 """
 import glob
 import os
@@ -236,3 +238,69 @@ def relax_ode(T0, tot, rho, gm1, rate, t, arad=1.0, nstep=20000):
 def warnings(txt):
     """The number of CLEAN WARNING lines in a log."""
     return txt.count('CLEAN WARNING')
+
+
+def radwave_root(prat, kappa, c, nmu=4, nphi=8, gamma=5.0/3.0):
+    """Linear radiation-acoustic wave of wavelength 1 in a uniform gas (rho = T = 1, ideal
+    gas, P_rad/P_gas = prat, grey absorption kappa, true c), perturbations exp(i(kx - w t)).
+    The gas + moment system as the clean scheme discretises it: the face flux is the
+    comoving F0 = F - (4/3) E0 v, and the closure is the vet_sc one, P1 = E1/3 + q T1,
+    with q from the static formal solution on the code's double-Gauss(nmu) x nphi rays.
+    Returns (omega, arad, eig), eig = the <problem>/radwave_eig_* keys of the acoustic
+    root (the right-going root whose phase speed is nearest the gas / mixture speeds)."""
+    k, ar = 2.0*np.pi, 3.0*prat
+    e0, b = ar, 4.0*ar
+    xg, wg = np.polynomial.legendre.leggauss(nmu)
+    mu = np.concatenate([h*0.5*(xg + 1.0) for h in (1.0, -1.0)])
+    w = np.tile(0.25*wg, 2)            # each ring's nphi azimuths have the same mu along x
+    j0, j2 = [np.sum(w*mu**n/(kappa + 1j*k*mu)) for n in (0, 2)]
+    q = kappa*b*(j2 - j0/3.0)
+    ik, g1 = 1j*k, gamma - 1.0
+    L = np.zeros((5, 5), dtype=complex)   # d/dt (rho, v, T, E, F0) = L (...)
+    L[0, 1] = -ik
+    L[1, 0], L[1, 2], L[1, 4] = -ik, -ik, kappa/c
+    L[2, 1], L[2, 2], L[2, 3] = -ik*g1, -g1*c*kappa*b, g1*c*kappa
+    L[3, 1], L[3, 2], L[3, 3], L[3, 4] = -ik*4.0*e0/3.0, c*kappa*b, -c*kappa, -ik
+    L[4, 2], L[4, 3], L[4, 4] = -ik*c*c*q, -ik*c*c/3.0, -c*kappa
+    lam, vec = np.linalg.eig(L)
+    om = 1j*lam
+    ptot = 1.0 + e0/3.0
+    bet = 1.0/ptot
+    cmix = np.sqrt((bet + (4.0 - 3.0*bet)**2*g1/(bet + 12.0*g1*(1.0 - bet)))*ptot)
+    lo, hi = 0.5*min(1.0, cmix), 1.5*max(1.0, cmix)
+    dist = [np.inf if x.real <= 0 else max(lo - x.real/k, x.real/k - hi, 0.0) +
+            1e-12*abs(x.imag) for x in om]
+    i = int(np.argmin(dist))
+    v = vec[:, i]/vec[0, i]
+    v[4] += 4.0*e0*v[1]/3.0             # the lab F = F0 + (4/3) E0 v
+    eig = {}
+    for n, x in zip('vtef', (v[1], v[2], v[3]/e0, v[4]/(c*e0))):
+        eig['radwave_eig_%s_re' % n], eig['radwave_eig_%s_im' % n] = x.real, x.imag
+    return om[i], ar, eig, cmix
+
+
+def lm_fit(res, p, nit=200):
+    """Levenberg-Marquardt: the p minimising |res(p)|^2 (finite-difference Jacobian)."""
+    p, lam = np.asarray(p, dtype=float), 1e-3
+    r = res(p)
+    for _ in range(nit):
+        J = np.empty((r.size, p.size))
+        for i in range(p.size):
+            h = 1e-7*max(1.0, abs(p[i]))
+            q = p.copy()
+            q[i] += h
+            J[:, i] = (res(q) - r)/h
+        A, g = J.T @ J, J.T @ r
+        dA = np.diag(np.maximum(np.diag(A), 1e-12*np.diag(A).max()))
+        while lam < 1e12:
+            dp = np.linalg.solve(A + lam*dA, -g)
+            rn = res(p + dp)
+            if rn @ rn < r @ r:
+                p, r, lam = p + dp, rn, 0.3*lam
+                break
+            lam *= 10.0
+        else:
+            break
+        if np.abs(dp).max() <= 1e-13*(1.0 + np.abs(p).max()):
+            break
+    return p, r

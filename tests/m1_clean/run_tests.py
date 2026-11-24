@@ -12,6 +12,7 @@ import argparse
 import concurrent.futures as cf
 import json
 import os
+import re
 import shutil
 import sys
 import time
@@ -279,6 +280,125 @@ def t_wb_cs(c):
 
 
 # ---------------------------------------------------------------------------------------
+# radiation-acoustic waves in every trapping regime
+
+RADWAVE = (  # tag, P_rad/P_gas, x = tau_cell c_eq/c (grid-scale trapping), signal-speed taper
+    ('thin', 10.0, 0.01, 'true'), ('thin_old', 10.0, 0.01, 'false'),
+    ('mid', 100.0, 0.1, 'true'), ('one', 10.0, 1.0, 'true'), ('trapped', 1.0, 100.0, 'true'))
+
+
+def radwave_fit(d, amp):
+    """omega of the k = 1 mode of a radwave run: drho = A e^{-i w t} + B e^{-g t} (the
+    acoustic and the non-propagating entropy mode), dv = V e^{-i w t}; joint fit."""
+    k, ts, ar, av = 2.0*np.pi, [], [], []
+    for f in m1t.bins(d, 'hydro_w'):
+        h = m1t.read_bin(f)
+        e = np.exp(-1j*k*m1t.cell_centres(d)[0])
+        ts.append(h['time'])
+        ar.append(2.0*np.mean((h['dens'].mean(axis=(0, 1)) - 1.0)*e)/amp)
+        av.append(2.0*np.mean(h['velx'].mean(axis=(0, 1))*e)/amp)
+    ts, ar, av = np.array(ts), np.array(ar), np.array(av)
+    w0 = complex(-np.polyfit(ts, np.unwrap(np.angle(av)), 1)[0],
+                 np.polyfit(ts, np.log(np.abs(av)), 1)[0])
+
+    def res(p):
+        w, A, V, B = p[0] + 1j*p[1], p[2] + 1j*p[3], p[4] + 1j*p[5], p[6] + 1j*p[7]
+        ea, sc = np.exp(-1j*w*ts), np.exp(w.imag*ts)   # relative to the decaying envelope
+        return np.concatenate([((A*ea + B*np.exp(-p[8]*ts) - ar)/sc/abs(ar[0])).view(float),
+                               ((V*ea - av)/sc/abs(av[0])).view(float)])
+    p, _ = m1t.lm_fit(res, [w0.real, w0.imag, ar[0].real, ar[0].imag, av[0].real,
+                            av[0].imag, 0.0, 0.0, 0.1])
+    return complex(p[0], p[1])
+
+
+def t_radwave(c):
+    """linear radiation-acoustic wave (64 x 4 cells, amplitude 1e-6, the exact eigenmode,
+    2 periods, cfl 0.3): phase speed and damping rate against the analytic root, from the
+    optically thin (x = 0.01) to the trapped (x = 100) regime; 'thin_old' runs without
+    hydro/rad_signal_speed_diff, for the time-step gain."""
+    cl, n, amp = 1.0e3, 64, 1.0e-6
+    out = {'err_cph': [], 'err_damp': [], 'damp': [], 'warnings': 0}
+    dt = {}
+    for tag, prat, x, diff in RADWAVE:
+        ceq = m1t.radwave_root(prat, 1.0, cl)[3]
+        kap = x*cl*n/ceq                     # tau_cell = kappa h = x c / c_eq
+        w, ar, eig, _ = m1t.radwave_root(prat, kap, cl)
+        tl = 2.0*2.0*np.pi/w.real
+        o = {'mesh/nx1': n, 'meshblock/nx1': n, 'time/cfl_number': 0.3, 'time/tlim': tl,
+             'hydro/rad_signal_speed': 'true', 'hydro/rad_signal_speed_diff': diff,
+             'rad_m1/c_light': cl, 'rad_m1/arad': ar, 'rad_m1/implicit_cfl': -1.0,
+             'problem/radwave_amp': amp, 'output2/dt': tl/32}
+        o.update({'rad_m1/kappa_' + s: kap for s in 'pef'})
+        o.update({'problem/' + kk: v for kk, v in eig.items()})
+        d = c.run('wave_cart.athinput', tag, o)
+        out['warnings'] += m1t.warnings(open(os.path.join(d, 'run.log')).read())
+        h = m1t.last_bin(d, 'hydro_w')
+        dt[tag] = h['time']/h['cycle']
+        if tag.endswith('_old'):
+            continue
+        wm = radwave_fit(d, amp)
+        out['err_cph'].append(float(abs(wm.real/w.real - 1.0)))
+        out['err_damp'].append(float(abs(wm.imag - w.imag)/wm.real))   # per radian
+        out['damp'].append(float(-wm.imag/w.real))                     # > 0: decays
+    out['dt_gain'] = float(dt['thin']/dt['thin_old'])
+    return out
+
+
+# ---------------------------------------------------------------------------------------
+# phi mirror symmetry on narrow wedges (vet_gd_wall_sym)
+
+def t_wedge_sym(c):
+    """the closed shell at rest and spherically symmetric (no rotation, no lateral mode) on
+    phi wedges with the production Gauss-Legendre 7 x 18 set (azimuthal period 20 deg):
+    a 20-deg wedge (exact phi-wall maps) and narrow 3.7 and 7.3 deg wedges with
+    vet_gd_wall_sym = true; the wedge-mean F_phi must vanish: fphi = |sum F3| / sum |F1|
+    after 8 cycles.  The narrow wedge without the key must stop with the wedge FATAL."""
+    o = {'time/nlim': 8, 'problem/gas_rot': 0.0, 'problem/lat_amp': 0.0,
+         'rad_m1/vet_gd_gl_nmu': 7, 'rad_m1/vet_gd_gl_nphi': 18,
+         'rad_m1/vet_gd_gl_stagger': 'true', 'rad_m1/vet_gd_wall_interp': 'true'}
+    out = {'fphi': [], 'warnings': 0}
+    for tag, w, sym in (('w20', np.pi/9, 'false'), ('w3.7', 0.064, 'true'),
+                        ('w7.3', 0.128, 'true')):
+        d = c.run('shell_sp.athinput', tag, dict(o, **{'mesh/x3max': w,
+                                                        'rad_m1/vet_gd_wall_sym': sym}))
+        m = m1t.last_bin(d, 'm1')
+        out['fphi'].append(float(abs(m['m1_f3'].sum())/np.abs(m['m1_f1']).sum()))
+        out['warnings'] += m1t.warnings(open(os.path.join(d, 'run.log')).read())
+    try:
+        c.run('shell_sp.athinput', 'w3.7_nosym', dict(o, **{'mesh/x3max': 0.064}))
+        out['wedge_fatal'] = 0
+    except RuntimeError:
+        log = open(os.path.join(c.dir, 'w3.7_nosym', 'run.log')).read()
+        out['wedge_fatal'] = int('vet_gd_wall_sym' in log and 'FATAL' in log)
+    return out
+
+
+# ---------------------------------------------------------------------------------------
+# floors with a general EOS: the floor energy is paid from the radiation
+
+def t_floor_pay(c):
+    """the closed shell with hydro/eos = general (cgs units = code units) and a
+    temperature floor just above the gas temperature, so the floor raises T in most cells
+    every cycle; hydro/floor_pay = rad_column pays that energy from the radiation of the
+    same column.  dE: total-energy drift from cycle 1 on (the payment of the initial
+    conversion's floor energy comes at the top of cycle 1, after the t = 0 output: dE0 is
+    that jump relative to E); paid / unpaid: floor energy over the run (floor_audit)."""
+    d = c.run('shell_sp.athinput', 'run', {
+        'hydro/eos': 'general', 'units/length_cgs': 1.0, 'units/mass_cgs': 1.0,
+        'units/time_cgs': 1.0, 'hydro/tfloor': 1.00001e-4, 'hydro/floor_pay': 'rad_column',
+        'hydro/floor_pay_skip': 'true', 'hydro/dfloor_flux_limit': 'true',
+        'hydro/floor_audit': 1})
+    u = os.path.join(d, 'sp.user.hst')
+    e = hst_col(u, 'Eg') + hst_col(u, 'Er')
+    log = open(os.path.join(d, 'run.log')).read()
+    pay = [[float(x) for x in m] for m in
+           re.findall(r'floor_audit cycle \d+ pay: paid (\S+) unpaid (\S+)', log)]
+    return dict(dE=rel_drift(e[1:]), dE0=float(abs(e[1] - e[0])/e[0]),
+                paid=sum(p[0] for p in pay), unpaid=sum(p[1] for p in pay),
+                warnings=m1t.warnings(log))
+
+
+# ---------------------------------------------------------------------------------------
 # linear momentum: a report, not a pass / fail criterion
 
 def t_momentum_box(c):
@@ -332,6 +452,9 @@ TESTS = [  # name, function, in --quick
     ('wb_sp', t_wb_sp, True),
     ('wb_cs', t_wb_cs, False),
     ('momentum_box', t_momentum_box, True),
+    ('radwave', t_radwave, False),
+    ('wedge_sym', t_wedge_sym, True),
+    ('floor_pay', t_floor_pay, True),
 ]
 
 
@@ -388,7 +511,7 @@ def one(a, name, fn):
 def main():
     p = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     p.add_argument('--exe', required=True, help='the athena binary (CPU build)')
-    p.add_argument('--quick', action='store_true', help='the short subset (9 tests)')
+    p.add_argument('--quick', action='store_true', help='the short subset (11 tests)')
     p.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 4)//4),
                    help='tests run at the same time')
     p.add_argument('--threads', type=int, default=4, help='OpenMP threads per run')

@@ -67,6 +67,9 @@ clean_pred_stage = false
 clean_stag_central = true
 clean_stag_kpat = false
 clean_stag_eicarry = true
+clean_gas_secant = max_stage2
+clean_pred_xch = true
+clean_stag_fcone_gas = false
 # --- this test ---
 clean_layout = staggered
 scheme = clean

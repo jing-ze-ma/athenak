@@ -32,15 +32,18 @@ is a FAIL with the path of its `run.log`.
 | `restart_sp` | `shell_sp` | 16 cycles straight vs 8 + restart + 8 | every dump and history row identical (difference 0) |
 | `restart_cs` | `shell_cs` | 8 straight vs 4 + restart + 4 | identical |
 | `dt_retry` | `shell_sp` | a forced step retry at cycle 4 with factor 1 (the step is repeated at the same dt) and with factor 0.5 | factor 1: identical to the run without retry; factor 0.5: runs on; one retry each |
-| `layout_tile` | `shell_sp` (16 x 16 lateral) | `<mesh>/layout_invariant_mode = tile`, `layout_tile = 8`, 8 cycles: 1 MeshBlock vs 1 x 2 MeshBlocks (along phi) and vs 2 x 2 (theta x phi, vacuum ray walls) | largest difference / largest value <= 1e-8 (see below) |
+| `layout_tile` | `shell_sp` (16 x 16 lateral) | `<mesh>/layout_invariant_mode = tile`, `layout_tile = 8`, 8 cycles: 1 MeshBlock vs 1 x 2 MeshBlocks (along phi) and vs 2 x 2 (theta x phi, vacuum ray walls) | 1 x 2: identical (difference 0); 2 x 2: largest difference / largest value <= 1e-8 (see below) |
 | `order_time` | `deckD` | time step halved at a fixed grid (3 levels quick, 5 full); successive-difference L1 of E, F_r, T | order of the finest pair >= 1.7; errors within 5 % of the reference |
 | `order_space` | `wave_cart` | linear radiation-hydro wave, one period, N = 16 ... 128 cells with dt following the CFL | order of the finest pair >= 1.7 (full only) |
 | `nlte_eps1e-1`, `nlte_eps1e-4` | `nlte_eps*` | two-level-atom non-LTE atmosphere (Jiang 2021, ApJS 253, 49, sec. 4.5): J vs the exact transport solution (`ref/nlte_exact_eps*.txt`) | L1 within 5 % of the reference value |
 | `thermal_eq` | `thermal_eq` | uniform gas + radiation relaxing to equilibrium (Jiang 2021, sec. 4.1) vs the exact ODE | max relative error of E(t), T(t) <= bound |
 | `wb_sp`, `wb_cs` | `rhse_sp`, `rhse_cs` | grey scattering envelope in hydrostatic and radiative equilibrium (spherical polar 2-D, cubed sphere) | max over the run of max |v| / c_s <= 1e-8 |
+| `radwave` | `wave_cart` (64 x 4) | linear radiation-acoustic wave (amplitude 1e-6, the exact eigenmode, 2 periods, cfl 0.3) at P_rad/P_gas, x = (10, 0.01), (100, 0.1), (10, 1), (1, 100), x = tau_cell c_eq / c the grid-scale trapping parameter; phase speed and damping of a k = 1 fit vs the analytic root (`m1t.radwave_root`); the x = 0.01 case also without `hydro/rad_signal_speed_diff` (full only, ~1 min) | phase speed within 3e-3, damping within 5e-3 per radian, no growth; dt gain of the key within 2 % of 2.77 |
+| `wedge_sym` | `shell_sp` | the shell at rest, spherically symmetric, GL 7 x 18 rays, 8 cycles, on a 20 deg wedge and (with `vet_gd_wall_sym = true`) 3.7 and 7.3 deg wedges: fphi = \|Σ F_phi\| / Σ \|F_r\|; the 3.7 deg wedge without the key | fphi <= 1e-8; the run without the key stops with the wedge FATAL |
+| `floor_pay` | `shell_sp` | `hydro/eos = general`, `tfloor` just above the gas temperature (the floor acts in most cells every cycle), `floor_pay = rad_column`, `floor_pay_skip`, `dfloor_flux_limit`, `floor_audit = 1`, 40 cycles: total-energy drift from cycle 1 on | dE <= 1e-13; floor energy paid > 0, unpaid 0; no `CLEAN WARNING` |
 | `momentum_box` | `wave_cart` (8^3, periodic 3-D) | total linear momentum, gas (`hydro_u`) + radiation (face momenta of `m1_face` / c^2), every cycle for 8 cycles; radiation wave along the xyz diagonal, amplitude 1e-3, `radwave_eig = false`, `nghost = 3`, tile 8: `dP_cyc` = largest component of \|P - P_0\| / Σ\|p_gas\| per cycle, `dP_max` its maximum (quick and full, ~10 s) | **a report, not a criterion**: passes when the run completes, the numbers are finite and there is no `CLEAN WARNING` |
 
-Notes on the results of this release (512cf768a):
+Notes on the results of this release (465aff485):
 - **L_z.** `dLz` is the drift of `Lz_tot` (gas + radiation + the L_z ledger of the clean
   solve). It is round-off (2e-16) by construction: the ledger books what the step does not
   conserve, so `dLz` checks the bookkeeping, not the conservation. The conservation error
@@ -51,11 +54,17 @@ Notes on the results of this release (512cf768a):
   because the history's `Lrz` is the cell vector u0 F while the scheme's radiation momentum
   is its face momenta (`CleanLzTotal`; ~0.6 % of the radiation's L_z apart).
 - **Layout.** Tile mode gives bit-identical results for every layout of whole-tile
-  MeshBlocks with one MeshBlock along x1 and x2 (theta). On this release 1 x 2 (along phi)
-  differs after 8 cycles by 1.5e-10 of the largest value (the round-off of the join of the
-  per-MeshBlock F line solves; bitwise with the F-join fix of the next release), and 2 x 2
-  by 4.5e-10: splitting theta puts ray walls inside the mesh, which is outside the tile
-  guarantee. The test therefore bounds the difference instead of requiring 0.
+  MeshBlocks with one MeshBlock along x1 and x2 (theta): 1 x 2 (along phi) is identical.
+  2 x 2 differs after 8 cycles by 1.6e-10 of the largest value: splitting theta puts ray
+  walls (mirror or vacuum) inside the mesh, which is outside the tile guarantee, so the test
+  bounds that difference instead of requiring 0.
+- **Floors.** On this release the floor energy of the initial conversion is paid at the top
+  of cycle 1, after the t = 0 output, so the history steps by that payment (1.9e-6 of E in
+  `floor_pay`, printed as `dE0`); `floor_pay` therefore measures dE from cycle 1 on.
+- **Narrow wedges.** On a phi-periodic wedge every ray set needs the width to be a multiple
+  of its azimuthal period (GL n_theta x n_phi: 360/n_phi deg; LQ10: 90 deg; the default
+  icosahedral set: 180 deg), else the run stops with a FATAL; `vet_gd_wall_sym = true` (with
+  `vet_gd_wall_interp = true`) lifts it on narrow wedges. All suite decks meet the rule.
 - **Linear momentum.** The scheme does not conserve linear momentum (gas + radiation) in
   general, and keeps no ledger for it: the face-flux cone cut (`clean_stag_fcone` with
   `clean_stag_fcone_gas = false`), the well-balancing residual (`clean_stag_fwb`) and the
@@ -70,7 +79,8 @@ Notes on the results of this release (512cf768a):
   1.84 (E) over the five time steps. The criterion is on the finest pair.
 
 The reference values and tolerances are in `ref/references.json` (measured with commit
-512cf768a, CPU, GCC 13, `-ffp-contract=off`). Bitwise tests (restart, dt_retry, layout) need
+512cf768a, CPU, GCC 13, `-ffp-contract=off`; reproduced to all printed digits on 465aff485 with
+the IA12.2 scheme keys of the decks; `radwave` measured there). Bitwise tests (restart, dt_retry, layout) need
 no reference: they compare two runs of the same binary. `momentum_box` has only
 `"equal": {"warnings": 0}`: its dP is recorded, not bounded.
 
@@ -104,7 +114,8 @@ larger difference points at the build (see the CUDA 12.2 warning in
 ## Notebooks
 
 `notebooks/` has one Jupyter notebook per test (conservation, thermal equilibrium, order,
-well-balancing, non-LTE, momentum box, restart): each runs its test through this suite (or loads
+well-balancing, non-LTE, momentum box, restart, radiation-acoustic waves, narrow wedges,
+floors): each runs its test through this suite (or loads
 an existing run) and plots the result against the exact solution or the criterion. Only numpy,
 matplotlib and jupyter are needed; see `notebooks/README.md`.
 
