@@ -26,3 +26,10 @@
 - CLEAN MCAP lines: pass 4254, write-back 2127; MCAPM 2127; FCONE 2127; WBFDIAG 41
 - dt min 0.05651 at t 4.752476e+05; s/cycle 3.488 (c6500-7500); end: t 4.834910e+05, Ltop/Lin 2.4599, Lbot/Lin 1.4844
 - floor_audit [update] skip_de per cycle: max abs 3.216e+43 at c6472; 1048 cycles > 1e41 (skip_de_per_cycle.txt)
+
+## WB
+- 2026-11-23 21:34:59 rc=0 last: elapsed=5.962664e+03 cycle=8050 time=4.890772e+05 dt=4.941214e-02 
+- CLEAN WARNING 52, stage fallbacks 30, DT_RETRY 23, FATAL 0, implicit_pos_floor created 1
+- CLEAN MCAP lines: pass 6426, write-back 3213; MCAPM 3213; FCONE 3213; WBFDIAG 65
+- dt min 0.04941 at t 4.890762e+05; s/cycle 3.619 (c6500-8050); end: t 4.890772e+05, Ltop/Lin 2.3942, Lbot/Lin 1.5983
+- floor_audit [update] skip_de per cycle: max abs 3.527e+43 at c8030; 1587 cycles > 1e41 (skip_de_per_cycle.txt)
