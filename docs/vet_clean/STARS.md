@@ -88,7 +88,10 @@ srun -N 1 -n 4 --gpus-per-node=4 env KOKKOS_MAP_DEVICE_ID_BY=mpi_rank OMP_NUM_TH
 
 With `mpirun`, use `mpirun -np 4 -x KOKKOS_MAP_DEVICE_ID_BY=mpi_rank -x OMP_NUM_THREADS=1 ...`.
 For a run over several nodes of A100s with InfiniBand (e.g. MPCDF Raven), also set
-`UCX_IB_GPU_DIRECT_RDMA=0`. One node does not need it.
+`UCX_IB_GPU_DIRECT_RDMA=0`. One node does not need it. Over several H200 nodes (e.g. Caltech HPC), set
+`UCX_TLS=^xpmem UCX_IB_GPU_DIRECT_RDMA=no UCX_RNDV_SCHEME=put_ppln`: without them the first message
+between nodes fails with `ib_mlx5 ... Local protection error`. With `put_ppln`, two nodes were bitwise
+from run to run.
 
 Measured on one node of 4 A100-40GB (MPCDF Raven, `gcc/13 cuda/12.6 openmpi_gpu/5.0`):
 
