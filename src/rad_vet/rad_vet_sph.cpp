@@ -130,8 +130,6 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
       << "time_scheme = be | hesdirk2, one MeshBlock "
       << "along x1, no SMR, implicit_flux = central | berthon | blend, "
       << "implicit_recon = dc, implicit_trans_limit = none; this input has:" << why
-      << std::endl
-      << "See tests_m1/runs_5a_sp_s1/README.md and tests_m1/runs_5b_sp_s2/README.md."
       << std::endl;
     std::exit(EXIT_FAILURE);
   }

@@ -990,7 +990,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
         << "is not allowed: the kappa_P/kappa_R factor of the ma form (~250-520 in an "
         << "iron bump) amplifies the lag between the relaxed end-of-step B* and the "
         << "start-of-step J = E^n, and the implicit Picard loop does not converge "
-        << "(NON-CONV on the BSG). Use vet_scatter_j = relaxed (default) or "
+        << "(no convergence). Use vet_scatter_j = relaxed (default) or "
         << "vet_scatter_form = absorption." << std::endl;
       std::exit(EXIT_FAILURE);
     }
@@ -1073,7 +1073,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   if (!opac_zero && !coupling) {
     std::cout << "### WARNING: <rad_vet> has non-zero opacities but coupling = false: "
-      << "the opacity enters the thick-limit FLUX only" << std::endl;
+      << "the opacity enters the transport only" << std::endl;
   }
   // an isothermal gas has no energy equation to couple to
   if (have_hydro && (coupling || !opac_zero)) {
