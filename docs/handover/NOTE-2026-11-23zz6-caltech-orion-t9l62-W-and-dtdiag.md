@@ -42,3 +42,4 @@
 - CW 0, stage fallbacks 0, DT_RETRY 0, pos_floor created 0; s/cycle 3.072 (c4550-4600); dt min 68.07 at t 4.389123e+05; skip_de per cycle: max abs 1.792e+24 at c4604; 0 cycles > 1e41
 - first DTREP: `DTREP cycle=4515 time=432085 cfl*dt_hyd=70.0239 cfl*dt_gasonly=87.2318 rank=3 gid=7 kji=22,16,49 dir=1 r=2.31764e+12 rho=1.69288e-07 T=4.74913e+13 pg=8.03971e+06 G1=1.66667 cgas=8.89675e+06 v=-4.54801e+07 ceff=2.25751e+07 h=1.58849e+10 tauT_h=1291.34 Erad=1.6397e+08 Ddd=0.333333 cdt_kP=1.6296e+06 frz=-1 sc=1 cell_dt=233.413 cell_dt_gas=292.127 theta_deg=94.7461 phi=2.47584`
 - (11-23 21:54) status: T0a [cycle=30150, t 1.58487e+06 dt 104, CW 0, fb 0, DT_RETRY 0, pos_floor 0];
+- (11-23 21:54) status: T0a [cycle=30150, t 1.58508e+06 dt 98.3, CW 0, fb 0, DT_RETRY 0, pos_floor 0];
