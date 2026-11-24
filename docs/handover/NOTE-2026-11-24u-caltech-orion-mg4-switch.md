@@ -26,3 +26,8 @@
 - pre-switch (log.1, on the old node): 0.6254 s/cyc (c4450-4700), dt 5.716051e+01. **Moved to hpc-sm-02-16 / holder 7333035 (COORD: frees 7333072 for RSG; 02-16 is timing-suspect).** Clean STOP: yes ('Terminating on stop request'). Pre-switch rst kept as rst_keep/bsg3d.00006.rst.pre-mg4.
 - relaunch: `2026-11-24 01:34:48 chunk 2 STAR=bsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc3_af836f5a3 md5=09f50abee4ffa6cd399ce15879626353 DECK=/resnick/groups/carnegie_poc/jingze/prod_rc3_1124/decks/tile/IA123_bsg.athinput md5=9f4884524a7d23` + EX: hydro/fofc=true hydro/fofc_retest=true rad_vet/clean_stag_mg_levels=4
 - log echo (log.2): ### NOTE: parameter 'clean_stag_mg_levels' in block 'rad_vet' is absent from the restart's input: added from the command line (= 4); | <hydro>: fofc_retest 1
+
+## m35mms (11-24 01:36): switched to mg_levels 4
+- pre-switch (log.1, on the old node): 1.1243 s/cyc (c4950-5200), dt 9.786278e+00. **Moved to hpc-sm-02-11 / holder 7333073 (COORD: frees 7333072 for RSG; 02-16 is timing-suspect).** Clean STOP: yes ('Terminating on stop request'). Pre-switch rst kept as rst_keep/m35mms.00004.rst.pre-mg4.
+- relaunch: `2026-11-24 01:34:48 chunk 2 STAR=m35mms BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc3_af836f5a3 md5=09f50abee4ffa6cd399ce15879626353 DECK=/resnick/groups/carnegie_poc/jingze/prod_rc3_1124/decks/tile/IA123_m35mms.athinput md5=ae635eee` + EX: hydro/fofc=true hydro/fofc_retest=true rad_vet/clean_stag_mg_levels=4
+- log echo (log.2): ### NOTE: parameter 'clean_stag_mg_levels' in block 'rad_vet' is absent from the restart's input: added from the command line (= 4); | <hydro>: fofc_retest 1
