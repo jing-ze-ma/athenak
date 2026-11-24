@@ -141,7 +141,7 @@ inline std::string M1LzKey(ParameterInput *pin, const bool cs, const bool k1) {
                        : (k1 ? "clean_sp_lz_bnd_k1" : "clean_sp_lz_bnd")});
 }
 
-// components of RadiationVet::vet_cell (closure = vet_sc), opacities as rho*kappa
+// components of RadiationVet::vet_cell (closure = vet_sc)
 constexpr int M1_VET_CHX = 0;   // extinction rho (kappa_F + kappa_s) [1/length]
 constexpr int M1_VET_SRC = 1;   // source function in E units (4 pi S / c)
 constexpr int M1_VET_J   = 2;   // E of the formal solution (4 pi J / c)
@@ -180,6 +180,7 @@ constexpr int M1_VGD_NMAX = M1_VGD_NMAX_BUILD;   // cmake -D Athena_M1_VGD_NMAX
 #else
 constexpr int M1_VGD_NMAX = 432;   // vet_gd: max directions (sizes buf[] in VetGdWall)
 #endif
+// components of opac, all stored as rho*kappa (inverse length)
 constexpr int M1_OP_P = 0;  // rho kappa_P, Planck (emission) mean
 constexpr int M1_OP_E = 1;   // rho kappa_E, energy (absorption) mean
 constexpr int M1_OP_T = 2;   // rho (kappa_F + kappa_s): transport opacity (flux source,
@@ -870,7 +871,7 @@ class RadiationVet {
   // step: they travel in the restart (kM1RssRstMagic), else are filled from the initial
   // state before the first dt (RssPrime).
   //! closure tensor the signal speed reads: 0 E/3, 1 M1Chi(F/cE), 2 tau_ten,
-  //! 3 vet_cell (chi, n), 4 vet_cell (D_dd)
+  //! 3 vet_cell (chi, n), 4 vet_cell (D_dd), 5 cln_s (D, clean)
   int RssMode() const;
   int RssRstMode() const;   // RssMode + 16 (extended restart state)
   int RssRstNch(int mode) const;  // channels written: opac(M1_OP_T) + the tensor's
