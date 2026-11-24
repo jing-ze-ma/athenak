@@ -1871,9 +1871,11 @@ int RadiationVet::CleanBiCGStab() {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   CleanW w = cln_w;
   const int nc = 1;
-  // clean_conv = budget (Newton passes): solve W A X = W B, W = 1/S the rows' gross
-  // terms, preconditioned by M^-1 W^-1, so every norm below is the budget's
-  const bool bud = cln_bon && cln_ewr > -1.5;
+  // clean_conv = budget, in the Newton passes (a single solve keeps clean_tol in its own
+  // norm): the rows over their gross terms S (CleanRightHandSide), W A X = W B with
+  // W = 1/S, right-preconditioned by M^-1 W^-1, so that every norm below is the budget's
+  // (cln_ewr -3: clean_clos1_budget's pass, in that norm to 0.1 clean_conv_max)
+  const bool bud = cln_bon && (cln_ewr > -1.5 || cln_ewr < -2.5);
   const int sx = CLW_X, sb = bud ? CLW_BW : CLW_B;
   const int sr = CLW_R, sr0 = CLW_R0;
   const int sp = CLW_P, sv = CLW_V;
@@ -1944,8 +1946,11 @@ int RadiationVet::CleanBiCGStab() {
   };
   restart(-1);
   Real tol = cln_tol*fmax(std::sqrt(bb), 1.0e-300);
-  // Eisenstat-Walker forcing (choice 2, safeguarded) on the pass's Newton residual |r0|
-  if (bud) {
+  // Eisenstat-Walker forcing (choice 2, safeguarded) on |r0|, the Newton residual of the
+  // pass in the budget's norm
+  if (bud && cln_ewr < -2.5) {
+    tol = 0.1*cln_bmax;
+  } else if (bud) {
     const Real r0 = std::sqrt(rr);
     Real eta = 0.1;
     if (cln_ewr > 0.0) {

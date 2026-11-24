@@ -1226,6 +1226,7 @@ class RadiationVet {
   Real cln_stall_f = 0.99;      // clean_bicg_stall_fac: least residual drop per window
   int cln_maxnl = 50;           // clean_maxnl: Newton iterations
   Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: Newton tolerance (relative dE, dT, dv)
+  bool cln_c1b = false;         // clean_clos1_budget
   bool cln_gtf = false;         // clean_gas_tfloor: gas T >= tfloor, energy to/from E
   bool cln_wbfct = false;       // clean_wb_fct
   bool cln_wbff = false;        // clean_wb_floor_fail

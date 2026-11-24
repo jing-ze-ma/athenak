@@ -1257,7 +1257,7 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
       CleanPreconditionerSetup();
       // budget: a pass whose iterate gives the next closure is solved in the strict norm
       const bool cnext = (cln_closit && inl + 1 < cln_maxpic) || (clos1 && inl == 0);
-      if (cnext) cln_ewr = -2.0;
+      if (cnext) cln_ewr = (cln_c1b && !dtr_redo) ? -3.0 : -2.0;
       nit = CleanBiCGStab();
       if (cnext) cln_ewr = -1.0;
       nit_sum += std::abs(nit);

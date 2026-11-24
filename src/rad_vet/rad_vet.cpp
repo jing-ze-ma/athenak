@@ -562,6 +562,12 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       }
       cln_vimp = false;
     }
+    // clean_clos1_budget (read only when named; false, the default: the strict norm): a
+    // pass whose iterate the next pass takes the closure of in the budget's norm, to 0.1
+    // clean_conv_max, the floor of the passes after it at the budget's ceiling (a step
+    // dt_retry redoes strictly, as its budget)
+    cln_c1b = pin->DoesParameterExist("rad_vet","clean_clos1_budget") &&
+              pin->GetBoolean("rad_vet","clean_clos1_budget");
     // clean_gas_tfloor: gas row's T bounded below by the EOS tfloor (E takes the rest)
     cln_gtf = stag("clean_gas_tfloor", true);
     // clean_wb_fct: the write-back's Zalesak limit on the written faces' energy flux,
