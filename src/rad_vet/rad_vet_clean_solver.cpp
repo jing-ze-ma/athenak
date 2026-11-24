@@ -1946,12 +1946,29 @@ int RadiationVet::CleanBiCGStab() {
   };
   restart(-1);
   Real tol = cln_tol*fmax(std::sqrt(bb), 1.0e-300);
+  // clean_bud_maxnorm: the budget's tests on max_i |r_i|, the norm of the pass's own test
+  // (an L2 norm above sqrt(N) t has its max above t: not reduced)
+  const bool mn = bud && cln_bmn;
+  const Real sqn = std::sqrt(static_cast<Real>(pmy_pack->pmesh->nmb_total)*
+                             (ie - is + 1)*(je - js + 1)*(ke - ks + 1));
+  auto vmax = [&](const int s) {
+    Real a = 0.0;
+    const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
+    Kokkos::parallel_reduce("cln_vmax", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            (nmb1 + 1)*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &mx) {
+      const int m = idx/nkji, k = ks + (idx - m*nkji)/nji;
+      const int j = js + (idx - m*nkji - (k - ks)*nji)/ni, i = is + idx%ni;
+      mx = fmax(mx, fabs(w(m,s,k,j,i)));
+    }, Kokkos::Max<Real>(a));
+    return CleanReduce(a, true);
+  };
   // Eisenstat-Walker forcing (choice 2, safeguarded) on |r0|, the Newton residual of the
   // pass in the budget's norm
   if (bud && cln_ewr < -2.5) {
     tol = 0.1*cln_bmax;
   } else if (bud) {
-    const Real r0 = std::sqrt(rr);
+    const Real r0 = mn ? vmax(sr) : std::sqrt(rr);
     Real eta = 0.1;
     if (cln_ewr > 0.0) {
       eta = 0.9*SQR(r0/cln_ewr);
@@ -1973,7 +1990,9 @@ int RadiationVet::CleanBiCGStab() {
   Real cmin = inf, cwin = inf;
   bool cmet = false;
   auto conv = [&](const int s, const Real r2, const Real t) {
-    if (!(std::sqrt(r2) <= t)) return false;
+    if (!(std::sqrt(r2) <= t) && !(mn && std::sqrt(r2) <= sqn*t && vmax(s) <= t)) {
+      return false;
+    }
     if (!cn) return true;
     CleanGhostFill(w, sx, 1, 0, 1);   // (X's ghosts are those of the last apply of X)
     Real a = 0.0;

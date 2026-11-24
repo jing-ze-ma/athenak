@@ -1228,6 +1228,7 @@ class RadiationVet {
   Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: Newton tolerance (relative dE, dT, dv)
   bool cln_c1b = false;         // clean_clos1_budget
   bool cln_vset = false;        // clean_vel_settled
+  bool cln_bmn = false;         // clean_bud_maxnorm
   bool cln_gtf = false;         // clean_gas_tfloor: gas T >= tfloor, energy to/from E
   bool cln_wbfct = false;       // clean_wb_fct
   bool cln_wbff = false;        // clean_wb_floor_fail
