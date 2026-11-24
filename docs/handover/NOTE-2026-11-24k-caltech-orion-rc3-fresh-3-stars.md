@@ -168,3 +168,4 @@ CLEAN WARNING cycle 779 t2s 2: the implicit_pos_floor creation 1.459516e+42 of t
 (float32 bins; vet_f* = cell radiation flux moments; shells i=320..331 = r 5.5279e+11..5.5603e+11; v in cm/s)
 ```
 - Volume-weighted over shells i=320..331 (the 23zt thin layer). F_phi / F_theta are SIGNED sums over the |F_r| sum; v_phi and v_r are mass-weighted means; max|v_phi| is over the cells. Script: caltech_results/PROD_RC3_1124/m35zams/thin.py (srun CPU step on 01-15).
+- (11-24 02:10) m35zams_z3 dt per 1000 cycles: c1000 t 3.020044e+03 dt 2.503296e+00 (wall 2.803689e+02 s);c2000 t 5.521967e+03 dt 2.498548e+00 (wall 5.472784e+02 s);
