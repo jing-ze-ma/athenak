@@ -69,3 +69,91 @@ Kokkos::Cuda ERROR: Failed to call Kokkos::Cuda::finalize()
 
 ## Remark on S5 (not evidence)
 - S5's growth of max|ef/es-1| (off 1.17, on 36.5; cells > 1: off 1, on 13.1 million of 67.1 million) has no criterion in 24zzzy and is 300 cycles from one start (the eruption rst). It is NOT evidence that the key is wrong, unstable or harmful: CW / fallback / BE / retry / ef<=0 are 0, dt mean -0.5 %, cost -0.7 %, L_top +3.2e-4. It is also not evidence that the key is safe at longer times.
+
+## Z: M35ZAMS ray set, T2 binary (7d7c4a71), fresh 200 cycles, on 01-15 (11-24 14:01)
+| arm | s/cyc | dt min/mean/max | its t2s2 / t2s3 (sum) | CW/FATAL/DT_RETRY | L_top/L_in c200 |
+|---|---|---|---|---|---|
+| ZA | 0.3400 | 3.481 / 3.481 / 3.481 | 12.7 / 14.6 | 0 / 0 / 0 | 1.00046 |
+| ZB | 0.3412 | 3.481 / 3.481 / 3.481 | 13.3 / 15.5 | 0 / 0 / 0 | 1.00046 |
+| ZC | 0.3427 | 3.481 / 3.481 / 3.481 | 12.3 / 14.0 | 0 / 0 / 0 | 1.00046 |
+
+### ZA
+2026-11-24 13:57:31 rc=0 (srun) ended: Terminating on cycle limit wall=101 s CW 0 FATAL 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 5.252909e+01 | faile
+- deck vs production: > nlim = 200;> dt_report = 0;> dt = 1e30;> dt = 1e30;> dt = 1e30;> dt = 1e30;> dt = 1e30;
+- first lines: <rad_vet> vet_gd direction set: 126 directions; moment errors |sum w - 1| 6.66134e-16, |sum w n| 2.03288e-17, |sum w nn - I/3| 2.77556e-16 (rotated 1.66533e-16), 4th-moment anisotropy 2.498e-16 (rotat
+```
+/resnick/groups/carnegie_poc/jingze/sdo_1124/ZA/bin/m35zams.vet.00000.bin  t=0.000000e+00  shells 384, thin 76 (i 308-383)
+  F3/|F1| odd: thin max 1.485e-02 median 1.130e-02 | thick(i<thin) max 2.037e-03 | thin mean <p> 3.10e-10
+  v_phi rms: thin 0.0000e+00  mass-weighted all 0.0000e+00  max|v_phi| thin 0.0000e+00
+/resnick/groups/carnegie_poc/jingze/sdo_1124/ZA/bin/m35zams.vet.00001.bin  t=6.961010e+02  shells 384, thin 76 (i 308-383)
+  F3/|F1| odd: thin max 1.385e-02 median 1.065e-02 | thick(i<thin) max 2.836e-04 | thin mean <p> 1.15e-04
+  v_phi rms: thin 1.3655e+04  mass-weighted all 5.3024e+00  max|v_phi| thin 1.2889e+05
+Traceback (most recent call last):
+  File "/resnick/groups/carnegie_poc/jingze/sdo_1124/raymeas.py", line 28, in <module>
+    f1, f3, e = full(d, 'vet_f1'), full(d, 'vet_f3'), full(d, 'vet_e')
+  File "/resnick/groups/carnegie_poc/jingze/sdo_1124/raymeas.py", line 15, in full
+    x2 = np.array(d['mb_x2f']); x3 = np.array(d['mb_x3f']); a = d['mb_data'][n]
+KeyError: 'vet_f1'
+srun: error: hpc-sm-01-15: task 0: Exited with exit code 1
+Traceback (most recent call last):
+  File "/resnick/groups/carnegie_poc/jingze/sdo_1124/raymeas.py", line 28, in <module>
+    f1, f3, e = full(d, 'vet_f1'), full(d, 'vet_f3'), full(d, 'vet_e')
+  File "/resnick/groups/carnegie_poc/jingze/sdo_1124/raymeas.py", line 15, in full
+    x2 = np.array(d['mb_x2f']); x3 = np.array(d['mb_x3f']); a = d['mb_data'][n]
+KeyError: 'vet_f1'
+srun: error: hpc-sm-01-15: task 0: Exited with exit code 1
+```
+
+### ZB
+2026-11-24 13:59:25 rc=0 (srun) ended: Terminating on cycle limit wall=101 s CW 0 FATAL 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 5.083120e+01 | faile
+- deck vs production: > nlim = 200;> dt_report = 0;> vet_gd_ls = 10;> dt = 1e30;> dt = 1e30;> dt = 1e30;> dt = 1e30;> dt = 1e30;
+- first lines: <rad_vet> vet_gd direction set: 120 directions; moment errors |sum w - 1| 0, |sum w n| 3.46945e-18, |sum w nn - I/3| 3.88578e-16 (rotated 3.88578e-16), 4th-moment anisotropy 3.33067e-16 (rotated 1.110
+```
+/resnick/groups/carnegie_poc/jingze/sdo_1124/ZB/bin/m35zams.vet.00000.bin  t=0.000000e+00  shells 384, thin 76 (i 308-383)
+  F3/|F1| odd: thin max 2.504e-02 median 2.477e-02 | thick(i<thin) max 7.974e-04 | thin mean <p> 2.28e-10
+  v_phi rms: thin 0.0000e+00  mass-weighted all 0.0000e+00  max|v_phi| thin 0.0000e+00
+/resnick/groups/carnegie_poc/jingze/sdo_1124/ZB/bin/m35zams.vet.00001.bin  t=6.961010e+02  shells 384, thin 76 (i 308-383)
+  F3/|F1| odd: thin max 2.362e-02 median 2.329e-02 | thick(i<thin) max 8.773e-04 | thin mean <p> 1.35e-04
+  v_phi rms: thin 2.8621e+04  mass-weighted all 6.3353e+00  max|v_phi| thin 2.5758e+05
+Traceback (most recent call last):
+  File "/resnick/groups/carnegie_poc/jingze/sdo_1124/raymeas.py", line 28, in <module>
+    f1, f3, e = full(d, 'vet_f1'), full(d, 'vet_f3'), full(d, 'vet_e')
+  File "/resnick/groups/carnegie_poc/jingze/sdo_1124/raymeas.py", line 15, in full
+    x2 = np.array(d['mb_x2f']); x3 = np.array(d['mb_x3f']); a = d['mb_data'][n]
+KeyError: 'vet_f1'
+srun: error: hpc-sm-01-15: task 0: Exited with exit code 1
+Traceback (most recent call last):
+  File "/resnick/groups/carnegie_poc/jingze/sdo_1124/raymeas.py", line 28, in <module>
+    f1, f3, e = full(d, 'vet_f1'), full(d, 'vet_f3'), full(d, 'vet_e')
+  File "/resnick/groups/carnegie_poc/jingze/sdo_1124/raymeas.py", line 15, in full
+    x2 = np.array(d['mb_x2f']); x3 = np.array(d['mb_x3f']); a = d['mb_data'][n]
+KeyError: 'vet_f1'
+srun: error: hpc-sm-01-15: task 0: Exited with exit code 1
+```
+
+### ZC
+2026-11-24 14:01:33 rc=0 (srun) ended: Terminating on cycle limit wall=104 s CW 0 FATAL 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 6.305118e+01 | faile
+- deck vs production: > final_restart = false;> nlim = 200;> dt_report = 0;> vet_gd_gl_nphi = 36;> dt = 1e30;> dt = 1e30;> dt = 1e30;> dt = 1e30;> dt = 1e30;
+- first lines: <rad_vet> vet_gd direction set: 252 directions; moment errors |sum w - 1| 3.33067e-15, |sum w n| 3.52908e-17, |sum w nn - I/3| 2.77556e-16 (rotated 1.11022e-16), 4th-moment anisotropy 5.82867e-16 (rot
+```
+/resnick/groups/carnegie_poc/jingze/sdo_1124/ZC/bin/m35zams.vet.00000.bin  t=0.000000e+00  shells 384, thin 76 (i 308-383)
+  F3/|F1| odd: thin max 1.050e-02 median 6.615e-03 | thick(i<thin) max 4.797e-04 | thin mean <p> 2.43e-10
+  v_phi rms: thin 0.0000e+00  mass-weighted all 0.0000e+00  max|v_phi| thin 0.0000e+00
+/resnick/groups/carnegie_poc/jingze/sdo_1124/ZC/bin/m35zams.vet.00001.bin  t=6.961010e+02  shells 384, thin 76 (i 308-383)
+  F3/|F1| odd: thin max 9.169e-03 median 5.897e-03 | thick(i<thin) max 1.260e-04 | thin mean <p> 4.01e-05
+  v_phi rms: thin 1.5540e+04  mass-weighted all 4.7043e+00  max|v_phi| thin 1.4053e+05
+Traceback (most recent call last):
+  File "/resnick/groups/carnegie_poc/jingze/sdo_1124/raymeas.py", line 28, in <module>
+    f1, f3, e = full(d, 'vet_f1'), full(d, 'vet_f3'), full(d, 'vet_e')
+  File "/resnick/groups/carnegie_poc/jingze/sdo_1124/raymeas.py", line 15, in full
+    x2 = np.array(d['mb_x2f']); x3 = np.array(d['mb_x3f']); a = d['mb_data'][n]
+KeyError: 'vet_f1'
+srun: error: hpc-sm-01-15: task 0: Exited with exit code 1
+Traceback (most recent call last):
+  File "/resnick/groups/carnegie_poc/jingze/sdo_1124/raymeas.py", line 28, in <module>
+    f1, f3, e = full(d, 'vet_f1'), full(d, 'vet_f3'), full(d, 'vet_e')
+  File "/resnick/groups/carnegie_poc/jingze/sdo_1124/raymeas.py", line 15, in full
+    x2 = np.array(d['mb_x2f']); x3 = np.array(d['mb_x3f']); a = d['mb_data'][n]
+KeyError: 'vet_f1'
+srun: error: hpc-sm-01-15: task 0: Exited with exit code 1
+```

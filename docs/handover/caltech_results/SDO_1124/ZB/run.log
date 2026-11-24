@@ -1,0 +1,2 @@
+2026-11-24 13:57:44 start ZB BIN md5=7d7c4a71a07d3dc3878e7dea1403df23 deck: > nlim = 200;> dt_report = 0;> vet_gd_ls = 10;> dt = 1e30;> dt = 1e30;> dt = 1e30;> dt = 1e30;> dt = 1e30;
+2026-11-24 13:59:25 rc=0 (srun) ended: Terminating on cycle limit wall=101 s CW 0 FATAL 0 DT_RETRY 0 last: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 5.083120e+01 | faile
