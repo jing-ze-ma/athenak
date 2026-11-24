@@ -900,6 +900,16 @@ void DtRetry::Report(Mesh *pm) {
 // CounterKeep (dt_retry.hpp)
 
 namespace {
+// floor_pay's energy paid from E_rad and left unpaid (this rank, hydro + MHD)
+void FloorPaid(Mesh *pm, Real p[2]) {
+  p[0] = p[1] = 0.0;
+  for (const fluid::DualEnergy *d : {pm->pmb_pack->phydro ? &pm->pmb_pack->phydro->dual :
+       nullptr, pm->pmb_pack->pmhd ? &pm->pmb_pack->pmhd->dual : nullptr}) {
+    if (d == nullptr) continue;
+    p[0] += d->hc[fluid::DC_PAID];
+    p[1] += d->hc[fluid::DC_UNPAID];
+  }
+}
 // the integer and the energy-type fields of Mesh::ecounter, in a fixed order
 std::int64_t *EcInt(EventCounters &e, int q) {
   std::int64_t *p[9] = {&e.nfofc, &e.neos_dfloor, &e.neos_efloor, &e.neos_tfloor,
@@ -948,6 +958,7 @@ void CounterKeep::Save(Mesh *pm, int slot) {
   Snap &s = s_[slot];   // (also with counters_rollback off: Cycle reads slot 0)
   for (int q = 0; q < 9; ++q) {s.ni[q] = *EcInt(pm->ecounter, q);}
   for (int q = 0; q < 6; ++q) {s.ec[q] = *EcReal(pm->ecounter, q);}
+  FloorPaid(pm, s.pay);
   auto *pm1 = pm->pmb_pack->pradm1;
   if (pm1 != nullptr) {
     s.hpos = SnapView(pm1->pos_cnt_d, s.pos);
@@ -1005,7 +1016,8 @@ void CounterKeep::Report(Mesh *pm) {
 //! checkpoint slot 0: implicit_pos_gas raises (cells, the energy E paid), E floor raises
 //! (cells, the energy the gas and the column paid), time2_face_fct's 'left' cells, a
 //! time2_auto_be step, floorcap's |v| / T caps and the c2p density floor under
-//! dfloor_flux_limit (active cells, and the mass x vol it created).  One CLEAN FALLBACK
+//! dfloor_flux_limit (active cells, and the mass x vol it created), floor_pay's energy
+//! from E_rad (and unpaid) of the hydro / MHD floors.  One CLEAN FALLBACK
 //! line when any fired (one reduction)
 
 void CounterKeep::Cycle(Mesh *pm) {
@@ -1013,7 +1025,7 @@ void CounterKeep::Cycle(Mesh *pm) {
   if (!s.have) return;
   auto *pm1 = pm->pmb_pack->pradm1;
   auto *ph = pm->pmb_pack->phydro;
-  Real d[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+  Real d[11] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   if (pm1 != nullptr && s.hpos) {
     using namespace radm1;   // NOLINT(build/namespaces)
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->pos_cnt_d);
@@ -1031,19 +1043,23 @@ void CounterKeep::Cycle(Mesh *pm) {
     d[7] = pm->ecounter.flr_dn - s.ec[5];
     d[8] = pm->ecounter.flr_dm_v - s.ec[3];
   }
+  Real p[2];   // (floor_pay)
+  FloorPaid(pm, p);
+  d[9] = p[0] - s.pay[0];
+  d[10] = p[1] - s.pay[1];
 #if MPI_PARALLEL_ENABLED
-  MPI_Allreduce(MPI_IN_PLACE, d, 9, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, d, 11, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
   // (the face FCT's count and the auto-BE decision are the same on every rank)
   const Real fl = (pm1 != nullptr) ? pm1->t2_ffct_left - s.ffl : 0.0;
   const int abe = (pm1 != nullptr && pm1->t2_abe_now && !pm1->t2_beonly) ? 1 : 0;
   if (global_variable::my_rank != 0) return;
   if (!(d[0] > 0.0 || d[2] > 0.0 || d[5] > 0.0 || d[6] > 0.0 || d[7] > 0.0 ||
-        fl > 0.0 || abe)) return;
+        d[9] != 0.0 || d[10] != 0.0 || fl > 0.0 || abe)) return;
   std::printf("CLEAN FALLBACK cycle %d: pos_gas %.0f (from E %.3e) e_floor %.0f (from "
               "gas %.3e, column %.3e) ffct_left %.0f auto_be %d floorcap v %.0f T %.0f "
-              "c2p_dfloor %.0f (mass %.3e)\n", pm->ncycle, d[0], d[1], d[2], d[3], d[4],
-              fl, abe, d[5], d[6], d[7], d[8]);
+              "c2p_dfloor %.0f (mass %.3e) floor_pay %.3e (unpaid %.3e)\n", pm->ncycle,
+              d[0], d[1], d[2], d[3], d[4], fl, abe, d[5], d[6], d[7], d[8], d[9], d[10]);
 }
 
 }  // namespace dtretry

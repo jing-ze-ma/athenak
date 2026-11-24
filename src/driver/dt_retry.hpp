@@ -231,6 +231,7 @@ class CounterKeep {
     bool hpos = false, hacl = false, hopn = false, hfcp = false;
     Real lz[2] = {0, 0};   // (<rad_m1>'s L_z ledger cln_lzl and its pending cln_lzp)
     Real ffl = 0;   // (<rad_m1>'s time2_face_fct 'left' cells, t2_ffct_left)
+    Real pay[2] = {0, 0};   // (floor_pay's paid / unpaid, DualEnergy hc, hydro + MHD)
   };
   Snap s_[3];   // slot 2: the stage-1 start of a time2_posfix re-solve
   std::int64_t nrb_[3] = {0, 0, 0};
