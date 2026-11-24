@@ -56,3 +56,7 @@
   2026-11-24 02:04:24 rc=0 wall=809 s last: elapsed=7.992603e+02 cycle=250 time=2.421289e+04 dt=9.684980e+01; s/cyc 2.8668 (c50-250); setup elapsed=1.170709e+02 (+ total wall=809); peak GPU mem 0,104061 MiB 1,103895 MiB 2,103895 MiB 3,104061 MiB 
   BiCGStab it 4.07 / stage line, solves 2.36 / stage line (502 lines); CW 0, FATAL 0, fallbacks 0, DT_RETRY 0
   md5 rows 0-200: user b578af5a0b7ae6839f552b4dbc336169, hydro 44d04279b221b4c4d52b07f8281723fc; dt at c200 96.8505
+- **T2**: ARGS: -i prod_rc3_1124/layopt/decks/IA123_t9l62_lay.athinput time/nlim=250 output2/dt=1e30 output3/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30 meshblock/nx3=256
+  2026-11-24 02:18:22 rc=0 wall=801 s last: elapsed=7.899262e+02 cycle=250 time=2.421289e+04 dt=9.684980e+01; s/cyc 2.8182 (c50-250); setup elapsed=1.196084e+02 (+ total wall=801); peak GPU mem 0,104507 MiB 1,104507 MiB 2,104507 MiB 3,104507 MiB 
+  BiCGStab it 4.07 / stage line, solves 2.36 / stage line (502 lines); CW 0, FATAL 0, fallbacks 0, DT_RETRY 0
+  md5 rows 0-200: user b578af5a0b7ae6839f552b4dbc336169, hydro 44d04279b221b4c4d52b07f8281723fc; dt at c200 96.8505
