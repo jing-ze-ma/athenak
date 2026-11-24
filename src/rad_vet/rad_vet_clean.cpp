@@ -482,6 +482,8 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/vet_mb_halo", "x"}, {"rad_vet/vet_mb_overlap", "x"},
     {"rad_vet/vet_mb_angles", "x"}, {"rad_vet/vet_mb_lag", "x"},
     {"rad_vet/vet_mb_agroup", "=1"}, {"rad_vet/vet_mb_agg", "=true"},
+    // (the vet_sc Milne diagnostic, removed)
+    {"rad_vet/vet_milne", "!"},
     // (the vet_gd upwind profile shift and the dense shell launch, removed)
     {"rad_vet/vet_gd_upwind", "=bilinear"}, {"rad_vet/vet_gd_upwind_*", ""},
     {"rad_vet/vet_gd_shell_list", "=true"},

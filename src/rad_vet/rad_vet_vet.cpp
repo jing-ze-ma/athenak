@@ -70,7 +70,7 @@
 //! the ordinary cell-centred exchange.
 //!
 //! LIMITS (checked at start-up).  Periodic x2 (and x3), uniform mesh, every MeshBlock at
-//! least w cells wide in x2 (x3) and 2 cells in x1; vet_milne needs one block along x1.
+//! least w cells wide in x2 (x3) and 2 cells in x1.
 
 #include <algorithm>
 #include <array>
@@ -94,6 +94,7 @@
 #include "rad_vet/vet_fluid.hpp"
 #include "rad_vet/rad_vet_implicit.hpp"
 #include "rad_vet/rad_vet_vetseg.hpp"
+#include "rad_vet/rad_vet_vetsrc.hpp"
 #include "utils/recipe.hpp"
 
 #if MPI_PARALLEL_ENABLED
@@ -724,11 +725,11 @@ void VetX1Move(VetMBState &st, DvceArray5D<Real> &a, const int s, const int rcv,
 //! inner x1 face when vet_bc_inner resolves to emit (VetBcEmit): the Marshak bath
 //! implicit_ebath_x1min, the black sphere 4 F/c of a flux face, nothing at an outflow
 //! face (scheme = clean); -1 = the diffusion
-//! intensity (or the Milne diagnostic's exact one).  The old rule (vet_bc_bath at a
+//! intensity.  The old rule (vet_bc_bath at a
 //! Marshak face) is vet_bc_inner = auto, bitwise.
 
 Real RadiationVet::VetBathLo() const {
-  if (vet_milne || !VetBcEmit()) {return -1.0;}
+  if (!VetBcEmit()) {return -1.0;}
   if (ibc_x1min == M1_IBC_OUTFLOW) return 0.0;
   return (ibc_x1min == M1_IBC_FLUX) ? 4.0*iflux_x1min/c_light : iebath_x1min;
 }
@@ -767,7 +768,6 @@ void RadiationVet::VetInit(ParameterInput *pin) {
   }
   vet_nmu = pin->GetOrAddInteger("rad_vet", "vet_nmu", 4);
   vet_nphi = pin->GetOrAddInteger("rad_vet", "vet_nphi", 8);
-  vet_milne = pin->GetOrAddBoolean("rad_vet", "vet_milne", false);
   // m1-h2div (tests_m1/runs_5j_h2div): at an x1 end with implicit_bc = marshak the rays
   // entering the box carry the incident bath, eps = implicit_ebath (0 = the vacuum of a
   // free surface), instead of the diffusion intensity E + 3 F.Omega/c of the end cell's
@@ -841,7 +841,7 @@ void RadiationVet::VetInit(ParameterInput *pin) {
     if (vs.compare("relaxed") == 0) {
       vcol_srelax = true;
     } else if (vs.compare("relaxed_esc") == 0) {
-      // (opt-in): relaxed with the cell's photon escape
+      // (opt-in): relaxed with the cell's photon escape (rad_vet_vetsrc.hpp)
       vcol_srelax = true;
       vcol_sesc = true;
     } else if (vs.compare("gas") == 0) {
@@ -953,15 +953,14 @@ void RadiationVet::VetInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_vet", "vet_x1_periodic")) {
     vet_x1per = pin->GetBoolean("rad_vet", "vet_x1_periodic");
   } else if (x1meshper && !global_variable::restart_run) {
-    vet_x1per = !vet_milne;
+    vet_x1per = true;
     pin->SetBoolean("rad_vet", "vet_x1_periodic", vet_x1per);
     if (global_variable::my_rank == 0) {
-      std::cout << "<rad_vet> vet_sc: periodic x1 mesh, vet_x1_periodic defaulted to "
-                << (vet_x1per ? "true" : "false (vet_milne)") << std::endl;
+      std::cout << "<rad_vet> vet_sc: periodic x1 mesh, vet_x1_periodic defaulted to true"
+                << std::endl;
     }
   }
   if (vet_x1per) {
-    if (vet_milne) {VetFatal("<rad_vet>/vet_x1_periodic excludes vet_milne");}
     if (pm->mesh_bcs[BoundaryFace::inner_x1] != BoundaryFlag::periodic) {
       VetFatal("<rad_vet>/vet_x1_periodic needs periodic x1 boundaries");
     }
@@ -1097,7 +1096,7 @@ void RadiationVet::VetInit(ParameterInput *pin) {
               << (vsc_gd ? " rays (vet_sc_set = gd: the vet_gd set, pole on x1"
                          : " rays (double-Gauss nmu=" + std::to_string(vet_nmu) +
                            " x nphi=" + std::to_string(vet_nphi))
-              << "), lagged per hydro step" << (vet_milne ? ", MILNE source (diag)" : "")
+              << "), lagged per hydro step"
               << (vet_full ? ", FULL tensor D = K/J (eigenvalue floor " : "")
               << (vet_full ? std::to_string(vet_eig_min) + ")" : "")
               << ", vet_bc_diff = " << (vet_bc_face ? "face" : "cell")
@@ -1349,9 +1348,6 @@ void RadiationVet::VetMBInit(ParameterInput *pin) {
   const int nbx2 = mindcs.nx2/nx2;
   const int nbx3 = thrd ? (mindcs.nx3/nx3) : 1;
   st.nx1g = mindcs.nx1;
-  if (vet_milne && st.nbx1 > 1) {
-    VetFatal("<rad_vet>/vet_milne needs ONE MeshBlock along x1 (tau from the top)");
-  }
   if (nx1 < 2) {
     VetFatal("<rad_vet>/closure = vet_sc needs <meshblock>/nx1 >= 2");
   }
@@ -1787,8 +1783,6 @@ void RadiationVet::VetSweepMB() {
   auto &mbsize = pmy_pack->pmb->mb_size;
   const Real cl = c_light;
   const Real efl = e_floor;
-  const bool milne = vet_milne;
-  const Real fmil = iflux_x1min;
   const Real bblo = VetBathLo();   // vet_bc_inner
   const Real bbhi = (vet_bc_bath && ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
   const bool bfc = vet_bc_face;
@@ -1888,8 +1882,6 @@ void RadiationVet::VetSweepMB() {
           } else if (up) {
             if (bblo >= 0.0) {
               ib = bblo;
-            } else if (milne) {
-              ib = su + 3.0*fmil/cl*m1;
             } else {
               Real e = esv_(m,esc_,k,j,i);
               if (bfc) e += 0.5*(s0 - s1);   // vet_bc_diff = face
@@ -2245,15 +2237,12 @@ void RadiationVet::VetShortCharSweep() {
   auto vc_ = vet_cell;
   auto ip_ = vet_ipl;
   auto ang_ = vet_ang;
-  auto opac_ = opac;
   auto &mbsize = pmy_pack->pmb->mb_size;
   const Real cl = c_light;
   const Real ar = arad;
   const Real efl = e_floor;
   const bool thermal = fl_on && coupling && !opac_zero;
-  const bool milne = vet_milne;
   const int vsf = vscat ? vscat_form : 0;   // vet_scatter
-  const Real fmil = iflux_x1min;
   const Real bblo = VetBathLo();   // vet_bc_inner
   const Real bbhi = (vet_bc_bath && ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
   const bool bfc = vet_bc_face;
@@ -2270,96 +2259,90 @@ void RadiationVet::VetShortCharSweep() {
   const int bmr0 = ibm_ray[0], bmr1 = ibm_ray[1], bmr2 = ibm_ray[2], bmr3 = ibm_ray[3];
   auto bmi_ = ibm_i;
 
-  // (1) extinction and source: cell by cell, or column by column for the Milne
-  // diagnostic, which needs tau (the same arithmetic; a column loop per thread leaves
-  // the GPU nearly idle)
-  if (!milne) {
-    auto opd_ = opac;
-    auto iwd_ = iw;
-    auto vcd_ = vet_cell;
-    const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
-    // the VET source: the state's own (the relaxed source of vet_source, removed)
-    const bool cvx = cln_srccvx;   // clean_source_convex
-    VetFor("vet_vet_srcc", (nmb1 + 1)*nk*nj*ni, KOKKOS_LAMBDA(const int t) {
-      const int i = is + t%ni;
-      int q = t/ni;
-      const int j = js + q%nj;
-      q /= nj;
-      const int k = ks + q%nk, m = q/nk;
-      Real chx = fmax(opd_(m,M1_OP_T,k,j,i), 1.0e-300);
-      Real e = fmax(esv_(m,esc_,k,j,i), efl);
-      Real s = e;
-      if (thermal) {
-        Real tg = iwd_(m,M1_IW_TP,k,j,i);
-        Real t2 = tg*tg;
-        if (vsf != 0) {   // vet_scatter (VetScatterMix, rad_vet.hpp)
-          const Real rkp = cvx ? fmin(opd_(m,M1_OP_P,k,j,i), chx) : opd_(m,M1_OP_P,k,j,i);
-          s = VetScatterMix(vsf, rkp, chx, opd_(m,M1_OP_S,k,j,i), ar*t2*t2, e);
-        } else {
-          Real eth = fmin(opd_(m,M1_OP_P,k,j,i)/chx, 1.0);
-          s = eth*ar*t2*t2 + (1.0 - eth)*e;
-        }
+  // (1) extinction and source, cell by cell
+  auto opd_ = opac;
+  auto iwd_ = iw;
+  auto vcd_ = vet_cell;
+  const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
+  // the VET source rule of vet_col / vet_gd (VetLatSweep): vet_source = relaxed (srx:
+  // the state relaxed by a local backward-Euler exchange over the step,
+  // VetRelaxedSource) or gas (the state's own source); under time2_vet = predict |
+  // rebuild time2_vet_source = state | relaxed | blend (Time2VetColAt sets vcol_srelax
+  // / vcol_sbl for the build).  vet_sc before: always the state's source.
+  const bool srx = thermal && vcol_srelax;
+  const bool sbl = vcol_sbl;
+  const Real sx0 = vcol_sx0;
+  // (vet_source = relaxed_esc): the x1 cell width for the escape
+  const bool sesc = srx && vcol_sesc;
+  const Real clq = gas_feedback ? c_light : 0.0;   // held gas: T* = T_b
+  auto &mbs_ = pmy_pack->pmb->mb_size;
+  const int vsr = (vsf != 0 && vscat_jrel) ? (vsf + 2) : vsf;   // relaxed J
+  FluidRef flv = FluidRef::Get(pmy_pack);
+  auto eos = flv.eos;
+  const bool cvx = cln_srccvx && !srx;   // clean_source_convex
+  auto uh = flv.u0;
+  const Real chs = chat;
+  const Real dts = mr_on ? mr_dt : pmy_pack->pmesh->dt;
+  VetFor("vet_vet_srcc", (nmb1 + 1)*nk*nj*ni, KOKKOS_LAMBDA(const int t) {
+    const int i = is + t%ni;
+    int q = t/ni;
+    const int j = js + q%nj;
+    q /= nj;
+    const int k = ks + q%nk, m = q/nk;
+    Real chx = fmax(opd_(m,M1_OP_T,k,j,i), 1.0e-300);
+    Real e = fmax(esv_(m,esc_,k,j,i), efl);
+    Real s = e;
+    if (thermal) {
+      Real tg = iwd_(m,M1_IW_TP,k,j,i);
+      Real t2 = tg*tg;
+      if (srx) {
+        const Real eth = fmin(opd_(m,M1_OP_P,k,j,i)/chx, 1.0);
+        const Real rks = (vsf != 0) ? opd_(m,M1_OP_S,k,j,i) : 0.0;
+        // relaxed_esc: the escape rate of the cell (0 = relaxed)
+        const Real qe = VetEscapeRate(sesc, chx, mbs_.d_view(m).dx1);
+        s = sesc ? (sbl ? VetRelaxedSourceBQ(eos, uh(m,IDN,k,j,i), tg, e,
+                                    opd_(m,M1_OP_P,k,j,i),
+                                    opd_(m,M1_OP_E,k,j,i), eth, ar, clq, chs, dts, vsr,
+                                    chx, rks, sx0, qe)
+                : VetRelaxedSourceQ(eos, uh(m,IDN,k,j,i), tg, e, opd_(m,M1_OP_P,k,j,i),
+                                   opd_(m,M1_OP_E,k,j,i), eth, ar, clq, chs, dts, vsr,
+                                   chx, rks, qe))
+             : (sbl ? VetRelaxedSourceB(eos, uh(m,IDN,k,j,i), tg, e,
+                                    opd_(m,M1_OP_P,k,j,i),
+                                    opd_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
+                                    chx, rks, sx0)
+                : VetRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opd_(m,M1_OP_P,k,j,i),
+                                   opd_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
+                                   chx, rks));
+      } else if (vsf != 0) {   // vet_scatter (VetScatterMix, rad_vet.hpp)
+        const Real rkp = cvx ? fmin(opd_(m,M1_OP_P,k,j,i), chx) : opd_(m,M1_OP_P,k,j,i);
+        s = VetScatterMix(vsf, rkp, chx, opd_(m,M1_OP_S,k,j,i), ar*t2*t2, e);
+      } else {
+        Real eth = fmin(opd_(m,M1_OP_P,k,j,i)/chx, 1.0);
+        s = eth*ar*t2*t2 + (1.0 - eth)*e;
       }
-      vcd_(m,M1_VET_CHX,k,j,i) = chx;
-      vcd_(m,M1_VET_SRC,k,j,i) = s;
-      for (int n = M1_VET_J; n < M1_VET_CHI; ++n) {
-        vcd_(m,n,k,j,i) = 0.0;
-      }
-      if (hrs_) {
-        for (int n = 0; n < 3; ++n) {vcd_(m,M1_VET_HP1+n,k,j,i) = 0.0;}
-      }
-      if (kps_) {
-        for (int n = 0; n < M1_VET_NKP; ++n) {vcd_(m,M1_VET_KP+n,k,j,i) = 0.0;}
-      }
-      if (f2s_) {
-        for (int n = 0; n < M1_VET_NFS; ++n) {vcd_(m,M1_VET_F2+n,k,j,i) = 0.0;}
-      }
-      if (nls_) {
-        vcd_(m,M1_VET_NL,k,j,i) = 0.0;
-        // vacuum (no extinction): no lagged scattering source, eps = 1
-        const Real eps = thermal ? fmin(opd_(m,M1_OP_P,k,j,i)/chx, 1.0) : 0.0;
-        vcd_(m,M1_VET_EPS,k,j,i) = !(opd_(m,M1_OP_T,k,j,i) > 0.0) ? 1.0 : eps;
-      }
-    });
-  } else {
-    par_for("vet_vet_src", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-    KOKKOS_LAMBDA(const int m, const int k, const int j) {
-      Real dx1 = mbsize.d_view(m).dx1;
-      Real tau = 0.0;
-      for (int i = ie; i >= is; --i) {
-        Real chx = fmax(opac_(m,M1_OP_T,k,j,i), 1.0e-300);
-        Real e = fmax(esv_(m,esc_,k,j,i), efl);
-        Real s = e;
-        if (milne) {
-          // exact grey Milne problem: S = J = 3 H (tau + q(tau)), Hopf q fitted
-          Real tc = tau + 0.5*chx*dx1;
-          Real qh = 0.710446 - 0.133054*exp(-3.4488*tc);
-          s = 3.0*fmil/cl*(tc + qh);
-        } else if (thermal) {
-          Real t = iw_(m,M1_IW_TP,k,j,i);
-          Real t2 = t*t;
-          // thermal fraction: the Planck (emission) mean over the extinction, capped at 1
-          if (vsf != 0) {   // vet_scatter (VetScatterMix, rad_vet.hpp)
-            s = VetScatterMix(vsf, opac_(m,M1_OP_P,k,j,i), chx, opac_(m,M1_OP_S,k,j,i),
-                              ar*t2*t2, e);
-          } else {
-            Real eth = fmin(opac_(m,M1_OP_P,k,j,i)/chx, 1.0);
-            s = eth*ar*t2*t2 + (1.0 - eth)*e;
-          }
-        }
-        tau += chx*dx1;
-        vc_(m,M1_VET_CHX,k,j,i) = chx;
-        vc_(m,M1_VET_SRC,k,j,i) = s;
-        for (int n = M1_VET_J; n < M1_VET_CHI; ++n) {vc_(m,n,k,j,i) = 0.0;}
-        if (nls_) {
-          vc_(m,M1_VET_NL,k,j,i) = 0.0;
-          vc_(m,M1_VET_EPS,k,j,i) = !(opac_(m,M1_OP_T,k,j,i) > 0.0) ? 1.0
-                                    : (thermal ? fmin(opac_(m,M1_OP_P,k,j,i)/chx, 1.0)
-                                               : 0.0);
-        }
-      }
-    });
-  }
+    }
+    vcd_(m,M1_VET_CHX,k,j,i) = chx;
+    vcd_(m,M1_VET_SRC,k,j,i) = s;
+    for (int n = M1_VET_J; n < M1_VET_CHI; ++n) {
+      vcd_(m,n,k,j,i) = 0.0;
+    }
+    if (hrs_) {
+      for (int n = 0; n < 3; ++n) {vcd_(m,M1_VET_HP1+n,k,j,i) = 0.0;}
+    }
+    if (kps_) {
+      for (int n = 0; n < M1_VET_NKP; ++n) {vcd_(m,M1_VET_KP+n,k,j,i) = 0.0;}
+    }
+    if (f2s_) {
+      for (int n = 0; n < M1_VET_NFS; ++n) {vcd_(m,M1_VET_F2+n,k,j,i) = 0.0;}
+    }
+    if (nls_) {
+      vcd_(m,M1_VET_NL,k,j,i) = 0.0;
+      // vacuum (no extinction): no lagged scattering source, eps = 1
+      const Real eps = thermal ? fmin(opd_(m,M1_OP_P,k,j,i)/chx, 1.0) : 0.0;
+      vcd_(m,M1_VET_EPS,k,j,i) = !(opd_(m,M1_OP_T,k,j,i) > 0.0) ? 1.0 : eps;
+    }
+  });
 
   // (2) the sweep: launch l does layer is+l for the upward rays and ie-l for the
   // downward ones, reading the intensity of launch l-1 from the other plane buffer.
@@ -2383,7 +2366,6 @@ void RadiationVet::VetShortCharSweep() {
              "needs a single MeshBlock on vet_sc (the banded sweep has no mirror); name "
              "vet_bc_reflect = open");
   }
-  if ((mlo || mhi) && milne) {VetFatal("<rad_vet>/vet_milne excludes a mirrored x1 end");}
   const int nhray = nray/2;
   const int npass = vet_x1per ? vet_x1npass : ((mlo && mhi) ? vet_mirror_npass
                                                : ((mlo || mhi) ? 2 : 1));
@@ -2457,9 +2439,6 @@ void RadiationVet::VetShortCharSweep() {
         } else if (up) {
           if (bblo >= 0.0) {
             ib = bblo;
-          } else if (milne) {
-            // the exact deep Milne intensity 3 H (tau + q + mu) = S + 3 H mu
-            ib = su + 3.0*fmil/cl*m1;
           } else {
             // diffusion: eps = E + 3 (F . Omega)/c from the bottom cell's M1 state;
             // vet_bc_diff = face: E moved to the FACE by the source's

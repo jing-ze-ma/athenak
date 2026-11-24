@@ -496,7 +496,6 @@ class RadiationVet {
   int vsc_gdmir = 0;         // ... ray r + nray/2 the x1 mirror of ray r (1) or not (-1)
   bool vsc_rayk = false;     // vet_sc_kernel = ray: the layer launch ray-parallel
   DvceArray4D<Real> vet_rayg;   // ... its per-ray face-sum scalars (block, 5 nray, k, j)
-  bool vet_milne = false;    // DIAGNOSTIC: source = exact grey Milne S(tau), gate 3
   bool vet_bc_bath = false;  // a MARSHAK x1 end gives the SC rays its bath (m1-h2div)
   // the x1 boundary intensity of the formal solutions, one rule
   // for vet_sc and vet_gd (VetBcInit, rad_vet.cpp).  vet_bc_inner (alias vet_gd_inner on

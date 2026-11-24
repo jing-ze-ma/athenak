@@ -1294,15 +1294,13 @@ void RadiationVet::VetRotInit(ParameterInput *pin) {
     const bool rev_named = pin->DoesParameterExist("rad_vet","vet_gd_rotate_every");
     // vet_sc rotates its set on the same clock, with the same keys and
     // the same fresh default (auto), except where the set is pinned: boundary beams
-    // along given rays (implicit_beam_n) and the Milne diagnostic
+    // along given rays (implicit_beam_n)
     const bool sc_pin = vet_sc &&
-        ((pin->DoesParameterExist("rad_vet","implicit_beam_n") &&
-          pin->GetInteger("rad_vet","implicit_beam_n") > 0) ||
-         (pin->DoesParameterExist("rad_vet","vet_milne") &&
-          pin->GetBoolean("rad_vet","vet_milne")));
-    // a vet_sc set pinned by boundary beams (implicit_beam_n) or the Milne diagnostic
-    // gets no DEFAULT rotation, and a named rotation with it is FATAL (below) -- the
-    // beams are injected along fixed rays of the set
+        (pin->DoesParameterExist("rad_vet","implicit_beam_n") &&
+         pin->GetInteger("rad_vet","implicit_beam_n") > 0);
+    // a vet_sc set pinned by boundary beams (implicit_beam_n) gets no DEFAULT rotation,
+    // and a named rotation with it is FATAL (below) -- the beams are injected along
+    // fixed rays of the set
     const bool rot_cl = vgd_on || vet_sc;
     bool rot_phys = false;
     if (rot_cl && rdt_named) {
@@ -1323,7 +1321,7 @@ void RadiationVet::VetRotInit(ParameterInput *pin) {
     if (rot_phys && vet_sc && sc_pin) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_vet>/vet_gd_rotate_dt: the vet_sc set is pinned by "
-                << "boundary beams (implicit_beam_n) or vet_milne; no rotation"
+                << "boundary beams (implicit_beam_n); no rotation"
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }

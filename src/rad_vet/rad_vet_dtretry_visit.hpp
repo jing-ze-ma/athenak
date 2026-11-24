@@ -81,7 +81,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vsc_gdmir", vsc_gdmir);
   v.value("vsc_rayk", vsc_rayk);
   v.view("vet_rayg", vet_rayg);
-  v.value("vet_milne", vet_milne);
   v.value("vet_bc_bath", vet_bc_bath);
   v.value("vet_bc_inner", vet_bc_inner);
   v.value("vet_bc_mirror", vet_bc_mirror);
