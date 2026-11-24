@@ -926,7 +926,9 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
         f3 = (q[0]*e2[1] - q[1]*e2[0])/rr;
       }
     }
-    GnomonicRaiseVelFloors(c, eos_, gen_, keepv_, vceil_, act_,
+    // (floor_from_ekin: the ceiling keeps E, so it acts on the ghosts as well, the same
+    // state as their active copies; counted in active cells only)
+    GnomonicRaiseVelFloors(c, eos_, gen_, keepv_, vceil_, act_ || fek_,
                            keepv_ ? dflfv_(m,k,j,i) : 1.0,
                            gen_ ? wtemp_(m,k,j,i) : 0.0, d,
                            m1, m2, m3, etot, v1, v2, v3, eint, pnew, g1new, temp,
@@ -941,7 +943,7 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
       wder_(m,IDG1,k,j,i) = g1new;
       wtemp_(m,k,j,i) = temp;
     }
-    if (ceil_used) {
+    if (ceil_used && act_) {
       sumv++;
     }
     if (tset_used) {
