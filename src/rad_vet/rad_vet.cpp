@@ -447,6 +447,17 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // the face (as fcone_gas), so that L_z is exact (cubed sphere: CleanCsTorque)
     cln_fclz = cln_fcone && pin->DoesParameterExist("rad_vet","clean_stag_fcone_lz") &&
                pin->GetBoolean("rad_vet","clean_stag_fcone_lz");
+    // clean_stag_fcone_emax (read only when named; needs clean_stag_fcone): every inner
+    // face's F within c max(E_L, E_R), also an opaque face's: no face F streams more than
+    // its brighter cell holds, so the gas's face terms stay below the cap h chi_f E
+    if (pin->DoesParameterExist("rad_vet","clean_stag_fcone_emax")) {
+      cln_fcemx = pin->GetBoolean("rad_vet","clean_stag_fcone_emax");
+      if (cln_fcemx && !cln_fcone) {
+        std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fcone_emax needs "
+                  << "clean_stag_fcone" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     // clean_stag_xdonor_freeze (0 off): from this pass on the xdonor cross flux C is held
     // (no donor/cap flip between passes)
     cln_xdfz = pin->GetOrAddInteger("rad_vet","clean_stag_xdonor_freeze",4);

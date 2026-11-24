@@ -3618,6 +3618,7 @@ void RadiationVet::CleanStagFCone(const int e, const int kd) {
   auto lf = KOKKOS_LAMBDA(const Real cp, const int q) {
     return !lz ? cp : (fa(q) ? fmax(cp, 0.0) : ((cp < 0.0) ? -cp : 1.0));
   };
+    const bool emx = cln_fcemx;   // (clean_stag_fcone_emax)
   if (cln_fconc.extent_int(0) != 5) Kokkos::realloc(cln_fconc, 5);
   Kokkos::deep_copy(cln_fconc, 0.0);
   auto fcc = cln_fconc;
@@ -3654,7 +3655,12 @@ void RadiationVet::CleanStagFCone(const int e, const int kd) {
                        CleanCellFaceDistance(x, d, m, k, j, i);
       const Real l = fmin(lf(x.w(m,CLW_CP,k-dk,j-dj,i-di), d),
                           lf(x.w(m,CLW_CP,k,j,i), d));
-      fc(m,CLF_N+2,k,j,i) = (bd ? 1.0 : 1.0 - (1.0 - l)/(1.0 + tau))*fc(m,CLF_N,k,j,i);
+      Real fs = (bd ? 1.0 : 1.0 - (1.0 - l)/(1.0 + tau))*fc(m,CLF_N,k,j,i);
+      if (emx && !bd) {   // (clean_stag_fcone_emax: |F_f| <= c max(E_L, E_R))
+        const Real ce = x.c*fmax(fmax(x.w(m,e,k,j,i), x.w(m,e,k-dk,j-dj,i-di)), 0.0);
+        fs = fmin(fmax(fs, -ce), ce);
+      }
+      fc(m,CLF_N+2,k,j,i) = fs;
     });
   }
   if (cub) {   // a face two MeshBlocks share: its lower gid's value
