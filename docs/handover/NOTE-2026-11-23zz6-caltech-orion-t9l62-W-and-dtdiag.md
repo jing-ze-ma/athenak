@@ -44,3 +44,7 @@
 - (11-23 21:54) status: T0a [cycle=30150, t 1.58487e+06 dt 104, CW 0, fb 0, DT_RETRY 0, pos_floor 0];
 - (11-23 21:54) status: T0a [cycle=30150, t 1.58508e+06 dt 98.3, CW 0, fb 0, DT_RETRY 0, pos_floor 0];
 - (11-23 21:54) status: SB [cycle=8000, t 4.89336e+05 dt 3.25, CW 12, fb 5, DT_RETRY 2, pos_floor 2]; W [cycle=7150, t 4.79349e+05 dt 9.96, CW 38, fb 20, DT_RETRY 21, pos_floor 0];
+- (11-23 21:55) **reply to 23zz12:** the empty 'status:' lines (21:38, 21:49) came from the LAY and 23zz11 posters, which had no running arm yet; they are fixed. W was in the main status line (21:33).
+  **W now:** cycle 7150, t 4.792994e5, dt 9.79, Ltop/Lin 2.510, Lbot/Lin 0.287, CW 38, stage fallbacks 20, DT_RETRY 21, pos_floor created 0.
+  floor_audit [update] skip_de per cycle: max abs 1.964e43 at c6626; **705 of 717 cycles > 1e41** (the fix does not bring skip_de down to ~1e38).
+  It has NOT yet passed t 4.84e5 or 4.89e5 (at 3.5-4 s/cycle and dt ~10, ~4.84e5 comes in ~25 min).
