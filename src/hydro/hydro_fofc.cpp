@@ -184,6 +184,12 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
       auto fofcc_ = fofc;
       auto cosc_ = pmy_pack->pcoord->cos_cell;
       auto wtemp_ = wtemp;
+      // (floor_from_ekin: the real pass's phi_hat, so the test keeps the same L_z part)
+      const bool fek_ = eos_.ekin_heat;
+      auto &mbs_ = pmy_pack->pmb->mb_size;
+      auto pnl_ = pmy_pack->pmb->mb_panel.d_view;
+      auto &aidx = pmy_pack->pmesh->mb_indcs;
+      const int js_ = aidx.js, ks_ = aidx.ks, nx2_ = aidx.nx2, nx3_ = aidx.nx3;
       const int ni   = (iu - il + 1);
       const int nji  = (ju - jl + 1)*ni;
       const int nkji = (ku - kl + 1)*nji;
@@ -204,12 +210,19 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
         Real etot = utest_(m,IEN,k,j,i);
         Real v1, v2, v3, eint, pnew, g1new, temp, de, vde;
         bool ceil_used, floored, tset_used;
+        Real f2 = 0.0, f3 = 0.0;
+        if (fek_) {
+          GnomonicPhiHat(pnl_(m), 0.25*M_PI*CellCenterX(j - js_, nx2_,
+                         mbs_.d_view(m).x2min, mbs_.d_view(m).x2max),
+                         0.25*M_PI*CellCenterX(k - ks_, nx3_, mbs_.d_view(m).x3min,
+                         mbs_.d_view(m).x3max), f2, f3);
+        }
         // the floor-TEST pass: `vde` is discarded, since this state is a trial one and
         // nothing is written back (see EventCounters::vceil_de)
         GnomonicRaiseVelFloors(cosc_(m,k,j), eos_, gen_, false, vceil_, true,
                                1.0, gen_ ? wtemp_(m,k,j,i) : 0.0, d,
                                m1, m2, m3, etot, v1, v2, v3, eint, pnew, g1new, temp,
-                               ceil_used, floored, tset_used, de, vde);
+                               ceil_used, floored, tset_used, de, vde, f2, f3);
         if (ceil_used || floored) {
           fofcc_(m,k,j,i) = true;
           sumf++;
