@@ -493,8 +493,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // mesh fwb's s of the faces of every direction less its line mean, as fwb_line's x1
     // faces: linear momentum exact without a ledger; no-op on curvilinear meshes
     if (cln_fwb && pin->DoesParameterExist("rad_vet", "clean_stag_fwb_cart") &&
-        pin->GetBoolean("rad_vet", "clean_stag_fwb_cart") && !pmy_pack->pmesh->multilevel &&
-        !pmy_pack->pmesh->use_spherical_polar && !pmy_pack->pmesh->use_cubed_sphere) {
+        pin->GetBoolean("rad_vet", "clean_stag_fwb_cart") &&
+        !pmy_pack->pmesh->multilevel && !pmy_pack->pmesh->use_spherical_polar &&
+        !pmy_pack->pmesh->use_cubed_sphere) {
       cln_fwbpj[0] = cln_fwbpj[1] = cln_fwbpj[2] = true;
     }
     // clean_stag_fcone (default on for a fresh run with fwb, recorded; a restart file
