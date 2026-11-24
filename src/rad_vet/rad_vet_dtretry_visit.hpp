@@ -144,15 +144,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("ibc_x3max", ibc_x3max);
   v.value("iflux_x1min", iflux_x1min);
   v.value("iflux_x1max", iflux_x1max);
-  v.value("fmod_per", fmod_per);
-  v.value("fmod_amp", fmod_amp);
-  v.value("fmod_f0", fmod_f0);
-  v.value("fmod_rt0", fmod_rt0);
-  v.value("fmod_rw", fmod_rw);
-  v.value("ftab_on", ftab_on);
-  v.value("ftab", ftab);
-  v.value("ftab_t0", ftab_t0);
-  v.value("ftab_scale", ftab_scale);
   v.value("iebath_x1min", iebath_x1min);
   v.value("iebath_x1max", iebath_x1max);
   v.value("iebath_hi_col_on", iebath_hi_col_on);

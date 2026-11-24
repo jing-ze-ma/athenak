@@ -84,13 +84,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
-  // the flux table is applied at the stage times (Time2FormStage)
-  if (ftab_on && time_scheme != M1_TIME_HESDIRK2 && !t2_beonly) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "<rad_vet>/implicit_flux_x1min_table needs time_scheme = "
-              << "hesdirk2 (the flux is set at the stage times)" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
   // vet_every (vet_sc_every) under vet_sc: the extrapolated builds between two formal
   // solutions are removed, only 1
   const std::string kev = M1KeyName(pin, "vet_every", {"vet_sc_every"});
@@ -538,25 +531,6 @@ bool RadiationVet::Time2Active() {
 //! into the old vector of the stage solve.  ImplicitSolve applies t2inc.
 
 //----------------------------------------------------------------------------------------
-//! \fn Real RadiationVet::InnerFluxAt
-//! \brief the inner face flux of the time hooks at time t: the table value
-//! (ftab_on) or the constant F0, times the sine / tanh factors when
-//! named (the arithmetic of the raycheap2-1109 hooks, unchanged)
-
-Real RadiationVet::InnerFluxAt(const Real t) const {
-  Real f = ftab_on ? ftab_scale*ftab.At(0, t - ftab_t0) : fmod_f0;
-  if (fmod_per > 0.0) {f *= 1.0 + fmod_amp*std::sin(2.0*M_PI*t/fmod_per);}
-  if (fmod_rw > 0.0) {f *= 0.5*(1.0 + std::tanh((t - fmod_rt0)/fmod_rw));}
-  return f;
-}
-
-//! \brief the exact integral of the TABLE flux over [t0, t1] (the
-//! energy budget's int F dt; table only, no sine / tanh factors)
-Real RadiationVet::InnerFluxIntegral(const Real t0, const Real t1) const {
-  return ftab_scale*ftab.Integral(0, t0 - ftab_t0, t1 - ftab_t0);
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::Time2GasTime
 //! \brief time2_tableau = sdirk2 with the Heun hydro (c_E = (0, 1), b_E = (1/2, 1/2)):
 //! the IMEX coupling conditions b_E.c_I = b_I.c_E = 1/2 hold when each stage has one
@@ -645,13 +619,6 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
 }
 
 void RadiationVet::Time2FormStage(int stage, Real dt) {
-  if (fmod_per > 0.0 || fmod_rw > 0.0 || ftab_on) {   // inner flux
-    // the stage-1 solve ends at t_n + (a21 + g) dt: hesdirk2 t_n + dt, trbdf2 t_n + 2 g
-    // dt, sdirk2 t_n + g dt; the stage-2 solve at t_n + dt
-    const Real cst = (stage == 1 && t2_tab != 0) ? t2_a21 + kT2G : 1.0;
-    const Real ts = pmy_pack->pmesh->time + cst*dt;
-    iflux_x1min = InnerFluxAt(ts);
-  }
   if (dbg_rst_fp > 0 && stage == 1) {dbg_rst_fp -= 1; RstFingerprint("formstage1");}
   const Real g = kT2G;
   const Real w0 = t2_w0, w1 = t2_w1;

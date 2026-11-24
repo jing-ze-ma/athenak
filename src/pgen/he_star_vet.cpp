@@ -4312,7 +4312,7 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   auto &x1f = pmbp->pcoord->xx1f;
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &volume = pmbp->pcoord->volume;
-  const Real rint = hs_rint_, fin = hsdrive::InnerFlux(pm, hs_fin_);   // hg262-drive
+  const Real rint = hs_rint_, fin = hs_fin_;   // hg262-drive
   // clean staggered: L_in / L_top = the energy the step's solves put through the x1
   // faces over dt (CleanBndAcc), the flux that moved E
   const bool lac = pm1->cln_ldt > 0.0 && pm1->cln_lacc.extent_int(0) > 0;
@@ -4596,9 +4596,7 @@ void HsAdaptiveUpdate(Mesh *pm) {
                     + (4.0/3.0)*(hsh(i,7)/sv - vm*hsh(i,5)/sv);
     lc[i] = fc*0.5*(hsh(i,1) + hsh(i+1,1));
   }
-  // hs_fin_ (bitwise), or the current table flux with
-  // problem/he_drive_closure_lin = table
-  const Real lin = hsdrive::ClosureFlux(pm, hs_fin_)*hsh(is,1);
+  const Real lin = hs_fin_*hsh(is,1);
   for (int i=is; i<=ie+1; ++i) {
     lrad[i] = hsh(i,0);
     lcf[i] = (i > is && i <= ie) ? 0.5*(lc[i-1] + lc[i]) : 0.0;

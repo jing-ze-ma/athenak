@@ -59,8 +59,6 @@ Real erad_ = 0.0, wgrav_ = 0.0, tprev_ = 0.0, ain_ = 0.0;
 // slopes' face fluxes, incl. implicit_bc_advect's end-face A E): in at x1min, out at
 // x1max (the Marshak top).  ebd_ = false: the transport cannot book it (columns 0).
 bool ebd_ = false;
-// problem/he_drive_closure_lin = const | table: the L_in the adaptive MLT closure targets
-bool cltab_ = false;
 Mesh *pmesh_ = nullptr;
 // the BC time: t_n + dt inside a cycle (set by StageLedger), else the mesh time
 bool bct_set_ = false;
@@ -397,7 +395,7 @@ void WriteLog(Mesh *pm, const std::vector<Real> &sh) {
   std::fprintf(fp, "%d %.17e %.17e %.17e %.17e %.17e %.17e %.17e %.17e %.17e %.17e "
                "%.17e %.17e %.17e %.17e %.17e %.17e %.17e %.17e\n", pm->ncycle, pm->time,
                mt, et, led_[0], led_[1], led_[2], led_[3], led_[4], erad_, wgrav_, gmi,
-               InnerFlux(pm, a_.fconst), ain_, ptop, gdm, ebi, ebo, esa);
+               a_.fconst, ain_, ptop, gdm, ebi, ebo, esa);
   std::fclose(fp);
 }
 
@@ -415,8 +413,7 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
   const bool hlive = pin->DoesParameterExist("problem","he_gm_live") &&
                      pin->GetBoolean("problem","he_gm_live");
   radvet::RadiationVet *pm1 = pm->pmb_pack->pradvet;
-  const bool hftab = (pm1 != nullptr) && pm1->ftab_on;
-  bool led = hinf || hlive || hftab;
+  bool led = hinf || hlive;
   if (pin->DoesParameterExist("problem","he_drive_ledger")) {
     led = pin->GetBoolean("problem","he_drive_ledger");
     if (!led && (hinf || hlive)) {
@@ -424,19 +421,10 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
             "he_gm_live (their state travels with the ledger)");
     }
   }
-  // The adaptive MLT closure targets L_in.  const (default):
-  // the deck's constant implicit_flux_x1min (the relaxed state's target); table: the
-  // current table flux (the first version; it re-targets the closure flux at EVERY
-  // radius to L_in(t) at once, which takes the extra injection out of the base cells
-  // convectively and drops the radiative L_bot)
-  {
-    const bool cln = pin->DoesParameterExist("problem","he_drive_closure_lin");
-    const std::string cl = (hftab && cln) ?
-        pin->GetString("problem","he_drive_closure_lin") : std::string("const");
-    if (cl != "const" && cl != "table") {
-      Fatal("problem/he_drive_closure_lin must be const or table");
-    }
-    cltab_ = (cl == "table");
+  if (pin->DoesParameterExist("problem","he_drive_closure_lin") &&
+      pin->GetString("problem","he_drive_closure_lin") != "const") {
+    Fatal("problem/he_drive_closure_lin = table is removed with the rad_vet inner flux "
+          "table; only const");
   }
   on_ = led;
   pmesh_ = pm;
@@ -540,9 +528,8 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
       std::cout << " (every " << every_ << " cycles, M_int table "
                 << (mtab_on_ ? "on" : "off") << ")";
     }
-    std::cout << ", rad_vet flux table " << (hftab ? "on" : "off") << ", A_in " << ain_
+    std::cout << ", A_in " << ain_
               << ", table t0 " << t0_ << ", Ebnd faces " << (ebd_ ? "on" : "off")
-              << ", closure L_in " << (cltab_ ? "table" : "const")
               << (restart ? " (restart)" : "") << std::endl;
   }
   if (!restart && global_variable::my_rank == 0) {
@@ -700,13 +687,8 @@ void StageLedger(Mesh *pm, const Real bdt, const bool binf, const bool zflux,
 
 //! the end-of-cycle work; log = false on a restart (the straight run wrote that line)
 void CycleBody(Mesh *pm, const bool log) {
-  radvet::RadiationVet *pm1 = pm->pmb_pack->pradvet;
   const Real t = pm->time;
-  if (pm1 != nullptr && pm1->ftab_on) {
-    erad_ += ain_*pm1->InnerFluxIntegral(tprev_, t);
-  } else {
-    erad_ += ain_*a_.fconst*(t - tprev_);
-  }
+  erad_ += ain_*a_.fconst*(t - tprev_);
   tprev_ = t;
   const bool refr = live_ && (pm->ncycle % every_ == 0 || !ref_);
   if (!log && !refr) return;
@@ -721,16 +703,6 @@ void CycleBody(Mesh *pm, const bool log) {
 
 void Cycle(Mesh *pm) {
   if (on_) {CycleBody(pm, true);}
-}
-
-Real ClosureFlux(Mesh *pm, const Real fconst) {
-  return cltab_ ? InnerFlux(pm, fconst) : fconst;
-}
-
-Real InnerFlux(Mesh *pm, const Real fconst) {
-  radvet::RadiationVet *pm1 = pm->pmb_pack->pradvet;
-  if (pm1 != nullptr && pm1->ftab_on) {return pm1->InnerFluxAt(pm->time);}
-  return fconst;
 }
 
 void Final() {

@@ -370,7 +370,12 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
   // removed (fatal when named), "=v" removed (fatal unless v, the value old-prod restart
   // files carry), else clean key
   static const char *tab[][2] = {
-    {"rad_vet/implicit_bc_*", nullptr}, {"rad_vet/implicit_flux_x1m*", nullptr},
+    {"rad_vet/implicit_bc_*", nullptr},
+    // (the inner flux's time hooks: removed)
+    {"rad_vet/implicit_flux_x1min_mod_*", "x"},
+    {"rad_vet/implicit_flux_x1min_ramp_*", "x"},
+    {"rad_vet/implicit_flux_x1min_table*", "x"},
+    {"rad_vet/implicit_flux_x1m*", nullptr},
     {"rad_vet/implicit_ebath_*", nullptr}, {"rad_vet/implicit_beam*", nullptr},
     {"rad_vet/implicit_cfl", nullptr},
     {"rad_vet/implicit_mr_*", nullptr}, {"rad_vet/implicit_det_trace", nullptr},
