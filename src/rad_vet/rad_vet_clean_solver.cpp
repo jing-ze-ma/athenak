@@ -1727,15 +1727,15 @@ void RadiationVet::CleanStagLineSolve(const CleanLevel &lv, const int src, const
     Kokkos::TeamPolicy<DevExeSpace> pol(DevExeSpace(), nt, ts);
     const int lv0 = TeamScratchLevel(scr, 0, pol.team_size());
     pol.set_scratch_size(lv0, Kokkos::PerTeam(scr));
-    // (the line of team r: m, j, k, and its rows loaded into scratch)
-    auto ld = KOKKOS_LAMBDA(const TeamMember_t &tm, int &m, int &k, int &j) {
+    // (the line of team r: m, j, k, and its rows loaded into the team's scratch sw)
+    auto ld = KOKKOS_LAMBDA(const TeamMember_t &tm, const ScrArray1D<Real> &sw, int &m,
+                            int &k, int &j) {
       const int q = lst ? ll(tm.league_rank()) : tm.league_rank();
       m = q/n32;
       const int pk = (q - m*n32)/n2, pj = q - m*n32 - pk*n2;
       k = l.o[2] + pk;
       j = l.o[1] + pj;
       if (col >= 0 && cl(pj, pk) != c0) return false;   // (team-uniform)
-      ScrArray1D<Real> sw(tm.team_scratch(lv0), (inp ? 4 : 8)*nx);
       Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int q) {
         const int i = is + q;
         Real r = w(m,src,k,j,i);
@@ -1755,9 +1755,9 @@ void RadiationVet::CleanStagLineSolve(const CleanLevel &lv, const int src, const
     };
     if (inp) {
       Kokkos::parallel_for("cln_pcr", pol, KOKKOS_LAMBDA(TeamMember_t tm) {
-        int m, k, j;
-        if (!ld(tm, m, k, j)) return;
         ScrArray1D<Real> sw(tm.team_scratch(lv0), 4*nx);
+        int m, k, j;
+        if (!ld(tm, sw, m, k, j)) return;
         for (int rd = 0, s = 1; rd < nround; ++rd, s *= 2) {
           Real v[kPcrRows][4];
           for (int u = 0; u < kPcrRows; ++u) {
@@ -1796,9 +1796,9 @@ void RadiationVet::CleanStagLineSolve(const CleanLevel &lv, const int src, const
       return;
     }
     Kokkos::parallel_for("cln_pcr2", pol, KOKKOS_LAMBDA(TeamMember_t tm) {
-      int m, k, j;
-      if (!ld(tm, m, k, j)) return;
       ScrArray1D<Real> sw(tm.team_scratch(lv0), 8*nx);
+      int m, k, j;
+      if (!ld(tm, sw, m, k, j)) return;
       int o = 0;
       for (int rd = 0, s = 1; rd < nround; ++rd, s *= 2) {
         const int d = 4*nx - o;
