@@ -32,6 +32,8 @@ SKIP_RE = [r'^std::thread', r'^std::future', r'Timer$', r'^MPI_', r'DevExeSpace'
 # pos_un_drop: the positivity report's sum over discarded attempts (CounterKeep::Restore adds after the checkpoint)
 # vgd_csmb: the cubed sphere's two read-mask buffers (a cache: dropped after a restore, the mask kernel re-runs on reuse)
 # cln_pcrl: the GPU PCR's lines of each colour (a cache keyed by the level's shape, rebuilt on a miss)
+# cln_dbginf: clean_dbg_inf's cycle, cleared once injected (rolled back, a dt_retry redo
+# would inject again, without end)
 # cln_sgv / cln_sga0 / cln_sga1 / cln_sgd1 / cln_sgd2 / cln_sgx / cln_sgtg: the theta-seam image geometry
 # (CleanSeamImage; built once from pcoord when the extent changes, read only)
 # cln_wci: clean_retry_budget's CLEAN WORST scratch (E before the last pass, refilled by every solve)
@@ -42,7 +44,7 @@ SKIP_RE = [r'^std::thread', r'^std::future', r'Timer$', r'^MPI_', r'DevExeSpace'
 SKIP_NAMES = {'hi_seq', 'cln_pcrl', 'cln_sgv', 'cln_sga0', 'cln_sga1', 'cln_sgd1', 'cln_sgd2', 'cln_sgx',
               'cln_sgtg', 'cln_wci', 'cln_pdh', 'cln_fpv', 'vgd_ipc_seq', 'acc_nccl', 'cln_hbuf', 'cln_halo', 'cln_hpb', 'cln_hdl',
               'vgd_es2_made', 'vgd_esid', 'vgd_est', 'pos_un_drop', 'vgd_csmb',
-              'vgd_csmw_h', 'vgd_csmw_r'}
+              'vgd_csmw_h', 'vgd_csmw_r', 'cln_dbginf'}
 NESTED = ['VgdTabHost', 'VgdTabDev', 'M1OpacTab', 'CleanW', 'CleanGeo']   # structs holding Views
 
 def ast(header, name):
@@ -87,7 +89,8 @@ def emit(fields, pre, out, skipped):
                    'vgd_csmb': ' (read-mask cache, rebuilt on reuse)',
                    'vgd_csmw_h': ' (mark exchange scratch, written before read)',
                    'vgd_csmw_r': ' (mark exchange scratch, written before read)',
-                   'vgd_esid': ' (stamp id, kept monotonic)', 'vgd_est': ' (stamps, kept)'}
+                   'vgd_esid': ' (stamp id, kept monotonic)', 'vgd_est': ' (stamps, kept)',
+                   'cln_dbginf': ' (one-shot test injection, kept)'}
             skipped.append(nm + ' : ' + t + why.get(n, ' (protocol counter, kept monotonic)')); continue
         if t.startswith('const ') or t.endswith('*') or '(*)' in t or t.endswith('&'):
             skipped.append(nm + ' : ' + t); continue
