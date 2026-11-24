@@ -19,3 +19,4 @@
   - m35mms: ### rad_vet/clean_stag_thinf_held = false;### rad_vet/cs_cross_mono = true;### rad_vet/implicit_pos_floor_solve = true;### rad_vet/time2_stage_local_be = false;### rad_vet/vet_gd_rotate_align = true;### rad_vet/vet_rotate_avg_ema_change_form = linear; | 'no effect' line R: ### WARNING (scheme = clean): no effect: rad_vet/implicit_pos_floor_solve rad_vet/cs_cross_mono
   - t9l62:  | 'no effect' line R: ### WARNING (scheme = clean): no effect: rad_vet/implicit_pos_floor_solve rad_vet/cs_cross_mono
 - Files: caltech_results/RELSMOKE_1124/<arm>_{B,R}/ (hst, run.log, log.0.gz).
+- Correction to the never-read list above: it compared raw names, but B prints the keys as rad_m1/... and R as rad_vet/.... After mapping rad_m1 -> rad_vet, R's extra never-read keys are only **rad_vet/cs_cross_mono and rad_vet/implicit_pos_floor_solve** (m35mms; bsg has cs_cross_mono). These are exactly the expected removed keys. So R reads every key that B reads.
