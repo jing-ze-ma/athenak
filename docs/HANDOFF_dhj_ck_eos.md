@@ -13,7 +13,7 @@ chase was a **missing `member.team_barrier()` in the general-EOS x1 flux kernel*
 place the unmodified baseline runs to `tlim` and conserves mass to 7e-4.
 
 Six arms, each 8 h on one apu1 GPU, all on `athena_fixrel` = `6e600f12`, all from
-`inputs/mhd/deep_hot_jupiter_rt_blowup.athinput` (= viper's `blowup.athinput`), all
+`inputs/planets/deep_hot_jupiter_rt_blowup.athinput` (= viper's `blowup.athinput`), all
 `tlim = 1.2e6 s = 3.934 rotations` (rotation = 3.05e5 s):
 
 | job | tag | the single change | pre-fix | **post-fix** |
@@ -72,7 +72,7 @@ not open it unless they raise it.**
 
 Earlier: `38311a8a` is the correlated-k chain-parallel split kernel, still the live
 RT architecture. Correlated-k itself is finished and documented in
-`docs/correlated_k_rt.md`, with regression tests in `tst/test_suite/rad/`.
+`docs/correlated_k_rt.md`, with regression tests in `tst/test_suite/two_stream/`.
 
 ## 2. The one real blow-up: ideal EOS + correlated-k — CLOSED
 
@@ -154,7 +154,7 @@ every history row): hydro+polar with no source terms, MHD+correlated-k+polar (pr
 and hydro with polar off and sources on — all three diverged before the fix (at cycles 20,
 40 and 120) and are all bitwise identical after it.
 
-**Regression test:** `tst/test_suite/nr/test_nr_geneos_repro_gpu.py`. Runs the same binary
+**Regression test:** `tst/test_suite/two_stream/test_nr_geneos_repro_gpu.py`. Runs the same binary
 three times and requires identical histories; validated FAILING without the fix and passing
 with it. **Do not shrink its grid** — detection is very sensitive: the production grid gave
 3 of 3 replicate pairs differing, while 32x32, 16x16 and a general-EOS linear wave gave
@@ -196,7 +196,7 @@ and the user rejected it on exactly that ground.
 
 ## 5. Bars to clear, and traps
 
-- **`inputs/mhd/deep_hot_jupiter_rt_blowup.athinput`** (`cd2e8815`) is kept as the
+- **`inputs/planets/deep_hot_jupiter_rt_blowup.athinput`** (`cd2e8815`) is kept as the
   *reference general-EOS + correlated-k run*, not as a reproducer of anything — nothing to
   reproduce survives. Repoint `ck_table`/`ck_data_dir` and it runs; 8 h on one apu1 GPU
   reaches `tlim = 1.2e6` = 3.934 rot (`rf.limoff`: 2.17e4 s of GPU time, 2.32e7
@@ -217,14 +217,14 @@ and the user rejected it on exactly that ground.
 
 ## 6. The exact input
 
-**Easiest path: use `inputs/mhd/deep_hot_jupiter_rt_blowup.athinput`** (`cd2e8815`), which
+**Easiest path: use `inputs/planets/deep_hot_jupiter_rt_blowup.athinput`** (`cd2e8815`), which
 is the reference run, and just repoint `ck_table`/`ck_data_dir`. It differs from
 viper's `/viper/ptmp/jinma/claude_eos_gpu/blowup.athinput` only in `tlim` (8.64e7 vs 1.2e6),
 `rt_de_max` (-1.0 vs 0.5), the two table paths, and one commented-out line — i.e. they are
 the same physics, and `cd2e8815` adds no source change.
 
 The delta table below reconstructs the same thing from the shipped
-`inputs/mhd/deep_hot_jupiter_rt_eos.athinput`, and is what documents WHY each knob is set.
+`inputs/planets/deep_hot_jupiter_rt_eos.athinput`, and is what documents WHY each knob is set.
 
 | block / param | shipped | reference run | why |
 |---|---|---|---|
@@ -263,7 +263,7 @@ listed only to mark them as retracted; **all six clear `tlim` on the fixed binar
 | `hydro` | `hydro_ck.athinput` — pure hydro | clean | clean |
 | `ideal_ck` / `ideal_grey` | separate ideal-gas files, differing in `rt_ck` ALONE | see section 2 | `ideal_ck` needs `rt_de_max` |
 
-The ideal-gas pair is derived from `inputs/mhd/deep_hot_jupiter_rt_ideal_xe.athinput`.
+The ideal-gas pair is derived from `inputs/planets/deep_hot_jupiter_rt_ideal_xe.athinput`.
 The four "not re-run" rows would be worth 8 h each only if someone wants the record
 complete; there is no open question they answer.
 

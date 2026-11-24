@@ -5,7 +5,7 @@ loop over x1, x2 AND x3, against the analytic solution of a 3-D ANISOTROPIC spre
 Gaussian, and against the SPLIT operator (rad_implicit_x1 + rad_implicit_ang) it
 replaces.
 
-THE PROBLEM (pgen rad_diff2d with problem/sig1 > 0, inputs/tests/rad_sts_all_gauss.
+THE PROBLEM (pgen rad_diff2d with problem/sig1 > 0, tst/inputs/rad_sts_all_gauss.
 athinput).  A Cartesian box at rest with a 1e-4 Gaussian temperature perturbation spread
 in BOTH x1 and x2 with DIFFERENT widths (sig1 = 1.5 sig0) and uniform in x3, on a uniform
 density.  At that amplitude the radiative conductivity is constant to a few parts in 1e4,
@@ -43,7 +43,7 @@ import numpy as np
 import pytest
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-INPUT = os.path.join(REPO, "inputs", "tests", "rad_sts_all_gauss.athinput")
+INPUT = os.path.join(REPO, "tst", "inputs", "rad_sts_all_gauss.athinput")
 BUILD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_sts_all")
 
 # cfl_number at nx = 32; halved with every doubling of the resolution so that dt scales

@@ -53,7 +53,7 @@ import subprocess
 import pytest
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-INPUT = os.path.join(REPO, "inputs", "tests", "rad_x1_uform_gauss.athinput")
+INPUT = os.path.join(REPO, "tst", "inputs", "rad_x1_uform_gauss.athinput")
 BUILD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_x1_uform")
 
 # cfl_number at nx = 32, halved with every doubling so that dt scales as dx^2 -- the

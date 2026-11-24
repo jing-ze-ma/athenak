@@ -3,7 +3,7 @@ The IMPLICIT transverse radiative operator on the CUBED SPHERE (hydro/rad_implic
 src/diffusion/conduction_transverse.cpp; design note docs/dev/cs_implicit_transverse.md).
 
 Same problem and same measurement as test_rad_cs_raddiff_cpu.py -- cs_test iprob 15,
-inputs/tests/cubed_sphere_raddiff.athinput: a uniform density at rest with
+tst/inputs/cubed_sphere_raddiff.athinput: a uniform density at rest with
 T = T0 (1 + amp f), f a spherical harmonic of degree l with no radial dependence, so the
 radial fluxes vanish identically and the ANGULAR operator is the only thing that moves
 energy.  The source read off two dumps must equal -l(l+1) kappa (T - T0) r_fac, i.e. the
@@ -35,7 +35,7 @@ REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")
 sys.path.insert(0, os.path.join(REPO, "vis", "python"))
 import bin_convert  # noqa: E402
 
-INPUT = os.path.join(REPO, "inputs", "tests", "cubed_sphere_raddiff.athinput")
+INPUT = os.path.join(REPO, "tst", "inputs", "cubed_sphere_raddiff.athinput")
 BUILD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_cs_implicit")
 
 L_CGS, M_CGS, T_CGS, MU = 1.0e8, 1.0e18, 527.0, 2.3

@@ -26,7 +26,7 @@ clips); [OUTPUTS.md](OUTPUTS.md) explains which lines matter. A healthy run prin
 
 ## 2. Production star runs
 
-Templates: `inputs/rad_vet_clean/star_bsg.athinput`, `star_m35mms.athinput`,
+Templates: `inputs/stars/star_bsg.athinput`, `star_m35mms.athinput`,
 `star_t9l62.athinput`. They hold the full production key set (tile layout mode). They need:
 
 1. a binary built with `-D PROBLEM=he_star_vet` (see [BUILD.md](BUILD.md));

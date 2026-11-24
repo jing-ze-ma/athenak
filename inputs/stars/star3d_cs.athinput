@@ -3,7 +3,7 @@
 # cube face (2.8 deg) instead of 128: 548 radial cells (stretched, 25-2530 Rsun; photosphere 834 Rsun; incl. the
 # atmosphere), 6 faces x 32 x 32, 24 MeshBlocks of 548 x 16 x 16 (tile 16).  Scheme keys:
 # the production runs of 2026-11-24 (commit 465aff485).  Fresh start from the 1-D profile.
-# Data (inputs/rad_vet_clean/star3d_data, linked into the run directory as star3d_data):
+# Data (inputs/stars/star3d_data, linked into the run directory as star3d_data):
 #   rsg_ic.txt (1-D IC profile), rsg_rosseland.txt, rsg_planck.txt (opacity tables).
 #   The gas EOS table is built at start-up from the <hydro> eos_* keys (no file).
 # Needs a binary built with -D PROBLEM=he_star_vet (docs/vet_clean/BUILD.md).

@@ -3,7 +3,7 @@ problem = UNIFIED super-time-stepped radiative diffusion of a 3D anisotropic Gau
 # THE SPLIT OPERATOR (rad_implicit_x1 + rad_implicit_ang) on the test problem of
 # <hydro>/rad_sts_all, which is where <hydro>/rad_x1_uform and rad_x1_kiter live.
 # Everything below is that input with the three operator switches flipped; see
-# tst/test_suite/rad/test_rad_x1_uform_cpu.py.
+# tst/test_suite/conduction/test_rad_x1_uform_cpu.py.
 #
 # The test problem of <hydro>/rad_sts_all (conduction_transverse.cpp,
 # Conduction::StsConductionUpdate): ONE RKL1 loop over x1, x2 and x3, replacing the split

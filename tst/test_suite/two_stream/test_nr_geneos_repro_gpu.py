@@ -38,7 +38,7 @@ The correlated-k tables are not needed -- the shipped input defaults to the grey
 import os
 import shutil
 import pytest
-import test_suite.rad.dhj_ck_common as dhj
+import test_suite.two_stream.dhj_ck_common as dhj
 
 BUILD = os.path.join(dhj.REPO, "tst", "build_geneos_repro")
 CACHE = os.path.join(dhj.REPO, "tst", "build", "CMakeCache.txt")

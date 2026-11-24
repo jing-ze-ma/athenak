@@ -54,7 +54,7 @@ import numpy as np
 import pytest
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-INPUT = os.path.join(REPO, "inputs", "tests", "rad_sts_all_gauss.athinput")
+INPUT = os.path.join(REPO, "tst", "inputs", "rad_sts_all_gauss.athinput")
 BUILD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_sts_split")
 
 # cfl_number at nx = 32, halved with every doubling of the resolution so that dt scales

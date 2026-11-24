@@ -20,7 +20,7 @@ athena_read.check_nan_flag = True
 logger = logging.getLogger('athena' + __name__[7:])  # set logger name
 
 _res = [64, 128, 256]
-_input = 'tests/linear_wave_mhd_geneos_table.athinput'
+_input = 'eos_tests/linear_wave_mhd_geneos_table.athinput'
 _min_rate = 1.8
 _min_contrast = 1.25
 

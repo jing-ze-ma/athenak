@@ -1,6 +1,6 @@
 # Spherical polar, MHD: the LOW-BETA STABILITY test.  Build with -D PROBLEM=sp_lowbeta.
 #
-# THE TWIN of cs_test iprob = 8 on inputs/tests/cubed_sphere_mhd_strat.athinput, and it
+# THE TWIN of cs_test iprob = 8 on inputs/cubed_sphere_tests/cubed_sphere_mhd_strat.athinput, and it
 # exists to answer one question: is the cubed sphere's low-beta instability a property of
 # the GNOMONIC machinery, or of AthenaK's curvilinear MHD source terms generally?
 #
@@ -12,7 +12,7 @@
 # kinetic energy in the .hst file IS the error.  The gate is whether it GROWS.
 #
 #   for b in 1.0 2.0 3.162; do
-#     build_sp/src/athena -i inputs/tests/spherical_polar_mhd_lowbeta.athinput -d . \
+#     build_sp/src/athena -i inputs/spherical_polar_tests/spherical_polar_mhd_lowbeta.athinput -d . \
 #       problem/b0c=$b job/basename=s$b
 #   done
 #   # rate = 0.5 * d/dt ln(KE);  beta = 2*p0/b0c^2 = 0.2, 0.05, 0.02.

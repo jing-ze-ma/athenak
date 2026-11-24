@@ -29,7 +29,7 @@ _flux_close = ['hlle']          # differs by construction, only required to be c
 _flux = _flux_exact + _flux_close
 _eos = ['ideal', 'general']
 _grid = ['uniform', 'smr']
-_input = 'tests/linear_wave_mhd_geneos.athinput'
+_input = 'eos_tests/linear_wave_mhd_geneos.athinput'
 
 
 # Run AthenaK

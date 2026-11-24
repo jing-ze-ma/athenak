@@ -31,7 +31,7 @@ athena_read.check_nan_flag = True
 logger = logging.getLogger('athena' + __name__[7:])  # set logger name
 
 _res = [64, 128, 256]
-_input = 'tests/linear_wave_hydro_geneos_table.athinput'
+_input = 'eos_tests/linear_wave_hydro_geneos_table.athinput'
 # second order in space and time; the margin allows for the leading correction at these
 # resolutions, but is nowhere near enough to let a first-order result through
 _min_rate = 1.8

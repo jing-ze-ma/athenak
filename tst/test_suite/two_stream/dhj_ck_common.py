@@ -21,7 +21,7 @@ SIGMA_SB = 5.6704e-5                       # Stefan-Boltzmann, cgs
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 DATA = os.path.join(REPO, "data", "exo_fms_ck")
 KTABLE = os.path.join(DATA, "ck", "Premixed_1x_g8_11.txt")
-INPUT = os.path.join(REPO, "inputs", "mhd", "deep_hot_jupiter_rt_eos.athinput")
+INPUT = os.path.join(REPO, "inputs", "planets", "deep_hot_jupiter_rt_eos.athinput")
 
 HAVE_TABLES = os.path.exists(KTABLE)
 NO_TABLES = "Exo-FMS correlated-k tables absent; see data/exo_fms_ck/PROVENANCE.md"

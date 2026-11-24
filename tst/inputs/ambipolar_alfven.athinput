@@ -1,6 +1,6 @@
 <comment>
 problem   = MHD Alfven wave damped by ambipolar diffusion (ambipolar-1101)
-reference = tst/test_suite/mhd/test_ambipolar_alfven_cpu.py
+reference = tst/test_suite/nonideal_mhd/test_ambipolar_alfven_cpu.py
 
 <job>
 basename  = AdAlfven

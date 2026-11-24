@@ -1,6 +1,6 @@
 """
 Radiative diffusion on the cubed sphere: the angular operator against the exact
-Laplacian of an l = 2 temperature field (cs_test iprob 15, inputs/tests/
+Laplacian of an l = 2 temperature field (cs_test iprob 15, tst/inputs/
 cubed_sphere_raddiff.athinput).
 
 Uniform density at rest, T = T0 (1 + amp f) with f an l = 2 combination in the direction
@@ -27,7 +27,7 @@ REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")
 sys.path.insert(0, os.path.join(REPO, "vis", "python"))
 import bin_convert  # noqa: E402
 
-INPUT = os.path.join(REPO, "inputs", "tests", "cubed_sphere_raddiff.athinput")
+INPUT = os.path.join(REPO, "tst", "inputs", "cubed_sphere_raddiff.athinput")
 BUILD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_cs_raddiff")
 
 # the input's units: T0 = 1 -> mu m_u v^2/k_B, p0 = 1 -> rho0 v^2 (the code uses the

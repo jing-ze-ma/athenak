@@ -375,7 +375,7 @@ inline int rt_nchain = 4;
 // compile time and fatals when n1 > RT_NNC, which the monolithic one does not.
 //
 // THE "BITWISE IDENTICAL" CLAIM BELOW HOLDS FOR THE CORRELATED-K AND GREY KERNELS, NOT
-// FOR THE PICKET FENCE.  Measured on inputs/mhd/deep_hot_jupiter_rt_ideal_xe (rt_ck =
+// FOR THE PICKET FENCE.  Measured on inputs/planets/deep_hot_jupiter_rt_ideal_xe (rt_ck =
 // false, 20 cycles, same binary, deterministic on rerun): the two paths agree on mass
 // and total energy to the printed digits but differ by 7.1 % in the 1-KE history
 // column.  Unexplained; the difference is confined to that path.
@@ -764,7 +764,7 @@ inline Real rt_de_max = 0.5;
 // ConsToPrim's pressure floor puts it straight back (this is the eos_efloor counter), and
 // the only trace left is a spurious energy source in the floor and, when the step is
 // large enough, the rt_de_max clip.  MEASURED on the shrunk production grid
-// (inputs/tests/dhj_ck_spherical.athinput, 4000 cycles): the centre-to-centre layers give
+// (two_stream_tests/dhj_ck_spherical, 4000 cycles): the centre-to-centre layers give
 // 27048 eos_efloor events against 0 for the staggered ones, and lose 1.7e-5 of the total
 // energy; from one shared state the same A/B is 16 floor events per cycle against 0.
 // The layers are NOT what is wrong -- their emission is the cell's own kappa rho B over
