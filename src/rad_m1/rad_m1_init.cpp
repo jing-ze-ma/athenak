@@ -1007,8 +1007,11 @@ void RadiationM1::ImplicitHaloCopy(DvceArray5D<Real> &sc, int nq, int c0, bool t
   // exchanged components)
   static int s_poison = -1;
   if (s_poison < 0) {
+    s_poison = 0;
+#if M1_DEBUG
     const char *f = std::getenv("M1_POISON_GHOST");
     s_poison = (f != nullptr) ? std::atoi(f) : 0;
+#endif
   }
   const bool poi = (s_poison != 0) && !topack;
   const int pd = s_poison;   // M1_POISON_GHOST=D: the ghost layers beyond depth D

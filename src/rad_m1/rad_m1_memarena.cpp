@@ -46,6 +46,7 @@
 
 namespace radm1 {
 
+#if M1_DEBUG
 namespace {
 bool EnvListHas(const char *env, const char *name) {
   const char *e = std::getenv(env);
@@ -55,6 +56,7 @@ bool EnvListHas(const char *env, const char *name) {
          s.find(",all,") != std::string::npos;
 }
 }  // namespace
+#endif
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::MemArenaInit
@@ -203,6 +205,7 @@ void RadiationM1::CleanWoBind() {
 //! 2 = CleanRays entry (cln_w.o, also at 0), 3 = its exit (the intensities)
 
 void RadiationM1::MemcutPoison(const int where) {
+#if M1_DEBUG
   static const bool on = (std::getenv("MEMCUT_POISON") != nullptr);
   if (!on) return;
   const char *pv = std::getenv("MEMCUT_PVAL");
@@ -243,6 +246,7 @@ void RadiationM1::MemcutPoison(const int where) {
     }
   }
   Kokkos::fence();
+#endif
 }
 
 }  // namespace radm1

@@ -396,6 +396,16 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
 
   // <rad_m1>/time2_k1_reset (see rad_m1.hpp)
   t2_k1reset = false;
+#if !M1_DEBUG
+  for (const char *k : {"dbg_rst_fp", "dbg_rst_fp_cycle", "dbg_rst_fp_dump"}) {
+    if (pin->DoesParameterExist("rad_m1", k)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/" << k
+                << " needs a build with -D Athena_M1_DEBUG=ON" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+#endif
   if (pin->DoesParameterExist("rad_m1", "dbg_rst_fp")) {
     dbg_rst_fp = pin->GetInteger("rad_m1", "dbg_rst_fp");
   }
@@ -2851,6 +2861,7 @@ namespace radm1 {
 //! line at the same cycle to find the state a restart does not carry.  Moves no state.
 //! Also the vet_gd source and the clean scheme's arrays and values; dbg_rst_fp_cycle adds
 //! fingerprints inside the first clean solve of a cycle, dbg_rst_fp_dump writes vgd_cs.
+#if M1_DEBUG
 namespace {
 template <class V>
 void M1Fp(const char *nm, const V &v, int cycle) {
@@ -2879,7 +2890,9 @@ void M1Fp(const char *nm, const V &v, int cycle) {
   }
 }
 }  // namespace
+#endif
 void RadiationM1::RstFingerprint(const char *tag) {
+#if M1_DEBUG
   const int cy = pmy_pack->pmesh->ncycle;
   if (global_variable::my_rank == 0) {std::printf("RSTFP cyc %d tag %s\n", cy, tag);}
   M1Fp("u0", u0, cy); M1Fp("opac", opac, cy); M1Fp("iw", iw, cy);
@@ -2937,7 +2950,7 @@ void RadiationM1::RstFingerprint(const char *tag) {
     std::printf("RSTFP cyc %d fv n %d icut %d scut %d\n", cy, cln_fvn, vlat_icut,
                 vgd_scut);
   }
-
+#endif
 }
 
 //----------------------------------------------------------------------------------------

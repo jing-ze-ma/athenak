@@ -343,6 +343,13 @@ if (DEFINED Athena_M1_VGD_NMAX AND NOT "${Athena_M1_VGD_NMAX}" STREQUAL "")
   target_compile_definitions(athena PRIVATE M1_VGD_NMAX_BUILD=${Athena_M1_VGD_NMAX})
 endif()
 
+# -D Athena_M1_DEBUG=ON: the clean M1 debug hooks (the restart fingerprints
+# <rad_m1>/dbg_rst_fp*, the poison variables MEMCUT_POISON, CLEAN_POISON_GHOST,
+# M1_POISON_GHOST and VGD_RING_POISON of the halo / arena gates); off by default
+if (Athena_M1_DEBUG)
+  target_compile_definitions(athena PRIVATE M1_DEBUG=1)
+endif()
+
 # -D Athena_M1_VGD_NCCL_DIR=<nccl root with include/ lib/> builds the vet_gd
 # NCCL halo (sp list halo + cs compact exchange; not used: VgdNcclOn): only the
 # two vet_gd sources get the define and the include path (the rest of the tree unchanged)

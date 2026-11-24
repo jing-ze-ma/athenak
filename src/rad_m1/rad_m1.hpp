@@ -1,5 +1,10 @@
 #ifndef RAD_M1_RAD_M1_HPP_
 #define RAD_M1_RAD_M1_HPP_
+// M1_DEBUG (cmake -D Athena_M1_DEBUG=ON): the debug hooks (restart fingerprints, poison
+// gates) are compiled in; 0 = a production build, where naming them is a FATAL
+#ifndef M1_DEBUG
+#define M1_DEBUG 0
+#endif
 //========================================================================================
 // AthenaK astrophysical fluid dynamics and numerical relativity code
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team

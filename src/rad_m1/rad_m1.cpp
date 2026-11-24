@@ -905,11 +905,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // env CLEAN_POISON_GHOST=1 (gate only): the ghost layers clean_halo_direct does not
     // send are NaN
     // (1: NaN; 2: +1e30; 3: -1e30, for readers that compare or take min / max)
+#if M1_DEBUG
     if (std::getenv("CLEAN_POISON_GHOST") != nullptr) {
       const int pm = std::atoi(std::getenv("CLEAN_POISON_GHOST"));
       cln_hdl.poison = true;
       cln_hdl.pval = (pm == 2) ? 1.0e30 : ((pm == 3) ? -1.0e30 : cln_hdl.pval);
     }
+#endif
     // clean_init = given | steady (read only when named: an input without it keeps a
     // byte-identical parameter dump).  A start out of radiative equilibrium takes steady:
     // the rays, a steady solution, run ahead of the given field's front.
@@ -2059,8 +2061,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "build" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+#if M1_DEBUG
     vgd_ring_poison = (std::getenv("VGD_RING_POISON") != nullptr) &&
                       (std::atoi(std::getenv("VGD_RING_POISON")) != 0);
+#endif
     // the same fresh default for a plain vet_col (no vet_gd), as
     // vet_sc.  vet_gd without the twin keeps false: there the pair is needed together
     // (NOTE-2026-10-09-viper-sp-seam-mass-leak: noesrc alone exposes the gd ray effect)
