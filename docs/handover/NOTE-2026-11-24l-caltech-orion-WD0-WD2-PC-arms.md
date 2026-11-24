@@ -73,3 +73,11 @@
 ```
 - floor_audit_worst lines in the blob (rank 0 gid 0, r 2.29-2.45e12): 21 (all in grep.txt)
 - FOFC: FOFC first-order cell-stages=0; last pay line: fofc_retest: retested 178507484 unflagged 0
+
+## WD0 vs WD2 summary (11-24 00:37)
+- **fofc echo:** the IA11 rst stores hydro/fofc, so a command-line override prints no 'added' NOTE. The <hydro> startup line shows only fofc_retest: WD2 `<hydro> dual_energy 0 (eta 0.001, slots -1,-1) floor_pay rad_column fofc_retest 1 floor_audit 1` vs WD0 `... fofc_retest 0 ...`. FOFC is clearly active in WD2: fofc_retest retested 1.2e7 cells at c6458, rising to 1.8e8 total by the end.
+- **EOS floors (end-of-run line):** WD0 `energy created x vol=3.45069e+42` vs WD2 `energy created x vol=7.12015e+37`, about 5 orders less with FOFC on. 'FOFC first-order cell-stages' reads 0 in both: the EY counter blind spot, while FOFC clearly acts.
+- **Pay per cycle** (floor_audit pay lines): WD0 c6458 paid paid 3.272500918e+36 vs WD2 paid 3.689175277e+22.
+- **CW / fallbacks / DT_RETRY:** WD0 2 / 1 / 0, WD2 0 / 0 / 0. dt min / last: WD0 2.485 / 4.962, WD2 3.524 / 6.556. There is no dt collapse in WD2 and no CW increase, so it is NOT the EY pattern.
+- **floor_audit_worst lines in the blob** (rank 0 gid 0, r 2.29-2.45e12): WD0 55, WD2 21 (grep.txt per arm).
+- **Reading (24f):** WD2's blob creation is essentially gone with FOFC on, so the high-order flux drives the deficit. FOFC as a production setting is the USER's call.
