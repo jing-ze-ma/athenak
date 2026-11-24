@@ -1,3 +1,0 @@
-...                                                                      [100%]
-3 passed in 333.23s (0:05:33)
-PYTEST_DONE

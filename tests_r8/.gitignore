@@ -1,9 +1,0 @@
-# binaries and bulk output are not committed; see README "Files"
-athena_box_ref
-athena_box_new
-athena_v4
-*/bin/
-*/cbin_hydro_w_2/
-*/rst/
-*/rt_profile.bin
-*/rt_surface.bin

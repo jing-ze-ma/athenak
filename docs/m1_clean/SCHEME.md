@@ -82,8 +82,7 @@ $h c\,k_E\,[(\tfrac12\beta^2-\boldsymbol\beta\cdot\mathbf a/c)\,E+2\boldsymbol\b
 (per stage), and the face momentum equation gets
 $\theta\,c\,\boldsymbol\beta_f\,(h c\,k_P aT^4-h c\,k_E E)_f$ (see §4). In the implicit solve these
 terms are evaluated at the current Newton iterate (`CleanRightHandSide`, `CleanFaceWeights`,
-`CleanStagBetaE` in `rad_m1_clean.hpp`). The background for this form, rather than a plain
-$O(v/c)$ truncation, is in `docs/dev/rad_m1_design.md` §1. The $(\mathbf v\cdot\mathbf F)\mathbf v/c^3$
+`CleanStagBetaE` in `rad_m1_clean.hpp`). The $(\mathbf v\cdot\mathbf F)\mathbf v/c^3$
 and $\tfrac12\beta^2\kappa\mathbf F/c$ momentum corrections are not kept.
 
 ### 2.2 Coupling to the gas
@@ -873,6 +872,3 @@ Methods the scheme builds on, which should be cited where they are relevant:
   production decks have no effect on the clean rays unless `clean_ray_source_relaxed = true`.
   `vet_col_lat_taucut` is overridden: clean rays sweep from the first shell, and the depth cut is
   `clean_ray_cut`'s.
-- **Older design notes.** `docs/dev/rad_m1_design.md` and `docs/dev/rad_m1_implicit_design.md`
-  describe the earlier explicit and cell-layout implicit solvers. Where they differ from this
-  note, this note (and the code) apply to `scheme = clean`.
