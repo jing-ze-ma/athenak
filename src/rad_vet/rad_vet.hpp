@@ -854,25 +854,13 @@ class RadiationVet {
   // what the exchange would write: bitwise).  <rad_vet>/zalesak_halo_skip (default true;
   // false = exchange every round as before).  Counters: rounds, exchanges done.
   bool zl_hskip = true;
-  // <rad_vet>/zalesak_local_rounds = N (default 0 = off, the global Jacobi
-  // rounds above): between two R exchanges each rank runs up to N Zalesak rounds on its
-  // own cells with the ghosts held (no MPI), then one global count + one exchange.  The
-  // iteration is monotone from R = 1, so it stops at the same fixed point up to the
-  // (1 - 1e-12) margin of the limiter; far fewer exchanges at many ranks.
-  int zl_local = 0;
-  Real zl_sub[2] = {0.0, 0.0};
   // <rad_vet>/zalesak_active (default false): a Zalesak round evaluates only
   // the cells whose 7-point stencil changed in the previous round or in the R exchange
   // after it (time2 face FCT: those next to an R that fell, its sign bit set).  A cell
   // whose inputs did not change cannot be newly limited (it was evaluated with the same
   // inputs before): BITWISE.
   bool zl_active = false;
-  // <rad_vet>/zalesak_converge (default false, read only when named): the Zalesak R of
-  // time2_face_fct and clean_wb_fct as the greatest fixed point of the monotone bound
-  // ZalesakBound, converged on each rank between R exchanges (rad_vet_zalesak.hpp):
-  // independent of ranks and layout, a few exchanges per limiter call
-  bool zl_conv = false;
-  Real zl_rounds[2] = {0.0, 0.0}, zl_halos[2] = {0.0, 0.0};
+  Real zl_rounds = 0.0, zl_halos = 0.0;
   // <rad_vet>/implicit_thin_switch (M1_THSW_*, rad_vet_implicit.hpp): a
   // dt-free thin/thick weight frozen per solve (formal-solution |H|/J, its non-locality
   // C1, the E^n Knudsen number); implicit_thin_corr adds the lagged formal-solution flux
@@ -1640,7 +1628,6 @@ class RadiationVet {
   // iw ends before the Krylov vectors)
   int Time2FctSlot(const int q) const;
   void Time2FctHalo(const int c);
-  template <class F> Real ZalesakConverge(const F &rf, const int q);   // zalesak_converge
   int CleanRingRstN() const;            // ... in the restart files (version 4)
   // (vet_rotate_avg_ema, production's EMA: a fill takes 2 sets; cln_rr = the EMA offsets
   // e, the aux J and D11 and the set count n, cln_rpd = the Delta, a_ch and the next

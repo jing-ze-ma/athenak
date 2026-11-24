@@ -432,6 +432,9 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/implicit_det_trace", "!"}, {"rad_vet/dbg_hydro_off", "!"},
     {"rad_vet/time2_k1_fct", "!"}, {"rad_vet/implicit_mr_every", "!"},
     {"rad_vet/coupling_split", "!"},
+    // (the Zalesak fixed-point and local-round variants, removed: only off)
+    {"rad_vet/zalesak_converge", "!"}, {"rad_vet/zalesak_local_rounds", "!"},
+    {"rad_vet/zalesak_colsweep", "!"},
     // (the explicit transport's sub-cycling, removed with it)
     {"rad_vet/cfl_rad", ""}, {"rad_vet/subcycle", ""},
     // (the vet_gd twin and its symmetric reference, removed, L4: with vet_gd on the twin
@@ -4877,20 +4880,17 @@ void RadiationVet::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
                       Kokkos::ALL, Kokkos::ALL), 1.0);
   }
   // (a cell's Q and P at the donors' R in slot c; a face's scale, its donor's R in ca)
-  // (s: the terms' magnitudes at R = 1, ZalesakBound's)
   auto qp = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, const int c,
-                          Real &q, Real &po, Real &s) {
+                          Real &q, Real &po) {
     const CleanArgs &x = *px;
     q = fp(m,3,k,j,i);
     po = 0.0;
-    s = fabs(q);
     for (int n = 0; n < nf; ++n) {
       const int dk = (n == 2), dj = (n == 1), di = (n == 0);
       const Real gl = x.h*CleanDivW(x, n, m, k, j, i, 0)*fp(m,n,k,j,i);   // (+ = in)
       const Real gh = x.h*CleanDivW(x, n, m, k, j, i, 1)*fp(m,n,k+dk,j+dj,i+di);
       if (gl > 0.0) {q += fabs(iw_(m,c,k-dk,j-dj,i-di))*gl;} else {po -= gl;}
       if (gh > 0.0) {po += gh;} else {q -= fabs(iw_(m,c,k+dk,j+dj,i+di))*gh;}
-      s += fabs(gl) + fabs(gh);
     }
   };
   auto sf = KOKKOS_LAMBDA(const int n, const int m, const int k, const int j,
@@ -4901,17 +4901,7 @@ void RadiationVet::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
   };
   const int n1 = ie - is + 1, nji = (je - js + 1)*n1, nkji = (ke - ks + 1)*nji;
   int nr = 0, sa = ca, sb = cb;
-  const Real zh = zl_halos[1];
-  if (zl_conv) {   // (rad_vet.hpp zalesak_converge)
-    const Real z0 = zl_sub[1];
-    if (ZalesakConverge(KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
-                                      const int c) {
-          Real q, po, s;
-          qp(m, k, j, i, c, q, po, s);
-          return ZalesakBound(q, po, s);
-        }, 1) > 0.0) {nr = static_cast<int>(zl_sub[1] - z0);}
-  }
-  for (; nr < (zl_conv ? 0 : 4096); ++nr) {   // (R only falls: until none newly limited)
+  for (; nr < 4096; ++nr) {   // (R only falls: until none newly limited)
     Real nv = 0.0;
     const bool all = (nr == 0);
     Kokkos::parallel_reduce("cln_wbfr", CleanRp256(DevExeSpace(), 0, (nmb1 + 1)*nkji),
@@ -4927,8 +4917,8 @@ void RadiationVet::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
       }
       Real r = rc;
       if (act) {
-        Real q, po, s;
-        qp(m, k, j, i, sa, q, po, s);
+        Real q, po;
+        qp(m, k, j, i, sa, q, po);
         const Real rq = (q > 0.0 && po > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/po) : 0.0;
         if (!(q - rc*po > 0.0) && rq < rc) {
           r = -rq;
@@ -4941,7 +4931,7 @@ void RadiationVet::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
     std::swap(sa, sb);
     if (!(CleanReduce(nv, false) > 0.0)) break;
   }
-  if (!zl_conv && nr == 4096) {
+  if (nr == 4096) {
     ZalesakCapWarn("clean_wb_fct", pmy_pack->pmesh->ncycle, t2_solve);
   }
   if (sa != ca) {   // (the last round's R, no sign bit set, ghosts too)
@@ -4956,8 +4946,8 @@ void RadiationVet::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
     const CleanArgs &x = *px;
     const int m = idx/nkji, k = ks + (idx%nkji)/nji, j = js + (idx%nji)/n1;
     const int i = is + idx%n1;
-    Real q, po, s;
-    qp(m, k, j, i, ca, q, po, s);
+    Real q, po;
+    qp(m, k, j, i, ca, q, po);
     const Real rc = iw_(m,ca,k,j,i);
     if (!(q - rc*po > 0.0)) a += 1.0;
     b += (1.0 - rc)*po*CleanVol(x, m, k, j, i);
@@ -4972,11 +4962,9 @@ void RadiationVet::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
   lv[0] = CleanReduce(lv[0], false);
   lv[1] = CleanReduce(lv[1], false);
   if (global_variable::my_rank == 0 && (cln_verbose > 0 || !std::isfinite(lv[1]))) {
-    const std::string xs = zl_conv ? " exchanges " +
-                           std::to_string(static_cast<int>(zl_halos[1] - zh)) : "";
-    std::printf("CLEAN %sWBFCT cycle %d t2s %d rounds %d left %.0f kept %.6e%s\n",
+    std::printf("CLEAN %sWBFCT cycle %d t2s %d rounds %d left %.0f kept %.6e\n",
                 std::isfinite(lv[1]) ? "" : "WARNING ", pmy_pack->pmesh->ncycle,
-                t2_solve, nr, lv[0], lv[1], xs.c_str());
+                t2_solve, nr, lv[0], lv[1]);
   }
   for (int n = 0; n < nf && pfo; ++n) {   // (the stored Phi: what moved E)
     CleanFor("cln_wbfs", nmb1, ks, ke+(n == 2), js, je+(n == 1), is, ie+(n == 0),

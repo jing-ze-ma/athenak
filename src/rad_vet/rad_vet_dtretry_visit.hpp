@@ -218,10 +218,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("gwd", gwd);
   v.view("fmm_t", fmm_t);
   v.value("zl_hskip", zl_hskip);
-  v.value("zl_local", zl_local);
-  v.value("zl_sub", zl_sub);
   v.value("zl_active", zl_active);
-  v.value("zl_conv", zl_conv);
   v.value("zl_rounds", zl_rounds);
   v.value("zl_halos", zl_halos);
   v.value("impl_thsw", impl_thsw);

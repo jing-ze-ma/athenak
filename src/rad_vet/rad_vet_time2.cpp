@@ -1327,30 +1327,10 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
   const bool zx2 = pmy_pack->pmesh->multi_d, zx3 = pmy_pack->pmesh->three_d;
   const bool zsk = zl_hskip;
   bool zfirst = true;
-  const int zlr = zl_local;   // (rad_vet.hpp zalesak_local_rounds)
   // zalesak_active: a round reads slot sa and writes sb, an R that fell with its sign
   // bit set (-0 for 0); the next round evaluates only the cells with such a face
   // neighbour (ghosts included: the exchange copies the sign), the others keep |R|
-  const bool zac = zl_active && !zl_conv;   // (rad_vet.hpp zalesak_active)
-  if (zl_conv) {   // (rad_vet.hpp zalesak_converge)
-    if (zlr > 0) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/zalesak_converge excludes zalesak_local_rounds"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    const Real z0 = zl_sub[0];
-    ncell = ZalesakConverge(KOKKOS_LAMBDA(const int m, const int k, const int j,
-                                          const int i, const int c) {
-      if (hoi && hm_(m,k,j,i) > 0.0) return 1.0;
-      Real w, po, pi, pl, dw;
-      bool lim;
-      cell(m, k, j, i, w, po, pi, pl, dw, lim, c);
-      const Real wf = eth*cvol(m,k,j,i)*un_(m,M1_E,k,j,i);
-      return ZalesakBound(w + po - pi + pl - wf, po, fabs(w) + po + 2.0*pi + wf);
-    }, 0);
-    if (ncell > 0.0) {nround = static_cast<int>(zl_sub[0] - z0);}
-  }
+  const bool zac = zl_active;   // (rad_vet.hpp zalesak_active)
   // (zalesak_active: the face ghosts of the slot read next, |R|, where no exchange
   // runs: no R near a MeshBlock face fell, so they are those of the other slot)
   auto fghost = [&](const int c, const int cf) {
@@ -1383,12 +1363,8 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
       iw_(m,c,k,j,i) = fabs(iw_(m,cf,k,j,i));
     });
   };
-  for (int r = 0; r < (zl_conv ? 0 : 4096); ++r) {   // until none newly limited
+  for (int r = 0; r < 4096; ++r) {   // until none newly limited
     Real nv[2] = {0.0, 0.0};
-    Real nl[2] = {0.0, 0.0};
-    for (int s = 0; s < (zlr > 0 ? zlr : 1); ++s) {
-    nv[0] = 0.0;
-    nv[1] = 0.0;
     // (zalesak_active: every cell in round 0)
     const bool zsel = zac && r > 0;
     const int s0 = sa, s1 = sb;
@@ -1429,18 +1405,6 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
                   Real &ab) {
       rnd(m, k, j, i, a, ab);
     }, Kokkos::Sum<Real>(nv[0]), Kokkos::Sum<Real>(nv[1]));
-    if (zlr > 0) {   // local sub-round: keep the changes, no MPI, ghosts held
-      if (!(nv[0] > 0.0)) {break;}
-      nl[0] += nv[0];
-      nl[1] += nv[1];
-      zl_sub[0] += 1.0;
-      par_for("vet_t2_ffct_cl", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        iw_(m,ca,k,j,i) = iw_(m,cb,k,j,i);
-      });
-    }
-    }   // zalesak_local_rounds sub-round loop (one pass when off)
-    if (zlr > 0) {nv[0] = nl[0]; nv[1] = nl[1];}
 #if MPI_PARALLEL_ENABLED
     MPI_Allreduce(MPI_IN_PLACE, nv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
@@ -1448,15 +1412,15 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
     if (!(nn > 0.0)) {break;}
     ncell += nn;
     nround = r + 1;
-    if (zlr == 0) std::swap(sa, sb);   // (the round's R is read next)
+    std::swap(sa, sb);   // (the round's R is read next)
     if (!zsk || zfirst || nv[1] > 0.0) {
       rhalo(sa);
-      if (!zac && zlr == 0) {   // (the other slot keeps the same ghosts)
+      if (!zac) {   // (the other slot keeps the same ghosts)
         Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, sb,
                           Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw,
                           Kokkos::ALL, sa, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
       }
-      zl_halos[0] += 1.0;
+      zl_halos += 1.0;
       zfirst = false;
     } else if (zac) {
       fghost(sa, sb);
@@ -1475,10 +1439,10 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
                       Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw, Kokkos::ALL, sa,
                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
-  if (!zl_conv && nround >= 4096) {
+  if (nround >= 4096) {
     ZalesakCapWarn("time2_face_fct", pmy_pack->pmesh->ncycle, t2_solve);
   }
-  zl_rounds[0] += static_cast<Real>(nround);
+  zl_rounds += static_cast<Real>(nround);
   t2_ffct_cells += ncell;
   t2_ffct_rmax = std::max(t2_ffct_rmax, static_cast<Real>(nround));
   if (nround == 0) {return;}   // nothing limited: t2inc untouched (bitwise)
@@ -2673,9 +2637,8 @@ void RadiationVet::Time2Report() {
               << t2_ffct_rmax << " withheld E x vol=" << t2_ffct_de << " left (Q<=0)="
               << t2_ffct_left << " emptied (E < " << t2_ffct_emin << " E^n) cells="
               << t2_ffct_nemp << " min E/E^n="
-              << t2_ffct_qmin << " (rank 0: rounds=" << zl_rounds[0] << " R exchanges="
-              << zl_halos[0];
-    if (zl_local > 0) {std::cout << " local sub-rounds=" << zl_sub[0];}
+              << t2_ffct_qmin << " (rank 0: rounds=" << zl_rounds << " R exchanges="
+              << zl_halos;
     std::cout << ")";
   }
   if (vet_col && t2_vcmode != 0) {

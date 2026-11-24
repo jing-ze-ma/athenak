@@ -599,23 +599,14 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
     }
     am_vec = am_cs && (named("hydro","am_vector") || named("mhd","am_vector"));
   }
-  // the Zalesak limiter of the hesdirk2 face fluxes: zalesak_active (default true on a
-  // fresh run) unless zalesak_local_rounds > 0 or zalesak_colsweep; zalesak_halo_skip
+  // the Zalesak limiter of the hesdirk2 face fluxes: zalesak_halo_skip, zalesak_active
+  // (default true on a fresh run)
   if (pin->DoesParameterExist("rad_vet","zalesak_halo_skip")) {
     zl_hskip = pin->GetBoolean("rad_vet","zalesak_halo_skip");
   }
-  if (pin->DoesParameterExist("rad_vet","zalesak_local_rounds")) {
-    zl_local = pin->GetInteger("rad_vet","zalesak_local_rounds");
-  }
   if (!global_variable::restart_run ||
       pin->DoesParameterExist("rad_vet","zalesak_active")) {
-    const bool zcs = pin->DoesParameterExist("rad_vet","zalesak_colsweep") &&
-                     pin->GetBoolean("rad_vet","zalesak_colsweep");
-    zl_active = pin->GetOrAddBoolean("rad_vet","zalesak_active",true) &&
-                (zl_local == 0) && !zcs;
-  }
-  if (pin->DoesParameterExist("rad_vet","zalesak_converge")) {
-    zl_conv = pin->GetBoolean("rad_vet","zalesak_converge");
+    zl_active = pin->GetOrAddBoolean("rad_vet","zalesak_active",true);
   }
   MemArenaInit(pin, nmb, M1_NIW, ncells3, ncells2, ncells1);
   if (impl_ctrelax > 0.0) {
