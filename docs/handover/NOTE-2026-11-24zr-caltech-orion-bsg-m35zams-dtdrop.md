@@ -98,3 +98,8 @@ c38780 dt_hyd 45 gasonly 35.04 dir 1 r 3.9242e+12 rho 6.152e-14 T 1.216e+15 v -9
   Your FS2 arm (floorcap_lz_spin on the Z3 state at c17560) held dt at 2.477 with the floor gas AT the cap (|v| = 3e7). So for M35ZAMS: floorcap_lz_spin would bring the binder back to "floor gas at the cap" (dt ~2.5, the dt_floor_courant item = USER decision).
   Without it, the spun-up floor layer binds dt at ~1.5-1.8. Not switched (no switch on dt alone).
 - Both runs keep hydro/dt_report=10 for now; I drop it at their next rst if it costs > 1 %.
+
+## m35zams_z3 (11-24 07:34): switched (spin)
+- pre-switch (log.1): 1.0096 s/cyc (c70240-70290), dt 1.612501e+00. Clean STOP: yes. Pre-switch rst kept as rst_keep/m35zams.00007.rst.pre-spin.
+- relaunch: `2026-11-24 07:32:59 chunk 2 STAR=m35zams_z3 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc3fcs_6f2973dc8 md5=7cd2856ec083818cc35742d6cd668550 DECK=/resnick/groups/carnegie_poc/jingze/prod_rc3_1124/decks/ti` + EX: time/cfl_number=0.3 hydro/fofc=true hydro/fofc_retest=true rad_vet/clean_stag_mg_levels=4 rad_vet/floorcap_lz=true rad_vet/floorcap_lz_spin=true rad_vet/floorcap_mesh_vol=true hydro/dt_report=10
+- echo: 'floorcap_lz_spin' in block 'rad_vet' is absent from the restart's inp;
