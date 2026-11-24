@@ -152,7 +152,6 @@ round-off change at the restart.
 |---|---|---|---|---|
 | `rad_m1/clean_verbose` | 0: the `CLEAN cycle` lines, `CLEAN WARNING` lines and event lines (`CLEAN WORST`, `GNSW`, `BICGSTAB`, `RETRY`, `KPOS` without a face slope); 1: also the per-solve diagnostics (`CLEAN MCAP`, `OLDVEC`, `FWB`, `FLIM`, `FCONE`, `LZ`/`LZB`, `WBFCT`, `KPOS`, `KREAL`, `XPAT`, the `XT` write-back closure, the ray cut). `CLEAN WARNING` lines always print. | 0 (read only when named) | all: `1` | `rad_m1/rad_m1.cpp` (constructor) |
 | `rad_m1/floorcap_report` | Print the cumulative floor-gas cap counters every N cycles. | 0 = never | all: `25` | `rad_m1/rad_m1.cpp` (constructor) |
-| `rad_m1/clean_nl_print` | Pass-by-pass solver diagnostics (debugging). | false | not named | `rad_m1/rad_m1.cpp` (constructor) |
 | `time/ndiag` | Print the cycle line every N cycles. | 1 | all: `50` | `driver/driver.cpp` |
 | `time/nan_check_cycles` | Check the state for NaN every N cycles and stop if found (0 = off). | 100 | all: `100` | `driver/driver.cpp` |
 
@@ -166,7 +165,7 @@ Scheme options pinned by the templates:
 
 - `clean_stag_upwind_central` (true), `clean_stag_central` (true): central advective flux within the TVD bound.
 - `clean_face_hctau` (true), `clean_face_jse` (true), `clean_face_opac` (`harmonic`): face values of the rays' flux, half ranges and opacity.
-- `clean_stag_thinf` (false), `clean_stag_flim` (false), `clean_consistency` (true): forms of the thin-limit correction and flux bound.
+- `clean_stag_thinf` (false), `clean_consistency` (true): forms of the thin-limit correction and flux bound.
 - `clean_stag_fwb` (true), `clean_stag_fcone` (true), `clean_stag_fwb_ring` (0) <!-- check at rebase: 1 on the rebase target -->: well-balanced face rows, cone limit |F| <= cE, ring projection.
 - `clean_stag_xdonor` (`lag`), `clean_stag_xsrc` (true), `clean_stag_xdonor_freeze` (4): donor form of the off-diagonal stress.
 - `clean_w_fse`, `clean_w_c0`, `clean_w_c1`: weight of the kinetic share.
@@ -184,7 +183,7 @@ Solver internals: `clean_conv` (`budget`), `clean_conv_max` (1e-5), `clean_conv_
 `implicit_predictor`, `implicit_predictor_tcap`, `implicit_resid_fatal`, `time/dt_retry_views`,
 `time/dt_retry_host`, `time/restart_refill_ghosts` (false: restarts are bitwise).
 
-Not recommended: `clean_pass_damp` (keep 0), `clean_stag_kpat`, `time2_k1_redist`,
+Not recommended: `clean_stag_kpat`, `time2_k1_redist`,
 `time2_k1_stiff` (keep 0).
 
 Named in the templates but without effect with them (fixed rays, spherical polar): the
