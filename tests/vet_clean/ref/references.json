@@ -184,5 +184,24 @@
    "worst_bitwise": true,
    "warnings": 0
   }
+ },
+ "ceiling_metric": {
+  "_about": "floor_from_ekin + vceil 0.5 vs no ceiling at t = 0, cell by cell (cs: metric |v| of the contravariant v^a): v_phi kept, |V| = max(vceil, |v_phi|) where capped, theta part 0, the rest scaled in [0, 1]",
+  "max": {
+   "sp_dvphi": 1e-13,
+   "sp_dcap": 1e-13,
+   "sp_vtheta": 1e-13,
+   "cs_dvphi": 1e-13,
+   "cs_dcap": 1e-13,
+   "cs_vtheta": 1e-13
+  },
+  "min": {
+   "sp_capped": 100,
+   "cs_capped": 1000
+  },
+  "equal": {
+   "sp_scale_ok": 1,
+   "cs_scale_ok": 1
+  }
  }
 }

@@ -2,6 +2,8 @@
 
 - read_bin(path): an AthenaK .bin dump as {variable: global array (nx3, nx2, nx1)} plus
   'time' and 'cycle' (single-level meshes; MeshBlocks placed by their logical location).
+- read_blocks(path): the same dump as a list of (extent, {variable: (n3, n2, n1)}) per
+  MeshBlock in file (gid) order (the cubed sphere: one panel after another).
 - read_hst(path): a .hst file as (labels, 2-D array).
 - make_deck(src, dst, overrides): copy an input deck, setting block/key = value pairs.
 - run(...): run the code in a directory, return (rc, wall seconds, log text).
@@ -53,6 +55,34 @@ def read_bin(path):
     out['time'] = float(par['time'])
     out['cycle'] = int(par['cycle'])
     out['_names'] = names
+    return out
+
+
+def read_blocks(path):
+    """Read one AthenaK binary dump as [(x1min, x1max, x2min, x2max, x3min, x3max),
+    {variable: (n3, n2, n1)}] per MeshBlock, in file order."""
+    out = []
+    with open(path, 'rb') as fp:
+        size = os.fstat(fp.fileno()).st_size
+        fp.readline()
+        npar = int(fp.readline().split(b'=')[-1])
+        par = dict([x.strip() for x in fp.readline().decode().split('=')]
+                   for _ in range(npar - 1))
+        lsz, vsz = int(par['size of location']), int(par['size of variable'])
+        fp.readline()
+        names = [v.decode() for v in fp.readline().split()[1:]]
+        fp.read(int(fp.readline().split(b'=')[-1]))
+        ldt, vdt = [np.float64 if z == 8 else np.float32 for z in (lsz, vsz)]
+        while fp.tell() < size:
+            ind = np.frombuffer(fp.read(24), dtype=np.int32).astype(np.int64)
+            fp.read(16)
+            ext = np.frombuffer(fp.read(6*lsz), dtype=ldt)
+            n1, n2, n3 = ind[1] - ind[0] + 1, ind[3] - ind[2] + 1, ind[5] - ind[4] + 1
+            if int(par.get('coordinate arrays', '0')) == 1:
+                fp.read((2*(n1 + n2 + n3) + 3)*lsz)
+            a = np.fromfile(fp, dtype=vdt, count=n1*n2*n3*len(names))
+            a = a.reshape(len(names), n3, n2, n1)
+            out.append((ext, {n: a[v] for v, n in enumerate(names)}))
     return out
 
 
