@@ -597,6 +597,7 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
     (pmy_pack->pmesh->pgen->user_srcs_func)(pmy_pack->pmesh, beta_dt);
   }
   eint_ledger::Mark(pmy_pack->pmesh, "usrc_rest");
+  if (use_dfl) DflMomentum();   // (after every momentum source of the stage)
 
   return TaskStatus::complete;
 }

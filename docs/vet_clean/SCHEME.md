@@ -125,6 +125,11 @@ which is in flux form.
 With `<hydro>/dfloor_flux_limit` the outflow of a nearly empty cell is scaled back so that its
 density cannot fall below the floor, and both neighbours see the same scaled flux; the density
 floor of the primitive-variable recovery stays as a backstop (counted in the event log). The
+held gas then also moves only as fast as its scaled flux: the cell's momentum, except its L_z
+part, is scaled by the same factor at fixed total energy (the kinetic energy becomes heat).
+Without this, gravity and pressure would keep accelerating gas whose work (carried by the mass
+flux under `etotgrav`) never arrives, until its kinetic energy exceeds its energy. The removed
+x1 momentum and the heat are printed at the end of the run. The
 open stellar boundaries remove mass by design, and the history records it.
 
 Test: `conservation_sp`, `conservation_cs` (dM/M <= 1e-13).

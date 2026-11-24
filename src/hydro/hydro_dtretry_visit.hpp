@@ -118,6 +118,7 @@ void hydro::Hydro::DtRetryVisit(V &v) {
   v.view("pfacewb.x3f", pfacewb.x3f);
   v.value("use_dfl", use_dfl);
   v.value("dfl_n", dfl_n);
+  v.value("dfl_dp", dfl_dp);
   v.view("dfl_th", dfl_th);
   v.view("dfl_thc", dfl_thc);
   v.view("dfl_sm", dfl_sm);
