@@ -94,8 +94,8 @@ Measured on one node of 4 A100-40GB (MPCDF Raven, `gcc/13 cuda/12.6 openmpi_gpu/
 
 | deck | wall time | per cycle | simulated time | output |
 |---|---|---|---|---|
-| sp | 13.9 min (832 s) | 0.21 s | 4000 cycles, 9.8 d (dt about 260 s) | 6 dumps of hydro_w + m1, 0.6 GB |
-| cs | 13.3 min (797 s) | 0.65 s | 1200 cycles, 13.9 d (dt 1000 s) | 6 dumps of hydro_w + m1, 1.9 GB |
+| sp | 13.9 min (832 s) | 0.21 s | 4000 cycles, 9.8 d (dt about 260 s) | 6 dumps of hydro_w + vet, 0.6 GB |
+| cs | 13.3 min (797 s) | 0.65 s | 1200 cycles, 13.9 d (dt 1000 s) | 6 dumps of hydro_w + vet, 1.9 GB |
 
 To make a run shorter or longer, change `time/nlim` (or give `time/nlim=N` on the command
 line). Dumps are written every 1000 cycles (sp) or 300 cycles (cs), set by `output2/dcycle`

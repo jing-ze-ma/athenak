@@ -10,7 +10,7 @@ path from download to a checked binary see [QUICKSTART.md](QUICKSTART.md).
 ```bash
 git clone <this repository> athenak
 cd athenak
-git checkout m1-clean-release
+git checkout vet-clean-release
 git submodule update --init kokkos       # Kokkos 4.6.2, pinned by the repository
 ```
 

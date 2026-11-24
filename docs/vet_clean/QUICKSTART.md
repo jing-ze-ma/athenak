@@ -26,7 +26,7 @@ Clone the repository, switch to the release branch, and fetch Kokkos (a git subm
 ```bash
 git clone <repo-url> athenak
 cd athenak
-git checkout m1-clean-release
+git checkout vet-clean-release
 git submodule update --init kokkos
 ```
 

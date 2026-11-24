@@ -171,7 +171,7 @@ floors created in the step. They are **not** in the history file.
 - Other terms not in the history, which show up in rE when they are non-zero: the kinetic
   energy the velocity ceiling removes (`vceil_de` in the event log), the kinetic energy change
   of `dfloor_keep_velocity` (`dfloor_ke`), unpaid floor energy (CLEAN WARNING), and energy
-  created by the radiation E floor (`energy created` in the `m1-positivity` line,
+  created by the radiation E floor (`energy created` in the `vet-positivity` line,
   `vet_pos_un` in the event log).
 - Known open item: once gas starts to fall in through the top boundary (Min_top != 0,
   M_hflx < 0), the outer boundary's removal of that inflow moves energy that E_hflx does not
@@ -262,7 +262,7 @@ block of `<rad_vet>`, `<time>` and `<hydro>` lines. The ones that matter for the
 | line | what it tells you |
 |---|---|
 | `<rad_vet> time_scheme=hesdirk2: stage steps=A backward-Euler steps=B stage fallbacks=C ...` | Steps taken with the two stages (A), with backward Euler (B; the first step, auto-BE steps), and the stage fallbacks (C; each one also printed a CLEAN WARNING). A large B or C means the run was often first order in time. The `face_fct` part gives the stage limiter's totals, including `left (Q<=0)` and `emptied` cells. |
-| `<rad_vet> m1-positivity: ... implicit_pos_gas=1 ... cell-solves=K energy moved rad->gas=X \| E floor raises cell-solves=K energy from gas=X energy created=Y ... taken from the column's radiation (implicit_pos_floor_cons)=Z \| hydro EOS floors energy created=W` | The positivity book-keeping of the clean write-back. **`energy created` (Y) should be 0**: a non-zero value is energy the E floor created (energy x volume). `energy from gas` and `taken from the column's radiation` are moves (conserved). The last field repeats the hydro floors' internal energy. |
+| `<rad_vet> vet-positivity: ... implicit_pos_gas=1 ... cell-solves=K energy moved rad->gas=X \| E floor raises cell-solves=K energy from gas=X energy created=Y ... taken from the column's radiation (implicit_pos_floor_cons)=Z \| hydro EOS floors energy created=W` | The positivity book-keeping of the clean write-back. **`energy created` (Y) should be 0**: a non-zero value is energy the E floor created (energy x volume). `energy from gas` and `taken from the column's radiation` are moves (conserved). The last field repeats the hydro floors' internal energy. |
 | `<hydro> EOS floors (all ranks, accepted steps, RK-weighted): mass created x vol=M energy created x vol=E \| FOFC first-order cell-stages=K` | The run total of the mass and internal energy the hydro floors created (cgs, since the start or restart). M is the density-floor mass of section 3 (its potential energy is not in E). |
 | `<time> dt_retry: N checkpoints (...), R retries, cap X` and `<time> dt_retry: K cycles took the backward-Euler redo` | How many cycles were retried, and the dt cap at the end. |
 | `<rad_vet> implicit energy solve: cells=... FAILURES=...` | The explicit-transport energy solve; not used by the clean scheme. |

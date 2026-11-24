@@ -8,7 +8,7 @@ the decks and the exact criteria).
 
 ## 1. The method in brief
 
-**Equations.** Two-moment (M1-type) grey radiation transport for the radiation energy
+**Equations.** Two-moment grey radiation transport for the radiation energy
 density $E$ and flux $\mathbf F$, in the mixed frame: lab-frame moments with
 comoving-frame opacities, keeping the $O(v/c)$ terms and the $O(\beta^2)$ terms that are
 leading order in dynamic diffusion (Krumholz et al. 2007; the β terms follow Ma et al. 2025,
@@ -195,7 +195,7 @@ conservation claim (the shell decks have closed walls that exert forces).
   negative is rejected and repeated (backward Euler, then a smaller dt), or the missing energy
   is taken from the radiation of the same cell (`implicit_pos_gas`, energy-conserving).
 
-All such events are counted in the end-of-run `m1-positivity` line. Test: every suite deck
+All such events are counted in the end-of-run `vet-positivity` line. Test: every suite deck
 runs with no floor raise, no energy created and no `CLEAN WARNING` (`floor_pay` raises the gas
 temperature on purpose, and pays it from the radiation).
 
