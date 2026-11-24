@@ -152,12 +152,21 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   // radiation enthalpy w_r = (E + P_dd)/c^2 in the inertia (Mihalas & Mihalas 1984, sect.
   // 101): c_eq^2 -> c_eq^2/(1 + w_r/rho), at most c^2/3 + c_g^2 where the radiation
   // dominates (a floored cell beside a bright field: 127 c without it, t9l62 IA9 6705)
-  const bool rss_ = rad_signal_speed, rsi_ = rss_inertia;
+  // rad_signal_speed_diff: the taper is the grid-scale TRAPPING criterion instead of the
+  // optical depth.  A radiation-pressure perturbation of wavenumber k = pi/h diffuses
+  // away at the rate c_hat k^2/(3 rho kappa_T) and the wave oscillates at c_eq k: it
+  // takes part in the compression only when diffusion is slower, tau_d c_eq/c_hat
+  // > 3/pi ~ 1 (Mihalas & Mihalas 1984, sect. 101), so the weight is
+  // 1 - exp(-tau_d c_eq,d/c_hat).  Cells with 1 < tau_d < c_hat/c_eq (a radiation-
+  // dominated convective zone) then keep about the gas speed, which bounds the speed
+  // of the radiatively damped wave from above; deep cells (tau_d c_eq/c_hat >> 1)
+  // keep c_eq.
+  const bool rss_ = rad_signal_speed, rsi_ = rss_inertia, rsd_ = rss_diff;
   DvceArray5D<Real> erad_, kopc_, tten_, vcel_;
   radm1::CleanGeo gn_;
   int rss_mode = 0;          // 0 isotropic E/3, 1 M1Chi, 2 tau_ten, 3 vet_sc, 4 vet full
   int rss_kind = 0;
-  Real rss_cl = 1.0;
+  Real rss_cl = 1.0, rss_ch = 1.0;
   if (rss_) {
     auto *prm = pmy_pack->pradm1;
     if (prm == nullptr) {
@@ -169,6 +178,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
     erad_ = prm->u0;
     kopc_ = prm->opac;
     rss_cl = prm->c_light;
+    rss_ch = prm->chat;
     rss_kind = prm->chi_kind;
     // the same selection decides what a restart file carries (RadiationM1::RssPrime)
     rss_mode = prm->RssMode();
@@ -330,7 +340,8 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
             }
             if (rsi_) ceq2 /= 1.0 + (er + pr)/(d*rss_cl*rss_cl);
             const Real dc2 = fmax(ceq2 - cg2, 0.0);
-            csd[a] = sqrt(cg2 + dc2*(1.0 - exp(-kt*h[a])));
+            const Real tw = rsd_ ? kt*h[a]*sqrt(ceq2)/rss_ch : kt*h[a];
+            csd[a] = sqrt(cg2 + dc2*(1.0 - exp(-tw)));
           }
           cs1 = csd[0]; cs2 = csd[1]; cs3 = csd[2];
         }
@@ -645,7 +656,8 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
               ceq2 = cs*cs + (4.0/3.0)*prr/d;
             }
             const Real dc2 = fmax(ceq2 - cs*cs, 0.0);
-            csd[a] = sqrt(cs*cs + dc2*(1.0 - exp(-kt*h[a])));
+            const Real tw = rsd_ ? kt*h[a]*sqrt(ceq2)/rss_ch : kt*h[a];
+            csd[a] = sqrt(cs*cs + dc2*(1.0 - exp(-tw)));
           }
         }
         const Real sc = cs_ ? 1.0/sncell_(m,k,j) : 1.0;

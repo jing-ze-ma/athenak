@@ -194,6 +194,9 @@ class Hydro {
   // <hydro>/rad_signal_speed_inertia (read only when named; default false): the
   // radiation enthalpy (E + P_dd)/c^2 joins rho as the inertia of that speed
   bool rss_inertia = false;
+  // <hydro>/rad_signal_speed_diff (read only when named; default false): the radiation
+  // term counts only where it is trapped on the grid scale, tau_d c_eq/c_hat > 1
+  bool rss_diff = false;
 
   // following used for FOFC
   DvceArray4D<bool> fofc;  // flag for each cell to indicate if FOFC is needed
