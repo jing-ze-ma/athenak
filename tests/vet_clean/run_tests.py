@@ -187,7 +187,9 @@ def t_layout_tile(c):
     walls need one MeshBlock along theta).  dfl: 1 vs 1 x 2 again with
     hydro/dfloor_flux_limit and dfloor just below the gas density (the outflow limiter
     acts in every cell; sdirk2's stage-2 donor across a MeshBlock face is a ghost), and
-    that run's energy and L_z drifts (am_budget)."""
+    that run's energy and L_z drifts (am_budget).  fofc: 1 vs 1 x 2 with hydro/fofc and
+    that dfloor (fo_fofc first-order cell-stages > 0), with its energy and L_z drifts
+    (dM_fofc is the density floor's own mass, reported)."""
     o = {'time/nlim': 8, 'mesh/nghost': 3, 'mesh/nx2': 16, 'mesh/nx3': 16,
          'mesh/layout_invariant_mode': 'tile', 'mesh/layout_tile': 8,
          'meshblock/nx2': 16, 'meshblock/nx3': 16}
@@ -205,6 +207,15 @@ def t_layout_tile(c):
     b = c.run('shell_sp.athinput', 'mb1x2_dfl', dict(o, **{'meshblock/nx3': 8}))
     out['maxdiff_dfl'] = vett.compare_dirs(a, b)[1]
     out.update({k + '_dfl': v for k, v in am_budget(b, 'sp').items() if k != 'dLz_gr'})
+    # (fofc: the same with hydro/fofc and that dfloor without the outflow limiter, so the
+    # trial state floors and FOFC replaces fluxes; its trial reads the u0 ghosts too)
+    o.update({'hydro/dfloor_flux_limit': 'false', 'hydro/fofc': 'true'})
+    a = c.run('shell_sp.athinput', 'mb1_fofc', dict(o))
+    b = c.run('shell_sp.athinput', 'mb1x2_fofc', dict(o, **{'meshblock/nx3': 8}))
+    out['maxdiff_fofc'] = vett.compare_dirs(a, b)[1]
+    out.update({k + '_fofc': v for k, v in am_budget(b, 'sp').items() if k != 'dLz_gr'})
+    lg = open(os.path.join(b, 'run.log')).read()
+    out['fo_fofc'] = float(re.findall(r'FOFC first-order cell-stages=(\S+)', lg)[-1])
     return out
 
 
