@@ -181,6 +181,24 @@ void GeneralHydFloorsPost(const EOS_Data &eos, const Real d, const Real di,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real EkinScaleTo()
+//! \brief floor_from_ekin: scales the momentum of a cell of kinetic energy e_k so that it
+//! becomes ekt, keeping the x3 part (L_z on spherical polar, keep3) whenever it fits in
+//! ekt; returns the new kinetic energy
+
+KOKKOS_INLINE_FUNCTION
+Real EkinScaleTo(const bool keep3, const Real di, const Real ekt, const Real e_k,
+                 HydCons1D &u, HydPrim1D &w) {
+  const Real ek3 = keep3 ? 0.5*di*SQR(u.mz) : 0.0;
+  const bool k3 = (ek3 <= ekt);
+  const Real fs = k3 ? sqrt(fmax(ekt - ek3, 0.0)/(e_k - ek3)) : sqrt(ekt/e_k);
+  const Real fz = (k3 && keep3) ? 1.0 : fs;
+  u.mx *= fs; u.my *= fs; u.mz *= fz;
+  w.vx *= fs; w.vy *= fs; w.vz *= fz;
+  return k3 ? ek3 + fs*fs*(e_k - ek3) : fs*fs*e_k;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void SingleC2P_GeneralHyd()
 //! \brief Converts a single state of conserved variables into primitive variables for
 //! non-relativistic hydrodynamics with a general EOS, and evaluates the derived
@@ -244,14 +262,16 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
     const Real vsq = SQR(w.vx) + SQR(w.vy) + SQR(w.vz);
     if (vsq > SQR(eos.vceil)) {
       vceil_test = true;
-      if (!eos.defer_cons_floors) {
+      if (!eos.defer_cons_floors && eos.ekin_heat) {   // (E fixed, x3 kept if it fits)
+        e_k = EkinScaleTo(eos.ekin_keep_x3, di, 0.5*w.d*SQR(eos.vceil), e_k, u, w);
+        vceil_used = true;
+        mom_scaled = true;
+      } else if (!eos.defer_cons_floors) {
         const Real fs = eos.vceil/sqrt(vsq);
         u.mx *= fs; u.my *= fs; u.mz *= fs;
         w.vx *= fs; w.vy *= fs; w.vz *= fs;
-        if (!eos.ekin_heat) {
-          u.e -= (1.0 - fs*fs)*e_k;
-          vceil_de += (1.0 - fs*fs)*e_k;
-        }
+        u.e -= (1.0 - fs*fs)*e_k;
+        vceil_de += (1.0 - fs*fs)*e_k;
         e_k *= fs*fs;
         vceil_used = true;
         mom_scaled = true;
@@ -265,11 +285,7 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
     const Real etf = eos.EnergyFromTemperature(w.d, eos.tfloor);
     const Real ek3 = eos.ekin_keep_x3 ? 0.5*di*SQR(u.mz) : 0.0;
     if (u.e - e_k < etf && u.e - ek3 >= etf && e_k > ek3) {
-      const Real fs = sqrt((u.e - etf - ek3)/(e_k - ek3));
-      const Real fz = eos.ekin_keep_x3 ? 1.0 : fs;
-      u.mx *= fs; u.my *= fs; u.mz *= fz;
-      w.vx *= fs; w.vy *= fs; w.vz *= fz;
-      e_k = ek3 + fs*fs*(e_k - ek3);
+      e_k = EkinScaleTo(eos.ekin_keep_x3, di, u.e - etf, e_k, u, w);
       mom_scaled = true;
     }
   }
