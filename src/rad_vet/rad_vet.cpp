@@ -440,6 +440,13 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_stag_fcone_gas: the gas takes the momentum fcone cuts at the face (momentum
     // and L_z exact; E pays the kinetic energy)
     cln_fcgas = cln_fcone && pin->GetOrAddBoolean("rad_vet","clean_stag_fcone_gas",false);
+    // clean_stag_fcone_lz (read only when named, default off): fcone takes a cell's
+    // excess from its faces without L_z lever arm first (x1; spherical polar also x2),
+    // cut and counted as now; a face with an arm (spherical polar x3, cubed sphere x2,
+    // x3) is scaled only where those faces alone exceed c E, and its cut is the gas's at
+    // the face (as fcone_gas), so that L_z is exact (cubed sphere: CleanCsTorque)
+    cln_fclz = cln_fcone && pin->DoesParameterExist("rad_vet","clean_stag_fcone_lz") &&
+               pin->GetBoolean("rad_vet","clean_stag_fcone_lz");
     // clean_stag_xdonor_freeze (0 off): from this pass on the xdonor cross flux C is held
     // (no donor/cap flip between passes)
     cln_xdfz = pin->GetOrAddInteger("rad_vet","clean_stag_xdonor_freeze",4);
