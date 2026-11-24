@@ -1,5 +1,5 @@
 # 3-D star test, cubed sphere: a small red-supergiant envelope (docs/vet_clean/STARS.md).
-# The production RSG deck (25 Msun, MESA profile) on the full sphere at N = 32 cells per
+# The production RSG deck (20.5 Msun, MESA profile) on the full sphere at N = 32 cells per
 # cube face (2.8 deg) instead of 128: 548 radial cells (stretched, 25-2530 Rsun; photosphere 834 Rsun; incl. the
 # atmosphere), 6 faces x 32 x 32, 24 MeshBlocks of 548 x 16 x 16 (tile 16).  Scheme keys:
 # the production runs of 2026-11-24 (commit 465aff485).  Fresh start from the 1-D profile.

@@ -8,7 +8,7 @@ run, and as starting points for your own star decks.
 | deck | mesh | star | cells | MeshBlocks | run |
 |---|---|---|---|---|---|
 | `inputs/rad_vet_clean/star3d_sp.athinput` | spherical-polar wedge: r 20-80 Rsun, theta pi/3..2pi/3, phi 0..pi/3 (periodic lateral walls) | blue supergiant envelope (the BSG production deck at 1/4 of its lateral resolution) | 256 x 64 x 64 = 1.0 M | 16 of 256 x 16 x 16 | 4000 cycles, 9.8 d |
-| `inputs/rad_vet_clean/star3d_cs.athinput` | cubed sphere, full sphere: r 25-2530 Rsun (stretched; photosphere at 834 Rsun), 6 faces x 32 x 32 | red supergiant (25 Msun, MESA profile; the RSG production deck at 1/4 of its lateral resolution) | 548 x 32 x 32 x 6 = 3.4 M | 24 of 548 x 16 x 16 | 1200 cycles, 13.9 d |
+| `inputs/rad_vet_clean/star3d_cs.athinput` | cubed sphere, full sphere: r 25-2530 Rsun (stretched; photosphere at 834 Rsun), 6 faces x 32 x 32 | red supergiant (20.5 Msun, MESA profile from a 22 Msun model; the RSG production deck at 1/4 of its lateral resolution) | 548 x 32 x 32 x 6 = 3.4 M | 24 of 548 x 16 x 16 | 1200 cycles, 13.9 d |
 
 Both decks start fresh from a 1-D profile. On the first cycle the code relaxes the
 radiation to its steady state in the initial gas (`clean_init = steady`). The cs deck sets
@@ -30,7 +30,7 @@ count gives the same answer, bit for bit.
 | `bsg_profile.txt` | 0.3 MB | sp | the MESA profile (r, T, rho, M, kappa, F_r) that `he_ic_profile` interpolates (the BSG reference initial state) |
 | `bsg_rosseland.txt` | 0.8 MB | sp | Rosseland-mean opacity incl. electron scattering, OPAL via MESA `kap` (GS98, X 0.70, Z 0.008), on log T x log rho |
 | `bsg_planck.txt` | 0.8 MB | sp | Planck-mean absorption opacity, TOPS above log T 4.2 and Ferguson et al. (2005) below (blend 4.0-4.2), same grid and composition |
-| `rsg_ic.txt` | 2.6 MB | cs | 1-D initial state of the 25 Msun RSG (MESA model, alpha_MLT 3), built for the code's EOS and opacities |
+| `rsg_ic.txt` | 2.6 MB | cs | 1-D initial state of the 20.5 Msun RSG (MESA model, 22 Msun initial, alpha_MLT 3), built for the code's EOS and opacities |
 | `rsg_rosseland.txt` | 0.8 MB | cs | Rosseland mean (OPAL / Ferguson via MESA `kap`, X 0.654, Z 0.0198) |
 | `rsg_planck.txt` | 0.8 MB | cs | Planck mean (TOPS / Ferguson, same composition) |
 
