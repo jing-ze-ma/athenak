@@ -429,7 +429,8 @@ bool RadiationVet::Time2Active() {
 //! time2_gtime_mom: momentum's f = 1/g in every cell; IEN takes its kinetic-energy
 //! change.  time2_gtime_slope: the flux state's gas eint is that of U* + d plus (1-g) dt
 //! minmod(K1, K2), K1 the last step's stage-2 slope of eint and K2 = d/(g dt), in the
-//! Patankar form where it is negative (positive); f is not used for the energy.
+//! Patankar form where it is negative (positive); f is not used for the energy.  Formed
+//! at which = 3, from the gas the caps and floors left (hs_ holds the raw increment).
 
 //----------------------------------------------------------------------------------------
 
@@ -491,6 +492,16 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
         e = 0.0;
       }
     }
+    if (which == 3 && gs) {
+      const Real c = csk ? ccl(m,k,j) : 0.0, r = u0_(m,IDN,k,j,i);
+      const Real k0 = CsKeMom(u0_(m,IM1,k,j,i), u0_(m,IM2,k,j,i), u0_(m,IM3,k,j,i), c)/r;
+      const Real k1 = CsKeMom(u0_(m,IM1,k,j,i) + hs_(m,IM1,k,j,i), u0_(m,IM2,k,j,i) +
+                              hs_(m,IM2,k,j,i), u0_(m,IM3,k,j,i) + hs_(m,IM3,k,j,i), c)/r;
+      const Real eb = u0_(m,IEN,k,j,i) - k0 - (etg ? r*phc(m,k,j,i) : 0.0);
+      xs = hs_(m,IEN,k,j,i);
+      hs_(m,IEN,k,j,i) = k1 - k0 + ((eb > 0.0) ? ((xs < 0.0) ? xs*eb/(eb - xs) : xs) :
+                                    0.0);
+    }
     for (int n = 0; n < nv; ++n) {
       const Real un = u1_(m,n,k,j,i), us = hs_(m,n,k,j,i), u = u0_(m,n,k,j,i);
       if (which == 1) {
@@ -504,18 +515,14 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
         u0_(m,n,k,j,i) = u + us;
       }
     }
-    if (which == 2 && gm) {  // IEN: kinetic energy of the momentum's f
+    if (which == 2 && gs) {hs_(m,IEN,k,j,i) = xs;}
+    if (which == 2 && gm && !gs) {  // IEN: kinetic energy of the momentum's f
       const Real c = csk ? ccl(m,k,j) : 0.0, r = u0_(m,IDN,k,j,i) + hs_(m,IDN,k,j,i);
       auto ke = [&](const Real s) {
         return CsKeMom(u0_(m,IM1,k,j,i) + s*hs_(m,IM1,k,j,i), u0_(m,IM2,k,j,i) +
                        s*hs_(m,IM2,k,j,i), u0_(m,IM3,k,j,i) + s*hs_(m,IM3,k,j,i), c)/r;
       };
       hs_(m,IEN,k,j,i) += ke(1.0) - ke(e*g/(1.0 - g));
-      if (gs) {
-        const Real eb = u0_(m,IEN,k,j,i) - ke(0.0) - (etg ? u0_(m,IDN,k,j,i)*phc(m,k,j,i)
-                                                          : 0.0);
-        if (eb > 0.0) {hs_(m,IEN,k,j,i) += (xs < 0.0) ? xs*eb/(eb - xs) : xs;}
-      }
     }
   });
   if (which != 3) return;
