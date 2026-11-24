@@ -15,3 +15,8 @@
 - FOFC line: `<hydro> EOS floors (all ranks, accepted steps, RK-weighted): mass created x vol=7.468168e+09 energy created x vol=4.538961e+36 | FOFC first-order cell-stages=2.943166e+09`
 - eos_efloor column (bsg3d.log): last 0 eos_efloor
 - floor_audit lines c770-790: 0 lines (in log.0.gz; first: ``)
+
+## bsg (11-24 07:38): switched (dfl)
+- pre-switch (log.3): 0.6422 s/cyc (c39350-39600), dt 4.981374e+01. Clean STOP: yes. Pre-switch rst kept as rst_keep/bsg3d.00029.rst.pre-dfl.
+- relaunch: `2026-11-24 07:37:23 chunk 4 STAR=bsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_dflfix_5b6159ad0 md5=9c59917d84f344a7094b5403d432dd5c DECK=/resnick/groups/carnegie_poc/jingze/prod_rc3_1124/decks/tile/IA123_bsg` + EX: time/cfl_number=0.3 hydro/fofc=true hydro/fofc_retest=true rad_vet/clean_stag_mg_levels=4 rad_vet/vet_gd_ls=0
+- echo: 
