@@ -66,8 +66,11 @@ TaskStatus RadiationVet::HydroConToPrim(Driver *pdrive, int stage) {
   }
   eint_ledger::Mark(pmy_pack->pmesh, "vet_post");
   // skip on a failed solve (dt_retry discards it; inf/NaN would poison the counters)
-  // compton: once per step, after its final solve (stage 2, or the backward Euler)
-  if (compton && !dtr_fail && t2_solve != M1_T2S_STAGE1) {Compton(pmy_pack->pmesh->dt);}
+  // compton: once per step, after its final solve (stage 2, or the backward Euler);
+  // not in clean_init = steady (its passes take clean_init_dtfac x dt)
+  if (compton && !dtr_fail && !cln_insteady && t2_solve != M1_T2S_STAGE1) {
+    Compton(pmy_pack->pmesh->dt);
+  }
   if (fcap_rho > 0.0 && !dtr_fail) {FloorGasCap();}
   FluidRefresh(pdrive);
   eint_ledger::Mark(pmy_pack->pmesh, "vet_c2p");

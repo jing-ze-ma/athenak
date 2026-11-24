@@ -429,7 +429,8 @@ def t_compton(c):
         for fm, fh in list(zip(vett.bins(d, 'vet'), vett.bins(d, 'hydro_w')))[1:]:
             m_, h_ = vett.read_bin(fm), vett.read_bin(fh)
             eg, er = h_['eint'].mean(), m_['vet_e'].mean()
-            err = max(err, abs(eg/ex[h_['cycle']] - 1.0))
+            if abs(h_['time'] - h_['cycle']*h) < 1.0e-6*h:   # (not tlim's short last step)
+                err = max(err, abs(eg/ex[h_['cycle']] - 1.0))
             dev = max(dev, abs(eg + er - tot)/tot)
             t, trr = eg*gm1/rho, (er/ar)**0.25
             over = max(over, (trr - t)/trr if cool else (t - trr)/trr)
