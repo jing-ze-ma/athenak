@@ -83,3 +83,18 @@ Done: BSGt C0 C0b C1 C1ra C1rb C2 M1 M2 M3 T1 T2 Z1f Z1t
 Idle: No node is waiting for work except 02-16/02-17 (kept for HG once hegiant.00205 lands) and nodes between arms; queue: S5, S4 (02-16/17), S3, S1 (02-11 after G1/G2), S2 + ZA/ZB/ZC (01-15 after C0t), RSG pair (01-17/02-03/02-09).
 
 Done: BSGt C0 C0b C1 C1ra C1rb C2 M1 M2 M3 T1 T2 Z1f Z1t 
+
+**11-24 13:57**
+
+| node | arm | cycle / target | s/cyc (last window) | ETA | CW / FATAL |
+|---|---|---|---|---|---|
+| 02-11 | t_S1off (running 1:10) | 48 / 300 | 0 | - | 0 / 0 |
+| 02-17 | **idle (4 H200)** | | | | |
+| 02-16 | **idle (4 H200)** | | | | |
+| 01-15 | t_ZA (running 1:30) | -21965 / 200 | 0.269 | 99 min | 0 / 0 |
+| 01-17 | **idle (4 H200)** | | | | |
+| 02-03 | **idle (4 H200)** | | | | |
+| 02-09 | **idle (4 H200)** | | | | |
+Idle: 02-09, 02-03, 01-17 (7333072) are kept for HG (P1/H0, H1, HT; 4 ranks each) once hegiant.00205 and its md5 arrive (copy ~75 MB/s, 33.6 of 68.2 GB at 13:56; about 8 min + md5); 02-11 waits for the S3/S2 verdict gate before S1; 01-15 runs ZA, ZB, ZC; S4 waits for S5's verdict.
+
+Done: BSGt C0 C0b C0t C1 C1ra C1rb C2 M1 M2 M3 T1 T2 Z1f Z1t 
