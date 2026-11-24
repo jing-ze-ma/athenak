@@ -512,8 +512,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // clean_stag_xdonor = lag (default) | p1 | off: the off-diagonal stress flux an
     // M-matrix term (CleanStagXDonor); clean_stag_xsrc (default on): also the face
-    // sources past their explicit share; clean_stag_xsweep (default off): a monotone
-    // line-Jacobi sweep after each linear solve
+    // sources past their explicit share
     const std::string xd = pin->GetOrAddString("rad_vet","clean_stag_xdonor",
                                                nw ? "lag" : "off");
     if (xd != "off" && xd != "p1" && xd != "lag") {
@@ -524,7 +523,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_xd = (xd != "off");
     cln_xlag = (xd == "lag");
     cln_xsrc = cln_xd && pin->GetOrAddBoolean("rad_vet","clean_stag_xsrc",nw);
-    cln_xsw = cln_xd && stag("clean_stag_xsweep", false);
     // clean_stag_eicarry (default off): the stage start's gas eint < 0 enters the gas row
     // as is, paid by its implicit exchange, not taken as 0 (CleanOldVector)
     cln_eicry = stag("clean_stag_eicarry", false);
@@ -583,7 +581,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
         pin->SetReal("rad_vet", key, 0.0);
       }
     }
-    cln_xpat = stag("clean_stag_xpat", false);
     // clean_xt_cons (default off): the first iterate's gas T with A's G = 1 - beta^2/2,
     // and after the first right-hand side T from the pass's gas row (its G and beta
     // terms: one Newton update at X = E_k), so the first pass's A is the gas row's;
@@ -606,9 +603,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_xte = (xe == "cons") ? 1 : ((xe == "x2") ? 2 : 0);
       if (cln_xte > 0) cln_xtcons = true;
     }
-    if (cln_ucp && (cln_xpat || cln_xte != 1)) {   // (CLW_PD: the work's q)
+    if (cln_ucp && cln_xte != 1) {   // (CLW_PD: the work's q)
       std::cout << "### FATAL ERROR <rad_vet>/clean_stag_central needs clean_xt_exact = "
-                << "cons, without clean_stag_xpat" << std::endl;
+                << "cons" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     cln_xtnorm = stag("clean_xt_norm", false) || cln_xte == 2;

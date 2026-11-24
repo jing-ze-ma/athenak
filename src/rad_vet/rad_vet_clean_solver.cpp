@@ -105,7 +105,7 @@ CleanArgs RadiationVet::CleanMakeArgs() {
   x.fre = cln_freal;
   x.fdg = cln_fdg;
   x.xq = cln_xd_on ? cln_xqs : -1;
-  x.pd = cln_ucp || (cln_xpat && cln_wo_nc > CLW_PD - CLW_NS);
+  x.pd = cln_ucp;
   x.xlag = cln_xlag;
   x.xsrc = cln_xsrc;
   x.drag = cln_vimp && cln_feedback;
@@ -1494,7 +1494,7 @@ void RadiationVet::CleanPreconditionerSetup() {
     CleanFaceWeights(x, 0, m, k, j, i+1, al_p, ar_p);
     CleanFaceWeights(x, 0, m, k, j, i, al_m, ar_m);
     const Real qr = x.feedback ? x.w(m,CLW_RY,k,j,i) : 1.0;   // (1 - r)
-    const Real pd = x.pd ? x.w(m,CLW_PD,k,j,i) : 0.0;   // (kpos / xpat)
+    const Real pd = x.pd ? x.w(m,CLW_PD,k,j,i) : 0.0;   // (clean_stag_central)
     Real a0 = 1.0 + x.h*x.c*op(m,M1_OP_E,k,j,i)*qr + pd + x.h*x.idx[0]*(al_p - ar_m);
     x.w(m,CLW_AM,k,j,i) = -x.h*x.idx[0]*al_m;
     x.w(m,CLW_AP,k,j,i) = x.h*x.idx[0]*ar_p;

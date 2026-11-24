@@ -466,7 +466,8 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/vet_gd_band_ring_inward", "!"},
     // (the staggered stage increment's and cross flux's study forms, removed)
     {"rad_vet/clean_stag_kpos", "!"}, {"rad_vet/clean_stag_kpat", "=false"},
-    {"rad_vet/clean_stag_kreal", "!"},
+    {"rad_vet/clean_stag_kreal", "!"}, {"rad_vet/clean_stag_xsweep", "!"},
+    {"rad_vet/clean_stag_xpat", "!"},
     // (removed in phase B, named by production decks or restart files: the old solve's
     // seam clamp, the pass print, the fixed set's band reach (the bound's band covers
     // it); the halo depth cap and the ray cut only at their kept values)
@@ -551,7 +552,7 @@ void RadiationVet::CleanInit() {
   if (!marena_on || cln_closit || cln_extrap > 0) {
     Kokkos::realloc(cln_w.s, nmb, CLW_NS, n3, n2, n1);
   }
-  const int nwo = (cln_xte > 0) ? CLW_NX : (cln_xpat ? CLW_NK : CLW_N);
+  const int nwo = (cln_xte > 0) ? CLW_NX : CLW_N;
   // (mem_arena, staggered: made at the first solve, over the intensities, CleanWoBind)
   cln_wo_nc = nwo - CLW_NS;
   cln_w.o = DvceArray5D<Real>();
@@ -568,10 +569,6 @@ void RadiationVet::CleanInit() {
   cln_xqs = cln_xd ? nfc + (cln_fdg >= 0) : -1;   // (clean_stag_xdonor's q)
   int nfx = nfc + (cln_fdg >= 0) + (cln_xd ? 5 : 0);
   cln_fwbs = cln_fwbst ? nfx++ : -1;
-  if (cln_xpat || cln_ucp) {
-    Kokkos::realloc(cln_kcnt, 2);
-    Kokkos::deep_copy(cln_kcnt, 0.0);
-  }
   Kokkos::realloc(cln_fc1, nmb, nfx, n3, n2, n1);
   Kokkos::realloc(cln_fc2, nmb, nfx, n3, n2, n1);
   Kokkos::realloc(cln_fc3, nmb, nfx, n3, n2, n1);
@@ -1304,7 +1301,6 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
       nit = CleanBiCGStab();
       if (cnext) cln_ewr = -1.0;
       if (fpc) RstFingerprint(("cln_pass" + std::to_string(inl) + "_post").c_str());
-      if (cln_xsw && nit >= 0) CleanStagXSweep();
       nit_sum += std::abs(nit);
       ++nsolve;
       cln_nsolve += 1.0;
@@ -1378,8 +1374,6 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
       dv0 = dv;
     }
     if (iterate) CleanCopyIterate();
-    // (clean_stag_xpat: the counts of the passes)
-    if (cln_xpat) CleanStagKEnd();
     // (R1, R2 of the solution, counted)
     CleanStagRealizable();
     nfirst = {cln_nr1, cln_nr2};
@@ -1799,56 +1793,7 @@ void RadiationVet::CleanStagXDonor(const bool first, const bool lat, const bool 
 
 #endif  // M1_TU_PART(0)
 
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanStagKEnd
-//! \brief clean_stag_xpat after the passes: the counts of the solve, exchange rows in
-//! Patankar form (last pass; sum over passes)
-
 #if M1_TU_PART(1)
-void RadiationVet::CleanStagKEnd() {
-  auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_kcnt);
-  Real v[2] = {h(0), h(1)};
-#if MPI_PARALLEL_ENABLED
-  MPI_Allreduce(MPI_IN_PLACE, v, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-#endif
-  if (global_variable::my_rank == 0 && cln_verbose > 0 && v[1] > 0.0) {
-    std::printf("CLEAN XPAT cycle %d t2s %d end: rows %.0f (sum %.0f)\n",
-                pmy_pack->pmesh->ncycle, t2_solve, v[0], v[1]);
-  }
-  Kokkos::deep_copy(cln_kcnt, 0.0);
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanStagXSweep
-//! \brief clean_stag_xsweep: one line-Jacobi sweep from the linear solve's X,
-//!   X = X+ + L^{-1} (B - A X+),  X+ = max(X, 0),
-//! L the x1-line tridiagonal part of A with A's diagonal (CleanPreconditionerSetup).  A
-//! an M-matrix (clean_stag_xdonor), A = L - N is a regular splitting (L^{-1} >= 0,
-//! N >= 0), so X = L^{-1} (B + N X+) >= 0 where B >= 0, and the sweep contracts the
-//! error of the solution.
-
-void RadiationVet::CleanStagXSweep() {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
-  const int nmb1 = pmy_pack->nmb_thispack - 1;
-  auto w = cln_w;
-  par_for("cln_xsw0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    w(m,CLW_V,k,j,i) = fmax(w(m,CLW_X,k,j,i), 0.0);
-  });
-  CleanApply(CLW_V, CLW_S);
-  par_for("cln_xsw1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    w(m,CLW_R,k,j,i) = w(m,CLW_B,k,j,i) - w(m,CLW_S,k,j,i);
-  });
-  CleanStagLineSolve(CleanStagLevel(0), CLW_R, CLW_Z, -1);
-  par_for("cln_xsw2", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    w(m,CLW_X,k,j,i) = w(m,CLW_V,k,j,i) + w(m,CLW_Z,k,j,i);
-  });
-}
-
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanWorstCell
 //! \brief CLEAN WORST (diagnostic) of a backward-Euler solve that did not converge: its
@@ -2173,8 +2118,7 @@ void RadiationVet::CleanRightHandSide(const bool beta, const bool lat) {
       });
     });
   }
-  // (clean_stag_kpos / xpat: the rows' Patankar diagonal CLW_PD; counts of this pass)
-  const bool pdo = x.pd, xpd = cln_xpat;
+  const bool pdo = x.pd;   // (clean_stag_central: the rows' diagonal CLW_PD)
   const bool xte = (cln_xte > 0) && x.feedback;   // (clean_xt_exact: CLW_XA, CLW_XW)
   const bool gpic = cln_gpic;   // (clean_gas_newton_switch)
   // (clean_gas_secant: CLW_RR holds the last pass's T)
@@ -2182,8 +2126,6 @@ void RadiationVet::CleanRightHandSide(const bool beta, const bool lat) {
                    ((cln_gsec == 2 || cln_gsec == 4) && t2_solve == M1_T2S_STAGE2);
   const bool gmx = cln_gsec >= 3;   // (max: the chord only where it is the steeper)
   const Real eps_ = std::numeric_limits<Real>::epsilon();
-  auto kc = cln_kcnt;
-  if (pdo) Kokkos::deep_copy(Kokkos::subview(kc, 0), 0.0);
   CleanParForLb<3>("cln_rhs", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px, &xh = *pxh;   // (in device memory: no per-thread copy)
@@ -2362,25 +2304,7 @@ void RadiationVet::CleanRightHandSide(const bool beta, const bool lat) {
         - rr*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0) - work - sdv + sb + gres + hes;
     // (clean_stag_sbimp: (1 - r) sb(E) in the operator, Newton form)
     if (x.sbi) x.w(m,CLW_B,k,j,i) -= (1.0 - rr)*CleanStagBetaE(xh, CLW_EK, m, k, j, i);
-    // (clean_stag_xpat: the exchange's removal R = r hcke E_k explicit while it leaves B
-    // >= th E_old (th = CLN_KPOS_TH), past that, R - (B0 - th E_old) (B0 = B + R) on the
-    // diagonal as its ratio to E_k: B >= min(B0, th E_old) >= 0 where B0 >= 0;
-    // continuous; the same fixed point)
-    if (pdo) {
-      Real pd = 0.0;
-      const Real rx = rr*hcke*fmax(x.w(m,CLW_EK,k,j,i), 0.0);
-      if (xpd && !eqr && rx > 0.0) {
-        const Real b0 = x.w(m,CLW_B,k,j,i) + rx;
-        const Real ex = fmax(b0 - CLN_KPOS_TH*fmax(x.w(m,CLW_EO,k,j,i), 0.0), 0.0);
-        if (rx > ex) {
-          pd += rr*hcke*(1.0 - ex/rx);
-          x.w(m,CLW_B,k,j,i) = b0 - ex;
-          Kokkos::atomic_add(&kc(0), 1.0);
-          Kokkos::atomic_add(&kc(1), 1.0);
-        }
-      }
-      x.w(m,CLW_PD,k,j,i) = pd + wq;
-    }
+    if (pdo) x.w(m,CLW_PD,k,j,i) = wq;
     // (clean_xt_exact: the row's exchange as linearised, B less its rest, and its work)
     if (xte) {
       x.w(m,CLW_XA,k,j,i) = eqr ? 0.0 : x.w(m,CLW_B,k,j,i) - (x.w(m,CLW_EO,k,j,i) - work
@@ -2480,7 +2404,7 @@ Real RadiationVet::CleanNewtonUpdate() {
 
   // (clean_xt_exact x2: T from the local 2x2 of the E and gas rows, the E row's rest
   // S = X diag - XA fixed)
-  const bool x2 = (cln_xte == 2) && cln_feedback, pdx = x2 && cln_xpat;
+  const bool x2 = (cln_xte == 2) && cln_feedback;
   Real change = 0.0, femax = 0.0, ermax = 0.0;
   // (CUDA: 4 blocks of 256 per SM, A100 R136 -1.5 ms/cycle; the reduction keeps its
   // blocks and grid: bitwise)
@@ -2509,7 +2433,7 @@ Real RadiationVet::CleanNewtonUpdate() {
     const Real hcke = hc*op(m,M1_OP_E,k,j,i);
     Real t;
     if (x2) {
-      const Real dg = 1.0 + hcke*w(m,CLW_RY,k,j,i) + (pdx ? w(m,CLW_PD,k,j,i) : 0.0);
+      const Real dg = 1.0 + hcke*w(m,CLW_RY,k,j,i);
       const Real sr = x*dg - w(m,CLW_XA,k,j,i);
       t = CleanExchangeTemperature(eos, uh(m,IDN,k,j,i),
               hc*op(m,M1_OP_P,k,j,i)*g*arad_/(1.0 + hcke),

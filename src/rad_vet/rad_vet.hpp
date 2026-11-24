@@ -1789,18 +1789,13 @@ class RadiationVet {
   bool cln_linpass = false;   // clean_lin_pass: a pass goes on past a failed linear solve
   void CleanStagXDonor(const bool first, const bool lat = true, const bool hold = false);
   void CleanWorstCell(const Real dnl, const Real dnl0);
-  void CleanStagXSweep();
   bool cln_srccvx = false;      // clean_source_convex: vet_scatter S between J and B
   bool cln_freal = false;       // clean_stag_freal: realisable sb, restart faces
   // clean_stag_xdonor (staggered, default off): the cross flux of the iterate as a
   // donor-cell coefficient of its face (CleanStagXDonor); its face slot, set in a solve
   bool cln_xd = false, cln_xd_on = false, cln_xlag = false, cln_xsrc = false;
-  bool cln_xsw = false;
   int cln_xqs = -1;   // (5 slots: qL >= 0, qR <= 0, the lagged explicit flux, C(E_k),
                     //  C's last change)
-  // clean_stag_xpat (default off): the exchange's removal -r hcke E_k past its share of
-  // the row in Patankar form (CleanRightHandSide)
-  bool cln_xpat = false;
   bool cln_eicry = false;   // clean_stag_eicarry (CleanOldVector)
   bool cln_colf = false;    // (clean_stag_colflux: column moves in the stored Phi)
   int cln_lza = 0;          // clean_cs_lz_abs
@@ -1840,8 +1835,6 @@ class RadiationVet {
   Real cln_stfac = 0.5;   // clean_stall_fac
   bool cln_gpic = false;   // (a stalled solve's passes without the gas Newton slope)
   Real cln_ngnsw = 0.0;   // (solves switched so far)
-  DvceArray1D<Real> cln_kcnt;   // (xpat rows: the last pass; their sum)
-  void CleanStagKEnd();
   int cln_fdg = -1;             // staggered bracket: face slot of its lagged flux DG
   bool cln_opt = false;         // clean_stag_opac_update: opacities at the iterate's T
   bool cln_consist = false;     // clean_consistency: bracket C = F_ray - f(Ur), cell

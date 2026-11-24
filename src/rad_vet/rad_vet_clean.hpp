@@ -219,7 +219,6 @@ constexpr int CLF_DS = CLF_N + 7;   // clean_stag_fkin: d of the stage-loop star
 constexpr int CLF_DB = CLF_N + 8;   // clean_stag_vimp: drag share b = beta/(1 + beta) and
 constexpr int CLF_DQ = CLF_N + 9;   //   the face momentum Q = G - c^2 dm_f of the iterate
 constexpr int CLF_KD = CLF_N + 10;  // clean_stag_fkin: the slopes K1, K2 of d (2)
-constexpr Real CLN_KPOS_TH = 0.1;   // clean_stag_kpos: E_old at least this share of E_s
 constexpr Real CLN_MEMUP = 1.0/6.0;  // clean_stag_gflux: a memory outflow above this
                                      // share of the donor's E_old goes upwind
 
@@ -268,9 +267,8 @@ constexpr int CLW_SG = 50;   //   and the gas rows (their scales), the weighted 
 constexpr int CLW_BW = 51;   //   preconditioner input (CleanBiCGStab)
 constexpr int CLW_PW = 52;
 constexpr int CLW_N = 53;
-constexpr int CLW_PD = 55;   // staggered clean_stag_xpat / central: the rows' Patankar
-                             //   diagonal (53, 54 unused)
-constexpr int CLW_NK = 56;   //   (allocated only with clean_stag_xpat)
+constexpr int CLW_PD = 55;   // staggered clean_stag_central: the rows' diagonal (53, 54
+                             //   unused)
 constexpr int CLW_XA = 56;   // staggered clean_xt_exact: B less its rest (the row's
 constexpr int CLW_XW = 57;   //   exchange as linearised), the row's work W
 constexpr int CLW_NX = 58;   //   (allocated only with clean_xt_exact)
@@ -311,7 +309,7 @@ struct CleanArgs {
   int xq;                      // staggered, clean_stag_xdonor: face slots qL, qR of the
                                // lagged fluxes' donor part, their explicit part, C(E_k)
                                // (-1: the central cross flux)
-  bool pd;                     // staggered, central / xpat: the rows' diagonal CLW_PD
+  bool pd;                     // staggered, clean_stag_central: the rows' diagonal CLW_PD
   bool xlag, xsrc;             //   lag: explicit up to the donor's share; xsrc: the
                                //   face sources too
   bool mcl;                    // staggered: a face's momentum term at most the force of
