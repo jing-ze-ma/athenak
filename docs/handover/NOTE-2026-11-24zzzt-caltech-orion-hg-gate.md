@@ -112,3 +112,24 @@ hegiant.m1.02296.bin r/R 1.5-2.0 d 0.00-0.02: 0.6107 (N 3048) d 0.02-0.05: 0.612
 - The scored files are hegiant.m1.02296.bin of H0 and HT. They **are the +6 dumps**: seam.sh only took files whose header says cycle = 794790 (= 794784 + 6), and 02296 is the first m1 dump of the run (written 14:16:21 for H0, against 14:18 for the end). The line 'cycle 794835' in the first listing belongs to hegiant.m1_vet.00154.bin (output6, the end-of-run final output), which was not scored. So the label stands: +6. The other dumps (and all bins) were deleted after the scoring, as you allowed; no second scoring is possible.
 - **Corrected label, HT (thinf=true): NOT harmless on HG**: panel edge d < 0.02 0.0027 (1.1-1.5 R) and 0.0079 (1.5-2 R) against 0.0000 / 0.0011 in H0; L_top up to 0.62 %; ef<=0 in one cell; max|ef/es-1| 78.2 (H0 0.30).
 - floor_pay columns follow in the H0F / H1F post (floor_pay sums of the old arms are yours: H0 4.1e31, H1 2.14e33, HT 9.1e31 erg).
+
+## H0F / H1F (fixed binary sdorder2 09d1e4df4), 11-24 14:46
+- Build: BUILD_OK md5=b8b0d79c45351fecfd04cee19c996605 prov=09d1e4df4486ded370dc4959dfd6b69e40258e8f; GATE PASS: athena_sdorder2_09d1e4df4 md5 b8b0d79c node hpc-sm-02-03 pass1=3.686e-11 end: Terminating on cycle limit; own dir wt_orion1121/sdo2/build_sdo2.
+- H0F: 2026-11-24 14:42:15 rc=0 (srun) ended: Terminating on cycle limit wall=221 s CW 0 FATAL 0 inf 0 DT_RETRY 0 fallback 0; peak GPU memory MiB over the whole arm 75919; last log line: `<rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 1.843740e+02 | failed stage at`
+- H1F: 2026-11-24 14:46:01 rc=0 (srun) ended: Terminating on cycle limit wall=226 s CW 0 FATAL 0 inf 0 DT_RETRY 0 fallback 0; peak GPU memory MiB over the whole arm 76011; last log line: `<rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 1.855392e+02 | failed stage at`
+| arm | floor_pay sum (FALLBACK lines) | floor_pay cumulative (audit) | rows | dt min/median(15-51)/max | s/cyc | s per sim s | CW/FATAL/inf/DT_RETRY | fallbacks/BE/retries/lines | SDO lines, K1K2<0 mean share, max ratio, cells >0.1, >1, ef<=0 | L_top/L_in start..end |
+|---|---|---|---|---|---|---|---|---|---|---|
+| H0F | 4.055e+31 | 4.036e+31 | 51 | 90.00 / 90.00 / 90.00 | 3.634 | 0.0404 | 0 / 0 / 0 / 0 | 0 / 0 / 0 / 0 | 51, 0.3730, 1.472e-01, 2, 0, 0 | 0.9628 .. 0.9777 |
+| H1F | 2.138e+33 | 2.124e+33 | 51 | 90.00 / 90.00 / 90.00 | 3.659 | 0.0407 | 0 / 0 / 0 / 0 | 0 / 0 / 0 / 0 | 51, 0.3728, 2.291e+00, 342270, 186, 0 | 0.9628 .. 0.9775 |
+
+H1F vs H0F (reference H0F), interpolated to H0F times:
+| cycle +n | t [s] | dt H0F | dt H1F | L_top rel | L_mid rel | L_int rel | L_bot rel |
+|---|---|---|---|---|---|---|---|---|---|
+| 5 | 6.6096e+07 | 90.00 | 90.00 | -3.056e-07 | -1.304e-05 | 9.567e-06 | 1.914e-05 |
+| 10 | 6.6097e+07 | 90.00 | 90.00 | -6.877e-06 | 1.089e-04 | -2.492e-04 | 4.259e-05 |
+| 20 | 6.6098e+07 | 90.00 | 90.00 | 7.489e-05 | 6.086e-04 | -3.504e-05 | 2.479e-05 |
+| 51 | 6.6101e+07 | 90.00 | 90.00 | -2.094e-04 | 6.002e-04 | 7.593e-04 | -3.610e-05 |
+max |rel| over the run: L_top 5.133e-04 L_mid 1.050e-03 L_int 1.576e-03 L_bot 8.316e-05
+
+**FAIL: floor_pay 2.138e+33 > 1.2 x 4.055e+31 (ratio 52.73)** (zzzr rules; H1 vs old O30 not tested here: needs O30.hst)
+H0h needed (L_top diff 0.9-2 %): no
