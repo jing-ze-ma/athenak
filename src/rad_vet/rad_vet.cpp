@@ -1684,6 +1684,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // the cubed sphere with clean_rays = sc: vet_gd's own sweep (intensities to cln_fvi)
     cln_cssc = pmy_pack->pmesh->use_cubed_sphere && vgd_on;
+    // (vet_rotate_avg_ema_wb: the ring carries the cells' half ranges, CLN_HO, so that a
+    // set change keeps them in a static state, as the moments)
+    cln_rfh = cln_cssc && vra_ema_wb;
     // clean_w_face_min: false only
     if (pin->GetOrAddBoolean("rad_vet","clean_w_face_min",false)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -1691,13 +1694,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "(only false)"
                 << std::endl;
       std::exit(EXIT_FAILURE);
-    }
-    // vet_rotate_avg_ema_wb keeps the ring's closure of a static state, but the cs face
-    // half ranges (cln_fh) are the two swept sets'
-    if (cln_cssc && vra_ema_wb && global_variable::my_rank == 0) {
-      std::cout << "### NOTE <rad_vet>/vet_rotate_avg_ema_wb on the cubed sphere with "
-                << "clean_rays = sc: the face half ranges follow the two swept sets, so "
-                << "a static state is not kept to round-off" << std::endl;
     }
     // clean_rot_ring unnamed: live where the vet_gd rays rotate in time with a cross-fade
     // (decided before a restart file's channels are counted)

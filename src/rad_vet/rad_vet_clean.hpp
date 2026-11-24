@@ -152,10 +152,15 @@ constexpr int CLN_FH = 29;   // cubed sphere: flux through the high x2, x3 face 
 constexpr int CLN_F1 = 37;   // rays' flux through an x1 boundary face
 constexpr int CLN_KP = 41;   // k+^d_b = K+^d_bd/J (stress of mu_d > 0), slot 3 d + b
 constexpr int CLN_N = 50;
+// vet_rotate_avg_ema_wb on the cubed sphere (sc rays): in place of k+ (not held there)
+// each cell's half ranges about its faces' normals, h+ out of its high faces (3), h- of
+// its low ones (3) (CleanCellHalf), so that the ring carries them as cell moments
+constexpr int CLN_HO = CLN_KP;
+constexpr int CLN_NHO = CLN_HO + 6;
 
 // the slots of cln_s
-inline int CleanNs(const bool cub) {
-  return cub ? CLN_F1 : CLN_FH;
+inline int CleanNs(const bool cub, const bool ho = false) {
+  return cub ? (ho ? CLN_NHO : CLN_F1) : CLN_FH;
 }
 
 // cell moments (D, h+-, C1, J, k+); the others are face sums

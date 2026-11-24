@@ -154,12 +154,14 @@
  },
  "wb_sp": {
   "max": {
-   "vmax_over_cs": 1e-08
+   "vmax_over_cs": 1e-08,
+   "vmax_over_cs_rot": 1e-08
   }
  },
  "wb_cs": {
   "max": {
-   "vmax_over_cs": 1e-08
+   "vmax_over_cs": 1e-08,
+   "vmax_over_cs_rot": 1e-08
   }
  },
  "momentum_box": {

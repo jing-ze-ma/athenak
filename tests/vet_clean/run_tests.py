@@ -400,16 +400,33 @@ def t_thermal_eq(c):
 # ---------------------------------------------------------------------------------------
 # well-balancing: a radiative hydrostatic envelope stays at rest
 
+# the rotating-set arm: the set turns every dt_rot (sp: R136's GL 11 x 12 about z; cs:
+# RSG's GL 10 x 12 about a 3-D axis), the fresh default EMA ring with the cross-fade, and
+# vet_rotate_avg_ema_wb, so that a set change leaves a static state's closure unchanged
+WB_ROT = {'rad_vet/vet_rotate_avg_ema_wb': 'true', 'rad_vet/vet_gd_gl_nphi': 12,
+          'rad_vet/vet_gd_gl_stagger': 'true'}
+WB_ROT_SP = dict(WB_ROT, **{'rad_vet/vet_gd_rotate_dt': 2.0, 'rad_vet/vet_gd_gl_nmu': 11,
+                            'rad_vet/vet_gd_wall_interp': 'true',
+                            'rad_vet/vet_gd_wall_sym': 'true'})
+WB_ROT_CS = dict(WB_ROT, **{'rad_vet/vet_gd_rotate_dt': 0.5, 'rad_vet/vet_gd_gl_nmu': 10})
+
+
+def t_wb(c, deck, rot):
+    """max v / c_s of the envelope with the fixed set and with the rotating one"""
+    out = {}
+    for tag, o in (('', None), ('_rot', rot)):
+        d = c.run(deck, 'run' + tag, o)
+        v = hst_col(os.path.join(d, 'rh.user.hst'), 'vcs_max')
+        out['vmax_over_cs' + tag] = float(v.max())
+    return out
+
+
 def t_wb_sp(c):
-    d = c.run('rhse_sp.athinput', 'run')
-    v = hst_col(os.path.join(d, 'rh.user.hst'), 'vcs_max')
-    return dict(vmax_over_cs=float(v.max()))
+    return t_wb(c, 'rhse_sp.athinput', WB_ROT_SP)
 
 
 def t_wb_cs(c):
-    d = c.run('rhse_cs.athinput', 'run')
-    v = hst_col(os.path.join(d, 'rh.user.hst'), 'vcs_max')
-    return dict(vmax_over_cs=float(v.max()))
+    return t_wb(c, 'rhse_cs.athinput', WB_ROT_CS)
 
 
 # ---------------------------------------------------------------------------------------

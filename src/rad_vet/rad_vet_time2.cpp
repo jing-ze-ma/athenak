@@ -1425,7 +1425,7 @@ int RadiationVet::CleanRstNq() const {
 // another closure, Time2RstAccept)
 int RadiationVet::CleanRstNcl() const {
   if (t2_rcl >= 0) return t2_rcl;  // a file's (Time2RstAccept)
-  return cln_closit ? CleanNs(pmy_pack->pmesh->use_cubed_sphere) : 0;
+  return cln_closit ? CleanNs(pmy_pack->pmesh->use_cubed_sphere, cln_rfh) : 0;
 }
 
 int RadiationVet::CleanRstNfv() const {
@@ -1476,7 +1476,7 @@ bool RadiationVet::Time2RstAccept(const int nfile, const int ver) {
   t2_nfv = (cln_cssc || cln_scmem) ? nfile - nb : 0;
   // a file of another clean_closure: the iterate closure is skipped, or missing (the
   // first solve takes the predicted closure)
-  const int ns = CleanNs(pmy_pack->pmesh->use_cubed_sphere);
+  const int ns = CleanNs(pmy_pack->pmesh->use_cubed_sphere, cln_rfh);
   auto fits = [&](const int n) {
     return cln_cssc ? (nfile - n == 0 || nfile - n == 12) : (nfile == n);
   };
@@ -1491,11 +1491,13 @@ bool RadiationVet::Time2RstAccept(const int nfile, const int ver) {
                 << std::endl;
     }
   }
-  // 1 .. 11 channels over (clean_ring_fh half ranges as ring fields): refused
-  if (cln_cssc && ver >= 6 && t2_nfv > 0 && t2_nfv < 12) {
-    std::cout << "### FATAL ERROR <rad_vet> restart: a file written with clean_ring_fh ("
-              << t2_nfv << " channels over)"
-              << std::endl;
+  // (the ring's half ranges, cln_rfh: no cln_fh channels; a file of a run with them is
+  // refused without them, and one without them with them: 1 .. 11 channels over)
+  const bool fho = cln_rfh ? t2_nfv != 0 : (t2_nfv > 0 && t2_nfv < 12);
+  if (cln_cssc && ver >= 6 && fho) {
+    std::cout << "### FATAL ERROR <rad_vet> restart: a file " << (cln_rfh ? "not " : "")
+              << "written with the ring's half ranges (vet_rotate_avg_ema_wb on the "
+              << "cubed sphere; " << t2_nfv << " channels over)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   // cubed sphere, version >= 6: the face half ranges are the last 0 or 12 channels; a

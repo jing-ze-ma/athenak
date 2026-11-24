@@ -226,7 +226,19 @@ flux rows are written about the rays' own steady state (`clean_stag_fwb`). The s
 (`clean_init = steady`) begins from the scheme's own discrete equilibrium. The remaining
 motion is at the solver-tolerance level, not round-off.
 
-Test: `wb_sp`, `wb_cs` (max |v|/c_s <= 1e-8 over the run; measured about 5e-9 and 1e-9).
+A rotating ray set is a new angular discretisation at every turn, so its closure of the same
+static state differs by the set's pattern error (~1e-4 in F) and a static envelope has no
+discrete equilibrium to keep (v/c_s ~1e-4 - 1e-3). With `vet_rotate_avg_ema_wb = true` the
+EMA ring takes up the pattern change of a turn in its offsets (the boundary's same-state
+Delta, weight a = a_ch alone, a_ch the change test of one set at two times): a set change
+then moves the closure only where the state moved, so a static state keeps its closure, its
+force and its equilibrium for any turn and cross-fade weight. On the cubed sphere the ring
+also carries the cells' face half ranges (`CleanCellHalf`). The K-set
+window (`vet_rotate_avg` without the EMA) has no such form: its window changes the closure of
+a static state at every turn.
+
+Test: `wb_sp`, `wb_cs` (max |v|/c_s <= 1e-8 over the run; measured about 5e-9 and 1e-9; with
+the rotating sets `_rot` 4.7e-9 and 9e-10).
 
 ### Second order in space and time
 
