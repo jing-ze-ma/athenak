@@ -306,7 +306,7 @@ def succ_orders(fields):
 
 def t_order_time(c):
     """deck D (spherical shell, kinematic gas, Marshak walls): time step halved 2 (quick)
-    or 4 times at a fixed grid; E, F_r and T converge at second order as dt -> 0."""
+    or 4 times at a fixed grid; successive orders of E, F_r and T."""
     dts = ([] if c.quick else [0.0625, 0.03125]) + [0.015625, 0.0078125, 0.00390625]
     S = {'E': [], 'F': [], 'T': []}
     for dt in dts:

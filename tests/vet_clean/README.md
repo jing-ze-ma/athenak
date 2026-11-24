@@ -147,8 +147,9 @@ Notes on the results of this release (465aff485):
   cycle. `momentum_box` therefore reports dP (printed, and kept with `--record`) and does
   not bound it; on spherical polar and cubed-sphere meshes Cartesian P is not a discrete
   invariant at all (local bases), so the test is Cartesian only.
-- **Order.** Deck D reaches second order only as dt -> 0: successive orders 1.57, 1.61,
-  1.84 (E) over the five time steps. The criterion is on the finest pair.
+- **Order.** Deck D's successive orders are 1.57, 1.61, 1.84 (E) over the five time steps:
+  below 2 on the whole ladder. The criterion is on the finest pair.
+  Neither order deck has stiff gas-radiation exchange, where the sdirk2 tableau is first order.
 
 The reference values and tolerances are in `ref/references.json` (measured with commit
 512cf768a, CPU, GCC 13, `-ffp-contract=off`; reproduced to all printed digits on 465aff485 with
