@@ -26,3 +26,21 @@ Pairs on the common first N rows: last-row relative difference (second - first)/
 - M2 vs M1 (N 100): t 3.07e-13 dt -3.09e-10 L_top 4.22e-06 L_in -6.91e-16 KE -1.19e-07 Etot 3.73e-11 M -1.13e-15 Lz -1.07e-06 | max d(L_top/L_in) 1.68e-04 | dt ratio mean 1.0000
 - M3 vs M1 (N 100): t 5.47e-13 dt -4.59e-11 L_top 2.48e-05 L_in -8.06e-16 KE 3.32e-07 Etot -1.36e-10 M -1.51e-15 Lz 5.45e-08 | max d(L_top/L_in) 2.16e-04 | dt ratio mean 1.0000
 - M3 vs M2 (N 100): t 2.40e-13 dt 2.63e-10 L_top 2.05e-05 L_in -1.15e-16 KE 4.51e-07 Etot -1.73e-10 M -3.78e-16 Lz 1.13e-06 | max d(L_top/L_in) 2.35e-04 | dt ratio mean 1.0000
+
+## Compton C0 vs C1: dt over the first 100 cycles after the rst (your 24zzzm); CW / FATAL / DT_RETRY 0 in both over 300 cycles
+
+| cycles from the rst | C0 dt | C1 dt | C0 L_top/L_in | C1 L_top/L_in |
+|---|---|---|---|---|
+| 0 | 13.94 | 13.94 | 2.5554 | 2.5554 |
+| 10 | 24.97 | 26.45 | 2.5528 | 2.5522 |
+| 20 | 14.78 | 15.74 | 2.5507 | 2.5500 |
+| 30 | 17.84 | 16.75 | 2.5489 | 2.5483 |
+| 40 | 13.96 | 17.13 | 2.5476 | 2.5463 |
+| 50 | 13.87 | 22.61 | 2.5460 | 2.5442 |
+| 60 | 13.67 | 28.92 | 2.5444 | 2.5411 |
+| 70 | 12.99 | 42.66 | 2.5428 | 2.5368 |
+| 80 | 29.44 | 23.91 | 2.5405 | 2.5326 |
+| 90 | 32.66 | 31.23 | 2.5371 | 2.5299 |
+| 99 | 29.75 | 25.32 | 2.5336 | 2.5275 |
+- first 100 rows: C0 dt min/mean 10.51 / 19.89, C1 13.94 / 25.67 (mean ratio 1.290); model time advanced C0 1975.5 s, C1 2552.8 s
+- first 300 rows: C0 dt min/mean 10.51 / 32.88, C1 13.94 / 35.12 (mean ratio 1.068); model time advanced C0 9848.7 s, C1 10521.3 s
