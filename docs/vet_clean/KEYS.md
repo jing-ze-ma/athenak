@@ -212,6 +212,6 @@ Removed (only false): `clean_stag_kpat`. Not recommended: `time2_k1_redist`,
 Named in the templates but without effect with them (fixed rays, spherical polar): the
 rotation keys other than `vet_gd_rotate_dt`, the cubed-sphere keys (`clean_cs_lz_tel`,
 `cs_cross_mono`, `cs_vertex_mono`, `mesh/cs_*`), `vet_source`, `vet_scatter_j` and the other
-relaxed-source keys (unless `clean_ray_source_relaxed = true`), `vet_col_lat_taucut`,
+relaxed-source keys (`clean_ray_source_relaxed` was removed: only false), `vet_col_lat_taucut`,
 `implicit_maxit`, `implicit_lin_maxit`, `time2_enth_be`, `time/dt_retry_max`. Keys that are
 never read are listed by the `never read` warning after the first cycle.

@@ -1440,21 +1440,6 @@ bool M1EosCacheEval(const EosT &eos, const V &ec, const int m, const int k, cons
 }
 
 //----------------------------------------------------------------------------------------
-//! \struct M1EosDirect
-//! \brief the (e, c_v) accessor the gas solve uses when the cache is OFF: one
-//! EOS_Data::ThermoAt() call, in the order the pre-3g code made it.
-
-template <class EosT>
-struct M1EosDirect {
-  EosT eos;
-  KOKKOS_INLINE_FUNCTION
-  void operator()(const Real dd, const Real t, Real &ee, Real &cv) const {
-    Real pp, cr, ct;
-    eos.ThermoAt(dd, t, ee, pp, cr, ct, cv);
-  }
-};
-
-//----------------------------------------------------------------------------------------
 //! \struct M1EosIdeal
 //! \brief the accessor for an ideal-gas EOS_Data (table off): e and c_v by the same
 //! expressions as the ideal branch of EOS_Data::ThermoAt (bitwise), without the table
@@ -1492,95 +1477,6 @@ struct M1EosCached {
 // safeguarded root find for T' inside the Picard loop
 constexpr int  M1_IMPL_TMAXIT = 100;
 constexpr Real M1_IMPL_TRTOL  = 1.0e-12;
-
-//----------------------------------------------------------------------------------------
-//! \fn M1ImplTemperature
-//! \brief solve the LOCAL gas energy equation of the implicit transport scheme,
-//!
-//!   y(T) = rho e(rho,T) + c dt rho kappa_P a T^4 - [ rho e^n + c dt rho kappa_E E0' ]
-//!        = 0,
-//!
-//! for T at fixed E' (E0' = E' + de0), by the same safeguarded Newton (`rtsafe`) that
-//! the explicit coupling uses -- bracket by walking, then a Newton step accepted only
-//! when it stays inside the bracket AND shrinks it at least as fast as bisection.  y is
-//! strictly increasing in T, so the bracket is unique.
-//!
-//! This is NOT the explicit path's function (there E'(T) is eliminated locally and the
-//! invariant is the bracket variable), so it cannot call rad_vet_coupling.cpp's copy;
-//! the ALGORITHM is the same and the explicit arithmetic is left untouched.
-//!
-//! Returns the number of function evaluations; `ok` is false if no bracket was found.
-
-template <class ThermoT>
-KOKKOS_INLINE_FUNCTION
-int M1ImplTemperatureT(const ThermoT &th, const Real dd, const Real tguess,
-                       const Real egn, const Real cdtkp_a, const Real rhs_abs,
-                       Real &tout, bool &ok) {
-  // y(T) = ee(T) + cdtkp_a*T^4 - (egn + rhs_abs)
-  Real target = egn + rhs_abs;
-  Real tlo = tguess, thi = tguess;
-  Real ylo, yhi;
-  int nev = 0;
-  {
-    Real ee, cv;
-    th(dd, tguess, ee, cv);
-    Real t2 = tguess*tguess;
-    Real y0 = ee + cdtkp_a*t2*t2 - target;
-    ylo = y0;
-    yhi = y0;
-    ++nev;
-  }
-  ok = true;
-  if (ylo > 0.0) {
-    for (int it=0; it<80 && ylo > 0.0; ++it) {
-      tlo *= 0.5;
-      Real ee, cv;
-      th(dd, tlo, ee, cv);
-      Real t2 = tlo*tlo;
-      ylo = ee + cdtkp_a*t2*t2 - target;
-      ++nev;
-    }
-    ok = (ylo <= 0.0);
-  } else if (yhi < 0.0) {
-    for (int it=0; it<80 && yhi < 0.0; ++it) {
-      thi *= 2.0;
-      Real ee, cv;
-      th(dd, thi, ee, cv);
-      Real t2 = thi*thi;
-      yhi = ee + cdtkp_a*t2*t2 - target;
-      ++nev;
-    }
-    ok = (yhi >= 0.0);
-  }
-  if (!ok) {
-    tout = tguess;
-    return nev;
-  }
-  Real tp = 0.5*(tlo + thi);
-  if (tlo == thi) {tp = tlo;}
-  Real dxold = fabs(thi - tlo);
-  Real dx = dxold;
-  bool conv = (tlo == thi);
-  for (int it=0; it<M1_IMPL_TMAXIT && !conv; ++it) {
-    Real ee, cv;
-    th(dd, tp, ee, cv);
-    ++nev;
-    Real t3 = tp*tp*tp;
-    Real y = ee + cdtkp_a*tp*t3 - target;
-    if (y > 0.0) {thi = tp;} else {tlo = tp;}
-    Real dy = dd*cv + 4.0*cdtkp_a*t3;
-    dxold = dx;
-    Real tn = (dy > 0.0) ? (tp - y/dy) : tp;
-    if (!(tn > tlo && tn < thi) || (fabs(2.0*y) > fabs(dxold*dy))) {
-      tn = 0.5*(tlo + thi);
-    }
-    dx = fabs(tn - tp);
-    conv = (dx <= M1_IMPL_TRTOL*fabs(tn)) || (fabs(thi - tlo) <= M1_IMPL_TRTOL*fabs(tp));
-    tp = tn;
-  }
-  tout = tp;
-  return nev;
-}
 
 //----------------------------------------------------------------------------------------
 //! \fn M1ImplTemperatureOpacNear

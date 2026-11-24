@@ -470,7 +470,7 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/clean_stag_xpat", "!"}, {"rad_vet/clean_thin_donor", "!"},
     {"rad_vet/clean_stag_stencil", "=true"}, {"rad_vet/clean_stag_sbimp", "!"},
     {"rad_vet/clean_cs_lat_wb", "!"}, {"rad_vet/clean_stag_thinf_held", "!"},
-    {"rad_vet/clean_face_hclat", "!"},
+    {"rad_vet/clean_face_hclat", "!"}, {"rad_vet/clean_ray_source_relaxed", "!"},
     // (removed in phase B, named by production decks or restart files: the old solve's
     // seam clamp, the pass print, the fixed set's band reach (the bound's band covers
     // it); the halo depth cap and the ray cut only at their kept values)

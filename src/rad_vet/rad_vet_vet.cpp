@@ -105,7 +105,6 @@
 #include "rad_vet/vet_fluid.hpp"
 #include "rad_vet/rad_vet_implicit.hpp"
 #include "rad_vet/rad_vet_vetseg.hpp"
-#include "rad_vet/rad_vet_vetsrc.hpp"
 #include "utils/recipe.hpp"
 
 #if MPI_PARALLEL_ENABLED
@@ -1966,7 +1965,7 @@ void RadiationVet::VetInit(ParameterInput *pin) {
     if (vs.compare("relaxed") == 0) {
       vcol_srelax = true;
     } else if (vs.compare("relaxed_esc") == 0) {
-      // (opt-in): relaxed with the cell's photon escape (rad_vet_vetsrc.hpp)
+      // (opt-in): relaxed with the cell's photon escape
       vcol_srelax = true;
       vcol_sesc = true;
     } else if (vs.compare("gas") == 0) {
@@ -4244,25 +4243,8 @@ void RadiationVet::VetShortCharSweep() {
     auto iwd_ = iw;
     auto vcd_ = vet_cell;
     const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
-    // the VET source rule of vet_col / vet_gd (VetLatSweep): vet_source = relaxed (srx:
-    // the state relaxed by a local backward-Euler exchange over the step,
-    // VetRelaxedSource) or gas (the state's own source); under time2_vet = predict |
-    // rebuild time2_vet_source = state | relaxed | blend (Time2VetColAt sets vcol_srelax
-    // / vcol_sbl for the build).  vet_sc before: always the state's source.
-    const bool srx = thermal && vcol_srelax;
-    const bool sbl = vcol_sbl;
-    const Real sx0 = vcol_sx0;
-    // (vet_source = relaxed_esc): the x1 cell width for the escape
-    const bool sesc = srx && vcol_sesc;
-    const Real clq = gas_feedback ? c_light : 0.0;   // held gas: T* = T_b
-    auto &mbs_ = pmy_pack->pmb->mb_size;
-    const int vsr = (vsf != 0 && vscat_jrel) ? (vsf + 2) : vsf;   // relaxed J
-    FluidRef flv = FluidRef::Get(pmy_pack);
-    auto eos = flv.eos;
-    const bool cvx = cln_srccvx && !srx;   // clean_source_convex
-    auto uh = flv.u0;
-    const Real chs = chat;
-    const Real dts = mr_on ? mr_dt : pmy_pack->pmesh->dt;
+    // the VET source: the state's own (the relaxed source of vet_source, removed)
+    const bool cvx = cln_srccvx;   // clean_source_convex
     VetFor("vet_vet_srcc", (nmb1 + 1)*nk*nj*ni, KOKKOS_LAMBDA(const int t) {
       const int i = is + t%ni;
       int q = t/ni;
@@ -4275,26 +4257,7 @@ void RadiationVet::VetShortCharSweep() {
       if (thermal) {
         Real tg = iwd_(m,M1_IW_TP,k,j,i);
         Real t2 = tg*tg;
-        if (srx) {
-          const Real eth = fmin(opd_(m,M1_OP_P,k,j,i)/chx, 1.0);
-          const Real rks = (vsf != 0) ? opd_(m,M1_OP_S,k,j,i) : 0.0;
-          // relaxed_esc: the escape rate of the cell (0 = relaxed)
-          const Real qe = VetEscapeRate(sesc, chx, mbs_.d_view(m).dx1);
-          s = sesc ? (sbl ? VetRelaxedSourceBQ(eos, uh(m,IDN,k,j,i), tg, e,
-                                      opd_(m,M1_OP_P,k,j,i),
-                                      opd_(m,M1_OP_E,k,j,i), eth, ar, clq, chs, dts, vsr,
-                                      chx, rks, sx0, qe)
-                  : VetRelaxedSourceQ(eos, uh(m,IDN,k,j,i), tg, e, opd_(m,M1_OP_P,k,j,i),
-                                     opd_(m,M1_OP_E,k,j,i), eth, ar, clq, chs, dts, vsr,
-                                     chx, rks, qe))
-               : (sbl ? VetRelaxedSourceB(eos, uh(m,IDN,k,j,i), tg, e,
-                                      opd_(m,M1_OP_P,k,j,i),
-                                      opd_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
-                                      chx, rks, sx0)
-                  : VetRelaxedSource(eos, uh(m,IDN,k,j,i), tg, e, opd_(m,M1_OP_P,k,j,i),
-                                     opd_(m,M1_OP_E,k,j,i), eth, ar, cl, chs, dts, vsr,
-                                     chx, rks));
-        } else if (vsf != 0) {   // vet_scatter (VetScatterMix, rad_vet.hpp)
+        if (vsf != 0) {   // vet_scatter (VetScatterMix, rad_vet.hpp)
           const Real rkp = cvx ? fmin(opd_(m,M1_OP_P,k,j,i), chx) : opd_(m,M1_OP_P,k,j,i);
           s = VetScatterMix(vsf, rkp, chx, opd_(m,M1_OP_S,k,j,i), ar*t2*t2, e);
         } else {

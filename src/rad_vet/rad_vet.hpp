@@ -1274,10 +1274,8 @@ class RadiationVet {
   bool x2_ok = false;
   // the dt of the relaxed VET source of the extrap2 build, a smoothed
   // step x2_dts = max(dt, x2_dts/2) (a tlim-clamped or retried short step does not
-  // switch stiff cells to the unrelaxed source; that dipped L_top 0.6 % for ~4 steps);
-  // vsrc_dt > 0 overrides the step dt of the vet_col / vet_col_lat relaxed source
+  // switch stiff cells to the unrelaxed source; that dipped L_top 0.6 % for ~4 steps)
   Real x2_dts = 0.0;
-  Real vsrc_dt = 0.0;
   // time2_vet_x2_fields (bits: 1 f_K, 2 the lateral slots, 4 vgd_hr, 8 q; default 9):
   // extrapolating the vet_gd lateral / half-range fields (rotated-set ray noise) put a
   // 5e-2 error vs the converged reference into the accretor stream phase; f_K + q alone
@@ -1897,7 +1895,6 @@ class RadiationVet {
   bool cln_jse = false;         // clean_face_jse
   bool cln_farea = false;       // clean_face_area
   bool cln_bcarea = false;      // clean_bc_area
-  bool cln_rsrel = false;       // clean_ray_source_relaxed
   DvceArray5D<Real> cln_fvi;    // the sc rays' intensities (m, d, k, j, i)
   DvceArray2D<Real> cln_fvd;    // the swept directions (x, y, z, weight; CleanFvSets)
   int cln_fvn = 0;              // their number
@@ -2082,16 +2079,11 @@ class RadiationVet {
   // physical behind a radiating front and D = diag(f, (1-f)/2, (1-f)/2) stays
   // realizable for 0 <= f <= 1)
   Real vcol_fkmin = 1.0/3.0;
-  // vet_col_source (he-presn-m1 0929): the thermal source of the formal solution.
-  // `relaxed` (default): a T^4 at the temperature T* the cell reaches after a LOCAL
-  // backward-Euler exchange over the step (VcolRelaxedSource, rad_vet_vetcol.cpp); `gas`:
-  // the start-of-step gas temperature as before (bitwise the old build)
+  // vet_source = relaxed | relaxed_esc (vcol_sesc) | gas, vet_col_source its alias: the
+  // relaxed ray source was removed (the clean rays take the state's own source), the
+  // key is only checked and echoed
   bool vcol_srelax = true;
-  // vet_source = relaxed_esc (vcol_srelax true as well): the relaxed source
-  // with the cell's photon escape (VetRelaxedSource qe, VetEscapeRate;
-  // rad_vet_vetsrc.hpp)
   bool vcol_sesc = false;
-  bool vcol_sbl = false;       // this build blends the relaxed source
   Real vcol_sx0 = 1.0;         // time2_vet_col_source_x0 (blend)
   // vet_scatter (read only when named; default off = bitwise): ONE
   // switch for electron scattering: the opacity split (otab.scat, opac M1_OP_S) and the

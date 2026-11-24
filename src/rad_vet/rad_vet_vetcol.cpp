@@ -27,7 +27,6 @@
 #include "rad_vet/vet_fluid.hpp"
 #include "rad_vet/rad_vet_implicit.hpp"
 #include "rad_vet/rad_vet_vetseg.hpp"
-#include "rad_vet/rad_vet_vetsrc.hpp"
 
 namespace radvet {
 

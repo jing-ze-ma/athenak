@@ -110,9 +110,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // cell's point intensities in area form: its net outward stream h+ + h- x A_c/A_f
     // (an isotropic field none: the bath balances; old: Marshak q = H_f/J)
     cln_bcarea = pin->GetOrAddBoolean("rad_vet","clean_bc_area",true);
-    // clean_ray_source_relaxed (default off): the rays' source the vet_source /
-    // vet_scatter_j form (relaxed_esc: the local exchange with escape, its relaxed pair)
-    cln_rsrel = pin->GetOrAddBoolean("rad_vet","clean_ray_source_relaxed",false);
     cln_tol = pin->GetOrAddReal("rad_vet","clean_tol",1.0e-10);
     cln_cnorm = pin->GetOrAddReal("rad_vet","clean_init_cnorm",1.0e-10);
     cln_lcnorm = pin->GetOrAddReal("rad_vet","clean_lin_cnorm",1.0e-10);
@@ -1568,7 +1565,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vs.compare("relaxed") == 0) {
       vcol_srelax = true;
     } else if (vs.compare("relaxed_esc") == 0) {
-      // (opt-in): relaxed with the cell's photon escape (rad_vet_vetsrc.hpp)
+      // (opt-in): relaxed with the cell's photon escape
       vcol_srelax = true;
       vcol_sesc = true;
     } else if (vs.compare("gas") == 0) {
