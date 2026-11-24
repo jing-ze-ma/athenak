@@ -202,7 +202,7 @@ Solver internals: `clean_conv` (`budget`), `clean_conv_max` (1e-5), `clean_conv_
 `clean_tol`, `clean_tol_nl`, `clean_maxit` (200), `clean_maxnl` (200), `clean_maxpic`,
 `clean_lin_pass`, `clean_lin_cnorm`, `clean_init_cnorm`, `clean_gas_newton_switch`,
 `clean_gas_newton_switch_min`, `clean_stall_fac`, `clean_troot_rtol`, `clean_pc_sweep` (`rb`),
-`clean_stag_mg_color`, `clean_stag_fs_line`, `clean_stag_pcr`, `clean_halo_direct`,
+`clean_stag_mg_color`, `clean_stag_fs_line`, `clean_stag_pcr`, `clean_halo_direct` (only true),
 `implicit_predictor`, `implicit_predictor_tcap`, `implicit_resid_fatal`, `time/dt_retry_views`,
 `time/dt_retry_host`, `time/restart_refill_ghosts` (false: restarts are bitwise).
 

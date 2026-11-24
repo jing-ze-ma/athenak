@@ -282,19 +282,9 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("trans_x3", trans_x3);
   v.view("f0x2", f0x2);
   v.view("f0x3", f0x3);
-  v.view("thw", thw);
-  v.view("thw_c", thw_c);
-  v.view("thq", thq);
-  v.view("thq_c", thq_c);
-  v.value("halo_shell", halo_shell);
   v.value("bicg_on", bicg_on);
-  v.view("krw", krw);
-  v.view("krw_c", krw_c);
   v.value("impl_prec_fb", impl_prec_fb);
   v.value("bcg_capped", bcg_capped);
-  v.value("impl_halo_direct", impl_halo_direct);
-  v.value("halo_direct_on", halo_direct_on);
-  v.dual("hd_src", hd_src);
   v.view("odc", odc);
   v.value("impl_stencil", impl_stencil);
   v.view("ost", ost);
@@ -310,42 +300,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("impl_pord", impl_pord);
   v.value("impl_kfuse", impl_kfuse);
   v.value("impl_prec", impl_prec);
-  v.view("kp_h", kp_h);
-  v.value("impl_halo_mpi", impl_halo_mpi);
-  v.value("hm_state", hm_state);
-  v.value("impl_hdepth", impl_hdepth);
-  v.value("hm_nsend", hm_nsend);
-  v.value("hm_nrecv", hm_nrecv);
-  v.value("hm_nq", hm_nq);
-  v.value("hm_rank", hm_rank);
-  v.value("hm_soff", hm_soff);
-  v.value("hm_slen", hm_slen);
-  v.value("hm_roff", hm_roff);
-  v.value("hm_rlen", hm_rlen);
-  v.dual("hm_sm", hm_sm);
-  v.dual("hm_skji", hm_skji);
-  v.dual("hm_sseg", hm_sseg);
-  v.dual("hm_rm", hm_rm);
-  v.dual("hm_rkji", hm_rkji);
-  v.dual("hm_rseg", hm_rseg);
-  v.dual("hm_segs", hm_segs);
-  v.view("hm_sbuf", hm_sbuf);
-  v.view("hm_rbuf", hm_rbuf);
-  v.view("hm_shost", hm_shost);
-  v.view("hm_rhost", hm_rhost);
-  v.value("impl_halo_ipc", impl_halo_ipc);
-  v.value("hi_state", hi_state);
-  v.value("hi_nchk", hi_nchk);
-  v.value("hi_half", hi_half);
-  v.dual("hi_prb", hi_prb);
-  v.dual("hi_psig", hi_psig);
-  v.dual("hi_phalf", hi_phalf);
-  v.dual("hi_proff", hi_proff);
-  v.dual("hi_pslot", hi_pslot);
-  v.value("impl_halo_ovl", impl_halo_ovl);
-  v.value("impl_ovl_faces", impl_ovl_faces);
-  v.value("hm_face", hm_face);
-  v.view("ho_h", ho_h);
   v.view("gc_part", gc_part);
   v.view("gc_x", gc_x);
   v.view("gf_gh", gf_gh);
@@ -500,8 +454,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("impl_vimp", impl_vimp);
   v.value("dop_face", dop_face);
   v.value("vimp_now", vimp_now);
-  v.view("vmw", vmw);
-  v.view("vmw_c", vmw_c);
   v.view("d3w", d3w);
   v.value("t2_ffct", t2_ffct);
   v.view("t2pf1", t2pf1);
@@ -1268,15 +1220,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
 //   vet_mbs : VetMBState *
 //   pos_un_drop : Real (protocol counter, kept monotonic)
 //   tmr_t : Kokkos::Timer
-//   pbval_th : MeshBoundaryValuesCC *
-//   pbval_tq : MeshBoundaryValuesCC *
-//   pbval_kr : MeshBoundaryValuesCC *
-//   hm_comm : void *
-//   hi_seq : long long (protocol counter, kept monotonic)
-//   hi_rbuf : Real *
-//   hi_sig : long long *
-//   hi_err : int *
-//   pbval_vm : MeshBoundaryValuesCC *
 //   pbval_d3 : MeshBoundaryValuesCC *
 //   pbval_sg : MeshBoundaryValuesCC *
 //   pbval_u : MeshBoundaryValuesCC *

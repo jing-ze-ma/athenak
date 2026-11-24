@@ -6,7 +6,7 @@
 //! \file rad_vet_memarena.cpp
 //! \brief memcut-1113 the memory arena (with vet_gd): the vet_gd intensity arrays
 //! (VgdRag::d of vgd_i, vgd_i_xb) and the implicit solve's scratch arrays that are dead
-//! across a VetGdBuild (ost, fmm_t, thw, vmw, thq, odc, d3w, krw, aa_*) share ONE device
+//! across a VetGdBuild (ost, fmm_t, odc, d3w, aa_*) share ONE device
 //! allocation.  The intensities are written and read only inside VetGdBuild (sweep,
 //! moments, half-range, ring); those solve arrays are re-written after every build before
 //! they are read.  Both facts are checked by MEMCUT_POISON (below) and the bitwise gates.
@@ -26,8 +26,8 @@
 //! rebinding afterwards.
 //!
 //! MEMCUT_POISON (diagnostic env, default unset): a comma list of arrays that are filled
-//! with NaN (MEMCUT_PVAL=big: +7.7e22) at the entry of every VetGdBuild (iw, ost, thw,
-//! thq, krw, odc, fmm_t, vmw, d3w, aa) and at its exit (vgd: every intensity array).  A
+//! with NaN (MEMCUT_PVAL=big: +7.7e22) at the entry of every VetGdBuild (iw, ost, odc,
+//! fmm_t, d3w, aa) and at its exit (vgd: every intensity array).  A
 //! run whose results stay bitwise with a list poisoned shows the lifetime split for it.
 
 #include <algorithm>
@@ -120,7 +120,7 @@ void RadiationVet::MemArenaGrow(const int64_t need, const bool keep) {
 //! \fn void RadiationVet::MemArenaSeal
 //! \brief called by every DtRetry::Save before it copies; the first call after the
 //! intensities exist moves the solve scratch arrays that are dead across a VetGdBuild
-//! (MEMCUT_POISON: ost, fmm_t, thw, vmw, thq, odc, d3w, krw, aa_*, job 13105648) into
+//! (MEMCUT_POISON: ost, fmm_t, odc, d3w, aa_*, job 13105648) into
 //! the arena, over the intensities (contents copied, member rebound), as many as fit;
 //! then no more rebinding
 
@@ -130,10 +130,10 @@ void RadiationVet::MemArenaSeal() {
   // move restores the moved Views)
   if (marena_sealed || !marena_on || marena.data() == nullptr) return;
   marena_sealed = true;
-  DvceArray5D<Real> *cand[] = {&cln_w.o, &ost, &fmm_t, &thw, &vmw, &thq, &odc, &d3w,
-                               &krw, &aa_xc, &aa_fc, &aa_xp, &aa_fp};
-  const char *nm[] = {"cln_wo", "ost", "fmm_t", "thw", "vmw", "thq", "odc", "d3w", "krw",
-                      "aa_xc", "aa_fc", "aa_xp", "aa_fp"};
+  DvceArray5D<Real> *cand[] = {&cln_w.o, &ost, &fmm_t, &odc, &d3w, &aa_xc, &aa_fc,
+                               &aa_xp, &aa_fp};
+  const char *nm[] = {"cln_wo", "ost", "fmm_t", "odc", "d3w", "aa_xc", "aa_fc", "aa_xp",
+                      "aa_fp"};
   // (clean: the arena grows to the clean scheme's own work vectors where they outgrow
   // the intensities, whatever vgd_i's layout makes of those)
   MemArenaGrow(static_cast<int64_t>(cln_w.o.span()));
@@ -228,12 +228,8 @@ void RadiationVet::MemcutPoison(const int where) {
   } else if (where == 0) {
     p5(iw, "iw");
     p5(ost, "ost");
-    p5(thw, "thw");
-    p5(thq, "thq");
-    p5(krw, "krw");
     p5(odc, "odc");
     p5(fmm_t, "fmm_t");
-    p5(vmw, "vmw");
     p5(d3w, "d3w");
     p5(aa_xc, "aa");
     p5(aa_fc, "aa");

@@ -899,7 +899,13 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    if (!pin->GetOrAddBoolean("rad_vet","clean_halo_direct",true)) cln_hdl.state = -1;
+    // (clean_halo_direct = false, the generic exchange, was removed)
+    if (!pin->GetOrAddBoolean("rad_vet","clean_halo_direct",true)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_vet>/clean_halo_direct = false was removed "
+                << "(only true)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     // env CLEAN_POISON_GHOST=1 (gate only): the ghost layers clean_halo_direct does not
     // send are NaN
     // (1: NaN; 2: +1e30; 3: -1e30, for readers that compare or take min / max)
@@ -1029,14 +1035,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   nstage = M1_NSTAGE;
   impl_cfl = -1.0;
-  impl_halo_ipc = false;
-  hi_state = 0;
-  hi_seq = 0;
-  hi_nchk = 0;
-  hi_rbuf = nullptr;
-  hi_sig = nullptr;
-  hi_err = nullptr;
-  hi_half = 0;
   marshak_q = 0.5;
   ibc_x1min = M1_IBC_MARSHAK;
   ibc_x1max = M1_IBC_MARSHAK;
@@ -1051,12 +1049,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   impl_solver = M1_ISOLV_LINE_JACOBI;
   trans_on = false;
   trans_x3 = false;
-  pbval_th = nullptr;
-  pbval_tq = nullptr;
-  halo_shell = false;
   // ---- milestone 3b phase C
   bicg_on = false;
-  pbval_kr = nullptr;
   impl_prec_fb = -1;
   bcg_capped = false;
   bcg_r0rel = 0.0;
@@ -1071,7 +1065,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   impl_vimp = false;
   vimp_now = false;
   t2_enth_be = false;
-  pbval_vm = nullptr;
   time_scheme = 0;
   t2_ok = false;
   t2_solve = 0;
@@ -1095,8 +1088,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   aa_hasp = false;
   aa_fnp = -1.0;
   // ---- milestone 3g: the gas-radiation energy coupling
-  impl_halo_direct = false;
-  halo_direct_on = false;
   impl_stencil = false;
   st_edges = true;
   impl_kfuse = 0;
@@ -2682,10 +2673,6 @@ RadiationVet::~RadiationVet() {
   if (vet_sc) {VetReport();}
   VetFree();
   delete pbval_u;
-  if (pbval_th != nullptr) {delete pbval_th;}
-  if (pbval_tq != nullptr) {delete pbval_tq;}
-  if (pbval_kr != nullptr) {delete pbval_kr;}
-  if (pbval_vm != nullptr) {delete pbval_vm;}
   if (pbval_d3 != nullptr) {delete pbval_d3;}
   if (pbval_sg != nullptr) {delete pbval_sg;}
   if (pbval_vl != nullptr) {delete pbval_vl;}

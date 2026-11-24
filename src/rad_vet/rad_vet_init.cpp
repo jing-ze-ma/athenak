@@ -5,14 +5,13 @@
 //========================================================================================
 //! \file rad_vet_init.cpp
 //! \brief set-up of the implicit radiation (<rad_vet>/transport = implicit): the keys the
-//! clean steps read (ImplicitInit), the x1 partition (ImplicitPartitionInit), the ghost
-//! exchanges of the work array (ImplicitHalo*), the run-end report (ImplicitReport,
-//! EventTotals) and the face-flux restart slabs (FaxRst*).
+//! clean steps read (ImplicitInit), the x1 partition (ImplicitPartitionInit), the
+//! run-end report (ImplicitReport, EventTotals) and the face-flux restart slabs
+//! (FaxRst*).
 
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
-#include <limits>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -22,7 +21,6 @@
 #include "globals.hpp"
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
-#include "mesh/nghbr_index.hpp"
 #include "coordinates/coordinates.hpp"
 #include "utils/recipe.hpp"
 #include "rad_vet/rad_vet.hpp"
@@ -38,7 +36,6 @@ namespace radvet {
 bool g_t2_reset_on = false;
 DvceArray4D<Real> g_t2_reset;
 double g_t2_reset_nskip = 0.0;
-static int M1HaloDepth(MeshBlockPack *pp, ParameterInput *pin);   // (below)
 
 namespace {
 //----------------------------------------------------------------------------------------
@@ -191,10 +188,9 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   }
   dbg_etally = pin->GetOrAddBoolean("rad_vet","dbg_energy_tally",false);
   // the fast set of the fixed-tensor closures (eddington, vet_sc, tau) with bicgstab and
-  // ONE MeshBlock along x1: implicit_halo_direct (the on-rank exchanges as one copy
-  // kernel when every neighbour is on its rank at the same level; bitwise),
-  // implicit_krylov_fuse (3; 1 with implicit_lin_cnorm > 0) and implicit_op_stencil (not
-  // with a periodic x1 wrap).  A key the input names keeps its value.
+  // ONE MeshBlock along x1: implicit_krylov_fuse (3; 1 with implicit_lin_cnorm > 0) and
+  // implicit_op_stencil (not with a periodic x1 wrap).  A key the input names keeps its
+  // value.
   const bool fixcl = eddington || vet_sc || tau_closure;
   const bool fdef = fixcl && (impl_solver == M1_ISOLV_BICGSTAB) &&
                     (pmy_pack->pmesh->mesh_indcs.nx1 == pmy_pack->pmesh->mb_indcs.nx1);
@@ -205,7 +201,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
       pin->GetOrAddString("rad_vet","implicit_bc_x1min","auto"),
       pmy_pack->pmesh->mesh_bcs[static_cast<int>(BoundaryFace::inner_x1)])
       == M1_IBC_PERIODIC);
-  impl_halo_direct = pin->GetOrAddBoolean("rad_vet","implicit_halo_direct",fdef);
   impl_kfuse = pin->GetOrAddInteger("rad_vet","implicit_krylov_fuse",
                                     fdef ? (cn_def ? 1 : 3) : 0);
   // a restart file written without cnorm echoes the defaulted fuse 3: with cnorm named
@@ -232,33 +227,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   }
   impl_onep_auto = false;
   impl_pord = 1;
-  // multi-rank exchanges: implicit_halo_mpi (bitwise the ordinary exchange) wherever
-  // implicit_halo_direct holds on a same-level mesh without cubed-sphere seams or polar
-  // boundaries (on the spherical-polar wedge not on a restart whose file lacks the key);
-  // implicit_halo_overlap on with more than one rank on a fresh run.  A key the input
-  // (or restart echo) names keeps its value.
-  {auto *pmh = pmy_pack->pmesh;
-  const bool hmdef = impl_halo_direct && !pmh->multilevel && !pmh->use_cubed_sphere &&
-                     !pmh->use_polar_boundary &&
-                     !(pmh->use_spherical_polar && global_variable::restart_run);
-  impl_halo_mpi = pin->GetOrAddBoolean("rad_vet","implicit_halo_mpi",hmdef);}
-  hm_state = 0;
-  hm_comm = nullptr;
-  impl_halo_ipc = pin->GetOrAddBoolean("rad_vet","implicit_halo_ipc",false);
-  if (impl_halo_ipc && !impl_halo_mpi) {
-    ImplFatal("<rad_vet>/implicit_halo_ipc needs implicit_halo_mpi = true");
-  }
-  impl_halo_ovl = pin->GetOrAddBoolean("rad_vet","implicit_halo_overlap",
-                      impl_halo_mpi && (global_variable::nranks > 1) &&
-                      !global_variable::restart_run);
-  impl_ovl_faces = pin->GetOrAddBoolean("rad_vet","implicit_halo_ovl_faces",false);
-  for (int f = 0; f < 6; ++f) {hm_face[f] = 1;}
-  if (impl_halo_ovl && !impl_halo_mpi) {
-    ImplFatal("<rad_vet>/implicit_halo_overlap needs implicit_halo_mpi = true");
-  }
-  if (impl_halo_mpi && !impl_halo_direct) {
-    ImplFatal("<rad_vet>/implicit_halo_mpi needs implicit_halo_direct = true");
-  }
   tmr_c0 = pin->DoesParameterExist("rad_vet","implicit_timers") ?
            pin->GetInteger("rad_vet","implicit_timers") : 0;   // read only when named
   // implicit_resid_fatal: the residual above which a stage stops the run (default 1e-2
@@ -728,37 +696,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
       Kokkos::realloc(vcol_q, nmb, ncells3, ncells2);
       Kokkos::deep_copy(vcol_q, marshak_q);
     }
-    // the transverse ghost exchanges (the clean solve makes thw / thq at their first use)
-    Kokkos::realloc(thw_c, nmb, M1_NHALO_T, 1, 1, 1);
-    pbval_th = new MeshBoundaryValuesCC(pmy_pack, pin, false);
-    pbval_th->exch_depth = M1HaloDepth(pmy_pack, pin);
-    impl_hdepth = pbval_th->exch_depth;   // also the halo_mpi cell lists
-    {
-      auto slot = [](const int iw) {
-        int s = -1;
-        for (int n=0; n<M1_NHALO_T; ++n) {
-          if (M1HaloCompT(n) == iw) {s = n;}
-        }
-        return s;
-      };
-      pbval_th->SetVectorPairs(M1_NHALO_T, {{slot(M1_IW_N2), slot(M1_IW_N3)},
-                                            {slot(M1_IW_A2), slot(M1_IW_A3)},
-                                            {slot(M1_IW_V2), slot(M1_IW_V3)}});
-    }
-    Kokkos::realloc(thq_c, nmb, M1_NHALO_Q, 1, 1, 1);
-    pbval_tq = new MeshBoundaryValuesCC(pmy_pack, pin, false);
-    pbval_tq->exch_depth = M1HaloDepth(pmy_pack, pin);
-    pbval_tq->SetVectorPairs(M1_NHALO_Q, {});   // E', G0, F1, KT: all scalars
-    halo_shell = !(pmy_pack->pmesh->multilevel || pmy_pack->pmesh->use_cubed_sphere ||
-                   pmy_pack->pmesh->use_polar_boundary);
-    Kokkos::realloc(krw, nmb, 1, ncells3, ncells2, ncells1);
-    Kokkos::deep_copy(krw, 0.0);
-    Kokkos::realloc(krw_c, nmb, 1, 1, 1, 1);
-    pbval_kr = new MeshBoundaryValuesCC(pmy_pack, pin, false);
-    pbval_kr->exch_depth = M1HaloDepth(pmy_pack, pin);
-    pbval_kr->InitializeBuffers(1);
-    pbval_kr->SetVectorPairs(1, {});   // one scalar Krylov vector
-    if (impl_halo_direct) {ImplicitHaloDirectInit();}
   }
   ImplicitPartitionInit();
 
@@ -934,338 +871,6 @@ void RadiationVet::ImplicitPartitionInit() {
               << " MeshBlocks per x1 column, " << part_nx1g << " rows per gathered line, "
               << part_nlay << " halo layers" << std::endl;
   }
-}
-
-// the depth of the implicit scratch exchanges on the cubed sphere,
-// <rad_vet>/implicit_halo_depth (default 2; 0 or >= ng = all ng layers, the old
-// behaviour).  The implicit kernels read 2 ghost layers
-// (the vimp enthalpy stencil +-2; poisoned-ghost gate M1_POISON_GHOST: NaN beyond depth
-// 2 leaves the outputs identical, beyond depth 1 does not), so depth 2 sends the same
-// values that are read with 2/3 of the bytes (RSG 2-node loop -2.5 %, bitwise).
-// G5 (USER 11-04): also on the spherical-polar mesh (wedge and full sphere:
-// the pole partner's rows are reversed within the strip, so a depth-2 strip fills the
-// 2 ghost rows next to the pole; poisoned-ghost gate incl. the polar rows) when x1 is
-// one MeshBlock (the gate poisons x2/x3 ghosts only; every sp production is x1-unsplit);
-// not on Cartesian meshes (the old behaviour, all ng layers).
-static int M1HaloDepth(MeshBlockPack *pp, ParameterInput *pin) {
-  Mesh *pm = pp->pmesh;
-  const bool sp = pm->use_spherical_polar && (pm->mesh_indcs.nx1 == pm->mb_indcs.nx1);
-  if (!pm->use_cubed_sphere && !sp) {return 0;}
-  int d = 2;
-  if (pin != nullptr && pin->DoesParameterExist("rad_vet", "implicit_halo_depth")) {
-    d = pin->GetInteger("rad_vet", "implicit_halo_depth");
-  }
-  return d;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::ImplicitHaloCopy
-//! \brief copy `nq` components between iw and the scratch halo array `sc` (`topack`
-//! picks the direction), over the HALO SHELL only.
-//!
-//! What the exchange reads out of `sc` is the outermost ng ACTIVE cells, and what it
-//! writes back into it is the ghost zones (buffs_cc.cpp, isame); with same-level
-//! neighbours only -- which is all the implicit solve allows -- nothing else in `sc` is
-//! ever touched.  The box [is+ng,ie-ng] x [js+ng,je-ng] x [ks+ng,ke-ng] is therefore
-//! neither sent nor received and need not be copied in either direction: on the way in
-//! its value is never read, and on the way back it is a copy of what the pack put there.
-//! At a 2-D 84 x 32 block with ng = 2 that is 480 cells per component instead of 3168.
-//! `halo_shell` falls back to the full copy for the exchanges that reach deeper (the
-//! cubed-sphere resample and the polar transform read the whole strip).
-//!
-//! The loop carries (m,n,k,j) and runs the contiguous i direction inside, so the index
-//! arithmetic of the flattened range policy (an integer division per index) is paid once
-//! per ROW instead of once per cell.
-
-void RadiationVet::ImplicitHaloCopy(DvceArray5D<Real> &sc, int nq, int c0, bool topack) {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  int n1 = indcs.nx1 + 2*(indcs.ng);
-  int n2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
-  int n3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
-  int nmb1 = pmy_pack->nmb_thispack - 1;
-  // the deep interior, as an index box.  A direction with no neighbour (a degenerate
-  // dimension) is interior everywhere; a direction too thin to have one (nx <= 2 ng), or
-  // a run whose exchange reaches deeper, makes the box empty and the copy full.
-  int ng = indcs.ng;
-  int ilo = halo_shell ? (indcs.is + ng) : n1;
-  int ihi = halo_shell ? (indcs.ie - ng) : (n1 - 1);
-  int jlo = (indcs.nx2 > 1) ? (indcs.js + ng) : 0;
-  int jhi = (indcs.nx2 > 1) ? (indcs.je - ng) : 0;
-  int klo = (indcs.nx3 > 1) ? (indcs.ks + ng) : 0;
-  int khi = (indcs.nx3 > 1) ? (indcs.ke - ng) : 0;
-  if (ilo > ihi) {
-    ilo = n1;
-    ihi = n1 - 1;
-  }
-  const int il_ = ilo, iu_ = ihi, jl_ = jlo, ju_ = jhi, kl_ = klo, ku_ = khi;
-  const int nc0 = c0, nn1 = n1;
-  const bool pack_ = topack;
-  auto iw_ = iw;
-  auto sc_ = sc;
-  // test switch (env M1_POISON_GHOST=1; gate only, NOT a run mode): on the way back,
-  // every ghost cell more than ONE cell outside the active range in x2 or x3 is set to
-  // NaN (if the outputs stay identical, no implicit kernel reads those layers of the
-  // exchanged components)
-  static int s_poison = -1;
-  if (s_poison < 0) {
-    s_poison = 0;
-#if VET_DEBUG
-    const char *f = std::getenv("M1_POISON_GHOST");
-    s_poison = (f != nullptr) ? std::atoi(f) : 0;
-#endif
-  }
-  const bool poi = (s_poison != 0) && !topack;
-  const int pd = s_poison;   // M1_POISON_GHOST=D: the ghost layers beyond depth D
-  const int pjs = indcs.js, pje = indcs.je, pks = indcs.ks, pke = indcs.ke;
-  const bool p2 = (indcs.nx2 > 1), p3 = (indcs.nx3 > 1);
-  if (impl_halo_direct || poi) {
-    // implicit_halo_direct on a mesh whose neighbours are not all on this rank: the
-    // same shell copy with ONE thread per cell (coalesced along i) instead of one per
-    // row -- the row loop runs ~13k threads with strided rows on the 3-D box.
-#if defined(KOKKOS_ENABLE_HIP)
-    // (HIP): one 64-lane vector per (m,n,k,j) row, 4 rows per team, i.e.
-    // the same cells, each copied by the same assignment, with the index division paid
-    // per row instead of per cell (rocprofv3, HG small cs deck: m1_impl_hcpyf 0.40 s,
-    // 7466 launches, ~2.6 TB/s).  Bitwise (plain copies).
-    if (!poi) {
-      const int nr2 = n2, nr3 = n3, nqq = nq;
-      const int nrow = (nmb1 + 1)*nq*n3*n2;
-      constexpr int kTr = 4;
-      Kokkos::TeamPolicy<DevExeSpace, Kokkos::LaunchBounds<256, 2>>
-          pol(DevExeSpace(), (nrow + kTr - 1)/kTr, kTr, 64);
-      Kokkos::parallel_for("vet_impl_hcpyt", pol, KOKKOS_LAMBDA(TeamMember_t tm) {
-        Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, kTr), [&](const int r) {
-          const int row = tm.league_rank()*kTr + r;
-          if (row >= nrow) return;
-          const int m = row/(nqq*nr3*nr2);
-          const int n = (row - m*(nqq*nr3*nr2))/(nr3*nr2);
-          const int k = (row - (m*nqq + n)*(nr3*nr2))/nr2;
-          const int j = row - ((m*nqq + n)*nr3 + k)*nr2;
-          const bool inr = (k >= kl_) && (k <= ku_) && (j >= jl_) && (j <= ju_);
-          const int nc = (nc0 >= 0) ? (nc0 + n) : M1HaloCompT(n);
-          Kokkos::parallel_for(Kokkos::ThreadVectorRange(tm, nn1), [&](const int i) {
-            if (inr && (i >= il_) && (i <= iu_)) return;
-            if (pack_) {
-              sc_(m,n,k,j,i) = iw_(m,nc,k,j,i);
-            } else {
-              iw_(m,nc,k,j,i) = sc_(m,n,k,j,i);
-            }
-          });
-        });
-      });
-      return;
-    }
-#endif
-    par_for("vet_impl_hcpyf", DevExeSpace(), 0, nmb1, 0, nq-1, 0, n3-1, 0, n2-1, 0, n1-1,
-    KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-      if ((k >= kl_) && (k <= ku_) && (j >= jl_) && (j <= ju_) && (i >= il_) &&
-          (i <= iu_)) {
-        return;
-      }
-      const int nc = (nc0 >= 0) ? (nc0 + n) : M1HaloCompT(n);
-      if (pack_) {
-        sc_(m,n,k,j,i) = iw_(m,nc,k,j,i);
-      } else if (poi && ((p2 && (j < pjs - pd || j > pje + pd)) ||
-                         (p3 && (k < pks - pd || k > pke + pd)))) {
-        iw_(m,nc,k,j,i) = std::numeric_limits<Real>::quiet_NaN();
-      } else {
-        iw_(m,nc,k,j,i) = sc_(m,n,k,j,i);
-      }
-    });
-    return;
-  }
-  par_for("vet_impl_hcpy", DevExeSpace(), 0, nmb1, 0, nq-1, 0, n3-1, 0, n2-1,
-  KOKKOS_LAMBDA(const int m, const int n, const int k, const int j) {
-    const int nc = (nc0 >= 0) ? (nc0 + n) : M1HaloCompT(n);
-    // the two i runs this row copies: the whole row unless the row is interior
-    int ia = 0, ib = nn1 - 1, ic = nn1, id = nn1 - 1;
-    if ((k >= kl_) && (k <= ku_) && (j >= jl_) && (j <= ju_)) {
-      ib = il_ - 1;
-      ic = iu_ + 1;
-    }
-    if (pack_) {
-      for (int i=ia; i<=ib; ++i) {
-        sc_(m,n,k,j,i) = iw_(m,nc,k,j,i);
-      }
-      for (int i=ic; i<=id; ++i) {
-        sc_(m,n,k,j,i) = iw_(m,nc,k,j,i);
-      }
-    } else {
-      for (int i=ia; i<=ib; ++i) {
-        iw_(m,nc,k,j,i) = sc_(m,n,k,j,i);
-      }
-      for (int i=ic; i<=id; ++i) {
-        iw_(m,nc,k,j,i) = sc_(m,n,k,j,i);
-      }
-    }
-  });
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::ImplicitHaloExchange
-//! \brief the common core: pack, exchange through the ordinary cell-centred boundary
-//! machinery on the PERSISTENT scratch array whose width matches `nq`, unpack.  The
-//! three widths (M1_NHALO_T, M1_NHALO_Q, 1) have one array and one boundary object each;
-//! they are used strictly sequentially, so they may share the MPI tag space.
-
-void RadiationVet::ImplicitHaloExchange(int nq, int c0) {
-  if (halo_direct_on) {   // implicit_halo_direct, every neighbour on this rank
-    ImplicitHaloDirect(nq, c0);
-    return;
-  }
-  if (impl_halo_mpi) {     // implicit_halo_mpi: on-rank copy + one message per rank
-    if (hm_state == 0) {ImplicitHaloMPIInit();}
-    if (hm_state == 1) {
-      ImplicitHaloMPI(nq, c0);
-      return;
-    }
-  }
-  DvceArray5D<Real> *pa, *pc;
-  MeshBoundaryValuesCC *pb;
-  if (nq == M1_NHALO_T) {
-    pa = &thw; pc = &thw_c; pb = pbval_th;
-  } else if (nq == M1_NHALO_Q) {
-    pa = &thq; pc = &thq_c; pb = pbval_tq;
-  } else if (nq == M1_NVIMP_X) {
-    pa = &vmw; pc = &vmw_c; pb = pbval_vm;
-  } else {
-    pa = &krw; pc = &krw_c; pb = pbval_kr;
-  }
-  if (pa->extent_int(0) == 0) {   // (thw under scheme = clean: made at its first use)
-    auto &id = pmy_pack->pmesh->mb_indcs;
-    Kokkos::realloc(*pa, pmy_pack->nmb_thispack, nq, (id.nx3 > 1) ? id.nx3 + 2*id.ng : 1,
-                    (id.nx2 > 1) ? id.nx2 + 2*id.ng : 1, id.nx1 + 2*id.ng);
-    pb->InitializeBuffers(nq);
-  }
-  ImplicitHaloCopy(*pa, nq, c0, true);
-  while (pb->InitRecv(nq) == TaskStatus::incomplete) {}
-  while (pb->PackAndSendCC(*pa, *pc) == TaskStatus::incomplete) {}
-  while (pb->RecvAndUnpackCC(*pa, *pc) == TaskStatus::incomplete) {}
-  while (pb->ClearSend() == TaskStatus::incomplete) {}
-  while (pb->ClearRecv() == TaskStatus::incomplete) {}
-  ImplicitHaloCopy(*pa, nq, c0, false);
-  // STAGE CS2 (C3): (N2, N3) of the work array are FACE-NORMAL components (as A and V)
-  // and cross a seam re-expressed on the destination's face normals (cs_perm_pairs,
-  // CubedS1Init; was the signed axis permutation); it is renormalised in the
-  // ghost cells all the same (a no-op for the cs closures: n = 0 or rhat),
-  // so that a later change of the seam map cannot hand the closure a non-unit n.  A zero
-  // n (eddington; vet_col about r_hat has n = r_hat) is left alone.
-  if (cs_geom && nq == M1_NHALO_T) {
-    auto &indcs = pmy_pack->pmesh->mb_indcs;
-    const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
-    const int ks = indcs.ks, ke = indcs.ke;
-    const int n1 = indcs.nx1 + 2*indcs.ng, n2 = indcs.nx2 + 2*indcs.ng;
-    const int n3 = indcs.nx3 + 2*indcs.ng;
-    auto iw_ = iw;
-    par_for("vet_cs_nrenorm", DevExeSpace(), 0, pmy_pack->nmb_thispack-1, 0, n3-1,
-            0, n2-1, 0, n1-1, KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      if (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke) return;
-      const Real a = iw_(m,M1_IW_N1,k,j,i), b = iw_(m,M1_IW_N2,k,j,i);
-      const Real d = iw_(m,M1_IW_N3,k,j,i);
-      const Real nn = a*a + b*b + d*d;
-      if (!(nn > 0.0)) return;
-      const Real f = 1.0/sqrt(nn);
-      iw_(m,M1_IW_N1,k,j,i) = a*f;
-      iw_(m,M1_IW_N2,k,j,i) = b*f;
-      iw_(m,M1_IW_N3,k,j,i) = d*f;
-    });
-  }
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::ImplicitHaloDirectInit
-//! \brief implicit_halo_direct: tabulate, for every MeshBlock of the pack and each of the
-//! 26 directions (ox1,ox2,ox3), the LOCAL index of the same-level neighbour that fills
-//! that ghost region, or -1 where there is none (a physical boundary: its ghost zones
-//! are not filled by the ordinary exchange either).  The direct copy is used only when
-//! EVERY rank finds every neighbour on its own rank at the same level, outside the
-//! cubed-sphere and polar transforms (so all ranks take the same branch and no MPI
-//! exchange is left half-posted); otherwise the ordinary exchange runs, as before.
-
-void RadiationVet::ImplicitHaloDirectInit() {
-  auto *pm = pmy_pack->pmesh;
-  const int nmb = pmy_pack->nmb_thispack;
-  hd_src = DualArray2D<int>("vet_hd_src", nmb, 27);
-  int ok = (pm->multilevel || pm->use_cubed_sphere || pm->use_polar_boundary) ? 0 : 1;
-  auto &nb = pmy_pack->pmb->nghbr;
-  auto &lev = pmy_pack->pmb->mb_lev;
-  const int e2 = pm->multi_d ? 1 : 0;
-  const int e3 = pm->three_d ? 1 : 0;
-  for (int m = 0; m < nmb; ++m) {
-    for (int d = 0; d < 27; ++d) {hd_src.h_view(m,d) = -1;}
-    for (int o3 = -e3; o3 <= e3; ++o3) {
-      for (int o2 = -e2; o2 <= e2; ++o2) {
-        for (int o1 = -1; o1 <= 1; ++o1) {
-          if (o1 == 0 && o2 == 0 && o3 == 0) continue;
-          int n = NeighborIndex(o1, o2, o3, 0, 0);
-          if (n < 0 || n >= pmy_pack->pmb->nnghbr) {ok = 0; continue;}
-          const NeighborBlock &q = nb.h_view(m,n);
-          if (q.gid < 0) continue;
-          if (q.rank != global_variable::my_rank || q.lev != lev.h_view(m)) {
-            ok = 0;
-            continue;
-          }
-          hd_src.h_view(m, (o1+1) + 3*(o2+1) + 9*(o3+1)) = q.gid - pmy_pack->gids;
-        }
-      }
-    }
-  }
-#if MPI_PARALLEL_ENABLED
-  {int g = ok;
-  MPI_Allreduce(&ok, &g, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
-  ok = g;}
-#endif
-  halo_direct_on = (ok == 1);
-  hd_src.modify_host();
-  hd_src.sync_device();
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::ImplicitHaloDirect
-//! \brief implicit_halo_direct: the ghost zones of `nq` components (c0 >= 0: that one
-//! component; else the M1HaloCompT list) filled by ONE kernel that copies each ghost
-//! cell from the active cell of the neighbour that owns it (all neighbours are on this
-//! rank at the same level, ImplicitHaloDirectInit).  The same numbers the pack /
-//! exchange / unpack chain delivers: 1 launch where there were 4, and no host work.
-
-void RadiationVet::ImplicitHaloDirect(int nq, int c0) {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie;
-  const int js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
-  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
-  const int n1 = nx1 + 2*indcs.ng;
-  const int n2 = (nx2 > 1) ? (nx2 + 2*indcs.ng) : 1;
-  const int n3 = (nx3 > 1) ? (nx3 + 2*indcs.ng) : 1;
-  const int nmb1 = pmy_pack->nmb_thispack - 1;
-  const bool md = (nx2 > 1), td = (nx3 > 1);
-  auto iw_ = iw;
-  auto tab = hd_src.d_view;
-  const int nc0 = c0;
-  par_for("vet_impl_hdir", DevExeSpace(), 0, nmb1, 0, nq-1, 0, n3-1, 0, n2-1, 0, n1-1,
-  KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-    const int o1 = (i < is) ? -1 : ((i > ie) ? 1 : 0);
-    const int o2 = md ? ((j < js) ? -1 : ((j > je) ? 1 : 0)) : 0;
-    const int o3 = td ? ((k < ks) ? -1 : ((k > ke) ? 1 : 0)) : 0;
-    if (o1 == 0 && o2 == 0 && o3 == 0) return;
-    const int src = tab(m, (o1+1) + 3*(o2+1) + 9*(o3+1));
-    if (src < 0) return;
-    const int nc = (nc0 >= 0) ? (nc0 + n) : M1HaloCompT(n);
-    iw_(m,nc,k,j,i) = iw_(src,nc,k - o3*nx3,j - o2*nx2,i - o1*nx1);
-  });
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::ImplicitKrylovHalo
-//! \brief milestone 3b phase C: put ONE component of the work array into the scratch
-//! array `krw`, exchange it with all six neighbours through the module's ordinary
-//! cell-centred boundary machinery (which is what supplies periodic wrap, edge/corner
-//! neighbours and MPI), and copy the ghost zones back.  PHYSICAL boundaries are not
-//! filled: the row's coefficient towards such a neighbour is identically zero, so the
-//! ghost value is multiplied by zero and never read in anger.
-
-void RadiationVet::ImplicitKrylovHalo(int comp) {
-  ImplicitHaloExchange(1, comp);
 }
 
 //----------------------------------------------------------------------------------------

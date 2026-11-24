@@ -1196,20 +1196,15 @@ void RadiationVet::Time2Restore(Driver *pdrive) {
 //! per round; cap 4096).  Bitwise wherever no face is limited.
 
 //! \brief the limiter R's exchange (iw slot c): with the clean scheme's direct lists, the
-//! first ghost layer only (the 7-point stencil reads the face ghosts; raw copies as
-//! pbval_kr's, cs_noresample), one message per neighbour rank, without the clean
-//! exchanges deferred to their next fill
+//! first ghost layer only (the 7-point stencil reads the face ghosts; raw copies,
+//! cs_noresample), one message per neighbour rank, without the clean exchanges deferred
+//! to their next fill
 
 void RadiationVet::Time2FctHalo(const int c) {
-  if (cln_hdl.state == 1 && iw.extent_int(4) == cln_hdl.n1 &&
-      iw.extent_int(3) == cln_hdl.n2 && iw.extent_int(2) == cln_hdl.n3) {
-    std::vector<CleanGSeg<Real>> hp;
-    hp.swap(cln_hpend);
-    CleanGhostFill(iw, c, 1, false, 0, 1);
-    cln_hpend.swap(hp);
-  } else {
-    ImplicitKrylovHalo(c);
-  }
+  std::vector<CleanGSeg<Real>> hp;
+  hp.swap(cln_hpend);
+  CleanGhostFill(iw, c, 1, false, 0, 1);
+  cln_hpend.swap(hp);
 }
 
 void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {

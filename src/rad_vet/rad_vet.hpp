@@ -992,36 +992,14 @@ class RadiationVet {
   DvceArray4D<Real> f0x2, f0x3;   // face-normal comoving fluxes on the x2 / x3 faces,
                                 // (m,k,j,i).  PERSISTENT state, carried by the restart
                                 // file next to f0x1; allocated only when trans_on.
-  DvceArray5D<Real> thw;        // (m,M1_NHALO_T,k,j,i) scratch the transverse halo
-                                // exchanges through the module's ordinary CC boundary
-                                // machinery
-  DvceArray5D<Real> thw_c;      // its (unused) coarse buffer; SMR/AMR is a fatal
-  MeshBoundaryValuesCC *pbval_th;  // the exchange object of thw
-  DvceArray5D<Real> thq;        // (m,M1_NHALO_Q,k,j,i) the NARROW transverse halo: the
-                                // components a Picard pass moves once the closure is
-                                // frozen (implicit_closure_lag = step)
-  DvceArray5D<Real> thq_c;      // its (unused) coarse buffer
-  MeshBoundaryValuesCC *pbval_tq;  // the exchange object of thq
-  bool halo_shell{};            // the deep interior of the scratch halo arrays may be
-                                // skipped (same-level neighbours only, no cubed sphere,
-                                // no polar boundary)
 
   // ---- MILESTONE 3b phase C: implicit_solver = bicgstab.  All null under line_jacobi.
   bool bicg_on{};               // impl_solver == M1_ISOLV_BICGSTAB and trans_on
-  DvceArray5D<Real> krw;        // (m,1,k,j,i) scratch: ONE Krylov vector, exchanged with
-                                // the same cell-centred machinery thw uses
-  DvceArray5D<Real> krw_c;      // its (unused) coarse buffer
-  MeshBoundaryValuesCC *pbval_kr;  // the exchange object of krw
   int impl_prec_fb{};           // <rad_vet>/implicit_precond_fallback: -1 = none (the
                                 // default), else the impl_prec code (0 line, 1 rbgs)
   bool bcg_capped{};            // the last BiCGStab stopped at lin_maxit, test unmet
   // ---- GPU cost of the Krylov iteration (bench/m1_fast_0923).  Every key defaults OFF;
   // off, nothing below is allocated or referenced and the path is bitwise HEAD.
-  bool impl_halo_direct{};      // <rad_vet>/implicit_halo_direct: fill the ghost zones of
-                                // the implicit exchanges by ONE on-rank copy kernel
-  bool halo_direct_on{};        // ...and the mesh allows it (same level, all neighbours
-                                // on this rank on EVERY rank, no seam/pole)
-  DualArray2D<int> hd_src;      // (m, 27 directions): local source MeshBlock or -1
   DvceArray5D<Real> odc;        // (m,3,k,j,i) that cache
   bool impl_stencil{};          // <rad_vet>/implicit_op_stencil: the operator of each
                                 // Picard pass as a 19-point stencil, built once
@@ -1050,63 +1028,6 @@ class RadiationVet {
                                 // forward half (red, black), 3 = mg (rbgs_fwd + block-
                                 // local semicoarsened levels, rad_vet_precond.cpp), 4 =
                                 // mg_gc (mg + the global band coarse space)
-  // ---- multi-rank Krylov (tests_m1/runs_3w_krylov, rad_vet_krylov.cpp).  Both keys
-  // default OFF; off, nothing below is allocated and the path is bitwise the old one.
-  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> kp_h;  // its 2 x 6 reduction slots
-  bool impl_halo_mpi{};         // <rad_vet>/implicit_halo_mpi: implicit_halo_direct on
-                                // several ranks: on-rank copy kernel + ONE message per
-                                // neighbour rank (pack / unpack kernels)
-  int hm_state{};               // 0 = not built, 1 = on, -1 = not possible on this mesh
-  int impl_hdepth = 0;   // G5: implicit_halo_depth of the halo_mpi lists (0 = ng)
-  int hm_nsend{}, hm_nrecv{};   // entries (cells) sent / received per component
-  int hm_nq{};                  // components the buffers are sized for
-  std::vector<int> hm_rank, hm_soff, hm_slen, hm_roff, hm_rlen;  // per neighbour rank
-  DualArray1D<int> hm_sm, hm_skji, hm_sseg, hm_rm, hm_rkji, hm_rseg;  // per entry
-  DualArray1D<int> hm_segs;     // (4*nseg) soff, slen, roff, rlen
-  DvceArray1D<Real> hm_sbuf, hm_rbuf;
-  // HIP builds hand MPI host copies of the two buffers (see
-  // ImplicitHaloMPIFinish); empty on CUDA / host builds.  pinned host
-  // memory, written by the pack kernel and read by the unpack kernel directly (no
-  // staging copies; hm_sbuf / hm_rbuf are then unused on HIP)
-  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> hm_shost, hm_rhost;
-  void *hm_comm;                // MPI_Comm* (the dup'ed communicator), opaque here
-  void ImplicitHaloMPIInit();
-  void ImplicitHaloMPI(int nq, int c0);
-  void ImplicitHaloMPIPost(int nq, int c0);    // receives, pack, on-rank copy
-  void ImplicitHaloMPIFinish(int nq, int c0);  // sends, wait, unpack
-  // ---- <rad_vet>/implicit_halo_ipc (m1-perf-0928; default false): the off-rank part of
-  // implicit_halo_mpi between ranks on the SAME node without MPI and without a host
-  // wait.  The pack kernel writes straight into the neighbour's receive buffer (CUDA
-  // IPC, double-buffered by the parity of the exchange count), a 1-thread kernel sets
-  // the neighbour's arrival flag; the receiver's 1-thread kernel spins on its own flag,
-  // unpacks, and acknowledges.  Same numbers as the MPI path (bitwise).
-  bool impl_halo_ipc{};
-  int hi_state{};               // 0 = not built, 1 = on, -1 = not possible (MPI path)
-  long long hi_seq;             // exchanges so far (identical on every rank)
-  long long hi_nchk;            // exchanges since the last check of the error flag
-  Real *hi_rbuf;                // own receive buffer, 2 parities x hi_half Reals
-  long long *hi_sig;            // own flags: [0,32) arrivals, [32,64) acks, by segment
-  int *hi_err;                  // device error flag (a spin timed out)
-  size_t hi_half{};
-  DualArray1D<unsigned long long> hi_prb, hi_psig;  // peer rbuf / sig, per segment
-  DualArray1D<long long> hi_phalf;  // peer parity-half size, per segment
-  DualArray1D<int> hi_proff;    // peer's receive offset (entries) for my data
-  DualArray1D<int> hi_pslot;    // my segment index in the peer's list
-  void ImplicitHaloIPCInit();
-  void ImplicitHaloIPCPost(int nq, int c0);
-  void ImplicitHaloIPCFinish(int nq, int c0);
-  // ---- implicit_halo_overlap (tests_m1/runs_3y_halo_overlap): the Krylov halo of x
-  // overlapped with the operator on the interior cells; read only when named, default
-  // off (then nothing below runs).  Needs implicit_halo_mpi and implicit_op_stencil.
-  bool impl_halo_ovl{};
-  // <rad_vet>/implicit_halo_ovl_faces (tests_m1/runs_4l_sync; read only when named,
-  // default false): the shell of the overlapped operator is only as deep as the faces
-  // whose ghosts arrive by MPI (hm_face, the union over the pack, set by
-  // ImplicitHaloMPIInit: x1-, x1+, x2-, x2+, x3-, x3+); the other faces go with the
-  // interior, whose ghosts (on-rank copy, physical: coefficient 0) are in place
-  bool impl_ovl_faces{};
-  int hm_face[6]{};
-  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> ho_h;  // 2 x 4 partial sums
   // implicit_precond = mg_gc (rad_vet_precond.cpp, tests_m1/runs_5p_coarse2): a GLOBAL
   // coarse space of per-x1-layer (x2,x3)-band means in front of mg; used only under it
   Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> gc_part;  // (m,lb,q,c,i) band sums
@@ -1504,8 +1425,6 @@ class RadiationVet {
   // strong kick of 1e-8 floor gas beside a
   // pgen-held 73 kK nozzle cell no longer charges it E_nozzle dv_floor: S2 -16.7 there)
   bool vimp_now{};              // on for this step (the positivity fallback drops it)
-  DvceArray5D<Real> vmw, vmw_c;   // exchange scratch of the M1_NVIMP_X components
-  MeshBoundaryValuesCC *pbval_vm;  // ...and its exchange object
   // (cubed sphere only): a 3-component exchange (scalar, face-normal pair)
   // of iw slots c0..c0+2, for the dA / s vectors of the conservative sources
   DvceArray5D<Real> d3w;
@@ -1641,8 +1560,6 @@ class RadiationVet {
   //   cs_seam   per MeshBlock: its inner_x2, outer_x2, inner_x3, outer_x3 face is a seam.
   //   csg2/3    the canonical seam geometry (M1CsSeamGeom) of the x2 / x3 seam faces,
   //             (m, {dth, angm, sfoot, smid}, along-seam cell incl. ghosts, side lo/hi).
-  // The implicit scratch exchanges (pbval_th, pbval_tq, pbval_kr) run without the
-  // along-seam resample, so a seam ghost is the neighbour's own (mirror) cell.
   DualArray2D<BoundaryFlag> m1bcs;
   DualArray2D<int> cs_seam;
   DvceArray4D<Real> csg2, csg3;
@@ -2147,11 +2064,11 @@ class RadiationVet {
   std::unique_ptr<MeshBoundaryValuesCC> cln_hpb;
   std::vector<CleanGSeg<Real>> cln_hpend;
   DvceArray5D<Real> cln_hbuf;   // the storage of every scratch array (as used, <= 32)
-  // clean_halo_direct (default true): the exchange in old production's halo_mpi form,
+  // clean_halo_direct (only true): the exchange in old production's halo_mpi form,
   // cell lists read once off cln_hpb's own exchange (CleanHaloInit): on-rank ghosts by
   // one copy, one message per neighbour rank, receives posted before the pack
   struct CleanHaloList {
-    int state = 0;              // 0 lists to make at first use, 1 on, -1 off
+    int state = 0;              // 0 lists to make at first use, 1 on, -1 while made
     int n1 = 0, n2 = 0, n3 = 0, nl = 0, ns = 0, nr = 0, par = 0;
     DvceArray1D<int> ld, ls, sc, rc;   // on-rank ghost <- its source; sent; received
     std::vector<int> rank, soff, slen, roff, rlen;
@@ -2194,20 +2111,6 @@ class RadiationVet {
   //! exchange the x1 ghost layers the multi-block solve needs; `eponly` picks the
   //! one-quantity set (E of the new iterate) instead of the six lagged ones
   //! gather the assembled rows onto the roots, run Thomas there, scatter back
-  //! milestone 3b phase B: exchange the LAGGED quantities the x2/x3 faces need with
-  //! ALL six neighbours (periodic wrap and MPI included), through the module's ordinary
-  //! cell-centred boundary machinery on the scratch array thw.  `nq` is how many of the
-  //! M1HaloCompT list go: M1_NHALO_T (all of them), M1_NHALO_Q (the components a Picard
-  //! pass can move once the closure is frozen) or 1 (E of the new iterate alone)
-  //! the common core of the two halo exchanges: pack `nq` components into the scratch
-  //! array that matches that width, run the ordinary CC exchange, unpack.  `c0 >= 0`
-  //! carries ONE named component of iw (the Krylov vector) instead of the M1HaloCompT
-  //! list
-  void ImplicitHaloExchange(int nq, int c0);
-  //! copy the halo components between iw and the scratch array `sc` over the HALO SHELL
-  //! (`topack` picks the direction); see the definition for why the deep interior is
-  //! neither sent nor received
-  void ImplicitHaloCopy(DvceArray5D<Real> &sc, int nq, int c0, bool topack);
   //! milestone 3b phase B: the lagged transverse (x2/x3) divergence of one Picard pass,
   //! split into its diagonal part (M1_IW_TDIA) and its right-hand side (M1_IW_TRHS)
   //! the TRANSVERSE realizability limiter: fill thx2/thx3 (and, when newk, the lagged
@@ -2236,15 +2139,10 @@ class RadiationVet {
   //! implicit_od_cache: y += sgn L_off(x) (with7 = false) or y = A x (with7 = true) from
   //! the cache; red > 0 also returns reductions in out[4] (see the definition)
   //! implicit_krylov_fuse = 3: BiCGStab with TWO blocking reductions per iteration
-  //! implicit_halo_direct: the neighbour table, and the one-kernel ghost fill
-  void ImplicitHaloDirectInit();
   //! implicit_op_stencil: build the 19-point operator of the pass / apply it
   // red_only (m1-fast3): y is already in yc (the overlap parts): the reductions only
   //! the fast-path operator product: stencil or od cache
-  void ImplicitHaloDirect(int nq, int c0);
   //! the Thomas / cyclic-Thomas sweep (implicit_line_solver = thomas)
-  //! milestone 3b phase C: exchange ONE component of iw with all six neighbours
-  void ImplicitKrylovHalo(int comp);
   //! milestone 3b phase C: y = A x with the frozen 7-point operator (one halo of x)
   //! milestone 3b phase D: accumulate sgn * L_off(x) into the component yc, with
   //! L_off the cell-row contribution of the OFF-DIAGONAL Eddington terms of every face

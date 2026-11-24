@@ -148,21 +148,6 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
     // slopes are cell- and face-local (rad_vet_time2.cpp), so they carry no geometry; the
     // seam face state is averaged at the start of each solve (CubedSeamFaceAverage).
     // implicit_vimp too (its cs form: ImplicitVimpBuild, the face-normal work row)
-    // (USER 10-18: production sp keys must run on cs): implicit_halo_mpi
-    // (and its overlap) is a communication layout, not a method; on cs it falls back to
-    // the ordinary seam-aware exchange (the same numbers), as implicit_halo_direct does
-    if (impl_halo_mpi) {
-      impl_halo_mpi = false;
-      impl_halo_ovl = false;
-      impl_ovl_faces = false;
-      impl_halo_ipc = false;
-      if (global_variable::my_rank == 0) {
-        std::cout << "<rad_vet> cubed sphere: implicit_halo_mpi (+ overlap) falls back "
-                     "to "
-                  << "the ordinary seam-aware exchange (the seam halo_mpi port is open)"
-                  << std::endl;
-      }
-    }
     // CS1: the canonical seam geometry needs the equiangular panel of -1..1 with the same
     // cell count along both tangential axes, and the one-sided tangential derivatives
     // next to a seam three cells of the block
@@ -421,20 +406,6 @@ void RadiationVet::CubedS1Init() {
   cs_seam_avg_on = true;
   if (pin_cs_ != nullptr && pin_cs_->DoesParameterExist("rad_vet","cs_seam_avg")) {
     cs_seam_avg_on = pin_cs_->GetBoolean("rad_vet","cs_seam_avg");
-  }
-  if (pbval_th != nullptr) {
-    pbval_th->cs_noresample = true;
-    // STAGE CS2: (N2,N3), (A2,A3), (V2,V3) of the work array are face-normal components
-    // (re-expressed on the destination's face normals at a seam,
-    // bvals_cc.cpp)
-    pbval_th->cs_perm_pairs = true;
-  }
-  if (pbval_tq != nullptr) {pbval_tq->cs_noresample = true;}
-  if (pbval_kr != nullptr) {pbval_kr->cs_noresample = true;}
-  // STAGE CS3: implicit_vimp's exchange; (DV2, DV3) are face-normal components
-  if (impl_vimp && pbval_vm != nullptr) {
-    pbval_vm->cs_noresample = true;
-    pbval_vm->cs_perm_pairs = true;
   }
 }
 

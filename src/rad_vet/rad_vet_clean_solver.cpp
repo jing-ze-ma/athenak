@@ -455,21 +455,13 @@ void RadiationVet::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
 //! every ghost the cell it copies; the on-rank pairs make the copy kernel, the off-rank
 //! ghosts are grouped by rank and their source cells sent to that rank once (its pack
 //! list, in the receiver's order: the messages carry no header).  Checked once: a field
-//! of other values through both paths must give the same array bitwise, else (and on a
-//! refined mesh) the lists stay off and the exchange is cln_hpb's, with a log line.
+//! of other values through both paths must give the same array bitwise, else the run
+//! stops.  (state -1 while the lists are made: the exchange is cln_hpb's.)
 
 void RadiationVet::CleanHaloInit(const int n3, const int n2, const int n1) {
   CleanHaloList &q = cln_hdl;
   auto *pm = pmy_pack->pmesh;
   const int me = global_variable::my_rank;
-  if (pm->multilevel) {
-    q.state = -1;
-    if (me == 0) {
-      std::cout << "<rad_vet> clean_halo_direct: refined mesh, the clean ghost exchange "
-                << "is MeshBoundaryValuesCC's" << std::endl;
-    }
-    return;
-  }
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
@@ -648,19 +640,23 @@ void RadiationVet::CleanHaloInit(const int n3, const int n2, const int n1) {
 #if MPI_PARALLEL_ENABLED
   MPI_Allreduce(MPI_IN_PLACE, &bad, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 #endif
-  q.state = (bad == 0) ? 1 : -1;
-  if (me == 0) {
-    if (bad == 0) {
-      std::cout << "<rad_vet> clean_halo_direct: ON, rank 0 copies " << q.nl
-                << " ghosts, sends " << q.ns << " cells, receives " << q.nr << " in "
-                << q.rank.size() << " messages; on-rank ghosts by depth";
-      for (int d = 0; d < ng; ++d) std::cout << " " << q.nld[d];
-      std::cout << (q.poison ? " (POISON)" : "") << std::endl;
-    } else {
-      std::cout << "<rad_vet> clean_halo_direct: the lists miss " << bad << " cells of "
-                << "the exchange, the clean ghost exchange is MeshBoundaryValuesCC's"
-                << std::endl;
+  if (bad != 0) {
+    if (me == 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "CleanHaloInit: the self-check of clean_halo_direct "
+                << "failed: its cell lists give " << bad << " cells other than the "
+                << "MeshBoundaryValuesCC exchange (array " << n3 << " x " << n2 << " x "
+                << n1 << ", " << global_variable::nranks << " ranks)" << std::endl;
     }
+    std::exit(EXIT_FAILURE);
+  }
+  q.state = 1;
+  if (me == 0) {
+    std::cout << "<rad_vet> clean_halo_direct: ON, rank 0 copies " << q.nl
+              << " ghosts, sends " << q.ns << " cells, receives " << q.nr << " in "
+              << q.rank.size() << " messages; on-rank ghosts by depth";
+    for (int d = 0; d < ng; ++d) std::cout << " " << q.nld[d];
+    std::cout << (q.poison ? " (POISON)" : "") << std::endl;
   }
 }
 

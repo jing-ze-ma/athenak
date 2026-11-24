@@ -186,7 +186,6 @@ add_executable(
 
         rad_vet/rad_vet.cpp
         rad_vet/rad_vet_fluid.cpp
-        rad_vet/rad_vet_halo.cpp
         rad_vet/rad_vet_init.cpp
         rad_vet/rad_vet_clean.cpp
         rad_vet/rad_vet_clean_p1.cpp
