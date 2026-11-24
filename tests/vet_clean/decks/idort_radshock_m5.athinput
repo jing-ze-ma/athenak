@@ -1,0 +1,136 @@
+# Steady non-equilibrium radiative shock, upstream Mach 5 (Lowrie & Edwards 2008, Shock Waves 18
+# 129; the Skinner & Ostriker cgs scaling), 1-D in x1: the semi-analytic profile as the initial
+# condition (problem/vet_shock_ref = ref/idort_radshock_m5.txt, columns x - x_s, rho, v, T_gas,
+# T_rad), Dirichlet far-field states at both x1 faces; the run must keep the profile.
+# The semi-analytic solution is grey non-equilibrium diffusion (Eddington closure), so the
+# run uses clean_closure = eddington (D = I/3) to compare like with like.
+# Used by: idort_radshock_m5.
+#
+# The <rad_vet> block starts with the scheme keys that production pins (the values of the
+# production star decks); the rest are this test's physics, grid and solver set-up.
+
+<job>
+basename = rs
+
+<mesh>
+layout_invariant = true
+nghost = 3
+nx1 = 256
+x1min = 0.0
+x1max = 3.35316086e-02
+ix1_bc = user
+ox1_bc = user
+nx2 = 4
+x2min = 0.0
+x2max = 3.35316086e-02
+ix2_bc = periodic
+ox2_bc = periodic
+nx3 = 1
+x3min = -0.5
+x3max = 0.5
+ix3_bc = periodic
+ox3_bc = periodic
+
+<meshblock>
+nx1 = 256
+nx2 = 4
+nx3 = 1
+
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.4
+nlim = -1
+tlim = 2e-10
+ndiag = 1000000
+
+<hydro>
+fofc = true
+eos = ideal
+reconstruct = plm
+rsolver = hllc
+gamma = 1.666666666666667
+
+<rad_vet>
+# --- production scheme keys ---
+zalesak_active = true
+clean_stag_xdonor = lag
+clean_stag_xsrc = true
+implicit_pos_floor_gas_keep = 1
+implicit_pos_gas_cons = true
+clean_stag_mg_color = mirror
+time2_k1_redist = 0
+time2_tableau = sdirk2
+clean_face_hctau = true
+clean_stag_upwind_central = true
+clean_w_fse_tau = true
+clean_stag_fwb_stage = false
+clean_stag_fwb_t2 = false
+time2_gtime_mom = true
+time2_k1_stiff = 0
+clean_pred_stage = false
+clean_stag_central = true
+clean_stag_kpat = false
+clean_stag_eicarry = true
+clean_gas_secant = max_stage2
+clean_pred_xch = true
+clean_stag_fcone_gas = false
+# --- this test ---
+clean_layout = staggered
+scheme = clean
+clean_cs_lz_abs = 2
+clean_stag_csvec_radial = true
+time2_face_fct = true
+c_light = 2.99792458e10
+chat_over_c = 1.0
+closure = vet_sc
+e_floor = 1.0e-30
+opacity = powerlaw
+kappa_p = 577.16
+kappa_e = 577.16
+kappa_f = 577.16
+kappa_s = 0.0
+rho_ref = 1.0
+t_ref = 1.0
+opac_a = -1.0
+opac_b = 0.0
+arad = 1.6332399e-46
+coupling = true
+gas_feedback = true
+transport = implicit
+implicit_cfl = -1.0
+implicit_bc_x1min = marshak
+implicit_ebath_x1min = 1.70873641e+11
+implicit_bc_x1max = marshak
+implicit_ebath_x1max = 9.16223959e+14
+time_scheme = hesdirk2
+vet_nmu = 4
+vet_nphi = 8
+vet_tensor = full
+clean_closure = eddington
+
+<problem>
+vet_shock_ref = ref/idort_radshock_m5.txt
+pgen_name = rad_vet_beam
+vet_test = radshock
+vet_shock_tunit = 82499208.0
+vet_shock_w = 2.0
+vet_shock_rho_l = 5.69000000e+00
+vet_shock_v_l = 8.65660331e+07
+vet_shock_t_l = 2.18000000e+06
+vet_shock_rho_r = 2.04721116e+01
+vet_shock_v_r = 2.40600842e+07
+vet_shock_t_r = 1.86546943e+07
+vet_shock_xs = 3.31573616e-02
+
+<output1>
+file_type = bin
+bin_double = true
+variable = vet
+dt = 5e-11
+
+<output2>
+file_type = bin
+bin_double = true
+variable = hydro_w
+dt = 5e-11

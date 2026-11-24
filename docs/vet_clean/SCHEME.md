@@ -260,6 +260,35 @@ cfl 0.3 and the larger dt that `rad_signal_speed_diff` gives in thin gas (2.8 x 
 
 Test: `radwave` (phase speed within 3e-3, damping within 5e-3 per radian, no growth).
 
+### Closure accuracy: beams, shadows, emitting bodies, non-LTE atmospheres
+
+The Eddington tensor and the thin-limit face fluxes come from the rays, so radiation that is
+far from isotropic keeps its direction: crossing beams pass through each other, a beam
+behind an opaque cloud leaves a sharp shadow, and the field around an emitting cylinder
+follows exact transport (an M1 closure merges crossing beams and fills shadows). Each beam
+stays straight, at its angle and 1-2 cells wide, but an oblique beam narrower than a cell
+carries about 1.8 x the exact energy density (1.4 x at twice the resolution; the cap of the
+streaming share at its edges). Around the cylinder E is within 1.3 % of exact transport and
+the moment flux in the vacuum about 20 % above it.
+
+Test: `idort_beams` (L1 of E and the beam energy within 5 % of 0.777 and 1.785), `idort_shadow`, `idort_shadow_gl` (L1
+0.014 and 0.013), `idort_cylinder` (E outside 0.013), `nlte_eps1e-1`, `nlte_eps1e-4` (J
+against exact transport, L1 1e-4 and 1.3e-3); `idort_beams_mb` (4 MeshBlocks: identical in
+tile mode).
+
+### Radiation hydrodynamics: radiative shocks and stiff exchange
+
+The coupled scheme holds the Lowrie & Edwards (2008) non-equilibrium radiative shocks at their
+semi-analytic profiles, precursor, Zel'dovich spike and relaxation region included, without
+a shift of the shock (with `clean_closure = eddington`, as the reference is grey
+non-equilibrium diffusion). The gas-radiation exchange is L-stable: at time steps of up to 1e5
+relaxation times the gas reaches the exact equilibrium temperature with the total energy
+conserved.
+
+Test: `idort_radshock_m2`, `idort_radshock_m5` (L1 of rho, v, T_gas, T_rad 2.5e-4 to 2.2e-3,
+each within 5 % of the reference), `idort_thermal_eq2` (error of T within 5 % of 2e-3 after
+5 steps, energy drift <= 1e-13), `thermal_eq`.
+
 ### Phi mirror symmetry on narrow wedges
 
 The ray set must map onto itself under the phi-wall mirrors of the wedge and, at a theta

@@ -262,5 +262,123 @@
    "retry_maxdiff": 0.0,
    "warnings": 0
   }
+ },
+ "idort_beams": {
+  "_about": "L1 = sum |E - E_exact| / sum E_exact over the box; the exact field is the cell average of the straight beams at the angles the code snapped them to. lum_top = energy of the third row below x1max / exact. The beams stay straight and 1-2 cells wide, but an oblique sub-cell beam carries about 1.8 x the exact energy density at this resolution (the cap of the streaming share at the beam edges; 1.4 x at twice the resolution), which dominates L1: regression references, not accuracy bounds",
+  "_ref": "Ma et al. 2025 (IDORT) sec. 4.1.1; Jiang 2021, ApJS 253, 49 sec. 4.2",
+  "near": {
+   "L1": [
+    0.777,
+    0.05
+   ],
+   "lum_top": [
+    1.785,
+    0.05
+   ]
+  }
+ },
+ "idort_beams_mb": {
+  "_about": "largest |difference| of the dumps: 4 MeshBlocks along x2 in tile mode (layout_tile 16) vs 1 MeshBlock, and 4 along x1 in block mode vs 1",
+  "equal": {
+   "maxdiff_tile_x2": 0.0
+  },
+  "max": {
+   "maxdiff_block_x1": 1e-08
+  }
+ },
+ "idort_shadow": {
+  "_about": "L1 of E against the exact attenuated beams (the thermal part, a T^4 <= 1 against E_b = 200 per beam, is not in the exact field)",
+  "_ref": "Ma et al. 2025 (IDORT) sec. 4.1.4; Jiang 2021, ApJS 253, 49 sec. 4.3; Jiang, Stone & Davis 2012, ApJS 199, 14, sec. 6.5",
+  "near": {
+   "L1": [
+    0.0138,
+    0.05
+   ]
+  }
+ },
+ "idort_shadow_gl": {
+  "_about": "as idort_shadow, the general 8 x 32 ray set; the exact field uses the snapped beam angle (11.38 deg)",
+  "_ref": "Ma et al. 2025 (IDORT) sec. 4.1.4",
+  "near": {
+   "L1": [
+    0.0126,
+    0.05
+   ]
+  }
+ },
+ "idort_cylinder": {
+  "_about": "L1 along y = 0 of E inside (x < 1) and outside (x > 1.05) and of F_x / c outside, against the exact transport solution ref/idort_cylinder_exact.npz; F_out is about 0.2 (the moment flux in the vacuum outside the cylinder is above the exact one): a regression reference",
+  "_ref": "Ma et al. 2025 (IDORT) sec. 4.1.2; Jiang 2021, ApJS 253, 49 sec. 4.6",
+  "near": {
+   "E_in": [
+    0.000518,
+    0.05
+   ],
+   "E_out": [
+    0.013,
+    0.05
+   ],
+   "F_out": [
+    0.205,
+    0.05
+   ]
+  }
+ },
+ "idort_radshock_m2": {
+  "_about": "L1 = mean |q - q_ref| / mean |q_ref| of rho, v, T_gas, T_rad at t = 2e-10 s against the semi-analytic profile ref/idort_radshock_m2.txt (no shift)",
+  "_ref": "Lowrie & Edwards 2008, Shock Waves 18, 129",
+  "near": {
+   "L1_rho": [
+    0.000383,
+    0.05
+   ],
+   "L1_v": [
+    0.000245,
+    0.05
+   ],
+   "L1_Tg": [
+    0.000396,
+    0.05
+   ],
+   "L1_Tr": [
+    0.000271,
+    0.05
+   ]
+  }
+ },
+ "idort_radshock_m5": {
+  "_about": "L1 = mean |q - q_ref| / mean |q_ref| of rho, v, T_gas, T_rad at t = 2e-10 s against the semi-analytic profile ref/idort_radshock_m5.txt (no shift)",
+  "_ref": "Lowrie & Edwards 2008, Shock Waves 18, 129",
+  "near": {
+   "L1_rho": [
+    0.00216,
+    0.05
+   ],
+   "L1_v": [
+    0.000919,
+    0.05
+   ],
+   "L1_Tg": [
+    0.00181,
+    0.05
+   ],
+   "L1_Tr": [
+    0.00103,
+    0.05
+   ]
+  }
+ },
+ "idort_thermal_eq2": {
+  "_about": "max |T/T_exact - 1| over the dumps (the first dump, after 5 steps of dt = 5e-4, 5 to 1e5 relaxation times each, dominates) and the total-energy drift",
+  "_ref": "Jiang 2021, ApJS 253, 49 sec. 4.1",
+  "near": {
+   "errT": [
+    0.00196,
+    0.05
+   ]
+  },
+  "max": {
+   "dEtot": 1e-13
+  }
  }
 }

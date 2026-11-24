@@ -252,7 +252,15 @@ def cell_centres(d):
 def relax_ode(T0, tot, rho, gm1, rate, t, arad=1.0, nstep=20000):
     """Gas temperature at time t of a uniform gas + radiation box relaxing at constant
     total energy tot = rho T/gm1 + E: de/dt = rate (E - arad T^4), e = rho T/gm1
-    (classical RK4)."""
+    (classical RK4).  After more than 25 relaxation times at the equilibrium temperature
+    (a stiff case) it returns the equilibrium temperature."""
+    lo, hi = 0.0, max(T0, (tot/arad)**0.25)
+    for _ in range(200):
+        Teq = 0.5*(lo + hi)
+        lo, hi = (Teq, hi) if rho*Teq/gm1 + arad*Teq**4 < tot else (lo, Teq)
+    if t*rate*(1.0 + 4.0*arad*Teq**3*gm1/rho) > 25.0:
+        return Teq
+
     def f(T):
         return rate*((tot - rho*T/gm1) - arad*T**4)*gm1/rho
     T, h = T0, t/nstep

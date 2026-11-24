@@ -1,7 +1,7 @@
 # Clean VET radiation test suite
 
 A self-contained CPU test suite for the clean VET radiation scheme: one command, a PASS / FAIL
-line per test, about 1 min (`--quick`) or 2.5 min (full) on 48 cores (`--jobs 12`).
+line per test, about 1 min (`--quick`) or 3 min (full) on 48 cores (`--jobs 12`).
 
 ```bash
 # build a CPU binary (into build_vettest/) and run the quick subset
@@ -49,6 +49,38 @@ is a FAIL with the path of its `run.log`.
 | `floor_pay` | `shell_sp` | `hydro/eos = general`, `tfloor` just above the gas temperature (the floor acts in most cells every cycle), `floor_pay = rad_column`, `floor_pay_skip`, `dfloor_flux_limit`, `floor_audit = 1`, 40 cycles: total-energy drift from t = 0; then 16 cycles with `floor_from_ekin = true` and `vceil = 1.2e-2`: energy, mass and L_z drift | dE <= 1e-13; floor energy paid > 0, unpaid 0; ekin dE, dM, dLz <= 1e-13; no `CLEAN WARNING` |
 | `ceiling_metric` | `shell_sp`, `shell_cs` | the rotating shells (`gas_rot = 0.3`, `gas_vr = 0.2`, r 1-3), `hydro/eos = general`, `floor_from_ekin = true`, `vceil = 0.5` (below \|v\| in 1408 / 2928 cells) against the same run without the ceiling, cell by cell at t = 0 (cs: the velocity rebuilt from the contravariant v^a on the unit tangents, \|V\| the metric norm): v_phi kept (L_z), \|V\| = max(vceil, \|v_phi\|) where capped, else unchanged, v_theta 0, the radial part scaled in [0, 1]. A ceiling on Σ v_a² of mixed components or a split along the covariant phi component fails it on cs (dvphi 0.31). The cell-level C++ test `unit/ceiling_cell.cpp` (build line in its header) checks the same, the tfloor payment and the heat = metric KE change, at corner and ghost-extended points of all six panels, on sp, Cartesian and cs | dvphi, dcap, vtheta <= 1e-13; scale_ok |
 | `momentum_box` | `wave_cart` (8^3, periodic 3-D) | total linear momentum, gas (`hydro_u`) + radiation (face momenta of `vet_face` / c^2), every cycle for 8 cycles; radiation wave along the xyz diagonal, amplitude 1e-3, `radwave_eig = false`, `nghost = 3`, tile 8: `dP_cyc` = largest component of \|P - P_0\| / Σ\|p_gas\| per cycle, `dP_max` its maximum (quick and full, ~10 s) | **a report, not a criterion**: passes when the run completes, the numbers are finite and there is no `CLEAN WARNING` |
+
+### IDORT literature tests
+
+The literature tests of the IDORT paper (Ma et al. 2025, sec. 4.1) and Jiang (2021, ApJS 253,
+49) with the production keys, each against an exact or semi-analytic solution (decks
+`idort_*`; the two-level-atom atmospheres are `nlte_eps1e-1` and `nlte_eps1e-4` above, the
+fast-relaxation thermal equilibrium is `thermal_eq`). L1 is sum |q - q_exact| / sum |q_exact|.
+
+| test | deck | what | criterion |
+|---|---|---|---|
+| `idort_beams` | `idort_beams` | two beams crossing in vacuum at +-45 deg (256 x 64, x2 periodic, ring of 4 rays): E vs the exact straight beams (cell averages); `lum_top` the energy of the row 3 cells below x1max vs exact | L1 and `lum_top` within 5 % of 0.777 and 1.785 (regression references, see below) |
+| `idort_beams_mb` | `idort_beams` | the beams on 4 MeshBlocks vs 1: along x2 in tile mode (`layout_tile = 16`), along x1 in block mode | tile x2: identical; block x1: largest difference <= 1e-8 |
+| `idort_shadow`, `idort_shadow_gl` | `idort_shadow*` | two beams at +-15 deg past an opaque ellipse (128 x 64; ring of 12 rays, or the general 8 x 32 set with the beams snapped to its rays): E vs the exact attenuated beams | L1 within 5 % of 0.0138 and 0.0126 |
+| `idort_cylinder` | `idort_cylinder` | homogeneous emitting cylinder (rho kappa = 10, a T^4 = 1) in vacuum, 128 x 128: E inside and outside and F_x outside along y = 0 vs the exact transport solution (`ref/idort_cylinder_exact.npz`) | each L1 within 5 % of 5.2e-4, 0.013, 0.205 |
+| `idort_radshock_m2`, `_m5` | `idort_radshock_m*` | Lowrie & Edwards (2008) radiative shocks, Mach 2 and 5, 256 cells, started from the semi-analytic profile (`ref/idort_radshock_m*.txt`, its absolute path set by `run_tests.py`) with the Eddington closure of the diffusion-theory reference (`clean_closure = eddington`): rho, v, T_gas, T_rad at t = 2e-10 s, no shift | each L1 within 5 % of the reference (2.5e-4 ... 2.2e-3) |
+| `idort_thermal_eq2` | `idort_thermal_eq2` | hot gas cooling into radiation (Jiang 2021 sec. 4.1), dt = 5 to 1e5 relaxation times: T(t) vs the exact ODE | max error within 5 % of 2.0e-3; total-energy drift <= 1e-13 |
+
+`idort_shadow` and `idort_shadow_gl` are in `--quick`; the eight take about 45 s with
+`--jobs 8`. The beams and shadow exact fields are computed in `run_tests.py`; the cylinder's
+(`ref/idort_cylinder_exact.npz`, x > 0 on the 128-cell grid) is the transport integral over 64
+Gauss polar angles x 4096 azimuths and the cylinder's periodic images. Notes:
+- **Beams.** The beams stay straight, at their angle and 1-2 cells wide, and cross without
+  interacting, but an oblique beam narrower than a cell carries about 1.8 x the exact energy
+  density at this resolution (`lum_top`; 1.4 x at twice the resolution): the cap of the
+  streaming share at the beam edges. This dominates L1 (0.78); both are regression
+  references.
+- **Cylinder flux.** E outside the cylinder is within 1.3 % of exact transport, the flux
+  `F_out` 20 % above it (the moment flux in the vacuum around the source); recorded as a
+  regression reference, an open item.
+- **Shocks.** With the v20.3 production keys of the method paper's bench table the L1 values
+  were 4-27 % lower (Mach 5 rho: 1.7e-3, here 2.2e-3); the shock stays at the semi-analytic
+  position (no shift needed).
 
 Notes on the results of this release (465aff485):
 - **L_z.** `dLz` is the drift of `Lz_tot` (gas + radiation + the L_z ledger of the clean

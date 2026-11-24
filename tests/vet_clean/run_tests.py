@@ -375,6 +375,25 @@ def t_nlte_eps1e_4(c):
     return t_nlte(c, '1e-4', 'nlte_eps1e-4.athinput')
 
 
+def relax_errors(d):
+    """(max |T/T_exact - 1|, max total-energy drift) over the dumps after t = 0 of a
+    uniform relaxation run d (vet_test = equil) against the exact ODE."""
+    p = vett.parse_deck_text(open(os.path.join(d, 'in.athinput')).read())
+    cl, ka = float(p['rad_vet']['c_light']), float(p['rad_vet']['kappa_p'])
+    arad = float(p['rad_vet']['arad'])
+    rho, gm1 = float(p['problem']['gas_rho']), float(p['hydro']['gamma']) - 1.0
+    T0, E0 = float(p['problem']['gas_eint'])*gm1/rho, float(p['problem']['e_rad'])
+    tot = rho*T0/gm1 + E0
+    errT = errE = 0.0
+    for fm, fh in list(zip(vett.bins(d, 'vet'), vett.bins(d, 'hydro_w')))[1:]:
+        m, h = vett.read_bin(fm), vett.read_bin(fh)
+        Tex = vett.relax_ode(T0, tot, rho, gm1, cl*ka*rho, m['time'], arad=arad)
+        T = (h['eint']*gm1/h['dens']).mean()
+        errT = max(errT, abs(T/Tex - 1.0))
+        errE = max(errE, abs(m['vet_e'].mean() + rho*T/gm1 - tot)/tot)
+    return float(errT), float(errE)
+
+
 def t_thermal_eq(c):
     """uniform gas + radiation out of equilibrium relax at constant total energy
     (e.g. Jiang 2021 sec. 4.1), dt resolving the relaxation time (~3e-6): T(t) against
@@ -382,20 +401,7 @@ def t_thermal_eq(c):
     out = {}
     for tag, dt in (('h', 2.5e-7), ('h2', 1.25e-7)):
         d = c.run('thermal_eq.athinput', 'dt' + tag, {'time/dt_fixed': dt})
-        p = vett.parse_deck_text(open(os.path.join(d, 'in.athinput')).read())
-        cl, ka = float(p['rad_vet']['c_light']), float(p['rad_vet']['kappa_p'])
-        arad = float(p['rad_vet']['arad'])
-        rho, gm1 = float(p['problem']['gas_rho']), float(p['hydro']['gamma']) - 1.0
-        T0, E0 = float(p['problem']['gas_eint'])*gm1/rho, float(p['problem']['e_rad'])
-        tot = rho*T0/gm1 + E0
-        errT = errE = 0.0
-        for fm, fh in list(zip(vett.bins(d, 'vet'), vett.bins(d, 'hydro_w')))[1:]:
-            m, h = vett.read_bin(fm), vett.read_bin(fh)
-            Tex = vett.relax_ode(T0, tot, rho, gm1, cl*ka*rho, m['time'], arad=arad)
-            T = (h['eint']*gm1/h['dens']).mean()
-            errT = max(errT, abs(T/Tex - 1.0))
-            errE = max(errE, abs(m['vet_e'].mean() + rho*T/gm1 - tot)/tot)
-        out['errT_' + tag], out['dEtot_' + tag] = float(errT), float(errE)
+        out['errT_' + tag], out['dEtot_' + tag] = relax_errors(d)
     out['order'] = float(np.log2(out['errT_h']/out['errT_h2']))
     return out
 
@@ -736,6 +742,146 @@ def t_momentum_box(c):
 
 
 # ---------------------------------------------------------------------------------------
+# IDORT literature tests (Ma et al. 2025; Jiang 2021): beams, shadow, emitting cylinder and
+# radiative shocks against exact or semi-analytic solutions
+
+def beam_list(d):
+    """[(E_b, angle deg, x2 lo, x2 hi)] of the implicit_beam keys of run d, with the in-plane
+    angle the code snapped each beam to (its log line), which the exact solution uses."""
+    p = vett.parse_deck_text(open(os.path.join(d, 'in.athinput')).read())['rad_vet']
+    ang = dict(re.findall(r'implicit_beam(\d+): .*in-plane ang=(\S+) deg',
+                          open(os.path.join(d, 'run.log')).read()))
+    return [(float(p['implicit_beam%d_e' % b]), float(ang[str(b)]),
+             float(p['implicit_beam%d_y0' % b]), float(p['implicit_beam%d_y1' % b]))
+            for b in range(int(p['implicit_beam_n']))]
+
+
+def mesh_of(d):
+    return vett.parse_deck_text(open(os.path.join(d, 'in.athinput')).read())['mesh']
+
+
+def beams_exact(d, ns=16):
+    """cell averages (ns x ns sub-samples) of straight beams entering at x1min, x2 periodic"""
+    p, (x1, x2, _) = mesh_of(d), vett.cell_centres(d)
+    x1a, x2a = float(p['x1min']), float(p['x2min'])
+    L = float(p['x2max']) - x2a
+    o = (np.arange(ns) + 0.5)/ns - 0.5
+    xs, ys = (x1[:, None] + o*(x1[1] - x1[0])).ravel(), (x2[:, None] + o*(x2[1] - x2[0])).ravel()
+    E = np.zeros((len(x2), len(x1)))
+    for e, ang, y0, y1 in beam_list(d):
+        y = (ys[:, None] - (xs[None, :] - x1a)*np.tan(np.radians(ang)) - y0) % L
+        E += e*(y < y1 - y0).reshape(len(x2), ns, len(x1), ns).mean(axis=(1, 3))
+    return E
+
+
+def l1(a, b):
+    return float(np.abs(a - b).sum()/np.abs(b).sum())
+
+
+def t_idort_beams(c):
+    """two crossing beams in vacuum: E against the exact straight beams (L1 over the box;
+    lum_top: the energy of the third row below the x1max face relative to the exact)"""
+    d = c.run('idort_beams.athinput', 'run')
+    E, Ex = vett.last_bin(d, 'vet')['vet_e'][0], beams_exact(d)
+    return dict(L1=l1(E, Ex), lum_top=float(E[:, -3].sum()/Ex[:, -3].sum()))
+
+
+def t_idort_beams_mb(c):
+    """the beams on 4 MeshBlocks against 1 MeshBlock: along x2 in tile mode (identical),
+    along x1 in block mode (tile mode needs one MeshBlock along x1; the result depends on
+    the MeshBlock size at the solver tolerance)."""
+    t = {'mesh/layout_invariant_mode': 'tile', 'mesh/layout_tile': 16}
+    a, b = c.run('idort_beams.athinput', 'tile1', t), c.run('idort_beams.athinput', 'block1')
+    x2 = c.run('idort_beams.athinput', 'tile4x2', dict(t, **{'meshblock/nx2': 16}))
+    x1 = c.run('idort_beams.athinput', 'block4x1', {'meshblock/nx1': 64})
+    return dict(maxdiff_tile_x2=vett.compare_dirs(a, x2)[1],
+                maxdiff_block_x1=vett.compare_dirs(b, x1)[1])
+
+
+def shadow_exact(d, nsub=4096):
+    """E of the beams attenuated along straight rays back to x1min through the ellipse
+    rho = rho0 (1 + (ratio - 1)/(1 + exp(delta (r^2 - 1)))), r^2 = (x/ax)^2 + (y/ay)^2,
+    rho kappa = rho^2 T^-3.5 = rho^5.5 (T = 1/rho); point values at the cell centres."""
+    p, (x1, x2, _) = mesh_of(d), vett.cell_centres(d)
+    q = vett.parse_deck_text(open(os.path.join(d, 'in.athinput')).read())['problem']
+    ax, ay, dl, r0, rt = (float(q['shadow_' + k]) for k in ('ax', 'ay', 'delta', 'rho0', 'ratio'))
+    x1a, x2a = float(p['x1min']), float(p['x2min'])
+    L, lx = float(p['x2max']) - x2a, float(p['x1max']) - x1a
+    E = np.zeros((len(x2), len(x1)))
+    for e, ang, _, _ in beam_list(d):
+        t = np.tan(np.radians(ang))
+        for i, xc in enumerate(x1):
+            n = int(np.ceil(nsub*(xc - x1a)/lx)) + 8
+            s = x1a + (np.arange(n) + 0.5)*(xc - x1a)/n
+            y = (x2[:, None] - (xc - s)*t - x2a) % L + x2a
+            z = np.clip(dl*((s/ax)**2 + (y/ay)**2 - 1.0), -700.0, 700.0)
+            rho = r0*(1.0 + (rt - 1.0)/(1.0 + np.exp(z)))
+            E[:, i] += e*np.exp(-(rho**5.5).sum(axis=1)*(xc - x1a)/n/np.cos(np.radians(ang)))
+    return E
+
+
+def t_idort_shadow(c, deck='idort_shadow.athinput'):
+    """two beams past an opaque ellipse: E against the exact attenuated beams (L1)"""
+    d = c.run(deck, 'run')
+    return dict(L1=l1(vett.last_bin(d, 'vet')['vet_e'][0], shadow_exact(d)))
+
+
+def t_idort_shadow_gl(c):
+    return t_idort_shadow(c, 'idort_shadow_gl.athinput')
+
+
+def t_idort_cylinder(c):
+    """homogeneous emitting cylinder: E inside and outside, F_x outside, along y = 0 against
+    the exact transport solution (ref/idort_cylinder_exact.npz, x > 0)."""
+    d = c.run('idort_cylinder.athinput', 'run')
+    m, (x1, x2, _) = vett.last_bin(d, 'vet'), vett.cell_centres(d)
+    cl = float(vett.parse_deck_text(open(os.path.join(d, 'in.athinput')).read())
+               ['rad_vet']['c_light'])
+    ex = np.load(os.path.join(HERE, 'ref', 'idort_cylinder_exact.npz'))
+    j, s = np.argsort(np.abs(x2))[:2], x1 > 0          # the two rows next to y = 0
+    E, F = m['vet_e'][0][j].mean(axis=0)[s], m['vet_f1'][0][j].mean(axis=0)[s]/cl
+    i, o = ex['x'] < 1.0, ex['x'] > 1.05
+    return dict(E_in=l1(E[i], ex['E'][i]), E_out=l1(E[o], ex['E'][o]),
+                F_out=l1(F[o], ex['F'][o]))
+
+
+def t_idort_radshock(c, m):
+    """Lowrie & Edwards radiative shock started from its semi-analytic profile: rho, v,
+    T_gas, T_rad at the end against the profile (no shift), L1 / mean |reference|."""
+    ref = os.path.join(HERE, 'ref', 'idort_radshock_m%s.txt' % m)
+    d = c.run('idort_radshock_m%s.athinput' % m, 'run', {'problem/vet_shock_ref': ref})
+    p = vett.parse_deck_text(open(os.path.join(d, 'in.athinput')).read())
+    tu, ar = float(p['problem']['vet_shock_tunit']), float(p['rad_vet']['arad'])
+    h, r = vett.last_bin(d, 'hydro_w'), vett.last_bin(d, 'vet')
+    rho = h['dens'].mean(axis=(0, 1))
+    q = dict(rho=rho, v=h['velx'].mean(axis=(0, 1)),
+             Tg=(float(p['hydro']['gamma']) - 1.0)*h['eint'].mean(axis=(0, 1))/rho/tu,
+             Tr=(np.maximum(r['vet_e'].mean(axis=(0, 1)), 0.0)/ar)**0.25/tu)
+    a = np.loadtxt(ref)
+    x = vett.cell_centres(d)[0] - float(p['problem']['vet_shock_xs'])
+    out = {}
+    for n, (k, v) in enumerate(q.items()):
+        e = np.interp(x, a[:, 0], a[:, n + 1])
+        out['L1_' + k] = float(np.abs(v - e).mean()/np.abs(e).mean())
+    return out
+
+
+def t_idort_radshock_m2(c):
+    return t_idort_radshock(c, '2')
+
+
+def t_idort_radshock_m5(c):
+    return t_idort_radshock(c, '5')
+
+
+def t_idort_thermal_eq2(c):
+    """hot gas cooling into radiation at large steps (implicit_cfl 1.6): T(t) and the
+    total energy against the exact ODE"""
+    errT, errE = relax_errors(c.run('idort_thermal_eq2.athinput', 'run'))
+    return dict(errT=errT, dEtot=errE)
+
+
+# ---------------------------------------------------------------------------------------
 
 TESTS = [  # name, function, in --quick
     ('conservation_sp', t_conservation_sp, True),
@@ -760,6 +906,14 @@ TESTS = [  # name, function, in --quick
     ('floor_pay', t_floor_pay, True),
     ('ceiling_metric', t_ceiling_metric, True),
     ('inf_reject', t_inf_reject, False),
+    ('idort_beams', t_idort_beams, False),
+    ('idort_beams_mb', t_idort_beams_mb, False),
+    ('idort_shadow', t_idort_shadow, True),
+    ('idort_shadow_gl', t_idort_shadow_gl, True),
+    ('idort_cylinder', t_idort_cylinder, False),
+    ('idort_radshock_m2', t_idort_radshock_m2, False),
+    ('idort_radshock_m5', t_idort_radshock_m5, False),
+    ('idort_thermal_eq2', t_idort_thermal_eq2, False),
 ]
 
 
@@ -816,7 +970,7 @@ def one(a, name, fn):
 def main():
     p = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     p.add_argument('--exe', required=True, help='the athena binary (CPU build)')
-    p.add_argument('--quick', action='store_true', help='the short subset (11 tests)')
+    p.add_argument('--quick', action='store_true', help='the short subset (13 tests)')
     p.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 4)//4),
                    help='tests run at the same time')
     p.add_argument('--threads', type=int, default=4, help='OpenMP threads per run')
