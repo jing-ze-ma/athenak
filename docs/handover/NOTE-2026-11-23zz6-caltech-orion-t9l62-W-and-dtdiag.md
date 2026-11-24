@@ -87,3 +87,8 @@
 ```
 - (11-23 22:24) status: T0a [cycle=30650, t 1.63707e+06 dt 82.3, CW 0, fb 0, DT_RETRY 0, pos_floor 0]; T0da [cycle=30500, t 1.65337e+06 dt 193, CW 2, fb 1, DT_RETRY 0, pos_floor 1]; T0h [cycle=30550, t 1.59182e+06 dt 29.8, CW 0, fb 0, DT_RETRY 0, pos_floor 0];
 - (11-23 22:24) status: W [cycle=7650, t 4.82933e+05 dt 5.78, CW 59, fb 29, DT_RETRY 27, pos_floor 2];
+
+## W (11-23 22:35)
+- 2026-11-23 22:31:05 rc=0 last: elapsed=5.033018e+03 cycle=7700 time=4.831070e+05 dt=5.585144e+00 
+- FATAL 0 
+- CW 76, stage fallbacks 33, DT_RETRY 29, pos_floor created 5; s/cycle 3.774 (c6500-7700); dt min 0.02278 at t 4.752742e+05; skip_de per cycle: max abs 2.534e+43 at c7711; 1267 cycles > 1e41
