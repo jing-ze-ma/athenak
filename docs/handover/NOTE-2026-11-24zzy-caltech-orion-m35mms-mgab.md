@@ -53,3 +53,23 @@ Production m35mms history (300-cycle bins): cycles, s/cyc, its sum/solves t2s2, 
 - **mg 4 (B): -10.5 %** s/cyc against A (1.174 vs 1.311; min window -10.1 %), its sum -30 % (t2s2 66.7 -> 46.5, t2s3 32.1 -> 22.3), passes -3 to -5 %. So mg 4 recovers about a tenth; the growth of the passes stays. A vs B answers differ at solver-tolerance level: dt identical to 6 digits, L_top 6e-5, Etot 9e-11, Lz_tot 5e-7.
 - bsg (your item 5): no drift. 300-cycle bins 0.64-0.87 s/cyc over c0-6900, first 0.696, latest (c6600-6900) 0.662.
 - m35mms production continues with mg 2; the switch is the USER's call.
+
+## Trend per 500 cycles (your 24zzzd), 11-24 12:58
+| cycles | t2s2 its (sum) / solves | t2s3 its / solves | dt min / mean of the 50-cycle prints | s/cyc |
+|---|---|---|---|---|
+| 0-500 | 9.2 / 2.00 | 10.7 / 2.17 | 12.01 / 12.01 | 0.638 |
+| 500-1000 | 8.7 / 2.00 | 11.9 / 2.26 | 12.01 / 12.01 | 0.641 |
+| 1000-1500 | 8.7 / 2.00 | 9.7 / 2.10 | 12.01 / 12.01 | 0.627 |
+| 1500-2000 | 9.0 / 2.00 | 9.7 / 2.09 | 12.01 / 12.01 | 0.694 |
+| 2000-2500 | 10.0 / 2.00 | 9.1 / 2.04 | 12.01 / 12.01 | 0.627 |
+| 2500-3000 | 10.9 / 2.00 | 11.9 / 2.40 | 12.01 / 12.01 | 0.658 |
+| 3000-3500 | 12.1 / 2.00 | 19.2 / 2.81 | 12.01 / 12.01 | 0.716 |
+| 3500-4000 | 13.1 / 2.00 | 17.0 / 2.86 | 12.01 / 12.01 | 0.792 |
+| 4000-4500 | 15.3 / 2.30 | 14.6 / 3.15 | 10.69 / 11.86 | 0.747 |
+| 4500-5000 | 30.0 / 4.09 | 14.7 / 2.89 | 9.23 / 10.15 | 0.888 |
+| 5000-5500 | 50.5 / 4.64 | 25.6 / 3.43 | 8.55 / 9.49 | 1.107 |
+| 5500-6000 | 54.4 / 4.47 | 26.2 / 3.60 | 10.19 / 11.22 | 1.201 |
+| 6000-6500 | 65.0 / 5.47 | 30.9 / 4.60 | 9.08 / 9.91 | 1.269 |
+| 6500-6542 | 54.5 / 5.09 | 25.4 / 4.19 | - | - |
+
+- Production RESUMED at 12:52:38 (chunk 2, mg 2) from rst_keep/m35mms.pre-mgab.rst (cycle 6278): `2026-11-24 12:52:38 chunk 2 STAR=m35mms BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc4v_262affd6f md5=7d7c4a71a07d3dc3878e7dea1403df23 DECK=/resnick/groups/carnegie_poc/jingze/prod_rc4v_1124/decks/IA123_m`. Its next periodic rst triggers the mg 4 relaunch.
