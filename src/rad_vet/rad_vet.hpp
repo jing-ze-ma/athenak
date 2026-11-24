@@ -2524,7 +2524,6 @@ class RadiationVet {
   void VetGdCsCompact();
   void VetGdCsHaloC(const int pass, const int i);
   bool VetGdCsHaloCX(const int pass, const int i, const int eb);
-  DvceArray1D<Real> vgd_csdsb, vgd_csdrb;   // NCCL device buffers
   DvceArray1D<int> vgd_cslst;               // per-pass branch lists
   // vet_gd_halo_compact = 0 (off), 1 (pass branch), 2 (+ ray reach): compact messages
   int vgd_hcomp = 0;
@@ -2710,7 +2709,6 @@ class RadiationVet {
   struct VgdHlPend {
     bool on = false, xe = false;                // xe: X is an exact (vgd_hxe) entry
     bool ipc = false;                           // the IPC path
-    bool nccl = false;                          // NCCL (stream-ordered) path
     // (CUDA IPC, lean): VetGdHalo's begin + end as ONE kernel (pack, flags, wait,
     // scatter).  now: the end follows
     // the begin (VetGdHalo); done: the scatter ran; cnt: the kernel's teams done packing
@@ -2726,11 +2724,6 @@ class RadiationVet {
     Kokkos::Timer tq;
   };
   VgdHlPend vgd_hlp;
-  // (compile -DM1_VGD_NCCL; not used, VgdNcclOn = false): the per-shell list exchange of
-  // the MPI path as stream-ordered NCCL send/recv on the sweep's stream
-  int acc_nccl = -1;            // -1 not decided, 0 off, 1 on
-  void *acc_ncomm = nullptr;    // ncclComm_t
-  bool VgdNcclOn();
   template <class V>
   bool VetGdHlBegin(V &a, const int nv, const int i0, const int ws);
   void VetGdHlEnd();

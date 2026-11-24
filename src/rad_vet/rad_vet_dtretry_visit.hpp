@@ -908,8 +908,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vgd_cstbuild", vgd_cstbuild);
   v.value("vgd_csvsent", vgd_csvsent);
   v.value("vgd_csvdense", vgd_csvdense);
-  v.view("vgd_csdsb", vgd_csdsb);
-  v.view("vgd_csdrb", vgd_csdrb);
   v.view("vgd_cslst", vgd_cslst);
   v.value("vgd_hcomp", vgd_hcomp);
   v.value("vgd_capped", vgd_capped);
@@ -1102,8 +1100,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
 //   vgd_ipc_err : int *
 //   vgd_ipc_seq : long long (protocol counter, kept monotonic)
 //   vgd_hlp : VgdHlPend
-//   acc_nccl : int (communicator state, kept)
-//   acc_ncomm : void *
 //   vgd_tabf : std::future<void>
 //   vgd_tex : DevExeSpace
 //   vgd_cur : DevExeSpace

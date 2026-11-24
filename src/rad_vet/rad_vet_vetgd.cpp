@@ -94,17 +94,6 @@ inline bool VgdMomLds() {
   return false;
 #endif
 }
-#if defined(M1_VGD_NCCL) && MPI_PARALLEL_ENABLED && defined(KOKKOS_ENABLE_CUDA)
-#include <nccl.h>
-#define M1_VGD_NCCL_ON 1
-#define M1_VGD_STREAM(ex) (ex).cuda_stream()
-#elif defined(M1_VGD_NCCL) && MPI_PARALLEL_ENABLED && defined(KOKKOS_ENABLE_HIP)
-#include <rccl/rccl.h>
-#define M1_VGD_NCCL_ON 1
-#define M1_VGD_STREAM(ex) (ex).hip_stream()
-#else
-#define M1_VGD_NCCL_ON 0
-#endif
 #include "globals.hpp"
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
@@ -797,7 +786,7 @@ void RadiationVet::VetGdInit() {
   const int c1 = indcs.nx1 + 2*indcs.ng;
   // (stage S3, rad_vet_vetgd_cs.cpp): the cubed sphere.  The options that
   // are wedge-specific or not ported are refused; the sp halo layouts (exact / compact
-  // lists, IPC, NCCL, overlap) do not apply (the cs band is filled by its own exact
+  // lists, IPC, overlap) do not apply (the cs band is filled by its own exact
   // copies; the band ring applies with the cs compact lists, see VetGdCsSweep);
   // no walls
   vgd_csg = pm->use_cubed_sphere;
@@ -2360,9 +2349,6 @@ bool RadiationVet::VetGdXffOk() {
 #if !defined(KOKKOS_ENABLE_CUDA)
   if (vgd_ipc_state == 1 && !vgd_raw) {return false;}
 #endif
-#if M1_VGD_NCCL_ON
-  if (VgdNcclOn()) {return false;}
-#endif
   if (vgd_i_xb.d.extent(0) != vgd_i.d.extent(0)) {return false;}
   return true;
 }
@@ -3510,14 +3496,6 @@ void VgdPackEvtWait(const DevExeSpace &ex) {ex.fence();}
 #endif
 }  // namespace
 
-//----------------------------------------------------------------------------------------
-//! \fn bool RadiationVet::VgdNcclOn
-//! \brief the NCCL list exchange (a -DM1_VGD_NCCL build) is not used: the MPI path
-
-bool RadiationVet::VgdNcclOn() {
-  return false;
-}
-
 template <class V>
 bool RadiationVet::VetGdHlBegin(V &a, const int nv, const int i0, const int ws) {
 #if MPI_PARALLEL_ENABLED
@@ -3742,28 +3720,6 @@ bool RadiationVet::VetGdHlBegin(V &a, const int nv, const int i0, const int ws) 
       });
     }
     const std::vector<int> &sp = X.sp, &rp_ = X.rp;
-    vgd_hlp.nccl = false;
-#if M1_VGD_NCCL_ON
-    if (VgdNcclOn()) {
-      // stream-ordered behind the pack; the scatter (VetGdHlEnd) is
-      // stream-ordered behind the receives
-      ncclComm_t nc = static_cast<ncclComm_t>(acc_ncomm);
-      auto st = M1_VGD_STREAM(vgd_cur);
-      vgd_hlp.tq.reset();
-      vgd_hlp.req.clear();
-      ncclGroupStart();
-      for (int p = 0; p < np; ++p) {
-        const int rk = vgd_prk[p];
-        const size_t nrv = static_cast<size_t>(rp_[p+1] - rp_[p]);
-        const size_t nsd = static_cast<size_t>(sp[p+1] - sp[p]);
-        if (nrv > 0) {ncclRecv(crb_.data() + rp_[p], nrv, ncclDouble, rk, nc, st);}
-        if (nsd > 0) {ncclSend(csb_.data() + sp[p], nsd, ncclDouble, rk, nc, st);}
-      }
-      ncclGroupEnd();
-      vgd_hlp.nccl = true;
-      vgd_tpost += vgd_hlp.tq.seconds();
-    } else {
-#endif
     // the ring copies (other shells' slabs, pure copies, stream order
     // unchanged: pack, ring, zero, scatter) are queued BEFORE the host waits, on an
     // event behind the pack (was a full fence of the sweep stream, then the ring after
@@ -3786,12 +3742,8 @@ bool RadiationVet::VetGdHlBegin(V &a, const int nv, const int i0, const int ws) 
                 vgd_comm, &req.back());
     }
     vgd_tpost += tq.seconds();
-#if M1_VGD_NCCL_ON
-    }   // !NCCL
-#endif
     // vet_gd_band_ring: the slab copies of the sweep (other shells' slabs only;
-    // pure copies) on vgd_cur: MPI path = while the messages travel; NCCL path
-    // = stream-ordered behind the NCCL group, before the scatter
+    // pure copies) on vgd_cur, while the messages travel
     VetGdRingFlush();
     // the zeros: Y's receive entries inside X's region (written by the dense unpack of X
     // as 0, as every value of X's region not on X's lists; X's own entries follow)
@@ -3856,13 +3808,6 @@ void RadiationVet::VetGdHlEnd() {
     // waited for them on the stream); the scatter reads it in place of crb
     const long long par = vgd_hlp.seq & 1;
     crb_ = DvceArray1D<Real>(vgd_ipc_rbuf + par*vgd_ipc_half, vgd_ipc_cs);
-    vgd_nexch += 1.0;
-    for (int p = 0; p < np; ++p) {
-      vgd_nbyte += static_cast<Real>(sp[p+1] - sp[p])*sizeof(Real);
-    }
-  } else if (vgd_hlp.nccl) {
-    // the receives are stream-ordered before the scatter (counts agreed
-    // when the lists were made)
     vgd_nexch += 1.0;
     for (int p = 0; p < np; ++p) {
       vgd_nbyte += static_cast<Real>(sp[p+1] - sp[p])*sizeof(Real);

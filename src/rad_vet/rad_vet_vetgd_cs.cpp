@@ -72,14 +72,6 @@
 #include "rad_vet/rad_vet_implicit.hpp"
 #include "rad_vet/rad_vet_vetseg.hpp"
 #include "rad_vet/rad_vet_vgdray.hpp"
-// the compact per-shell exchange over NCCL (build -DM1_VGD_NCCL; not used: VgdNcclOn in
-// rad_vet_vetgd.cpp)
-#if defined(M1_VGD_NCCL) && MPI_PARALLEL_ENABLED && defined(KOKKOS_ENABLE_CUDA)
-#include <nccl.h>
-#define M1_VGDCS_NCCL 1
-#else
-#define M1_VGDCS_NCCL 0
-#endif
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -728,16 +720,6 @@ void RadiationVet::VetGdCsInit() {
                                          : "none"))
               << "; list cache " << vgd_csncl << " sets" << std::endl;
   }
-#if M1_VGDCS_NCCL
-  // the NCCL communicator now (collective: every rank), not at the first
-  // exchange (a rank without partners never exchanges)
-  if (global_variable::nranks > 1) {
-    if (VgdNcclOn() && me == 0) {
-      std::cout << "<rad_vet> vet_gd cs compact exchange over NCCL "
-                << "(stream-ordered, no host fence per shell)" << std::endl;
-    }
-  }
-#endif
 }
 
 //----------------------------------------------------------------------------------------
@@ -1145,19 +1127,8 @@ void RadiationVet::VetGdCsHaloC(const int pass, const int i) {
       static_cast<int64_t>(rb_.extent(0)) < nr) {
     VgdCsFatal("VetGdCsHaloC: message buffer too small");
   }
-  // with NCCL the device buffers (vgd_csdsb / vgd_csdrb) and no host
-  // fence: pack, the NCCL group and the unpack all stream-ordered on the sweep's stream
-  bool ncl = false;
-#if M1_VGDCS_NCCL
-  ncl = VgdNcclOn();
-  if (ncl && static_cast<int64_t>(vgd_csdsb.extent(0)) <
-             static_cast<int64_t>(sb_.extent(0))) {
-    Kokkos::realloc(vgd_csdsb, sb_.extent(0));
-    Kokkos::realloc(vgd_csdrb, rb_.extent(0));
-  }
-#endif
-  Real *sbp = ncl ? vgd_csdsb.data() : sb_.data();
-  Real *rbp = ncl ? vgd_csdrb.data() : rb_.data();
+  Real *sbp = sb_.data();
+  Real *rbp = rb_.data();
   if (ns > 0) {
     Kokkos::parallel_for("vet_vgdcs_cpack",
                          VgdLight(DevExeSpace(), 0, static_cast<int>(ns)),
@@ -1167,28 +1138,6 @@ void RadiationVet::VetGdCsHaloC(const int pass, const int i) {
       sbp[o] = a_(S_(e,0),d,S_(e,1),S_(e,2),i);
     });
   }
-#if M1_VGDCS_NCCL
-  if (ncl) {
-    static_assert(sizeof(Real) == sizeof(double), "ncclDouble");
-    ncclComm_t nc = static_cast<ncclComm_t>(acc_ncomm);
-    cudaStream_t st = DevExeSpace().cuda_stream();
-    Kokkos::Timer tq;
-    ncclGroupStart();
-    for (int p = 0; p < np; ++p) {
-      const int rk = vgd_csprk[p];
-      const int64_t cr = ro[p+1] - ro[p], cs = so[p+1] - so[p];
-      if (cr > 0) {
-        ncclRecv(rbp + (ro[p] - r0), static_cast<size_t>(cr), ncclDouble, rk, nc, st);
-      }
-      if (cs > 0) {
-        ncclSend(sbp + (so[p] - s0), static_cast<size_t>(cs), ncclDouble, rk, nc, st);
-        vgd_nbyte += static_cast<Real>(cs)*sizeof(Real);
-      }
-    }
-    if (ncclGroupEnd() != ncclSuccess) {VgdCsFatal("ncclGroupEnd failed");}
-    vgd_tmpi += tq.seconds();
-  } else {
-#endif
   Kokkos::fence();
   Kokkos::Timer tq;
   std::vector<MPI_Request> req;
@@ -1209,9 +1158,6 @@ void RadiationVet::VetGdCsHaloC(const int pass, const int i) {
   }
   MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
   vgd_tmpi += tq.seconds();
-#if M1_VGDCS_NCCL
-  }   // !ncl
-#endif
   vgd_nexch += 1.0;
   vgd_csvsent += static_cast<double>(ns);
   vgd_csvdense += static_cast<double>(vgd_csnsnd)*n;
@@ -1241,15 +1187,12 @@ struct VgdCsXIdx {int v[VGD_CSX_NS + 1];};
 //! two-set sweep in ONE round: one pack kernel, one host fence, ONE message
 //! per partner (piece p = [current set's values of p | next set's values of p], tag
 //! 7107), one unpack kernel.  The values are those of the two VetGdCsHaloC calls (the
-//! same copies into the same band cells: bitwise).  false (nothing done) with NCCL:
-//! the caller runs the two exchanges
+//! same copies into the same band cells: bitwise).  false (nothing done): the caller
+//! runs the two exchanges
 
 bool RadiationVet::VetGdCsHaloCX(const int pass, const int i, const int eb) {
 #if MPI_PARALLEL_ENABLED
   if (eb < 0) {return false;}
-#if M1_VGDCS_NCCL
-  if (VgdNcclOn()) {return false;}
-#endif
   const VgdCsCl &EA = vgd_cscl[vgd_cscur];
   const VgdCsCl &EB = vgd_cscl[eb];
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1726,9 +1669,6 @@ void RadiationVet::VetGdCsSweep() {
 #if !MPI_PARALLEL_ENABLED
   early = false;
 #endif
-#if M1_VGDCS_NCCL
-  if (VgdNcclOn()) {early = false;}
-#endif
   if (xffs) {early = false;}   // (the early send: one set per shell kernel)
 #if defined(KOKKOS_ENABLE_HIP) && MPI_PARALLEL_ENABLED
   // MI300A, ROCm 7.2: more than 2 ranks on one GPU with the default GPU_MAX_HW_QUEUES
@@ -1813,7 +1753,7 @@ void RadiationVet::VetGdCsSweep() {
 #define M1_VGDCS_SHELL_NAME shell_
 #include "rad_vet_vetgd_cs_shell.inc"
 #undef M1_VGDCS_SHELL_NAME
-      // cs early send (compact lists, no NCCL): the
+      // cs early send (compact lists): the
       // values this shell SENDS first, then their pack (pinned host buffer) and an event;
       // the full shell kernel runs while the host exchanges (finished below at the halo
       // point: event wait instead of a fence, MPI, unpack)

@@ -341,18 +341,6 @@ if (DEFINED Athena_VET_VGD_NMAX AND NOT "${Athena_VET_VGD_NMAX}" STREQUAL "")
   target_compile_definitions(athena PRIVATE M1_VGD_NMAX_BUILD=${Athena_VET_VGD_NMAX})
 endif()
 
-# -D Athena_M1_VGD_NCCL_DIR=<nccl root with include/ lib/> builds the vet_gd
-# NCCL halo (sp list halo + cs compact exchange; not used: VgdNcclOn): only the
-# two vet_gd sources get the define and the include path (the rest of the tree unchanged)
-if (DEFINED Athena_M1_VGD_NCCL_DIR AND NOT "${Athena_M1_VGD_NCCL_DIR}" STREQUAL "")
-  set_source_files_properties(rad_vet/rad_vet_vetgd.cpp rad_vet/rad_vet_vetgd_sweep.cpp
-      rad_vet/rad_vet_vetgd_cs.cpp
-      PROPERTIES COMPILE_DEFINITIONS M1_VGD_NCCL=1
-      INCLUDE_DIRECTORIES ${Athena_M1_VGD_NCCL_DIR}/include)
-  target_link_libraries(athena PRIVATE -L${Athena_M1_VGD_NCCL_DIR}/lib nccl
-      -Wl,-rpath,${Athena_M1_VGD_NCCL_DIR}/lib)
-endif()
-
 # HIP: the clean RHS / Newton translation unit without VGPR spills to AGPRs.  On gfx942
 # the AGPRs share the register file: cln_rhs's 32 AGPR spill slots left it 1 wave per SIMD
 # (2 with its spills in scratch).  The arithmetic is unchanged (bitwise)
