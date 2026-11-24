@@ -97,3 +97,15 @@ PL: cycles 30140-30149 (last 10), 15.0 pass lines per cycle
 ## QUESTION before any fresh t9l62 start: the candidate clean_init CW
 - Candidate fresh t9l62 (b8b0d79c, thinf / lat_sums / tie_gid / opac_drag true, gtime_slope true, allow_clamp false, vceil 3e8): 'CLEAN WARNING clean_init steady: not converged (residual 6.167e-08, tol 1.0e-08)', 50 passes. The T2 production fresh t9l62 (thinf = false, the old values): converged in 3 passes, residual 1.3e-9, no CW. The other three stars (bsg, M35ZAMS, m35mms) have no such CW in the candidate fresh start.
 - The run continued and finished 100 cycles (CW 1 only). I have not looked into the cause; **what explains it, and is a fresh t9l62 start on these settings acceptable? Please answer before any fresh t9l62 start.**
+
+## t9l62 fresh: which key makes clean_init steady warn (your 24zzzzz), nlim = 1, candidate binary b8b0d79c, deck copies (one line changed back per arm)
+| arm | changed back | steady init | CW | end |
+|---|---|---|---|---|
+| A | thinf=false | converged after 3 passes, residual 1.343e-09 (tol 1.0e-08; 0 formal so | 0 | srun rc rc=0, Terminating on cycle limit; last log line: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 0 | failed |
+| B | lat_sums=false | NOT converged after 50 passes, residual 6.166e-08 (tol 1.0e-08; 0 form
+not converged (residual 6.166e-08, tol 1.0e-08) | 1 | srun rc rc=0, Terminating on cycle limit; last log line: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 0 | failed |
+| C | tie_gid=false | NOT converged after 50 passes, residual 6.167e-08 (tol 1.0e-08; 0 form
+not converged (residual 6.167e-08, tol 1.0e-08) | 1 | srun rc rc=0, Terminating on cycle limit; last log line: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 0 | failed |
+| D | opac_drag=false | NOT converged after 50 passes, residual 6.167e-08 (tol 1.0e-08; 0 form
+not converged (residual 6.167e-08, tol 1.0e-08) | 1 | srun rc rc=0, Terminating on cycle limit; last log line: <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 0 | failed |
+- **Arm A (thinf = false) converges in 3 passes (1.343e-9), CW 0, like the T2 production fresh; B, C, D each warn after 50 passes (6.17e-8).** So thinf = true is the key that makes the steady init not converge to 1e-8 (the production T2 and the candidate differ in thinf, allow_clamp, gtime_slope, the binary and dt_report; only thinf matters for the init). E (gtime_slope = false) is running, F (sym) skipped as you said; E's result follows. Production deck vs candidate deck differences: lat_sums, tie_gid, opac_drag, thinf, allow_clamp (true -> false), time2_gtime_slope (added), vceil (3.0e8 already in both), outputs, dt_report, nlim. No other differing line. Not tested: allow_clamp and the binary on their own (A differs from the T2 production by those and still converges).
