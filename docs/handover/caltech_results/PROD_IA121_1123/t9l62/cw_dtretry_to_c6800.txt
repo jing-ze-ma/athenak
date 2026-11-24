@@ -1,0 +1,50 @@
+CLEAN WARNING cycle 6467 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN WARNING cycle 6469 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+CLEAN WARNING cycle 6469: backward-Euler solve not converged (dt_retry, 3 so far; last change 6.374e-05)
+DT_RETRY cycle=6469 t=475242 dt 2.18171 -> 1.09086 reason=NON-CONVERGED resid=-1 cut 1
+CLEAN WARNING cycle 6469 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+CLEAN WARNING cycle 6469: backward-Euler solve not converged (dt_retry, 3 so far; last change 9.872e-05)
+DT_RETRY cycle=6469 t=475242 dt 1.09086 -> 0.545428 reason=NON-CONVERGED resid=-1 cut 2
+CLEAN WARNING cycle 6469 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+CLEAN WARNING cycle 6469: backward-Euler solve not converged (dt_retry, 3 so far; last change 1.552e-05)
+DT_RETRY cycle=6469 t=475242 dt 0.545428 -> 0.272714 reason=NON-CONVERGED resid=-1 cut 3
+CLEAN WARNING cycle 6498 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+CLEAN WARNING cycle 6498: backward-Euler solve not converged (dt_retry, 3 so far; last change 3.576e-04)
+DT_RETRY cycle=6498 t=475251 dt 0.643046 -> 0.321523 reason=NON-CONVERGED resid=-1 cut 1
+CLEAN WARNING cycle 6498 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+CLEAN WARNING cycle 6498: backward-Euler solve not converged (dt_retry, 3 so far; last change 3.619e-04)
+DT_RETRY cycle=6498 t=475251 dt 0.321523 -> 0.160761 reason=NON-CONVERGED resid=-1 cut 2
+CLEAN WARNING cycle 6539 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+CLEAN WARNING cycle 6551 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 3)
+DT_RETRY recovered cycle=6552 t=4.752935e+05 cap 4.107080e+00 >= CFL dt 3.959785e+00: cap off
+CLEAN WARNING cycle 6564 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 4)
+CLEAN WARNING cycle 6566 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 5)
+CLEAN WARNING cycle 6569 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 6)
+CLEAN WARNING cycle 6577 t2s 2: implicit_pos_floor created 7.842411e+41 of E (neither the gas nor the column covered the raise)
+CLEAN WARNING cycle 6577 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 7)
+CLEAN WARNING cycle 6577: backward-Euler solve not converged (dt_retry, 8 so far; last change 6.324e-05)
+DT_RETRY cycle=6577 t=4.753954e+05 dt 3.338796e+00 -> 1.669398e+00 reason=NON-CONVERGED resid=-1.000000e+00 cut 1
+CLEAN WARNING cycle 6577 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 7)
+CLEAN WARNING cycle 6577: backward-Euler solve not converged (dt_retry, 8 so far; last change 1.139e-04)
+DT_RETRY cycle=6577 t=4.753954e+05 dt 1.669398e+00 -> 8.346991e-01 reason=NON-CONVERGED resid=-1.000000e+00 cut 2
+CLEAN WARNING cycle 6577 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 7)
+CLEAN WARNING cycle 6577: backward-Euler solve not converged (dt_retry, 8 so far; last change 2.338e-04)
+DT_RETRY cycle=6577 t=4.753954e+05 dt 8.346991e-01 -> 4.173496e-01 reason=NON-CONVERGED resid=-1.000000e+00 cut 3
+CLEAN WARNING cycle 6577 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 7)
+CLEAN WARNING cycle 6577: backward-Euler solve not converged (dt_retry, 8 so far; last change 2.311e-04)
+DT_RETRY cycle=6577 t=4.753954e+05 dt 4.173496e-01 -> 2.086748e-01 reason=NON-CONVERGED resid=-1.000000e+00 cut 4
+CLEAN WARNING cycle 6577 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 7)
+CLEAN WARNING cycle 6577: backward-Euler solve not converged (dt_retry, 8 so far; last change 3.400e-05)
+DT_RETRY cycle=6577 t=4.753954e+05 dt 2.086748e-01 -> 1.043374e-01 reason=NON-CONVERGED resid=-1.000000e+00 cut 5
+CLEAN WARNING cycle 6577 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 7)
+CLEAN WARNING cycle 6577: backward-Euler solve not converged (dt_retry, 8 so far; last change 1.662e-05)
+DT_RETRY cycle=6577 t=4.753954e+05 dt 1.043374e-01 -> 5.216870e-02 reason=NON-CONVERGED resid=-1.000000e+00 cut 6
+CLEAN WARNING cycle 6577 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 7)
+CLEAN WARNING cycle 6577: backward-Euler solve not converged (dt_retry, 8 so far; last change 7.705e-06)
+DT_RETRY cycle=6577 t=4.753954e+05 dt 5.216870e-02 -> 2.608435e-02 reason=NON-CONVERGED resid=-1.000000e+00 cut 7
+CLEAN WARNING cycle 6577 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 7)
+CLEAN WARNING cycle 6577: backward-Euler solve not converged (dt_retry, 8 so far; last change 3.258e-06)
+DT_RETRY cycle=6577 t=4.753954e+05 dt 2.608435e-02 -> 1.304217e-02 reason=NON-CONVERGED resid=-1.000000e+00 cut 8
+CLEAN WARNING cycle 6577 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 7)
+CLEAN WARNING cycle 6637 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 8)
+DT_RETRY recovered cycle=6658 t=4.754393e+05 cap 4.368213e+00 >= CFL dt 4.030973e+00: cap off
