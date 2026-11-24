@@ -3,7 +3,7 @@
 # production input (not launched): 268 x 256 x 256, theta pi/3..2pi/3, phi 0..pi/3 periodic,
 # 4 MeshBlocks (268 x 128 x 128) for 2 nodes x 2 GPUs.  cfl 0.3 + hydro/rad_signal_speed,
 # implicit_tol 1e-8, outflow + marshak top, adaptive MLT scaffold with a 3e5..6e5 s ramp,
-# seed 1e-3 over 36.2-43.8 Rsun.  See inputs/radiation/bsg_vet_column.athinput.
+# seed 1e-3 over 36.2-43.8 Rsun.  See inputs/rad_vet_clean/bsg_vet_column.athinput.
 # =====================================================================================
 <comment>
 problem = BSG envelope (Ma, Bildsten & Jiang 2026), 20 Msun, log L 5.161, Teff 15835 K;

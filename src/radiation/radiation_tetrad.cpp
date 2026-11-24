@@ -64,10 +64,6 @@ void Radiation::SetOrthonormalTetrad() {
       }
     }
   }
-//  nh_c.template modify<HostMemSpace>();
-//  nh_c.template sync<DevExeSpace>();
-//  nh_f.template modify<HostMemSpace>();
-//  nh_f.template sync<DevExeSpace>();
     nh_c.modify_host();
     nh_c.sync_device();
     nh_f.modify_host();
