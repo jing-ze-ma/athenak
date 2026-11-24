@@ -19,3 +19,10 @@
   So **I kept WB running** (the state is clean). If you want it stopped on the letter of the rule, say so; it is a test, and I can stop it at once.
   CLEAN cycle / WBFDIAG lines for 6465-6470: arm_WB/clean_cycle_wbfdiag_c6465-6470.txt.
 - (11-23 20:35) **SB WARNING (not stopped)**:  first skip_de > 1e41: cycle 6463 skip_de 897645092400000010747709812793477416615936
+
+## WA
+- 2026-11-23 21:01:58 rc=0 last: elapsed=3.919530e+03 cycle=7500 time=4.833734e+05 dt=1.177837e+01 
+- CLEAN WARNING 34, stage fallbacks 18, DT_RETRY 17, FATAL 0, implicit_pos_floor created 0
+- CLEAN MCAP lines: pass 4254, write-back 2127; MCAPM 2127; FCONE 2127; WBFDIAG 41
+- dt min 0.05651 at t 4.752476e+05; s/cycle 3.488 (c6500-7500); end: t 4.834910e+05, Ltop/Lin 2.4599, Lbot/Lin 1.4844
+- floor_audit [update] skip_de per cycle: max abs 3.216e+43 at c6472; 1048 cycles > 1e41 (skip_de_per_cycle.txt)
