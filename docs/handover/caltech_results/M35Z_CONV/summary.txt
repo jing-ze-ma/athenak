@@ -1,0 +1,76 @@
+# M35ZAMS convection diagnostic (T2 run, prod_rc4v_1124/m35zams, binary athena_ia123rc4v_262affd6f). NOTE 2026-11-24zzzo.
+# dumps 44, t = 0 .. 77111 s (0.892 d); early dump t = 19801 s, last dump t = 77111 s; cgs unless stated
+# all quantities are shell (solid-angle) statistics of the wedge; L scaled to 4 pi; rms are rho-weighted. ESTIMATES: nabla, N2 (from shell-mean T, rho, Pg, E; P = Pg + E/3), comoving L_rad and convective fluxes (cell F1, E; P_rr = D11 E on the vet_vet dumps t = 0, 43200, 77110 s, E/3 elsewhere), diffusivity, growth/damping times
+# check E/(a T_gas^4) deep (i = 50) at last dump: 1.0000 (1 = LTE)
+r_top = 8.1976 R_sun (tau integrated inward from the top face). shell-mean tau = 1 at r = 7.8935 (early) / 7.8961 (last) R_sun, tau = 2/3 at 7.8967 / 7.8993; per-column tau = 1 radius, last dump, mean/min/max: [7.8962 7.8947 7.9014] R_sun
+iron peak: i = 273 r = 7.7677 R_sun, T = 1.6830e+05 K, kappa_R = 2.3039 cm2/g (shell T range 1.2-2.6e5 K, kappa maximum)
+
+Table: rms velocities in km/s (vr_fl = about the shell mass-weighted mean), N2/(g/H_P) dimensionless (<0 = unstable to adiabatic convection by the shell-mean gradients)
+
+early t=19801
+mark      r/Rsun  rho       T[K]      tau         nab-nad N2/(g/H)   vr_fl      vth      vph 1e3Mtot   Mg_max   kappa_R     Gamma   Lradc/L   Lenth/L Lkin/L
+Fe peak   7.7677  4.292e-08 1.687e+05 3.552e+02    0.0695   -0.654    0.06   0.0040   0.0073    0.67    0.003     2.317     0.877    1.0001    0.0000 -2.61e-11
+r(tau1)   7.8975  8.843e-10 4.133e+04 7.788e-01   -0.0398    0.287    0.17   0.1450   0.1667    6.73    0.056     1.403     0.530    0.9985    0.0000 -4.24e-11
+r=7.83    7.8285  2.148e-08 1.045e+05 5.465e+01   -0.0018    0.009    0.04   0.0415   0.0758    1.56    0.004     1.370     0.518    1.0001    0.0000 -7.16e-12
+r=7.6     7.5991  1.800e-07 2.650e+05 2.059e+03   -0.0471    0.414    0.00   0.0006   0.0011    0.07    0.000     1.444     0.546    1.0002   -0.0000 -7.31e-16
+r=7.4     7.4017  2.140e-06 4.303e+05 1.364e+04   -0.0659    0.251    0.00   0.0000   0.0000    0.03    0.000     0.871     0.329    1.0002   -0.0000 -8.41e-21
+r=7.0     7.0015  6.649e-05 1.031e+06 4.035e+05   -0.0467    0.105    0.00   0.0000   0.0000    0.00    0.000     0.602     0.228    1.0001   -0.0000 -3.87e-22
+
+last t=77111
+mark      r/Rsun  rho       T[K]      tau         nab-nad N2/(g/H)   vr_fl      vth      vph 1e3Mtot   Mg_max   kappa_R     Gamma   Lradc/L   Lenth/L Lkin/L
+Fe peak   7.7677  4.214e-08 1.683e+05 3.527e+02    0.0677   -0.644    9.88   6.0037   7.2744  137.55    0.622     2.304     0.871    0.9996    0.0007 -9.73e-05
+r(tau1)   7.8975  1.056e-09 4.319e+04 1.063e+00   -0.0288    0.198    2.76   8.5366  12.6673  347.63    1.156     1.439     0.543    0.9974    0.0000 8.37e-08
+r=7.83    7.8285  2.182e-08 1.058e+05 5.723e+01   -0.0005    0.003    6.75   6.1527  12.3412  239.10    0.694     1.367     0.517    1.0001    0.0001 1.13e-05
+r=7.6     7.5991  1.801e-07 2.649e+05 2.058e+03   -0.0469    0.412    0.36   0.5140   0.4420    6.36    0.110     1.445     0.547    1.0003   -0.0000 1.57e-08
+r=7.4     7.4017  2.140e-06 4.303e+05 1.364e+04   -0.0659    0.251    0.00   0.0023   0.0010    0.03    0.000     0.871     0.329    1.0002   -0.0000 7.02e-14
+r=7.0     7.0015  6.649e-05 1.031e+06 4.035e+05   -0.0467    0.105    0.00   0.0000   0.0000    0.00    0.000     0.602     0.228    1.0001   -0.0000 1.51e-18
+
+Same rms with cells of column tau < 1 excluded (rho-weighted, last dump; NaN = no cells)
+mark      r/Rsun     vr_fl      vth      vph  1e3Mtot   dT_rms
+Fe peak   7.7677    9.8814   6.0037   7.2744  137.546 3.00e-03
+r=7.83    7.8285    6.7520   6.1527  12.3412  239.098 7.02e-03
+r(tau1)   7.8975    3.3674   9.5171  13.7782  382.417 1.46e-02
+r(tau1)+1 7.9014    2.2708   5.4652  13.2036  390.828 2.62e-03
+r(tau1)+2 7.9052       nan      nan      nan      nan      nan
+r=7.4     7.4017    0.0023   0.0023   0.0010    0.033 4.96e-06
+early: shells with N^2 < 0 at tau > 1: 30 cells, r = 7.7149-7.8247 R_sun (T 2.03e+05-1.09e+05 K)
+early: max of (L_enth + L_KE)/L at tau > 1 = 6.210e-08 at r = 7.7677; max |v_r mean-subtracted rms| = 0.13 km/s; min L_rad,com/L at tau > 1 = 0.99836 (cell estimate)
+last: shells with N^2 < 0 at tau > 1: 30 cells, r = 7.7149-7.8247 R_sun (T 2.03e+05-1.10e+05 K)
+last: max of (L_enth + L_KE)/L at tau > 1 = 6.590e-04 at r = 7.7753; max |v_r mean-subtracted rms| = 10.09 km/s; min L_rad,com/L at tau > 1 = 0.99739 (cell estimate)
+thin gas (tau << 1): cell-centred L_rad estimate = 0.9548 L at i = 350, while user.hst L_top/L_in = 1.0002; the two disagree by 4.5 % and the cause is not checked, so L_rad at tau < 1 is not usable here
+
+KE by radial shell (4 pi scaled, erg), t in s; KE_fl = radial + lateral fluctuations about the shell means (shell-mean lateral flow NOT included, listed as KE_latmean); KE_mean = mean radial flow of the shell
+e-fold fit: ln KE_fl linear in t over the last 32 dumps from t > 2e4 s, s (n. = not monotone), 1/rate in s
+shell r/Rsun        KE_fl early   KE_fl last KE_mean last      ratio  e-fold[s]      R^2 trend
+6.800-6.934           2.508e+26    2.199e+29    5.266e+29     876.73   1.03e+04    0.381 last-10 rise
+6.934-7.105           9.727e+26    7.688e+30    2.529e+31    7903.10   7.28e+03    0.414 last-10 rise
+7.105-7.316           1.646e+28    3.488e+32    4.150e+32   21188.30   4.96e+03    0.582 last-10 rise
+7.316-7.496           4.766e+28    1.298e+34    1.759e+33  272390.96   3.88e+03    0.940 last-10 rise
+7.496-7.681           8.992e+32    6.473e+37    3.180e+33   71983.55   4.54e+03    0.964 last-10 rise
+7.681-7.832           3.205e+34    1.176e+39    3.012e+34   36699.51   5.34e+03    0.953 last-10 rise
+7.832-7.948           2.358e+34    1.753e+38    1.045e+34    7436.18   6.18e+03    0.973 last-10 rise
+7.948-8.045           3.821e+31    8.749e+32    1.082e+30      22.90   1.88e+04    0.930 last-10 rise
+8.045-8.104           9.087e+27    3.336e+29    6.286e+21      36.71   1.17e+04    0.924 last-10 rise
+8.104-8.152           2.020e+27    1.927e+29    5.007e+21      95.39   9.44e+03    0.946 last-10 flat
+8.152-8.196           9.880e+26    7.875e+29    4.669e+21     797.08   7.01e+03    0.981 last-10 rise
+total KE_fl early 5.656e+34, last 1.416e+39; mean-flow KE early 3.242e+34 last 4.595e+34
+KE_latmean (shell-mean lateral flow) early 2.582e+30 last 3.282e+37; radial part of KE_fl early 2.056e+34 last 5.874e+38
+fl. KE over first 5 dumps: [0.00000000e+00 1.47910309e+33 1.98181753e+33 3.52939775e+33
+ 5.08216503e+33]
+hydro.hst KE 1/2/3 (wedge, code units erg) at t = 0: 0.000e+00 0.000e+00 0.000e+00; at last t = 77111: 1.917e+35 8.994e+34 1.913e+35
+hydro.hst KE component log-slopes t>2e4: e-fold times (s) 1-KE 5.40e+03, 2-KE 5.01e+03, 3-KE 5.41e+03 (negative = decaying)
+hydro.hst KE component log-slopes t>5e4: e-fold times (s) 1-KE 1.25e+04, 2-KE 7.27e+03, 3-KE 8.51e+03 (negative = decaying)
+
+Local e-fold times of KE [s] by window (slope of ln KE; velocity e-fold = 2x; growth if > 0)
+window [ks]       Fe band     hst 1-KE     hst 2-KE     hst 3-KE
+20-30           3.889e+03    4.813e+03    4.643e+03    5.105e+03
+30-40           3.784e+03    3.760e+03    4.042e+03    4.090e+03
+40-50           3.980e+03    3.862e+03    4.328e+03    4.359e+03
+50-60           7.136e+03    7.428e+03    5.348e+03    6.836e+03
+60-70           9.784e+03    1.108e+04    7.470e+03    9.460e+03
+70-78           1.469e+04    2.234e+04    2.693e+04    8.990e+03
+wedge check: hydro.hst KE sum x 4pi/Omega = 1.4491e+39 erg vs dumps KE_fl + KE_latmean + KE_mean = 1.4491e+39 erg
+early iron peak (i=273): N^2 = -2.362e-06 s^-2 -> unstable, adiabatic growth time 1/sqrt(-N2) = 6.51e+02 s; H_P = 4.405e+09 cm; thermal diffusivity 2.19e+16 cm2/s, H_P^2/kappa_T = 8.84e+02 s; c_s(tot) = 9.871e+06 cm/s; c/c_s = 3037; tau_shell(peak) = 355.2 (top->inward)
+last iron peak (i=273): N^2 = -2.299e-06 s^-2 -> unstable, adiabatic growth time 1/sqrt(-N2) = 6.60e+02 s; H_P = 4.459e+09 cm; thermal diffusivity 2.23e+16 cm2/s, H_P^2/kappa_T = 8.90e+02 s; c_s(tot) = 9.899e+06 cm/s; c/c_s = 3029; tau_shell(peak) = 352.7 (top->inward)
+t=19801 s iron-peak shell: corr(v_r', T') = 0.973, corr(v_r', rho') = -0.976, skewness of v_r' = -0.39, area fraction of downflow = 0.48, rms T'/T = 1.65e-05, rms rho'/rho = 1.47e-04, v_r' min/max = -0.20/0.13 km/s
+t=77111 s iron-peak shell: corr(v_r', T') = 0.444, corr(v_r', rho') = -0.315, skewness of v_r' = -0.99, area fraction of downflow = 0.38, rms T'/T = 3.03e-03, rms rho'/rho = 3.34e-02, v_r' min/max = -35.18/28.20 km/s
