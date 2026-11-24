@@ -4,10 +4,9 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_clean_solver.cpp
-//! \brief Linear algebra of the clean implicit radiation solve: face coefficients, the
-//! operator A E = E (1 + h c kE (1-r)) + h div F_lin(E), an x1-line tridiagonal
-//! preconditioner (or the old production multigrid on it) and right-preconditioned
-//! BiCGStab.
+//! \brief Linear algebra of the clean implicit radiation solve: the operator
+//! A E = E (1 + h c kE (1-r)) + h div F_lin(E), x1-line tridiagonal / multigrid
+//! preconditioners, right-preconditioned BiCGStab, ghost exchange, layout-invariant sums.
 
 #include <algorithm>
 #include <bitset>
@@ -39,7 +38,7 @@
 // layout-invariant reductions of the clean solve (repro sums)
 namespace radvet {
 
-//! up to three sums and one max (M1BcgRed, M1LayReduce)
+//! up to three sums and one max (M1LayReduce)
 struct M1BcgVal {
   Real s0, s1, s2, mx;
 };
@@ -62,35 +61,21 @@ inline void M1GlobalMax(Real &a) {
 
 //----------------------------------------------------------------------------------------
 //! \fn M1LayReduce
-//! \brief layinv-1105 <mesh>/layout_invariant: the M1BcgVal reduction of fn(idx, v) over
-//! idx in [0, n) AND over all ranks with ORDER-INDEPENDENT sums (repro::ReproSum): each
-//! cell's contribution is taken from fn on a zeroed M1BcgVal (0 + term = term exactly;
-//! fn runs once per idx, so its side effects are those of the plain reduction) and
-//! deposited exactly.  The result depends only on the multiset of cell terms: the same
-//! for every MeshBlock layout, rank count, thread schedule and backend.
-
-//!
-//! block mode (<mesh>/layout_invariant_mode = block, the default;
-//! repro::block_mode): idx = m*nkji + q (M1BcgIdx).  Each MeshBlock's partial is taken in
-//! a fixed code-set order (M1_LB_NS strided slots, then one team per MeshBlock with the
-//! fixed pairwise tree of M1DetReduce), a function of the MeshBlock alone (any team size,
-//! any number of MeshBlocks on the rank).  The nmb partials are copied to the host and
-//! deposited exactly (repro::ReproSum), then merged over ranks with the max in one
-//! Allgather: the result depends only on the set of MeshBlock partials.
-//! bpart / hpart: device / host scratch (sized on first use).
+//! \brief <mesh>/layout_invariant: the M1BcgVal reduction of fn(idx, v) over idx in
+//! [0, n) and all ranks with exact order-independent sums (repro::ReproSum).
+//! Cell mode: every cell term deposited exactly (independent of layout and backend).
+//! Block mode (default): each MeshBlock's (or tile's) partial in a fixed order
+//! (M1_LB_NS strided slots, then a fixed pairwise tree), partials summed exactly on the
+//! host and merged over ranks.  bpart / hpart: device / host scratch.
 
 template <class F>
 void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real> &bpart,
                  Kokkos::View<Real*, Kokkos::HostSpace> &hpart, const F &fn,
                  M1BcgVal &out, const int *nxb = nullptr) {
   if (repro::block_mode) {
-    // level 1: M1_LB_NS slots per MeshBlock (independent of nmb), slot s accumulates
-    // q = s, s + M1_LB_NS, ... (coalesced over s); level 2: one team per MeshBlock, slot
-    // t of M1_DR_NT accumulates the level-1 slots t, t + M1_DR_NT, ... in order, then
-    // the fixed pairwise tree.  Every order is set by the code.
-    // (tile mode, nxb the MeshBlock's cells: the units are the N x N (x2, x3) tiles
-    // instead, q the cell's index in its tile: a tile of the MeshBlock's size is the
-    // MeshBlock's partial, bitwise)
+    // level 1: slot s of M1_LB_NS sums q = s, s + M1_LB_NS, ...; level 2: one team per
+    // unit sums slots t, t + M1_DR_NT, ..., then the pairwise tree.  Tile mode (nxb):
+    // the units are N x N (x2, x3) tiles (a MeshBlock-sized tile is bitwise the block)
     const bool tl = repro::tile_n > 0 && nxb != nullptr;
     const int t2 = (tl && nxb[1] > 1) ? repro::tile_n : 1;
     const int t3 = (tl && nxb[2] > 1) ? repro::tile_n : 1;
@@ -166,7 +151,7 @@ void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real
       });
     });
     auto hp = Kokkos::subview(hpart, Kokkos::make_pair(0, 4*nmb));
-    // (stream-ordered copy + one stream fence, not deep_copy's two device syncs; h200)
+    // (stream-ordered copy + one fence)
     Kokkos::deep_copy(DevExeSpace(), hp, Kokkos::subview(part, Kokkos::make_pair(off2,
                       off2 + 4*nmb)));
     DevExeSpace().fence();
@@ -203,14 +188,13 @@ void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real
   out.mx = rv.mx;
 }
 
-} // namespace radvet
+}  // namespace radvet
 
 namespace radvet {
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationVet::MeshBlock0Dx
-//! \brief the cell width along x(d+1) of the mesh's MeshBlock 0, as MeshBlock sets
-//! it, the same on every rank (a rank's first MeshBlock's differs from it by round-off:
-//! the answer depended on the MeshBlocks of a rank, one layout on other rank counts)
+//! \brief cell width along x(d+1) of the mesh's MeshBlock 0: the same on every rank
+//! (a rank's own first MeshBlock differs by round-off)
 
 Real RadiationVet::MeshBlock0Dx(const int d) const {
   auto *pm = pmy_pack->pmesh;
@@ -352,13 +336,11 @@ CleanArgs RadiationVet::CleanMakeArgs() {
 
 //----------------------------------------------------------------------------------------
 //! \fn const void *RadiationVet::CleanDevCopy
-//! \brief a device copy (slot s < 8) of an argument struct of n <= 8 KB bytes (CleanArgs,
-//! the EOS) for the device calls that are not inlined: a reference to a kernel's capture
-//! is copied to the stack of every thread (~3 KB for CleanArgs), one to device memory is
-//! read in place (CleanDev, CleanDevArgs).
+//! \brief device copy (slot s < 8, n <= 8 KB) of an argument struct for non-inlined
+//! device calls: read in place, not copied to every thread's stack as a capture is
 
 const void *RadiationVet::CleanDevCopy(const void *p, const size_t n, const int s) {
-  // (the host too: a copy that outlives the struct, as cln_gdx is kept across calls)
+  // (host builds too: the copy outlives the struct)
   constexpr size_t slot = 8192;
   if (n > slot || s < 0 || s >= 8) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -371,10 +353,7 @@ const void *RadiationVet::CleanDevCopy(const void *p, const size_t n, const int 
       h(static_cast<const char *>(p), n);
   auto d = Kokkos::subview(cln_xdev, std::make_pair(s*slot, s*slot + n));
 #if defined(KOKKOS_ENABLE_CUDA)
-  // (CUDA: in stream order, after the kernels that read the slot and before the next; a
-  // pageable copy this small is staged at the call (athena.hpp AthBodyToDevice), so it
-  // needs no fence: the plain deep_copy's two device syncs and blocking copy per launch
-  // left the A100 idle)
+  // (CUDA: in stream order, no fence; a small pageable copy is staged at the call)
   Kokkos::deep_copy(DevExeSpace(), d, h);
 #else
   Kokkos::deep_copy(d, h);
@@ -388,19 +367,12 @@ const CleanArgs *RadiationVet::CleanDevArgs(const CleanArgs &x, const int s) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanGhostFill
-//! \brief ghost cells of components [c0, c0+nc) of a work array: the neighbours' cells
-//! (other MeshBlocks, periodic wrap; across a cubed-sphere seam the neighbour's own
-//! cells, without the along-seam resample) by the cell-centred boundary exchange on a
-//! scratch array of nc components (only the ghosts and the ng layers the exchange reads
-//! are copied in, only the ghosts back), then (phys) a copy of the edge cell on physical
-//! boundaries.  part = 1 only starts the exchange (nc <= clean_halo_vars), part = 2
-//! finishes it: work on the cells CleanInner by ng can run in between.  The fills
-//! deferred by CleanGhostDefer (their ghosts are read only after the next exchange) go
-//! in the same exchange where they fit (one exchange of all their components).  The
-//! closure's off-diagonal D12, D13, D23 take the edge cell's with their parity: odd
-//! across a reflecting radiation wall normal to one of their axes, and D_r,theta,
-//! D_r,phi across the pole (e_theta, e_phi flip), so that d_b(D E) puts no shear
-//! traction on the wall (as ce91f387d)
+//! \brief fill the ghosts of components [c0, c0+nc) by the cell-centred exchange
+//! (cubed-sphere seams without resample), then (phys) copy the edge cell on physical
+//! boundaries.  part 1 starts, part 2 finishes (inner cells may run between).  Deferred
+//! fills (CleanGhostDefer) join the next exchange where they fit.  D12, D13, D23 are odd
+//! across a reflecting wall normal to one of their axes and D_r,theta, D_r,phi across
+//! the pole, so d_b(D E) puts no shear traction on the wall
 
 void RadiationVet::CleanGhostFill(DvceArray5D<Real> a, const int c0, const int nc,
                                   const bool phys, const int part, const int dep,
@@ -483,8 +455,7 @@ void RadiationVet::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
     cln_hpb->InitializeBuffers(cln_hmax);
     cln_hpb->SetVectorPairs(cln_hmax, {});
     cln_hpb->cs_noresample = true;
-    // (16 teams per buffer: a MeshBlock face is one buffer, which one team packed alone,
-    // ~0.5 ms per exchange on an A100 at 831 x 64 x 32; bitwise, copies)
+    // (16 teams per buffer instead of one per MeshBlock face; bitwise)
     cln_hpb->cc_split = 16;
   }
   if (cln_hdl.state == 0) CleanHaloInit(n3, n2, n1);
@@ -504,15 +475,12 @@ void RadiationVet::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
   if (dl && part == 1) return;
   if (dl) CleanHaloFinish(sg);
   const bool cs = pmy_pack->pmesh->use_cubed_sphere;
-  // one MeshBlock and one array of doubles: the exchange runs on the array's own
-  // components [c0, c0 + nc), no copies (the copies took every cell outside CleanInner,
-  // ghosts included: the same values)
+  // one MeshBlock and one Real array: exchange on the array itself, no copies
   bool own = false;
   if constexpr (std::is_same<T, Real>::value) own = (nmb1 == 0 && sg.size() == 1);
   // (clean_halo_direct, doubles: the cube-vertex corners on the arrays themselves)
   const bool dc = dl && cs && std::is_same<T, Real>::value;
-  // (the exchanges run one at a time: their scratch arrays share one allocation, made
-  // and grown to nc components by the first exchange that copies through it)
+  // (exchanges run one at a time: their scratch shares one allocation, grown on demand)
   if (!own && (dl ? cs && !dc : true) && cln_hbuf.extent_int(1) < nc) {
     Kokkos::realloc(cln_hbuf, nmb1 + 1, nc, n3, n2, n1);
     cln_halo.clear();
@@ -530,8 +498,8 @@ void RadiationVet::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
     const size_t off = static_cast<size_t>(sg[0].c0)*n3*n2*n1;
     if (own) ha = DvceArray5D<Real>(sg[0].a.data() + off, 1, nc, n3, n2, n1);
   }
-  // (only the cells outside CleanInner are copied: CleanShell.  clean_halo_direct: only
-  // on the cubed sphere, after the exchange, for the cube-vertex corners of the old one)
+  // (only the shell outside the inner box is copied; clean_halo_direct: only on the
+  // cubed sphere, for the cube-vertex corners)
   if (!own && !dc && (dl ? cs : part != 2)) {
     const CleanShell sc(n3, n2, n1, ng, is, ie, js, je, ks, ke, md, td);
     int o = 0;
@@ -594,13 +562,10 @@ void RadiationVet::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanHaloInit
-//! \brief clean_halo_direct: the cell lists of the ghost exchange, read off the
-//! exchange itself: an array of cell ids (rank, MeshBlock, cell) through cln_hpb gives
-//! every ghost the cell it copies; the on-rank pairs make the copy kernel, the off-rank
-//! ghosts are grouped by rank and their source cells sent to that rank once (its pack
-//! list, in the receiver's order: the messages carry no header).  Checked once: a field
-//! of other values through both paths must give the same array bitwise, else the run
-//! stops.  (state -1 while the lists are made: the exchange is cln_hpb's.)
+//! \brief clean_halo_direct: build the ghost exchange's cell lists by sending cell ids
+//! through cln_hpb: on-rank pairs make the copy kernel, off-rank ghosts are grouped by
+//! rank (pack lists in the receiver's order, no headers).  Self-check: a test field must
+//! come out bitwise equal through both paths, else the run stops
 
 void RadiationVet::CleanHaloInit(const int n3, const int n2, const int n1) {
   CleanHaloList &q = cln_hdl;
@@ -640,8 +605,8 @@ void RadiationVet::CleanHaloInit(const int n3, const int n2, const int n1) {
     std::vector<int> ld, ls, lfm;
     std::vector<std::vector<int>> rg(nrk), rs(nrk), rf(nrk);   // off-rank ghosts, their
                                                                 // sources and families
-    // (the family of ghost (m,k,j,i), copy of id w: the axis along which the source of
-    // its neighbour one layer in (out at the first layer) differs, 3 at edges, corners)
+    // (family of a ghost copying id w: the axis along which its neighbour one layer in
+    // differs by one cell; 3 at edges and corners)
     auto fam = [&](const int m, const int k, const int j, const int i, const int64_t w) {
       const int ox = (i < is || i > ie), oy = md && (j < js || j > je);
       const int oz = td && (k < ks || k > ke);
@@ -806,9 +771,8 @@ void RadiationVet::CleanHaloInit(const int n3, const int n2, const int n1) {
 
 //----------------------------------------------------------------------------------------
 //! \fn RadiationVet::CleanHaloKey, CleanHaloMask
-//! \brief clean_halo_direct, CleanGSeg::fm: the mask set of an exchange (fm of family
-//! f over all its components, nc), and its buffer layout: each entry's components in
-//! order of the mask, the messages' entries packed
+//! \brief clean_halo_direct: the masks of an exchange (CleanGSeg::fm per family, then
+//! nc) and their packed buffer layout
 
 template <typename T>
 std::array<uint32_t, 5> RadiationVet::CleanHaloKey(const std::vector<CleanGSeg<T>> &sg) {
@@ -857,10 +821,8 @@ RadiationVet::CleanHaloList::Mask &RadiationVet::CleanHaloMask(
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanHaloPost
-//! \brief clean_halo_direct, first half: receives posted (into the half of the receive
-//! buffer the previous exchange's unpack does not read), pack, wait for the pack (the
-//! stream holds nothing behind it), the on-rank copy, then one send per neighbour rank.
-//! Buffer entry p of component n (over the segments in order) at p nc + n
+//! \brief clean_halo_direct, first half: post receives (alternate buffer halves), pack,
+//! fence, on-rank copy, one send per neighbour rank.  Entry p, component n at p nc + n
 
 template <typename T>
 void RadiationVet::CleanHaloPost(const std::vector<CleanGSeg<T>> &sg) {
@@ -916,8 +878,7 @@ void RadiationVet::CleanHaloPost(const std::vector<CleanGSeg<T>> &sg) {
   }
   if (q.ns > 0 || q.nr > 0) DevExeSpace().fence();
 #endif
-  // (the on-rank copy runs on the device while the sends are posted; the ghosts deeper
-  // than dcur keep their values)
+  // (on-rank copy runs while the sends are posted; ghosts deeper than dcur kept)
   const int dc = q.dcur;
   int oc = 0;
   for (auto &s : sg) {
@@ -949,8 +910,7 @@ void RadiationVet::CleanHaloPost(const std::vector<CleanGSeg<T>> &sg) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanHaloFinish
-//! \brief clean_halo_direct, second half: wait for the messages, unpack, wait for the
-//! sends
+//! \brief clean_halo_direct, second half: wait, unpack, wait for the sends
 
 template <typename T>
 void RadiationVet::CleanHaloFinish(const std::vector<CleanGSeg<T>> &sg) {
@@ -1018,11 +978,8 @@ void RadiationVet::CleanGhostPhys(DvceArray5D<T> a, const int c0, const int nc) 
   const int ib[6] = {ibc_x1min, ibc_x1max, ibc_x2min, ibc_x2max, ibc_x3min, ibc_x3max};
   int rf = 0;   // (bit s: side s reflects)
   for (int s = 0; s < 6; ++s) rf |= (ib[s] == M1_IBC_REFLECT) ? (1 << s) : 0;
-  // (D is the rays'. The x1min end of their sweep keeps the diffusion intensity unless
-  // vet_bc_reflect = mirror: there the wall cell's D_12 is that of a field the rays do
-  // not mirror, and an odd ghost turned it into a shear gradient D_12 E/dx in the theta
-  // faces of the wall row that moved the gas at the flz q wall outward. Its D_12 ghost
-  // stays even; D_13 stays odd (no wall torque: L_z exact))
+  // (x1min without vet_bc_reflect = mirror: the rays do not mirror there, so the D_12
+  // ghost stays even (no spurious shear); D_13 stays odd (no wall torque: L_z exact))
   const bool rm = vet_bc_mirror;
   auto sg = [=] KOKKOS_FUNCTION (const int c, const int s, const int m) {
     const int p = c - CLN_D11 - 3;   // (D12, D13, D23: axes 01, 02, 12; p != 2 - d)
@@ -1031,11 +988,11 @@ void RadiationVet::CleanGhostPhys(DvceArray5D<T> a, const int c0, const int nc) 
     if (s == 0 && !rm && p == 0) return 1.0;
     return (((rf >> s) & 1) && p != 2 - s/2) ? -1.0 : 1.0;
   };
-  // (a direction without a physical side on this rank's MeshBlocks: no launch; mb_bcs
-  // is set on the host, the device copy is never written)
+  // (no launch for a direction without a physical side on this rank)
   auto bh = pmy_pack->pmb->mb_bcs.h_view;
   auto phys = [&](const int d) {
-    for (int m = 0; m <= nmb1; ++m) if (pf(bh(m,2*d)) || pf(bh(m,2*d+1))) return true;
+    for (int m = 0; m <= nmb1; ++m)
+      if (pf(bh(m,2*d)) || pf(bh(m,2*d+1))) return true;
     return false;
   };
   // (x1, x2, x3 in turn: a corner takes the product of its sides' parities)
@@ -1088,10 +1045,8 @@ Real RadiationVet::CleanReduce(Real v, const bool max) {
 
 //----------------------------------------------------------------------------------------
 //! \fn std::array<Real, 2> CleanSums
-//! \brief the n <= 2 sums s0, s1 that f(m, k, j, i, s0, s1) adds over the active cells
-//! (it may also update the cell's vectors: a BiCGStab step and its dots in one pass), one
-//! reduction over the ranks; <mesh>/layout_invariant: M1LayReduce's (rank-count
-//! invariant)
+//! \brief the n <= 2 sums f(m, k, j, i, s0, s1) adds over the active cells and ranks
+//! (f may also update vectors); layout_invariant: via M1LayReduce
 
 template <typename F>
 std::array<Real, 2> CleanSums(MeshBlockPack *pp, const char *name, const int n,
@@ -1102,7 +1057,7 @@ std::array<Real, 2> CleanSums(MeshBlockPack *pp, const char *name, const int n,
   int nmb = pp->nmb_thispack;
   const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
   std::array<Real, 2> d = {0.0, 0.0};
-  if (pp->pmesh->layout_invariant) {   // (old production's sums: M1LayReduce, any ranks)
+  if (pp->pmesh->layout_invariant) {
     M1BcgVal v;
     auto *r = pp->pradvet;
     const int nxb[3] = {nx1, nx2, nx3};   // (layout_invariant_mode = tile)
@@ -1141,10 +1096,8 @@ Real RadiationVet::CleanSumCells(const DvceArray4D<Real> &a) {
 
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationVet::CleanLzTotal
-//! \brief the history's L_z about z: sum V R (p_phi + F_phi/c^2) of the gas and of the
-//! radiation's cell vector (the frame of y; R = x1v sin(theta), the cubed sphere's
-//! CleanCsFrame), plus the L_z ledger (CleanLzBook); 0 before the first solve.  With
-//! clean_cs_lz_tel the radiation's is that of its face momenta (CleanCsTorque)
+//! \brief history L_z: sum V R (p_phi + F_phi/c^2) of gas and radiation plus the L_z
+//! ledger (CleanLzBook); 0 before the first solve; clean_cs_lz_tel: face momenta
 
 Real RadiationVet::CleanLzTotal() {
   if (!cln_init || !(sph_geom || cs_geom)) return 0.0;
@@ -1181,8 +1134,8 @@ Real RadiationVet::CleanLzTotal() {
 
 //----------------------------------------------------------------------------------------
 //! \fn std::array<Real, 2> RadiationVet::CleanDots
-//! \brief the n <= 2 sums over active cells and the nc components of w(ab[2q])
-//! w(ab[2q+1]) (q < n): one pass, one reduction over the ranks
+//! \brief the n <= 2 dot products of w(ab[2q]) and w(ab[2q+1]) over nc components, one
+//! pass and one reduction
 
 std::array<Real, 2> RadiationVet::CleanDots(CleanW w, const int nc, const int n,
                                             const std::array<int, 4> ab) {
@@ -1198,11 +1151,9 @@ std::array<Real, 2> RadiationVet::CleanDots(CleanW w, const int nc, const int n,
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanFaceCoefficients
-//! \brief per face: the blend weight w(C1), theta, the old-vector flux G, and the
-//! half-range factors h+-_f.  h+_f = H+_f/J_L and h-_f = H-_f/J_R, with H+-_f the rays'
-//! half-range fluxes reconstructed to the face from the upwind side (minmod-limited);
-//! on the cubed sphere with FV rays their half ranges about the face normal.
-//! |h+-_f| <= 1 keeps the operator an M-matrix.
+//! \brief per face: blend weight w(C1), theta, old-vector flux G and h+_f = H+_f/J_L,
+//! h-_f = H-_f/J_R (H+- minmod-reconstructed from the upwind side; cubed sphere: about
+//! the face normal).  |h+-_f| <= 1 keeps the operator an M-matrix
 
 void RadiationVet::CleanFaceCoefficients() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1217,8 +1168,7 @@ void RadiationVet::CleanFaceCoefficients() {
   auto op = opac;
   auto inc = t2inc;
   const bool fsk = cln_fsolve;
-  // (cubed sphere: the opacities of seam ghosts are the neighbour's cells, not of the
-  // resampled gas ghosts: a seam face is single-valued)
+  // (cubed sphere: seam ghost opacities from the neighbour's cells: single-valued faces)
   if (pmy_pack->pmesh->use_cubed_sphere) {
     CleanGhostFill(opac, 0, opac.extent_int(1), false);
   }
@@ -1290,14 +1240,10 @@ void RadiationVet::CleanFaceCoefficients() {
                                        : cs(m,CLN_HP+dir,kl,jl,il);
       fc(m,CLF_HM,k,j,i) = (jr_ > 0.0) ? fmax(fmin(hmf/jr_, 0.0), -1.0)
                                        : cs(m,CLN_HM+dir,k,j,i);
-      // (clean_face_jse: old production implicit_thin_recon = jse, M1ThinJs: h+- of the
-      // face take the shape of the cells' half-range fluxes, h+ x H+_f/H+_L with H+_f =
-      // wl H+_L + wr H+_R the clean_face_hctau interpolation (h- likewise), the factor
-      // within [1/2, 2], in proportion to the thermal fraction eps = min(kappa_P/chi, 1)
-      // of the face (the smaller of the two cells): where E ~ J the upwind part is the
-      // rays' own face flux; radial faces of sp / cs, every face of a Cartesian mesh;
-      // clean_face_jse_cell: the factor on the donor cell's h+- (old M1ThinJs), not on
-      // the face value, which already carries the reconstruction)
+      // (clean_face_jse: scale h+ by H+_f/H+_L, H+_f = wl H+_L + wr H+_R (CleanHcTauW),
+      // factor in [1/2, 2], blended by eps = min(kappa_P/chi, 1) of the face (h- alike);
+      // radial faces on curved meshes, all on Cartesian.  clean_face_jse_cell: scale the
+      // donor cell's h+- instead of the face value)
       auto jse = [&]() {
         if (!fjs || !(dir == 0 || !(px->sph || px->cub))) return;
         auto ep = [&](const int kk, const int jj, const int ii) {
@@ -1323,8 +1269,8 @@ void RadiationVet::CleanFaceCoefficients() {
         jse();
         return;
       }
-      // (cubed sphere: about the face's own normal from the FV intensities of L and R,
-      // so that a seam face takes the same h+- on both sides)
+      // (cubed sphere: about the face normal from the FV intensities of L and R, so a
+      // seam face takes the same h+- on both sides)
       // (J_L, J_R, H+_L, H-_R as scalars: nvcc -O3 miscompiles a runtime-indexed local)
       Real jl0 = 0.0, jr0 = 0.0, hp0 = 0.0, hm0 = 0.0;
       if (fsc) {
@@ -1351,24 +1297,20 @@ void RadiationVet::CleanFaceCoefficients() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanApply
-//! \brief w(dst) = A w(src) over the active cells (the linear part of the operator); the
-//! exchange of src overlaps the inner cells (on the cubed sphere with the xdonor only:
-//! else CleanStagCsLateral reads its ghosts first)
+//! \brief w(dst) = A w(src) over the active cells; src's exchange overlaps the inner
+//! cells (cubed sphere: only with the xdonor, else the lateral sums need ghosts first)
 
 void RadiationVet::CleanApply(const int src, const int dst) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, js = indcs.js, ks = indcs.ks;
-  // (the cubed sphere: with the xdonor, whose cross terms read no ghost of src and no
-  // lateral sums, as elsewhere; else the lateral sums of src follow its exchange)
   const bool ov = !pmy_pack->pmesh->use_cubed_sphere || cln_xd_on;
   auto wa = (src < cln_w.ns) ? cln_w.s : cln_w.o;   // (src's array, CLW_NS)
   const int ws = (src < cln_w.ns) ? src : src - cln_w.ns;
-  // (the cubed sphere: the stencil and CleanStagCsLateral read the first ghost layer)
+  // (cubed sphere: the stencil and lateral sums read the first ghost layer)
   const bool cub0 = pmy_pack->pmesh->use_cubed_sphere;
   CleanGhostFill(wa, ws, 1, true, ov ? 1 : 0, cub0 ? 1 : 0);
   const std::function<void()> fin = [&]() {if (ov) CleanGhostFill(wa, ws, 1, true, 2);};
-  // (the cubed sphere's lateral sums Y of src: their exchange overlaps the inner faces'
-  // cross terms, cln_xf)
+  // (cubed sphere: the exchange of src's lateral sums Y overlaps the inner cross terms)
   const bool yov = pmy_pack->pmesh->use_cubed_sphere && !cln_xd_on;
   if (!cln_xd_on) CleanStagCsLateral(src, true, yov ? 1 : 0);   // (xdonor: none)
   CleanArgs x = CleanMakeArgs();
@@ -1377,26 +1319,23 @@ void RadiationVet::CleanApply(const int src, const int dst) {
   auto w = cln_w;
   auto st = cln_st;
   const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
-  // (cubed sphere: the lateral stress of every face from the sums Y, CleanFaceCross;
-  // none with the xdonor, which takes the cross terms out of the operator)
+  // (cubed sphere: lateral stress from the sums Y; none with the xdonor)
   const bool cub = x.cub, cxf = cub && !(x.xq >= 0 && !x.hi);
   const CleanArgs *px = cxf ? CleanDevArgs(x, 0) : nullptr;
-  // (the cubed sphere: each face's cross term once, not once per cell beside it)
+  // (cubed sphere: each face's cross term once, not per adjacent cell)
   DvceArray5D<Real> xf;
   if (cxf) {
     const int ie = indcs.ie, je = indcs.je, ke = indcs.ke;
     xf = ScratchView<DvceArray5D<Real>>("cln_xf", pmy_pack->nmb_thispack, 3,
                                         w.s.extent_int(2), w.s.extent_int(3),
                                         w.s.extent_int(4));
-    // (pass 0: the faces between two active cells; pass 1, after the exchange: the
-    // two end planes of each direction)
+    // (pass 0: faces between two active cells; pass 1, after the exchange: end planes)
     for (int ps = 0; ps < 2; ++ps) {
       if (ps == 1 && yov) CleanGhostFill(cln_w, CLW_L, 9, 2, 1);
       const bool xon0 = x.multi_d && !(x.xq >= 0 && !x.hi);
       if (ps == 1 || !xon0) {
-        // the cln_xfe faces of every direction in ONE launch (were one per
-        // plane or direction, up to 9 per apply): pass 1 the end planes, pass 0 (no
-        // inner kernel) the inner faces; the same CleanFaceCross per face
+        // all directions' faces in one launch: pass 1 the end planes, pass 0 (no inner
+        // kernel) the inner faces
         const int ne[3] = {ie - is + 1, je - js + 1, ke - ks + 1};
         Kokkos::Array<int, 7> c0;   // (segment s: faces c0[s] .. c0[s+1]-1 per block)
         Kokkos::Array<int, 6> sd, sk0, sj0, si0, snj, sni;
@@ -1491,10 +1430,9 @@ void RadiationVet::CleanApply(const int src, const int dst) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanPreconditionerSetup
-//! \brief coefficients of the preconditioner: the x1-line tridiagonal part of A plus the
-//! diagonal of its x2 and x3 parts (the off-diagonal Eddington terms are left to the
-//! Krylov iteration); the mg also the x2 and x3 couplings and the coarse
-//! levels
+//! \brief preconditioner coefficients: the x1-line tridiagonal part of A plus the
+//! diagonal of its x2, x3 parts (cross terms left to Krylov); for the mg also the x2, x3
+//! couplings and the coarse levels.  Also the face weights and the operator rows
 
 void RadiationVet::CleanPreconditionerSetup() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1530,8 +1468,8 @@ void RadiationVet::CleanPreconditionerSetup() {
     CleanStencilRow(x, m, k, j, i, c);
     for (int s = 0; s < CLN_ST; ++s) st(m,s,k-ks,j-js,i-is) = c[s];
   });
-  // (the lateral stress sums' coefficients, CleanStagCsLateral; of the
-  // geometry and the closure alone, so built once per closure of a solve, cln_csyok)
+  // (lateral stress sums' coefficients: geometry and closure only, built once per
+  // closure, cln_csyok)
   if (x.cub && !cln_csyok) {
     cln_csyok = true;
     auto cy = cln_csy;
@@ -1543,8 +1481,7 @@ void RadiationVet::CleanPreconditionerSetup() {
         Real y0[3] = {0.0, 0.0, 0.0}, yn[2][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
         const int vl = CleanTransSide(x, q, m, k, j, i, 0);
         const int vh = CleanTransSide(x, q, m, k, j, i, 1);
-        // (a seam side: its ghost extrapolated in panel, the cell 2 away in its slot,
-        // CleanStagCsLateral)
+        // (seam side: ghost extrapolated in panel, CleanCsSeamCoef)
         const bool o2 = (vl + vh == 1) && x.mbc(m,2*q+vl) == BoundaryFlag::panel;
         const Real wq = (vl + vh == 2 || o2) ? 0.25 : 0.5;
         for (int s = -1; s <= 1; s += 2) {
@@ -1621,9 +1558,8 @@ void RadiationVet::CleanPreconditionerSetup() {
 
 //----------------------------------------------------------------------------------------
 //! \fn CleanLevel RadiationVet::CleanStagLevel
-//! \brief level l of the staggered mg: l = 0 is the mesh (rows in cln_w), l > 0 the
-//! coarse levels (cln_mg[l-1]).  The rows are scalar (CleanLevel with 1x1 blocks) and
-//! keep the slot order AM, A0, AP, Thomas scratch of cln_w on every level.
+//! \brief level l of the staggered mg: 0 the mesh (cln_w), l > 0 cln_mg[l-1]; scalar
+//! rows in cln_w's slot order (AM, A0, AP, scratch) on every level
 
 CleanLevel RadiationVet::CleanStagLevel(const int l) {
   CleanLevel lv;
@@ -1662,11 +1598,9 @@ CleanLevel RadiationVet::CleanStagLevel(const int l) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanStagCoarseSetup
-//! \brief rows of the coarse levels of the staggered mg (Galerkin R A7 P, the old
-//! production mg): P piecewise constant over 2 x 2 (x2,x3) aggregates of the same x1
-//! index inside one MeshBlock, R = P^T.  A coupling inside the aggregate goes onto the
-//! diagonal, one to another aggregate stays, one across the block face is never used.
-//! On curvilinear meshes the mesh rows are summed with their cell volumes.
+//! \brief coarse rows of the staggered mg, Galerkin R A P: P constant over 2 x 2 (x2,x3)
+//! aggregates at fixed x1 within a MeshBlock, R = P^T; in-aggregate couplings go onto
+//! the diagonal.  Curved meshes: the mesh rows weighted by cell volume
 
 void RadiationVet::CleanStagCoarseSetup() {
   int nmb1 = pmy_pack->nmb_thispack - 1;
@@ -1717,18 +1651,11 @@ void RadiationVet::CleanStagCoarseSetup() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanStagLineSolve
-//! \brief u(dst) = L^{-1} u(src) on a level of the staggered preconditioner, L its
-//! x1-line tridiagonal part: Thomas solve along the x1 lines of colour col (-1: every
-//! line), (j + k) mod 2, with the couplings to u(dst) of the neighbours inside the level
-//! of another colour up to lim on the right-hand side (red-black: the even lines (0, -1),
-//! the odd ones (1, 1), the even ones again (0, 1)).  clean_stag_mg_color =
-//! mirror: j, k are a line's distance from the nearer MeshBlock edge along x2, x3, so
-//! that the colours, and the sweep, mirror with the mesh about its x2 and x3 midplanes
-//! (rule 7; j + k colours an even line count's mirror lines oppositely: asymmetry at the
-//! solve tolerance); the two middle lines of an even count share a colour and their
-//! mutual coupling is left out of the sweep.  On a GPU one team per line
-//! solves it by parallel cyclic reduction in team scratch, coalesced along x1, as the old
-//! production line solves (M1PCRMG); the host keeps Thomas.
+//! \brief u(dst) = L^{-1} u(src), L the x1-line tridiagonal part, on the lines of colour
+//! col = (j + k) mod 2 (-1: all), with the neighbours of colour != col and <= lim on the
+//! RHS.  clean_stag_mg_color = mirror: j, k counted from the nearer edge, so the sweep is
+//! mirror-symmetric about the x2, x3 midplanes.  GPU: parallel cyclic reduction, one team
+//! per line (cln_pcr); host: Thomas
 
 void RadiationVet::CleanStagLineSolve(const CleanLevel &lv, const int src, const int dst,
                                       const int col, const int lim) {
@@ -1754,8 +1681,8 @@ void RadiationVet::CleanStagLineSolve(const CleanLevel &lv, const int src, const
     const int nx = l.n[0], n2 = l.n[1], n32 = l.n[2]*l.n[1];
     int nround = 0;
     while ((1 << nround) < nx) ++nround;
-    // (nx <= kPcrRows team size: each round in place, a lane keeps the new values of its
-    // rows in registers over a barrier; half the scratch, so more teams per CU)
+    // (nx <= kPcrRows team size: rounds in place, new values in registers over a barrier;
+    // half the scratch)
     constexpr int kPcrRows = 4;
     Kokkos::TeamPolicy<DevExeSpace> pol(DevExeSpace(), (nmb1 + 1)*n32, 256);
     const bool inp = (nx <= kPcrRows*pol.team_size());
@@ -1874,15 +1801,10 @@ void RadiationVet::CleanStagLineSolve(const CleanLevel &lv, const int src, const
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanStagVCycle
-//! \brief u(dst) = M^{-1} u(src) on level l of the staggered mg (the old production mg,
-//! rad_vet_precond.cpp at 391cd4c15): z0 = S r, one forward red-black sweep of x1-line
-//! solves (the even lines, then the odd ones with the even z0 on the right-hand side);
-//! r1 = R (r - A7 z0), the residual of the level's rows inside the MeshBlock summed over
-//! each aggregate (with the cell volumes from a curvilinear mesh); z = z0 + P z1, z1 the
-//! same on level l+1.  The coarsest level takes the sweep alone.  clean_pc_sweep adds a
-//! second even pass with the odd z0 on the right-hand side (rbr), and a post-sweep
-//! after the coarse correction, the odd lines then the even ones with the other
-//! colour's z on the right-hand side (sym).
+//! \brief u(dst) = M^{-1} u(src) on level l of the staggered mg: z0 = red-black x1-line
+//! sweep, r1 = R (r - A z0) (volume-weighted on curved meshes), z = z0 + P z1 with z1
+//! from level l+1; the coarsest level only sweeps.  clean_pc_sweep: &1 a second even
+//! pass, &2 a post-sweep (odd, then even)
 
 void RadiationVet::CleanStagVCycle(const int l, const int src, const int dst) {
   const CleanLevel f = CleanStagLevel(l);
@@ -1930,7 +1852,7 @@ void RadiationVet::CleanStagVCycle(const int l, const int src, const int dst) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanPrecondition
-//! \brief w(dst) = M^{-1} w(src): the old production mg (CleanStagVCycle)
+//! \brief w(dst) = M^{-1} w(src) (CleanStagVCycle)
 
 void RadiationVet::CleanPrecondition(const int src, const int dst) {
   CleanStagVCycle(0, src, dst);
@@ -1938,9 +1860,8 @@ void RadiationVet::CleanPrecondition(const int src, const int dst) {
 
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationVet::CleanBiCGStab
-//! \brief right-preconditioned BiCGStab for A X = B, starting from the X it is given:
-//! scalar E vectors of cln_w.  Returns the number of iterations, negative if not
-//! converged.
+//! \brief right-preconditioned BiCGStab for A X = B from the given X (cln_w); returns
+//! the iteration count, negative if not converged
 
 int RadiationVet::CleanBiCGStab() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1950,9 +1871,8 @@ int RadiationVet::CleanBiCGStab() {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   CleanW w = cln_w;
   const int nc = 1;
-  // clean_conv = budget, in the Newton passes (a single solve keeps clean_tol in its own
-  // norm): the rows over their gross terms S (CleanRightHandSide), W A X = W B with
-  // W = 1/S, right-preconditioned by M^-1 W^-1, so that every norm below is the budget's
+  // clean_conv = budget (Newton passes): solve W A X = W B, W = 1/S the rows' gross
+  // terms, preconditioned by M^-1 W^-1, so every norm below is the budget's
   const bool bud = cln_bon && cln_ewr > -1.5;
   const int sx = CLW_X, sb = bud ? CLW_BW : CLW_B;
   const int sr = CLW_R, sr0 = CLW_R0;
@@ -1994,15 +1914,10 @@ int RadiationVet::CleanBiCGStab() {
     return CleanDots(w, nc, n, ab);
   };
 
-  // (re)start from the true residual of X with the shadow residual r0 = r.  A breakdown
-  // (r0.r at the rounding level of |r0| |r|, or r0.v or omega zero) restarts; a second
-  // breakdown right after a restart fails the solve.  (A step's vector updates and the
-  // dots after them take one pass, CleanSums, in the arithmetic and summation order of
-  // separate update kernels and CleanDots.)  The dots of an iteration take four
-  // reductions: r0.v, s.s, (q.q, q.s), and (r.r, r0.r) for the next one.  Convergence of
-  // the recursive residual is checked on the true one, which restarts if it is above
-  // 10 tol (rows of very different scale, e.g. the empty side cells of a diagonal beam
-  // whose flux factors are uncapped, can leave the recursion far from it)
+  // (re)start from the true residual with r0 = r.  A breakdown (r0.r at rounding level,
+  // r0.v or omega zero) restarts; a second one right after a restart fails.  Updates and
+  // their dots share a pass (CleanSums); four reductions per iteration.  Convergence of
+  // the recursive residual is confirmed on the true one (<= 10 tol), else restart
   Real rho = 1.0, alpha = 1.0, omega = 1.0, rr = 0.0, r0r0 = 0.0, rho_new = 0.0, bb = 0.0;
   int it0 = 0;
   auto restart = [&](const int it, const bool force = false) {
@@ -2029,8 +1944,7 @@ int RadiationVet::CleanBiCGStab() {
   };
   restart(-1);
   Real tol = cln_tol*fmax(std::sqrt(bb), 1.0e-300);
-  // Eisenstat-Walker forcing (choice 2, safeguarded) on |r0|, the Newton residual of the
-  // pass in the budget's norm
+  // Eisenstat-Walker forcing (choice 2, safeguarded) on the pass's Newton residual |r0|
   if (bud) {
     const Real r0 = std::sqrt(rr);
     Real eta = 0.1;
@@ -2043,19 +1957,11 @@ int RadiationVet::CleanBiCGStab() {
     cln_eta = eta;
     tol = fmax(eta*r0, 0.1*cln_tolb);
   }
-  // clean_init_cnorm > 0, the steady start's solves, and clean_lin_cnorm > 0, the steps'
-  // strict ones (as the old production's implicit_lin_cnorm; the budget's passes keep
-  // their own per-row test): besides the test relative to |b|, which leaves an envelope
-  // far below the core at its first preconditioned iterate (MeshBlock-dependent, rule
-  // 5), max_i |r_i|/(a_i E_i) <= cnorm, a_i the row's diagonal (CLW_A0), E_i the
-  // largest of the Newton iterate E^k and the solve's |X| over the row's stencil: an
-  // M-matrix row's off-diagonals sum to at most a_i, so a_i E_i bounds its round-off
-  // (Oettli-Prager), also in a cell next to a beam whose own E is ~0 (with E^k alone the
-  // test was unattainable there, and every solve ran to the stall window).
-  // (Production's s_i = 1 + h c chi_E is below the round-off of a transport-dominated
-  // row.)  Where that measure stops falling (stall window below) with the global test
-  // met, it is at the round-off of an empty or free-streaming row, and the solve is
-  // converged
+  // clean_init_cnorm (steady start) / clean_lin_cnorm (steps), not with the budget: also
+  // require max_i |r_i|/(a_i E_i) <= cnorm, a_i the diagonal, E_i the max of E^k and |X|
+  // over the stencil (an M-matrix row's round-off bound, Oettli-Prager), since the |b|
+  // test alone leaves faint regions unconverged.  If this stalls with the global test
+  // met, it is at round-off: converged
   const Real cnt = cln_insteady ? cln_cnorm : cln_lcnorm;
   const bool cn = (cnt > 0.0) && !bud;
   const Real efl = e_floor, inf = std::numeric_limits<Real>::infinity();
@@ -2067,7 +1973,7 @@ int RadiationVet::CleanBiCGStab() {
     CleanGhostFill(w, sx, 1, 0, 1);   // (X's ghosts are those of the last apply of X)
     Real a = 0.0;
     const int dj = pmy_pack->pmesh->multi_d, dk = pmy_pack->pmesh->three_d;
-    // (a flat range, as cln_old: a max, the same in any order)
+    // (a flat range; a max is order-independent)
     const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
     Kokkos::parallel_reduce("cln_cnorm", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                             (nmb1 + 1)*nkji),
@@ -2090,9 +1996,8 @@ int RadiationVet::CleanBiCGStab() {
   auto done = [&](const int it) {return restart(it, true) && conv(sr, rr, 10.0*tol);};
 
   const Real eps = std::numeric_limits<Real>::epsilon();
-  // clean_bicg_stall_its N: a solve whose least residual (the recursive one, or the true
-  // one of a restart) fell by less than clean_bicg_stall_fac over the last N iterations
-  // has stalled, and fails as at the iteration cap
+  // clean_bicg_stall_its N: fail if the least residual fell by less than
+  // clean_bicg_stall_fac over the last N iterations
   Real rmin = std::sqrt(rr), rwin = rmin;
   for (int it = 1; it <= cln_maxit; ++it) {
     rmin = fmin(rmin, std::sqrt(rr));
@@ -2100,7 +2005,7 @@ int RadiationVet::CleanBiCGStab() {
       if (cmet) {   // (cnorm with the global test met: the per-cell measure's window)
         if (!(cmin < cln_stall_f*cwin)) {
           const bool ok = restart(it, true) && std::sqrt(rr) <= 10.0*tol;
-          cln_ncwin += ok ? 1 : 0;   // (counted: the CLEAN line's cwin)
+          cln_ncwin += ok ? 1 : 0;   // (the CLEAN line's cwin count)
           return ok ? it : -it;
         }
         cwin = cmin;
