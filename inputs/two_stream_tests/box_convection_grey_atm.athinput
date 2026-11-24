@@ -27,7 +27,7 @@
 # the static one.
 #
 # Build:  cmake -B build -D PROBLEM=box_convection && make -C build -j
-# Run:    build/src/athena -i inputs/hydro/box_convection_grey_atm.athinput
+# Run:    build/src/athena -i inputs/two_stream_tests/box_convection_grey_atm.athinput
 
 <comment>
 problem = grey plane-parallel atmosphere, two-stream RT validation
@@ -98,7 +98,7 @@ t_base       = 14738.6173
 dgrad        = -0.20
 vpert        = 0.0
 bc_mode      = 2
-opac_table   = inputs/hydro/kappa_const.txt
+opac_table   = inputs/two_stream_tests/kappa_const.txt
 rt_two_stream = true
 rt_top_vacuum = true
 rt_nquad      = 2

@@ -1,7 +1,7 @@
 """
 Ohmic (Lorentz) drag with a steep eta(r) on the cubed sphere (src/pgen/ohm_drag.cpp,
-inputs/tests/ohm_drag_cs.athinput), against the exact 1-D reference of
-inputs/tests/ohm_drag_ref1d.py.
+tst/inputs/ohm_drag_cs.athinput), against the exact 1-D reference of
+tst/inputs/ohm_drag_ref1d.py.
 
 Shell r in [1,2], axial dipole (m = 1) threading two conducting walls at rest, shellular
 rotation Omega = 0.25 sin^4(pi (r-1)) HELD by a user source (kinematic), and
@@ -35,8 +35,8 @@ import numpy as np
 import pytest
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-INPUT = os.path.join(REPO, "inputs", "tests", "ohm_drag_cs.athinput")
-REF = os.path.join(REPO, "inputs", "tests", "ohm_drag_ref1d.py")
+INPUT = os.path.join(REPO, "tst", "inputs", "ohm_drag_cs.athinput")
+REF = os.path.join(REPO, "tst", "inputs", "ohm_drag_ref1d.py")
 BUILD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_ohm_drag")
 HAVE_MPI = shutil.which("mpirun") is not None
 TLIM = 0.5

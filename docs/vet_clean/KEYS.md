@@ -2,7 +2,7 @@
 
 This page lists the keys a user sets for a run: the scheme, the rays, the time step, the
 boundaries, opacities and units, the layout mode, and output. The production values are those
-of the star templates in `inputs/rad_vet_clean/` (`star_bsg`, `star_m35mms`, `star_t9l62`:
+of the star templates in `inputs/stars/` (`star_bsg`, `star_m35mms`, `star_t9l62`:
 3-D spherical-polar wedges, one MeshBlock along x1, fixed rays, problem generator
 `he_star_vet`). Solver internals and keys without effect are listed only by name in the
 appendix. A full sphere with poles or a stretched theta under `vet_gd`, and radiation with

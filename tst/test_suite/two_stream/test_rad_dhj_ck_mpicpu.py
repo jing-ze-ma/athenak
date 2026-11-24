@@ -30,7 +30,7 @@ import os
 import shutil
 import numpy as np
 import pytest
-import test_suite.rad.dhj_ck_common as ck
+import test_suite.two_stream.dhj_ck_common as ck
 
 BUILD = os.path.join(ck.REPO, "tst", "build_ck_mpi")
 

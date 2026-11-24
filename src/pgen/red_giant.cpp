@@ -1648,7 +1648,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // Default true: the applied source is then the divergence of one
     // field and telescopes.  Consulted ONLY by the mode-3 column solve
     // (two_stream_rt.hpp, c3.ex_iter), so it is inert under rt_implicit_column = 0 --
-    // verified bitwise on red_giant_column and red_giant_fofc.
+    // verified bitwise on red_giant_column.
     ts::rt_col3_ex_iter = pin->GetOrAddBoolean("problem", "rt_col3_ex_iter", true);
     // mode 3 converges in 2-4 Newton steps and is cheap per step, so it gets one more
     // than the linearised modes by default

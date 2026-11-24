@@ -25,7 +25,7 @@
 #
 # Build:  cmake -B build -D PROBLEM=box_convection && make -C build -j
 # Run:    python3 tools/box_convection/mk_eddington_column.py edd_column.txt
-#         build/src/athena -i inputs/hydro/box_convection_grey_cons.athinput
+#         build/src/athena -i inputs/two_stream_tests/box_convection_grey_cons.athinput
 
 <comment>
 problem = grey plane-parallel atmosphere, two-stream RT conservation test
@@ -113,7 +113,7 @@ t_base       = 26170.238
 dgrad        = -0.20
 vpert        = 0.0
 bc_mode      = 2
-opac_table   = inputs/hydro/kappa_const.txt
+opac_table   = inputs/two_stream_tests/kappa_const.txt
 ic_profile   = edd_column.txt
 rt_two_stream = true
 rt_semi_implicit = true

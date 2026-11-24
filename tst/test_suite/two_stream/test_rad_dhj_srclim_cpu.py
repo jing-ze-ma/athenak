@@ -28,7 +28,7 @@ and half a rotation of simulated time; see docs/correlated_k_rt.md for the measu
 import os
 import shutil
 import pytest
-import test_suite.rad.dhj_ck_common as ck
+import test_suite.two_stream.dhj_ck_common as ck
 
 BUILD = os.path.join(ck.REPO, "tst", "build_ck")
 

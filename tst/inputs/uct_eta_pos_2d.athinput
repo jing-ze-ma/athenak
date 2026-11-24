@@ -7,7 +7,7 @@ configure = --prob=built_in_pgens
 # 0.1, so every other x1 face is converging across a field gradient, in a genuinely 2-D
 # pattern (the corner EMF averages four different faces).  Periodic: the total energy is
 # conserved, and the magnetic energy eta_pos removes must reappear as heat.
-# tst/test_suite/mhd/test_mhd_uct_eta_pos_cpu.py
+# tst/test_suite/low_mach/test_mhd_uct_eta_pos_cpu.py
 
 <job>
 basename  = uct_eta_pos_2d

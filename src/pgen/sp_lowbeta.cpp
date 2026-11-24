@@ -9,8 +9,8 @@
 //! WHY THIS EXISTS.  On the cubed sphere, a uniform medium AT REST carrying a uniform
 //! Cartesian (hence force-free) field is linearly UNSTABLE below beta ~ 0.05, with the
 //! threshold beta rising as the grid refines -- see cs_test iprob = 8 and
-//! inputs/tests/cubed_sphere_mhd_strat.athinput.  A radial monopole at the same beta is
-//! stable, so the feedback needs TANGENTIAL field.
+//! inputs/cubed_sphere_tests/cubed_sphere_mhd_strat.athinput.  A radial monopole at the
+//! same beta is stable, so the feedback needs TANGENTIAL field.
 //!
 //! The question this file answers is whether that is a property of the GNOMONIC
 //! machinery -- the non-orthogonal tangent basis, its face rotations and its geometric

@@ -32,7 +32,7 @@ import athena_read  # noqa
 athena_read.check_nan_flag = True
 logger = logging.getLogger('athena' + __name__[7:])  # set logger name
 
-_input = 'tests/tfloor_kelvin.athinput'
+_input = 'eos_tests/tfloor_kelvin.athinput'
 
 # The input's <units>: cgs throughout, so one code temperature is m_u/k_B kelvin for the
 # general EOS and mu times that for an ideal gas.

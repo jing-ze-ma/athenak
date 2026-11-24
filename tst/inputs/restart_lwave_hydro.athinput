@@ -1,6 +1,6 @@
 # AthenaK input file: 1D Cartesian HYDRO linear wave, restart-bitwise regression test.
 #
-# The test (tst/test_suite/hydro/test_restart_bitwise_cpu.py) runs this twice: once
+# The test (tst/test_suite/restart/test_restart_bitwise_cpu.py) runs this twice: once
 # straight through <time>/nlim cycles, and once as a restart from the file written at
 # cycle nlim/2, and demands that the two final dumps are BITWISE identical.
 #

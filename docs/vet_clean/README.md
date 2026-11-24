@@ -43,5 +43,5 @@ git submodule update --init kokkos
 tests/vet_clean/run_tests.sh --quick        # builds a CPU binary, runs the quick tests
 ```
 
-Inputs: `tests/vet_clean/decks/` (small test problems) and `inputs/rad_vet_clean/`
+Inputs: `tests/vet_clean/decks/` (small test problems) and `inputs/stars/`
 (production star templates).

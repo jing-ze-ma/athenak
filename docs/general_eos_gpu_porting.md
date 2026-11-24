@@ -82,7 +82,7 @@ compiled for a GPU at all.
 
 **Verification.** The change is mechanical and alters no arithmetic, so it was checked
 bitwise on CPU: pre-fix and post-fix binaries produce byte-identical output for
-`inputs/tests/mhd_eos_electrons.athinput`, the same with `use_rkg_sts = true`, and 20
+`inputs/eos_tests/mhd_eos_electrons.athinput`, the same with `use_rkg_sts = true`, and 20
 cycles of the `deep_hot_jupiter_rt_eos` reference input (spherical-polar geometry with
 super-time-stepping engaged — the path that exercises every touched kernel). The whole
 binary then links for `gfx942`.
@@ -143,7 +143,7 @@ one block per rank leaves nothing to redistribute.
 ## 4. Input settings that are specific to this configuration
 
 All of these carry their reasoning in the comments of
-`inputs/mhd/deep_hot_jupiter_rt_eos.athinput`; this is the summary.
+`inputs/planets/deep_hot_jupiter_rt_eos.athinput`; this is the summary.
 
 - **`<units>` is required** by the general EOS. Every factor is 1 because the problem is
   already in cgs, and `mu = 1` because composition lives in the EOS.

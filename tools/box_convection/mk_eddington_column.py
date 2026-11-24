@@ -11,7 +11,7 @@ so the whole column follows from tau alone.  Starting a run FROM this profile is
 turns the grey-atmosphere problem into a CONSERVATION test: the state is already the
 steady solution the scheme is supposed to hold, so any energy the column gains is the
 scheme's own book-keeping error and nothing else.  That is how the tau-blend handover
-bug was localized -- see inputs/hydro/box_convection_grey_cons.athinput.
+bug was localized -- see inputs/two_stream_tests/box_convection_grey_cons.athinput.
 
 Writes "z rho eint", z increasing, covering the mesh and generously beyond it so the
 ghosts are covered too (box_convection.cpp refuses a profile that is not).
@@ -28,7 +28,7 @@ M_U = 1.66053906660e-24
 MU = 0.6                 # mean molecular weight; matches <units>/mu and problem/mu
 GAMMA = 5.0 / 3.0
 G0 = 1.0e4               # cm/s^2, problem/g0
-KAPPA = 0.4              # cm^2/g, the constant table inputs/hydro/kappa_const.txt
+KAPPA = 0.4              # cm^2/g, the table inputs/two_stream_tests/kappa_const.txt
 TEFF = 5000.0            # K; F = sigma Teff^4 = <hydro>/rad_flux_inner
 TAU_BOT = 1000.0         # the optical depth that sits at x1min
 RGAS = K_B / (MU * M_U)

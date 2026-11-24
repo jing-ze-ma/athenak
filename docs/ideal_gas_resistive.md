@@ -1,7 +1,7 @@
 # Resistive MHD with an ideal gas and a tabulated electron fraction
 
 Recommended settings for Ohmic-resistive hot-Jupiter runs that keep ideal-gas
-thermodynamics. Reference input: [`inputs/mhd/deep_hot_jupiter_rt_ideal_xe.athinput`](../inputs/mhd/deep_hot_jupiter_rt_ideal_xe.athinput).
+thermodynamics. Reference input: [`inputs/planets/deep_hot_jupiter_rt_ideal_xe.athinput`](../inputs/planets/deep_hot_jupiter_rt_ideal_xe.athinput).
 
 Every number below was measured on that problem — a 64 x 56 x 128 spherical-polar
 ultra-hot Jupiter at `bbot = 10 G`, run for one rotation period (2pi/omega = 3.05e5 s) on
