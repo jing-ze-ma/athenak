@@ -154,3 +154,12 @@ run_cs/bin/rsg.hydro_w.00009.bin cycle 1200 t = 14.047 d
 
 Pairs on the common first N rows: last-row relative difference (second - first)/first; time, dt, L_top, L_in, KE_int, Etot, M_tot, Lz_tot; and max |L_top/L_in difference| over the rows:
 - BSGt vs BSGf (N 300): t 3.46e-10 dt 1.84e-10 L_top 6.70e-05 L_in 0.00e+00 KE -3.99e-07 Etot -2.10e-10 M 2.02e-15 Lz -1.14e-02 | max d(L_top/L_in) 4.87e+00 | dt ratio mean 1.0000
+
+## t9l62-T1-T2 (11-24 13:33)
+| arm | hst rows | s/cyc (cycles) | dt min/mean/max | its t2s2 (sum, solves) | its t2s3 | passes/cyc | L_top/L_in end (mean) | L_bot/L_in | KE_int end (drift) | dM/M | dE/E | CW/FATAL/inf/DT_RETRY | FWB / FCONE lines |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| T1 | 300 | 2.3968 (c2600-2850) | 96.84 / 96.84 / 96.84 | 6.1, 3.00 | 8.1, 2.21 | 5.21 | 1.02447 (1.01754) | 0.99594 | 1.05974e+42 (2.25e+00) | -7.73e-16 | -2.07e-06 | 0 / 0 / 0 / 0 | 600 / 600 |
+| T2 | 300 | 2.4024 (c2600-2850) | 96.84 / 96.84 / 96.84 | 5.7, 2.97 | 8.0, 2.24 | 5.21 | 1.02445 (1.01764) | 0.99594 | 1.05974e+42 (2.25e+00) | 3.09e-15 | -2.08e-06 | 0 / 0 / 0 / 0 | 600 / 600 |
+
+Pairs on the common first N rows: last-row relative difference (second - first)/first; time, dt, L_top, L_in, KE_int, Etot, M_tot, Lz_tot; and max |L_top/L_in difference| over the rows:
+- T2 vs T1 (N 300): t 9.59e-11 dt 8.62e-10 L_top -1.57e-05 L_in 1.72e-16 KE 2.93e-06 Etot -1.13e-08 M 7.73e-16 Lz 6.19e-07 | max d(L_top/L_in) 3.05e-03 | dt ratio mean 1.0000

@@ -1,0 +1,2 @@
+2026-11-24 13:09:31 start T1 hpc-sm-02-16 BIN md5=7d7c4a71a07d3dc3878e7dea1403df23 ARGS: -r /resnick/groups/carnegie_poc/jingze/prod_rc4v_1124/t9l62/rst_keep/t9l62.stop1124b.rst -i /resnick/groups/carnegie_poc/jingze/prod_rc4v_1124/decks/IA123_t9l62.athinput time/cfl_number=0.3 hydro/dt_report=0 time/nlim=2853 rad_vet/clean_verbose=2 rad_vet/clean_stag_thinf=false output2/dt=1e30 output3/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30 job/final_restart=false
+2026-11-24 13:33:19 T1 finished CW 0 FATAL 0 inf 0 DT_RETRY 0
