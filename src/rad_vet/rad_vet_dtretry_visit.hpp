@@ -217,12 +217,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("impl_recon", impl_recon);
   v.value("impl_enth", impl_enth);
   v.view("gwd", gwd);
-  v.value("impl_hr_cmem", impl_hr_cmem);
-  v.view("fax1", fax1);
-  v.view("fax2", fax2);
-  v.view("fax3", fax3);
-  v.value("impl_cm_fainit_done", impl_cm_fainit_done);
-  v.value("impl_cm_rst", impl_cm_rst);
   v.view("fmm_t", fmm_t);
   v.value("zl_hskip", zl_hskip);
   v.value("zl_local", zl_local);
@@ -362,7 +356,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("t2f1", t2f1);
   v.view("t2f2", t2f2);
   v.view("t2f3", t2f3);
-  v.view("t2fa1", t2fa1);
   v.view("ipred2", ipred2);
   v.value("pred2_ok", pred2_ok);
   v.value("pred2_dt", pred2_dt);

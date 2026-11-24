@@ -89,12 +89,6 @@ const char *kDtrMinimal[] = {
   // flux through the outer face of the last solve, read by the pgen's hydro-stage budget
   // accumulator like f0x1; absent (empty) elsewhere
   "m1.ibadv_x1max",
-  // implicit_hr_cmem (implied by implicit_physflux / implicit_aphll_mem):
-  // the APPLIED face fluxes of the last solve, read by the next solve as its step-start
-  // value (fax*n, implicit_physflux_mom = fa) and kept by implicit_hr_cmem_rst; they were
-  // not visited (stale generated visitor), so a retry read the failed attempt's; empty
-  // (no entry matches) without cmem
-  "m1.fax1", "m1.fax2", "m1.fax3",
   // vet_gd's half-range ratios (vgd_hr; the rotation average's field
   // array vra_a1 is this View): the closure of a cycle that does not rebuild them
   // reads the last build's.  A forced retry at fac 1 on the R136 production restart

@@ -779,12 +779,7 @@ class RadiationVet {
   // formal-solution ratios h+ + h-; AL = 0, HCL = w c s_L/2 >= 0, HCR = -w c s_R/2 <= 0
   // (M-matrix kept); the thin correction DG unchanged (hc = the formal solution's own
   // dissipation at J, with Hf = the mean of H).  Thin-switch faces only.
-  // implicit_hr_cmem_cap = k > 0 (read only when named; 0 = off): the separate
-  // central-branch memory F_c of implicit_hr_cmem clamped to |F_c| <= k c max(E'_L, E'_R)
-  // of the face after each solve.  Where w ~ 1 F_c does not feed back on E, so the plain
-  // face equation integrates -c^2 dt grad P without the wave coupling that bounds it
-  // (ws66 at c dt/dx >> 1 blew up when w later fell); the clamp is inactive in a resolved
-  // field. implicit_hr_recon_sfgate (read only when named, default false): plm on h
+  // implicit_hr_recon_sfgate (read only when named, default false): plm on h
   // (implicit_hr_recon_q = h) only OFF the beams.  A cell whose own J does not carry the
   // SC face flux (Jh > J, the sf state of M1HrSf: a beam passing through) and its two
   // neighbours along d keep sig = 0 (donor cell, sf ratios, hc, js unchanged); everywhere
@@ -836,25 +831,13 @@ class RadiationVet {
   // fed to M1ThinFace) and the weight AL of the last thin-switch face build (output
   // m1_gw)
   DvceArray5D<Real> gwd;
-  bool impl_hr_cmem = false;   // implicit_hr_cmem: separate F_c memory
-  DvceArray4D<Real> fax1, fax2, fax3;   // the applied face fluxes (cmem)
-  // fax* restored from the restart file (FaxRstUnpack)
-  bool impl_cm_fainit_done = false;
-  // implicit_hr_cmem_rst (opt-in, read only when named, default false): the
-  // restart file carries fax* (kM1FaxRstMagic, behind the pgen slabs; each face array
-  // as 2 cell-sized slabs: faces 0..n-1, then face n in the first cell plane), so a
-  // restart continues bitwise.  The reader restores them whenever the file has them and
-  // the run has cmem (and then skips implicit_hr_cmem_fainit).
-  bool impl_cm_rst = false;
-  // time2_face_fct: the slabs also carry K1's face energy flux t2pf1 (2 per direction,
-  // the same layout, behind the fax ones) once a solve stored it, so a restart limits
-  // as the run would
+  // time2_face_fct: the restart file carries K1's face energy flux t2pf1 (one
+  // cell-sized slab per direction, kM1FaxRstMagic, behind the pgen slabs) once a solve
+  // stored it, so a restart limits as the run would.  (The slabs of the removed
+  // implicit_hr_cmem_rst in an old file: read and IGNORED, pgen.cpp)
   int FaxRstNslab() const {
     const int nd = trans_on ? (trans_x3 ? 3 : 2) : 1;
-    const int np = (t2_pfst && t2pf1_ok && t2pf1.extent_int(0) > 0) ? nd : 0;
-    if (!impl_hr_cmem || !impl_cm_rst || fax1.extent_int(0) == 0) {return np;}
-    return 2 + ((fax2.extent_int(0) > 0) ? 2 : 0) + ((fax3.extent_int(0) > 0) ? 2 : 0) +
-           np;
+    return (t2_pfst && t2pf1_ok && t2pf1.extent_int(0) > 0) ? nd : 0;
   }
   void FaxRstPack(DvceArray5D<Real> out, int nmb);
   bool FaxRstUnpack(DvceArray5D<Real> in, int nmb, int nsl);
@@ -1175,10 +1158,6 @@ class RadiationVet {
   DvceArray5D<Real> t2k2;       // (m,M1_T2_NK,k,j,i) the stage-2 slope K2
   DvceArray5D<Real> t2inc;      // (m,M1_T2_NK,k,j,i) old vector - stage start state
   DvceArray4D<Real> t2f1, t2f2, t2f3;  // the face fluxes of U^n (Heun average)
-  // under implicit_hr_cmem the APPLIED x1 face flux fax1 of U^n (f0x1 is
-  // then the F_c memory); history booking only (ry_per_accretor RyPerRadBook), never
-  // read by the solve
-  DvceArray4D<Real> t2fa1;
   DvceArray5D<Real> ipred2;     // the predictor increment of the stage-2 solve
   bool pred2_ok{};
   Real pred2_dt{};
