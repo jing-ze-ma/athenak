@@ -93,11 +93,13 @@ mkdir run && cd run && OMP_NUM_THREADS=4 ../build_cpu/src/athena -i ../tests/m1_
 
 ## GPU builds
 
-The same suite runs a GPU binary (`--exe build_cuda/src/athena --threads 1 --jobs 1`). The
-bitwise tests compare two runs of one binary and must pass on a GPU too. The reference
-tests (`order_*`, `nlte_*`, `thermal_eq`, `wb_*`) must agree with the CPU references within
-their tolerances; a much larger difference points at the build (see the CUDA 12.2 warning in
-`docs/m1_clean/BUILD.md`). The suite has been run on CPU only so far.
+The same suite runs a GPU binary built WITHOUT `-D PROBLEM` (the built-in problem
+generators; a `he_star_m1` binary cannot run these decks): `--exe build_tests/src/athena
+--threads 1 --jobs 1` (on MI300A also `export HSA_XNACK=1`). The bitwise tests compare two
+runs of one binary and must pass on a GPU too. The reference tests (`order_*`, `nlte_*`,
+`thermal_eq`, `wb_*`) must agree with the CPU references within their tolerances; a much
+larger difference points at the build (see the CUDA 12.2 warning in
+`docs/m1_clean/BUILD.md`). The quick subset passes on MI300A (8/8).
 
 ## Notebooks
 
