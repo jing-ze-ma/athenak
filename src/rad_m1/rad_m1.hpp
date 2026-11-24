@@ -277,7 +277,7 @@ struct M1OpacTab {
   // rad_m1_opacity.hpp).  kes, kfl, kxe in CODE opacity per unit mass (times kunit).
   int scat = 0;
   Real kes = 0.0;    // constant kappa_e, vet_kappa_es (0.34 cm^2/g = 0.2(1+X), X = 0.7)
-  Real kfl = 0.0;    // Ma's floor: kappa_e <= kappa_R - kfl, vet_kappa_floor (1e-5)
+  Real kfl = 0.0;    // floor: kappa_e <= kappa_R - kfl, vet_kappa_floor (1e-5)
   Real kxe = 0.0;    // sigma_T/m_u = 0.40062 cm^2/g: kappa_e = kxe n_e/(n_tot mu)
 };
 

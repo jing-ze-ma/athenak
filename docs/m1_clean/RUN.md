@@ -31,7 +31,7 @@ Templates: `inputs/rad_m1_clean/star_bsg.athinput`, `star_m35mms.athinput`,
 
 1. a binary built with `-D PROBLEM=he_star_m1` (see [BUILD.md](BUILD.md));
 2. the opacity tables and initial-condition profiles named by the `he_opac_table`,
-   `he_planck_table`, `he_ic_file` (and for the BSG `he_ic_linhao_file`) keys. Replace
+   `he_planck_table`, `he_ic_file` (and for the BSG `he_ic_profile_file`) keys. Replace
    `TABLES/` with the directory that holds them. The tables are not in the repository.
 
 Typical launch, one MPI rank per GPU:

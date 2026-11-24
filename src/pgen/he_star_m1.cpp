@@ -145,12 +145,6 @@ bool hs_zflux_ = true;
 // the reconstruction treats as plain (Hydro::wb_rmax) take the isodensity walk
 // p -/+ rho dPhi_wb instead of the cached hydrostatic walk (see HeStarGravity)
 bool hs_wbwin_ = false;
-// problem/he_clump (TEST, read only when named, default false): a cold
-// opaque sphere of gas held fixed (rho, T, v = 0) at every stage, the absorber of the
-// shadow test in the production geometry; (r, theta, phi) centre, radius (code units)
-bool hs_cl_on_ = false;
-Real hs_cl_r_ = 0.0, hs_cl_th_ = 0.0, hs_cl_ph_ = 0.0, hs_cl_a_ = 0.0;
-Real hs_cl_d_ = 0.0, hs_cl_e_ = 0.0;
 // he-wind-bc: problem/he_bc_inner = inflow (hs_binf_) and he_bc_outer = outflow
 // (hs_bout_); defaults wall / noinflow = the he-presn-m1 behaviour
 bool hs_binf_ = false, hs_bout_ = false;
@@ -197,7 +191,7 @@ Real hs_atp_dfl_ = 0.0;
 //   v_r copied where it points out and 0 where it points in.
 bool hs_pm_ = false, hs_bzc_ = false, hs_bcopy_ = false;
 // problem/he_bc_outer_r2 (read only when named; default false = bitwise;
-// needs he_bc_outer = copy): L. Ma bsg_star.cpp Outflow_X1 exactly: edge v_r < 0 -> rho
+// needs he_bc_outer = copy): bsg_star.cpp Outflow_X1 exactly: edge v_r < 0 -> rho
 // copied, v_r = 0; else (v_r >= 0) ghost rho = previous ghost rho (r_{g-1}/r_g)^2 and v_r
 // copied; P (here eint, ideal gas) and v_t copied in both branches
 bool hs_bcr2_ = false;
@@ -286,7 +280,8 @@ Real hs_eq_tol_ = 1.0e-9, hs_eq_dfl_ = 0.0;
 std::vector<Real> hs_eq_a_;
 DvceArray4D<Real> hs_sfac_;
 constexpr char kHsDicTag[8] = {'H', 'S', 'D', 'I', 'C', 'E', '0', '1'};
-// (the removed he_bc_linhao's wall-luminosity trailer: stripped from old restart files)
+// (the removed fixed-profile inner face's wall-luminosity trailer: stripped from old
+// restart files)
 constexpr char kHsLbcTag[8] = {'H', 'S', 'L', 'B', 'A', 'T', 'H', '1'};
 
 //! the frozen-MLT weight w(t): a function of the time only (restart-safe)
@@ -322,12 +317,12 @@ Real HsLinInterp(const DvceArray1D<Real> &a, const Real rlo, const Real dr, cons
   return (1.0 - w)*a(i) + w*a(i+1);
 }
 
-//! (problem/he_ic_linhao): a uniform deviate U in [0, 1) that depends only
+//! (problem/he_ic_profile): a uniform deviate U in [0, 1) that depends only
 //! on the GLOBAL cell index (and the key's seed): splitmix64 of the index.  Identical on
 //! every layout, device and site (the per-block srand(gid)/rand() stream of the Athena++
 //! pgen cannot be reproduced; only its statistics are).
 KOKKOS_INLINE_FUNCTION
-Real HsLinhaoU(const std::uint64_t idx, const std::uint64_t seed) {
+Real HsCellUniform(const std::uint64_t idx, const std::uint64_t seed) {
   std::uint64_t z = idx + seed*0x9E3779B97F4A7C15ULL + 0x632BE59BD9B4E019ULL;
   z = (z ^ (z >> 30))*0xBF58476D1CE4E5B9ULL;
   z = (z ^ (z >> 27))*0x94D049BB133111EBULL;
@@ -340,6 +335,14 @@ Real HsLinhaoU(const std::uint64_t idx, const std::uint64_t seed) {
             << "he_star_m1: " << msg << std::endl;
   // (_Exit: no static destructors behind live Kokkos views, as VgdFatalAt)
   std::_Exit(EXIT_FAILURE);
+}
+
+//! the problem key `k` (he_ic_profile*), or its deprecated name he_ic_linhao* when only
+//! that one is in the input (older decks and restart files)
+std::string HsIcKey(ParameterInput *pin, const std::string &k) {
+  const std::string old = "he_ic_linhao" + k.substr(std::strlen("he_ic_profile"));
+  return (!pin->DoesParameterExist("problem", k) &&
+          pin->DoesParameterExist("problem", old)) ? old : k;
 }
 
 //! a restart file without problem/<key>: the old default v applies (NOTE)
@@ -1915,37 +1918,38 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // their T enters the stencil of the edge cell, which is iterated.  The inner wall face
   // (wall_closed_ix1, mirror state) is then balanced by construction.  E and F_r keep the
   // column's values.  Rebuilt on a restart (the BCs read the balanced ghost profiles).
-  // With he_ic_linhao the column is his profile (rho, T, F_r incl. the inner ghosts);
-  // his seed then multiplies the balanced rho (isobaric, in his block below).
+  // With he_ic_profile the column is the profile file's (rho, T, F_r incl. the inner
+  // ghosts); its seed then multiplies the balanced rho (isobaric, in its block below).
   hs_bal_ = pin->GetOrAddBoolean("problem","he_ic_balance",false);
-  // problem/he_ic_linhao (read only when named; default false = this
-  // IC bitwise, no key added to the input) replaces the initial state by L. Ma's
-  // Athena++ bsg_star.cpp construction (the block at the end of this function).  His
-  // profile is read here: problem/he_ic_balance re-marches it (also on a restart).
-  const bool hlin = pin->DoesParameterExist("problem","he_ic_linhao") &&
-                    pin->GetBoolean("problem","he_ic_linhao");
+  // problem/he_ic_profile (read only when named; default false = this
+  // IC bitwise, no key added to the input; deprecated name he_ic_linhao) replaces the
+  // initial state by the construction of the BSG reference Athena++ setup bsg_star.cpp
+  // (the block at the end of this function).  Its profile is read here:
+  // problem/he_ic_balance re-marches it (also on a restart).
+  const bool hlin = pin->DoesParameterExist("problem",HsIcKey(pin,"he_ic_profile")) &&
+                    pin->GetBoolean("problem",HsIcKey(pin,"he_ic_profile"));
   std::string lfn;
   std::vector<Real> pr, pT, pd, pM, pF;
   bool gxi = false;
   Real lrmax = 0.0, ltmax = 0.0, ldmax = 0.0, lgmax = 0.0;
   if (hlin && (hs_bal_ || !restart)) {
-    lfn = pin->GetString("problem","he_ic_linhao_file");
-    // Athena++ Constants::grav_const_cgs (his grav_rmax uses G and the file's M column)
-    const Real lG = pin->GetOrAddReal("problem","he_ic_linhao_gconst",6.67408e-8);
-    // he_ic_linhao_gext = r2 (default, his bsg_star.cpp:429 g = g(rmax)
+    lfn = pin->GetString("problem",HsIcKey(pin,"he_ic_profile_file"));
+    // Athena++ Constants::grav_const_cgs (bsg_star.cpp's grav_rmax: G, the file's M)
+    const Real lG = pin->GetOrAddReal("problem",HsIcKey(pin,"he_ic_profile_gconst"),6.67408e-8);
+    // he_ic_profile_gext = r2 (default, bsg_star.cpp:429 g = g(rmax)
     // (r/rmax)^+2, as coded) | invsq (the run's point mass GM/r^2, hydrostatic; see
     // below)
-    const std::string gxs = pin->GetOrAddString("problem","he_ic_linhao_gext","r2");
+    const std::string gxs = pin->GetOrAddString("problem",HsIcKey(pin,"he_ic_profile_gext"),"r2");
     if (gxs != "r2" && gxs != "invsq") {
-      HsFatal("problem/he_ic_linhao_gext must be r2 or invsq", __LINE__);
+      HsFatal("problem/he_ic_profile_gext must be r2 or invsq", __LINE__);
     }
     gxi = (gxs == "invsq");
     if (gxi && hs_gmc_) {
-      HsFatal("problem/he_ic_linhao_gext = invsq needs the point-mass gravity", __LINE__);
+      HsFatal("problem/he_ic_profile_gext = invsq needs the point-mass gravity", __LINE__);
     }
     {
       std::ifstream f(lfn);
-      if (!f.good()) HsFatal("cannot open problem/he_ic_linhao_file '" + lfn + "'",
+      if (!f.good()) HsFatal("cannot open problem/he_ic_profile_file '" + lfn + "'",
                              __LINE__);
       std::string line;
       while (std::getline(f, line)) {
@@ -1957,13 +1961,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         pF.push_back(g);
       }
     }
-    if (pr.size() < 2) HsFatal("problem/he_ic_linhao_file: fewer than 2 rows", __LINE__);
+    if (pr.size() < 2) HsFatal("problem/he_ic_profile_file: fewer than 2 rows", __LINE__);
     lrmax = pr.back(); ltmax = pT.back(); ldmax = pd.back();
     lgmax = lG*pM.back()/(lrmax*lrmax);
   }
-  // his profile at x1: r <= rmax rho, T [K], F_r LINEAR in r between the bracketing
-  // rows (bsg_star.cpp ProblemGenerator, his lleft/lright search, verbatim); r > rmax
-  // the atmosphere (see the he_ic_linhao block), F_r = 0
+  // the profile at x1: r <= rmax rho, T [K], F_r LINEAR in r between the bracketing
+  // rows (bsg_star.cpp ProblemGenerator's lleft/lright search, verbatim); r > rmax
+  // the atmosphere (see the he_ic_profile block), F_r = 0
   auto lprof = [&](const Real x1, Real &rho, Real &tem, Real &flx) {
     const int np = static_cast<int>(pr.size());
     flx = 0.0;
@@ -1971,7 +1975,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       tem = ltmax;
       const Real tc = tem/hs_tk;   // P/rho of this EOS at T(rmax)
       if (gxi) {
-        // he_ic_linhao_gext = invsq: the isothermal hydrostatic atmosphere of the
+        // he_ic_profile_gext = invsq: the isothermal hydrostatic atmosphere of the
         // run's own point mass, g = GM/r^2 (= g(rmax) (rmax/r)^2 with g(rmax) =
         // GM/rmax^2): rho = rho(rmax) exp(-(GM/(P/rho)) (1/rmax - 1/r))
         rho = ldmax*std::exp(-(hs_gm_/tc)*(1.0/lrmax - 1.0/x1));
@@ -2018,7 +2022,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     for (int i=0; i<n1; ++i) {
       dc[i] = logint(hd, hx1v(0,i));
       ec[i] = logint(he, hx1v(0,i));
-      if (hlin) {   // he_ic_linhao: his profile (rho, T) is the column
+      if (hlin) {   // he_ic_profile: the profile (rho, T) is the column
         Real tl, fl, p, cr, ct, cv;
         lprof(hx1v(0,i), dc[i], tl, fl);
         eos.ThermoAt(dc[i], tl/hs_tk, ec[i], p, cr, ct, cv);
@@ -2139,7 +2143,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // Iterated with the balance (a depends on rho); the face x1f(is+NW) keeps its
     // continuum Phi_eff, the cells below are rebuilt downward from it.
     // problem/he_ic_balance_aref = file (default; read only when named) | dpr (implied by
-    // he_ic_linhao): a_ref = -(dPr/dr)/rho of the column (Pr = a T^4/3 at the faces, the
+    // he_ic_profile): a_ref = -(dPr/dr)/rho of the column (Pr = a T^4/3 at the faces, the
     // column's rho in the cell), the discrete force of the steady start at the column's
     // T, in every cell (no module form in the wall cells); Phi_eff rebuilt upward from
     // the first face with it.  file = kt F_file/c (above)
@@ -2615,7 +2619,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // re-applies it with the Phi_eff rebuilt from it above the face x1f(is), exactly as the
   // fresh start's HeStarIcEquil left them (stripped here, before the Picard trailer)
   if (restart) {
-    // the removed he_bc_linhao's wall-luminosity trailer (the last one) is dropped
+    // the removed fixed-profile inner face's wall-luminosity trailer (the last one) is
+    // dropped
     auto &blk = pgen_rststate;
     const std::size_t nt = sizeof(kHsLbcTag) + sizeof(Real);
     if (blk.size() >= nt &&
@@ -2897,7 +2902,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 "he_ic_balance = false, nx1 >= 2 and nghost >= 2", __LINE__);
       }
     }
-    // problem/he_bc_linhao (L. Ma's ghost-built inner face of the old solver) is removed
+    // problem/he_bc_linhao (the ghost-built fixed-profile inner face of the old solver)
+    // is removed
     if (pin->DoesParameterExist("problem","he_bc_linhao") &&
         pin->GetBoolean("problem","he_bc_linhao")) {
       HsFatal("problem/he_bc_linhao was removed with the old solver", __LINE__);
@@ -2957,31 +2963,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   hs_sp_law_ = (sf == "lawson");}
   hs_rtop_ = rtop;
-  if (pin->DoesParameterExist("problem","he_clump")) {
-    hs_cl_on_ = pin->GetBoolean("problem","he_clump");
-  }
-  if (hs_cl_on_ && pmy_mesh_->use_cubed_sphere) {
-    // the test clump reads x2v, x3v as (theta, phi) (panel coordinates on
-    // the cubed sphere): refused instead of a silently misplaced clump
-    HsFatal("problem/he_clump (test) is spherical-polar only (x2v, x3v read as theta, "
-            "phi)", __LINE__);
-  }
-  if (hs_cl_on_) {
-    hs_cl_r_ = pin->GetReal("problem","he_clump_r");
-    hs_cl_th_ = pin->GetReal("problem","he_clump_th");
-    hs_cl_ph_ = pin->GetReal("problem","he_clump_ph");
-    hs_cl_a_ = pin->GetReal("problem","he_clump_a");
-    hs_cl_d_ = pin->GetReal("problem","he_clump_rho");
-    const Real tk = pin->GetReal("problem","he_clump_t_kelvin");
-    Real ee, pp, cr, ct, cv;
-    eos.ThermoAt(hs_cl_d_, tk/hs_tk, ee, pp, cr, ct, cv);
-    hs_cl_e_ = ee;
-    if (global_variable::my_rank == 0) {
-      std::cout << "  he_clump (TEST): r " << hs_cl_r_ << " theta " << hs_cl_th_
-                << " phi " << hs_cl_ph_ << " radius " << hs_cl_a_ << " rho " << hs_cl_d_
-                << " T " << tk << " K, eint " << hs_cl_e_ << std::endl;
-    }
-  }
   user_srcs_func = HeStarGravity;
   // fin51-r-fix: the per-cycle state of HeStarGravity joins the <time>/dt_retry
   // checkpoint (a retried cycle redoes the ramp weight / adaptive closure update exactly
@@ -3160,7 +3141,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const bool sn2 = (sband == "n2");
   Real seed = pin->GetOrAddReal("problem","he_seed",sn2 ? 1.0e-3 : 0.0);
   if (hlin && seed != 0.0) {
-    HsFatal("problem/he_ic_linhao = true replaces the he_seed perturbation by its own "
+    HsFatal("problem/he_ic_profile = true replaces the he_seed perturbation by its own "
             "(set he_seed = 0)", __LINE__);
   }
   const Real seedk = pin->GetOrAddReal("problem","he_seed_k",4.0);
@@ -3457,39 +3438,39 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   if (!hlin) return;
 
-  // ---- problem/he_ic_linhao = true.  The initial state of L. Ma's
-  // Athena++ pgen bsg_star.cpp (ProblemGenerator), in cgs (he_ic_linhao_file = his
-  // MESA_profile_combined profile: r T rho M kappa F_r per line, cgs, ascending r; his
+  // ---- problem/he_ic_profile = true.  The initial state of the BSG reference
+  // Athena++ pgen bsg_star.cpp (ProblemGenerator), in cgs (he_ic_profile_file = its
+  // MESA_profile_combined profile: r T rho M kappa F_r per line, cgs, ascending r; that
   // code reads the same table in code units, a pure rescaling):
   //  * r <= rmax (the file's last r): rho, T, F_r LINEAR in r between the bracketing rows
-  //    (his lleft/lright search and formula, verbatim);
+  //    (its lleft/lright search and formula, verbatim);
   //  * r > rmax: T = T(rmax), rho = max(rho_rmax exp(-g (r - rmax)/(P/rho)), dfloor),
-  //    F_r = 0, with g = G M_rmax/rmax^2 (r/rmax)^2 EXACTLY as his code (the factor grows
+  //    F_r = 0, with g = G M_rmax/rmax^2 (r/rmax)^2 EXACTLY as that code (the factor grows
   //    outward; the paper's "local gravity" would be (rmax/r)^2: reproduced, not fixed),
   //    P/rho = this EOS's code temperature T/T_unit (gas pressure only);
-  //  * gas energy from the UNPERTURBED rho and T (his IEN = rho T/(gamma - 1)), E = a
-  // T^4, F1 = F_r (his two-zone intensities have exactly these moments), F2 = F3 = 0, v =
+  //  * gas energy from the UNPERTURBED rho and T (its IEN = rho T/(gamma - 1)), E = a
+  // T^4, F1 = F_r (its two-zone intensities have exactly these moments), F2 = F3 = 0, v =
   // 0; * the perturbation rho *= 1 + amp (U - 0.5) where the unperturbed rho > rho_thr,
-  //    U uniform per cell from HsLinhaoU(global cell index) (his: srand(gid), rand()):
+  //    U uniform per cell from HsCellUniform(global cell index) (there: srand(gid), rand()):
   //    isobaric (P, E unchanged).  The potential energy of etotgrav uses the perturbed
-  // rho. * the comoving x1 face fluxes f0x1 = his F_r at the faces.
+  // rho. * the comoving x1 face fluxes f0x1 = the profile's F_r at the faces.
   // Fresh starts only (a restart returned above).  The ghost cells are filled the same
   // way and then overwritten by the (unchanged) boundary conditions.
   {
     if (hcs || wic) {
-      HsFatal("problem/he_ic_linhao needs the spherical-polar wedge and no he_wind_ic",
+      HsFatal("problem/he_ic_profile needs the spherical-polar wedge and no he_wind_ic",
               __LINE__);
     }
     if (pmbp->punit != nullptr && (std::fabs(pmbp->punit->length_cgs() - 1.0) > 1.0e-12
         || std::fabs(pmbp->punit->density_cgs() - 1.0) > 1.0e-12)) {
-      HsFatal("problem/he_ic_linhao needs <units> length_cgs = mass_cgs = 1 (cgs r, rho)",
+      HsFatal("problem/he_ic_profile needs <units> length_cgs = mass_cgs = 1 (cgs r, rho)",
               __LINE__);
     }
-    const Real lamp = pin->GetOrAddReal("problem","he_ic_linhao_amp",0.05);
-    // his threshold rho > 0.01 in HIS code units: rho_thr [cgs] = 0.01 rho_unit (his
-    // input file, not supplied).  No default: the run states its assumption.
-    const Real lthr = pin->GetReal("problem","he_ic_linhao_rho_thr");
-    const int lrng = pin->GetOrAddInteger("problem","he_ic_linhao_rng",0);
+    const Real lamp = pin->GetOrAddReal("problem",HsIcKey(pin,"he_ic_profile_amp"),0.05);
+    // the reference threshold rho > 0.01 in ITS code units: rho_thr [cgs] = 0.01
+    // rho_unit (of its input file, not supplied).  No default: the run states its assumption.
+    const Real lthr = pin->GetReal("problem",HsIcKey(pin,"he_ic_profile_rho_thr"));
+    const int lrng = pin->GetOrAddInteger("problem",HsIcKey(pin,"he_ic_profile_rng"),0);
     const int np = static_cast<int>(pr.size());
     const int nm = nmb1 + 1, nc1 = n1m1 + 1;
     DualArray2D<Real> lD("hs_lin_d", nm, nc1), lE("hs_lin_eg", nm, nc1);
@@ -3533,17 +3514,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const std::int64_t gn2 = pmy_mesh_->mesh_indcs.nx2 + 2*ng;
     const std::uint64_t useed = static_cast<std::uint64_t>(lrng);
     const bool m3 = (indcs.nx3 > 1), m2 = (indcs.nx2 > 1);
-    // problem/he_ic_linhao_seed_group = true (read only when named): one
-    // deviate per hydro merge_lat group, so a merged 128^2 shell has the seed of his real
+    // problem/he_ic_profile_seed_group = true (read only when named): one
+    // deviate per hydro merge_lat group, so a merged 128^2 shell has the seed of the real
     // coarse cells (same amp and rms) instead of the average of 4 fine deviates.
     DualArray2D<int> lfg("hs_lin_fg", nm, nc1);
     {
       std::vector<Real> mrc;
       std::vector<int> mfs;
-      if (pin->DoesParameterExist("problem","he_ic_linhao_seed_group") &&
-          pin->GetBoolean("problem","he_ic_linhao_seed_group")) {
+      if (pin->DoesParameterExist("problem",HsIcKey(pin,"he_ic_profile_seed_group")) &&
+          pin->GetBoolean("problem",HsIcKey(pin,"he_ic_profile_seed_group"))) {
         if (!pin->DoesParameterExist("hydro","merge_lat_rc")) {
-          HsFatal("problem/he_ic_linhao_seed_group needs hydro/merge_lat_rc", __LINE__);
+          HsFatal("problem/he_ic_profile_seed_group needs hydro/merge_lat_rc", __LINE__);
         }
         std::istringstream sr(pin->GetString("hydro","merge_lat_rc"));
         std::istringstream sf(pin->GetString("hydro","merge_lat_f"));
@@ -3566,7 +3547,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       lfg.modify_host(); lfg.sync_device();
     }
     auto lfgd = lfg.d_view;
-    par_for("hs_ic_linhao", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+    par_for("hs_ic_profile", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real r = x1v(m,i);
       const Real d0 = bal ? cbd(i) : ld(m,i), eg = bal ? cbe(i) : le(m,i);
@@ -3577,7 +3558,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         const std::int64_t gj = m2 ? (lo(m,1) + ((j - ljs)/fg)*fg + ng) : 0;
         const std::int64_t gk = m3 ? (lo(m,2) + ((k - lks)/fg)*fg + ng) : 0;
         const std::uint64_t idx = static_cast<std::uint64_t>((gk*gn2 + gj)*gn1 + gi);
-        d = d0*(1.0 + lamp*(HsLinhaoU(idx, useed) - 0.5));
+        d = d0*(1.0 + lamp*(HsCellUniform(idx, useed) - 0.5));
       }
       uh(m,IDN,k,j,i) = d;
       uh(m,IM1,k,j,i) = 0.0;
@@ -3596,7 +3577,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (ff0.extent_int(0) >= nmb1 + 1) {
       const int e3 = ff0.extent_int(1) - 1, e2 = ff0.extent_int(2) - 1;
       const int e1 = std::min(ff0.extent_int(3) - 1, nc1);
-      par_for("hs_icf_linhao", DevExeSpace(), 0, nmb1, 0, e3, 0, e2, 0, e1,
+      par_for("hs_icf_profile", DevExeSpace(), 0, nmb1, 0, e3, 0, e2, 0, e1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         ff0(m,k,j,i) = lff(m,i);
       });
@@ -3606,7 +3587,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       for (int n=0; n<np; ++n) {
         if (pd[n] > lthr) nthr = n;
       }
-      std::cout << "he_star_m1: he_ic_linhao: " << lfn << " (" << np << " rows, r "
+      std::cout << "he_star_m1: he_ic_profile: " << lfn << " (" << np << " rows, r "
                 << pr[0] << " .. rmax " << lrmax << "), T(rmax) " << ltmax
                 << " K, rho(rmax) "
                 << ldmax << ", g(rmax) " << lgmax
@@ -3659,29 +3640,6 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
   if (hs_mlt_ && hs_mrs_ >= 0.0) {
     const Real w = HsMltW(HsMltTc(pm));
     if (w != hs_mw_) HsApplyMltW(pm, w);
-  }
-  // he_clump (TEST): re-impose the fixed cold clump (rho, eint, v = 0)
-  if (hs_cl_on_) {
-    auto &cx1v = pmbp->pcoord->x1v;
-    auto &cx2v = pmbp->pcoord->x2v;
-    auto &cx3v = pmbp->pcoord->x3v;
-    auto phc = ph->phicc0;
-    const Real r0 = hs_cl_r_, t0 = hs_cl_th_, p0 = hs_cl_ph_, a2 = SQR(hs_cl_a_);
-    const Real dcl = hs_cl_d_, ecl = hs_cl_e_;
-    const Real x0 = r0*sin(t0)*cos(p0), y0 = r0*sin(t0)*sin(p0), z0 = r0*cos(t0);
-    par_for("hs_clump", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real r = cx1v(m,i), t = cx2v(m,j), p = cx3v(m,k);
-      const Real d2 = SQR(r*sin(t)*cos(p) - x0) + SQR(r*sin(t)*sin(p) - y0)
-                      + SQR(r*cos(t) - z0);
-      if (d2 <= a2) {
-        u0(m,IDN,k,j,i) = dcl;
-        u0(m,IM1,k,j,i) = 0.0;
-        u0(m,IM2,k,j,i) = 0.0;
-        u0(m,IM3,k,j,i) = 0.0;
-        u0(m,IEN,k,j,i) = ecl + dcl*phc(m,k,j,i);
-      }
-    });
   }
   // F6 localisation (<rad_m1>/dbg_energy_tally, output only): sum IEN V
   // after each part of this source and the hydro energy flux through the x1 boundary
@@ -4157,7 +4115,7 @@ void HeStarBC(Mesh *pm) {
         Real v1 = (v1e > 0.0) ? v1e : 0.0;
         const Real v2 = uh(m,IM2,k,j,ia)/da;
         const Real v3 = uh(m,IM3,k,j,ia)/da;
-        // he_bc_outer_r2: his branch test is v_r < 0 (v_r = 0 -> outflow)
+        // he_bc_outer_r2: its branch test is v_r < 0 (v_r = 0 -> outflow)
         const bool r2o = bcr2 && !(v1e < 0.0);
         if (bcr2) v1 = r2o ? v1e : 0.0;
         Real dg = da;
