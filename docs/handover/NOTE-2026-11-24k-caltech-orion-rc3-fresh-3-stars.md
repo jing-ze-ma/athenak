@@ -86,3 +86,21 @@ shell ratio sum|F_phi|/sum|F_r| over the thin-layer shells i=321..328 (r 5.5319e
 (float32 bins; vet_f* = cell radiation flux moments; shells i=320..331 = r 5.5279e+11..5.5603e+11; v in cm/s)
 ```
 - Volume-weighted over shells i=320..331 (the 23zt thin layer). F_phi / F_theta are SIGNED sums over the |F_r| sum; v_phi and v_r are mass-weighted means; max|v_phi| is over the cells. Script: caltech_results/PROD_RC3_1124/m35zams/thin.py (srun CPU step on 01-15).
+
+- (11-24 00:42) **bsg STOPPED (USR1 = graceful rst + exit) on:  CW created-inf**, step 7333072.82, log.0:
+```
+<hydro> floor_audit cycle 777 pay: paid 2.820596039e+39 unpaid 0 given_to_rad 2.396834386e+23 cells 34730701 | fofc_retest: retested 0 unflagged 0
+CLEAN cycle 777 t2s 2 it 0 (sum 7) pos 0 mark 0 all 0 neg 379 r1 379 r2 1241 first 379 1241 guard 0 solves 6 cwin 0
+CLEAN WARNING XT cycle 777 t2s 2 write-back closure inf
+CLEAN WARNING cycle 777 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN cycle 777 t2s 1 it 1 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 187 first 0 187 guard 0 solves 5 cwin 0
+CLEAN FALLBACK cycle 777: pos_gas 8 (from E 4.300e+31) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 0 T 0 c2p_dfloor 91488 (mass 1.024e+07) floor_pay 3.961e+38 (unpaid 0.000e+00)
+<hydro> floor_audit cycle 778 [update] cell-c2p 2.61053481e+10 e_c<=0 599876 kedom 1481599 sub_tfloor 615829 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 693417 (kedom 659702) floor_de 4.568888467e+38 <r> 3.978187927e+12 <r>_de 3.989411779e+
+--
+<hydro> floor_audit cycle 779 pay: paid 3.67640457e+39 unpaid 0 given_to_rad 2.40745216e+23 cells 34781317 | fofc_retest: retested 0 unflagged 0
+CLEAN cycle 779 t2s 2 it 0 (sum 10) pos 0 mark 0 all 0 neg 615 r1 615 r2 1944 first 615 1944 guard 0 solves 6 cwin 0
+CLEAN WARNING XT cycle 779 t2s 2 write-back closure inf
+CLEAN WARNING cycle 779 t2s 2: implicit_pos_floor created 1.459516e+42 of E (neither the gas nor the column covered the raise)
+CLEAN WARNING cycle 779 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+CLEAN WARNING cycle 779 t2s 2: the implicit_pos_floor creation 1.459516e+42 of the failed attempt is discarded with it
+```
