@@ -359,3 +359,5 @@ Parameter 'fofc_retest' in block 'hydro' on command line not found
 (float32 bins; vet_f* = cell radiation flux moments; shells i=320..331 = r 5.5279e+11..5.5603e+11; v in cm/s)
 ```
 - (11-24 07:12) m35zams_z3 dt per 1000 cycles: c60000 t 1.122316e+05 dt 6.918412e-01 (wall 1.706984e+04 s);c61000 t 1.129352e+05 dt 8.614701e-01 (wall 1.732959e+04 s);c62000 t 1.139244e+05 dt 1.173690e+00 (wall 1.759469e+04 s);c63000 t 1.152088e+05 dt 1.130959e+00 (wall 1.786604e+04 s);c64000 t 1.165886e+05 dt 1.418600e+00 (wall 1.814086e+04 s);c65000 t 1.179651e+05 dt 8.827438e-01 (wall 1.841417e+04 s);c66000 t 1.191647e+05 dt 1.259213e+00 (wall 1.868509e+04 s);
+
+- (11-24 07:13) status: bsg [log.2 cycle=37550 time=2.201836e+06 dt=3.342286e+01, CW 0, DT_RETRY 0]; t9l62 [log.4   , CW 0, DT_RETRY 0]; m35mms [log.4 cycle=25300 time=2.525947e+05 dt=1.200577e+01, CW 0, DT_RETRY 0]; m35zams_z3 [log.0 cycle=66760 time=1.199515e+05 dt=9.432424e-01, CW 0, DT_RETRY 0];
