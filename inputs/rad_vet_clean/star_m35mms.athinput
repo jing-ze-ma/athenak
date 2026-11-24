@@ -95,7 +95,7 @@ wb_option = polytropic
 wb_rmax = 1.097072e+12
 
 <rad_vet>
-clean_stag_mg_levels = 2
+clean_stag_mg_levels = 4
 floorcap_report = 25
 floorcap_v = 3e7
 floorcap_lz = true
@@ -119,7 +119,7 @@ implicit_gas_src = conservative2
 vet_seg = jump
 vet_bc_diff = face
 vet_source_noesrc_h2be = true
-vet_gd_allow_clamp = true
+vet_gd_allow_clamp = false
 vet_gd_halo_ipc = false
 implicit_pos_floor_solve = true
 vet_scatter_form = ma
