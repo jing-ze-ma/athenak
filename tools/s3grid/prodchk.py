@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""prodchk.py (s3grid-1017): READ-ONLY surface/background check of an AG Car (he_star_vet) run, the BGDIAG metrics.
+"""prodchk.py (s3grid-1017): READ-ONLY surface/background check of an AG Car (star_vet) run, the BGDIAG metrics.
 
 usage: python3 prodchk.py --run DIR [--stdout 'GLOB'] [--bins 'GLOB'] [--dstride 5e6] [--win 2e7] [--rph 2.7025e13]
                           [--dmax 2e-16] [--out PREFIX]
@@ -17,7 +17,7 @@ Metrics (definitions as NOTE rol2u_safety_1015 BGDIAG):
         0.9 R_ph) - (last cell before it with rho > 1e-10); cliff fractions of columns with steps <= 1 and <= 2 (BGDIAG's
         '2-dex drop within <= 1 cell' = <= 2 steps, i.e. at most one intermediate cell); median cells across that
         2-dex drop; dr/r and g dr/(e/rho) at r_surf; M(>1.2,1.5,2 R_ph); cells |v_r| > 500 km/s; top 4 cells: max rho,
-        fraction with rho < he_sponge_dmax (sponge active only there).
+        fraction with rho < star_sponge_dmax (sponge active only there).
 """
 import argparse
 import glob

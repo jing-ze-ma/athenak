@@ -1,4 +1,4 @@
-# tools/ic_star: the standard initial condition for he_star_vet envelope runs
+# tools/ic_star: the standard initial condition for star_vet envelope runs
 
 ONE pipeline and ONE in-code IC chain for every stellar-envelope run (BSG, He giants, AG Car /
 LBVs, future stars). There are two input modes:
@@ -36,8 +36,8 @@ global, the MLT++ gate and the branch scan add several coarse columns; skip the 
 2. Structure: T = T_MESA(P), PCHIP in ln P, i.e. MESA's nabla(P) = dlnT/dlnP.
 3. HSE re-integrated OUTWARD from the column bottom r_bot with OUR EOS: rho solves
    P - aT^4/3 = P_gas,code(rho, T). Gravity is the code's: G m(r) = G m_MESA(r_bot) +
-   G int 4 pi r^2 rho dr. The deck gets **he_gm = G m(x1min) of this column and
-   he_gm_column = true**.
+   G int 4 pi r^2 rho dr. The deck gets **star_gm = G m(x1min) of this column and
+   star_gm_column = true**.
 4. Stop where T(P) reaches the Hopf tau = 3 temperature (3F/4sigma (3 + q))^1/4. If the MESA
    profile ends first (BSG), continue OUTWARD with local MLT (spec mlt) and OUR kappa from
    rho_top (1 + eps). eps is SHOT so that R_ph = the target (spec R_ph or MESA's). That is the
@@ -166,7 +166,7 @@ star_utils.f90 e999399f.
 
 The hg145 and BSG gates failed in the atmosphere for the same reason, a seam at the
 photosphere:
-- the code's startup (he_ic_rad = sph1d + re_atm + he_ic_rad_hse) put tau 2/3 at a different
+- the code's startup (star_ic_rad = sph1d + re_atm + star_ic_rad_hse) put tau 2/3 at a different
   radius than the column (hg145: 112.6 vs 113.9 Rsun; BSG: 51.5 vs 53.03 Rsun);
 - the frozen F_MLT (~0.5 F for the He giant) ended abruptly there.
 
@@ -175,14 +175,14 @@ The standard now removes it:
    - F_MLT/F x smoothstep(ln tau): 1 at tau >= 30, 0 at tau <= 3 (tau from the mesh top with the
      run kappa_R);
    - F_r = F (1 - F_MLT/F), so F_r + F_MLT = L holds exactly.
-   - Why 30 -> 3: sph1d sets T to radiative equilibrium with weight 1 for tau < he_ic_rad_taua =
-     30 (he_star_vet.cpp ~821). The taper therefore lives entirely in the code's full-RE zone, and
+   - Why 30 -> 3: sph1d sets T to radiative equilibrium with weight 1 for tau < star_ic_rad_taua =
+     30 (star_vet.cpp ~821). The taper therefore lives entirely in the code's full-RE zone, and
      radiation carries the whole flux by the Hopf join at tau 3, as it does in the RE atmosphere.
 2. **Code-consistent atmosphere** (`seam: {deck, binary, tol_cells 0.1, maxit 8}`): the column
    is passed through the code's OWN startup solve:
    - the binary is the CPU build of the production commit, /raven/ptmp/jinma/icstd_1016/bin/athena_he_cpu_b16b66db;
-   - it runs 0 cycles on the run deck with lateral 4x4, he_ic_equil and ic_rad off (they come
-     after the dump), and he_ic_rad_dump;
+   - it runs 0 cycles on the run deck with lateral 4x4, star_ic_equil and ic_rad off (they come
+     after the dump), and star_ic_rad_dump;
    - the dumped column (sph1d E, RE T, HSE rho; F_r and F_MLT kept), with the taper re-applied,
      becomes the new column;
    - the loop iterates to the fixed point R_ph(column) = R_ph(sph1d) within 0.1 of the radial
@@ -226,11 +226,11 @@ RESULTS sect. 9).** Options A-C below are kept for the record; A was tried (RESU
 branch ic-gammacap-1016) and does not converge.
 
 
-**What fails.** he_star_vet.cpp ~813-1125 runs an outer Picard loop of two steps:
+**What fails.** star_vet.cpp ~813-1125 runs an outer Picard loop of two steps:
 - (i) the E solve at fixed rho (HsSph1dPass VET passes, T = (E/a)^1/4 in the RE zone tau <
   taua);
 - (ii) the HSE march at fixed T, with g_eff = g - kt F_r/c. Where Gamma = kt F_r/(c g) >
-  he_ic_rad_hse_gmax (0.9), g_eff is set to (1 - gmax) g.
+  star_ic_rad_hse_gmax (0.9), g_eff is set to (1 - gmax) g.
 
 For 14p5M the photosphere lies on the He/H recombination opacity cliff (kappa 0.01 -> 5 between
 7.5 and 20 kK, Gamma_L up to 6):
@@ -243,12 +243,12 @@ For 14p5M the photosphere lies on the He/H recombination opacity cliff (kappa 0.
   top layer.
 
 **Options** (each opt-in through a new problem key, default off = bitwise):
-- **A. Scaffold takes the super-Eddington excess** (`he_ic_rad_hse_scaffold`, suggested):
+- **A. Scaffold takes the super-Eddington excess** (`star_ic_rad_hse_scaffold`, suggested):
   - in step (i)/(ii), cap the radiative flux of each fine cell at F_r <= gmax c g/kt(T, rho) and
     move the excess into the frozen scaffold (hM), so that F_r + F_MLT = L is kept;
   - the column's F_MLT and the frozen deposit then follow the code's own RE solution. This is
     what MESA does there: convection, F_MLT/F 0.76-0.95 at tau 30-100;
-  - the change is local to the sph1d block (cap + bookkeeping, also written by he_ic_rad_dump);
+  - the change is local to the sph1d block (cap + bookkeeping, also written by star_ic_rad_dump);
   - about 150-250 lines; 1-2 days including the CPU seam passes (2-20 min each) and the gates.
 - **B. Robust nonlinear solve:**
   - replace the Picard alternation by a damped coupled update (damp T as well as rho), or by a
@@ -294,16 +294,16 @@ For 14p5M the photosphere lies on the He/H recombination opacity cliff (kappa 0.
   MESA's own F_MLT/F with OUR kappa would give Gamma_rad 1.49 (no static solution with that
   split; our kappa is 1.4-1.5x MESA's at 24-33 kK).
 
-**The option** (tool only; the code keys he_ic_rad_taua/taub already exist; default 'deck' =
+**The option** (tool only; the code keys star_ic_rad_taua/taub already exist; default 'deck' =
 unchanged, bitwise):
-- `startup: {re_zone: hopf}`: he_ic_rad_taua = max(2/3, tauj/3) = 1 and he_ic_rad_taub = tauj = 3
+- `startup: {re_zone: hopf}`: star_ic_rad_taua = max(2/3, tauj/3) = 1 and star_ic_rad_taub = tauj = 3
   (tau_R of the run kappa from the mesh top). They go into the seam passes and the deck block.
 - The startup then re-solves RE only in the column's photosphere layer. Below tau 3 it keeps the
   column's T (MESA's T(P)) and the scaffold, and its HSE march starts at r_b(tau 3). The
   Gamma > 0.9 layer (tau ~3500-4000) is not marched.
 - `taper: {enable: false}` is allowed with the seam: the scaffold stays the column's own, and each
   pass sets F_r = F (1 - F_MLT/F) exactly on the dump rows.
-- The seam passes use he_nfine 262144 (= the deck block; the hg145 seam deck had 2^20).
+- The seam passes use star_nfine 262144 (= the deck block; the hg145 seam deck had 2^20).
 - The diagnostics print Gamma_rad of the scaffold vs that of MESA's own split with our kappa.
 
 **When to use it:** mode mesa, when MESA's convective flux reaches tau ~ tauj and the default
@@ -355,7 +355,7 @@ startup does not converge (the 2c symptoms). E1/BSG/AG Car keep the default.
 | eos | dump (explicit) or logd_min/max, logt_min/max, dlog | -21..-1 (mesa: >= MESA base + 0.5 dex), tfloor rule..6.8 (mesa: >= MESA base T + 0.1 dex), 0.02 |
 | background | rho_floor_rel, dmax_rel, dfloor_rel, sponge_rate_rel, sponge_r0_rel, tfloor_rel, wb_rmax_rel, pfloor_rel, vceil_rel, balance_rmax_rel (+ explicit rho_floor/tfloor/sponge_rate) | sect. 6 |
 | ramp | start_turnovers, time_turnovers | 2, 10 |
-| startup | re_zone | 'deck' (the deck's he_ic_rad_taua/taub, E1 30/3000); 'hopf': RE only at tau_R < tauj (sect. 2d) |
+| startup | re_zone | 'deck' (the deck's star_ic_rad_taua/taub, E1 30/3000); 'hopf': RE only at tau_R < tauj (sect. 2d) |
 | | allow_outside_tables, report_radii_rsun | reproduction/validation only; extra MESA comparison radii |
 | config | cache, eos_binary | /raven/ptmp/jinma/ic_star_cache, bubbles_1012 athena_cpu_m4 |
 
@@ -395,19 +395,19 @@ startup does not converge (the 2c symptoms). E1/BSG/AG Car keep the default.
 | x1min | n_hp H_p below the Fe-CZ base | 83 Rsun = 3.4 H_p (explicit); default 4.5 |
 | x1max | rtop_fac R_ph | 3.0 |
 | column floor | decade(4e-6 rho_ph) | 1e-16 (rho_ph 2.56e-11) |
-| he_sponge_dmax | 2 x column floor | 2e-16 |
+| star_sponge_dmax | 2 x column floor | 2e-16 |
 | dfloor | 1e-4 x column floor | 1e-20 |
-| he_sponge_rate | decade(80 g/c_s,iso at R_ph) | 1e-3 /s (g/c_s 1.26e-5) |
-| he_sponge_r0 | 0.9 x1max | |
+| star_sponge_rate | decade(80 g/c_s,iso at R_ph) | 1e-3 /s (g/c_s 1.26e-5) |
+| star_sponge_r0 | 0.9 x1max | |
 | tfloor_kelvin | 100-K floor of 0.76 T_rad(x1max), T_rad = (E_col/a)^1/4 | 3000 K (T_rad 3956 K) |
 | eos_logt_min | floor(10 log10 tfloor)/10 | 3.4 |
 | pfloor | decade(6e-8 P_gas(floor, tfloor)) | 1e-12 |
 | vceil | decade(4.3 v_esc(R_ph)) | 1e8 |
 | wb_rmax | 1.1 R_ph | |
-| he_ic_balance_rmax | 0.8808 R_ph | 342 Rsun |
+| star_ic_balance_rmax | 0.8808 R_ph | 342 Rsun |
 | mlt_ramp_start / _time | 2 / 10 x t_Fe = H_p/v_MLT at the Fe opacity peak | 4.0297e6 / 2.0149e7 (E1 4.032e6 / 2.016e7) |
-| implicit_flux_x1min | the column's F_r(x1min), log-linear in r (= he_star_vet's fine grid; the code fatals if the two differ by > 1e-3, he_star_vet.cpp ~1552) | 8.1426e12 |
-| he_gm (+ he_gm_column) | global: GM point mass; mesa: G m(x1min) of the column + he_gm_column true | |
+| implicit_flux_x1min | the column's F_r(x1min), log-linear in r (= star_vet's fine grid; the code fatals if the two differ by > 1e-3, star_vet.cpp ~1552) | 8.1426e12 |
+| star_gm (+ star_gm_column) | global: GM point mass; mesa: G m(x1min) of the column + star_gm_column true | |
 
 **Caveats for big, cool stars (RGs, RSGs).** These rules are tuned on hot, compact-ish
 envelopes and are probably NOT good for them:
@@ -435,16 +435,16 @@ super-Eddington layers, x1max > 5 R_ph). These are flags only.
 - **<rad_vet>**: implicit_bc_x1min flux, **implicit_flux_x1min = F_r(x1min) of the column**,
   implicit_bc_x1max marshak, implicit_flux_x1max 0.
 - **<problem>**:
-  - he_gm (+ he_gm_column in mode mesa), he_ic_file, he_opac_table, he_planck_table,
-    he_opac_logd_min, he_nfine 262144, he_tau_int 1, he_ic_cols 5;
-  - **the IC chain**: he_ic_rad sph1d, he_ic_rad_gas re_atm, he_ic_rad_hse true,
-    he_ic_rad_atm_force module, he_ic_rad_atm_post false, he_ic_eint_from_t true,
-    he_ic_balance true, he_ic_balance_rmax, he_ic_equil true (+ dtfac 1, relax_n 40,
+  - star_gm (+ star_gm_column in mode mesa), star_ic_file, star_opac_table, star_planck_table,
+    star_opac_logd_min, star_nfine 262144, star_tau_int 1, star_ic_cols 5;
+  - **the IC chain**: star_ic_rad sph1d, star_ic_rad_gas re_atm, star_ic_rad_hse true,
+    star_ic_rad_atm_force module, star_ic_rad_atm_post false, star_ic_eint_from_t true,
+    star_ic_balance true, star_ic_balance_rmax, star_ic_equil true (+ dtfac 1, relax_n 40,
     relax_tol 1e-4, maxit 1, tol 1e-9, last_march true);
   - **the scaffold**: mlt_flux_frozen true, mlt_closure frozen, mlt_ramp_start, mlt_ramp_time;
-  - **walls and top**: he_wall_zero_flux, he_wall_closed, he_bc_inner wall,
-    he_bc_outer outflow, he_sponge_rate, he_sponge_r0, he_sponge_mode radial, he_sponge_dmax,
-    he_seed_rlo/rhi, he_grid_dump.
+  - **walls and top**: star_wall_zero_flux, star_wall_closed, star_bc_inner wall,
+    star_bc_outer outflow, star_sponge_rate, star_sponge_r0, star_sponge_mode radial, star_sponge_dmax,
+    star_seed_rlo/rhi, star_grid_dump.
 
 ## 8. Regression and validation
 
@@ -465,7 +465,7 @@ m1 dumps, on the deck grid AND on its 2x-atmosphere grid. All items must pass:
 | item | criterion |
 |---|---|
 | 1 resolution | >= 4.4 cells per atmospheric (density) scale height over 0.95-1.1 R_ph on the deck grid: min of H_rho/dr, H_rho = -dr/dln<rho> of the t = 0 startup atmosphere, floor-plateau cells (rho < 1.5 x min) excluded |
-| 2 convergence | the SAME floor rule on both runs (column floor = min rho of he_ic_file, startup plateau within 1 %, dfloor and he_sponge_dmax identical), and deck vs 2x-atmosphere grid, saturated t >= 4 d, band 0.99-1.1 R_ph: band mean rms <v_r> within 15 %, time-rms profile L2 diff <= 10 % (L2 over 0.99-1.1 R_ph, pair profile interpolated to the deck radii, \|\|p_d - p_p\|\|/\|\|p_p\|\|), dominant period (FFT, median of the 5 top-rms radii) within 10 % |
+| 2 convergence | the SAME floor rule on both runs (column floor = min rho of star_ic_file, startup plateau within 1 %, dfloor and star_sponge_dmax identical), and deck vs 2x-atmosphere grid, saturated t >= 4 d, band 0.99-1.1 R_ph: band mean rms <v_r> within 15 %, time-rms profile L2 diff <= 10 % (L2 over 0.99-1.1 R_ph, pair profile interpolated to the deck radii, \|\|p_d - p_p\|\|/\|\|p_p\|\|), dominant period (FFT, median of the 5 top-rms radii) within 10 % |
 | 3 bounded | no growth (last-third max <= 1.5 x middle-third max) and saturated band rms <= c_s,iso(R_ph) |
 | 4 star unaffected | 0.5-0.9 R_ph max \|<v_r>\| < 1 km/s over the whole run; 0.9-0.99 R_ph < 3 km/s on the SATURATED state t >= 4 d (the growth-phase max is printed for information); R_ph(tau_R 2/3) within +-2 % of t = 0 at every dump; L_top/L_in within +-5 % for t >= 2 d; \|dM/M\| < 1e-6; Mdot_top < 1e-8 Msun/yr |
 | 5 robustness | summary NON-CONVERGED = 0, no FATAL/DIVERGED/NaN, rc 0, dt_min >= 0.25 dt_median (hst dt WITHOUT the startup row and the final step truncated to tlim; dt_retry retries reported) |
@@ -474,7 +474,7 @@ The three readings in items 2 and 4-5 (0.9-0.99 R_ph on the saturated state, the
 band) were confirmed by the USER on 2026-10-17.
 
 **Floor.** The standard floor rule is kept: column floor decade(4e-6 rho_ph) (1e-15 for the BSG),
-dfloor 1e-4 x, he_sponge_dmax 2 x the column floor. The oscillation AMPLITUDE depends on the floor
+dfloor 1e-4 x, star_sponge_dmax 2 x the column floor. The oscillation AMPLITUDE depends on the floor
 level, because the floor plateau sets the top of the oscillating layer (the oscillation fills the
 hydrostatic atmosphere below the plateau and dies 0.02-0.03 R_ph into it): BSG g480 band rms
 9.2 / 6.0 / 3.3 km/s for floors 1e-16 / 1e-15 / 1e-14, while the period changes by <= 3 % and the

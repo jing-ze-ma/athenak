@@ -29,9 +29,9 @@ clips); [OUTPUTS.md](OUTPUTS.md) explains which lines matter. A healthy run prin
 Templates: `inputs/rad_vet_clean/star_bsg.athinput`, `star_m35mms.athinput`,
 `star_t9l62.athinput`. They hold the full production key set (tile layout mode). They need:
 
-1. a binary built with `-D PROBLEM=he_star_vet` (see [BUILD.md](BUILD.md));
-2. the opacity tables and initial-condition profiles named by the `he_opac_table`,
-   `he_planck_table`, `he_ic_file` (and for the BSG `he_ic_profile_file`) keys. Replace
+1. a binary built with `-D PROBLEM=star_vet` (see [BUILD.md](BUILD.md));
+2. the opacity tables and initial-condition profiles named by the `star_opac_table`,
+   `star_planck_table`, `star_ic_file` (and for the BSG `star_ic_profile_file`) keys. Replace
    `TABLES/` with the directory that holds them. The tables are not in the repository.
 
 Typical launch, one MPI rank per GPU:

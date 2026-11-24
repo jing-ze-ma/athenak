@@ -351,10 +351,10 @@ class Ext2:
             '0.6 dex clamped [0,1], boxcar-averaged +-0.1 dex in log T' % (LB0, LB1)]
         write(fr, sR, ['AthenaK stellar Rosseland opacity table, log10 kappa_R [cm^2/g] on '
                        '(log10 T[K], log10 rho[g/cm3]); INCLUDES electron scattering'] +
-              common + ['LOW T: ' + noteR, 'Read with he_opac_table (he_star_vet).'])
+              common + ['LOW T: ' + noteR, 'Read with star_opac_table (star_vet).'])
         write(fp, sP, ['AthenaK stellar Planck opacity table, log10 kappa_P [cm^2/g] on '
                        '(log10 T[K], log10 rho[g/cm3]); ABSORPTION ONLY (no scattering)'] +
-              common + ['LOW T: ' + noteP, 'Read with he_planck_table (he_star_vet).'])
+              common + ['LOW T: ' + noteP, 'Read with star_planck_table (star_vet).'])
         np.savez(os.path.join(outdir, 'build_fields.npz'), lT=lT, lD=lD, KR=KR, KP=KP,
                  tops_lt=np.array([a for a, b, c, d in info]),
                  tops_floor=np.array([b for a, b, c, d in info]),

@@ -1,6 +1,6 @@
 # Outputs of a clean VET star run: history columns, energy check, warnings
 
-This page describes what a production star run (problem generator `he_star_vet`, decks
+This page describes what a production star run (problem generator `star_vet`, decks
 `inputs/rad_vet_clean/star_bsg`, `star_m35mms`, `star_t9l62`) writes as history data and as run-time messages,
 and how to check energy and mass conservation from the history file. The input keys are described in `KEYS.md`.
 
@@ -16,8 +16,8 @@ full sphere. To convert a wedge luminosity to a full-sphere one, multiply by
 row per accepted cycle into two files in the run directory:
 
 - `<basename>.hydro.hst`: the standard AthenaK hydro sums;
-- `<basename>.user.hst`: the columns of the problem generator (`HeStarHist`,
-  `src/pgen/he_star_vet.cpp:4314`).
+- `<basename>.user.hst`: the columns of the problem generator (`StarHist`,
+  `src/pgen/star_vet.cpp`).
 
 Facts that matter when you read them (`src/outputs/history.cpp`, `src/driver/driver.cpp`):
 
@@ -54,7 +54,7 @@ V is the true cell volume (also on curvilinear meshes).
 ### 1.2 `<basename>.user.hst`
 
 The layout below holds when `<problem>/mlt_flux_frozen = false`, as in all three decks
-(`he_star_vet.cpp:4320`, `nb = 20`). With `mlt_flux_frozen = true` two columns `w_mlt`,
+(`star_vet.cpp`, `nb = 20`). With `mlt_flux_frozen = true` two columns `w_mlt`,
 `L_MLT` are inserted at 22-23 and every later column moves up by 2. Read the header to be
 safe.
 
@@ -63,8 +63,8 @@ Definitions used in the table:
 - `is`, `ie`: the first and last active radial cell; `imid = is + nx1/2`. The decks have one
   MeshBlock along x1, so these are the first, last and middle cells of the mesh.
 - `r_int`: the radius where the Rosseland optical depth of the **initial** column, integrated
-  from the top of the mesh, reaches `<problem>/he_tau_int` (1.0 in the decks), i.e. the
-  initial photosphere (`he_star_vet.cpp:1703`). If it is never reached, `r_int = r_in`.
+  from the top of the mesh, reaches `<problem>/star_tau_int` (1.0 in the decks), i.e. the
+  initial photosphere (`star_vet.cpp`). If it is never reached, `r_int = r_in`.
   "The L_int face" is the lower x1 face of the cell that contains `r_int`.
 - `F`: the radiation flux stored on the x1 face. In the staggered clean scheme this is the
   face flux variable of the F equation (the radiation momentum times c^2, in flux units). In
@@ -99,7 +99,7 @@ Definitions used in the table:
 | 20 | v1sq_wall | mean v_r^2 over the first active radial cells of the whole mesh | cm^2/s^2 |
 | 21 | Picard | **Always 0** under `scheme = clean`; the clean solve reports its passes in the `CLEAN cycle` lines (section 4.2). | - |
 | 22 | P_esrc | power that the explicit radiation source term puts into E, sum (chat/c) esrc V, at the state of this row. 0 in the decks (no frozen MLT deposit, no test source). | erg/s |
-| 23 | P_sponge | rate of kinetic energy loss of the top sponge at the state of this row. 0 in the decks (`he_sponge_rate` = 0). | erg/s |
+| 23 | P_sponge | rate of kinetic energy loss of the top sponge at the state of this row. 0 in the decks (`star_sponge_rate` = 0). | erg/s |
 | 24 | M_hflx | hydro mass leaving through the physical x1 faces (inner + outer, outward positive) over the step, divided by dt. These are the RK-weighted fluxes the update used (`AmBndFlux`, `src/hydro/hydro_am.cpp:637`), so they close the mass budget exactly. Needs the angular-momentum module (`<hydro>/am_transport`, on in the decks); 0 without it. | g/s |
 | 25 | E_hflx | the same for the hydro conserved energy U_E | erg/s |
 | 26 | Lz_hflx | the same for the gas L_z | g cm^2/s^2 |
@@ -153,8 +153,8 @@ of about 1e-15.
 floors created in the step. They are **not** in the history file.
 
 - The mass that `<hydro>/dfloor` creates adds to M_tot, and each gram adds its potential
-  energy Phi_grav = GM (1/r_in - 1/r) >= 0 to Etot (`etotgrav = true`; he_star_vet sets the
-  zero of Phi at r_in, `src/pgen/he_star_vet.cpp:1851`). `<hydro>/floor_pay = rad_column`
+  energy Phi_grav = GM (1/r_in - 1/r) >= 0 to Etot (`etotgrav = true`; star_vet sets the
+  zero of Phi at r_in, `src/pgen/star_vet.cpp`). `<hydro>/floor_pay = rad_column`
   pays the **internal** energy the floors create from the radiation, so that part does not
   change Etot (what cannot be paid is created and printed as a CLEAN WARNING), but nothing
   pays the potential energy of the new mass.
@@ -164,7 +164,7 @@ floors created in the step. They are **not** in the history file.
   gram of floor mass (measured), while m35mms stays at about 1e-9.
 - A working estimate: on a step with no other mass source, rM (computed without the floor
   term) **is** the floor mass. Then dE_floor is about rM x Phi_grav(r) of the floored cells;
-  near the top Phi_grav ~ GM (1/r_in - 1/r_top), with GM = `<problem>/he_gm`. Use the event
+  near the top Phi_grav ~ GM (1/r_in - 1/r_top), with GM = `<problem>/star_gm`. Use the event
   log `eos_dfloor` column to see in which intervals the floor acted.
 - The run totals of the floors are printed at the end of the run (section 4.3, line
   `<hydro> EOS floors ...`: mass created x volume and internal energy created x volume).
@@ -305,7 +305,7 @@ block of `<rad_vet>`, `<time>` and `<hydro>` lines. The ones that matter for the
 
 ## 5. Caveats
 
-- The column meanings come from `HeStarHist` and the functions it reads. Columns can be
+- The column meanings come from `StarHist` and the functions it reads. Columns can be
   added in later versions; always read the header.
 - `Phi` in L_midE/L_intE is the flux of the step's last solve as stored for the next step's
   first slope (`t2pf1`). This follows the code comment and the write path in

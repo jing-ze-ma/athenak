@@ -41,6 +41,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -170,7 +171,8 @@ InputBlock* ParameterInput::GetPtrToBlock(std::string name) {
 //! \fn void VetAlias(std::string &block, std::string &name, std::string &value)
 //! \brief the names of the radiation module before its m1 -> vet rename, read as the new
 //! names: <rad_m1>, <problem>/m1_*, <problem>/pgen_name = rad_m1_*, <outputN>/variable =
-//! m1 | m1_*.  Input files, command lines and restart files that use them run unchanged.
+//! m1 | m1_*.  And the star keys before their he_ -> star_ rename: <problem>/he_* is read
+//! as star_*.  Input files, command lines and restart files that use them run unchanged.
 
 static void VetAlias(std::string &block, std::string &name, std::string &value) {
   auto swap = [](std::string &s, const std::string &a, const std::string &b) {
@@ -179,11 +181,31 @@ static void VetAlias(std::string &block, std::string &name, std::string &value) 
   if (block == "rad_m1") block = "rad_vet";
   if (block == "problem") {
     swap(name, "m1_", "vet_");
+    swap(name, "he_", "star_");
     if (name == "pgen_name") swap(value, "rad_m1_", "rad_vet_");
   }
   if (block.compare(0, 6, "output") == 0 && name == "variable") {
     if (value == "m1") value = "vet";
     swap(value, "m1_", "vet_");
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void ParameterInput::CheckStarAlias()
+//! \brief the <problem> parameters of one source (file, restart header or command line) as
+//! spelled there: FATAL if it names he_X and star_X with different values; records the
+//! he_X for the NOTE of ModifyFromCmdline
+
+void ParameterInput::CheckStarAlias(const std::map<std::string, std::string> &spelled) {
+  for (const auto &kv : spelled) {
+    if (kv.first.compare(0, 3, "he_") != 0) continue;
+    star_renamed.insert(kv.first);
+    auto it = spelled.find("star_" + kv.first.substr(3));
+    if (it == spelled.end() || it->second == kv.second) continue;
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "<problem>/" << kv.first << " = " << kv.second << " (old name) and "
+              << it->first << " = " << it->second << " differ" << std::endl;
+    std::exit(EXIT_FAILURE);
   }
 }
 
@@ -200,6 +222,7 @@ void ParameterInput::LoadFromStream(std::istream &is) {
   std::size_t first_char, last_char;
   InputBlock *pib{};
   int line_num{-1}, blocks_found{0};
+  std::map<std::string, std::string> spelled;
 
   while (is.good()) {
     std::getline(is, line);
@@ -249,10 +272,12 @@ void ParameterInput::LoadFromStream(std::istream &is) {
     }
     // parse line and add name/value/comment strings (if found) to current block name
     ParseLine(line, param_name, param_value, param_comment);
+    if (block_name == "problem") spelled[param_name] = param_value;
     VetAlias(block_name, param_name, param_value);
     AddParameter(pib, param_name, param_value, param_comment);
     pib->GetPtrToLine(param_name)->origin = kOriginFile;  // MarkAllAsRestart re-tags
   }
+  CheckStarAlias(spelled);
   return;
 }
 
@@ -420,6 +445,7 @@ void ParameterInput::ModifyFromCmdline(int argc, char *argv[], bool add_absent) 
   std::string input_text, block,name, value;
   InputBlock *pb;
   InputLine *pl;
+  std::map<std::string, std::string> spelled;
 
   for (int i=1; i<argc; i++) {
     input_text = argv[i];
@@ -433,6 +459,7 @@ void ParameterInput::ModifyFromCmdline(int argc, char *argv[], bool add_absent) 
     block = input_text.substr(0, slash_posn);
     name  = input_text.substr(slash_posn+1, (equal_posn - slash_posn - 1));
     value = input_text.substr(equal_posn+1, std::string::npos);
+    if (block == "problem") spelled[name] = value;
     VetAlias(block, name, value);
 
     // get pointer to node with same block name in linked list of InputBlocks
@@ -466,6 +493,12 @@ void ParameterInput::ModifyFromCmdline(int argc, char *argv[], bool add_absent) 
     pl->origin = kOriginCmdline;
 
     if (value.length() > pb->max_len_parvalue) pb->max_len_parvalue = value.length();
+  }
+  CheckStarAlias(spelled);
+  if (global_variable::my_rank == 0 && !star_renamed.empty()) {
+    std::cout << "### NOTE: <problem>/he_* keys are now named star_*; read as such:";
+    for (const auto &k : star_renamed) std::cout << " " << k;
+    std::cout << std::endl;
   }
 }
 

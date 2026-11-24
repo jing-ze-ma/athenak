@@ -608,8 +608,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_vset = pin->DoesParameterExist("rad_vet","clean_vel_settled") &&
                pin->GetBoolean("rad_vet","clean_vel_settled");
     // clean_bud_maxnorm (read only when named; false, the default: the L2 norm): the
-    // budget passes' linear test and Eisenstat-Walker |r0| in the max norm over the cells,
-    // the norm of the pass's own test (CleanNewtonUpdate), not an L2 sum over the cells
+    // budget passes' linear test and Eisenstat-Walker |r0| in the max norm over the
+    // cells, the norm of the pass's own test (CleanNewtonUpdate), not an L2 sum over the
+    // cells
     cln_bmn = pin->DoesParameterExist("rad_vet","clean_bud_maxnorm") &&
               pin->GetBoolean("rad_vet","clean_bud_maxnorm");
     // clean_gas_tfloor (default true): the gas row's T bounded below by the EOS
@@ -653,11 +654,11 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_vet","clean_dbg_inf")) {
       cln_dbginf = pin->GetInteger("rad_vet","clean_dbg_inf");
     }
-    // clean_gas_newton_switch (default W = 4 on a fresh run, USER 11-21, recorded; 0 = off;
-    // W in [3, 64]), clean_gas_newton_switch_min (default 6 on a fresh run, else 20),
-    // clean_stall_fac (0.5): the old production's implicit_gas_newton_switch, a stalled
-    // solve's remaining passes on the bracketed gas root without the Newton slope; a
-    // restart file without the keys keeps 0 / 20
+    // clean_gas_newton_switch (default W = 4 on a fresh run, USER 11-21, recorded; 0 =
+    // off; W in [3, 64]), clean_gas_newton_switch_min (default 6 on a fresh run, else
+    // 20), clean_stall_fac (0.5): the old production's implicit_gas_newton_switch, a
+    // stalled solve's remaining passes on the bracketed gas root without the Newton
+    // slope; a restart file without the keys keeps 0 / 20
     if (!nw && !pin->DoesParameterExist("rad_vet","clean_gas_newton_switch")) {
       recipe::Log("<rad_vet>/clean_gas_newton_switch = 0 (a restart file without the "
                   "key: "
@@ -816,17 +817,17 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_steady = (ci == "steady");
     }
     if (cln_steady) {
-      // problem/he_ic_equil: its relax keys give the defaults
-      const bool heq = pin->DoesParameterExist("problem","he_ic_equil") &&
-                       pin->GetBoolean("problem","he_ic_equil");
+      // problem/star_ic_equil: its relax keys give the defaults
+      const bool heq = pin->DoesParameterExist("problem","star_ic_equil") &&
+                       pin->GetBoolean("problem","star_ic_equil");
       auto eqk = [&](const char *k, const Real d) {
         return (heq && pin->DoesParameterExist("problem", k)) ?
                pin->GetReal("problem", k) : d;
       };
       cln_steady_n = pin->GetOrAddInteger("rad_vet","clean_init_n",
-          static_cast<int>(eqk("he_ic_equil_relax_n", heq ? 40.0 : 50.0)));
+          static_cast<int>(eqk("star_ic_equil_relax_n", heq ? 40.0 : 50.0)));
       cln_steady_dtfac = pin->GetOrAddReal("rad_vet","clean_init_dtfac",
-                                           eqk("he_ic_equil_dtfac", 1.0e6));
+                                           eqk("star_ic_equil_dtfac", 1.0e6));
       cln_steady_tol = pin->GetOrAddReal("rad_vet","clean_init_tol",1.0e-8);
     }
   } else {

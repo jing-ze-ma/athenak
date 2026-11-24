@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """make_star_ic.py SPEC [--out DIR] [--compare REF] [--no-png]
 
-THE standard initial condition for he_star_vet stellar-envelope runs (BSG, He giants, AG Car /
+THE standard initial condition for star_vet stellar-envelope runs (BSG, He giants, AG Car /
 LBVs, future stars): spec (YAML/JSON) -> tables (cached) -> IC column + provenance header ->
 deck block -> diagnostics (text + PNG).  The method is the AG Car one (make_ic_agcar_ge.py):
 see README.md and icstd/column.py.
@@ -280,7 +280,7 @@ def main():
         c['rho_floor'] = col['rho_floor']
         st.GM, st.RSTAR = col['GM_wall'], col['rph']
         GM = col['GM_wall']
-        ssrc['GM'] = 'G m(x1min) of the column (he_gm_column = true)'
+        ssrc['GM'] = 'G m(x1min) of the column (star_gm_column = true)'
         log('column floor %.1e = decade(%g x rho_ph %.4e) (rule)' % (col['rho_floor'],
                                                                    bg['rho_floor_rel'],
                                                                    col['rho_R']))
@@ -308,8 +308,8 @@ def main():
     spec_line = json.dumps({k: v for k, v in s.items() if not k.startswith('_')},
                            sort_keys=True, default=str)
     with open(fn, 'w') as fh:
-        fh.write('# he_star_vet IC (tools/ic_star make_star_ic.py, mode %s, scheme '
-                 '%s; he_ic_cols = 5): %s; L %.8e GM %.8e R_ph %.8e Teff %.2f; alpha_MLT %g, '
+        fh.write('# star_vet IC (tools/ic_star make_star_ic.py, mode %s, scheme '
+                 '%s; star_ic_cols = 5): %s; L %.8e GM %.8e R_ph %.8e Teff %.2f; alpha_MLT %g, '
                  'MLT++ pp_alpha %g f1 %g f2 %g; x1min %.10e; column floor %.1e\n'
                  % (mode, col['scheme'], name, L, GM, col['rph'],
                     (L/(4*np.pi*col['rph']**2*SIG))**0.25, ml['alpha'], ml['pp_alpha'],
@@ -341,7 +341,7 @@ def main():
               ramp_time=rp['time_turnovers']*tt,
               seed_rlo=1.007*(fz['r_base'] if fz else x1min), seed_rhi=0.9786*R,
               why_tfloor=why['tfloor_kelvin'], why_pfloor=why['pfloor'],
-              why_vceil=why['vceil'], why_sponge=why['he_sponge_rate'],
+              why_vceil=why['vceil'], why_sponge=why['star_sponge_rate'],
               wb_rmax_rel=bg['wb_rmax_rel'], dfloor_rel=bg['dfloor_rel'],
               dmax_rel=bg['dmax_rel'], sponge_r0_rel=bg['sponge_r0_rel'],
               balance_rmax_rel=bg['balance_rmax_rel'], deck_extra=s.get('deck_extra', []),
@@ -362,7 +362,7 @@ def main():
             log(x)
     if not a.no_png:
         from icstd import diag as DG
-        info = dict(name=name, x1min=x1min, x1max=x1max, dmax=bgv['he_sponge_dmax'],
+        info = dict(name=name, x1min=x1min, x1max=x1max, dmax=bgv['star_sponge_dmax'],
                     rho_floor=c['rho_floor'], r_fe=fz['r_fe'] if fz else None,
                     r_base=fz['r_base'] if fz else None, r_top=fz['r_top'] if fz else None)
         pfn = os.path.join(out, 'diag_%s.png' % name)
@@ -392,11 +392,11 @@ def diag(log, s, st, col, pr, fz, bgv, ot, ed, mesa, x1min, x1max, rbot, F_rin, 
     e = s['eos']
     ok = (lt.max() <= e['logt_max'] and lr.min() >= e['logd_min'] and
           lr.max() <= e['logd_max'] and lt.min() >= e['logt_min'])
-    log('  deck EOS range (eos_logt %.2f..%.2f, eos_logd %.1f..%.1f): column %s (he_star_vet '
+    log('  deck EOS range (eos_logt %.2f..%.2f, eos_logd %.1f..%.1f): column %s (star_vet '
         'fatals outside)' % (e['logt_min'], e['logt_max'], e['logd_min'], e['logd_max'],
                              'inside' if ok else 'OUTSIDE'))
     t0, t1, d0, d1 = st.ross_lims
-    log('  Rosseland grid (with he_opac_logd_min %g) log T %.3f..%.3f, log rho %.3f..%.3f: '
+    log('  Rosseland grid (with star_opac_logd_min %g) log T %.3f..%.3f, log rho %.3f..%.3f: '
         'column %s' % (s['opacity']['ld_ext'], t0, t1, d0, d1,
                        'inside' if (lt.min() >= t0 and lt.max() <= t1 and lr.min() >= d0 and
                                     lr.max() <= d1) else 'OUTSIDE (edge-clamped)'))
@@ -469,7 +469,7 @@ def diag(log, s, st, col, pr, fz, bgv, ot, ed, mesa, x1min, x1max, rbot, F_rin, 
     i0 = int(np.argmin(abs(r - x1min)))
     log('  at x1min: T %.4e rho %.4e nabla_rad/nabla_ad %.4f F_MLT/F %.2e tau %.4e'
         % (T[i0], rho[i0], pr['nrad'][i0]/pr['nad'][i0], col['fmlt'][i0], pr['tau'][i0]))
-    log('  ghost margin: the column starts %.4f Rsun below x1min; he_star_vet needs it to cover '
+    log('  ghost margin: the column starts %.4f Rsun below x1min; star_vet needs it to cover '
         'x1min - 3 dx1(wall) - 2 dx1 -> the grid must have dx1(wall) < ~%.4f Rsun'
         % ((x1min - r[0])/RSUN, (x1min - r[0])/5.5/RSUN))
     log('  implicit_flux_x1min = F_r(x1min) %.12e; L/(4 pi x1min^2) %.12e (ratio %.8f)'
@@ -495,25 +495,25 @@ def diag(log, s, st, col, pr, fz, bgv, ot, ed, mesa, x1min, x1max, rbot, F_rin, 
     log('  column floor %.1e from r %.6e (%.4f R_ph) to the column top: floor layer %.4f-%.4f '
         'R_ph in the domain' % (bgv['rho_floor'], col['r_floor'], col['r_floor']/R,
                                 col['r_floor']/R, x1max/R))
-    rd = r[(rho < bgv['he_sponge_dmax']) & (r > R)]
+    rd = r[(rho < bgv['star_sponge_dmax']) & (r > R)]
     log('  sponge: dmax %.1e %s column floor %.1e -> %s; gas with rho < dmax from r %.4f R_ph;'
         ' r0 %.4f R_ph; rate %.1e /s = %.1f g/c_s (1/rate = %.2e s; dynamical time at R_ph '
-        '%.3e s)' % (bgv['he_sponge_dmax'], '>' if bgv['he_sponge_dmax'] > bgv['rho_floor'] else
+        '%.3e s)' % (bgv['star_sponge_dmax'], '>' if bgv['star_sponge_dmax'] > bgv['rho_floor'] else
                      '<=', bgv['rho_floor'],
-                     'ACTIVE on the floor gas' if bgv['he_sponge_dmax'] > bgv['rho_floor'] else
+                     'ACTIVE on the floor gas' if bgv['star_sponge_dmax'] > bgv['rho_floor'] else
                      'INACTIVE (floor above dmax!)', rd.min()/R if rd.size else np.nan,
-                     bgv['he_sponge_r0']/R, bgv['he_sponge_rate'],
-                     bgv['he_sponge_rate']/bgv['nu_ph'], 1/bgv['he_sponge_rate'],
+                     bgv['star_sponge_r0']/R, bgv['star_sponge_rate'],
+                     bgv['star_sponge_rate']/bgv['nu_ph'], 1/bgv['star_sponge_rate'],
                      np.sqrt(R**3/st.GM)))
     log('  dfloor %.1e, tfloor %.0f K (T_rad(x1max) %.1f K, Teff %.1f), eos_logt_min %.1f, '
         'pfloor %.1e, vceil %.1e, wb_rmax %.3f R_ph, balance_rmax %.4f R_ph (tau-3 join %.4f)'
         % (bgv['dfloor'], bgv['tfloor_kelvin'], bgv['T_rad_x1max'],
            (L/(4*np.pi*R**2*SIG))**0.25, s['eos']['logt_min'], bgv['pfloor'], bgv['vceil'],
-           bgv['wb_rmax']/R, bgv['he_ic_balance_rmax']/R, col['rj']/R))
-    if bgv['he_ic_balance_rmax'] >= col['rj']:
-        log('  WARNING: he_ic_balance_rmax above the tau-3 join')
-    if fz and bgv['he_ic_balance_rmax'] > fz['r_top']:
-        log('  NOTE: he_ic_balance_rmax above the Fe-CZ top (E1: inside the MLT++ adiabat)')
+           bgv['wb_rmax']/R, bgv['star_ic_balance_rmax']/R, col['rj']/R))
+    if bgv['star_ic_balance_rmax'] >= col['rj']:
+        log('  WARNING: star_ic_balance_rmax above the tau-3 join')
+    if fz and bgv['star_ic_balance_rmax'] > fz['r_top']:
+        log('  NOTE: star_ic_balance_rmax above the Fe-CZ top (E1: inside the MLT++ adiabat)')
     log('---- regime flags')
     teff = (L/(4*np.pi*R**2*SIG))**0.25
     flags = []
@@ -584,7 +584,7 @@ def diag_mesa(log, s, st, col, ms, mesa, x1min, czf):
     log('  m(x1min) ours %.8e vs MESA %.8e (%.2e rel); m_env(x1min..tau_j) ours %.5e g = %.5f '
         'Msun vs MESA (to its top) %.5e g = %.5f Msun: ratio %.4f'
         % (mw, mm, mw/mm - 1, menv, menv/1.98847e33, menvM, menvM/1.98847e33, menv/menvM))
-    log('  deck: he_gm = G m(x1min) = %.10e, he_gm_column = true' % (G_CODE*mw))
+    log('  deck: star_gm = G m(x1min) = %.10e, star_gm_column = true' % (G_CODE*mw))
     ii = col['interior']
     ex = col['excess']
     if ex['n']:
@@ -621,7 +621,7 @@ def diag_mesa(log, s, st, col, ms, mesa, x1min, czf):
                                          'super-Eddington, no static solution with that '
                                          'split' if (GrM[sel] > 1).any() else 'sub-Eddington'))
     if col.get('startup'):
-        log('  startup re_zone hopf: he_ic_rad_taua %g, he_ic_rad_taub %g (deck block)'
+        log('  startup re_zone hopf: star_ic_rad_taua %g, star_ic_rad_taub %g (deck block)'
             % (col['startup']['taua'], col['startup']['taub']))
     zo = []
     fm = np.clip(1 - ii['frad'], 0, 1)
@@ -781,9 +781,9 @@ def taper_and_seam(log, s, st, col, ot, x1min, x1max, mode, out, name):
         tb = float(s['grid']['tauj'])
         ta = max(2.0/3.0, tb/3.0)
         col['startup'] = dict(taua=ta, taub=tb)
-        sov = ['problem/he_ic_rad_taua=%.6g' % ta, 'problem/he_ic_rad_taub=%.6g' % tb]
+        sov = ['problem/star_ic_rad_taua=%.6g' % ta, 'problem/star_ic_rad_taub=%.6g' % tb]
         tau0 = SM.tau_from_top(col['r'], col['rho'], st.kap(col['T'], col['rho']), x1max)
-        log('startup re_zone hopf: he_ic_rad_taua %.6g, he_ic_rad_taub %.6g (tauj): the code\'s '
+        log('startup re_zone hopf: star_ic_rad_taua %.6g, star_ic_rad_taub %.6g (tauj): the code\'s '
             'startup re-solves RE only at tau_R < %.6g (from the mesh top) and keeps the '
             'column\'s T, scaffold and (below r_b) rho; this column: tau_R(R_ph %.6e) %.4g, '
             'tau_R(r_j %.6e) %.4g' % (ta, tb, tb, col['rph'],
@@ -817,12 +817,12 @@ def taper_and_seam(log, s, st, col, ot, x1min, x1max, mode, out, name):
         raise SystemExit('seam: the deck %s has x1min/x1max %s/%s, the spec %.10e/%.10e'
                          % (sm['deck'], dk['x1min'], dk['x1max'], x1min, x1max))
     ov = ['mesh/nx2=4', 'mesh/nx3=4', 'meshblock/nx2=4', 'meshblock/nx3=4',
-          'meshblock/nx1=%s' % dk['nx1'], 'problem/he_opac_table=%s' % ot['ross'],
-          'problem/he_planck_table=%s' % ot['planck'],
-          'problem/he_gm=%.10e' % st.GM] + sov + list(sm.get('overrides', []))
+          'meshblock/nx1=%s' % dk['nx1'], 'problem/star_opac_table=%s' % ot['ross'],
+          'problem/star_planck_table=%s' % ot['planck'],
+          'problem/star_gm=%.10e' % st.GM] + sov + list(sm.get('overrides', []))
     if rz == 'hopf':                # the deck block's fine grid (the hg145 seam deck had 2^20)
-        ov.append('problem/he_nfine=262144')
-    ov.append('problem/he_gm_column=%s' % ('true' if mode == 'mesa' else 'false'))
+        ov.append('problem/star_nfine=262144')
+    ov.append('problem/star_gm_column=%s' % ('true' if mode == 'mesa' else 'false'))
     cfg = dict(sm, workdir=wd, overrides=ov)
     hdr = ['# tools/ic_star %s column, seam fixed point' % name]
 

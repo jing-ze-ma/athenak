@@ -16,6 +16,8 @@
 #include <string>   // string
 #include <cstdlib>
 #include <list>
+#include <map>
+#include <set>
 
 #include "athena.hpp"
 #include "outputs/io_wrapper.hpp"
@@ -112,6 +114,9 @@ class ParameterInput {
 
  private:
   std::string last_filename;  // last input file opened, to prevent duplicate reads
+  std::set<std::string> star_renamed;  // <problem>/he_* keys read as star_*
+
+  void CheckStarAlias(const std::map<std::string, std::string> &spelled);
 
   InputBlock* FindOrAddBlock(std::string name);
   InputBlock* GetPtrToBlock(std::string name);

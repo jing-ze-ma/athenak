@@ -4,7 +4,7 @@ This page lists the keys a user sets for a run: the scheme, the rays, the time s
 boundaries, opacities and units, the layout mode, and output. The production values are those
 of the star templates in `inputs/rad_vet_clean/` (`star_bsg`, `star_m35mms`, `star_t9l62`:
 3-D spherical-polar wedges, one MeshBlock along x1, fixed rays, problem generator
-`he_star_vet`). Solver internals and keys without effect are listed only by name in the
+`star_vet`). Solver internals and keys without effect are listed only by name in the
 appendix. A full sphere with poles or a stretched theta under `vet_gd`, and radiation with
 `<mhd>`, are in the code but no deck or test covers them
 ([SCHEME.md](SCHEME.md), "In the code but not tested").
@@ -46,6 +46,12 @@ Rules:
   modules add later are not shown).
 - After the first cycle the code prints `### WARNING: N input parameter(s) were never read by
   the code`: a key there is a typo or a key this build does not have.
+
+- The star keys `<problem>/star_*` were named `he_*` before 2026-11-24. Old names in a deck,
+  on the command line or in a restart file are read as `star_*` with one `### NOTE`; a deck
+  that names both spellings of a key with different values is FATAL.
+  `tools/rename_star_keys.sh FILE ...` renames the keys in decks and scripts. The problem
+  generator `-D PROBLEM=star_vet` was `he_star_vet`; CMake accepts the old name.
 
 ### Keys that must always be named
 

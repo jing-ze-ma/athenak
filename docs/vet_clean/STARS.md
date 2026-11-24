@@ -18,7 +18,7 @@ count gives the same answer, bit for bit.
 
 ## 1. What you need
 
-1. An AthenaK binary built with `-D PROBLEM=he_star_vet`: `build_star/src/athena` of
+1. An AthenaK binary built with `-D PROBLEM=star_vet`: `build_star/src/athena` of
    [QUICKSTART.md](QUICKSTART.md) section 3, a CPU build for the start-up check and a CUDA
    (or HIP) build for the GPU run.
 2. The input data in `inputs/rad_vet_clean/star3d_data/`. The decks read them by the relative
@@ -26,8 +26,8 @@ count gives the same answer, bit for bit.
 
 | file | size | used by | what |
 |---|---|---|---|
-| `bsg_ic.txt` | 0.9 MB | sp | 1-D initial state (r, rho, e, F_r, E; he_ic_cols = 5): the Ma et al. (2026) BSG profile, radiative-only outward integration to the photosphere, isothermal atmosphere, F_r = 0 above the photosphere |
-| `bsg_profile.txt` | 0.3 MB | sp | the MESA profile (r, T, rho, M, kappa, F_r) that `he_ic_profile` interpolates (the BSG reference initial state) |
+| `bsg_ic.txt` | 0.9 MB | sp | 1-D initial state (r, rho, e, F_r, E; star_ic_cols = 5): the Ma et al. (2026) BSG profile, radiative-only outward integration to the photosphere, isothermal atmosphere, F_r = 0 above the photosphere |
+| `bsg_profile.txt` | 0.3 MB | sp | the MESA profile (r, T, rho, M, kappa, F_r) that `star_ic_profile` interpolates (the BSG reference initial state) |
 | `bsg_rosseland.txt` | 0.8 MB | sp | Rosseland-mean opacity incl. electron scattering, OPAL via MESA `kap` (GS98, X 0.70, Z 0.008), on log T x log rho |
 | `bsg_planck.txt` | 0.8 MB | sp | Planck-mean absorption opacity, TOPS above log T 4.2 and Ferguson et al. (2005) below (blend 4.0-4.2), same grid and composition |
 | `rsg_ic.txt` | 2.6 MB | cs | 1-D initial state of the 20.5 Msun RSG (MESA model, 22 Msun initial, alpha_MLT 3), built for the code's EOS and opacities |
