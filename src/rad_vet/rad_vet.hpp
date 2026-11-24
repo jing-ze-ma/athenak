@@ -1159,9 +1159,6 @@ class RadiationVet {
   // midpoint quadratic), and D_r,lat is zero in the cells within cs_vertex_mono_n + 1
   // (so every face of those cells sees none).  Conservative (per face), local.
   Real impl_pred_tcap = 2.0;   // seamE-1106 implicit_predictor_tcap
-  Real t2_k1rd = 0.0, t2_k1rd_n = 0.0, t2_k1rd_un = 0.0;   // seamE-1106 time2_k1_redist
-  int t2_k1rd_calls = 0;
-  Real t2_k1rd_mv = 0.0, t2_k1rd_mx = 0.0;
   bool cs_vtx_mono = false;    // DEFAULT = cs geometry (USER 10-29)
   int cs_vtx_n = 1;
   // <rad_vet>/implicit_pos_floor_cons (read only when named; default false =

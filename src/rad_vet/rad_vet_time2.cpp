@@ -405,40 +405,18 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_vet", "time2_k1_stiff")) {
     t2_k1stiff = pin->GetReal("rad_vet", "time2_k1_stiff");
   }
-  // (USER 11-08 "make some defaults", r8 key set): DEFAULT 0.1 where it is
-  // legal (one radial MeshBlock; column-local), else 0 = the old default, logged; recipe
-  // none keeps 0.  Read only when named as before.
-  // (USER 11-13 "make some defaults", the R136/HG/RSG key set): where
-  // time2_face_fct is on by default (cubed sphere / spherical polar, multi-D implicit
-  // transport, hesdirk2; below) the face limiter replaces the redistribution and the
-  // DEFAULT is 0; elsewhere (Cartesian, 1-D) the prod-1108 rule above stays.  The clean
-  // scheme does not redistribute (a column-local compensation; the answer would depend
-  // on the MeshBlocks along x1).
-  const bool ffct14 = recipe::GetMode(pin) != recipe::Mode::none && sph_geom &&
-                      trans_on && time_scheme == M1_TIME_HESDIRK2;
-  {
-    const bool onecol = pmy_pack->pmesh->mesh_indcs.nx1 == pmy_pack->pmesh->mb_indcs.nx1;
-    const bool rnone = recipe::GetMode(pin) == recipe::Mode::none;
-    t2_k1rd = 0.0;
-    if (!pin->DoesParameterExist("rad_vet", "time2_k1_redist")) {
-      recipe::Log(std::string("<rad_vet>/time2_k1_redist = ") + (t2_k1rd > 0.0 ? "0.1" :
-                  "0") + (ffct14 ? " (default: time2_face_fct)" :
-                  std::string(" (default, prod-1108") + (onecol ? (rnone ?
-                  "; recipe none)" : ")") : "; 0: more than one radial MeshBlock)")));
-    }
-  }
-  if (pin->DoesParameterExist("rad_vet", "time2_k1_redist")) {   // seamE-1106
-    t2_k1rd = pin->GetReal("rad_vet", "time2_k1_redist");
-  }
-  if (t2_k1rd > 0.0 && pmy_pack->pmesh->mesh_indcs.nx1 != pmy_pack->pmesh->mb_indcs.nx1) {
+  // time2_k1_redist (the K1 redistribution along the column, removed): only 0
+  if (pin->DoesParameterExist("rad_vet", "time2_k1_redist") &&
+      pin->GetReal("rad_vet", "time2_k1_redist") != 0.0) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-              << "<rad_vet>/time2_k1_redist is column-local: one radial block only"
+              << "<rad_vet>/time2_k1_redist is removed; only 0 is accepted. Restart "
+              << "files of the old solver may store 0.1: name time2_k1_redist = 0"
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
   // step 1 <rad_vet>/time2_face_fct (rad_vet.hpp; read only when named)
   // (USER 11-13): DEFAULT true on the cubed sphere / spherical polar with
-  // multi-D implicit transport and hesdirk2 (ffct14 above); false elsewhere and with
+  // multi-D implicit transport and hesdirk2; false elsewhere and with
   // recipe none, as before.  An explicit key wins.  The clean scheme: on for a fresh
   // run (v20.4, recorded; a restart file without the key keeps off); its t2inc F
   // channels are face F as here, and its solve stores the energy flux Phi that moved E
@@ -742,99 +720,6 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
           sum += 1.0;
         }, Kokkos::Sum<Real>(ns));
         t2_k1stiff_n += ns;
-      }
-    }
-    // seamE-1106 time2_k1_redist = th (> 0, read only when named): where the explicit
-    // increment takes the stage-1 old vector below th E, E + a21 dt K1_E < th E, the
-    // missing V K1_E, V (th E - E - a21 dt K1_E)/(a21 dt), is taken from the cells of
-    // the same x1 (radial) column at distance d = 1, 2, .. 16, the two
-    // cells at each d in proportion to their room V (E + a21 dt K1_E - th E)/(a21 dt)
-    // (> 0 only; donors keep E + a21 dt K1_E >= th E).  The moved quantity is V K1_E, so
-    // sum V K1_E is exact, E channel only; what rr cells cannot pay is given back
-    // (unpaid, left to the posfix).  One thread serves the receivers of a column in
-    // ascending i, so when two compete for one donor the inner one is served first.  K1
-    // is the stored slope, so stage 2 reads the same field.  Column-local: Time2Init
-    // FATALs unless x1 is one block (mesh nx1 = block nx1), so no neighbour block or
-    // rank is read.  A no-op under time2_tableau = sdirk2 (a21 = 0).
-    if (t2_k1rd > 0.0) {
-      auto &id = pmy_pack->pmesh->mb_indcs;
-      const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
-      const int nmbr = pmy_pack->nmb_thispack - 1;
-      auto k1d_ = t2k1;
-      auto ue_ = u0;
-      // FIX: pcoord->volume exists only on cs / sp (1x1x1x1 elsewhere: the
-      // old vol(m,k,j,i) read out of bounds on Cartesian decks, so needs and donor rooms
-      // were garbage: beams drained or blown up, results changed run to run).  Cartesian:
-      // the uniform cell volume of the MeshBlock (a column is inside one block).
-      auto &vola = pmy_pack->pcoord->volume;
-      const bool usev = (vola.extent_int(0) >= nmbr + 1) && (vola.extent_int(3) > 1);
-      auto &mbsz = pmy_pack->pmb->mb_size;
-      auto vol = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i)
-                 -> Real {
-        return usev ? vola(m,k,j,i) : (mbsz.d_view(m).dx1*mbsz.d_view(m).dx2*
-                                       mbsz.d_view(m).dx3);
-      };
-      const Real th = t2_k1rd, ca = c1;
-      const int rr = 16;
-      Real nb = 0.0, nun = 0.0, mvd = 0.0, mvx = 0.0;
-      Kokkos::parallel_reduce("vet_t2_k1rd", Kokkos::MDRangePolicy<Kokkos::Rank<3>>(
-          DevExeSpace(), {0, ks, js}, {nmbr + 1, ke + 1, je + 1}),
-      KOKKOS_LAMBDA(const int m, const int k, const int j, Real &sb, Real &su, Real &sm,
-                    Real &sx) {
-        for (int i = is; i <= ie; ++i) {
-          const Real e0 = ue_(m,M1_E,k,j,i);
-          const Real ev = e0 + ca*k1d_(m,M1_T2_E,k,j,i);
-          if (ev >= th*e0) continue;
-          sb += 1.0;
-          // the energy (rate x volume) this cell lacks
-          Real need = (th*e0 - ev)/ca*vol(m,k,j,i);
-          k1d_(m,M1_T2_E,k,j,i) += need/vol(m,k,j,i);
-          for (int d = 1; d <= rr && need > 0.0; ++d) {
-            // both sides at distance d, in proportion to their room (no inward bias)
-            const int ql = i - d, qh = i + d;
-            Real rl = 0.0, rh = 0.0;
-            if (ql >= is) {
-              const Real eq = ue_(m,M1_E,k,j,ql);
-              rl = fmax((eq + ca*k1d_(m,M1_T2_E,k,j,ql) - th*eq)/ca*vol(m,k,j,ql), 0.0);
-            }
-            if (qh <= ie) {
-              const Real eq = ue_(m,M1_E,k,j,qh);
-              rh = fmax((eq + ca*k1d_(m,M1_T2_E,k,j,qh) - th*eq)/ca*vol(m,k,j,qh), 0.0);
-            }
-            const Real rs = rl + rh;
-            if (!(rs > 0.0)) continue;
-            const Real f = (need < rs) ? need/rs : 1.0;
-            if (ql >= is) {k1d_(m,M1_T2_E,k,j,ql) -= f*rl/vol(m,k,j,ql);}
-            if (qh <= ie) {k1d_(m,M1_T2_E,k,j,qh) -= f*rh/vol(m,k,j,qh);}
-            need -= f*rs;
-            sm += f*rs;
-            sx += f*rs*static_cast<Real>(d);
-          }
-          if (need > 0.0) {
-            // not enough within rr cells: undo the unpaid part, posfix decides
-            k1d_(m,M1_T2_E,k,j,i) -= need/vol(m,k,j,i);
-            su += 1.0;
-          }
-        }
-      }, Kokkos::Sum<Real>(nb), Kokkos::Sum<Real>(nun), Kokkos::Sum<Real>(mvd),
-         Kokkos::Sum<Real>(mvx));
-      {
-        Real vv[4] = {nb, nun, mvd, mvx};
-#if MPI_PARALLEL_ENABLED
-        MPI_Allreduce(MPI_IN_PLACE, vv, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-#endif
-        t2_k1rd_n += vv[0];
-        t2_k1rd_un += vv[1];
-        t2_k1rd_mv += vv[2];
-        t2_k1rd_mx += vv[3];
-        t2_k1rd_calls += 1;
-        if (global_variable::my_rank == 0 && t2_k1rd_calls % 50 == 0) {
-          std::cout << "<rad_vet> K1RD calls " << t2_k1rd_calls << " cells/call "
-                    << t2_k1rd_n/t2_k1rd_calls << " unpaid/call "
-                    << t2_k1rd_un/t2_k1rd_calls << " moved rate "
-                    << t2_k1rd_mv/t2_k1rd_calls << " mean cells moved "
-                    << t2_k1rd_mx/fmax(t2_k1rd_mv, 1.0e-300) << std::endl;
-        }
       }
     }
   } else {
@@ -2270,10 +2155,6 @@ void RadiationVet::Time2Report() {
             << ": stage steps=" << t2_nstep
             << " backward-Euler steps=" << t2_nbe << " stage fallbacks=" << t2_nfall
             << " vet clips=" << t2_nclip;
-  if (t2_k1rd > 0.0) {
-    std::cout << " k1_redist(th=" << t2_k1rd << ") cells(rank 0)=" << t2_k1rd_n
-              << " unpaid=" << t2_k1rd_un;
-  }
   if (t2_k1stiff > 0.0) {
     std::cout << " k1_stiff(s=" << t2_k1stiff << ") cells(rank 0)=" << t2_k1stiff_n;
   }

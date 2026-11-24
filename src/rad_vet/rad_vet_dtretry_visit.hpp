@@ -352,12 +352,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("t2_inprobe", t2_inprobe);
   v.value("t2_vcmode", t2_vcmode);
   v.value("impl_pred_tcap", impl_pred_tcap);
-  v.value("t2_k1rd", t2_k1rd);
-  v.value("t2_k1rd_n", t2_k1rd_n);
-  v.value("t2_k1rd_un", t2_k1rd_un);
-  v.value("t2_k1rd_calls", t2_k1rd_calls);
-  v.value("t2_k1rd_mv", t2_k1rd_mv);
-  v.value("t2_k1rd_mx", t2_k1rd_mx);
   v.value("cs_vtx_mono", cs_vtx_mono);
   v.value("cs_vtx_n", cs_vtx_n);
   v.value("impl_pos_flr_cons", impl_pos_flr_cons);
