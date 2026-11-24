@@ -56,3 +56,13 @@ Kokkos::Cuda ERROR: Failed to call Kokkos::Cuda::finalize()
 - last common row 300: L_top 1.78e-04 L_in 0.00e+00 KE 1.71e-04 Etot -2.59e-08 M 1.70e-15 Lz -6.44e-06 (on - off relative)
 - **PASS** (rule: extra CW/fallback/BE/retry, ef<=0, dt mean < 0.95 off, s per sim s > 1.05 off, |L_top| > 1 %) 
 - ends: S3off: 2026-11-24 13:54:53 end: t_S3off|COMPLETED|0:0|00:05:44; log: Terminating on cycle limit CW 0 FATAL 0 DT_RETRY 0 ; S3on: 2026-11-24 13:55:43 end: t_S3on|COMPLETED|0:0|00:05:40; log: Terminating on cycle limit CW 0 FATAL 0 DT_RETRY 0
+
+## S5 (t9l62 outburst, t9l62.00015) (11-24 13:57)
+| arm | rows | s/cyc (cycles) | dt min/mean/max | its t2s2 (sum, solves) | t2s3 | L_top/L_in end | L_bot/L_in end | KE | dE/E | dM/M | CW/FATAL/inf/DT_RETRY | fallbacks/BE/retries | SDO: lines, K1K2<0 mean share, max ratio, cells>0.1, >1, ef<=0 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| S5off | 300 | 3.0206 (c5300-5550) | 10.51 / 32.88 / 46.91 | 14.2, 4.84 | 8.4, 3.61 | 2.44083 | 0.98459 | 1.78357e+44 | -6.01e-05 | 3.09e-16 | 0 / 0 / 0 / 0 | 0 / 0 / 0 | 300, 0.2879, 1.168e+00, 350113, 1, 0 |
+| S5on | 300 | 2.9999 (c5300-5550) | 11.5 / 32.73 / 47.18 | 14.3, 4.81 | 8.3, 3.50 | 2.44160 | 0.98451 | 1.78337e+44 | -5.98e-05 | 1.55e-16 | 0 / 0 / 0 / 0 | 0 / 0 / 0 | 300, 0.2863, 3.653e+01, 27725883, 13080726, 0 |
+
+- last common row 300: L_top 3.17e-04 L_in 0.00e+00 KE -1.13e-04 Etot 2.51e-07 M -1.55e-15 Lz -3.69e-08 (on - off relative)
+- **PASS** (rule: extra CW/fallback/BE/retry, ef<=0, dt mean < 0.95 off, s per sim s > 1.05 off, |L_top| > 1 %) 
+- ends: S5off: 2026-11-24 13:57:07 end: t_S5off|COMPLETED|0:0|00:16:12; log: Terminating on cycle limit CW 0 FATAL 0 DT_RETRY 0 ; S5on: 2026-11-24 13:57:07 end: t_S5on|COMPLETED|0:0|00:16:10; log: Terminating on cycle limit CW 0 FATAL 0 DT_RETRY 0
