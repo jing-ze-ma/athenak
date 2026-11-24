@@ -20,3 +20,10 @@
 - s/cyc 0.6867 (c50-300); dt c0/c100/c200/c300: 165.46 168.46 168.72 168.84 ; L_top/L_in, L_bot/L_in at c300: 1.06355 0.99551; BiCGStab it 2.66, solves 3.75 per stage line
 - binder (last DTREP): c320 dt_hyd 168.8 gasonly 96.65 dir 3 r 1.4023e+12 rho 5.742e-05 T 1.422e+14 v 3.984e+04 ceff 1.764e+07 tauT_h 1.34e+05
 
+
+## t9l62 (11-24 11:24) on hpc-sm-02-16 / 7333035 
+- start: `2026-11-24 11:10:14 chunk 0 STAR=t9l62 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc4v_262affd6f md5=7d7c4a71a07d3dc3878e7dea1403df23 DECK=/resnick/groups/carnegie_poc/jingze/prod_rc4v_1124/decks/IA123_t9l62.athinput md5=22d549e14df6e`
+- 300-cycle watch: FATAL 0, CW 0, created inf 0, DT_RETRY 0; never-read: ### output1/dt = 0;
+- s/cyc 2.4333 (c50-300); dt c0/c100/c200/c300: 96.852 96.852 96.851 96.849 ; L_top/L_in, L_bot/L_in at c300: 1.00341 0.99779; BiCGStab it 4.59, solves 2.39 per stage line
+- binder (last DTREP): c300 dt_hyd 96.85 gasonly 123.3 dir 3 r 1.6909e+12 rho 9.984e-05 T 1.923e+14 v 7.524e-02 ceff 2.279e+07 tauT_h 3.74e+05
+
