@@ -60,3 +60,6 @@
   2026-11-24 02:18:22 rc=0 wall=801 s last: elapsed=7.899262e+02 cycle=250 time=2.421289e+04 dt=9.684980e+01; s/cyc 2.8182 (c50-250); setup elapsed=1.196084e+02 (+ total wall=801); peak GPU mem 0,104507 MiB 1,104507 MiB 2,104507 MiB 3,104507 MiB 
   BiCGStab it 4.07 / stage line, solves 2.36 / stage line (502 lines); CW 0, FATAL 0, fallbacks 0, DT_RETRY 0
   md5 rows 0-200: user b578af5a0b7ae6839f552b4dbc336169, hydro 44d04279b221b4c4d52b07f8281723fc; dt at c200 96.8505
+
+### t9l62 decision (11-24 02:18): **KEEP (T0 layout; best answer-preserving ratio 0.9903 (T2) vs break-even 0.9732)**
+- T0 s/cyc 2.84590, user md5 b578af5a0b7ae6839f552b4dbc336169; T1: s/cyc 2.86677, ratio 1.0073, md5 equal yes; T2: s/cyc 2.81821, ratio 0.9903, md5 equal yes; N 51000, Nd 1366.
