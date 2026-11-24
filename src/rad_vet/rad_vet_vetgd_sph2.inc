@@ -4,32 +4,19 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_vetgd_sph2.inc
-//! \brief accsp-1102 (USER 11-02 "try sp with stretched theta with gd and wb tide"):
-//! vet_gd on a STRETCHED theta (mesh/theta_plateau, mesh/use_grid_stretch_theta) and on
-//! the FULL sphere (mesh/use_polar_boundary).  Included once at the end of
-//! rad_vet_vetgd.cpp (member definitions; no new translation unit).
-//!
-//! (a) STRETCHED THETA.  The sweep took the band rows at the uniform positions x2min +
-//!     (j - js + 0.5) dx2 and the upwind row as j + (thu - th)/dx2.  With vgd_sth the
-//!     rows are the face MIDPOINTS of the real faces (the node table vgd_thn, computed
-//!     from the mesh's own theta map), and the fractional row is linear in theta between
-//!     the two bracketing nodes (VgdThFj).  On a uniform grid this is the old formula up
-//!     to round-off; vgd_sth is false there (bitwise).
-//! (b) FULL SPHERE.  The band rows beyond a pole continue the theta of the EXTENDED
-//!     chart (-theta north, 2 pi - theta south, i.e. the point (|theta|, phi + pi)): the
-//!     node table is mirrored there, the halo slot beyond the pole takes the pole partner
-//!     (lx2, lx3 + dk + nb3/2) with its rows reversed (VetGdHaloInit / VetGdHalo; an
-//!     on-rank partner is read in-kernel with VgdPoleRow), and an upwind point behind the
-//!     axis is located in that chart (VgdPoleChart).  The directions are global Cartesian,
-//!     so no direction map is needed across the pole.  The band depth is computed from
-//!     sin(vet_gd_band_colat) instead of sin(0); the longer near-tangent reads of the
-//!     polar rings are clamped to the shell's stored band and counted (as every clamp).
+//! \brief vet_gd on a stretched theta and on the full sphere (use_polar_boundary);
+//! included at the end of rad_vet_vetgd.cpp (member definitions).
+//! Stretched theta: band rows at the real face midpoints (node table vgd_thn), the
+//! fractional row linear in theta between nodes (VgdThFj); vgd_sth false if uniform.
+//! Full sphere: rows beyond a pole continue the extended chart (-theta north,
+//! 2 pi - theta south, phi + pi); the pole slot takes the partner's reversed rows
+//! (VgdPoleRow); directions are global Cartesian (no map across the pole); polar rings
+//! read beyond the band depth set by vet_gd_band_colat are clamped and counted.
 
 namespace radvet {
 
 namespace {
-// the mesh's theta face of logical index n (0 .. nx2 the mesh faces), the map of
-// Coordinates (LeftEdgeX + ApplyThetaStretch)
+// mesh theta face n (0 .. nx2), as Coordinates maps it (LeftEdgeX + ApplyThetaStretch)
 double VgdThetaFace(const Mesh *pm, const int n) {
   const int nx = pm->mesh_indcs.nx2;
   const double x0 = pm->mesh_size.x2min, x1 = pm->mesh_size.x2max;
@@ -42,6 +29,10 @@ double VgdThetaFace(const Mesh *pm, const int n) {
 }
 } // namespace
 
+//----------------------------------------------------------------------------------------
+//! \fn int RadiationVet::VgdPoleSlot
+//! \brief pole slot of halo neighbour o of a block in theta row lx2: 1 north, 2 south, else 0
+
 int RadiationVet::VgdPoleSlot(const int o, const int lx2) const {
   if (!vgd_pol) {return 0;}
   const int oo = (o < 4) ? o : (o + 1);
@@ -52,10 +43,9 @@ int RadiationVet::VgdPoleSlot(const int o, const int lx2) const {
 }
 
 //----------------------------------------------------------------------------------------
-//! the narrowest lateral spacing (radians of arc on the unit sphere) of the band-depth
-//! formula: min over the mesh's theta cells of dtheta, and sin(theta_lim) dphi with
-//! theta_lim the theta limit of a wedge (as before) or, on the full sphere,
-//! vet_gd_band_colat (the polar rings poleward of it read beyond the band: clamped)
+//! \fn double RadiationVet::VetGdThetaDmin
+//! \brief narrowest lateral spacing (arc on the unit sphere) for the band depth:
+//! min of dtheta and sin(theta_lim) dphi, theta_lim = wedge limit or vet_gd_band_colat
 
 double RadiationVet::VetGdThetaDmin() const {
   Mesh *pm = pmy_pack->pmesh;
@@ -72,7 +62,8 @@ double RadiationVet::VetGdThetaDmin() const {
 }
 
 //----------------------------------------------------------------------------------------
-//! the node table vgd_thn(m, band row) (after vgd_w is known)
+//! \fn void RadiationVet::VetGdThetaInit
+//! \brief node table vgd_thn(m, band row), after vgd_w is known
 
 void RadiationVet::VetGdThetaInit() {
   Mesh *pm = pmy_pack->pmesh;
@@ -85,14 +76,14 @@ void RadiationVet::VetGdThetaInit() {
   for (int n = 0; n < nx; ++n) {
     node[n] = 0.5*(VgdThetaFace(pm, n) + VgdThetaFace(pm, n + 1));
   }
-  // a global row J (any integer within one period/mirror of the mesh) -> its theta
+  // global row J (within one period / mirror of the mesh) -> theta
   auto nodeg = [&](const int J) -> double {
     if (J >= 0 && J < nx) {return node[J];}
-    if (vgd_pol) {   // the extended chart beyond a pole: the mirror row
+    if (vgd_pol) {   // extended chart beyond a pole: the mirror row
       if (J < 0) {return -node[-1 - J];}
       return 2.0*M_PI - node[2*nx - 1 - J];
     }
-    // a periodic wedge: the image of the other side's row (the band holds its copy)
+    // periodic wedge: image of the other side's row
     if (J < 0) {return node[J + nx] - (t1 - t0);}
     return node[J - nx] + (t1 - t0);
   };
@@ -117,7 +108,7 @@ void RadiationVet::VetGdThetaInit() {
     }
   }
   Kokkos::deep_copy(vgd_thn, tn_h);
-  // (the pole slot table vgd_hpol is made by VetGdHaloInit, which knows nb2)
+  // the pole slot table vgd_hpol is made by VetGdHaloInit (knows nb2)
   {
     const int c1 = indcs.nx1 + 2*indcs.ng;
     Kokkos::realloc(vgd_wsd, 2, c1);
@@ -148,17 +139,13 @@ void RadiationVet::VetGdThetaInit() {
 }
 
 //----------------------------------------------------------------------------------------
-//! <rad_vet>/vet_gd_band_global: the band lists keyed on the GLOBAL cell (the cubed
-//! sphere's exact band copies, VetGdCsInit, on the full sphere's index space). Band
-//! position (kk, jj) of block (lx2, lx3) is the global cell J = lx2 nx2 + jj - w, K = lx3
-//! nx3 + kk - w, continued beyond a pole in the extended chart (J -> -1 - J north, 2 nt2
-//! - 1 - J south, K -> K + nx3t/2: the pole partner's reversed rows, as the slot halo), K
-//! periodic.  Every position at depth d >= 1 (Chebyshev distance from the interior) takes
-//! its owner's interior value: on-rank copies and one message per partner rank, both
-//! sorted by depth so that the per-shell halo of depth ws is a prefix (VetGdCsHalo with
-//! ws).  Every slot is marked remote (vgd_hloc = -1): the sweep reads every band position
-//! from the band (no direct neighbour reads, which reach one block). vgd_raw (a wedge): J
-//! and K periodic, each x1 level apart; vgd_own the on-rank owners.
+//! \fn void RadiationVet::VetGdGlobalBandInit
+//! \brief vet_gd_band_global: band lists keyed on the global cell, as VetGdCsInit.
+//! Band (kk, jj) of block (lx2, lx3) is J = lx2 nx2 + jj - w, K = lx3 nx3 + kk - w;
+//! beyond a pole J -> -1 - J (north) or 2 nt2 - 1 - J (south), K -> K + nx3t/2.
+//! Each position at depth d >= 1 takes its owner's interior value; lists are sorted by
+//! depth so the depth-ws halo is a prefix. vgd_hloc = -1: all reads from the band.
+//! vgd_raw (wedge): J, K periodic per x1 level; vgd_own: on-rank owners.
 
 void RadiationVet::VetGdGlobalBandInit() {
   Mesh *pm = pmy_pack->pmesh;
@@ -180,7 +167,7 @@ void RadiationVet::VetGdGlobalBandInit() {
     const LogicalLocation &l = pm->lloc_eachmb[g];
     gof[(l.lx1*nb3 + l.lx3)*nb2 + l.lx2] = g;
   }
-  // the owner (gid, band k, band j) of band position (kk, jj) of block g; false: none
+  // owner (gid, band k, band j) of band position (kk, jj) of block g; false: none
   auto owner = [&](const int g, const int kk, const int jj, int &go, int &ko,
                    int &jo) -> bool {
     const LogicalLocation &l = pm->lloc_eachmb[g];
@@ -228,8 +215,7 @@ void RadiationVet::VetGdGlobalBandInit() {
   // buckets by depth (1..w): on-rank (6 ints), per partner rank send / recv (3 ints)
   std::vector<std::vector<int>> lb(w + 1);
   std::map<int, std::vector<std::vector<int>>> sb, rb;
-  // G1: the source cell's global (J, K) of every send / receive entry, in the
-  // same order (the compact halo's keep test is evaluated from them on both sides)
+  // source cell's global (J, K) per send / receive entry (compact keep test, both sides)
   std::map<int, std::vector<std::vector<int>>> sbj, rbj;
   for (int gr = 0; gr < ngb; ++gr) {
     const int rr = pm->rank_eachmb[gr];
@@ -246,10 +232,8 @@ void RadiationVet::VetGdGlobalBandInit() {
         if (rr != me && ro != me) {continue;}
         const int jg = pm->lloc_eachmb[go].lx2*nx2 + jo - w;
         const int kg = pm->lloc_eachmb[go].lx3*nx3 + ko - w;
-        // (tw 1: an image across a theta wall keeps every direction of its branch, as the
-        // slot halo's wall slots (no geometric map); tw 2, vgd_raw: an image across a phi
-        // wall only (not read by a theta-wall ghost) keeps what its wall map reads for
-        // the directions kept at its own position, VetGdGbHaloC)
+        // tw 1: image across a theta wall (keeps its whole branch); tw 2 (vgd_raw):
+        // image across a phi wall only (keeps what its wall map reads, VetGdGbHaloC)
         const int jr = pm->lloc_eachmb[gr].lx2*nx2 + jj - w;
         const int kr = pm->lloc_eachmb[gr].lx3*nx3 + kk - w;
         const bool pw = (kr < 0 || kr >= nt3);
@@ -276,7 +260,7 @@ void RadiationVet::VetGdGlobalBandInit() {
       }
     }
   }
-  // the on-rank list in depth order, its prefix counts
+  // on-rank list in depth order, its prefix counts
   std::vector<int> loc;
   vgd_gdnl.assign(w + 1, 0);
   for (int d = 1; d <= w; ++d) {
@@ -294,7 +278,7 @@ void RadiationVet::VetGdGlobalBandInit() {
     }
     Kokkos::deep_copy(vgd_csloc, l_h);
   }
-  // the partners (sorted), their segments in depth order
+  // partners (sorted), their segments in depth order
   vgd_csprk.clear();
   for (const auto &x : sb) {vgd_csprk.push_back(x.first);}
   for (const auto &x : rb) {
@@ -361,16 +345,14 @@ void RadiationVet::VetGdGlobalBandInit() {
   // message buffers: one shell of every direction, or ln chi and ln S of some shells
   const int nent = std::max(std::max(vgd_csnsnd, vgd_csnrcv), 1);
   const int nvb = std::max(vgd_n, 2*8);
-  // device buffers (CUDA-aware MPI, as the sp slot halo; VetGdCsHalo with ws >= 0);
-  // the pinned host buffers of the cubed sphere get one element
+  // device buffers (CUDA-aware MPI); the cs pinned host buffers get one element
   Kokkos::realloc(vgd_sbuf, static_cast<size_t>(nent)*nvb);
   Kokkos::realloc(vgd_rbuf, static_cast<size_t>(nent)*nvb);
   Kokkos::realloc(vgd_cssb, 1);
   Kokkos::realloc(vgd_csrb, 1);
   vgd_hmpi = (np > 0);
-  // the band columns' phi from the GLOBAL index (P0 + (K + 0.5) D, K unwrapped): the
-  // per-block x3min + (k + 0.5) dx3 differs in the last bit between layouts, and a
-  // tangent cell's branch test n . r_hat >= 0 may flip with it
+  // band column phi from the global index, P0 + (K + 0.5) D (layout independent; the
+  // branch test n . r_hat >= 0 of a tangent cell depends on the last bit)
   {
     const double p0 = pm->mesh_size.x3min, dp = (pm->mesh_size.x3max - p0)/nt3;
     vgd_phc_h.assign(static_cast<size_t>(nmb)*c3w, 0.0);
@@ -387,8 +369,7 @@ void RadiationVet::VetGdGlobalBandInit() {
     }
     Kokkos::deep_copy(vgd_phc, ph_h);
   }
-  // G1: the compact global band (vet_gd_halo_compact > 0, an MPI band)
-  // (a rotating set's kept lists: remade per new set, swapped with the cross-fade's)
+  // compact global band (vet_gd_halo_compact > 0, MPI band); kept lists per direction set
   vgd_gbc = (vgd_hcomp > 0) && vgd_hmpi;
   if (vgd_gbc) {
     const int n = vgd_n;
@@ -402,8 +383,8 @@ void RadiationVet::VetGdGlobalBandInit() {
       for (int e = 0; e < 3*vgd_csnrcv; ++e) {b_h(e/3,e%3) = rj[e];}
       Kokkos::deep_copy(vgd_gbjr, b_h);
     }
-    // the global rows: node theta, cell width, the polar zone (node colatitude <
-    // vet_gd_band_colat, + w + 1 rows: every row a clamped polar read can reach)
+    // global rows: node theta, cell width, polar zone (colatitude < vet_gd_band_colat,
+    // + w + 1 rows: every row a clamped polar read can reach)
     Kokkos::realloc(vgd_gbth, nt2);
     Kokkos::realloc(vgd_gbdt, nt2);
     Kokkos::realloc(vgd_gbcap, nt2);
@@ -425,7 +406,8 @@ void RadiationVet::VetGdGlobalBandInit() {
     Kokkos::deep_copy(vgd_gbdt, dt_h);
     Kokkos::deep_copy(vgd_gbcap, cp_h);
     vgd_gbdmin = static_cast<Real>(VetGdThetaDmin());
-    auto x1v_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmy_pack->pcoord->x1v);
+    auto x1v_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                     pmy_pack->pcoord->x1v);
     auto x1f_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
                                                      pmy_pack->pcoord->xx1f);
     vgd_r1v.assign(x1v_h.extent(1), 0.0);
@@ -445,10 +427,10 @@ void RadiationVet::VetGdGlobalBandInit() {
                 << "keep their whole branch" << std::endl;
     }
   }
-  // vet_gd_halo_ipc (vgd_raw): the kept-list exchanges GPU-driven over CUDA IPC, one
-  // receive region per partner (the largest dense receive segment); collective
+  // vet_gd_halo_ipc (vgd_raw): kept-list exchanges GPU-driven over IPC, one receive
+  // region per partner (largest dense receive segment); collective
   if (vgd_raw && vgd_ipc_on && vgd_hcomp > 0 && vgd_ipc_state == 0) {
-    // (clean_rot_fuse: room for both cross-fade sets' values, VetGdGbHaloX)
+    // clean_rot_fuse: room for both cross-fade sets (VetGdGbHaloX)
     size_t cs = 1;
     for (int p = 0; p < np; ++p) {cs = std::max<size_t>(cs, 1ULL*vgd_cspm[p]*vgd_n);}
     if (cln_rfuse) {cs *= 2;}
@@ -458,7 +440,7 @@ void RadiationVet::VetGdGlobalBandInit() {
   vgd_gbcb.clear();
   vgd_gbcf_xb.clear();
   vgd_gbcb_xb.clear();
-  // every slot reads the band (no direct on-rank neighbour reads)
+  // every slot reads the band
   Kokkos::deep_copy(vgd_hloc, -1);
   for (int t = 0; t < 8*nmb; ++t) {vgd_hrank[t] = me;}
   if (me == 0) {
@@ -472,17 +454,12 @@ void RadiationVet::VetGdGlobalBandInit() {
 }
 
 //----------------------------------------------------------------------------------------
-//! G1 (USER 11-04): vet_gd_halo_compact > 0 with vet_gd_band_global (the full
-//! sphere, stretched theta).  The per-shell exchange of VetGdCsHalo (depth-ws prefix of
-//! the global-cell lists), sending only the (entry, direction) values that pass the keep
-//! test of the slot halo (VgdHaloKeepTP), evaluated on BOTH sides from the source cell's
-//! global row J (node-table theta, the row's own width for the stencil offset) and
-//! column K (global phi), the receiver's band depth of the entry and the shell's radii:
-//! sender and receiver compute the same flags in the same list order, so the compact
-//! messages need no index.  Rows of the polar zone (+ the band depth) keep their whole
-//! branch (clamped polar reads).  vgd_raw: a phi-wall image's flags are made by the
-//! receiver (its wall map) and sent once per list to the sender.  Unsent positions get 0
-//! (never read).  On-rank copies as before (all directions).  Returns false.
+//! \fn bool RadiationVet::VetGdGbHaloC
+//! \brief compact per-shell exchange of the global band (vet_gd_halo_compact > 0):
+//! only (entry, direction) values passing VgdHaloKeepTP are sent. Both sides compute the
+//! same flags from the source cell's (J, K), depth and shell radii, so messages carry no
+//! index. Polar-zone rows keep their whole branch; vgd_raw phi-wall image flags come
+//! from the receiver. Unsent positions get 0 (never read). Returns false.
 
 template <class V>
 bool RadiationVet::VetGdGbHaloC(V &a, const int i, const int ws) {
@@ -490,13 +467,12 @@ bool RadiationVet::VetGdGbHaloC(V &a, const int i, const int ws) {
   auto &indcs = pm->mb_indcs;
   auto a_ = a;
   const int nv = vgd_n;
-  // on the sweep's own (default) stream the pack and the unpack are stream-ordered with
-  // the shell kernels; the host waits only for the pack
+  // lean (sweep on the default stream): pack / unpack stream-ordered, host waits for pack
   const bool lean = vgd_cur.impl_instance_id() == DevExeSpace().impl_instance_id();
   if (!lean) vgd_cur.fence();   // the shell's intensities are complete
   const int wq = std::min(ws, static_cast<int>(vgd_gdnl.size()) - 1);
   {
-    const int nl = vgd_raw ? 0 : vgd_gdnl[wq];   // (vgd_raw: on-rank owners read direct)
+    const int nl = vgd_raw ? 0 : vgd_gdnl[wq];   // vgd_raw: on-rank owners read direct
     if (nl > 0) {
       auto L_ = vgd_csloc;
       par_for("vet_vgdgb_loc", DevExeSpace(), 0, nl - 1, 0, nv - 1,
@@ -533,16 +509,13 @@ bool RadiationVet::VetGdGbHaloC(V &a, const int i, const int ws) {
   auto fs_ = vgd_gbfs;
   auto fr_ = vgd_gbfr;
   const int nmx = std::max(ns, nr);
-  // vgd_raw (the current direction set: VetGdTables remakes them, VgdXfTables swaps
-  // them): the kept lists and bounds of each (shell, pass, depth), made at their first
-  // exchange; the pack and unpack run over the kept values only (an unsent band value is
-  // never read)
+  // vgd_raw: kept lists and bounds per (shell, pass, depth) of the current direction
+  // set, made at the first exchange; pack / unpack run over kept values only
   const int key = (2*i + (inw ? 1 : 0))*(vgd_w + 1) + wq;
   auto &cf = vgd_gbcf[vgd_raw ? key : -1];
   auto &cb = vgd_gbcb[vgd_raw ? key : -1];
-  // (the lists depend on the sweep's first shell, vgd_scut (hasm, rm): its last entry; a
-  // cut change remakes those of the shells whose side of the cut it moves, the old ones
-  // freed)
+  // the lists depend on the cut vgd_scut (last entry); a cut change remakes the lists
+  // of the shells it moves across
   auto side = [&](const int c) {
     return (i > indcs.is + c) ? 1 : ((i < indcs.is + c) ? -1 : 0);
   };
@@ -551,7 +524,7 @@ bool RadiationVet::VetGdGbHaloC(V &a, const int i, const int ws) {
   if (vgd_raw && !cb.empty()) {
     for (int q = 0; q < 4*np; ++q) {pv(q) = cb[q];}
   } else {
-    // (1) the flags of both sides (send: my interior cells; receive: my band positions)
+    // (1) flags of both sides (send: my interior cells; receive: my band positions)
     par_for("vet_vgdgb_flag", DevExeSpace(), 0, nmx - 1, 0, nv - 1,
     KOKKOS_LAMBDA(const int e, const int v) {
       const Real nx = dir_(v,0), ny = dir_(v,1), nz = dir_(v,2);
@@ -572,10 +545,8 @@ bool RadiationVet::VetGdGbHaloC(V &a, const int i, const int ws) {
         else {fr_(static_cast<size_t>(e)*nv + v) = f;}
       }
     });
-    // (1b) vgd_raw, a phi-wall image (tw 2; my band positions): the directions its wall
-    // map reads (as the sweep's rd0) for each direction q the keep test passes at the
-    // image's own (unwrapped) position, where the reader's geometry is that of any band
-    // position; the senders then take the receivers' flags of the depth-wq prefix
+    // (1b) vgd_raw phi-wall image (tw 2): flag the directions its wall map reads for
+    // each q kept at the image's unwrapped position; senders take the receivers' flags
     if (vgd_raw) {
       auto phc_ = vgd_phc;
       auto mp_ = vgd_map;
@@ -616,7 +587,7 @@ bool RadiationVet::VetGdGbHaloC(V &a, const int i, const int ws) {
     // (2) exclusive scans in place (flag -> position; totals at the end)
     VgdScan2(DevExeSpace(), vgd_gbfs, static_cast<size_t>(ns)*nv, vgd_gbfr,
              static_cast<size_t>(nr)*nv, "vet_vgdgb_scan2", vgd_scan_sums);
-    // (3) the positions at the partner segment bounds (prefix of depth wq) -> pinned host
+    // (3) positions at the partner segment bounds (depth-wq prefix) -> pinned host
     {
       std::vector<int> bd(4*np);
       for (int p = 0; p < np; ++p) {
@@ -655,20 +626,16 @@ bool RadiationVet::VetGdGbHaloC(V &a, const int i, const int ws) {
     }
   }
 #if defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP)
-  // vet_gd_halo_ipc (prod's GPU-driven form, VetGdHlBegin): the pack stores my kept
-  // values of partner p straight into its receive region of me, a flag kernel sets its
-  // arrival flag, a wait kernel waits for mine, the unpack reads my regions: all
-  // stream-ordered, no host wait and no MPI.  The same values in the same band positions
-  // (bitwise). Parity buffers: a partner's flag of exchange s follows its unpack of s -
-  // 1.
+  // vet_gd_halo_ipc: pack into partner p's receive region of me, set its flag, wait for
+  // mine, unpack: stream-ordered, no host wait, no MPI; bitwise the MPI result.
+  // Parity buffers: a partner's flag of exchange s follows its unpack of s - 1.
   if (vgd_raw && !cb.empty() && vgd_ipc_state == 1 && lean) {
     ++vgd_ipc_seq;
     const long long seq = vgd_ipc_seq, par = seq & 1;
     const int np_ = np;
     auto pslot = vgd_ipc_pslot.d_view;
     VgdIpcIdx b0{}, b1{};
-    // the bodies (> 512 B with b0, b1) as kernel arguments, not constant memory, whose
-    // reuse makes the host wait on the previous such kernel at every launch (as par_for)
+    // bodies (> 512 B) as kernel arguments, not constant memory (avoids a host wait)
     auto lw = [](const int n) {return Kokkos::Experimental::require(Kokkos::RangePolicy<>(
         DevExeSpace(), 0, n), Kokkos::Experimental::WorkItemProperty::HintLightWeight);};
     for (int p = 0; p < np; ++p) {b0.v[p] = cb[4*p]; b1.v[p] = cb[4*p + 1];}
@@ -714,7 +681,7 @@ bool RadiationVet::VetGdGbHaloC(V &a, const int i, const int ws) {
     return false;
   }
 #endif
-  // (4) the compact pack (my kept values in list order)
+  // (4) compact pack (my kept values in list order)
   auto sb_ = vgd_sbuf;
   auto rb_ = vgd_rbuf;
   auto ls_ = cf[0], lr_ = cf[1];
@@ -733,8 +700,7 @@ bool RadiationVet::VetGdGbHaloC(V &a, const int i, const int ws) {
       sb_(fs_(q)) = a_(S_(e,0),v,S_(e,1),S_(e,2),i);
     });
   }
-  // (lean: the host waits for the pack alone, an event behind it on the sweep's stream,
-  // as prod's VetGdHlBegin, not a device-wide fence)
+  // lean: wait for the pack alone (an event on the sweep's stream, not a fence)
   if (lean) {
     VgdPackEvtRecord(DevExeSpace());
     VgdPackEvtWait(DevExeSpace());
@@ -765,7 +731,7 @@ bool RadiationVet::VetGdGbHaloC(V &a, const int i, const int ws) {
   vgd_tmpi += tq.seconds();
   vgd_nexch += 1.0;
   vgd_csvsent += nsent;
-  // (5) the expansion into the band (unsent positions of the prefix: 0)
+  // (5) expand into the band (unsent positions of the prefix: 0)
   if (vgd_raw && cb[4*np + 1] > 0) {
     Kokkos::parallel_for("vet_vgdgb_kunpack",
                          Kokkos::RangePolicy<>(DevExeSpace(), 0, cb[4*np + 1]),
@@ -789,12 +755,10 @@ bool RadiationVet::VetGdGbHaloC(V &a, const int i, const int ws) {
 }
 
 //----------------------------------------------------------------------------------------
-//! clean_rot_fuse (vgd_raw, the fused two-set sweep): the compact exchange of shell i
-//! (pass vgd_hinw, depth ws) for both cross-fade sets in ONE message per partner, piece
-//! p = [the current set's kept values of p, then the other set's] (as VetGdHlXff for the
-//! exact lists); one pack and one unpack.  Each set's kept lists (VetGdGbHaloC): the same
-//! values reach the same band positions as the two exchanges (bitwise).  false (nothing
-//! done) unless both sets hold the kept lists of this (shell, pass, depth, cut)
+//! \fn bool RadiationVet::VetGdGbHaloX
+//! \brief clean_rot_fuse (vgd_raw): compact exchange of shell i for both cross-fade
+//! sets in one message per partner (current set's piece, then the other's); bitwise two
+//! VetGdGbHaloC calls. false (nothing done) unless both sets hold the kept lists.
 
 bool RadiationVet::VetGdGbHaloX(const int i, const int ws) {
 #if MPI_PARALLEL_ENABLED
@@ -807,7 +771,7 @@ bool RadiationVet::VetGdGbHaloX(const int i, const int ws) {
   auto ia = vgd_gbcb.find(key), ib = vgd_gbcb_xb.find(key);
   if (ia == vgd_gbcb.end() || ib == vgd_gbcb_xb.end()) {return false;}
   const std::vector<int> &A = ia->second, &B = ib->second;
-  // (each set's pieces contiguous from 0 in partner order: piece p at [c(4p), c(4p+1)))
+  // each set's pieces contiguous in partner order: piece p at [c(4p), c(4p+1))
   auto ok = [&](const std::vector<int> &c) {
     if (static_cast<int>(c.size()) != 4*np + 3 || c.back() != vgd_scut || c[0] != 0 ||
         c[2] != 0) {
@@ -847,12 +811,11 @@ bool RadiationVet::VetGdGbHaloX(const int i, const int ws) {
   const bool lean = vgd_cur.impl_instance_id() == DevExeSpace().impl_instance_id();
 #if defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP)
   if (vgd_ipc_state == 1) {
-    // vet_gd_halo_ipc (as VetGdGbHaloC): the pack stores the merged piece of partner p
-    // straight into its receive region of me, flag, wait for mine, unpack; stream-ordered
+    // vet_gd_halo_ipc, as VetGdGbHaloC with the merged pieces
     for (int p = 0; p < np; ++p) {
       if (static_cast<size_t>(sm.v[p+1] - sm.v[p]) > vgd_ipc_cs ||
           static_cast<size_t>(rm.v[p+1] - rm.v[p]) > vgd_ipc_cs) {
-        return false;   // (no room: the two exchanges)
+        return false;   // no room: the two exchanges
       }
     }
     if (!lean) {return false;}
@@ -992,10 +955,10 @@ bool RadiationVet::VetGdGbHaloX(const int i, const int ws) {
 }
 
 //----------------------------------------------------------------------------------------
-//! vgd_raw with vet_gd_band_ring: the record of the band positions the raw exchange of
-//! (shell, pass, depth) key writes (VetGdGbHaloC's kept list, else the depth prefix of
-//! the receive list, every direction), encoded as the exact lists ((m n + v) c3 + k) c2
-//! + j: the ring saves and restores these values of the inward band (VetGdRingFlush)
+//! \fn int RadiationVet::VetGdRawKey
+//! \brief vgd_raw + vet_gd_band_ring: key and record of the band positions the raw
+//! exchange of (shell, pass, depth) writes, encoded ((m n + v) c3 + k) c2 + j; the ring
+//! saves / restores them (VetGdRingFlush)
 
 int RadiationVet::VetGdRawKey(const int i, const bool inw, const int ws) const {
   const int wq = std::min(ws, static_cast<int>(vgd_gdnl.size()) - 1);
@@ -1014,7 +977,7 @@ DvceArray1D<int> RadiationVet::VetGdRawRec(const int key) {
   const bool kc = vgd_gbc && vgd_gbcb.count(key) && vgd_gbcb[key].size() > 4*np + 1;
   auto R_ = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_csrl);
   auto D_ = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_gdpr);
-  std::vector<int> q;   // the kept (entry n + direction), else every one within depth wq
+  std::vector<int> q;   // kept (entry, direction), else all within depth wq
   if (kc) {
     q.resize(vgd_gbcb[key][4*np + 1]);
     auto lh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_gbcf[key][1]);
