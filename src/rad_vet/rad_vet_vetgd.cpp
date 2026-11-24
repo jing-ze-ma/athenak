@@ -2208,11 +2208,14 @@ void RadiationVet::VetGdTables(const Real alpha) {
              "rad_vet/vet_gd_wall_sym = true (with vet_gd_wall_interp = true) for "
              "mirror-paired phi walls");
   }
-  if (H.nthx > 0 && !vgd_wst) {
-    // a theta-periodic wedge: the clean theta seam face is one-frame (a net F_theta)
+  if (H.nthx > 0 && !vgd_wst &&
+      pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::periodic) {
+    // a theta-periodic mesh: its clean theta seam face is one-frame (a net F_theta); a
+    // reflecting theta wall has no seam face
     VgdFatal("theta-periodic wedge: the theta wall maps are inexact (" +
              std::to_string(H.nthx) + " of " + std::to_string(nmap) + " direction maps); "
-             "name rad_vet/vet_gd_theta_seam_sym = true for mirror-paired theta seams");
+             "name rad_vet/vet_gd_theta_seam_sym = true (with vet_gd_wall_interp = true) "
+             "for mirror-paired theta seams");
   }
   const bool first = (vgd_alpha < 0.0);
   // (the compact global band's kept lists belong to a set: a new set remakes them)
