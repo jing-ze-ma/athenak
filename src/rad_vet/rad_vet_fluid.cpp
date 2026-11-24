@@ -35,6 +35,7 @@
 #include <iostream>
 
 #include "utils/eint_ledger.hpp"
+#include "utils/scratch_view.hpp"
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
@@ -98,6 +99,43 @@ TaskStatus RadiationVet::HydroConToPrim(Driver *pdrive, int stage) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void FloorCapMomentum
+//! \brief the floor-gas cap's |m|^2 msq of a cell momentum p (the cubed sphere: m2, m3
+//! covariant on the unit tangents, cos_cell c, so msq = m1^2 + (m2^2 - 2 c m2 m3 +
+//! m3^2)/(1 - c^2), the metric norm of the ceiling's |v|) and, with lz, its phi_hat f
+//! (spherical polar e3, Cartesian (-y, x)/R of the cell, the cubed sphere its covariant
+//! (0, f2, f3), GnomonicPhiHat), the part pf = m.phi_hat that carries L_z (the cubed
+//! sphere m_a phi^a) and the Cartesian arm R of the cell (else 0)
+
+KOKKOS_INLINE_FUNCTION
+void FloorCapMomentum(const bool sph, const bool cub, const bool lz, const int pnl,
+                      const RegionSize &sz, const Real c, const int ii, const int jj,
+                      const int kk, const int nx1, const int nx2, const int nx3,
+                      const Real p[3], Real f[3], Real &msq, Real &pf, Real &r) {
+  const Real det = 1.0 - c*c;
+  msq = cub ? p[0]*p[0] + (p[1]*p[1] - 2.0*c*p[1]*p[2] + p[2]*p[2])/det
+            : p[0]*p[0] + p[1]*p[1] + p[2]*p[2];
+  f[0] = f[1] = 0.0;
+  f[2] = sph ? 1.0 : 0.0;
+  pf = r = 0.0;
+  if (!lz) return;
+  if (cub) {
+    GnomonicPhiHat(pnl, 0.25*M_PI*CellCenterX(jj, nx2, sz.x2min, sz.x2max),
+                   0.25*M_PI*CellCenterX(kk, nx3, sz.x3min, sz.x3max), f[1], f[2]);
+  } else if (!sph) {
+    const Real cx = CellCenterX(ii, nx1, sz.x1min, sz.x1max);
+    const Real cy = CellCenterX(jj, nx2, sz.x2min, sz.x2max);
+    r = sqrt(cx*cx + cy*cy);
+    if (r > 0.0) {
+      f[0] = -cy/r;
+      f[1] = cx/r;
+    }
+  }
+  pf = cub ? (p[1]*(f[1] - c*f[2]) + p[2]*(f[2] - c*f[1]))/det
+           : p[0]*f[0] + p[1]*f[1] + p[2]*f[2];
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::FloorGasCap
 //! \brief cap |v| and T_gas of near-floor gas (rho < fcap_rho) after
 //! the implicit solve, active cells, on the conserved state (FluidRefresh follows).
@@ -106,6 +144,10 @@ TaskStatus RadiationVet::HydroConToPrim(Driver *pdrive, int stage) {
 //! T <= T_rad mimics Compton equilibration, which the model has no term for.  Energy:
 //! the clipped kinetic energy and the excess internal energy go to E_rad,
 //! so gas + radiation energy is conserved per cell (chat = c).  Momentum is removed.
+//! floorcap_lz_spin: the whole velocity is capped (so |v| <= floorcap_v), and the L_z
+//! X it removes goes to the gas at or above floorcap_rho as one rigid rotation
+//! dOmega = X/I, I = sum rho V R^2 (both summed per cell, then in a fixed order:
+//! CleanSumCells), its kinetic energy paid from the cell's E_rad: L_z and E exact.
 
 void RadiationVet::FloorGasCap() {
   hydro::Hydro *ph = pmy_pack->phydro;
@@ -132,50 +174,74 @@ void RadiationVet::FloorGasCap() {
   const bool mv = fcap_mvol, flz = fcap_lz, sph = hv;
   auto mbs = pmy_pack->pmb->mb_size;
   const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
-  // the cubed sphere: m2, m3 are covariant on the unit tangents (cos_cell c), so |m|^2 =
-  // m1^2 + (m2^2 - 2 c m2 m3 + m3^2)/(1 - c^2), the metric norm of the ceiling's |v|
+  // the cubed sphere: the metric norm of the covariant m2, m3 (FloorCapMomentum)
   const bool cub = pmy_pack->pmesh->use_cubed_sphere;
   auto cosc = cub ? pmy_pack->pcoord->cos_cell : DvceArray3D<Real>("fcap_c",1,1,1);
   auto pnl = pmy_pack->pmb->mb_panel.d_view;
   CleanArgs x;
   if (mv) x = CleanMakeArgs();
+  // (floorcap_lz_spin: dOmega = X/I, from the state before the cap)
+  const bool spn = fcap_spin;
+  Real dom = 0.0;
+  if (spn) {
+    auto lxx = ScratchView<DvceArray4D<Real>>("fcap_lxx", nmb1 + 1, u0.extent_int(2),
+                                              u0.extent_int(3), u0.extent_int(4));
+    auto lxi = ScratchView<DvceArray4D<Real>>("fcap_lxi", nmb1 + 1, u0.extent_int(2),
+                                              u0.extent_int(3), u0.extent_int(4));
+    par_for("vet_floorcap_lz", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real dd = uh(m,IDN,k,j,i);
+      const Real p[3] = {uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i)};
+      Real f[3], msq, pf, r;
+      FloorCapMomentum(sph, cub, true, pnl(m), mbs.d_view(m), cub ? cosc(m,k,j) : 0.0,
+                       i - is, j - js, k - ks, nx1, nx2, nx3, p, f, msq, pf, r);
+      if (sph || cub) r = CleanLzArm(x, m, k, j, i);
+      const Real wv = CleanVol(x, m, k, j, i);
+      const bool cap = (dd < rc) && (dd > 0.0) && (vc > 0.0) && (msq > SQR(vc*dd));
+      lxx(m,k,j,i) = cap ? (1.0 - vc*dd/sqrt(msq))*pf*r*wv : 0.0;
+      lxi(m,k,j,i) = (dd >= rc) ? dd*wv*r*r : 0.0;
+    });
+    const Real lx = CleanSumCells(lxx), li = CleanSumCells(lxi);
+    if (lx != 0.0 && !(li > 0.0)) {
+      std::cout << "### FATAL ERROR: <rad_vet>/floorcap_lz_spin: the cap removed L_z "
+                << lx << " but no gas is at or above floorcap_rho to take it"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (lx != 0.0) dom = lx/li;
+  }
   par_for("vet_floorcap", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real dd = uh(m,IDN,k,j,i);
-    if (!(dd < rc) || !(dd > 0.0)) return;
+    if (!(dd > 0.0) || (!(dd < rc) && dom == 0.0)) return;
     const Real wv = mv ? CleanVol(x, m, k, j, i) :
         (hv ? ((x1f(m,i+1)*x1f(m,i+1)*x1f(m,i+1) - x1f(m,i)*x1f(m,i)*x1f(m,i))
                /3.0*(cos(x2f(m,j)) - cos(x2f(m,j+1)))*(x3f(m,k+1) - x3f(m,k))) : 1.0);
     Real m1 = uh(m,IM1,k,j,i), m2 = uh(m,IM2,k,j,i), m3 = uh(m,IM3,k,j,i);
-    const Real c = cub ? cosc(m,k,j) : 0.0, det = 1.0 - c*c;
-    const Real msq = cub ? m1*m1 + (m2*m2 - 2.0*c*m2*m3 + m3*m3)/det
-                         : m1*m1 + m2*m2 + m3*m3;
+    const Real c = cub ? cosc(m,k,j) : 0.0;
+    const Real pm[3] = {m1, m2, m3};
+    Real f[3], msq, pf, rf;
+    FloorCapMomentum(sph, cub, flz, pnl(m), mbs.d_view(m), c, i - is, j - js, k - ks, nx1,
+                     nx2, nx3, pm, f, msq, pf, rf);
+    if (!(dd < rc)) {   // (floorcap_lz_spin: dOmega rho R phi_hat, E_rad pays its KE)
+      const Real r = (sph || cub) ? CleanLzArm(x, m, k, j, i) : rf, w = dom*dd*r;
+      const Real q[3] = {m1 + w*f[0], m2 + w*f[1], m3 + w*f[2]};
+      Real g[3], qsq, qf, qr;
+      FloorCapMomentum(sph, cub, false, 0, mbs.d_view(m), c, 0, 0, 0, 1, 1, 1, q, g, qsq,
+                       qf, qr);
+      const Real dk = 0.5*(qsq - msq)/dd;
+      uh(m,IM1,k,j,i) = q[0]; uh(m,IM2,k,j,i) = q[1]; uh(m,IM3,k,j,i) = q[2];
+      uh(m,IEN,k,j,i) += dk;
+      u0_(m,M1_E,k,j,i) -= dk;
+      Kokkos::atomic_add(&cnt_.d_view(5), -w*r*wv);
+      return;
+    }
     Real ekin = 0.5*msq/dd;
     const Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
     Real etot = uh(m,IEN,k,j,i);
     Real erad = u0_(m,M1_E,k,j,i);
-    if (vc > 0.0 && msq > SQR(vc*dd) && flz) {
-      // (floorcap_lz: the part pf = m.phi_hat that carries L_z never scaled, EkinScale;
-      // phi_hat spherical polar e3, Cartesian (-y, x)/R of the cell, the cubed sphere
-      // its covariant (0, f2, f3), GnomonicPhiHat, with pf = m_a phi^a)
-      Real f[3] = {0.0, 0.0, sph ? 1.0 : 0.0};
-      if (cub) {
-        auto &sz = mbs.d_view(m);
-        GnomonicPhiHat(pnl(m), 0.25*M_PI*CellCenterX(j - js, nx2, sz.x2min, sz.x2max),
-                       0.25*M_PI*CellCenterX(k - ks, nx3, sz.x3min, sz.x3max), f[1],
-                       f[2]);
-      } else if (!sph) {
-        auto &sz = mbs.d_view(m);
-        const Real cx = CellCenterX(i - is, nx1, sz.x1min, sz.x1max);
-        const Real cy = CellCenterX(j - js, nx2, sz.x2min, sz.x2max);
-        const Real r = sqrt(cx*cx + cy*cy);
-        if (r > 0.0) {
-          f[0] = -cy/r;
-          f[1] = cx/r;
-        }
-      }
-      const Real pf = cub ? (m2*(f[1] - c*f[2]) + m3*(f[2] - c*f[1]))/det
-                          : m1*f[0] + m2*f[1] + m3*f[2];
+    if (vc > 0.0 && msq > SQR(vc*dd) && flz && !spn) {
+      // (floorcap_lz: the part pf = m.phi_hat that carries L_z never scaled, EkinScale)
       Real fs;
       const Real ek = EkinScale(ekin, 0.5*pf*pf/dd, 0.5*vc*vc*dd, fs);
       const Real dke = ekin - ek;

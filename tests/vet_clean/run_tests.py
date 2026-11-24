@@ -138,6 +138,52 @@ def t_conservation_lz(c):
     return out
 
 
+def t_floorcap_spin(c):
+    """floorcap_lz_spin with the conservation_lz keys: the floor-gas cap scales the whole
+    velocity and gives the L_z it removes to the gas at or above floorcap_rho as one rigid
+    rotation.  floorcap_rho = gas_rho (sp 100, cs 1), so the cells that thin below the IC
+    density are floor gas, capped below the shells' speeds (sp 5e-3, cs 0.05: a cap of the
+    cs shell's 0.3 at 5e-3 puts so much kinetic energy into E that the first stage solve
+    fails), and the rest take the rotation.  Drifts as conservation_lz on both meshes
+    (dLz_gr without the ledger), n_v > 0 capped cells; restart (8 + 8) and a forced
+    dt_retry bitwise; 1 vs 1 x 2 MeshBlocks in tile mode bitwise.  nospin_sp_dLz_gr: the
+    same with floorcap_lz off, for information."""
+    fc = dict(LZ_FC, **{'rad_vet/floorcap_rho': 100.0, 'rad_vet/floorcap_lz_spin': 'true',
+                        'rad_vet/floorcap_report': 1})
+    sp = dict(LZ_KEYS, **dict(fc, **{'rad_vet/clean_stag_fwb_ring': 1}))
+    d = c.run('shell_sp.athinput', 'sp', dict(sp, **{'time/nlim': 40}))
+    out = {'sp_' + k: v for k, v in am_budget(d, 'sp').items()}
+    n = re.findall(r'floorcap cycle \d+ \(cumulative, all calls\): n_v (\S+)',
+                   open(os.path.join(d, 'run.log')).read())
+    out['n_v'] = float(n[-1]) if n else 0.0
+    out.update({'cs_' + k: v for k, v in
+                am_budget(c.run('shell_cs.athinput', 'cs',
+                                dict(LZ_KEYS, **dict(fc, **{'time/nlim': 12,
+                                                          'rad_vet/floorcap_rho': 1.0,
+                                                          'rad_vet/floorcap_v': 0.05}))),
+                          'cs').items()})
+    o = dict(sp, **{'rad_vet/floorcap_lz': 'false', 'rad_vet/floorcap_lz_spin': 'false',
+                    'time/nlim': 40})
+    out['nospin_sp_dLz_gr'] = am_budget(c.run('shell_sp.athinput', 'nospin', o),
+                                        'sp')['dLz_gr']
+    out['restart_maxdiff'] = restart_pair(c, 'shell_sp.athinput', 16, 8, sp)['maxdiff']
+    o = dict(sp, **{'time/nlim': 16, 'time/dt_retry': 'true'})
+    a = c.run('shell_sp.athinput', 'r_straight', o)
+    b = c.run('shell_sp.athinput', 'r_retry1', dict(o, **{'time/dt_retry_force_cycle': 4,
+                                                          'time/dt_retry_force_fac': 1.0}))
+    out['retry_maxdiff'] = vett.compare_dirs(a, b)[1]
+    o = dict(sp, **{'time/nlim': 8, 'mesh/nghost': 3, 'mesh/nx2': 16, 'mesh/nx3': 16,
+                    'mesh/layout_invariant_mode': 'tile', 'mesh/layout_tile': 8,
+                    'meshblock/nx2': 16, 'meshblock/nx3': 16,
+                    'rad_vet/vet_gd_theta_wall': 'mirror'})
+    a = c.run('shell_sp.athinput', 'mb1', o)
+    b = c.run('shell_sp.athinput', 'mb1x2', dict(o, **{'meshblock/nx3': 8}))
+    out['layout_maxdiff'] = vett.compare_dirs(a, b)[1]
+    out['warnings'] = sum(vett.warnings(open(os.path.join(c.dir, t, 'run.log')).read())
+                          for t in ('sp', 'cs', 'r_straight', 'r_retry1', 'mb1', 'mb1x2'))
+    return out
+
+
 # ---------------------------------------------------------------------------------------
 # restart and dt_retry: bitwise
 
@@ -614,6 +660,7 @@ TESTS = [  # name, function, in --quick
     ('conservation_sp', t_conservation_sp, True),
     ('conservation_cs', t_conservation_cs, True),
     ('conservation_lz', t_conservation_lz, False),
+    ('floorcap_spin', t_floorcap_spin, False),
     ('restart_sp', t_restart_sp, True),
     ('restart_cs', t_restart_cs, False),
     ('dt_retry', t_dt_retry, True),
