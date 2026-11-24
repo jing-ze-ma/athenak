@@ -1687,7 +1687,6 @@ class RadiationVet {
     return static_cast<const T *>(CleanDevCopy(&x, sizeof(T), s));
   }
   const CleanArgs *CleanDevArgs(const CleanArgs &x, const int s);
-  void CleanGhostFill(DvceArray5D<float> a, const int c0, const int nc);
   template <typename T>
   void CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc, const bool phys,
                        const int part, const int dep = 0,
