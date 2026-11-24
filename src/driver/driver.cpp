@@ -45,10 +45,16 @@
 #endif
 
 namespace {
-// <hydro|mhd>/floor_pay: a discarded attempt's floor payment is dropped with it
+// <hydro|mhd>/floor_pay: a discarded attempt's floor payment (and audit counts) is
+// dropped with it
 void DualDiscard(Mesh *pm) {
   if (pm->pmb_pack->phydro != nullptr) pm->pmb_pack->phydro->dual.Discard();
   if (pm->pmb_pack->pmhd != nullptr) pm->pmb_pack->pmhd->dual.Discard();
+}
+// (the floor audit's counters at the step's start, which DualDiscard puts back)
+void DualMark(Mesh *pm) {
+  if (pm->pmb_pack->phydro != nullptr) pm->pmb_pack->phydro->dual.Mark();
+  if (pm->pmb_pack->pmhd != nullptr) pm->pmb_pack->pmhd->dual.Mark();
 }
 // <hydro|mhd>/floor_pay = rad: the energy the fluid floors and dual selection created
 // is taken from E_rad of the same cell (hydro/dual_energy.hpp)
@@ -669,7 +675,10 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       dt_rst_ = 0.0;
       // (floor_pay: what the conversions before the loop floored, e.g. a restart's, is
       // paid before the checkpoint, so that a discarded attempt drops only its own)
-      if (!dtr_retrying) {DualPay(pmesh);}
+      if (!dtr_retrying) {
+        DualPay(pmesh);
+        DualMark(pmesh);
+      }
       if (pdtr_ != nullptr && pdtr_->on && !dtr_retrying) {pdtr_->Save(pmesh);}
       if (pctr_ != nullptr && !dtr_retrying) {pctr_->Save(pmesh, 0);}
       // <problem>/eint_ledger (no-op unless on): a retried cycle drops the

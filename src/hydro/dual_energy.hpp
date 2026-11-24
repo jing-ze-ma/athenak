@@ -94,6 +94,7 @@ struct DualEnergy {
   DvceArray4D<Real> payv;   // energy created in active cells, not yet paid (per volume)
   DvceArray4D<Real> phi;    // <hydro>/etotgrav: the potential, rho*Phi of a floor's mass
   Real hc[DC_NCNT] = {};    // this rank's cumulative counters
+  Real hck[DC_NCNT] = {};   // hc at the step's start (Mark; Discard puts it back)
 
   // read the keys; `nfluid` = nhydro or nmhd, `du_off` = tracers.DuOff()
   void Read(ParameterInput *pin, const std::string &block, const EOS_Data &eos,
@@ -105,8 +106,12 @@ struct DualEnergy {
   void Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real> &w0,
             DvceArray5D<Real> &wder, DvceArray4D<Real> &wtemp, const EOS_Data &eos);
   void Report(MeshBlockPack *pp);
-  // a discarded attempt (dt_retry, the hesdirk2 redo): its floors' payment goes too
-  void Discard() {if (pay && init) Kokkos::deep_copy(payv, 0.0);}
+  // a discarded attempt (dt_retry, the hesdirk2 redo): its floors' payment and counts go
+  void Mark() {for (int n = 0; n < DC_NCNT; ++n) hck[n] = hc[n];}
+  void Discard() {
+    for (int n = 0; n < DC_NCNT; ++n) hc[n] = hck[n];
+    if (pay && init) Kokkos::deep_copy(payv, 0.0);
+  }
 };
 
 //! floor_pay = rad: pay `payv` of the fluid from E_rad (slot ie of urad) of the same

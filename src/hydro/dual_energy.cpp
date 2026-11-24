@@ -280,6 +280,9 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
      Kokkos::Sum<Real>(s[9]), Kokkos::Sum<Real>(s[10]), Kokkos::Sum<Real>(s[11]),
      Kokkos::Sum<Real>(s[12]), Kokkos::Sum<Real>(s[13]), Kokkos::Sum<Real>(s[14]),
      Kokkos::Sum<Real>(s[15]));
+  // (before this call's counts: a report closes the cycles before this stage, so its
+  // differences are whole steps)
+  if (armed) Report(pp);
   const int b = armed ? 0 : DC_REFRESH;
   hc[b + DC_N] += static_cast<Real>(pp->nmb_thispack)*indcs.nx1*indcs.nx2*indcs.nx3;
   hc[b + DC_KEDOM] += s[0];
@@ -298,10 +301,8 @@ void DualEnergy::Post(MeshBlockPack *pp, DvceArray5D<Real> &u0, DvceArray5D<Real
   hc[b + DC_FLR_RDE] += s[13];
   hc[b + DC_SKIP_DE] += s[14];
   hc[b + DC_SKIP_DM] += s[15];
-  const bool was_armed = armed;
   armed = false;
   if (on) valid = true;
-  if (was_armed) Report(pp);
 }
 
 //----------------------------------------------------------------------------------------
