@@ -67,6 +67,12 @@ Floor gas ($\rho$ below `rad_vet/floorcap_rho`) can be pinned at the floor-gas v
 with `<hydro>/dt_floor_courant = C` (production 0.6) it takes one Courant bound on the sum of its
 signal rates, dt $\le C/\sum_d(|v_d| + c_d)/h_d$, instead of `cfl_number` per direction, so the
 floor atmosphere does not set the step of the star (test: `floor_dt`).
+`rad_vet/compton = true` adds the Kompaneets exchange
+$\rho\kappa_{\rm es} c E\,4k_B(T - T_r)/(m_e c^2)$ once per step, after the final solve: backward
+Euler per cell on the gas energy, with $E$ taking exactly what the gas loses, and the root
+bracketed between $T$ and $T_r$, so neither overshoots (test: `compton`). It matters only where
+$\kappa_P \ll \kappa_{\rm es}4kT/(m_e c^2)$, i.e. in hot, thin gas, which absorption alone
+cannot cool within a step.
 
 **Implicit stage solve.** In each stage the face momentum equation is eliminated face by face,
 which leaves a scalar system for $E$. It is solved by Newton passes: each pass is a

@@ -397,6 +397,48 @@ def t_thermal_eq(c):
     return out
 
 
+def t_compton(c):
+    """rad_vet/compton: uniform gas out of equilibrium with the radiation, scattering only
+    (kappa_P = 1e-30), the Kompaneets exchange over 40 fixed steps, gas heated (T0 = 1,
+    T_r 3.16) and cooled (T0 = 100): eint against the exact backward-Euler recursion of
+    the same equation, T never past T_r, gas + E exact."""
+    out = {'err': [], 'dEtot': [], 'overshoot': []}
+    o = {'rad_vet/kappa_p': 1e-30, 'rad_vet/kappa_e': 1e-30, 'rad_vet/kappa_f': 0.0,
+         'rad_vet/kappa_s': 100.0, 'rad_vet/compton': 'true',
+         'rad_vet/temp_unit_kelvin': 2.67e9, 'time/tlim': 1.0e-5}
+    for tag, ei in (('heat', 1.5), ('cool', 150.0)):
+        d = c.run('thermal_eq.athinput', tag, dict(o, **{'problem/gas_eint': ei}))
+        p = vett.parse_deck_text(open(os.path.join(d, 'in.athinput')).read())
+        cl, ks = float(p['rad_vet']['c_light']), float(p['rad_vet']['kappa_s'])
+        ar, h = float(p['rad_vet']['arad']), float(p['time']['dt_fixed'])
+        rho, gm1 = float(p['problem']['gas_rho']), float(p['hydro']['gamma']) - 1.0
+        cc = 4.0*1.380649e-16*float(p['rad_vet']['temp_unit_kelvin'])/8.1871057769e-7
+        e, E = ei, float(p['problem']['e_rad'])
+        cool = e*gm1/rho > (E/ar)**0.25
+        tot, tr0, ex = e + E, (E/ar)**0.25, {0: e}
+        for n in range(200):   # the code's equation, bisected to round-off
+            lo, hi = (tr0*rho/gm1, e) if cool else (e, tr0*rho/gm1)
+            for _ in range(200):
+                m = 0.5*(lo + hi)
+                g = m - e + h*cl*rho*ks*cc*(E if cool else E + e - m)*(
+                    m*gm1/rho - ((E + e - m)/ar)**0.25)
+                lo, hi = (lo, m) if g > 0.0 else (m, hi)
+            E, e = E + e - hi, hi
+            ex[n + 1] = e
+        err = dev = over = 0.0
+        for fm, fh in list(zip(vett.bins(d, 'vet'), vett.bins(d, 'hydro_w')))[1:]:
+            m_, h_ = vett.read_bin(fm), vett.read_bin(fh)
+            eg, er = h_['eint'].mean(), m_['vet_e'].mean()
+            err = max(err, abs(eg/ex[h_['cycle']] - 1.0))
+            dev = max(dev, abs(eg + er - tot)/tot)
+            t, trr = eg*gm1/rho, (er/ar)**0.25
+            over = max(over, (trr - t)/trr if cool else (t - trr)/trr)
+        out['err'].append(float(err))
+        out['dEtot'].append(float(dev))
+        out['overshoot'].append(float(over))
+    return out
+
+
 # ---------------------------------------------------------------------------------------
 # well-balancing: a radiative hydrostatic envelope stays at rest
 
@@ -749,6 +791,7 @@ TESTS = [  # name, function, in --quick
     ('nlte_eps1e-1', t_nlte_eps1e_1, True),
     ('nlte_eps1e-4', t_nlte_eps1e_4, False),
     ('thermal_eq', t_thermal_eq, False),
+    ('compton', t_compton, False),
     ('wb_sp', t_wb_sp, True),
     ('wb_cs', t_wb_cs, False),
     ('momentum_box', t_momentum_box, True),

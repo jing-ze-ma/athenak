@@ -152,6 +152,14 @@
    "dEtot_h2": 1e-13
   }
  },
+ "compton": {
+  "_about": "rad_vet/compton, heat and cool arms: eint vs the exact backward-Euler recursion, gas + E, T past T_r",
+  "max": {
+   "err": 1e-10,
+   "dEtot": 1e-13,
+   "overshoot": 1e-12
+  }
+ },
  "wb_sp": {
   "max": {
    "vmax_over_cs": 1e-08,
