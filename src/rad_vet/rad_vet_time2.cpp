@@ -782,21 +782,6 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
       ai_(m,k,j,i) = v;
     });
   }
-  // (implicit_gas_src = conservative): the same increment of the stored
-  // cell F, from its slopes (the old vector of the write-back's F^old)
-  csinc_ok = false;
-  if (impl_gas_src_cons && csk1_ok && csk1.extent(0) == t2k1.extent(0)) {
-    auto ck1_ = csk1;
-    auto ck2_ = csk2;
-    auto ci_ = csinc;
-    par_for("vet_t2_csinc", DevExeSpace(), 0, nmb1, 0, 2, 0, n3-1, 0, n2-1, 0, n1-1,
-    KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-      Real v = c1*ck1_(m,n,k,j,i);
-      if (two) {v += c2*ck2_(m,n,k,j,i);}
-      ci_(m,n,k,j,i) = v;
-    });
-    csinc_ok = true;
-  }
   if (t2_ffct) {Time2FaceFct(stage, c1, c2);}   // step 1
   CleanBndAcc(stage, c1, c2, (stage == 1) ? 0.0 : (heun ? 0.5 : w0), dt);
   t2_solve = (stage == 1) ? M1_T2S_STAGE1 : M1_T2S_STAGE2;
@@ -1374,8 +1359,8 @@ void RadiationVet::EbndAccept(Real dt, bool t2step) {
 //! K1 where the cell is stiff (there the L-stable stages forget a stage-1 slope error and
 //! keep is second order; replacing all of K1 by a BE probe slope is what broke the stiff
 //! ladders).  Only the jump steps change, so an O(dt) error of the correction itself
-//! stays O(dt^2) globally.  The solve runs as a STAGE1 solve (its slope lands in t2k2 /
-//! csk2 and is copied to t2k1 / csk1); the predictor history is kept (implicit_predictor
+//! stays O(dt^2) globally.  The solve runs as a STAGE1 solve (its slope lands in t2k2
+//! and is copied to t2k1); the predictor history is kept (implicit_predictor
 //! is off for this solve); U^n is put back.  With vet_gd_rotate_slope_reuse the stage-1
 //! solve of the step keeps this solve's closure build (the same set, built by
 //! Time2VetColAt(1) at U^n + theta dt K1_old with the gas at U^n instead of after the
@@ -1403,7 +1388,7 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
     Kokkos::deep_copy(DevExeSpace(), fl.pm->b1.x2f, fl.pm->b0.x2f);
     Kokkos::deep_copy(DevExeSpace(), fl.pm->b1.x3f, fl.pm->b0.x3f);
   }
-  // the old vector U^n - dt_c K1 (every channel; the cell F of conservative2 too)
+  // the old vector U^n - dt_c K1 (every channel)
   {
     auto k1_ = t2k1;
     auto in_ = t2inc;
@@ -1417,18 +1402,7 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
       in_(m,n,k,j,i) = c*k1_(m,n,k,j,i);
     });
     cln_lzc = c*cln_lzs1;   // (clean_cs_lz_abs = 2)
-    csinc_ok = false;
-    if (impl_gas_src_cons && csk1_ok && csk1.extent(0) == t2k1.extent(0)) {
-      auto ck1_ = csk1;
-      auto ci_ = csinc;
-      par_for("vet_t2_rccs", DevExeSpace(), 0, nmb1, 0, 2, 0, n3-1, 0, n2-1, 0, n1-1,
-      KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-        ci_(m,n,k,j,i) = c*ck1_(m,n,k,j,i);
-      });
-      csinc_ok = true;
-    }
   }
-  const bool csok0 = csk1_ok;
   const bool pred_save = impl_pred;
   impl_pred = false;
   Mesh *pmesh = pmy_pack->pmesh;
@@ -1452,15 +1426,10 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
       Kokkos::deep_copy(DevExeSpace(), t2pf1, t2pf2);
       t2pf1_ok = t2pf2_ok;
     }
-    if (csok0 && impl_gas_src_cons && csk2.extent(0) == csk1.extent(0)) {
-      Kokkos::deep_copy(DevExeSpace(), csk1, csk2);
-    }
     vgd_rot_ncorr += 1.0;
   } else {
     vgd_rot_ncfail += 1.0;
   }
-  csk1_ok = csok0;
-  csinc_ok = false;
   // U^n back
   Kokkos::deep_copy(DevExeSpace(), u0, u1);
   Kokkos::deep_copy(DevExeSpace(), f0x1, t2f1);

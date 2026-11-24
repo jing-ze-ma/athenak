@@ -239,10 +239,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("ifw3", ifw3);
   v.value("impl_gas_src_cons", impl_gas_src_cons);
   v.view("csk1", csk1);
-  v.view("csk2", csk2);
-  v.view("csinc", csinc);
   v.value("csk1_ok", csk1_ok);
-  v.value("csinc_ok", csinc_ok);
   v.value("gcs_first", gcs_first);
   v.value("cs2_vnp", cs2_vnp);
   v.value("impl_solver", impl_solver);

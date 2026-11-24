@@ -909,9 +909,8 @@ class RadiationVet {
   // cell flux and Z_f the face's transport (and non-momentum-equation) part, written by
   // the face kernels of the solve (rad_vet_implicit.cpp, NOTE-consrc.md)
   bool impl_gas_src_cons = false;
-  DvceArray5D<Real> csk1, csk2, csinc;  // hesdirk2: slopes / increment of the cell F (3)
+  DvceArray5D<Real> csk1;               // hesdirk2: the slope of the cell F (3)
   bool csk1_ok = false;                 // csk1 holds the slope that pairs with t2k1
-  bool csinc_ok = false;                // csinc was formed for the coming stage solve
   bool gcs_first = true;                // the first conservative solve of this run
   // csk1 (+ csk1_ok, gcs_first) in the restart file (kM1CskRstMagic):
   // the header whenever a conservative solve has run, the 3 slabs when csk1 holds a slope
