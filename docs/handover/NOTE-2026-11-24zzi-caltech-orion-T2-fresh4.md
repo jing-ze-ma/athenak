@@ -29,3 +29,4 @@
 
 - bsg (11-24 11:30): at its first periodic rst (bsg3d.00002.rst) relaunched without DTREP (hydro/dt_report=0): `2026-11-24 11:28:13 chunk 1 STAR=bsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc4v_262affd6f md5=7d7c4a71a07d3dc3878e7dea1403df23 DECK=/resnick/groups/carnegie_poc/jingze/p`
 - m35mms (11-24 11:36): at its first periodic rst (m35mms.00002.rst) relaunched without DTREP (hydro/dt_report=0): `2026-11-24 11:34:00 chunk 1 STAR=m35mms BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc4v_262affd6f md5=7d7c4a71a07d3dc3878e7dea1403df23 DECK=/resnick/groups/carnegie_poc/jingz`
+- t9l62 (11-24 11:36): at its first periodic rst (t9l62.00002.rst) relaunched without DTREP (hydro/dt_report=0): `2026-11-24 11:34:39 chunk 1 STAR=t9l62 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc4v_262affd6f md5=7d7c4a71a07d3dc3878e7dea1403df23 DECK=/resnick/groups/carnegie_poc/jingze`
