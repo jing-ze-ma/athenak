@@ -4,10 +4,8 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_vetgd_sweep.cpp
-//! \brief RadiationVet::VetGdSweep (the vet_gd shell sweep and its shell-body kernels) in
-//! its own translation unit: rad_vet_vetgd.cpp compiled with M1_VGD_SWEEP_TU keeps its
-//! includes, its file-local helpers and this one function.  The sweep's kernels are the
-//! A100 build's longest nvcc/ptxas job; split off, the two halves build in parallel.
+//! \brief RadiationVet::VetGdSweep from rad_vet_vetgd.cpp (M1_VGD_SWEEP_TU); split off
+//! because its kernels are the longest nvcc/ptxas job, so the halves build in parallel.
 
 #define M1_VGD_SWEEP_TU
 #include "rad_vet_vetgd.cpp"
