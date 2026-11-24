@@ -1658,23 +1658,23 @@ void RadiationVet::VgdTabCompute(const Real alpha, const int nthr) {
   auto &mbs = pmy_pack->pmb->mb_size;
   const int jsg = vgd_w, ksg = vgd_w;   // the band-index origin of the active cells
   auto x2_h = [&](const int m, const int j) {
-    // a stretched theta / the full sphere: the node table (sph2.inc)
+    // stretched theta / full sphere: the node table (sph2.inc)
     if (vgd_sth) {return static_cast<Real>(vgd_thn_h[static_cast<size_t>(m)*c2 + j]);}
     return vgd_lg.ThH(mbs, m, j, jsg);
   };
-  // on the full sphere the rows beyond a pole are not a periodic image (the
-  // extended chart: the same point, same global directions): no theta wall
+  // full sphere: rows beyond a pole are the same points (extended chart), not a
+  // periodic image: no theta wall
   const bool thwrap = !vgd_pol;
   auto x3_h = [&](const int m, const int k) {
-    // vet_gd_band_global: the band column's phi from the GLOBAL index
+    // vet_gd_band_global: the band column's phi from the global index
     if (vgd_gband) {return static_cast<Real>(vgd_phc_h[static_cast<size_t>(m)*c3 + k]);}
     return vgd_lg.PhH(mbs, m, k, ksg);
   };
   const double t0 = pm->mesh_size.x2min, t1 = pm->mesh_size.x2max;
   const double p0 = pm->mesh_size.x3min, p1 = pm->mesh_size.x3max;
   int nwall = 0, nexact = 0, nmap = 0, nphx = 0;
-  // the (m, k) columns are independent: host threads over them (bitwise identical to
-  // the serial loop; each thread keeps its own counters)
+  // the (m, k) columns are independent: host threads over them (bitwise; per-thread
+  // counters)
   auto column = [&](const int m, const int k, int &nwall, int &nexact, int &nmap,
                     int &nphx) {
     {
@@ -1717,16 +1717,15 @@ void RadiationVet::VgdTabCompute(const Real alpha, const int nthr) {
             ++nphx;   // a phi-only image the set does not map onto itself
           }
           if (wint) {
-            // vet_gd_wall_interp: the exactly rotated direction M n_q from the 3 nearest
-            // set directions OF THE SAME BRANCH at the source cell (spherical
-            // barycentric weights when all >= 0, else inverse-angle), weights sum to 1;
-            // an exact match keeps the single direction (the phi period: bitwise)
+            // vet_gd_wall_interp: M n_q from the 3 nearest same-branch set directions at
+            // the source cell (barycentric when all >= 0, else inverse-angle, sum 1); an
+            // exact match keeps the single direction
             const double mt = nx*st*cp + ny*st*sp + nz*ct;   // target branch n.r_hat
             int r3[3] = {best, best, best};
             double w3[3] = {1.0, 0.0, 0.0};
             if (vgd_wsym && thw == th) {
-              // vet_gd_wall_sym, a phi wall: VgdMirPick, i.e. (M n_q on n_q's ring)
-              // linear in azimuth between its ring neighbours: positive, mirror-paired
+              // vet_gd_wall_sym, phi wall: VgdMirPick, linear in azimuth on n_q's ring
+              // (positive, mirror-paired)
               VgdMirPick(d, n, mx, my, mz, sw*cpw, sw*spw, cw, true, r3, w3, true);
             } else if (bd <= 1.0 - 1.0e-12) {
               double b3[3] = {-2.0, -2.0, -2.0};
@@ -1803,8 +1802,8 @@ void RadiationVet::VgdTabCompute(const Real alpha, const int nthr) {
       nphx += cnt[t][3];
     }
   }
-  // the branch of every stored value: n . r_hat of the direction actually stored at a
-  // lateral cell (the mapped one, at the source position, for a wall ghost)
+  // branch of every stored value: n . r_hat of the direction stored at a lateral cell
+  // (for a wall ghost the mapped one, at the source position)
   auto &mr_h = H.mr;
   for (int m = 0; m < nmb; ++m) {
     for (int k = 0; k < c3; ++k) {
@@ -1819,17 +1818,16 @@ void RadiationVet::VgdTabCompute(const Real alpha, const int nthr) {
         for (int q = 0; q < n; ++q) {
           const int r = mp_h(m,k,j,q);
           mr_h(m,k,j,q) = d[4*r]*st*cp + d[4*r+1]*st*sp + d[4*r+2]*ct;
-          // interpolated wall ghost: the branch of the TARGET direction (the sources
-          // were chosen on that branch)
+          // interpolated wall ghost: the branch of the target direction (sources were
+          // chosen on it)
           if (wint && w_h(m,k,j) != 0) {mr_h(m,k,j,q) = mt_h(m,k,j,q);}
         }
       }
     }
   }
   if (vgd_thmir) {
-    // vet_gd_theta_wall = mirror: the theta ghost rows (every column k,
-    // phi unwrapped: the mirrored read is then re-indexed at a phi wall as any read)
-    // read the mirror row; their direction tables and branch (the target's: the local
+    // vet_gd_theta_wall = mirror: theta ghost rows (every k, phi unwrapped) read the
+    // mirror row; their direction tables and branch (the target's: the local
     // reflection keeps n . r_hat)
     const int wb = vgd_w, nx2 = indcs.nx2;
     for (int m = 0; m < nmb; ++m) {
@@ -1840,7 +1838,7 @@ void RadiationVet::VgdTabCompute(const Real alpha, const int nthr) {
           for (int g = 0; g < wb; ++g) {
             const int j = (sd == 1) ? (wb + nx2 + g) : (wb - 1 - g);
             const int jm = VgdMirRow(g, sd == 1, wb, nx2);
-            const double sb = ((g/nx2) % 2 == 0) ? -1.0 : 1.0;   // (even: no flip)
+            const double sb = ((g/nx2) % 2 == 0) ? -1.0 : 1.0;   // even: no flip
             const double th = x2_h(m,j), thm = x2_h(m,jm);
             const double st = std::sin(th), ct = std::cos(th);
             const double sw = std::sin(thm), cw = std::cos(thm);
@@ -1851,15 +1849,15 @@ void RadiationVet::VgdTabCompute(const Real alpha, const int nthr) {
               const double a = nx*st*cp + ny*st*sp + nz*ct;
               const double b = nx*ct*cp + ny*ct*sp - nz*st;
               const double c = -nx*sp + ny*cp;
-              // (a, -b, c) in the mirror cell's frame ((a, b, c) after two reflections)
+              // (a, -b, c) in the mirror cell's frame
               const double mx = a*sw*cp + sb*b*cw*cp - c*sp;
               const double my = a*sw*sp + sb*b*cw*sp + c*cp;
               const double mz = a*cw - sb*b*sw;
               int r3[3];
               double w3[3];
               VgdMirPick(d, n, mx, my, mz, rx, ry, rz, wint, r3, w3);
-              // the theta ghost's own wall tables (flag 2 = mirror; its periodic maps
-              // are never read): one direction (map), or 3 with weights (wint)
+              // the theta ghost's own wall tables (flag 2 = mirror): one direction, or 3
+              // with weights (wint)
               mp_h(m,k,j,q) = r3[0];
               if (wint) {
                 for (int t = 0; t < 3; ++t) {
@@ -1867,9 +1865,8 @@ void RadiationVet::VgdTabCompute(const Real alpha, const int nthr) {
                   w3_h(m,k,j,q,t) = w3[t];
                 }
               }
-              // (without wint the branch of the value read: r3[0] in the mirror row,
-              // whose own map continues it across a phi wall; else that pass's other
-              // branch, not yet swept, would be read in a corner of the band)
+              // without wint the branch of the value read (r3[0] in the mirror row),
+              // else a band corner would read that pass's other, unswept branch
               mr_h(m,k,j,q) = wint ? a : mr_h(m,k,jm,r3[0]);
             }
           }
@@ -1878,12 +1875,9 @@ void RadiationVet::VgdTabCompute(const Real alpha, const int nthr) {
     }
   }
   if (vgd_thvac > 0) {
-    // vet_gd_theta_wall = vacuum (flag 3) / extrap (flag 4): the theta
-    // ghost rows beyond a physical wall (every column k).  Only the flag changes: the
-    // periodic direction maps and branches stay, for the twin (the laterally uniform
-    // shell state is continued beyond the wall, as the 1-D column the closure adds back;
-    // with vacuum in the twin too the wall would cancel in main - twin) and for the
-    // periodic halo reads the twin makes
+    // vet_gd_theta_wall = vacuum (flag 3) / extrap (flag 4): theta ghost rows beyond a
+    // physical wall; only the flag changes. The periodic maps stay for the twin (which
+    // continues the uniform shell state beyond the wall) and its periodic halo reads
     const int wb = vgd_w, nx2 = indcs.nx2;
     const int fl = (vgd_thvac == 1) ? 3 : 4;
     for (int m = 0; m < nmb; ++m) {
@@ -1907,8 +1901,8 @@ void RadiationVet::VgdTabCompute(const Real alpha, const int nthr) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VgdTabAlloc
-//! \brief the pinned host buffers of the tables (once, zero-filled) and,
-//! with dev, the second set of device tables the prefetch uploads into
+//! \brief pinned host buffers of the tables (once, zero-filled) and, with dev, the
+//! second set of device tables the prefetch uploads into
 
 void RadiationVet::VgdTabAlloc(const bool dev) {
   VgdTabHost &H = vgd_tabh;
@@ -1953,11 +1947,9 @@ void RadiationVet::VgdTabAlloc(const bool dev) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdTabPrefetch
-//! \brief vgdrot-1011: after the tables of the block of
-//! vet_gd_rotate_every cycles holding cycle cyc, the host part of the NEXT block's tables
-//! on a host thread (VgdTabCompute: the same function, so the same numbers); VetGdTabPoll
-//! uploads them into the second device set on their own device instance once ready, and
-//! VetGdTables at the next rotation swaps them in (no host work, no copy, at that point)
+//! \brief compute the next rotation block's tables on a host thread (VgdTabCompute,
+//! same numbers); VetGdTabPoll uploads them into the second device set, VetGdTables
+//! swaps them in at the next rotation
 
 void RadiationVet::VetGdTabPrefetch(const int cyc) {
   if (!VgdRotOn() || vgd_tab_state != 0 || vgd_xf) {return;}
@@ -1973,7 +1965,7 @@ void RadiationVet::VetGdTabPoll() {
   if (vgd_tabf.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {return;}
   vgd_tabf.get();
   // the second device set is not read by anything in flight (swapped out at the last
-  // rotation, every kernel since then fenced): upload on the table instance
+  // rotation, fenced since): upload on the table instance
   VgdTabHost &H = vgd_tabh;
   Kokkos::deep_copy(vgd_tex, vgd_tabd.dir, H.dir);
   Kokkos::deep_copy(vgd_tex, vgd_tabd.wall, H.w);
@@ -1988,12 +1980,11 @@ void RadiationVet::VetGdTabPoll() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdTables
-//! \brief the set rotated by alpha about z -> vgd_dir, the wall maps and branch tables
-//! (from the prefetched second device set when it holds alpha, else
-//! computed now into the pinned host buffers and copied)
+//! \brief the set rotated by alpha -> vgd_dir, wall maps and branch tables (from the
+//! prefetched device set when it holds alpha, else computed now and copied)
 
-// the angle of the direction tables now in vgd_dir/wall/map/mr/m3/w3 (NOT a
-// class member: the dt-retry checkpoint restores vgd_alpha but not these Views)
+// angle of the tables now in vgd_dir/wall/map/mr/m3/w3 (not a class member: the
+// dt-retry checkpoint restores vgd_alpha but not these Views)
 static Real g_vgd_tab_alpha = -9.0;
 
 void RadiationVet::VetGdTables(const Real alpha) {
@@ -2011,7 +2002,7 @@ void RadiationVet::VetGdTables(const Real alpha) {
     }
     vgd_tab_nswap += 1.0;
   } else {
-    if (vgd_tab_state == 1) {vgd_tabf.get();}     // (another angle: not used)
+    if (vgd_tab_state == 1) {vgd_tabf.get();}     // another angle: not used
     if (vgd_tab_state == 3) {vgd_tex.fence();}    // the host buffers are being read
     VgdTabAlloc(false);
     if (H.alpha != alpha) {VgdTabCompute(alpha, 16);}
@@ -2032,9 +2023,8 @@ void RadiationVet::VetGdTables(const Real alpha) {
              "band copies do not re-index directions)");
   }
   if (H.nphx > 0 && !vgd_wsym) {
-    // any set (S10 / LQ / GL, staggered or not, rotated or not): an interpolated or
-    // nearest-direction phi-wall map breaks the set's phi mirror symmetry (a net F_phi),
-    // unless vet_gd_wall_sym makes the phi-wall maps mirror-paired
+    // any set: an interpolated / nearest phi-wall map breaks the set's phi mirror
+    // symmetry (a net F_phi), unless vet_gd_wall_sym pairs the maps
     VgdFatal("phi-periodic wedge width W must be a multiple of the ray set's azimuthal "
              "period for exact wall maps (" + std::to_string(H.nphx) + " of " +
              std::to_string(nmap) + " phi-wall direction maps inexact); interpolated "
@@ -2042,7 +2032,7 @@ void RadiationVet::VetGdTables(const Real alpha) {
              "vet_gd_wall_interp)");
   }
   const bool first = (vgd_alpha < 0.0);
-  // (the compact global band's kept lists belong to a set: a new set remakes them)
+  // the compact global band's kept lists belong to a set: a new set remakes them
   if (alpha != vgd_alpha) {
     vgd_gbcf.clear();
     vgd_gbcb.clear();
@@ -2075,10 +2065,9 @@ void RadiationVet::VetGdTables(const Real alpha) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VgdXfTables
-//! \brief vgdxf-1112 (vet_gd_rotate_xfade): the tables of alpha into vgd_dir/...; the two
-//! sets of the cross-fade stay on the device (the current one and vgd_tabd, the prefetch
-//! set: prefetch is off with xfade) and are swapped, no host work; another angle swaps
-//! the current set out and makes the new one (VetGdTables, same numbers)
+//! \brief vet_gd_rotate_xfade: the tables of alpha into vgd_dir/...; both cross-fade
+//! sets stay on the device (current and vgd_tabd) and are swapped; another angle swaps
+//! the current set out and builds the new one (VetGdTables)
 
 void RadiationVet::VgdXfTables(const Real alpha) {
   if (alpha == vgd_alpha && g_vgd_tab_alpha == alpha) {return;}
@@ -2091,15 +2080,12 @@ void RadiationVet::VgdXfTables(const Real alpha) {
       std::swap(vgd_m3, vgd_tabd.m3);
       std::swap(vgd_w3, vgd_tabd.w3);
     }
-    // the exact halo lists (keyed by the set's angle, generation numbers
-    // unique over both) go with their set, so the two sets of the cross-fade do not
-    // rebuild each other's lists at every build (the same lists: bitwise).  Not on the
-    // cubed sphere (its compact lists have their own per-set slots; the band ring
-    // rewrites these records at every sweep)
-    // (and so do the compact global band's kept lists and their band records)
+    // the exact halo lists (and the global band's kept lists) go with their set, so
+    // the two sets do not rebuild each other's lists (bitwise). Not on the cubed sphere
+    // (own per-set slots)
     if (!vgd_csg) {std::swap(vgd_hxe, vgd_hxe_alt);}
     VgdGbSwap();
-    // the set's intensities and shell lists go with it too (keyed caches)
+    // the set's intensities and shell lists go with it (keyed caches)
     if (vgd_xff) {
       std::swap(vgd_i, vgd_i_xb);
       for (int p = 0; p < 2; ++p) {
@@ -2124,11 +2110,11 @@ void RadiationVet::VgdXfTables(const Real alpha) {
 }
 
 namespace {
-void VgdPackEvtRecord(const DevExeSpace &ex);   // (defined with VetGdHlBegin)
+void VgdPackEvtRecord(const DevExeSpace &ex);   // defined with VetGdHlBegin
 void VgdPackEvtWait(const DevExeSpace &ex);
 }  // namespace
 
-// the second, high-priority stream of the cubed sphere's early send (VgdEs2Make)
+// second, high-priority stream of the cubed sphere's early send (VgdEs2Make)
 namespace {
 #if defined(KOKKOS_ENABLE_HIP)
 DevExeSpace VgdPrioSpace() {
@@ -2153,10 +2139,9 @@ DevExeSpace VgdPrioSpace() {return DevExeSpace();}
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VgdXffSwap
-//! \brief swap the whole set context of the cross-fade (the tables, the
-//! angles, the exact halo lists, the intensities, the shell lists) without a fence: the
-//! handles only (a kernel in flight holds its own copies).  Used between the two halo
-//! exchanges of a fused sweep's shell when the merged message does not apply
+//! \brief swap the cross-fade's whole set context (tables, angles, exact lists,
+//! intensities, shell lists) without a fence (handles only); between the two halo
+//! exchanges of a fused shell when the merged message does not apply
 
 void RadiationVet::VgdXffSwap() {
   std::swap(vgd_dir, vgd_tabd.dir);
@@ -2192,8 +2177,8 @@ void RadiationVet::VgdEs2Make() {
 
 //----------------------------------------------------------------------------------------
 //! \fn bool RadiationVet::VetGdXffOk
-//! \brief the fused two-set sweep covers this configuration (the same answer
-//! on every rank: keys and the halo setup only).  Otherwise the two sweeps run
+//! \brief does the fused two-set sweep cover this configuration (same answer on every
+//! rank)? Otherwise the two sweeps run
 
 bool RadiationVet::VetGdXffOk() {
   if (!vgd_xff || !vgd_xf) {return false;}
@@ -2204,8 +2189,8 @@ bool RadiationVet::VetGdXffOk() {
   if (vgd_gband && !vgd_raw) {
     return false;
   }
-  // (the IPC halo: one set per exchange; the raw band's merged one, VetGdGbHaloX;
-  // CUDA lean, VetGdHlXff's IPC form, without the early send)
+  // IPC halo: one set per exchange (raw band: VetGdGbHaloX; CUDA lean: VetGdHlXff's
+  // IPC form, no early send)
 #if !defined(KOKKOS_ENABLE_CUDA)
   if (vgd_ipc_state == 1 && !vgd_raw) {return false;}
 #endif
@@ -2215,12 +2200,9 @@ bool RadiationVet::VetGdXffOk() {
 
 //----------------------------------------------------------------------------------------
 //! \fn bool RadiationVet::VetGdHlXff
-//! \brief the exchange of shell i (pass vgd_hinw, depth ws) for both sets of
-//! the fused sweep in ONE message per partner: the current set's exact-list values of
-//! partner p, then the other set's (send / receive layouts: piece p = [A_p, B_p]).  The
-//! same values reach the same band cells as the two exact-list exchanges (VetGdHlBegin /
-//! VetGdHlEnd, MPI path), bitwise.  false (nothing done) unless both sets hold exact
-//! records of this exchange.
+//! \brief exchange of shell i (pass vgd_hinw, depth ws) for both fused sets in one
+//! message per partner (piece p = [A_p, B_p]); bitwise the two exact-list exchanges.
+//! false (nothing done) unless both sets hold exact records of this exchange.
 
 bool RadiationVet::VetGdHlXff(const int i, const int ws) {
 #if MPI_PARALLEL_ENABLED
@@ -2255,7 +2237,7 @@ bool RadiationVet::VetGdHlXff(const int i, const int ws) {
       static_cast<int>(XB.rp.size()) != np + 1) {
     return false;
   }
-  // the merged layouts: piece p at so[p] (send) / ro[p] (receive), A's part first
+  // merged layouts: piece p at so[p] (send) / ro[p] (receive), A first
   std::vector<int> so(np + 1), ro(np + 1);
   VgdIpcIdx sa{}, sb{}, ra{}, rb{}, sm{}, rm{};
   for (int p = 0; p <= np; ++p) {
@@ -2281,10 +2263,9 @@ bool RadiationVet::VetGdHlXff(const int i, const int ws) {
   const int nsA = XA.ns, nsB = XB.ns;
   const int npk = np;
 #if defined(KOKKOS_ENABLE_CUDA)
-  // the IPC form (CUDA, lean; no early send): one kernel packs both sets' kept
-  // values of partner p straight into its receive buffer (A at its list's offset, B at
-  // the second array's, as the twin), the last team sets the partners' flags, every team
-  // waits for mine and scatters both sets (the m1_vgd_xff_scatter numbers: bitwise)
+  // IPC form (CUDA lean, no early send): one kernel packs both sets' kept values of
+  // partner p into its receive buffer, the last team sets the partners' flags, every
+  // team waits for mine and scatters both sets (bitwise m1_vgd_xff_scatter)
   if (vgd_ipc_state == 1 &&
       vgd_rg_pend.empty() && static_cast<int>(XA.dsto.size()) == np &&
       static_cast<int>(XB.dsto.size()) == np) {
@@ -2418,8 +2399,7 @@ bool RadiationVet::VetGdHlXff(const int i, const int ws) {
       sbuf_(pos) = b ? aB_(m,v,kb,jb,i) : aA_(m,v,kb,jb,i);
     });
   }
-  // (the band-ring copies of other shells between the pack and the scatter, as in
-  // VetGdHlBegin)
+  // band-ring copies of other shells go between pack and scatter (as VetGdHlBegin)
   VgdPackEvtRecord(vgd_cur);
   VetGdRingFlush();
   VgdPackEvtWait(vgd_cur);
@@ -2447,7 +2427,7 @@ bool RadiationVet::VetGdHlXff(const int i, const int ws) {
     }
     vgd_nbyte += static_cast<Real>(so[p+1] - so[p])*sizeof(Real);
   }
-  // the scatter of both sets (A's entries, then B's), as VetGdHlEnd per set
+  // scatter both sets (A, then B), as VetGdHlEnd per set
   const int nrA = XA.nr, nwA = XA.nw, nrB = XB.nr, nwB = XB.nw;
   const int nA = nrA + nwA, nB = nrB + nwB;
   if (nA + nB > 0) {
@@ -2467,7 +2447,7 @@ bool RadiationVet::VetGdHlXff(const int i, const int ws) {
       const int c = b ? (c0 - nA) : c0;
       const int nr = b ? nrB : nrA;
       const VgdIpcIdx &rx = b ? rb : ra;
-      // the merged receive position of compact source s of this set
+      // merged receive position of compact source s of this set
       auto at = [&](const int s) -> int {
         int p = 0;
         while (p + 1 < npk && rx.v[p+1] <= s) {++p;}
@@ -2506,7 +2486,7 @@ bool RadiationVet::VetGdHlXff(const int i, const int ws) {
   }
   vgd_hl_nuse += 2.0;
   vgd_xff_nmsg += 1.0;
-  vgd_rg_lastx = true;   // the band of this exchange by (both sets') lists
+  vgd_rg_lastx = true;   // the band of this exchange came from both sets' lists
   vgd_rg_lastx_e = ex;
   return true;
 #else
@@ -2519,8 +2499,8 @@ bool RadiationVet::VetGdHlXff(const int i, const int ws) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdHaloInit
-//! \brief the 8 lateral neighbour slots of every local MeshBlock (same x1 level, uniform
-//! level; theta and phi periodic: the wrap of the logical location), message buffers
+//! \brief the 8 lateral neighbour slots of every local MeshBlock (same x1 level; theta
+//! and phi periodic by wrapping the logical location) and the message buffers
 
 void RadiationVet::VetGdHaloInit() {
   Mesh *pm = pmy_pack->pmesh;
@@ -2557,8 +2537,8 @@ void RadiationVet::VetGdHaloInit() {
     }
     Kokkos::deep_copy(vgd_lxy, lx_h);
   }
-  // (full sphere): a slot beyond a pole takes the pole partner (lx2, lx3 + dk
-  // + nb3/2), rows reversed (vgd_hpol 1 north, 2 south; 0 everywhere else)
+  // full sphere: a slot beyond a pole takes the pole partner (lx2, lx3 + dk + nb3/2),
+  // rows reversed (vgd_hpol 1 north, 2 south, else 0)
   if (vgd_pol && (nb3 % 2 != 0)) {
     VgdFatal("the full sphere needs an EVEN number of MeshBlocks in phi (pole partners)");
   }
@@ -2588,24 +2568,23 @@ void RadiationVet::VetGdHaloInit() {
   }
   Kokkos::deep_copy(vgd_hloc, hl_h);
   Kokkos::deep_copy(vgd_hpol, hp_h);
-  // the largest region (an edge slot: nx x W) times the most variables per message
-  // (all directions of one shell, or ln chi and ln S of every shell)
+  // the largest region (edge slot: nx x W) times the most variables per message
   const int c1 = indcs.nx1 + 2*indcs.ng;
   const int nreg = std::max(indcs.nx2, indcs.nx3)*vgd_w;
-  // one shell of all directions (the multi-shell ln chi, ln S exchange is
-  // chunked to fit, VetGdHaloCs); was nreg*max(vgd_n, 2*c1)
+  // one shell of all directions (the multi-shell ln chi, ln S exchange is chunked to
+  // fit, VetGdHaloCs)
   (void) c1;
   vgd_maxcnt = nreg*std::max(vgd_n, 2);
   if (vgd_hmpi) {
     Kokkos::realloc(vgd_sbuf, static_cast<size_t>(nmb)*8*vgd_maxcnt);
     Kokkos::realloc(vgd_rbuf, static_cast<size_t>(nmb)*8*vgd_maxcnt);
-    // the message plan: pieces sorted by (rank, receiver block, receiver slot) on both
-    // sides; sizes per piece kn*jn with kn, jn in {nx, ws}
+    // message plan: pieces sorted by (rank, receiver block, receiver slot) on both
+    // sides; piece size kn*jn with kn, jn in {nx, ws}
     std::vector<std::array<int, 4>> ps, pr;
     for (int m = 0; m < nmb; ++m) {
       for (int o = 0; o < 8; ++o) {
         if (hl_h(8*m + o) >= 0) {continue;}
-        // the receiver's slot that points back here: the opposite one, or across a pole
+        // the receiver's slot pointing back here: the opposite one, or across a pole
         // the one with the same theta side and the opposite phi side
         int orc = 7 - o;
         if (hp_h(8*m + o) != 0) {
@@ -2651,8 +2630,7 @@ void RadiationVet::VetGdHaloInit() {
           }
           const int o = x[3] % 8;
           ((side == 0) ? so_h : ro_h)(ws, x[3]) = off;
-          // the piece size: the receiver's slot (7 - o on the send side is the same
-          // shape as my slot o)
+          // piece size: the receiver's slot 7 - o has the shape of my slot o
           off += sz(o, ws);
           ((side == 0) ? vgd_pscnt : vgd_prcnt)[ws][p] += sz(o, ws);
         }
@@ -2686,14 +2664,13 @@ void RadiationVet::VetGdHaloInit() {
       vgd_r1f.assign(x1f_h.extent(1), 0.0);
       for (size_t q = 0; q < vgd_r1v.size(); ++q) {vgd_r1v[q] = x1v_h(0,q);}
       for (size_t q = 0; q < vgd_r1f.size(); ++q) {vgd_r1f[q] = x1f_h(0,q);}
-      // exact per-shell sizes (ni = 1, nv = vgd_n) at the deepest band: the sums of the
-      // remote pieces (the dense sbuf / rbuf also carry the multi-shell ln chi, ln S
-      // exchange; these buffers do not)
+      // exact per-shell sizes (ni = 1, nv = vgd_n) at the deepest band: sums of the
+      // remote pieces (only the dense sbuf / rbuf carry the multi-shell exchange)
       const size_t ns = static_cast<size_t>(pb_h(vgd_w,npp))*vgd_n;
       const size_t nr = static_cast<size_t>(pb_h(vgd_w,2*npp + 1))*vgd_n;
       Kokkos::realloc(vgd_csb, std::max<size_t>(ns, 1));
       Kokkos::realloc(vgd_crb, std::max<size_t>(nr, 1));
-      // the mask slots: this shell's and the next one's
+      // mask slots: this shell's and the next one's
       for (int sl = 0; sl < 2; ++sl) {
         Kokkos::realloc(vgd_hfs[sl], ns + 1);
         Kokkos::realloc(vgd_hfr[sl], nr + 1);
@@ -2704,20 +2681,18 @@ void RadiationVet::VetGdHaloInit() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdHalo
-//! \brief fill the lateral band (vgd_w cells) of a band-index array a(m, v, k, j, i),
-//! variables [0, nv), shells i in [i0, i1], from the 8 lateral neighbours' interiors:
-//! a local neighbour is copied directly (it reads only interiors, it writes only bands:
-//! no race), a remote one by one message per (block, slot).  vgd_raw: the global-cell
-//! lists, unmapped; the intensities (mapd) only from remote owners
+//! \brief fill the lateral band (vgd_w cells) of a(m, v, k, j, i), v in [0, nv), i in
+//! [i0, i1], from the 8 lateral neighbours' interiors: local ones copied directly (read
+//! interiors, write bands: no race), remote ones by one message per (block, slot).
+//! vgd_raw: global-cell lists, unmapped; intensities (mapd) only from remote owners
 
 template <class V>
 void RadiationVet::VetGdHalo(V &a, const int nv, const int i0, const int i1, const int ws,
                              const bool mapd) {
-  // vet_gd_band_global: every band position within depth ws from its
-  // owner's interior (global-cell lists, rad_vet_vetgd_sph2.inc); the full sphere has no
-  // direction re-indexing at its walls (checked in VgdTabCompute)
+  // vet_gd_band_global: every band position within depth ws from its owner's interior
+  // (global-cell lists, sph2.inc); no direction re-indexing at the full sphere's walls
   if (vgd_gband || vgd_raw) {
-    // G1: the compact per-shell exchange of the global band
+    // compact per-shell exchange of the global band
     if (mapd && vgd_gbc && i1 == i0 && nv == vgd_n) {
       VetGdGbHaloC(a, i0, ws);
       return;
@@ -2739,9 +2714,8 @@ void RadiationVet::VetGdHalo(V &a, const int nv, const int i0, const int i1, con
   auto m3_ = vgd_m3;
   auto w3_ = vgd_w3;
   // region of slot o along one direction d = -1, 0, +1 with depth ws: (dest start, len,
-  // neighbour source start) = (w - ws, ws, w + nx - ws), (w, nx, w), (w + nx, ws, w);
-  // wall ghosts (mapd) take direction mp(v) of the source: the wall re-indexing folded
-  // into the copy (new(d) = old(map(d)))
+  // source start) = (w - ws, ws, w + nx - ws), (w, nx, w), (w + nx, ws, w); wall
+  // ghosts (mapd) take direction mp(v) of the source (new(d) = old(map(d)))
   const bool mpi = vgd_hmpi;
   if (mapd && !mpi) {return;}
   auto sb_ = vgd_sbuf;
@@ -2749,7 +2723,7 @@ void RadiationVet::VetGdHalo(V &a, const int nv, const int i0, const int i1, con
   auto ro_ = vgd_roff;
   const int nvi = nv*ni;
   const bool hcomp = mapd && (vgd_hcomp > 0) && (ni == 1);
-  // true when the list path of the compact halo wrote the band itself
+  // true when the compact halo's list path wrote the band itself
   bool done = false;
   if (hcomp) {done = VetGdHaloCompact(a, nv, i0, ws);}
   if (!hcomp) {
@@ -2775,15 +2749,14 @@ void RadiationVet::VetGdHalo(V &a, const int nv, const int i0, const int i1, con
       const int jd = (dj < 0) ? (w - ws) : ((dj == 0) ? w : (w + nx2));
       const int kd = (dk < 0) ? (w - ws) : ((dk == 0) ? w : (w + nx3));
       const int js_ = (dj < 0) ? (w + nx2 - ws) : w;
-      // (nx3 = 1, axisymmetric: every phi band column is a copy of the one column)
+      // nx3 = 1: every phi band column is a copy of the one column
       const int ks_ = (nx3 == 1) ? w : (((dk < 0) ? (w + nx3 - ws) : w) + kk);
       const int vs = (mapd && wl_(m,kd+kk,jd+jj) != 0) ? mp_(m,kd+kk,jd+jj,v) : v;
       const int jsrc = (pl != 0) ? VgdPoleRow(jd + jj, w, nx2) : (js_ + jj);
       a_(m,v,kd+kk,jd+jj,i) = a_(nl,vs,ks_,jsrc,i);
     } else if (mpi) {
-      // my interior that the remote neighbour needs in ITS opposite slot (across a pole:
-      // the receiver's band row w - ws + jj (north) / w + nx2 + jj (south) is my row
-      // reversed about the pole)
+      // my interior that the remote neighbour needs in its opposite slot (across a
+      // pole: my rows reversed)
       const int js2 = (dj > 0) ? (w + nx2 - ws) : w;
       const int ks2 = (nx3 == 1) ? w : (((dk > 0) ? (w + nx3 - ws) : w) + kk);
       const int jsrc = (pl == 0) ? (js2 + jj)
@@ -2857,9 +2830,8 @@ void RadiationVet::VetGdHalo(V &a, const int nv, const int i0, const int i1, con
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdHaloCs
-//! \brief VetGdHalo of the 2 source fields (ln chi, ln S) over shells [i0, i1]
-//! at the full band depth, in chunks of shells whose messages fit vgd_maxcnt per slot
-//! (each value is copied exactly as by the one-call exchange: bitwise)
+//! \brief VetGdHalo of ln chi, ln S over shells [i0, i1] at full band depth, in chunks
+//! that fit vgd_maxcnt per slot (bitwise the one-call exchange)
 
 void RadiationVet::VetGdHaloCs(DvceArray5D<Real> &a, const int i0, const int i1) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -2874,9 +2846,8 @@ void RadiationVet::VetGdHaloCs(DvceArray5D<Real> &a, const int i0, const int i1)
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdThVacCs
-//! \brief wallbug-1027 vet_gd_theta_wall = vacuum / extrap: ln chi, ln S of the theta
-//! ghost rows beyond a physical wall (flags 3, 4; every band column, after the exchange
-//! filled the phi band) = the edge row's (zero gradient)
+//! \brief vet_gd_theta_wall = vacuum / extrap: ln chi, ln S of the theta ghost rows
+//! beyond a physical wall (flags 3, 4) = the edge row's (zero gradient)
 
 void RadiationVet::VetGdThVacCs(DvceArray5D<Real> &a, const int i0, const int i1) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -2895,7 +2866,7 @@ void RadiationVet::VetGdThVacCs(DvceArray5D<Real> &a, const int i0, const int i1
     const int g = (s < wb) ? s : (s - wb);
     const int j = (s < wb) ? (wb - 1 - g) : (wb + nx2 + g);
     if (wl_(m,k,j) < 3) {return;}
-    // the band row next to the wall (the block's own edge row with one theta MeshBlock)
+    // the band row next to the wall (the block's edge row with one theta MeshBlock)
     int je = (s < wb) ? static_cast<int>(lg_.Jw(mbsize, m, wb, t0))
                       : (static_cast<int>(lg_.Jw(mbsize, m, wb, t1)) - 1);
     je = (je < 0) ? 0 : ((je > c2 - 1) ? (c2 - 1) : je);
@@ -2905,8 +2876,8 @@ void RadiationVet::VetGdThVacCs(DvceArray5D<Real> &a, const int i0, const int i1
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdThMirCs
-//! \brief wallbug-1027 vet_gd_theta_wall = mirror: ln chi, ln S of the theta ghost rows
-//! (every band column, after the exchange filled the phi band) = their mirror rows
+//! \brief vet_gd_theta_wall = mirror: ln chi, ln S of the theta ghost rows = their
+//! mirror rows (after the exchange filled the phi band)
 
 void RadiationVet::VetGdThMirCs(DvceArray5D<Real> &a, const int i0, const int i1) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -2925,17 +2896,14 @@ void RadiationVet::VetGdThMirCs(DvceArray5D<Real> &a, const int i0, const int i1
 
 //----------------------------------------------------------------------------------------
 //! \fn KOKKOS_INLINE_FUNCTION bool VgdHaloKeep
-//! \brief vet_gd_halo_compact: is the value of direction u at the source cell (global
-//! lateral indices gj, gk) at receiver band depth dep needed by the reads of shell s's
-//! data in this pass?  Computed from GLOBAL indices only, so sender and receiver agree
-//! bitwise.  mode 1: the pass's branch (n.r < 0 inward, >= 0 outward; |n.r| < 1e-12
-//! kept); mode 2: + the ray's lateral reach (closed form in p = r sin(psi), psi widened
-//! by gam for the source-cell/upwind-point offset) >= dep - 3 cells.  wall: branch only.
+//! \brief vet_gd_halo_compact: is direction u at source cell (global gj, gk) at band
+//! depth dep needed by the reads of shell s in this pass? Global indices only, so
+//! sender and receiver agree bitwise. mode 1: the pass's branch (|n.r| < 1e-12 kept);
+//! mode 2: also the ray's lateral reach >= dep - 3 cells. wall: branch only.
 
 namespace {
-// G1: the keep test at a given source-cell position (theta, phi): shared by
-// the uniform slot halo (VgdHaloKeep, the index formula) and the global band of the full
-// sphere / stretched theta (VetGdGbHaloC, the node table)
+// the keep test at a source-cell position (theta, phi): shared by the uniform slot halo
+// (VgdHaloKeep) and the global band (VetGdGbHaloC, node table)
 KOKKOS_INLINE_FUNCTION
 bool VgdHaloKeepTP(const Real nx, const Real ny, const Real nz, const Real th,
                    const Real ph, const bool inw, const int mode, const bool wall,
@@ -2946,8 +2914,8 @@ bool VgdHaloKeepTP(const Real nx, const Real ny, const Real nz, const Real th,
   if (fabs(mu) < 1.0e-12) {return true;}
   if (inw != (mu < 0.0)) {return false;}
   if (mode < 2 || wall) {return true;}
-  // (the reader is up to dep cells from the source cell: its psi differs by up to that
-  // separation; gam = 2 cell widths)
+  // the reader is up to dep cells from the source cell (psi differs by up to that;
+  // gam = 2 cell widths)
   const Real psi = acos(fmin(fabs(mu), 1.0)), gw = 0.5*gam*(dep + 2);
   const Real phi_ = fmin(psi + gw, 0.5*M_PI), plo_ = fmax(psi - gw, 0.0);
   const Real ph_ = rs*sin(phi_), pl_ = rs*sin(plo_);
@@ -2964,7 +2932,7 @@ bool VgdHaloKeepTP(const Real nx, const Real ny, const Real nz, const Real th,
     const Real pp = fmin(ph_, rs);
     dl = fmax(dl, asin(fmin(pp/rs, 1.0)) - asin(fmin(pp/rp, 1.0)));
   }
-  // (the read point is up to dl from the cell centre: up to ceil(dl/dmin) cells away)
+  // the read point is up to dl from the cell centre: up to ceil(dl/dmin) cells away
   return dep <= static_cast<int>(ceil(dl/dmin)) + 3;
 }
 
@@ -2981,12 +2949,9 @@ bool VgdHaloKeep(const Real nx, const Real ny, const Real nz, const int gj, cons
 } // namespace
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::VetGdHaloCompact
-//! \brief vet_gd_halo_compact = 1, 2: the per-shell MPI halo with only the needed values
-//! (VgdHaloKeep) in the messages: flags on the dense layout of both sides, exclusive
-//! scans, compact pack, MPI, expansion to the dense layout (unsent entries 0: never
-//! read), then the dense unpack as before.
-//! Bitwise.
+//! \fn void RadiationVet::VetGdHcPrep
+//! \brief vet_gd_halo_compact = 1, 2: the keep masks of (shell, pass, depth) on the
+//! dense layouts of both sides (VgdHaloKeep), their scans and partner bounds
 void RadiationVet::VetGdHcPrep(const int slot, const int i0, const bool inw0,
                                const int ws) {
 #if MPI_PARALLEL_ENABLED
@@ -3000,8 +2965,7 @@ void RadiationVet::VetGdHcPrep(const int slot, const int i0, const bool inw0,
   const bool inw = inw0;
   const int mode = vgd_hcomp;
   const int nb2 = vgd_nb2, nb3 = vgd_nb3;
-  // (mirror, extrap theta walls: rows within ws of a wall keep their branch;
-  // gj global, the mesh's nx2)
+  // mirror / extrap theta walls: rows within ws of a wall keep their branch (gj global)
   const bool thm = vgd_thmir || (vgd_thvac == 2);
   const int nx2m = pm->mesh_indcs.nx2;
   const Real t0 = pm->mesh_size.x2min, p0 = pm->mesh_size.x3min;
@@ -3044,7 +3008,7 @@ void RadiationVet::VetGdHcPrep(const int slot, const int i0, const bool inw0,
     const int lx2 = lx_(m,0), lx3 = lx_(m,1);
     const Real nx = dir_(v,0), ny = dir_(v,1), nz = dir_(v,2);
     {
-      // SEND (my slot o, receiver slot direction -dj, -dk)
+      // send (my slot o, receiver slot direction -dj, -dk)
       const int js2 = (dj > 0) ? (w + nx2 - ws) : w;
       const int ks2 = (dk > 0) ? (w + nx3 - ws) : w;
       const int gj = lx2*nx2 + (js2 + jj - w), gk = lx3*nx3 + (ks2 + kk - w);
@@ -3052,8 +3016,8 @@ void RadiationVet::VetGdHcPrep(const int slot, const int i0, const bool inw0,
       const int dpj = (rdj < 0) ? (ws - jj) : ((rdj > 0) ? (jj + 1) : 0);
       const int dpk = (rdk < 0) ? (ws - kk) : ((rdk > 0) ? (kk + 1) : 0);
       const int lr2 = (lx2 + dj + nb2) % nb2, lr3 = (lx3 + dk + nb3) % nb3;
-      // (mirror theta walls): the rows within ws of a wall are read by
-      // mirrored rays too; keep their whole branch (both sides decide from gj alone)
+      // mirror theta walls: rows within ws of a wall are read by mirrored rays too;
+      // keep their whole branch (decided from gj alone)
       const bool wall = (lr2 + rdj < 0) || (lr2 + rdj >= nb2) || (lr3 + rdk < 0)
                         || (lr3 + rdk >= nb3) || (thm && (gj < ws || gj >= nx2m - ws));
       fs_(static_cast<size_t>(so_(ws,8*m + o))*nvi + t) =
@@ -3061,7 +3025,7 @@ void RadiationVet::VetGdHcPrep(const int slot, const int i0, const bool inw0,
                     (dpj > dpk) ? dpj : dpk, rs, rm, rp, hasm, hasp, gam, dmin) ? 1 : 0;
     }
     {
-      // RECEIVE (my slot o): the source cell in the neighbour, global indices
+      // receive (my slot o): the source cell in the neighbour, global indices
       const int js_ = (dj < 0) ? (w + nx2 - ws) : w;
       const int ks_ = (dk < 0) ? (w + nx3 - ws) : w;
       const int ln2 = (lx2 + dj + nb2) % nb2, ln3 = (lx3 + dk + nb3) % nb3;
@@ -3075,14 +3039,12 @@ void RadiationVet::VetGdHcPrep(const int slot, const int i0, const bool inw0,
                     (dpj > dpk) ? dpj : dpk, rs, rm, rp, hasm, hasp, gam, dmin) ? 1 : 0;
     }
   });
-  // (2) exclusive scans (in place: flag -> position; the total at index n)
-  // keep the flags: pack/expand need flag AND position -> flag = pos(q+1) - pos(q)
-  // both scans in one launch (two 32-bit counts in one 64-bit sum: exact,
-  // the same positions)
+  // (2) exclusive scans in place (flag -> position, total at n); flag = pos(q+1) -
+  // pos(q); both in one launch (two 32-bit counts in one 64-bit sum)
   VgdScan2(vgd_cur, vgd_hfs[slot], stot, vgd_hfr[slot], rtot, "vet_vgd_hc_scan2",
            vgd_scan_sums);
-  // (3) the scan values at the partner boundaries, written straight into pinned host
-  // memory (read by the host after the exchange's fence; no copy, no sync here)
+  // (3) scan values at the partner boundaries, straight into pinned host memory (read
+  // after the exchange's fence)
   const int np = static_cast<int>(vgd_prk.size());
   {
     auto pbd_ = vgd_pbd;
@@ -3104,15 +3066,12 @@ void RadiationVet::VetGdHcPrep(const int slot, const int i0, const bool inw0,
 
 //----------------------------------------------------------------------------------------
 //! \fn bool RadiationVet::VetGdHlBuild
-//! \brief vet_gd_halo_list_mb: entry e (pass inw, shell i, depth ws)
-//! made from the compact masks fs / fr (flag -> position after the exclusive scans) and
-//! the partner bounds pbh (send np + 1, receive np + 1):
-//!   sl(c)  the band address (m, v, k, j) of the c-th sent value (the compact pack),
-//!   dl, sr the band address of every receiver ghost value with its source sent, and the
-//!          compact position of that source (the expansion + dense unpack composed),
-//!   dw, sw the same for wall ghosts of vet_gd_wall_interp (3 sources, -1 = unsent).
-//! Address = ((m nv + v) c3 + k) c2 + j in the band index space of depth vgd_w.  False
-//! (entry invalid) when the byte budget is used up.
+//! \brief vet_gd_halo_list_mb: entry e (pass inw, shell i, depth ws) from the compact
+//! masks fs / fr and partner bounds pbh:
+//!   sl     band address (m, v, k, j) of the c-th sent value,
+//!   dl, sr band address of every receiver ghost with a sent source, and its position,
+//!   dw, sw the same for vet_gd_wall_interp wall ghosts (3 sources, -1 = unsent).
+//! Address = ((m nv + v) c3 + k) c2 + j at depth vgd_w. False when over the budget.
 
 bool RadiationVet::VetGdHlBuild(const int e, const int i, const bool inw, const int ws,
                                 const DvceArray1D<int> &fs, const DvceArray1D<int> &fr,
@@ -3145,7 +3104,7 @@ bool RadiationVet::VetGdHlBuild(const int e, const int i, const bool inw, const 
   auto fr_ = fr;
   auto fn_ = vgd_hl_fn;
   auto fw_ = vgd_hl_fw;
-  // (1) the receiver ghosts that the dense unpack fills from at least one sent value
+  // (1) receiver ghosts that the dense unpack fills from at least one sent value
   par_for("vet_vgd_hl_dflag", vgd_cur, 0, nmb1, 0, 7, 0, mx - 1,
   KOKKOS_LAMBDA(const int m, const int o, const int t) {
     if (hl_(8*m + o) >= 0) {return;}
@@ -3189,7 +3148,7 @@ bool RadiationVet::VetGdHlBuild(const int e, const int i, const bool inw, const 
   }
   const int ns = pbh[np] - pbh[0];
   const int nr = nrw[0], nw = nrw[1];
-  // every array at least its new size (capacity kept); the budget on the sum
+  // every array at least its new size (capacity kept); budget on the sum
   const size_t nsz[5] = {static_cast<size_t>(std::max(ns, 1)),
                          static_cast<size_t>(std::max(nr, 1)),
                          static_cast<size_t>(std::max(nr, 1)),
@@ -3202,8 +3161,8 @@ bool RadiationVet::VetGdHlBuild(const int e, const int i, const bool inw, const 
     after += std::max(arr[q]->extent(0), nsz[q]);
   }
   if (after > have) {
-    // the budget: vet_gd_halo_list_mb, capped on a GPU at half the device memory free
-    // at the first build (room for the restart-write temporaries and the rest)
+    // budget: vet_gd_halo_list_mb, capped on a GPU at half the device memory free at
+    // the first build
     if (vgd_hl_cap == 0) {
       vgd_hl_cap = static_cast<size_t>(vgd_hl_mb) << 20;
       size_t fr = 0, tt = 0;
@@ -3221,7 +3180,7 @@ bool RadiationVet::VetGdHlBuild(const int e, const int i, const bool inw, const 
     }
     const size_t cap = vgd_hl_cap;
     if (vgd_hl_bytes + sizeof(int)*(after - have) > cap) {
-      // over the budget: no new attempt for this mask set (the dense path as before)
+      // over the budget: no new attempt for this mask set (dense path)
       E.alpha = vgd_alpha;
       E.scut = vgd_scut;
       E.ws = ws;
@@ -3238,7 +3197,7 @@ bool RadiationVet::VetGdHlBuild(const int e, const int i, const bool inw, const 
   auto sr_ = E.sr;
   auto dw_ = E.dw;
   auto sw_ = E.sw;
-  // (2) the send list (the compact pack's addresses)
+  // (2) the send list (compact pack addresses)
   par_for("vet_vgd_hl_slist", vgd_cur, 0, nmb1, 0, 7, 0, mx - 1,
   KOKKOS_LAMBDA(const int m, const int o, const int t) {
     if (hl_(8*m + o) >= 0) {return;}
@@ -3307,26 +3266,17 @@ bool RadiationVet::VetGdHlBuild(const int e, const int i, const bool inw, const 
 
 //----------------------------------------------------------------------------------------
 //! \fn bool RadiationVet::VetGdHaloCompact
-//! \brief the exchange of one shell: the mask of (shell, pass, depth) from VetGdHcPrep
-//! (prepared during the previous shell's MPI wait, else now), compact pack, MPI,
-//! expansion; then the next shell's mask is queued before the wait.  Bitwise the
-//! unpipelined path (same masks, same positions).  Returns false: the
-//! caller unpacks the dense receive buffer.
-//! vet_gd_halo_list_mb > 0: when the entry X of this (pass, shell) is
-//! valid for the current masks and the band of this shell was last written, in each
-//! pass, by the entry now stored for that pass (or never), the dense band of X holds
-//! nonzero values only on the receive lists of X and of the other pass's entry Y (the
-//! dense unpack writes 0 everywhere else on its region).  Then the exchange is the
-//! gather pack of X, MPI, zeros on Y's list inside X's region, the scatter of X: the same
-//! band values as the dense path.  Returns true (band written).  (Defined below
-//! VetGdHlBegin / VetGdHlEnd.)
+//! \brief exchange of one shell: mask from VetGdHcPrep (prepared during the previous
+//! shell's wait), compact pack, MPI, expansion; queue the next mask. false: the caller
+//! unpacks the dense buffer. With a valid list entry X (vet_gd_halo_list_mb): gather
+//! pack of X, MPI, zeros on the other pass's list Y in X's region, scatter of X (same
+//! band values as the dense path; true). Defined below VetGdHlBegin / VetGdHlEnd.
 
 //----------------------------------------------------------------------------------------
 //! \fn bool RadiationVet::VetGdHlBegin
-//! \brief the first half of the list path of VetGdHaloCompact (the gather
-//! pack, the fence, the posted messages, the zeros on Y's entries), when the list path
-//! applies (else false, nothing done); VetGdHlEnd completes it.  VetGdHaloCompact calls
-//! both back to back; the overlap of VetGdSweep runs the next shell's local items between
+//! \brief first half of the list path of VetGdHaloCompact (gather pack, fence, posted
+//! messages, zeros on Y's entries); false when the list path does not apply.
+//! VetGdHlEnd completes it; the sweep overlap runs local items in between.
 
 //----------------------------------------------------------------------------------------
 // an event behind the per-shell halo pack on the sweep stream, so the host
