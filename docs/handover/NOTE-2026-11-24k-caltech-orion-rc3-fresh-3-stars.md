@@ -434,3 +434,5 @@ Parameter 'fofc_retest' in block 'hydro' on command line not found
 
 - (11-24 09:22) status: bsg [log.4 cycle=48550 time=3.778089e+06 dt=1.565016e+02, CW 0, DT_RETRY 0]; t9l62 [log.5 cycle=7750 time=5.346385e+05 dt=5.827220e+01, CW 0, DT_RETRY 0]; m35mms [log.4 cycle=33100 time=3.456183e+05 dt=1.200611e+01, CW 0, DT_RETRY 0]; m35zams_z3 [log.2 cycle=93000 time=1.820880e+05 dt=2.490221e+00, CW 0, DT_RETRY 0];
 - (11-24 09:43) m35zams_z3 dt per 1000 cycles: c92000 t 1.795959e+05 dt 2.493368e+00 (wall 6.289766e+03 s);c93000 t 1.820880e+05 dt 2.490221e+00 (wall 6.572952e+03 s);c94000 t 1.845776e+05 dt 2.489062e+00 (wall 6.852128e+03 s);c95000 t 1.870662e+05 dt 2.487570e+00 (wall 7.141821e+03 s);c96000 t 1.895555e+05 dt 2.489029e+00 (wall 7.429942e+03 s);c97000 t 1.920453e+05 dt 2.489245e+00 (wall 7.718072e+03 s);
+
+- (11-24 09:48) RSG status: log.1 cycle=789750 time=7.391798e+08 dt=8.800000e+02, CW 0, DT_RETRY 0
