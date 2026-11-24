@@ -21,3 +21,8 @@
 - **(11-24 01:35) Correction:** the first relaunch of all 4 at 01:30 FAILED (launch_rc3f.sh was not executable: 'Permission denied'). The two 'OK ... 300 cycles' lines above for m35mms / m35zams are false: the watch read the stopped log. All 4 were down from 01:30.
   bsg (now on hpc-sm-02-16 / 7333035, freeing 7333072 for RSG) and m35mms (02-11) were relaunched at 01:34 with fofc + mg4 (`bash launch_rc3f.sh`); their 300-cycle watches are running again.
   t9l62 and m35zams stay stopped at their 01:30 rsts (t9l62.00005, hard-linked as .pre-mg4; m35zams final rst) for the 24v layout batch on 02-17 / 01-15. They restart right after it.
+
+## bsg (11-24 01:36): switched to mg_levels 4
+- pre-switch (log.1, on the old node): 0.6254 s/cyc (c4450-4700), dt 5.716051e+01. **Moved to hpc-sm-02-16 / holder 7333035 (COORD: frees 7333072 for RSG; 02-16 is timing-suspect).** Clean STOP: yes ('Terminating on stop request'). Pre-switch rst kept as rst_keep/bsg3d.00006.rst.pre-mg4.
+- relaunch: `2026-11-24 01:34:48 chunk 2 STAR=bsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc3_af836f5a3 md5=09f50abee4ffa6cd399ce15879626353 DECK=/resnick/groups/carnegie_poc/jingze/prod_rc3_1124/decks/tile/IA123_bsg.athinput md5=9f4884524a7d23` + EX: hydro/fofc=true hydro/fofc_retest=true rad_vet/clean_stag_mg_levels=4
+- log echo (log.2): ### NOTE: parameter 'clean_stag_mg_levels' in block 'rad_vet' is absent from the restart's input: added from the command line (= 4); | <hydro>: fofc_retest 1
