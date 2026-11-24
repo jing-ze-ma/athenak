@@ -771,8 +771,10 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_verbose: 0 the CLEAN cycle lines, warnings and events; 1 also the per-solve
-    // diagnostics
+    // clean_verbose (read only when named): 0 (default) the CLEAN cycle lines, warnings
+    // and events; 1 also the per-solve diagnostics (CLEAN MCAP, OLDVEC, FCONE, FWB, LZ,
+    // WBFCT, KPOS, KREAL, XPAT, the write-back closure and the ray cut); 2 also the
+    // CLEAN PASS line of every pass (its changes de, dv against tol_nl)
     if (pin->DoesParameterExist("rad_vet","clean_verbose")) {
       cln_verbose = pin->GetInteger("rad_vet","clean_verbose");
     }
