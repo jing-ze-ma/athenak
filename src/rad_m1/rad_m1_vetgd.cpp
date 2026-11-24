@@ -2397,14 +2397,15 @@ void RadiationM1::VetGdTables(const Real alpha) {
     VgdFatal("vet_gd_band_global: a wall direction map is not the identity (the global "
              "band copies do not re-index directions)");
   }
-  if (H.nphx > 0) {
+  if (H.nphx > 0 && !vgd_wsym) {
     // any set (S10 / LQ / GL, staggered or not, rotated or not): an interpolated or
-    // nearest-direction phi-wall map breaks the set's phi mirror symmetry (a net F_phi)
+    // nearest-direction phi-wall map breaks the set's phi mirror symmetry (a net F_phi),
+    // unless vet_gd_wall_sym makes the phi-wall maps mirror-paired
     VgdFatal("phi-periodic wedge width W must be a multiple of the ray set's azimuthal "
              "period for exact wall maps (" + std::to_string(H.nphx) + " of " +
              std::to_string(nmap) + " phi-wall direction maps inexact); interpolated "
-             "maps break phi mirror symmetry; see WALLSYM / rad_m1/vet_gd_wall_sym once "
-             "available");
+             "maps break phi mirror symmetry (or <rad_m1>/vet_gd_wall_sym = true with "
+             "vet_gd_wall_interp)");
   }
   const bool first = (vgd_alpha < 0.0);
   // (the compact global band's kept lists belong to a set: a new set remakes them)
