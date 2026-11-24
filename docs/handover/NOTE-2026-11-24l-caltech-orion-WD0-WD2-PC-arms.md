@@ -96,3 +96,8 @@
 - 2026-11-24 01:05:00 rc=0 last: elapsed=9.819349e+02 cycle=39350 time=3.137425e+05 dt=1.023440e+01
 - FATAL 0, CW 0, stage fallbacks 0, DT_RETRY 0, created inf 0; dt min/last 10.21 / 10.24
 - s/cyc (last 800 cycles) 1.0045 (c38600-39350); Krylov it 4.86, solves 4.33 per stage line (2000 lines); d(L_top/L_in) vs P0: rms 1.000e-05 max 1.000e-05 over 1 equal-t rows (same-time rows only)
+
+## PL4 (11-24 01:06)
+- 2026-11-24 01:06:25 rc=0 last: elapsed=9.421660e+02 cycle=39350 time=3.137428e+05 dt=1.023452e+01
+- FATAL 0, CW 0, stage fallbacks 0, DT_RETRY 0, created inf 0; dt min/last 10.21 / 10.24
+- s/cyc (last 800 cycles) 0.9625 (c38600-39350); Krylov it 4.93, solves 4.36 per stage line (2000 lines); d(L_top/L_in) vs P0: rms 1.000e-05 max 1.000e-05 over 1 equal-t rows (same-time rows only)
