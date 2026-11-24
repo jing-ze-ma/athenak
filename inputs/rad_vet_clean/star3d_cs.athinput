@@ -168,7 +168,7 @@ floor_pay_skip = true
 dfloor_flux_limit = true
 
 <rad_vet>
-clean_stag_mg_levels = 4
+clean_stag_mg_levels = 2
 zalesak_active = true
 scheme = clean
 clean_layout = staggered

@@ -65,7 +65,7 @@ out of a restart deck changes the scheme silently. The templates name them all.
 | `<rad_vet>/clean_pred_xch` | `true` | production value (default false) |
 | `<rad_vet>/clean_stag_fcone_gas` | `false` | production value |
 | `<rad_vet>/clean_wb_exch_local` | `true` | read only when named |
-| `<rad_vet>/clean_stag_mg_levels` | `4` | read only when named (default 2): the staggered multigrid preconditioner's coarse levels; 4 is -9 % per cycle on the late m35mms state |
+| `<rad_vet>/clean_stag_mg_levels` | `2` | the default; named because older restart files may store 4 (4 is -9 % per cycle on the late m35mms state but +18-19 % on fresh t9l62 / bsg; USER 11-24: 2 for all stars) |
 | `<rad_vet>/vet_gd_wall_sym`, `vet_gd_theta_seam_sym` | `true` | read only when named; a theta-periodic deck without `vet_gd_theta_seam_sym` stops with a FATAL |
 | `<hydro>/floor_pay` | `rad_column` | older star restart files do not store it (restart default: none) |
 | `<hydro>/floor_pay_skip`, `dfloor_flux_limit`, `rad_signal_speed_diff` | `true` | read only when named |
