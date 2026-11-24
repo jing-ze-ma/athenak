@@ -17,3 +17,9 @@
 - (11-23 21:03) status: WB [cycle=7550, t 4.85395e+05 dt 12.2, CW 28, fb 16, DT_RETRY 12, pos_floor 1]; SB [cycle=7000, t 4.79148e+05 dt 9.31, CW 3, fb 2, DT_RETRY 2, pos_floor 0];
 - (11-23 21:33) status: WB [cycle=8000, t 4.89076e+05 dt 3.16, CW 48, fb 28, DT_RETRY 21, pos_floor 1]; SB [cycle=7650, t 4.86040e+05 dt 11.9, CW 3, fb 2, DT_RETRY 2, pos_floor 0]; W [cycle=6750, t 4.75700e+05 dt 4.76, CW 38, fb 20, DT_RETRY 21, pos_floor 0];
 - (11-23 21:38) status:
+
+## T0 (11-23 21:38)
+- 2026-11-23 21:37:34 rc=0 last: elapsed=7.001133e+01 cycle=30100 time=1.579165e+06 dt=1.173417e+02 
+- FATAL 0 
+- CW 0, stage fallbacks 0, DT_RETRY 0, pos_floor created 0; s/cycle n/a; dt min 95.29 at t 1.580408e+06; skip_de per cycle: max abs 1.238e+17 at c30105; 0 cycles > 1e41
+- first DTREP: `DTREP cycle=30085 time=1.57756e+06 cfl*dt_hyd=107.368 cfl*dt_gasonly=187.657 rank=2 gid=5 kji=34,3,146 dir=1 r=4.5059e+12 rho=2.89929e-11 T=1.67374e+13 pg=485.265 G1=1.66667 cgas=5.28164e+06 v=-3.96447e+07 ceff=1.32938e+08 h=3.08832e+10 tauT_h=0.595814 Erad=2.56419e+06 Ddd=0.333333 cdt_kP=5083.75 frz=-1 sc=1 cell_dt=178.947 cell_dt_gas=687.417 theta_deg=90.1758 phi=1.76408`
