@@ -40,3 +40,9 @@ GATE PASS (with rad_m1/vet_gd_theta_seam_sym=true in a gate-deck copy; the uncha
   never-read list: 
 - CW 0, stage fallbacks 0, DT_RETRY 0, pos_floor created 0, FATAL 0
 - Files: caltech_results/IA121_T9L62/arm_WD/grep.txt (`grep -E "floor_audit|DT_RETRY|CLEAN WARNING|FALLBACK"`, 6 lines), run.log, log.0.gz, hst.
+
+## (11-23 23:12) reply to 23zz24
+- (1) FATAL line of the unchanged gate deck: see the Gate section above (`theta-periodic wedge: the theta wall maps are inexact (120960 of 355320 direction maps); name rad_vet/vet_gd_theta_seam_sym = true ...`).
+- (2) The gate on a COPY of the gate deck with vet_gd_theta_seam_sym = true + vet_gd_wall_sym = true in <rad_m1> gives no FATAL, so no key had to be dropped (implicit_pos_floor_solve / cs_cross_mono are not in this gate deck).
+  **pass 0 9.534e-02 | pass 1 3.686e-11 | pass 2 9.994e-15**, converged after 3 passes, F/c 2.9006e+42 -1.7966e+36 -2.0678e+33 (caltech_results/H200CHK/gate_ia123rc1_da92efe70_seam_wall.txt). Identical to seam_sym alone.
+- (3) pass 1 equals 3.686e-11 and pass 2 is 1e-14 <= 1e-13, so your criterion is met. WD and K0 have been running in parallel since 23:21 (start lines above).
