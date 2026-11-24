@@ -1,0 +1,104 @@
+CLEAN cycle 7815 t2s 2 it 1 (sum 13) pos 0 mark 0 all 0 neg 0 r1 0 r2 4134 first 0 4134 guard 0 solves 5 cwin 0
+CLEAN MCAP cycle 7815 t2s 2: 3124 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 7815 t2s 2 faces 25153286 momentum cut sum |dF| V/c^2 2.188248e+28
+CLEAN FWB cycle 7815 t2s 2 faces 109044851 radiation momentum sum |dp| 1.564385e+29 x1 faces sum dp -8.305320e+27
+CLEAN XT cycle 7815 t2s 2 write-back closure 6.448e-05
+CLEAN OLDVEC cycle 7815 t2s 3 eint<0 38 (taken as 0) E<0 0
+CLEAN cycle 7815 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 4342 first 0 4342 guard 0 solves 6 cwin 0
+CLEAN MCAP cycle 7815 t2s 3: 3128 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 7815 t2s 3 faces 25176775 momentum cut sum |dF| V/c^2 2.201787e+28
+CLEAN FWB cycle 7815 t2s 3 faces 109044693 radiation momentum sum |dp| 1.589557e+29 x1 faces sum dp -8.116206e+27
+CLEAN XT cycle 7815 t2s 3 write-back closure 2.384e-05
+CLEAN LZB cycle 7815 t2s 3 ledger -1.3649799380627435e+43
+CLEAN cycle 7816 t2s 2 it 0 (sum 12) pos 0 mark 0 all 0 neg 0 r1 0 r2 4187 first 0 4187 guard 0 solves 6 cwin 0
+CLEAN MCAP cycle 7816 t2s 2: 3110 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 7816 t2s 2 faces 25157775 momentum cut sum |dF| V/c^2 2.583510e+28
+CLEAN FWB cycle 7816 t2s 2 faces 109044286 radiation momentum sum |dp| 1.707652e+29 x1 faces sum dp -1.011268e+28
+CLEAN XT cycle 7816 t2s 2 write-back closure 3.722e-05
+CLEAN OLDVEC cycle 7816 t2s 3 eint<0 41 (taken as 0) E<0 0
+CLEAN cycle 7816 t2s 3 it 2 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 4327 first 0 4327 guard 2 solves 5 cwin 0
+CLEAN MCAP cycle 7816 t2s 3: 3144 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 7816 t2s 3 faces 25179360 momentum cut sum |dF| V/c^2 3.773318e+28
+CLEAN FWB cycle 7816 t2s 3 faces 109044171 radiation momentum sum |dp| 1.673717e+29 x1 faces sum dp -8.889119e+27
+CLEAN XT cycle 7816 t2s 3 write-back closure 1.257e-04
+CLEAN LZB cycle 7816 t2s 3 ledger -1.3694379741862502e+43
+CLEAN cycle 7817 t2s 2 it 1 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 4029 first 0 4029 guard 0 solves 6 cwin 0
+CLEAN MCAP cycle 7817 t2s 2: 3126 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 7817 t2s 2 faces 25160971 momentum cut sum |dF| V/c^2 2.654198e+28
+CLEAN FWB cycle 7817 t2s 2 faces 109043595 radiation momentum sum |dp| 1.562254e+29 x1 faces sum dp -8.394054e+27
+CLEAN XT cycle 7817 t2s 2 write-back closure 1.543e-04
+CLEAN OLDVEC cycle 7817 t2s 3 eint<0 33 (taken as 0) E<0 0
+CLEAN cycle 7817 t2s 3 it 2 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 4213 first 0 4213 guard 0 solves 5 cwin 0
+CLEAN MCAP cycle 7817 t2s 3: 3078 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 7817 t2s 3 faces 25185004 momentum cut sum |dF| V/c^2 4.504322e+28
+CLEAN FWB cycle 7817 t2s 3 faces 109043448 radiation momentum sum |dp| 1.585982e+29 x1 faces sum dp -8.217714e+27
+CLEAN XT cycle 7817 t2s 3 write-back closure 5.952e-06
+CLEAN LZB cycle 7817 t2s 3 ledger -1.3690179222142179e+43
+CLEAN cycle 7818 t2s 2 it 1 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 4068 first 0 4068 guard 0 solves 6 cwin 0
+CLEAN MCAP cycle 7818 t2s 2: 3128 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 7818 t2s 2 faces 25161756 momentum cut sum |dF| V/c^2 2.653509e+28
+CLEAN FWB cycle 7818 t2s 2 faces 109043040 radiation momentum sum |dp| 1.621959e+29 x1 faces sum dp -8.639782e+27
+CLEAN XT cycle 7818 t2s 2 write-back closure 9.267e-05
+CLEAN OLDVEC cycle 7818 t2s 3 eint<0 30 (taken as 0) E<0 0
+CLEAN cycle 7818 t2s 3 it 1 (sum 7) pos 0 mark 0 all 0 neg 0 r1 0 r2 4364 first 0 4364 guard 2 solves 6 cwin 0
+CLEAN MCAP cycle 7818 t2s 3: 3128 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 7818 t2s 3 faces 25183174 momentum cut sum |dF| V/c^2 2.157930e+28
+CLEAN FWB cycle 7818 t2s 3 faces 109042920 radiation momentum sum |dp| 1.698952e+29 x1 faces sum dp -8.693854e+27
+CLEAN XT cycle 7818 t2s 3 write-back closure 2.132e-04
+CLEAN LZB cycle 7818 t2s 3 ledger -1.3704634721489259e+43
+CLEAN cycle 7819 t2s 2 it 1 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 4148 first 0 4148 guard 0 solves 6 cwin 0
+CLEAN MCAP cycle 7819 t2s 2: 3172 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 7819 t2s 2 faces 25162069 momentum cut sum |dF| V/c^2 2.903536e+28
+CLEAN FWB cycle 7819 t2s 2 faces 109042501 radiation momentum sum |dp| 1.684117e+29 x1 faces sum dp -8.216641e+27
+CLEAN XT cycle 7819 t2s 2 write-back closure 2.316e-05
+CLEAN OLDVEC cycle 7819 t2s 3 eint<0 49 (taken as 0) E<0 0
+CLEAN cycle 7819 t2s 3 it 2 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 4351 first 0 4351 guard 1 solves 5 cwin 0
+CLEAN MCAP cycle 7819 t2s 3: 3190 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 7819 t2s 3 faces 25183788 momentum cut sum |dF| V/c^2 2.169256e+28
+CLEAN FWB cycle 7819 t2s 3 faces 109042283 radiation momentum sum |dp| 1.646815e+29 x1 faces sum dp -7.276995e+27
+CLEAN XT cycle 7819 t2s 3 write-back closure 2.711e-05
+CLEAN LZB cycle 7819 t2s 3 ledger -1.3722211795572378e+43
+CLEAN cycle 7820 t2s 2 it 0 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 4061 first 0 4061 guard 0 solves 6 cwin 0
+CLEAN MCAP cycle 7820 t2s 2: 3128 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 7820 t2s 2 faces 25166990 momentum cut sum |dF| V/c^2 2.254769e+28
+CLEAN FWB cycle 7820 t2s 2 faces 109041838 radiation momentum sum |dp| 1.573274e+29 x1 faces sum dp -8.497797e+27
+CLEAN XT cycle 7820 t2s 2 write-back closure 4.476e-04
+CLEAN OLDVEC cycle 7820 t2s 3 eint<0 30 (taken as 0) E<0 0
+CLEAN cycle 7820 t2s 3 it 1 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 4282 first 0 4282 guard 1 solves 6 cwin 0
+CLEAN MCAP cycle 7820 t2s 3: 3136 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 7820 t2s 3 faces 25190505 momentum cut sum |dF| V/c^2 2.166739e+28
+CLEAN FWB cycle 7820 t2s 3 faces 109041692 radiation momentum sum |dp| 1.603530e+29 x1 faces sum dp -8.429609e+27
+CLEAN XT cycle 7820 t2s 3 write-back closure 7.284e-07
+CLEAN LZB cycle 7820 t2s 3 ledger -1.3723763279672240e+43
+CLEAN cycle 7821 t2s 2 it 0 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 4168 first 0 4168 guard 0 solves 6 cwin 0
+CLEAN MCAP cycle 7821 t2s 2: 3122 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 7821 t2s 2 faces 24959364 momentum cut sum |dF| V/c^2 1.665734e+28
+CLEAN FWB cycle 7821 t2s 2 faces 109041344 radiation momentum sum |dp| 1.344258e+29 x1 faces sum dp -7.302161e+27
+CLEAN XT cycle 7821 t2s 2 write-back closure 2.808e-05
+CLEAN OLDVEC cycle 7821 t2s 3 eint<0 43 (taken as 0) E<0 0
+CLEAN cycle 7821 t2s 3 it 0 (sum 6) pos 0 mark 0 all 0 neg 0 r1 0 r2 4290 first 0 4290 guard 0 solves 6 cwin 0
+CLEAN MCAP cycle 7821 t2s 3: 3124 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 7821 t2s 3 faces 25147203 momentum cut sum |dF| V/c^2 2.061024e+28
+CLEAN FWB cycle 7821 t2s 3 faces 109041233 radiation momentum sum |dp| 1.369248e+29 x1 faces sum dp -7.304940e+27
+CLEAN XT cycle 7821 t2s 3 write-back closure 1.488e-05
+CLEAN LZB cycle 7821 t2s 3 ledger -1.3724611516794841e+43
+CLEAN cycle 7822 t2s 2 it 1 (sum 14) pos 0 mark 0 all 0 neg 0 r1 0 r2 4022 first 0 4022 guard 0 solves 5 cwin 0
+CLEAN MCAP cycle 7822 t2s 2: 3124 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 7822 t2s 2 faces 25166461 momentum cut sum |dF| V/c^2 1.825950e+28
+CLEAN FWB cycle 7822 t2s 2 faces 109041225 radiation momentum sum |dp| 4.331766e+29 x1 faces sum dp -4.281831e+28
+CLEAN XT cycle 7822 t2s 2 write-back closure 2.055e-05
+CLEAN OLDVEC cycle 7822 t2s 3 eint<0 53 (taken as 0) E<0 0
+CLEAN cycle 7822 t2s 3 it -3 (sum 413) pos 0 mark 0 all 0 neg 0 r1 0 r2 5 first 0 5 guard 0 solves 200 cwin 0
+CLEAN MCAP cycle 7822 t2s 3: 85011912 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 7822 t2s 3 faces 58095203 momentum cut sum |dF| V/c^2 -nan
+CLEAN FWB cycle 7822 t2s 3 faces 109041081 radiation momentum sum |dp| -nan x1 faces sum dp -nan
+CLEAN WBFCT cycle 7822 t2s 3 rounds 3 left 31693647 kept -nan
+CLEAN XT cycle 7822 t2s 3 write-back closure 7.875e-01
+CLEAN WARNING cycle 7822 t2s 3: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+CLEAN cycle 7822 t2s 1 it 2 (sum 117) pos 0 mark 0 all 0 neg 1 r1 1 r2 353 first 1 353 guard 0 solves 22 cwin 0
+CLEAN MCAP cycle 7822 t2s 1: 3200 face momentum terms at the cap h chi_f E in the last pass
+CLEAN FCONE cycle 7822 t2s 1 faces 25943432 momentum cut sum |dF| V/c^2 2.575110e+30
+CLEAN FWB cycle 7822 t2s 1 faces 109041344 radiation momentum sum |dp| 4.968453e+29 x1 faces sum dp -2.485902e+28
+CLEAN WBFCT cycle 7822 t2s 1 rounds 1 left 1 kept 0.000000e+00
+CLEAN LZB cycle 7822 t2s 1 ledger -1.3624403587761373e+43
+CLEAN XT cycle 7822 t2s 1 write-back closure 8.716e-01
