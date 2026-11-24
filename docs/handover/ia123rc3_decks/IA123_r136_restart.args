@@ -106,3 +106,14 @@ hydro/fofc=true
 hydro/fofc_retest=true
 # staggered mg preconditioner levels (Caltech PL4, NOTE 24s; uniform settings):
 rad_vet/clean_stag_mg_levels=4
+# time keys of the production decks (T9FAST: a rst can store another segment's cfl_number; every time/ key the run relies on is named):
+time/evolution=dynamic
+time/integrator=rk2
+time/dt_retry_fac=0.5
+time/dt_retry_fac_t2=0.9
+time/dt_retry_grow=1.1
+time/dt_retry_host=false
+time/dt_retry_ngood=20
+time/dt_retry_views=minimal
+time/dt_retry_t2_be=0
+time/nan_check_cycles=100
