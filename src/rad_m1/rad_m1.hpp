@@ -1802,10 +1802,6 @@ class RadiationM1 {
   int CleanRingNd(const int nf) const {return vra_ema ? nf + 3 : nf;}
   void CleanRingRstCopy(DvceArray5D<Real> &a, const int c, const int nmb, const int m0,
                         const bool pk, const bool have);
-  int CleanFvRstN() const;      // the cubed sphere's sc rays' cln_fvi in the restart
-  void CleanFvRstCopy(DvceArray5D<Real> &a, const int c, const int nmb, const int m0,
-                      const bool pk);   // files (version 5): interior cells, dense
-  bool cln_fvgf = false;        // (their ghosts to be filled, CleanRstFaces)
   // closure components in the restart files of the extrap history and clean_rot_ring:
   // push 16's order (CleanRstSlot); the cell layout keeps its first CLN_N - 1, CLN_JR is
   // staggered only

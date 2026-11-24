@@ -1103,65 +1103,6 @@ void RadiationM1::CleanRingRstCopy(DvceArray5D<Real> &a, const int c, const int 
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn RadiationM1::CleanFvRst*
-//! \brief the sc rays' intensities on the cubed sphere in the restart files (version 5):
-//! a slab of their count nv, then cln_fvi's interior cells (v, k, j, i), dense in the
-//! ghosted slabs as CleanRingRstCopy.  The ghosts are those of the cell-centred exchange
-//! of the interior (CleanGdFaceSums: CleanGhostFill), filled again after a restart has
-//! read the interior (cln_fvgf, CleanRstFaces).  Unpacking (c <= 0: a's channel 0 is
-//! record slab -c) slab 0 allocates cln_fvi
-
-int RadiationM1::CleanFvRstN() const {
-  auto &id = pmy_pack->pmesh->mb_indcs;
-  const int64_t nv = static_cast<int64_t>(cln_fvi.extent_int(1))*id.nx1*id.nx2*id.nx3;
-  const int64_t ns = static_cast<int64_t>(cln_fvi.extent_int(2))*cln_fvi.extent_int(3)*
-                     cln_fvi.extent_int(4);
-  return 1 + static_cast<int>((nv + ns - 1)/ns);
-}
-
-void RadiationM1::CleanFvRstCopy(DvceArray5D<Real> &a, const int c, const int nmb,
-                                 const int m0, const bool pk) {
-  auto &id = pmy_pack->pmesh->mb_indcs;
-  auto AL = Kokkos::ALL;
-  if (!pk && c == 0) {
-    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
-                                                 Kokkos::subview(a, 0, 0, 0, 0, 0));
-    Kokkos::realloc(cln_fvi, nmb, static_cast<int>(std::llround(h())), a.extent_int(2),
-                    a.extent_int(3), a.extent_int(4));
-    cln_fvgf = true;
-    return;
-  }
-  if (pk) {
-    Kokkos::deep_copy(Kokkos::subview(a, std::make_pair(0, nmb), c, AL, AL, AL),
-                      static_cast<Real>(cln_fvi.extent_int(1)));
-  }
-  const int64_t ni = id.nx1, nj = id.nx2, nk = id.nx3, nc = ni*nj*nk;
-  const int64_t nd = cln_fvi.extent_int(1)*nc;
-  const int64_t ns = static_cast<int64_t>(a.extent(2))*a.extent(3)*a.extent(4);
-  const int c1 = c + 1;   // (the data behind the count)
-  const int64_t q0 = std::max(c1, 0) - c1, q1 = std::min<int64_t>(c + CleanFvRstN(),
-                                                                   a.extent(1)) - c1;
-  if (q1 <= q0) return;
-  const int64_t nq = (q1 - q0)*ns, sa = a.stride(0);
-  const int is = id.is, js = id.js, ks = id.ks;
-  Real *pa = a.data();
-  auto fi = cln_fvi;
-  Kokkos::parallel_for("m1_fv_rst",
-  Kokkos::RangePolicy<DevExeSpace, Kokkos::IndexType<int64_t>>(DevExeSpace(), 0, nmb*nq),
-  KOKKOS_LAMBDA(const int64_t p) {
-    const int64_t m = p/nq, q = q0*ns + p - m*nq;
-    Real *x = pa + m*sa + c1*ns + q;
-    const int v = static_cast<int>(q/nc), r = static_cast<int>(q - v*nc);
-    const int i = is + r%ni, j = js + (r/ni)%nj, k = ks + r/(ni*nj);
-    if (pk) {
-      *x = (q < nd) ? fi(m + m0,v,k,j,i) : 0.0;
-    } else if (q < nd) {
-      fi(m,v,k,j,i) = *x;
-    }
-  });
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanRingMoments
 //! \brief clean_rot_ring: the closure of the rotating union of vet_rotate_avg = K sets
 //! with the cross-fade from a sweep of the current set b and the next set b+1 alone.

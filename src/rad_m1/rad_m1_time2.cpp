@@ -2222,14 +2222,10 @@ int RadiationM1::CleanRstNcl() const {
 int RadiationM1::CleanRstNfv() const {
   if (!clean) return 0;
   // (the cubed sphere's sc rays; before the first sweep those a restart file holds)
-  // (the sc rays' cln_fvi: their slots of the union on a ring, CleanGdFaceSums; version
-  // 5: dense, CleanFvRstCopy)
+  // (the sc rays' cln_fvi: their slots of the union on a ring, CleanGdFaceSums)
   // (version 6, staggered: their face half ranges cln_fh instead, none where every
-  // solve rebuilds them first, CleanFhBuilt)
+  // solve rebuilds them first, CleanFhBuilt; a version-5 file is refused, Time2RstAccept)
   if (cln_cssc && t2_rstv >= 6) return CleanFhBuilt() ? 0 : 12;
-  if (cln_cssc && t2_rstv >= 5) {
-    return (cln_fvi.extent_int(0) > 0) ? CleanFvRstN() : t2_nfv;
-  }
   if (cln_cssc && cln_fvi.extent_int(0) > 0) return cln_fvi.extent_int(1);
   if (cln_cssc) return (cln_fvn > 0) ? cln_fvn : t2_nfv;
   return cln_scmem ? cln_top.extent_int(1) : 0;
@@ -2243,8 +2239,7 @@ int RadiationM1::CleanRstNfv() const {
 int RadiationM1::Time2RstNchWant() {
   // the hesdirk2 slope channels, then (any time scheme) the clean scheme's state.
   // (version 4, the clean scheme: no channels for what clean_skip_time2_hist leaves
-  // zero, and the ring's offsets dense, CleanRingRstCopy; version 5: the cubed sphere's
-  // sc rays' intensities dense too, CleanFvRstCopy)
+  // zero, and the ring's offsets dense, CleanRingRstCopy)
   const bool sk = clean && cln_not2h && t2_rstv >= 4;
   const int np = (impl_pord == 2) ? 5 : 3;
   const int nt = (time_scheme != M1_TIME_HESDIRK2) ? 0 :
@@ -2265,6 +2260,12 @@ bool RadiationM1::Time2RstAccept(const int nfile, const int ver) {
   // (a version-1 file, before 8349d48ff, holds d without its slope K1_d: read with K1_d =
   // 0 and a backward-Euler first step)
   t2_rstd3 = (ver < 2) && clean && cln_fsolve && cln_fkin;
+  // (version 5 on the cubed sphere: the sc rays' intensities, no longer read)
+  if (clean && cln_cssc && ver == 5) {
+    std::cout << "### FATAL ERROR <rad_m1> restart: a version-5 clean file on the cubed "
+              << "sphere (the sc rays' intensities) is no longer read" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   t2_rstv = clean ? ver : 5;
   t2_rcl = -1;
   int nb = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0);
@@ -2482,8 +2483,6 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
     } else {
       Kokkos::deep_copy(af, 0.0);
     }
-  } else if (cln_cssc && CleanRstNfv() > 0) {
-    CleanFvRstCopy(a, c, nmb, m0, true);
   } else if (CleanRstNfv() > 0 && CleanRstFv().extent_int(0) >= m0 + nmb) {
     Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c + CleanRstNfv()), AL, AL,
                                       AL),
@@ -2514,13 +2513,6 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
       Kokkos::realloc(cln_fh, nmb, 12, w.extent_int(1), w.extent_int(2), w.extent_int(3));
     }
     DeepCopyAcross(Kokkos::subview(cln_fh, mb, ch - nfv0, AL, AL, AL), w);
-    return;
-  }
-  if (clean && cln_cssc && t2_rstv >= 5 && ch >= nfv0) {   // (version 5, CleanFvRstCopy)
-    DvceArray5D<Real> t("m1_t2_fvrd", nmb, 1, w.extent_int(1), w.extent_int(2),
-                        w.extent_int(3));
-    DeepCopyAcross(Kokkos::subview(t, AL, 0, AL, AL, AL), w);
-    CleanFvRstCopy(t, nfv0 - ch, nmb, 0, false);
     return;
   }
   if (clean && (cln_cssc || cln_scmem) && ch >= nfv0) {
