@@ -112,8 +112,8 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   {
     const Real g = kT2G;
     t2_tab = 0;
-    if (pin->DoesParameterExist("rad_vet", "time2_tableau")) {
-      std::string tb = pin->GetString("rad_vet", "time2_tableau");
+    {
+      std::string tb = pin->GetOrAddString("rad_vet", "time2_tableau", "hesdirk2");
       if (tb.compare("hesdirk2") == 0) {
         t2_tab = 0;
       } else if (tb.compare("trbdf2") == 0) {
@@ -197,6 +197,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   }
   // time2_enth_be: the backward-Euler solves of a hesdirk2 run take the stage solves'
   // enthalpy face rule too (else the operator changes for one step: an O(dt) error)
+  recipe::Old(pin, "rad_vet", "time2_enth_be", "false");
   t2_enth_be = pin->GetOrAddBoolean("rad_vet", "time2_enth_be",
                                     !global_variable::restart_run);
   // time2_vet_extrap: stage solves use D* = D^n + (dt/dt_prev)(D^n - D^{n-1})
@@ -326,10 +327,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
 
   // time2_k1_stiff = s: in cells with relaxation rate k dt > s the exchange part of K1
   // moves to E (Time2FormStage)
-  t2_k1stiff = 0.0;
-  if (pin->DoesParameterExist("rad_vet", "time2_k1_stiff")) {
-    t2_k1stiff = pin->GetReal("rad_vet", "time2_k1_stiff");
-  }
+  t2_k1stiff = pin->GetOrAddReal("rad_vet", "time2_k1_stiff", 0.0);
   // time2_k1_redist: only 0 is accepted (old restart files may store 0.1)
   if (pin->DoesParameterExist("rad_vet", "time2_k1_redist") &&
       pin->GetReal("rad_vet", "time2_k1_redist") != 0.0) {
@@ -342,6 +340,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   // time2_face_fct: Zalesak limiter of the stage increment (Time2FaceFct); on for a fresh
   // run.  The clean solve stores the energy flux Phi that moved E (CleanWriteBack)
   const bool cfd = !global_variable::restart_run;
+  recipe::Old(pin, "rad_vet", "time2_face_fct", "false");
   t2_ffct = cfd;
   if (pin->DoesParameterExist("rad_vet", "time2_face_fct") || cfd) {
     t2_ffct = pin->GetOrAddBoolean("rad_vet", "time2_face_fct", t2_ffct);
@@ -357,18 +356,12 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_vet", "time2_adm_poslim")) {
     t2_adm_pl = pin->GetBoolean("rad_vet", "time2_adm_poslim");
   }
-  // time2_cfl_post (read only when named)
-  if (pin->DoesParameterExist("rad_vet", "time2_cfl_post")) {
-    t2_cfl_post = pin->GetBoolean("rad_vet", "time2_cfl_post");
-  }
-  // time2_auto_be = N (read only when named)
-  if (pin->DoesParameterExist("rad_vet", "time2_auto_be")) {
-    t2_abe = pin->GetInteger("rad_vet", "time2_auto_be");
-    if (t2_abe < 0) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/time2_auto_be must be >= 0" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
+  t2_cfl_post = pin->GetOrAddBoolean("rad_vet", "time2_cfl_post", t2_cfl_post);
+  t2_abe = pin->GetOrAddInteger("rad_vet", "time2_auto_be", t2_abe);
+  if (t2_abe < 0) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<rad_vet>/time2_auto_be must be >= 0" << std::endl;
+    std::exit(EXIT_FAILURE);
   }
   if (global_variable::my_rank == 0 && t2_abe > 0) {
     std::cout << "<rad_vet> time2_auto_be=" << t2_abe << ": after a stage fallback the "

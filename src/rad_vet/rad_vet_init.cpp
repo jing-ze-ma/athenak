@@ -351,14 +351,9 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   }
   }
   // cs_vertex_mono: two-point lateral faces near the 8 cube vertices (cs_vertex_mono_n)
-  cs_vtx_mono = cs_geom;
-  if (pin->DoesParameterExist("rad_vet","cs_vertex_mono")) {
-    cs_vtx_mono = pin->GetBoolean("rad_vet","cs_vertex_mono") && cs_geom;
-  }
+  cs_vtx_mono = pin->GetOrAddBoolean("rad_vet","cs_vertex_mono",true) && cs_geom;
   impl_pred_tcap = (recipe::GetMode(pin) == recipe::Mode::none) ? 2.0 : 1.1;
-  if (pin->DoesParameterExist("rad_vet","implicit_predictor_tcap")) {
-    impl_pred_tcap = pin->GetReal("rad_vet","implicit_predictor_tcap");
-  }
+  impl_pred_tcap = pin->GetOrAddReal("rad_vet","implicit_predictor_tcap",impl_pred_tcap);
   if (pin->DoesParameterExist("rad_vet","cs_vertex_mono_n")) {
     cs_vtx_n = pin->GetInteger("rad_vet","cs_vertex_mono_n");
     if (cs_vtx_n < 0) {
@@ -367,9 +362,8 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   }
   // E floor raise: implicit_pos_floor_cons takes the uncovered part from the column's
   // radiation; implicit_pos_gas_cons / implicit_pos_floor_gas_keep bound the gas share
-  if (pin->DoesParameterExist("rad_vet","implicit_pos_floor_cons")) {
-    impl_pos_flr_cons = pin->GetBoolean("rad_vet","implicit_pos_floor_cons");
-  }
+  impl_pos_flr_cons =
+      pin->GetOrAddBoolean("rad_vet","implicit_pos_floor_cons",impl_pos_flr_cons);
   if (impl_pos_flr_cons && global_variable::my_rank == 0) {
     std::cout << "<rad_vet> implicit_pos_floor_cons: the E floor's uncovered raise is "
                  "taken "

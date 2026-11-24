@@ -105,8 +105,9 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       dt_report_key = pin->GetInteger("hydro","dt_report");
     }
     extern Real dt_floor_courant_key;
-    if (pin->DoesParameterExist("hydro","dt_floor_courant")) {
-      dt_floor_courant_key = pin->GetReal("hydro","dt_floor_courant");
+    if (pin->DoesBlockExist("rad_vet") ||
+        pin->DoesParameterExist("hydro","dt_floor_courant")) {
+      dt_floor_courant_key = pin->GetOrAddReal("hydro","dt_floor_courant",0.0);
     }
   }
   // P4: the passive-tracer layout shared with MHD (mhd/mhd_tracers.hpp): the
@@ -455,24 +456,24 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     std::string tr = pin->GetString("rad_vet","transport");
     rad_signal_speed = (tr.compare("implicit") == 0 || tr.compare("implicit_x1") == 0);
   }
-  if (pin->DoesParameterExist("hydro","rad_signal_speed")) {
-    rad_signal_speed = pin->GetBoolean("hydro","rad_signal_speed");
-  }
+  // (recorded in a run with <rad_vet>)
+  auto rec = [&](const char *k, bool &v) {
+    if (pin->DoesBlockExist("rad_vet") || pin->DoesParameterExist("hydro", k)) {
+      v = pin->GetOrAddBoolean("hydro", k, v);
+    }
+  };
+  rec("rad_signal_speed", rad_signal_speed);
   if (pin->DoesParameterExist("hydro","rad_signal_speed_inertia")) {
     rss_inertia = pin->GetBoolean("hydro","rad_signal_speed_inertia");
   }
-  if (pin->DoesParameterExist("hydro","rad_signal_speed_diff")) {
-    rss_diff = pin->GetBoolean("hydro","rad_signal_speed_diff");
-  }
-  if (pin->DoesParameterExist("hydro","rad_signal_speed_phase")) {
-    rss_phase = pin->GetBoolean("hydro","rad_signal_speed_phase");
-    if (rss_phase && !(rad_signal_speed && rss_diff)) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<hydro>/rad_signal_speed_phase = true needs "
-                << "rad_signal_speed = true and rad_signal_speed_diff = true"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
+  rec("rad_signal_speed_diff", rss_diff);
+  rec("rad_signal_speed_phase", rss_phase);
+  if (rss_phase && !(rad_signal_speed && rss_diff)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<hydro>/rad_signal_speed_phase = true needs "
+              << "rad_signal_speed = true and rad_signal_speed_diff = true"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
   }
   // allocate array of flags used with etotgrav
   if (use_etotgrav || use_wellbalance_dynamic) {
@@ -622,9 +623,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     use_fofc = pin->GetOrAddBoolean("hydro","fofc",fofc_dflt);
     if (use_fofc) {fofc_rep.Init(pin, "hydro");}
-    if (pin->DoesParameterExist("hydro", "dfloor_flux_limit")) {
-      use_dfl = pin->GetBoolean("hydro", "dfloor_flux_limit");
-    }
+    rec("dfloor_flux_limit", use_dfl);
     if (use_dfl) {
       pbval_dfl = new MeshBoundaryValuesCC(ppack, pin, false);
       pbval_dfl->SetVectorPairs(1, {});   // (the factor is a scalar)

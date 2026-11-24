@@ -64,12 +64,14 @@ void DualEnergy::Read(ParameterInput *pin, const std::string &block, const EOS_D
     pretry = pin->GetBoolean(blk, "floor_pay_retry");
     if (pretry && !pay) Fatal("<" + blk + ">/floor_pay_retry needs floor_pay = rad*");
   }
-  // floor_pay_skip (read only when named; default false): the dfloor / vceil cells too
-  if (Named(pin, blk, "floor_pay_skip")) {
-    pskip = pin->GetBoolean(blk, "floor_pay_skip");
+  // floor_pay_skip (default false; recorded with floor_pay): the dfloor / vceil cells too
+  if (pay || Named(pin, blk, "floor_pay_skip")) {
+    pskip = pin->GetOrAddBoolean(blk, "floor_pay_skip", false);
     if (pskip && !pay) Fatal("<" + blk + ">/floor_pay_skip needs floor_pay = rad*");
   }
-  retest = Named(pin, blk, "fofc_retest") && pin->GetBoolean(blk, "fofc_retest");
+  if (pay || Named(pin, blk, "fofc_retest")) {
+    retest = pin->GetOrAddBoolean(blk, "fofc_retest", false);
+  }
   if (Named(pin, blk, "floor_audit")) report = pin->GetInteger(blk, "floor_audit");
   worst = Named(pin, blk, "floor_audit_worst") &&
           pin->GetBoolean(blk, "floor_audit_worst");
