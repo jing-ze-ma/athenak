@@ -4,10 +4,9 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_clean_closure.cpp
-//! \brief Closure of the clean implicit radiation solve.  Once per step the formal
-//! solution (short characteristics) is run on the state predicted at the end of the step,
-//! and its moments give the Eddington tensor D, the half-range factors h+- and the
-//! non-locality C1 of every cell.
+//! \brief Closure of the clean implicit radiation solve: the formal solution on the
+//! predicted end-of-step state gives each cell's Eddington tensor D, half-range factors
+//! h+- and non-locality C1.
 
 #include <algorithm>
 #include <cstdio>
@@ -30,9 +29,8 @@
 #include "rad_vet/rad_vet_clean.hpp"
 #include "utils/imex_sdirk2.hpp"
 #include "utils/scratch_view.hpp"
-// M1_TU_PART: this file is compiled as 3 translation units (rad_vet_clean_closure.cpp =
-// part 0, rad_vet_clean_closure_p<k>.cpp = part k, see split_tu.py); every member
-// function below is in exactly one part.
+// M1_TU_PART: compiled as 3 TUs (this file part 0, rad_vet_clean_closure_p<k>.cpp part k)
+// to cut nvcc/ptxas time; each member function is in exactly one part
 #ifndef M1_TU_PART_N
 #define M1_TU_PART_N 0
 #endif
@@ -42,9 +40,8 @@ namespace radvet {
 extern bool g_vra_adv;   // vet_rotate_advance (rad_vet_vetgd.cpp)
 //----------------------------------------------------------------------------------------
 //! \fn void CleanStoreMoments
-//! \brief the closure of a cell from its ray moments q (CLN_* layout, not normalised):
-//! D = K/J, h+- = H+-/J, k+ = K+/J, C1 = <|I - S|>/J; without rays (J = 0) isotropic
-//! and marked for the fill.  The face fluxes are copied.
+//! \brief a cell's closure from its ray moments q (CLN_*, not normalised): D = K/J,
+//! h+- = H+-/J, k+ = K+/J, C1 = <|I - S|>/J; J = 0: isotropic, marked for the fill
 
 KOKKOS_INLINE_FUNCTION
 void CleanStoreMoments(const DvceArray5D<Real> &cs, const DvceArray5D<Real> &valid,
@@ -84,9 +81,8 @@ void CleanStoreMoments(const DvceArray5D<Real> &cs, const DvceArray5D<Real> &val
 
 //----------------------------------------------------------------------------------------
 //! \fn void CleanFaceVector
-//! \brief spherical polar: the exact vector area a of the low face of cell (k,j,i) normal
-//! to dir (r faces along r_hat, theta faces along theta_hat, phi faces along phi_hat);
-//! on the cubed sphere that of CleanCsGeometry; Cartesian the area along e_dir
+//! \brief exact vector area a of the low face of cell (k,j,i) normal to dir (spherical
+//! polar exact, cubed sphere CleanCsGeometry's, Cartesian along e_dir)
 
 KOKKOS_INLINE_FUNCTION
 void CleanFaceVector(const CleanArgs &x, const DvceArray2D<Real> &x3f, const int dir,
@@ -100,8 +96,7 @@ void CleanFaceVector(const CleanArgs &x, const DvceArray2D<Real> &x3f, const int
     for (int c = 0; c < 3; ++c) a[c] = (c == dir) ? x.area[dir](m,k,j,i) : 0.0;
     return;
   }
-  // (a theta or phi face reads only its own angle: the high face of a 1-D (2-D) cell has
-  // no j+1 (k+1) edge)
+  // (a theta or phi face reads only its own angle: no j+1 (k+1) edge in 1-D (2-D))
   const Real r1 = x.x1f(m,i), r2 = x.x1f(m,i+1), t1 = x.x2f(m,j);
   const Real t2 = (dir == 1) ? t1 : x.x2f(m,j+1);
   const Real p1 = x3f(m,k), p2 = (dir == 2) ? p1 : x3f(m,k+1);
@@ -136,10 +131,8 @@ void CleanLocalBasis(const Real th, const Real ph, Real e[3][3]) {
 
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanThickI
-//! \brief clean_ray_cut: the intensity of direction n in a cell below the cut, the
-//! diffusion limit I = J + 3 n . H of the cell's E en and F f (iw, the state the rays are
-//! built for) in its frame e (CleanThickFrame); its moments are D = I/3 and h+- = +-1/4
-//! + h/2 of the set's quadrature
+//! \brief clean_ray_cut: intensity along n in a cell below the cut, the diffusion limit
+//! I = J + 3 n . H of its E en and F f in the frame e (CleanThickFrame)
 
 KOKKOS_INLINE_FUNCTION
 void CleanThickFrame(const CleanArgs &x, const DvceArray2D<Real> &x3v, const int m,
@@ -161,9 +154,8 @@ Real CleanThickI(const Real e[3][3], const Real f[3], const Real en, const Real 
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanClosure
-//! \brief builds the closure for t^{n+1}.  Both stage solves and a backward-Euler redo
-//! end at t^{n+1}, so one closure serves the whole step; it is rebuilt for a new step or
-//! a new dt.  clean_closure = eddington takes the isotropic closure instead of the rays.
+//! \brief builds the closure for t^{n+1}, once per step and dt (all stage solves end
+//! there); clean_closure = eddington: isotropic
 
 #if M1_TU_PART(0)
 void RadiationVet::CleanClosure() {
@@ -194,8 +186,7 @@ void RadiationVet::CleanClosure() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanClosureEddington
-//! \brief clean_closure = eddington: the isotropic closure in every cell (D = I/3,
-//! h+- = +-1/4, k+ = I/6, C1 = 0), with no formal solution
+//! \brief clean_closure = eddington: D = I/3, h+- = +-1/4, k+ = I/6, C1 = 0
 
 void RadiationVet::CleanClosureEddington() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -222,9 +213,8 @@ void RadiationVet::CleanClosureEddington() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanClosureIterate
-//! \brief closure of the current Newton/Picard iterate (clean_closure = iterate): the
-//! formal solution of the iterate's E, gas temperature and F, with the stage
-//! opacities, so that the Eddington tensor belongs to the state being solved for
+//! \brief clean_closure = iterate: closure from the formal solution of the current
+//! iterate's E, T and F
 
 void RadiationVet::CleanClosureIterate() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -252,11 +242,9 @@ void RadiationVet::CleanClosureIterate() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanRayMoments
-//! \brief formal solution of the current state (u0 and the gas, no prediction) and its
-//! moments J, K = D J, H+, H-, <|I - S|> and the ray face fluxes per cell into dst (CLN_*
-//! layout, not normalised; J = 0 marks a cell whose rays do not carry its radiation).
-//! With solve = false the moments of the closure in place (the rays of the last formal
-//! solution) are taken.
+//! \brief ray moments J, K, H+-, <|I - S|> and face fluxes (CLN_*, not normalised) into
+//! dst: of a new formal solution of the current state, or (solve = false) of the closure
+//! in place
 
 void RadiationVet::CleanRayMoments(DvceArray5D<Real> dst, const bool solve) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -275,7 +263,7 @@ void RadiationVet::CleanRayMoments(DvceArray5D<Real> dst, const bool solve) {
   CleanFor("cln_raymom", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real jr = cs(m,CLN_J,k,j,i);
-    for (int n = 0; n < CLN_N; ++n) {   // (0: a slot the staggered layout drops)
+    for (int n = 0; n < CLN_N; ++n) {   // (0: a slot the staggered layout lacks)
       dst(m,n,k,j,i) = (n >= cs.extent_int(1)) ? 0.0 :
                        ((CleanCellMoment(n) && n != CLN_J) ? jr : 1.0)*cs(m,n,k,j,i);
     }
@@ -285,12 +273,9 @@ void RadiationVet::CleanRayMoments(DvceArray5D<Real> dst, const bool solve) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanClosureAfterSolve
-//! \brief clean_closure = extrap(2): the ray moments of a converged solution.  The last
-//! solve of a step gives the moments at t^{n+1} (used from the next step on); with
-//! extrap2 the stage-1 solve gives those at the stage-1 time.  With extrap1 only a
-//! backward-Euler step runs the formal solution here; after a stage step the closure of
-//! the stage-1 solve (rays of its first iterate, a state at the stage-1 time t^n + (a21 +
-//! g) dt: t^{n+1} for hesdirk2, t^n + g dt for sdirk2) gives the moments.
+//! \brief clean_closure = extrap(2): store the ray moments of a converged solution: the
+//! step's last solve at t^{n+1}, extrap2 also stage 1 at its time.  extrap1: the stage-1
+//! closure's moments at t^n + (a21 + g) dt; only backward Euler solves here
 
 void RadiationVet::CleanClosureAfterSolve() {
   const Real time = pmy_pack->pmesh->time;
@@ -322,12 +307,11 @@ void RadiationVet::CleanClosureAfterSolve() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanRingSolveSet
-//! \brief clean_rot_ring = jump: the swept set whose intensities give the face half
-//! ranges of the solve is the set of the step's rotation block;
-//! the step after a block boundary reads the next set of the boundary build
+//! \brief clean_rot_ring = jump: the face half ranges use the swept set of the step's
+//! rotation block
 
 void RadiationVet::CleanRingSolveSet() {
-  if (cln_cssc) return;   // (the sc rays on the cubed sphere: CleanScUnion2's two sets)
+  if (cln_cssc) return;   // (cubed-sphere sc rays: CleanScUnion2's two sets)
   const int64_t bs = VetGdBlock(pmy_pack->pmesh->ncycle);
   const int ns = static_cast<int>(cln_fvdm.size());
   for (int q = 0; q < ns && ns > 1; ++q) {
@@ -337,9 +321,8 @@ void RadiationVet::CleanRingSolveSet() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanRingJump
-//! \brief clean_rot_ring = jump: the moments of a step that closes a rotation block
-//! become those of the next block's window at its end (the closure jumps there), and the
-//! next step does not extrapolate through the jump
+//! \brief clean_rot_ring = jump: at a rotation-block end the moments jump to the next
+//! block's; the next step does not extrapolate through it
 
 void RadiationVet::CleanRingJump() {
   if (!cln_rjump) return;
@@ -351,8 +334,7 @@ void RadiationVet::CleanRingJump() {
 
 //----------------------------------------------------------------------------------------
 //! \fn bool CleanRealizable
-//! \brief whether ray moments q (CLN_* layout, not normalised, J > 0) are those of a
-//! non-negative intensity: |H| <= J and K - H H^T/J positive semidefinite (to round-off)
+//! \brief true if moments q (J > 0) are realisable: |H| <= J, K - H H^T/J PSD (to 1e-12)
 
 KOKKOS_INLINE_FUNCTION
 bool CleanRealizable(const CleanArgs &x, const Real *q, const int m, const int k,
@@ -385,28 +367,13 @@ bool CleanRealizable(const CleanArgs &x, const Real *q, const int m, const int k
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanClosureExtrap
 //! \brief clean_closure = extrap(2): the closure at the stage time from ray moments of
-//! converged solutions, extrapolated linearly in time.
-//!
-//! The formal solution is linear in the source and the boundary intensity, so the
-//! extrapolated moments are those of the extrapolated intensity, exact when S and the
-//! inflow vary linearly in time; the closure D = K/J, h+- = H+-/J, C1 is then formed from
-//! them.  The line passes through the moments at t^{n-1} and t^n (extrap), or, for stage
-//! 2 with extrap2, through those at t^n and of the stage-1 solution.  A cell keeps the
-//! moments at t^n where the extrapolated ones are not those of a non-negative intensity
-//! (J <= 0, |H| > J or K - H H^T/J not positive semidefinite; counted).  The first step,
-//! a restart and backward-Euler solves use the moments at t^n alone; without any (first
-//! step, restart) the closure of the state at t^n is built (CleanClosure).  With extrap1
-//! the moments are those of the stage-1 closures and stage 2 keeps the stage-1 closure.
-//! Where the stage-1 solve ends before t^{n+1} (sdirk2, trbdf2) the stage-1 moments are
-//! those of the stage-1 times: stage 1 takes the last step's alone (its pass 1 takes the
-//! closure of its own iterate), and stage 2 the line through the last step's and this
-//! step's stage-1 moments at t^{n+1} (keeping the stage-1 closure is O(dt) late).  The
-//! line is drawn only between two stage-1 sets, and never into a stage-1 pass 0: at c dt
-//! >> dx the sets are successive closure iterates of a quasi-static field, not samples of
-//! a smooth history, and a line fed back into the next set over-relaxes that iteration.
-//! For the same reason the stage-2 line is weighted 1/(1 + z) in each cell, z = c dt/dx
-//! its light crossings per step: 1 - O(dt) where the radiation is resolved in time (the
-//! order unchanged), 0 where it is quasi-static and the closure follows the stage-1 one.
+//! converged solutions, extrapolated linearly in time (exact for S and inflow linear in
+//! t).  The line runs through t^{n-1} and t^n, or (stage 2, extrap2) t^n and stage 1.
+//! Cells whose extrapolate is not realisable keep the latest moments (counted); first
+//! step, restart and backward Euler use t^n alone (or build it).  extrap1 with stage 1
+//! before t^{n+1} (sdirk2, trbdf2): stage 1 uses the last step's moments, stage 2 the
+//! line through the last and this step's stage-1 sets, weighted 1/(1 + z), z = c dt/dx
+//! (no over-relaxation where the field is quasi-static)
 
 #if M1_TU_PART(0)
 void RadiationVet::CleanClosureExtrap() {
@@ -414,8 +381,8 @@ void RadiationVet::CleanClosureExtrap() {
   const Real dt = pmy_pack->pmesh->dt;
   cln_nguard = 0;
   const bool sx = (cln_extrap == 3 && t2_tab != 0);   // (stage-1 moments before t^n+1)
-  // (stage 2 of sx: the line through two stage-1 sets, the last step's not of a
-  // backward-Euler step, a restart's start or a clean_rot_ring jump: cln_tn < time)
+  // (stage 2 of sx: the line through two stage-1 sets, the last not from backward
+  // Euler, a restart or a ring jump)
   const bool usec = sx && t2_solve == M1_T2S_STAGE2 && cln_have_c && !cln_cand_be &&
                     cln_have_n && cln_tn < time && cln_tm > cln_tn;
   if (cln_extrap == 3 && t2_solve == M1_T2S_STAGE2 && !usec) return;
@@ -470,8 +437,7 @@ void RadiationVet::CleanClosureExtrap() {
     const int j = js + (t/ni)%nj;
     const int k = ks + (t/(ni*nj))%nk;
     const int m = t/(ni*nj*nk);
-    // (stage 2 of sx: the line times 1/(1 + z), z = c dt / dx the light crossings of the
-    // cell's thinnest direction in a step)
+    // (stage 2 of sx: the line times 1/(1 + z), z = c dt/dx of the thinnest direction)
     Real z = 0.0;
     for (int d = 0; d < x.nf && usec; ++d) {
       z = fmax(z, x.c*dt*CleanDivF(x, d, m, k, j, i, 0.0, 1.0));
@@ -486,8 +452,7 @@ void RadiationVet::CleanClosureExtrap() {
                     CleanRealizable(x, q, m, k, j, i);
     if (!ok) {
       if (line && mn(m,CLN_J,k,j,i) > 0.0) ++ng;
-      // (the face sums of a MeshBlock face on the cubed sphere, held on both sides, stay
-      // extrapolated alike)
+      // (cubed sphere: face sums, held on both sides, stay extrapolated alike)
       for (int n = 0; n < CLN_N; ++n) {
         if (!x.cub || CleanCellMoment(n)) q[n] = mn(m,n,k,j,i);
       }
@@ -505,25 +470,13 @@ void RadiationVet::CleanClosureExtrap() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanPredictState
-//! \brief the state at t^{n+1} predicted from the physics of this step, as input of the
-//! formal solution (iw: E, T, F) and, for temperature-dependent opacities, opac.
-//!
-//! The hydro's explicit stage already holds the gas at t^{n+1} without the radiation
-//! coupling, and K1 = f(U^n) (the FSAL slope of the implicit part) gives the coupling's
-//! rates at U^n:
-//!  1. momentum: hydro + dt K1_M.  Where radiation supports the gas this cancels the
-//!     explicit gravity kick; the kinetic energy is taken from this momentum.
-//!  2. radiation transport: dt (K1_E + K1_EN) = -dt div F, less the work of the radiation
-//!     force on the gas.  A loss larger than the content is applied at constant relative
-//!     rate.
-//!  3. exchange: the implicit local relaxation of (eint, E) over dt, from the hydro eint
-//!     and the transported E (stiff and local, so solved as such; no overshoot).
-//! Without gas feedback the gas is held fixed and E advances at its own rate.
-//! Density is not changed by radiation within a step.  The prediction is within O(dt^2)
-//! of U^{n+1}.  Without a valid K1 (first step, backward Euler) the rates of 1. and 2.
-//! are zero, but the exchange 3. still relaxes the gas, as old production's relaxed ray
-//! source does in every step (a hot gas the step cools is no source of the closure).
-//! With use_k1 = false the formal solution sees the current state itself.
+//! \brief predict the t^{n+1} state for the formal solution (iw: E, T, F; opac if
+//! T-dependent), O(dt^2), from the hydro's explicit stage and K1 = f(U^n) (FSAL):
+//!  1. momentum: hydro + dt K1_M (cancels the explicit gravity kick where supported);
+//!  2. transport: dt (K1_E + K1_EN), losses beyond the content at constant relative rate;
+//!  3. exchange: implicit local relaxation of (eint, E) over dt.
+//! No valid K1 (first step, backward Euler): only 3.  No feedback: gas fixed.
+//! use_k1 = false: the current state itself
 
 #if M1_TU_PART(0)
 void RadiationVet::CleanPredictState(const bool use_k1) {
@@ -587,8 +540,8 @@ void RadiationVet::CleanPredictState(const bool use_k1) {
         const Real de = dt*k1(m,M1_T2_E,k,j,i);
         e = CleanPredictE(e0, de);
       } else if (relax) {
-        // radiation transport over dt (a valid K1), less the work of the radiation force
-        // on the gas, then the implicit local exchange of (eint, E) over dt
+        // transport over dt (valid K1) less the radiation force's work, then the
+        // implicit local exchange of (eint, E)
         if (use_rates) {
           for (int n = 0; n < 3; ++n) mom[n] += dt*k1(m,M1_T2_M1+n,k,j,i);
           const Real ekin_new = 0.5*(SQR(mom[0]) + SQR(mom[1]) + SQR(mom[2]))/d;
@@ -633,17 +586,12 @@ void RadiationVet::CleanPredictState(const bool use_k1) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanClosureSphere
-//! \brief spherical polar: the exact ray moments of a uniformly bright sphere of radius
-//! R = clean_sphere_radius about the origin seen through vacuum.  Outside it the rays
-//! fill the cone mu > mu_c = sqrt(1 - R^2/r^2) about r_hat: D_rr = (1 + mu_c + mu_c^2)/3,
-//! D_tt = D_pp = (1 - D_rr)/2, h+_r = (1 + mu_c)/2, h-_r = 0,
-//! h+-_t = h+-_p = +-S/(pi (1 - mu_c)) with S = int_{mu_c}^1 sqrt(1 - mu^2) dmu, C1 = 1,
-//! and the half-range stress columns k+^r = (D_rr, 0, 0), k+^t = (k, D_tt/2, 0),
-//! k+^p = (k, 0, D_pp/2) with k = (R/r) (1 + mu_c)/(3 pi); R -> 0 is the point source.
-//! Inside (r <= R) the radiation is isotropic: D = I/3, h+- = +-1/4, k+ = I/6, C1 = 0.
-//! On the cubed sphere D and the stress columns take Cartesian components about
-//! r_hat (that of the frame of y) and the mean normals n_d of the lateral families:
-//! k+^r = k_rr r_hat, k+^d = k r_hat + D_tt n_d/2.
+//! \brief exact closure of a uniformly bright sphere of radius R = clean_sphere_radius
+//! in vacuum.  Outside, the cone mu > mu_c = sqrt(1 - R^2/r^2): D_rr = (1 + mu_c +
+//! mu_c^2)/3, D_tt = D_pp = (1 - D_rr)/2, h+_r = (1 + mu_c)/2, h-_r = 0, h+-_t = h+-_p =
+//! +-S/(pi (1 - mu_c)), S = int_{mu_c}^1 sqrt(1 - mu^2) dmu, C1 = 1; k+^r = (D_rr, 0, 0),
+//! k+^t = (k, D_tt/2, 0), k+^p = (k, 0, D_pp/2), k = (R/r)(1 + mu_c)/(3 pi).  Inside:
+//! isotropic.  Cubed sphere: Cartesian about r_hat and the lateral family normals n_d
 
 void RadiationVet::CleanClosureSphere() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -717,14 +665,11 @@ void RadiationVet::CleanClosureSphere() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanRays
-//! \brief the formal solution of the state in iw (E, T, F; chi from opac) and its
-//! closure: vet_sc on a Cartesian mesh, vet_gd from the first shell on spherical polar.
-//! The source function is the state's own (no relaxed source or relaxed scattering J,
-//! which would make the closure depend on dt).
+//! \brief formal solution of the state in iw (chi from opac) and its closure: vet_sc,
+//! or vet_gd on curved meshes; the state's own source (no dt-dependent relaxation)
 
 void RadiationVet::CleanRays() {
-  // (the closure's time: a step at least one rotation block long, the steady start's
-  // large steps, takes the sets of its start, as VetGdBlock)
+  // (the closure's time; a step of at least one rotation block takes its start's sets)
   const Real dt = pmy_pack->pmesh->dt, tc = pmy_pack->pmesh->time +
                   ((vgd_rot_dt > 0.0 && dt >= vgd_rot_dt) ? 0.0 : dt);
   if (!vgd_on && cln_ring) {   // (the rotating vet_sc set: CleanRingMoments sweeps it)
@@ -757,8 +702,7 @@ void RadiationVet::CleanRays() {
     CleanRingMoments();
   } else {
     CleanClosureFromGd();
-    // (clean_rays = sc on the cubed sphere: also the intensities cln_fvi of the face half
-    // ranges, CleanFaceHalf)
+    // (cubed-sphere sc rays: also the face half ranges from cln_fvi, CleanFaceHalf)
     if (cln_consist || cln_cssc) CleanGdFaceSums();
     if (cln_cssc) CleanFaceHalf(vgd_dir, 0, true, 0);
     if (cln_cssc) cln_fvi = DvceArray5D<Real>();   // (build scratch)
@@ -767,9 +711,8 @@ void RadiationVet::CleanRays() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanScUnion2
-//! \brief clean_rot_ring, the sc rays on the cubed sphere: the union the face half ranges
-//! read (cln_fvd, cln_fvn), the sets b and b+1 of the step in their cln_fvi slots
-//! (blk mod 2) with the cross-fade weights 1 - s and s: two sets of intensities resident
+//! \brief clean_rot_ring, cubed-sphere sc rays: the direction union (cln_fvd) of sets
+//! b, b+1 (slots blk mod 2) with cross-fade weights 1 - s, s
 
 void RadiationVet::CleanScUnion2() {
   const int n = vgd_n;
@@ -792,18 +735,15 @@ void RadiationVet::CleanScUnion2() {
 
 //----------------------------------------------------------------------------------------
 //! \fn bool CleanRingMix
-//! \brief clean_rot_ring: the raw moments q of the union of the current set (slot 0 of
-//! rl, CleanRingL), the next one (slot qn, weight s) and the older sets r (weights 1,
-//! the last 1 - s) from their normalised moments (rl, the offsets rr): J-weighted with
-//! the ratios r_r = J_{b-r}/J_b, J their weighted mean.  Invalid offsets (r_r < 0) and a
-//! current set without rays (false) are left out, as the production ring (RotAvgApply)
+//! \brief clean_rot_ring: raw moments q of the ring mix: current set (slot 0), next (qn,
+//! weight s), older sets r (weights 1, the last 1 - s), J-weighted with r_r =
+//! J_{b-r}/J_b.  Invalid offsets (r_r < 0) skipped; false if the current set has no rays
 
 struct CleanRingL {
   DvceArray5D<Real> rl, cs;
   Kokkos::Array<int, CLN_N> fm;
   int nf, ol, ks, js, is;
-  // (slot o's normalised moment n at the interior cell (k,j,i): the swept set ol from
-  // cln_s, where its sweep left it (the last), as the raw copy would hold it)
+  // (slot o's normalised moment n at interior cell (k,j,i); slot ol is read from cln_s)
   KOKKOS_INLINE_FUNCTION
   Real operator()(const int m, const int o, const int n, const int k, const int j,
                   const int i) const {
@@ -849,13 +789,10 @@ bool CleanRingMix(const CleanRingL &rl, const DvceArray5D<Real> &rr,
 
 //----------------------------------------------------------------------------------------
 //! \fn bool CleanRingEma
-//! \brief clean_rot_ring with vet_rotate_avg_ema (production's form, RotAvgEma*,
-//! RotXfBlend): the raw moments q of (1 - s) A + s T in the normalised fields and J. A =
-//! the current set with the EMA offsets (e = rr's first nfr, its J entry the ratio r =
-//! J_avg/J_b), T = the next set with the EMA the coming boundary makes of this state's
-//! Delta (RotAvgEmaShift): aw = max(1/N, a_ch, 1/(n + 1)), r' = (1 - aw) r/R + aw, e' =
-//! (1 - aw)(r/R)/r' (e - D), R = J_{b+1}/J_b; a_ch is this build's (pd's entry nfr), n
-//! rr's entry nfr + 2 (0: no history, A and T the sets themselves)
+//! \brief clean_rot_ring, vet_rotate_avg_ema: raw moments of (1 - s) A + s T.  A: current
+//! set plus EMA offsets e (J entry r = J_avg/J_b); T: next set with the EMA its boundary
+//! will make, aw = max(1/N, a_ch, 1/(n + 1)), r' = (1 - aw) r/R + aw,
+//! e' = (1 - aw)(r/R)/r' (e - D), R = J_{b+1}/J_b; n = rr's entry nfr + 2 (0: no history)
 
 KOKKOS_INLINE_FUNCTION
 bool CleanRingEma(const CleanRingL &rl, const DvceArray5D<Real> &rr,
@@ -892,15 +829,10 @@ bool CleanRingEma(const CleanRingL &rl, const DvceArray5D<Real> &rr,
 
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationVet::CleanRingFields
-//! \brief clean_rot_ring: the fields the offsets and the Delta carry, fm(CLN index) =
-//! their slot or -1, and their number.  The staggered layout leaves out those none of its
-//! solves reads: those cln_s does not hold (CleanNs: CLN_KP, CLN_F1, off the cubed sphere
-//! CLN_FH) and the stress parts of the face sums CLN_FX, CLN_F2, CLN_F3 and (cubed
-//! sphere) CLN_FH: only their energy flux is read; on the cubed sphere also CLN_G (the
-//! sp F solve reads it).  The mixture gives 0 there (CleanRingMix).  file: the fields
-//! of the restart files' layout (CleanRingRstCopy): up to version 6 it keeps the stress
-//! parts and CLN_G on the cubed sphere (0 in a file written since), from version 7 the
-//! ring's own
+//! \brief clean_rot_ring: the fields the ring carries, fm[n] = slot or -1; returns their
+//! number.  Left out: fields cln_s lacks, the stress parts of the face sums and (cubed
+//! sphere) CLN_G (mixed as 0).  file: the restart layout; files before version 7 keep the
+//! stress parts (and CLN_G on the cubed sphere)
 
 #if M1_TU_PART(0)
 int RadiationVet::CleanRingFields(int *fm, const bool file) const {
@@ -919,9 +851,8 @@ int RadiationVet::CleanRingFields(int *fm, const bool file) const {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanRingShift
-//! \brief clean_rot_ring: the first build of block b shifts the ring by the pending
-//! Delta (that of the boundary of block b when it closed the block): d_1 = -Delta,
-//! d_j -= Delta, the J ratios r_j' = r_{j-1}/R, r_1' = 1/R
+//! \brief clean_rot_ring: block b's first build shifts the ring by the pending Delta:
+//! d_1 = -Delta, d_j -= Delta, r_j' = r_{j-1}/R, r_1' = 1/R
 
 void RadiationVet::CleanRingShift(const int64_t b) {
   auto &id = pmy_pack->pmesh->mb_indcs;
@@ -934,9 +865,8 @@ void RadiationVet::CleanRingShift(const int64_t b) {
   auto rr = cln_rr;
   auto pd = cln_rpd;
   if (vra_ema) {
-    // (RotAvgEmaShift: the EMA moves on with the Delta and the change weight a_ch of the
-    // boundary; the aux := the next set there.  No history or no Delta: the current set
-    // alone)
+    // (EMA update with the boundary's Delta and weight a_ch; no history or no Delta:
+    // the current set alone)
     const Real a0 = vra_ema_wb ? -1.0 : 1.0/vra_ema_n;   // (< 0 = a_ch alone)
     par_for("cln_ring_eshift", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, 0,
             id.nx3 - 1, 0, id.nx2 - 1, 0, id.nx1 - 1,
@@ -980,13 +910,10 @@ void RadiationVet::CleanRingShift(const int64_t b) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanRingPreShift
-//! \brief dt_retry checkpoint (DtRetryQuiesce): with clean_rot_ring = live, the
-//! cross-fade and vet_gd_rotate_align the build of a step lies in one block for every dt
-//! of its retries (a step ends on each boundary): a step that starts on the boundary of
-//! block cln_rb shifts the ring here, before the checkpoint, as its first build would.
-//! The offsets then do not change within the cycle and the pending Delta is read by no
-//! build of it: the checkpoint skips both (cln_rfix).  Otherwise the build shifts and
-//! both are copied
+//! \brief before the dt_retry checkpoint: with clean_rot_ring = live, cross-fade and
+//! vet_gd_rotate_align every retry's build lies in one block, so a step starting on a
+//! block boundary shifts the ring here and the checkpoint skips offsets and Delta
+//! (cln_rfix).  CleanRingBlk: the block of a build at time + dt
 
 int64_t RadiationVet::CleanRingBlk(const Real dt) const {
   const Real tau = (pmy_pack->pmesh->time + dt - vgd_rot_t0)/vgd_rot_dt;
@@ -999,10 +926,8 @@ bool RadiationVet::CleanRingTwo() const {
   return cln_ring == 1 && vgd_xf && !(vra_on && !g_vra_adv);
 }
 
-// (the sc rays on the staggered cubed sphere: their intensities are a build's scratch,
-// folded into the face half ranges cln_fh; those are rebuilt before every solve where
-// every solve builds the closure first and every build sweeps all the sets they read,
-// else they are state: the dt_retry checkpoint and the restart files keep them)
+// (cubed-sphere sc rays: true if the face half ranges cln_fh are rebuilt before every
+// solve; else they are state, kept by the dt_retry checkpoint and restart files)
 bool RadiationVet::CleanFhBuilt() const {
   return cln_cssc && cln_extrap == 0 && !cln_closit && !cln_edd && !cln_sphere &&
          (!cln_ring || CleanRingTwo());
@@ -1019,13 +944,11 @@ void RadiationVet::CleanRingPreShift() {
 
 //----------------------------------------------------------------------------------------
 //! \fn RadiationVet::CleanRingRst*
-//! \brief clean_rot_ring in the restart files (version 4): the offsets cln_rr, then the
-//! Delta cln_rpd, of the fields the ring carries on the interior cells, in their own
-//! layout flat per MeshBlock (the fields of the file layout, CleanRingFields: 0 in those
-//! cln_rr does not hold; with vet_rotate_avg_ema each followed by its 3 entries,
-//! CleanRingNr / Nd), dense in CleanRingRstN() ghosted slabs (the rest of the last one
-//! 0).  CleanRingRstCopy packs (pk; 0 without have) or unpacks the slabs c ..
-//! c + CleanRingRstN() - 1 of a (c < 0: a's channel 0 is slab -c) of MeshBlocks m0 ..
+//! \brief clean_rot_ring in restart files (version >= 4): offsets cln_rr then Delta
+//! cln_rpd on interior cells in the file layout (CleanRingFields; 0 where cln_rr holds
+//! none; ema: 3 extra entries), flat per MeshBlock in CleanRingRstN() ghosted slabs.
+//! CleanRingRstCopy packs (pk; zeros without have) or unpacks slabs c .. of array a
+//! (c < 0: channel 0 is slab -c) for MeshBlocks m0 .. m0 + nmb - 1
 
 int RadiationVet::CleanRingRstN() const {
   auto &id = pmy_pack->pmesh->mb_indcs;
@@ -1055,8 +978,7 @@ void RadiationVet::CleanRingRstCopy(DvceArray5D<Real> &a, const int c, const int
       Kokkos::realloc(cln_rpd, nmb, CleanRingNd(nf), id.nx3, id.nx2, id.nx1);
     }
   }
-  // (the field groups of cln_rr: the K - 1 offsets, or the EMA's 1; the entries after
-  // the groups are copied as they are)
+  // (cln_rr's field groups: K - 1 offsets or the EMA's 1; later entries copied as is)
   const int gr = vra_ema ? 1 : vra_k - 1;
   const int64_t ni = static_cast<int64_t>(id.nx1)*id.nx2*id.nx3;
   const int64_t nr = CleanRingNr(nf)*ni, ndm = CleanRingNd(nf)*ni;
@@ -1093,27 +1015,15 @@ void RadiationVet::CleanRingRstCopy(DvceArray5D<Real> &a, const int c, const int
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanRingMoments
-//! \brief clean_rot_ring: the closure of the rotating union of vet_rotate_avg = K sets
-//! with the cross-fade from a sweep of the current set b and the next set b+1 alone.
-//! The union's moments (CLN_*, not normalised; the face sums included) are
+//! \brief clean_rot_ring: closure of the rotating union of K = vet_rotate_avg sets with
+//! cross-fade, sweeping only the current set b and the next b+1:
 //!   M = (1 - s)/K M_{b-K+1} + 1/K sum_{j=1}^{K-2} M_{b-j} + 1/K M_b + s/K M_{b+1}
-//! with the older sets taken from the normalised moments g = M/J of the current one and
-//! the offsets d_j = g_{b-j} - g_b, r_j = J_{b-j}/J_b (CleanRingMix) measured on the same
-//! state, as production's ring (rad_vet_rotavg.cpp): the ray pattern is carried, the
-//! current set's J and moments stay live, so the mixture follows the state's scale.
-//! The build that closes block b (on its boundary t_b+1,
-//! s = 1; vet_gd_rotate_align puts a step end there on every dt) gives Delta = M_{b+1} -
-//! M_b, and the first build of block b+1 shifts the ring: d_1 = -Delta, d_j -= Delta.
-//! The offsets are therefore piecewise constant in t with steps at the block boundaries:
-//! the closure is a function of t, the state and the states at the boundaries, continuous
-//! in t, so the integrator keeps its order in dt; against the union it lags by the
-//! change of the ray-pattern differences over at most K rotation blocks.  A fresh start
-//! (or a missed boundary) sweeps the whole union once to fill the ring.  A cell whose
-//! mixture is not that of a non-negative intensity takes the two swept sets' (1 - s) M_b
-//! + s M_{b+1} (the cell moments only on the cubed sphere, whose face sums are held on
-//! both sides of a MeshBlock face).  Linear in the moments, so every face sum stays
-//! single-valued and conservative.  The sc rays (clean_rays = sc, spherical polar) sweep
-//! each set alone here, in its own tables (VgdXfTables keeps two).
+//! older sets from the current g = M/J plus offsets d_j = g_{b-j} - g_b,
+//! r_j = J_{b-j}/J_b (CleanRingMix).  The build closing block b (s = 1) gives Delta =
+//! M_{b+1} - M_b; block b+1's first build shifts the ring (CleanRingShift).  Offsets are
+//! piecewise constant, so the closure stays continuous in t.  A fresh start fills the
+//! ring with one full sweep.  Unrealisable mixtures fall back to (1 - s) M_b + s M_{b+1}
+//! (counted); linear in the moments, so face sums stay single-valued and conservative
 
 void RadiationVet::CleanRingMoments() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1123,18 +1033,13 @@ void RadiationVet::CleanRingMoments() {
   const int64_t b = cln_rbld;
   const Real s = cln_rs;
   const int c3 = ke - ks + 1, c2 = je - js + 1, c1 = ie - is + 1;
-  // (the swept sets' moments: the current set in cln_rl slot 0, the next in slot 1; the
-  // older ones of a fill straight into their offsets' slots of cln_rr.  All on the
-  // interior cells; the offsets and the Delta only of the fields fm carries)
-  // (fr: the fields of the offsets and the Delta, nfr of them)
+  // (swept moments on interior cells: current set in cln_rl slot 0, next in slot 1; a
+  // fill's older sets straight into cln_rr.  fr: fields of offsets and Delta)
   Kokkos::Array<int, CLN_N> fm, fr;
   const int nf = CleanRingFields(fm.data()), nfr = CleanRingFields(fr.data());
-  // (the sweep order: the sc rays on the cubed sphere the older sets in block order,
-  // then the live b, b+1 in their slot order blk mod 2, as CleanFaceHalf folds the union
-  // (the sets' sweeps are independent); elsewhere the slot order (on sp the block order
-  // breaks the bitwise restart of q_def, reflecting top).  The set swept last keeps its
-  // moments in cln_s: the live ring's rl holds the other one, ol the slot of the last
-  // (0: b, 1: b + 1), or both where an older set of a fill is swept last)
+  // (sweep order: cubed-sphere sc rays the older sets by block, then b, b+1 by slot
+  // blk mod 2, as CleanFaceHalf folds them; elsewhere slot order (keeps the restart
+  // bitwise).  The last swept set stays in cln_s, ol its slot (-1: rl holds both))
   std::vector<int> ord(ns);
   for (int q = 0; q < ns; ++q) ord[q] = q;
   auto okey = [&](int u) {
@@ -1147,8 +1052,7 @@ void RadiationVet::CleanRingMoments() {
   }
   const int64_t pl = cln_fvblk[ord[ns - 1]] - (b - nk + 1);
   const int ol = (cln_ring != 1) ? -1 : ((pl == nr) ? 0 : ((pl == nk) ? 1 : -1));
-  // (over the stencil coefficients cln_csy where they fit: every pass's
-  // CleanPreconditionerSetup rewrites them before they are read, dead across a build)
+  // (aliases cln_csy where it fits: rewritten before every read, dead across a build)
   const int nrl = ((ol < 0) ? 2 : 1)*nf;
   if (cln_csy.span() >= static_cast<std::size_t>(nmb)*nrl*c3*c2*c1) {
     cln_rl = DvceArray5D<Real>(cln_csy.data(), nmb, nrl, c3, c2, c1);
@@ -1161,9 +1065,8 @@ void RadiationVet::CleanRingMoments() {
     Kokkos::realloc(cln_rpd, nmb, CleanRingNd(nfr), c3, c2, c1);
     cln_rok = false;
   }
-  // vet_rotate_avg_ema (CleanRingEma): rr = the EMA offsets, the aux J and D11 (the
-  // current set at the last boundary) and the set count n; pd also a_ch and the next
-  // set's J and D11
+  // vet_rotate_avg_ema: rr = EMA offsets, aux J and D11 (last boundary), set count n;
+  // pd also a_ch and the next set's J and D11
   const bool ema = vra_ema, chj = vra_ema_chj, estep = vra_ema_chstep;
   const Real a0 = ema ? (vra_ema_wb ? -1.0 : 1.0/vra_ema_n) : 1.0, eps = vra_ema_eps;
   std::vector<int> slot(nk + 2, -1);   // slot of block b - nk + 1 + p
@@ -1175,25 +1078,22 @@ void RadiationVet::CleanRingMoments() {
   for (int p = 0; p < nr; ++p) full = full && slot[p] >= 0;
   const bool shift = cln_rok && b == cln_rb + 1 && cln_rpb == cln_rb;
   const bool fill = (!cln_rok || b != cln_rb) && !shift && full;
-  // the moments of each swept set (the ray_min test on the mixture below); the sc rays on
-  // the cubed sphere: the union's directions first (the face half ranges, CleanFaceHalf)
+  // moments of each swept set (ray_min tested on the mixture); cubed-sphere sc rays: the
+  // union's directions first
   if (cln_cssc) CleanScUnion2();
   auto dfull = cln_fvd;
   bool fh0 = true;
   const Real ray_min = cln_raymin;
   cln_raymin = 0.0;
-  // (clean_ring_jmin: the J ratios of the offsets and the Delta only where both sets'
-  // J >= clean_ray_min E: at a fresh start's ring fill a set can see a source hole, J ~
-  // 1e-200 in all sets, and J_s/J_b ~ 1e50 there came back times the next build's J)
+  // (clean_ring_jmin: J ratios only where both sets' J >= clean_ray_min E, so a source
+  // hole's J ~ 1e-200 gives no huge ratio)
   const Real jmin = cln_ringjmin ? ray_min : 0.0;
   auto iwr = iw;
   auto cs = cln_s;
   const CleanRingL rl{cln_rl, cln_s, fm, nf, ol, ks, js, is};
   auto rr = cln_rr;
-  // clean_rot_fuse: the live ring's two sets of a build (b, b+1) in one fused sweep
-  // (VetGdSweep with vgd_xff_now: each set's own tables and intensities, vgd_i and
-  // vgd_i_xb), their lists made first; the loop below then takes each set's moments, its
-  // tables and intensities brought back by VgdXfTables (not with a reflecting top)
+  // clean_rot_fuse: sweep the live sets b, b+1 in one fused VetGdSweep (vgd_xff_now;
+  // own tables and intensities each); the loop below then takes each set's moments
   const bool fuse = vgd_on && cln_rfuse && !cln_scmem && ns == 2 && !fill && VetGdXffOk();
   if (vgd_on && cln_rfuse && !fuse && ns == 2 && !fill && !cln_rfuse_said &&
       global_variable::my_rank == 0) {
@@ -1214,7 +1114,7 @@ void RadiationVet::CleanRingMoments() {
     vgd_xff_now = true;
     VetGdSweep();
     vgd_xff_now = false;
-    vgd_xff_n += 1.0;   // (the fused builds, reported with vet_gd_rotate_xfade_fuse)
+    vgd_xff_n += 1.0;   // (fused build count)
   }
   for (int qo = 0; qo < ns; ++qo) {
     const int q = ord[qo];
@@ -1222,8 +1122,8 @@ void RadiationVet::CleanRingMoments() {
     const bool older = (p >= 0 && p < nr);
     const bool keep = (older && fill) || p == nr || p == nk;
     if (older && fill) vra_gen += 1;
-    if (!vgd_on) {   // (vet_sc on a Cartesian mesh: the set of block cln_fvblk[q] alone)
-      VetRotSet(VetRotBeta(cln_fvblk[q]));   // (no RotAvg: VetShortChar is not run)
+    if (!vgd_on) {   // (vet_sc: the set of block cln_fvblk[q] alone)
+      VetRotSet(VetRotBeta(cln_fvblk[q]));
       VetShortCharSweep();
       CleanClosureFromRays();
     } else {
@@ -1262,19 +1162,16 @@ void RadiationVet::CleanRingMoments() {
   const int qb = 0, qn = (slot[nk] >= 0) ? 1 : 0;
   auto pd = cln_rpd;
   if (!cln_rok || b != cln_rb) {
-    // (a fill outside the steady start: below; clean_rot_ring_fill_rst: the first fill
-    // of a restart from an old scheme's file as the steady start's, at the file's state)
+    // (f0: fill outside the steady start; clean_rot_ring_fill_rst: a restart's first
+    // fill from an older-format file fills as the steady start does)
     const bool f0 = !cln_insteady && !(cln_rfrst && cln_rstold && !cln_rfdone && full);
     cln_rfdone = cln_rfdone || (cln_rstold && full);
     if (shift) {
       CleanRingShift(b);
     } else if (full && ema) {
-      // RotAvgEmaInit: the J-weighted equal mix of the current and the previous set (its
-      // moments in rr's offsets, above); the aux := the current set.  Outside the steady
-      // start the fill0 form (as the window's fill below): the current set alone, count
-      // 1; a restart from a file whose averaged closure had converged (an old scheme's
-      // EMA history, cln_rhist) count N: the run continues an average, no warm-up, the
-      // next boundary takes the weight max(1/N, a_ch) instead of 1/2
+      // EMA init: J-weighted equal mix of the current and previous set, aux := current.
+      // f0: the current set alone, count 1; a restart with converged EMA history
+      // (cln_rhist): count N, no warm-up
       const Real n0 = cln_rhist ? vra_ema_n : 1.0;
       cln_rhist = false;
       par_for("cln_ring_einit", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
@@ -1295,12 +1192,9 @@ void RadiationVet::CleanRingMoments() {
         rr(m,nfr+2,k,j,i) = v ? fmax(2.0, n0) : ((f0 && jb > 0.0 && jb >= jm) ? n0 : 0.0);
       });
     } else if (full) {
-      // a fill: within CleanSteadyStart (a fresh start's ring, built at the initial state
-      // and time) the offsets of the older sets from the current one (their moments,
-      // above); elsewhere the older sets start as the current one (zero offsets, J ratio
-      // 1) and enter one per block through the shifts: their sweep at a step's build
-      // would take a state one step on, at a time that depends on dt, into the window for
-      // K blocks, an O(dt) error (deck D with rotation 1st order, 2nd with this form)
+      // a fill: in CleanSteadyStart the older sets' offsets from their sweeps; elsewhere
+      // zero offsets (J ratio 1), the older sets entering one per block via the shifts
+      // (sweeping them at a step's build would add an O(dt) error)
       par_for("cln_ring_fill", DevExeSpace(), 0, nmb - 1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k0, const int j0, const int i0) {
         const int k = k0 - ks, j = j0 - js, i = i0 - is;
@@ -1340,8 +1234,8 @@ void RadiationVet::CleanRingMoments() {
                                 ((jb > 0.0 && jb >= jm && jn >= jm) ? jn/jb : -1.0);
       }
       if (!ema) return;
-      // (RotAvgEmaChange: a_ch of the boundary, the current set now against the aux,
-      // c = max |ln J_b/J_aux|, |D11_b - D11_aux|; the next set's J and D11 for the aux)
+      // (EMA change weight a_ch from c = max |ln J_b/J_aux|, |D11_b - D11_aux|; the next
+      // set's J and D11 for the aux)
       Real ach = -1.0;
       if (eps > 0.0) {
         const Real jo = rr(m,nfr,k,j,i);
@@ -1356,8 +1250,7 @@ void RadiationVet::CleanRingMoments() {
     cln_rpb = b;
     cln_rpt = vgd_rot_t0 + (static_cast<Real>(b) + (cln_rlast ? 1.0 : s))*vgd_rot_dt;
   }
-  // the mixture; jump, at the build that closes the block: also the moments of the next
-  // block's window there (cln_rnew, the closure history of the next step)
+  // the mixture; jump: at the block-closing build also the next block's window (cln_rnew)
   const bool ring = cln_rok;
   const bool nxt = ring && cln_rlast && slot[nk] >= 0;
   if (nxt && cln_rnew.extent_int(0) != nmb) {   // (the layout of cln_mc it becomes)
@@ -1379,7 +1272,7 @@ void RadiationVet::CleanRingMoments() {
     const int m = t/(ni*nj*nkk);
     // (the swept sets' raw moments M = g J)
     const int kr = k - ks, jr = j - js, ir = i - is;
-    // (slot o; the fields the ring does not carry: 0, none of the solves reads them)
+    // (slot o; fields the ring does not carry: 0, never read)
     auto raw = [&](const int o, const int n) {
       const Real jo = rl(m,o,CLN_J,kr,jr,ir);
       return (n == CLN_J) ? jo : ((fm[n] < 0) ? 0.0 : rl(m,o,n,kr,jr,ir)*jo);
@@ -1424,17 +1317,11 @@ void RadiationVet::CleanRingMoments() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanFvSets
-//! \brief clean_rot_ring: the swept directions (cln_fvd, cln_fvn) for the closure of
-//! time tc (of the step of cycle cyc).  The rotating vet_gd set (vet_gd_rotate_dt |
-//! _every) is swept as the union of the sets the closure averages, set by set in slots of
-//! n directions with the set's weight folded into the quadrature weights, so that every
-//! moment and face sum is the weighted mean of the sets' (linear in I: single-valued,
-//! conservative and realisable).  With vet_rotate_avg = K these are the last K sets
-//! b-K+1 .. b of block b, 1/K each; vet_gd_rotate_xfade adds the next set b+1 and weights
-//! the oldest (1 - s)/K and the next s/K, s the fraction of block b passed at tc, so that
-//! the closure is continuous in time.  A function of t and the state alone (a restart
-//! rebuilds the same union).  Block blk takes slot blk mod (K + xfade).  Without
-//! vet_rotate_advance the K sets repeat: the union is fixed and has nothing to fade.
+//! \brief the swept directions (cln_fvd, cln_fvn) for the closure at time tc: the union
+//! of the rotating sets, the set weights folded into the quadrature weights (moments are
+//! weighted means: single-valued, conservative, realisable).  vet_rotate_avg = K: sets
+//! b-K+1 .. b, 1/K each; vet_gd_rotate_xfade adds b+1, weights (1 - s)/K oldest and s/K
+//! next, s the fraction of block b passed.  Slot blk mod (K + xfade); a function of t
 
 void RadiationVet::CleanFvSets(const Real tc, const int cyc) {
   const int n = vgd_n;
@@ -1508,11 +1395,9 @@ void RadiationVet::CleanFvSets(const Real tc, const int cyc) {
 
 //----------------------------------------------------------------------------------------
 //! \fn int CleanFvMirror
-//! \brief the leaving direction (of d0 .. d0+nd-1) nearest to the mirror image
-//! n - 2 (n . t) t of an incoming direction d at a wall of unit normal t, sg t outward
-//! of the cell (-1: d is not incoming); u = |n . t|.  Of directions as near as each other
-//! to round-off (a symmetric image: the cubed sphere's faces) the first, so that the map
-//! does not depend on the last bits of the geometry (GPU against CPU)
+//! \brief leaving direction of d0 .. d0+nd-1 nearest the mirror image n - 2 (n . t) t of
+//! incoming d at a wall (sg t outward; -1: d not incoming); u = |n . t|.  Ties within
+//! 1e-12 take the first (CPU/GPU independent)
 
 KOKKOS_INLINE_FUNCTION
 int CleanFvMirror(const DvceArray2D<Real> &dir_, const int d0, const int nd, const int d,
@@ -1534,17 +1419,13 @@ int CleanFvMirror(const DvceArray2D<Real> &dir_, const int d0, const int nd, con
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanRayCut
-//! \brief clean_ray_cut, from the rays' source of this build (vlat_cs, VetLatCsFinish):
-//! the first shell swept, vlat_icut (one global min over the columns).  Below it the
-//! closure is the diffusion limit (CleanThickI), whose error is O(R^2) with R = |grad
-//! S|/(chi S): a column's cut lies clean_ray_cut_margin optical depths below its first
-//! cell from the bottom up with R >= clean_ray_cut_r (central differences along all three
-//! axes, one-sided at a physical face) or thinner than vet_col_lat_cut_thin, and at
-//! tau_top >= clean_ray_cut_taumin.  The cut moves down at once and up only after
-//! clean_ray_cut_wait builds that would raise it; the cut and that count go into the
-//! restart file (clean_ray_cut_now, _count).  The staggered layout's sc rays only
-//! (clean_rays = sc: the vet_gd sweep starts at the cut with the diffusion inflow);
-//! several MeshBlocks along x1: no cut.
+//! \brief clean_ray_cut: first swept shell vlat_icut (global min over columns); below
+//! it the closure is the diffusion limit (CleanThickI, error O(R^2),
+//! R = |grad S|/(chi S)).
+//! A column's cut: clean_ray_cut_margin optical depths below its lowest cell with R >=
+//! clean_ray_cut_r or thinner than vet_col_lat_cut_thin, and at tau_top >=
+//! clean_ray_cut_taumin.  Moves down at once, up after clean_ray_cut_wait builds (both
+//! in the restart file).  sc rays only; no cut with several MeshBlocks along x1
 
 #if M1_TU_PART(1)
 void RadiationVet::CleanRayCut() {
@@ -1613,8 +1494,7 @@ void RadiationVet::CleanRayCut() {
 }
 #endif  // M1_TU_PART(1)
 
-// the directions of one cell as a strided row, the accessor's address once
-// per cell instead of per direction (the same values; out of the slab: its dummy)
+// one cell's directions as a strided row: the address once per cell (dummy: stride 0)
 struct CleanRow {
   Real *p;
   int64_t s;
@@ -1629,11 +1509,10 @@ CleanRow VgdRow(const RadiationVet::VgdRag &vi, const int m, const int kb, const
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanClosureFromGd
-//! \brief the closure from the vet_gd intensities in the local basis (r, theta, phi) of
-//! each cell, mu_b = n . e_b: J = <I>, K_bc = <I mu_b mu_c>, H+-_b = <I mu_b> over mu_b
-//! >< 0, K+^d_b = <I mu_b mu_d> over mu_d > 0 and C1 = <|I - S|>/J (CLN_* layout, as
-//! CleanClosureFromRays; no ray face fluxes).  On the cubed sphere mu_b = n_b (Cartesian
-//! D and k+ columns) and the half ranges are about the family normals (CleanCsFamily).
+//! \brief closure from the vet_gd intensities, mu_b = n . e_b in the cell's basis:
+//! J = <I>, K_bc = <I mu_b mu_c>, H+-_b = <I mu_b> over mu_b >< 0, K+^d_b = <I mu_b mu_d>
+//! over mu_d > 0, C1 = <|I - S|>/J.  Cubed sphere: Cartesian D, half ranges about the
+//! family normals
 
 #if M1_TU_PART(1)
 void RadiationVet::CleanClosureFromGd() {
@@ -1656,12 +1535,10 @@ void RadiationVet::CleanClosureFromGd() {
   // (in device memory, CleanGdFaceSums)
   cln_gdx = CleanDevArgs(x, 3);
   const CleanArgs *px = cln_gdx;
-  // clean_ray_cut: below the cut the sc rays' intensities are the diffusion limit, in
-  // vgd_i for the moments here and the face sums (CleanGdFaceSums)
+  // clean_ray_cut: below the cut vgd_i holds the diffusion limit
   if (vgd_on && vlat_icut > 0) {
     const Real ic = 1.0/c_light;
-    // (one team per cell, its lanes along the directions: the stores of a warp
-    // contiguous; the same values)
+    // (one team per cell, lanes along the directions: contiguous stores)
     const int nc = vlat_icut, nj = je - js + 1, nk = ke - ks + 1;
     const int tsz =
         std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace> ? 1 : 32;
@@ -1688,7 +1565,7 @@ void RadiationVet::CleanClosureFromGd() {
     const Real st = sin(x2v(m,j)), ct = cos(x2v(m,j));
     const Real sp = sin(x3v(m,k)), cp = cos(x3v(m,k));
     const Real s0 = exp(cw_(m,1,k+ok,j+og,i));
-    // the cubed sphere: D in Cartesian components, half ranges about the families n_d
+    // cubed sphere: Cartesian D, half ranges about the families n_d
     Real nd[3][3];
     if (x.cub) CleanCsFamily(x, m, k, j, i, nd);
     Real q[CLN_N] = {0.0}, hp[3] = {0.0}, hm[3] = {0.0};   // (q in registers)
@@ -1732,11 +1609,9 @@ void RadiationVet::CleanClosureFromGd() {
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanGdI
-//! \brief the sc rays' intensities in the mesh layout without a copy (CleanGdFaceSums,
-//! CleanFaceHalf): vgd_i, the first ghost layer of the MeshBlock's faces from gl (side
-//! 0: j = js - 1, 1: k = ks - 1, (r, t) = (k - ks, i), (j - js, i); the cubed sphere
-//! (six) also 2: j = je + 1, 3: k = ke + 1 alike, 4: i = is - 1, 5: i = ie + 1 at
-//! (k - ks, j - js))
+//! \brief sc ray intensities in the mesh layout without a copy: vgd_i, the first ghost
+//! layer from gl (side 0: j = js - 1, 1: k = ks - 1; six: also 2, 3 high j, k and 4, 5
+//! low, high i)
 
 struct CleanGdI {
   RadiationVet::VgdRag vi;
@@ -1769,12 +1644,9 @@ struct CleanGdI {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanFaceHalf
-//! \brief the sc rays on the cubed sphere, staggered layout: the half ranges of every
-//! face about its own normal (CleanFaceCoefficients), as the sums of the union's beams of
-//! the face's two cells, J_L, J_R, H+_L, H-_R (cln_fh, 4 per face family), folded set by
-//! set right after its sweep (the set's intensities in vgd_i with the ghost layers of
-//! CleanGdFaceSums, or a version-5 restart's in cln_fvi from row fo; its union rows o of
-//! dv): no copy of the intensities.  zero: the first set of a build
+//! \brief cubed-sphere sc rays: each face's half-range sums J_L, J_R, H+_L, H-_R about
+//! its normal (cln_fh), accumulated set by set after each sweep from vgd_i (or, for a
+//! version-5 restart, cln_fvi from row fo); union rows o of dv; zero: first set
 
 #if M1_TU_PART(2)
 void RadiationVet::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
@@ -1789,8 +1661,7 @@ void RadiationVet::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
   auto fh = cln_fh;
   auto fi = cln_fvi;
   auto gn = cln_gn;
-  // (the swept set in vgd_i and its ghost layers, CleanGdFaceSums; a version-5 restart's
-  // intensities in cln_fvi)
+  // (the swept set in vgd_i plus ghost layers; a version-5 restart's in cln_fvi)
   const bool fv = cln_fvi.extent_int(0) > 0;
   const CleanGdI gi{vgd_i, cln_gdgl, vgd_w - ks, vgd_w - indcs.ng, ks, js, true, ke, je,
                     is, ie};
@@ -1804,10 +1675,10 @@ void RadiationVet::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
       // (J_L, J_R, H+_L, H-_R as scalars: nvcc -O3 miscompiles a runtime-indexed local)
       Real jl0 = zero ? 0.0 : fh(m,4*dir,k,j,i), jr0 = zero ? 0.0 : fh(m,4*dir+1,k,j,i);
       Real hp0 = zero ? 0.0 : fh(m,4*dir+2,k,j,i), hm0 = zero ? 0.0 : fh(m,4*dir+3,k,j,i);
-      // (the two cells' intensity rows once, not an index per direction)
+      // (the two cells' intensity rows once)
       const CleanRow gl_ = fv ? CleanRow{nullptr, 0} : gi.At(m, kl, jl, il);
       const CleanRow gr_ = fv ? CleanRow{nullptr, 0} : gi.At(m, k, j, i);
-#pragma unroll 4   // (rays in flight: hipcc kept one at a time since 089efb501)
+#pragma unroll 4   // (several rays in flight on hipcc)
       for (int e = 0; e < n; ++e) {
         const int d = o + e;
         Real mu = 0.0;
@@ -1830,21 +1701,14 @@ void RadiationVet::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanGdFaceSums
-//! \brief the vet_gd rays' face fluxes for clean_consistency (CLN_FX, CLN_F2, CLN_F3,
-//! CLN_F1: sum_d w (n_d . A_f) I_f / A_f and the stress columns in the face's local
-//! basis), A_f the exact vector area of the face (closed for every cell).  A theta or
-//! phi face carries the intensity of its upwind cell (none on a physical boundary), and
-//! so does an r face of the staggered layout.  Else the
-//! r faces of a column take the cell balances from the inner face: the outer r face of a
-//! cell gets what its inner one carries plus the exchange V chi (S - J, -H) less the
-//! lateral outflow (the momentum in the column's basis), so that the energy balance of
-//! every cell is the vet_gd exchange to round-off.  CLN_G is what the momentum balance of
-//! the rays (in the cell's basis) differs by from the cell layout's divergence of these
-//! face components: the curvature of their stress.  Several MeshBlocks along x1: a level
-//! starts from the top face of the level below (vgd_x1b -> vgd_x1r), one level per pass;
-//! at a reflecting top the remainder is spread over the outermost level (zero wall flux).
-//! On the cubed sphere the momentum is Cartesian and the r faces carry the rays' upwind
-//! fluxes (no curvature terms).
+//! \brief vet_gd face fluxes (CLN_FX, F2, F3, F1): sum_d w (n_d . A_f) I_f / A_f and the
+//! stress columns in the face basis, A_f the exact closed vector area.  Lateral faces
+//! (and staggered r faces) carry the upwind intensity.  Else r faces follow the cell
+//! balances from the inner face (outer = inner + V chi (S - J, -H) - lateral outflow),
+//! so each cell's energy balance is the vet_gd exchange to round-off; CLN_G is the stress
+//! curvature left over.  Several MeshBlocks along x1: one level per pass from the one
+//! below; a reflecting top spreads the remainder over the outermost level.  Cubed
+//! sphere: Cartesian momentum, upwind r faces
 
 void RadiationVet::CleanGdFaceSums() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1867,21 +1731,19 @@ void RadiationVet::CleanGdFaceSums() {
   auto cs = cln_s;
   const bool f1 = cln_s.extent_int(1) > CLN_F1;   // (the cell layout's CLN_F1)
   CleanArgs x = CleanMakeArgs();
-  // (the kernels read the args in device memory: a light-weight launch without a host
-  // wait)
+  // (args in device memory: light launches)
   cln_gdx = CleanDevArgs(x, 3);
   const CleanArgs *px = cln_gdx;
-  // nx3 = 1 (axisymmetric): no phi face is a boundary; the upwind cell of the low one is
-  // the own cell with the directions rotated back by the phi extent (the wall map), the
-  // high one carries the low one's sums in its own basis
+  // nx3 = 1 (axisymmetric): no phi boundary; the low phi face's upwind cell is the cell
+  // itself through the wall map, the high face carries the low one's sums in its basis
   const bool axi = !pmy_pack->pmesh->three_d && x.sph;
   auto bnd = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
                                   const int i) {
     const CleanArgs &x = *px;
     return !(axi && dir == 2) && CleanBoundaryFace(x, dir, m, k, j, i);
   };
-  // the inner face: no flux at a reflecting one, else the outward beams of the sweep's
-  // emission (vet_bc_inner emit) or of the first cell, the inward ones of the first cell
+  // inner face: no flux if reflecting, else outward beams from the emission (vet_bc_inner
+  // emit) or the first cell, inward beams from the first cell
   const bool open = (ibc_x1min != M1_IBC_REFLECT);
   const bool emi = VetBcEmit();
   const Real iemit = VetBathLo();
@@ -1889,34 +1751,26 @@ void RadiationVet::CleanGdFaceSums() {
   const bool rwsc[2] = {!open, ibc_x1max == M1_IBC_REFLECT};
   auto bmi = ibm_i;
   const int bmn = ibm_nr, bmr[4] = {ibm_ray[0], ibm_ray[1], ibm_ray[2], ibm_ray[3]};
-  // the short characteristics' intensities in the mesh layout with the ghost exchange
-  // (the image cell's beyond a periodic seam, re-indexed by the wall map as the sweep)
-  // (clean_rot_ring: two slots, of the sets blk mod 2, on the cubed sphere for the face
-  // half ranges (CleanScUnion2), on sp with a reflecting top for its mirror)
+  // intensities in the mesh layout with ghosts (re-indexed by the wall map at a periodic
+  // seam); clean_rot_ring: two slots (sets blk mod 2) with cln_scmem
   const int ns2 = (cln_ring && cln_scmem) ? 2 : 1;
   const int doff = (ns2 == 1) ? 0 : cln_rqm*n;
-  // Staggered spherical polar (one radial MeshBlock, no reflecting top): vgd_i itself,
-  // and only the low theta and phi ghost layers exchanged, in chunks of clean_halo_vars
-  // directions (one exchange each)
-  // The staggered cubed sphere (one radial MeshBlock) likewise, with the first ghost
-  // layer of every MeshBlock face (CleanGdI six: the high lateral faces' sums CLN_FH and
-  // the face half ranges, CleanFaceHalf, read them): no copy of the intensities
+  // gl: one radial MeshBlock (sp: no reflecting top): vgd_i itself plus exchanged first
+  // ghost layers, low theta, phi only (cubed sphere, six: all faces), in direction chunks
   const bool six = x.cub && vgd_nb1 == 1 && !cln_scmem;
   const bool gl = (x.sph && !axi && pmy_pack->pmesh->three_d &&
                    vgd_nb1 == 1 && !cln_scmem) || six;
   CleanGdI gi{vi_, DvceArray5D<Real>(), ok, og, ks, js, six, ke, je, is, ie};
   if (gl) {
     const int ng = indcs.ng;
-    // (the cubed sphere: chunks of a quarter of clean_halo_vars, the chunk array made for
-    // this call only, the largest scratch of a build there)
+    // (cubed sphere: chunks of clean_halo_vars/4, the build's largest scratch)
     const int nc = std::min(n, six ? std::max(cln_hmax/4, 1) : cln_hmax);
     const int nt = std::max(ke - ks + 1, je - js + 1);
-    // (persistent scratch: no cudaMalloc / cudaFree per build; gl's unwritten rows stay
-    // the zeros of its allocation, ch is written before it is read)
+    // (persistent scratch; gl's unwritten rows stay zero, ch is written before read)
     cln_gdgl = ScratchView<DvceArray5D<Real>>("cln_gd_gl", nmb1 + 1, n, six ? 6 : 2, nt,
                                               std::max(cs.extent_int(4), je - js + 1));
     gi.gl = cln_gdgl;
-    // (six: over the stencil rows cln_st where they fit, dead across a build as cln_csy)
+    // (six: aliases cln_st where it fits, dead across a build)
     const bool ost = cln_st.span() >= static_cast<std::size_t>(nmb1 + 1)*nc*
                      cs.extent_int(2)*cs.extent_int(3)*cs.extent_int(4);
     auto ch = (six && ost) ? DvceArray5D<Real>(cln_st.data(), nmb1 + 1, nc,
@@ -1929,8 +1783,7 @@ void RadiationVet::CleanGdFaceSums() {
     auto gg = gi.gl;
     for (int d0 = 0; d0 < n; d0 += nc) {
       const int nd = std::min(nc, n - d0);
-      // (only the ng layers along the MeshBlock's theta and phi faces (six: and r faces):
-      // the exchange reads no other cell)
+      // (only the ng layers the exchange reads)
       CleanFor("cln_gd_chc", nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         if (j >= js + ng && j <= je - ng && k >= ks + ng && k <= ke - ng &&
@@ -1971,8 +1824,7 @@ void RadiationVet::CleanGdFaceSums() {
                                     const int i) {
     return gl ? gi(m,d,k,j,i) : fi_(m,doff+d,k,j,i);
   };
-  // vector area of the low face of cell (k,j,i) normal to dir and the local basis there
-  // (Cartesian on the cubed sphere)
+  // vector area of the low face normal to dir and the local basis there
   auto face = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
                                    const int i, Real a[3], Real e[3][3]) {
     const CleanArgs &x = *px;
@@ -1986,9 +1838,8 @@ void RadiationVet::CleanGdFaceSums() {
       for (int c = 0; c < 3; ++c) e[b][c] = (b == c) ? 1.0 : 0.0;
     }
   };
-  // beam of direction d through the low theta or phi face of cell (k,j,i), of vector
-  // area a (not a boundary)
-  // (gl: ro, ru the rows of the cell and of its neighbour below along dir)
+  // beam of direction d through the low lateral face of vector area a (not a boundary);
+  // gl: ro, ru the rows of the cell and its lower neighbour
   auto lat = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
                                   const int i, const int d, const Real a[3],
                                   const CleanRow &ro, const CleanRow &ru) {
@@ -2010,10 +1861,8 @@ void RadiationVet::CleanGdFaceSums() {
     }
     return f*v;
   };
-  // vet_gd_wall_sym (an inexact phi wall) / vet_gd_theta_seam_sym: a seam face's sums q
-  // (local basis e, vector area a, area ar) also in the frame of the wall's other side:
-  // there its own beams exact, the incoming ones through the mirror image of this
-  // side's wall map; q the mean of the two (mirror-paired, one face for both sides)
+  // vet_gd_wall_sym / vet_gd_theta_seam_sym: a seam face's sums q averaged with those
+  // seen from the other side (own beams exact, incoming via the mirrored wall map)
   const bool wsx = vgd_wsx, wst = vgd_wst;
   const Real wsc = cos(vgd_wsw), wss = sin(vgd_wsw);
   auto mi_ = vgd_mir;
@@ -2026,9 +1875,8 @@ void RadiationVet::CleanGdFaceSums() {
     if (!(p ? wsx : wst) || (p ? (k != ks) : (j != js)) ||
         x.mbc(m, p ? 4 : 2) != BoundaryFlag::periodic ||
         wl_(m,k-p+ok,j-1+p+og) == 0) {return;}
-    // the other side's face vector b and basis eb: phi, turned about z by W; theta, the
-    // equatorial mirror image Z = diag(1, 1, -1) (exact for the whole face): b = -Z a,
-    // eb = (Z e_r, -Z e_theta, Z e_phi)
+    // the other side's face vector b and basis eb: phi, rotated about z by W; theta,
+    // Z = diag(1, 1, -1): b = -Z a, eb = (Z e_r, -Z e_theta, Z e_phi)
     Real b[3], eb[3][3], s[4] = {0.0}, qb[4];
     for (int c = 0; c < 3; ++c) {
       const Real zc = (c == 2) ? -1.0 : 1.0;
@@ -2059,8 +1907,7 @@ void RadiationVet::CleanGdFaceSums() {
       q[t] = 0.5*(q[t] + qb[t]);
     }
   };
-  // sums of the beams of every direction through the face (local basis e, area ar), per
-  // unit area (the face's geometry once per face, not per direction: the same numbers)
+  // beam sums through the face per unit area (basis e, area ar)
   auto add = [=] KOKKOS_FUNCTION (const Real e[3][3], const Real ar, const int d,
                                   const Real f, Real q[4]) {
     const Real w = dir_(d,3)*f/ar;
@@ -2069,9 +1916,7 @@ void RadiationVet::CleanGdFaceSums() {
       q[1+b] += w*(dir_(d,0)*e[b][0] + dir_(d,1)*e[b][1] + dir_(d,2)*e[b][2]);
     }
   };
-  // the same sums with the momentum in Cartesian components, projected on
-  // the face's basis and divided by its area ar once per face (CleanGdFaceSums' lateral
-  // and r faces: 8 flops per direction instead of 26 and a division)
+  // the same with Cartesian momentum, projected and divided by ar once per face (proj)
   auto addc = [=] KOKKOS_FUNCTION (const int d, const Real f, Real s[4]) {
     const Real w = dir_(d,3)*f;
     s[0] += w;
@@ -2082,8 +1927,8 @@ void RadiationVet::CleanGdFaceSums() {
     q[0] = s[0]/ar;
     for (int b = 0; b < 3; ++b) q[1+b] = (e[b][0]*s[1] + e[b][1]*s[2] + e[b][2]*s[3])/ar;
   };
-  // a mirror at the r face i, per unit area: no energy, the normal momentum of the
-  // beams of cell ic that hit it (f of sign sg) doubled, no tangential part
+  // a mirror r face, per unit area: no energy, twice the normal momentum of cell ic's
+  // beams that hit it (sign sg), no tangential part
   auto mirror = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i,
                                      const int ic, const Real sg, Real q[4]) {
     const CleanArgs &x = *px;
@@ -2099,9 +1944,8 @@ void RadiationVet::CleanGdFaceSums() {
     q[0] = 0.0;
     for (int b = 0; b < 3; ++b) q[1+b] = wn*nf[b];
   };
-  // sp, the raw rows (gl), a whole build: both lateral faces and the r face of
-  // a cell in one pass over the directions (cln_gd_fs below), each sum its own terms in
-  // the same order as the three kernels of the other meshes
+  // sp with gl: both lateral faces and the r face in one pass over the directions
+  // (cln_gd_fs), each sum in the same order as the separate kernels
   const bool fs = gl && x.sph && !x.cub && !axi;
   for (int dir = 1; dir < 3 && !fs; ++dir) {
     const int nf = (dir == 1) ? CLN_F2 : CLN_F3;
@@ -2109,7 +1953,7 @@ void RadiationVet::CleanGdFaceSums() {
     CleanForK("cln_gd_lat", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const CleanArgs &x = *px;
-      // the cubed sphere: the high face of the MeshBlock too (CLN_FH of its last cell)
+      // cubed sphere: also the MeshBlock's high face (CLN_FH of its last cell)
       const bool hi = x.cub && ((dir == 1) ? j == je : k == ke);
       for (int up = 0; up <= (hi ? 1 : 0); ++up) {
         const int kf = k + up*(dir == 2), jf = j + up*(dir == 1);
@@ -2131,18 +1975,16 @@ void RadiationVet::CleanGdFaceSums() {
   }
   if (!fs) CleanGhostFill(cln_s, CLN_F2, 4);
   if (!fs) CleanGhostFill(cln_s, CLN_F3, 4);
-  // the staggered layout's sc rays on spherical polar (rr): the r face i carries their
-  // own upwind fluxes (area times the per-area sums), not the balance march, which loses
-  // the diffusion flux in the difference V chi (S - J) of thick cells and, with the
-  // bracket, feeds back on E
+  // rr (spherical polar): r faces carry the rays' own upwind fluxes, not the balance
+  // march, which loses the diffusion flux of thick cells in V chi (S - J)
   const bool rr = x.sph;
   auto rflux = [=] KOKKOS_FUNCTION (const int m, const int k, const int j, const int i,
                                     Real q[4]) {
     const CleanArgs &x = *px;
     Real a[3], e[3][3], sc[4] = {0.0};
     face(0, m, k, j, i, a, e);
-    // (the sc rays at a reflecting x1 face: the mirror images of the cell's leaving
-    // beams, CleanFvMirror, scaled so that the face returns the energy it receives)
+    // (reflecting x1 face: mirror images of the leaving beams, CleanFvMirror, scaled so
+    // the face returns the energy it receives)
     const int ic = (i == is) ? is : ie;
     const Real sg = (i == is) ? -1.0 : 1.0, an = sqrt(a[0]*a[0] + a[1]*a[1] + a[2]*a[2]);
     const Real t[3] = {a[0]/an, a[1]/an, a[2]/an};
@@ -2182,10 +2024,10 @@ void RadiationVet::CleanGdFaceSums() {
   DvceArray5D<Real> rf = ScratchView<DvceArray5D<Real>>("cln_gd_rf",
                        rr ? nmb1 + 1 : 1, 4, rr ? ke - ks + 1 : 1, rr ? nj : 1,
                        rr ? ie - is + 2 : 1);
-  Kokkos::deep_copy(DevExeSpace(), rf, 0.0);   // (the zeros of a fresh one)
+  Kokkos::deep_copy(DevExeSpace(), rf, 0.0);
   if (fs) {
-    // (cells is..ie: the low theta and phi faces as cln_gd_lat; faces is..ie+1: the r
-    // face as cln_gd_rf, a boundary one by rflux after the loop)
+    // (cells is..ie: low lateral faces as cln_gd_lat; faces is..ie+1: the r face as
+    // cln_gd_rf, a boundary one by rflux)
     CleanForK("cln_gd_fs", nmb1, ks, ke, js, je, is, ie + 1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const CleanArgs &x = *px;
@@ -2266,8 +2108,8 @@ void RadiationVet::CleanGdFaceSums() {
       }
     }
   };
-  // rr on sp without a reflecting top: no march (every r face is the rays'), one thread
-  // per cell (the same numbers); the columns then only close their ends
+  // rr without a reflecting top: no march, one thread per cell; the columns then only
+  // close their ends
   const bool cel = rr && !x.cub && ibc_x1max != M1_IBC_REFLECT;
   if (cel) {
     CleanFor("cln_gd_cel", nmb1, ks, ke, js, je, is, ie,
@@ -2329,9 +2171,8 @@ void RadiationVet::CleanGdFaceSums() {
       }
       for (int c = 0; c < 4 && cel; ++c) q[c] = rf(m,c,k-ks,j-js,ie+1-is);
       if (xf_(m) & 4) {
-        // a reflecting top: the rays' remainder at the wall (their non-conservation, all
-        // but the mirror's momentum) spread over the cells of the column by volume, so
-        // that no energy leaves through it (the levels below: in the pass down)
+        // reflecting top: the remainder at the wall (all but the mirror's momentum)
+        // spread over the column by volume, so no energy leaves (lower levels: below)
         Real qw[4];
         mirror(m, k, j, ie + 1, ie, 1.0, qw);
         for (int c = 0; c < 4; ++c) q[c] -= qw[c]*x.area[0](m,k,j,ie+1);
@@ -2360,8 +2201,8 @@ void RadiationVet::CleanGdFaceSums() {
       }
     });
   }
-  // a reflecting top over several levels: the remainder, the column volume and the
-  // volume below the level above handed down; each level takes its share
+  // reflecting top over several levels: remainder and volumes handed down, each level
+  // takes its share
   for (int lev = vgd_nb1 - 2; lev >= 0 && ibc_x1max == M1_IBC_REFLECT; --lev) {
     VetGdX1Pass(false);
     par_for("cln_gd_top", DevExeSpace(), 0, nmb1, ks, ke, js, je,
@@ -2389,9 +2230,8 @@ void RadiationVet::CleanGdFaceSums() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanClosureFromRays
-//! \brief closure of every cell whose rays carry its radiation (J >= clean_ray_min E):
-//! D = K/J, h+- = H+-/J, k+ = K+/J, C1 = <|I - S|>/J.  Other cells are marked for the
-//! fill.  The rays' face fluxes (CLN_F2 ... CLN_F3) are copied for every cell.
+//! \brief closure from the vet_sc moments where J >= clean_ray_min E (else isotropic,
+//! marked for the fill); the rays' face fluxes copied everywhere
 
 void RadiationVet::CleanClosureFromRays() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -2471,16 +2311,14 @@ void RadiationVet::CleanClosureFill() {
   auto valid = cln_v;
   // (D, h+- and, where held, k+: the slots t < CLN_C1, then CLN_KP + t - CLN_C1)
   const int nfl = CLN_C1 + std::max(std::min(cln_s.extent_int(1) - CLN_KP, 9), 0);
-  // (clean_fill_cs_remap: on the cubed sphere a lateral neighbour's h+- of the face
-  // family across a seam in our axes (CleanCsSlot), its other lateral family left out
-  // where the seam turns the axes, diagonal neighbours across a seam too)
+  // (clean_fill_cs_remap: a neighbour's h+- across a cubed-sphere seam remapped to our
+  // axes (CleanCsSlot); families the seam turns, and diagonal neighbours, left out)
   const bool rmp = cln_fillcs && pmy_pack->pmesh->use_cubed_sphere;
   CleanArgs x = CleanMakeArgs();
 
   for (int pass = 0; pass < cln_fillpass; ++pass) {
-    // (the last chunk of cln_s and the marks in one exchange: the same ghosts)
-    // (only what cln_fill reads, D and h+-, valid(0), depth 1: every caller exchanges all
-    // of cln_s after the fill; the last pass also valid(1), as the ghosts were left)
+    // (only what cln_fill reads, D, h+- and valid(0), depth 1, in one exchange; callers
+    // exchange all of cln_s afterwards; the last pass also valid(1))
     const int ns = cln_s.extent_int(1), nf = (ns/cln_hmax)*cln_hmax;
     if (nfl == CLN_C1 && cln_hmax > CLN_C1) {
       CleanGhostDefer(cln_s, 0, CLN_C1);
