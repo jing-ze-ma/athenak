@@ -178,6 +178,24 @@ CleanArgs RadiationVet::CleanMakeArgs() {
     x.x1v = pmy_pack->pcoord->x1v;
     x.x1f = pmy_pack->pcoord->xx1f;
   }
+  if (!x.sph && !x.cub && cln_lzsp) {   // (clean_lz_spin, Cartesian: z x r of cells)
+    const int nmb = pmy_pack->nmb_thispack, ng = indcs.ng;
+    const int n1 = indcs.nx1 + 2*ng, n2 = (indcs.nx2 > 1) ? indcs.nx2 + 2*ng : 1;
+    if (cln_cx[0].extent_int(0) != nmb) {
+      Kokkos::realloc(cln_cx[0], nmb, n1);
+      Kokkos::realloc(cln_cx[1], nmb, n2);
+      auto cx = cln_cx[0], cy = cln_cx[1];
+      auto size = pmy_pack->pmb->mb_size.d_view;
+      const int is = indcs.is, js = indcs.js, nx1 = indcs.nx1, nx2 = indcs.nx2;
+      par_for("cln_cx", DevExeSpace(), 0, nmb - 1, 0, std::max(n1, n2) - 1,
+      KOKKOS_LAMBDA(const int m, const int i) {
+        if (i < n1) cx(m,i) = CellCenterX(i - is, nx1, size(m).x1min, size(m).x1max);
+        if (i < n2) cy(m,i) = CellCenterX(i - js, nx2, size(m).x2min, size(m).x2max);
+      });
+    }
+    x.x1v = cln_cx[0];
+    x.x2v = cln_cx[1];
+  }
   FluidRef fl = FluidRef::Get(pmy_pack);
   x.etg = fl.on && fl.use_etotgrav;
   x.mhd = fl.on && fl_mhd;
@@ -1018,7 +1036,7 @@ Real RadiationVet::CleanSumCells(const DvceArray4D<Real> &a) {
 //! clean_cs_lz_tel the radiation's is that of its face momenta (CleanCsTorque)
 
 Real RadiationVet::CleanLzTotal() {
-  if (!clean || !cln_init || !(sph_geom || cs_geom)) return 0.0;
+  if (!clean || !cln_init || !(sph_geom || cs_geom || cln_lzsp)) return 0.0;
   CleanArgs x = CleanMakeArgs();
   FluidRef fl = FluidRef::Get(pmy_pack);
   const bool fo = fl.on;
@@ -1033,8 +1051,10 @@ Real RadiationVet::CleanLzTotal() {
     if (fo) CleanGasMomentum(x, uh, m, k, j, i, p);
     const Real r = CleanLzArm(x, m, k, j, i);
     const Real v = CleanVol(x, m, k, j, i);
-    if (!tel) {
-      s0 += v*r*(p[2] + ur(m,M1_F3,k,j,i)*ic2);
+    if (!tel) {   // (Cartesian: x p_y - y p_x)
+      s0 += (x.sph || x.cub) ? v*r*(p[2] + ur(m,M1_F3,k,j,i)*ic2) :
+            v*(x.x1v(m,i)*(p[1] + ur(m,M1_F2,k,j,i)*ic2) -
+               x.x2v(m,j)*(p[0] + ur(m,M1_F1,k,j,i)*ic2));
       return;
     }
     Real lr = 0.0;   // (the cell's halves of its lateral faces' V F lambda/c^2)

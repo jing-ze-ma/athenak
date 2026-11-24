@@ -1790,6 +1790,26 @@ Real CleanStagBetaE(const CleanArgs &xh, const int e, const int m, const int k,
 }
 
 //----------------------------------------------------------------------------------------
+//! \brief the face families with an L_z arm, (z x r).e_d != 0: spherical polar x3, the
+//! cubed sphere x2, x3 (lateral), Cartesian x1, x2 (L_z about z); the others, without
+//! one, are those a cap or cut may take momentum from (clean_stag_fcone_lz)
+KOKKOS_INLINE_FUNCTION
+bool CleanLzFamily(const bool sph, const bool cub, const int d) {
+  return sph ? (d == 2) : (cub ? (d > 0) : (d < 2));
+}
+
+//! \brief the arm (z x r).e_dir of momentum along e_dir in cell (k,j,i), or at its face
+//! normal to dir: spherical polar R along x3, Cartesian -y along x1 and x along x2 (the
+//! cell centres of clean_lz_spin), else 0 (the cubed sphere's faces: CleanCsArm)
+KOKKOS_INLINE_FUNCTION
+Real CleanDirLzArm(const CleanArgs &x, const int dir, const int m, const int k,
+                   const int j, const int i) {
+  if (x.sph) return (dir == 2) ? x.x1v(m,i)*x.tg(m,2,j) : 0.0;
+  if (x.cub || x.x2v.extent_int(0) == 0) return 0.0;
+  return (dir == 0) ? -x.x2v(m,j) : ((dir == 1) ? x.x1v(m,i) : 0.0);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real CleanMomentumChange
 //! \brief the momentum the radiation gives to cell (k,j,i) along dir over the stage, in
 //! conservative form: at each face, minus the left side of the radiation flux equation,
@@ -1961,11 +1981,15 @@ Real CleanCsFrame(const CleanArgs &x, const int m, const int k, const int j, con
 }
 
 //! \brief the arm R of L_z = R p_phi of a cell vector p in the frame of y: spherical
-//! polar x1v sin(theta), the cubed sphere CleanCsFrame's; 0 on Cartesian
+//! polar x1v sin(theta), the cubed sphere CleanCsFrame's; Cartesian |(x, y)| with the
+//! cell centres of clean_lz_spin, else 0
 KOKKOS_INLINE_FUNCTION
 Real CleanLzArm(const CleanArgs &x, const int m, const int k, const int j, const int i) {
   Real q[3][3];
-  return x.cub ? CleanCsFrame(x, m, k, j, i, q) : (x.sph ? x.x1v(m,i)*x.tg(m,2,j) : 0.0);
+  if (!x.sph && !x.cub) {
+    return (x.x2v.extent_int(0) > 0) ? sqrt(SQR(x.x1v(m,i)) + SQR(x.x2v(m,j))) : 0.0;
+  }
+  return x.cub ? CleanCsFrame(x, m, k, j, i, q) : x.x1v(m,i)*x.tg(m,2,j);
 }
 
 //----------------------------------------------------------------------------------------

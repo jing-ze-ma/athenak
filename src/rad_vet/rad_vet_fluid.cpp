@@ -39,7 +39,9 @@
 #include "mesh/mesh.hpp"
 #include "coordinates/coordinates.hpp"
 #include "driver/driver.hpp"
+#include "coordinates/cell_locations.hpp"
 #include "eos/eos.hpp"
+#include "eos/general_c2p_hyd.hpp"
 #include "hydro/hydro.hpp"
 #include "hydro/hydro_mergelat.hpp"
 #include "mhd/mhd.hpp"
@@ -126,7 +128,9 @@ void RadiationVet::FloorGasCap() {
   auto cnt_ = fcap_cnt;
   const Real rc = fcap_rho, vc = fcap_v;
   const Real ar = arad;
-  const bool mv = fcap_mvol;
+  const bool mv = fcap_mvol, flz = fcap_lz, sph = hv;
+  auto mbs = pmy_pack->pmb->mb_size;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2;
   CleanArgs x;
   if (mv) x = CleanMakeArgs();
   par_for("vet_floorcap", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -142,7 +146,35 @@ void RadiationVet::FloorGasCap() {
     const Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
     Real etot = uh(m,IEN,k,j,i);
     Real erad = u0_(m,M1_E,k,j,i);
-    if (vc > 0.0 && msq > SQR(vc*dd)) {
+    if (vc > 0.0 && msq > SQR(vc*dd) && flz) {
+      // (floorcap_lz: the part pf = m.phi_hat that carries L_z never scaled, EkinScale;
+      // phi_hat spherical polar e3, Cartesian (-y, x)/R of the cell)
+      Real f[3] = {0.0, 0.0, sph ? 1.0 : 0.0};
+      if (!sph) {
+        auto &sz = mbs.d_view(m);
+        const Real cx = CellCenterX(i - is, nx1, sz.x1min, sz.x1max);
+        const Real cy = CellCenterX(j - js, nx2, sz.x2min, sz.x2max);
+        const Real r = sqrt(cx*cx + cy*cy);
+        if (r > 0.0) {
+          f[0] = -cy/r;
+          f[1] = cx/r;
+        }
+      }
+      const Real pf = m1*f[0] + m2*f[1] + m3*f[2];
+      Real fs;
+      const Real ek = EkinScale(ekin, 0.5*pf*pf/dd, 0.5*vc*vc*dd, fs);
+      const Real dke = ekin - ek;
+      Kokkos::atomic_add(&cnt_.d_view(4), (1.0 - fs)*sqrt(fmax(msq - pf*pf, 0.0))*wv);
+      m1 = fs*(m1 - pf*f[0]) + pf*f[0];
+      m2 = fs*(m2 - pf*f[1]) + pf*f[1];
+      m3 = fs*(m3 - pf*f[2]) + pf*f[2];
+      uh(m,IM1,k,j,i) = m1; uh(m,IM2,k,j,i) = m2; uh(m,IM3,k,j,i) = m3;
+      ekin = ek;
+      etot -= dke;
+      erad += dke;
+      Kokkos::atomic_add(&cnt_.d_view(0), 1.0);
+      Kokkos::atomic_add(&cnt_.d_view(2), dke*wv);
+    } else if (vc > 0.0 && msq > SQR(vc*dd)) {
       const Real fs = vc*dd/sqrt(msq);
       const Real dke = (1.0 - fs*fs)*ekin;
       // (the momentum removed, booked: |dp| V and, spherical polar or with

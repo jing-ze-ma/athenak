@@ -512,10 +512,11 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // withheld), so gas + radiation momentum and L_z are exact; E pays the kinetic energy
     cln_fcgas = cln_fcone && pin->GetOrAddBoolean("rad_vet","clean_stag_fcone_gas",false);
     // clean_stag_fcone_lz (read only when named, default off): fcone takes a cell's
-    // excess from its faces without L_z lever arm first (x1; spherical polar also x2),
-    // cut and counted as now; a face with an arm (spherical polar x3, cubed sphere x2,
-    // x3) is scaled only where those faces alone exceed c E, and its cut is the gas's at
-    // the face (as fcone_gas), so that L_z is exact (cubed sphere: CleanCsTorque)
+    // excess from its faces without L_z lever arm first (CleanLzFamily: spherical polar
+    // x1, x2; cubed sphere x1; Cartesian x3), cut and counted as now; a face with an arm
+    // is scaled only where those faces alone exceed c E, and its cut is the gas's at the
+    // face (as fcone_gas; clean_lz_spin: a rigid rotation), so that L_z is exact (cubed
+    // sphere: CleanCsTorque)
     cln_fclz = cln_fcone && pin->DoesParameterExist("rad_vet","clean_stag_fcone_lz") &&
                pin->GetBoolean("rad_vet","clean_stag_fcone_lz");
     // clean_stag_fcone_emax (read only when named; needs clean_stag_fcone): every inner
@@ -623,6 +624,18 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       std::cout << "### FATAL ERROR: <rad_vet>/clean_cs_lz_tel needs the cubed sphere "
                 << "and clean_layout = staggered" << std::endl;
       std::exit(EXIT_FAILURE);
+    }
+    // clean_lz_spin (read only when named; needs clean_stag_fcone_lz, on the cubed sphere
+    // clean_cs_lz_tel): the L_z of the momentum that fcone's cut of the faces with an
+    // arm and clean_wb_mcap's cap withhold is the gas's as one rigid rotation dOmega =
+    // X/I, I = sum rho V R^2 (CleanWriteBack), not the face's gas: L_z exact, no kick
+    if (pin->DoesParameterExist("rad_vet","clean_lz_spin")) {
+      cln_lzsp = pin->GetBoolean("rad_vet","clean_lz_spin");
+      if (cln_lzsp && (!cln_fclz || (pmy_pack->pmesh->use_cubed_sphere && !cln_lzt))) {
+        std::cout << "### FATAL ERROR: <rad_vet>/clean_lz_spin needs clean_stag_fcone_lz "
+                  << "(the cubed sphere: and clean_cs_lz_tel)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
     }
     // clean_cs_lat_wb (default off): a lateral face projects its cells' lateral stress
     // sums after the rotation of the cell's radial direction into the face plane, so
@@ -1459,6 +1472,17 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     fcap_rho = pin->GetReal("rad_vet","floorcap_rho");
     if (pin->DoesParameterExist("rad_vet","floorcap_v")) {
       fcap_v = pin->GetReal("rad_vet","floorcap_v");
+    }
+    // floorcap_lz (read only when named): the velocity cap scales the momentum without
+    // L_z only (phi_hat: spherical polar e3, Cartesian (-y, x)/R; the part along it is
+    // kept, also where it alone exceeds floorcap_v), so that L_z is exact
+    if (pin->DoesParameterExist("rad_vet","floorcap_lz")) {
+      fcap_lz = pin->GetBoolean("rad_vet","floorcap_lz");
+      if (fcap_lz && pmy_pack->pmesh->use_cubed_sphere) {
+        std::cout << "### FATAL ERROR: <rad_vet>/floorcap_lz is not on the cubed sphere"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
     }
     if (pin->DoesParameterExist("rad_vet","floorcap_report")) {
       fcap_report = pin->GetInteger("rad_vet","floorcap_report");

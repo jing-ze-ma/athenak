@@ -468,6 +468,7 @@ class RadiationVet {
   // FloorGasCap.
   Real fcap_rho = 0.0, fcap_v = 0.0;
   int fcap_report = 0;
+  bool fcap_lz = false;     // floorcap_lz: the velocity cap keeps the L_z momentum
   bool fcap_mvol = false;   // floorcap_mesh_vol: counters by CleanVol and CleanLzArm
   DualArray1D<Real> fcap_cnt;   // 0 n_v, 1 n_t, 2 dKE, 3 dEint (energy units x volume),
                                 // 4 |dp| V, 5 dL_z V (spherical polar;
@@ -1995,6 +1996,9 @@ class RadiationVet {
   bool cln_fcgas = false;   // clean_stag_fcone_gas
   bool cln_fclz = false;    // clean_stag_fcone_lz
   bool cln_fcemx = false;   // clean_stag_fcone_emax
+  bool cln_lzsp = false;    // clean_lz_spin
+  DvceArray5D<Real> cln_fcx;   // (clean_lz_spin: fcone's cut withheld, by face)
+  DvceArray2D<Real> cln_cx[2];   // (clean_lz_spin, Cartesian: the cell centres x, y)
   bool cln_fwbst = false;   // clean_stag_fwb_stage
   bool cln_fwbpj[3] = {false, false, false};   // fwb_line, -, _ring (fwb_cart: all)
   int cln_fwbs = -1;        // (fwb_stage: the face slot of s; cln_fwbok: s is the round's)
