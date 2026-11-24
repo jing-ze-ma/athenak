@@ -9,3 +9,10 @@
 
 - (11-23 22:32) The first E0 start (22:31) collided with a LAYF8 dispatch on hpc-sm-02-17, so I cancelled it after 20 s and removed its empty section. E0 restarted alone on 02-17 at 22:33.
 - **Per 23zz18: only E0 vs E4.** E1/E2/E3/E0n/E1p are cancelled. **Binary: halfday 83b71abed for both.** The three E4 keys (clean_clos1_budget, clean_vel_settled, clean_bud_maxnorm) are not in IA12.2 465aff485; they come only with the 3 halfday commits. halfday with keys off = IA12.2.
+
+## E0 (EX: rad_m1/vet_gd_theta_seam_sym=true rad_m1/vet_gd_wall_sym=true)
+- 2026-11-23 23:15:00 rc=0 last: elapsed=2.481648e+03 cycle=23900 time=1.962649e+05 dt=1.200577e+01
+- CLEAN WARNING 0, CLEAN FALLBACK 2000, stage fallbacks 0, DT_RETRY 0, FATAL 0; DTREP/DTREG lines 480
+- s/cycle 1.260 (c21950-23900); dt first 12.0064 / min 11.9780 / last 12.0058; mean solves/stage 3.91; mean Krylov its per CLEAN cycle line 10.08
+- Ltop/Lin 0.9772-1.0052 (end 1.0012), Lbot/Lin 0.9907-1.0084 (end 1.0019)
+- max GPU memory 36371 MiB per GPU (mem.log)
