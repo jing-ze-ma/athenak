@@ -2962,6 +2962,7 @@ class RadiationM1 {
   DvceArray1D<Real> cln_fwbc;    // (fwb: the faces, their momentum sums |dp|, x1 dp)
   bool cln_fcone = false;   // clean_stag_fcone
   bool cln_fcgas = false;   // clean_stag_fcone_gas
+  bool cln_fcemx = false;   // clean_stag_fcone_emax
   bool cln_fwbst = false;   // clean_stag_fwb_stage
   bool cln_fwbpj[3] = {false, false, false};   // clean_stag_fwb_line, -, _ring
   int cln_fwbs = -1;        // (fwb_stage: the face slot of s; cln_fwbok: s is the round's)

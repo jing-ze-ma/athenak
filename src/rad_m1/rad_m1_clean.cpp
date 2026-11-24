@@ -4915,6 +4915,7 @@ void RadiationM1::CleanStagFCone(const int e, const int kd) {
   CleanArgs x = CleanMakeArgs();
   const bool cub = x.cub, dd = cln_fkin && e == CLW_X && cln_dok, wbc = e == CLW_X;
   const bool fg = cln_fcgas;   // (clean_stag_fcone_gas)
+  const bool emx = cln_fcemx;   // (clean_stag_fcone_emax)
   if (cln_fconc.extent_int(0) != 2) Kokkos::realloc(cln_fconc, 2);
   Kokkos::deep_copy(cln_fconc, 0.0);
   auto fcc = cln_fconc;
@@ -4945,7 +4946,12 @@ void RadiationM1::CleanStagFCone(const int e, const int kd) {
       const Real tau = 0.5*(x.op(m,M1_OP_T,k,j,i) + x.op(m,M1_OP_T,k-dk,j-dj,i-di))*
                        CleanCellFaceDistance(x, d, m, k, j, i);
       const Real l = fmin(x.w(m,CLW_CP,k-dk,j-dj,i-di), x.w(m,CLW_CP,k,j,i));
-      fc(m,CLF_N+2,k,j,i) = (bd ? 1.0 : 1.0 - (1.0 - l)/(1.0 + tau))*fc(m,CLF_N,k,j,i);
+      Real fs = (bd ? 1.0 : 1.0 - (1.0 - l)/(1.0 + tau))*fc(m,CLF_N,k,j,i);
+      if (emx && !bd) {   // (clean_stag_fcone_emax: |F_f| <= c max(E_L, E_R))
+        const Real ce = x.c*fmax(fmax(x.w(m,e,k,j,i), x.w(m,e,k-dk,j-dj,i-di)), 0.0);
+        fs = fmin(fmax(fs, -ce), ce);
+      }
+      fc(m,CLF_N+2,k,j,i) = fs;
     });
   }
   if (cub) {   // (a face two MeshBlocks share: its lower gid's value)
