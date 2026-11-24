@@ -44,7 +44,7 @@ class Driver;
 namespace mhd {
 using MHDBoundaryFnPtr = void (*)(int m, Mesh* pm, MHD* pmhd, DvceArray5D<Real> &u);
 // <mhd>/fofc pgen-level default, the MHD mirror of hydro::fofc_pgen_default (hydro.hpp):
-// false in the core; he_star_m1 and box_convection set it true at static initialisation.
+// false in the core; he_star_vet and box_convection set it true at static initialisation.
 // An input that names the key is unchanged; a RESTART whose embedded input lacks the key
 // keeps the old default (off).
 inline bool fofc_pgen_default = false;
@@ -293,7 +293,7 @@ class MHD {
   // the potential the x1 well-balanced scheme (BuildWBCache and the x1 WB
   // reconstruction) sees: the TRUE potential (these ARE phicc0 / phi0.x1f, shallow
   // copies) unless EnableWBEffectivePotential gives it its own, e.g. the effective
-  // potential of g - a_rad_ref that <rad_m1>/force_reference = wb_arad needs. Mirror of
+  // potential of g - a_rad_ref that <rad_vet>/force_reference = wb_arad needs. Mirror of
   // Hydro::phicc_wb (m1-mhd).
   bool use_phi_wb = false;
   DvceArray4D<Real> phicc_wb;    // cell-centered potential seen by the x1 WB scheme

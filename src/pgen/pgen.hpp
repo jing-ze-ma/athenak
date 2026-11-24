@@ -142,7 +142,7 @@ class ProblemGenerator {
   DvceArray5D<Real> pgen_rst_slabs_in;
   // called once per cycle after Mesh::NewTimeStep in Driver::Execute
   UserCycleFnPtr user_cycle_func=nullptr;
-  // Called once per stage by RadiationM1::HydroConToPrim
+  // Called once per stage by RadiationVet::HydroConToPrim
   // right AFTER the M1 implicit coupling wrote the gas u0 and BEFORE the fluid refresh
   // (exchange, BCs, ConToPrim), so a pgen can clean cells the radiation force touched
   // (ry_per_accretor: zero v in the sink cells).  Null = never called (all other pgens).
@@ -154,8 +154,8 @@ class ProblemGenerator {
   // the fluxes it leaves.  Null (default): nothing is called, every run unchanged.
   UserCycleFnPtr user_hydro_flux_func=nullptr;
   // called ONCE on a fresh start, in Driver::Initialize right after the
-  // <rad_m1>/ic_rad passes (IcRadRun) and before the boundaries/primitives are rebuilt,
-  // so a pgen can adjust its initial state to the relaxed radiation (he_star_m1:
+  // <rad_vet>/ic_rad passes (IcRadRun) and before the boundaries/primitives are rebuilt,
+  // so a pgen can adjust its initial state to the relaxed radiation (he_star_vet:
   // he_ic_rad_atm_post).  Left null (every other pgen, ic_rad = none) it is never called.
   UserCycleFnPtr user_icpost_func=nullptr;
   // while true after user_icpost_func, Driver::Initialize runs the ic_rad
@@ -184,9 +184,9 @@ class ProblemGenerator {
   void SphericalCollapse(ParameterInput *pin, const bool restart);
   void RadiationLinearWave(ParameterInput *pin, const bool restart);
   void RadiationBeam(ParameterInput *pin, const bool restart);
-  void RadiationM1Tests(ParameterInput *pin, const bool restart);
-  void RadiationM1Tests2(ParameterInput *pin, const bool restart);
-  void RadiationM1Rhse(ParameterInput *pin, const bool restart);
+  void RadiationVetTests(ParameterInput *pin, const bool restart);
+  void RadiationVetTests2(ParameterInput *pin, const bool restart);
+  void RadiationVetRhse(ParameterInput *pin, const bool restart);
   void Z4cBoostedPuncture(ParameterInput *pin, const bool restart);
   void Z4cLinearWave(ParameterInput *pin, const bool restart);
   void SelfGravity(ParameterInput *pin, const bool restart);

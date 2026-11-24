@@ -28,10 +28,10 @@
 #include "diffusion/resistivity.hpp"
 #include "radiation/radiation.hpp"
 #include "radiation/radiation_tetrad.hpp"
-#include "rad_m1/rad_m1.hpp"
-#include "rad_m1/rad_m1_clean.hpp"
-#include "rad_m1/rad_m1_closure.hpp"
-#include "rad_m1/rad_m1_implicit.hpp"
+#include "rad_vet/rad_vet.hpp"
+#include "rad_vet/rad_vet_clean.hpp"
+#include "rad_vet/rad_vet_closure.hpp"
+#include "rad_vet/rad_vet_implicit.hpp"
 #include "particles/particles.hpp"
 #include "outputs.hpp"
 #include "utils/current.hpp"
@@ -1289,23 +1289,23 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
   //     closure = tau | vet_col before the first solve has no tensor: f_K = -1 is
   //     written and D = 1/3 (isotropic) as a placeholder.
   // m1_vsc: J and F/c of the vet_sc formal solution
-  if (name.compare("m1_vsc") == 0) {
+  if (name.compare("vet_vsc") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
     auto dv = derived_var;
-    auto vc_ = pm->pmb_pack->pradm1->vet_cell;
-    const bool hv = pm->pmb_pack->pradm1->vet_sc && (vc_.extent_int(0) >= nmb);
-    par_for("m1_vsc_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    auto vc_ = pm->pmb_pack->pradvet->vet_cell;
+    const bool hv = pm->pmb_pack->pradvet->vet_sc && (vc_.extent_int(0) >= nmb);
+    par_for("vet_vsc_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       for (int c = 0; c < 4; ++c) {
-        dv(m,i_dv+c,k,j,i) = hv ? vc_(m,radm1::M1_VET_J+((c == 0) ? 0 : (6 + c)),k,j,i)
+        dv(m,i_dv+c,k,j,i) = hv ? vc_(m,radvet::M1_VET_J+((c == 0) ? 0 : (6 + c)),k,j,i)
                                 : 0.0;
       }
     });
     i_dv += 4;
   }
   // m1_vet under scheme = clean: D = K/J of the closure the step's solves read, cln_s
-  // (clean_closure = predict, the staggered default; rad_m1_clean_closure.cpp
+  // (clean_closure = predict, the staggered default; rad_vet_clean_closure.cpp
   // CleanClosure: the formal solution of the predicted state at
   // t^{n+1}, the clean_rot_ring average over the window's sets, CleanClosureFromGd, then
   // CleanClosureFill; built once per step and rebuilt for a new dt (dt_retry), read by
@@ -1315,32 +1315,32 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
   // D = I/3.  Components 11 22 33 12 13 23 in the frame of m1_f1..3, radial first: the
   // cubed sphere's Cartesian D turned into CleanCsFrame's (r_hat, ., .), D' = q D q^T
   // (the old scheme's m1_vet wrote the Cartesian D there).  P_ab = m1_e D_ab.
-  if (name.compare("m1_vet") == 0 && pm->pmb_pack->pradm1->clean) {
+  if (name.compare("vet_vet") == 0 && pm->pmb_pack->pradvet->clean) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
     auto dv = derived_var;
-    auto prm = pm->pmb_pack->pradm1;
+    auto prm = pm->pmb_pack->pradvet;
     auto cs_ = prm->cln_s;
     auto gn_ = prm->cln_gn;
     // (clean_closure = iterate: the closure in place, also one a restart file holds)
     const bool have = (prm->cln_tc > -1.0e299 || (prm->cln_closit && prm->cln_cip)) &&
                       (cs_.extent_int(0) >= nmb) &&
-                      (cs_.extent_int(1) > radm1::CLN_D11 + 5);
+                      (cs_.extent_int(1) > radvet::CLN_D11 + 5);
     // (D = I/3 is the same in every frame)
     const bool rot = have && prm->cs_geom && (gn_.a.extent_int(0) >= nmb);
-    par_for("m1_vet_cln", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    par_for("vet_vet_cln", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       Real d[3][3] = {{1.0/3.0, 0.0, 0.0}, {0.0, 1.0/3.0, 0.0}, {0.0, 0.0, 1.0/3.0}};
       if (have) {
         for (int a = 0; a < 3; ++a) {
           for (int b = 0; b < 3; ++b) {
-            d[a][b] = cs_(m,radm1::CLN_D11+((a == b) ? a : 2+a+b),k,j,i);
+            d[a][b] = cs_(m,radvet::CLN_D11+((a == b) ? a : 2+a+b),k,j,i);
           }
         }
       }
       Real q[3][3] = {{1.0, 0.0, 0.0}, {0.0, 1.0, 0.0}, {0.0, 0.0, 1.0}};
       if (rot) {   // (CleanCsFrame's rows)
-        for (int c = 0; c < 3; ++c) q[0][c] = gn_.At<radm1::CLG_R>(m,c,k,j,i);
+        for (int c = 0; c < 3; ++c) q[0][c] = gn_.At<radvet::CLG_R>(m,c,k,j,i);
         const Real rho = sqrt(q[0][0]*q[0][0] + q[0][1]*q[0][1]);
         q[2][0] = -q[0][1]/rho;
         q[2][1] = q[0][0]/rho;
@@ -1360,53 +1360,53 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
       }
     });
     i_dv += 6;
-  } else if (name.compare("m1_vet") == 0) {
+  } else if (name.compare("vet_vet") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
     auto dv = derived_var;
-    auto prm = pm->pmb_pack->pradm1;
+    auto prm = pm->pmb_pack->pradvet;
     auto u0_ = prm->u0;
     auto iw_ = prm->iw;
     auto vc_ = prm->vet_cell;
-    const bool impl = (prm->transport != radm1::M1_TRANSPORT_EXPLICIT) &&
-                      (prm->impl_nstep > 0.0) && (iw_.extent_int(1) > radm1::M1_IW_WCHI);
-    const bool itrans = impl && prm->trans_on && (iw_.extent_int(1) > radm1::M1_IW_N3);
+    const bool impl = (prm->transport != radvet::M1_TRANSPORT_EXPLICIT) &&
+                      (prm->impl_nstep > 0.0) && (iw_.extent_int(1) > radvet::M1_IW_WCHI);
+    const bool itrans = impl && prm->trans_on && (iw_.extent_int(1) > radvet::M1_IW_N3);
     const bool dfull = (impl || prm->clean) && prm->vet_sc && prm->vet_full;
     const bool notens = !impl && (prm->tau_closure || prm->vet_col);
     const bool edd = prm->eddington;
     const int chk = prm->chi_kind;
     const Real cl = prm->c_light;
     const Real efl = prm->e_floor;
-    par_for("m1_vet_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    par_for("vet_vet_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       Real chi = 1.0/3.0, n1 = 1.0, n2 = 0.0, n3 = 0.0;
       if (impl) {
-        chi = iw_(m,radm1::M1_IW_WCHI,k,j,i);
+        chi = iw_(m,radvet::M1_IW_WCHI,k,j,i);
         if (itrans) {
-          n1 = iw_(m,radm1::M1_IW_N1,k,j,i);
-          n2 = iw_(m,radm1::M1_IW_N2,k,j,i);
-          n3 = iw_(m,radm1::M1_IW_N3,k,j,i);
+          n1 = iw_(m,radvet::M1_IW_N1,k,j,i);
+          n2 = iw_(m,radvet::M1_IW_N2,k,j,i);
+          n3 = iw_(m,radvet::M1_IW_N3,k,j,i);
         }
       } else if (!notens) {
-        Real e = fmax(u0_(m,radm1::M1_E,k,j,i), efl);
-        Real f1 = u0_(m,radm1::M1_F1,k,j,i);
-        Real f2 = u0_(m,radm1::M1_F2,k,j,i);
-        Real f3 = u0_(m,radm1::M1_F3,k,j,i);
+        Real e = fmax(u0_(m,radvet::M1_E,k,j,i), efl);
+        Real f1 = u0_(m,radvet::M1_F1,k,j,i);
+        Real f2 = u0_(m,radvet::M1_F2,k,j,i);
+        Real f3 = u0_(m,radvet::M1_F3,k,j,i);
         Real fm = sqrt(f1*f1 + f2*f2 + f3*f3);
-        chi = edd ? (1.0/3.0) : radm1::M1Chi(fmin(fm/(cl*e), 1.0), chk);
+        chi = edd ? (1.0/3.0) : radvet::M1Chi(fmin(fm/(cl*e), 1.0), chk);
         if (fm > 0.0) {
           n1 = f1/fm;
           n2 = f2/fm;
           n3 = f3/fm;
         }
       }
-      Real d11 = radm1::M1EddDiag(chi, n1);
-      Real d22 = radm1::M1EddDiag(chi, n2);
-      Real d33 = radm1::M1EddDiag(chi, n3);
+      Real d11 = radvet::M1EddDiag(chi, n1);
+      Real d22 = radvet::M1EddDiag(chi, n2);
+      Real d33 = radvet::M1EddDiag(chi, n3);
       if (dfull) {
-        d11 = vc_(m,radm1::M1_VET_D11,k,j,i);
-        d22 = vc_(m,radm1::M1_VET_D11+1,k,j,i);
-        d33 = vc_(m,radm1::M1_VET_D11+2,k,j,i);
+        d11 = vc_(m,radvet::M1_VET_D11,k,j,i);
+        d22 = vc_(m,radvet::M1_VET_D11+1,k,j,i);
+        d33 = vc_(m,radvet::M1_VET_D11+2,k,j,i);
       }
       if (notens) {
         chi = -1.0;
@@ -1425,23 +1425,23 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
   // products on the cubed sphere, whatever keys the solve itself uses:
   //   m1_cf1..3 = (F_a - (v_a + (D v)_a) E)/(c E)  (work-array components)
   //   m1_ce0 = E0/(arad T^4) - 1,  E0 = (1 + b^2) E - 2 b.F/c + b.D.b E,  T = iterate T
-  if (name.compare("m1_comov") == 0) {
+  if (name.compare("vet_comov") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
     auto dv = derived_var;
-    auto prm = pm->pmb_pack->pradm1;
+    auto prm = pm->pmb_pack->pradvet;
     if (prm->clean) {   // (ImplicitSolve's iw slots, which scheme = clean does not fill)
       std::cout << "### FATAL ERROR: output variable m1_comov is not filled under "
-                << "<rad_m1>/scheme = clean" << std::endl;
+                << "<rad_vet>/scheme = clean" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     auto iw_ = prm->iw;
-    const bool ok = (prm->transport != radm1::M1_TRANSPORT_EXPLICIT) && prm->trans_on &&
-                    (prm->impl_nstep > 0.0) && (iw_.extent_int(1) > radm1::M1_IW_N3);
+    const bool ok = (prm->transport != radvet::M1_TRANSPORT_EXPLICIT) && prm->trans_on &&
+                    (prm->impl_nstep > 0.0) && (iw_.extent_int(1) > radvet::M1_IW_N3);
     const bool cs = prm->cs_geom;
     auto ccl = pm->pmb_pack->pcoord->cos_cell;
     auto vlk = prm->VlatTT();
-    const int c0 = radm1::M1_TT_LAT0, ntt = vlk.extent_int(1);
+    const int c0 = radvet::M1_TT_LAT0, ntt = vlk.extent_int(1);
     const bool lat = prm->vlat_now && prm->vlat_ready && (ntt > c0 + 3);
     const bool tan = prm->vlat_ready && prm->vgd_on && prm->vgd_tan &&
                      (cs ? (prm->vlat_now && ntt > c0 + 5) : ntt > c0 + 4);
@@ -1450,18 +1450,18 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     auto cn3 = prm->cs_cn3;
     auto qf = prm->cs_qf;
     const Real cl = prm->c_light, ar = prm->arad, efl = prm->e_floor;
-    par_for("m1_comov_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    par_for("vet_comov_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       Real r[4] = {0.0, 0.0, 0.0, 0.0};
       if (ok) {
-        const Real e = fmax(iw_(m,radm1::M1_IW_EP,k,j,i), efl);
-        const Real f[3] = {iw_(m,radm1::M1_IW_F1,k,j,i), iw_(m,radm1::M1_IW_F2,k,j,i),
-                           iw_(m,radm1::M1_IW_F3,k,j,i)};
-        const Real v[3] = {iw_(m,radm1::M1_IW_V1,k,j,i), iw_(m,radm1::M1_IW_V2,k,j,i),
-                           iw_(m,radm1::M1_IW_V3,k,j,i)};
-        const Real chi = iw_(m,radm1::M1_IW_WCHI,k,j,i);
-        Real n[3] = {iw_(m,radm1::M1_IW_N1,k,j,i), iw_(m,radm1::M1_IW_N2,k,j,i),
-                     iw_(m,radm1::M1_IW_N3,k,j,i)};
+        const Real e = fmax(iw_(m,radvet::M1_IW_EP,k,j,i), efl);
+        const Real f[3] = {iw_(m,radvet::M1_IW_F1,k,j,i), iw_(m,radvet::M1_IW_F2,k,j,i),
+                           iw_(m,radvet::M1_IW_F3,k,j,i)};
+        const Real v[3] = {iw_(m,radvet::M1_IW_V1,k,j,i), iw_(m,radvet::M1_IW_V2,k,j,i),
+                           iw_(m,radvet::M1_IW_V3,k,j,i)};
+        const Real chi = iw_(m,radvet::M1_IW_WCHI,k,j,i);
+        Real n[3] = {iw_(m,radvet::M1_IW_N1,k,j,i), iw_(m,radvet::M1_IW_N2,k,j,i),
+                     iw_(m,radvet::M1_IW_N3,k,j,i)};
         const Real c = cs ? ccl(m,k,j) : 0.0, is2 = 1.0/(1.0 - c*c);
         // raise a work-array vector (cs: G^-1 on the face-normal pair)
         auto up = [&](const Real *x, Real *y) {
@@ -1483,8 +1483,8 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
         Real vdv = pi*(v[0]*vr[0] + v[1]*vr[1] + v[2]*vr[2]) + pa*nv*nv;
         if (usel) {
           Real o[3];
-          vdv += radm1::M1LatDx(cs, lat, tan, vlk, c0, cn2, cn3, qf, m, k, j, i, v[0],
-                                v[1], v[2], o[0], o[1], o[2]);
+          vdv += radvet::M1LatDx(cs, lat, tan, vlk, c0, cn2, cn3, qf, m, k, j, i, v[0],
+                                 v[1], v[2], o[0], o[1], o[2]);
           for (int q = 0; q < 3; ++q) {
             dvx[q] += o[q];
           }
@@ -1495,7 +1495,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
         const Real b2 = (v[0]*vr[0] + v[1]*vr[1] + v[2]*vr[2])/(cl*cl);
         const Real bf = (f[0]*vr[0] + f[1]*vr[1] + f[2]*vr[2])/(cl*cl);
         const Real e0 = (1.0 + b2)*e - 2.0*bf + vdv*e/(cl*cl);
-        const Real tp = iw_(m,radm1::M1_IW_TP,k,j,i);
+        const Real tp = iw_(m,radvet::M1_IW_TP,k,j,i);
         r[3] = e0/(ar*tp*tp*tp*tp) - 1.0;
       }
       for (int q = 0; q < 4; ++q) {
@@ -1506,11 +1506,11 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
   }
 
   // m1_face: the transported face-normal comoving fluxes (basetype_output.cpp)
-  if (name.compare("m1_face") == 0) {
+  if (name.compare("vet_face") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
     auto dv = derived_var;
-    auto prm = pm->pmb_pack->pradm1;
+    auto prm = pm->pmb_pack->pradvet;
     auto fx1 = prm->f0x1;
     auto fx2 = prm->f0x2;
     auto fx3 = prm->f0x3;
@@ -1520,11 +1520,11 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     const bool h3 = prm->trans_on && prm->trans_x3 && (fx3.extent_int(0) >= nmb) &&
                     (fx3.extent_int(1) > ke);
     // m1_ex1: clean, the x1 energy flux Phi of the step's last solve (t2pf1 x c/chat;
-    // f0x1 is then the face momentum F, as the he_star_m1 hst L_midE)
+    // f0x1 is then the face momentum F, as the he_star_vet hst L_midE)
     auto pf1 = prm->t2pf1;
     const bool he = prm->clean && prm->t2pf1_ok && (pf1.extent_int(0) >= nmb);
     const Real icc = prm->c_light/prm->chat;
-    par_for("m1_face_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    par_for("vet_face_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       dv(m,i_dv  ,k,j,i) = h1 ? fx1(m,k,j,i) : 0.0;
       dv(m,i_dv+1,k,j,i) = h1 ? fx1(m,k,j,i+1) : 0.0;
@@ -1536,13 +1536,13 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
   }
 
   // m1_gw: x1-face g_L, g_R and weight AL at the left face of cell i
-  if (name.compare("m1_gw") == 0) {
+  if (name.compare("vet_gw") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
     auto dv = derived_var;
-    auto gw = pm->pmb_pack->pradm1->gwd;
+    auto gw = pm->pmb_pack->pradvet->gwd;
     const bool hv = (gw.extent_int(0) >= nmb);
-    par_for("m1_gw_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    par_for("vet_gw_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       for (int c = 0; c < 5; ++c) {
         dv(m,i_dv+c,k,j,i) = hv ? gw(m,c,k,j,i) : 0.0;
@@ -1552,11 +1552,11 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
   }
 
   // m1_fs: J and H_r of the vet_gd formal solution (basetype_output.cpp)
-  if (name.compare("m1_fs") == 0) {
+  if (name.compare("vet_fs") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
     auto dv = derived_var;
-    auto prm = pm->pmb_pack->pradm1;
+    auto prm = pm->pmb_pack->pradvet;
     auto vi_ = prm->vgd_i;
     auto cs_ = prm->vgd_cs;
     auto dir_ = prm->vgd_dir;
@@ -1566,7 +1566,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     const int og = prm->vgd_w - indcs.ng;
     const int ilo = is + prm->vlat_icut;
     auto &mbsize = pm->pmb_pack->pmb->mb_size;
-    par_for("m1_fs_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    par_for("vet_fs_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       Real jm = 0.0, hr = 0.0, sv = 0.0, cv = 0.0;
       if (hv && i >= ilo) {
@@ -1591,14 +1591,14 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
   }
 
   // m1_lat: the handed-over closure tensor slots (basetype_output.cpp)
-  if (name.compare("m1_lat") == 0) {
+  if (name.compare("vet_lat") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
     auto dv = derived_var;
-    auto prm = pm->pmb_pack->pradm1;
+    auto prm = pm->pmb_pack->pradvet;
     auto tt_ = prm->VlatTT();
     const bool htt = (tt_.extent_int(0) >= nmb) &&
-                     (tt_.extent_int(1) >= radm1::M1_TT_LAT0 + radm1::M1_TT_NLAT);
+                     (tt_.extent_int(1) >= radvet::M1_TT_LAT0 + radvet::M1_TT_NLAT);
     auto vi_ = prm->vgd_i;
     auto dir_ = prm->vgd_dir;
     auto cr_ = prm->vgd_csr;
@@ -1610,10 +1610,10 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     const int og = prm->vgd_w - indcs.ng;
     const int ilo = is + prm->vlat_icut;
     auto &mbsize = pm->pmb_pack->pmb->mb_size;
-    par_for("m1_lat_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    par_for("vet_lat_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       for (int c = 0; c < 7; ++c) {
-        dv(m,i_dv+c,k,j,i) = htt ? tt_(m,((c == 0) ? 0 : radm1::M1_TT_LAT0 + c - 1),k,j,i)
+        dv(m,i_dv+c,k,j,i) = htt ? tt_(m,(c == 0) ? 0 : radvet::M1_TT_LAT0 + c - 1,k,j,i)
                                  : 0.0;
       }
       Real rx = 0.0, ry = 0.0, rz = 0.0;
@@ -1647,14 +1647,14 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
   }
 
   // m1_gdhr: the vet_gd half-range ratios (basetype_output.cpp)
-  if (name.compare("m1_gdhr") == 0) {
+  if (name.compare("vet_gdhr") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
     auto dv = derived_var;
-    auto gh_ = pm->pmb_pack->pradm1->vgd_hr;
-    const bool hgd = pm->pmb_pack->pradm1->vgd_on && (gh_.extent_int(0) >= nmb) &&
+    auto gh_ = pm->pmb_pack->pradvet->vgd_hr;
+    const bool hgd = pm->pmb_pack->pradvet->vgd_on && (gh_.extent_int(0) >= nmb) &&
                      (gh_.extent_int(1) >= 6);
-    par_for("m1_gdhr_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    par_for("vet_gdhr_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       for (int a = 0; a < 6; ++a) {
         dv(m,i_dv+a,k,j,i) = hgd ? gh_(m,a,k,j,i) : -1.0;
@@ -1664,37 +1664,37 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
   }
 
   // m1_thsw: the thin switch's cell inputs (basetype_output.cpp)
-  if (name.compare("m1_thsw") == 0) {
+  if (name.compare("vet_thsw") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
     auto dv = derived_var;
-    auto prm = pm->pmb_pack->pradm1;
+    auto prm = pm->pmb_pack->pradvet;
     auto vc_ = prm->vet_cell;
     auto gh_ = prm->vgd_hr;
     const bool hsc = prm->vet_sc && (vc_.extent_int(0) >= nmb) &&
-                     (vc_.extent_int(1) > radm1::M1_VET_EPS);
+                     (vc_.extent_int(1) > radvet::M1_VET_EPS);
     const bool hgd = !hsc && prm->vgd_on && (gh_.extent_int(0) >= nmb);
-    const bool gx = hgd && (gh_.extent_int(1) >= radm1::M1_VGD_HRNX);
+    const bool gx = hgd && (gh_.extent_int(1) >= radvet::M1_VGD_HRNX);
     const bool c1v = hsc && prm->thsw_c1;
     const int mode = prm->impl_thsw;
-    const bool fs = (mode == radm1::M1_THSW_FS || mode == radm1::M1_THSW_FSKN ||
-                     mode == radm1::M1_THSW_FSQ || mode == radm1::M1_THSW_FSI ||
-                     mode == radm1::M1_THSW_FSE);
-    const bool fse = (mode == radm1::M1_THSW_FSE);
+    const bool fs = (mode == radvet::M1_THSW_FS || mode == radvet::M1_THSW_FSKN ||
+                     mode == radvet::M1_THSW_FSQ || mode == radvet::M1_THSW_FSI ||
+                     mode == radvet::M1_THSW_FSE);
+    const bool fse = (mode == radvet::M1_THSW_FSE);
     const Real h0 = prm->thsw_h0, h1 = prm->thsw_h1;
-    par_for("m1_thsw_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
+    par_for("vet_thsw_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       Real fb = -1.0, c1 = -1.0, ep = -1.0, jj = -1.0;
       if (hsc) {
-        jj = vc_(m,radm1::M1_VET_J,k,j,i);
+        jj = vc_(m,radvet::M1_VET_J,k,j,i);
         if (jj > 0.0) {
-          const Real a = vc_(m,radm1::M1_VET_H1,k,j,i);
-          const Real b = vc_(m,radm1::M1_VET_H1+1,k,j,i);
-          const Real c = vc_(m,radm1::M1_VET_H1+2,k,j,i);
+          const Real a = vc_(m,radvet::M1_VET_H1,k,j,i);
+          const Real b = vc_(m,radvet::M1_VET_H1+1,k,j,i);
+          const Real c = vc_(m,radvet::M1_VET_H1+2,k,j,i);
           fb = fmin(sqrt(a*a + b*b + c*c)/jj, 1.0);
           if (c1v) {
-            c1 = vc_(m,radm1::M1_VET_NL,k,j,i)/jj;
-            ep = vc_(m,radm1::M1_VET_EPS,k,j,i);
+            c1 = vc_(m,radvet::M1_VET_NL,k,j,i)/jj;
+            ep = vc_(m,radvet::M1_VET_EPS,k,j,i);
           }
         }
       } else if (hgd && gh_(m,0,k,j,i) >= 0.0) {
@@ -1704,9 +1704,9 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
         }
         fb = fmin(sqrt(f2), 1.0);
         if (gx) {
-          c1 = gh_(m,radm1::M1_VGD_HRC1,k,j,i);
-          ep = gh_(m,radm1::M1_VGD_HREP,k,j,i);
-          jj = gh_(m,radm1::M1_VGD_HRJ,k,j,i);
+          c1 = gh_(m,radvet::M1_VGD_HRC1,k,j,i);
+          ep = gh_(m,radvet::M1_VGD_HREP,k,j,i);
+          jj = gh_(m,radvet::M1_VGD_HRJ,k,j,i);
         }
       }
       Real w = -1.0;

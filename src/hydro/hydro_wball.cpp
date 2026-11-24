@@ -16,7 +16,7 @@
 #include "hydro.hpp"
 #include "hydro_wball.hpp"
 #include "hydro_am.hpp"
-#include "rad_m1/rad_m1.hpp"
+#include "rad_vet/rad_vet.hpp"
 
 namespace hydro {
 
@@ -204,11 +204,11 @@ void WbAllBuild(WbAllCtx &c) {
 
 //----------------------------------------------------------------------------------------
 //! \fn DvceArray5D<Real> WbRadRef
-//! \brief <rad_m1>/force_reference = wb_arad_md, once set: its reference (WbRadPhi)
+//! \brief <rad_vet>/force_reference = wb_arad_md, once set: its reference (WbRadPhi)
 
 DvceArray5D<Real> WbRadRef(MeshBlockPack *pp) {
-  const radm1::RadiationM1 *pr = pp->pradm1;
-  return (pr != nullptr && pr->force_ref == radm1::M1_FREF_WB_MD && pr->cln_fref_set) ?
+  const radvet::RadiationVet *pr = pp->pradvet;
+  return (pr != nullptr && pr->force_ref == radvet::M1_FREF_WB_MD && pr->cln_fref_set) ?
          pr->cln_fref : DvceArray5D<Real>();
 }
 

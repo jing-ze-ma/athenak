@@ -530,7 +530,7 @@ class Conduction {
   // still false, which is the case at initialisation.
   bool rad_w_built = false;
   // THE INERT-BLEND SKIP (tests_m1/runs_4j_accmerge).  A problem generator that reads
-  // neither rad_tauf nor anything derived from it (box_convection under <rad_m1>, which
+  // neither rad_tauf nor anything derived from it (box_convection under <rad_vet>, which
   // keeps <hydro>/isotropic_conduction = radiative only as the holder of rad_flux_inner,
   // with rad_tau_lo above the column depth) sets rad_tauf_unread.  BuildRadWeights then
   // first forms a rigorous upper bound on every column's face tau (a parallel sum of

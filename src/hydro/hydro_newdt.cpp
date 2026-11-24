@@ -31,9 +31,9 @@
 #include "diffusion/conduction.hpp"
 #include "diffusion/viscosity.hpp"
 #include "srcterms/srcterms.hpp"
-#include "rad_m1/rad_m1.hpp"
-#include "rad_m1/rad_m1_clean.hpp"
-#include "rad_m1/rad_m1_closure.hpp"
+#include "rad_vet/rad_vet.hpp"
+#include "rad_vet/rad_vet_clean.hpp"
+#include "rad_vet/rad_vet_closure.hpp"
 
 namespace hydro {
 // <hydro>/dt_report (read only when named, in the Hydro constructor; 0 = off).
@@ -140,7 +140,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   // acoustic speed of the medium (radiative diffusion at the grid scale only lowers it),
   // so the bound is conservative.  E, F, the tensor and opac are the M1 state of the
   // last radiation step (the module runs after the hydro stages): a lag of one step.
-  // Before the first step they come from RadiationM1::RssPrime (Driver::Initialize):
+  // Before the first step they come from RadiationVet::RssPrime (Driver::Initialize):
   // the restart file's copy, or opac of the initial state on a fresh start.
   // Off: no change.
   // rad_signal_speed_inertia: the relativistic sound speed of gas + radiation, the
@@ -158,15 +158,15 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   // keep c_eq.
   const bool rss_ = rad_signal_speed, rsi_ = rss_inertia, rsd_ = rss_diff;
   DvceArray5D<Real> erad_, kopc_, tten_, vcel_;
-  radm1::CleanGeo gn_;
+  radvet::CleanGeo gn_;
   int rss_mode = 0;          // 0 isotropic E/3, 1 M1Chi, 2 tau_ten, 3 vet_sc, 4 vet full
   int rss_kind = 0;
   Real rss_cl = 1.0, rss_ch = 1.0;
   if (rss_) {
-    auto *prm = pmy_pack->pradm1;
+    auto *prm = pmy_pack->pradvet;
     if (prm == nullptr) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<hydro>/rad_signal_speed = true needs a <rad_m1> block"
+                << std::endl << "<hydro>/rad_signal_speed = true needs a <rad_vet> block"
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
@@ -175,7 +175,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
     rss_cl = prm->c_light;
     rss_ch = prm->chat;
     rss_kind = prm->chi_kind;
-    // the same selection decides what a restart file carries (RadiationM1::RssPrime)
+    // the same selection decides what a restart file carries (RadiationVet::RssPrime)
     rss_mode = prm->RssMode();
     if (rss_mode == 2) tten_ = prm->tau_ten;
     if (rss_mode >= 3) vcel_ = (rss_mode == 5) ? prm->cln_s : prm->vet_cell;
@@ -262,16 +262,16 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         Real cs1 = cs, cs2 = cs, cs3 = cs;
         if (rss_) {
           const Real d = w0_(m,IDN,k,j,i);
-          const Real er = fmax(erad_(m,radm1::M1_E,k,j,i), 0.0);
+          const Real er = fmax(erad_(m,radvet::M1_E,k,j,i), 0.0);
           // diagonal of the Eddington tensor, D_dd = P_dd/E
           Real dd[3] = {1.0/3.0, 1.0/3.0, 1.0/3.0};
           if (rss_mode >= 4) {   // (5: clean's cln_s, 0 before its first closure: 1/3)
-            const int d0 = (rss_mode == 5) ? radm1::CLN_D11 : radm1::M1_VET_D11;
+            const int d0 = (rss_mode == 5) ? radvet::CLN_D11 : radvet::M1_VET_D11;
             if (rss_mode == 4 || vcel_(m,d0,k,j,i) > 0.0) {
               for (int a = 0; a < 3; ++a) {
                 dd[a] = (rss_mode == 5 && use_cubed_sphere) ?
-                        radm1::CleanDuu(vcel_, gn_, (a == 0) ? radm1::CLG_R :
-                                        radm1::CLG_E + 3*(a - 1), m, k, j, i) :
+                        radvet::CleanDuu(vcel_, gn_, (a == 0) ? radvet::CLG_R :
+                                         radvet::CLG_E + 3*(a - 1), m, k, j, i) :
                         vcel_(m,d0+a,k,j,i);
               }
             }
@@ -281,17 +281,17 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
               chi = tten_(m,0,k,j,i); n1 = tten_(m,1,k,j,i);
               n2 = tten_(m,2,k,j,i); n3 = tten_(m,3,k,j,i);
             } else if (rss_mode == 3) {
-              chi = vcel_(m,radm1::M1_VET_CHI,k,j,i);
-              n1 = vcel_(m,radm1::M1_VET_N1,k,j,i);
-              n2 = vcel_(m,radm1::M1_VET_N1+1,k,j,i);
-              n3 = vcel_(m,radm1::M1_VET_N1+2,k,j,i);
+              chi = vcel_(m,radvet::M1_VET_CHI,k,j,i);
+              n1 = vcel_(m,radvet::M1_VET_N1,k,j,i);
+              n2 = vcel_(m,radvet::M1_VET_N1+1,k,j,i);
+              n3 = vcel_(m,radvet::M1_VET_N1+2,k,j,i);
             } else {
-              const Real f1 = erad_(m,radm1::M1_F1,k,j,i);
-              const Real f2 = erad_(m,radm1::M1_F2,k,j,i);
-              const Real f3 = erad_(m,radm1::M1_F3,k,j,i);
+              const Real f1 = erad_(m,radvet::M1_F1,k,j,i);
+              const Real f2 = erad_(m,radvet::M1_F2,k,j,i);
+              const Real f3 = erad_(m,radvet::M1_F3,k,j,i);
               const Real fn = sqrt(f1*f1 + f2*f2 + f3*f3);
               const Real inv = (fn > 0.0) ? 1.0/fn : 0.0;
-              chi = (er > 0.0) ? radm1::M1Chi(fn/(rss_cl*er), rss_kind) : 1.0/3.0;
+              chi = (er > 0.0) ? radvet::M1Chi(fn/(rss_cl*er), rss_kind) : 1.0/3.0;
               n1 = f1*inv; n2 = f2*inv; n3 = f3*inv;
             }
             if (chi > 0.0) {   // tau_ten is zero before its first build: keep 1/3
@@ -302,7 +302,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
             }
           }
           const Real cg2 = cs*cs;
-          const Real kt = fmax(kopc_(m,radm1::M1_OP_T,k,j,i), 0.0);
+          const Real kt = fmax(kopc_(m,radvet::M1_OP_T,k,j,i), 0.0);
           Real h[3];
           if (use_cubed_sphere || use_spherical_polar) {
             h[0] = dx1_(m,k,j,i); h[1] = dx2_(m,k,j,i); h[2] = dx3_(m,k,j,i);
@@ -561,11 +561,11 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
       const bool curv = (use_cubed_sphere || use_spherical_polar);
       DvceArray4D<Real> tfz_;
       bool havetf = false;
-      if (pmy_pack->pradm1 != nullptr) {
-        tfz_ = pmy_pack->pradm1->thin_frz;
+      if (pmy_pack->pradvet != nullptr) {
+        tfz_ = pmy_pack->pradvet->thin_frz;
         havetf = (tfz_.extent(0) > 0);
       }
-      const Real cdt = (pmy_pack->pradm1 != nullptr ? pmy_pack->pradm1->c_light : 0.0)
+      const Real cdt = (pmy_pack->pradvet != nullptr ? pmy_pack->pradvet->c_light : 0.0)
                        *pmy_pack->pmesh->dt;
       const int is_ = is, nx1_ = nx1;
       auto rv = rp.d_view;
@@ -596,14 +596,14 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         Real er = 0.0, kt = 0.0, kp = 0.0;
         Real dd[3] = {1.0/3.0, 1.0/3.0, 1.0/3.0};
         if (rss_) {
-          er = fmax(erad_(m,radm1::M1_E,k,j,i), 0.0);
+          er = fmax(erad_(m,radvet::M1_E,k,j,i), 0.0);
           if (rss_mode >= 4) {   // (5: clean's cln_s, 0 before its first closure: 1/3)
-            const int d0 = (rss_mode == 5) ? radm1::CLN_D11 : radm1::M1_VET_D11;
+            const int d0 = (rss_mode == 5) ? radvet::CLN_D11 : radvet::M1_VET_D11;
             if (rss_mode == 4 || vcel_(m,d0,k,j,i) > 0.0) {
               for (int a = 0; a < 3; ++a) {
                 dd[a] = (rss_mode == 5 && use_cubed_sphere) ?
-                        radm1::CleanDuu(vcel_, gn_, (a == 0) ? radm1::CLG_R :
-                                        radm1::CLG_E + 3*(a - 1), m, k, j, i) :
+                        radvet::CleanDuu(vcel_, gn_, (a == 0) ? radvet::CLG_R :
+                                         radvet::CLG_E + 3*(a - 1), m, k, j, i) :
                         vcel_(m,d0+a,k,j,i);
               }
             }
@@ -613,17 +613,17 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
               chi = tten_(m,0,k,j,i); n1 = tten_(m,1,k,j,i);
               n2 = tten_(m,2,k,j,i); n3 = tten_(m,3,k,j,i);
             } else if (rss_mode == 3) {
-              chi = vcel_(m,radm1::M1_VET_CHI,k,j,i);
-              n1 = vcel_(m,radm1::M1_VET_N1,k,j,i);
-              n2 = vcel_(m,radm1::M1_VET_N1+1,k,j,i);
-              n3 = vcel_(m,radm1::M1_VET_N1+2,k,j,i);
+              chi = vcel_(m,radvet::M1_VET_CHI,k,j,i);
+              n1 = vcel_(m,radvet::M1_VET_N1,k,j,i);
+              n2 = vcel_(m,radvet::M1_VET_N1+1,k,j,i);
+              n3 = vcel_(m,radvet::M1_VET_N1+2,k,j,i);
             } else {
-              const Real f1 = erad_(m,radm1::M1_F1,k,j,i);
-              const Real f2 = erad_(m,radm1::M1_F2,k,j,i);
-              const Real f3 = erad_(m,radm1::M1_F3,k,j,i);
+              const Real f1 = erad_(m,radvet::M1_F1,k,j,i);
+              const Real f2 = erad_(m,radvet::M1_F2,k,j,i);
+              const Real f3 = erad_(m,radvet::M1_F3,k,j,i);
               const Real fn = sqrt(f1*f1 + f2*f2 + f3*f3);
               const Real inv = (fn > 0.0) ? 1.0/fn : 0.0;
-              chi = (er > 0.0) ? radm1::M1Chi(fn/(rss_cl*er), rss_kind) : 1.0/3.0;
+              chi = (er > 0.0) ? radvet::M1Chi(fn/(rss_cl*er), rss_kind) : 1.0/3.0;
               n1 = f1*inv; n2 = f2*inv; n3 = f3*inv;
             }
             if (chi > 0.0) {
@@ -633,8 +633,8 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
               dd[2] = dg + an*n3*n3;
             }
           }
-          kt = fmax(kopc_(m,radm1::M1_OP_T,k,j,i), 0.0);
-          kp = kopc_(m,radm1::M1_OP_P,k,j,i);
+          kt = fmax(kopc_(m,radvet::M1_OP_T,k,j,i), 0.0);
+          kp = kopc_(m,radvet::M1_OP_P,k,j,i);
           const bool ideal = (eos.is_ideal && !eos.IsGeneral());
           const Real gm1 = ideal ? (eos.gamma - 1.0) : 0.0;
           const Real pg = ideal ? eos.IdealGasPressure(w0_(m,IEN,k,j,i)) : 0.0;

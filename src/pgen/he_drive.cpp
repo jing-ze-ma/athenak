@@ -4,7 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file he_drive.cpp
-//! \brief the driven inner boundary of he_star_m1 (see he_drive.hpp
+//! \brief the driven inner boundary of he_star_vet (see he_drive.hpp
 //! for the keys): the inflow table, the live monopole gravity and the RK-exact boundary
 //! ledgers.  State lives in this file; the pgen calls the functions of he_drive.hpp.
 
@@ -24,9 +24,9 @@
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
 #include "mhd/mhd.hpp"
-#include "rad_m1/rad_m1.hpp"
-#include "rad_m1/m1_fluid.hpp"
-#include "rad_m1/rad_m1_implicit.hpp"
+#include "rad_vet/rad_vet.hpp"
+#include "rad_vet/vet_fluid.hpp"
+#include "rad_vet/rad_vet_implicit.hpp"
 #include "utils/repro_sum.hpp"
 #include "utils/time_table.hpp"
 #include "pgen/he_drive.hpp"
@@ -55,7 +55,7 @@ Real led_[kNL] = {0.0, 0.0, 0.0, 0.0, 0.0}, ledn_[kNL] = {0.0, 0.0, 0.0, 0.0, 0.
 int led_cyc_ = -1;
 Real erad_ = 0.0, wgrav_ = 0.0, tprev_ = 0.0, ain_ = 0.0;
 // The radiation energy through the physical x1 faces AS THE SCHEME
-// APPLIES IT (RadiationM1 Ebnd with ebnd_split: the hesdirk2 tableau weights of the
+// APPLIES IT (RadiationVet Ebnd with ebnd_split: the hesdirk2 tableau weights of the
 // slopes' face fluxes, incl. implicit_bc_advect's end-face A E): in at x1min, out at
 // x1max (the Marshak top).  ebd_ = false: the transport cannot book it (columns 0).
 bool ebd_ = false;
@@ -110,9 +110,9 @@ void ShellSums(Mesh *pm, std::vector<Real> *out) {
   const int ks = indcs.ks, ke = indcs.ke;
   const int nc1 = indcs.nx1 + 2*indcs.ng;
   const int nmb = pmbp->nmb_thispack;
-  radm1::FluidRef fl = radm1::FluidRef::Get(pmbp);
+  radvet::FluidRef fl = radvet::FluidRef::Get(pmbp);
   auto u0 = fl.u0;
-  auto ur = pmbp->pradm1->u0;
+  auto ur = pmbp->pradvet->u0;
   auto &vol = pmbp->pcoord->volume;
   constexpr int nq = 4;
   out->assign(static_cast<size_t>(nq)*nc1, 0.0);
@@ -125,7 +125,7 @@ void ShellSums(Mesh *pm, std::vector<Real> *out) {
       if (q == 0) {return u0(m,IDN,k,j,i)*v;}
       if (q == 1) {return v;}
       if (q == 2) {return u0(m,IEN,k,j,i)*v;}
-      return ur(m,radm1::M1_E,k,j,i)*v;
+      return ur(m,radvet::M1_E,k,j,i)*v;
     }, rs);
     for (int q = 0; q < nq; ++q) {
       for (int i = is; i <= ie; ++i) {
@@ -144,7 +144,7 @@ void ShellSums(Mesh *pm, std::vector<Real> *out) {
           s0 += u0(m,IDN,k,j,i)*v;
           s1 += v;
           s2 += u0(m,IEN,k,j,i)*v;
-          s3 += ur(m,radm1::M1_E,k,j,i)*v;
+          s3 += ur(m,radvet::M1_E,k,j,i)*v;
         }
       }
     }
@@ -213,7 +213,7 @@ void DPhi(Mesh *pm, const Real dmi, const std::vector<Real> &ddm, std::vector<Re
 DvceArray4D<Real> rcc_, rx1_, rx2_, rx3_, rwc_, rwf_;
 
 void TakeRef(Mesh *pm) {
-  radm1::FluidRef fl = radm1::FluidRef::Get(pm->pmb_pack);
+  radvet::FluidRef fl = radvet::FluidRef::Get(pm->pmb_pack);
   auto clone = [](const DvceArray4D<Real> &a, DvceArray4D<Real> *c) {
     *c = DvceArray4D<Real>(Kokkos::view_alloc(std::string("hsdrv_ref"),
                                               Kokkos::WithoutInitializing), a.layout());
@@ -237,7 +237,7 @@ void SetPhi(Mesh *pm, const std::vector<Real> &dpc, const std::vector<Real> &dpf
   const int n3m1 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng - 1) : 0;
   const int n1m1 = nc1 - 1;
   const int nmb1 = pmbp->nmb_thispack - 1;
-  radm1::FluidRef fl = radm1::FluidRef::Get(pmbp);
+  radvet::FluidRef fl = radvet::FluidRef::Get(pmbp);
   DvceArray1D<Real> dc("hsdrv_dpc", nc1), df("hsdrv_dpf", nc1 + 1);
   auto hdc = Kokkos::create_mirror_view(dc);
   auto hdf = Kokkos::create_mirror_view(df);
@@ -325,7 +325,7 @@ void FaceSums(Mesh *pm, const bool binf, const bool zflux, Real *f) {
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, ks = indcs.ks;
   const int nx2 = indcs.nx2, nx3 = indcs.nx3;
   const int nmb = pmbp->nmb_thispack;
-  radm1::FluidRef fl = radm1::FluidRef::Get(pmbp);
+  radvet::FluidRef fl = radvet::FluidRef::Get(pmbp);
   auto flx1 = fl.uflx->x1f;
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &mbbcs = pmbp->pmb->mb_bcs;
@@ -390,7 +390,7 @@ void WriteLog(Mesh *pm, const std::vector<Real> &sh) {
     for (int i = 0; i < nx1_; ++i) {dm += ddm_[i];}
     gdm = a_.gcode*dm;
   }
-  radm1::RadiationM1 *pm1 = pm->pmb_pack->pradm1;
+  radvet::RadiationVet *pm1 = pm->pmb_pack->pradvet;
   const Real ebi = ebd_ ? pm1->ebnd_acc_in : 0.0;
   const Real ebo = ebd_ ? pm1->ebnd_acc_out : 0.0;
   const Real esa = ebd_ ? pm1->ebnd_acc_src : 0.0;
@@ -414,7 +414,7 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
   const bool hinf = pin->DoesParameterExist("problem","he_bc_inner_table");
   const bool hlive = pin->DoesParameterExist("problem","he_gm_live") &&
                      pin->GetBoolean("problem","he_gm_live");
-  radm1::RadiationM1 *pm1 = pm->pmb_pack->pradm1;
+  radvet::RadiationVet *pm1 = pm->pmb_pack->pradvet;
   const bool hftab = (pm1 != nullptr) && pm1->ftab_on;
   bool led = hinf || hlive || hftab;
   if (pin->DoesParameterExist("problem","he_drive_ledger")) {
@@ -466,9 +466,9 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
   } else if (ig == "rk2") {
     nst_ = 2; gam0_[0] = 0.0; gam1_[0] = 1.0; beta_[0] = 1.0;
     gam0_[1] = 0.5; gam1_[1] = 0.5; beta_[1] = 0.5;
-    if (pin->DoesBlockExist("rad_m1") &&
-        pin->DoesParameterExist("rad_m1", "time2_tableau") &&
-        pin->GetString("rad_m1", "time2_tableau").compare("trbdf2") == 0) {
+    if (pin->DoesBlockExist("rad_vet") &&
+        pin->DoesParameterExist("rad_vet", "time2_tableau") &&
+        pin->GetString("rad_vet", "time2_tableau").compare("trbdf2") == 0) {
       const Real c2 = 2.0 - std::sqrt(2.0);
       beta_[0] = c2;
       gam0_[1] = 0.25;
@@ -507,7 +507,7 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
   // The scheme's own x1-face radiation energy (Ebnd, split), so the
   // Marshak top loss is in the ledger; only where Ebnd is defined (implicit transport,
   // no multi-rate, no coupling_split)
-  ebd_ = (pm1 != nullptr) && (pm1->transport == radm1::M1_TRANSPORT_IMPLICIT) &&
+  ebd_ = (pm1 != nullptr) && (pm1->transport == radvet::M1_TRANSPORT_IMPLICIT) &&
          !pm1->MRActive() && (pm1->csplit == 0);
   if (ebd_) {
     pm1->ebnd_on = true;
@@ -543,7 +543,7 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
       std::cout << " (every " << every_ << " cycles, M_int table "
                 << (mtab_on_ ? "on" : "off") << ")";
     }
-    std::cout << ", rad_m1 flux table " << (hftab ? "on" : "off") << ", A_in " << ain_
+    std::cout << ", rad_vet flux table " << (hftab ? "on" : "off") << ", A_in " << ain_
               << ", table t0 " << t0_ << ", Ebnd faces " << (ebd_ ? "on" : "off")
               << ", closure L_in " << (cltab_ ? "table" : "const")
               << (restart ? " (restart)" : "") << std::endl;
@@ -556,7 +556,7 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
                    "[9]E_sponge [10]Erad_in (A_in int F dt) [11]W_grav [12]GM_int "
                    "[13]F_in [14]A_in [15]dPhi(x1f(ie+1)) [16]G dm(x1f(ie+1)) "
                    "[17]ErB_in [18]ErB_out (radiation energy in at x1min / OUT at x1max "
-                   "as the scheme applies it, RadiationM1 Ebnd) [19]E_src (the explicit "
+                   "as the scheme applies it, RadiationVet Ebnd) [19]E_src (the explicit "
                    "radiation source esrc = the MLT scaffold, as the solves apply it). "
                    "Budget: [4]-[4]_0 = "
                    "[7]-[8]+[9]+[11]+[17]-[18]+[19]\n");
@@ -601,7 +601,7 @@ void RstAppend(std::vector<char> *out) {
   p.push_back(dmint_);
   for (int i = 0; i < nx1_; ++i) {p.push_back(ref_ ? rhoref_[i] : 0.0);}
   for (int i = 0; i < nx1_; ++i) {p.push_back(ref_ ? ddm_[i] : 0.0);}
-  radm1::RadiationM1 *pm1 = (pmesh_ != nullptr) ? pmesh_->pmb_pack->pradm1 : nullptr;
+  radvet::RadiationVet *pm1 = (pmesh_ != nullptr) ? pmesh_->pmb_pack->pradvet : nullptr;
   p.push_back(ebd_ ? pm1->ebnd_acc_in : 0.0);
   p.push_back(ebd_ ? pm1->ebnd_acc_out : 0.0);
   p.push_back(ebd_ ? pm1->ebnd_acc_src : 0.0);
@@ -640,7 +640,7 @@ void RestartApply(Mesh *pm) {
     o += nx1_;
     if (rst_.size() == nexp + 4) {
       if (ebd_) {
-        radm1::RadiationM1 *pm1 = pm->pmb_pack->pradm1;
+        radvet::RadiationVet *pm1 = pm->pmb_pack->pradvet;
         pm1->ebnd_acc_in = rst_[o];
         pm1->ebnd_acc_out = rst_[o + 1];
         pm1->ebnd_acc = pm1->ebnd_acc_in - pm1->ebnd_acc_out;
@@ -703,7 +703,7 @@ void StageLedger(Mesh *pm, const Real bdt, const bool binf, const bool zflux,
 
 //! the end-of-cycle work; log = false on a restart (the straight run wrote that line)
 void CycleBody(Mesh *pm, const bool log) {
-  radm1::RadiationM1 *pm1 = pm->pmb_pack->pradm1;
+  radvet::RadiationVet *pm1 = pm->pmb_pack->pradvet;
   const Real t = pm->time;
   if (pm1 != nullptr && pm1->ftab_on) {
     erad_ += ain_*pm1->InnerFluxIntegral(tprev_, t);
@@ -731,7 +731,7 @@ Real ClosureFlux(Mesh *pm, const Real fconst) {
 }
 
 Real InnerFlux(Mesh *pm, const Real fconst) {
-  radm1::RadiationM1 *pm1 = pm->pmb_pack->pradm1;
+  radvet::RadiationVet *pm1 = pm->pmb_pack->pradvet;
   if (pm1 != nullptr && pm1->ftab_on) {return pm1->InnerFluxAt(pm->time);}
   return fconst;
 }

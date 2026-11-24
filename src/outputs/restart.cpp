@@ -38,8 +38,8 @@
 #include "z4c/compact_object_tracker.hpp"
 #include "z4c/z4c.hpp"
 #include "radiation/radiation.hpp"
-#include "rad_m1/rad_m1.hpp"
-#include "rad_m1/rad_m1_implicit.hpp"
+#include "rad_vet/rad_vet.hpp"
+#include "rad_vet/rad_vet_implicit.hpp"
 #include "srcterms/turb_driver.hpp"
 #include "pgen/pgen.hpp"
 #include "utils/two_stream_warm_rst.hpp"
@@ -84,14 +84,14 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
   adm::ADM* padm = pm->pmb_pack->padm;
   z4c::Z4c* pz4c = pm->pmb_pack->pz4c;
   radiation::Radiation* prad = pm->pmb_pack->prad;
-  // <rad_m1>: the four evolved moments (E, F_i), written and read as one more
+  // <rad_vet>: the four evolved moments (E, F_i), written and read as one more
   // cell-centred block.  Guarded by the pointer everywhere, so a file written by a run
-  // WITHOUT <rad_m1> has exactly the layout and the bytes it had before (design sect.6)
-  radm1::RadiationM1* pradm1 = pm->pmb_pack->pradm1;
+  // WITHOUT <rad_vet> has exactly the layout and the bytes it had before (design sect.6)
+  radvet::RadiationVet* pradvet = pm->pmb_pack->pradvet;
   TurbulenceDriver* pturb=pm->pmb_pack->pturb;
   int nhydro=0, nmhd=0, nrad=0, nm1=0, nforce=3, nadm=0, nz4c=0;
-  if (pradm1 != nullptr) {
-    nm1 = radm1::M1_NVAR;
+  if (pradvet != nullptr) {
+    nm1 = radvet::M1_NVAR;
   }
   if (phydro != nullptr) {
     nhydro = phydro->nhydro + phydro->nscalars;
@@ -254,39 +254,39 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     Kokkos::deep_copy(outarray_rad, Kokkos::subview(prad->i0, std::make_pair(0,nmb),
                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
-  if (pradm1 != nullptr) {
-    stage(outarray_m1, Kokkos::subview(pradm1->u0, std::make_pair(0,nmb), Kokkos::ALL,
+  if (pradvet != nullptr) {
+    stage(outarray_m1, Kokkos::subview(pradvet->u0, std::make_pair(0,nmb), Kokkos::ALL,
                                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
     // milestone 3a: the persistent x1 face fluxes of the implicit scheme
-    if (pradm1->transport >= radm1::M1_TRANSPORT_IMPLICIT_X1) {
-      stage(outarray_m1f, Kokkos::subview(pradm1->f0x1, std::make_pair(0,nmb),
+    if (pradvet->transport >= radvet::M1_TRANSPORT_IMPLICIT_X1) {
+      stage(outarray_m1f, Kokkos::subview(pradvet->f0x1, std::make_pair(0,nmb),
                                           Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
     }
     // milestone 3b phase B: the transverse face fluxes, in the SAME order the reader
     // (src/pgen/pgen.cpp) takes them back: f0x1, then f0x2, then f0x3.
-    if (pradm1->trans_on) {
-      stage(outarray_m1f2, Kokkos::subview(pradm1->f0x2, std::make_pair(0,nmb),
+    if (pradvet->trans_on) {
+      stage(outarray_m1f2, Kokkos::subview(pradvet->f0x2, std::make_pair(0,nmb),
                                            Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
-      if (pradm1->trans_x3) {
-        stage(outarray_m1f3, Kokkos::subview(pradm1->f0x3, std::make_pair(0,nmb),
+      if (pradvet->trans_x3) {
+        stage(outarray_m1f3, Kokkos::subview(pradvet->f0x3, std::make_pair(0,nmb),
                                              Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
       }
     }
-    // implicit_predictor = step: the stored previous-step increment (radm1::ipred)
-    if (pradm1->impl_pred && pradm1->pred_ok) {
-      const int npc = static_cast<int>(pradm1->ipred.extent(1));
+    // implicit_predictor = step: the stored previous-step increment (radvet::ipred)
+    if (pradvet->impl_pred && pradvet->pred_ok) {
+      const int npc = static_cast<int>(pradvet->ipred.extent(1));
       Kokkos::realloc(outarray_m1p, nmb, npc, nout3, nout2, nout1);
-      Kokkos::deep_copy(outarray_m1p, Kokkos::subview(pradm1->ipred,
+      Kokkos::deep_copy(outarray_m1p, Kokkos::subview(pradvet->ipred,
                         std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL,
                         Kokkos::ALL));
     }
     // time_scheme = hesdirk2: the FSAL slope and what goes with it
-    if (pradm1->Time2RstNch() > 0) {
-      const int nct = pradm1->Time2RstNch();
-      if (pradm1->rst_pack_mb) {
+    if (pradvet->Time2RstNch() > 0) {
+      const int nct = pradvet->Time2RstNch();
+      if (pradvet->rst_pack_mb) {
         // restart_pack_per_mb: one MeshBlock at a time (same bytes); the clean rays'
         // intensities (the last nfv channels) are copied to the host directly
-        const int nfv = pradm1->cln_cssc ? 0 : pradm1->CleanRstNfv(), nc0 = nct - nfv;
+        const int nfv = pradvet->cln_cssc ? 0 : pradvet->CleanRstNfv(), nc0 = nct - nfv;
         // (the staging of a MeshBlock in pinned host memory, which the device writes
         // directly: no device copy of its channels at a dump; where the host reads device
         // memory (MI300A, CPU builds) the device array itself, packed in place: no
@@ -298,7 +298,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
         const int nst = (um && nfv == 0 && !IOWrapper::collective) ? 1 : nmb;
         // (and, without ray intensities in the record, in windows of at most
         // <job>/restart_window_mb)
-        const int nwin = (nst < nmb && pradm1->CleanRstNfv() == 0) ?
+        const int nwin = (nst < nmb && pradvet->CleanRstNfv() == 0) ?
             std::max(1, std::min(nct, static_cast<int>(win_mb_*1048576.0/
                                  (sizeof(Real)*nout1*nout2*nout3)))) : nct;
         if (um) {
@@ -314,7 +314,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
         for (int m = 0; m < ((nst < nmb) ? 0 : nmb); ++m) {
           DvceArray5D<Real> tmp(um ? outarray_m1t_d.data() + outarray_m1t_d.stride(0)*m :
                                 pin.data(), 1, nc0, nout3, nout2, nout1);
-          pradm1->Time2RstPack(tmp, 1, m);
+          pradvet->Time2RstPack(tmp, 1, m);
           if (!um) {
             Kokkos::deep_copy(Kokkos::subview(outarray_m1t, m, std::make_pair(0, nc0), AL,
                                               AL, AL),
@@ -322,8 +322,8 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
           }
           auto fv = Kokkos::subview(outarray_m1t, m, std::make_pair(nc0, nct), AL, AL,
                                     AL);
-          if (nfv > 0 && pradm1->CleanRstFv().extent_int(0) > m) {
-            Kokkos::deep_copy(fv, Kokkos::subview(pradm1->CleanRstFv(), m, AL, AL, AL,
+          if (nfv > 0 && pradvet->CleanRstFv().extent_int(0) > m) {
+            Kokkos::deep_copy(fv, Kokkos::subview(pradvet->CleanRstFv(), m, AL, AL, AL,
                                                   AL));
           } else if (nfv > 0) {
             Kokkos::deep_copy(fv, 0.0);
@@ -332,51 +332,52 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
         if (um) Kokkos::fence();
       } else {
         DvceArray5D<Real> tmp("rst-m1t", nmb, nct, nout3, nout2, nout1);
-        pradm1->Time2RstPack(tmp, nmb);
+        pradvet->Time2RstPack(tmp, nmb);
         Kokkos::realloc(outarray_m1t, nmb, nct, nout3, nout2, nout1);
         Kokkos::deep_copy(outarray_m1t, tmp);
       }
     }
     // implicit_closure_thin_relax: the relaxed closure of the last step (ctr_mem)
-    if (pradm1->impl_ctrelax > 0.0 && pradm1->ctr_init) {
+    if (pradvet->impl_ctrelax > 0.0 && pradvet->ctr_init) {
       Kokkos::realloc(outarray_m1c, nmb, 4, nout3, nout2, nout1);
-      Kokkos::deep_copy(outarray_m1c, Kokkos::subview(pradm1->ctr_mem,
+      Kokkos::deep_copy(outarray_m1c, Kokkos::subview(pradvet->ctr_mem,
                         std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL,
                         Kokkos::ALL));
     }
     // <hydro|mhd>/rad_signal_speed: the signal-speed inputs of the last M1 step
     if ((phydro != nullptr && phydro->rad_signal_speed) ||
         (pmhd != nullptr && pmhd->rad_signal_speed)) {
-      const int rmode = pradm1->RssRstMode();
-      const int nrs = pradm1->RssRstNch(rmode);
+      const int rmode = pradvet->RssRstMode();
+      const int nrs = pradvet->RssRstNch(rmode);
       // (zero-copy, independent I/O: one MeshBlock's pack, filled MeshBlock by MeshBlock
       // by the writer)
       const bool one = zc && nmb > 1 && !IOWrapper::collective;
       pack(outarray_m1s, "rst-m1s", one ? 1 : nmb, nrs, [&](DvceArray5D<Real> &t) {
-        if (!one) pradm1->RssRstPack(t, nmb, rmode);
+        if (!one) pradvet->RssRstPack(t, nmb, rmode);
       });
     }
     // implicit_gas_src = conservative(2): the cell-F slope csk1
-    if (pradm1->CskRstNch() > 0) {
+    if (pradvet->CskRstNch() > 0) {
       Kokkos::realloc(outarray_m1k, nmb, 3, nout3, nout2, nout1);
-      Kokkos::deep_copy(outarray_m1k, Kokkos::subview(pradm1->csk1, std::make_pair(0,nmb),
+      Kokkos::deep_copy(outarray_m1k, Kokkos::subview(pradvet->csk1,
+                                                      std::make_pair(0,nmb),
                         Kokkos::ALL, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
     }
     // vet_rotate_avg: the averaging history, densely packed slabs
-    const int nra = pradm1->RotAvgRstNslab(nout1*nout2*nout3);
+    const int nra = pradvet->RotAvgRstNslab(nout1*nout2*nout3);
     if (nra > 0) {
       // packed per MeshBlock in chunks of 4 slabs (was a device copy of the
       // whole record, the largest transient on top of the steady state); same bytes
       Kokkos::realloc(outarray_m1r, nmb, nra, nout3, nout2, nout1);
-      pradm1->RotAvgRstPackHost(outarray_m1r, nmb, 4);
+      pradvet->RotAvgRstPackHost(outarray_m1r, nmb, 4);
     }
   }
   // <hydro|mhd>/am_vector: the spin reservoir (+ the radiation's hesdirk2
   // spin slope amk1), kAmSpinRstMagic, the last slabs of each record
   {
     hydro::AmModule *pam = hydro::AmModuleOf(pm->pmb_pack);
-    const bool k1 = (pam != nullptr) && pam->am_vector && (pradm1 != nullptr) &&
-                    (pradm1->amk1.extent_int(0) > 0);
+    const bool k1 = (pam != nullptr) && pam->am_vector && (pradvet != nullptr) &&
+                    (pradvet->amk1.extent_int(0) > 0);
     const int nams = ((pam != nullptr) && pam->am_vector) ? (k1 ? 2 : 1) : 0;
     if (nams > 0) {
       auto mb = std::make_pair(0, nmb);
@@ -386,7 +387,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
                         Kokkos::subview(pam->am_spin, mb, AL, AL, AL));
       if (k1) {
         Kokkos::deep_copy(Kokkos::subview(tmp, AL, 1, AL, AL, AL),
-                          Kokkos::subview(pradm1->amk1, mb, AL, AL, AL));
+                          Kokkos::subview(pradvet->amk1, mb, AL, AL, AL));
       }
       hold(outarray_ams, tmp);
     }
@@ -403,10 +404,10 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     }
   }
   // implicit_hr_cmem_rst: the applied face fluxes (kM1FaxRstMagic)
-  if (pradm1 != nullptr && pradm1->FaxRstNslab() > 0) {
-    const int nf = pradm1->FaxRstNslab();
+  if (pradvet != nullptr && pradvet->FaxRstNslab() > 0) {
+    const int nf = pradvet->FaxRstNslab();
     pack(outarray_fax, "rst-fax", nmb, nf, [&](DvceArray5D<Real> &t) {
-      pradm1->FaxRstPack(t, nmb);
+      pradvet->FaxRstPack(t, nmb);
     });
   }
   if (pturb != nullptr) {
@@ -446,7 +447,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   hydro::Hydro* phydro = pm->pmb_pack->phydro;
   mhd::MHD* pmhd = pm->pmb_pack->pmhd;
   radiation::Radiation* prad = pm->pmb_pack->prad;
-  radm1::RadiationM1* pradm1 = pm->pmb_pack->pradm1;
+  radvet::RadiationVet* pradvet = pm->pmb_pack->pradvet;
   TurbulenceDriver* pturb=pm->pmb_pack->pturb;
   z4c::Z4c* pz4c = pm->pmb_pack->pz4c;
   adm::ADM* padm = pm->pmb_pack->padm;
@@ -470,60 +471,60 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     std::memcpy(&(warm_hdr[0]), &(hdr[0]), sizeof(hdr));
     std::memcpy(&(warm_hdr[0]) + sizeof(hdr), &bdtp, sizeof(bdtp));
   }
-  // <rad_m1> implicit_predictor = step: the number of ipred channels written (0 when no
+  // <rad_vet> implicit_predictor = step: the number of ipred channels written (0 when no
   // increment is stored, and then not one byte), and its marked header -- int32 have,
-  // int32 ncomp, Real pred_dt.  See radm1::kM1PredRstMagic.
-  const int npred = (pradm1 != nullptr && pradm1->impl_pred && pradm1->pred_ok) ?
-                    static_cast<int>(pradm1->ipred.extent(1)) : 0;
+  // int32 ncomp, Real pred_dt.  See radvet::kM1PredRstMagic.
+  const int npred = (pradvet != nullptr && pradvet->impl_pred && pradvet->pred_ok) ?
+                    static_cast<int>(pradvet->ipred.extent(1)) : 0;
   char pred_hdr[2*sizeof(std::int32_t) + sizeof(Real)];
   {
     const std::int32_t hdr[2] = {(npred > 0) ? 1 : 0, static_cast<std::int32_t>(npred)};
-    const Real pdt = (pradm1 != nullptr) ? pradm1->pred_dt : 0.0;
+    const Real pdt = (pradvet != nullptr) ? pradvet->pred_dt : 0.0;
     std::memcpy(&(pred_hdr[0]), &(hdr[0]), sizeof(hdr));
     std::memcpy(&(pred_hdr[0]) + sizeof(hdr), &pdt, sizeof(pdt));
   }
-  // <rad_m1> time_scheme = hesdirk2: the slope block, behind the predictor one --
+  // <rad_vet> time_scheme = hesdirk2: the slope block, behind the predictor one --
   // int32 have, int32 nch, Real pred2_dt, Real dt_prev, Real vprev
-  const int nt2 = (pradm1 != nullptr) ? pradm1->Time2RstNch() : 0;
-  // <rad_m1> implicit_one_pass: its state, behind the hesdirk2 header
+  const int nt2 = (pradvet != nullptr) ? pradvet->Time2RstNch() : 0;
+  // <rad_vet> implicit_one_pass: its state, behind the hesdirk2 header
   // (9 Reals; 18 with implicit_one_pass_auto, whose switch-off state follows)
-  const bool wonep = (pradm1 != nullptr) && (pradm1->impl_onep > 0);
+  const bool wonep = (pradvet != nullptr) && (pradvet->impl_onep > 0);
   Real onep_hdr[18];
   IOWrapperSizeT onep_nb = 0;
   if (wonep) {
     for (int t = 0; t < 3; ++t) {
-      onep_hdr[t] = pradm1->onep_qa[t];
-      onep_hdr[3+t] = pradm1->onep_qb[t];
-      onep_hdr[6+t] = pradm1->onep_cnt[t];
-      onep_hdr[9+t] = pradm1->onep_off[t];
-      onep_hdr[12+t] = pradm1->onep_actr[t];
-      onep_hdr[15+t] = pradm1->onep_prb[t];
+      onep_hdr[t] = pradvet->onep_qa[t];
+      onep_hdr[3+t] = pradvet->onep_qb[t];
+      onep_hdr[6+t] = pradvet->onep_cnt[t];
+      onep_hdr[9+t] = pradvet->onep_off[t];
+      onep_hdr[12+t] = pradvet->onep_actr[t];
+      onep_hdr[15+t] = pradvet->onep_prb[t];
     }
-    onep_nb = (pradm1->impl_onep_auto ? 18 : 9)*sizeof(Real);
+    onep_nb = (pradvet->impl_onep_auto ? 18 : 9)*sizeof(Real);
   }
-  // <rad_m1> implicit_mr_every > 1 / vet_sc_every > 1: the multi-rate window and the
+  // <rad_vet> implicit_mr_every > 1 / vet_sc_every > 1: the multi-rate window and the
   // tensor cadence state, behind the one-pass header
-  const bool wmr = (pradm1 != nullptr) && pradm1->F4RstHdr();
+  const bool wmr = (pradvet != nullptr) && pradvet->F4RstHdr();
   Real mr_hdr[10] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
   if (wmr) {
-    mr_hdr[6] = static_cast<Real>(pradm1->vsc_cnt);
-    mr_hdr[7] = static_cast<Real>(pradm1->vsc_nb);
-    mr_hdr[8] = pradm1->vsc_t0;
-    mr_hdr[9] = pradm1->vsc_t1;
-    mr_hdr[0] = pradm1->mr_first ? 1.0 : 0.0;
-    mr_hdr[1] = static_cast<Real>(pradm1->mr_cnt);
-    mr_hdr[2] = pradm1->mr_acc;
-    mr_hdr[3] = pradm1->mr_dt;
-    mr_hdr[4] = static_cast<Real>(pradm1->mr_kc);
-    mr_hdr[5] = static_cast<Real>(pradm1->mr_kn);
+    mr_hdr[6] = static_cast<Real>(pradvet->vsc_cnt);
+    mr_hdr[7] = static_cast<Real>(pradvet->vsc_nb);
+    mr_hdr[8] = pradvet->vsc_t0;
+    mr_hdr[9] = pradvet->vsc_t1;
+    mr_hdr[0] = pradvet->mr_first ? 1.0 : 0.0;
+    mr_hdr[1] = static_cast<Real>(pradvet->mr_cnt);
+    mr_hdr[2] = pradvet->mr_acc;
+    mr_hdr[3] = pradvet->mr_dt;
+    mr_hdr[4] = static_cast<Real>(pradvet->mr_kc);
+    mr_hdr[5] = static_cast<Real>(pradvet->mr_kn);
   }
   // the time2_auto_be back-off state, only while a skip run is active
-  const bool wabe = (pradm1 != nullptr) && (pradm1->t2_abe > 0) &&
-                    (pradm1->t2_abe_len > 0 || pradm1->t2_abe_left > 0);
+  const bool wabe = (pradvet != nullptr) && (pradvet->t2_abe > 0) &&
+                    (pradvet->t2_abe_len > 0 || pradvet->t2_abe_left > 0);
   std::int32_t abe_hdr[2] = {0, 0};
   if (wabe) {
-    abe_hdr[0] = static_cast<std::int32_t>(pradm1->t2_abe_len);
-    abe_hdr[1] = static_cast<std::int32_t>(pradm1->t2_abe_left);
+    abe_hdr[0] = static_cast<std::int32_t>(pradvet->t2_abe_len);
+    abe_hdr[1] = static_cast<std::int32_t>(pradvet->t2_abe_left);
   }
   char t2_hdr[2*sizeof(std::int32_t) + 3*sizeof(Real)];
   {
@@ -532,16 +533,16 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     // and 5, the clean scheme: no zero channels, the ring dense, then also the cubed
     // sphere's sc rays, Time2RstNchWant; version 7: the ring without the cubed sphere's
     // zero stress / CLN_G fields, CleanRingFields)
-    const bool cl = (pradm1 != nullptr) && pradm1->clean;
-    const bool fk = cl && pradm1->cln_fsolve && pradm1->cln_fkin;
+    const bool cl = (pradvet != nullptr) && pradvet->clean;
+    const bool fk = cl && pradvet->cln_fsolve && pradvet->cln_fkin;
     const std::int32_t hdr[2] = {(nt2 > 0) ? (cl ? 7 : (fk ? 2 : 1)) : 0,
                                  static_cast<std::int32_t>(nt2)};
     Real hv[3] = {0.0, 0.0, 0.0};
-    if (pradm1 != nullptr) {
-      hv[0] = pradm1->pred2_ok ? pradm1->pred2_dt : 0.0;
-      hv[1] = pradm1->t2_dtprev;
-      hv[2] = (pradm1->t2_vprev ? 1.0 : 0.0) + (cl && pradm1->t2_ok ? 2.0 : 0.0) +
-              (cl && pradm1->cln_k1ok ? 4.0 : 0.0);
+    if (pradvet != nullptr) {
+      hv[0] = pradvet->pred2_ok ? pradvet->pred2_dt : 0.0;
+      hv[1] = pradvet->t2_dtprev;
+      hv[2] = (pradvet->t2_vprev ? 1.0 : 0.0) + (cl && pradvet->t2_ok ? 2.0 : 0.0) +
+              (cl && pradvet->cln_k1ok ? 4.0 : 0.0);
     }
     std::memcpy(&(t2_hdr[0]), &(hdr[0]), sizeof(hdr));
     std::memcpy(&(t2_hdr[0]) + sizeof(hdr), &(hv[0]), sizeof(hv));
@@ -554,48 +555,49 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   // the implicit-ck state block (utils/two_stream_ck_rst.hpp), behind even that one
   const int nck = ck_rst_hdr_bytes.empty() ? 0
                   : static_cast<int>(outarray_ck.extent(0));
-  // <rad_m1> implicit_closure_thin_relax: 4 ctr_mem slabs behind everything (0 = none,
-  // and then not one byte).  radm1::kM1CtrRstMagic.
-  const int nctr = (pradm1 != nullptr && pradm1->impl_ctrelax > 0.0 && pradm1->ctr_init)
+  // <rad_vet> implicit_closure_thin_relax: 4 ctr_mem slabs behind everything (0 = none,
+  // and then not one byte).  radvet::kM1CtrRstMagic.
+  const int nctr = (pradvet != nullptr && pradvet->impl_ctrelax > 0.0 &&
+                    pradvet->ctr_init)
                    ? 4 : 0;
   char ctr_hdr[2*sizeof(std::int32_t)];
   {
     const std::int32_t hdr[2] = {(nctr > 0) ? 1 : 0, static_cast<std::int32_t>(nctr)};
     std::memcpy(&(ctr_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
-  // <hydro|mhd>/rad_signal_speed: nrss slabs behind even those (radm1::kM1RssRstMagic)
-  const bool wrss = (pradm1 != nullptr) &&
+  // <hydro|mhd>/rad_signal_speed: nrss slabs behind even those (radvet::kM1RssRstMagic)
+  const bool wrss = (pradvet != nullptr) &&
                     ((phydro != nullptr && phydro->rad_signal_speed) ||
                      (pmhd != nullptr && pmhd->rad_signal_speed));
-  const int rss_mode = wrss ? pradm1->RssRstMode() : 0;
-  const int nrss = wrss ? pradm1->RssRstNch(rss_mode) : 0;
+  const int rss_mode = wrss ? pradvet->RssRstMode() : 0;
+  const int nrss = wrss ? pradvet->RssRstNch(rss_mode) : 0;
   char rss_hdr[4*sizeof(std::int32_t)];
   {
     const std::int32_t hdr[4] = {(nrss > 0) ? 1 : 0, static_cast<std::int32_t>(nrss),
                                  static_cast<std::int32_t>(rss_mode), 0};
     std::memcpy(&(rss_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
-  // <rad_m1>/implicit_gas_src = conservative(2): csk1 + the flags,
-  // ncsk slabs behind the vet_gd_async ones (radm1::kM1CskRstMagic)
-  const bool wcsk = (pradm1 != nullptr) && pradm1->CskRstHdr();
-  const int ncsk = wcsk ? pradm1->CskRstNch() : 0;
+  // <rad_vet>/implicit_gas_src = conservative(2): csk1 + the flags,
+  // ncsk slabs behind the vet_gd_async ones (radvet::kM1CskRstMagic)
+  const bool wcsk = (pradvet != nullptr) && pradvet->CskRstHdr();
+  const int ncsk = wcsk ? pradvet->CskRstNch() : 0;
   char csk_hdr[4*sizeof(std::int32_t)];
   {
     const std::int32_t hdr[4] = {wcsk ? 1 : 0, static_cast<std::int32_t>(ncsk),
-                                 (wcsk && pradm1->csk1_ok) ? 1 : 0, 0};
+                                 (wcsk && pradvet->csk1_ok) ? 1 : 0, 0};
     std::memcpy(&(csk_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
-  // <rad_m1>/vet_rotate_avg: the averaging history, nra slabs behind
-  // even the csk ones (radm1::kM1RaRstMagic; RadiationM1::RotAvgRstHdr)
-  std::int64_t ra_hdr[radm1::RadiationM1::M1_RA_RST_NH] = {0};
-  if (pradm1 != nullptr) {pradm1->RotAvgRstHdr(&(ra_hdr[0]));}
+  // <rad_vet>/vet_rotate_avg: the averaging history, nra slabs behind
+  // even the csk ones (radvet::kM1RaRstMagic; RadiationVet::RotAvgRstHdr)
+  std::int64_t ra_hdr[radvet::RadiationVet::M1_RA_RST_NH] = {0};
+  if (pradvet != nullptr) {pradvet->RotAvgRstHdr(&(ra_hdr[0]));}
   const int nra = static_cast<int>(ra_hdr[1]);
   // am_vector spin slabs (hydro::kAmSpinRstMagic), behind even the nra ones
   int nams = 0;
   {
     hydro::AmModule *pam = hydro::AmModuleOf(pm->pmb_pack);
     if ((pam != nullptr) && pam->am_vector) {
-      nams = ((pradm1 != nullptr) && (pradm1->amk1.extent_int(0) > 0)) ? 2 : 1;
+      nams = ((pradvet != nullptr) && (pradvet->amk1.extent_int(0) > 0)) ? 2 : 1;
     }
   }
   char ams_hdr[4*sizeof(std::int32_t)];
@@ -611,8 +613,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     const std::int32_t hdr[4] = {1, static_cast<std::int32_t>(npgs), 0, 0};
     std::memcpy(&(pgs_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
-  // the rad_m1 applied face fluxes, behind even the pgen slabs
-  const int nfax = (pradm1 != nullptr) ? pradm1->FaxRstNslab() : 0;
+  // the rad_vet applied face fluxes, behind even the pgen slabs
+  const int nfax = (pradvet != nullptr) ? pradvet->FaxRstNslab() : 0;
   char fax_hdr[4*sizeof(std::int32_t)];
   {
     const std::int32_t hdr[4] = {1, static_cast<std::int32_t>(nfax), 0, 0};
@@ -625,8 +627,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     std::memcpy(&(eint_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
   int nhydro=0, nmhd=0, nrad=0, nm1=0, nforce=3, nz4c=0, nadm=0, nco=0;
-  if (pradm1 != nullptr) {
-    nm1 = radm1::M1_NVAR;
+  if (pradvet != nullptr) {
+    nm1 = radvet::M1_NVAR;
   }
   if (phydro != nullptr) {
     nhydro = phydro->nhydro + phydro->nscalars;
@@ -802,8 +804,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     // the implicit_predictor header, same marked form, behind the warm-start one
     if (npred > 0) {
       IOWrapperSizeT nb = sizeof(pred_hdr);
-      resfile.Write_any_type(&(radm1::kM1PredRstMagic[0]),
-                             sizeof(radm1::kM1PredRstMagic), "byte",
+      resfile.Write_any_type(&(radvet::kM1PredRstMagic[0]),
+                             sizeof(radvet::kM1PredRstMagic), "byte",
                              single_file_per_rank);
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(pred_hdr[0]), nb, "byte", single_file_per_rank);
@@ -811,31 +813,31 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     // the hesdirk2 slope header, same marked form, behind the predictor one
     if (nt2 > 0) {
       IOWrapperSizeT nb = sizeof(t2_hdr);
-      resfile.Write_any_type(&(radm1::kM1Time2RstMagic[0]),
-                             sizeof(radm1::kM1Time2RstMagic), "byte",
+      resfile.Write_any_type(&(radvet::kM1Time2RstMagic[0]),
+                             sizeof(radvet::kM1Time2RstMagic), "byte",
                              single_file_per_rank);
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(t2_hdr[0]), nb, "byte", single_file_per_rank);
     }
     if (wonep) {
       IOWrapperSizeT nb = onep_nb;
-      resfile.Write_any_type(&(radm1::kM1OnePassRstMagic[0]),
-                             sizeof(radm1::kM1OnePassRstMagic), "byte",
+      resfile.Write_any_type(&(radvet::kM1OnePassRstMagic[0]),
+                             sizeof(radvet::kM1OnePassRstMagic), "byte",
                              single_file_per_rank);
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(onep_hdr[0]), nb, "byte", single_file_per_rank);
     }
     if (wmr) {
       IOWrapperSizeT nb = sizeof(mr_hdr);
-      resfile.Write_any_type(&(radm1::kM1MRRstMagic[0]), sizeof(radm1::kM1MRRstMagic),
+      resfile.Write_any_type(&(radvet::kM1MRRstMagic[0]), sizeof(radvet::kM1MRRstMagic),
                              "byte", single_file_per_rank);
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(mr_hdr[0]), nb, "byte", single_file_per_rank);
     }
     if (wabe) {
       IOWrapperSizeT nb = sizeof(abe_hdr);
-      resfile.Write_any_type(&(radm1::kM1AutoBeRstMagic[0]),
-                             sizeof(radm1::kM1AutoBeRstMagic), "byte",
+      resfile.Write_any_type(&(radvet::kM1AutoBeRstMagic[0]),
+                             sizeof(radvet::kM1AutoBeRstMagic), "byte",
                              single_file_per_rank);
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(abe_hdr[0]), nb, "byte", single_file_per_rank);
@@ -860,7 +862,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     // the thin_relax closure header, same marked form, behind the implicit-ck one
     if (nctr > 0) {
       IOWrapperSizeT nb = sizeof(ctr_hdr);
-      resfile.Write_any_type(&(radm1::kM1CtrRstMagic[0]), sizeof(radm1::kM1CtrRstMagic),
+      resfile.Write_any_type(&(radvet::kM1CtrRstMagic[0]), sizeof(radvet::kM1CtrRstMagic),
                              "byte", single_file_per_rank);
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(ctr_hdr[0]), nb, "byte", single_file_per_rank);
@@ -868,7 +870,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     // the signal-speed header, same marked form, behind the thin_relax one
     if (nrss > 0) {
       IOWrapperSizeT nb = sizeof(rss_hdr);
-      resfile.Write_any_type(&(radm1::kM1RssRstMagic[0]), sizeof(radm1::kM1RssRstMagic),
+      resfile.Write_any_type(&(radvet::kM1RssRstMagic[0]), sizeof(radvet::kM1RssRstMagic),
                              "byte", single_file_per_rank);
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(rss_hdr[0]), nb, "byte", single_file_per_rank);
@@ -876,7 +878,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     // the conservative cell-F slope header, same marked form, behind the signal-speed one
     if (wcsk) {
       IOWrapperSizeT nb = sizeof(csk_hdr);
-      resfile.Write_any_type(&(radm1::kM1CskRstMagic[0]), sizeof(radm1::kM1CskRstMagic),
+      resfile.Write_any_type(&(radvet::kM1CskRstMagic[0]), sizeof(radvet::kM1CskRstMagic),
                              "byte", single_file_per_rank);
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(csk_hdr[0]), nb, "byte", single_file_per_rank);
@@ -884,7 +886,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     // the vet_rotate_avg header, same marked form, behind the csk one
     if (nra > 0) {
       IOWrapperSizeT nb = sizeof(ra_hdr);
-      resfile.Write_any_type(&(radm1::kM1RaRstMagic[0]), sizeof(radm1::kM1RaRstMagic),
+      resfile.Write_any_type(&(radvet::kM1RaRstMagic[0]), sizeof(radvet::kM1RaRstMagic),
                              "byte", single_file_per_rank);
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(ra_hdr[0]), nb, "byte", single_file_per_rank);
@@ -905,10 +907,10 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(pgs_hdr[0]), nb, "byte", single_file_per_rank);
     }
-    // the rad_m1 applied face flux header, same marked form, behind the pgen slab one
+    // the rad_vet applied face flux header, same marked form, behind the pgen slab one
     if (nfax > 0) {
       IOWrapperSizeT nb = sizeof(fax_hdr);
-      resfile.Write_any_type(&(radm1::kM1FaxRstMagic[0]), sizeof(radm1::kM1FaxRstMagic),
+      resfile.Write_any_type(&(radvet::kM1FaxRstMagic[0]), sizeof(radvet::kM1FaxRstMagic),
                              "byte", single_file_per_rank);
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(fax_hdr[0]), nb, "byte", single_file_per_rank);
@@ -942,15 +944,15 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (prad != nullptr) {
     data_size += nout1*nout2*nout3*nrad*sizeof(Real);   // radiation i0
   }
-  if (pradm1 != nullptr) {
-    data_size += nout1*nout2*nout3*nm1*sizeof(Real);    // rad_m1 u0
-    if (pradm1->transport >= radm1::M1_TRANSPORT_IMPLICIT_X1) {
-      data_size += (nout1+1)*nout2*nout3*sizeof(Real);  // rad_m1 f0x1 (milestone 3a)
+  if (pradvet != nullptr) {
+    data_size += nout1*nout2*nout3*nm1*sizeof(Real);    // rad_vet u0
+    if (pradvet->transport >= radvet::M1_TRANSPORT_IMPLICIT_X1) {
+      data_size += (nout1+1)*nout2*nout3*sizeof(Real);  // rad_vet f0x1 (milestone 3a)
     }
-    if (pradm1->trans_on) {
-      data_size += nout1*(nout2+1)*nout3*sizeof(Real);  // rad_m1 f0x2 (3b phase B)
-      if (pradm1->trans_x3) {
-        data_size += nout1*nout2*(nout3+1)*sizeof(Real);  // rad_m1 f0x3
+    if (pradvet->trans_on) {
+      data_size += nout1*(nout2+1)*nout3*sizeof(Real);  // rad_vet f0x2 (3b phase B)
+      if (pradvet->trans_x3) {
+        data_size += nout1*nout2*(nout3+1)*sizeof(Real);  // rad_vet f0x3
       }
     }
   }
@@ -978,15 +980,15 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     data_size += nwarm*cell_bytes;   // rt_c3bp (+ rt_c3bp2)
   }
   if (npred > 0) {
-    data_size += npred*cell_bytes;   // rad_m1 ipred
+    data_size += npred*cell_bytes;   // rad_vet ipred
   }
   if (nt2 > 0) {
-    data_size += nt2*cell_bytes;   // rad_m1 hesdirk2 slope
+    data_size += nt2*cell_bytes;   // rad_vet hesdirk2 slope
   }
   // hydro / mhd w0(IEN), + the hydro w0 density and velocities
   data_size += (neint + (we_hyd ? 4 : 0))*cell_bytes;
   data_size += nck*cell_bytes;   // implicit-ck state
-  data_size += nctr*cell_bytes;   // rad_m1 thin_relax ctr_mem
+  data_size += nctr*cell_bytes;   // rad_vet thin_relax ctr_mem
   data_size += nrss*cell_bytes;   // rad_signal_speed inputs
   data_size += ncsk*cell_bytes;   // conservative csk1
   data_size += nra*cell_bytes;   // vet_rotate_avg history
@@ -1014,22 +1016,22 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
                  + sizeof(warm_hdr);
   }
   if (npred > 0) {
-    step3size += sizeof(radm1::kM1PredRstMagic) + sizeof(IOWrapperSizeT)
+    step3size += sizeof(radvet::kM1PredRstMagic) + sizeof(IOWrapperSizeT)
                  + sizeof(pred_hdr);
   }
   if (nt2 > 0) {
-    step3size += sizeof(radm1::kM1Time2RstMagic) + sizeof(IOWrapperSizeT)
+    step3size += sizeof(radvet::kM1Time2RstMagic) + sizeof(IOWrapperSizeT)
                  + sizeof(t2_hdr);
   }
   if (wonep) {
-    step3size += sizeof(radm1::kM1OnePassRstMagic) + sizeof(IOWrapperSizeT)
+    step3size += sizeof(radvet::kM1OnePassRstMagic) + sizeof(IOWrapperSizeT)
                  + onep_nb;
   }
   if (wmr) {
-    step3size += sizeof(radm1::kM1MRRstMagic) + sizeof(IOWrapperSizeT) + sizeof(mr_hdr);
+    step3size += sizeof(radvet::kM1MRRstMagic) + sizeof(IOWrapperSizeT) + sizeof(mr_hdr);
   }
   if (wabe) {
-    step3size += sizeof(radm1::kM1AutoBeRstMagic) + sizeof(IOWrapperSizeT)
+    step3size += sizeof(radvet::kM1AutoBeRstMagic) + sizeof(IOWrapperSizeT)
                  + sizeof(abe_hdr);
   }
   if (neint > 0) {
@@ -1040,16 +1042,19 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
                  + ck_rst_hdr_bytes.size();
   }
   if (nctr > 0) {
-    step3size += sizeof(radm1::kM1CtrRstMagic) + sizeof(IOWrapperSizeT) + sizeof(ctr_hdr);
+    step3size += sizeof(radvet::kM1CtrRstMagic) + sizeof(IOWrapperSizeT) +
+        sizeof(ctr_hdr);
   }
   if (nrss > 0) {
-    step3size += sizeof(radm1::kM1RssRstMagic) + sizeof(IOWrapperSizeT) + sizeof(rss_hdr);
+    step3size += sizeof(radvet::kM1RssRstMagic) + sizeof(IOWrapperSizeT) +
+        sizeof(rss_hdr);
   }
   if (wcsk) {
-    step3size += sizeof(radm1::kM1CskRstMagic) + sizeof(IOWrapperSizeT) + sizeof(csk_hdr);
+    step3size += sizeof(radvet::kM1CskRstMagic) + sizeof(IOWrapperSizeT) +
+        sizeof(csk_hdr);
   }
   if (nra > 0) {
-    step3size += sizeof(radm1::kM1RaRstMagic) + sizeof(IOWrapperSizeT) + sizeof(ra_hdr);
+    step3size += sizeof(radvet::kM1RaRstMagic) + sizeof(IOWrapperSizeT) + sizeof(ra_hdr);
   }
   if (nams > 0) {
     step3size += sizeof(hydro::kAmSpinRstMagic) + sizeof(IOWrapperSizeT) +
@@ -1059,7 +1064,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     step3size += sizeof(kPgenSlabRstMagic) + sizeof(IOWrapperSizeT) + sizeof(pgs_hdr);
   }
   if (nfax > 0) {
-    step3size += sizeof(radm1::kM1FaxRstMagic) + sizeof(IOWrapperSizeT) + sizeof(fax_hdr);
+    step3size += sizeof(radvet::kM1FaxRstMagic) + sizeof(IOWrapperSizeT) +
+        sizeof(fax_hdr);
   }
 
   // write cell-centered variables in parallel
@@ -1272,7 +1278,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     myoffset = offset_myrank;
   }
 
-  if (pradm1 != nullptr) {
+  if (pradvet != nullptr) {
     for (int m=0;  m<noutmbs_max; ++m) {
       // every rank has a MB to write, so write collectively
       if (m < noutmbs_min) {
@@ -1282,7 +1288,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
         if (resfile.Write_any_type_at_all(mbptr.data(),mbcnt,myoffset,"Real",
                                           single_file_per_rank) != mbcnt) {
           std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-          << std::endl << "cell-centered rad_m1 data not written correctly to rst file, "
+          << std::endl << "cell-centered rad_vet data not written correctly to rst file, "
           << "restart file is broken." << std::endl;
           exit(EXIT_FAILURE);
         }
@@ -1296,14 +1302,14 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
         if (resfile.Write_any_type_at(mbptr.data(),mbcnt,myoffset,"Real",
                                       single_file_per_rank) != mbcnt) {
           std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << "cell-centered rad_m1 data not written correctly"
+                    << std::endl << "cell-centered rad_vet data not written correctly"
                     << " to rst file, restart file is broken." << std::endl;
           exit(EXIT_FAILURE);
         }
         myoffset += data_size;
       }
     }
-    offset_myrank += nout1*nout2*nout3*nm1*sizeof(Real);    // rad_m1 u0
+    offset_myrank += nout1*nout2*nout3*nm1*sizeof(Real);    // rad_vet u0
     myoffset = offset_myrank;
 
     // milestone 3a / 3b phase B: the persistent face fluxes, same loop, same order.
@@ -1317,7 +1323,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
           if (resfile.Write_any_type_at_all(mbptr.data(),mbcnt,myoffset,"Real",
                                             single_file_per_rank) != mbcnt) {
             std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-            << std::endl << "rad_m1 face data not written correctly to rst file, "
+            << std::endl << "rad_vet face data not written correctly to rst file, "
             << "restart file is broken." << std::endl;
             exit(EXIT_FAILURE);
           }
@@ -1328,7 +1334,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
           if (resfile.Write_any_type_at(mbptr.data(),mbcnt,myoffset,"Real",
                                         single_file_per_rank) != mbcnt) {
             std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                      << std::endl << "rad_m1 face data not written correctly"
+                      << std::endl << "rad_vet face data not written correctly"
                       << " to rst file, restart file is broken." << std::endl;
             exit(EXIT_FAILURE);
           }
@@ -1336,7 +1342,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
         }
       }
     };
-    if (pradm1->transport >= radm1::M1_TRANSPORT_IMPLICIT_X1) {
+    if (pradvet->transport >= radvet::M1_TRANSPORT_IMPLICIT_X1) {
       for (int m=0;  m<noutmbs_max; ++m) {
         if (m < noutmbs_min) {
           auto mbptr = Kokkos::subview(outarray_m1f, m, Kokkos::ALL, Kokkos::ALL,
@@ -1345,7 +1351,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
           if (resfile.Write_any_type_at_all(mbptr.data(),mbcnt,myoffset,"Real",
                                             single_file_per_rank) != mbcnt) {
             std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-            << std::endl << "rad_m1 face data not written correctly to rst file, "
+            << std::endl << "rad_vet face data not written correctly to rst file, "
             << "restart file is broken." << std::endl;
             exit(EXIT_FAILURE);
           }
@@ -1357,23 +1363,23 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
           if (resfile.Write_any_type_at(mbptr.data(),mbcnt,myoffset,"Real",
                                         single_file_per_rank) != mbcnt) {
             std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                      << std::endl << "rad_m1 face data not written correctly"
+                      << std::endl << "rad_vet face data not written correctly"
                       << " to rst file, restart file is broken." << std::endl;
             exit(EXIT_FAILURE);
           }
           myoffset += data_size;
         }
       }
-      offset_myrank += (nout1+1)*nout2*nout3*sizeof(Real);   // rad_m1 f0x1
+      offset_myrank += (nout1+1)*nout2*nout3*sizeof(Real);   // rad_vet f0x1
       myoffset = offset_myrank;
     }
-    if (pradm1->trans_on) {
+    if (pradvet->trans_on) {
       wrface(outarray_m1f2);
-      offset_myrank += nout1*(nout2+1)*nout3*sizeof(Real);   // rad_m1 f0x2
+      offset_myrank += nout1*(nout2+1)*nout3*sizeof(Real);   // rad_vet f0x2
       myoffset = offset_myrank;
-      if (pradm1->trans_x3) {
+      if (pradvet->trans_x3) {
         wrface(outarray_m1f3);
-        offset_myrank += nout1*nout2*(nout3+1)*sizeof(Real);   // rad_m1 f0x3
+        offset_myrank += nout1*nout2*(nout3+1)*sizeof(Real);   // rad_vet f0x3
         myoffset = offset_myrank;
       }
     }
@@ -1583,11 +1589,11 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (nwarm > 0) { write_wtemp(outarray_wm1, "rt warm start"); }
   if (nwarm > 1) { write_wtemp(outarray_wm2, "rt warm start 2"); }
   // and the implicit_predictor increment behind that, one slab per channel
-  write_group(outarray_m1p, npred, "rad_m1 predictor");
+  write_group(outarray_m1p, npred, "rad_vet predictor");
   // and the hesdirk2 slope behind that
-  write_group(outarray_m1t, nt2, "rad_m1 hesdirk2 slope",
+  write_group(outarray_m1t, nt2, "rad_vet hesdirk2 slope",
               [&](DvceArray5D<Real> &t, int m, int w0) {
-                pradm1->Time2RstPack(t, 1, m, w0);});
+                pradvet->Time2RstPack(t, 1, m, w0);});
   // and the internal energy last of all (kEintRstMagic)
   if (we_hyd) { write_wtemp(outarray_weh, "hydro internal energy"); }
   // (w0's IDN, IVX, IVY, IVZ are its first 4 channels: contiguous per MeshBlock)
@@ -1599,22 +1605,22 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
                                 Kokkos::ALL), "ck restart state");
   }
   // and the thin_relax closure memory last of all (kM1CtrRstMagic)
-  write_group(outarray_m1c, nctr, "rad_m1 thin_relax closure");
+  write_group(outarray_m1c, nctr, "rad_vet thin_relax closure");
   // and the rad_signal_speed inputs behind it (kM1RssRstMagic)
   write_group(outarray_m1s, nrss, "rad_signal_speed inputs",
               [&](DvceArray5D<Real> &t, int m, int) {
-                pradm1->RssRstPack(t, 1, pradm1->RssRstMode(), m);});
+                pradvet->RssRstPack(t, 1, pradvet->RssRstMode(), m);});
   // and the vet_gd_async pending source behind it (kM1VgdRstMagic)
   // and the conservative cell-F slope behind it (kM1CskRstMagic)
-  write_group(outarray_m1k, ncsk, "rad_m1 conservative cell-F slope");
+  write_group(outarray_m1k, ncsk, "rad_vet conservative cell-F slope");
   // and the vet_rotate_avg history behind it (kM1RaRstMagic)
   write_group(outarray_m1r, nra, "vet_rotate_avg history");
   // and the am_vector spin (+ amk1) behind it (hydro::kAmSpinRstMagic)
   write_group(outarray_ams, nams, "am_vector spin");
   // and the per-cell pgen slabs behind it (kPgenSlabRstMagic)
   write_group(outarray_pgs, npgs, "pgen slab");
-  // and the rad_m1 applied face fluxes last of all (kM1FaxRstMagic)
-  write_group(outarray_fax, nfax, "rad_m1 applied face flux");
+  // and the rad_vet applied face fluxes last of all (kM1FaxRstMagic)
+  write_group(outarray_fax, nfax, "rad_vet applied face flux");
 
   // close file, clean up
   resfile.Close(single_file_per_rank);

@@ -385,8 +385,8 @@ class MeshBoundaryValues {
                        DvceArray4D<Real> phi = DvceArray4D<Real>());
   static void BFieldBCs(MeshBlockPack *pp, DualArray2D<Real> bin, DvceFaceFld4D<Real> b0);
   static void RadiationBCs(MeshBlockPack *pp,DualArray2D<Real> iin,DvceArray5D<Real> i0);
-  static void RadM1BCs(MeshBlockPack *pp, DualArray2D<Real> uin, DvceArray5D<Real> u0,
-                       Real cl, Real e_floor);
+  static void RadVetBCs(MeshBlockPack *pp, DualArray2D<Real> uin, DvceArray5D<Real> u0,
+                        Real cl, Real e_floor);
   static void Z4cBCs(MeshBlockPack *pp, DualArray2D<Real> uin, DvceArray5D<Real> u0,
                      DvceArray5D<Real> coarse_u0);
 
@@ -473,9 +473,9 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // cs_noresample (default false): this object's cross-panel ghosts are the plain signed
   // index copy of the neighbour's own cells (no along-seam resample), i.e. the mirror
   // images of this block's cells across the seam. Set by the implicit M1 on its scratch
-  // exchanges (stage CS1, rad_m1_sph.cpp), whose seam faces pair cell to cell.
+  // exchanges (stage CS1, rad_vet_sph.cpp), whose seam faces pair cell to cell.
   bool cs_noresample = false;
-  // teams of each (block, buffer, variable) of the CC pack/unpack: 1; the clean M1
+  // teams of each (block, buffer, variable) of the CC pack/unpack: 1; the clean VET
   // exchanges take more.  CUDA: 16 (a cubed-sphere face of 700 x 64 x 3 cells was one
   // team's; A100 RSG 12 ranks -0.28 s/cycle, hst and dumps bitwise)
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -511,7 +511,7 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // covariant metric transform (bvals_cc.cpp). Set by the implicit M1 on pbval_th.
   bool cs_perm_pairs = false;
   // cs- cs_hrq0 >= 0 (default -1): slots cs_hrq0..+3 hold the HALF-RANGE ratios
-  // (h+_2, h-_2, h+_3, h-_3) about this block's x2 / x3 axes (rad_m1 vgd_hr on the cubed
+  // (h+_2, h-_2, h+_3, h-_3) about this block's x2 / x3 axes (rad_vet vgd_hr on the cubed
   // sphere). Across a seam they take the axis permutation of the index map and,
   // where the destination axis runs reversed, h+ <-> -h- (no resample: the mirror
   // cell). Exact for the seam-normal axis (the plane family is common to both charts).

@@ -5,7 +5,7 @@
 //========================================================================================
 //! \file he_strip_bg.cpp
 //! \brief a ONE-SHOT restart-time transform
-//! of the he_star_m1 problem that removes the gas above the photosphere (lifted gas
+//! of the he_star_vet problem that removes the gas above the photosphere (lifted gas
 //! falling back, filling the volume to the outer boundary) and replaces it with a
 //! static, optically thin ambient in radiative equilibrium.
 //!
@@ -54,8 +54,8 @@
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
 #include "hydro/hydro_am.hpp"
-#include "rad_m1/rad_m1.hpp"
-#include "rad_m1/rad_m1_opacity.hpp"
+#include "rad_vet/rad_vet.hpp"
+#include "rad_vet/rad_vet_opacity.hpp"
 #include "utils/eint_from_cons.hpp"
 
 #if MPI_PARALLEL_ENABLED
@@ -84,9 +84,9 @@ void HsStripBackground(ParameterInput *pin, Mesh *pm) {
 
   MeshBlockPack *pmbp = pm->pmb_pack;
   hydro::Hydro *ph = pmbp->phydro;
-  auto *pm1 = pmbp->pradm1;
+  auto *pm1 = pmbp->pradvet;
   if (ph == nullptr || pm1 == nullptr) {
-    std::cout << "### FATAL strip_bg: needs <hydro> and <rad_m1>" << std::endl;
+    std::cout << "### FATAL strip_bg: needs <hydro> and <rad_vet>" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   auto &indcs = pm->mb_indcs;
@@ -156,7 +156,7 @@ void HsStripBackground(ParameterInput *pin, Mesh *pm) {
       const Real d = u0(m,IDN,k,j,i);
       const Real t = tgas(i);
       Real op, oe, of, os;
-      radm1::M1TableOpacities(ot, d, t, op, oe, of, os);
+      radvet::M1TableOpacities(ot, d, t, op, oe, of, os);
       const Real dt = (of + os)*d*(x1f(m,i+1) - x1f(m,i));
       if (tau + 0.5*dt >= taucut) {
         ic = i;
@@ -274,7 +274,7 @@ void HsRestartPerturb(ParameterInput *pin, Mesh *pm) {
     return;
   }
   MeshBlockPack *pmbp = pm->pmb_pack;
-  auto *pm1 = pmbp->pradm1;
+  auto *pm1 = pmbp->pradvet;
   if (pm1 == nullptr) return;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;

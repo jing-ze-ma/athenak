@@ -27,7 +27,7 @@ add_executable(
         bvals/physics/hydro_bcs.cpp
         bvals/physics/bfield_bcs.cpp
         bvals/physics/radiation_bcs.cpp
-        bvals/physics/rad_m1_bcs.cpp
+        bvals/physics/rad_vet_bcs.cpp
         bvals/physics/z4c_bcs.cpp
 
         coordinates/adm.cpp
@@ -174,9 +174,9 @@ add_executable(
         pgen/tests/am_wb.cpp
         pgen/tests/rad_beam.cpp
         pgen/tests/rad_diff2d.cpp
-        pgen/tests/rad_m1_tests.cpp
-        pgen/tests/rad_m1_tests2.cpp
-        pgen/tests/rad_m1_rhse.cpp
+        pgen/tests/rad_vet_tests.cpp
+        pgen/tests/rad_vet_tests2.cpp
+        pgen/tests/rad_vet_rhse.cpp
         pgen/tests/rad_linear_wave.cpp
         pgen/tests/z4c_boosted_puncture.cpp
         pgen/tests/z4c_linear_wave.cpp
@@ -184,33 +184,33 @@ add_executable(
         pgen/tests/binary_gravity.cpp
         pgen/tests/be_collapse.cpp
 
-        rad_m1/rad_m1.cpp
-        rad_m1/rad_m1_fluid.cpp
-        rad_m1/rad_m1_halo.cpp
-        rad_m1/rad_m1_limits.cpp
-        rad_m1/rad_m1_init.cpp
-        rad_m1/rad_m1_clean.cpp
-        rad_m1/rad_m1_clean_p1.cpp
-        rad_m1/rad_m1_clean_p2.cpp
-        rad_m1/rad_m1_clean_closure.cpp
-        rad_m1/rad_m1_clean_closure_p1.cpp
-        rad_m1/rad_m1_clean_closure_p2.cpp
-        rad_m1/rad_m1_clean_solver.cpp
-        rad_m1/rad_m1_sph.cpp
-        rad_m1/rad_m1_time2.cpp
-        rad_m1/rad_m1_mr.cpp
-        rad_m1/rad_m1_newdt.cpp
-        rad_m1/rad_m1_opacity.cpp
-        rad_m1/rad_m1_tau.cpp
-        rad_m1/rad_m1_vetcol.cpp
-        rad_m1/rad_m1_vetlat.cpp
-        rad_m1/rad_m1_memarena.cpp
-        rad_m1/rad_m1_vetgd.cpp
-        rad_m1/rad_m1_vetgd_sweep.cpp
-        rad_m1/rad_m1_vetgd_cs.cpp
-        rad_m1/rad_m1_rotavg.cpp
-        rad_m1/rad_m1_tasks.cpp
-        rad_m1/rad_m1_vet.cpp
+        rad_vet/rad_vet.cpp
+        rad_vet/rad_vet_fluid.cpp
+        rad_vet/rad_vet_halo.cpp
+        rad_vet/rad_vet_limits.cpp
+        rad_vet/rad_vet_init.cpp
+        rad_vet/rad_vet_clean.cpp
+        rad_vet/rad_vet_clean_p1.cpp
+        rad_vet/rad_vet_clean_p2.cpp
+        rad_vet/rad_vet_clean_closure.cpp
+        rad_vet/rad_vet_clean_closure_p1.cpp
+        rad_vet/rad_vet_clean_closure_p2.cpp
+        rad_vet/rad_vet_clean_solver.cpp
+        rad_vet/rad_vet_sph.cpp
+        rad_vet/rad_vet_time2.cpp
+        rad_vet/rad_vet_mr.cpp
+        rad_vet/rad_vet_newdt.cpp
+        rad_vet/rad_vet_opacity.cpp
+        rad_vet/rad_vet_tau.cpp
+        rad_vet/rad_vet_vetcol.cpp
+        rad_vet/rad_vet_vetlat.cpp
+        rad_vet/rad_vet_memarena.cpp
+        rad_vet/rad_vet_vetgd.cpp
+        rad_vet/rad_vet_vetgd_sweep.cpp
+        rad_vet/rad_vet_vetgd_cs.cpp
+        rad_vet/rad_vet_rotavg.cpp
+        rad_vet/rad_vet_tasks.cpp
+        rad_vet/rad_vet_vet.cpp
         radiation/radiation.cpp
         radiation/radiation_fluxes.cpp
         radiation/radiation_newdt.cpp
@@ -278,7 +278,7 @@ endif()
 # defaults of a problem generator; a no-op for every pgen without its own file
 if (${PROBLEM} STREQUAL "deep_hot_jupiter_rt")
   target_sources(athena PRIVATE pgen/deep_hot_jupiter_rt_defaults.cpp)
-elseif (${PROBLEM} STREQUAL "he_star_m1" OR ${PROBLEM} STREQUAL "ry_per_accretor")
+elseif (${PROBLEM} STREQUAL "he_star_vet" OR ${PROBLEM} STREQUAL "ry_per_accretor")
   # the he_star / accretor x1 well-balanced defaults
   target_sources(athena PRIVATE pgen/star_wb_defaults.cpp)
 else()
@@ -327,8 +327,8 @@ endif()
 if (DEFINED Athena_EXTRA_DEFS AND NOT "${Athena_EXTRA_DEFS}" STREQUAL "")
   target_compile_definitions(athena PRIVATE ${Athena_EXTRA_DEFS})
 endif()
-# The he_star_m1 one-shot restart-time background strip (own file)
-if (${PROBLEM} STREQUAL "he_star_m1")
+# The he_star_vet one-shot restart-time background strip (own file)
+if (${PROBLEM} STREQUAL "he_star_vet")
   target_sources(athena PRIVATE pgen/he_strip_bg.cpp)
   # The driven inner boundary (inflow table, live gravity, ledgers)
   target_sources(athena PRIVATE pgen/he_drive.cpp)
@@ -337,25 +337,25 @@ if (${PROBLEM} STREQUAL "he_star_m1")
 endif()
 
 # -D Athena_M1_VGD_NMAX=<n> raises the vet_gd direction cap (default 432 in
-# rad_m1.hpp; it sizes a per-thread buffer of VetGdWall, so a large cap is a CPU /
+# rad_vet.hpp; it sizes a per-thread buffer of VetGdWall, so a large cap is a CPU /
 # diagnostic build: 480 = GL 20x24 needs it)
 if (DEFINED Athena_M1_VGD_NMAX AND NOT "${Athena_M1_VGD_NMAX}" STREQUAL "")
   target_compile_definitions(athena PRIVATE M1_VGD_NMAX_BUILD=${Athena_M1_VGD_NMAX})
 endif()
 
-# -D Athena_M1_DEBUG=ON: the clean M1 debug hooks (the restart fingerprints
-# <rad_m1>/dbg_rst_fp*, the poison variables MEMCUT_POISON, CLEAN_POISON_GHOST,
+# -D Athena_VET_DEBUG=ON: the clean VET debug hooks (the restart fingerprints
+# <rad_vet>/dbg_rst_fp*, the poison variables MEMCUT_POISON, CLEAN_POISON_GHOST,
 # M1_POISON_GHOST and VGD_RING_POISON of the halo / arena gates); off by default
-if (Athena_M1_DEBUG)
-  target_compile_definitions(athena PRIVATE M1_DEBUG=1)
+if (Athena_VET_DEBUG)
+  target_compile_definitions(athena PRIVATE VET_DEBUG=1)
 endif()
 
 # -D Athena_M1_VGD_NCCL_DIR=<nccl root with include/ lib/> builds the vet_gd
 # NCCL halo (sp list halo + cs compact exchange; not used: VgdNcclOn): only the
 # two vet_gd sources get the define and the include path (the rest of the tree unchanged)
 if (DEFINED Athena_M1_VGD_NCCL_DIR AND NOT "${Athena_M1_VGD_NCCL_DIR}" STREQUAL "")
-  set_source_files_properties(rad_m1/rad_m1_vetgd.cpp rad_m1/rad_m1_vetgd_sweep.cpp
-      rad_m1/rad_m1_vetgd_cs.cpp
+  set_source_files_properties(rad_vet/rad_vet_vetgd.cpp rad_vet/rad_vet_vetgd_sweep.cpp
+      rad_vet/rad_vet_vetgd_cs.cpp
       PROPERTIES COMPILE_DEFINITIONS M1_VGD_NCCL=1
       INCLUDE_DIRECTORIES ${Athena_M1_VGD_NCCL_DIR}/include)
   target_link_libraries(athena PRIVATE -L${Athena_M1_VGD_NCCL_DIR}/lib nccl
@@ -366,7 +366,7 @@ endif()
 # the AGPRs share the register file: cln_rhs's 32 AGPR spill slots left it 1 wave per SIMD
 # (2 with its spills in scratch).  The arithmetic is unchanged (bitwise)
 if (Kokkos_ENABLE_HIP)
-  set_source_files_properties(rad_m1/rad_m1_clean_p1.cpp
+  set_source_files_properties(rad_vet/rad_vet_clean_p1.cpp
       PROPERTIES COMPILE_OPTIONS "-mllvm;-amdgpu-spill-vgpr-to-agpr=0")
 endif()
 

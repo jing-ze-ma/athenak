@@ -18,7 +18,7 @@
 #include "hydro/hydro.hpp"
 #include "mhd/mhd.hpp"
 #include "radiation/radiation.hpp"
-#include "rad_m1/rad_m1.hpp"
+#include "rad_vet/rad_vet.hpp"
 #include "z4c/z4c.hpp"
 
 #if MPI_PARALLEL_ENABLED
@@ -149,8 +149,8 @@ void MeshRefinement::InitRecvAMR(int nleaf) {
   if (pmy_mesh->pmb_pack->prad != nullptr) {
     ncc_tosend += (pmy_mesh->pmb_pack->prad->prgeo->nangles);
   }
-  if (pmy_mesh->pmb_pack->pradm1 != nullptr) {
-    ncc_tosend += (radm1::M1_NVAR);
+  if (pmy_mesh->pmb_pack->pradvet != nullptr) {
+    ncc_tosend += (radvet::M1_NVAR);
   }
   if (pmy_mesh->pmb_pack->pz4c != nullptr) {
     ncc_tosend += (pmy_mesh->pmb_pack->pz4c->nz4c);
@@ -409,8 +409,8 @@ void MeshRefinement::PackAndSendAMR(int nleaf) {
   if (pmy_mesh->pmb_pack->prad != nullptr) {
     ncc_tosend += (pmy_mesh->pmb_pack->prad->prgeo->nangles);
   }
-  if (pmy_mesh->pmb_pack->pradm1 != nullptr) {
-    ncc_tosend += (radm1::M1_NVAR);
+  if (pmy_mesh->pmb_pack->pradvet != nullptr) {
+    ncc_tosend += (radvet::M1_NVAR);
   }
   if (pmy_mesh->pmb_pack->pz4c != nullptr) {
     ncc_tosend += (pmy_mesh->pmb_pack->pz4c->nz4c);
@@ -540,7 +540,7 @@ void MeshRefinement::PackAndSendAMR(int nleaf) {
   hydro::Hydro* phydro = pmy_mesh->pmb_pack->phydro;
   mhd::MHD* pmhd = pmy_mesh->pmb_pack->pmhd;
   radiation::Radiation* prad = pmy_mesh->pmb_pack->prad;
-  radm1::RadiationM1* pradm1 = pmy_mesh->pmb_pack->pradm1;
+  radvet::RadiationVet* pradvet = pmy_mesh->pmb_pack->pradvet;
   z4c::Z4c* pz4c = pmy_mesh->pmb_pack->pz4c;
 
   int ncc_sent = 0, nfc_sent = 0;
@@ -558,9 +558,9 @@ void MeshRefinement::PackAndSendAMR(int nleaf) {
     PackAMRBuffersCC(prad->i0, prad->coarse_i0, ncc_sent, nfc_sent);
     ncc_sent += prad->prgeo->nangles;
   }
-  if (pradm1 != nullptr) {
-    PackAMRBuffersCC(pradm1->u0, pradm1->coarse_u0, ncc_sent, nfc_sent);
-    ncc_sent += radm1::M1_NVAR;
+  if (pradvet != nullptr) {
+    PackAMRBuffersCC(pradvet->u0, pradvet->coarse_u0, ncc_sent, nfc_sent);
+    ncc_sent += radvet::M1_NVAR;
   }
   if (pz4c != nullptr) {
     PackAMRBuffersCC(pz4c->u0, pz4c->coarse_u0, ncc_sent, nfc_sent);
@@ -834,7 +834,7 @@ void MeshRefinement::ClearRecvAndUnpackAMR() {
   hydro::Hydro* phydro = pmy_mesh->pmb_pack->phydro;
   mhd::MHD* pmhd = pmy_mesh->pmb_pack->pmhd;
   radiation::Radiation* prad = pmy_mesh->pmb_pack->prad;
-  radm1::RadiationM1* pradm1 = pmy_mesh->pmb_pack->pradm1;
+  radvet::RadiationVet* pradvet = pmy_mesh->pmb_pack->pradvet;
   z4c::Z4c* pz4c = pmy_mesh->pmb_pack->pz4c;
 
   int ncc_recv=0, nfc_recv=0;
@@ -853,9 +853,9 @@ void MeshRefinement::ClearRecvAndUnpackAMR() {
     UnpackAMRBuffersCC(prad->i0, prad->coarse_i0, ncc_recv, nfc_recv);
     ncc_recv += prad->prgeo->nangles;
   }
-  if (pradm1 != nullptr) {
-    UnpackAMRBuffersCC(pradm1->u0, pradm1->coarse_u0, ncc_recv, nfc_recv);
-    ncc_recv += radm1::M1_NVAR;
+  if (pradvet != nullptr) {
+    UnpackAMRBuffersCC(pradvet->u0, pradvet->coarse_u0, ncc_recv, nfc_recv);
+    ncc_recv += radvet::M1_NVAR;
   }
   if (pz4c != nullptr) {
     UnpackAMRBuffersCC(pz4c->u0, pz4c->coarse_u0, ncc_recv, nfc_recv);

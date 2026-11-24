@@ -27,7 +27,7 @@
 #include "diffusion/viscosity.hpp"
 #include "diffusion/resistivity.hpp"
 #include "radiation/radiation.hpp"
-#include "rad_m1/rad_m1.hpp"
+#include "rad_vet/rad_vet.hpp"
 #include "srcterms/turb_driver.hpp"
 #include "particles/particles.hpp"
 #include "units/units.hpp"
@@ -53,9 +53,9 @@ MeshBlockPack::MeshBlockPack(Mesh *pm, int igids, int igide) :
   tl_map.insert(std::make_pair("rkg_stagen",std::make_shared<TaskList>()));
   tl_map.insert(std::make_pair("after_rkg_stagen",std::make_shared<TaskList>()));
   tl_map.insert(std::make_pair("after_rkg_timeintegrator",std::make_shared<TaskList>()));
-  tl_map.insert(std::make_pair("m1_before_stagen",std::make_shared<TaskList>()));
-  tl_map.insert(std::make_pair("m1_stagen",std::make_shared<TaskList>()));
-  tl_map.insert(std::make_pair("m1_after_stagen",std::make_shared<TaskList>()));
+  tl_map.insert(std::make_pair("vet_before_stagen",std::make_shared<TaskList>()));
+  tl_map.insert(std::make_pair("vet_stagen",std::make_shared<TaskList>()));
+  tl_map.insert(std::make_pair("vet_after_stagen",std::make_shared<TaskList>()));
 }
 
 //----------------------------------------------------------------------------------------
@@ -68,7 +68,7 @@ MeshBlockPack::~MeshBlockPack() {
   if (padm   != nullptr) {delete padm;}
   if (ptmunu != nullptr) {delete ptmunu;}
   if (prad   != nullptr) {delete prad;}
-  if (pradm1 != nullptr) {delete pradm1;}
+  if (pradvet != nullptr) {delete pradvet;}
   if (pdyngr != nullptr) {delete pdyngr;}
   if (pnr    != nullptr) {delete pnr;}
   if (pturb  != nullptr) {delete pturb;}
@@ -188,20 +188,20 @@ void MeshBlockPack::AddPhysics(ParameterInput *pin) {
     prad = nullptr;
   }
 
-  // (5b) GREY PHOTON M1 RADIATION (<rad_m1>).  Runs in its own sub-cycled task lists
-  // (see rad_m1_tasks.cpp), so nothing is added to the main integrator lists here.
-  if (pin->DoesBlockExist("rad_m1")) {
+  // (5b) GREY PHOTON M1 RADIATION (<rad_vet>).  Runs in its own sub-cycled task lists
+  // (see rad_vet_tasks.cpp), so nothing is added to the main integrator lists here.
+  if (pin->DoesBlockExist("rad_vet")) {
     if (pin->DoesBlockExist("radiation")) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "Both <rad_m1> and <radiation> blocks detected in the "
+                << std::endl << "Both <rad_vet> and <radiation> blocks detected in the "
                 << "input file; only one radiation module can be used." << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    pradm1 = new radm1::RadiationM1(this, pin);
+    pradvet = new radvet::RadiationVet(this, pin);
     nphysics++;
-    pradm1->AssembleRadM1Tasks(tl_map);
+    pradvet->AssembleRadVetTasks(tl_map);
   } else {
-    pradm1 = nullptr;
+    pradvet = nullptr;
   }
 
   // (6) TURBULENCE DRIVER

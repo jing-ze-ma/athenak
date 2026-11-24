@@ -10,8 +10,8 @@
 //!
 //! <time>/dt_retry (DEFAULT true; <job>/recipe = none keeps it off on a restart whose
 //! input lacks the key): at the top of every cycle the Driver checkpoints the evolving
-//! state of the Hydro and the RadiationM1 modules (DtRetry::Save).  A cycle in which a
-//! module raises a failure (RadiationM1::dtr_fail: a Picard solve that ends DIVERGED, or
+//! state of the Hydro and the RadiationVet modules (DtRetry::Save).  A cycle in which a
+//! module raises a failure (RadiationVet::dtr_fail: a Picard solve that ends DIVERGED, or
 //! NON-CONVERGED outside a hesdirk2 stage, whose own redo is the backward-Euler step) is
 //! put back exactly (DtRetry::Restore) and taken again with dt x dt_retry_fac; the cut dt
 //! becomes a cap that, after dt_retry_ngood accepted cycles in a row, grows by
@@ -22,12 +22,12 @@
 //! copies).
 //!
 //! The checkpoint is the member visitor generated from clang's AST (tools/dtretry_gen.py:
-//! rad_m1/rad_m1_dtretry_visit.hpp, hydro/hydro_dtretry_visit.hpp): every non-View member
-//! is copied by value, and every View member in the selected set is deep-copied into a
-//! clone of the same layout and memory space (its handle is kept too, so a View swapped
-//! or reallocated during the failed attempt is put back).  dt_retry_views = minimal
-//! (default: the evolving arrays, kDtrMinimal in dt_retry.cpp) | all (every View: memory
-//! x ~2, a debug and audit mode).
+//! rad_vet/rad_vet_dtretry_visit.hpp, hydro/hydro_dtretry_visit.hpp): every non-View
+//! member is copied by value, and every View member in the selected set is deep-copied
+//! into a clone of the same layout and memory space (its handle is kept too, so a View
+//! swapped or reallocated during the failed attempt is put back).  dt_retry_views =
+//! minimal (default: the evolving arrays, kDtrMinimal in dt_retry.cpp) | all (every View:
+//! memory x ~2, a debug and audit mode).
 
 #include <cstdint>
 #include <memory>
@@ -65,7 +65,7 @@ struct Entry {
 // before (or that a once-per-cycle update guards with a cycle stamp) joins the
 // checkpoint: the pgen registers it once at setup (RegisterValue / RegisterView, below)
 // and DtRetry::Build adds it as "pgen.<name>" entries (Views always deep-copied).
-// Without it a retried cycle keeps what the failed attempt left there (he_star_m1: the
+// Without it a retried cycle keeps what the failed attempt left there (he_star_vet: the
 // frozen-MLT ramp weight hs_mw_ was already at w(t) on the retry, so esrc kept w(t)
 // where the straight run's start-of-cycle solves still saw w(t - dt)).
 std::vector<std::unique_ptr<Entry>> &PgenEntries();
@@ -204,7 +204,7 @@ class DtRetry {
 // the EVENT COUNTERS of an attempt the code throws away are thrown
 // away with it, so the event log (and the m1 positivity totals) report what the state
 // kept.  Discarded attempts: a dt_retry cycle (DtRetry::Retry puts the state back, but
-// not Mesh::ecounter nor the <rad_m1> device counters pos_cnt_d / acl_cnt_d /
+// not Mesh::ecounter nor the <rad_vet> device counters pos_cnt_d / acl_cnt_d /
 // opn_nskip_d), a hesdirk2 step redone with backward Euler (Time2Restore: U^n back, the
 // hydro stages run again), and the hesdirk2 helper solves whose result is put back
 // (Time2StartProbe, Time2RotCorrect).  Counters only: nothing a kernel reads is touched,
@@ -227,10 +227,10 @@ class CounterKeep {
     bool have = false;
     Real ec[6] = {0, 0, 0, 0, 0, 0};   // ecounter efloor_de, vceil_de, dfloor_ke, flr_*
     std::int64_t ni[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};   // its integer counters
-    DvceArray1D<Real> pos, acl, opn, fcp;   // (fcp: <rad_m1>/floorcap's fcap_cnt)
+    DvceArray1D<Real> pos, acl, opn, fcp;   // (fcp: <rad_vet>/floorcap's fcap_cnt)
     bool hpos = false, hacl = false, hopn = false, hfcp = false;
-    Real lz[2] = {0, 0};   // (<rad_m1>'s L_z ledger cln_lzl and its pending cln_lzp)
-    Real ffl = 0;   // (<rad_m1>'s time2_face_fct 'left' cells, t2_ffct_left)
+    Real lz[2] = {0, 0};   // (<rad_vet>'s L_z ledger cln_lzl and its pending cln_lzp)
+    Real ffl = 0;   // (<rad_vet>'s time2_face_fct 'left' cells, t2_ffct_left)
     Real pay[2] = {0, 0};   // (floor_pay's paid / unpaid, DualEnergy hc, hydro + MHD)
   };
   Snap s_[3];   // slot 2: the stage-1 start of a time2_posfix re-solve

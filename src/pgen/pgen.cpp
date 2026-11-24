@@ -32,8 +32,8 @@
 #include "z4c/compact_object_tracker.hpp"
 #include "z4c/z4c.hpp"
 #include "radiation/radiation.hpp"
-#include "rad_m1/rad_m1.hpp"
-#include "rad_m1/rad_m1_implicit.hpp"
+#include "rad_vet/rad_vet.hpp"
+#include "rad_vet/rad_vet_implicit.hpp"
 #include "srcterms/turb_driver.hpp"
 #include "utils/two_stream_warm_rst.hpp"
 #include "utils/two_stream_ck_rst.hpp"
@@ -238,14 +238,14 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   z4c::Z4c* pz4c = pm->pmb_pack->pz4c;
   radiation::Radiation* prad=pm->pmb_pack->prad;
   TurbulenceDriver* pturb=pm->pmb_pack->pturb;
-  // <rad_m1>: the four evolved moments, read back in the SAME order in which
+  // <rad_vet>: the four evolved moments, read back in the SAME order in which
   // restart.cpp writes them (after the <radiation> intensities, before the turbulence
-  // forcing).  Guarded by the pointer, so a file from a run without <rad_m1> is
+  // forcing).  Guarded by the pointer, so a file from a run without <rad_vet> is
   // unchanged and still readable.
-  radm1::RadiationM1* pradm1 = pm->pmb_pack->pradm1;
+  radvet::RadiationVet* pradvet = pm->pmb_pack->pradvet;
   int nrad = 0, nm1 = 0, nhydro = 0, nmhd = 0, nforce = 3, nadm = 0, nz4c = 0;
-  if (pradm1 != nullptr) {
-    nm1 = radm1::M1_NVAR;
+  if (pradvet != nullptr) {
+    nm1 = radvet::M1_NVAR;
   }
   if (phydro != nullptr) {
     nhydro = phydro->nhydro + phydro->nscalars;
@@ -593,13 +593,13 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
   }
 
-  // --- THE <rad_m1> implicit_predictor HEADER (radm1::kM1PredRstMagic): the same peek
+  // --- THE <rad_vet> implicit_predictor HEADER (radvet::kM1PredRstMagic): the same peek
   // once more, behind the warm-start header.  It says how many ipred channels the tail
   // carries behind the warm-start slabs and the dt of the step they were stored on.
   int npred_file = 0;
   Real pred_dt_file = 0.0;
-  if (std::memcmp(variabledata, &(radm1::kM1PredRstMagic[0]),
-                  sizeof(radm1::kM1PredRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kM1PredRstMagic[0]),
+                  sizeof(radvet::kM1PredRstMagic)) == 0) {
     char pred_hdr[2*sizeof(std::int32_t) + sizeof(Real)];
     IOWrapperSizeT nb = 0;
     bool ok = true;
@@ -624,19 +624,19 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
     if (!ok || hdr[0] != 1 || hdr[1] < 1 || hdr[1] > 5) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "the <rad_m1> predictor header of this restart file is "
+                << std::endl << "the <rad_vet> predictor header of this restart file is "
                 << "broken." << std::endl;
       exit(EXIT_FAILURE);
     }
     npred_file = static_cast<int>(hdr[1]);
   }
 
-  // --- THE <rad_m1> time_scheme = hesdirk2 HEADER (radm1::kM1Time2RstMagic), behind the
-  // predictor one: nch slabs of the stored FSAL slope follow the predictor slabs.
+  // --- THE <rad_vet> time_scheme = hesdirk2 HEADER (radvet::kM1Time2RstMagic), behind
+  // the predictor one: nch slabs of the stored FSAL slope follow the predictor slabs.
   int nt2_file = 0, nt2_ver = 1;
   Real t2_hv[3] = {0.0, 0.0, 0.0};
-  if (std::memcmp(variabledata, &(radm1::kM1Time2RstMagic[0]),
-                  sizeof(radm1::kM1Time2RstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kM1Time2RstMagic[0]),
+                  sizeof(radvet::kM1Time2RstMagic)) == 0) {
     char t2_hdr[2*sizeof(std::int32_t) + 3*sizeof(Real)];
     IOWrapperSizeT nb = 0;
     bool ok = true;
@@ -661,7 +661,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
     if (!ok || hdr[0] < 1 || hdr[0] > 7 || hdr[1] < 1 || hdr[1] > 65536) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "the <rad_m1> hesdirk2 header of this restart file is "
+                << std::endl << "the <rad_vet> hesdirk2 header of this restart file is "
                 << "broken." << std::endl;
       exit(EXIT_FAILURE);
     }
@@ -669,12 +669,12 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     nt2_ver = static_cast<int>(hdr[0]);
   }
 
-  // --- THE <rad_m1> implicit_one_pass HEADER (radm1::kM1OnePassRstMagic), behind the
+  // --- THE <rad_vet> implicit_one_pass HEADER (radvet::kM1OnePassRstMagic), behind the
   // hesdirk2 one: 9 Reals (18 with implicit_one_pass_auto), no slabs
   bool onep_file = false, onep_auto_file = false;
   Real onep_hv[18];
-  if (std::memcmp(variabledata, &(radm1::kM1OnePassRstMagic[0]),
-                  sizeof(radm1::kM1OnePassRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kM1OnePassRstMagic[0]),
+                  sizeof(radvet::kM1OnePassRstMagic)) == 0) {
     IOWrapperSizeT nb = 0;
     bool ok = true;
     if (global_variable::my_rank == 0 || single_file_per_rank) {
@@ -696,19 +696,19 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     onep_auto_file = ok && (nb == 18*sizeof(Real));
     if (!ok) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "the <rad_m1> one-pass header of this restart file is "
+                << std::endl << "the <rad_vet> one-pass header of this restart file is "
                 << "broken." << std::endl;
       exit(EXIT_FAILURE);
     }
     onep_file = true;
   }
 
-  // --- THE <rad_m1> implicit_mr_every / vet_sc_every HEADER (radm1::kM1MRRstMagic),
+  // --- THE <rad_vet> implicit_mr_every / vet_sc_every HEADER (radvet::kM1MRRstMagic),
   // behind the one-pass one: 10 Reals, no slabs
   bool mr_file = false;
   Real mr_hv[10];
-  if (std::memcmp(variabledata, &(radm1::kM1MRRstMagic[0]),
-                  sizeof(radm1::kM1MRRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kM1MRRstMagic[0]),
+                  sizeof(radvet::kM1MRRstMagic)) == 0) {
     IOWrapperSizeT nb = 0;
     bool ok = true;
     if (global_variable::my_rank == 0 || single_file_per_rank) {
@@ -727,19 +727,19 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
 #endif
     if (!ok) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "the <rad_m1> multi-rate header of this restart file is "
+                << std::endl << "the <rad_vet> multi-rate header of this restart file is "
                 << "broken." << std::endl;
       exit(EXIT_FAILURE);
     }
     mr_file = true;
   }
 
-  // --- THE <rad_m1> time2_auto_be HEADER (radm1::kM1AutoBeRstMagic), behind
+  // --- THE <rad_vet> time2_auto_be HEADER (radvet::kM1AutoBeRstMagic), behind
   // the multi-rate one: int32 len, int32 left, no slabs (absent: stage mode, as before)
   bool abe_file = false;
   std::int32_t abe_hv[2] = {0, 0};
-  if (std::memcmp(variabledata, &(radm1::kM1AutoBeRstMagic[0]),
-                  sizeof(radm1::kM1AutoBeRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kM1AutoBeRstMagic[0]),
+                  sizeof(radvet::kM1AutoBeRstMagic)) == 0) {
     IOWrapperSizeT nb = 0;
     bool ok = true;
     if (global_variable::my_rank == 0 || single_file_per_rank) {
@@ -758,7 +758,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
 #endif
     if (!ok || abe_hv[0] < 0 || abe_hv[1] < 0) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "the <rad_m1> time2_auto_be header of this restart file "
+                << std::endl << "the <rad_vet> time2_auto_be header of this restart file "
                 << "is broken." << std::endl;
       exit(EXIT_FAILURE);
     }
@@ -834,11 +834,11 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     nck_file = ckh.nslab;
   }
 
-  // --- THE <rad_m1> implicit_closure_thin_relax HEADER (radm1::kM1CtrRstMagic), behind
+  // --- THE <rad_vet> implicit_closure_thin_relax HEADER (radvet::kM1CtrRstMagic), behind
   // the implicit-ck one: nctr_file (4) slabs of ctr_mem, the LAST of each record.
   int nctr_file = 0;
-  if (std::memcmp(variabledata, &(radm1::kM1CtrRstMagic[0]),
-                  sizeof(radm1::kM1CtrRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kM1CtrRstMagic[0]),
+                  sizeof(radvet::kM1CtrRstMagic)) == 0) {
     char ctr_hdr[2*sizeof(std::int32_t)];
     IOWrapperSizeT nb = 0;
     bool ok = true;
@@ -860,19 +860,19 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     if (ok) {std::memcpy(&(hdr[0]), &(ctr_hdr[0]), sizeof(hdr));}
     if (!ok || hdr[0] != 1 || hdr[1] != 4) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "the <rad_m1> thin_relax header of this restart file is "
+                << std::endl << "the <rad_vet> thin_relax header of this restart file is "
                 << "broken." << std::endl;
       exit(EXIT_FAILURE);
     }
     nctr_file = static_cast<int>(hdr[1]);
   }
 
-  // --- THE <hydro>/rad_signal_speed HEADER (radm1::kM1RssRstMagic), behind the
-  // thin_relax one: nrss_file slabs (RadiationM1::RssSlot of mode rss_mode_file), the
+  // --- THE <hydro>/rad_signal_speed HEADER (radvet::kM1RssRstMagic), behind the
+  // thin_relax one: nrss_file slabs (RadiationVet::RssSlot of mode rss_mode_file), the
   // LAST of each record.
   int nrss_file = 0, rss_mode_file = -1;
-  if (std::memcmp(variabledata, &(radm1::kM1RssRstMagic[0]),
-                  sizeof(radm1::kM1RssRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kM1RssRstMagic[0]),
+                  sizeof(radvet::kM1RssRstMagic)) == 0) {
     char rss_hdr[4*sizeof(std::int32_t)];
     IOWrapperSizeT nb = 0;
     bool ok = true;
@@ -903,12 +903,12 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     rss_mode_file = static_cast<int>(hdr[2]);
   }
 
-  // --- THE <rad_m1>/vet_gd_async HEADER (radm1::kM1VgdRstMagic), behind the signal-speed
-  // one: nvgd_file (2) slabs of the pending gd build's source, the LAST of each record,
-  // and the build's ncycle.
+  // --- THE <rad_vet>/vet_gd_async HEADER (radvet::kM1VgdRstMagic), behind the
+  // signal-speed one: nvgd_file (2) slabs of the pending gd build's source, the LAST of
+  // each record, and the build's ncycle.
   int nvgd_file = 0, vgd_cyc_file = -1;
-  if (std::memcmp(variabledata, &(radm1::kM1VgdRstMagic[0]),
-                  sizeof(radm1::kM1VgdRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kM1VgdRstMagic[0]),
+                  sizeof(radvet::kM1VgdRstMagic)) == 0) {
     char vgd_hdr[4*sizeof(std::int32_t)];
     IOWrapperSizeT nb = 0;
     bool ok = true;
@@ -930,7 +930,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     if (ok) {std::memcpy(&(hdr[0]), &(vgd_hdr[0]), sizeof(hdr));}
     if (!ok || hdr[0] != 1 || hdr[1] != 2 || hdr[2] < 0) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "the <rad_m1>/vet_gd_async header of this restart "
+                << std::endl << "the <rad_vet>/vet_gd_async header of this restart "
                 << "file is broken." << std::endl;
       exit(EXIT_FAILURE);
     }
@@ -938,13 +938,13 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     vgd_cyc_file = static_cast<int>(hdr[2]);
   }
 
-  // --- THE <rad_m1>/implicit_gas_src = conservative(2) HEADER (radm1::kM1CskRstMagic),
+  // --- THE <rad_vet>/implicit_gas_src = conservative(2) HEADER (radvet::kM1CskRstMagic),
   // behind the vet_gd_async one: ncsk_file (3 or 0) slabs of csk1 and
   // the flags (csk1_ok; its presence means gcs_first = false)
   int ncsk_file = 0, csk_ok_file = 0;
   bool csk_have = false;
-  if (std::memcmp(variabledata, &(radm1::kM1CskRstMagic[0]),
-                  sizeof(radm1::kM1CskRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kM1CskRstMagic[0]),
+                  sizeof(radvet::kM1CskRstMagic)) == 0) {
     char csk_hdr[4*sizeof(std::int32_t)];
     IOWrapperSizeT nb = 0;
     bool ok = true;
@@ -966,7 +966,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     if (ok) {std::memcpy(&(hdr[0]), &(csk_hdr[0]), sizeof(hdr));}
     if (!ok || hdr[0] != 1 || (hdr[1] != 0 && hdr[1] != 3)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "the <rad_m1> conservative cell-F slope header of this "
+                << std::endl << "the <rad_vet> conservative cell-F slope header of this "
                 << "restart file is broken." << std::endl;
       exit(EXIT_FAILURE);
     }
@@ -975,13 +975,13 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     csk_ok_file = static_cast<int>(hdr[2]);
   }
 
-  // --- THE <rad_m1>/vet_rotate_avg HEADER (radm1::kM1RaRstMagic),
+  // --- THE <rad_vet>/vet_rotate_avg HEADER (radvet::kM1RaRstMagic),
   // behind the vet_gd_async one: nra_file slabs of the averaging history (densely
-  // packed), the LAST of each record, and the scalars (RadiationM1::RotAvgRstHdr)
+  // packed), the LAST of each record, and the scalars (RadiationVet::RotAvgRstHdr)
   int nra_file = 0;
-  std::int64_t ra_hdr[radm1::RadiationM1::M1_RA_RST_NH] = {0};
-  if (std::memcmp(variabledata, &(radm1::kM1RaRstMagic[0]),
-                  sizeof(radm1::kM1RaRstMagic)) == 0) {
+  std::int64_t ra_hdr[radvet::RadiationVet::M1_RA_RST_NH] = {0};
+  if (std::memcmp(variabledata, &(radvet::kM1RaRstMagic[0]),
+                  sizeof(radvet::kM1RaRstMagic)) == 0) {
     IOWrapperSizeT nb = 0;
     bool ok = true;
     if (global_variable::my_rank == 0 || single_file_per_rank) {
@@ -1003,7 +1003,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
 #endif
     if (!ok || ra_hdr[0] != 1 || ra_hdr[1] < 1) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "the <rad_m1>/vet_rotate_avg header of this restart "
+                << std::endl << "the <rad_vet>/vet_rotate_avg header of this restart "
                 << "file is broken." << std::endl;
       exit(EXIT_FAILURE);
     }
@@ -1077,11 +1077,11 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     npgs_file = static_cast<int>(hdr[1]);
   }
 
-  // --- THE rad_m1 APPLIED FACE FLUX HEADER (radm1::kM1FaxRstMagic), behind
+  // --- THE rad_vet APPLIED FACE FLUX HEADER (radvet::kM1FaxRstMagic), behind
   // the pgen slab one: nfax_file slabs, the last of each record
   int nfax_file = 0;
-  if (std::memcmp(variabledata, &(radm1::kM1FaxRstMagic[0]),
-                  sizeof(radm1::kM1FaxRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kM1FaxRstMagic[0]),
+                  sizeof(radvet::kM1FaxRstMagic)) == 0) {
     char fax_hdr[4*sizeof(std::int32_t)];
     IOWrapperSizeT nb = 0;
     bool ok = true;
@@ -1103,18 +1103,18 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     if (ok) {std::memcpy(&(hdr[0]), &(fax_hdr[0]), sizeof(hdr));}
     if (!ok || hdr[0] != 1 || hdr[1] < 2 || hdr[1] > 6) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "the rad_m1 applied face flux header of this restart "
+                << std::endl << "the rad_vet applied face flux header of this restart "
                 << "file is broken." << std::endl;
       exit(EXIT_FAILURE);
     }
     nfax_file = static_cast<int>(hdr[1]);
   }
 
-  // --- THE time2_stage_local_be CARRY HEADER (radm1::kM1ThcRstMagic),
+  // --- THE time2_stage_local_be CARRY HEADER (radvet::kM1ThcRstMagic),
   // behind the fax one: nthc_file slabs, the last of each record
   int nthc_file = 0;
-  if (std::memcmp(variabledata, &(radm1::kM1ThcRstMagic[0]),
-                  sizeof(radm1::kM1ThcRstMagic)) == 0) {
+  if (std::memcmp(variabledata, &(radvet::kM1ThcRstMagic[0]),
+                  sizeof(radvet::kM1ThcRstMagic)) == 0) {
     char thc_hdr[4*sizeof(std::int32_t)];
     IOWrapperSizeT nb = 0;
     bool ok = true;
@@ -1136,19 +1136,19 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     if (ok) {std::memcpy(&(hdr[0]), &(thc_hdr[0]), sizeof(hdr));}
     if (!ok || hdr[0] != 1 || hdr[1] < 1 || hdr[1] > 16) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "the rad_m1 local_be carry header of this restart "
+                << std::endl << "the rad_vet local_be carry header of this restart "
                 << "file is broken." << std::endl;
       exit(EXIT_FAILURE);
     }
     nthc_file = static_cast<int>(hdr[1]);
   }
-  // --- THE vet_gd_rotate_xfade HEADER (radm1::kM1XfdRstMagic), behind the
+  // --- THE vet_gd_rotate_xfade HEADER (radvet::kM1XfdRstMagic), behind the
   // thc one: nxfd_file slabs, the last of each record
   int nxfd_file = 0;
-  std::int64_t xfd_hi[radm1::kM1XfdRstNi] = {};
-  Real xfd_hr[radm1::kM1XfdRstNr] = {};
-  if (std::memcmp(variabledata, &(radm1::kM1XfdRstMagic[0]),
-                  sizeof(radm1::kM1XfdRstMagic)) == 0) {
+  std::int64_t xfd_hi[radvet::kM1XfdRstNi] = {};
+  Real xfd_hr[radvet::kM1XfdRstNr] = {};
+  if (std::memcmp(variabledata, &(radvet::kM1XfdRstMagic[0]),
+                  sizeof(radvet::kM1XfdRstMagic)) == 0) {
     char xfd_hdr[sizeof(xfd_hi) + sizeof(xfd_hr)];
     IOWrapperSizeT nb = 0;
     bool ok = true;
@@ -1172,7 +1172,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
     if (!ok || xfd_hi[0] != 1 || xfd_hi[1] < 1 || xfd_hi[1] > 4096) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "the rad_m1 xfade header of this restart file is broken."
+                << std::endl << "the rad_vet xfade header of this restart file is broken."
                 << std::endl;
       exit(EXIT_FAILURE);
     }
@@ -1208,19 +1208,19 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   if (prad != nullptr) {
     data_size_ += nout1*nout2*nout3*nrad*sizeof(Real);   // rad i0
   }
-  if (pradm1 != nullptr) {
-    data_size_ += nout1*nout2*nout3*nm1*sizeof(Real);    // rad_m1 u0
-    if (pradm1->transport >= radm1::M1_TRANSPORT_IMPLICIT_X1) {
-      data_size_ += (nout1+1)*nout2*nout3*sizeof(Real);  // rad_m1 f0x1 (milestone 3a)
+  if (pradvet != nullptr) {
+    data_size_ += nout1*nout2*nout3*nm1*sizeof(Real);    // rad_vet u0
+    if (pradvet->transport >= radvet::M1_TRANSPORT_IMPLICIT_X1) {
+      data_size_ += (nout1+1)*nout2*nout3*sizeof(Real);  // rad_vet f0x1 (milestone 3a)
     }
   }
   // milestone 3b phase B: the x2/x3 face-normal fluxes of transport = implicit.  A file
   // written before they existed (or by an implicit_x1 run) simply does not have them:
   // that length is accepted below, with one warning, and the arrays stay zero.
   IOWrapperSizeT m1f23_size = 0;
-  if (pradm1 != nullptr && pradm1->trans_on) {
+  if (pradvet != nullptr && pradvet->trans_on) {
     m1f23_size += nout1*(nout2+1)*nout3*sizeof(Real);
-    if (pradm1->trans_x3) {m1f23_size += nout1*nout2*(nout3+1)*sizeof(Real);}
+    if (pradvet->trans_x3) {m1f23_size += nout1*nout2*(nout3+1)*sizeof(Real);}
   }
   bool m1_have_f23 = (m1f23_size > 0);
   data_size_ += m1f23_size;
@@ -1263,7 +1263,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   if (wd_mhd) { wd_size += 2*nout1*nout2*nout3*sizeof(Real); }
   // and behind both of them, the mode-3 warm-start history: nwarm_file slabs, a number
   // the marked header above gave us rather than something inferred from the length
-  // (and behind those the npred_file <rad_m1> predictor slabs, also header-declared)
+  // (and behind those the npred_file <rad_vet> predictor slabs, also header-declared)
   IOWrapperSizeT wm_size = static_cast<IOWrapperSizeT>(nwarm_file + npred_file + nt2_file
                             + neint_file + nwpv_file + nck_file + nctr_file + nrss_file
                             + nvgd_file
@@ -1316,7 +1316,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     data_size_ -= m1f23_size;
     m1_have_f23 = false;
     if (global_variable::my_rank == 0) {
-      std::cout << "### WARNING: restart file carries no <rad_m1> x2/x3 face fluxes "
+      std::cout << "### WARNING: restart file carries no <rad_vet> x2/x3 face fluxes "
                 << "(written before transport = implicit existed); they are "
                 << "zero-initialised and the first step rebuilds them." << std::endl;
     }
@@ -1611,7 +1611,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     myoffset = offset_myrank;
   }
 
-  if (pradm1 != nullptr) {
+  if (pradvet != nullptr) {
     Kokkos::realloc(ccin, nmb, nm1, nout3, nout2, nout1);
     for (int m=0;  m<noutmbs_max; ++m) {
       // every rank has a MB to read, so read collectively
@@ -1622,7 +1622,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         if (resfile.Read_Reals_at_all(mbptr.data(), mbcnt, myoffset,
                                       single_file_per_rank) != mbcnt) {
           std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << "CC rad_m1 data not read correctly from rst file, "
+                    << std::endl << "CC rad_vet data not read correctly from rst file, "
                     << "restart file is broken." << std::endl;
           exit(EXIT_FAILURE);
         }
@@ -1636,16 +1636,16 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         if (resfile.Read_Reals_at(mbptr.data(), mbcnt, myoffset,
                                   single_file_per_rank) != mbcnt) {
           std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << "CC rad_m1 data not read correctly from rst file, "
+                    << std::endl << "CC rad_vet data not read correctly from rst file, "
                     << "restart file is broken." << std::endl;
           exit(EXIT_FAILURE);
         }
         myoffset += data_size;
       }
     }
-    Kokkos::deep_copy(Kokkos::subview(pradm1->u0, std::make_pair(0,nmb), Kokkos::ALL,
+    Kokkos::deep_copy(Kokkos::subview(pradvet->u0, std::make_pair(0,nmb), Kokkos::ALL,
                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), ccin);
-    offset_myrank += nout1*nout2*nout3*nm1*sizeof(Real);    // rad_m1 u0
+    offset_myrank += nout1*nout2*nout3*nm1*sizeof(Real);    // rad_vet u0
     myoffset = offset_myrank;
 
     // milestone 3a / 3b phase B: the persistent face fluxes, read back in the same order
@@ -1658,7 +1658,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
           if (resfile.Read_Reals_at_all(mbptr.data(), mbcnt, myoffset,
                                         single_file_per_rank) != mbcnt) {
             std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                      << std::endl << "rad_m1 face data not read correctly from rst "
+                      << std::endl << "rad_vet face data not read correctly from rst "
                       << "file, restart file is broken." << std::endl;
             exit(EXIT_FAILURE);
           }
@@ -1669,7 +1669,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
           if (resfile.Read_Reals_at(mbptr.data(), mbcnt, myoffset,
                                     single_file_per_rank) != mbcnt) {
             std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                      << std::endl << "rad_m1 face data not read correctly from rst "
+                      << std::endl << "rad_vet face data not read correctly from rst "
                       << "file, restart file is broken." << std::endl;
             exit(EXIT_FAILURE);
           }
@@ -1677,7 +1677,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         }
       }
     };
-    if (pradm1->transport >= radm1::M1_TRANSPORT_IMPLICIT_X1) {
+    if (pradvet->transport >= radvet::M1_TRANSPORT_IMPLICIT_X1) {
       HostArray4D<Real> fcin("m1fcin", nmb, nout3, nout2, nout1+1);
       for (int m=0;  m<noutmbs_max; ++m) {
         if (m < noutmbs_min) {
@@ -1686,7 +1686,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
           if (resfile.Read_Reals_at_all(mbptr.data(), mbcnt, myoffset,
                                         single_file_per_rank) != mbcnt) {
             std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                      << std::endl << "rad_m1 face data not read correctly from rst "
+                      << std::endl << "rad_vet face data not read correctly from rst "
                       << "file, restart file is broken." << std::endl;
             exit(EXIT_FAILURE);
           }
@@ -1697,31 +1697,31 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
           if (resfile.Read_Reals_at(mbptr.data(), mbcnt, myoffset,
                                     single_file_per_rank) != mbcnt) {
             std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                      << std::endl << "rad_m1 face data not read correctly from rst "
+                      << std::endl << "rad_vet face data not read correctly from rst "
                       << "file, restart file is broken." << std::endl;
             exit(EXIT_FAILURE);
           }
           myoffset += data_size;
         }
       }
-      Kokkos::deep_copy(Kokkos::subview(pradm1->f0x1, std::make_pair(0,nmb), Kokkos::ALL,
+      Kokkos::deep_copy(Kokkos::subview(pradvet->f0x1, std::make_pair(0,nmb), Kokkos::ALL,
                         Kokkos::ALL, Kokkos::ALL), fcin);
-      offset_myrank += (nout1+1)*nout2*nout3*sizeof(Real);   // rad_m1 f0x1
+      offset_myrank += (nout1+1)*nout2*nout3*sizeof(Real);   // rad_vet f0x1
       myoffset = offset_myrank;
     }
     if (m1_have_f23) {
       HostArray4D<Real> f2in("m1f2in", nmb, nout3, nout2+1, nout1);
       rdface(f2in);
-      Kokkos::deep_copy(Kokkos::subview(pradm1->f0x2, std::make_pair(0,nmb), Kokkos::ALL,
+      Kokkos::deep_copy(Kokkos::subview(pradvet->f0x2, std::make_pair(0,nmb), Kokkos::ALL,
                         Kokkos::ALL, Kokkos::ALL), f2in);
-      offset_myrank += nout1*(nout2+1)*nout3*sizeof(Real);   // rad_m1 f0x2
+      offset_myrank += nout1*(nout2+1)*nout3*sizeof(Real);   // rad_vet f0x2
       myoffset = offset_myrank;
-      if (pradm1->trans_x3) {
+      if (pradvet->trans_x3) {
         HostArray4D<Real> f3in("m1f3in", nmb, nout3+1, nout2, nout1);
         rdface(f3in);
-        Kokkos::deep_copy(Kokkos::subview(pradm1->f0x3, std::make_pair(0,nmb),
+        Kokkos::deep_copy(Kokkos::subview(pradvet->f0x3, std::make_pair(0,nmb),
                           Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), f3in);
-        offset_myrank += nout1*nout2*(nout3+1)*sizeof(Real);   // rad_m1 f0x3
+        offset_myrank += nout1*nout2*(nout3+1)*sizeof(Real);   // rad_vet f0x3
         myoffset = offset_myrank;
       }
     }
@@ -1875,16 +1875,16 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
               << "level and problem/rt_impl_warm = 2 wants two; the first column solve "
               << "does not extrapolate and this restart is not bitwise." << std::endl;
   }
-  // the <rad_m1> predictor increment: delivered straight into ipred (allocated by the
-  // RadiationM1 constructor) when this run keeps one with the same channel count.  A
+  // the <rad_vet> predictor increment: delivered straight into ipred (allocated by the
+  // RadiationVet constructor) when this run keeps one with the same channel count.  A
   // file without it leaves pred_ok = false: the first step cold starts, as before.
-  const bool pred_want = (pradm1 != nullptr) && pradm1->impl_pred &&
-                         !(pradm1->clean && pradm1->cln_not2h);
+  const bool pred_want = (pradvet != nullptr) && pradvet->impl_pred &&
+                         !(pradvet->clean && pradvet->cln_not2h);
   const bool pred_read = pred_want && (npred_file > 0) &&
-                         (static_cast<int>(pradm1->ipred.extent(1)) == npred_file) &&
-                         (static_cast<int>(pradm1->ipred.extent(0)) >= nmb);
+                         (static_cast<int>(pradvet->ipred.extent(1)) == npred_file) &&
+                         (static_cast<int>(pradvet->ipred.extent(0)) >= nmb);
   if (pred_want && !pred_read && global_variable::my_rank == 0) {
-    std::cout << "### WARNING: restart file has no <rad_m1> implicit_predictor "
+    std::cout << "### WARNING: restart file has no <rad_vet> implicit_predictor "
               << "increment (written before it was added, or by a run without one); "
               << "the first implicit step cold starts and this restart is not bitwise."
               << std::endl;
@@ -1893,95 +1893,95 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // file without it leaves t2_ok = false: the first step is backward Euler.
   // a be_only run never uses the slope (each step is backward Euler); the same block
   // carries the clean scheme's state, with any time scheme
-  const bool t2_h2 = (pradm1 != nullptr) &&
-                     (pradm1->time_scheme == radm1::M1_TIME_HESDIRK2);
-  const bool t2_want = t2_h2 && !pradm1->t2_beonly;
-  const bool t2_acc = (pradm1 != nullptr) && (nt2_file > 0) &&
-                      pradm1->Time2RstAccept(nt2_file, nt2_ver);
+  const bool t2_h2 = (pradvet != nullptr) &&
+                     (pradvet->time_scheme == radvet::M1_TIME_HESDIRK2);
+  const bool t2_want = t2_h2 && !pradvet->t2_beonly;
+  const bool t2_acc = (pradvet != nullptr) && (nt2_file > 0) &&
+                      pradvet->Time2RstAccept(nt2_file, nt2_ver);
   const bool t2_read = t2_acc &&
-                       (!t2_h2 || static_cast<int>(pradm1->t2k1.extent(0)) >= nmb);
+                       (!t2_h2 || static_cast<int>(pradvet->t2k1.extent(0)) >= nmb);
   // (staggered fkin: every clean file carries its state in that block, a file without
   // it is the old scheme's, CleanRstFaces; of the old block only its slope K1, the first
   // slabs: the first step is the stage step it would have taken)
-  const bool t2_old = (pradm1 != nullptr) && pradm1->clean &&
-                      pradm1->cln_fsolve && pradm1->cln_fkin && !t2_acc;
-  if (pradm1 != nullptr) pradm1->cln_rstold = t2_old;
+  const bool t2_old = (pradvet != nullptr) && pradvet->clean &&
+                      pradvet->cln_fsolve && pradvet->cln_fkin && !t2_acc;
+  if (pradvet != nullptr) pradvet->cln_rstold = t2_old;
   if (t2_old) {   // (none of the clean block's layout applies)
-    pradm1->t2_rstd3 = false;
-    pradm1->t2_nfv = 0;
+    pradvet->t2_rstd3 = false;
+    pradvet->t2_nfv = 0;
   }
-  const bool t2_k1 = t2_old && t2_want && nt2_file >= radm1::M1_T2_NK &&
-                     static_cast<int>(pradm1->t2k1.extent(0)) >= nmb;
+  const bool t2_k1 = t2_old && t2_want && nt2_file >= radvet::M1_T2_NK &&
+                     static_cast<int>(pradvet->t2k1.extent(0)) >= nmb;
   if (t2_want && !t2_read && !t2_k1 && global_variable::my_rank == 0) {
-    std::cout << "### WARNING: restart file has no <rad_m1> hesdirk2 slope; the first "
+    std::cout << "### WARNING: restart file has no <rad_vet> hesdirk2 slope; the first "
               << "step is backward Euler and this restart is not bitwise." << std::endl;
   }
-  if (t2_want && t2_read && pradm1->t2_rstd3 && global_variable::my_rank == 0) {
+  if (t2_want && t2_read && pradvet->t2_rstd3 && global_variable::my_rank == 0) {
     std::cout << "### WARNING: restart file has the staggered energy-flux memory d "
               << "without its slope (written before 8349d48ff); the first step is "
               << "backward Euler and this restart is not bitwise." << std::endl;
   }
   // the time2_auto_be back-off state of the dumping run (a skip run in
   // progress continues; the record is written only then)
-  if (abe_file && pradm1 != nullptr) {
-    pradm1->t2_abe_len = static_cast<int>(abe_hv[0]);
-    pradm1->t2_abe_left = static_cast<int>(abe_hv[1]);
+  if (abe_file && pradvet != nullptr) {
+    pradvet->t2_abe_len = static_cast<int>(abe_hv[0]);
+    pradvet->t2_abe_left = static_cast<int>(abe_hv[1]);
     if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> time2_auto_be skip run restored (len "
+      std::cout << "<rad_vet> time2_auto_be skip run restored (len "
                 << abe_hv[0] << ", left " << abe_hv[1] << ")" << std::endl;
     }
   }
-  if (mr_file && pradm1 != nullptr && pradm1->F4RstHdr()) {
-    pradm1->vsc_cnt = static_cast<int>(mr_hv[6] + 0.5);
-    pradm1->vsc_nb = static_cast<int>(mr_hv[7] + 0.5);
-    pradm1->vsc_t0 = mr_hv[8];
-    pradm1->vsc_t1 = mr_hv[9];
-    pradm1->mr_first = (mr_hv[0] > 0.5);
-    pradm1->mr_cnt = static_cast<int>(mr_hv[1] + 0.5);
-    pradm1->mr_acc = mr_hv[2];
-    pradm1->mr_dt = mr_hv[3];
-    pradm1->mr_kc = static_cast<int>(mr_hv[4] + 0.5);
-    pradm1->mr_kn = static_cast<int>(mr_hv[5] + 0.5);
+  if (mr_file && pradvet != nullptr && pradvet->F4RstHdr()) {
+    pradvet->vsc_cnt = static_cast<int>(mr_hv[6] + 0.5);
+    pradvet->vsc_nb = static_cast<int>(mr_hv[7] + 0.5);
+    pradvet->vsc_t0 = mr_hv[8];
+    pradvet->vsc_t1 = mr_hv[9];
+    pradvet->mr_first = (mr_hv[0] > 0.5);
+    pradvet->mr_cnt = static_cast<int>(mr_hv[1] + 0.5);
+    pradvet->mr_acc = mr_hv[2];
+    pradvet->mr_dt = mr_hv[3];
+    pradvet->mr_kc = static_cast<int>(mr_hv[4] + 0.5);
+    pradvet->mr_kn = static_cast<int>(mr_hv[5] + 0.5);
   }
-  if (onep_file && pradm1 != nullptr && pradm1->impl_onep > 0) {
+  if (onep_file && pradvet != nullptr && pradvet->impl_onep > 0) {
     for (int t = 0; t < 3; ++t) {
-      pradm1->onep_qa[t] = onep_hv[t];
-      pradm1->onep_qb[t] = onep_hv[3+t];
-      pradm1->onep_cnt[t] = onep_hv[6+t];
+      pradvet->onep_qa[t] = onep_hv[t];
+      pradvet->onep_qb[t] = onep_hv[3+t];
+      pradvet->onep_cnt[t] = onep_hv[6+t];
       // implicit_one_pass_auto: a file without its state (auto off, or older) starts
       // with one_pass on and fresh counters
-      if (onep_auto_file && pradm1->impl_onep_auto) {
-        pradm1->onep_off[t] = onep_hv[9+t];
-        pradm1->onep_actr[t] = onep_hv[12+t];
-        pradm1->onep_prb[t] = onep_hv[15+t];
+      if (onep_auto_file && pradvet->impl_onep_auto) {
+        pradvet->onep_off[t] = onep_hv[9+t];
+        pradvet->onep_actr[t] = onep_hv[12+t];
+        pradvet->onep_prb[t] = onep_hv[15+t];
       }
     }
   }
   // implicit_closure_thin_relax: the relaxed closure of the last step, when this run
   // relaxes too.  A file without it leaves ctr_init = false: the first step after the
   // restart is unrelaxed and the restart not bitwise.
-  const bool ctr_want = (pradm1 != nullptr) && (pradm1->impl_ctrelax > 0.0);
+  const bool ctr_want = (pradvet != nullptr) && (pradvet->impl_ctrelax > 0.0);
   const bool ctr_read = ctr_want && (nctr_file == 4) &&
-                        (static_cast<int>(pradm1->ctr_mem.extent(0)) >= nmb);
+                        (static_cast<int>(pradvet->ctr_mem.extent(0)) >= nmb);
   if (ctr_want && !ctr_read && global_variable::my_rank == 0) {
-    std::cout << "### WARNING: restart file has no <rad_m1> implicit_closure_thin_relax "
+    std::cout << "### WARNING: restart file has no <rad_vet> implicit_closure_thin_relax "
               << "closure memory; the first step is unrelaxed and this restart is not "
               << "bitwise." << std::endl;
   }
   // <hydro|mhd>/rad_signal_speed: the signal-speed inputs of the last M1 step, staged
-  // for RadiationM1::RssPrime (Driver::Initialize) when this run uses the signal speed
-  const bool rss_read = (nrss_file > 0) && (pradm1 != nullptr) &&
+  // for RadiationVet::RssPrime (Driver::Initialize) when this run uses the signal speed
+  const bool rss_read = (nrss_file > 0) && (pradvet != nullptr) &&
                         ((phydro != nullptr && phydro->rad_signal_speed) ||
                          (pmhd != nullptr && pmhd->rad_signal_speed));
-  // <rad_m1>/vet_rotate_avg: the averaging history, when this run averages (a file
+  // <rad_vet>/vet_rotate_avg: the averaging history, when this run averages (a file
   // without it, or a run without averaging, keeps the plain behaviour: the first build
   // re-measures the history, or averaging is off)
-  const bool ra_read = (nra_file > 0) && (pradm1 != nullptr) && pradm1->vra_on;
+  const bool ra_read = (nra_file > 0) && (pradvet != nullptr) && pradvet->vra_on;
   // implicit_gas_src = conservative(2): csk1 and the flags, when this run is one too
   // (with hesdirk2 for the slabs: csk1 is sized as its slope t2k1); not under scheme =
   // clean, whose solve never reads the slopes (its own run never writes them)
-  const bool csk_read = csk_have && (pradm1 != nullptr) && pradm1->impl_gas_src_cons &&
-                        !pradm1->clean;
+  const bool csk_read = csk_have && (pradvet != nullptr) && pradvet->impl_gas_src_cons &&
+                        !pradvet->clean;
   // am_vector: the spin (+ amk1) when this run carries one too
   hydro::AmModule *pam_rst = hydro::AmModuleOf(pmy_mesh_->pmb_pack);
   const bool ams_read = (nams_file > 0) && (pam_rst != nullptr) && pam_rst->am_vector;
@@ -1992,9 +1992,10 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                  "the "
               << "restart is not bitwise)." << std::endl;
   }
-  if (pradm1 != nullptr && pradm1->vra_on && !pradm1->clean && nra_file == 0 &&
+  if (pradvet != nullptr && pradvet->vra_on && !pradvet->clean && nra_file == 0 &&
       global_variable::my_rank == 0) {
-    std::cout << "<rad_m1> vet_rotate_avg: the restart file has no averaging history; it "
+    std::cout << "<rad_vet> vet_rotate_avg: the restart file has no averaging history; "
+                 "it "
               << "is re-measured at the first build (a restart from a run with a "
                  "complete "
               << "history is then not bitwise)." << std::endl;
@@ -2130,12 +2131,12 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                        *sizeof(Real);
       myoffset = offset_myrank;
       for (int n=0; n<npred_file; ++n) {
-        read_slab("rad_m1 predictor");
-        DeepCopyAcross(Kokkos::subview(pradm1->ipred, std::make_pair(0,nmb), n,
+        read_slab("rad_vet predictor");
+        DeepCopyAcross(Kokkos::subview(pradvet->ipred, std::make_pair(0,nmb), n,
                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), wtin);
       }
-      pradm1->pred_ok = true;
-      pradm1->pred_dt = pred_dt_file;
+      pradvet->pred_ok = true;
+      pradvet->pred_dt = pred_dt_file;
     }
     if (t2_read || t2_k1) {
       // the slope slabs sit behind every other tail slab of the record
@@ -2145,19 +2146,19 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       offset_myrank = tail0
           + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
       myoffset = offset_myrank;
-      for (int n=0; n<(t2_read ? nt2_file : radm1::M1_T2_NK); ++n) {
-        read_slab("rad_m1 hesdirk2 slope");
-        pradm1->Time2RstSet(n, wtin, nmb);
+      for (int n=0; n<(t2_read ? nt2_file : radvet::M1_T2_NK); ++n) {
+        read_slab("rad_vet hesdirk2 slope");
+        pradvet->Time2RstSet(n, wtin, nmb);
       }
       // (version 3: t2_ok and cln_k1ok as written, bits 2 and 4 of t2_hv[2]; before,
       // the slope was written only with t2_ok)
       const int fl = static_cast<int>(t2_hv[2] + 0.5);
-      pradm1->t2_ok = t2_want && !pradm1->t2_rstd3 && (nt2_ver < 3 || (fl & 2));
-      pradm1->cln_k1ok = (nt2_ver < 3) ? pradm1->t2_ok : ((fl & 4) != 0);
-      pradm1->pred2_ok = t2_read && (t2_hv[0] > 0.0);
-      pradm1->pred2_dt = t2_hv[0];
-      pradm1->t2_dtprev = t2_hv[1];
-      pradm1->t2_vprev = ((fl & 1) != 0);
+      pradvet->t2_ok = t2_want && !pradvet->t2_rstd3 && (nt2_ver < 3 || (fl & 2));
+      pradvet->cln_k1ok = (nt2_ver < 3) ? pradvet->t2_ok : ((fl & 4) != 0);
+      pradvet->pred2_ok = t2_read && (t2_hv[0] > 0.0);
+      pradvet->pred2_dt = t2_hv[0];
+      pradvet->t2_dtprev = t2_hv[1];
+      pradvet->t2_vprev = ((fl & 1) != 0);
     }
     // the internal energy (kEintRstMagic): only with the full general-EOS tail, which is
     // what makes the first conversion frozen; it goes into w0 in that conversion
@@ -2233,11 +2234,11 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
           + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
       myoffset = offset_myrank;
       for (int n=0; n<nctr_file; ++n) {
-        read_slab("rad_m1 thin_relax closure");
-        DeepCopyAcross(Kokkos::subview(pradm1->ctr_mem, std::make_pair(0,nmb), n,
+        read_slab("rad_vet thin_relax closure");
+        DeepCopyAcross(Kokkos::subview(pradvet->ctr_mem, std::make_pair(0,nmb), n,
                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), wtin);
       }
-      pradm1->ctr_init = true;
+      pradvet->ctr_init = true;
     }
     // the rad_signal_speed inputs (kM1RssRstMagic), the last slabs of the record
     if (rss_read) {
@@ -2248,18 +2249,18 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       offset_myrank = tail0
           + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
       myoffset = offset_myrank;
-      Kokkos::realloc(pradm1->rss_stage, nmb, nrss_file, nout3, nout2, nout1);
+      Kokkos::realloc(pradvet->rss_stage, nmb, nrss_file, nout3, nout2, nout1);
       for (int n=0; n<nrss_file; ++n) {
         read_slab("rad_signal_speed inputs");
-        DeepCopyAcross(Kokkos::subview(pradm1->rss_stage, Kokkos::ALL, n,
+        DeepCopyAcross(Kokkos::subview(pradvet->rss_stage, Kokkos::ALL, n,
                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), wtin);
       }
-      pradm1->rss_stage_mode = rss_mode_file;
+      pradvet->rss_stage_mode = rss_mode_file;
     }
     // the conservative cell-F slope (kM1CskRstMagic), behind the vet_gd_async slabs
     if (csk_read) {
-      pradm1->gcs_first = false;
-      const int q0 = static_cast<int>(pradm1->t2k1.extent(0));
+      pradvet->gcs_first = false;
+      const int q0 = static_cast<int>(pradvet->t2k1.extent(0));
       if (ncsk_file == 3 && q0 > 0) {
         int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
                     + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
@@ -2268,22 +2269,22 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         offset_myrank = tail0
             + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
         myoffset = offset_myrank;
-        const int q3 = static_cast<int>(pradm1->t2k1.extent(2));
-        const int q2 = static_cast<int>(pradm1->t2k1.extent(3));
-        const int q1 = static_cast<int>(pradm1->t2k1.extent(4));
-        Kokkos::realloc(pradm1->csk1, q0, 3, q3, q2, q1);
-        Kokkos::realloc(pradm1->csk2, q0, 3, q3, q2, q1);
-        Kokkos::realloc(pradm1->csinc, q0, 3, q3, q2, q1);
-        Kokkos::deep_copy(pradm1->csk1, 0.0);
-        Kokkos::deep_copy(pradm1->csk2, 0.0);
-        Kokkos::deep_copy(pradm1->csinc, 0.0);
+        const int q3 = static_cast<int>(pradvet->t2k1.extent(2));
+        const int q2 = static_cast<int>(pradvet->t2k1.extent(3));
+        const int q1 = static_cast<int>(pradvet->t2k1.extent(4));
+        Kokkos::realloc(pradvet->csk1, q0, 3, q3, q2, q1);
+        Kokkos::realloc(pradvet->csk2, q0, 3, q3, q2, q1);
+        Kokkos::realloc(pradvet->csinc, q0, 3, q3, q2, q1);
+        Kokkos::deep_copy(pradvet->csk1, 0.0);
+        Kokkos::deep_copy(pradvet->csk2, 0.0);
+        Kokkos::deep_copy(pradvet->csinc, 0.0);
         for (int n=0; n<3; ++n) {
-          read_slab("rad_m1 conservative cell-F slope");
-          DeepCopyAcross(Kokkos::subview(pradm1->csk1, std::make_pair(0,nmb), n,
+          read_slab("rad_vet conservative cell-F slope");
+          DeepCopyAcross(Kokkos::subview(pradvet->csk1, std::make_pair(0,nmb), n,
                          Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), wtin);
         }
-        pradm1->csk1_ok = (csk_ok_file == 1);
-        pradm1->csinc_ok = false;
+        pradvet->csk1_ok = (csk_ok_file == 1);
+        pradvet->csinc_ok = false;
       }
     }
     // the vet_rotate_avg history (kM1RaRstMagic), the last slabs of the record
@@ -2301,7 +2302,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         DeepCopyAcross(Kokkos::subview(rin, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
                        Kokkos::ALL), wtin);
       }
-      pradm1->RotAvgRstLoad(&(ra_hdr[0]), rin, nmb);
+      pradvet->RotAvgRstLoad(&(ra_hdr[0]), rin, nmb);
     }
     // the am_vector spin (+ amk1), hydro::kAmSpinRstMagic, the last slabs of the record
     if (ams_read) {
@@ -2317,21 +2318,21 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                      Kokkos::ALL, Kokkos::ALL), wtin);
       if (nams_file > 1) {
         read_slab("am_vector spin slope");
-        if (pradm1 != nullptr) {
+        if (pradvet != nullptr) {
           auto &sp = pam_rst->am_spin;
-          if (pradm1->amk1.extent_int(0) == 0) {
-            Kokkos::realloc(pradm1->amk1, sp.extent_int(0), sp.extent_int(1),
+          if (pradvet->amk1.extent_int(0) == 0) {
+            Kokkos::realloc(pradvet->amk1, sp.extent_int(0), sp.extent_int(1),
                             sp.extent_int(2), sp.extent_int(3));
-            Kokkos::realloc(pradm1->amk2, sp.extent_int(0), sp.extent_int(1),
+            Kokkos::realloc(pradvet->amk2, sp.extent_int(0), sp.extent_int(1),
                             sp.extent_int(2), sp.extent_int(3));
-            Kokkos::realloc(pradm1->aminc, sp.extent_int(0), sp.extent_int(1),
+            Kokkos::realloc(pradvet->aminc, sp.extent_int(0), sp.extent_int(1),
                             sp.extent_int(2), sp.extent_int(3));
-            Kokkos::deep_copy(pradm1->amk1, 0.0);
-            Kokkos::deep_copy(pradm1->amk2, 0.0);
-            Kokkos::deep_copy(pradm1->aminc, 0.0);
+            Kokkos::deep_copy(pradvet->amk1, 0.0);
+            Kokkos::deep_copy(pradvet->amk2, 0.0);
+            Kokkos::deep_copy(pradvet->aminc, 0.0);
           }
-          DeepCopyAcross(Kokkos::subview(pradm1->amk1, std::make_pair(0,nmb), Kokkos::ALL,
-                         Kokkos::ALL, Kokkos::ALL), wtin);
+          DeepCopyAcross(Kokkos::subview(pradvet->amk1, std::make_pair(0,nmb),
+                         Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), wtin);
         }
       }
     }
@@ -2354,10 +2355,10 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                        Kokkos::ALL, Kokkos::ALL), wtin);
       }
     }
-    // the rad_m1 applied face fluxes (kM1FaxRstMagic), last of the record
-    if (nfax_file == 0 && pradm1 != nullptr && pradm1->t2_pfst &&
+    // the rad_vet applied face fluxes (kM1FaxRstMagic), last of the record
+    if (nfax_file == 0 && pradvet != nullptr && pradvet->t2_pfst &&
         global_variable::my_rank == 0) {
-      std::cout << "NOTE <rad_m1> restart: no time2_face_fct face fluxes in the file; the "
+      std::cout << "NOTE <rad_vet> restart: no time2_face_fct face fluxes in the file; the "
                 << "first stage takes the stage-start face F" << std::endl;
     }
     if (nfax_file > 0) {
@@ -2371,13 +2372,14 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       myoffset = offset_myrank;
       DvceArray5D<Real> faxin("rst-fax-in", nmb, nfax_file, nout3, nout2, nout1);
       for (int n=0; n<nfax_file; ++n) {
-        read_slab("rad_m1 applied face flux");
+        read_slab("rad_vet applied face flux");
         DeepCopyAcross(Kokkos::subview(faxin, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
                        Kokkos::ALL), wtin);
       }
-      const bool got = (pradm1 != nullptr) && pradm1->FaxRstUnpack(faxin, nmb, nfax_file);
+      const bool got = (pradvet != nullptr) && pradvet->FaxRstUnpack(faxin, nmb,
+                                                                     nfax_file);
       if (global_variable::my_rank == 0) {
-        std::cout << "<rad_m1> restart: applied face fluxes fax* (" << nfax_file
+        std::cout << "<rad_vet> restart: applied face fluxes fax* (" << nfax_file
                   << " slabs) "
                   << (got ? "restored" : "IGNORED (no matching cmem arrays)")
                   << std::endl;
@@ -2385,13 +2387,13 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
     // the time2_stage_local_be carry (kM1ThcRstMagic) of an old file: not used
     if (nthc_file > 0 && global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> restart: time2_stage_local_be carry (" << nthc_file
+      std::cout << "<rad_vet> restart: time2_stage_local_be carry (" << nthc_file
                 << " slabs) IGNORED (local_be is not in this build)" << std::endl;
     }
     // the old scheme's vet_gd_rotate_xfade state (kM1XfdRstMagic), last of the record:
     // not used (the clean ring keeps no cross-fade state)
     if (nxfd_file > 0 && global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> restart: vet_gd_rotate_xfade state (" << nxfd_file
+      std::cout << "<rad_vet> restart: vet_gd_rotate_xfade state (" << nxfd_file
                 << " slabs) IGNORED (the old scheme's cross-fade)" << std::endl;
     }
   }
@@ -2701,8 +2703,8 @@ void ProblemGenerator::CallProblemGenerator(ParameterInput *pin, bool is_restart
     RadiationLinearWave(pin, is_restart);
   } else if (pgen_fun_name.compare("rad_beam") == 0) {
     RadiationBeam(pin, is_restart);
-  } else if (pgen_fun_name.compare("rad_m1_beam") == 0) {
-    RadiationM1Tests(pin, is_restart);
+  } else if (pgen_fun_name.compare("rad_vet_beam") == 0) {
+    RadiationVetTests(pin, is_restart);
   } else if (pgen_fun_name.compare("rad_diff2d") == 0) {
     RadDiff2D(pin, is_restart);
   } else if (pgen_fun_name.compare("shock_tube") == 0) {

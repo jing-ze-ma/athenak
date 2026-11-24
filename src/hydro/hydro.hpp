@@ -98,7 +98,7 @@ inline DvceArray1D<Real> *nanrep_dummy_r = nullptr;
 inline int rsolv_nanrep_lines = 0;
 
 // <hydro>/fofc pgen-level default : false in the core; a problem generator
-// whose inputs all run FOFC sets it true at static initialisation (he_star_m1,
+// whose inputs all run FOFC sets it true at static initialisation (he_star_vet,
 // box_convection). Constant-initialised, so it is false before any dynamic initialiser
 // runs; read once by the Hydro constructor. An input that names the key is unchanged; a
 // RESTART whose embedded input lacks the key keeps the old default (off).
@@ -106,7 +106,7 @@ inline bool fofc_pgen_default = false;
 // <hydro>/etotgrav pgen-level support flag. The default
 // etotgrav = true (utils/recipe.hpp) applies only where SUPPORTED: a problem generator
 // that fills the potential (phicc0/phi0) and writes its energy with rho*Phi sets this
-// true at static initialisation (he_star_m1, ry_per_accretor); plus an energy equation
+// true at static initialisation (he_star_vet, ry_per_accretor); plus an energy equation
 // (not the isothermal EOS) and no mesh refinement. Elsewhere the default stays off
 // silently.
 inline bool etotgrav_pgen_default = false;

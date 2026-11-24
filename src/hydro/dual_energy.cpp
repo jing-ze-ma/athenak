@@ -45,9 +45,9 @@ void DualEnergy::Read(ParameterInput *pin, const std::string &block, const EOS_D
                       int nfluid, int du_off) {
   blk = block;
   on = Named(pin, blk, "dual_energy") && pin->GetBoolean(blk, "dual_energy");
-  // floor_pay: default rad_column for a fresh run with eos = general and <rad_m1>
+  // floor_pay: default rad_column for a fresh run with eos = general and <rad_vet>
   // (recorded; a restart file without the key keeps none), else none
-  const bool rad = eos.IsGeneral() && pin->DoesBlockExist("rad_m1") &&
+  const bool rad = eos.IsGeneral() && pin->DoesBlockExist("rad_vet") &&
                    !global_variable::restart_run;
   if (rad || Named(pin, blk, "floor_pay")) {
     const std::string s = pin->GetOrAddString(blk, "floor_pay", "rad_column");
@@ -107,8 +107,8 @@ void DualEnergy::Allocate(MeshBlockPack *pp, const DvceArray5D<Real> &u0) {
   if (init && pre.extent_int(0) == nmb && pre.extent_int(1) == 5 &&
       pre.extent_int(2) == n3 &&
       pre.extent_int(3) == n2 && pre.extent_int(4) == n1) return;
-  if (pay && pp->pradm1 == nullptr) {
-    Fatal("<" + blk + ">/floor_pay = rad needs <rad_m1>");
+  if (pay && pp->pradvet == nullptr) {
+    Fatal("<" + blk + ">/floor_pay = rad needs <rad_vet>");
   }
   Kokkos::realloc(pre, nmb, 5, n3, n2, n1);
   Kokkos::realloc(pst, nmb, n3, n2, n1);

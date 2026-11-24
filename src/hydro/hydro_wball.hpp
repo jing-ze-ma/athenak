@@ -43,9 +43,9 @@ Real WbRamp(const Real q, const Real a, const Real b) {
   return (q <= a) ? 1.0 : ((q >= b) ? 0.0 : (b - q)/(b - a));
 }
 
-//! <rad_m1>/force_reference = wb_arad_md: the potentials of the walk along dir (1..3)
+//! <rad_vet>/force_reference = wb_arad_md: the potentials of the walk along dir (1..3)
 //! from cell (k,j,i) to its -1, -1/2, +1/2, +1 points less those of the reference
-//! radiation force, rr = RadiationM1::cln_fref 1 + 2 dir + side (WbRadRef): the line
+//! radiation force, rr = RadiationVet::cln_fref 1 + 2 dir + side (WbRadRef): the line
 //! integral P of the acceleration over each half cell (side 0 face to centre, 1 centre
 //! to face), so that the background balances gravity and that force together; the
 //! neighbours' halves on the same faces (none: rr empty)

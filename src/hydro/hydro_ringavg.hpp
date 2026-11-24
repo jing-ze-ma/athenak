@@ -21,7 +21,7 @@
 //! <Phi>), which keeps sum E). Hydro::NewTimeStep then uses N_j dphi as the phi width
 //! in those rows. Groups never straddle a MeshBlock (N_j divides the block nx3) and the
 //! group boundaries are aligned across the pole (polar ghosts land on whole groups).
-//! The radiation (rad_m1) is not averaged.
+//! The radiation (rad_vet) is not averaged.
 //!
 //! Keys (nothing is constructed unless polar_ring_avg = true):
 //! <mesh>/polar_ring_avg = true needs use_spherical_polar + use_polar_boundary

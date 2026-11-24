@@ -5,7 +5,7 @@
 //========================================================================================
 //! \file star_wb_defaults.cpp
 //! \brief recipe::PgenEarlyDefaults of the
-//! he_star_m1 and ry_per_accretor builds (src/CMakeLists.txt links this file for those
+//! he_star_vet and ry_per_accretor builds (src/CMakeLists.txt links this file for those
 //! two problems; deep_hot_jupiter_rt has its own, every other pgen the no-op
 //! early_defaults_none.cpp).  The x1 well-balanced reconstruction of every he_star (HG,
 //! RSG, R136a1) and accretor production deck, as the dhj G4 default:
@@ -16,8 +16,8 @@
 //! is recorded (GetOrAdd) so the run's restarts carry it; each decision is logged in the
 //! start-up defaults block.  A restart whose input lacks a key keeps the old default
 //! (off). <fluid>/wb_rmax is NOT defaulted (per-deck radius; 0 = WB everywhere).
-//! (<rad_m1>/vet_rotate_advance, the other P12 key, is a rad_m1 default:
-//! RadiationM1::VetRotInit.)
+//! (<rad_vet>/vet_rotate_advance, the other P12 key, is a rad_vet default:
+//! RadiationVet::VetRotInit.)
 
 #include <string>
 

@@ -33,8 +33,8 @@
 #include "dyn_grmhd/dyn_grmhd.hpp"
 #include "ion-neutral/ion-neutral.hpp"
 #include "radiation/radiation.hpp"
-#include "rad_m1/rad_m1.hpp"
-#include "rad_m1/rad_m1_implicit.hpp"
+#include "rad_vet/rad_vet.hpp"
+#include "rad_vet/rad_vet_implicit.hpp"
 #include "driver.hpp"
 #include "diffusion/resistivity.hpp"
 #include "gravity/gravity.hpp"
@@ -66,10 +66,10 @@ fluid::DualEnergy *DualPayer(Mesh *pm) {
 }
 // (returns the energy left unpaid, see DualPayFromRad)
 Real DualPay(Mesh *pm) {
-  auto *pm1 = pm->pmb_pack->pradm1;
+  auto *pm1 = pm->pmb_pack->pradvet;
   fluid::DualEnergy *pde = DualPayer(pm);
   if (pm1 == nullptr || pde == nullptr) return 0.0;
-  return fluid::DualPayFromRad(pm->pmb_pack, *pde, pm1->u0, radm1::M1_E,
+  return fluid::DualPayFromRad(pm->pmb_pack, *pde, pm1->u0, radvet::M1_E,
                                pm1->chat/pm1->c_light, pm1->e_floor);
 }
 }  // namespace
@@ -159,12 +159,12 @@ Driver::Driver(ParameterInput *pin, Mesh *pmesh, Real wtlim, Kokkos::Timer* ptim
       gam0[1] = 0.5;
       gam1[1] = 0.5;
       beta[1] = 0.5;
-      // <rad_m1>/time2_tableau = trbdf2 (rad_m1_time2.cpp): the explicit
+      // <rad_vet>/time2_tableau = trbdf2 (rad_vet_time2.cpp): the explicit
       // partner of TR-BDF2, the two-stage RK2 with c2 = 2 - sqrt(2) and
       // b = (1 - 1/(2 c2), 1/(2 c2)): stage 2 = 3/4 U^n + 1/4 Y2 + dt/(2 c2) L(Y2)
-      if (pin->DoesBlockExist("rad_m1") &&
-          pin->DoesParameterExist("rad_m1", "time2_tableau") &&
-          pin->GetString("rad_m1", "time2_tableau").compare("trbdf2") == 0) {
+      if (pin->DoesBlockExist("rad_vet") &&
+          pin->DoesParameterExist("rad_vet", "time2_tableau") &&
+          pin->GetString("rad_vet", "time2_tableau").compare("trbdf2") == 0) {
         const Real c2 = 2.0 - std::sqrt(2.0);
         beta[0] = c2;
         gam0[1] = 0.25;
@@ -394,7 +394,7 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
     hydro::Hydro *phm = pmesh->pmb_pack->phydro;
     if (phm != nullptr && phm->pmlat != nullptr && phm->pmlat->on) {
       const int nnu = phm->pmlat->CountNonUniform(phm->u0, IDN);
-      auto *prm = pmesh->pmb_pack->pradm1;
+      auto *prm = pmesh->pmb_pack->pradvet;
       const int nnr = (prm != nullptr && phm->pmlat->rad) ?
                       phm->pmlat->CountNonUniform(prm->u0, 0) : 0;
       if (global_variable::my_rank == 0) {
@@ -411,7 +411,7 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
       }
       if (nnr > 0) {
         DvceArray4D<Real> nophi;
-        phm->pmlat->Average(prm->u0, radm1::M1_NVAR, radm1::M1_NVAR, 1, nophi, false);
+        phm->pmlat->Average(prm->u0, radvet::M1_NVAR, radvet::M1_NVAR, 1, nophi, false);
       }
       if (nnu + nnr > 0) refill = true;
     }
@@ -425,11 +425,11 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
   z4c::Z4c *pz4c = pmesh->pmb_pack->pz4c;
   if (time_evolution != TimeEvolution::tstatic) {
     // <hydro|mhd>/rad_signal_speed: the M1 inputs of the signal speed (restored, or opac
-    // of the initial state) before the first dt; see RadiationM1::RssPrime
+    // of the initial state) before the first dt; see RadiationVet::RssPrime
     if (((phydro != nullptr && phydro->rad_signal_speed) ||
          (pmhd != nullptr && pmhd->rad_signal_speed)) &&
-        pmesh->pmb_pack->pradm1 != nullptr) {
-      pmesh->pmb_pack->pradm1->RssPrime(res_flag);
+        pmesh->pmb_pack->pradvet != nullptr) {
+      pmesh->pmb_pack->pradvet->RssPrime(res_flag);
     }
     if (phydro != nullptr) {
       (void) pmesh->pmb_pack->phydro->NewTimeStep(this, nexp_stages);
@@ -440,8 +440,8 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
     if (prad != nullptr) {
       (void) pmesh->pmb_pack->prad->NewTimeStep(this, nexp_stages);
     }
-    if (pmesh->pmb_pack->pradm1 != nullptr) {
-      (void) pmesh->pmb_pack->pradm1->NewTimeStep(this, nexp_stages);
+    if (pmesh->pmb_pack->pradvet != nullptr) {
+      (void) pmesh->pmb_pack->pradvet->NewTimeStep(this, nexp_stages);
     }
     if (pz4c != nullptr) {
       (void) pmesh->pmb_pack->pz4c->NewTimeStep(this, nexp_stages);
@@ -476,35 +476,35 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
   }
 
   // a restart of the staggered clean scheme from the old scheme's file: its face fluxes
-  if (res_flag && pmesh->pmb_pack->pradm1 != nullptr) {
-    pmesh->pmb_pack->pradm1->CleanRstFaces();
+  if (res_flag && pmesh->pmb_pack->pradvet != nullptr) {
+    pmesh->pmb_pack->pradvet->CleanRstFaces();
   }
-  //---- Step 2b. <rad_m1>/ic_rad (opt-in; FRESH STARTS ONLY, never on a
-  // restart): the IC radiation passes (rad_m1_icrad.cpp) or the steady radiation of
-  // <rad_m1>/clean_init = steady (rad_m1_clean.cpp) at the first dt, then the
+  //---- Step 2b. <rad_vet>/ic_rad (opt-in; FRESH STARTS ONLY, never on a
+  // restart): the IC radiation passes (rad_vet_icrad.cpp) or the steady radiation of
+  // <rad_vet>/clean_init = steady (rad_vet_clean.cpp) at the first dt, then the
   // boundaries, primitives and dt of the new state exactly as Steps 1-2 do on any start
   if (!res_flag && time_evolution != TimeEvolution::tstatic &&
-      pmesh->pmb_pack->pradm1 != nullptr && pmesh->pmb_pack->pradm1->cln_steady) {
-    pmesh->pmb_pack->pradm1->CleanSteadyStart(this);
+      pmesh->pmb_pack->pradvet != nullptr && pmesh->pmb_pack->pradvet->cln_steady) {
+    pmesh->pmb_pack->pradvet->CleanSteadyStart(this);
     // the pgen's post-ic_rad hook (null = nothing; pgen.hpp)
     if (pmesh->pgen->user_icpost_func != nullptr) {
       (pmesh->pgen->user_icpost_func)(pmesh);
-      // a pgen that iterates its IC with the radiation (he_star_m1
+      // a pgen that iterates its IC with the radiation (he_star_vet
       // he_ic_equil) asks for the IC passes again (false = once, as before)
       while (pmesh->pgen->user_icpost_again) {
-        pmesh->pmb_pack->pradm1->CleanSteadyStart(this);
+        pmesh->pmb_pack->pradvet->CleanSteadyStart(this);
         (pmesh->pgen->user_icpost_func)(pmesh);
       }
     }
     InitBoundaryValuesAndPrimitives(pmesh, false);
     if (((phydro != nullptr && phydro->rad_signal_speed) ||
          (pmhd != nullptr && pmhd->rad_signal_speed))) {
-      pmesh->pmb_pack->pradm1->RssPrime(res_flag);
+      pmesh->pmb_pack->pradvet->RssPrime(res_flag);
     }
     if (phydro != nullptr) {(void) phydro->NewTimeStep(this, nexp_stages);}
     if (pmhd != nullptr) {(void) pmhd->NewTimeStep(this, nexp_stages);}
     if (prad != nullptr) {(void) prad->NewTimeStep(this, nexp_stages);}
-    (void) pmesh->pmb_pack->pradm1->NewTimeStep(this, nexp_stages);
+    (void) pmesh->pmb_pack->pradvet->NewTimeStep(this, nexp_stages);
     if (pz4c != nullptr) {(void) pz4c->NewTimeStep(this, nexp_stages);}
     pmesh->NewTimeStep(tlim);
   }
@@ -690,10 +690,10 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       }
       if (dtr_retrying) {rkg_pend = rkg_pend_ckpt;} else {rkg_pend_ckpt = rkg_pend;}
       dtr_retrying = false;
-      // the hesdirk2 wall split (rank 0, fenced; RadiationM1::Time2AutoBeEnd)
-      radm1::RadiationM1 *pm1w = pmesh->pmb_pack->pradm1;
+      // the hesdirk2 wall split (rank 0, fenced; RadiationVet::Time2AutoBeEnd)
+      radvet::RadiationVet *pm1w = pmesh->pmb_pack->pradvet;
       const bool t2wall = (pm1w != nullptr) &&
-                          (pm1w->time_scheme == radm1::M1_TIME_HESDIRK2);
+                          (pm1w->time_scheme == radvet::M1_TIME_HESDIRK2);
       auto t2clk = [&]() {
         if (t2wall) {Kokkos::fence();}
         return std::chrono::steady_clock::now();
@@ -736,9 +736,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         prs->rkg_dtfac = 1.0;
       };
       if (rkg_on && prs->rkg_strang) {
-        if (pmesh->pmb_pack->pradm1 != nullptr) {
+        if (pmesh->pmb_pack->pradvet != nullptr) {
           std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << "<mhd>/rkg_strang is not supported with <rad_m1>"
+                    << std::endl << "<mhd>/rkg_strang is not supported with <rad_vet>"
                     << std::endl;
           std::exit(EXIT_FAILURE);
         }
@@ -756,16 +756,16 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       if (trc_s) {pmesh->pmb_pack->pmhd->TracerSourceHalf(1);}
 
       // time-integrator tasks for each stage of integrator
-      // <rad_m1>/time_scheme = hesdirk2 (rad_m1_time2.cpp): the implicit radiation solve
-      // runs INSIDE each Heun stage, after its after_stagen; a stage that is not
+      // <rad_vet>/time_scheme = hesdirk2 (rad_vet_time2.cpp): the implicit radiation
+      // solve runs INSIDE each Heun stage, after its after_stagen; a stage that is not
       // admissible sends the step back to U^n and through the backward-Euler path below.
-      radm1::RadiationM1 *pm1 = pmesh->pmb_pack->pradm1;
+      radvet::RadiationVet *pm1 = pmesh->pmb_pack->pradvet;
       // time2_start = slope: a step without a stored slope gets K1 from a
       // probe solve and runs the stages (no-op otherwise)
       // the first step of a new vet_gd rotation block drops the old set's
       // slope (vet_gd_rotate_slope; no-op without vet_gd_rotate_dt)
       if (pm1 != nullptr) {pm1->VetGdRotStep();}
-      // <rad_m1>/time2_auto_be (off unless named): a step of a skip run takes
+      // <rad_vet>/time2_auto_be (off unless named): a step of a skip run takes
       // the backward-Euler redo path at once (t2_ok = false: no stages, no probe)
       if (pm1 != nullptr) {(void) pm1->Time2AutoBeBegin();}
       // slot 1 = the counters at the stage start; the helper solves
@@ -802,9 +802,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         if (m1t2) {
           if (stage == 1) {pm1->Time2GasTime(this, 1);}   // (sdirk2 only)
           pm1->Time2FormStage(stage, pmesh->dt);
-          ExecuteTaskList(pmesh, "m1_before_stagen", 1);
-          ExecuteTaskList(pmesh, "m1_stagen", 1);
-          ExecuteTaskList(pmesh, "m1_after_stagen", 1);
+          ExecuteTaskList(pmesh, "vet_before_stagen", 1);
+          ExecuteTaskList(pmesh, "vet_stagen", 1);
+          ExecuteTaskList(pmesh, "vet_after_stagen", 1);
           if (pm1->t2_fail) {
             m1t2fail = true;
             break;
@@ -838,44 +838,44 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // Operator-split, sub-cycled grey M1 radiation transport (design sect. 5).
       // N_sub = ceil(dt_mesh/dt_rad); each substep runs the module's own two-stage
       // PD-ARS chain with dt_sub = dt_mesh/N_sub.  Skipped entirely -- lists empty,
-      // loop not entered -- when there is no <rad_m1> block.
+      // loop not entered -- when there is no <rad_vet> block.
       if (pm1 != nullptr && m1t2 && !m1t2fail) {
         // hesdirk2: U^{n+1} = Y3 is in place and K1 is stored by the stage-2 solve
-        pm1->t2_solve = radm1::M1_T2S_NONE;
+        pm1->t2_solve = radvet::M1_T2S_NONE;
         pm1->t2_nstep += 1.0;
         (void) pm1->ApplyClosureLimits(this, 1);
         (void) pm1->NewTimeStep(this, 1);
         pm1->t2_dtprev = pmesh->dt;
-      } else if (pmesh->pmb_pack->pradm1 != nullptr && !dtr_now) {
+      } else if (pmesh->pmb_pack->pradvet != nullptr && !dtr_now) {
         // hesdirk2 without a valid slope: backward Euler, which stores K1
-        const bool m1be2 = (pm1->time_scheme == radm1::M1_TIME_HESDIRK2);
-        pm1->t2_solve = m1be2 ? radm1::M1_T2S_BESTORE : radm1::M1_T2S_NONE;
-        int nsub = pmesh->pmb_pack->pradm1->SetSubsteps(pmesh->dt);
+        const bool m1be2 = (pm1->time_scheme == radvet::M1_TIME_HESDIRK2);
+        pm1->t2_solve = m1be2 ? radvet::M1_T2S_BESTORE : radvet::M1_T2S_NONE;
+        int nsub = pmesh->pmb_pack->pradvet->SetSubsteps(pmesh->dt);
         pm1->CleanBndAcc(0, 0.0, 0.0, 0.0, pmesh->dt);   // (history: boundary energy)
         for (int nst=0; nst<nsub; ++nst) {
           // nstage is M1_NSTAGE for the explicit scheme and 1 for the implicit one
           // (milestone 3a: one backward-Euler solve per hydro step)
-          for (int stage=1; stage<=(pmesh->pmb_pack->pradm1->nstage); ++stage) {
-            ExecuteTaskList(pmesh, "m1_before_stagen", stage);
-            ExecuteTaskList(pmesh, "m1_stagen", stage);
-            ExecuteTaskList(pmesh, "m1_after_stagen", stage);
+          for (int stage=1; stage<=(pmesh->pmb_pack->pradvet->nstage); ++stage) {
+            ExecuteTaskList(pmesh, "vet_before_stagen", stage);
+            ExecuteTaskList(pmesh, "vet_stagen", stage);
+            ExecuteTaskList(pmesh, "vet_after_stagen", stage);
           }
           // final admissibility pass of the substep (milestone 1b).  Without it the
           // state left by the last stage -- and so every dump and restart -- can carry
           // E below the floor or |f| slightly above 1 (1a saw f = 1 + 3e-5); inside the
           // substep the next stage's ApplyClosureLimits would have repaired it.
-          (void) pmesh->pmb_pack->pradm1->ApplyClosureLimits(this, 1);
+          (void) pmesh->pmb_pack->pradvet->ApplyClosureLimits(this, 1);
         }
-        (void) pmesh->pmb_pack->pradm1->NewTimeStep(this, 1);
+        (void) pmesh->pmb_pack->pradvet->NewTimeStep(this, 1);
         if (m1be2) {
-          pm1->t2_solve = radm1::M1_T2S_NONE;
+          pm1->t2_solve = radvet::M1_T2S_NONE;
           pm1->t2_ok = true;
           pm1->t2_nbe += 1.0;
           pm1->t2_dtprev = pmesh->dt;
         }
       }
 
-      // <rad_m1>/time2_cfl_post: the fluid's CFL dt again, of the state the radiation
+      // <rad_vet>/time2_cfl_post: the fluid's CFL dt again, of the state the radiation
       // update left (hydro stage 2 took it before the coupling wrote the gas)
       if (pm1 != nullptr && pm1->t2_cfl_post && !dtr_now) {
         if (pmesh->pmb_pack->phydro != nullptr) {
@@ -1234,7 +1234,7 @@ void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
   if (pdtr_ != nullptr) {pdtr_->Report(pmesh);}
   if (pctr_ != nullptr) {pctr_->Report(pmesh);}
   // the stage-loop copies of the pgen registers hold device Views (a
-  // registered View, e.g. he_star_m1 hs_fsub): freed here, before Kokkos::finalize
+  // registered View, e.g. he_star_vet hs_fsub): freed here, before Kokkos::finalize
   dtretry::PgenStageClear();
   // cycle through output Types and load data / write files
   //  This design allows for asynchronous outputs to implemented in the future.
@@ -1548,17 +1548,17 @@ void Driver::InitBoundaryValuesAndPrimitives(Mesh *pm, bool keep_ghosts) {
     }
   }
 
-  // Initialize rad_m1: ghost zones on the moments (everywhere)
-  radm1::RadiationM1 *pradm1 = pm->pmb_pack->pradm1;
-  if (pradm1 != nullptr && !keep_ghosts) {
-    (void) pradm1->RestrictU(this, 0);
-    (void) pradm1->InitRecv(this, -1);  // stage < 0 suppresses InitFluxRecv
-    (void) pradm1->SendU(this, 0);
-    (void) pradm1->ClearSend(this, -1);
-    (void) pradm1->ClearRecv(this, -1);
-    (void) pradm1->RecvU(this, 0);
-    (void) pradm1->ApplyPhysicalBCs(this, 0);
-    (void) pradm1->Prolongate(this, 0);
+  // Initialize rad_vet: ghost zones on the moments (everywhere)
+  radvet::RadiationVet *pradvet = pm->pmb_pack->pradvet;
+  if (pradvet != nullptr && !keep_ghosts) {
+    (void) pradvet->RestrictU(this, 0);
+    (void) pradvet->InitRecv(this, -1);  // stage < 0 suppresses InitFluxRecv
+    (void) pradvet->SendU(this, 0);
+    (void) pradvet->ClearSend(this, -1);
+    (void) pradvet->ClearRecv(this, -1);
+    (void) pradvet->RecvU(this, 0);
+    (void) pradvet->ApplyPhysicalBCs(this, 0);
+    (void) pradvet->Prolongate(this, 0);
   }
 
   // Initialize radiation: ghost zones and intensity (everywhere)

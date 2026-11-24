@@ -104,29 +104,29 @@ static const char *var_choice[NOUTPUT_CHOICES] = {
   // the physics checks in the BaseTypeOutput constructor test index RANGES.
   "hydro_fofc", "mhd_fofc",
 
-  // grey M1 radiation, <rad_m1> (155-159)
-  "m1_e", "m1_f1", "m1_f2", "m1_f3", "m1",
+  // grey M1 radiation, <rad_vet> (155-159)
+  "vet_e", "vet_f1", "vet_f2", "vet_f3", "vet",
 
   // self-gravity potential (160)
   "grav_phi",
 
   // grey M1 radiation: the closure's Eddington factor and tensor diagonal (161)
-  "m1_vet",
-  "m1_comov",
+  "vet_vet",
+  "vet_comov",
 
   // grey M1 radiation: the TRANSPORTED face-normal comoving fluxes of the implicit
   // solve (f0x1/f0x2/f0x3), the flux whose face sums are the luminosities (162)
-  "m1_face",
+  "vet_face",
 
   // grey M1 radiation: moments of the vet_gd formal solution, J and H_r in E units (163)
-  "m1_fs",
-  "m1_gw",
+  "vet_fs",
+  "vet_gw",
 
   // the vet_sc formal solution's J and F/c (E units), Cartesian (164)
-  "m1_vsc",
+  "vet_vsc",
 
   // the thin switch's cell inputs |H|/J, C1, eps, the cell weight, J (165)
-  "m1_thsw", "m1_gdhr",
+  "vet_thsw", "vet_gdhr",
 
   // the cell resistivity eta_O (+ eta_A = min(ad_coef |B|^2, max_eta_ad)
   // with ambipolar diffusion) the resistive EMF uses, code units (167)
@@ -134,7 +134,7 @@ static const char *var_choice[NOUTPUT_CHOICES] = {
 
   // the closure tensor handed to the implicit operator (tau_ten slot 0 and
   // the vet_col_lat slots LAT0..5), the cell unit vector and the vet_gd J, H_r (168)
-  "m1_lat"
+  "vet_lat"
 };
 
 
@@ -287,7 +287,7 @@ class BaseTypeOutput {
   HostArray5D<Real> outarray;
   HostArray5D<Real> outarray_hyd, outarray_mhd, outarray_rad, outarray_m1,
                     outarray_force, outarray_z4c, outarray_adm;
-  // <rad_m1>/transport = implicit_x1 (milestone 3a): the x1 FACE fluxes are persistent
+  // <rad_vet>/transport = implicit_x1 (milestone 3a): the x1 FACE fluxes are persistent
   // state of that scheme and are written as one more block after the moments, with
   // (nout1+1) values per row.  Empty -- and not one byte written -- in every other run.
   HostArray4D<Real> outarray_m1f;
@@ -324,29 +324,30 @@ class BaseTypeOutput {
   // a cold started restart is not a bitwise continuation.  Empty unless the warm start is
   // on and has allocated; see utils/two_stream_warm_rst.hpp for the file format.
   HostArray4D<Real> outarray_wm1, outarray_wm2;
-  // the <rad_m1> implicit_predictor = step increment (RadiationM1::ipred, 3 channels);
-  // empty unless one is stored.  See radm1::kM1PredRstMagic.
+  // the <rad_vet> implicit_predictor = step increment (RadiationVet::ipred, 3 channels);
+  // empty unless one is stored.  See radvet::kM1PredRstMagic.
   HostArray5D<Real> outarray_m1p;
-  // <rad_m1> time_scheme = hesdirk2: the stored slope K1, ipred2, vet_prev (channels of
-  // RadiationM1::Time2RstPack); empty unless a slope is stored.  radm1::kM1Time2RstMagic.
+  // <rad_vet> time_scheme = hesdirk2: the stored slope K1, ipred2, vet_prev (channels of
+  // RadiationVet::Time2RstPack); empty unless a slope is stored.
+  // radvet::kM1Time2RstMagic.
   HostArray5D<Real> outarray_m1t;
   HostArray5D<Real> outarray_wpv;   // hydro w0 (its IDN, IVX..IVZ go to the eint record)
   std::vector<DvceArray5D<Real>> rst_keep_;   // device packs a zero-copy staging reads
   DvceArray5D<Real> outarray_m1t_d;   // (its memory where the host reads device memory)
-  // <rad_m1> implicit_closure_thin_relax: ctr_mem (4 channels); empty unless stored.
-  // radm1::kM1CtrRstMagic.
+  // <rad_vet> implicit_closure_thin_relax: ctr_mem (4 channels); empty unless stored.
+  // radvet::kM1CtrRstMagic.
   HostArray5D<Real> outarray_m1c;
-  // <hydro>/rad_signal_speed: the M1 inputs of the signal speed (RadiationM1::RssSlot);
-  // empty unless the signal speed is on.  radm1::kM1RssRstMagic.
+  // <hydro>/rad_signal_speed: the M1 inputs of the signal speed (RadiationVet::RssSlot);
+  // empty unless the signal speed is on.  radvet::kM1RssRstMagic.
   HostArray5D<Real> outarray_m1s;
-  // <rad_m1>/vet_rotate_avg: the averaging history, densely packed
-  // slabs; empty without a complete history.  radm1::kM1RaRstMagic.
+  // <rad_vet>/vet_rotate_avg: the averaging history, densely packed
+  // slabs; empty without a complete history.  radvet::kM1RaRstMagic.
   HostArray5D<Real> outarray_m1r;
   // implicit_gas_src = conservative(2): the cell-F slope csk1
   HostArray5D<Real> outarray_m1k;
   HostArray5D<Real> outarray_ams;   // am_vector spin (+ amk1)
   HostArray5D<Real> outarray_pgs;   // per-cell pgen slabs
-  HostArray5D<Real> outarray_fax;   // rad_m1 applied face fluxes
+  HostArray5D<Real> outarray_fax;   // rad_vet applied face fluxes
   HostFaceFld4D<Real> outfield;  // FC output field on host
   std::vector<int> noutmbs;   // with MPI, number of output MBs across all ranks
   int noutmbs_min;            // with MPI, minimum number of output MBs across all ranks

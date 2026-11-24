@@ -10,7 +10,7 @@
 #include <iostream>
 
 #include "athena.hpp"
-#include "rad_m1/rad_m1_parfor.hpp"   // (radm1::par_for_lb: wbcache)
+#include "rad_vet/rad_vet_parfor.hpp"   // (radvet::par_for_lb: wbcache)
 #include "mesh/mesh.hpp"
 #include "driver/driver.hpp"
 #include "coordinates/coordinates.hpp"

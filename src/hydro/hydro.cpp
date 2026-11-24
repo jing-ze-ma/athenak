@@ -442,13 +442,13 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     pravg = new hydro::RingAvg(ppack, pin);
   }
   // radiation-modified CFL signal speed (hydro_newdt.cpp). DEFAULT: on with an
-  // IMPLICIT M1 transport (<rad_m1>/transport = implicit | implicit_x1, any closure),
-  // whose time step has no light-speed limit; off without <rad_m1> and with the explicit
+  // IMPLICIT M1 transport (<rad_vet>/transport = implicit | implicit_x1, any closure),
+  // whose time step has no light-speed limit; off without <rad_vet> and with the explicit
   // transport (dt already set by the light speed). Read only when named, so the
   // parameter dump of a run without the key is unchanged.
-  if (pin->DoesBlockExist("rad_m1") &&
-      pin->DoesParameterExist("rad_m1","transport")) {
-    std::string tr = pin->GetString("rad_m1","transport");
+  if (pin->DoesBlockExist("rad_vet") &&
+      pin->DoesParameterExist("rad_vet","transport")) {
+    std::string tr = pin->GetString("rad_vet","transport");
     rad_signal_speed = (tr.compare("implicit") == 0 || tr.compare("implicit_x1") == 0);
   }
   if (pin->DoesParameterExist("hydro","rad_signal_speed")) {

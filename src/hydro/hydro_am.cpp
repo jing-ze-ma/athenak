@@ -33,7 +33,7 @@
 #include "bvals/bvals.hpp"
 #include "hydro/hydro.hpp"
 #include "mhd/mhd.hpp"
-#include "rad_m1/rad_m1.hpp"
+#include "rad_vet/rad_vet.hpp"
 #include "hydro/hydro_am.hpp"
 #include "utils/recipe.hpp"
 #include "utils/eint_from_cons.hpp"
@@ -497,10 +497,10 @@ void AmModule::FrameRotation(Real bdt, Driver *pdrive, int stage, const AmFluid 
   // its rotation on the gas (the M1 equations carry no frame terms); u0 F covariant on
   // the cs panel basis (raised with cos_cell), orthonormal on sp
   // (only when the radiation exchanges momentum with this gas: coupling + gas_feedback)
-  const bool hrad = amc && (pmy_pack->pradm1 != nullptr) &&
-                    pmy_pack->pradm1->coupling && pmy_pack->pradm1->gas_feedback;
-  auto ur_ = hrad ? pmy_pack->pradm1->u0 : DvceArray5D<Real>();
-  const Real icc = hrad ? 1.0/(pmy_pack->pradm1->c_light*pmy_pack->pradm1->chat) : 0.0;
+  const bool hrad = amc && (pmy_pack->pradvet != nullptr) &&
+                    pmy_pack->pradvet->coupling && pmy_pack->pradvet->gas_feedback;
+  auto ur_ = hrad ? pmy_pack->pradvet->u0 : DvceArray5D<Real>();
+  const Real icc = hrad ? 1.0/(pmy_pack->pradvet->c_light*pmy_pack->pradvet->chat) : 0.0;
   if (fex && frame_ln.extent_int(0) == 0) {
     Kokkos::realloc(frame_ln, pmy_pack->nmb_thispack, 3, ic.nx3 + 2*ic.ng,
                     ic.nx2 + 2*ic.ng, ic.nx1 + 2*ic.ng);
@@ -554,8 +554,8 @@ void AmModule::FrameRotation(Real bdt, Driver *pdrive, int stage, const AmFluid 
       }
       if (hrad) {
         Real fc[3], lr[3];
-        cart(ur_(m,radm1::M1_F1,k,j,i), ur_(m,radm1::M1_F2,k,j,i),
-             ur_(m,radm1::M1_F3,k,j,i), fc);
+        cart(ur_(m,radvet::M1_F1,k,j,i), ur_(m,radvet::M1_F2,k,j,i),
+             ur_(m,radvet::M1_F3,k,j,i), fc);
         for (int q = 0; q < 3; ++q) {
           fc[q] *= dv*icc;
         }

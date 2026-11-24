@@ -19,7 +19,7 @@
 #include "eos/eos.hpp"
 #include "hydro/rsolvers/llf_hyd_singlestate.hpp"
 #include "hydro.hpp"
-#include "rad_m1/rad_m1.hpp"
+#include "rad_vet/rad_vet.hpp"
 #include "hydro/fofc_etotgrav.hpp"
 #include "bvals/bvals.hpp"
 

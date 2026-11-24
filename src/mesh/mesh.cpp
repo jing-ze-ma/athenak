@@ -29,7 +29,7 @@
 #include "diffusion/resistivity.hpp"
 #include "diffusion/conduction.hpp"
 #include "radiation/radiation.hpp"
-#include "rad_m1/rad_m1.hpp"
+#include "rad_vet/rad_vet.hpp"
 #include "particles/particles.hpp"
 #include "srcterms/srcterms.hpp"
 #include "outputs/io_wrapper.hpp"
@@ -186,7 +186,7 @@ Mesh::Mesh(ParameterInput *pin) :
     const std::string lim = pin->GetOrAddString("mesh", "layout_invariant_mode", "block");
     // tile (with <mesh>/layout_tile N): block mode with fixed N x N (x2, x3) tiles of the
     // mesh in place of MeshBlocks (repro::tile_n; one MeshBlock along x1, checked with
-    // the MeshBlock size by rad_m1)
+    // the MeshBlock size by rad_vet)
     if (lim != "block" && lim != "exact" && lim != "tile") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<mesh>/layout_invariant_mode = '" << lim
@@ -480,7 +480,7 @@ Mesh::Mesh(ParameterInput *pin) :
     std::exit(EXIT_FAILURE);
   }
   // ...and on a Cartesian mesh every stretch would be silently IGNORED (the hydro/MHD
-  // Cartesian coordinates are uniform; rad_m1 refuses them separately).
+  // Cartesian coordinates are uniform; rad_vet refuses them separately).
   if (!use_spherical_polar && !use_cubed_sphere &&
       (use_grid_stretch_r || use_grid_stretch_r_poly || use_grid_stretch_theta)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -519,7 +519,7 @@ Mesh::Mesh(ParameterInput *pin) :
   // use_polar_boundary); the growth q is solved so that the cap faces land exactly on
   // the edges, and must not exceed theta_plateau_qmax. Ghosts mirror the first cells
   // (StretchThetaPlateau). It is a theta stretch: everything that treats
-  // use_grid_stretch_theta (outputs, rad_m1 refusals, BuildX2vRecon) sees it as one.
+  // use_grid_stretch_theta (outputs, rad_vet refusals, BuildX2vRecon) sees it as one.
   // Absent key: nothing changes (fStretchThetaPlat[2] = 0 selects the sinh map).
   for (int n=0; n<8; ++n) fStretchThetaPlat[n] = 0.0;
   use_theta_plateau = pin->GetOrAddBoolean("mesh", "theta_plateau", false);
@@ -1304,12 +1304,12 @@ void Mesh::NewTimeStep(const Real tlim) {
   if (pmb_pack->prad != nullptr) {
     dt = std::min(dt, (cfl_no)*(pmb_pack->prad->dtnew) );
   }
-  // rad_m1 timestep. Only folded in when the module owns the mesh step (sub-cycling
-  // off, or nothing else sets a dt); its own <rad_m1>/cfl_rad is already in dtnew, so
+  // rad_vet timestep. Only folded in when the module owns the mesh step (sub-cycling
+  // off, or nothing else sets a dt); its own <rad_vet>/cfl_rad is already in dtnew, so
   // <time>/cfl_number is NOT applied a second time here.
-  if (pmb_pack->pradm1 != nullptr) {
-    if (pmb_pack->pradm1->sets_mesh_dt) {
-      dt = std::min(dt, (pmb_pack->pradm1->dtnew) );
+  if (pmb_pack->pradvet != nullptr) {
+    if (pmb_pack->pradvet->sets_mesh_dt) {
+      dt = std::min(dt, (pmb_pack->pradvet->dtnew) );
     }
   }
   // Particles timestep
@@ -1490,8 +1490,8 @@ void Mesh::NewTimeStep(const Real tlim) {
   }
 
   // vet_gd_rotate_dt + vet_gd_rotate_align: land on the rotation times
-  if (pmb_pack->pradm1 != nullptr) {
-    dt = pmb_pack->pradm1->VetGdAlignDt(time, dt);
+  if (pmb_pack->pradvet != nullptr) {
+    dt = pmb_pack->pradvet->VetGdAlignDt(time, dt);
   }
 
   // limit last time step to stop at tlim *exactly*

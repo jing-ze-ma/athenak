@@ -45,28 +45,29 @@ bool NewDefaults(ParameterInput *pin) {
 void Log(const std::string &line) {Lines().push_back(line);}
 
 void CleanDefaults(ParameterInput *pin) {
-  if (global_variable::restart_run || !pin->DoesBlockExist("rad_m1")) return;
+  if (global_variable::restart_run || !pin->DoesBlockExist("rad_vet")) return;
   auto named = [&](const char *b, const char *k) {return pin->DoesParameterExist(b, k);};
-  if (!named("rad_m1", "transport")) {
-    pin->SetString("rad_m1", "transport", "implicit");
-    Log("<rad_m1>/transport = implicit (the default of a fresh run)");
+  if (!named("rad_vet", "transport")) {
+    pin->SetString("rad_vet", "transport", "implicit");
+    Log("<rad_vet>/transport = implicit (the default of a fresh run)");
   }
-  const std::string sc = named("rad_m1", "scheme") ? pin->GetString("rad_m1", "scheme") :
-      (pin->GetString("rad_m1", "transport") == "implicit" ? "clean" : "default");
+  const std::string sc = named("rad_vet", "scheme") ? pin->GetString("rad_vet",
+                                                                     "scheme") :
+      (pin->GetString("rad_vet", "transport") == "implicit" ? "clean" : "default");
   if (sc != "clean") return;
   // spherical polar and the cubed sphere: the vet_gd rays, unless the input names a
   // closure (or the analytic clean_closure)
   auto on = [&](const char *k) {return named("mesh", k) && pin->GetBoolean("mesh", k);};
   if ((on("use_spherical_polar") || on("use_cubed_sphere")) &&
-      !named("rad_m1", "closure") && !named("rad_m1", "clean_closure")) {
-    pin->SetString("rad_m1", "closure", "vet_col");
-    if (!named("rad_m1", "vet_gd")) pin->SetBoolean("rad_m1", "vet_gd", true);
-    Log("<rad_m1>/closure = vet_col, vet_gd = true (the default of a fresh clean run on "
+      !named("rad_vet", "closure") && !named("rad_vet", "clean_closure")) {
+    pin->SetString("rad_vet", "closure", "vet_col");
+    if (!named("rad_vet", "vet_gd")) pin->SetBoolean("rad_vet", "vet_gd", true);
+    Log("<rad_vet>/closure = vet_col, vet_gd = true (the default of a fresh clean run on "
         "spherical polar or the cubed sphere)");
   }
   if (!named("time", "cfl_number")) {
     pin->GetOrAddReal("time", "cfl_number", 0.3);
-    Log("<time>/cfl_number = 0.3 (the default of a fresh clean M1 run)");
+    Log("<time>/cfl_number = 0.3 (the default of a fresh clean VET run)");
   }
 }
 

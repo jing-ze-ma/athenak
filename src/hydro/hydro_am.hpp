@@ -828,7 +828,7 @@ class AmModule {
   DvceArray5D<Real> am_bflx;
   Real am_bdt = 0.0;
   // (set by the problem: its user x1 faces whose flux it takes back, so am_bflx omits
-  // them: inner all, outer its inflow; he_star_m1 he_wall_zero_flux)
+  // them: inner all, outer its inflow; he_star_vet he_wall_zero_flux)
   bool am_bzero[2] = {false, false};
   void AmBndFlux(Driver *pdrive, int stage, Real bdt, const AmFluid &fl);
   // the dt_retry checkpoint visitor (generated: hydro/hydro_am_dtretry_visit.hpp)
@@ -839,7 +839,7 @@ class AmModule {
 AmModule *AmModuleOf(MeshBlockPack *pp);
 // the restart block of <hydro|mhd>/am_vector (outputs/restart.cpp, read in
 // pgen.cpp): header {1, nslab, 0, 0}; slab 0 = am_spin, slab 1 (if present) = the
-// radiation's hesdirk2 FSAL spin slope amk1 (RadiationM1)
+// radiation's hesdirk2 FSAL spin slope amk1 (RadiationVet)
 constexpr char kAmSpinRstMagic[8] = {'A', 'M', 'S', 'P', 'I', 'N', '0', '1'};
 
 }  // namespace hydro

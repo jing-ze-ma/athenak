@@ -225,7 +225,7 @@ void WB_CLASS::BuildWBCache(const int jl, const int ju, const int kl, const int 
   const bool wbgi = wb_guard_ideal;
   const bool wbci = wb_clamp_ideal;
   auto rr = hydro::WbRadRef(pmy_pack);   // (wb_arad_md: the reference radiation force)
-  radm1::par_for_lb("wbcache", DevExeSpace(), 0, nmb1, kl, ku, jl, ju, is-1, ie+1,
+  radvet::par_for_lb("wbcache", DevExeSpace(), 0, nmb1, kl, ku, jl, ju, is-1, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real fm = phicc(m,k,j,i-1), fmh = phi(m,k,j,i), fph = phi(m,k,j,i+1);
     Real fp = phicc(m,k,j,i+1);

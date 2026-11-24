@@ -28,7 +28,7 @@
 #include "z4c/z4c.hpp"
 #include "srcterms/srcterms.hpp"
 #include "srcterms/turb_driver.hpp"
-#include "rad_m1/rad_m1.hpp"
+#include "rad_vet/rad_vet.hpp"
 #include "gravity/gravity.hpp"
 #include "outputs.hpp"
 
@@ -181,11 +181,11 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
        << std::endl << "Input file needs <mhd>/fofc = true" << std::endl;
     exit(EXIT_FAILURE);
   }
-  if ((ivar>=155) && (ivar<160) && (pm->pmb_pack->pradm1 == nullptr)) {
+  if ((ivar>=155) && (ivar<160) && (pm->pmb_pack->pradvet == nullptr)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
        << "Output of M1 radiation moments requested in <output> block '"
-       << out_params.block_name << "' but no RadiationM1 object has been constructed."
-       << std::endl << "Input file is likely missing a <rad_m1> block" << std::endl;
+       << out_params.block_name << "' but no RadiationVet object has been constructed."
+       << std::endl << "Input file is likely missing a <rad_vet> block" << std::endl;
     exit(EXIT_FAILURE);
   }
   if ((ivar>=151) && (ivar<153) && (pm->pmb_pack->ppart == nullptr)) {
@@ -202,11 +202,11 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
        << out_params.block_name << "' but there is no <mhd> resistivity" << std::endl;
     exit(EXIT_FAILURE);
   }
-  if (ivar==161 && (pm->pmb_pack->pradm1 == nullptr)) {
+  if (ivar==161 && (pm->pmb_pack->pradvet == nullptr)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
        << "Output of the M1 Eddington tensor requested in <output> block '"
-       << out_params.block_name << "' but no RadiationM1 object has been constructed."
-       << std::endl << "Input file is likely missing a <rad_m1> block" << std::endl;
+       << out_params.block_name << "' but no RadiationVet object has been constructed."
+       << std::endl << "Input file is likely missing a <rad_vet> block" << std::endl;
     exit(EXIT_FAILURE);
   }
   // derived curls/currents/curvatures difference over the LOGICAL Cartesian block
@@ -234,30 +234,30 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       }
     }
   }
-  if (ivar==168 && (pm->pmb_pack->pradm1 == nullptr)) {
-    std::cout << "### FATAL ERROR: m1_gdhr output needs a <rad_m1> block" << std::endl;
+  if (ivar==168 && (pm->pmb_pack->pradvet == nullptr)) {
+    std::cout << "### FATAL ERROR: m1_gdhr output needs a <rad_vet> block" << std::endl;
     exit(EXIT_FAILURE);
   }
-  if (ivar==167 && (pm->pmb_pack->pradm1 == nullptr)) {
-    std::cout << "### FATAL ERROR: m1_thsw output needs a <rad_m1> block" << std::endl;
+  if (ivar==167 && (pm->pmb_pack->pradvet == nullptr)) {
+    std::cout << "### FATAL ERROR: m1_thsw output needs a <rad_vet> block" << std::endl;
     exit(EXIT_FAILURE);
   }
-  if (ivar==166 && (pm->pmb_pack->pradm1 == nullptr)) {
-    std::cout << "### FATAL ERROR: m1_vsc output needs a <rad_m1> block" << std::endl;
+  if (ivar==166 && (pm->pmb_pack->pradvet == nullptr)) {
+    std::cout << "### FATAL ERROR: m1_vsc output needs a <rad_vet> block" << std::endl;
     exit(EXIT_FAILURE);
   }
-  if (ivar==163 && (pm->pmb_pack->pradm1 == nullptr)) {
+  if (ivar==163 && (pm->pmb_pack->pradvet == nullptr)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
        << "Output of the M1 formal-solution moments requested in <output> block '"
-       << out_params.block_name << "' but no RadiationM1 object has been constructed."
-       << std::endl << "Input file is likely missing a <rad_m1> block" << std::endl;
+       << out_params.block_name << "' but no RadiationVet object has been constructed."
+       << std::endl << "Input file is likely missing a <rad_vet> block" << std::endl;
     exit(EXIT_FAILURE);
   }
-  if (ivar==162 && (pm->pmb_pack->pradm1 == nullptr)) {
+  if (ivar==162 && (pm->pmb_pack->pradvet == nullptr)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
        << "Output of the M1 face fluxes requested in <output> block '"
-       << out_params.block_name << "' but no RadiationM1 object has been constructed."
-       << std::endl << "Input file is likely missing a <rad_m1> block" << std::endl;
+       << out_params.block_name << "' but no RadiationVet object has been constructed."
+       << std::endl << "Input file is likely missing a <rad_vet> block" << std::endl;
     exit(EXIT_FAILURE);
   }
   if (ivar==160 && (pm->pmb_pack->pgrav == nullptr)) {
@@ -719,29 +719,29 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     }
 
     // grey M1 radiation moments
-    if (variable.compare("m1_e") == 0 || variable.compare("m1") == 0) {
-      outvars.emplace_back("m1_e",radm1::M1_E,&(pm->pmb_pack->pradm1->u0));
+    if (variable.compare("vet_e") == 0 || variable.compare("vet") == 0) {
+      outvars.emplace_back("vet_e",radvet::M1_E,&(pm->pmb_pack->pradvet->u0));
     }
-    if (variable.compare("m1_f1") == 0 || variable.compare("m1") == 0) {
-      outvars.emplace_back("m1_f1",radm1::M1_F1,&(pm->pmb_pack->pradm1->u0));
+    if (variable.compare("vet_f1") == 0 || variable.compare("vet") == 0) {
+      outvars.emplace_back("vet_f1",radvet::M1_F1,&(pm->pmb_pack->pradvet->u0));
     }
-    if (variable.compare("m1_f2") == 0 || variable.compare("m1") == 0) {
-      outvars.emplace_back("m1_f2",radm1::M1_F2,&(pm->pmb_pack->pradm1->u0));
+    if (variable.compare("vet_f2") == 0 || variable.compare("vet") == 0) {
+      outvars.emplace_back("vet_f2",radvet::M1_F2,&(pm->pmb_pack->pradvet->u0));
     }
-    if (variable.compare("m1_f3") == 0 || variable.compare("m1") == 0) {
-      outvars.emplace_back("m1_f3",radm1::M1_F3,&(pm->pmb_pack->pradm1->u0));
+    if (variable.compare("vet_f3") == 0 || variable.compare("vet") == 0) {
+      outvars.emplace_back("vet_f3",radvet::M1_F3,&(pm->pmb_pack->pradvet->u0));
     }
-    // clean: m1 also carries the cell flux of the faces' energy flux Phi (m1_f:
+    // clean: vet also carries the cell flux of the faces' energy flux Phi (vet_f:
     // the face momenta's, the radiation momentum)
-    auto *pr = pm->pmb_pack->pradm1;
-    if (variable.compare("m1") == 0 && pr != nullptr && pr->clean) {
+    auto *pr = pm->pmb_pack->pradvet;
+    if (variable.compare("vet") == 0 && pr != nullptr && pr->clean) {
       if (pr->cln_phic.extent_int(0) == 0) {   // (CleanInit keeps it: the same shape)
         Kokkos::realloc(pr->cln_phic, pr->u0.extent_int(0), 3, pr->u0.extent_int(2),
                         pr->u0.extent_int(3), pr->u0.extent_int(4));
       }
       for (int n = 0; n < 3; ++n) {
-        outvars.emplace_back("m1_phi" + std::to_string(n + 1), n,
-                             &(pm->pmb_pack->pradm1->cln_phic));
+        outvars.emplace_back("vet_phi" + std::to_string(n + 1), n,
+                             &(pm->pmb_pack->pradvet->cln_phic));
       }
     }
 
@@ -749,12 +749,12 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     // diagonal of the Eddington tensor D = P/E in the coordinate basis (D_11 = D_rr on
     // the spherical-polar wedge), so that P_rad,aa = D_aa E is exact in post-processing.
     // Derived (derived_variables.cpp); not part of variable = m1.
-    if (variable.compare("m1_vsc") == 0) {
+    if (variable.compare("vet_vsc") == 0) {
       out_params.contains_derived = true;
-      outvars.emplace_back("m1_vj",0,&(derived_var));
-      outvars.emplace_back("m1_vh1",1,&(derived_var));
-      outvars.emplace_back("m1_vh2",2,&(derived_var));
-      outvars.emplace_back("m1_vh3",3,&(derived_var));
+      outvars.emplace_back("vet_vj",0,&(derived_var));
+      outvars.emplace_back("vet_vh1",1,&(derived_var));
+      outvars.emplace_back("vet_vh2",2,&(derived_var));
+      outvars.emplace_back("vet_vh3",3,&(derived_var));
       out_params.n_derived += 4;
     }
     // the thin switch's cell inputs of the last formal solution (vet_sc
@@ -766,46 +766,47 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     // P2: the vet_gd half-range ratios (vgd_hr) the halfrange face flux uses:
     // m1_ghp1/ghm1 = H+_r/J, H-_r/J, then theta, phi.  hp < 0 flags no formal solution.
     // Derived; not part of m1.
-    if (variable.compare("m1_gdhr") == 0) {
+    if (variable.compare("vet_gdhr") == 0) {
       out_params.contains_derived = true;
-      outvars.emplace_back("m1_ghp1",0,&(derived_var));
-      outvars.emplace_back("m1_ghm1",1,&(derived_var));
-      outvars.emplace_back("m1_ghp2",2,&(derived_var));
-      outvars.emplace_back("m1_ghm2",3,&(derived_var));
-      outvars.emplace_back("m1_ghp3",4,&(derived_var));
-      outvars.emplace_back("m1_ghm3",5,&(derived_var));
+      outvars.emplace_back("vet_ghp1",0,&(derived_var));
+      outvars.emplace_back("vet_ghm1",1,&(derived_var));
+      outvars.emplace_back("vet_ghp2",2,&(derived_var));
+      outvars.emplace_back("vet_ghm2",3,&(derived_var));
+      outvars.emplace_back("vet_ghp3",4,&(derived_var));
+      outvars.emplace_back("vet_ghm3",5,&(derived_var));
       out_params.n_derived += 6;
     }
-    if (variable.compare("m1_thsw") == 0) {
+    if (variable.compare("vet_thsw") == 0) {
       out_params.contains_derived = true;
-      outvars.emplace_back("m1_tfb",0,&(derived_var));
-      outvars.emplace_back("m1_tc1",1,&(derived_var));
-      outvars.emplace_back("m1_teps",2,&(derived_var));
-      outvars.emplace_back("m1_tw",3,&(derived_var));
-      outvars.emplace_back("m1_tj",4,&(derived_var));
+      outvars.emplace_back("vet_tfb",0,&(derived_var));
+      outvars.emplace_back("vet_tc1",1,&(derived_var));
+      outvars.emplace_back("vet_teps",2,&(derived_var));
+      outvars.emplace_back("vet_tw",3,&(derived_var));
+      outvars.emplace_back("vet_tj",4,&(derived_var));
       out_params.n_derived += 5;
     }
-    if (variable.compare("m1_comov") == 0) {
+    if (variable.compare("vet_comov") == 0) {
       out_params.contains_derived = true;
-      outvars.emplace_back("m1_cf1",0,&(derived_var));
-      outvars.emplace_back("m1_cf2",1,&(derived_var));
-      outvars.emplace_back("m1_cf3",2,&(derived_var));
-      outvars.emplace_back("m1_ce0",3,&(derived_var));
+      outvars.emplace_back("vet_cf1",0,&(derived_var));
+      outvars.emplace_back("vet_cf2",1,&(derived_var));
+      outvars.emplace_back("vet_cf3",2,&(derived_var));
+      outvars.emplace_back("vet_ce0",3,&(derived_var));
       out_params.n_derived += 4;
     }
     // scheme = clean: the full D (11 22 33 12 13 23) in the frame of m1_f1..3, no f_K
     // (derived_variables.cpp)
-    if (variable.compare("m1_vet") == 0 && pm->pmb_pack->pradm1->clean) {
+    if (variable.compare("vet_vet") == 0 && pm->pmb_pack->pradvet->clean) {
       out_params.contains_derived = true;
-      const char *dn[6] = {"m1_d11", "m1_d22", "m1_d33", "m1_d12", "m1_d13", "m1_d23"};
+      const char *dn[6] = {"vet_d11", "vet_d22", "vet_d33", "vet_d12", "vet_d13",
+                           "vet_d23"};
       for (int n = 0; n < 6; ++n) outvars.emplace_back(dn[n],n,&(derived_var));
       out_params.n_derived += 6;
-    } else if (variable.compare("m1_vet") == 0) {
+    } else if (variable.compare("vet_vet") == 0) {
       out_params.contains_derived = true;
-      outvars.emplace_back("m1_fk",0,&(derived_var));
-      outvars.emplace_back("m1_d11",1,&(derived_var));
-      outvars.emplace_back("m1_d22",2,&(derived_var));
-      outvars.emplace_back("m1_d33",3,&(derived_var));
+      outvars.emplace_back("vet_fk",0,&(derived_var));
+      outvars.emplace_back("vet_d11",1,&(derived_var));
+      outvars.emplace_back("vet_d22",2,&(derived_var));
+      outvars.emplace_back("vet_d33",3,&(derived_var));
       out_params.n_derived += 4;
     }
 
@@ -817,13 +818,13 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     // then limited to |F| <= c E) and is not the transported flux.  Zero where the
     // array does not exist (explicit transport; x2/x3 on a 1-D column).  Derived; not
     // part of variable = m1.
-    if (variable.compare("m1_face") == 0) {
+    if (variable.compare("vet_face") == 0) {
       out_params.contains_derived = true;
-      outvars.emplace_back("m1_fx1",0,&(derived_var));
-      outvars.emplace_back("m1_fx1o",1,&(derived_var));
-      outvars.emplace_back("m1_fx2",2,&(derived_var));
-      outvars.emplace_back("m1_fx3",3,&(derived_var));
-      outvars.emplace_back("m1_ex1",4,&(derived_var));
+      outvars.emplace_back("vet_fx1",0,&(derived_var));
+      outvars.emplace_back("vet_fx1o",1,&(derived_var));
+      outvars.emplace_back("vet_fx2",2,&(derived_var));
+      outvars.emplace_back("vet_fx3",3,&(derived_var));
+      outvars.emplace_back("vet_ex1",4,&(derived_var));
       out_params.n_derived += 5;
     }
 
@@ -832,21 +833,21 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     // (n_d . r_hat) I_d (= F_r/c, compare m1_f1/c).  Zero where vet_gd is off or below
     // its first shell.  Diagnostic (GATE2); derived, not part of m1.
     // m1_sfs, m1_cfs: the source S and extinction chi the sweep used.
-    if (variable.compare("m1_gw") == 0) {   // diagnostic
+    if (variable.compare("vet_gw") == 0) {   // diagnostic
       out_params.contains_derived = true;
-      outvars.emplace_back("m1_gl",0,&(derived_var));
-      outvars.emplace_back("m1_gr",1,&(derived_var));
-      outvars.emplace_back("m1_w",2,&(derived_var));
-      outvars.emplace_back("m1_fhr",3,&(derived_var));
-      outvars.emplace_back("m1_cef",4,&(derived_var));
+      outvars.emplace_back("vet_gl",0,&(derived_var));
+      outvars.emplace_back("vet_gr",1,&(derived_var));
+      outvars.emplace_back("vet_w",2,&(derived_var));
+      outvars.emplace_back("vet_fhr",3,&(derived_var));
+      outvars.emplace_back("vet_cef",4,&(derived_var));
       out_params.n_derived += 5;
     }
-    if (variable.compare("m1_fs") == 0) {
+    if (variable.compare("vet_fs") == 0) {
       out_params.contains_derived = true;
-      outvars.emplace_back("m1_jfs",0,&(derived_var));
-      outvars.emplace_back("m1_hfs",1,&(derived_var));
-      outvars.emplace_back("m1_sfs",2,&(derived_var));
-      outvars.emplace_back("m1_cfs",3,&(derived_var));
+      outvars.emplace_back("vet_jfs",0,&(derived_var));
+      outvars.emplace_back("vet_hfs",1,&(derived_var));
+      outvars.emplace_back("vet_sfs",2,&(derived_var));
+      outvars.emplace_back("vet_cfs",3,&(derived_var));
       out_params.n_derived += 4;
     }
 
@@ -856,11 +857,11 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     // Cartesian D_r,lat, Q = ((D11 - D22)/2, D12) about the cs_qf frame), the cell unit
     // vector m1_rx/ry/rz (Cartesian; cs: the vet_gd band vector) and J, H_r of the
     // current vet_gd formal solution about that vector (m1_jg, m1_hg; E units).  Derived.
-    if (variable.compare("m1_lat") == 0) {
+    if (variable.compare("vet_lat") == 0) {
       out_params.contains_derived = true;
-      const char *nm[12] = {"m1_tt0", "m1_lat0", "m1_lat1", "m1_lat2", "m1_lat3",
-                            "m1_lat4", "m1_lat5", "m1_rx", "m1_ry", "m1_rz", "m1_jg",
-                            "m1_hg"};
+      const char *nm[12] = {"vet_tt0", "vet_lat0", "vet_lat1", "vet_lat2", "vet_lat3",
+                            "vet_lat4", "vet_lat5", "vet_rx", "vet_ry", "vet_rz",
+                            "vet_jg", "vet_hg"};
       for (int c = 0; c < 12; ++c) {outvars.emplace_back(nm[c],c,&(derived_var));}
       out_params.n_derived += 12;
     }

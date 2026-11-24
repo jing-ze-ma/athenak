@@ -9,8 +9,8 @@
 //! \brief the default set of a run and <job>/recipe.
 //!
 //! The recipe defaults (<hydro|mhd>/am_transport where supported,
-//! <hydro|mhd>/etotgrav where supported, <rad_m1>/implicit_solver = bicgstab,
-//! <rad_m1>/implicit_resid_fatal = 1e-2, problem/theta_wall_closed with theta_bc = hse;
+//! <hydro|mhd>/etotgrav where supported, <rad_vet>/implicit_solver = bicgstab,
+//! <rad_vet>/implicit_resid_fatal = 1e-2, problem/theta_wall_closed with theta_bc = hse;
 //! <time>/dt_retry = true was already the fresh default) apply when NewDefaults():
 //!   <job>/recipe not named    : a FRESH run (a restart whose input lacks a key keeps
 //! that key's OLD default and says so: running chains unchanged)
@@ -34,10 +34,10 @@ void PrintLog();                          // the start-up block (rank 0), then c
 // exists (main.cpp, before the Mesh); pgen/<problem>_defaults.cpp or the no-op
 // pgen/early_defaults_none.cpp
 void PgenEarlyDefaults(ParameterInput *pin);
-// a fresh M1 run's defaults of keys read before <rad_m1> exists (main.cpp, after
-// PgenEarlyDefaults): <rad_m1>/transport = implicit; with scheme = clean (named or
+// a fresh M1 run's defaults of keys read before <rad_vet> exists (main.cpp, after
+// PgenEarlyDefaults): <rad_vet>/transport = implicit; with scheme = clean (named or
 // the default with transport = implicit) closure = vet_col + vet_gd on spherical polar
-// and the cubed sphere and <time>/cfl_number = 0.3 (rad_m1.cpp holds the rest)
+// and the cubed sphere and <time>/cfl_number = 0.3 (rad_vet.cpp holds the rest)
 void CleanDefaults(ParameterInput *pin);
 }  // namespace recipe
 

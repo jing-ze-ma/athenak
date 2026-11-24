@@ -28,12 +28,12 @@
 #include "hydro/hydro.hpp"
 #include "mhd/mhd.hpp"
 #include "diffusion/resistivity.hpp"
-#include "rad_m1/rad_m1.hpp"
-#include "rad_m1/rad_m1_implicit.hpp"
+#include "rad_vet/rad_vet.hpp"
+#include "rad_vet/rad_vet_implicit.hpp"
 #include "hydro/hydro_dtretry_visit.hpp"
 #include "hydro/hydro_am.hpp"
 #include "hydro/hydro_am_dtretry_visit.hpp"
-#include "rad_m1/rad_m1_dtretry_visit.hpp"
+#include "rad_vet/rad_vet_dtretry_visit.hpp"
 #include "mhd/mhd_dtretry_visit.hpp"
 #include "diffusion/resistivity_dtretry_visit.hpp"
 #include "driver/dt_retry.hpp"
@@ -66,7 +66,7 @@ const char *kDtrMinimal[] = {
   // <hydro>/am_vector's spin reservoir (hydro::AmModule, persistent across
   // cycles) and the radiation's hesdirk2 FSAL spin slope; empty/absent unless am_vector
   "am.am_spin", "m1.amk1",
-  // RadiationM1
+  // RadiationVet
   "m1.u0", "m1.f0x1", "m1.f0x2", "m1.f0x3", "m1.ipred", "m1.ipred2", "m1.t2k1",
   "m1.vet_prev", "m1.vsc_d0", "m1.vsc_d1", "m1.ctr_mem", "m1.csk1", "m1.csk2",
   "m1.csinc", "m1.vra_d", "m1.opac", "m1.tau_ten", "m1.vet_cell",
@@ -103,8 +103,8 @@ const char *kDtrMinimal[] = {
   "m1.vgd_hr",
   // scheme = clean (not visited before: a retry read the failed attempt's): the face
   // arrays' clean_stag_fkin energy flux memory d and its slope K1 (CLF_N + 3, CLF_KD;
-  // copied to cln_rstd, RadiationM1::CleanDtrD), the sc rays' intensities (cln_fvi), with
-  // cln_fref_set (force_reference = clean recaptures), and the sc rays' top shell a
+  // copied to cln_rstd, RadiationVet::CleanDtrD), the sc rays' intensities (cln_fvi),
+  // with cln_fref_set (force_reference = clean recaptures), and the sc rays' top shell a
   // reflecting top mirrors (cln_top).  The closure's extrap history is left alone: its
   // flags go with the handles the attempt swapped and, on a first cycle, with cln_init.
   // clean_rot_ring: the offsets and the pending Delta (a retried first step of a block
@@ -119,7 +119,7 @@ const char *kDtrMinimal[] = {
   "m1.cmi_cnt", "m1.fcd_cnt_d",
 };
 
-// the Views of kDtrMinimal that <rad_m1>/scheme = clean does not write
+// the Views of kDtrMinimal that <rad_vet>/scheme = clean does not write
 // (dt_retry_views = clean)
 const char *kDtrNotClean[] = {
   "m1.ipred", "m1.ipred2", "m1.csk1", "m1.csk2", "m1.tau_ten", "m1.x2_tt", "m1.x2_hr",
@@ -443,16 +443,16 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
                 (on ? " (default)" : " (recipe none, restart: the old default)"));
   }
   if (!on) return;
-  // the wiring covers Hydro or MHD + RadiationM1 (the implicit scheme);
+  // the wiring covers Hydro or MHD + RadiationVet (the implicit scheme);
   // anything else: off
   auto *pk = pm->pmb_pack;
   if ((pk->phydro != nullptr && pk->pmhd != nullptr) || pk->prad != nullptr ||
       pk->pz4c != nullptr ||
       pk->padm != nullptr || pk->ppart != nullptr || pk->pturb != nullptr ||
-      pk->pradm1 == nullptr || pm->adaptive || pm->multilevel) {
+      pk->pradvet == nullptr || pm->adaptive || pm->multilevel) {
     if (global_variable::my_rank == 0) {
       std::cout << "<time> dt_retry: not wired for this module set (wired: <hydro> + "
-                << "<rad_m1> or <mhd> + <rad_m1>, no mesh refinement) "
+                << "<rad_vet> or <mhd> + <rad_vet>, no mesh refinement) "
                 << "-> off" << std::endl;
     }
     on = false;
@@ -468,7 +468,7 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
     fix_ = pin->GetReal("time", "dt_fixed");
   }
   // <time>/dt_retry_fac_t2 (read only when named): the dt factor of a
-  // retry raised by <rad_m1>/time2_reject = retry (default: dt_retry_fac)
+  // retry raised by <rad_vet>/time2_reject = retry (default: dt_retry_fac)
   if (pin->DoesParameterExist("time", "dt_retry_fac_t2")) {
     t2_fac_ = pin->GetReal("time", "dt_retry_fac_t2");
   }
@@ -484,10 +484,10 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   if (pin->DoesParameterExist("time", "dt_retry_t2be_now")) {
     t2streak_ = pin->GetBoolean("time", "dt_retry_t2be_now");
   }
-  pk->pradm1->dtr_t2be = (t2_be_ == 0) || (t2_be_ > 0 && t2streak_);
-  pk->pradm1->dtr_maxcut = maxcut_;   // (vkick_be_retry bookkeeping)
+  pk->pradvet->dtr_t2be = (t2_be_ == 0) || (t2_be_ > 0 && t2streak_);
+  pk->pradvet->dtr_maxcut = maxcut_;   // (vkick_be_retry bookkeeping)
   std::string vm = pin->GetOrAddString("time", "dt_retry_views", "minimal");
-  // clean: the minimal list without the Views the clean scheme (<rad_m1>/scheme =
+  // clean: the minimal list without the Views the clean scheme (<rad_vet>/scheme =
   // clean) does not write (the implicit solve's predictors and sources, the vet_col
   // closure builds)
   all_views_ = (vm == "all");
@@ -563,7 +563,7 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
   if (pin->DoesParameterExist("time", "dt_retry_ngood_now")) {
     ngood_ = pin->GetInteger("time", "dt_retry_ngood_now");
   }
-  pk->pradm1->dtr_on = true;
+  pk->pradvet->dtr_on = true;
   if (global_variable::my_rank == 0) {
     std::cout << "<time> dt_retry on: fac " << fac_ << " max " << maxcut_ << " ngood "
               << ngood_req_ << " grow " << grow_ << " views "
@@ -577,7 +577,7 @@ void DtRetry::Build(Mesh *pm) {
   std::set<std::string> &sel = sel_;
   for (const char *s : kDtrMinimal) {sel.insert(s);}
   // (scheme = clean writes none of them: their clones are never needed, the default)
-  if (clean_views_ || pm->pmb_pack->pradm1->clean) {
+  if (clean_views_ || pm->pmb_pack->pradvet->clean) {
     for (const char *s : kDtrNotClean) {sel.erase(s);}
   }
   for (auto &s : extra_views_) {sel.insert(s);}
@@ -598,7 +598,7 @@ void DtRetry::Build(Mesh *pm) {
   {
     // (clean sc rays, staggered, without the reflecting top's memory: cln_fvi is each
     // build's copy of vgd_i, written before it is read; CleanGdFaceSums)
-    auto *m1 = pk->pradm1;
+    auto *m1 = pk->pradvet;
     // (on the cubed sphere too; their face half ranges cln_fh where every solve rebuilds
     // them first, CleanFhBuilt)
     if (m1->clean && !m1->cln_scmem) {
@@ -617,17 +617,17 @@ void DtRetry::Build(Mesh *pm) {
     pam->DtRetryVisit(b);
   }
   // dt_retry_host skips the host copy of vet_rotate_avg's history vra_d
-  // while it is clean (written only at rotation-block boundaries; RadiationM1::vra_gen)
+  // while it is clean (written only at rotation-block boundaries; RadiationVet::vra_gen)
   // (and of clean_rot_ring's offsets cln_rr, written only at block boundaries, a fill
   // or a restart: their writers bump vra_gen too)
   for (auto &e : ent_) {
     if (((host_ || hm1_) && e->name == "m1.vra_d") || e->name == "m1.cln_rr") {
-      e->SetGen(&(pk->pradm1->vra_gen));
+      e->SetGen(&(pk->pradvet->vra_gen));
     }
     // (and both, with the pending Delta, while no build of the cycle shifts the ring:
-    // RadiationM1::CleanRingPreShift)
+    // RadiationVet::CleanRingPreShift)
     if (e->name == "m1.cln_rr" || e->name == "m1.cln_rpd") {
-      e->SetSkip(&(pk->pradm1->cln_rfix));
+      e->SetSkip(&(pk->pradvet->cln_rfix));
     }
   }
   // the problem generator's registered state (PgenEntries)
@@ -650,8 +650,8 @@ void DtRetry::Save(Mesh *pm) {
   cap0_ = pm->dt_cap;
   ngood0_ = ngood_;
   Kokkos::Timer t;
-  pm->pmb_pack->pradm1->DtRetryQuiesce(false);
-  pm->pmb_pack->pradm1->MemArenaSeal();   // no rebind after a checkpoint
+  pm->pmb_pack->pradvet->DtRetryQuiesce(false);
+  pm->pmb_pack->pradvet->MemArenaSeal();   // no rebind after a checkpoint
   for (auto &e : ent_) {e->Save();}
   Kokkos::fence();
   tsave_ += t.seconds();
@@ -688,7 +688,7 @@ void DtRetry::Save(Mesh *pm) {
 //----------------------------------------------------------------------------------------
 bool DtRetry::Failed(Mesh *pm) {
   if (!on) return false;
-  auto *m1 = pm->pmb_pack->pradm1;
+  auto *m1 = pm->pmb_pack->pradvet;
   if (force_cycle_ >= 0 && !forced_done_ && pm->ncycle == force_cycle_) {
     forced_done_ = true;
     m1->dtr_fail = true;
@@ -699,7 +699,7 @@ bool DtRetry::Failed(Mesh *pm) {
 
 //----------------------------------------------------------------------------------------
 bool DtRetry::Retry(Mesh *pm, Driver *pd) {
-  auto *m1 = pm->pmb_pack->pradm1;
+  auto *m1 = pm->pmb_pack->pradvet;
   const int why = m1->dtr_why;
   const Real res = m1->dtr_resid;
   const Real dto = pm->dt;
@@ -804,8 +804,8 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
     pm->dt_cap = dtn;
     ngood_ = 0;
   }
-  if (dtn != dto && pm->pmb_pack->pradm1 != nullptr) {
-    dtn = pm->pmb_pack->pradm1->VetGdAlignDt(pm->time, dtn);
+  if (dtn != dto && pm->pmb_pack->pradvet != nullptr) {
+    dtn = pm->pmb_pack->pradvet->VetGdAlignDt(pm->time, dtn);
   }
   pm->dt = dtn;
   // the words the production link scripts STOP on (DIVERGED, nan, NON-CONVERGED=) are not
@@ -830,12 +830,12 @@ bool DtRetry::Retry(Mesh *pm, Driver *pd) {
 void DtRetry::Accept(Mesh *pm) {
   if (!on) return;
   ncut_ = 0;
-  pm->pmb_pack->pradm1->dtr_ncut = 0;
-  pm->pmb_pack->pradm1->dtr_redo = false;
+  pm->pmb_pack->pradvet->dtr_ncut = 0;
+  pm->pmb_pack->pradvet->dtr_redo = false;
   // a cycle that took the backward-Euler redo of time2_reject = retry arms the
   // next cycle to take it at once (a rejection that persists from cycle to cycle costs as
   // much as time2_reject = be); the first cycle without a rejection disarms it
-  auto *m1 = pm->pmb_pack->pradm1;
+  auto *m1 = pm->pmb_pack->pradvet;
   if (m1->dtr_t2hit) {nt2be_ += 1;}
   t2streak_ = m1->dtr_t2hit;
   m1->dtr_t2hit = false;
@@ -953,7 +953,7 @@ void CounterKeep::Save(Mesh *pm, int slot) {
   for (int q = 0; q < 9; ++q) {s.ni[q] = *EcInt(pm->ecounter, q);}
   for (int q = 0; q < 6; ++q) {s.ec[q] = *EcReal(pm->ecounter, q);}
   FloorPaid(pm, s.pay);
-  auto *pm1 = pm->pmb_pack->pradm1;
+  auto *pm1 = pm->pmb_pack->pradvet;
   if (pm1 != nullptr) {
     s.hpos = SnapView(pm1->pos_cnt_d, s.pos);
     s.hacl = SnapView(pm1->acl_cnt_d, s.acl);
@@ -972,10 +972,10 @@ void CounterKeep::Restore(Mesh *pm, int slot, int why) {
   dvc_[why] += static_cast<double>(pm->ecounter.vceil_de - s.ec[1]);
   for (int q = 0; q < 9; ++q) {*EcInt(pm->ecounter, q) = s.ni[q];}
   for (int q = 0; q < 6; ++q) {*EcReal(pm->ecounter, q) = s.ec[q];}
-  auto *pm1 = pm->pmb_pack->pradm1;
+  auto *pm1 = pm->pmb_pack->pradvet;
   if (pm1 != nullptr) {
-    const Real un1 = HostAt(pm1->pos_cnt_d, radm1::M1_POS_FLR_UN);
-    const Real un0 = s.hpos ? HostAt(s.pos, radm1::M1_POS_FLR_UN) : 0.0;
+    const Real un1 = HostAt(pm1->pos_cnt_d, radvet::M1_POS_FLR_UN);
+    const Real un0 = s.hpos ? HostAt(s.pos, radvet::M1_POS_FLR_UN) : 0.0;
     dun_[why] += static_cast<double>(un1 - un0);
     pm1->pos_un_drop += un1 - un0;   // (the positivity report's discarded field)
     BackView(pm1->pos_cnt_d, s.pos, s.hpos);
@@ -1017,11 +1017,11 @@ void CounterKeep::Report(Mesh *pm) {
 void CounterKeep::Cycle(Mesh *pm) {
   const Snap &s = s_[0];
   if (!s.have) return;
-  auto *pm1 = pm->pmb_pack->pradm1;
+  auto *pm1 = pm->pmb_pack->pradvet;
   auto *ph = pm->pmb_pack->phydro;
   Real d[11] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   if (pm1 != nullptr && s.hpos) {
-    using namespace radm1;   // NOLINT(build/namespaces)
+    using namespace radvet;   // NOLINT(build/namespaces)
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->pos_cnt_d);
     auto h0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), s.pos);
     const int q[5] = {M1_POS_GAS, M1_POS_GAS_DE, M1_POS_FLR, M1_POS_FLR_DE,

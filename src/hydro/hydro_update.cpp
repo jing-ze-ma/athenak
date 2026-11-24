@@ -15,7 +15,7 @@
 #include "driver/driver.hpp"
 #include "eos/eos.hpp"
 #include "hydro.hpp"
-#include "rad_m1/rad_m1.hpp"
+#include "rad_vet/rad_vet.hpp"
 #include "hydro/rk_update_shared.hpp"
 
 namespace fluid {

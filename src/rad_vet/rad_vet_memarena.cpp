@@ -1,0 +1,252 @@
+//========================================================================================
+// AthenaK astrophysical fluid dynamics code
+// Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
+// Licensed under the 3-clause BSD License (the "LICENSE")
+//========================================================================================
+//! \file rad_vet_memarena.cpp
+//! \brief memcut-1113 the memory arena (with vet_gd): the vet_gd intensity arrays
+//! (VgdRag::d of vgd_i, vgd_i_xb) and the implicit solve's scratch arrays that are dead
+//! across a VetGdBuild (ost, fmm_t, thw, vmw, thq, odc, d3w, krw, aa_*) share ONE device
+//! allocation.  The intensities are written and read only inside VetGdBuild (sweep,
+//! moments, half-range, ring); those solve arrays are re-written after every build before
+//! they are read.  Both facts are checked by MEMCUT_POISON (below) and the bitwise gates.
+//! iw is NOT shared: some of its channels live across a build (poisoned, the run breaks).
+//! Under the clean scheme the intensities are dead outside CleanRays (the closure reads
+//! them after the build) and the staggered layout's own work vectors (cln_w.o, the line
+//! rows, BiCGStab vectors, mg couplings, lateral sums and budget scales) are re-written
+//! in every solve before they are read: those alone move over them (MEMCUT_POISON clnw
+//! at the entry of CleanRays, vgdc at its exit); so do the shared slots cln_w.s where no
+//! build runs inside the solve (clean_closure = predict).
+//!
+//! The intensity arrays are unmanaged 1-D Views at offsets 0, n_0, ... of marena (it
+//! grows by copy + rebind while they are allocated, until the first dt_retry
+//! checkpoint after they exist); at that checkpoint (MemArenaSeal from DtRetry::Save,
+//! before it copies anything) the solve arrays are moved over them (contents copied,
+//! members rebound to unmanaged Views at offsets 0, ... of marena), as many as fit.  No
+//! rebinding afterwards.
+//!
+//! MEMCUT_POISON (diagnostic env, default unset): a comma list of arrays that are filled
+//! with NaN (MEMCUT_PVAL=big: +7.7e22) at the entry of every VetGdBuild (iw, ost, thw,
+//! thq, krw, odc, fmm_t, vmw, d3w, aa) and at its exit (vgd: every intensity array).  A
+//! run whose results stay bitwise with a list poisoned shows the lifetime split for it.
+
+#include <algorithm>
+#include <cstdint>
+#include <cstdlib>
+#include <iostream>
+#include <limits>
+#include <string>
+
+#include "athena.hpp"
+#include "globals.hpp"
+#include "mesh/mesh.hpp"
+#include "parameter_input.hpp"
+#include "rad_vet/rad_vet.hpp"
+#include "rad_vet/rad_vet_clean.hpp"
+
+namespace radvet {
+
+#if VET_DEBUG
+namespace {
+bool EnvListHas(const char *env, const char *name) {
+  const char *e = std::getenv(env);
+  if (e == nullptr) return false;
+  const std::string s = std::string(",") + e + ",";
+  return s.find(std::string(",") + name + ",") != std::string::npos ||
+         s.find(",all,") != std::string::npos;
+}
+}  // namespace
+#endif
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::MemArenaInit
+//! \brief the arena with vet_gd; allocate iw (zero-filled) as before (iw is NOT in the
+//! arena: some of its channels live across a VetGdBuild, MEMCUT_POISON=iw, job 13107429)
+
+void RadiationVet::MemArenaInit(ParameterInput *pin, const int nmb, const int niw,
+                                const int n3, const int n2, const int n1) {
+  marena_on = vgd_on;
+  Kokkos::realloc(iw, nmb, niw, n3, n2, n1);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool RadiationVet::MemArenaVgd
+//! \brief bind a.d (n Reals, zero-filled by the caller) into the arena (the intensity
+//! arrays one after the other); false: not bound, the caller allocates a.d itself
+
+bool RadiationVet::MemArenaVgd(VgdRag &a, const int64_t n) {
+  if (!marena_on || marena_sealed) return false;
+  const int64_t off = marena_sw;
+  const int64_t need = off + n;
+  MemArenaGrow(need);
+  a.d = DvceArray1D<Real>(marena.data() + off, n);
+  marena_sw = need + ((64 - (need % 64)) % 64);   // 64-Real alignment of the next one
+  return true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::MemArenaGrow
+//! \brief at least need Reals: a new allocation, the old bytes copied in front (the
+//! intensity arrays bound so far keep their contents and offsets), then rebind them;
+//! keep = false (CleanWoBind: all of it dead between a build and its solve): the old
+//! allocation freed first, nothing copied
+
+void RadiationVet::MemArenaGrow(const int64_t need, const bool keep) {
+  const int64_t have = static_cast<int64_t>(marena.extent(0));
+  if (need <= have) return;
+  Kokkos::fence();
+  const Real *o0 = marena.data(), *o1 = marena.data() + have;
+  if (!keep) marena = DvceArray1D<Real>();
+  DvceArray1D<Real> nb("vet_arena", need);
+  if (have > 0 && keep) {
+    Kokkos::deep_copy(Kokkos::subview(nb, std::make_pair(int64_t(0), have)), marena);
+  }
+  VgdRag *bound[2] = {&vgd_i, &vgd_i_xb};
+  for (VgdRag *b : bound) {
+    if (have > 0 && b->d.data() != nullptr && b->d.data() >= o0 && b->d.data() < o1) {
+      b->d = DvceArray1D<Real>(nb.data() + (b->d.data() - o0), b->d.extent(0));
+    }
+  }
+  for (DvceArray5D<Real> *w : {&cln_w.o, &cln_w.s}) {   // (bound by CleanWoBind)
+    if (have > 0 && w->data() != nullptr && w->data() >= o0 && w->data() < o1) {
+      *w = DvceArray5D<Real>(nb.data() + (w->data() - o0), w->extent(0), w->extent(1),
+                             w->extent(2), w->extent(3), w->extent(4));
+    }
+  }
+  marena = nb;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::MemArenaSeal
+//! \brief called by every DtRetry::Save before it copies; the first call after the
+//! intensities exist moves the solve scratch arrays that are dead across a VetGdBuild
+//! (MEMCUT_POISON: ost, fmm_t, thw, vmw, thq, odc, d3w, krw, aa_*, job 13105648) into
+//! the arena, over the intensities (contents copied, member rebound), as many as fit;
+//! then no more rebinding
+
+void RadiationVet::MemArenaSeal() {
+  // (a fresh run allocates the intensities inside cycle 1: the move waits for the next
+  // checkpoint; every checkpoint takes the members' handles anew, so a retry after the
+  // move restores the moved Views)
+  if (marena_sealed || !marena_on || marena.data() == nullptr) return;
+  marena_sealed = true;
+  DvceArray5D<Real> *cand[] = {&cln_w.o, &ost, &fmm_t, &thw, &vmw, &thq, &odc, &d3w,
+                               &krw, &aa_xc, &aa_fc, &aa_xp, &aa_fp};
+  const char *nm[] = {"cln_wo", "ost", "fmm_t", "thw", "vmw", "thq", "odc", "d3w", "krw",
+                      "aa_xc", "aa_fc", "aa_xp", "aa_fp"};
+  // (clean: the arena grows to the clean scheme's own work vectors where they outgrow
+  // the intensities, whatever vgd_i's layout makes of those)
+  if (clean) MemArenaGrow(static_cast<int64_t>(cln_w.o.span()));
+  const int64_t have = static_cast<int64_t>(marena.extent(0));
+  int64_t off = 0;
+  std::string moved;
+  Kokkos::fence();
+  for (int q = 0; q < static_cast<int>(sizeof(cand)/sizeof(cand[0])); ++q) {
+    DvceArray5D<Real> &a = *cand[q];
+    const int64_t n = static_cast<int64_t>(a.span());
+    // (clean: its own work vectors only)
+    if ((clean && q > 0) || a.data() == nullptr || n == 0 ||
+        !a.span_is_contiguous() || off + n > have || a.data() == marena.data()) {
+      // (cln_w.o already there, CleanWoBind)
+      if (a.data() == marena.data() && n > 0) off += n + ((64 - (n % 64)) % 64);
+      continue;
+    }
+    DvceArray5D<Real> b(marena.data() + off, a.extent(0), a.extent(1), a.extent(2),
+                        a.extent(3), a.extent(4));
+    Kokkos::deep_copy(b, a);
+    a = b;
+    off += n + ((64 - (n % 64)) % 64);
+    moved += std::string(" ") + nm[q];
+  }
+  Kokkos::fence();
+  if (global_variable::my_rank == 0) {
+    std::cout << "<rad_vet> mem_arena: intensities " << marena_sw*sizeof(Real)/1.0e9
+              << " GB in one allocation; solve scratch moved over them (" << off*
+              sizeof(Real)/1.0e9 << " GB on rank 0):" << moved << std::endl;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::CleanWoBind
+//! \brief the staggered layout's own work vectors cln_w.o at the first solve that needs
+//! them: in the arena, over the intensities (dead outside a build), where a build has
+//! made it (MemArenaGrow rebinds them with the intensities), else their own allocation
+//! (moved over the intensities by MemArenaSeal): no second copy before the first
+//! checkpoint.  The shared slots cln_w.s, where CleanInit left them unmade (no build
+//! inside the solve), follow cln_w.o: in the arena after it, or their own allocation
+
+void RadiationVet::CleanWoBind() {
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int n1 = id.nx1 + 2*id.ng, n2 = (id.nx2 > 1) ? id.nx2 + 2*id.ng : 1;
+  const int n3 = (id.nx3 > 1) ? id.nx3 + 2*id.ng : 1, nmb = pmy_pack->nmb_thispack;
+  if (cln_w.o.data() == nullptr) {
+    if (marena.data() == nullptr) {
+      Kokkos::realloc(cln_w.o, nmb, cln_wo_nc, n3, n2, n1);
+    } else {
+      MemArenaGrow(static_cast<int64_t>(nmb)*cln_wo_nc*n3*n2*n1, false);
+      cln_w.o = DvceArray5D<Real>(marena.data(), nmb, cln_wo_nc, n3, n2, n1);
+    }
+  }
+  if (cln_w.s.data() != nullptr) return;
+  if (cln_w.o.data() != marena.data()) {
+    Kokkos::realloc(cln_w.s, nmb, CLW_NS, n3, n2, n1);
+    return;
+  }
+  const int64_t no = static_cast<int64_t>(cln_w.o.span());
+  const int64_t off = no + ((64 - (no % 64)) % 64);   // (64-Real alignment)
+  MemArenaGrow(off + static_cast<int64_t>(nmb)*CLW_NS*n3*n2*n1, false);
+  cln_w.s = DvceArray5D<Real>(marena.data() + off, nmb, CLW_NS, n3, n2, n1);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::MemcutPoison
+//! \brief diagnostic (env MEMCUT_POISON, see the file comment): where 0 = VetGdBuild
+//! entry (the solve-phase arrays), 1 = its exit (the intensities); the clean scheme:
+//! 2 = CleanRays entry (cln_w.o, also at 0), 3 = its exit (the intensities)
+
+void RadiationVet::MemcutPoison(const int where) {
+#if VET_DEBUG
+  static const bool on = (std::getenv("MEMCUT_POISON") != nullptr);
+  if (!on) return;
+  const char *pv = std::getenv("MEMCUT_PVAL");
+  const Real v = (pv != nullptr && std::string(pv) == "big") ? 7.7e22
+                 : std::numeric_limits<Real>::quiet_NaN();
+  auto p5 = [&](DvceArray5D<Real> &a, const char *nm) {
+    if (a.data() != nullptr && EnvListHas("MEMCUT_POISON", nm)) {Kokkos::deep_copy(a, v);}
+  };
+  // (clnw also at every VetGdBuild: a sweep writes the arena wherever it is called)
+  if (where == 0 || where == 2) {p5(cln_w.o, "clnw"); p5(cln_w.s, "clnw");}
+  // (the stencil rows: dead across a build, CleanRingMoments' build scratch over them)
+  if (where == 2 || where == 3) {p5(cln_st, "clnst"); p5(cln_csy, "clnst");}
+  if (where == 3) {
+    if (EnvListHas("MEMCUT_POISON", "vgdc")) {
+      VgdRag *bound[2] = {&vgd_i, &vgd_i_xb};
+      for (VgdRag *b : bound) {
+        if (b->d.data() != nullptr) {Kokkos::deep_copy(b->d, v);}
+      }
+    }
+  } else if (where == 0) {
+    p5(iw, "iw");
+    p5(ost, "ost");
+    p5(thw, "thw");
+    p5(thq, "thq");
+    p5(krw, "krw");
+    p5(odc, "odc");
+    p5(fmm_t, "fmm_t");
+    p5(vmw, "vmw");
+    p5(d3w, "d3w");
+    p5(aa_xc, "aa");
+    p5(aa_fc, "aa");
+    p5(aa_xp, "aa");
+    p5(aa_fp, "aa");
+  } else if (EnvListHas("MEMCUT_POISON", "vgd")) {
+    VgdRag *bound[2] = {&vgd_i, &vgd_i_xb};
+    for (VgdRag *b : bound) {
+      if (b->d.data() != nullptr) {Kokkos::deep_copy(b->d, v);}
+    }
+  }
+  Kokkos::fence();
+#endif
+}
+
+}  // namespace radvet

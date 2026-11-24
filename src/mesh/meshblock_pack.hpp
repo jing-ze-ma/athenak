@@ -30,7 +30,7 @@ namespace dyngr {class DynGRMHD;}
 namespace numrel {class NumericalRelativity;}
 class TurbulenceDriver;
 namespace radiation {class Radiation;}
-namespace radm1 {class RadiationM1;}
+namespace radvet {class RadiationVet;}
 namespace z4c {class Z4c;}
 namespace z4c {class CCE;}
 namespace adm {class ADM;}
@@ -74,7 +74,7 @@ class MeshBlockPack {
   ion_neutral::IonNeutral *pionn=nullptr;
   TurbulenceDriver *pturb=nullptr;
   radiation::Radiation *prad=nullptr;
-  radm1::RadiationM1 *pradm1=nullptr;
+  radvet::RadiationVet *pradvet=nullptr;
   std::vector<z4c::CCE *> pz4c_cce;
   particles::Particles *ppart=nullptr;
   gravity::Gravity *pgrav=nullptr;

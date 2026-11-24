@@ -2,9 +2,9 @@
 """Generate the member visitors of the dt-retry checkpoint from clang's AST.
 
 usage: dtretry_gen.py <clang++> <flags file> <src dir>
-Writes src/rad_m1/rad_m1_dtretry_visit.hpp, src/hydro/hydro_dtretry_visit.hpp,
+Writes src/rad_vet/rad_vet_dtretry_visit.hpp, src/hydro/hydro_dtretry_visit.hpp,
 src/mhd/mhd_dtretry_visit.hpp and src/diffusion/resistivity_dtretry_visit.hpp:
-for every data member of RadiationM1 / Hydro / MHD / Resistivity (and of the nested plain
+for every data member of RadiationVet / Hydro / MHD / Resistivity (and of the nested plain
 structs listed in NESTED), one call of the visitor in declaration order --
   v.view(name, x)    any Kokkos::View (DvceArray*, HostArray*, raw Kokkos::View)
   v.dual(name, x)    any Kokkos::DualView (DualArray*)
@@ -135,8 +135,8 @@ def gen(header, cls, outfile, guard, ns):
     open(os.path.join(SRC, outfile), 'w').write('\n'.join(txt))
     print('%s: %d visits, %d skipped -> %s' % (cls, len(out), len(skipped), outfile))
 
-SUB = {n: ast('rad_m1/rad_m1.hpp', n) for n in NESTED}
-gen('rad_m1/rad_m1.hpp', 'RadiationM1', 'rad_m1/rad_m1_dtretry_visit.hpp', 'RAD_M1_RAD_M1_DTRETRY_VISIT_HPP_', 'radm1')
+SUB = {n: ast('rad_vet/rad_vet.hpp', n) for n in NESTED}
+gen('rad_vet/rad_vet.hpp', 'RadiationVet', 'rad_vet/rad_vet_dtretry_visit.hpp', 'RAD_VET_RAD_VET_DTRETRY_VISIT_HPP_', 'radvet')
 gen('hydro/hydro.hpp', 'Hydro', 'hydro/hydro_dtretry_visit.hpp', 'HYDRO_HYDRO_DTRETRY_VISIT_HPP_', 'hydro')
 gen('mhd/mhd.hpp', 'MHD', 'mhd/mhd_dtretry_visit.hpp', 'MHD_MHD_DTRETRY_VISIT_HPP_', 'mhd')
 gen('diffusion/resistivity.hpp', 'Resistivity', 'diffusion/resistivity_dtretry_visit.hpp',

@@ -249,7 +249,7 @@ struct DvceEdgeFld4D {
 // the policy of the par_for wrappers below.  On HIP a plain RangePolicy
 // kernel is compiled for up to 1024 threads per block, which caps it at 128 VGPRs on
 // gfx942: the heavy per-cell kernels (EOS, opacity tables, Riemann solvers) then SPILL to
-// scratch (rocprofv3: 92-2288 B per lane).  LaunchBounds<256, 2> (as radm1::par_for_lb)
+// scratch (rocprofv3: 92-2288 B per lane).  LaunchBounds<256, 2> (as radvet::par_for_lb)
 // lets the register allocator use up to 256 VGPRs; Kokkos launches 256-thread blocks.
 // par_for has no reductions: the arithmetic and the result are unchanged (bitwise).
 // -DATHENA_HIP_PARFOR_LB=0: the old policy.

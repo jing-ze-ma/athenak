@@ -13,7 +13,7 @@
 //! For r < r_c every 1 x f x f (x1, x2, x3) group of cells is treated as ONE hydro cell:
 //! (1) after every hydro stage update (RKUpdate + source terms + the conduction
 //! operators, before SendU) and after every write of the gas by the implicit
-//! radiation solve (RadiationM1::FluidRefresh), the conserved state of each group is
+//! radiation solve (RadiationVet::FluidRefresh), the conserved state of each group is
 //! replaced by its group value: rho, the total energy and the scalars by their
 //! VOLUME average; the momentum as a Cartesian vector field m_i = P/V + Omega x d_i
 //! (d_i = cell centre - group volume centroid) that keeps the group's linear momentum

@@ -33,7 +33,7 @@
 #include "hydro/hydro_am.hpp"
 #include "hydro/hydro_mergelat.hpp"
 #include "hydro/hydro_ringavg.hpp"
-#include "rad_m1/rad_m1.hpp"
+#include "rad_vet/rad_vet.hpp"
 #include "utils/c2p_track.hpp"
 
 namespace hydro {

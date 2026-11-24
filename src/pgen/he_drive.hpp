@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file he_drive.hpp
-//! \brief the time-dependent DRIVEN inner boundary of he_star_m1
+//! \brief the time-dependent DRIVEN inner boundary of he_star_vet
 //! (he_drive.cpp).  Every key is read only when named; with none of them the problem
 //! generator never calls into this file beyond the cheap On() queries (bitwise).
 //!
@@ -30,9 +30,9 @@
 //!  problem/he_drive_ledger (default: true when any drive key is named): the RK-exact
 //!      ledgers of the mass and total energy through the x1 boundary faces, the sponge,
 //!      W_grav, int F_in A dt and the radiation energy through the x1 faces as the
-//!      scheme applies it (RadiationM1 Ebnd, split in / out), written with M_tot, E_tot
+//!      scheme applies it (RadiationVet Ebnd, split in / out), written with M_tot, E_tot
 //!      every cycle to <basename>.hsdrive.txt (rank 0).
-//!  problem/he_drive_closure_lin = const (default) | table (read only with the rad_m1
+//!  problem/he_drive_closure_lin = const (default) | table (read only with the rad_vet
 //!      flux table): the L_in the adaptive MLT closure targets, the constant
 //!      implicit_flux_x1min or the current table flux.
 //! All state travels in the restart file (trailer HSDRV001, the last one).
@@ -54,7 +54,7 @@ struct SetupArgs {
   Real gm = 0.0;         // he_gm = G m(r_in) of the column
   Real rho_rin = 0.0;    // the initial column at r_in: rho, eint (scales of the ghosts)
   Real eint_rin = 0.0;
-  Real fconst = 0.0;     // <rad_m1>/implicit_flux_x1min (constant)
+  Real fconst = 0.0;     // <rad_vet>/implicit_flux_x1min (constant)
   bool binf = false;     // he_bc_inner = inflow
   bool pointmass = false;
   bool bc_hse = false;   // he_bc_outer = hse (reads the static G m(r))
@@ -81,10 +81,10 @@ void StageLedger(Mesh *pm, Real bdt, bool binf, bool zflux, Real dsp);
 void Cycle(Mesh *pm);
 //! append the trailer (On only; called by the pgen restart writer, last)
 void RstAppend(std::vector<char> *out);
-//! the inner flux the closure / history read: the table flux at t when the rad_m1 flux
+//! the inner flux the closure / history read: the table flux at t when the rad_vet flux
 //! table is on, else fconst (bitwise the old constant)
 Real InnerFlux(Mesh *pm, Real fconst);
-//! the L_in target of the adaptive MLT closure: fconst unless the rad_m1 flux table is
+//! the L_in target of the adaptive MLT closure: fconst unless the rad_vet flux table is
 //! on AND problem/he_drive_closure_lin = table (then InnerFlux)
 Real ClosureFlux(Mesh *pm, Real fconst);
 void Final();

@@ -26,11 +26,11 @@
 //!    source terms and floors are all seen; only a ConToPrim that follows a hydro update
 //!    (armed by Fluxes) selects.
 //!  dual_energy_eta = 1e-3: the selection threshold e/E.
-//!  floor_pay = rad_column (default of a fresh run with eos = general and <rad_m1>,
+//!  floor_pay = rad_column (default of a fresh run with eos = general and <rad_vet>,
 //!    recorded; none otherwise, and the only value without them) | rad | none.
 //!  floor_pay = rad: the energy the floors (and the dual selection) create in an active
 //!    cell, e_final - (E - KE), is taken from the cell's E_rad after the radiation stage
-//!    (RadiationM1::HydroConToPrim): gas + (c/chat) E_rad is exact per cell; what E_rad
+//!    (RadiationVet::HydroConToPrim): gas + (c/chat) E_rad is exact per cell; what E_rad
 //!    cannot cover (down to e_floor) is counted as unpaid.  floor_pay = rad_column:
 //!    that rest is taken from the E_rad of the cell's radial column (MeshBlock, nearest
 //!    first, as implicit_pos_gas_cons); what is still left is created, CLEAN WARNING.

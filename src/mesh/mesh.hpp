@@ -116,8 +116,8 @@ struct EventCounters {
   Real flr_dm_v, flr_de_v;
   // and the active cells the hydro density floor raised (all conversions; CLEAN FALLBACK)
   Real flr_dn;
-  // F4: <rad_m1> solver/limiter totals since the start of this run (or
-  // restart), filled at each event-log output (RadiationM1::EventTotals)
+  // F4: <rad_vet> solver/limiter totals since the start of this run (or
+  // restart), filled at each event-log output (RadiationVet::EventTotals)
   static constexpr int kNM1Tot = 13;
   bool m1on;
   Real m1tot[kNM1Tot];
