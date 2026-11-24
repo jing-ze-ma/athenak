@@ -107,3 +107,8 @@ hegiant.m1.02296.bin r/R 1.5-2.0 d 0.00-0.02: 0.6107 (N 3048) d 0.02-0.05: 0.612
 - Peak memory per GPU over the whole 51-cycle arm (nvidia-smi): H0 75919 MiB; H1 75915 MiB; HT 76059 MiB;  (8 ranks, 2 nodes 02-09 + 02-03). The rows > 200000 in the first post were torn lines from two samplers writing one file; corrected.
 - Node table: HG done (02-09, 02-03 now free); uniform pairs running: U4 on 02-16 (A) + 02-17 (B), U3 A->B on 02-11 (mg 4), U1 A->B on 01-17, U2 A->B on 01-15. Nothing else running or queued.
 - Cost from the dump-free clean stage time (rank 0): H0 179.3 s, H1 175.4 s (ratio 0.978), HT 188.8 s (1.053 x H0). Rule 4 (1.05 x H0) holds for H1 by this measure. Its per stage line: H0 16.3 / 14.8 (solves 4.31 / 5.41), H1 16.2 / 15.2 (4.22 / 5.61), HT 18.2 / 15.5 (5.59 / 6.22).
+
+## Panel edge: which dump was scored (your 24zzzzo item 4)
+- The scored files are hegiant.m1.02296.bin of H0 and HT. They **are the +6 dumps**: seam.sh only took files whose header says cycle = 794790 (= 794784 + 6), and 02296 is the first m1 dump of the run (written 14:16:21 for H0, against 14:18 for the end). The line 'cycle 794835' in the first listing belongs to hegiant.m1_vet.00154.bin (output6, the end-of-run final output), which was not scored. So the label stands: +6. The other dumps (and all bins) were deleted after the scoring, as you allowed; no second scoring is possible.
+- **Corrected label, HT (thinf=true): NOT harmless on HG**: panel edge d < 0.02 0.0027 (1.1-1.5 R) and 0.0079 (1.5-2 R) against 0.0000 / 0.0011 in H0; L_top up to 0.62 %; ef<=0 in one cell; max|ef/es-1| 78.2 (H0 0.30).
+- floor_pay columns follow in the H0F / H1F post (floor_pay sums of the old arms are yours: H0 4.1e31, H1 2.14e33, HT 9.1e31 erg).
