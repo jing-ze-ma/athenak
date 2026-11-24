@@ -51,6 +51,7 @@
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_clean.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
+#include "rad_m1/rad_m1_zalesak.hpp"
 #include "utils/eint_from_cons.hpp"
 #include "utils/imex_sdirk2.hpp"
 
@@ -1777,8 +1778,27 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
   // zalesak_active: a round reads slot sa and writes sb, an R that fell with its sign
   // bit set (-0 for 0); the next round evaluates only the cells with such a face
   // neighbour (ghosts included: the exchange copies the sign), the others keep |R|
-  const bool zac = zl_active;   // (rad_m1.hpp zalesak_active)
+  const bool zac = zl_active && !zl_conv;   // (rad_m1.hpp zalesak_active)
   const bool swp = t2_ffct_swp;
+  if (zl_conv) {   // (rad_m1.hpp zalesak_converge)
+    if (swp || t2_ffct_rk != 0 || zlr > 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/zalesak_converge excludes time2_face_fct_sweep, "
+                << "time2_face_fct_rounds and zalesak_local_rounds" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    const Real z0 = zl_sub[0];
+    ncell = ZalesakConverge(KOKKOS_LAMBDA(const int m, const int k, const int j,
+                                          const int i, const int c) {
+      if (hoi && hm_(m,k,j,i) > 0.0) return 1.0;
+      Real w, po, pi, pl, dw;
+      bool lim;
+      cell(m, k, j, i, w, po, pi, pl, dw, lim, c);
+      const Real wf = eth*cvol(m,k,j,i)*un_(m,M1_E,k,j,i);
+      return ZalesakBound(w + po - pi + pl - wf, po, fabs(w) + po + 2.0*pi + wf);
+    }, 0);
+    if (ncell > 0.0) {nround = static_cast<int>(zl_sub[0] - z0);}
+  }
   if (swp) {   // (time2_face_fct_sweep: x1 columns in place, slot cb the last round's R)
     // (one cell: the Zalesak test with x1 neighbours from ca, in place, and lateral ones
     // from cb, the last round's; true if its R fell)
@@ -1944,7 +1964,7 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
       iw_(m,c,k,j,i) = fabs(iw_(m,cf,k,j,i));
     });
   };
-  for (int r = 0; r < (swp ? 0 : 4096); ++r) {   // until no cell is newly limited
+  for (int r = 0; r < ((swp || zl_conv) ? 0 : 4096); ++r) {   // until none newly limited
     Real nv[2] = {0.0, 0.0};
     Real nl[2] = {0.0, 0.0};
     for (int s = 0; s < (zlr > 0 ? zlr : 1); ++s) {

@@ -2584,6 +2584,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     zl_active = pin->GetOrAddBoolean("rad_m1","zalesak_active",true) && (zl_local == 0) &&
                 !zl_colsweep;
   }
+  if (pin->DoesParameterExist("rad_m1","zalesak_converge")) {
+    zl_conv = pin->GetBoolean("rad_m1","zalesak_converge");
+  }
   zl_prof = (std::getenv("M1_FCT_PROF") != nullptr);
   if (impl_fmm && pin->DoesParameterExist("rad_m1","implicit_face_mmat_rowsel")) {
     fmm_rowsel = pin->GetBoolean("rad_m1","implicit_face_mmat_rowsel");

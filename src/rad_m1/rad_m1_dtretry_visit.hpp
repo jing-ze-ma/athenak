@@ -366,6 +366,7 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("zl_local", zl_local);
   v.value("zl_sub", zl_sub);
   v.value("zl_active", zl_active);
+  v.value("zl_conv", zl_conv);
   v.value("zl_colsweep", zl_colsweep);
   v.value("zl_cap", zl_cap);
   v.value("zl_capped", zl_capped);

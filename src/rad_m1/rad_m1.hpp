@@ -1205,6 +1205,11 @@ class RadiationM1 {
   // whose inputs did not change cannot be newly limited (it was evaluated with the same
   // inputs before): BITWISE.
   bool zl_active = false;
+  // <rad_m1>/zalesak_converge (default false, read only when named): the Zalesak R of
+  // time2_face_fct and clean_wb_fct as the greatest fixed point of the monotone bound
+  // ZalesakBound, converged on each rank between R exchanges (rad_m1_zalesak.hpp):
+  // independent of ranks and layout, a few exchanges per limiter call
+  bool zl_conv = false;
   // <rad_m1>/zalesak_colsweep (default false; face_mmat only): each round is
   // one x1 Gauss-Seidel sweep up + down per column (transverse R from the round's
   // snapshot).  Monotone from R = 1: the same fixed point up to the 1e-12 margin, not
@@ -2769,6 +2774,7 @@ class RadiationM1 {
   // iw ends before the Krylov vectors)
   int Time2FctSlot(const int q) const;
   void Time2FctHalo(const int c);
+  template <class F> Real ZalesakConverge(const F &rf, const int q);   // zalesak_converge
   int CleanRingRstN() const;            // ... in the restart files (version 4)
   // (vet_rotate_avg_ema, production's EMA: a fill takes 2 sets; cln_rr = the EMA offsets
   // e, the aux J and D11 and the set count n, cln_rpd = the Delta, a_ch and the next

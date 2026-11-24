@@ -33,6 +33,7 @@
 #include "rad_m1/m1_fluid.hpp"
 #include "rad_m1/rad_m1_clean.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
+#include "rad_m1/rad_m1_zalesak.hpp"
 #include "utils/repro_sum.hpp"
 #include "utils/scratch_view.hpp"
 
@@ -5978,17 +5979,20 @@ void RadiationM1::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
                       Kokkos::ALL, Kokkos::ALL), 1.0);
   }
   // (a cell's Q and P at the donors' R in slot c; a face's scale, its donor's R in ca)
+  // (s: the terms' magnitudes at R = 1, ZalesakBound's)
   auto qp = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, const int c,
-                          Real &q, Real &po) {
+                          Real &q, Real &po, Real &s) {
     const CleanArgs &x = *px;
     q = fp(m,3,k,j,i);
     po = 0.0;
+    s = fabs(q);
     for (int n = 0; n < nf; ++n) {
       const int dk = (n == 2), dj = (n == 1), di = (n == 0);
       const Real gl = x.h*CleanDivW(x, n, m, k, j, i, 0)*fp(m,n,k,j,i);   // (+ = in)
       const Real gh = x.h*CleanDivW(x, n, m, k, j, i, 1)*fp(m,n,k+dk,j+dj,i+di);
       if (gl > 0.0) {q += fabs(iw_(m,c,k-dk,j-dj,i-di))*gl;} else {po -= gl;}
       if (gh > 0.0) {po += gh;} else {q -= fabs(iw_(m,c,k+dk,j+dj,i+di))*gh;}
+      s += fabs(gl) + fabs(gh);
     }
   };
   auto sf = KOKKOS_LAMBDA(const int n, const int m, const int k, const int j,
@@ -5999,7 +6003,17 @@ void RadiationM1::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
   };
   const int n1 = ie - is + 1, nji = (je - js + 1)*n1, nkji = (ke - ks + 1)*nji;
   int nr = 0, sa = ca, sb = cb;
-  for (; nr < 4096; ++nr) {   // (R only falls: until no cell is newly limited)
+  const Real zh = zl_halos[1];
+  if (zl_conv) {   // (rad_m1.hpp zalesak_converge)
+    const Real z0 = zl_sub[1];
+    if (ZalesakConverge(KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
+                                      const int c) {
+          Real q, po, s;
+          qp(m, k, j, i, c, q, po, s);
+          return ZalesakBound(q, po, s);
+        }, 1) > 0.0) {nr = static_cast<int>(zl_sub[1] - z0);}
+  }
+  for (; nr < (zl_conv ? 0 : 4096); ++nr) {   // (R only falls: until none newly limited)
     Real nv = 0.0;
     const bool all = (nr == 0);
     Kokkos::parallel_reduce("cln_wbfr", CleanRp256(DevExeSpace(), 0, (nmb1 + 1)*nkji),
@@ -6015,8 +6029,8 @@ void RadiationM1::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
       }
       Real r = rc;
       if (act) {
-        Real q, po;
-        qp(m, k, j, i, sa, q, po);
+        Real q, po, s;
+        qp(m, k, j, i, sa, q, po, s);
         const Real rq = (q > 0.0 && po > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/po) : 0.0;
         if (!(q - rc*po > 0.0) && rq < rc) {
           r = -rq;
@@ -6041,8 +6055,8 @@ void RadiationM1::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
     const CleanArgs &x = *px;
     const int m = idx/nkji, k = ks + (idx%nkji)/nji, j = js + (idx%nji)/n1;
     const int i = is + idx%n1;
-    Real q, po;
-    qp(m, k, j, i, ca, q, po);
+    Real q, po, s;
+    qp(m, k, j, i, ca, q, po, s);
     const Real rc = iw_(m,ca,k,j,i);
     if (!(q - rc*po > 0.0)) a += 1.0;
     b += (1.0 - rc)*po*CleanVol(x, m, k, j, i);
@@ -6057,8 +6071,10 @@ void RadiationM1::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
   lv[0] = CleanReduce(lv[0], false);
   lv[1] = CleanReduce(lv[1], false);
   if (global_variable::my_rank == 0) {
-    std::printf("CLEAN WBFCT cycle %d t2s %d rounds %d left %.0f kept %.6e\n",
-                pmy_pack->pmesh->ncycle, t2_solve, nr, lv[0], lv[1]);
+    const std::string xs = zl_conv ? " exchanges " +
+                           std::to_string(static_cast<int>(zl_halos[1] - zh)) : "";
+    std::printf("CLEAN WBFCT cycle %d t2s %d rounds %d left %.0f kept %.6e%s\n",
+                pmy_pack->pmesh->ncycle, t2_solve, nr, lv[0], lv[1], xs.c_str());
   }
   for (int n = 0; n < nf && pfo; ++n) {   // (the stored Phi: what moved E)
     CleanFor("cln_wbfs", nmb1, ks, ke+(n == 2), js, je+(n == 1), is, ie+(n == 0),
