@@ -44,3 +44,7 @@ Pairs on the common first N rows: last-row relative difference (second - first)/
 | 99 | 29.75 | 25.32 | 2.5336 | 2.5275 |
 - first 100 rows: C0 dt min/mean 10.51 / 19.89, C1 13.94 / 25.67 (mean ratio 1.290); model time advanced C0 1975.5 s, C1 2552.8 s
 - first 300 rows: C0 dt min/mean 10.51 / 32.88, C1 13.94 / 35.12 (mean ratio 1.068); model time advanced C0 9848.7 s, C1 10521.3 s
+
+## bsg-thinf-fresh (BSGf = the T2 fresh production c0-300, 02-11, outputs on) (11-24 13:23)
+| arm | hst rows | s/cyc (cycles) | dt min/mean/max | its t2s2 (sum, solves) | its t2s3 | passes/cyc | L_top/L_in end (mean) | L_bot/L_in | KE_int end (drift) | dM/M | dE/E | CW/FATAL/inf/DT_RETRY | FWB / FCONE lines |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
