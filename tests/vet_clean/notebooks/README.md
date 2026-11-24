@@ -39,7 +39,7 @@ With 4 threads per run most notebooks take under a minute; `order.ipynb` and `wb
 (the cubed-sphere `wb_cs`) take 2-5 min.
 `nbutil.py` holds the two shared helpers: `suite()` (runs `run_tests.py --only TEST --keep
 --record`) and `verdict()` (the suite's PASS / FAIL check against `ref/references.json`).
-The committed notebooks were executed with the CPU binary of commit 69bfe5d04; `radwave`,
-`wedge_sym` and `floor_pay` with that of ad213fb5e. All ten run with `nbconvert` on
-Python 3.6 (numpy 1.19, matplotlib 3.3, nbconvert 6.0). `jupyter lab` needs JupyterLab,
+The committed notebooks were executed with the CPU binary of commit 30d0e3461 (Python 3.13,
+numpy, matplotlib, nbconvert 7); their key plots are exported to `docs/vet_clean/figures/`
+(`export_figures.py`). All ten also run with `nbconvert` on Python 3.6 (numpy 1.19, matplotlib 3.3, nbconvert 6.0). `jupyter lab` needs JupyterLab,
 which `pip install jupyter` does not install on Python 3.6; use `jupyter notebook` there.
