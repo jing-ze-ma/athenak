@@ -283,8 +283,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     } else if (vm.compare("extrap") == 0) {
       t2_vcmode = 3;
     } else if (vm.compare("extrap2") == 0) {
-      t2_vcmode = 4;   // (rad_vet.hpp Time2VetColExtrap2)
-      x2_fields = pin->GetOrAddInteger("rad_vet", "time2_vet_x2_fields", 9);
+      t2_vcmode = 4;   // (restart files of the old solver: its channels, Time2RstSet)
     } else {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_vet>/" << kvc << " = '" << vm
@@ -540,11 +539,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     Kokkos::realloc(t2f2, nmb, n3, n2+1, n1);
     if (trans_x3) {Kokkos::realloc(t2f3, nmb, n3+1, n2, n1);}
   }
-  const bool noh = cln_not2h;   // clean_skip_time2_hist
-  if (impl_pred && !noh) {
-    Kokkos::realloc(ipred2, nmb, (impl_pord == 2) ? 5 : 3, n3, n2, n1);
-    Kokkos::deep_copy(ipred2, 0.0);
-  }
   if (vet_sc) {
     Kokkos::realloc(vet_prev, nmb, M1_T2_NVET, n3, n2, n1);
     Kokkos::realloc(vet_now, nmb, M1_T2_NVET, n3, n2, n1);
@@ -556,19 +550,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     // Time2VetStart's save slots (E, T) and the saved stage-start opacities;
     // time2_vet_col = predict | rebuild: also KT, T(Y1), E(Y1) and the inner face flux
     // (scheme = clean: only ImplicitSolve's stage chain reads them; not made)
-    if (t2_vcmode == 4) {
-      if (!noh) {
-        Kokkos::realloc(x2_tt, nmb, M1_X2_NTT, n3, n2, n1);
-        Kokkos::realloc(x2_hr, nmb, M1_X2_NHR, n3, n2, n1);
-        Kokkos::realloc(x2_q, nmb, n3, n2);
-        Kokkos::deep_copy(x2_tt, 0.0);
-        Kokkos::deep_copy(x2_hr, 0.0);
-        Kokkos::deep_copy(x2_q, 0.0);
-      }
-      x2_ok = false;
-      x2_t = 0.0;
-      x2_alpha = -2.0;
-    }
     if (t2_vcmode == 3) {
       Kokkos::realloc(vcol_prev, nmb, n3, n2, n1);
       Kokkos::realloc(vcol_qprev, nmb, n3, n2);
@@ -1966,94 +1947,6 @@ void RadiationVet::Time2VetSourceInit(ParameterInput *pin, const bool act,
   }
 }
 
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::Time2VetColExtrap2
-//! \brief rbfast-1021 time2_vet_col = extrap2 (rad_vet.hpp): the hand-over fields of the
-//! build at U^n (just made by Time2VetStart) extrapolated to t^{n+1} with the previous
-//! step's build; the raw build becomes the history
-
-void RadiationVet::Time2VetColExtrap2() {
-  const Real tn = pmy_pack->pmesh->time;
-  const Real dtn = pmy_pack->pmesh->dt;
-  const Real r = (x2_ok && tn > x2_t) ? dtn/(tn - x2_t) : 0.0;
-  // the vet_gd fields only within one rotated direction set
-  // (vet_gd_rotate_xfade: the cross-faded closure is continuous across the
-  // set changes, so its fields are extrapolated across them too)
-  const Real rg = (vgd_on && (vgd_alpha == x2_alpha || vgd_xf)) ? r : 0.0;
-  const int xf = x2_fields;
-  const Real rk = (xf & 1) ? r : 0.0, rl = (xf & 2) ? rg : 0.0, rh = (xf & 4) ? rg : 0.0;
-  const int nmb1 = pmy_pack->nmb_thispack - 1;
-  const int n3 = static_cast<int>(tau_ten.extent(2));
-  const int n2 = static_cast<int>(tau_ten.extent(3));
-  const int n1 = static_cast<int>(tau_ten.extent(4));
-  const int ntt = std::min(static_cast<int>(tau_ten.extent(1)), M1_X2_NTT);
-  auto tt_ = tau_ten;
-  auto pt_ = x2_tt;
-  const Real fkm = vcol_axis_flux ? (1.0/3.0) : vcol_fkmin;
-  const int lat0 = M1_TT_LAT0;
-  par_for("vet_t2_x2tt", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    for (int c = 0; c < ntt; ++c) {
-      const Real gn = tt_(m,c,k,j,i);
-      Real v = gn;
-      if (c == 0) {
-        v = fmin(fmax(gn + rk*(gn - pt_(m,0,k,j,i)), fkm), 1.0);
-      } else if (c >= lat0) {
-        v = gn + rl*(gn - pt_(m,c,k,j,i));
-      }
-      pt_(m,c,k,j,i) = gn;
-      tt_(m,c,k,j,i) = v;
-    }
-  });
-  const int nhr = std::min(static_cast<int>(vgd_hr.extent(1)), M1_X2_NHR);
-  if (vgd_on && vgd_hr.extent_int(0) > nmb1 && nhr > 0 &&
-      static_cast<int>(vgd_hr.extent(4)) == n1) {
-    auto hr_ = vgd_hr;
-    auto ph_ = x2_hr;
-    const int nh3 = static_cast<int>(vgd_hr.extent(2));
-    const int nh2 = static_cast<int>(vgd_hr.extent(3));
-    par_for("vet_t2_x2hr", DevExeSpace(), 0, nmb1, 0, nh3-1, 0, nh2-1, 0, n1-1,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      // r+_r < 0 flags a cell without a formal solution: it keeps its build
-      const bool ok = (hr_(m,0,k,j,i) >= 0.0) && (ph_(m,0,k,j,i) >= 0.0);
-      for (int c = 0; c < nhr; ++c) {
-        const Real gn = hr_(m,c,k,j,i);
-        Real v = gn;
-        if (ok && c < M1_VGD_HRNX) {
-          v = gn + rh*(gn - ph_(m,c,k,j,i));
-          if (c < 6) {
-            v = (c % 2 == 0) ? fmin(fmax(v, 0.0), 1.0) : fmin(fmax(v, -1.0), 0.0);
-          } else if (c == M1_VGD_HREP) {
-            v = fmin(fmax(v, 0.0), 1.0);
-          } else {
-            v = fmax(v, 0.0);
-          }
-        }
-        ph_(m,c,k,j,i) = gn;
-        hr_(m,c,k,j,i) = v;
-      }
-    });
-  }
-  if (vcol_sq && vcol_q.extent_int(0) > nmb1) {
-    auto q_ = vcol_q;
-    auto pq_ = x2_q;
-    const Real qlo = vcol_qmin, qhi = vcol_qmax;
-    const int nq3 = static_cast<int>(vcol_q.extent(1));
-    const int nq2 = static_cast<int>(vcol_q.extent(2));
-    // the gd top cell's q under vet_gd_replace
-    const Real rq = (xf & 8) ? (vgd_replace ? rg : r) : 0.0;
-    par_for("vet_t2_x2q", DevExeSpace(), 0, nmb1, 0, nq3-1, 0, nq2-1,
-    KOKKOS_LAMBDA(const int m, const int k, const int j) {
-      const Real qn = q_(m,k,j);
-      q_(m,k,j) = fmin(fmax(qn + rq*(qn - pq_(m,k,j)), qlo), qhi);
-      pq_(m,k,j) = qn;
-    });
-  }
-  x2_t = tn;
-  x2_alpha = vgd_alpha;
-  x2_ok = true;
-}
-
 int RadiationVet::Time2FctSlot(const int q) const {
   return q ? M1_IW_S2 : M1_IW_S1;
 }
@@ -2088,14 +1981,15 @@ int RadiationVet::CleanRstNfv() const {
 
 //----------------------------------------------------------------------------------------
 //! \fn RadiationVet::Time2Rst*
-//! \brief the restart channels: K1 (M1_T2_NK), then ipred2 (3, implicit_predictor), then
-//! vet_prev (M1_T2_NVET, closure = vet_sc)
+//! \brief the restart channels: K1 (M1_T2_NK), then vet_prev (M1_T2_NVET, closure =
+//! vet_sc); files of the old solver (version < 4) also hold its ipred2 (implicit_predictor)
+//! and extrap2 channels, read past
 
 int RadiationVet::Time2RstNchWant() {
   // the hesdirk2 slope channels, then (any time scheme) the clean scheme's state.
-  // (version 4, the clean scheme: no channels for what clean_skip_time2_hist leaves
-  // zero, and the ring's offsets dense, CleanRingRstCopy)
-  const bool sk = cln_not2h && t2_rstv >= 4;
+  // (version 4, the clean scheme: no ipred2 and extrap2 channels, and the ring's offsets
+  // dense, CleanRingRstCopy)
+  const bool sk = t2_rstv >= 4;
   const int np = (impl_pord == 2) ? 5 : 3;
   const int nt = (time_scheme != M1_TIME_HESDIRK2) ? 0 :
          M1_T2_NK + ((impl_pred && !sk) ? np : 0) + (vet_sc ? M1_T2_NVET : 0)
@@ -2213,14 +2107,8 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
     put(c, M1_T2_NK, t2k1, 0);
     c += M1_T2_NK;
   }
-  // (clean_skip_time2_hist: no predictor and extrap2 channels, version 4; the file is
-  // written in this run's layout, t2_rstv = 5)
-  const bool noh = cln_not2h;
-  if (h2 && impl_pred && !noh) {
-    const int np = (impl_pord == 2) ? 5 : 3;
-    put(c, np, ipred2, 0);
-    c += np;
-  }
+  // (no predictor and extrap2 channels, version 4; the file is written in this run's
+  // layout, t2_rstv = 5)
   if (h2 && vet_sc) {
     put(c, M1_T2_NVET, vet_prev, 0);
     c += M1_T2_NVET;
@@ -2304,25 +2192,6 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
     }
     c += 6;
   }
-  // extrap2: the raw builds of the last step, q at i = 0, time, alpha
-  if (h2 && vet_col && t2_vcmode == 4 && !noh) {
-    put(c, M1_X2_NTT, x2_tt, 0);
-    put(c + M1_X2_NTT, M1_X2_NHR, x2_hr, 0);
-    c += M1_X2_NTT + M1_X2_NHR;
-    auto a_ = a;
-    auto q_ = x2_q;
-    const Real t = x2_ok ? x2_t : -1.0e300, al = x2_alpha, ds = x2_dts;
-    const int cq = c - w0;
-    const int mq = m0;
-    par_for("vet_t2_x2rst", DevExeSpace(), 0, nmb - 1, 0, na3-1, 0, na2-1, 0, na1-1,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      if (cq >= 0 && cq < nw) a_(m,cq,k,j,i) = (i == 0) ? q_(m+mq,k,j) : 0.0;
-      if (cq+1 >= 0 && cq+1 < nw) a_(m,cq+1,k,j,i) = t;
-      if (cq+2 >= 0 && cq+2 < nw) a_(m,cq+2,k,j,i) = al;
-      if (cq+3 >= 0 && cq+3 < nw) a_(m,cq+3,k,j,i) = ds;
-    });
-    c += 4;
-  }
   // (a window that does not reach the rays' intensities: restart.cpp windows only a
   // record without them)
   if (w0 > 0 || w1 < c + CleanRstNfv()) return;
@@ -2347,14 +2216,14 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   auto mb = std::make_pair(0, nmb);
   auto AL = Kokkos::ALL;
   const bool h2 = (time_scheme == M1_TIME_HESDIRK2);
-  // clean_skip_time2_hist: a file's predictor / extrap2 channels are read past (a NOTE
-  // once where they hold values: files of the old scheme)
+  // a file's predictor / extrap2 channels are read past (a NOTE once where they hold
+  // values: files of the old scheme)
   auto skip = [&w]() {
     static bool said = false;
     for (size_t q = 0; q < w.span() && !said && global_variable::my_rank == 0; ++q) {
       if (w.data()[q] == 0.0) continue;
-      std::cout << "<rad_vet> NOTE: clean_skip_time2_hist: the restart file's implicit "
-                << "predictor / extrap2 channels are skipped" << std::endl;
+      std::cout << "<rad_vet> NOTE: the restart file's implicit predictor / extrap2 "
+                << "channels are skipped" << std::endl;
       said = true;
     }
   };
@@ -2381,14 +2250,10 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     return;
   }
   if (h2) ch -= M1_T2_NK;
-  if (h2 && impl_pred && !(cln_not2h && t2_rstv >= 4)) {
+  if (h2 && impl_pred && t2_rstv < 4) {
     const int np = (impl_pord == 2) ? 5 : 3;
     if (ch < np) {
-      if (!cln_not2h) {
-        DeepCopyAcross(Kokkos::subview(ipred2, mb, ch, AL, AL, AL), w);
-      } else {
-        skip();
-      }
+      skip();
       return;
     }
     ch -= np;
@@ -2524,31 +2389,8 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     }
     ch -= nd;
   }
-  // extrap2 (Time2RstPack)
-  // (clean_skip_time2_hist: no extrap2 history kept, x2_ok stays false)
-  if (h2 && vet_col && t2_vcmode == 4 && cln_not2h) skip();
-  if (h2 && vet_col && t2_vcmode == 4 && !cln_not2h) {
-    if (ch < M1_X2_NTT) {
-      DeepCopyAcross(Kokkos::subview(x2_tt, mb, ch, AL, AL, AL), w);
-    } else if (ch < M1_X2_NTT + M1_X2_NHR) {
-      DeepCopyAcross(Kokkos::subview(x2_hr, mb, ch - M1_X2_NTT, AL, AL, AL), w);
-    } else if (ch == M1_X2_NTT + M1_X2_NHR) {
-      for (int m = 0; m < nmb; ++m) {   // the q column sits at i = 0
-        auto hq = Kokkos::create_mirror_view(Kokkos::subview(x2_q, m, AL, AL));
-        for (int k = 0; k < static_cast<int>(hq.extent(0)); ++k) {
-          for (int j = 0; j < static_cast<int>(hq.extent(1)); ++j) {hq(k,j) = w(m,k,j,0);}
-        }
-        Kokkos::deep_copy(Kokkos::subview(x2_q, m, AL, AL), hq);
-      }
-    } else if (ch == M1_X2_NTT + M1_X2_NHR + 1) {
-      x2_t = w(0,0,0,0);
-      x2_ok = (x2_t > -1.0e299);
-    } else if (ch == M1_X2_NTT + M1_X2_NHR + 2) {
-      x2_alpha = w(0,0,0,0);
-    } else {
-      x2_dts = w(0,0,0,0);
-    }
-  }
+  // extrap2 (the old solver's files, version < 4): read past
+  if (h2 && vet_col && t2_vcmode == 4) skip();
 }
 
 //----------------------------------------------------------------------------------------
@@ -2739,9 +2581,8 @@ void RadiationVet::RstFingerprint(const char *tag) {
   if (global_variable::my_rank == 0) {std::printf("RSTFP cyc %d tag %s\n", cy, tag);}
   M1Fp("u0", u0, cy); M1Fp("opac", opac, cy); M1Fp("iw", iw, cy);
   M1Fp("t2k1", t2k1, cy); M1Fp("t2k2", t2k2, cy); M1Fp("ipred", ipred, cy);
-  M1Fp("ipred2", ipred2, cy); M1Fp("f0x1", f0x1, cy); M1Fp("f0x2", f0x2, cy);
+  M1Fp("f0x1", f0x1, cy); M1Fp("f0x2", f0x2, cy);
   M1Fp("f0x3", f0x3, cy); M1Fp("tau_ten", tau_ten, cy); M1Fp("vet_cell", vet_cell, cy);
-  M1Fp("x2_tt", x2_tt, cy); M1Fp("x2_hr", x2_hr, cy); M1Fp("x2_q", x2_q, cy);
   M1Fp("ctr_mem", ctr_mem, cy); M1Fp("csk1", csk1, cy); M1Fp("ifw", ifw, cy);
   M1Fp("ifw2", ifw2, cy); M1Fp("ifw3", ifw3, cy); M1Fp("thx2", thx2, cy);
   M1Fp("thx3", thx3, cy); M1Fp("ktd", ktd, cy); M1Fp("vgd_hr", vgd_hr, cy);
@@ -2775,9 +2616,9 @@ void RadiationVet::RstFingerprint(const char *tag) {
   }
   if (global_variable::my_rank == 0) {
     std::printf("RSTFP cyc %d scalars pred_ok %d pred_dt %.17e pred2_ok %d "
-                "pred2_dt %.17e t2_ok %d t2_dtprev %.17e t2_vprev %d x2_ok %d x2_t %.17e "
+                "pred2_dt %.17e t2_ok %d t2_dtprev %.17e t2_vprev %d "
                 "abe %d %d\n", cy, pred_ok ? 1 : 0, pred_dt, pred2_ok ? 1 : 0, pred2_dt,
-                t2_ok ? 1 : 0, t2_dtprev, t2_vprev ? 1 : 0, x2_ok ? 1 : 0, x2_t,
+                t2_ok ? 1 : 0, t2_dtprev, t2_vprev ? 1 : 0,
                 t2_abe_len, t2_abe_left);
     std::fflush(stdout);
   }  if (global_variable::my_rank == 0) {

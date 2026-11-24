@@ -350,7 +350,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("t2f1", t2f1);
   v.view("t2f2", t2f2);
   v.view("t2f3", t2f3);
-  v.view("ipred2", ipred2);
   v.value("pred2_ok", pred2_ok);
   v.value("pred2_dt", pred2_dt);
   v.view("vet_prev", vet_prev);
@@ -387,14 +386,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("t2pth", t2pth);
   v.view("vcol_prev", vcol_prev);
   v.view("vcol_qprev", vcol_qprev);
-  v.view("x2_tt", x2_tt);
-  v.view("x2_hr", x2_hr);
-  v.view("x2_q", x2_q);
-  v.value("x2_t", x2_t);
-  v.value("x2_alpha", x2_alpha);
-  v.value("x2_ok", x2_ok);
-  v.value("x2_dts", x2_dts);
-  v.value("x2_fields", x2_fields);
   v.value("dbg_rst_fp", dbg_rst_fp);
   v.value("dbg_rst_fp_cycle", dbg_rst_fp_cycle);
   v.value("dbg_rst_fp_dump", dbg_rst_fp_dump);
@@ -592,7 +583,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_consist", cln_consist);
   v.value("cln_closit", cln_closit);
   v.value("cln_extrap", cln_extrap);
-  v.value("cln_not2h", cln_not2h);
   v.value("cln_edd", cln_edd);
   v.value("cln_sphere", cln_sphere);
   v.value("cln_sph_r", cln_sph_r);

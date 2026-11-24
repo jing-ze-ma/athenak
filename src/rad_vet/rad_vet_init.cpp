@@ -617,11 +617,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(ctr_mem, nmb, 4, ncells3, ncells2, ncells1);
   }
   Kokkos::deep_copy(iw, 0.0);
-  if (impl_pred && !cln_not2h) {
-    Kokkos::realloc(ipred, nmb, (impl_pord == 2) ? 5 : 3, ncells3, ncells2, ncells1);
-    Kokkos::deep_copy(ipred, 0.0);
-    pred_ok = false;
-  }
   if (trans_on) {
     Kokkos::realloc(f0x2, nmb, ncells3, ncells2+1, ncells1);
     Kokkos::deep_copy(f0x2, 0.0);

@@ -1136,7 +1136,6 @@ class RadiationVet {
   DvceArray5D<Real> t2k2;       // (m,M1_T2_NK,k,j,i) the stage-2 slope K2
   DvceArray5D<Real> t2inc;      // (m,M1_T2_NK,k,j,i) old vector - stage start state
   DvceArray4D<Real> t2f1, t2f2, t2f3;  // the face fluxes of U^n (Heun average)
-  DvceArray5D<Real> ipred2;     // the predictor increment of the stage-2 solve
   bool pred2_ok{};
   Real pred2_dt{};
   DvceArray5D<Real> vet_prev;   // vet_sc: the start-of-step tensor of the previous step
@@ -1246,31 +1245,9 @@ class RadiationVet {
   void Time2PredTheta(const Real dt, const Real gdt, const bool dbg);
   void Time2PredDebugSc();
   void Time2VetColExtrap();
-  // time2_vet_col = extrap2 (t2_vcmode 4): ONE build per step at U^n (as lag
-  // / extrap), hand-over fields of the build extrapolated to t^{n+1} with the build of
-  // the previous step, g = g^n + r (g^n - g^{n-1}), r = dt/(t^n - t^{n-1}): D(t^{n+1}) +
-  // O(dt^2) from SOLVED states (no stiff K1 in it), the cost of predict.  Fields: tau_ten
-  // f_K (slot 0, clamped [f_K min, 1]) and the lateral slots, vet_gd vgd_hr (half-range
-  // ratios clamped to their ranges, C1, eps, J; a cell whose r+_r < 0 now or before keeps
-  // its build), the outer q (vcol_q, its range).  The vet_gd fields are not extrapolated
-  // across a new rotated direction set (vgd_alpha changed): that step keeps their build.
-  // History (raw builds, time, alpha) is restart and dt_retry state.
-  void Time2VetColExtrap2();
-  DvceArray5D<Real> x2_tt, x2_hr;   // the previous build: tau_ten (10), vgd_hr (10) slots
-  DvceArray3D<Real> x2_q;           // ... and vcol_q
-  Real x2_t = 0.0, x2_alpha = -2.0;
-  bool x2_ok = false;
-  // the dt of the relaxed VET source of the extrap2 build, a smoothed
-  // step x2_dts = max(dt, x2_dts/2) (a tlim-clamped or retried short step does not
-  // switch stiff cells to the unrelaxed source; that dipped L_top 0.6 % for ~4 steps)
-  Real x2_dts = 0.0;
-  // time2_vet_x2_fields (bits: 1 f_K, 2 the lateral slots, 4 vgd_hr, 8 q; default 9):
-  // extrapolating the vet_gd lateral / half-range fields (rotated-set ray noise) put a
-  // 5e-2 error vs the converged reference into the accretor stream phase; f_K + q alone
-  // (the gd fields as built at U^n) = the rebuild accuracy
-  int x2_fields = 9;
-  static constexpr int M1_X2_NTT = 10, M1_X2_NHR = 10;
-  static constexpr int M1_X2_NCH = M1_X2_NTT + M1_X2_NHR + 4;   // + q, time, alpha, dts
+  // the old solver's time2_vet_col = extrap2 restart channels (version < 4, read past):
+  // its tau_ten (10) and vgd_hr (10) builds, q, time, alpha, dts
+  static constexpr int M1_X2_NCH = 24;
   void Time2Report();
   void RstFingerprint(const char *tag);
   int dbg_rst_fp = 0;
@@ -1821,7 +1798,6 @@ class RadiationVet {
   bool cln_consist = false;     // clean_consistency: bracket C = F_ray - f(Ur), cell
   bool cln_closit = false;      // clean_closure: predict | iterate
   int cln_extrap = 0;           // clean_closure = extrap (1) | extrap2 (2)
-  bool cln_not2h = false;       // clean_skip_time2_hist: no ipred, ipred2, x2_* arrays
                                 // | extrap1 (3, cell default)
   bool cln_edd = false;         // clean_closure = eddington (D = I/3, no rays)
   bool cln_sphere = false;      // clean_closure = sphere (spherical polar)

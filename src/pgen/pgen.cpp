@@ -597,7 +597,6 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // once more, behind the warm-start header.  It says how many ipred channels the tail
   // carries behind the warm-start slabs and the dt of the step they were stored on.
   int npred_file = 0;
-  Real pred_dt_file = 0.0;
   if (std::memcmp(variabledata, &(radvet::kM1PredRstMagic[0]),
                   sizeof(radvet::kM1PredRstMagic)) == 0) {
     char pred_hdr[2*sizeof(std::int32_t) + sizeof(Real)];
@@ -620,7 +619,6 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     std::int32_t hdr[2] = {0, 0};
     if (ok) {
       std::memcpy(&(hdr[0]), &(pred_hdr[0]), sizeof(hdr));
-      std::memcpy(&pred_dt_file, &(pred_hdr[0]) + sizeof(hdr), sizeof(pred_dt_file));
     }
     if (!ok || hdr[0] != 1 || hdr[1] < 1 || hdr[1] > 5) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -1874,20 +1872,6 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
               << "level and problem/rt_impl_warm = 2 wants two; the first column solve "
               << "does not extrapolate and this restart is not bitwise." << std::endl;
   }
-  // the <rad_vet> predictor increment: delivered straight into ipred (allocated by the
-  // RadiationVet constructor) when this run keeps one with the same channel count.  A
-  // file without it leaves pred_ok = false: the first step cold starts, as before.
-  const bool pred_want = (pradvet != nullptr) && pradvet->impl_pred &&
-                         !pradvet->cln_not2h;
-  const bool pred_read = pred_want && (npred_file > 0) &&
-                         (static_cast<int>(pradvet->ipred.extent(1)) == npred_file) &&
-                         (static_cast<int>(pradvet->ipred.extent(0)) >= nmb);
-  if (pred_want && !pred_read && global_variable::my_rank == 0) {
-    std::cout << "### WARNING: restart file has no <rad_vet> implicit_predictor "
-              << "increment (written before it was added, or by a run without one); "
-              << "the first implicit step cold starts and this restart is not bitwise."
-              << std::endl;
-  }
   // time_scheme = hesdirk2: the stored slope, when this run wants one of that size.  A
   // file without it leaves t2_ok = false: the first step is backward Euler.
   // a be_only run never uses the slope (each step is backward Euler); the same block
@@ -1986,7 +1970,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                  "the "
               << "restart is not bitwise)." << std::endl;
   }
-  if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read || t2_read || t2_k1 ||
+  if (wt_hyd || wt_mhd || nwarm_read > 0 || t2_read || t2_k1 ||
       nck_file > 0 ||
       neint_file > 0 ||   // an ideal-gas eint slab alone
       ctr_read || rss_read || ra_read || ams_read ||
@@ -2109,20 +2093,6 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         read_slab("rt warm start 2");
         ts::rt_warm_stage2.assign(wtin.data(), wtin.data() + nw);
       }
-    }
-    if (pred_read) {
-      // step over the warm-start slabs this run did not want
-      offset_myrank += static_cast<IOWrapperSizeT>(nwarm_file
-                                                   - nwarm_read)*nout1*nout2*nout3
-                       *sizeof(Real);
-      myoffset = offset_myrank;
-      for (int n=0; n<npred_file; ++n) {
-        read_slab("rad_vet predictor");
-        DeepCopyAcross(Kokkos::subview(pradvet->ipred, std::make_pair(0,nmb), n,
-                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), wtin);
-      }
-      pradvet->pred_ok = true;
-      pradvet->pred_dt = pred_dt_file;
     }
     if (t2_read || t2_k1) {
       // the slope slabs sit behind every other tail slab of the record

@@ -760,14 +760,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     if (cln_sphere) cln_sph_r = pin->GetReal("rad_vet","clean_sphere_radius");}
-    // clean_skip_time2_hist (read only when named; default true): no arrays for the
-    // implicit solve's predictors (ipred, ipred2) and the vet_col extrap2 builds (x2_tt,
-    // x2_hr, x2_q), which the clean scheme neither reads nor writes; their restart
-    // channels are zeros and carry no extrap2 history (x2_t = -1e300)
-    cln_not2h = true;
-    if (pin->DoesParameterExist("rad_vet","clean_skip_time2_hist")) {
-      cln_not2h = pin->GetBoolean("rad_vet","clean_skip_time2_hist");
-    }
     {const std::string nn = pin->GetOrAddString("rad_vet","clean_nl_norm","global");
     if (nn.compare("global") != 0 && nn.compare("cell") != 0) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__

@@ -435,6 +435,8 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     // (the Zalesak fixed-point and local-round variants, removed: only off)
     {"rad_vet/zalesak_converge", "!"}, {"rad_vet/zalesak_local_rounds", "!"},
     {"rad_vet/zalesak_colsweep", "!"},
+    // (the old solver's step history: never kept, its restart channels are read past)
+    {"rad_vet/clean_skip_time2_hist", "=true"},
     // (the explicit transport's sub-cycling, removed with it)
     {"rad_vet/cfl_rad", ""}, {"rad_vet/subcycle", ""},
     // (the vet_gd twin and its symmetric reference, removed, L4: with vet_gd on the twin
