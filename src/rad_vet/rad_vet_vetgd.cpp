@@ -4,55 +4,20 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_vetgd.cpp
-//! \brief <rad_vet>/vet_gd = true (m1-vet-gd; design rt_design_1003/SC_PROPER_SP.md,
-//! candidate b): the Eddington tensor on the spherical-polar wedge from a
-//! short-characteristics (SC) formal solution along GLOBALLY FIXED directions.
+//! \brief <rad_vet>/vet_gd: the Eddington tensor on the spherical-polar grid from a
+//! short-characteristics formal solution along globally fixed (Cartesian) directions.
 //!
-//! WHAT IS SOLVED.  At every vet_col build (the same state, source S and extinction chi
-//! as vet_col and vet_col_lat: VetLatSweep fills ln chi, ln S and the first shell
-//! vlat_icut), the grey transfer equation  n . grad I = chi (S - I)  is swept shell by
-//! shell for the N = 12 vet_gd_nside^2 HEALPix ring centres n_d, fixed in the CARTESIAN
-//! frame (straight rays: the curvature of the sp grid enters only through the positions,
-//! there is no angular redistribution and no angular numerical diffusion).  The weights
-//! are equal up to one global factor in n_z^2 that makes the set integrate 1, n and nn
-//! exactly, so f = 1/3 holds for an isotropic or linear intensity in every cell frame.
+//! The grey equation n . grad I = chi (S - I) is swept shell by shell for a fixed set of
+//! straight-ray directions (HEALPix or product set; weights integrate 1, n, nn exactly).
 //! Two passes, one launch per shell, one thread per (block, cell, direction):
-//!   inward, top-down, for the (cell, direction) pairs with n . r_hat < 0: the upwind
-//!     point is where the backward ray meets the sphere of shell i+1 (the top shell from
-//!     the vacuum top face);
-//!   outward, bottom-up, for n . r_hat >= 0: the sphere of shell i-1, or, for a ray that
-//!     misses it, the same shell beyond the tangent point (an inward value of the first
-//!     pass), or the inner face of the first shell (the diffusion intensity, as
-//!     vet_col_lat; S of the FACE with vet_bc_diff = face, default).
-//! For straight rays this order has no cycles (r is monotone on either side of the one
-//! tangent point).  At the upwind point I (the SAME direction index), ln chi and ln S are
-//! bilinear in (theta, phi) index space; the source is linear in tau along the segment
-//! (vet_col's positive first-order weights).  This is rt_design_1003/sc_proper/gd_sc.py,
-//! against which the C++ is gated.
-//!
-//! WALLS.  At a periodic theta or phi wall of the wedge the ghost cells hold the copied
-//! intensities of the other side; they are re-indexed after every exchange by the LOCAL
-//! FRAME convention of the run's own periodic boundaries (the (r, theta, phi)
-//! components of a direction are kept, i.e. n -> M n with M the rotation between the
-//! two frames, and the nearest set direction is read).  For a phi period of pi/2 the
-//! HEALPix set is invariant and the map is an exact permutation.
-//!
-//! SEVERAL MESHBLOCKS.  An upwind point inside the block reads the current sweep; one in
-//! the lateral ghost band reads the neighbour's intensity of the LAST sweep (exchanged
-//! after every sweep): a lagged inflow across block boundaries (block-Jacobi).  Reads
-//! beyond the ghost band are clamped and counted (very oblique rays through laterally
-//! thin cells).
-//!
-//! HAND-OVER: the vet_col_lat interface (tau_ten slots M1_TT_LAT0.., the mesh basis):
-//!   LAT0 = D_rr - f_K(vet_col), folded into slot 0 by VetLatBuild (so slot 0 = D_rr of
-//!          the sweep above the first shell, vet_col's f_K below it),
-//!   LAT1, LAT2 = D_r,theta and D_r,phi (the lagged Picard term M1SphLat when
-//!          vet_col_lat_offdiag),
-//!   LAT3, LAT4, LAT5 = D_tt - (1 - D_rr)/2, D_tp, D_pp - (1 - D_rr)/2 (the trace-free
-//!          tangential anisotropy about the operator's isotropic tangential pressure:
-//!          the lagged term M1SphTan of the transverse face equations,
-//!          vet_gd_tangential).
-//! All vet_col_lat keys apply (taucut, every, init_iter, offdiag, dump).
+//!   inward (n . r_hat < 0), top-down: upwind point on shell i+1 (vacuum at the top);
+//!   outward (n . r_hat >= 0), bottom-up: shell i-1, or beyond the tangent point on the
+//!     same shell (inward value), or the inner face (diffusion intensity).
+//! Upwind I, ln chi, ln S are bilinear in (theta, phi) index space; S is linear in tau.
+//! Periodic theta/phi walls: ghost intensities are re-indexed by the local-frame map
+//! n -> M n (nearest set direction). Block boundaries: lagged inflow (block-Jacobi).
+//! Output: the vet_col_lat slots M1_TT_LAT0..5 (D_rr - f_K, D_rtheta, D_rphi, and the
+//! trace-free tangential anisotropy D_tt - (1 - D_rr)/2, D_tp, D_pp - (1 - D_rr)/2).
 
 #include <algorithm>
 #include <array>
@@ -73,18 +38,15 @@
 #include <vector>
 
 #include "athena.hpp"
-// TEST vgdshell-1113 fpon: FMA contraction only within one expression in this TU
+// FMA contraction only within one expression in this TU
 #if defined(__clang__)
 #pragma clang fp contract(on)
 #endif
 
-// the per-cell direction sums of m1_vgd_hr / m1_vgd_mom read the 120 values
-// of a cell from the VgdRag slab (d fastest): adjacent threads read rows n*8 bytes apart,
-// one cache line per lane per load: ~20 GB/s (rocprofv3: hr 22.7 ms,
-// mom 11 ms per call on R136).  On HIP a team of VGD_LDS_TS cells (the par_for's cells in
-// its order, k fastest) loads chunks of VGD_LDS_DC directions of its cells coalesced into
-// LDS; each thread then sums its OWN cell over d in the same order with the same
-// expressions (bitwise).  Elsewhere the par_for kernels.
+// per-cell direction sums (m1_vgd_hr / m1_vgd_mom) read a cell's directions from the
+// VgdRag slab (d fastest): on HIP a team of VGD_LDS_TS cells stages VGD_LDS_DC
+// directions at a time in LDS (coalesced); each thread sums its own cell in the same
+// order (bitwise). Elsewhere plain par_for.
 constexpr int VGD_LDS_TS = 64;
 constexpr int VGD_LDS_DC = 16;
 inline bool VgdMomLds() {
@@ -114,19 +76,13 @@ inline bool VgdMomLds() {
 #endif
 
 namespace radvet {
-// <rad_vet>/vet_gd_twin_srw (read only when named, default false = bitwise): the twin's
-// pattern subtraction (D_rr, lateral slots, half-range ratios) weighted per cell by the
-// symref weight w = min(J_twin/J, 1) (VgdSrW), as the reference shift is: a cell much
-// brighter than its shell's laterally uniform twin (a thick bump in a mostly thin shell,
-// the accretor's L1 tip) keeps its own D_gd instead of the thin shell's
-// twin-minus-reference bias (D_rr 0.26, D_tt 0.37 in tau > 30 cells without it); w = 1
-// cells are bitwise.  Parsed in rad_vet.cpp.
+// <rad_vet>/vet_gd_twin_srw: weight the twin's pattern subtraction per cell by the
+// symref weight w = min(J_twin/J, 1) (VgdSrW); w = 1 cells are bitwise. Parsed in
+// rad_vet.cpp.
 #if !defined(M1_VGD_SWEEP_TU)
-// <rad_vet>/vet_rotate_advance (read only when named, default false = bitwise;
-// parsed in VetRotInit, one RadiationVet per rank): with vet_rotate_avg = K the set of
-// block b no longer repeats with period K (VetGdAngleBlk / RotPhase), so the last-K
-// window the closure averages advances through SO(3) (3d axis) or the azimuth (z axis)
-// instead of freezing one fixed K-set pattern in space
+// <rad_vet>/vet_rotate_advance: with vet_rotate_avg = K the angle set of block b does
+// not repeat with period K, so the averaged window advances through SO(3) / the azimuth
+// (parsed in VetRotInit)
 bool g_vra_adv = false;
 #endif
 
@@ -136,9 +92,8 @@ void VgdFatal(const std::string &msg) {VgdFatalAt(__FILE__, "<rad_vet>/vet_gd: "
 KOKKOS_INLINE_FUNCTION
 Real VgdLerp(const Real a, const Real b, const Real u) {return a + u*(b - a);}
 
-// the sp stencil accessor of the shared upwind core (rad_vet_vgdray.hpp):
-// the four (theta, phi) corners of the bilinear foot (q = 0..3: (k0,j0), (k0,j1),
-// (k1,j0), (k1,j1)), the nested bilinear VgdLerp as before
+// sp stencil accessor of the shared upwind core (rad_vet_vgdray.hpp): the four
+// (theta, phi) corners q = 0..3: (k0,j0), (k0,j1), (k1,j0), (k1,j1); nested bilinear
 struct VgdSt4 {
   int k0, k1, j0, j1;
   Real uj, uk;
@@ -154,21 +109,16 @@ struct VgdSt4 {
   }
 };
 
-// (VgdLight: rad_vet_vetseg.hpp)
-
-// vet_gd_halo_ipc: flags in device memory written over NVLink by the peers
-// (as implicit_halo_ipc): [0, NS) arrivals by partner slot, [NS, 2 NS) acks; a spin gives
-// up after ~20 s of GPU clock and raises the error flag (checked after every sweep)
+// vet_gd_halo_ipc: device flags written over NVLink by the peers: [0, NS) arrivals by
+// partner slot, [NS, 2 NS) acks; a spin gives up after ~20 s and raises the error flag
 constexpr int VGD_IPC_NS = 32;
 constexpr long long VGD_IPC_SPIN = 40000000000LL;
-// (HIP): wall_clock64() runs at 100 MHz on gfx942: 2e9 ticks = 20 s
+// HIP: wall_clock64() runs at 100 MHz on gfx942: 2e9 ticks = 20 s
 constexpr long long VGD_IPC_SPIN_HIP = 2000000000LL;
 struct VgdIpcIdx {int v[VGD_IPC_NS + 1];};
-// the HIP port of the IPC halo.  The flags live in uncached (fine-grained)
-// device memory and are read / written with system-scope atomics; the receive buffer is
-// plain device memory written by the partner's pack kernel (remote stores) and read by
-// my scatter kernel, which the stream runs after my k2 has seen the partner's flag (k2's
-// system fences + the kernel boundaries order the data before / after the flag)
+// HIP IPC halo: flags in fine-grained device memory, system-scope atomics; the receive
+// buffer is written by the partner's pack kernel and read by my scatter kernel after
+// k2 has seen the partner's flag (system fences + kernel boundaries order the data)
 #if defined(KOKKOS_ENABLE_HIP)
 #define M1G(x) hip##x
 #define M1G_STREAM(ex) (ex).hip_stream()
@@ -214,9 +164,9 @@ void VgdIpcSet(long long *f, const long long v) {
 #endif
 }
 
-// lean IPC protocol: ONE system fence (orders this rank's earlier peer
-// stores, the pack, before the flags), then the arrival flag of exchange v into every
-// partner's slot; the wait: every own arrival flag >= v, then ONE fence
+// lean IPC protocol: one system fence (orders the pack's peer stores before the
+// flags), then the arrival flag v into every partner's slot; the wait: every own
+// arrival flag >= v, then one fence
 KOKKOS_INLINE_FUNCTION
 void VgdIpcSetN(const unsigned long long *psig, const int *pslot, const int np,
                 const long long v) {
@@ -263,9 +213,8 @@ void VgdIpcWaitN(const long long *f, const int np, const long long target, int *
 #endif
 }
 
-// vet_interp = auto: a material edge in the upwind stencil, the
-// extinction contrast max/min over the corners of nonzero weight > kVetCornerRatio
-// (rad_vet_vetseg.hpp; csx holds ln chi)
+// vet_interp = auto: material edge in the upwind stencil, i.e. the ln chi contrast over
+// the corners of nonzero weight > log(kVetCornerRatio)
 template <class CS>
 KOKKOS_INLINE_FUNCTION
 bool VgdCornerEdge(const CS &csx, const int m, const int k0, const int k1, const int j0,
@@ -321,12 +270,9 @@ void VgdDirections(const int ns, std::vector<double> &d) {
   }
 }
 
-// level-symmetric LQ_N (Carlson; mu_1 of Lewis & Miller), positive weights per
-// permutation class from the even moments 1, x^4, x^6, ... (sum w nn = I/3 exactly by
-// the octahedral symmetry); the Athena++ / Jiang 2021 (Bruls 1999) family
-// product set: Gauss-Legendre in n_z (nmu nodes on [-1, 1]) x nphi uniform azimuths per
-// ring, alternate rings shifted by half an azimuth step (stagger); C_nphi-invariant about
-// z, positive weights, sum w = 1, sum w n = 0, sum w nn = I/3 exactly (no fix)
+// product set: Gauss-Legendre in n_z (nmu nodes) x nphi uniform azimuths per ring,
+// alternate rings shifted by half a step (stagger); positive weights, sum w = 1,
+// sum w n = 0, sum w nn = I/3 exactly
 void VgdProduct(const int nmu, const int nphi, const bool stagger,
                 std::vector<double> &d) {
   d.clear();
@@ -358,16 +304,11 @@ void VgdProduct(const int nmu, const int nphi, const bool stagger,
   }
 }
 
-// every stencil that the shell kernel's solve of item (block m, cell (k,
-// j), direction d) of shell i (sweep position l) of the pass inw MAY read, as boxes
-// f(iu, k_lo, k_hi, j_lo, j_hi) of band cells (inclusive) of shell iu.  The kernel's
-// expressions, but robust to the rounding of a different compilation (FMA contraction):
-// the branch test is ignored, both segment types are offered when the test is within a
-// relative 1e-9 of its threshold, and the bilinear base index is taken for every floor
-// within 1e-8 of the fractional index (then clamped as the kernel clamps).  Used by the
-// overlap split and by the exact halo lists: a superset of the reads is safe for both.
-// sth / pol / tn / c2w = the stretched-theta node table and the full sphere
-// (rad_vet_vetgd_sph2.inc), the same expressions as the shell kernel
+// every stencil box f(iu, k_lo, k_hi, j_lo, j_hi) (inclusive band cells of shell iu)
+// that the shell kernel's solve of (m, k, j, d) at shell i may read. Robust to rounding
+// of another compilation: both branches near the threshold (rel 1e-9), every floor
+// within 1e-8. A superset of the reads: used by the overlap split and the halo lists.
+// sth / pol / tn / c2w: stretched-theta node table and full-sphere chart (sph2.inc)
 template <class TD, class TB, class TX, class TF, class TT, class FN>
 KOKKOS_INLINE_FUNCTION
 void VgdCand(const int m, const int k, const int j, const int d, const int i, const int l,
@@ -421,9 +362,8 @@ void VgdCand(const int m, const int k, const int j, const int d, const int i, co
   } else if (p2 > t2 - tol) {
     box(i, 2.0*zr, d);                      // a turned ray
   }
-  // a reflecting inner face (scheme = clean, the sweep's typ 2 imir): the first shell's
-  // inward intensity at the face point in the specular image direction (the nearest
-  // inward set direction; every direction within 1e-9 of it: robust to rounding)
+  // reflecting inner face (clean scheme, imir): the first shell's inward intensity at
+  // the face point in the specular image direction (every direction within 1e-9 of it)
   if (imir && l == lcut && p2 <= t2*(1.0 + 1.0e-13) + tol) {
     const Real ds = zr - sqrt(fmax(t2 - p2, 0.0));
     const Real xu = r*st*cp - ds*nx, yu = r*st*sp - ds*ny, zu = r*ct - ds*nz;
@@ -447,12 +387,10 @@ void VgdCand(const int m, const int k, const int j, const int d, const int i, co
   }
 }
 
-// two in-place exclusive int scans (flag -> position, total at index n)
-// in one pass: the two counts ride in the low and high 32 bits of one int64 sum (all
-// counts < 2^31, so exact and the positions are those of two separate scans).  The scan
-// is chunked and deterministic (integer sums: the positions of Kokkos::parallel_scan):
-// per chunk of VGD_SCAN_CH entries a team sum, a scan of the chunk sums, a team scan per
-// chunk from its offset.
+// two in-place exclusive int scans (flag -> position, total at index n) in one pass:
+// the two counts ride in the low / high 32 bits of one int64 sum (counts < 2^31: exact).
+// Chunked and deterministic: per VGD_SCAN_CH chunk a team sum, a scan of the chunk
+// sums, a team scan per chunk from its offset.
 constexpr int VGD_SCAN_CH = 4096;
 void VgdScan2(const DevExeSpace &ex, const DvceArray1D<int> &a, const size_t na,
               const DvceArray1D<int> &b, const size_t nb, const char *name,
@@ -505,9 +443,8 @@ void VgdScan2(const DevExeSpace &ex, const DvceArray1D<int> &a, const size_t na,
   });
 }
 
-// in-place exclusive int scan of a[0, n] (a[n] = 0 first, then the total)
-// on the instance's stream with CUB (one launch pair instead of the 3 team launches of
-// VgdScan2; integer sums: the same positions).  Non-CUDA: VgdScan2.
+// in-place exclusive int scan of a[0, n] (a[n] = 0 first, then the total) with CUB on
+// the instance's stream (integer sums: the positions of VgdScan2). Non-CUDA: VgdScan2.
 void VgdScanOne(const DevExeSpace &ex, const DvceArray1D<int> &a, const size_t n,
                 Kokkos::View<int64_t*, DevMemSpace> &sums, DvceArray1D<char> &tmp) {
 #if defined(KOKKOS_ENABLE_CUDA)
@@ -528,13 +465,10 @@ void VgdScanOne(const DevExeSpace &ex, const DvceArray1D<int> &a, const size_t n
 #endif
 }
 
-// (<rad_vet>/vet_gd_geo = n >= 1, stored as vgd_ls = -n): the GEODESIC set, the
-// vertices of the class-I subdivided icosahedron (10 n^2 + 2 directions: n = 1 12, 2 42,
-// 3 92), weights = the solid angle of each vertex's spherical Voronoi cell (the polygon
-// of the circumcentres of its triangles, split into the triangles (vertex, edge midpoint,
-// circumcentre)) / 4 pi.  The subdivision and the weights keep the full icosahedral
-// symmetry (incl. the inversion, +-Omega pairs): sum w = 1, sum w n = 0, sum w nn = I/3
-// and the 4th moments isotropic to round-off (checked by VgdMomentCheck)
+// vet_gd_geo = n >= 1 (stored as vgd_ls = -n): the geodesic set, the vertices of the
+// class-I subdivided icosahedron (10 n^2 + 2 directions); weight = solid angle of the
+// vertex's spherical Voronoi cell / 4 pi. Full icosahedral symmetry: sum w = 1,
+// sum w n = 0, sum w nn = I/3, 4th moments isotropic to round-off (VgdMomentCheck)
 namespace {
 double VgdSphTri(const double *a, const double *b, const double *c) {
   // the solid angle of the spherical triangle of unit vectors a, b, c (Van Oosterom)
@@ -631,8 +565,8 @@ bool VgdGeodesic(const int nl, std::vector<double> &d) {
   return true;
 }
 
-// the moment errors of a direction set (rows x y z w): max |sum w - 1|,
-// |sum w n|, |sum w n_i n_j - delta_ij / 3|, |sum w n_i n_j n_k n_l - (dd + dd + dd)/15|
+// moment errors of a direction set (rows x y z w): max |sum w - 1|, |sum w n|,
+// |sum w n_i n_j - delta_ij/3|, |sum w n_i n_j n_k n_l - (dd + dd + dd)/15|
 void VgdMomentCheck(const std::vector<double> &d, double e[4]) {
   const int n = static_cast<int>(d.size()/4);
   double m0 = 0.0, m1[3] = {0, 0, 0}, m2[3][3] = {{0}}, m4[3][3][3][3] = {{{{0}}}};
@@ -666,6 +600,8 @@ void VgdMomentCheck(const std::vector<double> &d, double e[4]) {
   }
 }
 
+// vet_gd_ls: level-symmetric LQ_N (Carlson; mu_1 of Lewis & Miller), positive weights
+// per permutation class from the even moments (sum w nn = I/3 by octahedral symmetry)
 bool VgdLevelSym(const int nl, std::vector<double> &d) {
   double m1;
   switch (nl) {
@@ -741,7 +677,7 @@ bool VgdLevelSym(const int nl, std::vector<double> &d) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VgdBuildSet
-//! \brief the vet_gd direction set of the keys: the product set, vet_gd_ls, vet_gd_geo or
+//! \brief the vet_gd direction set of the keys: product set, vet_gd_ls, vet_gd_geo or
 //! HEALPix (vet_gd_nside); shared by vet_gd and vet_sc_set = gd
 
 void RadiationVet::VgdBuildSet(std::vector<double> &d) const {
@@ -762,9 +698,8 @@ void RadiationVet::VgdBuildSet(std::vector<double> &d) const {
 
 void RadiationVet::VetGdInit() {
   Mesh *pm = pmy_pack->pmesh;
-  // nx3 = 1: axisymmetric.  The phi band columns are the cell's own column with the
-  // directions rotated by their phi offset (the mesh's phi extent per column, which must
-  // map the direction set onto itself: exact wall maps)
+  // nx3 = 1: axisymmetric; the phi band columns are the cell's own column with the
+  // directions rotated by their phi offset (must map the set onto itself)
   if (!pm->multi_d) {VgdFatal("needs a 3-D wedge or a 2-D axisymmetric mesh");}
   if (!pm->three_d && (impl_beam_hr || impl_beam_fs)) {
     VgdFatal("2-D axisymmetric: no implicit_flux_beam");
@@ -783,15 +718,11 @@ void RadiationVet::VetGdInit() {
   auto &indcs = pm->mb_indcs;
   const int nmb = pmy_pack->nmb_thispack;
   const int c1 = indcs.nx1 + 2*indcs.ng;
-  // (stage S3, rad_vet_vetgd_cs.cpp): the cubed sphere.  The options that
-  // are wedge-specific or not ported are refused; the sp halo layouts (exact / compact
-  // lists, IPC, overlap) do not apply (the cs band is filled by its own exact
-  // copies; the band ring applies with the cs compact lists, see VetGdCsSweep);
-  // no walls
+  // cubed sphere (rad_vet_vetgd_cs.cpp): wedge-only options are refused; the cs band
+  // is filled by its own exact copies (compact lists, see VetGdCsSweep); no walls
   vgd_csg = pm->use_cubed_sphere;
   // <mesh>/layout_invariant: the sweep's (theta, phi) from the global index
-  // (rad_vet_vgdlg.hpp); a uniform single-level sp mesh (the stretched-theta node table
-  // and the full sphere's global band are global already; their spacing is taken here)
+  // (rad_vet_vgdlg.hpp); a uniform single-level sp mesh
   vgd_lg.on = false;
   if (!vgd_csg && pm->layout_invariant) {
     vgd_lg.on = true;
@@ -818,10 +749,8 @@ void RadiationVet::VetGdInit() {
     vgd_wint = false;
     vgd_ipc_on = false;
     vgd_hx_on = false;
-    // the unfused twin always with THIS build's cut (the vet_gd_twin_lowmem order: the
-    // fused twin's numbers); the plain unfused twin would take the previous build's cut
-    // (its sp default when the fuse cannot apply, e.g. MPI without vet_gd_halo_compact):
-    // decomposition-dependent.  vet_gd_twin_fuse (lowmem off) is kept
+    // the unfused twin always uses this build's cut (as the fused twin); the previous
+    // build's cut would make it decomposition-dependent
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_vet> vet_gd on the CUBED SPHERE: seam "
                 << "strip + vertex triangle upwind stencil, exact per-shell band copies "
@@ -832,10 +761,9 @@ void RadiationVet::VetGdInit() {
                 << ", no tangential part" << std::endl;
     }
   }
-  // (rad_vet_vetgd_sph2.inc): the stretched theta / full sphere node-table path.
-  // The options whose own geometry is still the uniform index formula are refused; the
-  // compact halo (its keep test VgdHaloKeep is uniform in theta and has no pole
-  // reversal) falls back to the dense halo: speed only, the values are the same
+  // stretched theta / full sphere (rad_vet_vetgd_sph2.inc): options that assume the
+  // uniform index formula are refused; the compact halo falls back to the dense one
+  // (same values)
   if (vgd_sth) {
     std::string bad;
     if (vgd_thmir || vgd_thvac > 0) {bad += " vet_gd_theta_wall = mirror|vacuum|extrap;";}
@@ -843,10 +771,8 @@ void RadiationVet::VetGdInit() {
       VgdFatal("not available on a stretched theta / the full sphere:" +
                bad);
     }
-    // G1: with vet_gd_band_global (the full-sphere fresh default) the compact
-    // halo is the keep-tested global-band exchange (VetGdGbHaloC, sph2.inc); the slot
-    // halo of a stretched-theta wedge / a full sphere without the global band keeps the
-    // dense halo (its slot keep test is the uniform index formula)
+    // with vet_gd_band_global the compact halo is the keep-tested global-band exchange
+    // (VetGdGbHaloC); otherwise the dense halo (the slot keep test assumes uniform theta)
     if (vgd_hcomp > 0 && !vgd_gband) {
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_vet> vet_gd: vet_gd_halo_compact = " << vgd_hcomp
@@ -861,9 +787,8 @@ void RadiationVet::VetGdInit() {
     }
     vgd_ipc_on = false;
   }
-  // several MeshBlocks along x1: the levels are swept one after the other, the boundary
-  // shell of a level handed to the next (VetGdX1Hand), the lateral halo per shell as on
-  // one level; flags 1 innermost, 2 outermost
+  // several MeshBlocks along x1: levels swept in turn, the boundary shell handed to the
+  // next (VetGdX1Hand); flags 1 innermost, 2 outermost
   vgd_nb1 = 1;
   for (int g = 0; g < pm->nmb_total; ++g) {
     vgd_nb1 = std::max(vgd_nb1, pm->lloc_eachmb[g].lx1 + 1);
@@ -900,32 +825,31 @@ void RadiationVet::VetGdInit() {
     }
     vgd_hcomp = 0;   // the dense per-shell halo (the compact lists assume one level)
   }
-  // vgd_raw: the raw band where the exact-list band would clamp (below, after the
-  // reach): the two bands give the same values where nothing clamps
+  // vgd_raw: the raw band where the exact-list band would clamp (same values where
+  // nothing clamps)
   const bool raw_ok = !vgd_csg && !vgd_pol && !vgd_sth;
   vgd_raw = false;
-  // (nx3 = 1: the dense halo, the compact / exact lists mark 3-D band reads)
+  // nx3 = 1: the dense halo (the compact / exact lists mark 3-D band reads)
   if (!pm->three_d) {vgd_hcomp = 0;}
   auto raw_halo = [&]() {
-    if (vgd_raw || !pm->three_d) {   // (the compact halo: VetGdGbHaloC)
+    if (vgd_raw || !pm->three_d) {   // the compact halo: VetGdGbHaloC
       vgd_hx_on = false;
-      vgd_ipc_on = vgd_ipc_on && vgd_raw && pm->three_d;   // (VetGdGbHaloC's own IPC)
+      vgd_ipc_on = vgd_ipc_on && vgd_raw && pm->three_d;   // VetGdGbHaloC's own IPC
     }
   };
   raw_halo();
-  // (vet_gd_wall_sym / vet_gd_theta_seam_sym name one deck value on every mesh: without
-  // a phi wall (cubed sphere, polar boundary, 2-D, the full 2 pi) or a theta seam (theta
-  // not periodic) there is nothing to symmetrise, and the key does nothing)
+  // vet_gd_wall_sym / vet_gd_theta_seam_sym do nothing without a phi wall or a
+  // periodic theta seam
   const bool sp3 = !vgd_csg && !vgd_pol && pm->three_d;
   vgd_wsym = vgd_wsym && sp3 &&
              pm->mesh_size.x3max - pm->mesh_size.x3min < 2.0*M_PI - 1.0e-12;
   vgd_wst = vgd_wst && sp3 &&
             pm->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::periodic;
-  // the direction set (pluggable: any table of unit vectors + weights summing to 1 with
-  // sum w nn = I/3; the sweep never looks inside it)
+  // the direction set: any table of unit vectors + weights with sum w = 1,
+  // sum w nn = I/3
   if (vgd_gl_nmu > 0) {
-    // the product set: its azimuth step must divide the wedge's phi period (exact walls)
-    // (no walls on the cubed sphere, nphi >= 4 only)
+    // product set: the azimuth step must divide the phi period (exact walls);
+    // nphi >= 4 on the cubed sphere
     const double per = pm->mesh_size.x3max - pm->mesh_size.x3min;
     const double m = per*vgd_gl_nphi/(2.0*M_PI);
     if (vgd_gl_nphi < 4 ||
@@ -936,8 +860,8 @@ void RadiationVet::VetGdInit() {
   }
   VgdBuildSet(vgd_base);
   // the set's image under (x, y, z) -> (c x - t s y, s x + t c y, tz z): a turn about z
-  // (t = 1), a mirror in a meridian plane (t = -1) or in the equator (tz = -1); the
-  // direction each one maps to, -1 where it is not in the set
+  // (t = 1), a meridian mirror (t = -1) or the equatorial mirror (tz = -1); -1 where
+  // the image is not in the set
   const size_t nb = vgd_base.size()/4;
   auto img = [&](const double c, const double s, const double t, const double tz) {
     std::vector<int> p(nb, -1);
@@ -965,7 +889,7 @@ void RadiationVet::VetGdInit() {
   };
   if (vgd_wsym) {
     // vet_gd_wall_sym: turn the set about z by the least angle that puts one of its
-    // mirror planes (GL k pi/nphi, the octahedral sets k pi/4) on the wedge mid-plane
+    // mirror planes on the wedge mid-plane
     if (!vgd_wint || VgdRotOn()) {
       VgdFatal("vet_gd_wall_sym needs vet_gd_wall_interp = true and no set rotation");
     }
@@ -981,15 +905,15 @@ void RadiationVet::VetGdInit() {
       }
     }
     vgd_mir = dev(img(std::cos(2.0*pc), std::sin(2.0*pc), -1.0, 1.0), "vet_gd_wall_sym");
-    // an inexact phi wall map (the turn by the period W is not a set map): the clean
+    // inexact phi wall map (the turn by the period is not a set map): the clean
     // scheme's seam faces in both frames (CleanGdFaceSums)
     vgd_wsw = pm->mesh_size.x3max - pm->mesh_size.x3min;
     const std::vector<int> pw = img(std::cos(vgd_wsw), std::sin(vgd_wsw), 1.0, 1.0);
     vgd_wsx = *std::min_element(pw.begin(), pw.end()) < 0;
   }
   if (vgd_wst) {
-    // vet_gd_theta_seam_sym: the clean scheme's theta seam faces in both frames, with the
-    // equatorial mirror (a theta wedge centred on the equator)
+    // vet_gd_theta_seam_sym: the clean scheme's theta seam faces in both frames, with
+    // the equatorial mirror (theta wedge centred on the equator)
     if (!vgd_wint || VgdRotOn() ||
         std::fabs(pm->mesh_size.x2min + pm->mesh_size.x2max - M_PI) > 1.0e-12) {
       VgdFatal("vet_gd_theta_seam_sym needs a theta wedge centred on the equator, "
@@ -1022,9 +946,7 @@ void RadiationVet::VetGdInit() {
               << std::endl;
   }
   vgd_n = static_cast<int>(vgd_base.size()/4);
-  // the set's z-rotation period (the rotation sequences span one): the
-  // product set 2 pi/nphi, the geodesic set pi (z is a 2-fold axis), HEALPix and LQ_N
-  // pi/2 (C4)
+  // the set's z-rotation period: product 2 pi/nphi, geodesic pi, HEALPix / LQ_N pi/2
   vgd_zper = (vgd_gl_nmu > 0) ? 2.0*M_PI/vgd_gl_nphi : ((vgd_ls < 0) ? M_PI : 0.5*M_PI);
   if (!pm->three_d) {
     const double per = pm->mesh_size.x3max - pm->mesh_size.x3min;
@@ -1047,10 +969,8 @@ void RadiationVet::VetGdInit() {
   Kokkos::realloc(vgd_dir, n, 4);
   Kokkos::realloc(vgd_x1b, nmb, std::max(n, 4)*indcs.nx3*indcs.nx2);
   Kokkos::realloc(vgd_x1r, nmb, std::max(n, 4)*indcs.nx3*indcs.nx2);
-  // the lateral band: the deepest reach of an upwind point in cells, over every shell:
-  // a NORM segment reaches sqrt(r_{l+1}^2 - r_l^2), a TURN segment 2 sqrt(r_l^2 -
-  // r_{l-1}^2) sideways at most; cell sizes r dtheta and r sin(theta) dphi
-  // (on the cubed sphere VetGdCsInit, with the cs tables and lists)
+  // lateral band: the deepest reach of an upwind point in cells over every shell (cell
+  // sizes r dtheta, r sin(theta) dphi); on the cubed sphere VetGdCsInit
   if (vgd_csg) {
     VetGdCsInit();
   } else {
@@ -1059,26 +979,22 @@ void RadiationVet::VetGdInit() {
     auto &mbs = pmy_pack->pmb->mb_size;
     const double t0 = pm->mesh_size.x2min, t1 = pm->mesh_size.x2max;
     const double smin = std::min(std::sin(t0), std::sin(t1));
-    // a stretched theta / the full sphere: the real narrowest row and the
-    // band latitude limit (VetGdThetaDmin)
+    // stretched theta / full sphere: the narrowest row and the band latitude limit
+    // (VetGdThetaDmin)
     const double dmin = vgd_sth ? VetGdThetaDmin()
                                 : std::min(vgd_lg.Dx2H(mbs, 0),
                                            smin*vgd_lg.Dx3H(mbs, 0));
-    // the data of shell s is read (a) by shell s-1 in the inward pass, chord <=
-    // sqrt(r_s^2 - r_{s-1}^2), (b) by shell s+1 in the outward pass, chord <=
-    // sqrt(r_{s+1}^2 - r_s^2), (c) by shell s itself (TURN / inner face), chord <= 2
-    // sqrt(r_s^2 - r_lo^2), r_lo = r_{s-1} (the inner face of the first shell); the
-    // angular offset <= chord / r_lo; + 2 cells for the bilinear stencil and rounding
+    // shell s is read (a) by s-1 inward, chord <= sqrt(r_s^2 - r_{s-1}^2), (b) by s+1
+    // outward, chord <= sqrt(r_{s+1}^2 - r_s^2), (c) by s itself (turn / inner face),
+    // chord <= 2 sqrt(r_s^2 - r_lo^2); angular offset <= chord / r_lo; + 2 cells
     auto x1f_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
                                                      pmy_pack->pcoord->xx1f);
-    // (pass 1: the raw band, where pass 0's exact lists would clamp)
+    // pass 1: the raw band, where pass 0's exact lists would clamp
     for (int pass = 0; pass < 2; ++pass) {
       int nmax = vgd_raw ? std::numeric_limits<int>::max()
                          : (pm->three_d ? std::min(indcs.nx2, indcs.nx3) : indcs.nx2);
-      // vet_gd_band_global: the band is filled from any block (global-
-      // cell lists), so its depth is capped by the SPHERE (half a ring in phi, the theta
-      // rows of one pole-to-pole mirror), not by the MeshBlock: the same depth for every
-      // layout
+      // vet_gd_band_global: the band is filled from any block, so its depth is capped
+      // by the sphere (half a ring in phi, pole-to-pole in theta): layout independent
       if (vgd_gband) {
         if (!vgd_pol) {
           VgdFatal("vet_gd_band_global needs the full sphere (mesh/use_polar_boundary)");
@@ -1090,7 +1006,7 @@ void RadiationVet::VetGdInit() {
       vgd_wso.assign(indcs.nx1 + 2*indcs.ng, 0);
       int wneed = 0;
       for (int m = 0; m < ((vgd_nb1 > 1) ? nmb : 1); ++m) {
-        // (the shells next to another level: its radii from the x1 ghosts)
+        // shells next to another level: radii from the x1 ghosts
         const bool lo = (xf_h(m) & 1), hi = (xf_h(m) & 2);
         for (int l = indcs.is; l <= indcs.ie; ++l) {
           const double r = x1v_h(m,l);
@@ -1103,8 +1019,7 @@ void RadiationVet::VetGdInit() {
           const int wl = static_cast<int>(std::ceil(a/(rlo*dmin))) + 2;
           wneed = std::max(wneed, wl);
           vgd_wsh[l] = std::min(wl, nmax);
-          // per pass: the INWARD-pass halo of shell s serves (a) and (c) (inward values),
-          // the OUTWARD-pass halo only (b) (outward values read by shell s+1)
+          // inward-pass halo of shell s serves (a) and (c), the outward-pass halo (b)
           const double ain = 2.0*std::sqrt(std::max(r*r - rlo*rlo, 0.0));
           const double aout = up ? std::sqrt(x1v_h(m,l+1)*x1v_h(m,l+1) - r*r) : 0.0;
           vgd_wsi[l] = std::min(static_cast<int>(std::ceil(ain/(rlo*dmin))) + 2, nmax);
@@ -1128,7 +1043,7 @@ void RadiationVet::VetGdInit() {
         }
         continue;
       }
-      if (vgd_nb1 > 1) {   // every shell at the full band, the x1 ghosts (hand-off) too
+      if (vgd_nb1 > 1) {   // every shell at the full band, the x1 ghosts too
         vgd_wsh.assign(c1, vgd_w);
         vgd_wsi = vgd_wsh;
         vgd_wso = vgd_wsh;
@@ -1145,7 +1060,7 @@ void RadiationVet::VetGdInit() {
     }
   }
   const int c2w = indcs.nx2 + 2*vgd_w, c3w = indcs.nx3 + 2*vgd_w;
-  if (vgd_sth) {VetGdThetaInit();}   // (rad_vet_vetgd_sph2.inc)
+  if (vgd_sth) {VetGdThetaInit();}   // rad_vet_vetgd_sph2.inc
   Kokkos::realloc(vgd_cs, nmb, 2, c3w, c2w, c1);
   Kokkos::realloc(vgd_wall, nmb, c3w, c2w);
   Kokkos::realloc(vgd_map, nmb, c3w, c2w, n);
@@ -1155,11 +1070,10 @@ void RadiationVet::VetGdInit() {
     Kokkos::realloc(vgd_w3, nmb, c3w, c2w, n, 3);
   }
   if (!vgd_csg) {VetGdHaloInit();}   // cs lists made by VetGdCsInit
-  if (vgd_gband || vgd_raw) {VetGdGlobalBandInit();}   // (sph2.inc): after the slots
+  if (vgd_gband || vgd_raw) {VetGdGlobalBandInit();}   // sph2.inc: after the slots
   if (vgd_thmir) {
-    // vet_gd_theta_wall = mirror: the theta neighbour across a wall is the
-    // block itself (one MeshBlock in theta), so the corner slots of the halo are the
-    // phi-edge slots and every mirrored read is an interior or phi-band value
+    // vet_gd_theta_wall = mirror: the theta neighbour across a wall is the block itself
+    // (one MeshBlock in theta): corner slots are phi-edge slots
     if (vgd_csg) {
       VgdFatal("vet_gd_theta_wall = mirror: no theta walls on the cubed sphere");
     }
@@ -1169,9 +1083,8 @@ void RadiationVet::VetGdInit() {
     if (vgd_ipc_on) {VgdFatal("vet_gd_theta_wall = mirror: vet_gd_halo_ipc not ported");}
   }
   if (vgd_thvac > 0) {
-    // vet_gd_theta_wall = vacuum / extrap: only the theta ghosts beyond a
-    // physical wall (VgdTabCompute flags 3 / 4) change; vacuum: any MeshBlock count in
-    // theta (the wall crossing from the mesh's theta limits)
+    // vet_gd_theta_wall = vacuum / extrap: only the theta ghosts beyond a physical wall
+    // change (VgdTabCompute flags 3 / 4); vacuum allows any MeshBlock count in theta
     if (vgd_csg) {VgdFatal("vet_gd_theta_wall = vacuum/extrap: not on the cubed sphere");}
     if (vgd_ipc_on) {
       VgdFatal("vet_gd_theta_wall = vacuum/extrap: vet_gd_halo_ipc not ported");
@@ -1181,14 +1094,9 @@ void RadiationVet::VetGdInit() {
     }
   }
   {
-    // vet_gd_band_ring: where every band value the sweep reads comes from an
-    // exact-list exchange of this sweep (the halo_exact gate below) and some block has
-    // a remote side (else no band)
-    // (on the cubed sphere, where the cs compact lists apply: every band
-    // value the cs sweep reads comes from the compact exchange of this sweep)
-    // (vgd_raw: every band value the sweep reads, from its exchange of this sweep)
-    // (no silent fallback: without the cs compact lists the clean sc rays keep the full
-    // ragged band, +18 GB/GPU on the RSG)
+    // vet_gd_band_ring: only where every band value the sweep reads comes from this
+    // sweep's exact-list (cs: compact; vgd_raw: own) exchange and some block has a
+    // remote side; without the cs compact lists the clean sc rays keep the ragged band
     if (vgd_csg && vgd_hcomp == 0) {
       VgdFatal("vet_gd_halo_compact = 0 on the cubed sphere with the clean sc rays (no "
                "compact lists, no band ring: the full band); name vet_gd_halo_compact "
@@ -1197,22 +1105,18 @@ void RadiationVet::VetGdInit() {
     const bool hxok = vgd_raw ? (vgd_hmpi && vgd_nb1 == 1)
                     : vgd_csg ? (vgd_cscomp && vgd_hmpi)
                               : (vgd_hx_on && vgd_hmpi && (vgd_hcomp > 0));
-    // (USER: speed over memory): the clean sc rays' raw band on spherical polar keeps
-    // every shell's band (no ring, no planb hook): A100 R136 rotating -15 % sweep-stage
-    // wall, half -3.6 %, +2.3 GiB/GPU, bitwise
+    // clean sc rays' raw band on sp: keep every shell's band (speed over memory)
     const bool ring_ok = vgd_ring_named ? vgd_ring_par : !(vgd_raw && !vgd_csg);
     bool anyside = false;
     auto hl_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_hloc);
     for (size_t q = 0; q < hl_h.extent(0); ++q) {anyside = anyside || (hl_h(q) < 0);}
     vgd_ring = ring_ok && hxok && anyside;
-    // the fused two-set sweep keeps the ragged band (sp; the ring's slabs
-    // follow one array); on the cubed sphere the ring records both sets' compact lists
-    // (VetGdCsSweep's ringrec)
+    // the fused two-set sweep keeps the ragged band on sp; on the cubed sphere the ring
+    // records both sets' compact lists (VetGdCsSweep's ringrec)
   }
-  VgdRagAlloc(vgd_i);   // after the halo init: the band sides follow vgd_hloc
-  // the combinations the fused sweep never covers (VetGdXffOk) keep the two
-  // sweeps and allocate no second array (e.g. the fused twin of the RSG decks; the clean
-  // sc rays' ring, CleanRingMoments, sweeps one set at a time)
+  VgdRagAlloc(vgd_i);   // after the halo init: band sides follow vgd_hloc
+  // combinations the fused sweep never covers (VetGdXffOk) keep two sweeps and no
+  // second array (the clean ring, CleanRingMoments, sweeps one set at a time)
   if (vgd_xff && ((cln_ring && !(cln_rfuse && cln_ring == 1 &&
                                           ibc_x1max != M1_IBC_REFLECT)) ||
                   (vgd_gband && !vgd_raw) || vgd_nb1 > 1)) {
@@ -1223,7 +1127,7 @@ void RadiationVet::VetGdInit() {
     }
   }
   if (vgd_xff) {
-    // the other set's intensities, the same layout (and band sides)
+    // the other set's intensities, same layout and band sides
     VgdRagAlloc(vgd_i_xb);
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_vet> vet_gd_rotate_xfade_fuse: second-set intensities "
@@ -1233,10 +1137,10 @@ void RadiationVet::VetGdInit() {
   }
   // vet_gd_halo_exact marks the reads in the shell-list sweep
   if (vgd_hx_on && (!vgd_hmpi || vgd_hcomp <= 0)) {
-    vgd_hx_on = false;         // the default does not apply (or nothing to exchange)
+    vgd_hx_on = false;         // does not apply (or nothing to exchange)
   }
   vgd_alpha = -1.0;
-  // the table prefetch (its own device instance for the upload)
+  // table prefetch (own device instance for the upload)
   if (VgdRotOn()) {
     vgd_tex = Kokkos::Experimental::partition_space(DevExeSpace(), 1)[0];
   }
@@ -1245,17 +1149,13 @@ void RadiationVet::VetGdInit() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetRotInit
-//! \brief the rotation keys of the angle set, shared by
-//! vet_gd and vet_sc: ONE clock, one key set, one fresh default.  Called
-//! from the closure parse of vet_col (vet_gd rides on it) and of vet_sc.
+//! \brief rotation keys of the angle set, shared by vet_gd and vet_sc (one clock, one
+//! key set); called from the closure parse of vet_col and of vet_sc
 
 void RadiationVet::VetRotInit(ParameterInput *pin) {
   const bool fresh = !global_variable::restart_run;
-  // vet_rotate_advance (read only when named; default false = bitwise).
-  // (USER 11-05): DEFAULT true on a FRESH vet_gd run (recipe::NewDefaults:
-  // fresh start or <job>/recipe = prod1019) when the key is not named; recorded, so the
-  // run's restarts keep it; a restart whose input lacks the key keeps false (logged).
-  // Acts only with vet_rotate_avg >= 2 (as every he_star production deck sets by hand).
+  // vet_rotate_advance: fresh vet_gd runs default to true (recorded); a restart file
+  // without the key keeps false. Acts only with vet_rotate_avg >= 2.
   if (vgd_on && !pin->DoesParameterExist("rad_vet","vet_rotate_advance")) {
     if (recipe::NewDefaults(pin)) {
       pin->GetOrAddBoolean("rad_vet","vet_rotate_advance",true);
@@ -1276,15 +1176,13 @@ void RadiationVet::VetRotInit(ParameterInput *pin) {
   {
     const bool rdt_named = pin->DoesParameterExist("rad_vet","vet_gd_rotate_dt");
     const bool rev_named = pin->DoesParameterExist("rad_vet","vet_gd_rotate_every");
-    // vet_sc rotates its set on the same clock, with the same keys and
-    // the same fresh default (auto), except where the set is pinned: boundary beams
-    // along given rays (implicit_beam_n)
+    // vet_sc rotates on the same clock with the same keys, unless its set is pinned
+    // by boundary beams (implicit_beam_n)
     const bool sc_pin = vet_sc &&
         (pin->DoesParameterExist("rad_vet","implicit_beam_n") &&
          pin->GetInteger("rad_vet","implicit_beam_n") > 0);
-    // a vet_sc set pinned by boundary beams (implicit_beam_n) gets no DEFAULT rotation,
-    // and a named rotation with it is FATAL (below) -- the beams are injected along
-    // fixed rays of the set
+    // a pinned vet_sc set gets no default rotation and a named one is fatal (the beams
+    // are injected along fixed rays of the set)
     const bool rot_cl = vgd_on || vet_sc;
     bool rot_phys = false;
     if (rot_cl && rdt_named) {
@@ -1317,9 +1215,8 @@ void RadiationVet::VetRotInit(ParameterInput *pin) {
       vgd_rot_align = pin->GetOrAddBoolean("rad_vet","vet_gd_rotate_align",true);
       vgd_rot_stretch = pin->GetOrAddReal("rad_vet","vet_gd_rotate_stretch",
                                           fresh ? 0.02 : 0.0);
-      // _slope DEFAULT correct on a FRESH run (Time2RotCorrect; acts
-      // only under time_scheme = hesdirk2, inert otherwise); a restart whose file lacks
-      // the key keeps keep (bitwise older runs).  Echoed, so a later restart keeps it.
+      // vet_gd_rotate_slope: fresh default correct (Time2RotCorrect, hesdirk2 only); a
+      // restart file without the key keeps keep
       std::string rs = pin->GetOrAddString("rad_vet","vet_gd_rotate_slope",
                                            fresh ? "correct" : "keep");
       if (rs.compare("keep") == 0) {
@@ -1327,8 +1224,7 @@ void RadiationVet::VetRotInit(ParameterInput *pin) {
       } else if (rs.compare("be") == 0) {
         vgd_rot_slope = 2;
       } else if (rs.compare("correct") == 0) {
-        // (Time2RotCorrect); frac in units of the step (default the
-        // stage size gamma = 1 - 1/sqrt 2)
+        // Time2RotCorrect; frac in units of the step (default gamma = 1 - 1/sqrt 2)
         vgd_rot_slope = 3;
         vgd_rot_cfrac = pin->GetOrAddReal("rad_vet","vet_gd_rotate_slope_frac",
                                           1.0 - 1.0/std::sqrt(2.0));
@@ -1349,20 +1245,18 @@ void RadiationVet::VetRotInit(ParameterInput *pin) {
       }
       if (vgd_rot_auto) {
         vgd_rot_auto_fac = 20.0;
-        // the value is recorded once resolved; until then the key reads "auto"
+        // recorded once resolved; until then the key reads "auto"
         pin->SetString("rad_vet","vet_gd_rotate_dt","auto");
       }
     }
   }
-  // (USER decision 1): the rotation axis of the vet_gd set.  z (the sp
-  // default, bitwise): the set turns about the polar axis (the wedge's symmetry: the
-  // periodic-wall maps stay exact permutations for HEALPix).  3d (the cubed-sphere
-  // default): about a quasi-random 3-D axis per rotation block, so that no direction of
-  // the set stays aligned with the panel seams / cube vertices from block to block.  On
-  // the sp wedge 3d is opt-in (the wall maps then take the nearest set direction)
+  // vet_gd_rotate_axis: z (sp default) turns the set about the polar axis (exact wall
+  // maps for HEALPix); 3d (cs default) about a quasi-random axis per rotation block, so
+  // no direction stays aligned with panel seams (on sp the wall maps take the nearest
+  // set direction)
   if (vgd_on) {
     const bool csm = pmy_pack->pmesh->use_cubed_sphere;
-    // read only when named: the default is not added to the parameter dump
+    // read only when named (not added to the parameter dump)
     const std::string ax = pin->DoesParameterExist("rad_vet","vet_gd_rotate_axis") ?
                            pin->GetString("rad_vet","vet_gd_rotate_axis") :
                            std::string(csm ? "3d" : "z");
@@ -1382,9 +1276,8 @@ void RadiationVet::VetRotInit(ParameterInput *pin) {
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationVet::VetGdAngle
 //! \brief vet_gd_rotate_every = N > 0: the z-rotation of the set for cycle c, constant
-//! over each block of N cycles: alpha = (pi/2) frac((c/N) g), g = (sqrt 5 - 1)/2 (a
-//! deterministic low-discrepancy sequence of the cycle number: reruns and restarts
-//! bitwise; pi/2 is the C4 period of the set, vgd_zper = pi for the geodesic set)
+//! per block of N cycles: alpha = P frac((c/N) g), g = (sqrt 5 - 1)/2, P the set's
+//! period (deterministic: reruns and restarts bitwise)
 
 Real RadiationVet::VetGdAngle(const int cyc) const {
   if (!VgdRotOn()) {return 0.0;}
@@ -1392,15 +1285,11 @@ Real RadiationVet::VetGdAngle(const int cyc) const {
 }
 
 Real RadiationVet::VetGdAngleBlk(const int64_t blk) const {
-  // vet_gd_rotate_axis = 3d: the KEY of block b (VgdRot3 decodes it): the
-  // zig-zag code of b (>= 0, exact in Real), or of b mod K with vet_rotate_avg = K (any K
-  // consecutive blocks hold the same K sets, as the stratified z phases).
-  // vet_rotate_advance: always zigzag(b) (no mod K): any K consecutive blocks are K
-  // consecutive points of the R_3 sequence (low discrepancy for every start), and the
-  // window moves on by one new set per block; the older sets of the window stay pure
-  // functions of their block (the restart / first-build re-sweeps of b - j)
-  // vet_rotate_avg_ema: a sequence that never repeats (3d: the key of b
-  // itself; z: the golden phase of b on the set's period)
+  // vet_gd_rotate_axis = 3d: the key of block b (decoded by VgdRot3) is zigzag(b), or
+  // zigzag(b mod K) with vet_rotate_avg = K. vet_rotate_advance: always zigzag(b), so
+  // any K consecutive blocks are consecutive R_3 points and the window moves by one set
+  // per block. vet_rotate_avg_ema: a never-repeating sequence (3d: key of b; z: golden
+  // phase of b)
   if (vra_ema) {
     if (vgd_rot3) {
       const int64_t z = (blk >= 0) ? 2*blk : (-2*blk - 1);
@@ -1418,30 +1307,24 @@ Real RadiationVet::VetGdAngleBlk(const int64_t blk) const {
     const int64_t z = (r >= 0) ? 2*r : (-2*r - 1);
     return static_cast<Real>(z);
   }
-  // with vet_rotate_avg = K the angle is the set's own period times
-  // RotPhase = (b mod K)/K, so that ANY K consecutive blocks hold K equispaced rotations
-  // (the averaged closure is then that of the K-fold refined azimuth set); the golden
-  // sequence on pi/2 clusters for a product set of period 2 pi/nphi (12: consecutive
-  // blocks step only -0.146 of the period)
+  // vet_rotate_avg = K: angle = period x RotPhase, (b mod K)/K, so any K consecutive
+  // blocks are K equispaced rotations (the K-fold refined azimuth set)
   if (vra_on) {
     const double per = vgd_zper;
     return static_cast<Real>(per*RotPhase(blk));
   }
   const double b = static_cast<double>(blk);
   const double g = 0.5*(std::sqrt(5.0) - 1.0);
-  // (a product set keeps pi/2 here: bitwise)
+  // a product set keeps pi/2 here
   return ((vgd_gl_nmu > 0) ? 0.5*M_PI : vgd_zper)*(b*g - std::floor(b*g));
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VgdRot3
-//! \brief cs-s3b-1017 vet_gd_rotate_axis = 3d: the rotation matrix (row major) of block
-//! key `key` (VetGdAngleBlk).  Block b: the uniform random rotation of Shoemake (1992)
-//! from the 3-D Kronecker point u_b = frac(b (1/g, 1/g^2, 1/g^3)), g the plastic-type
-//! constant of the R_3 sequence (Roberts 2018; low discrepancy in u, so the rotations
-//! cover SO(3) evenly without clustering), right-multiplied by the inverse of that of
-//! b = 0, so that block 0 is the unrotated set (as alpha = 0 on the z clock).  A pure
-//! function of the key: reruns, restarts and every rank give the same bits.
+//! \brief vet_gd_rotate_axis = 3d: the rotation matrix (row major) of block key `key`.
+//! Shoemake (1992) uniform rotation from the R_3 point u_b = frac(b (1/g, 1/g^2,
+//! 1/g^3)) (Roberts 2018), times the inverse of b = 0's (block 0 unrotated). A pure
+//! function of the key: same bits on every rank and restart.
 
 void RadiationVet::VgdRot3(const Real key, double r[9]) const {
   const int64_t z = static_cast<int64_t>(std::llround(static_cast<double>(key)));
@@ -1486,15 +1369,13 @@ void RadiationVet::VgdRot3(const Real key, double r[9]) const {
 
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationVet::RotPhase
-//! \brief the rotation of block blk as a fraction of the set's period, in [0, 1): the
-//! golden sequence frac(b g) (vgdrot), or with vet_rotate_avg = K the stratified (b mod
-//! K)/K (shared by vet_gd and vet_sc)
+//! \brief rotation of block blk as a fraction of the set's period in [0, 1): golden
+//! frac(b g), or with vet_rotate_avg = K the stratified (b mod K)/K
 
 double RadiationVet::RotPhase(const int64_t blk) const {
-  // vet_rotate_advance: frac(b (1 + gam)/K), gam = g/(4 (K-1)) irrational:
-  // any K consecutive phases are equispaced to within gam (K-1)/K < 0.16/K of the period
-  // (nearly the K-fold refined set), and the window drifts by gam/K of the period per
-  // block, never repeating (one full sub-period 1/K every 1/gam ~ 4 (K-1)/g blocks)
+  // vet_rotate_advance: frac(b (1 + gam)/K), gam = g/(4 (K-1)): any K consecutive phases
+  // are equispaced to within 0.16/K of the period, and the window drifts by gam/K per
+  // block without repeating
   if (vra_on && vra_k >= 2 && g_vra_adv) {
     const double g = 0.5*(std::sqrt(5.0) - 1.0);
     const double kk = static_cast<double>(vra_k);
@@ -1512,15 +1393,10 @@ double RadiationVet::RotPhase(const int64_t blk) const {
 
 //----------------------------------------------------------------------------------------
 //! \fn int64_t RadiationVet::VetGdBlock
-//! \brief the rotation block of the step of cycle cyc.  Cycle clock
-//! (vet_gd_rotate_every = N): cyc/N, as before.  Physical clock (vet_gd_rotate_dt =
-//! dt_rot > 0): the block holding the step's MIDPOINT, floor((t + dt/2 - t0)/dt_rot)
-//! with t, dt the mesh time and step (constant over the stages of a step, so both
-//! hesdirk2 stages and every build of the step share the set).  The angle is then a
-//! function of the physical time only: every dt samples the same set at the same t, the
-//! closure is piecewise constant in t with jumps at t0 + k dt_rot, and with
-//! vet_gd_rotate_align (VetGdAlignDt) every jump sits on a step boundary on every dt, so
-//! a dt ladder converges at the integrator's order.  Restart-safe (t, dt from the file).
+//! \brief rotation block of the step of cycle cyc. Cycle clock (vet_gd_rotate_every =
+//! N): cyc/N. Physical clock (vet_gd_rotate_dt > 0): floor((t + dt/2 - t0)/dt_rot),
+//! the block of the step midpoint, shared by all stages and builds of the step. With
+//! vet_gd_rotate_align every jump sits on a step boundary. Restart-safe.
 
 int64_t RadiationVet::VetGdBlock(const int cyc) const {
   if (vgd_rot_dt > 0.0) {
@@ -1533,10 +1409,8 @@ int64_t RadiationVet::VetGdBlock(const int cyc) const {
 
 //----------------------------------------------------------------------------------------
 //! \fn bool RadiationVet::RotLastStep
-//! \brief is the current step the last of its rotation block (the next step
-//! belongs to the next block)?  Physical clock: t + dt reaches the next boundary t0 +
-//! (b+1) dt_rot (exact with vet_gd_rotate_align); cycle clock: (cyc+1) % N == 0.  Shared
-//! by vet_gd and vet_sc.
+//! \brief is the current step the last of its rotation block? Physical clock: t + dt
+//! reaches t0 + (b+1) dt_rot; cycle clock: (cyc+1) % N == 0. Shared with vet_sc.
 
 bool RadiationVet::RotLastStep() const {
   const Mesh *pm = pmy_pack->pmesh;
@@ -1551,12 +1425,9 @@ bool RadiationVet::RotLastStep() const {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdRotStep
-//! \brief vgdrot2-1012 (Driver, before Time2RotCorrect): on the first step of a new
-//! rotation block (physical clock) the stored hesdirk2 slope K1 is f(U^{n-1..n}) of the
-//! OLD set; the FSAL stage 1 would then carry O(dt) of the old closure per jump (first
-//! order however the jumps are aligned).  be: t2_ok = false (a backward-Euler step).
-//! The first call (fresh start or restart) takes the block just before t as the last
-//! one, so a restart exactly on a boundary re-seeds the slope too.
+//! \brief (Driver, before Time2RotCorrect) on the first step of a new rotation block
+//! the stored hesdirk2 slope K1 belongs to the old set; be resets it (t2_ok = false).
+//! The first call takes the block before t as the last one (restart on a boundary).
 
 void RadiationVet::VetGdRotStep() {
   if (!(vgd_rot_dt > 0.0) || !(vgd_on || vsc_rot)) {return;}
@@ -1566,8 +1437,8 @@ void RadiationVet::VetGdRotStep() {
     vgd_rot_lastblk = static_cast<int64_t>(
         std::floor((pm->time - vgd_rot_t0)/vgd_rot_dt - 1.0e-9));
   }
-  // correct keeps the slope and asks Time2RotCorrect for its jump
-  // with vet_gd_rotate_xfade the closure has no jump: no slope correction
+  // correct keeps the slope and asks Time2RotCorrect for its jump;
+  // vet_gd_rotate_xfade has no jump: no slope correction
   if (vgd_xf && vgd_on) {
     vgd_rot_lastblk = b;
     return;
@@ -1584,17 +1455,13 @@ void RadiationVet::VetGdRotStep() {
 
 //----------------------------------------------------------------------------------------
 //! \fn Real RadiationVet::VetGdAlignDt
-//! \brief vet_gd_rotate_dt > 0 with vet_gd_rotate_align (from
-//! Mesh::NewTimeStep after the global min, before the tlim clamp): the next boundary
-//! t_k = t0 + k dt_rot > t is reached in n = ceil(rem/dt) EQUAL steps, dt' = rem/n
-//! (never a sliver step; dt' >= dt/2; dt' = dt when dt divides rem).  Same on every rank.
-//! vet_gd_rotate_stretch = s > 0: n - 1 steps when that needs dt' <= (1 + s) dt (a step
-//! up to s longer than the limit, instead of a whole extra step per interval).
+//! \brief vet_gd_rotate_align (Mesh::NewTimeStep, after the global min): reach the next
+//! boundary t0 + k dt_rot in n = ceil(rem/dt) equal steps, dt' = rem/n >= dt/2.
+//! vet_gd_rotate_stretch = s > 0: n - 1 steps when dt' <= (1 + s) dt.
 
 Real RadiationVet::VetGdAlignDt(const Real time, const Real dt) {
-  // vet_gd_rotate_dt = auto -> vgd_rot_auto_fac x the first dt this sees
-  // (the global step, before any alignment), fixed for the run and recorded as the number
-  // so a restart (and the parameter dump) keeps it
+  // vet_gd_rotate_dt = auto: vgd_rot_auto_fac x the first global dt, recorded as a
+  // number (restarts keep it)
   if (vgd_rot_auto && !(vgd_rot_dt > 0.0) && dt > 0.0) {
     vgd_rot_dt = vgd_rot_auto_fac*(vgd_rot_unc ? pmy_pack->pmesh->dt_uncapped : dt);
     vgd_rot_auto = false;
@@ -1613,7 +1480,7 @@ Real RadiationVet::VetGdAlignDt(const Real time, const Real dt) {
   if (!(vgd_rot_dt > 0.0) || !vgd_rot_align || !(dt > 0.0)) {return dt;}
   const double x = (time - vgd_rot_t0)/vgd_rot_dt;
   double k = std::floor(x) + 1.0;
-  // time already on a boundary (to round-off): the NEXT one
+  // already on a boundary (to round-off): the next one
   if ((k - x)*vgd_rot_dt < 1.0e-9*dt) {k += 1.0;}
   const double rem = vgd_rot_t0 + k*vgd_rot_dt - time;
   double n = std::ceil(rem/dt*(1.0 - 1.0e-9));
@@ -1628,11 +1495,10 @@ Real RadiationVet::VetGdAlignDt(const Real time, const Real dt) {
 
 //----------------------------------------------------------------------------------------
 //! \fn static void VgdMirPick
-//! \brief wallbug-1027 vet_gd_theta_wall = mirror: the set directions that stand in for
-//! the direction m (unit) at a cell whose radial unit vector is (rx, ry, rz): an exact
-//! match (n . m > 1 - 1e-12) or, without wint, the nearest set direction of m's branch
-//! (sign of m . r_hat) with weight 1; with wint the 3 nearest of that branch, spherical
-//! barycentric weights when all >= 0, else inverse-angle (vet_gd_wall_interp's rule)
+//! \brief vet_gd_theta_wall = mirror: set directions standing in for direction m at a
+//! cell with radial unit vector (rx, ry, rz): an exact match, else the nearest of m's
+//! branch (sign of m . r_hat); with wint the 3 nearest, barycentric weights when all
+//! >= 0, else inverse-angle (vet_gd_wall_interp's rule)
 
 static void VgdMirPick(const std::vector<double> &d, const int n, const double mx,
                        const double my, const double mz, const double rx,
@@ -1662,10 +1528,8 @@ static void VgdMirPick(const std::vector<double> &d, const int n, const double m
   if (bd > 1.0 - 1.0e-12) {r3[0] = r3[1] = r3[2] = best; return;}
   if (b3[0] <= -2.0) {r3[0] = r3[1] = r3[2] = best; return;}
   if (!wint || b3[2] <= -2.0) {r3[1] = r3[2] = r3[0]; return;}
-  // m on a ring of the set (the same n_z: a product or HEALPix set mirrored about the
-  // equator): linear in azimuth between the two ring directions that bracket it (n_z
-  // kept exactly; the 3-point rule below would mix in another ring or fall back to
-  // inverse-angle weights, since m is not inside the spherical triangle)
+  // m on a ring of the set (same n_z): linear in azimuth between the two bracketing
+  // ring directions (n_z kept exactly)
   {
     int ra = -1, rb = -1;
     double da = -2.0, db = -2.0;
@@ -1696,9 +1560,8 @@ static void VgdMirPick(const std::vector<double> &d, const int n, const double m
         return;
       }
     }
-    // ronly (vet_gd_wall_sym): no same-branch pair brackets m (a tangent split) -> its
-    // nearest same-branch ring direction alone, so the pick stays on the ring (paired
-    // under both mirrors; the 3-point rule below breaks ties across rings by index)
+    // ronly (vet_gd_wall_sym): no bracketing pair -> the nearest same-branch ring
+    // direction alone (paired under both mirrors)
     if (ronly && ra >= 0) {r3[0] = r3[1] = r3[2] = ra; return;}
   }
   const double *u = &d[4*r3[0]], *v = &d[4*r3[1]], *x = &d[4*r3[2]];
@@ -1727,8 +1590,8 @@ static void VgdMirPick(const std::vector<double> &d, const int n, const double m
 
 //----------------------------------------------------------------------------------------
 //! \fn std::vector<double> RadiationVet::VgdRotate
-//! \brief the set of angle (or block key) alpha, packed as vgd_base (x, y, z, w): rotated
-//! about z by alpha, or with vet_gd_rotate_axis = 3d by R_b (VgdRot3)
+//! \brief the set at angle (or block key) alpha, packed as vgd_base (x, y, z, w):
+//! rotated about z, or with vet_gd_rotate_axis = 3d by R_b (VgdRot3)
 
 std::vector<double> RadiationVet::VgdRotate(const Real alpha) const {
   const int n = vgd_n;
@@ -1756,11 +1619,9 @@ std::vector<double> RadiationVet::VgdRotate(const Real alpha) const {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VgdTabCompute
-//! \brief the host part of VetGdTables for angle alpha (the set rotated by
-//! alpha about z, the wall maps and branch tables) into the persistent pinned host
-//! buffers vgd_tabh (allocated by VgdTabAlloc; non-wall m3 / w3 entries stay 0 as in the
-//! zero-initialised mirrors before).  Touches nothing else: safe on the prefetch thread.
-//! nthr: host threads over the (m, k) columns (the result does not depend on it).
+//! \brief host part of VetGdTables for angle alpha (rotated set, wall maps, branch
+//! tables) into the pinned host buffers vgd_tabh; touches nothing else (safe on the
+//! prefetch thread). nthr: host threads over (m, k) columns (result independent).
 
 void RadiationVet::VgdTabCompute(const Real alpha, const int nthr) {
   Mesh *pm = pmy_pack->pmesh;
