@@ -4,8 +4,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_tasks.cpp
-//! \brief the rad_vet task lists (run by the Driver after "after_timeintegrator"), the
-//! thin task wrappers and the time step.
+//! \brief rad_vet task lists, the thin task wrappers and the time step.
 
 #include <float.h>
 
@@ -29,18 +28,16 @@
 namespace radvet {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::AssembleRadVetTasks
-//! \brief Adds rad_vet tasks to the m1_* task lists.  Called by
-//! MeshBlockPack::AddPhysics.
+//! \brief adds the rad_vet tasks to the vet_* task lists (called by AddPhysics)
 
 void RadiationVet::AssembleRadVetTasks(std::map<std::string,
                                        std::shared_ptr<TaskList>> tl) {
   TaskID none(0);
 
-  // "vet_before_stagen": work that must complete over all MeshBlocks before the stage
+  // "vet_before_stagen"
   id.irecv = tl["vet_before_stagen"]->AddTask(&RadiationVet::InitRecv, this, none);
 
-  // "vet_stagen": the clean stage solve (scheme = clean, transport = implicit), then the
-  // hydro inversion and the ghost-zone exchange of the moments
+  // "vet_stagen": clean stage solve, hydro inversion, ghost exchange of the moments
   id.closure = tl["vet_stagen"]->AddTask(&RadiationVet::ApplyClosureLimits,this,none);
   id.opac    = tl["vet_stagen"]->AddTask(&RadiationVet::Opacity, this, id.closure);
   id.update  = tl["vet_stagen"]->AddTask(&RadiationVet::CleanSolve, this, id.opac);
@@ -107,7 +104,7 @@ TaskStatus RadiationVet::ApplyPhysicalBCs(Driver *pdrive, int stage) {
 
   pbval_u->RadVetBCs((pmy_pack), (pbval_u->u_in), u0, c_light, e_floor);
 
-  // user BCs (the beam test patches the inflow face here)
+  // user BCs
   if (pmy_pack->pmesh->pgen->user_bcs) {
     (pmy_pack->pmesh->pgen->user_bcs_func)(pmy_pack->pmesh);
   }
@@ -156,18 +153,15 @@ TaskStatus RadiationVet::ClearRecv(Driver *pdrive, int stage) {
   return TaskStatus::complete;
 }
 
-
 //----------------------------------------------------------------------------------------
 //! \fn TaskStatus RadiationVet::ApplyClosureLimits
-//! \brief first task of the stage chain: starts the implicit_timers (the clean solve
-//! keeps its state; no clip)
+//! \brief first task of the stage chain: starts the implicit_timers; applies no clip
 
 TaskStatus RadiationVet::ApplyClosureLimits(Driver *pdrive, int stage) {
-  // implicit_timers: the M1 stage chain starts here
   tmr_on = (tmr_c0 > 0) && (pmy_pack->pmesh->ncycle >= tmr_c0);
   if (tmr_on) {tmr_cnt[7] += 1.0;}
   TmrMark(-1);
-  // the clean solve keeps its solution: a clip would change the energy and momentum
+  // no clip: it would break energy and momentum conservation
   TmrMark(0);
   return TaskStatus::complete;
 }
@@ -176,8 +170,7 @@ TaskStatus RadiationVet::ApplyClosureLimits(Driver *pdrive, int stage) {
 //! \fn TaskStatus RadiationVet::NewTimeStep
 
 TaskStatus RadiationVet::NewTimeStep(Driver *pdriver, int stage) {
-  // no light-speed CFL: the implicit step takes the step it is given, unless
-  // <rad_vet>/implicit_cfl > 0 asks for c dt/dx (the radiation-only tests)
+  // no light-speed CFL unless implicit_cfl > 0 (dt = implicit_cfl dx/c)
   dtnew = static_cast<Real>(std::numeric_limits<float>::max());
   if (!(impl_cfl > 0.0)) return TaskStatus::complete;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -205,9 +198,8 @@ TaskStatus RadiationVet::NewTimeStep(Driver *pdriver, int stage) {
   if (pmy_pack->pmesh->multi_d) {dxmin = std::min(dxmin, dt2);}
   if (pmy_pack->pmesh->three_d) {dxmin = std::min(dxmin, dt3);}
   if (sph_geom) {
-    // stage S1, spherical polar: mb_size.dx2/dx3 are ANGLES and dx1 is the unstretched
-    // spacing, so take the smallest physical cell width dr, r dtheta, r sin(theta) dphi
-    // of Coordinates over the active cells (reduced over ranks by the driver)
+    // spherical: mb_size dx2/dx3 are angles, so take the smallest physical width
+    // (dr, r dtheta, r sin(theta) dphi) over the active cells
     auto cx1 = pmy_pack->pcoord->dx1;
     auto cx2 = pmy_pack->pcoord->dx2;
     auto cx3 = pmy_pack->pcoord->dx3;
