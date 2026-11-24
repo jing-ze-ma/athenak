@@ -511,6 +511,13 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // face, as its share of the face's conservative term (the cut F's absorption not
     // withheld), so gas + radiation momentum and L_z are exact; E pays the kinetic energy
     cln_fcgas = cln_fcone && pin->GetOrAddBoolean("rad_vet","clean_stag_fcone_gas",false);
+    // clean_stag_fcone_lz (read only when named, default off): fcone takes a cell's
+    // excess from its faces without L_z lever arm first (x1; spherical polar also x2),
+    // cut and counted as now; a face with an arm (spherical polar x3, cubed sphere x2,
+    // x3) is scaled only where those faces alone exceed c E, and its cut is the gas's at
+    // the face (as fcone_gas), so that L_z is exact (cubed sphere: CleanCsTorque)
+    cln_fclz = cln_fcone && pin->DoesParameterExist("rad_vet","clean_stag_fcone_lz") &&
+               pin->GetBoolean("rad_vet","clean_stag_fcone_lz");
     // clean_stag_thinf_held (default off, the v20.7 value, USER 11-21): the thin flux
     // factor of a donor blended by theta = min(1, max(J, P)/(clean_ray_min E_old)), P its
     // largest ray outflow: theta g(rays) + (1 - theta) h (its own half range); a

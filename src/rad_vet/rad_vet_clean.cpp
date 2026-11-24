@@ -4651,22 +4651,34 @@ void RadiationVet::CleanStagFCone(const int e, const int kd) {
   CleanArgs x = CleanMakeArgs();
   const bool cub = x.cub, dd = cln_fkin && e == CLW_X && cln_dok, wbc = e == CLW_X;
   const bool fg = cln_fcgas;   // (clean_stag_fcone_gas)
+  // (clean_stag_fcone_lz: l_i of the faces without L_z arm (fa), CLW_CP >= 0 with the
+  // others' 1, or -l_i of the others with fa's 0, where those alone exceed c E)
+  const bool lz = cln_fclz, sph = x.sph;
+  auto fa = KOKKOS_LAMBDA(const int q) {return q == 0 || (sph && q == 1);};
+  auto lf = KOKKOS_LAMBDA(const Real cp, const int q) {
+    return !lz ? cp : (fa(q) ? fmax(cp, 0.0) : ((cp < 0.0) ? -cp : 1.0));
+  };
   if (cln_fconc.extent_int(0) != 2) Kokkos::realloc(cln_fconc, 2);
   Kokkos::deep_copy(cln_fconc, 0.0);
   auto fcc = cln_fconc;
   CleanFor("cln_fcone_l", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real s = 0.0;
+    Real s = 0.0, st = 0.0;   // (st: the faces with L_z arm, clean_stag_fcone_lz)
     for (int d = 0; d < 2*x.nf; ++d) {
       const int q = d/2, h = d%2;
       Real c[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, u[3];
       c[d] = 1.0;
       CleanStagCellVector(x, m, k, j, i, c, u);
-      s += fabs(x.fc[q](m,CLF_N,k+h*(q == 2),j+h*(q == 1),i+h*(q == 0)))*
-           sqrt(SQR(u[0]) + SQR(u[1]) + SQR(u[2]));
+      const Real a = fabs(x.fc[q](m,CLF_N,k+h*(q == 2),j+h*(q == 1),i+h*(q == 0)))*
+                     sqrt(SQR(u[0]) + SQR(u[1]) + SQR(u[2]));
+      if (lz && !fa(q)) {
+        st += a;
+      } else {
+        s += a;
+      }
     }
     const Real ce = x.c*fmax(x.w(m,e,k,j,i), 0.0);
-    x.w(m,CLW_CP,k,j,i) = (s > ce) ? ce/s : 1.0;
+    x.w(m,CLW_CP,k,j,i) = (st > ce) ? -ce/st : ((s + st > ce) ? (ce - st)/s : 1.0);
   });
   CleanGhostFill(cln_w, CLW_CP, 1);
   for (int d = 0; d < x.nf; ++d) {
@@ -4680,7 +4692,8 @@ void RadiationVet::CleanStagFCone(const int e, const int kd) {
       const bool bd = CleanBoundaryFace(x, d, m, k, j, i);
       const Real tau = 0.5*(x.op(m,M1_OP_T,k,j,i) + x.op(m,M1_OP_T,k-dk,j-dj,i-di))*
                        CleanCellFaceDistance(x, d, m, k, j, i);
-      const Real l = fmin(x.w(m,CLW_CP,k-dk,j-dj,i-di), x.w(m,CLW_CP,k,j,i));
+      const Real l = fmin(lf(x.w(m,CLW_CP,k-dk,j-dj,i-di), d),
+                          lf(x.w(m,CLW_CP,k,j,i), d));
       fc(m,CLF_N+2,k,j,i) = (bd ? 1.0 : 1.0 - (1.0 - l)/(1.0 + tau))*fc(m,CLF_N,k,j,i);
     });
   }
@@ -4709,11 +4722,13 @@ void RadiationVet::CleanStagFCone(const int e, const int kd) {
       const bool lin = (d == 0) ? (i > is) : ((d == 1) ? (j > js) : (k > ks));
       const Real f = fc(m,CLF_N,k,j,i);
       const Real fs = !bd ? fc(m,CLF_N+2,k,j,i) :
-                      x.w(m,CLW_CP,k-lin*dk,j-lin*dj,i-lin*di)*f;
+                      lf(x.w(m,CLW_CP,k-lin*dk,j-lin*dj,i-lin*di), d)*f;
       fc(m,CLF_N+2,k,j,i) = fs;
       if (fs == f) return;
       const Real it = 1.0/fc(m,CLF_TH,k,j,i);
-      if (!bd && !fg) fc(m,CLF_N+1,k,j,i) -= (f - fs)*it/(x.h*x.c*x.c);
+      if (!bd && !fg && !(lz && !fa(d))) {
+        fc(m,CLF_N+1,k,j,i) -= (f - fs)*it/(x.h*x.c*x.c);
+      }
       if (dd && !bd) {   // (the energy flux's memory G + d kept)
         fc(m,CLF_N+3,k,j,i) += f - fs;
         if (kd > 0) fc(m,kd,k,j,i) += (f - fs)/x.h;
