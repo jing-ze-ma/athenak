@@ -163,8 +163,7 @@ void RadiationVet::VetColReport() {
         if (vgd_ring) {
           std::cout << "<rad_vet> vet_gd_band_ring (rank 0): sweeps " << vgd_rg_nk
                     << ", dense band saves " << vgd_rg_ndense << ", save store "
-                    << vgd_rg_store.extent(0)*sizeof(Real)/1.0e9 << " GB"
-                    << (vgd_ring_poison ? " (POISON test)" : "") << std::endl;
+                    << vgd_rg_store.extent(0)*sizeof(Real)/1.0e9 << " GB" << std::endl;
         }
         if (vgd_xff) {
           double oos2 = 0.0;

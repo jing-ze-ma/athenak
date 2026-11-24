@@ -6563,7 +6563,6 @@ void RadiationVet::VetGdRingFlush() {
   const int c2b = nx2 + 2*w, c3b = nx3 + 2*w;
   const bool two = vgd_rg_two;
   const bool xb = two && vgd_rg_xb;
-  const bool poison = vgd_ring_poison;
   // one group: at most one save, one release, one acquire (else several launches)
   size_t p = 0;
   while (p < vgd_rg_pend.size()) {
@@ -6699,21 +6698,6 @@ void RadiationVet::VetGdRingFlush() {
     auto oc_ = vgd_rg_doffc;
     auto so_ = vgd_rg_dsoff;
     auto st_ = vgd_rg_store;
-    const int64_t ad = a_.dummy;
-    // debug: the lent slab NaN (every value the sweep reads must be written first)
-    if (poison && aq.kind) {
-      const int s = aq.slot;
-      const int64_t s0 = vgd_rg_soff[static_cast<size_t>(s)*nmb];
-      const int64_t s1 = (s + 1 < vgd_rg_k) ? vgd_rg_soff[static_cast<size_t>(s + 1)*nmb]
-                                              : ad;
-      auto da = a_.d, db = b_.d;
-      const Real qn = std::numeric_limits<Real>::quiet_NaN();
-      Kokkos::parallel_for("vet_vgd_ring_nan", Kokkos::RangePolicy<>(vgd_cur, 0, s1 - s0),
-      KOKKOS_LAMBDA(const int64_t t) {
-        da(s0 + t) = qn;
-        if (two) {db(s0 + t) = qn;}
-      });
-    }
     const int64_t nsv = sv.kind ? (xb ? (sv_n + sv_n2) : sv_n) : 0;
     const int64_t nin = static_cast<int64_t>(nmb)*n*nx3*nx2;
     const int64_t nrl = rl.kind ? nin : 0;

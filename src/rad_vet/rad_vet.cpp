@@ -1911,10 +1911,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "build" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-#if VET_DEBUG
-    vgd_ring_poison = (std::getenv("VGD_RING_POISON") != nullptr) &&
-                      (std::atoi(std::getenv("VGD_RING_POISON")) != 0);
-#endif
     // the same fresh default for a plain vet_col (no vet_gd), as
     // vet_sc.  vet_gd without the twin keeps false: there the pair is needed together
     // (NOTE-2026-10-09-viper-sp-seam-mass-leak: noesrc alone exposes the gd ray effect)
