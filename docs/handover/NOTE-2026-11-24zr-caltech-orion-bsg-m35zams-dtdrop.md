@@ -89,3 +89,12 @@ c38770 dt_hyd 51.06 gasonly 41.16 dir 1 r 4.2503e+12 rho 6.152e-14 T 6.959e+14 v
 c38780 dt_hyd 45 gasonly 35.04 dir 1 r 3.9242e+12 rho 6.152e-14 T 1.216e+15 v -9.993e+07 cgas 4.501e+07 ceff 4.501e+07 tauT_h 0.000423
 ```
 - first DTREG lines: `DTREG polar cycle=38670 npol=7 cfl*cell_dt=84.7994 row=0 theta_deg=60.1172 phi=0.00204531 r=1.40233e+12 dir=3 rho=5.77419e-05 T=1.41913e+14 v=-1775.14 cgas=1.53792e+07 ceff=1.7594e+07 h=4.97371e+09 cfl*cell_dt_gas=97.01|DTREG rest  cycle=38670 npol=7 cfl*cell_dt=86.1643 row=7 theta_deg=61.7579 phi=0.00204531 r=1.40233e+12 dir=3 rho=5.77393e-05 T=1.41911e+14 v=-923.111 cgas=1.53791e+07 ceff=1.75939e+07 h=5.05349e+09 cfl*cell_dt_gas=98.5723|`
+
+## Reading (24zq items 3 / 4)
+- **bsg: the binder IS floor-density gas at large r, the c777 mechanism.** rho = 6.152e-14 = dfloor (deck dfloor 6.15245e-14), r 3.8-4.25e12, v_r -6e7 to **-1.0e8 = vceil (1.0e8)**, dir 1, tauT_h ~4e-4; cfl*dt_hyd 44-51.
+  The other half of the binders sits at rho 6.23e-14, r 3.82e12 with |v| 6.3e7. **DFLFIX H3 started beside bsg at once** (07:28, hpc-sm-01-15 next to M35ZAMS; memory 34 + 40 GB/GPU), athena_dflfix_5b6159ad0 from bsg3d.00028 (hard link .dfltest), production keys + vet_gd_ls=0, 1000 cycles. Results go to NOTE 24zn (H3).
+- **M35ZAMS (Z3): the binder is floor gas, but ABOVE the cap, not at it.** rho = 1.000e-17 (dfloor), r 5.59-5.62e11 (the thin layer just above the photosphere), **dir 3 (phi), |v| 4.1-5.5e7 > floorcap_v 3e7**, cfl*dt_hyd 1.49-1.82.
+  This is the same mechanism as m35mms before floorcap_lz_spin: floorcap_lz keeps v_phi of capped floor cells.
+  Your FS2 arm (floorcap_lz_spin on the Z3 state at c17560) held dt at 2.477 with the floor gas AT the cap (|v| = 3e7). So for M35ZAMS: floorcap_lz_spin would bring the binder back to "floor gas at the cap" (dt ~2.5, the dt_floor_courant item = USER decision).
+  Without it, the spun-up floor layer binds dt at ~1.5-1.8. Not switched (no switch on dt alone).
+- Both runs keep hydro/dt_report=10 for now; I drop it at their next rst if it costs > 1 %.
