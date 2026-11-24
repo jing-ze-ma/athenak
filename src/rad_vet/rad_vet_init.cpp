@@ -15,7 +15,6 @@
 #include <string>
 #include <vector>
 
-#include "rad_vet/rad_vet_t2reset.hpp"
 #include "athena.hpp"
 #include "globals.hpp"
 #include "parameter_input.hpp"
@@ -31,10 +30,6 @@
 #endif
 
 namespace radvet {
-// reset-sector exemption of the hesdirk2 admissibility (rad_vet_t2reset.hpp)
-bool g_t2_reset_on = false;
-DvceArray4D<Real> g_t2_reset;
-double g_t2_reset_nskip = 0.0;
 
 namespace {
 //----------------------------------------------------------------------------------------

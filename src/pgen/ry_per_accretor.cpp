@@ -178,7 +178,6 @@
 #include "coordinates/coordinates.hpp"
 #include "coordinates/cell_locations.hpp"
 #include "coordinates/cubed_sphere.hpp"
-#include "rad_vet/rad_vet_t2reset.hpp"
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
@@ -2735,14 +2734,6 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
       hmk = pmbp->pradvet->hold_m;
       Kokkos::deep_copy(hmk, 0.0);
     }
-    // problem/t2_reset_exempt: the cells this kernel resets (nozzle, mask, back
-    // sink) are exempt from the next hesdirk2 admissibility check (rad_vet_t2reset.hpp)
-    const bool rse = rad && radvet::g_t2_reset_on;
-    DvceArray4D<Real> rsk;
-    if (rse) {
-      rsk = radvet::g_t2_reset;
-      Kokkos::deep_copy(rsk, 0.0);
-    }
     const Real l1c = l1_c_, l1t = l1_t_;
     const RocheParams pr = rp_;
     const bool g3 = g3d_;
@@ -2799,7 +2790,6 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
         }
       }
       if (!(innz || inmk)) return;
-      if (rse) {rsk(m,k,j,i) = 1.0;}
       array_sum::GlobalSum v;
       for (int n=0; n<NREDUCTION_VARIABLES; ++n) v.the_array[n] = 0.0;
       const Real d0 = u0(m,IDN,k,j,i), m30 = u0(m,IM3,k,j,i), e0 = u0(m,IEN,k,j,i);
@@ -3477,19 +3467,6 @@ void RyPerHistEnv(HistoryData *pdata, Mesh *pm) {
 //! release the namespace-scope Views before Kokkos::finalize
 void RyPerFinal(ParameterInput *pin, Mesh *pm) {
   eint_ledger::Free();   // before Kokkos::finalize
-  if (radvet::g_t2_reset_on) {   // t2_reset_exempt: report, free before finalize
-    double ns = radvet::g_t2_reset_nskip;
-#if MPI_PARALLEL_ENABLED
-    MPI_Allreduce(MPI_IN_PLACE, &ns, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-#endif
-    if (global_variable::my_rank == 0) {
-      std::printf("ry_per_accretor: t2_reset_exempt: %.0f non-positive stage values in "
-                  "reset cells skipped by the admissibility check (this run segment)\n",
-                  ns);
-    }
-    radvet::g_t2_reset = DvceArray4D<Real>();
-    radvet::g_t2_reset_on = false;
-  }
   // the held-set face supply booked by RyPerHoldBook (into erinj_/Ebnd)
   if (pm->pmb_pack->pradvet != nullptr && pm->pmb_pack->pradvet->impl_hold) {
     Real hb = hold_bk_;
@@ -6458,25 +6435,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // (read, not added: the key stays out of the PAR_DUMP of runs that do not set it)
   flvc_ = pin->DoesParameterExist("problem", "floor_m1_vcap") &&
           pin->GetBoolean("problem", "floor_m1_vcap");
-  // problem/t2_reset_exempt (read only when named, default false = bitwise): the
-  // nozzle / donor-mask / back-sink cells (reset by this pgen after every stage) are
-  // exempt from the hesdirk2 stage admissibility check and the time2_posfix marking
-  // (rad_vet_t2reset.hpp); sp and cs alike
+  // problem/t2_reset_exempt: the reset cells' exemption from the old solver's stage
+  // admissibility check, removed with it
   if (pin->DoesParameterExist("problem", "t2_reset_exempt") &&
       pin->GetBoolean("problem", "t2_reset_exempt")) {
-    if (!rad_) fatal("problem/t2_reset_exempt needs <rad_vet>");
-    auto &idh = pmy_mesh_->mb_indcs;
-    const int nh1 = idh.nx1 + 2*idh.ng;
-    const int nh2 = (idh.nx2 > 1) ? (idh.nx2 + 2*idh.ng) : 1;
-    const int nh3 = (idh.nx3 > 1) ? (idh.nx3 + 2*idh.ng) : 1;
-    const int nmh = std::max(pmbp->nmb_thispack, pmy_mesh_->nmb_maxperrank);
-    Kokkos::realloc(radvet::g_t2_reset, nmh, nh3, nh2, nh1);
-    Kokkos::deep_copy(radvet::g_t2_reset, 0.0);
-    radvet::g_t2_reset_on = true;
-    if (global_variable::my_rank == 0) {
-      std::printf("ry_per_accretor: t2_reset_exempt: nozzle / mask / back-sink cells are "
-                  "exempt from the hesdirk2 admissibility check\n");
-    }
+    fatal("problem/t2_reset_exempt is removed (scheme = clean has no stage "
+          "admissibility check to exempt cells from)");
   }
   if (flvc_ && !rad_) fatal("problem/floor_m1_vcap needs <rad_vet>");
   // (default true; history only)
