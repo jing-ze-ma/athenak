@@ -139,3 +139,9 @@ CLEAN WARNING cycle 779 t2s 2: the implicit_pos_floor creation 1.459516e+42 of t
 00015 2.619e+04  10408 |    6.7870e-04   -1.3452e-07 |   -8.2293e+04    2.9810e+06 |   -1.9709e+04    9.2487e+04
 (float32 bins; vet_f* = cell radiation flux moments; shells i=320..331 = r 5.5279e+11..5.5603e+11; v in cm/s)
 ```
+
+## m35zams_z3 (11-24 01:57) 
+- start: `2026-11-24 01:55:47 chunk 0 STAR=m35zams_z3 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc3_af836f5a3 md5=09f50abee4ffa6cd399ce15879626353 DECK=/resnick/groups/carnegie_poc/jingze/prod_rc3_1124/layopt/decks/IA123_m35zams_lay.athinput md5=6811bf5735a0d56d6ebf8c2860bccec1 start=-i /resnick/groups/carnegie_`
+- FATAL 0, CLEAN WARNING 0, stage fallbacks 0, DT_RETRY 0, created inf 0; never-read: ### mesh/cs_seam_blockend = extend;### mesh/cs_vertex_3cell = true;### mesh/cs_seam_rho_guard = 4;### time/dt_retry_max = 8;### hydro/wb_cache_every = 0;### rad_vet/clean_stag_thinf_held = false;### rad_vet/time2_stage_local_be = false;### rad_vet/vet_gd_rotate_align = true;### rad_vet/vet_rotate_av
+- s/cyc 0.2661 (c10-280); row 200 (cycle 200): t 6.961014e+02 dt 3.48051 L_top/L_in 1.000460 L_bot/L_in 0.999890
+- md5 of the first 201 non-# rows (cycles 0-200): user.hst 1e0c57b57e944bf7f534fe471424f9d2, hydro.hst 7e8b70e0f8f80341fba8ebbf18fad8e5 (rows in caltech_results/PROD_RC3_1124/m35zams_z3/user_hst_first201rows.txt)
