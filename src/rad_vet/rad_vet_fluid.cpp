@@ -4,31 +4,8 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_fluid.cpp
-//! \brief the fluid side of the M1 module: the ghost exchange and inversion after a write
-//! of the conserved fluid (HydroConToPrim, FluidRefresh), the near-floor gas cap
-//! (FloorGasCap) and |B|^2/2 (EmagBuild).
-//!
-//! THE REFERENCE FORCE, <rad_vet>/force_reference = wb_arad (milestone 2a).  When an
-//! external well-balanced scheme already carries part of the radiative support -- the
-//! effective potential Phi_eff of box_convection, whose gravity source delivers
-//! -rho*g + rho*arad_ref to the gas momentum and NO energy term, because a_rad is not in
-//! the etotgrav potential -- the coupling must not hand the gas that part a second time.
-//! The bookkeeping that makes the split exact is: MOMENTUM residual, WORK full.
-//!
-//!   radiation field:  F' - F*                 (the full force; unchanged)
-//!   gas momentum:     dm_res = dm - dt rho arad_ref,   dm = -(F' - F*)/(chat c)
-//!   gas energy:       u(IEN) += W with W = vbar.dm, the work of the FULL force
-//!   radiation energy: E' -= (chat/c) W
-//!
-//! Momentum is conserved because the WB source supplies exactly the dt rho arad_ref that
-//! was taken out here.  Energy: writing u(IEN) = e_gas + KE_old + W while the momentum
-//! actually applied is dm_res raises the gas INTERNAL energy by vbar.(dm - dm_res) =
-//! vbar.dt rho arad_ref -- precisely the amount the WB momentum source will then remove
-//! from it when it adds dt rho arad_ref to IM1 without an energy term.  Over the cycle
-//! the internal energy is left alone and the radiation field has paid for the whole of
-//! the kinetic work, exactly once.  The two vbar are a stage apart, so the cancellation
-//! is exact to O(dt^2), the order of the operator split itself.
-//!
+//! \brief fluid side of the M1 module: ghost exchange and inversion after a write of
+//! the conserved fluid, near-floor gas cap, |B|^2/2, the opacity task and RSLA check.
 
 #include <cstdlib>
 #include <iostream>
@@ -62,24 +39,13 @@ namespace radvet {
 
 //----------------------------------------------------------------------------------------
 //! \fn TaskStatus RadiationVet::HydroConToPrim
-//! \brief refresh hydro's GHOST ZONES and primitives after the coupling has written its
-//! conserved u0, once per substep stage.
-//!
-//! The ConToPrim alone (which is all design sect. 5 asks for) is not enough, and the
-//! reason cost a debugging round in T5: the hydro stage chain is
-//! CopyCons -> Fluxes -> ... -> SendU -> RecvU -> BCs -> ConToPrim, so its FLUXES read
-//! ghost-zone primitives that were exchanged BEFORE this module last wrote u0.  A
-//! uniform single zone whose gas energy the coupling had just dropped by two decades
-//! came back with a density spread of 7e-8 and a spurious momentum, because the first
-//! hydro flux of the next cycle saw stale ghosts: a jump of the full energy change at
-//! the MeshBlock boundary.  So the conserved state is restricted, exchanged and
-//! bounded here, exactly as Driver::InitBoundaryValuesAndPrimitives does it, before
-//! the inversion.
+//! \brief refresh hydro ghost zones and primitives after the coupling wrote u0, once
+//! per stage: the next hydro fluxes read ghost primitives, so ConToPrim alone would
+//! leave stale ghosts (restrict, exchange, BCs as InitBoundaryValuesAndPrimitives).
 
 TaskStatus RadiationVet::HydroConToPrim(Driver *pdrive, int stage) {
-  Time2GasTime(pdrive, 2);   // (sdirk2: the gas of the stage-1 solve at t^{n+1})
-  // <hydro>/merge_lat_rad = true: the radiation E, F of the merged lateral
-  // groups replaced by their group values after the solve (hydro_mergelat.hpp)
+  Time2GasTime(pdrive, 2);   // sdirk2: the gas of the stage-1 solve at t^{n+1}
+  // <hydro>/merge_lat_rad: radiation E, F of merged lateral groups -> group values
   {
     hydro::Hydro *phm = pmy_pack->phydro;
     if (phm != nullptr && phm->pmlat != nullptr && phm->pmlat->on && phm->pmlat->rad) {
@@ -94,8 +60,7 @@ TaskStatus RadiationVet::HydroConToPrim(Driver *pdrive, int stage) {
     (pmy_pack->pmesh->pgen->user_m1post_func)(pmy_pack->pmesh);
   }
   eint_ledger::Mark(pmy_pack->pmesh, "vet_post");
-  // not on the state of a failed solve, which dt_retry discards (its
-  // inf / NaN cells made the cap's energy counters inf for the rest of the run)
+  // skip on a failed solve (dt_retry discards it; inf/NaN would poison the counters)
   if (fcap_rho > 0.0 && !dtr_fail) {FloorGasCap();}
   FluidRefresh(pdrive);
   eint_ledger::Mark(pmy_pack->pmesh, "vet_c2p");
@@ -105,13 +70,9 @@ TaskStatus RadiationVet::HydroConToPrim(Driver *pdrive, int stage) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::FloorGasCap
-//! \brief cap |v| and T_gas of near-floor gas (rho < fcap_rho) after
-//! the implicit solve, active cells, on the conserved state (FluidRefresh follows).
-//! The cap acts where the gas carries a negligible share of the energy (rho 4+ decades
-//! below the photosphere) and only there sets the CFL dt (hot, fast floor pockets).
-//! T <= T_rad mimics Compton equilibration, which the model has no term for.  Energy:
-//! the clipped kinetic energy and the excess internal energy go to E_rad,
-//! so gas + radiation energy is conserved per cell (chat = c).  Momentum is removed.
+//! \brief cap |v| and T_gas <= T_rad (Compton-like) of near-floor gas (rho < fcap_rho)
+//! after the implicit solve. Clipped kinetic and excess internal energy go to E_rad
+//! (gas + radiation energy conserved per cell for chat = c); momentum is removed.
 
 void RadiationVet::FloorGasCap() {
   hydro::Hydro *ph = pmy_pack->phydro;
@@ -154,8 +115,7 @@ void RadiationVet::FloorGasCap() {
     if (vc > 0.0 && msq > SQR(vc*dd)) {
       const Real fs = vc*dd/sqrt(msq);
       const Real dke = (1.0 - fs*fs)*ekin;
-      // (the momentum removed, booked: |dp| V and, spherical polar or with
-      // floorcap_mesh_vol on every mesh, its L_z)
+      // book the removed momentum |dp| V and its L_z
       Real p[3] = {m1, m2, m3};
       if (mv) CleanGasMomentum(x, uh, m, k, j, i, p);
       Kokkos::atomic_add(&cnt_.d_view(4), (1.0 - fs)*(mv ? sqrt(p[0]*p[0] + p[1]*p[1] +
@@ -178,8 +138,7 @@ void RadiationVet::FloorGasCap() {
     if (eg > 0.0) {
       const Real tg = eos.Temperature(dd, eg);
       const Real trad = sqrt(sqrt(fmax(erad, 0.0)/ar));
-      // never below the EOS temperature floor: the C2P that follows would raise e_int
-      // back to e(rho, tfloor) and create the energy this cap moved to E_rad
+      // not below the EOS floor: the C2P would raise e_int back and create energy
       const Real tcap = fmax(trad, eos.tfloor);
       if (tg > tcap) {
         const Real enew = eos.EnergyFromTemperature(dd, tcap);
@@ -216,14 +175,10 @@ void RadiationVet::FloorGasCap() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::FluidRefresh
-//! \brief restrict, exchange, bound and invert the fluid after a host-side write of its
-//! conserved u0 (see HydroConToPrim above for why).  Hydro: the hydro task calls
-//! verbatim (bitwise).  MHD (m1-mhd): M1 never writes b0, so only u0 is exchanged, and
-//! through pbval_u directly: MHD::InitRecv(-1) also posts the B receives and
-//! MHD::ClearRecv(-1) MPI_Waits on them, and no B is sent here -- a deadlock on more
-//! than one rank.  MHD::ApplyPhysicalBCs re-applies the B BCs to an unchanged b0
-//! (harmless) and the pgen's user BC, Prolongate and ConToPrim rebuild bcc0 and w0.
-//! lat = false: without the merged lateral groups' average (Time2GasTime's flux state).
+//! \brief restrict, exchange, bound and invert the fluid after a write of u0.
+//! Hydro: the hydro task calls. MHD: only u0 is exchanged, through pbval_u directly
+//! (MHD::InitRecv/ClearRecv(-1) would wait on B receives never sent: deadlock).
+//! lat = false: skip the merged lateral groups' average.
 
 void RadiationVet::FluidRefresh(Driver *pdrive, bool lat) {
   if (pmy_pack->pmhd != nullptr) {
@@ -241,7 +196,7 @@ void RadiationVet::FluidRefresh(Driver *pdrive, bool lat) {
   }
   hydro::Hydro *ph = pmy_pack->phydro;
   if (ph == nullptr) return;
-  // the gas the solve wrote, back to group values (hydro_mergelat.hpp)
+  // the gas the solve wrote, back to group values
   if (lat && ph->pmlat != nullptr && ph->pmlat->on) {
     ph->pmlat->Average(ph->u0, ph->nhydro, ph->nhydro + ph->nscalars, 0, ph->phicc0,
                        ph->use_etotgrav);
@@ -259,9 +214,8 @@ void RadiationVet::FluidRefresh(Driver *pdrive, bool lat) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::EmagBuild
-//! \brief m1-mhd: |B|^2/2 per cell (incl. ghosts) of b0 (un = false -> emag0) or of the
-//! U^n copy b1 (un = true -> emag1), with the MHD C2P's face average (M1EmagCell).
-//! No-op for hydro.
+//! \brief |B|^2/2 per cell (incl. ghosts) of b0 -> emag0, or of b1 (un = true) -> emag1,
+//! with the MHD C2P's face average. No-op for hydro.
 
 void RadiationVet::EmagBuild(bool un) {
   mhd::MHD *pm = pmy_pack->pmhd;
@@ -284,11 +238,8 @@ void RadiationVet::EmagBuild(bool un) {
   auto &x3v = pmy_pack->pcoord->x3v;
   auto &x3f = pmy_pack->pcoord->xx3f;
   if (csr) {
-    // the cubed sphere's |B|^2 is that of the ORTHONORMAL triple the MHD
-    // C2P builds (Coordinates::GnomonicEquiangleRaiseVelMHD): the faces hold the
-    // projections B.nhat (nhat_xi.nhat_eta = -c), bx = B.rhat (CellCenteredRadialFld),
-    // by = B.e_xi = (b_xi + c b_eta)/s, bz = B.(e_eta - c e_xi)/s = b_eta; the plain
-    // sum of the face-normal means (M1EmagCell's generic branch) is wrong by O(c)
+    // cubed sphere: |B|^2 of the orthonormal triple of the MHD C2P (faces hold B.nhat,
+    // nhat_xi.nhat_eta = -c): bx = B.rhat, by = (b_xi + c b_eta)/s, bz = b_eta
     auto ccl = pmy_pack->pcoord->cos_cell;
     auto csn = pmy_pack->pcoord->sin_cell;
     par_for("vet_emag_cs", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
@@ -310,9 +261,12 @@ void RadiationVet::EmagBuild(bool un) {
   });
 }
 
+//----------------------------------------------------------------------------------------
+// opacities
 
 //----------------------------------------------------------------------------------------
 //! \fn TaskStatus RadiationVet::Opacity
+//! \brief fill opac = rho*kappa (four channels) from the gas state of the stage
 
 TaskStatus RadiationVet::Opacity(Driver *pdrive, int stage) {
   // first gas reader of both M1 chains: refresh |B|^2/2 of the stage's field
@@ -340,7 +294,7 @@ TaskStatus RadiationVet::Opacity(Driver *pdrive, int stage) {
   // with <hydro>/etotgrav the conserved energy includes rho*Phi: subtract it as well
   const bool etg = fl.use_etotgrav;
   auto phicc = fl.phicc0;
-  const bool mhd = fl_mhd;      // m1-mhd: and |B|^2/2
+  const bool mhd = fl_mhd;      // and |B|^2/2
   auto emag_ = emag0;
   // cubed sphere: the momentum is covariant, KE = 0.5 m_a v^a (gnomonic_raisevel.hpp)
   const bool csk = pmy_pack->pmesh->use_cubed_sphere;
@@ -392,10 +346,8 @@ TaskStatus RadiationVet::Opacity(Driver *pdrive, int stage) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::RSLACheck
-//! \brief reduced-speed-of-light admissibility check, run once on the first filled
-//! opacity array: prints K = chat/(v_max tau_max), with tau_max the largest x1 column
-//! optical depth over the active cells and v_max = <rad_vet>/rsla_vmax if positive, else
-//! the measured max |v|
+//! \brief reduced-speed-of-light check, once on the first opacity fill: prints
+//! K = chat/(v_max tau_max); tau_max: largest x1 column depth, v_max: rsla_vmax or max|v|
 
 void RadiationVet::RSLACheck() {
   rsla_done = true;
