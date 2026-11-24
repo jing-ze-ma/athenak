@@ -3612,14 +3612,21 @@ void RadiationVet::CleanStagFCone(const int e, const int kd) {
   const bool cub = x.cub, dd = cln_fkin && e == CLW_X && cln_dok, wbc = e == CLW_X;
   const bool fg = cln_fcgas;   // (clean_stag_fcone_gas)
   // (clean_stag_fcone_lz: l_i of the faces without L_z arm (fa), CLW_CP >= 0 with the
-  // others' 1, or -l_i of the others with fa's 0, where those alone exceed c E)
-  const bool lz = cln_fclz, sph = x.sph;
-  auto fa = KOKKOS_LAMBDA(const int q) {return q == 0 || (sph && q == 1);};
+  // others' 1, or -l_i of the others with fa's 0, where those alone exceed c E;
+  // clean_lz_spin: the others' cut withheld, its L_z X the gas's rigid rotation; the
+  // cubed sphere's gas phi momentum is lz_tel's torque, which holds the cut already)
+  const bool lz = cln_fclz, spn = cln_lzsp, sph = x.sph;
+  auto fa = KOKKOS_LAMBDA(const int q) {return !CleanLzFamily(sph, cub, q);};
   auto lf = KOKKOS_LAMBDA(const Real cp, const int q) {
     return !lz ? cp : (fa(q) ? fmax(cp, 0.0) : ((cp < 0.0) ? -cp : 1.0));
   };
-    const bool emx = cln_fcemx;   // (clean_stag_fcone_emax)
+  const bool emx = cln_fcemx;   // (clean_stag_fcone_emax)
   if (cln_fconc.extent_int(0) != 5) Kokkos::realloc(cln_fconc, 5);
+  if (spn && cln_fcx.extent_int(0) != nmb1 + 1) {
+    Kokkos::realloc(cln_fcx, nmb1 + 1, 3, cln_w.s.extent_int(2) + 1,
+                    cln_w.s.extent_int(3) + 1, cln_w.s.extent_int(4) + 1);
+  }
+  auto fcx = cln_fcx;
   Kokkos::deep_copy(cln_fconc, 0.0);
   auto fcc = cln_fconc;
   CleanFor("cln_fcone_l", nmb1, ks, ke, js, je, is, ie,
@@ -3690,9 +3697,12 @@ void RadiationVet::CleanStagFCone(const int e, const int kd) {
       const Real fs = !bd ? fc(m,CLF_N+2,k,j,i) :
                       lf(x.w(m,CLW_CP,k-lin*dk,j-lin*dj,i-lin*di), d)*f;
       fc(m,CLF_N+2,k,j,i) = fs;
+      if (spn) fcx(m,d,k,j,i) = 0.0;
       if (fs == f) return;
       const Real it = 1.0/fc(m,CLF_TH,k,j,i);
-      if (!bd && !fg && !(lz && !fa(d))) {
+      // (clean_lz_spin: the arm faces' cut withheld from the gas, per face, CleanWriteBack)
+      if (spn && !bd && !fa(d) && !fg && !cub) fcx(m,d,k,j,i) = (f - fs)*it/(x.c*x.c);
+      if (!bd && !fg && !(lz && !fa(d) && !(spn && !cub))) {
         fc(m,CLF_N+1,k,j,i) -= (f - fs)*it/(x.h*x.c*x.c);
       }
       if (dd && !bd) {   // (the energy flux's memory G + d kept)
@@ -4940,6 +4950,50 @@ void RadiationVet::CleanWriteBack() {
   const bool lzt = cln_lzt && feedback;
   DvceArray5D<Real> tqv;
   Real lzs[2] = {0.0, 0.0};
+  // (clean_lz_spin: X, the L_z of fcone's cut of the faces with an arm (CleanStagFCone)
+  // and of clean_wb_mcap's cap (a pass of the arm families' terms), the gas's as the
+  // rigid rotation dOmega = X/I, I = sum rho V R^2; the cubed sphere: none, its gas phi
+  // momentum is lz_tel's torque of the uncut, uncapped face terms)
+  const bool spn = cln_lzsp && feedback && !x.vzero && !x.cub;
+  Real lzx = 0.0;
+  if (spn) {   // (per cell, then summed in a fixed order: each cell's own halves)
+    CleanArgs xm = xh;
+    xm.mcl = cln_wbmc;
+    xm.mclc = DvceArray1D<Real>("cln_lzmc", 1);
+    auto fcx = cln_fcx;
+    auto lxx = ScratchView<DvceArray4D<Real>>("cln_lxx", nmb1 + 1, u0.extent_int(2),
+                                              u0.extent_int(3), u0.extent_int(4));
+    CLEAN_HIPX(const CleanArgs *pxm = CleanDevArgs(xm, 0), *pxh = CleanDevArgs(xh, 1);)
+    CleanFor("cln_lzmc", nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      CLEAN_HIPX(const CleanArgs &xm = *pxm, &xh = *pxh;)
+      Real s = 0.0;
+      for (int d = 0; d < xh.nf; ++d) {
+        if (!CleanLzFamily(xh.sph, xh.cub, d)) continue;
+        Real cf[2], wf[2], a = 0.0;
+        const Real u = CleanMomentumChange(xh, CLW_X, d, m, k, j, i, nullptr, cf, wf);
+        for (int sd = 0; sd < 2; ++sd) {   // (fcone's cut, as the gas's share of it)
+          a += wf[sd]*fcx(m,d,k+sd*(d == 2),j+sd*(d == 1),i+sd*(d == 0));
+        }
+        if (xm.mcl) a += u - CleanMomentumChange(xm, CLW_X, d, m, k, j, i);
+        s += a*CleanDirLzArm(xh, d, m, k, j, i);
+      }
+      lxx(m,k,j,i) = s*CleanVol(xh, m, k, j, i);
+    });
+    lzx = CleanSumCells(lxx);
+    lzs[0] = lzx;
+    if (!lzt) {
+      auto ug = FluidRef::Get(pmy_pack).u0;
+      auto lxi = ScratchView<DvceArray4D<Real>>("cln_lxi", nmb1 + 1, u0.extent_int(2),
+                                                u0.extent_int(3), u0.extent_int(4));
+      CleanFor("cln_lzsi", nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        lxi(m,k,j,i) = ug(m,IDN,k,j,i)*CleanVol(x, m, k, j, i)*
+                       SQR(CleanLzArm(x, m, k, j, i));
+      });
+      lzs[1] = CleanSumCells(lxi);
+    }
+  }
   if (lzt) {
     tqv = ScratchView<DvceArray5D<Real>>("cln_tqv", nmb1 + 1, 3, u0.extent_int(2),
                                          u0.extent_int(3), u0.extent_int(4));
@@ -4962,10 +5016,15 @@ void RadiationVet::CleanWriteBack() {
       tqv(m,1,k,j,i) = gl - xs;   // the absorption torque
       tqv(m,2,k,j,i) = -(gl + rl);
     });
-    lzs[0] = CleanSumCells(lxs);
+    lzs[0] += CleanSumCells(lxs);
     lzs[1] = CleanSumCells(lxi);
   }
-  const Real lzw_ = (lzs[1] > 0.0) ? lzs[0]/lzs[1] : 0.0;   // dOmega
+  const Real lzw_ = (lzs[1] > 0.0) ? lzs[0]/lzs[1] : 0.0;   // (dOmega)
+  if (spn && global_variable::my_rank == 0 && lzx != 0.0) {
+    std::printf("CLEAN LZSPIN cycle %d t2s %d: L_z of the cut and capped momentum X "
+                "%.6e, the gas's as dOmega %.6e (I %.6e)\n", pmy_pack->pmesh->ncycle,
+                t2_solve, lzx, lzw_, lzs[1]);
+  }
 
   // face fluxes of the solution
   for (int dir = 0; dir < 3; ++dir) {
@@ -5090,7 +5149,17 @@ void RadiationVet::CleanWriteBack() {
     if (feedback) {
       Real mg[3], pg[3], rf[3], dlz = 0.0;
       CleanStagMomentum(xh, CLW_X, m, k, j, i, dm, mg, &dlz);
-      if (lzt) {   // clean_cs_lz_tel: the gas phi momentum of CleanCsTorque (cln_wbtq)
+      if (spn) {   // (clean_lz_spin: dOmega rho z x r; the ledger's withheld L_z back)
+        const Real w = lzw_*uh(m,IDN,k,j,i), r = CleanLzArm(x, m, k, j, i);
+        if (x.sph) {
+          dm[2] += w*r;
+        } else {
+          dm[0] -= w*x.x2v(m,j);
+          dm[1] += w*x.x1v(m,i);
+        }
+        dlz -= w*r*r*CleanVol(x, m, k, j, i);
+      }
+      if (lzt) {   // (clean_cs_lz_tel: the gas phi momentum of CleanCsTorque, cln_wbtq)
         Real q[3][3];
         const Real rc = CleanCsFrame(x, m, k, j, i, q);
         const Real dp = tqv(m,1,k,j,i)/(x.vol(m,k,j,i)*rc) + lzw_*uh(m,IDN,k,j,i)*rc -
