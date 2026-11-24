@@ -1,0 +1,2 @@
+2026-11-24 12:42:09 start B BIN md5=7d7c4a71a07d3dc3878e7dea1403df23 ARGS: -r /resnick/groups/carnegie_poc/jingze/prod_rc4v_1124/m35mms/rst_keep/m35mms.pre-mgab.rst -i /resnick/groups/carnegie_poc/jingze/prod_rc4v_1124/decks/IA123_m35mms.athinput hydro/dt_report=0 rad_vet/clean_stag_mg_levels=4 time/cfl_number=0.3 time/nlim=6478 output2/dt=1e30 output3/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30
+2026-11-24 12:47:09 rc=0
