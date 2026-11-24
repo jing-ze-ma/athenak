@@ -7,3 +7,4 @@
 - Test stop rule (23zk; these are tests, so I apply it myself): dt < 0.01, NaN/inf or FATAL -> scancel of the arm's step.
 - Files: caltech_results/IA121_T9L62/arm_<arm>/: grep.txt.gz (23zy grep), t9l62.user.hst.gz, t9l62.hydro.hst.gz, log.0.gz, run.log, skip_de_per_cycle.txt.
 - (11-23 20:00) **WA WARNING (not stopped)**:  first skip_de > 1e41: cycle 6463 skip_de 274884229199999989683878879727984467509248
+- (11-23 20:00) **WB WARNING (not stopped)**: first pos_floor: `CLEAN WARNING cycle 6469 t2s 1: implicit_pos_floor created inf of E (neither the gas nor the column covered the raise)` first skip_de > 1e41: cycle 6463 skip_de 274884228899999999072285939333213320118272
