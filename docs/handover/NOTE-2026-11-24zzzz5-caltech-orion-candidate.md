@@ -24,3 +24,72 @@ ld39 2026-11-24 15:31:47 rc=0 (srun) ended: Terminating on cycle limit wall=30 s
 39 cycle 30948: 2026-11-24 15:31:47 rc=0 (srun) ended: Terminating on cycle limit wall=30 s CW 0 FATAL 0 clamp sweeps) 0 | 
 ```
 - Exit status recorded: srun's code and the log's last state are in each line.
+
+## Candidate timing: results (11-24 15:43). Binary b8b0d79c45351fecfd04cee19c996605 (caltech-sdorder2-09d1e4df4); settings as in the header (keys named on the command line for restarts; fresh decks with the lines listed there)
+| arm | rows | s/cyc last 50 (cycles) | dt min/mean/max | its t2s2 (sum, solves) | t2s3 | passes/cyc | CW/FATAL/inf/DT_RETRY | BE/fallback/retry | clamped reads | floor_pay sum | L_top/L_in end | end |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| bsg_R | 100 | 0.6598 (c6950-7000) ; loop 68.7 s | 147/149.3/153 | 15.2, 3.45 | 14.7, 3.78 | - | 0/0/0/0 | 0/0/0 | 0.000000e+00 | 0.00e+00 | 1.09672 | rc=0 (srun) ended: Terminating on cycle limit wall=93 s CW 0 FATAL 0 clamp sweep |
+| bsg_F | 101 | 0.7289 (c50-100, loop time) ; loop 74.0 s | 164.6/167.3/168.5 | 20.7, 3.26 | 25.8, 3.94 | - | 0/0/0/0 | 1/0/0 | 0.000000e+00 | 0.00e+00 | 1.04016 | rc=0 (srun) ended: Terminating on cycle limit wall=149 s CW 0 FATAL 0 clamp swee |
+| m35zams_R | 131 | 0.2971 (c22200-22250) ; loop 32.7 s | 3.481/3.481/3.481 | 18.9, 2.00 | 15.1, 2.15 | - | 0/0/0/0 | 0/0/0 | 0.000000e+00 | 0.00e+00 | 1.00015 | rc=0 (srun) ended: Terminating on cycle limit wall=53 s CW 0 FATAL 0 clamp sweep |
+| m35zams_F | 101 | 0.2825 (c50-100, loop time) ; loop 29.7 s | 3.481/3.481/3.481 | 15.0, 2.33 | 15.4, 2.17 | - | 0/0/0/0 | 1/0/0 | 0.000000e+00 | 0.00e+00 | 1.00072 | rc=0 (srun) ended: Terminating on cycle limit wall=74 s CW 0 FATAL 0 clamp sweep |
+| m35mms_R | 100 | 1.0972 (c7000-7050) ; loop 111.4 s | 12.01/12.01/12.01 | 37.3, 5.19 | 17.9, 4.04 | - | 0/0/0/0 | 0/0/0 | 0.000000e+00 | 8.73e+25 | 0.98817 | rc=0 (srun) ended: Terminating on cycle limit wall=140 s CW 0 FATAL 0 clamp swee |
+| m35mms_F | 101 | 0.6543 (c50-100, loop time) ; loop 66.5 s | 12.01/12.01/12.01 | 8.6, 2.00 | 10.5, 2.27 | - | 0/0/0/0 | 1/0/0 | 0.000000e+00 | 0.00e+00 | 1.00160 | rc=0 (srun) ended: Terminating on cycle limit wall=154 s CW 0 FATAL 0 clamp swee |
+| t9l62_R | 100 | 2.5820 (c2600-2650) ; loop 255.6 s | 96.84/96.84/96.84 | 5.4, 2.90 | 9.2, 2.51 | 5.41 | 0/0/0/0 | 0/0/0 | 0.000000e+00 | 3.69e+28 | 1.01512 | rc=0 (srun) ended: Terminating on cycle limit wall=315 s CW 0 FATAL 0 clamp swee |
+| t9l62_F | 101 | 2.4168 (c50-100, loop time) ; loop 238.3 s | 96.85/96.85/96.85 | 8.0, 2.74 | 5.9, 1.99 | - | 1/0/0/0 | 1/0/0 | 0.000000e+00 | 1.46e+30 | 1.00957 | rc=0 (srun) ended: Terminating on cycle limit wall=543 s CW 1 FATAL 0 clamp swee |
+| PO | 25 | 3.2653 (mean of loop, 25 cyc) ; loop 81.6 s | 13.94/22.54/27.66 | 14.1, 5.04 | 8.2, 4.08 | 9.12 | 0/0/0/0 | 0/0/0 | 0.000000e+00 | 1.52e+27 | 2.55212 | rc=0 (srun) ended: Terminating on cycle limit wall=149 s CW 0 FATAL 0 clamp swee |
+| PQ | 25 | 2.5068 (mean of loop, 25 cyc) ; loop 62.7 s | 96.84/96.84/96.84 | 5.8, 2.60 | 6.7, 2.04 | 4.64 | 0/0/0/0 | 0/0/0 | 0 | 8.48e+27 | 1.01285 | rc=0 (srun) ended: Terminating on cycle limit wall=126 s CW 0 FATAL 0 clamp swee |
+| PL | 1 | 4.2732 (c30100-30150) ; loop 271.7 s | 96.37/96.37/96.37 | 24.4, 10.12 | 17.2, 5.91 | 16.03 | 0/0/0/0 | 0/0/0 | 0.000000e+00 | 2.02e+23 | 1.59571 | rc=0 (srun) ended: Terminating on cycle limit wall=309 s CW 0 FATAL 0 clamp swee |
+| ZM2 | 113 | 0.2998 (c22200-22250) ; loop 33.2 s | 3.481/3.481/3.481 | 18.9, 2.00 | 15.1, 2.15 | - | 0/0/0/0 | 0/0/0 | 0.000000e+00 | 0.00e+00 | 1.00015 | rc=0 (srun) ended: Terminating on cycle limit wall=50 s CW 0 FATAL 0 clamp sweep |
+| ZM3 | 100 | 0.2988 (c22200-22250) ; loop 32.9 s | 3.481/3.481/3.481 | 14.5, 2.00 | 15.9, 2.41 | - | 0/0/0/0 | 0/0/0 | 0.000000e+00 | 0.00e+00 | 1.00015 | rc=0 (srun) ended: Terminating on cycle limit wall=48 s CW 0 FATAL 0 clamp sweep |
+| ZM4 | 100 | 0.3013 (c22200-22250) ; loop 33.3 s | 3.481/3.481/3.481 | 13.6, 2.00 | 16.1, 2.50 | - | 0/0/0/0 | 0/0/0 | 0.000000e+00 | 0.00e+00 | 1.00015 | rc=0 (srun) ended: Terminating on cycle limit wall=54 s CW 0 FATAL 0 clamp sweep |
+
+- Measured loop time per cycle: restart arms = elapsed over the last 50 cycles of the prints; **fresh arms = (main-loop time minus the time to cycle 50)/50**, because the last elapsed print of a fresh run includes the final rst write (its plain last-50 reading, 1.35 / 4.37 s for bsg / t9l62, is not a step time). M35ZAMS_R, ZM2 and ZM3 hst rows > 100 include rows of my cancelled overlapping try (same cycles repeated); the table values above use the prints only.
+- **t9l62 fresh, CLEAN WARNING 1:** 'clean_init steady: not converged (residual 6.167e-08, tol 1.0e-08)' after 50 passes; the production T2 fresh run (thinf=false etc.) converged in 3 passes (residual 1.3e-9). It is the only CW in the candidate arms; the run went on and ended on the cycle limit.
+- bsg_F, M35ZAMS_F, m35mms_F, t9l62_F show 1 backward-Euler step (the first step of a fresh run); no fallback, retry or DT_RETRY anywhere.
+- PL (00037, older-scheme state p1_bf4f917d4 written 11-21; single 65-cycle run: the first 40 leave the scheme change behind; the profile is the last 10): dt 96.4, 16 pass lines per cycle against 4.6 (PQ) and 9.1 (PO); s/cyc 4.27 by the last-50 window (includes the first 40's part), hst rows 1 (its hst cadence is a time one). Its stored clean_conv_max is 1e-4 (others 1e-5), so its tol column reads 1.0e-4: this is a state with a looser stored tolerance, not the candidate's conv 1e-5; it was not named, so it is as stored.
+
+### Per-pass means over the last 10 cycles (CLEAN PASS: it, de, dv, tol; tags = the last field: opac or the fe/fv value)
+```
+PO: cycles 5294-5303 (last 10), 9.3 pass lines per cycle
+  t2s 2 pass  0: n  10 (of 10 cycles) | it 6.4 | de 8.18e-03 | dv 9.30e-07 | tol 1.00e-05 | tags 6.747e-16 6.795e-16 6.827e-16
+  t2s 2 pass  1: n  10 (of 10 cycles) | it 1.3 | de 1.89e-02 | dv 4.96e-08 | tol 1.00e-05 | tags opac
+  t2s 2 pass  2: n  10 (of 10 cycles) | it 3.4 | de 7.79e-04 | dv 1.90e-08 | tol 1.00e-05 | tags opac
+  t2s 2 pass  3: n  10 (of 10 cycles) | it 1.9 | de 3.81e-05 | dv 5.78e-11 | tol 1.00e-05 | tags 1.054e-15 1.068e-15 1.113e-15
+  t2s 2 pass  4: n  10 (of 10 cycles) | it 1.3 | de 3.00e-06 | dv 8.85e-12 | tol 1.00e-05 | tags 1.054e-15 1.068e-15 1.113e-15
+  t2s 2 pass  5: n   1 (of 10 cycles) | it 0.0 | de 4.17e-12 | dv 1.05e-14 | tol 1.00e-05 | tags 6.813e-16
+  t2s 3 pass  0: n  10 (of 10 cycles) | it 1.1 | de 1.52e-02 | dv 9.97e-07 | tol 1.00e-05 | tags 6.359e-16 6.535e-16 7.004e-16
+  t2s 3 pass  1: n  10 (of 10 cycles) | it 2.5 | de 1.64e-03 | dv 2.58e-07 | tol 1.00e-05 | tags opac
+  t2s 3 pass  2: n  10 (of 10 cycles) | it 2.7 | de 6.14e-05 | dv 1.43e-08 | tol 1.00e-05 | tags opac
+  t2s 3 pass  3: n  10 (of 10 cycles) | it 1.0 | de 6.98e-06 | dv 5.36e-09 | tol 1.00e-05 | tags 6.331e-16 6.535e-16 7.079e-16
+  t2s 3 pass  4: n   2 (of 10 cycles) | it 3.5 | de 2.50e-06 | dv 1.15e-09 | tol 1.00e-05 | tags 6.331e-16 7.593e-16
+PQ: cycles 2568-2577 (last 10), 5.1 pass lines per cycle
+  t2s 2 pass  0: n  10 (of 10 cycles) | it 0.0 | de 1.24e-18 | dv 6.92e-09 | tol 1.00e-11 | tags 2.001e-13
+  t2s 2 pass  1: n  10 (of 10 cycles) | it 2.0 | de 2.03e-08 | dv 2.32e-11 | tol 1.01e-08 | tags opac
+  t2s 2 pass  2: n  10 (of 10 cycles) | it 4.0 | de 1.75e-09 | dv 8.53e-13 | tol 9.95e-09 | tags opac
+  t2s 3 pass  0: n  10 (of 10 cycles) | it 2.0 | de 4.06e-09 | dv 6.93e-09 | tol 2.03e-09 | tags 2.001e-13 2.002e-13
+  t2s 3 pass  1: n  10 (of 10 cycles) | it 5.2 | de 1.16e-09 | dv 1.67e-12 | tol 1.55e-09 | tags opac
+  t2s 3 pass  2: n   1 (of 10 cycles) | it 4.0 | de 1.40e-10 | dv 7.87e-14 | tol 8.45e-10 | tags opac
+PL: cycles 30140-30149 (last 10), 15.0 pass lines per cycle
+  t2s 2 pass  0: n  10 (of 10 cycles) | it 1.7 | de 2.35e-02 | dv 4.58e-05 | tol 1.00e-04 | tags 1.100e-12 1.354e-12 1.435e-12
+  t2s 2 pass  1: n  10 (of 10 cycles) | it 1.0 | de 7.68e-03 | dv 2.10e-05 | tol 1.00e-04 | tags opac
+  t2s 2 pass  2: n  10 (of 10 cycles) | it 1.0 | de 2.18e-02 | dv 1.46e-05 | tol 1.00e-04 | tags opac
+  t2s 2 pass  3: n  10 (of 10 cycles) | it 1.1 | de 8.17e-03 | dv 1.09e-05 | tol 1.00e-04 | tags 1.165e-12 1.214e-12 1.248e-12
+  t2s 2 pass  4: n  10 (of 10 cycles) | it 2.1 | de 1.99e-02 | dv 5.73e-06 | tol 1.00e-04 | tags 1.239e-12 1.256e-12 1.328e-12
+  t2s 2 pass  5: n  10 (of 10 cycles) | it 6.2 | de 1.97e-03 | dv 5.22e-06 | tol 1.00e-04 | tags 1.247e-12 1.284e-12 1.329e-12
+  t2s 2 pass  6: n  10 (of 10 cycles) | it 4.5 | de 9.43e-04 | dv 2.71e-06 | tol 1.00e-04 | tags 1.251e-12 1.287e-12 1.329e-12
+  t2s 2 pass  7: n   8 (of 10 cycles) | it 3.8 | de 1.04e-03 | dv 2.38e-06 | tol 1.00e-04 | tags 1.251e-12 1.288e-12 1.329e-12
+  t2s 2 pass  8: n   6 (of 10 cycles) | it 5.0 | de 6.54e-04 | dv 2.26e-06 | tol 1.00e-04 | tags 1.251e-12 1.288e-12 1.329e-12
+  t2s 2 pass  9: n   5 (of 10 cycles) | it 3.2 | de 3.42e-04 | dv 9.77e-07 | tol 1.00e-04 | tags 1.251e-12 1.288e-12 1.329e-12
+  t2s 2 pass 10: n   3 (of 10 cycles) | it 1.0 | de 4.92e-04 | dv 5.91e-07 | tol 1.00e-04 | tags 1.251e-12 1.288e-12 2.396e-12
+  t2s 2 pass 11: n   2 (of 10 cycles) | it 2.0 | de 1.61e-04 | dv 7.70e-07 | tol 1.00e-04 | tags 1.251e-12 1.288e-12
+  t2s 2 pass 12: n   1 (of 10 cycles) | it 1.0 | de 2.53e-04 | dv 2.63e-07 | tol 1.00e-04 | tags 1.251e-12
+  t2s 2 pass 13: n   1 (of 10 cycles) | it 1.0 | de 1.75e-05 | dv 2.33e-07 | tol 1.00e-04 | tags 1.251e-12
+  t2s 3 pass  0: n  10 (of 10 cycles) | it 2.9 | de 1.01e-02 | dv 5.76e-05 | tol 1.00e-04 | tags 1.418e-12 1.440e-12 1.471e-12
+  t2s 3 pass  1: n  10 (of 10 cycles) | it 2.1 | de 1.77e-03 | dv 8.31e-06 | tol 1.00e-04 | tags opac
+  t2s 3 pass  2: n  10 (of 10 cycles) | it 3.6 | de 1.20e-03 | dv 5.11e-06 | tol 1.00e-04 | tags opac
+  t2s 3 pass  3: n   8 (of 10 cycles) | it 4.4 | de 3.35e-03 | dv 4.56e-06 | tol 1.00e-04 | tags 1.482e-12 1.496e-12 1.501e-12
+  t2s 3 pass  4: n   8 (of 10 cycles) | it 2.9 | de 6.68e-04 | dv 3.98e-06 | tol 1.00e-04 | tags 1.482e-12 1.496e-12 1.539e-12
+  t2s 3 pass  5: n   5 (of 10 cycles) | it 2.4 | de 2.86e-04 | dv 6.95e-07 | tol 1.00e-04 | tags 1.496e-12 1.567e-12 1.570e-12
+  t2s 3 pass  6: n   3 (of 10 cycles) | it 1.3 | de 1.01e-05 | dv 9.02e-08 | tol 1.00e-04 | tags 1.496e-12 1.570e-12
+```
+- PS t9l62 (100 cycles, 00015): rb 3.0685 vs sym 3.1325 s/cyc, its t2s2 14.7 -> 13.1, t2s3 8.7 -> 8.2, dt mean -6.3 % (different trajectories), cost per simulated second 1.089 x, L_top at matched time max 1.0e-4; not harmless by the bounds (cost and dt). Earlier PS m35mms: cost 1.114 x.

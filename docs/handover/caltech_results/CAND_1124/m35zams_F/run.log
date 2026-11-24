@@ -1,0 +1,2 @@
+2026-11-24 15:27:31 start m35zams_F hpc-sm-01-15 BIN md5=b8b0d79c45351fecfd04cee19c996605 ARGS: -i /resnick/groups/carnegie_poc/jingze/cand_1124/t/m35zams.athinput
+2026-11-24 15:28:45 rc=0 (srun) ended: Terminating on cycle limit wall=74 s CW 0 FATAL 0 clamp sweeps) 0.000000e+00

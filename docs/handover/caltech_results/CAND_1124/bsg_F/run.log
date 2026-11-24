@@ -1,0 +1,2 @@
+2026-11-24 15:27:24 start bsg_F hpc-sm-01-17 BIN md5=b8b0d79c45351fecfd04cee19c996605 ARGS: -i /resnick/groups/carnegie_poc/jingze/cand_1124/t/bsg.athinput
+2026-11-24 15:29:53 rc=0 (srun) ended: Terminating on cycle limit wall=149 s CW 0 FATAL 0 clamp sweeps) 0.000000e+00
