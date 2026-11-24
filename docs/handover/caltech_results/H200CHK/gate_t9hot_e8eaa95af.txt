@@ -1,0 +1,4 @@
+GATE PASS (seam+wall sym deck copy): athena_t9hot_e8eaa95af md5 fbc14236 node hpc-sm-02-16 pass1=3.686e-11
+<rad_vet> clean_init steady pass 0: max(|dE|, |dF|/c)/max E = 9.534e-02
+<rad_vet> clean_init steady pass 1: max(|dE|, |dF|/c)/max E = 3.686e-11
+<rad_vet> clean_init steady pass 2: max(|dE|, |dF|/c)/max E = 9.994e-15
