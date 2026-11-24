@@ -163,3 +163,12 @@ Pairs on the common first N rows: last-row relative difference (second - first)/
 
 Pairs on the common first N rows: last-row relative difference (second - first)/first; time, dt, L_top, L_in, KE_int, Etot, M_tot, Lz_tot; and max |L_top/L_in difference| over the rows:
 - T2 vs T1 (N 300): t 9.59e-11 dt 8.62e-10 L_top -1.57e-05 L_in 1.72e-16 KE 2.93e-06 Etot -1.13e-08 M 7.73e-16 Lz 6.19e-07 | max d(L_top/L_in) 3.05e-03 | dt ratio mean 1.0000
+
+## RSG-thinf-from-01809 (rc3) (11-24 13:45)
+| arm | hst rows | s/cyc (cycles) | dt min/mean/max | its t2s2 (sum, solves) | its t2s3 | passes/cyc | L_top/L_in end (mean) | L_bot/L_in | KE_int end (drift) | dM/M | dE/E | CW/FATAL/inf/DT_RETRY | FWB / FCONE lines |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| RSGf | 100 | 1.4913 (c817400-817450) | 956.5 / 956.5 / 956.5 | 6.9, 4.54 | 6.3, 5.55 | - | 0.94473 (0.94668) | 1.07306 | 2.07574e+46 (-2.11e-04) | -5.79e-14 | 2.09e-07 | 0 / 0 / 0 / 0 | 0 / 0 |
+| RSGt | 100 | 1.5208 (c817400-817450) | 956.5 / 956.5 / 956.5 | 7.9, 5.00 | 6.7, 5.62 | - | 0.94573 (0.94811) | 1.07306 | 2.07574e+46 (-2.11e-04) | -5.91e-14 | 2.04e-07 | 0 / 0 / 0 / 0 | 0 / 0 |
+
+Pairs on the common first N rows: last-row relative difference (second - first)/first; time, dt, L_top, L_in, KE_int, Etot, M_tot, Lz_tot; and max |L_top/L_in difference| over the rows:
+- RSGt vs RSGf (N 100): t 0.00e+00 dt 0.00e+00 L_top 1.06e-03 L_in 0.00e+00 KE 2.53e-11 Etot -5.68e-09 M -1.24e-15 Lz -4.81e-05 | max d(L_top/L_in) 3.11e-03 | dt ratio mean 1.0000
