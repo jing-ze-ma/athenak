@@ -1381,6 +1381,13 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
       // the first pass's change, at most 1e-4)
       if (!cln_bon && inl == 0) trel = fmin(0.1*dnl, 1.0e-4);
       tol_nl = fmax(tol_nl, trel);
+      // clean_verbose >= 2: each pass's changes against the tolerance it is tested with
+      if (cln_verbose > 1 && global_variable::my_rank == 0) {
+        std::printf("CLEAN PASS cycle %d t2s %d pass %d it %d de %.3e dv %.3e tol %.3e "
+                    "fe %.3e fv %.3e%s%s\n", pmy_pack->pmesh->ncycle, t2_solve, inl,
+                    nit, de, dv, tol_nl, cln_fe, cln_fv, clos ? " clos" : "",
+                    opr ? " opac" : "");
+      }
       if (fbl) {
         de0 = de;
         dv0 = dv;

@@ -235,7 +235,11 @@ With `<rad_vet>/clean_verbose = 0` (default) the code prints the `CLEAN cycle` l
 `CLEAN WARNING` lines and the event lines (`CLEAN WORST`, `GNSW`, `BICGSTAB`, `KPOS`
 without a face slope). `clean_verbose = 1` adds the per-solve diagnostics (`CLEAN MCAP`,
 `OLDVEC`, `FWB`, `FCONE`, `LZ`/`LZB`, `WBFCT`, `KPOS`, `KREAL`, `XPAT`, the `XT`
-write-back closure, the ray cut). `CLEAN WARNING` lines always print.
+write-back closure, the ray cut). `clean_verbose = 2` adds a `CLEAN PASS cycle N t2s S
+pass P it K de D dv V tol T fe F fv G [clos] [opac]` line for every pass of every solve:
+its Krylov iterations, its changes against the tolerance the convergence test uses, and the
+round-off levels of that test (to see which passes a solve needs and why).
+`CLEAN WARNING` lines always print.
 
 | line | meaning | what to look at |
 |---|---|---|
