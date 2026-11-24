@@ -63,6 +63,10 @@ radiation-pressure perturbation lags the compression by about $\pi/2$, so its re
 $O(x^2)$ and its $O(x)$ part only damps the wave; the linear root stays at the gas speed until
 the mode is overdamped ($x \sim 0.3$). In thin gas ($c_{\rm eq}^2 \propto 1/\rho$) the
 linear weight's term grows as $\rho^{-1/2}$; this one stays far below $c_g$.
+Floor gas ($\rho$ below `rad_vet/floorcap_rho`) can be pinned at the floor-gas velocity cap;
+with `<hydro>/dt_floor_courant = C` (production 0.6) it takes one Courant bound on the sum of its
+signal rates, dt $\le C/\sum_d(|v_d| + c_d)/h_d$, instead of `cfl_number` per direction, so the
+floor atmosphere does not set the step of the star (test: `floor_dt`).
 
 **Implicit stage solve.** In each stage the face momentum equation is eliminated face by face,
 which leaves a scalar system for $E$. It is solved by Newton passes: each pass is a

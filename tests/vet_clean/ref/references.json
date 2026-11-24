@@ -249,5 +249,16 @@
   "equal": {
    "nonfinite": 0
   }
+ },
+ "floor_dt": {
+  "_about": "hydro/dt_floor_courant = 0.6 on the shell with floor gas: energy as conservation_sp, restart and forced dt_retry bitwise; dt_gain (mean dt with / without the key) reported",
+  "max": {
+   "dE": 1e-13
+  },
+  "equal": {
+   "restart_maxdiff": 0.0,
+   "retry_maxdiff": 0.0,
+   "warnings": 0
+  }
  }
 }

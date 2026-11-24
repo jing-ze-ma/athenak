@@ -138,6 +138,28 @@ def t_conservation_lz(c):
     return out
 
 
+def t_floor_dt(c):
+    """hydro/dt_floor_courant = 0.6 on the rotating shell with floor gas (floorcap_rho = 100,
+    the cells that thin below the IC density, as floorcap_spin): floor gas takes dt <= C /
+    sum_d (|v_d| + c_d)/h_d instead of cfl_number per direction.  dt_gain: mean dt with the
+    key over dt without it (reported); energy as conservation_sp; restart (8 + 8) and a
+    forced dt_retry with the key bitwise."""
+    fc = dict(LZ_FC, **{'rad_vet/floorcap_rho': 100.0, 'hydro/dt_floor_courant': 0.6})
+    on = c.run('shell_sp.athinput', 'on', dict(fc, **{'time/nlim': 16}))
+    off = c.run('shell_sp.athinput', 'off', dict(fc, **{'time/nlim': 16, 'hydro/dt_floor_courant': 0.0}))
+    dt = [hst_col(os.path.join(d, 'sp.user.hst'), 'dt')[1:] for d in (on, off)]
+    out = dict(dE=am_budget(on, 'sp')['dE'], dt_gain=float(np.mean(dt[0])/np.mean(dt[1])))
+    out['restart_maxdiff'] = restart_pair(c, 'shell_sp.athinput', 16, 8, fc)['maxdiff']
+    o = dict(fc, **{'time/nlim': 16, 'time/dt_retry': 'true'})
+    a = c.run('shell_sp.athinput', 'r_straight', o)
+    b = c.run('shell_sp.athinput', 'r_retry1', dict(o, **{'time/dt_retry_force_cycle': 4,
+                                                          'time/dt_retry_force_fac': 1.0}))
+    out['retry_maxdiff'] = vett.compare_dirs(a, b)[1]
+    out['warnings'] = sum(vett.warnings(open(os.path.join(c.dir, t, 'run.log')).read())
+                          for t in ('on', 'r_straight', 'r_retry1'))
+    return out
+
+
 def t_floorcap_spin(c):
     """floorcap_lz_spin with the conservation_lz keys: the floor-gas cap scales the whole
     velocity and gives the L_z it removes to the gas at or above floorcap_rho as one rigid
@@ -700,6 +722,7 @@ TESTS = [  # name, function, in --quick
     ('conservation_cs', t_conservation_cs, True),
     ('conservation_lz', t_conservation_lz, False),
     ('floorcap_spin', t_floorcap_spin, False),
+    ('floor_dt', t_floor_dt, False),
     ('restart_sp', t_restart_sp, True),
     ('restart_cs', t_restart_cs, False),
     ('dt_retry', t_dt_retry, True),
