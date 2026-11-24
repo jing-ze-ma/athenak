@@ -1180,15 +1180,11 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       fcap_v = pin->GetReal("rad_vet","floorcap_v");
     }
     // floorcap_lz (read only when named): the velocity cap scales the momentum without
-    // L_z only (phi_hat: spherical polar e3, Cartesian (-y, x)/R; the part along it is
-    // kept, also where it alone exceeds floorcap_v), so that L_z is exact
+    // L_z only (phi_hat: spherical polar e3, Cartesian (-y, x)/R, the cubed sphere
+    // GnomonicPhiHat; the part along it is kept, also where it alone exceeds
+    // floorcap_v), so that L_z is exact
     if (pin->DoesParameterExist("rad_vet","floorcap_lz")) {
       fcap_lz = pin->GetBoolean("rad_vet","floorcap_lz");
-      if (fcap_lz && pmy_pack->pmesh->use_cubed_sphere) {
-        std::cout << "### FATAL ERROR: <rad_vet>/floorcap_lz is not on the cubed sphere"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
     }
     if (pin->DoesParameterExist("rad_vet","floorcap_report")) {
       fcap_report = pin->GetInteger("rad_vet","floorcap_report");
