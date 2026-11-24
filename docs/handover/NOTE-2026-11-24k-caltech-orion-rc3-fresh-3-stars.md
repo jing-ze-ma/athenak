@@ -288,3 +288,4 @@ Parameter 'fofc_retest' in block 'hydro' on command line not found
 ### FATAL ERROR in /resnick/groups/carnegie_poc/jingze/wt_orion1121/v203/src/parameter_input.cpp at line 460
 Parameter 'fofc_retest' in block 'hydro' on command line not found
 ```
+- (11-24 05:12) m35zams_z3 dt per 1000 cycles: c35000 t 7.549501e+04 dt 1.430958e+00 (wall 1.001073e+04 s);c36000 t 7.684122e+04 dt 1.278883e+00 (wall 1.028138e+04 s);c37000 t 7.824394e+04 dt 1.476283e+00 (wall 1.055695e+04 s);c38000 t 7.957407e+04 dt 1.748991e+00 (wall 1.082441e+04 s);c39000 t 8.122855e+04 dt 1.804176e+00 (wall 1.109264e+04 s);c40000 t 8.301159e+04 dt 1.862168e+00 (wall 1.137189e+04 s);
