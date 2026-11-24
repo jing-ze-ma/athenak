@@ -445,12 +445,16 @@ void RadiationM1::VetGdGlobalBandInit() {
         if (rr != me && ro != me) {continue;}
         const int jg = pm->lloc_eachmb[go].lx2*nx2 + jo - w;
         const int kg = pm->lloc_eachmb[go].lx3*nx3 + ko - w;
-        // (an image across a wedge wall keeps every direction of its branch, as the slot
-        // halo's wall slots: a theta image has no geometric map, and a phi image's wall
-        // map reads other directions than the reach test's)
+        // (tw 1: an image across a theta wall keeps every direction of its branch, as the
+        // slot halo's wall slots (no geometric map); tw 2, vgd_raw: an image across a phi
+        // wall only (not read by a theta-wall ghost) keeps what its wall map reads for
+        // the directions kept at its own position, VetGdGbHaloC)
         const int jr = pm->lloc_eachmb[gr].lx2*nx2 + jj - w;
         const int kr = pm->lloc_eachmb[gr].lx3*nx3 + kk - w;
-        const int tw = (!vgd_pol && (jr < 0 || jr >= nt2 || kr < 0 || kr >= nt3)) ? 1 : 0;
+        const bool pw = (kr < 0 || kr >= nt3);
+        const int tw = (vgd_pol || !(pw || jr < 0 || jr >= nt2)) ? 0
+                       : ((pw && jr >= 0 && jr < nt2 && vgd_raw && !vgd_thmir &&
+                           vgd_thvac == 0) ? 2 : 1);
         if (rr == me && ro == me) {
           lb[d].insert(lb[d].end(), {gr - g0, kk, jj, go - g0, ko, jo, d});
         } else if (rr == me) {
@@ -674,8 +678,10 @@ void RadiationM1::VetGdGlobalBandInit() {
 //! column K (global phi), the receiver's band depth of the entry and the shell's radii:
 //! sender and receiver compute the same flags in the same list order, so the compact
 //! messages need no index.  Rows of the polar zone (+ the band depth) keep their whole
-//! branch (clamped polar reads).  Unsent positions get 0 (vet_gd_halo_compact_nan: NaN,
-//! the gate that nothing unsent is read).  On-rank copies as before (all directions).
+//! branch (clamped polar reads).  vgd_raw: a phi-wall image's flags are made by the
+//! receiver (its wall map) and sent once per list to the sender.  Unsent positions get 0
+//! (vet_gd_halo_compact_nan: NaN, the gate that nothing unsent is read).  On-rank copies
+//! as before (all directions).
 
 //! part (vet_gd_halo_overlap): 0 the whole exchange; 1 up to the posted messages (true:
 //! begun, the kept lists of a fixed set only); 2 the wait and the unpack of a begun one
@@ -760,12 +766,13 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
       for (int sd = 0; sd < 2; ++sd) {
         if (e >= ((sd == 0) ? ns : nr)) {continue;}
         const int dep = (sd == 0) ? DS_(e) : DR_(e);
+        const int tw = (sd == 0) ? JS_(e,2) : JR_(e,2);
         int f = 0;
-        if (dep <= wq) {
+        if (dep <= wq && tw != 2) {
           const int J = (sd == 0) ? JS_(e,0) : JR_(e,0);
           const int K = (sd == 0) ? JS_(e,1) : JR_(e,1);
           const Real gam = 2.0*fmax(dt_(J), dph);
-          const bool all = (cp_(J) != 0) || (((sd == 0) ? JS_(e,2) : JR_(e,2)) != 0);
+          const bool all = (cp_(J) != 0) || (tw != 0);
           f = VgdHaloKeepTP(nx, ny, nz, th_(J), p0 + (K + 0.5)*dph, inw, mode, all, dep,
                             rs, rm, rp, hasm, hasp, gam, dmin) ? 1 : 0;
         }
@@ -773,6 +780,47 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
         else {fr_(static_cast<size_t>(e)*nv + v) = f;}
       }
     });
+    // (1b) vgd_raw, a phi-wall image (tw 2; my band positions): the directions its wall
+    // map reads (as the sweep's rd0) for each direction q the keep test passes at the
+    // image's own (unwrapped) position, where the reader's geometry is that of any band
+    // position; the senders then take the receivers' flags of the depth-wq prefix
+    if (vgd_raw) {
+      auto phc_ = vgd_phc;
+      auto mp_ = vgd_map;
+      auto m3_ = vgd_m3;
+      const bool wint = vgd_wint;
+      par_for("m1_vgdgb_wflag", DevExeSpace(), 0, std::max(nr, 1) - 1, 0, nv - 1,
+      KOKKOS_LAMBDA(const int e, const int q) {
+        if (e >= nr || DR_(e) > wq || JR_(e,2) != 2) {return;}
+        const int m = R_(e,0), kk = R_(e,1), jj = R_(e,2), J = JR_(e,0);
+        const Real gam = 2.0*fmax(dt_(J), dph);
+        if (!VgdHaloKeepTP(dir_(q,0), dir_(q,1), dir_(q,2), th_(J), phc_(m,kk), inw, mode,
+                           cp_(J) != 0, DR_(e), rs, rm, rp, hasm, hasp, gam, dmin)) {
+          return;
+        }
+        for (int t = 0; t < (wint ? 3 : 1); ++t) {
+          const int v = wint ? m3_(m,kk,jj,q,t) : mp_(m,kk,jj,q);
+          Kokkos::atomic_max(&fr_(static_cast<size_t>(e)*nv + v), 1);
+        }
+      });
+      Kokkos::fence();
+      std::vector<MPI_Request> fq;
+      for (int p = 0; p < np; ++p) {
+        const int rk = vgd_csprk[p];
+        const int sn = vgd_gdsn[wq][p]*nv, rn = vgd_gdrn[wq][p]*nv;
+        if (sn > 0) {
+          fq.emplace_back();
+          MPI_Irecv(fs_.data() + static_cast<size_t>(vgd_csps[p])*nv, sn, MPI_INT, rk,
+                    7113, MPI_COMM_WORLD, &fq.back());
+        }
+        if (rn > 0) {
+          fq.emplace_back();
+          MPI_Isend(fr_.data() + static_cast<size_t>(vgd_cspr[p])*nv, rn, MPI_INT, rk,
+                    7113, MPI_COMM_WORLD, &fq.back());
+        }
+      }
+      MPI_Waitall(static_cast<int>(fq.size()), fq.data(), MPI_STATUSES_IGNORE);
+    }
     // (2) exclusive scans in place (flag -> position; totals at the end)
     VgdScan2(DevExeSpace(), vgd_gbfs, static_cast<size_t>(ns)*nv, vgd_gbfr,
              static_cast<size_t>(nr)*nv, "m1_vgdgb_scan2", vgd_scan_sums);
