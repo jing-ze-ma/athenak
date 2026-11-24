@@ -1330,13 +1330,15 @@ void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
                 << " | FOFC first-order cell-stages=" << fl[2] << std::endl;
     }
     if (pmesh->pmb_pack->phydro != nullptr && pmesh->pmb_pack->phydro->use_dfl) {
-      Real dn = pmesh->pmb_pack->phydro->dfl_n;
+      auto *ph = pmesh->pmb_pack->phydro;
+      Real dn[3] = {ph->dfl_n, ph->dfl_dp[0], ph->dfl_dp[1]};
 #if MPI_PARALLEL_ENABLED
-      MPI_Allreduce(MPI_IN_PLACE, &dn, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, dn, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
       if (global_variable::my_rank == 0) {
         std::cout << "<hydro> dfloor_flux_limit: outflow-limited cell-stages (all "
-                  << "attempts)=" << dn << std::endl;
+                  << "attempts)=" << dn[0] << ", their x1 momentum x vol removed="
+                  << dn[1] << ", kinetic energy x vol made heat=" << dn[2] << std::endl;
       }
     }
     // the density floor / velocity ceiling cells floor_pay skips: their total energy and

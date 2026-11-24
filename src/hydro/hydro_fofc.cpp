@@ -892,7 +892,7 @@ void Hydro::DfloorFluxLimit(Driver *pdrive, int stage) {
     // (less the round-off of the update itself, so the stored rho is >= dfloor)
     const Real tot = g0*u0_(m,IDN,k,j,i) + g1*u1_(m,IDN,k,j,i);
     const Real room = tot - dfl - 8.0*DBL_EPSILON*(tot + q);
-    if (q > room) {
+    if (q > room && q > 0.0) {   // (a cell without outflow keeps th = 1)
       th(m,0,k,j,i) = (room > 0.0) ? room/q : 0.0;
       sn += 1.0;
     }
@@ -969,6 +969,65 @@ void Hydro::DfloorFluxLimit(Driver *pdrive, int stage) {
       face(f3, r3, 3, m, k, j, i, eg ? p3(m,k,j,i) : 0.0);
     });
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void Hydro::DflMomentum
+//! \brief <hydro>/dfloor_flux_limit, the momentum: a cell whose outflow was scaled by
+//! th < 1 kept that mass, so its velocity is scaled to the mass flux it really had: the
+//! momentum but its L_z part pf phi_hat (EkinScale's, floor_from_ekin) times th, E fixed
+//! (the kinetic energy taken becomes heat).  Otherwise gravity and pressure keep
+//! accelerating held gas whose work (the potential and the enthalpy its mass flux
+//! carries, etotgrav) never arrives: KE > E, floors, infall to the velocity ceiling.
+//! After every momentum source of the stage; the x1 momentum and the heat are booked.
+
+void Hydro::DflMomentum() {
+  auto *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks, nx1 = indcs.nx1;
+  const int nx2 = indcs.nx2, nx3 = indcs.nx3, nmb = pmy_pack->nmb_thispack;
+  const bool cs = pm->use_cubed_sphere, sp = pm->use_spherical_polar;
+  auto &vol = pmy_pack->pcoord->volume;
+  auto cosc = cs ? pmy_pack->pcoord->cos_cell : DvceArray3D<Real>("dfl_c", 1, 1, 1);
+  auto &size = pmy_pack->pmb->mb_size;
+  auto pnl = pmy_pack->pmb->mb_panel.d_view;
+  auto u0_ = u0, th = dfl_th;
+  Real dp = 0.0, dk = 0.0;
+  Kokkos::parallel_reduce("dfl_mom", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          nmb*nx3*nx2*nx1),
+  KOKKOS_LAMBDA(const int n, Real &sdp, Real &sk) {
+    const int m = n/(nx3*nx2*nx1), k = (n/(nx2*nx1))%nx3 + ks;
+    const int j = (n/nx1)%nx2 + js, i = n%nx1 + is;
+    const Real t = th(m,0,k,j,i);
+    if (!(t < 1.0)) return;
+    const auto &sz = size.d_view(m);
+    const Real x2 = CellCenterX(j - js, nx2, sz.x2min, sz.x2max);
+    const Real x3 = CellCenterX(k - ks, nx3, sz.x3min, sz.x3max);
+    // phi_hat: spherical polar e3, the cubed sphere its covariant (0, f2, f3),
+    // Cartesian (-y, x)/R of the cell
+    Real f[3] = {0.0, 0.0, sp ? 1.0 : 0.0};
+    if (cs) {
+      GnomonicPhiHat(pnl(m), 0.25*M_PI*x2, 0.25*M_PI*x3, f[1], f[2]);
+    } else if (!sp) {
+      const Real x1 = CellCenterX(i - is, nx1, sz.x1min, sz.x1max);
+      const Real r = sqrt(x1*x1 + x2*x2);
+      if (r > 0.0) {f[0] = -x2/r; f[1] = x1/r;}
+    }
+    const Real c = cs ? cosc(m,k,j) : 0.0, det = 1.0 - c*c;
+    const Real m1 = u0_(m,IM1,k,j,i), m2 = u0_(m,IM2,k,j,i), m3 = u0_(m,IM3,k,j,i);
+    const Real msq = cs ? m1*m1 + (m2*m2 - 2.0*c*m2*m3 + m3*m3)/det
+                        : m1*m1 + m2*m2 + m3*m3;
+    const Real pf = cs ? (m2*(f[1] - c*f[2]) + m3*(f[2] - c*f[1]))/det
+                       : m1*f[0] + m2*f[1] + m3*f[2];
+    u0_(m,IM1,k,j,i) = t*(m1 - pf*f[0]) + pf*f[0];
+    u0_(m,IM2,k,j,i) = t*(m2 - pf*f[1]) + pf*f[1];
+    u0_(m,IM3,k,j,i) = t*(m3 - pf*f[2]) + pf*f[2];
+    const Real v = (cs || sp) ? vol(m,k,j,i) : sz.dx1*sz.dx2*sz.dx3;
+    sdp += (m1 - u0_(m,IM1,k,j,i))*v;
+    sk += 0.5*(1.0 - t*t)*fmax(msq - pf*pf, 0.0)/u0_(m,IDN,k,j,i)*v;
+  }, Kokkos::Sum<Real>(dp), Kokkos::Sum<Real>(dk));
+  dfl_dp[0] += dp;
+  dfl_dp[1] += dk;
 }
 
 } // namespace hydro

@@ -447,14 +447,16 @@ class Hydro {
   void FOFC(Driver *d, int stage);
   // <hydro>/dfloor_flux_limit (read only when named; default false): the outflow
   // limiter that keeps rho >= dfloor by construction (hydro_fofc.cpp); dfl_n counts the
-  // limited cell-stages
+  // limited cell-stages, dfl_dp[2] the x1 momentum x vol and the kinetic energy x vol
+  // (made heat) DflMomentum took from them
   bool use_dfl = false;
-  Real dfl_n = 0.0;
+  Real dfl_n = 0.0, dfl_dp[2] = {0.0, 0.0};
   MeshBoundaryValuesCC *pbval_dfl = nullptr, *pbval_dfs = nullptr;
   DvceArray5D<Real> dfl_th, dfl_thc;
   DvceFaceFld5D<Real> *pdfl_fs = nullptr;   // cubed sphere: the seam record
   DvceArray1D<int> dfl_sm;                  // cubed sphere: the seam faces of each block
   void DfloorFluxLimit(Driver *d, int stage);
+  void DflMomentum();
 
   void AddGravFlux(const DvceFaceFld4D<Real> &phi0, DvceFaceFld5D<Real> &flx);
   void AddGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons,
