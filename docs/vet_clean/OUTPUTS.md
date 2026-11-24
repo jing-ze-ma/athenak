@@ -78,7 +78,7 @@ Definitions used in the table:
 |---|---|---|---|
 | 0 | time | simulation time | s |
 | 1 | dt | step that ended here | s |
-| 2 | L_bot | sum F A at the x1 face between the first and second active cells (`is+1`), one cell above the inner boundary | erg/s |
+| 2 | L_bot | at the x1 face between the first and second active cells (`is+1`), one cell above the inner boundary: with `scheme = clean` the comoving flux sum (Phi - (4/3) v E) A (as L_midC; before IA12.3-rc4 it was the face flux sum F A); with the old scheme sum F A | erg/s |
 | 3 | L_mid | sum F A at the lower face of cell `imid` | erg/s |
 | 4 | L_int | sum F A at the L_int face | erg/s |
 | 5 | L_top | energy that the step's radiation solves moved **out** through the outer x1 face, divided by dt (positive outward). This is the boundary record of the clean solve (`CleanBndAcc`, `src/rad_vet/rad_vet_time2.cpp`). If the record is missing for a step it falls back to sum F A at the top face. | erg/s |
