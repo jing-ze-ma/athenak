@@ -1,7 +1,7 @@
 # seam.py R lo hi f.m1.bin...: hole (|F|>cE) fraction vs distance to the cubed-sphere panel edge, d = 1 - max(|x2|,|x3|), and per panel
 import sys, numpy as np
 sys.path.insert(0, sys.argv[0].rsplit('/',1)[0]); import bin_convert as bc
-R, lo, hi = map(float, sys.argv[1:4]); c = 2.99792458e10
+R, lo, hi = map(float, sys.argv[1:4]); import os; c = 2.99792458e10*float(os.environ.get('CSCALE', '1'))  # CSCALE < 1: positive control
 for f in sys.argv[4:]:
     m = bc.read_binary(f); nb = m['n_mbs']
     bins = np.array([0, 0.02, 0.05, 0.1, 0.2, 0.4, 0.7, 1.01]); H = np.zeros(len(bins)-1); N = np.zeros(len(bins)-1); pan = {}
@@ -17,4 +17,4 @@ for f in sys.argv[4:]:
         for i in range(len(N)): H[i] += h[k == i].sum(); N[i] += (k == i).sum()
         lg = tuple(m['mb_logical'][b]) if 'mb_logical' in m else b
         pan.setdefault(b % 6, []).append(h.mean())
-    print(f.split('/')[-1], 'r/R %.1f-%.1f' % (lo, hi), ' '.join('d %.2f-%.2f: %.3f' % (bins[i], bins[i+1], H[i]/max(N[i], 1)) for i in range(len(N))))
+    print(f.split('/')[-1], 'r/R %.1f-%.1f' % (lo, hi), ' '.join('d %.2f-%.2f: %s (N %d)' % (bins[i], bins[i+1], '%.4f' % (H[i]/N[i]) if N[i] else 'none', N[i]) for i in range(len(N))))
