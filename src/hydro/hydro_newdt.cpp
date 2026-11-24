@@ -39,6 +39,8 @@ namespace hydro {
 // <hydro>/dt_report (read only when named, in the Hydro constructor; 0 = off).
 // Diagnostics only: no state change.
 int dt_report_key = 0;
+// <hydro>/dt_floor_courant (read only when named, in the Hydro constructor; 0 = off)
+Real dt_floor_courant_key = 0.0;
 
 //----------------------------------------------------------------------------------------
 // \!fn void Hydro::NewTimeStep()
@@ -266,6 +268,22 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
     }
   };
 
+  // <hydro>/dt_floor_courant = C (read only when named; 0 = off = bitwise): a cell of
+  // floor gas, rho < <rad_vet>/floorcap_rho, takes dt <= C/sum_d (|v_d| + c_d)/h_d
+  // instead of cfl_number h_d/(|v_d| + c_d), so the floor atmosphere does not set dt
+  const Real dfc_ = (dt_floor_courant_key > 0.0) ?
+                    dt_floor_courant_key/pmy_pack->pmesh->cfl_no : 0.0;
+  Real fcr_ = 0.0;
+  if (dfc_ > 0.0) {
+    if (pmy_pack->pradvet == nullptr || pmy_pack->pradvet->fcap_rho <= 0.0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<hydro>/dt_floor_courant needs <rad_vet>/floorcap_rho > 0"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    fcr_ = pmy_pack->pradvet->fcap_rho;
+  }
+
   if (pdrive->time_evolution == TimeEvolution::kinematic) {
     // find smallest (dx/v) in each direction for advection problems
     Kokkos::parallel_reduce("HydroNudt1",Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
@@ -376,35 +394,39 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         mres.loc = idx;
         return;
       }
-      Real cell_dt;
-      if (use_cubed_sphere || use_spherical_polar) {
+      // the per-direction CFL widths h_d/(|v_d| + c_d)
+      Real q1, q2, q3;
+      const bool curv = (use_cubed_sphere || use_spherical_polar);
+      if (curv) {
+        q1 = dx1_(m,k,j,i)/max_dv1;
         if (mlat_) {
           const Real mf = static_cast<Real>(mlfi_(m,i));
-          const Real h2 = mf*dx2_(m,k,j,i), h3 = mf*dx3_(m,k,j,i);
-          min_dt1 = fmin((dx1_(m,k,j,i)/max_dv1), min_dt1);
-          min_dt2 = fmin((h2/max_dv2), min_dt2);
-          min_dt3 = fmin((h3/max_dv3), min_dt3);
-          cell_dt = dx1_(m,k,j,i)/max_dv1;
-          if (multi_d_) cell_dt = fmin(cell_dt, h2/max_dv2);
-          if (three_d_) cell_dt = fmin(cell_dt, h3/max_dv3);
+          q2 = mf*dx2_(m,k,j,i)/max_dv2;
+          q3 = mf*dx3_(m,k,j,i)/max_dv3;
         } else {
-        const Real h3 = rav_ ? rnf_(m,j)*dx3_(m,k,j,i) : dx3_(m,k,j,i);
-        min_dt1 = fmin((dx1_(m,k,j,i)/max_dv1), min_dt1);
-        min_dt2 = fmin((dx2_(m,k,j,i)/max_dv2), min_dt2);
-        min_dt3 = fmin((h3/max_dv3), min_dt3);
-        cell_dt = dx1_(m,k,j,i)/max_dv1;
-        if (multi_d_) cell_dt = fmin(cell_dt, dx2_(m,k,j,i)/max_dv2);
-        if (three_d_) cell_dt = fmin(cell_dt, h3/max_dv3);
-        if (dtcell_on) {dtc_(m,k-ks,j-js,i-is) = cell_dt;}
+          q2 = dx2_(m,k,j,i)/max_dv2;
+          q3 = (rav_ ? rnf_(m,j)*dx3_(m,k,j,i) : dx3_(m,k,j,i))/max_dv3;
         }
       } else {
-      min_dt1 = fmin((mbsize.d_view(m).dx1/max_dv1), min_dt1);
-      min_dt2 = fmin((mbsize.d_view(m).dx2/max_dv2), min_dt2);
-      min_dt3 = fmin((mbsize.d_view(m).dx3/max_dv3), min_dt3);
-      cell_dt = mbsize.d_view(m).dx1/max_dv1;
-      if (multi_d_) cell_dt = fmin(cell_dt, mbsize.d_view(m).dx2/max_dv2);
-      if (three_d_) cell_dt = fmin(cell_dt, mbsize.d_view(m).dx3/max_dv3);
+        q1 = mbsize.d_view(m).dx1/max_dv1;
+        q2 = mbsize.d_view(m).dx2/max_dv2;
+        q3 = mbsize.d_view(m).dx3/max_dv3;
       }
+      // <hydro>/dt_floor_courant: floor gas (rho < floorcap_rho) bound on the SUM of the
+      // directions' Courant numbers instead of cfl_number per direction
+      if (dfc_ > 0.0 && w0_(m,IDN,k,j,i) < fcr_) {
+        Real s = 1.0/q1;
+        if (multi_d_) s += 1.0/q2;
+        if (three_d_) s += 1.0/q3;
+        q1 = q2 = q3 = dfc_/s;
+      }
+      min_dt1 = fmin(q1, min_dt1);
+      min_dt2 = fmin(q2, min_dt2);
+      min_dt3 = fmin(q3, min_dt3);
+      Real cell_dt = q1;
+      if (multi_d_) cell_dt = fmin(cell_dt, q2);
+      if (three_d_) cell_dt = fmin(cell_dt, q3);
+      if (dtcell_on && curv && !mlat_) {dtc_(m,k-ks,j-js,i-is) = cell_dt;}
       if (cell_dt < mres.val) { mres.val = cell_dt; mres.loc = idx; }
     }, Kokkos::Min<Real>(dt1), Kokkos::Min<Real>(dt2),Kokkos::Min<Real>(dt3),
        Kokkos::MinLoc<Real, int>(hloc));
@@ -628,6 +650,16 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
           const Real t = h[a]/(fabs(v[a]) + csd[a]*(a > 0 ? sc : 1.0));
           if (t < best) {best = t; adir = a;}
         }
+        Real fl = 0.0;   // dt_floor_courant: the floor cell's summed bound
+        if (dfc_ > 0.0 && d < fcr_) {
+          Real sm = 0.0;
+          for (int a = 0; a < 3; ++a) {
+            if ((a == 1 && !multi_d_) || (a == 2 && !three_d_)) continue;
+            sm += (fabs(v[a]) + csd[a]*(a > 0 ? sc : 1.0))/h[a];
+          }
+          best = dfc_/sm;
+          fl = 1.0;
+        }
         rv(0) = curv ? x1v_(m,i) : CellCenterX(i-is_, nx1_, mbsize.d_view(m).x1min,
                                                mbsize.d_view(m).x1max);
         rv(1) = d;
@@ -649,6 +681,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         rv(17) = sc;
         rv(18) = (curv ? pmy_x2v_(m,j) : 0.0);
         rv(19) = (curv ? pmy_x3v_(m,k) : 0.0);
+        rv(20) = fl;
       });
       rp.modify_device();
       rp.sync_host();
@@ -667,7 +700,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
                 << " Ddd=" << q(12) << " cdt_kP=" << q(13) << " frz=" << q(14)
                 << " sc=" << q(17) << " cell_dt=" << q(15) << " cell_dt_gas=" << q(16)
                 << " theta_deg=" << q(18)*180.0/M_PI << " phi=" << q(19)
-                << std::endl;
+                << " floor=" << static_cast<int>(q(20)) << std::endl;
       }
       if (tg[0] > 0) {
         const Real cf = pmy_pack->pmesh->cfl_no;

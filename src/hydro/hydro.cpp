@@ -104,6 +104,10 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("hydro","dt_report")) {
       dt_report_key = pin->GetInteger("hydro","dt_report");
     }
+    extern Real dt_floor_courant_key;
+    if (pin->DoesParameterExist("hydro","dt_floor_courant")) {
+      dt_floor_courant_key = pin->GetReal("hydro","dt_floor_courant");
+    }
   }
   // P4: the passive-tracer layout shared with MHD (mhd/mhd_tracers.hpp): the
   // floor-mass tracer <hydro>/floor_tracer (read only when named; default off) is the
