@@ -45,6 +45,7 @@ void hydro::Hydro::DtRetryVisit(V &v) {
   v.value("dtnew_prev", dtnew_prev);
   v.value("rad_signal_speed", rad_signal_speed);
   v.value("rss_inertia", rss_inertia);
+  v.value("rss_diff", rss_diff);
   v.view("fofc", fofc);
   v.value("use_fofc", use_fofc);
   v.view("fofc_cnt", fofc_cnt);
