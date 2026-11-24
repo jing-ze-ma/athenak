@@ -103,6 +103,7 @@ clean_stag_mg_levels = 4
 floorcap_report = 25
 floorcap_v = 3e7
 floorcap_lz = true
+floorcap_lz_spin = true
 floorcap_rho = 1e-14
 clean_stag_flim = false
 clean_init_dtfac = 1.0e6
@@ -275,7 +276,7 @@ clean_wb_fct = true
 vet_gd_rotate_xfade = true
 vet_rotate_advance = true
 clean_stag_fs_line = pcr
-floorcap_mesh_vol = 0
+floorcap_mesh_vol = true
 
 <problem>
 he_seed_band = old
