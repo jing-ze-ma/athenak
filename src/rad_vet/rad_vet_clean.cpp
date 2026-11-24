@@ -4869,6 +4869,7 @@ void RadiationVet::CleanStagFwbProject(const int d, const int slot,
       sw += mu(m,b,a,2*c+1);
     }
     const Real q = (sw > 0.0) ? ss/sw : 0.0;
+    Real cn = 0.0, cp = 0.0, c1 = 0.0;   // (the line's counters: one atomic each)
     for (int t = 0; t <= n; ++t) {   // (one MeshBlock round a periodic wrap: low face)
       int k, j, i, kr, jr, ir;
       face(t, a, b, k, j, i);
@@ -4878,10 +4879,14 @@ void RadiationVet::CleanStagFwbProject(const int d, const int slot,
       if (!cnt || t == n) continue;   // (the counters: the printed s, the write-back's)
       const Real p = fc(m,CLF_TH,k,j,i)*s*0.5*(CleanVol(x, m, k, j, i) +
                      CleanVol(x, m, k-dk, j-dj, i-di))/(x.c*x.c);
-      Kokkos::atomic_add(&fwc(0), 1.0);
-      Kokkos::atomic_add(&fwc(1), fabs(p));
-      if (d == 0) Kokkos::atomic_add(&fwc(2), p);
+      cn += 1.0;
+      cp += fabs(p);
+      c1 += p;
     }
+    if (!cnt) return;
+    Kokkos::atomic_add(&fwc(0), cn);
+    Kokkos::atomic_add(&fwc(1), cp);
+    if (d == 0) Kokkos::atomic_add(&fwc(2), c1);
   });
 }
 
