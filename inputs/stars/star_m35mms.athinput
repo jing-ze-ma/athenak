@@ -4,7 +4,7 @@
 # Before running: replace TABLES/ in the he_* table / profile / IC file keys by the
 # directory of your copies (the files are not in the repository), and set the run
 # length and outputs.
-# Needs a binary built with -D PROBLEM=he_star_vet (docs/vet_clean/BUILD.md).
+# Needs a binary built with -D PROBLEM=star_vet (docs/vet_clean/BUILD.md).
 # Key meanings: docs/vet_clean/KEYS.md.  Restart rule: docs/vet_clean/RUN.md.
 
 <job>
@@ -268,29 +268,29 @@ clean_stag_fs_line = pcr
 floorcap_mesh_vol = true
 
 <problem>
-he_ic_balance = false
-he_seed_band = n2
-he_ic_profile = false
-he_ic_rad = file
-he_ic_eint_from_t = true
+star_ic_balance = false
+star_seed_band = n2
+star_ic_profile = false
+star_ic_rad = file
+star_ic_eint_from_t = true
 user_srcs = true
 user_hist = true
-he_gm = 4.6449357021e+27
-he_gravity = wb
-he_ic_file = TABLES/m35mms/ic_m35mms.txt
-he_opac_table = TABLES/tables/rosseland_mesakap_gs98_x0.70_z0.02.txt
-he_planck_table = TABLES/tables/planck_ext2_gs98_x0.70_z0.02.txt
-he_nfine = 262144
-he_tau_int = 1.0
-he_ic_cols = 5
-he_wall_zero_flux = true
+star_gm = 4.6449357021e+27
+star_gravity = wb
+star_ic_file = TABLES/m35mms/ic_m35mms.txt
+star_opac_table = TABLES/tables/rosseland_mesakap_gs98_x0.70_z0.02.txt
+star_planck_table = TABLES/tables/planck_ext2_gs98_x0.70_z0.02.txt
+star_nfine = 262144
+star_tau_int = 1.0
+star_ic_cols = 5
+star_wall_zero_flux = true
 mlt_flux_frozen = false
-he_wall_closed = true
+star_wall_closed = true
 mlt_closure = frozen
-he_grid_dump = true
-he_bc_outer = copy
-he_bc_outer_r2 = false
-he_bc_inner = wall
+star_grid_dump = true
+star_bc_outer = copy
+star_bc_outer_r2 = false
+star_bc_inner = wall
 
 <output1>
 file_type = hst

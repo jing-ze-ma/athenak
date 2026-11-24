@@ -36,8 +36,9 @@ option(Athena_ENABLE_MPI "Compile with MPI parallelism enabled" OFF)
 option(Athena_ENABLE_OPENMP "Compile with OpenMP parallelism enabled" OFF)
 option(Athena_ENABLE_RNS "Compile with RNS support enabled" OFF)
 set(PROBLEM built_in_pgens CACHE STRING "Name of problem generator function")
-if (${PROBLEM} STREQUAL "he_star_m1")   # (the name before the m1 -> vet rename)
-  set(PROBLEM he_star_vet)
+if (${PROBLEM} STREQUAL "he_star_vet" OR ${PROBLEM} STREQUAL "he_star_m1")   # (old names)
+  message(STATUS "PROBLEM = ${PROBLEM} is now named star_vet")
+  set(PROBLEM star_vet)
 endif()
 
 #------ set macros exported to config.hpp ------------------------------------------------

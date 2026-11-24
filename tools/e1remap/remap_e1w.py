@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""remap_e1w.py (e1remap-1014): AthenaK restart (he_star_vet + rad_vet, general EOS, spherical polar) ->
-2x-lateral narrow-wedge initial state for problem/he_ic_remap_file (pgen he_star_vet, branch e1remap-1014).
+"""remap_e1w.py (e1remap-1014): AthenaK restart (star_vet + rad_vet, general EOS, spherical polar) ->
+2x-lateral narrow-wedge initial state for problem/star_ic_remap_file (pgen star_vet, branch e1remap-1014).
 
 usage: python3 remap_e1w.py RST TEMPLATE_DECK OUTDIR [--x2min A --x2max B] [--dphi D] [--phi0 auto|IDX]
                             [--refine 2] [--blend W] [--name NAME]
@@ -22,7 +22,7 @@ Method (all per radial index i, including the x1 ghosts; the radial grid is copi
      (equal volumes: phi uniform; theta range symmetric about pi/2) mix as q_L' = (1-a) q_L + a q_R, a = 0.5 (1 - d/W)
      -> seam jump 0, every pair sum (so every shell sum) exact.  Variables: rho, m1-3, ET, E, F1-3, f0x1.
 FORMAT (little endian): 'HSREMAP1' | int32 [ver=1, ng, nx1, nx2, nx3, nhyd=5, nm1=4, 0] | float64 [t, x1min, x1max, x2min,
-  x2max, x3min, x3max] | uint64 npgen | npgen bytes (parent PGEN block: Picard window + he_ic_equil a_ref trailer) |
+  x2max, x3min, x3max] | uint64 npgen | npgen bytes (parent PGEN block: Picard window + star_ic_equil a_ref trailer) |
   float64 hydro u0 [5][nx3+2ng][nx2+2ng][nx1+2ng] | m1 u0 [4][..] | f0x1 [nx3+2ng][nx2+2ng][nx1+2ng+1]
   (lateral ghosts = periodic images of the child, x1 ghosts = the parent's, prolonged).
 """
@@ -52,7 +52,8 @@ def parse_params(txt):
             continue
         if '=' in s and blk is not None:
             k, v = s.split('=', 1)
-            out[blk + '/' + k.strip()] = v.strip()
+            # (problem/he_*: the star keys before their rename to star_*)
+            out[re.sub('^problem/he_', 'problem/star_', blk + '/' + k.strip())] = v.strip()
     return out
 
 
@@ -261,15 +262,15 @@ def main():
     P('  t = %.17g  dt = %.17g  ncycle %d  nmb %d  mesh %s  meshblock %s  ng %d' %
       (R['time'], R['dt'], R['ncycle'], R['nmb'], R['mesh'], R['mb'], R['ng']))
     P('  blocks', R['order'], ' nhydro', R['nh'], ' f0x2/f0x3', R['trans'], ' counts', R['counts'])
-    if 'problem/he_ic_rad_atm_na' in par:
-        raise SystemExit('parent used he_ic_rad_atm_post (a_ref in the input): not supported')
+    if 'problem/star_ic_rad_atm_na' in par:
+        raise SystemExit('parent used star_ic_rad_atm_post (a_ref in the input): not supported')
     if par.get('problem/mlt_closure', 'frozen') != 'frozen':
         raise SystemExit('parent mlt_closure must be frozen')
     pg = R['blocks'].get(b'PGENST01', b'')
-    if dk.get('problem/he_ic_equil', 'false').lower() in ('true', '1') and pg[-8:] != b'HSDICE01':
-        raise SystemExit('child deck has he_ic_equil = true but the parent rst carries no he_ic_equil a_ref trailer')
-    for k in ('problem/mlt_ramp_start', 'problem/mlt_ramp_time', 'problem/he_gm', 'problem/he_ic_file',
-              'rad_vet/implicit_flux_x1min', 'problem/he_sponge_r0', 'hydro/wb_rmax'):
+    if dk.get('problem/star_ic_equil', 'false').lower() in ('true', '1') and pg[-8:] != b'HSDICE01':
+        raise SystemExit('child deck has star_ic_equil = true but the parent rst carries no star_ic_equil a_ref trailer')
+    for k in ('problem/mlt_ramp_start', 'problem/mlt_ramp_time', 'problem/star_gm', 'problem/star_ic_file',
+              'rad_vet/implicit_flux_x1min', 'problem/star_sponge_r0', 'hydro/wb_rmax'):
         if par.get(k) != dk.get(k):
             P('  NOTE key differs parent -> child deck: %s: %s -> %s' % (k, par.get(k), dk.get(k)))
     # radial grid identical
@@ -538,7 +539,7 @@ def main():
         return '\n'.join(lines)
     d = deck_txt
     d = setkey(d, 'time', 'start_time', repr(t), 'e1remap-1014: = parent rst time (checked bitwise by the pgen)')
-    d = setkey(d, 'problem', 'he_ic_remap_file', os.path.abspath(fn), 'e1remap-1014: md5 ' + md5)
+    d = setkey(d, 'problem', 'star_ic_remap_file', os.path.abspath(fn), 'e1remap-1014: md5 ' + md5)
     for blk in sorted(b for b in set(k.split('/')[0] for k in dk) if b.startswith('output')):
         odt = float(dk[blk + '/dt'])
         nlast = math.floor(t / odt + 1e-9)

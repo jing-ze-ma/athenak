@@ -1,7 +1,7 @@
 """mkdeck.py (s3grid-1017): child decks from the S3 parent parameter dump (rst 00046) with the extended fine radial grid.
 usage: mkdeck.py PARENT_PAR FIT_TXT WB_RMAX_RPH OUTDIR
-writes OUTDIR/s3g_tmpl.athinput (fresh template run: he_ic_equil on the new grid, 1 cycle, rst every cycle) and
-OUTDIR/s3g_run.athinput (the run deck; remap_r.py adds start_time / he_ic_remap_file / output schedules)."""
+writes OUTDIR/s3g_tmpl.athinput (fresh template run: star_ic_equil on the new grid, 1 cycle, rst every cycle) and
+OUTDIR/s3g_run.athinput (the run deck; remap_r.py adds start_time / star_ic_remap_file / output schedules)."""
 import re
 import sys
 

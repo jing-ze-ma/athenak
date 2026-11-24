@@ -26,10 +26,10 @@ r_top: {x1max_cm: 2.473909e13}   # = hg145e1_raven.athinput (355.6 Rsun)
 seam:
   deck: /raven/ptmp/jinma/hegiant145_1015/decks/hg145e1_raven.athinput
   binary: /raven/ptmp/jinma/icstd_1016/bin/athena_he_cpu_843ce3e4   # ic-gammacap-1016
-  overrides: ['problem/he_ic_rad_gamma_cap=0.3']
+  overrides: ['problem/star_ic_rad_gamma_cap=0.3']
 # 10-16: without a cap the code's own sph1d + re_atm + HSE startup does not converge for this star
 # (super-Eddington RE photosphere on the He/H opacity cliff; RESULTS sect. 6).  With the opt-in
-# startup cap he_ic_rad_gamma_cap = 0.3 (branch ic-gammacap-1016, he_star_vet) the radiative flux
+# startup cap star_ic_rad_gamma_cap = 0.3 (branch ic-gammacap-1016, star_vet) the radiative flux
 # is capped at 0.3 c g/kappa per cell and the excess goes into the frozen scaffold (as MESA's
 # convection there); the standard top (Hopf) and taper (tau 30 -> 3) are used.
-deck_extra: ['problem/he_ic_rad_gamma_cap=0.3']
+deck_extra: ['problem/star_ic_rad_gamma_cap=0.3']

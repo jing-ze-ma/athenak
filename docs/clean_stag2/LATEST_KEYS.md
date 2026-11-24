@@ -85,7 +85,7 @@
 - **Gated pieces, keys off:**
   - RSGDIE `clean_retry_budget` (f1855eaa8): a redone step keeps the budget tolerance; CLEAN WORST names the failing cell.
   - LZ4 `clean_cs_lat_wb` (bfc6e0723): projection of the cubed-sphere lateral stress sums; G1-G4 pass; rsgs 600 cycles 0 CW, Lz +6e-12.
-  - FRESHGO icbal (8f585d5b9, 4a7f72334): he_ic_balance with he_ic_linhao, problem/he_ic_balance_aref.
+  - FRESHGO icbal (8f585d5b9, 4a7f72334): star_ic_balance with star_ic_linhao, problem/star_ic_balance_aref.
   - LZWB 8127c2e94 (above).
   - Bench / test only: the AmHistory budget gains Lz_tot = CleanLzTotal. The cs feed1 row's ct.py budget reads it (LZWB: the old row mixed the cell-form radiation L_z with the face-form ledger under lz_tel).
   - Non-MPI build fix (M1_TU_PART outside `#if MPI_PARALLEL_ENABLED`).
@@ -174,7 +174,7 @@ GPU:
 - **Key-on / default recommendations pending the USER (all OFF / unchanged in v20 as cut):** (1) hydro/floor_pay=rad_column (ELEAK; TQS localised the rule-1 energy remainder to the hydro EOS floor's created energy, which this closes to noise: AB9/AB9rt RSG, AB10 HG 0 CW, no slowdown); (2) rad_vet/clean_cs_lz_tel=true (LZTEL2 fix: RSG 300 cycles key on 0 CW, L_z drift 8e-12; HG 50 cycles dt identical to key off; rt bitwise); (3) code default rad_vet/time2_face_fct=true (production names it; tests that omit it ran without FCT: CPU stalls + R136 fresh 2 CW, CONV/CONV2); (4) code default rad_vet/time2_k1_stiff=0 (all keys files name 0).
 - **Rule-1 blockers cleared:** TIE cs face tie exact on production (TQK); energy remainder = hydro EOS floor energy (TQS) -> floor_pay recommendation above. CONSERV lzbook books sp L_z at open boundaries + hst M/E/L_z boundary fluxes. LAG fill0 R136 fresh pair bitwise.
 - **Gate (v20n 6d3da47b2):** CPU k20 bench (k18 + fofc + nghost=3 + time2_face_fct) 66 hst == Sk20r2 (the new k20 reference, reproducible k20ref == k20refb), bins data-identical, GATES FAIL 8 (known prod-value/ref-missing rows), CW 1 = forced flz qFB deck; stars plain == poison 0 CW; pzgate 10/10; restart I/O pieces: rst md5 == v20g incl. a 2^10-piece build, k = 1 read-ahead restart bitwise. Caltech H200 (4 ranks/node, romio): RSG rt 5/5, poison == plain == repro, HG rt 5/5 (the >= 2 GiB piece case that failed on v20g), 0 CW, hst chain V20G == V20J (cols 1-26) == V20L == V20M == V20N; speed RSG 2.84 HG 4.18 s/cycle (v20l vs v20g SPL 2.71 vs 2.73). Raven A100 gpudev R136 rt bitwise 0 CW (hst == V20K).
-- **hst:** he_star_vet user hst has 4 new columns at the end (M_hflx, E_hflx, Lz_hflx, Lz_tot; 30 columns); columns 1-26 and hydro hst are bitwise to v20g.
+- **hst:** star_vet user hst has 4 new columns at the end (M_hflx, E_hflx, Lz_hflx, Lz_tot; 30 columns); columns 1-26 and hydro hst are bitwise to v20g.
 
 
 ### v19 block (superseded by v20 above)
@@ -204,7 +204,7 @@ R136: r136_latest.txt is for restarts from **r136.00097** (Raven /raven/ptmp/jin
 ## How the keys were made
 - **Source:** the K1 production args.
   - HG / RSG: viper vgpu/k1_{hg,rsg}.args, the base args that VGPU gives every gpuq run.
-  - R136: Raven gh200lead/r136_keys.txt + the kline rarms.sh staggered set. Where a key appeared twice, the last value wins, so time2_k1_redist=0 and he_ic_file=..._ext165.
+  - R136: Raven gh200lead/r136_keys.txt + the kline rarms.sh staggered set. Where a key appeared twice, the last value wins, so time2_k1_redist=0 and star_ic_file=..._ext165.
 - **Decisions applied:**
   - **clean_xt_exact=cons** (S3B).
   - **implicit_fb_local / _rounds dropped:** the code is deleted from the clean solve (USER 2026-11-19).
@@ -251,9 +251,9 @@ R136: r136_latest.txt is for restarts from **r136.00097** (Raven /raven/ptmp/jin
 | mesh/cs_seam_blockend | `extend` | K1 production value (hg) |
 | mesh/cs_vertex_3cell | `true` | K1 production value (hg) |
 | time/cfl_number | `0.3` | K1 production value (hg) |
-| problem/he_ic_file | `/viper/ptmp2/jinma/prod_1107/tables/hgglob_1021/files/hg145-prod-1018/ic_hegiant_14p5M_mk.txt` | K1 production value (hg) |
-| problem/he_opac_table | `/viper/ptmp2/jinma/prod_1107/tables/hgglob_1021/files/hg145-prod-1018/rosseland_mesakap_afe2dd8da2bd.txt` | K1 production value (hg) |
-| problem/he_planck_table | `/viper/ptmp2/jinma/prod_1107/tables/hgglob_1021/files/hg145-prod-1018/planck_ext2_x0.0009496_z0.0215304_416a61196c64.txt` | K1 production value (hg) |
+| problem/star_ic_file | `/viper/ptmp2/jinma/prod_1107/tables/hgglob_1021/files/hg145-prod-1018/ic_hegiant_14p5M_mk.txt` | K1 production value (hg) |
+| problem/star_opac_table | `/viper/ptmp2/jinma/prod_1107/tables/hgglob_1021/files/hg145-prod-1018/rosseland_mesakap_afe2dd8da2bd.txt` | K1 production value (hg) |
+| problem/star_planck_table | `/viper/ptmp2/jinma/prod_1107/tables/hgglob_1021/files/hg145-prod-1018/planck_ext2_x0.0009496_z0.0215304_416a61196c64.txt` | K1 production value (hg) |
 | rad_vet/cs_cross_mono | `true` | K1 production value (hg) |
 | ~~rad_vet/implicit_opac_newton~~ | ~~`false`~~ | DROPPED: no effect under clean: CleanPreflight drops the implicit_* keys the clean solve does not read (ABLATE P16: naming them is bitwise); a restart reads its file value anyway |
 | mesh/cs_seam_rho_guard | `4` | K1 production value (hg) |
@@ -333,9 +333,9 @@ R136: r136_latest.txt is for restarts from **r136.00097** (Raven /raven/ptmp/jin
 | mesh/cs_seam_blockend | `extend` | K1 production value (rsg) |
 | hydro/merge_lat_blockend | `exchange` | K1 production value (rsg) |
 | mesh/cs_vertex_3cell | `true` | K1 production value (rsg) |
-| problem/he_ic_file | `/viper/ptmp2/jinma/prod_1107/tables/rsg_E_1020/files/rsg-E-1020/ic_rsg_g25_deep.txt` | K1 production value (rsg) |
-| problem/he_opac_table | `/viper/ptmp2/jinma/prod_1107/tables/rsg_E_1020/files/rsg-g25-prod/rosseland_mesakap_4c0e8b64d26a.txt` | K1 production value (rsg) |
-| problem/he_planck_table | `/viper/ptmp2/jinma/prod_1107/tables/rsg_E_1020/files/rsg-g25-prod/planck_ext2_x0.653848_z0.019757_d38e5526afef.txt` | K1 production value (rsg) |
+| problem/star_ic_file | `/viper/ptmp2/jinma/prod_1107/tables/rsg_E_1020/files/rsg-E-1020/ic_rsg_g25_deep.txt` | K1 production value (rsg) |
+| problem/star_opac_table | `/viper/ptmp2/jinma/prod_1107/tables/rsg_E_1020/files/rsg-g25-prod/rosseland_mesakap_4c0e8b64d26a.txt` | K1 production value (rsg) |
+| problem/star_planck_table | `/viper/ptmp2/jinma/prod_1107/tables/rsg_E_1020/files/rsg-g25-prod/planck_ext2_x0.653848_z0.019757_d38e5526afef.txt` | K1 production value (rsg) |
 | rad_vet/cs_cross_mono | `true` | K1 production value (rsg) |
 | ~~rad_vet/implicit_opac_newton~~ | ~~`false`~~ | DROPPED: no effect under clean: CleanPreflight drops the implicit_* keys the clean solve does not read (ABLATE P16: naming them is bitwise); a restart reads its file value anyway |
 | mesh/cs_seam_rho_guard | `4` | K1 production value (rsg) |
@@ -354,7 +354,7 @@ R136: r136_latest.txt is for restarts from **r136.00097** (Raven /raven/ptmp/jin
 | output3/dt | `1e30` | K1 production value (rsg) |
 | output5/dt | `1e30` | K1 production value (rsg) |
 | output6/dt | `1e30` | K1 production value (rsg) |
-| problem/he_ic_equil | `false` | K1 production value (rsg) |
+| problem/star_ic_equil | `false` | K1 production value (rsg) |
 | rad_vet/scheme | `clean` | K line: clean solve |
 | rad_vet/clean_layout | `staggered` | K line: staggered |
 | rad_vet/clean_rays | `sc` | K line: sc rays |
@@ -381,8 +381,8 @@ R136: r136_latest.txt is for restarts from **r136.00097** (Raven /raven/ptmp/jin
 |---|---|---|
 | rad_vet/zalesak_active | `true` | ADDED v15: bitwise to za off (CPU bench 66/66 hst + MI300A HG/RSG hst identical to v14), adopted for speed (HG -20 %) |
 | rad_vet/vet_gd_band_ring | `false` | ADDED for A100/R136 only (SPD2 2026-11-19): key-only, R136 hst md5 BITWISE, -47 ms/cycle (C1 0.953 -> 0.903 s), memory 24.6 of 40 GB; HG/RSG keep the default vet_gd_band_ring=true: on RSG false costs +25 GB/rank (93.2 vs ~69 GB, MEMTRIM) |
-| problem/he_opac_table | `/raven/ptmp/jinma/stag2/gh200lead/pkg/opac/rosseland_mesakap_a09_x0.58_z0.0064_topsbase_T7.txt` | K1 production value (r136) |
-| problem/he_planck_table | `/raven/ptmp/jinma/stag2/gh200lead/pkg/opac/planck_tops_x0.58_z0.0064_a09_T7.txt` | K1 production value (r136) |
+| problem/star_opac_table | `/raven/ptmp/jinma/stag2/gh200lead/pkg/opac/rosseland_mesakap_a09_x0.58_z0.0064_topsbase_T7.txt` | K1 production value (r136) |
+| problem/star_planck_table | `/raven/ptmp/jinma/stag2/gh200lead/pkg/opac/planck_tops_x0.58_z0.0064_a09_T7.txt` | K1 production value (r136) |
 | rad_vet/time2_adm_poslim | `true` | K1 production value (r136) |
 | rad_vet/cs_cross_mono | `true` | K1 production value (r136) |
 | ~~rad_vet/implicit_opac_newton~~ | ~~`false`~~ | DROPPED: no effect under clean: CleanPreflight drops the implicit_* keys the clean solve does not read (ABLATE P16: naming them is bitwise); a restart reads its file value anyway |
@@ -393,21 +393,21 @@ R136: r136_latest.txt is for restarts from **r136.00097** (Raven /raven/ptmp/jin
 | ~~rad_vet/implicit_opac_lag_passes~~ | ~~`3`~~ | DROPPED: no effect under clean: CleanPreflight drops the implicit_* keys the clean solve does not read (ABLATE P16: naming them is bitwise); a restart reads its file value anyway |
 | rad_vet/vet_gd_tangential | `true` | K1 production value (r136) |
 | mesh/layout_invariant | `true` | K1 production value (r136) |
-| problem/he_wb_grav_window | `true` | K1 production value (r136) |
+| problem/star_wb_grav_window | `true` | K1 production value (r136) |
 | output2/bin_double | `true` | K1 production value (r136) |
 | output3/bin_double | `true` | K1 production value (r136) |
 | output6/bin_double | `true` | K1 production value (r136) |
 | ~~rad_vet/implicit_wb_vkick_reject~~ | ~~`1e9`~~ | DROPPED: no effect under clean: CleanPreflight drops the implicit_* keys the clean solve does not read (ABLATE P16: naming them is bitwise); a restart reads its file value anyway |
 | mesh/layout_invariant_mode | `block` | K1 production value (r136) |
-| problem/he_sponge_rate | `0` | K1 production value (r136) |
-| problem/he_bc_outer | `noinflow` | K1 production value (r136) |
+| problem/star_sponge_rate | `0` | K1 production value (r136) |
+| problem/star_bc_outer | `noinflow` | K1 production value (r136) |
 | output2/dt | `2000` | K1 production value (r136) |
 | output3/dt | `2000` | K1 production value (r136) |
 | rad_vet/floorcap_rho | `1e-14` | K1 production value (r136) |
 | rad_vet/floorcap_v | `3e7` | K1 production value (r136) |
 | rad_vet/floorcap_report | `25` | K1 production value (r136) |
 | time/dt_retry | `true` | K1: dt_retry on (checkpoint + retry) |
-| problem/he_ic_file | `/raven/ptmp/jinma/stag2/gh200lead/pkg/ic/ic_r136a1_B_dfl17_ext165.txt` | K1 production value (r136) |
+| problem/star_ic_file | `/raven/ptmp/jinma/stag2/gh200lead/pkg/ic/ic_r136a1_B_dfl17_ext165.txt` | K1 production value (r136) |
 | mesh/nx1 | `738` | K1 production value (r136) |
 | mesh/x1min | `1.3531365000e+12` | K1 production value (r136) |
 | mesh/x1max | `1.0435500000e+13` | K1 production value (r136) |

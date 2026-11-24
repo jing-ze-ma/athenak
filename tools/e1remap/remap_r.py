@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""remap_r.py (s3grid-1017): AthenaK restart (he_star_vet + rad_vet, general EOS, spherical polar, ONE MeshBlock radially)
--> the same state on a NEW RADIAL GRID (same x1min/x1max, same lateral grid) as a problem/he_ic_remap_file start
-(pgen he_star_vet, e1remap-1014 path; file format of remap_e1w.py).
+"""remap_r.py (s3grid-1017): AthenaK restart (star_vet + rad_vet, general EOS, spherical polar, ONE MeshBlock radially)
+-> the same state on a NEW RADIAL GRID (same x1min/x1max, same lateral grid) as a problem/star_ic_remap_file start
+(pgen star_vet, e1remap-1014 path; file format of remap_e1w.py).
 
 usage: python3 remap_r.py PARENT_RST PARENT_X1GRID CHILD_TEMPLATE_RST CHILD_X1GRID CHILD_DECK OUTDIR [--name NAME]
   PARENT_RST           the state to remap (e.g. S3 rst 00046, t = 3.0e7)
   PARENT_X1GRID        its <basename>.x1grid.txt (faces incl. ghosts, written at startup)
   CHILD_TEMPLATE_RST   any restart of a FRESH run of CHILD_DECK (new grid): supplies the child's Phi_eff per cell
-                       (u0(IEN) - KE - eint; the new grid's he_ic_equil a_ref and Phi_eff) and its PGEN block (the a_ref
+                       (u0(IEN) - KE - eint; the new grid's star_ic_equil a_ref and Phi_eff) and its PGEN block (the a_ref
                        trailer of the new grid; the Picard window trailer is stripped by the pgen)
   CHILD_X1GRID         the template run's x1grid.txt
-  CHILD_DECK           the child deck (new grid keys); the generated deck = it + start_time + he_ic_remap_file + output
+  CHILD_DECK           the child deck (new grid keys); the generated deck = it + start_time + star_ic_remap_file + output
                        schedules aligned to the parent
 Method (per lateral column, radial index incl. x1 ghosts):
   cell quantities rho, m1, m2, m3, eint, E, F1, F2, F3: conservative remap of the parent's piecewise-LINEAR profile
@@ -210,7 +210,7 @@ def main():
         return '\n'.join(lines)
     d = dk_txt
     d = setkey(d, 'time', 'start_time', repr(t), 's3grid-1017: = parent rst time (checked bitwise by the pgen)')
-    d = setkey(d, 'problem', 'he_ic_remap_file', os.path.abspath(fn), 's3grid-1017 remap_r.py: md5 ' + md5)
+    d = setkey(d, 'problem', 'star_ic_remap_file', os.path.abspath(fn), 's3grid-1017 remap_r.py: md5 ' + md5)
     for blk in sorted(b for b in set(k.split('/')[0] for k in dk) if b.startswith('output')):
         odt = float(dk[blk + '/dt'])
         nlast = math.floor(t / odt + 1e-9)

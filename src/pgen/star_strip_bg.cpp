@@ -3,9 +3,9 @@
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
-//! \file he_strip_bg.cpp
+//! \file star_strip_bg.cpp
 //! \brief a ONE-SHOT restart-time transform
-//! of the he_star_vet problem that removes the gas above the photosphere (lifted gas
+//! of the star_vet problem that removes the gas above the photosphere (lifted gas
 //! falling back, filling the volume to the outer boundary) and replaces it with a
 //! static, optically thin ambient in radiative equilibrium.
 //!

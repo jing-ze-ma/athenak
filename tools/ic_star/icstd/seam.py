@@ -2,16 +2,16 @@
 
 (1) Scaffold TAPER: the frozen F_MLT/F of the column is multiplied by a smoothstep in ln tau,
     1 at tau >= tau_hi (30), 0 at tau <= tau_lo (3); F_r = F (1 - F_MLT/F) keeps F_r + F_MLT =
-    L exactly.  Why tau 30 -> 3: he_ic_rad = sph1d replaces T by the radiative-equilibrium T
-    with weight w = 1 for tau < he_ic_rad_taua = 30 (he_star_vet.cpp ~821), i.e. above tau 30 the
+    L exactly.  Why tau 30 -> 3: star_ic_rad = sph1d replaces T by the radiative-equilibrium T
+    with weight w = 1 for tau < star_ic_rad_taua = 30 (star_vet.cpp ~821), i.e. above tau 30 the
     code's IC is RE with the column's F_r; a scaffold that is still ~0.5 F there (He giant) or
     ends abruptly at the column's photosphere (the hg145/BSG gate failures) is inconsistent
     with it.  Tapering inside the full-RE zone hands the whole flux to radiation by tau 3, the
     Hopf join of the column, smoothly.
 (2) Code-consistent atmosphere: the column is passed through the code's OWN startup solve
-    (he_ic_rad = sph1d + re_atm + he_ic_rad_hse, the run's Rosseland/Planck tables, tau_a/tau_b
+    (star_ic_rad = sph1d + re_atm + star_ic_rad_hse, the run's Rosseland/Planck tables, tau_a/tau_b
     blend, HsSph1dPass) by running the production binary (CPU build of the same commit) for 0
-    cycles with problem/he_ic_rad_dump; the dumped column (+ the re-applied taper) becomes the
+    cycles with problem/star_ic_rad_dump; the dumped column (+ the re-applied taper) becomes the
     new column; iterate to the fixed point R_ph(column) = R_ph(sph1d) (the code prints
     'R_ph (tau_R 2/3, run kappa) rph0 -> rph1').  Then the run's startup reproduces the column's
     photosphere to within the tolerance (default 0.1 of the radial cell at R_ph).
@@ -73,7 +73,8 @@ RPH_RE = re.compile(r'R_ph \(tau_R 2/3, run kappa\) ([0-9.eE+-]+) -> ([0-9.eE+-]
 def deck_with(base, keys, out):
     """copy of the deck file with block/key = value set (replaced, or inserted after the
     block header when the key is not there)"""
-    lines = open(base).read().splitlines()
+    # (he_*: the star keys before their rename to star_*)
+    lines = re.sub(r'(?m)^(\s*)he_', r'\1star_', open(base).read()).splitlines()
     todo = {}
     for kv in keys:
         k, v = kv.split('=', 1)
@@ -115,9 +116,9 @@ def _block(lines, blk):
 def code_pass(cfg, colfile, dumpfile, wdir, log):
     """0-cycle run of the binary on the deck with the column; -> rph0, rph1, stdout path"""
     os.makedirs(wdir, exist_ok=True)
-    keys = ['problem/he_ic_file=%s' % colfile, 'problem/he_ic_rad_dump=%s' % dumpfile,
-            'time/nlim=0', 'problem/he_ic_equil=false', 'rad_vet/ic_rad=none',
-            'problem/he_ic_rad_atm_force=continuum'] + list(cfg.get('overrides', []))
+    keys = ['problem/star_ic_file=%s' % colfile, 'problem/star_ic_rad_dump=%s' % dumpfile,
+            'time/nlim=0', 'problem/star_ic_equil=false', 'rad_vet/ic_rad=none',
+            'problem/star_ic_rad_atm_force=continuum'] + list(cfg.get('overrides', []))
     deck = deck_with(cfg['deck'], keys, os.path.join(wdir, 'pass.athinput'))
     cmd = list(cfg.get('launcher', [])) + [cfg['binary'], '-i', deck, '-d', wdir]
     out = os.path.join(wdir, 'run.log')
@@ -138,7 +139,7 @@ def code_pass(cfg, colfile, dumpfile, wdir, log):
 
 
 def grid_dr_at(wdir, r0):
-    """the radial cell width at r0 from <basename>.x1grid.txt (he_grid_dump)"""
+    """the radial cell width at r0 from <basename>.x1grid.txt (star_grid_dump)"""
     fs = [f for f in os.listdir(wdir) if f.endswith('.x1grid.txt')]
     if not fs:
         return None

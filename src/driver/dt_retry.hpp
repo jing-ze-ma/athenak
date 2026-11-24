@@ -65,7 +65,7 @@ struct Entry {
 // before (or that a once-per-cycle update guards with a cycle stamp) joins the
 // checkpoint: the pgen registers it once at setup (RegisterValue / RegisterView, below)
 // and DtRetry::Build adds it as "pgen.<name>" entries (Views always deep-copied).
-// Without it a retried cycle keeps what the failed attempt left there (he_star_vet: the
+// Without it a retried cycle keeps what the failed attempt left there (star_vet: the
 // frozen-MLT ramp weight hs_mw_ was already at w(t) on the retry, so esrc kept w(t)
 // where the straight run's start-of-cycle solves still saw w(t - dt)).
 std::vector<std::unique_ptr<Entry>> &PgenEntries();

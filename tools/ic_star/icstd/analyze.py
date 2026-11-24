@@ -7,21 +7,21 @@ Rules (each reproduces the AG Car E1 production value; constants in spec.DEFAULT
   column bottom      rlo_fac x1min (AG Car A: 0.95; the code needs ghosts below x1min);
   x1max              rtop_fac R_ph (E1: 3.0); column top col_top_fac x1max (1.15);
   column floor       10^round(log10(rho_floor_rel rho_ph))      (E1: 1e-16; rho_ph 2.56e-11)
-  he_sponge_dmax     dmax_rel x floor                            (E1: 2e-16)
+  star_sponge_dmax     dmax_rel x floor                            (E1: 2e-16)
   dfloor             dfloor_rel x floor                          (E1: 1e-20)
-  he_sponge_rate     10^round(log10(sponge_rate_rel g/c_s,iso)) at R_ph   (E1: 1e-3 /s;
+  star_sponge_rate     10^round(log10(sponge_rate_rel g/c_s,iso)) at R_ph   (E1: 1e-3 /s;
                      g/c_s 1.26e-5 /s for AG Car A: rate = 80 g/c_s)
-  he_sponge_r0       sponge_r0_rel x1max                          (E1: 0.9)
+  star_sponge_r0       sponge_r0_rel x1max                          (E1: 0.9)
   tfloor_kelvin      100 K floor of tfloor_rel T_rad(x1max), T_rad = (E_col/a)^1/4 of the
                      diluted IC radiation at x1max                 (E1: 3000 K; T_rad 3956 K)
   eos_logt_min       floor(10 log10 tfloor)/10                    (E1: 3.4)
   pfloor             10^round(log10(pfloor_rel P_gas(floor, tfloor)))  (E1: 1e-12)
   vceil              10^round(log10(vceil_rel v_esc(R_ph)))       (E1: 1e8; v_esc 2.3e7)
   wb_rmax            wb_rmax_rel R_ph                             (E1: 1.1)
-  he_ic_balance_rmax balance_rmax_rel R_ph                        (E1: 342/388.3 = 0.8808)
+  star_ic_balance_rmax balance_rmax_rel R_ph                        (E1: 342/388.3 = 0.8808)
   mlt_ramp_start / _time  start_turnovers / time_turnovers x t_Fe, t_Fe = H_p/v_MLT (textbook
                      alpha_MLT bubble speed) at the Fe opacity peak     (E1: 2 and 10 x 2.016e6 s)
-  implicit_flux_x1min = the column's F_r at x1min, log-linear in r (= he_star_vet.cpp's fine-grid
+  implicit_flux_x1min = the column's F_r at x1min, log-linear in r (= star_vet.cpp's fine-grid
                      interpolation; the code fatals if they differ by > 1e-3).
 """
 import numpy as np
@@ -159,7 +159,7 @@ def r_at_hp_below(r, Hp, r_base, n_hp):
 
 
 def flux_at(col, r0):
-    """he_star_vet fine-grid interpolation of F_r: log-linear in r"""
+    """star_vet fine-grid interpolation of F_r: log-linear in r"""
     r, F = col['r'], col['Fr']
     k = max(0, min(np.searchsorted(r, r0) - 1, r.size - 2))
     w = (r0 - r[k])/(r[k+1] - r[k])
@@ -176,13 +176,13 @@ def background(st, s, Tph, rho_ph, x1max, col_floor):
     g = st.GM/R**2
     nu = g/cs
     out['rho_floor'] = col_floor
-    out['he_sponge_dmax'] = b['dmax_rel']*col_floor
+    out['star_sponge_dmax'] = b['dmax_rel']*col_floor
     out['dfloor'] = b['dfloor_rel']*col_floor
-    out['he_sponge_rate'] = float(b['sponge_rate']) if b.get('sponge_rate') else \
+    out['star_sponge_rate'] = float(b['sponge_rate']) if b.get('sponge_rate') else \
         decade(b['sponge_rate_rel']*nu)
-    why['he_sponge_rate'] = 'rule %g x g/c_s,iso at R_ph (= %.3e /s; g %.3e, c_s %.3e)' % (
+    why['star_sponge_rate'] = 'rule %g x g/c_s,iso at R_ph (= %.3e /s; g %.3e, c_s %.3e)' % (
         b['sponge_rate_rel'], nu, g, cs)
-    out['he_sponge_r0'] = b['sponge_r0_rel']*x1max
+    out['star_sponge_r0'] = b['sponge_r0_rel']*x1max
     trad = t_rad_at(st, x1max, Tph)
     out['T_rad_x1max'] = trad
     out['tfloor_kelvin'] = float(b['tfloor']) if b.get('tfloor') else \
@@ -196,7 +196,7 @@ def background(st, s, Tph, rho_ph, x1max, col_floor):
     out['vceil'] = decade(b['vceil_rel']*vesc)
     why['vceil'] = 'rule %g x v_esc(R_ph) = %.3e cm/s' % (b['vceil_rel'], vesc)
     out['wb_rmax'] = b['wb_rmax_rel']*R
-    out['he_ic_balance_rmax'] = b['balance_rmax_rel']*R
+    out['star_ic_balance_rmax'] = b['balance_rmax_rel']*R
     out['nu_ph'], out['g_ph'], out['cs_ph'], out['v_esc'] = nu, g, cs, vesc
     out['rho_ph'] = rho_ph
     return out, why

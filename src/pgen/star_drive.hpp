@@ -1,33 +1,33 @@
-#ifndef PGEN_HE_DRIVE_HPP_
-#define PGEN_HE_DRIVE_HPP_
+#ifndef PGEN_STAR_DRIVE_HPP_
+#define PGEN_STAR_DRIVE_HPP_
 //========================================================================================
 // AthenaK astrophysical fluid dynamics code
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
-//! \file he_drive.hpp
-//! \brief the time-dependent DRIVEN inner boundary of he_star_vet
-//! (he_drive.cpp).  Every key is read only when named; with none of them the problem
+//! \file star_drive.hpp
+//! \brief the time-dependent DRIVEN inner boundary of star_vet
+//! (star_drive.cpp).  Every key is read only when named; with none of them the problem
 //! generator never calls into this file beyond the cheap On() queries (bitwise).
 //!
-//!  problem/he_bc_inner_table = <file>  (needs he_bc_inner = inflow): columns t, rho,
+//!  problem/star_bc_inner_table = <file>  (needs star_bc_inner = inflow): columns t, rho,
 //!      T [K], v_r (code units); the inner ghosts hold the initial column's shape scaled
 //!      to (rho, e(rho, T)) of the table at r_in, with v_r = v_tab (r_in/r)^2 rho_tab/rho
 //!      (constant mass flux through the ghosts) and v_t = 0.
-//!  problem/he_gm_live = true: the LIVE monopole gravity G m(r, t) = G M_int(t) +
+//!  problem/star_gm_live = true: the LIVE monopole gravity G m(r, t) = G M_int(t) +
 //!      G int_{r_in}^{r} 4 pi r'^2 <rho> dr', applied as the INCREMENT over the potential
 //!      in force when the reference was taken (the IC's on a fresh start, the restart
 //!      state's when the keys are switched on at a restart): Phi = Phi_ref + dPhi, dPhi =
 //!      the exact potential of dm(r) = dM_int + sum of the shell-mean mass changes
 //!      (uniform density inside each cell).  Unchanged shell masses give dPhi = 0
 //!      EXACTLY (the reference balance is kept bitwise).  Refreshed at the END of every
-//!      problem/he_gm_live_every-th cycle (user_cycle_func, after the accepted step and
+//!      problem/star_gm_live_every-th cycle (user_cycle_func, after the accepted step and
 //!      its outputs); the energy keeps e_int: E += rho dPhi (the work of the
 //!      time-dependent potential, booked as W_grav).
-//!  problem/he_gm_table = <file> (optional, with he_gm_live): columns t, M_int (code mass
-//!      inside r_in); G M_int(t) = he_gm + G (M_int(t) - M_int(t_ref)).
-//!  problem/he_drive_t0 (default 0): table time = t - he_drive_t0 (both pgen tables).
-//!  problem/he_drive_ledger (default: true when any drive key is named): the RK-exact
+//!  problem/star_gm_table = <file> (optional, with star_gm_live): columns t, M_int (code
+//!      mass inside r_in); G M_int(t) = star_gm + G (M_int(t) - M_int(t_ref)).
+//!  problem/star_drive_t0 (default 0): table time = t - star_drive_t0 (both pgen tables).
+//!  problem/star_drive_ledger (default: true when any drive key is named): the RK-exact
 //!      ledgers of the mass and total energy through the x1 boundary faces, the sponge,
 //!      W_grav, int F_in A dt and the radiation energy through the x1 faces as the
 //!      scheme applies it (RadiationVet Ebnd, split in / out), written with M_tot, E_tot
@@ -48,18 +48,18 @@ namespace hsdrive {
 struct SetupArgs {
   Real gcode = 0.0;      // G in code units (0: no <units>)
   Real tk = 1.0;         // kelvin per code temperature unit
-  Real gm = 0.0;         // he_gm = G m(r_in) of the column
+  Real gm = 0.0;         // star_gm = G m(r_in) of the column
   Real rho_rin = 0.0;    // the initial column at r_in: rho, eint (scales of the ghosts)
   Real eint_rin = 0.0;
   Real fconst = 0.0;     // <rad_vet>/implicit_flux_x1min (constant)
-  bool binf = false;     // he_bc_inner = inflow
+  bool binf = false;     // star_bc_inner = inflow
   bool pointmass = false;
-  bool bc_hse = false;   // he_bc_outer = hse (reads the static G m(r))
+  bool bc_hse = false;   // star_bc_outer = hse (reads the static G m(r))
 };
 
 bool On();               // any drive feature: the ledger and the cycle hook run
-bool InflowOn();         // he_bc_inner_table
-bool LiveOn();           // he_gm_live
+bool InflowOn();         // star_bc_inner_table
+bool LiveOn();           // star_gm_live
 //! read the keys (every start), after the pgen built its potentials
 void Setup(ParameterInput *pin, Mesh *pm, bool restart, const SetupArgs &a);
 //! strip the HSDRV001 trailer from the pgen restart block (call on every restart before
@@ -82,4 +82,4 @@ void Final();
 
 }  // namespace hsdrive
 
-#endif  // PGEN_HE_DRIVE_HPP_
+#endif  // PGEN_STAR_DRIVE_HPP_
