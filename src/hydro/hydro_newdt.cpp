@@ -182,6 +182,79 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
     if (rss_mode == 5) gn_ = prm->cln_gn;   // (cubed sphere: D Cartesian)
   }
 
+  // the radiation signal speeds csd of cell (m,k,j,i) at gas speed cs and widths h,
+  // with the D_dd, E and kappa_T they use: one formula for the time step and its DT
+  // report
+  auto rssd = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
+                            const Real cs, const Real h[3], Real csd[3], Real dd[3],
+                            Real &er, Real &kt) {
+    const Real d = w0_(m,IDN,k,j,i);
+    for (int a = 0; a < 3; ++a) dd[a] = 1.0/3.0;
+    er = fmax(erad_(m,radvet::M1_E,k,j,i), 0.0);
+    // diagonal of the Eddington tensor, D_dd = P_dd/E
+    if (rss_mode >= 4) {   // (5: clean's cln_s, 0 before its first closure: 1/3)
+      const int d0 = (rss_mode == 5) ? radvet::CLN_D11 : radvet::M1_VET_D11;
+      if (rss_mode == 4 || vcel_(m,d0,k,j,i) > 0.0) {
+        for (int a = 0; a < 3; ++a) {
+          dd[a] = (rss_mode == 5 && use_cubed_sphere) ?
+                  radvet::CleanDuu(vcel_, gn_, (a == 0) ? radvet::CLG_R :
+                                   radvet::CLG_E + 3*(a - 1), m, k, j, i) :
+                  vcel_(m,d0+a,k,j,i);
+        }
+      }
+    } else if (rss_mode >= 1) {
+      Real chi, n1, n2, n3;
+      if (rss_mode == 2) {
+        chi = tten_(m,0,k,j,i); n1 = tten_(m,1,k,j,i);
+        n2 = tten_(m,2,k,j,i); n3 = tten_(m,3,k,j,i);
+      } else if (rss_mode == 3) {
+        chi = vcel_(m,radvet::M1_VET_CHI,k,j,i);
+        n1 = vcel_(m,radvet::M1_VET_N1,k,j,i);
+        n2 = vcel_(m,radvet::M1_VET_N1+1,k,j,i);
+        n3 = vcel_(m,radvet::M1_VET_N1+2,k,j,i);
+      } else {
+        const Real f1 = erad_(m,radvet::M1_F1,k,j,i);
+        const Real f2 = erad_(m,radvet::M1_F2,k,j,i);
+        const Real f3 = erad_(m,radvet::M1_F3,k,j,i);
+        const Real fn = sqrt(f1*f1 + f2*f2 + f3*f3);
+        const Real inv = (fn > 0.0) ? 1.0/fn : 0.0;
+        chi = (er > 0.0) ? radvet::M1Chi(fn/(rss_cl*er), rss_kind) : 1.0/3.0;
+        n1 = f1*inv; n2 = f2*inv; n3 = f3*inv;
+      }
+      if (chi > 0.0) {   // tau_ten is zero before its first build: keep 1/3
+        const Real dg = 0.5*(1.0 - chi), an = 0.5*(3.0*chi - 1.0);
+        dd[0] = dg + an*n1*n1;
+        dd[1] = dg + an*n2*n2;
+        dd[2] = dg + an*n3*n3;
+      }
+    }
+    const Real cg2 = cs*cs;
+    kt = fmax(kopc_(m,radvet::M1_OP_T,k,j,i), 0.0);
+    Real pg = 0.0, gm1 = 0.0;
+    const bool ideal = (eos.is_ideal && !eos.IsGeneral());
+    if (ideal) {
+      pg = eos.IdealGasPressure(w0_(m,IEN,k,j,i));
+      gm1 = eos.gamma - 1.0;
+    }
+    for (int a = 0; a < 3; ++a) {
+      const Real pr = fmax(dd[a], 0.0)*er;
+      Real ceq2;
+      if (ideal) {
+        const Real ptot = pg + pr;
+        const Real beta = pg/ptot;
+        const Real gam1 = beta + SQR(4.0 - 3.0*beta)*gm1
+                                 /(beta + 12.0*gm1*(1.0 - beta));
+        ceq2 = gam1*ptot/d;
+      } else {
+        ceq2 = cg2 + (4.0/3.0)*pr/d;
+      }
+      if (rsi_) ceq2 /= 1.0 + (er + pr)/(d*rss_cl*rss_cl);
+      const Real dc2 = fmax(ceq2 - cg2, 0.0);
+      const Real tw = rsd_ ? kt*h[a]*sqrt(ceq2)/rss_ch : kt*h[a];
+      csd[a] = sqrt(cg2 + dc2*(1.0 - exp(-tw)));
+    }
+  };
+
   if (pdrive->time_evolution == TimeEvolution::kinematic) {
     // find smallest (dx/v) in each direction for advection problems
     Kokkos::parallel_reduce("HydroNudt1",Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
@@ -261,48 +334,6 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         }
         Real cs1 = cs, cs2 = cs, cs3 = cs;
         if (rss_) {
-          const Real d = w0_(m,IDN,k,j,i);
-          const Real er = fmax(erad_(m,radvet::M1_E,k,j,i), 0.0);
-          // diagonal of the Eddington tensor, D_dd = P_dd/E
-          Real dd[3] = {1.0/3.0, 1.0/3.0, 1.0/3.0};
-          if (rss_mode >= 4) {   // (5: clean's cln_s, 0 before its first closure: 1/3)
-            const int d0 = (rss_mode == 5) ? radvet::CLN_D11 : radvet::M1_VET_D11;
-            if (rss_mode == 4 || vcel_(m,d0,k,j,i) > 0.0) {
-              for (int a = 0; a < 3; ++a) {
-                dd[a] = (rss_mode == 5 && use_cubed_sphere) ?
-                        radvet::CleanDuu(vcel_, gn_, (a == 0) ? radvet::CLG_R :
-                                         radvet::CLG_E + 3*(a - 1), m, k, j, i) :
-                        vcel_(m,d0+a,k,j,i);
-              }
-            }
-          } else if (rss_mode >= 1) {
-            Real chi, n1, n2, n3;
-            if (rss_mode == 2) {
-              chi = tten_(m,0,k,j,i); n1 = tten_(m,1,k,j,i);
-              n2 = tten_(m,2,k,j,i); n3 = tten_(m,3,k,j,i);
-            } else if (rss_mode == 3) {
-              chi = vcel_(m,radvet::M1_VET_CHI,k,j,i);
-              n1 = vcel_(m,radvet::M1_VET_N1,k,j,i);
-              n2 = vcel_(m,radvet::M1_VET_N1+1,k,j,i);
-              n3 = vcel_(m,radvet::M1_VET_N1+2,k,j,i);
-            } else {
-              const Real f1 = erad_(m,radvet::M1_F1,k,j,i);
-              const Real f2 = erad_(m,radvet::M1_F2,k,j,i);
-              const Real f3 = erad_(m,radvet::M1_F3,k,j,i);
-              const Real fn = sqrt(f1*f1 + f2*f2 + f3*f3);
-              const Real inv = (fn > 0.0) ? 1.0/fn : 0.0;
-              chi = (er > 0.0) ? radvet::M1Chi(fn/(rss_cl*er), rss_kind) : 1.0/3.0;
-              n1 = f1*inv; n2 = f2*inv; n3 = f3*inv;
-            }
-            if (chi > 0.0) {   // tau_ten is zero before its first build: keep 1/3
-              const Real dg = 0.5*(1.0 - chi), an = 0.5*(3.0*chi - 1.0);
-              dd[0] = dg + an*n1*n1;
-              dd[1] = dg + an*n2*n2;
-              dd[2] = dg + an*n3*n3;
-            }
-          }
-          const Real cg2 = cs*cs;
-          const Real kt = fmax(kopc_(m,radvet::M1_OP_T,k,j,i), 0.0);
           Real h[3];
           if (use_cubed_sphere || use_spherical_polar) {
             h[0] = dx1_(m,k,j,i); h[1] = dx2_(m,k,j,i); h[2] = dx3_(m,k,j,i);
@@ -314,30 +345,8 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
             h[0] = mbsize.d_view(m).dx1; h[1] = mbsize.d_view(m).dx2;
             h[2] = mbsize.d_view(m).dx3;
           }
-          Real pg = 0.0, gm1 = 0.0;
-          const bool ideal = (eos.is_ideal && !eos.IsGeneral());
-          if (ideal) {
-            pg = eos.IdealGasPressure(w0_(m,IEN,k,j,i));
-            gm1 = eos.gamma - 1.0;
-          }
-          Real csd[3];
-          for (int a = 0; a < 3; ++a) {
-            const Real pr = fmax(dd[a], 0.0)*er;
-            Real ceq2;
-            if (ideal) {
-              const Real ptot = pg + pr;
-              const Real beta = pg/ptot;
-              const Real gam1 = beta + SQR(4.0 - 3.0*beta)*gm1
-                                       /(beta + 12.0*gm1*(1.0 - beta));
-              ceq2 = gam1*ptot/d;
-            } else {
-              ceq2 = cg2 + (4.0/3.0)*pr/d;
-            }
-            if (rsi_) ceq2 /= 1.0 + (er + pr)/(d*rss_cl*rss_cl);
-            const Real dc2 = fmax(ceq2 - cg2, 0.0);
-            const Real tw = rsd_ ? kt*h[a]*sqrt(ceq2)/rss_ch : kt*h[a];
-            csd[a] = sqrt(cg2 + dc2*(1.0 - exp(-tw)));
-          }
+          Real csd[3], dd[3], er, kt;
+          rssd(m, k, j, i, cs, h, csd, dd, er, kt);
           cs1 = csd[0]; cs2 = csd[1]; cs3 = csd[2];
         }
         max_dv1 = fabs(w0_(m,IVX,k,j,i)) + cs1;
@@ -596,64 +605,8 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         Real er = 0.0, kt = 0.0, kp = 0.0;
         Real dd[3] = {1.0/3.0, 1.0/3.0, 1.0/3.0};
         if (rss_) {
-          er = fmax(erad_(m,radvet::M1_E,k,j,i), 0.0);
-          if (rss_mode >= 4) {   // (5: clean's cln_s, 0 before its first closure: 1/3)
-            const int d0 = (rss_mode == 5) ? radvet::CLN_D11 : radvet::M1_VET_D11;
-            if (rss_mode == 4 || vcel_(m,d0,k,j,i) > 0.0) {
-              for (int a = 0; a < 3; ++a) {
-                dd[a] = (rss_mode == 5 && use_cubed_sphere) ?
-                        radvet::CleanDuu(vcel_, gn_, (a == 0) ? radvet::CLG_R :
-                                         radvet::CLG_E + 3*(a - 1), m, k, j, i) :
-                        vcel_(m,d0+a,k,j,i);
-              }
-            }
-          } else if (rss_mode >= 1) {
-            Real chi, n1, n2, n3;
-            if (rss_mode == 2) {
-              chi = tten_(m,0,k,j,i); n1 = tten_(m,1,k,j,i);
-              n2 = tten_(m,2,k,j,i); n3 = tten_(m,3,k,j,i);
-            } else if (rss_mode == 3) {
-              chi = vcel_(m,radvet::M1_VET_CHI,k,j,i);
-              n1 = vcel_(m,radvet::M1_VET_N1,k,j,i);
-              n2 = vcel_(m,radvet::M1_VET_N1+1,k,j,i);
-              n3 = vcel_(m,radvet::M1_VET_N1+2,k,j,i);
-            } else {
-              const Real f1 = erad_(m,radvet::M1_F1,k,j,i);
-              const Real f2 = erad_(m,radvet::M1_F2,k,j,i);
-              const Real f3 = erad_(m,radvet::M1_F3,k,j,i);
-              const Real fn = sqrt(f1*f1 + f2*f2 + f3*f3);
-              const Real inv = (fn > 0.0) ? 1.0/fn : 0.0;
-              chi = (er > 0.0) ? radvet::M1Chi(fn/(rss_cl*er), rss_kind) : 1.0/3.0;
-              n1 = f1*inv; n2 = f2*inv; n3 = f3*inv;
-            }
-            if (chi > 0.0) {
-              const Real dg = 0.5*(1.0 - chi), an = 0.5*(3.0*chi - 1.0);
-              dd[0] = dg + an*n1*n1;
-              dd[1] = dg + an*n2*n2;
-              dd[2] = dg + an*n3*n3;
-            }
-          }
-          kt = fmax(kopc_(m,radvet::M1_OP_T,k,j,i), 0.0);
+          rssd(m, k, j, i, cs, h, csd, dd, er, kt);
           kp = kopc_(m,radvet::M1_OP_P,k,j,i);
-          const bool ideal = (eos.is_ideal && !eos.IsGeneral());
-          const Real gm1 = ideal ? (eos.gamma - 1.0) : 0.0;
-          const Real pg = ideal ? eos.IdealGasPressure(w0_(m,IEN,k,j,i)) : 0.0;
-          for (int a = 0; a < 3; ++a) {
-            const Real prr = fmax(dd[a], 0.0)*er;
-            Real ceq2;
-            if (ideal) {
-              const Real ptot = pg + prr;
-              const Real beta = pg/ptot;
-              const Real gam1 = beta + SQR(4.0 - 3.0*beta)*gm1
-                                       /(beta + 12.0*gm1*(1.0 - beta));
-              ceq2 = gam1*ptot/d;
-            } else {
-              ceq2 = cs*cs + (4.0/3.0)*prr/d;
-            }
-            const Real dc2 = fmax(ceq2 - cs*cs, 0.0);
-            const Real tw = rsd_ ? kt*h[a]*sqrt(ceq2)/rss_ch : kt*h[a];
-            csd[a] = sqrt(cs*cs + dc2*(1.0 - exp(-tw)));
-          }
         }
         const Real sc = cs_ ? 1.0/sncell_(m,k,j) : 1.0;
         const Real v[3] = {w0_(m,IVX,k,j,i), w0_(m,IVY,k,j,i), w0_(m,IVZ,k,j,i)};
