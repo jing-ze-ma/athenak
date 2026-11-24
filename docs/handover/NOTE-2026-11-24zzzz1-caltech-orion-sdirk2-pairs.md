@@ -66,3 +66,6 @@ Kokkos::Cuda ERROR: Failed to call Kokkos::Cuda::finalize()
 - last common row 300: L_top 3.17e-04 L_in 0.00e+00 KE -1.13e-04 Etot 2.51e-07 M -1.55e-15 Lz -3.69e-08 (on - off relative)
 - **PASS** (rule: extra CW/fallback/BE/retry, ef<=0, dt mean < 0.95 off, s per sim s > 1.05 off, |L_top| > 1 %) 
 - ends: S5off: 2026-11-24 13:57:07 end: t_S5off|COMPLETED|0:0|00:16:12; log: Terminating on cycle limit CW 0 FATAL 0 DT_RETRY 0 ; S5on: 2026-11-24 13:57:07 end: t_S5on|COMPLETED|0:0|00:16:10; log: Terminating on cycle limit CW 0 FATAL 0 DT_RETRY 0
+
+## Remark on S5 (not evidence)
+- S5's growth of max|ef/es-1| (off 1.17, on 36.5; cells > 1: off 1, on 13.1 million of 67.1 million) has no criterion in 24zzzy and is 300 cycles from one start (the eruption rst). It is NOT evidence that the key is wrong, unstable or harmful: CW / fallback / BE / retry / ef<=0 are 0, dt mean -0.5 %, cost -0.7 %, L_top +3.2e-4. It is also not evidence that the key is safe at longer times.
