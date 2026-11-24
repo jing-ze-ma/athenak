@@ -1,0 +1,2 @@
+2026-11-23 21:38:44 start m35_B BIN md5=cfa3dc7713962f6ab2f5a1cf85de0fbe deck md5=e7cbbb8c796c6477a46ab8a44afd4831 GPUs=2,3 RST=/resnick/groups/carnegie_poc/jingze/prod_ia11_1123/m35mms/rst_keep/m35mms.00014.rst EX: time/nlim=34024 job/final_restart=false output2/dt=1e30 output3/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30 rad_m1/vet_gd_wall_sym=true rad_m1/vet_gd_theta_seam_sym=true
+2026-11-23 21:57:49 rc=0 last: elapsed=1.047904e+03 cycle=34000 time=2.625110e+05 dt=1.185502e+01
