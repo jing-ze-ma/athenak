@@ -211,3 +211,6 @@ srun: error: hpc-sm-01-15: task 0: Exited with exit code 1
 <rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 2.530778e+02 | failed stage attempts 0.000000e+00 | their BE redo 0.000000e+00 | auto_be steps 0.000000e+00 | other BE steps 0.000000e+00 | 
 ```
 max|ef/es-1| per 50 cycles (S2Lon): 0.12 0.14 0.15 0.24 0.29 0.47 0.38 0.34 0.36 0.30 0.32 0.25 0.19 0.32 0.40 0.28 0.33 0.47 
+
+## Marked per your 24zzzzj: all S passes are CONDITIONAL
+- **S1, S2, S2L, S3, S5: 'PASS' = conditional: old binary (a840d7e92), ef<=0 NOT tested.** The key has a positivity defect in floorcap gas (the increment is built before FloorGasCap) that the ef<=0 counter does not see, so 'ef<=0 0' in these tables is not a valid test. The other criteria (CW, fallback, BE, retry, dt, cost, L_top) stand as measured. S2L ran to its end (posted above); no further S arm; S3 and S5 are rerun only when you give the fixed binary.
