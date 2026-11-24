@@ -917,14 +917,7 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
                                             mbs_.d_view(m).x2max);
       const Real ec = 0.25*M_PI*CellCenterX(k - ks_, nx3_, mbs_.d_view(m).x3min,
                                             mbs_.d_view(m).x3max);
-      Real q[3], e1[3], e2[3];
-      cubed_sphere::PanelToCart(pnl_(m), xc, ec, q);
-      cubed_sphere::PanelTangents(pnl_(m), xc, ec, e1, e2);
-      const Real rr = sqrt(q[0]*q[0] + q[1]*q[1]);
-      if (rr > 0.0) {
-        f2 = (q[0]*e1[1] - q[1]*e1[0])/rr;
-        f3 = (q[0]*e2[1] - q[1]*e2[0])/rr;
-      }
+      GnomonicPhiHat(pnl_(m), xc, ec, f2, f3);
     }
     // (floor_from_ekin: the ceiling keeps E, so it acts on the ghosts as well, the same
     // state as their active copies; counted in active cells only)

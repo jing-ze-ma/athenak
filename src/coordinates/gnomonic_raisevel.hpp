@@ -15,6 +15,27 @@
 #include "eos/eos.hpp"
 #include "eos/general_c2p_hyd.hpp"
 #include "eos/c2p_floors_ideal.hpp"
+#include "coordinates/cubed_sphere.hpp"
+
+//----------------------------------------------------------------------------------------
+//! \fn void GnomonicPhiHat
+//! \brief <hydro>/floor_from_ekin: the covariant components (f2, f3) = (phi.e_xi,
+//! phi.e_eta) of phi_hat = z x r_hat/|z x r_hat| at (xi, eta) of panel p on its unit
+//! tangents, the direction GnomonicRaiseVelFloors keeps (L_z); 0 on the axis
+
+KOKKOS_INLINE_FUNCTION
+void GnomonicPhiHat(const int p, const Real xi, const Real eta, Real &f2, Real &f3) {
+  Real q[3], e1[3], e2[3];
+  cubed_sphere::PanelToCart(p, xi, eta, q);
+  cubed_sphere::PanelTangents(p, xi, eta, e1, e2);
+  const Real rr = sqrt(q[0]*q[0] + q[1]*q[1]);
+  f2 = 0.0;
+  f3 = 0.0;
+  if (rr > 0.0) {
+    f2 = (q[0]*e1[1] - q[1]*e1[0])/rr;
+    f3 = (q[0]*e2[1] - q[1]*e2[0])/rr;
+  }
+}
 
 //----------------------------------------------------------------------------------------
 //! \fn void GnomonicRaiseVelFloors
