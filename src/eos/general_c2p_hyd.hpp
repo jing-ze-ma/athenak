@@ -182,28 +182,32 @@ void GeneralHydFloorsPost(const EOS_Data &eos, const Real d, const Real di,
 
 //----------------------------------------------------------------------------------------
 //! \fn Real EkinScale()
-//! \brief floor_from_ekin: the scale fs of the momentum of a cell of kinetic energy e_k
-//! that makes it ekt, keeping (kp) the part of kinetic energy ekk that carries L_z
-//! (spherical polar x3, the cubed sphere's p.phi_hat) whenever it fits in ekt; returns
-//! the new kinetic energy (every mesh, one formula)
+//! \brief floor_from_ekin: the scale fs of the momentum without L_z of a cell of kinetic
+//! energy e_k that makes it ekt, the part ekk that carries L_z (spherical polar x3, the
+//! cubed sphere's p.phi_hat, Cartesian (x p_y - y p_x)/R) never scaled: where ekk alone
+//! exceeds ekt, fs = 0 and the cell keeps ekk (|v| = |v_phi| above the ceiling, L_z
+//! exact); returns the new kinetic energy (every mesh, one formula)
 
 KOKKOS_INLINE_FUNCTION
-Real EkinScale(const Real e_k, const Real ekk, const Real ekt, Real &fs, bool &kp) {
-  kp = (ekk <= ekt);
-  fs = kp ? sqrt(fmax(ekt - ekk, 0.0)/(e_k - ekk)) : sqrt(ekt/e_k);
-  return kp ? ekk + fs*fs*(e_k - ekk) : fs*fs*e_k;
+Real EkinScale(const Real e_k, const Real ekk, const Real ekt, Real &fs) {
+  fs = (e_k > ekk) ? sqrt(fmax(ekt - ekk, 0.0)/(e_k - ekk)) : 0.0;
+  return ekk + fs*fs*(e_k - ekk);
 }
 
-//! \brief EkinScale on a state whose x3 momentum carries L_z (keep3: spherical polar)
+//! \brief EkinScale on a state whose momentum along phi_hat carries L_z: x3 (keep3,
+//! spherical polar), or (phx, phy, 0) (Cartesian, its cell's (-y, x)/R; else 0)
 KOKKOS_INLINE_FUNCTION
-Real EkinScaleTo(const bool keep3, const Real di, const Real ekt, const Real e_k,
-                 HydCons1D &u, HydPrim1D &w) {
+Real EkinScaleTo(const bool keep3, const Real phx, const Real phy, const Real di,
+                 const Real ekt, const Real e_k, HydCons1D &u, HydPrim1D &w) {
+  const Real f[3] = {phx, phy, keep3 ? 1.0 : 0.0};
+  const Real pf = keep3 ? u.mz : u.mx*phx + u.my*phy;
   Real fs;
-  bool kp;
-  const Real ek = EkinScale(e_k, keep3 ? 0.5*di*SQR(u.mz) : 0.0, ekt, fs, kp);
-  const Real fz = (kp && keep3) ? 1.0 : fs;
-  u.mx *= fs; u.my *= fs; u.mz *= fz;
-  w.vx *= fs; w.vy *= fs; w.vz *= fz;
+  const Real ek = EkinScale(e_k, 0.5*di*SQR(pf), ekt, fs);
+  // (m' = fs (m - pf phi_hat) + pf phi_hat: spherical polar x3 kept exactly)
+  u.mx = fs*(u.mx - pf*f[0]) + pf*f[0];
+  u.my = fs*(u.my - pf*f[1]) + pf*f[1];
+  u.mz = fs*(u.mz - pf*f[2]) + pf*f[2];
+  w.vx = u.mx*di; w.vy = u.my*di; w.vz = u.mz*di;
   return ek;
 }
 
@@ -230,7 +234,8 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
                           bool &dfloor_used, bool &efloor_used, bool &tfloor_used,
                           Real &efloor_de, bool &mom_scaled, Real &dfloor_fv,
                           bool &vceil_used, bool &vceil_test, bool &tclamp_used,
-                          bool &tset_used, Real &vceil_de) {
+                          bool &tset_used, Real &vceil_de, const Real phx = 0.0,
+                          const Real phy = 0.0) {
   // density floor: by default raise u.d only; dfloor_keep_velocity scales the momentum by
   // fv = d_old/dfloor and removes the lost kinetic energy (on the cubed sphere the energy
   // correction is deferred to GnomonicEquiangleRaiseVel through dfloor_fv)
@@ -271,8 +276,9 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
     const Real vsq = SQR(w.vx) + SQR(w.vy) + SQR(w.vz);
     if (vsq > SQR(eos.vceil)) {
       vceil_test = true;
-      if (!eos.defer_cons_floors && eos.ekin_heat) {   // (E fixed, x3 kept if it fits)
-        e_k = EkinScaleTo(eos.ekin_keep_x3, di, 0.5*w.d*SQR(eos.vceil), e_k, u, w);
+      if (!eos.defer_cons_floors && eos.ekin_heat) {   // (E fixed, the L_z part kept)
+        e_k = EkinScaleTo(eos.ekin_keep_x3, phx, phy, di, 0.5*w.d*SQR(eos.vceil), e_k, u,
+                          w);
         vceil_used = true;
         mom_scaled = true;
       } else if (!eos.defer_cons_floors) {
@@ -287,14 +293,15 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
       }
     }
   }
-  // floor_from_ekin: E fixed, the kinetic energy (but x3's on spherical polar) pays the
-  // temperature floor where it can; a cell with E below e(rho, tfloor) + KE_x3 keeps its
-  // momentum and goes to the floors below
+  // floor_from_ekin: E fixed, the kinetic energy (but its L_z part, EkinScaleTo) pays
+  // the temperature floor where it can; a cell with E below e(rho, tfloor) + that part
+  // keeps its momentum and goes to the floors below
   if (eos.ekin_heat && !eos.defer_cons_floors) {
     const Real etf = eos.EnergyFromTemperature(w.d, eos.tfloor);
-    const Real ek3 = eos.ekin_keep_x3 ? 0.5*di*SQR(u.mz) : 0.0;
+    const Real ek3 = 0.5*di*SQR(eos.ekin_keep_x3 ? u.mz : u.mx*phx + u.my*phy);
     if (u.e - e_k < etf && u.e - ek3 >= etf && e_k > ek3) {
-      e_k = EkinScaleTo(eos.ekin_keep_x3, di, fmax(u.e - etf, ek3), e_k, u, w);
+      e_k = EkinScaleTo(eos.ekin_keep_x3, phx, phy, di, fmax(u.e - etf, ek3), e_k, u,
+                        w);
       mom_scaled = true;
     }
   }

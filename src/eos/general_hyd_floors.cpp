@@ -15,6 +15,7 @@
 #include <string>
 
 #include "athena.hpp"
+#include "coordinates/cell_locations.hpp"
 #include "hydro/hydro.hpp"
 #include "units/units.hpp"
 #include "eos/eos.hpp"
@@ -50,6 +51,12 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
   Real vceil_de_=0.0;
   Real dfloor_ke_=0.0;
   const bool kvtally = eos.dfloor_keep_velocity && !eos.defer_cons_floors;
+  // floor_from_ekin on Cartesian: phi_hat = (-y, x)/R of the cell, whose momentum (L_z
+  // about z) EkinScaleTo keeps
+  const bool fphi_ = eos.ekin_heat && !eos.ekin_keep_x3 && !eos.defer_cons_floors;
+  auto mbs_ = pmy_pack->pmb->mb_size;
+  auto &ind_ = pmy_pack->pmesh->mb_indcs;
+  const int is_ = ind_.is, js_ = ind_.js, nx1_ = ind_.nx1, nx2_ = ind_.nx2;
   Real fdm_ = 0.0, fde_ = 0.0;   // mass and energy created by the floors
   int fdn_ = 0;   // active cells the density floor raised
   const auto fvw_ = FloorVol();
@@ -104,10 +111,21 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
     const Real ke_in = (kvtally && u.d > 0.0)
         ? 0.5*(SQR(u.mx) + SQR(u.my) + SQR(u.mz))/u.d : 0.0;
     // the cached temperature in this cell warm starts the T(d,e) root find
+    Real phx = 0.0, phy = 0.0;
+    if (fphi_) {
+      auto &sz = mbs_.d_view(m);
+      const Real x = CellCenterX(i - is_, nx1_, sz.x1min, sz.x1max);
+      const Real y = CellCenterX(j - js_, nx2_, sz.x2min, sz.x2max);
+      const Real r = sqrt(x*x + y*y);
+      if (r > 0.0) {
+        phx = -y/r;
+        phy = x/r;
+      }
+    }
     SingleC2P_GeneralHyd(u, eos, w, wtemp_(m,k,j,i), temp, pgas, g1,
                          dfloor_used, efloor_used, tfloor_used, efloor_de, mom_scaled,
                          dfloor_fv, vceil_used, vceil_test, tclamp_used, tset_used,
-                         vceil_de);
+                         vceil_de, phx, phy);
     // dfloor_keep_velocity on the cubed sphere: GnomonicEquiangleRaiseVel applies the
     // metric part of the correction with fv per cell (not on the floor-test pass, which
     // is followed by no RaiseVel)
