@@ -1,0 +1,6 @@
+clean VET test suite: 2 tests, full, 1 at a time x 1 threads, binary /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc1wd_8197e0c4f
+FAIL floor_pay             2 s    <- ERROR run: return code 1 (see /resnick/groups/carnegie_poc/jingze/ia123_1123/wd2/vet_clean_runs/floor_pay/run/run.log)
+FAIL inf_reject            2 s    <- ERROR run: return code 1 (see /resnick/groups/carnegie_poc/jingze/ia123_1123/wd2/vet_clean_runs/inf_reject/run/run.log)
+0 passed, 2 failed, 4 s
+srun: error: hpc-sm-02-11: task 0: Exited with exit code 1
+vet_clean rc=1

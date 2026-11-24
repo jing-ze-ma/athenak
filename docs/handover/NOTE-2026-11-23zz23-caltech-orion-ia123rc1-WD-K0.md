@@ -68,3 +68,16 @@ must be contiguous and have the same layout.
 - user.hst rc1 vs IA12.2: BITWISE identical (200 rows)
 - hydro.hst rc1 vs IA12.2: BITWISE identical (200 rows)
 - Both ran side by side on hpc-sm-01-17 (2+2 H200, 2 blocks/GPU), so the s/cyc ratio is the comparison, not the absolute rate. Files: caltech_results/IA123_K0/{K0rc1,K0ia122}/.
+
+## (11-23 23:28) rc1-wd 8197e0c4f (your 24a): build + gate + GPU check
+- BUILD_OK 23:27:45 athena_ia123rc1wd_8197e0c4f md5=438f78cba817222ba1929faf88abd70f TUs=53; rc1 binary untouched: md5 fe0ef3cd
+- GATE PASS (seam+wall sym deck copy): athena_ia123rc1wd_8197e0c4f md5 438f78cb node hpc-sm-02-11 pass1=3.686e-11 pass2=9.994e-15
+- GPU check, 1 H200, `tests/vet_clean/run_tests.py --exe athena_ia123rc1wd_8197e0c4f --only floor_pay,inf_reject --jobs 1 --threads 1`:
+```
+clean VET test suite: 2 tests, full, 1 at a time x 1 threads, binary /resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc1wd_8197e0c4f
+FAIL floor_pay             2 s    <- ERROR run: return code 1 (see /resnick/groups/carnegie_poc/jingze/ia123_1123/wd2/vet_clean_runs/floor_pay/run/run.log)
+FAIL inf_reject            2 s    <- ERROR run: return code 1 (see /resnick/groups/carnegie_poc/jingze/ia123_1123/wd2/vet_clean_runs/inf_reject/run/run.log)
+0 passed, 2 failed, 4 s
+srun: error: hpc-sm-02-11: task 0: Exited with exit code 1
+vet_clean rc=1
+```
