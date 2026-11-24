@@ -6,15 +6,9 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_vgdlg.hpp
-//! \brief layinv-1105 <mesh>/layout_invariant: the (theta, phi) positions and spacings
-//! the vet_gd sweep uses on a spherical-polar mesh, from the GLOBAL cell index.
-//!
-//! The sweep places the band rows/columns at x2min_b + (j - js + 0.5) dx2_b of its block
-//! b (uniform in index space).  The block bounds and dx2_b = (x2max_b - x2min_b)/nx2 are
-//! rounded per block, so the same global cell gets positions differing in the last bit
-//! between MeshBlock layouts; the ray geometry (and a tangent cell's branch test)
-//! follows.  With on: x2a + (J + 0.5) dx2 with the global row J and the MESH spacing
-//! (the same numbers for every layout); off: the old per-block expressions, bitwise.
+//! \brief (theta, phi) cell positions and spacings of the spherical-polar vet_gd sweep.
+//! <mesh>/layout_invariant on: x2a + (J + 0.5) dx2 from the global index J and the mesh
+//! spacing (identical for every MeshBlock layout); off: per-block x2min_b, dx2_b.
 
 #include "athena.hpp"
 

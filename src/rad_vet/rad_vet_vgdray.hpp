@@ -6,26 +6,10 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_vgdray.hpp
-//! \brief the ONE upwind core of the vet_gd ray solve, shared by the sp sweep
-//! (rad_vet_vetgd_body.inc, VetGdSweep) and the cubed-sphere sweep (VetGdCsSweep): the
-//! branch / chord geometry of a (cell, direction), the top-face inflow, the inner-face
-//! value (vet_gd_inner = emit | diffusion), the upwind intensity over the stencil
-//! (renormalised over the cells of the right branch) and the closing segment (vet_seg =
-//! jump below the inner face, vet_interp = corner, vet_seg = split, the plain segment).
-//!
-//! The geometry differs only in the upwind STENCIL, passed as an accessor A:
-//!   A.N()            the number of stencil cells
-//!   A.K(e), A.J(e)   band position of cell e
-//!   A.W(e)           its weight
-//!   A.Interp(f)      the stencil interpolation of f(kk, jj) (sp: the nested bilinear
-//!                    VgdLerp; cs: the weighted sum) -- each in its own former order
-//! The field values come in as callables: fI(kk, jj) the upwind-shell intensity (sp: the
-//! band / wall read rd; cs: the owner read rdi), fC(c, kk, jj, ii) ln chi (c = 0) or ln S
-//! (c = 1) of a cell.  What stays separate: the stencil construction itself (sp: the
-//! (theta, phi) bilinear foot with the band clamp; cs: VgdCsStencil on the panel map),
-//! the sp-only branches (vet_gd_theta_wall = vacuum, the inner-face beam mask), and the
-//! band / halo layouts.  Every expression is the former code's, term for term and in its
-//! order (bitwise).
+//! \brief upwind core of the vet_gd ray solve shared by the sp and cs sweeps (chord,
+//! top inflow, inner face, upwind intensity, closing segment), plus sp theta helpers.
+//! Stencil accessor A: N() cells, K(e), J(e) band position, W(e) weight, Interp(f).
+//! Fields: fI(kk,jj) upwind-shell intensity, fC(c,kk,jj,ii) ln chi (c=0) / ln S (c=1).
 
 #include <cmath>
 
@@ -33,9 +17,9 @@
 #include "rad_vet/rad_vet_vetseg.hpp"
 
 //----------------------------------------------------------------------------------------
-// the upwind shell iu, the chord ds back to it and the own-cell part dso (vet_seg =
-// split: the path from the cell centre back to the radial face it shares with the upwind
-// shell; typ 3: half the chord).  typ: 1 upwind shell, 2 inner face, 3 own shell (turned)
+//! \fn VgdRayChord
+//! \brief upwind shell iu, chord ds and own-cell part dso (split: centre to shared face).
+//! typ: 1 upwind shell, 2 inner face, 3 own shell (turned ray)
 template <typename VX>
 KOKKOS_INLINE_FUNCTION
 void VgdRayChord(const bool inw, const int l, const int lcut, const int m, const int i,
@@ -71,8 +55,9 @@ void VgdRayChord(const bool inw, const int l, const int lcut, const int m, const
 }
 
 //----------------------------------------------------------------------------------------
-// from the vacuum top face (the end cell's S extrapolated, as vet_col_lat), or with the
-// top bath its incident intensity attenuated; sbl = S of the shell below
+//! \fn VgdTopInflow
+//! \brief inflow at the top face: extrapolated S (vacuum) or attenuated bath intensity;
+//! sbl = S of the shell below
 KOKKOS_INLINE_FUNCTION
 Real VgdTopInflow(const Real ch0, const Real ds, const Real s0, const Real sbl,
                   const bool tbh, const Real itop) {
@@ -87,10 +72,9 @@ Real VgdTopInflow(const Real ch0, const Real ds, const Real s0, const Real sbl,
 }
 
 //----------------------------------------------------------------------------------------
-// typ 2, the inner face: emi (vet_gd_inner = emit): the boundary emission ie0 carried to
-// the cell with the face source; else the diffusion intensity at the inner face of the
-// first shell, S + mu (-dS/dtau_r) (bfc, vet_bc_diff = face: S of the FACE, 1.5 S_a -
-// 0.5 S_b).  rf = the inner face radius, ra/rb = the first two shell radii
+//! \fn VgdInnerFace
+//! \brief typ 2 value: emit (ie0 carried in) or diffusion S + mu (-dS/dtau_r) at the
+//! inner face rf (bfc: face S = 1.5 S_a - 0.5 S_b); ra, rb = first two shell radii
 template <typename A, typename FC>
 KOKKOS_INLINE_FUNCTION
 Real VgdInnerFace(const A &acc, const FC &fC, const int i, const bool emi,
@@ -121,10 +105,9 @@ Real VgdInnerFace(const A &acc, const FC &fC, const int i, const bool emi,
 }
 
 //----------------------------------------------------------------------------------------
-// the upwind intensity: each (cell, direction) holds ONE intensity, of the pass its
-// n_d . r_hat selects; stencil cells of the other pass (ok false) are dropped and the
-// weights renormalised (all valid: the plain interpolation); none: -1 (the closing
-// segment then starts from the upwind source)
+//! \fn VgdUpwindI
+//! \brief upwind intensity over the stencil cells of the right pass (ok), weights
+//! renormalised; -1 if none (the segment then starts from the upwind S)
 template <typename A, typename FI>
 KOKKOS_INLINE_FUNCTION
 Real VgdUpwindI(const A &acc, const FI &fI, const bool *ok, const bool all) {
@@ -138,19 +121,13 @@ Real VgdUpwindI(const A &acc, const FI &fI, const bool *ok, const bool all) {
 }
 
 //----------------------------------------------------------------------------------------
-// the closing segment from the upwind point (I = ivu, chi = chu, S = su; ivu < 0: none)
-// to the cell (ch0, s0) over the chord ds (own part dso):
-//  * vet_seg = jump (spe 2, 3) on a turned ray (typ 3, l > lcut) that dips below its own
-//    inner face rfi: piecewise constant per cell (the chord below the face takes chi, S
-//    of the cell below, log-mean of the own column and the upwind point);
-//  * vet_interp = corner (vim 2, or 3 at a material edge, edgef()): one segment per
-//    stencil cell from its own (I, chi, S), the outcome interpolated over the cells of
-//    the right branch;
-//  * vet_seg = split / the plain linear-in-tau segment.
-// (k, j): the own column (its shell below, i - 1, for the jump branch); iuu: the shell
-// one further upwind of a typ 1 segment (iu where the band has none), idd the own
-// column's shell one further downstream (i where none): vet_seg = jump's plateau tests
-// (VetSegFace, VetSegSplit)
+//! \fn VgdSegFinish
+//! \brief closing segment from the upwind point (ivu, chu, su; ivu < 0: none) to the
+//! cell (ch0, s0) over chord ds (own part dso):
+//!  - jump (spe >= 2), turned ray below inner face rfi: piecewise constant per cell
+//!  - corner (vim 2, or 3 where edgef()): one segment per stencil cell, interpolated
+//!  - else split or plain linear-in-tau segment
+//! iuu / idd: shells one further upwind / downstream for the jump plateau tests.
 template <typename A, typename FI, typename FC, typename FE>
 KOKKOS_INLINE_FUNCTION
 Real VgdSegFinish(const A &acc, const FI &fI, const FC &fC, const FE &edgef,
@@ -160,8 +137,7 @@ Real VgdSegFinish(const A &acc, const FI &fI, const FC &fC, const FE &edgef,
                   const bool spl, const int spe, const int typ, const int l,
                   const int lcut, const Real p2, const Real rfi, const Real zr,
                   const int vim, const int iuu, const int idd) {
-  // vet_seg = jump: S of the shell one further upwind (iuu) and of the own column one
-  // further downstream (idd); -1 where the band has none
+  // jump: S one shell further upwind (iuu) / downstream (idd); -1 where none
   const bool hu2 = (spl && spe == 2 && typ == 1 && iuu != iu);
   const Real sdd = (spl && spe == 2 && typ == 1 && idd != i) ? exp(fC(1, k, j, idd))
                                                               : -1.0;
@@ -211,8 +187,10 @@ Real VgdSegFinish(const A &acc, const FI &fI, const FC &fC, const FE &edgef,
   }
 }
 
-// fractional band row of theta thu; jb = a starting guess (the cell's own row: upwind
-// points lie a few rows away, so the walk is short)
+//----------------------------------------------------------------------------------------
+// spherical-polar theta helpers
+
+// fractional band row of theta thu, walking from the guess jb
 template <typename T>
 KOKKOS_INLINE_FUNCTION
 Real VgdThFj(const T &tn, const int m, const int jb, const Real thu, const int c2w,
@@ -220,16 +198,12 @@ Real VgdThFj(const T &tn, const int m, const int jb, const Real thu, const int c
   int j0 = (jb < 0) ? 0 : ((jb > c2w - 2) ? (c2w - 2) : jb);
   while (j0 < c2w - 2 && tn(m,j0+1) <= thu) {++j0;}
   while (j0 > 0 && tn(m,j0) > thu) {--j0;}
-  // sh = the global row offset of band row 0 (0: the old value, bitwise);
-  // the result is then the GLOBAL fractional row (the caller subtracts sh from its
-  // integer part), so the fraction rounds the same on every MeshBlock layout
+  // sh: global row of band row 0; the global fractional row rounds layout-invariantly
   return (j0 + sh) + (thu - tn(m,j0))/(tn(m,j0+1) - tn(m,j0));
 }
 
-// the full sphere: an upwind point BEHIND the polar axis (|dphi| > pi/2 from the cell)
-// is taken in the extended chart of the cell's hemisphere: (theta, phi) -> (-theta,
-// phi + pi) north, (2 pi - theta, phi + pi) south; the band rows beyond the pole hold
-// the pole partner's reversed rows at exactly those positions
+// full sphere: an upwind point behind the pole (|dphi| > pi/2) maps to the extended
+// chart: theta -> -theta (north) or 2 pi - theta (south), phi -> phi + pi
 KOKKOS_INLINE_FUNCTION
 void VgdPoleChart(const bool pol, const Real th, Real &thu, Real &dph) {
   if (!pol || !(fabs(dph) > 0.5*M_PI)) {return;}
@@ -237,17 +211,14 @@ void VgdPoleChart(const bool pol, const Real th, Real &thu, Real &dph) {
   dph += (dph > 0.0) ? -M_PI : M_PI;
 }
 
-// the band row a pole-slot read takes in its on-rank partner: rows reversed about the
-// pole (north: band row jj < w -> interior row 2 w - 1 - jj; south: jj >= w + nx2 ->
-// 2 (w + nx2) - 1 - jj)
+// pole-slot band row jj -> row of the on-rank partner, reversed about the pole
 KOKKOS_INLINE_FUNCTION
 int VgdPoleRow(const int jj, const int w, const int nx2) {
   return (jj < w) ? (2*w - 1 - jj) : (2*(w + nx2) - 1 - jj);
 }
 
-// vet_gd_theta_wall = mirror: the interior row a theta ghost g rows beyond its wall (hi:
-// the upper one) reads, reflected at the walls as often as it takes (a band deeper than
-// nx2 reaches past the far wall: two reflections there)
+// vet_gd_theta_wall = mirror: interior row read by a ghost g rows beyond the wall (hi:
+// upper), reflected as often as needed
 KOKKOS_INLINE_FUNCTION
 int VgdMirRow(const int g, const bool hi, const int w, const int nx2) {
   const int p = g % nx2;
