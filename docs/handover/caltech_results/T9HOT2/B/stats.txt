@@ -4,3 +4,4 @@ cycle 5250: N_hot 2 | thin |v| max p99 1.775e+08 2.904e+07 | dense |v| max p99 1
 cycle 5300: N_hot 0 | thin |v| max p99 1.666e+08 2.890e+07 | dense |v| max p99 1.294e+08 3.322e+07 | thin sum eint 1.603e+06 KE 1.813e+08 (cell sums, no volume)
 cycle 5350: N_hot 0 | thin |v| max p99 1.074e+08 2.872e+07 | dense |v| max p99 1.442e+08 3.328e+07 | thin sum eint 1.604e+06 KE 1.839e+08 (cell sums, no volume)
 cycle 5400: N_hot 0 | thin |v| max p99 1.506e+08 2.856e+07 | dense |v| max p99 1.419e+08 3.333e+07 | thin sum eint 1.625e+06 KE 1.891e+08 (cell sums, no volume)
+cycle 5421: N_hot 0 | thin |v| max p99 1.351e+08 2.849e+07 | dense |v| max p99 1.436e+08 3.335e+07 | thin sum eint 1.620e+06 KE 1.894e+08 (cell sums, no volume)
