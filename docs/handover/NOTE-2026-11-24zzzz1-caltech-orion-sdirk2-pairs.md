@@ -167,3 +167,10 @@ srun: error: hpc-sm-01-15: task 0: Exited with exit code 1
 - last common row 300: L_top 4.78e-06 L_in 0.00e+00 KE 8.45e-05 Etot -2.84e-10 M 2.33e-15 Lz -1.71e-04 (on - off relative)
 - **PASS** (rule: extra CW/fallback/BE/retry, ef<=0, dt mean < 0.95 off, s per sim s > 1.05 off, |L_top| > 1 %) 
 - ends: S1off: 2026-11-24 13:59:52 rc=0 wall=222 s CW 0 FATAL 0 inf 0 DT_RETRY 0 ; S1on: 2026-11-24 14:03:40 rc=0 wall=228 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+
+## zzzzh items (11-24 14:04)
+- **S4 dropped:** both S4 arms stopped at ~13:57-14:04 (STOP file, tests); not scored. Partial dirs are kept without rst.
+- **ZA's 'cycle -21965':** an artefact of my live table (it subtracts the S2 base cycle 22160 from every t_Z row). ZA is a fresh start: first hst row t = 0.0, dt 3.4805, cycle 0; it ran its first 5 cycles and ended on the cycle limit (200).
+- Z arms ran ZA, ZB, ZC one after the other on 01-15 (already running when the node request came): all ended on the cycle limit, srun exit 0, CW 0, FATAL 0, DT_RETRY 0; ZB (S10, vet_gd_ls = 10, GL keys removed) did NOT FATAL.
+- Ray effect |F3/F1| odd, thin shells, vet dump (raymeas.py, i 308-383): ZA 7x18 t=0 max 1.485e-2 median 1.13e-2, t=696 s 1.385e-2 / 1.065e-2; ZB S10 2.504e-2 / 2.48e-2, then 2.362e-2 / 2.33e-2; ZC 7x36 1.050e-2 / 6.6e-3, then 9.17e-3 / 5.9e-3. v_phi rms in the thin layer at c200 ZA 1.37e4, ZB 2.86e4, ZC 1.55e4 cm/s. s/cyc 0.340 / 0.341 / 0.343; dt identical; L_top/L_in 1.00046 in all. (The KeyError lines in rays.txt are my script also feeding the vet_vet dump; no data loss.)
+- **S1 (bsg) PASS** (0.6436 / 0.6427 s/cyc, dt 152.8 identical, L_top +4.8e-6, SDO max ratio off 1e-4, on 0.40, 11 cells > 0.1, none > 1, ef<=0 0). S2, S3, S5, S1 all PASS; S2L is running (off on 01-15, on on 02-16 after S4 ended).
