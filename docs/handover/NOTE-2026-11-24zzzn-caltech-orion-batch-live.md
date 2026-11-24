@@ -68,3 +68,18 @@ Done: BSGt C0 C0b C1 C1ra M1 M2 M3 T1 T2 Z1f Z1t
 Idle: No node is waiting for work except 02-16/02-17 (kept for HG once hegiant.00205 lands) and nodes between arms; queue: S5, S4 (02-16/17), S3, S1 (02-11 after G1/G2), S2 + ZA/ZB/ZC (01-15 after C0t), RSG pair (01-17/02-03/02-09).
 
 Done: BSGt C0 C0b C1 C1ra C1rb C2 M1 M2 M3 T1 T2 Z1f Z1t 
+
+**11-24 13:42**
+
+| node | arm | cycle / target | s/cyc (last window) | ETA | CW / FATAL |
+|---|---|---|---|---|---|
+| 02-11 | G_G1 (running 6:23) | -5279 / 8 | 0 | - | 0 / 0 |
+| 02-17 | t_S5on (running 1:20) | -5279 / 300 | 0 | - | 0 / 0 |
+| 02-16 | t_S5off (running 1:20) | -5279 / 300 | 0 | - | 0 / 0 |
+| 01-15 | t_C0t (running 5:24) | 71 / 300 | 2.983 | 11 min | 0 / 0 |
+| 01-17 | t_RSGf (running 2:52) | 77 / 100 | 1.491 | 1 min | 0 / 0 |
+| 02-03 | t_RSGf (running 2:53) | 77 / 100 | 1.491 | 1 min | 0 / 0 |
+| 02-09 | t_RSGf (running 2:53) | 77 / 100 | 1.491 | 1 min | 0 / 0 |
+Idle: No node is waiting for work except 02-16/02-17 (kept for HG once hegiant.00205 lands) and nodes between arms; queue: S5, S4 (02-16/17), S3, S1 (02-11 after G1/G2), S2 + ZA/ZB/ZC (01-15 after C0t), RSG pair (01-17/02-03/02-09).
+
+Done: BSGt C0 C0b C1 C1ra C1rb C2 M1 M2 M3 T1 T2 Z1f Z1t 
