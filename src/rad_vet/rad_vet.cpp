@@ -1548,8 +1548,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   vet_ncall = 0.0;
   tau_closure = false;
   tau_ready = false;
-  tau_time = 0.0;
-  tau_ncall = 0.0;
   vet_col = false;
   vcol_sph = false;
   vcol_axis_flux = false;
@@ -1591,11 +1589,12 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // whose file lacks the key keeps false (echoed).  Bitwise wherever esrc = 0.
     vsrc_noes = pin->GetOrAddBoolean("rad_vet","vet_source_noesrc",fresh);
   } else if (cl.compare("tau") == 0) {
-    // the multi-D implicit solve reads (chi, n) from the column optical depth
-    // (rad_vet_tau.cpp), in the uniaxial form; every other use of chi (explicit wave
-    // speeds, the 1-D branch, the explicit coupling) keeps Levermore's, as closure = m1
-    eddington = false;
-    tau_closure = true;
+    // (removed: the clean scheme refused it on every mesh)
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_vet>/closure = tau was removed; use closure = vet_col with "
+      << "vet_gd = true (spherical polar, cubed sphere) or vet_sc (Cartesian)"
+      << std::endl;
+    std::exit(EXIT_FAILURE);
   } else if (cl.compare("vet_col") == 0) {
     // STAGE S5 (rad_vet_vetcol.cpp): the tensor of a per-column 1-D formal solution,
     // carried by the tau closure's machinery (tau_ten, built once per step)
@@ -2489,7 +2488,7 @@ void RadiationVet::RssPrime(bool restart) {
     const bool tens = (b == 2 && tau_closure) || (b == 5 && RssMode() == 5) ||
                       ((b == 3 || b == 4) && vet_sc && vet_cell.extent(0) > 0 &&
                        (vet_full == (b == 4)));
-    if (b == 2 && tau_closure && !tau_ready) {TauClosureInit();}
+    if (b == 2 && tau_closure && !tau_ready) {VetColInit();}
     const int nmb = static_cast<int>(rss_stage.extent(0));
     const int nall = static_cast<int>(rss_stage.extent(1));
     const int nop = opac.extent_int(1) - 1;
@@ -2514,7 +2513,7 @@ void RadiationVet::RssPrime(bool restart) {
     // the tensor is put back only into the same kind of closure; opac always
     int want = 1;
     if (mode == 2 && tau_closure) {
-      if (!tau_ready) {TauClosureInit();}
+      if (!tau_ready) {VetColInit();}
       want = RssRstNch(mode);
     } else if (((mode == 3 || mode == 4) && vet_sc && vet_cell.extent(0) > 0 &&
                 (vet_full == (mode == 4))) || (mode == 5 && RssMode() == 5)) {
@@ -2676,7 +2675,7 @@ RadiationVet::~RadiationVet() {
     (void)hipFree(vgd_ipc_err);
   }
 #endif
-  if (tau_closure) {TauClosureReport();}
+  if (vet_col) {VetColReport();}
   ReportCounters();
   ImplicitReport();   // milestone 3a; a no-op in transport = explicit
   Time2Report();      // time_scheme = hesdirk2; a no-op otherwise

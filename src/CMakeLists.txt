@@ -201,7 +201,6 @@ add_executable(
         rad_vet/rad_vet_mr.cpp
         rad_vet/rad_vet_newdt.cpp
         rad_vet/rad_vet_opacity.cpp
-        rad_vet/rad_vet_tau.cpp
         rad_vet/rad_vet_vetcol.cpp
         rad_vet/rad_vet_vetlat.cpp
         rad_vet/rad_vet_memarena.cpp

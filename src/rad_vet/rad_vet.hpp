@@ -2266,27 +2266,9 @@ class RadiationVet {
   // (x1max): chi = exact grey plane-parallel K/J(tau) (Hopf fit), axis along -grad tau.
   // Never reads the local flux.  Rebuilt once per hydro step from the start-of-step
   // transport opacity; x1 stacks of MeshBlocks across MPI ranks are supported.
-  bool tau_closure{};          // closure = tau (default false)
-  bool tau_ready{};            // TauClosureInit has run
-  int tau_nblk{};              // MeshBlocks per x1 stack (uniform mesh)
-  bool tau_any_mpi{};          // some stack member of a local block is on another rank
-  Real tau_time{}, tau_ncall{}; // seconds in TauClosureBuild (fenced), calls
-  DualArray1D<int> tau_pos;    // (m): x1 position of the block in its stack
-  DualArray1D<int> tau_loc;    // (m*nblk + q): local index of stack member q, -1 remote
-  std::vector<int> tau_mrank, tau_mlid;  // (m*nblk + q): rank / local id of member q
-  DvceArray3D<Real> tau_sum;   // (m,k,j): the block's own column integral of rho kappa_t
-  DvceArray4D<Real> tau_rcv;   // (m,q,k,j): column integrals received from member q
-  HostArray3D<Real> tau_sum_h;
-  HostArray4D<Real> tau_rcv_h;
-  DvceArray4D<Real> tau_col;   // (m,k,j,i): column optical depth at the cell centre
+  bool tau_closure{};          // = vet_col: the column tensor tau_ten is in use
+  bool tau_ready{};            // VetColInit has run
   DvceArray5D<Real> tau_ten;   // (m,4,k,j,i): chi, n1, n2, n3 read by ImplicitSolve (b)
-  //! closure = tau: check the mesh, build the stack topology, allocate (first call)
-  void TauClosureInit();
-  //! closure = tau: fill tau_ten from the transport opacity M1_IW_KT of the work array
-  //! (its x2/x3 ghost layers must be current: called after the transverse halo)
-  void TauClosureBuild();
-  //! closure = tau: cost line at the end of the run
-  void TauClosureReport();
 
   // ---- <rad_vet>/closure = vet_col (rad_vet_vetcol.cpp, design stage S5, option D): the
   // Eddington factor f_K = K/J of a 1-D formal solution per RADIAL COLUMN (spherical
@@ -2345,7 +2327,7 @@ class RadiationVet {
   Real vcol_qmin{}, vcol_qmax{};
   int vcol_lc{};               // shells per chunk of the team build (scratch budget)
   DvceArray3D<Real> vcol_q;    // (m, k, j): the column's Marshak q at the top face
-  void VetColInit();           // checks, tau_ten, vcol_q (first TauClosureInit)
+  void VetColInit();           // checks, tau_ten, vcol_q (first call)
   void VetColReport();
 
   // ---- <rad_vet>/vet_col_lat (m1-vetcol-lat, rad_vet_vetlat.cpp; design
