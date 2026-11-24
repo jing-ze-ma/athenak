@@ -1,0 +1,128 @@
+# (rc4 on vet-trim: keys that vet-trim no longer reads are dropped)
+# IA12.3-rc4 restart of R136 from viper r136fresh_1108/run/rst/r136.00149.rst (11-20 04:18; the latest R136 rst reachable; old implicit scheme, stores <rad_m1>, read as <rad_vet> by the aliases) onto ia123-rc4.
+# Usage: athena -r r136.00149.rst -d <dir> $(grep -v "^#" IA123_r136_restart.args | tr "\n" " ")  (plus Caltech's own output / time / table-path keys)
+# Rule rst-stored-keys: the rst holds the OLD scheme's input block, so EVERY clean-scheme production key is named: CLEANUP keysc.sh r136, then the later star keys.
+# Mesh: spherical polar 738 x 128 x 128 (theta pi/3..2pi/3 periodic, phi 60 deg periodic), MeshBlocks 738 x 64 x 64 -> 4 blocks -> 4 ranks (4 H200, one node); 8 or 12 GPUs need a finer block split (not possible on restart without a remesh).
+# The set changes 10x12 (stored) -> 11x12 on the restart ("added from the command line"); the closure history restarts with the new set.
+# CLEANUP keysc.sh r136 (rad_m1 -> rad_vet):
+hydro/eos_logt_max=7.0
+hydro/floor_pay=rad_column
+hydro/split_c2p_once=true
+hydro/wall_wb_onesided=true
+mesh/layout_invariant=true
+mesh/layout_invariant_mode=block
+problem/he_wb_grav_window=true
+rad_vet/clean_conv_kappa=1.0
+rad_vet/clean_conv_max=1e-5
+rad_vet/clean_face_hctau=true
+rad_vet/clean_face_opac=harmonic
+rad_vet/clean_gas_newton_switch=4
+rad_vet/clean_gas_newton_switch_min=6
+rad_vet/clean_layout=staggered
+rad_vet/clean_lin_pass=true
+rad_vet/clean_maxit=200
+rad_vet/clean_maxnl=200
+rad_vet/clean_pc_sweep=rb
+rad_vet/clean_pred_stage=false
+rad_vet/clean_rays=sc
+rad_vet/clean_rot_fuse=true
+rad_vet/clean_rot_ring=live
+rad_vet/clean_stag_central=true
+rad_vet/clean_stag_eicarry=true
+rad_vet/clean_stag_fcone=true
+rad_vet/clean_stag_flim=false
+rad_vet/clean_stag_fwb=true
+rad_vet/clean_stag_fwb_stage=false
+rad_vet/clean_stag_fwb_t2=false
+rad_vet/clean_stag_mg_color=mirror
+rad_vet/clean_stag_opac_passes=3
+rad_vet/clean_stag_opac_update=true
+rad_vet/clean_stag_thinf=false
+rad_vet/clean_stag_thinf_held=false
+rad_vet/clean_stag_upwind_central=true
+rad_vet/clean_stag_xdonor=lag
+rad_vet/clean_stag_xsrc=true
+rad_vet/clean_w_fse_tau=true
+rad_vet/clean_wb_fct=true
+rad_vet/clean_xt_exact=cons
+rad_vet/cs_cross_mono=true
+rad_vet/cs_vertex_mono=true
+rad_vet/floorcap_report=25
+rad_vet/floorcap_rho=1e-14
+rad_vet/floorcap_v=3e7
+rad_vet/implicit_pos_floor_cons=true
+rad_vet/implicit_pos_floor_gas_keep=1
+rad_vet/implicit_pos_gas=true
+rad_vet/implicit_pos_gas_cons=true
+rad_vet/implicit_predictor_tcap=1.1
+rad_vet/scheme=clean
+rad_vet/time2_auto_be=16
+rad_vet/time2_face_fct=true
+rad_vet/time2_gtime_mom=true
+rad_vet/time2_k1_redist=0
+rad_vet/time2_k1_stiff=0
+rad_vet/time2_stage_local_be=false
+rad_vet/time2_tableau=sdirk2
+rad_vet/vet_gd_rotate_align=true
+rad_vet/vet_gd_rotate_xfade=true
+rad_vet/vet_gd_tangential=true
+rad_vet/vet_rotate_advance=true
+rad_vet/zalesak_active=true
+time/cfl_number=0.3
+time/dt_retry=true
+time/restart_refill_ghosts=false
+# IA12.1 / IA12.2 star keys (uniform settings):
+rad_vet/clean_gas_secant=max_stage2
+rad_vet/clean_pred_xch=true
+rad_vet/clean_stag_fcone_gas=false
+rad_vet/clean_wb_exch_local=true
+rad_vet/clean_stag_fwb_ring=1
+hydro/rad_signal_speed=true
+hydro/rad_signal_speed_diff=true
+hydro/floor_pay_skip=true
+hydro/dfloor_flux_limit=true
+hydro/floor_audit=1
+# (overrides keysc mesh/layout_invariant_mode=block)
+mesh/layout_invariant_mode=tile
+mesh/layout_tile=64
+# IA12.3 keys:
+rad_vet/clean_clos1_budget=true
+rad_vet/clean_bud_maxnorm=true
+rad_vet/clean_vel_settled=false
+hydro/floor_from_ekin=true
+# R136 ray set (RSETSYM, USER: wall_interp + seam keys): GL 11 x 12 staggered, odd nmu so the set is equator-mirror symmetric; the z rotation is unchanged:
+rad_vet/vet_gd_gl_nmu=11
+rad_vet/vet_gd_gl_nphi=12
+rad_vet/vet_gd_gl_stagger=true
+rad_vet/vet_gd_wall_interp=true
+rad_vet/vet_gd_wall_sym=true
+rad_vet/vet_gd_theta_seam_sym=true
+# FOFC on for all stars (USER 11-24 ~02:10 PST, NOTE 24q / 24r):
+hydro/fofc=true
+hydro/fofc_retest=true
+# staggered mg preconditioner levels: USER 11-24, 2 for all stars (named: rsts may store 4):
+rad_vet/clean_stag_mg_levels=2
+# time keys of the production decks (T9FAST: a rst can store another segment's cfl_number; every time/ key the run relies on is named):
+time/evolution=dynamic
+time/integrator=rk2
+time/dt_retry_fac=0.5
+time/dt_retry_fac_t2=0.9
+time/dt_retry_grow=1.1
+time/dt_retry_host=false
+time/dt_retry_ngood=20
+time/dt_retry_views=minimal
+time/dt_retry_t2_be=0
+time/nan_check_cycles=100
+# one direction set (rc4 rule-12 FATAL on a product set + vet_gd_ls; the rst may store vet_gd_ls):
+rad_vet/vet_gd_ls=0
+# the floor-gas cap keeps v_phi (rule 1, L_z exact):
+rad_vet/floorcap_lz=true
+# FCAPSPIN (Caltech FS1 clean): the floor-gas cap's L_z returned as one rigid rotation; needs floorcap_mesh_vol:
+rad_vet/floorcap_lz_spin=true
+rad_vet/floorcap_mesh_vol=true
+# USER 11-24: dt_floor_courant (where the floor-gas cap is named) and the in-phase signal-speed weight, all stars:
+hydro/dt_floor_courant=0.6
+hydro/rad_signal_speed_phase=true
+# ROTWB (rotating sets: the EMA ring carries the cells' half ranges, well-balanced; a cs restart must keep the value its file was written with):
+rad_vet/vet_rotate_avg_ema=128
+rad_vet/vet_rotate_avg_ema_wb=true
