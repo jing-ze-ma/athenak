@@ -1603,7 +1603,7 @@ class RadiationVet {
   void CleanPrecondition(const int src, const int dst);
   CleanLevel CleanStagLevel(const int l);
   void CleanStagLineSolve(const CleanLevel &lv, const int src, const int dst,
-                          const int col, const int lim = -1, const int nc = 2);
+                          const int col, const int lim = -1);
   void CleanStagCoarseSetup();
   void CleanStagVCycle(const int l, const int src, const int dst);
   void CleanApply(const int src, const int dst);
@@ -1858,8 +1858,7 @@ class RadiationVet {
   int cln_verbose = 0;          // clean_verbose: 1 = also the per-solve diagnostics
   int cln_stagmg = 0;           // the old production mg (staggered): 1 its line colours
                                 //   (j + k) parity, 2 mirror (clean_stag_mg_color)
-  int cln_pcsweep = 0;          // clean_pc_sweep: +1 a 2nd red pass, +2 a post-sweep,
-                                // 4 wave
+  int cln_pcsweep = 0;          // clean_pc_sweep: +1 a 2nd red pass, +2 a post-sweep
   bool cln_steady = false;      // clean_init = steady: radiation relaxed before step 1
   int cln_steady_n = 50;        // clean_init_n: most pre-solve passes
   Real cln_steady_dtfac = 1.0e6, cln_steady_tol = 1.0e-8;  // clean_init_dtfac, _tol

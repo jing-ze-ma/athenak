@@ -1595,10 +1595,9 @@ void RadiationVet::CleanStagCoarseSetup() {
 //! \fn void RadiationVet::CleanStagLineSolve
 //! \brief u(dst) = L^{-1} u(src) on a level of the staggered preconditioner, L its
 //! x1-line tridiagonal part: Thomas solve along the x1 lines of colour col (-1: every
-//! line), (j + k) mod nc, with the couplings to u(dst) of the neighbours inside the level
-//! of another colour up to lim on the right-hand side (red-black: nc = 2, the even lines
-//! (0, -1), the odd ones (1, 1), the even ones again (0, 1); clean_pc_sweep = wave: nc
-//! past the largest j + k, a line's colour its wavefront).  clean_stag_mg_color =
+//! line), (j + k) mod 2, with the couplings to u(dst) of the neighbours inside the level
+//! of another colour up to lim on the right-hand side (red-black: the even lines (0, -1),
+//! the odd ones (1, 1), the even ones again (0, 1)).  clean_stag_mg_color =
 //! mirror: j, k are a line's distance from the nearer MeshBlock edge along x2, x3, so
 //! that the colours, and the sweep, mirror with the mesh about its x2 and x3 midplanes
 //! (rule 7; j + k colours an even line count's mirror lines oppositely: asymmetry at the
@@ -1608,7 +1607,7 @@ void RadiationVet::CleanStagCoarseSetup() {
 //! production line solves (M1PCRMG); the host keeps Thomas.
 
 void RadiationVet::CleanStagLineSolve(const CleanLevel &lv, const int src, const int dst,
-                                      const int col, const int lim, const int nc) {
+                                      const int col, const int lim) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const CleanLevel l = lv;
   const int is = l.o[0], ie = l.o[0] + l.n[0] - 1, cp = l.a0 + 2;
@@ -1620,7 +1619,7 @@ void RadiationVet::CleanStagLineSolve(const CleanLevel &lv, const int src, const
     pj %= n1;
     pk %= n2;
     return (((mir && 2*pj >= n1) ? n1 - 1 - pj : pj) +
-            ((mir && 2*pk >= n2) ? n2 - 1 - pk : pk)) % nc;
+            ((mir && 2*pk >= n2) ? n2 - 1 - pk : pk)) % 2;
   };
   auto on = KOKKOS_LAMBDA(const int pj, const int pk) {   // (a neighbour on the rhs)
     const int c = cl(pj, pk);
@@ -1763,22 +1762,9 @@ void RadiationVet::CleanStagLineSolve(const CleanLevel &lv, const int src, const
 
 void RadiationVet::CleanStagVCycle(const int l, const int src, const int dst) {
   const CleanLevel f = CleanStagLevel(l);
-  // (wave: the lines by wavefronts j + k, from the edges in, then back out, each with the
-  // couplings to the lines solved before it: a symmetric Gauss-Seidel in the line order,
-  // exact for a donor-cell transport along +-x2, x3 inside the MeshBlock)
-  const bool wv = (cln_pcsweep == 4), mir = (cln_stagmg == 2);
-  const int nw = mir ? (f.t[1] - 1)/2 + (f.t[2] - 1)/2 + 1 : f.t[1] + f.t[2] - 1;
-  auto sweep = [&](const bool all) {
-    for (int c = 0; c < nw; ++c) CleanStagLineSolve(f, src, dst, c, all ? nw : c - 1, nw);
-    for (int c = nw - 1; c >= 0; --c) CleanStagLineSolve(f, src, dst, c, nw, nw);
-  };
-  if (wv) {
-    sweep(false);
-  } else {
-    CleanStagLineSolve(f, src, dst, 0, -1);
-    CleanStagLineSolve(f, src, dst, 1, 1);
-    if (cln_pcsweep & 1) CleanStagLineSolve(f, src, dst, 0, 1);
-  }
+  CleanStagLineSolve(f, src, dst, 0, -1);
+  CleanStagLineSolve(f, src, dst, 1, 1);
+  if (cln_pcsweep & 1) CleanStagLineSolve(f, src, dst, 0, 1);
   if (l == static_cast<int>(cln_mg.size())) return;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   const CleanLevel c = CleanStagLevel(l+1);
@@ -1812,9 +1798,7 @@ void RadiationVet::CleanStagVCycle(const int l, const int src, const int dst) {
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     f.u(m,dst,k,j,i) += c.u(m,CLS_X,(k - f.o[2])/r[2],(j - f.o[1])/r[1],i - f.o[0]);
   });
-  if (wv) {
-    sweep(true);
-  } else if (cln_pcsweep & 2) {
+  if (cln_pcsweep & 2) {
     CleanStagLineSolve(f, src, dst, 1, 1);
     CleanStagLineSolve(f, src, dst, 0, 1);
   }

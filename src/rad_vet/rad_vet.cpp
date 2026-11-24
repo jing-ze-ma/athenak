@@ -718,20 +718,16 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_mgt = {mi.nx1, nt, d3 ? nt : 1};
     }
     // clean_pc_sweep = sym (default of a fresh run, recorded; a restart file without the
-    // key keeps rb) | rb | rbr | rbrsym | wave: the mg's smoothing on each level, a
-    // forward red-black sweep, + a second red pass (rbr), + a black-red post-sweep after
-    // the coarse correction (sym); wave: symmetric Gauss-Seidel over the x1 lines in
-    // wavefronts from the MeshBlock edges in and back out, before and after the coarse
-    // correction (a ray-dark region's donor-cell transport across x2, x3)
-    // (CleanStagVCycle)
+    // key keeps rb) | rb | rbr | rbrsym: the mg's smoothing on each level, a forward
+    // red-black sweep, + a second red pass (rbr), + a black-red post-sweep after the
+    // coarse correction (sym) (CleanStagVCycle; wave: removed)
     const std::string sw = pin->GetOrAddString("rad_vet","clean_pc_sweep",
                                                nw ? "sym" : "rb");
-    cln_pcsweep = (sw == "rbr") + 2*(sw == "sym") + 3*(sw == "rbrsym") + 4*(sw == "wave");
+    cln_pcsweep = (sw == "rbr") + 2*(sw == "sym") + 3*(sw == "rbrsym");
     if (!cln_pcsweep && sw != "rb") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/clean_pc_sweep = rb | rbr | sym | rbrsym | "
-                                "wave"
-                << std::endl;
+                << std::endl << "<rad_vet>/clean_pc_sweep = " << sw << ": rb | rbr | sym "
+                << "| rbrsym (wave was removed)" << std::endl;
       std::exit(EXIT_FAILURE);
     }}
     // clean_stag_lat_sums: spherical polar / Cartesian, the lateral stress of the faces
