@@ -45,3 +45,20 @@ PASS thermal_eq           26 s  errT_h 0.000552 dEtot_h 1.26e-15 errT_h2 0.00012
 2 passed, 2 failed, 26 s
 INNER DONE
 ```
+
+## Gate A idort rerun with test names (your 24zzw; same build_cpu 29046c3f2, no rebuild, 28 cores of 01-15, 11-24 12:42)
+- M35ZAMS s/cyc guard: baseline 0.32305; after 0.32708; monitor: 
+```
+29046c3f2
+clean VET test suite: 8 tests, full, 6 at a time x 4 threads, binary /resnick/groups/carnegie_poc/jingze/wt_orion1121/wt_cpu/build_cpu/src/athena
+PASS idort_shadow          3 s  L1 0.0138
+PASS idort_shadow_gl       4 s  L1 0.0126
+PASS idort_beams          13 s  L1 0.777 lum_top 1.79 flux_err 2.66e-07
+PASS idort_radshock_m2     15 s  L1_rho 0.000383 L1_v 0.000245 L1_Tg 0.000396 L1_Tr 0.000271
+PASS idort_radshock_m5     14 s  L1_rho 0.00216 L1_v 0.000919 L1_Tg 0.00181 L1_Tr 0.00103
+PASS idort_cylinder       23 s  E_in 0.000531 E_out 0.0111 F_out 0.0116 FH_out 0.203
+PASS idort_thermal_eq2     23 s  errT 0.00196 dEtot 1.88e-16
+PASS idort_beams_mb       40 s  maxdiff_tile_x2 0 maxdiff_block_x1 2.05e-11
+8 passed, 0 failed, 40 s
+INNER DONE
+```
