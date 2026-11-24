@@ -447,6 +447,8 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/time2_start", "=be"},
     // (the vet_sc builds extrapolated between formal solutions: removed, only 1)
     {"rad_vet/vet_sc_every", "=1"},
+    // (the restart fingerprints, a debug hook removed)
+    {"rad_vet/dbg_rst_fp*", "x"},
     // (the explicit transport's sub-cycling, removed with it)
     {"rad_vet/cfl_rad", ""}, {"rad_vet/subcycle", ""},
     // (the vet_gd twin and its symmetric reference, removed, L4: with vet_gd on the twin
@@ -508,7 +510,8 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
         const std::string c(t[1]);
         if (c == "x") {
           CleanFatal("<" + k + "> belonged to a removed path (the cell layout, the FV "
-                     "rays or a retired study key); remove it from the input");
+                     "rays, a debug hook removed or a retired study key); remove it "
+                     "from the input");
         }
         if (c[0] == '=' && v != c.substr(1) && !(c == "=false" && v == "0")) {
           CleanFatal("<" + k + "> = " + v + ": removed from this build (only " +
@@ -1254,9 +1257,6 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
   auto settled = [&](const Real d, const Real d0, const Real f) {
     return d < tol_nl || (d > 0.5*d0 && d < 100.0*fmin(f, tol_nl));
   };
-  // <rad_vet>/dbg_rst_fp_cycle: fingerprints of the first solve of that cycle
-  const bool fpc = (pmy_pack->pmesh->ncycle == dbg_rst_fp_cycle) && !dbg_rst_fp_done;
-  if (fpc) RstFingerprint("cln_setup");
   Real dnl = 0.0, dnl0 = -1.0;   // (the last pass's change and the one before)
   {
     CleanFirstIterate();
@@ -1309,7 +1309,6 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
         CleanRightHandSide();
       }
       CleanPreconditionerSetup();
-      if (fpc) RstFingerprint(("cln_pass" + std::to_string(inl) + "_pre").c_str());
       // (budget: a pass whose iterate the next pass takes the closure of is solved in
       // the strict norm, so that closure does not carry the inexact solve: with
       // clean_closure = extrap1/2 or iterate the step's answer depends on it)
@@ -1317,7 +1316,6 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
       if (cnext) cln_ewr = -2.0;
       nit = CleanBiCGStab();
       if (cnext) cln_ewr = -1.0;
-      if (fpc) RstFingerprint(("cln_pass" + std::to_string(inl) + "_post").c_str());
       nit_sum += std::abs(nit);
       ++nsolve;
       cln_nsolve += 1.0;
@@ -1519,7 +1517,6 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
 
   // 6. clean_closure = extrap(2): ray moments of the new state
   if (cln_extrap > 0 && !t2_fail) CleanClosureAfterSolve();
-  if (fpc) dbg_rst_fp_done = true;
   return TaskStatus::complete;
 }
 

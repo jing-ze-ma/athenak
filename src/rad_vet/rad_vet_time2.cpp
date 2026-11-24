@@ -377,28 +377,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     }
   }
 
-#if !VET_DEBUG
-  for (const char *k : {"dbg_rst_fp", "dbg_rst_fp_cycle", "dbg_rst_fp_dump"}) {
-    if (pin->DoesParameterExist("rad_vet", k)) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/" << k
-                << " needs a build with -D Athena_VET_DEBUG=ON" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-  }
-#endif
-  if (pin->DoesParameterExist("rad_vet", "dbg_rst_fp")) {
-    dbg_rst_fp = pin->GetInteger("rad_vet", "dbg_rst_fp");
-  }
-  // dbg_rst_fp_cycle = C (read only when named): the first clean solve of cycle C also
-  // prints fingerprints at its setup and around each linear solve; dbg_rst_fp_dump: every
-  // fingerprint also writes vgd_cs to vgdcs_<tag>_r<rank>.bin (5 int extents, the data)
-  if (pin->DoesParameterExist("rad_vet", "dbg_rst_fp_cycle")) {
-    dbg_rst_fp_cycle = pin->GetInteger("rad_vet", "dbg_rst_fp_cycle");
-  }
-  if (pin->DoesParameterExist("rad_vet", "dbg_rst_fp_dump")) {
-    dbg_rst_fp_dump = pin->GetBoolean("rad_vet", "dbg_rst_fp_dump");
-  }
   // <rad_vet>/time2_k1_stiff = s (default 0 = off, bitwise)
   t2_k1stiff = 0.0;
   if (pin->DoesParameterExist("rad_vet", "time2_k1_stiff")) {
@@ -619,7 +597,6 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
 }
 
 void RadiationVet::Time2FormStage(int stage, Real dt) {
-  if (dbg_rst_fp > 0 && stage == 1) {dbg_rst_fp -= 1; RstFingerprint("formstage1");}
   const Real g = kT2G;
   const Real w0 = t2_w0, w1 = t2_w1;
   // hesdirk2 and sdirk2 both use the Heun stage start (tab 0's original expression,
@@ -2134,107 +2111,6 @@ void RadiationVet::Time2Report() {
             << " | failed stage attempts " << t2w_fail << " | their BE redo " << t2w_redo
             << " | auto_be steps " << t2w_abe << " | other BE steps " << t2w_be
             << " | discarded dt_retry attempts " << t2w_retry << std::endl;
-}
-
-}  // namespace radvet
-
-namespace radvet {
-//----------------------------------------------------------------------------------------
-//! \fn RadiationVet::RstFingerprint (DIAGNOSTIC <rad_vet>/dbg_rst_fp = N)
-//! Sum and sum of squares of every persistent array (per component of the 5-D ones), all
-//! ranks, printed by rank 0: run A (straight) and run B (restarted) are diffed line by
-//! line at the same cycle to find the state a restart does not carry.  Moves no state.
-//! Also the vet_gd source and the clean scheme's arrays and values; dbg_rst_fp_cycle adds
-//! fingerprints inside the first clean solve of a cycle, dbg_rst_fp_dump writes vgd_cs.
-#if VET_DEBUG
-namespace {
-template <class V>
-void M1Fp(const char *nm, const V &v, int cycle) {
-  if (v.span() == 0) return;
-  auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), v);
-  const int nc = (V::rank == 5) ? static_cast<int>(v.extent(1)) : 1;
-  const std::size_t per = h.span()/(V::rank == 5 ? v.extent(1)*v.extent(0) : 1);
-  for (int c = 0; c < nc; ++c) {
-    double s1 = 0.0, s2 = 0.0;
-    if (V::rank == 5) {
-      for (std::size_t m = 0; m < v.extent(0); ++m) {
-        const Real *p = h.data() + (m*v.extent(1) + c)*per;
-        for (std::size_t q = 0; q < per; ++q) {s1 += p[q]; s2 += p[q]*p[q];}
-      }
-    } else {
-      const Real *p = h.data();
-      for (std::size_t q = 0; q < h.span(); ++q) {s1 += p[q]; s2 += p[q]*p[q];}
-    }
-    double g[2] = {s1, s2};
-#if MPI_PARALLEL_ENABLED
-    MPI_Allreduce(MPI_IN_PLACE, g, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-#endif
-    if (global_variable::my_rank == 0) {
-      std::printf("RSTFP cyc %d %s[%d] %.17e %.17e\n", cycle, nm, c, g[0], g[1]);
-    }
-  }
-}
-}  // namespace
-#endif
-void RadiationVet::RstFingerprint(const char *tag) {
-#if VET_DEBUG
-  const int cy = pmy_pack->pmesh->ncycle;
-  if (global_variable::my_rank == 0) {std::printf("RSTFP cyc %d tag %s\n", cy, tag);}
-  M1Fp("u0", u0, cy); M1Fp("opac", opac, cy); M1Fp("iw", iw, cy);
-  M1Fp("t2k1", t2k1, cy); M1Fp("t2k2", t2k2, cy); M1Fp("ipred", ipred, cy);
-  M1Fp("f0x1", f0x1, cy); M1Fp("f0x2", f0x2, cy);
-  M1Fp("f0x3", f0x3, cy); M1Fp("tau_ten", tau_ten, cy); M1Fp("vet_cell", vet_cell, cy);
-  M1Fp("ctr_mem", ctr_mem, cy); M1Fp("csk1", csk1, cy); M1Fp("ifw", ifw, cy);
-  M1Fp("ifw2", ifw2, cy); M1Fp("ifw3", ifw3, cy); M1Fp("thx2", thx2, cy);
-  M1Fp("thx3", thx3, cy); M1Fp("ktd", ktd, cy); M1Fp("vgd_hr", vgd_hr, cy);
-  M1Fp("vgd_hr_c", vgd_hr_c, cy); M1Fp("t2f1", t2f1, cy); M1Fp("t2f2", t2f2, cy);
-  M1Fp("t2f3", t2f3, cy); M1Fp("vet_prev", vet_prev, cy);
-  // the vet_gd source and the clean scheme's state
-  M1Fp("vgd_cs", vgd_cs, cy); M1Fp("vlat_cs", vlat_cs, cy);
-  FluidRef fl = FluidRef::Get(pmy_pack);
-  if (fl.on) {M1Fp("fl_u0", fl.u0, cy); M1Fp("fl_w0", fl.w0, cy);}
-  M1Fp("cln_s", cln_s, cy); M1Fp("cln_v", cln_v, cy); M1Fp("cln_w", cln_w.s, cy);
-  M1Fp("cln_wo", cln_w.o, cy);
-  M1Fp("cln_fc1", cln_fc1, cy); M1Fp("cln_fc2", cln_fc2, cy);
-  M1Fp("cln_fc3", cln_fc3, cy);
-  M1Fp("cln_fref", cln_fref, cy); M1Fp("cln_mn", cln_mn, cy); M1Fp("cln_mp", cln_mp, cy);
-  M1Fp("cln_mc", cln_mc, cy); M1Fp("cln_m1", cln_m1, cy); M1Fp("cln_fvi", cln_fvi, cy);
-  M1Fp("cln_fvd", cln_fvd, cy);
-  M1Fp("cln_opb", cln_opb, cy); M1Fp("cln_gn", cln_gn.r, cy);
-  M1Fp("cln_gn.a", cln_gn.a, cy);
-  M1Fp("cln_rl", cln_rl, cy); M1Fp("cln_rr", cln_rr, cy); M1Fp("cln_rpd", cln_rpd, cy);
-  M1Fp("cln_rnew", cln_rnew, cy);
-  if (dbg_rst_fp_dump && vgd_cs.span() > 0) {
-    auto hc = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vgd_cs);
-    char fn[256];
-    std::snprintf(fn, sizeof(fn), "vgdcs_%s_r%d.bin", tag, global_variable::my_rank);
-    FILE *fo = std::fopen(fn, "wb");
-    int ext[5];
-    for (int r = 0; r < 5; ++r) ext[r] = static_cast<int>(hc.extent(r));
-    std::fwrite(ext, sizeof(int), 5, fo);
-    std::fwrite(hc.data(), sizeof(Real), hc.span(), fo);
-    std::fclose(fo);
-  }
-  if (global_variable::my_rank == 0) {
-    std::printf("RSTFP cyc %d scalars pred_ok %d pred_dt %.17e pred2_ok %d "
-                "pred2_dt %.17e t2_ok %d t2_dtprev %.17e t2_vprev %d "
-                "abe %d %d\n", cy, pred_ok ? 1 : 0, pred_dt, pred2_ok ? 1 : 0, pred2_dt,
-                t2_ok ? 1 : 0, t2_dtprev, t2_vprev ? 1 : 0,
-                t2_abe_len, t2_abe_left);
-    std::fflush(stdout);
-  }  if (global_variable::my_rank == 0) {
-    std::printf("RSTFP cyc %d clean init %d faces %d havec %d tc %.17e "
-                "dtb %.17e fe %.17e fv %.17e\n", cy, cln_init ? 1 : 0,
-                cln_faces_set ? 1 : 0, cln_havec ? 1 : 0, cln_tc,
-                cln_dtb, cln_fe, cln_fv);
-    std::printf("RSTFP cyc %d extrap tn %.17e tp %.17e tm %.17e t1 %.17e "
-                "have %d %d %d %d cand_be %d\n", cy, cln_tn, cln_tp, cln_tm, cln_t1,
-                cln_have_n ? 1 : 0, cln_have_p ? 1 : 0, cln_have_c ? 1 : 0,
-                cln_have_1 ? 1 : 0, cln_cand_be ? 1 : 0);
-    std::printf("RSTFP cyc %d fv n %d icut %d scut %d\n", cy, cln_fvn, vlat_icut,
-                vgd_scut);
-  }
-#endif
 }
 
 //----------------------------------------------------------------------------------------

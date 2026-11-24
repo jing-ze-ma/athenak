@@ -159,6 +159,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("ibm_f", ibm_f);
   v.view("ibm_s", ibm_s);
   v.value("impl_mface_lin", impl_mface_lin);
+  v.value("impl_bc_advect", impl_bc_advect);
   v.view("f0x1", f0x1);
   v.view("iw", iw);
   v.value("impl_nstep", impl_nstep);
@@ -184,6 +185,12 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("impl_recon", impl_recon);
   v.value("impl_enth", impl_enth);
   v.view("gwd", gwd);
+  v.value("impl_hr_cmem", impl_hr_cmem);
+  v.view("fax1", fax1);
+  v.view("fax2", fax2);
+  v.view("fax3", fax3);
+  v.value("impl_cm_fainit_done", impl_cm_fainit_done);
+  v.value("impl_cm_rst", impl_cm_rst);
   v.view("fmm_t", fmm_t);
   v.value("zl_hskip", zl_hskip);
   v.value("zl_active", zl_active);
@@ -205,6 +212,28 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("vgd_pin_cnt", vgd_pin_cnt);
   v.view("ifw2", ifw2);
   v.view("ifw3", ifw3);
+  v.value("part_nblk", part_nblk);
+  v.value("part_nroot", part_nroot);
+  v.value("part_nx1g", part_nx1g);
+  v.value("part_nlay", part_nlay);
+  v.value("part_nqa", part_nqa);
+  v.dual("part_pos", part_pos);
+  v.dual("part_slot", part_slot);
+  v.dual("part_nbr", part_nbr);
+  v.view("part_sys", part_sys);
+  v.view("part_sbuf", part_sbuf);
+  v.view("part_rbuf", part_rbuf);
+  v.view("part_sbuf_h", part_sbuf_h);
+  v.view("part_rbuf_h", part_rbuf_h);
+  v.view("part_hbuf", part_hbuf);
+  v.view("part_hbuf_h", part_hbuf_h);
+  v.value("part_mrank", part_mrank);
+  v.value("part_mgid", part_mgid);
+  v.value("part_rootgid", part_rootgid);
+  v.value("part_rootrank", part_rootrank);
+  v.value("part_nbrrank", part_nbrrank);
+  v.value("part_nbrgid", part_nbrgid);
+  v.value("part_any_mpi", part_any_mpi);
   v.value("impl_gas_src_cons", impl_gas_src_cons);
   v.view("csk1", csk1);
   v.value("csk1_ok", csk1_ok);
@@ -215,10 +244,21 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("trans_x3", trans_x3);
   v.view("f0x2", f0x2);
   v.view("f0x3", f0x3);
+  v.view("thw", thw);
+  v.view("thw_c", thw_c);
+  v.view("thq", thq);
+  v.view("thq_c", thq_c);
+  v.value("halo_shell", halo_shell);
   v.value("bicg_on", bicg_on);
+  v.view("krw", krw);
+  v.view("krw_c", krw_c);
   v.value("impl_prec_fb", impl_prec_fb);
   v.value("bcg_capped", bcg_capped);
+  v.value("impl_halo_direct", impl_halo_direct);
+  v.value("halo_direct_on", halo_direct_on);
+  v.dual("hd_src", hd_src);
   v.view("odc", odc);
+  v.value("impl_stencil", impl_stencil);
   v.view("ost", ost);
   v.value("st_edges", st_edges);
   v.value("impl_onep", impl_onep);
@@ -230,7 +270,44 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("onep_actr", onep_actr);
   v.value("onep_prb", onep_prb);
   v.value("impl_pord", impl_pord);
+  v.value("impl_kfuse", impl_kfuse);
   v.value("impl_prec", impl_prec);
+  v.view("kp_h", kp_h);
+  v.value("impl_halo_mpi", impl_halo_mpi);
+  v.value("hm_state", hm_state);
+  v.value("impl_hdepth", impl_hdepth);
+  v.value("hm_nsend", hm_nsend);
+  v.value("hm_nrecv", hm_nrecv);
+  v.value("hm_nq", hm_nq);
+  v.value("hm_rank", hm_rank);
+  v.value("hm_soff", hm_soff);
+  v.value("hm_slen", hm_slen);
+  v.value("hm_roff", hm_roff);
+  v.value("hm_rlen", hm_rlen);
+  v.dual("hm_sm", hm_sm);
+  v.dual("hm_skji", hm_skji);
+  v.dual("hm_sseg", hm_sseg);
+  v.dual("hm_rm", hm_rm);
+  v.dual("hm_rkji", hm_rkji);
+  v.dual("hm_rseg", hm_rseg);
+  v.dual("hm_segs", hm_segs);
+  v.view("hm_sbuf", hm_sbuf);
+  v.view("hm_rbuf", hm_rbuf);
+  v.view("hm_shost", hm_shost);
+  v.view("hm_rhost", hm_rhost);
+  v.value("impl_halo_ipc", impl_halo_ipc);
+  v.value("hi_state", hi_state);
+  v.value("hi_nchk", hi_nchk);
+  v.value("hi_half", hi_half);
+  v.dual("hi_prb", hi_prb);
+  v.dual("hi_psig", hi_psig);
+  v.dual("hi_phalf", hi_phalf);
+  v.dual("hi_proff", hi_proff);
+  v.dual("hi_pslot", hi_pslot);
+  v.value("impl_halo_ovl", impl_halo_ovl);
+  v.value("impl_ovl_faces", impl_ovl_faces);
+  v.value("hm_face", hm_face);
+  v.view("ho_h", ho_h);
   v.view("gc_part", gc_part);
   v.view("gc_x", gc_x);
   v.view("gf_gh", gf_gh);
@@ -306,6 +383,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("t2f1", t2f1);
   v.view("t2f2", t2f2);
   v.view("t2f3", t2f3);
+  v.view("t2fa1", t2fa1);
   v.value("pred2_ok", pred2_ok);
   v.value("pred2_dt", pred2_dt);
   v.view("vet_prev", vet_prev);
@@ -334,10 +412,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("t2pth", t2pth);
   v.view("vcol_prev", vcol_prev);
   v.view("vcol_qprev", vcol_qprev);
-  v.value("dbg_rst_fp", dbg_rst_fp);
-  v.value("dbg_rst_fp_cycle", dbg_rst_fp_cycle);
-  v.value("dbg_rst_fp_dump", dbg_rst_fp_dump);
-  v.value("dbg_rst_fp_done", dbg_rst_fp_done);
+  v.value("vsrc_dt", vsrc_dt);
   v.value("t2_nfv", t2_nfv);
   v.value("t2_rcl", t2_rcl);
   v.value("t2_rskip", t2_rskip);
@@ -357,6 +432,8 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("impl_vimp", impl_vimp);
   v.value("dop_face", dop_face);
   v.value("vimp_now", vimp_now);
+  v.view("vmw", vmw);
+  v.view("vmw_c", vmw_c);
   v.view("d3w", d3w);
   v.value("t2_ffct", t2_ffct);
   v.view("t2pf1", t2pf1);
@@ -437,6 +514,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_optdr", cln_optdr);
   v.value("cln_hface", cln_hface);
   v.value("cln_fspcr", cln_fspcr);
+  v.value("cln_stst", cln_stst);
   v.view("cln_st", cln_st);
   v.view("cln_csy", cln_csy);
   v.value("cln_csyok", cln_csyok);
@@ -491,13 +569,23 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_xd_on", cln_xd_on);
   v.value("cln_xlag", cln_xlag);
   v.value("cln_xsrc", cln_xsrc);
+  v.value("cln_xsw", cln_xsw);
   v.value("cln_xqs", cln_xqs);
+  v.value("cln_kpos", cln_kpos);
+  v.value("cln_xpat", cln_xpat);
+  v.value("cln_kpb", cln_kpb);
+  v.value("cln_kq_on", cln_kq_on);
+  v.value("cln_kqs", cln_kqs);
+  v.view("cln_ky1", cln_ky1);
+  v.value("cln_kreal", cln_kreal);
+  v.value("cln_kpat", cln_kpat);
   v.value("cln_eicry", cln_eicry);
   v.value("cln_colf", cln_colf);
   v.value("cln_lza", cln_lza);
   v.value("cln_lzbook", cln_lzbook);
   v.value("cln_lzt", cln_lzt);
   v.value("cln_lzbf", cln_lzbf);
+  v.value("cln_latwb", cln_latwb);
   v.value("cln_thinf", cln_thinf);
   v.view("cln_mclc", cln_mclc);
   v.value("cln_fwb", cln_fwb);
@@ -511,6 +599,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_fwbok", cln_fwbok);
   v.value("cln_fwbt2", cln_fwbt2);
   v.view("cln_fconc", cln_fconc);
+  v.value("cln_thinh", cln_thinh);
   v.value("cln_xdfz", cln_xdfz);
   v.value("cln_xdh", cln_xdh);
   v.value("cln_lzl", cln_lzl);
@@ -518,6 +607,10 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_lzs2", cln_lzs2);
   v.value("cln_lzc", cln_lzc);
   v.value("cln_lzp", cln_lzp);
+  v.value("cln_kmode", cln_kmode);
+  v.value("cln_ktau", cln_ktau);
+  v.value("cln_kredo", cln_kredo);
+  v.value("cln_kredo_neg", cln_kredo_neg);
   v.value("cln_xtnorm", cln_xtnorm);
   v.value("cln_xtcons", cln_xtcons);
   v.value("cln_xte", cln_xte);
@@ -526,6 +619,10 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_stfac", cln_stfac);
   v.value("cln_gpic", cln_gpic);
   v.value("cln_ngnsw", cln_ngnsw);
+  v.value("cln_krel_on", cln_krel_on);
+  v.value("cln_kc1", cln_kc1);
+  v.value("cln_kc2", cln_kc2);
+  v.view("cln_kcnt", cln_kcnt);
   v.value("cln_fdg", cln_fdg);
   v.value("cln_opt", cln_opt);
   v.value("cln_consist", cln_consist);
@@ -565,6 +662,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_upw", cln_upw);
   v.value("cln_ucp", cln_ucp);
   v.value("cln_ucen", cln_ucen);
+  v.value("cln_sbimp", cln_sbimp);
   v.value("cln_split", cln_split);
   v.value("cln_nr1", cln_nr1);
   v.value("cln_nr2", cln_nr2);
@@ -582,12 +680,16 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_dtb", cln_dtb);
   v.view("cln_s", cln_s);
   v.value("cln_cssc", cln_cssc);
+  v.value("cln_rfh", cln_rfh);
   v.value("cln_wfse", cln_wfse);
   v.value("cln_wfst", cln_wfst);
   v.value("cln_hctau", cln_hctau);
   v.value("cln_jse", cln_jse);
+  v.value("cln_hclat", cln_hclat);
   v.value("cln_farea", cln_farea);
   v.value("cln_bcarea", cln_bcarea);
+  v.value("cln_rsrel", cln_rsrel);
+  v.value("cln_tdn", cln_tdn);
   v.view("cln_fvi", cln_fvi);
   v.view("cln_fvd", cln_fvd);
   v.value("cln_fvn", cln_fvn);
@@ -677,6 +779,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vcol_fkmin", vcol_fkmin);
   v.value("vcol_srelax", vcol_srelax);
   v.value("vcol_sesc", vcol_sesc);
+  v.value("vcol_sbl", vcol_sbl);
   v.value("vcol_sx0", vcol_sx0);
   v.value("vscat", vscat);
   v.value("vscat_form", vscat_form);
@@ -1094,6 +1197,15 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
 //   vet_mbs : VetMBState *
 //   pos_un_drop : Real (protocol counter, kept monotonic)
 //   tmr_t : Kokkos::Timer
+//   pbval_th : MeshBoundaryValuesCC *
+//   pbval_tq : MeshBoundaryValuesCC *
+//   pbval_kr : MeshBoundaryValuesCC *
+//   hm_comm : void *
+//   hi_seq : long long (protocol counter, kept monotonic)
+//   hi_rbuf : Real *
+//   hi_sig : long long *
+//   hi_err : int *
+//   pbval_vm : MeshBoundaryValuesCC *
 //   pbval_d3 : MeshBoundaryValuesCC *
 //   pbval_sg : MeshBoundaryValuesCC *
 //   pbval_u : MeshBoundaryValuesCC *
