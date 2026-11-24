@@ -522,14 +522,14 @@ Real t2nf_ = -1.0;
 // skb_un_ = the FLR_UN counter (rank-local, cumulative) at the last booking.
 bool skb_ = false;
 Real skb_un_ = 0.0;
-// (rbk_): a helper solve whose slope becomes K1 (Time2StartProbe,
-// Time2RotCorrect = vet_gd_rotate_slope correct) puts U^n and its faces back, so the
+// (rbk_): a helper solve whose slope becomes K1 (Time2RotCorrect =
+// vet_gd_rotate_slope correct) puts U^n and its faces back, so the
 // stage-start faces t2f1 are NOT the faces of that K1: RyPerRadBook keeps the probe's
 // r_out faces (comoving + bath, per column) in rbk1_ and books the next stage-1 K1 part
-// from them when the probe's slope was kept (rbk1n_: t2_nprobe / vgd_rot_ncorr then)
+// from them when the probe's slope was kept (rbk1n_: vgd_rot_ncorr then)
 DvceArray3D<Real> rbk1_;
 bool rbk1_on_ = false;
-double rbk1n_[2] = {0.0, 0.0};
+double rbk1n_ = 0.0;
 bool rbk_ = false;
 DvceArray3D<Real> bdvs_;   // ibadv_x1max at the step's first hydro stage (the K1 faces)
 // Two passive advective tracers, <hydro>/nscalars = 2 (0 = off: no
@@ -2056,8 +2056,7 @@ void RyPerRadBook(Mesh *pm) {
       r1(m,k,j) = ffp(m,k,j,iep+1) + (hbp ? bdp(m,k,j) : 0.0);
     });
     rbk1_on_ = true;
-    rbk1n_[0] = pm1->t2_nprobe;
-    rbk1n_[1] = pm1->vgd_rot_ncorr;
+    rbk1n_ = pm1->vgd_rot_ncorr;
     return;
   }
   const Real g = 1.0 - 1.0/std::sqrt(2.0);
@@ -2087,8 +2086,7 @@ void RyPerRadBook(Mesh *pm) {
   const bool hbs = hbdv && hk && (bds.extent_int(0) > 0);
   const bool kres = pm1->t2_k1reset;
   // K1 from a probe solve (see rbk1_): its own r_out faces
-  const bool kp = hk && rbk1_on_ && (pm1->t2_nprobe == rbk1n_[0] + 1.0 ||
-                                     pm1->vgd_rot_ncorr == rbk1n_[1] + 1.0);
+  const bool kp = hk && rbk1_on_ && (pm1->vgd_rot_ncorr == rbk1n_ + 1.0);
   if (hk) {rbk1_on_ = false;}
   DvceArray3D<Real> kpf;
   if (kp) {kpf = rbk1_;}

@@ -75,7 +75,7 @@ const char *kDtrMinimal[] = {
   "m1.t2pf1",
   // esrc (the explicit energy source, OLD vector of E in every solve) is
   // rewritten by the pgen only when its ramp weight changes, at the first Heun stage; the
-  // solves that run before it (time2 start probe / rotation correction) read last cycle's
+  // solves that run before it (the rotation correction) read last cycle's
   "m1.esrc",
   // the wall flux of the last solve, read by the next
   // stage-1 solve for the L_in history (lbath_l1); absent elsewhere (no entry matches)

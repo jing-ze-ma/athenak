@@ -437,6 +437,8 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/zalesak_colsweep", "!"},
     // (the old solver's step history: never kept, its restart channels are read past)
     {"rad_vet/clean_skip_time2_hist", "=true"},
+    // (the hesdirk2 start probe: removed, only be)
+    {"rad_vet/time2_start", "=be"},
     // (the explicit transport's sub-cycling, removed with it)
     {"rad_vet/cfl_rad", ""}, {"rad_vet/subcycle", ""},
     // (the vet_gd twin and its symmetric reference, removed, L4: with vet_gd on the twin
@@ -4831,7 +4833,7 @@ void RadiationVet::CleanStagDrag(const bool first, const bool vel, const bool la
 //! dlz), <rad_vet>/clean_lz_ledger (M1LzKey)
 
 void RadiationVet::CleanLzBook(const Real s, const bool start) {
-  if (t2_inprobe) return;   // (a helper solve, put back: Time2StartProbe, RotCorrect)
+  if (t2_inprobe) return;   // (a helper solve, put back: Time2RotCorrect)
   if (t2_solve == M1_T2S_STAGE1) {
     cln_lzp = (start ? 0.0 : cln_lzp) + ((t2_tab == 0 || t2_tab == 2) ? 0.5 : t2_w0)*s;
     return;

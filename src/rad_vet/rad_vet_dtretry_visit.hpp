@@ -358,8 +358,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("t2hs", t2hs);
   v.value("t2_gt", t2_gt);
   v.value("t2_gtm", t2_gtm);
-  v.value("t2_start", t2_start);
-  v.value("t2_nprobe", t2_nprobe);
   v.value("t2_inprobe", t2_inprobe);
   v.value("t2_vcmode", t2_vcmode);
   v.value("impl_pred_tcap", impl_pred_tcap);
@@ -798,8 +796,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vgd_rot_nalign", vgd_rot_nalign);
   v.value("vgd_rot_slope", vgd_rot_slope);
   v.value("vgd_rot_lastblk", vgd_rot_lastblk);
-  v.value("t2_rotprobe", t2_rotprobe);
-  v.value("vgd_rot_nprobe", vgd_rot_nprobe);
   v.value("t2_rotcorr", t2_rotcorr);
   v.value("t2_vcreuse", t2_vcreuse);
   v.value("vgd_rot_creuse", vgd_rot_creuse);

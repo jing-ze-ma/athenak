@@ -1152,24 +1152,11 @@ class RadiationVet {
   int t2_gt = 0;   // the last Time2GasTime step of this stage loop
   bool t2_gtm = true;   // time2_gtime_mom: the flux state's momentum f = 1/g
   void Time2Restore(Driver *pdrive);
-  // time2_start (read only when named, default be = bitwise): how a step
-  // without a stored slope K1 (the first step, a restart without the slope) starts.
-  // be: the step is Lie split (Heun hydro, then one backward-Euler solve), first order
-  // in time for that step.  slope: a backward-Euler PROBE solve of dt_p = dt from U^n
-  // gives K1 = (Y_p - U^n)/dt_p = f_I(Y_p), U^n is put back, and the step runs the
-  // hesdirk2 stages.  K1 = f_I(U^n) + O(dt) is enough for order 2 (one step), and where
-  // U^n is off the stiff manifold (a pulse with F = 0, a moving gas in a radiation field
-  // at rest) Y_p is the relaxed state, so (1 - g) dt K1 stays a bounded move toward it
-  // (a shorter probe makes K1 ~ jump/dt_p and the stage-1 old vector overshoots by
-  // dt/dt_p, h2order_1011: rsw, rlat floors).
-  int t2_start = 0;             // 0 be, 1 slope
   // implicit_vimp_bc (ImplicitVimpBuild; default true on fresh runs with implicit_vimp,
   // false on a restart whose file lacks it): the implicit_bc_advect enthalpy flux of a
   // Marshak x1 end face takes the stage's radiative kick dv of its cell, as the interior
   // faces do under vimp
-  Real t2_nprobe = 0.0;         // probe solves taken (counter)
-  bool t2_inprobe = false;      // inside the probe solve (ImplicitF0Init moves t2f*)
-  bool Time2StartProbe(Driver *pdrive, Real dt);
+  bool t2_inprobe = false;      // inside a helper solve (Time2RotCorrect)
   void Time2VetStart();        // vet_sc: formal solution at U^n, then extrapolate
   void Time2VetExtrapolate();
   // closure = vet_col under hesdirk2 (m1-sp-order2b): time2_vet_col = lag (D^n in both
@@ -2203,16 +2190,13 @@ class RadiationVet {
   ParameterInput *pin_rot_ = nullptr;
   bool vgd_rot_align = false;
   double vgd_rot_nalign = 0.0;   // steps shortened by VetGdAlignDt (diagnostic)
-  // vet_gd_rotate_slope (with vet_gd_rotate_dt; probe | be | keep): the hesdirk2 FSAL
+  // vet_gd_rotate_slope (with vet_gd_rotate_dt; be | keep | correct): the hesdirk2 FSAL
   // slope K1 of the first step of a new rotation block belongs to the OLD set (an O(dt)
-  // stage-1 error per jump = first order); probe: a time2_start=slope probe solve of the
-  // new set gives K1 (VetGdRotStep), be: that step is backward Euler, keep (default): as
-  // before.  probe / be measured WORSE than keep (vgdrot2 NOTE: the BE probe slope is not
-  // f(U^n) in stiff cells; be is Lie split): opt-in diagnostics only
+  // stage-1 error per jump = first order); be: that step is backward Euler, keep: as
+  // before (be measured WORSE than keep, vgdrot2 NOTE: be is Lie split); probe (a probe
+  // solve of the new set) is removed
   int vgd_rot_slope = 0;
   int64_t vgd_rot_lastblk = INT64_MIN;
-  bool t2_rotprobe = false;
-  double vgd_rot_nprobe = 0.0;
   void VetGdRotStep();
   // vet_gd_rotate_slope = correct (3): on the first step of a new block a
   // CORRECTION solve (Time2RotCorrect) of size dt_c = vet_gd_rotate_slope_frac x dt from

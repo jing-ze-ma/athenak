@@ -760,23 +760,17 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // solve runs INSIDE each Heun stage, after its after_stagen; a stage that is not
       // admissible sends the step back to U^n and through the backward-Euler path below.
       radvet::RadiationVet *pm1 = pmesh->pmb_pack->pradvet;
-      // time2_start = slope: a step without a stored slope gets K1 from a
-      // probe solve and runs the stages (no-op otherwise)
       // the first step of a new vet_gd rotation block drops the old set's
       // slope (vet_gd_rotate_slope; no-op without vet_gd_rotate_dt)
       if (pm1 != nullptr) {pm1->VetGdRotStep();}
       // <rad_vet>/time2_auto_be (off unless named): a step of a skip run takes
-      // the backward-Euler redo path at once (t2_ok = false: no stages, no probe)
+      // the backward-Euler redo path at once (t2_ok = false: no stages)
       if (pm1 != nullptr) {(void) pm1->Time2AutoBeBegin();}
-      // slot 1 = the counters at the stage start; the helper solves
-      // below put U^n back, so their counters are dropped (back to slot 1) too
+      // slot 1 = the counters at the stage start; the helper solve
+      // below puts U^n back, so its counters are dropped (back to slot 1) too
       if (pctr_ != nullptr && pm1 != nullptr) {pctr_->Save(pmesh, 1);}
-      bool m1help = false;
-      if (pm1 != nullptr) {m1help = pm1->Time2StartProbe(this, pmesh->dt);}
       // vet_gd_rotate_slope = correct, the slope's closure jump
-      if (pm1 != nullptr) {
-        m1help = pm1->Time2RotCorrect(this, pmesh->dt) || m1help;
-      }
+      const bool m1help = (pm1 != nullptr) && pm1->Time2RotCorrect(this, pmesh->dt);
       if (m1help && pctr_ != nullptr) {pctr_->Restore(pmesh, 1, 2);}
       const bool m1t2 = (pm1 != nullptr) && pm1->Time2Active();
       bool m1t2fail = false;

@@ -176,12 +176,12 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   }
   // time2_enth_be: the stage solves build the enthalpy face coefficient a_f as the mean
   // of the two cells, but the backward-Euler solves of the same run (the start step, the
-  // time2_start slope probe, the rotation probe, the step after a failed stage) take
-  // implicit_enthalpy's own a_f (plm: the 4-point plm mean).  That changes the operator
-  // for one step of length dt, an O(dt) term of the T ladders (rw_p10t100 E / eint 1.78 /
-  // 1.84 at l 16-32).  true: those solves take the stage rule too. DEFAULT true on a
-  // fresh run; a restart whose file lacks the key keeps false (FIN3, bitwise) -- the same
-  // rule as implicit_cs2_vimp_npass (fresh 3, restart 0).
+  // step after a failed stage) take implicit_enthalpy's own a_f (plm: the 4-point plm
+  // mean).  That changes the operator for one step of length dt, an O(dt) term of the T
+  // ladders (rw_p10t100 E / eint 1.78 / 1.84 at l 16-32).  true: those solves take the
+  // stage rule too. DEFAULT true on a fresh run; a restart whose file lacks the key keeps
+  // false (FIN3, bitwise) -- the same rule as implicit_cs2_vimp_npass (fresh 3, restart
+  // 0).
   t2_enth_be = pin->GetOrAddBoolean("rad_vet", "time2_enth_be",
                                     !global_variable::restart_run);
   // time2_vet_extrap (default false): the stage solves use D^n of the formal solution at
@@ -353,23 +353,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
               << std::endl << "<rad_vet>/time2_one_pass_safety must be 0 or >= 1"
               << std::endl;
     std::exit(EXIT_FAILURE);
-  }
-  // time2_start (rad_vet.hpp; read only when named):
-  // be (default, bitwise) | slope.  The Lie-split backward-Euler first step leaves an
-  // O(dt) start-up error that the second-order steps after it carry along as a free
-  // mode (h2order_1011: P = 10 linear wave, tau 100, v 1.1 1.2 1.0 -> see NOTE).
-  if (pin->DoesParameterExist("rad_vet", "time2_start")) {
-    std::string st = pin->GetString("rad_vet", "time2_start");
-    if (st.compare("be") == 0) {
-      t2_start = 0;
-    } else if (st.compare("slope") == 0) {
-      t2_start = 1;
-    } else {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_vet>/time2_start = '" << st
-                << "' is not a choice (be | slope)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
   }
   t2_dbg_fail = -1;
   if (pin->DoesParameterExist("rad_vet", "time2_dbg_fail")) {
@@ -1598,76 +1581,6 @@ void RadiationVet::EbndAccept(Real dt, bool t2step) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn bool RadiationVet::Time2StartProbe
-//! \brief time2_start = slope: on a hesdirk2 step without a stored slope,
-//! a backward-Euler probe solve of dt_p = dt from U^n (radiation, faces
-//! and gas; no hydro) stores K1 = (Y_p - U^n)/dt_p = f_I(U^n) + O(dt_p); U^n is then put
-//! back and the step runs the two stages, so no step of the run is Lie split.  Returns
-//! true when a probe was taken.  The predictor history the probe leaves is dropped (it
-//! only moves Picard starting points).
-
-bool RadiationVet::Time2StartProbe(Driver *pdrive, Real dt) {
-  // VetGdRotStep asks for the probe at a rotation (any time2_start)
-  if (time_scheme != M1_TIME_HESDIRK2 || (t2_start != 1 && !t2_rotprobe)) return false;
-  // time2_auto_be: a skipped step takes the backward-Euler path, which stores
-  // a fresh slope (of the new rotation set too); no probe
-  if (t2_abe_now) {
-    t2_rotprobe = false;
-    return false;
-  }
-  t2_rotprobe = false;
-  if (Time2Active()) return false;
-  FluidRef fl = FluidRef::Get(pmy_pack);
-  // U^n into the stage-start copies (Time2FormStage(1) overwrites them again)
-  Kokkos::deep_copy(DevExeSpace(), u1, u0);
-  Kokkos::deep_copy(DevExeSpace(), t2f1, f0x1);
-  if (trans_on) {
-    Kokkos::deep_copy(DevExeSpace(), t2f2, f0x2);
-    if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), t2f3, f0x3);}
-  }
-  if (fl.on) {Kokkos::deep_copy(DevExeSpace(), fl.u1, fl.u0);}
-  // <mhd>: U^n = (u1, b1) for the solve (emag1, Time2VetStart); b1 still
-  // holds the last step's start here (the MHD stage 1 copies b0 into it again)
-  if (fl.on && fl.mhd) {
-    Kokkos::deep_copy(DevExeSpace(), fl.pm->b1.x1f, fl.pm->b0.x1f);
-    Kokkos::deep_copy(DevExeSpace(), fl.pm->b1.x2f, fl.pm->b0.x2f);
-    Kokkos::deep_copy(DevExeSpace(), fl.pm->b1.x3f, fl.pm->b0.x3f);
-  }
-  // the cold-start face init (implicit_f0_init) of the probe moves the copy too
-  // (ImplicitF0Init, t2_inprobe), so it survives the put-back
-  Mesh *pmesh = pmy_pack->pmesh;
-  t2_inprobe = true;
-  t2_solve = M1_T2S_BESTORE;
-  t2_fail = false;
-  nsub = 1;
-  dt_sub = dt;
-  pdrive->ExecuteTaskList(pmesh, "vet_before_stagen", 1);
-  pdrive->ExecuteTaskList(pmesh, "vet_stagen", 1);
-  pdrive->ExecuteTaskList(pmesh, "vet_after_stagen", 1);
-  t2_inprobe = false;
-  // U^n back
-  Kokkos::deep_copy(DevExeSpace(), u0, u1);
-  Kokkos::deep_copy(DevExeSpace(), f0x1, t2f1);
-  if (trans_on) {
-    Kokkos::deep_copy(DevExeSpace(), f0x2, t2f2);
-    if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), f0x3, t2f3);}
-  }
-  if (fl.on) {
-    Kokkos::deep_copy(DevExeSpace(), fl.u0, fl.u1);
-    FluidRefresh(pdrive);
-    if (fl.mhd) EmagBuild(false);   // b0 untouched; same faces
-  }
-  t2_solve = M1_T2S_NONE;
-  t2_fail = false;
-  pred_ok = false;
-  pred2_ok = false;
-  t2_ok = true;
-  t2_dtprev = dt;
-  t2_nprobe += 1.0;
-  return true;
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn bool RadiationVet::Time2RotCorrect
 //! \brief vet_gd_rotate_slope = correct (asked for by VetGdRotStep on the first step of a
 //! new vet_gd rotation block, with a valid FSAL slope K1 = f_old(U^n) of the OLD set):
@@ -2504,9 +2417,6 @@ void RadiationVet::Time2Report() {
   if (t2_pcap > 0.0) {
     std::cout << " time2_pred_cap=" << t2_pcap << " limited cell-builds=" << t2_pnlim
               << " of " << t2_pncell;
-  }
-  if (t2_start == 1) {
-    std::cout << " time2_start=slope probes=" << t2_nprobe;
   }
   if (vgd_rot_slope == 3) {
     std::cout << " vet_gd_rotate_slope=correct solves=" << vgd_rot_ncorr << " failed="

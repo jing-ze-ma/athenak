@@ -1342,8 +1342,6 @@ void RadiationVet::VetRotInit(ParameterInput *pin) {
                                            fresh ? "correct" : "keep");
       if (rs.compare("keep") == 0) {
         vgd_rot_slope = 0;
-      } else if (rs.compare("probe") == 0) {
-        vgd_rot_slope = 1;
       } else if (rs.compare("be") == 0) {
         vgd_rot_slope = 2;
       } else if (rs.compare("correct") == 0) {
@@ -1363,7 +1361,8 @@ void RadiationVet::VetRotInit(ParameterInput *pin) {
       } else {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "<rad_vet>/vet_gd_rotate_slope = '" << rs
-                  << "' is not a choice (probe | be | correct | keep)" << std::endl;
+                  << "' is not a choice (be | correct | keep; probe is removed)"
+                  << std::endl;
         std::exit(EXIT_FAILURE);
       }
       if (vgd_rot_auto) {
@@ -1570,12 +1569,10 @@ bool RadiationVet::RotLastStep() const {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdRotStep
-//! \brief vgdrot2-1012 (Driver, before Time2StartProbe): on the first step of a new
+//! \brief vgdrot2-1012 (Driver, before Time2RotCorrect): on the first step of a new
 //! rotation block (physical clock) the stored hesdirk2 slope K1 is f(U^{n-1..n}) of the
 //! OLD set; the FSAL stage 1 would then carry O(dt) of the old closure per jump (first
-//! order however the jumps are aligned).  probe: t2_ok = false + a probe solve (the
-//! time2_start = slope path, its build at U^n with the new set) gives K1 = f_new(U^n) +
-//! O(dt_p); be: t2_ok = false (a backward-Euler step).  The first call (fresh start or
+//! order however the jumps are aligned).  be: t2_ok = false (a backward-Euler step).  The first call (fresh start or
 //! restart) takes the block just before t as the last one, so a restart exactly on a
 //! boundary re-seeds the slope too.
 
@@ -1599,8 +1596,6 @@ void RadiationVet::VetGdRotStep() {
   } else if (b != vgd_rot_lastblk && vgd_rot_slope != 0 && vgd_rot_slope != 3 &&
       time_scheme == M1_TIME_HESDIRK2 && t2_ok) {
     t2_ok = false;
-    t2_rotprobe = (vgd_rot_slope == 1);
-    vgd_rot_nprobe += 1.0;
   }
   vgd_rot_lastblk = b;
 }

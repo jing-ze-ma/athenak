@@ -207,7 +207,7 @@ class DtRetry {
 // not Mesh::ecounter nor the <rad_vet> device counters pos_cnt_d / acl_cnt_d /
 // opn_nskip_d), a hesdirk2 step redone with backward Euler (Time2Restore: U^n back, the
 // hydro stages run again), and the hesdirk2 helper solves whose result is put back
-// (Time2StartProbe, Time2RotCorrect).  Counters only: nothing a kernel reads is touched,
+// (Time2RotCorrect).  Counters only: nothing a kernel reads is touched,
 // so the evolution is bitwise the same with it on or off.  <time>/counters_rollback
 // (default true; read only when named, the parameter dump is unchanged).  Slot 0 = the
 // cycle checkpoint (dt_retry), slot 1 = the stage start (backward-Euler redo).  Cycle:
