@@ -723,6 +723,11 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // change settled; the others leave v, F to the next pass (the same fixed point)
     cln_vset = pin->DoesParameterExist("rad_vet","clean_vel_settled") &&
                pin->GetBoolean("rad_vet","clean_vel_settled");
+    // clean_bud_maxnorm (read only when named; false, the default: the L2 norm): the
+    // budget passes' linear test and Eisenstat-Walker |r0| in the max norm over the cells,
+    // the norm of the pass's own test (CleanNewtonUpdate), not an L2 sum over the cells
+    cln_bmn = pin->DoesParameterExist("rad_vet","clean_bud_maxnorm") &&
+              pin->GetBoolean("rad_vet","clean_bud_maxnorm");
     // clean_gas_tfloor (default true): the gas row's T bounded below by the EOS
     // tfloor, and the gas eint written back from that root (E takes the rest)
     cln_gtf = stag("clean_gas_tfloor", true);
