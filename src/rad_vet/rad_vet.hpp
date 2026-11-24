@@ -1798,15 +1798,9 @@ class RadiationVet {
   bool cln_xsw = false;
   int cln_xqs = -1;   // (5 slots: qL >= 0, qR <= 0, the lagged explicit flux, C(E_k),
                     //  C's last change)
-  // clean_stag_kpos (staggered, default off): the explicit stage increment of hesdirk2
-  // limited to E_old >= th E_s, conservatively (CleanStagKPos); clean_stag_xpat (default
-  // off): the exchange's removal -r hcke E_k past its share of the row in Patankar form
-  // (CleanRightHandSide)
-  bool cln_kpos = false, cln_xpat = false;
-  bool cln_kpb = false;   // (kpos limited this stage: its closure print)
-  bool cln_kq_on = false;   // (kpos: the stage's q and pd set)
-  int cln_kqs = -1;   // (kpos: 2 face slots, the moved flux's qL >= 0, qR <= 0)
-  DvceArray4D<Real> cln_ky1;   // (kpos: E of the stage-1 solution, K2's reference)
+  // clean_stag_xpat (default off): the exchange's removal -r hcke E_k past its share of
+  // the row in Patankar form (CleanRightHandSide)
+  bool cln_xpat = false;
   bool cln_kreal = false;   // (S3B kick bound: CLW_KS set in CleanOldVector)
   bool cln_kpat = false;    // clean_stag_kpat (CleanStagKPat)
   bool cln_eicry = false;   // clean_stag_eicarry (CleanOldVector)
@@ -1842,12 +1836,6 @@ class RadiationVet {
   ParameterInput *cln_lzpin = nullptr;
   void CleanLzBook(const Real s, const bool start);
   Real CleanLzTotal();   // (the history's L_z: gas + radiation + ledger)
-  int cln_kmode = 0;        // (clean_stag_kpos: 1 faces, 2 cell, 3 redo, 4 delta)
-  Real cln_ktau = 0.0;      // (delta: tau/h of the stage)
-  void CleanStagKDelta();
-  int cln_kredo = 0;        // (redo: rounds of this stage)
-  Real cln_kredo_neg = 0.0;   // (redo: X <= 0 cells of the last round)
-  bool CleanStagKRedo();
   bool cln_xtnorm = false, cln_xtcons = false;   // (CleanFirstIterate, CleanSolve)
   int cln_xte = 0;   // (clean_xt_exact: 0 off, 1 cons, 2 x2)
   int cln_gnsw = 0, cln_gnswmin = 20;   // clean_gas_newton_switch, _min
@@ -1861,9 +1849,7 @@ class RadiationVet {
   bool cln_krel_on = false;
   void CleanStagKReal();
   void CleanStagKPat();
-  Real cln_kc1 = 0.0, cln_kc2 = 0.0;   // (the stage's c1, c2 of t2pf1, t2pf2)
   DvceArray1D<Real> cln_kcnt;   // (xpat rows: the last pass; their sum)
-  void CleanStagKPos();
   void CleanStagKEnd();
   int cln_fdg = -1;             // staggered bracket: face slot of its lagged flux DG
   bool cln_opt = false;         // clean_stag_opac_update: opacities at the iterate's T

@@ -559,12 +559,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_xsrc", cln_xsrc);
   v.value("cln_xsw", cln_xsw);
   v.value("cln_xqs", cln_xqs);
-  v.value("cln_kpos", cln_kpos);
   v.value("cln_xpat", cln_xpat);
-  v.value("cln_kpb", cln_kpb);
-  v.value("cln_kq_on", cln_kq_on);
-  v.value("cln_kqs", cln_kqs);
-  v.view("cln_ky1", cln_ky1);
   v.value("cln_kreal", cln_kreal);
   v.value("cln_kpat", cln_kpat);
   v.value("cln_eicry", cln_eicry);
@@ -595,10 +590,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_lzs2", cln_lzs2);
   v.value("cln_lzc", cln_lzc);
   v.value("cln_lzp", cln_lzp);
-  v.value("cln_kmode", cln_kmode);
-  v.value("cln_ktau", cln_ktau);
-  v.value("cln_kredo", cln_kredo);
-  v.value("cln_kredo_neg", cln_kredo_neg);
   v.value("cln_xtnorm", cln_xtnorm);
   v.value("cln_xtcons", cln_xtcons);
   v.value("cln_xte", cln_xte);
@@ -608,8 +599,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_gpic", cln_gpic);
   v.value("cln_ngnsw", cln_ngnsw);
   v.value("cln_krel_on", cln_krel_on);
-  v.value("cln_kc1", cln_kc1);
-  v.value("cln_kc2", cln_kc2);
   v.view("cln_kcnt", cln_kcnt);
   v.value("cln_fdg", cln_fdg);
   v.value("cln_opt", cln_opt);

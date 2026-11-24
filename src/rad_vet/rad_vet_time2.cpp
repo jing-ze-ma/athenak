@@ -1011,8 +1011,6 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
   });
   cln_lzc = c1*cln_lzs1 + (two ? c2*cln_lzs2 : 0.0);   // (clean_cs_lz_abs = 2)
   CleanDInc(two, c1, c2, heun ? 0.5 : w1, heun ? 0.5 : w0);
-  cln_kc1 = c1;   // (clean_stag_kpos: the face part of the increment, CleanStagKPos)
-  cln_kc2 = two ? c2 : 0.0;
   // <hydro>/am_vector: the spin reservoir's increment from its slopes
   if (am_vec && aminc.extent_int(0) > 0) {
     auto a1_ = amk1;

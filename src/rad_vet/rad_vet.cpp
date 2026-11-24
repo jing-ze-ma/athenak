@@ -525,28 +525,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_xlag = (xd == "lag");
     cln_xsrc = cln_xd && pin->GetOrAddBoolean("rad_vet","clean_stag_xsrc",nw);
     cln_xsw = cln_xd && stag("clean_stag_xsweep", false);
-    // clean_stag_kpos = off (default) | faces (= true) | cell | redo: the stage increment
-    // in MPRK form (CleanStagKPos): faces, every slope face flux and the cell part
-    // moved; cell, the cell part and the x1 boundary only, the face fluxes explicit;
-    // redo, as cell, and where the solve gives X <= 0 the stage again with those
-    // donors' faces moved (CleanStagKRedo, rounds, the last all faces)
-    {
-      const std::string kp = !pin->DoesParameterExist("rad_vet", "clean_stag_kpos") ?
-                             "off" : pin->GetString("rad_vet", "clean_stag_kpos");
-      if (kp != "off" && kp != "false" && kp != "true" && kp != "faces" &&
-          kp != "cell" && kp != "redo" && kp != "delta") {
-        std::cout << "### FATAL ERROR <rad_vet>/clean_stag_kpos = off | faces | cell | "
-                     "redo"
-                  << " | delta" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      // (delta: as faces, but each face's slope flux G splits into tau (al E + ar E) of
-      // the stage's own coefficients, implicit, and the rest dG = G - tau (al E_s,L +
-      // ar E_s,R) moved as q X_donor: near equilibrium dG -> 0, CleanStagKDelta)
-      cln_kmode = (kp == "true" || kp == "faces") ? 1 : (kp == "cell" ? 2 :
-                  (kp == "redo" ? 3 : (kp == "delta" ? 4 : 0)));
-      cln_kpos = (cln_kmode > 0);
-    }
     cln_kreal = stag("clean_stag_kreal", false);
     // clean_stag_kpat (default off): the stage increment's gas kick in Patankar form, the
     // start's E and gas eint >= 0, the momentum rest in the faces' F (CleanStagKPat)
@@ -637,18 +615,13 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_xte = (xe == "cons") ? 1 : ((xe == "x2") ? 2 : 0);
       if (cln_xte > 0) cln_xtcons = true;
     }
-    if (cln_kpat && cln_xte == 0 && !cln_kpos && !cln_xpat) {   // (CLW_KF..+2: the rest)
+    if (cln_kpat && cln_xte == 0 && !cln_xpat) {   // (CLW_KF..+2: the rest)
       std::cout << "### FATAL ERROR <rad_vet>/clean_stag_kpat needs clean_xt_exact" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    if (cln_ucp && (cln_kpos || cln_xpat || cln_xte != 1)) {   // (CLW_PD: the work's q)
+    if (cln_ucp && (cln_xpat || cln_xte != 1)) {   // (CLW_PD: the work's q)
       std::cout << "### FATAL ERROR <rad_vet>/clean_stag_central needs clean_xt_exact = "
-                << "cons, without clean_stag_kpos / xpat" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    if (cln_kpos && cln_xte == 2) {   // (x2's local 2x2 has no kpos gas term)
-      std::cout << "### FATAL ERROR <rad_vet>/clean_stag_kpos with clean_xt_exact = x2 "
-                << "is not implemented" << std::endl;
+                << "cons, without clean_stag_xpat" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     cln_xtnorm = stag("clean_xt_norm", false) || cln_xte == 2;
