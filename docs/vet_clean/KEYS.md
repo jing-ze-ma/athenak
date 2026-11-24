@@ -68,6 +68,7 @@ out of a restart deck changes the scheme silently. The templates name them all.
 | `<rad_vet>/vet_gd_wall_sym`, `vet_gd_theta_seam_sym` | `true` | read only when named; a theta-periodic deck without `vet_gd_theta_seam_sym` stops with a FATAL |
 | `<hydro>/floor_pay` | `rad_column` | older star restart files do not store it (restart default: none) |
 | `<hydro>/floor_pay_skip`, `dfloor_flux_limit`, `rad_signal_speed_diff` | `true` | read only when named |
+| `<hydro>/fofc`, `fofc_retest` | `true` | older star restart files store `fofc = false` |
 | `<mesh>/layout_invariant_mode` | `tile` | see "Layout and reproducibility" |
 | `<mesh>/layout_tile` | `128` | the lateral MeshBlock size of the templates |
 
@@ -155,6 +156,7 @@ Transverse Marshak faces are not supported by the ray sweep (FATAL).
 | `hydro/floor_pay_skip` | Pay also the energy that the density floor and the velocity ceiling change. Needs `floor_pay`. | false (read only when named) | all: `true` | `hydro/dual_energy.cpp` |
 | `hydro/floor_from_ekin` | General-EOS hydro: the primitive recovery keeps E; the velocity ceiling's kinetic energy becomes heat, and a kinetic-energy-dominated cell below e(rho, tfloor) pays the deficit from its own r and theta kinetic energy where that covers it. The phi momentum (L_z) is never scaled (where the phi part alone exceeds `vceil`, the r / theta part goes to 0 and |v| = |v_phi| may stay above `vceil`; Cartesian phi_hat = (-y, x)/R); cells it cannot pay take the floors as before (paid by `floor_pay`). Removes r / theta momentum there (not booked). FATAL with another EOS or `dual_energy`. | false (read only when named) | not named (Caltech t9l62 arm) | `eos/eos.cpp` (constructor) |
 | `hydro/dfloor_flux_limit` | Scale back the outflow of a nearly empty cell so its density stays above the floor (both neighbours see the same flux). | false (read only when named) | all: `true` | `hydro/hydro.cpp` |
+| `hydro/fofc`, `fofc_retest` | First-order flux correction: a trial update from the fluxes flags every cell where a floor or the velocity ceiling would act, and its faces take the first-order LLF flux (both neighbours see the same flux: E, mass, momentum and L_z exact). `fofc_retest` re-tests the flagged cells with the metric-correct internal energy (needs `eos = general`). Needs `nghost >= 3` with `plm`. The cell-stages replaced are counted (`FOFC first-order cell-stages`, the run total). | false / false | all: `true` / `true` | `hydro/hydro_fofc.cpp` |
 
 ## Layout and reproducibility
 
