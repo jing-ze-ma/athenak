@@ -16,3 +16,4 @@
 - pre-switch (log.1): 0.6213 s/cyc (c4350-4600), dt 6.063733e+01. Clean STOP: yes ('Terminating on stop request'). Pre-switch rst kept as rst_keep/bsg3d.00006.rst.pre-mg4.
 - relaunch: `2026-11-24 01:30:33 chunk 1 rc=0 last: time=5e+05 cycle=4722` + EX: hydro/fofc=true hydro/fofc_retest=true rad_vet/clean_stag_mg_levels=4
 - log echo (log.1): (no mg_levels line yet) | <hydro>: fofc_retest 1
+- bsg 300 cycles on mg4 (11-24 01:32): CW 0, FATAL 0, created inf 0, DT_RETRY 0. **before** 0.6213 s/cyc (c4350-4600), dt 6.063733e+01 -> **after** 0.6254 s/cyc (c4450-4700), dt 5.716051e+01
