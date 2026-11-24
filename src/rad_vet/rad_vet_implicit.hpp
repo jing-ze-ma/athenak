@@ -765,7 +765,7 @@ Real M1SphDrr(const Real chi, const Real n1, const Real s2) {
   return 0.5*(1.0 - chi) + 0.5*(3.0*chi - 1.0)*n1*n1*s2;
 }
 
-//! \fn M1SphMarshakFaceE
+//! \fn M1SphMarshakCoef
 //! \brief <rad_vet>/implicit_marshak_face = linear (m1-sp-order2, spherical-polar wedge,
 //! tests_m1/runs_5o_sporder2): the E of a Marshak boundary FACE at r_f, from the end cell
 //! (E ec at its centroid rc) and its interior neighbour (en at rn), by the linear
@@ -775,25 +775,13 @@ Real M1SphDrr(const Real chi, const Real n1, const Real s2) {
 //!   cb = alpha (rn/r_f)^2,  ca > cb >= 0.
 //! The implicit row carries E_lin itself (ca on the diagonal, -cb on the neighbour: a
 //! non-positive off-diagonal and a diagonally dominant row, so the M-matrix sign pattern
-//! stays).  The returned value is E_lin LIMITED to [0, 2 ca ec / (1 + alpha)] (i.e. G_f
-//! in [0, 2 G_end], the bound of the van Leer face value of implicit_enthalpy = plm);
-//! the difference limited - linear at the lagged iterate is a deferred correction that
-//! vanishes wherever the limiter is inactive (every smooth profile).
+//! stays).
 
 KOKKOS_INLINE_FUNCTION
 void M1SphMarshakCoef(const Real rc, const Real rn, const Real rf, Real &ca, Real &cb) {
   const Real al = (rf - rc)/(rc - rn);
   ca = (1.0 + al)*SQR(rc/rf);
   cb = al*SQR(rn/rf);
-}
-
-KOKKOS_INLINE_FUNCTION
-Real M1SphMarshakFaceE(const Real ec, const Real en, const Real rc, const Real rn,
-                       const Real rf) {
-  Real ca, cb;
-  M1SphMarshakCoef(rc, rn, rf, ca, cb);
-  const Real ecap = 2.0*SQR(rc/rf)*ec;
-  return fmin(fmax(ca*ec - cb*en, 0.0), ecap);
 }
 
 //----------------------------------------------------------------------------------------

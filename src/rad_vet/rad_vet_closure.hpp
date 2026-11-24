@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_closure.hpp
-//! \brief Levermore (1984) M1 closure, the flux limiter and the Skinner & Ostriker
+//! \brief Levermore (1984) M1 closure and the Skinner & Ostriker
 //! (2013, eq. 41a) closed-form wave speeds, as device-inline functions.
 //!
 //! Conventions (docs/dev/rad_vet_design.md sect. 1 and 3): E is the lab-frame radiation
@@ -50,70 +50,6 @@ Real M1Chi(const Real fnorm, const int kind = M1_CHI_LEVERMORE) {
   }
   Real s = sqrt(fmax(4.0 - 3.0*f2, 0.0));
   return (3.0 + 4.0*f2)/(5.0 + 2.0*s);
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn M1ApplyLimits
-//! \brief Apply the energy floor and the flux limit |F| <= c E to one cell state.  The
-//! flux is scaled by (c E/|F|), NOT by the square of that ratio.  Returns true if either
-//! limit was active.
-
-KOKKOS_INLINE_FUNCTION
-bool M1ApplyLimits(const Real cl, const Real e_floor,
-                   Real &e, Real &f1, Real &f2, Real &f3) {
-  bool limited = false;
-  if (!(e > e_floor)) {
-    e = e_floor;
-    limited = true;
-  }
-  Real fmag = sqrt(f1*f1 + f2*f2 + f3*f3);
-  Real fmax = cl*e;
-  if (fmag > fmax) {
-    Real scale = (fmag > 0.0) ? (fmax/fmag) : 0.0;
-    f1 *= scale;
-    f2 *= scale;
-    f3 *= scale;
-    limited = true;
-  }
-  return limited;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn M1FluxNormCs
-//! \brief STAGE CS2 (cubed sphere): the physical |F| of a flux whose (f2, f3) are
-//! COVARIANT on the panel basis at the cell angle c = cos_cell:
-//! |F|^2 = f1^2 + g^ab f_a f_b, g^ab = [[1, -c], [-c, 1]]/(1 - c^2).  The one place this
-//! metric norm is written; the write-back clip (M1ApplyLimitsCs) and
-//! implicit_realisable_coupling both use it.
-
-KOKKOS_INLINE_FUNCTION
-Real M1FluxNormCs(const Real c, const Real f1, const Real f2, const Real f3) {
-  return sqrt(f1*f1 + (f2*f2 + f3*f3 - 2.0*c*f2*f3)/(1.0 - c*c));
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn M1ApplyLimitsCs
-//! \brief STAGE CS2 (cubed sphere): M1ApplyLimits for a flux whose (f2, f3) are COVARIANT
-//! on the panel basis at the cell angle c = cos_cell, with |F| = M1FluxNormCs.
-
-KOKKOS_INLINE_FUNCTION
-bool M1ApplyLimitsCs(const Real cl, const Real e_floor, const Real c,
-                     Real &e, Real &f1, Real &f2, Real &f3) {
-  bool limited = false;
-  if (!(e > e_floor)) {
-    e = e_floor;
-    limited = true;
-  }
-  Real fmag = M1FluxNormCs(c, f1, f2, f3);
-  Real fmax = cl*e;
-  if (fmag > fmax) {
-    Real scale = (fmag > 0.0) ? (fmax/fmag) : 0.0;
-    f1 *= scale;
-    f2 *= scale;
-    f3 *= scale;
-    limited = true;
-  }
-  return limited;
 }
 
 //----------------------------------------------------------------------------------------
