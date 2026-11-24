@@ -1,0 +1,31 @@
+--- IA122_t9l62
++++ IA123_t9l62
+@@ -0,0 +1 @@
++# IA12.3-rc1 2026-11-24 vet-ia123-rc1 da92efe70 (release trunk vet-clean-release + IA12.3). = caltech_ia122/notile/IA122_t9l62.athinput in the release names (<rad_vet>, vet*) with ONLY the IA12.3 best keys (mk.py header)
+@@ -78,0 +80 @@
++floor_from_ekin = true   # IA12.3 FLOORT/GEOMAUDIT/LZCUT: c2p keeps E; vceil KE -> heat; KE-dominated tfloor deficit paid from own r/theta KE (phi kept, L_z exact)
+@@ -111 +113 @@
+-<rad_m1>
++<rad_vet>
+@@ -146 +147,0 @@
+-implicit_pos_floor_solve = true   # F3 (needs implicit_pos_floor = true)
+@@ -162,0 +164,5 @@
++vet_gd_wall_sym = true   # IA12.3 WALLSYM: mirror-paired phi-wall maps (identical on whole-period wedges)
++vet_gd_theta_seam_sym = true   # IA12.3: theta seam face from both sides (equatorial mirror); FATAL without it on theta-periodic meshes
++clean_clos1_budget = true   # IA12.3 HALFDAY-M35 L1: extrap1 stage-1 pass 0 in the budget norm (-6..-10 % s/cyc, inside the dt-halving band)
++clean_bud_maxnorm = true   # IA12.3 HDM35-C (83b71abed form; HALF12 may replace the form): budget test in the per-cell max norm
++clean_vel_settled = false   # IA12.3 HDM35-B: named OFF: breaks the well-balanced tests wb_sp / wb_cs (vmax/cs 2e-4)
+@@ -206 +211,0 @@
+-cs_cross_mono = true   # FRESHPREP
+@@ -305 +310 @@
+-he_ic_linhao             = false                  # IC from he_ic_file (no Ma+2026 IC/seed)
++he_ic_profile             = false                  # IC from he_ic_file (no Ma+2026 IC/seed)
+@@ -355 +360 @@
+-variable  = m1
++variable  = vet
+@@ -365 +370 @@
+-variable  = m1_vet
++variable  = vet_vet
+@@ -369 +374 @@
+-variable  = m1_face       # face fluxes fx1/fx1o/fx2/fx3: the thin-atmosphere check (TRUEREPRO.md sect. atm)
++variable  = vet_face       # face fluxes fx1/fx1o/fx2/fx3: the thin-atmosphere check (TRUEREPRO.md sect. atm)
