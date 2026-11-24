@@ -6,16 +6,9 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file vet_fluid.hpp
-//! \brief m1-mhd (docs/dev/m1_mhd_0927.md): ONE accessor for the fluid the grey M1
-//! module couples to -- <hydro> or <mhd> -- so that every M1 kernel and the two M1
-//! problem generators (box_convection, rad_vet_beam) run one code path.
-//!
-//! FluidRef is a host-side value built by FluidRef::Get(pmbp) each time it is needed:
-//! shallow copies of the fluid's Views (a Kokkos View assignment copies the handle, not
-//! the data) plus its flags and EOS.  Kernels copy the members they need into locals
-//! exactly as before (`auto uh = fl.u0;`), so a hydro run executes the same arithmetic
-//! on the same memory (bitwise).  Under MHD the conserved energy also carries |B|^2/2:
-//! the M1 kernels subtract it with the cell field the MHD C2P builds (M1EmagCell).
+//! \brief FluidRef: one accessor for the fluid M1 couples to (<hydro> or <mhd>).
+//! FluidRef::Get(pmbp) returns shallow View handles plus flags and EOS. Under MHD the
+//! conserved energy carries |B|^2/2, removed with the C2P cell field (M1EmagCell).
 
 #include <utility>
 
@@ -78,8 +71,7 @@ struct FluidRef {
     pcond = p->pcond;
     pvisc = p->pvisc;
   }
-  // swap the OWNER's u0 and u1 (the handles; used to evaluate a U^n-state quantity with
-  // a routine that reads u0).  The FluidRef copies are swapped too.
+  // swap the owner's u0/u1 handles (and these copies): evaluate U^n with a u0 reader
   void SwapU01() {
     if (pm != nullptr) {
       std::swap(pm->u0, pm->u1);
@@ -101,12 +93,9 @@ struct FluidRef {
 
 //----------------------------------------------------------------------------------------
 //! \fn Real M1EmagCell
-//! \brief |B|^2/2 of the cell field built from the faces EXACTLY as the MHD C2P builds it
-//! (general_mhd.cpp / ideal_mhd.cpp ConsToPrim): spherical polar = the x_v-weighted mean
-//! in all three directions; cubed sphere = CellCenteredRadialFld in x1 and plain means in
-//! x2, x3; otherwise plain face means.  The temperature M1 forms is then the C2P's.
-//! The three face arrays are passed separately so that a hydro caller can hand any
-//! existing 4-D View as a never-read dummy (no allocation).
+//! \brief |B|^2/2 of the cell field, averaged from faces exactly as the MHD ConsToPrim
+//! does (sph: x_v-weighted; cs: CellCenteredRadialFld in x1; else plain means).
+//! A hydro caller may pass any 4-D View as never-read face arrays.
 
 KOKKOS_INLINE_FUNCTION
 Real M1EmagCell(const DvceArray4D<Real> &b1f, const DvceArray4D<Real> &b2f,
