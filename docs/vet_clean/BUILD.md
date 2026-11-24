@@ -89,7 +89,7 @@ Known-good module sets:
 |---|---|---|---|
 | MPCDF Raven | A100 | `gcc/13 cuda/12.6 openmpi_gpu/5.0 cmake/3.30` | `AMPERE80` |
 | Caltech HPC (Resnick) | H200 | `gcc/13.2.0-gcc-13.2.0-w55nxkl cuda/12.9.0-none-none-pfmzfdv hpcx/2.17.1/hpcx-ompi` (cmake from the system or a module of version >= 3.20) | `HOPPER90` |
-| NCSA DeltaAI | GH200 | `cudatoolkit` 12.9 (Cray PE, host compiler `CC`: `NVCC_WRAPPER_DEFAULT_COMPILER=CC`) | `HOPPER90` |
+| NCSA DeltaAI | GH200 | the default modules (`PrgEnv-gnu`, `gcc-native/14`, `cudatoolkit/25.5_12.9`, `cray-mpich`; host compiler `CC` = g++ 14: `NVCC_WRAPPER_DEFAULT_COMPILER=CC`; system cmake 3.28; configure checked for this release, build not re-run) | `HOPPER90` |
 
 At run time on the H200 cluster above, set `UCX_TLS=^xpmem OMPI_MCA_io=romio321`. On the A100
 cluster, set `UCX_IB_GPU_DIRECT_RDMA=0`.
