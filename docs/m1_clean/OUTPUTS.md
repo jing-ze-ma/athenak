@@ -2,8 +2,7 @@
 
 This page describes what a production star run (problem generator `he_star_m1`, decks
 `inputs/rad_m1_clean/star_bsg`, `star_m35mms`, `star_t9l62`) writes as history data and as run-time messages,
-and how to check energy and mass conservation from the history file. It refers to the
-release commit 512cf768a. The input keys are described in `KEYS.md`.
+and how to check energy and mass conservation from the history file. The input keys are described in `KEYS.md`.
 
 Units: the decks set `<units>` length, mass and time to 1, so code units are cgs (cm, g, s,
 erg). The only exception is the temperature: the code temperature is T[K] /
@@ -98,7 +97,7 @@ Definitions used in the table:
 | 18 | Etot | sum (U_E + E) V: gas total energy (internal + kinetic + rho Phi_grav) plus radiation energy. With closed walls its rate is L_in - L_top. | erg |
 | 19 | Min_top | inflow part at the outer face, sum min(f_rho, 0) A (<= 0); the outer boundary removes this inflow | g/s |
 | 20 | v1sq_wall | mean v_r^2 over the first active radial cells of the whole mesh | cm^2/s^2 |
-| 21 | Picard | mean passes per implicit solve since the previous row. **Always 0 on this commit**: the counter belongs to the old solver; the clean solve reports its passes in the `CLEAN cycle` lines (section 4.2). | - |
+| 21 | Picard | **Always 0** under `scheme = clean`; the clean solve reports its passes in the `CLEAN cycle` lines (section 4.2). | - |
 | 22 | P_esrc | power that the explicit radiation source term puts into E, sum (chat/c) esrc V, at the state of this row. 0 in the decks (no frozen MLT deposit, no test source). | erg/s |
 | 23 | P_sponge | rate of kinetic energy loss of the top sponge at the state of this row. 0 in the decks (`he_sponge_rate` = 0). | erg/s |
 | 24 | M_hflx | hydro mass leaving through the physical x1 faces (inner + outer, outward positive) over the step, divided by dt. These are the RK-weighted fluxes the update used (`AmBndFlux`, `src/hydro/hydro_am.cpp:637`), so they close the mass budget exactly. Needs the angular-momentum module (`<hydro>/am_transport`, on in the decks); 0 without it. | g/s |
@@ -107,7 +106,7 @@ Definitions used in the table:
 | 27 | Lz_tot | L_z of gas + radiation, including the radiation's L_z ledger (`CleanLzTotal`) | g cm^2/s |
 | 28 | L_midE | sum Phi A at the L_mid face: the energy flux that moved E there | erg/s |
 | 29 | L_intE | sum Phi A at the L_int face | erg/s |
-| 30 | L_midC | L_midE minus the advective part: sum (Phi - (4/3) v E) A at the L_mid face, with v and E the means of the two cells beside the face. This is the comoving radiative flux, the quantity the old solver's L_mid measured. | erg/s |
+| 30 | L_midC | L_midE minus the advective part: sum (Phi - (4/3) v E) A at the L_mid face, with v and E the means of the two cells beside the face. This is the comoving radiative flux. | erg/s |
 | 31 | L_intC | the same at the L_int face | erg/s |
 
 Notes:
@@ -131,7 +130,7 @@ where the density floor acted), `eos_efloor`, `eos_tfloor`, `eos_vceil`, `eos_fa
 m1_newt_fb m1_gn_switch m1_od_fall m1_vlat_fall m1_opn_skip m1_pos_flr m1_pos_un m1_pos_s2
 m1_acl_e m1_acl_f` (`src/outputs/eventlog.cpp`). For the clean scheme the radiation columns
 that matter are `m1_pos_flr` (E floor raises) and `m1_pos_un` (energy the E floor created,
-x volume); most of the others are counters of the old solver.
+x volume); most of the others are not used by the clean scheme.
 
 ## 3. Checking energy and mass conservation from `<basename>.user.hst`
 
@@ -151,7 +150,7 @@ M_tot. A conservative step gives rE/(L_in dt) at round-off (about 1e-9 or less) 
 of about 1e-15.
 
 **The density floor term.** `dE_floor` and `dM_floor` are the energy and mass that the hydro
-floors created in the step. On this commit they are **not** in the history file.
+floors created in the step. They are **not** in the history file.
 
 - The mass that `<hydro>/dfloor` creates adds to M_tot, and each gram adds its potential
   energy Phi_grav = GM (1/r_in - 1/r) >= 0 to Etot (`etotgrav = true`; he_star_m1 sets the
@@ -162,7 +161,7 @@ floors created in the step. On this commit they are **not** in the history file.
 - So if the density floor is active, rE is not at round-off. Because the floor acts near the
   top, where Phi_grav is largest, the residual can be large compared with round-off: in the
   bsg deck the floor mass gives rE of order 1e-4 L_in dt per cycle at about 1.3e15 erg per
-  gram of floor mass (measured on this release), while m35mms stays at about 1e-9.
+  gram of floor mass (measured), while m35mms stays at about 1e-9.
 - A working estimate: on a step with no other mass source, rM (computed without the floor
   term) **is** the floor mass. Then dE_floor is about rM x Phi_grav(r) of the floored cells;
   near the top Phi_grav ~ GM (1/r_in - 1/r_top), with GM = `<problem>/he_gm`. Use the event
@@ -232,6 +231,12 @@ handled but that the user should know about.
 
 ### 4.2 Other per-cycle lines of the clean scheme
 
+With `<rad_m1>/clean_verbose = 0` (default) the code prints the `CLEAN cycle` lines, the
+`CLEAN WARNING` lines and the event lines (`CLEAN WORST`, `GNSW`, `BICGSTAB`, `RETRY`, `KPOS`
+without a face slope). `clean_verbose = 1` adds the per-solve diagnostics (`CLEAN MCAP`,
+`OLDVEC`, `FWB`, `FLIM`, `FCONE`, `LZ`/`LZB`, `WBFCT`, `KPOS`, `KREAL`, `XPAT`, the `XT`
+write-back closure, the ray cut). `CLEAN WARNING` lines always print.
+
 | line | meaning | what to look at |
 |---|---|---|
 | `CLEAN cycle N t2s S it K (sum M) pos 0 mark 0 all 0 neg Q r1 . r2 . first . . guard . solves . cwin .` | One line per radiation solve. `it`: Newton/Picard passes of this solve (**negative = not converged**); `sum`: linear iterations; `neg`: cells with E < 0 after the solve; `cwin`: linear solves that stopped on the stall window. | `it` < 0 and `neg` > 0 should be rare. |
@@ -263,24 +268,24 @@ block of `<rad_m1>`, `<time>` and `<hydro>` lines. The ones that matter for the 
 | `<rad_m1> m1-positivity: ... implicit_pos_gas=1 ... cell-solves=K energy moved rad->gas=X \| E floor raises cell-solves=K energy from gas=X energy created=Y ... taken from the column's radiation (implicit_pos_floor_cons)=Z \| \|F\| > c E scaled back cell-solves=... \| hydro EOS floors energy created=W` | The positivity book-keeping of the clean write-back. **`energy created` (Y) should be 0**: a non-zero value is energy the E floor created (energy x volume). `energy from gas` and `taken from the column's radiation` are moves (conserved). The last field repeats the hydro floors' internal energy. |
 | `<hydro> EOS floors (all ranks, accepted steps, RK-weighted): mass created x vol=M energy created x vol=E \| FOFC first-order cell-stages=K` | The run total of the mass and internal energy the hydro floors created (cgs, since the start or restart). M is the density-floor mass of section 3 (its potential energy is not in E). |
 | `<time> dt_retry: N checkpoints (...), R retries, cap X` and `<time> dt_retry: K cycles took the backward-Euler redo` | How many cycles were retried, and the dt cap at the end. |
-| `<rad_m1> implicit transport: solves=0 Picard iterations mean=0 max=0 NON-CONVERGED=0` | Counters of the old solver: always 0 under `scheme = clean` on this commit. Use the CLEAN lines and the CLEAN WARNINGs instead. |
-| `<rad_m1> floor clips (all ranks, every solve incl. BE): solved E <= e_floor cell-solves=0 written-back gas eint <= 0 cell-solves=0` | Also counters of the old solver (not incremented by the clean scheme). Use the `m1-positivity` line. |
+| `<rad_m1> implicit transport: solves=0 Picard iterations mean=0 max=0 NON-CONVERGED=0` | Not used by the clean scheme: always 0 under `scheme = clean`. Use the CLEAN lines and the CLEAN WARNINGs instead. |
+| `<rad_m1> floor clips (all ranks, every solve incl. BE): solved E <= e_floor cell-solves=0 written-back gas eint <= 0 cell-solves=0` | Not incremented by the clean scheme. Use the `m1-positivity` line. |
 | `<rad_m1> implicit energy solve: cells=... FAILURES=...` | The explicit-transport energy solve; not used by the clean scheme. |
 
 ### 4.4 Start-up messages and FATAL errors
 
 - `### WARNING (scheme = clean): <rad_m1/key> has no effect, the clean solve reads <rad_m1>/other`
-  and `### WARNING (scheme = clean): no effect: ...`: the input names a key of the old
-  solver; use the clean key named in the message. (`CleanPreflight`,
+  and `### WARNING (scheme = clean): no effect: ...`: the input names a key that the clean
+  solve does not use; use the clean key named in the message. (`CleanPreflight`,
   `src/rad_m1/rad_m1_clean.cpp:366`.)
-- `### NOTE: <rad_m1>/implicit_maxit = A is not the clean solve's: clean_maxnl = B`: the old
+- `### NOTE: <rad_m1>/implicit_maxit = A is not the clean solve's: clean_maxnl = B`: that
   key is ignored; name the clean key to change the limit.
 - `### WARNING: N input parameter(s) were never read by the code`: printed after the first
-  cycle; check each listed key for a typo (the keys listed in `KEYS.md` as never read are
-  expected there).
+  cycle; check each listed key for a typo (keys that the templates name without effect, `KEYS.md` appendix, may be
+  listed).
 - `### FATAL ERROR ... <rad_m1/key> belonged to a removed path` / `removed from this build
   (only V is accepted)` / `has no counterpart in scheme = clean`: the input names a removed
-  key or a removed value; remove it or set it to the accepted value. A restart file of an old
+  key or a removed value; remove it or set it to the accepted value. A restart file of an earlier
   run may carry such a key: override it on the command line (for example
   `rad_m1/time2_stage_local_be=false`).
 - `<rad_m1>/scheme = clean currently needs a uniform mesh and chat = c`, `... on spherical
@@ -301,13 +306,12 @@ block of `<rad_m1>`, `<time>` and `<hydro>` lines. The ones that matter for the 
 
 ## 5. Caveats
 
-- The column meanings come from `HeStarHist` and the functions it reads on commit
-  512cf768a. Columns can be added in later versions; always read the header.
+- The column meanings come from `HeStarHist` and the functions it reads. Columns can be
+  added in later versions; always read the header.
 - `Phi` in L_midE/L_intE is the flux of the step's last solve as stored for the next step's
   first slope (`t2pf1`). This follows the code comment and the write path in
   `CleanWriteBack` (`src/rad_m1/rad_m1_clean.cpp:5812`); it was not checked against a dump.
 - That `E_hflx` contains the potential-energy flux rho v Phi_grav (so that Etot closes with
   etotgrav) follows from the conserved-energy flux the hydro uses; it was not traced line by
   line.
-- The size of the density-floor residual quoted in section 3 comes from a measurement on this
-  release for the bsg and m35mms decks; other decks and run phases differ.
+- The size of the density-floor residual quoted in section 3 comes from a measurement for the bsg and m35mms decks; other decks and run phases differ.

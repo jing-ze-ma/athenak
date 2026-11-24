@@ -26,8 +26,7 @@ clips); [OUTPUTS.md](OUTPUTS.md) explains which lines matter. A healthy run prin
 ## 2. Production star runs
 
 Templates: `inputs/rad_m1_clean/star_bsg.athinput`, `star_m35mms.athinput`,
-`star_t9l62.athinput`. They hold the full key set of the 2026-11-23 production runs (commit
-512cf768a, tile layout mode). They need:
+`star_t9l62.athinput`. They hold the full production key set (tile layout mode). They need:
 
 1. a binary built with `-D PROBLEM=he_star_m1` (see [BUILD.md](BUILD.md));
 2. the opacity tables and initial-condition profiles named by the `he_opac_table`,
@@ -48,6 +47,10 @@ MeshBlock smaller and set `<mesh>/layout_tile` to the new lateral MeshBlock size
 with tiles of N x N cells gives the same answer, bit for bit, for every layout of whole-tile
 MeshBlocks. Different N give answers that differ at the solver tolerance.
 
+The templates name `<rad_m1>/clean_verbose = 1`, which prints the per-solve `CLEAN`
+diagnostic lines (useful context for any `CLEAN WARNING`); your own decks can leave it at the
+default 0 ([OUTPUTS.md](OUTPUTS.md), section 4.2).
+
 On the first cycle the code relaxes the radiation field to its steady state in the initial
 gas (`clean_init = steady`). The log line `clean_init steady pass 1 ...` is a convenient
 fingerprint: a new binary, machine or compiler must reproduce it to a few digits.
@@ -63,7 +66,7 @@ This bites when a deck or the code default changed since the restart file was wr
 example, an old restart file stored `time2_k1_stiff = 1.0`, and a restart that relied on the
 new default 0 silently ran with 1.0, which changed the photospheric luminosity by about
 50 %. So, when you restart from a file written with other keys (another code version,
-someone else's run), name every key that matters on the command line:
+another run), name every key that matters on the command line:
 
 ```bash
 ./athena -r run/hegiant.00205.rst rad_m1/time2_k1_stiff=0 rad_m1/clean_stag_fwb_stage=false \
@@ -92,8 +95,8 @@ same step exactly (the `dt_retry` test). Each retry prints a `DT_RETRY cycle=...
 
 ## 3. Keys
 
-[KEYS.md](KEYS.md) lists every key the production decks use, with its meaning, default and
-production value, and a separate list of experimental keys that are not recommended.
+[KEYS.md](KEYS.md) lists the keys a user sets, with meaning, default and production value,
+the restart rule, and the keys that must always be named.
 
 ## 4. Checking a run
 

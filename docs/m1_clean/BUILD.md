@@ -41,7 +41,7 @@ make -C build_cpu -j athena                # -> build_cpu/src/athena
 The same commands are in `tests/m1_clean/run_tests.sh --build`, which builds into
 `build_m1test/`.
 
-Tested on MPCDF Raven (Intel Xeon IceLake, 72 cores per node), 2026-11-23:
+Tested on an Intel Xeon IceLake cluster (72 cores per node) with
 `module load gcc/13 openmpi/4.1 cmake/3.30`; the configure step takes 10 s and `make -j 72`
 takes 81 s.
 
@@ -84,8 +84,8 @@ Known-good module sets:
 | Caltech HPC (Resnick) | H200 | `gcc/13.2.0-gcc-13.2.0-w55nxkl cuda/12.9.0-none-none-pfmzfdv hpcx/2.17.1/hpcx-ompi` (cmake from the system or a module of version >= 3.20) | `HOPPER90` |
 | NCSA DeltaAI | GH200 | `cudatoolkit` 12.9 (Cray PE, host compiler `CC`: `NVCC_WRAPPER_DEFAULT_COMPILER=CC`) | `HOPPER90` |
 
-At run time on the Caltech cluster, set `UCX_TLS=^xpmem OMPI_MCA_io=romio321`. On Raven A100
-nodes, set `UCX_IB_GPU_DIRECT_RDMA=0`.
+At run time on the H200 cluster above, set `UCX_TLS=^xpmem OMPI_MCA_io=romio321`. On the A100
+cluster, set `UCX_IB_GPU_DIRECT_RDMA=0`.
 
 ## 5. AMD GPUs (HIP, MI300A)
 
@@ -98,22 +98,29 @@ cmake -S . -B build_hip -D CMAKE_BUILD_TYPE=Release -D CMAKE_CXX_COMPILER=$(whic
 make -C build_hip -j 32 athena
 ```
 
-Tested on MPCDF viper (MI300A APU) with `module load gcc/16 rocm/7.2 openmpi_gpu/5.0 cmake/4.0`.
+Tested on MI300A APUs with `module load gcc/16 rocm/7.2 openmpi_gpu/5.0 cmake/4.0`.
 `GFX942_APU` treats host and device memory as one pool. For a discrete MI300X use
 `Kokkos_ARCH_AMD_GFX942`. On ROCm 7.2, more than 2 MPI ranks per GPU on a cubed-sphere mesh
 hang in the ray-sweep halo exchange unless `GPU_MAX_HW_QUEUES=2` is set; the code stops
 with a FATAL message that says so.
-The default UCX settings are both bitwise and fastest on viper; no extra environment is
+The default UCX settings are bitwise and fastest on MI300A; no extra environment is
 needed.
 
-## 6. Build time
+## 6. Debug build
+
+`-D Athena_M1_DEBUG=ON` compiles in debugging hooks: restart fingerprints
+(`<rad_m1>/dbg_rst_fp`, `dbg_rst_fp_cycle`, `dbg_rst_fp_dump`) and poison gates for
+uninitialised data. It is off by default; a build without it stops with a FATAL error when a
+`dbg_rst_fp` key is named. Production builds leave it off.
+
+## 7. Build time
 
 The longest translation units are `rad_m1_vetgd.cpp` (about 12 min with nvcc, mostly one
 `ptxas` process), then `rad_m1_init.cpp` and `hydro_fluxes.cpp`. With Ninja (`-G Ninja`) and
 `ccache` (`-D CMAKE_CXX_COMPILER_LAUNCHER=ccache`), a rebuild after a one-file change takes
 1-2 min on A100 and well under a minute on CPU. A cold CPU build takes 1.5 min on 72 cores.
 
-## 7. After building
+## 8. After building
 
 Run the CPU test suite (about 1.5 min with `--quick` on 16 cores):
 
