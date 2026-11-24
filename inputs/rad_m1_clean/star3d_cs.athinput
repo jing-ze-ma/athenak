@@ -2,14 +2,13 @@
 # The production RSG deck (25 Msun, MESA profile) on the full sphere at N = 32 cells per
 # cube face (2.8 deg) instead of 128: 548 radial cells (stretched, 25-2530 Rsun; photosphere 834 Rsun; incl. the
 # atmosphere), 6 faces x 32 x 32, 24 MeshBlocks of 548 x 16 x 16 (tile 16).  Scheme keys:
-# the 2026-11-23 production runs (commit 512cf768a).  Fresh start from the 1-D profile.
+# the production runs of 2026-11-24 (commit 465aff485).  Fresh start from the 1-D profile.
 # Data (inputs/rad_m1_clean/star3d_data, linked into the run directory as star3d_data):
 #   rsg_ic.txt (1-D IC profile), rsg_rosseland.txt, rsg_planck.txt (opacity tables).
 #   The gas EOS table is built at start-up from the <hydro> eos_* keys (no file).
 # Needs a binary built with -D PROBLEM=he_star_m1 (docs/m1_clean/BUILD.md).
 # Lines ending "# Default value added at run time" are code defaults recorded by the production
 # run: the code treats them as not set by the input (keep that comment on them).
-# Lines "# IA12.1: key = value" are the keys of the next release (commented: not in this source).
 
 <job>
 basename = rsg
@@ -133,6 +132,7 @@ eos_logt_min = 2.9
 eos_logt_max = 6.8
 eos_dlog = 0.02
 rad_signal_speed = true
+rad_signal_speed_diff = true
 reconstruct = plm
 rsolver = hllc
 fofc = true
@@ -188,8 +188,8 @@ merge_lat_blockend = exchange
 wall_wb_onesided = true
 split_c2p_once = true
 floor_pay = rad_column
-# IA12.1: floor_pay_skip = true
-# IA12.1: dfloor_flux_limit = true
+floor_pay_skip = true
+dfloor_flux_limit = true
 
 <rad_m1>
 zalesak_active = true
@@ -530,10 +530,10 @@ clean_pred_stage = false
 clean_stag_central = true
 clean_stag_kpat = false
 clean_stag_eicarry = true
-# IA12.1: clean_gas_secant = stage2
-# IA12.1: clean_pred_xch = true
-# IA12.1: clean_stag_fcone_gas = false
-# IA12.1: clean_wb_exch_local = true
+clean_gas_secant = max_stage2
+clean_pred_xch = true
+clean_stag_fcone_gas = false
+clean_wb_exch_local = true
 
 <problem>
 he_ic_eint_from_t = true

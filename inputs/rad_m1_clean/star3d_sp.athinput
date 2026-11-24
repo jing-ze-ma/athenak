@@ -2,13 +2,12 @@
 # The production BSG deck (star_bsg.athinput) at the production radial grid and 1/4 the
 # lateral resolution: 256 x 64 x 64 cells, 20-80 Rsun, theta pi/3..2pi/3, phi 0..pi/3 (periodic
 # lateral walls), 16 MeshBlocks of 256 x 16 x 16 (tile 16).  Same scheme keys as the
-# production runs (commit 512cf768a), incl. the Gauss-Legendre 7 x 18 ray set (azimuthal
+# production runs of 2026-11-24 (commit 465aff485), incl. the Gauss-Legendre 7 x 18 ray set (azimuthal
 # period 20 deg: the 60 deg periodic wedge is a whole number of periods, as it must be).
 # Data (inputs/rad_m1_clean/star3d_data, linked into the run directory as star3d_data):
 #   bsg_ic.txt, bsg_profile.txt (thinned copies of the production 1-D profiles),
 #   bsg_rosseland.txt, bsg_planck.txt (opacity tables).
 # Needs a binary built with -D PROBLEM=he_star_m1 (docs/m1_clean/BUILD.md).
-# Lines "# IA12.1: key = value" are the keys of the next release (commented: not in this source).
 
 <job>
 basename = bsg3d
@@ -83,6 +82,7 @@ am_transport = true
 sp_x2_periodic_image = true
 eos = general
 rad_signal_speed = true
+rad_signal_speed_diff = true
 gamma = 1.6666666666666667
 reconstruct = plm
 rsolver = hllc
@@ -101,8 +101,8 @@ wb_x1 = true
 wb_option = polytropic
 wb_cache_every = 0
 wb_rmax = 4.231839e+12
-# IA12.1: floor_pay_skip = true
-# IA12.1: dfloor_flux_limit = true
+floor_pay_skip = true
+dfloor_flux_limit = true
 
 <rad_m1>
 floorcap_report = 25
@@ -253,8 +253,7 @@ clean_rot_ring = off
 clean_source_convex = 1
 clean_stag_fcone = true
 clean_stag_fwb = true
-clean_stag_fwb_ring = 0
-# IA12.1: clean_stag_fwb_ring = 1
+clean_stag_fwb_ring = 1
 clean_stag_fwb_stage = false
 clean_stag_fwb_t2 = false
 clean_stag_lat_sums = 0
@@ -279,10 +278,10 @@ vet_rotate_advance = true
 vet_rotate_avg_ema_change_form = linear
 clean_stag_fs_line = pcr
 floorcap_mesh_vol = 0
-# IA12.1: clean_gas_secant = stage2
-# IA12.1: clean_pred_xch = true
-# IA12.1: clean_stag_fcone_gas = false
-# IA12.1: clean_wb_exch_local = true
+clean_gas_secant = max_stage2
+clean_pred_xch = true
+clean_stag_fcone_gas = false
+clean_wb_exch_local = true
 
 <problem>
 he_seed_band = old

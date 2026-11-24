@@ -1,5 +1,5 @@
 # Production star deck template: T = 9 kK, log L/Lsun = 6.2 envelope.
-# The scheme keys are those of the 2026-11-23 production runs (commit 512cf768a), tile
+# The scheme keys are those of the production runs of 2026-11-24 (commit 465aff485), tile
 # layout mode (layout_tile = the lateral MeshBlock size; change both together).
 # Before running: replace TABLES/ in the he_* table / profile / IC file keys by the
 # directory of your copies (the files are not in the repository), and set the run
@@ -73,6 +73,7 @@ am_transport = true
 sp_x2_periodic_image = true
 eos = general
 rad_signal_speed = true
+rad_signal_speed_diff = true
 gamma = 1.6666666666666667
 reconstruct = plm
 rsolver = hllc
@@ -85,6 +86,9 @@ dfloor_keep_velocity = true
 vceil = 3.0e8
 wall_wb_onesided = true
 floor_pay = rad_column
+floor_pay_skip = true
+dfloor_flux_limit = true
+floor_audit = 1
 general_eos = gamma
 tfloor = 123359972487.0939
 wb_x1 = true
@@ -198,6 +202,10 @@ clean_pred_stage = false
 clean_stag_central = true
 clean_stag_kpat = false
 clean_stag_eicarry = true
+clean_gas_secant = max_stage2
+clean_pred_xch = true
+clean_stag_fcone_gas = false
+clean_wb_exch_local = true
 clean_face_hctau = true
 clean_face_jse = true
 clean_face_jse_cell = false
@@ -243,7 +251,7 @@ clean_rot_ring = off
 clean_source_convex = 1
 clean_stag_fcone = true
 clean_stag_fwb = true
-clean_stag_fwb_ring = 0
+clean_stag_fwb_ring = 1
 clean_stag_fwb_stage = false
 clean_stag_fwb_t2 = false
 clean_stag_lat_sums = 0
