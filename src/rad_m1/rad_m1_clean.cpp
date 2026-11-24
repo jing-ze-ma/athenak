@@ -1306,9 +1306,10 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       if (fpc) RstFingerprint(("cln_pass" + std::to_string(inl) + "_pre").c_str());
       // (budget: a pass whose iterate the next pass takes the closure of is solved in
       // the strict norm, so that closure does not carry the inexact solve: with
-      // clean_closure = extrap1/2 or iterate the step's answer depends on it)
+      // clean_closure = extrap1/2 or iterate the step's answer depends on it;
+      // clean_clos1_budget: in the budget's norm to 0.1 clean_conv_max)
       const bool cnext = (cln_closit && inl + 1 < cln_maxpic) || (clos1 && inl == 0);
-      if (cnext) cln_ewr = -2.0;
+      if (cnext) cln_ewr = (cln_c1b && (!dtr_redo || cln_rtb)) ? -3.0 : -2.0;
       nit = CleanBiCGStab();
       if (cnext) cln_ewr = -1.0;
       if (fpc) RstFingerprint(("cln_pass" + std::to_string(inl) + "_post").c_str());

@@ -763,6 +763,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_m1","clean_tol_rel_max")) {
       cln_tolrmx = pin->GetReal("rad_m1","clean_tol_rel_max");
     }
+    // clean_clos1_budget (read only when named; false, the default: the strict norm): a
+    // pass whose iterate the next pass takes the closure of in the budget's norm, to 0.1
+    // clean_conv_max, the floor of the passes after it at the budget's ceiling (a step
+    // dt_retry redoes strictly, as its budget)
+    cln_c1b = pin->DoesParameterExist("rad_m1","clean_clos1_budget") &&
+              pin->GetBoolean("rad_m1","clean_clos1_budget");
     // clean_gas_tfloor (default true): the gas row's T bounded below by the EOS
     // tfloor, and the gas eint written back from that root (E takes the rest)
     cln_gtf = stag("clean_gas_tfloor", true);
