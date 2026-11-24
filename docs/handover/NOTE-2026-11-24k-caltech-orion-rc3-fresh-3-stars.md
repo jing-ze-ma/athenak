@@ -274,3 +274,17 @@ CLEAN WARNING cycle 779 t2s 2: the implicit_pos_floor creation 1.459516e+42 of t
 00045   8.1e+04  38867 |   -1.0011e-02    5.8863e-04 |   -7.9167e+05    2.0377e+07 |    2.5814e+05    7.9796e+05
 (float32 bins; vet_f* = cell radiation flux moments; shells i=320..331 = r 5.5279e+11..5.5603e+11; v in cm/s)
 ```
+
+- (11-24 05:08) **t9l62 FATAL** (log.3); clean STOP written + rsts hard-linked to rst_keep (COORD permission, USER asleep):
+```
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+[LOG_CAT_SBGP] libnuma.so: cannot open shared object file: No such file or directory
+[LOG_CAT_SBGP] Failed to dlopen libnuma.so. Fallback to GROUP_BY_SOCKET manual.
+### FATAL ERROR in /resnick/groups/carnegie_poc/jingze/wt_orion1121/v203/src/parameter_input.cpp at line 460
+Parameter 'fofc_retest' in block 'hydro' on command line not found
+Kokkos::Cuda ERROR: Failed to call Kokkos::Cuda::finalize()
+### FATAL ERROR in /resnick/groups/carnegie_poc/jingze/wt_orion1121/v203/src/parameter_input.cpp at line 460
+Parameter 'fofc_retest' in block 'hydro' on command line not found
+### FATAL ERROR in /resnick/groups/carnegie_poc/jingze/wt_orion1121/v203/src/parameter_input.cpp at line 460
+Parameter 'fofc_retest' in block 'hydro' on command line not found
+```
