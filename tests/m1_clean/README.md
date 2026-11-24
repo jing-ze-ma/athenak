@@ -99,6 +99,18 @@ tests (`order_*`, `nlte_*`, `thermal_eq`, `wb_*`) must agree with the CPU refere
 their tolerances; a much larger difference points at the build (see the CUDA 12.2 warning in
 `docs/m1_clean/BUILD.md`). The suite has been run on CPU only so far.
 
+## Notebooks
+
+`notebooks/` has one Jupyter notebook per test (conservation, thermal equilibrium, order,
+well-balancing, non-LTE, momentum box, restart): each runs its test through this suite (or loads
+an existing run) and plots the result against the exact solution or the criterion. Only numpy,
+matplotlib and jupyter are needed; see `notebooks/README.md`.
+
+```bash
+cd tests/m1_clean/notebooks && ATHENA_EXE=$PWD/../../../build_m1test/src/athena \
+  jupyter nbconvert --to notebook --execute --inplace thermal_eq.ipynb
+```
+
 ## Files
 
 - `run_tests.sh`: builds a CPU binary if needed, then runs `run_tests.py`.
