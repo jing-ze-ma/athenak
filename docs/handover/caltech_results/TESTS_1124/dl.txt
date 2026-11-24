@@ -1,0 +1,6 @@
+PR    L_top/L_in vs P0 on 999 P0 times: rms 3.176e-05 max 1.145e-04
+PR    L_bot/L_in vs P0 on 999 P0 times: rms 1.530e-08 max 5.945e-08
+PRL4  L_top/L_in vs P0 on 999 P0 times: rms 3.200e-05 max 1.265e-04
+PRL4  L_bot/L_in vs P0 on 999 P0 times: rms 1.459e-08 max 5.917e-08
+PL4   L_top/L_in vs P0 on 999 P0 times: rms 3.000e-05 max 1.137e-04
+PL4   L_bot/L_in vs P0 on 999 P0 times: rms 1.227e-08 max 5.362e-08

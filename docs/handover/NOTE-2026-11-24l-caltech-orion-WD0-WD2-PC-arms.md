@@ -101,3 +101,22 @@
 - 2026-11-24 01:06:25 rc=0 last: elapsed=9.421660e+02 cycle=39350 time=3.137428e+05 dt=1.023452e+01
 - FATAL 0, CW 0, stage fallbacks 0, DT_RETRY 0, created inf 0; dt min/last 10.21 / 10.24
 - s/cyc (last 800 cycles) 0.9625 (c38600-39350); Krylov it 4.93, solves 4.36 per stage line (2000 lines); d(L_top/L_in) vs P0: rms 1.000e-05 max 1.000e-05 over 1 equal-t rows (same-time rows only)
+
+## PC arms summary (11-24 01:08)
+| arm | node | s/cyc (c38600-39350) | vs P0 | Krylov it / stage line | solves / stage line | CW / FATAL |
+|---|---|---|---|---|---|---|
+| P0 (rb, mg 2) | 02-17 | 1.0596 | - | 7.15 | 4.45 | 0 / 0 |
+| PR (rbr) | 02-03 | 1.0694 | +0.9 % (other node) | 5.99 | 4.40 | 0 / 0 |
+| PRL4 (rbr, mg 4) | 02-17 | 1.0045 | **-5.2 %** (same node) | 4.86 | 4.33 | 0 / 0 |
+| PL4 (rb, mg 4) | 02-03 | 0.9625 | **-9.2 %** (other node; vs PR on the same node -10.0 %) | 4.93 | 4.36 | 0 / 0 |
+- d(L_top/L_in) and d(L_bot/L_in) vs P0, each arm interpolated onto P0's hst times (999 points; the earlier 'equal-t rows' line used only 1 row and is superseded):
+```
+PR    L_top/L_in vs P0 on 999 P0 times: rms 3.176e-05 max 1.145e-04
+PR    L_bot/L_in vs P0 on 999 P0 times: rms 1.530e-08 max 5.945e-08
+PRL4  L_top/L_in vs P0 on 999 P0 times: rms 3.200e-05 max 1.265e-04
+PRL4  L_bot/L_in vs P0 on 999 P0 times: rms 1.459e-08 max 5.917e-08
+PL4   L_top/L_in vs P0 on 999 P0 times: rms 3.000e-05 max 1.137e-04
+PL4   L_bot/L_in vs P0 on 999 P0 times: rms 1.227e-08 max 5.362e-08
+```
+  All three are ~3e-5 rms / 1.2e-4 max in L_top/L_in, inside the D1-vs-D1h band (<= ~1.7e-4).
+- Node caveat: P0 / PRL4 ran on hpc-sm-02-17 and PR / PL4 on hpc-sm-02-03. Same-node pairs: PRL4 vs P0 -5.2 %, PL4 vs PR -10.0 %. **mg_levels = 4 is the lever, and rbr alone does not help (+0.9 %).** dt is the same in all arms (10.21-10.24).
