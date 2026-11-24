@@ -4,43 +4,23 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_rotavg.cpp
-//! \brief <rad_vet>/vet_rotate_avg = K >= 2: the closure averaged over the
-//! last K rotated direction sets (closure-agnostic: vet_sc registers its fields in
-//! VetScRotAvgSetup, rad_vet_vet.cpp; vet_gd's rotating sets are averaged on the clean
-//! ring, clean_rot_ring).
+//! \brief vet_rotate_avg = K >= 2: the closure averaged over the last K rotated direction
+//! sets (K-window or EMA), and its restart record.
 //!
-//! WHY.  With the set rotated every rotate_dt and c dt/dx >> 1, every set relaxes to its
-//! own steady state within a step or two, so the closure in use is the CURRENT set's,
-//! ray effects included ("last set wins"): rotation does not average the ray effects.
-//!
-//! WHAT.  g_s = the normalised hand-over fields of set s (ratios to J: the Eddington
-//! tensor parts, the half-range ratios, C1/J; and J itself).  The moment step gets
-//!   used = g_b(now) + (1/K) sum_{j=1}^{K-1} d_j        (additive fields)
-//!   used = g_b(now) (1 + sum_j r_j)/K                  (J: ratio fields)
-//! with the OFFSETS d_j = g_{b-j} - g_b (r_j = J_{b-j}/J_b) of the K-1 previous sets from
-//! the current one.  Every offset is a difference of two sweeps of the SAME state: at the
-//! first build of a new block the old set is swept once more (before the tables switch),
-//! Delta = g_new - g_old, and the ring is shifted: d_1' = -Delta, d_j' = d_{j-1} - Delta
-//! (r_1' = 1/R, r_j' = r_{j-1}/R with R = J_new/J_old).  On a fresh start or a restart
-//! the K-1 previous sets are swept once at the first build.  In a steady state used =
-//! (1/K) sum_s g_s exactly: the normalised moments of the equal mixture of the K sets'
-//! normalised intensities, i.e. a realizable closure with the tensor and the half-range
-//! ratios from the SAME mixture.  In a changing state the current set is live (no lag of
-//! the closure); only the ray-pattern differences are carried, aged <= K rotate_dt.
-//! Clamps (kind 1): the half-range ratios to their ranges, C1 >= 0, the outer q to its
-//! range; the tensor's D_rr is clamped by the fold (VetLatBuild).  Field arrays: two
-//! (m, n, k, j, i) arrays and one column array (m, k, j) held at the top cell i = ie.
-//! Kinds: 0 additive, 1 additive clamped to [lo, hi], 2 ratio (J itself), 3 a raw moment
-//! normalised by the J field (vet_sc's K_ab, H_a, the half-range sums, C1 in E units):
-//! averaged as X/J, handed back as (X/J)_avg J_avg.
-//!
-//! VALIDITY.  A cell is valid in a set when i >= the closure's first shell (ilo) and the
-//! flag field (if any) is >= 0 (and the J field > 0 when kind-3 fields exist); an offset
-//! is kept only where both sweeps were valid, and the mean runs over the valid offsets
-//! (+ the current set).
-//!
-//! COST.  One extra sweep per rotation block (+ K-1 sweeps at the first build); memory
-//! (K-1)(nf+1) reals per active cell.
+//! With c dt/dx >> 1 each rotated set relaxes to its own steady state, so plain rotation
+//! does not average the ray effects.  g_s = normalised hand-over fields of set s (ratios
+//! to J, and J).  The moment step gets
+//!   used = g_b(now) + (1/K) sum_{j=1}^{K-1} d_j      (additive fields)
+//!   used = g_b(now) (1 + sum_j r_j)/K                (J: ratio fields)
+//! with offsets d_j = g_{b-j} - g_b (r_j = J_{b-j}/J_b).  Each offset is a difference of
+//! two sweeps of the SAME state: at a block change the old set is swept once more,
+//! Delta = g_new - g_old, and the ring shifts d_1' = -Delta, d_j' = d_{j-1} - Delta
+//! (ratios: r_1' = 1/R, r_j' = r_{j-1}/R).  Steady state: used = (1/K) sum_s g_s exactly
+//! (a realizable mixture); the current set stays live, only pattern differences age.
+//! Kinds: 0 additive, 1 additive clamped to [lo, hi], 2 ratio (J), 3 raw moment averaged
+//! as X/J and handed back times the mean J.  A cell is valid in a set when i >= ilo, the
+//! flag field is >= 0 and J > 0; offsets count only where both sweeps were valid.
+//! Memory: (K-1)(nf+1) reals per active cell.
 
 
 #include <algorithm>
@@ -55,7 +35,7 @@
 namespace radvet {
 
 namespace {
-// the field arrays of one call (device copies)
+// field arrays of one call (device copies)
 struct RaArr {
   DvceArray5D<Real> a0, a1;
   DvceArray3D<Real> c;
@@ -96,8 +76,8 @@ bool RaGet(const RaArr &a, const Tab &t, const int f, const int ie, const int m,
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::RotAvgSnap
-//! \brief the registered fields as they are (raw, one set; kind 3 as X/J) -> ring slot
-//! `slot`, with the validity of each cell
+//! \brief registered fields as they are (kind 3 as X/J) -> ring slot `slot`, with the
+//! validity of each cell
 
 void RadiationVet::RotAvgSnap(const int slot, const int ilo) {
   vra_gen += 1;   // vra_d may change (dt_retry_host skips clean saves)
@@ -106,7 +86,7 @@ void RadiationVet::RotAvgSnap(const int slot, const int ilo) {
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   const int nf = vra_tab.nf;
-  const int nalloc = vra_k;   // the ring (K-1 slots) + the Delta slot K-1
+  const int nalloc = vra_k;   // ring (K-1 slots) + Delta slot K-1
   if (vra_d.extent_int(0) < nmb1 + 1 || vra_d.extent_int(1) != nalloc*(nf + 1)) {
     Kokkos::realloc(vra_d, nmb1 + 1, nalloc*(nf + 1), ke - ks + 1, je - js + 1,
                     ie - is + 1);
@@ -130,8 +110,8 @@ void RadiationVet::RotAvgSnap(const int slot, const int ilo) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::RotAvgUpdate
-//! \brief init (the first build of a run): with the CURRENT set's raw fields in place,
-//! the raw snapshots S_j of the K-1 previous sets -> offsets S_j - g (ratio fields S_j/g)
+//! \brief first build of a run: with the current set's raw fields in place, the
+//! snapshots S_j of the K-1 previous sets -> offsets S_j - g (ratio fields S_j/g)
 
 void RadiationVet::RotAvgUpdate(const int ilo) {
   if (vra_pend != 1) return;
@@ -176,11 +156,9 @@ void RadiationVet::RotAvgUpdate(const int ilo) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::RotAvgDelta
-//! \brief the LAST build of a block: slot holds the current set's raw fields g_b, the
-//! fields now hold the NEXT set's raw S at the same state -> slot := Delta = S - g_b
-//! (ratio fields S/g_b), valid where both are.  The state of the last build is the
-//! predicted P ~ U(t_k) + O(dt^2) at the block boundary t_k on every dt (the first build
-//! of the next block would sample U(t_k + dt): an O(dt) offset on a dt ladder)
+//! \brief last build of a block: slot holds g_b, the fields the NEXT set's S at the same
+//! state -> slot := Delta = S - g_b (ratio: S/g_b), valid where both are.  The last build
+//! samples the block boundary to O(dt^2) on every dt.
 
 void RadiationVet::RotAvgDelta(const int slot, const int ilo) {
   if (vra_ema) {RotAvgEmaChange(ilo);}
@@ -211,9 +189,9 @@ void RadiationVet::RotAvgDelta(const int slot, const int ilo) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::RotAvgShift
-//! \brief the first build of a new block: the ring moves on by one set with the Delta of
-//! the last build (slot ds): the dropped oldest slot becomes d_1 = -Delta (1/R), every
-//! other d_j -= Delta (/= R)
+//! \brief first build of a new block: the ring moves on by one set with the Delta of
+//! slot ds: the dropped oldest slot becomes d_1 = -Delta (1/R), every other d_j -= Delta
+//! (/= R)
 
 void RadiationVet::RotAvgShift(const int ds) {
   if (vra_ema) {
@@ -259,9 +237,8 @@ void RadiationVet::RotAvgShift(const int ds) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::RotAvgApply
-//! \brief the registered fields := the mean over the current set and the valid offsets
-//! (ratio fields: the plain mean; the others J-weighted with the ratio field jw, i.e.
-//! the normalised moments of the union of the K sets; kind 3: (X/J)_avg times the mean J)
+//! \brief registered fields := mean over the current set and the valid offsets (ratio
+//! fields plain, others J-weighted by jw; kind 3: (X/J)_avg times the mean J)
 
 void RadiationVet::RotAvgApply(const int ilo) {
   if (vra_ema) {
@@ -285,7 +262,7 @@ void RadiationVet::RotAvgApply(const int ilo) {
     for (int s = 0; s < nslot; ++s) {nv += d_(m,s*nf1+t.nf,kk,jj,ii);}
     if (nv < 1.5) return;
     const Real jr = RaJ(a, t, m, k, j, i);
-    Real ju = jr;   // the averaged J (kind 3 fields are handed back with it)
+    Real ju = jr;   // averaged J (kind 3 fields are handed back with it)
     if (t.jf >= 0) {
       Real sm = 1.0;
       for (int s = 0; s < nslot; ++s) {
@@ -294,10 +271,8 @@ void RadiationVet::RotAvgApply(const int ilo) {
       }
       ju = jr*sm/nv;
     }
-    // the weight of each older set: its J over the current set's (field jw, a ratio
-    // field), so the normalised fields are those of the UNION of the sets' intensities,
-    // sum_s M_s / sum_s J_s (equal weights 1 without a J field or vet_rotate_avg_weight =
-    // equal)
+    // weight of each older set: its J over the current one's (jw), so the fields are the
+    // normalised moments of the union of the sets (1 without jw or with weight = equal)
     Real ws[M1_RA_NF], wsum = 1.0;
     for (int s = 0; s < nslot; ++s) {
       const int o = s*nf1;
@@ -331,23 +306,16 @@ void RadiationVet::RotAvgApply(const int ilo) {
 }
 
 //----------------------------------------------------------------------------------------
-//! vet_rotate_avg_ema = N: the exponential moving average over the rotated
-//! sets in the offset form of the K-window (one ring slot, vra_k = 2).  With weights
-//! w_j = a (1 - a)^j over the sets b - j (J-weighted as the K-window: the normalised
-//! moments of the weighted union of the sets' intensities), slot 0 holds
-//!   e_f = avg_f - g_f(now)  (additive fields),  r_f = avg_f/g_f(now)  (ratio fields: J)
-//! and the boundary b-1 -> b with the same-state Delta (D_f = g_new - g_old, R_f =
-//! g_new/g_old) updates them as
-//!   r' = (1 - a) r/R + a,   e' = (1 - a) (r_jw/R_jw) (e - D)/r'_jw
-//! (the factor r_jw/R_jw / r'_jw is 1 with equal weights).  In a steady state used = the
-//! EMA of the sets; the current set stays live, only pattern differences are carried
-//! (they decay as (1 - a)^blocks).  Init (the first build of a run): the equal mix of the
-//! current and the one previous set (as K = 2).
+//! vet_rotate_avg_ema = N: exponential moving average in the offset form (one ring slot,
+//! vra_k = 2), weights a (1 - a)^j over the sets b - j (J-weighted).  Slot 0 holds
+//!   e_f = avg_f - g_f(now) (additive),  r_f = avg_f/g_f(now) (ratio: J)
+//! and the boundary Delta (D_f, R_f) updates them as
+//!   r' = (1 - a) r/R + a,   e' = (1 - a) (r_jw/R_jw) (e - D)/r'_jw.
+//! Init: the equal mix of the current and the previous set (as K = 2).
 
 namespace {
-// the EMA weight of a block boundary for a cell at radius rr:
-// a = max(1/N, 1 - exp(-dtb/tau))
-// with tau = tau0 (physical) and/or lc r/c (local light crossing); 1/N without either
+// EMA weight of a block boundary at radius rr: a = max(1/N, 1 - exp(-dtb/tau)),
+// tau = tau0 and/or lc r/c (local light crossing)
 KOKKOS_INLINE_FUNCTION
 Real RaEmaA(const Real a0, const Real dtb, const Real tau0, const Real lc, const Real rr,
             const Real cl) {
@@ -357,6 +325,10 @@ Real RaEmaA(const Real a0, const Real dtb, const Real tau0, const Real lc, const
   return fmin(a, 1.0);
 }
 }  // namespace
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::RotAvgEmaInit
+//! \brief EMA init on the first build (equal mix of two sets) and the aux slot
 
 void RadiationVet::RotAvgEmaInit(const int ilo) {
   vra_gen += 1;
@@ -373,7 +345,7 @@ void RadiationVet::RotAvgEmaInit(const int ilo) {
     const int kk = k - ks, jj = j - js, ii = i - is;
     const bool v = RaValid(a, t, ilo, m, k, j, i) && (d_(m,t.nf,kk,jj,ii) > 0.5);
     const Real jr = RaJ(a, t, m, k, j, i);
-    // the previous set's weight relative to the current one (its J ratio, or 1)
+    // previous set's weight relative to the current one (its J ratio, or 1)
     Real ws = 1.0;
     if (v && t.jw >= 0) {
       Real g;
@@ -392,10 +364,9 @@ void RadiationVet::RotAvgEmaInit(const int ilo) {
         d_(m,f,kk,jj,ii) = v ? ws*(sv - g)/(1.0 + ws) : 0.0;
       }
     }
-    d_(m,t.nf,kk,jj,ii) = v ? 2.0 : 0.0;   // the flag counts the sets (warm-up)
-    // the aux slot 1: the current set's raw fields (the change test of the next
-    // boundary compares the same set at two times); its flag entry holds the change
-    // weight of the coming boundary (-1: none measured)
+    d_(m,t.nf,kk,jj,ii) = v ? 2.0 : 0.0;   // flag counts the sets (warm-up)
+    // aux slot 1: the current set's raw fields for the next boundary's change test; its
+    // flag entry holds that boundary's change weight (-1: none measured)
     const int o1 = t.nf + 1;
     for (int f = 0; f < t.nf; ++f) {
       Real g;
@@ -411,15 +382,14 @@ void RadiationVet::RotAvgEmaInit(const int ilo) {
   vra_pend = 0;
 }
 
-//! the change test on the LAST build of a block, before RotAvgDelta turns
-//! the Delta slot (vra_k - 1, holding the current set b's raw fields g_b(now)) into the
-//! Delta: the same set at the previous boundary is in the aux slot 1 (it was the "next"
-//! set there).  c = max(|ln J_b(now)/J_b(then)|, |D_b(now) - D_b(then)|) (J = the
-//! kind-2 J field, vet_rotate_avg_ema_change_j; D = field 0, the
-//! D_rr part) gives the boundary's weight a_ch = min(1, c/eps) (vet_rotate_avg_ema_change
-//! = eps, 0 = off), stored in the aux flag entry; then the aux slot := the NEXT set's raw
-//! fields (now in place) for the following boundary.  A changed geometry (a source
-//! switched on, a shadow moved) thereby drops the history that belongs to the old one.
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::RotAvgEmaChange
+//! \brief change test on the last build of a block, before RotAvgDelta: compares set b
+//! now with the same set at the previous boundary (aux slot 1).
+//! c = max(|ln J_b(now)/J_b(then)|, |D_b(now) - D_b(then)|) (vet_rotate_avg_ema_change_j,
+//! field 0 = D_rr) gives a_ch = min(1, c/eps) (vet_rotate_avg_ema_change = eps, 0 off),
+//! stored in the aux flag; then aux := the next set's raw fields.  A changed geometry
+//! thus drops the old history.
 void RadiationVet::RotAvgEmaChange(const int ilo) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -431,8 +401,7 @@ void RadiationVet::RotAvgEmaChange(const int ilo) {
   const int o1 = t.nf + 1, od = (vra_k - 1)*(t.nf + 1);
   const Real eps = vra_ema_eps;
   const bool usej = vra_ema_chj, step = vra_ema_chstep;
-  // the J field of the test: jf, else the ratio field (kind 2, the set's J; vet_gd
-  // registers it as the weight jw only, so jf alone left the J test dead)
+  // J field of the test: jf, else the kind-2 ratio field (vet_gd registers J as jw only)
   int jt = t.jf;
   for (int f = 0; f < t.nf && jt < 0; ++f) {
     if (t.kind[f] == 2 && t.arr[f] != 2) jt = f;
@@ -450,8 +419,7 @@ void RadiationVet::RotAvgEmaChange(const int ilo) {
       if (t.nf > 0 && t.arr[0] != 2 && t.kind[0] != 2) {
         c = fmax(c, fabs(d_(m,od,kk,jj,ii) - d_(m,o1,kk,jj,ii)));
       }
-      // linear: a_ch = c/eps (any drift shortens the memory); step: 0 below eps, 1 at
-      // 2 eps (only a change larger than eps per block drops the history)
+      // linear: a_ch = c/eps; step: 0 below eps, 1 at 2 eps
       ach = step ? fmin(1.0, fmax(0.0, c/eps - 1.0)) : fmin(1.0, c/eps);
     }
     const Real jr = RaJ(a, t, m, k, j, i);
@@ -462,6 +430,10 @@ void RadiationVet::RotAvgEmaChange(const int ilo) {
     d_(m,o1+t.nf,kk,jj,ii) = ach;
   });
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::RotAvgEmaShift
+//! \brief EMA update at a block boundary (first build of the new block)
 
 void RadiationVet::RotAvgEmaShift(const int ds) {
   if (vra_ema_wb) {
@@ -479,14 +451,14 @@ void RadiationVet::RotAvgEmaShift(const int ds) {
   const int od = ds*(t.nf + 1);
   const Real a0 = 1.0/vra_ema_n;
   const Real tau0 = vra_ema_tau, lc = vra_ema_lc, cl = c_light;
-  // the block length: the physical rotation clock, else the cycles of a block x dt
+  // block length: the rotation clock, else the block's cycles x dt
   Mesh *pm = pmy_pack->pmesh;
   const Real dtb = (vgd_rot_dt > 0.0) ? vgd_rot_dt
                                       : static_cast<Real>(std::max(vgd_rot, 1))*pm->dt;
   auto &size = pmy_pack->pmb->mb_size;
   const int nx1 = indcs.nx1;
-  // vet_rotate_avg_ema_diag = M > 0: every M-th boundary, the change
-  // weights of the cells with a history (mean, fraction > 1/N, fraction >= 0.5), printed
+  // vet_rotate_avg_ema_diag = M > 0: every M-th boundary print the change weights of the
+  // cells with a history (mean, fraction > 1/N, fraction >= 0.5)
   vra_ema_nsh += 1;
   if (vra_ema_diag > 0 && vra_ema_nsh % vra_ema_diag == 0) {
     const int nkji = (ke-ks+1)*(je-js+1)*(ie-is+1);
@@ -527,20 +499,19 @@ void RadiationVet::RotAvgEmaShift(const int ds) {
     const bool vh = d_(m,t.nf,kk,jj,ii) > 0.5;
     if (!vd || !vh) {   // no Delta or no history: restart from the current set alone
       for (int f = 0; f < t.nf; ++f) {d_(m,f,kk,jj,ii) = (t.kind[f] == 2) ? 1.0 : 0.0;}
-      d_(m,t.nf,kk,jj,ii) = vd ? 1.0 : 0.0;   // count 1: the current set alone
+      d_(m,t.nf,kk,jj,ii) = vd ? 1.0 : 0.0;   // count 1: current set alone
       if (dema) {
         for (int f = 0; f <= t.nf; ++f) {d_(m,o2+f,kk,jj,ii) = d_(m,f,kk,jj,ii);}
       }
       return;
     }
     Real rr = 1.0;
-    if (lc > 0.0) {   // the cell radius (x1 = r on the sp wedge and the cubed sphere)
+    if (lc > 0.0) {   // cell radius (x1 = r on sp and cs)
       const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
       rr = x1min + (static_cast<Real>(ii) + 0.5)*(x1max - x1min)/nx1;
     }
-    const Real ach = d_(m,(t.nf+1)+t.nf,kk,jj,ii);   // the change weight (aux slot)
-    // warm-up: with n sets seen so far the weight is at least 1/(n+1) (the plain mean of
-    // all sets until n reaches N; the flag entry counts them)
+    const Real ach = d_(m,(t.nf+1)+t.nf,kk,jj,ii);   // change weight (aux slot)
+    // warm-up: with n sets seen the weight is >= 1/(n+1) (plain mean until n = N)
     const Real nset = d_(m,t.nf,kk,jj,ii);
     const Real aw = fmax(fmax(RaEmaA(a0, dtb, tau0, lc, rr, cl), fmin(ach, 1.0)),
                          1.0/(nset + 1.0));
@@ -550,8 +521,8 @@ void RadiationVet::RotAvgEmaShift(const int ds) {
       const Real r1 = (1.0 - aw)*r0/R + aw;
       fac = (1.0 - aw)*(r0/R)/r1;
     }
-    // dema: the second EMA, of the new first one, in the same frame, with
-    // the same (J-) weights: r2' = (1 - aw) r2/R + aw r1', e2' = fac2 (e2 - D) + w1 e1'
+    // dema: second EMA of the new first one, same frame and J weights:
+    //   r2' = (1 - aw) r2/R + aw r1',  e2' = fac2 (e2 - D) + w1 e1'
     Real fac2 = 1.0 - aw, w1 = aw;
     if (dema && t.jw >= 0) {
       const Real r2 = d_(m,o2+t.jw,kk,jj,ii), R = d_(m,od+t.jw,kk,jj,ii);
@@ -577,6 +548,10 @@ void RadiationVet::RotAvgEmaShift(const int ds) {
   });
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::RotAvgEmaApply
+//! \brief registered fields := current set + EMA offset (dema: 2 e1 - e2)
+
 void RadiationVet::RotAvgEmaApply(const int ilo) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -593,8 +568,7 @@ void RadiationVet::RotAvgEmaApply(const int ilo) {
     const int kk = k - ks, jj = j - js, ii = i - is;
     if (!(d_(m,t.nf,kk,jj,ii) > 0.5)) return;
     const Real jr = RaJ(a, t, m, k, j, i);
-    // dema: the lag-corrected offset 2 e1 - e2 (ratios 2 r1 - r2 in
-    // [r1/4, 4 r1]); without dema the EMA itself
+    // dema: lag-corrected offset 2 e1 - e2 (ratios 2 r1 - r2 in [r1/4, 4 r1])
     auto off = [&](const int f) -> Real {
       const Real e1 = d_(m,f,kk,jj,ii);
       if (!dema) return e1;
@@ -622,28 +596,22 @@ void RadiationVet::RotAvgEmaApply(const int ilo) {
 }
 
 //----------------------------------------------------------------------------------------
-//! the averaging state in the restart file (radvet::kM1RaRstMagic), so a
-//! restart with vet_rotate_avg = K is a bitwise continuation.  The header (int64 x
-//! M1_RA_RST_NH): have = 1, nslab, K, nf, closure (1 vet_gd, 2 vet_sc), head, pend,
-//! nslot (ring slots written: K-1, or K with the Delta slot when pend = 3), blk, the
-//! interior cells per MeshBlock.  The slots' interior values (nslot (nf+1) nx3 nx2 nx1
-//! per MeshBlock) are packed densely into nslab slabs of the record's (ghosted) slab
-//! size, the LAST of each MeshBlock record, so the history moves with its MeshBlock (any
-//! rank count / distribution).  Written only with a complete history (vra_state = 1).
-//! only the radial range i >= i0 is written, i0 = the first interior
-//! i (over all MeshBlocks and ranks) where a written slot is valid: the closure's shells
-//! (vet_gd: i >= is + vlat_icut).  Cells below are invalid in every slot and never read;
-//! they load as zero (flag 0).  Header entry 10 = i0 (a 10-entry header: i0 = 0, the
-//! full range, as written by).
+//! Restart record of the averaging state (kM1RaRstMagic), for a bitwise continuation.
+//! Header (int64 x M1_RA_RST_NH): have = 1, nslab, K, nf, closure (1 vet_gd, 2 vet_sc,
+//! +16 EMA), head, pend, nslot (K-1, or K with the Delta slot when pend = 3), blk,
+//! interior cells per MeshBlock, i0.  The slots' interior values for i >= i0 (first i
+//! valid in any slot, over all ranks) are packed densely into nslab slabs at the end of
+//! each MeshBlock record, so the history moves with its block.  Written only with a
+//! complete history (vra_state = 1); cells below i0 load as zero.  A 10-entry header
+//! reads i0 = 0.
 
-// the registered field count of the history: the table's, or (a restart written before
-// the first build of the run, e.g. a 0-step restart) the one loaded from the file
+// registered field count: the table's, or the file's (restart before the first build)
 int RadiationVet::RotAvgNf() const {
   return (vra_tab.nf > 0) ? vra_tab.nf : vra_rst_nf;
 }
 
-// the first interior i where a written slot is valid, over all MeshBlocks and ranks
-// (nx1 - 1 at most, so at least one radial cell is written)
+// first interior i where a written slot is valid, over all MeshBlocks and ranks
+// (at most nx1 - 1)
 int RadiationVet::RotAvgRstI0() const {
   const int nf = RotAvgNf();
   const int nslot = (vra_pend == 3) ? vra_k : vra_k - 1;
@@ -673,6 +641,7 @@ int RadiationVet::RotAvgRstI0() const {
   return i0;
 }
 
+// slabs of the restart record (0: nothing to write)
 int RadiationVet::RotAvgRstNslab(const int ncell) const {
   const int nf = RotAvgNf();
   if (!vra_on || vra_state != 1 || nf <= 0 || vra_d.extent_int(0) == 0 || ncell <= 0) {
@@ -686,6 +655,7 @@ int RadiationVet::RotAvgRstNslab(const int ncell) const {
   return static_cast<int>((nv + ncell - 1)/ncell);
 }
 
+// restart header h[0..10]
 void RadiationVet::RotAvgRstHdr(int64_t *h) const {
   h[10] = 0;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -705,9 +675,8 @@ void RadiationVet::RotAvgRstHdr(int64_t *h) const {
 }
 
 namespace {
-// the flat copy between vra_d's first nslot (nf+1) components (interior, radial range
-// i >= i0) and the dense slabs of the record (dir 0: vra_d -> slabs, zero-padded; 1:
-// slabs -> vra_d)
+// flat copy between vra_d's first nslot (nf+1) components (interior, i >= i0) and the
+// dense slabs (dir 0: vra_d -> slabs, zero-padded; 1: slabs -> vra_d)
 void RaRstCopy(const DvceArray5D<Real> &d, const DvceArray5D<Real> &sl, const int nmb,
                const int ncomp, const int dir, const int i0) {
   const int ni = d.extent_int(4) - i0, nj = d.extent_int(3), nk = d.extent_int(2);
@@ -716,8 +685,7 @@ void RaRstCopy(const DvceArray5D<Real> &d, const DvceArray5D<Real> &sl, const in
   const int64_t ncout = static_cast<int64_t>(n1)*n2*n3;
   const int64_t nv = ncomp*ncint;
   const int64_t ntot = static_cast<int64_t>(sl.extent_int(1))*ncout;
-  // one MeshBlock per launch, and launches of at most 2^30 values (the
-  // index range is int; a block's record can exceed 2^31 values); one launch = as before
+  // one MeshBlock per launch, at most 2^30 values each (int index range)
   const int64_t nch = int64_t(1) << 30;
   for (int m = 0; m < nmb; ++m) {
   for (int64_t q0 = 0; q0 < ntot; q0 += nch) {
@@ -750,10 +718,8 @@ void RaRstCopy(const DvceArray5D<Real> &d, const DvceArray5D<Real> &sl, const in
 }
 }  // namespace
 
-//! the same record straight into the host array of the restart output
-//! (nmb, nslab, n3, n2, n1), through a device buffer of at most nsc slabs of one
-//! MeshBlock instead of the whole (nmb, nslab) record: every element is the value
-//! RaRstCopy(dir 0) puts there (the same index map), so the file is byte-identical
+//! the same record straight into the host output array (nmb, nslab, n3, n2, n1) through
+//! a device buffer of at most nsc slabs of one MeshBlock; byte-identical to RaRstCopy
 void RadiationVet::RotAvgRstPackHost(HostArray5D<Real> &out, const int nmb,
                                      const int nsc) {
   const DvceArray5D<Real> d = vra_d;
@@ -790,7 +756,7 @@ void RadiationVet::RotAvgRstPackHost(HostArray5D<Real> &out, const int nmb,
         const int ii = static_cast<int>(r % ni) + i0;
         sl(0,s-s0,k,j,i) = d(m,n,kk,jj,ii);
       });
-      // (4-D subviews, both contiguous with equal strides: a device -> host copy)
+      // 4-D subviews, contiguous with equal strides
       Kokkos::deep_copy(Kokkos::subview(out, m, std::make_pair(s0, s0+ns), Kokkos::ALL,
                                         Kokkos::ALL, Kokkos::ALL),
                         Kokkos::subview(sl, 0, std::make_pair(0, ns), Kokkos::ALL,
@@ -799,14 +765,12 @@ void RadiationVet::RotAvgRstPackHost(HostArray5D<Real> &out, const int nmb,
   }
 }
 
-//! the history of the file into vra_d + the scalars, when it fits this run (the same K
-//! and closure, the same MeshBlock size); else nothing (the first build re-measures)
+//! load the file's history into vra_d when it fits this run (same K, closure, MeshBlock
+//! size); else nothing (the first build re-measures)
 bool RadiationVet::RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src,
                                  const int nmb) {
-  // (a run that never averages through vra_d: no rotation, or the clean scheme's own
-  // ring; the history would only hold device memory)
-  // (an old scheme's EMA history under the clean ring: its fields are not the ring's,
-  // but the closure it averaged is converged, CleanRingMoments)
+  // not averaged through vra_d (no rotation, or the clean ring): skip; cln_rhist records
+  // an EMA history under the clean ring (its closure is converged)
   if (!VgdRotOn() || cln_ring) {
     cln_rhist = cln_ring && vra_ema && h[0] == 1;
     return false;
@@ -841,8 +805,8 @@ bool RadiationVet::RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src,
   return true;
 }
 
-//! the first averaging call after a load (the table is complete there): the registered
-//! fields must be those of the file, else the history is dropped (re-measured)
+//! first averaging call after a load: the registered fields must match the file's,
+//! else the history is dropped (re-measured)
 bool RadiationVet::RotAvgRstCheck() {
   if (vra_rst_nf < 0) {return true;}
   const bool ok = (vra_tab.nf == vra_rst_nf);
