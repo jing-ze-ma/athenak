@@ -1,0 +1,4 @@
+time 1800.02 cycle 601 (vet bin 00001; float32 output)
+thin layer rho 1e-16..4e-13 (cells): n=131072  max|F_phi|/|F_r| 1.996e-02  p99 1.470e-02  median 7.282e-03 | max|F_theta|/|F_r| 2.474e-02
+rho 1e-14..4e-13 (cells): n=81920  max|F_phi|/|F_r| 1.996e-02  p99 1.506e-02  median 8.058e-03 | max|F_theta|/|F_r| 2.474e-02
+shell ratio sum|F_phi|/sum|F_r| over the thin-layer shells i=321..328 (r 5.5319e+11..5.5509e+11): max 8.093e-03

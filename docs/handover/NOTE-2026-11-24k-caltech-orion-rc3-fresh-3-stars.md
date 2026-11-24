@@ -54,3 +54,18 @@ PASS ceiling_metric       14 s  sp_dvphi 0 sp_dcap 0 sp_vtheta 0 sp_scale_ok 1 s
 8 passed, 0 failed, 121 s
 ```
 - Full output + record: caltech_results/RC3_KEYTESTS/.
+
+## m35zams thin-layer |F_phi|/|F_r| (11-24 00:33)
+- No vet bin at cycle 200 (t 696; bins every 1800 s). These are the nearest dumps: t=0 (00000) and t=1800.02 / cycle 601 (00001). Float32 bins, vet_f1/f2/f3 cell moments; thin layer = cells with rho 1e-16..4e-13 (the band of the 23zt v_phi growth, r ~5.53-5.55e11).
+```
+time 0 cycle 0 (vet bin 00000; float32 output)
+thin layer rho 1e-16..4e-13 (cells): n=196608  max|F_phi|/|F_r| 1.833e-02  p99 1.443e-02  median 6.698e-03 | max|F_theta|/|F_r| 2.782e-02
+rho 1e-14..4e-13 (cells): n=98304  max|F_phi|/|F_r| 1.833e-02  p99 1.509e-02  median 8.129e-03 | max|F_theta|/|F_r| 2.782e-02
+shell ratio sum|F_phi|/sum|F_r| over the thin-layer shells i=320..331 (r 5.5292e+11..5.5590e+11): max 8.176e-03
+
+time 1800.02 cycle 601 (vet bin 00001; float32 output)
+thin layer rho 1e-16..4e-13 (cells): n=131072  max|F_phi|/|F_r| 1.996e-02  p99 1.470e-02  median 7.282e-03 | max|F_theta|/|F_r| 2.474e-02
+rho 1e-14..4e-13 (cells): n=81920  max|F_phi|/|F_r| 1.996e-02  p99 1.506e-02  median 8.058e-03 | max|F_theta|/|F_r| 2.474e-02
+shell ratio sum|F_phi|/sum|F_r| over the thin-layer shells i=321..328 (r 5.5319e+11..5.5509e+11): max 8.093e-03
+```
+- For reference, IA12.1 smoke 23zt (S22 2x2 64^2 layout, non-wallsym deck) at t 3.6e3 already had a coherent v_phi of 3.9e6 cm/s there. Script: caltech_results/PROD_RC3_1124/m35zams/fphi.py.
