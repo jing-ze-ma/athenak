@@ -1,0 +1,2 @@
+2026-11-23 23:35:10 start bsg_R BIN=athena_release_38f3d3c95 md5=ad08ae9ba54268f65ac3c5ea76c0b18f NODE=hpc-sm-01-17 GPUS=2,3 ARGS: -i /resnick/groups/carnegie_poc/jingze/ia122_1123/decks/tile/IA122_bsg.athinput time/nlim=30 output2/dt=1e30 output3/dt=1e30 output4/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30
+2026-11-23 23:37:58 rc=0 last: elapsed=4.022816e+01 cycle=0 time=0.000000e+00 dt=1.654553e+02
