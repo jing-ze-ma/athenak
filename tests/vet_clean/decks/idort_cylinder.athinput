@@ -89,7 +89,6 @@ vet_source_noesrc = true
 vet_scatter = true
 vet_scatter_form = ma
 vet_scatter_j = relaxed
-vet_gd_rotate_every = 10
 implicit_resid_fatal = 1.0e-2
 implicit_pos_gas = true
 implicit_pos_floor = true

@@ -95,7 +95,6 @@ vet_col_lat_taucut = 30.0
 vet_gd_gl_nmu = 10
 vet_gd_gl_nphi = 12
 vet_gd_gl_stagger = true
-vet_gd_rotate_every = 10
 vet_col_lat_offdiag = operator
 vet_gd_tangential = false
 vet_gd_wall_interp = true

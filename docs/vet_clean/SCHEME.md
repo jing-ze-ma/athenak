@@ -272,11 +272,11 @@ behind an opaque cloud leaves a sharp shadow, and the field around an emitting c
 follows exact transport (an M1 closure merges crossing beams and fills shadows). Each beam
 stays straight, at its angle and 1-2 cells wide, but an oblique beam narrower than a cell
 carries about 1.8 x the exact energy density (1.4 x at twice the resolution; the cap of the
-streaming share at its edges). Around the cylinder E is within 1.3 % of exact transport and
+streaming share at its edges). Around the cylinder E is within 1.1 % of exact transport and
 the moment flux in the vacuum about 20 % above it.
 
 Test: `idort_beams` (L1 of E and the beam energy within 5 % of 0.777 and 1.785), `idort_shadow`, `idort_shadow_gl` (L1
-0.014 and 0.013), `idort_cylinder` (E outside 0.013), `nlte_eps1e-1`, `nlte_eps1e-4` (J
+0.014 and 0.013), `idort_cylinder` (E outside 0.011), `nlte_eps1e-1`, `nlte_eps1e-4` (J
 against exact transport, L1 1e-4 and 1.3e-3); `idort_beams_mb` (4 MeshBlocks: identical in
 tile mode); `shadow` (a clump lit by an isotropic bath: 0.6 % of the unshadowed radiation is
 left in the geometric umbra behind it, bound 2 %; regions whose sight lines miss the clump
