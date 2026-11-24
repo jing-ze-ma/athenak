@@ -4283,7 +4283,8 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   // moved E; c/chat its stored chat/c) through the L_mid / L_int faces; L_mid / L_int
   // are the faces' F (clean staggered: the face momentum, not the energy flux).
   // L_midC, L_intC: the comoving part Phi - (4/3) v E of the same flux (v, E the face
-  // means; thick D = 1/3), what old's L_mid / L_int sum (old f0x1 = F - a E)
+  // means; thick D = 1/3), what old's L_mid / L_int sum (old f0x1 = F - a E). L_bot is
+  // that comoving flux too (old's L_bot, face is+1; the face F adds the wall's 4/3 v E)
   pdata->nhist = nb + 10;
   const char *lab[32] = {"L_bot", "L_mid", "L_int", "L_top", "L_in", "E_rad", "e_gas",
                          "M_int", "KE_int", "KEr_int", "Mr_int", "PV_int", "V_int",
@@ -4343,7 +4344,7 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
     for (int n=0; n<NREDUCTION_VARIABLES; ++n) h.the_array[n] = 0.0;
     const Real vol = volume(m,k,j,i);
     if (haveff) {
-      if (i == is) h.the_array[0] = ff0(m,k,j,i+1)*area1(m,k,j,i+1);
+      if (i == is && !hpf) h.the_array[0] = ff0(m,k,j,i+1)*area1(m,k,j,i+1);
       if (i == imid) h.the_array[1] = ff0(m,k,j,i)*area1(m,k,j,i);
       if (x1f(m,i) <= rint && x1f(m,i+1) > rint) {
         h.the_array[2] = ff0(m,k,j,i)*area1(m,k,j,i);
@@ -4354,6 +4355,7 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
                      ur(m,radvet::M1_E,k,j,i))*area1(m,k,j,i)/3.0;
     if (hpf && i == imid) h.the_array[24] = icc*pf1(m,0,k,j,i)*area1(m,k,j,i);
     if (hpf && i == imid) h.the_array[26] = h.the_array[24] - cof;
+    if (hpf && i == is + 1) h.the_array[0] = icc*pf1(m,0,k,j,i)*area1(m,k,j,i) - cof;
     if (hpf && x1f(m,i) <= rint && x1f(m,i+1) > rint) {
       h.the_array[25] = icc*pf1(m,0,k,j,i)*area1(m,k,j,i);
       h.the_array[27] = h.the_array[25] - cof;
