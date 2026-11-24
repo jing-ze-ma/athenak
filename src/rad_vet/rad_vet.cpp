@@ -135,6 +135,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       }
     }
     const bool pl = (ov[1] > 0.0);
+    recipe::Old(pin, "rad_vet", "clean_lin_pass", pl ? "true" : "false");
     cln_linpass = pin->GetOrAddBoolean("rad_vet","clean_lin_pass",nw || pl);}
     cln_tol_nl = pin->GetOrAddReal("rad_vet","clean_tol_nl",1.0e-11);
     cln_raymin = pin->GetOrAddReal("rad_vet","clean_ray_min",1.0e-3);
@@ -150,6 +151,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // cross-fade, CleanInit): the rotating union swept as the current (+ next) set, older
     // sets as moment offsets (CleanRingMoments). clean_rot_fuse: the live ring's two sets
     // in one fused sweep (bitwise the two sweeps; a second intensity array)
+    recipe::Old(pin, "rad_vet", "clean_rot_fuse", "false");
     cln_rfuse = pin->GetOrAddBoolean("rad_vet","clean_rot_fuse",nw);
     if (pin->DoesParameterExist("rad_vet","clean_rot_ring")) {
       std::string rr = pin->GetString("rad_vet","clean_rot_ring");
@@ -196,12 +198,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_stag_opac_update (default on for a fresh run, every mesh) and clean_face_opac
     // (default harmonic on a fresh run), USER 11-21, recorded; a restart file without a
     // key keeps the old default (echoed)
-    auto old = [&](const char *k, const char *v) {
-      if (!nw && !pin->DoesParameterExist("rad_vet", k)) {
-        recipe::Log(std::string("<rad_vet>/") + k + " = " + v + " (a restart file "
-                    "without the key: the old default)");
-      }
-    };
+    auto old = [&](const char *k, const char *v) {recipe::Old(pin, "rad_vet", k, v);};
     old("clean_stag_opac_update", "false");
     old("clean_face_opac", "arith");
     cln_opt = pin->GetOrAddBoolean("rad_vet","clean_stag_opac_update",nw);
@@ -349,10 +346,10 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_freal = stag("clean_stag_freal", cln_gflux && cln_fsolve);
     // clean_stag_upwind_central: an upwind face carries the central mean of a E within
     // the TVD bound (CleanStagAdvectCorr)
-    cln_ucen = stag("clean_stag_upwind_central", false);
+    cln_ucen = pin->GetOrAddBoolean("rad_vet","clean_stag_upwind_central",false);
     // clean_stag_central: the rest as the plain central mean, the work drain and the gas
     // kick in the same Patankar weight (CleanStagMprkWeight)
-    cln_ucp = stag("clean_stag_central", false);
+    cln_ucp = pin->GetOrAddBoolean("rad_vet","clean_stag_central",false);
     cln_ucen = cln_ucen || cln_ucp;
     // clean_stag_csvec_radial: cs cell vector exact for a radial field (true only)
     cln_csvr = stag("clean_stag_csvec_radial", true);
@@ -363,6 +360,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // clean_stag_thinf: the bracket's ray correction in the face half ranges, realisable
     // (CleanStagBracket)
+    old("clean_stag_thinf", "false");
     cln_thinf = pin->GetOrAddBoolean("rad_vet","clean_stag_thinf",nw);
     // clean_stag_flim: false only (fwb + fcone bound F)
     if (pin->GetOrAddBoolean("rad_vet","clean_stag_flim",false)) {
@@ -474,6 +472,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_stag_xdonor = lag | p1 | off: the off-diagonal stress flux as an M-matrix
     // term (CleanStagXDonor); clean_stag_xsrc: also the face sources past their explicit
     // share
+    old("clean_stag_xdonor", "off");
     const std::string xd = pin->GetOrAddString("rad_vet","clean_stag_xdonor",
                                                nw ? "lag" : "off");
     if (xd != "off" && xd != "p1" && xd != "lag") {
@@ -483,10 +482,11 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     cln_xd = (xd != "off");
     cln_xlag = (xd == "lag");
+    if (cln_xd) old("clean_stag_xsrc", "false");
     cln_xsrc = cln_xd && pin->GetOrAddBoolean("rad_vet","clean_stag_xsrc",nw);
     // clean_stag_eicarry: a stage start's gas eint < 0 enters the gas row as is, paid by
     // its implicit exchange (CleanOldVector)
-    cln_eicry = stag("clean_stag_eicarry", false);
+    cln_eicry = pin->GetOrAddBoolean("rad_vet","clean_stag_eicarry",false);
     cln_colf = stag("clean_stag_colflux", false);
     // clean_cs_lz_abs = 2 (cubed sphere, the only form): the gas phi momentum is the
     // faces' absorption as its r and theta; the L_z it does not take is booked as the
@@ -503,9 +503,11 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_cs_lz_tel: L_z by telescoping (gas phi momentum of CleanCsTorque, radiation
     // L_z of its face momenta), so the ledger holds the radial boundaries' torque alone
     if (cln_lza == 2 || pin->DoesParameterExist("rad_vet", "clean_cs_lz_tel")) {
+      old("clean_cs_lz_tel", "false");
       cln_lzt = pin->GetOrAddBoolean("rad_vet","clean_cs_lz_tel",nw);
     }
     // clean_cs_lz_bnd_free: no radiation stress torque through the cs radial boundaries
+    if (cln_lzt) old("clean_cs_lz_bnd_free", "false");
     if (cln_lzt) cln_lzbf = pin->GetOrAddBoolean("rad_vet","clean_cs_lz_bnd_free",nw);
     if (cln_lzt && cln_lza != 2) {
       std::cout << "### FATAL ERROR: <rad_vet>/clean_cs_lz_tel needs the cubed sphere "
@@ -549,6 +551,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // cons: the work by which the row and the gas kinetic energy differ goes to E whole;
     // x2: also every T root from the local 2x2 of the E and gas rows
     {
+      old("clean_xt_exact", "off");
       const std::string xe = pin->GetOrAddString("rad_vet","clean_xt_exact",
                                                  nw ? "cons" : "off");
       if (xe != "off" && xe != "cons" && xe != "x2") {
@@ -596,23 +599,20 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       }
       cln_vimp = false;
     }
-    // clean_clos1_budget (read only when named; false, the default: the strict norm): a
+    // clean_clos1_budget (false, the default, recorded: the strict norm): a
     // pass whose iterate the next pass takes the closure of in the budget's norm, to 0.1
     // clean_conv_max, the floor of the passes after it at the budget's ceiling (a step
     // dt_retry redoes strictly, as its budget)
-    cln_c1b = pin->DoesParameterExist("rad_vet","clean_clos1_budget") &&
-              pin->GetBoolean("rad_vet","clean_clos1_budget");
-    // clean_vel_settled (read only when named; false, the default: every pass): the
+    cln_c1b = pin->GetOrAddBoolean("rad_vet","clean_clos1_budget",false);
+    // clean_vel_settled (false, the default, recorded: every pass): the
     // velocity update (its F solve) only in a pass that can end the solve, one whose E
     // change settled; the others leave v, F to the next pass (the same fixed point)
-    cln_vset = pin->DoesParameterExist("rad_vet","clean_vel_settled") &&
-               pin->GetBoolean("rad_vet","clean_vel_settled");
-    // clean_bud_maxnorm (read only when named; false, the default: the L2 norm): the
+    cln_vset = pin->GetOrAddBoolean("rad_vet","clean_vel_settled",false);
+    // clean_bud_maxnorm (false, the default, recorded: the L2 norm): the
     // budget passes' linear test and Eisenstat-Walker |r0| in the max norm over the
     // cells, the norm of the pass's own test (CleanNewtonUpdate), not an L2 sum over the
     // cells
-    cln_bmn = pin->DoesParameterExist("rad_vet","clean_bud_maxnorm") &&
-              pin->GetBoolean("rad_vet","clean_bud_maxnorm");
+    cln_bmn = pin->GetOrAddBoolean("rad_vet","clean_bud_maxnorm",false);
     // clean_gas_tfloor (default true): the gas row's T bounded below by the EOS
     // tfloor, and the gas eint written back from that root (E takes the rest)
     cln_gtf = stag("clean_gas_tfloor", true);
@@ -634,9 +634,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // clean_wb_exch_local (needs clean_gas_tfloor, EOS tfloor > 0): the write-back's cell
     // exchange solved exactly from the transported E (E > 0, gas >= e(rho, tfloor))
-    if (pin->DoesParameterExist("rad_vet","clean_wb_exch_local")) {
-      cln_wbxl = pin->GetBoolean("rad_vet","clean_wb_exch_local");
-    }
+    cln_wbxl = pin->GetOrAddBoolean("rad_vet","clean_wb_exch_local",cln_wbxl);
     // clean_wb_mcap (read only when named; default false): the write-back gives the gas
     // the face momentum terms at the Newton passes' cap h chi_f E, the momentum whose
     // work the E row paid (CleanMomentumChange); the terms withheld are printed
@@ -659,11 +657,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // 20), clean_stall_fac (0.5): the old production's implicit_gas_newton_switch, a
     // stalled solve's remaining passes on the bracketed gas root without the Newton
     // slope; a restart file without the keys keeps 0 / 20
-    if (!nw && !pin->DoesParameterExist("rad_vet","clean_gas_newton_switch")) {
-      recipe::Log("<rad_vet>/clean_gas_newton_switch = 0 (a restart file without the "
-                  "key: "
-                  "the old default)");
-    }
+    old("clean_gas_newton_switch", "0");
+    old("clean_gas_newton_switch_min", "20");
     cln_gnsw = pin->GetOrAddInteger("rad_vet","clean_gas_newton_switch",nw ? 4 : 0);
     cln_gnswmin = pin->GetOrAddInteger("rad_vet","clean_gas_newton_switch_min",
                                        nw ? 6 : 20);
@@ -677,6 +672,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // preconditioner: mg (CleanStagVCycle)
     {// clean_stag_mg_color = mirror | parity: the mg's line colours (CleanStagLineSolve)
+    old("clean_stag_mg_color", "parity");
     const std::string mc = pin->GetOrAddString("rad_vet","clean_stag_mg_color",
                                                nw ? "mirror" : "parity");
     if (mc != "parity" && mc != "mirror") {
@@ -701,15 +697,13 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       }
       cln_mgt = {mi.nx1, nt, d3 ? nt : 1};
     }
-    // clean_stag_mg_levels N (read only when named; default 2): the mg's coarse levels at
+    // clean_stag_mg_levels N (default 2): the mg's coarse levels at
     // most, each halving the tile's x2 and x3 where even (>= 4); 0: the sweep alone
-    if (pin->DoesParameterExist("rad_vet","clean_stag_mg_levels")) {
-      cln_mgnl = pin->GetInteger("rad_vet","clean_stag_mg_levels");
-      if (cln_mgnl < 0) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<rad_vet>/clean_stag_mg_levels N >= 0" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
+    cln_mgnl = pin->GetOrAddInteger("rad_vet","clean_stag_mg_levels",cln_mgnl);
+    if (cln_mgnl < 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_vet>/clean_stag_mg_levels N >= 0" << std::endl;
+      std::exit(EXIT_FAILURE);
     }
     // clean_pc_sweep = sym (default of a fresh run, recorded; a restart file without the
     // key keeps rb) | rb | rbr | rbrsym | wave: the mg's smoothing on each level, a
@@ -805,10 +799,10 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "(only true)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_init = given | steady (read only when named): steady relaxes the radiation
+    // clean_init = given | steady: steady relaxes the radiation
     // before step 1
-    if (pin->DoesParameterExist("rad_vet","clean_init")) {
-      const std::string ci = pin->GetString("rad_vet","clean_init");
+    {
+      const std::string ci = pin->GetOrAddString("rad_vet","clean_init","given");
       if (ci != "given" && ci != "steady") {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
           << std::endl << "<rad_vet>/clean_init = given | steady" << std::endl;
@@ -1046,11 +1040,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                (cl0.compare("vet_col") == 0 && pin->DoesParameterExist("rad_vet","vet_gd")
                 && pin->GetBoolean("rad_vet","vet_gd"));
   }
-  if (pin->DoesParameterExist("rad_vet","vet_scatter")) {
-    vscat = pin->GetBoolean("rad_vet","vet_scatter");
-  } else if (fresh && vet_rays && opacity_type == M1_OPAC_TABLE && gen_eos_tab) {
-    vscat = pin->GetOrAddBoolean("rad_vet","vet_scatter",true);
-  }
+  vscat = pin->GetOrAddBoolean("rad_vet","vet_scatter", fresh && vet_rays &&
+                               opacity_type == M1_OPAC_TABLE && gen_eos_tab);
   if (vscat) {
     std::string sf = pin->GetOrAddString("rad_vet","vet_scatter_form","ma");
     if (sf.compare("ma") == 0) {
@@ -1206,29 +1197,22 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_vet","floorcap_v")) {
       fcap_v = pin->GetReal("rad_vet","floorcap_v");
     }
-    // floorcap_lz (read only when named): the velocity cap scales the momentum without
+    // floorcap_lz (default false): the velocity cap scales the momentum without
     // L_z only (phi_hat: spherical polar e3, Cartesian (-y, x)/R, the cubed sphere
     // GnomonicPhiHat; the part along it is kept, also where it alone exceeds
     // floorcap_v), so that L_z is exact
-    if (pin->DoesParameterExist("rad_vet","floorcap_lz")) {
-      fcap_lz = pin->GetBoolean("rad_vet","floorcap_lz");
-    }
-    // floorcap_lz_spin (read only when named; needs floorcap_lz, floorcap_mesh_vol): the
+    fcap_lz = pin->GetOrAddBoolean("rad_vet","floorcap_lz",fcap_lz);
+    // floorcap_lz_spin (default false; needs floorcap_lz, floorcap_mesh_vol): the
     // cap scales the whole velocity, so |v| <= floorcap_v, and gives the L_z it removes
     // to the gas at or above floorcap_rho as one rigid rotation (FloorGasCap)
-    if (pin->DoesParameterExist("rad_vet","floorcap_lz_spin")) {
-      fcap_spin = pin->GetBoolean("rad_vet","floorcap_lz_spin");
-    }
+    fcap_spin = pin->GetOrAddBoolean("rad_vet","floorcap_lz_spin",fcap_spin);
     if (pin->DoesParameterExist("rad_vet","floorcap_report")) {
       fcap_report = pin->GetInteger("rad_vet","floorcap_report");
     }
     // floorcap_mesh_vol: counters weighted by the mesh cell volume, |dp| and L_z in the
     // frame of y (CleanVol, CleanLzArm)
     {
-      if (!nw && !pin->DoesParameterExist("rad_vet","floorcap_mesh_vol")) {
-        recipe::Log("<rad_vet>/floorcap_mesh_vol = false (a restart file without the "
-                    "key: the old default)");
-      }
+      recipe::Old(pin, "rad_vet", "floorcap_mesh_vol", "false");
       fcap_mvol = pin->GetOrAddBoolean("rad_vet","floorcap_mesh_vol",nw);
     }
     if (fcap_spin && !(fcap_lz && fcap_mvol)) {
@@ -1611,11 +1595,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_gl_nmu")) {
       vgd_gl_nmu = pin->GetInteger("rad_vet","vet_gd_gl_nmu");
     }
-    if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_gl_nphi")) {
-      vgd_gl_nphi = pin->GetInteger("rad_vet","vet_gd_gl_nphi");
-    }
-    if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_gl_stagger")) {
-      vgd_gl_stag = pin->GetBoolean("rad_vet","vet_gd_gl_stagger");
+    if (vgd_on && vgd_gl_nmu > 0) {
+      vgd_gl_nphi = pin->GetOrAddInteger("rad_vet","vet_gd_gl_nphi",vgd_gl_nphi);
+      vgd_gl_stag = pin->GetOrAddBoolean("rad_vet","vet_gd_gl_stagger",vgd_gl_stag);
     }
     if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_ls")) {
       vgd_ls = pin->GetInteger("rad_vet","vet_gd_ls");
@@ -1729,9 +1711,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       }
     }
     if (vgd_on) {VetBcInit(pin, true);}
-    if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_allow_clamp")) {
-      vgd_allow_clamp = pin->GetBoolean("rad_vet","vet_gd_allow_clamp");
-    }
+    if (vgd_on) vgd_allow_clamp =
+        pin->GetOrAddBoolean("rad_vet","vet_gd_allow_clamp",vgd_allow_clamp);
     // vet_gd_band_global: default true on a fresh sp full-sphere vet_gd start
     // (recipe::NewDefaults), recorded
     {
@@ -1790,18 +1771,11 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     if (!vgd_on && fresh && !pin->DoesParameterExist("rad_vet","vet_source_noesrc")) {
       vsrc_noes = pin->GetOrAddBoolean("rad_vet","vet_source_noesrc",true);
     }
-    if (pin->DoesParameterExist("rad_vet","vet_source_noesrc_h2be")) {
-      vsrc_noes_h2be = pin->GetBoolean("rad_vet","vet_source_noesrc_h2be");
-    }
-    if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_wall_interp")) {
-      vgd_wint = pin->GetBoolean("rad_vet","vet_gd_wall_interp");
-    }
-    if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_wall_sym")) {
-      vgd_wsym = pin->GetBoolean("rad_vet","vet_gd_wall_sym");
-    }
-    if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_theta_seam_sym")) {
-      vgd_wst = pin->GetBoolean("rad_vet","vet_gd_theta_seam_sym");
-    }
+    vsrc_noes_h2be =
+        pin->GetOrAddBoolean("rad_vet","vet_source_noesrc_h2be",vsrc_noes_h2be);
+    if (vgd_on) vgd_wint = pin->GetOrAddBoolean("rad_vet","vet_gd_wall_interp",vgd_wint);
+    if (vgd_on) vgd_wsym = pin->GetOrAddBoolean("rad_vet","vet_gd_wall_sym",vgd_wsym);
+    if (vgd_on) vgd_wst = pin->GetOrAddBoolean("rad_vet","vet_gd_theta_seam_sym",vgd_wst);
     // vet_gd_theta_wall: periodic | mirror (specular) | vacuum (no incoming intensity at
     // a physical theta wall) | extrap (zero gradient)
     if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_theta_wall")) {
@@ -1834,21 +1808,18 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_halo_ipc")) {
       vgd_ipc_on = pin->GetBoolean("rad_vet","vet_gd_halo_ipc");
     }
-    if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_replace")) {
-      vgd_replace = pin->GetBoolean("rad_vet","vet_gd_replace");
-    }
+    if (vgd_on) vgd_replace =
+        pin->GetOrAddBoolean("rad_vet","vet_gd_replace",vgd_replace);
     // vet_gd_tangential: full tensor by default; recipe none on cs: D_rr only
     if (vgd_on && pmy_pack->pmesh->use_cubed_sphere &&
         recipe::GetMode(pin) == recipe::Mode::none) {vgd_tan = false;}
-    if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_tangential")) {
-      vgd_tan = pin->GetBoolean("rad_vet","vet_gd_tangential");
-    }
+    if (vgd_on) vgd_tan = pin->GetOrAddBoolean("rad_vet","vet_gd_tangential",vgd_tan);
     if (vlat_on) {
       // vet_col_lat_cut_thin (VetLatCsFinish)
       vlat_cut_thin = pin->GetOrAddReal("rad_vet","vet_col_lat_cut_thin",
                                         global_variable::restart_run ? 0.0 : 1.0);
-      if (pin->DoesParameterExist("rad_vet","vet_col_lat_offdiag")) {
-        std::string so = pin->GetString("rad_vet","vet_col_lat_offdiag");
+      {
+        std::string so = pin->GetOrAddString("rad_vet","vet_col_lat_offdiag","operator");
         if (so.compare("none") == 0 || so.compare("false") == 0) {
           vlat_odm = 0;
         } else if (so.compare("lagged") == 0 || so.compare("true") == 0) {
@@ -2466,7 +2437,8 @@ void RadiationVet::RotAvgParse(ParameterInput *pin) {
     vra_ema_n = pin->GetOrAddReal("rad_vet","vet_rotate_avg_ema",128.0);
   }
   // vet_rotate_avg_ema_wb acts on the EMA ring only
-  if (pin->DoesParameterExist("rad_vet","vet_rotate_avg_ema_wb") && vra_ema_n < 1.0) {
+  if (pin->DoesParameterExist("rad_vet","vet_rotate_avg_ema_wb") &&
+      pin->GetBoolean("rad_vet","vet_rotate_avg_ema_wb") && vra_ema_n < 1.0) {
     std::cout << "### FATAL ERROR <rad_vet>/vet_rotate_avg_ema_wb needs "
               << "vet_rotate_avg_ema >= 1" << std::endl;
     std::exit(EXIT_FAILURE);
@@ -2493,9 +2465,7 @@ void RadiationVet::RotAvgParse(ParameterInput *pin) {
         std::exit(EXIT_FAILURE);
       }
     }
-    if (pin->DoesParameterExist("rad_vet","vet_rotate_avg_ema_wb")) {
-      vra_ema_wb = pin->GetBoolean("rad_vet","vet_rotate_avg_ema_wb");
-    }
+    vra_ema_wb = pin->GetOrAddBoolean("rad_vet","vet_rotate_avg_ema_wb",vra_ema_wb);
     if (pin->DoesParameterExist("rad_vet","vet_rotate_avg_ema_dema")) {
       vra_ema_dema = pin->GetBoolean("rad_vet","vet_rotate_avg_ema_dema");
       if (vra_ema_dema) {vra_k = 4;}   // slot 2 = e2, slot 3 the Delta

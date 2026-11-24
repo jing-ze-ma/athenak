@@ -29,6 +29,8 @@ enum class Mode {standard, prod1019, none};
 Mode GetMode(ParameterInput *pin);        // validates <job>/recipe (read without adding)
 bool NewDefaults(ParameterInput *pin);    // see above
 void Log(const std::string &line);        // one defaulted key (or why it stayed off)
+void Old(ParameterInput *pin, const std::string &block, const std::string &key,
+         const std::string &value);       // Log: a restart file without key runs value
 void PrintLog();                          // the start-up block (rank 0), then clears
 // a problem generator's fresh-start defaults of keys read before the pgen
 // exists (main.cpp, before the Mesh); pgen/<problem>_defaults.cpp or the no-op

@@ -1273,10 +1273,8 @@ void RadiationVet::VetRotInit(ParameterInput *pin) {
   // set direction)
   if (vgd_on) {
     const bool csm = pmy_pack->pmesh->use_cubed_sphere;
-    // read only when named (not added to the parameter dump)
-    const std::string ax = pin->DoesParameterExist("rad_vet","vet_gd_rotate_axis") ?
-                           pin->GetString("rad_vet","vet_gd_rotate_axis") :
-                           std::string(csm ? "3d" : "z");
+    const std::string ax = pin->GetOrAddString("rad_vet","vet_gd_rotate_axis",
+                                               csm ? "3d" : "z");
     if (ax.compare("z") == 0) {
       vgd_rot3 = false;
     } else if (ax.compare("3d") == 0) {

@@ -44,6 +44,13 @@ bool NewDefaults(ParameterInput *pin) {
 
 void Log(const std::string &line) {Lines().push_back(line);}
 
+void Old(ParameterInput *pin, const std::string &block, const std::string &key,
+         const std::string &value) {
+  if (!global_variable::restart_run || pin->DoesParameterExist(block, key)) return;
+  Log("<" + block + ">/" + key + " = " + value +
+      " (a restart file without the key: the old default)");
+}
+
 void CleanDefaults(ParameterInput *pin) {
   if (global_variable::restart_run || !pin->DoesBlockExist("rad_vet")) return;
   auto named = [&](const char *b, const char *k) {return pin->DoesParameterExist(b, k);};

@@ -272,8 +272,9 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  if (pin->DoesParameterExist(bk, "floor_from_ekin")) {
-    eos_data.ekin_heat = pin->GetBoolean(bk, "floor_from_ekin");
+  if ((pin->DoesBlockExist("rad_vet") && bk.compare("hydro") == 0) ||
+      pin->DoesParameterExist(bk, "floor_from_ekin")) {
+    eos_data.ekin_heat = pin->GetOrAddBoolean(bk, "floor_from_ekin", false);
     if (eos_data.ekin_heat && (bk.compare("hydro") != 0 ||
                                pin->GetString(bk, "eos").compare("general") != 0)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
