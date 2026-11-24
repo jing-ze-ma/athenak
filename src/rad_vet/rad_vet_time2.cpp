@@ -460,6 +460,30 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
   const Real g = kT2G, cl = c_light, ch = chat, ar = arad, dt = pmy_pack->pmesh->dt;
   const bool gm = t2_gtm, gs = t2_gts;
   auto k1_ = t2k1;
+  // TEST (SDORDER): the flux state's exchange, env SDO_PRINT
+  static const bool sdop = std::getenv("SDO_PRINT") != nullptr;
+  Real sdo[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  if (which == 2 && sdop) {
+    Kokkos::parallel_reduce("sdo_sgn", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+        DevExeSpace(), {0, kl, jl, il}, {nmb, ku + 1, ju + 1, iu + 1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &nn, Real &nc) {
+      const Real cc = csk ? ccl(m,k,j) : 0.0, r = u1_(m,IDN,k,j,i), dd = u0_(m,IDN,k,j,i);
+      Real p[3], q[3], s[3];
+      for (int n = 0; n < 3; ++n) {
+        p[n] = u1_(m,IM1+n,k,j,i);
+        q[n] = p[n] + g*dt*k1_(m,M1_T2_M1+n,k,j,i);
+        s[n] = p[n] + g*(hs_(m,IM1+n,k,j,i) - p[n]);
+      }
+      const Real a = g*dt*k1_(m,M1_T2_EN,k,j,i) -
+                     (CsKeMom(q[0], q[1], q[2], cc) - CsKeMom(p[0], p[1], p[2], cc))/r;
+      const Real es = u1_(m,IEN,k,j,i) + g*(hs_(m,IEN,k,j,i) - u1_(m,IEN,k,j,i)) -
+                      CsKeMom(s[0], s[1], s[2], cc)/dd;
+      const Real ey = u0_(m,IEN,k,j,i) - CsKeMom(u0_(m,IM1,k,j,i), u0_(m,IM2,k,j,i),
+                      u0_(m,IM3,k,j,i), cc)/dd;
+      nc += 1.0;
+      if (a*(ey - es) < 0.0) nn += 1.0;
+    }, Kokkos::Sum<Real>(sdo[0]), Kokkos::Sum<Real>(sdo[1]));
+  }
   par_for("vet_t2_gtime", DevExeSpace(), 0, nmb-1, kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real e = 0.0, xs = 0.0;
@@ -518,6 +542,39 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
       }
     }
   });
+  if (which == 2 && sdop) {
+    Real mx = 0.0;
+    Kokkos::parallel_reduce("sdo_rat", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+        DevExeSpace(), {0, kl, jl, il}, {nmb, ku + 1, ju + 1, iu + 1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &n1, Real &n2,
+                  Real &n3, Real &vm) {
+      const Real cc = csk ? ccl(m,k,j) : 0.0, r0 = u0_(m,IDN,k,j,i);
+      const Real gr = etg ? phc(m,k,j,i) : 0.0;
+      const Real e0 = u0_(m,IEN,k,j,i) - CsKeMom(u0_(m,IM1,k,j,i), u0_(m,IM2,k,j,i),
+                      u0_(m,IM3,k,j,i), cc)/r0 - r0*gr;
+      const Real r1 = r0 + hs_(m,IDN,k,j,i);
+      const Real e1 = u0_(m,IEN,k,j,i) + hs_(m,IEN,k,j,i) -
+                      CsKeMom(u0_(m,IM1,k,j,i) + hs_(m,IM1,k,j,i),
+                              u0_(m,IM2,k,j,i) + hs_(m,IM2,k,j,i),
+                              u0_(m,IM3,k,j,i) + hs_(m,IM3,k,j,i), cc)/r1 - r1*gr;
+      if (!(e0 > 0.0)) return;
+      const Real x = fabs(e1/e0 - 1.0);
+      if (x > 0.1) n1 += 1.0;
+      if (x > 1.0) n2 += 1.0;
+      if (!(e1 > 0.0)) n3 += 1.0;
+      vm = fmax(vm, x);
+    }, Kokkos::Sum<Real>(sdo[2]), Kokkos::Sum<Real>(sdo[3]), Kokkos::Sum<Real>(sdo[4]),
+       Kokkos::Max<Real>(mx));
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, sdo, 5, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &mx, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::printf("SDO cycle %d dt %.6e K1K2<0 %.4f max|ef/es-1| %.4e cells>0.1 %.0f "
+                  ">1 %.0f ef<=0 %.0f of %.0f\n", pmy_pack->pmesh->ncycle, dt,
+                  sdo[0]/sdo[1], mx, sdo[2], sdo[3], sdo[4], sdo[1]);
+    }
+  }
   if (which != 3) return;
   FluidRefresh(pdrive, false);   // ghosts + w0 of the flux state
   // u0 back to U* + d in the ghosts too, with the neighbour's f d (exchanged; 0 at the
