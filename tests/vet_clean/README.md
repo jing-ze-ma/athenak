@@ -111,8 +111,10 @@ generators; a `he_star_vet` binary cannot run these decks): `--exe build_tests/s
 runs of one binary and must pass on a GPU too. The reference tests (`order_*`, `nlte_*`,
 `thermal_eq`, `wb_*`) must agree with the CPU references within their tolerances; a much
 larger difference points at the build (see the CUDA 12.2 warning in
-`docs/vet_clean/BUILD.md`). The quick subset passed on MI300A (8/8) before `radwave`,
-`wedge_sym` and `floor_pay` were added; those three have not been run on a GPU yet.
+`docs/vet_clean/BUILD.md`). On MI300A (viper, ROCm 7.2) the quick subset passes 10 of 11:
+`layout_tile` finds 1 x 2 MeshBlocks (a phi split) 1.9e-11 from one MeshBlock, where the CPU
+is bitwise; IA12.2 gives the same numbers, so on a GPU the 1 x 2 case is bounded, not
+bitwise (an open item).
 
 ## Notebooks
 
