@@ -1605,7 +1605,7 @@ Real RadiationVet::EbndEsrc() {
 
 void RadiationVet::EbndStart() {
   if (!ebnd_on) return;
-  if (transport != M1_TRANSPORT_IMPLICIT || MRActive() || csplit != 0) {
+  if (MRActive() || csplit != 0) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
               << std::endl << "<rad_vet> Ebnd (energy-budget diagnostic) needs the "
               << "implicit transport without multi-rate / coupling_split" << std::endl;

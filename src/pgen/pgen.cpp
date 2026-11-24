@@ -1209,7 +1209,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   }
   if (pradvet != nullptr) {
     data_size_ += nout1*nout2*nout3*nm1*sizeof(Real);    // rad_vet u0
-    if (pradvet->transport >= radvet::M1_TRANSPORT_IMPLICIT_X1) {
+    {
       data_size_ += (nout1+1)*nout2*nout3*sizeof(Real);  // rad_vet f0x1 (milestone 3a)
     }
   }
@@ -1676,7 +1676,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         }
       }
     };
-    if (pradvet->transport >= radvet::M1_TRANSPORT_IMPLICIT_X1) {
+    {
       HostArray4D<Real> fcin("m1fcin", nmb, nout3, nout2, nout1+1);
       for (int m=0;  m<noutmbs_max; ++m) {
         if (m < noutmbs_min) {

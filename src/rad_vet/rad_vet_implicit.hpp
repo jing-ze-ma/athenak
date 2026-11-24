@@ -101,13 +101,6 @@ constexpr char kM1XfdRstMagic[8] = {'M', '1', 'X', 'F', 'D', 'R', 'S', '1'};
 constexpr int kM1XfdRstNi = 24;   // int64 header words
 constexpr int kM1XfdRstNr = 8;    // Real header words
 
-// <rad_vet>/transport
-constexpr int M1_TRANSPORT_EXPLICIT   = 0;   // stages 1-2: PD-ARS, sub-cycled
-constexpr int M1_TRANSPORT_IMPLICIT_X1 = 1;  // stage 3a: backward Euler on x1 columns
-constexpr int M1_TRANSPORT_IMPLICIT = 2;     // stage 3b phase B: the same backward-Euler
-                                             // solve with the x2/x3 couplings added, the
-                                             // x1 direction still solved exactly per
-                                             // column and the transverse ones LAGGED
                                              // (line Jacobi) or wrapped in a Krylov
                                              // iteration.
 

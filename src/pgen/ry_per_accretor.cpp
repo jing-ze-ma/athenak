@@ -3916,7 +3916,6 @@ void RadSetup(ParameterInput *pin, MeshBlockPack *pmbp, const std::vector<Real> 
     fatal("needs <rad_vet>/force_reference = wb_arad (Phi_eff carries the column's "
           "radiation force)");
   }
-  if (pm1->transport == radvet::M1_TRANSPORT_EXPLICIT) fatal("needs implicit transport");
   if (pin->GetString("rad_vet", "implicit_bc_x1min").compare("flux") != 0 ||
       pin->GetString("rad_vet", "implicit_bc_x1max").compare("marshak") != 0) {
     fatal("needs implicit_bc_x1min = flux (the star's L at r_in) and implicit_bc_x1max = "

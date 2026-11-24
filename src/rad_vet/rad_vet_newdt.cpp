@@ -27,6 +27,10 @@ namespace radvet {
 //! \fn TaskStatus RadiationVet::NewTimeStep
 
 TaskStatus RadiationVet::NewTimeStep(Driver *pdriver, int stage) {
+  // no light-speed CFL: the implicit step takes the step it is given, unless
+  // <rad_vet>/implicit_cfl > 0 asks for c dt/dx (the radiation-only tests)
+  dtnew = static_cast<Real>(std::numeric_limits<float>::max());
+  if (!(impl_cfl > 0.0)) return TaskStatus::complete;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int nx1 = indcs.nx1;
   int nx2 = indcs.nx2;
@@ -80,17 +84,7 @@ TaskStatus RadiationVet::NewTimeStep(Driver *pdriver, int stage) {
     dxmin = smin;
   }
 
-  // ---- MILESTONE 3a hook: the implicit scheme has no light-speed CFL.  It takes the
-  // step it is given; <rad_vet>/implicit_cfl > 0 asks for a radiation CFL c dt/dx, which
-  // is how the radiation-only tests choose their step.
-  if (transport >= M1_TRANSPORT_IMPLICIT_X1) {
-    dtnew = (impl_cfl > 0.0) ? (impl_cfl*dxmin/c_light)
-                             : static_cast<Real>(std::numeric_limits<float>::max());
-    return TaskStatus::complete;
-  }
-  // ---- end of the 3a hook
-
-  dtnew = cfl_rad*dxmin/chat;
+  dtnew = impl_cfl*dxmin/c_light;
   return TaskStatus::complete;
 }
 

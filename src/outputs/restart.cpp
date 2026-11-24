@@ -258,7 +258,7 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     stage(outarray_m1, Kokkos::subview(pradvet->u0, std::make_pair(0,nmb), Kokkos::ALL,
                                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
     // milestone 3a: the persistent x1 face fluxes of the implicit scheme
-    if (pradvet->transport >= radvet::M1_TRANSPORT_IMPLICIT_X1) {
+    {
       stage(outarray_m1f, Kokkos::subview(pradvet->f0x1, std::make_pair(0,nmb),
                                           Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
     }
@@ -946,7 +946,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   if (pradvet != nullptr) {
     data_size += nout1*nout2*nout3*nm1*sizeof(Real);    // rad_vet u0
-    if (pradvet->transport >= radvet::M1_TRANSPORT_IMPLICIT_X1) {
+    {
       data_size += (nout1+1)*nout2*nout3*sizeof(Real);  // rad_vet f0x1 (milestone 3a)
     }
     if (pradvet->trans_on) {
@@ -1342,7 +1342,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
         }
       }
     };
-    if (pradvet->transport >= radvet::M1_TRANSPORT_IMPLICIT_X1) {
+    {
       for (int m=0;  m<noutmbs_max; ++m) {
         if (m < noutmbs_min) {
           auto mbptr = Kokkos::subview(outarray_m1f, m, Kokkos::ALL, Kokkos::ALL,

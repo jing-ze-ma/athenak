@@ -83,7 +83,6 @@ void ImplFatal(const std::string &msg) {
 //! and allocate the face and work arrays.  Called at the END of the constructor.
 
 void RadiationVet::ImplicitInit(ParameterInput *pin) {
-  if (transport < M1_TRANSPORT_IMPLICIT_X1) return;
   // <rad_vet>/time_scheme (read by Time2Init below): hesdirk2 on a fresh run wherever it
   // is accepted (no polar boundary, a closure other than tau (vet_col included),
   // <time>/integrator = rk2), be elsewhere and on a restart whose file lacks the key.
@@ -1322,7 +1321,6 @@ void RadiationVet::EventTotals(Real *v) {
 //! the multi-rate report and the positivity bookings of the clean steps
 
 void RadiationVet::ImplicitReport() {
-  if (transport < M1_TRANSPORT_IMPLICIT_X1) return;
   // the positivity counters and the hydro inversions' floor energy, all ranks
   // (collective: every rank reaches this line with the same pos keys)
   const bool pos = impl_pos_gas || impl_pos_floor;

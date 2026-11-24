@@ -588,10 +588,7 @@ class RadiationVet {
   // sub-cycling is off OR when no other module sets the mesh timestep
   bool sets_mesh_dt{};
 
-  // ---- MILESTONE 3a: IMPLICIT x1 TRANSPORT (docs/dev/rad_vet_implicit_design.md).
-  // Everything below is inert with the default <rad_vet>/transport = explicit; see
-  // rad_vet_implicit.hpp / rad_vet_implicit.cpp.
-  int transport{};              // M1_TRANSPORT_*
+  // implicit transport (rad_vet_implicit.hpp)
   int nstage{};                 // stages per substep: M1_NSTAGE explicit, 1 implicit
   Real impl_cfl{};              // <rad_vet>/implicit_cfl: dtnew = impl_cfl*dx/c (<=0 off)
   DvceArray1D<Real> opn_nskip_d;

@@ -125,7 +125,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("vet_cell", vet_cell);
   v.view("vet_ipl", vet_ipl);
   v.value("sets_mesh_dt", sets_mesh_dt);
-  v.value("transport", transport);
   v.value("nstage", nstage);
   v.value("impl_cfl", impl_cfl);
   v.view("opn_nskip_d", opn_nskip_d);

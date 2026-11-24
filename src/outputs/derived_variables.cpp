@@ -1368,8 +1368,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     auto u0_ = prm->u0;
     auto iw_ = prm->iw;
     auto vc_ = prm->vet_cell;
-    const bool impl = (prm->transport != radvet::M1_TRANSPORT_EXPLICIT) &&
-                      (prm->impl_nstep > 0.0) && (iw_.extent_int(1) > radvet::M1_IW_WCHI);
+    const bool impl = (prm->impl_nstep > 0.0) && (iw_.extent_int(1) > radvet::M1_IW_WCHI);
     const bool itrans = impl && prm->trans_on && (iw_.extent_int(1) > radvet::M1_IW_N3);
     const bool dfull = prm->vet_sc && prm->vet_full;
     const bool notens = !impl && (prm->tau_closure || prm->vet_col);
@@ -1436,7 +1435,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
       std::exit(EXIT_FAILURE);
     }
     auto iw_ = prm->iw;
-    const bool ok = (prm->transport != radvet::M1_TRANSPORT_EXPLICIT) && prm->trans_on &&
+    const bool ok = prm->trans_on &&
                     (prm->impl_nstep > 0.0) && (iw_.extent_int(1) > radvet::M1_IW_N3);
     const bool cs = prm->cs_geom;
     auto ccl = pm->pmb_pack->pcoord->cos_cell;

@@ -2401,10 +2401,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // vector with the stage weights): beta = Pg/P ~ 0.01, so the gas holds ~1 % of the
     // heat capacity, and an explicit gas-side deposit was -0.5 e_gas per step at cfl 0.3
     // (v2/runs/mF03: force 0.94 rho g).  The implicit exchange gives the gas its share.
-    if (pm1->transport == radvet::M1_TRANSPORT_EXPLICIT) {
-      HsFatal("problem/mlt_flux_frozen needs <rad_vet>/transport = implicit (esrc)",
-              __LINE__);
-    }
     Kokkos::realloc(pm1->esrc, nmb1+1, n3m1+1, n2m1+1, n1m1+1);
     Kokkos::deep_copy(pm1->esrc, 0.0);
     auto es = pm1->esrc;

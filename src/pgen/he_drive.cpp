@@ -507,7 +507,7 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
   // The scheme's own x1-face radiation energy (Ebnd, split), so the
   // Marshak top loss is in the ledger; only where Ebnd is defined (implicit transport,
   // no multi-rate, no coupling_split)
-  ebd_ = (pm1 != nullptr) && (pm1->transport == radvet::M1_TRANSPORT_IMPLICIT) &&
+  ebd_ = (pm1 != nullptr) &&
          !pm1->MRActive() && (pm1->csplit == 0);
   if (ebd_) {
     pm1->ebnd_on = true;

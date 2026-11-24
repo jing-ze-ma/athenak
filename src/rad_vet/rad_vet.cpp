@@ -60,21 +60,13 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     std::exit(EXIT_FAILURE);
   }
   chat = chat_over_c*c_light;
-  // ---- MILESTONE 3a hook: which transport scheme runs.  Everything the implicit one
-  // needs is read and allocated by ImplicitInit at the end of this constructor.
-  // (a fresh run's default implicit is set before, recipe::CleanDefaults; a restart file
-  // without the key ran explicit)
+  // transport: only implicit (a fresh run's default, recipe::CleanDefaults; a restart
+  // file without the key ran the removed explicit scheme)
   {std::string tr = pin->GetOrAddString("rad_vet","transport","explicit");
-  if (tr.compare("explicit") == 0) {
-    transport = M1_TRANSPORT_EXPLICIT;
-  } else if (tr.compare("implicit_x1") == 0) {
-    transport = M1_TRANSPORT_IMPLICIT_X1;
-  } else if (tr.compare("implicit") == 0) {
-    transport = M1_TRANSPORT_IMPLICIT;
-  } else {
+  if (tr.compare("implicit") != 0) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<rad_vet>/transport = '" << tr << "' is not a valid choice "
-      << "(explicit | implicit_x1 | implicit)" << std::endl;
+      << std::endl << "<rad_vet>/transport = '" << tr << "': only transport = implicit "
+      << "(the clean scheme)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   }
@@ -82,7 +74,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   // the default of a fresh implicit run (v20.4).  The production values below are the
   // defaults of a fresh clean run; a restart file without a key keeps its old default
   const bool nw = !global_variable::restart_run;
-  {const bool scd = nw && (transport == M1_TRANSPORT_IMPLICIT);
+  {const bool scd = nw;
   if (scd && !pin->DoesParameterExist("rad_vet","scheme")) {
     recipe::Log("<rad_vet>/scheme = clean (the default with transport = implicit)");
   }
@@ -946,12 +938,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                                            eqk("he_ic_equil_dtfac", 1.0e6));
       cln_steady_tol = pin->GetOrAddReal("rad_vet","clean_init_tol",1.0e-8);
     }
-    if (transport != M1_TRANSPORT_IMPLICIT) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<rad_vet>/scheme = clean needs transport = implicit"
-        << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
   } else {   // (the old production solver, scheme = default, is not in this build)
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_vet>/scheme = '" << sc << "': only scheme = clean (with "
@@ -990,9 +976,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     const bool sp_ = pm_->use_spherical_polar && !pm_->use_cubed_sphere;
     const bool cs_ = pm_->use_cubed_sphere && !pm_->use_spherical_polar;
     if (pm_->use_spherical_polar && !sp_) {why += " mesh/use_spherical_polar";}
-    if (cs_ && transport != M1_TRANSPORT_IMPLICIT) {
-      why += " mesh/use_cubed_sphere with transport != implicit";
-    }
     // S1: the FULL sphere (mesh/use_polar_boundary, ix2_bc = ox2_bc = polar) and the
     // theta stretch (mesh/use_grid_stretch_theta, e.g. mesh/theta_plateau) are allowed
     // for transport = implicit on sp.  Every implicit kernel takes a polar face as a
@@ -1001,7 +984,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // rows; the transverse geometry reads Coordinates (areas, volumes, dxface).  The
     // remaining restrictions (implicit_bc_x2 = auto | reflect at a polar face, no vet_sc
     // / tau / vet_col_lat / vet_gd) are checked in SphericalS1Check and VetLatInit.
-    const bool full_ok = sp_ && (transport == M1_TRANSPORT_IMPLICIT);
+    const bool full_ok = sp_;
     if (pm_->use_polar_boundary) {
       if (!full_ok) {
         why += " mesh/use_polar_boundary (the full sphere needs transport = implicit on "
@@ -2183,24 +2166,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       << "(m1 | minerbo | kershaw | eddington | vet_sc | tau | vet_col)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  if (vet_sc && transport != M1_TRANSPORT_IMPLICIT) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<rad_vet>/closure = vet_sc needs <rad_vet>/transport = implicit "
-      << "on a multi-D mesh" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
-  if (tau_closure && transport != M1_TRANSPORT_IMPLICIT) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<rad_vet>/closure = tau needs <rad_vet>/transport = implicit "
-      << "on a multi-D mesh" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
-  if (chi_kind != M1_CHI_LEVERMORE && transport == M1_TRANSPORT_EXPLICIT) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<rad_vet>/closure = '" << cl << "' needs an implicit transport: "
-      << "the explicit HLL wave speeds are Levermore's" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
   }
 
   // the M1 face states read two cells beyond the face (PLM of the old <rad_vet>/
@@ -2240,11 +2205,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   Kokkos::realloc(u1, nmb, M1_NVAR, ncells3, ncells2, ncells1);
   // (memory): the face fluxes are the explicit stage's (CalculateFluxes,
   // RKUpdate, flux correction); the implicit task list never adds them
-  {const bool expl = (transport < M1_TRANSPORT_IMPLICIT_X1);
-  const int f3 = expl ? ncells3 : 1, f2 = expl ? ncells2 : 1, f1 = expl ? ncells1 : 1;
-  Kokkos::realloc(uflx.x1f, nmb, M1_NVAR, f3, f2, f1);
-  Kokkos::realloc(uflx.x2f, nmb, M1_NVAR, f3, f2, f1);
-  Kokkos::realloc(uflx.x3f, nmb, M1_NVAR, f3, f2, f1);}
+  Kokkos::realloc(uflx.x1f, nmb, M1_NVAR, 1, 1, 1);
+  Kokkos::realloc(uflx.x2f, nmb, M1_NVAR, 1, 1, 1);
+  Kokkos::realloc(uflx.x3f, nmb, M1_NVAR, 1, 1, 1);
   // rho*kappa is needed in the GHOST cells too: the face opacity at the first and last
   // active face is the arithmetic mean over a ghost and an active cell.
   // vet_scatter: a 4th component, rho kappa_e (M1_OP_S)

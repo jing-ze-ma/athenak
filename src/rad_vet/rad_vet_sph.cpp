@@ -87,7 +87,6 @@ namespace radvet {
 void RadiationVet::SphericalS1Check(ParameterInput *pin) {
   std::string why;
   auto *pm = pmy_pack->pmesh;
-  if (transport != M1_TRANSPORT_IMPLICIT) {why += " transport != implicit;";}
   // STAGE S2: the uniaxial chi(f) closures (m1, minerbo, kershaw) as well; vet_sc and
   // the tau closure (plane-parallel column depth on index space) stay refused
   // STAGE S5: closure = vet_col (the per-column spherical formal solution) is allowed
@@ -96,7 +95,7 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
   if (pm->mesh_indcs.nx1 != pm->mb_indcs.nx1) {
     why += " more than one MeshBlock along x1 (meshblock/nx1 must equal mesh/nx1);";
   }
-  if (transport == M1_TRANSPORT_IMPLICIT) {
+  {
     // berthon | blend on the radial faces (the wedge only; ImplicitInit
     // refuses them on the cubed sphere and the tau-only weight everywhere multi-D)
     if (impl_flux != M1_IFLUX_CENTRAL && impl_flux != M1_IFLUX_BERTHON &&
