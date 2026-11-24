@@ -122,3 +122,8 @@
 - FATAL 0 
 - CW 5, stage fallbacks 3, DT_RETRY 2, pos_floor created 1; s/cycle 4.024 (c30100-31050); dt min 29 at t 1.719176e+06; skip_de per cycle: max abs 2.491e+40 at c30876; 0 cycles > 1e41
 - first DTREP: `DTREP cycle=30085 time=1.57756e+06 cfl*dt_hyd=187.496 cfl*dt_gasonly=187.657 rank=3 gid=6 kji=86,77,144 dir=1 r=4.44456e+12 rho=6.81208e-13 T=5.16062e+12 pg=3.51546 G1=1.66667 cgas=2.93275e+06 v=-9.44663e+07 ceff=3.01646e+06 h=3.04627e+10 tauT_h=0.00803132 Erad=23168.4 Ddd=0.333333 cdt_kP=595.969 frz=-1 sc=1 cell_dt=312.493 cell_dt_gas=312.762 theta_deg=71.1915 phi=2.86854`
+
+## LAYF8 (11-23 23:10)
+- 2026-11-23 23:08:45 rc=0 last: elapsed=9.449182e+02 cycle=300 time=2.905537e+04 dt=9.684942e+01 
+- FATAL 0 
+- CW 0, stage fallbacks 0, DT_RETRY 0, pos_floor created 0; s/cycle 2.782 (c0-300); dt min 96.85 at t 2.905537e+04; skip_de per cycle: max abs 0.000e+00 at c; 0 cycles > 1e41
