@@ -23,3 +23,8 @@
 - FATAL 0 
 - CW 0, stage fallbacks 0, DT_RETRY 0, pos_floor created 0; s/cycle n/a; dt min 95.29 at t 1.580408e+06; skip_de per cycle: max abs 1.238e+17 at c30105; 0 cycles > 1e41
 - first DTREP: `DTREP cycle=30085 time=1.57756e+06 cfl*dt_hyd=107.368 cfl*dt_gasonly=187.657 rank=2 gid=5 kji=34,3,146 dir=1 r=4.5059e+12 rho=2.89929e-11 T=1.67374e+13 pg=485.265 G1=1.66667 cgas=5.28164e+06 v=-3.96447e+07 ceff=1.32938e+08 h=3.08832e+10 tauT_h=0.595814 Erad=2.56419e+06 Ddd=0.333333 cdt_kP=5083.75 frz=-1 sc=1 cell_dt=178.947 cell_dt_gas=687.417 theta_deg=90.1758 phi=1.76408`
+
+## LAY (11-23 21:43)
+- 2026-11-23 21:41:55 rc=0 last:  
+- FATAL 1 ### FATAL ERROR in /resnick/groups/carnegie_poc/jingze/wt_orion1121/v203/src/main.cpp: a key that places the cells differs from the restart file,     meshblock/nx2: restart file 128 -> now 256 
+- CW 0, stage fallbacks 0, DT_RETRY 0, pos_floor created 0; s/cycle n/a; dt min ; skip_de per cycle: max abs 0.000e+00 at c; 0 cycles > 1e41
