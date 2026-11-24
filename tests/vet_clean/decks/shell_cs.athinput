@@ -103,7 +103,7 @@ vet_gd_gl_nmu = 8
 vet_gd_gl_nphi = 16
 vet_gd_rotate_dt = 0
 vet_col_lat = true
-vet_gd_allow_clamp = true
+vet_gd_allow_clamp = false
 
 <problem>
 pgen_name = rad_vet_beam
