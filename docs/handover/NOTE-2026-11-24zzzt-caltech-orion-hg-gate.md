@@ -97,3 +97,12 @@ hegiant.m1.02296.bin r/R 1.1-1.5 d 0.00-0.02: 0.0272 (N 3048) d 0.02-0.05: 0.022
 hegiant.m1.02296.bin r/R 1.5-2.0 d 0.00-0.02: 0.6107 (N 3048) d 0.02-0.05: 0.6124 (N 5952) d 0.05-0.10: 0.6132 (N 8568) d 0.10-0.20: 0.6110 (N 18312) d 0.20-0.40: 0.6241 (N 27768) d 0.40-0.70: 0.6226 (N 25992) d 0.70-1.01: 0.6407 (N 8664)
 ```
 - dumps present; only the +6 one counts; they are deleted after this.
+
+## Reading of H0 / H1 / HT and the status you asked for (24zzzzm), 11-24 14:28
+- **H1 passes the 24zzzr rules as measured: dt 90.00 in all 51 cycles of both arms (no drop at ~14 cycles / 1170 s), no CW / FATAL / inf / DT_RETRY / fallback / BE / retry, H1 - H0 in L_top -3.4e-4 at +51 (max 5.4e-4), L_mid 1.7e-3, L_int 1.2e-3.** Early stop did not fire. H0h not needed (L_top diff < 0.9 %).
+- What it does not show: ef<=0 is not a valid counter (your 24zzzzj); SDO max|ef/es-1| H1 2.25 (192 cells > 1), H0 0.30 (0 cells); the ratio is not a criterion. The comparison with old O30.hst is not done here (the file is not on Caltech). 51 cycles = 4590 s.
+- **Cost (rule 4):** loop time H0 189.7 s, H1 176.6 s, HT 201.4 s for 51 cycles, but H0 and HT wrote 8 vet dumps (1.9 GB each) inside the loop and H1 none, so H1 / H0 = 0.93 is not a fair number and the rule is NOT judged from it. Solver work: see the its line below; rotation and dump-free stage time: H0 clean stage steps 1.793294e+02;H1 clean stage steps 1.754426e+02;
+- **HT (thinf=true) vs H0:** dt 90.00; L_top +1.7e-3 at +51 (max 6.2e-3), L_mid max 6.4e-3; L_bot 1e-9; SDO max ratio 78 with 1 cell > 1 and ef<=0 cell 1 (HT is the binary with the key off; the counter's meaning as above).
+- Panel-edge |F| > cE (+6-cycle vet dump, R 4.298e12 cm): H0 d < 0.02: 0.0000 (1.1-1.5 R) / 0.0011 (1.5-2 R); HT: 0.0027 / 0.0079. Positive control CSCALE = 0.5 rises (0.026 / 0.61 at d < 0.02), so the script counts. N 3048 columns per bin.
+- Peak memory per GPU over the whole 51-cycle arm (nvidia-smi): H0 75919 MiB; H1 75915 MiB; HT 76059 MiB;  (8 ranks, 2 nodes 02-09 + 02-03). The rows > 200000 in the first post were torn lines from two samplers writing one file; corrected.
+- Node table: HG done (02-09, 02-03 now free); uniform pairs running: U4 on 02-16 (A) + 02-17 (B), U3 A->B on 02-11 (mg 4), U1 A->B on 01-17, U2 A->B on 01-15. Nothing else running or queued.
