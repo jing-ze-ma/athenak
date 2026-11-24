@@ -789,7 +789,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // below puts them back with U^n); taken only when a redo can happen
       if (m1t2) {
         dtretry::PgenStageSave();
-        pm1->Time2Stash();   // time2_k1_reset (no-op unless named)
+        pm1->Time2Stash();
       }
       for (int stage=1; stage<=(nexp_stages); ++stage) {
         hydro_stage(stage);

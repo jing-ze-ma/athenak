@@ -400,6 +400,7 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/implicit_*", ""},
     // (the hesdirk2 stage formation the clean solve shares, Time2FormStage / Time2Stash,
     // and dt_retry: read; ImplicitSolve's acceptance and posfix and the KE cap: none)
+    {"rad_vet/time2_k1_reset", "!"},   // (the K1 reset of held cells, removed)
     {"rad_vet/time2_k1_*", nullptr}, {"rad_vet/time2_face_fct*", nullptr},
     {"time/dt_retry_t2_be", nullptr},
     {"rad_vet/time2_accept_fallback", ""}, {"rad_vet/time2_posfix*", ""},

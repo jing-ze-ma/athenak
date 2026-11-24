@@ -378,8 +378,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     }
   }
 
-  // <rad_vet>/time2_k1_reset (see rad_vet.hpp)
-  t2_k1reset = false;
 #if !VET_DEBUG
   for (const char *k : {"dbg_rst_fp", "dbg_rst_fp_cycle", "dbg_rst_fp_dump"}) {
     if (pin->DoesParameterExist("rad_vet", k)) {
@@ -401,15 +399,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   }
   if (pin->DoesParameterExist("rad_vet", "dbg_rst_fp_dump")) {
     dbg_rst_fp_dump = pin->GetBoolean("rad_vet", "dbg_rst_fp_dump");
-  }
-  if (pin->DoesParameterExist("rad_vet", "time2_k1_reset")) {
-    const std::string kr = pin->GetString("rad_vet", "time2_k1_reset");
-    if (kr == "pos") {
-      t2_k1reset = true;
-      t2_k1pos = true;
-    } else {
-      t2_k1reset = pin->GetBoolean("rad_vet", "time2_k1_reset");
-    }
   }
   // <rad_vet>/time2_k1_stiff = s (default 0 = off, bitwise)
   t2_k1stiff = 0.0;
@@ -461,7 +450,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   }
   t2_pfst = true;
   t2_ffct_emin = 0.1;   // (rad_vet.hpp)
-  t2_ys_ok = false;
   // time2_accept_fallback is DEFAULT true under hesdirk2 (this
   // reader returns above for be, where the key is unused); false only when named so
   t2_accfb = true;
@@ -499,10 +487,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   int n1 = indcs.nx1 + 2*(indcs.ng);
   int n2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
   int n3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
-  if (t2_k1reset) {
-    Kokkos::realloc(t2ys, nmb, n3, n2, n1);
-    Kokkos::deep_copy(t2ys, 0.0);
-  }
   Kokkos::realloc(t2k1, nmb, M1_T2_NK, n3, n2, n1);
   Kokkos::realloc(t2k2, nmb, M1_T2_NK, n3, n2, n1);
   Kokkos::realloc(t2inc, nmb, M1_T2_NK, n3, n2, n1);
@@ -703,82 +687,6 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
     }
     c1 = t2_a21*dt;
     c2 = 0.0;
-    // time2_k1_reset: no K1 where E was overwritten since the stage-loop start
-    if (t2_k1reset && t2_ys_ok && t2ys.extent_int(0) >= pmy_pack->nmb_thispack) {
-      auto &id = pmy_pack->pmesh->mb_indcs;
-      const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
-      const int nmbr = pmy_pack->nmb_thispack - 1;
-      auto ys_ = t2ys;
-      auto k1r_ = t2k1;
-      const int ncell = M1_T2_F1;   // E, gas momentum (3), gas energy
-      // Coordinates::volume is allocated (and filled) only on the cubed
-      // sphere / spherical polar; elsewhere it is 1x1x1x1 and vol(m,k,j,i) read out of
-      // bounds.  Cartesian: the uniform cell volume of the MeshBlock.
-      auto &vol = pmy_pack->pcoord->volume;
-      const bool usev = (vol.extent_int(0) >= nmbr + 1) && (vol.extent_int(3) > 1);
-      auto &mbsz = pmy_pack->pmb->mb_size;
-      Real nr = 0.0, de = 0.0;
-      // time2_k1_reset = pos: the stage-1 old vector of E and of the gas eint
-      if (t2_k1pos) {
-        FluidRef flp = FluidRef::Get(pmy_pack);
-        const bool hg = flp.on;
-        auto ug = hg ? flp.u0 : u0;
-        const bool etg = hg && flp.use_etotgrav;
-        auto phc = hg ? flp.phicc0 : DvceArray4D<Real>();
-        const bool emh = hg && flp.mhd;
-        auto emg = emag0;
-        const Real th = 0.1, ca = c1;   // (the pos rule: E + ca K1_E > 0.1 E)
-        Real np = 0.0;
-        Kokkos::parallel_reduce("vet_t2_k1pos", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-            DevExeSpace(), {0, ks, js, is}, {nmbr + 1, ke + 1, je + 1, ie + 1}),
-        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sum) {
-          if (u0_(m,M1_E,k,j,i) != ys_(m,k,j,i)) return;   // reset by the E rule anyway
-          const Real e0 = u0_(m,M1_E,k,j,i);
-          bool bad = !(e0 + ca*k1r_(m,M1_T2_E,k,j,i) > th*e0);
-          if (hg && !bad) {
-            const Real dd = ug(m,IDN,k,j,i), idd = 1.0/fmax(dd, 1.0e-300);
-            Real eg0 = ug(m,IEN,k,j,i) - 0.5*(SQR(ug(m,IM1,k,j,i)) +
-                                              SQR(ug(m,IM2,k,j,i)) +
-                                              SQR(ug(m,IM3,k,j,i)))*idd;
-            const Real m1 = ug(m,IM1,k,j,i) + ca*k1r_(m,M1_T2_M1,k,j,i);
-            const Real m2 = ug(m,IM2,k,j,i) + ca*k1r_(m,M1_T2_M1+1,k,j,i);
-            const Real m3 = ug(m,IM3,k,j,i) + ca*k1r_(m,M1_T2_M1+2,k,j,i);
-            Real eg1 = ug(m,IEN,k,j,i) + ca*k1r_(m,M1_T2_EN,k,j,i)
-                       - 0.5*(m1*m1 + m2*m2 + m3*m3)*idd;
-            Real egr = etg ? dd*phc(m,k,j,i) : 0.0;
-            if (emh) egr += emg(m,k,j,i);
-            eg0 -= egr;
-            eg1 -= egr;
-            bad = (eg0 > 0.0) && !(eg1 > th*eg0);
-          }
-          if (bad) {
-            ys_(m,k,j,i) = -1.0;   // marks the cell for the E rule below and the faces
-            sum += 1.0;
-          }
-        }, Kokkos::Sum<Real>(np));
-        t2_k1pos_n += np;
-      }
-      Kokkos::parallel_reduce("vet_t2_k1reset", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
-          DevExeSpace(), {0, ks, js, is}, {nmbr + 1, ke + 1, je + 1, ie + 1}),
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &sum,
-                    Real &sde) {
-        if (u0_(m,M1_E,k,j,i) != ys_(m,k,j,i)) {
-          const Real cv = usev ? vol(m,k,j,i) : (mbsz.d_view(m).dx1*mbsz.d_view(m).dx2*
-                                                 mbsz.d_view(m).dx3);
-          sde += (k1r_(m,M1_T2_E,k,j,i) + k1r_(m,M1_T2_EN,k,j,i))*cv;
-          for (int n=0; n<ncell; ++n) {k1r_(m,n,k,j,i) = 0.0;}
-          sum += 1.0;
-        }
-      }, Kokkos::Sum<Real>(nr), Kokkos::Sum<Real>(de));
-      t2_k1reset_n += nr;
-      t2_k1reset_de = de;
-      // the face slopes of the faces of a reset cell are dropped by the stage-1 solve,
-      // after a halo exchange of the reset mask (both blocks of a shared face agree)
-      t2_ys_face = true;
-    } else {
-      t2_k1reset_de = 0.0;
-      t2_ys_face = false;
-    }
     // time2_k1_stiff = s (> 0): in cells whose gas-radiation relaxation
     // rate k = ch rho kappa_E + 4 cl rho kappa_P a T^3/(rho c_v) (rho c_v ~ eint/T) has
     // k dt > s, the EXCHANGE part of the FSAL slope K1 is moved from the gas energy to
@@ -929,7 +837,6 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
         }
       }
     }
-    t2_ys_ok = false;
   } else {
     int nmb1 = static_cast<int>(u0.extent(0)) - 1;
     int n3 = static_cast<int>(u0.extent(2)), n2 = static_cast<int>(u0.extent(3));
@@ -1015,23 +922,12 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::Time2Stash
-//! \brief pgrst-1021 time2_k1_reset: the radiation E at the hesdirk2 stage-loop start
-//! (the state the FSAL slope K1 belongs to; the Driver calls it before the Heun stage 1)
+//! \brief the hesdirk2 stage-loop start (the Driver calls it before the Heun stage 1):
+//! the clean scheme's energy flux memory and ray history checkpoints
 
 void RadiationVet::Time2Stash() {
-  t2_ys_ok = false;
   CleanDMem(true);
   CleanRayHistory(true);
-  if (!t2_k1reset || t2ys.extent_int(0) < pmy_pack->nmb_thispack) return;
-  auto ys_ = t2ys;
-  auto u_ = u0;
-  par_for("vet_t2_stash", DevExeSpace(), 0, static_cast<int>(t2ys.extent(0)) - 1, 0,
-          static_cast<int>(t2ys.extent(1)) - 1, 0, static_cast<int>(t2ys.extent(2)) - 1,
-          0, static_cast<int>(t2ys.extent(3)) - 1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    ys_(m,k,j,i) = u_(m,M1_E,k,j,i);
-  });
-  t2_ys_ok = true;
 }
 
 //----------------------------------------------------------------------------------------
@@ -2374,10 +2270,6 @@ void RadiationVet::Time2Report() {
             << ": stage steps=" << t2_nstep
             << " backward-Euler steps=" << t2_nbe << " stage fallbacks=" << t2_nfall
             << " vet clips=" << t2_nclip;
-  if (t2_k1reset) {
-    std::cout << " k1_reset cells(rank 0)=" << t2_k1reset_n << " faces=" << t2_k1reset_nf;
-    if (t2_k1pos) {std::cout << " (pos rule cells " << t2_k1pos_n << ")";}
-  }
   if (t2_k1rd > 0.0) {
     std::cout << " k1_redist(th=" << t2_k1rd << ") cells(rank 0)=" << t2_k1rd_n
               << " unpaid=" << t2_k1rd_un;

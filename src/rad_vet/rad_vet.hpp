@@ -995,33 +995,10 @@ class RadiationVet {
   // non-admissible hesdirk2 stage raises the dt_retry flag (reason time2_reject) instead
   // of the backward-Euler redo, so the cycle is taken again at a smaller dt with hesdirk2
   int t2_reject = 0;            // 0 be, 1 retry
-  // <rad_vet>/time2_k1_reset = true (read only when named; default false,
-  // bitwise): the FSAL slope K1 is the slope at the previous step's end state Y3.  A cell
-  // whose radiation E is overwritten between that solve and the next stage-1 start by
-  // anything but the scheme (a problem generator holding light: ry_per_accretor donor
-  // lobe, nozzle, back sink) has no valid K1 there; the stage-1 increment (1-g) dt K1
-  // then extrapolates the relaxation of the held value (ratio (1-g)/g = 2.41) and drives
-  // E / eint of the old vector <= 0 every cycle.  With the key, Time2Stash keeps E at the
-  // stage-loop start and Time2FormStage(1) zeroes the cell channels of K1 (E, gas
-  // momentum, gas energy; not the face fluxes) in interior cells whose E differs from it.
-  bool t2_k1reset = false;
-  bool t2_ys_ok = false;        // t2ys was taken at this cycle's stage-loop start
-  Real t2_k1reset_n = 0.0;      // cells reset (this rank, whole run)
-  Real t2_k1reset_de = 0.0;     // this step: sum over reset cells of (K1_E + K1_EN) vol
-                                // dropped (the problem generator's budget books it)
-  bool t2_ys_face = false;      // the stage-1 solve still has to drop the face slopes
-  // time2_k1_reset = pos: also drop K1 (cell + faces) where the stage-1
-  // old vector start + a21 dt K1 would leave E or the gas eint <= theta x its start value
-  // (theta 0.1): an FSAL slope that no longer fits the cell (an
-  // advancing front, near-vacuum); those cells take a local first-order stage
-  bool t2_k1pos = false;
-  Real t2_k1pos_n = 0.0;        // cells dropped by the pos rule (this rank, whole run)
-  Real t2_k1reset_nf = 0.0;     // faces reset (this rank, whole run)
   // time2_k1_stiff = s: move the exchange part of K1 (gas -> E) in cells
   // with relaxation k dt > s (Time2FormStage); 0 = off
   Real t2_k1stiff = 0.0;
   Real t2_k1stiff_n = 0.0;      // cell-steps changed (this rank, whole run)
-  DvceArray4D<Real> t2ys;       // (m,k,j,i) radiation E at the stage-loop start
   void Time2Stash();
   // Ebnd (an energy-budget diagnostic, off unless a problem generator sets
   // ebnd_on; sph_shell: <problem>/am_hist_ebnd): the radiation energy the scheme put in

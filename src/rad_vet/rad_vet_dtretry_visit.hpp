@@ -286,17 +286,8 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("t2_fail", t2_fail);
   v.value("t2_dbg_fail", t2_dbg_fail);
   v.value("t2_reject", t2_reject);
-  v.value("t2_k1reset", t2_k1reset);
-  v.value("t2_ys_ok", t2_ys_ok);
-  v.value("t2_k1reset_n", t2_k1reset_n);
-  v.value("t2_k1reset_de", t2_k1reset_de);
-  v.value("t2_ys_face", t2_ys_face);
-  v.value("t2_k1pos", t2_k1pos);
-  v.value("t2_k1pos_n", t2_k1pos_n);
-  v.value("t2_k1reset_nf", t2_k1reset_nf);
   v.value("t2_k1stiff", t2_k1stiff);
   v.value("t2_k1stiff_n", t2_k1stiff_n);
-  v.view("t2ys", t2ys);
   v.value("ebnd_on", ebnd_on);
   v.value("ebnd_acc", ebnd_acc);
   v.value("ebnd_split", ebnd_split);

@@ -2078,13 +2078,11 @@ void RyPerRadBook(Mesh *pm) {
   // U^n kept by Time2FormStage)
   auto ff = pm1->f0x1;
   auto fk = pm1->t2f1;
-  auto k1 = pm1->t2k1;
   const bool hk = (wk != 0.0);
   const bool hbdv = pm1->iebath_hi_col_on;
   DvceArray3D<Real> bdv, bds;
   if (hbdv) {bdv = pm1->ibadv_x1max; bds = bdvs_;}
   const bool hbs = hbdv && hk && (bds.extent_int(0) > 0);
-  const bool kres = pm1->t2_k1reset;
   // K1 from a probe solve (see rbk1_): its own r_out faces
   const bool kp = hk && rbk1_on_ && (pm1->vgd_rot_ncorr == rbk1n_ + 1.0);
   if (hk) {rbk1_on_ = false;}
@@ -2104,17 +2102,7 @@ void RyPerRadBook(Mesh *pm) {
     const Real a = area1(m,k,j,ie+1);
     ay += (ff(m,k,j,ie+1) + (hbdv ? bdv(m,k,j) : 0.0))*a;
     if (hk) {
-      // a column whose last cell had its K1 dropped (time2_k1_reset) has no K1 face part
-      bool rs = false;
-      if (kres) {
-        rs = true;
-        for (int n=0; n<radvet::M1_T2_F1; ++n) {
-          if (k1(m,n,k,j,ie) != 0.0) rs = false;
-        }
-      }
-      if (!rs) {
-        ak += (kp ? kpf(m,k,j) : (fk(m,k,j,ie+1) + (hbs ? bds(m,k,j) : 0.0)))*a;
-      }
+      ak += (kp ? kpf(m,k,j) : (fk(m,k,j,ie+1) + (hbs ? bds(m,k,j) : 0.0)))*a;
     }
     sum += v;
   }, Kokkos::Sum<array_sum::GlobalSum>(rs2));
