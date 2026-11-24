@@ -133,3 +133,7 @@ max |rel| over the run: L_top 5.133e-04 L_mid 1.050e-03 L_int 1.576e-03 L_bot 8.
 
 **FAIL: floor_pay 2.138e+33 > 1.2 x 4.055e+31 (ratio 52.73)** (zzzr rules; H1 vs old O30 not tested here: needs O30.hst)
 H0h needed (L_top diff 0.9-2 %): no
+
+## sdorder3 (your 24zzzzx), 11-24 15:48
+- BUILD rc=0 wall=291 s TUs=250 BUILD_OK md5=30d01765970051212176cc2eb81ea034 prov=95813cf85f2901d61e9dc1320b8d54f480810682 ; .prov: 95813cf85f2901d61e9dc1320b8d54f480810682 dir /resnick/groups/carnegie_poc/jingze/wt_orion1121/sdo3/build_sdo3; cmake flags as build2.sh;  ; own dir wt_orion1121/sdo3/build_sdo3, flags as sdorder2; GATE PASS: athena_sdorder3_95813cf85 md5 30d01765 node hpc-sm-02-09 pass1=3.686e-11 end: Terminating on cycle limit
+- Nothing runs with it until your explicit go. Prepared, not launched: hg_gate_1124/goG.PREPARED (H0G / H1G, 8 ranks, 51 cycles, floor_pay) and sdo_1124/nG.PREPARED (S3G, S5G as S3F / S5F).
