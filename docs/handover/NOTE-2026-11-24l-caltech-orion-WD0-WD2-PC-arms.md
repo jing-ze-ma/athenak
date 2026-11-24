@@ -39,3 +39,37 @@
 ```
 - floor_audit_worst lines in the blob (rank 0 gid 0, r 2.29-2.45e12): 55 (all in grep.txt)
 - FOFC: FOFC first-order cell-stages=0; last pay line: fofc_retest: retested 0 unflagged 0
+
+## WD2 (11-24 00:32)
+- 2026-11-24 00:32:23 rc=0 last: 
+- FATAL 0, CW 0, stage fallbacks 0, DT_RETRY 0, created inf 0; dt min/last 3.524 / 6.556
+- echo: 'floor_from_ekin' in block 'hydro' is absent from the restart's input: added from the comm;'floor_audit_worst' in block 'hydro' is absent from the restart's input: added from the co;'fofc_retest' in block 'hydro' is absent from the restart's input: added from the command ; <hydro> dual_energy 0 (eta 0.001, slots -1,-1) floor_pay rad_column fofc_retest 1 floor_audit 1
+- [update] per cycle (last line of each cycle; floor_de, skip_de cumulative, and their per-cycle differences):
+```
+ cycle     floor_de   d_floor_de      skip_de    d_skip_de
+  6457   0.0000e+00   0.0000e+00   0.0000e+00   0.0000e+00
+  6458   0.0000e+00   0.0000e+00   3.0149e+22   3.0149e+22
+  6459   0.0000e+00   0.0000e+00   3.0925e+22   7.7630e+20
+  6460   0.0000e+00   0.0000e+00   3.8644e+22   7.7184e+21
+  6461   0.0000e+00   0.0000e+00   6.4845e+22   2.6201e+22
+  6462   0.0000e+00   0.0000e+00   7.0585e+22   5.7397e+21
+  6463   0.0000e+00   0.0000e+00   1.1349e+23   4.2904e+22
+  6464   0.0000e+00   0.0000e+00   1.1655e+23   3.0627e+21
+  6465   0.0000e+00   0.0000e+00   1.2857e+23   1.2022e+22
+  6466   0.0000e+00   0.0000e+00   1.2857e+23   2.7000e+15
+  6467   0.0000e+00   0.0000e+00   1.2905e+23   4.7337e+20
+  6468   0.0000e+00   0.0000e+00   1.7071e+23   4.1663e+22
+  6469   0.0000e+00   0.0000e+00   1.7672e+23   6.0112e+21
+  6470   0.0000e+00   0.0000e+00   1.7696e+23   2.3774e+20
+  6471   0.0000e+00   0.0000e+00   1.7722e+23   2.5580e+20
+  6472   0.0000e+00   0.0000e+00   5.0295e+23   3.2574e+23
+  6473   0.0000e+00   0.0000e+00   5.0349e+23   5.3792e+20
+  6474   0.0000e+00   0.0000e+00   5.0387e+23   3.7949e+20
+  6475   0.0000e+00   0.0000e+00   5.0451e+23   6.3698e+20
+  6476   0.0000e+00   0.0000e+00   5.0475e+23   2.4456e+20
+  6477   0.0000e+00   0.0000e+00   5.0558e+23   8.2954e+20
+  6478   0.0000e+00   0.0000e+00   5.1113e+23   5.5484e+21
+  6479   0.0000e+00   0.0000e+00   5.1114e+23   1.2172e+19
+```
+- floor_audit_worst lines in the blob (rank 0 gid 0, r 2.29-2.45e12): 21 (all in grep.txt)
+- FOFC: FOFC first-order cell-stages=0; last pay line: fofc_retest: retested 178507484 unflagged 0
