@@ -33,10 +33,12 @@ inline void ZalesakCapWarn(const char *who, const int cycle, const int t2s) {
 //! (independent of R, so the bound is monotone in q).  E is a sum of at most 8 such terms
 //! (the content, 6 faces, a floor), each addition off by at most eps of a partial sum
 //! <= s, and R po by eps po <= eps s: 16 eps s covers both.  R = 0 where q is not above
-//! it (no outflow; 'left' if q itself is not > 0); R = 1 without outflow.
+//! it (no outflow; 'left' if q itself is not > 0); R = 1 without outflow; -1 flags a
+//! non-finite input (ZalesakConverge counts it and leaves R alone).
 
 KOKKOS_INLINE_FUNCTION
 Real ZalesakBound(const Real q, const Real po, const Real s) {
+  if (!Kokkos::isfinite(q + po + s)) return -1.0;
   const Real b = q - 16.0*DBL_EPSILON*s;
   return (po > 0.0) ? ((b > 0.0) ? fmin(1.0, b/po) : 0.0) : 1.0;
 }
@@ -72,17 +74,17 @@ Real RadiationM1::ZalesakConverge(const F &rf, const int q) {
   const int f1 = n3*n2, f2 = x2 ? n3*n1 : 0, f3 = x3 ? n2*n1 : 0, nf = 2*(f1 + f2 + f3);
   int sa = ca, sb = cb;
   bool all = true;
-  Real nfall = 0.0;
+  Real nfall = 0.0, nnan = 0.0;
   bool done = false;
   for (int r = 0; r < 4096 && !done; ++r) {
     Real nb = 0.0;
     for (int s = 0; s < 4096; ++s) {   // (local rounds, ghosts held)
-      Real nv = 0.0, nvb = 0.0;
+      Real nv = 0.0, nvb = 0.0, nvn = 0.0;
       const int s0 = sa, s1 = sb;
       const bool a0 = all;
       Kokkos::parallel_reduce("m1_zlc_r", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                               (nmb1 + 1)*nkji),
-      KOKKOS_LAMBDA(const int idx, Real &a, Real &b) {
+      KOKKOS_LAMBDA(const int idx, Real &a, Real &b, Real &c) {
         const int m = idx/nkji, k = ks + (idx%nkji)/nji, j = js + (idx%nji)/n1;
         const int i = is + idx%n1;
         const Real rc = fabs(iw_(m,s0,k,j,i));
@@ -96,7 +98,9 @@ Real RadiationM1::ZalesakConverge(const F &rf, const int q) {
         Real rn = rc;
         if (act) {
           const Real f = rf(m, k, j, i, s0);
-          if (f < rc) {
+          if (f < 0.0) {
+            c += 1.0;
+          } else if (f < rc) {
             rn = -f;
             a += 1.0;
             if (i < is + zd || i > ie - zd || (x2 && (j < js + zd || j > je - zd)) ||
@@ -104,12 +108,13 @@ Real RadiationM1::ZalesakConverge(const F &rf, const int q) {
           }
         }
         iw_(m,s1,k,j,i) = rn;
-      }, Kokkos::Sum<Real>(nv), Kokkos::Sum<Real>(nvb));
+      }, Kokkos::Sum<Real>(nv), Kokkos::Sum<Real>(nvb), Kokkos::Sum<Real>(nvn));
       all = false;
       std::swap(sa, sb);
       zl_sub[q] += 1.0;
       nfall += nv;
       nb += nvb;
+      if (a0) nnan = nvn;
       if (!(nv > 0.0)) break;
     }
     if (!(CleanReduce(nb, false) > 0.0)) {
@@ -151,8 +156,14 @@ Real RadiationM1::ZalesakConverge(const F &rf, const int q) {
       iw_(m,s0,k,j,i) = iw_(m,s1,k,j,i) = (g < fabs(iw_(m,s1,k,j,i))) ? -g : g;
     });
   }
-  if (!done) {ZalesakCapWarn(q ? "clean_wb_fct" : "time2_face_fct",
-                             pmy_pack->pmesh->ncycle, t2_solve);}
+  const char *who = q ? "clean_wb_fct" : "time2_face_fct";
+  if (!done) ZalesakCapWarn(who, pmy_pack->pmesh->ncycle, t2_solve);
+  nnan = CleanReduce(nnan, false);
+  if (nnan > 0.0 && global_variable::my_rank == 0) {
+    std::printf("CLEAN WARNING cycle %d t2s %d: %s %.0f cells with a non-finite limiter "
+                "input (their R left alone; the state goes on to the stage's finite "
+                "checks)\n", pmy_pack->pmesh->ncycle, t2_solve, who, nnan);
+  }
   auto r0 = slot(sa);
   auto r1 = slot(ca);
   par_for("m1_zlc_abs", DevExeSpace(), 0, nmb1, 0, r0.extent_int(1) - 1, 0,
