@@ -40,6 +40,7 @@
 #include "coordinates/coordinates.hpp"
 #include "driver/driver.hpp"
 #include "coordinates/cell_locations.hpp"
+#include "coordinates/gnomonic_raisevel.hpp"
 #include "eos/eos.hpp"
 #include "eos/general_c2p_hyd.hpp"
 #include "hydro/hydro.hpp"
@@ -130,7 +131,12 @@ void RadiationVet::FloorGasCap() {
   const Real ar = arad;
   const bool mv = fcap_mvol, flz = fcap_lz, sph = hv;
   auto mbs = pmy_pack->pmb->mb_size;
-  const int nx1 = indcs.nx1, nx2 = indcs.nx2;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  // the cubed sphere: m2, m3 are covariant on the unit tangents (cos_cell c), so |m|^2 =
+  // m1^2 + (m2^2 - 2 c m2 m3 + m3^2)/(1 - c^2), the metric norm of the ceiling's |v|
+  const bool cub = pmy_pack->pmesh->use_cubed_sphere;
+  auto cosc = cub ? pmy_pack->pcoord->cos_cell : DvceArray3D<Real>("fcap_c",1,1,1);
+  auto pnl = pmy_pack->pmb->mb_panel.d_view;
   CleanArgs x;
   if (mv) x = CleanMakeArgs();
   par_for("vet_floorcap", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -141,16 +147,24 @@ void RadiationVet::FloorGasCap() {
         (hv ? ((x1f(m,i+1)*x1f(m,i+1)*x1f(m,i+1) - x1f(m,i)*x1f(m,i)*x1f(m,i))
                /3.0*(cos(x2f(m,j)) - cos(x2f(m,j+1)))*(x3f(m,k+1) - x3f(m,k))) : 1.0);
     Real m1 = uh(m,IM1,k,j,i), m2 = uh(m,IM2,k,j,i), m3 = uh(m,IM3,k,j,i);
-    const Real msq = m1*m1 + m2*m2 + m3*m3;
+    const Real c = cub ? cosc(m,k,j) : 0.0, det = 1.0 - c*c;
+    const Real msq = cub ? m1*m1 + (m2*m2 - 2.0*c*m2*m3 + m3*m3)/det
+                         : m1*m1 + m2*m2 + m3*m3;
     Real ekin = 0.5*msq/dd;
     const Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
     Real etot = uh(m,IEN,k,j,i);
     Real erad = u0_(m,M1_E,k,j,i);
     if (vc > 0.0 && msq > SQR(vc*dd) && flz) {
       // (floorcap_lz: the part pf = m.phi_hat that carries L_z never scaled, EkinScale;
-      // phi_hat spherical polar e3, Cartesian (-y, x)/R of the cell)
+      // phi_hat spherical polar e3, Cartesian (-y, x)/R of the cell, the cubed sphere
+      // its covariant (0, f2, f3), GnomonicPhiHat, with pf = m_a phi^a)
       Real f[3] = {0.0, 0.0, sph ? 1.0 : 0.0};
-      if (!sph) {
+      if (cub) {
+        auto &sz = mbs.d_view(m);
+        GnomonicPhiHat(pnl(m), 0.25*M_PI*CellCenterX(j - js, nx2, sz.x2min, sz.x2max),
+                       0.25*M_PI*CellCenterX(k - ks, nx3, sz.x3min, sz.x3max), f[1],
+                       f[2]);
+      } else if (!sph) {
         auto &sz = mbs.d_view(m);
         const Real cx = CellCenterX(i - is, nx1, sz.x1min, sz.x1max);
         const Real cy = CellCenterX(j - js, nx2, sz.x2min, sz.x2max);
@@ -160,7 +174,8 @@ void RadiationVet::FloorGasCap() {
           f[1] = cx/r;
         }
       }
-      const Real pf = m1*f[0] + m2*f[1] + m3*f[2];
+      const Real pf = cub ? (m2*(f[1] - c*f[2]) + m3*(f[2] - c*f[1]))/det
+                          : m1*f[0] + m2*f[1] + m3*f[2];
       Real fs;
       const Real ek = EkinScale(ekin, 0.5*pf*pf/dd, 0.5*vc*vc*dd, fs);
       const Real dke = ekin - ek;
