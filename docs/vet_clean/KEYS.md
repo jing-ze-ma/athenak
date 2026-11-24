@@ -123,6 +123,7 @@ from a file written before these keys must name both on the command line.
 | `time/dt_retry_grow`, `dt_retry_ngood` | After a cut, dt grows back by this factor per good cycle, starting after this many good cycles. | 1.25, 10 | all: `1.1`, `20` | `driver/dt_retry.cpp` (`DtRetry`) |
 | `time/dt_retry_t2_be` | After this many stage-rejection cuts in one cycle, a rejected stage is redone with backward Euler (0 = at once, < 0 = never). | 0 | all: `0` | `driver/dt_retry.cpp` (`DtRetry`) |
 | `time/dt_retry_force_cycle`, `dt_retry_force_fac` | Testing: force one retry at this cycle with this factor (the `dt_retry` test). | off | not named | `driver/dt_retry.cpp` (`DtRetry`) |
+| `rad_vet/clean_dbg_inf` | Testing: the first stage-1 write-back of this cycle gives one cell a non-finite E iterate. `implicit_pos_floor` never raises a non-finite E; the stage is rejected and redone (the `inf_reject` test). | off | not named | `rad_vet/rad_vet.cpp` (constructor) |
 
 ## Boundaries
 
@@ -207,7 +208,7 @@ Scheme options pinned by the templates:
 - `clean_xt_exact` (`cons`), `clean_wb_fct` (true), `time2_face_fct` (true): exact exchange bookkeeping and the Zalesak limiters.
 - `clean_stag_opac_update` (true), `clean_stag_opac_passes` (3): opacities at the iterate's temperature.
 - `clean_stag_lat_sums`, `clean_stag_opac_drag`, `clean_stag_tie_gid` (all 0): fresh-run defaults that the templates switch off.
-- `implicit_pos_floor`, `implicit_pos_floor_cons`, `implicit_pos_gas`, `implicit_pos_gas_cons` (true): E floor and gas positivity paid from the radiation.
+- `implicit_pos_floor`, `implicit_pos_floor_cons`, `implicit_pos_gas`, `implicit_pos_gas_cons` (true): E floor and gas positivity paid from the radiation. A non-finite E (a diverged iterate) is never raised: the write-back rejects the solve.
 - `vet_seg` (`jump`), `vet_interp` (`auto`), `vet_bc_inner`, `vet_bc_diff`, `vet_gd_tangential`, `vet_gd_wall_interp`, `vet_gd_halo_compact`, `vet_gd_allow_clamp`: ray-sweep details.
 
 Solver internals: `clean_conv` (`budget`), `clean_conv_max` (1e-5), `clean_conv_kappa`,

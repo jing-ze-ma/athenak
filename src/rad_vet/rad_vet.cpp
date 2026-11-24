@@ -647,8 +647,17 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_vet","clean_wb_floor_diag")) {
       cln_wbfdg = pin->GetInteger("rad_vet","clean_wb_floor_diag");
     }
-    // clean_gas_newton_switch W (0 off, W in [3, 64]), _min, clean_stall_fac: a stalled
-    // solve's remaining passes on the bracketed gas root without the Newton slope
+    // clean_dbg_inf C (test, read only when named): the first stage-1 write-back of cycle
+    // C gives rank 0's first active cell a non-finite E iterate (the test of the
+    // non-finite rejection, tests/vet_clean inf_reject)
+    if (pin->DoesParameterExist("rad_vet","clean_dbg_inf")) {
+      cln_dbginf = pin->GetInteger("rad_vet","clean_dbg_inf");
+    }
+    // clean_gas_newton_switch (default W = 4 on a fresh run, USER 11-21, recorded; 0 = off;
+    // W in [3, 64]), clean_gas_newton_switch_min (default 6 on a fresh run, else 20),
+    // clean_stall_fac (0.5): the old production's implicit_gas_newton_switch, a stalled
+    // solve's remaining passes on the bracketed gas root without the Newton slope; a
+    // restart file without the keys keeps 0 / 20
     if (!nw && !pin->DoesParameterExist("rad_vet","clean_gas_newton_switch")) {
       recipe::Log("<rad_vet>/clean_gas_newton_switch = 0 (a restart file without the "
                   "key: "

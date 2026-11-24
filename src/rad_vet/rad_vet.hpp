@@ -1240,6 +1240,7 @@ class RadiationVet {
   bool cln_wbmc = false;        // clean_wb_mcap
   Real cln_wbffn = 0.0;         // its steps accepted at the last cut
   int cln_wbfdg = 0;            // clean_wb_floor_diag (diagnostic)
+  int cln_dbginf = -1;          // clean_dbg_inf (test): the cycle of the injected inf
   Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E
   // clean_ray_cut (CleanRayCut): no rays below the shell where every deeper cell is
   // diffusive (|grad S|/(chi S) < clean_ray_cut_r, none thinner than

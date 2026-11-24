@@ -551,6 +551,27 @@ def t_ceiling_metric(c):
 
 
 # ---------------------------------------------------------------------------------------
+# a non-finite iterate is rejected, never floored
+
+def t_inf_reject(c):
+    """the closed shell with rad_vet/clean_dbg_inf = 4: the first stage-1 write-back of
+    cycle 4 gives one cell a non-finite E iterate.  implicit_pos_floor must not raise it
+    (no booking of a non-finite raise: nonfinite = implicit_pos_floor creation warnings
+    that print inf or nan); the write-back's check rejects the stage, which is redone
+    (rejected >= 1), and the run stays energy-exact (dE as conservation_sp)."""
+    d = c.run('shell_sp.athinput', 'run', {
+        'time/nlim': 8, 'rad_vet/implicit_pos_floor': 'true',
+        'rad_vet/implicit_pos_floor_cons': 'true', 'rad_vet/clean_dbg_inf': 4})
+    log = open(os.path.join(d, 'run.log')).read()
+    cw = [ln for ln in log.splitlines() if 'CLEAN WARNING' in ln]
+    out = am_budget(d, 'sp')
+    fl = [ln for ln in cw if 'implicit_pos_floor created' in ln]
+    return dict(dE=out['dE'], nonfinite=sum(bool(re.search(r'\b(inf|nan)\b', ln,
+                                                           re.I)) for ln in fl),
+                rejected=sum(('stage fallback' in ln) or ('dt_retry' in ln) for ln in cw))
+
+
+# ---------------------------------------------------------------------------------------
 # linear momentum: a report, not a pass / fail criterion
 
 def t_momentum_box(c):
@@ -609,6 +630,7 @@ TESTS = [  # name, function, in --quick
     ('wedge_sym', t_wedge_sym, True),
     ('floor_pay', t_floor_pay, True),
     ('ceiling_metric', t_ceiling_metric, True),
+    ('inf_reject', t_inf_reject, False),
 ]
 
 
