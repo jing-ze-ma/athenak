@@ -51,6 +51,7 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
   Real dfloor_ke_=0.0;
   const bool kvtally = eos.dfloor_keep_velocity && !eos.defer_cons_floors;
   Real fdm_ = 0.0, fde_ = 0.0;   // mass and energy created by the floors
+  int fdn_ = 0;   // active cells the density floor raised
   const auto fvw_ = FloorVol();
   // LaunchBounds<256, 2> on CUDA as in general_hyd.cpp; HIP keeps the default policy,
   // since there the sums depend on the block size
@@ -62,7 +63,7 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
   Kokkos::parallel_reduce("hyd_c2p_gen", C2pPol(DevExeSpace(), 0, nmkji),
   KOKKOS_LAMBDA(const int &idx, int &sumd, int &sume, int &sumt, int &sumv,
                 int &sumc, int &sumts, Real &sumde, Real &sumvde, Real &sumdke,
-                Real &sdm_, Real &sde_) {
+                Real &sdm_, Real &sde_, int &sdn_) {
     int m = (idx)/nkji;
     int k = (idx - m*nkji)/nji;
     int j = (idx - m*nkji - k*nji)/ni;
@@ -132,6 +133,7 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
         if (eos.ifltr >= 0) cons(m,eos.ifltr,k,j,i) += u.d - cons(m,IDN,k,j,i);
         cons(m,IDN,k,j,i) = u.d;
         sumd++;
+        if (fvw_(m,k,j,i) > 0.0) sdn_++;   // (an active cell)
       }
       if (efloor_used) {
         cons(m,IEN,k,j,i) = u.e;
@@ -198,14 +200,14 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
      Kokkos::Sum<int>(nceilv_), Kokkos::Sum<int>(ntclamp_), Kokkos::Sum<int>(ntset_),
      Kokkos::Sum<Real>(efloor_de_), Kokkos::Sum<Real>(vceil_de_),
      Kokkos::Sum<Real>(dfloor_ke_),
-     Kokkos::Sum<Real>(fdm_), Kokkos::Sum<Real>(fde_));
+     Kokkos::Sum<Real>(fdm_), Kokkos::Sum<Real>(fde_), Kokkos::Sum<int>(fdn_));
 
   // store appropriate counters
   if (only_testfloors) {
     pmy_pack->pmesh->ecounter.nfofc += nfloord_;
   } else {
     pmy_pack->pmesh->ecounter.neos_dfloor += nfloord_;
-    FloorBook(fdm_, fde_);
+    FloorBook(fdm_, fde_, fdn_);
     pmy_pack->pmesh->ecounter.neos_efloor += nfloore_;
     pmy_pack->pmesh->ecounter.neos_tfloor += nfloort_;
     pmy_pack->pmesh->ecounter.neos_vceil  += nceilv_;

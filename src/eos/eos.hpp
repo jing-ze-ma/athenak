@@ -797,7 +797,7 @@ class EquationOfState {
 
   // active-cell volumes and booking of the mass and energy created by the floors
   FloorVolW FloorVol() const;
-  void FloorBook(const Real dm, const Real de);
+  void FloorBook(const Real dm, const Real de, const int dn = 0);
   Real flr_w = 1.0;   // weight of this conversion's floor change within the step
 
   // virtual functions to convert cons to prim in either Hydro or MHD (depending on

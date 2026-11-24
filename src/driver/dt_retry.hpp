@@ -225,7 +225,7 @@ class CounterKeep {
  private:
   struct Snap {
     bool have = false;
-    Real ec[5] = {0, 0, 0, 0, 0};   // ecounter efloor_de, vceil_de, dfloor_ke, flr_*_v
+    Real ec[6] = {0, 0, 0, 0, 0, 0};   // ecounter efloor_de, vceil_de, dfloor_ke, flr_*
     std::int64_t ni[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};   // its integer counters
     DvceArray1D<Real> pos, acl, opn, fcp;   // (fcp: <rad_m1>/floorcap's fcap_cnt)
     bool hpos = false, hacl = false, hopn = false, hfcp = false;
