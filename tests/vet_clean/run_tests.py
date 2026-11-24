@@ -420,7 +420,11 @@ def t_wedge_sym(c):
     after 8 cycles.  The narrow wedge without the key must stop with the wedge FATAL.
     The same shell made theta-periodic (20 deg wedge) with vet_gd_theta_seam_sym = true: the
     seam face from both sides (the equatorial mirror), fth = |sum F_theta| / sum |F_r|;
-    without the key it must stop with the theta-image FATAL."""
+    without the key it must stop with the theta-image FATAL.  fth_rot: the theta-periodic
+    30 deg wedge with GL 11 x 12 (odd nmu: every ring pairs with its equatorial mirror)
+    turning about z with the production rotation stack of vet_gd_rotate_dt (EMA ring,
+    cross-fade), both seam keys, after 8 cycles; GL 10 x 12 staggered (even nmu, no
+    mirror) must stop with the mirror FATAL (rot_fatal)."""
     o = {'time/nlim': 8, 'problem/gas_rot': 0.0, 'problem/lat_amp': 0.0,
          'rad_vet/vet_gd_gl_nmu': 7, 'rad_vet/vet_gd_gl_nphi': 18,
          'rad_vet/vet_gd_gl_stagger': 'true', 'rad_vet/vet_gd_wall_interp': 'true'}
@@ -450,6 +454,18 @@ def t_wedge_sym(c):
     except RuntimeError:
         log = open(os.path.join(c.dir, 'th20_nosym', 'run.log')).read()
         out['theta_fatal'] = int('vet_gd_theta_seam_sym' in log and 'FATAL' in log)
+    r = dict(th, **{'mesh/x3max': np.pi/6, 'rad_vet/vet_gd_gl_nphi': 12,
+                    'rad_vet/vet_gd_rotate_dt': 2.0, 'rad_vet/vet_gd_theta_seam_sym': 'true'})
+    d = c.run('shell_sp.athinput', 'th30rot', dict(r, **{'rad_vet/vet_gd_gl_nmu': 11}))
+    m = vett.last_bin(d, 'vet')
+    out['fth_rot'] = float(abs(m['vet_f2'].sum())/np.abs(m['vet_f1']).sum())
+    out['warnings'] += vett.warnings(open(os.path.join(d, 'run.log')).read())
+    try:
+        c.run('shell_sp.athinput', 'th30rot_even', dict(r, **{'rad_vet/vet_gd_gl_nmu': 10}))
+        out['rot_fatal'] = 0
+    except RuntimeError:
+        log = open(os.path.join(c.dir, 'th30rot_even', 'run.log')).read()
+        out['rot_fatal'] = int('not mirror-symmetric' in log and 'FATAL' in log)
     return out
 
 

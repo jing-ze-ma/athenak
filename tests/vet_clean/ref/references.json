@@ -167,13 +167,15 @@
   }
  },
  "wedge_sym": {
-  "_about": "fphi = |sum F_phi| / sum |F_r| on the 20 deg (exact), 3.7 and 7.3 deg (vet_gd_wall_sym) wedges; fth = |sum F_theta| / sum |F_r| on the theta-periodic 20 deg shell with vet_gd_theta_seam_sym (reported, not bounded: 1.1e-5 at cycle 8 on the release base and IA12.3 alike, under study); wedge_fatal / theta_fatal = 1: the narrow wedge without vet_gd_wall_sym, and the theta-periodic shell without vet_gd_theta_seam_sym, stop with the FATAL",
+  "_about": "fphi = |sum F_phi| / sum |F_r| on the 20 deg (exact), 3.7 and 7.3 deg (vet_gd_wall_sym) wedges; fth = |sum F_theta| / sum |F_r| on the theta-periodic 20 deg shell with vet_gd_theta_seam_sym (reported, not bounded: 1.1e-5 at cycle 8 on the release base and IA12.3 alike, under study); wedge_fatal / theta_fatal = 1: the narrow wedge without vet_gd_wall_sym, and the theta-periodic shell without vet_gd_theta_seam_sym, stop with the FATAL; fth_rot = the same on the 30 deg theta-periodic wedge with GL 11 x 12 turning about z (EMA ring, cross-fade); rot_fatal = 1: GL 10 x 12 staggered (no equatorial mirror) stops with the mirror FATAL",
   "max": {
-   "fphi": 1e-08
+   "fphi": 1e-08,
+   "fth_rot": 1e-08
   },
   "equal": {
    "wedge_fatal": 1,
    "theta_fatal": 1,
+   "rot_fatal": 1,
    "warnings": 0
   }
  },
