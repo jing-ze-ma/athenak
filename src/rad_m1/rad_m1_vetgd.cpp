@@ -1050,7 +1050,6 @@ void RadiationM1::VetGdInit() {
   if (vgd_wst) {
     // vet_gd_theta_seam_sym: the clean scheme's theta seam faces in both frames, with the
     // equatorial mirror (a theta wedge centred on the equator)
-    vgd_wtw = pm->mesh_size.x2max - pm->mesh_size.x2min;
     if (!vgd_wint || VgdRotOn() ||
         std::fabs(pm->mesh_size.x2min + pm->mesh_size.x2max - M_PI) > 1.0e-12) {
       VgdFatal("vet_gd_theta_seam_sym needs a theta wedge centred on the equator, "
@@ -1868,7 +1867,7 @@ Real RadiationM1::VetGdAlignDt(const Real time, const Real dt) {
 static void VgdMirPick(const std::vector<double> &d, const int n, const double mx,
                        const double my, const double mz, const double rx,
                        const double ry, const double rz, const bool wint, int r3[3],
-                       double w3[3]) {
+                       double w3[3], const bool ronly = false) {
   const bool up = (mx*rx + my*ry + mz*rz) >= 0.0;
   double b3[3] = {-2.0, -2.0, -2.0};
   int best = 0;
@@ -1927,6 +1926,10 @@ static void VgdMirPick(const std::vector<double> &d, const int n, const double m
         return;
       }
     }
+    // ronly (vet_gd_wall_sym): no same-branch pair brackets m (a tangent split) -> its
+    // nearest same-branch ring direction alone, so the pick stays on the ring (paired
+    // under both mirrors; the 3-point rule below breaks ties across rings by index)
+    if (ronly && ra >= 0) {r3[0] = r3[1] = r3[2] = ra; return;}
   }
   const double *u = &d[4*r3[0]], *v = &d[4*r3[1]], *x = &d[4*r3[2]];
   auto det3 = [](const double *a, const double *b, const double *c) {
@@ -2093,7 +2096,7 @@ void RadiationM1::VgdTabCompute(const Real alpha, const int nthr) {
             if (vgd_wsym && thw == th) {
               // vet_gd_wall_sym, a phi wall: VgdMirPick, i.e. (M n_q on n_q's ring)
               // linear in azimuth between its ring neighbours: positive, mirror-paired
-              VgdMirPick(d, n, mx, my, mz, sw*cpw, sw*spw, cw, true, r3, w3);
+              VgdMirPick(d, n, mx, my, mz, sw*cpw, sw*spw, cw, true, r3, w3, true);
             } else if (bd <= 1.0 - 1.0e-12) {
               double b3[3] = {-2.0, -2.0, -2.0};
               for (int r = 0; r < n; ++r) {

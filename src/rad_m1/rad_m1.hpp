@@ -3872,7 +3872,6 @@ class RadiationM1 {
   // vet_gd_theta_seam_sym (read only when named, default false; needs
   // vet_gd_wall_interp): the clean scheme's theta seam faces in both frames (paired)
   bool vgd_wst = false;
-  Real vgd_wtw = 0.0;         // the theta period
   DvceArray1D<int> vgd_mirz;  // (n): the equatorial mirror image of each direction
   VgdLG vgd_lg;   // the vet_gd sweep geometry from the global index
   Kokkos::View<int *****, LayoutWrapper, DevMemSpace> vgd_m3;

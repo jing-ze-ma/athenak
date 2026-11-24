@@ -2141,13 +2141,11 @@ void RadiationM1::CleanGdFaceSums() {
     return f*v;
   };
   // vet_gd_wall_sym (an inexact phi wall) / vet_gd_theta_seam_sym: a seam face's sums q
-  // (local basis e, vector area a, area ar) also in the frame of the wall's other side,
-  // turned by the period about z (phi) or about phi_hat (theta): there its own beams
-  // exact, the incoming ones through the mirror image of this side's wall map; q the
-  // mean of the two (mirror-paired, one face for both sides)
+  // (local basis e, vector area a, area ar) also in the frame of the wall's other side:
+  // there its own beams exact, the incoming ones through the mirror image of this
+  // side's wall map; q the mean of the two (mirror-paired, one face for both sides)
   const bool wsx = vgd_wsx, wst = vgd_wst;
   const Real wsc = cos(vgd_wsw), wss = sin(vgd_wsw);
-  const Real wtc = cos(vgd_wtw), wts = sin(vgd_wtw);
   auto mi_ = vgd_mir;
   auto mz_ = vgd_mirz;
   auto seam2 = [=] KOKKOS_FUNCTION (const int dir, const int m, const int k, const int j,
@@ -2158,23 +2156,20 @@ void RadiationM1::CleanGdFaceSums() {
     if (!(p ? wsx : wst) || (p ? (k != ks) : (j != js)) ||
         x.mbc(m, p ? 4 : 2) != BoundaryFlag::periodic ||
         wl_(m,k-p+ok,j-1+p+og) == 0) {return;}
-    // the turn (Rodrigues about u = phi_hat at the cell for theta; about z exactly)
-    const Real u0 = -sin(x3v(m,k)), u1 = cos(x3v(m,k));
-    auto turn = [&](const Real v[3], Real o[3]) {
-      if (p) {
-        o[0] = wsc*v[0] - wss*v[1];
-        o[1] = wss*v[0] + wsc*v[1];
-        o[2] = v[2];
-        return;
-      }
-      const Real uv = (1.0 - wtc)*(u0*v[0] + u1*v[1]);
-      o[0] = wtc*v[0] + wts*u1*v[2] + uv*u0;
-      o[1] = wtc*v[1] - wts*u0*v[2] + uv*u1;
-      o[2] = wtc*v[2] + wts*(u0*v[1] - u1*v[0]);
-    };
+    // the other side's face vector b and basis eb: phi, turned about z by W; theta, the
+    // equatorial mirror image Z = diag(1, 1, -1) (exact for the whole face): b = -Z a,
+    // eb = (Z e_r, -Z e_theta, Z e_phi)
     Real b[3], eb[3][3], s[4] = {0.0}, qb[4];
-    turn(a, b);
-    for (int t = 0; t < 3; ++t) turn(e[t], eb[t]);
+    for (int c = 0; c < 3; ++c) {
+      const Real zc = (c == 2) ? -1.0 : 1.0;
+      b[c] = p ? ((c == 0) ? wsc*a[0] - wss*a[1] : (c == 1) ? wss*a[0] + wsc*a[1] : a[2])
+               : -zc*a[c];
+      for (int t = 0; t < 3; ++t) {
+        eb[t][c] = p ? ((c == 0) ? wsc*e[t][0] - wss*e[t][1]
+                                 : (c == 1) ? wss*e[t][0] + wsc*e[t][1] : e[t][2])
+                     : ((t == 1) ? -zc : zc)*e[t][c];
+      }
+    }
     const int kl = k - p, jl = j - 1 + p;
     for (int d = 0; d < n; ++d) {
       const Real f = dir_(d,0)*b[0] + dir_(d,1)*b[1] + dir_(d,2)*b[2];
