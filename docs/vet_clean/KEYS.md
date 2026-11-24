@@ -214,7 +214,8 @@ Solver internals: `clean_conv` (`budget`), `clean_conv_max` (1e-5), `clean_conv_
 `clean_lin_pass`, `clean_lin_cnorm`, `clean_init_cnorm`, `clean_gas_newton_switch`,
 `clean_gas_newton_switch_min`, `clean_stall_fac`, `clean_troot_rtol`, `clean_pc_sweep` (`rb`),
 `clean_clos1_budget`, `clean_vel_settled`, `clean_bud_maxnorm` (speed keys, read only when named, default off: the closure pass solved
-in the budget norm; the velocity update only in a pass that can end the solve; the budget test in the per-cell max norm), `clean_stag_mg_color`, `clean_stag_fs_line`, `clean_stag_pcr`, `clean_halo_direct`,
+in the budget norm; the velocity update only in a pass that can end the solve, which breaks `wb_sp` / `wb_cs`
+(vmax/cs 2e-4 vs 1e-8: not for production until fixed); the budget test in the per-cell max norm, form under study), `clean_stag_mg_color`, `clean_stag_fs_line`, `clean_stag_pcr`, `clean_halo_direct`,
 `implicit_predictor`, `implicit_predictor_tcap`, `implicit_resid_fatal`, `time/dt_retry_views`,
 `time/dt_retry_host`, `time/restart_refill_ghosts` (false: restarts are bitwise).
 
