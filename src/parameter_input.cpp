@@ -167,6 +167,27 @@ InputBlock* ParameterInput::GetPtrToBlock(std::string name) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void VetAlias(std::string &block, std::string &name, std::string &value)
+//! \brief the names of the radiation module before its m1 -> vet rename, read as the new
+//! names: <rad_m1>, <problem>/m1_*, <problem>/pgen_name = rad_m1_*, <outputN>/variable =
+//! m1 | m1_*.  Input files, command lines and restart files that use them run unchanged.
+
+static void VetAlias(std::string &block, std::string &name, std::string &value) {
+  auto swap = [](std::string &s, const std::string &a, const std::string &b) {
+    if (s.compare(0, a.size(), a) == 0) s = b + s.substr(a.size());
+  };
+  if (block == "rad_m1") block = "rad_vet";
+  if (block == "problem") {
+    swap(name, "m1_", "vet_");
+    if (name == "pgen_name") swap(value, "rad_m1_", "rad_vet_");
+  }
+  if (block.compare(0, 6, "output") == 0 && name == "variable") {
+    if (value == "m1") value = "vet";
+    swap(value, "m1_", "vet_");
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn  void ParameterInput::LoadFromStream(std::istream &is)
 //  \brief Load input parameters from a stream
 
@@ -196,6 +217,8 @@ void ParameterInput::LoadFromStream(std::istream &is) {
       first_char++;
       last_char = (line.find_first_of(">", first_char));
       block_name.assign(line, first_char, last_char-1);       // extract block name
+      std::string nn, nv;
+      VetAlias(block_name, nn, nv);
 
       if (last_char == std::string::npos) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -226,6 +249,7 @@ void ParameterInput::LoadFromStream(std::istream &is) {
     }
     // parse line and add name/value/comment strings (if found) to current block name
     ParseLine(line, param_name, param_value, param_comment);
+    VetAlias(block_name, param_name, param_value);
     AddParameter(pib, param_name, param_value, param_comment);
     pib->GetPtrToLine(param_name)->origin = kOriginFile;  // MarkAllAsRestart re-tags
   }
@@ -409,6 +433,7 @@ void ParameterInput::ModifyFromCmdline(int argc, char *argv[], bool add_absent) 
     block = input_text.substr(0, slash_posn);
     name  = input_text.substr(slash_posn+1, (equal_posn - slash_posn - 1));
     value = input_text.substr(equal_posn+1, std::string::npos);
+    VetAlias(block, name, value);
 
     // get pointer to node with same block name in linked list of InputBlocks
     pb = GetPtrToBlock(block);
