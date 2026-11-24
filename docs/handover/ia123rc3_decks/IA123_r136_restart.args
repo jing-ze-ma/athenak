@@ -117,3 +117,7 @@ time/dt_retry_ngood=20
 time/dt_retry_views=minimal
 time/dt_retry_t2_be=0
 time/nan_check_cycles=100
+# one direction set (rc4 rule-12 FATAL on a product set + vet_gd_ls; the rst may store vet_gd_ls):
+rad_vet/vet_gd_ls=0
+# the floor-gas cap keeps v_phi (rule 1, L_z exact):
+rad_vet/floorcap_lz=true
