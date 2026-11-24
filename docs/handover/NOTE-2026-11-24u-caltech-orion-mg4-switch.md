@@ -33,3 +33,8 @@
 - log echo (log.2): ### NOTE: parameter 'clean_stag_mg_levels' in block 'rad_vet' is absent from the restart's input: added from the command line (= 4); | <hydro>: fofc_retest 1
 - bsg 300 cycles on mg4 (11-24 01:40): CW 0, FATAL 0, created inf 0, DT_RETRY 0. **before** 0.6254 s/cyc (c4450-4700), dt 5.716051e+01 -> **after** 0.7471 s/cyc (c4850-5100), dt 5.774589e+01
 - m35mms 300 cycles on mg4 (11-24 01:41): CW 0, FATAL 0, created inf 0, DT_RETRY 0. **before** 1.1243 s/cyc (c4950-5200), dt 9.786278e+00 -> **after** 0.8972 s/cyc (c5300-5550), dt 1.093650e+01
+
+## t9l62 (11-24 02:22): switched to mg_levels 4
+- pre-switch (log.1, on the old node): 2.7956 s/cyc (c1100-1350), dt 9.684534e+01. **Moved to hpc-sm-02-17 / holder 7333073 (COORD: frees 7333072 for RSG; 02-16 is timing-suspect).** Clean STOP: yes ('Terminating on stop request'). Pre-switch rst kept as rst_keep/t9l62.00005.rst.pre-mg4.
+- relaunch: `2026-11-24 02:20:20 chunk 2 STAR=t9l62 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc3_af836f5a3 md5=09f50abee4ffa6cd399ce15879626353 DECK=/resnick/groups/carnegie_poc/jingze/prod_rc3_1124/decks/tile/IA123_t9l62.athinput md5=194a66017c` + EX: time/cfl_number=0.3 hydro/fofc=true hydro/fofc_retest=true rad_vet/clean_stag_mg_levels=4 time/cfl_number=0.3 hydro/dt_report=200
+- log echo (log.2): ### NOTE: parameter 'clean_stag_mg_levels' in block 'rad_vet' is absent from the restart's input: added from the command line (= 4); | <hydro>: fofc_retest 1
