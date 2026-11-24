@@ -471,6 +471,74 @@ def t_floor_pay(c):
     return out
 
 
+# the velocity ceiling in the metric: floor_from_ekin keeps u_phi (L_z), cuts the rest
+
+CS_FRAME = {0: ((0, 1, 0), (0, 0, 1), (1, 0, 0)), 1: ((-1, 0, 0), (0, 0, 1), (0, 1, 0)),
+            2: ((0, -1, 0), (0, 0, 1), (-1, 0, 0)), 3: ((0, 1, 0), (-1, 0, 0), (0, 0, 1)),
+            4: ((1, 0, 0), (0, 0, 1), (0, -1, 0)), 5: ((0, 1, 0), (1, 0, 0), (0, 0, -1))}
+
+
+def phys_velocity(d, cs):
+    """the t = 0 hydro_w velocity of run dir d per cell as Cartesian-frame (V.r_hat,
+    V.theta_hat, V.phi_hat): sp the orthonormal components; the cubed sphere the
+    contravariant v^a on the panel's unit tangents (cubed_sphere::PanelTangents,
+    cubed_sphere::PanelFrame), rebuilt as V = v^1 r_hat + v^2 e_xi + v^3 e_eta"""
+    out = []
+    for p, (ext, a) in enumerate(vett.read_blocks(vett.bins(d, 'hydro_w')[0])):
+        v = np.stack([a['velx'], a['vely'], a['velz']])
+        if not cs:
+            out.append(v.reshape(3, -1))
+            continue
+        n3, n2, _ = a['velx'].shape
+        c = [ext[2*m] + (np.arange(n) + 0.5)*(ext[2*m + 1] - ext[2*m])/n
+             for m, n in ((1, n2), (2, n3))]
+        x, y = np.meshgrid(np.tan(0.25*np.pi*c[0]), np.tan(0.25*np.pi*c[1]))
+        fa, fb, fn = [np.array(f, float)[:, None, None] for f in CS_FRAME[p]]
+        dl = np.sqrt(1 + x*x + y*y)
+        q = (fa*x + fb*y + fn)/dl
+        e1 = (fa*dl - q*x)/np.sqrt(1 + y*y)
+        e2 = (fb*dl - q*y)/np.sqrt(1 + x*x)
+        e1, e2 = e1/np.linalg.norm(e1, axis=0), e2/np.linalg.norm(e2, axis=0)
+        ph = np.stack([-q[1], q[0], 0*q[0]])/np.hypot(q[0], q[1])
+        th = np.cross(ph, q, axis=0)
+        V = v[0]*q[..., None] + v[1]*e1[..., None] + v[2]*e2[..., None]
+        out.append(np.stack([(V*b[..., None]).sum(0) for b in (q, th, ph)]).reshape(3, -1))
+    return np.concatenate(out, 1)
+
+
+def t_ceiling_metric(c):
+    """the rotating shells (gas_rot 0.3 about z, gas_vr 0.2) with hydro/eos = general,
+    floor_from_ekin and vceil = 0.5, below |v| in most cells, against the same run without
+    the ceiling, cell by cell at t = 0 (after the initial inversion): u_phi kept (L_z),
+    the rest scaled along itself (theta part stays 0), |V| (cs: the metric norm of the
+    contravariant v^a) = max(vceil, |v_phi|) where the ceiling acts and unchanged
+    elsewhere.  A ceiling on Sum v_a^2 of mixed components, or a split along the wrong
+    (co- / contravariant) phi component, fails it on the cubed sphere"""
+    vc = 0.5
+    o = {'hydro/eos': 'general', 'units/length_cgs': 1.0, 'units/mass_cgs': 1.0,
+         'units/time_cgs': 1.0, 'hydro/floor_from_ekin': 'true', 'output2/variable':
+         'hydro_w', 'time/nlim': 1, 'problem/gas_rho': 1.0, 'problem/gas_temp': 0.5,
+         'problem/e_out': 1.0, 'problem/r0': 2.0, 'problem/width': 0.3,
+         'problem/gas_rot': 0.3, 'problem/gas_vr': 0.2, 'problem/rho_lat_amp': 0.0,
+         'problem/lat_amp': 0.0, 'mesh/x1max': 3.0}
+    out = {}
+    for m, deck in (('sp', 'shell_sp.athinput'), ('cs', 'shell_cs.athinput')):
+        a = phys_velocity(c.run(deck, m + '_free', dict(o, **{'hydro/vceil': 0.0})),
+                          m == 'cs')
+        b = phys_velocity(c.run(deck, m + '_ceil', dict(o, **{'hydro/vceil': vc})),
+                          m == 'cs')
+        va, vb = np.linalg.norm(a, axis=0), np.linalg.norm(b, axis=0)
+        cap = np.where(va > vc, np.maximum(vc, np.abs(a[2])), va)
+        rad = np.abs(a[0]) > 1e-8*va.max()   # (the radial part's scale, where it has one)
+        sr = b[0][rad]/a[0][rad]
+        out.update({m + '_dvphi': float(np.abs(b[2] - a[2]).max()/va.max()),
+                    m + '_dcap': float(np.abs(vb - cap).max()/va.max()),
+                    m + '_vtheta': float(np.abs(b[1]).max()/va.max()),
+                    m + '_scale_ok': int(np.all((sr >= -1e-13) & (sr <= 1 + 1e-13))),
+                    m + '_capped': int((va > vc).sum())})
+    return out
+
+
 # ---------------------------------------------------------------------------------------
 # linear momentum: a report, not a pass / fail criterion
 
@@ -529,6 +597,7 @@ TESTS = [  # name, function, in --quick
     ('radwave', t_radwave, False),
     ('wedge_sym', t_wedge_sym, True),
     ('floor_pay', t_floor_pay, True),
+    ('ceiling_metric', t_ceiling_metric, True),
 ]
 
 
