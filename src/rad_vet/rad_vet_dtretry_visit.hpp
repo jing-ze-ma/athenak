@@ -90,7 +90,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vet_seg_emit", vet_seg_emit);
   v.value("vet_seg_jump", vet_seg_jump);
   v.value("vet_seg_plateau", vet_seg_plateau);
-  v.value("vet_xcr", vet_xcr);
   v.value("vet_x1per", vet_x1per);
   v.value("vet_x1npass", vet_x1npass);
   v.value("vet_x1ptol", vet_x1ptol);

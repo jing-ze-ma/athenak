@@ -518,7 +518,6 @@ class RadiationVet {
                                // as two sub-segments split at the face
   bool vet_seg_jump = false;   // vet_seg = jump (coreL-1012): emit + the contrast rule
   bool vet_seg_plateau = false; // vet_seg_plateau: jump's contrast only across a plateau
-  bool vet_xcr = false;        // vet_seg_cross: the cell crossed before the x1 face
   // the segment mode VetSegSplit takes: 0 split, 1 emit, 2 jump with the plateau weights,
   // 3 jump without them (rad_vet_vetseg.hpp)
   int VetSegMode() const {

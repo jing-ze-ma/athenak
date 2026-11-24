@@ -486,6 +486,8 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/vet_milne", "!"},
     // (vet_path = cells, removed; decks and old-production restart files store none)
     {"rad_vet/vet_path", "=none"},
+    // (vet_seg_cross, removed)
+    {"rad_vet/vet_seg_cross", "!"},
     // (the vet_gd upwind profile shift and the dense shell launch, removed)
     {"rad_vet/vet_gd_upwind", "=bilinear"}, {"rad_vet/vet_gd_upwind_*", ""},
     {"rad_vet/vet_gd_shell_list", "=true"},

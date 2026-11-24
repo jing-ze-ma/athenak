@@ -885,11 +885,6 @@ void RadiationVet::VetInit(ParameterInput *pin) {
       VetFatal("<rad_vet>/vet_seg must be mean, split, emit or jump");
     }
   }
-  // vet_seg_cross (default false): where the ray crosses a row or layer boundary of the
-  // upwind column before the x1 face and that cell is a material edge to the stencil,
-  // the last part of the upwind half-segment takes the chi and S of the cell it crosses
-  // (VetSegCross; with vet_interp != lin)
-  vet_xcr = pin->GetOrAddBoolean("rad_vet", "vet_seg_cross", false);
   {std::string ax = pin->GetOrAddString("rad_vet", "vet_axis", "flux");
   if (ax.compare("flux") == 0) {
     vet_axis_flux = true;
@@ -1774,7 +1769,6 @@ void RadiationVet::VetSweepMB() {
   const Real bbhi = (vet_bc_bath && ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
   const bool bfc = vet_bc_face;
   const bool spl = vet_seg_split;
-  const bool xcr = vet_xcr;
   const int spe = VetSegMode();
   const int vim = vet_interp;   // (#6)
   const bool plm_ = true;
@@ -1963,19 +1957,6 @@ void RadiationVet::VetSweepMB() {
                                 cs_(m,li,1,kb,jb)};
             iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe,
                              f2s_ ? &ifc : nullptr, suq, sdd);
-            int r2 = 0, r3 = 0;
-            const Real f = xcr ? fmin(VetCrossFrac(sh2, r2),
-                                      thrd ? VetCrossFrac(sh3, r3) : 1.0) : 1.0;
-            if (f < 1.0 && VetCrossEdge(wq, cq, cs_(m,li,0,kc + r3,jc + r2))) {
-              // vet_seg_cross: the stencil over 1 - f, then the cell crossed
-              Real ib;
-              (void) VetUpCorner(vim, wq, iq, cq, sq, s0, c0, (1.0 - f)*dx1/am1, spl,
-                                 spe, &ib, suq, sdd);
-              iv = VetSegCross(ib, cs_(m,li,0,kc + r3,jc + r2),
-                               cs_(m,li,1,kc + r3,jc + r2), s0, c0, dx1/am1, f, spe,
-                               f2s_ ? &ifc : nullptr,
-                               juu ? s2(kc + r3,jc + r2) : -1.0, sdd);
-            }
           } else if (spl) {
             // vet_seg = split, the two halves at the x1 face
             iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe,
@@ -2213,7 +2194,6 @@ void RadiationVet::VetShortCharSweep() {
   const bool bfc = vet_bc_face;
   const bool x1src = vet_x1per && vet_x1src;
   const bool spl = vet_seg_split;
-  const bool xcr = vet_xcr;
   const int spe = VetSegMode();
   const bool x2o = vet_x2open, x3o = vet_x3open;   // vacuum x2 (x3) faces
   const int vim = vet_interp;   // (#6)
@@ -2558,21 +2538,6 @@ void RadiationVet::VetShortCharSweep() {
                               vc_(m,M1_VET_SRC,kb,ja,iup), vc_(m,M1_VET_SRC,kb,jb,iup)};
           iv = VetUpCorner(vim, wq, iq, cq, sq, s0, c0, dx1/am1, spl, spe,
                            f2s_ ? &ifc : nullptr, suq, sdd);
-          int r2 = 0, r3 = 0;
-          Real f = xcr ? fmin(VetCrossFrac(sh2, r2),
-                              thrd ? VetCrossFrac(sh3, r3) : 1.0) : 1.0;
-          const int q2 = j - js + r2, q3 = k - ks + r3;
-          if ((x2o && (q2 < 0 || q2 >= nx2)) || (x3o && (q3 < 0 || q3 >= nx3))) f = 1.0;
-          const int jq = js + VetWrap(q2, nx2), kq = thrd ? ks + VetWrap(q3, nx3) : k;
-          if (f < 1.0 && VetCrossEdge(wq, cq, vc_(m,M1_VET_CHX,kq,jq,iup))) {
-            // vet_seg_cross: the stencil over 1 - f, then the cell crossed
-            Real ib;
-            (void) VetUpCorner(vim, wq, iq, cq, sq, s0, c0, (1.0 - f)*dx1/am1, spl, spe,
-                               &ib, suq, sdd);
-            iv = VetSegCross(ib, vc_(m,M1_VET_CHX,kq,jq,iup),
-                             vc_(m,M1_VET_SRC,kq,jq,iup), s0, c0, dx1/am1, f, spe,
-                             f2s_ ? &ifc : nullptr, juu ? s2(kq,jq) : -1.0, sdd);
-          }
         } else if (spl) {
           // vet_seg = split, the two halves at the x1 face
           iv = VetSegSplit(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1, spe,
