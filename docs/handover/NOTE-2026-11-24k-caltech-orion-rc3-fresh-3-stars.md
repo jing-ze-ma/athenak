@@ -115,3 +115,15 @@ CLEAN WARNING cycle 779 t2s 2: the implicit_pos_floor creation 1.459516e+42 of t
 
 - From the 50-cycle (m35zams: 10-cycle) elapsed prints; windows as listed. The runs are on different cycles, so this is a rough comparison. dt is unchanged (m35mms 12.0076; t9l62 96.85; m35zams 2.49).
 - Watch re-armed (prod_rc3_1124/prodwatch2.sh, 5 min): it posts every CLEAN WARNING with context (no stop). On FATAL / 'created inf' it posts and COORD asks the USER; only m35mms 'created inf' writes STOP at once (USER pre-approved). Status every 2 h.
+
+## m35zams thin layer, signed sums (orion 24o) at 11-24 01:13: 11 vet dumps
+```
+00005      9000   3485 |    7.1752e-04    1.9220e-07 |    3.1269e+04    2.1059e+06 |   -1.5987e+06    1.6334e+06
+00006  1.08e+04   4203 |    4.8903e-04   -3.7440e-07 |    9.4914e+03    5.0767e+06 |   -9.8358e+05    9.8358e+05
+00007  1.26e+04   4927 |    2.6021e-04   -9.2387e-09 |   -6.1489e+03    5.5981e+06 |   -5.6087e+05    5.6183e+05
+00008  1.44e+04   5653 |    6.7599e-04   -2.5037e-07 |   -2.2011e+04    4.8252e+06 |   -4.9114e+05    4.9206e+05
+00009  1.62e+04   6378 |    4.8321e-04   -1.7067e-07 |   -1.9673e+04    4.1902e+06 |   -2.6207e+05    2.6863e+05
+00010   1.8e+04   7104 |    7.1289e-04   -4.7976e-08 |   -3.9166e+04    2.7038e+06 |    1.1445e+05    1.5089e+05
+00011  1.98e+04   7830 |    1.6817e-04   -1.5113e-07 |   -4.8355e+04    4.8276e+06 |    2.7961e+05    2.8401e+05
+(float32 bins; vet_f* = cell radiation flux moments; shells i=320..331 = r 5.5279e+11..5.5603e+11; v in cm/s)
+```
