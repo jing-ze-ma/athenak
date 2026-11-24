@@ -75,3 +75,14 @@ shell ratio sum|F_phi|/sum|F_r| over the thin-layer shells i=321..328 (r 5.5319e
 - FATAL 0, CLEAN WARNING 0, stage fallbacks 0, DT_RETRY 0, created inf 0; never-read: ### mesh/cs_seam_blockend = extend;### mesh/cs_vertex_3cell = true;### mesh/cs_seam_rho_guard = 4;### time/dt_retry_max = 8;### hydro/wb_cache_every = 0;### rad_vet/clean_stag_thinf_held = false;### rad_vet/time2_stage_local_be = false;### rad_vet/vet_gd_rotate_align = true;### rad_vet/vet_rotate_av
 - s/cyc 2.3070 (c50-200); row 200 (cycle 200): t 1.937038e+04 dt 96.8505 L_top/L_in 1.002203 L_bot/L_in 0.938786
 - md5 of the first 201 non-# rows (cycles 0-200): user.hst c6f22bb0fab6105f8be69389d0cd09ee, hydro.hst 694e3bcfadb96b67ba8f2af07fadbcd5 (rows in caltech_results/PROD_RC3_1124/t9l62/user_hst_first201rows.txt)
+
+## m35zams thin layer, signed sums (orion 24o) at 11-24 00:42: 4 vet dumps
+```
+ dump         t  cycle | sumFphiV/|Fr|V sumFthV/|Fr|V |     <v_phi>_m    max|v_phi| |       <v_r>_m     <|v_r|>_m
+00000         0      0 |    1.0897e-11   -3.4790e-14 |    0.0000e+00    0.0000e+00 |    0.0000e+00    0.0000e+00
+00001      1800    601 |    1.1295e-04   -4.0297e-08 |   -4.6006e+02    3.0000e+07 |    2.5043e+06    2.5048e+06
+00002      3600   1320 |   -1.5021e-04   -1.9715e-07 |    3.7450e+03    2.2801e+05 |    1.9148e+06    2.4344e+06
+00003      5401   2041 |   -1.5355e-03   -2.2347e-06 |   -1.9721e+03    6.4105e+05 |   -3.9430e+06    4.0677e+06
+(float32 bins; vet_f* = cell radiation flux moments; shells i=320..331 = r 5.5279e+11..5.5603e+11; v in cm/s)
+```
+- Volume-weighted over shells i=320..331 (the 23zt thin layer). F_phi / F_theta are SIGNED sums over the |F_r| sum; v_phi and v_r are mass-weighted means; max|v_phi| is over the cells. Script: caltech_results/PROD_RC3_1124/m35zams/thin.py (srun CPU step on 01-15).
