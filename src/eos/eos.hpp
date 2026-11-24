@@ -115,7 +115,8 @@ struct EOS_Data {
   bool efloor_from_ekin = false;
   // <hydro>/floor_from_ekin (read only when named): E fixed in the inversion; the
   // velocity ceiling's kinetic energy becomes heat and a cell below e(rho, tfloor) pays
-  // the deficit from its kinetic energy (x3 momentum kept on spherical polar: L_z exact)
+  // the deficit from its kinetic energy (the L_z momentum kept, EkinScale: x3 on
+  // spherical polar, p.phi_hat on the cubed sphere in GnomonicRaiseVelFloors)
   bool ekin_heat = false, ekin_keep_x3 = false;
 
   // <block>/efloor_as_tfloor: whenever a floor fires or the table inversion is clamped,

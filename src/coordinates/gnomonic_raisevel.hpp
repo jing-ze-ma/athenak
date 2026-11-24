@@ -43,7 +43,8 @@ void GnomonicRaiseVelFloors(const Real c, const EOS_Data &eos_, const bool gen_,
     Real &m1, Real &m2, Real &m3, Real &etot,
     Real &v1, Real &v2, Real &v3, Real &eint,
     Real &pnew, Real &g1new, Real &temp,
-    bool &ceil_used, bool &floored, bool &tset_used, Real &de, Real &vde) {
+    bool &ceil_used, bool &floored, bool &tset_used, Real &de, Real &vde,
+    const Real f2 = 0.0, const Real f3 = 0.0) {
   ceil_used = false;
   floored = false;
   tset_used = false;
@@ -68,11 +69,25 @@ void GnomonicRaiseVelFloors(const Real c, const EOS_Data &eos_, const bool gen_,
       etot -= ekin;     // momentum was zeroed
     }
   }
+  // floor_from_ekin (eos_.ekin_heat): the kinetic energy made ekt with E fixed, keeping
+  // p.phi_hat = m_a phi^a (L_z; f2, f3 the covariant phi_hat) where it fits (EkinScale)
+  auto ekin_to = [&](const Real ekt) {
+    const Real pf = (m2*(f2 - c*f3) + m3*(f3 - c*f2))/det;
+    Real fs;
+    bool kp;
+    ekin = EkinScale(ekin, 0.5*pf*pf/d, ekt, fs, kp);
+    const Real g = kp ? (1.0 - fs)*pf : 0.0;
+    m1 *= fs; m2 = fs*m2 + g*f2; m3 = fs*m3 + g*f3;
+    v1 = m1/d; v2 = (m2 - c*m3)/(d*det); v3 = (m3 - c*m2)/(d*det);
+  };
   // velocity ceiling: scale the momentum by fs = vceil/|v| with |v|^2 = 2 KE/rho, and
   // remove (1 - fs^2) KE from the total energy
   if (vceil_ > 0.0 && act_ && ekin > 0.0 && d > 0.0) {
     const Real vsq = 2.0*ekin/d;
-    if (vsq > vceil_*vceil_) {
+    if (vsq > vceil_*vceil_ && eos_.ekin_heat) {
+      ekin_to(0.5*d*vceil_*vceil_);
+      ceil_used = true;
+    } else if (vsq > vceil_*vceil_) {
       const Real fs = vceil_/sqrt(vsq);
       m1 *= fs; m2 *= fs; m3 *= fs;
       v1 *= fs; v2 *= fs; v3 *= fs;
@@ -81,6 +96,12 @@ void GnomonicRaiseVelFloors(const Real c, const EOS_Data &eos_, const bool gen_,
       ekin *= fs*fs;
       ceil_used = true;
     }
+  }
+  if (eos_.ekin_heat) {   // (the temperature floor paid from KE where that covers it)
+    const Real etf = eos_.EnergyFromTemperature(d, eos_.tfloor);
+    const Real pf = (m2*(f2 - c*f3) + m3*(f3 - c*f2))/det;
+    const Real ekk = 0.5*pf*pf/d;
+    if (etot - ekin < etf && etot - ekk >= etf && ekin > ekk) ekin_to(etot - etf);
   }
   eint = etot - ekin;
   bool mom_scaled = false;
