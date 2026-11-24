@@ -137,19 +137,19 @@ tests/m1_clean/run_tests.sh --exe build_tests/src/athena --only conservation_sp
 It must print a `PASS` line with the drifts `dE`, `dM`, `dLz` at round-off (below 1e-13):
 
 ```
-PASS conservation_sp       9 s  dE 7.78e-16 dM 8.99e-16 dLz 1.96e-16 dLz_gr 6.94e-07
-1 passed, 0 failed, 9 s
+PASS conservation_sp      14 s  dE 6.67e-16 dM 7.19e-16 dLz 0 dLz_gr 6.94e-07
+1 passed, 0 failed, 14 s
 ```
 
-Then run the quick suite, 8 tests (under 1 min on 32 cores):
+Then run the quick suite, 11 tests (about 1 min on 32 cores):
 
 ```bash
 tests/m1_clean/run_tests.sh --exe build_tests/src/athena --quick
 ```
 
-It ends with `8 passed, 0 failed`. Each line reads `PASS|FAIL  test  wall-time  measured
+It ends with `11 passed, 0 failed`. Each line reads `PASS|FAIL  test  wall-time  measured
 values`; a `FAIL` line names the failed criterion after `<-` and keeps the run directory in
-`m1_clean_runs/<test>/` (its `run.log` has the details). The full suite (13 tests) runs
+`m1_clean_runs/<test>/` (its `run.log` has the details). The full suite (17 tests) runs
 without `--quick`. What each test checks: [tests/m1_clean/README.md](../../tests/m1_clean/README.md).
 
 On a GPU, run the same suite with the GPU `build_tests` binary, one test at a time (2 min
@@ -205,7 +205,7 @@ The star decks run with `build_star/src/athena` (section 3). The decks, the tabl
 not re-run for this release. Sections 2, 3a, 4 and 5 were run as written from a fresh clone
 on a CPU cluster (GCC 13, Open MPI 4.1). Block 3b was built as written on A100 (CUDA 12.6,
 GCC 13). Block 3d was built on MI300A (ROCm 7.2), and the GPU quick suite of section 4
-passed there on one MI300A.
+(its 8 tests before `wedge_sym` and `floor_pay` were added) passed there on one MI300A.
 
 <sup>2</sup> With ROCm 7.2, more than 2 ranks per MI300A on a cubed-sphere mesh hang unless
 `GPU_MAX_HW_QUEUES=2` is set; the code stops with a FATAL message that says so.

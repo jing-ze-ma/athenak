@@ -61,6 +61,12 @@ out of a restart deck changes the scheme silently. The templates name them all.
 | `<rad_m1>/clean_stag_central` | `true` | production value (default false) |
 | `<rad_m1>/clean_stag_kpat` | `false` | production value |
 | `<rad_m1>/clean_stag_eicarry` | `true` | production value (default false) |
+| `<rad_m1>/clean_gas_secant` | `max_stage2` | production value (default false) |
+| `<rad_m1>/clean_pred_xch` | `true` | production value (default false) |
+| `<rad_m1>/clean_stag_fcone_gas` | `false` | production value |
+| `<rad_m1>/clean_wb_exch_local` | `true` | read only when named |
+| `<hydro>/floor_pay` | `rad_column` | older star restart files do not store it (restart default: none) |
+| `<hydro>/floor_pay_skip`, `dfloor_flux_limit`, `rad_signal_speed_diff` | `true` | read only when named |
 | `<mesh>/layout_invariant_mode` | `tile` | see "Layout and reproducibility" |
 | `<mesh>/layout_tile` | `128` | the lateral MeshBlock size of the templates |
 
@@ -88,11 +94,13 @@ out of a restart deck changes the scheme silently. The templates name them all.
 | `rad_m1/vet_scatter`, `vet_scatter_form` | Split the opacity into absorption and electron scattering in the ray source (`ma`: Ma et al. 2026, eq. 7). Changes only the rays' source function. | true on a fresh run with table opacity and a tabulated EOS; `ma` | all: `true`, `ma` | `rad_m1/rad_m1.cpp` (constructor) |
 | `rad_m1/vet_scatter_kappa_e` | Electron-scattering opacity: `const` or `eos` (from the EOS ionisation). | `eos` with a tabulated EOS; `const` otherwise | all: `const` | `rad_m1/rad_m1.cpp` (constructor) |
 | `rad_m1/clean_ray_cut_r` | Adaptive ray depth cut on 3-D sp/cs meshes with one MeshBlock along x1: below the cut the closure is the diffusion limit. | 0.01 where the cut applies | all: `0.01` | `rad_m1/rad_m1.cpp` (constructor) |
+| `rad_m1/vet_gd_wall_sym` | Narrow phi wedges only: centre the set on the wedge, mirror-paired phi-wall maps, the seam face from both sides. Needs `vet_gd_wall_interp = true`. | false (read only when named) | not named (the template wedges are whole periods) | `rad_m1/rad_m1.cpp` (constructor), `rad_m1/rad_m1_vetgd.cpp` |
 
-On a phi-periodic wedge the width must be a multiple of the direction set's azimuthal
-period (Gauss-Legendre: 360 deg / nphi, 20 deg for nphi = 18; level-symmetric LQ_N: 90 deg):
-only then is the phi-wall map exact. Otherwise the interpolated wall map drives a spurious
-net F_phi in thin gas (e.g. <F_phi>/<F_r> ~ 0.4 to 1 in free streaming).
+The wedge rule: on a phi-periodic spherical-polar wedge the width must be a multiple of the
+ray set's azimuthal period (Gauss-Legendre: 360 deg / nphi, 20 deg for nphi = 18; LQ10: 90
+deg; the default icosahedral set: 180 deg), else the run stops with a FATAL. A narrow wedge
+that cannot meet it (e.g. 0.064 rad) names `vet_gd_wall_sym = true` with
+`vet_gd_wall_interp = true` (the `wedge_sym` test).
 
 ## Time integration, time step and retries
 
@@ -100,6 +108,7 @@ net F_phi in thin gas (e.g. <F_phi>/<F_r> ~ 0.4 to 1 in free streaming).
 |---|---|---|---|---|
 | `time/integrator` | Hydro integrator; must be `rk2` (the explicit part of the IMEX scheme). | `rk2` | all: `rk2` | `driver/driver.cpp` (constructor) |
 | `time/cfl_number` | Courant number of the hydro step; the radiation does not limit dt. | 0.3 on a fresh clean M1 run | all: `0.3` | `mesh/build_tree.cpp` |
+| `hydro/rad_signal_speed_diff` | With `rad_signal_speed = true`: the radiation term of the signal speed weighted by 1 - exp(-x), x = tau_d c_eq / c the grid-scale trapping parameter; untrapped radiation (x << 1) does not limit dt. Time step only (accuracy, not stability). | false (read only when named) | all: `true` | `hydro/hydro.cpp` |
 | `rad_m1/time_scheme` | `hesdirk2`: two implicit stages per step with the Heun hydro (second order); `be`: one backward-Euler solve per step (first order). | `hesdirk2` on a fresh run that supports it; `be` otherwise | all: `hesdirk2` | `rad_m1/rad_m1_init.cpp` (`ImplicitInit`) |
 | `rad_m1/time2_tableau` | Tableau of the two stages: `sdirk2` (Alexander's L-stable SDIRK2, recommended), `hesdirk2`, `trbdf2`. | `hesdirk2` | all: `sdirk2` | `rad_m1/rad_m1_time2.cpp` (`Time2Init`) |
 | `rad_m1/time2_auto_be` | After a step whose stages fell back to backward Euler, the next 1, 2, 4, ... N steps take backward Euler at once (0 = off). | 16 | all: `16` | `rad_m1/rad_m1_time2.cpp` (`Time2Init`) |
@@ -137,6 +146,8 @@ Transverse Marshak faces are not supported by the ray sweep (FATAL).
 | `rad_m1/e_floor` | Floor of E (code units). | FLT_MIN | all: `1.0e-4` | `rad_m1/rad_m1.cpp` (constructor) |
 | `rad_m1/floorcap_rho`, `floorcap_v` | Floor-gas cap: in cells with rho below `floorcap_rho`, |v| is capped at `floorcap_v` and T at max(T_rad, floor); the removed energy goes to E (momentum is removed and reported). | off | all: `1e-14`, `3e7` | `rad_m1/rad_m1.cpp` (constructor) |
 | `hydro/dfloor`, `pfloor`, `tfloor` | Hydro floors. `hydro/floor_pay = rad_column` pays the internal energy they create from the radiation (needs `hydro/eos = general`). | FLT_MIN | per deck | `eos/eos.cpp`, `hydro/dual_energy.cpp` |
+| `hydro/floor_pay_skip` | Pay also the energy that the density floor and the velocity ceiling change. Needs `floor_pay`. | false (read only when named) | all: `true` | `hydro/dual_energy.cpp` |
+| `hydro/dfloor_flux_limit` | Scale back the outflow of a nearly empty cell so its density stays above the floor (both neighbours see the same flux). | false (read only when named) | all: `true` | `hydro/hydro.cpp` |
 
 ## Layout and reproducibility
 
@@ -144,7 +155,7 @@ Transverse Marshak faces are not supported by the ray sweep (FATAL).
 |---|---|---|---|---|
 | `mesh/layout_invariant` | Global and shell sums in exact, order-independent form: results independent of the MPI rank count. | true | all: `true` | `mesh/mesh.cpp` (constructor) |
 | `mesh/layout_invariant_mode` | `block`: sums per MeshBlock (independent of the rank count for fixed MeshBlocks); `exact`: every cell term exact (about +8 % cost); `tile`: fixed N x N lateral tiles as the summation and multigrid units, so results do not depend on the MeshBlock layout either (with ray walls in theta: one MeshBlock along x2). | `block` | `tile` (recommended) | `mesh/mesh.cpp` (constructor) |
-| `rad_m1/vet_gd_band_ring` | Lend the band intensities per shell from a few slabs: same results, less GPU memory (RUN.md section 6). | bool | on where it applies, off on the raw sp band (read only when named) | A100 sp wedges: `true` | `rad_m1/rad_m1.cpp` (constructor) |
+| `rad_m1/vet_gd_band_ring` | Lend the band intensities per shell from a few slabs: same results, less GPU memory (RUN.md section 6). | on where it applies, off on the raw sp band (read only when named) | A100 sp wedges: `true` | `rad_m1/rad_m1.cpp` (constructor) |
 | `mesh/layout_tile` | Tile size N for `tile` mode; required with it. Needs one MeshBlock along x1 and N dividing `<meshblock>` nx2 and nx3. | none | `128` | `mesh/mesh.cpp` (constructor) |
 | `mesh/nghost` | Ghost cells; the face line solves across MeshBlocks need >= 3. | 2 | all: `3` | `mesh/mesh.cpp` (constructor) |
 | `meshblock/nx1`, `nx2`, `nx3` | MeshBlock size. One MeshBlock along x1 is needed for the ray cut and tile mode. | = mesh | per deck | `mesh/mesh.cpp` (constructor) |
@@ -159,6 +170,8 @@ round-off change at the restart.
 | `rad_m1/clean_verbose` | 0: the `CLEAN cycle` lines, `CLEAN WARNING` lines and event lines (`CLEAN WORST`, `GNSW`, `BICGSTAB`, `KPOS` without a face slope); 1: also the per-solve diagnostics (`CLEAN MCAP`, `OLDVEC`, `FWB`, `FCONE`, `LZ`/`LZB`, `WBFCT`, `KPOS`, `KREAL`, `XPAT`, the `XT` write-back closure, the ray cut). `CLEAN WARNING` lines always print. | 0 (read only when named) | all: `1` | `rad_m1/rad_m1.cpp` (constructor) |
 | `rad_m1/floorcap_report` | Print the cumulative floor-gas cap counters every N cycles. | 0 = never | all: `25` | `rad_m1/rad_m1.cpp` (constructor) |
 | `time/ndiag` | Print the cycle line every N cycles. | 1 | all: `50` | `driver/driver.cpp` |
+| `hydro/floor_audit` | Print the floor events and their payment every N cycles (`floor_audit cycle` lines). Needs `eos = general`. | 0 | all: `1` | `hydro/dual_energy.cpp` |
+| `hydro/dt_report` | Print every N cycles which cell and term set dt (`DTREP`, `DTREG`; RUN.md section 5). No effect on the state. | 0 (read only when named) | not named | `hydro/hydro.cpp` |
 | `time/nan_check_cycles` | Check the state for NaN every N cycles and stop if found (0 = off). | 100 | all: `100` | `driver/driver.cpp` |
 
 ## Appendix: advanced and internal keys
@@ -172,7 +185,11 @@ Scheme options pinned by the templates:
 - `clean_stag_upwind_central` (true), `clean_stag_central` (true): central advective flux within the TVD bound.
 - `clean_face_hctau` (true), `clean_face_jse` (true), `clean_face_opac` (`harmonic`): face values of the rays' flux, half ranges and opacity.
 - `clean_stag_thinf` (false), `clean_consistency` (true): forms of the thin-limit correction and flux bound.
-- `clean_stag_fwb` (true), `clean_stag_fcone` (true), `clean_stag_fwb_ring` (0) <!-- check at rebase: 1 on the rebase target -->: well-balanced face rows, cone limit |F| <= cE, ring projection.
+- `clean_stag_fwb` (true), `clean_stag_fcone` (true), `clean_stag_fwb_ring` (1: 3-D spherical polar with periodic phi only): well-balanced face rows, cone limit |F| <= cE, ring projection.
+- `clean_stag_fcone_gas` (false): the cone cut's momentum is not given to the gas.
+- `clean_gas_secant` (`max_stage2`): in the stage-2 solves the gas-exchange slope is the chord through the last pass's T where it beats the tangent by more than a derived round-off bound (16 eps of the terms of e(T) - e(T_p)), else the tangent.
+- `clean_pred_xch` (true): the stage-2 start blends this step's stage-1 slope and the last step's stage-2 slope by the stiffness of each cell's exchange.
+- `clean_wb_exch_local` (true): the write-back's cell exchange is solved exactly from the transported E (E > 0 and gas >= e(rho, tfloor) by construction); needs an EOS `tfloor` > 0.
 - `clean_stag_xdonor` (`lag`), `clean_stag_xsrc` (true), `clean_stag_xdonor_freeze` (4): donor form of the off-diagonal stress.
 - `clean_w_fse`, `clean_w_c0`, `clean_w_c1`: weight of the kinetic share.
 - `clean_xt_exact` (`cons`), `clean_wb_fct` (true), `time2_face_fct` (true): exact exchange bookkeeping and the Zalesak limiters.

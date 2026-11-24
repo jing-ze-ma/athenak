@@ -179,9 +179,7 @@ The production templates (`star_bsg.athinput` and the others, [RUN.md](RUN.md)) 
 these decks only in resolution, MeshBlock size (`layout_tile` must equal the lateral
 MeshBlock size), run length and outputs. Both sp decks use the Gauss-Legendre 7 x 18 ray
 set (`vet_gd_gl_nmu = 7`, `vet_gd_gl_nphi = 18`, `vet_gd_gl_stagger = true`). On a
-phi-periodic wedge the wedge width must be a multiple of the set's azimuthal period
-360 deg / nphi (20 deg here; the wedge is 60 deg). Otherwise the set breaks the phi mirror
-symmetry and drives a spurious F_phi in thin gas. For example, the LQ10 set
-(`vet_gd_ls = 10`, period 90 deg) is wrong on this wedge (see KEYS.md). Lines of
-the form `# IA12.1: key = value` mark the keys of the next code version. They are not
-read by this one.
+phi-periodic wedge the width must be a multiple of the ray set's azimuthal period
+(360 deg / nphi = 20 deg here, the wedge is 60 deg; LQ10: 90 deg; the default icosahedral set:
+180 deg), else the run stops with a FATAL. A narrow wedge that cannot meet this (e.g. 0.064 rad)
+names `vet_gd_wall_sym = true` with `vet_gd_wall_interp = true` ([KEYS.md](KEYS.md)).

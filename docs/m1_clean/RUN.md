@@ -47,6 +47,10 @@ MeshBlock smaller and set `<mesh>/layout_tile` to the new lateral MeshBlock size
 with tiles of N x N cells gives the same answer, bit for bit, for every layout of whole-tile
 MeshBlocks. Different N give answers that differ at the solver tolerance.
 
+On a phi-periodic wedge the width must be a multiple of the ray set's azimuthal period (GL
+7 x 18: 20 deg; LQ10: 90 deg; the default icosahedral set: 180 deg), else the run stops with a
+FATAL; a narrower wedge names `vet_gd_wall_sym = true` with `vet_gd_wall_interp = true`.
+
 The templates name `<rad_m1>/clean_verbose = 1`, which prints the per-solve `CLEAN`
 diagnostic lines (useful context for any `CLEAN WARNING`); your own decks can leave it at the
 default 0 ([OUTPUTS.md](OUTPUTS.md), section 4.2).
@@ -72,7 +76,9 @@ another run), name every key that matters on the command line:
 ./athena -r run/hegiant.00205.rst rad_m1/time2_k1_stiff=0 rad_m1/clean_stag_fwb_stage=false \
   rad_m1/clean_stag_fwb_t2=false rad_m1/clean_w_fse_tau=true rad_m1/time2_gtime_mom=true \
   rad_m1/clean_pred_stage=false rad_m1/clean_stag_central=true rad_m1/clean_stag_kpat=false \
-  rad_m1/clean_stag_eicarry=true
+  rad_m1/clean_stag_eicarry=true rad_m1/clean_gas_secant=max_stage2 rad_m1/clean_pred_xch=true \
+  rad_m1/clean_stag_fcone_gas=false rad_m1/clean_wb_exch_local=true hydro/floor_pay=rad_column \
+  hydro/floor_pay_skip=true hydro/dfloor_flux_limit=true hydro/rad_signal_speed_diff=true
 ```
 
 and check the start of the log: it prints the value in effect for every key (grep for the

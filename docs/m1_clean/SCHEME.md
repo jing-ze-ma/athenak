@@ -51,12 +51,20 @@ one normal component per face. The face flux of a stage is a blend of
 unchanged. Radiation transport and the gas-radiation exchange are implicit, with Alexander's
 two-stage L-stable SDIRK tableau (`time2_tableau = sdirk2`); each stage sees the gas at the
 same time as the explicit part, so the IMEX scheme is second order. Backward Euler is the
-fallback (first step, or a step whose stage failed).
+fallback (first step, or a step whose stage failed). The radiation does not limit the
+stability of the step; with `<hydro>/rad_signal_speed_diff = true` (production) it enters the
+hydro time step only where it is trapped: the radiation part of the signal speed is weighted by
+$1 - e^{-x}$, $x = \tau_d\,c_{\rm eq}/c$ the grid-scale trapping parameter ($\tau_d$ the
+optical depth of a cell). Where $x \ll 1$ the radiation diffuses out of a cell faster than a
+sound wave crosses it and does not stiffen the gas, so dt is not limited by it. This is a
+matter of accuracy only (the scheme is IMEX, so stability does not depend on it).
 
 **Implicit stage solve.** In each stage the face momentum equation is eliminated face by face,
 which leaves a scalar system for $E$. It is solved by Newton passes: each pass is a
 right-preconditioned BiCGStab with a line-relaxation multigrid preconditioner, followed by an
-exact per-cell root for the gas temperature (any EOS), then a line solve that recovers the face
+exact per-cell root for the gas temperature (any EOS; with `clean_gas_secant = max_stage2`
+the secant chord replaces the tangent only where it is better by more than a derived round-off
+bound, 16 eps of the terms of $e(T) - e(T_p)$), then a line solve that recovers the face
 fluxes. Convergence is measured in each cell's own energy budget of the stage, with the
 tolerance tied to the step's time-error estimate.
 
@@ -82,10 +90,12 @@ reason it holds, where it stops holding, and the test in `tests/m1_clean` that c
 | positivity | density by construction; E by the implicit operator and Zalesak limiters, with counted backstops; gas internal energy not by construction (the step is redone, or the radiation pays) |
 | well-balance | equilibrium envelopes stay at rest to about 1e-9 of the sound speed |
 | order | second order in space and time, asymptotically |
+| radiation-acoustic waves | phase speed and damping right in every trapping regime |
 | restart, dt retry | bitwise |
 | reproducibility | bitwise across rank counts; across tile layouts with the conditions below |
 | CPU / GPU | agreement to round-off, not bitwise |
 | no silent fallbacks | every change of method prints or stops the run |
+| phi mirror symmetry | exact on wedges of whole azimuthal periods; on narrow wedges with `vet_gd_wall_sym` |
 | meshes | Cartesian, spherical polar, cubed sphere; one implementation |
 
 ### Energy (gas + radiation): exact
@@ -96,18 +106,19 @@ the radiation force, and any later correction to $E$ is moved to the gas with th
 sign. The positivity limiters scale a face's flux on both sides at once. The density,
 pressure and radiation floors take the energy they need from the radiation of the same cell
 or its radial column (`<hydro>/floor_pay = rad_column`, `implicit_pos_floor_cons`).
-<!-- check at rebase: floor_pay_skip (density-floor potential energy) -->
+With `floor_pay_skip = true` (production) the energy changed by the density floor and the
+velocity ceiling is paid as well.
 Energy is created only when a column holds too little radiation to pay; each such event
 prints a `CLEAN WARNING`.
 
 Test: `conservation_sp`, `conservation_cs` (closed rotating shells, dE/E <= 1e-13; measured
-about 1e-15) and `thermal_eq`.
+about 1e-15), `thermal_eq`, and `floor_pay` (general EOS with a temperature floor that acts in
+most cells every cycle, paid from the radiation: dE/E <= 1e-13).
 
 ### Mass: exact
 
 The radiation solve never changes the density, so mass conservation is that of the hydro,
 which is in flux form.
-<!-- check at rebase: hydro/dfloor_flux_limit -->
 With `<hydro>/dfloor_flux_limit` the outflow of a nearly empty cell is scaled back so that its
 density cannot fall below the floor, and both neighbours see the same scaled flux; the density
 floor of the primitive-variable recovery stays as a backstop (counted in the event log). The
@@ -118,8 +129,7 @@ Test: `conservation_sp`, `conservation_cs` (dM/M <= 1e-13).
 ### Angular momentum $L_z$: exact on the cubed sphere; on spherical polar exact except where the cone cut acts
 
 On a spherical-polar mesh the azimuthal radiation stress is written in torque form, so it
-cancels between neighbouring cells; `clean_stag_fwb_ring`
-<!-- check at rebase: production value of clean_stag_fwb_ring (1 on the rebase target) -->
+cancels between neighbouring cells; `clean_stag_fwb_ring = 1`
 removes the net torque of the
 well-balancing residual on each azimuthal ring. On the cubed sphere the panel faces are not
 azimuthal faces: each cell's gas takes its absorption torque, and the part that cannot cancel
@@ -136,7 +146,6 @@ test output).
   removes momentum the gas does not take, and its $L_z$ goes into the ledger. On the test shell
   this happens on the first cycles of a fresh start and amounts to about 7e-7 of the gas
   $L_z$; the ledger is constant afterwards.
-  <!-- check at rebase: clean_stag_fcone_gas -->
   With `clean_stag_fcone_gas = true` the gas takes the cut's momentum and $L_z$ is exact
   without a ledger (6e-16); this is not the production setting.
 - Cubed sphere: the ledger stays at round-off (1e-17), so gas + radiation $L_z$ is conserved
@@ -157,7 +166,6 @@ radiation stress is in flux form. Gravity and the open boundaries change the mom
 physical sources. Three things change gas + radiation momentum without being given to the gas:
 
 - the realisability cut of the face flux (`clean_stag_fcone`)
-  <!-- check at rebase: clean_stag_fcone_gas -->
   unless `clean_stag_fcone_gas = true`, which makes the cut momentum-neutral;
 - the well-balancing residual of `clean_stag_fwb`;
 - the floor-gas momentum removal (`floorcap`, `dfloor_keep_velocity`, the velocity ceiling).
@@ -175,7 +183,6 @@ conservation claim (the shell decks have closed walls that exert forces).
 ### Positivity
 
 - **Density** stays above its floor by construction
-  <!-- check at rebase: hydro/dfloor_flux_limit -->
   (`dfloor_flux_limit`, above).
 - **Radiation energy $E$** is non-negative by construction of the implicit operator: it is an
   M-matrix for any Eddington tensor and step (the kinetic share has $h^+\ge0\ge h^-$, the
@@ -189,7 +196,8 @@ conservation claim (the shell decks have closed walls that exert forces).
   is taken from the radiation of the same cell (`implicit_pos_gas`, energy-conserving).
 
 All such events are counted in the end-of-run `m1-positivity` line. Test: every suite deck
-runs with no floor raise, no energy created and no `CLEAN WARNING`.
+runs with no floor raise, no energy created and no `CLEAN WARNING` (`floor_pay` raises the gas
+temperature on purpose, and pays it from the radiation).
 
 ### Well-balance: equilibrium envelopes stay at rest
 
@@ -212,6 +220,33 @@ as an order near 1.
 Test: `order_time` (order of the finest pair >= 1.7), `order_space` (linear
 radiation-hydro wave on a Cartesian mesh, finest pair >= 1.7).
 
+### Radiation-acoustic waves in every trapping regime
+
+A small sound wave in gas + radiation is damped by the radiation and, where the radiation is
+trapped, travels at the mixture sound speed. The scheme reproduces the analytic root of the
+linear gas + moment system (with its own closure and exchange) from the free-streaming
+($x = 0.01$) through the intermediate ($x = 0.1$, 1) to the trapped limit ($x = 100$), at
+cfl 0.3 and the larger dt that `rad_signal_speed_diff` gives in thin gas (2.8 x at $x = 0.01$).
+
+Test: `radwave` (phase speed within 3e-3, damping within 5e-3 per radian, no growth).
+
+### Phi mirror symmetry on narrow wedges
+
+The ray set must map onto itself under the phi-wall mirrors of the wedge and, at a theta
+seam, under the equatorial mirror. On a phi-periodic spherical-polar wedge the rays' phi-wall
+maps are therefore exact only when the wedge width is a whole number of the direction set's
+azimuthal periods (Gauss-Legendre
+$n_\theta\times n_\phi$: 360 deg$/n_\phi$; LQ10: 90 deg; the default icosahedral set: 180 deg);
+any other width stops the run with a FATAL error. A narrow wedge that cannot meet this
+(e.g. 0.064 rad) names `vet_gd_wall_sym = true` with `vet_gd_wall_interp = true`: the set is
+turned to have a mirror plane on the wedge centre, the two walls' maps are mirror images, and
+the seam face is computed in both frames. A mirror-symmetric state then has a wedge-mean
+$F_\phi$ of zero to round-off. A corresponding treatment of theta seams is not in this release.
+
+Test: `wedge_sym` (a spherically symmetric shell on 3.7 and 7.3 deg wedges with the key and a
+20 deg wedge without it: $|\sum F_\phi|/\sum|F_r| \le 10^{-8}$, measured 2e-12 to 2e-9; the
+narrow wedge without the key stops with the FATAL).
+
 ### Restart and dt retry: bitwise
 
 The restart file carries the full scheme state (stage slope, face momenta, closure history,
@@ -232,15 +267,12 @@ Test: `restart_sp`, `restart_cs`, `dt_retry` (difference 0).
   sums and the multigrid act on fixed N x N lateral tiles. Layouts made of whole tiles are
   bitwise identical when there is one MeshBlock along x1 and, if the theta boundaries are ray
   walls (mirror or vacuum), one MeshBlock along x2, as in the production templates. Splitting
-  across such walls gives a round-off difference (about 1e-10 after 8 cycles) from the
-  face-flux line solves joined across MeshBlocks.
+  across such walls gives a round-off difference (about 1e-10 after 8 cycles).
 - **Block mode** (default): the result depends on the MeshBlock size at the solver
   tolerance, because the preconditioner is MeshBlock-local.
 
 Test: `layout_tile` (1 x 2 MeshBlocks along phi vs one MeshBlock: identical; 2 x 2, which
 also splits theta across the ray walls: bounded at 1e-8).
-<!-- check at rebase: 1 x 2 bitwise is the behaviour of the rebase target; tests/m1_clean/README and
-references.json must say the same -->
 
 ### CPU / GPU consistency: round-off, not bitwise
 
