@@ -3004,6 +3004,7 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
   const bool gsc = cln_gsec == 1 || cln_gsec == 3 ||
                    ((cln_gsec == 2 || cln_gsec == 4) && t2_solve == M1_T2S_STAGE2);
   const bool gmx = cln_gsec >= 3;   // (max: the chord only where it is the steeper)
+  const Real eps_ = std::numeric_limits<Real>::epsilon();
   auto kc = cln_kcnt;
   if (pdo) Kokkos::deep_copy(Kokkos::subview(kc, 0), 0.0);
   CleanParForLb<3>("cln_rhs", nmb1, ks, ke, js, je, is, ie,
@@ -3114,11 +3115,14 @@ void RadiationM1::CleanRightHandSide(const bool beta, const bool lat) {
       // passes cycling between the jump's two sides; the root is unchanged)
       const Real tp = x.w(m,CLW_RR,k,j,i);
       // (max: the larger of the chord and the tangent d cv, Newton's step where e(T) is
-      // smooth, the chord across the jump, where both tangents undershoot its latent heat)
+      // smooth, the chord across the jump, where both tangents undershoot its latent heat;
+      // the chord only where it exceeds the tangent by more than the round-off of
+      // e(T) - e(T_p), so where they agree (an ideal gas: exactly) no round-off picks)
       if (gsc && !sec && tp > 0.0 && tp != t) {
         Real ep, pp, crp, ctp, cvp;
         eos.ThermoAt(d, tp, ep, pp, crp, ctp, cvp);
-        if (!gmx || (eg - ep)/(t - tp) > cg) {
+        const Real dx = (eg - ep - cg*(t - tp))*(t - tp);
+        if (!gmx || dx > 16.0*eps_*(fabs(eg) + fabs(ep) + fabs(cg*(t - tp)))*fabs(t - tp)) {
           cg = (eg - ep)/(t - tp);
           s = hckp*arad_*(t + tp)*(t*t + tp*tp);
         }
