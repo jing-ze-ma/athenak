@@ -69,3 +69,9 @@ rho 1e-14..4e-13 (cells): n=81920  max|F_phi|/|F_r| 1.996e-02  p99 1.506e-02  me
 shell ratio sum|F_phi|/sum|F_r| over the thin-layer shells i=321..328 (r 5.5319e+11..5.5509e+11): max 8.093e-03
 ```
 - For reference, IA12.1 smoke 23zt (S22 2x2 64^2 layout, non-wallsym deck) at t 3.6e3 already had a coherent v_phi of 3.9e6 cm/s there. Script: caltech_results/PROD_RC3_1124/m35zams/fphi.py.
+
+## t9l62 (11-24 00:35) 
+- start: `2026-11-24 00:25:57 chunk 0 STAR=t9l62 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc3_af836f5a3 md5=09f50abee4ffa6cd399ce15879626353 DECK=/resnick/groups/carnegie_poc/jingze/prod_rc3_1124/decks/tile/IA123_t9l62.athinput md5=194a66017c67d98275cee4c9f9af0815 start=-i /resnick/groups/carnegie_poc/jingze/pr`
+- FATAL 0, CLEAN WARNING 0, stage fallbacks 0, DT_RETRY 0, created inf 0; never-read: ### mesh/cs_seam_blockend = extend;### mesh/cs_vertex_3cell = true;### mesh/cs_seam_rho_guard = 4;### time/dt_retry_max = 8;### hydro/wb_cache_every = 0;### rad_vet/clean_stag_thinf_held = false;### rad_vet/time2_stage_local_be = false;### rad_vet/vet_gd_rotate_align = true;### rad_vet/vet_rotate_av
+- s/cyc 2.3070 (c50-200); row 200 (cycle 200): t 1.937038e+04 dt 96.8505 L_top/L_in 1.002203 L_bot/L_in 0.938786
+- md5 of the first 201 non-# rows (cycles 0-200): user.hst c6f22bb0fab6105f8be69389d0cd09ee, hydro.hst 694e3bcfadb96b67ba8f2af07fadbcd5 (rows in caltech_results/PROD_RC3_1124/t9l62/user_hst_first201rows.txt)
