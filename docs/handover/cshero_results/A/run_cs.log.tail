@@ -1,0 +1,40 @@
+CLEAN cycle 1197 t2s 3 it 1 (sum 3) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN cycle 1198 t2s 2 it 1 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN cycle 1198 t2s 3 it 1 (sum 3) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+<hydro> fofc_report t=1.199000e+06 cycle=1199 stages=6 fired cell-stages: at-floor=0 other=0 | per x1 bin [i0-i1] floor/other:
+CLEAN cycle 1199 t2s 2 it 1 (sum 8) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+CLEAN cycle 1199 t2s 3 it 1 (sum 3) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 3 cwin 0
+<time> dt_retry: 1200 checkpoints (1.049275e+00 s, 6.189907e+02 MB on rank 0), 0 retries, cap -1.000000e+00
+<time> dt_retry: 2400 View copies skipped (unwritten since the last copy, dt_retry_host; not written in the cycle, SetSkip)
+<time> counters_rollback: event counters of discarded attempts dropped: dt_retry 0, backward-Euler redo 0, hesdirk2 helper solves 0; E-floor created energy dropped (m1_pos_un, x volume) 0.000000e+00 / 0.000000e+00 / 0.000000e+00, vceil_de dropped 0.000000e+00 / 0.000000e+00 / 0.000000e+00
+<hydro> EOS floors (all ranks, accepted steps, RK-weighted): mass created x vol=0.000000e+00 energy created x vol=0.000000e+00 | FOFC first-order cell-stages=0.000000e+00
+<hydro> dfloor_flux_limit: outflow-limited cell-stages (all attempts)=0.000000e+00, their x1 momentum x vol removed=0.000000e+00, kinetic energy x vol made heat=0.000000e+00
+<hydro> floor_pay skip cells (dfloor/vceil, all attempts, RK-weighted): energy change x vol=0.000000e+00 mass change x vol=0.000000e+00
+elapsed=4.574328e+02 cycle=1200 time=1.200000e+06 dt=1.000000e+03
+
+Terminating on cycle limit
+time=1.200000e+06 cycle=1200
+tlim=1.000000e+30 nlim=1200
+
+MeshBlock-cycles = 28800
+cpu time used  = 4.498635e+02
+main loop time (before the final outputs) = 4.494002e+02
+zone-cycles/cpu_second = 8.981156e+06
+particle-updates/cpu_second = 0.000000e+00
+<hydro>/split_bval_fast: energy-only refreshes 0, full refreshes 0 (rank 0)
+<rad_vet> closure = vet_col: 0.000000e+00 tensor builds (0.000000e+00 skipped), 0.000000e+00 s (rank 0, fenced), 0.000000e+00 ms per build
+<rad_vet> vet_col_lat: 0.000000e+00 sweeps, 0.000000e+00 s (rank 0, fenced), 0.000000e+00 ms per sweep; lateral reads clamped to the ghost band (rank 0, all sweeps): 0.000000e+00
+<rad_vet> vet_gd: rank 0 fenced seconds: source 0.000000e+00, sweeps 0.000000e+00 (of which per-shell halo+walls 5.113012e+01, of which MPI wait 1.561318e+01), tables (rotation) 0.000000e+00, moments 0.000000e+00; in-solve rebuilds 0.000000e+00 (0.000000e+00 s)
+<rad_vet> vet_gd halo (rank 0): exchanges 1.136618e+06, bytes sent 1.428393e+11 (1.256704e+05 per exchange), post 0.000000e+00 s, partners 0; band-clamped lateral reads (ALL ranks, all sweeps) 0.000000e+00
+<rad_vet> vet_gd cs band (rank 0): compact, intensity values sent 7.204945e+09 of dense 1.088222e+12 (6.620842e-03); list builds 5.900000e+01 (1.329177e+01 s)
+<rad_vet> cs list builds (rank 0 s): mask kernel 6.605960e+00, download+check 1.611449e-01, mark exchange 7.468230e-01, host lists 5.049087e+00, upload 7.246544e-01; mask stride 65760 (padded)
+<rad_vet> vet_gd ragged band (rank 0): out-of-slab accesses 0.000000e+00
+<rad_vet> vet_gd_band_ring (rank 0): sweeps 1.209000e+03, dense band saves 0.000000e+00, save store 8.340050e-02 GB
+<rad_vet> vet_gd_rotate_xfade_fuse (rank 0): fused builds 1.204000e+03, two-sweep fallbacks 0.000000e+00, merged exchanges 0.000000e+00, out-of-slab accesses (other set) 0.000000e+00
+<rad_vet> (rank 0) vet_gd halo lists 0.000000e+00 made, 0.000000e+00 MB of 0.000000e+00 (key 4096, GPU: <= free/2); exchanges by list 0.000000e+00, dense 0.000000e+00
+<rad_vet> (rank 0) exact-list batches 0.000000e+00 (group 0, 0.000000e+00 s, list reallocs 0.000000e+00); table prefetch 1 swapped in 0.000000e+00 of the rotations
+<rad_vet> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_vet> vet-positivity: implicit_pos_gas=1 (frac 1.000000e-03) cell-solves=0.000000e+00 energy moved rad->gas=0.000000e+00 | E floor raises cell-solves=0.000000e+00 energy from gas=0.000000e+00 energy created=0.000000e+00 (code units x volume) [in discarded attempts, rolled back: 0.000000e+00] taken from the column's radiation (implicit_pos_floor_cons)=0.000000e+00 | hydro EOS floors energy created=0.000000e+00
+<rad_vet> time_scheme=hesdirk2: stage steps=1.199000e+03 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 face_fct calls=2.398000e+03 skipped(no face flux)=0.000000e+00 K1 flux from U^n=0.000000e+00 limited cells=0.000000e+00 max rounds=0.000000e+00 withheld E x vol=0.000000e+00 left (Q<=0)=0.000000e+00 emptied (E < 1.000000e-01 E^n) cells=0.000000e+00 min E/E^n=1.000000e+300 (rank 0: rounds=0.000000e+00 R exchanges=0.000000e+00) time2_vet_col=extrap2 fallbacks=0.000000e+00 accepted-with-fallback stages=0.000000e+00 rotate_align shortened dt=1.202000e+03 clean_rot_ring guard cells=0.000000e+00 off-boundary shifts=0.000000e+00
+<rad_vet> time2_auto_be=16: skipped-stage BE steps=0.000000e+00 stage retries=0.000000e+00 (succeeded 0.000000e+00)
+<rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 4.331530e+02 | failed stage attempts 0.000000e+00 | their BE redo 0.000000e+00 | auto_be steps 0.000000e+00 | other BE steps 7.780515e-01 | discarded dt_retry attempts 0.000000e+00
