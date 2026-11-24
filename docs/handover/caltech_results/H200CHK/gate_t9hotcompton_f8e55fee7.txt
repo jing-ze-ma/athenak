@@ -1,0 +1,7 @@
+GATE PASS (gate deck copy WITHOUT vet_gd_ls): athena_t9hotcompton_f8e55fee7 md5 a2e01882 node hpc-sm-02-11 pass1=3.686e-11
+<rad_vet> clean_init steady pass 0: max(|dE|, |dF|/c)/max E = 9.534e-02
+CLEAN cycle 0 t2s 0 it 2 (sum 2) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_vet> clean_init steady pass 1: max(|dE|, |dF|/c)/max E = 3.686e-11
+CLEAN cycle 0 t2s 0 it 1 (sum 1) pos 0 mark 0 all 0 neg 0 r1 0 r2 0 first 0 0 guard 0 solves 1 cwin 0
+<rad_vet> clean_init steady pass 2: max(|dE|, |dF|/c)/max E = 9.994e-15
+<rad_vet> clean_init steady: converged after 3 passes, residual 9.994e-15 (tol 1.0e-08; 0 formal solutions); radiation E 4.1527620104e+45 -> 4.1602693712e+45, F/c 3.5094e+39 0.0000e+00 0.0000e+00 -> 2.9006e+42 1.5002e+34 -2.0678e+33 (volume sums)
