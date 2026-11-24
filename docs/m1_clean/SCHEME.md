@@ -77,9 +77,9 @@ reason it holds, where it stops holding, and the test in `tests/m1_clean` that c
 |---|---|
 | energy (gas + radiation) | exact; floors are paid from the radiation |
 | mass | exact |
-| angular momentum L_z | spherical polar: exact with a ledger; cubed sphere: exact without one |
-| linear momentum | exact only where no limiter or residual acts; not recorded otherwise |
-| positivity | density and E by construction; gas internal energy by rejection and repair |
+| angular momentum L_z | cubed sphere: exact (no ledger); spherical polar: exact except where the face-flux cone cut acts (booked in a ledger; a fix is in progress) |
+| linear momentum | not conserved in general: the cone cut, the well-balancing residual and the floor velocity rules change it (not booked); gravity is a source; not a discrete invariant on spherical-polar / cubed-sphere meshes |
+| positivity | density by construction; E by the implicit operator and Zalesak limiters, with counted backstops; gas internal energy not by construction (the step is redone, or the radiation pays) |
 | well-balance | equilibrium envelopes stay at rest to about 1e-9 of the sound speed |
 | order | second order in space and time, asymptotically |
 | restart, dt retry | bitwise |
@@ -115,7 +115,7 @@ open stellar boundaries remove mass by design, and the history records it.
 
 Test: `conservation_sp`, `conservation_cs` (dM/M <= 1e-13).
 
-### Angular momentum $L_z$: exact on the cubed sphere, exact with a ledger on spherical polar
+### Angular momentum $L_z$: exact on the cubed sphere; on spherical polar exact except where the cone cut acts
 
 On a spherical-polar mesh the azimuthal radiation stress is written in torque form, so it
 cancels between neighbouring cells; `clean_stag_fwb_ring`
@@ -149,7 +149,7 @@ test output).
 Test: `conservation_sp`, `conservation_cs` (drift of `Lz_tot` <= 1e-13, with `dLz_gr`
 printed).
 
-### Linear momentum: exact where nothing cuts; not recorded
+### Linear momentum: not conserved in general
 
 The radiation momentum lives on the cell faces. The gas receives, face by face, minus the
 change of the radiation momentum of that face, shared between the two cells, and the
@@ -169,7 +169,8 @@ residual changes it by about 6e-7 and the production cut by up to a few 1e-3 per
 spherical-polar and cubed-sphere meshes Cartesian momentum is not a discrete invariant (the
 momenta live in local bases), so only $L_z$ and the radial budget are meaningful there.
 
-Test: none in the suite (the shell decks have closed walls that exert forces).
+Test: `momentum_box` (a periodic Cartesian box) reports the drift; it is a report, not a
+conservation claim (the shell decks have closed walls that exert forces).
 
 ### Positivity
 
