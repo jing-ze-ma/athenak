@@ -2054,44 +2054,4 @@ void RadiationVet::VetGdCsSweep() {
   }
 }
 
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CsTanFrameInit
-//! \brief the per-cell orthonormal tangent frame cs_qf of Q: e1 = the normal of the x2
-//! plane through the cell centre, e2 = the x3 plane's normal less its e1 part (both
-//! planes hold the radial line, so both are tangential).  Cartesian components, exchanged
-//! once through the tau_ten kind of exchange (a = at least 6 components, the same
-//! no-resample map as the slots): a seam ghost holds its mirror cell's frame, a cube-
-//! vertex corner ghost zeros, so Q contracts to zero there.
-
-void RadiationVet::CsTanFrameInit(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
-                                  MeshBoundaryValuesCC *pb) {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is, js = indcs.js, je = indcs.je, ks = indcs.ks, ke = indcs.ke;
-  const int nmb1 = pmy_pack->nmb_thispack - 1;
-  const int n3 = a.extent_int(2), n2 = a.extent_int(3);
-  Kokkos::realloc(cs_qf, nmb1 + 1, 6, n3, n2);
-  Kokkos::deep_copy(a, 0.0);
-  auto a_ = a;
-  auto cn2 = cs_cn2, cn3 = cs_cn3;
-  par_for("vet_cstan_fr", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-  KOKKOS_LAMBDA(const int m, const int k, const int j) {
-    Real e1[3], e2[3];
-    for (int c = 0; c < 3; ++c) {e1[c] = cn2(m,j,c); e2[c] = cn3(m,k,c);}
-    const Real d = e1[0]*e2[0] + e1[1]*e2[1] + e1[2]*e2[2];
-    for (int c = 0; c < 3; ++c) {e2[c] -= d*e1[c];}
-    const Real nn = 1.0/sqrt(e2[0]*e2[0] + e2[1]*e2[1] + e2[2]*e2[2]);
-    for (int c = 0; c < 3; ++c) {
-      a_(m,c,k,j,is) = e1[c];
-      a_(m,3+c,k,j,is) = e2[c]*nn;
-    }
-  });
-  VetLatExchange(a, ac, pb);
-  auto q_ = cs_qf;
-  par_for("vet_cstan_fq", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j) {
-    for (int c = 0; c < 6; ++c) {q_(m,c,k,j) = a_(m,c,k,j,is);}
-  });
-  Kokkos::deep_copy(a, 0.0);
-}
-
 } // namespace radvet

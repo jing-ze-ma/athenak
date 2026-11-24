@@ -2052,8 +2052,6 @@ class RadiationVet {
   // ghosts; M1CsQab), M1CsTanFaceLag / M1CsTanFaceOp
   bool vgd_tan = true;
   DvceArray4D<Real> cs_qf;
-  void CsTanFrameInit(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
-                      MeshBoundaryValuesCC *pb);
   bool vgd_replace = false;    // vet_gd_replace: no vet_col sweep (D = I/3 below the
                                // first gd shell, q from the gd top cell)
   int vgd_n = 0;
