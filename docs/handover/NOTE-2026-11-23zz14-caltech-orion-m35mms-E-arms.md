@@ -7,9 +7,5 @@
 - Files for each arm: caltech_results/M35FAST/<arm>/: log_grep.txt.gz (DTREP|DTREG|CLEAN WARNING|CLEAN FALLBACK|FATAL|^CLEAN cycle|^CLEAN pass|elapsed=), user + hydro hst (gz), log.0.gz, run.log.
 - Reference (23zp / 23zx): D0 1.225 s/cyc; D1 1.255 s/cyc, mean solves/stage 3.89.
 
-## E0 (EX: rad_m1/vet_gd_theta_seam_sym=true rad_m1/vet_gd_wall_sym=true)
-- 2026-11-23 22:31:51 rc=0 last: 
-- CLEAN WARNING 0, CLEAN FALLBACK 0, stage fallbacks 0, DT_RETRY 0, FATAL 0; DTREP/DTREG lines 0
-- s/cycle ; dt first 0.0000 / min 0.0000 / last 0.0000; mean solves/stage ; mean Krylov its per CLEAN cycle line 
-- 
-- max GPU memory 10579 MiB per GPU (mem.log)
+- (11-23 22:32) The first E0 start (22:31) collided with a LAYF8 dispatch on hpc-sm-02-17, so I cancelled it after 20 s and removed its empty section. E0 restarted alone on 02-17 at 22:33.
+- **Per 23zz18: only E0 vs E4.** E1/E2/E3/E0n/E1p are cancelled. **Binary: halfday 83b71abed for both.** The three E4 keys (clean_clos1_budget, clean_vel_settled, clean_bud_maxnorm) are not in IA12.2 465aff485; they come only with the 3 halfday commits. halfday with keys off = IA12.2.
