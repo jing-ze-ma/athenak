@@ -178,6 +178,6 @@ The notebook in the repository was executed on the 4-A100 runs above.
 The production templates (`star_bsg.athinput` and the others, [RUN.md](RUN.md)) differ from
 these decks only in resolution, MeshBlock size (`layout_tile` must equal the lateral
 MeshBlock size), run length and outputs. The sp test deck also uses the fixed 120-direction
-LQ10 ray set (`vet_gd_ls = 10`) instead of the template's Gauss-Legendre 7 x 18 set. Lines of
+LQ10 ray set (`vet_gd_ls = 10`) instead of the template's Gauss-Legendre 7 x 18 set. (A Gauss-Legendre set on a phi-periodic wedge needs a wedge width that is a multiple of 360 deg / nphi, e.g. 20 deg for nphi = 18; see KEYS.md.) Lines of
 the form `# IA12.1: key = value` mark the keys of the next code version. They are not
 read by this one.

@@ -89,6 +89,11 @@ out of a restart deck changes the scheme silently. The templates name them all.
 | `rad_m1/vet_scatter_kappa_e` | Electron-scattering opacity: `const` or `eos` (from the EOS ionisation). | `eos` with a tabulated EOS; `const` otherwise | all: `const` | `rad_m1/rad_m1.cpp` (constructor) |
 | `rad_m1/clean_ray_cut_r` | Adaptive ray depth cut on 3-D sp/cs meshes with one MeshBlock along x1: below the cut the closure is the diffusion limit. | 0.01 where the cut applies | all: `0.01` | `rad_m1/rad_m1.cpp` (constructor) |
 
+On a phi-periodic wedge the width must be a multiple of the direction set's azimuthal
+period (Gauss-Legendre: 360 deg / nphi, 20 deg for nphi = 18; level-symmetric LQ_N: 90 deg):
+only then is the phi-wall map exact. Otherwise the interpolated wall map drives a spurious
+net F_phi in thin gas (e.g. <F_phi>/<F_r> ~ 0.4 to 1 in free streaming).
+
 ## Time integration, time step and retries
 
 | key | meaning | default | production | read in |
