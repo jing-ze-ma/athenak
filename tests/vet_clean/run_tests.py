@@ -780,10 +780,17 @@ def l1(a, b):
 
 def t_idort_beams(c):
     """two crossing beams in vacuum: E against the exact straight beams (L1 over the box;
-    lum_top: the energy of the third row below the x1max face relative to the exact)"""
+    lum_top: the energy of the third row below the x1max face relative to the exact);
+    flux_err: the largest |x1 energy flux through a row (sum of vet_phi1) / injected - 1|"""
     d = c.run('idort_beams.athinput', 'run')
-    E, Ex = vett.last_bin(d, 'vet')['vet_e'][0], beams_exact(d)
-    return dict(L1=l1(E, Ex), lum_top=float(E[:, -3].sum()/Ex[:, -3].sum()))
+    m, Ex = vett.last_bin(d, 'vet'), beams_exact(d)
+    E, x2 = m['vet_e'][0], vett.cell_centres(d)[1]
+    cl = float(vett.parse_deck_text(open(os.path.join(d, 'in.athinput')).read())
+               ['rad_vet']['c_light'])
+    fin = sum(e*np.cos(np.radians(a))*(y1 - y0) for e, a, y0, y1 in beam_list(d))
+    fx = m['vet_phi1'][0].sum(axis=0)*(x2[1] - x2[0])/cl
+    return dict(L1=l1(E, Ex), lum_top=float(E[:, -3].sum()/Ex[:, -3].sum()),
+                flux_err=float(np.abs(fx/fin - 1.0).max()))
 
 
 def t_idort_beams_mb(c):
@@ -831,18 +838,19 @@ def t_idort_shadow_gl(c):
 
 
 def t_idort_cylinder(c):
-    """homogeneous emitting cylinder: E inside and outside, F_x outside, along y = 0 against
-    the exact transport solution (ref/idort_cylinder_exact.npz, x > 0)."""
+    """homogeneous emitting cylinder: E inside and outside, the energy flux Phi_x (vet_phi1)
+    and the face momentum F_x (vet_f1, FH_out) outside, along y = 0 against the exact
+    transport solution (ref/idort_cylinder_exact.npz, x > 0)."""
     d = c.run('idort_cylinder.athinput', 'run')
     m, (x1, x2, _) = vett.last_bin(d, 'vet'), vett.cell_centres(d)
     cl = float(vett.parse_deck_text(open(os.path.join(d, 'in.athinput')).read())
                ['rad_vet']['c_light'])
     ex = np.load(os.path.join(HERE, 'ref', 'idort_cylinder_exact.npz'))
     j, s = np.argsort(np.abs(x2))[:2], x1 > 0          # the two rows next to y = 0
-    E, F = m['vet_e'][0][j].mean(axis=0)[s], m['vet_f1'][0][j].mean(axis=0)[s]/cl
+    E, F, H = (m[v][0][j].mean(axis=0)[s] for v in ('vet_e', 'vet_phi1', 'vet_f1'))
     i, o = ex['x'] < 1.0, ex['x'] > 1.05
     return dict(E_in=l1(E[i], ex['E'][i]), E_out=l1(E[o], ex['E'][o]),
-                F_out=l1(F[o], ex['F'][o]))
+                F_out=l1(F[o]/cl, ex['F'][o]), FH_out=l1(H[o]/cl, ex['F'][o]))
 
 
 def t_idort_radshock(c, m, deck='idort_radshock_m%s.athinput'):
