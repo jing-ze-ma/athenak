@@ -533,7 +533,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     // and 5, the clean scheme: no zero channels, the ring dense, then also the cubed
     // sphere's sc rays, Time2RstNchWant; version 7: the ring without the cubed sphere's
     // zero stress / CLN_G fields, CleanRingFields)
-    const bool cl = (pradvet != nullptr) && pradvet->clean;
+    const bool cl = (pradvet != nullptr);
     const bool fk = cl && pradvet->cln_fsolve && pradvet->cln_fkin;
     const std::int32_t hdr[2] = {(nt2 > 0) ? (cl ? 7 : (fk ? 2 : 1)) : 0,
                                  static_cast<std::int32_t>(nt2)};

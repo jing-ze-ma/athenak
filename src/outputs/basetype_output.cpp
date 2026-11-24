@@ -734,7 +734,7 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     // clean: vet also carries the cell flux of the faces' energy flux Phi (vet_f:
     // the face momenta's, the radiation momentum)
     auto *pr = pm->pmb_pack->pradvet;
-    if (variable.compare("vet") == 0 && pr != nullptr && pr->clean) {
+    if (variable.compare("vet") == 0 && pr != nullptr) {
       if (pr->cln_phic.extent_int(0) == 0) {   // (CleanInit keeps it: the same shape)
         Kokkos::realloc(pr->cln_phic, pr->u0.extent_int(0), 3, pr->u0.extent_int(2),
                         pr->u0.extent_int(3), pr->u0.extent_int(4));
@@ -795,7 +795,7 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
     }
     // scheme = clean: the full D (11 22 33 12 13 23) in the frame of m1_f1..3, no f_K
     // (derived_variables.cpp)
-    if (variable.compare("vet_vet") == 0 && pm->pmb_pack->pradvet->clean) {
+    if (variable.compare("vet_vet") == 0) {
       out_params.contains_derived = true;
       const char *dn[6] = {"vet_d11", "vet_d22", "vet_d33", "vet_d12", "vet_d13",
                            "vet_d23"};

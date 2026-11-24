@@ -88,7 +88,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   std::string sc = pin->GetOrAddString("rad_vet","scheme",scd ? "clean" : "default");
   if (sc.compare("clean") == 0) {
-    clean = true;
     CleanPreflight(pin);
     // clean_w_fse (default on): the thin share's thinness is the old production's
     // (implicit_thin_switch = fse): g = max(|H|/J, eps C1/1.5), eps = min(kappa_P/chi,
@@ -1418,17 +1417,12 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // recorded; a restart file without the key keeps off, echoed): the counters
     // weighted by the mesh's cell volume, |dp| and L_z of the gas momentum in the frame
     // of y on every mesh (CleanVol, CleanLzArm); the state is the same
-    if (clean || pin->DoesParameterExist("rad_vet","floorcap_mesh_vol")) {
-      if (clean && !nw && !pin->DoesParameterExist("rad_vet","floorcap_mesh_vol")) {
+    {
+      if (!nw && !pin->DoesParameterExist("rad_vet","floorcap_mesh_vol")) {
         recipe::Log("<rad_vet>/floorcap_mesh_vol = false (a restart file without the "
                     "key: the old default)");
       }
       fcap_mvol = pin->GetOrAddBoolean("rad_vet","floorcap_mesh_vol",nw);
-      if (fcap_mvol && !clean) {
-        std::cout << "### FATAL ERROR: <rad_vet>/floorcap_mesh_vol needs scheme = clean"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
     }
     if (fcap_rho > 0.0 && (!coupling || !(arad > 0.0))) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -1484,9 +1478,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     force_ref = M1_FREF_NONE;
   } else if (fr.compare("wb_arad") == 0) {
     force_ref = M1_FREF_WB_ARAD;
-  } else if (fr.compare("clean") == 0 && clean) {
+  } else if (fr.compare("clean") == 0) {
     force_ref = M1_FREF_CLEAN;
-  } else if (fr.compare("wb_arad_md") == 0 && clean) {
+  } else if (fr.compare("wb_arad_md") == 0) {
     force_ref = M1_FREF_WB_MD;
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -1606,7 +1600,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     RotAvgParse(pin);  // vet_rotate_avg (shared key)
     // scheme = clean with clean_rot_ring named: the rotating set on the clean ring, as
     // vet_gd's (vet_gd_rotate_xfade, default false; no slope correction)
-    if (clean && vsc_rot && cln_ring) {
+    if (vsc_rot && cln_ring) {
       vgd_xf = pin->GetOrAddBoolean("rad_vet","vet_gd_rotate_xfade",false) && VgdRotOn();
       vgd_rot_slope = 0;
     }
@@ -1832,7 +1826,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
           pin->GetInteger("rad_vet","vet_gd_rotate_every") > 0;
       if (rdt || rev) {
         pin->GetOrAddInteger("rad_vet","vet_rotate_avg",4);
-        if (clean && rdt && !rev) {
+        if (rdt && !rev) {
           pin->GetOrAddBoolean("rad_vet","vet_gd_rotate_xfade",true);
         }
         recipe::Log("<rad_vet>/vet_rotate_avg = 4 (default with a rotating vet_gd set)");
@@ -1876,7 +1870,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // time-averaged by default, vet_rotate_avg = 4 with the cross-fade (clean_rot_ring
     // live), recorded so that a restart keeps them; a restart file without the keys keeps
     // the plain rotation
-    if (clean && (sph_geom || cs_geom) && !global_variable::restart_run &&
+    if ((sph_geom || cs_geom) && !global_variable::restart_run &&
         VgdRotOn() &&
         (vgd_rot_dt > 0.0 || vgd_rot_auto)) {
       pin->GetOrAddInteger("rad_vet","vet_rotate_avg",4);
@@ -1885,7 +1879,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // (a restart of the old production's averaged set, whose file has no cross-fade:
     // the sp sc rays take it, the live ring; without it the first steps from the
     // production state take the K-set closure's jumps, which its R136 restart cannot)
-    if (clean && sph_geom && global_variable::restart_run &&
+    if (sph_geom && global_variable::restart_run &&
         VgdRotOn() && pin->DoesParameterExist("rad_vet","vet_rotate_avg") &&
         pin->GetInteger("rad_vet","vet_rotate_avg") > 1 &&
         !pin->DoesParameterExist("rad_vet","vet_gd_rotate_xfade")) {
@@ -1896,7 +1890,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // set before the first VetGdRotStep (a restart on a block boundary acts at once).
     // clean_rot_ring = jump: a block's first step is backward Euler from the first step
     // on (a restart on a block boundary too)
-    if (clean && vgd_on && VgdRotOn()) vgd_rot_slope = 0;
+    if (vgd_on && VgdRotOn()) vgd_rot_slope = 0;
     if (cln_ring == 2) vgd_rot_slope = 2;
     // vet_gd_rotate_xfade (read only when named; rad_vet.hpp)
     if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_rotate_xfade")) {
@@ -1920,7 +1914,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       }
     }
     // the cubed sphere with clean_rays = sc: vet_gd's own sweep (intensities to cln_fvi)
-    cln_cssc = clean && pmy_pack->pmesh->use_cubed_sphere && vgd_on;
+    cln_cssc = pmy_pack->pmesh->use_cubed_sphere && vgd_on;
     // clean_thin_donor (default off): the thin share w c h E of every face from its
     // donor alone, the half range h out through the face the donor's own (its rays
     // about the face normal: the six faces partition the donor's free-streaming
@@ -1946,7 +1940,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // clean_rot_ring not named: live wherever the vet_gd rays rotate in time
     // with a cross-fade (decided here, before a restart file's channels are counted)
-    if (clean && !cln_ring_named && vgd_on && vra_on && g_vra_adv &&
+    if (!cln_ring_named && vgd_on && vra_on && g_vra_adv &&
         vgd_xf && (vgd_rot_dt > 0.0 || vgd_rot_auto) && vgd_rot_align &&
         vra_k <= M1_RA_NF) {
       cln_ring = 1;
@@ -2109,7 +2103,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                   << " vacuum or extrap" << std::endl;
         std::exit(EXIT_FAILURE);
       }
-    } else if (vgd_on && clean && pmy_pack->pmesh->use_spherical_polar &&
+    } else if (vgd_on && pmy_pack->pmesh->use_spherical_polar &&
                !pmy_pack->pmesh->use_polar_boundary) {
       // (unnamed, scheme = clean): the rays' theta walls follow the mesh: a reflecting
       // wall mirrors, a periodic one wraps
@@ -2123,7 +2117,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // (default on for clean on CUDA without a theta wall: VetGdSetup keeps it on the raw
     // 3-D sweep only; off-node partners take the MPI path)
 #if defined(KOKKOS_ENABLE_CUDA)
-    vgd_ipc_on = vgd_on && clean && !vgd_thmir && vgd_thvac == 0;
+    vgd_ipc_on = vgd_on && !vgd_thmir && vgd_thvac == 0;
 #endif
     if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_halo_ipc")) {
       vgd_ipc_on = pin->GetBoolean("rad_vet","vet_gd_halo_ipc");
@@ -2145,7 +2139,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       }
       // scheme = clean: its rays sweep from the first shell (no depth cut), decided here
       // so that every build, also one before the first solve (CleanInit), uses it
-      if (clean) vlat_taucut = std::numeric_limits<Real>::max();
+      vlat_taucut = std::numeric_limits<Real>::max();
       // vet_col_lat_cut_thin (VetLatCsFinish).  DEFAULT 1 on a fresh
       // run; a restart whose file lacks the key keeps 0 (the depth cut alone, bitwise)
       vlat_cut_thin = pin->GetOrAddReal("rad_vet","vet_col_lat_cut_thin",
@@ -2290,30 +2284,28 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   // Returns immediately with transport = explicit.
   ImplicitInit(pin);
   // clean sc rays with a reflecting top: its mirror reads the last build (rad_vet.hpp)
-  cln_scmem = clean && vgd_on && sph_geom && ibc_x1max == M1_IBC_REFLECT;
+  cln_scmem = vgd_on && sph_geom && ibc_x1max == M1_IBC_REFLECT;
   // the ray cut (CleanRayCut) wherever it applies: the staggered layout's sc rays on 3-D
   // spherical polar or the cubed sphere, one MeshBlock along x1, no reflecting top
-  if (clean) {
-    const Mesh *pm = ppack->pmesh;
-    const bool ok = vgd_on && sph_geom &&
-                    pm->three_d && !pm->multilevel && pm->mesh_indcs.nx1 == indcs.nx1 &&
-                    !cln_scmem;
-    cln_rcut_on = ok;
-    if (!ok && global_variable::my_rank == 0) {
-      std::cout << "<rad_vet> clean_ray_cut: not applicable here (staggered sc rays on "
-                << "3-D spherical polar or the cubed sphere, one MeshBlock along x1 only)"
-                << std::endl;
-    }
-    if (cln_rcut_on) {
-      cln_rcut_r = pin->GetOrAddReal("rad_vet","clean_ray_cut_r",0.01);
-      cln_rcut_mg = pin->GetOrAddReal("rad_vet","clean_ray_cut_margin",10.0);
-      cln_rcut_tau = pin->GetOrAddReal("rad_vet","clean_ray_cut_taumin",0.0);
-      cln_rcut_wait = pin->GetOrAddInteger("rad_vet","clean_ray_cut_wait",10);
-      // (the cut and its count in a restart file, CleanRayCut)
-      cln_rcut = pin->GetOrAddInteger("rad_vet","clean_ray_cut_now",-1);
-      cln_rcut_n = pin->GetOrAddInteger("rad_vet","clean_ray_cut_count",0);
-      pin_rcut_ = pin;
-    }
+  const Mesh *pm = ppack->pmesh;
+  const bool ok = vgd_on && sph_geom &&
+                  pm->three_d && !pm->multilevel && pm->mesh_indcs.nx1 == indcs.nx1 &&
+                  !cln_scmem;
+  cln_rcut_on = ok;
+  if (!ok && global_variable::my_rank == 0) {
+    std::cout << "<rad_vet> clean_ray_cut: not applicable here (staggered sc rays on "
+              << "3-D spherical polar or the cubed sphere, one MeshBlock along x1 only)"
+              << std::endl;
+  }
+  if (cln_rcut_on) {
+    cln_rcut_r = pin->GetOrAddReal("rad_vet","clean_ray_cut_r",0.01);
+    cln_rcut_mg = pin->GetOrAddReal("rad_vet","clean_ray_cut_margin",10.0);
+    cln_rcut_tau = pin->GetOrAddReal("rad_vet","clean_ray_cut_taumin",0.0);
+    cln_rcut_wait = pin->GetOrAddInteger("rad_vet","clean_ray_cut_wait",10);
+    // (the cut and its count in a restart file, CleanRayCut)
+    cln_rcut = pin->GetOrAddInteger("rad_vet","clean_ray_cut_now",-1);
+    cln_rcut_n = pin->GetOrAddInteger("rad_vet","clean_ray_cut_count",0);
+    pin_rcut_ = pin;
   }
   // <rad_vet>/polar_ring_avg (the implicit M1 on hydro's coarse polar phi groups):
   // removed
@@ -2438,7 +2430,7 @@ bool RadiationVet::FrefWaccOn() const {
 }
 
 bool RadiationVet::FrefWaccStage() const {
-  return clean && t2_ok;
+  return t2_ok;
 }
 
 Real RadiationVet::FrefWaccGam0(Real bdt, Real dt_mesh) const {
@@ -2478,7 +2470,7 @@ int RadiationVet::RssMode() const {
   // (scheme = clean: its own current Eddington tensor, cln_s, which the stage solve
   // rebuilds every step; tau_ten is not rebuilt there; not before CleanInit: a restart's
   // closure, clean_closure = iterate, precedes the cubed sphere's geometry cln_gn)
-  if (clean && cln_s.extent(0) > 0 && cln_init) return 5;
+  if (cln_s.extent(0) > 0 && cln_init) return 5;
   if (tau_closure && tau_ten.extent(0) > 0) return 2;
   if (vet_sc && vet_cell.extent(0) > 0) return vet_full ? 4 : 3;
   if (!eddington && !tau_closure && !vet_sc) return 1;

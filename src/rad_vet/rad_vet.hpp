@@ -1184,16 +1184,13 @@ class RadiationVet {
   // keeps these weights, its dropped K1 part re-enters stage 2); a backward-Euler step
   // applies L of its solve.  Read-only: no number of the run changes.
   bool ebnd_on = false;
-  bool ebnd_adv = false;          // + implicit_bc_advect's end-face A E
   Real ebnd_acc = 0.0;            // accumulated energy (code units)
-  Real ebnd_l1 = 0.0, ebnd_l2 = 0.0;   // L at the step start / of the stage-1 solve
   // ebnd_split (set by the he_star_vet drive ledger only): the inner and
   // the outer faces accumulated apart with the same weights (ebnd_acc_in = energy put in
   // through the physical inner x1 faces, ebnd_acc_out = energy LEAVING through the outer
   // ones, both incl. the ebnd_adv term); ebnd_acc is then their difference
   bool ebnd_split = false;
   Real ebnd_acc_in = 0.0, ebnd_acc_out = 0.0;
-  Real ebnd_l1i = 0.0, ebnd_l1o = 0.0, ebnd_l2i = 0.0, ebnd_l2o = 0.0;
   // with ebnd_split also the explicit source esrc as the solves apply it: each solve adds
   // its dt (chat/c) esrc to the old vector and to its slope, so the step deposits the
   // slopes' (chat/c) sum esrc V with the same tableau weights (K1 carries the esrc of
@@ -1206,9 +1203,6 @@ class RadiationVet {
   Real ebnd_s3 = 0.0;
   bool ebnd_s3_ok = false;
   Real EbndEsrc();
-  // side 0: inner minus outer (the original sum); 1: the inner faces only (inward
-  // positive); 2: the outer faces only (OUTWARD positive)
-  Real EbndFluxX1(int side = 0);
   void EbndStart();
   void EbndStage1();
   void EbndAccept(Real dt, bool t2step);
@@ -1878,7 +1872,6 @@ class RadiationVet {
   Real CleanSumCells(const DvceArray4D<Real> &a);
   void CleanClosureSphere();
 
-  bool clean = false;           // <rad_vet>/scheme = clean
   Real cln_c0 = 0.1;            // clean_w_c0: C1 below which w = 0
   Real cln_c1 = 0.5;            // clean_w_c1: C1 above which w = 1
   Real cln_tol = 1.0e-10;       // clean_tol: relative residual of the linear solve

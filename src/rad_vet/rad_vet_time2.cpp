@@ -448,7 +448,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   {
     const bool onecol = pmy_pack->pmesh->mesh_indcs.nx1 == pmy_pack->pmesh->mb_indcs.nx1;
     const bool rnone = recipe::GetMode(pin) == recipe::Mode::none;
-    t2_k1rd = (onecol && !rnone && !ffct14 && !clean) ? 0.1 : 0.0;
+    t2_k1rd = 0.0;
     if (!pin->DoesParameterExist("rad_vet", "time2_k1_redist")) {
       recipe::Log(std::string("<rad_vet>/time2_k1_redist = ") + (t2_k1rd > 0.0 ? "0.1" :
                   "0") + (ffct14 ? " (default: time2_face_fct)" :
@@ -472,13 +472,13 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   // run (v20.4, recorded; a restart file without the key keeps off); its t2inc F
   // channels are face F as here, and its solve stores the energy flux Phi that moved E
   // (CleanWriteBack)
-  const bool cfd = clean && !global_variable::restart_run;
-  t2_ffct = (ffct14 && !clean) || cfd;
+  const bool cfd = !global_variable::restart_run;
+  t2_ffct = cfd;
   if (pin->DoesParameterExist("rad_vet", "time2_face_fct") || cfd) {
     t2_ffct = pin->GetOrAddBoolean("rad_vet", "time2_face_fct", t2_ffct);
   }
-  t2_pfst = t2_ffct || clean;
-  t2_ffct_emin = clean ? 0.1 : 0.0;   // (rad_vet.hpp)
+  t2_pfst = true;
+  t2_ffct_emin = 0.1;   // (rad_vet.hpp)
   t2_ys_ok = false;
   // time2_accept_fallback is DEFAULT true under hesdirk2 (this
   // reader returns above for be, where the key is unused); false only when named so
@@ -540,7 +540,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     Kokkos::realloc(t2f2, nmb, n3, n2+1, n1);
     if (trans_x3) {Kokkos::realloc(t2f3, nmb, n3+1, n2, n1);}
   }
-  const bool noh = clean && cln_not2h;   // clean_skip_time2_hist
+  const bool noh = cln_not2h;   // clean_skip_time2_hist
   if (impl_pred && !noh) {
     Kokkos::realloc(ipred2, nmb, (impl_pord == 2) ? 5 : 3, n3, n2, n1);
     Kokkos::deep_copy(ipred2, 0.0);
@@ -556,11 +556,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     // Time2VetStart's save slots (E, T) and the saved stage-start opacities;
     // time2_vet_col = predict | rebuild: also KT, T(Y1), E(Y1) and the inner face flux
     // (scheme = clean: only ImplicitSolve's stage chain reads them; not made)
-    if (!clean) {
-      Kokkos::realloc(vet_now, nmb, (t2_vcmode == 0 || t2_vcmode >= 3) ? 2 : 6, n3, n2,
-                      n1);
-      Kokkos::realloc(vet_opac, nmb, vscat ? (M1_NOPAC + 1) : M1_NOPAC, n3, n2, n1);
-    }
     if (t2_vcmode == 4) {
       if (!noh) {
         Kokkos::realloc(x2_tt, nmb, M1_X2_NTT, n3, n2, n1);
@@ -1090,7 +1085,6 @@ void RadiationVet::Time2Stash() {
 //! it back (a stage failed)
 
 void RadiationVet::CleanRayHistory(const bool save) {
-  if (!clean) return;
   DvceArray5D<Real> *a[6] = {&cln_fvi, &cln_fh, &cln_top, &cln_rr, &cln_rpd, &cln_rnew};
   auto &k = cln_rk;
   auto cp = [](auto &d, const auto &s) {
@@ -1527,19 +1521,6 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
      Kokkos::Min<Real>(qmin));
   // (clean staggered: the face F is the radiation momentum, which the limiter leaves
   // alone, so momentum and L_z stay exact; the solve keeps |F| <= cE)
-  for (int d = 0; d < 3 && !clean; ++d) {
-    if ((d == 1 && !tr2) || (d == 2 && !tr3)) {continue;}
-    const int dk = (d == 2) ? 1 : 0, dj = (d == 1) ? 1 : 0, di = (d == 0) ? 1 : 0;
-    par_for("vet_t2_ffct_f", DevExeSpace(), 0, nmb1, ks, ke + dk, js, je + dj, is,
-            ie + di,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      const Real g = gf(m, d, k, j, i);
-      Real rd = 1.0;
-      if (g > 0.0) {rd = iw_(m,ca,k-dk,j-dj,i-di);}
-      if (g < 0.0) {rd = iw_(m,ca,k,j,i);}
-      if (rd < 1.0) {in_(m,M1_T2_F1+d,k,j,i) *= rd;}
-    });
-  }
 #if MPI_PARALLEL_ENABLED
   MPI_Allreduce(MPI_IN_PLACE, lv, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, &qmin, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
@@ -1561,7 +1542,7 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
 
 void RadiationVet::CleanBndAcc(int stage, Real c1, Real c2, Real w, Real dt) {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
-  if (!clean || !(sph_geom || cs_geom)) return;
+  if (!(sph_geom || cs_geom)) return;
   if (cln_lacc.extent_int(0) <= nmb1) {
     Kokkos::realloc(cln_lacc, nmb1 + 1, 4, u0.extent_int(2), u0.extent_int(3));
   }
@@ -1587,80 +1568,6 @@ void RadiationVet::CleanBndAcc(int stage, Real c1, Real c2, Real w, Real dt) {
     const Real rd = lim ? iw_(m,sr,k,j,(g > 0.0) ? i - 1 : i) : 1.0;
     la(m,2+s,k,j) = w*la(m,s,k,j) + rd*g;
   });
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn Real RadiationVet::EbndFluxX1
-//! \brief mhdfix-1025 Ebnd: L = sum A F1 over the physical inner x1 faces minus the outer
-//! ones (the radiation energy flux into the domain through x1, all ranks).
-//! side = 1 only the inner faces, side = 2 only the outer faces with
-//! the sign flipped (outward positive); side = 0 is the original sum (bitwise).
-
-Real RadiationVet::EbndFluxX1(const int side) {
-  auto &id = pmy_pack->pmesh->mb_indcs;
-  const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
-  const int nmb1 = pmy_pack->nmb_thispack - 1;
-  auto ff = f0x1;
-  auto &a1 = pmy_pack->pcoord->area.x1f;
-  auto &bcs = pmy_pack->pmb->mb_bcs;
-  // ebnd_adv (problem/am_hist_ebnd): + the advective end-face flux
-  const bool adv = ebnd_adv && impl_bc_advect;
-  const int bclo = ibc_x1min, bchi = ibc_x1max;
-  const bool mfl = impl_mface_lin, sqf = vcol_sqf;
-  const bool vqs = (vet_col && vcol_sq) || hr_q;
-  const Real elo = iebath_x1min, ehi = iebath_x1max;
-  const bool ebc = iebath_hi_col_on;
-  auto ebc_ = iebath_hi_col;
-  auto iw_ = iw;
-  auto cx1v = pmy_pack->pcoord->x1v;
-  auto cx1f = pmy_pack->pcoord->xx1f;
-  Real l = 0.0;
-  Kokkos::parallel_reduce("vet_ebnd", Kokkos::MDRangePolicy<Kokkos::Rank<3>>(
-      DevExeSpace(), {0, ks, js}, {nmb1 + 1, ke + 1, je + 1}),
-  KOKKOS_LAMBDA(const int m, const int k, const int j, Real &sum) {
-    auto phys = [](const BoundaryFlag f) {
-      return !(f == BoundaryFlag::block || f == BoundaryFlag::periodic ||
-               f == BoundaryFlag::shear_periodic || f == BoundaryFlag::panel ||
-               f == BoundaryFlag::polar || f == BoundaryFlag::undef);
-    };
-    const bool plo = (side != 2) && phys(bcs.d_view(m, BoundaryFace::inner_x1));
-    const bool phi = (side != 1) && phys(bcs.d_view(m, BoundaryFace::outer_x1));
-    if (plo) {sum += a1(m,k,j,is)*ff(m,k,j,is);}
-    if (phi) {sum -= a1(m,k,j,ie+1)*ff(m,k,j,ie+1);}
-    // ebnd_adv: the advective enthalpy flux A E of implicit_bc_advect through
-    // a Marshak end face, with the E the row takes (ImplicitSolve's x1 rows): outflow the
-    // face E (implicit_marshak_face = linear) or the end cell's, inflow the bath
-    if (adv && plo && bclo == M1_IBC_MARSHAK) {
-      const Real ai = iw_(m,M1_IW_ADV,k,j,is), vi = iw_(m,M1_IW_V1,k,j,is);
-      Real ee = elo;
-      if (!(vi > 0.0)) {
-        ee = iw_(m,M1_IW_EP,k,j,is);
-        if (mfl && ie > is) {
-          ee = M1SphMarshakFaceE(iw_(m,M1_IW_EP,k,j,is), iw_(m,M1_IW_EP,k,j,is+1),
-                                 cx1v(m,is), cx1v(m,is+1), cx1f(m,is));
-        }
-      }
-      sum += a1(m,k,j,is)*ai*ee;
-    }
-    if (adv && phi && bchi == M1_IBC_MARSHAK) {
-      const Real ai = iw_(m,M1_IW_ADV,k,j,ie), vi = iw_(m,M1_IW_V1,k,j,ie);
-      Real ee = ebc ? ebc_(m,k,j) : ehi;
-      if (vi > 0.0) {
-        ee = iw_(m,M1_IW_EP,k,j,ie);
-        if (mfl && (!vqs || sqf) && ie > is) {
-          ee = M1SphMarshakFaceE(iw_(m,M1_IW_EP,k,j,ie), iw_(m,M1_IW_EP,k,j,ie-1),
-                                 cx1v(m,ie), cx1v(m,ie-1), cx1f(m,ie+1));
-        }
-      }
-      sum -= a1(m,k,j,ie+1)*ai*ee;
-    }
-  }, Kokkos::Sum<Real>(l));
-#if MPI_PARALLEL_ENABLED
-  Real g;
-  MPI_Allreduce(&l, &g, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-  l = g;
-#endif
-  return (side == 2) ? -l : l;
 }
 
 //! \fn Real RadiationVet::EbndEsrc
@@ -1704,24 +1611,12 @@ void RadiationVet::EbndStart() {
               << "implicit transport without multi-rate / coupling_split" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  if (ebnd_split) {
-    ebnd_l1i = EbndFluxX1(1);
-    ebnd_l1o = EbndFluxX1(2);
-    ebnd_s1 = ebnd_s3_ok ? ebnd_s3 : EbndEsrc();
-    return;
-  }
-  ebnd_l1 = EbndFluxX1();
+  if (ebnd_split) ebnd_s1 = ebnd_s3_ok ? ebnd_s3 : EbndEsrc();
 }
 
 void RadiationVet::EbndStage1() {
   if (!ebnd_on) return;
-  if (ebnd_split) {
-    ebnd_l2i = EbndFluxX1(1);
-    ebnd_l2o = EbndFluxX1(2);
-    ebnd_s2 = EbndEsrc();
-    return;
-  }
-  ebnd_l2 = EbndFluxX1();
+  if (ebnd_split) ebnd_s2 = EbndEsrc();
 }
 
 void RadiationVet::EbndAccept(Real dt, bool t2step) {
@@ -1738,11 +1633,11 @@ void RadiationVet::EbndAccept(Real dt, bool t2step) {
   // (clean: f0x1 is the face momentum and the iw slots are not filled; the energy its
   // solves put through the physical x1 faces is CleanBndAcc's, inner and outer)
   Real lc[2] = {0.0, 0.0};
-  if (clean && !(cln_ldt > 0.0) && global_variable::my_rank == 0) {
+  if (!(cln_ldt > 0.0) && global_variable::my_rank == 0) {
     std::printf("CLEAN WARNING cycle %d: Ebnd without the step's boundary energy "
                 "(CleanBndAcc), its faces take 0\n", pmy_pack->pmesh->ncycle);
   }
-  if (clean && cln_ldt > 0.0) {
+  if (cln_ldt > 0.0) {
     auto la = cln_lacc;
     auto &bcs = pmy_pack->pmb->mb_bcs;
     auto &id = pmy_pack->pmesh->mb_indcs;
@@ -1759,9 +1654,8 @@ void RadiationVet::EbndAccept(Real dt, bool t2step) {
     for (int s = 0; s < 2; ++s) lc[s] = CleanReduce(lc[s], false);
   }
   if (ebnd_split) {
-    const Real l3i = clean ? 0.0 : EbndFluxX1(1), l3o = clean ? 0.0 : EbndFluxX1(2);
-    ebnd_acc_in += clean ? lc[0] : applied(ebnd_l1i, ebnd_l2i, l3i);
-    ebnd_acc_out += clean ? lc[1] : applied(ebnd_l1o, ebnd_l2o, l3o);
+    ebnd_acc_in += lc[0];
+    ebnd_acc_out += lc[1];
     const Real s3 = EbndEsrc();
     ebnd_acc_src += applied(ebnd_s1, ebnd_s2, s3);
     ebnd_s3 = s3;
@@ -1769,7 +1663,7 @@ void RadiationVet::EbndAccept(Real dt, bool t2step) {
     ebnd_acc = ebnd_acc_in - ebnd_acc_out;
     return;
   }
-  ebnd_acc += clean ? lc[0] - lc[1] : applied(ebnd_l1, ebnd_l2, EbndFluxX1());
+  ebnd_acc += lc[0] - lc[1];
 }
 
 //----------------------------------------------------------------------------------------
@@ -2211,7 +2105,7 @@ void RadiationVet::Time2VetColExtrap2() {
 }
 
 int RadiationVet::Time2FctSlot(const int q) const {
-  return clean ? (q ? M1_IW_S2 : M1_IW_S1) : (q ? M1_IW_KS : M1_IW_KZ);
+  return q ? M1_IW_S2 : M1_IW_S1;
 }
 
 //----------------------------------------------------------------------------------------
@@ -2227,13 +2121,11 @@ int RadiationVet::CleanRstNq() const {
 // (clean_closure = iterate: the closure in place, the last iterate's, is state; none in
 // a file of another closure, Time2RstAccept)
 int RadiationVet::CleanRstNcl() const {
-  if (!clean) return 0;
   if (t2_rcl >= 0) return t2_rcl;   // (a file's, Time2RstAccept)
   return cln_closit ? CleanNs(pmy_pack->pmesh->use_cubed_sphere, cln_rfh) : 0;
 }
 
 int RadiationVet::CleanRstNfv() const {
-  if (!clean) return 0;
   // (the cubed sphere's sc rays; before the first sweep those a restart file holds)
   // (the sc rays' cln_fvi: their slots of the union on a ring, CleanGdFaceSums)
   // (version 6, staggered: their face half ranges cln_fh instead, none where every
@@ -2253,7 +2145,7 @@ int RadiationVet::Time2RstNchWant() {
   // the hesdirk2 slope channels, then (any time scheme) the clean scheme's state.
   // (version 4, the clean scheme: no channels for what clean_skip_time2_hist leaves
   // zero, and the ring's offsets dense, CleanRingRstCopy)
-  const bool sk = clean && cln_not2h && t2_rstv >= 4;
+  const bool sk = cln_not2h && t2_rstv >= 4;
   const int np = (impl_pord == 2) ? 5 : 3;
   const int nt = (time_scheme != M1_TIME_HESDIRK2) ? 0 :
          M1_T2_NK + ((impl_pred && !sk) ? np : 0) + (vet_sc ? M1_T2_NVET : 0)
@@ -2261,28 +2153,28 @@ int RadiationVet::Time2RstNchWant() {
          + ((vet_col && t2_vcmode == 4 && !sk) ? M1_X2_NCH : 0);   // extrap2
   return nt + ((force_ref == M1_FREF_CLEAN) ? 4 + cln_lzt : 0)   // the reference, set
          + ((force_ref == M1_FREF_WB_MD) ? 10 : 0)           // wb_arad_md: 9, set
-         + ((clean && cln_extrap > 0) ? 2*CleanRstNq() + 1 : 0)    // extrap history
+         + ((cln_extrap > 0) ? 2*CleanRstNq() + 1 : 0)    // extrap history
          + CleanRstNcl()                                     // iterate: the closure
-         + ((clean && cln_ring) ? (t2_rstv < 4 ? vra_k*CleanRstNq() : CleanRingRstN()) + 1
+         + (cln_ring ? (t2_rstv < 4 ? vra_k*CleanRstNq() : CleanRingRstN()) + 1
                                 : 0)                          // clean_rot_ring
-         + ((clean && cln_fsolve && cln_fkin) ? 6 : 0)       // stag fkin: d and its K1
+         + ((cln_fsolve && cln_fkin) ? 6 : 0)       // stag fkin: d and its K1
          + CleanRstNfv();                                    // the rays' intensities
 }
 
 bool RadiationVet::Time2RstAccept(const int nfile, const int ver) {
   // (a version-1 file, before 8349d48ff, holds d without its slope K1_d: read with K1_d =
   // 0 and a backward-Euler first step)
-  t2_rstd3 = (ver < 2) && clean && cln_fsolve && cln_fkin;
+  t2_rstd3 = (ver < 2) && cln_fsolve && cln_fkin;
   // (version 5 on the cubed sphere: the sc rays' intensities, no longer read)
-  if (clean && cln_cssc && ver == 5) {
+  if (cln_cssc && ver == 5) {
     std::cout << "### FATAL ERROR <rad_vet> restart: a version-5 clean file on the cubed "
               << "sphere (the sc rays' intensities) is no longer read" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  t2_rstv = clean ? ver : 5;
+  t2_rstv = ver;
   t2_rcl = -1;
   int nb = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0);
-  t2_nfv = (clean && (cln_cssc || cln_scmem)) ? nfile - nb : 0;
+  t2_nfv = (cln_cssc || cln_scmem) ? nfile - nb : 0;
   // (a file of another clean_closure: the closure in place of an iterate run, CleanRstNcl,
   // is skipped by another closure; without it, an iterate run's first solve takes the
   // predicted closure, CleanSolve)
@@ -2290,7 +2182,7 @@ bool RadiationVet::Time2RstAccept(const int nfile, const int ver) {
   auto fits = [&](const int n) {
     return cln_cssc ? (nfile - n == 0 || nfile - n == 12) : (nfile == n);
   };
-  if (clean && !cln_scmem && !fits(nb) && fits(cln_closit ? nb - ns : nb + ns)) {
+  if (!cln_scmem && !fits(nb) && fits(cln_closit ? nb - ns : nb + ns)) {
     t2_rcl = cln_closit ? 0 : ns;
     nb += cln_closit ? -ns : ns;
     t2_nfv = cln_cssc ? nfile - nb : 0;
@@ -2305,7 +2197,7 @@ bool RadiationVet::Time2RstAccept(const int nfile, const int ver) {
   // layout records the key, only a file of a run with it fits exactly, and a file of
   // one is refused without it: 1 .. 11 channels over)
   const bool fho = cln_rfh ? t2_nfv != 0 : (t2_nfv > 0 && t2_nfv < 12);
-  if (clean && cln_cssc && ver >= 6 && fho) {
+  if (cln_cssc && ver >= 6 && fho) {
     std::cout << "### FATAL ERROR <rad_vet> restart: a file " << (cln_rfh ? "not " : "")
               << "written with clean_ring_fh (" << t2_nfv << " channels over)"
               << std::endl;
@@ -2316,7 +2208,7 @@ bool RadiationVet::Time2RstAccept(const int nfile, const int ver) {
   // read with the ring off its ring channels are skipped (they were read into cln_fh
   // beyond its 12 channels), anything else is refused
   t2_rskip = 0;
-  if (clean && cln_cssc && ver >= 6 && t2_nfv > 12) {
+  if (cln_cssc && ver >= 6 && t2_nfv > 12) {
     t2_rskip = cln_ring ? -1 : CleanRingRstN() + 1;
     const int nh = t2_nfv - t2_rskip;
     if (t2_rskip < 0 || (nh != 0 && nh != 12)) {
@@ -2338,7 +2230,7 @@ int RadiationVet::Time2RstNch() {
   t2_rcl = -1;
   // (the clean scheme always: its state, and K1 with cln_k1ok, also in backward-Euler
   // steps; restart.cpp stores t2_ok)
-  return (t2_ok || clean || time_scheme != M1_TIME_HESDIRK2) ? Time2RstNchWant() : 0;
+  return Time2RstNchWant();
 }
 
 // m0 > 0 packs MeshBlocks m0 .. m0+nmb-1 into a(0 .. nmb-1) (per-MB staging)
@@ -2375,7 +2267,7 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
   }
   // (clean_skip_time2_hist: no predictor and extrap2 channels, version 4; the file is
   // written in this run's layout, t2_rstv = 5)
-  const bool noh = clean && cln_not2h;
+  const bool noh = cln_not2h;
   if (h2 && impl_pred && !noh) {
     const int np = (impl_pord == 2) ? 5 : 3;
     put(c, np, ipred2, 0);
@@ -2403,7 +2295,7 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
   // clean_closure = extrap*: the ray moments at t^n and at the end of the step, then
   // t^n, that end time and the flags at i = 0..4
   const int nq = CleanRstNq();
-  if (clean && cln_extrap > 0) {
+  if (cln_extrap > 0) {
     const bool have = (cln_mn.extent_int(0) >= m0 + nmb);
     for (int n = 0; n < nq && have; ++n) {
       put(c + n, 1, cln_mn, CleanRstSlot(n));
@@ -2431,7 +2323,7 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
   // clean_rot_ring: the offsets and the pending Delta of the fields the ring carries
   // (interior cells, dense: CleanRingRstCopy), then the ring's flag, block, the pending
   // block and its time at i = 0..3
-  if (clean && cln_ring) {
+  if (cln_ring) {
     const int nd = CleanRingRstN();
     const bool have = cln_rok && (cln_rr.extent_int(0) >= m0 + nmb);
     CleanRingRstCopy(a, c - w0, nmb, m0, true, have);
@@ -2451,7 +2343,7 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
   }
   // clean_stag_fkin: the energy flux's memory d of the three face families (CLF_N + 3),
   // then its slope K1 (CLF_KD); before the first solve (CleanInit) those of the file read
-  if (clean && cln_fsolve && cln_fkin) {
+  if (cln_fsolve && cln_fkin) {
     for (int d = 0; d < 3; ++d) {
       auto fc = (d == 0) ? cln_fc1 : ((d == 1) ? cln_fc2 : cln_fc3);
       if (!cln_init && cln_rstd.extent_int(0) >= m0 + nmb) {
@@ -2521,14 +2413,14 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   // the last t2_nfv channels: the sc rays' intensities (their number is not
   // known before the first sweep, Time2RstAccept)
   const int nfv0 = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0) + t2_rskip;
-  if (clean && cln_cssc && t2_rstv >= 6 && ch >= nfv0) {   // (cln_fh)
+  if (cln_cssc && t2_rstv >= 6 && ch >= nfv0) {   // (cln_fh)
     if (cln_fh.extent_int(0) != nmb) {
       Kokkos::realloc(cln_fh, nmb, 12, w.extent_int(1), w.extent_int(2), w.extent_int(3));
     }
     DeepCopyAcross(Kokkos::subview(cln_fh, mb, ch - nfv0, AL, AL, AL), w);
     return;
   }
-  if (clean && (cln_cssc || cln_scmem) && ch >= nfv0) {
+  if ((cln_cssc || cln_scmem) && ch >= nfv0) {
     auto &fv = CleanRstFv();
     if (fv.extent_int(0) != nmb || fv.extent_int(1) != t2_nfv) {
       Kokkos::realloc(fv, nmb, t2_nfv, w.extent_int(1), w.extent_int(2), w.extent_int(3));
@@ -2541,10 +2433,10 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     return;
   }
   if (h2) ch -= M1_T2_NK;
-  if (h2 && impl_pred && !(clean && cln_not2h && t2_rstv >= 4)) {
+  if (h2 && impl_pred && !(cln_not2h && t2_rstv >= 4)) {
     const int np = (impl_pord == 2) ? 5 : 3;
     if (ch < np) {
-      if (!(clean && cln_not2h)) {
+      if (!cln_not2h) {
         DeepCopyAcross(Kokkos::subview(ipred2, mb, ch, AL, AL, AL), w);
       } else {
         skip();
@@ -2588,7 +2480,7 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     ch -= nr + 1;
   }
   const int nq = CleanRstNq();
-  if (clean && cln_extrap > 0) {
+  if (cln_extrap > 0) {
     if (ch < 2*nq) {
       auto &mx = (ch < nq) ? cln_mn : cln_mc;
       if (mx.extent_int(0) != nmb) {
@@ -2625,7 +2517,7 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     if (ch < t2_rskip) return;
     ch -= t2_rskip;
   }
-  if (clean && cln_ring && t2_rstv >= 4) {   // (version 4, CleanRingRstCopy)
+  if (cln_ring && t2_rstv >= 4) {   // (version 4, CleanRingRstCopy)
     if (ch < CleanRingRstN()) {
       DvceArray5D<Real> t("vet_t2_ringrd", nmb, 1, w.extent_int(1), w.extent_int(2),
                           w.extent_int(3));
@@ -2635,7 +2527,7 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     }
     ch -= CleanRingRstN() - vra_k*nq;   // (the flag slab, as in the old layout)
   }
-  if (clean && cln_ring) {
+  if (cln_ring) {
     const int nr = (vra_k - 1)*nq;
     if (ch < nr + nq) {
       // (the interior cells of the carried fields, CleanRingMoments)
@@ -2672,7 +2564,7 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     }
     ch -= nr + nq + 1;
   }
-  if (clean && cln_fsolve && cln_fkin) {   // (CleanInit copies it to the face arrays)
+  if (cln_fsolve && cln_fkin) {   // (CleanInit copies it to the face arrays)
     const int nd = t2_rstd3 ? 3 : 6;
     if (ch < nd) {
       if (cln_rstd.extent_int(0) != nmb) {   // (zeroed: K1_d = 0 for a version-1 file)
@@ -2686,8 +2578,8 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   }
   // extrap2 (Time2RstPack)
   // (clean_skip_time2_hist: no extrap2 history kept, x2_ok stays false)
-  if (h2 && vet_col && t2_vcmode == 4 && clean && cln_not2h) skip();
-  if (h2 && vet_col && t2_vcmode == 4 && !(clean && cln_not2h)) {
+  if (h2 && vet_col && t2_vcmode == 4 && cln_not2h) skip();
+  if (h2 && vet_col && t2_vcmode == 4 && !cln_not2h) {
     if (ch < M1_X2_NTT) {
       DeepCopyAcross(Kokkos::subview(x2_tt, mb, ch, AL, AL, AL), w);
     } else if (ch < M1_X2_NTT + M1_X2_NHR) {

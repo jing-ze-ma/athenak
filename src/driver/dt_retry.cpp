@@ -576,10 +576,8 @@ DtRetry::DtRetry(ParameterInput *pin, Mesh *pm) {
 void DtRetry::Build(Mesh *pm) {
   std::set<std::string> &sel = sel_;
   for (const char *s : kDtrMinimal) {sel.insert(s);}
-  // (scheme = clean writes none of them: their clones are never needed, the default)
-  if (clean_views_ || pm->pmb_pack->pradvet->clean) {
-    for (const char *s : kDtrNotClean) {sel.erase(s);}
-  }
+  // (the clean solve writes none of them: their clones are never needed)
+  for (const char *s : kDtrNotClean) {sel.erase(s);}
   for (auto &s : extra_views_) {sel.insert(s);}
   auto *pk = pm->pmb_pack;
   if (pk->phydro != nullptr) {
@@ -601,12 +599,12 @@ void DtRetry::Build(Mesh *pm) {
     auto *m1 = pk->pradvet;
     // (on the cubed sphere too; their face half ranges cln_fh where every solve rebuilds
     // them first, CleanFhBuilt)
-    if (m1->clean && !m1->cln_scmem) {
+    if (!m1->cln_scmem) {
       sel.erase("m1.cln_fvi");
       if (!m1->cln_cssc || m1->CleanFhBuilt()) sel.erase("m1.cln_fh");
     }
     // (and the rays' source vlat_cs, each build's, written before it is read)
-    if (m1->clean) sel.erase("m1.vlat_cs");
+    sel.erase("m1.vlat_cs");
     Binder b{&ent_, "m1.", &sel, all_views_, host_ || hm1_};
     m1->DtRetryVisit(b);
   }

@@ -1018,7 +1018,7 @@ Real RadiationVet::CleanSumCells(const DvceArray4D<Real> &a) {
 //! clean_cs_lz_tel the radiation's is that of its face momenta (CleanCsTorque)
 
 Real RadiationVet::CleanLzTotal() {
-  if (!clean || !cln_init || !(sph_geom || cs_geom)) return 0.0;
+  if (!cln_init || !(sph_geom || cs_geom)) return 0.0;
   CleanArgs x = CleanMakeArgs();
   FluidRef fl = FluidRef::Get(pmy_pack);
   const bool fo = fl.on;

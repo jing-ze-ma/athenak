@@ -3686,7 +3686,7 @@ void RadiationVet::CleanStagBracket() {
 //! before it, belong to a solution the backward-Euler redo discards)
 
 void RadiationVet::CleanDMem(const bool save) {
-  if (!clean || !cln_fsolve || !cln_fkin) return;
+  if (!cln_fsolve || !cln_fkin) return;
   if (!cln_init) CleanInit();
   auto AL = Kokkos::ALL;
   for (auto fc : {cln_fc1, cln_fc2, cln_fc3}) {
@@ -3705,7 +3705,7 @@ void RadiationVet::CleanDMem(const bool save) {
 
 void RadiationVet::CleanDInc(const bool two, const Real c1, const Real c2, const Real w1,
                              const Real w0) {
-  if (!clean || !cln_fsolve || !cln_fkin) return;
+  if (!cln_fsolve || !cln_fkin) return;
   for (auto fc : {cln_fc1, cln_fc2, cln_fc3}) {
     par_for("cln_dinc", DevExeSpace(), 0, fc.extent_int(0) - 1, 0, fc.extent_int(2) - 1,
             0, fc.extent_int(3) - 1, 0, fc.extent_int(4) - 1,
@@ -3728,7 +3728,7 @@ void RadiationVet::CleanDInc(const bool two, const Real c1, const Real c2, const
 #if M1_TU_PART(2)
 void RadiationVet::CleanDtrD(const bool save) {
   const int nmb = cln_fc1.extent_int(0);
-  if (!clean || !cln_fsolve || !cln_fkin || nmb == 0) return;
+  if (!cln_fsolve || !cln_fkin || nmb == 0) return;
   auto AL = Kokkos::ALL;
   if (save && (cln_rstd.extent_int(0) != nmb || cln_rstd.extent_int(1) != 6)) {
     Kokkos::realloc(cln_rstd, nmb, 6, cln_fc1.extent_int(2), cln_fc1.extent_int(3),

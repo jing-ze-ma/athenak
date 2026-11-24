@@ -2193,7 +2193,7 @@ void RadiationVet::VetInit(ParameterInput *pin) {
   int ncells1 = indcs.nx1 + 2*(indcs.ng);
   int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
   int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
-  Kokkos::realloc(vet_cell, nmb, M1_VET_NC + (clean ? M1_VET_NKP : 0) +
+  Kokkos::realloc(vet_cell, nmb, M1_VET_NC + M1_VET_NKP +
                   (cln_consist ? M1_VET_NFS : 0), ncells3, ncells2, ncells1);
   Kokkos::deep_copy(vet_cell, 0.0);
   if (mbpath) {
@@ -2585,7 +2585,7 @@ void RadiationVet::VetMBInit(ParameterInput *pin) {
   }
   // scheme = clean: one cell more for the slopes of the second-order foot (VetPlmFoot);
   // a reach within round-off of an integer one more (the per-ray band below)
-  const int wp = clean ? 1 : 0;
+  const int wp = 1;
   auto wband = [wp](const Real s) {
     return static_cast<int>(std::floor(s)) + 1 + wp +
            ((std::fabs(s - std::round(s)) < 1.0e-9) ? 1 : 0);
@@ -2621,14 +2621,12 @@ void RadiationVet::VetMBInit(ParameterInput *pin) {
   // off the single-block run after one cycle).  With thsw_c1 the per-cell kernel is the
   // default; naming the ray kernel or vet_mb_angles with it is FATAL.  The per-cell
   // kernel is also the one with the clean scheme's sums and the periodic x1 sweep.
-  if (thsw_c1 || clean || vet_x1per) {
-    if (pin->DoesParameterExist("rad_vet", "vet_mb_kernel") && st.raypar) {
-      VetFatal("<rad_vet>/vet_mb_kernel = ray does not accumulate the thin-switch C1 sum "
-               "(M1_VET_NL) that implicit_thin_switch / thin_corr / thin_recon need; use "
-               "vet_mb_kernel = cell (the default with them)");
-    }
-    st.raypar = false;
+  if (pin->DoesParameterExist("rad_vet", "vet_mb_kernel") && st.raypar) {
+    VetFatal("<rad_vet>/vet_mb_kernel = ray does not accumulate the thin-switch C1 sum "
+             "(M1_VET_NL) that implicit_thin_switch / thin_corr / thin_recon need; use "
+             "vet_mb_kernel = cell (the default with them)");
   }
+  st.raypar = false;
   // vet_mb_tblock = B (exact, default 1 = off; tests_m1/runs_4i_sctb/README.md): up to
   // B launches per kernel launch, never across a band exchange, so B <= vet_mb_halo
   // matters; without vet_mb_halo in the input, the default halo becomes max(3, B).
@@ -3334,7 +3332,7 @@ void RadiationVet::VetSweepMB(bool lagged) {
   const int spe = VetSegMode();
   const int vim = vet_interp;   // (#6)
   const bool vpath = (vet_path != 0);
-  const bool plm_ = clean;
+  const bool plm_ = true;
   auto bw_ = st.bwe;
   const int ncb = nx3*nx2*nx1, npb = nx3*nx2;
 #if MPI_PARALLEL_ENABLED
@@ -3471,7 +3469,7 @@ void RadiationVet::VetSweepMB(bool lagged) {
   rk.spe = VetSegMode();
   rk.vim = vet_interp;
   rk.vpath = (vet_path != 0);
-  rk.plm = clean;
+  rk.plm = true;
   rk.cl = cl;
   rk.efl = efl;
   rk.rd = rd_;
@@ -3587,7 +3585,7 @@ void RadiationVet::VetSweepMB(bool lagged) {
   // clean_consistency: the face sums of a neighbour's cell go to spl (VetX1Move after)
   const int npass = vet_x1per ? vet_x1npass : 1, ngl = npass*nx1g;
   const bool x1src = vet_x1per && vet_x1src;
-  const bool kps_ = clean, f2s_ = cln_consist, x1per = vet_x1per;
+  const bool kps_ = true, f2s_ = cln_consist, x1per = vet_x1per;
   const int bmn_ = ibm_nr;
   const int bmr0 = ibm_ray[0], bmr1 = ibm_ray[1], bmr2 = ibm_ray[2], bmr3 = ibm_ray[3];
   auto bmi_ = ibm_i;
@@ -4045,7 +4043,7 @@ void RadiationVet::VetMBSweeps() {
     VetSweepAng(st, pmy_pack->nmb_thispack, indcs.is, indcs.js, indcs.ks, indcs.nx1,
                 indcs.nx2, trans_x3 ? indcs.nx3 : 1, trans_x3, vet_milne, iflux_x1min,
                 bblo, bbhi, vet_bc_face, vet_seg_split, VetSegMode(), vet_interp,
-                (vet_path != 0), clean, c_light, e_floor,
+                (vet_path != 0), true, c_light, e_floor,
                 iw, vet_cell, vet_ang);
     return;
   }
@@ -4189,7 +4187,7 @@ void RadiationVet::VetShortCharSweep() {
   // every sweep variant carries them (the banded MB sweep in its moment arrays)
   const bool hrs_ = impl_beam_hr;
   // scheme = clean: the half-range stress columns K+^d_bd (M1_VET_KP, boundary fluxes)
-  const bool kps_ = clean;
+  const bool kps_ = true;
   // (implicit_thin_switch = fs | fskn): the non-locality sum w |I - S| of the
   // rays at each cell (M1_VET_NL, C1 of M1ThinCell)
   const bool nls_ = thsw_c1;
@@ -4232,7 +4230,7 @@ void RadiationVet::VetShortCharSweep() {
   const bool x2o = vet_x2open, x3o = vet_x3open;   // vacuum x2 (x3) faces
   const int vim = vet_interp;   // (#6)
   const bool vpath = (vet_path != 0);
-  const bool plm_ = clean;
+  const bool plm_ = true;
   // the boundary beam rays (ImplBeamInit)
   const int bmn_ = ibm_nr;
   const int bmr0 = ibm_ray[0], bmr1 = ibm_ray[1], bmr2 = ibm_ray[2], bmr3 = ibm_ray[3];
@@ -4261,7 +4259,7 @@ void RadiationVet::VetShortCharSweep() {
     const int vsr = (vsf != 0 && vscat_jrel) ? (vsf + 2) : vsf;   // relaxed J
     FluidRef flv = FluidRef::Get(pmy_pack);
     auto eos = flv.eos;
-    const bool cvx = clean && cln_srccvx && !srx;   // clean_source_convex
+    const bool cvx = cln_srccvx && !srx;   // clean_source_convex
     auto uh = flv.u0;
     const Real chs = chat;
     const Real dts = mr_on ? mr_dt : pmy_pack->pmesh->dt;
@@ -5091,8 +5089,6 @@ void RadiationVet::ImplBeamInit(ParameterInput *pin) {
   if (!vet_sc) VetFatal("<rad_vet>/implicit_beam_n needs closure = vet_sc");
   if (ibc_x1min != M1_IBC_MARSHAK)
     VetFatal("<rad_vet>/implicit_beam_n needs implicit_bc_x1min = marshak");
-  if (!clean && (vet_mbs != nullptr || pmy_pack->pmesh->nmb_total > 1))
-    VetFatal("<rad_vet>/implicit_beam_n needs a single MeshBlock (VetShortChar sweep)");
   if (vet_x1per) VetFatal("<rad_vet>/implicit_beam_n is not for a periodic x1 sweep");
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nx2 = indcs.nx2, nx3 = trans_x3 ? indcs.nx3 : 1;

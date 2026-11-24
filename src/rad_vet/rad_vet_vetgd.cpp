@@ -782,7 +782,7 @@ void RadiationVet::VetGdInit() {
     VgdFatal("2-D axisymmetric: no implicit_flux_beam");
   }
   if (ibc_x1max != M1_IBC_MARSHAK &&
-      !(clean && (ibc_x1max == M1_IBC_REFLECT || ibc_x1max == M1_IBC_OUTFLOW))) {
+      !(ibc_x1max == M1_IBC_REFLECT || ibc_x1max == M1_IBC_OUTFLOW)) {
     // the sweep has a vacuum top, or a mirror (VetGdTopMirror) for the clean scheme
     VgdFatal("outer x1 needs implicit_bc_x1max = marshak (+ vet_col_surface_q), or "
              "reflect with scheme = clean");
@@ -916,7 +916,7 @@ void RadiationVet::VetGdInit() {
   }
   // vgd_raw: the raw band where the exact-list band would clamp (below, after the
   // reach): the two bands give the same values where nothing clamps
-  const bool raw_ok = clean && !vgd_csg && !vgd_pol && !vgd_sth;
+  const bool raw_ok = !vgd_csg && !vgd_pol && !vgd_sth;
   vgd_raw = false;
   // (nx3 = 1: the dense halo, the compact / exact lists mark 3-D band reads)
   if (!pm->three_d) {vgd_hcomp = 0;}
@@ -1203,7 +1203,7 @@ void RadiationVet::VetGdInit() {
     // (vgd_raw: every band value the sweep reads, from its exchange of this sweep)
     // (no silent fallback: without the cs compact lists the clean sc rays keep the full
     // ragged band, +18 GB/GPU on the RSG)
-    if (vgd_csg && clean && vgd_hcomp == 0) {
+    if (vgd_csg && vgd_hcomp == 0) {
       VgdFatal("vet_gd_halo_compact = 0 on the cubed sphere with the clean sc rays (no "
                "compact lists, no band ring: the full band); name vet_gd_halo_compact "
                "= 2");
@@ -1227,7 +1227,7 @@ void RadiationVet::VetGdInit() {
   // the combinations the fused sweep never covers (VetGdXffOk) keep the two
   // sweeps and allocate no second array (e.g. the fused twin of the RSG decks; the clean
   // sc rays' ring, CleanRingMoments, sweeps one set at a time)
-  if (vgd_xff && ((clean && cln_ring && !(cln_rfuse && cln_ring == 1 &&
+  if (vgd_xff && ((cln_ring && !(cln_rfuse && cln_ring == 1 &&
                                           ibc_x1max != M1_IBC_REFLECT)) ||
                   (vgd_gband && !vgd_raw) || vgd_nb1 > 1 ||
                   (vgd_csg && vgd_cscomp && vgd_csxg > 1) ||
@@ -4313,7 +4313,7 @@ void RadiationVet::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
   const int n1 = indcs.nx1, is = indcs.is;
   const int n1c = indcs.nx1 + 2*indcs.ng;
   const int lcut = vgd_scut;
-  const bool imir_ = clean && (ibc_x1min == M1_IBC_REFLECT) && lcut == 0;
+  const bool imir_ = (ibc_x1min == M1_IBC_REFLECT) && lcut == 0;
   const int wb = w;
   const int js = wb, je = wb + nx2 - 1, ks = wb, ke = wb + nx3 - 1;
   const int jlo = 0, jhi = je + wb - 1, klo = 0, khi = ke + wb - 1;
@@ -5356,7 +5356,7 @@ void RadiationVet::VetGdSweep() {
   // the wall kernel (bodym) for mirror, vacuum and extrap theta walls
   const bool thm = vgd_thmir || (vgd_thvac > 0);
   const bool bfc = vet_bc_face;   // vet_bc_diff = face
-  const bool imir = clean && (ibc_x1min == M1_IBC_REFLECT) && lcut == 0;
+  const bool imir = (ibc_x1min == M1_IBC_REFLECT) && lcut == 0;
   const bool spl = vet_seg_split;   // vet_seg = split
   const int spe = VetSegMode();
   const int vim = vet_interp;   // vet_interp: 2 corner, 3 auto
@@ -6252,7 +6252,7 @@ void RadiationVet::VetGdSource() {
   // source)
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int og = vgd_w - indcs.ng, ok = vgd_w - indcs.ks, x1g = (vgd_nb1 > 1) ? 1 : 0;
-  const int cut = clean ? 0 : vlat_icut;
+  const int cut = 0;
   const int ilo = indcs.is + cut - x1g, ie = indcs.ie + x1g;
   auto cs_ = vlat_cs;
   auto cw_ = vgd_cs;
@@ -6323,7 +6323,7 @@ void RadiationVet::VetGdSweepPost() {
 void RadiationVet::VetGdPost() {
   Kokkos::Timer tm;
   // (the clean scheme on the cubed sphere reads the intensities: CleanClosureFromGd)
-  if (!(clean && vgd_csg)) {VetGdMoments();}
+  if (!vgd_csg) {VetGdMoments();}
   VetLatOdMax();   // D_r,lat in the implicit operator (vet_col_lat_offdiag = operator)
   Kokkos::fence();
   vgd_tmom += tm.seconds();

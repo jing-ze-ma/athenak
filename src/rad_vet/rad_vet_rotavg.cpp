@@ -807,8 +807,8 @@ bool RadiationVet::RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src,
   // ring; the history would only hold device memory)
   // (an old scheme's EMA history under the clean ring: its fields are not the ring's,
   // but the closure it averaged is converged, CleanRingMoments)
-  if (!VgdRotOn() || (clean && cln_ring)) {
-    cln_rhist = clean && cln_ring && vra_ema && h[0] == 1;
+  if (!VgdRotOn() || cln_ring) {
+    cln_rhist = cln_ring && vra_ema && h[0] == 1;
     return false;
   }
   auto &indcs = pmy_pack->pmesh->mb_indcs;

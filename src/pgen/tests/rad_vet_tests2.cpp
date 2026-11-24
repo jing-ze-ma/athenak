@@ -930,7 +930,6 @@ void ProblemGenerator::RadiationVetTests2(ParameterInput *pin, const bool restar
           pin->GetBoolean("problem","am_hist_ebnd") && pmbp->pradvet != nullptr) {
         m1_am_ebnd = true;
         pmbp->pradvet->ebnd_on = true;
-        pmbp->pradvet->ebnd_adv = true;
       }
     }
     if (restart) return;
@@ -1625,8 +1624,8 @@ void RadVetAmHistory(HistoryData *pdata, Mesh *pm) {
   // the cubed sphere the cell flux is the face momenta's vector.  The clean scheme's cs
   // cell flux is in the frame of y, (r, theta, phi) about rhat, not covariant)
   radvet::RadiationVet *pr = pmbp->pradvet;
-  const bool sfh = pr->clean && pr->cln_split && !csm;
-  const bool fry = pr->clean && csm;
+  const bool sfh = pr->cln_split && !csm;
+  const bool fry = csm;
   const bool md = pm->multi_d, td = pm->three_d;
   auto g1 = pr->f0x1, g2 = pr->f0x2, g3 = pr->f0x3;
   // <hydro>/am_vector: the spin reservoir, L = am_spin rhat_c (total)

@@ -1007,7 +1007,7 @@ int64_t RadiationVet::CleanRingBlk(const Real dt) const {
 
 // (live with the cross-fade: every build sweeps the sets b and b+1)
 bool RadiationVet::CleanRingTwo() const {
-  return clean && cln_ring == 1 && vgd_xf && !(vra_on && !g_vra_adv);
+  return cln_ring == 1 && vgd_xf && !(vra_on && !g_vra_adv);
 }
 
 // (the sc rays on the staggered cubed sphere: their intensities are a build's scratch,

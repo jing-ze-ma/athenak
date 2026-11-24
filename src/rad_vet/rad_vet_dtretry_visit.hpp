@@ -381,17 +381,10 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("t2_k1stiff_n", t2_k1stiff_n);
   v.view("t2ys", t2ys);
   v.value("ebnd_on", ebnd_on);
-  v.value("ebnd_adv", ebnd_adv);
   v.value("ebnd_acc", ebnd_acc);
-  v.value("ebnd_l1", ebnd_l1);
-  v.value("ebnd_l2", ebnd_l2);
   v.value("ebnd_split", ebnd_split);
   v.value("ebnd_acc_in", ebnd_acc_in);
   v.value("ebnd_acc_out", ebnd_acc_out);
-  v.value("ebnd_l1i", ebnd_l1i);
-  v.value("ebnd_l1o", ebnd_l1o);
-  v.value("ebnd_l2i", ebnd_l2i);
-  v.value("ebnd_l2o", ebnd_l2o);
   v.value("ebnd_acc_src", ebnd_acc_src);
   v.value("ebnd_s1", ebnd_s1);
   v.value("ebnd_s2", ebnd_s2);
@@ -583,7 +576,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("dbg_etally", dbg_etally);
   v.view("acl_cnt_d", acl_cnt_d);
   v.value("cln_rk", cln_rk);
-  v.value("clean", clean);
   v.value("cln_c0", cln_c0);
   v.value("cln_c1", cln_c1);
   v.value("cln_tol", cln_tol);

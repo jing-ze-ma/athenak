@@ -136,7 +136,7 @@ void RadiationVet::MemArenaSeal() {
                       "aa_xc", "aa_fc", "aa_xp", "aa_fp"};
   // (clean: the arena grows to the clean scheme's own work vectors where they outgrow
   // the intensities, whatever vgd_i's layout makes of those)
-  if (clean) MemArenaGrow(static_cast<int64_t>(cln_w.o.span()));
+  MemArenaGrow(static_cast<int64_t>(cln_w.o.span()));
   const int64_t have = static_cast<int64_t>(marena.extent(0));
   int64_t off = 0;
   std::string moved;
@@ -145,7 +145,7 @@ void RadiationVet::MemArenaSeal() {
     DvceArray5D<Real> &a = *cand[q];
     const int64_t n = static_cast<int64_t>(a.span());
     // (clean: its own work vectors only)
-    if ((clean && q > 0) || a.data() == nullptr || n == 0 ||
+    if (q > 0 || a.data() == nullptr || n == 0 ||
         !a.span_is_contiguous() || off + n > have || a.data() == marena.data()) {
       // (cln_w.o already there, CleanWoBind)
       if (a.data() == marena.data() && n > 0) off += n + ((64 - (n % 64)) % 64);

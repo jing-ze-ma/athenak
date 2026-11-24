@@ -93,7 +93,7 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
   // STAGE S5: closure = vet_col (the per-column spherical formal solution) is allowed
   if (vet_sc || (tau_closure && !vet_col)) {why += " closure = vet_sc | tau;";}
   if (pm->multilevel) {why += " SMR/AMR;";}
-  if (pm->mesh_indcs.nx1 != pm->mb_indcs.nx1 && !clean) {
+  if (pm->mesh_indcs.nx1 != pm->mb_indcs.nx1) {
     why += " more than one MeshBlock along x1 (meshblock/nx1 must equal mesh/nx1);";
   }
   if (transport == M1_TRANSPORT_IMPLICIT) {
@@ -149,23 +149,6 @@ void RadiationVet::SphericalS1Check(ParameterInput *pin) {
     // slopes are cell- and face-local (rad_vet_time2.cpp), so they carry no geometry; the
     // seam face state is averaged at the start of each solve (CubedSeamFaceAverage).
     // implicit_vimp too (its cs form: ImplicitVimpBuild, the face-normal work row)
-    // (scheme = clean: its own solve and preconditioner; the old one's keys are not read)
-    if (impl_solver != M1_ISOLV_BICGSTAB && !clean) {
-      wcs += " implicit_solver != bicgstab;";
-    }
-    // (CS_VETGD.md S2): implicit_precond = mg as well.  mg is algebraic and
-    // block-local (x1 line solves, one red-black transverse sweep, Galerkin 2x2
-    // aggregates inside a MeshBlock, rad_vet_precond.cpp): it reads no geometry, and its
-    // only communication, the z0 halo of the fine residual, is ImplicitKrylovHalo, i.e.
-    // the cs seam (no-resample, mirror-pair) exchange of the Krylov vector itself.
-    // mg_gc / mg_gf stay refused (band / Fourier coarse spaces of a periodic x2/x3 mesh;
-    // the cs analogue is mg_ylm, stage 3 list).  The cs DEFAULT stays rbgs_fwd.
-    if (impl_prec != 2 && impl_prec != 3 && !clean) {
-      wcs += " implicit_precond != rbgs_fwd | mg;";
-    }
-    if (impl_prec_fb >= 0 && !clean) {   // rbgs / line refused on cs
-      wcs += " implicit_precond_fallback != none;";
-    }
     // (USER 10-18: production sp keys must run on cs): implicit_halo_mpi
     // (and its overlap) is a communication layout, not a method; on cs it falls back to
     // the ordinary seam-aware exchange (the same numbers), as implicit_halo_direct does

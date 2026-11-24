@@ -511,7 +511,6 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
          !pm1->MRActive() && (pm1->csplit == 0);
   if (ebd_) {
     pm1->ebnd_on = true;
-    pm1->ebnd_adv = true;   // EbndFluxX1 adds A E only where implicit_bc_advect is on
     pm1->ebnd_split = true;
   }
   // the inner face area of the whole mesh (Erad ledger)

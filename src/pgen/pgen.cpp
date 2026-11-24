@@ -940,8 +940,8 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
 
   // --- THE <rad_vet>/implicit_gas_src = conservative(2) HEADER (radvet::kM1CskRstMagic),
   // behind the vet_gd_async one: ncsk_file (3 or 0) slabs of csk1 and
-  // the flags (csk1_ok; its presence means gcs_first = false)
-  int ncsk_file = 0, csk_ok_file = 0;
+  // the flags (skipped: the clean solve does not read them)
+  int ncsk_file = 0;
   bool csk_have = false;
   if (std::memcmp(variabledata, &(radvet::kM1CskRstMagic[0]),
                   sizeof(radvet::kM1CskRstMagic)) == 0) {
@@ -972,7 +972,6 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
     csk_have = true;
     ncsk_file = static_cast<int>(hdr[1]);
-    csk_ok_file = static_cast<int>(hdr[2]);
   }
 
   // --- THE <rad_vet>/vet_rotate_avg HEADER (radvet::kM1RaRstMagic),
@@ -1879,7 +1878,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // RadiationVet constructor) when this run keeps one with the same channel count.  A
   // file without it leaves pred_ok = false: the first step cold starts, as before.
   const bool pred_want = (pradvet != nullptr) && pradvet->impl_pred &&
-                         !(pradvet->clean && pradvet->cln_not2h);
+                         !pradvet->cln_not2h;
   const bool pred_read = pred_want && (npred_file > 0) &&
                          (static_cast<int>(pradvet->ipred.extent(1)) == npred_file) &&
                          (static_cast<int>(pradvet->ipred.extent(0)) >= nmb);
@@ -1903,7 +1902,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // (staggered fkin: every clean file carries its state in that block, a file without
   // it is the old scheme's, CleanRstFaces; of the old block only its slope K1, the first
   // slabs: the first step is the stage step it would have taken)
-  const bool t2_old = (pradvet != nullptr) && pradvet->clean &&
+  const bool t2_old = (pradvet != nullptr) &&
                       pradvet->cln_fsolve && pradvet->cln_fkin && !t2_acc;
   if (pradvet != nullptr) pradvet->cln_rstold = t2_old;
   if (t2_old) {   // (none of the clean block's layout applies)
@@ -1977,11 +1976,6 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // without it, or a run without averaging, keeps the plain behaviour: the first build
   // re-measures the history, or averaging is off)
   const bool ra_read = (nra_file > 0) && (pradvet != nullptr) && pradvet->vra_on;
-  // implicit_gas_src = conservative(2): csk1 and the flags, when this run is one too
-  // (with hesdirk2 for the slabs: csk1 is sized as its slope t2k1); not under scheme =
-  // clean, whose solve never reads the slopes (its own run never writes them)
-  const bool csk_read = csk_have && (pradvet != nullptr) && pradvet->impl_gas_src_cons &&
-                        !pradvet->clean;
   // am_vector: the spin (+ amk1) when this run carries one too
   hydro::AmModule *pam_rst = hydro::AmModuleOf(pmy_mesh_->pmb_pack);
   const bool ams_read = (nams_file > 0) && (pam_rst != nullptr) && pam_rst->am_vector;
@@ -1992,18 +1986,10 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                  "the "
               << "restart is not bitwise)." << std::endl;
   }
-  if (pradvet != nullptr && pradvet->vra_on && !pradvet->clean && nra_file == 0 &&
-      global_variable::my_rank == 0) {
-    std::cout << "<rad_vet> vet_rotate_avg: the restart file has no averaging history; "
-                 "it "
-              << "is re-measured at the first build (a restart from a run with a "
-                 "complete "
-              << "history is then not bitwise)." << std::endl;
-  }
   if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read || t2_read || t2_k1 ||
       nck_file > 0 ||
       neint_file > 0 ||   // an ideal-gas eint slab alone
-      ctr_read || rss_read || ra_read || csk_read || ams_read ||
+      ctr_read || rss_read || ra_read || ams_read ||
       npgs_file > 0 || nfax_file > 0 || nthc_file > 0 || nxfd_file > 0) {
     const IOWrapperSizeT tail0 = offset_myrank;
     HostArray4D<Real> wtin("rst-wt-in", 1, 1, 1, 1);
@@ -2256,36 +2242,6 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                        Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), wtin);
       }
       pradvet->rss_stage_mode = rss_mode_file;
-    }
-    // the conservative cell-F slope (kM1CskRstMagic), behind the vet_gd_async slabs
-    if (csk_read) {
-      pradvet->gcs_first = false;
-      const int q0 = static_cast<int>(pradvet->t2k1.extent(0));
-      if (ncsk_file == 3 && q0 > 0) {
-        int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
-                    + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file
-                  + nwpv_file
-                    + nck_file + nctr_file + nrss_file + nvgd_file;
-        offset_myrank = tail0
-            + static_cast<IOWrapperSizeT>(nprev)*nout1*nout2*nout3*sizeof(Real);
-        myoffset = offset_myrank;
-        const int q3 = static_cast<int>(pradvet->t2k1.extent(2));
-        const int q2 = static_cast<int>(pradvet->t2k1.extent(3));
-        const int q1 = static_cast<int>(pradvet->t2k1.extent(4));
-        Kokkos::realloc(pradvet->csk1, q0, 3, q3, q2, q1);
-        Kokkos::realloc(pradvet->csk2, q0, 3, q3, q2, q1);
-        Kokkos::realloc(pradvet->csinc, q0, 3, q3, q2, q1);
-        Kokkos::deep_copy(pradvet->csk1, 0.0);
-        Kokkos::deep_copy(pradvet->csk2, 0.0);
-        Kokkos::deep_copy(pradvet->csinc, 0.0);
-        for (int n=0; n<3; ++n) {
-          read_slab("rad_vet conservative cell-F slope");
-          DeepCopyAcross(Kokkos::subview(pradvet->csk1, std::make_pair(0,nmb), n,
-                         Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), wtin);
-        }
-        pradvet->csk1_ok = (csk_ok_file == 1);
-        pradvet->csinc_ok = false;
-      }
     }
     // the vet_rotate_avg history (kM1RaRstMagic), the last slabs of the record
     if (ra_read) {

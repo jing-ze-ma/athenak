@@ -3040,7 +3040,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // scheme's own fixed point with the gas T, and its force pass the last steady pass;
     // the x1 shells of the force, its radial component: spherical polar or the cubed
     // sphere)
-    if (pm1->clean && !(pmy_mesh_->use_spherical_polar || pmy_mesh_->use_cubed_sphere)) {
+    if (!(pmy_mesh_->use_spherical_polar || pmy_mesh_->use_cubed_sphere)) {
       HsFatal("problem/he_ic_equil with scheme = clean needs spherical polar or the "
               "cubed sphere", __LINE__);
     }
@@ -4320,7 +4320,7 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
   // clean staggered: L_in / L_top = the energy the step's solves put through the x1
   // faces over dt (CleanBndAcc), the flux that moved E
   const bool lac = pm1->cln_ldt > 0.0 && pm1->cln_lacc.extent_int(0) > 0;
-  const bool hpf = pm1->clean && pm1->t2pf1_ok && pm1->t2pf1.extent_int(0) > 0;
+  const bool hpf = pm1->t2pf1_ok && pm1->t2pf1.extent_int(0) > 0;
   auto pf1 = pm1->t2pf1;
   const Real icc = pm1->c_light/pm1->chat;
   auto lacc = pm1->cln_lacc;

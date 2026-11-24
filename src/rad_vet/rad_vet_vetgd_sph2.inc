@@ -451,7 +451,7 @@ void RadiationVet::VetGdGlobalBandInit() {
     // (clean_rot_fuse: room for both cross-fade sets' values, VetGdGbHaloX)
     size_t cs = 1;
     for (int p = 0; p < np; ++p) {cs = std::max<size_t>(cs, 1ULL*vgd_cspm[p]*vgd_n);}
-    if (clean && cln_rfuse) {cs *= 2;}
+    if (cln_rfuse) {cs *= 2;}
     VetGdIpcInit(vgd_csprk, cs, std::max(np, 1)*cs);
   }
   vgd_gbcf.clear();

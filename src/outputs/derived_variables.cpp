@@ -1315,7 +1315,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
   // D = I/3.  Components 11 22 33 12 13 23 in the frame of m1_f1..3, radial first: the
   // cubed sphere's Cartesian D turned into CleanCsFrame's (r_hat, ., .), D' = q D q^T
   // (the old scheme's m1_vet wrote the Cartesian D there).  P_ab = m1_e D_ab.
-  if (name.compare("vet_vet") == 0 && pm->pmb_pack->pradvet->clean) {
+  if (name.compare("vet_vet") == 0) {
     if (derived_var.extent(4) <= 1)
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
     auto dv = derived_var;
@@ -1371,7 +1371,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     const bool impl = (prm->transport != radvet::M1_TRANSPORT_EXPLICIT) &&
                       (prm->impl_nstep > 0.0) && (iw_.extent_int(1) > radvet::M1_IW_WCHI);
     const bool itrans = impl && prm->trans_on && (iw_.extent_int(1) > radvet::M1_IW_N3);
-    const bool dfull = (impl || prm->clean) && prm->vet_sc && prm->vet_full;
+    const bool dfull = prm->vet_sc && prm->vet_full;
     const bool notens = !impl && (prm->tau_closure || prm->vet_col);
     const bool edd = prm->eddington;
     const int chk = prm->chi_kind;
@@ -1430,7 +1430,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
       Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
     auto dv = derived_var;
     auto prm = pm->pmb_pack->pradvet;
-    if (prm->clean) {   // (ImplicitSolve's iw slots, which scheme = clean does not fill)
+    {   // (ImplicitSolve's iw slots, which scheme = clean does not fill)
       std::cout << "### FATAL ERROR: output variable m1_comov is not filled under "
                 << "<rad_vet>/scheme = clean" << std::endl;
       std::exit(EXIT_FAILURE);
@@ -1522,7 +1522,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     // m1_ex1: clean, the x1 energy flux Phi of the step's last solve (t2pf1 x c/chat;
     // f0x1 is then the face momentum F, as the he_star_vet hst L_midE)
     auto pf1 = prm->t2pf1;
-    const bool he = prm->clean && prm->t2pf1_ok && (pf1.extent_int(0) >= nmb);
+    const bool he = prm->t2pf1_ok && (pf1.extent_int(0) >= nmb);
     const Real icc = prm->c_light/prm->chat;
     par_for("vet_face_out", DevExeSpace(), 0, (nmb-1), ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {

@@ -1585,7 +1585,7 @@ template void RadiationVet::VetGdCsHalo<RadiationVet::VgdRag>(RadiationVet::VgdR
 
 void RadiationVet::VetGdCsSource() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int ilo = indcs.is + (clean ? 0 : vlat_icut), ie = indcs.ie;
+  const int ilo = indcs.is, ie = indcs.ie;
   VetGdCsHalo(vgd_cs, 2, ilo, ie, true);
   Kokkos::fence();
 }
