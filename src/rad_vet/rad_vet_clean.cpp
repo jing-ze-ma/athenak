@@ -372,7 +372,7 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
   static const char *tab[][2] = {
     {"rad_vet/implicit_bc_*", nullptr}, {"rad_vet/implicit_flux_x1m*", nullptr},
     {"rad_vet/implicit_ebath_*", nullptr}, {"rad_vet/implicit_beam*", nullptr},
-    {"rad_vet/implicit_cfl", nullptr}, {"rad_vet/implicit_allow_multid", nullptr},
+    {"rad_vet/implicit_cfl", nullptr},
     {"rad_vet/implicit_mr_*", nullptr}, {"rad_vet/implicit_det_trace", nullptr},
     {"rad_vet/implicit_tol", "clean_tol_nl"}, {"rad_vet/implicit_lin_tol", "clean_tol"},
     {"rad_vet/implicit_maxit", nullptr},   // (read by the old module's ImplicitInit; a
@@ -388,13 +388,11 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/implicit_predictor", nullptr}, {"rad_vet/implicit_predictor_tcap", nullptr},
     {"rad_vet/implicit_resid_fatal", nullptr},
     // (members of ImplicitInit the clean steps use: the enthalpy flux, the conservative
-    // gas source, the Marshak face, the predictor order, the hold, the fused kernels, the
-    // floor solve's pairing with implicit_pos_floor)
+    // gas source, the Marshak face, the predictor order, the hold)
     {"rad_vet/implicit_enthalpy", nullptr}, {"rad_vet/implicit_gas_src", nullptr},
     {"rad_vet/implicit_marshak_face", nullptr},
     {"rad_vet/implicit_predictor_order", nullptr},
-    {"rad_vet/implicit_hold", nullptr}, {"rad_vet/implicit_fast_kernels", nullptr},
-    {"rad_vet/implicit_pos_floor_solve", nullptr},
+    {"rad_vet/implicit_hold", nullptr},
     {"rad_vet/implicit_pos_gas*", nullptr}, {"rad_vet/implicit_pos_floor", nullptr},
     {"rad_vet/implicit_pos_floor_cons", nullptr},
     {"rad_vet/implicit_pos_floor_gas_keep", nullptr},
@@ -463,7 +461,13 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/vet_gd_upwind", "=bilinear"}, {"rad_vet/vet_gd_upwind_*", ""},
     {"rad_vet/vet_gd_shell_list", "=true"},
     // (the inward-only band ring slabs and their per-shell hook, removed)
-    {"rad_vet/vet_gd_band_ring_inward", "!"}};
+    {"rad_vet/vet_gd_band_ring_inward", "!"},
+    // (removed in phase B, named by production decks or restart files: the old solve's
+    // seam clamp, the pass print, the fixed set's band reach (the bound's band covers
+    // it); the halo depth cap and the ray cut only at their kept values)
+    {"rad_vet/cs_cross_mono", ""}, {"rad_vet/clean_nl_print", ""},
+    {"rad_vet/vet_gd_reach", ""}, {"rad_vet/clean_halo_depth", "=0"},
+    {"rad_vet/clean_ray_cut", "=true"}};
   const bool say = (global_variable::my_rank == 0);
   std::string none;
   std::vector<std::string> drop;
@@ -490,7 +494,7 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
           CleanFatal("<" + k + "> = " + v + " has no counterpart in scheme = clean");
         }
         if (c.empty()) none += " " + k;
-        if (c != "!" && c[0] != '=' && k.compare(0, 16, "rad_vet/implicit_") == 0) {
+        if (c != "!" && c[0] != '=' && k.compare(0, 17, "rad_vet/implicit_") == 0) {
           drop.push_back(ln.param_name);
         }
         if (say && !c.empty() && c != "!" && c[0] != '=') {
