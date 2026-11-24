@@ -6173,6 +6173,13 @@ void RadiationVet::CleanWriteBack() {
   const bool krl = cln_krel_on && feedback;   // (clean_stag_kreal: CLW_KR)
   const bool kpb = cln_kpb && feedback;
   const bool cls = xwb || kpb;   // (the closure in CLW_PW, printed below)
+  // (clean_wb_mcap: the gas's momentum at the passes' cap, that of the E row's work; the
+  // terms capped and their momentum withheld per face family, CLEAN MCAP below)
+  const bool wmc = cln_wbmc && feedback && !x.vzero;
+  if (wmc) {
+    xh.mcl = true;
+    xh.mclc = DvceArray1D<Real>("cln_wbmcc", 4);
+  }
   px = CleanDevArgs(x, 0);   // (the F solve took the slots; xh changed)
   pxh = CleanDevArgs(xh, 1);
   const bool lzb = cln_lzbook && feedback;
@@ -6477,10 +6484,21 @@ void RadiationVet::CleanWriteBack() {
     });
     CleanWbFct(x, px, wfp, pfo, pf);
   }
+  if (wmc) Kokkos::deep_copy(xh.mclc, 0.0);   // (the write-back's own, not the probe's)
   CleanFor("cln_wbcell", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     wbc(m, k, j, i, false);
   });
+  if (wmc) {
+    auto hm = Kokkos::create_mirror_view_and_copy(HostMemSpace(), xh.mclc);
+    Real r[4];
+    for (int n = 0; n < 4; ++n) r[n] = CleanReduce(hm(n), false);
+    if (global_variable::my_rank == 0 && r[0] > 0.0) {
+      std::printf("CLEAN MCAP cycle %d t2s %d: %.0f face momentum terms at the cap in the "
+                  "write-back, gas momentum withheld sum dp V (x1 x2 x3) %.6e %.6e %.6e\n",
+                  pmy_pack->pmesh->ncycle, t2_solve, r[0], r[1], r[2], r[3]);
+    }
+  }
   if (lzb) {   // (the L_z ledger: the stage's L_z as its slope, then booked)
     const Real s = CleanSumCells(lzw);
     if (slopes) (t2_solve == M1_T2S_STAGE1 ? cln_lzs2 : cln_lzs1) = s/h;

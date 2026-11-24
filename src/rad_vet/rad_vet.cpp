@@ -766,6 +766,12 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_vet","clean_wb_exch_local")) {
       cln_wbxl = pin->GetBoolean("rad_vet","clean_wb_exch_local");
     }
+    // clean_wb_mcap (read only when named; default false): the write-back gives the gas
+    // the face momentum terms at the Newton passes' cap h chi_f E, the momentum whose
+    // work the E row paid (CleanMomentumChange); the terms withheld are printed
+    if (pin->DoesParameterExist("rad_vet","clean_wb_mcap")) {
+      cln_wbmc = pin->GetBoolean("rad_vet","clean_wb_mcap");
+    }
     // clean_wb_floor_diag N (diagnostic, read only when named): the terms of the first
     // N cells of each write-back whose E the floor raises (CLEAN WBFDIAG)
     if (pin->DoesParameterExist("rad_vet","clean_wb_floor_diag")) {
