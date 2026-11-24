@@ -121,3 +121,6 @@ time/nan_check_cycles=100
 rad_vet/vet_gd_ls=0
 # the floor-gas cap keeps v_phi (rule 1, L_z exact):
 rad_vet/floorcap_lz=true
+# FCAPSPIN (Caltech FS1 clean): the floor-gas cap's L_z returned as one rigid rotation; needs floorcap_mesh_vol:
+rad_vet/floorcap_lz_spin=true
+rad_vet/floorcap_mesh_vol=true

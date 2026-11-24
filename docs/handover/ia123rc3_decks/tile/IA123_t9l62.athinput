@@ -112,6 +112,7 @@ clean_stag_mg_levels = 4   # IA12.3-rc4 (Caltech PL4 late m35mms: -9.2 % s/cyc, 
 floorcap_report = 25   # PROD 11-21 (orion ig/ih)
 floorcap_v = 3e7   # PROD 11-21 (orion ig/ih)
 floorcap_lz = true   # IA12.3-rc4 (rule 1: the floor-gas cap keeps v_phi, L_z exact)
+floorcap_lz_spin = true   # IA12.3-rc4 FCAPSPIN (Caltech FS1 clean, NOTE 138f84eff): the cap's L_z back to the dense gas as one rigid rotation
 floorcap_rho = 1e-14   # PROD 11-21 (orion ig/ih)
 clean_stag_flim                  = false        # UNISET IA9: IA9 all three false; Caltech prod already moved to flim off (was true)
 clean_init_dtfac = 1.0e6   # PROD 11-21 (orion ig/ih)
@@ -296,7 +297,7 @@ clean_wb_fct                     = true         # UNISET IA9 (all three stars)
 vet_gd_rotate_xfade              = true         # UNISET IA9 (all three stars)
 vet_rotate_advance               = true         # UNISET IA9 (all three stars)
 clean_stag_fs_line               = pcr          # UNISET D14 arm 14 PASS: pcr = thomas on RSG to 0.009 pp (IA9_RSGgp), uniform pcr
-floorcap_mesh_vol                = 0            # UNISET IA9 (R136 tested value; D14: floorcap named on all three)
+floorcap_mesh_vol = true   # IA12.3-rc4 (needed by floorcap_lz_spin; Caltech FS1)
 <problem>
 he_ic_balance = false
 he_seed_band             = n2                     # [NS] seed not stated: AthenaK default n2 band seed (amplitude 1e-3)
