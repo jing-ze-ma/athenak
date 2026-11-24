@@ -518,6 +518,17 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // the face (as fcone_gas), so that L_z is exact (cubed sphere: CleanCsTorque)
     cln_fclz = cln_fcone && pin->DoesParameterExist("rad_vet","clean_stag_fcone_lz") &&
                pin->GetBoolean("rad_vet","clean_stag_fcone_lz");
+    // clean_stag_fcone_emax (read only when named; needs clean_stag_fcone): every inner
+    // face's F within c max(E_L, E_R), also an opaque face's: no face F streams more than
+    // its brighter cell holds, so the gas's face terms stay below the cap h chi_f E
+    if (pin->DoesParameterExist("rad_vet","clean_stag_fcone_emax")) {
+      cln_fcemx = pin->GetBoolean("rad_vet","clean_stag_fcone_emax");
+      if (cln_fcemx && !cln_fcone) {
+        std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fcone_emax needs "
+                  << "clean_stag_fcone" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     // clean_stag_thinf_held (default off, the v20.7 value, USER 11-21): the thin flux
     // factor of a donor blended by theta = min(1, max(J, P)/(clean_ray_min E_old)), P its
     // largest ray outflow: theta g(rays) + (1 - theta) h (its own half range); a

@@ -1994,6 +1994,7 @@ class RadiationVet {
   bool cln_fcone = false;   // clean_stag_fcone
   bool cln_fcgas = false;   // clean_stag_fcone_gas
   bool cln_fclz = false;    // clean_stag_fcone_lz
+  bool cln_fcemx = false;   // clean_stag_fcone_emax
   bool cln_fwbst = false;   // clean_stag_fwb_stage
   bool cln_fwbpj[3] = {false, false, false};   // fwb_line, -, _ring (fwb_cart: all)
   int cln_fwbs = -1;        // (fwb_stage: the face slot of s; cln_fwbok: s is the round's)
