@@ -1350,6 +1350,7 @@ class RadiationVet {
   std::vector<DvceArray5D<Real>> cln_mg;          // coarse levels of the multigrid
   std::vector<std::array<int, 3>> cln_mgn;        //   and their cells along x1..x3
   std::array<int, 3> cln_mgt = {0, 0, 0};       //   its tiles' cells (layout_tile)
+  int cln_mgnl = 2;             //   most coarse levels (clean_stag_mg_levels)
   bool cln_fsolve = false;      // staggered: the face F of a separate F solve
   bool cln_fkin = false;        // staggered fsolve: streaming share of the rays' kinetic
                                 //   momentum flux
