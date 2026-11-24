@@ -117,6 +117,9 @@ const char *kDtrMinimal[] = {
   // (not visited before the generated visitor): the cumulative counters of the run
   // report
   "m1.cmi_cnt", "m1.fcd_cnt_d",
+  // vet_x1_periodic (adaptive): the last build's exit plane, the next build's warm start
+  // (not cloned before: a forced retry at fac 1 of the Cartesian box was not bitwise)
+  "m1.vet_x1ent",
 };
 
 // the Views of kDtrMinimal that <rad_vet>/scheme = clean does not write

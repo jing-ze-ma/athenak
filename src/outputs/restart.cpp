@@ -410,6 +410,11 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
       pradvet->FaxRstPack(t, nmb);
     });
   }
+  // vet_x1_periodic: the warm-start exit plane (kM1X1eRstMagic)
+  if (pradvet != nullptr && pradvet->X1eRstNslab(nout1) > 0) {
+    pack(outarray_x1e, "rst-x1e", nmb, pradvet->X1eRstNslab(nout1),
+         [&](DvceArray5D<Real> &t) {pradvet->X1eRstPack(t, nmb);});
+  }
   if (pturb != nullptr) {
     Kokkos::realloc(outarray_force, nmb, nforce, nout3, nout2, nout1);
     Kokkos::deep_copy(outarray_force, Kokkos::subview(pturb->force, std::make_pair(0,nmb),
@@ -620,6 +625,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     const std::int32_t hdr[4] = {1, static_cast<std::int32_t>(nfax), 0, 0};
     std::memcpy(&(fax_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
+  // the vet_x1_periodic warm-start plane, behind the fax slabs
+  const int nx1e = (pradvet != nullptr) ? pradvet->X1eRstNslab(nout1) : 0;
+  const std::int32_t x1e_hdr[4] = {1, static_cast<std::int32_t>(nx1e), 0, 0};
   char eint_hdr[2*sizeof(std::int32_t)];
   {
     // (hdr[1]: the hydro w0 density and velocity slabs behind the hydro w0(IEN))
@@ -915,6 +923,14 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(fax_hdr[0]), nb, "byte", single_file_per_rank);
     }
+    // the vet_x1_periodic warm-start header, behind the fax one
+    if (nx1e > 0) {
+      IOWrapperSizeT nb = sizeof(x1e_hdr);
+      resfile.Write_any_type(&(radvet::kM1X1eRstMagic[0]), sizeof(radvet::kM1X1eRstMagic),
+                             "byte", single_file_per_rank);
+      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
+      resfile.Write_any_type(&(x1e_hdr[0]), nb, "byte", single_file_per_rank);
+    }
   }
 
   //--- STEP 4.  All ranks write data over all MeshBlocks (5D arrays) in parallel
@@ -995,6 +1011,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   data_size += nams*cell_bytes;   // am_vector spin (+ amk1)
   data_size += npgs*cell_bytes;   // per-cell pgen slabs
   data_size += nfax*cell_bytes;   // fax*
+  data_size += nx1e*cell_bytes;   // vet_x1_periodic warm start
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     resfile.Write_any_type(&(data_size), sizeof(IOWrapperSizeT), "byte",
                             single_file_per_rank);
@@ -1066,6 +1083,10 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (nfax > 0) {
     step3size += sizeof(radvet::kM1FaxRstMagic) + sizeof(IOWrapperSizeT) +
         sizeof(fax_hdr);
+  }
+  if (nx1e > 0) {
+    step3size += sizeof(radvet::kM1X1eRstMagic) + sizeof(IOWrapperSizeT) +
+        sizeof(x1e_hdr);
   }
 
   // write cell-centered variables in parallel
@@ -1621,6 +1642,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   write_group(outarray_pgs, npgs, "pgen slab");
   // and the rad_vet applied face fluxes last of all (kM1FaxRstMagic)
   write_group(outarray_fax, nfax, "rad_vet applied face flux");
+  // and the vet_x1_periodic warm-start plane behind them (kM1X1eRstMagic)
+  write_group(outarray_x1e, nx1e, "rad_vet vet_x1 warm start");
 
   // close file, clean up
   resfile.Close(single_file_per_rank);
@@ -1637,7 +1660,8 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   outarray_hyd = outarray_mhd = outarray_rad = outarray_m1 = outarray_force =
       outarray_z4c = outarray_adm = outarray_ck = outarray_m1p = outarray_m1t =
       outarray_m1c = outarray_m1s = outarray_m1r = outarray_m1k =
-      outarray_ams = outarray_pgs = outarray_fax = outarray_wpv = HostArray5D<Real>();
+      outarray_ams = outarray_pgs = outarray_fax = outarray_x1e = outarray_wpv =
+      HostArray5D<Real>();
   outarray_m1t_d = DvceArray5D<Real>();
   rst_keep_.clear();
   outarray_m1f = outarray_m1f2 = outarray_m1f3 = outarray_wth = outarray_wtm =

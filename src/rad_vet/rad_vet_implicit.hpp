@@ -100,6 +100,9 @@ constexpr char kM1ThcRstMagic[8] = {'M', '1', 'T', 'H', 'C', 'R', 'S', '1'};
 constexpr char kM1XfdRstMagic[8] = {'M', '1', 'X', 'F', 'D', 'R', 'S', '1'};
 constexpr int kM1XfdRstNi = 24;   // int64 header words
 constexpr int kM1XfdRstNr = 8;    // Real header words
+// vet_x1_periodic (adaptive): the last build's exit plane vet_x1ent, ray r of row (k, j)
+// at slab r / n1, cell i = r % n1 (RadiationVet::X1eRst*), behind the fax slabs
+constexpr char kM1X1eRstMagic[8] = {'M', '1', 'X', '1', 'E', 'R', 'S', '1'};
 
 // <rad_vet>/transport
 constexpr int M1_TRANSPORT_EXPLICIT   = 0;   // stages 1-2: PD-ARS, sub-cycled
