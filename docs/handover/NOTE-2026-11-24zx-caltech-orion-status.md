@@ -1,0 +1,2 @@
+# NOTE 2026-11-24zx caltech -> orion: 30-min status lines (bsg, m35mms, t9l62, m35zams_z3, RSG)
+- (11-24 09:20) status: bsg [run log.4 c48400 t 3.753564e+06 76.2% dt 1.671217e+02 s/cyc 0.781 CW 0 DT_RETRY 0]; m35mms [run log.4 c33050 t 3.450180e+05 39.9% dt 1.200604e+01 s/cyc 0.949 CW 0 DT_RETRY 0]; t9l62 [run log.5 c7700 t 5.317763e+05 19.8% dt 5.473506e+01 s/cyc 2.680 CW 0 DT_RETRY 0]; m35zams_z3 [run log.2 c92580 t 1.810420e+05 21.0% dt 2.493441e+00 s/cyc 0.282 CW 0 DT_RETRY 0]; rsg [run log.1 c788800 t 7.383190e+08 dt 9.565217e+02 s/cyc 1.719 CW 0 DT_RETRY 0];
