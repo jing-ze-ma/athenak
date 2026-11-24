@@ -859,7 +859,7 @@ class RadiationVet {
 
   // ---- off-diagonal Eddington terms and the closure lag (multi-D implicit)
   int impl_offdiag{};           // M1_OD_*: lagged | operator | none
-  int od_now{};                 // the mode this step runs: impl_offdiag, or
+  int od_now{};                 // mode this step runs (impl_offdiag, or none/lagged)
   // implicit_closure_thin_relax = C (0 off; closure_lag = step): relax the step's
   // (chi, n) from the previous step's with w = min(1, 2/(1 + G^2)),
   // G = C max(chi', b/f)/tau_c + f chi'/min(chi, 1-chi); ctr_mem: (chi, n1, n2, n3)
@@ -1278,28 +1278,26 @@ class RadiationVet {
   bool cln_fcgas = false;   // clean_stag_fcone_gas
   bool cln_fwbst = false;   // clean_stag_fwb_stage
   bool cln_fwbpj[3] = {false, false, false};   // clean_stag_fwb_line, -, _ring
-  int cln_fwbs = -1;        // (fwb_stage: the face slot of s; cln_fwbok: s is the round's)
+  int cln_fwbs = -1;        // fwb_stage: face slot of s (cln_fwbok: s is the round's)
   bool cln_fwbok = false;
   bool cln_fwbt2 = false;   // clean_stag_fwb_t2
   DvceArray1D<Real> cln_fconc;   // (fcone: the faces scaled, their momentum sum)
   int cln_xdfz = 0;         // clean_stag_xdonor_freeze
   bool cln_xdh = false;     // (its hold in this pass)
-  // (clean_cs_lz_abs = 2: the L_z V R (dp_torque - dp) the gas does not take, booked as
-  // the radiation's, cln_lzl (<rad_vet>/clean_lz_ledger); its sums over the cells as
-  // the gas momentum's slopes K1 (cln_lzs1, <rad_vet>/clean_lz_ledger_k1), K2 (cln_lzs2)
-  // and stage start increment (cln_lzc), and the stage-1 part pending until stage 2
-  // (cln_lzp). 3-D spherical polar: the same ledger, whose cells' sum there is the L_z
-  // that crossed the boundaries, the open or imposed radial ones (M1LzKey))
+  // clean L_z ledger (clean_cs_lz_abs = 2; M1LzKey): cln_lzl the L_z the gas does not
+  // take, booked as the radiation's; its sums as the gas momentum's slopes K1 (cln_lzs1),
+  // K2 (cln_lzs2), stage-start increment (cln_lzc) and stage-1 part pending (cln_lzp).
+  // 3-D spherical polar: the L_z that crossed the radial boundaries.
   Real cln_lzl = 0.0, cln_lzs1 = 0.0, cln_lzs2 = 0.0, cln_lzc = 0.0, cln_lzp = 0.0;
   ParameterInput *cln_lzpin = nullptr;
   void CleanLzBook(const Real s, const bool start);
-  Real CleanLzTotal();   // (the history's L_z: gas + radiation + ledger)
+  Real CleanLzTotal();   // gas + radiation + ledger L_z
   bool cln_xtnorm = false, cln_xtcons = false;   // (CleanFirstIterate, CleanSolve)
-  int cln_xte = 0;   // (clean_xt_exact: 0 off, 1 cons, 2 x2)
+  int cln_xte = 0;   // clean_xt_exact: 0 off, 1 cons, 2 x2
   int cln_gnsw = 0, cln_gnswmin = 20;   // clean_gas_newton_switch, _min
   Real cln_stfac = 0.5;   // clean_stall_fac
-  bool cln_gpic = false;   // (a stalled solve's passes without the gas Newton slope)
-  Real cln_ngnsw = 0.0;   // (solves switched so far)
+  bool cln_gpic = false;   // a stalled solve's passes without the gas Newton slope
+  Real cln_ngnsw = 0.0;   // solves switched so far
   int cln_fdg = -1;             // staggered bracket: face slot of its lagged flux DG
   bool cln_opt = false;         // clean_stag_opac_update: opacities at the iterate's T
   bool cln_consist = false;     // clean_consistency: bracket C = F_ray - f(Ur), cell
@@ -1311,8 +1309,7 @@ class RadiationVet {
   Real cln_sph_r = 0.0;         // clean_sphere_radius
   bool cln_nl_cell = false;     // clean_nl_norm = cell: per-cell relative Newton changes
   Real cln_trtol = 0.0;        // clean_troot_rtol: residual stop of the exchange root
-                               // (staggered default 1e-13)
-  Real cln_nl_escale = 0.0;     // that E scale, clean_nl_efloor max E of the iterate
+  Real cln_nl_escale = 0.0;     // E scale of clean_nl_efloor: max E of the iterate
   int cln_wo_nc = 0;            // the slots of cln_w.o (CleanWoBind)
   static constexpr int cln_hmax = 16;   // most variables of one ghost exchange
   bool cln_budget = false;      // clean_conv = budget (staggered default): CleanSolve
@@ -1323,8 +1320,8 @@ class RadiationVet {
   DvceArray5D<Real> cln_wci;    // E before a backward-Euler solve's last pass
   Real cln_ewr = -1.0, cln_eta = 0.1;   // Eisenstat-Walker: last |r0|_S, forcing
   int cln_verbose = 0;          // clean_verbose: 1 = also the per-solve diagnostics
-  int cln_stagmg = 0;           // the old production mg (staggered): 1 its line colours
-                                //   (j + k) parity, 2 mirror (clean_stag_mg_color)
+  int cln_stagmg = 0;           // clean_stag_mg_color: 1 line colours (j + k) parity,
+                                //   2 mirror
   int cln_pcsweep = 0;          // clean_pc_sweep: +1 a 2nd red pass, +2 a post-sweep
   bool cln_steady = false;      // clean_init = steady: radiation relaxed before step 1
   int cln_steady_n = 50;        // clean_init_n: most pre-solve passes
@@ -1377,7 +1374,7 @@ class RadiationVet {
   bool cln_ring_named = false;  // clean_rot_ring named in the input
   bool cln_rlast = false;       // jump: the build closes its block (the next set swept)
   bool cln_rjump = false;       // jump: cln_rnew holds the next block's moments
-  DvceArray5D<Real> cln_rnew;   // jump: the moments of block b+1's window at the boundary
+  DvceArray5D<Real> cln_rnew;   // jump: moments of block b+1's window at the boundary
   bool cln_rfix = false;        // no build of this cycle shifts (CleanRingPreShift)
   bool cln_rok = false;         // the ring holds the offsets of the sets before cln_rb
   bool cln_rhist = false;       // the restart file's EMA history is converged
@@ -1411,8 +1408,8 @@ class RadiationVet {
   CleanW cln_w;                 // work vectors (CLW_*)
   DvceArray5D<Real> cln_fc1, cln_fc2, cln_fc3;   // face variables (CLF_*)
   DvceArray5D<Real> cln_fref;   // force_reference = clean: reference force (m,3,k,j,i)
-  // staggered: the cell flux of the faces' energy flux Phi (m,3,k,j,i; the write-back,
-  // output m1 as m1_phi), u0 F holding the face momenta's (the radiation momentum)
+  // staggered: cell flux of the faces' energy flux Phi (m,3,k,j,i; output m1_phi); u0 F
+  // holds the face momenta's
   DvceArray5D<Real> cln_phic;
   DvceArray5D<Real> cln_rstd;   // staggered fkin: the restart's d and its K1 (m,6,k,j,i)
   bool cln_fref_set = false;    // cln_fref holds the force of the first coupled solve
@@ -1427,31 +1424,28 @@ class RadiationVet {
   };
   std::map<int, CleanHalo> cln_halo;   // by nc
   DvceArray1D<char> cln_xdev;   // device copies of kernel arguments (CleanDevCopy)
-  // the exchange object of every clean ghost fill (clean_halo_vars variables; a fill
-  // sends only its own), the fills deferred to the next exchange (CleanGhostDefer)
+  // exchange object of every clean ghost fill (a fill sends only its own variables);
+  // fills deferred to the next exchange (CleanGhostDefer)
   std::unique_ptr<MeshBoundaryValuesCC> cln_hpb;
   std::vector<CleanGSeg<Real>> cln_hpend;
-  DvceArray5D<Real> cln_hbuf;   // the storage of every scratch array (as used, <= 32)
-  // clean_halo_direct (only true): the exchange in old production's halo_mpi form,
-  // cell lists read once off cln_hpb's own exchange (CleanHaloInit): on-rank ghosts by
-  // one copy, one message per neighbour rank, receives posted before the pack
+  DvceArray5D<Real> cln_hbuf;   // storage of every scratch array (<= 32)
+  // clean_halo_direct: cell lists read once off cln_hpb's exchange (CleanHaloInit);
+  // on-rank ghosts by one copy, one message per neighbour rank, receives posted first
   struct CleanHaloList {
     int state = 0;              // 0 lists to make at first use, 1 on, -1 while made
     int n1 = 0, n2 = 0, n3 = 0, nl = 0, ns = 0, nr = 0, par = 0;
     DvceArray1D<int> ld, ls, sc, rc;   // on-rank ghost <- its source; sent; received
     std::vector<int> rank, soff, slen, roff, rlen;
-    // (the lists in order of depth, the ghost layer, 1..ng; per message
-    // and depth d the entries of depth <= d, slend/rlend[s ng + d - 1], nld[d - 1];
-    // rd, ldp the depth of each received / on-rank ghost; dcur the exchange's depth)
+    // lists ordered by ghost depth 1..ng; per message and depth d the entries of
+    // depth <= d (slend/rlend[s ng + d - 1], nld[d - 1]); rd, ldp, sdp: depth of each
+    // received / on-rank / sent entry; dcur: the exchange's depth
     int ng = 0, dcur = 0;
     std::vector<int> slend, rlend, nld;
-    DvceArray1D<int> rd, ldp, sdp;   // (sdp: the depth of each sent entry)
-    // (device buffers on HIP too: the messages are MB-size, ROCm-aware MPI moves them
-    // GPU to GPU; host-pinned staging is CPU-copy bound on MI300A)
-    DvceArray1D<Real> sbuf, rbuf;      // (rbuf: two halves, alternate exchanges)
-    // (CleanGSeg::fm: the family of each on-rank, sent and received ghost (hsf, hrf on
-    // the host); per mask set (its fm over all components, nc) each sent and received
-    // entry's buffer offset and the messages' lengths by depth)
+    DvceArray1D<int> rd, ldp, sdp;
+    // device buffers on HIP too (GPU-aware MPI; host staging is copy bound on MI300A)
+    DvceArray1D<Real> sbuf, rbuf;      // rbuf: two halves, alternate exchanges
+    // face family of each on-rank, sent and received ghost (hsf, hrf on the host); per
+    // mask set each entry's buffer offset and the message lengths by depth
     DvceArray1D<int> lf, sf, rf;
     std::vector<int> hsf, hrf;
     struct Mask {
@@ -1472,114 +1466,46 @@ class RadiationVet {
   std::array<uint32_t, 5> CleanHaloKey(const std::vector<CleanGSeg<T>> &sg);
   CleanHaloList::Mask &CleanHaloMask(const std::array<uint32_t, 5> &key);
   Real cln_nsolve = 0.0, cln_nit = 0.0, cln_nfail = 0.0, cln_nneg = 0.0;
-  //! exchange the x1 ghost layers the multi-block solve needs; `eponly` picks the
-  //! one-quantity set (E of the new iterate) instead of the six lagged ones
-  //! gather the assembled rows onto the roots, run Thomas there, scatter back
-  //! milestone 3b phase B: the lagged transverse (x2/x3) divergence of one Picard pass,
-  //! split into its diagonal part (M1_IW_TDIA) and its right-hand side (M1_IW_TRHS)
-  //! the TRANSVERSE realizability limiter: fill thx2/thx3 (and, when newk, the lagged
-  //! limiter opacity klx2/klx3) for the current pass.  Inert under
-  //! implicit_trans_limit = none, where thx2/thx3 are not even allocated.
-  //! milestone 3e: snapshot the SCALED state entering a Picard pass (x_k) into aa_xc.
-  //! Called at the top of every pass when implicit_accel = anderson.
-  //! milestone 3e: at the end of Picard pass `it` the iw state is G(x_k).  Form the
-  //! fixed-point residual g_k, push (dX, dG) onto the history, solve the small least-
-  //! squares problem and overwrite the iw state with the accelerated iterate x_{k+1}
-  //! (realizability re-applied).  The statistics go into aa_nacc / aa_nrst.
-  //! milestone 3b phase C: the x1 line solve of the assembled rows (M1_IW_TA..TR ->
-  //! M1_IW_S2), Thomas or cyclic Thomas, gathered over the stack when part_nblk > 1.
-  //! It IS the preconditioner of the BiCGStab wrapper and the line-Jacobi pass itself.
-  //! implicit_line_solver = pcr: the same line solve by parallel cyclic reduction,
-  //! one Kokkos team per x1 column (GPU)
-  //! implicit_krylov_fuse: the pcr line solve with the right-hand side read from `rc`
-  //! (upd = 0), or made on the fly as the BiCGStab p (upd = 1) / s (upd = 2) update,
-  //! and the answer written to `zc`.  `col` >= 0 solves only the columns of that
-  //! red-black colour (implicit_precond = rbgs); `sub` >= 0 then subtracts the
-  //! transverse 5-point coupling to component `sub` from the right-hand side.
-  //! mgrows = true reads the rows from mgr (implicit_mg_full_rows) and
-  //! subtracts the other-colour edge couplings of the stencil with `sub`
-  //! implicit_od_cache: fill odc with sum_{e!=d} d_e P_de(x) of component xc
-  //! the preconditioner of the fast path: z = M^{-1} r (see implicit_precond)
-  //! implicit_od_cache: y += sgn L_off(x) (with7 = false) or y = A x (with7 = true) from
-  //! the cache; red > 0 also returns reductions in out[4] (see the definition)
-  //! implicit_krylov_fuse = 3: BiCGStab with TWO blocking reductions per iteration
-  //! implicit_op_stencil: build the 19-point operator of the pass / apply it
-  // red_only (m1-fast3): y is already in yc (the overlap parts): the reductions only
-  //! the fast-path operator product: stencil or od cache
-  //! the Thomas / cyclic-Thomas sweep (implicit_line_solver = thomas)
-  //! milestone 3b phase C: y = A x with the frozen 7-point operator (one halo of x)
-  //! milestone 3b phase D: accumulate sgn * L_off(x) into the component yc, with
-  //! L_off the cell-row contribution of the OFF-DIAGONAL Eddington terms of every face
-  //! equation, evaluated at the component xc with the closure of this Picard pass
-  //! FROZEN (so it is linear in x).  No communication: the caller has already put x in
-  //! the ghost zones (ImplicitApplyOp) or x IS the iterate, whose halo is current.
-  //! milestone 3b phase C: z = M^{-1} r, the x1 line solve applied to an arbitrary
-  //! right-hand side (it overwrites M1_IW_TR and M1_IW_S1..S3).  rc < 0: the caller
-  //! has already staged r in M1_IW_TR.
-  //! milestone 3b phase C: solve the frozen 7-point system by BiCGStab; the answer is
-  //! left in M1_IW_S2, exactly where the line-Jacobi pass leaves it.  Returns the number
-  //! of inner iterations taken.
-  // returns 0: go on (implicit_final_resid_stop failed, this pass continues), 1: accept,
-  // 2: failed with no pass left (non-converged); 1 and 2 put the saved state back
-  //! the same BiCGStab with fused reductions and vector updates (implicit_bcg_sync > 0)
 
-  // ---- <rad_vet>/closure = tau (rad_vet_tau.cpp): the Eddington tensor of the multi-D
-  // implicit solve from the COLUMN OPTICAL DEPTH measured from the top of the domain
-  // (x1max): chi = exact grey plane-parallel K/J(tau) (Hopf fit), axis along -grad tau.
-  // Never reads the local flux.  Rebuilt once per hydro step from the start-of-step
-  // transport opacity; x1 stacks of MeshBlocks across MPI ranks are supported.
+  // ---- closure = tau / vet_col column tensor (rad_vet_tau.cpp)
   bool tau_closure{};          // = vet_col: the column tensor tau_ten is in use
   bool tau_ready{};            // VetColInit has run
-  DvceArray5D<Real> tau_ten;   // (m,4,k,j,i): chi, n1, n2, n3 read by ImplicitSolve (b)
+  DvceArray5D<Real> tau_ten;   // (m,4,k,j,i): chi, n1, n2, n3 read by ImplicitSolve
 
-  // ---- <rad_vet>/closure = vet_col (rad_vet_vetcol.cpp, design stage S5, option D): the
-  // Eddington factor f_K = K/J of a 1-D formal solution per RADIAL COLUMN (spherical
-  // impact-parameter rays on the sp wedge, Gauss rays in plane-parallel on a Cartesian
-  // mesh) with the column's own extinction and source, handed to the implicit solve as a
-  // FIXED uniaxial tensor about r_hat (or the M1 flux axis) through the tau closure's
-  // tau_ten (tau_closure is set as well; only the tensor build differs).
+  // ---- closure = vet_col (rad_vet_vetcol.cpp): f_K = K/J of a 1-D formal solution per
+  // radial column (impact-parameter rays on sp, plane-parallel Gauss rays on Cartesian),
+  // a fixed uniaxial tensor about r_hat (or the M1 flux axis) through tau_ten
   bool vet_col{};              // closure = vet_col (default false)
   bool vcol_sph{};             // spherical rays (sp) or plane-parallel (Cartesian)
   bool vcol_axis_flux{};       // vet_col_axis = flux: n = the M1 cell flux direction
   int vcol_nc{}, vcol_np{}, vcol_nmu{}, vcol_every{}, vcol_nray{};
-  // vet_col_fk_min (m1-sp-order2b): the lower bound of f_K = K/J.  1/3 (the old clamp,
-  // inherited from vet_sc's eigen/flux projection) or 0 (sp default: f_K < 1/3 is
-  // physical behind a radiating front and D = diag(f, (1-f)/2, (1-f)/2) stays
-  // realizable for 0 <= f <= 1)
+  // vet_col_fk_min: lower bound of f_K = K/J, 1/3 or 0 (D = diag(f, (1-f)/2, (1-f)/2)
+  // stays realizable for 0 <= f <= 1)
   Real vcol_fkmin = 1.0/3.0;
-  // vet_source = relaxed | relaxed_esc (vcol_sesc) | gas, vet_col_source its alias: the
-  // relaxed ray source was removed (the clean rays take the state's own source), the
-  // key is only checked and echoed
+  // vet_source = relaxed | relaxed_esc | gas (alias vet_col_source): checked and echoed
+  // only (the clean rays take the state's own source)
   bool vcol_srelax = true;
   bool vcol_sesc = false;
   Real vcol_sx0 = 1.0;         // time2_vet_col_source_x0 (blend)
-  // vet_scatter (read only when named; default off = bitwise): ONE
-  // switch for electron scattering: the opacity split (otab.scat, opac M1_OP_S) and the
-  // closure source VetScatterMix.  vscat_form 1 = ma (Jiang 2021 eq. 6), 2 = absorption
+  // vet_scatter: electron scattering, the opacity split (otab.scat, opac M1_OP_S) and
+  // VetScatterMix; vscat_form 1 ma (Jiang 2021 eq. 6), 2 absorption
   bool vscat = false;
   int vscat_form = 1;
-  // vet_scatter_j (relaxed source mode only): false = current: J = E^n / the Picard
-  // iterate next to B* (absorption form only); true = relaxed (the input default):
-  // J = E*, the end-of-step pair of B*.  Set in the ctor whenever vet_scatter is on.
+  // vet_scatter_j: false current (J = E^n / iterate, absorption form only), true
+  // relaxed (J = E*, the end-of-step pair of B*)
   bool vscat_jrel = false;
-  // vet_col with a REFLECTING outer x1 (m1-sp-order2b): the incoming intensity at the
-  // top face is the mirror of the outgoing one, I_in = b/(1 - a) per ray (b the outgoing
-  // intensity of a vacuum-top sweep, a the ray's round-trip transmission), in a second
-  // sweep
+  // vet_col with a reflecting outer x1: a second sweep with I_in = b/(1 - a) per ray
+  // (b the vacuum-top outgoing intensity, a the round-trip transmission)
   bool vcol_rtop = false;
-  // vet_col_surface_face (m1-sp-order2b, sp): with vet_col_surface_q and
-  // implicit_marshak_face = linear, the outer face flux is c q E_f with E_f the linear
-  // face E and q = H(face)/J_f, J_f the formal J extrapolated to the face in the same
-  // way (r^2 J linear from the top two shells): F = c H(face) (E/J)_face, second order
-  // (the cell form c H(face) (E/J)_top-cell is first order when E/J varies).  vcol_jca,
-  // vcol_jcb: the extrapolation weights of the top face (M1SphMarshakCoef), vcol_jcap
-  // the limiter's 2 (r_c/r_f)^2
+  // vet_col_surface_face (sp, with vet_col_surface_q and implicit_marshak_face = linear):
+  // outer face flux c H(face) (E/J)_face with E, J extrapolated linearly in r^2 (second
+  // order). vcol_jca, vcol_jcb: top-face weights (M1SphMarshakCoef), vcol_jcap the
+  // limiter's 2 (r_c/r_f)^2
   bool vcol_sqf = false;
   Real vcol_jca = 0.0, vcol_jcb = 0.0, vcol_jcap = 0.0;
   bool vcol_built{};           // a tensor exists (vet_col_every > 1 skips builds)
   Real vcol_time{}, vcol_ncall{}, vcol_nskip{};
-  // vet_col_surface_q (runs_5e): the outer-x1 Marshak q per column from the formal
-  // solution, q = H(top face)/J(top cell), lagged like the tensor
+  // vet_col_surface_q: outer-x1 Marshak q = H(top face)/J(top cell) per column
   bool vcol_sq{};
   Real vcol_qmin{}, vcol_qmax{};
   int vcol_lc{};               // shells per chunk of the team build (scratch budget)
@@ -1587,50 +1513,39 @@ class RadiationVet {
   void VetColInit();           // checks, tau_ten, vcol_q (first call)
   void VetColReport();
 
-  // ---- <rad_vet>/vet_col_lat (m1-vetcol-lat, rad_vet_vetlat.cpp; design
-  // rt_design_1003/SP_SC_G0.md sect. 4, plan C1): the LATERAL CORRECTION of vet_col from
-  // a few-angle short-characteristics sweep on the mesh (local mu x psi about r_hat).
-  // Every direction is swept twice: through the 3-D field and through the column's own
-  // laterally homogeneous field (the TWIN, the same arithmetic with the own column read
-  // at every lateral point); their moment difference is the correction, exactly 0 on a
-  // laterally uniform state.  Stored in tau_ten slots M1_TT_LAT0.. (the mesh basis):
-  // dD_rr is folded into the implicit diagonal (chi of slot 0), D_r,lat enters the face
-  // equations as a LAGGED Picard term (M1SphLat).  Read only when named; sp wedge only
-  // (cs after CS2).
+  // ---- vet_col_lat (rad_vet_vetcol.cpp): lateral correction of vet_col from a few-angle
+  // SC sweep, each direction swept through the 3-D field and through the column's
+  // laterally homogeneous twin; their moment difference (0 on a uniform state) is stored
+  // in tau_ten M1_TT_LAT0.. (mesh basis). dD_rr enters the diagonal, D_r,lat the face
+  // equations (M1SphLat).
   bool vlat_on = false;        // vet_col_lat
-  // the Athena++ lateral ratio keys <mesh>/x2rat, x3rat named != 1 in
-  // the input (AthenaK ignores them: its theta/phi grid is uniform); VetLatInit refuses
-  // them under vet_col_lat / vet_gd, so a ported deck cannot think it stretched theta
+  // Athena++ <mesh>/x2rat, x3rat named != 1 (AthenaK grids are uniform): VetLatInit
+  // refuses them under vet_col_lat / vet_gd
   std::string vlat_rat_keys;
-  // vet_col_lat_offdiag: what D_r,lat does in the solve.  0 none, 1 lagged (a Picard
-  // term, C1), 2 operator (default, C2: in the Krylov operator, M1SphLat of the
-  // Krylov vector, through the stored stencil and VetLatOp)
+  // vet_col_lat_offdiag: D_r,lat in the solve, 0 none, 1 lagged Picard term, 2 operator
+  // (Krylov operator through the stencil and VetLatOp)
   int vlat_odm = 2;
   bool vlat_now = false;       // the term is on in this step (positivity fallback)
   Real vlat_odmax = 0.0;       // max |D_r,lat| of the last sweep (all ranks)
-  // the operator form is active: on in this step and a non-zero D_r,lat (a zero one
-  // leaves the operator, its stencil and the right-hand side untouched, bitwise)
+  // operator form active (a zero D_r,lat leaves the operator untouched)
   bool VlatOp() const {
     return vlat_now && !vlat_lagfb && (vlat_odm == 2) && (vlat_odmax > 0.0);
   }
-  // vet_col_lat_posfix = lag (read only when named; default drop =
-  // bitwise): at a positivity trigger the lateral D_r,lat and Q terms leave the OPERATOR
-  // (which is then the M-matrix form) but stay in full as the lagged Picard term of the
-  // face equations, so the fixed point keeps the whole tensor.  Only a second trigger in
-  // the same step drops them (vlat_nfall, as before)
+  // vet_col_lat_posfix = lag: at a positivity trigger the lateral terms leave the
+  // operator (M-matrix form) but stay as the lagged Picard term; a second trigger in the
+  // step drops them (vlat_nfall)
   bool vlat_posfix_lag = false;
   bool vlat_lagfb = false;     // this step: the lateral terms lagged after a trigger
-  // (rad_vet_meshfb.cpp): implicit_fb_diag, implicit_fb_local
+  // implicit_fb_diag, implicit_fb_local (rad_vet_meshfb.cpp)
   bool fbl_any = false;
   DvceArray5D<Real> vlat_tt_loc;
   DvceArray5D<Real> VlatTT() const {return fbl_any ? vlat_tt_loc : tau_ten;}
-  // theta of the data each x2 row holds, for the trigonometric factors of
-  // M1SphTan (= x2v; the periodic source cell's theta in the ghost rows at a
-  // theta-periodic seam).  Built on first use, rebuilt when the pack size changes.
+  // theta of each x2 row for M1SphTan (x2v; the source cell's theta in periodic ghost
+  // rows), built on first use
   const Real *vtan_x2t_src = nullptr;
-  int vlat_icut = 0;           // the first shell of the sweep (CleanRayCut)
-  Real vlat_cut_thin = 0.0;    // vet_col_lat_cut_thin: no cut above a
-                               // cell thinner than this (0 off)
+  int vlat_icut = 0;           // first shell of the sweep (CleanRayCut)
+  Real vlat_cut_thin = 0.0;    // vet_col_lat_cut_thin: no cut above a cell thinner than
+                               // this (0 off)
   bool vlat_ready = false;     // VetLatInit done
   int vlat_nbuild = 0;         // builds done
   Real vlat_time = 0.0, vlat_ncall = 0.0, vlat_nclamp = 0.0;
@@ -1645,113 +1560,81 @@ class RadiationVet {
   void VetLatExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
                       MeshBoundaryValuesCC *pb);
   void VetLatDump();
-  // vet_col_lat_offdiag = operator: y += sgn L_lat(x) (the direct form, legacy
-  // operator path and the right-hand side), and the same terms added to the stored
-  // 19-point stencil of the pass (ImplicitStencilBuild)
-  // the cubed-sphere forms (M1CsLat0 / M1CsLatF, Cartesian D_r,lat)
 
-  // ---- <rad_vet>/vet_gd (m1-vet-gd, rad_vet_vetgd.cpp; design
-  // rt_design_1003/SC_PROPER_SP.md, candidate b): the Eddington tensor from an SC sweep
-  // along GLOBALLY FIXED (Cartesian) HEALPix directions, handed over through the
-  // vet_col_lat interface (sets vlat_on; the vet_col_lat keys apply).  Read only when
-  // named; sp wedge only.
+
+  // ---- vet_gd (rad_vet_vetgd.cpp): Eddington tensor from an SC sweep along globally
+  // fixed (Cartesian) HEALPix directions, through the vet_col_lat interface (sets
+  // vlat_on); sp wedge / cubed sphere
   bool vgd_on = false;         // vet_gd
-  // HEALPix nside of the set that names none: 12 nside^2 = 108 directions (only on old
-  // restarts / recipe none)
+  // HEALPix nside of a set that names none (12 nside^2 directions)
   static constexpr int vgd_nside = 3;
-  // vet_gd_tangential (read with vet_gd): spherical polar the lagged M1SphTan term; the
-  // cubed sphere Q in LAT4, LAT5 about the per-cell tangent frame cs_qf (m, 6, k, j incl.
-  // ghosts; M1CsQab), M1CsTanFaceLag / M1CsTanFaceOp
+  // vet_gd_tangential: sp the lagged M1SphTan term; cs Q in LAT4, LAT5 about the cell
+  // tangent frame cs_qf (m, 6, k, j incl. ghosts; M1CsQab)
   bool vgd_tan = true;
   DvceArray4D<Real> cs_qf;
   bool vgd_replace = false;    // vet_gd_replace: no vet_col sweep (D = I/3 below the
                                // first gd shell, q from the gd top cell)
   int vgd_n = 0;
   int vgd_ls = 0;              // vet_gd_ls = 6/8/10/12: level-symmetric LQ_N set instead
-  double vgd_zper = 0.5*M_PI;  // the set's z-rotation period (VetGdInit)
+  double vgd_zper = 0.5*M_PI;  // z-rotation period of the set (VetGdInit)
   int vgd_gl_nmu = 0;          // vet_gd_gl_nmu > 0: product set GL(nmu in n_z) x nphi
   int vgd_gl_nphi = 12;        // vet_gd_gl_nphi (C_nphi about z)
   bool vgd_gl_stag = true;     // vet_gd_gl_stagger: alternate rings half a step
   int vgd_rot = 0;             // vet_gd_rotate_every: z-rotation every N cycles
-  // vet_gd_rotate_dt > 0 (read only when named): the rotation in PHYSICAL
-  // time instead (block b of the step = floor((t + dt/2 - t0)/dt_rot), the same angle
-  // at the same t on every dt), vet_gd_rotate_t0 its origin; vet_gd_rotate_align (default
-  // true): Mesh::NewTimeStep lands a step on every block boundary (VetGdAlignDt)
+  // vet_gd_rotate_dt > 0: rotate in physical time, block
+  // b = floor((t + dt/2 - t0)/dt_rot) (t0 = vet_gd_rotate_t0); vet_gd_rotate_align: steps
+  // land on block boundaries (VetGdAlignDt)
   Real vgd_rot_dt = 0.0, vgd_rot_t0 = 0.0;
   // vet_gd_rotate_stretch: VetGdAlignDt may lengthen dt by <= this
   Real vgd_rot_stretch = 0.0;
-  // vet_gd_rotate_dt = auto (the fresh vet_gd default): resolved by the
-  // first VetGdAlignDt to vgd_rot_auto_fac x that dt and recorded in pin_rot_
+  // vet_gd_rotate_dt = auto: vgd_rot_auto_fac x the first dt, recorded in pin_rot_
   bool vgd_rot_auto = false;
-  // the unnamed fresh default resolves from the first CFL dt before the
-  // dt_fixed / dt_retry cap (Mesh::dt_uncapped), so a fixed-dt ladder shares one clock
+  // the unnamed default resolves from the uncapped first CFL dt (Mesh::dt_uncapped)
   bool vgd_rot_unc = false;
   Real vgd_rot_auto_fac = 20.0;
   ParameterInput *pin_rot_ = nullptr;
   bool vgd_rot_align = false;
   double vgd_rot_nalign = 0.0;   // steps shortened by VetGdAlignDt (diagnostic)
-  // vet_gd_rotate_slope (with vet_gd_rotate_dt; be | keep | correct): the hesdirk2 FSAL
-  // slope K1 of the first step of a new rotation block belongs to the OLD set (an O(dt)
-  // stage-1 error per jump = first order); be: that step is backward Euler, keep: as
-  // before (be measured WORSE than keep, vgdrot2 NOTE: be is Lie split); probe (a probe
-  // solve of the new set) is removed
+  // vet_gd_rotate_slope = be | keep | correct: what the hesdirk2 FSAL slope K1 (of the
+  // old set) does on the first step of a new rotation block; be: a backward-Euler step
   int vgd_rot_slope = 0;
   int64_t vgd_rot_lastblk = INT64_MIN;
   void VetGdRotStep();
-  // vet_gd_rotate_slope = correct (3): on the first step of a new block a
-  // CORRECTION solve (Time2RotCorrect) of size dt_c = vet_gd_rotate_slope_frac x dt from
-  // U^n with the new set and the old vector U^n - dt_c K1 turns the stored slope into
-  // K1 + (I - dt_c A_new)^{-1} (f_new - f_old)(U^n): the closure jump of the slope in
-  // the non-stiff cells, and keep's K1 in the stiff ones (where keep is 2nd order).
-  // vet_gd_rotate_slope_reuse (default true): the stage-1 solve of that step keeps the
-  // correction solve's closure build (the same set, P = U^n + theta dt K1) instead of a
-  // second sweep
+  // vet_gd_rotate_slope = correct: a correction solve (Time2RotCorrect) of size
+  // dt_c = vet_gd_rotate_slope_frac x dt from U^n with the new set turns K1 into
+  // K1 + (I - dt_c A_new)^{-1} (f_new - f_old)(U^n); vet_gd_rotate_slope_reuse: the
+  // stage-1 solve keeps that closure build
   bool t2_rotcorr = false;
   bool t2_vcreuse = false;
   bool vgd_rot_creuse = true;
   Real vgd_rot_cfrac = 0.0;
   double vgd_rot_ncorr = 0.0, vgd_rot_ncfail = 0.0, vgd_rot_ncpass = 0.0;
   bool Time2RotCorrect(Driver *pdrive, Real dt);
-  Real vgd_alpha = -1.0;       // the current z-angle (-1: tables not built)
-  // (USER decision 1): <rad_vet>/vet_gd_rotate_axis = z | 3d (default z on
-  // the sp wedge: bitwise; 3d on the cubed sphere).  3d: the set of rotation block b is
-  // R_b n with R_b a 3-D rotation about a quasi-random axis (VgdRot3); vgd_alpha is then
-  // the block KEY (zig-zag code of b, or of b mod K with vet_rotate_avg = K), not an
-  // angle
+  Real vgd_alpha = -1.0;       // current z-angle (-1: tables not built)
+  // vet_gd_rotate_axis = z | 3d (default z on sp, 3d on the cubed sphere). 3d: the set of
+  // block b is R_b n, R_b a 3-D rotation about a quasi-random axis (VgdRot3); vgd_alpha
+  // is then the block key, not an angle
   bool vgd_rot3 = false;
   void VgdRot3(const Real key, double r[9]) const;
   std::vector<double> VgdRotate(const Real alpha) const;
-  // <rad_vet>/vet_rotate_avg = K >= 2 (read only when named; default 0 = off,
-  // bitwise): the closure handed to the moment step is the mean over the LAST K rotated
-  // direction sets, not the current set's alone (rad_vet_rotavg.cpp).  Closure-agnostic:
-  // a closure registers its NORMALISED hand-over fields (ratios to J: the Eddington
-  // tensor parts, the half-range ratios, C1/J; J itself as a ratio), and the average is
-  // kept as per-set OFFSETS d_j = g_{b-j} - g_b of each older set from the current one,
-  // every difference taken from two sweeps of the SAME state (the old set re-swept once
-  // at the first build of a new block): used = g_b(now) + sum_j d_j / K.  The current set
-  // is live (no lag of the closure); only the ray-pattern differences are carried
-  // between blocks.  On a fresh start or a restart the K-1 older sets are swept once at
-  // the first build.  Needs a rotating closure (vet_gd: vet_gd_rotate_dt / _every).
+  // vet_rotate_avg = K >= 2 (rad_vet_rotavg.cpp): the closure is the mean over the last K
+  // rotated direction sets. A closure registers its normalised fields (ratios to J); the
+  // mean is kept as offsets d_j = g_{b-j} - g_b, each from two sweeps of the same state:
+  // used = g_b(now) + sum_j d_j / K. Needs a rotating closure.
   static constexpr int M1_RA_NF = 16;
-  struct RotAvgTab {           // the registered fields (POD: captured by the kernels)
+  struct RotAvgTab {           // registered fields (POD: captured by the kernels)
     int nf = 0;
     int arr[M1_RA_NF]{}, comp[M1_RA_NF]{}, kind[M1_RA_NF]{};
     Real lo[M1_RA_NF]{}, hi[M1_RA_NF]{};
     int farr = -1, fcomp = 0;  // validity flag field: invalid where < 0 (-1: none)
-    int jf = -1;               // the J field (index into the table) of kind-3 fields
+    int jf = -1;               // J field (index into the table) of kind-3 fields
     int jw = -1;               // the ratio field weighting the sets (-1: equal)
   };
   int vra_k = 0;               // vet_rotate_avg (K; 0/1 off)
-  // <rad_vet>/vet_rotate_avg_ema = N >= 1 (default 128 on a fresh run whose
-  // set rotates, else read only when named; 0 = off, the K window): the K-window mean
-  // replaced by an exponential moving average over the rotated sets, weight a = 1/N per
-  // rotation block, kept in the same offset form (ONE
-  // slot: e = avg - g_b(now), r = Jbar/J_b, + an aux slot for the change test; vra_k = 3
-  // internally): effective window
-  // ~2N - 1 sets at the memory of K = 2.  vet_rotate_avg_ema_tau > 0 (physical time) and
-  // vet_rotate_avg_ema_lc > 0 (x the local light-crossing time r/c) tie a to a time
-  // window instead: a = max(1/N, 1 - exp(-dt_blk/tau)).  The rotation sequence does not
-  // repeat (3d: the R_3 sequence of b, z: golden phases)
+  // vet_rotate_avg_ema = N: the K-window mean replaced by an exponential moving average
+  // over the rotated sets, weight a = 1/N per block, in the same offset form (one slot
+  // e = avg - g_b(now), r = Jbar/J_b, + an aux slot; vra_k = 3). _tau > 0 (physical time)
+  // or _lc > 0 (x the light-crossing time r/c): a = max(1/N, 1 - exp(-dt_blk/tau)).
   bool vra_ema = false;
   Real vra_ema_n = 0.0, vra_ema_tau = 0.0, vra_ema_lc = 0.0;
   void RotAvgEmaInit(const int ilo);
@@ -1759,72 +1642,61 @@ class RadiationVet {
   void RotAvgEmaChange(const int ilo);
   Real vra_ema_eps = 0.05;     // vet_rotate_avg_ema_change (0: no change test)
   bool vra_ema_chj = true;     // vet_rotate_avg_ema_change_j: the J ratio in the test
-  bool vra_ema_chstep = false; // vet_rotate_avg_ema_change_form = step (default) | linear
-  // vet_rotate_avg_ema_wb (read only when named, default false = bitwise; clean
-  // ring only): a = a_ch alone, no 1/N floor and no 1/(n + 1) count, so the pattern
-  // average moves only where the field changed and a static state keeps its closure
+  bool vra_ema_chstep = false; // vet_rotate_avg_ema_change_form = step | linear
+  // vet_rotate_avg_ema_wb (clean ring): a = a_ch alone (no 1/N floor, no 1/(n + 1)
+  // count): a static state keeps its closure
   bool vra_ema_wb = false;
   int vra_ema_diag = 0;        // vet_rotate_avg_ema_diag = M: print the change weights
-  // vet_rotate_avg_ema_dema (read only when named, default false): the lag-
-  // corrected (double) EMA: slot 2 holds the EMA of the EMA (e2, same weights, same frame
-  // shifts), the closure uses 2 e1 - e2 (ratio fields 2 r1 - r2, kept in [r1/4, 4 r1]);
-  // vra_k = 4 (slot 3 the Delta)
+  // vet_rotate_avg_ema_dema: double EMA, slot 2 the EMA of the EMA (e2); the closure uses
+  // 2 e1 - e2 (ratios 2 r1 - r2 in [r1/4, 4 r1]); vra_k = 4 (slot 3 the Delta)
   bool vra_ema_dema = false;
-  int64_t vra_ema_nsh = 0;     // the boundaries seen (diag cadence only)
+  int64_t vra_ema_nsh = 0;     // boundaries seen (diag cadence only)
   void RotAvgEmaApply(const int ilo);
-  // <rad_vet>/vet_gd_rotate_xfade = true (read only when named; default false; needs
-  // vet_gd_rotate_dt > 0): the clean ring live (clean_rot_ring = live), the closure
-  // cross-faded from the current to the next set over each rotation block
-  // (CleanFvSets); the two sets' tables stay on the device (VgdXfTables)
+  // vet_gd_rotate_xfade (needs vet_gd_rotate_dt > 0): clean ring live, the closure
+  // cross-faded from the current to the next set over each block (CleanFvSets); both
+  // sets' tables on the device (VgdXfTables)
   bool vgd_xf = false;
-  // vgd_xff (with vet_gd_rotate_xfade): the two sets of a cross-fade build swept in
-  // ONE sweep: per shell one kernel launch over both sets' (cell, direction) lists and
-  // (sp, MPI exact lists) one message per partner carrying both sets' values.  Every
-  // value is computed by the same code from the same inputs as by the two sweeps, and the
-  // moments / blend run in the same order afterwards (bitwise).  The second set keeps its
-  // own intensities (vgd_i_xb, the size of vgd_i: the extra memory), shell lists and
-  // exact halo lists; they travel with the set's tables (VgdXfTables).  No band ring
-  // (vgd_ring off: the ragged array).  Falls back to the two sweeps where
-  // a combination is not covered (VetGdXffOk)
+  // vgd_xff: both sets of a cross-fade build in one sweep (one launch per shell, one
+  // message per partner), bitwise the two sweeps. The second set keeps its own
+  // intensities (vgd_i_xb), shell and halo lists. Falls back where VetGdXffOk fails.
   bool vgd_xff = false;
   bool vgd_xff_now = false;      // this sweep carries the next set too (VetGdSweep)
   bool vgd_xff_prep = false;     // VetGdSweep: the set's lists only, no passes
   DvceArray1D<int> vgd_shl_xb[2];
   int vgd_shn_xb[2] = {0, 0};
   Real vgd_shl_alpha_xb = -3.0;
-  DvceArray1D<char> vgd_bbufx;     // the fused shell closure (device copy)
+  DvceArray1D<char> vgd_bbufx;     // fused shell closure (device copy)
   DvceArray1D<int> vgd_cslst_xb;   // cs: the other set's pass lists
-  DvceArray1D<Real> vgd_xff_sb, vgd_xff_rb;   // the merged messages (sp)
+  DvceArray1D<Real> vgd_xff_sb, vgd_xff_rb;   // merged messages (sp)
   double vgd_xff_n = 0.0;          // fused builds (diagnostic)
   double vgd_xff_nmsg = 0.0;       // merged exchanges (diagnostic)
   double vgd_xff_nfb = 0.0;        // builds that fell back to two sweeps (diagnostic)
   bool VetGdXffOk();
   void VgdXffSwap();
-  void VgdEs2Make();   // the cubed sphere's early send's second stream
+  void VgdEs2Make();   // second stream of the cubed sphere's early send
   void VgdGbSwap() {   // the compact global band's kept lists go with their set
     std::swap(vgd_gbcf, vgd_gbcf_xb);
     std::swap(vgd_gbcb, vgd_gbcb_xb);
     std::swap(vgd_gbrec, vgd_gbrec_xb);
   }
   bool VetGdHlXff(const int i, const int ws);
-  bool VetGdGbHaloX(const int i, const int ws);   // (vgd_raw: both sets, one message)
-  // early send of the cubed sphere (VetGdCsSweep): this shell's SEND cells first, on a
-  // second high-priority stream, with their pack; the host exchanges while the shell
-  // kernel (which skips the stamped cells) runs
+  bool VetGdGbHaloX(const int i, const int ws);   // vgd_raw: both sets, one message
+  // early send (VetGdCsSweep): the shell's send cells first on a second high-priority
+  // stream; the host exchanges while the shell kernel (skipping them) runs
   DevExeSpace vgd_es2;
   bool vgd_es2_made = false;
-  DvceArray4D<int> vgd_est[2];     // per set (m, kb, jb, d): the stamp of the early cells
-  int vgd_esid = 0;                // the stamp of the current early shell
-  Real vgd_xf_alt = -9.0;        // the angle of the tables in the second device set
+  DvceArray4D<int> vgd_est[2];     // per set (m, kb, jb, d): stamp of the early cells
+  int vgd_esid = 0;                // stamp of the current early shell
+  Real vgd_xf_alt = -9.0;        // angle of the tables in the second device set
   void VgdXfTables(const Real alpha);
   bool vra_eq = false;        // vet_rotate_avg_weight = equal (default j: J-weighted)
   bool vra_on = false;
   RotAvgTab vra_tab;
-  DvceArray5D<Real> vra_a0, vra_a1;   // the closure's field arrays (set per call)
-  DvceArray3D<Real> vra_c;     // a column field (m, k, j) at the top cell (arr 2)
+  DvceArray5D<Real> vra_a0, vra_a1;   // closure's field arrays (set per call)
+  DvceArray3D<Real> vra_c;     // column field (m, k, j) at the top cell (arr 2)
   DvceArray5D<Real> vra_d;     // (m, (K-1)(nf+1), k, j, i) interior: offsets + valid
   int64_t vra_gen = 0;        // bumped by every writer of vra_d
-  int vra_head = 0;            // the ring slot of d_1 (the previous set)
+  int vra_head = 0;            // ring slot of d_1 (the previous set)
   int vra_state = 0;           // 0: no history yet (init at the next build), 1: ready
   int vra_pend = 0;            // 1: init slots raw, 3: Delta of the coming boundary held
   bool vra_raw = false;        // a snapshot sweep: the closure leaves its fields raw
@@ -1837,43 +1709,30 @@ class RadiationVet {
   void RotAvgDelta(const int slot, const int ilo);
   void RotAvgShift(const int ds);
   bool RotLastStep() const;    // the step is the last of its rotation block
-  // the history in the restart file (kM1RaRstMagic, rad_vet_rotavg.cpp)
+  // history in the restart file (kM1RaRstMagic, rad_vet_rotavg.cpp)
   static constexpr int M1_RA_RST_NH = 11;   // int64 header entries (10)
   int RotAvgNf() const;
   int RotAvgRstNslab(const int ncell) const;
-  int RotAvgRstI0() const;     // the first written radial cell
+  int RotAvgRstI0() const;     // first written radial cell
   void RotAvgRstHdr(int64_t *h) const;
   void RotAvgRstPack(DvceArray5D<Real> &dst, const int nmb);
   void RotAvgRstPackHost(HostArray5D<Real> &out, const int nmb, const int nsc);
   bool RotAvgRstLoad(const int64_t *h, const DvceArray5D<Real> &src, const int nmb);
   bool RotAvgRstCheck();
   int vra_rst_nf = -1;         // nf of a history loaded from the file (-1: none/checked)
-  int64_t vra_blk = INT64_MIN; // the block of the last build
+  int64_t vra_blk = INT64_MIN; // block of the last build
   bool vra_last = false;       // this build is on the last step of its block
   DvceArray5D<Real> vra_bk_vc;              // vet_sc: vet_cell kept over the next-set
                                             // sweep of a last build
   void VetGdSweepPost();       // twin, sweep(s), fused moments, VetGdPost
-  // vet_gd_inner = emit (read only when named; default diff = bitwise): with the first gd
-  // shell at the physical inner face (icut = 0) the outward rays start from the inner
-  // boundary's own emission (flux: black sphere I = 4 F_in/c; marshak: the bath) instead
-  // of the diffusion intensity
   bool vgd_tbath = false;   // the top (x1max Marshak) bath enters the sweep
-  std::vector<double> vgd_base;   // the unrotated set (x, y, z, w)
+  std::vector<double> vgd_base;   // unrotated set (x, y, z, w)
   DvceArray2D<Real> vgd_dir;   // (d, 0..3): n_x, n_y, n_z, weight (sum 1)
-  // (m, d, k, j, i): intensities, ghosts lagged.  LayoutLeft (i slowest), so
-  // that one shell of the per-shell sweep and halo is one contiguous ~nd*nk*nj slab (the
-  // LayoutRight array spread every shell over all of its GBs: strided, TLB-bound); the
-  // values and every arithmetic are unchanged (bitwise)
-  // (memory): RAGGED per-shell band.  Shell i stores only the lateral band
-  // its own data needs (wi(i) = vgd_wsh, <= vgd_w; the dense array carried the deepest
-  // band of all shells for every shell: 70 % of the device memory of AG Car A), and a
-  // block only on the sides where a neighbour (edge or corner) is NOT on this rank (an
-  // on-rank neighbour is read in its interior, never through the band).  Index space
-  // unchanged: (m, d, k, j, i) with k, j in the band index space of depth vgd_w; one
-  // slab per (m, i), d fastest, then k, then j.  An access outside
-  // the shell's slab (never, by the band construction) goes to one dummy element and is
-  // counted (VgdRag::oos, reported at the end): the values are bitwise those of the
-  // dense array as long as the count is 0.
+  // (m, d, k, j, i) intensities, ghosts lagged, as a ragged per-shell band: shell i keeps
+  // only the lateral band it needs (depth wi(i) <= vgd_w) and only on sides whose
+  // neighbour is off-rank. Index space (m, d, k, j, i) with k, j in the band space of
+  // depth vgd_w; one slab per (m, i), d fastest, then k, then j. An access outside the
+  // slab goes to a dummy element and is counted (VgdRag::oos, must stay 0).
   struct VgdRag {
     DvceArray1D<Real> d;
     Kokkos::View<int64_t**, DevMemSpace> off;  // (m, i): first element of slab (m, i)
@@ -1913,41 +1772,33 @@ class RadiationVet {
   VgdIView vgd_i;
   VgdIView vgd_i_xb;   // the other cross-fade set's intensities
   void VgdRagAlloc(VgdRag &a);
-  // the memory arena (rad_vet_memarena.cpp; with vet_gd): the intensity arrays and solve
-  // scratch that is dead across a VetGdBuild in one allocation
+  // memory arena (with vet_gd): the intensity arrays and the solve scratch dead across a
+  // VetGdBuild in one allocation
   bool marena_on = false, marena_sealed = false;
-  DvceArray1D<Real> marena;   // the intensities, then (first checkpoint) solve scratch
+  DvceArray1D<Real> marena;   // intensities, then (first checkpoint) solve scratch
   int64_t marena_sw = 0;      // Reals of the intensity arrays bound so far
   void MemArenaInit(ParameterInput *pin, int nmb, int niw, int n3, int n2, int n1);
   bool MemArenaVgd(VgdRag &a, int64_t n);
   void MemArenaGrow(int64_t need, bool keep = true);
   void MemArenaSeal();
   void CleanWoBind();   // cln_w.o, .s at the first solve (mem_arena)
-  // vet_gd_band_ring (where it applies: MPI band with the exact halo lists, not the sp
-  // raw band; on the cubed sphere with the cs compact lists, vet_gd_halo_compact > 0):
-  // the ragged array keeps every shell's INTERIOR only (compact slab, depth 0) and lends
-  // a shell one of VGD_RING_K wide slabs (its full band depth wi, the same rectangle as
-  // before) only while the sweep needs its band: inward pass from just before the shell
-  // is computed until the next shell has read it; outward pass from just before the
-  // shell is computed (its interior copied in, and the band values of its INWARD
-  // exchange, saved per shell after that exchange, put back: the turned rays read them)
-  // until the next shell has read it.  The accessor (VgdRag::operator()) is unchanged:
-  // only the device tables off(m, i) / wi(i) are switched (in stream order), so the
-  // shell kernel's code and every value it reads are those of the dense-band array
-  // (bitwise).  One extra small kernel per shell (copies), launched while the shell's
-  // halo messages travel.
+  // vet_gd_band_ring (MPI band with exact halo lists, or cs compact lists): the ragged
+  // array keeps each shell's interior only and lends a shell one of VGD_RING_K slabs of
+  // its full band depth while the sweep needs its band (outward pass: interior copied in,
+  // the saved inward-exchange band put back). Only off(m, i) / wi(i) switch, so every
+  // value read is the dense band's (bitwise).
   static constexpr int VGD_RING_K = 3;
-  int vgd_rg_k = VGD_RING_K;          // the slots of this allocation
+  int vgd_rg_k = VGD_RING_K;          // slots of this allocation
   struct VgdRingOp {
     int kind = 0;      // 1 save (inward band -> store), 2 release, 3 acquire
     int i = -1, slot = -1;
     bool copyin = false, restore = false;
   };
-  bool vgd_ring = false;              // the ring layout is allocated (both arrays)
+  bool vgd_ring = false;              // ring layout allocated (both arrays)
   bool vgd_ring_named = false, vgd_ring_par = true;   // vet_gd_band_ring (named)
   bool vgd_ring_act = false;          // the ring runs in this sweep
   bool vgd_rg_two = false;            // this sweep carries a second array (vgd_i_xb)
-  bool vgd_rg_xb = false;             // ... the other xfade set's array
+  bool vgd_rg_xb = false;             // the other xfade set's array
   std::vector<int64_t> vgd_rg_sn2;    // (i) the other set's saved count
   bool vgd_rg_lastx = false;          // the last halo used an exact list
   int vgd_rg_lastx_e = -1;
@@ -1955,12 +1806,12 @@ class RadiationVet {
   std::vector<int64_t> vgd_rg_soff;   // (s nmb + m): slot offsets (host)
   std::vector<int> vgd_rg_wfull;      // (i): a shell's band depth when lent a slot
   std::vector<int> vgd_rg_state;      // (i): -1 compact, else slot
-  std::vector<int> vgd_rg_sown;       // (s): the shell holding slot s, -1 free
+  std::vector<int> vgd_rg_sown;       // (s): shell holding slot s, -1 free
   std::vector<int64_t> vgd_rg_so, vgd_rg_sn;   // (i): save store offset, count/array
   std::vector<int> vgd_rg_sk;         // (i): save kind: 1 exact list, 2 dense band, 3 raw
-  std::vector<int> vgd_rg_se;         // (i): the exact list record (3: the raw key)
-  // vgd_raw: the band positions (encoded as the exact lists) each raw exchange writes,
-  // keyed as vgd_gbcf (rad_vet_vetgd_sph2.inc VetGdRawRec)
+  std::vector<int> vgd_rg_se;         // (i): exact list record (3: the raw key)
+  // vgd_raw: band positions (as exact lists) each raw exchange writes, keyed as vgd_gbcf
+  // (VetGdRawRec)
   std::map<int, DvceArray1D<int>> vgd_gbrec, vgd_gbrec_xb;
   int VetGdRawKey(const int i, const bool inw, const int ws) const;
   DvceArray1D<int> VetGdRawRec(const int key);
@@ -1977,68 +1828,56 @@ class RadiationVet {
   Kokkos::View<int ***, LayoutWrapper, DevMemSpace> vgd_wall;    // (m, k, j)
   Kokkos::View<int ****, LayoutWrapper, DevMemSpace> vgd_map;    // (m, k, j, d)
   DvceArray4D<Real> vgd_mr;    // (m, k, j, d): n . r_hat of the value stored there
-  // vet_gd_wall_interp (read only when named, default false): wall ghosts from the 3
-  // nearest same-branch directions with weights (m, k, j, d, 3)
+  // vet_gd_wall_interp: wall ghosts from the 3 nearest same-branch directions
+  // (m, k, j, d, 3)
   bool vgd_wint = false;
-  // vet_gd_wall_sym (read only when named, default false; needs vet_gd_wall_interp):
-  // the set turned so that a mirror plane is the wedge mid-plane, phi-wall ghosts linear
-  // in azimuth on their ring (VgdMirPick): phi-symmetric on any wedge width
+  // vet_gd_wall_sym (needs _wall_interp): the set turned so a mirror plane is the wedge
+  // mid-plane, phi-wall ghosts linear in azimuth on their ring (VgdMirPick)
   bool vgd_wsym = false;
   bool vgd_wsx = false;       // and its phi wall map inexact: both-frame seam faces
-  Real vgd_wsw = 0.0;         // the phi period W
-  DvceArray1D<int> vgd_mir;   // (n): the mirror image of each direction
-  // vet_gd_theta_seam_sym (read only when named, default false; needs
-  // vet_gd_wall_interp): the clean scheme's theta seam faces in both frames (paired)
+  Real vgd_wsw = 0.0;         // phi period W
+  DvceArray1D<int> vgd_mir;   // (n): mirror image of each direction
+  // vet_gd_theta_seam_sym (needs _wall_interp): clean theta seam faces in both frames
   bool vgd_wst = false;
-  DvceArray1D<int> vgd_mirz;  // (n): the equatorial mirror image of each direction
-  VgdLG vgd_lg;   // the vet_gd sweep geometry from the global index
+  DvceArray1D<int> vgd_mirz;  // (n): equatorial mirror image of each direction
+  VgdLG vgd_lg;   // vet_gd sweep geometry from the global index
   Kokkos::View<int *****, LayoutWrapper, DevMemSpace> vgd_m3;
   DvceArray5D<Real> vgd_w3;
-  // vet_gd_theta_wall (read only when named; periodic | mirror, default
-  // periodic = the old local-frame theta periodicity): mirror makes the theta walls
-  // specular mirrors of the formal solution.  A theta ghost (band row beyond a wall at
-  // depth g) reads the interior row at depth g on the other side of the wall, direction
-  // (n.r, n.theta, n.phi) -> (n.r, -n.theta, n.phi) in the local frames (the exact
-  // equatorial plane: z -> -z), from up to 3 same-branch set directions (the ghost's
-  // own wall tables, vgd_wall = 2, vgd_map / vgd_m3 / vgd_w3; nearest only without
-  // vet_gd_wall_interp); ln chi, ln S of the ghost rows are the mirror rows'
-  // (VetGdThMirCs, from VetGdHaloCs)
+  // vet_gd_theta_wall = periodic | mirror: mirror makes the theta walls specular; a theta
+  // ghost at depth g reads the interior row at depth g across the wall, direction
+  // (n.r, n.theta, n.phi) -> (n.r, -n.theta, n.phi), from up to 3 same-branch directions
+  // (vgd_wall = 2, vgd_map / vgd_m3 / vgd_w3); ln chi, ln S from the mirror rows
+  // (VetGdThMirCs)
   bool vgd_thmir = false;
   bool cln_scmem = false;      // clean sc rays, reflecting top: its mirror reads cln_top
   DvceArray5D<Real> cln_top;   // its last top shell: slot s, direction d at (s*nt + d/n1,
                                // i = d%n1), nt = ceil(n/n1) (VetGdTopCopy)
   void VetGdTopCopy();
-  int cln_rq = 0;               // clean_rot_ring, sc rays: the slot swept (CleanFvSets)
-  int cln_rqm = 0;              // and its sp top-mirror slot (blk mod 2)
+  int cln_rq = 0;               // clean_rot_ring, sc rays: slot swept (CleanFvSets)
+  int cln_rqm = 0;              // its sp top-mirror slot (blk mod 2)
   void VetGdThMirCs(DvceArray5D<Real> &a, const int i0, const int i1);
-  // vet_gd_theta_wall = vacuum (1) | extrap (2), 0 otherwise: the theta
-  // ghosts beyond a PHYSICAL theta wall (wall flag 3 / 4) are not the far wall's.
-  // vacuum: zero incoming intensity at the wall (a ray whose upwind point lies beyond
-  // the wall starts at its wall crossing with I = 0, as the vacuum top face; ghost reads
-  // of the bilinear stencil are 0); extrap: a ghost reads the edge row's intensity of
-  // the same direction (zero gradient).  ln chi, ln S of the ghost rows = the edge row
-  // (VetGdThVacCs).  Swept by the wall kernel (bodym) with the mirror
+  // vet_gd_theta_wall = vacuum (1) | extrap (2) at a physical theta wall (flag 3 / 4):
+  // vacuum: I = 0 entering at the wall (ghost reads 0); extrap: ghosts read the edge
+  // row's intensity (zero gradient); ln chi, ln S from the edge row (VetGdThVacCs)
   int vgd_thvac = 0;
   void VetGdThVacCs(DvceArray5D<Real> &a, const int i0, const int i1);
   MeshBoundaryValuesCC *pbval_gd = nullptr;
-  // EXACT per-shell lateral halo (decomposition-invariant sweep): vgd_i and vgd_cs carry
-  // a lateral ghost band of vgd_w cells (the deepest reach of an upwind point), filled
-  // shell by shell from the 8 lateral neighbours (on-rank copies + MPI)
+  // exact per-shell lateral halo: vgd_i and vgd_cs carry a ghost band of vgd_w cells,
+  // filled shell by shell from the 8 lateral neighbours (on-rank copies + MPI)
   int vgd_w = 0;
-  // the clean closure on a wedge: the band of any depth keyed on the global cell
-  // (VetGdGlobalBandInit, theta and phi periodic), the intensities unmapped; the sweep
-  // reads an on-rank owner (vgd_own) directly, a remote one from the band, and applies
-  // the wall map at the read, as one MeshBlock reads itself
+  // clean closure on a wedge: band of any depth keyed on the global cell
+  // (VetGdGlobalBandInit); the sweep reads an on-rank owner (vgd_own) directly, a remote
+  // one from the band, and applies the wall map at the read
   bool vgd_raw = false;
   DvceArray4D<int> vgd_own;   // (m, band k, band j, 3): owner's local index (-1 remote),
                               // its band k, j
   DvceArray5D<Real> vgd_cs;    // (m, 2, k, j, i): ln chi, ln S with the vgd_w band
   DvceArray1D<int> vgd_hloc;   // (8 nmb): local index of the slot's neighbour, -1 remote
-  std::vector<int> vgd_hrank, vgd_hlid;   // (8 nmb): the remote neighbour's rank, lid
-  DvceArray1D<Real> vgd_sbuf, vgd_rbuf;   // flat message buffers, one piece per remote
-  // (block, slot), the pieces to/from one rank contiguous (one message per rank pair)
-  // in the order of the RECEIVER's (block, slot); offsets per band depth ws in units of
-  // nv*ni: (ws, 8 m + o), -1 for an on-rank slot
+  std::vector<int> vgd_hrank, vgd_hlid;   // (8 nmb): remote neighbour's rank, lid
+  // flat message buffers, one piece per remote (block, slot), contiguous per rank pair in
+  // the receiver's (block, slot) order; offsets per band depth ws in units of nv*ni:
+  // (ws, 8 m + o), -1 for an on-rank slot
+  DvceArray1D<Real> vgd_sbuf, vgd_rbuf;
   DvceArray2D<int> vgd_soff, vgd_roff;
   std::vector<int> vgd_prk;                  // partner ranks
   std::vector<std::vector<int>> vgd_pdsp, vgd_pscnt, vgd_prdsp, vgd_prcnt;   // (ws, p)
@@ -2050,29 +1889,23 @@ class RadiationVet {
   bool vlat_src_ep = false;
   Real vgd_nrb = 0.0, vgd_trb = 0.0;
   void VetGdIterRebuild();
-  // the cs half-range data at the start of a solve (|H|/J, seam ghosts)
+  // cs half-range data at the start of a solve (|H|/J, seam ghosts)
   void VetGdCsHrPrep();
   void VetGdSpHrHalo();   // sp ghosts of vgd_hr
   MeshBoundaryValuesCC *pbval_hr = nullptr;
   DvceArray5D<Real> vgd_hr_c;
   void VetGdRealDiag();
   void VetGdHaloInit();
-  // (CS_VETGD.md sect. 4A, stage S3; rad_vet_vetgd_cs.cpp): vet_gd on the
-  // cubed sphere.  The band of a block is its OWN panel's index space (as on sp), and
-  // the strips of the four neighbour panels are stored UNFOLDED next to the panel edges
-  // (a neighbour cell at depth d from the seam sits where the mirror image of the own
-  // cell at depth d would continue the index line; equal N, so the pairing is one to
-  // one).  Every band position holds one global cell (or none: the corner quadrants
-  // beyond two edges, depths >= N), filled per shell by exact keyed copies (on-rank +
-  // MPI).  The upwind point is found in Cartesian, its panel by the largest normal
-  // component and its (xi, eta) by the gnomonic chart; reads are bilinear in that
-  // panel's native indices, the seam strip (half a cell on either side) linear across
-  // the seam with each side's own tangential coordinate, the cube vertex triangle by
-  // spherical barycentric weights of its 3 cells.  No walls, no direction maps.
+  // vet_gd on the cubed sphere (rad_vet_vetgd_cs.cpp): a block's band is its own panel's
+  // index space with the four neighbour panels' strips unfolded at the edges; each band
+  // position holds one global cell, filled per shell by exact keyed copies. The upwind
+  // point is found in Cartesian (panel by the largest normal component, (xi, eta) by the
+  // gnomonic chart); bilinear reads, linear across a seam strip, spherical barycentric
+  // weights at a cube vertex.
   bool vgd_csg = false;               // vet_gd on the cubed sphere
   int vgd_csn = 0;                    // cells per panel edge
   DvceArray4D<Real> vgd_csr;          // (m, k, j, 3): band cell unit vector, 0 none
-  std::vector<double> vgd_csr_h;      // the same on the host (double), (m, k, j, 3)
+  std::vector<double> vgd_csr_h;      // same on the host (double), (m, k, j, 3)
   DvceArray2D<int> vgd_csblk;         // (m, 3): panel, global j0, global k0
   DvceArray3D<int> vgd_cscm;          // (p, q, 7): q (a,t) -> p unfolded (J,K) affine
   DvceArray2D<int> vgd_csnb;          // (p, 4): panel across side -x2, +x2, -x3, +x3
@@ -2080,9 +1913,8 @@ class RadiationVet {
   DvceArray2D<int> vgd_cssl, vgd_csrl;   // (e, 3): MPI send src / recv dst (m,k,j)
   std::vector<int> vgd_csprk;         // partner ranks
   std::vector<int> vgd_csps, vgd_cspn, vgd_cspr, vgd_cspm;   // send/recv displ, count
-  // message buffers.  in PINNED HOST memory (the pack/unpack kernels write/
-  // read them directly), so MPI never sees a GPU pointer here: no GPUDirect RDMA and
-  // no UCX cuda staging for the vet_gd band (pure copies: bitwise the device buffers)
+  // message buffers in pinned host memory (pack/unpack kernels access them): MPI never
+  // sees a GPU pointer here
   Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> vgd_cssb, vgd_csrb;
   int vgd_csnloc = 0, vgd_csnsnd = 0, vgd_csnrcv = 0;
   void VetGdCsInit();
@@ -2093,38 +1925,33 @@ class RadiationVet {
   void VetGdCsHalo(V &a, const int nv, const int i0, const int i1, const bool loc,
                    const int ws = -1);
   Kokkos::View<int ****, LayoutWrapper, DevMemSpace> vgd_csown;   // (m, k, j, 3) owner
-  // (USER decision 2): vet_gd_halo_compact > 0 on cs -- the chart-aware
-  // exact lists: per shell and pass only the (remote band cell, direction) values the
-  // sweep reads (VetGdCsCompact: a read-mask kernel that replays the sweep's upwind
-  // stencils for the direction set, the receivers' masks sent to the owners once per set,
-  // both sides' lists in the same order).  Bitwise the dense band copies (the same values
-  // are read; every remote read is checked against the mask in the sweep: FATAL on a
-  // miss)
+  // vet_gd_halo_compact > 0 on cs: chart-aware exact lists, per shell and pass only the
+  // (remote band cell, direction) values the sweep reads (VetGdCsCompact: a read-mask
+  // kernel replays the upwind stencils; masks sent to the owners once per set). Every
+  // remote read is checked against the mask: fatal on a miss.
   struct VgdCsCl {
     Real alpha = -9.0;
     int64_t use = 0;
     std::vector<int64_t> so, ro;     // ((pass*n1 + s)*(np + 1) + p): list offsets
     Kokkos::View<int *, LayoutWrapper, DevMemSpace> si, ri;   // e*n + d per value
-    // (e_rcv, d, s): 1 in, 2 out, 0 not read; 2 bits per value, 16 values
-    // per word (value t = (e_rcv*n + d)*n1 + s in word t/16, bits 2 (t%16))
+    // (e_rcv, d, s): 1 in, 2 out, 0 not read; 2 bits per value, value
+    // t = (e_rcv*n + d)*n1 + s in word t/16, bits 2 (t%16)
     Kokkos::View<uint32_t *, LayoutWrapper, DevMemSpace> msk;
   };
   bool vgd_cscomp = false;
-  // vet_gd_cs_list_pad; the read-mask stride per receive entry (n*nx1, or
-  // rounded up to 16 with the pad); sub-timers of the list build (rank 0, fenced):
-  // mask kernel, mask download + check, mark exchange, host lists, upload
+  // vet_gd_cs_list_pad: read-mask stride per receive entry (n*nx1, or rounded up to 16);
+  // list-build sub-timers (rank 0): mask kernel, download + check, mark exchange, host
+  // lists, upload
   int64_t vgd_csper = 0;
   double vgd_cstb_k = 0.0, vgd_cstb_d = 0.0, vgd_cstb_m = 0.0, vgd_cstb_h = 0.0,
          vgd_cstb_u = 0.0;
-  // persistent host buffers of the read-mask exchange (VetGdCsCompact):
-  // own marks (sent) and the receivers' marks (received); grown, never freed
+  // persistent host buffers of the read-mask exchange: own marks (sent), the receivers'
+  // (received)
   std::vector<uint32_t> vgd_csmw_h, vgd_csmw_r;
-  // the cache holds max(2, vet_rotate_avg) sets (vgd_csncl): with K-set
-  // rotation (keys b mod K) every set's lists are made once, not at every rotation
+  // the cache holds max(2, vet_rotate_avg) sets (vgd_csncl): each set's lists made once
   static constexpr int M1_VGD_CSCL_MAX = 16;
   VgdCsCl vgd_cscl[M1_VGD_CSCL_MAX];
-  // hgmem: the read masks of two entries (the set in use and the one made or re-masked
-  // next); the others keep their lists alone (VetGdCsCompact)
+  // read masks of two entries (the set in use and the next); the others keep lists only
   Kokkos::View<uint32_t *, LayoutWrapper, DevMemSpace> vgd_csmb[2];
   int vgd_csncl = 2;
   int vgd_cscur = 0;
@@ -2142,12 +1969,12 @@ class RadiationVet {
   Real vgd_nclamp_seen = 0.0;
   bool vgd_hinw = true;
   int vgd_nb2 = 1, vgd_nb3 = 1;
-  // several MeshBlocks along x1: the levels swept one after the other
+  // several MeshBlocks along x1: the levels swept in turn
   int vgd_nb1 = 1;
   std::vector<int> vgd_x1nb, vgd_x1lv;   // (2 m + 0/1): gid below / above, -1 none; lx1
   DvceArray1D<int> vgd_x1f;   // (m): 1 innermost, 2 outermost level, 4 reflecting top,
                               // + 8 lx1
-  DvceArray1D<int> vgd_x1mo;  // the blocks by level (the shell list order)
+  DvceArray1D<int> vgd_x1mo;  // blocks by level (the shell list order)
   std::vector<int> vgd_shlv[2];   // (level): first code of the level in vgd_shl[pass]
   DvceArray2D<Real> vgd_x1b, vgd_x1r;    // (m, v): one shell to / from the x1 neighbour
   void VetGdX1Hand(const bool up);
@@ -2158,41 +1985,36 @@ class RadiationVet {
   void VetGdInnerMirror();
   Kokkos::View<int **, LayoutWrapper, DevMemSpace> vgd_lxy;   // (m, 0/1): lx2, lx3
   DvceArray1D<Real> vgd_csb, vgd_crb;
-  // the compact mask of the NEXT shell is built (bitwise)
-  // while this shell's messages travel; 2 slots of flags/positions (vgd_hfs/hfr) and of
-  // the partner boundaries in pinned host memory (vgd_hpb), tagged (i, inw, ws, icut,
-  // sweep id)
+  // the next shell's compact mask is built while this shell's messages travel; 2 slots
+  // of flags/positions (vgd_hfs/hfr) and partner bounds (vgd_hpb, pinned), tagged
+  // (i, inw, ws, icut, sweep id)
   DvceArray1D<int> vgd_hfs[2], vgd_hfr[2];
   Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_hpb[2];
   int vgd_htag[2][5] = {{-1, -1, -1, -1, -1}, {-1, -1, -1, -1, -1} };
   int vgd_hlast = 1, vgd_hsweep = 0;
-  // vet_gd_halo_cache_mb (default 0 = off): byte budget (MB per rank) of a
   int vgd_hnext[3] = {-1, 0, 0};
   void VetGdHcPrep(const int slot, const int i0, const bool inw0, const int ws);
   Kokkos::View<int **, LayoutWrapper, DevMemSpace> vgd_pbd;   // (ws, 2 (np+1))
   std::vector<double> vgd_r1v, vgd_r1f;
   template <class V>
   bool VetGdHaloCompact(V &a, const int nv, const int i0, const int ws);
-  // vet_gd_halo_list_mb (read only when named; default 4096, 0 = off):
-  // MB budget per rank of the compact-halo LISTS per (pass, shell), built from the masks
-  // at the first exchange of a mask set (direction set, cut, depth) and used by every
-  // later sweep of the set: gather pack, MPI, scatter (+ zeros on the other pass's
-  // entries) instead of flag / scan / pack / expand / dense unpack.  Bitwise: the band
-  // gets the same values (see VetGdHaloCompact for when the dense zeros are implied).
+  // compact-halo lists per (pass, shell), built from the masks at the first exchange of a
+  // mask set (direction set, cut, depth) and reused: gather pack, MPI, scatter (+ zeros
+  // on the other pass's entries) instead of flag / scan / pack / expand / dense unpack
   struct VgdHlEntry {
     DvceArray1D<int> sl;          // (ns): packed band address of each sent value
     DvceArray1D<int> dl, sr;      // (nr): packed band address, compact source position
     DvceArray1D<int> dw, sw;      // (nw), (3 nw): wall_interp ghosts: address, sources
     std::vector<int> sp, rp;      // (np + 1): partner bounds of the compact messages
-    std::vector<int> dsto;        // (np): start of my values in each
-                                  // partner's receive layout (batch-made exact lists)
+  std::vector<int> dsto;        // (np): start of my values in each partner's receive
+                                // layout (batch-made exact lists)
     Real alpha = -2.0;
     int scut = -1, ws = -1, ns = 0, nr = 0, nw = 0;
     int64_t gen = -1;             // build id (> 0) while valid
     bool nofit = false;           // over the budget for (alpha, scut, ws)
     size_t bytes = 0;
-    // vet_gd_halo_exact: the lists hold only the values the sweep READS
-    // (sr / sw = -1: a read ghost whose source is not in the mask: written 0)
+    // vet_gd_halo_exact: only the values the sweep reads (sr / sw = -1: a read ghost with
+    // no source in the mask, written 0)
     bool exact = false;
   };
   static constexpr int vgd_hl_mb = 4096;   // MB per rank: budget of the halo lists
@@ -2206,40 +2028,28 @@ class RadiationVet {
   int64_t vgd_hl_gen = 0;
   Real vgd_hl_nmade = 0.0, vgd_hl_nuse = 0.0, vgd_hl_ndense = 0.0;
   DvceArray1D<int> vgd_hl_fn, vgd_hl_fw;    // build scratch: dest flags -> positions
-  // per band array (data pointer) and pass: the build id of the entry whose exchange
-  // last wrote each shell's band (0 = never written: all zero; -1 = unknown)
+  // per band array and pass: build id of the entry whose exchange last wrote each shell's
+  // band (0: never written, all zero; -1: unknown)
   std::map<const void *, std::array<std::vector<int64_t>, 2>> vgd_hl_gw;
   bool VetGdHlBuild(const int e, const int i, const bool inw, const int ws,
                     const DvceArray1D<int> &fs, const DvceArray1D<int> &fr,
                     const std::vector<int> &pbh);
-  // (all bitwise unless stated)
   DvceArray4D<Real> vgd_trig;   // (m, k, j, 4): sin, cos of theta, phi (shell kernel)
-  // (rad_vet_vetgd_sph2.inc): vet_gd on a STRETCHED theta and/or the FULL
-  // sphere (polar x2 faces).  vgd_sth: the (theta) positions of the band rows come from
-  // the node table vgd_thn (m, band row) = the face midpoint of the row in the EXTENDED
-  // chart (beyond a pole theta continues to -theta / 2 pi - theta, i.e. the point
-  // (theta, phi + pi)); the upwind fractional row is linear between the two nodes that
-  // bracket it.  false = the uniform index formula (bitwise as before).  vgd_pol: the
-  // full sphere: the halo slots beyond a pole take the pole partner (lx2, lx3 + nb3/2)
-  // with the rows REVERSED (vgd_hpol(8 m + o) = 1 north, 2 south; on-rank partners are
-  // read in-kernel with the reversed row), an upwind point behind the axis is taken in
-  // the extended chart, and reads beyond the shell's stored band are clamped (counted)
+  // vet_gd on a stretched theta and/or the full sphere (rad_vet_vetgd_sph2.inc).
+  // vgd_sth: band-row theta from the node table vgd_thn (extended chart: beyond a pole
+  // theta continues as (-theta, phi + pi)), upwind rows linear between nodes. vgd_pol:
+  // halo slots beyond a pole take the pole partner (lx2, lx3 + nb3/2) with rows reversed
+  // (vgd_hpol 1 north, 2 south); reads beyond the stored band are clamped (counted).
   bool vgd_sth = false, vgd_pol = false;
-  static constexpr Real vgd_bcolat = 30.0;   // (deg) the full sphere's band depth: sin
+  static constexpr Real vgd_bcolat = 30.0;   // (deg) full sphere's polar band zone
   DvceArray2D<Real> vgd_thn;              // (m, c2w) band-row theta (extended chart)
   std::vector<double> vgd_thn_h;          // host copy, m-major
   DvceArray1D<int> vgd_hpol;              // (8 nmb) pole slot flag
   DvceArray2D<int> vgd_wsd;               // (2, c1) per-shell halo depth: inward, outward
-  // <rad_vet>/vet_gd_band_global (read only when named; default false =
-  // bitwise; full sphere only, rad_vet_vetgd_sph2.inc): a decomposition-INDEPENDENT band.
-  // (1) every band position of every block is filled by an exact copy of its owner's
-  // interior value keyed on the GLOBAL cell (the cs band lists vgd_cs* and VetGdCsHalo,
-  // shared with the cubed sphere; any depth, several blocks away: the band is no longer
-  // capped at the MeshBlock size), per shell only the positions within the shell's halo
-  // depth (the lists sorted by depth, prefix counts per depth); (2) the upwind stencil is
-  // clamped to the CELL's own window (k +- wu, j +- wu, wu the read shell's halo depth)
-  // instead of to the block's band edge, so a clamped polar read is the same wherever the
-  // MeshBlock boundaries lie
+  // vet_gd_band_global (full sphere): a decomposition-independent band. Every band
+  // position is an exact copy of its owner's value keyed on the global cell (the cs lists
+  // vgd_cs*, VetGdCsHalo; any depth), per shell only within its halo depth; the upwind
+  // stencil is clamped to the cell's own window (k +- wu, j +- wu), not the block's band
   bool vgd_gband = false;
   DvceArray2D<Real> vgd_phc;              // (m, band k): band-column phi, global index
   std::vector<double> vgd_phc_h;          // host copy, m-major
@@ -2247,34 +2057,31 @@ class RadiationVet {
   std::vector<int> vgd_gdnl;              // (ws): on-rank entries with depth <= ws
   std::vector<std::vector<int>> vgd_gdsn, vgd_gdrn;   // (ws)(partner): send / recv counts
   void VetGdGlobalBandInit();
-  // G1: vet_gd_halo_compact > 0 with vet_gd_band_global (the full sphere,
-  // stretched theta): per shell and pass only the (band cell, direction) values that pass
-  // VgdHaloKeep, evaluated at the SOURCE cell's global (row J, column K) on both sides
-  // (node-table theta, global phi, the row's own theta spacing); rows within the polar
-  // zone (node colatitude < vet_gd_band_colat) + the band depth keep their whole branch
+  // vet_gd_halo_compact > 0 with vet_gd_band_global: per shell and pass only the values
+  // VgdHaloKeep passes at the source cell's global (J, K); rows in the polar zone
+  // (colatitude < vet_gd_band_colat) + the band depth keep their whole branch
   bool vgd_gbc = false;
   DvceArray2D<int> vgd_gbjs, vgd_gbjr;    // (entry, 2): source cell global J, K
   DvceArray1D<Real> vgd_gbth, vgd_gbdt;   // (J): node theta, theta cell width
   DvceArray1D<int> vgd_gbcap;             // (J): 1 = polar zone (branch only)
   DvceArray1D<int> vgd_gbfs, vgd_gbfr;    // flags -> positions (entry*n + v; +1)
   Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_gbpb;   // segment bounds
-  // vgd_raw: the scanned flags and bounds per (shell, pass, depth) (VetGdGbHaloC)
-  std::map<int, std::array<DvceArray1D<int>, 2>> vgd_gbcf, vgd_gbcf_xb;   // (_xb: the
-  std::map<int, std::vector<int>> vgd_gbcb, vgd_gbcb_xb;   // other cross-fade set's)
+  // vgd_raw: scanned flags and bounds per (shell, pass, depth) (VetGdGbHaloC); _xb: the
+  // other cross-fade set's
+  std::map<int, std::array<DvceArray1D<int>, 2>> vgd_gbcf, vgd_gbcf_xb;
+  std::map<int, std::vector<int>> vgd_gbcb, vgd_gbcb_xb;
   Real vgd_gbdmin = 0.0;
   template <class V>
   bool VetGdGbHaloC(V &a, const int i, const int ws);
-  void VetGdThetaInit();                  // the node table and the checks
-  double VetGdThetaDmin() const;          // the narrowest lateral spacing for the band
+  void VetGdThetaInit();                  // node table and checks
+  double VetGdThetaDmin() const;          // narrowest lateral spacing for the band
   int VgdPoleSlot(const int o, const int lx2) const;  // 0, 1 north, 2 south
   Kokkos::View<int64_t*, DevMemSpace> vgd_scan_sums;   // VgdScan2 chunk sums
-  // vet_gd_halo_exact (read only when named; default false; bitwise): the compact-halo
-  // lists of each (pass, shell) cut down to the band values the sweep actually reads
-  // (marked from the sweep's own ray geometry, VetGdSweep), the senders told by one
-  // request message per list build; no zeros of the other pass's entries needed.
+  // vet_gd_halo_exact: the compact-halo lists cut to the band values the sweep reads
+  // (marked from its ray geometry), senders told by one request per list build
   bool vgd_hx_on = false;
   DvceArray1D<int> vgd_hx_mk;              // (m, v, k, j) dense band: read marks
-  int vgd_hx_stamp = 0;                    // the marks of the current build
+  int vgd_hx_stamp = 0;                    // marks of the current build
   Kokkos::View<int, DevMemSpace> vgd_hx_oc;   // marked ghosts outside the region
   Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_hx_pin, vgd_hx_pin2;
   DvceArray1D<int> vgd_hx_need, vgd_hx_nc, vgd_hx_ns;   // build scratch
@@ -2282,13 +2089,13 @@ class RadiationVet {
   Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_hx_hb;   // bounds, counts
   Real vgd_hx_nmade = 0.0, vgd_hx_nout = 0.0, vgd_hx_nfall = 0.0, vgd_hx_nun = 0.0;
   Real vgd_hx_vmask = 0.0, vgd_hx_vexact = 0.0;   // received values: mask lists, exact
-  std::vector<VgdHlEntry> vgd_hxe;         // (2 n1): the exact lists per (pass, shell)
+  std::vector<VgdHlEntry> vgd_hxe;         // (2 n1): exact lists per (pass, shell)
   std::vector<VgdHlEntry> vgd_hxe_alt;     // the other xfade set's lists
   bool VetGdHxKey(const int e, const int ws) const;   // record e matches the masks' key
   bool VetGdHxCut(const int e, const VgdHlEntry &X) const;   // ray-cut move test
   void VetGdHxBuild2(const int e, const int i, const int ws);
-  // the exact lists of many shells in a few collectives (VetGdHxBatch);
-  // per-slot scratch pools, the per-depth partner / piece tables, pinned bounds
+  // exact lists of many shells in a few collectives (VetGdHxBatch): scratch pools,
+  // per-depth partner / piece tables, pinned bounds
   DvceArray1D<char> vgd_hxb_tmp;
   int vgd_hxb_g = 0, vgd_hxb_npc = 0;
   size_t vgd_hxb_rcap = 0, vgd_hxb_scap = 0;
@@ -2298,10 +2105,8 @@ class RadiationVet {
   Kokkos::View<int*, Kokkos::SharedHostPinnedSpace> vgd_hxb_hb, vgd_hxb_sp;
   Real vgd_hxb_t = 0.0, vgd_hxb_ngroup = 0.0, vgd_hxb_nrealloc = 0.0;
   void VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs);
-  // vet_gd_halo_ipc (read only when named; default false; bitwise): the
-  // per-shell exchange of the batch-made exact lists over node-local CUDA IPC, driven by
-  // the GPU (spin / flag kernels on the sweep's stream; the host never waits in the
-  // sweep).
+  // vet_gd_halo_ipc: per-shell exchange of the batch-made exact lists over node-local
+  // CUDA IPC, driven by the GPU (the host never waits in the sweep)
   bool vgd_ipc_on = false;
   int vgd_ipc_state = 0;        // 0 not built, 1 on, -1 not possible (MPI path)
   Real *vgd_ipc_rbuf = nullptr;
@@ -2316,13 +2121,12 @@ class RadiationVet {
   std::vector<void *> vgd_ipc_open;
   void VetGdIpcInit(const std::vector<int> &prk, size_t cs, size_t half);
   void VetGdIpcCheck();
-  // the pending list-path exchange of the overlap (VetGdHlBegin / VetGdHlEnd)
+  // pending list-path exchange of the overlap (VetGdHlBegin / VetGdHlEnd)
   struct VgdHlPend {
     bool on = false, xe = false;                // xe: X is an exact (vgd_hxe) entry
     bool ipc = false;                           // the IPC path
-    // (CUDA IPC, lean): VetGdHalo's begin + end as ONE kernel (pack, flags, wait,
-    // scatter).  now: the end follows
-    // the begin (VetGdHalo); done: the scatter ran; cnt: the kernel's teams done packing
+    // IPC: begin + end as one kernel (pack, flags, wait, scatter). now: the end follows
+    // the begin; done: the scatter ran; cnt: teams done packing
     bool now = false, done = false;
     Kokkos::View<int, DevMemSpace> cnt;
     long long seq = 0;
@@ -2339,26 +2143,23 @@ class RadiationVet {
   bool VetGdHlBegin(V &a, const int nv, const int i0, const int ws);
   void VetGdHlEnd();
   std::vector<int> vgd_wsh;    // (i): band depth the shell's data needs (<= vgd_w)
-  std::vector<int> vgd_wsi, vgd_wso;   // (i): the same per pass (inward, outward)
+  std::vector<int> vgd_wsi, vgd_wso;   // (i): same per pass (inward, outward)
   template <class V>
   void VetGdHalo(V &a, const int nv, const int i0, const int i1, const int ws,
                  const bool mapd);
-  // the multi-shell (ln chi, ln S) halo in chunks of shells that fit the
-  // per-shell message buffers (the same values; the buffers sized for one shell of all
-  // directions instead of all shells of the 2 source fields)
+  // multi-shell (ln chi, ln S) halo in chunks of shells that fit the per-shell buffers
   void VetGdHaloCs(DvceArray5D<Real> &a, const int i0, const int i1);
   Real vgd_tsrc = 0.0, vgd_tswp = 0.0, vgd_tmom = 0.0;
   void VetGdInit();
   Real VetGdAngle(const int cyc) const;
   bool VgdRotOn() const {return vgd_rot > 0 || vgd_rot_dt > 0.0 || vgd_rot_auto;}
-  int64_t VetGdBlock(const int cyc) const;       // the rotation block
+  int64_t VetGdBlock(const int cyc) const;       // rotation block
   Real VetGdAngleBlk(const int64_t b) const;
   double RotPhase(const int64_t b) const;   // block -> fraction of period
   Real VetGdAlignDt(const Real time, const Real dt);
   void VetGdTables(const Real alpha);
-  // the tables' host part in persistent pinned buffers (no per-rotation
-  // mirrors), and the next rotation's tables prefetched (host thread + upload into a
-  // second device set on vgd_tex, swapped in at the rotation)
+  // host part of the tables in persistent pinned buffers; the next rotation's tables
+  // prefetched (host thread + upload into a second device set on vgd_tex)
   struct VgdTabHost {
     Kokkos::View<Real **, LayoutWrapper, Kokkos::SharedHostPinnedSpace> dir;
     Kokkos::View<int ***, LayoutWrapper, Kokkos::SharedHostPinnedSpace> w;
@@ -2392,14 +2193,13 @@ class RadiationVet {
   void VetGdSweep();
   void VetGdWall(const int i0, const int i1);
   void VetGdMoments();
-  // the shell body closure in device memory, called through a pointer
-  // (VgdClosureToDevice)
+  // shell body closure in device memory, called through a pointer (VgdClosureToDevice)
   DvceArray1D<char> vgd_bbuf0, vgd_bbuf1;
 #if defined(KOKKOS_ENABLE_CUDA)
   DvceArray1D<char> vgd_bbuf2, vgd_bbuf3;   // CUDA gx-false closures
 #endif
   int vgd_scut = 0;            // vlat_icut the running sweep uses (sync: = vlat_icut)
-  DevExeSpace vgd_cur;         // the instance the sweep/halo use
+  DevExeSpace vgd_cur;         // instance the sweep/halo use
 #if MPI_PARALLEL_ENABLED
   MPI_Comm vgd_comm = MPI_COMM_WORLD;
 #endif
