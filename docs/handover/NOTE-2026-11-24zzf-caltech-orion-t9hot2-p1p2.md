@@ -38,3 +38,32 @@ c5250 dt_hyd 18.18 gasonly 18.19 dir 3 gid 0 kji 77,50,59 r 2.4821e+12 rho 1.755
 4.770823e+05 6.6959 2.557970e+38 2.221271e+39 8.763705e+38 2.1541614981e+47 2.3310565725e+32 2.2929342399e+38
 4.770894e+05 7.1478 2.551334e+38 2.221193e+39 8.763705e+38 2.1541614020e+47 2.3310565725e+32 2.3439229339e+38
 ```
+
+## K (11-24 11:05)
+- floor_from_ekin=false nlim=5421 ; 2026-11-24 11:04:51 rc=0 wall=973 s 
+- CW 0, FATAL 0, created inf 0, DT_RETRY 0; s/cyc 2.9972 (c5200-5400)
+- dt every 10 cycles: 33.12 32.72 35.98 43.77 30.86 44.94 21.55 37.6 15.04 17.49 32.17 38.2 28.6 27.91 26.64 24.42 19.85 28.58 29.71 41.62 35.82 43.07 41.57 31.51 23.01 15.35 24.54 22.22 32.23 16.07 
+- per-dump stats:
+```
+cycle 5150: N_hot 0 | thin |v| max p99 1.118e+08 2.929e+07 | dense |v| max p99 1.126e+08 3.308e+07 | thin sum eint 1.569e+06 KE 1.707e+08 (cell sums, no volume)
+cycle 5200: N_hot 2 | thin |v| max p99 3.000e+08 2.913e+07 | dense |v| max p99 1.219e+08 3.315e+07 | thin sum eint 1.597e+06 KE 1.761e+08 (cell sums, no volume)
+cycle 5250: N_hot 2 | thin |v| max p99 1.608e+08 2.898e+07 | dense |v| max p99 1.232e+08 3.320e+07 | thin sum eint 1.594e+06 KE 1.784e+08 (cell sums, no volume)
+cycle 5300: N_hot 0 | thin |v| max p99 1.252e+08 2.884e+07 | dense |v| max p99 1.363e+08 3.324e+07 | thin sum eint 1.612e+06 KE 1.829e+08 (cell sums, no volume)
+cycle 5350: N_hot 0 | thin |v| max p99 1.348e+08 2.863e+07 | dense |v| max p99 1.450e+08 3.331e+07 | thin sum eint 1.625e+06 KE 1.878e+08 (cell sums, no volume)
+cycle 5400: N_hot 1 | thin |v| max p99 1.115e+08 2.852e+07 | dense |v| max p99 1.436e+08 3.334e+07 | thin sum eint 1.622e+06 KE 1.892e+08 (cell sums, no volume)
+cycle 5421: N_hot 2 | thin |v| max p99 2.024e+08 2.848e+07 | dense |v| max p99 1.431e+08 3.336e+07 | thin sum eint 1.639e+06 KE 1.899e+08 (cell sums, no volume)
+```
+- DTREP every 50 cycles:
+```
+c5150 dt_hyd 40.78 gasonly 40.86 dir 3 gid 0 kji 79,49,58 r 2.4651e+12 rho 1.987e-12 T 3.107e+14 v -7.469e+07 ceff 2.296e+07 tauT_h 0.00996
+c5200 dt_hyd 14.34 gasonly 14.34 dir 1 gid 0 kji 78,51,60 r 2.4991e+12 rho 3.385e-12 T 1.160e+16 v 2.193e+08 ceff 1.391e+08 tauT_h 0.0241
+c5250 dt_hyd 27.51 gasonly 27.56 dir 3 gid 0 kji 78,50,59 r 2.4821e+12 rho 1.950e-12 T 2.000e+14 v -1.277e+08 ceff 1.852e+07 tauT_h 0.00984
+c5300 dt_hyd 29.63 gasonly 29.74 dir 3 gid 0 kji 78,50,58 r 2.4651e+12 rho 6.776e-12 T 1.567e+14 v 1.182e+08 ceff 1.668e+07 tauT_h 0.0435
+c5350 dt_hyd 29.54 gasonly 29.64 dir 2 gid 2 kji 75,122,54 r 2.3984e+12 rho 2.076e-12 T 4.422e+14 v 1.218e+08 ceff 2.763e+07 tauT_h 0.0116
+c5400 dt_hyd 32.72 gasonly 32.77 dir 3 gid 0 kji 77,50,58 r 2.4651e+12 rho 2.994e-11 T 3.001e+14 v 9.955e+07 ceff 2.256e+07 tauT_h 0.135
+```
+- hst tail (t dt L_bot L_top L_in Etot M_tot Lz_tot):
+```
+4.814911e+05 17.294 8.644341e+38 2.176744e+39 8.763705e+38 2.1541031667e+47 2.3310565725e+32 -6.4520524272e+41
+4.815082e+05 17.072 8.694694e+38 2.176539e+39 8.763705e+38 2.1541029447e+47 2.3310565725e+32 -6.4517163939e+41
+```
