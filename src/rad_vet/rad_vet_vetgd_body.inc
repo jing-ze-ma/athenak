@@ -350,7 +350,8 @@
                                const int ii) -> Real {return fC(c,kk,jj,ii);};
                 return VgdCornerEdge(csr, m, k0, k1, j0, j1, iu, uk, uj);
               };
-              // vet_seg = jump's plateau test: the shell one further upwind (in the block)
+              // vet_seg = jump's plateau test: the shell one further upwind (in the
+              // block)
               const int iu2 = 2*iu - i;
               const int iuu = (typ == 1 && iu2 >= is && iu2 <= ie) ? iu2 : iu;
               const int id2 = 2*i - iu;

@@ -416,7 +416,7 @@ inline void VetFor(const char *name, const int n, const F &f) {
 
 //----------------------------------------------------------------------------------------
 //! \fn VetAggPost
-//! \brief vet_mb_agg: post the ONE message per neighbour rank of plan A (flat buffers
+//! \brief post the ONE message per neighbour rank of plan A (flat buffers
 //! st.sfl / st.rfl, filled by the caller's pack kernel, which must have completed).
 
 void VetAggPost(VetMBState &st, const VetMBState::Agg &A) {
@@ -1565,7 +1565,7 @@ void RadiationVet::VetMBInit(ParameterInput *pin) {
   st.xloc.modify_host();
   st.xloc.sync_device();
 
-  // vet_mb_agg: the message plans.  A piece is one (sweep block, slot) pair with a
+  // the message plans.  A piece is one (sweep block, slot) pair with a
   // remote neighbour; the pieces to one rank are ordered by the RECEIVER's (block, slot)
   // = (hlid, nof-1-o) on the sender and (m, o) on the receiver, the same order.
   auto plan = [&](VetMBState::Agg &A, const std::vector<int> &csz,
@@ -1612,7 +1612,7 @@ void RadiationVet::VetMBInit(ParameterInput *pin) {
     for (const auto &x : pr) {
       while (ip < A.prk.size() && A.prk[ip] != x[0]) ++ip;
       if (ip == A.prk.size()) {
-        VetFatal("<rad_vet>/vet_mb_agg: asymmetric neighbour ranks");
+        VetFatal("<rad_vet>/closure = vet_sc: asymmetric neighbour ranks");
       }
       if (static_cast<int>(ip) != last) {
         A.rdsp[ip] = A.rtot;
@@ -1718,20 +1718,9 @@ void RadiationVet::VetFree() {
 //! along x1 the stack is swept in turn, which the x1 line solve (implicit_partition =
 //! gather) already imposes.
 //!
-//! GPU cost (tests_m1/runs_3m_vetmb/README_SCALING.md).  A launch holds only one x1
-//! layer, so the default kernel runs one thread per (block, ray, cell) (VetRayLaunch)
-//! and sums the moments in a second launch (VetMomLaunch, same order, same numbers);
-//! vet_mb_kernel = cell keeps the per-cell ray loop.  vet_mb_halo = K exchanges a band
-//! K reaches wide after every K-th launch only, and the K-1 launches in between also
-//! sweep the part of the band still valid (K-1, K-2, .. reaches) redundantly: the same
-//! arithmetic on the same numbers.  vet_mb_overlap sweeps the interior cells of the next
-//! launch while the MPI part of the band is in flight.  Every launch passes its functor
-//! as a kernel argument (VetFor): no host wait between launches.
-//!
-//! `lagged` (DIAGNOSTIC vet_mb_lag): after every exchange the ghost band (and the handed
-//! x1 plane) is SWAPPED with the one stored by the previous sweep -- each block then
-//! sweeps with the neighbours' intensities of the previous sweep, the block-Jacobi
-//! alternative, while the self-wrap of a block that spans the whole period stays exact.
+//! The kernel runs one thread per (block, column) looping over the rays and adds the
+//! moments into vet_cell itself; the band exchanges pass their functors as kernel
+//! arguments (VetFor): no host wait between launches.
 
 void RadiationVet::VetSweepMB() {
   // vet_source_noesrc for vet_sc (as vet_col, fixbundle-1009 F1): the
