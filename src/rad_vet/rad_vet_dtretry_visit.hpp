@@ -65,6 +65,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("fcap_rho", fcap_rho);
   v.value("fcap_v", fcap_v);
   v.value("fcap_report", fcap_report);
+  v.value("fcap_lz", fcap_lz);
   v.value("fcap_mvol", fcap_mvol);
   v.dual("fcap_cnt", fcap_cnt);
   v.value("rsla_warn", rsla_warn);
@@ -619,6 +620,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_wbxl", cln_wbxl);
   v.value("cln_flrun", cln_flrun);
   v.value("cln_flrid", cln_flrid);
+  v.value("cln_wbmc", cln_wbmc);
   v.value("cln_wbffn", cln_wbffn);
   v.value("cln_wbfdg", cln_wbfdg);
   v.value("cln_raymin", cln_raymin);
@@ -680,6 +682,10 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_fcone", cln_fcone);
   v.value("cln_fcgas", cln_fcgas);
   v.value("cln_fclz", cln_fclz);
+  v.value("cln_fcemx", cln_fcemx);
+  v.value("cln_lzsp", cln_lzsp);
+  v.view("cln_fcx", cln_fcx);
+  for (int q0_ = 0; q0_ < 2; ++q0_) {v.view("cln_cx[]", cln_cx[q0_]);}
   v.value("cln_fwbst", cln_fwbst);
   v.value("cln_fwbpj", cln_fwbpj);
   v.value("cln_fwbs", cln_fwbs);
