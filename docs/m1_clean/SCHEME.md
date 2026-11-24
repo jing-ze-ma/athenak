@@ -69,68 +69,210 @@ discrete steady solution in the given gas.
 
 ## 2. Properties
 
-<!-- SKELETON: the wording of each property (exact / booked / approximate) and its
-mechanism are being audited and will be filled in from PROPERTIES.md. -->
+Each property is stated as it holds with the production keys of the templates, with the
+reason it holds, where it stops holding, and the test in `tests/m1_clean` that checks it.
+"Exact" means to round-off.
 
-### Energy conservation (gas + radiation)
+| property | status |
+|---|---|
+| energy (gas + radiation) | exact; floors are paid from the radiation |
+| mass | exact |
+| angular momentum L_z | spherical polar: exact with a ledger; cubed sphere: exact without one |
+| linear momentum | exact only where no limiter or residual acts; not recorded otherwise |
+| positivity | density and E by construction; gas internal energy by rejection and repair |
+| well-balance | equilibrium envelopes stay at rest to about 1e-9 of the sound speed |
+| order | second order in space and time, asymptotically |
+| restart, dt retry | bitwise |
+| reproducibility | bitwise across rank counts; across tile layouts with the conditions below |
+| CPU / GPU | agreement to round-off, not bitwise |
+| no silent fallbacks | every change of method prints or stops the run |
+| meshes | Cartesian, spherical polar, cubed sphere; one implementation |
 
-- Test: `conservation_sp`, `conservation_cs` (dE/E <= 1e-13).
-- Mechanism: TBD (PROPERTIES.md).
+### Energy (gas + radiation): exact
 
-### Momentum
+$E$ is updated in flux form with one energy flux per face, shared by the two cells. The gas
+takes exactly the energy the radiation gives up in each cell, including the kinetic energy of
+the radiation force, and any later correction to $E$ is moved to the gas with the opposite
+sign. The positivity limiters scale a face's flux on both sides at once. The density,
+pressure and radiation floors take the energy they need from the radiation of the same cell
+or its radial column (`<hydro>/floor_pay = rad_column`, `implicit_pos_floor_cons`).
+<!-- check at rebase: floor_pay_skip (density-floor potential energy) -->
+Energy is created only when a column holds too little radiation to pay; each such event
+prints a `CLEAN WARNING`.
 
-- Test: none in the suite (the conservation tests check energy, L_z and mass).
-- Mechanism: TBD (PROPERTIES.md).
+Test: `conservation_sp`, `conservation_cs` (closed rotating shells, dE/E <= 1e-13; measured
+about 1e-15) and `thermal_eq`.
 
-### Angular momentum
+### Mass: exact
 
-- Test: `conservation_sp`, `conservation_cs` (drift of the history column `Lz_tot` <= 1e-13; `Lz_tot` = gas + radiation + the L_z ledger; on the cubed sphere the radiation part is that of the face momenta).
-- Mechanism: TBD (PROPERTIES.md).
+The radiation solve never changes the density, so mass conservation is that of the hydro,
+which is in flux form.
+<!-- check at rebase: hydro/dfloor_flux_limit -->
+With `<hydro>/dfloor_flux_limit` the outflow of a nearly empty cell is scaled back so that its
+density cannot fall below the floor, and both neighbours see the same scaled flux; the density
+floor of the primitive-variable recovery stays as a backstop (counted in the event log). The
+open stellar boundaries remove mass by design, and the history records it.
 
-### Mass
+Test: `conservation_sp`, `conservation_cs` (dM/M <= 1e-13).
 
-- Test: `conservation_sp`, `conservation_cs` (dM/M <= 1e-13).
-- Mechanism: TBD (PROPERTIES.md).
+### Angular momentum $L_z$: exact on the cubed sphere, exact with a ledger on spherical polar
 
-### Positivity by construction
+On a spherical-polar mesh the azimuthal radiation stress is written in torque form, so it
+cancels between neighbouring cells; `clean_stag_fwb_ring`
+<!-- check at rebase: production value of clean_stag_fwb_ring (1 on the rebase target) -->
+removes the net torque of the
+well-balancing residual on each azimuthal ring. On the cubed sphere the panel faces are not
+azimuthal faces: each cell's gas takes its absorption torque, and the part that cannot cancel
+locally is collected each solve and given back to the gas as a uniform rigid spin. This
+conserves $L_z$ exactly but not locally.
 
-- Test: realisability counts printed every solve; no dedicated test.
-- Mechanism: TBD (PROPERTIES.md).
+Whatever $L_z$ the radiation step still changes goes into a ledger, stored in the restart
+file. The history column `Lz_tot` is gas + radiation + ledger. Because the ledger books
+exactly what the step changes, `Lz_tot` is constant by construction; the scheme's $L_z$
+error is the growth of the ledger, i.e. the drift of gas + radiation alone (`dLz_gr` in the
+test output).
 
-### Well-balanced hydrostatic and radiative equilibrium
+- Spherical polar, production keys: the face-flux realisability cut (`clean_stag_fcone`)
+  removes momentum the gas does not take, and its $L_z$ goes into the ledger. On the test shell
+  this happens on the first cycles of a fresh start and amounts to about 7e-7 of the gas
+  $L_z$; the ledger is constant afterwards.
+  <!-- check at rebase: clean_stag_fcone_gas -->
+  With `clean_stag_fcone_gas = true` the gas takes the cut's momentum and $L_z$ is exact
+  without a ledger (6e-16); this is not the production setting.
+- Cubed sphere: the ledger stays at round-off (1e-17), so gas + radiation $L_z$ is conserved
+  without one. Here the radiation's $L_z$ is that of the face momenta; the larger `dLz_gr`
+  the test prints (6e-5) uses the cell-centred flux vector and is a diagnostic mismatch, not
+  the scheme's $L_z$.
+- Not recorded in the ledger: the momentum the floor-gas cap (`floorcap`), the density floor
+  with `dfloor_keep_velocity` and the velocity ceiling remove.
 
-- Test: `wb_sp`, `wb_cs` (max |v|/c_s <= 1e-8 over the run).
-- Mechanism: TBD (PROPERTIES.md).
+Test: `conservation_sp`, `conservation_cs` (drift of `Lz_tot` <= 1e-13, with `dLz_gr`
+printed).
+
+### Linear momentum: exact where nothing cuts; not recorded
+
+The radiation momentum lives on the cell faces. The gas receives, face by face, minus the
+change of the radiation momentum of that face, shared between the two cells, and the
+radiation stress is in flux form. Gravity and the open boundaries change the momentum as
+physical sources. Three things change gas + radiation momentum without being given to the gas:
+
+- the realisability cut of the face flux (`clean_stag_fcone`)
+  <!-- check at rebase: clean_stag_fcone_gas -->
+  unless `clean_stag_fcone_gas = true`, which makes the cut momentum-neutral;
+- the well-balancing residual of `clean_stag_fwb`;
+- the floor-gas momentum removal (`floorcap`, `dfloor_keep_velocity`, the velocity ceiling).
+
+Their unsigned sizes are printed (`CLEAN FCONE`, `CLEAN FWB`, the `floorcap` line), but there
+is no linear-momentum ledger. In a periodic Cartesian box at small amplitude, where none of
+them acts, momentum is conserved to 5e-17; in a violent stress test the well-balancing
+residual changes it by about 6e-7 and the production cut by up to a few 1e-3 per cycle. On
+spherical-polar and cubed-sphere meshes Cartesian momentum is not a discrete invariant (the
+momenta live in local bases), so only $L_z$ and the radial budget are meaningful there.
+
+Test: none in the suite (the shell decks have closed walls that exert forces).
+
+### Positivity
+
+- **Density** stays above its floor by construction
+  <!-- check at rebase: hydro/dfloor_flux_limit -->
+  (`dfloor_flux_limit`, above).
+- **Radiation energy $E$** is non-negative by construction of the implicit operator: it is an
+  M-matrix for any Eddington tensor and step (the kinetic share has $h^+\ge0\ge h^-$, the
+  advective flux takes the smallest donor share that keeps the M-matrix, the off-diagonal
+  stress enters in donor-cell form). Zalesak limiters on the explicit stage increment and on
+  the written-back fluxes keep $E$ above `e_floor`; they scale only the energy flux, so
+  momentum is untouched. A floor remains behind them; it takes its energy from the cell's gas
+  or its column and is counted. The cone limit keeps $|\mathbf F|\le cE$.
+- **Gas internal energy** is not positive by construction. A step that would make it
+  negative is rejected and repeated (backward Euler, then a smaller dt), or the missing energy
+  is taken from the radiation of the same cell (`implicit_pos_gas`, energy-conserving).
+
+All such events are counted in the end-of-run `m1-positivity` line. Test: every suite deck
+runs with no floor raise, no energy created and no `CLEAN WARNING`.
+
+### Well-balance: equilibrium envelopes stay at rest
+
+A star in hydrostatic and radiative equilibrium is designed as a steady state of the discrete
+equations. The gas sees only the deviation of the radiative force from a reference force that
+balances gravity (`force_reference = wb_arad`, held by the well-balanced hydro), and the face
+flux rows are written about the rays' own steady state (`clean_stag_fwb`). The steady start
+(`clean_init = steady`) begins from the scheme's own discrete equilibrium. The remaining
+motion is at the solver-tolerance level, not round-off.
+
+Test: `wb_sp`, `wb_cs` (max |v|/c_s <= 1e-8 over the run; measured about 5e-9 and 1e-9).
 
 ### Second order in space and time
 
-- Test: `order_space` (linear radiation-hydro wave, Cartesian; order of the finest pair >= 1.7), `order_time` (deck D, dt halved on a fixed grid; second order is reached as dt -> 0: successive orders 1.57, 1.61, 1.84).
-- Mechanism: TBD (PROPERTIES.md).
+The face terms are second order in space; the IMEX SDIRK2 pairing is second order in time.
+At the time steps of the test, deck D is still pre-asymptotic: the successive orders are 1.57,
+1.61 and 1.84 (E) as dt is halved, and finer ladders reach 2. A first-order defect would show
+as an order near 1.
 
-### Bitwise restart and dt retry
+Test: `order_time` (order of the finest pair >= 1.7), `order_space` (linear
+radiation-hydro wave on a Cartesian mesh, finest pair >= 1.7).
 
-- Test: `restart_sp`, `restart_cs`, `dt_retry` (difference 0; a retry with factor 1 repeats the step exactly).
-- Mechanism: TBD (PROPERTIES.md).
+### Restart and dt retry: bitwise
 
-### Reproducibility across rank counts and MeshBlock layouts
+The restart file carries the full scheme state (stage slope, face momenta, closure history,
+ray cut, ledger), so N steps straight and N/2 steps, a restart and N/2 more are identical.
+A dt retry restores a full cycle checkpoint, so a retry at the same dt repeats the step
+exactly. The restart file also records every key, and a restart uses the recorded value
+(see the restart rule in [KEYS.md](KEYS.md)).
 
-- Test: `layout_tile` (tile mode: 1 x 2 and 2 x 2 MeshBlocks vs one MeshBlock; on this release they differ by about 1e-10 of the largest value after 8 cycles, fixed in the next release). Rank-count independence (block mode): not in the suite.
-- Mechanism: TBD (PROPERTIES.md).
+Test: `restart_sp`, `restart_cs`, `dt_retry` (difference 0).
 
-### CPU / GPU consistency
+### Reproducibility
 
-- Test: the suite run on a GPU binary (`tests/m1_clean/README.md`, "GPU builds"); see [BUILD.md](BUILD.md) for a known toolchain problem.
-- Mechanism: TBD (PROPERTIES.md).
+- **Same binary, same layout:** bitwise from run to run.
+- **MPI rank count:** bitwise. With `<mesh>/layout_invariant = true` (default) every global
+  or shell sum goes through an exact binned accumulator, so it does not depend on the order
+  of its terms. Not part of the suite.
+- **MeshBlock layout, tile mode** (`layout_invariant_mode = tile`, `layout_tile = N`): the
+  sums and the multigrid act on fixed N x N lateral tiles. Layouts made of whole tiles are
+  bitwise identical when there is one MeshBlock along x1 and, if the theta boundaries are ray
+  walls (mirror or vacuum), one MeshBlock along x2, as in the production templates. Splitting
+  across such walls gives a round-off difference (about 1e-10 after 8 cycles) from the
+  face-flux line solves joined across MeshBlocks.
+- **Block mode** (default): the result depends on the MeshBlock size at the solver
+  tolerance, because the preconditioner is MeshBlock-local.
+
+Test: `layout_tile` (1 x 2 MeshBlocks along phi vs one MeshBlock: identical; 2 x 2, which
+also splits theta across the ray walls: bounded at 1e-8).
+<!-- check at rebase: 1 x 2 bitwise is the behaviour of the rebase target; tests/m1_clean/README and
+references.json must say the same -->
+
+### CPU / GPU consistency: round-off, not bitwise
+
+One Kokkos implementation runs on CPUs and on NVIDIA and AMD GPUs. The sums are
+backend-independent (exact accumulators), and `-ffp-contract=off` (with `--fmad=false` for
+CUDA device code) removes fused multiply-add differences. The math libraries (exp, pow, the
+EOS) differ between backends, so CPU and GPU agree to round-off on smooth problems and far
+below the time-step error on stiff ones, but not bit for bit. See [BUILD.md](BUILD.md) for a
+toolchain that does not agree.
+
+Test: the suite on a GPU binary (`tests/m1_clean/README.md`, "GPU builds").
 
 ### No silent fallbacks
 
-- Test: unsupported options stop with a FATAL error naming the key; handled events print `CLEAN WARNING` lines ([OUTPUTS.md](OUTPUTS.md)); a healthy run prints none.
-- Mechanism: TBD (PROPERTIES.md).
+The scheme never changes method silently. Every backward-Euler redo, dt retry, solver switch
+or unconverged acceptance prints a `CLEAN` or `DT_RETRY` line, an exhausted retry is FATAL,
+and an unsupported combination of keys (mesh refinement, $\hat c<c$, removed keys or values,
+missing prerequisites) stops the run with a FATAL error naming the key. Some counted
+corrections (paid floor raises, limiter remnants, the automatic backward-Euler back-off of
+`time2_auto_be`) are reported only in the end-of-run summary; the floor-gas cap prints every
+`floorcap_report` cycles. See [OUTPUTS.md](OUTPUTS.md).
 
 ### Cartesian, spherical-polar and cubed-sphere meshes, one implementation
 
-- Test: the `*_sp` and `*_cs` variants above; `order_space` on a Cartesian mesh. Uniform meshes only (no SMR/AMR).
-- Mechanism: TBD (PROPERTIES.md).
+The face and cell kernels are written once in terms of cell volumes, face areas,
+centre-to-centre distances and each cell's local orthonormal frame, which each mesh supplies
+(the exact AthenaK volumes and areas on curved meshes). Supported: Cartesian 1-D to 3-D,
+spherical polar 1-D to 3-D (wedges, axisymmetric, full sphere; radial stretching allowed)
+and the cubed sphere. The mesh must be uniform (mesh refinement is FATAL). Two options are
+geometry-specific by construction: `clean_stag_fwb_ring` (3-D spherical polar with periodic
+phi) and the cubed-sphere torque redistribution.
+
+Tests: the `*_sp` and `*_cs` variants above; `order_space` on a Cartesian mesh.
 
 ## 3. Code map
 

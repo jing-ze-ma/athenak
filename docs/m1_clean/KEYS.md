@@ -131,14 +131,14 @@ Transverse Marshak faces are not supported by the ray sweep (FATAL).
 | `rad_m1/force_reference`, `force_reference_work` | `wb_arad`: well-balanced radiative envelope; the problem generator supplies the reference radiative acceleration, the gas receives only the residual force; its work is paid as `split` (required by the clean scheme). | `none`; `auto` | all: `wb_arad`, `split` | `rad_m1/rad_m1.cpp` (constructor) |
 | `rad_m1/e_floor` | Floor of E (code units). | FLT_MIN | all: `1.0e-4` | `rad_m1/rad_m1.cpp` (constructor) |
 | `rad_m1/floorcap_rho`, `floorcap_v` | Floor-gas cap: in cells with rho below `floorcap_rho`, |v| is capped at `floorcap_v` and T at max(T_rad, floor); the removed energy goes to E (momentum is removed and reported). | off | all: `1e-14`, `3e7` | `rad_m1/rad_m1.cpp` (constructor) |
-| `hydro/dfloor`, `pfloor`, `tfloor` | Hydro floors. `hydro/floor_pay = rad_column` pays the internal energy they create from the radiation. | FLT_MIN | per deck | `eos/eos.cpp`, `hydro/dual_energy.cpp` |
+| `hydro/dfloor`, `pfloor`, `tfloor` | Hydro floors. `hydro/floor_pay = rad_column` pays the internal energy they create from the radiation (needs `hydro/eos = general`). | FLT_MIN | per deck | `eos/eos.cpp`, `hydro/dual_energy.cpp` |
 
 ## Layout and reproducibility
 
 | key | meaning | default | production | read in |
 |---|---|---|---|---|
 | `mesh/layout_invariant` | Global and shell sums in exact, order-independent form: results independent of the MPI rank count. | true | all: `true` | `mesh/mesh.cpp` (constructor) |
-| `mesh/layout_invariant_mode` | `block`: sums per MeshBlock (independent of the rank count for fixed MeshBlocks); `exact`: every cell term exact (about +8 % cost); `tile`: fixed N x N lateral tiles as the summation and multigrid units, so results do not depend on the MeshBlock layout either. | `block` | `tile` (recommended) | `mesh/mesh.cpp` (constructor) |
+| `mesh/layout_invariant_mode` | `block`: sums per MeshBlock (independent of the rank count for fixed MeshBlocks); `exact`: every cell term exact (about +8 % cost); `tile`: fixed N x N lateral tiles as the summation and multigrid units, so results do not depend on the MeshBlock layout either (with ray walls in theta: one MeshBlock along x2). | `block` | `tile` (recommended) | `mesh/mesh.cpp` (constructor) |
 | `mesh/layout_tile` | Tile size N for `tile` mode; required with it. Needs one MeshBlock along x1 and N dividing `<meshblock>` nx2 and nx3. | none | `128` | `mesh/mesh.cpp` (constructor) |
 | `mesh/nghost` | Ghost cells; the face line solves across MeshBlocks need >= 3. | 2 | all: `3` | `mesh/mesh.cpp` (constructor) |
 | `meshblock/nx1`, `nx2`, `nx3` | MeshBlock size. One MeshBlock along x1 is needed for the ray cut and tile mode. | = mesh | per deck | `mesh/mesh.cpp` (constructor) |
@@ -167,7 +167,7 @@ Scheme options pinned by the templates:
 - `clean_stag_upwind_central` (true), `clean_stag_central` (true): central advective flux within the TVD bound.
 - `clean_face_hctau` (true), `clean_face_jse` (true), `clean_face_opac` (`harmonic`): face values of the rays' flux, half ranges and opacity.
 - `clean_stag_thinf` (false), `clean_stag_flim` (false), `clean_consistency` (true): forms of the thin-limit correction and flux bound.
-- `clean_stag_fwb` (true), `clean_stag_fcone` (true), `clean_stag_fwb_ring` (0): well-balanced face rows, cone limit |F| <= cE, ring projection.
+- `clean_stag_fwb` (true), `clean_stag_fcone` (true), `clean_stag_fwb_ring` (0) <!-- check at rebase: 1 on the rebase target -->: well-balanced face rows, cone limit |F| <= cE, ring projection.
 - `clean_stag_xdonor` (`lag`), `clean_stag_xsrc` (true), `clean_stag_xdonor_freeze` (4): donor form of the off-diagonal stress.
 - `clean_w_fse`, `clean_w_c0`, `clean_w_c1`: weight of the kinetic share.
 - `clean_xt_exact` (`cons`), `clean_wb_fct` (true), `time2_face_fct` (true): exact exchange bookkeeping and the Zalesak limiters.

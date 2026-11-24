@@ -8,13 +8,15 @@ hydrodynamics), in a well-balanced formulation for stellar envelopes.
 
 Properties (wording, mechanism and the test of each: [SCHEME.md](SCHEME.md)):
 
-- energy and mass conservation; momentum and angular momentum (`Lz_tot`, with its ledger);
-- positivity by construction;
-- well-balanced hydrostatic + radiative equilibrium;
-- second order in space and time;
+- energy and mass conserved to round-off (floors paid from the radiation);
+- angular momentum L_z conserved: exactly on the cubed sphere, with a ledger on spherical polar;
+- linear momentum conserved where no limiter or residual acts (not recorded otherwise);
+- density and radiation energy positive by construction; gas internal energy by rejection and repair;
+- well-balanced: equilibrium envelopes stay at rest to about 1e-9 of the sound speed;
+- second order in space and time (asymptotically);
 - bitwise restarts and dt retries;
-- reproducible across MPI rank counts, and across MeshBlock layouts in tile mode;
-- CPU / GPU consistency;
+- bitwise across MPI rank counts, and across tile layouts in tile mode;
+- CPU and GPU agree to round-off (not bitwise);
 - no silent fallbacks: unsupported options are FATAL, handled events print `CLEAN WARNING`;
 - Cartesian, spherical-polar and cubed-sphere meshes with one implementation.
 
