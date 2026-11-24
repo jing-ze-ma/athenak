@@ -38,3 +38,8 @@
 - pre-switch (log.1, on the old node): 2.7956 s/cyc (c1100-1350), dt 9.684534e+01. **Moved to hpc-sm-02-17 / holder 7333073 (COORD: frees 7333072 for RSG; 02-16 is timing-suspect).** Clean STOP: yes ('Terminating on stop request'). Pre-switch rst kept as rst_keep/t9l62.00005.rst.pre-mg4.
 - relaunch: `2026-11-24 02:20:20 chunk 2 STAR=t9l62 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc3_af836f5a3 md5=09f50abee4ffa6cd399ce15879626353 DECK=/resnick/groups/carnegie_poc/jingze/prod_rc3_1124/decks/tile/IA123_t9l62.athinput md5=194a66017c` + EX: time/cfl_number=0.3 hydro/fofc=true hydro/fofc_retest=true rad_vet/clean_stag_mg_levels=4 time/cfl_number=0.3 hydro/dt_report=200
 - log echo (log.2): ### NOTE: parameter 'clean_stag_mg_levels' in block 'rad_vet' is absent from the restart's input: added from the command line (= 4); | <hydro>: fofc_retest 1
+- **t9l62 REVERTED** (11-24 05:06) on:  dt=3.217524e+01<dt_pre/3(9.684534e+01). Post-switch rsts moved to rst_mg4_reverted/ (kept). Relaunched from t9l62.00005.rst with time/cfl_number=0.3 hydro/fofc=true hydro/fofc_retest=true.
+```
+
+```
+- post-switch log.2: 2.8996 s/cyc (c4850-5100), dt 3.217524e+01
