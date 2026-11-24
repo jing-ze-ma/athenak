@@ -4,7 +4,7 @@ A self-contained CPU test suite for the clean VET radiation scheme: one command,
 line per test, about 1 min (`--quick`) or 2.5 min (full) on 48 cores (`--jobs 12`).
 
 ```bash
-# build a CPU binary (into build_m1test/) and run the quick subset
+# build a CPU binary (into build_vettest/) and run the quick subset
 tests/vet_clean/run_tests.sh --quick
 # or test a binary you built yourself
 tests/vet_clean/run_tests.sh --exe build_cpu/src/athena            # full suite
@@ -127,7 +127,7 @@ an existing run) and plots the result against the exact solution or the criterio
 matplotlib and jupyter are needed; see `notebooks/README.md`.
 
 ```bash
-cd tests/vet_clean/notebooks && ATHENA_EXE=$PWD/../../../build_m1test/src/athena \
+cd tests/vet_clean/notebooks && ATHENA_EXE=$PWD/../../../build_vettest/src/athena \
   jupyter nbconvert --to notebook --execute --inplace thermal_eq.ipynb
 ```
 

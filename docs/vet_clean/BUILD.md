@@ -46,7 +46,7 @@ make -C build_cpu -j 16 athena             # -> build_cpu/src/athena
 ```
 
 The same commands are in `tests/vet_clean/run_tests.sh --build`, which builds into
-`build_m1test/`.
+`build_vettest/`.
 
 Tested on an Intel Xeon IceLake cluster (72 cores per node) with
 `module load gcc/13 openmpi/4.1 cmake/3.30`; the configure step takes 10 s and `make -j 72`

@@ -29,7 +29,7 @@ jupyter nbconvert --to notebook --execute --inplace thermal_eq.ipynb
 ```
 
 Settings (environment variables, read by the first cell of each notebook):
-- `ATHENA_EXE`: the binary (default `../../../build_m1test/src/athena`, the one
+- `ATHENA_EXE`: the binary (default `../../../build_vettest/src/athena`, the one
   `tests/vet_clean/run_tests.sh` builds).
 - `M1_NB_WORKDIR`: where the runs go (default `runs/` next to the notebooks). A test whose
   record `WORKDIR/<test>.json` exists is loaded, not rerun: delete `WORKDIR/<test>*` to rerun.

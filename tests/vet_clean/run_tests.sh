@@ -4,9 +4,9 @@
 # The clean VET test suite on a CPU machine.  Needs python3 with numpy, cmake, a C++17
 # compiler and MPI (mpicxx).  See tests/vet_clean/README.md.
 #   --exe PATH   test this athena binary
-#   --build      configure and build a CPU binary in <repo>/build_m1test first (the
+#   --build      configure and build a CPU binary in <repo>/build_vettest first (the
 #                recipe of docs/vet_clean/BUILD.md); without --exe or --build the script
-#                uses <repo>/build_m1test/src/athena if it exists, else builds it
+#                uses <repo>/build_vettest/src/athena if it exists, else builds it
 #   --quick      the short subset (8 tests, ~1.5 min on 16 cores)
 # Exit status 0 if every test passes.
 set -e
@@ -20,7 +20,7 @@ while [ $# -gt 0 ]; do
     *) ARGS+=("$1"); shift ;;
   esac
 done
-B=$REPO/build_m1test
+B=$REPO/build_vettest
 if [ -z "$EXE" ]; then
   EXE=$B/src/athena
   if [ $BUILD = 1 ] || [ ! -x "$EXE" ]; then

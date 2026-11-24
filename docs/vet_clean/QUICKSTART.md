@@ -184,7 +184,7 @@ on the command line as `block/key=value`, for example `time/nlim=100`. The outpu
 ## 6. Plots in Jupyter
 
 One notebook per test problem runs the deck and plots the result against its reference.
-Name the binary in `ATHENA_EXE` (the notebooks' default is `build_m1test/src/athena`, the
+Name the binary in `ATHENA_EXE` (the notebooks' default is `build_vettest/src/athena`, the
 binary of `run_tests.sh --build`), then run a notebook without a browser (about 1 min):
 
 ```bash
