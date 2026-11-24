@@ -85,10 +85,11 @@ void GeneralHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
   // CUDA; the reduction keeps its block size and grid, so the sums are unchanged
   using C2pPol = Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256, 2>>;
   Real fdm_ = 0.0, fde_ = 0.0;   // mass and energy created by the floors
+  int fdn_ = 0;   // active cells the density floor raised
   const auto fvw_ = FloorVol();
   Kokkos::parallel_reduce("hyd_c2p_gen", C2pPol(DevExeSpace(), 0, nmkji),
   KOKKOS_LAMBDA(const int &idx, int &sumd, int &sume, int &sumt, int &sumc, Real &sdm_,
-                Real &sde_) {
+                Real &sde_, int &sdn_) {
     int m = (idx)/nkji;
     int k = (idx - m*nkji)/nji;
     int j = (idx - m*nkji - k*nji)/ni;
@@ -127,6 +128,7 @@ void GeneralHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
         if (eos.ifltr >= 0) cons(m,eos.ifltr,k,j,i) += u.d - cons(m,IDN,k,j,i);
         cons(m,IDN,k,j,i) = u.d;
         sumd++;
+        if (fvw_(m,k,j,i) > 0.0) sdn_++;   // (an active cell)
       }
       if (efloor_used) {
         cons(m,IEN,k,j,i) = u.e;
@@ -171,14 +173,14 @@ void GeneralHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
     }
   }, Kokkos::Sum<int>(nfloord_), Kokkos::Sum<int>(nfloore_),
      Kokkos::Sum<int>(nfloort_), Kokkos::Sum<int>(ntclamp_),
-     Kokkos::Sum<Real>(fdm_), Kokkos::Sum<Real>(fde_));
+     Kokkos::Sum<Real>(fdm_), Kokkos::Sum<Real>(fde_), Kokkos::Sum<int>(fdn_));
 
   // store appropriate counters
   if (only_testfloors) {
     pmy_pack->pmesh->ecounter.nfofc += nfloord_;
   } else {
     pmy_pack->pmesh->ecounter.neos_dfloor += nfloord_;
-    FloorBook(fdm_, fde_);
+    FloorBook(fdm_, fde_, fdn_);
     pmy_pack->pmesh->ecounter.neos_efloor += nfloore_;
     pmy_pack->pmesh->ecounter.neos_tfloor += nfloort_;
     pmy_pack->pmesh->ecounter.neos_tclamp += ntclamp_;
