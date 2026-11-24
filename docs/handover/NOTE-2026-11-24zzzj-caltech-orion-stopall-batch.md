@@ -172,3 +172,12 @@ Pairs on the common first N rows: last-row relative difference (second - first)/
 
 Pairs on the common first N rows: last-row relative difference (second - first)/first; time, dt, L_top, L_in, KE_int, Etot, M_tot, Lz_tot; and max |L_top/L_in difference| over the rows:
 - RSGt vs RSGf (N 100): t 0.00e+00 dt 0.00e+00 L_top 1.06e-03 L_in 0.00e+00 KE 2.53e-11 Etot -5.68e-09 M -1.24e-15 Lz -4.81e-05 | max d(L_top/L_in) 3.11e-03 | dt ratio mean 1.0000
+
+## t9l62-C0t (C0 = Compton-arm baseline thinf false, C0t = same + thinf=true, small-dt phase, t9l62.00015) (11-24 13:52)
+| arm | hst rows | s/cyc (cycles) | dt min/mean/max | its t2s2 (sum, solves) | its t2s3 | passes/cyc | L_top/L_in end (mean) | L_bot/L_in | KE_int end (drift) | dM/M | dE/E | CW/FATAL/inf/DT_RETRY | FWB / FCONE lines |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| C0 | 300 | 3.0014 (c5300-5550) | 10.51 / 32.88 / 46.91 | 14.2, 4.84 | 8.4, 3.61 | - | 2.44083 (2.50902) | 0.98459 | 1.78357e+44 (2.72e-02) | 3.09e-16 | -6.01e-05 | 0 / 0 / 0 / 0 | 0 / 0 |
+| C0t | 300 | 2.9804 (c5300-5550) | 11.07 / 33.69 / 46.96 | 14.5, 4.83 | 8.5, 3.54 | - | 2.43799 (2.50604) | 0.98506 | 1.78438e+44 (2.76e-02) | 1.55e-16 | -6.15e-05 | 0 / 0 / 0 / 0 | 0 / 0 |
+
+Pairs on the common first N rows: last-row relative difference (second - first)/first; time, dt, L_top, L_in, KE_int, Etot, M_tot, Lz_tot; and max |L_top/L_in difference| over the rows:
+- C0t vs C0 (N 300): t 5.02e-04 dt 1.63e-02 L_top -1.16e-03 L_in 0.00e+00 KE 4.51e-04 Etot -1.45e-06 M 3.09e-16 Lz -2.12e-06 | max d(L_top/L_in) 8.64e-03 | dt ratio mean 1.0247
