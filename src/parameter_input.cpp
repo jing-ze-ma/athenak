@@ -719,6 +719,7 @@ int ParameterInput::GetOrAddInteger(std::string block, std::string name, int def
   if (DoesParameterExist(block, name)) {
     pb = GetPtrToBlock(block);
     pl = pb->GetPtrToLine(name);
+    if (pl->def.empty()) pl->def = std::to_string(def_value);
     std::string val = pl->param_value;
     ret = atoi(val.c_str());
   } else {
@@ -747,6 +748,7 @@ Real ParameterInput::GetOrAddReal(std::string block, std::string name, Real def_
   if (DoesParameterExist(block, name)) {
     pb = GetPtrToBlock(block);
     pl = pb->GetPtrToLine(name);
+    if (pl->def.empty()) pl->def = RealToString(def_value);
     std::string val = pl->param_value;
     ret = static_cast<Real>(atof(val.c_str()));
   } else {
@@ -776,6 +778,7 @@ bool ParameterInput::GetOrAddBoolean(std::string block,std::string name, bool de
   if (DoesParameterExist(block, name)) {
     pb = GetPtrToBlock(block);
     pl = pb->GetPtrToLine(name);
+    if (pl->def.empty()) pl->def = def_value ? "true" : "false";
     std::string val = pl->param_value;
     if (val.compare(0, 1, "0")==0 || val.compare(0, 1, "1")==0) {
       ret = static_cast<bool>(atoi(val.c_str()));
@@ -812,6 +815,7 @@ std::string ParameterInput::GetOrAddString(std::string block, std::string name,
   if (DoesParameterExist(block, name)) {
     pb = GetPtrToBlock(block);
     pl = pb->GetPtrToLine(name);
+    if (pl->def.empty()) pl->def = def_value;
     ret = pl->param_value;
   } else {
     pb = FindOrAddBlock(block);
@@ -938,6 +942,43 @@ void ParameterInput::MarkAllAsRestart() {
   for (auto &b : block) {
     for (auto &l : b.line) {l.origin = kOriginRestart;}
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void ParameterInput::PrintNonDefault()
+//  \brief the resolved scheme (rank 0, at start-up, runs with <rad_vet>): every
+//  <rad_vet>, <hydro>, <time>, <mesh> key read with a default (GetOrAdd*) whose value
+//  differs from it (on a restart the default of a file without the key), and where the
+//  value came from.
+
+void ParameterInput::PrintNonDefault() {
+  if (global_variable::my_rank != 0 || !DoesBlockExist("rad_vet")) return;
+  auto same = [](std::string a, std::string b) {
+    for (auto *s : {&a, &b}) {
+      if (*s == "true") *s = "1";
+      if (*s == "false") *s = "0";
+    }
+    char *ea, *eb;
+    const double x = std::strtod(a.c_str(), &ea), y = std::strtod(b.c_str(), &eb);
+    const bool num = !a.empty() && !b.empty() && *ea == 0 && *eb == 0;
+    return num ? (x == y) : (a == b);
+  };
+  static const char *org[] = {"code", "file", "cmdline", "restart"};
+  std::cout << "--- keys that differ from the default (file | cmdline | restart) ---"
+            << std::endl;
+  int n = 0;
+  for (const char *bk : {"rad_vet", "hydro", "time", "mesh"}) {
+    InputBlock *pb = GetPtrToBlock(bk);
+    if (pb == nullptr) continue;
+    for (const auto &l : pb->line) {
+      if (l.origin == kOriginCode || l.def.empty()) continue;
+      if (same(l.param_value, l.def)) continue;
+      std::cout << "  " << bk << "/" << l.param_name << " = " << l.param_value
+                << " (default " << l.def << ") " << org[l.origin] << std::endl;
+      ++n;
+    }
+  }
+  std::cout << "--- end (" << n << " keys) ---" << std::endl;
 }
 
 //----------------------------------------------------------------------------------------

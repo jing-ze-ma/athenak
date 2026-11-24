@@ -42,6 +42,7 @@ struct InputLine {
   // (ReportUnreadParameters): never written to a dump or restart file
   bool accessed = false;  // read or probed by the code (Get*, GetOrAdd*, Does*, Set*)
   int origin = 0;         // ParameterInput::kOrigin*: where the current value came from
+  std::string def;        // default of the first GetOrAdd* (PrintNonDefault)
 };
 
 //----------------------------------------------------------------------------------------
@@ -90,6 +91,7 @@ class ParameterInput {
   static constexpr int kOriginCmdline = 2;  // command line block/name=value
   static constexpr int kOriginRestart = 3;  // parameter header of a restart file (-r)
   void MarkAllAsRestart();
+  void PrintNonDefault();
   void ReportUnreadParameters();
   bool DoesBlockExist(std::string name);
   bool DoesParameterExist(std::string block, std::string name);
