@@ -1941,6 +1941,16 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       const int ng_ = pin->GetInteger("rad_vet","vet_gd_geo");
       if (ng_ > 0) {vgd_ls = -ng_;}
     }
+    // one direction set: the product set takes precedence over vet_gd_ls / vet_gd_geo, so
+    // naming both would silently ignore the latter (rule 12: FATAL, name one; 0 = off)
+    if (vgd_on && vgd_gl_nmu > 0 && vgd_ls != 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+                << "<rad_vet>: both a product set (vet_gd_gl_nmu = " << vgd_gl_nmu
+                << ") and " << ((vgd_ls > 0) ? "vet_gd_ls" : "vet_gd_geo") << " are named; "
+                << "the product set would be used and the other ignored. Name one set "
+                << "(vet_gd_ls = 0 / vet_gd_geo = 0 for the product set)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_rotate_every")) {
       vgd_rot = pin->GetInteger("rad_vet","vet_gd_rotate_every");
     }
