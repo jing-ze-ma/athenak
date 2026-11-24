@@ -7,7 +7,8 @@ scattering shell on a 3-D spherical-polar wedge is a good first run:
 
 ```bash
 mkdir -p run/shell && cd run/shell
-OMP_NUM_THREADS=4 ../../build_cpu/src/athena -i ../../tests/vet_clean/decks/shell_sp.athinput
+OMPI_MCA_hwloc_base_binding_policy=none OMP_NUM_THREADS=4 \
+  ../../build_cpu/src/athena -i ../../tests/vet_clean/decks/shell_sp.athinput
 ```
 
 It runs 40 cycles in about 15 s and writes:

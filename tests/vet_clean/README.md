@@ -1,7 +1,7 @@
 # Clean VET radiation test suite
 
 A self-contained CPU test suite for the clean VET radiation scheme: one command, a PASS / FAIL
-line per test, about 5 min (`--quick`) or 10-15 min (full) on a 16-core workstation.
+line per test, about 1 min (`--quick`) or 2.5 min (full) on 48 cores (`--jobs 12`).
 
 ```bash
 # build a CPU binary (into build_m1test/) and run the quick subset
@@ -16,7 +16,8 @@ a C++17 compiler. The binary needs only the built-in problem generators, so the 
 build (no `-D PROBLEM`) is enough. Every test runs on one MPI rank with OpenMP threads.
 
 Options (`run_tests.py --help`): `--jobs N` tests at the same time (default: cores / 4),
-`--threads T` OpenMP threads per run (default 4), `--workdir DIR` (default
+`--threads T` OpenMP threads per run (default 4; on a shared node cap `--jobs`, the default
+takes every core), `--workdir DIR` (default
 `./vet_clean_runs`), `--keep` (keep the run directories of passed tests; failed tests are
 always kept), `--record FILE` (write every measured number to a JSON file), `--keys
 'block/key=value ...'` (extra input keys for every run, e.g. to test a new key on the whole
@@ -100,7 +101,8 @@ set-up. A test changes only a few keys on top (for example `time/nlim`, `time/dt
 directory. To run a deck by hand:
 
 ```bash
-mkdir run && cd run && OMP_NUM_THREADS=4 ../build_cpu/src/athena -i ../tests/vet_clean/decks/shell_sp.athinput
+mkdir run && cd run && OMPI_MCA_hwloc_base_binding_policy=none OMP_NUM_THREADS=4 \
+  ../build_cpu/src/athena -i ../tests/vet_clean/decks/shell_sp.athinput
 ```
 
 ## GPU builds

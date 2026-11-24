@@ -42,7 +42,8 @@ Every block below makes two binaries from the same flags:
   contains no built-in test problems.
 
 `-D CMAKE_CXX_FLAGS=-ffp-contract=off` makes CPU and GPU agree to round-off; keep it.
-Pick the block for your machine.
+Pick the block for your machine. On a cluster, run the GPU builds inside a compute job, not
+on a login node (many sites kill long login-node processes).
 
 ### 3a. CPU (any x86 or ARM cluster or workstation)
 
@@ -141,16 +142,18 @@ PASS conservation_sp      14 s  dE 6.67e-16 dM 7.19e-16 dLz 0 dLz_gr 6.94e-07
 1 passed, 0 failed, 14 s
 ```
 
-Then run the quick suite, 11 tests (about 1 min on 32 cores):
+Then run the quick suite, 11 tests (45 s on 48 cores). By default the suite runs one test
+per 4 cores of the machine; on a shared login node cap it with `--jobs` (12 jobs x 4
+threads = 48 cores):
 
 ```bash
-tests/vet_clean/run_tests.sh --exe build_tests/src/athena --quick
+tests/vet_clean/run_tests.sh --exe build_tests/src/athena --quick --jobs 12
 ```
 
 It ends with `11 passed, 0 failed`. Each line reads `PASS|FAIL  test  wall-time  measured
 values`; a `FAIL` line names the failed criterion after `<-` and keeps the run directory in
-`vet_clean_runs/<test>/` (its `run.log` has the details). The full suite (17 tests) runs
-without `--quick`. What each test checks: [tests/vet_clean/README.md](../../tests/vet_clean/README.md).
+`vet_clean_runs/<test>/` (its `run.log` has the details). The full suite (17 tests, 2.5 min on
+48 cores) runs without `--quick`. What each test checks: [tests/vet_clean/README.md](../../tests/vet_clean/README.md).
 
 On a GPU, run the same suite with the GPU `build_tests` binary, one test at a time (2 min
 on one MI300A):
@@ -165,9 +168,14 @@ A closed rotating radiating shell on a 3-D spherical-polar grid, 40 cycles in ab
 
 ```bash
 mkdir -p run/shell && cd run/shell
-OMP_NUM_THREADS=4 ../../build_tests/src/athena -i ../../tests/vet_clean/decks/shell_sp.athinput
+OMPI_MCA_hwloc_base_binding_policy=none OMP_NUM_THREADS=4 \
+  ../../build_tests/src/athena -i ../../tests/vet_clean/decks/shell_sp.athinput
 cd ../..
 ```
+
+Started without `mpirun`, Open MPI binds the process to one core, so the 4 threads share it
+(minutes instead of seconds); `OMPI_MCA_hwloc_base_binding_policy=none` turns that off. With
+`mpirun -np 1 --bind-to none` it is not needed.
 
 It writes history files (`sp.*.hst`) and binary dumps (`bin/*.bin`); any key can be changed
 on the command line as `block/key=value`, for example `time/nlim=100`. The output files:
@@ -175,13 +183,22 @@ on the command line as `block/key=value`, for example `time/nlim=100`. The outpu
 
 ## 6. Plots in Jupyter
 
-One notebook per test problem runs the deck and plots the result against its reference:
+One notebook per test problem runs the deck and plots the result against its reference.
+Name the binary in `ATHENA_EXE` (the notebooks' default is `build_m1test/src/athena`, the
+binary of `run_tests.sh --build`), then run a notebook without a browser (about 1 min):
 
 ```bash
-jupyter lab tests/vet_clean/notebooks/
+export ATHENA_EXE=$PWD/build_tests/src/athena
+cd tests/vet_clean/notebooks
+jupyter nbconvert --to notebook --execute --inplace shell.ipynb
+cd ../../..
 ```
 
-The notebooks use `build_tests/src/athena`; how to start them and what each one shows:
+or open them interactively with `jupyter notebook` (or `jupyter lab`) in that directory.
+
+All ten notebooks run on Python 3.6 (numpy 1.19, matplotlib 3.3); `jupyter lab` needs
+JupyterLab, which `pip install jupyter` does not install on Python 3.6. How to start them
+and what each one shows:
 [tests/vet_clean/notebooks/README.md](../../tests/vet_clean/notebooks/README.md).
 
 ## 7. 3-D stars in spherical-polar and cubed-sphere coordinates
@@ -202,8 +219,8 @@ The star decks run with `build_star/src/athena` (section 3). The decks, the tabl
 ---
 
 <sup>1</sup> Block 3c is taken from the build scripts used for production on GH200; it was
-not re-run for this release. Sections 2, 3a, 4 and 5 were run as written from a fresh clone
-on a CPU cluster (GCC 13, Open MPI 4.1). Block 3b was built as written on A100 (CUDA 12.6,
+not re-run for this release. Sections 2, 3a, 4, 5 and 6 and the CPU start-up check of
+STARS.md were run as written from a fresh clone on a CPU cluster (GCC 13, Open MPI 4.1). Block 3b was built as written on A100 (CUDA 12.6,
 GCC 13). Block 3d was built on MI300A (ROCm 7.2), and the GPU quick suite of section 4
 (its 8 tests before `wedge_sym` and `floor_pay` were added) passed there on one MI300A.
 

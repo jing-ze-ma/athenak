@@ -18,8 +18,9 @@ count gives the same answer, bit for bit.
 
 ## 1. What you need
 
-1. An AthenaK binary built with `-D PROBLEM=he_star_vet` ([BUILD.md](BUILD.md)): a CPU build
-   for the start-up check, and a CUDA (or HIP) build for the GPU run.
+1. An AthenaK binary built with `-D PROBLEM=he_star_vet`: `build_star/src/athena` of
+   [QUICKSTART.md](QUICKSTART.md) section 3, a CPU build for the start-up check and a CUDA
+   (or HIP) build for the GPU run.
 2. The input data in `inputs/rad_vet_clean/star3d_data/`. The decks read them by the relative
    path `star3d_data/...`, so link that directory into the directory you start the run from.
 
@@ -40,20 +41,21 @@ header records its source. The cs deck builds its gas EOS table (H/He ionisation
 from the `<hydro>` `eos_*` keys, so it needs no EOS file. md5 sums:
 
 ```
-ee9bf2ba1faef43372c268e34ccd0db6  bsg_ic.txt
+14d68b29b855cc83dc1c441661bbb766  bsg_ic.txt
 8c9460946b4580ba4a5a8b7173b26220  bsg_profile.txt
 c116f402987a6ce03e2d8f872e0ff94c  bsg_rosseland.txt
-512e97c29c4e8785d4ebcda33e667516  bsg_planck.txt
-125db6efdff0a72289042e6a50aae3cf  rsg_ic.txt
-a9d3440e1aa5a4718e081b03714bb8fe  rsg_rosseland.txt
-d8382173d238bf2a3d9fe1afb4129ce6  rsg_planck.txt
+318193f5b032cb7988c41d9e76462d31  bsg_planck.txt
+14f6552147896492aee0a81d20db1251  rsg_ic.txt
+398243da9cd2e12de84b53bb3d2097a0  rsg_rosseland.txt
+2c221acf7162bf54052a033b882f07d5  rsg_planck.txt
 ```
 
 ## 2. Run
 
-Set up a run directory once (paths relative to the AthenaK checkout `$ATHENAK`):
+Set up a run directory once, outside the checkout (`ATHENAK` names the `athenak/` directory):
 
 ```bash
+export ATHENAK=/path/to/athenak
 mkdir -p star3d && cd star3d
 ln -s $ATHENAK/inputs/rad_vet_clean/star3d_data .
 cp $ATHENAK/inputs/rad_vet_clean/star3d_sp.athinput $ATHENAK/inputs/rad_vet_clean/star3d_cs.athinput .
@@ -65,12 +67,13 @@ Use one MPI rank per MeshBlock (16 for sp, 24 for cs) and one OpenMP thread per 
 
 ```bash
 export OMP_NUM_THREADS=1
-mpirun -np 16 $ATHENAK/build_cpu/src/athena -i star3d_sp.athinput -d run_sp_cpu time/nlim=3 > run_sp_cpu.log 2>&1
-mpirun -np 24 $ATHENAK/build_cpu/src/athena -i star3d_cs.athinput -d run_cs_cpu time/nlim=2 > run_cs_cpu.log 2>&1
+mpirun -np 16 $ATHENAK/build_star/src/athena -i star3d_sp.athinput -d run_sp_cpu time/nlim=3 > run_sp_cpu.log 2>&1
+mpirun -np 24 $ATHENAK/build_star/src/athena -i star3d_cs.athinput -d run_cs_cpu time/nlim=2 > run_cs_cpu.log 2>&1
 ```
 
 Measured on one 2 x 56-core Intel Xeon Platinum 8480+ node (gcc 13, Open MPI 4.1, ranks pinned to cores): sp
-3 cycles in 128 s; cs 2 cycles in 125 s (685 s when the node is shared with other jobs).
+3 cycles in 128 s; cs 2 cycles in 125 s (685 s when the node is shared with other jobs;
+both at once on a shared login node: sp 220 s, cs 372 s). Each run writes its t = 0 dumps (sp 0.2 GB, cs 0.6 GB); delete `run_*_cpu` after.
 Most of that is the start-up (the profile, the ray tables and the steady radiation start).
 A cycle then costs about 25 s (sp and cs). Fewer ranks also work (any divisor of the MeshBlock
 count), only slower.
@@ -81,9 +84,9 @@ Use one MPI rank per GPU. With Slurm:
 
 ```bash
 srun -N 1 -n 4 --gpus-per-node=4 env KOKKOS_MAP_DEVICE_ID_BY=mpi_rank OMP_NUM_THREADS=1 \
-  $ATHENAK/build_cuda/src/athena -i star3d_sp.athinput -d run_sp > run_sp.log 2>&1
+  $ATHENAK/build_star/src/athena -i star3d_sp.athinput -d run_sp > run_sp.log 2>&1
 srun -N 1 -n 4 --gpus-per-node=4 env KOKKOS_MAP_DEVICE_ID_BY=mpi_rank OMP_NUM_THREADS=1 \
-  $ATHENAK/build_cuda/src/athena -i star3d_cs.athinput -d run_cs > run_cs.log 2>&1
+  $ATHENAK/build_star/src/athena -i star3d_cs.athinput -d run_cs > run_cs.log 2>&1
 ```
 
 With `mpirun`, use `mpirun -np 4 -x KOKKOS_MAP_DEVICE_ID_BY=mpi_rank -x OMP_NUM_THREADS=1 ...`.

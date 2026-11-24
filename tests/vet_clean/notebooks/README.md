@@ -22,7 +22,7 @@ PASS / FAIL line.
 
 ```bash
 pip install numpy matplotlib jupyter                       # nothing else is needed
-export ATHENA_EXE=$PWD/build_m1test/src/athena             # a CPU build (see ../README.md)
+export ATHENA_EXE=$PWD/build_tests/src/athena              # the CPU build of QUICKSTART.md 3a
 cd tests/vet_clean/notebooks
 jupyter notebook                                           # and open a notebook, or:
 jupyter nbconvert --to notebook --execute --inplace thermal_eq.ipynb
@@ -40,4 +40,6 @@ With 4 threads per run most notebooks take under a minute; `order.ipynb` and `wb
 `nbutil.py` holds the two shared helpers: `suite()` (runs `run_tests.py --only TEST --keep
 --record`) and `verdict()` (the suite's PASS / FAIL check against `ref/references.json`).
 The committed notebooks were executed with the CPU binary of commit 69bfe5d04; `radwave`,
-`wedge_sym` and `floor_pay` with that of ad213fb5e (Python 3.6 kernel).
+`wedge_sym` and `floor_pay` with that of ad213fb5e. All ten run with `nbconvert` on
+Python 3.6 (numpy 1.19, matplotlib 3.3, nbconvert 6.0). `jupyter lab` needs JupyterLab,
+which `pip install jupyter` does not install on Python 3.6; use `jupyter notebook` there.

@@ -14,6 +14,10 @@ git checkout vet-clean-release
 git submodule update --init kokkos       # Kokkos 4.6.2, pinned by the repository
 ```
 
+On a cluster, build inside a compute job (`srun`/`salloc`), not on a login node: many sites
+limit login-node CPU time (NCSA DeltaAI kills processes after 30 CPU-minutes), and one file
+of a CUDA build (`rad_vet_vetgd.cpp`) takes about 12 min of nvcc alone.
+
 ## 2. Options that matter for this scheme
 
 | CMake option | Value used | Why |
@@ -38,7 +42,7 @@ You need a C++17 compiler (GCC 11 or newer; GCC 13 is used here), MPI and CMake 
 cmake -S . -B build_cpu -D CMAKE_BUILD_TYPE=Release -D CMAKE_CXX_COMPILER=mpicxx \
   -D Athena_ENABLE_MPI=ON -D Athena_ENABLE_OPENMP=ON \
   -D CMAKE_CXX_FLAGS=-ffp-contract=off -D Athena_VET_VGD_NMAX=4096
-make -C build_cpu -j athena                # -> build_cpu/src/athena
+make -C build_cpu -j 16 athena             # -> build_cpu/src/athena
 ```
 
 The same commands are in `tests/vet_clean/run_tests.sh --build`, which builds into
@@ -62,7 +66,7 @@ cmake -S . -B build_cuda -D CMAKE_BUILD_TYPE=Release \
   -D Kokkos_ENABLE_IMPL_CUDA_MALLOC_ASYNC=OFF \
   -D Athena_ENABLE_MPI=ON -D CMAKE_CXX_FLAGS=-ffp-contract=off \
   -D Athena_VET_VGD_NMAX=512 -D PROBLEM=he_star_vet
-make -C build_cuda -j athena
+make -C build_cuda -j 32 athena
 ```
 
 `<ARCH>` is `AMPERE80` for A100, `HOPPER90` for H100 / H200 / GH200.
