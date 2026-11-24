@@ -25,3 +25,15 @@ GATE PASS (seam+wall sym deck copy): athena_ia123rc3_af836f5a3 md5 09f50abe node
 - FATAL 0, CLEAN WARNING 0, stage fallbacks 0, DT_RETRY 0, created inf 0; never-read: ### mesh/cs_seam_blockend = extend;### mesh/cs_vertex_3cell = true;### mesh/cs_seam_rho_guard = 4;### time/dt_retry_max = 8;### hydro/wb_cache_every = 0;### rad_vet/clean_stag_thinf_held = false;### rad_vet/time2_stage_local_be = false;### rad_vet/vet_gd_rotate_align = true;### rad_vet/vet_rotate_av
 - s/cyc 0.3397 (c10-240); row 200 (cycle 200): t 6.961014e+02 dt 3.48051 L_top/L_in 1.000463 L_bot/L_in 0.999890
 - md5 of the first 201 non-# rows (cycles 0-200): user.hst 389b393268498febe19f29b63adeefd1, hydro.hst 80043f8487b2a2ba33dea9a71eb7d49a (rows in caltech_results/PROD_RC3_1124/m35zams/user_hst_first201rows.txt)
+
+## m35mms (11-24 00:28) 
+
+- start: `2026-11-24 00:25:57 chunk 0 STAR=m35mms BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc3_af836f5a3 md5=09f50abee4ffa6cd399ce15879626353 DECK=/resnick/groups/carnegie_poc/jingze/prod_rc3_1124/decks/tile/IA123_m35mms.athinput md5=ae635eee87acbd5436e2c61f058453e6 start=-i /resnick/groups/carnegie_poc/jingze/`
+## bsg (11-24 00:28) 
+- start: `2026-11-24 00:25:57 chunk 0 STAR=bsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc3_af836f5a3 md5=09f50abee4ffa6cd399ce15879626353 DECK=/resnick/groups/carnegie_poc/jingze/prod_rc3_1124/decks/tile/IA123_bsg.athinput md5=9f4884524a7d230edd2fc32eb63525fd start=-i /resnick/groups/carnegie_poc/jingze/prod_r`
+- FATAL 0, CLEAN WARNING 0, stage fallbacks 0, DT_RETRY 0, created inf 0; never-read: ### mesh/cs_seam_blockend = extend;### mesh/cs_vertex_3cell = true;### mesh/cs_seam_rho_guard = 4;### time/dt_retry_max = 8;### hydro/wb_cache_every = 0;### rad_vet/clean_stag_thinf_held = false;### rad_vet/time2_stage_local_be = false;### rad_vet/vet_gd_rotate_align = true;### rad_vet/vet_rotate_av
+- s/cyc 0.6174 (c50-200); row 200 (cycle 200): t 2.401526e+03 dt 12.0076 L_top/L_in 1.001077 L_bot/L_in 0.999344
+- md5 of the first 201 non-# rows (cycles 0-200): user.hst b1d5579c37ff27ec25fdb174fa27baf2, hydro.hst bfdd1f3ae0e7fd6066faff5d44df98e3 (rows in caltech_results/PROD_RC3_1124/m35mms/user_hst_first201rows.txt)
+- FATAL 0, CLEAN WARNING 0, stage fallbacks 0, DT_RETRY 0, created inf 0; never-read: ### mesh/cs_seam_blockend = extend;### mesh/cs_vertex_3cell = true;### mesh/cs_seam_rho_guard = 4;### time/dt_retry_max = 8;### hydro/merge_lat_mom = rigid;### hydro/wb_cache_every = 0;### rad_vet/clean_stag_thinf_held = false;### rad_vet/time2_stage_local_be = false;### rad_vet/vet_gd_rotate_align 
+- s/cyc 0.6644 (c50-200); row 200 (cycle 200): t 3.359495e+04 dt 168.721 L_top/L_in 1.054684 L_bot/L_in 1.534098
+- md5 of the first 201 non-# rows (cycles 0-200): user.hst f907df1f36dc5a8d11439e43ab157a5c, hydro.hst 446533081340295d2a239eb200762c9b (rows in caltech_results/PROD_RC3_1124/bsg/user_hst_first201rows.txt)
