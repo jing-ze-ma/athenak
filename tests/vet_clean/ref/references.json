@@ -14,6 +14,23 @@
    "dLz": 1e-13
   }
  },
+ "conservation_lz": {
+  "_about": "the L_z-exact caps / cuts all on (sp: + floorcap_lz on every cell): drifts as conservation_sp, dLz_gr without the ledger; restart and forced dt_retry bitwise; cs_dLz_gr is reported only (the cell-centred flux vector, as conservation_cs)",
+  "max": {
+   "sp_dE": 1e-13,
+   "sp_dM": 1e-13,
+   "sp_dLz": 1e-13,
+   "sp_dLz_gr": 1e-13,
+   "cs_dE": 1e-13,
+   "cs_dM": 1e-13,
+   "cs_dLz": 1e-13
+  },
+  "equal": {
+   "restart_maxdiff": 0.0,
+   "retry_maxdiff": 0.0,
+   "warnings": 0
+  }
+ },
  "restart_sp": {
   "equal": {
    "maxdiff": 0.0
