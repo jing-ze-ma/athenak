@@ -1466,6 +1466,13 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     eddington = false;
     vet_sc = true;
     VetRotInit(pin);   // the vet_gd rotation keys and defaults
+    // vet_gd_rotate_every has no vet_sc clock: inert (it only turns the default off)
+    if (pin->DoesParameterExist("rad_vet","vet_gd_rotate_every") &&
+        pin->GetInteger("rad_vet","vet_gd_rotate_every") > 0 &&
+        global_variable::my_rank == 0) {
+      std::cout << "### NOTE: <rad_vet>/vet_gd_rotate_every has no effect with closure = "
+                << "vet_sc (the set does not rotate); name vet_gd_rotate_dt" << std::endl;
+    }
     RotAvgParse(pin);  // vet_rotate_avg (shared key)
     // scheme = clean with clean_rot_ring named: the rotating set on the clean ring, as
     // vet_gd's (vet_gd_rotate_xfade, default false; no slope correction)
