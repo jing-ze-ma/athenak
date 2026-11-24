@@ -36,6 +36,8 @@ EventLogOutput::EventLogOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
 //! \brief sums event counter data across MPI ranks
 
 void EventLogOutput::LoadOutputData(Mesh *pm) {
+  // (this rank's FOFC cell-stages, before the row's sum and reset: the run total)
+  pm->ecounter.nfofc_run += pm->ecounter.nfofc;
 #if MPI_PARALLEL_ENABLED
   // perform in-place sum or max over all MPI ranks, depending on counter
   std::int64_t* pdfloor = &(pm->ecounter.neos_dfloor);

@@ -1311,10 +1311,10 @@ void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
     }
 #endif
     // s3c floor ledger: the mass and energy the hydro inversions' floors created
-    // (and the cell-stages the first-order flux correction replaced since the last
-    // event-log output, <hydro>/fofc: counted, never silent)
+    // (and the cell-stages the first-order flux correction replaced in this run,
+    // <hydro>/fofc: counted, never silent)
     Real fl[3] = {pmesh->ecounter.flr_dm_v, pmesh->ecounter.flr_de_v,
-                  static_cast<Real>(pmesh->ecounter.nfofc)};
+                  static_cast<Real>(pmesh->ecounter.nfofc_run + pmesh->ecounter.nfofc)};
 #if MPI_PARALLEL_ENABLED
     MPI_Allreduce(MPI_IN_PLACE, fl, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
