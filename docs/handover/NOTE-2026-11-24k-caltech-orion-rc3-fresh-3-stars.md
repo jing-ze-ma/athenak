@@ -159,3 +159,12 @@ CLEAN WARNING cycle 779 t2s 2: the implicit_pos_floor creation 1.459516e+42 of t
 - FATAL 0, CLEAN WARNING 0, stage fallbacks 0, DT_RETRY 0, created inf 0; never-read: ### mesh/cs_seam_blockend = extend;### mesh/cs_vertex_3cell = true;### mesh/cs_seam_rho_guard = 4;### time/dt_retry_max = 8;### hydro/wb_cache_every = 0;### rad_vet/clean_stag_thinf_held = false;### rad_vet/time2_stage_local_be = false;### rad_vet/vet_gd_rotate_align = true;### rad_vet/vet_rotate_av
 - s/cyc 0.2647 (c10-310); row 200 (cycle 200): t 6.961014e+02 dt 3.48051 L_top/L_in 1.000460 L_bot/L_in 0.999890
 - md5 of the first 201 non-# rows (cycles 0-200): user.hst 1e0c57b57e944bf7f534fe471424f9d2, hydro.hst 7e8b70e0f8f80341fba8ebbf18fad8e5 (rows in caltech_results/PROD_RC3_1124/m35zams_z3/user_hst_first201rows.txt)
+
+## m35zams_z3 (Z3 layout) thin layer, signed sums (orion 24o/24zb) at 11-24 02:02: 2 vet dumps
+```
+ dump         t  cycle | sumFphiV/|Fr|V sumFthV/|Fr|V |     <v_phi>_m    max|v_phi| |       <v_r>_m     <|v_r|>_m
+00000         0      0 |    1.1650e-11    1.5311e-14 |    0.0000e+00    0.0000e+00 |    0.0000e+00    0.0000e+00
+00001      1802    525 |    1.2257e-04   -4.0754e-08 |   -4.6103e+02    3.0732e+05 |    2.4903e+06    2.4905e+06
+(float32 bins; vet_f* = cell radiation flux moments; shells i=320..331 = r 5.5279e+11..5.5603e+11; v in cm/s)
+```
+- Volume-weighted over shells i=320..331 (the 23zt thin layer). F_phi / F_theta are SIGNED sums over the |F_r| sum; v_phi and v_r are mass-weighted means; max|v_phi| is over the cells. Script: caltech_results/PROD_RC3_1124/m35zams/thin.py (srun CPU step on 01-15).

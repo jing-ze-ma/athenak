@@ -1,0 +1,4 @@
+ dump         t  cycle | sumFphiV/|Fr|V sumFthV/|Fr|V |     <v_phi>_m    max|v_phi| |       <v_r>_m     <|v_r|>_m
+00000         0      0 |    1.1650e-11    1.5311e-14 |    0.0000e+00    0.0000e+00 |    0.0000e+00    0.0000e+00
+00001      1802    525 |    1.2257e-04   -4.0754e-08 |   -4.6103e+02    3.0732e+05 |    2.4903e+06    2.4905e+06
+(float32 bins; vet_f* = cell radiation flux moments; shells i=320..331 = r 5.5279e+11..5.5603e+11; v in cm/s)
