@@ -93,3 +93,7 @@ PL: cycles 30140-30149 (last 10), 15.0 pass lines per cycle
   t2s 3 pass  6: n   3 (of 10 cycles) | it 1.3 | de 1.01e-05 | dv 9.02e-08 | tol 1.00e-04 | tags 1.496e-12 1.570e-12
 ```
 - PS t9l62 (100 cycles, 00015): rb 3.0685 vs sym 3.1325 s/cyc, its t2s2 14.7 -> 13.1, t2s3 8.7 -> 8.2, dt mean -6.3 % (different trajectories), cost per simulated second 1.089 x, L_top at matched time max 1.0e-4; not harmless by the bounds (cost and dt). Earlier PS m35mms: cost 1.114 x.
+
+## QUESTION before any fresh t9l62 start: the candidate clean_init CW
+- Candidate fresh t9l62 (b8b0d79c, thinf / lat_sums / tie_gid / opac_drag true, gtime_slope true, allow_clamp false, vceil 3e8): 'CLEAN WARNING clean_init steady: not converged (residual 6.167e-08, tol 1.0e-08)', 50 passes. The T2 production fresh t9l62 (thinf = false, the old values): converged in 3 passes, residual 1.3e-9, no CW. The other three stars (bsg, M35ZAMS, m35mms) have no such CW in the candidate fresh start.
+- The run continued and finished 100 cycles (CW 1 only). I have not looked into the cause; **what explains it, and is a fresh t9l62 start on these settings acceptable? Please answer before any fresh t9l62 start.**
