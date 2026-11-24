@@ -797,6 +797,7 @@ class RadiationVet {
   DvceArray5D<Real> t2hs;
   int t2_gt = 0;   // last Time2GasTime step of this stage loop
   bool t2_gtm = true;   // time2_gtime_mom: the flux state's momentum factor 1/g
+  bool t2_gts = false;  // time2_gtime_slope: its eint by the limited exchange slope
   void Time2Restore(Driver *pdrive);
 
   bool t2_inprobe = false;      // inside a helper solve (Time2RotCorrect)
