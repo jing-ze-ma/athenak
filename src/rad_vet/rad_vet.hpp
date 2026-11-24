@@ -1439,6 +1439,13 @@ class RadiationVet {
   DvceArray4D<Real> cln_ga[3], cln_gd[3];
   CleanGeo cln_gn;
   DvceArray3D<Real> cln_tg;   // spherical polar: CleanArgs::tg
+  // vet_gd_theta_seam_sym: CleanArgs' geometry with the theta-periodic seam's ghost rows
+  // their periodic images' (CleanSeamImage): vol, area x1f / x2f, dxface x2f / x3f,
+  // x2v, tg
+  DvceArray4D<Real> cln_sgv, cln_sga0, cln_sga1, cln_sgd1, cln_sgd2;
+  DvceArray2D<Real> cln_sgx;
+  DvceArray3D<Real> cln_sgtg;
+  void CleanSeamImage();
   struct CleanHalo {            // ghost exchange of nc components: scratch array and
     DvceArray5D<Real> a, ca;    // its coarse dummy
   };
