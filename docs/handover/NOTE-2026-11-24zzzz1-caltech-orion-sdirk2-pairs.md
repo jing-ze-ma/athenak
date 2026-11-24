@@ -226,3 +226,15 @@ max|ef/es-1| per 50 cycles (S2Lon): 0.12 0.14 0.15 0.24 0.29 0.47 0.38 0.34 0.36
 - **PASS** (rule: extra CW/fallback/BE/retry, ef<=0, dt mean < 0.95 off, s per sim s > 1.05 off, |L_top| > 1 %) 
 - ends: S3Foff: 2026-11-24 14:52:20 rc=0 wall=346 s CW 0 FATAL 0 inf 0 DT_RETRY 0 | S3Fon: 2026-11-24 14:58:01 rc=0 wall=341 s CW 0 FATAL 0 inf 0 DT_RETRY 0
 - ef<=0 per 50 cycles (post-cap) off/on: 0 0 0 0 0 0 ; 0 0 0 0 0 0 ; 
+
+## S5F (fixed binary sdorder2 09d1e4df4, both arms, SDO_PRINT=1), 11-24 15:16
+| arm | rows | s/cyc (cycles) | dt min/mean/max | its t2s2 (sum, solves) | t2s3 | L_top/L_in end | L_bot/L_in end | KE | dE/E | dM/M | CW/FATAL/inf/DT_RETRY | fallbacks/BE/retries | SDO: lines, K1K2<0 mean share, max ratio, cells>0.1, >1, ef<=0 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| S5Foff | 300 | 3.0398 (c5300-5550) | 10.51 / 32.88 / 46.91 | 14.2, 4.84 | 8.4, 3.61 | 2.44083 | 0.98459 | 1.78357e+44 | -6.01e-05 | 3.09e-16 | 0 / 0 / 0 / 0 | 0 / 0 / 0 | 300, 0.2879, 9.512e+02, 9088084, 502823, 502823 |
+| S5Fon | 300 | 3.0016 (c5300-5550) | 12.04 / 38.71 / 50.52 | 14.9, 4.71 | 8.7, 3.34 | 2.42044 | 0.98680 | 1.78883e+44 | -7.02e-05 | 1.55e-16 | 0 / 0 / 0 / 0 | 0 / 0 / 0 | 300, 0.2876, 7.910e+01, 27727803, 13085411, 0 |
+
+- last common row 300: L_top -8.35e-03 L_in 1.72e-16 KE 2.95e-03 Etot -1.02e-05 M -1.55e-15 Lz -7.91e-07 (on - off relative)
+- floor_pay sum (CLEAN FALLBACK lines): off 3.280e+32 on 5.000e+27 ratio 0.000; per 50 cycles off: 2.04e+32 1.24e+32 8.71e+26 8.57e+26 8.66e+26 8.01e+26 4.23e+26 | on: 1.44e+27 2.31e+26 5.96e+26 6.88e+26 8.15e+26 7.64e+26 4.63e+26
+- **PASS** (rule: extra CW/fallback/BE/retry, ef<=0, dt mean < 0.95 off, s per sim s > 1.05 off, |L_top| > 1 %) 
+- ends: S5Foff: 2026-11-24 15:16:21 rc=0 wall=977 s CW 0 FATAL 0 inf 0 DT_RETRY 0 | S5Fon: 2026-11-24 15:16:08 rc=0 wall=964 s CW 0 FATAL 0 inf 0 DT_RETRY 0
+- ef<=0 per 50 cycles (post-cap) off/on: 502890 1 1 1 0 0 ; 0 0 0 0 0 0 ; 
