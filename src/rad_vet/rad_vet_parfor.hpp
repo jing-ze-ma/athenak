@@ -6,27 +6,16 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_parfor.hpp
-//! \brief par_for_lb: the 4-D athena par_for (same flattening, same index arithmetic)
-//! with Kokkos::LaunchBounds<256,2> (m1-fast4, tests_m1/runs_5r_fast4; min 2 blocks
-//! of 256 per SM, i.e. a register cap of 128 on CUDA -- the heavy pass kernels ran at
-//! 12-18 % occupancy with 154-255 registers; same arithmetic, RSG pass_setup -11 %).
-//!
-//! Kokkos' HIP backend compiles a plain RangePolicy kernel for up to 1024 threads per
-//! block, which caps a kernel at 128 VGPRs on gfx942; the heavy per-cell kernels of the
-//! implicit solve (EOS and opacity-table lookups inlined, 150-250 live registers) then
-//! SPILL to scratch (m1_impl_i1 111 spilled VGPRs, m1_opacity 121, m1_vimp_j 69).  Kokkos
-//! launches a RangePolicy with 256 threads per block anyway, so the bound only lets the
-//! register allocator use what it needs.  The arithmetic is unchanged.
+//! \brief 4-D par_for with Kokkos::LaunchBounds<256,2> and flattened 4-D reductions.
+//! The launch bound caps registers at 128 on CUDA (occupancy) and lifts the 1024-thread
+//! VGPR cap on HIP (no spills); the arithmetic equals athena's par_for.
 
 #include <string>
 
 #include "athena.hpp"
 
-// M1_INL: forces the body of a KOKKOS_LAMBDA to be inlined into the launch wrapper,
-// placed after the parameter list:  KOKKOS_LAMBDA(...) M1_INL {...}.  The large per-cell
-// lambdas of the implicit solve are otherwise CALLED from the Kokkos wrapper (the inliner
-// refuses them), which pins them at 64 VGPRs and puts a 176-828 byte call frame per lane
-// in scratch memory.  Inlining leaves the arithmetic of the lambda as it is.
+// M1_INL: force-inline a KOKKOS_LAMBDA body into the launch wrapper (no call frame in
+// scratch); usage KOKKOS_LAMBDA(...) M1_INL {...}.
 #define M1_INL __attribute__((always_inline))
 
 namespace radvet {
@@ -57,12 +46,9 @@ inline void par_for_lb(const std::string &name, ExeSpace exec_space,
   });
 }
 
-//! par_reduce_flat: a 4-D (m, k, j, i) parallel_reduce on the flattened
-//! 1-D RangePolicy of par_for, in place of Kokkos::MDRangePolicy<Rank<4>> (whose CUDA
-//! reduction ran ~50x below bandwidth: 0.9 ms for one 2M-cell field on A100).  The cell
-//! set and the body are unchanged; only the order in which the partial results are
-//! combined differs, so Max / Min / MaxLoc reductions and sums of integer-valued Reals
-//! are bitwise the MDRange result (a general floating-point sum is not).
+//! par_reduce_flat: 4-D (m,k,j,i) parallel_reduce on a flat 1-D RangePolicy (faster
+//! than MDRangePolicy). Max/Min/MaxLoc and integer-valued sums are bitwise the MDRange
+//! result; a general floating-point sum is not (different combine order).
 template <typename Function, typename Reducer>
 inline void par_reduce_flat(const std::string &name, const int &nl, const int &nu,
                             const int &kl, const int &ku, const int &jl, const int &ju,

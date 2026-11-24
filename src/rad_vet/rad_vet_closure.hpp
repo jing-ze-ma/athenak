@@ -6,17 +6,9 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_closure.hpp
-//! \brief Levermore (1984) M1 closure and the Skinner & Ostriker
-//! (2013, eq. 41a) closed-form wave speeds, as device-inline functions.
-//!
-//! Conventions (docs/dev/rad_vet_design.md sect. 1 and 3): E is the lab-frame radiation
-//! energy density, F_i the lab-frame flux, f_i = F_i/(c E) the reduced flux with
-//! |f| <= 1, n_i = f_i/|f| and
-//!
-//!   chi  = (3 + 4 f^2)/(5 + 2 sqrt(4 - 3 f^2))
+//! \brief M1 closure factor chi and the physical-boundary ghost fill (device inline).
+//! E, F_i lab-frame moments, f_i = F_i/(c E), |f| <= 1, n_i = f_i/|f|:
 //!   P_ij = E [ (1-chi)/2 delta_ij + (3 chi - 1)/2 n_i n_j ]
-//!
-//! All of this is algebraic in flat space: there is no root find anywhere in here.
 
 #include <math.h>
 #include "athena.hpp"
@@ -25,14 +17,11 @@ namespace radvet {
 
 //----------------------------------------------------------------------------------------
 //! \fn M1Chi
-//! \brief closure factor chi as a function of the reduced flux magnitude; chi(0) = 1/3
-//! (isotropic), chi(1) = 1 (free streaming) for every kind.
-//!   M1_CHI_LEVERMORE  Levermore (1984), the Lorentz-boosted isotropic field (default)
-//!   M1_CHI_MINERBO    Minerbo (1978) classical maximum entropy, the usual polynomial fit
-//!                     chi = 1/3 + (2 f^2/15)(3 - f + 3 f^2)
-//!   M1_CHI_KERSHAW    Kershaw (1976), chi = (1 + 2 f^2)/3
-//! The explicit HLL wave speeds are Levermore's, so the other two are accepted with the
-//! implicit transports only (docs/dev/rad_vet_closure_survey.md).
+//! \brief closure factor chi(|f|); chi(0) = 1/3, chi(1) = 1 for every kind.
+//!   LEVERMORE (1984): (3 + 4 f^2)/(5 + 2 sqrt(4 - 3 f^2))
+//!   MINERBO   (1978): 1/3 + (2 f^2/15)(3 - f + 3 f^2)
+//!   KERSHAW   (1976): (1 + 2 f^2)/3
+//! The explicit HLL wave speeds assume Levermore (others: implicit transports only).
 
 constexpr int M1_CHI_LEVERMORE = 0;
 constexpr int M1_CHI_MINERBO   = 1;
@@ -54,15 +43,10 @@ Real M1Chi(const Real fnorm, const int kind = M1_CHI_LEVERMORE) {
 
 //----------------------------------------------------------------------------------------
 //! \fn M1FillGhost
-//! \brief ONE ghost cell of the physical x1/x2/x3 boundaries, from the CONSERVED moments
-//! of the active cell (ka,ja,ia) it continues.  Moved here verbatim from the anonymous
-//! namespace of bvals/physics/rad_vet_bcs.cpp so that a problem generator whose mesh flag
-//! is `user` -- and whose own BC routine therefore replaces RadVetBCs on that face -- can
-//! reuse the SAME fill instead of re-deriving it (box_convection's M1 top wall).
-//!
-//! mode 0 = plain copy (outflow), 1 = reflect (flip the normal flux), 2 = vacuum, i.e. a
-//! DARK ghost: no incoming radiation, ever.  inorm = 1,2,3 selects the face-normal flux
-//! component; sgn = +1 when "outgoing" is the positive coordinate direction.
+//! \brief fill one physical-boundary ghost cell from the conserved moments of active
+//! cell (ka,ja,ia); shared by RadVetBCs and user BCs.
+//! mode 0 = copy (outflow), 1 = reflect (flip normal flux), 2 = vacuum (dark ghost).
+//! inorm = 1,2,3 is the face-normal flux component; sgn = +1 if outgoing is +x.
 
 KOKKOS_INLINE_FUNCTION
 void M1FillGhost(const DvceArray5D<Real> &u, const int m,
@@ -83,21 +67,9 @@ void M1FillGhost(const DvceArray5D<Real> &u, const int m,
       f3 = -f3;
     }
   } else if (mode == 2) {
-    // VACUUM: the ghost is ALWAYS dark, E = e_floor and F = 0, i.e. no incoming
-    // radiation whatever the interior state does.  A beam at f = 1 still leaves
-    // unimpeded, because the HLL left wave speed of a dark state is b_L = 0.
-    //
-    // The earlier "copy the interior when the interior flux points out" fill was
-    // wrong for two reasons.  Zeroing only the normal component (the version before
-    // that) leaves the ghost a reservoir of E with no flux and the HLL flux then PUMPS
-    // energy in (38 % growth of a grazing beam).  Copying the WHOLE state is the same
-    // defect in a milder form: it represents incoming radiation equal to the interior's
-    // own inward half, so dE/dn = 0 at the face and NO relation between F and E is
-    // imposed.  At a plane-parallel free surface the physical condition is f = 1/2, not
-    // 1, and with the copy the surface value of E floats -- measured on the He column:
-    // E at the top grew 137x over 1000 s and the emergent flux fell to 0.36 of the
-    // imposed one.  A dark ghost supplies the Marshak-like relation through the HLL
-    // flux and the same column stays flat to 2.4 %.
+    // vacuum: dark ghost (E = e_floor, F = 0), no incoming radiation. A beam at f = 1
+    // still leaves (HLL b_L = 0 for a dark state); the HLL flux then gives a
+    // Marshak-like F-E relation at the face. Copying the interior would let E float.
     (void) sgn;
     e = efl;
     f1 = 0.0;
