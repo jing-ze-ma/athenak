@@ -1,0 +1,45 @@
+--- IA122_bsg
++++ IA123_bsg
+@@ -0,0 +1 @@
++# IA12.3-rc2 2026-11-24 ia123-rc2 5b493acfa (release trunk vet-clean-release + IA12.3). = caltech_ia122/notile/IA122_bsg.athinput in the release names (<rad_vet>, vet*) with ONLY the IA12.3 best keys (mk.py header)
+@@ -112,0 +114 @@
++floor_from_ekin = true   # IA12.3 FLOORT/GEOMAUDIT/LZCUT: c2p keeps E; vceil KE -> heat; KE-dominated tfloor deficit paid from own r/theta KE (phi kept, L_z exact)
+@@ -144 +146 @@
+-<rad_m1>
++<rad_vet>
+@@ -179 +180,0 @@
+-implicit_pos_floor_solve = true   # F3 (needs implicit_pos_floor = true)
+@@ -195,0 +197,5 @@
++vet_gd_wall_sym = true   # IA12.3 WALLSYM: mirror-paired phi-wall maps (identical on whole-period wedges)
++vet_gd_theta_seam_sym = true   # IA12.3: theta seam face from both sides (equatorial mirror); FATAL without it on theta-periodic meshes
++clean_clos1_budget = false   # IA12.3: named OFF until RWFIX (radwave free-streaming phase error with clos1_budget + bud_maxnorm)
++clean_bud_maxnorm = false   # IA12.3: named OFF until RWFIX (see clean_clos1_budget)
++clean_vel_settled = false   # IA12.3 HDM35-B: named OFF: breaks the well-balanced tests wb_sp / wb_cs (vmax/cs 2e-4)
+@@ -239 +244,0 @@
+-cs_cross_mono = true   # FRESHPREP
+@@ -337,8 +342,8 @@
+-he_ic_linhao = true   # FRESHPREP
+-he_ic_linhao_file = /resnick/groups/carnegie_poc/jingze/fresh_prod_1120/bsg/linhao_profile_full.txt   # FRESHPREP
+-he_ic_linhao_amp = 0.05   # FRESHPREP
+-he_ic_linhao_rho_thr     = 6.15245e-7     # his rho > 0.01 code x density_unit 6.15245e-5 (his athinput.bsg_star.rusty)
+-he_ic_linhao_seed_group = true   # lhxseed-1106: one deviate per merged group, as his coarse cells
+-he_ic_linhao_rng         = 0              # splitmix64(global cell index) seed
+-he_ic_linhao_gconst      = 6.67408e-8     # Athena++ Constants::grav_const_cgs (his g(rmax) = G M_rmax / rmax^2)
+-he_ic_linhao_gext        = invsq          # [USER 11-04] atmosphere above rmax hydrostatic in GM/r^2 (his cpp:429 r^+2 = r2)
++he_ic_profile = true   # FRESHPREP
++he_ic_profile_file = /resnick/groups/carnegie_poc/jingze/fresh_prod_1120/bsg/linhao_profile_full.txt   # FRESHPREP
++he_ic_profile_amp = 0.05   # FRESHPREP
++he_ic_profile_rho_thr     = 6.15245e-7     # his rho > 0.01 code x density_unit 6.15245e-5 (his athinput.bsg_star.rusty)
++he_ic_profile_seed_group = true   # lhxseed-1106: one deviate per merged group, as his coarse cells
++he_ic_profile_rng         = 0              # splitmix64(global cell index) seed
++he_ic_profile_gconst      = 6.67408e-8     # Athena++ Constants::grav_const_cgs (his g(rmax) = G M_rmax / rmax^2)
++he_ic_profile_gext        = invsq          # [USER 11-04] atmosphere above rmax hydrostatic in GM/r^2 (his cpp:429 r^+2 = r2)
+@@ -385 +390 @@
+-variable  = m1
++variable  = vet
+@@ -396 +401 @@
+-variable  = m1_vet
++variable  = vet_vet
+@@ -401 +406 @@
+-variable  = m1_face       # face fluxes fx1/fx1o/fx2/fx3: the thin-atmosphere check (TRUEREPRO.md sect. atm)
++variable  = vet_face       # face fluxes fx1/fx1o/fx2/fx3: the thin-atmosphere check (TRUEREPRO.md sect. atm)
