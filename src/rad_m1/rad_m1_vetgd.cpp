@@ -976,15 +976,13 @@ void RadiationM1::VetGdInit() {
   // the direction set (pluggable: any table of unit vectors + weights summing to 1 with
   // sum w nn = I/3; the sweep never looks inside it)
   if (vgd_gl_nmu > 0) {
-    // the product set: its azimuth step must divide the wedge's phi period (exact walls),
-    // unless vet_gd_wall_interp maps the walls (any wedge, as the other sets)
+    // the product set: its azimuth step must divide the wedge's phi period (exact walls)
     // (no walls on the cubed sphere, nphi >= 4 only)
     const double per = pm->mesh_size.x3max - pm->mesh_size.x3min;
     const double m = per*vgd_gl_nphi/(2.0*M_PI);
-    if (vgd_gl_nphi < 4 ||
-        (!vgd_csg && !vgd_wint && std::fabs(m - std::round(m)) > 1.0e-9)) {
+    if (vgd_gl_nphi < 4 || (!vgd_csg && std::fabs(m - std::round(m)) > 1.0e-9)) {
       VgdFatal("vet_gd_gl_nphi must be >= 4 with 2 pi/nphi dividing the phi period of "
-               "the wedge (exact wall maps), or <rad_m1>/vet_gd_wall_interp = true");
+               "the wedge (exact wall maps)");
     }
   }
   VgdBuildSet(vgd_base);
