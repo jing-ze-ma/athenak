@@ -631,7 +631,7 @@ void RadiationVet::CleanHaloInit(const int n3, const int n2, const int n1) {
               << " ghosts, sends " << q.ns << " cells, receives " << q.nr << " in "
               << q.rank.size() << " messages; on-rank ghosts by depth";
     for (int d = 0; d < ng; ++d) std::cout << " " << q.nld[d];
-    std::cout << (q.poison ? " (POISON)" : "") << std::endl;
+    std::cout << std::endl;
   }
 }
 
