@@ -107,13 +107,16 @@ sign. The positivity limiters scale a face's flux on both sides at once. The den
 pressure and radiation floors take the energy they need from the radiation of the same cell
 or its radial column (`<hydro>/floor_pay = rad_column`, `implicit_pos_floor_cons`).
 With `floor_pay_skip = true` (production) the energy changed by the density floor and the
-velocity ceiling is paid as well.
+velocity ceiling is paid as well. The initial conversion's floors are paid before the t = 0 output.
+With `<hydro>/floor_from_ekin` (general EOS) a fast cell pays its floor deficit from its own
+r / theta kinetic energy instead (E kept, $L_z$ kept: the phi momentum is never scaled).
 Energy is created only when a column holds too little radiation to pay; each such event
 prints a `CLEAN WARNING`.
 
 Test: `conservation_sp`, `conservation_cs` (closed rotating shells, dE/E <= 1e-13; measured
 about 1e-15), `thermal_eq`, and `floor_pay` (general EOS with a temperature floor that acts in
-most cells every cycle, paid from the radiation: dE/E <= 1e-13).
+most cells every cycle, paid from the radiation: dE/E <= 1e-13 from t = 0; and with
+`floor_from_ekin` and a velocity ceiling below the shell's speeds: dE, dM, dLz <= 1e-13).
 
 ### Mass: exact
 
@@ -167,7 +170,8 @@ physical sources. Three things change gas + radiation momentum without being giv
 
 - the realisability cut of the face flux (`clean_stag_fcone`)
   unless `clean_stag_fcone_gas = true`, which makes the cut momentum-neutral;
-- the well-balancing residual of `clean_stag_fwb`;
+- the well-balancing residual of `clean_stag_fwb` (on a uniform Cartesian mesh
+  `clean_stag_fwb_cart = true` removes its line mean: no net momentum);
 - the floor-gas momentum removal (`floorcap`, `dfloor_keep_velocity`, the velocity ceiling).
 
 Their unsigned sizes are printed (`CLEAN FCONE`, `CLEAN FWB`, the `floorcap` line), but there
@@ -241,11 +245,16 @@ any other width stops the run with a FATAL error. A narrow wedge that cannot mee
 (e.g. 0.064 rad) names `vet_gd_wall_sym = true` with `vet_gd_wall_interp = true`: the set is
 turned to have a mirror plane on the wedge centre, the two walls' maps are mirror images, and
 the seam face is computed in both frames. A mirror-symmetric state then has a wedge-mean
-$F_\phi$ of zero to round-off. A corresponding treatment of theta seams is not in this release.
+$F_\phi$ of zero to round-off. On a theta-periodic wedge the theta seam face is likewise computed
+from both sides, its other side being the exact equatorial mirror of this side
+(`vet_gd_theta_seam_sym = true`, required on theta-periodic meshes: FATAL otherwise), which
+removes the one-frame seam face's net $F_\theta$ (the 2.5e-2 mirror error of the 20-deg deck).
 
 Test: `wedge_sym` (a spherically symmetric shell on 3.7 and 7.3 deg wedges with the key and a
 20 deg wedge without it: $|\sum F_\phi|/\sum|F_r| \le 10^{-8}$, measured 2e-12 to 2e-9; the
-narrow wedge without the key stops with the FATAL).
+narrow wedge without the key stops with the FATAL; the shell made theta-periodic stops with
+the FATAL without `vet_gd_theta_seam_sym`; with it the mean $F_\theta$ is reported, 1e-5 of
+$\sum|F_r|$ after 8 cycles, an open item).
 
 ### Restart and dt retry: bitwise
 

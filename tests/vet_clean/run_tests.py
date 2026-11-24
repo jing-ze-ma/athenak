@@ -356,7 +356,10 @@ def t_wedge_sym(c):
     phi wedges with the production Gauss-Legendre 7 x 18 set (azimuthal period 20 deg):
     a 20-deg wedge (exact phi-wall maps) and narrow 3.7 and 7.3 deg wedges with
     vet_gd_wall_sym = true; the wedge-mean F_phi must vanish: fphi = |sum F3| / sum |F1|
-    after 8 cycles.  The narrow wedge without the key must stop with the wedge FATAL."""
+    after 8 cycles.  The narrow wedge without the key must stop with the wedge FATAL.
+    The same shell made theta-periodic (20 deg wedge) with vet_gd_theta_seam_sym = true: the
+    seam face from both sides (the equatorial mirror), fth = |sum F_theta| / sum |F_r|;
+    without the key it must stop with the theta-image FATAL."""
     o = {'time/nlim': 8, 'problem/gas_rot': 0.0, 'problem/lat_amp': 0.0,
          'rad_vet/vet_gd_gl_nmu': 7, 'rad_vet/vet_gd_gl_nphi': 18,
          'rad_vet/vet_gd_gl_stagger': 'true', 'rad_vet/vet_gd_wall_interp': 'true'}
@@ -374,6 +377,18 @@ def t_wedge_sym(c):
     except RuntimeError:
         log = open(os.path.join(c.dir, 'w3.7_nosym', 'run.log')).read()
         out['wedge_fatal'] = int('vet_gd_wall_sym' in log and 'FATAL' in log)
+    th = dict(o, **{'mesh/x3max': np.pi/9, 'mesh/ix2_bc': 'periodic',
+                    'mesh/ox2_bc': 'periodic', 'rad_vet/vet_gd_wall_sym': 'true'})
+    d = c.run('shell_sp.athinput', 'th20', dict(th, **{'rad_vet/vet_gd_theta_seam_sym': 'true'}))
+    m = vett.last_bin(d, 'vet')
+    out['fth'] = float(abs(m['vet_f2'].sum())/np.abs(m['vet_f1']).sum())
+    out['warnings'] += vett.warnings(open(os.path.join(d, 'run.log')).read())
+    try:
+        c.run('shell_sp.athinput', 'th20_nosym', th)
+        out['theta_fatal'] = 0
+    except RuntimeError:
+        log = open(os.path.join(c.dir, 'th20_nosym', 'run.log')).read()
+        out['theta_fatal'] = int('vet_gd_theta_seam_sym' in log and 'FATAL' in log)
     return out
 
 
@@ -384,22 +399,31 @@ def t_floor_pay(c):
     """the closed shell with hydro/eos = general (cgs units = code units) and a
     temperature floor just above the gas temperature, so the floor raises T in most cells
     every cycle; hydro/floor_pay = rad_column pays that energy from the radiation of the
-    same column.  dE: total-energy drift from cycle 1 on (the payment of the initial
-    conversion's floor energy comes at the top of cycle 1, after the t = 0 output: dE0 is
-    that jump relative to E); paid / unpaid: floor energy over the run (floor_audit)."""
-    d = c.run('shell_sp.athinput', 'run', {
-        'hydro/eos': 'general', 'units/length_cgs': 1.0, 'units/mass_cgs': 1.0,
-        'units/time_cgs': 1.0, 'hydro/tfloor': 1.00001e-4, 'hydro/floor_pay': 'rad_column',
+    same column.  dE: total-energy drift from t = 0 (the initial conversion's floor energy
+    is paid before the t = 0 output; dE0 = the t = 0 -> 1 step alone); paid / unpaid:
+    floor energy over the run (floor_audit).  The ekin run: hydro/floor_from_ekin = true
+    with a velocity ceiling below the shell's speeds (vceil 1.2e-2): the ceiling's kinetic
+    energy becomes heat, phi momentum kept (L_z): ekin_dE, ekin_dM, ekin_dLz as
+    conservation_sp."""
+    g = {'hydro/eos': 'general', 'units/length_cgs': 1.0, 'units/mass_cgs': 1.0,
+         'units/time_cgs': 1.0}
+    d = c.run('shell_sp.athinput', 'run', dict(g, **{
+        'hydro/tfloor': 1.00001e-4, 'hydro/floor_pay': 'rad_column',
         'hydro/floor_pay_skip': 'true', 'hydro/dfloor_flux_limit': 'true',
-        'hydro/floor_audit': 1})
+        'hydro/floor_audit': 1}))
     u = os.path.join(d, 'sp.user.hst')
     e = hst_col(u, 'Eg') + hst_col(u, 'Er')
     log = open(os.path.join(d, 'run.log')).read()
     pay = [[float(x) for x in m] for m in
            re.findall(r'floor_audit cycle \d+ pay: paid (\S+) unpaid (\S+)', log)]
-    return dict(dE=rel_drift(e[1:]), dE0=float(abs(e[1] - e[0])/e[0]),
-                paid=sum(p[0] for p in pay), unpaid=sum(p[1] for p in pay),
-                warnings=vett.warnings(log))
+    out = dict(dE=rel_drift(e), dE0=float(abs(e[1] - e[0])/e[0]),
+               paid=sum(p[0] for p in pay), unpaid=sum(p[1] for p in pay),
+               warnings=vett.warnings(log))
+    d = c.run('shell_sp.athinput', 'ekin', dict(g, **{
+        'time/nlim': 16, 'hydro/floor_from_ekin': 'true', 'hydro/vceil': 1.2e-2}))
+    out.update({'ekin_' + k: v for k, v in am_budget(d, 'sp').items() if k != 'dLz_gr'})
+    out['warnings'] += vett.warnings(open(os.path.join(d, 'run.log')).read())
+    return out
 
 
 # ---------------------------------------------------------------------------------------

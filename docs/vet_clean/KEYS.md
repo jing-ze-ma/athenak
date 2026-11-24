@@ -65,6 +65,7 @@ out of a restart deck changes the scheme silently. The templates name them all.
 | `<rad_vet>/clean_pred_xch` | `true` | production value (default false) |
 | `<rad_vet>/clean_stag_fcone_gas` | `false` | production value |
 | `<rad_vet>/clean_wb_exch_local` | `true` | read only when named |
+| `<rad_vet>/vet_gd_wall_sym`, `vet_gd_theta_seam_sym` | `true` | read only when named; a theta-periodic deck without `vet_gd_theta_seam_sym` stops with a FATAL |
 | `<hydro>/floor_pay` | `rad_column` | older star restart files do not store it (restart default: none) |
 | `<hydro>/floor_pay_skip`, `dfloor_flux_limit`, `rad_signal_speed_diff` | `true` | read only when named |
 | `<mesh>/layout_invariant_mode` | `tile` | see "Layout and reproducibility" |
@@ -94,13 +95,16 @@ out of a restart deck changes the scheme silently. The templates name them all.
 | `rad_vet/vet_scatter`, `vet_scatter_form` | Split the opacity into absorption and electron scattering in the ray source (`ma`: Ma et al. 2026, eq. 7). Changes only the rays' source function. | true on a fresh run with table opacity and a tabulated EOS; `ma` | all: `true`, `ma` | `rad_vet/rad_vet.cpp` (constructor) |
 | `rad_vet/vet_scatter_kappa_e` | Electron-scattering opacity: `const` or `eos` (from the EOS ionisation). | `eos` with a tabulated EOS; `const` otherwise | all: `const` | `rad_vet/rad_vet.cpp` (constructor) |
 | `rad_vet/clean_ray_cut_r` | Adaptive ray depth cut on 3-D sp/cs meshes with one MeshBlock along x1: below the cut the closure is the diffusion limit. | 0.01 where the cut applies | all: `0.01` | `rad_vet/rad_vet.cpp` (constructor) |
-| `rad_vet/vet_gd_wall_sym` | Narrow phi wedges only: centre the set on the wedge, mirror-paired phi-wall maps, the seam face from both sides. Needs `vet_gd_wall_interp = true`. | false (read only when named) | not named (the template wedges are whole periods) | `rad_vet/rad_vet.cpp` (constructor), `rad_vet/rad_vet_vetgd.cpp` |
+| `rad_vet/vet_gd_wall_sym` | Phi-periodic wedges: centre the set on the wedge, mirror-paired phi-wall maps, the seam face from both sides. Needs `vet_gd_wall_interp = true`. Identical results on wedges that are whole azimuthal periods; required on narrower ones. No effect without a phi wall (cubed sphere, full 2 pi, 2-D). | false (read only when named) | all: `true` | `rad_vet/rad_vet.cpp` (constructor), `rad_vet/rad_vet_vetgd.cpp` |
+| `rad_vet/vet_gd_theta_seam_sym` | Theta-periodic wedges: the theta seam face's other side is its exact equatorial mirror (both frames, as the phi seam). Required on a theta-periodic mesh (FATAL otherwise); the ray set must be mirror-symmetric about the equator (FATAL otherwise; e.g. GL with even nmu and stagger is not). No effect without a theta seam. | false (read only when named) | all: `true` | `rad_vet/rad_vet.cpp` (constructor), `rad_vet/rad_vet_vetgd.cpp` |
 
 The wedge rule: on a phi-periodic spherical-polar wedge the width must be a multiple of the
 ray set's azimuthal period (Gauss-Legendre: 360 deg / nphi, 20 deg for nphi = 18; LQ10: 90
 deg; the default icosahedral set: 180 deg), else the run stops with a FATAL. A narrow wedge
 that cannot meet it (e.g. 0.064 rad) names `vet_gd_wall_sym = true` with
-`vet_gd_wall_interp = true` (the `wedge_sym` test).
+`vet_gd_wall_interp = true` (the `wedge_sym` test). A theta-periodic wedge (all the star
+templates) stops with a FATAL unless it names `vet_gd_theta_seam_sym = true`; a restart
+from a file written before these keys must name both on the command line.
 
 ## Time integration, time step and retries
 
@@ -147,6 +151,7 @@ Transverse Marshak faces are not supported by the ray sweep (FATAL).
 | `rad_vet/floorcap_rho`, `floorcap_v` | Floor-gas cap: in cells with rho below `floorcap_rho`, |v| is capped at `floorcap_v` and T at max(T_rad, floor); the removed energy goes to E (momentum is removed and reported). | off | all: `1e-14`, `3e7` | `rad_vet/rad_vet.cpp` (constructor) |
 | `hydro/dfloor`, `pfloor`, `tfloor` | Hydro floors. `hydro/floor_pay = rad_column` pays the internal energy they create from the radiation (needs `hydro/eos = general`). | FLT_MIN | per deck | `eos/eos.cpp`, `hydro/dual_energy.cpp` |
 | `hydro/floor_pay_skip` | Pay also the energy that the density floor and the velocity ceiling change. Needs `floor_pay`. | false (read only when named) | all: `true` | `hydro/dual_energy.cpp` |
+| `hydro/floor_from_ekin` | General-EOS hydro: the primitive recovery keeps E; the velocity ceiling's kinetic energy becomes heat, and a kinetic-energy-dominated cell below e(rho, tfloor) pays the deficit from its own r and theta kinetic energy where that covers it. The phi momentum (L_z) is never scaled; cells it cannot pay take the floors as before (paid by `floor_pay`). Removes r / theta momentum there (not booked). FATAL with another EOS or `dual_energy`. | false (read only when named) | not named (Caltech t9l62 arm) | `eos/eos.cpp` (constructor) |
 | `hydro/dfloor_flux_limit` | Scale back the outflow of a nearly empty cell so its density stays above the floor (both neighbours see the same flux). | false (read only when named) | all: `true` | `hydro/hydro.cpp` |
 
 ## Layout and reproducibility
@@ -187,6 +192,7 @@ Scheme options pinned by the templates:
 - `clean_stag_thinf` (false), `clean_consistency` (true): forms of the thin-limit correction and flux bound.
 - `clean_stag_fwb` (true), `clean_stag_fcone` (true), `clean_stag_fwb_ring` (1: 3-D spherical polar with periodic phi only): well-balanced face rows, cone limit |F| <= cE, ring projection.
 - `clean_stag_fcone_gas` (false): the cone cut's momentum is not given to the gas.
+- `clean_stag_fwb_cart` (read only when named; uniform Cartesian meshes only, no-op elsewhere): the well-balancing residual minus its line mean along every face direction, so `clean_stag_fwb` gives no net linear momentum.
 - `clean_gas_secant` (`max_stage2`): in the stage-2 solves the gas-exchange slope is the chord through the last pass's T where it beats the tangent by more than a derived round-off bound (16 eps of the terms of e(T) - e(T_p)), else the tangent.
 - `clean_pred_xch` (true): the stage-2 start blends this step's stage-1 slope and the last step's stage-2 slope by the stiffness of each cell's exchange.
 - `clean_wb_exch_local` (true): the write-back's cell exchange is solved exactly from the transported E (E > 0 and gas >= e(rho, tfloor) by construction); needs an EOS `tfloor` > 0.
@@ -202,7 +208,8 @@ Solver internals: `clean_conv` (`budget`), `clean_conv_max` (1e-5), `clean_conv_
 `clean_tol`, `clean_tol_nl`, `clean_maxit` (200), `clean_maxnl` (200), `clean_maxpic`,
 `clean_lin_pass`, `clean_lin_cnorm`, `clean_init_cnorm`, `clean_gas_newton_switch`,
 `clean_gas_newton_switch_min`, `clean_stall_fac`, `clean_troot_rtol`, `clean_pc_sweep` (`rb`),
-`clean_stag_mg_color`, `clean_stag_fs_line`, `clean_stag_pcr`, `clean_halo_direct`,
+`clean_clos1_budget`, `clean_vel_settled`, `clean_bud_maxnorm` (speed keys, read only when named, default off: the closure pass solved
+in the budget norm; the velocity update only in a pass that can end the solve; the budget test in the per-cell max norm), `clean_stag_mg_color`, `clean_stag_fs_line`, `clean_stag_pcr`, `clean_halo_direct`,
 `implicit_predictor`, `implicit_predictor_tcap`, `implicit_resid_fatal`, `time/dt_retry_views`,
 `time/dt_retry_host`, `time/restart_refill_ghosts` (false: restarts are bitwise).
 
