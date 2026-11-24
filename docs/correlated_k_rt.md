@@ -31,7 +31,7 @@ Two things bite immediately:
 
 * **AthenaK command-line overrides only MODIFY parameters that already exist.** A
   `<problem>` block without these lines makes `problem/rt_ck=true` on the command line
-  fatal with "not found". `inputs/mhd/deep_hot_jupiter_rt_eos.athinput` lists them all
+  fatal with "not found". `inputs/planets/deep_hot_jupiter_rt_eos.athinput` lists them all
   with their defaults for exactly this reason.
 * **`ck_table` and `ck_data_dir` resolve against the WORKING DIRECTORY**, not against the
   input file. A run launched from a run directory or through `-d` needs absolute paths.
@@ -339,7 +339,7 @@ Four checks, two of them run on every correlated-k start:
 4. **Global energy.** The base flux is σT_int⁴ to 0.04 % and the shortwave absorbs 98.8 %
    of the analytic incident flux at production resolution.
 
-`tst/test_suite/rad/test_rad_dhj_ck_cpu.py` re-checks 1, 2 and 4 in the regression suite,
+`tst/test_suite/two_stream/test_rad_dhj_ck_cpu.py` re-checks 1, 2 and 4 in the regression suite,
 and `test_rad_dhj_ck_mpicpu.py` checks that the answer does not depend on the
 decomposition. Both build their own binary (the scheme is a user problem generator) and
 skip when the tables are absent, which is what CI does.

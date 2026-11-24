@@ -1,6 +1,6 @@
 # Cubed sphere, RESISTIVITY + REFINEMENT, at the MINIMUM legal MeshBlock size.
 #
-# This input exists for one reason: NOTHING ELSE IN inputs/tests/ USES BLOCKS THIS NARROW,
+# This input exists for one reason: NO OTHER DECK HERE USES BLOCKS THIS NARROW,
 # and a whole class of cubed-sphere bug only appears when they are.  It is the same physics
 # as cubed_sphere_resist_smr.athinput -- read that file for the problem and the gates --
 # with <meshblock>/nx2 = nx3 = 4, the smallest `Mesh` allows.

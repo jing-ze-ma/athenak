@@ -8,7 +8,7 @@ configure = --prob=built_in_pgens
 # (lhlld_emf_eta_pos) lifts to 0.  2-D, aligned with x1, periodic in x2: the UCT-HLLD
 # corner EMF E3 then reduces to the x1-face flux, so uct_hlld must reproduce gs07 to
 # round-off with eta_pos on and with it off (eta_pos is mirrored in the UCT d^L, d^R).
-# tst/test_suite/mhd/test_mhd_uct_eta_pos_cpu.py
+# tst/test_suite/low_mach/test_mhd_uct_eta_pos_cpu.py
 
 <job>
 basename  = uct_eta_pos

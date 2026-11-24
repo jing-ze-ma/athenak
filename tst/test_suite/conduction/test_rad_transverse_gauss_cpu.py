@@ -4,7 +4,7 @@ src/diffusion/conduction_transverse.cpp) against the analytic spreading Gaussian
 
 A Cartesian box at rest, uniform in x1, with a 1e-4 Gaussian temperature perturbation in
 (x2,x3) on a uniform density (pgen rad_diff2d, with
-inputs/tests/rad_transverse_gauss.athinput).
+tst/inputs/rad_transverse_gauss.athinput).
 At that amplitude the radiative conductivity is constant to a few parts in 1e4, so the
 perturbation obeys dT/dt = D grad^2 T and the exact solution is
 
@@ -55,7 +55,7 @@ import numpy as np
 import pytest
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-INPUT = os.path.join(REPO, "inputs", "tests", "rad_transverse_gauss.athinput")
+INPUT = os.path.join(REPO, "tst", "inputs", "rad_transverse_gauss.athinput")
 BUILD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_tr_gauss")
 
 # L1 error in the total energy against the analytic solution, and the order.

@@ -1,6 +1,6 @@
 """
 Advected electron fraction <mhd>/xe_tracer (xetracer-1101) on a uniform MHD box with the
-general EOS table (src/pgen/xe_tracer_test.cpp, inputs/tests/xe_tracer_box.athinput).
+general EOS table (src/pgen/xe_tracer_test.cpp, tst/inputs/xe_tracer_box.athinput).
 
 1. Relaxation: z0 = 10 x_eq (and 0.1 x_eq) at rest; after N cycles z must equal the
    backward-Euler recursion n <- 2c/(1 + sqrt(1 + 4ac)), c = n + a n_eq^2,
@@ -22,7 +22,7 @@ import numpy as np
 import pytest
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-INPUT = os.path.join(REPO, "inputs", "tests", "xe_tracer_box.athinput")
+INPUT = os.path.join(REPO, "tst", "inputs", "xe_tracer_box.athinput")
 BUILD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_xe_tracer")
 
 RELAX_TOL = 1.0e-12

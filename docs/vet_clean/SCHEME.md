@@ -428,7 +428,7 @@ Tests: the `*_sp` and `*_cs` variants above; `order_space` on a Cartesian mesh.
 
 ### In the code but not tested
 
-No deck in `tests/vet_clean` or `inputs/rad_vet_clean` and no test of the suite covers the
+No deck in `tests/vet_clean` or `inputs/stars` and no test of the suite covers the
 following. The properties of this section are not verified there.
 
 | feature | state | what is tested instead |

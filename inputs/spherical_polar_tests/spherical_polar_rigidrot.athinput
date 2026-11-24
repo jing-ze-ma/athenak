@@ -1,6 +1,6 @@
 # Spherical polar, RIGID ROTATION: the exact steady state v = omega zhat x r with
 # p = p0 + d0 omega^2 R^2 / 2.  Build with -D PROBLEM=sp_test.  The twin of
-# inputs/tests/cubed_sphere_rigidrot.athinput (same shell, omega, tlim, gamma, plm/hllc,
+# inputs/cubed_sphere_tests/cubed_sphere_rigidrot.athinput (same shell, omega, tlim, gamma, plm/hllc,
 # rk2, cfl) on the ORTHOGONAL grid: the deviation from the initial state IS the error and
 # is written to the history (L1-v, L1-p, L1-rho, L1-b) and to sp_rigidrot-errs.dat at
 # the end, split into the polar rows and the interior.

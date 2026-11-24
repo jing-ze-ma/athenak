@@ -7,8 +7,8 @@ run, and as starting points for your own star decks.
 
 | deck | mesh | star | cells | MeshBlocks | run |
 |---|---|---|---|---|---|
-| `inputs/rad_vet_clean/star3d_sp.athinput` | spherical-polar wedge: r 20-80 Rsun, theta pi/3..2pi/3, phi 0..pi/3 (periodic lateral walls) | blue supergiant envelope (the BSG production deck at 1/4 of its lateral resolution) | 256 x 64 x 64 = 1.0 M | 16 of 256 x 16 x 16 | 4000 cycles, 9.8 d |
-| `inputs/rad_vet_clean/star3d_cs.athinput` | cubed sphere, full sphere: r 25-2530 Rsun (stretched; photosphere at 834 Rsun), 6 faces x 32 x 32 | red supergiant (20.5 Msun, MESA profile from a 22 Msun model; the RSG production deck at 1/4 of its lateral resolution) | 548 x 32 x 32 x 6 = 3.4 M | 24 of 548 x 16 x 16 | 1200 cycles, 13.9 d |
+| `inputs/stars/star3d_sp.athinput` | spherical-polar wedge: r 20-80 Rsun, theta pi/3..2pi/3, phi 0..pi/3 (periodic lateral walls) | blue supergiant envelope (the BSG production deck at 1/4 of its lateral resolution) | 256 x 64 x 64 = 1.0 M | 16 of 256 x 16 x 16 | 4000 cycles, 9.8 d |
+| `inputs/stars/star3d_cs.athinput` | cubed sphere, full sphere: r 25-2530 Rsun (stretched; photosphere at 834 Rsun), 6 faces x 32 x 32 | red supergiant (20.5 Msun, MESA profile from a 22 Msun model; the RSG production deck at 1/4 of its lateral resolution) | 548 x 32 x 32 x 6 = 3.4 M | 24 of 548 x 16 x 16 | 1200 cycles, 13.9 d |
 
 Both decks start fresh from a 1-D profile. On the first cycle the code relaxes the
 radiation to its steady state in the initial gas (`clean_init = steady`). The cs deck sets
@@ -21,7 +21,7 @@ count gives the same answer, bit for bit.
 1. An AthenaK binary built with `-D PROBLEM=he_star_vet`: `build_star/src/athena` of
    [QUICKSTART.md](QUICKSTART.md) section 3, a CPU build for the start-up check and a CUDA
    (or HIP) build for the GPU run.
-2. The input data in `inputs/rad_vet_clean/star3d_data/`. The decks read them by the relative
+2. The input data in `inputs/stars/star3d_data/`. The decks read them by the relative
    path `star3d_data/...`, so link that directory into the directory you start the run from.
 
 | file | size | used by | what |
@@ -57,8 +57,8 @@ Set up a run directory once, outside the checkout (`ATHENAK` names the `athenak/
 ```bash
 export ATHENAK=/path/to/athenak
 mkdir -p star3d && cd star3d
-ln -s $ATHENAK/inputs/rad_vet_clean/star3d_data .
-cp $ATHENAK/inputs/rad_vet_clean/star3d_sp.athinput $ATHENAK/inputs/rad_vet_clean/star3d_cs.athinput .
+ln -s $ATHENAK/inputs/stars/star3d_data .
+cp $ATHENAK/inputs/stars/star3d_sp.athinput $ATHENAK/inputs/stars/star3d_cs.athinput .
 ```
 
 ### One CPU node: does it start? (a few cycles)
