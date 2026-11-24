@@ -1280,6 +1280,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vgd_tabh.nexact", vgd_tabh.nexact);
   v.value("vgd_tabh.nmap", vgd_tabh.nmap);
   v.value("vgd_tabh.nphx", vgd_tabh.nphx);
+  v.value("vgd_tabh.nthx", vgd_tabh.nthx);
   v.view("vgd_tabd.dir", vgd_tabd.dir);
   v.view("vgd_tabd.wall", vgd_tabd.wall);
   v.view("vgd_tabd.map", vgd_tabd.map);
