@@ -330,7 +330,7 @@ def coarsen(a):
 
 def t_order_space(c):
     """linear radiation-hydro wave (Cartesian, periodic, kappa 0.1 per unit length): grid
-    and time step refined together; the solution converges at second order."""
+    and time step refined together; orders of successive differences of E and v."""
     ns = [16, 32, 64, 128]
     sol = {'E': [], 'v': []}
     for n in ns:
@@ -397,7 +397,7 @@ def relax_errors(d):
 def t_thermal_eq(c):
     """uniform gas + radiation out of equilibrium relax at constant total energy
     (e.g. Jiang 2021 sec. 4.1), dt resolving the relaxation time (~3e-6): T(t) against
-    the exact ODE at two time steps; the error falls at second order."""
+    the exact ODE at two time steps and the order of its error."""
     out = {}
     for tag, dt in (('h', 2.5e-7), ('h2', 1.25e-7)):
         d = c.run('thermal_eq.athinput', 'dt' + tag, {'time/dt_fixed': dt})

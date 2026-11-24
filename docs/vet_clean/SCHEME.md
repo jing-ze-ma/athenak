@@ -50,7 +50,8 @@ one normal component per face. The face flux of a stage is a blend of
 **Time integration.** IMEX. The hydrodynamics is AthenaK's explicit Heun (`rk2`) integrator,
 unchanged. Radiation transport and the gas-radiation exchange are implicit, with Alexander's
 two-stage L-stable SDIRK tableau (`time2_tableau = sdirk2`); each stage sees the gas at the
-same time as the explicit part, so the IMEX scheme is second order. Backward Euler is the
+same time as the explicit part, so the IMEX scheme is second order where the gas-radiation
+exchange is not stiff (see "Order of accuracy" in section 2). Backward Euler is the
 fallback (first step, or a step whose stage failed). The radiation does not limit the
 stability of the step; with `<hydro>/rad_signal_speed_diff = true` (production) it enters the
 hydro time step only where it is trapped: the radiation part of the signal speed is weighted by
@@ -352,8 +353,8 @@ removes the one-frame seam face's net $F_\theta$ (the 2.5e-2 mirror error of the
 Test: `wedge_sym` (a spherically symmetric shell on 3.7 and 7.3 deg wedges with the key and a
 20 deg wedge without it: $|\sum F_\phi|/\sum|F_r| \le 10^{-8}$, measured 2e-12 to 2e-9; the
 narrow wedge without the key stops with the FATAL; the shell made theta-periodic stops with
-the FATAL without `vet_gd_theta_seam_sym`; with it the mean $F_\theta$ is reported, 1.6e-14 of
-$\sum|F_r|$ after 8 cycles).
+the FATAL without `vet_gd_theta_seam_sym`; with it the mean $F_\theta$ is <= 1e-8 of
+$\sum|F_r|$ after 8 cycles, measured 1.6e-14).
 
 ### Restart and dt retry: bitwise
 
@@ -375,7 +376,8 @@ Test: `restart_sp`, `restart_cs`, `dt_retry` (difference 0).
   sums and the multigrid act on fixed N x N lateral tiles. Layouts made of whole tiles are
   bitwise identical when there is one MeshBlock along x1 and, if the theta boundaries are ray
   walls (mirror or vacuum), one MeshBlock along x2, as in the production templates. Splitting
-  across such walls gives a round-off difference (about 1e-10 after 8 cycles).
+  across such walls gives a round-off difference (below 1e-13 of the largest
+  value after 8 cycles, CPU, 89b05b1c7).
 - **Block mode** (default): the result depends on the MeshBlock size at the solver
   tolerance, because the preconditioner is MeshBlock-local.
 
