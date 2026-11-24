@@ -456,6 +456,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_wbmc", cln_wbmc);
   v.value("cln_wbffn", cln_wbffn);
   v.value("cln_wbfdg", cln_wbfdg);
+  v.value("cln_dbginf", cln_dbginf);
   v.value("cln_raymin", cln_raymin);
   v.value("cln_rcut_on", cln_rcut_on);
   v.value("cln_rcut_r", cln_rcut_r);
@@ -661,13 +662,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_gn.is", cln_gn.is);
   v.value("cln_gn.ie", cln_gn.ie);
   v.view("cln_tg", cln_tg);
-  v.view("cln_sgv", cln_sgv);
-  v.view("cln_sga0", cln_sga0);
-  v.view("cln_sga1", cln_sga1);
-  v.view("cln_sgd1", cln_sgd1);
-  v.view("cln_sgd2", cln_sgd2);
-  v.view("cln_sgx", cln_sgx);
-  v.view("cln_sgtg", cln_sgtg);
   v.view("cln_xdev", cln_xdev);
   v.value("cln_hpend", cln_hpend);
   v.value("cln_nsolve", cln_nsolve);
@@ -1097,6 +1091,13 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
 //   pin_rcut_ : ParameterInput *
 //   cln_lzpin : ParameterInput *
 //   cln_wci : DvceArray5D<Real> (protocol counter, kept monotonic)
+//   cln_sgv : DvceArray4D<Real> (protocol counter, kept monotonic)
+//   cln_sga0 : DvceArray4D<Real> (protocol counter, kept monotonic)
+//   cln_sga1 : DvceArray4D<Real> (protocol counter, kept monotonic)
+//   cln_sgd1 : DvceArray4D<Real> (protocol counter, kept monotonic)
+//   cln_sgd2 : DvceArray4D<Real> (protocol counter, kept monotonic)
+//   cln_sgx : DvceArray2D<Real> (protocol counter, kept monotonic)
+//   cln_sgtg : DvceArray3D<Real> (protocol counter, kept monotonic)
 //   cln_halo : std::map<int, CleanHalo> (views over cln_hbuf, kept)
 //   cln_hpb : std::unique_ptr<MeshBoundaryValuesCC> (made at first use, kept)
 //   cln_hbuf : DvceArray5D<Real> (the storage of cln_halo, kept)
