@@ -197,6 +197,9 @@ class Hydro {
   // <hydro>/rad_signal_speed_diff (read only when named; default false): the radiation
   // term counts only where it is trapped on the grid scale, tau_d c_eq/c_hat > 1
   bool rss_diff = false;
+  // <hydro>/rad_signal_speed_phase (read only when named; default false; needs
+  // rad_signal_speed_diff): that weight is 1 - exp(-x^2), the in-phase part
+  bool rss_phase = false;
 
   // following used for FOFC
   DvceArray4D<bool> fofc;  // flag for each cell to indicate if FOFC is needed

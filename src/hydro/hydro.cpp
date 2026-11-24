@@ -460,6 +460,16 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   if (pin->DoesParameterExist("hydro","rad_signal_speed_diff")) {
     rss_diff = pin->GetBoolean("hydro","rad_signal_speed_diff");
   }
+  if (pin->DoesParameterExist("hydro","rad_signal_speed_phase")) {
+    rss_phase = pin->GetBoolean("hydro","rad_signal_speed_phase");
+    if (rss_phase && !(rad_signal_speed && rss_diff)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<hydro>/rad_signal_speed_phase = true needs "
+                << "rad_signal_speed = true and rad_signal_speed_diff = true"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
   // allocate array of flags used with etotgrav
   if (use_etotgrav || use_wellbalance_dynamic) {
     auto &indcs = pmy_pack->pmesh->mb_indcs;
