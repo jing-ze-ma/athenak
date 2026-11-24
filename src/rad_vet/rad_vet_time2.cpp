@@ -22,6 +22,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -461,6 +462,34 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
   const Real g = kT2G, cl = c_light, ch = chat, ar = arad, dt = pmy_pack->pmesh->dt;
   const bool gm = t2_gtm, gs = t2_gts;
   auto k1_ = t2k1;
+  // TEST (SDORDER): the flux state's exchange, env SDO_PRINT; SDO_DUMP = dir (CPU only)
+  static const bool sdop = std::getenv("SDO_PRINT") != nullptr;
+  static const char *sdod = std::getenv("SDO_DUMP");
+  static Real sdos[2] = {0.0, 0.0};
+  if (which == 2 && sdop) {
+    Real nn0 = 0.0, nc0 = 0.0;
+    Kokkos::parallel_reduce("sdo_sgn", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+        DevExeSpace(), {0, kl, jl, il}, {nmb, ku + 1, ju + 1, iu + 1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &nn, Real &nc) {
+      const Real cc = csk ? ccl(m,k,j) : 0.0, r = u1_(m,IDN,k,j,i), dd = u0_(m,IDN,k,j,i);
+      Real p[3], q[3], s[3];
+      for (int n = 0; n < 3; ++n) {
+        p[n] = u1_(m,IM1+n,k,j,i);
+        q[n] = p[n] + g*dt*k1_(m,M1_T2_M1+n,k,j,i);
+        s[n] = p[n] + g*(hs_(m,IM1+n,k,j,i) - p[n]);
+      }
+      const Real a = g*dt*k1_(m,M1_T2_EN,k,j,i) -
+                     (CsKeMom(q[0], q[1], q[2], cc) - CsKeMom(p[0], p[1], p[2], cc))/r;
+      const Real es = u1_(m,IEN,k,j,i) + g*(hs_(m,IEN,k,j,i) - u1_(m,IEN,k,j,i)) -
+                      CsKeMom(s[0], s[1], s[2], cc)/dd;
+      const Real ey = u0_(m,IEN,k,j,i) - CsKeMom(u0_(m,IM1,k,j,i), u0_(m,IM2,k,j,i),
+                      u0_(m,IM3,k,j,i), cc)/dd;
+      nc += 1.0;
+      if (a*(ey - es) < 0.0) nn += 1.0;
+    }, Kokkos::Sum<Real>(nn0), Kokkos::Sum<Real>(nc0));
+    sdos[0] = nn0; sdos[1] = nc0;
+  }
+  if (which == 3 && sdop) {Kokkos::fence();}
   par_for("vet_t2_gtime", DevExeSpace(), 0, nmb-1, kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real e = 0.0, xs = 0.0;
@@ -526,7 +555,115 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
     }
   });
   if (which != 3) return;
+  const Real vc = fcap_v, rc = fcap_rho;
+  auto er_ = this->u0;
+  auto vol_ = pmy_pack->pcoord->volume;
+  if (sdop) {   // the post-cap base u0 - hs and the flux state u0 (before its c2p)
+    Real mx = 0.0, c[4] = {0.0, 0.0, 0.0, 0.0}, cap[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+    Real mv = 0.0, mt = 0.0, mvb = 0.0, mtb = 0.0;
+    auto st = [=] KOKKOS_FUNCTION (int m, int k, int j, int i, Real w, Real &e, Real &v) {
+      const Real r = u0_(m,IDN,k,j,i) - w*hs_(m,IDN,k,j,i);
+      const Real p1 = u0_(m,IM1,k,j,i) - w*hs_(m,IM1,k,j,i);
+      const Real p2 = u0_(m,IM2,k,j,i) - w*hs_(m,IM2,k,j,i);
+      const Real p3 = u0_(m,IM3,k,j,i) - w*hs_(m,IM3,k,j,i);
+      const Real q = CsKeMom(p1, p2, p3, csk ? ccl(m,k,j) : 0.0);
+      e = u0_(m,IEN,k,j,i) - w*hs_(m,IEN,k,j,i) - q/r - (etg ? r*phc(m,k,j,i) : 0.0);
+      v = sqrt(2.0*q)/r;
+    };
+    Kokkos::parallel_reduce("sdo_rat", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+        DevExeSpace(), {0, kl, jl, il}, {nmb, ku + 1, ju + 1, iu + 1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &n1, Real &n2,
+                  Real &n3, Real &vm) {
+      Real e0, e1, v0, v1;
+      st(m, k, j, i, 1.0, e0, v0);
+      st(m, k, j, i, 0.0, e1, v1);
+      if (!(e1 > 0.0)) n3 += 1.0;
+      if (!(e0 > 0.0)) return;
+      const Real x = fabs(e1/e0 - 1.0);
+      if (x > 0.1) n1 += 1.0;
+      if (x > 1.0) n2 += 1.0;
+      vm = fmax(vm, x);
+    }, Kokkos::Sum<Real>(c[0]), Kokkos::Sum<Real>(c[1]), Kokkos::Sum<Real>(c[2]),
+       Kokkos::Max<Real>(mx));
+    Kokkos::parallel_reduce("sdo_cap", Kokkos::MDRangePolicy<Kokkos::Rank<4>>(
+        DevExeSpace(), {0, kl, jl, il}, {nmb, ku + 1, ju + 1, iu + 1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &n0, Real &nv,
+                  Real &nt, Real &nvb, Real &ntb, Real &wv, Real &wt, Real &wvb, Real &wtb) {
+      const Real r = u0_(m,IDN,k,j,i);
+      if (!(r < rc)) return;
+      Real e0, e1, v0, v1;
+      st(m, k, j, i, 1.0, e0, v0);
+      st(m, k, j, i, 0.0, e1, v1);
+      const Real tr = pow(fmax(er_(m,M1_E,k,j,i), 0.0)/ar, 0.25);
+      const Real t0 = (e0 > 0.0) ? eos.Temperature(r, e0)/tr : 0.0;
+      const Real t1 = (e1 > 0.0) ? eos.Temperature(r, e1)/tr : 0.0;
+      n0 += 1.0;
+      nv += (v1 > 1.01*vc); nt += (t1 > 1.01);
+      nvb += (v0 > 1.01*vc); ntb += (t0 > 1.01);
+      wv = fmax(wv, v1/vc); wt = fmax(wt, t1); wvb = fmax(wvb, v0/vc); wtb = fmax(wtb, t0);
+    }, Kokkos::Sum<Real>(cap[0]), Kokkos::Sum<Real>(cap[1]), Kokkos::Sum<Real>(cap[2]),
+       Kokkos::Sum<Real>(cap[3]), Kokkos::Sum<Real>(cap[4]), Kokkos::Max<Real>(mv),
+       Kokkos::Max<Real>(mt), Kokkos::Max<Real>(mvb), Kokkos::Max<Real>(mtb));
+    c[3] = sdos[0];
+    Real nc = sdos[1], mm[5] = {mx, mv, mt, mvb, mtb};
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, c, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, cap, 5, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &nc, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, mm, 5, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::printf("SDO cycle %d dt %.6e K1K2<0 %.4f max|ef/es-1| %.4e cells>0.1 %.0f "
+                  ">1 %.0f ef<=0 %.0f of %.0f\n", pmy_pack->pmesh->ncycle, dt, c[3]/nc,
+                  mm[0], c[0], c[1], c[2], nc);
+      if (rc > 0.0) {
+        std::printf("SDOCAP cycle %d cells rho<fcap %.0f flux v>1.01vc %.0f (max %.3f) "
+                    "T>1.01Trad %.0f (max %.3f) | base v %.0f (max %.3f) T %.0f (max "
+                    "%.3f)\n", pmy_pack->pmesh->ncycle, cap[0], cap[1], mm[1], cap[2],
+                    mm[2], cap[3], mm[3], cap[4], mm[4]);
+      }
+    }
+  }
+  std::vector<double> sdo0;
+  const int dn3 = ku - kl + 1, dn2 = ju - jl + 1, dn1 = iu - il + 1;
+  auto sdoi = [&](int m, int k, int j, int i) {
+    return static_cast<size_t>(((m*dn3 + (k - kl))*dn2 + (j - jl))*dn1 + (i - il));};
+  if (sdod) {
+    Kokkos::fence();
+    sdo0.resize(static_cast<size_t>(nmb)*dn3*dn2*dn1);
+    for (int m = 0; m < nmb; ++m) for (int k = kl; k <= ku; ++k) for (int j = jl; j <= ju; ++j)
+    for (int i = il; i <= iu; ++i) {sdo0[sdoi(m,k,j,i)] = u0_(m,IEN,k,j,i);}
+  }
   FluidRefresh(pdrive, false);   // ghosts + w0 of the flux state
+  if (sdod) {
+    Kokkos::fence();
+    double t[5] = {};
+    char fn[512];
+    std::snprintf(fn, sizeof(fn), "%s/floor.c%d.r%d", sdod, pmy_pack->pmesh->ncycle,
+                  global_variable::my_rank);
+    FILE *fp = std::fopen(fn, "wb");
+    for (int m = 0; m < nmb; ++m) for (int k = kl; k <= ku; ++k) for (int j = jl; j <= ju; ++j)
+    for (int i = il; i <= iu; ++i) {
+      const double d = u0_(m,IEN,k,j,i) - sdo0[sdoi(m,k,j,i)], r = u0_(m,IDN,k,j,i);
+      const double ea = u0_(m,IEN,k,j,i) - CsKeMom(u0_(m,IM1,k,j,i), u0_(m,IM2,k,j,i),
+                        u0_(m,IM3,k,j,i), csk ? ccl(m,k,j) : 0.0)/r -
+                        (etg ? r*phc(m,k,j,i) : 0.0);
+      if (!(fabs(d) > 1e-6*fabs(ea))) continue;
+      t[0] += 1.0; t[1] += (ea - d < 0.0); t[2] += d*vol_(m,k,j,i);
+      t[3] += (r < rc); t[4] += (ea - d < 0.0)*d*vol_(m,k,j,i);
+      const double rec[6] = {double(i-il), double(j-jl), double(k-kl), r, ea - d, ea};
+      std::fwrite(rec, sizeof(double), 6, fp);
+    }
+    std::fclose(fp);
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, t, 5, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::printf("SDOFLOOR cycle %d cells %.0f eint<0 %.0f rho<fcap %.0f raised %.6e erg "
+                  "(of eint<0 %.6e)\n", pmy_pack->pmesh->ncycle, t[0], t[1], t[3], t[2],
+                  t[4]);
+    }
+  }
   // u0 back to U* + d in the ghosts too, with the neighbour's f d (exchanged; 0 at the
   // physical boundaries): a ghost is then its neighbour's cell bitwise, so the stage-2
   // dfloor_flux_limit takes the same donor state on both sides of a MeshBlock face (the
