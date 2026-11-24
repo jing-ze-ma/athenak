@@ -97,3 +97,5 @@ hydro/floor_from_ekin=true
 # FOFC on for all stars (USER 11-24 ~02:10 PST, NOTE 24q / 24r); named because the rst stores fofc:
 hydro/fofc=true
 hydro/fofc_retest=true
+# staggered mg preconditioner levels (Caltech PL4, NOTE 24s; uniform settings):
+rad_vet/clean_stag_mg_levels=4

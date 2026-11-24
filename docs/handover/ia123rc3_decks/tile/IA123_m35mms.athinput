@@ -105,6 +105,7 @@ wb_x1 = true   # FRESHPREP
 wb_option = polytropic   # FRESHPREP
 wb_rmax = 1.097072e+12   # FRESHPREP
 <rad_vet>
+clean_stag_mg_levels = 4   # IA12.3-rc4 (Caltech PL4 late m35mms: -9.2 % s/cyc, Krylov 7.15 -> 4.93; NOTE 24s)
 floorcap_report = 25   # PROD 11-21 (orion ig/ih)
 floorcap_v = 3e7   # PROD 11-21 (orion ig/ih)
 floorcap_rho = 1e-14   # PROD 11-21 (orion ig/ih)
