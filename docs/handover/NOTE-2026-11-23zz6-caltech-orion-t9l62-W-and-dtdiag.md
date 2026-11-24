@@ -14,3 +14,4 @@
   Per-part times for 00011: cell/face vars 58.4 s, hesdirk2 slope 83.3 s, w0 84.1 s, rad_signal_speed 85.5 s, face flux 85.9 s.
 - The bins print no timing line. Estimated from the file mtimes of one dump (11:17, output index 12/3): m1_face (1.07 GB) closed at 26.81 s, m1_vet (1.61 GB) +1.77 s,
   m1 (1.88 GB) +2.08 s, hydro_w (1.34 GB) +1.54 s. So each bin takes ~1.5-2 s; m1_face's own start is unknown.
+- (11-23 21:03) status: WB [cycle=7550, t 4.85395e+05 dt 12.2, CW 28, fb 16, DT_RETRY 12, pos_floor 1]; SB [cycle=7000, t 4.79148e+05 dt 9.31, CW 3, fb 2, DT_RETRY 2, pos_floor 0];
