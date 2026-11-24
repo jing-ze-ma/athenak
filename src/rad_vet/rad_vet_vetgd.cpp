@@ -1834,11 +1834,11 @@ void RadiationVet::VgdTabCompute(const Real alpha, const int nthr) {
   };
   const double t0 = pm->mesh_size.x2min, t1 = pm->mesh_size.x2max;
   const double p0 = pm->mesh_size.x3min, p1 = pm->mesh_size.x3max;
-  int nwall = 0, nexact = 0, nmap = 0, nphx = 0;
+  int nwall = 0, nexact = 0, nmap = 0, nphx = 0, nthx = 0;
   // the (m, k) columns are independent: host threads over them (bitwise identical to
   // the serial loop; each thread keeps its own counters)
   auto column = [&](const int m, const int k, int &nwall, int &nexact, int &nmap,
-                    int &nphx) {
+                    int &nphx, int &nthx) {
     {
       for (int j = 0; j < c2; ++j) {
         const double th = x2_h(m,j), ph = x3_h(m,k);
@@ -1877,6 +1877,8 @@ void RadiationVet::VgdTabCompute(const Real alpha, const int nthr) {
             ++nexact;
           } else if (thw == th) {
             ++nphx;   // a phi-only image the set does not map onto itself
+          } else if (phw == ph) {
+            ++nthx;   // a theta-only image (a turn about phi_hat: never exact)
           }
           if (wint) {
             // vet_gd_wall_interp: the exactly rotated direction M n_q from the 3 nearest
@@ -1948,12 +1950,13 @@ void RadiationVet::VgdTabCompute(const Real alpha, const int nthr) {
     const int ncol = nmb*c3;
     const int hwc = static_cast<int>(std::thread::hardware_concurrency());
     const int nth = std::max(1, std::min(hwc, std::min(nthr, ncol)));
-    std::vector<std::array<int, 4>> cnt(nth, {0, 0, 0, 0});
+    std::vector<std::array<int, 5>> cnt(nth, {0, 0, 0, 0, 0});
     std::vector<std::thread> pool;
     for (int t = 0; t < nth; ++t) {
       pool.emplace_back([&, t]() {
         for (int c = t; c < ncol; c += nth) {
-          column(c/c3, c % c3, cnt[t][0], cnt[t][1], cnt[t][2], cnt[t][3]);
+          column(c/c3, c % c3, cnt[t][0], cnt[t][1], cnt[t][2], cnt[t][3],
+                 cnt[t][4]);
         }
       });
     }
@@ -1963,6 +1966,7 @@ void RadiationVet::VgdTabCompute(const Real alpha, const int nthr) {
       nexact += cnt[t][1];
       nmap += cnt[t][2];
       nphx += cnt[t][3];
+      nthx += cnt[t][4];
     }
   }
   // the branch of every stored value: n . r_hat of the direction actually stored at a
@@ -2065,6 +2069,7 @@ void RadiationVet::VgdTabCompute(const Real alpha, const int nthr) {
   H.nexact = nexact;
   H.nmap = nmap;
   H.nphx = nphx;
+  H.nthx = nthx;
 }
 
 //----------------------------------------------------------------------------------------
@@ -2199,9 +2204,15 @@ void RadiationVet::VetGdTables(const Real alpha) {
     // unless vet_gd_wall_sym makes the phi-wall maps mirror-paired
     VgdFatal("phi-periodic wedge width W must be a multiple of the ray set's azimuthal "
              "period for exact wall maps (" + std::to_string(H.nphx) + " of " +
-             std::to_string(nmap) + " phi-wall direction maps inexact); interpolated "
-             "maps break phi mirror symmetry (or <rad_vet>/vet_gd_wall_sym = true with "
-             "vet_gd_wall_interp)");
+             std::to_string(nmap) + " phi-wall direction maps inexact), or name "
+             "rad_vet/vet_gd_wall_sym = true (with vet_gd_wall_interp = true) for "
+             "mirror-paired phi walls");
+  }
+  if (H.nthx > 0 && !vgd_wst) {
+    // a theta-periodic wedge: the clean theta seam face is one-frame (a net F_theta)
+    VgdFatal("theta-periodic wedge: the theta wall maps are inexact (" +
+             std::to_string(H.nthx) + " of " + std::to_string(nmap) + " direction maps); "
+             "name rad_vet/vet_gd_theta_seam_sym = true for mirror-paired theta seams");
   }
   const bool first = (vgd_alpha < 0.0);
   // (the compact global band's kept lists belong to a set: a new set remakes them)

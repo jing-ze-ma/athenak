@@ -3186,6 +3186,7 @@ class RadiationVet {
     std::vector<double> mt;
     Real alpha = -9.0;
     int nwall = 0, nexact = 0, nmap = 0, nphx = 0;   // nphx: inexact phi-only wall maps
+    int nthx = 0;                                     // nthx: theta-only wall maps
   };
   struct VgdTabDev {
     DvceArray2D<Real> dir;
