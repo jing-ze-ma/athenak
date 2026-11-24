@@ -702,8 +702,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   }
 
   // --- THE <rad_vet> implicit_mr_every / vet_sc_every HEADER (radvet::kM1MRRstMagic),
-  // behind the one-pass one: 10 Reals, no slabs
-  bool mr_file = false;
+  // behind the one-pass one: 10 Reals, no slabs (both removed: read past)
   Real mr_hv[10];
   if (std::memcmp(variabledata, &(radvet::kM1MRRstMagic[0]),
                   sizeof(radvet::kM1MRRstMagic)) == 0) {
@@ -729,7 +728,6 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                 << "broken." << std::endl;
       exit(EXIT_FAILURE);
     }
-    mr_file = true;
   }
 
   // --- THE <rad_vet> time2_auto_be HEADER (radvet::kM1AutoBeRstMagic), behind
@@ -1913,18 +1911,6 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       std::cout << "<rad_vet> time2_auto_be skip run restored (len "
                 << abe_hv[0] << ", left " << abe_hv[1] << ")" << std::endl;
     }
-  }
-  if (mr_file && pradvet != nullptr && pradvet->F4RstHdr()) {
-    pradvet->vsc_cnt = static_cast<int>(mr_hv[6] + 0.5);
-    pradvet->vsc_nb = static_cast<int>(mr_hv[7] + 0.5);
-    pradvet->vsc_t0 = mr_hv[8];
-    pradvet->vsc_t1 = mr_hv[9];
-    pradvet->mr_first = (mr_hv[0] > 0.5);
-    pradvet->mr_cnt = static_cast<int>(mr_hv[1] + 0.5);
-    pradvet->mr_acc = mr_hv[2];
-    pradvet->mr_dt = mr_hv[3];
-    pradvet->mr_kc = static_cast<int>(mr_hv[4] + 0.5);
-    pradvet->mr_kn = static_cast<int>(mr_hv[5] + 0.5);
   }
   if (onep_file && pradvet != nullptr && pradvet->impl_onep > 0) {
     for (int t = 0; t < 3; ++t) {

@@ -91,6 +91,16 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
               << "hesdirk2 (the flux is set at the stage times)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  // vet_every (vet_sc_every) under vet_sc: the extrapolated builds between two formal
+  // solutions are removed, only 1
+  const std::string kev = M1KeyName(pin, "vet_every", {"vet_sc_every"});
+  if (vet_sc && pin->DoesParameterExist("rad_vet", kev) &&
+      pin->GetInteger("rad_vet", kev) > 1) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<rad_vet>/" << kev << " > 1 (vet_sc) is removed; only 1 "
+              << "is accepted" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   // plain be with t2_beonly (ImplicitInit) runs as hesdirk2, every step on
   // the backward-Euler path (Time2AutoBeBegin)
   if (time_scheme == M1_TIME_BE && t2_beonly) {
@@ -201,7 +211,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   //             t^{n+1} + O(dt^2); same cost as lag
   //   rebuild : predict for stage 1, a second formal solution at Y1 for stage 2
   // DEFAULT predict on a fresh run (as time2_vet_col on the wedge), unless
-  // time2_vet_extrap = true or vet_sc_every > 1 (which predict excludes: lag, silently);
+  // time2_vet_extrap = true (lag, silently);
   // a restart whose file lacks the key keeps lag (echoed).  lag is first
   // order in time wherever the tensor changes (pulse_k12.8 T 1.05), predict 2.0.
   // ONE key time2_vet for both formal solutions (lag | predict |
@@ -212,14 +222,11 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   // vet_sc_every / vet_col_every.
   t2_vsmode = 0;
   const std::string kvs = M1KeyName(pin, "time2_vet", {"time2_vet_sc"});
-  const std::string kev = M1KeyName(pin, "vet_every", {"vet_sc_every"});
   const bool vs_named = pin->DoesParameterExist("rad_vet", kvs);
-  const bool vs_every = pin->DoesParameterExist("rad_vet", kev) &&
-                        (pin->GetInteger("rad_vet", kev) > 1);
   if (vet_sc && vs_named && pin->GetString("rad_vet", kvs).compare("extrap") == 0) {
     t2_vext = true;
   }
-  if (vet_sc && (vs_named || (!t2_vext && !vs_every))) {
+  if (vet_sc && (vs_named || !t2_vext)) {
     std::string vm = pin->GetOrAddString("rad_vet", kvs,
                                          global_variable::restart_run ? "lag"
                                                                       : "predict");
@@ -235,11 +242,10 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
                 << "' is not a choice (lag | predict | rebuild | extrap)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    const bool every = vs_every;
-    if (t2_vsmode != 0 && (t2_vext || every)) {
+    if (t2_vsmode != 0 && t2_vext) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_vet>/" << kvs << " = " << vm << " excludes "
-                << "time2_vet_extrap = true and " << kev << " > 1" << std::endl;
+                << "time2_vet_extrap = true" << std::endl;
       std::exit(EXIT_FAILURE);
     }
   }
@@ -1285,12 +1291,6 @@ Real RadiationVet::EbndEsrc() {
 
 void RadiationVet::EbndStart() {
   if (!ebnd_on) return;
-  if (MRActive() || csplit != 0) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "<rad_vet> Ebnd (energy-budget diagnostic) needs the "
-              << "implicit transport without multi-rate / coupling_split" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
   if (ebnd_split) ebnd_s1 = ebnd_s3_ok ? ebnd_s3 : EbndEsrc();
 }
 
@@ -1656,7 +1656,6 @@ int RadiationVet::Time2RstNchWant() {
   const int np = (impl_pord == 2) ? 5 : 3;
   const int nt = (time_scheme != M1_TIME_HESDIRK2) ? 0 :
          M1_T2_NK + ((impl_pred && !sk) ? np : 0) + (vet_sc ? M1_T2_NVET : 0)
-         + ((vet_sc && vsc_every > 1) ? 2*M1_T2_NVET : 0)    // vet_sc_every: D0, D1
          + ((vet_col && t2_vcmode == 4 && !sk) ? M1_X2_NCH : 0);   // extrap2
   return nt + ((force_ref == M1_FREF_CLEAN) ? 4 + cln_lzt : 0)   // the reference, set
          + ((force_ref == M1_FREF_WB_MD) ? 10 : 0)           // wb_arad_md: 9, set
@@ -1775,12 +1774,6 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
   if (h2 && vet_sc) {
     put(c, M1_T2_NVET, vet_prev, 0);
     c += M1_T2_NVET;
-    if (vsc_every > 1) {
-      const int nv = M1_T2_NVET;
-      put(c, nv, vsc_d0, 0);
-      put(c + nv, nv, vsc_d1, 0);
-      c += 2*nv;
-    }
   }
   // force_reference = clean (wb_arad_md): the reference force (and potentials) and
   // whether it is set
@@ -1927,17 +1920,6 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
       return;
     }
     ch -= M1_T2_NVET;
-    if (vsc_every > 1) {
-      if (ch < 2*M1_T2_NVET) {
-        if (ch < M1_T2_NVET) {
-          DeepCopyAcross(Kokkos::subview(vsc_d0, mb, ch, AL, AL, AL), w);
-        } else {
-          DeepCopyAcross(Kokkos::subview(vsc_d1, mb, ch - M1_T2_NVET, AL, AL, AL), w);
-        }
-        return;
-      }
-      ch -= 2*M1_T2_NVET;
-    }
   }
   if (force_ref == M1_FREF_CLEAN || force_ref == M1_FREF_WB_MD) {
     const int nr = (force_ref == M1_FREF_WB_MD) ? 9 : 3 + cln_lzt;

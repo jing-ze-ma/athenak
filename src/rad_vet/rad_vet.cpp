@@ -2259,11 +2259,10 @@ void RadiationVet::SetX2FaceFlux(const DvceArray3D<Real> &flo,
 
 bool RadiationVet::FrefWaccOn() const {
   // time2_fref_wacc: also the backward-Euler steps of a hesdirk2 run (no
-  // valid slope: the first step, a redo; not a helper solve, not multi-rate / csplit)
+  // valid slope: the first step, a redo; not a helper solve)
   const bool t2be = fref_wacc_t2 && (time_scheme == M1_TIME_HESDIRK2) &&
-                    (!t2_ok || FrefWaccStage()) && !t2_inprobe && (csplit == 0);
-  return fref_wsplit && ((time_scheme == M1_TIME_BE) || t2be) &&
-         (mr_every <= 1);
+                    (!t2_ok || FrefWaccStage()) && !t2_inprobe;
+  return fref_wsplit && ((time_scheme == M1_TIME_BE) || t2be);
 }
 
 bool RadiationVet::FrefWaccStage() const {

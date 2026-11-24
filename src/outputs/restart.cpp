@@ -502,22 +502,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     }
     onep_nb = (pradvet->impl_onep_auto ? 18 : 9)*sizeof(Real);
   }
-  // <rad_vet> implicit_mr_every > 1 / vet_sc_every > 1: the multi-rate window and the
-  // tensor cadence state, behind the one-pass header
-  const bool wmr = (pradvet != nullptr) && pradvet->F4RstHdr();
-  Real mr_hdr[10] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-  if (wmr) {
-    mr_hdr[6] = static_cast<Real>(pradvet->vsc_cnt);
-    mr_hdr[7] = static_cast<Real>(pradvet->vsc_nb);
-    mr_hdr[8] = pradvet->vsc_t0;
-    mr_hdr[9] = pradvet->vsc_t1;
-    mr_hdr[0] = pradvet->mr_first ? 1.0 : 0.0;
-    mr_hdr[1] = static_cast<Real>(pradvet->mr_cnt);
-    mr_hdr[2] = pradvet->mr_acc;
-    mr_hdr[3] = pradvet->mr_dt;
-    mr_hdr[4] = static_cast<Real>(pradvet->mr_kc);
-    mr_hdr[5] = static_cast<Real>(pradvet->mr_kn);
-  }
   // the time2_auto_be back-off state, only while a skip run is active
   const bool wabe = (pradvet != nullptr) && (pradvet->t2_abe > 0) &&
                     (pradvet->t2_abe_len > 0 || pradvet->t2_abe_left > 0);
@@ -827,13 +811,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(onep_hdr[0]), nb, "byte", single_file_per_rank);
     }
-    if (wmr) {
-      IOWrapperSizeT nb = sizeof(mr_hdr);
-      resfile.Write_any_type(&(radvet::kM1MRRstMagic[0]), sizeof(radvet::kM1MRRstMagic),
-                             "byte", single_file_per_rank);
-      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
-      resfile.Write_any_type(&(mr_hdr[0]), nb, "byte", single_file_per_rank);
-    }
     if (wabe) {
       IOWrapperSizeT nb = sizeof(abe_hdr);
       resfile.Write_any_type(&(radvet::kM1AutoBeRstMagic[0]),
@@ -1026,9 +1003,6 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (wonep) {
     step3size += sizeof(radvet::kM1OnePassRstMagic) + sizeof(IOWrapperSizeT)
                  + onep_nb;
-  }
-  if (wmr) {
-    step3size += sizeof(radvet::kM1MRRstMagic) + sizeof(IOWrapperSizeT) + sizeof(mr_hdr);
   }
   if (wabe) {
     step3size += sizeof(radvet::kM1AutoBeRstMagic) + sizeof(IOWrapperSizeT)

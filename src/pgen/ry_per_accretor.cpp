@@ -501,7 +501,7 @@ DvceArray4D<Real> spr_aref_;   // the module's a_ref (= pm1->arad_ref, refreshed
 // stages (one cycle late: the 2e4 start-up gap of the static runs).  (The held-cell
 // resets under hesdirk2 are still booked per stage in full: an open booking gap of the
 // hold with hesdirk2, not of backward Euler.)  Off (old booking) without the M1 coupling
-// hook, with implicit_mr_every > 1 or csplit. they are now booked with their weight in
+// hook. they are now booked with their weight in
 // the step.  The radiation is not RK-combined by the hydro, but under hesdirk2
 // Time2FormStage(2) makes the stage-2 start w1 u1 + w0 u0, where u1 (copied after the
 // Heun stage 1) carries the stage-1 reset and u0 = Y2 + the stage-2 reset: Y3 - U^n = D1
@@ -6780,7 +6780,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     {
       auto *pm1 = pmbp->pradvet;
       rbk_ = rad_ && pm1 != nullptr && pm1->coupling && pm1->gas_feedback && pm1->fl_on &&
-             !pm1->MRActive() && pm1->csplit == 0 &&
              (!pin->DoesParameterExist("problem", "rad_book_lag") ||
               !pin->GetBoolean("problem", "rad_book_lag"));
       if (rbk_) user_m1post_func = RyPerM1PostRb;

@@ -669,8 +669,7 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   if (vet_sc) {VetInit(pin);}
   ImplBeamInit(pin);   // (rad_vet_vet.cpp)
   Time2Init(pin);
-  MRInit(pin);         // implicit_mr_every (rad_vet_mr.cpp)
-  if (time_scheme == M1_TIME_BE && mr_every <= 1) {
+  if (time_scheme == M1_TIME_BE) {
     Kokkos::realloc(u1, u1.extent(0), M1_NVAR, 1, 1, 1);
   }
 }
@@ -756,7 +755,6 @@ void RadiationVet::ImplicitReport() {
     for (int q = 0; q < 11; ++q) {std::cout << " " << nm[q] << "=" << tmr_acc[q];}
     std::cout << std::endl;
   }
-  MRReport();
   if (pos) {
     std::cout << "<rad_vet> vet-positivity: implicit_pos_gas=" << impl_pos_gas << " (frac "
               << impl_pos_gas_frac << ") cell-solves=" << pos_cnt[M1_POS_GAS]

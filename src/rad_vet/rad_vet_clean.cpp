@@ -440,6 +440,8 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/clean_skip_time2_hist", "=true"},
     // (the hesdirk2 start probe: removed, only be)
     {"rad_vet/time2_start", "=be"},
+    // (the vet_sc builds extrapolated between formal solutions: removed, only 1)
+    {"rad_vet/vet_sc_every", "=1"},
     // (the explicit transport's sub-cycling, removed with it)
     {"rad_vet/cfl_rad", ""}, {"rad_vet/subcycle", ""},
     // (the vet_gd twin and its symmetric reference, removed, L4: with vet_gd on the twin
