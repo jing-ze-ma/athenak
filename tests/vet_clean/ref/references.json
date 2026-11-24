@@ -184,5 +184,17 @@
    "worst_bitwise": true,
    "warnings": 0
   }
+ },
+ "inf_reject": {
+  "_about": "rad_vet/clean_dbg_inf = 4: one non-finite E iterate in cycle 4's first stage-1 write-back; implicit_pos_floor must not floor or book it, the stage is rejected and redone",
+  "max": {
+   "dE": 1e-13
+  },
+  "min": {
+   "rejected": 1
+  },
+  "equal": {
+   "nonfinite": 0
+  }
  }
 }

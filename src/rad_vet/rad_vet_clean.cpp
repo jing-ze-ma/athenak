@@ -6253,6 +6253,10 @@ void RadiationVet::CleanWriteBack() {
                                                  u0.extent_int(3), u0.extent_int(4));
   // (prb, clean_wb_fct's probe: no side effects, each cell's E without its face
   // transport, e + qf, into cln_wbfp 3 for CleanWbFct, before the cells' write-back)
+  // (clean_dbg_inf: once, in the first stage-1 write-back of that cycle)
+  const bool dinf = (cln_dbginf == fcy) && t2_solve == M1_T2S_STAGE1 && !t2_inprobe &&
+                    global_variable::my_rank == 0;
+  if (dinf) cln_dbginf = -1;
   auto wbc = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
                            const bool prb) CLEAN_HIP_INLINE {
     CLEAN_HIPX(const CleanArgs &x = *px, &xh = *pxh;)   // (in device memory)
@@ -6493,8 +6497,10 @@ void RadiationVet::CleanWriteBack() {
     // (implicit_pos_floor, the old production's write-back: an E at or below e_floor is
     // raised to it with the energy of the cell's gas above e_min; what the gas cannot
     // cover is taken from the radiation of the cell's column (implicit_pos_floor_cons,
-    // below), else counted as created; counted)
-    if (pflr && e <= efl) {
+    // below), else counted as created; counted).  A non-finite E (a diverged iterate) is
+    // never raised: it stays non-finite, and the check below rejects the solve
+    if (dinf && !prb && m == 0 && k == ks && j == js && i == is) e = -INFINITY;
+    if (pflr && e <= efl && Kokkos::isfinite(e)) {
       const Real vol = CleanVol(x, m, k, j, i);
       const bool gas = feedback && !x.vzero;
       Real take = 0.0;
