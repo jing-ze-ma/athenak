@@ -6043,6 +6043,9 @@ void RadiationM1::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
     std::swap(sa, sb);
     if (!(CleanReduce(nv, false) > 0.0)) break;
   }
+  if (!zl_conv && nr == 4096) {
+    ZalesakCapWarn("clean_wb_fct", pmy_pack->pmesh->ncycle, t2_solve);
+  }
   if (sa != ca) {   // (the last round's R, no sign bit set, ghosts too)
     Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, ca, Kokkos::ALL,
                       Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw, Kokkos::ALL, sa,

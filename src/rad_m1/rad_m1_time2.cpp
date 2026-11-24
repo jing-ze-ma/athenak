@@ -2060,6 +2060,9 @@ void RadiationM1::Time2FaceFct(int stage, Real c1, Real c2) {
                       Kokkos::ALL, Kokkos::ALL), Kokkos::subview(iw, Kokkos::ALL, sa,
                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
+  if (!zl_conv && nround >= 4096) {
+    ZalesakCapWarn("time2_face_fct", pmy_pack->pmesh->ncycle, t2_solve);
+  }
   zl_rounds[0] += static_cast<Real>(nround);
   if (zl_prof) {
     Kokkos::fence();

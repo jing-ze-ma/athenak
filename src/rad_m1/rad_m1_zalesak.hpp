@@ -11,9 +11,21 @@
 //! R exchanges
 
 #include <cfloat>
+#include <cstdio>
 #include <utility>
 
+#include "globals.hpp"
+
 namespace radm1 {
+
+//! \brief the Zalesak rounds stopped at their cap with R still falling: the limited E is
+//! then not bounded (never silent)
+inline void ZalesakCapWarn(const char *who, const int cycle, const int t2s) {
+  if (global_variable::my_rank == 0) {
+    std::printf("CLEAN WARNING cycle %d t2s %d: %s Zalesak rounds at the cap 4096, R not "
+                "converged (E above the floor not guaranteed)\n", cycle, t2s, who);
+  }
+}
 
 //! \brief a cell's limiter bound: the largest R <= 1 with q - R po above the round-off
 //! of the sums that later form its E.  q is what the cell holds without its outflow po
@@ -61,7 +73,8 @@ Real RadiationM1::ZalesakConverge(const F &rf, const int q) {
   int sa = ca, sb = cb;
   bool all = true;
   Real nfall = 0.0;
-  for (int r = 0; r < 4096; ++r) {
+  bool done = false;
+  for (int r = 0; r < 4096 && !done; ++r) {
     Real nb = 0.0;
     for (int s = 0; s < 4096; ++s) {   // (local rounds, ghosts held)
       Real nv = 0.0, nvb = 0.0;
@@ -99,7 +112,10 @@ Real RadiationM1::ZalesakConverge(const F &rf, const int q) {
       nb += nvb;
       if (!(nv > 0.0)) break;
     }
-    if (!(CleanReduce(nb, false) > 0.0)) break;
+    if (!(CleanReduce(nb, false) > 0.0)) {
+      done = true;
+      break;
+    }
     if (sa != ca) {   // (every rank exchanges slot ca: the ranks' round counts differ)
       Kokkos::deep_copy(DevExeSpace(), slot(ca), slot(sa));
       std::swap(sa, sb);
@@ -135,6 +151,8 @@ Real RadiationM1::ZalesakConverge(const F &rf, const int q) {
       iw_(m,s0,k,j,i) = iw_(m,s1,k,j,i) = (g < fabs(iw_(m,s1,k,j,i))) ? -g : g;
     });
   }
+  if (!done) {ZalesakCapWarn(q ? "clean_wb_fct" : "time2_face_fct",
+                             pmy_pack->pmesh->ncycle, t2_solve);}
   auto r0 = slot(sa);
   auto r1 = slot(ca);
   par_for("m1_zlc_abs", DevExeSpace(), 0, nmb1, 0, r0.extent_int(1) - 1, 0,
