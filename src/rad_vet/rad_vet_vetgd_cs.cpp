@@ -813,7 +813,7 @@ void RadiationVet::VetGdCsCompact() {
   const Real h = 0.5*M_PI/nc;
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
-  const int64_t per_ = vgd_csper;   // n*n1, or padded to 16
+  const int64_t per_ = vgd_csper;   // n*n1 padded to 16
   Kokkos::Timer tsub;
   // (1) the read mask (VetGdCsSweep's geometry; the values never matter)
   par_for("vet_vgdcs_rmask", DevExeSpace(), 0, nmb1, ks, ke, js, je, 0, n - 1,
@@ -892,290 +892,206 @@ void RadiationVet::VetGdCsCompact() {
   const size_t nsl = static_cast<size_t>(2)*n1*ng;
   std::vector<int> sl_h, rl_h;
   int64_t ts = 0, tr = 0;
-  if (per % 16 == 0) {
-    // the lists straight from the packed 2-bit words (partner blocks of
-    // entries are word aligned when n*n1 % 16 == 0): zero words skipped, the marks sent
-    // as packed words (8x fewer bytes); the same lists in the same (t-increasing) order
-    // as the byte path below
-    const size_t wpe = per/16;   // words per entry
-    // the nonzero words only (the marks are sparse: the compact lists send ~0.3 % of
-    // the dense values), compacted on the device in increasing word order, as (word in
-    // its partner's block, word) pairs: the download, the marks exchange and the host
-    // scans move the nonzero words, not the whole mask (~0.5 GB per build on RSG); the
-    // same words in the same order give the same lists.  The host copies in PERSISTENT
-    // buffers (grown, never freed), not a fresh vector per build.  RSG E 10-31: under an
-    // LD_PRELOAD profiler (nsys osrt / cpu sampling) UCX's registration cache missed the
-    // munmap of the previous build's buffer, the new buffer reused its addresses and the
-    // rendezvous sent stale pages: inconsistent lists, then MPI_ERR_TRUNCATE or a hang
-    const int64_t nwr = static_cast<int64_t>(vgd_csnrcv)*static_cast<int64_t>(wpe);
-    using RpL = Kokkos::RangePolicy<DevExeSpace, Kokkos::IndexType<int64_t>>;
-    int64_t nz = 0;
-    Kokkos::parallel_scan("vet_vgdcs_nzn", RpL(DevExeSpace(), 0, nwr),
-    KOKKOS_LAMBDA(const int64_t w, int64_t &u, const bool) {
-      if (msk_(w) != 0u) {u += 1;}
-    }, nz);
-    DvceArray1D<int64_t> zi("vet_vgdcs_zi", std::max<int64_t>(nz, 1));
-    DvceArray1D<uint32_t> zv("vet_vgdcs_zv", std::max<int64_t>(nz, 1));
-    Kokkos::parallel_scan("vet_vgdcs_nzc", RpL(DevExeSpace(), 0, nwr),
-    KOKKOS_LAMBDA(const int64_t w, int64_t &u, const bool fin) {
-      const uint32_t x = msk_(w);
-      if (x == 0u) {return;}
-      if (fin) {zi(u) = w; zv(u) = x;}
-      u += 1;
-    });
-    std::vector<int64_t> hzi(std::max<int64_t>(nz, 1));
-    std::vector<uint32_t> hzv(std::max<int64_t>(nz, 1));
-    Kokkos::deep_copy(Kokkos::View<int64_t *, Kokkos::HostSpace,
-                      Kokkos::MemoryTraits<Kokkos::Unmanaged>>(hzi.data(), hzi.size()), zi);
-    Kokkos::deep_copy(Kokkos::View<uint32_t *, Kokkos::HostSpace,
-                      Kokkos::MemoryTraits<Kokkos::Unmanaged>>(hzv.data(), hzv.size()), zv);
-    bool both = false;
-    for (int64_t q = 0; q < nz; ++q) {
-      const uint32_t x = hzv[q];
-      if ((x & (x >> 1) & 0x55555555u) != 0u) {both = true;}
-    }
-    if (both) {VgdCsFatal("read mask: a value marked both inward and outward");}
-    // own pairs per partner (its receive entries' block), into the persistent buffer
-    std::vector<size_t> ho(np + 1, 0), hn(np, 0);
-    std::vector<int64_t> hlo(np, 0);
-    for (int p = 0; p < np; ++p) {
-      const int64_t w0 = static_cast<int64_t>(vgd_cspr[p])*wpe;
-      const int64_t w1 = w0 + static_cast<int64_t>(vgd_cspm[p])*wpe;
-      if (w1 - w0 > static_cast<int64_t>(UINT32_MAX)) {
-        VgdCsFatal("compact lists: a partner block of more than 2^32 mask words");
-      }
-      hlo[p] = std::lower_bound(hzi.begin(), hzi.begin() + nz, w0) - hzi.begin();
-      hn[p] = (vgd_cspm[p] > 0)
-              ? (std::lower_bound(hzi.begin(), hzi.begin() + nz, w1) - hzi.begin()) - hlo[p]
-              : 0;
-      ho[p+1] = ho[p] + 2*hn[p];
-    }
-    if (vgd_csmw_h.size() < std::max<size_t>(ho[np], 1)) {vgd_csmw_h.resize(ho[np]);}
-    uint32_t *mp = vgd_csmw_h.data();
-    for (int p = 0; p < np; ++p) {
-      const int64_t w0 = static_cast<int64_t>(vgd_cspr[p])*wpe;
-      for (size_t q = 0; q < hn[p]; ++q) {
-        mp[ho[p] + 2*q] = static_cast<uint32_t>(hzi[hlo[p] + q] - w0);
-        mp[ho[p] + 2*q + 1] = hzv[hlo[p] + q];
-      }
-    }
-    vgd_cstb_d += tsub.seconds();
-    tsub.reset();
-    // the owners' pairs (the marks of the entries they send me), per partner
-    std::vector<uint64_t> rn(np, 0), sn(np, 0);
-    for (int p = 0; p < np; ++p) {sn[p] = hn[p];}
-    std::vector<size_t> ro(np + 1, 0);
-#if MPI_PARALLEL_ENABLED
-    {
-      // own tags (7109 pair counts, 7107 pairs, 7108 their checksums; 7105 is the fused
-      // twin's sweep exchange) and a checksum per message: a block that arrives other
-      // than it was sent is FATAL here, never a silent wrong list
-      auto hsum = [](const uint32_t *a, const size_t nw) {
-        uint64_t h = 1469598103934665603ull;
-        for (size_t w = 0; w < nw; ++w) {h = (h ^ a[w])*1099511628211ull;}
-        return h;
-      };
-      std::vector<MPI_Request> req;
-      for (int p = 0; p < np; ++p) {
-        const int rk = vgd_csprk[p];
-        if (vgd_cspn[p] > 0) {
-          req.emplace_back();
-          MPI_Irecv(&rn[p], 1, MPI_UINT64_T, rk, 7109, MPI_COMM_WORLD, &req.back());
-        }
-        if (vgd_cspm[p] > 0) {
-          req.emplace_back();
-          MPI_Isend(&sn[p], 1, MPI_UINT64_T, rk, 7109, MPI_COMM_WORLD, &req.back());
-        }
-      }
-      MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
-      req.clear();
-      for (int p = 0; p < np; ++p) {ro[p+1] = ro[p] + 2*rn[p];}
-      if (vgd_csmw_r.size() < std::max<size_t>(ro[np], 1)) {vgd_csmw_r.resize(ro[np]);}
-      std::vector<uint64_t> hs(np, 0), hr(np, 0);
-      for (int p = 0; p < np; ++p) {
-        const int rk = vgd_csprk[p];
-        if (vgd_cspn[p] > 0) {
-          req.emplace_back();
-          MPI_Irecv(vgd_csmw_r.data() + ro[p], static_cast<int>(2*rn[p]), MPI_UINT32_T,
-                    rk, 7107, MPI_COMM_WORLD, &req.back());
-          req.emplace_back();
-          MPI_Irecv(&hr[p], 1, MPI_UINT64_T, rk, 7108, MPI_COMM_WORLD, &req.back());
-        }
-        if (vgd_cspm[p] > 0) {
-          hs[p] = hsum(mp + ho[p], 2*hn[p]);
-          req.emplace_back();
-          MPI_Isend(mp + ho[p], static_cast<int>(2*hn[p]), MPI_UINT32_T, rk, 7107,
-                    MPI_COMM_WORLD, &req.back());
-          req.emplace_back();
-          MPI_Isend(&hs[p], 1, MPI_UINT64_T, rk, 7108, MPI_COMM_WORLD, &req.back());
-        }
-      }
-      MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
-      for (int p = 0; p < np; ++p) {
-        if (vgd_cspn[p] <= 0) {continue;}
-        if (hsum(vgd_csmw_r.data() + ro[p], 2*rn[p]) != hr[p]) {
-          VgdCsFatal("compact lists: the read marks from rank " +
-                     std::to_string(vgd_csprk[p]) + " arrived corrupted (rank " +
-                     std::to_string(global_variable::my_rank) + ", checksum mismatch): "
-                     "the MPI transport delivered other bytes than were sent (seen with "
-                     "UCX's registration cache under an LD_PRELOAD profiler such as nsys "
-                     "-t osrt / -s cpu: export UCX_RCACHE_ENABLE=n for such runs)");
-        }
-      }
-    }
-#endif
-    vgd_cstb_m += tsub.seconds();
-    tsub.reset();
-    // (each partner's counts and fills on its own host thread: disjoint slots and list
-    // ranges, the same lists; h200spd: the host lists were ~1.1 s of each ~2 s build)
-    auto parts = [np](const auto &f) {
-      std::vector<std::thread> th;
-      for (int p = 1; p < np; ++p) th.emplace_back(f, p);
-      if (np > 0) f(0);
-      for (auto &t : th) t.join();
-    };
-    // the lists from partner p's pairs (pr + po[p], pn[p] of them), its entries from st0[p]
-    auto buildw = [&](const uint32_t *pr, const std::vector<size_t> &po,
-                      const std::vector<int> &st0, std::vector<int64_t> &off,
-                      std::vector<int> &lst) {
-      std::vector<int64_t> nn(nsl*np, 0);
-      parts([&](const int p) {
-        const size_t q1 = (po[p+1] - po[p])/2;
-        for (size_t q = 0; q < q1; ++q) {
-          uint32_t x = pr[po[p] + 2*q + 1];
-          const size_t r0 = static_cast<size_t>(pr[po[p] + 2*q])*16;   // in-block t
-          while (x != 0u) {
-            const int b = __builtin_ctz(x) >> 1;
-            const uint32_t v = (x >> (2*b)) & 3u;
-            x &= ~(3u << (2*b));
-            const size_t r = (r0 + b) % per;
-            const int d = static_cast<int>(r/n1), sh = static_cast<int>(r % n1);
-            nn[((static_cast<size_t>(v - 1)*n1 + sh)*ng + dg[d])*np + p] += 1;
-          }
-        }
-      });
-      off.assign(nsl*(np + 1), 0);
-      int64_t t = 0;
-      for (size_t sl = 0; sl < nsl; ++sl) {
-        for (int p = 0; p < np; ++p) {
-          off[sl*(np + 1) + p] = t;
-          t += nn[sl*np + p];
-        }
-        off[sl*(np + 1) + np] = t;
-      }
-      lst.assign(std::max<int64_t>(t, 1), 0);
-      std::vector<int64_t> cur(nsl*np);
-      for (size_t sl = 0; sl < nsl; ++sl) {
-        for (int p = 0; p < np; ++p) {cur[sl*np + p] = off[sl*(np + 1) + p];}
-      }
-      parts([&](const int p) {
-        const size_t q1 = (po[p+1] - po[p])/2;
-        for (size_t q = 0; q < q1; ++q) {
-          uint32_t x = pr[po[p] + 2*q + 1];
-          const size_t r0 = static_cast<size_t>(pr[po[p] + 2*q])*16;
-          while (x != 0u) {   // bits low to high = t increasing (as the byte path)
-            const int b = __builtin_ctz(x) >> 1;
-            const uint32_t v = (x >> (2*b)) & 3u;
-            x &= ~(3u << (2*b));
-            const size_t rr = r0 + b;
-            const int e = st0[p] + static_cast<int>(rr/per);
-            const size_t r = rr % per;
-            const int d = static_cast<int>(r/n1), sh = static_cast<int>(r % n1);
-            lst[cur[((static_cast<size_t>(v - 1)*n1 + sh)*ng + dg[d])*np + p]++] =
-                e*n + d;
-          }
-        }
-      });
-      return t;
-    };
-    // (the send and receive lists at once)
-    std::thread tl([&]() {tr = buildw(mp, ho, vgd_cspr, E.ro, rl_h);});
-    ts = buildw(vgd_csmw_r.data(), ro, vgd_csps, E.so, sl_h);
-    tl.join();
-  } else {
-    // the packed mask expanded on the host (1 byte per value, as before)
-    std::vector<uint8_t> mh(static_cast<size_t>(std::max(vgd_csnrcv, 1))*per, 0);
-    {
-      auto mp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), msk_);
-      bool both = false;
-      for (size_t t = 0; t < mh.size(); ++t) {
-        const uint8_t v = static_cast<uint8_t>((mp(t >> 4) >> (2*(t & 15))) & 3u);
-        both = both || (v == 3);
-        mh[t] = v;
-      }
-      if (both) {VgdCsFatal("read mask: a value marked both inward and outward");}
-    }
-    // (2) the receivers' marks -> the owners
-    std::vector<uint8_t> sm(static_cast<size_t>(std::max(vgd_csnsnd, 1))*per, 0);
-  #if MPI_PARALLEL_ENABLED
-    {
-      std::vector<MPI_Request> req;
-      for (int p = 0; p < np; ++p) {
-        const int rk = vgd_csprk[p];
-        if (vgd_cspn[p] > 0) {
-          req.emplace_back();
-          MPI_Irecv(sm.data() + static_cast<size_t>(vgd_csps[p])*per,
-                    static_cast<int>(vgd_cspn[p]*per), MPI_UNSIGNED_CHAR, rk, 7102,
-                    MPI_COMM_WORLD, &req.back());
-        }
-        if (vgd_cspm[p] > 0) {
-          req.emplace_back();
-          MPI_Isend(mh.data() + static_cast<size_t>(vgd_cspr[p])*per,
-                    static_cast<int>(vgd_cspm[p]*per), MPI_UNSIGNED_CHAR, rk, 7102,
-                    MPI_COMM_WORLD, &req.back());
-        }
-      }
-      MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
-    }
-  #endif
-    auto build = [&](const uint8_t *mk, const std::vector<int> &st0,
-                     const std::vector<int> &cnt, std::vector<int64_t> &off,
-                     std::vector<int> &lst) {
-      std::vector<int64_t> nn(nsl*np, 0);
-      for (int p = 0; p < np; ++p) {
-        for (int e = st0[p]; e < st0[p] + cnt[p]; ++e) {
-          const uint8_t *q = mk + static_cast<size_t>(e)*per;
-          for (int d = 0; d < n; ++d) {
-            for (int sh = 0; sh < n1; ++sh) {
-              const uint8_t v = q[static_cast<size_t>(d)*n1 + sh];
-              if (v) {nn[((static_cast<size_t>(v - 1)*n1 + sh)*ng + dg[d])*np + p] += 1;}
-            }
-          }
-        }
-      }
-      off.assign(nsl*(np + 1), 0);
-      int64_t t = 0;
-      for (size_t sl = 0; sl < nsl; ++sl) {
-        for (int p = 0; p < np; ++p) {
-          off[sl*(np + 1) + p] = t;
-          t += nn[sl*np + p];
-        }
-        off[sl*(np + 1) + np] = t;
-      }
-      lst.assign(std::max<int64_t>(t, 1), 0);
-      std::vector<int64_t> cur(nsl*np);
-      for (size_t sl = 0; sl < nsl; ++sl) {
-        for (int p = 0; p < np; ++p) {cur[sl*np + p] = off[sl*(np + 1) + p];}
-      }
-      for (int p = 0; p < np; ++p) {
-        for (int e = st0[p]; e < st0[p] + cnt[p]; ++e) {
-          const uint8_t *q = mk + static_cast<size_t>(e)*per;
-          for (int d = 0; d < n; ++d) {
-            for (int sh = 0; sh < n1; ++sh) {
-              const uint8_t v = q[static_cast<size_t>(d)*n1 + sh];
-              if (v) {
-                lst[cur[((static_cast<size_t>(v - 1)*n1 + sh)*ng + dg[d])*np + p]++] =
-                    e*n + d;
-              }
-            }
-          }
-        }
-      }
-      return t;
-    };
-    ts = build(sm.data(), vgd_csps, vgd_cspn, E.so, sl_h);
-    tr = build(mh.data(), vgd_cspr, vgd_cspm, E.ro, rl_h);
+  // (vgd_csper is padded to a multiple of 16 in VetGdCsInit)
+  if (per % 16 != 0) {VgdCsFatal("compact lists: n*n1 not padded to 16");}
+  // the lists straight from the packed 2-bit words (partner blocks of entries are
+  // word aligned): zero words skipped, the marks sent
+  // as packed words (8x fewer bytes)
+  const size_t wpe = per/16;   // words per entry
+  // the nonzero words only (the marks are sparse: the compact lists send ~0.3 % of
+  // the dense values), compacted on the device in increasing word order, as (word in
+  // its partner's block, word) pairs: the download, the marks exchange and the host
+  // scans move the nonzero words, not the whole mask (~0.5 GB per build on RSG); the
+  // same words in the same order give the same lists.  The host copies in PERSISTENT
+  // buffers (grown, never freed), not a fresh vector per build.  RSG E 10-31: under an
+  // LD_PRELOAD profiler (nsys osrt / cpu sampling) UCX's registration cache missed the
+  // munmap of the previous build's buffer, the new buffer reused its addresses and the
+  // rendezvous sent stale pages: inconsistent lists, then MPI_ERR_TRUNCATE or a hang
+  const int64_t nwr = static_cast<int64_t>(vgd_csnrcv)*static_cast<int64_t>(wpe);
+  using RpL = Kokkos::RangePolicy<DevExeSpace, Kokkos::IndexType<int64_t>>;
+  int64_t nz = 0;
+  Kokkos::parallel_scan("vet_vgdcs_nzn", RpL(DevExeSpace(), 0, nwr),
+  KOKKOS_LAMBDA(const int64_t w, int64_t &u, const bool) {
+    if (msk_(w) != 0u) {u += 1;}
+  }, nz);
+  DvceArray1D<int64_t> zi("vet_vgdcs_zi", std::max<int64_t>(nz, 1));
+  DvceArray1D<uint32_t> zv("vet_vgdcs_zv", std::max<int64_t>(nz, 1));
+  Kokkos::parallel_scan("vet_vgdcs_nzc", RpL(DevExeSpace(), 0, nwr),
+  KOKKOS_LAMBDA(const int64_t w, int64_t &u, const bool fin) {
+    const uint32_t x = msk_(w);
+    if (x == 0u) {return;}
+    if (fin) {zi(u) = w; zv(u) = x;}
+    u += 1;
+  });
+  std::vector<int64_t> hzi(std::max<int64_t>(nz, 1));
+  std::vector<uint32_t> hzv(std::max<int64_t>(nz, 1));
+  Kokkos::deep_copy(Kokkos::View<int64_t *, Kokkos::HostSpace,
+                    Kokkos::MemoryTraits<Kokkos::Unmanaged>>(hzi.data(), hzi.size()), zi);
+  Kokkos::deep_copy(Kokkos::View<uint32_t *, Kokkos::HostSpace,
+                    Kokkos::MemoryTraits<Kokkos::Unmanaged>>(hzv.data(), hzv.size()), zv);
+  bool both = false;
+  for (int64_t q = 0; q < nz; ++q) {
+    const uint32_t x = hzv[q];
+    if ((x & (x >> 1) & 0x55555555u) != 0u) {both = true;}
   }
+  if (both) {VgdCsFatal("read mask: a value marked both inward and outward");}
+  // own pairs per partner (its receive entries' block), into the persistent buffer
+  std::vector<size_t> ho(np + 1, 0), hn(np, 0);
+  std::vector<int64_t> hlo(np, 0);
+  for (int p = 0; p < np; ++p) {
+    const int64_t w0 = static_cast<int64_t>(vgd_cspr[p])*wpe;
+    const int64_t w1 = w0 + static_cast<int64_t>(vgd_cspm[p])*wpe;
+    if (w1 - w0 > static_cast<int64_t>(UINT32_MAX)) {
+      VgdCsFatal("compact lists: a partner block of more than 2^32 mask words");
+    }
+    hlo[p] = std::lower_bound(hzi.begin(), hzi.begin() + nz, w0) - hzi.begin();
+    hn[p] = (vgd_cspm[p] > 0)
+            ? (std::lower_bound(hzi.begin(), hzi.begin() + nz, w1) - hzi.begin()) - hlo[p]
+            : 0;
+    ho[p+1] = ho[p] + 2*hn[p];
+  }
+  if (vgd_csmw_h.size() < std::max<size_t>(ho[np], 1)) {vgd_csmw_h.resize(ho[np]);}
+  uint32_t *mp = vgd_csmw_h.data();
+  for (int p = 0; p < np; ++p) {
+    const int64_t w0 = static_cast<int64_t>(vgd_cspr[p])*wpe;
+    for (size_t q = 0; q < hn[p]; ++q) {
+      mp[ho[p] + 2*q] = static_cast<uint32_t>(hzi[hlo[p] + q] - w0);
+      mp[ho[p] + 2*q + 1] = hzv[hlo[p] + q];
+    }
+  }
+  vgd_cstb_d += tsub.seconds();
+  tsub.reset();
+  // the owners' pairs (the marks of the entries they send me), per partner
+  std::vector<uint64_t> rn(np, 0), sn(np, 0);
+  for (int p = 0; p < np; ++p) {sn[p] = hn[p];}
+  std::vector<size_t> ro(np + 1, 0);
+#if MPI_PARALLEL_ENABLED
+  {
+    // own tags (7109 pair counts, 7107 pairs, 7108 their checksums; 7105 is the fused
+    // twin's sweep exchange) and a checksum per message: a block that arrives other
+    // than it was sent is FATAL here, never a silent wrong list
+    auto hsum = [](const uint32_t *a, const size_t nw) {
+      uint64_t h = 1469598103934665603ull;
+      for (size_t w = 0; w < nw; ++w) {h = (h ^ a[w])*1099511628211ull;}
+      return h;
+    };
+    std::vector<MPI_Request> req;
+    for (int p = 0; p < np; ++p) {
+      const int rk = vgd_csprk[p];
+      if (vgd_cspn[p] > 0) {
+        req.emplace_back();
+        MPI_Irecv(&rn[p], 1, MPI_UINT64_T, rk, 7109, MPI_COMM_WORLD, &req.back());
+      }
+      if (vgd_cspm[p] > 0) {
+        req.emplace_back();
+        MPI_Isend(&sn[p], 1, MPI_UINT64_T, rk, 7109, MPI_COMM_WORLD, &req.back());
+      }
+    }
+    MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
+    req.clear();
+    for (int p = 0; p < np; ++p) {ro[p+1] = ro[p] + 2*rn[p];}
+    if (vgd_csmw_r.size() < std::max<size_t>(ro[np], 1)) {vgd_csmw_r.resize(ro[np]);}
+    std::vector<uint64_t> hs(np, 0), hr(np, 0);
+    for (int p = 0; p < np; ++p) {
+      const int rk = vgd_csprk[p];
+      if (vgd_cspn[p] > 0) {
+        req.emplace_back();
+        MPI_Irecv(vgd_csmw_r.data() + ro[p], static_cast<int>(2*rn[p]), MPI_UINT32_T,
+                  rk, 7107, MPI_COMM_WORLD, &req.back());
+        req.emplace_back();
+        MPI_Irecv(&hr[p], 1, MPI_UINT64_T, rk, 7108, MPI_COMM_WORLD, &req.back());
+      }
+      if (vgd_cspm[p] > 0) {
+        hs[p] = hsum(mp + ho[p], 2*hn[p]);
+        req.emplace_back();
+        MPI_Isend(mp + ho[p], static_cast<int>(2*hn[p]), MPI_UINT32_T, rk, 7107,
+                  MPI_COMM_WORLD, &req.back());
+        req.emplace_back();
+        MPI_Isend(&hs[p], 1, MPI_UINT64_T, rk, 7108, MPI_COMM_WORLD, &req.back());
+      }
+    }
+    MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
+    for (int p = 0; p < np; ++p) {
+      if (vgd_cspn[p] <= 0) {continue;}
+      if (hsum(vgd_csmw_r.data() + ro[p], 2*rn[p]) != hr[p]) {
+        VgdCsFatal("compact lists: the read marks from rank " +
+                   std::to_string(vgd_csprk[p]) + " arrived corrupted (rank " +
+                   std::to_string(global_variable::my_rank) + ", checksum mismatch): "
+                   "the MPI transport delivered other bytes than were sent (seen with "
+                   "UCX's registration cache under an LD_PRELOAD profiler such as nsys "
+                   "-t osrt / -s cpu: export UCX_RCACHE_ENABLE=n for such runs)");
+      }
+    }
+  }
+#endif
+  vgd_cstb_m += tsub.seconds();
+  tsub.reset();
+  // (each partner's counts and fills on its own host thread: disjoint slots and list
+  // ranges, the same lists; h200spd: the host lists were ~1.1 s of each ~2 s build)
+  auto parts = [np](const auto &f) {
+    std::vector<std::thread> th;
+    for (int p = 1; p < np; ++p) th.emplace_back(f, p);
+    if (np > 0) f(0);
+    for (auto &t : th) t.join();
+  };
+  // the lists from partner p's pairs (pr + po[p], pn[p] of them), its entries from st0[p]
+  auto buildw = [&](const uint32_t *pr, const std::vector<size_t> &po,
+                    const std::vector<int> &st0, std::vector<int64_t> &off,
+                    std::vector<int> &lst) {
+    std::vector<int64_t> nn(nsl*np, 0);
+    parts([&](const int p) {
+      const size_t q1 = (po[p+1] - po[p])/2;
+      for (size_t q = 0; q < q1; ++q) {
+        uint32_t x = pr[po[p] + 2*q + 1];
+        const size_t r0 = static_cast<size_t>(pr[po[p] + 2*q])*16;   // in-block t
+        while (x != 0u) {
+          const int b = __builtin_ctz(x) >> 1;
+          const uint32_t v = (x >> (2*b)) & 3u;
+          x &= ~(3u << (2*b));
+          const size_t r = (r0 + b) % per;
+          const int d = static_cast<int>(r/n1), sh = static_cast<int>(r % n1);
+          nn[((static_cast<size_t>(v - 1)*n1 + sh)*ng + dg[d])*np + p] += 1;
+        }
+      }
+    });
+    off.assign(nsl*(np + 1), 0);
+    int64_t t = 0;
+    for (size_t sl = 0; sl < nsl; ++sl) {
+      for (int p = 0; p < np; ++p) {
+        off[sl*(np + 1) + p] = t;
+        t += nn[sl*np + p];
+      }
+      off[sl*(np + 1) + np] = t;
+    }
+    lst.assign(std::max<int64_t>(t, 1), 0);
+    std::vector<int64_t> cur(nsl*np);
+    for (size_t sl = 0; sl < nsl; ++sl) {
+      for (int p = 0; p < np; ++p) {cur[sl*np + p] = off[sl*(np + 1) + p];}
+    }
+    parts([&](const int p) {
+      const size_t q1 = (po[p+1] - po[p])/2;
+      for (size_t q = 0; q < q1; ++q) {
+        uint32_t x = pr[po[p] + 2*q + 1];
+        const size_t r0 = static_cast<size_t>(pr[po[p] + 2*q])*16;
+        while (x != 0u) {   // bits low to high = t increasing
+          const int b = __builtin_ctz(x) >> 1;
+          const uint32_t v = (x >> (2*b)) & 3u;
+          x &= ~(3u << (2*b));
+          const size_t rr = r0 + b;
+          const int e = st0[p] + static_cast<int>(rr/per);
+          const size_t r = rr % per;
+          const int d = static_cast<int>(r/n1), sh = static_cast<int>(r % n1);
+          lst[cur[((static_cast<size_t>(v - 1)*n1 + sh)*ng + dg[d])*np + p]++] =
+              e*n + d;
+        }
+      }
+    });
+    return t;
+  };
+  // (the send and receive lists at once)
+  std::thread tl([&]() {tr = buildw(mp, ho, vgd_cspr, E.ro, rl_h);});
+  ts = buildw(vgd_csmw_r.data(), ro, vgd_csps, E.so, sl_h);
+  tl.join();
   vgd_cstb_h += tsub.seconds();
   tsub.reset();
   // the largest (pass, shell, group) slice (the pipelined slot size)
