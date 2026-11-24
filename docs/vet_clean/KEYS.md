@@ -59,7 +59,7 @@ out of a restart deck changes the scheme silently. The templates name them all.
 | `<rad_vet>/time2_gtime_mom` | `true` | older files may store false |
 | `<rad_vet>/clean_pred_stage` | `false` | production value |
 | `<rad_vet>/clean_stag_central` | `true` | production value (default false) |
-| `<rad_vet>/clean_stag_kpat` | `false` | production value |
+| `<rad_vet>/clean_stag_kpat` | `false` | removed (only false) |
 | `<rad_vet>/clean_stag_eicarry` | `true` | production value (default false) |
 | `<rad_vet>/clean_gas_secant` | `max_stage2` | production value (default false) |
 | `<rad_vet>/clean_pred_xch` | `true` | production value (default false) |
@@ -206,7 +206,7 @@ Solver internals: `clean_conv` (`budget`), `clean_conv_max` (1e-5), `clean_conv_
 `implicit_predictor`, `implicit_predictor_tcap`, `implicit_resid_fatal`, `time/dt_retry_views`,
 `time/dt_retry_host`, `time/restart_refill_ghosts` (false: restarts are bitwise).
 
-Not recommended: `clean_stag_kpat`, `time2_k1_redist`,
+Removed (only false): `clean_stag_kpat`. Not recommended: `time2_k1_redist`,
 `time2_k1_stiff` (keep 0).
 
 Named in the templates but without effect with them (fixed rays, spherical polar): the

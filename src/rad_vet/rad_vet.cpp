@@ -526,17 +526,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_xsrc = cln_xd && pin->GetOrAddBoolean("rad_vet","clean_stag_xsrc",nw);
     cln_xsw = cln_xd && stag("clean_stag_xsweep", false);
     cln_kreal = stag("clean_stag_kreal", false);
-    // clean_stag_kpat (default off): the stage increment's gas kick in Patankar form, the
-    // start's E and gas eint >= 0, the momentum rest in the faces' F (CleanStagKPat)
-    cln_kpat = stag("clean_stag_kpat", false);
     // clean_stag_eicarry (default off): the stage start's gas eint < 0 enters the gas row
     // as is, paid by its implicit exchange, not taken as 0 (CleanOldVector)
     cln_eicry = stag("clean_stag_eicarry", false);
-    if (cln_kpat && cln_kreal) {
-      std::cout << "### FATAL ERROR <rad_vet>/clean_stag_kpat with clean_stag_kreal is not "
-                << "implemented" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     cln_colf = stag("clean_stag_colflux", false);
     // clean_cs_lz_abs = 2 (the cubed sphere, the only form): the gas phi momentum is
     // the faces' absorption as its r and theta (CleanStagMomentum), and the L_z it does
@@ -614,10 +606,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       }
       cln_xte = (xe == "cons") ? 1 : ((xe == "x2") ? 2 : 0);
       if (cln_xte > 0) cln_xtcons = true;
-    }
-    if (cln_kpat && cln_xte == 0 && !cln_xpat) {   // (CLW_KF..+2: the rest)
-      std::cout << "### FATAL ERROR <rad_vet>/clean_stag_kpat needs clean_xt_exact" << std::endl;
-      std::exit(EXIT_FAILURE);
     }
     if (cln_ucp && (cln_xpat || cln_xte != 1)) {   // (CLW_PD: the work's q)
       std::cout << "### FATAL ERROR <rad_vet>/clean_stag_central needs clean_xt_exact = "

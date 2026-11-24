@@ -465,7 +465,7 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     // (the inward-only band ring slabs and their per-shell hook, removed)
     {"rad_vet/vet_gd_band_ring_inward", "!"},
     // (the staggered stage increment's and cross flux's study forms, removed)
-    {"rad_vet/clean_stag_kpos", "!"},
+    {"rad_vet/clean_stag_kpos", "!"}, {"rad_vet/clean_stag_kpat", "=false"},
     // (removed in phase B, named by production decks or restart files: the old solve's
     // seam clamp, the pass print, the fixed set's band reach (the bound's band covers
     // it); the halo depth cap and the ray cut only at their kept values)
@@ -1209,7 +1209,6 @@ TaskStatus RadiationVet::CleanSolve(Driver *pdriver, int stage) {
   if (cln_ring == 2) CleanRingSolveSet();
   CleanWoBind();
   CleanStagKReal();   // (clean_stag_kreal: the kick E can pay, the rest deferred)
-  CleanStagKPat();    // (clean_stag_kpat: the kick in Patankar form, the rest in F)
   cln_xdh = false;   // (clean_stag_xdonor_freeze: no hold before this solve's passes)
   CleanOldVector();
   CleanFaceCoefficients();
@@ -1736,110 +1735,6 @@ void RadiationVet::CleanStagKReal() {
   if (cln_krel_on && global_variable::my_rank == 0 && cln_verbose > 0) {
     std::printf("CLEAN KREAL cycle %d t2s %d cells %.0f min s %.3e\n",
                 pmy_pack->pmesh->ncycle, t2_solve, nc, smin);
-  }
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::CleanStagKPat
-//! \brief clean_stag_kpat (staggered stage solves): the stage increment's gas momentum
-//! kick D (t2inc) in Patankar form, so that the start's E and gas eint are >= 0 by
-//! construction.  W(s) = KE(p + s D) - KE(p) = a s + b s^2 (p, D in the frame of y,
-//! CleanStagKReal's), s the root in [0, 1] of b s^2 + (a + Y) s = Y_0, Y_0 the start
-//! without the kick's kinetic energy, Y the step's (Y_s = s Y >= 0 wherever Y_0 >= 0;
-//! s = 1 where the start keeps Y_s >= Y):
-//! 1. E (Y = E^n, Y_0 = E^n + dE + W(1), the work the slopes took from E): E takes W(1) -
-//!    W(s) back from the gas energy (eint as formed);
-//! 2. the gas eint (Y = its eint before the increment, Y_0 = eint + d(e_tot) - KE(p)):
-//!    the kick s D, the gas energy as formed (eint takes the kinetic energy back).
-//! The momentum rest R = (1 - s) D stays the radiation's: each face's F increment takes
-//! c^2 sum_c sg_c V_c n.R_c/V_f of its two cells (n its unit normal; sg 1/2, all of it
-//! where the cell's other face along n is a physical boundary; V_f = (V_L + V_R)/2), so
-//! the faces carry sum_c V_c R_c (the cubed sphere: R in Cartesian components, the
-//! projections p = n.R of CleanStagCsVector).  Energy and momentum exact
-
-void RadiationVet::CleanStagKPat() {
-  const bool stage = (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
-  FluidRef fl = FluidRef::Get(pmy_pack);
-  if (!cln_kpat || !stage || !cln_feedback || !fl.on) return;
-  auto &id = pmy_pack->pmesh->mb_indcs;
-  const int is = id.is, ie = id.ie, js = id.js, je = id.je, ks = id.ks, ke = id.ke;
-  const int nmb1 = pmy_pack->nmb_thispack - 1;
-  auto uh = fl.u0;
-  auto u0_ = u0;
-  auto inc = t2inc;
-  auto w = cln_w;
-  CleanArgs x = CleanMakeArgs();
-  CleanFor("cln_kpat", nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real d = uh(m,IDN,k,j,i);
-    const Real us[3] = {uh(m,IM1,k,j,i), uh(m,IM2,k,j,i), uh(m,IM3,k,j,i)};
-    const Real ud[3] = {inc(m,M1_T2_M1,k,j,i), inc(m,M1_T2_M1+1,k,j,i),
-                        inc(m,M1_T2_M1+2,k,j,i)};
-    // (the components without faces, q >= nf: taken whole, their kinetic energy wt)
-    Real ps[3], pd[3], a = 0.0, b = 0.0, k0 = 0.0, wt = 0.0;
-    CleanGasVector(x, m, k, j, i, us, ps);
-    CleanGasVector(x, m, k, j, i, ud, pd);
-    for (int q = 0; q < 3; ++q) {
-      if (q < x.nf) {
-        a += ps[q]*pd[q]/d;
-        b += 0.5*SQR(pd[q])/d;
-      } else {
-        wt += (ps[q] + 0.5*pd[q])*pd[q]/d;
-      }
-      k0 += 0.5*SQR(ps[q])/d;
-      w(m,CLW_KF+q,k,j,i) = 0.0;
-    }
-    if (!(b > 0.0)) return;
-    // (the root of b s^2 + (a + y) s = y0 in [0, 1], without cancellation; y0 <= 0:
-    // the start is negative without the kick, which no share of it fixes: 1)
-    auto root = [&](const Real aa, const Real bb, const Real y, const Real y0) {
-      if (!(y > 0.0) || !(y0 > 0.0) || aa + bb <= 0.0 || y0 - (aa + bb) >= y) return 1.0;
-      const Real p = aa + y, sq = std::sqrt(p*p + 4.0*bb*y0);
-      return fmin((p >= 0.0) ? 2.0*y0/(p + sq) : (sq - p)/(2.0*bb), 1.0);
-    };
-    const Real en = u0_(m,M1_E,k,j,i);
-    const Real s1 = root(a, b, en, en + inc(m,M1_T2_E,k,j,i) + a + b);   // (wt paid)
-    const Real dw = a + b - (a + b*s1)*s1;
-    inc(m,M1_T2_E,k,j,i) += dw;
-    inc(m,M1_T2_EN,k,j,i) -= dw;
-    const Real ei = CleanGasEint(x, uh, k0, m, k, j, i);
-    const Real s2 = root(a*s1, b*s1*s1, ei, ei + inc(m,M1_T2_EN,k,j,i) - wt);
-    const Real s = s1*s2;
-    for (int q = 0; q < x.nf; ++q) {
-      w(m,CLW_KF+q,k,j,i) = (1.0 - s)*pd[q];
-      if (!x.cub) inc(m,M1_T2_M1+q,k,j,i) *= s;
-    }
-    if (x.cub) for (int q = 0; q < 3; ++q) inc(m,M1_T2_M1+q,k,j,i) *= s;   // (nf = 3)
-  });
-  CleanGhostFill(cln_w, CLW_KF, 3);
-  const Real c2 = SQR(c_light);
-  for (int dir = 0; dir < x.nf; ++dir) {
-    const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2), tf = M1_T2_F1 + dir;
-    CleanFor("cln_kpat_f", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
-      // (a cell's sg V n.R on this face, all of it where its other face along n is a
-      // physical boundary)
-      auto sv = [&](const int kk, const int jj, const int ii, const int ko, const int jo,
-                    const int io) {
-        Real r = w(m,CLW_KF+dir,kk,jj,ii);
-        if (x.cub) {
-          Real q[3][3];
-          CleanCsFrame(x, m, kk, jj, ii, q);
-          r = 0.0;
-          for (int c = 0; c < 3; ++c) {
-            Real rc = 0.0;
-            for (int a = 0; a < 3; ++a) rc += w(m,CLW_KF+a,kk,jj,ii)*q[a][c];
-            r += x.g.At<CLG_N>(m,3*dir+c,k,j,i)*rc;
-          }
-        }
-        return (CleanBoundaryFace(x, dir, m, ko, jo, io) ? 1.0 : 0.5)*
-               CleanVol(x, m, kk, jj, ii)*r;
-      };
-      const Real vf = 0.5*(CleanVol(x, m, k-dk, j-dj, i-di) + CleanVol(x, m, k, j, i));
-      inc(m,tf,k,j,i) += c2*(sv(k-dk, j-dj, i-di, k-dk, j-dj, i-di) +
-                             sv(k, j, i, k+dk, j+dj, i+di))/vf;
-    });
   }
 }
 

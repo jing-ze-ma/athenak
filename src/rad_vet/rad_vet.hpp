@@ -1802,7 +1802,6 @@ class RadiationVet {
   // the row in Patankar form (CleanRightHandSide)
   bool cln_xpat = false;
   bool cln_kreal = false;   // (S3B kick bound: CLW_KS set in CleanOldVector)
-  bool cln_kpat = false;    // clean_stag_kpat (CleanStagKPat)
   bool cln_eicry = false;   // clean_stag_eicarry (CleanOldVector)
   bool cln_colf = false;    // (clean_stag_colflux: column moves in the stored Phi)
   int cln_lza = 0;          // clean_cs_lz_abs
@@ -1848,7 +1847,6 @@ class RadiationVet {
   // stage
   bool cln_krel_on = false;
   void CleanStagKReal();
-  void CleanStagKPat();
   DvceArray1D<Real> cln_kcnt;   // (xpat rows: the last pass; their sum)
   void CleanStagKEnd();
   int cln_fdg = -1;             // staggered bracket: face slot of its lagged flux DG
