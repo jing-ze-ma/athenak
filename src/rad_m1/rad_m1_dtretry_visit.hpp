@@ -1013,6 +1013,8 @@ void radm1::RadiationM1::DtRetryVisit(V &v) {
   v.value("marena_sw", marena_sw);
   v.value("vgd_rg_k", vgd_rg_k);
   v.value("vgd_ring", vgd_ring);
+  v.value("vgd_ring_named", vgd_ring_named);
+  v.value("vgd_ring_par", vgd_ring_par);
   v.value("vgd_ring_act", vgd_ring_act);
   v.value("vgd_ring_poison", vgd_ring_poison);
   v.value("vgd_rg_two", vgd_rg_two);

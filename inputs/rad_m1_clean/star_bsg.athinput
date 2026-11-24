@@ -165,6 +165,7 @@ implicit_flux_x1min = 2.2942145641e+13
 implicit_bc_x1max = marshak
 implicit_flux_x1max = 0.0
 scheme = clean
+vet_gd_band_ring = true            # band slabs lent per shell: bitwise, less GPU memory
 clean_layout = staggered
 clean_rays = sc
 time2_face_fct = true

@@ -2733,6 +2733,7 @@ class RadiationM1 {
     bool copyin = false, restore = false;
   };
   bool vgd_ring = false;              // the ring layout is allocated (both arrays)
+  bool vgd_ring_named = false, vgd_ring_par = true;   // vet_gd_band_ring (named)
   bool vgd_ring_act = false;          // the ring runs in this sweep
   bool vgd_ring_poison = false;       // env VGD_RING_POISON=1: NaN in lent slabs (test)
   bool vgd_rg_two = false;            // this sweep carries a second array (vgd_i_xb)

@@ -1214,7 +1214,7 @@ void RadiationM1::VetGdInit() {
     // (USER: speed over memory): the clean sc rays' raw band on spherical polar keeps
     // every shell's band (no ring, no planb hook): A100 R136 rotating -15 % sweep-stage
     // wall, half -3.6 %, +2.3 GiB/GPU, bitwise
-    const bool ring_ok = !(vgd_raw && !vgd_csg);
+    const bool ring_ok = vgd_ring_named ? vgd_ring_par : !(vgd_raw && !vgd_csg);
     bool anyside = false;
     auto hl_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vgd_hloc);
     for (size_t q = 0; q < hl_h.extent(0); ++q) {anyside = anyside || (hl_h(q) < 0);}

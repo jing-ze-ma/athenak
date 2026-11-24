@@ -117,3 +117,17 @@ k j i, r, rho, T, sound and flow speeds, the radiation terms) and, on a spherica
 `DTREG polar` / `DTREG rest` for the minima near the poles and elsewhere. If the minimum sits
 at the poles or in hot floor gas, change the mesh or the floors there rather than the
 radiation keys. `<mhd>/dt_report` does the same for MHD runs.
+
+## 6. GPU memory on spherical-polar wedges
+
+If an A100 run with `vet_gd` on a spherical-polar wedge stops with an out-of-memory error
+(often at a ray-cut change, `m1_vgdgb_keep`), name
+
+```
+<rad_m1>
+vet_gd_band_ring = true
+```
+
+It lends the band intensities per shell from a few wide slabs instead of keeping every
+shell's band: the same results bit for bit, less memory, a few per cent slower. Unnamed, it
+is on where it applies except on the raw band of spherical-polar meshes.

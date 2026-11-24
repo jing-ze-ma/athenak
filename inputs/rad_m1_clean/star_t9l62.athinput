@@ -162,6 +162,7 @@ time2_face_fct = true
 time2_k1_redist = 0
 time2_stage_local_be = false
 scheme = clean
+vet_gd_band_ring = true            # band slabs lent per shell: bitwise, less GPU memory
 clean_layout = staggered
 clean_rays = sc
 zalesak_active = true

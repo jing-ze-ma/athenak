@@ -139,6 +139,7 @@ Transverse Marshak faces are not supported by the ray sweep (FATAL).
 |---|---|---|---|---|
 | `mesh/layout_invariant` | Global and shell sums in exact, order-independent form: results independent of the MPI rank count. | true | all: `true` | `mesh/mesh.cpp` (constructor) |
 | `mesh/layout_invariant_mode` | `block`: sums per MeshBlock (independent of the rank count for fixed MeshBlocks); `exact`: every cell term exact (about +8 % cost); `tile`: fixed N x N lateral tiles as the summation and multigrid units, so results do not depend on the MeshBlock layout either (with ray walls in theta: one MeshBlock along x2). | `block` | `tile` (recommended) | `mesh/mesh.cpp` (constructor) |
+| `rad_m1/vet_gd_band_ring` | Lend the band intensities per shell from a few slabs: same results, less GPU memory (RUN.md section 6). | bool | on where it applies, off on the raw sp band (read only when named) | A100 sp wedges: `true` | `rad_m1/rad_m1.cpp` (constructor) |
 | `mesh/layout_tile` | Tile size N for `tile` mode; required with it. Needs one MeshBlock along x1 and N dividing `<meshblock>` nx2 and nx3. | none | `128` | `mesh/mesh.cpp` (constructor) |
 | `mesh/nghost` | Ghost cells; the face line solves across MeshBlocks need >= 3. | 2 | all: `3` | `mesh/mesh.cpp` (constructor) |
 | `meshblock/nx1`, `nx2`, `nx3` | MeshBlock size. One MeshBlock along x1 is needed for the ray cut and tile mode. | = mesh | per deck | `mesh/mesh.cpp` (constructor) |
