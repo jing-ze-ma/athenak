@@ -1614,7 +1614,7 @@ void RadiationM1::CleanRayCut() {
     cln_rcut = lmin;
     cln_rcut_n = 0;
   }
-  if (global_variable::my_rank == 0 && prev != cln_rcut) {
+  if (global_variable::my_rank == 0 && cln_verbose > 0 && prev != cln_rcut) {
     std::cout << "CLEAN ray cut cycle " << pmy_pack->pmesh->ncycle << " shell "
               << prev << " -> " << cln_rcut << " (want " << lmin << ", "
               << (bt ? "tau_top" : "R") << ")" << std::endl;

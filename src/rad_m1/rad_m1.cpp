@@ -867,6 +867,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // clean_verbose (read only when named): 0 (default) the CLEAN cycle lines, warnings
+    // and events; 1 also the per-solve diagnostics (CLEAN MCAP, OLDVEC, FCONE, FWB, LZ,
+    // WBFCT, KPOS, KREAL, XPAT, the write-back closure and the ray cut)
+    if (pin->DoesParameterExist("rad_m1","clean_verbose")) {
+      cln_verbose = pin->GetInteger("rad_m1","clean_verbose");
+    }
     // clean_conv = budget (default) | strict: budget measures every row in the
     // cell's own budget for the step, S = the sum of its gross terms (old value, fluxes
     // through the faces, exchange, work, beta terms), so that a change or residual is

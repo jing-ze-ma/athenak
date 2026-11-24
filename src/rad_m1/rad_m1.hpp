@@ -2039,6 +2039,7 @@ class RadiationM1 {
   Real cln_bmax = 1.0e-5;       // clean_conv_max
   DvceArray5D<Real> cln_wci;    // E before a backward-Euler solve's last pass
   Real cln_ewr = -1.0, cln_eta = 0.1;   // Eisenstat-Walker: last |r0|_S, forcing
+  int cln_verbose = 0;          // clean_verbose: 1 = also the per-solve diagnostics
   int cln_stagmg = 0;           // the old production mg (staggered): 1 its line colours
                                 //   (j + k) parity, 2 mirror (clean_stag_mg_color)
   int cln_pcsweep = 0;          // clean_pc_sweep: +1 a 2nd red pass, +2 a post-sweep,

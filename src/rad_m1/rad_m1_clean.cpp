@@ -1432,7 +1432,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (cln_mclc.extent_int(0) == 1) {   // (the last pass's face momentum terms at the cap)
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_mclc);
     const Real n = CleanReduce(h(0), false);
-    if (global_variable::my_rank == 0 && n > 0.0) {
+    if (global_variable::my_rank == 0 && cln_verbose > 0 && n > 0.0) {
       std::printf("CLEAN MCAP cycle %d t2s %d: %.0f face momentum terms at the cap h chi_f "
                   "E in the last pass\n", pmy_pack->pmesh->ncycle, t2_solve, n);
     }
@@ -1734,7 +1734,7 @@ void RadiationM1::CleanStagKReal() {
   nc = CleanReduce(nc, false);
   smin = -CleanReduce(-smin, true);
   cln_krel_on = (nc > 0.0);
-  if (cln_krel_on && global_variable::my_rank == 0) {
+  if (cln_krel_on && global_variable::my_rank == 0 && cln_verbose > 0) {
     std::printf("CLEAN KREAL cycle %d t2s %d cells %.0f min s %.3e\n",
                 pmy_pack->pmesh->ncycle, t2_solve, nc, smin);
   }
@@ -1914,7 +1914,7 @@ void RadiationM1::CleanOldVector() {
                 "(gas or E; the solve fails and the step is redone)\n",
                 pmy_pack->pmesh->ncycle, t2_solve, nn[2]);
   }
-  if (global_variable::my_rank == 0 && (nn[0] > 0.0 || nn[1] > 0.0)) {
+  if (global_variable::my_rank == 0 && cln_verbose > 0 && (nn[0] > 0.0 || nn[1] > 0.0)) {
     std::printf("CLEAN OLDVEC cycle %d t2s %d eint<0 %.0f (%s) E<0 %.0f\n",
                 pmy_pack->pmesh->ncycle, t2_solve, nn[0], cry ? "carried" : "taken as 0",
                 nn[1]);
@@ -2261,14 +2261,14 @@ void RadiationM1::CleanStagKPos() {
   nkr = CleanReduce(nkr, false);
   skr = -CleanReduce(-skr, true);
   cln_krel_on = (nkr > 0.0);
-  if (cln_krel_on && global_variable::my_rank == 0) {
+  if (cln_krel_on && global_variable::my_rank == 0 && cln_verbose > 0) {
     std::printf("CLEAN KREAL cycle %d t2s %d cells %.0f min s %.3e (on the kpos E_old)\n",
                 pmy_pack->pmesh->ncycle, t2_solve, nkr, skr);
   }
   nq[0] = CleanReduce(nq[0], false);
   nq[1] = CleanReduce(nq[1], false);
   cln_kq_on = true;
-  if (global_variable::my_rank == 0) {
+  if (global_variable::my_rank == 0 && cln_verbose > 0) {
     std::printf("CLEAN KPOS cycle %d t2s %d faces %.0f cells pd %.0f guard %.0f/%.0f "
                 "gas-limited %.0f Eo<0 %.0f (eint<0 at the stage start %.0f)\n",
                 pmy_pack->pmesh->ncycle, t2_solve, nq[0], nn[0], nq[1], nn[2], nn[1],
@@ -2343,7 +2343,7 @@ void RadiationM1::CleanStagKDelta() {
   }
   nq[0] = CleanReduce(nq[0], false);
   nq[1] = CleanReduce(nq[1], false);
-  if (global_variable::my_rank == 0) {
+  if (global_variable::my_rank == 0 && cln_verbose > 0) {
     std::printf("CLEAN KPOS delta cycle %d t2s %d tau/h %.3e faces dG %.0f guard %.0f\n",
                 pmy_pack->pmesh->ncycle, t2_solve, cln_ktau, nq[0], nq[1]);
   }
@@ -2464,7 +2464,7 @@ bool RadiationM1::CleanStagKRedo() {
     if (w(m,CLW_KT,k,j,i) > 1.5) w(m,CLW_KT,k,j,i) = 1.0;
   });
   CleanGhostFill(cln_w, CLW_EO, 1);
-  if (global_variable::my_rank == 0) {
+  if (global_variable::my_rank == 0 && cln_verbose > 0) {
     std::printf("CLEAN KPOS redo cycle %d t2s %d round %d X<=0 %.0f new donors %.0f%s\n",
                 pmy_pack->pmesh->ncycle, t2_solve, cln_kredo, nn[0], nn[1],
                 last ? " (last: all)" : "");
@@ -2485,7 +2485,7 @@ void RadiationM1::CleanStagKEnd() {
 #if MPI_PARALLEL_ENABLED
   MPI_Allreduce(MPI_IN_PLACE, v, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
-  if (global_variable::my_rank == 0 && v[1] > 0.0) {
+  if (global_variable::my_rank == 0 && cln_verbose > 0 && v[1] > 0.0) {
     std::printf("CLEAN XPAT cycle %d t2s %d end: rows %.0f (sum %.0f)\n",
                 pmy_pack->pmesh->ncycle, t2_solve, v[0], v[1]);
   }
@@ -4601,7 +4601,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_fwbc);
     const Real n = CleanReduce(h(0), false), p = CleanReduce(h(1), false);
     const Real p1 = CleanReduce(h(2), false);
-    if (global_variable::my_rank == 0) {
+    if (global_variable::my_rank == 0 && (cln_verbose > 0 || !std::isfinite(p + p1))) {
       std::printf("CLEAN %sFWB cycle %d t2s %d faces %.0f radiation momentum sum |dp| "
                   "%.6e x1 faces sum dp %.6e\n", std::isfinite(p + p1) ? "" : "WARNING ",
                   pmy_pack->pmesh->ncycle, t2_solve, n, p, p1);
@@ -4715,7 +4715,7 @@ void RadiationM1::CleanStagFCone(const int e, const int kd) {
   if (e == CLW_X) {
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_fconc);
     const Real n = CleanReduce(h(0), false), p = CleanReduce(h(1), false);
-    if (global_variable::my_rank == 0 && n > 0.0) {
+    if (global_variable::my_rank == 0 && cln_verbose > 0 && n > 0.0) {
       std::printf("CLEAN FCONE cycle %d t2s %d faces %.0f momentum cut sum |dF| V/c^2 "
                   "%.6e\n", pmy_pack->pmesh->ncycle, t2_solve, n, p);
     }
@@ -5672,7 +5672,7 @@ void RadiationM1::CleanLzBook(const Real s, const bool start) {
   const bool cs = (cln_lza == 2);
   cln_lzpin->SetReal("rad_m1", M1LzKey(cln_lzpin, cs, false), cln_lzl);
   cln_lzpin->SetReal("rad_m1", M1LzKey(cln_lzpin, cs, true), cln_lzs1);
-  if (global_variable::my_rank == 0 && !cln_insteady) {
+  if (global_variable::my_rank == 0 && cln_verbose > 0 && !cln_insteady) {
     std::printf("CLEAN LZ%s cycle %d t2s %d ledger %.16e\n", cs ? "" : "B",
                 pmy_pack->pmesh->ncycle, t2_solve, cln_lzl);
   }
@@ -5803,7 +5803,7 @@ void RadiationM1::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
   }, Kokkos::Sum<Real>(lv[0]), Kokkos::Sum<Real>(lv[1]));
   lv[0] = CleanReduce(lv[0], false);
   lv[1] = CleanReduce(lv[1], false);
-  if (global_variable::my_rank == 0) {
+  if (global_variable::my_rank == 0 && (cln_verbose > 0 || !std::isfinite(lv[1]))) {
     const std::string xs = zl_conv ? " exchanges " +
                            std::to_string(static_cast<int>(zl_halos[1] - zh)) : "";
     std::printf("CLEAN %sWBFCT cycle %d t2s %d rounds %d left %.0f kept %.6e%s\n",
@@ -6450,7 +6450,7 @@ void RadiationM1::CleanWriteBack() {
       c = fmax(c, Kokkos::isfinite(v) ? v : INFINITY);   // (Max drops a NaN)
     }, Kokkos::Max<Real>(cm));
     cm = CleanReduce(cm, true);
-    if (global_variable::my_rank == 0) {
+    if (global_variable::my_rank == 0 && (cln_verbose > 0 || !std::isfinite(cm))) {
       std::printf("CLEAN %s%s cycle %d t2s %d write-back closure %.3e\n",
                   std::isfinite(cm) ? "" : "WARNING ", xwb ? "XT" : "KPOS",
                   pmy_pack->pmesh->ncycle, t2_solve, cm);
