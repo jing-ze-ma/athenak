@@ -1209,6 +1209,8 @@ class RadiationVet {
   Real cln_lcnorm = 0.0;        // clean_lin_cnorm: the steps' strict solves (0 off)
   int cln_maxit = 800;          // clean_maxit: BiCGStab iterations
   bool cln_pcr = true;          // clean_stag_pcr: PC line solves by PCR on a GPU
+  int cln_pcrdb = 0;            // env M1_PCR_DB: PCR one row per lane, double buffer
+  std::map<std::array<int, 8>, DvceArray1D<int>> cln_pcrl;   // PCR lines of a colour
   int cln_optn = 3;             // clean_stag_opac_passes: refreshed in passes < N
   bool cln_optdr = false;       // clean_stag_opac_drag: the refresh rebuilds the drag
   bool cln_hface = false;       // clean_face_opac = harmonic: the x1 face chi
