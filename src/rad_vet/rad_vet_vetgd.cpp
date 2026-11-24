@@ -826,7 +826,6 @@ void RadiationVet::VetGdInit() {
   }
   if (vgd_csg) {
     std::string bad;
-    if (vet_path != 0) {bad += " vet_path = cells;";}
     if (!bad.empty()) {VgdFatal("not available on the cubed sphere:" + bad);}
     vgd_wint = false;
     vgd_ipc_on = false;
@@ -852,7 +851,6 @@ void RadiationVet::VetGdInit() {
   if (vgd_sth) {
     std::string bad;
     if (vgd_thmir || vgd_thvac > 0) {bad += " vet_gd_theta_wall = mirror|vacuum|extrap;";}
-    if (vet_path != 0) {bad += " vet_path = cells;";}
     if (!bad.empty()) {
       VgdFatal("not available on a stretched theta / the full sphere:" +
                bad);
@@ -1230,8 +1228,7 @@ void RadiationVet::VetGdInit() {
   if (vgd_xff && ((cln_ring && !(cln_rfuse && cln_ring == 1 &&
                                           ibc_x1max != M1_IBC_REFLECT)) ||
                   (vgd_gband && !vgd_raw) || vgd_nb1 > 1 ||
-                  (vgd_csg && vgd_cscomp && vgd_csxg > 1) ||
-                  (!vgd_csg && vet_path != 0))) {
+                  (vgd_csg && vgd_cscomp && vgd_csxg > 1))) {
     vgd_xff = false;
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_vet> vet_gd_rotate_xfade_fuse: not covered here ("
@@ -2357,7 +2354,7 @@ bool RadiationVet::VetGdXffOk() {
     return !(vgd_cscomp && vgd_csxg > 1) && !vgd_gband &&
            (vgd_i_xb.d.extent(0) == vgd_i.d.extent(0));
   }
-  if (vet_path != 0 || (vgd_gband && !vgd_raw)) {
+  if (vgd_gband && !vgd_raw) {
     return false;
   }
   // (the IPC halo: one set per exchange; the raw band's merged one, VetGdGbHaloX;
@@ -5353,10 +5350,6 @@ void RadiationVet::VetGdSweep() {
   const bool spl = vet_seg_split;   // vet_seg = split
   const int spe = VetSegMode();
   const int vim = vet_interp;   // vet_interp: 2 corner, 3 auto
-  // vet_path = cells.  the shell body takes it as an ARGUMENT and each launch passes a
-  // literal, so the default (none) kernel is compiled without the cells branch (the
-  // dormant branch cost ~7-9 % per sweep on A100); results bitwise either way
-  const bool vpa_h = (vet_path != 0);
   // vet_gd_inner = emit at the physical inner face (icut = 0): the
   // inner boundary's own emission (black sphere of flux F_in, Marshak bath)
   // vet_bc_inner (VetBcEmit: emit, or auto at a Marshak face)
@@ -5572,18 +5565,15 @@ void RadiationVet::VetGdSweep() {
     } else {
       bdp = VgdClosureToDevice(body, vgd_bbuf0);
     }
-    // no cells path: the shell list launches the kernel compiled without its
-    // branches (bitwise)
-    const bool gfast = !vpa_h;
 #if defined(KOKKOS_ENABLE_CUDA)
     using VgdBodygT = decltype(bodyg);
     using VgdBodymgT = decltype(bodymg);
     const VgdBodygT *bgp = nullptr;
     const VgdBodymgT *bgq = nullptr;
-    if (gfast && bmp != nullptr) {bgq = VgdClosureToDevice(bodymg, vgd_bbuf3);}
-    if (gfast && bdp != nullptr) {bgp = VgdClosureToDevice(bodyg, vgd_bbuf2);}
+    if (bmp != nullptr) {bgq = VgdClosureToDevice(bodymg, vgd_bbuf3);}
+    if (bdp != nullptr) {bgp = VgdClosureToDevice(bodyg, vgd_bbuf2);}
 #endif
-    // both sets' gx-false closures in device memory (VetGdXffOk: gfast)
+    // both sets' gx-false closures in device memory (VetGdXffOk)
     using VgdXb0T = decltype(mkx0(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3,
                                   vgd_i));
     using VgdXb1T = decltype(mkx1(vgd_dir, vgd_wall, vgd_map, vgd_mr, vgd_m3, vgd_w3,
@@ -5591,10 +5581,6 @@ void RadiationVet::VetGdSweep() {
     const VgdXb0T *xa0 = nullptr, *xq0 = nullptr;
     const VgdXb1T *xa1 = nullptr, *xq1 = nullptr;
     if (xffs) {
-      if (!gfast) {
-        VgdFatal("vet_gd_rotate_xfade_fuse: the fused sweep needs the gx-false shell "
-                 "kernel");
-      }
 #if defined(KOKKOS_ENABLE_CUDA)
       // (the current set's closure: the buffer of its gx-false body)
       auto &bba = vgd_bbuf2;
@@ -5668,85 +5654,55 @@ void RadiationVet::VetGdSweep() {
       if (c1 <= c0) {return;}
       auto L_ = cl;
       if (bmp != nullptr || bdp != nullptr) {
-        // vet_gd_body_global: the same codes, the closure through a pointer
+        // vet_gd_body_global: the same codes, the closure through a pointer; one kernel
+        // per variant (host-side choice)
+        const std::false_type f_;
+#if defined(KOKKOS_ENABLE_CUDA)
+        // on CUDA the gx-false closures bodyg / bodymg
+        const VgdBodygT *bp_ = bgp;
+        const VgdBodymgT *bq_ = bgq;
+#else
         const VgdBodyT *bp_ = bdp;
         const VgdBodymT *bq_ = bmp;
-        const bool vp_ = vpa_h;
-        // one kernel per variant, as below (host-side choice)
-        if (gfast) {
-          // the kernel without the gated branches (rad_vet_vetgd_body.inc)
-          const std::false_type f_;
-#if defined(KOKKOS_ENABLE_CUDA)
-          // on CUDA the gx-false closures bodyg / bodymg
-          const VgdBodygT *bp_ = bgp;
-          const VgdBodymgT *bq_ = bgq;
 #endif
 #if defined(KOKKOS_ENABLE_CUDA)
-          // launch-bounds variants of the gx-false kernel on CUDA (M1_VGD_CUDA_LB;
-          // 0 = the VgdShellPol launch).  Register allocation and
-          // block size only: the same arithmetic, the same bits
+        // launch-bounds variants of the gx-false kernel on CUDA (M1_VGD_CUDA_LB;
+        // 0 = the VgdShellPol launch).  Register allocation and
+        // block size only: the same arithmetic, the same bits
 #define M1_VGD_GF_CU(...)                                                    \
-          if (bq_ != nullptr) {                                               \
-            Kokkos::parallel_for(name, __VA_ARGS__, KOKKOS_LAMBDA(const int c) { \
-              int t = L_(c);                                                  \
-              const int d = t % n;                                            \
-              t /= n;                                                         \
-              const int m = t/nkj;                                            \
-              t -= m*nkj;                                                     \
-              const int k = ks + t/nj;                                        \
-              const int j = js + (t % nj);                                    \
-              (*bq_)(m, k, j, d, i, l, f_, f_);                               \
-            });                                                               \
-          } else {                                                            \
-            Kokkos::parallel_for(name, __VA_ARGS__, KOKKOS_LAMBDA(const int c) { \
-              int t = L_(c);                                                  \
-              const int d = t % n;                                            \
-              t /= n;                                                         \
-              const int m = t/nkj;                                            \
-              t -= m*nkj;                                                     \
-              const int k = ks + t/nj;                                        \
-              const int j = js + (t % nj);                                    \
-              (*bp_)(m, k, j, d, i, l, f_, f_);                               \
-            });                                                               \
-          }
-          switch (M1_VGD_CUDA_LB) {
-            case 1: M1_VGD_GF_CU(VgdLbPol<128, 4>(vgd_cur, c0, c1)); break;
-            case 2: M1_VGD_GF_CU(VgdLbPol<128, 5>(vgd_cur, c0, c1)); break;
-            case 3: M1_VGD_GF_CU(VgdLbPol<128, 6>(vgd_cur, c0, c1)); break;
-            case 4: M1_VGD_GF_CU(VgdLbPol<256, 2>(vgd_cur, c0, c1)); break;
-            case 5: M1_VGD_GF_CU(VgdLbPol<256, 3>(vgd_cur, c0, c1)); break;
-            default: M1_VGD_GF_CU(VgdShellPol(vgd_cur, c0, c1)); break;
-          }
+        if (bq_ != nullptr) {                                               \
+          Kokkos::parallel_for(name, __VA_ARGS__, KOKKOS_LAMBDA(const int c) { \
+            int t = L_(c);                                                  \
+            const int d = t % n;                                            \
+            t /= n;                                                         \
+            const int m = t/nkj;                                            \
+            t -= m*nkj;                                                     \
+            const int k = ks + t/nj;                                        \
+            const int j = js + (t % nj);                                    \
+            (*bq_)(m, k, j, d, i, l, f_, f_);                               \
+          });                                                               \
+        } else {                                                            \
+          Kokkos::parallel_for(name, __VA_ARGS__, KOKKOS_LAMBDA(const int c) { \
+            int t = L_(c);                                                  \
+            const int d = t % n;                                            \
+            t /= n;                                                         \
+            const int m = t/nkj;                                            \
+            t -= m*nkj;                                                     \
+            const int k = ks + t/nj;                                        \
+            const int j = js + (t % nj);                                    \
+            (*bp_)(m, k, j, d, i, l, f_, f_);                               \
+          });                                                               \
+        }
+        switch (M1_VGD_CUDA_LB) {
+          case 1: M1_VGD_GF_CU(VgdLbPol<128, 4>(vgd_cur, c0, c1)); break;
+          case 2: M1_VGD_GF_CU(VgdLbPol<128, 5>(vgd_cur, c0, c1)); break;
+          case 3: M1_VGD_GF_CU(VgdLbPol<128, 6>(vgd_cur, c0, c1)); break;
+          case 4: M1_VGD_GF_CU(VgdLbPol<256, 2>(vgd_cur, c0, c1)); break;
+          case 5: M1_VGD_GF_CU(VgdLbPol<256, 3>(vgd_cur, c0, c1)); break;
+          default: M1_VGD_GF_CU(VgdShellPol(vgd_cur, c0, c1)); break;
+        }
 #undef M1_VGD_GF_CU
 #else
-          if (bq_ != nullptr) {
-            Kokkos::parallel_for(name, VgdShellPol(vgd_cur, c0, c1),
-            KOKKOS_LAMBDA(const int c) {
-              int t = L_(c);
-              const int d = t % n;
-              t /= n;
-              const int m = t/nkj;
-              t -= m*nkj;
-              const int k = ks + t/nj;
-              const int j = js + (t % nj);
-              (*bq_)(m, k, j, d, i, l, f_, f_);
-            });
-          } else {
-            Kokkos::parallel_for(name, VgdShellPol(vgd_cur, c0, c1),
-            KOKKOS_LAMBDA(const int c) {
-              int t = L_(c);
-              const int d = t % n;
-              t /= n;
-              const int m = t/nkj;
-              t -= m*nkj;
-              const int k = ks + t/nj;
-              const int j = js + (t % nj);
-              (*bp_)(m, k, j, d, i, l, f_, f_);
-            });
-          }
-#endif
-          return;
-        }
         if (bq_ != nullptr) {
           Kokkos::parallel_for(name, VgdShellPol(vgd_cur, c0, c1),
           KOKKOS_LAMBDA(const int c) {
@@ -5757,19 +5713,7 @@ void RadiationVet::VetGdSweep() {
             t -= m*nkj;
             const int k = ks + t/nj;
             const int j = js + (t % nj);
-            (*bq_)(m, k, j, d, i, l, vp_, true);
-          });
-        } else if (vp_) {
-          Kokkos::parallel_for(name, VgdShellPol(vgd_cur, c0, c1),
-          KOKKOS_LAMBDA(const int c) {
-            int t = L_(c);
-            const int d = t % n;
-            t /= n;
-            const int m = t/nkj;
-            t -= m*nkj;
-            const int k = ks + t/nj;
-            const int j = js + (t % nj);
-            (*bp_)(m, k, j, d, i, l, true, true);
+            (*bq_)(m, k, j, d, i, l, f_, f_);
           });
         } else {
           Kokkos::parallel_for(name, VgdShellPol(vgd_cur, c0, c1),
@@ -5781,9 +5725,10 @@ void RadiationVet::VetGdSweep() {
             t -= m*nkj;
             const int k = ks + t/nj;
             const int j = js + (t % nj);
-            (*bp_)(m, k, j, d, i, l, false, true);
+            (*bp_)(m, k, j, d, i, l, f_, f_);
           });
         }
+#endif
         return;
       }
       if (thm) {
@@ -5797,19 +5742,7 @@ void RadiationVet::VetGdSweep() {
           t -= m*nkj;
           const int k = ks + t/nj;
           const int j = js + (t % nj);
-          bodym(m, k, j, d, i, l, vpa_h, true);
-        });
-      } else if (vpa_h) {
-        Kokkos::parallel_for(name, VgdShellPol(vgd_cur, c0, c1),
-        KOKKOS_LAMBDA(const int c) {
-          int t = L_(c);
-          const int d = t % n;
-          t /= n;
-          const int m = t/nkj;
-          t -= m*nkj;
-          const int k = ks + t/nj;
-          const int j = js + (t % nj);
-          body(m, k, j, d, i, l, true, true);
+          bodym(m, k, j, d, i, l, false, true);
         });
       } else {
         Kokkos::parallel_for(name, VgdShellPol(vgd_cur, c0, c1),
@@ -6327,15 +6260,11 @@ void RadiationVet::VetGdPost() {
   }
   Kokkos::deep_copy(vgd_pin_cnt, vlat_cnt);
   vlat_nclamp = vgd_pin_cnt(0);
-  vgd_npath = vgd_pin_cnt(1);   // vet_path (all ranks below)
   // all ranks (exactness of the sweep: any read beyond the band is clamped and counted)
   vgd_nclamp_all = vlat_nclamp;
 #if MPI_PARALLEL_ENABLED
   MPI_Allreduce(MPI_IN_PLACE, &vgd_nclamp_all, 1, MPI_ATHENA_REAL, MPI_SUM,
                 MPI_COMM_WORLD);
-  if (vet_path != 0) {
-    MPI_Allreduce(MPI_IN_PLACE, &vgd_npath, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-  }
 #endif
   // the band is capped at the block size: a read beyond it would be clamped (inexact
   // sweep).  Checked at every build: FATAL unless vet_gd_allow_clamp = true (warning)

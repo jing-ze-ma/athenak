@@ -795,19 +795,6 @@ void RadiationVet::VetInit(ParameterInput *pin) {
                "corner)");
     }
   }
-  // vet_path = cells | none (VetPathStep, rad_vet_vetseg.hpp): the x1 step
-  // of a ray steeper than the cell diagonal subdivided at the row / layer nodes.  OPT-IN:
-  // DEFAULT none (fresh and restart; bitwise 281dd686), cells only when named.
-  {
-    const std::string vp = pin->GetOrAddString("rad_vet", "vet_path", "none");
-    if (vp.compare("none") == 0) {
-      vet_path = 0;
-    } else if (vp.compare("cells") == 0) {
-      vet_path = 1;
-    } else {
-      VetFatal("<rad_vet>/vet_path = '" + vp + "' is not a choice (cells | none)");
-    }
-  }
   // vet_source = relaxed | gas, the VET source of a lagged build
   // (and of predict / rebuild unless time2_vet_source overrides it), as vet_col / vet_gd
   // (vet_col_source there).  DEFAULT gas on vet_sc (fresh and restart: its old source).
@@ -1790,7 +1777,6 @@ void RadiationVet::VetSweepMB() {
   const bool xcr = vet_xcr;
   const int spe = VetSegMode();
   const int vim = vet_interp;   // (#6)
-  const bool vpath = (vet_path != 0);
   const bool plm_ = true;
 
   // (a) the banded extinction/source planes, layer i - is + 2 (VetShortChar zeroes the
@@ -2006,27 +1992,6 @@ void RadiationVet::VetSweepMB() {
                                         0);
           }
           if (f2s_) add4(up ? f2u + 8 : fnd + 8, wr*m1*fmax(ifc, 0.0));
-          if (vpath) {   // vet_path = cells (VetPathStep)
-            const Real sh3p = thrd ? (-dx1*m3/(am1*dx3)) : 0.0;
-            const int lo = i - is + 2;   // the own banded layer
-            auto acc = [&](const int c, const int dk, const int dj, Real &cv, Real &sv)
-                           -> bool {
-              const int lc = (c == 0) ? li : lo;
-              const int kq = thrd ? (kc + dk) : kc;
-              cv = cs_(m,lc,0,kq,jc + dj);
-              sv = cs_(m,lc,1,kq,jc + dj);
-              return true;
-            };
-            const Real wq[4] = {waa, wab, wba, wbb};
-            const Real iq[4] = {ip_(m,pr,r,ka,ja) + dv, ip_(m,pr,r,ka,jb) + dv,
-                                ip_(m,pr,r,kb,ja) + dv, ip_(m,pr,r,kb,jb) + dv};
-            const Real cq[4] = {cs_(m,li,0,ka,ja), cs_(m,li,0,ka,jb), cs_(m,li,0,kb,ja),
-                                cs_(m,li,0,kb,jb)};
-            const Real sq[4] = {cs_(m,li,1,ka,ja), cs_(m,li,1,ka,jb), cs_(m,li,1,kb,ja),
-                                cs_(m,li,1,kb,jb)};
-            VetPathStep(acc, vim, wq, iq, cq, sq, iup_v, cu, su, s0, c0, dx1/am1, spl,
-                        spe, sh2, sh3p, iv, suq);
-          }
         }
         iv = fmax(iv, 0.0);
         ip_(m,pw,r,kc,jc) = iv;
@@ -2252,7 +2217,6 @@ void RadiationVet::VetShortCharSweep() {
   const int spe = VetSegMode();
   const bool x2o = vet_x2open, x3o = vet_x3open;   // vacuum x2 (x3) faces
   const int vim = vet_interp;   // (#6)
-  const bool vpath = (vet_path != 0);
   const bool plm_ = true;
   // the boundary beam rays (ImplBeamInit)
   const int bmn_ = ibm_nr;
@@ -2624,46 +2588,8 @@ void RadiationVet::VetShortCharSweep() {
           if (f2s_) ifc = VetSegFaceI(iup_v, su, s0, 0.5*cu*dx1/am1, 0.5*c0*dx1/am1,
                                       0);
         }
-        // the face crossing of the single segment, also with vet_path = cells: a face
-        // flux, so the conservation of the update does not depend on the path
+        // the face crossing of the single segment: a face flux
         if (f2s_ && !mimg) g[3] = wr*m1*fmax(ifc, 0.0);
-        if (vpath) {   // vet_path = cells (VetPathStep)
-          const Real sh3p = thrd ? (-dx1*m3/(am1*dx3)) : 0.0;
-          auto acc = [&](const int c, const int dk, const int dj, Real &cv,
-                         Real &sv) -> bool {
-            bool in = true;
-            int qj = j - js + dj, qk = k - ks + dk;
-            if (x2o) {
-              if (qj < 0 || qj >= nx2) {in = false;}
-              qj = (qj < 0) ? 0 : ((qj >= nx2) ? (nx2 - 1) : qj);
-            } else {
-              qj = VetWrap(qj, nx2);
-            }
-            if (thrd) {
-              if (x3o) {
-                if (qk < 0 || qk >= nx3) {in = false;}
-                qk = (qk < 0) ? 0 : ((qk >= nx3) ? (nx3 - 1) : qk);
-              } else {
-                qk = VetWrap(qk, nx3);
-              }
-            } else {
-              qk = 0;
-            }
-            const int ic = (c == 0) ? iup : i;
-            cv = vc_(m,M1_VET_CHX,ks + qk,js + qj,ic);
-            sv = vc_(m,M1_VET_SRC,ks + qk,js + qj,ic);
-            return in;
-          };
-          const Real wq[4] = {waa, wab, wba, wbb};
-          const Real iq[4] = {gaa*ip_(m,pr,rb,ka,ja) + dv, gab*ip_(m,pr,rb,ka,jb) + dv,
-                              gba*ip_(m,pr,rb,kb,ja) + dv, gbb*ip_(m,pr,rb,kb,jb) + dv};
-          const Real cq[4] = {vc_(m,M1_VET_CHX,ka,ja,iup), vc_(m,M1_VET_CHX,ka,jb,iup),
-                              vc_(m,M1_VET_CHX,kb,ja,iup), vc_(m,M1_VET_CHX,kb,jb,iup)};
-          const Real sq[4] = {vc_(m,M1_VET_SRC,ka,ja,iup), vc_(m,M1_VET_SRC,ka,jb,iup),
-                              vc_(m,M1_VET_SRC,kb,ja,iup), vc_(m,M1_VET_SRC,kb,jb,iup)};
-          VetPathStep(acc, vim, wq, iq, cq, sq, iup_v, cu, su, s0, c0, dx1/am1, spl, spe,
-                      sh2, sh3p, iv, suq);
-        }
       }
       iv = fmax(iv, 0.0);
       ip_(m,pw,r,k,j) = iv;

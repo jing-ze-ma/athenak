@@ -484,6 +484,8 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/vet_mb_agroup", "=1"}, {"rad_vet/vet_mb_agg", "=true"},
     // (the vet_sc Milne diagnostic, removed)
     {"rad_vet/vet_milne", "!"},
+    // (vet_path = cells, removed; decks and old-production restart files store none)
+    {"rad_vet/vet_path", "=none"},
     // (the vet_gd upwind profile shift and the dense shell launch, removed)
     {"rad_vet/vet_gd_upwind", "=bilinear"}, {"rad_vet/vet_gd_upwind_*", ""},
     {"rad_vet/vet_gd_shell_list", "=true"},

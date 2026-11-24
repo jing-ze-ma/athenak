@@ -99,7 +99,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vet_x1_npsum", vet_x1_npsum);
   v.value("vet_x1_ncap", vet_x1_ncap);
   v.value("vet_x1_npmax", vet_x1_npmax);
-  v.value("vet_path", vet_path);
   v.value("vet_interp", vet_interp);
   v.value("vet_mirror_npass", vet_mirror_npass);
   v.value("vet_x1src", vet_x1src);
@@ -932,7 +931,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vgd_capped", vgd_capped);
   v.value("vgd_allow_clamp", vgd_allow_clamp);
   v.value("vgd_nclamp_seen", vgd_nclamp_seen);
-  v.value("vgd_npath", vgd_npath);
   v.value("vgd_hinw", vgd_hinw);
   v.value("vgd_nb2", vgd_nb2);
   v.value("vgd_nb3", vgd_nb3);

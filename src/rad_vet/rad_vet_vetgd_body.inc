@@ -10,21 +10,14 @@
 //! row).  Two kernels, so that the mirror read costs the default nothing (compiled into
 //! the one kernel it cost +3.6 % GPU time on the accretor deck, 12414551 vs 12414756).
 //! Needs M1_VGD_BODY_NAME (the lambda's name) and M1_VGD_BODY_MIR defined.
-//! vpa is deduced (generic lambda): a launch passes a bool (the runtime value) or
-//! std::false_type, which compiles the branches it gates out of that kernel (VetGdSweep
-//! launches it only without the cells path); the last argument is unused.  The
-//! arithmetic of every path taken is unchanged.
+//! The last two arguments are unused (a launch passes bools or std::false_type; the
+//! vet_path = cells branch they gated is removed).
 
-// nvcc rejects generic __host__ __device__ lambdas: on CUDA vpa is a plain bool (a
-// std::false_type converts; the gated branches are then runtime-false, not compiled out)
-// on CUDA, M1_VGD_BODY_GX0 defined gives the vpa-false kernel instead: vpa is
-// compile-time false inside (the arguments are ignored), so the gated branches are
-// compiled out there too (as the std::false_type launch does on HIP)
+// nvcc rejects generic __host__ __device__ lambdas: on CUDA the arguments are plain bools
 #if defined(KOKKOS_ENABLE_CUDA) && defined(M1_VGD_BODY_GX0)
       auto M1_VGD_BODY_NAME = KOKKOS_LAMBDA(const int m, const int k, const int j,
                                             const int d, const int i, const int l,
                                             const bool, const bool) {
-        constexpr bool vpa = false;
 #else
 #if defined(KOKKOS_ENABLE_CUDA)
 #define M1_VGD_TT bool
@@ -33,7 +26,7 @@
 #endif
       auto M1_VGD_BODY_NAME = KOKKOS_LAMBDA(const int m, const int k, const int j,
                                             const int d, const int i, const int l,
-                                            const M1_VGD_TT vpa, const M1_VGD_TT) {
+                                            const M1_VGD_TT, const M1_VGD_TT) {
 #undef M1_VGD_TT
 #endif
         // several MeshBlocks along x1: the first shell and the top face are those of the
@@ -350,210 +343,21 @@
               const Real chu = exp(lin(0));
               const Real su = exp(lin(1));
               const Real rfi = cx1f(m,i);
-              // vet_path = cells (vet_sc's VetPathStep, rad_vet_vetseg.hpp):
-              // a ray whose segment jumps more than one lateral cell (|fj - j| or
-              // |fk - k| > 1: dr tan(psi)/(r dtheta) > 1) sees chi and S only at its two
-              // ends and misses a lateral material edge narrower than the jump.  Where
-              // the cells the step passes (the foot stencil, the cell that holds each
-              // node, the own cell) have a chi contrast > kVetCornerRatio (or an S
-              // contrast > kVetCornerRatio among those not thin over the step, chi ds
-              // > 0.01), the step is subdivided at the NODES where it crosses a theta-row
-              // or phi-layer centre (index linear in the path fraction): each node takes
-              // chi, S trilinear in ln (theta, phi index; radius between the own and
-              // upwind shells at the node's true r),
-              // or at a material edge (corner contrast > kVetCornerRatio) the cell that
-              // holds it (own shell below the radial face dso, upwind above).  Each
-              // sub-segment is the code's own segment (vet_seg split / jump), split at
-              // the radial face where that lies inside it, at its midpoint otherwise;
-              // the first one from the foot (vet_interp corner / auto as below).  A
-              // smooth step (no contrast) keeps the single segment: bitwise.  Not taken
-              // on a clamped foot or on the turned ray that dips below its inner face
-              // (vet_seg = jump branch below: piecewise per cell in radius already).
-              bool pdone = false;
-              if (vpa && !clp && !(spl && spe >= 2 && typ == 3 && l > lcb &&
-                                   p2 < rfi*rfi)) {
-                const Real gj = fjg - (j + sj_), gk = fkg - (k + sk_);
-                const Real a2 = fabs(gj), a3 = fabs(gk);
-                const int n2 = (a2 > 1.0) ? (static_cast<int>(ceil(a2)) - 1) : 0;
-                const int n3 = (a3 > 1.0) ? (static_cast<int>(ceil(a3)) - 1) : 0;
-                if (n2 + n3 > 0) {
-                  const int g2 = (gj < 0.0) ? -1 : 1, g3 = (gk < 0.0) ? -1 : 1;
-                  const Real rup = cx1v(m,iu);
-                  const bool own3 = (typ != 1);
-                  // the node: path fraction sn from the foot (0) to the cell (1), its
-                  // lateral fractional indices; returns ln chi, ln S (edge: holder cell)
-                  auto node = [&](const Real sn, const Real yj, const Real yk, Real &lcn,
-                                  Real &lsn, Real &lch, Real &lsh) {
-                    const Real q = (1.0 - sn)*ds;   // the path distance from the cell
-                    const int jn = static_cast<int>(floor(yj)) - sj_;
-                    const int kn = static_cast<int>(floor(yk)) - sk_;
-                    const Real aj = yj - floor(yj), ak = yk - floor(yk);
-                    Real wr = 0.0;
-                    if (!own3) {
-                      const Real rq = sqrt(fmax(r*r - 2.0*q*r*mr + q*q, 0.0));
-                      wr = fmin(fmax((rq - r)/(rup - r), 0.0), 1.0);
-                    }
-                    const int ih = (own3 || q < dso) ? i : iu;
-                    const int jh = jn + ((aj < 0.5) ? 0 : 1);
-                    const int kh = kn + ((ak < 0.5) ? 0 : 1);
-                    lch = csx(m,0,kh,jh,ih);
-                    lsh = csx(m,1,kh,jh,ih);
-                    Real lmn = 1.0e300, lmx = -1.0e300, ws = 0.0, lc = 0.0, ls = 0.0;
-                    for (int c = 0; c < 2; ++c) {
-                      const Real wc = (c == 0) ? (1.0 - wr) : wr;
-                      if (!(wc > 0.0)) {continue;}
-                      const int ic = (c == 0) ? i : iu;
-                      for (int b = 0; b < 2; ++b) {
-                        const Real wk = (b == 0) ? (1.0 - ak) : ak;
-                        if (!(wk > 0.0)) {continue;}
-                        for (int a = 0; a < 2; ++a) {
-                          const Real wj = (a == 0) ? (1.0 - aj) : aj;
-                          if (!(wj > 0.0)) {continue;}
-                          const Real w = wc*wk*wj;
-                          const Real cl = csx(m,0,kn + b,jn + a,ic);
-                          lmn = fmin(lmn, cl);
-                          lmx = fmax(lmx, cl);
-                          ws += w;
-                          lc += w*cl;
-                          ls += w*csx(m,1,kn + b,jn + a,ic);
-                        }
-                      }
-                    }
-                    if ((lmx - lmn) > log(kVetCornerRatio)) {
-                      lcn = lch;
-                      lsn = lsh;
-                    } else {
-                      lcn = lc/ws;
-                      lsn = ls/ws;
-                    }
-                  };
-                  // the next node after (t2, t3) in path order from the foot
-                  auto next = [&](int &t2, int &t3, Real &sn, Real &yj, Real &yk) {
-                    const Real s2 = (t2 < n2) ? (1.0 - (n2 - t2)/a2) : 2.0;
-                    const Real s3 = (t3 < n3) ? (1.0 - (n3 - t3)/a3) : 2.0;
-                    if (s2 <= s3) {
-                      sn = s2;
-                      // yj, yk at the global magnitude (node() and the
-                      // gate subtract sj_, sk_ from their integer parts)
-                      yj = (j + sj_) + g2*(n2 - t2);
-                      yk = (k + sk_) + gk*(1.0 - sn);
-                      ++t2;
-                      if (s3 == s2) {++t3;}   // a row-layer corner: one node
-                    } else {
-                      sn = s3;
-                      yk = (k + sk_) + g3*(n3 - t3);
-                      yj = (j + sj_) + gj*(1.0 - sn);
-                      ++t3;
-                    }
-                  };
-                  // the gate (ln values): foot stencil, node holder cells, own cell
-                  const Real ltn = log(1.0e-2/fmax(ds, 1.0e-300));
-                  Real cmn = csx(m,0,k,j,i), cmx = cmn, smn = 1.0e300, smx = -1.0e300;
-                  if (cmn > ltn) {smn = csx(m,1,k,j,i); smx = smn;}
-                  for (int q = 0; q < 4; ++q) {
-                    const Real wq = ((q < 2) ? (1.0 - uk) : uk)
-                                    *((q % 2 == 0) ? (1.0 - uj) : uj);
-                    if (!(wq > 0.0)) {continue;}
-                    const int kk = (q < 2) ? k0 : k1, jj = (q % 2 == 0) ? j0 : j1;
-                    const Real cl = csx(m,0,kk,jj,iu);
-                    cmn = fmin(cmn, cl);
-                    cmx = fmax(cmx, cl);
-                    if (cl > ltn) {
-                      smn = fmin(smn, csx(m,1,kk,jj,iu));
-                      smx = fmax(smx, csx(m,1,kk,jj,iu));
-                    }
-                  }
-                  {
-                    int t2 = 0, t3 = 0;
-                    while (t2 < n2 || t3 < n3) {
-                      Real sn, yj, yk;
-                      next(t2, t3, sn, yj, yk);
-                      const Real q = (1.0 - sn)*ds;
-                      const int ih = (own3 || q < dso) ? i : iu;
-                      const int jn = static_cast<int>(floor(yj)) - sj_;
-                      const int kn = static_cast<int>(floor(yk)) - sk_;
-                      const int jh = jn + ((yj - floor(yj) < 0.5) ? 0 : 1);
-                      const int kh = kn + ((yk - floor(yk) < 0.5) ? 0 : 1);
-                      const Real cl = csx(m,0,kh,jh,ih);
-                      cmn = fmin(cmn, cl);
-                      cmx = fmax(cmx, cl);
-                      if (cl > ltn) {
-                        smn = fmin(smn, csx(m,1,kh,jh,ih));
-                        smx = fmax(smx, csx(m,1,kh,jh,ih));
-                      }
-                    }
-                  }
-                  const Real lr = log(kVetCornerRatio);
-                  if ((cmx - cmn) > lr || (smx - smn) > lr) {
-                    // one sub-segment from (I, chi, S) at path distance qa to (chi, S)
-                    // at qb < qa: split at the radial face dso if inside, else midway
-                    auto seg = [&](const Real ia, const Real ca, const Real sa,
-                                   const Real qa, const Real cb, const Real sb,
-                                   const Real qb) -> Real {
-                      const Real f = (typ == 1 && spl && dso < qa && dso > qb) ? dso
-                                     : 0.5*(qa + qb);
-                      if (spl) {return VetSegSplit(ia, sa, sb, ca*(qa - f), cb*(f - qb),
-                                                   spe);}
-                      Real ex, w0, wu;
-                      VetSegW(0.5*(ca + cb)*(qa - qb), ex, w0, wu);
-                      return ia*ex + wu*sa + w0*sb;
-                    };
-                    int t2 = 0, t3 = 0;
-                    Real sn, yj, yk, lcn, lsn, lch, lsh;
-                    next(t2, t3, sn, yj, yk);
-                    node(sn, yj, yk, lcn, lsn, lch, lsh);
-                    Real cb = exp(lcn), sb = exp(lsn), qb = (1.0 - sn)*ds;
-                    Real ivp;
-                    if (vim == 2 ||
-                        (vim == 3 && VgdCornerEdge(csx, m, k0, k1, j0, j1, iu, uk, uj))) {
-                      Real ws = 0.0, vs = 0.0;
-                      for (int q = 0; q < 4; ++q) {
-                        const int kk = (q < 2) ? k0 : k1;
-                        const int jj = (q % 2 == 0) ? j0 : j1;
-                        const Real wq = ((q < 2) ? (1.0 - uk) : uk)
-                                        *((q % 2 == 0) ? (1.0 - uj) : uj);
-                        if (!(wq > 0.0) || !(ok[q] || ivu < 0.0)) {continue;}
-                        const Real cq = exp(csx(m,0,kk,jj,iu)), sq = exp(csx(m,1,kk,jj,iu));
-                        const Real iq = (ivu < 0.0) ? sq : fIu(kk,jj);
-                        ws += wq;
-                        vs += wq*seg(iq, cq, sq, ds, cb, sb, qb);
-                      }
-                      ivp = vs/ws;
-                    } else {
-                      ivp = seg((ivu < 0.0) ? su : ivu, chu, su, ds, cb, sb, qb);
-                    }
-                    while (t2 < n2 || t3 < n3) {
-                      const Real ca = cb, sa = sb, qa = qb;
-                      next(t2, t3, sn, yj, yk);
-                      node(sn, yj, yk, lcn, lsn, lch, lsh);
-                      cb = exp(lcn);
-                      sb = exp(lsn);
-                      qb = (1.0 - sn)*ds;
-                      ivp = seg(ivp, ca, sa, qa, cb, sb, qb);
-                    }
-                    iv = fmax(seg(ivp, cb, sb, qb, ch0, s0, 0.0), 0.0);
-                    pdone = true;
-                    Kokkos::atomic_add(&cnt_(1), 1.0);
-                  }
-                }
-              }
-              if (!pdone) {
-                // the closing segment (vet_seg = jump below the inner face, vet_interp =
-                // corner, vet_seg = split, the plain segment: rad_vet_vgdray.hpp)
-                auto edgef = [&]() {
-                  auto csr = [&](const int, const int c, const int kk, const int jj,
-                                 const int ii) -> Real {return fC(c,kk,jj,ii);};
-                  return VgdCornerEdge(csr, m, k0, k1, j0, j1, iu, uk, uj);
-                };
-                // vet_seg = jump's plateau test: the shell one further upwind (in the block)
-                const int iu2 = 2*iu - i;
-                const int iuu = (typ == 1 && iu2 >= is && iu2 <= ie) ? iu2 : iu;
-                const int id2 = 2*i - iu;
-                const int idd = (typ == 1 && id2 >= is && id2 <= ie) ? id2 : i;
-                iv = VgdSegFinish(st4, fIu, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0,
-                                  s0, ds, dso, spl, spe, typ, l, lcb, p2, rfi, zr, vim, iuu,
-                                  idd);
-              }
+              // the closing segment (vet_seg = jump below the inner face, vet_interp =
+              // corner, vet_seg = split, the plain segment: rad_vet_vgdray.hpp)
+              auto edgef = [&]() {
+                auto csr = [&](const int, const int c, const int kk, const int jj,
+                               const int ii) -> Real {return fC(c,kk,jj,ii);};
+                return VgdCornerEdge(csr, m, k0, k1, j0, j1, iu, uk, uj);
+              };
+              // vet_seg = jump's plateau test: the shell one further upwind (in the block)
+              const int iu2 = 2*iu - i;
+              const int iuu = (typ == 1 && iu2 >= is && iu2 <= ie) ? iu2 : iu;
+              const int id2 = 2*i - iu;
+              const int idd = (typ == 1 && id2 >= is && id2 <= ie) ? id2 : i;
+              iv = VgdSegFinish(st4, fIu, fC, edgef, ok, iu, k, j, i, ivu, chu, su, ch0,
+                                s0, ds, dso, spl, spe, typ, l, lcb, p2, rfi, zr, vim, iuu,
+                                idd);
             }
           }
           return iv;

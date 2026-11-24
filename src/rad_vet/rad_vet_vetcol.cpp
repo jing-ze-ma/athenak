@@ -151,9 +151,6 @@ void RadiationVet::VetColReport() {
                   << vgd_cstb_u << "; mask stride " << vgd_csper << " (padded)"
                   << std::endl;
       }
-      std::cout << "<rad_vet> vet_gd vet_path = " << ((vet_path != 0) ? "cells" : "none")
-                << ": subdivided steps (ALL ranks, all sweeps) " << vgd_npath
-                << std::endl;
       {
         // ragged band: accesses outside a shell's slab (must be 0)
         Real no = 0.0;

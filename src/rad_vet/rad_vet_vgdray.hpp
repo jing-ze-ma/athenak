@@ -23,8 +23,7 @@
 //! band / wall read rd; cs: the owner read rdi), fC(c, kk, jj, ii) ln chi (c = 0) or ln S
 //! (c = 1) of a cell.  What stays separate: the stencil construction itself (sp: the
 //! (theta, phi) bilinear foot with the band clamp; cs: VgdCsStencil on the panel map),
-//! the sp-only branches (vet_gd_theta_wall = vacuum, vet_path = cells, the
-//! inner-face beam mask), and the band / halo layouts.  Every expression is
+//! the sp-only branches (vet_gd_theta_wall = vacuum, the inner-face beam mask), and the band / halo layouts.  Every expression is
 //! the former code's, term for term and in its order (bitwise).
 
 #include <cmath>

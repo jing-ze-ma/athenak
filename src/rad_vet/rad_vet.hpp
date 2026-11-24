@@ -532,7 +532,6 @@ class RadiationVet {
   DvceArray4D<Real> vet_x1ent;   // (nmb, nray, k, j): the previous pass's exit plane
   Real vet_x1_nbuild = 0.0, vet_x1_npsum = 0.0, vet_x1_ncap = 0.0;
   int vet_x1_npmax = 0;
-  int vet_path = 0;          // 1 = the x1 step subdivided at the row nodes
   int vet_interp = 0;        // upwind stencil 0 lin, 1 log, 2 corner
   int vet_mirror_npass = 4;  // passes of a cavity mirrored at both x1
                              // ends (vet_bc_reflect; vet_x1_npass when named)
@@ -2560,7 +2559,6 @@ class RadiationVet {
   int vgd_hcomp = 0;
   bool vgd_capped = false, vgd_allow_clamp = false;
   Real vgd_nclamp_seen = 0.0;
-  Real vgd_npath = 0.0;   // vet_path subdivided steps (ALL ranks, all sweeps)
   bool vgd_hinw = true;
   int vgd_nb2 = 1, vgd_nb3 = 1;
   // several MeshBlocks along x1: the levels swept one after the other
