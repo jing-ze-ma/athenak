@@ -29,3 +29,7 @@ ls: cannot access '/resnick/groups/carnegie_poc/jingze/hg_gate_1124/HT/bin/*.bin
 no pair H0 H1
 no pair H0 HT
 **POST CHECK FAILED: no verdict**
+
+## 4 ranks do not fit: H0, H1, HT aborted at cycle 2 (11-24 14:13); the table and seam section just above are from these aborted arms and count for nothing
+- srun exit 134 on all three; log: `  what():  Kokkos ERROR: Cuda memory space failed to allocate 4.254 GiB (label="cln_rk").` (peak before it 137-141 GB of ~141 per GPU). The +1 step fits (137.5 GB), cycle 2 does not. FAIL of memory, not of the method.
+- Same rst, keys and binary now on **8 ranks = 2 nodes (02-09 + 02-03), 1 GPU per rank, 3 blocks per rank**, multi-node UCX env of run_rsg.sh; one arm after the other.
