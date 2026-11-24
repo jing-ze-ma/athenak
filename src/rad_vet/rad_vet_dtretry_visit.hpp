@@ -64,6 +64,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("fcap_v", fcap_v);
   v.value("fcap_report", fcap_report);
   v.value("fcap_lz", fcap_lz);
+  v.value("fcap_spin", fcap_spin);
   v.value("fcap_mvol", fcap_mvol);
   v.dual("fcap_cnt", fcap_cnt);
   v.value("rsla_warn", rsla_warn);
