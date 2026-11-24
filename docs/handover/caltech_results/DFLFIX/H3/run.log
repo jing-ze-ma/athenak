@@ -1,0 +1,2 @@
+2026-11-24 07:28:37 start H3 BIN=athena_dflfix_5b6159ad0 md5=9c59917d84f344a7094b5403d432dd5c NODE=hpc-sm-01-15 HOLDER=7333036 ARGS: -r /resnick/groups/carnegie_poc/jingze/prod_rc3_1124/bsg/rst_keep/bsg3d.00028.rst.dfltest time/cfl_number=0.3 hydro/fofc=true hydro/fofc_retest=true rad_vet/clean_stag_mg_levels=4 job/final_restart=false time/nlim=39667 output2/dt=-1 output3/dt=-1 output5/dt=-1 output6/dt=-1 output7/dt=-1 rad_vet/vet_gd_ls=0
+2026-11-24 07:38:17 rc=0
