@@ -396,12 +396,24 @@ corrections (paid floor raises, limiter remnants, the automatic backward-Euler b
 The face and cell kernels are written once in terms of cell volumes, face areas,
 centre-to-centre distances and each cell's local orthonormal frame, which each mesh supplies
 (the exact AthenaK volumes and areas on curved meshes). Supported: Cartesian 1-D to 3-D,
-spherical polar 1-D to 3-D (wedges, axisymmetric, full sphere; radial stretching allowed)
-and the cubed sphere. The mesh must be uniform (mesh refinement is FATAL). Two options are
-geometry-specific by construction: `clean_stag_fwb_ring` (3-D spherical polar with periodic
-phi) and the cubed-sphere torque redistribution.
+spherical polar 1-D to 3-D (wedges, axisymmetric, full sphere (not tested, below); radial
+stretching allowed) and the cubed sphere. The mesh must not be refined (FATAL). Two
+options are geometry-specific by construction: `clean_stag_fwb_ring` (3-D spherical polar with
+periodic phi) and the cubed-sphere torque redistribution.
 
 Tests: the `*_sp` and `*_cs` variants above; `order_space` on a Cartesian mesh.
+
+### In the code but not tested
+
+No deck in `tests/vet_clean` or `inputs/rad_vet_clean` and no test of the suite covers the
+following. The properties of this section are not verified there.
+
+| feature | state | what is tested instead |
+|---|---|---|
+| spherical polar with the poles (full sphere, `<mesh>/use_polar_boundary`) under `vet_gd` | accepted, not tested | wedges clear of the poles; the full sphere on the cubed sphere (`*_cs`) |
+| stretched theta (`<mesh>/use_grid_stretch_theta`, `theta_plateau`) under `vet_gd` | accepted, not tested | uniform theta; radial stretching in the star decks |
+| several MeshBlocks along x1 under `vet_gd` | the sweep has the code, but the start-up check stops with a FATAL error on spherical polar and the cubed sphere (`meshblock/nx1` must equal `mesh/nx1`), so it cannot be reached | one MeshBlock along x1; several on a Cartesian mesh with `closure = vet_sc` (`idort_beams_mb`) |
+| radiation with MHD (`<mhd>` in place of `<hydro>`; `RadiationVet::EmagBuild` takes \|B\|^2/2 out of the gas energy) | accepted with `time2_tableau = hesdirk2` (default) or `trbdf2`, not tested; `sdirk2`, the tableau of the star decks, is FATAL with MHD and matter coupling; `<hydro>` and `<mhd>` together are FATAL | hydrodynamics only |
 
 ## 3. Code map
 

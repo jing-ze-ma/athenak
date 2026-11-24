@@ -123,7 +123,8 @@ cycles which limit sets dt: a `DTREP` line with the cell of the global minimum (
 k j i, r, rho, T, sound and flow speeds, the radiation terms) and, on a spherical-polar mesh,
 `DTREG polar` / `DTREG rest` for the minima near the poles and elsewhere. If the minimum sits
 at the poles or in hot floor gas, change the mesh or the floors there rather than the
-radiation keys. `<mhd>/dt_report` does the same for MHD runs.
+radiation keys. `<mhd>/dt_report` does the same for MHD runs
+(radiation with MHD is not tested: SCHEME.md).
 
 ## 6. GPU memory on spherical-polar wedges
 

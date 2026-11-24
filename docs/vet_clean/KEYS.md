@@ -5,7 +5,9 @@ boundaries, opacities and units, the layout mode, and output. The production val
 of the star templates in `inputs/rad_vet_clean/` (`star_bsg`, `star_m35mms`, `star_t9l62`:
 3-D spherical-polar wedges, one MeshBlock along x1, fixed rays, problem generator
 `he_star_vet`). Solver internals and keys without effect are listed only by name in the
-appendix.
+appendix. A full sphere with poles or a stretched theta under `vet_gd`, and radiation with
+`<mhd>`, are in the code but no deck or test covers them
+([SCHEME.md](SCHEME.md), "In the code but not tested").
 
 Columns: **default** is the value the code uses when the key is absent; **production** is
 the value in the templates (`all:` when the three agree); **read in** is the file and
@@ -120,7 +122,7 @@ from a file written before these keys must name both on the command line.
 | `hydro/rad_signal_speed_diff` | With `rad_signal_speed = true`: the radiation term of the signal speed weighted by 1 - exp(-x), x = tau_d c_eq / c the grid-scale trapping parameter; untrapped radiation (x << 1) does not limit dt. Time step only (accuracy, not stability). | false (read only when named) | all: `true` | `hydro/hydro.cpp` |
 | `hydro/rad_signal_speed_phase` | With `rad_signal_speed_diff = true`: that weight is 1 - exp(-x^2), the in-phase (restoring) part of the radiation-pressure perturbation; the linear weight also counts its damping part, which grows as rho^-1/2 in thin gas (t9l62 eruption: ceff 5x c_g at tau_h 1e-4..1e-2). Same weight at x = 1, larger for x > 1. Time step only. Needs `rad_signal_speed` and `rad_signal_speed_diff` (FATAL otherwise). | false (read only when named) | all: `true` (USER 11-24) | `hydro/hydro.cpp` |
 | `rad_vet/time_scheme` | `hesdirk2`: two implicit stages per step with the Heun hydro (second order); `be`: one backward-Euler solve per step (first order). | `hesdirk2` on a fresh run that supports it; `be` otherwise | all: `hesdirk2` | `rad_vet/rad_vet_init.cpp` (`ImplicitInit`) |
-| `rad_vet/time2_tableau` | Tableau of the two stages: `sdirk2` (Alexander's L-stable SDIRK2, recommended), `hesdirk2`, `trbdf2`. | `hesdirk2` | all: `sdirk2` | `rad_vet/rad_vet_time2.cpp` (`Time2Init`) |
+| `rad_vet/time2_tableau` | Tableau of the two stages: `sdirk2` (Alexander's L-stable SDIRK2, recommended; FATAL with `<mhd>` and matter coupling), `hesdirk2`, `trbdf2`. | `hesdirk2` | all: `sdirk2` | `rad_vet/rad_vet_time2.cpp` (`Time2Init`) |
 | `rad_vet/time2_auto_be` | After a step whose stages fell back to backward Euler, the next 1, 2, 4, ... N steps take backward Euler at once (0 = off). | 16 | all: `16` | `rad_vet/rad_vet_time2.cpp` (`Time2Init`) |
 | `rad_vet/clean_init` | `steady`: before step 1 the radiation is relaxed to the scheme's steady solution in the given gas; `given`: start from the given field. | `given` | all: `steady` | `rad_vet/rad_vet.cpp` (constructor) |
 | `rad_vet/clean_init_dtfac`, `clean_init_tol`, `clean_init_n` | Pseudo time step (in units of the first dt), tolerance and pass limit of the steady start. | 1e6, 1e-8, 40 or 50 (problem dependent) | all: `1.0e6`, not named, not named | `rad_vet/rad_vet.cpp` (constructor) |
@@ -173,7 +175,7 @@ Transverse Marshak faces are not supported by the ray sweep (FATAL).
 | `rad_vet/vet_gd_band_ring` | Lend the band intensities per shell from a few slabs: same results, less GPU memory (RUN.md section 6). | on where it applies, off on the raw sp band (read only when named) | A100 sp wedges: `true` | `rad_vet/rad_vet.cpp` (constructor) |
 | `mesh/layout_tile` | Tile size N for `tile` mode; required with it. Needs one MeshBlock along x1 and N dividing `<meshblock>` nx2 and nx3. | none | `128` | `mesh/mesh.cpp` (constructor) |
 | `mesh/nghost` | Ghost cells; the face line solves across MeshBlocks need >= 3. | 2 | all: `3` | `mesh/mesh.cpp` (constructor) |
-| `meshblock/nx1`, `nx2`, `nx3` | MeshBlock size. One MeshBlock along x1 is needed for the ray cut and tile mode. | = mesh | per deck | `mesh/mesh.cpp` (constructor) |
+| `meshblock/nx1`, `nx2`, `nx3` | MeshBlock size. On spherical polar and the cubed sphere nx1 must equal `<mesh>/nx1` (FATAL otherwise); tile mode needs it on every mesh. | = mesh | per deck | `mesh/mesh.cpp` (constructor) |
 
 Changing the mode changes the round-off of the sums: switch at a fresh start, or accept a
 round-off change at the restart.
