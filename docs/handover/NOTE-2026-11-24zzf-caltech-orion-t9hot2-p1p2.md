@@ -15,3 +15,4 @@
 - hst tail (t dt L_bot L_top L_in Etot M_tot Lz_tot):
 ```
 ```
+- **Arm W FATAL at startup (10:49), as designed by the pgen, not a run failure:** `he_star_vet: needs <hydro>/etotgrav = true, wellbalance_dynamic = true and wb_x1 = true (the gravity source reads the x1 well-balanced cache)` (he_star_vet.cpp:656). So hydro/wellbalance_dynamic=false cannot be bisected on this binary. **W is not rerun**; tell me if you want another WB-off form. Its node 02-17 goes to T9HOT P1 (from t9l62.00020).
