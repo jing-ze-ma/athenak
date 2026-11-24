@@ -42,3 +42,34 @@ no pair H0 HT
 - H1 (srun exit 134): `  what():  Kokkos ERROR: Cuda memory space failed to allocate 4.254 GiB (label="cln_rk").` on every rank; it IS an out-of-memory allocation (4.254 GiB for cln_rk); peak before it 140869 MiB per GPU (nvidia-smi).
 - HT (srun exit 134): `  what():  Kokkos ERROR: Cuda memory space failed to allocate 4.254 GiB (label="cln_rk").` on every rank; it IS an out-of-memory allocation (4.254 GiB for cln_rk); peak before it 136743 MiB per GPU (nvidia-smi).
 - No unused arm holds GPU memory (the steps are gone); the +3 check below was run with H0's args (8 ranks), so it covers the H0 memory check: peak 75.9 GB per GPU.
+
+## H0 / H1 / HT (11-24 14:26)
+- H0: 2026-11-24 14:18:58 rc=0 (srun) ended: Terminating on cycle limit wall=227 s CW 0 FATAL 0 inf 0 DT_RETRY 0 fallback 0; peak GPU memory MiB 75919; last log line: `<rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 1.793294e+02 | failed stage at`
+- H1: 2026-11-24 14:22:37 rc=0 (srun) ended: Terminating on cycle limit wall=218 s CW 0 FATAL 0 inf 0 DT_RETRY 0 fallback 0; peak GPU memory MiB 75915; last log line: `<rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 1.754426e+02 | failed stage at`
+- HT: 2026-11-24 14:26:48 rc=0 (srun) ended: Terminating on cycle limit wall=249 s CW 0 FATAL 0 inf 0 DT_RETRY 0 fallback 0; peak GPU memory MiB 76059; last log line: `<rad_vet> hesdirk2 wall split (rank 0 s): clean stage steps 1.888158e+02 | failed stage at`
+| arm | rows | dt min/median(15-51)/max | s/cyc | s per sim s | CW/FATAL/inf/DT_RETRY | fallbacks/BE/retries/lines | SDO lines, K1K2<0 mean share, max ratio, cells >0.1, >1, ef<=0 | L_top/L_in start..end |
+|---|---|---|---|---|---|---|---|---|
+| H0 | 51 | 90.00 / 90.00 / 90.00 | 3.720 | 0.0413 | 0 / 0 / 0 / 0 | 0 / 0 / 0 / 0 | 51, 0.3730, 2.957e-01, 2, 0, 0 | 0.9628 .. 0.9777 |
+| H1 | 51 | 90.00 / 90.00 / 90.00 | 3.462 | 0.0385 | 0 / 0 / 0 / 0 | 0 / 0 / 0 / 0 | 51, 0.3728, 2.253e+00, 342270, 192, 0 | 0.9628 .. 0.9774 |
+| HT | 51 | 90.00 / 90.00 / 90.00 | 3.950 | 0.0439 | 0 / 0 / 0 / 0 | 0 / 0 / 0 / 0 | 51, 0.3710, 7.822e+01, 40, 1, 1 | 0.9632 .. 0.9794 |
+
+H1 vs H0 (reference H0), interpolated to H0 times:
+| cycle +n | t [s] | dt H0 | dt H1 | L_top rel | L_mid rel | L_int rel | L_bot rel |
+|---|---|---|---|---|---|---|---|
+| 5 | 6.6096e+07 | 90.00 | 90.00 | -3.274e-07 | -1.291e-05 | 1.108e-05 | 1.914e-05 |
+| 10 | 6.6097e+07 | 90.00 | 90.00 | -6.585e-06 | 6.134e-05 | -2.449e-04 | 4.259e-05 |
+| 20 | 6.6098e+07 | 90.00 | 90.00 | 3.849e-05 | 7.630e-04 | 8.440e-05 | 2.479e-05 |
+| 51 | 6.6101e+07 | 90.00 | 90.00 | -3.408e-04 | 1.126e-03 | 1.181e-03 | -3.610e-05 |
+max |rel| over the run: L_top 5.395e-04 L_mid 1.738e-03 L_int 1.221e-03 L_bot 8.316e-05
+
+HT vs H0 (reference H0), interpolated to H0 times:
+| cycle +n | t [s] | dt H0 | dt HT | L_top rel | L_mid rel | L_int rel | L_bot rel |
+|---|---|---|---|---|---|---|---|
+| 5 | 6.6096e+07 | 90.00 | 90.00 | -1.035e-04 | -4.563e-03 | -5.102e-03 | -3.882e-10 |
+| 10 | 6.6097e+07 | 90.00 | 90.00 | -5.297e-03 | -6.328e-03 | -3.666e-03 | -5.298e-11 |
+| 20 | 6.6098e+07 | 90.00 | 90.00 | 2.175e-03 | 3.135e-03 | 3.153e-03 | -9.217e-10 |
+| 51 | 6.6101e+07 | 90.00 | 90.00 | 1.700e-03 | -1.420e-03 | -1.370e-03 | -7.234e-10 |
+max |rel| over the run: L_top 6.186e-03 L_mid 6.433e-03 L_int 6.532e-03 L_bot 9.217e-10
+
+**PASS** (zzzr rules; H1 vs old O30 not tested here: needs O30.hst)
+H0h needed (L_top diff 0.9-2 %): no
