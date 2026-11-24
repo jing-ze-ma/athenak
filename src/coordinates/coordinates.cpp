@@ -885,6 +885,12 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
 #endif
   Real fde_ = 0.0;   // floor ledger (EventCounters flr_de_v)
   auto cvol_ = volume;
+  // <hydro>/floor_from_ekin: phi_hat = z x r_hat/|z x r_hat| at the cell centre, its
+  // covariant components (phi.e_xi, phi.e_eta) on the panel's unit tangents (L_z kept)
+  const bool fek_ = eos_data.ekin_heat;
+  auto &mbs_ = pmy_pack->pmb->mb_size;
+  auto pnl_ = pmy_pack->pmb->mb_panel.d_view;
+  const int js_ = aidx.js, ks_ = aidx.ks, nx2_ = aidx.nx2, nx3_ = aidx.nx3;
   Kokkos::parallel_reduce("cs_raisev",
   RvPol(DevExeSpace(), 0, (nmb1 + 1)*nkji),
   KOKKOS_LAMBDA(const int &idx, int &sumv, int &sumts, Real &sumde, Real &sumvde,
@@ -905,11 +911,26 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
                        k >= aks && k <= ake);
     Real v1, v2, v3, eint, pnew, g1new, temp, de, vde;
     bool ceil_used, floored, tset_used;
+    Real f2 = 0.0, f3 = 0.0;
+    if (fek_) {
+      const Real xc = 0.25*M_PI*CellCenterX(j - js_, nx2_, mbs_.d_view(m).x2min,
+                                            mbs_.d_view(m).x2max);
+      const Real ec = 0.25*M_PI*CellCenterX(k - ks_, nx3_, mbs_.d_view(m).x3min,
+                                            mbs_.d_view(m).x3max);
+      Real q[3], e1[3], e2[3];
+      cubed_sphere::PanelToCart(pnl_(m), xc, ec, q);
+      cubed_sphere::PanelTangents(pnl_(m), xc, ec, e1, e2);
+      const Real rr = sqrt(q[0]*q[0] + q[1]*q[1]);
+      if (rr > 0.0) {
+        f2 = (q[0]*e1[1] - q[1]*e1[0])/rr;
+        f3 = (q[0]*e2[1] - q[1]*e2[0])/rr;
+      }
+    }
     GnomonicRaiseVelFloors(c, eos_, gen_, keepv_, vceil_, act_,
                            keepv_ ? dflfv_(m,k,j,i) : 1.0,
                            gen_ ? wtemp_(m,k,j,i) : 0.0, d,
                            m1, m2, m3, etot, v1, v2, v3, eint, pnew, g1new, temp,
-                           ceil_used, floored, tset_used, de, vde);
+                           ceil_used, floored, tset_used, de, vde, f2, f3);
     u0(m,IM1,k,j,i) = m1;
     u0(m,IM2,k,j,i) = m2;
     u0(m,IM3,k,j,i) = m3;

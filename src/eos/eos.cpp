@@ -275,11 +275,10 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
   if (pin->DoesParameterExist(bk, "floor_from_ekin")) {
     eos_data.ekin_heat = pin->GetBoolean(bk, "floor_from_ekin");
     if (eos_data.ekin_heat && (bk.compare("hydro") != 0 ||
-                               pin->GetString(bk, "eos").compare("general") != 0 ||
-                               pp->pmesh->use_cubed_sphere)) {
+                               pin->GetString(bk, "eos").compare("general") != 0)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<" << bk << ">/floor_from_ekin: general-EOS hydro, "
-                << "Cartesian or spherical polar only" << std::endl;
+                << std::endl << "<" << bk << ">/floor_from_ekin: general-EOS hydro only"
+                << std::endl;
       std::exit(EXIT_FAILURE);
     }
     eos_data.ekin_keep_x3 = pp->pmesh->use_spherical_polar;

@@ -181,21 +181,30 @@ void GeneralHydFloorsPost(const EOS_Data &eos, const Real d, const Real di,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real EkinScaleTo()
-//! \brief floor_from_ekin: scales the momentum of a cell of kinetic energy e_k so that it
-//! becomes ekt, keeping the x3 part (L_z on spherical polar, keep3) whenever it fits in
-//! ekt; returns the new kinetic energy
+//! \fn Real EkinScale()
+//! \brief floor_from_ekin: the scale fs of the momentum of a cell of kinetic energy e_k
+//! that makes it ekt, keeping (kp) the part of kinetic energy ekk that carries L_z
+//! (spherical polar x3, the cubed sphere's p.phi_hat) whenever it fits in ekt; returns
+//! the new kinetic energy (every mesh, one formula)
 
+KOKKOS_INLINE_FUNCTION
+Real EkinScale(const Real e_k, const Real ekk, const Real ekt, Real &fs, bool &kp) {
+  kp = (ekk <= ekt);
+  fs = kp ? sqrt(fmax(ekt - ekk, 0.0)/(e_k - ekk)) : sqrt(ekt/e_k);
+  return kp ? ekk + fs*fs*(e_k - ekk) : fs*fs*e_k;
+}
+
+//! \brief EkinScale on a state whose x3 momentum carries L_z (keep3: spherical polar)
 KOKKOS_INLINE_FUNCTION
 Real EkinScaleTo(const bool keep3, const Real di, const Real ekt, const Real e_k,
                  HydCons1D &u, HydPrim1D &w) {
-  const Real ek3 = keep3 ? 0.5*di*SQR(u.mz) : 0.0;
-  const bool k3 = (ek3 <= ekt);
-  const Real fs = k3 ? sqrt(fmax(ekt - ek3, 0.0)/(e_k - ek3)) : sqrt(ekt/e_k);
-  const Real fz = (k3 && keep3) ? 1.0 : fs;
+  Real fs;
+  bool kp;
+  const Real ek = EkinScale(e_k, keep3 ? 0.5*di*SQR(u.mz) : 0.0, ekt, fs, kp);
+  const Real fz = (kp && keep3) ? 1.0 : fs;
   u.mx *= fs; u.my *= fs; u.mz *= fz;
   w.vx *= fs; w.vy *= fs; w.vz *= fz;
-  return k3 ? ek3 + fs*fs*(e_k - ek3) : fs*fs*e_k;
+  return ek;
 }
 
 //----------------------------------------------------------------------------------------
