@@ -177,6 +177,7 @@ round-off change at the restart.
 | `rad_vet/floorcap_report` | Print the cumulative floor-gas cap counters every N cycles. | 0 = never | all: `25` | `rad_vet/rad_vet.cpp` (constructor) |
 | `time/ndiag` | Print the cycle line every N cycles. | 1 | all: `50` | `driver/driver.cpp` |
 | `hydro/floor_audit` | Print the floor events and their payment every N cycles (`floor_audit cycle` lines). Needs `eos = general`. | 0 | all: `1` | `hydro/dual_energy.cpp` |
+| `hydro/floor_audit_worst` | With each `floor_audit` report, every rank prints its cell of the largest energy the inversion created ((E_after - E_before) x vol): its place and its density, total / internal energy, kinetic energy by component and potential before and after (`floor_audit_worst` lines). No effect on the state. Needs `floor_audit`. | false (read only when named) | not named (diagnosis) | `hydro/dual_energy.cpp` |
 | `hydro/dt_report` | Print every N cycles which cell and term set dt (`DTREP`, `DTREG`; RUN.md section 5). No effect on the state. | 0 (read only when named) | not named | `hydro/hydro.cpp` |
 | `time/nan_check_cycles` | Check the state for NaN every N cycles and stop if found (0 = off). | 100 | all: `100` | `driver/driver.cpp` |
 
