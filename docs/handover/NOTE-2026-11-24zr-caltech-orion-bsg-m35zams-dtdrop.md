@@ -51,3 +51,22 @@ cycle=69000 time=1.233686e+05 dt=1.769237e+00
 ```
 - t9l62 (your status question): log.4 ended at c5122, one cycle after the resume, on a stale STOP. The prodwatch2 FATAL branch had written that STOP at 05:05, on the dead fresh-start FATAL log.3, and it was never removed. COORD relaunched at 07:16 (log.5, step 7333073.64). I have fixed it: every launcher now does rm -f <star>/STOP before prodg, and prodwatch2 writes STOP only while the step runs. It also now ALERTS when a production step is gone before tlim.
 - Next: each star is stopped cleanly and resumed with hydro/dt_report=10 (every key named); the DTREP binders follow below once ~100 cycles are in.
+
+## m35zams_z3: resumed with hydro/dt_report=10 (11-24 07:26)
+- Clean STOP: yes; resumed from m35zams.00006.rst (hard link rst_keep/m35zams.00006.rst.pre-dtr) on hpc-sm-01-15: `2026-11-24 07:24:44 chunk 1 STAR=m35zams_z3 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc3_af836f5a3 md5=09f50abee4ffa6cd399ce15879626` + EX: time/cfl_number=0.3 hydro/fofc=true hydro/fofc_retest=true rad_vet/clean_stag_mg_levels=4 rad_vet/floorcap_lz=true hydro/dt_report=10
+- DTREP binders, every other report over ~100 cycles (all 138 DTREP/DTREG lines in caltech_results/DTDROP_1124/m35zams_z3/dtrep_dtreg.txt):
+```
+c69250 dt_hyd 1.513 gasonly 1.514 dir 3 r 5.5971e+11 rho 1.000e-17 T 1.184e+14 v -4.142e+07 cgas 1.405e+07 ceff 1.405e+07 tauT_h 9.8e-10
+c69260 dt_hyd 1.522 gasonly 1.524 dir 3 r 5.6162e+11 rho 1.000e-17 T 9.207e+11 v 5.403e+07 cgas 1.239e+06 ceff 1.323e+06 tauT_h 9.84e-10
+c69270 dt_hyd 1.485 gasonly 1.487 dir 3 r 5.6162e+11 rho 1.000e-17 T 1.656e+12 v 5.498e+07 cgas 1.662e+06 ceff 1.726e+06 tauT_h 9.84e-10
+c69280 dt_hyd 1.492 gasonly 1.494 dir 3 r 5.6162e+11 rho 1.000e-17 T 1.916e+12 v 5.459e+07 cgas 1.787e+06 ceff 1.847e+06 tauT_h 9.84e-10
+c69290 dt_hyd 1.558 gasonly 1.564 dir 3 r 5.6162e+11 rho 1.000e-17 T 1.337e+11 v 5.338e+07 cgas 4.720e+05 ceff 6.632e+05 tauT_h 9.84e-10
+c69300 dt_hyd 1.558 gasonly 1.559 dir 3 r 5.6162e+11 rho 1.000e-17 T 1.743e+13 v 4.864e+07 cgas 5.390e+06 ceff 5.410e+06 tauT_h 9.84e-10
+c69310 dt_hyd 1.708 gasonly 1.709 dir 3 r 5.6162e+11 rho 1.000e-17 T 9.789e+12 v 4.525e+07 cgas 4.039e+06 ceff 4.066e+06 tauT_h 9.84e-10
+c69320 dt_hyd 1.787 gasonly 1.793 dir 3 r 5.5971e+11 rho 1.000e-17 T 1.337e+11 v -4.632e+07 cgas 4.720e+05 ceff 6.539e+05 tauT_h 9.8e-10
+c69330 dt_hyd 1.765 gasonly 1.772 dir 3 r 5.5971e+11 rho 1.000e-17 T 1.337e+11 v -4.689e+07 cgas 4.720e+05 ceff 6.538e+05 tauT_h 9.8e-10
+c69340 dt_hyd 1.824 gasonly 1.831 dir 3 r 5.5971e+11 rho 1.000e-17 T 1.337e+11 v -4.537e+07 cgas 4.720e+05 ceff 6.538e+05 tauT_h 9.8e-10
+c69350 dt_hyd 1.792 gasonly 1.799 dir 3 r 5.5971e+11 rho 1.000e-17 T 1.337e+11 v -4.618e+07 cgas 4.720e+05 ceff 6.538e+05 tauT_h 9.8e-10
+c69360 dt_hyd 1.66 gasonly 1.661 dir 3 r 5.5943e+11 rho 1.013e-17 T 4.383e+12 v 4.780e+07 cgas 2.703e+06 ceff 2.741e+06 tauT_h 9.91e-10
+```
+- first DTREG lines: `DTREG polar cycle=69250 npol=7 cfl*cell_dt=1.931743e+00 row=4 theta_deg=8.829309e+01 phi=2.425000e-02 r=5.588872e+11 dir=3 rho=1.000000e-17 T=4.333303e+12 v=4.065206e+07 cgas=2.687410e+06 ceff=2.726319e+06 h=2.793196e+08 cfl*cell_dt_gas=1.933477e+00|DTREG rest  cycle=69250 npol=7 cfl*cell_dt=1.513318e+00 row=56 theta_deg=8.978484e+01 phi=2.375000e-02 r=5.597052e+11 dir=3 rho=1.000000e-17 T=1.183834e+14 v=-4.142355e+07 cgas=1.404655e+07 ceff=1.405400e+07 h=2.798506e+08 cfl*cell_dt_gas=1.513522e+0|`
