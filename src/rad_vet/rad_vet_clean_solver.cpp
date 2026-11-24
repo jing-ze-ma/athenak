@@ -100,11 +100,13 @@ void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real
       v.s0 = v.s1 = v.s2 = v.mx = 0.0;
       if (tl) {
         const int b = m/ntb, u = m - b*ntb, k0 = (u/nt2)*t3, j0 = (u%nt2)*t2;
+#pragma unroll 4
         for (int q = sl; q < ntc; q += ns) {
           const int r = q/n1, k = k0 + r/t2, j = j0 + r%t2;
           fn(b*nkji + (k*n2 + j)*n1 + q - r*n1, v);
         }
       } else {
+#pragma unroll 4
         for (int q = sl; q < nkji; q += ns) {fn(m*nkji + q, v);}
       }
       part(4*idx) = v.s0;
@@ -123,7 +125,22 @@ void M1LayReduce(const char *name, const int n, const int nkji, DvceArray1D<Real
       const int m = tm.league_rank();
       Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, M1_DR_NT), [&](const int t) {
         Real a0 = 0.0, a1 = 0.0, a2 = 0.0, a3 = 0.0;
-        for (int q = t; q < ns; q += M1_DR_NT) {
+        // (kU slots' values loaded at once, then added in the slot order: bitwise)
+        constexpr int kU = 8;
+        int q = t;
+        for (; q + (kU - 1)*M1_DR_NT < ns; q += kU*M1_DR_NT) {
+          Real p[kU][4];
+          for (int u = 0; u < kU; ++u) {
+            for (int c = 0; c < 4; ++c) p[u][c] = part(4*(m*ns + q + u*M1_DR_NT) + c);
+          }
+          for (int u = 0; u < kU; ++u) {
+            a0 += p[u][0];
+            a1 += p[u][1];
+            a2 += p[u][2];
+            a3 = (p[u][3] > a3) ? p[u][3] : a3;
+          }
+        }
+        for (; q < ns; q += M1_DR_NT) {
           const int b = 4*(m*ns + q);
           a0 += part(b);
           a1 += part(b + 1);
