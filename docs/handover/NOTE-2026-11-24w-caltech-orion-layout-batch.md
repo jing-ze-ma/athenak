@@ -63,3 +63,4 @@
 
 ### t9l62 decision (11-24 02:18): **KEEP (T0 layout; best answer-preserving ratio 0.9903 (T2) vs break-even 0.9732)**
 - T0 s/cyc 2.84590, user md5 b578af5a0b7ae6839f552b4dbc336169; T1: s/cyc 2.86677, ratio 1.0073, md5 equal yes; T2: s/cyc 2.81821, ratio 0.9903, md5 equal yes; N 51000, Nd 1366.
+- t9l62 production resumed (KEEP) from its 01:31 rst t9l62.00005 on hpc-sm-02-17: `2026-11-24 02:20:20 chunk 2 STAR=t9l62 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc3_af836f5a3 md5=09f50abee4ffa6cd399ce15879626353 DECK=/resnick/groups/carnegie_poc/jingze/` + EX time/cfl_number=0.3 hydro/fofc=true hydro/fofc_retest=true rad_vet/clean_stag_mg_levels=4 hydro/dt_report=200; 300-cycle watch on
