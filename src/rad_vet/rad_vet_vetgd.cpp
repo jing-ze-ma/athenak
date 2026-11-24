@@ -887,7 +887,6 @@ void RadiationVet::VetGdInit() {
     Kokkos::deep_copy(v, h);
     return v;
   };
-  vgd_mpk = vgd_wsym || vgd_wst;
   if (vgd_wsym && VgdRotOn()) {
     // a set turning about z on a wedge of whole azimuthal periods: the turn by the period
     // W maps every turned set onto itself (the two turns commute), so its phi wall maps

@@ -795,16 +795,15 @@ bool CleanRingMix(const CleanRingL &rl, const DvceArray5D<Real> &rr,
 //! J_avg/J_b), T = the next set with the EMA the coming boundary makes of this state's
 //! Delta (RotAvgEmaShift): aw = max(1/N, a_ch, 1/(n + 1)), r' = (1 - aw) r/R + aw, e' =
 //! (1 - aw)(r/R)/r' (e - D), R = J_{b+1}/J_b; a_ch is this build's (pd's entry nfr), n
-//! rr's entry nfr + 2 (0: no history, A and T the sets themselves).  fraw (the symmetry
-//! keys, vgd_mpk): the face sums (not cell moments) as (1 - s) A + s T in raw moments,
-//! linear in the faces' own sums: no cell's J ratio weights its low face, so that a face
-//! and its mirror face mix alike
+//! rr's entry nfr + 2 (0: no history, A and T the sets themselves).  The face sums (not
+//! cell moments) as (1 - s) A + s T in raw moments, linear in the faces' own sums: no
+//! cell's J ratio weights its low face, so that a face and its mirror face mix alike
 
 KOKKOS_INLINE_FUNCTION
 bool CleanRingEma(const CleanRingL &rl, const DvceArray5D<Real> &rr,
                   const DvceArray5D<Real> &pd, const Kokkos::Array<int, CLN_N> &fr,
                   const int nfr, const int qn, const Real s, const Real a0, const int m,
-                  const int k, const int j, const int i, const bool fraw, Real *q) {
+                  const int k, const int j, const int i, Real *q) {
   const Real jb = rl(m,0,CLN_J,k,j,i), jn = rl(m,qn,CLN_J,k,j,i);
   if (!(jb > 0.0)) return false;
   const Real nset = rr(m,nfr+2,k,j,i), r = rr(m,fr[int{CLN_J}],k,j,i);
@@ -828,8 +827,8 @@ bool CleanRingEma(const CleanRingL &rl, const DvceArray5D<Real> &rr,
     }
     const Real e = rr(m,fr[n],k,j,i);
     const Real ga = gb + (hist ? e : 0.0), gt = sh ? gn + fac*(e - (gn - gb)) : gn;
-    q[n] = (fraw && !CleanCellMoment(n)) ? (1.0 - s)*ga*jb*(hist ? r : 1.0) + s*gt*jt
-                                         : ((1.0 - s)*ga + s*gt)*q[CLN_J];
+    q[n] = CleanCellMoment(n) ? ((1.0 - s)*ga + s*gt)*q[CLN_J]
+                              : (1.0 - s)*ga*jb*(hist ? r : 1.0) + s*gt*jt;
   }
   return true;
 }
@@ -1267,7 +1266,6 @@ void RadiationVet::CleanRingMoments() {
   auto rw = cln_rnew;
   auto iw_ = iw;
   auto valid = cln_v;
-  const bool fraw = vgd_mpk;
   CleanArgs x = CleanMakeArgs();
   int nguard = 0;
   const int ni = ie - is + 1, nj = je - js + 1, nkk = ke - ks + 1;
@@ -1287,7 +1285,7 @@ void RadiationVet::CleanRingMoments() {
     };
     Real q[CLN_N];
     const bool mix = ring && (ema ? CleanRingEma(rl, rr, pd, fr, nfr, qn, s, a0, m, kr,
-                                                 jr, ir, fraw, q)
+                                                 jr, ir, q)
                                   : CleanRingMix(rl, rr, fr, nfr, qn, nr, s, m, kr, jr,
                                                  ir, q));
     if (!mix) {

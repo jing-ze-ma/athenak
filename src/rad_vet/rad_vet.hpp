@@ -1870,7 +1870,6 @@ class RadiationVet {
   // vet_gd_theta_seam_sym (needs _wall_interp): clean theta seam faces in both frames
   bool vgd_wst = false;
   DvceArray1D<int> vgd_mirz;  // (n): the equatorial mirror image of each direction
-  bool vgd_mpk = false;       // either key named: mirror-paired ring face sums
   VgdLG vgd_lg;   // the vet_gd sweep geometry from the global index
   Kokkos::View<int *****, LayoutWrapper, DevMemSpace> vgd_m3;
   DvceArray5D<Real> vgd_w3;

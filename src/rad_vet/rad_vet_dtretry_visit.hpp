@@ -844,7 +844,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("vgd_mir", vgd_mir);
   v.value("vgd_wst", vgd_wst);
   v.view("vgd_mirz", vgd_mirz);
-  v.value("vgd_mpk", vgd_mpk);
   v.value("vgd_lg", vgd_lg);
   v.view("vgd_m3", vgd_m3);
   v.view("vgd_w3", vgd_w3);
