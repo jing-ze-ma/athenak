@@ -174,3 +174,13 @@ srun: error: hpc-sm-01-15: task 0: Exited with exit code 1
 - Z arms ran ZA, ZB, ZC one after the other on 01-15 (already running when the node request came): all ended on the cycle limit, srun exit 0, CW 0, FATAL 0, DT_RETRY 0; ZB (S10, vet_gd_ls = 10, GL keys removed) did NOT FATAL.
 - Ray effect |F3/F1| odd, thin shells, vet dump (raymeas.py, i 308-383): ZA 7x18 t=0 max 1.485e-2 median 1.13e-2, t=696 s 1.385e-2 / 1.065e-2; ZB S10 2.504e-2 / 2.48e-2, then 2.362e-2 / 2.33e-2; ZC 7x36 1.050e-2 / 6.6e-3, then 9.17e-3 / 5.9e-3. v_phi rms in the thin layer at c200 ZA 1.37e4, ZB 2.86e4, ZC 1.55e4 cm/s. s/cyc 0.340 / 0.341 / 0.343; dt identical; L_top/L_in 1.00046 in all. (The KeyError lines in rays.txt are my script also feeding the vet_vet dump; no data loss.)
 - **S1 (bsg) PASS** (0.6436 / 0.6427 s/cyc, dt 152.8 identical, L_top +4.8e-6, SDO max ratio off 1e-4, on 0.40, 11 cells > 0.1, none > 1, ef<=0 0). S2, S3, S5, S1 all PASS; S2L is running (off on 01-15, on on 02-16 after S4 ended).
+
+## S2L (M35ZAMS, 900 cycles; off on 01-15, on on 02-16) (11-24 14:10)
+| arm | rows | s/cyc (cycles) | dt min/mean/max | its t2s2 (sum, solves) | t2s3 | L_top/L_in end | L_bot/L_in end | KE | dE/E | dM/M | CW/FATAL/inf/DT_RETRY | fallbacks/BE/retries | SDO: lines, K1K2<0 mean share, max ratio, cells>0.1, >1, ef<=0 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| S2Loff | 900 | 0.2941 (c22160-23050) | 3.481 / 3.481 / 3.481 | 18.4, 2.00 | 15.5, 2.21 | 1.00054 | 1.00001 | 5.56605e+35 | -8.26e-08 | -2.11e-15 | 0 / 0 / 0 / 0 | 0 / 0 / 0 | 900, 0.3173, 1.019e-05, 0, 0, 0 |
+| S2Lon | 900 | 0.2925 (c22160-23050) | 3.481 / 3.481 / 3.481 | 18.3, 2.00 | 15.6, 2.21 | 1.00054 | 1.00001 | 5.56705e+35 | -8.26e-08 | 1.74e-15 | 0 / 0 / 0 / 0 | 0 / 0 / 0 | 900, 0.3171, 4.676e-01, 497, 0, 0 |
+
+- last common row 900: L_top -6.83e-07 L_in 0.00e+00 KE 1.79e-04 Etot -2.97e-11 M 9.92e-16 Lz 1.03e-03 (on - off relative)
+- **PASS** (rule: extra CW/fallback/BE/retry, ef<=0, dt mean < 0.95 off, s per sim s > 1.05 off, |L_top| > 1 %) 
+- ends: S2Loff: 2026-11-24 14:08:11 end: t_S2Loff|COMPLETED|0:0|00:04:44; log: Terminating on cycle limit CW 0 FATAL 0 DT_RETRY 0 ; S2Lon: 2026-11-24 14:10:52 rc=0 wall=287 s CW 0 FATAL 0 inf 0 DT_RETRY 0
