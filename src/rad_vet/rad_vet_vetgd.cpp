@@ -887,11 +887,27 @@ void RadiationVet::VetGdInit() {
     Kokkos::deep_copy(v, h);
     return v;
   };
+  if (vgd_wsym && VgdRotOn()) {
+    // a set turning about z on a wedge of whole azimuthal periods: the turn by the period
+    // W maps every turned set onto itself (the two turns commute), so its phi wall maps
+    // are exact and there is nothing to symmetrise (the key does nothing)
+    const double w = pm->mesh_size.x3max - pm->mesh_size.x3min;
+    const std::vector<int> pw = img(std::cos(w), std::sin(w), 1.0, 1.0);
+    if (!vgd_wint || vgd_rot3 || *std::min_element(pw.begin(), pw.end()) < 0) {
+      VgdFatal("vet_gd_wall_sym with a rotating set needs vet_gd_wall_interp = true, a "
+               "turn about z and a wedge of whole azimuthal periods of the set");
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_vet> vet_gd_wall_sym: the turning set's phi wall maps are exact "
+                << "(no effect)" << std::endl;
+    }
+    vgd_wsym = false;
+  }
   if (vgd_wsym) {
     // vet_gd_wall_sym: turn the set about z by the least angle that puts one of its
-    // mirror planes on the wedge mid-plane
-    if (!vgd_wint || VgdRotOn()) {
-      VgdFatal("vet_gd_wall_sym needs vet_gd_wall_interp = true and no set rotation");
+    // mirror planes (GL k pi/nphi, the octahedral sets k pi/4) on the wedge mid-plane
+    if (!vgd_wint) {
+      VgdFatal("vet_gd_wall_sym needs vet_gd_wall_interp = true");
     }
     const double pc = 0.5*(pm->mesh_size.x3min + pm->mesh_size.x3max);
     const double pp = (vgd_gl_nmu > 0) ? M_PI/vgd_gl_nphi : 0.25*M_PI;
