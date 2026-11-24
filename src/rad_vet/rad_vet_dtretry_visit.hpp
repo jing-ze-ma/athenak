@@ -908,10 +908,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vgd_cstbuild", vgd_cstbuild);
   v.value("vgd_csvsent", vgd_csvsent);
   v.value("vgd_csvdense", vgd_csvdense);
-  v.value("vgd_csxg", vgd_csxg);
-  v.value("vgd_csxmax", vgd_csxmax);
-  v.view("vgd_csxsb", vgd_csxsb);
-  v.view("vgd_csxrb", vgd_csxrb);
   v.view("vgd_csdsb", vgd_csdsb);
   v.view("vgd_csdrb", vgd_csdrb);
   v.view("vgd_cslst", vgd_cslst);

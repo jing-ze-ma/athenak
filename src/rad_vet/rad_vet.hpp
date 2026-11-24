@@ -2493,7 +2493,6 @@ class RadiationVet {
   // miss)
   struct VgdCsCl {
     Real alpha = -9.0;
-    int ng = 1;                      // direction groups of the lists
     int64_t use = 0;
     std::vector<int64_t> so, ro;     // ((pass*n1 + s)*(np + 1) + p): list offsets
     Kokkos::View<int *, LayoutWrapper, DevMemSpace> si, ri;   // e*n + d per value
@@ -2527,14 +2526,6 @@ class RadiationVet {
   void VetGdCsCompact();
   void VetGdCsHaloC(const int pass, const int i);
   bool VetGdCsHaloCX(const int pass, const int i, const int eb);
-  // vet_gd_cs_xgroups = G > 1: the sweep's directions in G contiguous groups,
-  // each (shell, group) its own kernel and compact exchange, software-pipelined (the
-  // exchange of one group runs while the next groups compute; every value computed by
-  // the same code from the same inputs: bitwise G = 1).  Lists ordered (pass, shell,
-  // group, partner, entry, d); pinned-host slot buffers
-  int vgd_csxg = 1;
-  int64_t vgd_csxmax = 0;              // largest (pass, shell, group) list, values
-  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> vgd_csxsb, vgd_csxrb;
   DvceArray1D<Real> vgd_csdsb, vgd_csdrb;   // NCCL device buffers
   DvceArray1D<int> vgd_cslst;               // per-pass branch lists
   // vet_gd_halo_compact = 0 (off), 1 (pass branch), 2 (+ ray reach): compact messages

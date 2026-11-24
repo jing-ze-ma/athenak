@@ -1904,10 +1904,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_halo_compact")) {
       vgd_hcomp = pin->GetInteger("rad_vet","vet_gd_halo_compact");
     }
-    if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_cs_xgroups")) {
-      // speed only (bitwise any value); 1 = the plain per-shell exchange
-      vgd_csxg = std::max(1, pin->GetInteger("rad_vet","vet_gd_cs_xgroups"));
-    }
     if (vgd_on && pin->DoesParameterExist("rad_vet","vet_gd_twin") &&
         pin->GetBoolean("rad_vet","vet_gd_twin")) {
       std::cout << "### FATAL ERROR <rad_vet>/vet_gd_twin = true: the twin is not in "

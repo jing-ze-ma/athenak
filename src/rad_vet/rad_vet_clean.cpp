@@ -493,6 +493,8 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     // (the vet_gd upwind profile shift and the dense shell launch, removed)
     {"rad_vet/vet_gd_upwind", "=bilinear"}, {"rad_vet/vet_gd_upwind_*", ""},
     {"rad_vet/vet_gd_shell_list", "=true"},
+    // (the cs sweep's pipelined direction groups, removed)
+    {"rad_vet/vet_gd_cs_xgroups", "=1"},
     // (the inward-only band ring slabs and their per-shell hook, removed)
     {"rad_vet/vet_gd_band_ring_inward", "!"},
     // (the staggered stage increment's and cross flux's study forms, removed)

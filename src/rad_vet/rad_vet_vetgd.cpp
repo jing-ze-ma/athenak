@@ -1227,8 +1227,7 @@ void RadiationVet::VetGdInit() {
   // sc rays' ring, CleanRingMoments, sweeps one set at a time)
   if (vgd_xff && ((cln_ring && !(cln_rfuse && cln_ring == 1 &&
                                           ibc_x1max != M1_IBC_REFLECT)) ||
-                  (vgd_gband && !vgd_raw) || vgd_nb1 > 1 ||
-                  (vgd_csg && vgd_cscomp && vgd_csxg > 1))) {
+                  (vgd_gband && !vgd_raw) || vgd_nb1 > 1)) {
     vgd_xff = false;
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_vet> vet_gd_rotate_xfade_fuse: not covered here ("
@@ -2350,9 +2349,8 @@ void RadiationVet::VgdEs2Make() {
 bool RadiationVet::VetGdXffOk() {
   if (!vgd_xff || !vgd_xf) {return false;}
   if (vgd_csg) {
-    // the cubed-sphere sweep (VetGdCsSweep): pass lists (G = 1), no early send / pipe
-    return !(vgd_cscomp && vgd_csxg > 1) && !vgd_gband &&
-           (vgd_i_xb.d.extent(0) == vgd_i.d.extent(0));
+    // the cubed-sphere sweep (VetGdCsSweep): pass lists, no early send
+    return !vgd_gband && (vgd_i_xb.d.extent(0) == vgd_i.d.extent(0));
   }
   if (vgd_gband && !vgd_raw) {
     return false;
