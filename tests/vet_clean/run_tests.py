@@ -1128,7 +1128,7 @@ def one(a, name, fn):
 def main():
     p = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     p.add_argument('--exe', required=True, help='the athena binary (CPU build)')
-    p.add_argument('--quick', action='store_true', help='the short subset (15 tests)')
+    p.add_argument('--quick', action='store_true', help='the short subset (16 tests)')
     p.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 4)//4),
                    help='tests run at the same time')
     p.add_argument('--threads', type=int, default=4, help='OpenMP threads per run')
