@@ -10,3 +10,4 @@
 - relaunch: `2026-11-24 01:30:10 chunk 1 rc=0 last: time=6e+04 cycle=5226` + EX: hydro/fofc=true hydro/fofc_retest=true rad_vet/clean_stag_mg_levels=4
 - log echo (log.1): (no mg_levels line yet) | <hydro>: fofc_retest 1
 - m35zams 300 cycles on mg4 (11-24 01:32): CW 0, FATAL 0, created inf 0, DT_RETRY 0. **before** 0.3654 s/cyc (c10230-10280), dt 2.478106e+00 -> **after** 0.3641 s/cyc (c10350-10400), dt 2.478581e+00
+- m35mms 300 cycles on mg4 (11-24 01:32): CW 0, FATAL 0, created inf 0, DT_RETRY 0. **before** 1.1243 s/cyc (c4950-5200), dt 9.786278e+00 -> **after** 1.1243 s/cyc (c4950-5200), dt 9.786278e+00
