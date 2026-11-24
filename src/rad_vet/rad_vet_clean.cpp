@@ -605,11 +605,11 @@ void RadiationVet::CleanInit() {
   }
   if (cln_ysum) Kokkos::realloc(cln_yl, nmb, 9, n3, n2, n1);
   // multigrid levels of the preconditioner: halve x2 and x3 where the tile's are even
-  // (>= 4), two coarse levels at most (x1 is never halved)
+  // (>= 4), clean_stag_mg_levels coarse levels at most (x1 is never halved)
   std::array<int, 3> nc = {indcs.nx1, indcs.nx2, indcs.nx3};
   if (cln_mgt[0] == 0) cln_mgt = nc;   // (layout_tile: the tiles' cells)
   std::array<int, 3> tc = cln_mgt;
-  while (cln_mgn.size() != 2) {
+  while (static_cast<int>(cln_mgn.size()) < cln_mgnl) {
     bool coarser = false;
     for (int d = 1; d < 3; ++d) {
       if (tc[d] >= 4 && tc[d] % 2 == 0) {

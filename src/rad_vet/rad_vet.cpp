@@ -857,6 +857,16 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       }
       cln_mgt = {mi.nx1, nt, d3 ? nt : 1};
     }
+    // clean_stag_mg_levels N (read only when named; default 2): the mg's coarse levels at
+    // most, each halving the tile's x2 and x3 where even (>= 4); 0: the sweep alone
+    if (pin->DoesParameterExist("rad_vet","clean_stag_mg_levels")) {
+      cln_mgnl = pin->GetInteger("rad_vet","clean_stag_mg_levels");
+      if (cln_mgnl < 0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<rad_vet>/clean_stag_mg_levels N >= 0" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
     // clean_pc_sweep = sym (default of a fresh run, recorded; a restart file without the
     // key keeps rb) | rb | rbr | rbrsym | wave: the mg's smoothing on each level, a
     // forward red-black sweep, + a second red pass (rbr), + a black-red post-sweep after
