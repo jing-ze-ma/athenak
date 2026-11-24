@@ -476,6 +476,12 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/time2_vstage", ""}, {"rad_vet/vet_col_order2", ""},
     {"rad_vet/vet_col_team", ""}, {"rad_vet/vet_col_team_size", ""},
     {"rad_vet/vet_col_chunk", ""}, {"rad_vet/vet_col_spread", ""},
+    // (vet_sc on several MeshBlocks: the ray kernel, the angle sweep and the lag removed)
+    {"rad_vet/vet_mb_kernel", "x"}, {"rad_vet/vet_mb_tblock*", "x"},
+    {"rad_vet/vet_mb_mom_fuse", "x"}, {"rad_vet/vet_mb_mom_batch", "x"},
+    {"rad_vet/vet_mb_halo", "x"}, {"rad_vet/vet_mb_overlap", "x"},
+    {"rad_vet/vet_mb_angles", "x"}, {"rad_vet/vet_mb_lag", "x"},
+    {"rad_vet/vet_mb_agroup", "=1"}, {"rad_vet/vet_mb_agg", "=true"},
     // (the vet_gd upwind profile shift and the dense shell launch, removed)
     {"rad_vet/vet_gd_upwind", "=bilinear"}, {"rad_vet/vet_gd_upwind_*", ""},
     {"rad_vet/vet_gd_shell_list", "=true"},

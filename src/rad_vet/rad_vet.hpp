@@ -1416,9 +1416,7 @@ class RadiationVet {
   //! VET, several MeshBlocks: allocate the banded buffers and neighbour tables
   void VetMBInit(ParameterInput *pin);
   //! VET, several MeshBlocks: the exact sweep with per-layer band exchange
-  void VetSweepMB(bool lagged);
-  //! VET, several MeshBlocks: the sweep(s) of one call (exact, or the lag diagnostic)
-  void VetMBSweeps();
+  void VetSweepMB();
   //! VET: free the multi-block state (destructor)
   void VetFree();
   //! let a problem generator name the x1 boundary types of the implicit solve
