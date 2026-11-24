@@ -5090,7 +5090,7 @@ void RadiationVet::CleanWriteBack() {
   CleanFor("cln_wbdiv", nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const CleanArgs &x = *px, &xh = *pxh;   // (device memory: no copy)
-    // (CleanFluxDivergence(Tie) with the faces' Phi of CleanStagRealizable, CLF_PT, but
+    // (h div Phi with the faces' Phi of CleanStagRealizable, CLF_PT, but CleanFaceFlux
     // on physical faces; with the tie the low faces' CLW_L and the high faces' owner's)
     Real dv = 0.0, pc[6];   // (the cubed sphere: each face's, CleanStagCellVector)
     for (int n = 0; n < 3; ++n) {
