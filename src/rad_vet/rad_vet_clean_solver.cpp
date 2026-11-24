@@ -245,22 +245,6 @@ void RadiationVet::CleanGhostDefer(DvceArray5D<Real> a, const int c0, const int 
   for (auto &s : cln_hpend) np += s.nc;
   if (np > cln_hmax) CleanGhostFlush();
   cln_hpend.push_back({a, c0, nc, true, dep});
-  if (!cln_hdl.poison) return;
-  // (CLEAN_POISON_GHOST: the ghosts are poison until the exchange that takes them, so
-  // that a kernel reading them in between, before the flush, reads the poison, not old
-  // values)
-  auto &id = pmy_pack->pmesh->mb_indcs;
-  const CleanShell sb(a.extent_int(2), a.extent_int(3), a.extent_int(4), 0, id.is, id.ie,
-                      id.js, id.je, id.ks, id.ke, pmy_pack->pmesh->multi_d,
-                      pmy_pack->pmesh->three_d);
-  const Real pv = cln_hdl.pval;
-  par_for("cln_hpoison", DevExeSpace(), 0, pmy_pack->nmb_thispack - 1, 0, nc - 1, 0,
-          sb.ncell - 1,
-  KOKKOS_LAMBDA(const int m, const int n, const int q) {
-    int k, j, i;
-    CleanShellCell(sb, q, k, j, i);
-    a(m,c0+n,k,j,i) = pv;
-  });
 }
 
 // (a range lies in one of the two arrays: CLW_NS)
@@ -764,27 +748,21 @@ void RadiationVet::CleanHaloPost(const std::vector<CleanGSeg<T>> &sg) {
   if (q.ns > 0 || q.nr > 0) DevExeSpace().fence();
 #endif
   // (the on-rank copy runs on the device while the sends are posted; the ghosts deeper
-  // than dcur keep their values; CLEAN_POISON_GHOST: NaN)
+  // than dcur keep their values)
   const int dc = q.dcur;
-  const bool pz = q.poison;
-  const T nan = static_cast<T>(q.pval);
   int oc = 0;
   for (auto &s : sg) {
     auto a = s.a;
-    auto d = q.ld, c = q.ls, dp = q.ldp, lf = q.lf;
+    auto d = q.ld, c = q.ls, lf = q.lf;
     const int c0 = s.c0, o = oc;
     oc += s.nc;
     if (q.nl == 0) break;
-    par_for("cln_hd_copy", DevExeSpace(), 0, (pz ? q.nl : q.nld[dc-1])-1, 0, s.nc-1,
+    par_for("cln_hd_copy", DevExeSpace(), 0, q.nld[dc-1]-1, 0, s.nc-1,
     KOKKOS_LAMBDA(const int p, const int n) {
       const int f = d(p), m = f/n321, r = f - m*n321, k = r/n21, j = (r - k*n21)/n1;
       const int fp = lf(p);
       const uint32_t w = (fp == 0) ? k0 : ((fp == 1) ? k1 : ((fp == 2) ? k2 : k3));
-      if (!((w >> (o + n)) & 1u) && !pz) return;
-      if (dp(p) > dc || !((w >> (o + n)) & 1u)) {
-        a(m,c0+n,k,j,r - k*n21 - j*n1) = nan;
-        return;
-      }
+      if (!((w >> (o + n)) & 1u)) return;
       const int g = c(p), mg = g/n321, t = g - mg*n321, kg = t/n21, jg = (t - kg*n21)/n1;
       a(m,c0+n,k,j,r - k*n21 - j*n1) = a(mg,c0+n,kg,jg,t - kg*n21 - jg*n1);
     });
@@ -822,8 +800,6 @@ void RadiationVet::CleanHaloFinish(const std::vector<CleanGSeg<T>> &sg) {
   auto rb = q.rbuf;
   const size_t b = static_cast<size_t>(q.par)*std::max(q.nr, 1)*cln_hmax;
   const int dc = q.dcur;
-  const bool pz = q.poison;
-  const T nan = static_cast<T>(q.pval);
   int o = 0;
   for (auto &s : sg) {
     auto a = s.a;
@@ -836,10 +812,7 @@ void RadiationVet::CleanHaloFinish(const std::vector<CleanGSeg<T>> &sg) {
         int u = p*nc + o + n;
         const int fp = rf(p);
         const uint32_t w = (fp == 0) ? k0 : ((fp == 1) ? k1 : ((fp == 2) ? k2 : k3));
-        if (dp(p) > dc || !((w >> (o + n)) & 1u)) {   // (not sent; POISON: NaN)
-          if (pz) a(m,c0+n,k,j,r - k*n21 - j*n1) = nan;
-          return;
-        }
+        if (dp(p) > dc || !((w >> (o + n)) & 1u)) return;   // (not sent)
         if (msk) {
           u = ro(p);
           for (int t = 0; t < o + n; ++t) u += (w >> t) & 1u;

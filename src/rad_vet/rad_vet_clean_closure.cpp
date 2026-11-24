@@ -723,7 +723,6 @@ void RadiationVet::CleanClosureSphere() {
 //! which would make the closure depend on dt).
 
 void RadiationVet::CleanRays() {
-  MemcutPoison(2);   // diagnostic (env MEMCUT_POISON)
   // (the closure's time: a step at least one rotation block long, the steady start's
   // large steps, takes the sets of its start, as VetGdBlock)
   const Real dt = pmy_pack->pmesh->dt, tc = pmy_pack->pmesh->time +
@@ -764,7 +763,6 @@ void RadiationVet::CleanRays() {
     if (cln_cssc) CleanFaceHalf(vgd_dir, 0, true, 0);
     if (cln_cssc) cln_fvi = DvceArray5D<Real>();   // (build scratch)
   }
-  MemcutPoison(3);
 }
 
 //----------------------------------------------------------------------------------------

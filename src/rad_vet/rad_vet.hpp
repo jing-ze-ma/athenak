@@ -1,10 +1,5 @@
 #ifndef RAD_VET_RAD_VET_HPP_
 #define RAD_VET_RAD_VET_HPP_
-// VET_DEBUG (cmake -D Athena_VET_DEBUG=ON): the debug hooks (restart fingerprints, poison
-// gates) are compiled in; 0 = a production build, where naming them is a FATAL
-#ifndef VET_DEBUG
-#define VET_DEBUG 0
-#endif
 //========================================================================================
 // AthenaK astrophysical fluid dynamics and numerical relativity code
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
@@ -1842,8 +1837,6 @@ class RadiationVet {
     // and depth d the entries of depth <= d, slend/rlend[s ng + d - 1], nld[d - 1];
     // rd, ldp the depth of each received / on-rank ghost; dcur the exchange's depth)
     int ng = 0, dcur = 0;
-    bool poison = false;
-    Real pval = std::numeric_limits<Real>::quiet_NaN();
     std::vector<int> slend, rlend, nld;
     DvceArray1D<int> rd, ldp, sdp;   // (sdp: the depth of each sent entry)
     // (device buffers on HIP too: the messages are MB-size, ROCm-aware MPI moves them
@@ -2341,7 +2334,6 @@ class RadiationVet {
   void MemArenaGrow(int64_t need, bool keep = true);
   void MemArenaSeal();
   void CleanWoBind();   // cln_w.o, .s at the first solve (mem_arena)
-  void MemcutPoison(int where);
   // vet_gd_band_ring (where it applies: MPI band with the exact halo lists, not the sp
   // raw band; on the cubed sphere with the cs compact lists, vet_gd_halo_compact > 0):
   // the ragged array keeps every shell's INTERIOR only (compact slab, depth 0) and lends

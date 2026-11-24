@@ -9,14 +9,14 @@
 //! across a VetGdBuild (ost, fmm_t, odc, d3w, aa_*) share ONE device
 //! allocation.  The intensities are written and read only inside VetGdBuild (sweep,
 //! moments, half-range, ring); those solve arrays are re-written after every build before
-//! they are read.  Both facts are checked by MEMCUT_POISON (below) and the bitwise gates.
+//! they are read.  Both facts were checked by poisoning them (NaN) and the bitwise gates.
 //! iw is NOT shared: some of its channels live across a build (poisoned, the run breaks).
 //! Under the clean scheme the intensities are dead outside CleanRays (the closure reads
 //! them after the build) and the staggered layout's own work vectors (cln_w.o, the line
 //! rows, BiCGStab vectors, mg couplings, lateral sums and budget scales) are re-written
-//! in every solve before they are read: those alone move over them (MEMCUT_POISON clnw
-//! at the entry of CleanRays, vgdc at its exit); so do the shared slots cln_w.s where no
-//! build runs inside the solve (clean_closure = predict).
+//! in every solve before they are read: those alone move over them (poisoned at the
+//! entry of CleanRays and the intensities at its exit); so do the shared slots cln_w.s
+//! where no build runs inside the solve (clean_closure = predict).
 //!
 //! The intensity arrays are unmanaged 1-D Views at offsets 0, n_0, ... of marena (it
 //! grows by copy + rebind while they are allocated, until the first dt_retry
@@ -24,11 +24,6 @@
 //! before it copies anything) the solve arrays are moved over them (contents copied,
 //! members rebound to unmanaged Views at offsets 0, ... of marena), as many as fit.  No
 //! rebinding afterwards.
-//!
-//! MEMCUT_POISON (diagnostic env, default unset): a comma list of arrays that are filled
-//! with NaN (MEMCUT_PVAL=big: +7.7e22) at the entry of every VetGdBuild (iw, ost, odc,
-//! fmm_t, d3w, aa) and at its exit (vgd: every intensity array).  A
-//! run whose results stay bitwise with a list poisoned shows the lifetime split for it.
 
 #include <algorithm>
 #include <cstdint>
@@ -45,18 +40,6 @@
 #include "rad_vet/rad_vet_clean.hpp"
 
 namespace radvet {
-
-#if VET_DEBUG
-namespace {
-bool EnvListHas(const char *env, const char *name) {
-  const char *e = std::getenv(env);
-  if (e == nullptr) return false;
-  const std::string s = std::string(",") + e + ",";
-  return s.find(std::string(",") + name + ",") != std::string::npos ||
-         s.find(",all,") != std::string::npos;
-}
-}  // namespace
-#endif
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::MemArenaInit
@@ -196,53 +179,6 @@ void RadiationVet::CleanWoBind() {
   const int64_t off = no + ((64 - (no % 64)) % 64);   // (64-Real alignment)
   MemArenaGrow(off + static_cast<int64_t>(nmb)*CLW_NS*n3*n2*n1, false);
   cln_w.s = DvceArray5D<Real>(marena.data() + off, nmb, CLW_NS, n3, n2, n1);
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::MemcutPoison
-//! \brief diagnostic (env MEMCUT_POISON, see the file comment): where 0 = VetGdBuild
-//! entry (the solve-phase arrays), 1 = its exit (the intensities); the clean scheme:
-//! 2 = CleanRays entry (cln_w.o, also at 0), 3 = its exit (the intensities)
-
-void RadiationVet::MemcutPoison(const int where) {
-#if VET_DEBUG
-  static const bool on = (std::getenv("MEMCUT_POISON") != nullptr);
-  if (!on) return;
-  const char *pv = std::getenv("MEMCUT_PVAL");
-  const Real v = (pv != nullptr && std::string(pv) == "big") ? 7.7e22
-                 : std::numeric_limits<Real>::quiet_NaN();
-  auto p5 = [&](DvceArray5D<Real> &a, const char *nm) {
-    if (a.data() != nullptr && EnvListHas("MEMCUT_POISON", nm)) {Kokkos::deep_copy(a, v);}
-  };
-  // (clnw also at every VetGdBuild: a sweep writes the arena wherever it is called)
-  if (where == 0 || where == 2) {p5(cln_w.o, "clnw"); p5(cln_w.s, "clnw");}
-  // (the stencil rows: dead across a build, CleanRingMoments' build scratch over them)
-  if (where == 2 || where == 3) {p5(cln_st, "clnst"); p5(cln_csy, "clnst");}
-  if (where == 3) {
-    if (EnvListHas("MEMCUT_POISON", "vgdc")) {
-      VgdRag *bound[2] = {&vgd_i, &vgd_i_xb};
-      for (VgdRag *b : bound) {
-        if (b->d.data() != nullptr) {Kokkos::deep_copy(b->d, v);}
-      }
-    }
-  } else if (where == 0) {
-    p5(iw, "iw");
-    p5(ost, "ost");
-    p5(odc, "odc");
-    p5(fmm_t, "fmm_t");
-    p5(d3w, "d3w");
-    p5(aa_xc, "aa");
-    p5(aa_fc, "aa");
-    p5(aa_xp, "aa");
-    p5(aa_fp, "aa");
-  } else if (EnvListHas("MEMCUT_POISON", "vgd")) {
-    VgdRag *bound[2] = {&vgd_i, &vgd_i_xb};
-    for (VgdRag *b : bound) {
-      if (b->d.data() != nullptr) {Kokkos::deep_copy(b->d, v);}
-    }
-  }
-  Kokkos::fence();
-#endif
 }
 
 }  // namespace radvet

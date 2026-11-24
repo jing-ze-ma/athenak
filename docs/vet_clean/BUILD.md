@@ -113,21 +113,14 @@ with a FATAL message that says so.
 The default UCX settings are bitwise and fastest on MI300A; no extra environment is
 needed.
 
-## 6. Debug build
-
-`-D Athena_VET_DEBUG=ON` compiles in debugging hooks: restart fingerprints
-(`<rad_vet>/dbg_rst_fp`, `dbg_rst_fp_cycle`, `dbg_rst_fp_dump`) and poison gates for
-uninitialised data. It is off by default; a build without it stops with a FATAL error when a
-`dbg_rst_fp` key is named. Production builds leave it off.
-
-## 7. Build time
+## 6. Build time
 
 The longest translation units are `rad_vet_vetgd.cpp` (about 12 min with nvcc, mostly one
 `ptxas` process), then `rad_vet_init.cpp` and `hydro_fluxes.cpp`. With Ninja (`-G Ninja`) and
 `ccache` (`-D CMAKE_CXX_COMPILER_LAUNCHER=ccache`), a rebuild after a one-file change takes
 1-2 min on A100 and well under a minute on CPU. A cold CPU build takes 1.5 min on 72 cores.
 
-## 8. After building
+## 7. After building
 
 Run the CPU test suite (about 1.5 min with `--quick` on 16 cores):
 

@@ -817,16 +817,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "(only true)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // env CLEAN_POISON_GHOST=1 (gate only): the ghost layers clean_halo_direct does not
-    // send are NaN
-    // (1: NaN; 2: +1e30; 3: -1e30, for readers that compare or take min / max)
-#if VET_DEBUG
-    if (std::getenv("CLEAN_POISON_GHOST") != nullptr) {
-      const int pm = std::atoi(std::getenv("CLEAN_POISON_GHOST"));
-      cln_hdl.poison = true;
-      cln_hdl.pval = (pm == 2) ? 1.0e30 : ((pm == 3) ? -1.0e30 : cln_hdl.pval);
-    }
-#endif
     // clean_init = given | steady (read only when named: an input without it keeps a
     // byte-identical parameter dump).  A start out of radiative equilibrium takes steady:
     // the rays, a steady solution, run ahead of the given field's front.
