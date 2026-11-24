@@ -109,6 +109,23 @@
    ]
   }
  },
+ "order_stiff": {
+  "last": true,
+  "min": {
+   "order_E": 1.7,
+   "order_v": 1.7
+  },
+  "near": {
+   "err_E": [
+    2.9e-07,
+    0.05
+   ],
+   "err_v": [
+    0.000305,
+    0.05
+   ]
+  }
+ },
  "order_space": {
   "last": true,
   "min": {

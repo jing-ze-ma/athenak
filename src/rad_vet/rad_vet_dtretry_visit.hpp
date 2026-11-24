@@ -314,6 +314,7 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.view("t2hs", t2hs);
   v.value("t2_gt", t2_gt);
   v.value("t2_gtm", t2_gtm);
+  v.value("t2_gts", t2_gts);
   v.value("t2_inprobe", t2_inprobe);
   v.value("t2_vcmode", t2_vcmode);
   v.value("impl_pred_tcap", impl_pred_tcap);
