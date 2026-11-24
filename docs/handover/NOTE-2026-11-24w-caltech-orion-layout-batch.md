@@ -43,3 +43,7 @@
   DTREP/DTREG (180 lines; first 2): `DTREP cycle=10410 time=26199.2 cfl*dt_hyd=3.48051 cfl*dt_gasonly=3.87656 rank=2 gid=10 kji=24,20,3 dir=1 r=4.73055e+11 rho=0.000183423 T=1.91129e+14 pg=3.50575e+10 G1=1.66667 cgas=1.78479e+07 v=0.323046 ceff=1.98789e+07 h=2.30629e+08 tauT_h=25959.2 Erad=3.1621|DTREG polar cycle=10410 npol=7 cfl*cell_dt=3.48051 row=2 theta_deg=88.2357 phi=0.04275 r=4.73055e+11 dir=1 rho=0.000183423 T=1.91129e+14 v=0.323571 cgas=1.78479e+07 ceff=1.98789e+07 h=2.30629e+08 cfl*cell_dt_gas=3.87656|`
   floorcap_report: 325 lines; last: `CLEAN FALLBACK cycle 10707: pos_gas 0 (from E 0.000e+00) e_floor 0 (from gas 0.000e+00, column 0.000e+00) ffct_left 0 auto_be 0 floorcap v 1621016 T 1032036 c2p_dfloor 6 (mass 1.220e-07) floor_pay 0.000e+00 (unpaid 0.000`
 - ZD2 skipped (24zb: start Z3 now).
+
+### m35zams: FRESH restart with the Z3 layout (orion 24zb, USER): 4 blocks of 384x64x64, layout_tile 64, on hpc-sm-01-15 (11-24 01:56)
+- `2026-11-24 01:55:47 chunk 0 STAR=m35zams_z3 BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc3_af836f5a3 md5=09f50abee4ffa6cd399ce15879626353 DECK=/resnick/groups/carnegie_poc/jingze/prod_rc3_1124/layopt/decks/IA123_m35zams_lay.athinput md5=6811bf5735a0d56d6ebf8c2860bccec1 star` EX: time/cfl_number=0.3 meshblock/nx2=64 meshblock/nx3=64 mesh/layout_tile=64 (+ deck copy layopt/decks/IA123_m35zams_lay.athinput with fofc / fofc_retest / mg 4 written in)
+- The old production dir prod_rc3_1124/m35zams is kept as the reference, with its rsts (00003 = the 01:30 final; .pre-mg4 hard link).
