@@ -1,0 +1,32 @@
+# IA12.3-rc3 restart of Caltech's IA11 t9l62 from t9l62.00012.rst (t ~4.752e5, cycle ~6450; NOT 00013, which is after the NaN), binary ia123-rc3 af836f5a3 (GitHub caltech-ia123rc3-af836f5a3 once pushed).
+# Usage: athena -r t9l62.00012.rst -d <dir> $(grep -v '^#' IA123_t9l62_restart.args | tr '\n' ' ')   (plus Caltech's own output/time keys)
+# Rule rst-stored-keys: a restart takes the rst's stored value of every key it stores, and a key the IA11 rst does not store gets the
+# "restart file without the key" value (often OFF, e.g. clean_stag_fwb_ring), so EVERY IA12 / IA12.1 key is named here.
+# IA12 keys (not in the IA11 rst):
+rad_vet/clean_pred_stage=false
+rad_vet/clean_stag_central=true
+rad_vet/clean_stag_kpat=false
+rad_vet/clean_stag_eicarry=true
+mesh/layout_invariant_mode=tile
+mesh/layout_tile=128
+# IA12.1 keys:
+rad_vet/clean_gas_secant=max_stage2
+rad_vet/clean_pred_xch=true
+rad_vet/clean_stag_fcone_gas=false
+rad_vet/clean_wb_exch_local=true
+rad_vet/clean_stag_fwb_ring=1
+hydro/floor_pay=rad_column
+hydro/floor_pay_skip=true
+hydro/dfloor_flux_limit=true
+hydro/floor_audit=1
+# diagnosis (COORD 11-23): CLEAN WBFDIAG lines (T9FIX 48abefc00), every 8 cycles
+rad_vet/clean_wb_floor_diag=8
+# IA12.2 keys (clean_gas_secant above: stage2 -> max_stage2):
+hydro/rad_signal_speed_diff=true
+# IA12.3-rc3 keys (release names; the IA11 rst stores <rad_m1>, read as <rad_vet> by the aliases; none of these is stored there):
+rad_vet/vet_gd_wall_sym=true
+rad_vet/vet_gd_theta_seam_sym=true
+rad_vet/clean_clos1_budget=true
+rad_vet/clean_bud_maxnorm=true
+rad_vet/clean_vel_settled=false
+hydro/floor_from_ekin=true
