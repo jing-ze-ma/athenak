@@ -25,3 +25,16 @@ Done: C0 C1 M1 M2 M3 Z1f Z1t
 | 02-03 | C_C0b (running 1:20) | -5279 / 50 | 0 | - | 0 / 0 |
 | 02-09 | cs_C (running 2:01) | 350 / 1200 | 0.293 | 4 min | 0 / 0 |
 Done: C0 C1 M1 M2 M3 Z1f Z1t 
+
+**11-24 13:34**
+
+| node | arm | cycle / target | s/cyc (last window) | ETA | CW / FATAL |
+|---|---|---|---|---|---|
+| 02-11 | G_pre_G2 (running 0:07) | 0 / ? | 0 | - | 0 / 0 |
+| 02-17 | **idle (4 H200)** | | | | |
+| 02-16 | **idle (4 H200)** | | | | |
+| 01-15 | **idle (4 H200)** | | | | |
+| 01-17 | **idle (4 H200)** | | | | |
+| 02-03 | C_C1rb (running 3:12) | 21 / 100 | 0 | - | 0 / 0 |
+| 02-09 | **idle (4 H200)** | | | | |
+Done: BSGt C0 C0b C1 C1ra M1 M2 M3 T1 T2 Z1f Z1t 
