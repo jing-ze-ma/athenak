@@ -208,8 +208,11 @@ def t_layout_tile(c):
     out['maxdiff_dfl'] = vett.compare_dirs(a, b)[1]
     out.update({k + '_dfl': v for k, v in am_budget(b, 'sp').items() if k != 'dLz_gr'})
     # (fofc: the same with hydro/fofc and that dfloor without the outflow limiter, so the
-    # trial state floors and FOFC replaces fluxes; its trial reads the u0 ghosts too)
-    o.update({'hydro/dfloor_flux_limit': 'false', 'hydro/fofc': 'true'})
+    # trial state floors and FOFC replaces fluxes; its trial reads the u0 ghosts too; an
+    # event log every 2 cycles, whose rows reset its interval counter: fo_fofc is the
+    # run's total all the same)
+    o.update({'hydro/dfloor_flux_limit': 'false', 'hydro/fofc': 'true',
+              'output9/file_type': 'log', 'output9/dcycle': 2})
     a = c.run('shell_sp.athinput', 'mb1_fofc', dict(o))
     b = c.run('shell_sp.athinput', 'mb1x2_fofc', dict(o, **{'meshblock/nx3': 8}))
     out['maxdiff_fofc'] = vett.compare_dirs(a, b)[1]
