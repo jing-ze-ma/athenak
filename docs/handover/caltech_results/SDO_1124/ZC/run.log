@@ -1,0 +1,2 @@
+2026-11-24 13:48:05 start ZC BIN md5=7d7c4a71a07d3dc3878e7dea1403df23 deck: > nlim = 200;> dt_report = 0;> vet_gd_gl_nphi = 36;> dt = 1e30;> dt = 1e30;> dt = 1e30;> dt = 1e30;> dt = 1e30;
+2026-11-24 13:48:15 rc=1 ended:  wall=10 s CW 0 FATAL 4 DT_RETRY 0
