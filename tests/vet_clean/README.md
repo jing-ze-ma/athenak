@@ -79,8 +79,8 @@ Gauss polar angles x 4096 azimuths and the cylinder's periodic images. Notes:
 - **Cylinder flux.** E outside the cylinder is within 1.1 % of exact transport and the
   energy flux Phi (`F_out`, `vet_phi1`, the flux the method paper measures) within 1.2 %
   (r F at x = 2-3.5 is 0.989 of exact). The face momentum F (`vet_f1`, `FH_out`) is 20 %
-  above exact: the harmonic face opacity at the cylinder's sharp edge (FACEOP 11-21; 7 %
-  with the arithmetic mean), a regression reference.
+  above exact, a regression reference. A study of 11-21 with other keys attributed it to the
+  harmonic face opacity at the cylinder's sharp edge; that is not re-measured on this code.
 - **Shocks.** The method paper's bench table (v20.3) ran the default tableau `hesdirk2`; these
   decks name the production `time2_tableau = sdirk2`, whose L1 values are 4-27 % higher
   (Mach 5 rho: 2.2e-3 vs 1.7e-3). With `hesdirk2` the release reproduces the table within

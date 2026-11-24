@@ -310,7 +310,7 @@
   }
  },
  "idort_cylinder": {
-  "_about": "L1 along y = 0 of E inside (x < 1) and outside (x > 1.05), and outside of the energy flux Phi_x / c (vet_phi1, F_out; what the paper measures) and of the face momentum F_x / c (vet_f1, FH_out), against the exact transport solution ref/idort_cylinder_exact.npz. FH_out is about 0.2 (the harmonic face opacity at the cylinder edge; FACEOP 11-21): a regression reference",
+  "_about": "L1 along y = 0 of E inside (x < 1) and outside (x > 1.05), and outside of the energy flux Phi_x / c (vet_phi1, F_out; what the paper measures) and of the face momentum F_x / c (vet_f1, FH_out), against the exact transport solution ref/idort_cylinder_exact.npz. FH_out is about 0.2, a regression reference (a study of 11-21 with other keys attributed it to the harmonic face opacity at the cylinder edge; not re-measured)",
   "_ref": "Ma et al. 2025 (IDORT) sec. 4.1.2; Jiang 2021, ApJS 253, 49 sec. 4.6",
   "near": {
    "E_in": [

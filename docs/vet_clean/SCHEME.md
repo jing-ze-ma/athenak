@@ -274,7 +274,8 @@ stays straight, at its angle and 1-2 cells wide, but an oblique beam narrower th
 carries about 1.8 x the exact energy density (1.4 x at twice the resolution; the cap of the
 streaming share at its edges), while its energy flux equals the injected flux to 3e-7. Around
 the cylinder E and the energy flux Phi are within 1.1 % and 1.2 % of exact transport; the face
-momentum F there is about 20 % above it (the harmonic face opacity at the sharp edge).
+momentum F there is about 20 % above it (an earlier study with other keys attributed this to
+the harmonic face opacity at the sharp edge; not re-measured here).
 
 Test: `idort_beams` (L1 of E and the beam energy within 5 % of 0.777 and 1.785), `idort_shadow`, `idort_shadow_gl` (L1
 0.014 and 0.013), `idort_cylinder` (E and Phi outside 0.011 and 0.012), `nlte_eps1e-1`, `nlte_eps1e-4` (J
