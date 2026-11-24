@@ -4,13 +4,13 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_tasks.cpp
-//! \brief assembly of the rad_vet task lists and the thin task wrappers.
-//!
-//! The module runs in its OWN sub-cycled task lists, "vet_before_stagen" / "vet_stagen" /
-//! "vet_after_stagen", which the Driver executes after "after_timeintegrator" (design
-//! sect. 5, modelled on the resistive RKG loop).  Nothing is added to the lists of the
-//! main time integrator, so a run without a <rad_vet> block is bitwise unchanged.
+//! \brief the rad_vet task lists (run by the Driver after "after_timeintegrator"), the
+//! thin task wrappers and the time step.
 
+#include <float.h>
+
+#include <algorithm>
+#include <limits>
 #include <map>
 #include <memory>
 #include <string>
@@ -21,6 +21,8 @@
 #include "tasklist/task_list.hpp"
 #include "mesh/mesh.hpp"
 #include "bvals/bvals.hpp"
+#include "coordinates/coordinates.hpp"
+#include "driver/driver.hpp"
 #include "rad_vet/rad_vet.hpp"
 #include "rad_vet/rad_vet_implicit.hpp"
 
@@ -151,6 +153,87 @@ TaskStatus RadiationVet::ClearRecv(Driver *pdrive, int stage) {
       if (tstat != TaskStatus::complete) return tstat;
     }
   }
+  return TaskStatus::complete;
+}
+
+
+//----------------------------------------------------------------------------------------
+//! \fn TaskStatus RadiationVet::ApplyClosureLimits
+//! \brief first task of the stage chain: starts the implicit_timers (the clean solve
+//! keeps its state; no clip)
+
+TaskStatus RadiationVet::ApplyClosureLimits(Driver *pdrive, int stage) {
+  // implicit_timers: the M1 stage chain starts here
+  tmr_on = (tmr_c0 > 0) && (pmy_pack->pmesh->ncycle >= tmr_c0);
+  if (tmr_on) {tmr_cnt[7] += 1.0;}
+  TmrMark(-1);
+  // the clean solve keeps its solution: a clip would change the energy and momentum
+  TmrMark(0);
+  return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn TaskStatus RadiationVet::NewTimeStep
+
+TaskStatus RadiationVet::NewTimeStep(Driver *pdriver, int stage) {
+  // no light-speed CFL: the implicit step takes the step it is given, unless
+  // <rad_vet>/implicit_cfl > 0 asks for c dt/dx (the radiation-only tests)
+  dtnew = static_cast<Real>(std::numeric_limits<float>::max());
+  if (!(impl_cfl > 0.0)) return TaskStatus::complete;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int nx1 = indcs.nx1;
+  int nx2 = indcs.nx2;
+  int nx3 = indcs.nx3;
+
+  Real dt1 = std::numeric_limits<float>::max();
+  Real dt2 = std::numeric_limits<float>::max();
+  Real dt3 = std::numeric_limits<float>::max();
+
+  auto &size = pmy_pack->pmb->mb_size;
+  const int nmkji = (pmy_pack->nmb_thispack)*nx3*nx2*nx1;
+  const int nkji = nx3*nx2*nx1;
+
+  Kokkos::parallel_reduce("RadVetNudt", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+  KOKKOS_LAMBDA(const int &idx, Real &min_dt1, Real &min_dt2, Real &min_dt3) {
+    int m = (idx)/nkji;
+    min_dt1 = fmin((size.d_view(m).dx1), min_dt1);
+    min_dt2 = fmin((size.d_view(m).dx2), min_dt2);
+    min_dt3 = fmin((size.d_view(m).dx3), min_dt3);
+  }, Kokkos::Min<Real>(dt1), Kokkos::Min<Real>(dt2), Kokkos::Min<Real>(dt3));
+
+  Real dxmin = dt1;
+  if (pmy_pack->pmesh->multi_d) {dxmin = std::min(dxmin, dt2);}
+  if (pmy_pack->pmesh->three_d) {dxmin = std::min(dxmin, dt3);}
+  if (sph_geom) {
+    // stage S1, spherical polar: mb_size.dx2/dx3 are ANGLES and dx1 is the unstretched
+    // spacing, so take the smallest physical cell width dr, r dtheta, r sin(theta) dphi
+    // of Coordinates over the active cells (reduced over ranks by the driver)
+    auto cx1 = pmy_pack->pcoord->dx1;
+    auto cx2 = pmy_pack->pcoord->dx2;
+    auto cx3 = pmy_pack->pcoord->dx3;
+    const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+    const int nji = nx2*nx1;
+    const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
+    Real smin = std::numeric_limits<float>::max();
+    Kokkos::parallel_reduce("RadVetNudtSph",
+                            Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+    KOKKOS_LAMBDA(const int &idx, Real &lmin) {
+      int m = idx/nkji;
+      int r = idx - m*nkji;
+      int k = r/nji;
+      r -= k*nji;
+      int j = r/nx1;
+      int i = r - j*nx1;
+      k += ks; j += js; i += is;
+      Real d = cx1(m,k,j,i);
+      if (md) {d = fmin(d, cx2(m,k,j,i));}
+      if (td) {d = fmin(d, cx3(m,k,j,i));}
+      lmin = fmin(d, lmin);
+    }, Kokkos::Min<Real>(smin));
+    dxmin = smin;
+  }
+
+  dtnew = impl_cfl*dxmin/c_light;
   return TaskStatus::complete;
 }
 

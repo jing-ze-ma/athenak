@@ -187,7 +187,6 @@ add_executable(
         rad_vet/rad_vet.cpp
         rad_vet/rad_vet_fluid.cpp
         rad_vet/rad_vet_halo.cpp
-        rad_vet/rad_vet_limits.cpp
         rad_vet/rad_vet_init.cpp
         rad_vet/rad_vet_clean.cpp
         rad_vet/rad_vet_clean_p1.cpp
@@ -199,7 +198,6 @@ add_executable(
         rad_vet/rad_vet_sph.cpp
         rad_vet/rad_vet_time2.cpp
         rad_vet/rad_vet_mr.cpp
-        rad_vet/rad_vet_newdt.cpp
         rad_vet/rad_vet_opacity.cpp
         rad_vet/rad_vet_vetcol.cpp
         rad_vet/rad_vet_vetlat.cpp
