@@ -3700,7 +3700,7 @@ void RadiationVet::CleanStagFCone(const int e, const int kd) {
       if (spn) fcx(m,d,k,j,i) = 0.0;
       if (fs == f) return;
       const Real it = 1.0/fc(m,CLF_TH,k,j,i);
-      // (clean_lz_spin: the arm faces' cut withheld from the gas, per face, CleanWriteBack)
+      // (clean_lz_spin: the arm faces' cut withheld from the gas per face, CleanWriteBack)
       if (spn && !bd && !fa(d) && !fg && !cub) fcx(m,d,k,j,i) = (f - fs)*it/(x.c*x.c);
       if (!bd && !fg && !(lz && !fa(d) && !(spn && !cub))) {
         fc(m,CLF_N+1,k,j,i) -= (f - fs)*it/(x.h*x.c*x.c);
