@@ -53,3 +53,18 @@ Done: BSGt C0 C0b C1 C1ra M1 M2 M3 T1 T2 Z1f Z1t
 Idle: 02-17, 02-16, 01-15, 01-17, 02-09 wait for hegiant.00205 (HG +1 step, H0, H1, HT; copy + md5 pending) and rsg.01809 (RSG thinf pair, 01-17 + 02-03 + 02-09); nothing else is queued (zzzv order).
 
 Done: BSGt C0 C0b C1 C1ra M1 M2 M3 T1 T2 Z1f Z1t 
+
+**11-24 13:41**
+
+| node | arm | cycle / target | s/cyc (last window) | ETA | CW / FATAL |
+|---|---|---|---|---|---|
+| 02-11 | G_G1 (running 5:56) | -5279 / 8 | 0 | - | 0 / 0 |
+| 02-17 | t_S5on (running 0:52) | -5279 / 300 | 0 | - | 0 / 0 |
+| 02-16 | t_S5off (running 0:52) | -5279 / 300 | 0 | - | 0 / 0 |
+| 01-15 | t_C0t (running 4:56) | 71 / 300 | 2.983 | 11 min | 0 / 0 |
+| 01-17 | **idle (4 H200)** | | | | |
+| 02-03 | **idle (4 H200)** | | | | |
+| 02-09 | **idle (4 H200)** | | | | |
+Idle: No node is waiting for work except 02-16/02-17 (kept for HG once hegiant.00205 lands) and nodes between arms; queue: S5, S4 (02-16/17), S3, S1 (02-11 after G1/G2), S2 + ZA/ZB/ZC (01-15 after C0t), RSG pair (01-17/02-03/02-09).
+
+Done: BSGt C0 C0b C1 C1ra C1rb C2 M1 M2 M3 T1 T2 Z1f Z1t 
