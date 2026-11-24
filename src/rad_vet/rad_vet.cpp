@@ -4,7 +4,8 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet.cpp
-//! \brief constructor, parameter reading and allocation for the RadiationVet class
+//! \brief RadiationVet constructor: reads the <rad_vet> keys, checks them and allocates
+//! the module's arrays.
 
 #include <float.h>
 
@@ -35,10 +36,11 @@
 #endif
 
 namespace radvet {
-// <rad_vet>/vet_gd_twin_srw (defined in rad_vet_vetgd.cpp)
 extern bool g_vra_adv;   // vet_rotate_advance (rad_vet_vetgd.cpp)
 //----------------------------------------------------------------------------------------
-// constructor, initializes data structures and parameters
+//! \fn RadiationVet::RadiationVet
+//! \brief reads <rad_vet>, checks the configuration and allocates the arrays.
+//! A key a restart file lacks keeps the default it ran with (fresh defaults: nw).
 
 RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     u0("vet_u0",1,1,1,1,1),
@@ -60,8 +62,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     std::exit(EXIT_FAILURE);
   }
   chat = chat_over_c*c_light;
-  // transport: only implicit (a fresh run's default, recipe::CleanDefaults; a restart
-  // file without the key ran the removed explicit scheme)
+  // transport: implicit only
   {std::string tr = pin->GetOrAddString("rad_vet","transport","explicit");
   if (tr.compare("implicit") != 0) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -70,9 +71,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     std::exit(EXIT_FAILURE);
   }
   }
-  // ---- <rad_vet>/scheme = clean: the clean stage solve (rad_vet_clean.cpp),
-  // the default of a fresh implicit run (v20.4).  The production values below are the
-  // defaults of a fresh clean run; a restart file without a key keeps its old default
+  // ---- scheme = clean (rad_vet_clean*.cpp), the only scheme of a fresh implicit run
   const bool nw = !global_variable::restart_run;
   {const bool scd = nw;
   if (scd && !pin->DoesParameterExist("rad_vet","scheme")) {
@@ -81,44 +80,34 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   std::string sc = pin->GetOrAddString("rad_vet","scheme",scd ? "clean" : "default");
   if (sc.compare("clean") == 0) {
     CleanPreflight(pin);
-    // clean_w_fse (default on): the thin share's thinness is the old production's
-    // (implicit_thin_switch = fse): g = max(|H|/J, eps C1/1.5), eps = min(kappa_P/chi,
-    // 1), w = smoothstep((g - c0)/(c1 - c0)) with c0, c1 = 0.3, 0.6 unless named.
-    // Upwind streaming holds where the field is anisotropic (|H|/J), not where it is
-    // merely non-local (C1 of an unresolved opaque photosphere cell, I != S across it,
-    // isotropic field); eps removes the non-locality of scattering
+    // clean_w_fse: thin-share thinness g = max(|H|/J, eps C1/1.5), eps = min(kappa_P/chi,
+    // 1), w = smoothstep((g - c0)/(c1 - c0)): upwind streaming where the field is
+    // anisotropic, not merely non-local
     cln_wfse = pin->GetOrAddBoolean("rad_vet","clean_w_fse",true);
-    // clean_w_fse_tau: scattering isotropises only over the cell's optical depth tau_d =
-    // chi V/A_f, so eps -> 1 - (1 - eps)(1 - exp(-tau_d)) (a thin or empty cell keeps C1)
+    // clean_w_fse_tau: eps -> 1 - (1 - eps)(1 - exp(-tau_d)), tau_d = chi V/A_f
     cln_wfst = cln_wfse && pin->GetOrAddBoolean("rad_vet","clean_w_fse_tau",true);
     cln_c0 = pin->GetOrAddReal("rad_vet","clean_w_c0",cln_wfse ? 0.3 : 0.1);
     cln_c1 = pin->GetOrAddReal("rad_vet","clean_w_c1",cln_wfse ? 0.6 : 0.5);
-    // clean_face_hctau (default off): the bracket's rays' face flux F_y interpolated in
-    // optical depth between the cell centres (old production implicit_thin_hcface = tau,
-    // CleanStagBracket), the rays' face flux kept where the cells' H jump (beams)
+    // clean_face_hctau: the bracket's ray face flux F_y interpolated in optical depth
+    // between the cell centres, kept where the cells' H jump (CleanStagBracket)
     cln_hctau = pin->GetOrAddBoolean("rad_vet","clean_face_hctau",false);
-    // clean_face_jse (default on): the face half ranges in the shape of the cells'
-    // half-range fluxes at the face (old production implicit_thin_recon = jse)
+    // clean_face_jse: face half ranges in the shape of the cells' half-range fluxes
     cln_jse = pin->GetOrAddBoolean("rad_vet","clean_face_jse",true);
-    // clean_face_jse_cell (default off): its factor on the donor cell's h+- (old
-    // M1ThinJs), not on the reconstructed face value
+    // clean_face_jse_cell: its factor on the donor cell's h+-, not the face value
     cln_jsec = pin->GetOrAddBoolean("rad_vet","clean_face_jse_cell",false);
-    // clean_face_area (default off): the sp / cs streaming share in area form
-    // (CleanStagArea) also under clean_stag_gflux: its h+- are the donor cell's rays
+    // clean_face_area: sp / cs streaming share in area form (CleanStagArea) also under
+    // clean_stag_gflux
     cln_farea = pin->GetOrAddBoolean("rad_vet","clean_face_area",false);
-    // clean_bc_area (default on): an open x1 end's half-range flux c h+- E of the end
-    // cell's point intensities in area form: its net outward stream h+ + h- x A_c/A_f
-    // (an isotropic field none: the bath balances; old: Marshak q = H_f/J)
+    // clean_bc_area: an open x1 end's half-range flux c h+- E in area form, net outward
+    // stream h+ + h- x A_c/A_f
     cln_bcarea = pin->GetOrAddBoolean("rad_vet","clean_bc_area",true);
     cln_tol = pin->GetOrAddReal("rad_vet","clean_tol",1.0e-10);
     cln_cnorm = pin->GetOrAddReal("rad_vet","clean_init_cnorm",1.0e-10);
     cln_lcnorm = pin->GetOrAddReal("rad_vet","clean_lin_cnorm",1.0e-10);
-    // clean_maxnl (200), clean_maxit (800) and clean_conv_max (1e-5) do not take the old
-    // production's implicit_maxit, implicit_lin_maxit and implicit_tol_rel_max (a named
-    // other value prints a NOTE).  clean_lin_pass (default on, the old production's
-    // form): a linear solve that ends at clean_maxit leaves its iterate to the next pass,
-    // without the stall test (CleanSolve); a restart file without the key keeps the form
-    // a named implicit_lin_maxit set
+    // clean_maxnl, clean_maxit, clean_conv_max do not take implicit_maxit,
+    // implicit_lin_maxit, implicit_tol_rel_max (a named other value prints a NOTE).
+    // clean_lin_pass: a linear solve ending at clean_maxit leaves its iterate to the next
+    // pass (no stall test)
     {Real ov[3] = {0.0, 0.0, 0.0};   // named implicit_maxit, _lin_maxit, _tol_rel_max
     const char *ok[3] = {"implicit_maxit", "implicit_lin_maxit", "implicit_tol_rel_max"};
     const char *ck[3] = {"clean_maxnl", "clean_maxit", "clean_conv_max"};
@@ -149,7 +138,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_linpass = pin->GetOrAddBoolean("rad_vet","clean_lin_pass",nw || pl);}
     cln_tol_nl = pin->GetOrAddReal("rad_vet","clean_tol_nl",1.0e-11);
     cln_raymin = pin->GetOrAddReal("rad_vet","clean_ray_min",1.0e-3);
-    // clean_rays = sc (vet_gd's own sweep; the FV rays fv1 | fv | lld are removed)
+    // clean_rays = sc only
     if (pin->DoesParameterExist("rad_vet","clean_rays") &&
         pin->GetString("rad_vet","clean_rays") != "sc") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -157,14 +146,10 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
         << "removed)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_rot_ring = off | live | jump (read only when named; live wherever the vet_gd
-    // rays rotate with a cross-fade, CleanInit): a rotating union swept as the current
-    // set (+ the next one), the older ones carried as moment offsets (CleanRingMoments)
-    // clean_rot_fuse (default on): the live ring's two sets
-    // (b, b+1) of a build in one fused sweep (vet_gd_rotate_xfade_fuse; the raw sp band
-    // and the cubed sphere's compact lists: one message per partner, VetGdGbHaloX /
-    // VetGdCsHaloCX), the closure of each from its own intensities: bitwise the two
-    // sweeps; a second intensity array
+    // clean_rot_ring = off | live | jump (live where the vet_gd rays rotate with a
+    // cross-fade, CleanInit): the rotating union swept as the current (+ next) set, older
+    // sets as moment offsets (CleanRingMoments). clean_rot_fuse: the live ring's two sets
+    // in one fused sweep (bitwise the two sweeps; a second intensity array)
     cln_rfuse = pin->GetOrAddBoolean("rad_vet","clean_rot_fuse",nw);
     if (pin->DoesParameterExist("rad_vet","clean_rot_ring")) {
       std::string rr = pin->GetString("rad_vet","clean_rot_ring");
@@ -177,34 +162,29 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       }
     }
     cln_fillpass = pin->GetOrAddInteger("rad_vet","clean_fill_passes",8);
-    // clean_fill_cs_remap (default off): the fill's h+- of a cubed-sphere seam neighbour
-    // in our face families (CleanClosureFill)
+    // clean_fill_cs_remap: the fill's h+- of a cs seam neighbour in our face families
     cln_fillcs = pin->GetOrAddBoolean("rad_vet","clean_fill_cs_remap",false);
     cln_pred = pin->GetOrAddBoolean("rad_vet","clean_predict",true);
     // implicit_predictor (step unless named none): the stage solve starts from the
-    // predicted E (CleanFirstIterate), as the old production's step predictor (a
-    // restart file's default "none", which ImplicitInit adds, is not named)
+    // predicted E (CleanFirstIterate)
     cln_kpred = !(pin->DoesParameterExist("rad_vet","implicit_predictor") &&
                   !pin->IsParameterDefaulted("rad_vet","implicit_predictor") &&
                   pin->GetString("rad_vet","implicit_predictor") == "none");
-    // clean_pred_stage (default false): sdirk2's stage-2 solve starts from E_old + h K1 of
-    // this step's stage 1 (E^n + dt K1), not of the last step's stage 2
+    // clean_pred_stage: sdirk2's stage-2 solve starts from E_old + h K1 of this step's
+    // stage 1, not of the last step's stage 2
     cln_pst = pin->GetOrAddBoolean("rad_vet","clean_pred_stage",false);
-    // clean_gas_secant = false (default) | true | stage2: the exchange's slopes from the
-    // chord through the last pass's gas T (CleanRightHandSide), in every solve or in the
-    // stage-2 solves only; max | max_stage2: the chord only where it is steeper than the
-    // tangent
+    // clean_gas_secant = false | true | stage2 | max | max_stage2: exchange slopes from
+    // the chord through the last pass's gas T (max: only where steeper than the tangent)
     {const std::string gs = pin->GetOrAddString("rad_vet","clean_gas_secant","false");
     cln_gsec = (gs == "true") ? 1 : ((gs == "stage2") ? 2 : ((gs == "max") ? 3 :
                ((gs == "max_stage2") ? 4 : 0)));}
-    // clean_pred_xch (default false): sdirk2's stage-2 solve starts from E_old + h K, K the
-    // stage-1 slope of this step where the cell's exchange is slow, the last step's
-    // stage-2 slope where it is stiff (weights 1 : z, z = h (ch kE + 4 c kP a T^4/e))
+    // clean_pred_xch: stage-2 start E_old + h K, K the stage-1 slope where the exchange
+    // is slow, the last stage-2 slope where stiff (weights 1 : z,
+    // z = h (ch kE + 4 c kP a T^4/e))
     cln_pxc = pin->GetOrAddBoolean("rad_vet","clean_pred_xch",false);
     {std::string bf = pin->GetOrAddString("rad_vet","clean_bc","halfrange");
     cln_bdry_form = (bf.compare("marshak") == 0) ? 1 : 0;}
-    // clean_layout = staggered, the only layout (the cell layout was removed; a restart
-    // file without the key ran it)
+    // clean_layout = staggered only
     if (pin->GetOrAddString("rad_vet","clean_layout",nw ? "staggered" : "cell") !=
         "staggered") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -213,9 +193,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_pcr = pin->GetOrAddBoolean("rad_vet","clean_stag_pcr",true);
-    // clean_stag_opac_update (default on for a fresh run, every mesh) and clean_face_opac
-    // (default harmonic on a fresh run), USER 11-21, recorded; a restart file without a
-    // key keeps the old default (echoed)
+    // old(k, v): log the old default v a restart file without key k keeps
     auto old = [&](const char *k, const char *v) {
       if (!nw && !pin->DoesParameterExist("rad_vet", k)) {
         recipe::Log(std::string("<rad_vet>/") + k + " = " + v + " (a restart file "
@@ -225,12 +203,10 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     old("clean_stag_opac_update", "false");
     old("clean_face_opac", "arith");
     cln_opt = pin->GetOrAddBoolean("rad_vet","clean_stag_opac_update",nw);
-    // (old production implicit_opac_lag = pred, implicit_opac_lag_passes: the opacities
-    // of passes 0 .. N-1, then frozen: a change of the discretisation, order 2 for N >= 2)
+    // clean_stag_opac_passes: opacities of passes 0 .. N-1, then frozen
     cln_optn = pin->GetOrAddInteger("rad_vet","clean_stag_opac_passes",3);
-    // clean_stag_opac_drag (default on for a fresh run, USER 11-21, recorded; a restart
-    // file without the key keeps off, echoed): a refresh rebuilds the clean_stag_vimp
-    // drag share b and Q of the faces (CleanStagDrag) with its chi
+    // clean_stag_opac_drag: a refresh rebuilds the clean_stag_vimp drag share b and Q
+    // (CleanStagDrag)
     old("clean_stag_opac_drag", "false");
     cln_optdr = pin->GetOrAddBoolean("rad_vet","clean_stag_opac_drag",nw);
     {const std::string fo = pin->GetOrAddString("rad_vet","clean_face_opac",
@@ -242,10 +218,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_hface = (fo == "harmonic");}
-    // clean_stag_fs_line = pcr | thomas: the F solve's x1 lines on a GPU, on every mesh
-    // (the cubed sphere: with clean_stag_fschur); default pcr on a fresh run, USER 11-21,
-    // recorded; unnamed in a restart file, the old keys clean_stag_fs_pcr (true) and, on
-    // the cubed sphere, clean_stag_fs_pcr_cs (false: thomas, echoed)
+    // clean_stag_fs_line = pcr | thomas: the F solve's x1 lines on a GPU; old files'
+    // clean_stag_fs_pcr (true) / clean_stag_fs_pcr_cs (cs: false) when unnamed
     {const bool cs = pmy_pack->pmesh->use_cubed_sphere;
     auto named = [&](const char *k, const bool d) {
       return pin->DoesParameterExist("rad_vet", k) ? pin->GetBoolean("rad_vet", k) : d;
@@ -264,14 +238,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_stall_n = pin->GetOrAddInteger("rad_vet","clean_bicg_stall_its",
                                       cln_linpass ? 0 : 50);
     cln_stall_f = pin->GetOrAddReal("rad_vet","clean_bicg_stall_fac",0.99);
-    // (the face tie: a face two MeshBlocks share, or one with itself across a periodic
-    // wrap, takes its owner's F, momentum exchange, energy-flux memory and (the
-    // write-back) Phi, CleanStagFaceTie)
-    // clean_stag_tie_gid (default on for a fresh run on a uniform mesh, USER 11-21: one
-    // rule on every mesh; recorded, a restart file without it keeps the old default):
-    // spherical polar, Cartesian, the tie's T, d and Phi by the cubed sphere's rule
-    // (CleanStagCsTie): the lower gid's, a block with itself across a periodic wrap its
-    // low face's (F stays the low face's, its storage)
+    // face tie: a face two MeshBlocks share (or one across a periodic wrap) takes its
+    // owner's F, momentum exchange, energy-flux memory and Phi (CleanStagFaceTie).
+    // clean_stag_tie_gid: on every mesh the cs rule (CleanStagCsTie), owner the lower gid
     old("clean_stag_tie_gid", "false");
     cln_tgid = pin->GetOrAddBoolean("rad_vet","clean_stag_tie_gid",
                                     nw && !pmy_pack->pmesh->multilevel);
@@ -280,30 +249,26 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_stag_fsweeps N (read only when named, default 1): the staggered F solve's
-    // line solves up to N times, the line ends taking the neighbours' F of the last sweep
+    // clean_stag_fsweeps N: line solves of the F solve up to N times
     if (pin->DoesParameterExist("rad_vet","clean_stag_fsweeps")) {
       cln_fsweeps = std::max(pin->GetInteger("rad_vet","clean_stag_fsweeps"), 1);
     }
-    // clean_stag_fschur (read only when named; default on where it applies): the F
-    // solve's lines exact across MeshBlocks and periodic wraps (CleanStagFSchur), in
-    // place of the sweeps; on a uniform mesh, and as a segment goes out in three cells
-    // at each end of a line, MeshBlocks of >= 3 cells along it (>= 6 where it goes both
-    // ways: more than two round a periodic line, two or more along one with ends);
-    // elsewhere the line ends lagged, as the log says
+    // clean_stag_fschur (default on where it applies): F lines exact across MeshBlocks
+    // and periodic wraps (CleanStagFSchur); needs a uniform mesh and MeshBlocks of >= 3
+    // cells along a line (>= 6 on longer or open lines)
     {Mesh *pm = pmy_pack->pmesh;
-    // (the cubed sphere: a lateral line is a ring of four panels' MeshBlocks)
+    // (cubed sphere: a lateral line is a ring of four panels' MeshBlocks)
     const bool cs = pm->use_cubed_sphere;
     bool ok = cln_fsweeps == 1 && !pm->multilevel, lag = false;
     for (int d = 0; d < 3; ++d) {
-      // (layout_invariant_mode = tile: as on MeshBlocks of a tile, CleanStagFSchurTile)
+      // (layout_invariant_mode = tile: tiles as MeshBlocks, CleanStagFSchurTile)
       const int n = (d > 0 && repro::tile_n > 0) ? repro::tile_n :
           ((d == 0) ? pm->mb_indcs.nx1 :
                       ((d == 1) ? pm->mb_indcs.nx2 : pm->mb_indcs.nx3));
       const int nb = ((cs && d > 0) ? 4 : 1)*((d == 0) ? pm->mesh_indcs.nx1 :
                      ((d == 1) ? pm->mesh_indcs.nx2 : pm->mesh_indcs.nx3))/n;
       const bool per = (cs && d > 0) || (pm->mesh_bcs[2*d] == BoundaryFlag::periodic);
-      const int nlong = (cs && per && nb%2 == 0) ? 7 : 6;   // (cs: the kept segment)
+      const int nlong = (cs && per && nb%2 == 0) ? 7 : 6;   // cs: the kept segment
       const int nmin = (nb > 2 || (nb == 2 && !per)) ? nlong : ((nb == 2) ? 3 : 0);
       ok = ok && n >= nmin && (nmin == 0 || pm->mb_indcs.ng >= 3);
       lag = lag || nmin > 0;
@@ -319,7 +284,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                   << "periodic one, >= 6 along longer or open ones" << std::endl;
         std::exit(EXIT_FAILURE);
       }
-    } else if (!ok && lag && !cs && cln_fsweeps == 1) {   // (no silent lagged ends)
+    } else if (!ok && lag && !cs && cln_fsweeps == 1) {   // no silent lagged ends
       std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fschur cannot take this mesh "
                 << "(nghost >= 3, MeshBlock size, uniform mesh): name clean_stag_fsweeps "
                 << "(line ends iterated) or clean_stag_fschur = false" << std::endl;
@@ -328,8 +293,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       std::cout << "<rad_vet> clean_stag_fschur off: the F solve's line ends lagged "
                 << "(clean_stag_fsweeps, mesh or MeshBlock size)" << std::endl;
     }
-    // (layout_invariant_mode = tile: the join of a periodic line in whole MeshBlocks,
-    // CleanStagFSchurTile)
+    // layout_tile: a periodic line joins whole MeshBlocks (CleanStagFSchurTile)
     for (int d = 1; d < 3 && cln_fschur && repro::tile_n > 0 && !cs; ++d) {
       const int nx = (d == 1) ? pm->mb_indcs.nx2 : pm->mb_indcs.nx3;
       const int nbm = ((d == 1) ? pm->mesh_indcs.nx2 : pm->mesh_indcs.nx3)/nx;
@@ -341,8 +305,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
-    // (the cubed sphere without it iterates its seams: clean_stag_fsweeps default 64,
-    // its lines by Thomas)
+    // cubed sphere without fschur iterates its seams (fsweeps 64, Thomas lines)
     if (cs && !cln_fschur && !pin->DoesParameterExist("rad_vet","clean_stag_fsweeps")) {
       cln_fsweeps = 64;
     }
@@ -350,14 +313,12 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       std::cout << "<rad_vet> clean_stag_fs_line = pcr: thomas on the cubed sphere "
                 << "without clean_stag_fschur" << std::endl;
     }}
-    // the consistency term is the default on Cartesian meshes and, with the vet_gd
-    // rays (sc), on spherical polar and the cubed sphere (well-balanced only with them)
+    // clean_consistency: default on Cartesian, and on sp / cs with the vet_gd rays (sc)
     const bool curv = pmy_pack->pmesh->use_spherical_polar ||
                       pmy_pack->pmesh->use_cubed_sphere;
     const bool vg = pin->DoesParameterExist("rad_vet","vet_gd") &&
                     pin->GetBoolean("rad_vet","vet_gd");
-    // (sp and cs, fresh: recorded so that a restart keeps it; a restart file without
-    // the key ran the removed FV rays fv1: FATAL unless the input names clean_rays)
+    // sp / cs: clean_rays recorded; a restart file without it ran other rays: fatal
     if (curv && vg && !pin->DoesParameterExist("rad_vet","clean_rays")) {
       if (global_variable::restart_run) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -368,47 +329,40 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       }
       pin->GetOrAddString("rad_vet","clean_rays","sc");
     }
-    // (with the split energy flux, where the rays are not opt-in)
     cln_split = true;
     cln_consist = pin->GetOrAddBoolean("rad_vet","clean_consistency", !curv || vg);
     cln_maxpic = pin->GetOrAddInteger("rad_vet","clean_maxpic",12);
-    // the staggered scheme: the energy flux apart from the face momentum (split), the
-    // face momentum of its own F solve (fsolve) in the Newton loop (fwork), with
-    // clean_consistency the rays' kinetic momentum flux in it (fkin) and their face flux
-    // as flux factors (gflux), the donor-cell share of the advective flux (upwind).  Read
-    // only when named: clean_stag_vimp, the gas velocity implicit in the face momentum
+    // staggered: energy flux apart from the face momentum (split), face momentum of its
+    // own F solve (fsolve) in the Newton loop (fwork); with clean_consistency the rays'
+    // kinetic momentum flux (fkin) and face flux as flux factors (gflux); donor-cell
+    // advective share (upwind). Read only when named.
     auto stag = [&](const char *key, const bool def) {
       return pin->DoesParameterExist("rad_vet", key) ? pin->GetBoolean("rad_vet", key) :
                                                       def;
     };
     cln_fsolve = cln_upw = cln_split;
     cln_fkin = cln_fwork = cln_gflux = cln_split && cln_consist;
-    // clean_stag_freal (default on with the F solve and gflux): realisable by
-    // construction, the comoving part of sb at most 2 |beta| hc kE E_k and the faces of a
-    // restart from the old scheme's file at most c E of their donor
+    // clean_stag_freal: realisable sb (comoving part <= 2 |beta| hc kE E_k) and restart
+    // faces <= c E of their donor
     cln_freal = stag("clean_stag_freal", cln_gflux && cln_fsolve);
-    // clean_stag_upwind_central (default off): an upwind face's fixed point carries the
-    // central mean of the cells' a E within the TVD bound (CleanStagAdvectCorr), the old
-    // production's cell flux a E
+    // clean_stag_upwind_central: an upwind face carries the central mean of a E within
+    // the TVD bound (CleanStagAdvectCorr)
     cln_ucen = stag("clean_stag_upwind_central", false);
-    // clean_stag_central (default off): the rest that of the plain central mean, the
-    // radiation work's drain on the E rows' diagonal and the gas's kick in the same
-    // Patankar weight (CleanStagAdvectCorr, CleanRightHandSide, CleanStagMprkWeight)
+    // clean_stag_central: the rest as the plain central mean, the work drain and the gas
+    // kick in the same Patankar weight (CleanStagMprkWeight)
     cln_ucp = stag("clean_stag_central", false);
     cln_ucen = cln_ucen || cln_ucp;
-    // clean_stag_csvec_radial (true, the only form): the cubed sphere's cell vector exact
-    // for a radial field (CleanStagCsVector); false (the old least-squares fit) is gone
+    // clean_stag_csvec_radial: cs cell vector exact for a radial field (true only)
     cln_csvr = stag("clean_stag_csvec_radial", true);
     if (!cln_csvr) {
       std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_csvec_radial = false (the old "
                 << "cell vector) is gone" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_stag_thinf (default on): the staggered bracket's ray correction in the face
-    // half ranges, realisable (CleanStagBracket), not as the gated lagged flux DG
+    // clean_stag_thinf: the bracket's ray correction in the face half ranges, realisable
+    // (CleanStagBracket)
     cln_thinf = pin->GetOrAddBoolean("rad_vet","clean_stag_thinf",nw);
-    // (fwb + fcone bound F, and keep free streaming; every mesh: the face F is the
-    // momentum along the face's unit normal, the cubed sphere's too, CleanCsNormA)
+    // clean_stag_flim: false only (fwb + fcone bound F)
     if (pin->GetOrAddBoolean("rad_vet","clean_stag_flim",false)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_vet>/clean_stag_flim = true was removed (only "
@@ -416,9 +370,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_stag_fwb (default on for a fresh run with the F solve and clean_consistency,
-    // recorded; a restart file without the key: off): the F rows in deviation form about
-    // the rays' own state, so that it is their exact steady state (CleanStagFSolve)
+    // clean_stag_fwb: F rows in deviation form about the rays' own state, their exact
+    // steady state (CleanStagFSolve)
     old("clean_stag_fwb", "false");
     old("clean_stag_fcone", "false");
     old("clean_stag_fwb_stage", "false");
@@ -430,16 +383,11 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "with clean_consistency" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_stag_fwb_stage (default off, recorded): fwb's residual s of the stage-old
-    // state, once per stage (CleanStagFSolve); off: of each solve's E, F_ray too, so that
-    // the thin rows' F is the rays' flux factor times the E they leave (old prod's
-    // c (h+ E_L + h- E_R) of E^{n+1}); E_old's carried the stage slopes' O(h K) into F
-    // (HG: a flux dipole at the opaque photosphere, FDIP)
+    // clean_stag_fwb_stage: fwb's residual s of the stage-old state, once per stage;
+    // off: of each solve's E (thin-row F = the rays' flux factor times E)
     cln_fwbst = cln_fwb && pin->GetOrAddBoolean("rad_vet","clean_stag_fwb_stage",false);
-    // clean_stag_fwb_t2 (default on for a fresh run with fwb_stage, USER 11-21, recorded;
-    // a restart file without the key: off): fwb_stage's s of the stage-time state
-    // E_old + h K, K the last slope (CleanStagFSolve): second order in time (no-op
-    // without fwb; FATAL with fwb but without fwb_stage)
+    // clean_stag_fwb_t2: fwb_stage's s of the stage-time state E_old + h K (second order
+    // in time)
     old("clean_stag_fwb_t2", "false");
     cln_fwbt2 = pin->GetOrAddBoolean("rad_vet","clean_stag_fwb_t2",nw && cln_fwbst);
     if (cln_fwbt2 && cln_fwb && !cln_fwbst) {
@@ -448,14 +396,12 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_fwbt2 = cln_fwbt2 && cln_fwbst;
-    // clean_stag_fwb_line (default off), clean_stag_fwb_ring (default on for a fresh run
-    // with fwb on a uniform 3-D spherical polar mesh with periodic x3, USER 11-21,
-    // recorded; a restart file without the key: off): fwb's s of the x1 faces
-    // less its line mean, of the phi faces (3-D spherical polar, periodic x3) less its
-    // ring mean, in proportion to the streaming share: no net radial force on a line, no
-    // torque on a ring, momentum and L_z exact without a ledger (CleanStagFwbProject)
+    // clean_stag_fwb_line / _ring: fwb's s of the x1 faces less its line mean, of the phi
+    // faces (3-D sp, periodic x3) less its ring mean: no net radial force on a line, no
+    // torque on a ring (CleanStagFwbProject)
     cln_fwbpj[0] = cln_fwb && stag("clean_stag_fwb_line", false);
-    const bool ring_ok = pmy_pack->pmesh->use_spherical_polar && pmy_pack->pmesh->three_d &&
+    const bool ring_ok = pmy_pack->pmesh->use_spherical_polar &&
+        pmy_pack->pmesh->three_d &&
         !pmy_pack->pmesh->multilevel &&
         pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x3] == BoundaryFlag::periodic;
     old("clean_stag_fwb_ring", "false");
@@ -473,22 +419,19 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "polar with a periodic x3" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_stag_fcone (default on for a fresh run with fwb, recorded; a restart file
-    // without the key: off): every cell's flux vector within its realisable cone,
-    // |F| <= c E, by construction: the faces scaled towards 0 (CleanStagFCone)
+    // clean_stag_fcone: each cell's flux within |F| <= c E by construction, faces scaled
+    // towards 0 (CleanStagFCone)
     cln_fcone = pin->GetOrAddBoolean("rad_vet","clean_stag_fcone",nw && cln_fwb);
     if (cln_fcone && !cln_fsolve) {
       std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_fcone needs the staggered F "
                 << "solve" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_stag_fcone_gas (default off): the gas takes the momentum fcone cuts, at the
-    // face, as its share of the face's conservative term (the cut F's absorption not
-    // withheld), so gas + radiation momentum and L_z are exact; E pays the kinetic energy
+    // clean_stag_fcone_gas: the gas takes the momentum fcone cuts at the face (momentum
+    // and L_z exact; E pays the kinetic energy)
     cln_fcgas = cln_fcone && pin->GetOrAddBoolean("rad_vet","clean_stag_fcone_gas",false);
-    // clean_stag_xdonor_freeze (default 4; 0 = off): from this pass of a solve on, the
-    // xdonor cross flux C is held (CleanStagXDonor): its donor side and cap no longer
-    // switch from pass to pass (HG C2D: a 1-cell donor/cap flip, period-2 passes at 2e-4)
+    // clean_stag_xdonor_freeze (0 off): from this pass on the xdonor cross flux C is held
+    // (no donor/cap flip between passes)
     cln_xdfz = pin->GetOrAddInteger("rad_vet","clean_stag_xdonor_freeze",4);
     if (const int pd = pin->GetOrAddInteger("rad_vet","clean_pass_damp",0); pd != 0) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -497,9 +440,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_stag_xdonor = lag (default) | p1 | off: the off-diagonal stress flux an
-    // M-matrix term (CleanStagXDonor); clean_stag_xsrc (default on): also the face
-    // sources past their explicit share
+    // clean_stag_xdonor = lag | p1 | off: the off-diagonal stress flux as an M-matrix
+    // term (CleanStagXDonor); clean_stag_xsrc: also the face sources past their explicit
+    // share
     const std::string xd = pin->GetOrAddString("rad_vet","clean_stag_xdonor",
                                                nw ? "lag" : "off");
     if (xd != "off" && xd != "p1" && xd != "lag") {
@@ -510,14 +453,13 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_xd = (xd != "off");
     cln_xlag = (xd == "lag");
     cln_xsrc = cln_xd && pin->GetOrAddBoolean("rad_vet","clean_stag_xsrc",nw);
-    // clean_stag_eicarry (default off): the stage start's gas eint < 0 enters the gas row
-    // as is, paid by its implicit exchange, not taken as 0 (CleanOldVector)
+    // clean_stag_eicarry: a stage start's gas eint < 0 enters the gas row as is, paid by
+    // its implicit exchange (CleanOldVector)
     cln_eicry = stag("clean_stag_eicarry", false);
     cln_colf = stag("clean_stag_colflux", false);
-    // clean_cs_lz_abs = 2 (the cubed sphere, the only form): the gas phi momentum is
-    // the faces' absorption as its r and theta (CleanStagMomentum), and the L_z it does
-    // not take is booked as the radiation's (CleanLzBook), so that the total stays
-    // exact; 0 | 1 (the torque row of the radiation's cell vector, no ledger) are gone
+    // clean_cs_lz_abs = 2 (cubed sphere, the only form): the gas phi momentum is the
+    // faces' absorption as its r and theta; the L_z it does not take is booked as the
+    // radiation's (CleanLzBook)
     if (pmy_pack->pmesh->use_cubed_sphere) cln_lza = 2;
     if (pin->DoesParameterExist("rad_vet", "clean_cs_lz_abs") &&
         pin->GetInteger("rad_vet", "clean_cs_lz_abs") != 2) {
@@ -527,15 +469,12 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     cln_lzbook = (cln_lza == 2) || (pmy_pack->pmesh->use_spherical_polar &&
                                     pmy_pack->pmesh->three_d);
-    // clean_cs_lz_tel (default on for a fresh staggered cubed-sphere run, recorded):
-    // its L_z by telescoping, the gas phi momentum of CleanCsTorque and the radiation's
-    // L_z that of its face momenta, so that the ledger holds the radial boundaries'
-    // torque alone (force_reference = clean withholds its phi row, CleanCsTorque)
+    // clean_cs_lz_tel: L_z by telescoping (gas phi momentum of CleanCsTorque, radiation
+    // L_z of its face momenta), so the ledger holds the radial boundaries' torque alone
     if (cln_lza == 2 || pin->DoesParameterExist("rad_vet", "clean_cs_lz_tel")) {
       cln_lzt = pin->GetOrAddBoolean("rad_vet","clean_cs_lz_tel",nw);
     }
-    // clean_cs_lz_bnd_free: no radiation stress torque through the radial boundaries on
-    // the cubed sphere (CleanCsTorque; with clean_cs_lz_tel, default on for a fresh run)
+    // clean_cs_lz_bnd_free: no radiation stress torque through the cs radial boundaries
     if (cln_lzt) cln_lzbf = pin->GetOrAddBoolean("rad_vet","clean_cs_lz_bnd_free",nw);
     if (cln_lzt && cln_lza != 2) {
       std::cout << "### FATAL ERROR: <rad_vet>/clean_cs_lz_tel needs the cubed sphere "
@@ -545,7 +484,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     if (cln_lzbook) {
       const bool cs = (cln_lza == 2);
       cln_lzpin = pin;
-      for (int k1 = 0; k1 < 2; ++k1) {   // (a restart file's non-finite value: NOTE, 0)
+      for (int k1 = 0; k1 < 2; ++k1) {   // a restart file's non-finite value: NOTE, 0
         const std::string key = M1LzKey(pin, cs, k1 == 1);
         Real &v = (k1 == 1) ? cln_lzs1 : cln_lzl;
         v = pin->GetOrAddReal("rad_vet", key, 0.0);
@@ -559,17 +498,13 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
         pin->SetReal("rad_vet", key, 0.0);
       }
     }
-    // clean_xt_cons (default off): the first iterate's gas T with A's G = 1 - beta^2/2,
-    // and after the first right-hand side T from the pass's gas row (its G and beta
-    // terms: one Newton update at X = E_k), so the first pass's A is the gas row's;
-    // clean_xt_norm (default off, study): the local exchange with E responding,
+    // clean_xt_cons: first iterate's gas T with G = 1 - beta^2/2, then T from the pass's
+    // gas row; clean_xt_norm: the local exchange with E responding,
     // e(T) + A T^4/(1 + hc kE) = eint + hc kE E/(1 + hc kE)
     cln_xtcons = stag("clean_xt_cons", false);
-    // clean_xt_exact = cons (default) | off | x2: the exchange's bookkeeping with one
-    // A' per cell and pass (CleanRightHandSide): cons, the first iterate's T from the
-    // pass's gas row (clean_xt_cons), the work the row and the gas's kinetic energy
-    // differ by to E whole (eint takes the heating only), the closure printed (CLEAN
-    // XT); x2 also every T root from the local 2x2 of the E and gas rows, E + e kept
+    // clean_xt_exact = cons | off | x2: one A' per cell and pass (CleanRightHandSide);
+    // cons: the work by which the row and the gas kinetic energy differ goes to E whole;
+    // x2: also every T root from the local 2x2 of the E and gas rows
     {
       const std::string xe = pin->GetOrAddString("rad_vet","clean_xt_exact",
                                                  nw ? "cons" : "off");
@@ -581,35 +516,26 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_xte = (xe == "cons") ? 1 : ((xe == "x2") ? 2 : 0);
       if (cln_xte > 0) cln_xtcons = true;
     }
-    if (cln_ucp && cln_xte != 1) {   // (CLW_PD: the work's q)
+    if (cln_ucp && cln_xte != 1) {   // CLW_PD: the work's q
       std::cout << "### FATAL ERROR <rad_vet>/clean_stag_central needs clean_xt_exact = "
                 << "cons" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     cln_xtnorm = stag("clean_xt_norm", false) || cln_xte == 2;
-    // clean_stag_rayratio (default off): the bracket reads the rays only as ratios (their
-    // face flux over the donor's ray J, the model flux of E), times the state's E
+    // clean_stag_rayratio: the bracket reads the rays only as ratios times the state's E
     cln_rayratio = pin->GetOrAddBoolean("rad_vet","clean_stag_rayratio",false) &&
                    cln_gflux;
-    // clean_ring_jmin (default on): a clean_rot_ring J ratio J_s/J_b is measured only
-    // where both sets' J are at least clean_ray_min E (a ratio of two ray-shadowed J is
-    // no ray pattern); elsewhere the offset is invalid (left out of the mix)
+    // clean_ring_jmin: a ring J ratio J_s/J_b only where both J >= clean_ray_min E
+    // (elsewhere the offset is invalid)
     cln_ringjmin = pin->GetOrAddBoolean("rad_vet","clean_ring_jmin",true);
-    // clean_rot_ring_fill_rst (default on): the ring's fill at a restart from a file
-    // without the clean state (cln_rstold: an old scheme's, whose closure averaged a
-    // full window) takes the older sets' offsets swept at the restart state, as the
-    // steady start (CleanRingMoments)
+    // clean_rot_ring_fill_rst: at a restart from a file without the clean state the ring
+    // fill takes the older sets' offsets swept at the restart state (CleanRingMoments)
     cln_rfrst = pin->GetOrAddBoolean("rad_vet","clean_rot_ring_fill_rst",true);
-    // clean_rst_mshare (default on): at a restart from a file without the clean state
-    // the M1 share's memory starts at its steady flux of the first solution
-    // (CleanStagFSolve)
+    // clean_rst_mshare: at such a restart the M1 share's memory starts at the first
+    // solution's steady flux (CleanStagFSolve)
     cln_rmsh = pin->GetOrAddBoolean("rad_vet","clean_rst_mshare",true);
-    // clean_source_convex (default on): the rays' vet_scatter source of the clean scheme
-    // (the state's own, CleanRays) with the absorption share kappa_P/chi at most 1, as
-    // the thermal source without vet_scatter: S = J + min(kappa_P/chi, 1) (B - J) between
-    // J and B (kappa_P > chi, a cool envelope's Planck mean above its Rosseland
-    // extinction, made S = J + 750 (B - J) < 0 there: floored to 1e-300, a source hole in
-    // the rays)
+    // clean_source_convex: the rays' vet_scatter source with kappa_P/chi capped at 1,
+    // S = J + min(kappa_P/chi, 1)(B - J) between J and B
     cln_srccvx = pin->GetOrAddBoolean("rad_vet","clean_source_convex",true);
     if (cln_freal && !(cln_gflux && cln_fsolve)) {
       std::cout << "### FATAL ERROR: <rad_vet>/clean_stag_freal needs clean_consistency "
@@ -617,8 +543,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_vimp = stag("clean_stag_vimp", cln_split);
-    // (the cubed sphere: only with clean_stag_vimp_cs, default on for a fresh run, USER
-    // 11-21, recorded; a restart file without the key keeps off, echoed)
+    // cubed sphere: only with clean_stag_vimp_cs
     if (cln_vimp && pmy_pack->pmesh->use_cubed_sphere) old("clean_stag_vimp_cs", "false");
     if (cln_vimp && pmy_pack->pmesh->use_cubed_sphere &&
         !pin->GetOrAddBoolean("rad_vet","clean_stag_vimp_cs",nw)) {
@@ -628,14 +553,10 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       }
       cln_vimp = false;
     }
-    // clean_gas_tfloor (default true): the gas row's T bounded below by the EOS
-    // tfloor, and the gas eint written back from that root (E takes the rest)
+    // clean_gas_tfloor: gas row's T bounded below by the EOS tfloor (E takes the rest)
     cln_gtf = stag("clean_gas_tfloor", true);
-    // clean_wb_fct (default on for a fresh run with clean_gas_tfloor and clean_xt_exact,
-    // USER 11-21, recorded; a restart file without the key: off, echoed): the
-    // write-back's Zalesak limit on the written faces' energy flux, E > 0 by construction
-    // (CleanWbFct); its budget is the gas row's of clean_gas_tfloor with
-    // clean_xt_exact's work
+    // clean_wb_fct: the write-back's Zalesak limit on the written faces' energy flux,
+    // E > 0 by construction (CleanWbFct)
     old("clean_wb_fct", "false");
     cln_wbfct = pin->GetOrAddBoolean("rad_vet","clean_wb_fct",
                                      nw && cln_gtf && cln_xte > 0);
@@ -644,38 +565,32 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "clean_xt_exact = cons | x2" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_wb_floor_fail (read only when named; default false): a write-back whose E
-    // floor takes energy the cell's own gas does not give (from the radial column or
-    // created, M1_POS_FLR_MV + M1_POS_FLR_UN) is not admissible: the stage fails (the
-    // backward-Euler redo), a backward-Euler step fails into dt_retry (reason
-    // efloor_column); at the last cut the step is accepted, counted, CLEAN WARNING
+    // clean_wb_floor_fail: a write-back whose E floor takes energy its own gas does not
+    // give is not admissible (stage fails; BE step to dt_retry, efloor_column); accepted
+    // at the last cut with a CLEAN WARNING
     if (pin->DoesParameterExist("rad_vet","clean_wb_floor_fail")) {
       cln_wbff = pin->GetBoolean("rad_vet","clean_wb_floor_fail");
     }
-    // clean_wb_exch_local (read only when named; default false; needs clean_gas_tfloor
-    // and an EOS tfloor > 0): the write-back's cell exchange solved exactly from the
-    // transported E (CleanWriteBack): E > 0 and the gas >= e(rho, tfloor) by
-    // construction, energy exact; the face FCT limits the transported E
+    // clean_wb_exch_local (needs clean_gas_tfloor, EOS tfloor > 0): the write-back's cell
+    // exchange solved exactly from the transported E (E > 0, gas >= e(rho, tfloor))
     if (pin->DoesParameterExist("rad_vet","clean_wb_exch_local")) {
       cln_wbxl = pin->GetBoolean("rad_vet","clean_wb_exch_local");
     }
-    // clean_wb_floor_diag N (diagnostic, read only when named): the terms of the first
-    // N cells of each write-back whose E the floor raises (CLEAN WBFDIAG)
+    // clean_wb_floor_diag N (diagnostic): terms of the first N floor-raised cells
+    // (CLEAN WBFDIAG)
     if (pin->DoesParameterExist("rad_vet","clean_wb_floor_diag")) {
       cln_wbfdg = pin->GetInteger("rad_vet","clean_wb_floor_diag");
     }
-    // clean_gas_newton_switch (default W = 4 on a fresh run, USER 11-21, recorded; 0 = off;
-    // W in [3, 64]), clean_gas_newton_switch_min (default 6 on a fresh run, else 20),
-    // clean_stall_fac (0.5): the old production's implicit_gas_newton_switch, a stalled
-    // solve's remaining passes on the bracketed gas root without the Newton slope; a
-    // restart file without the keys keeps 0 / 20
+    // clean_gas_newton_switch W (0 off, W in [3, 64]), _min, clean_stall_fac: a stalled
+    // solve's remaining passes on the bracketed gas root without the Newton slope
     if (!nw && !pin->DoesParameterExist("rad_vet","clean_gas_newton_switch")) {
       recipe::Log("<rad_vet>/clean_gas_newton_switch = 0 (a restart file without the "
                   "key: "
                   "the old default)");
     }
     cln_gnsw = pin->GetOrAddInteger("rad_vet","clean_gas_newton_switch",nw ? 4 : 0);
-    cln_gnswmin = pin->GetOrAddInteger("rad_vet","clean_gas_newton_switch_min",nw ? 6 : 20);
+    cln_gnswmin = pin->GetOrAddInteger("rad_vet","clean_gas_newton_switch_min",
+                                       nw ? 6 : 20);
     cln_stfac = pin->GetOrAddReal("rad_vet","clean_stall_fac",0.5);
     if (cln_gnsw < 0 || cln_gnsw > 64 || (cln_gnsw > 0 && cln_gnsw < 3) ||
         cln_gnswmin < 1 || !(cln_stfac > 0.0 && cln_stfac <= 1.0)) {
@@ -684,9 +599,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // the preconditioner: the old production mg (CleanStagVCycle)
-    {// clean_stag_mg_color = mirror (default) | parity: the mg's line colours,
-    // mirror-symmetric or (j + k) parity (CleanStagLineSolve)
+    // preconditioner: mg (CleanStagVCycle)
+    {// clean_stag_mg_color = mirror | parity: the mg's line colours (CleanStagLineSolve)
     const std::string mc = pin->GetOrAddString("rad_vet","clean_stag_mg_color",
                                                nw ? "mirror" : "parity");
     if (mc != "parity" && mc != "mirror") {
@@ -696,11 +610,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_stagmg = (mc == "mirror") ? 2 : 1;
-    // (layout_invariant_mode = tile: the mg acts on fixed tiles of N x N (x2, x3) cells
-    // of the mesh, N the mesh's layout_tile, as on MeshBlocks of that size (line colours,
-    // couplings kept, coarse aggregates inside a tile), so that its action, and the
-    // solve, are the same for every MeshBlock layout whose MeshBlocks are whole tiles
-    // (CleanStagLineSolve; one MeshBlock along x1))
+    // layout_tile N: the mg acts on fixed N x N (x2, x3) tiles as on MeshBlocks, so the
+    // solve is the same for every layout of whole tiles (one MeshBlock along x1)
     if (repro::tile_n > 0) {
       const int nt = repro::tile_n;
       const auto &mi = pmy_pack->pmesh->mb_indcs;
@@ -714,10 +625,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       }
       cln_mgt = {mi.nx1, nt, d3 ? nt : 1};
     }
-    // clean_pc_sweep = sym (default of a fresh run, recorded; a restart file without the
-    // key keeps rb) | rb | rbr | rbrsym: the mg's smoothing on each level, a forward
-    // red-black sweep, + a second red pass (rbr), + a black-red post-sweep after the
-    // coarse correction (sym) (CleanStagVCycle; wave: removed)
+    // clean_pc_sweep = sym | rb | rbr | rbrsym: the mg smoothing per level, a forward
+    // red-black sweep, + a second red pass (rbr), + a black-red post-sweep (sym)
     const std::string sw = pin->GetOrAddString("rad_vet","clean_pc_sweep",
                                                nw ? "sym" : "rb");
     cln_pcsweep = (sw == "rbr") + 2*(sw == "sym") + 3*(sw == "rbrsym");
@@ -727,12 +636,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "| rbrsym (wave was removed)" << std::endl;
       std::exit(EXIT_FAILURE);
     }}
-    // clean_stag_lat_sums: spherical polar / Cartesian, the lateral stress of the faces
-    // from the cells' sums Y (CleanStagCsLateral), the cubed sphere's form (spherical
-    // polar phi faces: the torque form); with clean_stag_xdonor, whose cross flux reads
-    // them.  Default on for a fresh run with those, USER 11-21 uniform settings,
-    // recorded; a restart file without the key keeps the 4-cell central differences
-    // (echoed)
+    // clean_stag_lat_sums (sp / Cartesian, with clean_stag_xdonor): the faces' lateral
+    // stress from the cells' sums Y (CleanStagCsLateral), the cs form; off: 4-cell
+    // central differences
     old("clean_stag_lat_sums", "false");
     cln_ysum = pin->GetOrAddBoolean("rad_vet","clean_stag_lat_sums",
                                     nw && cln_xd) &&
@@ -743,8 +649,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "lag | p1" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_closure (default extrap1: the rays' source from converged states; predict's
-    // explicit K1 state patterns the cs photosphere, STAGFIX5)
+    // clean_closure: predict | iterate | extrap | extrap1 | extrap2 | eddington | sphere
     {std::string cl = pin->GetOrAddString("rad_vet","clean_closure","extrap1");
     cln_closit = (cl.compare("iterate") == 0);
     cln_extrap = (cl.compare("extrap") == 0) ? 1 : ((cl.compare("extrap2") == 0) ? 2 :
@@ -767,7 +672,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
     cln_nl_cell = (nn.compare("cell") == 0);}
-    // (the exchange root stops at its residual noise, CleanExchangeTemperature)
+    // clean_troot_rtol: the exchange root stops at its residual noise
     cln_trtol = pin->GetOrAddReal("rad_vet","clean_troot_rtol",1.0e-13);
     if (pin->GetOrAddBoolean("rad_vet","clean_conv_est_f",false)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -776,20 +681,15 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_verbose (read only when named): 0 (default) the CLEAN cycle lines, warnings
-    // and events; 1 also the per-solve diagnostics (CLEAN MCAP, OLDVEC, FCONE, FWB, LZ,
-    // WBFCT, KPOS, KREAL, XPAT, the write-back closure and the ray cut)
+    // clean_verbose: 0 the CLEAN cycle lines, warnings and events; 1 also the per-solve
+    // diagnostics
     if (pin->DoesParameterExist("rad_vet","clean_verbose")) {
       cln_verbose = pin->GetInteger("rad_vet","clean_verbose");
     }
-    // clean_conv = budget (default) | strict: budget measures every row in the
-    // cell's own budget for the step, S = the sum of its gross terms (old value, fluxes
-    // through the faces, exchange, work, beta terms), so that a change or residual is
-    // the fraction of the energy the cell exchanges in the step.  Its tolerance is
-    // clean_conv_kappa (1.0) x the step's time-error estimate in the same weights,
-    // between clean_tol_nl (10 clean_tol) and clean_conv_max (1e-5), and BiCGStab in
-    // that norm with Eisenstat-Walker forcing; strict: E, T relative to themselves,
-    // clean_tol_nl
+    // clean_conv = budget | strict. budget: every row measured in the cell's own step
+    // budget S (sum of its gross terms), tolerance clean_conv_kappa x the step's
+    // time-error estimate, between clean_tol_nl and clean_conv_max, BiCGStab in that norm
+    // with Eisenstat-Walker forcing; strict: E, T relative to themselves, clean_tol_nl
     {const std::string cv = pin->GetOrAddString("rad_vet","clean_conv","budget");
     if (cv != "budget" && cv != "strict") {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -798,11 +698,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     cln_budget = (cv == "budget");}
     cln_bkap = pin->GetOrAddReal("rad_vet","clean_conv_kappa",1.0);
-    // clean_conv_max (read above): the tolerance's ceiling, default 1e-5.  The MeshBlock
-    // layout moves the answer to about it (a solve may stop a pass earlier or later),
-    // which a step dt_retry redoes amplifies (mpirej_retry, 1 vs 2 ranks: 1e-4 9.1e-2,
-    // 1e-5 9.2e-6)
-    // (a step dt_retry redoes is solved to the strict tolerance)
+    // a step dt_retry redoes is solved to the strict tolerance
     if (pin->GetOrAddBoolean("rad_vet","clean_retry_budget",false)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_vet>/clean_retry_budget = true was removed "
@@ -810,16 +706,14 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // (clean_halo_direct = false, the generic exchange, was removed)
     if (!pin->GetOrAddBoolean("rad_vet","clean_halo_direct",true)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_vet>/clean_halo_direct = false was removed "
                 << "(only true)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // clean_init = given | steady (read only when named: an input without it keeps a
-    // byte-identical parameter dump).  A start out of radiative equilibrium takes steady:
-    // the rays, a steady solution, run ahead of the given field's front.
+    // clean_init = given | steady (read only when named): steady relaxes the radiation
+    // before step 1
     if (pin->DoesParameterExist("rad_vet","clean_init")) {
       const std::string ci = pin->GetString("rad_vet","clean_init");
       if (ci != "given" && ci != "steady") {
@@ -830,9 +724,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_steady = (ci == "steady");
     }
     if (cln_steady) {
-      // (problem/he_ic_equil starts: the old module's relax, he_ic_equil_relax_n steps
-      // of he_ic_equil_dtfac x dt, defaults 40 and 1e6; at 1e3-1e6 dt the gas cooled to
-      // a photosphere with inward F, RSG L/L_in -0.13, and the re-march inverted rho)
+      // problem/he_ic_equil: its relax keys give the defaults
       const bool heq = pin->DoesParameterExist("problem","he_ic_equil") &&
                        pin->GetBoolean("problem","he_ic_equil");
       auto eqk = [&](const char *k, const Real d) {
@@ -845,7 +737,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                                            eqk("he_ic_equil_dtfac", 1.0e6));
       cln_steady_tol = pin->GetOrAddReal("rad_vet","clean_init_tol",1.0e-8);
     }
-  } else {   // (the old production solver, scheme = default, is not in this build)
+  } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_vet>/scheme = '" << sc << "': only scheme = clean (with "
       << "transport = implicit; a restart file without the key ran the old solver)"
@@ -853,28 +745,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     std::exit(EXIT_FAILURE);
   }
   }
-  // GEOMETRY GUARD (docs/dev/rad_vet_curvilinear_design.md sect. 0).  Every M1 kernel,
-  // explicit and implicit, is CARTESIAN with a UNIFORM cell: divergences divide by
-  // mb_size.dx1..3 (rad_vet_update.cpp, rad_vet_fluxes.cpp, rad_vet_implicit.cpp), the
-  // flux vector is Cartesian, and no metric enters.  On a spherical-polar or cubed-sphere
-  // mesh the run would proceed silently with that arithmetic (on sp dx2 is Delta theta
-  // in radians: the transverse transport is wrong by r and r sin(theta)), so refuse it.
-  // The radial stretches are refused too although they only act inside the sp/cs
-  // geometry (on a plain Cartesian mesh the hydro ignores them and so would M1), so
-  // that no stretched input can reach the uniform-dx kernels; and relativistic
-  // coordinates, since the M1 here is the O(v/c) flat-space system.
-  //
-  // STAGE S1 (tests_m1/runs_5a_sp_s1) lifts the refusal for ONE configuration: a
-  // spherical-polar WEDGE that does not touch a pole, with the radial stretches allowed,
-  // transport = implicit, closure = eddington and the restrictions checked by
-  // SphericalS1Check after ImplicitInit; STAGE S2 (tests_m1/runs_5b_sp_s2) adds the
-  // chi(f) closures m1 / minerbo / kershaw there.  Everything else on sp (the poles,
-  // explicit transport, vet_sc, tau) stays refused.
-  // STAGE CS0 (branch m1-cs-implicit, rt_design_1003/CS_IMPLICIT_VET.md): the cubed
-  // sphere for transport = implicit, closure = eddington, time_scheme = be, bicgstab +
-  // rbgs_fwd only (checked in SphericalS1Check, which runs for both meshes).  x1 = r on
-  // it as on sp, so the sp radial forms (A_f/V_i, dxface, the Marshak face) carry over;
-  // the transverse faces take the plain two-point form over dxface (no skew factor).
+  // geometry guard: uniform Cartesian, a spherical-polar wedge or full sphere, or the
+  // cubed sphere (checks in SphericalS1Check, VetLatInit); no relativistic coordinates
   sph_geom = false;
   cs_geom = false;
   {
@@ -883,14 +755,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     const bool sp_ = pm_->use_spherical_polar && !pm_->use_cubed_sphere;
     const bool cs_ = pm_->use_cubed_sphere && !pm_->use_spherical_polar;
     if (pm_->use_spherical_polar && !sp_) {why += " mesh/use_spherical_polar";}
-    // S1: the FULL sphere (mesh/use_polar_boundary, ix2_bc = ox2_bc = polar) and the
-    // theta stretch (mesh/use_grid_stretch_theta, e.g. mesh/theta_plateau) are allowed
-    // for transport = implicit on sp.  Every implicit kernel takes a polar face as a
-    // PHYSICAL face (flag != block, periodic) and the pole face has area 0
-    // (coordinates.cpp), so "pole = reflect at a zero-area face" is exact for the E/F
-    // rows; the transverse geometry reads Coordinates (areas, volumes, dxface).  The
-    // remaining restrictions (implicit_bc_x2 = auto | reflect at a polar face, no vet_sc
-    // / tau / vet_col_lat / vet_gd) are checked in SphericalS1Check and VetLatInit.
+    // full sphere (use_polar_boundary) and theta stretch allowed on sp: a polar face is a
+    // physical face of area 0 (reflect is exact there)
     const bool full_ok = sp_;
     if (pm_->use_polar_boundary) {
       if (!full_ok) {
@@ -946,11 +812,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   impl_nstep = 0.0;
   impl_itsum = 0.0;
   impl_itmax = 0.0;
-  // ---- milestone 3b phase B
   impl_solver = M1_ISOLV_LINE_JACOBI;
   trans_on = false;
   trans_x3 = false;
-  // ---- milestone 3b phase C
   bicg_on = false;
   impl_prec_fb = -1;
   bcg_capped = false;
@@ -960,7 +824,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   impl_pred = false;
   pred_ok = false;
   pred_dt = 0.0;
-  // ---- milestone 3b phase D
   impl_offdiag = M1_OD_LAGGED;
   od_now = M1_OD_LAGGED;
   impl_vimp = false;
@@ -983,19 +846,16 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   t2_lin_save = 0.0;
   t2_onep_s = -1.0;
   impl_tlim = M1_TLIM_NONE;
-  // ---- milestone 3e: Anderson acceleration of the Picard map
+  // Anderson acceleration
   aa_nh = 0;
   aa_head = 0;
   aa_hasp = false;
   aa_fnp = -1.0;
-  // ---- milestone 3g: the gas-radiation energy coupling
   st_edges = true;
   impl_prec = 0;
-  // ---- end of the 3a hook
   e_floor = pin->GetOrAddReal("rad_vet","e_floor",(FLT_MIN));
 
-  // (the explicit transport's face-flux options, removed with it: only their old
-  // defaults are accepted, CleanPreflight)
+  // removed explicit face-flux options: only their old defaults are accepted
   if (pin->DoesParameterExist("rad_vet","scaled_prefactor") &&
       pin->GetReal("rad_vet","scaled_prefactor") != 20.0) {
     std::cout << "### FATAL ERROR: <rad_vet>/scaled_prefactor = "
@@ -1004,8 +864,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     std::exit(EXIT_FAILURE);
   }
 
-  // (1b) opacities, per unit mass, in code units.  kappa_e defaults to kappa_p and
-  // kappa_f to kappa_p as well, so a single kappa_p gives a grey absorbing medium.
+  // opacities per unit mass (code units); kappa_e and kappa_f default to kappa_p
   {std::string op = pin->GetOrAddString("rad_vet","opacity","const");
   if (op.compare("const") == 0) {
     opacity_type = M1_OPAC_CONST;
@@ -1022,10 +881,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     std::exit(EXIT_FAILURE);
   }
   }
-  // the unit conversions of the TABLE lookup, which is in kelvin and g/cm^3 (design
-  // sect. 4 / the stage-2 plan sect. 4).  T[K] = T_code*temp_unit_kelvin: the same
-  // direction Conduction uses with Units::temperature_cgs(), which for the He box's
-  // <units> 1/1/1 with mu = 1 is mu m_u/k_B = 1.202724e-8 K per code unit.
+  // table lookup units: T[K] = T_code*temp_unit_kelvin, rho_unit_cgs, kappa_unit
   otab.tunit = pin->GetOrAddReal("rad_vet","temp_unit_kelvin",1.0);
   otab.dunit = pin->GetOrAddReal("rad_vet","rho_unit_cgs",1.0);
   otab.kunit = pin->GetOrAddReal("rad_vet","kappa_unit",1.0);
@@ -1035,16 +891,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       << "be positive" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // <rad_vet>/opac_abs_rho_max (read only when named, default 0 = off, bitwise inert): an
-  // ABSORPTION MASK of the table opacity for tenuous gas.  Cells with a CODE density
-  // below it get kappa_P = kappa_E = 0 (no emission, no absorption) and the transport
-  // opacity <rad_vet>/opac_abs_kappa_s [cm^2/g] (electron scattering, default 0.34 = 0.2
-  // (1 + X) at X = 0.7) instead of the table's Rosseland mean.  Meant for an artificial,
-  // optically thin, thermally decoupled ambient (ry_per_accretor's hot 300 km/s ambient,
-  // design docs/dev/accretor_rhd_design.md sect. 2.3): with an edge-held table kappa_P it
-  // would cool to T_rad in ~1e-6 s and collapse.  Applied inside M1TableOpacities, i.e.
-  // at EVERY table lookup of the module (opacity task, the Picard re-evaluation, the T
-  // solve, time2), so the mask is the same wherever kappa is used.
+  // opac_abs_rho_max (read only when named): absorption mask of the table opacity; cells
+  // with code density below it get kappa_P = kappa_E = 0 and the transport opacity
+  // opac_abs_kappa_s [cm^2/g]; applied at every table lookup (M1TableOpacities)
   if (pin->DoesParameterExist("rad_vet","opac_abs_rho_max")) {
     otab.amask_rho = pin->GetReal("rad_vet","opac_abs_rho_max");
     const Real kes = pin->DoesParameterExist("rad_vet","opac_abs_kappa_s") ?
@@ -1077,26 +926,16 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   opac_zero = (kappa_p == 0.0 && kappa_e == 0.0 && kappa_f == 0.0 && kappa_s == 0.0 &&
                opacity_type != M1_OPAC_USER && opacity_type != M1_OPAC_TABLE);
-  // vet_scatter (read only when named, default off = bitwise): ONE
-  // switch for electron scattering across the module.
-  //  (i) the opacity split.  opacity = table: os = kappa_e, of = kappa_a = kappa_R -
-  //      kappa_e (Ma+2026 sect. 2.2.4, guarded so that kappa_a >= vet_kappa_floor), with
-  //      kappa_e = vet_kappa_es (vet_scatter_kappa_e = const, default 0.34 cm^2/g) or
-  //      sigma_T x_e/(mu m_u) from the general EOS (= eos).  Other opacity laws: the
-  //      input's own kappa_f (absorption) and kappa_s (scattering).  rho kappa_e goes to
-  //      opac(M1_OP_S); every consumer of the extinction keeps the TOTAL M1_OP_T.
-  //      Scattering exchanges no energy (coherent, no Compton term): the exchange keeps
-  //      kappa_P / kappa_E.
-  //  (ii) the closure source of vet_sc / vet_col / vet_col_lat / vet_gd, VetScatterMix
-  //      (rad_vet.hpp), form vet_scatter_form = ma (Jiang 2021 eq. 6) | absorption,
-  //      J next to B* vet_scatter_j = relaxed (default) | current (absorption only;
-  //      ma + current FATALs below).
-  // (user 10-09): on a FRESH run with a VET closure that carries ray data
-  // (closure = vet_sc, or vet_col with vet_gd = true), opacity = table and a tabulated
-  // general EOS (which supplies kappa_e from its Saha x_e), vet_scatter defaults ON with
-  // vet_scatter_kappa_e = eos; everything else (M1 / eddington / tau / vet_col without
-  // vet_gd, other opacity laws, the ideal gas) and a restart whose file lacks the key
-  // keep the old default (off).  The resolved value is recorded.
+  // vet_scatter: electron scattering.
+  //  (i) opacity split: table os = kappa_e, of = kappa_a = kappa_R - kappa_e (guarded,
+  //      kappa_a >= vet_kappa_floor), kappa_e = vet_kappa_es (const) or
+  //      sigma_T x_e/(mu m_u) (eos); other laws: kappa_f, kappa_s. rho kappa_e goes to
+  //      opac(M1_OP_S); the extinction stays the total M1_OP_T; scattering exchanges no
+  //      energy.
+  //  (ii) closure source VetScatterMix: vet_scatter_form = ma | absorption,
+  //      vet_scatter_j = relaxed | current.
+  // Default on for a fresh run with ray data (vet_sc, or vet_col + vet_gd), opacity =
+  // table and a tabulated general EOS (kappa_e = eos); else off.
   const bool fresh = !global_variable::restart_run;
   bool gen_eos_tab = false;   // <hydro|mhd>/eos = general with general_eos = table
   for (const char *bk : {"hydro", "mhd"}) {
@@ -1131,7 +970,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
         << "(ma | absorption)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // vet_scatter_j default = relaxed (J = E*, the end-of-step pair of B*).
+  // vet_scatter_j: relaxed (J = E*, the end-of-step pair of B*) | current
     std::string sj = pin->GetOrAddString("rad_vet","vet_scatter_j","relaxed");
     if (sj.compare("current") == 0) {
       vscat_jrel = false;
@@ -1143,10 +982,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
         << "(current | relaxed)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // form ma + j = current is unstable: the kappa_P/kappa_R factor of the ma form
-    // (~250-520 in the BSG iron bump) amplifies the lag between the relaxed
-    // (end-of-step) B* and the start-of-step J = E^n; the implicit Picard loop then
-    // fails to converge (NON-CONV on the BSG, bsg_1001/VET_SCATTER.md round 2).
+  // ma + current: kappa_P/kappa_R amplifies the lag between B* and J = E^n, the Picard
+  // loop does not converge
     if (vscat_form == 1 && !vscat_jrel) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "<rad_vet>/vet_scatter_form = ma with vet_scatter_j = current "
@@ -1159,7 +996,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     std::string km = "const";
     if (opacity_type == M1_OPAC_TABLE) {
-      // eos where a tabulated general EOS supplies x_e (fresh runs)
+      // eos where a tabulated general EOS supplies x_e
       km = pin->GetOrAddString("rad_vet","vet_scatter_kappa_e",
                                (fresh && gen_eos_tab) ? "eos" : "const");
       if (km.compare("const") == 0) {
@@ -1192,10 +1029,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
   }
 
-  // (1c) matter coupling.  It reads rho, v and the gas energy from hydro's CONSERVED
-  // u0 and writes u0(IEN) and u0(IM1..3) back, so it needs a <hydro> block unless every
-  // opacity vanishes (the pure-transport tests of milestone 1a).
-  // m1-mhd: or an <mhd> block (the same conserved layout; IEN also carries |B|^2/2)
+  // matter coupling: reads rho, v, gas energy from the fluid's conserved u0 and writes
+  // u0(IEN), u0(IM1..3) back; needs <hydro> or <mhd> unless every opacity vanishes
   const bool have_mhd = pin->DoesBlockExist("mhd");
   bool have_hydro = pin->DoesBlockExist("hydro") || have_mhd;
   if (have_mhd && pin->DoesBlockExist("hydro")) {
@@ -1204,24 +1039,21 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       << "supported: the module couples to ONE fluid" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // <mhd> on the cubed sphere too (EmagBuild takes the C2P's orthonormal
-  // |B|^2 there; the momentum layout is the hydro one: covariant on the panel basis)
+  // <mhd> on the cubed sphere too (EmagBuild takes the C2P's orthonormal |B|^2)
   const std::string fblk = have_mhd ? "mhd" : "hydro";
   fl_on = have_hydro;
   fl_mhd = have_mhd;
-  // (1c) the advective enthalpy-flux split of the E equation (design sect. 3 "Moving
-  // fluid"), default off (it was on only with the explicit thick_flux = ap_hll)
+  // advect_split: advective enthalpy-flux split of the E equation
   advect_split = pin->GetOrAddBoolean("rad_vet","advect_split",false);
   coupling = pin->GetOrAddBoolean("rad_vet","coupling",!opac_zero);
   gas_feedback = pin->GetOrAddBoolean("rad_vet","gas_feedback",true);
-  // debug switches (see rad_vet.hpp); every default is the production value
+  // debug switch (see rad_vet.hpp)
   dbg_gas_force = pin->GetOrAddBoolean("rad_vet","dbg_gas_force",true);
   if (!dbg_gas_force && global_variable::my_rank == 0) {
     std::cout << "### WARNING: <rad_vet> DEBUG switch dbg_gas_force = false is active"
               << " -- this is not a physical configuration" << std::endl;
   }
-  // (the debug switches opac_freeze, dbg_gas_heat and dbg_gas_force_trans, removed:
-  // only their production values; dbg_tensor: CleanPreflight)
+  // removed debug switches: only their production values
   {const std::pair<const char *, bool> rm[] = {{"opac_freeze", false},
        {"dbg_gas_heat", true}, {"dbg_gas_force_trans", true}};
   for (const auto &r : rm) {
@@ -1253,7 +1085,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
   }
-  // the design's gas-only EOS requirement (sect. 1)
+  // gas-only EOS
   if (have_hydro && pin->GetOrAddBoolean(fblk,"eos_radiation",false)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_vet> requires a GAS-ONLY EOS: <hydro>/eos_radiation must be "
@@ -1261,8 +1093,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // radiation constant, code units: the equilibrium energy density is arad*T^4 with T
-  // the EOS's own code temperature.  Required whenever there is emission/absorption.
+  // radiation constant in code units (equilibrium E = arad*T^4, T the EOS's code
+  // temperature), required with emission/absorption
   if (coupling && (kappa_p > 0.0 || kappa_e > 0.0 ||
                    opacity_type == M1_OPAC_USER ||
                    opacity_type == M1_OPAC_TABLE)) {
@@ -1275,7 +1107,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   } else {
     arad = pin->GetOrAddReal("rad_vet","arad",0.0);
   }
-  // floor-gas cap (rad_vet.hpp; read only when named)
+  // floor-gas cap (read only when named)
   if (pin->DoesParameterExist("rad_vet","floorcap_rho")) {
     fcap_rho = pin->GetReal("rad_vet","floorcap_rho");
     if (pin->DoesParameterExist("rad_vet","floorcap_v")) {
@@ -1284,10 +1116,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_vet","floorcap_report")) {
       fcap_report = pin->GetInteger("rad_vet","floorcap_report");
     }
-    // floorcap_mesh_vol (scheme = clean; default on for a fresh run, USER 11-21,
-    // recorded; a restart file without the key keeps off, echoed): the counters
-    // weighted by the mesh's cell volume, |dp| and L_z of the gas momentum in the frame
-    // of y on every mesh (CleanVol, CleanLzArm); the state is the same
+    // floorcap_mesh_vol: counters weighted by the mesh cell volume, |dp| and L_z in the
+    // frame of y (CleanVol, CleanLzArm)
     {
       if (!nw && !pin->DoesParameterExist("rad_vet","floorcap_mesh_vol")) {
         recipe::Log("<rad_vet>/floorcap_mesh_vol = false (a restart file without the "
@@ -1307,11 +1137,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << " (0 = no cap), T <= T_rad, clipped KE -> E_rad" << std::endl;
     }
   }
-  // Unit audit (units-physical-inputs): c_light, arad, temp_unit_kelvin, rho_unit_cgs and
-  // kappa_unit are CODE-unit constants typed into the input, not derived from <units>.
-  // Print each next to the value <units> implies (general EOS: T_unit = m_u/k_B per
-  // code temperature, <units>/mu divided out; ideal: times mu) and warn on a mismatch.
-  // Diagnostic only: the input values are used unchanged.
+  // unit audit: print each code-unit constant next to the value <units> implies and warn
+  // on a mismatch (diagnostic; the inputs are used unchanged)
   if (pmy_pack->punit != nullptr && global_variable::my_rank == 0) {
     const auto *pu = pmy_pack->punit;
     std::string eblk = pin->DoesBlockExist("mhd") ? "mhd" : "hydro";
@@ -1336,14 +1163,9 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     line("kappa_unit", otab.kunit, kexp, "code opacity per cm^2/g");
   }
 
-  // (2a) <rad_vet>/force_reference.  `wb_arad` means: an EXTERNAL well-balanced scheme
-  // already delivers rho*arad_ref(z) to the gas momentum (box_convection's effective
-  // potential), so the coupling must hand the gas only the RESIDUAL radiative force.
-  // The reference array itself comes from the problem generator (SetForceReference);
-  // without it the option is a fatal, not a silent no-op.  `clean` (scheme = clean):
-  // the reference is the clean solve's own radiative force of its first coupled solve,
-  // i.e. of the (steady-started) initial state; the hydro carries that state as its
-  // static well-balanced background, so a discrete equilibrium of both is exact.
+  // force_reference: wb_arad = an external well-balanced scheme delivers rho*arad_ref to
+  // the gas (SetForceReference, required); clean = the clean solve's own force of its
+  // first coupled solve, the hydro's static well-balanced background
   {std::string fr = pin->GetOrAddString("rad_vet","force_reference","none");
   if (fr.compare("none") == 0) {
     force_ref = M1_FREF_NONE;
@@ -1360,11 +1182,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     std::exit(EXIT_FAILURE);
   }
   }
-  // force_reference_work (m1-keydefault-0927): with force_reference = wb_arad the
-  // default is `auto` = split when the problem generator gives the gas the reference
-  // work (it sets fref_wsplit_ok before SetForceReference: box_convection, he_star_vet),
-  // else full; resolved and echoed in SetForceReference.  `full` keeps the pre-0927
-  // scheme.  Without wb_arad the key is read only when named and has no effect.
+  // force_reference_work (wb_arad): auto = split when the pgen gives the gas the
+  // reference work (fref_wsplit_ok before SetForceReference), else full
   fref_wsplit = false;
   fref_wsplit_auto = false;
   const bool fwb = (force_ref == M1_FREF_WB_ARAD) || (force_ref == M1_FREF_WB_MD);
@@ -1383,9 +1202,8 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
   }
-  // time2_fref_wacc (default true, USER 10-22; false = the old payment):
-  // the exact payment above also for the backward-Euler steps of a hesdirk2 run, which
-  // otherwise pay v' dt rho a_ref (B deck, first step: +76 energy units created, rE jump)
+  // time2_fref_wacc: the exact reference-work payment also for the backward-Euler steps
+  // of a hesdirk2 run
   fref_wacc_t2 = pin->GetOrAddBoolean("rad_vet", "time2_fref_wacc", true);
   // the hydro integrator's stage weights (driver.cpp), for fref_wacc
   {
@@ -1419,7 +1237,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     std::exit(EXIT_FAILURE);
   }
 
-  // (2a) the RSLA start-up check of design sect. 2
+  // RSLA start-up check
   rsla_warn = pin->GetOrAddReal("rad_vet","rsla_warn",0.1);
   rsla_vmax = pin->GetOrAddReal("rad_vet","rsla_vmax",-1.0);
   rsla_force = pin->GetOrAddBoolean("rad_vet","rsla_force",false);
@@ -1460,13 +1278,12 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
   } else if (cl.compare("eddington") == 0) {
     eddington = true;
   } else if (cl.compare("vet_sc") == 0) {
-    // the implicit multi-D solve reads (chi, n) from the short-characteristics formal
-    // solution (rad_vet_vet.cpp); every other use of chi (explicit wave speeds, the
-    // 1-D branch) keeps Levermore's
+    // the implicit multi-D solve reads (chi, n) from the SC formal solution
+    // (rad_vet_vet.cpp); other uses of chi keep Levermore's
     eddington = false;
     vet_sc = true;
     VetRotInit(pin);   // the vet_gd rotation keys and defaults
-    // vet_gd_rotate_every has no vet_sc clock: inert (it only turns the default off)
+    // vet_gd_rotate_every has no vet_sc clock: inert
     if (pin->DoesParameterExist("rad_vet","vet_gd_rotate_every") &&
         pin->GetInteger("rad_vet","vet_gd_rotate_every") > 0 &&
         global_variable::my_rank == 0) {
@@ -1474,38 +1291,31 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "vet_sc (the set does not rotate); name vet_gd_rotate_dt" << std::endl;
     }
     RotAvgParse(pin);  // vet_rotate_avg (shared key)
-    // scheme = clean with clean_rot_ring named: the rotating set on the clean ring, as
-    // vet_gd's (vet_gd_rotate_xfade, default false; no slope correction)
+    // clean_rot_ring named: the rotating set on the clean ring (vet_gd_rotate_xfade)
     if (vsc_rot && cln_ring) {
       vgd_xf = pin->GetOrAddBoolean("rad_vet","vet_gd_rotate_xfade",false) && VgdRotOn();
       vgd_rot_slope = 0;
     }
-    // vet_source_noesrc for vet_sc too (rad_vet_vet.cpp).
-    // (#11): DEFAULT true on a fresh run, as on vet_col / vet_gd (the VET source of a
-    // backward-Euler solve reads the physical E^n, not E^n + dt (chat/c) esrc); a restart
-    // whose file lacks the key keeps false (echoed).  Bitwise wherever esrc = 0.
+    // vet_source_noesrc (rad_vet_vet.cpp)
     vsrc_noes = pin->GetOrAddBoolean("rad_vet","vet_source_noesrc",fresh);
   } else if (cl.compare("tau") == 0) {
-    // (removed: the clean scheme refused it on every mesh)
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_vet>/closure = tau was removed; use closure = vet_col with "
       << "vet_gd = true (spherical polar, cubed sphere) or vet_sc (Cartesian)"
       << std::endl;
     std::exit(EXIT_FAILURE);
   } else if (cl.compare("vet_col") == 0) {
-    // STAGE S5 (rad_vet_vetcol.cpp): the tensor of a per-column 1-D formal solution,
-    // carried by the tau closure's machinery (tau_ten, built once per step)
+    // per-column 1-D formal solution through tau_ten (rad_vet_vetcol.cpp)
     eddington = false;
     tau_closure = true;
     vet_col = true;
     vcol_nc = pin->GetOrAddInteger("rad_vet","vet_col_ncore",8);
     vcol_np = pin->GetOrAddInteger("rad_vet","vet_col_nsub",1);
     vcol_nmu = pin->GetOrAddInteger("rad_vet","vet_col_nmu",4);
-    // the canonical key vet_every, vet_col_every its alias
+    // vet_every (alias vet_col_every)
     vcol_every = pin->GetOrAddInteger("rad_vet",
                                       M1KeyName(pin, "vet_every", {"vet_col_every"}), 1);
-    // vet_col_fk_min (m1-sp-order2b): the lower clamp of f_K, default 0 on every mesh (a
-    // restart whose file lacks the key keeps 1/3, echoed)
+    // vet_col_fk_min: lower clamp of f_K (restart files without it: 1/3)
     vcol_fkmin = pin->GetOrAddReal("rad_vet","vet_col_fk_min",
                                    global_variable::restart_run ? (1.0/3.0) : 0.0);
     if (!(vcol_fkmin >= 0.0 && vcol_fkmin <= 1.0/3.0 + 1.0e-12)) {
