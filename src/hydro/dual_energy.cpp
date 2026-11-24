@@ -338,25 +338,29 @@ void DualEnergy::Worst(MeshBlockPack *pp, const DvceArray5D<Real> &u0,
   if (!(mx.val > 0.0)) return;
   const int m = mx.loc/nkji, k = (mx.loc - m*nkji)/nji + ks;
   const int j = (mx.loc - m*nkji - (k - ks)*nji)/nx1 + js, i = mx.loc%nx1 + is;
-  auto hu = Kokkos::create_mirror_view_and_copy(HostMemSpace(), Kokkos::subview(u0, m,
-            Kokkos::ALL, k, j, i));
-  auto hw = Kokkos::create_mirror_view_and_copy(HostMemSpace(), Kokkos::subview(w0, m,
-            Kokkos::ALL, k, j, i));
-  auto hp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), Kokkos::subview(pre_, m,
-            Kokkos::ALL, k, j, i));
-  auto x1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pp->pcoord->x1v);
-  auto x2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pp->pcoord->x2v);
-  auto x3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pp->pcoord->x3v);
-  // (the cell centre's coordinates where the grid has them: not on the cubed sphere)
-  auto X = [=](const decltype(x1) &x, const int n) {
-    return (x.extent_int(0) > m && x.extent_int(1) > n) ? x(m,n) : 0.0;
-  };
-  Real ph = 0.0;
-  if (phi.extent_int(0) > 0) {
-    auto hph = Kokkos::create_mirror_view_and_copy(HostMemSpace(), Kokkos::subview(phi,
-               m, k, j, i));
-    ph = hph();
-  }
+  // the cell's values gathered on the device into one contiguous view, then copied:
+  // 0-4 u0, 5-9 the state before (E, d, m1-3), 10 w0 eint, 11 Phi, 12-14 x1v x2v x3v
+  // (0 on the cubed sphere, which has no x1v / x2v / x3v)
+  DvceArray1D<Real> cv("duale_wc", 15);
+  auto x1v_ = pp->pcoord->x1v, x2v_ = pp->pcoord->x2v, x3v_ = pp->pcoord->x3v;
+  const bool grv = (phi.extent_int(0) > 0);
+  const bool cs = pp->pmesh->use_cubed_sphere;
+  auto phi_ = phi;
+  par_for("duale_wcell", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int) {
+    for (int n = 0; n < 5; ++n) {
+      cv(n) = u0(m,n,k,j,i);
+      cv(5+n) = pre_(m,n,k,j,i);
+    }
+    cv(10) = w0(m,IEN,k,j,i);
+    cv(11) = grv ? phi_(m,k,j,i) : 0.0;
+    cv(12) = cs ? 0.0 : x1v_(m,i);
+    cv(13) = cs ? 0.0 : x2v_(m,j);
+    cv(14) = cs ? 0.0 : x3v_(m,k);
+  });
+  auto hv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cv);
+  auto hu = [&](const int n) {return hv(n);};
+  auto hp = [&](const int n) {return hv(5+n);};
+  const Real ph = hv(11);
   const Real d0 = hp(1), d1 = hu(IDN);
   Real k0[3], k1[3];
   for (int n = 0; n < 3; ++n) {
@@ -367,9 +371,9 @@ void DualEnergy::Worst(MeshBlockPack *pp, const DvceArray5D<Real> &u0,
               "th %.6e ph %.6e dE %.4e rho %.4e -> %.4e E %.4e -> %.4e eint_pre %.4e "
               "eint %.4e KE123 %.4e %.4e %.4e -> %.4e %.4e %.4e Phi %.4e\n", blk.c_str(),
               pp->pmesh->ncycle, armed ? "[update]" : "[refresh]",
-              global_variable::my_rank, pp->pmb->mb_gid.h_view(m), k, j, i, X(x1, i),
-              X(x2, j), X(x3, k), mx.val, d0, d1, hp(0), hu(IEN),
-              hp(0) - k0[0] - k0[1] - k0[2], hw(IEN), k0[0], k0[1], k0[2], k1[0], k1[1],
+              global_variable::my_rank, pp->pmb->mb_gid.h_view(m), k, j, i, hv(12),
+              hv(13), hv(14), mx.val, d0, d1, hp(0), hu(IEN),
+              hp(0) - k0[0] - k0[1] - k0[2], hv(10), k0[0], k0[1], k0[2], k1[0], k1[1],
               k1[2], ph);
   std::fflush(stdout);
 }
