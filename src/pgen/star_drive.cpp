@@ -31,7 +31,7 @@
 #include "utils/time_table.hpp"
 #include "pgen/star_drive.hpp"
 
-namespace hsdrive {
+namespace stardrive {
 namespace {
 
 constexpr char kTag[8] = {'H', 'S', 'D', 'R', 'V', '0', '0', '1'};
@@ -46,7 +46,7 @@ bool mtab_on_ = false;
 Real t0_ = 0.0;
 SetupArgs a_;
 int every_ = 1;
-char logfn_[1024] = {0};   // <basename>.hsdrive.txt
+char logfn_[1024] = {0};   // <basename>.stardrive.txt
 // RK stage coefficients of the integrator (driver.cpp), for the stage ledger
 int nst_ = 0;
 Real gam0_[4] = {0.0, 0.0, 0.0, 0.0}, gam1_[4] = {0.0, 0.0, 0.0, 0.0};
@@ -116,7 +116,7 @@ void ShellSums(Mesh *pm, std::vector<Real> *out) {
   out->assign(static_cast<size_t>(nq)*nc1, 0.0);
   if (pm->layout_invariant) {
     std::vector<Real> rs;
-    repro::ShellSums("hsdrv_shell_r", nq, nc1, nmb, ks, ke, js, je, is, ie,
+    repro::ShellSums("stardrv_shell_r", nq, nc1, nmb, ks, ke, js, je, is, ie,
                      KOKKOS_LAMBDA(const int q, const int m, const int k, const int j,
                                    const int i) {
       const Real v = vol(m,k,j,i);
@@ -132,8 +132,8 @@ void ShellSums(Mesh *pm, std::vector<Real> *out) {
     }
     return;
   }
-  DvceArray2D<Real> sh("hsdrv_shell", nq, nc1);
-  par_for("hsdrv_shell", DevExeSpace(), is, ie, KOKKOS_LAMBDA(const int i) {
+  DvceArray2D<Real> sh("stardrv_shell", nq, nc1);
+  par_for("stardrv_shell", DevExeSpace(), is, ie, KOKKOS_LAMBDA(const int i) {
     Real s0 = 0.0, s1 = 0.0, s2 = 0.0, s3 = 0.0;
     for (int m = 0; m < nmb; ++m) {
       for (int k = ks; k <= ke; ++k) {
@@ -213,7 +213,7 @@ DvceArray4D<Real> rcc_, rx1_, rx2_, rx3_, rwc_, rwf_;
 void TakeRef(Mesh *pm) {
   radvet::FluidRef fl = radvet::FluidRef::Get(pm->pmb_pack);
   auto clone = [](const DvceArray4D<Real> &a, DvceArray4D<Real> *c) {
-    *c = DvceArray4D<Real>(Kokkos::view_alloc(std::string("hsdrv_ref"),
+    *c = DvceArray4D<Real>(Kokkos::view_alloc(std::string("stardrv_ref"),
                                               Kokkos::WithoutInitializing), a.layout());
     Kokkos::deep_copy(*c, a);
   };
@@ -236,7 +236,7 @@ void SetPhi(Mesh *pm, const std::vector<Real> &dpc, const std::vector<Real> &dpf
   const int n1m1 = nc1 - 1;
   const int nmb1 = pmbp->nmb_thispack - 1;
   radvet::FluidRef fl = radvet::FluidRef::Get(pmbp);
-  DvceArray1D<Real> dc("hsdrv_dpc", nc1), df("hsdrv_dpf", nc1 + 1);
+  DvceArray1D<Real> dc("stardrv_dpc", nc1), df("stardrv_dpf", nc1 + 1);
   auto hdc = Kokkos::create_mirror_view(dc);
   auto hdf = Kokkos::create_mirror_view(df);
   for (int i = 0; i < nc1; ++i) {hdc(i) = dpc[i];}
@@ -251,7 +251,7 @@ void SetPhi(Mesh *pm, const std::vector<Real> &dpc, const std::vector<Real> &dpf
   const bool wfs = (pwf.data() != ph1.data());
   auto rcc = rcc_, rx1 = rx1_, rx2 = rx2_, rx3 = rx3_, rwc = rwc_, rwf = rwf_;
   auto u0 = fl.u0;
-  par_for("hsdrv_setphi", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+  par_for("stardrv_setphi", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = dc(i);
     const Real pn = rcc(m,k,j,i) + d;
@@ -316,7 +316,7 @@ Real Refresh(Mesh *pm, const std::vector<Real> &sh, const bool energy) {
 }
 
 //! the four boundary-face sums of this stage (mass in at is, mass out at ie+1, energy
-//! in, energy out), with the effective fluxes of the pgen's wall corrections (hs_zflux)
+//! in, energy out), with the effective fluxes of the pgen's wall corrections (star_zflux)
 void FaceSums(Mesh *pm, const bool binf, const bool zflux, Real *f) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
@@ -328,7 +328,7 @@ void FaceSums(Mesh *pm, const bool binf, const bool zflux, Real *f) {
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &mbbcs = pmbp->pmb->mb_bcs;
   array_sum::GlobalSum s;
-  Kokkos::parallel_reduce("hsdrv_face", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+  Kokkos::parallel_reduce("stardrv_face", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           nmb*nx3*nx2),
   KOKKOS_LAMBDA(const int n, array_sum::GlobalSum &acc) {
     const int m = n/(nx3*nx2);
@@ -445,7 +445,7 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
   if (every_ < 1) {
     Fatal("problem/star_gm_live_every must be >= 1");
   }
-  std::snprintf(logfn_, sizeof(logfn_), "%s.hsdrive.txt",
+  std::snprintf(logfn_, sizeof(logfn_), "%s.stardrive.txt",
                 pin->GetString("job","basename").c_str());
   // the integrator's stage coefficients (driver.cpp), for the stage ledger
   const std::string ig = pin->GetString("time","integrator");
@@ -509,7 +509,7 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
     auto &area1 = pmbp->pcoord->area.x1f;
     auto &mbbcs = pmbp->pmb->mb_bcs;
     Real s = 0.0;
-    Kokkos::parallel_reduce("hsdrv_ain", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+    Kokkos::parallel_reduce("stardrv_ain", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                             nmb*nx3*nx2),
     KOKKOS_LAMBDA(const int n, Real &acc) {
       const int m = n/(nx3*nx2);
@@ -714,4 +714,4 @@ void Final() {
   mtab_ = timetable::Table();
 }
 
-}  // namespace hsdrive
+}  // namespace stardrive

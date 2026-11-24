@@ -468,7 +468,8 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
     Real dt_rst = pmesh->dt;
     pmesh->NewTimeStep(tlim);
     // (rsthip-1121: only a dt_fixed that binds replaces it; an inert cap, e.g. the
-    // ORDER decks' dt_fixed = 1e30, keeps the restored dt, else the restart is not bitwise)
+    // ORDER decks' dt_fixed = 1e30, keeps the restored dt, else the restart is not
+    // bitwise)
     if (res_flag && dt_rst > 0.0 && !(dtfix && pmesh->dt_uncapped > pmesh->dt_cap)) {
       pmesh->dt = dt_rst;
       dt_rst_ = dt_rst;   // checked at the first cycle (Execute)
@@ -1232,7 +1233,7 @@ void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
   if (pdtr_ != nullptr) {pdtr_->Report(pmesh);}
   if (pctr_ != nullptr) {pctr_->Report(pmesh);}
   // the stage-loop copies of the pgen registers hold device Views (a
-  // registered View, e.g. star_vet hs_fsub): freed here, before Kokkos::finalize
+  // registered View, e.g. star_vet star_fsub): freed here, before Kokkos::finalize
   dtretry::PgenStageClear();
   // cycle through output Types and load data / write files
   //  This design allows for asynchronous outputs to implemented in the future.

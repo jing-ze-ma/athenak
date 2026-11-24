@@ -227,7 +227,7 @@ branch ic-gammacap-1016) and does not converge.
 
 
 **What fails.** star_vet.cpp ~813-1125 runs an outer Picard loop of two steps:
-- (i) the E solve at fixed rho (HsSph1dPass VET passes, T = (E/a)^1/4 in the RE zone tau <
+- (i) the E solve at fixed rho (StarSph1dPass VET passes, T = (E/a)^1/4 in the RE zone tau <
   taua);
 - (ii) the HSE march at fixed T, with g_eff = g - kt F_r/c. Where Gamma = kt F_r/(c g) >
   star_ic_rad_hse_gmax (0.9), g_eff is set to (1 - gmax) g.

@@ -114,7 +114,7 @@ class ParameterInput {
 
  private:
   std::string last_filename;  // last input file opened, to prevent duplicate reads
-  std::set<std::string> star_renamed;  // <problem>/he_* keys read as star_*
+  std::set<std::string> star_renamed;  // <problem>/he_*, hs_* read as star_*
 
   void CheckStarAlias(const std::map<std::string, std::string> &spelled);
 

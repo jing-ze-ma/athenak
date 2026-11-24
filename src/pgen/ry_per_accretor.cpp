@@ -41,7 +41,7 @@
 //! ENERGY.  Isothermal only (<hydro>/eos = isothermal; problem/thermo = isothermal).  The
 //! key problem/thermo = adiabatic is RESERVED for the gamma = 5/3 option and is FATAL
 //! today.  Building it: put Phi into phicc0/phi0 with <hydro>/etotgrav (star_vet.cpp
-//! hs_phi fill), keep Coriolis explicit, do NOT add the centrifugal work as an explicit
+//! star_phi fill), keep Coriolis explicit, do NOT add the centrifugal work as an explicit
 //! energy source when the potential carries it (the rot_potential double-count
 //! guard, deep_hot_jupiter_rt.cpp `if (!(rotpot && use_etotgrav))`), and give the user
 //! BCs a pressure.  With the isothermal EOS there is no energy equation, so neither the
@@ -3533,7 +3533,7 @@ Real RadColAt(const std::vector<Real> &y, const Real psi) {
   return (1.0 - w)*y[lo] + w*y[hi];
 }
 
-//! <rad_vet>: the merged opacity table format (star_vet's HsReadOpacityTable without
+//! <rad_vet>: the merged opacity table format (star_vet's StarReadOpacityTable without
 //! the low-density extension: below the grid the lookup holds the edge value)
 void RyReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
                         DvceArray1D<Real> &lT, DvceArray1D<Real> &lD, int &nT, int &nD,

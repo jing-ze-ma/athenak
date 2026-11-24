@@ -31,7 +31,7 @@
 //!      ledgers of the mass and total energy through the x1 boundary faces, the sponge,
 //!      W_grav, int F_in A dt and the radiation energy through the x1 faces as the
 //!      scheme applies it (RadiationVet Ebnd, split in / out), written with M_tot, E_tot
-//!      every cycle to <basename>.hsdrive.txt (rank 0).
+//!      every cycle to <basename>.stardrive.txt (rank 0).
 //! All state travels in the restart file (trailer HSDRV001, the last one).
 
 #include <string>
@@ -42,7 +42,7 @@
 class Mesh;
 class ParameterInput;
 
-namespace hsdrive {
+namespace stardrive {
 
 //! everything the problem generator knows that the drive needs
 struct SetupArgs {
@@ -80,6 +80,6 @@ void Cycle(Mesh *pm);
 void RstAppend(std::vector<char> *out);
 void Final();
 
-}  // namespace hsdrive
+}  // namespace stardrive
 
 #endif  // PGEN_STAR_DRIVE_HPP_
