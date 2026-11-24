@@ -28,3 +28,9 @@
 - 2026-11-23 21:41:55 rc=0 last:  
 - FATAL 1 ### FATAL ERROR in /resnick/groups/carnegie_poc/jingze/wt_orion1121/v203/src/main.cpp: a key that places the cells differs from the restart file,     meshblock/nx2: restart file 128 -> now 256 
 - CW 0, stage fallbacks 0, DT_RETRY 0, pos_floor created 0; s/cycle n/a; dt min ; skip_de per cycle: max abs 0.000e+00 at c; 0 cycles > 1e41
+
+## T0d (11-23 21:43)
+- 2026-11-23 21:40:47 rc=0 last: elapsed=7.561569e+01 cycle=30100 time=1.580358e+06 dt=1.927452e+02 
+- FATAL 0 
+- CW 0, stage fallbacks 0, DT_RETRY 0, pos_floor created 0; s/cycle n/a; dt min 192.7 at t 1.580551e+06; skip_de per cycle: max abs 1.983e+17 at c30114; 0 cycles > 1e41
+- first DTREP: `DTREP cycle=30085 time=1.57756e+06 cfl*dt_hyd=187.496 cfl*dt_gasonly=187.657 rank=3 gid=6 kji=86,77,144 dir=1 r=4.44456e+12 rho=6.81208e-13 T=5.16062e+12 pg=3.51546 G1=1.66667 cgas=2.93275e+06 v=-9.44663e+07 ceff=3.01646e+06 h=3.04627e+10 tauT_h=0.00803132 Erad=23168.4 Ddd=0.333333 cdt_kP=595.969 frz=-1 sc=1 cell_dt=312.493 cell_dt_gas=312.762 theta_deg=71.1915 phi=2.86854`
