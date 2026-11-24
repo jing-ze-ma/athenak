@@ -115,3 +115,4 @@
 - FATAL 0 
 - CW 0, stage fallbacks 0, DT_RETRY 0, pos_floor created 0; s/cycle 3.194 (c30100-31050); dt min 26.08 at t 1.589055e+06; skip_de per cycle: max abs 1.115e+18 at c31084; 0 cycles > 1e41
 - first DTREP: `DTREP cycle=30085 time=1.57756e+06 cfl*dt_hyd=26.842 cfl*dt_gasonly=46.9142 rank=2 gid=5 kji=34,3,146 dir=1 r=4.5059e+12 rho=2.89929e-11 T=1.67374e+13 pg=485.265 G1=1.66667 cgas=5.28164e+06 v=-3.96447e+07 ceff=1.32938e+08 h=3.08832e+10 tauT_h=0.595814 Erad=2.56419e+06 Ddd=0.333333 cdt_kP=5083.75 frz=-1 sc=1 cell_dt=178.947 cell_dt_gas=687.417 theta_deg=90.1758 phi=1.76408`
+- (11-23 22:55) status: T0da [cycle=30950, t 1.73168e+06 dt 193, CW 5, fb 3, DT_RETRY 2, pos_floor 1]; LAYF8 [cycle=0, t 1.45279e+03 dt 96.9, CW 0, fb 0, DT_RETRY 0, pos_floor 0];
