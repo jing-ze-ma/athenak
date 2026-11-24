@@ -4,9 +4,8 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_vetgd_cs_shell.inc
-//! \brief the cs shell kernel body of RadiationVet::VetGdCsSweep, included
-//! there as shell_ (the current set) and shellx_ (the next set of a fused cross-fade).
-//! Needs M1_VGDCS_SHELL_NAME defined.
+//! \brief cs shell kernel body of RadiationVet::VetGdCsSweep, included as shell_
+//! (current set) and shellx_ (next set of a fused cross-fade); needs M1_VGDCS_SHELL_NAME.
       auto M1_VGDCS_SHELL_NAME = KOKKOS_LAMBDA(const int m, const int k, const int j,
                                                const int d, const bool cnt) {
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
@@ -16,9 +15,8 @@
         const Real r = cx1v(m,i);
         const Real zr = r*fabs(mr);
         const Real p2 = fmax(r*r - zr*zr, 0.0);
-        // the geometry (branch, upwind shell, chord, stencil) of the cell and direction,
-        // then its value
-        // br: 0 the top shell's inflow, 1 the radial ray at the outward turn, 2 upwind
+        // geometry (branch, upwind shell, chord, stencil) of the cell and direction, then
+        // its value. br: 0 top-shell inflow, 1 radial ray at the outward turn, 2 upwind
         const int br = (inw && l == n1 - 1) ? 0 : ((!inw && zr < 1.0e-12*r) ? 1 : 2);
         int typ = 1;
         int iu = i + 1;
@@ -28,9 +26,9 @@
           const Real rtop = cx1f(m,ie+1);
           ds = sqrt(fmax(rtop*rtop - p2, 0.0)) - zr;
         } else if (br == 2) {
-          // the upwind shell, the chord and its own-cell part (rad_vet_vgdray.hpp)
+          // upwind shell, chord and own-cell part
           VgdRayChord(inw, l, lcut, m, i, zr, p2, cx1v, cx1f, spl, typ, iu, ds, dso);
-          // the upwind point (Cartesian), its direction and the cs stencil
+          // upwind point (Cartesian), its direction and the cs stencil
           Real xu[3] = {r*rx - ds*nx, r*ry - ds*ny, r*rz - ds*nz};
           const Real ru = sqrt(xu[0]*xu[0] + xu[1]*xu[1] + xu[2]*xu[2]);
           xu[0] /= ru;
@@ -39,7 +37,7 @@
           const bool sok = VgdCsStencil(xu, bl_(m,0), bl_(m,1), bl_(m,2), wb, c2b, c3b,
                                         nc, h, cm_, nb_, st);
           if (!sok && cnt) {Kokkos::atomic_add(&cnt_(0), 1.0);}
-          if (st.n == 0) {   // nothing in the band (counted): the own column
+          if (st.n == 0) {   // nothing in the band (counted): own column
             st.n = 1;
             st.k[0] = k;
             st.j[0] = j;
@@ -61,7 +59,7 @@
         const Real ch0 = exp(cv(m,0,k,j,i));
         const Real s0 = exp(cv(m,1,k,j,i));
         Real iv;
-        // the stencil and the field reads of the shared upwind core
+        // stencil and field reads of the shared upwind core
         const VgdCsA acc{st};
         auto fC = [&](const int c, const int kk, const int jj, const int ii) -> Real {
           return cv(m,c,kk,jj,ii);
@@ -75,9 +73,8 @@
             iv = VgdInnerFace(acc, fC, i, emi, iemit, bfc, cx1f(m,i), cx1v(m,i),
                               cx1v(m,i+1), p2, ch0, ds, s0);
           } else {
-            // the intensity of a stencil cell: its owner's interior when on this rank
-            // (stream order: shell iu is complete; the other branch of shell i, which
-            // this launch writes, is masked), else the band copy of the remote value
+            // stencil-cell intensity: owner's interior if on this rank (shell iu done;
+            // the other branch of shell i is masked), else the band copy
             auto rdi = [&](const int kk, const int jj) -> Real {
               if (ccl && cnt) {
                 const int x = rx_(m,kk,jj);
@@ -111,9 +108,7 @@
               edge = (lmx - lmn) > lcr;
             }
             auto edgef = [&]() {return edge;};
-            // the closing segment (vet_seg = jump below the inner face, vet_interp =
-            // corner, vet_seg = split, the plain segment: rad_vet_vgdray.hpp)
-            // vet_seg = jump's plateau test: the shell one further upwind (in the block)
+            // closing segment; jump plateau test: the shell one further upwind (in block)
             const int iu2 = 2*iu - i;
             const int iuu = (typ == 1 && iu2 >= is && iu2 <= ie) ? iu2 : iu;
             const int id2 = 2*i - iu;

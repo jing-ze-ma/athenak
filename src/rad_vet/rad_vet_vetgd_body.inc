@@ -4,14 +4,10 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_vetgd_body.inc
-//! \brief the shell kernel body of RadiationVet::VetGdSweep (moved verbatim
-//! from rad_vet_vetgd.cpp), included twice there: M1_VGD_BODY_MIR 0 (the default kernel,
-//! the code as before) and 1 (vet_gd_theta_wall = mirror: theta ghosts read their mirror
-//! row).  Two kernels, so that the mirror read costs the default nothing (compiled into
-//! the one kernel it cost +3.6 % GPU time on the accretor deck, 12414551 vs 12414756).
-//! Needs M1_VGD_BODY_NAME (the lambda's name) and M1_VGD_BODY_MIR defined.
-//! The last two arguments are unused (a launch passes bools or std::false_type; the
-//! vet_path = cells branch they gated is removed).
+//! \brief shell kernel body of RadiationVet::VetGdSweep, included twice:
+//! M1_VGD_BODY_MIR 0 (default) and 1 (vet_gd_theta_wall = mirror), so the mirror read
+//! costs the default kernel nothing. Needs M1_VGD_BODY_NAME and M1_VGD_BODY_MIR.
+//! The last two lambda arguments are unused (bools or std::false_type).
 
 // nvcc rejects generic __host__ __device__ lambdas: on CUDA the arguments are plain bools
 #if defined(KOKKOS_ENABLE_CUDA) && defined(M1_VGD_BODY_GX0)
@@ -29,19 +25,16 @@
                                             const M1_VGD_TT, const M1_VGD_TT) {
 #undef M1_VGD_TT
 #endif
-        // several MeshBlocks along x1: the first shell and the top face are those of the
-        // innermost and outermost levels
+        // several MeshBlocks in x1: first shell / top face of the innermost / outermost
         const int lcb = (x1f_(m) & 1) ? lcut : -1;
         const Real nx = dir_(d,0), ny = dir_(d,1), nz = dir_(d,2);
-        // the face midpoints (uniform in index space, as the bilinear reads assume)
-        // a stretched theta / the full sphere: the row's node (sph2.inc)
+        // face midpoints (uniform in index space); stretched theta / full sphere: node
         const Real th = sth_ ? thn_(m,j)
                              : lg_.Th(mbsize, m, j, js);
-        // vet_gd_band_global: phi from the global index (layout exact)
+        // vet_gd_band_global: phi from the global index
         const Real ph = gphb_ ? phcb_(m, gpwb_ + k - ks)
                               : lg_.Ph(mbsize, m, k, ks);
-        // sin / cos of the cell's (theta, phi) from the per-cell table (the
-        // same expressions, evaluated once per cell instead of once per direction)
+        // sin / cos of the cell's (theta, phi), from the per-cell table
         const Real st = tg_(m,k-ks,j-js,0), ct = tg_(m,k-ks,j-js,1);
         const Real sp = tg_(m,k-ks,j-js,2), cp = tg_(m,k-ks,j-js,3);
         const Real mr = nx*st*cp + ny*st*sp + nz*ct;
@@ -49,16 +42,15 @@
         // the ray of direction d through cell (k, j, i) on source csx, intensities vix
         auto solve = [&](const DvceArray5D<Real> &csx, const VgdIView &vix) -> Real {
           auto rd0 = [&](int kk, const int jj, const int ii, int dq) -> Real {
-            // axisymmetric (nx3 = 1): a phi band column is the own column, direction
-            // rotated by the column's phi offset (the wall map of its interior row; the
-            // raw band reads its owner through the wall map below)
+            // axisymmetric (nx3 = 1): a phi band column is the own column with the
+            // direction rotated by its phi offset
             if (!raw_ && nx3b == 1 && kk != wb) {
               dq = mp_(m,kk,wb,dq);
               kk = wb;
             }
             const int ek = (kk < wb) ? -1 : ((kk >= wb + nx3b) ? 1 : 0);
             const int ej = (jj < wb) ? -1 : ((jj >= wb + nx2b) ? 1 : 0);
-            if (ek == 0 && ej == 0) {   // (a mirror row of the MIR kernel: shifted)
+            if (ek == 0 && ej == 0) {   // MIR kernel: a mirror row is shifted
               return vix(m,dq,kk,jj,ii);
             }
             const int oo = 3*(ek + 1) + (ej + 1);
@@ -66,7 +58,7 @@
             const int ow = raw_ ? own_(m,kk,jj,0) : 0;
             const int nl = raw_ ? ((ow < 0) ? m : ow) : hl_(sl);
             if (nl < 0) {
-              // the band copy (the unpack applied the wall map)
+              // band copy (the unpack applied the wall map)
               return vix(m,dq,kk,jj,ii);
             }
             // an on-rank pole partner: its rows reversed about the pole
@@ -84,21 +76,18 @@
             const int dd = (wl_(m,kk,jj) != 0) ? mp_(m,kk,jj,dq) : dq;
             return vix(nl,dd,kn,jn,ii);
           };
-          // (rdq: direction dq at the cell's stencil, rd the thread's own direction d)
+          // rdq: direction dq at a stencil cell; rd: the thread's own direction d
           auto rdq = [&](const int kk, const int jj, const int ii, const int dq) -> Real {
-            // a theta ghost of vet_gd_theta_wall = mirror (wall flag 2)
-            // reads its mirror row (then as any read, e.g. a phi wall) through its own
-            // wall tables; no extra capture (the closure stays below the launch limit)
+            // theta_wall = mirror (flag 2): a theta ghost reads its mirror row (no extra
+            // capture: the closure stays below the launch limit)
 #if M1_VGD_BODY_MIR
             if ((jj < wb || jj >= wb + nx2b) && wl_(m,kk,jj) >= 2) {
               const bool hi = (jj >= wb + nx2b);
-              // vet_gd_theta_wall = vacuum (flag 3): no intensity beyond the wall;
-              // extrap (4): the edge row's, same direction (zero gradient)
+              // vacuum (flag 3): zero; extrap (4): the edge row's (zero gradient)
               if (wl_(m,kk,jj) == 3) {return 0.0;}
               if (wl_(m,kk,jj) == 4) {
-                // the edge value only when it is of the ghost's branch (the one the
-                // stencil selected it for): a turned ray reads its own shell, whose
-                // other branch is being written by this launch; else the periodic read
+                // edge value only if of the ghost's branch (the other branch of the
+                // own shell is being written); else the periodic read
                 const int je = hi ? (wb + nx2b - 1) : wb;
                 if ((mr_(m,kk,je,dq) < 0.0) == (mr_(m,kk,jj,dq) < 0.0)) {
                   return rd0(kk,je,ii,dq);
@@ -128,9 +117,8 @@
           const Real s0 = exp(csx(m,1,k,j,i));
           Real iv;
           if (inw && l == n1 - 1 && (x1f_(m) & 2)) {
-            // from the vacuum top face (the end cell's S extrapolated, as vet_col_lat),
-            // or with the top bath or a reflecting top (the mirrored
-            // intensity in the ghost shell, VetGdTopMirror) its inflow attenuated
+            // top face: extrapolated S (vacuum), or the bath / mirrored (VetGdTopMirror)
+            // inflow attenuated
             const Real rtop = cx1f(m,ie+1);
             const Real ds = sqrt(fmax(rtop*rtop - p2, 0.0)) - zr;
             const bool rfl = (x1f_(m) & 4);
@@ -139,12 +127,11 @@
           } else if (!inw && zr < 1.0e-12*r) {
             iv = s0;                     // tangent at the cell centre (measure zero)
           } else {
-            // the upwind shell, the chord and its own-cell part (rad_vet_vgdray.hpp);
-            // typ 1 upwind shell, 2 inner face, 3 own shell
+            // upwind shell, chord, own-cell part; typ 1 upwind, 2 inner face, 3 own shell
             int typ, iu;
             Real ds, dso;
             VgdRayChord(inw, l, lcb, m, i, zr, p2, cx1v, cx1f, spl, typ, iu, ds, dso);
-            // the upwind point, its lateral cell and bilinear fractions (index space)
+            // upwind point, its lateral cell and bilinear fractions (index space)
             const Real xu = r*st*cp - ds*nx;
             const Real yu = r*st*sp - ds*ny;
             const Real zu = r*ct - ds*nz;
@@ -152,13 +139,10 @@
             Real thu = acos(fmin(fmax(zu/ru, -1.0), 1.0));
             Real dph = atan2(yu, xu) - ph;
             dph -= twopi*floor((dph + M_PI)/twopi);
-            // behind the polar axis -> the extended chart; the fractional
-            // row from the node table (rad_vet_vgdtheta.hpp)
+            // behind the pole -> extended chart; fractional row from the node table
             VgdPoleChart(pol_, th, thu, dph);
-            // the fractional upwind index at its GLOBAL magnitude (fjg, fkg;
-            // sj_ = sk_ = 0 without <mesh>/layout_invariant: the old fj, fk exactly); the
-            // stencil base and the bilinear fractions come from it, so they are the same
-            // numbers on every MeshBlock layout
+            // fractional upwind index at its global magnitude (sj_ = sk_ = 0 without
+            // layout_invariant): stencil base and fractions are layout independent
             const int sj_ = lg_.Sj(m, js), sk_ = lg_.Sk(m, ks);
             const Real fjg = sth_ ? VgdThFj(thn_, m, j, thu, c2w_, sj_)
                                   : (j + sj_) + (thu - th)/lg_.Dx2(mbsize, m);
@@ -168,21 +152,18 @@
             int k0 = static_cast<int>(floor(fkg)) - sk_;
             Real uj = fjg - floor(fjg), uk = fkg - floor(fkg);
             bool clp = false;
-            // the full sphere: reads stop at the shell's halo depth
-            // (the polar rings' long reads; clamped and counted like any clamp)
+            // full sphere: reads stop at the shell's halo depth (clamped and counted)
             int jlo_ = jlo, jhi_ = jhi, klo_ = klo, khi_ = khi;
             if (pol_) {
-              // the depth the halo of the read data filled: the inward band of shell iu
-              // (read by the inward pass and by a turned ray), else its outward band
-              // (every side, on-rank or not: the sweep is then independent of the
-              // decomposition, as the band construction makes it on a wedge)
+              // filled halo depth: inward band of shell iu (inward pass, turned ray),
+              // else outward band; on every side: decomposition independent
               const int wu = wsd_((inw || typ == 3) ? 0 : 1, iu);
               klo_ = wb - wu;
               khi_ = wb + nx3b + wu - 2;
               jlo_ = wb - wu;
               jhi_ = wb + nx2b + wu - 2;
-              // vet_gd_band_global: the CELL's window (the same cells for
-              // every layout; inside the block's band since wb <= k, j < wb + nx)
+              // vet_gd_band_global: the cell's window (layout independent; inside the
+              // block's band since wb <= k, j < wb + nx)
               if (pol_ == 2) {
                 klo_ = k - wu;
                 khi_ = k + wu - 1;
@@ -196,30 +177,26 @@
             if (k0 > khi_) {k0 = khi_; uk = 1.0; clp = true;}
             if (clp) {Kokkos::atomic_add(&cnt_(0), 1.0);}
             int j1 = j0 + 1, k1 = k0 + 1;
-            // the stencil and the field reads of the shared upwind core
+            // stencil and field reads of the shared upwind core
             const VgdSt4 st4{k0, k1, j0, j1, uj, uk};
             auto fC = [&](const int c, const int kk, const int jj, const int ii) -> Real {
               return csx(m,c,kk,jj,ii);
             };
             auto fIu = [&](const int kk, const int jj) -> Real {return rd(kk,jj,iu);};
-            // the branch n . r_hat of a stencil cell
+            // branch n . r_hat of a stencil cell
             auto mrq = [&](const int kk, const int jj) -> Real {return mr_(m,kk,jj,d);};
             bool bdone = false;
 #if M1_VGD_BODY_MIR
-            // vet_gd_theta_wall = vacuum: the upwind point lies beyond a
-            // physical vacuum theta wall (the mesh's theta limits; flag 3 on the band row
-            // nearest the point).  The ray starts at its wall crossing (the cone theta =
-            // theta_wall, exact) with I = 0, as from the vacuum top face; chi, S there
-            // from the row next to the wall (linear in phi index, linear in r between
-            // the shells i and iu)
+            // theta_wall = vacuum, upwind point beyond the wall (flag 3): the ray
+            // starts at its exact crossing of the cone theta = theta_wall with I = 0;
+            // chi, S from the row next to the wall (linear in phi index and r)
             const bool vlo = (thu < mt0), vhi = (thu > mt0 + mtl);
             const int jrw = static_cast<int>(fmin(fmax(floor(fjg + 0.5) - sj_, Real(jlo)),
                                                   Real(jhi + 1)));
             if (typ != 2 && (vlo || vhi) && wl_(m,k,jrw) == 3) {
               const bool hi = vhi;
               const Real thw = hi ? (mt0 + mtl) : mt0;
-              // the row next to the wall (the block's own edge row with one MeshBlock in
-              // theta), band index
+              // band index of the row next to the wall
               const int jw = static_cast<int>(fmin(fmax(
                 lg_.Jw(mbsize, m, js, thw)
                 - (hi ? 1 : 0), Real(jlo)), Real(jhi + 1)));
@@ -246,7 +223,7 @@
               } else if (qb != 0.0) {
                 tryt(-qc/qb);
               }
-              if (tc < 0.0) {   // (round-off) the index-linear estimate
+              if (tc < 0.0) {   // round-off: the index-linear estimate
                 const Real fw = jw + (hi ? 0.5 : -0.5);
                 tc = ds*fmin(fmax((fw - j)/(fj - j), 0.0), 1.0);
               }
@@ -279,22 +256,20 @@
             }
 #endif
             if (bdone) {
-              // done: the segment from the theta wall
+              // segment from the theta wall
             } else if (typ == 2 && emi) {
-              // vet_gd_inner = emit: the inner boundary's emission at the
-              // upwind point of the inner face, carried to the cell with the face source
+              // vet_gd_inner = emit: boundary emission at the inner-face point
               iv = VgdInnerFace(st4, fC, i, true, iemit, bfc, cx1f(m,i), cx1v(m,i),
                                 cx1v(m,i+1), p2, ch0, ds, s0);
             } else if (typ == 2 && imir) {
-              // a reflecting inner face (scheme = clean): the inflow at the face point is
-              // the first shell's inward intensity there in the specular image direction
-              // (nearest set direction; stencil cells of the inward branch only), times
-              // the column's flux ratio (VetGdInnerMirror)
+              // reflecting inner face: first-shell inward intensity in the nearest
+              // specular direction (inward stencil cells) times the flux ratio
+              // (VetGdInnerMirror)
               const Real ux = xu/ru, uy = yu/ru, uz = zu/ru;
               const Real mu = nx*ux + ny*uy + nz*uz;
               int dm = 0;
               Real best = -2.0;
-              for (int q = 0; q < n; ++q) {   // (the nearest inward one, as the ratio)
+              for (int q = 0; q < n; ++q) {   // nearest inward one, as the ratio
                 const Real c = dir_(q,0)*(nx - 2.0*mu*ux) + dir_(q,1)*(ny - 2.0*mu*uy) +
                                dir_(q,2)*(nz - 2.0*mu*uz);
                 const Real mq = dir_(q,0)*ux + dir_(q,1)*uy + dir_(q,2)*uz;
@@ -312,18 +287,13 @@
               iv = VgdInnerFace(st4, fC, i, true, (im < 0.0) ? s0 : isc_(m,k-ks,j-js)*im,
                                 bfc, cx1f(m,i), cx1v(m,i), cx1v(m,i+1), p2, ch0, ds, s0);
             } else if (typ == 2) {
-              // the diffusion intensity at the inner face of the first shell,
-              // S + mu (-dS/dtau_r); vet_bc_diff = face: S of the FACE,
-              // 1.5 S_a - 0.5 S_b (the S the half-cell carry below starts from), not of
-              // the first shell's cell (O(dtau_cell) low isotropic part otherwise)
+              // diffusion intensity S + mu (-dS/dtau_r) at the inner face; vet_bc_diff =
+              // face: face S = 1.5 S_a - 0.5 S_b (cell S is O(dtau_cell) low)
               iv = VgdInnerFace(st4, fC, i, false, 0.0, bfc, cx1f(m,i), cx1v(m,i),
                                 cx1v(m,i+1), p2, ch0, ds, s0);
             } else {
-              // each (cell, direction) holds ONE intensity, of the pass its n_d . r_hat
-              // selects; the ray read here is inward at the upwind point for the inward
-              // pass and for a turned ray, outward otherwise.  Stencil cells of the other
-              // pass hold the wrong branch (near the tangent band): they are dropped and
-              // the bilinear weights renormalised (all valid: the plain bilinear)
+              // one intensity per (cell, direction), of the pass n_d . r_hat selects;
+              // stencil cells of the other pass are dropped, weights renormalised
               const bool want_in = inw || (typ == 3);
               bool ok[4];
               bool all = true;
@@ -334,7 +304,7 @@
                 ok[q] = want_in ? (mq < 0.0) : (mq >= 0.0);
                 all = all && ok[q];
               }
-              // none (-1): the upwind source (below)
+              // none (-1): start from the upwind source
               const Real ivu = VgdUpwindI(st4, fIu, ok, all);
               auto lin = [&](const int c) {
                 return VgdLerp(VgdLerp(fC(c,k0,j0,iu), fC(c,k0,j1,iu), uj),
@@ -343,15 +313,13 @@
               const Real chu = exp(lin(0));
               const Real su = exp(lin(1));
               const Real rfi = cx1f(m,i);
-              // the closing segment (vet_seg = jump below the inner face, vet_interp =
-              // corner, vet_seg = split, the plain segment: rad_vet_vgdray.hpp)
+              // closing segment
               auto edgef = [&]() {
                 auto csr = [&](const int, const int c, const int kk, const int jj,
                                const int ii) -> Real {return fC(c,kk,jj,ii);};
                 return VgdCornerEdge(csr, m, k0, k1, j0, j1, iu, uk, uj);
               };
-              // vet_seg = jump's plateau test: the shell one further upwind (in the
-              // block)
+              // jump plateau test: the shell one further upwind (in the block)
               const int iu2 = 2*iu - i;
               const int iuu = (typ == 1 && iu2 >= is && iu2 <= ie) ? iu2 : iu;
               const int id2 = 2*i - iu;
