@@ -423,6 +423,9 @@ Paths relative to `src/`.
 - AthenaK: J. M. Stone et al. (2024), arXiv:2409.16053.
 - This radiation scheme: a method paper is in preparation; until it appears, cite this
   document with the commit hash of the code you ran.
+- The VET approach it follows: Jiang, Stone & Davis (2012), ApJS 199, 14 (Godunov radiation
+  MHD with a variable Eddington tensor in the mixed frame); Menon et al. (2022), MNRAS 512,
+  401 (VETTAM: VET from ray tracing, coupled implicitly to hydrodynamics).
 - Methods it builds on: Ma, Pakmor, Justham & de Mink (2025), arXiv:2503.16627 (mixed-frame
   β terms); Jiang (2021), ApJS 253, 49 (implicit discrete-ordinates radiation, level-symmetric
   sets, scattering split); Davis, Stone & Jiang (2012), ApJS 199, 9 (VET from short
