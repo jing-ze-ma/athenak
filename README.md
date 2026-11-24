@@ -32,6 +32,12 @@ Other pages give instructions for running the code.
 
 Since AthenaK is very similar to Athena++, the [Athena++ documention](https://github.com/PrincetonUniversity/athena/wiki) may also be helpful.
 
+## Clean M1 radiation scheme
+
+This branch contains the clean M1 (variable Eddington tensor) radiation-hydrodynamics scheme
+of `src/rad_m1/`. Start with [docs/m1_clean/QUICKSTART.md](docs/m1_clean/QUICKSTART.md):
+download, build on CPUs and GPUs, run the tests and the 3-D star problems.
+
 ## Code papers
 
 For more details on the features and algorithms implemented in AthenaK, see the code papers:

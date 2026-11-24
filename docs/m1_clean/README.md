@@ -27,6 +27,7 @@ Properties (wording, mechanism and the test of each: [SCHEME.md](SCHEME.md)):
 
 | document | for |
 |---|---|
+| [QUICKSTART.md](QUICKSTART.md) | start here: download, build (CPU, NVIDIA, AMD), check, tests, plots, 3-D stars |
 | [SCHEME.md](SCHEME.md) | the method and its properties, code map, how to cite |
 | [BUILD.md](BUILD.md) | building on CPU, NVIDIA (CUDA) and AMD (HIP); known-good toolchains |
 | [RUN.md](RUN.md) | a first run, the production star decks, restarts, dt retries |
@@ -34,11 +35,11 @@ Properties (wording, mechanism and the test of each: [SCHEME.md](SCHEME.md)):
 | [OUTPUTS.md](OUTPUTS.md) | history columns, checking energy conservation, `CLEAN WARNING` messages, the end-of-run summary |
 | [tests/m1_clean](../../tests/m1_clean/README.md) | the test suite |
 
-Quick start:
+Quick start (details: [QUICKSTART.md](QUICKSTART.md)):
 
 ```bash
 git submodule update --init kokkos
-tests/m1_clean/run_tests.sh --quick        # builds a CPU binary, runs the quick tests (~5 min on 16 cores)
+tests/m1_clean/run_tests.sh --quick        # builds a CPU binary, runs the quick tests
 ```
 
 Inputs: `tests/m1_clean/decks/` (small test problems) and `inputs/rad_m1_clean/`

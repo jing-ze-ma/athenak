@@ -2,7 +2,8 @@
 
 The clean M1 scheme is part of the normal AthenaK build: there is no extra switch. This page
 gives the configurations that have been used for production and for the test suite. All of
-them are plain CMake builds; out-of-source build directories are required.
+them are plain CMake builds; out-of-source build directories are required. For the shortest
+path from download to a checked binary see [QUICKSTART.md](QUICKSTART.md).
 
 ## 1. Get the source
 
@@ -24,8 +25,10 @@ git submodule update --init kokkos       # Kokkos 4.6.2, pinned by the repositor
 | `Athena_M1_VGD_NMAX` | `4096` on CPU, default (432) or `512` on GPU | The largest number of ray directions of the VET closure. The star decks use 126; the test decks use up to 512. |
 | `PROBLEM` | unset (built-in problem generators) or `he_star_m1` | The test suite uses only built-in generators (`rad_m1_beam`). The star decks need `-D PROBLEM=he_star_m1`. |
 
-A binary built for one `PROBLEM` cannot run a deck of another user problem generator. The
-built-in generators are always available.
+A binary built with `-D PROBLEM=<name>` runs only that problem generator: a
+`he_star_m1` binary cannot run the test decks. Build the test binary without `-D PROBLEM`
+(the GPU blocks below name `he_star_m1`; drop it, in a second build directory, for the
+test suite on a GPU).
 
 ## 3. CPU (workstation or cluster)
 
@@ -100,7 +103,7 @@ make -C build_hip -j 32 athena
 
 Tested on MI300A APUs with `module load gcc/16 rocm/7.2 openmpi_gpu/5.0 cmake/4.0`.
 `GFX942_APU` treats host and device memory as one pool. For a discrete MI300X use
-`Kokkos_ARCH_AMD_GFX942`. On ROCm 7.2, more than 2 MPI ranks per GPU on a cubed-sphere mesh
+`Kokkos_ARCH_AMD_GFX942`, for MI250 / MI250X `Kokkos_ARCH_AMD_GFX90A` (not tested). On ROCm 7.2, more than 2 MPI ranks per GPU on a cubed-sphere mesh
 hang in the ray-sweep halo exchange unless `GPU_MAX_HW_QUEUES=2` is set; the code stops
 with a FATAL message that says so.
 The default UCX settings are bitwise and fastest on MI300A; no extra environment is
