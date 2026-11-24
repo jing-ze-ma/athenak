@@ -81,9 +81,6 @@ f_stretch_r_p_w = 1.0e-12                    # sharp edges: every face equals hi
 layout_invariant = true   # FRESHPREP
 layout_invariant_mode = tile   # IA12 LAYOUT (USER: tile in production)
 layout_tile = 128   # IA12 LAYOUT: = this deck's lateral MeshBlock (128 x 128); must divide meshblock nx2, nx3
-cs_seam_blockend = extend   # FRESHPREP
-cs_vertex_3cell = true   # FRESHPREP
-cs_seam_rho_guard = 4   # FRESHPREP
 <meshblock>
 nx1 = 256
 nx2 = 128   # FRESHPREP
@@ -102,7 +99,6 @@ dt_retry_fac             = 0.5        # UNISET IA9
 dt_retry_fac_t2          = 0.9        # UNISET IA9
 dt_retry_grow            = 1.1        # UNISET IA9
 dt_retry_host            = false      # UNISET IA9
-dt_retry_max             = 8          # UNISET IA9
 dt_retry_ngood           = 20         # UNISET IA9
 dt_retry_views           = minimal    # UNISET IA9
 dt_retry_t2_be           = 0          # UNISET IA9
@@ -120,7 +116,6 @@ dfloor_flux_limit = true   # IA12.1 FLOORE (mass-conserving density floor)
 floor_audit = 1   # IA12.1 FLOORE diagnostic (run.log lines per cycle, for the eres2 rule-1 scorer)
 merge_lat_rc             = 2.43495e12,3.82635e12,5.5656e12   # USER 11-06 his SMR: 128^2 at 20-35, 256^2 at 35-55, 128^2 at 55-80 Rsun
 merge_lat_f              = 2,1,2
-merge_lat_mom            = rigid
 merge_lat_diag           = 1000
 split_c2p_once = true   # FRESHPREP
 am_transport   = true         # [OURS] numerical default kept (user 11-04); Athena++ (his code) has none
@@ -130,7 +125,8 @@ rad_signal_speed = true
 gamma       = 1.6666666666666667
 reconstruct = plm
 rsolver     = hllc             # paper: HLLC
-fofc        = false            # USER 11-06: as Linhao (no FOFC)
+fofc = true   # USER 11-24 ~02:10 PST: FOFC on for all stars (NOTE 24q / 24r)
+fofc_retest = true   # USER 11-24 (with fofc)
 etotgrav = true   # FRESHPREP
 wellbalance_dynamic = true   # FRESHPREP
 dfloor = 6.15245e-14   # FRESHPREP
@@ -143,13 +139,11 @@ general_eos = gamma   # FRESHPREP
 tfloor = 134104228155.32465   # FRESHPREP
 wb_x1 = true   # FRESHPREP
 wb_option = polytropic   # FRESHPREP
-wb_cache_every = 0   # FRESHPREP
 wb_rmax = 4.231839e+12   # FRESHPREP
 <rad_vet>
 floorcap_report = 25   # PROD 11-21 (orion ig/ih)
 floorcap_v = 3e7   # PROD 11-21 (orion ig/ih)
 floorcap_rho = 1e-14   # PROD 11-21 (orion ig/ih)
-clean_stag_thinf_held            = false        # UNISET IA9: IA9 all three false (was true)
 clean_stag_flim                  = false        # UNISET IA9: IA9 all three false; Caltech prod already moved to flim off (was true)
 clean_init_dtfac = 1.0e6   # PROD 11-21 (orion ig/ih)
 vet_gd_gl_nmu = 7
@@ -239,7 +233,6 @@ clean_stag_xsrc = true   # FRESHPREP
 clean_stag_mg_color = mirror   # FRESHPREP
 time2_k1_redist = 0   # FRESHPREP
 time2_auto_be = 16   # FRESHPREP
-time2_stage_local_be = false   # FRESHPREP
 implicit_predictor_tcap = 1.1   # FRESHPREP
 time2_k1_stiff = 0   # CALSMOKE IA9 key (NOTE 23c; deck had: time2_k1_stiff = 0   # FRESHPREP)
 clean_conv_kappa = 1.0   # FRESHPREP
@@ -332,10 +325,8 @@ clean_w_c0                       = 0.3          # UNISET IA9 (all three stars)
 clean_w_c1                       = 0.6          # UNISET IA9 (all three stars)
 clean_w_face_min                 = 0            # UNISET IA9 (all three stars)
 clean_wb_fct                     = true         # UNISET IA9 (all three stars)
-vet_gd_rotate_align              = true         # UNISET IA9 (all three stars)
 vet_gd_rotate_xfade              = true         # UNISET IA9 (all three stars)
 vet_rotate_advance               = true         # UNISET IA9 (all three stars)
-vet_rotate_avg_ema_change_form   = linear       # UNISET IA9 (all three stars)
 clean_stag_fs_line               = pcr          # UNISET D14 arm 14 PASS: pcr = thomas on RSG to 0.009 pp (IA9_RSGgp), uniform pcr
 floorcap_mesh_vol                = 0            # UNISET IA9 (R136 tested value; D14: floorcap named on all three)
 <problem>
@@ -350,12 +341,9 @@ he_ic_profile_rng         = 0              # splitmix64(global cell index) seed
 he_ic_profile_gconst      = 6.67408e-8     # Athena++ Constants::grav_const_cgs (his g(rmax) = G M_rmax / rmax^2)
 he_ic_profile_gext        = invsq          # [USER 11-04] atmosphere above rmax hydrostatic in GM/r^2 (his cpp:429 r^+2 = r2)
 he_bc_linhao = false   # FRESHPREP
-he_ic_rad_gas            = column         # ORIGINAL IC
-he_ic_rad_hse            = false          # ORIGINAL IC
 he_ic_rad                = file           # ORIGINAL IC (fresh default sph1d)
 he_ic_eint_from_t        = false          # ORIGINAL IC (PIN defaults-1009)
 user_srcs   = true
-user_bcs    = true
 user_hist   = true
 he_gm = 2.62502e27   # FRESHPREP
 he_gravity = wb   # FRESHPREP

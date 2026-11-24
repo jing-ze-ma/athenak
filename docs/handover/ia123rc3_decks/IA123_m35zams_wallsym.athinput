@@ -48,9 +48,6 @@ use_grid_stretch_r       = true                   # [PAPER-ish] logarithmic radi
 f_stretch_r              = -0.187211542088146     # [PAPER] log bins: = -ln(x1max/x1min) (dlnr = 4.875301e-04; dtheta = 5.006913e-04, dphi = 5.000000e-04)
 layout_invariant = true   # FRESHPREP
 layout_invariant_mode = tile   # GLWEDGE
-cs_seam_blockend = extend   # FRESHPREP
-cs_vertex_3cell = true   # FRESHPREP
-cs_seam_rho_guard = 4   # FRESHPREP
 layout_tile = 32   # IA12.2: = lateral MeshBlock size (16 blocks)
 <meshblock>
 nx1                      = 384                    # vet_gd: one x1 block
@@ -70,7 +67,6 @@ dt_retry_fac             = 0.5        # UNISET IA9
 dt_retry_fac_t2          = 0.9        # UNISET IA9
 dt_retry_grow            = 1.1        # UNISET IA9
 dt_retry_host            = false      # UNISET IA9
-dt_retry_max             = 8          # UNISET IA9
 dt_retry_ngood           = 20         # UNISET IA9
 dt_retry_views           = minimal    # UNISET IA9
 dt_retry_t2_be           = 0          # UNISET IA9
@@ -99,7 +95,8 @@ rad_signal_speed = true
 gamma       = 1.6666666666666667
 reconstruct = plm
 rsolver     = hllc             # paper: HLLC
-fofc        = false            # USER 11-06: as Linhao (no FOFC)
+fofc = true   # USER 11-24 ~02:10 PST: FOFC on for all stars (NOTE 24q / 24r)
+fofc_retest = true   # USER 11-24 (with fofc)
 etotgrav = true   # FRESHPREP
 wellbalance_dynamic = true   # FRESHPREP
 dfloor                   = 1.0e-17                # [NS] = the IC density floor above the photosphere (r > 8.007 Rsun)
@@ -112,13 +109,11 @@ general_eos = gamma   # FRESHPREP
 tfloor                   = 133673032492.78598     # 1000 K / temp_unit_kelvin (as M35MMS)
 wb_x1 = true   # FRESHPREP
 wb_option = polytropic   # FRESHPREP
-wb_cache_every = 0   # FRESHPREP
 wb_rmax                  = 6.691526e+11           # 1.25 x he_ic_balance_rmax (M35MMS / T19L6.4 FRESHPREP ratio); > x1max
 <rad_vet>
 floorcap_report = 25   # PROD 11-21 (orion ig/ih)
 floorcap_v = 3e7   # PROD 11-21 (orion ig/ih)
 floorcap_rho = 1e-14   # PROD 11-21 (orion ig/ih)
-clean_stag_thinf_held            = false        # UNISET IA9: IA9 all three false (was true)
 clean_stag_flim                  = false        # UNISET IA9: IA9 all three false; Caltech prod already moved to flim off (was true)
 clean_init_dtfac = 1.0e6   # PROD 11-21 (orion ig/ih)
 vet_gd_gl_nmu = 7   # GLWEDGE
@@ -197,7 +192,6 @@ implicit_flux_x1max = 0.0
 implicit_predictor_tcap = 1.1   # FRESHPREP
 time2_face_fct = true   # FRESHPREP
 time2_k1_redist = 0   # FRESHPREP
-time2_stage_local_be = false   # FRESHPREP
 scheme = clean   # FRESHPREP
 clean_layout = staggered   # FRESHPREP
 clean_rays = sc   # FRESHPREP
@@ -301,10 +295,8 @@ clean_w_c0                       = 0.3          # UNISET IA9 (all three stars)
 clean_w_c1                       = 0.6          # UNISET IA9 (all three stars)
 clean_w_face_min                 = 0            # UNISET IA9 (all three stars)
 clean_wb_fct                     = true         # UNISET IA9 (all three stars)
-vet_gd_rotate_align              = true         # UNISET IA9 (all three stars)
 vet_gd_rotate_xfade              = true         # UNISET IA9 (all three stars)
 vet_rotate_advance               = true         # UNISET IA9 (all three stars)
-vet_rotate_avg_ema_change_form   = linear       # UNISET IA9 (all three stars)
 clean_stag_fs_line               = pcr          # UNISET D14 arm 14 PASS: pcr = thomas on RSG to 0.009 pp (IA9_RSGgp), uniform pcr
 floorcap_mesh_vol                = 0            # UNISET IA9 (R136 tested value; D14: floorcap named on all three)
 vet_gd_band_ring = true   # GLWEDGE
@@ -320,12 +312,9 @@ he_ic_profile             = false                  # IC from he_ic_file (no Ma+2
 # (removed: BSG-only) he_ic_linhao_gconst      = 6.67408e-8     # Athena++ Constants::grav_const_cgs (his g(rmax) = G M_rmax / rmax^2)
 # (removed: BSG-only) he_ic_linhao_gext        = invsq          # [USER 11-04] atmosphere above rmax hydrostatic in GM/r^2 (his cpp:429 r^+2 = r2)
 he_bc_linhao = false   # FRESHPREP
-he_ic_rad_gas            = column         # ORIGINAL IC
-he_ic_rad_hse            = false          # ORIGINAL IC
 he_ic_rad                = file           # ORIGINAL IC (fresh default sph1d)
 he_ic_eint_from_t        = true                   # eint from the IC T with the code EOS
 user_srcs   = true
-user_bcs    = true
 user_hist   = true
 he_gm                    = 4.6449357021e+27       # [PAPER] 35 Msun point mass (G 6.6743e-8, Msun 1.98841e33)
 he_gravity = wb   # FRESHPREP
@@ -343,7 +332,6 @@ he_grid_dump   = true
 he_bc_outer              = copy                   # [PAPER] open top (Schultz+2022); outflow ghosts, no inflow
 he_bc_outer_r2           = false                  # plain copy (r^-2 ghost density was Ma+2026-specific)
 he_bc_inner = wall   # FRESHPREP
-he_ic_balance_rmax       = 5.353221e+11           # IC radius at T = 2.137e5 K (same anchor temperature as M35MMS 8.776579e11)
 <output1>
 file_type = hst
 dt = 0

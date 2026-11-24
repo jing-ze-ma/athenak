@@ -45,9 +45,6 @@ use_grid_stretch_r       = true                   # [PAPER-ish] logarithmic radi
 f_stretch_r              = -3.509253962786431     # = -ln(x1max/x1min): StretchR is then exactly r = r0 (r1/r0)^xi (dlnr = 0.006854)
 layout_invariant = true   # FRESHPREP
 layout_invariant_mode    = block                  # [PROD]
-cs_seam_blockend = extend   # FRESHPREP
-cs_vertex_3cell = true   # FRESHPREP
-cs_seam_rho_guard = 4   # FRESHPREP
 <meshblock>
 nx1                      = 512                    # vet_gd: one x1 block
 nx2                      = 128                    # 8 blocks on 8 GPUs (4 viper apu nodes); see jobs/ for other layouts
@@ -66,7 +63,6 @@ dt_retry_fac             = 0.5        # UNISET IA9
 dt_retry_fac_t2          = 0.9        # UNISET IA9
 dt_retry_grow            = 1.1        # UNISET IA9
 dt_retry_host            = false      # UNISET IA9
-dt_retry_max             = 8          # UNISET IA9
 dt_retry_ngood           = 20         # UNISET IA9
 dt_retry_views           = minimal    # UNISET IA9
 dt_retry_t2_be           = 0          # UNISET IA9
@@ -95,7 +91,8 @@ rad_signal_speed = true
 gamma       = 1.6666666666666667
 reconstruct = plm
 rsolver     = hllc             # paper: HLLC
-fofc        = false            # USER 11-06: as Linhao (no FOFC)
+fofc = true   # USER 11-24 ~02:10 PST: FOFC on for all stars (NOTE 24q / 24r)
+fofc_retest = true   # USER 11-24 (with fofc)
 etotgrav = true   # FRESHPREP
 wellbalance_dynamic = true   # FRESHPREP
 dfloor                   = 3.6e-19                # [NS/IC] = the IC floor 1e-10 rho0 (rho0 3.6e-9)
@@ -108,13 +105,11 @@ general_eos = gamma   # FRESHPREP
 tfloor = 123359972487.0939   # FRESHPREP
 wb_x1 = true   # FRESHPREP
 wb_option = polytropic   # FRESHPREP
-wb_cache_every = 0   # FRESHPREP
 wb_rmax = 7.504290e+12   # FRESHPREP
 <rad_vet>
 floorcap_report = 25   # PROD 11-21 (orion ig/ih)
 floorcap_v = 3e7   # PROD 11-21 (orion ig/ih)
 floorcap_rho = 1e-14   # PROD 11-21 (orion ig/ih)
-clean_stag_thinf_held            = false        # UNISET IA9: IA9 all three false (was true)
 clean_stag_flim                  = false        # UNISET IA9: IA9 all three false; Caltech prod already moved to flim off (was true)
 clean_init_dtfac = 1.0e6   # PROD 11-21 (orion ig/ih)
 vet_gd_gl_nmu = 7
@@ -193,7 +188,6 @@ implicit_flux_x1max = 0.0
 implicit_predictor_tcap = 1.1   # FRESHPREP
 time2_face_fct = true   # FRESHPREP
 time2_k1_redist = 0   # FRESHPREP
-time2_stage_local_be = false   # FRESHPREP
 scheme = clean   # FRESHPREP
 clean_layout = staggered   # FRESHPREP
 clean_rays = sc   # FRESHPREP
@@ -297,10 +291,8 @@ clean_w_c0                       = 0.3          # UNISET IA9 (all three stars)
 clean_w_c1                       = 0.6          # UNISET IA9 (all three stars)
 clean_w_face_min                 = 0            # UNISET IA9 (all three stars)
 clean_wb_fct                     = true         # UNISET IA9 (all three stars)
-vet_gd_rotate_align              = true         # UNISET IA9 (all three stars)
 vet_gd_rotate_xfade              = true         # UNISET IA9 (all three stars)
 vet_rotate_advance               = true         # UNISET IA9 (all three stars)
-vet_rotate_avg_ema_change_form   = linear       # UNISET IA9 (all three stars)
 clean_stag_fs_line               = pcr          # UNISET D14 arm 14 PASS: pcr = thomas on RSG to 0.009 pp (IA9_RSGgp), uniform pcr
 floorcap_mesh_vol                = 0            # UNISET IA9 (R136 tested value; D14: floorcap named on all three)
 <problem>
@@ -319,12 +311,9 @@ he_bc_linhao             = false                  # [OURWALL 11-13] was true: no
 # [OURWALL 11-13] dropped (read only with he_bc_linhao / he_ic_linhao): he_bc_linhao_rad         = halfrange      # [HIS] cpp:969-1034 half-range ghost intensities, DO upwind face (M1 face flux + VET outward rays); <mu>_+ of his 120-angle LQ10 set
 # [OURWALL 11-13] dropped (read only with he_bc_linhao / he_ic_linhao): he_bc_linhao_diss        = none           # [USER 11-04] inner-face dissipation: none (central average; his stock Athena++ HLLE would add ~1/(taucell tau) x the E jump)
 # [OURWALL 11-13] dropped (read only with he_bc_linhao / he_ic_linhao): he_bc_linhao_fis = iter   # vstarfix-1106 (F_is = Picard iterate, not the shifted F0^n)
-he_ic_rad_gas            = column         # ORIGINAL IC
-he_ic_rad_hse            = false          # ORIGINAL IC
 he_ic_rad                = file           # ORIGINAL IC (fresh default sph1d)
 he_ic_eint_from_t        = true                   # eint from the IC T with the code EOS
 user_srcs   = true
-user_bcs    = true
 user_hist   = true
 he_gm                    = 7.4033817458e+27       # [PAPER/IC] M_core 56 Msun (Table 1) = 55.77 Msun of the IC HSE fit (G 6.67408e-8, Msun 1.989e33)
 he_gravity = wb   # FRESHPREP
@@ -343,7 +332,6 @@ he_bc_outer              = copy                   # [PAPER] open top (Schultz+20
 he_bc_outer_r2           = false                  # plain copy (r^-2 ghost density was Ma+2026-specific)
 he_bc_inner              = wall                   # [OURWALL 11-13] was zerocontact: production closed wall (HG262/RSG): scaled-IC-profile ghosts, v_r mirrored
 # [OURWALL 11-13] dropped (read only with he_bc_linhao / he_ic_linhao): he_bc_linhao_mu1         = 0.5085136694622286     # <mu>_+ of the LQ8 set (80 dirs)
-he_ic_balance_rmax = 6.003432e+12   # FRESHPREP
 <output1>
 file_type = hst
 dt = 0

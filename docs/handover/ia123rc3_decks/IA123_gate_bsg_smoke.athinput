@@ -74,9 +74,6 @@ f_stretch_r_p_xa = 0.1875                    # = face 48/256 = 35 Rsun (his refi
 f_stretch_r_p_xb = 0.6875                    # = face 176/256 = 55 Rsun
 f_stretch_r_p_w = 1.0e-12                    # sharp edges: every face equals his piecewise-uniform faces to < 1e-10 Rsun
 layout_invariant = true   # FRESHPREP
-cs_seam_blockend = extend   # FRESHPREP
-cs_vertex_3cell = true   # FRESHPREP
-cs_seam_rho_guard = 4   # FRESHPREP
 <meshblock>
 nx1 = 256
 nx2 = 128   # FRESHPREP
@@ -98,7 +95,6 @@ mu = 0.62   # FRESHPREP
 <hydro>
 merge_lat_rc             = 2.43495e12,3.82635e12,5.5656e12   # USER 11-06 his SMR: 128^2 at 20-35, 256^2 at 35-55, 128^2 at 55-80 Rsun
 merge_lat_f              = 2,1,2
-merge_lat_mom            = rigid
 merge_lat_diag           = 1000
 split_c2p_once = true   # FRESHPREP
 am_transport   = true         # [OURS] numerical default kept (user 11-04); Athena++ (his code) has none
@@ -108,7 +104,8 @@ rad_signal_speed = true
 gamma       = 1.6666666666666667
 reconstruct = plm
 rsolver     = hllc             # paper: HLLC
-fofc        = false            # USER 11-06: as Linhao (no FOFC)
+fofc = true   # USER 11-24 ~02:10 PST: FOFC on for all stars (NOTE 24q / 24r)
+fofc_retest = true   # USER 11-24 (with fofc)
 etotgrav = true   # FRESHPREP
 wellbalance_dynamic = true   # FRESHPREP
 dfloor = 6.15245e-14   # FRESHPREP
@@ -121,7 +118,6 @@ general_eos = gamma   # FRESHPREP
 tfloor = 134104228155.32465   # FRESHPREP
 wb_x1 = true   # FRESHPREP
 wb_option = polytropic   # FRESHPREP
-wb_cache_every = 0   # FRESHPREP
 wb_rmax = 4.231839e+12   # FRESHPREP
 <rad_vet>
 clean_init_dtfac = 1.0e6   # gate control: pre-beamreal default
@@ -131,32 +127,23 @@ vet_gd_gl_stagger = true
 clean_stag_thinf = true
 time2_enth_be            = true           # [RT] = the 10-14 binary's fresh default (named)
 time2_fref_wacc          = true           # [RT] inert (force_reference = none)
-vet_gd_twin_state        = mean   # needed with twin off
-vet_gd_twin_weight       = none           # FIN3 (prodswitch-1013, fin3-1012)
 vet_interp               = auto           # FIN3 (prodswitch-1013, fin3-1012)
 vet_col_lat_cut_thin     = 1.0            # FIN3 (prodswitch-1013, fin3-1012)
 vet_bc_inner             = auto           # FIN3 (prodswitch-1013, fin3-1012)
 vet_bc_reflect           = auto           # FIN3 (prodswitch-1013, fin3-1012)
 vet_source               = relaxed        # FIN3 (prodswitch-1013, fin3-1012)
 time2_start              = be             # FIN
-time2_vstage             = true           # FIN
-time2_pred_cap           = 0.5            # FIN
 time2_vet_col_source     = blend          # FIN (X sporder-1012)
 implicit_gas_src         = conservative2  # FIN (consfix-1011; full BSG OK, DeltaAI 3363656)
 vet_seg                  = jump           # FIN (coreL-1012; was emit)
 vet_bc_diff              = face           # FIN
-vet_gd_symref            = none   # USER 11-06 twin off, as R136a1
 vet_source_noesrc_h2be   = true           # bsgrec-R
 vet_gd_allow_clamp       = true           # [OURS-BIN] binary compatibility, not physics: the 10-14 binaries clamped the vet_gd lateral reach silently (band 64, needs 102); prod-1102 FATALs unless allowed (as bsgma-1104)
 vet_gd_halo_ipc          = true           # Caltech: single node, 2 H200 x 8 blocks (CUDA IPC; speed-only, bitwise: smoke arm Coff)
-vet_gd_twin_fuse         = false  # twin off, as R136a1
-vet_gd_twin_lowmem       = true           # Caltech: 8 blocks/GPU, as your BSG fin3 deck (bitwise vs false per DeltaAI mem2)
-vet_gd_twin_det          = true   # accel-1009: fixed-order twin shell means (GPU run-to-run bitwise)
 vet_gd_twin = false   # FRESHPREP
 vet_scatter_form         = ma     # paper split (Jiang 2021 eq. 6)
 vet_scatter_j            = relaxed
 vet_scatter_kappa_e      = const  # paper: ideal gas mu 0.62, kappa_es const (NOT eos)
-report_newton_fb = false   # rc-1009: no per-step iw host copy (F4 counters keep the count)
 c_light          = 2.99792458e10
 arad             = 2.3392742567e-47   # a_cgs*T_unit^4, T_unit = 0.62 m_u/k_B = 7.4568864364e-9 K
 chat_over_c      = 1.0
@@ -209,7 +196,6 @@ clean_stag_xsrc = true   # FRESHPREP
 clean_stag_mg_color = mirror   # FRESHPREP
 time2_k1_redist = 0   # FRESHPREP
 time2_auto_be = 16   # FRESHPREP
-time2_stage_local_be = false   # FRESHPREP
 implicit_predictor_tcap = 1.1   # FRESHPREP
 time2_k1_stiff = 0   # FRESHPREP
 clean_conv_kappa = 1.0   # FRESHPREP
@@ -235,12 +221,9 @@ he_ic_profile_rng         = 0              # splitmix64(global cell index) seed
 he_ic_profile_gconst      = 6.67408e-8     # Athena++ Constants::grav_const_cgs (his g(rmax) = G M_rmax / rmax^2)
 he_ic_profile_gext        = invsq          # [USER 11-04] atmosphere above rmax hydrostatic in GM/r^2 (his cpp:429 r^+2 = r2)
 he_bc_linhao = false   # FRESHPREP
-he_ic_rad_gas            = column         # ORIGINAL IC
-he_ic_rad_hse            = false          # ORIGINAL IC
 he_ic_rad                = file           # ORIGINAL IC (fresh default sph1d)
 he_ic_eint_from_t        = false          # ORIGINAL IC (PIN defaults-1009)
 user_srcs   = true
-user_bcs    = true
 user_hist   = true
 he_gm = 2.62502e27   # FRESHPREP
 he_gravity = wb   # FRESHPREP
