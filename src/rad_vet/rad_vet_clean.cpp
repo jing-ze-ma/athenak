@@ -467,7 +467,7 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     // (the staggered stage increment's and cross flux's study forms, removed)
     {"rad_vet/clean_stag_kpos", "!"}, {"rad_vet/clean_stag_kpat", "=false"},
     {"rad_vet/clean_stag_kreal", "!"}, {"rad_vet/clean_stag_xsweep", "!"},
-    {"rad_vet/clean_stag_xpat", "!"},
+    {"rad_vet/clean_stag_xpat", "!"}, {"rad_vet/clean_thin_donor", "!"},
     // (removed in phase B, named by production decks or restart files: the old solve's
     // seam clamp, the pass print, the fixed set's band reach (the bound's band covers
     // it); the halo depth cap and the ray cut only at their kept values)
@@ -537,7 +537,7 @@ void RadiationVet::CleanInit() {
   int nmb = pmy_pack->nmb_thispack;
   // (clean_closure = iterate: not the closure a restart file holds, Time2RstSet)
   if (!cln_cip) {
-    Kokkos::realloc(cln_s, nmb, CleanNs(pmy_pack->pmesh->use_cubed_sphere, cln_rfh),
+    Kokkos::realloc(cln_s, nmb, CleanNs(pmy_pack->pmesh->use_cubed_sphere),
                     n3, n2, n1);
   }
   if (cln_phic.extent_int(0) != nmb) {
@@ -2737,7 +2737,7 @@ void RadiationVet::CleanStagBracket() {
   CleanArgs x = CleanMakeArgs();
   x.feedback = false;   // (the gas terms read the last iterate's work vectors)
   const Real efl = e_floor;
-  const bool rat = cln_rayratio, thf = cln_thinf, tdn = cln_tdn;
+  const bool rat = cln_rayratio, thf = cln_thinf;
   const bool hct = cln_hctau, hcl = cln_hclat;
   const Real rmn = cln_raymin;
   auto iw_ = iw;
@@ -2805,11 +2805,6 @@ void RadiationVet::CleanStagBracket() {
       const Real fr0 = up ? x.cs(m,CLN_FH+4*(dir-1),k-dk,j-dj,i-di) : x.cs(m,n,k,j,i);
       const bool bf = CleanBoundaryFace(x, dir, m, k, j, i);
       if (bf) return;
-      // (clean_thin_donor: the thin share is its donors' own, no rays' flux DG)
-      if (tdn) {
-        x.fc[dir](m,x.fdg,k,j,i) = 0.0;
-        return;
-      }
       // (the rays' J also where it is below clean_ray_min E: their face flux passes
       // through cells they hold almost nothing in, the side cells of a diagonal beam;
       // rayratio: E, and the rays' flux per J of its donor times the donor's E)
@@ -3125,9 +3120,7 @@ bool CleanStagFRow(const CleanArgs &x, const CleanFLine &ln, const FC &fc, const
 //! two round-offs is no flux factor), times the E (work vector e) of its donor (as
 //! clean_stag_rayratio) plus the advective a E of the face's a = v + v.D, upwind (the
 //! cubed sphere: a lateral MeshBlock's high face from its last cell, CLN_FH); false
-//! (f unchanged) where the donor holds no rays.  clean_thin_donor: the thin share's own
-//! energy flux, c (h+ E_L + h- E_R) of the donors' half ranges, so that the thin limit's
-//! momentum is the energy flux it carries
+//! (f unchanged) where the donor holds no rays
 
 KOKKOS_INLINE_FUNCTION
 bool CleanStagFRay(const CleanArgs &x, const int e, const int dir, const int m,
@@ -3141,11 +3134,6 @@ bool CleanStagFRay(const CleanArgs &x, const int e, const int dir, const int m,
   const Real jd = x.cs(m,CLN_J,kf-u*ek,jf-u*ej,iff-u*ei);
   const Real a = 0.5*(CleanStagN(x, CLW_A1, dir, m, kf, jf, iff, kf-ek, jf-ej, iff-ei) +
                       CleanStagN(x, CLW_A1, dir, m, kf, jf, iff, kf, jf, iff));
-  if (x.tdn) {
-    f = x.c*(x.fc[dir](m,CLF_HP,kf,jf,iff)*ec(1) + x.fc[dir](m,CLF_HM,kf,jf,iff)*ec(0)) +
-        a*ec(a > 0.0);
-    return true;
-  }
   if (jd > 0.0) f = x.c*fmin(fmax(g/jd, -1.0), 1.0)*ec(u) + a*ec(a > 0.0);
   return jd > 0.0;
 }

@@ -174,15 +174,10 @@ constexpr int CLN_F1 = 37;   // cell layout: their flux through an x1 boundary f
 constexpr int CLN_KP = 41;   // cell layout: k+^d_b = K+^d_bd/J (outgoing stress of
                              // mu_d > 0), 3 d + b
 constexpr int CLN_N = 50;
-// clean_ring_fh (cubed sphere, clean_rays = sc): in place of k+ (not held there) each
-// cell's half ranges about its own faces' normals, h+ out of its high faces (3), h- of
-// its low faces (3) (CleanCellHalf), so that the ring carries them as cell moments
-constexpr int CLN_HO = CLN_KP;
-constexpr int CLN_NHO = CLN_HO + 6;
 
 // the slots of cln_s
-inline int CleanNs(const bool cub, const bool ho = false) {
-  return cub ? (ho ? CLN_NHO : CLN_F1) : CLN_FH;
+inline int CleanNs(const bool cub) {
+  return cub ? CLN_F1 : CLN_FH;
 }
 
 // the moments of the cell (D, h+-, C1, J, k+; the others are face sums)
@@ -345,7 +340,6 @@ struct CleanArgs {
   // radius vector; vol, area, dxf and x1v, x1f as above, g the geometry (CLG_*) of
   // CleanCsGeometry
   bool cub;
-  bool tdn = false;   // clean_thin_donor (CleanStagFRay)
   bool lwb = false;   // clean_cs_lat_wb (CleanStagCsLat)
   bool ys = false;    // clean_stag_lat_sums: the lateral sums Y off the cubed sphere
   bool lzbf = false;  // clean_lz_bnd_free on spherical polar (CleanFaceStress)

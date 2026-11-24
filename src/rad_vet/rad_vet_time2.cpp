@@ -2108,7 +2108,7 @@ int RadiationVet::CleanRstNq() const {
 // a file of another closure, Time2RstAccept)
 int RadiationVet::CleanRstNcl() const {
   if (t2_rcl >= 0) return t2_rcl;   // (a file's, Time2RstAccept)
-  return cln_closit ? CleanNs(pmy_pack->pmesh->use_cubed_sphere, cln_rfh) : 0;
+  return cln_closit ? CleanNs(pmy_pack->pmesh->use_cubed_sphere) : 0;
 }
 
 int RadiationVet::CleanRstNfv() const {
@@ -2164,7 +2164,7 @@ bool RadiationVet::Time2RstAccept(const int nfile, const int ver) {
   // (a file of another clean_closure: the closure in place of an iterate run, CleanRstNcl,
   // is skipped by another closure; without it, an iterate run's first solve takes the
   // predicted closure, CleanSolve)
-  const int ns = CleanNs(pmy_pack->pmesh->use_cubed_sphere, cln_rfh);
+  const int ns = CleanNs(pmy_pack->pmesh->use_cubed_sphere);
   auto fits = [&](const int n) {
     return cln_cssc ? (nfile - n == 0 || nfile - n == 12) : (nfile == n);
   };
@@ -2179,13 +2179,11 @@ bool RadiationVet::Time2RstAccept(const int nfile, const int ver) {
                 << std::endl;
     }
   }
-  // (clean_ring_fh: its half ranges are ring fields, no cln_fh channels; until the
-  // layout records the key, only a file of a run with it fits exactly, and a file of
-  // one is refused without it: 1 .. 11 channels over)
-  const bool fho = cln_rfh ? t2_nfv != 0 : (t2_nfv > 0 && t2_nfv < 12);
-  if (cln_cssc && ver >= 6 && fho) {
-    std::cout << "### FATAL ERROR <rad_vet> restart: a file " << (cln_rfh ? "not " : "")
-              << "written with clean_ring_fh (" << t2_nfv << " channels over)"
+  // (a file written with clean_thin_donor's half ranges as ring fields, removed: no
+  // cln_fh channels, 1 .. 11 channels over, refused)
+  if (cln_cssc && ver >= 6 && t2_nfv > 0 && t2_nfv < 12) {
+    std::cout << "### FATAL ERROR <rad_vet> restart: a file written with clean_ring_fh ("
+              << t2_nfv << " channels over)"
               << std::endl;
     std::exit(EXIT_FAILURE);
   }

@@ -1841,14 +1841,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // the cubed sphere with clean_rays = sc: vet_gd's own sweep (intensities to cln_fvi)
     cln_cssc = pmy_pack->pmesh->use_cubed_sphere && vgd_on;
-    // clean_thin_donor (default off): the thin share w c h E of every face from its
-    // donor alone, the half range h out through the face the donor's own (its rays
-    // about the face normal: the six faces partition the donor's free-streaming
-    // outflow by projected area, w <= 1 keeps it below), no lagged rays' flux DG; on
-    // the cubed sphere with the cells' own half ranges (cln_rfh: CLN_HO, which the
-    // rotating ring's offsets carry as the closure)
-    cln_tdn = pin->GetOrAddBoolean("rad_vet","clean_thin_donor",false);
-    cln_rfh = cln_cssc && cln_tdn;
     // (a face's thin share w from the thicker of its two cells' C1)
     if (pin->GetOrAddBoolean("rad_vet","clean_w_face_min",false)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -1859,7 +1851,7 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     // rotwb2-1121: vet_rotate_avg_ema_wb keeps the ring's closure of a static state, but
     // the cs face half ranges (cln_fh, CleanFaceHalf) are the two swept sets' (no offset)
-    if (cln_cssc && vra_ema_wb && !cln_rfh && global_variable::my_rank == 0) {
+    if (cln_cssc && vra_ema_wb && global_variable::my_rank == 0) {
       std::cout << "### NOTE <rad_vet>/vet_rotate_avg_ema_wb on the cubed sphere with "
                 << "clean_rays = sc: the face half ranges follow the two swept sets, so "
                 << "a static state is not kept to round-off" << std::endl;

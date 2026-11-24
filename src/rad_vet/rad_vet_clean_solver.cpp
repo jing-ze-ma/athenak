@@ -130,7 +130,6 @@ CleanArgs RadiationVet::CleanMakeArgs() {
   x.cseam = (pmy_pack->pmesh->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::periodic)
             ? 0.5/tan(ms.x2min) + 0.5/tan(ms.x2max) : 0.0;   // (read on that wrap only)
   x.cub = pmy_pack->pmesh->use_cubed_sphere;
-  x.tdn = cln_tdn;
   x.lwb = x.cub && cln_latwb;
   x.ys = !x.cub && cln_ysum;
   x.lzbf = !x.cub && cln_lzbf;
@@ -1095,13 +1094,11 @@ void RadiationVet::CleanFaceCoefficients() {
   auto mbc = pmy_pack->pmb->mb_bcs.d_view;
   const bool hrm = cln_hface;
   const bool fsc = cln_cssc;   // (the sc rays: their folded sums, CleanFaceHalf)
-  const bool fho = cln_rfh;    // (clean_ring_fh: the cells' own, CleanCellHalf)
-  const bool tdn = cln_tdn;    // (clean_thin_donor)
   const bool wfs = cln_wfse;   // (clean_w_fse)
   const bool wft = cln_wfst;   // (clean_w_fse_tau)
   const bool fjs = cln_jse;    // (clean_face_jse)
   const bool fjc = cln_jsec;   // (clean_face_jse_cell)
-  const CleanArgs *px = (fho || fjs || wft) ? CleanDevArgs(CleanMakeArgs(), 0) : nullptr;
+  const CleanArgs *px = (fjs || wft) ? CleanDevArgs(CleanMakeArgs(), 0) : nullptr;
   const int nd = pmy_pack->pmesh->use_cubed_sphere ? cln_fvn : 0;
 
   for (int dir = 0; dir < 3; ++dir) {
@@ -1149,11 +1146,9 @@ void RadiationVet::CleanFaceCoefficients() {
         return (a*b <= 0.0) ? 0.0 : ((fabs(a) < fabs(b)) ? a : b);
       };
       const Real hpl = hp(kl,jl,il);
-      const Real hpf = tdn ? hpl : hpl + 0.5*minmod(hpl - hp(kl-dk,jl-dj,il-di),
-                                                    hp(k,j,i) - hpl);
+      const Real hpf = hpl + 0.5*minmod(hpl - hp(kl-dk,jl-dj,il-di), hp(k,j,i) - hpl);
       const Real hmr = hm(k,j,i);
-      const Real hmf = tdn ? hmr : hmr - 0.5*minmod(hmr - hm(kl,jl,il),
-                                                    hm(k+dk,j+dj,i+di) - hmr);
+      const Real hmf = hmr - 0.5*minmod(hmr - hm(kl,jl,il), hm(k+dk,j+dj,i+di) - hmr);
       const Real jl_ = cs(m,CLN_J,kl,jl,il), jr_ = cs(m,CLN_J,k,j,i);
       fc(m,CLF_HP,k,j,i) = (jl_ > 0.0) ? fmin(fmax(hpf/jl_, 0.0), 1.0)
                                        : cs(m,CLN_HP+dir,kl,jl,il);
@@ -1195,16 +1190,6 @@ void RadiationVet::CleanFaceCoefficients() {
       // (cubed sphere: about the face's own normal from the FV intensities of L and R,
       // so that a seam face takes the same h+- on both sides)
       // (J_L, J_R, H+_L, H-_R as scalars: nvcc -O3 miscompiles a runtime-indexed local)
-      if (fho) {   // (each cell's value out through this face, in its own axes)
-        Real s;
-        const int nl = CleanCsSlot(*px, dir, m, k, j, i, kl, jl, il, false, s);
-        const int nr = CleanCsSlot(*px, dir, m, k, j, i, k, j, i, false, s);
-        fc(m,CLF_HP,k,j,i) = (nl & 1) ? cs(m,CLN_HO+nl/2,kl,jl,il)
-                                      : -cs(m,CLN_HO+3+nl/2,kl,jl,il);
-        fc(m,CLF_HM,k,j,i) = (nr & 1) ? -cs(m,CLN_HO+nr/2,k,j,i)
-                                      : cs(m,CLN_HO+3+nr/2,k,j,i);
-        return;
-      }
       Real jl0 = 0.0, jr0 = 0.0, hp0 = 0.0, hm0 = 0.0;
       if (fsc) {
         jl0 = fh(m,4*dir,k,j,i);
