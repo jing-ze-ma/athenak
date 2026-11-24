@@ -2,8 +2,8 @@
 # The production BSG deck (star_bsg.athinput) at the production radial grid and 1/4 the
 # lateral resolution: 256 x 64 x 64 cells, 20-80 Rsun, theta pi/3..2pi/3, phi 0..pi/3 (periodic
 # lateral walls), 16 MeshBlocks of 256 x 16 x 16 (tile 16).  Same scheme keys as the
-# production runs (commit 512cf768a), except the ray set: LQ10 (120 fixed directions)
-# instead of GL 7 x 18 (GL on a wedge needs a later commit).
+# production runs (commit 512cf768a), incl. the Gauss-Legendre 7 x 18 ray set (azimuthal
+# period 20 deg: the 60 deg periodic wedge is a whole number of periods, as it must be).
 # Data (inputs/rad_m1_clean/star3d_data, linked into the run directory as star3d_data):
 #   bsg_ic.txt, bsg_profile.txt (thinned copies of the production 1-D profiles),
 #   bsg_rosseland.txt, bsg_planck.txt (opacity tables).
@@ -136,6 +136,9 @@ arad = 2.3392742567e-47
 chat_over_c = 1.0
 closure = vet_col
 vet_gd = true
+vet_gd_gl_nmu = 7
+vet_gd_gl_nphi = 18
+vet_gd_gl_stagger = true
 vet_scatter = true
 vet_gd_replace = true
 vet_col_lat_taucut = 30.0
@@ -190,7 +193,6 @@ cs_cross_mono = true
 clean_init = steady
 vet_rotate_avg_ema = 0
 clean_cs_lz_tel = false
-vet_gd_ls = 10
 vet_rotate_avg = 0
 vet_gd_rotate_dt = 0
 force_reference_work = split

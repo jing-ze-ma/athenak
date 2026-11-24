@@ -70,9 +70,9 @@ mpirun -np 24 $ATHENAK/build_cpu/src/athena -i star3d_cs.athinput -d run_cs_cpu 
 ```
 
 Measured on one 2 x 56-core Intel Xeon Platinum 8480+ node (gcc 13, Open MPI 4.1, ranks pinned to cores): sp
-3 cycles in 229 s; cs 2 cycles in 125 s. Most of that is the start-up
-(the profile, the ray tables and the steady radiation start). A cycle then costs about
-40 s (sp) and 25 s (cs). Fewer ranks also work (any divisor of the MeshBlock
+3 cycles in 128 s; cs 2 cycles in 125 s (685 s when the node is shared with other jobs).
+Most of that is the start-up (the profile, the ray tables and the steady radiation start).
+A cycle then costs about 25 s (sp and cs). Fewer ranks also work (any divisor of the MeshBlock
 count), only slower.
 
 ### 4 GPUs: the test run
@@ -94,8 +94,8 @@ Measured on one node of 4 A100-40GB (MPCDF Raven, `gcc/13 cuda/12.6 openmpi_gpu/
 
 | deck | wall time | per cycle | simulated time | output |
 |---|---|---|---|---|
-| sp | 13.7 min (819 s) | 0.20 s | 4000 cycles, 9.8 d (dt about 260 s) | 6 dumps of hydro_w + m1, 0.6 GB |
-| cs | 13.3 min (798 s) | 0.65 s | 1200 cycles, 13.9 d (dt 1000 s) | 6 dumps of hydro_w + m1, 1.9 GB |
+| sp | 13.9 min (832 s) | 0.21 s | 4000 cycles, 9.8 d (dt about 260 s) | 6 dumps of hydro_w + m1, 0.6 GB |
+| cs | 13.3 min (797 s) | 0.65 s | 1200 cycles, 13.9 d (dt 1000 s) | 6 dumps of hydro_w + m1, 1.9 GB |
 
 To make a run shorter or longer, change `time/nlim` (or give `time/nlim=N` on the command
 line). Dumps are written every 1000 cycles (sp) or 300 cycles (cs), set by `output2/dcycle`
@@ -119,7 +119,7 @@ Checks:
 2. `grep -c 'CLEAN WARNING' run_sp.log` gives 0 (the same for cs).
 3. The steady start converged (log line `clean_init steady: converged after N passes`).
    The line `clean_init steady pass 1: ... = ...` is a fingerprint of the binary, and a
-   new machine or compiler should reproduce it to a few digits: sp `1.070e-08`, cs
+   new machine or compiler should reproduce it to a few digits: sp `9.025e-09`, cs
    `1.218e-07` (the same on CPU and A100). On the RSG the steady-start residual stalls
    near 1.1e-7 of max E. The default tolerance 1e-8 is then never reached, and the start
    ends after 40 passes with a `CLEAN WARNING`, so the cs deck accepts 2e-7. Do not use a
@@ -134,7 +134,7 @@ Checks:
 
 | deck | L_in | L_top at the end | L_top / L_in at the end | L_top / L_in over the second half |
 |---|---|---|---|---|
-| sp | 4.651e37 (wedge) | 4.84e37 | 1.040 | 0.958 - 1.066 |
+| sp | 4.651e37 (wedge) | 4.83e37 | 1.039 | 0.958 - 1.066 |
 | cs | 6.837e38 | 6.74e38 | 0.986 | 0.986 - 0.997 |
 
 What the curves look like (the notebook plots them):
@@ -143,7 +143,7 @@ What the curves look like (the notebook plots them):
   atmosphere (E = a T^4, F = 0 above the photosphere) streams out. It falls to about
   1.4 `L_in` within 10 cycles and to within 5 % of `L_in` after about 0.3 d. After that it
   oscillates around `L_in` by up to 10 % (0.96 - 1.07 over the second half). `L_bot`
-  swings between -1.1 and +2 `L_in` over the first 100 cycles while the inner wall
+  swings between -1.4 and +2.2 `L_in` over the first 100 cycles while the inner wall
   adjusts, then stays within 10 % of `L_in` (0.94 - 1.05 over the second half).
 - cs: `L_top / L_in` starts at 0.987, peaks at 1.10 after about 0.1 d and relaxes back to
   0.986 - 0.997 over the second week. `L_bot / L_in` stays within 3 % of 1, and within
@@ -177,7 +177,11 @@ The notebook in the repository was executed on the 4-A100 runs above.
 
 The production templates (`star_bsg.athinput` and the others, [RUN.md](RUN.md)) differ from
 these decks only in resolution, MeshBlock size (`layout_tile` must equal the lateral
-MeshBlock size), run length and outputs. The sp test deck also uses the fixed 120-direction
-LQ10 ray set (`vet_gd_ls = 10`) instead of the template's Gauss-Legendre 7 x 18 set. (A Gauss-Legendre set on a phi-periodic wedge needs a wedge width that is a multiple of 360 deg / nphi, e.g. 20 deg for nphi = 18; see KEYS.md.) Lines of
+MeshBlock size), run length and outputs. Both sp decks use the Gauss-Legendre 7 x 18 ray
+set (`vet_gd_gl_nmu = 7`, `vet_gd_gl_nphi = 18`, `vet_gd_gl_stagger = true`). On a
+phi-periodic wedge the wedge width must be a multiple of the set's azimuthal period
+360 deg / nphi (20 deg here; the wedge is 60 deg). Otherwise the set breaks the phi mirror
+symmetry and drives a spurious F_phi in thin gas. For example, the LQ10 set
+(`vet_gd_ls = 10`, period 90 deg) is wrong on this wedge (see KEYS.md). Lines of
 the form `# IA12.1: key = value` mark the keys of the next code version. They are not
 read by this one.
