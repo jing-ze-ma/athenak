@@ -489,6 +489,14 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                 << "polar with a periodic x3" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // clean_stag_fwb_cart (read only when named, default false): on a uniform Cartesian
+    // mesh fwb's s of the faces of every direction less its line mean, as fwb_line's x1
+    // faces: linear momentum exact without a ledger; no-op on curvilinear meshes
+    if (cln_fwb && pin->DoesParameterExist("rad_vet", "clean_stag_fwb_cart") &&
+        pin->GetBoolean("rad_vet", "clean_stag_fwb_cart") && !pmy_pack->pmesh->multilevel &&
+        !pmy_pack->pmesh->use_spherical_polar && !pmy_pack->pmesh->use_cubed_sphere) {
+      cln_fwbpj[0] = cln_fwbpj[1] = cln_fwbpj[2] = true;
+    }
     // clean_stag_fcone (default on for a fresh run with fwb, recorded; a restart file
     // without the key: off): every cell's flux vector within its realisable cone,
     // |F| <= c E, by construction: the faces scaled towards 0 (CleanStagFCone)
