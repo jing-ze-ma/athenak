@@ -1512,6 +1512,12 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     }
     dtr_fail = true;
   }
+  if (cln_feedback && cln_neint > 0 && !t2stage && !dtr_on && !t2_inprobe &&
+      global_variable::my_rank == 0) {
+    std::printf("CLEAN WARNING cycle %d t2s %d: backward-Euler step accepted with %d "
+                "cells of gas eint below 0 / its floor, E < 0 or not finite (no "
+                "dt_retry)\n", pmy_pack->pmesh->ncycle, t2_solve, cln_neint);
+  }
   if (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2) {
     // (as the old production with implicit_pos_floor(_cons): an E < 0 that the
     // conservative write-back floor raises does not fail the stage; the floor is counted)
@@ -3361,8 +3367,9 @@ Real RadiationM1::CleanNewtonUpdate() {
                       (pxe ? w(m,CLW_PD,k,j,i) : 0.0);
       const Real ga = hc*op(m,M1_OP_P,k,j,i)*g*arad_*SQR(SQR(t)) - hcke*x -
                       w(m,CLW_EP,k,j,i);
-      xc = fmax(xc, fabs(w(m,CLW_XA,k,j,i) - (dg - 1.0)*x - ga)/fmax(fabs(x) +
-                    fabs(w(m,CLW_EO,k,j,i)) + fabs(w(m,CLW_EI,k,j,i)), 1.0e-300));
+      const Real c = fabs(w(m,CLW_XA,k,j,i) - (dg - 1.0)*x - ga)/fmax(fabs(x) +
+                     fabs(w(m,CLW_EO,k,j,i)) + fabs(w(m,CLW_EI,k,j,i)), 1.0e-300);
+      xc = fmax(xc, Kokkos::isfinite(c) ? c : INFINITY);   // (Max drops a NaN)
     }
     w(m,CLW_EK,k,j,i) = e;
     w(m,CLW_T,k,j,i) = t;
@@ -3395,7 +3402,8 @@ Real RadiationM1::CleanNewtonUpdate() {
   change = mx[0]; femax = mx[1]; ermax = mx[2]; xcl = mx[3];
   if (xte && cln_nlprint) {   // (diagnostic: CLEAN XT with clean_nl_print only)
     if (global_variable::my_rank == 0) {
-      std::printf("CLEAN XT cycle %d t2s %d pass closure %.3e\n", pmy_pack->pmesh->ncycle,
+      std::printf("CLEAN %sXT cycle %d t2s %d pass closure %.3e\n",
+                  std::isfinite(xcl) ? "" : "WARNING ", pmy_pack->pmesh->ncycle,
                   t2_solve, xcl);
     }
   }
@@ -4863,9 +4871,9 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
     const Real n = CleanReduce(h(0), false), p = CleanReduce(h(1), false);
     const Real p1 = CleanReduce(h(2), false);
     if (global_variable::my_rank == 0) {
-      std::printf("CLEAN FWB cycle %d t2s %d faces %.0f radiation momentum sum |dp| "
-                  "%.6e x1 faces sum dp %.6e\n", pmy_pack->pmesh->ncycle, t2_solve, n, p,
-                  p1);
+      std::printf("CLEAN %sFWB cycle %d t2s %d faces %.0f radiation momentum sum |dp| "
+                  "%.6e x1 faces sum dp %.6e\n", std::isfinite(p + p1) ? "" : "WARNING ",
+                  pmy_pack->pmesh->ncycle, t2_solve, n, p, p1);
     }
   }
   if (flm) {   // (clean_stag_flim: the faces cut and their radiation momentum, booked)
@@ -6057,8 +6065,9 @@ void RadiationM1::CleanWbFct(const CleanArgs &x, const CleanArgs *px,
   lv[0] = CleanReduce(lv[0], false);
   lv[1] = CleanReduce(lv[1], false);
   if (global_variable::my_rank == 0) {
-    std::printf("CLEAN WBFCT cycle %d t2s %d rounds %d left %.0f kept %.6e\n",
-                pmy_pack->pmesh->ncycle, t2_solve, nr, lv[0], lv[1]);
+    std::printf("CLEAN %sWBFCT cycle %d t2s %d rounds %d left %.0f kept %.6e\n",
+                std::isfinite(lv[1]) ? "" : "WARNING ", pmy_pack->pmesh->ncycle,
+                t2_solve, nr, lv[0], lv[1]);
   }
   for (int n = 0; n < nf && pfo; ++n) {   // (the stored Phi: what moved E)
     CleanFor("cln_wbfs", nmb1, ks, ke+(n == 2), js, je+(n == 1), is, ie+(n == 0),
@@ -6696,12 +6705,14 @@ void RadiationM1::CleanWriteBack() {
     Kokkos::parallel_reduce("cln_wbclose", CleanRp256(DevExeSpace(), 0, (nmb1 + 1)*nkji),
     KOKKOS_LAMBDA(const int idx, Real &c) {
       const int m = idx/nkji, k = ks + (idx%nkji)/nji, j = js + (idx%nji)/n1;
-      c = fmax(c, w(m,CLW_PW,k,j,is + idx%n1));
+      const Real v = w(m,CLW_PW,k,j,is + idx%n1);
+      c = fmax(c, Kokkos::isfinite(v) ? v : INFINITY);   // (Max drops a NaN)
     }, Kokkos::Max<Real>(cm));
     cm = CleanReduce(cm, true);
     if (global_variable::my_rank == 0) {
-      std::printf("CLEAN %s cycle %d t2s %d write-back closure %.3e\n",
-                  xwb ? "XT" : "KPOS", pmy_pack->pmesh->ncycle, t2_solve, cm);
+      std::printf("CLEAN %s%s cycle %d t2s %d write-back closure %.3e\n",
+                  std::isfinite(cm) ? "" : "WARNING ", xwb ? "XT" : "KPOS",
+                  pmy_pack->pmesh->ncycle, t2_solve, cm);
     }
   }
   cln_kpb = false;

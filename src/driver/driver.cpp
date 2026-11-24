@@ -671,7 +671,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // paid before the checkpoint, so that a discarded attempt drops only its own)
       if (!dtr_retrying) {DualPay(pmesh);}
       if (pdtr_ != nullptr && pdtr_->on && !dtr_retrying) {pdtr_->Save(pmesh);}
-      if (pctr_ != nullptr && pdtr_->on && !dtr_retrying) {pctr_->Save(pmesh, 0);}
+      if (pctr_ != nullptr && !dtr_retrying) {pctr_->Save(pmesh, 0);}
       // <problem>/eint_ledger (no-op unless on): a retried cycle drops the
       // failed attempt's entries; otherwise the gap since the last commit is booked
       if (dtr_retrying) {
@@ -942,6 +942,7 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // dual selection created is taken from E_rad of the same cell, once, after every
       // radiation stage (hydro/dual_energy.hpp)
       if (!dpre) {DualPay(pmesh);}
+      if (pctr_ != nullptr) {pctr_->Cycle(pmesh);}   // (CLEAN FALLBACK)
       if (t2kind == 1) {
         pm1->Time2AutoBeEnd(1, t2sec(t2w0, t2wf), t2sec(t2wf, t2we));
       } else if (t2kind >= 0) {

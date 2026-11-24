@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <iostream>
 #include <limits>
@@ -943,8 +944,7 @@ CounterKeep::CounterKeep(ParameterInput *pin, Mesh *pm) {
 }
 
 void CounterKeep::Save(Mesh *pm, int slot) {
-  if (!on) return;
-  Snap &s = s_[slot];
+  Snap &s = s_[slot];   // (also with counters_rollback off: Cycle reads slot 0)
   for (int q = 0; q < 9; ++q) {s.ni[q] = *EcInt(pm->ecounter, q);}
   for (int q = 0; q < 5; ++q) {s.ec[q] = *EcReal(pm->ecounter, q);}
   auto *pm1 = pm->pmb_pack->pradm1;
@@ -955,6 +955,7 @@ void CounterKeep::Save(Mesh *pm, int slot) {
     s.hfcp = SnapView(pm1->fcap_cnt.d_view, s.fcp);
     s.lz[0] = pm1->cln_lzl;
     s.lz[1] = pm1->cln_lzp;
+    s.ffl = pm1->t2_ffct_left;
   }
   s.have = true;
 }
@@ -997,6 +998,49 @@ void CounterKeep::Report(Mesh *pm) {
             << "dropped (m1_pos_un, x volume) " << a[0] << " / " << a[1] << " / " << a[2]
             << ", vceil_de dropped " << a[3] << " / " << a[4] << " / " << a[5]
             << std::endl;
+}
+
+//! \brief an accepted cycle's counted corrections (no silent fallbacks), from its
+//! checkpoint slot 0: implicit_pos_gas raises (cells, the energy E paid), E floor raises
+//! (cells, the energy the gas and the column paid), time2_face_fct's 'left' cells, a
+//! time2_auto_be step, floorcap's |v| / T caps and the c2p density floor under
+//! dfloor_flux_limit.  One CLEAN FALLBACK line when any fired (one reduction)
+
+void CounterKeep::Cycle(Mesh *pm) {
+  const Snap &s = s_[0];
+  if (!s.have) return;
+  auto *pm1 = pm->pmb_pack->pradm1;
+  auto *ph = pm->pmb_pack->phydro;
+  Real d[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  if (pm1 != nullptr && s.hpos) {
+    using namespace radm1;   // NOLINT(build/namespaces)
+    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->pos_cnt_d);
+    auto h0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), s.pos);
+    const int q[5] = {M1_POS_GAS, M1_POS_GAS_DE, M1_POS_FLR, M1_POS_FLR_DE,
+                      M1_POS_FLR_MV};
+    for (int n = 0; n < 5; ++n) {d[n] = h(q[n]) - h0(q[n]);}
+  }
+  if (pm1 != nullptr && s.hfcp) {
+    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->fcap_cnt.d_view);
+    auto h0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), s.fcp);
+    for (int n = 0; n < 2; ++n) {d[5+n] = h(n) - h0(n);}
+  }
+  if (ph != nullptr && ph->use_dfl) {
+    d[7] = static_cast<Real>(pm->ecounter.neos_dfloor - s.ni[1]);
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, d, 8, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  // (the face FCT's count and the auto-BE decision are the same on every rank)
+  const Real fl = (pm1 != nullptr) ? pm1->t2_ffct_left - s.ffl : 0.0;
+  const int abe = (pm1 != nullptr && pm1->t2_abe_now && !pm1->t2_beonly) ? 1 : 0;
+  if (global_variable::my_rank != 0) return;
+  if (!(d[0] > 0.0 || d[2] > 0.0 || d[5] > 0.0 || d[6] > 0.0 || d[7] > 0.0 ||
+        fl > 0.0 || abe)) return;
+  std::printf("CLEAN FALLBACK cycle %d: pos_gas %.0f (from E %.3e) e_floor %.0f (from "
+              "gas %.3e, column %.3e) ffct_left %.0f auto_be %d floorcap v %.0f T %.0f "
+              "c2p_dfloor %.0f\n", pm->ncycle, d[0], d[1], d[2], d[3], d[4], fl, abe,
+              d[5], d[6], d[7]);
 }
 
 }  // namespace dtretry

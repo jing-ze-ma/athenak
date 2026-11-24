@@ -210,7 +210,9 @@ class DtRetry {
 // (Time2StartProbe, Time2RotCorrect).  Counters only: nothing a kernel reads is touched,
 // so the evolution is bitwise the same with it on or off.  <time>/counters_rollback
 // (default true; read only when named, the parameter dump is unchanged).  Slot 0 = the
-// cycle checkpoint (dt_retry), slot 1 = the stage start (backward-Euler redo).
+// cycle checkpoint (dt_retry), slot 1 = the stage start (backward-Euler redo).  Cycle:
+// the accepted cycle's counted corrections against slot 0 (taken every cycle), one
+// CLEAN FALLBACK line when any fired (no silent fallbacks; one reduction).
 class CounterKeep {
  public:
   CounterKeep(ParameterInput *pin, Mesh *pm);
@@ -218,6 +220,7 @@ class CounterKeep {
   void Save(Mesh *pm, int slot);
   void Restore(Mesh *pm, int slot, int why);   // why: 0 dt_retry, 1 BE redo, 2 helper
   void Report(Mesh *pm);
+  void Cycle(Mesh *pm);
 
  private:
   struct Snap {
@@ -227,6 +230,7 @@ class CounterKeep {
     DvceArray1D<Real> pos, acl, opn, fcp;   // (fcp: <rad_m1>/floorcap's fcap_cnt)
     bool hpos = false, hacl = false, hopn = false, hfcp = false;
     Real lz[2] = {0, 0};   // (<rad_m1>'s L_z ledger cln_lzl and its pending cln_lzp)
+    Real ffl = 0;   // (<rad_m1>'s time2_face_fct 'left' cells, t2_ffct_left)
   };
   Snap s_[3];   // slot 2: the stage-1 start of a time2_posfix re-solve
   std::int64_t nrb_[3] = {0, 0, 0};
