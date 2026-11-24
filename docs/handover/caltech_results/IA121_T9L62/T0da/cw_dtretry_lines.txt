@@ -1,0 +1,7 @@
+CLEAN WARNING cycle 30385 t2s 2: implicit_pos_floor created inf of E (neither the gas nor the column covered the raise)
+CLEAN WARNING cycle 30385 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 1)
+CLEAN WARNING cycle 30872 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
+CLEAN WARNING cycle 30874 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 3)
+CLEAN WARNING cycle 30876: backward-Euler solve not converged (dt_retry, 4 so far; last change 1.037e-04)
+DT_RETRY cycle=30876 t=1.719147e+06 dt 5.800809e+01 -> 2.900405e+01 reason=NON-CONVERGED resid=-1.000000e+00 cut 1
+DT_RETRY recovered cycle=30891 t=1.719676e+06 cap 8.851333e+01 >= CFL dt 7.443411e+01: cap off

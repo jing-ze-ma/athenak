@@ -1,0 +1,8 @@
+grid 1.577673e+06 - 1.607000e+06, 2001 pts
+L_top/L_in  T0da-T0a  rms 1.470e-02 max 2.827e-02  (rel to mean 1.5523)
+L_top/L_in  T0a-T0h   rms 2.775e-02 max 4.877e-02  (rel to mean 1.5523)
+L_bot/L_in  T0da-T0a  rms 5.769e-05 max 1.280e-04  (rel to mean 1.0020)
+L_bot/L_in  T0a-T0h   rms 2.304e-05 max 4.932e-05  (rel to mean 1.0020)
+T0a   s/cyc 3.471 (c30100-31050)  wall per 1e4 s model 345 s  (t 1.5792e+06 - 1.6747e+06)
+T0da  s/cyc 4.024 (c30100-31050)  wall per 1e4 s model 230 s  (t 1.5804e+06 - 1.7463e+06)
+T0h   s/cyc 3.194 (c30100-31050)  wall per 1e4 s model 1035 s  (t 1.5781e+06 - 1.6074e+06)
