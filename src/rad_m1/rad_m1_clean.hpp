@@ -1859,7 +1859,19 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
       if (tc != t) {   // (counted; a write-back's also the gas momentum withheld)
         Kokkos::atomic_add(&x.mclc(0), 1.0);
         if (x.mclc.extent_int(0) > 1) {
-          Kokkos::atomic_add(&x.mclc(1+dir), (tc - t)*CleanVol(x, m, k, j, i));
+          const Real dv = (tc - t)*CleanVol(x, m, k, j, i);
+          Kokkos::atomic_add(&x.mclc(1+dir), dv);
+          if (x.mclc.extent_int(0) > 4) {   // (T9WK measurement: L_z, opaque faces)
+            if (x.sph && dir == 2) {
+              Kokkos::atomic_add(&x.mclc(4), dv*x.x1v(m,i)*x.tg(m,2,j));
+            }
+            const Real dxf = (x.sph || x.cub) ? x.dxf[dir](m,kf,jf,iff) : 1.0/x.idx[dir];
+            if (0.5*xs*dxf > 1.0) {
+              Kokkos::atomic_add(&x.mclc(5), 1.0);
+              Kokkos::atomic_add(&x.mclc(6), fabs(dv));
+            }
+            Kokkos::atomic_add(&x.mclc(7), fabs(dv));
+          }
         }
       }
       t = tc;

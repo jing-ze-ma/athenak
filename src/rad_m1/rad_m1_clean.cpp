@@ -6389,7 +6389,7 @@ void RadiationM1::CleanWriteBack() {
   const bool wmc = cln_wbmc && feedback && !x.vzero;
   if (wmc) {
     xh.mcl = true;
-    xh.mclc = DvceArray1D<Real>("cln_wbmcc", 4);
+    xh.mclc = DvceArray1D<Real>("cln_wbmcc", 8);
   }
   px = CleanDevArgs(x, 0);   // (the F solve took the slots; xh changed)
   pxh = CleanDevArgs(xh, 1);
@@ -6702,12 +6702,17 @@ void RadiationM1::CleanWriteBack() {
   });
   if (wmc) {
     auto hm = Kokkos::create_mirror_view_and_copy(HostMemSpace(), xh.mclc);
-    Real r[4];
-    for (int n = 0; n < 4; ++n) r[n] = CleanReduce(hm(n), false);
+    Real r[8];
+    for (int n = 0; n < 8; ++n) r[n] = CleanReduce(hm(n), false);
     if (global_variable::my_rank == 0 && r[0] > 0.0) {
       std::printf("CLEAN MCAP cycle %d t2s %d: %.0f face momentum terms at the cap in the "
                   "write-back, gas momentum withheld sum dp V (x1 x2 x3) %.6e %.6e %.6e\n",
                   pmy_pack->pmesh->ncycle, t2_solve, r[0], r[1], r[2], r[3]);
+    }
+    if (global_variable::my_rank == 0 && r[0] > 0.0) {
+      std::printf("CLEAN MCAPM cycle %d t2s %d: L_z withheld %.6e, tau_f > 1 terms %.0f "
+                  "sum |dp| V %.6e of all %.6e\n", pmy_pack->pmesh->ncycle, t2_solve,
+                  r[4], r[5], r[6], r[7]);
     }
   }
   if (lzb) {   // (the L_z ledger: the stage's L_z as its slope, then booked)
