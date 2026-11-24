@@ -6,3 +6,17 @@
 - s/cyc 0.2738 (c50-320); dt c0/c100/c200/c300: 3.4805 3.4805 3.4805 3.4805 ; L_top/L_in, L_bot/L_in at c300: 1.00028 1.00003; BiCGStab it 7.60, solves 2.16 per stage line
 - binder (last DTREP): c310 dt_hyd 3.481 gasonly 3.877 dir 1 r 4.7306e+11 rho 1.834e-04 T 1.911e+14 v -3.038e-01 ceff 1.988e+07 tauT_h 2.6e+04
 
+
+## m35mms (11-24 11:14) on hpc-sm-02-17 / 7333073 
+- start: `2026-11-24 11:10:14 chunk 0 STAR=m35mms BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc4v_262affd6f md5=7d7c4a71a07d3dc3878e7dea1403df23 DECK=/resnick/groups/carnegie_poc/jingze/prod_rc4v_1124/decks/IA123_m35mms.athinput md5=1c0709cfdb5`
+- 300-cycle watch: FATAL 0, CW 0, created inf 0, DT_RETRY 0; never-read: ### output1/dt = 0;
+- s/cyc 0.6467 (c50-300); dt c0/c100/c200/c300: 12.008 12.008 12.008 12.008 ; L_top/L_in, L_bot/L_in at c300: 1.00065 1.00011; BiCGStab it 5.46, solves 2.11 per stage line
+- binder (last DTREP): c330 dt_hyd 12.01 gasonly 14.16 dir 3 r 6.7509e+11 rho 1.743e-04 T 2.212e+14 v 6.886e-03 ceff 2.265e+07 tauT_h 8.8e+04
+
+
+## bsg (11-24 11:14) on hpc-sm-02-11 / 7333073 
+- start: `2026-11-24 11:10:14 chunk 0 STAR=bsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc4v_262affd6f md5=7d7c4a71a07d3dc3878e7dea1403df23 DECK=/resnick/groups/carnegie_poc/jingze/prod_rc4v_1124/decks/IA123_bsg.athinput md5=875f06c8efda9256e`
+- 300-cycle watch: FATAL 0, CW 0, created inf 0, DT_RETRY 0; never-read: ### output1/dt = 0;
+- s/cyc 0.6867 (c50-300); dt c0/c100/c200/c300: 165.46 168.46 168.72 168.84 ; L_top/L_in, L_bot/L_in at c300: 1.06355 0.99551; BiCGStab it 2.66, solves 3.75 per stage line
+- binder (last DTREP): c320 dt_hyd 168.8 gasonly 96.65 dir 3 r 1.4023e+12 rho 5.742e-05 T 1.422e+14 v 3.984e+04 ceff 1.764e+07 tauT_h 1.34e+05
+
