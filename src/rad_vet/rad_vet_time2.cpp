@@ -4,24 +4,14 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_time2.cpp
-//! \brief <rad_vet>/time_scheme = hesdirk2: second order in time for the coupled gas +
-//! implicit M1 system (docs/dev/rad_vet_time2_design.md sect. 5,
-//! tests_m1/runs_3x_hesdirk2).
-//!
-//! H-ESDIRK2 is an IMEX Runge-Kutta scheme whose explicit part is AthenaK's Heun (rk2)
-//! hydro, unchanged, and whose implicit part is the stiffly accurate, L-stable ESDIRK
-//!   A = [[0,0,0],[1-g,g,0],[1/2,b2,g]],  g = 1 - 1/sqrt 2,  b2 = g/(2(1-g)),
-//! with the first slope first-same-as-last (FSAL).  Each implicit stage is the existing
-//! backward-Euler ImplicitSolve with dt -> g dt and a SUPPLIED old vector
-//!   rhs = (stage start state) + t2inc,
-//! where the stage start state is what the Heun stage produced (it stays the solve's
-//! first iterate, and the only state the EOS and the opacities are evaluated at), and
-//!   stage 1: t2inc = (1-g) dt K1,   stage 2: t2inc = dt (g/2 K1 + (b2 - g/2) K2).
-//! The slope of a solve is K = (Y - rhs)/(g dt); the stage-2 one is the next K1.
-//!
-//! A step is backward Euler (with K1 = (Y - rhs)/dt stored) when no valid K1 exists:
-//! the first step, a restart from a file without the slope, and the step after a failed
-//! stage, which is redone from U^n.
+//! \brief time_scheme = hesdirk2: the IMEX stages (Heun hydro, ESDIRK implicit
+//! radiation), their state and its restart channels.
+//! Implicit part: A = [[0,0,0],[1-g,g,0],[1/2,b2,g]], g = 1 - 1/sqrt 2, b2 = g/(2(1-g)),
+//! first slope FSAL.  A stage is the backward-Euler ImplicitSolve with dt -> g dt and the
+//! old vector rhs = (stage start) + t2inc, t2inc = (1-g) dt K1 (stage 1) or
+//! dt (g/2 K1 + (b2 - g/2) K2) (stage 2); its slope is K = (Y - rhs)/(g dt).  Without a
+//! valid K1 (first step, restart without the slope, failed stage) the step is backward
+//! Euler and stores K1 = (Y - rhs)/dt.
 
 #include <algorithm>
 #include <chrono>
@@ -64,9 +54,8 @@ const Real kT2G = imex_sdirk2::Gamma();   // shared tableau
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::Time2Init
-//! \brief read <rad_vet>/time_scheme (be | hesdirk2) and allocate the stage state.  The
-//! key is always present here: ImplicitInit resolves its default (hesdirk2 where it is
-//! accepted, be elsewhere and on restarts whose file lacks it; m1-defaults2).
+//! \brief reads time_scheme (its default set by ImplicitInit) and the time2_* keys, and
+//! allocates the stage state
 
 void RadiationVet::Time2Init(ParameterInput *pin) {
   time_scheme = M1_TIME_BE;
@@ -83,8 +72,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
-  // vet_every (vet_sc_every) under vet_sc: the extrapolated builds between two formal
-  // solutions are removed, only 1
+  // vet_every > 1 is not accepted under vet_sc
   const std::string kev = M1KeyName(pin, "vet_every", {"vet_sc_every"});
   if (vet_sc && pin->DoesParameterExist("rad_vet", kev) &&
       pin->GetInteger("rad_vet", kev) > 1) {
@@ -93,8 +81,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
               << "is accepted" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // plain be with t2_beonly (ImplicitInit) runs as hesdirk2, every step on
-  // the backward-Euler path (Time2AutoBeBegin)
+  // be with t2_beonly runs as hesdirk2 with every step on the backward-Euler path
   if (time_scheme == M1_TIME_BE && t2_beonly) {
     time_scheme = M1_TIME_HESDIRK2;
     if (global_variable::my_rank == 0) {
@@ -117,10 +104,11 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
               << "= rk2 (its explicit part IS the Heun hydro)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // the stage coefficients (see rad_vet.hpp t2_tab).  hesdirk2: a21 = 1-g, Heun average,
-  // then g/2 K1 + (b2 - g/2) K2.  trbdf2 (ESDIRK form of TR-BDF2, c = (0, 2g, 1),
-  // A = [[0,0,0],[g,g,0],[w,w,g]], w = sqrt(2)/4): a21 = g, the hydro's stage-2 weights
-  // 1/4 (Y2) and 3/4 (U^n), then (w - g/4)(K1 + K2).
+  // stage coefficients (t2_tab, utils/imex_sdirk2.hpp):
+  //   hesdirk2: a21 = 1-g, Heun average, then g/2 K1 + (b2 - g/2) K2
+  //   trbdf2 (c = (0, 2g, 1), w = sqrt(2)/4): a21 = g, hydro weights 1/4 (Y2) and
+  //     3/4 (U^n), then (w - g/4)(K1 + K2)
+  //   sdirk2: no explicit K1 (Time2GasTime)
   {
     const Real g = kT2G;
     t2_tab = 0;
@@ -130,7 +118,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
         t2_tab = 0;
       } else if (tb.compare("trbdf2") == 0) {
         t2_tab = 1;
-      } else if (tb.compare("sdirk2") == 0) {   // seamE-1106
+      } else if (tb.compare("sdirk2") == 0) {
         t2_tab = 2;
       } else {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -139,8 +127,6 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
         std::exit(EXIT_FAILURE);
       }
     }
-    // the coefficients from the shared tableau (utils/imex_sdirk2.hpp,
-    // the same expressions), also used by <problem>/ck_time_scheme = hesdirk2
     const imex_sdirk2::Tableau tb = imex_sdirk2::Make(t2_tab);
     (void) g;
     t2_a21 = tb.a21;
@@ -155,7 +141,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
                   << (t2_gtm ? "" : ", time2_gtime_mom = false") << std::endl;
       }
     }
-    if (t2_tab == 2 && coupling && pmy_pack->pmhd != nullptr) {   // (Time2GasTime)
+    if (t2_tab == 2 && coupling && pmy_pack->pmhd != nullptr) {  // no mhd path
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_vet>/time2_tableau = sdirk2 is not wired for mhd"
                 << std::endl;
@@ -168,50 +154,28 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
       }
     }
   }
-  // closure = vet_col (m1-sph2) sets tau_closure too: its tensor is a formal solution
-  // like vet_sc's, built at U^n by Time2VetStart and kept for both stages
+  // closure = vet_col sets tau_closure too; its tensor is built at U^n (Time2VetStart)
   if (tau_closure && !vet_col) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
               << std::endl << "<rad_vet>/time_scheme = hesdirk2 is not wired for "
               << "closure = tau" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // time2_enth_be: the stage solves build the enthalpy face coefficient a_f as the mean
-  // of the two cells, but the backward-Euler solves of the same run (the start step, the
-  // step after a failed stage) take implicit_enthalpy's own a_f (plm: the 4-point plm
-  // mean).  That changes the operator for one step of length dt, an O(dt) term of the T
-  // ladders (rw_p10t100 E / eint 1.78 / 1.84 at l 16-32).  true: those solves take the
-  // stage rule too. DEFAULT true on a fresh run; a restart whose file lacks the key keeps
-  // false (FIN3, bitwise) -- the same rule as implicit_cs2_vimp_npass (fresh 3, restart
-  // 0).
+  // time2_enth_be: the backward-Euler solves of a hesdirk2 run take the stage solves'
+  // enthalpy face rule too (else the operator changes for one step: an O(dt) error)
   t2_enth_be = pin->GetOrAddBoolean("rad_vet", "time2_enth_be",
                                     !global_variable::restart_run);
-  // time2_vet_extrap (default false): the stage solves use D^n of the formal solution at
-  // U^n; true = D* = D^n + (dt/dt_prev)(D^n - D^{n-1}) (runs_3x: fails G1 at P=100,
-  // tau=10)
+  // time2_vet_extrap: stage solves use D* = D^n + (dt/dt_prev)(D^n - D^{n-1})
   t2_vext = false;
   if (pin->DoesParameterExist("rad_vet", "time2_vet_extrap")) {
     t2_vext = pin->GetBoolean("rad_vet", "time2_vet_extrap");
   }
-  // time2_vet_sc (read only when named; default lag): when the vet_sc
-  // tensor of the two stage solves is built.  Both stages sit at t^{n+1} (c = 1), so
-  // D(U^n) is an O(dt) lag and the step is FIRST order in time wherever the tensor
-  // changes (torder_1010: pulse_k12.8 T 1.05 1.03 1.02; eddington or the extrapolated
-  // D* give 2.00).  The modes are those of time2_vet_col (Time2VetColAt):
-  //   lag     : D(U^n) for both stages (time2_vet_extrap = true: D* extrapolated)
-  //   predict : ONE formal solution per step at P = (stage-1 start) + dt K1, i.e. at
-  //             t^{n+1} + O(dt^2); same cost as lag
-  //   rebuild : predict for stage 1, a second formal solution at Y1 for stage 2
-  // DEFAULT predict on a fresh run (as time2_vet_col on the wedge), unless
-  // time2_vet_extrap = true (lag, silently);
-  // a restart whose file lacks the key keeps lag (echoed).  lag is first
-  // order in time wherever the tensor changes (pulse_k12.8 T 1.05), predict 2.0.
-  // ONE key time2_vet for both formal solutions (lag | predict |
-  // rebuild | extrap); the old spellings time2_vet_sc (vet_sc) and time2_vet_col (vet_col
-  // / vet_gd) are read as aliases of their own closure (M1KeyName), so an input or a
-  // restart file that names only the old key is unchanged.  vet_sc: extrap = lag with
-  // time2_vet_extrap = true (the D* extrapolation, as before).  vet_every likewise for
-  // vet_sc_every / vet_col_every.
+  // time2_vet (aliases time2_vet_sc / time2_vet_col by closure): when the formal-solution
+  // tensor of the two stage solves is built.  Both stages sit at t^{n+1}, so D(U^n) is an
+  // O(dt) lag (first order in time wherever the tensor changes).
+  //   lag     : D(U^n) for both stages (vet_sc extrap: D* of time2_vet_extrap)
+  //   predict : one build per step at P = (stage-1 start) + dt K1, t^{n+1} + O(dt^2)
+  //   rebuild : predict for stage 1, a second build at Y1 for stage 2
   t2_vsmode = 0;
   const std::string kvs = M1KeyName(pin, "time2_vet", {"time2_vet_sc"});
   const bool vs_named = pin->DoesParameterExist("rad_vet", kvs);
@@ -241,32 +205,10 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
-  // time2_vet_col (closure = vet_col; m1-sp-order2b, tests_m1/runs_5q_sporder2b): when
-  // the vet_col tensor (and surface q) of the two stage solves is built.  Both stages
-  // sit at t^{n+1} (c = 1), so D(U^n) is an O(dt) lag and the step first order in time.
-  //   lag     : D(U^n) for both stages (the m1-sph2 form)
-  //   predict : ONE build per step at P = (stage-1 start) + dt K1 (radiation U^n + dt
-  //             K1, gas the Heun predictor + dt K1 of the coupling): D(t^{n+1}) + O(dt^2)
-  //   rebuild : predict for stage 1, then a second build at the stage-1 solution Y1
-  //   extrap  : DIAGNOSTIC, D^n + (dt/dt_prev)(D^n - D^{n-1}); the history is not in
-  //             the restart file
-  // DEFAULT predict on the spherical-polar wedge; lag elsewhere and on a restart whose
-  // file lacks the key (echoed).  K1 is restart state: predict restarts bitwise.
-  // time2_vstage (m1-sp-order2b, tests_m1/runs_5q_sporder2b): in a stage solve under
-  // implicit_vimp the lagged v-dependent terms take the stage's own velocity instead of
-  // the stage-start one (which misses the stage's radiative kick, an O(dt) lag): the
-  // comoving correction E0 - E at v_old + dv^k of the iterate, and the derived cell flux
-  // F = F0 + a E at the velocity the write-back gives the gas.  Without it F is first
-  // order in time (rsw_u_T: 1.00, E/T/gas 1.9-2.0).  Default true on the spherical-polar
-  // wedge (a restart whose file lacks the key keeps false, echoed); elsewhere false
-  // unless named.
-  // default true on every mesh (was the wedge only): the Cartesian vet_sc
-  // ladders need it as much (cenPvs: rw_t10a F1 1.58 2.32 1.97 vs 1.07 1.04
-  // 1.02 without); a restart whose file lacks the key keeps false (echoed)
+  // vet_col: the same modes, plus extrap (D^n + (dt/dt_prev)(D^n - D^{n-1}); its history
+  // is not in the restart file) and extrap2
   t2_vcmode = 0;
   if (vet_col) {
-    // (USER 10-25): the sph fresh-start default is extrap2 (was predict;
-    // RSG E / HG production value); a restart whose file lacks the key keeps lag
     const bool vdef = sph_geom && !global_variable::restart_run;
     const std::string kvc = M1KeyName(pin, "time2_vet", {"time2_vet_col"});
     std::string vm = (sph_geom || pin->DoesParameterExist("rad_vet", kvc)) ?
@@ -281,7 +223,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     } else if (vm.compare("extrap") == 0) {
       t2_vcmode = 3;
     } else if (vm.compare("extrap2") == 0) {
-      t2_vcmode = 4;   // (restart files of the old solver: its channels, Time2RstSet)
+      t2_vcmode = 4;
     } else {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "<rad_vet>/" << kvc << " = '" << vm
@@ -295,30 +237,18 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
                 << " needs vet_every (vet_col_every) = 1" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // time2_vet_source (was time2_vet_col_source): Time2VetSourceInit
+    // time2_vet_source (alias time2_vet_col_source)
     Time2VetSourceInit(pin, t2_vcmode == 1 || t2_vcmode == 2, true);
   }
-  // vet_sc reads the same time2_vet_source (its builds take the
-  // VET source rule of vet_col / vet_gd, rad_vet_vet.cpp).  A restart whose file lacks
-  // the key keeps vet_sc's old source of the predicted state (state); the old spelling
-  // time2_vet_col_source is vet_col's own (a vet_sc file may name it, inert there).
+  // vet_sc reads the same time2_vet_source
   if (vet_sc) {
     Time2VetSourceInit(pin, t2_vsmode == 1 || t2_vsmode == 2, false);
   }
-  // time2_pred_cap: the predicted state of time2_vet_sc / time2_vet_col =
-  // predict | rebuild is P = U^n + theta dt K1 with, per cell,
+  // time2_pred_cap: the predicted state is P = U^n + theta dt K1 per cell,
   //   theta = min(1, cap/r),  r = max(|dt K1_E|/E^n, |eint(P) - eint_b|/eint_b),
-  // eint_b the gas internal energy of the stage start without the coupling's K1.  K1 is
-  // the PREVIOUS step's slope: where the state relaxes within a step (a stiff exchange
-  // far from equilibrium, a light front at c dt/dx >> 1) the linear extrapolation
-  // overshoots (eq2: E^n + dt K1 = 2 E^n, T(P) = 0 from a negative eint), and the
-  // formal solution of that unphysical P puts a closure and a half-range/thin-switch
-  // flux into the solve that the state does not have.  theta caps the relative change of
-  // the predictor at cap (P stays positive for cap < 1): where r <= cap (every cell of a
-  // resolved evolution as dt -> 0, r = O(dt)) theta = 1 and the build is bitwise the
-  // unlimited one, so the order is kept; where r > cap the build moves toward D(U^n),
-  // the first-order lag, which is what the step can trust there.  0 = off.  Default
-  // 0.5 on fresh runs; a restart whose file lacks the key keeps 0 (bitwise).
+  // eint_b the stage-start eint without the coupling's K1.  It stops the previous step's
+  // slope from overshooting where the state relaxes within a step; theta = 1 (bitwise the
+  // unlimited build) where r <= cap.  0 = off.
   t2_pcap = 0.0;
   if (t2_vsmode != 0 || t2_vcmode == 1 || t2_vcmode == 2) {
     t2_pcap = pin->GetOrAddReal("rad_vet", "time2_pred_cap",
@@ -329,22 +259,11 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
-  // time2_lin_tol / time2_lin_tol_fac (tests_m1/runs_5f_h2fast): the linear (Krylov)
-  // tolerance of the two stage solves: time2_lin_tol when named, else implicit_lin_tol
-  // x time2_lin_tol_fac.  Default 1 since audit-m1-0928 (was 10 on fresh runs from
-  // tests_m1/runs_5f_h2fast: 3-D He box 21 -> 15 Krylov iterations per stage solve).
-  // Factor 10 degrades the stiff radiation-wave time convergence
-  // (/viper/ptmp2/jinma/audit_m1_0928/rw/RESULTS_time.txt: error 1.6-4x larger, order
-  // 1.37 -> 0.48 at tau 10), for a gain of -0.4..+7.5 % per simulated second (He box,
-  // sph_wedge, MI300A).  Opt-in by name.  A restart whose file records the key keeps its
-  // value; one that does not gets 1 (as before).
+  // time2_lin_tol / time2_lin_tol_fac: Krylov tolerance of the stage solves
+  // (time2_lin_tol, else implicit_lin_tol x time2_lin_tol_fac)
   const bool rs = global_variable::restart_run;
-  // time2_one_pass_safety (tests_m1/runs_5f_h2fast): the implicit_one_pass safety factor
-  // of the stage solves.  One-pass acceptance leaves a Picard error ~ tol/safety where
-  // the two-pass test leaves ~ q tol; the radwave G1 order at implicit_tol = 1e-11 needs
-  // the stage solves closer to the latter (safety 3: median order 1.74 at P=100,
-  // tau=1e3; 30: >= 1.94 in all 24 cases).  Default 30; 0 = implicit_one_pass_safety,
-  // the default of a restart whose file does not carry the key.
+  // time2_one_pass_safety: implicit_one_pass safety factor of the stage solves (0 =
+  // implicit_one_pass_safety); one-pass acceptance leaves a Picard error ~ tol/safety
   t2_onep_s = pin->GetOrAddReal("rad_vet", "time2_one_pass_safety", rs ? 0.0 : 30.0);
   if (t2_onep_s != 0.0 && !(t2_onep_s >= 1.0)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -356,13 +275,8 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_vet", "time2_dbg_fail")) {
     t2_dbg_fail = pin->GetInteger("rad_vet", "time2_dbg_fail");
   }
-  // dbg_t2_admiss = N (DEBUG, default 0 = off, read only when named so the restart echo
-  // and every result stay bitwise): for the first N non-admissible hesdirk2 stages print
-  // which quantity went <= 0 (solved E, solved T, written-back gas eint) and, for each,
-  // the cell of its minimum with the stage OLD vector (E, eint) and the stage start E
-  // <rad_vet>/time2_reject = be | retry (read only when named; default be =
-  // the backward-Euler redo, bitwise).  retry needs <time>/dt_retry = true (checked at
-  // the first rejection: without it the step falls back to backward Euler as before)
+  // time2_reject: be (backward-Euler redo) | retry (needs <time>/dt_retry = true; without
+  // it the step falls back to backward Euler)
   t2_reject = 0;
   if (pin->DoesParameterExist("rad_vet", "time2_reject")) {
     const std::string tr = pin->GetString("rad_vet", "time2_reject");
@@ -376,12 +290,13 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     }
   }
 
-  // <rad_vet>/time2_k1_stiff = s (default 0 = off, bitwise)
+  // time2_k1_stiff = s: in cells with relaxation rate k dt > s the exchange part of K1
+  // moves to E (Time2FormStage)
   t2_k1stiff = 0.0;
   if (pin->DoesParameterExist("rad_vet", "time2_k1_stiff")) {
     t2_k1stiff = pin->GetReal("rad_vet", "time2_k1_stiff");
   }
-  // time2_k1_redist (the K1 redistribution along the column, removed): only 0
+  // time2_k1_redist: only 0 is accepted (old restart files may store 0.1)
   if (pin->DoesParameterExist("rad_vet", "time2_k1_redist") &&
       pin->GetReal("rad_vet", "time2_k1_redist") != 0.0) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
@@ -390,13 +305,8 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // step 1 <rad_vet>/time2_face_fct (rad_vet.hpp; read only when named)
-  // (USER 11-13): DEFAULT true on the cubed sphere / spherical polar with
-  // multi-D implicit transport and hesdirk2; false elsewhere and with
-  // recipe none, as before.  An explicit key wins.  The clean scheme: on for a fresh
-  // run (v20.4, recorded; a restart file without the key keeps off); its t2inc F
-  // channels are face F as here, and its solve stores the energy flux Phi that moved E
-  // (CleanWriteBack)
+  // time2_face_fct: Zalesak limiter of the stage increment (Time2FaceFct); on for a fresh
+  // run.  The clean solve stores the energy flux Phi that moved E (CleanWriteBack)
   const bool cfd = !global_variable::restart_run;
   t2_ffct = cfd;
   if (pin->DoesParameterExist("rad_vet", "time2_face_fct") || cfd) {
@@ -404,21 +314,20 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   }
   t2_pfst = true;
   t2_ffct_emin = 0.1;   // (rad_vet.hpp)
-  // time2_accept_fallback is DEFAULT true under hesdirk2 (this
-  // reader returns above for be, where the key is unused); false only when named so
+  // time2_accept_fallback (read only when named)
   t2_accfb = true;
   if (pin->DoesParameterExist("rad_vet", "time2_accept_fallback")) {
     t2_accfb = pin->GetBoolean("rad_vet", "time2_accept_fallback");
   }
-  // <rad_vet>/time2_adm_poslim (rad_vet.hpp; read only when named)
+  // time2_adm_poslim (read only when named)
   if (pin->DoesParameterExist("rad_vet", "time2_adm_poslim")) {
     t2_adm_pl = pin->GetBoolean("rad_vet", "time2_adm_poslim");
   }
-  // <rad_vet>/time2_cfl_post (rad_vet.hpp; read only when named)
+  // time2_cfl_post (read only when named)
   if (pin->DoesParameterExist("rad_vet", "time2_cfl_post")) {
     t2_cfl_post = pin->GetBoolean("rad_vet", "time2_cfl_post");
   }
-  // <rad_vet>/time2_auto_be = N (rad_vet.hpp; read only when named)
+  // time2_auto_be = N (read only when named)
   if (pin->DoesParameterExist("rad_vet", "time2_auto_be")) {
     t2_abe = pin->GetInteger("rad_vet", "time2_auto_be");
     if (t2_abe < 0) {
@@ -447,7 +356,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
   Kokkos::deep_copy(t2k1, 0.0);
   Kokkos::deep_copy(t2k2, 0.0);
   Kokkos::deep_copy(t2inc, 0.0);
-  if (t2_pfst) {   // step 1: zero = no face flux known (restart, start)
+  if (t2_pfst) {  // zero: no face flux known (start, restart)
     Kokkos::realloc(t2pf1, nmb, 3, n3, n2, n1);
     Kokkos::realloc(t2pf2, nmb, 3, n3, n2, n1);
     Kokkos::deep_copy(t2pf1, 0.0);
@@ -468,9 +377,7 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
     Kokkos::deep_copy(vet_prev, 0.0);
   }
   if (vet_col) {
-    // Time2VetStart's save slots (E, T) and the saved stage-start opacities;
-    // time2_vet_col = predict | rebuild: also KT, T(Y1), E(Y1) and the inner face flux
-    // (scheme = clean: only ImplicitSolve's stage chain reads them; not made)
+    // time2_vet_col = extrap: the previous build's D and q
     if (t2_vcmode == 3) {
       Kokkos::realloc(vcol_prev, nmb, n3, n2, n1);
       Kokkos::realloc(vcol_qprev, nmb, n3, n2);
@@ -501,34 +408,23 @@ bool RadiationVet::Time2Active() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::Time2FormStage
-//! \brief called after the hydro's "after_stagen" of Heun stage `stage`: builds the stage
-//! START state of the radiation (stage 1: U^n; stage 2: the Heun average of U^n and Y2,
-//! which the hydro has already done for the gas) and the increment t2inc that turns it
-//! into the old vector of the stage solve.  ImplicitSolve applies t2inc.
+//! \fn void RadiationVet::Time2GasTime
+//! \brief time2_tableau = sdirk2: one time per stage for gas and radiation, which keeps
+//! the IMEX coupling conditions b_E.c_I = b_I.c_E = 1/2 with the Heun hydro.
+//!   which = 1 (before the stage-1 solve): the Heun-stage-1 gas U* is kept in t2hs; the
+//!     solve takes S = U^n + g (U* - U^n), the gas at t^n + g dt.
+//!   which = 2 (first in HydroConToPrim, gas Y = S + d): the gas becomes U* + d.
+//!   which = 3 (after the stage tasks): w0 is refreshed from the hydro's stage-2 flux
+//!     state U* + f d (f = 1/g non-stiff, -> 1 stiff), then u0 is U* + d again.
+//! time2_gtime_mom: momentum's f = 1/g in every cell; IEN takes its kinetic-energy
+//! change.
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::Time2GasTime
-//! \brief time2_tableau = sdirk2 with the Heun hydro (c_E = (0, 1), b_E = (1/2, 1/2)):
-//! the IMEX coupling conditions b_E.c_I = b_I.c_E = 1/2 hold when each stage has one
-//! time for both parts (c = (0, g, 1, 1), the hydro's stage-2 flux an explicit stage).
-//! which = 1, before the stage-1 solve: the gas U* of Heun stage 1 (t^{n+1}) is kept in
-//! t2hs and the solve takes S = U^n + g (U* - U^n), the gas at t^n + g dt (convex, so
-//! positive; all cells).  which = 2, first in its HydroConToPrim (gas Y = S + d): the
-//! gas becomes U* + d (the explicit U* with the implicit g dt K2, so the stage-2
-//! increment and the exchange, booked once in d, are unchanged), before the ring average,
-//! the floor cap and the refresh act on it as they did on Y.  which = 3, after the stage
-//! tasks: the hydro's stage-2 flux state U* + f d (t^{n+1}, the exchange over the full
-//! dt: f = 1/g non-stiff, -> 1 stiff, below) is refreshed into w0 (its floors stay in
-//! u0), then u0 is U* + d again.  time2_gtime_mom (default true): the momentum's f is
-//! 1/g in every cell (the radiation force is no relaxation of v; the energy's f -> 1 left
-//! the stiff cells' flux velocity a (1 - g) dt share of the residual force short, an
-//! O(dt) wall drift, CALQ t9l62 L_bot), and the flux state's IEN takes the kinetic-energy
-//! change, so its gas eint is that of the energy's f.
 
 void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
   hydro::Hydro *ph = pmy_pack->phydro;
-  if (t2_tab != 2 || !coupling || ph == nullptr || (which > 1 && t2_gt != which - 1)) return;
+  if (t2_tab != 2 || !coupling || ph == nullptr || (which > 1 && t2_gt != which - 1))
+    return;
   t2_gt = (which == 3) ? 0 : which;
   auto u0_ = ph->u0;
   auto u1_ = ph->u1;
@@ -542,9 +438,8 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
     Kokkos::realloc(t2hs, nmb, nv, n3, n2, n1);
   }
   auto hs_ = t2hs;
-  // the flux state's factor on d: 1/g + O(k dt) (the ARK conditions), 1 where the
-  // exchange is stiff (k dt >> 1: the backward-Euler ratio of a full dt to g dt of a
-  // linear relaxation at rate k = ch rho kappa_E + 4 cl rho kappa_P a T^3/(rho c_v))
+  // flux-state factor on d: 1/g + O(k dt), -> 1 where the exchange is stiff, k = ch rho
+  // kappa_E + 4 cl rho kappa_P a T^3/(rho c_v)
   auto op_ = opac;
   auto eos = ph->peos->eos_data;
   auto phc = ph->phicc0;
@@ -578,7 +473,7 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
         u0_(m,n,k,j,i) = u + us;
       }
     }
-    if (which == 2 && gm) {   // (IEN: the kinetic energy of the momentum's f, not of e)
+    if (which == 2 && gm) {  // IEN: kinetic energy of the momentum's f
       const Real c = csk ? ccl(m,k,j) : 0.0, r = u0_(m,IDN,k,j,i) + hs_(m,IDN,k,j,i);
       auto ke = [&](const Real s) {
         return CsKeMom(u0_(m,IM1,k,j,i) + s*hs_(m,IM1,k,j,i), u0_(m,IM2,k,j,i) +
@@ -595,11 +490,16 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
   });
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::Time2FormStage
+//! \brief after the hydro's stage `stage`: the radiation stage start (stage 1 U^n, stage
+//! 2 the Heun average of U^n and Y2) and t2inc, which ImplicitSolve adds to form the old
+//! vector of the stage solve
+
 void RadiationVet::Time2FormStage(int stage, Real dt) {
   const Real g = kT2G;
   const Real w0 = t2_w0, w1 = t2_w1;
-  // hesdirk2 and sdirk2 both use the Heun stage start (tab 0's original expression,
-  // bitwise); only trbdf2 (tab 1) takes the w0/w1 average
+  // hesdirk2 and sdirk2 take the Heun stage start; trbdf2 the w0/w1 average
   const bool heun = (t2_tab == 0 || t2_tab == 2);
   Real c1, c2;
   auto u0_ = u0;
@@ -614,15 +514,9 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
     }
     c1 = t2_a21*dt;
     c2 = 0.0;
-    // time2_k1_stiff = s (> 0): in cells whose gas-radiation relaxation
-    // rate k = ch rho kappa_E + 4 cl rho kappa_P a T^3/(rho c_v) (rho c_v ~ eint/T) has
-    // k dt > s, the EXCHANGE part of the FSAL slope K1 is moved from the gas energy to
-    // the radiation E (ch/cl weighted, so the solve's total energy is unchanged): the
-    // gas K1_EN keeps only the kinetic-energy change of its momentum slope (eint of the
-    // old vector = eint of the stage start), K1_E keeps transport + the moved exchange.
-    // The stiff exchange is then taken by the implicit stages only (L-stable there);
-    // the E/gas partition of the old vector is forgotten at O(1/(k dt)).  Transport,
-    // momentum and face slopes are untouched.  The stored K1 is changed (stage 2 too).
+    // time2_k1_stiff: where k dt > s (k as in Time2GasTime) the exchange part of K1 moves
+    // from the gas energy to E (ch/cl weighted, total energy kept), so the L-stable
+    // stages alone take the stiff exchange; K1_EN keeps the kinetic-energy change
     if (t2_k1stiff > 0.0) {
       FluidRef fls = FluidRef::Get(pmy_pack);
       if (fls.on) {
@@ -716,7 +610,7 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
   });
   cln_lzc = c1*cln_lzs1 + (two ? c2*cln_lzs2 : 0.0);   // (clean_cs_lz_abs = 2)
   CleanDInc(two, c1, c2, heun ? 0.5 : w1, heun ? 0.5 : w0);
-  // <hydro>/am_vector: the spin reservoir's increment from its slopes
+  // am_vector: the spin reservoir's increment from its slopes
   if (am_vec && aminc.extent_int(0) > 0) {
     auto a1_ = amk1;
     auto a2_ = amk2;
@@ -731,7 +625,7 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
       ai_(m,k,j,i) = v;
     });
   }
-  if (t2_ffct) {Time2FaceFct(stage, c1, c2);}   // step 1
+  if (t2_ffct) {Time2FaceFct(stage, c1, c2);}
   CleanBndAcc(stage, c1, c2, (stage == 1) ? 0.0 : (heun ? 0.5 : w0), dt);
   t2_solve = (stage == 1) ? M1_T2S_STAGE1 : M1_T2S_STAGE2;
   t2_fail = false;
@@ -741,8 +635,8 @@ void RadiationVet::Time2FormStage(int stage, Real dt) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::Time2Stash
-//! \brief the hesdirk2 stage-loop start (the Driver calls it before the Heun stage 1):
-//! the clean scheme's energy flux memory and ray history checkpoints
+//! \brief stage-loop start (before Heun stage 1): checkpoints the clean energy-flux
+//! memory and ray history
 
 void RadiationVet::Time2Stash() {
   CleanDMem(true);
@@ -751,8 +645,7 @@ void RadiationVet::Time2Stash() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanRayHistory
-//! \brief save: keep the rays' history (CleanRayKeep) at the stage-loop start; else put
-//! it back (a stage failed)
+//! \brief save: keep the rays' history (CleanRayKeep); else restore it (a stage failed)
 
 void RadiationVet::CleanRayHistory(const bool save) {
   DvceArray5D<Real> *a[6] = {&cln_fvi, &cln_fh, &cln_top, &cln_rr, &cln_rpd, &cln_rnew};
@@ -788,9 +681,8 @@ void RadiationVet::CleanRayHistory(const bool save) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::Time2Restore
-//! \brief a stage failed: put U^n back (radiation from u1 and the face copies, gas from
-//! the hydro's u1), refresh the hydro ghosts and primitives.  The Driver then reruns the
-//! Heun stages and takes the step with backward Euler.
+//! \brief a stage failed: put U^n back (radiation, faces, gas, B, spin) and refresh the
+//! hydro; the Driver reruns the Heun stages and takes the step with backward Euler
 
 void RadiationVet::Time2Restore(Driver *pdrive) {
   t2_gt = 0;   // (Time2GasTime)
@@ -803,7 +695,7 @@ void RadiationVet::Time2Restore(Driver *pdrive) {
   FluidRef fl = FluidRef::Get(pmy_pack);
   if (fl.on) {
     Kokkos::deep_copy(DevExeSpace(), fl.u0, fl.u1);
-    // m1-mhd: the field back to U^n too (b1 is the stage-1 copy of b0 incl. ghosts)
+    // mhd: the field back to U^n (b1 is the stage-1 copy of b0 incl. ghosts)
     if (fl.mhd) {
       mhd::MHD *pm = pmy_pack->pmhd;
       Kokkos::deep_copy(DevExeSpace(), pm->b0.x1f, pm->b1.x1f);
@@ -813,9 +705,7 @@ void RadiationVet::Time2Restore(Driver *pdrive) {
     FluidRefresh(pdrive);
     if (fl.mhd) EmagBuild(false);
   }
-  // <hydro>/am_vector: the spin reservoir back to U^n too (am_spin1,
-  // taken by the hydro's stage 1 and untouched since); the redo's hydro stage 1 copies
-  // am_spin into am_spin1 again
+  // am_vector: the spin reservoir back to U^n (am_spin1)
   if (am_vec) {
     hydro::AmModule *pam = hydro::AmModuleOf(pmy_pack);
     Kokkos::deep_copy(DevExeSpace(), pam->am_spin, pam->am_spin1);
@@ -826,49 +716,30 @@ void RadiationVet::Time2Restore(Driver *pdrive) {
   t2_fail = false;
   t2_ok = false;
   t2_nfall += 1.0;
-  // (rule 9: the backward-Euler redo that carries the step is counted, not silent)
+  // the backward-Euler redo is reported, never silent
   if (global_variable::my_rank == 0) {
     std::printf("CLEAN WARNING cycle %d t2s %d: stage solve failed, the step is redone "
                 "with backward Euler (stage fallback %.0f)\n", pmy_pack->pmesh->ncycle,
                 t2_solve, t2_nfall);
     if (cln_flrun > 0.0 && cln_flrid == 4*pmy_pack->pmesh->ncycle + t2_solve) {
-      // (the failed attempt's floor creation is not kept)
-      std::printf("CLEAN WARNING cycle %d t2s %d: the implicit_pos_floor creation %.6e of "
+      std::printf(
+          "CLEAN WARNING cycle %d t2s %d: the implicit_pos_floor creation %.6e of "
                   "the failed attempt is discarded with it\n", pmy_pack->pmesh->ncycle,
                   t2_solve, cln_flrun);
     }
   }
   cln_flrun = 0.0;
-  // m1-h2div (tests_m1/runs_5j_h2div): the predictor increments were stored by the
-  // stage solve that just FAILED (the store precedes the admissibility test), and the
-  // backward-Euler redo would start its Picard loop from U^n + (dt/(g dt)) x that
-  // increment (+ the order-2 rate term).  Where the redo does not converge either, its
-  // result stays near that start, and the failed increment of the next step extrapolates
-  // it again: the diffuse-wall shadow grew x1.5 per step to E ~ 1e12.  The redo starts
-  // cold from U^n instead, and the next stage solves rebuild the history.
+  // the predictor increments were stored by the failed solve: the redo starts cold from
+  // U^n (extrapolating them again can grow without bound)
   pred_ok = false;
   pred2_ok = false;
   t2_solve = M1_T2S_NONE;
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::Time2FaceFct
-//! \brief facebound-1112 step 1 <rad_vet>/time2_face_fct (rad_vet.hpp): Zalesak
-//! positivity limiter on the face fluxes of the explicit stage increment t2inc (E and
-//! face F channels).  G_f = A_f (c1 t2pf1 + c2 t2pf2) is the energy the increment carries
-//! across face f (+ towards +x_d); V_i dE_i = sum_lower G - sum_upper G + V_i s_i with
-//! s_i the cell-local remainder.  Only cells whose old vector E + dE is not > 0 are
-//! limited, by R_i = (1 - 1e-12) Q_i/P_i, Q_i = V (E + dE) + P_i - I_i + I_i(R): what it
-//! holds w/o face transport plus the inflow its donors' current R still let through; a
-//! face is scaled by the R of its donor.  A limited donor cuts its receivers' inflow, so
-//! rounds run until no cell is newly limited (R only decreases; a receiver that loses
-//! inflow is limited again by exactly the deficit, which travels down the beam one cell
-//! per round; cap 4096).  Bitwise wherever no face is limited.
-
-//! \brief the limiter R's exchange (iw slot c): with the clean scheme's direct lists, the
-//! first ghost layer only (the 7-point stencil reads the face ghosts; raw copies,
-//! cs_noresample), one message per neighbour rank, without the clean exchanges deferred
-//! to their next fill
+//! \fn void RadiationVet::Time2FctHalo
+//! \brief exchange of the limiter R (iw slot c): first ghost layer only, the clean direct
+//! lists, without the deferred clean exchanges
 
 void RadiationVet::Time2FctHalo(const int c) {
   std::vector<CleanGSeg<Real>> hp;
@@ -877,12 +748,20 @@ void RadiationVet::Time2FctHalo(const int c) {
   cln_hpend.swap(hp);
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::Time2FaceFct
+//! \brief time2_face_fct: Zalesak positivity limiter on the face fluxes of the stage
+//! increment t2inc (E and face F channels).  G_f = A_f (c1 t2pf1 + c2 t2pf2) is the
+//! energy the increment carries across face f; only cells whose old vector E + dE is not
+//! > 0 are limited, by R_i = (1 - 1e-12) Q_i/P_i, and a face takes its donor's R.  Rounds
+//! repeat until no cell is newly limited (R only decreases; cap 4096).  Bitwise where no
+//! face is limited.
+
 void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
   const bool two = (stage != 1);
   auto rhalo = [&](const int c) {Time2FctHalo(c);};
-  // no stored face flux for K1 (first stage step, restart): K1 is the slope of the last
-  // stage-2 solve, whose solution is U^n, so its face flux is the stage-start face flux
-  // t2f* = f0x* (the restart file's F; the cmem applied flux is not used here)
+  // no stored face flux for K1 (first step, restart): K1 is the last stage-2 slope, whose
+  // solution is U^n, so its face flux is the stage-start t2f* = f0x*
   if (!two && !t2pf1_ok && t2pf1.extent_int(0) >= pmy_pack->nmb_thispack &&
       t2f1.extent_int(0) >= pmy_pack->nmb_thispack) {
     auto pf_ = t2pf1;
@@ -901,7 +780,7 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
     t2_ffct_fill += 1.0;
   }
   if (!t2pf1_ok || (two && !t2pf2_ok) || t2pf1.extent_int(0) < pmy_pack->nmb_thispack) {
-    t2_ffct_nop += 1.0;   // no stored face flux for this slope (start, restart)
+    t2_ffct_nop += 1.0;  // no stored face flux for this slope
     return;
   }
   if (iw.extent_int(1) <= Time2FctSlot(0)) {
@@ -950,9 +829,8 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
   };
   auto un_ = u1;   // (E^n: the limiter keeps th V E^n in a limited cell)
   const Real eth = t2_ffct_emin;
-  // V (E + dE) unlimited (w), the full outflow po and inflow pi, the inflow pl that the
-  // current R of the donors lets through, and the change dw of
-  // V E_new by the current R (slot ca, ghosts valid); lim: a face next to it is limited
+  // w = V (E + dE) unlimited, outflow po, inflow pi, the inflow pl the donors' R let
+  // through, the change dw of V E_new by R (slot sa); lim: an adjacent face is limited
   auto cell = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
                             Real &w, Real &po, Real &pi, Real &pl, Real &dw,
                             bool &lim, const int sa) {
@@ -990,9 +868,8 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
     }
     w = cvol(m,k,j,i)*(u0_(m,M1_E,k,j,i) + in_(m,M1_T2_E,k,j,i));
   };
-  // R = 1 everywhere, ghosts included (physical ghosts are never filled: unlimited);
-  // the rounds read slot sa and write sb, then swap them (no copy; both slots keep the
-  // same ghosts: after an exchange of sa they are copied to sb)
+  // R = 1 everywhere incl. ghosts (physical ghosts stay unlimited); rounds read slot sa
+  // and write sb, then swap (both slots keep the same ghosts)
   for (const int c : {ca, cb}) {
     Kokkos::deep_copy(DevExeSpace(), Kokkos::subview(iw, Kokkos::ALL, c, Kokkos::ALL,
                       Kokkos::ALL, Kokkos::ALL), 1.0);
@@ -1000,18 +877,17 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
   int sa = ca, sb = cb;
   Real ncell = 0.0;
   int nround = 0;
-  // (rad_vet.hpp zalesak_halo_skip): exchange R only after a round that
-  // changed a cell within 2 ng of a MeshBlock face; the first exchange always runs
+  // zalesak_halo_skip: exchange R only after a round that changed a cell within 2 ng of a
+  // MeshBlock face; the first exchange always runs
   const int zd = 2*id.ng;
   const bool zx2 = pmy_pack->pmesh->multi_d, zx3 = pmy_pack->pmesh->three_d;
   const bool zsk = zl_hskip;
   bool zfirst = true;
-  // zalesak_active: a round reads slot sa and writes sb, an R that fell with its sign
-  // bit set (-0 for 0); the next round evaluates only the cells with such a face
-  // neighbour (ghosts included: the exchange copies the sign), the others keep |R|
-  const bool zac = zl_active;   // (rad_vet.hpp zalesak_active)
-  // (zalesak_active: the face ghosts of the slot read next, |R|, where no exchange
-  // runs: no R near a MeshBlock face fell, so they are those of the other slot)
+  // zalesak_active: an R that fell is written with its sign bit set; the next round
+  // evaluates only cells with such a face neighbour, the others keep |R|
+  const bool zac = zl_active;  // zalesak_active
+  // zalesak_active, no exchange: the face ghosts of the slot read next are those of the
+  // other slot
   auto fghost = [&](const int c, const int cf) {
     const int n1 = ie - is + 1, n2 = je - js + 1, n3 = ke - ks + 1;
     const int f1 = n3*n2, f2 = tr2 ? n3*n1 : 0, f3 = tr3 ? n2*n1 : 0;
@@ -1064,8 +940,7 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
         cell(m, k, j, i, w, po, pi, pl, dw, lim, s0);
         const Real wf = eth*cvol(m,k,j,i)*un_(m,M1_E,k,j,i);
         if (!(w + dw > wf)) {
-          // what the cell holds without face transport + the inflow it still gets,
-          // above the floor th V E^n
+          // held without face transport + remaining inflow, above th V E^n
           const Real q = w + po - pi + pl - wf;
           const Real rq = (q > 0.0 && po > 0.0) ? fmin(1.0, (1.0 - 1.0e-12)*q/po) : 0.0;
           if (rq < rc) {
@@ -1127,7 +1002,7 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
   if (nround == 0) {return;}   // nothing limited: t2inc untouched (bitwise)
   // apply: the E channel of every cell next to a limited face, then the face F channels
   Real lv[3] = {0.0, 0.0, 0.0}, qmin = 1.0e300;
-  // (a flat range, as par_reduce_flat: the 4-D MDRange reduction took 8 ms on the A100)
+  // a flat range (faster than a 4-D MDRange reduction)
   const int n1 = ie - is + 1, nji = (je - js + 1)*n1, nkji = (ke - ks + 1)*nji;
   Kokkos::parallel_reduce("vet_t2_ffct_e", Kokkos::RangePolicy<>(DevExeSpace(), 0,
                           (nmb1 + 1)*nkji),
@@ -1148,8 +1023,8 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
     }
   }, Kokkos::Sum<Real>(lv[0]), Kokkos::Sum<Real>(lv[1]), Kokkos::Sum<Real>(lv[2]),
      Kokkos::Min<Real>(qmin));
-  // (clean staggered: the face F is the radiation momentum, which the limiter leaves
-  // alone, so momentum and L_z stay exact; the solve keeps |F| <= cE)
+  // clean staggered: face F is the radiation momentum, left alone by the limiter, so
+  // momentum and L_z stay exact
 #if MPI_PARALLEL_ENABLED
   MPI_Allreduce(MPI_IN_PLACE, lv, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, &qmin, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
@@ -1162,12 +1037,10 @@ void RadiationVet::Time2FaceFct(int stage, Real c1, Real c2) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanBndAcc
-//! \brief the history's x1 boundary energy (rad_vet.hpp cln_lacc), production's rule of
-//! booking the flux that moved E: stage 0 starts a backward-Euler step (its solves add
-//! h A Phi, CleanWriteBack); stage 1 / 2 the old
-//! vector of a hesdirk2 stage, whose face part is w x (the energy of Y2, in the Heun
-//! start) + A (c1 t2pf1 + c2 t2pf2), each face at its donor's limiter R
-//! (time2_face_fct, as Time2FaceFct applies it); the stage solve adds g dt A Phi
+//! \brief the history's x1 boundary energy cln_lacc, booking the flux that moved E: stage
+//! 0 starts a backward-Euler step (its solves add h A Phi); stage 1 / 2 the old vector of
+//! a hesdirk2 stage, w x (energy of Y2) + A (c1 t2pf1 + c2 t2pf2) at the donors' limiter
+//! R; the stage solve adds g dt A Phi
 
 void RadiationVet::CleanBndAcc(int stage, Real c1, Real c2, Real w, Real dt) {
   const int nmb1 = pmy_pack->nmb_thispack - 1;
@@ -1200,8 +1073,8 @@ void RadiationVet::CleanBndAcc(int stage, Real c1, Real c2, Real w, Real dt) {
 }
 
 //! \fn Real RadiationVet::EbndEsrc
-//! \brief hg262-drive-1113 (ebnd_split): (chat/c) sum esrc V over the active cells, all
-//! ranks (0 without esrc)
+//! \brief ebnd_split: (chat/c) sum esrc V over the active cells, all ranks (0 without
+//! esrc)
 
 Real RadiationVet::EbndEsrc() {
   if (!esrc_on) return 0.0;
@@ -1228,9 +1101,8 @@ Real RadiationVet::EbndEsrc() {
 }
 
 //! \fn void RadiationVet::EbndStart / EbndStage1 / EbndAccept
-//! \brief mhdfix-1025 Ebnd (rad_vet.hpp): L at the step start (the face flux of the slope
-//! K1), of the accepted stage-1 solve (K2), and the step's applied energy at acceptance
-//! (a retried cycle accumulates nothing: the Driver accepts after the dt_retry check)
+//! \brief Ebnd: L at the step start (face flux of K1), of the accepted stage-1 solve
+//! (K2), and the step's applied energy at acceptance (after the dt_retry check)
 
 void RadiationVet::EbndStart() {
   if (!ebnd_on) return;
@@ -1253,8 +1125,8 @@ void RadiationVet::EbndAccept(Real dt, bool t2step) {
     }
     return dt*l3;
   };
-  // (clean: f0x1 is the face momentum and the iw slots are not filled; the energy its
-  // solves put through the physical x1 faces is CleanBndAcc's, inner and outer)
+  // clean: f0x1 is the face momentum; the energy through the physical x1 faces is
+  // CleanBndAcc's
   Real lc[2] = {0.0, 0.0};
   if (!(cln_ldt > 0.0) && global_variable::my_rank == 0) {
     std::printf("CLEAN WARNING cycle %d: Ebnd without the step's boundary energy "
@@ -1291,24 +1163,11 @@ void RadiationVet::EbndAccept(Real dt, bool t2step) {
 
 //----------------------------------------------------------------------------------------
 //! \fn bool RadiationVet::Time2RotCorrect
-//! \brief vet_gd_rotate_slope = correct (asked for by VetGdRotStep on the first step of a
-//! new vet_gd rotation block, with a valid FSAL slope K1 = f_old(U^n) of the OLD set):
-//! one stage-type solve of dt_c = vet_gd_rotate_slope_frac dt from U^n (radiation, faces,
-//! gas; no hydro) with the NEW set and the old vector U^n - dt_c K1 (cell F: - dt_c
-//! csk1).  Its slope (Y - old)/dt_c = K1 + z/dt_c with, to first order in z = Y - U^n,  z
-//! = dt_c (I - dt_c A_new)^{-1} (f_new - f_old)(U^n): the stored slope is K1 + (I - dt_c
-//! A)^{-1} Delta f -- the closure jump of the slope where dt_c A is small (the thin
-//! regime, where keep leaves an O(dt Delta f) error per jump = first order), and keep's
-//! K1 where the cell is stiff (there the L-stable stages forget a stage-1 slope error and
-//! keep is second order; replacing all of K1 by a BE probe slope is what broke the stiff
-//! ladders).  Only the jump steps change, so an O(dt) error of the correction itself
-//! stays O(dt^2) globally.  The solve runs as a STAGE1 solve (its slope lands in t2k2
-//! and is copied to t2k1); the predictor history is kept (implicit_predictor
-//! is off for this solve); U^n is put back.  With vet_gd_rotate_slope_reuse the stage-1
-//! solve of the step keeps this solve's closure build (the same set, built by
-//! Time2VetColAt(1) at U^n + theta dt K1_old with the gas at U^n instead of after the
-//! Heun stage: an O(dt) state shift on the jump steps only). A failed correction solve
-//! keeps K1 (keep).  Returns true when a solve was taken.
+//! \brief vet_gd_rotate_slope = correct, on the first step of a new vet_gd rotation block
+//! with a valid K1 of the old set: one stage-type solve of dt_c =
+//! vet_gd_rotate_slope_frac dt from U^n with the new set and old vector U^n - dt_c K1.
+//! Its slope K1 + (I - dt_c A)^{-1} Delta f takes the closure jump where dt_c A is small
+//! and keeps K1 where stiff; a failed solve keeps K1.  Returns true when a solve ran.
 
 bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
   if (!t2_rotcorr) return false;
@@ -1324,8 +1183,7 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
     if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), t2f3, f0x3);}
   }
   if (fl.on) {Kokkos::deep_copy(DevExeSpace(), fl.u1, fl.u0);}
-  // <mhd>: U^n = (u1, b1) for the solve (emag1, Time2VetStart); b1 still
-  // holds the last step's start here (the MHD stage 1 copies b0 into it again)
+  // mhd: U^n = (u1, b1) for the solve; b1 still holds the last step's start
   if (fl.on && fl.mhd) {
     Kokkos::deep_copy(DevExeSpace(), fl.pm->b1.x1f, fl.pm->b0.x1f);
     Kokkos::deep_copy(DevExeSpace(), fl.pm->b1.x2f, fl.pm->b0.x2f);
@@ -1365,7 +1223,7 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
   if (ok) {
     Kokkos::deep_copy(DevExeSpace(), t2k1, t2k2);
     cln_lzs1 = cln_lzs2;   // (clean_cs_lz_abs = 2)
-    if (t2_pfst && t2pf1.extent_int(0) > 0) {   // step 1
+    if (t2_pfst && t2pf1.extent_int(0) > 0) {
       Kokkos::deep_copy(DevExeSpace(), t2pf1, t2pf2);
       t2pf1_ok = t2pf2_ok;
     }
@@ -1395,8 +1253,8 @@ bool RadiationVet::Time2RotCorrect(Driver *pdrive, Real dt) {
 
 //----------------------------------------------------------------------------------------
 //! \fn M1T2VcpLaunch
-//! \brief the m1_t2_vcp kernel of RadiationVet::Time2VetColAt, instantiated on the
-//! ideal-gas/analytic-opacity tag.
+//! \brief the m1_t2_vcp kernel of RadiationVet::Time2VetColAt (ideal gas / analytic
+//! opacity instantiation)
 template <typename Ctx, typename Idl>
 void M1T2VcpLaunch(const Ctx &ctx_, Idl) {
   auto aa = std::get<0>(ctx_);
@@ -1438,9 +1296,8 @@ void M1T2VcpLaunch(const Ctx &ctx_, Idl) {
   auto vcb = [=] KOKKOS_FUNCTION (Idl idl, const int m, const int k, const int j,
                                   const int i) M1_INL {
 #if defined(KOKKOS_ENABLE_CUDA)
-    // nvcc: an extended lambda may not capture a variable for the first time inside
-    // an `if constexpr` branch, so name every capture up front (no code is
-    // generated; other backends capture exactly what the instantiation reads).
+    // nvcc: an extended lambda may not capture a variable first inside an `if constexpr`
+    // branch, so every capture is named up front
     (void)aa; (void)bb; (void)dt; (void)efl; (void)eos; (void)etg; (void)gam; (void)gdt;
     (void)iw_; (void)k1_; (void)kev; (void)kf; (void)kp; (void)kss; (void)opac_; (void)ot;
     (void)otype; (void)phicc; (void)rref; (void)tref; (void)two; (void)u0_; (void)uh;
@@ -1452,9 +1309,8 @@ void M1T2VcpLaunch(const Ctx &ctx_, Idl) {
       t = vn_(m,3,k,j,i);
       e = vn_(m,4,k,j,i);
     } else {
-      // the hydro u0 is already the stage-1 OLD vector here (ImplicitSolve added
-      // t2inc = (1-g) dt K1 to it): g dt K1 completes dt K1.  time2_pred_cap: theta
-      // dt K1 in all, i.e. g dt - (1 - theta) dt more (= g dt, bitwise, at theta = 1)
+      // u0 is already the stage-1 old vector (+ (1-g) dt K1): g dt K1 completes dt K1;
+      // time2_pred_cap: theta dt K1 in all
       const Real th = lim ? th_(m,k,j,i) : 1.0;
       const Real gdtt = lim ? (gdt - (1.0 - th)*dt) : gdt;
       const Real m1 = uh(m,IM1,k,j,i) + gdtt*k1_(m,M1_T2_M1,k,j,i);
@@ -1463,7 +1319,7 @@ void M1T2VcpLaunch(const Ctx &ctx_, Idl) {
       Real eint = uh(m,IEN,k,j,i) + gdtt*k1_(m,M1_T2_EN,k,j,i)
                   - 0.5*(m1*m1 + m2*m2 + m3*m3)/fmax(d, 1.0e-300);
       if (etg) eint -= d*phicc(m,k,j,i);
-      if (mhd) eint -= emag_(m,k,j,i);   // m1-mhd: B is not changed by K1
+      if (mhd) eint -= emag_(m,k,j,i);  // B is not changed by K1
       if constexpr (decltype(idl)::value) {
         t = ((gam-1.0)*fmax(eint, 0.0)/d);
       } else {
@@ -1499,24 +1355,10 @@ void M1T2VcpLaunch(const Ctx &ctx_, Idl) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::Time2VetSourceInit
-//! \brief time2_vet_source = relaxed | state | blend (was
-//! time2_vet_col_source, its alias on vet_col): the VET source of the predict / rebuild
-//! build, for every formal solution (#3).  vet_source = relaxed relaxes
-//! the build state's gas and E by a local backward-Euler exchange over dt, i.e. it moves
-//! the source one step AHEAD of the state it is given.  At U^n (lag, backward Euler)
-//! that is the step's end; at the predicted P = U^n + dt K1, already at t^{n+1} +
-//! O(dt^2), it lands near t^{n+2}: an O(dt) source error, FIRST order in time wherever
-//! the exchange is resolved and out of equilibrium (vcpred_1010 neq1_u_T: E 1.71 1.57
-//! 1.40, T 1.67 1.47 1.23).  state = the source of P itself (eps B + (1 - eps) E, or
-//! VetScatterMix with J = E_P under vet_scatter): 1.92 1.87 1.91 / 1.96 1.98 1.99.
-//! blend = S*(0) + w (S*(dt) - S*(0)), w = x^2/(x0^2 + x^2) with x the
-//! cell's exchange stiffness c dt rho kappa (radiation + gas temperature): the state's
-//! own source where the exchange is resolved (x << x0, O(dt^3) from it), the relaxed
-//! source where it is stiff (VetRelaxedSourceB); time2_vet_source_x0 (alias
-//! time2_vet_col_source_x0; default 1).  lag / extrap keep vet_source.
-//! DEFAULT on vet_col / vet_gd: blend on a fresh run with predict | rebuild (where it
-//! acts), relaxed on a restart whose file lacks the key; vet_sc: state (its old source;
-//! OPEN, see VetInit); the resolved value is echoed; explicit input overrides.
+//! \brief time2_vet_source = relaxed | state | blend: VET source of the predict / rebuild
+//! builds.  relaxed: a local backward-Euler exchange over dt (one step ahead of the
+//! state: first order at P); state: the source of P itself; blend: S*(0) + w (S*(dt) -
+//! S*(0)), w = x^2/(x0^2 + x^2), x = c dt rho kappa (time2_vet_source_x0).
 
 void RadiationVet::Time2VetSourceInit(ParameterInput *pin, const bool act,
                                       const bool col) {
@@ -1524,8 +1366,7 @@ void RadiationVet::Time2VetSourceInit(ParameterInput *pin, const bool act,
                                           {"time2_vet_col_source"})
                               : std::string("time2_vet_source");
   if (!act && !pin->DoesParameterExist("rad_vet", key)) {return;}
-  // #3 (OPEN, rad_vet_vet.cpp VetInit): vet_sc keeps state (fresh and
-  // restart), vet_col / vet_gd blend (restart lacking the key: relaxed)
+  // vet_sc: state; vet_col / vet_gd: blend (relaxed on a restart without the key)
   const char *dflt = col ? (global_variable::restart_run ? "relaxed" : "blend") : "state";
   std::string vs = act ?
       pin->GetOrAddString("rad_vet", key, dflt) :
@@ -1559,26 +1400,24 @@ int RadiationVet::Time2FctSlot(const int q) const {
 
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationVet::CleanRstNq
-//! \brief closure components per record in the restart files of the clean extrap history
-//! and clean_rot_ring, in push 16's order (CleanRstSlot): all CLN_N (the last, CLN_JR,
-//! the rays' J below clean_ray_min)
+//! \brief closure components per record of the clean extrap history and clean_rot_ring
+//! (CleanRstSlot order): all CLN_N
 
 int RadiationVet::CleanRstNq() const {
   return CLN_N;
 }
 
-// (clean_closure = iterate: the closure in place, the last iterate's, is state; none in
-// a file of another closure, Time2RstAccept)
+// clean_closure = iterate: the closure in place is restart state (none in a file of
+// another closure, Time2RstAccept)
 int RadiationVet::CleanRstNcl() const {
-  if (t2_rcl >= 0) return t2_rcl;   // (a file's, Time2RstAccept)
+  if (t2_rcl >= 0) return t2_rcl;  // a file's (Time2RstAccept)
   return cln_closit ? CleanNs(pmy_pack->pmesh->use_cubed_sphere) : 0;
 }
 
 int RadiationVet::CleanRstNfv() const {
-  // (the cubed sphere's sc rays; before the first sweep those a restart file holds)
-  // (the sc rays' cln_fvi: their slots of the union on a ring, CleanGdFaceSums)
-  // (version 6, staggered: their face half ranges cln_fh instead, none where every
-  // solve rebuilds them first, CleanFhBuilt; a version-5 file is refused, Time2RstAccept)
+  // cubed sphere sc rays: their cln_fvi slots (before the first sweep: the file's);
+  // version >= 6: the face half ranges cln_fh instead (none where every solve rebuilds
+  // them)
   if (cln_cssc && t2_rstv >= 6) return CleanFhBuilt() ? 0 : 12;
   if (cln_cssc && cln_fvi.extent_int(0) > 0) return cln_fvi.extent_int(1);
   if (cln_cssc) return (cln_fvn > 0) ? cln_fvn : t2_nfv;
@@ -1587,14 +1426,12 @@ int RadiationVet::CleanRstNfv() const {
 
 //----------------------------------------------------------------------------------------
 //! \fn RadiationVet::Time2Rst*
-//! \brief the restart channels: K1 (M1_T2_NK), then vet_prev (M1_T2_NVET, closure =
-//! vet_sc); files of the old solver (version < 4) also hold its ipred2
-//! (implicit_predictor) and extrap2 channels, read past
+//! \brief the restart channels: K1 (M1_T2_NK), vet_prev (M1_T2_NVET, vet_sc), then the
+//! clean scheme's state; files of version < 4 also hold ipred2 and extrap2 channels
+//! (read past)
 
 int RadiationVet::Time2RstNchWant() {
-  // the hesdirk2 slope channels, then (any time scheme) the clean scheme's state.
-  // (version 4, the clean scheme: no ipred2 and extrap2 channels, and the ring's offsets
-  // dense, CleanRingRstCopy)
+  // version >= 4: no ipred2 / extrap2 channels, ring offsets dense (CleanRingRstCopy)
   const bool sk = t2_rstv >= 4;
   const int np = (impl_pord == 2) ? 5 : 3;
   const int nt = (time_scheme != M1_TIME_HESDIRK2) ? 0 :
@@ -1611,10 +1448,9 @@ int RadiationVet::Time2RstNchWant() {
 }
 
 bool RadiationVet::Time2RstAccept(const int nfile, const int ver) {
-  // (a version-1 file, before 8349d48ff, holds d without its slope K1_d: read with K1_d =
-  // 0 and a backward-Euler first step)
+  // version 1 holds d without its slope K1_d: K1_d = 0, backward-Euler first step
   t2_rstd3 = (ver < 2) && cln_fsolve && cln_fkin;
-  // (version 5 on the cubed sphere: the sc rays' intensities, no longer read)
+  // version 5 on the cubed sphere (sc ray intensities) is refused
   if (cln_cssc && ver == 5) {
     std::cout << "### FATAL ERROR <rad_vet> restart: a version-5 clean file on the cubed "
               << "sphere (the sc rays' intensities) is no longer read" << std::endl;
@@ -1624,9 +1460,8 @@ bool RadiationVet::Time2RstAccept(const int nfile, const int ver) {
   t2_rcl = -1;
   int nb = Time2RstNchWant() - CleanRstNfv() - (t2_rstd3 ? 3 : 0);
   t2_nfv = (cln_cssc || cln_scmem) ? nfile - nb : 0;
-  // (a file of another clean_closure: the closure in place of an iterate run, CleanRstNcl,
-  // is skipped by another closure; without it, an iterate run's first solve takes the
-  // predicted closure, CleanSolve)
+  // a file of another clean_closure: the iterate closure is skipped, or missing (the
+  // first solve takes the predicted closure)
   const int ns = CleanNs(pmy_pack->pmesh->use_cubed_sphere);
   auto fits = [&](const int n) {
     return cln_cssc ? (nfile - n == 0 || nfile - n == 12) : (nfile == n);
@@ -1642,18 +1477,16 @@ bool RadiationVet::Time2RstAccept(const int nfile, const int ver) {
                 << std::endl;
     }
   }
-  // (a file written with clean_thin_donor's half ranges as ring fields, removed: no
-  // cln_fh channels, 1 .. 11 channels over, refused)
+  // 1 .. 11 channels over (clean_ring_fh half ranges as ring fields): refused
   if (cln_cssc && ver >= 6 && t2_nfv > 0 && t2_nfv < 12) {
     std::cout << "### FATAL ERROR <rad_vet> restart: a file written with clean_ring_fh ("
               << t2_nfv << " channels over)"
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // rotwb2-1121: on the cubed sphere (version 6) the face half ranges are the last 0 or
-  // 12 channels (cln_fh).  A surplus beyond them is a file written with clean_rot_ring:
-  // read with the ring off its ring channels are skipped (they were read into cln_fh
-  // beyond its 12 channels), anything else is refused
+  // cubed sphere, version >= 6: the face half ranges are the last 0 or 12 channels; a
+  // surplus is a clean_rot_ring file: with the ring off its channels are skipped, else
+  // refused
   t2_rskip = 0;
   if (cln_cssc && ver >= 6 && t2_nfv > 12) {
     t2_rskip = cln_ring ? -1 : CleanRingRstN() + 1;
@@ -1675,8 +1508,8 @@ bool RadiationVet::Time2RstAccept(const int nfile, const int ver) {
 int RadiationVet::Time2RstNch() {
   t2_rstv = 7;   // (the writer: version 7, after a restart from an older file too)
   t2_rcl = -1;
-  // (the clean scheme always: its state, and K1 with cln_k1ok, also in backward-Euler
-  // steps; restart.cpp stores t2_ok)
+  // the clean state (and K1 with cln_k1ok) is written in backward-Euler steps too;
+  // restart.cpp stores t2_ok
   return Time2RstNchWant();
 }
 
@@ -1712,8 +1545,7 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
     put(c, M1_T2_NK, t2k1, 0);
     c += M1_T2_NK;
   }
-  // (no predictor and extrap2 channels, version 4; the file is written in this run's
-  // layout, t2_rstv = 5)
+  // version >= 4 layout: no predictor / extrap2 channels
   if (h2 && vet_sc) {
     put(c, M1_T2_NVET, vet_prev, 0);
     c += M1_T2_NVET;
@@ -1776,8 +1608,8 @@ void RadiationVet::Time2RstPack(DvceArray5D<Real> &a, int nmb, int m0, int w0) {
     }
     c += nd + 1;
   }
-  // clean_stag_fkin: the energy flux's memory d of the three face families (CLF_N + 3),
-  // then its slope K1 (CLF_KD); before the first solve (CleanInit) those of the file read
+  // clean_stag_fkin: the energy flux memory d of the three face families (CLF_N + 3),
+  // then its slope K1 (CLF_KD); before the first solve, those read from the file
   if (cln_fsolve && cln_fkin) {
     for (int d = 0; d < 3; ++d) {
       auto fc = (d == 0) ? cln_fc1 : ((d == 1) ? cln_fc2 : cln_fc3);
@@ -1815,8 +1647,7 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   auto mb = std::make_pair(0, nmb);
   auto AL = Kokkos::ALL;
   const bool h2 = (time_scheme == M1_TIME_HESDIRK2);
-  // a file's predictor / extrap2 channels are read past (a NOTE once where they hold
-  // values: files of the old scheme)
+  // a file's predictor / extrap2 channels are read past (a NOTE once if nonzero)
   auto skip = [&w]() {
     static bool said = false;
     for (size_t q = 0; q < w.span() && !said && global_variable::my_rank == 0; ++q) {
@@ -1914,7 +1745,7 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     }
     ch -= CleanRstNcl();
   }
-  if (t2_rskip > 0) {   // (rotwb2-1121: the file's ring with the ring off, not read)
+  if (t2_rskip > 0) {  // the file's ring with the ring off: not read
     if (ch < t2_rskip) return;
     ch -= t2_rskip;
   }
@@ -1926,7 +1757,7 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
       CleanRingRstCopy(t, -ch, nmb, 0, false, true);
       return;
     }
-    ch -= CleanRingRstN() - vra_k*nq;   // (the flag slab, as in the old layout)
+    ch -= CleanRingRstN() - vra_k*nq;  // the flag slab
   }
   if (cln_ring) {
     const int nr = (vra_k - 1)*nq;
@@ -1977,18 +1808,16 @@ void RadiationVet::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
     }
     ch -= nd;
   }
-  // extrap2 (the old solver's files, version < 4): read past
+  // extrap2 (version < 4): read past
   if (h2 && vet_col && t2_vcmode == 4) skip();
 }
 
 //----------------------------------------------------------------------------------------
 //! \fn bool RadiationVet::Time2AutoBeBegin
-//! \brief autobe-1029 <rad_vet>/time2_auto_be (rad_vet.hpp): called by the Driver at the
-//! cycle start (after VetGdRotStep).  In a skip run the step is put in exactly the state
-//! the stage fallback leaves for its redo (Time2Restore): no valid slope (t2_ok = false,
-//! so the Driver runs the Heun hydro alone and then the BESTORE backward-Euler solve, and
-//! FrefWaccOn sees a BE step), cold predictor, and the dt_retry arm of a time2_reject
-//! redo.  A retried cycle calls it again with the same (unchanged) run state.
+//! \brief time2_auto_be: called by the Driver at the cycle start (after VetGdRotStep).
+//! A skip step is put in the state the stage fallback leaves (Time2Restore): no valid
+//! slope (Heun hydro, then the BESTORE solve), cold predictor, the dt_retry arm of a
+//! time2_reject redo.  A retried cycle calls it again with the same state.
 
 bool RadiationVet::Time2AutoBeBegin() {
   t2_abe_now = false;
@@ -2011,10 +1840,9 @@ bool RadiationVet::Time2AutoBeBegin() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::Time2AutoBeEnd
-//! \brief an ACCEPTED cycle of a hesdirk2 run.  kind 0 = stage step, 1 =
-//! stage fallback + BE redo, 2 = time2_auto_be step, 3 = other BE step (no slope),
-//! 4 = a discarded dt_retry attempt (timing only).  tw_a / tw_b: fenced wall seconds of
-//! (the attempt | the step) and (the redo).
+//! \brief an accepted cycle of a hesdirk2 run.  kind 0 stage step, 1 stage fallback +
+//! BE redo, 2 time2_auto_be step, 3 other BE step, 4 discarded dt_retry attempt (timing
+//! only); tw_a / tw_b: fenced wall seconds of the attempt or step, and of the redo
 
 void RadiationVet::Time2AutoBeEnd(int kind, Real tw_a, Real tw_b) {
   if (kind == 0) {t2w_clean += tw_a;}
@@ -2041,6 +1869,7 @@ void RadiationVet::Time2AutoBeEnd(int kind, Real tw_a, Real tw_b) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::Time2Report
+//! \brief end-of-run counters of the hesdirk2 steps (rank 0)
 
 void RadiationVet::Time2Report() {
   if (time_scheme != M1_TIME_HESDIRK2) return;
@@ -2052,7 +1881,7 @@ void RadiationVet::Time2Report() {
   if (t2_k1stiff > 0.0) {
     std::cout << " k1_stiff(s=" << t2_k1stiff << ") cells(rank 0)=" << t2_k1stiff_n;
   }
-  if (t2_ffct) {   // step 1 (global sums)
+  if (t2_ffct) {  // global sums
     std::cout << " face_fct calls=" << t2_ffct_calls << " skipped(no face flux)="
               << t2_ffct_nop << " K1 flux from U^n=" << t2_ffct_fill << " limited cells="
               << t2_ffct_cells << " max rounds="
@@ -2115,9 +1944,7 @@ void RadiationVet::Time2Report() {
 //----------------------------------------------------------------------------------------
 //! \fn bool RadiationVet::VsrcNoes
 //! \brief vet_source_noesrc in force for the current solve: every backward-Euler solve
-//! (time_scheme = be; under hesdirk2 the BESTORE / fallback / ic_rad solves unless
-//! vet_source_noesrc_h2be = false); never a hesdirk2 STAGE solve (its build reads iw EN,
-//! where time2_vet_col = predict puts the predicted state)
+//! (under hesdirk2 unless vet_source_noesrc_h2be = false), never a stage solve
 
 bool RadiationVet::VsrcNoes() const {
   if (!vsrc_noes) return false;
