@@ -427,12 +427,12 @@ bool RadiationVet::Time2Active() {
 //!   which = 3 (after the stage tasks): w0 is refreshed from the hydro's stage-2 flux
 //!     state U* + f d (f = 1/g non-stiff, -> 1 stiff), then u0 is U* + d again.
 //! time2_gtime_mom: momentum's f = 1/g in every cell; IEN takes its kinetic-energy
-//! change.  time2_gtime_slope: the flux state's gas eint is that of U* + d plus (1-g) dt
-//! minmod(K1, K2), K1 the last step's stage-2 slope of eint and K2 = d/(g dt), in the
-//! Patankar form where it is negative (positive); f is not used for the energy.  Formed
-//! at which = 3, from the gas the caps and floors left (hs_ holds the raw increment).  Its
-//! floors act on the flux state's primitives only: u0 is restored to U* + d as it was, so
-//! they create no energy and nothing is paid.
+//! change.  The flux state's eint increment (hs_ IEN, raw) is (f - 1) d's, or with
+//! time2_gtime_slope (1-g) dt minmod(K1, K2), K1 the last step's stage-2 slope of eint
+//! and K2 = d/(g dt) (f not used for the energy).  At which = 3 it is added to the gas
+//! the caps and floors left, in the Patankar form where it is negative (positive).  Its
+//! floors act on the primitives only: u0 is restored to U* + d as it was, so they
+//! create no energy and nothing is paid.
 
 //----------------------------------------------------------------------------------------
 
@@ -494,7 +494,7 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
         e = 0.0;
       }
     }
-    if (which == 3 && gs) {
+    if (which == 3) {
       const Real c = csk ? ccl(m,k,j) : 0.0, r = u0_(m,IDN,k,j,i);
       const Real k0 = CsKeMom(u0_(m,IM1,k,j,i), u0_(m,IM2,k,j,i), u0_(m,IM3,k,j,i), c)/r;
       const Real k1 = CsKeMom(u0_(m,IM1,k,j,i) + hs_(m,IM1,k,j,i), u0_(m,IM2,k,j,i) +
@@ -515,32 +515,34 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
         hs_(m,n,k,j,i) = ((gm && n >= IM1 && n <= IM3) ? 1.0/g - 1.0 : e)*d;
       } else {
         u0_(m,n,k,j,i) = u + us;
-        if (gs) {hs_(m,n,k,j,i) = u;}   // (the register to restore)
+        hs_(m,n,k,j,i) = u;   // (the register to restore)
       }
     }
-    if (which == 2 && gs) {hs_(m,IEN,k,j,i) = xs;}
-    if (which == 2 && gm && !gs) {  // IEN: kinetic energy of the momentum's f
+    if (which == 2 && gs) {
+      hs_(m,IEN,k,j,i) = xs;
+    } else if (which == 2) {   // (f - 1) d of the total energy less that of the kinetic
       const Real c = csk ? ccl(m,k,j) : 0.0, r = u0_(m,IDN,k,j,i) + hs_(m,IDN,k,j,i);
-      auto ke = [&](const Real s) {
-        return CsKeMom(u0_(m,IM1,k,j,i) + s*hs_(m,IM1,k,j,i), u0_(m,IM2,k,j,i) +
-                       s*hs_(m,IM2,k,j,i), u0_(m,IM3,k,j,i) + s*hs_(m,IM3,k,j,i), c)/r;
+      const Real s = gm ? e*g/(1.0 - g) : 1.0;
+      auto ke = [&](const Real q) {
+        return CsKeMom(u0_(m,IM1,k,j,i) + q*hs_(m,IM1,k,j,i), u0_(m,IM2,k,j,i) +
+                       q*hs_(m,IM2,k,j,i), u0_(m,IM3,k,j,i) + q*hs_(m,IM3,k,j,i), c)/r;
       };
-      hs_(m,IEN,k,j,i) += ke(1.0) - ke(e*g/(1.0 - g));
+      hs_(m,IEN,k,j,i) -= ke(s) - ke(0.0);
     }
   });
   if (which != 3) return;
   const bool dpay = ph->dual.pay;
-  if (gs) {ph->dual.pay = false;}
+  ph->dual.pay = false;
   FluidRefresh(pdrive, false);   // ghosts + w0 of the flux state
   ph->dual.pay = dpay;
-  // u0 back to U* + d in the ghosts too, with the neighbour's f d (exchanged; 0 at the
+  // u0 back to U* + d, in the ghosts the neighbour's (exchanged; the flux state at the
   // physical boundaries): a ghost is then its neighbour's cell bitwise, so the stage-2
   // dfloor_flux_limit takes the same donor state on both sides of a MeshBlock face (the
   // face flux does not depend on the MeshBlock layout)
   par_for("vet_t2_gtime3g", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     if (k >= kl && k <= ku && j >= jl && j <= ju && i >= il && i <= iu) return;
-    for (int n = 0; n < nv; ++n) {hs_(m,n,k,j,i) = gs ? u0_(m,n,k,j,i) : 0.0;}
+    for (int n = 0; n < nv; ++n) {hs_(m,n,k,j,i) = u0_(m,n,k,j,i);}
   });
   (void) ph->pbval_u->InitRecv(nv);
   (void) ph->pbval_u->PackAndSendCC(hs_, ph->coarse_u0);
@@ -549,9 +551,7 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
   (void) ph->pbval_u->RecvAndUnpackCC(hs_, ph->coarse_u0);
   par_for("vet_t2_gtime3", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, n1-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    for (int n = 0; n < nv; ++n) {
-      u0_(m,n,k,j,i) = gs ? hs_(m,n,k,j,i) : u0_(m,n,k,j,i) - hs_(m,n,k,j,i);
-    }
+    for (int n = 0; n < nv; ++n) {u0_(m,n,k,j,i) = hs_(m,n,k,j,i);}
   });
 }
 
