@@ -488,6 +488,8 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/vet_path", "=none"},
     // (vet_seg_cross, removed)
     {"rad_vet/vet_seg_cross", "!"},
+    // (the vet_col_lat depth cut: the clean rays always start at the first shell)
+    {"rad_vet/vet_col_lat_taucut", ""},
     // (the vet_gd upwind profile shift and the dense shell launch, removed)
     {"rad_vet/vet_gd_upwind", "=bilinear"}, {"rad_vet/vet_gd_upwind_*", ""},
     {"rad_vet/vet_gd_shell_list", "=true"},
@@ -749,7 +751,7 @@ void RadiationVet::CleanInit() {
                  "vet_col with vet_gd");
     }
     // (the rays' theta walls: rad_vet.cpp, vet_gd_theta_wall or, unnamed, the mesh's
-    // walls) (the sweep starts at the first shell, the constructor's vlat_taucut)
+    // walls) (the sweep starts at the first shell or the ray cut, vlat_icut)
     // (implicit_flux_beam = halfrange has no effect here: no clean solve reads the
     // half-range ratios vgd_hr, so they are neither made nor checkpointed)
     impl_beam_hr = false;

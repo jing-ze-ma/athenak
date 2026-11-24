@@ -9,7 +9,7 @@
 //! short-characteristics (SC) formal solution along GLOBALLY FIXED directions.
 //!
 //! WHAT IS SOLVED.  At every vet_col build (the same state, source S and extinction chi
-//! as vet_col and vet_col_lat: VetLatSweep(0) fills ln chi, ln S and the first shell
+//! as vet_col and vet_col_lat: VetLatSweep fills ln chi, ln S and the first shell
 //! vlat_icut), the grey transfer equation  n . grad I = chi (S - I)  is swept shell by
 //! shell for the N = 12 vet_gd_nside^2 HEALPix ring centres n_d, fixed in the CARTESIAN
 //! frame (straight rays: the curvature of the sp grid enters only through the positions,
@@ -5098,7 +5098,7 @@ void RadiationVet::VetGdIpcCheck() {
 
 void RadiationVet::VetGdX1Hand(const bool up) {
   if (vgd_scut != 0) {VgdFatal("several MeshBlocks along x1 need vlat_icut = 0 (the "
-                               "sweep from the inner face: vet_col_lat_taucut large)");}
+                               "sweep from the inner face)");}
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int nmb1 = pmy_pack->nmb_thispack - 1, n = vgd_n, w = vgd_w;
   const int nx2 = indcs.nx2, nk = indcs.nx3*nx2;
@@ -6165,13 +6165,13 @@ void RadiationVet::VetGdMoments() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdSource
-//! \brief the source of a gd build: ln chi, ln S of every cell (VetLatSweep(0), with the
+//! \brief the source of a gd build: ln chi, ln S of every cell (VetLatSweep, with the
 //! first shell vlat_icut), copied into the band index space of vgd_cs and its lateral
 //! band filled exactly (one multi-shell exchange, on the default instance); with several
 //! MeshBlocks along x1 also the x1 ghost shells (the neighbour level's boundary shells)
 
 void RadiationVet::VetGdSource() {
-  VetLatSweep(0);
+  VetLatSweep();
   // ln chi, ln S in the band index space, the lateral band filled exactly: from the
   // first shell up (the gd sweep), or every shell for the clean scheme, whose rays and
   // closure read the whole column (shells below the cut would keep an earlier build's
@@ -6198,7 +6198,7 @@ void RadiationVet::VetGdSource() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetGdBuild
-//! \brief the gd build inside VetLatBuild: source and first shell (VetLatSweep(0)), the
+//! \brief the gd build inside VetLatBuild: source and first shell (VetLatSweep), the
 //! sweep(s) with the lagged lateral inflow, the moments; timed per part (fenced)
 
 void RadiationVet::VetGdBuild() {

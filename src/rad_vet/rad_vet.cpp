@@ -1978,12 +1978,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
       vgd_tan = pin->GetBoolean("rad_vet","vet_gd_tangential");
     }
     if (vlat_on) {
-      if (pin->DoesParameterExist("rad_vet","vet_col_lat_taucut")) {
-        vlat_taucut = pin->GetReal("rad_vet","vet_col_lat_taucut");
-      }
-      // scheme = clean: its rays sweep from the first shell (no depth cut), decided here
-      // so that every build, also one before the first solve (CleanInit), uses it
-      vlat_taucut = std::numeric_limits<Real>::max();
       // vet_col_lat_cut_thin (VetLatCsFinish).  DEFAULT 1 on a fresh
       // run; a restart whose file lacks the key keeps 0 (the depth cut alone, bitwise)
       vlat_cut_thin = pin->GetOrAddReal("rad_vet","vet_col_lat_cut_thin",
@@ -2547,7 +2541,6 @@ RadiationVet::~RadiationVet() {
   delete pbval_u;
   if (pbval_d3 != nullptr) {delete pbval_d3;}
   if (pbval_sg != nullptr) {delete pbval_sg;}
-  if (pbval_vl != nullptr) {delete pbval_vl;}
   if (pbval_ea != nullptr) {delete pbval_ea;}
   if (pbval_vs != nullptr) {delete pbval_vs;}
   if (pbval_hr != nullptr) {delete pbval_hr;}

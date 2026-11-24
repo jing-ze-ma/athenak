@@ -2016,35 +2016,19 @@ class RadiationVet {
   // M1SphTan (= x2v; the periodic source cell's theta in the ghost rows at a
   // theta-periodic seam).  Built on first use, rebuilt when the pack size changes.
   const Real *vtan_x2t_src = nullptr;
-  static constexpr int vlat_nmu = 4, vlat_npsi = 4;   // vet_col_lat directions
-  Real vlat_taucut = 30.0;     // vet_col_lat_taucut: the sweep starts where every column
-                               // has tau_top >= this (global shell index vlat_icut)
-  int vlat_icut = 0;
+  int vlat_icut = 0;           // the first shell of the sweep (CleanRayCut)
   Real vlat_cut_thin = 0.0;    // vet_col_lat_cut_thin: no cut above a
                                // cell thinner than this (0 off)
   bool vlat_ready = false;     // VetLatInit done
   int vlat_nbuild = 0;         // builds done
   Real vlat_time = 0.0, vlat_ncall = 0.0, vlat_nclamp = 0.0;
-  DvceArray5D<Real> vlat_i;    // (m, 2 nmu npsi, k, j, i): 3-D intensities
-  DvceArray5D<Real> vlat_t;    // (m, 2 nmu npsi, k, j, i): twin intensities
-  DvceArray5D<Real> vlat_t_c;
-  DvceArray5D<Real> vlat_d;    // (m, 2 nmu npsi, k, j, i): 3-D minus twin, ghosts
-                               // lagged (the lateral part of the inflow)
-  DvceArray5D<Real> vlat_d_c;
   DvceArray5D<Real> vlat_cs;   // (m, 2, k, j, i): ln chi, ln S (ghosts exchanged)
   DvceArray5D<Real> vlat_cs_c;
-  DvceArray3D<Real> vlat_geo;  // (shell l, 2 a + dir, 0..3): per-shell ray geometry
-  DvceArray1D<Real> vlat_mu;   // (a): Gauss nodes on [0, 1], descending
-  DvceArray1D<Real> vlat_w;    // (a): hemisphere weights, sum 1/2 (J = sum w I)
   DvceArray1D<Real> vlat_cnt;  // (1): lateral reads clamped to the ghost band
-  std::vector<double> vlat_nodes;   // the mu nodes (host)
-  int vlat_geo_icut = -1;       // the first shell vlat_geo was built for
-  MeshBoundaryValuesCC *pbval_vl = nullptr;   // vlat_i
   MeshBoundaryValuesCC *pbval_ea = nullptr;   // EAUDITF diagnostic
   MeshBoundaryValuesCC *pbval_vs = nullptr;   // vlat_cs
   void VetLatInit();
-  void VetLatBuild();
-  void VetLatSweep(const int stage);   // 0 twin, 1 3-D, 2 moments
+  void VetLatSweep();   // ln chi, ln S of a vet_gd build
   void VetLatOdMax();
   void VetLatExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
                       MeshBoundaryValuesCC *pb);

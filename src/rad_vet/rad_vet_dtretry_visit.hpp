@@ -697,7 +697,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vlat_lagfb", vlat_lagfb);
   v.value("fbl_any", fbl_any);
   v.view("vlat_tt_loc", vlat_tt_loc);
-  v.value("vlat_taucut", vlat_taucut);
   v.value("vlat_icut", vlat_icut);
   v.value("vlat_cut_thin", vlat_cut_thin);
   v.value("vlat_ready", vlat_ready);
@@ -705,19 +704,9 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("vlat_time", vlat_time);
   v.value("vlat_ncall", vlat_ncall);
   v.value("vlat_nclamp", vlat_nclamp);
-  v.view("vlat_i", vlat_i);
-  v.view("vlat_t", vlat_t);
-  v.view("vlat_t_c", vlat_t_c);
-  v.view("vlat_d", vlat_d);
-  v.view("vlat_d_c", vlat_d_c);
   v.view("vlat_cs", vlat_cs);
   v.view("vlat_cs_c", vlat_cs_c);
-  v.view("vlat_geo", vlat_geo);
-  v.view("vlat_mu", vlat_mu);
-  v.view("vlat_w", vlat_w);
   v.view("vlat_cnt", vlat_cnt);
-  v.value("vlat_nodes", vlat_nodes);
-  v.value("vlat_geo_icut", vlat_geo_icut);
   v.value("vgd_on", vgd_on);
   v.value("vgd_tan", vgd_tan);
   v.view("cs_qf", cs_qf);
@@ -1100,7 +1089,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
 //   cln_hbuf : DvceArray5D<Real> (the storage of cln_halo, kept)
 //   cln_hdl : CleanHaloList (cell lists made at first use, kept)
 //   vtan_x2t_src : const Real *
-//   pbval_vl : MeshBoundaryValuesCC *
 //   pbval_ea : MeshBoundaryValuesCC *
 //   pbval_vs : MeshBoundaryValuesCC *
 //   pin_rot_ : ParameterInput *
