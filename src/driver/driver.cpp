@@ -509,6 +509,10 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
     pmesh->NewTimeStep(tlim);
   }
 
+  // floor_pay: the initial conversions' floors are paid here, before the t = 0 outputs,
+  // so that the first cycle starts from the state they record (Execute pays none again)
+  DualPay(pmesh);
+
   //---- Step 3.  Cycle through output Types and load data / write files.
   if (!res_flag) { // only write outputs at the beginning of the run
     for (auto &out : pout->pout_list) {
