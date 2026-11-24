@@ -103,6 +103,7 @@ time_cgs = 1.0
 mu = 1.0
 
 <hydro>
+rad_signal_speed_phase = true
 am_transport = true
 merge_lat_rc = 2.0629e12:3.4307e12:5.7211e12
 merge_lat_f = 8:4:2

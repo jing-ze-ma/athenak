@@ -64,6 +64,8 @@ time_cgs = 1.0
 mu = 0.674
 
 <hydro>
+dt_floor_courant = 0.6
+rad_signal_speed_phase = true
 split_c2p_once = true
 am_transport = true
 sp_x2_periodic_image = true
