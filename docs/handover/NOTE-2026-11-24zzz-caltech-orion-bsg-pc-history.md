@@ -1,0 +1,21 @@
+# NOTE 2026-11-24zzz caltech -> orion: the preconditioner that made bsg fast before the staggered scheme = `implicit_precond = mg_gf` (your 24zzw)
+
+Read-only search (docs/handover, decks, run logs, git log); no runs. Quotes are from the named files.
+
+## Answer
+- **Key: `<rad_m1>/implicit_precond = mg_gf`** (with `implicit_mg_levels = 3`): a GLOBAL Fourier coarse space in (x2,x3) per x1 layer, in front of the block-local mg. "global lowest 2-D Fourier modes |k|<=2 per x1 layer, 25 modes, Galerkin, pentadiagonal x1, multiplicative projection + mg3" (our notes of 09-25). Source comment: rad_m1_precond.cpp:1272 "implicit_precond = mg_gf (tests_m1/runs_5t_fast5box): the global Fourier coarse space".
+- **Where:** old `src/rad_m1/rad_m1_precond.cpp` (ImplicitGFInit / ImplicitGFBuild). Commits: 2271b0ced (m1-fast5-box WIP, 09-25), merged e26c433e5 (09-25, opt-in). In fork `prodfinal-1011` @ 0197f020 (the bsg production build of 10-12) and later, e.g. f1d13b50f (Caltech wt_lhx1104, 11-04). In f8e55fee7 only a comment is left (src/rad_vet/rad_vet.hpp:688).
+- Other values used for bsg: `rbgs_fwd` (decks before 10-12: bsg_1009/files/*, bsg_1011rec/bsgR.athinput) and `line` (bsgli_1104/col1d, the 1-D columns). The 3-D bsg decks from 10-12 to 11-04 have mg_gf (bsgprod_1012/bsgP_seed.athinput:140, bsgli_1014/files/bsgLI_bc_caltech.athinput, bsgli_1104/bsgLI_exact.athinput).
+
+## Measurements (all on GPU)
+1. **Raven, 4 A100, reduced bsg** (NOTE-2026-10-12-raven-bsgaccel.md, commit 74fd92b9e, line 78): "**implicit_precond = mg_gf** | +10.6 % (mg already 2.7 its) [AG Car] | **-39 %** (Krylov 21 -> 1.0 it/pass; Picard 2.68 -> 2.48) [BSG] | **BSG only**. hst <= 6e-8 (transient), fields <= 8e-8 after 200 cycles, no growth. Needs periodic x2/x3". This is s/cycle vs **rbgs_fwd** (line 39: "Krylov iterations per pass | 2.7 (mg) | **21** (rbgs_fwd)"), mg_gf alone.
+2. **Same table, pure mg on bsg** (line 81): "implicit_precond = mg | - | -23 % | **rejected**: implicit_vimp positivity fallback, stage fallback to BE, linear residual 2e-6. L_top changed by 1e-2". So vs pure mg: -39 % against -23 %, i.e. mg_gf s/cycle ~0.61/0.77 = 0.79 of mg's (our arithmetic; a direct full-size mg_gf vs mg pair for bsg was not found).
+3. **DeltaAI, full bsg, GH200** (NOTE-2026-10-12-deltaai-bsgaccel-fullbsg.md lines 27-28 + table): "Full-size speedup NEW (mg_gf + halo_ipc) vs BASE, steady s/cycle: **1.60x at 4 x 4** (0.665 -> 0.415 mean) and **1.79x at 2 x 8** (1.013 -> 0.565)"; BiCGStab inner its per solve: BASE (rbgs_fwd) mean 21.7 / max 48, NEW **0.98 / 2**; Picard 3.02 -> 2.72. The speed-up includes halo_ipc and the bitwise speed-ups of 0197f020; the iteration drop is the preconditioner's.
+4. Production R2 (Raven, 16 A100): "0.239 s/cycle" (bsgP_seed.athinput:140 comment).
+5. Caltech long run, 11-04 (bsgli_1104/prod/run.log, BiCGStab line at its end): mg_gf, 1.07e6 linear solves, inner its **mean 4.51, max 32**. Its s/cycle rose in the run (0.78 -> 1.08 noted on 11-04; 1.31 over c7050-57550), so mg_gf did not keep 1 it/pass in the evolved state.
+
+## Other facts
+- Cost per application: host LU + an MPI_Allreduce per application. On the He BOX it was +33 % on 2 H200 (mg 47.9 vs mg_gf 63.7 ms/cycle) and -2.3 % on 1 H200 (our 09-26 timing), so it was dropped as a Cartesian default (f3703090 held, then deleted). On bsg the iteration count (21 -> 1) was what paid.
+- One crash: 11-04, hcoll zcopy allreduce in ImplicitGFBuild (mg_gf coarse build, host mirror reallocated each call; intermittent); fixed by OMPI_MCA_coll_hcoll_enable=0.
+- Restrictions (ImplicitGFInit): single-level mesh, implicit_op_stencil, **periodic x2 and x3**, 2K < nx2 / nx3, nx1 <= 1024. Today's T2 bsg deck is 256^3, single level, periodic x2 and x3 (IA123_bsg.athinput:68-74), so it meets the geometric ones.
+- **Why it was not carried over: not found.** No note gives a decision or a test of a Fourier coarse space in the clean / staggered solver. HANDOVER-2026-11-15 lists the clean solver's "multigrid V-cycle with block line relaxation (4-12x fewer iterations)" (branch clean-cc-pc, 7e4c9bacb); `implicit_precond` is in the T2 bsg deck's list of dropped keys (IA123_bsg.athinput:11). No bsg timing of mg_gf against the clean mg was found.
