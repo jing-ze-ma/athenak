@@ -58,6 +58,11 @@ $1 - e^{-x}$, $x = \tau_d\,c_{\rm eq}/c$ the grid-scale trapping parameter ($\ta
 optical depth of a cell). Where $x \ll 1$ the radiation diffuses out of a cell faster than a
 sound wave crosses it and does not stiffen the gas, so dt is not limited by it. This is a
 matter of accuracy only (the scheme is IMEX, so stability does not depend on it).
+`<hydro>/rad_signal_speed_phase = true` weights it by $1 - e^{-x^2}$ instead: for $x \ll 1$ the
+radiation-pressure perturbation lags the compression by about $\pi/2$, so its restoring part is
+$O(x^2)$ and its $O(x)$ part only damps the wave; the linear root stays at the gas speed until
+the mode is overdamped ($x \sim 0.3$). In thin gas ($c_{\rm eq}^2 \propto 1/\rho$) the
+linear weight's term grows as $\rho^{-1/2}$; this one stays far below $c_g$.
 
 **Implicit stage solve.** In each stage the face momentum equation is eliminated face by face,
 which leaves a scalar system for $E$. It is solved by Newton passes: each pass is a

@@ -335,7 +335,8 @@ def t_wb_cs(c):
 
 RADWAVE = (  # tag, P_rad/P_gas, x = tau_cell c_eq/c (grid-scale trapping), signal-speed taper
     ('thin', 10.0, 0.01, 'true'), ('thin_old', 10.0, 0.01, 'false'),
-    ('mid', 100.0, 0.1, 'true'), ('one', 10.0, 1.0, 'true'), ('trapped', 1.0, 100.0, 'true'))
+    ('mid', 100.0, 0.1, 'true'), ('one', 10.0, 1.0, 'true'), ('trapped', 1.0, 100.0, 'true'),
+    ('mid_phase', 100.0, 0.1, 'phase'), ('one_phase', 10.0, 1.0, 'phase'))
 
 
 def radwave_fit(d, amp):
@@ -366,7 +367,8 @@ def t_radwave(c):
     """linear radiation-acoustic wave (64 x 4 cells, amplitude 1e-6, the exact eigenmode,
     2 periods, cfl 0.3): phase speed and damping rate against the analytic root, from the
     optically thin (x = 0.01) to the trapped (x = 100) regime; 'thin_old' runs without
-    hydro/rad_signal_speed_diff, for the time-step gain."""
+    hydro/rad_signal_speed_diff, for the time-step gain; '*_phase' with
+    hydro/rad_signal_speed_phase (in-phase weight 1 - exp(-x^2))."""
     cl, n, amp = 1.0e3, 64, 1.0e-6
     out = {'err_cph': [], 'err_damp': [], 'damp': [], 'warnings': 0}
     dt = {}
@@ -376,9 +378,12 @@ def t_radwave(c):
         w, ar, eig, _ = vett.radwave_root(prat, kap, cl)
         tl = 2.0*2.0*np.pi/w.real
         o = {'mesh/nx1': n, 'meshblock/nx1': n, 'time/cfl_number': 0.3, 'time/tlim': tl,
-             'hydro/rad_signal_speed': 'true', 'hydro/rad_signal_speed_diff': diff,
+             'hydro/rad_signal_speed': 'true',
+             'hydro/rad_signal_speed_diff': 'false' if diff == 'false' else 'true',
              'rad_vet/c_light': cl, 'rad_vet/arad': ar, 'rad_vet/implicit_cfl': -1.0,
              'problem/radwave_amp': amp, 'output2/dt': tl/32}
+        if diff == 'phase':
+            o['hydro/rad_signal_speed_phase'] = 'true'
         o.update({'rad_vet/kappa_' + s: kap for s in 'pef'})
         o.update({'problem/' + kk: v for kk, v in eig.items()})
         d = c.run('wave_cart.athinput', tag, o)
@@ -392,6 +397,7 @@ def t_radwave(c):
         out['err_damp'].append(float(abs(wm.imag - w.imag)/wm.real))   # per radian
         out['damp'].append(float(-wm.imag/w.real))                     # > 0: decays
     out['dt_gain'] = float(dt['thin']/dt['thin_old'])
+    out['dt_gain_phase'] = [float(dt['mid_phase']/dt['mid']), float(dt['one_phase']/dt['one'])]
     return out
 
 

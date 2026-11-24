@@ -156,7 +156,18 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   // dominated convective zone) then keep about the gas speed, which bounds the speed
   // of the radiatively damped wave from above; deep cells (tau_d c_eq/c_hat >> 1)
   // keep c_eq.
+  // rad_signal_speed_phase: the weight is the IN-PHASE part of the radiation pressure
+  // perturbation, 1 - exp(-x^2), x = tau_d c_eq,d/c_hat.  For x << 1 the perturbation
+  // lags the compression by ~pi/2: its in-phase (restoring) part is O(x^2) and the O(x)
+  // part damps the wave (the implicit exchange's job), so the linear root of gas +
+  // moments stays at c_g until the mode is overdamped near x ~ 0.3 and reaches c_eq for
+  // x >~ 1 (Mihalas & Mihalas 1984, sect. 101).  The weight is >= 1 - exp(-x) for
+  // x >= 1, so dt is never larger where the radiation is trapped.  In thin gas c_eq^2
+  // ~ 1/rho: the radiation term of csd^2 grows as rho^-1/2 with the linear weight and
+  // tends to [(4/3) D_dd E kappa_T h/c_hat]^2 (density independent, << c_g^2) with
+  // this one.
   const bool rss_ = rad_signal_speed, rsi_ = rss_inertia, rsd_ = rss_diff;
+  const bool rsp_ = rss_phase;
   DvceArray5D<Real> erad_, kopc_, tten_, vcel_;
   radvet::CleanGeo gn_;
   int rss_mode = 0;          // 0 isotropic E/3, 1 M1Chi, 2 tau_ten, 3 vet_sc, 4 vet full
@@ -251,7 +262,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
       if (rsi_) ceq2 /= 1.0 + (er + pr)/(d*rss_cl*rss_cl);
       const Real dc2 = fmax(ceq2 - cg2, 0.0);
       const Real tw = rsd_ ? kt*h[a]*sqrt(ceq2)/rss_ch : kt*h[a];
-      csd[a] = sqrt(cg2 + dc2*(1.0 - exp(-tw)));
+      csd[a] = sqrt(cg2 + dc2*(1.0 - exp(-(rsp_ ? tw*tw : tw))));
     }
   };
 

@@ -142,13 +142,14 @@
   }
  },
  "radwave": {
-  "_about": "per case (thin, mid, one, trapped): |c_ph/c_ph,exact - 1|, |d(damping)|/omega and the damping per radian (> 0: no growth); dt_gain: dt with / without hydro/rad_signal_speed_diff at x = 0.01",
+  "_about": "per case (thin, mid, one, trapped, mid_phase, one_phase): |c_ph/c_ph,exact - 1|, |d(damping)|/omega and the damping per radian (> 0: no growth); dt_gain: dt with / without hydro/rad_signal_speed_diff at x = 0.01; dt_gain_phase: dt with / without hydro/rad_signal_speed_phase at x = 0.1 (2.15) and x = 1 (1: the weights agree there)",
   "max": {
    "err_cph": 0.003,
    "err_damp": 0.005
   },
   "min": {
-   "damp": 1e-06
+   "damp": 1e-06,
+   "dt_gain_phase": 1.0
   },
   "near": {
    "dt_gain": [
