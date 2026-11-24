@@ -239,3 +239,5 @@ CLEAN WARNING cycle 779 t2s 2: the implicit_pos_floor creation 1.459516e+42 of t
 (float32 bins; vet_f* = cell radiation flux moments; shells i=320..331 = r 5.5279e+11..5.5603e+11; v in cm/s)
 ```
 - (11-24 04:11) m35zams_z3 dt per 1000 cycles: c22000 t 5.276485e+04 dt 1.845216e+00 (wall 6.321371e+03 s);c23000 t 5.469825e+04 dt 1.805268e+00 (wall 6.600154e+03 s);c24000 t 5.659522e+04 dt 1.714710e+00 (wall 6.879727e+03 s);c25000 t 5.851048e+04 dt 1.900824e+00 (wall 7.162713e+03 s);c26000 t 6.038583e+04 dt 1.833869e+00 (wall 7.448624e+03 s);c27000 t 6.232854e+04 dt 1.945029e+00 (wall 7.738806e+03 s);
+
+- (11-24 04:23) status: bsg [log.2 cycle=21700 time=1.364828e+06 dt=6.009534e+01, CW 0, DT_RETRY 0]; t9l62 [log.2 cycle=4300 time=4.162843e+05 dt=9.090845e+01, CW 0, DT_RETRY 0]; m35mms [log.4 cycle=15200 time=1.330905e+05 dt=1.111823e+01, CW 0, DT_RETRY 0]; m35zams_z3 [log.0 cycle=30300 time=6.842044e+04 dt=1.873972e+00, CW 0, DT_RETRY 0];
