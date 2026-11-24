@@ -53,8 +53,8 @@ void DualDiscard(Mesh *pm) {
 }
 // (the floor audit's counters at the step's start, which DualDiscard puts back)
 void DualMark(Mesh *pm) {
-  if (pm->pmb_pack->phydro != nullptr) pm->pmb_pack->phydro->dual.Mark();
-  if (pm->pmb_pack->pmhd != nullptr) pm->pmb_pack->pmhd->dual.Mark();
+  if (pm->pmb_pack->phydro != nullptr) pm->pmb_pack->phydro->dual.Mark(pm->pmb_pack);
+  if (pm->pmb_pack->pmhd != nullptr) pm->pmb_pack->pmhd->dual.Mark(pm->pmb_pack);
 }
 // <hydro|mhd>/floor_pay = rad: the energy the fluid floors and dual selection created
 // is taken from E_rad of the same cell (hydro/dual_energy.hpp)

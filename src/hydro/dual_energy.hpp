@@ -107,7 +107,12 @@ struct DualEnergy {
             DvceArray5D<Real> &wder, DvceArray4D<Real> &wtemp, const EOS_Data &eos);
   void Report(MeshBlockPack *pp);
   // a discarded attempt (dt_retry, the hesdirk2 redo): its floors' payment and counts go
-  void Mark() {for (int n = 0; n < DC_NCNT; ++n) hck[n] = hc[n];}
+  // (Mark, at the step's start before the checkpoint, reports first: a report closes the
+  // steps before, and a retried attempt, which does not mark, reports nothing again)
+  void Mark(MeshBlockPack *pp) {
+    Report(pp);
+    for (int n = 0; n < DC_NCNT; ++n) hck[n] = hc[n];
+  }
   void Discard() {
     for (int n = 0; n < DC_NCNT; ++n) hc[n] = hck[n];
     if (pay && init) Kokkos::deep_copy(payv, 0.0);
