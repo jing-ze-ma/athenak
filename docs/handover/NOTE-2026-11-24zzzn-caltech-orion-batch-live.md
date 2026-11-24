@@ -98,3 +98,18 @@ Done: BSGt C0 C0b C1 C1ra C1rb C2 M1 M2 M3 T1 T2 Z1f Z1t
 Idle: 02-09, 02-03, 01-17 (7333072) are kept for HG (P1/H0, H1, HT; 4 ranks each) once hegiant.00205 and its md5 arrive (copy ~75 MB/s, 33.6 of 68.2 GB at 13:56; about 8 min + md5); 02-11 waits for the S3/S2 verdict gate before S1; 01-15 runs ZA, ZB, ZC; S4 waits for S5's verdict.
 
 Done: BSGt C0 C0b C0t C1 C1ra C1rb C2 M1 M2 M3 T1 T2 Z1f Z1t 
+
+**11-24 14:13**
+
+| node | arm | cycle / target | s/cyc (last window) | ETA | CW / FATAL |
+|---|---|---|---|---|---|
+| 02-11 | **idle (4 H200)** | | | | |
+| 02-17 | **idle (4 H200)** | | | | |
+| 02-16 | **idle (4 H200)** | | | | |
+| 01-15 | **idle (4 H200)** | | | | |
+| 01-17 | **idle (4 H200)** | | | | |
+| 02-03 | **idle (4 H200)** | | | | |
+| 02-09 | **idle (4 H200)** | | | | |
+Idle: 02-09, 02-03, 01-17 (7333072) are kept for HG (P1/H0, H1, HT; 4 ranks each) once hegiant.00205 and its md5 arrive (copy ~75 MB/s, 33.6 of 68.2 GB at 13:56; about 8 min + md5); 02-11 waits for the S3/S2 verdict gate before S1; 01-15 runs ZA, ZB, ZC; S4 waits for S5's verdict.
+
+Done: BSGt C0 C0b C0t C1 C1ra C1rb C2 M1 M2 M3 T1 T2 Z1f Z1t 
