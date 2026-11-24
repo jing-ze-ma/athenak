@@ -140,6 +140,16 @@ void RadiationVet::Time2Init(ParameterInput *pin) {
         std::cout << "<rad_vet> time2_tableau = sdirk2: no explicit K1, Heun hydro"
                   << (t2_gtm ? "" : ", time2_gtime_mom = false") << std::endl;
       }
+      // time2_gtime_slope (read only when named): Time2GasTime's slope-limited exchange
+      if (pin->DoesParameterExist("rad_vet", "time2_gtime_slope")) {
+        t2_gts = pin->GetBoolean("rad_vet", "time2_gtime_slope");
+        if (t2_gts && !t2_gtm) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<rad_vet>/time2_gtime_slope needs time2_gtime_mom = "
+                    << "true" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+      }
     }
     if (t2_tab == 2 && coupling && pmy_pack->pmhd != nullptr) {  // no mhd path
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -417,7 +427,9 @@ bool RadiationVet::Time2Active() {
 //!   which = 3 (after the stage tasks): w0 is refreshed from the hydro's stage-2 flux
 //!     state U* + f d (f = 1/g non-stiff, -> 1 stiff), then u0 is U* + d again.
 //! time2_gtime_mom: momentum's f = 1/g in every cell; IEN takes its kinetic-energy
-//! change.
+//! change.  time2_gtime_slope: the flux state's gas eint is that of U* + d plus (1-g) dt
+//! minmod(K1, K2), K1 the last step's stage-2 slope of eint and K2 = d/(g dt), in the
+//! Patankar form where it is negative (positive); f is not used for the energy.
 
 //----------------------------------------------------------------------------------------
 
@@ -446,10 +458,11 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
   auto ccl = pmy_pack->pcoord->cos_cell;
   const bool etg = ph->use_etotgrav, csk = cs_geom;
   const Real g = kT2G, cl = c_light, ch = chat, ar = arad, dt = pmy_pack->pmesh->dt;
-  const bool gm = t2_gtm;
+  const bool gm = t2_gtm, gs = t2_gts;
+  auto k1_ = t2k1;
   par_for("vet_t2_gtime", DevExeSpace(), 0, nmb-1, kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real e = 0.0;
+    Real e = 0.0, xs = 0.0;
     if (which == 2) {
       const Real dd = u0_(m,IDN,k,j,i);
       const Real eg = u0_(m,IEN,k,j,i) - CsKeMom(u0_(m,IM1,k,j,i), u0_(m,IM2,k,j,i),
@@ -459,6 +472,24 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
       const Real z = dt*(ch*op_(m,M1_OP_E,k,j,i) + ((eg > 0.0) ?
                      4.0*cl*op_(m,M1_OP_P,k,j,i)*ar*SQR(SQR(tk))/eg : 0.0));
       e = (1.0 + g*z)/(g*(1.0 + z)) - 1.0;
+      if (gs) {
+        const Real cc = csk ? ccl(m,k,j) : 0.0, r = u1_(m,IDN,k,j,i);
+        Real p[3], q[3], s[3];   // momenta of U^n, U^n + g dt K1 and S
+        for (int n = 0; n < 3; ++n) {
+          p[n] = u1_(m,IM1+n,k,j,i);
+          q[n] = p[n] + g*dt*k1_(m,M1_T2_M1+n,k,j,i);
+          s[n] = p[n] + g*(hs_(m,IM1+n,k,j,i) - p[n]);
+        }
+        // the eint changes g dt K1 and g dt K2 = d
+        const Real a = g*dt*k1_(m,M1_T2_EN,k,j,i) -
+                       (CsKeMom(q[0], q[1], q[2], cc) - CsKeMom(p[0], p[1], p[2], cc))/r;
+        const Real es = u1_(m,IEN,k,j,i) + g*(hs_(m,IEN,k,j,i) - u1_(m,IEN,k,j,i)) -
+                        CsKeMom(s[0], s[1], s[2], cc)/dd -
+                        (etg ? dd*phc(m,k,j,i) : 0.0);
+        const Real b = eg - es;
+        xs = (a*b > 0.0) ? (1.0/g - 1.0)*((fabs(a) < fabs(b)) ? a : b) : 0.0;
+        e = 0.0;
+      }
     }
     for (int n = 0; n < nv; ++n) {
       const Real un = u1_(m,n,k,j,i), us = hs_(m,n,k,j,i), u = u0_(m,n,k,j,i);
@@ -480,6 +511,11 @@ void RadiationVet::Time2GasTime(Driver *pdrive, int which) {
                        s*hs_(m,IM2,k,j,i), u0_(m,IM3,k,j,i) + s*hs_(m,IM3,k,j,i), c)/r;
       };
       hs_(m,IEN,k,j,i) += ke(1.0) - ke(e*g/(1.0 - g));
+      if (gs) {
+        const Real eb = u0_(m,IEN,k,j,i) - ke(0.0) - (etg ? u0_(m,IDN,k,j,i)*phc(m,k,j,i)
+                                                          : 0.0);
+        if (eb > 0.0) {hs_(m,IEN,k,j,i) += (xs < 0.0) ? xs*eb/(eb - xs) : xs;}
+      }
     }
   });
   if (which != 3) return;

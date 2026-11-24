@@ -328,6 +328,33 @@ def coarsen(a):
     return 0.5*(a[..., 0::2] + a[..., 1::2])
 
 
+def t_order_stiff(c):
+    """linear radiation-acoustic wave in the trapped regime (P_rad/P_gas 1, x = 100; 32
+    cells, one period, strict solves), time step T/64 ... T/512, with time2_gtime_slope:
+    the stiff exchange of sdirk2 converges at second order."""
+    cl, n = 1.0e3, 32
+    ceq = vett.radwave_root(1.0, 1.0, cl)[3]
+    kap = 100.0*cl*n/ceq
+    w, ar, eig, _ = vett.radwave_root(1.0, kap, cl)
+    tl = 2.0*np.pi/w.real
+    o = {'mesh/nx1': n, 'meshblock/nx1': n, 'time/cfl_number': 10.0, 'time/tlim': tl,
+         'hydro/rad_signal_speed': 'true', 'hydro/rad_signal_speed_diff': 'true',
+         'rad_vet/c_light': cl, 'rad_vet/arad': ar, 'rad_vet/implicit_cfl': -1.0,
+         'rad_vet/clean_conv': 'strict', 'rad_vet/clean_tol': 1e-14,
+         'rad_vet/clean_tol_nl': 1e-13, 'rad_vet/time2_gtime_slope': 'true'}
+    o.update({'rad_vet/kappa_' + s: kap for s in 'pef'})
+    o.update({'problem/' + k: v for k, v in eig.items()})
+    S = {'E': [], 'v': []}
+    for m in (64, 128, 256, 512):
+        d = c.run('wave_cart.athinput', 'T%d' % m, dict(o, **{'time/dt_fixed': tl/m}))
+        S['E'].append(vett.last_bin(d, 'vet')['vet_e'])
+        S['v'].append(vett.last_bin(d, 'hydro_w')['velx'])
+    out = {}
+    for k, v in S.items():
+        out['err_' + k], out['order_' + k] = succ_orders(v)
+    return out
+
+
 def t_order_space(c):
     """linear radiation-hydro wave (Cartesian, periodic, kappa 0.1 per unit length): grid
     and time step refined together; orders of successive differences of E and v."""
@@ -1052,6 +1079,7 @@ TESTS = [  # name, function, in --quick
     ('dt_retry', t_dt_retry, True),
     ('layout_tile', t_layout_tile, True),
     ('order_time', t_order_time, True),
+    ('order_stiff', t_order_stiff, False),
     ('order_space', t_order_space, False),
     ('nlte_eps1e-1', t_nlte_eps1e_1, True),
     ('nlte_eps1e-4', t_nlte_eps1e_4, False),
