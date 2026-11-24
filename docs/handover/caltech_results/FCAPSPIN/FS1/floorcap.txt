@@ -1,0 +1,10 @@
+<rad_vet> floorcap cycle 6630 (cumulative, all calls): n_v 5.87628e+06 n_t 2.10779e+07 dKE 1.47962e+30 dEint 3.35553e+30 (erg, to E_rad) momentum removed |dp| 4.9288e+22 dL_z 3.0213e+23
+<rad_vet> floorcap cycle 6630 (cumulative, all calls): n_v 6.33313e+06 n_t 2.43548e+07 dKE 1.56061e+30 dEint 3.35981e+30 (erg, to E_rad) momentum removed |dp| 5.19863e+22 dL_z 4.05261e+23
+<rad_vet> floorcap cycle 6640 (cumulative, all calls): n_v 1.52531e+07 n_t 5.58634e+07 dKE 3.79221e+30 dEint 8.11077e+30 (erg, to E_rad) momentum removed |dp| 1.26323e+23 dL_z 5.13511e+24
+<rad_vet> floorcap cycle 6640 (cumulative, all calls): n_v 1.57308e+07 n_t 5.9144e+07 dKE 3.87604e+30 dEint 8.11529e+30 (erg, to E_rad) momentum removed |dp| 1.29116e+23 dL_z 5.61308e+24
+<rad_vet> floorcap cycle 6650 (cumulative, all calls): n_v 2.507183e+07 n_t 9.068223e+07 dKE 6.183435e+30 dEint 1.272355e+31 (erg, to E_rad) momentum removed |dp| 2.059796e+23 dL_z 1.574992e+25
+<rad_vet> floorcap cycle 6650 (cumulative, all calls): n_v 2.557288e+07 n_t 9.397013e+07 dKE 6.269359e+30 dEint 1.272832e+31 (erg, to E_rad) momentum removed |dp| 2.088424e+23 dL_z 1.641524e+25
+<rad_vet> floorcap cycle 6660 (cumulative, all calls): n_v 3.538319e+07 n_t 1.255773e+08 dKE 8.635831e+30 dEint 1.753425e+31 (erg, to E_rad) momentum removed |dp| 2.876758e+23 dL_z 3.483024e+25
+<rad_vet> floorcap cycle 6660 (cumulative, all calls): n_v 3.591017e+07 n_t 1.288777e+08 dKE 8.721728e+30 dEint 1.753931e+31 (erg, to E_rad) momentum removed |dp| 2.905378e+23 dL_z 3.587776e+25
+<rad_vet> floorcap cycle 6670 (cumulative, all calls): n_v 4.624667e+07 n_t 1.605998e+08 dKE 1.112438e+31 dEint 2.272333e+31 (erg, to E_rad) momentum removed |dp| 3.705784e+23 dL_z 5.669312e+25
+<rad_vet> floorcap cycle 6670 (cumulative, all calls): n_v 4.680347e+07 n_t 1.639173e+08 dKE 1.121084e+31 dEint 2.272867e+31 (erg, to E_rad) momentum removed |dp| 3.734594e+23 dL_z 5.807146e+25

@@ -1,0 +1,4 @@
+<rad_vet> floorcap cycle 6630 (cumulative, all calls): n_v 5.87628e+06 n_t 2.10779e+07 dKE 1.47962e+30 dEint 3.35553e+30 (erg, to E_rad) momentum removed |dp| 4.9288e+22 dL_z 3.02204e+23
+<rad_vet> floorcap cycle 6630 (cumulative, all calls): n_v 6.33313e+06 n_t 2.43548e+07 dKE 1.56061e+30 dEint 3.35981e+30 (erg, to E_rad) momentum removed |dp| 5.19863e+22 dL_z 4.05335e+23
+<rad_vet> floorcap cycle 6640 (cumulative, all calls): n_v 1.52531e+07 n_t 5.58634e+07 dKE 3.79221e+30 dEint 8.11077e+30 (erg, to E_rad) momentum removed |dp| 1.26323e+23 dL_z 5.13532e+24
+<rad_vet> floorcap cycle 6640 (cumulative, all calls): n_v 1.57308e+07 n_t 5.9144e+07 dKE 3.87604e+30 dEint 8.11529e+30 (erg, to E_rad) momentum removed |dp| 1.29116e+23 dL_z 5.61329e+24

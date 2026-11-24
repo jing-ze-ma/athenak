@@ -1,0 +1,2 @@
+2026-11-24 03:27:19 start FS2 BIN md5=7cd2856ec083818cc35742d6cd668550 NODE=hpc-sm-01-15 ARGS: -r /resnick/groups/carnegie_poc/jingze/prod_rc3_1124/m35zams_z3/rst_keep/m35zams.00002.rst.pre-spin time/cfl_number=0.3 hydro/fofc=true hydro/fofc_retest=true rad_vet/clean_stag_mg_levels=4 rad_vet/floorcap_lz=true rad_vet/floorcap_lz_spin=true rad_vet/floorcap_mesh_vol=true rad_vet/floorcap_report=10 hydro/dt_report=10 time/nlim=17601 job/final_restart=false output2/dt=1e30 output3/dt=1e30 output5/dt=1e30 output6/dt=1e30 output7/dt=1e30
+2026-11-24 03:28:24 rc=0
