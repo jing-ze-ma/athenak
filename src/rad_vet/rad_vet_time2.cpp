@@ -1589,8 +1589,8 @@ int RadiationVet::CleanRstNfv() const {
 //----------------------------------------------------------------------------------------
 //! \fn RadiationVet::Time2Rst*
 //! \brief the restart channels: K1 (M1_T2_NK), then vet_prev (M1_T2_NVET, closure =
-//! vet_sc); files of the old solver (version < 4) also hold its ipred2 (implicit_predictor)
-//! and extrap2 channels, read past
+//! vet_sc); files of the old solver (version < 4) also hold its ipred2
+//! (implicit_predictor) and extrap2 channels, read past
 
 int RadiationVet::Time2RstNchWant() {
   // the hesdirk2 slope channels, then (any time scheme) the clean scheme's state.

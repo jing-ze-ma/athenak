@@ -1572,9 +1572,9 @@ bool RadiationVet::RotLastStep() const {
 //! \brief vgdrot2-1012 (Driver, before Time2RotCorrect): on the first step of a new
 //! rotation block (physical clock) the stored hesdirk2 slope K1 is f(U^{n-1..n}) of the
 //! OLD set; the FSAL stage 1 would then carry O(dt) of the old closure per jump (first
-//! order however the jumps are aligned).  be: t2_ok = false (a backward-Euler step).  The first call (fresh start or
-//! restart) takes the block just before t as the last one, so a restart exactly on a
-//! boundary re-seeds the slope too.
+//! order however the jumps are aligned).  be: t2_ok = false (a backward-Euler step).
+//! The first call (fresh start or restart) takes the block just before t as the last
+//! one, so a restart exactly on a boundary re-seeds the slope too.
 
 void RadiationVet::VetGdRotStep() {
   if (!(vgd_rot_dt > 0.0) || !(vgd_on || vsc_rot)) {return;}
