@@ -20,3 +20,4 @@
 - pre-switch (log.3): 0.6422 s/cyc (c39350-39600), dt 4.981374e+01. Clean STOP: yes. Pre-switch rst kept as rst_keep/bsg3d.00029.rst.pre-dfl.
 - relaunch: `2026-11-24 07:37:23 chunk 4 STAR=bsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_dflfix_5b6159ad0 md5=9c59917d84f344a7094b5403d432dd5c DECK=/resnick/groups/carnegie_poc/jingze/prod_rc3_1124/decks/tile/IA123_bsg` + EX: time/cfl_number=0.3 hydro/fofc=true hydro/fofc_retest=true rad_vet/clean_stag_mg_levels=4 rad_vet/vet_gd_ls=0
 - echo: 
+- bsg 300 cycles after the switch (11-24 07:42): CW 0, FATAL 0, created inf 0, DT_RETRY 0. **before** 0.6422 s/cyc (c39350-39600), dt 4.981374e+01 -> **after** 0.7788 s/cyc (c39750-40000), dt 1.637392e+02. Last DTREP: binder c40010 dir 1 r 2.4513e+12 rho 1.555e-07 v -9.641e+06 ceff 1.017e+07 (cfl*dt_hyd 164.573)
