@@ -86,3 +86,4 @@
 <hydro> floor_audit cycle 6626 pay: paid 3.138571693e+42 unpaid 0 given_to_rad 1.667968658e+12 cells 335770 | fofc_retest: retested 0 unflagged 0
 ```
 - (11-23 22:24) status: T0a [cycle=30650, t 1.63707e+06 dt 82.3, CW 0, fb 0, DT_RETRY 0, pos_floor 0]; T0da [cycle=30500, t 1.65337e+06 dt 193, CW 2, fb 1, DT_RETRY 0, pos_floor 1]; T0h [cycle=30550, t 1.59182e+06 dt 29.8, CW 0, fb 0, DT_RETRY 0, pos_floor 0];
+- (11-23 22:24) status: W [cycle=7650, t 4.82933e+05 dt 5.78, CW 59, fb 29, DT_RETRY 27, pos_floor 2];
