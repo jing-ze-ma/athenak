@@ -19,8 +19,8 @@
 //!     implicit_halo_ovl_faces as on the Cartesian mesh (without a pole every ghost is
 //!     the plain copy; halo_mpi and the overlap allowed since m1-sphhalo,
 //!     tests_m1/runs_5i_sphhalo);
-//!   * implicit_flux = central, implicit_recon = dc, implicit_trans_limit = none,
-//!     no dbg_tensor; implicit_offdiag is set to none (the Eddington
+//!   * implicit_flux = central, implicit_recon = dc, implicit_trans_limit = none;
+//!     implicit_offdiag is set to none (the Eddington
 //!     tensor has no off-diagonal part, so the terms it drops are identically zero).
 //!
 //! The geometry itself lives in the implicit kernels (rad_m1_implicit.cpp, `sph`
@@ -116,7 +116,6 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     // m1-sph2 (tests_m1/runs_5h_sph2): time_scheme = hesdirk2 and implicit_vimp are
     // allowed on the wedge (the stage solves' old vector carries no geometry; the vimp
     // rows take the sp areas, volumes and face distances in ImplicitVimpBuild)
-    if (dbg_tensor != 0) {why += " dbg_tensor != none;";}
     if (pin->DoesParameterExist("rad_m1","implicit_offdiag")) {
       std::string s = pin->GetString("rad_m1","implicit_offdiag");
       // S2: `lagged` for the non-Eddington closures; `operator` (the 19-point stencil,
@@ -161,12 +160,7 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     // the cs seam (no-resample, mirror-pair) exchange of the Krylov vector itself.
     // mg_gc / mg_gf stay refused (band / Fourier coarse spaces of a periodic x2/x3 mesh;
     // the cs analogue is mg_ylm, stage 3 list).  The cs DEFAULT stays rbgs_fwd.
-    // <rad_m1>/cs_precond_line = true admits implicit_precond = line on cs
-    // (opt-in, a layout-gate arm, not a production choice): the x1 line solves read no
-    // geometry and no neighbour, so the deck's other layout dependences show up bitwise
-    const bool cs_line_ok = (impl_prec == 0) &&
-                            pin->GetOrAddBoolean("rad_m1","cs_precond_line",false);
-    if (impl_prec != 2 && impl_prec != 3 && !cs_line_ok && !clean) {
+    if (impl_prec != 2 && impl_prec != 3 && !clean) {
       wcs += " implicit_precond != rbgs_fwd | mg;";
     }
     if (impl_prec_fb >= 0 && !clean) {   // rbgs / line refused on cs
@@ -237,8 +231,8 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
       << "implicit_offdiag = auto | none (| lagged for m1/minerbo/kershaw), "
       << "time_scheme = be | hesdirk2, one MeshBlock "
       << "along x1, no SMR, implicit_flux = central | berthon | blend, "
-      << "implicit_recon = dc, implicit_trans_limit = none, no "
-      << "dbg_tensor; this input has:" << why << std::endl
+      << "implicit_recon = dc, implicit_trans_limit = none; this input has:" << why
+      << std::endl
       << "See tests_m1/runs_5a_sp_s1/README.md and tests_m1/runs_5b_sp_s2/README.md."
       << std::endl;
     std::exit(EXIT_FAILURE);

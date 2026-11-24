@@ -2042,7 +2042,6 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   // NC 0, +0.03 ms per SC call).  A restart whose file lacks the key (written when the
   // key was read only when named) keeps uniaxial; the resolved value is recorded.
   vet_full = false;
-  vet_eig_min = 0.0;
   {
     std::string vt = pin->GetOrAddString("rad_m1", "vet_tensor",
                          global_variable::restart_run ? "uniaxial" : "full");
@@ -2051,12 +2050,6 @@ void RadiationM1::VetInit(ParameterInput *pin) {
     } else if (vt.compare("uniaxial") != 0) {
       VetFatal("<rad_m1>/vet_tensor = '" + vt + "' not implemented (uniaxial | full)");
     }
-  }
-  if (pin->DoesParameterExist("rad_m1", "vet_eig_min")) {
-    vet_eig_min = pin->GetReal("rad_m1", "vet_eig_min");
-  }
-  if (vet_eig_min < 0.0 || vet_eig_min > 0.33) {
-    VetFatal("<rad_m1>/vet_eig_min must lie in [0, 0.33]");
   }
   if (vet_nmu < 1 || vet_nphi < 1) {VetFatal("<rad_m1>/vet_nmu, vet_nphi must be >= 1");}
   // vet_x1_periodic = true (default false; tests_m1/runs_3r_radwave): a PERIODIC x1
@@ -4870,7 +4863,7 @@ void RadiationM1::VetShortCharSweep() {
 //!   (1) J <= 0 or a non-positive trace: D = delta/3 (counted);
 //!   (2) D /= tr D (a round-off correction, not counted);
 //!   (3) eigen-decomposition (cyclic Jacobi); if an eigenvalue lies below vet_eig_min
-//!       (default 0) the spectrum is mapped affinely, lam -> emin + (lam' - emin)
+//!       (= 0) the spectrum is mapped affinely, lam -> emin + (lam' - emin)
 //!       (1 - 3 emin)/(sum lam' - 3 emin) with lam' = max(lam, emin), which keeps the
 //!       eigenvectors, the trace 1 and every eigenvalue in [emin, 1] (counted).
 //! Consequences for the solve: D_dd >= emin >= 0 on every diagonal, so each x1 line row

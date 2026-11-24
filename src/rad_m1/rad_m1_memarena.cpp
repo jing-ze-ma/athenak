@@ -4,9 +4,9 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_m1_memarena.cpp
-//! \brief memcut-1113 <rad_m1>/mem_arena: the vet_gd intensity arrays (VgdRag::d of
-//! vgd_i, vgd_i_xb) and the implicit solve's scratch arrays that are dead across
-//! a VetGdBuild (ost, fmm_t, thw, vmw, thq, odc, d3w, krw, aa_*) share ONE device
+//! \brief memcut-1113 the memory arena (with vet_gd): the vet_gd intensity arrays
+//! (VgdRag::d of vgd_i, vgd_i_xb) and the implicit solve's scratch arrays that are dead
+//! across a VetGdBuild (ost, fmm_t, thw, vmw, thq, odc, d3w, krw, aa_*) share ONE device
 //! allocation.  The intensities are written and read only inside VetGdBuild (sweep,
 //! moments, half-range, ring); those solve arrays are re-written after every build before
 //! they are read.  Both facts are checked by MEMCUT_POISON (below) and the bitwise gates.
@@ -58,15 +58,12 @@ bool EnvListHas(const char *env, const char *name) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::MemArenaInit
-//! \brief read the key; allocate iw (zero-filled) as before (iw is NOT in the arena: some
-//! of its channels live across a VetGdBuild, MEMCUT_POISON=iw, job 13107429)
+//! \brief the arena with vet_gd; allocate iw (zero-filled) as before (iw is NOT in the
+//! arena: some of its channels live across a VetGdBuild, MEMCUT_POISON=iw, job 13107429)
 
 void RadiationM1::MemArenaInit(ParameterInput *pin, const int nmb, const int niw,
                                const int n3, const int n2, const int n1) {
   marena_on = vgd_on;
-  if (pin->DoesParameterExist("rad_m1", "mem_arena")) {
-    marena_on = marena_on && pin->GetBoolean("rad_m1", "mem_arena");
-  }
   Kokkos::realloc(iw, nmb, niw, n3, n2, n1);
 }
 

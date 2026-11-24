@@ -115,18 +115,16 @@ const char *kDtrMinimal[] = {
   "m1.cln_fvi", "m1.cln_fh", "m1.cln_top",
   "m1.cln_rr", "m1.cln_rpd", "m1.cln_fvd",
   // (not visited before the generated visitor): vet_gd_rotate_xfade's G/A/Delta slots,
-  // read by the next builds' estimate (RotXfEst); the old scheme's K1 of
-  // time2_inc_energy / time2_exch_split, read by the next
-  // stage 1; and the cumulative counters of the run report
-  "m1.vgd_xf_d", "m1.t2ke1", "m1.t2kx1", "m1.t2lx1", "m1.cmi_cnt",
-  "m1.fcd_cnt_d",
+  // read by the next builds' estimate (RotXfEst); and the cumulative counters of the
+  // run report
+  "m1.vgd_xf_d", "m1.cmi_cnt", "m1.fcd_cnt_d",
 };
 
 // the Views of kDtrMinimal that <rad_m1>/scheme = clean does not write
 // (dt_retry_views = clean)
 const char *kDtrNotClean[] = {
   "m1.ipred", "m1.ipred2", "m1.csk1", "m1.csk2", "m1.tau_ten", "m1.x2_tt", "m1.x2_hr",
-  "m1.x2_q", "m1.t2ke1", "m1.t2kx1", "m1.t2lx1", "m1.cmi_cnt", "m1.fcd_cnt_d",
+  "m1.x2_q", "m1.cmi_cnt", "m1.fcd_cnt_d",
 };
 
 // debug (dt_retry_poison_n / dt_retry_poison_cells): restrict the poison of
@@ -610,9 +608,6 @@ void DtRetry::Build(Mesh *pm) {
     }
     // (and the rays' source vlat_cs, each build's, written before it is read)
     if (m1->clean) sel.erase("m1.vlat_cs");
-    // (clean_extrap_share: the step's moments overwrite the array of those at
-    // t^{n-1}, the cycle start's cln_mn, which the retry's line reads again)
-    if (m1->clean && m1->cln_mshare) sel.insert("m1.cln_mn");
     Binder b{&ent_, "m1.", &sel, all_views_, host_ || hm1_};
     m1->DtRetryVisit(b);
   }

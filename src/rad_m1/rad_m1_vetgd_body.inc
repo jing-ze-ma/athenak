@@ -10,23 +10,21 @@
 //! row).  Two kernels, so that the mirror read costs the default nothing (compiled into
 //! the one kernel it cost +3.6 % GPU time on the accretor deck, 12414551 vs 12414756).
 //! Needs M1_VGD_BODY_NAME (the lambda's name) and M1_VGD_BODY_MIR defined.
-//! vpa and gx are deduced (generic lambda): a launch passes a bool (the
-//! runtime value; gx true) or std::false_type, which compiles the branches they gate out
-//! of that kernel (gx false: no band exit or fused
-//! twin; VetGdSweep launches it only when those are off).  The arithmetic of every path
-//! taken is unchanged.
+//! vpa is deduced (generic lambda): a launch passes a bool (the runtime value) or
+//! std::false_type, which compiles the branches it gates out of that kernel (VetGdSweep
+//! launches it only without the cells path); the last argument is unused.  The
+//! arithmetic of every path taken is unchanged.
 
-// nvcc rejects generic __host__ __device__ lambdas: on CUDA vpa / gx are plain bools (a
+// nvcc rejects generic __host__ __device__ lambdas: on CUDA vpa is a plain bool (a
 // std::false_type converts; the gated branches are then runtime-false, not compiled out)
-// on CUDA, M1_VGD_BODY_GX0 defined gives the gx-false kernel instead: vpa
-// and gx are compile-time false inside (the arguments are ignored), so the gated branches
-// are compiled out there too (as the std::false_type launch does on HIP)
+// on CUDA, M1_VGD_BODY_GX0 defined gives the vpa-false kernel instead: vpa is
+// compile-time false inside (the arguments are ignored), so the gated branches are
+// compiled out there too (as the std::false_type launch does on HIP)
 #if defined(KOKKOS_ENABLE_CUDA) && defined(M1_VGD_BODY_GX0)
       auto M1_VGD_BODY_NAME = KOKKOS_LAMBDA(const int m, const int k, const int j,
                                             const int d, const int i, const int l,
                                             const bool, const bool) {
         constexpr bool vpa = false;
-        constexpr bool gx = false;
 #else
 #if defined(KOKKOS_ENABLE_CUDA)
 #define M1_VGD_TT bool
@@ -35,7 +33,7 @@
 #endif
       auto M1_VGD_BODY_NAME = KOKKOS_LAMBDA(const int m, const int k, const int j,
                                             const int d, const int i, const int l,
-                                            const M1_VGD_TT vpa, const M1_VGD_TT gx) {
+                                            const M1_VGD_TT vpa, const M1_VGD_TT) {
 #undef M1_VGD_TT
 #endif
         // several MeshBlocks along x1: the first shell and the top face are those of the
@@ -220,7 +218,7 @@
             // nearest the point).  The ray starts at its wall crossing (the cone theta =
             // theta_wall, exact) with I = 0, as from the vacuum top face; chi, S there
             // from the row next to the wall (linear in phi index, linear in r between
-            // the shells i and iu as vet_gd_band_exit)
+            // the shells i and iu)
             const bool vlo = (thu < mt0), vhi = (thu > mt0 + mtl);
             const int jrw = static_cast<int>(fmin(fmax(floor(fjg + 0.5) - sj_, Real(jlo)),
                                                   Real(jhi + 1)));
@@ -286,72 +284,9 @@
               }
               bdone = true;
             }
-            if (!bdone && clp && gx && bandx && typ == 1) {
-#else
-            if (clp && gx && bandx && typ == 1) {
 #endif
-              // vet_gd_band_exit: the upwind point lies beyond the ghost band.  Instead
-              // of reading the clamped (wrong) column, stop the segment where the ray
-              // leaves the band (index linear in the path fraction s) and take I, chi, S
-              // there, bilinear on the band-edge ghost columns of the two shells i and iu
-              // (the lagged inflow of the last sweep) and linear in r between them
-              const Real gj = fj - j, gk = fk - k;
-              Real s = 1.0;
-              if (fj < jlo) {s = fmin(s, (jlo - j)/gj);}
-              if (fj > jhi + 1) {s = fmin(s, (jhi + 1 - j)/gj);}
-              if (fk < klo) {s = fmin(s, (klo - k)/gk);}
-              if (fk > khi + 1) {s = fmin(s, (khi + 1 - k)/gk);}
-              s = fmax(s*(1.0 - 1.0e-9), 0.0);
-              const Real dsx = s*ds;
-              const Real xx = r*st*cp - dsx*nx, yx = r*st*sp - dsx*ny, zx = r*ct - dsx*nz;
-              const Real rx = sqrt(xx*xx + yx*yx + zx*zx);
-              const Real thx = acos(fmin(fmax(zx/rx, -1.0), 1.0));
-              Real dpx = atan2(yx, xx) - ph;
-              dpx -= twopi*floor((dpx + M_PI)/twopi);
-              const Real fjx = fmin(fmax(j + (thx - th)/lg_.Dx2(mbsize, m), Real(jlo)),
-                                    Real(jhi + 1));
-              const Real fkx = fmin(fmax(k + dpx/lg_.Dx3(mbsize, m), Real(klo)),
-                                    Real(khi + 1));
-              int jx0 = static_cast<int>(floor(fjx)), kx0 = static_cast<int>(floor(fkx));
-              jx0 = (jx0 > jhi) ? jhi : jx0;
-              kx0 = (kx0 > khi) ? khi : kx0;
-              const Real ujx = fjx - jx0, ukx = fkx - kx0;
-              const Real wr = fmin(fmax((rx - r)/(cx1v(m,iu) - r), 0.0), 1.0);
-              const bool want_in = inw;
-              Real wsum = 0.0, isum = 0.0;
-              for (int q = 0; q < 4; ++q) {
-                const int kk = (q < 2) ? kx0 : (kx0 + 1);
-                const int jj = (q % 2 == 0) ? jx0 : (jx0 + 1);
-                const Real wq = ((q < 2) ? (1.0 - ukx) : ukx)
-                                *((q % 2 == 0) ? (1.0 - ujx) : ujx);
-                const Real mq = mr_(m,kk,jj,d);
-                if (((want_in && mq < 0.0) || (!want_in && mq >= 0.0)) && wq > 0.0) {
-                  wsum += wq;
-                  isum += wq*((1.0 - wr)*rd(kk,jj,i) + wr*rd(kk,jj,iu));
-                }
-              }
-              if (wsum > 0.0) {
-                auto linx = [&](const int c, const int ii) {
-                  return VgdLerp(VgdLerp(csx(m,c,kx0,jx0,ii), csx(m,c,kx0,jx0+1,ii), ujx),
-                                 VgdLerp(csx(m,c,kx0+1,jx0,ii), csx(m,c,kx0+1,jx0+1,ii),
-                                         ujx), ukx);
-                };
-                const Real chx = exp((1.0 - wr)*linx(0,i) + wr*linx(0,iu));
-                const Real sx = exp((1.0 - wr)*linx(1,i) + wr*linx(1,iu));
-                if (spl) {
-                  const Real dxo = fmin(dso, dsx);
-                  iv = fmax(VetSegSplit(isum/wsum, sx, s0, chx*(dsx - dxo),
-                                        ch0*dxo, spe), 0.0);
-                } else {
-                  Real ex, w0, wu;
-                  VetSegW(0.5*(chx + ch0)*dsx, ex, w0, wu);
-                  iv = fmax((isum/wsum)*ex + wu*sx + w0*s0, 0.0);
-                }
-                bdone = true;
-              }
-            }
             if (bdone) {
-              // done: the shortened segment from the band edge
+              // done: the segment from the theta wall
             } else if (typ == 2 && emi) {
               // vet_gd_inner = emit: the inner boundary's emission at the
               // upwind point of the inner face, carried to the cell with the face source
@@ -389,7 +324,7 @@
               // 1.5 S_a - 0.5 S_b (the S the half-cell carry below starts from), not of
               // the first shell's cell (O(dtau_cell) low isotropic part otherwise)
               iv = VgdInnerFace(st4, fC, i, false, 0.0, bfc, cx1f(m,i), cx1v(m,i),
-                                cx1v(m,i+1), p2, ch0, ds, s0, izf);
+                                cx1v(m,i+1), p2, ch0, ds, s0);
             } else {
               // each (cell, direction) holds ONE intensity, of the pass its n_d . r_hat
               // selects; the ray read here is inward at the upwind point for the inward
@@ -423,9 +358,9 @@
               // node, the own cell) have a chi contrast > kVetCornerRatio (or an S
               // contrast > kVetCornerRatio among those not thin over the step, chi ds
               // > 0.01), the step is subdivided at the NODES where it crosses a theta-row
-              // or phi-layer centre (index linear in the path fraction, as
-              // vet_gd_band_exit): each node takes chi, S trilinear in ln (theta, phi
-              // index; radius between the own and upwind shells at the node's true r),
+              // or phi-layer centre (index linear in the path fraction): each node takes
+              // chi, S trilinear in ln (theta, phi index; radius between the own and
+              // upwind shells at the node's true r),
               // or at a material edge (corner contrast > kVetCornerRatio) the cell that
               // holds it (own shell below the radial face dso, upwind above).  Each
               // sub-segment is the code's own segment (vet_seg split / jump), split at

@@ -11,8 +11,8 @@
 //! WHAT IS SOLVED.  At every vet_col build (rad_m1_vetcol.cpp: the same state, source S
 //! and extinction chi as the column solution), the grey transfer equation
 //!     n . grad I = chi (S - I)
-//! is swept shell by shell along x1 for vet_col_lat_nmu Gauss nodes in mu = |n . r_hat|
-//! on [0, 1] per hemisphere times vet_col_lat_npsi uniform azimuths psi about r_hat
+//! is swept shell by shell along x1 for vlat_nmu = 4 Gauss nodes in mu = |n . r_hat|
+//! on [0, 1] per hemisphere times vlat_npsi = 4 uniform azimuths psi about r_hat
 //! (the LOCAL frame (r_hat, theta_hat, phi_hat) of each cell): inward rays from the top
 //! (vacuum) down to the shell vlat_icut, then outward rays back up.  A ray arriving at a
 //! cell centre of shell i is traced back to the sphere of the upwind shell (i+1 inward,
@@ -50,14 +50,11 @@
 //! LAGGED lateral difference (3-D minus twin) of the previous sweep, exchanged after
 //! each 3-D sweep.  Only the lateral part of the inflow across block boundaries is
 //! lagged (by one build, i.e. one step in science mode), and a laterally uniform state
-//! stays exact.  The first build iterates the 3-D sweep vet_col_lat_init_iter times.  A
-//! ray whose upwind point lies beyond the ghost band (very oblique rays through
-//! laterally thin cells) reads the last ghost (counted, reported at the end).
+//! stays exact.  A ray whose upwind point lies beyond the ghost band (very oblique rays
+//! through laterally thin cells) reads the last ghost (counted, reported at the end).
 //!
 //! CADENCE.  Built with vet_col (every step; under hesdirk2 + time2_vet_col = predict at
-//! U^n + dt K1).  vet_col_lat_every = N > 1 keeps the correction of the last sweep for N
-//! steps (the f_rr fold is re-applied after every vet_col build) and is allowed only with
-//! time2_vet_col = lag, i.e. in relaxation.
+//! U^n + dt K1).
 //!
 //! LIMITS (fatal at start-up): the spherical-polar wedge (sph_geom), vet_col_axis =
 //! radial; the cubed sphere waits for CS2, Cartesian boxes have vet_sc.
@@ -211,13 +208,6 @@ void RadiationM1::VetLatInit() {
     VlatFatal("vet_col_lat_offdiag = operator needs implicit_solver = bicgstab and "
               "implicit_op_stencil = true (the lateral terms go into the stencil)");
   }
-  if (vlat_nmu < 1 || vlat_npsi < 2 || vlat_every < 1 || vlat_iinit < 1) {
-    VlatFatal("vet_col_lat_nmu >= 1, _npsi >= 2, _every >= 1, _init_iter >= 1");
-  }
-  if (vlat_every > 1 && t2_vcmode != 0) {
-    VlatFatal("vet_col_lat_every > 1 is a RELAXATION option: it needs "
-              "time2_vet_col = lag (science mode rebuilds every step)");
-  }
   auto &indcs = pm->mb_indcs;
   if (indcs.nx1 < 3) {VlatFatal("needs at least 3 cells along x1");}
   const int nmb = pmy_pack->nmb_thispack;
@@ -238,9 +228,6 @@ void RadiationM1::VetLatInit() {
   Kokkos::realloc(vlat_cs, nmb, 2, c3, c2, c1);
   Kokkos::deep_copy(vlat_cs, 0.0);
   Kokkos::realloc(vlat_cs_c, nmb, 2, 1, 1, 1);
-  if (vlat_taumax > 0.0 || vlat_taumin > 0.0) {
-    Kokkos::realloc(vlat_wt, nmb, c3, c2, c1);
-  }
   Kokkos::realloc(vlat_geo, indcs.nx1, 2*vlat_nmu, 4);
   Kokkos::realloc(vlat_mu, vlat_nmu);
   Kokkos::realloc(vlat_w, vlat_nmu);
@@ -299,11 +286,7 @@ void RadiationM1::VetLatInit() {
               << ((vlat_odm == 2) ? ", D_r,lat in the implicit operator"
                   : ((vlat_odm == 1) ? ", D_r,lat as a lagged Picard term"
                                      : ", D_r,lat NOT used"))
-              << "; sweep from tau_top >= " << vlat_taucut << "; taper "
-              << vlat_taumax << " (0: off)" << ", thin cap " << vlat_taumin << " (0: off)"
-              << "; rebuilt every "
-              << vlat_every << " step(s); first build " << vlat_iinit
-              << " inflow iterations" << std::endl;
+              << "; sweep from tau_top >= " << vlat_taucut << std::endl;
     if (vcol_rtop) {
       std::cout << "<rad_m1> vet_col_lat: NOTE the sweep's top is vacuum (vet_col's "
                 << "reflecting top is not mirrored; both sweeps alike)" << std::endl;
@@ -325,7 +308,7 @@ void RadiationM1::VetLatOdMax() {
   // + the tangential slots (vet_gd); on the cubed sphere D_r,lat is the Cartesian
   // vector in LAT1..LAT3, + Q (LAT4, LAT5)
   const bool c3 = cs_geom;
-  const bool tn = vgd_on && vgd_tan && vgd_tanop && !c3, cst = vgd_on && vgd_tan && c3;
+  const bool tn = vgd_on && vgd_tan && !c3, cst = vgd_on && vgd_tan && c3;
   // cs_vertex_mono (rad_m1.hpp): D_r,lat (LAT1..3) = 0 in the cells within
   // cs_vertex_mono_n + 1 of a cube vertex, set after every build and before the ghost
   // exchange (the callers), so the operator, its stencil, the lagged assembly and the
@@ -795,31 +778,6 @@ void RadiationM1::VetLatSweep(const int stage) {
   }
   return;
   }
-  // vet_col_lat_taumax = T > 0: the correction tapered off with depth, weight 1 for
-  // tau_top <= T, 0 for tau_top >= 2 T, linear in ln(tau_top) between (vlat_wt)
-  // vet_col_lat_taumin = t > 0: the same taper at the THIN end, weight 0 for
-  // tau_top <= t, 1 for tau_top >= 2 t (the thin top, where no closure term may be lagged
-  // or coupled without losing the Picard fixed point, C2_RESULTS.md); the two multiply
-  const bool tap = (vlat_taumax > 0.0) || (vlat_taumin > 0.0);
-  auto wt_ = vlat_wt;
-  if (tap) {
-    const Real tmx = vlat_taumax, tmn = vlat_taumin;
-    const Real il2 = 1.0/log(2.0);
-    par_for("m1_vlat_taper", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-    KOKKOS_LAMBDA(const int m, const int k, const int j) {
-      Real tau = 0.0;
-      for (int i = ie; i >= is; --i) {
-        const Real dt_ = exp(cs_(m,0,k,j,i))*(cx1f(m,i+1) - cx1f(m,i));
-        const Real tc = tau + 0.5*dt_;
-        const Real lt = log(fmax(tc, 1.0e-300));
-        const Real wd = (tmx > 0.0) ? fmin(fmax(1.0 - (lt - log(tmx))*il2, 0.0), 1.0)
-                                    : 1.0;
-        const Real wn = (tmn > 0.0) ? fmin(fmax((lt - log(tmn))*il2, 0.0), 1.0) : 1.0;
-        wt_(m,k,j,i) = wd*wn;
-        tau += dt_;
-      }
-    });
-  }
   // (5) the moments: the correction dD = D(3-D) - D(twin) -> tau_ten LAT slots
   const int ilo = is + lcut;
   const Real twopi = 2.0*M_PI;
@@ -852,10 +810,9 @@ void RadiationM1::VetLatSweep(const int stage) {
       }
     }
     if (j3 > 0.0 && jt > 0.0) {
-      const Real w = tap ? wt_(m,k,j,i) : 1.0;
-      tt_(m,M1_TT_LAT0,k,j,i) = w*(krr3/j3 - krrt/jt);
-      tt_(m,M1_TT_LAT0+1,k,j,i) = w*(krt3/j3 - krtt/jt);
-      tt_(m,M1_TT_LAT0+2,k,j,i) = w*(krp3/j3 - krpt/jt);
+      tt_(m,M1_TT_LAT0,k,j,i) = krr3/j3 - krrt/jt;
+      tt_(m,M1_TT_LAT0+1,k,j,i) = krt3/j3 - krtt/jt;
+      tt_(m,M1_TT_LAT0+2,k,j,i) = krp3/j3 - krpt/jt;
     }
   });
   // the largest |D_r,lat| of this sweep (all ranks): 0 keeps the operator untouched

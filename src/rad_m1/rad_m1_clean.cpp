@@ -423,6 +423,11 @@ void RadiationM1::CleanPreflight(ParameterInput *pin) {
     {"rad_m1/clean_line_teams", "x"}, {"rad_m1/clean_line_solver", "x"},
     {"rad_m1/clean_line_chunk", "x"},
     {"rad_m1/clean_fv_*", "x"},   // (the FV rays' keys, removed with them)
+    // (the explicit transport's face-flux and source options: only their old defaults)
+    {"rad_m1/thick_flux", "=none"}, {"rad_m1/ap_form", "=alpha2"},
+    {"rad_m1/reconstruct", "=plm"}, {"rad_m1/split_vel", "=recon"},
+    {"rad_m1/source_form", "=full"}, {"rad_m1/f_source", "=cell"},
+    {"rad_m1/dbg_tensor", "=none"}, {"rad_m1/dbg_tensor_tilt", ""},
     // (the old solver's diagnostics, multi-rate, coupling split and K1 FCT: removed)
     {"rad_m1/dbg_energy_audit", "!"}, {"rad_m1/dbg_cs_metric_selftest", "!"},
     {"rad_m1/implicit_det_trace", "!"}, {"rad_m1/dbg_hydro_off", "!"},
@@ -517,10 +522,10 @@ void RadiationM1::CleanInit() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   // (the L_z ledger follows the gas momentum's increments as the slopes' sums: not the
   // cell-wise scalings of these)
-  if (cln_lzbook && (t2_flr_rho > 0.0 || cln_kreal || cln_kpos)) {
+  if (cln_lzbook && (cln_kreal || cln_kpos)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "<rad_m1> the L_z ledger (cubed sphere, 3-D spherical polar) needs no "
-              << "time2_floor_eint, clean_stag_kreal, clean_stag_kpos (staggered)"
+              << "clean_stag_kreal, clean_stag_kpos (staggered)"
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
@@ -556,7 +561,7 @@ void RadiationM1::CleanInit() {
                   (cln_vimp ? CLF_DQ + 1 : CLF_QL + 3);
   // (clean_stag_opac_update: only where the opacities depend on T, tables or the T
   // exponent (bump) of powerlaw)
-  cln_opt = cln_opt && !opac_freeze && !opac_zero && (opacity_type == M1_OPAC_TABLE ||
+  cln_opt = cln_opt && !opac_zero && (opacity_type == M1_OPAC_TABLE ||
             (opacity_type != M1_OPAC_CONST && opac_b != 0.0));
   // (the staggered bracket's lagged flux DG in one more slot, CleanStagBracket)
   cln_fdg = cln_consist ? nfc : -1;
@@ -594,35 +599,29 @@ void RadiationM1::CleanInit() {
     Kokkos::realloc(cln_csy, nmb, CLN_CSY, indcs.nx3, indcs.nx2, indcs.nx1);
   }
   if (cln_ysum) Kokkos::realloc(cln_yl, nmb, 9, n3, n2, n1);
-  // multigrid levels of clean_stag_pc = mg: halve x2 and x3 where the tile's are even
+  // multigrid levels of the preconditioner: halve x2 and x3 where the tile's are even
   // (>= 4), two coarse levels at most (x1 is never halved)
-  if (cln_stagmg) {
-    std::array<int, 3> nc = {indcs.nx1, indcs.nx2, indcs.nx3};
-    if (cln_mgt[0] == 0) cln_mgt = nc;   // (clean_stag_mg_tile: the tiles' cells)
-    std::array<int, 3> tc = cln_mgt;
-    while (cln_mgn.size() != 2) {
-      bool coarser = false;
-      for (int d = 1; d < 3; ++d) {
-        if (tc[d] >= 4 && tc[d] % 2 == 0) {
-          nc[d] /= 2;
-          tc[d] /= 2;
-          coarser = true;
-        }
+  std::array<int, 3> nc = {indcs.nx1, indcs.nx2, indcs.nx3};
+  if (cln_mgt[0] == 0) cln_mgt = nc;   // (layout_tile: the tiles' cells)
+  std::array<int, 3> tc = cln_mgt;
+  while (cln_mgn.size() != 2) {
+    bool coarser = false;
+    for (int d = 1; d < 3; ++d) {
+      if (tc[d] >= 4 && tc[d] % 2 == 0) {
+        nc[d] /= 2;
+        tc[d] /= 2;
+        coarser = true;
       }
-      if (!coarser) break;
-      cln_mgn.push_back(nc);
-      cln_mg.emplace_back("cln_mg", nmb, CLS_N, nc[2], nc[1], nc[0]);
     }
+    if (!coarser) break;
+    cln_mgn.push_back(nc);
+    cln_mg.emplace_back("cln_mg", nmb, CLS_N, nc[2], nc[1], nc[0]);
   }
   if (cln_extrap > 0) {
     // (a restart may have read t^n and the end of the last step)
     if (cln_mn.extent_int(0) != nmb) Kokkos::realloc(cln_mn, nmb, CLN_N, n3, n2, n1);
     if (cln_mc.extent_int(0) != nmb) Kokkos::realloc(cln_mc, nmb, CLN_N, n3, n2, n1);
-    if (cln_mshare) {
-      cln_mp = cln_mc;
-    } else {
-      Kokkos::realloc(cln_mp, nmb, CLN_N, n3, n2, n1);
-    }
+    Kokkos::realloc(cln_mp, nmb, CLN_N, n3, n2, n1);
     if (cln_extrap == 2) Kokkos::realloc(cln_m1, nmb, CLN_N, n3, n2, n1);
   }
   Mesh *pm = pmy_pack->pmesh;
@@ -1248,8 +1247,6 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
   if (fpc) RstFingerprint("cln_setup");
   Real dnl = 0.0, dnl0 = -1.0;   // (the last pass's change and the one before)
   for (int ipos = 0; ; ++ipos) {
-    cln_pdfst = true;   // (clean_pass_damp: no history before a solve's first pass)
-    cln_pdn = 0;
     CleanFirstIterate();
     cln_fsk = false;
     cln_fwbok = false;
@@ -1266,7 +1263,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     converged = !iterate;
     cln_gpic = false;   // (clean_gas_newton_switch: the solve's history)
     std::vector<Real> rhist;
-    Real de0 = 1.0e300, dv0 = 1.0e300, df0 = 1.0e300, trel = 0.0;
+    Real de0 = 1.0e300, dv0 = 1.0e300, trel = 0.0;
     for (int inl = 0; inl < maxnl; ++inl) {
       const bool clos = (cln_closit && inl < cln_maxpic) || (clos1 && inl == 1);
       if (clos) {
@@ -1298,8 +1295,6 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       // (clean_xt_cons: the same, the first iterate's T from the pass's gas row)
       if (inl == 0 && (cln_sbimp || cln_xtcons) && cln_feedback) {
         CleanNewtonUpdate();
-        cln_pdfst = true;   // (clean_pass_damp: that update's X is the last solve's)
-        cln_pdn = 0;
         CleanRightHandSide();
       }
       CleanPreconditionerSetup();
@@ -1376,26 +1371,7 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       if (fbl) {
         de0 = de;
         dv0 = dv;
-        df0 = cln_dfp;
         continue;
-      }
-      // the remaining change of a contraction q < 1/2 is q/(1-q) times that of the pass
-      auto est = [&](const Real d, const Real d0) {
-        const Real q = d/d0;
-        return (q < 0.5) ? q/(1.0 - q)*d : d;
-      };
-      // (clean_conv_est_f: also the F solve's F, its own ratio from the third pass, the
-      // larger of de's and dv's before)
-      const Real df = cln_dfp;
-      auto estf = [&]() {
-        const Real q = (inl > 1) ? df/df0 : fmax(de/de0, dv/dv0);
-        return ((q < 0.5) ? q/(1.0 - q)*df : df) < tol_nl;
-      };
-      const bool cef = cln_cestf && cln_bon;
-      if (cef && inl > 0 && est(de, de0) < tol_nl && est(dv, dv0) < tol_nl && estf() &&
-          !(clos1 && inl == 0)) {
-        converged = true;
-        break;
       }
       if (settled(de, de0, cln_fe) && settled(dv, dv0, cln_fv) && !(clos1 && inl == 0)) {
         converged = true;
@@ -1403,7 +1379,6 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
       }
       de0 = de;
       dv0 = dv;
-      df0 = df;
     }
     if (iterate) CleanCopyIterate();
     // (clean_stag_xpat: the counts of the passes)
@@ -1447,11 +1422,6 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
     CleanWorstCell(dnl, dnl0);
     if (fatal) CleanFatal("<rad_m1> clean: a backward-Euler solve did not converge and "
                           "its last change exceeds <rad_m1>/implicit_resid_fatal");
-  }
-  if (cln_rtb && dtr_redo && cln_bon && nit >= 0 && global_variable::my_rank == 0) {
-    std::printf("CLEAN RETRY cycle %d t2s %d: the redone solve converged to the budget "
-                "tolerance %.3e, last change %.3e\n", pmy_pack->pmesh->ncycle, t2_solve,
-                cln_tolb, dnl);
   }
   if (global_variable::my_rank == 0) {
     std::printf("CLEAN cycle %d t2s %d it %d (sum %d) pos 0 mark 0 all 0 neg %d "
@@ -3198,15 +3168,6 @@ Real RadiationM1::CleanNewtonUpdate() {
   // S = X diag - XA fixed)
   const bool x2 = (cln_xte == 2) && cln_feedback, pdx = x2 && cln_xpat;
   const bool kpg = cln_kq_on;   // (clean_stag_kpos: the gas row's pd_g X)
-  const bool dmp = cln_pdmp > 0, dfst = cln_pdfst;
-  const bool dact = dmp && cln_pdn >= cln_pdmp;   // (from pass clean_pass_damp on)
-  ++cln_pdn;
-  if (dmp && cln_pdh.extent_int(0) < nmb) {
-    Kokkos::realloc(cln_pdh, nmb, cln_w.s.extent_int(2), cln_w.s.extent_int(3),
-                    cln_w.s.extent_int(4));
-  }
-  auto hd = cln_pdh;
-  cln_pdfst = false;
   Real change = 0.0, femax = 0.0, ermax = 0.0;
   // (CUDA: 4 blocks of 256 per SM, A100 R136 -1.5 ms/cycle; the reduction keeps its
   // blocks and grid: bitwise)
@@ -3225,15 +3186,6 @@ Real RadiationM1::CleanNewtonUpdate() {
     const Real t_old = w(m,CLW_T,k,j,i);
     Real x = w(m,CLW_X,k,j,i);
     const Real xr = poslim ? x : fmax(x, 0.0);   // (the change: undamped)
-    // (clean_pass_damp: a change that turns back, l = d/d_last < 0, takes d/(1 - l), the
-    // fixed point of that mode, as CleanStagXDonor's C; the fixed point is unchanged;
-    // an iterate E <= 0 takes the solution whole, so that it leaves E < 0 at once)
-    if (dmp) {
-      const Real d = x - e_old, dp = dfst ? 0.0 : hd(m,k,j,i);
-      const Real l = (dact && d*dp < 0.0 && e_old > 0.0) ? d/dp : 0.0;
-      x = e_old + d/(1.0 - l);
-      hd(m,k,j,i) = x - e_old;
-    }
     const Real ex = fmax(x, 0.0);
     const Real e = poslim ? x : ex, g = w(m,CLW_GM,k,j,i);
     // (gflux: the gas takes the Doppler part hc kE dop E of sb at X, as the E row takes
@@ -3287,7 +3239,7 @@ Real RadiationM1::CleanNewtonUpdate() {
     // change the linear solve fixes at the floor, its 0.1 tfl in the budget's norm)
     // (a step dt_retry redoes, whose state just failed, is solved strictly too)
     const Real tfl = fmax(cln_tol_nl, 10.0*cln_tol);
-    cln_tolb = (kok && (!dtr_redo || cln_rtb)) ?
+    cln_tolb = (kok && !dtr_redo) ?
                fmin(fmax(cln_bkap*ermax, tfl), cln_bmax) : tfl;
     cln_fe = 0.1*tfl;
   }
@@ -3325,51 +3277,13 @@ Real RadiationM1::CleanVelocityUpdate() {
   if (cln_mclc.extent_int(0) != 1) Kokkos::realloc(cln_mclc, 1);
   Kokkos::deep_copy(cln_mclc, 0.0);
   xh.mclc = cln_mclc;
-  // (clean_conv_est_f: the stage's first F solve has no last pass's F to compare)
-  const bool fv = cln_fsk;
   // (the F solve's face tie after the drag, which evaluates the same face T: CLF_PT)
-  const bool td = cln_fwork && cln_ftie;
+  const bool td = cln_fwork;
   if (cln_fwork) {   // (clean_stag_fwork: the momentum of the
     CleanStagFSolve(CLW_EK, !td, false);         //  F solve, which the write-back gives
     xh.fs = true;                                //  the gas, for the work W of the E row)
-    xh.tf = cln_ftie && !x.cub && !cln_tgid;
+    xh.tf = !x.cub && !cln_tgid;
     cln_fsk = true;
-  }
-  // (clean_conv_est_f: the change of each face's F since the last pass's F solve, h A_f
-  // |dF| over V S of each of its active cells, the budget's norm of CleanNewtonUpdate;
-  // then the F kept for the next pass)
-  if (cln_cestf && cln_fwork) {
-    auto &fc1 = cln_fc1;
-    if (cln_fpv.extent_int(0) != nmb) {
-      Kokkos::realloc(cln_fpv, nmb, 3, fc1.extent_int(2), fc1.extent_int(3),
-                      fc1.extent_int(4));
-    }
-    auto fp = cln_fpv;
-    const int nf = x.nf, ie = is + nx1 - 1, je = js + nx2 - 1, ke = ks + nx3 - 1;
-    const int n1 = nx1 + 1, n2 = nx2 + (nf > 1), n3 = nx3 + (nf > 2);
-    const int n21 = n2*n1, n321 = n3*n21;
-    const CleanArgs *pf = CleanDevArgs(x, 0);
-    const Real inf = std::numeric_limits<Real>::infinity();
-    Real dfm = 0.0;
-    Kokkos::parallel_reduce("cln_dfch", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb*n321),
-    KOKKOS_LAMBDA(const int idx, Real &dmax) {
-      const CleanArgs &x = *pf;
-      const int m = idx/n321, k = (idx%n321)/n21 + ks, j = (idx%n21)/n1 + js;
-      const int i = idx%n1 + is;
-      for (int d = 0; d < nf; ++d) {
-        const int dk = (d == 2), dj = (d == 1), di = (d == 0);
-        if (i > ie + di || j > je + dj || k > ke + dk) continue;
-        const Real f = x.fc[d](m,CLF_N,k,j,i);
-        const Real df = fv ? x.h*x.area[d](m,k,j,i)*fabs(f - fp(m,d,k,j,i)) : inf;
-        fp(m,d,k,j,i) = f;
-        for (int s = 0; s < 2; ++s) {
-          const int kc = k - (1 - s)*dk, jc = j - (1 - s)*dj, ic = i - (1 - s)*di;
-          if (kc < ks || kc > ke || jc < js || jc > je || ic < is || ic > ie) continue;
-          dmax = fmax(dmax, df/(CleanVol(x, m, kc, jc, ic)*x.w(m,CLW_SE,kc,jc,ic)));
-        }
-      }
-    }, Kokkos::Max<Real>(dfm));
-    cln_dfp = CleanReduce(dfm, true);
   }
   FluidRef fl = FluidRef::Get(pmy_pack);
   auto uh = fl.u0;
@@ -3602,9 +3516,8 @@ void RadiationM1::CleanStagBracket() {
   // (clean_stag_thinf_held: theta = min(1, max(J, P)/(clean_ray_min E_old)) of every
   // cell in CLW_V, a Krylov scratch slot, P the largest rays' flux out of one of its
   // faces: 1 where the rays carry the cell (as its closure, a beam's transit cell
-  // included), down to 0 where they hold less than clean_ray_min of its E;
-  // clean_stag_thinf_own: min(1, max(J, P)/E_old))
-  const bool own = cln_thown, thh = cln_thinh || own, thg = cln_thhg;
+  // included), down to 0 where they hold less than clean_ray_min of its E)
+  const bool thh = cln_thinh;
   if (thh) {
     CleanFor("cln_thheld", nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -3616,19 +3529,9 @@ void RadiationM1::CleanStagBracket() {
                         x.cs(m,n,k+(d == 2),j+(d == 1),i+(d == 0));
         p = fmax(p, fmax(fh, -x.cs(m,n,k,j,i)));
       }
-      const Real e = (own ? 1.0 : rmn)*x.w(m,CLW_EO,k,j,i);
+      const Real e = rmn*x.w(m,CLW_EO,k,j,i);
       const Real h = fmax(x.cs(m,CLN_JR,k,j,i), p);
-      // (clean_stag_thinf_held_gate: times r^2, r = E_old/H where the rays bring more
-      // than the cell holds, H = max(J, P) > E_old (the old production's quasi-steadiness
-      // gate, on the front side only): a dark floor cell a beam just hit moves with its
-      // own half range; a cell the rays under-fill keeps C1's theta) weighted by the
-      // cell's absorption depth over the stage, tau_a = h c kappa_P: where the gas takes
-      // the radiation within the stage the step-start rays do not predict the cell being
-      // filled; a free-streaming front (tau_a ~ 0, a beam) keeps C1's theta)
-      const Real eo = fmax(x.w(m,CLW_EO,k,j,i), 0.0);
-      const Real r = (thg && h > eo) ? eo/h : 1.0;
-      const Real ta = thg ? fmin(x.h*x.c*x.op(m,M1_OP_P,k,j,i), 1.0) : 0.0;
-      x.w(m,CLW_V,k,j,i) = ((e > h) ? h/e : 1.0)*(1.0 - (1.0 - r*r)*ta);
+      x.w(m,CLW_V,k,j,i) = (e > h) ? h/e : 1.0;
     });
     CleanGhostFill(cln_w, CLW_V, 1);   // (its lateral sums: none, CLW_L keeps J's)
   }
@@ -3744,25 +3647,14 @@ void RadiationM1::CleanStagBracket() {
         const Real er = fmax(x.w(m,CLW_EO,k,j,i), 0.0);
         // (clean_stag_thinf_held: the share theta of the donor's E the rays carry moves
         // with their flux factor, the rest with the donor's own half range: a convex
-        // blend, realisable; a ray-shadowed donor (J << E) is no dam;
-        // clean_stag_thinf_own: the rest with its own stage-old face flux factor where
-        // that is the larger)
+        // blend, realisable; a ray-shadowed donor (J << E) is no dam)
         const Real gp = fmin(hp/fmax(jl, rmn*el), 1.0),
                    gm = fmax(hm/fmax(jr, rmn*er), -1.0);
         const Real ql = thh ? x.w(m,CLW_V,k-dk,j-dj,i-di) : 1.0;
         const Real qr = thh ? x.w(m,CLW_V,k,j,i) : 1.0;
         auto &fp = x.fc[dir](m,CLF_HP,k,j,i), &fm = x.fc[dir](m,CLF_HM,k,j,i);
-        const Real g0 = x.fc[dir](m,CLF_G,k,j,i);
-        const Real ol = (g0 > 0.0 && el > 0.0) ? fmin(g0/(x.c*el), 1.0) : 0.0;
-        const Real orr = (g0 < 0.0 && er > 0.0) ? fmax(g0/(x.c*er), -1.0) : 0.0;
-        if (jl > 0.0) {
-          fp = own ? gp + (1.0 - ql)*fmax(ol - gp, 0.0)
-                   : (thh ? ql*gp + (1.0 - ql)*fp : gp);
-        }
-        if (jr > 0.0) {
-          fm = own ? gm + (1.0 - qr)*fmin(orr - gm, 0.0)
-                   : (thh ? qr*gm + (1.0 - qr)*fm : gm);
-        }
+        if (jl > 0.0) fp = thh ? ql*gp + (1.0 - ql)*fp : gp;
+        if (jr > 0.0) fm = thh ? qr*gm + (1.0 - qr)*fm : gm;
         x.fc[dir](m,x.fdg,k,j,i) = 0.0;
         return;
       }
@@ -3916,7 +3808,7 @@ struct CleanFLine {
     return s*f;
   }
   // whether the MeshBlock solves face (k,j,i), number t of the n + 1 of its line along
-  // dir (tie: clean_stag_ftie, the block whose low face it is; on the cubed sphere, with
+  // dir (tie: the face tie, the block whose low face it is; on the cubed sphere, with
   // clean_stag_fschur, the lower gid's, as CleanStagFCsShared), else its identity row
   KOKKOS_INLINE_FUNCTION
   bool Own(const CleanArgs &x, const int dir, const int m, const int k, const int j,
@@ -3952,7 +3844,7 @@ struct CleanFLine {
 //! \fn bool CleanStagFRow
 //! \brief the row lo F_{f-1} + dg F_f + hi F_{f+1} = r of face (k,j,i) normal to dir in
 //! the F solve (CleanStagFSolve); false where the face has no equation (F = F^H) or (own
-//! false, clean_stag_ftie) another block owns it: the identity row, r the caller's;
+//! false, the face tie) another block owns it: the identity row, r the caller's;
 //! sm (clean_stag_fschur): the row sum lo + dg + hi, without the cancellation.  The
 //! geometry: the kinetic stress over h c is q (P_R - P_L) + qs (P_R + P_L), spherical
 //! polar's area form (1/dx +- s) (CleanStagSph), Cartesian 1/dx, the cubed sphere's
@@ -4112,7 +4004,7 @@ void CleanStagFJoin(const Real p[8], const Real q[8], Real c[8], Real ya[3],
 //!     - h c (al_L F_{f-1} + al_R F_{f+1})/(2 dx_f)
 //!     = F^H/theta,
 //! al_i = max(A(tau_i)^2, w of its faces), 1 where a face of the cell has
-//! |F^H| > c E_donor (with fkin only under clean_stag_flim: al on the (1 - w) share).
+//! |F^H| > c E_donor (not with fkin).
 //! al = 0 gives F^H (a face with al_L = al_R = 0 keeps it exactly).
 //! The lines along each direction are tridiagonal (Thomas per MeshBlock line; the end
 //! faces next to other MeshBlocks or a periodic wrap take the neighbours' F lagged,
@@ -4189,7 +4081,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
         const Real eo = w(m,CLW_EO,k,j,i);
         w(m,CLW_V,k,j,i) = eo;
         if (k < ks || k > ke || j < js || j > je || i < is || i > ie) return;
-        const Real ep = CleanPredictE(eo, h*kv(m,M1_T2_E,k,j,i), false);
+        const Real ep = CleanPredictE(eo, h*kv(m,M1_T2_E,k,j,i));
         w(m,CLW_EO,k,j,i) = (ep > eo/ecap && ep < eo*ecap) ? ep : eo;
       });
       CleanGhostFill(cln_w, CLW_EO, 1);
@@ -4210,10 +4102,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
   xh.kq = -1;
   auto op = opac;
   const CleanFLine ln{cln_v, x.cub};
-  const bool fk = cln_fkin, dok = cln_dok, cub = x.cub, flm = cln_flim;
-  if (flm && cln_flimc.extent_int(0) != 2) Kokkos::realloc(cln_flimc, 2);
-  if (flm) Kokkos::deep_copy(cln_flimc, 0.0);
-  auto flc = cln_flimc;
+  const bool fk = cln_fkin, dok = cln_dok, cub = x.cub;
   const bool rms = cln_rmsh && cln_rstold && !cln_rmdone && fk && e == CLW_X && dok;
   DvceArray1D<Real> rmc("cln_rmc", 1);
   const bool fwb = cln_fwb;
@@ -4247,7 +4136,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
   // lines converge across MeshBlock faces and the periodic wrap)
   // (the cubed sphere without clean_stag_fschur iterates its seams: 64 by default)
   const int nsw = std::max(cln_fsweeps, 1);
-  const bool tie = cub ? cln_fschur : cln_ftie;
+  const bool tie = !cub || cln_fschur;
   const bool fov = !cub && nsw == 1;
   Real fsd = 0.0, fsf = 0.0;
   for (int q = 0; q < (2 + nsw)*x.nf; ++q) {
@@ -4295,9 +4184,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
           if (!fk) a = fmax(a, fc(m,CLF_W,kf,jf,iff));
           const Real f = fc(m,CLF_N,kf,jf,iff);
           const Real ed = (f > 0.0) ? x.w(m,e,kf-dk,jf-dj,iff-di) : x.w(m,e,kf,jf,iff);
-          // (clean_stag_flim with fkin: the dissipation of a face's excess over its
-          // donor's c E, a stress, telescopes: momentum and L_z exact)
-          if ((!fk || flm) && !CleanBoundaryFace(x, dir, m, kf, jf, iff) &&
+          if (!fk && !CleanBoundaryFace(x, dir, m, kf, jf, iff) &&
               !(fabs(f) <= (1.0 + 1.0e-12)*x.c*fmax(ed, 0.0))) a = 1.0;
           // (the cubed sphere's faces: the last F solve's)
           if (cub) v(m,9+2*dir+s,k,j,i) = fc(m,CLF_N+2,kf,jf,iff);
@@ -4338,7 +4225,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
       // (the cubed sphere, one MeshBlock along x1: one exchange, depth 1, the ghosts of a
       // face its family's terms (fm), started once the last direction's cells it sends
       // are done, in flight behind its inner cells)
-      const bool pv = cub && f0 > 0 && cln_hmax >= 12 && dir == x.nf - 1;
+      const bool pv = cub && f0 > 0 && dir == x.nf - 1;
       const std::function<void()> post = [&]() {
         CleanGhostDefer(cln_v, 3, 6, 1);
         cln_hpend.back().fm = {0, 7, 070, 0};
@@ -4468,7 +4355,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
       CleanFor("cln_fs2f", nmb1, ks, ke+dk, js, je+dj, is, ie+di,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         const int t = (dir == 0) ? i - is : ((dir == 1) ? j - js : k - ks);
-        // (clean_stag_ftie: the high face of a line that another MeshBlock or the
+        // (the face tie: the high face of a line that another MeshBlock or the
         // periodic wrap shares is its owner's, the block whose low face it is: an
         // identity row, the value its CLW_Y ghost brings, CleanStagFaceTie)
         const bool own = ln.Own(x, dir, m, k, j, i, t, n, tie);
@@ -4657,39 +4544,12 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
         const Real f = cub ? fc(m,CLF_N+2,k,j,i) : x.w(m,CleanFLine::Cy(dir),k,j,i);
         fc(m,CLF_N+2,k,j,i) = fc(m,CLF_N,k,j,i);   // (F^H: the boundary's, kept)
         if (CleanBoundaryFace(x, dir, m, k, j, i)) return;
-        // (clean_stag_flim: the solution F within 5/4 of its donor's realisable range,
-        // [-c E_R, c E_L]: in floor gas, chi ~ 1e-19, the lateral curl of a ray D at odds
-        // with the moment F drives F secularly, only chi damps it (|F| ~ 2e4 c E,
-        // T19HOT), and the dissipation above, on the (1 - w) share, does not reach it.
-        // The 1/4 is the bound's own discretisation (a face against its donor's mean E;
-        // free streaming in fs: up to 0.12): a resolved or streaming flow keeps its F.
-        // With clean_stag_fwb the thin rows' steady state is the rays' realisable one,
-        // and the bound is the range itself.
-        // The cut f - fs moved F's equation by -(f - fs)/theta; the gas term
-        // (F - G)/c^2 + h div P - h CLF_N+1 then takes h chi (F - A)/c of fs, the
-        // absorption of the realisable flux, not the cut: CLF_N+1 -= (f - fs)/(theta h
-        // c^2).  Its radiation momentum leaves the total: counted and printed.  E and
-        // the gas energy stay exact (flux form; the work is that of the gas term).  The
-        // kinetic stress below keeps the solution's f, of the equation it satisfied)
-        Real fs = f;
-        if (flm) {
-          const Real mg = fwb ? 1.0 : 1.25;
-          fs = fmin(fmax(f, -mg*x.c*fmax(x.w(m,e,k,j,i), 0.0)),
-                    mg*x.c*fmax(x.w(m,e,k-dk,j-dj,i-di), 0.0));
-          if (fs != f) {
-            const Real it = 1.0/fc(m,CLF_TH,k,j,i);
-            fc(m,CLF_N+1,k,j,i) -= (f - fs)*it/(x.h*x.c*x.c);
-            Kokkos::atomic_add(&flc(0), 1.0);
-            Kokkos::atomic_add(&flc(1), fabs(f - fs)*it*0.5*(CleanVol(x, m, k, j, i) +
-                               CleanVol(x, m, k-dk, j-dj, i-di))/(x.c*x.c));
-          }
-        }
         // (fkin, the solution's F solve: d = Phi^H - F, Phi^H = F^H + theta d the energy
         // flux's high-order part, whose memory is G + d (CleanFaceSource): its own
         // history, so that its steady state, F^H of G = F^H, does not depend on h)
         if (fk && e == CLW_X && dok) {   // (and its slope, CleanDInc)
           const Real th = fc(m,CLF_TH,k,j,i);
-          const Real dd = fc(m,CLF_N,k,j,i) - fs - (1.0 - th)*fc(m,CLF_N+3,k,j,i);
+          const Real dd = fc(m,CLF_N,k,j,i) - f - (1.0 - th)*fc(m,CLF_N+3,k,j,i);
           fc(m,CLF_N+3,k,j,i) += dd;
           if (kd > 0) fc(m,kd,k,j,i) = dd/x.h;
           // (clean_rst_mshare, the first solution after a restart from an old scheme's
@@ -4702,11 +4562,11 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
             if (fabs(ms) > x.c*fmax(x.w(m,e,k,j,i), x.w(m,e,k-dk,j-dj,i-di))) {
               Kokkos::atomic_add(&rmc(0), 1.0);
             }
-            fc(m,CLF_N+3,k,j,i) = ms - fs;
+            fc(m,CLF_N+3,k,j,i) = ms - f;
           }
         }
-        fc(m,CLF_N,k,j,i) = fs;
-        fc(m,CLF_N+2,k,j,i) = fs;
+        fc(m,CLF_N,k,j,i) = f;
+        fc(m,CLF_N+2,k,j,i) = f;
         Real tl[6], tr[6];
         ln.Cell(x, dir, m, k, j, i, k-dk, j-dj, i-di, tl);
         ln.Cell(x, dir, m, k, j, i, k, j, i, tr);
@@ -4740,7 +4600,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
     }
   }
   if (cln_fcone) CleanStagFCone(e, kd);
-  if (cln_ftie && tie_now) CleanStagFaceTie(e, kd);
+  if (tie_now) CleanStagFaceTie(e, kd);
   if (fwb && e == CLW_X) {   // (clean_stag_fwb: the radiation momentum of the residuals)
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_fwbc);
     const Real n = CleanReduce(h(0), false), p = CleanReduce(h(1), false);
@@ -4749,14 +4609,6 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
       std::printf("CLEAN %sFWB cycle %d t2s %d faces %.0f radiation momentum sum |dp| "
                   "%.6e x1 faces sum dp %.6e\n", std::isfinite(p + p1) ? "" : "WARNING ",
                   pmy_pack->pmesh->ncycle, t2_solve, n, p, p1);
-    }
-  }
-  if (flm) {   // (clean_stag_flim: the faces cut and their radiation momentum, booked)
-    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), cln_flimc);
-    const Real n = CleanReduce(h(0), false), p = CleanReduce(h(1), false);
-    if (global_variable::my_rank == 0 && n > 0.0) {
-      std::printf("CLEAN FLIM cycle %d t2s %d faces %.0f momentum cut sum |dF| V/c^2 "
-                  "%.6e\n", pmy_pack->pmesh->ncycle, t2_solve, n, p);
     }
   }
   if (rms) {   // (clean_rst_mshare: once, at the old file's first solution)
@@ -4779,7 +4631,7 @@ void RadiationM1::CleanStagFSolve(const int e, const bool tie_now, const bool la
 //! |u_f| >= |F_i|: then |F_i| <= sum_f l_f |F_f| |u_f| <= l_i S_i <= c E_i.  A face has
 //! one value for both its cells (the cubed sphere: its lower gid's, CleanStagFCsShared),
 //! so the momentum stays in flux form; a radial beam (S_i = |F_i|) is cut only where its
-//! cell holds less than c E_i.  As clean_stag_flim's cut, the gas takes the absorption
+//! cell holds less than c E_i.  The gas takes the absorption
 //! of the scaled F (CLF_N + 1), the energy flux's memory G + d is kept, the radiation
 //! momentum cut is booked and printed (CLEAN FCONE); E is unchanged
 
@@ -4853,7 +4705,7 @@ void RadiationM1::CleanStagFCone(const int e, const int kd) {
       if (fs == f) return;
       const Real it = 1.0/fc(m,CLF_TH,k,j,i);
       if (!bd && !fg) fc(m,CLF_N+1,k,j,i) -= (f - fs)*it/(x.h*x.c*x.c);
-      if (dd && !bd) {   // (the energy flux's memory G + d kept, as clean_stag_flim's)
+      if (dd && !bd) {   // (the energy flux's memory G + d kept)
         fc(m,CLF_N+3,k,j,i) += f - fs;
         if (kd > 0) fc(m,kd,k,j,i) += (f - fs)/x.h;
       }
@@ -4976,7 +4828,7 @@ void RadiationM1::CleanStagFwbProject(const int d, const int slot,
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanStagFaceTie
-//! \brief clean_stag_ftie (spherical polar, Cartesian): a face shared by two MeshBlocks,
+//! \brief the face tie (spherical polar, Cartesian): a face shared by two MeshBlocks,
 //! or by one with itself across a periodic wrap, takes the values of its owner, the block
 //! whose low face it is, as its F does (the F solve's identity row, CleanStagFSolve):
 //! the momentum exchange T = (F - G)/c^2 + h div P - h N1 of each face
@@ -5078,7 +4930,7 @@ Real RadiationM1::CleanStagFSweepChange() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanStagFSchur
-//! \brief clean_stag_fschur (uniform mesh; with clean_stag_ftie, the cubed sphere with
+//! \brief clean_stag_fschur (uniform mesh; with the face tie, the cubed sphere with
 //! its owner rule, CleanFLine::Own): the F solve's lines exact across MeshBlocks and
 //! periodic wraps, on the cubed sphere round the rings of four panels' lateral lines.
 //! The line of each MeshBlock is a segment of the whole line, its first and last face
@@ -5553,7 +5405,7 @@ void RadiationM1::CleanStagFCsShared() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanStagCsTie
-//! \brief cubed sphere, clean_stag_ftie: the nc face slots c0, c1, c2 of a face shared
+//! \brief cubed sphere, the face tie: the nc face slots c0, c1, c2 of a face shared
 //! with another MeshBlock, in a panel or across a seam, take the values of the lower gid
 //! (as its F, CleanStagFCsShared), in our axes (CleanCsSlot), so that both sides use one
 //! value to the bit.  Each cell puts those of its face of family q on its MeshBlock's
@@ -6018,12 +5870,12 @@ void RadiationM1::CleanWriteBack() {
   // operator it was solved with; with clean_stag_split also the cell flux, that of Phi
   // (the faces keep F^H)
   auto u0_ = u0;
-  // (clean_stag_ftie: a high face's Phi its owner's, CLW_L + dir of the next cell, so the
+  // (the face tie: a high face's Phi its owner's, CLW_L + dir of the next cell, so the
   // energy telescopes across MeshBlock faces and the theta-periodic wrap; the solve's
   // own Phi there differs by its copy's geometry, a residual E takes; the cubed sphere:
   // each shared face's CLF_PT the lower gid's, CleanStagCsTie)
-  const bool tie = cln_ftie && !x.cub && !cln_tgid;
-  if (cln_ftie && (x.cub || cln_tgid)) CleanStagCsTie(1, CLF_PT);
+  const bool tie = !x.cub && !cln_tgid;
+  if (x.cub || cln_tgid) CleanStagCsTie(1, CLF_PT);
   if (tie) {
     const int nf = x.nf;
     CLEAN_HIPX(const CleanArgs *px = CleanDevArgs(x, 0);)
@@ -6151,8 +6003,8 @@ void RadiationM1::CleanWriteBack() {
   // (the face F of the F solve and its dissipation; the lateral sums of X: above)
   CleanStagFSolve(CLW_X, true, false);
   xh.fs = true;
-  xh.tf = cln_ftie && !x.cub && !cln_tgid;
-  xh.fa = cln_ftie && (x.cub || cln_tgid);   // (the tied T in CLF_PT, CleanStagFaceTie)
+  xh.tf = !x.cub && !cln_tgid;
+  xh.fa = x.cub || cln_tgid;   // (the tied T in CLF_PT, CleanStagFaceTie)
 
   // (clean_cs_lz_tel: the stress torque CleanCsTorque's xs, a defect of the radiation's
   // momentum equation, is zero-sum noise per cell (sum |xs| ~1e5 its net); the gas takes
@@ -6219,7 +6071,7 @@ void RadiationM1::CleanWriteBack() {
   const bool wpa = wsp && FrefWaccOn();   // (fref_wacc: CleanRightHandSide)
   auto wc = wpa ? FrefWacc() : DvceArray4D<Real>();
   const Real fra = FrefWaccStage() ? 1.0 : h/pmy_pack->pmesh->dt;
-  const bool wex = wsp && fref_wacc_t2 && !fref_pay_post &&
+  const bool wex = wsp && fref_wacc_t2 &&
                    time_scheme == M1_TIME_HESDIRK2;   // (no slope carries a payment)
   const bool fm = icr_fmeas && cln_vzero;   // (CleanSteadyStart: icr_dm)
   auto fmd = icr_dm;

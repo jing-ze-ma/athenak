@@ -106,7 +106,7 @@ TaskStatus RadiationM1::HydroConToPrim(Driver *pdrive, int stage) {
 //! The cap acts where the gas carries a negligible share of the energy (rho 4+ decades
 //! below the photosphere) and only there sets the CFL dt (hot, fast floor pockets).
 //! T <= T_rad mimics Compton equilibration, which the model has no term for.  Energy:
-//! the clipped kinetic energy (fcap_ke_rad) and the excess internal energy go to E_rad,
+//! the clipped kinetic energy and the excess internal energy go to E_rad,
 //! so gas + radiation energy is conserved per cell (chat = c).  Momentum is removed.
 
 void RadiationM1::FloorGasCap() {
@@ -130,8 +130,6 @@ void RadiationM1::FloorGasCap() {
   auto &x3f = pmy_pack->pcoord->xx3f;
   auto cnt_ = fcap_cnt;
   const Real rc = fcap_rho, vc = fcap_v;
-  const bool tc = fcap_t, kr = fcap_ke_rad;
-  const Real tmin = fcap_tmin/otab.tunit;   // code temperature
   const Real ar = arad;
   const bool mv = fcap_mvol;
   CleanArgs x;
@@ -167,30 +165,26 @@ void RadiationM1::FloorGasCap() {
       m1 *= fs; m2 *= fs; m3 *= fs;
       uh(m,IM1,k,j,i) = m1; uh(m,IM2,k,j,i) = m2; uh(m,IM3,k,j,i) = m3;
       ekin -= dke;
-      if (kr) {
-        etot -= dke;
-        erad += dke;
-      }
+      etot -= dke;
+      erad += dke;
       Kokkos::atomic_add(&cnt_.d_view(0), 1.0);
       Kokkos::atomic_add(&cnt_.d_view(2), dke*wv);
     }
-    if (tc) {
-      const Real eg = etot - ekin - egrv;
-      if (eg > 0.0) {
-        const Real tg = eos.Temperature(dd, eg);
-        const Real trad = sqrt(sqrt(fmax(erad, 0.0)/ar));
-        // never below the EOS temperature floor: the C2P that follows would raise e_int
-        // back to e(rho, tfloor) and create the energy this cap moved to E_rad
-        const Real tcap = fmax(fmax(trad, tmin), eos.tfloor);
-        if (tg > tcap) {
-          const Real enew = eos.EnergyFromTemperature(dd, tcap);
-          const Real de = eg - enew;
-          if (de > 0.0) {
-            etot -= de;
-            erad += de;
-            Kokkos::atomic_add(&cnt_.d_view(1), 1.0);
-            Kokkos::atomic_add(&cnt_.d_view(3), de*wv);
-          }
+    const Real eg = etot - ekin - egrv;
+    if (eg > 0.0) {
+      const Real tg = eos.Temperature(dd, eg);
+      const Real trad = sqrt(sqrt(fmax(erad, 0.0)/ar));
+      // never below the EOS temperature floor: the C2P that follows would raise e_int
+      // back to e(rho, tfloor) and create the energy this cap moved to E_rad
+      const Real tcap = fmax(trad, eos.tfloor);
+      if (tg > tcap) {
+        const Real enew = eos.EnergyFromTemperature(dd, tcap);
+        const Real de = eg - enew;
+        if (de > 0.0) {
+          etot -= de;
+          erad += de;
+          Kokkos::atomic_add(&cnt_.d_view(1), 1.0);
+          Kokkos::atomic_add(&cnt_.d_view(3), de*wv);
         }
       }
     }
@@ -210,7 +204,7 @@ void RadiationM1::FloorGasCap() {
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> floorcap cycle " << cyc << " (cumulative, all calls): n_v "
                 << c[0] << " n_t " << c[1] << " dKE " << c[2] << " dEint " << c[3]
-                << " (erg, to E_rad" << (kr ? "" : "; KE thermalised") << ")"
+                << " (erg, to E_rad)"
                 << " momentum removed |dp| " << c[4] << " dL_z " << c[5] << std::endl;
     }
   }

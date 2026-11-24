@@ -261,7 +261,7 @@ constexpr int CLW_S = 32;
 constexpr int CLW_Q = 33;
 constexpr int CLW_Y = 34;
 constexpr int CLW_Z = 35;
-constexpr int CLW_TM = 36;   // clean_stag_pc = mg: coefficients of E_{j-1}, E_{j+1},
+constexpr int CLW_TM = 36;   // the mg: coefficients of E_{j-1}, E_{j+1},
                              //   E_{k-1}, E_{k+1} (4)
 constexpr int CLW_L = 40;    // staggered, cubed sphere: the lateral stress sums Y of the
                              // face families q of a cell, CLW_L + 3 q
@@ -507,7 +507,7 @@ struct CleanLevel {
   CleanW u;                    // blocks and vectors (m, slot, k, j, i)
   int o[3];                    // index of the first active cell along x1, x2, x3
   int n[3];                    // active cells along x1, x2, x3
-  int t[3];                    // cells of a tile along x1, x2, x3 (clean_stag_mg_tile)
+  int t[3];                    // cells of a tile along x1, x2, x3 (layout_tile)
   int a0;                      // diagonal block
   int sm[3], sp[3];            // blocks of the lower and upper neighbour along each dir
 };
@@ -1839,7 +1839,7 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
       if (tq) tq[side] = 2.0*db;
       continue;
     }
-    // (clean_stag_ftie: T of the face as its owner, the block whose low face it is,
+    // (the face tie: T of the face as its owner, the block whose low face it is,
     // computed it, CleanStagFaceTie)
     const Real tu = x.tf ? x.w(m,CLW_L+3*dir,kf,jf,iff) :
                     (fa ? x.fc[dir](m,CLF_PT,kf,jf,iff) : ((f - g)/(x.c*x.c) +
@@ -2172,12 +2172,10 @@ void CleanOverlapFor(const std::string &nm, MeshBlockPack *pp, const bool ov, co
 //----------------------------------------------------------------------------------------
 //! \fn Real CleanPredictE
 //! \brief the predicted E = e0 + de kept positive: linear down to 0 and e0 exp(de/e0)
-//! below (cut: a jump to e0/e at e0 + de = 0), or e0 exp(de/e0) for every de < 0
-//! (smooth, clean_predict_pos: continuous, e0 + de to first order)
+//! below (a jump to e0/e at e0 + de = 0)
 
 KOKKOS_INLINE_FUNCTION
-Real CleanPredictE(const Real e0, const Real de, const bool smooth) {
-  if (smooth) return (de >= 0.0) ? e0 + de : ((e0 > 0.0) ? e0*exp(de/e0) : 0.0);
+Real CleanPredictE(const Real e0, const Real de) {
   return (e0 + de > 0.0) ? e0 + de : ((e0 > 0.0) ? e0*exp(de/e0) : 0.0);
 }
 

@@ -296,7 +296,7 @@ template <typename T>
 void RadiationM1::CleanGhostFillT(DvceArray5D<T> a, const int c0, const int nc,
                                   const bool phys, const int part, const int dep,
                                   const std::array<uint32_t, 4> fm) {
-  if (nc > cln_hmax) {   // (the exchange moves at most clean_halo_vars variables at once)
+  if (nc > cln_hmax) {   // (the exchange moves at most cln_hmax variables at once)
     const int h = cln_hmax;
     // (a full mask stays full for every chunk)
     auto sh = [&](const uint32_t m) {return (m == ~0u || h >= 32) ? m : m >> h;};
@@ -351,10 +351,9 @@ void RadiationM1::CleanGhostExchange(const std::vector<CleanGSeg<T>> &sg,
               << "lists of clean_halo_direct" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  if (dl && part != 2) {   // (the depth: the deepest its segments need, clean_halo_depth)
+  if (dl && part != 2) {   // (the depth: the deepest its segments need)
     int d = 0;
     for (auto &s : sg) d = (s.dep <= 0) ? ng : std::max(d, s.dep);
-    if (cln_hdl.dcap > 0) d = std::min(d, cln_hdl.dcap);
     cln_hdl.dcur = std::min(std::max(d, 1), ng);
     CleanHaloPost(sg);
   }
@@ -481,9 +480,8 @@ void RadiationM1::CleanHaloInit(const int n3, const int n2, const int n1) {
   const int n21 = n2*n1, n321 = n3*n21;
   const int64_t nid = static_cast<int64_t>(mx)*n321;
   q.n1 = n1; q.n2 = n2; q.n3 = n3;
-  const int ng = indcs.ng, dcap = q.dcap;
+  const int ng = indcs.ng;
   q.ng = ng;
-  q.dcap = 0;   // (the lists and their check: all ng layers)
   DvceArray5D<Real> x("cln_hdl_x", nmb, 1, n3, n2, n1),
                     y("cln_hdl_y", nmb, 1, n3, n2, n1);
   const std::vector<CleanGSeg<Real>> sx = {{x, 0, 1, false}}, sy = {{y, 0, 1, false}};
@@ -651,15 +649,13 @@ void RadiationM1::CleanHaloInit(const int n3, const int n2, const int n1) {
   MPI_Allreduce(MPI_IN_PLACE, &bad, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 #endif
   q.state = (bad == 0) ? 1 : -1;
-  q.dcap = dcap;
   if (me == 0) {
     if (bad == 0) {
       std::cout << "<rad_m1> clean_halo_direct: ON, rank 0 copies " << q.nl
                 << " ghosts, sends " << q.ns << " cells, receives " << q.nr << " in "
                 << q.rank.size() << " messages; on-rank ghosts by depth";
       for (int d = 0; d < ng; ++d) std::cout << " " << q.nld[d];
-      std::cout << ", clean_halo_depth " << dcap << (q.poison ? " (POISON)" : "")
-                << std::endl;
+      std::cout << (q.poison ? " (POISON)" : "") << std::endl;
     } else {
       std::cout << "<rad_m1> clean_halo_direct: the lists miss " << bad << " cells of "
                 << "the exchange, the clean ghost exchange is MeshBoundaryValuesCC's"
@@ -1106,9 +1102,7 @@ void RadiationM1::CleanFaceCoefficients() {
   const bool hrm = cln_hface;
   const bool fsc = cln_cssc;   // (the sc rays: their folded sums, CleanFaceHalf)
   const bool fho = cln_rfh;    // (clean_ring_fh: the cells' own, CleanCellHalf)
-  const bool thr = cln_thr;    // (clean_cs_thin_radial)
   const bool tdn = cln_tdn;    // (clean_thin_donor)
-  const bool wmn = cln_wmin;   // (clean_w_face_min)
   const bool wfs = cln_wfse;   // (clean_w_fse)
   const bool wft = cln_wfst;   // (clean_w_fse_tau)
   const bool fjs = cln_jse;    // (clean_face_jse)
@@ -1144,10 +1138,8 @@ void RadiationM1::CleanFaceCoefficients() {
         }
         return fmax(sqrt(h2), ep*cs(m,CLN_C1,kk,jj,ii)/1.5);
       };
-      const Real c1 = wmn ? fmin(gw(k, j, i), gw(kl, jl, il))
-                          : fmax(gw(k, j, i), gw(kl, jl, il));
-      fc(m,CLF_W,k,j,i) = (thr && dir > 0) ? 0.0
-                                           : CleanSmoothStep((c1 - c1lo)/(c1hi - c1lo));
+      const Real c1 = fmax(gw(k, j, i), gw(kl, jl, il));
+      fc(m,CLF_W,k,j,i) = CleanSmoothStep((c1 - c1lo)/(c1hi - c1lo));
       fc(m,CLF_TH,k,j,i) = 1.0/(1.0 + h*c*chi);
       fc(m,CLF_G,k,j,i) = f0(m,k,j,i) + (stage ? inc(m,tf,k,j,i) : 0.0);
       if (fsk) fc(m,CLF_N+2,k,j,i) = fc(m,CLF_G,k,j,i);   // (fsolve: start of its F)
@@ -1417,7 +1409,7 @@ void RadiationM1::CleanApply(const int src, const int dst) {
 //! \fn void RadiationM1::CleanPreconditionerSetup
 //! \brief coefficients of the preconditioner: the x1-line tridiagonal part of A plus the
 //! diagonal of its x2 and x3 parts (the off-diagonal Eddington terms are left to the
-//! Krylov iteration); clean_stag_pc = mg also the x2 and x3 couplings and the coarse
+//! Krylov iteration); the mg also the x2 and x3 couplings and the coarse
 //! levels
 
 void RadiationM1::CleanPreconditionerSetup() {
@@ -1428,7 +1420,6 @@ void RadiationM1::CleanPreconditionerSetup() {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   CleanArgs x = CleanMakeArgs();
   auto op = opac;
-  const bool mg = cln_stagmg;
   // the face weights of the pass, once per face for CleanApply (x.fwc)
   CLEAN_HIPX(const CleanArgs *pxw = CleanDevArgs(x, 0);)
   for (int dir = 0; dir < x.nf; ++dir) {
@@ -1526,11 +1517,9 @@ void RadiationM1::CleanPreconditionerSetup() {
       a0 += (x.sph || x.cub) ? x.h*(CleanDivW(x, 1, m, k, j, i, 1)*al_p -
                                     CleanDivW(x, 1, m, k, j, i, 0)*ar_m)
                              : x.h*x.idx[1]*(al_p - ar_m);
-      if (mg) {
-        const bool cv = x.sph || x.cub;
-        x.w(m,CLW_TM,k,j,i) = -x.h*al_m*(cv ? CleanDivW(x, 1, m, k, j, i, 0) : x.idx[1]);
-        x.w(m,CLW_TM+1,k,j,i) = x.h*ar_p*(cv ? CleanDivW(x, 1, m, k, j, i, 1) : x.idx[1]);
-      }
+      const bool cv = x.sph || x.cub;
+      x.w(m,CLW_TM,k,j,i) = -x.h*al_m*(cv ? CleanDivW(x, 1, m, k, j, i, 0) : x.idx[1]);
+      x.w(m,CLW_TM+1,k,j,i) = x.h*ar_p*(cv ? CleanDivW(x, 1, m, k, j, i, 1) : x.idx[1]);
     }
     if (x.three_d) {
       CleanFaceWeights(x, 2, m, k+1, j, i, al_p, ar_p);
@@ -1539,15 +1528,12 @@ void RadiationM1::CleanPreconditionerSetup() {
       a0 += cv ? x.h*(CleanDivW(x, 2, m, k, j, i, 1)*al_p -
                       CleanDivW(x, 2, m, k, j, i, 0)*ar_m)
                : x.h*x.idx[2]*(al_p - ar_m);
-      if (mg) {
-        x.w(m,CLW_TM+2,k,j,i) = -x.h*al_m*(cv ? CleanDivW(x, 2, m, k, j, i, 0)
-                                               : x.idx[2]);
-        x.w(m,CLW_TM+3,k,j,i) = x.h*ar_p*(cv ? CleanDivW(x, 2, m, k, j, i, 1) : x.idx[2]);
-      }
+      x.w(m,CLW_TM+2,k,j,i) = -x.h*al_m*(cv ? CleanDivW(x, 2, m, k, j, i, 0) : x.idx[2]);
+      x.w(m,CLW_TM+3,k,j,i) = x.h*ar_p*(cv ? CleanDivW(x, 2, m, k, j, i, 1) : x.idx[2]);
     }
     x.w(m,CLW_A0,k,j,i) = a0;
   });
-  if (mg) CleanStagCoarseSetup();
+  CleanStagCoarseSetup();
 }
 
 //----------------------------------------------------------------------------------------
@@ -1578,7 +1564,7 @@ CleanLevel RadiationM1::CleanStagLevel(const int l) {
   }
   const int nb[3] = {pmy_pack->pmesh->mb_indcs.nx1, pmy_pack->pmesh->mb_indcs.nx2,
                      pmy_pack->pmesh->mb_indcs.nx3};
-  for (int d = 0; d < 3; ++d) {   // (clean_stag_mg_tile; default the MeshBlock)
+  for (int d = 0; d < 3; ++d) {   // (layout_tile; default the MeshBlock)
     lv.t[d] = cln_mgt[0] ? cln_mgt[d]*lv.n[d]/nb[d] : lv.n[d];
   }
   const int tm = (l == 0) ? CLW_TM : CLS_TM;
@@ -1877,15 +1863,10 @@ void RadiationM1::CleanStagVCycle(const int l, const int src, const int dst) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::CleanPrecondition
-//! \brief w(dst) = M^{-1} w(src): tridiagonal (Thomas) solve along every x1 line
-//! (clean_stag_pc = line), or the old production mg (mg, CleanStagVCycle)
+//! \brief w(dst) = M^{-1} w(src): the old production mg (CleanStagVCycle)
 
 void RadiationM1::CleanPrecondition(const int src, const int dst) {
-  if (cln_stagmg) {
-    CleanStagVCycle(0, src, dst);
-  } else {
-    CleanStagLineSolve(CleanStagLevel(0), src, dst, -1);
-  }
+  CleanStagVCycle(0, src, dst);
 }
 
 //----------------------------------------------------------------------------------------

@@ -23,17 +23,6 @@
 
 namespace radm1 {
 
-// <rad_m1>/thick_flux: which asymptotic-preserving correction the face flux carries
-// (design sect. 3).  Device code branches on these, so they are plain ints.
-constexpr int M1_THICK_NONE   = 0;   // plain HLL
-constexpr int M1_THICK_APHLL  = 1;   // Bloch et al. (2021) alpha on the E-flux only
-constexpr int M1_THICK_SCALED = 2;   // Jiang (2021) App. A: both wave speeds x eps(tau)
-
-// <rad_m1>/ap_form: which algebraic form of the thick_flux = ap_hll E-flux is used
-// (design sect. 10 and the 1c measurement recorded there).
-constexpr int M1_APFORM_UNIFIED = 0;  // alpha F_HLL + (1-alpha) F_diff(1 - dEr/dEc)
-constexpr int M1_APFORM_ALPHA2  = 1;  // the 1b pair: Berthon for dc, alpha^2 for plm
-
 //----------------------------------------------------------------------------------------
 //! \fn M1Chi
 //! \brief closure factor chi as a function of the reduced flux magnitude; chi(0) = 1/3

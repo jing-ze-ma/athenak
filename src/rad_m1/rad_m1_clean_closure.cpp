@@ -298,9 +298,7 @@ void RadiationM1::CleanClosureAfterSolve() {
   const Real time = pmy_pack->pmesh->time;
   const Real dt = pmy_pack->pmesh->dt;
   if (cln_extrap == 3 && t2_solve == M1_T2S_STAGE2) return;
-  // (clean_extrap_share: writing cln_mc overwrites the moments at t^{n-1})
   if (cln_extrap == 3 && t2_solve == M1_T2S_STAGE1) {
-    if (cln_mshare) cln_have_p = false;
     CleanRayMoments(cln_mc, false);
     const imex_sdirk2::Tableau tb = imex_sdirk2::Make(t2_tab);
     cln_tm = time + ((t2_tab == 0) ? dt : (tb.a21 + tb.g)*dt);
@@ -317,7 +315,6 @@ void RadiationM1::CleanClosureAfterSolve() {
     cln_have_1 = true;
     return;
   }
-  if (cln_mshare) cln_have_p = false;
   CleanRayMoments(cln_mc);
   cln_tm = time + dt;
   cln_have_c = true;
@@ -428,11 +425,7 @@ void RadiationM1::CleanClosureExtrap() {
   // a new step: the end of the last step (sx: its stage-1 time) becomes t^n
   if (cln_have_c && (cln_tm == time || (sx && cln_tm < time))) {
     std::swap(cln_mp, cln_mn);
-    if (cln_mshare) {
-      cln_mc = cln_mp;
-    } else {
-      std::swap(cln_mn, cln_mc);
-    }
+    std::swap(cln_mn, cln_mc);
     cln_tp = cln_tn;
     cln_tn = cln_tm;
     cln_have_p = cln_have_n && !cln_cand_be;
@@ -575,7 +568,6 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
   bool scat = vscat;
   Real arad_ = arad, cl = c_light;
   const bool feedback = cln_feedback;
-  const bool ps = cln_psmooth;
   CleanArgs x = CleanMakeArgs();
 
   CleanFor("cln_predict", nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
@@ -595,7 +587,7 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
       if (use_rates && !feedback) {
         // gas held fixed: E advances at its own rate, which includes the exchange
         const Real de = dt*k1(m,M1_T2_E,k,j,i);
-        e = CleanPredictE(e0, de, ps);
+        e = CleanPredictE(e0, de);
       } else if (relax) {
         // radiation transport over dt (a valid K1), less the work of the radiation force
         // on the gas, then the implicit local exchange of (eint, E) over dt
@@ -604,7 +596,7 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
           const Real ekin_new = 0.5*(SQR(mom[0]) + SQR(mom[1]) + SQR(mom[2]))/d;
           const Real de = dt*(k1(m,M1_T2_E,k,j,i) + k1(m,M1_T2_EN,k,j,i))
                           - (ekin_new - ekin);
-          e = CleanPredictE(e0, de, ps);
+          e = CleanPredictE(e0, de);
         }
         // E (1 + h c kE) = e + h c kP a T^4,  eint(T) + E = eint_h + e
         const Real hce = dt*cl*opac_(m,M1_OP_E,k,j,i);
@@ -615,7 +607,7 @@ void RadiationM1::CleanPredictState(const bool use_k1) {
       }
     } else if (use_rates) {
       const Real de = dt*k1(m,M1_T2_E,k,j,i);
-      e = CleanPredictE(e0, de, ps);
+      e = CleanPredictE(e0, de);
     }
 
     if (active) {
@@ -916,14 +908,13 @@ bool CleanRingEma(const CleanRingL &rl, const DvceArray5D<Real> &rr,
 //! solves reads: those cln_s does not hold (CleanNs: CLN_KP, CLN_F1, off the cubed sphere
 //! CLN_FH) and the stress parts of the face sums CLN_FX, CLN_F2, CLN_F3 and (cubed
 //! sphere) CLN_FH: only their energy flux is read; on the cubed sphere also CLN_G (the
-//! sp F solve reads it).  The mixture gives 0 there (CleanRingMix).  ring: those of the
-//! offsets and the Delta (with clean_ring_fields = closure the cell moments and CLN_JR;
-//! the others are mixed from the swept sets alone).  file: the fields of the restart
-//! files' layout (CleanRingRstCopy): up to version 6 it keeps the stress parts and CLN_G
-//! on the cubed sphere (0 in a file written since), from version 7 the ring's own
+//! sp F solve reads it).  The mixture gives 0 there (CleanRingMix).  file: the fields
+//! of the restart files' layout (CleanRingRstCopy): up to version 6 it keeps the stress
+//! parts and CLN_G on the cubed sphere (0 in a file written since), from version 7 the
+//! ring's own
 
 #if M1_TU_PART(0)
-int RadiationM1::CleanRingFields(int *fm, const bool ring, const bool file) const {
+int RadiationM1::CleanRingFields(int *fm, const bool file) const {
   const bool cub = pmy_pack->pmesh->use_cubed_sphere;
   const int ns = CleanNs(cub, cln_rfh);   // (the slots of cln_s)
   int nf = 0;
@@ -931,9 +922,8 @@ int RadiationM1::CleanRingFields(int *fm, const bool ring, const bool file) cons
     const bool fs = (n >= CLN_F2 && n < CLN_G && (n - CLN_F2)%4 != 0) ||   // (stress
                     (n >= CLN_FH && n < CLN_F1 && (n - CLN_FH)%4 != 0);    // parts)
     const bool un = fs || (cub && (n == CLN_G || n == CLN_G + 1));
-    const bool cm = !(ring && cln_rcell) || CleanCellMoment(n) || n == CLN_JR;
     const bool f6 = file && t2_rstv < 7;
-    fm[n] = ((n < ns && !(f6 ? fs && !cub : un)) && cm) ? nf++ : -1;
+    fm[n] = (n < ns && !(f6 ? fs && !cub : un)) ? nf++ : -1;
   }
   return nf;
 }
@@ -948,7 +938,7 @@ void RadiationM1::CleanRingShift(const int64_t b) {
   auto &id = pmy_pack->pmesh->mb_indcs;
   const int nr = vra_k - 1;
   Kokkos::Array<int, CLN_N> fm;
-  const int nf = CleanRingFields(fm.data(), true);
+  const int nf = CleanRingFields(fm.data());
   const Real tk = vgd_rot_t0 + static_cast<Real>(b)*vgd_rot_dt;
   if (std::abs(cln_rpt - tk) > 1.0e-9*vgd_rot_dt) cln_roff_sum += 1.0;
   vra_gen += 1;
@@ -1051,7 +1041,7 @@ void RadiationM1::CleanRingPreShift() {
 int RadiationM1::CleanRingRstN() const {
   auto &id = pmy_pack->pmesh->mb_indcs;
   int fm[CLN_N];
-  const int nff = CleanRingFields(fm, true, true);
+  const int nff = CleanRingFields(fm, true);
   const int64_t nv = static_cast<int64_t>(CleanRingNr(nff) + CleanRingNd(nff))*id.nx1*
                      id.nx2*id.nx3;
   const int64_t ns = static_cast<int64_t>(id.nx1 + 2*id.ng)*
@@ -1064,7 +1054,7 @@ void RadiationM1::CleanRingRstCopy(DvceArray5D<Real> &a, const int c, const int 
                                    const int m0, const bool pk, const bool have) {
   auto &id = pmy_pack->pmesh->mb_indcs;
   int fm[CLN_N], ff[CLN_N];
-  const int nf = CleanRingFields(fm, true), nff = CleanRingFields(ff, true, true);
+  const int nf = CleanRingFields(fm), nff = CleanRingFields(ff, true);
   Kokkos::Array<int, CLN_N> mp;   // (the file's field slot -> cln_rr's, -1: not held)
   for (int n = 0; n < CLN_N; ++n) {
     if (ff[n] >= 0) mp[ff[n]] = fm[n];
@@ -1208,7 +1198,7 @@ void RadiationM1::CleanRingMoments() {
   // interior cells; the offsets and the Delta only of the fields fm carries)
   // (fr: the fields of the offsets and the Delta, nfr of them)
   Kokkos::Array<int, CLN_N> fm, fr;
-  const int nf = CleanRingFields(fm.data()), nfr = CleanRingFields(fr.data(), true);
+  const int nf = CleanRingFields(fm.data()), nfr = CleanRingFields(fr.data());
   // (the sweep order: the sc rays on the cubed sphere the older sets in block order,
   // then the live b, b+1 in their slot order blk mod 2, as CleanFaceHalf folds the union
   // (the sets' sweeps are independent); elsewhere the slot order (on sp the block order
@@ -1875,15 +1865,10 @@ void RadiationM1::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
   const bool fv = cln_fvi.extent_int(0) > 0;
   const CleanGdI gi{vgd_i, cln_gdgl, vgd_w - ks, vgd_w - indcs.ng, ks, js, true, ke, je,
                     is, ie};
-  const bool fht = cln_fht;   // (clean_face_half_tau)
-  auto op = opac;
   for (int dir = 0; dir < 3; ++dir) {
     if (dir == 1 && !pmy_pack->pmesh->multi_d) continue;
     if (dir == 2 && !pmy_pack->pmesh->three_d) continue;
     const int di = (dir == 0), dj = (dir == 1), dk = (dir == 2);
-    auto dxd = (dir == 0) ? pmy_pack->pcoord->dx1
-                          : ((dir == 1) ? pmy_pack->pcoord->dx2
-                                        : pmy_pack->pcoord->dx3);
     CleanForK("cln_facehalf", nmb1, ks, ke+dk, js, je+dj, is, ie+di,   // (HIP: k fastest)
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const int kl = k - dk, jl = j - dj, il = i - di;
@@ -1893,9 +1878,6 @@ void RadiationM1::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
       // (the two cells' intensity rows once, not an index per direction)
       const CleanRow gl_ = fv ? CleanRow{nullptr, 0} : gi.At(m, kl, jl, il);
       const CleanRow gr_ = fv ? CleanRow{nullptr, 0} : gi.At(m, k, j, i);
-      // (clean_face_half_tau: each donor's transmission through its half cell)
-      const Real al = fht ? exp(-0.5*op(m,M1_OP_T,kl,jl,il)*dxd(m,kl,jl,il)) : 1.0;
-      const Real ar = fht ? exp(-0.5*op(m,M1_OP_T,k,j,i)*dxd(m,k,j,i)) : 1.0;
 #pragma unroll 4   // (rays in flight: hipcc kept one at a time since 089efb501)
       for (int e = 0; e < n; ++e) {
         const int d = o + e;
@@ -1906,8 +1888,8 @@ void RadiationM1::CleanFaceHalf(const DvceArray2D<Real> &dv, const int o,
         const Real wl = dv(d,3)*il_, wr = dv(d,3)*ir_;
         jl0 += wl;
         jr0 += wr;
-        if (mu > 0.0) hp0 += (al*wl + (1.0 - al)*wr)*mu;
-        if (!(mu > 0.0)) hm0 += (ar*wr + (1.0 - ar)*wl)*mu;
+        if (mu > 0.0) hp0 += wl*mu;
+        if (!(mu > 0.0)) hm0 += wr*mu;
       }
       fh(m,4*dir,k,j,i) = jl0;
       fh(m,4*dir+1,k,j,i) = jr0;
@@ -2230,9 +2212,9 @@ void RadiationM1::CleanGdFaceSums() {
     for (int b = 0; b < 3; ++b) q[1+b] = wn*nf[b];
   };
   // sp, the raw rows (gl), a whole build: both lateral faces and the r face of
-  // a cell in one pass over the directions (cln_gd_fs below; clean_gd_face_fuse = false:
-  // the three kernels), each sum its own terms in the same order (bitwise)
-  const bool fs = cln_gdfs && gl && x.sph && !x.cub && !axi;
+  // a cell in one pass over the directions (cln_gd_fs below), each sum its own terms in
+  // the same order as the three kernels of the other meshes
+  const bool fs = gl && x.sph && !x.cub && !axi;
   for (int dir = 1; dir < 3 && !fs; ++dir) {
     const int nf = (dir == 1) ? CLN_F2 : CLN_F3;
     if (!x.sph && dir >= x.nf) continue;

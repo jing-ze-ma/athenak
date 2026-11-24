@@ -40,8 +40,6 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
   if (fl_mhd && !emag_hold) EmagBuild(false);
   if (opac_zero) return TaskStatus::complete;
   if (!fl_on) return TaskStatus::complete;
-  // <rad_m1>/opac_freeze: fill the array once and keep it
-  if (opac_freeze && opac_frozen) return TaskStatus::complete;
   if (opacity_type == M1_OPAC_TABLE && otab.nT <= 0) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1>/opacity = table, but no tables were handed to the "
@@ -109,7 +107,6 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
     if (osc) opac_(m,M1_OP_S,k,j,i) = d*os;
   });
 
-  opac_frozen = true;
   if (!rsla_done) RSLACheck();
   return TaskStatus::complete;
 }

@@ -40,10 +40,6 @@ double VgdThetaFace(const Mesh *pm, const int n) {
   }
   return static_cast<double>(t);
 }
-#if MPI_PARALLEL_ENABLED
-// vet_gd_halo_overlap: the requests of a begun compact exchange (VetGdGbHaloC part 1)
-std::vector<MPI_Request> g_vgd_gbo_req;
-#endif
 } // namespace
 
 int RadiationM1::VgdPoleSlot(const int o, const int lx2) const {
@@ -485,22 +481,18 @@ void RadiationM1::VetGdGlobalBandInit() {
 //! messages need no index.  Rows of the polar zone (+ the band depth) keep their whole
 //! branch (clamped polar reads).  vgd_raw: a phi-wall image's flags are made by the
 //! receiver (its wall map) and sent once per list to the sender.  Unsent positions get 0
-//! (never read).  On-rank copies as before (all directions).
-
-//! part (vet_gd_halo_overlap): 0 the whole exchange; 1 up to the posted messages (true:
-//! begun, the kept lists of a fixed set only); 2 the wait and the unpack of a begun one
+//! (never read).  On-rank copies as before (all directions).  Returns false.
 
 template <class V>
-bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) {
+bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws) {
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   auto a_ = a;
   const int nv = vgd_n;
-  // vet_gd_halo_lean: on the sweep's own (default) stream the pack and the unpack are
-  // stream-ordered with the shell kernels; the host waits only for the pack
-  const bool lean = vgd_lean &&
-                    vgd_cur.impl_instance_id() == DevExeSpace().impl_instance_id();
-  if (!lean && part != 2) vgd_cur.fence();   // the shell's intensities are complete
+  // on the sweep's own (default) stream the pack and the unpack are stream-ordered with
+  // the shell kernels; the host waits only for the pack
+  const bool lean = vgd_cur.impl_instance_id() == DevExeSpace().impl_instance_id();
+  if (!lean) vgd_cur.fence();   // the shell's intensities are complete
   const int wq = std::min(ws, static_cast<int>(vgd_gdnl.size()) - 1);
   {
     const int nl = vgd_raw ? 0 : vgd_gdnl[wq];   // (vgd_raw: on-rank owners read direct)
@@ -555,11 +547,6 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
   };
   if (vgd_raw && !cb.empty() && side(cb.back()) != side(vgd_scut)) {cb.clear();}
   auto pv = Kokkos::subview(vgd_gbpb, std::make_pair(4*np, 8*np));
-  if (part == 1 && !(vgd_raw && !cb.empty())) {   // (the lists are made: whole)
-    VetGdGbHaloC(a, i, ws, 0);
-    return false;
-  }
-  const bool post = (part != 2), wait = (part != 1);
   if (vgd_raw && !cb.empty()) {
     for (int q = 0; q < 4*np; ++q) {pv(q) = cb[q];}
   } else {
@@ -673,7 +660,7 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
   // (bitwise). Parity buffers: a partner's flag of exchange s follows its unpack of s -
   // 1.
   if (vgd_raw && !cb.empty() && vgd_ipc_state == 1 && lean) {
-    if (post) {++vgd_ipc_seq;}
+    ++vgd_ipc_seq;
     const long long seq = vgd_ipc_seq, par = seq & 1;
     const int np_ = np;
     auto pslot = vgd_ipc_pslot.d_view;
@@ -682,32 +669,29 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
     // reuse makes the host wait on the previous such kernel at every launch (as par_for)
     auto lw = [](const int n) {return Kokkos::Experimental::require(Kokkos::RangePolicy<>(
         DevExeSpace(), 0, n), Kokkos::Experimental::WorkItemProperty::HintLightWeight);};
-    if (post) {
-      for (int p = 0; p < np; ++p) {b0.v[p] = cb[4*p]; b1.v[p] = cb[4*p + 1];}
-      auto prb = vgd_ipc_prb.d_view;
-      auto phalf = vgd_ipc_phalf.d_view;
-      auto pcs = vgd_ipc_pcs.d_view;
-      auto psig = vgd_ipc_psig.d_view;
-      auto ls_ = cf[0];
-      Kokkos::parallel_for("m1_vgdgb_ipc_pack", lw(std::max(cb[4*np], 1)),
-      KOKKOS_LAMBDA(const int o) {
-        int p = 0;
-        while (p < np_ && !(o >= b0.v[p] && o < b1.v[p])) {++p;}
-        if (p == np_) {return;}
-        const int e = ls_(o)/nv;
-        reinterpret_cast<Real *>(prb(p))[par*phalf(p) + pslot(p)*pcs(p) + o - b0.v[p]] =
-            a_(S_(e,0),ls_(o) - e*nv,S_(e,1),S_(e,2),i);
-      });
-      Kokkos::parallel_for("m1_vgdgb_ipc_set", Kokkos::RangePolicy<>(DevExeSpace(), 0, 1),
-      KOKKOS_LAMBDA(const int) {VgdIpcSetN(psig.data(), pslot.data(), np_, seq);});
-      for (int p = 0; p < np; ++p) {
-        vgd_nbyte += static_cast<Real>(b1.v[p] - b0.v[p])*sizeof(Real);
-        vgd_csvsent += static_cast<double>(b1.v[p] - b0.v[p]);
-        vgd_csvdense += static_cast<double>(vgd_gdsn[wq][p])*nv;
-      }
-      vgd_ipc_n += 1.0;
+    for (int p = 0; p < np; ++p) {b0.v[p] = cb[4*p]; b1.v[p] = cb[4*p + 1];}
+    auto prb = vgd_ipc_prb.d_view;
+    auto phalf = vgd_ipc_phalf.d_view;
+    auto pcs = vgd_ipc_pcs.d_view;
+    auto psig = vgd_ipc_psig.d_view;
+    auto ls_ = cf[0];
+    Kokkos::parallel_for("m1_vgdgb_ipc_pack", lw(std::max(cb[4*np], 1)),
+    KOKKOS_LAMBDA(const int o) {
+      int p = 0;
+      while (p < np_ && !(o >= b0.v[p] && o < b1.v[p])) {++p;}
+      if (p == np_) {return;}
+      const int e = ls_(o)/nv;
+      reinterpret_cast<Real *>(prb(p))[par*phalf(p) + pslot(p)*pcs(p) + o - b0.v[p]] =
+          a_(S_(e,0),ls_(o) - e*nv,S_(e,1),S_(e,2),i);
+    });
+    Kokkos::parallel_for("m1_vgdgb_ipc_set", Kokkos::RangePolicy<>(DevExeSpace(), 0, 1),
+    KOKKOS_LAMBDA(const int) {VgdIpcSetN(psig.data(), pslot.data(), np_, seq);});
+    for (int p = 0; p < np; ++p) {
+      vgd_nbyte += static_cast<Real>(b1.v[p] - b0.v[p])*sizeof(Real);
+      vgd_csvsent += static_cast<double>(b1.v[p] - b0.v[p]);
+      vgd_csvdense += static_cast<double>(vgd_gdsn[wq][p])*nv;
     }
-    if (!wait) {return true;}
+    vgd_ipc_n += 1.0;
     for (int p = 0; p < np; ++p) {b0.v[p] = cb[4*p + 2]; b1.v[p] = cb[4*p + 3];}
     long long *sig = vgd_ipc_sig;
     int *err = vgd_ipc_err;
@@ -732,8 +716,7 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
   auto sb_ = vgd_sbuf;
   auto rb_ = vgd_rbuf;
   auto ls_ = cf[0], lr_ = cf[1];
-  if (!post) {
-  } else if (vgd_raw && cb[4*np] > 0) {
+  if (vgd_raw && cb[4*np] > 0) {
     Kokkos::parallel_for("m1_vgdgb_kpack",
                          Kokkos::RangePolicy<>(DevExeSpace(), 0, cb[4*np]),
     KOKKOS_LAMBDA(const int o) {
@@ -750,17 +733,16 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
   }
   // (lean: the host waits for the pack alone, an event behind it on the sweep's stream,
   // as prod's VetGdHlBegin, not a device-wide fence)
-  if (post && lean) {
+  if (lean) {
     VgdPackEvtRecord(DevExeSpace());
     VgdPackEvtWait(DevExeSpace());
-  } else if (post) {
+  } else {
     Kokkos::fence();
   }
   Kokkos::Timer tq;
-  std::vector<MPI_Request> &req = g_vgd_gbo_req;
-  if (post) req.clear();
+  std::vector<MPI_Request> req;
   double nsent = 0.0;
-  for (int p = 0; p < np && post; ++p) {
+  for (int p = 0; p < np; ++p) {
     const int rk = vgd_csprk[p];
     const int s0 = pv(4*p), s1 = pv(4*p + 1), r0 = pv(4*p + 2), r1 = pv(4*p + 3);
     if (r1 > r0) {
@@ -777,12 +759,7 @@ bool RadiationM1::VetGdGbHaloC(V &a, const int i, const int ws, const int part) 
     }
     vgd_csvdense += static_cast<double>(vgd_gdsn[wq][p])*nv;
   }
-  if (!wait) {   // (begun: the next shell's interior runs while the messages travel)
-    vgd_csvsent += nsent;
-    return true;
-  }
   MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
-  req.clear();
   vgd_tmpi += tq.seconds();
   vgd_nexch += 1.0;
   vgd_csvsent += nsent;
@@ -865,8 +842,7 @@ bool RadiationM1::VetGdGbHaloX(const int i, const int ws) {
   auto lsA_ = vgd_gbcf[key][0], lrA_ = vgd_gbcf[key][1];
   auto lsB_ = vgd_gbcf_xb[key][0], lrB_ = vgd_gbcf_xb[key][1];
   const int nv = vgd_n, npk = np;
-  const bool lean = vgd_lean &&
-                    vgd_cur.impl_instance_id() == DevExeSpace().impl_instance_id();
+  const bool lean = vgd_cur.impl_instance_id() == DevExeSpace().impl_instance_id();
 #if defined(KOKKOS_ENABLE_CUDA) || defined(KOKKOS_ENABLE_HIP)
   if (vgd_ipc_state == 1) {
     // vet_gd_halo_ipc (as VetGdGbHaloC): the pack stores the merged piece of partner p
@@ -1058,10 +1034,8 @@ DvceArray1D<int> RadiationM1::VetGdRawRec(const int key) {
 }
 
 template bool RadiationM1::VetGdGbHaloC<DvceArray5D<Real>>(DvceArray5D<Real> &a,
-                                                           const int i, const int ws,
-                                                           const int part);
+                                                           const int i, const int ws);
 template bool RadiationM1::VetGdGbHaloC<RadiationM1::VgdRag>(RadiationM1::VgdRag &a,
-                                                             const int i, const int ws,
-                                                             const int part);
+                                                             const int i, const int ws);
 
 } // namespace radm1

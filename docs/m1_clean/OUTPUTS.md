@@ -246,11 +246,9 @@ write-back closure, the ray cut). `CLEAN WARNING` lines always print.
 | `CLEAN OLDVEC cycle N t2s S eint<0 K (carried\|taken as 0) E<0 Q` | The state that starts a stage has K cells with gas internal energy < 0 (carried into the gas row with `clean_stag_eicarry = true`) and Q cells with E < 0. | Occasional values are expected in floor gas; growing counts are a warning sign. |
 | `CLEAN FWB cycle N t2s S faces K radiation momentum sum \|dp\| X x1 faces sum dp Y` | `clean_stag_fwb`: the radiation momentum of the well-balancing residuals of this solve. | Diagnostic. |
 | `CLEAN FCONE cycle N t2s S faces K momentum cut sum \|dF\| V/c^2 X` | `clean_stag_fcone` scaled K faces back to \|F\| <= cE; X is the momentum removed. | Should stay small compared with the radiation momentum. |
-| `CLEAN FLIM ...` | The same for `clean_stag_flim` (off in production). | - |
 | `CLEAN WBFCT cycle N t2s S rounds R left K kept X` | `clean_wb_fct`: the limiter rounds of the write-back; `left` = cells still limited after the last round. | `left` > 0 means the limiter could not fully protect E > e_floor in those cells. |
 | `CLEAN MCAP cycle N t2s S: K face momentum terms at the cap h chi_f E in the last pass` | Face momentum exchange terms at their cap. | Diagnostic. |
 | `CLEAN LZB cycle N t2s S ledger X` | 3-D spherical polar: the radiation's L_z ledger (stored in the restart file). | Use with `Lz_tot` in the history. |
-| `CLEAN RETRY ...` | With `clean_retry_budget = true`: a redone solve converged to the budget tolerance. | - |
 | `CLEAN KPOS`, `CLEAN KREAL`, `CLEAN XPAT` | Only with those (non-production) keys. | - |
 | `DT_RETRY cycle=N t=T dt A -> B reason=R resid=X cut K` | A cycle is taken again with a smaller dt. `reason`: NON-CONVERGED, resid>implicit_resid_fatal, eint<=0, time2_reject, vkick, floor_pay_unpaid, forced. | A few per run are normal for dynamic stars; many in a row mean the run is in trouble. |
 | `DT_RETRY recovered cycle=N ...` | The dt cap that dt_retry imposed is lifted. | - |
@@ -288,7 +286,7 @@ block of `<rad_m1>`, `<time>` and `<hydro>` lines. The ones that matter for the 
 - `<rad_m1>/scheme = clean currently needs a uniform mesh and chat = c`, `... on spherical
   polar needs ... closure = vet_col with vet_gd`, `force_reference = wb_arad(_md) ... needs
   ... force_reference_work = split`, `clean_stag_fschur cannot take this mesh (nghost >= 3,
-  MeshBlock size, uniform mesh)`, `clean_stag_mg_tile N (or <mesh>/layout_tile) needs ...`:
+  MeshBlock size, uniform mesh)`, `<mesh>/layout_tile N needs ...`:
   set-up checks; the message says which key or mesh property to change.
 - `### FATAL ERROR in src/main.cpp: a key that places the cells differs from the restart
   file`: a restart deck changes the grid; restart with the grid the file was written with.

@@ -73,7 +73,7 @@
         } else {
           if (typ == 2) {
             iv = VgdInnerFace(acc, fC, i, emi, iemit, bfc, cx1f(m,i), cx1v(m,i),
-                              cx1v(m,i+1), p2, ch0, ds, s0, izf);
+                              cx1v(m,i+1), p2, ch0, ds, s0);
           } else {
             // the intensity of a stencil cell: its owner's interior when on this rank
             // (stream order: shell iu is complete; the other branch of shell i, which

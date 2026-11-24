@@ -72,9 +72,6 @@ void RadiationM1::VetColInit() {
   // vet_col_reflect_top: only on sp with a reflecting outer x1 of the M1 solve
   vcol_rtop = vcol_rtop && vcol_sph && (ibc_x1max == M1_IBC_REFLECT);
   vcol_sqf = vcol_sqf && vcol_sph && vcol_sq && impl_mface_lin;
-  if (vcol_rtop && !(vcol_amax >= 0.0 && vcol_amax < 1.0)) {
-    VcolFatal("vet_col_reflect_amax must be in [0, 1)");
-  }
   const int ie = indcs.ie;
   // (the per-column formal solution's quadrature tables went with VetColBuild: under
   // scheme = clean the closure is vet_gd's, which reads tau_ten, vcol_q and the
@@ -120,8 +117,7 @@ void RadiationM1::VetColReport() {
             << ((vcol_ncall > 0.0) ? (1.0e3*vcol_time/vcol_ncall) : 0.0)
             << " ms per build" << std::endl;
   if (vlat_on) {
-    std::cout << "<rad_m1> vet_col_lat: " << vlat_ncall << " sweeps (incl. the "
-              << "first build's " << vlat_iinit << " inflow iterations), " << vlat_time
+    std::cout << "<rad_m1> vet_col_lat: " << vlat_ncall << " sweeps, " << vlat_time
               << " s (rank 0, fenced), "
               << ((vlat_ncall > 0.0) ? (1.0e3*vlat_time/vlat_ncall) : 0.0)
               << " ms per sweep; lateral reads clamped to the ghost band (rank 0, "
@@ -159,8 +155,8 @@ void RadiationM1::VetColReport() {
         std::cout << "<rad_m1> cs list builds (rank 0 s): mask kernel "
                   << vgd_cstb_k << ", download+check " << vgd_cstb_d << ", mark exchange "
                   << vgd_cstb_m << ", host lists " << vgd_cstb_h << ", upload "
-                  << vgd_cstb_u << "; mask stride " << vgd_csper
-                  << (vgd_cspad ? " (padded)" : "") << std::endl;
+                  << vgd_cstb_u << "; mask stride " << vgd_csper << " (padded)"
+                  << std::endl;
       }
       std::cout << "<rad_m1> vet_gd vet_path = " << ((vet_path != 0) ? "cells" : "none")
                 << ": subdivided steps (ALL ranks, all sweeps) " << vgd_npath
@@ -192,7 +188,7 @@ void RadiationM1::VetColReport() {
                     << "(other set) " << oos2 << std::endl;
         }
       }
-      if (vgd_hcomp > 0 && vgd_hl_mb > 0) {
+      if (vgd_hcomp > 0) {
         std::cout << "<rad_m1> (rank 0) vet_gd halo lists "
                   << vgd_hl_nmade << " made, " << vgd_hl_bytes/1048576.0 << " MB of "
                   << vgd_hl_cap/1048576.0 << " (key " << vgd_hl_mb
@@ -212,15 +208,6 @@ void RadiationM1::VetColReport() {
                 << " (group " << vgd_hxb_g << ", " << vgd_hxb_t << " s, list reallocs "
                 << vgd_hxb_nrealloc << "); table prefetch 1"
                 << " swapped in " << vgd_tab_nswap << " of the rotations" << std::endl;
-      if (vgd_ovl_g > 0 || vgd_fuse_h > 1) {
-        std::cout << "<rad_m1> (rank 0) vet_gd_overlap=" << vgd_ovl_g
-                  << " split shells " << vgd_ovl_nsplit << " (remote items "
-                  << ((vgd_ovl_nall > 0.0) ? vgd_ovl_nrem/vgd_ovl_nall : 0.0)
-                  << " of all), unsplit " << vgd_ovl_nfull
-                  << (vgd_ovl_nofit ? " (over vet_gd_overlap_mb)" : "")
-                  << "; vet_gd_fuse_shells=" << vgd_fuse_h << " skipped exchanges "
-                  << vgd_fuse_nskip << std::endl;
-      }
     }
   }
 }

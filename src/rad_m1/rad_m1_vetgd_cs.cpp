@@ -711,7 +711,7 @@ void RadiationM1::VetGdCsInit() {
     vgd_csncl = std::min(std::max(2, vra_k), static_cast<int>(M1_VGD_CSCL_MAX));
   }
   vgd_csper = static_cast<int64_t>(vgd_n)*indcs.nx1;
-  if (vgd_cspad) {vgd_csper = 16*((vgd_csper + 15)/16);}
+  vgd_csper = 16*((vgd_csper + 15)/16);   // padded: the packed-word list path
   for (int c = 0; c < vgd_csncl; ++c) {
     vgd_cscl[c].alpha = -9.0;
     vgd_cscl[c].use = 0;
@@ -1650,7 +1650,6 @@ void RadiationM1::VetGdCsSweep() {
   const int nc = vgd_csn;
   const Real h = 0.5*M_PI/nc;
   const bool bfc = vet_bc_face;
-  const bool izf = vgd_izf && (ibc_x1min == M1_IBC_REFLECT) && lcut == 0;   // hrsplit
   const bool spl = vet_seg_split;
   const int spe = VetSegMode();
   const int vim = vet_interp;
