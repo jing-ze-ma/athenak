@@ -344,11 +344,13 @@ FloorVolW EquationOfState::FloorVol() const {
 //----------------------------------------------------------------------------------------
 //! \fn void EquationOfState::FloorBook()
 //! \brief adds the mass and energy created by the floors, weighted by flr_w, to the
-//! event counters flr_dm_v and flr_de_v
+//! event counters flr_dm_v and flr_de_v, and the active cells the density floor raised
+//! (flr_dn)
 
-void EquationOfState::FloorBook(const Real dm, const Real de) {
+void EquationOfState::FloorBook(const Real dm, const Real de, const int dn) {
   pmy_pack->pmesh->ecounter.flr_dm_v += flr_w*dm;
   pmy_pack->pmesh->ecounter.flr_de_v += flr_w*de;
+  pmy_pack->pmesh->ecounter.flr_dn += dn;
 }
 
 //----------------------------------------------------------------------------------------
