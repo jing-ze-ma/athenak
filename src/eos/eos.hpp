@@ -113,6 +113,10 @@ struct EOS_Data {
   // <block>/efloor_from_ekin: the energy floor is paid from the kinetic energy (total
   // energy fixed, momentum rescaled); energy is created only when E < e_floor
   bool efloor_from_ekin = false;
+  // <hydro>/floor_from_ekin (read only when named): E fixed in the inversion; the
+  // velocity ceiling's kinetic energy becomes heat and a cell below e(rho, tfloor) pays
+  // the deficit from its kinetic energy (x3 momentum kept on spherical polar: L_z exact)
+  bool ekin_heat = false, ekin_keep_x3 = false;
 
   // <block>/efloor_as_tfloor: whenever a floor fires or the table inversion is clamped,
   // the internal energy is reset to e(rho, T) at the temperature settled on (at least

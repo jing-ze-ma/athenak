@@ -272,6 +272,18 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  if (pin->DoesParameterExist(bk, "floor_from_ekin")) {
+    eos_data.ekin_heat = pin->GetBoolean(bk, "floor_from_ekin");
+    if (eos_data.ekin_heat && (bk.compare("hydro") != 0 ||
+                               pin->GetString(bk, "eos").compare("general") != 0 ||
+                               pp->pmesh->use_cubed_sphere)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<" << bk << ">/floor_from_ekin: general-EOS hydro, "
+                << "Cartesian or spherical polar only" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    eos_data.ekin_keep_x3 = pp->pmesh->use_spherical_polar;
+  }
   eos_data.sfloor = pin->GetOrAddReal(bk,"sfloor",(FLT_MIN));
   // cubed sphere: conserved floor writes deferred to GnomonicEquiangleRaiseVel{,MHD}
   eos_data.defer_cons_floors = pp->pmesh->use_cubed_sphere;
@@ -279,7 +291,7 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
   // original floor kernels when no floor switch is on (EOS_Data::floors_legacy)
   eos_data.floors_legacy = !(eos_data.dfloor_keep_velocity ||
                              (eos_data.vceil > 0.0) ||
-                             eos_data.efloor_from_ekin ||
+                             eos_data.efloor_from_ekin || eos_data.ekin_heat ||
                              eos_data.efloor_as_tfloor);
 
   // <block>/tfloor_kelvin: tfloor in kelvin.  The code temperature of an ideal gas
