@@ -469,6 +469,8 @@ void RadiationVet::CleanPreflight(ParameterInput *pin) {
     {"rad_vet/clean_stag_kreal", "!"}, {"rad_vet/clean_stag_xsweep", "!"},
     {"rad_vet/clean_stag_xpat", "!"}, {"rad_vet/clean_thin_donor", "!"},
     {"rad_vet/clean_stag_stencil", "=true"}, {"rad_vet/clean_stag_sbimp", "!"},
+    {"rad_vet/clean_cs_lat_wb", "!"}, {"rad_vet/clean_stag_thinf_held", "!"},
+    {"rad_vet/clean_face_hclat", "!"},
     // (removed in phase B, named by production decks or restart files: the old solve's
     // seam clamp, the pass print, the fixed set's band reach (the bound's band covers
     // it); the halo depth cap and the ray cut only at their kept values)
@@ -2720,7 +2722,7 @@ void RadiationVet::CleanStagBracket() {
   x.feedback = false;   // (the gas terms read the last iterate's work vectors)
   const Real efl = e_floor;
   const bool rat = cln_rayratio, thf = cln_thinf;
-  const bool hct = cln_hctau, hcl = cln_hclat;
+  const bool hct = cln_hctau;
   const Real rmn = cln_raymin;
   auto iw_ = iw;
   CleanFor("cln_rayj", nmb1, ks, ke, js, je, is, ie,
@@ -2729,28 +2731,6 @@ void RadiationVet::CleanStagBracket() {
   });
   CleanGhostFill(cln_w, CLW_Z, 1);
   CleanStagCsLateral(CLW_Z);
-  // (clean_stag_thinf_held: theta = min(1, max(J, P)/(clean_ray_min E_old)) of every
-  // cell in CLW_V, a Krylov scratch slot, P the largest rays' flux out of one of its
-  // faces: 1 where the rays carry the cell (as its closure, a beam's transit cell
-  // included), down to 0 where they hold less than clean_ray_min of its E)
-  const bool thh = cln_thinh;
-  if (thh) {
-    CleanFor("cln_thheld", nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      Real p = 0.0;
-      for (int d = 0; d < x.nf; ++d) {
-        const int n = (d == 0) ? CLN_FX : ((d == 1) ? CLN_F2 : CLN_F3);
-        const bool up = x.cub && d > 0 && ((d == 1) ? j == x.je : k == x.ke);
-        const Real fh = up ? x.cs(m,CLN_FH+4*(d-1),k,j,i) :
-                        x.cs(m,n,k+(d == 2),j+(d == 1),i+(d == 0));
-        p = fmax(p, fmax(fh, -x.cs(m,n,k,j,i)));
-      }
-      const Real e = rmn*x.w(m,CLW_EO,k,j,i);
-      const Real h = fmax(x.cs(m,CLN_JR,k,j,i), p);
-      x.w(m,CLW_V,k,j,i) = (e > h) ? h/e : 1.0;
-    });
-    CleanGhostFill(cln_w, CLW_V, 1);   // (its lateral sums: none, CLW_L keeps J's)
-  }
   CLEAN_HIPX(const CleanArgs *px = CleanDevArgs(x, 0);)
   const bool hrm = cln_hface;
   for (int dir = 0; dir < x.nf; ++dir) {
@@ -2826,19 +2806,6 @@ void RadiationVet::CleanStagBracket() {
         const Real ga = (tg[(fr0 > 0.0) ? 2 : 3] - 1.0)*fy;
         fy = (1.0 - e)*(wl*hl + wr*hr) + e*(fy + ga);
       }
-      // (clean_face_hclat: the lateral faces of sp / cs the mean of the two cells' H along
-      // the face normal, the old production's hc face value there (implicit_thin_hcface_gd
-      // = x1); a cubed-sphere seam ghost's H from its own axes, CleanCsSlot)
-      if (hcl && dir > 0 && (x.sph || x.cub)) {
-        auto hn = [&](const int kk, const int jj, const int ii) {
-          Real sg = 1.0;
-          const int q = x.cub ? CleanCsSlot(x, dir, m, k, j, i, kk, jj, ii, false, sg)/2
-                              : dir;
-          return sg*(x.cs(m,CLN_HP+q,kk,jj,ii) + x.cs(m,CLN_HM+q,kk,jj,ii))*
-                 x.cs(m,CLN_JR,kk,jj,ii);
-        };
-        fy = 0.5*(hn(k-dk, j-dj, i) + hn(k, j, i));
-      }
       // (clean_stag_thinf: the rest of the rays' face flux, dd = F_y - h+ J_L - h- J_R,
       // in the face half ranges, tilted in proportion to their sizes (the shrinking one
       // at most to 0, the rest then on the other), per J of the donor, at least
@@ -2856,16 +2823,10 @@ void RadiationVet::CleanStagBracket() {
         const Real hm = !(s > 0.0) ? hr : (cut ? ((tl < 0.0) ? fmin(fr, 0.0) : 0.0) : tr);
         const Real el = fmax(x.w(m,CLW_EO,k-dk,j-dj,i-di), 0.0);
         const Real er = fmax(x.w(m,CLW_EO,k,j,i), 0.0);
-        // (clean_stag_thinf_held: the share theta of the donor's E the rays carry moves
-        // with their flux factor, the rest with the donor's own half range: a convex
-        // blend, realisable; a ray-shadowed donor (J << E) is no dam)
         const Real gp = fmin(hp/fmax(jl, rmn*el), 1.0),
                    gm = fmax(hm/fmax(jr, rmn*er), -1.0);
-        const Real ql = thh ? x.w(m,CLW_V,k-dk,j-dj,i-di) : 1.0;
-        const Real qr = thh ? x.w(m,CLW_V,k,j,i) : 1.0;
-        auto &fp = x.fc[dir](m,CLF_HP,k,j,i), &fm = x.fc[dir](m,CLF_HM,k,j,i);
-        if (jl > 0.0) fp = thh ? ql*gp + (1.0 - ql)*fp : gp;
-        if (jr > 0.0) fm = thh ? qr*gm + (1.0 - qr)*fm : gm;
+        if (jl > 0.0) x.fc[dir](m,CLF_HP,k,j,i) = gp;
+        if (jr > 0.0) x.fc[dir](m,CLF_HM,k,j,i) = gm;
         x.fc[dir](m,x.fdg,k,j,i) = 0.0;
         return;
       }

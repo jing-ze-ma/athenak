@@ -338,7 +338,6 @@ struct CleanArgs {
   // radius vector; vol, area, dxf and x1v, x1f as above, g the geometry (CLG_*) of
   // CleanCsGeometry
   bool cub;
-  bool lwb = false;   // clean_cs_lat_wb (CleanStagCsLat)
   bool ys = false;    // clean_stag_lat_sums: the lateral sums Y off the cubed sphere
   bool lzbf = false;  // clean_lz_bnd_free on spherical polar (CleanFaceStress)
   DvceArray5D<Real> yl;   //   (cln_yl: CLW_L + 3 q on the cubed sphere)
@@ -797,11 +796,7 @@ int CleanCsSlot(const CleanArgs &x, const int dir, const int m, const int kf,
 //! \fn Real CleanStagCsLat
 //! \brief cubed sphere: n.(Y_p + Y_p') of cell (k,j,i) (CleanStagCsLateral), n the
 //! normal of its face (kf,jf,iff) normal to dir and p, p' the cell's two face families
-//! other than the face's, in the owner's axes (CleanCsSlot).  clean_cs_lat_wb, a lateral
-//! face: n R in place of n, R the rotation of the cell's radial direction a (its centroid
-//! direction, halo-exchanged) onto b, a projected into the face plane: a radial sum adds
-//! n.b = 0, so a spherically symmetric P gives the face no force (the equiangular cells
-//! are not mirror images, n.a_L + n.a_R != 0); O(dtheta^2) for a smooth P
+//! other than the face's, in the owner's axes (CleanCsSlot)
 
 KOKKOS_INLINE_FUNCTION
 Real CleanStagCsLat(const CleanArgs &x, const int dir, const int m, const int kf,
@@ -810,25 +805,6 @@ Real CleanStagCsLat(const CleanArgs &x, const int dir, const int m, const int kf
   const int q = x.cub ? CleanCsSlot(x, dir, m, kf, jf, iff, k, j, i, false, s)/2 : dir;
   const int p = (q == 0) ? 1 : 0, pp = (q == 2) ? 1 : 2;
   for (int c = 0; c < 3; ++c) n[c] = x.cub ? x.g.At<CLG_N>(m,3*dir+c,kf,jf,iff) : (c == q);
-  if (x.lwb && dir > 0) {   // (n R = n - w x n + w x (w x n)/(1 + a.b), w = a x b)
-    Real a[3], b[3], aa = 0.0, an = 0.0, bb = 0.0, ab = 0.0;
-    for (int c = 0; c < 3; ++c) {
-      a[c] = x.g.At<CLG_X>(m,c,k,j,i);
-      aa += a[c]*a[c];
-      an += a[c]*n[c];
-    }
-    for (int c = 0; c < 3; ++c) {b[c] = a[c] - an*n[c]; bb += b[c]*b[c];}
-    aa = 1.0/std::sqrt(aa);
-    bb = 1.0/std::sqrt(bb);
-    for (int c = 0; c < 3; ++c) {a[c] *= aa; b[c] *= bb; ab += a[c]*b[c];}
-    const Real w[3] = {a[1]*b[2] - a[2]*b[1], a[2]*b[0] - a[0]*b[2],
-                       a[0]*b[1] - a[1]*b[0]};
-    const Real u[3] = {w[1]*n[2] - w[2]*n[1], w[2]*n[0] - w[0]*n[2],
-                       w[0]*n[1] - w[1]*n[0]};
-    const Real v[3] = {w[1]*u[2] - w[2]*u[1], w[2]*u[0] - w[0]*u[2],
-                       w[0]*u[1] - w[1]*u[0]};
-    for (int c = 0; c < 3; ++c) n[c] += v[c]/(1.0 + ab) - u[c];
-  }
   for (int c = 0; c < 3; ++c) {
     d += n[c]*(x.cub ? x.w(m,CLW_L+3*p+c,k,j,i) + x.w(m,CLW_L+3*pp+c,k,j,i)
                      : x.yl(m,3*p+c,k,j,i) + x.yl(m,3*pp+c,k,j,i));

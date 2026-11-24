@@ -1801,7 +1801,6 @@ class RadiationVet {
   bool cln_lzbook = false;  // (the L_z ledger: cubed sphere, or 3-D spherical polar)
   bool cln_lzt = false;     // clean_cs_lz_tel
   bool cln_lzbf = false;    // clean_cs_lz_bnd_free
-  bool cln_latwb = false;   // clean_cs_lat_wb
   bool cln_thinf = false;   // clean_stag_thinf
   DvceArray1D<Real> cln_mclc;    // (the Newton passes' momentum cap: the terms it moved)
   bool cln_fwb = false;     // clean_stag_fwb
@@ -1815,7 +1814,6 @@ class RadiationVet {
   bool cln_fwbok = false;
   bool cln_fwbt2 = false;   // clean_stag_fwb_t2
   DvceArray1D<Real> cln_fconc;   // (fcone: the faces scaled, their momentum sum)
-  bool cln_thinh = false;   // clean_stag_thinf_held
   int cln_xdfz = 0;         // clean_stag_xdonor_freeze
   bool cln_xdh = false;     // (its hold in this pass)
   // (clean_cs_lz_abs = 2: the L_z V R (dp_torque - dp) the gas does not take, booked as
@@ -1899,7 +1897,6 @@ class RadiationVet {
   bool cln_wfst = false;        // clean_w_fse_tau
   bool cln_hctau = false;       // clean_face_hctau
   bool cln_jse = false;         // clean_face_jse
-  bool cln_hclat = false;       // clean_face_hclat
   bool cln_farea = false;       // clean_face_area
   bool cln_bcarea = false;      // clean_bc_area
   bool cln_rsrel = false;       // clean_ray_source_relaxed

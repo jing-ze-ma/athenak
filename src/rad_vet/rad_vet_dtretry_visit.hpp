@@ -563,7 +563,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_lzbook", cln_lzbook);
   v.value("cln_lzt", cln_lzt);
   v.value("cln_lzbf", cln_lzbf);
-  v.value("cln_latwb", cln_latwb);
   v.value("cln_thinf", cln_thinf);
   v.view("cln_mclc", cln_mclc);
   v.value("cln_fwb", cln_fwb);
@@ -577,7 +576,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_fwbok", cln_fwbok);
   v.value("cln_fwbt2", cln_fwbt2);
   v.view("cln_fconc", cln_fconc);
-  v.value("cln_thinh", cln_thinh);
   v.value("cln_xdfz", cln_xdfz);
   v.value("cln_xdh", cln_xdh);
   v.value("cln_lzl", cln_lzl);
@@ -654,7 +652,6 @@ void radvet::RadiationVet::DtRetryVisit(V &v) {
   v.value("cln_wfst", cln_wfst);
   v.value("cln_hctau", cln_hctau);
   v.value("cln_jse", cln_jse);
-  v.value("cln_hclat", cln_hclat);
   v.value("cln_farea", cln_farea);
   v.value("cln_bcarea", cln_bcarea);
   v.value("cln_rsrel", cln_rsrel);

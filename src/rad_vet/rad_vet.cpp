@@ -103,9 +103,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_face_jse_cell (default off): its factor on the donor cell's h+- (old
     // M1ThinJs), not on the reconstructed face value
     cln_jsec = pin->GetOrAddBoolean("rad_vet","clean_face_jse_cell",false);
-    // clean_face_hclat (default off): the bracket's F_y on the lateral faces of sp / cs is
-    // the mean of the two cells' H (old production hc with implicit_thin_hcface_gd = x1)
-    cln_hclat = pin->GetOrAddBoolean("rad_vet","clean_face_hclat",false);
     // clean_face_area (default off): the sp / cs streaming share in area form
     // (CleanStagArea) also under clean_stag_gflux: its h+- are the donor cell's rays
     cln_farea = pin->GetOrAddBoolean("rad_vet","clean_face_area",false);
@@ -492,12 +489,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     // face, as its share of the face's conservative term (the cut F's absorption not
     // withheld), so gas + radiation momentum and L_z are exact; E pays the kinetic energy
     cln_fcgas = cln_fcone && pin->GetOrAddBoolean("rad_vet","clean_stag_fcone_gas",false);
-    // clean_stag_thinf_held (default off, the v20.7 value, USER 11-21): the thin flux
-    // factor of a donor blended by theta = min(1, max(J, P)/(clean_ray_min E_old)), P its
-    // largest ray outflow: theta g(rays) + (1 - theta) h (its own half range); a
-    // ray-shadowed donor is no dam
-    cln_thinh = cln_thinf &&
-        pin->GetOrAddBoolean("rad_vet","clean_stag_thinf_held",false);
     // clean_stag_xdonor_freeze (default 4; 0 = off): from this pass of a solve on, the
     // xdonor cross flux C is held (CleanStagXDonor): its donor side and cap no longer
     // switch from pass to pass (HG C2D: a 1-cell donor/cap flip, period-2 passes at 2e-4)
@@ -551,15 +542,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     if (cln_lzt) cln_lzbf = pin->GetOrAddBoolean("rad_vet","clean_cs_lz_bnd_free",nw);
     if (cln_lzt && cln_lza != 2) {
       std::cout << "### FATAL ERROR: <rad_vet>/clean_cs_lz_tel needs the cubed sphere "
-                << "and clean_layout = staggered" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    // clean_cs_lat_wb (default off): a lateral face projects its cells' lateral stress
-    // sums after the rotation of the cell's radial direction into the face plane, so
-    // that a spherically symmetric P gives no lateral face force (CleanStagCsLat)
-    cln_latwb = stag("clean_cs_lat_wb", false);
-    if (cln_latwb && cln_lza != 2) {
-      std::cout << "### FATAL ERROR: <rad_vet>/clean_cs_lat_wb needs the cubed sphere "
                 << "and clean_layout = staggered" << std::endl;
       std::exit(EXIT_FAILURE);
     }
