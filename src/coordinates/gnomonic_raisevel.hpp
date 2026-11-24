@@ -70,13 +70,12 @@ void GnomonicRaiseVelFloors(const Real c, const EOS_Data &eos_, const bool gen_,
     }
   }
   // floor_from_ekin (eos_.ekin_heat): the kinetic energy made ekt with E fixed, keeping
-  // p.phi_hat = m_a phi^a (L_z; f2, f3 the covariant phi_hat) where it fits (EkinScale)
+  // p.phi_hat = m_a phi^a (L_z; f2, f3 the covariant phi_hat) unscaled (EkinScale)
   auto ekin_to = [&](const Real ekt) {
     const Real pf = (m2*(f2 - c*f3) + m3*(f3 - c*f2))/det;
     Real fs;
-    bool kp;
-    ekin = EkinScale(ekin, 0.5*pf*pf/d, ekt, fs, kp);
-    const Real g = kp ? (1.0 - fs)*pf : 0.0;
+    ekin = EkinScale(ekin, 0.5*pf*pf/d, ekt, fs);
+    const Real g = (1.0 - fs)*pf;
     m1 *= fs; m2 = fs*m2 + g*f2; m3 = fs*m3 + g*f3;
     v1 = m1/d; v2 = (m2 - c*m3)/(d*det); v3 = (m3 - c*m2)/(d*det);
   };
