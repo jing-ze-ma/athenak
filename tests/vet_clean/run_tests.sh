@@ -7,7 +7,7 @@
 #   --build      configure and build a CPU binary in <repo>/build_vettest first (the
 #                recipe of docs/vet_clean/BUILD.md); without --exe or --build the script
 #                uses <repo>/build_vettest/src/athena if it exists, else builds it
-#   --quick      the short subset (13 tests, ~1 min on 48 cores)
+#   --quick      the short subset (15 tests, ~1 min on 48 cores)
 # Exit status 0 if every test passes.
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)

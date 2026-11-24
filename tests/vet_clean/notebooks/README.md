@@ -18,6 +18,7 @@ PASS / FAIL line.
 | `wedge_sym.ipynb` | `wedge_sym` | F_phi per phi column across the wedge; the wedge-mean F_phi of each wedge vs the criterion |
 | `floor_pay.ipynb` | `floor_pay` | total-energy drift from cycle 1 on; the floor energy paid from the radiation per cycle |
 | `idort.ipynb` | `idort_*` (8 tests) | crossing beams (image and cuts vs the exact beams), shadow (image, cuts vs the exact attenuated beams), emitting cylinder (E, F vs exact transport), radiative shocks (rho, T vs Lowrie & Edwards), cooling at large dt (T(t) vs the exact ODE) |
+| `radiation.ipynb` | `radshock`, `radshock_m5`, `diffusion`, `marshak`, `advect_pulse`, `advect_uniform`, `shadow` | the classic radiation tests: shock profiles vs Lowrie & Edwards; diffusing pulses vs the exact Gaussian and the diffusion-coefficient error vs tau_cell; Marshak-wave profiles; the advected vs the shifted resting pulse; E maps with and without the clump and the geometric umbra |
 
 ## How to run
 
@@ -36,11 +37,11 @@ Settings (environment variables, read by the first cell of each notebook):
   record `WORKDIR/<test>.json` exists is loaded, not rerun: delete `WORKDIR/<test>*` to rerun.
 - `M1_NB_THREADS`: OpenMP threads per run (default 4).
 
-With 4 threads per run most notebooks take under a minute; `order.ipynb` and `wb.ipynb`
-(the cubed-sphere `wb_cs`) and `idort.ipynb` take 2-5 min.
+With 4 threads per run most notebooks take under a minute; `order.ipynb`, `wb.ipynb`
+(the cubed-sphere `wb_cs`), `idort.ipynb` and `radiation.ipynb` take 2-5 min.
 `nbutil.py` holds the two shared helpers: `suite()` (runs `run_tests.py --only TEST --keep
 --record`) and `verdict()` (the suite's PASS / FAIL check against `ref/references.json`).
 The committed notebooks were executed with the CPU binary of commit 30d0e3461 (Python 3.13,
 numpy, matplotlib, nbconvert 7); their key plots are exported to `docs/vet_clean/figures/`
-(`export_figures.py`). All eleven also run with `nbconvert` on Python 3.6 (numpy 1.19, matplotlib 3.3, nbconvert 6.0). `jupyter lab` needs JupyterLab,
+(`export_figures.py`). All twelve also run with `nbconvert` on Python 3.6 (numpy 1.19, matplotlib 3.3, nbconvert 6.0). `jupyter lab` needs JupyterLab,
 which `pip install jupyter` does not install on Python 3.6; use `jupyter notebook` there.

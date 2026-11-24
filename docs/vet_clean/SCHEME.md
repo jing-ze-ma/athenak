@@ -100,6 +100,8 @@ reason it holds, where it stops holding, and the test in `tests/vet_clean` that 
 | well-balance | equilibrium envelopes stay at rest to about 1e-9 of the sound speed |
 | order | second order in space and time, asymptotically |
 | radiation-acoustic waves | phase speed and damping right in every trapping regime |
+| diffusion limit | the right diffusion coefficient at any cell optical depth (asymptotic preserving) |
+| moving media | radiation advected with the gas; comoving diffusion Galilean invariant |
 | restart, dt retry | bitwise |
 | reproducibility | bitwise across rank counts; across tile layouts with the conditions below |
 | CPU / GPU | agreement to round-off, not bitwise |
@@ -215,7 +217,9 @@ conservation claim (the shell decks have closed walls that exert forces).
 
 All such events are counted in the end-of-run `vet-positivity` line. Test: every suite deck
 runs with no floor raise, no energy created and no `CLEAN WARNING` (`floor_pay` raises the gas
-temperature on purpose, and pays it from the radiation).
+temperature on purpose, and pays it from the radiation); `diffusion` (a top-hat in E at
+tau_cell = 1e4 stays within [background, background + amplitude] to round-off) and `marshak`
+(a Marshak wave into a cold slab: E and T_gas positive and below the bath values).
 
 ### Well-balance: equilibrium envelopes stay at rest
 
@@ -274,7 +278,9 @@ the moment flux in the vacuum about 20 % above it.
 Test: `idort_beams` (L1 of E and the beam energy within 5 % of 0.777 and 1.785), `idort_shadow`, `idort_shadow_gl` (L1
 0.014 and 0.013), `idort_cylinder` (E outside 0.013), `nlte_eps1e-1`, `nlte_eps1e-4` (J
 against exact transport, L1 1e-4 and 1.3e-3); `idort_beams_mb` (4 MeshBlocks: identical in
-tile mode).
+tile mode); `shadow` (a clump lit by an isotropic bath: 0.6 % of the unshadowed radiation is
+left in the geometric umbra behind it, bound 2 %; regions whose sight lines miss the clump
+unchanged to 2 %).
 
 ### Radiation hydrodynamics: radiative shocks and stiff exchange
 
@@ -287,7 +293,32 @@ conserved.
 
 Test: `idort_radshock_m2`, `idort_radshock_m5` (L1 of rho, v, T_gas, T_rad 2.5e-4 to 2.2e-3,
 each within 5 % of the reference), `idort_thermal_eq2` (error of T within 5 % of 2e-3 after
-5 steps, energy drift <= 1e-13), `thermal_eq`.
+5 steps, energy drift <= 1e-13), `thermal_eq`; `radshock`, `radshock_m5` (the same shocks
+with the production closure: L1 of rho and T_rad about 0.5 % and 1 %, within 5 % of the
+reference values; the difference from the Eddington run is the closure in the thin
+precursor).
+
+### Diffusion limit: asymptotic preserving
+
+In an optically thick medium the moment equations must reduce to diffusion with
+D = c/(3 rho kappa) however thick a single cell is; a scheme without this property is too
+diffusive by a factor ~tau_cell. In the thick limit the staggered face flux is the compact
+diffusion flux $-(c/\chi_f)\,\partial_n(\mathsf D E)$ with no added dissipation, so the
+diffusion coefficient is right at every tau_cell.
+
+Test: `diffusion` (a Gaussian pulse: variance growth within 2e-3 of 2 D t at tau_cell = 10,
+1e3, 1e5 and 1e-4 in 2-D; measured 8e-4, 8e-8, 1e-10, 9e-7).
+
+### Moving media
+
+The equations are mixed frame with the $O(v/c)$ and dynamic-diffusion $O(\beta^2)$ terms,
+and the face flux includes the advective flux of radiation carried by the gas, so radiation
+trapped in a moving gas moves with it and a uniform medium at the coupling's fixed point
+stays there.
+
+Test: `advect_pulse` (a diffusing pulse advected at v against the same pulse at rest shifted by
+v t: L1 <= 3e-3, measured 7e-4), `advect_uniform` (a uniform medium at 0.01 c: T changes by
+<= 1e-5, measured 1.4e-6).
 
 ### Phi mirror symmetry on narrow wedges
 

@@ -82,6 +82,27 @@ Gauss polar angles x 4096 azimuths and the cylinder's periodic images. Notes:
   were 4-27 % lower (Mach 5 rho: 1.7e-3, here 2.2e-3); the shock stays at the semi-analytic
   position (no shift needed).
 
+### Classic radiation tests
+
+The classic grey radiation tests (group `radiation`; decks `decks/rad_*.athinput`, ported from
+`inputs/tests/rad_vet_*` to the production clean scheme: `transport = implicit`, `closure =
+vet_sc`, the key block of the other Cartesian decks, Marshak radiation faces).
+
+| test | deck | what | criterion |
+|---|---|---|---|
+| `radshock`, `radshock_m5` | `rad_radshock_m2`, `rad_radshock_m5` | Lowrie & Edwards (2008, Shock Waves 18, 129) steady radiative shock, Mach 2 (subcritical) and 5 (supercritical), 256 cells, 2e-10 s from the semi-analytic profile, with the production closure (`idort_radshock_m*` runs them with `clean_closure = eddington`; same reference): L1 of rho, v, T_gas, T_rad | every L1 <= 1-2 %; L1 of rho, T_rad within 5 % of the reference (0.44 %, 1.1 %; Mach 5: 0.45 %, 0.75 %); E > 0 |
+| `diffusion` | `rad_diffusion` | Gaussian pulse in a static pure scatterer at tau_cell = 1, 10, 1e3, 1e5 and in 2-D (64^2, tau_cell 1e3): variance growth vs 2 D t, L1 vs the exact Gaussian; a top-hat at tau_cell = 1e4 (quick and full, ~20 s) | \|growth/(2 D t) - 1\| <= 2e-3 (1e-4 in 2-D) at tau_cell >= 10; L1 within 5 % of the reference; top-hat within [bg, bg + amplitude] to round-off; tau_cell = 1 reported only |
+| `marshak` | `rad_marshak` | non-equilibrium Marshak wave into a cold slab, constant c_v (no analytic solution: not Su & Olson) | E, T > 0 and <= the bath (maximum principle); E non-increasing into the slab; front x_f (T = T_b/2) within 5 % of the reference 0.535 |
+| `advect_uniform` | `rad_advect_uniform` | uniform thick medium at 0.01 c at the coupling's fixed point (quick and full, ~3 s) | max relative change of T <= 1e-5, of E <= 1e-4 |
+| `advect_pulse` | `rad_advect_pulse` | diffusing radiation pulse advected at 3e7 cm/s (Krumholz et al. 2007) vs the same pulse at rest shifted by v t | L1 <= 3e-3 at every dump; the last within 5 % of 7.2e-4 |
+| `shadow` | `rad_shadow` | opaque clump in a thin gas illuminated by a 1740 K bath (Hayes & Norman 2003), 3 light-crossing times, vs the run without the clump | radiation left in the geometric umbra behind the clump <= 2 % (measured 0.61 %); cells whose sight lines miss the clump unchanged to 2 % |
+
+Not ported: `beam`, `pulse1d` (free streaming of a set-up packet in vacuum: the gas is not
+initialised by the problem generator and the `vet_sc` formal solution has no source there, so
+the packet does not move); `jump`, `advect_shear` (no such `vet_test` in the problem
+generator); `equil`, `equil_table` (= `thermal_eq`), `atmosphere` (= `nlte_*`);
+`g5_pulse2d` is part of `diffusion`.
+
 Notes on the results of this release (465aff485):
 - **L_z.** `dLz` is the drift of `Lz_tot` (gas + radiation + the L_z ledger of the clean
   solve). It is round-off (2e-16) by construction: the ledger books what the step does not
@@ -126,7 +147,8 @@ Notes on the results of this release (465aff485):
 
 The reference values and tolerances are in `ref/references.json` (measured with commit
 512cf768a, CPU, GCC 13, `-ffp-contract=off`; reproduced to all printed digits on 465aff485 with
-the IA12.2 scheme keys of the decks; `radwave` measured there). Bitwise tests (restart, dt_retry, layout) need
+the IA12.2 scheme keys of the decks; `radwave` measured there; the classic radiation tests
+measured with 30d0e3461, CPU, GCC 13, MPCDF Orion). Bitwise tests (restart, dt_retry, layout) need
 no reference: they compare two runs of the same binary. `momentum_box` has only
 `"equal": {"warnings": 0}`: its dP is recorded, not bounded.
 
@@ -165,8 +187,8 @@ bitwise (an open item).
 
 `notebooks/` has one Jupyter notebook per test (conservation, thermal equilibrium, order,
 well-balancing, non-LTE, momentum box, restart, radiation-acoustic waves, narrow wedges,
-floors): each runs its test through this suite (or loads
-an existing run) and plots the result against the exact solution or the criterion. Only numpy,
+floors; `radiation.ipynb` for all the classic radiation tests): each runs its test through
+this suite (or loads an existing run) and plots the result against the exact solution or the criterion. Only numpy,
 matplotlib and jupyter are needed; see `notebooks/README.md`.
 
 ```bash

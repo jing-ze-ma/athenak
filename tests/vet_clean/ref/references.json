@@ -380,5 +380,143 @@
   "max": {
    "dEtot": 1e-13
   }
+ },
+ "diffusion": {
+  "_about": "Gaussian pulse in a static pure scatterer (the asymptotic-preserving diffusion limit, e.g. Jiang et al. 2012 ApJS 199 14): errD = variance growth / (2 D t) - 1 at tau_cell = 10, 1e3, 1e5 (bounded, the diffusion limit is exact as tau_cell -> inf); L1 vs the exact Gaussian of the diffusion equation (the 128-cell spatial error); errD_2d, L1_2d: the isotropic 2-D pulse (64^2, tau_cell 1e3); th_min, th_max: the top-hat at tau_cell = 1e4 minus background, minus amplitude (maximum principle: >= 0, <= 0); tau_cell = 1 (errD_tau1, L1_tau1: transport, not diffusion) is reported, not bounded",
+  "max": {
+   "errD": 0.002,
+   "errD_2d": 0.0001,
+   "th_max": 0.0
+  },
+  "min": {
+   "errD": -0.002,
+   "errD_2d": -0.0001,
+   "th_min": -1e-12
+  },
+  "near": {
+   "L1": [
+    0.001167,
+    0.05
+   ],
+   "L1_2d": [
+    0.006592,
+    0.05
+   ]
+  },
+  "equal": {
+   "warnings": 0
+  }
+ },
+ "radshock": {
+  "_about": "Lowrie & Edwards 2008 Shock Waves 18 129, Mach 2 subcritical, 256 cells, against the semi-analytic profile ref/idort_radshock_m2.txt (grey non-equilibrium DIFFUSION, P = E/3) with the PRODUCTION closure (idort_radshock_m2 runs the same shock with clean_closure = eddington): L1 = mean |q - q_ref| / mean |q_ref|. Most of the ~1 % in T_rad is the closure (2.5e-4 with eddington); the bounds are about 2 x the measured values, the near values pin the accuracy",
+  "max": {
+   "L1_rho": 0.01,
+   "L1_v": 0.01,
+   "L1_Tg": 0.015,
+   "L1_Tr": 0.02
+  },
+  "min": {
+   "Emin": 1e-300
+  },
+  "near": {
+   "L1_rho": [
+    0.004414,
+    0.05
+   ],
+   "L1_Tr": [
+    0.01069,
+    0.05
+   ]
+  },
+  "equal": {
+   "warnings": 0
+  }
+ },
+ "radshock_m5": {
+  "_about": "as radshock, Mach 5 supercritical (ref/idort_radshock_m5.txt)",
+  "max": {
+   "L1_rho": 0.01,
+   "L1_v": 0.01,
+   "L1_Tg": 0.015,
+   "L1_Tr": 0.015
+  },
+  "min": {
+   "Emin": 1e-300
+  },
+  "near": {
+   "L1_rho": [
+    0.004539,
+    0.05
+   ],
+   "L1_Tr": [
+    0.00746,
+    0.05
+   ]
+  },
+  "equal": {
+   "warnings": 0
+  }
+ },
+ "marshak": {
+  "_about": "non-equilibrium Marshak wave with constant c_v (not Su & Olson 1997, whose c_v ~ T^3 the ideal EOS cannot represent): no analytic solution, so a robustness criterion (E, T_gas > 0; Emax = max E / E_b and Tmax = max T / T_b <= 1, the maximum principle; Erise = largest increase of E into the slab / E_b, round-off) plus the front x_f (T_gas = T_b / 2 at t = 200) as a regression value",
+  "max": {
+   "Emax": 1.0,
+   "Tmax": 1.0,
+   "Erise": 1e-12
+  },
+  "min": {
+   "Emin": 1e-300,
+   "Tmin": 1e-300
+  },
+  "near": {
+   "x_front": [
+    0.5353,
+    0.05
+   ]
+  },
+  "equal": {
+   "warnings": 0
+  }
+ },
+ "advect_uniform": {
+  "_about": "uniform medium at v = 0.01 c at the fixed point of the coupling (He, Wibking & Krumholz 2024 MNRAS 531 1228, arXiv:2404.08247, sec. 5.5; the IC solves it with the M1 chi(f), the scheme's VET closure differs at O(beta^2)): dT, dE = largest relative change over the run",
+  "max": {
+   "dT": 1e-05,
+   "dE": 0.0001
+  },
+  "equal": {
+   "warnings": 0
+  }
+ },
+ "advect_pulse": {
+  "_about": "advecting radiation pulse (Krumholz, Klein, McKee & Bolstad 2007 ApJ 667 626; Jiang 2021 sec. 4.4): L1 of the moving pulse shifted back by v t against the pulse at rest, per dump (Galilean invariance of the comoving diffusion); near: the last dump",
+  "max": {
+   "L1": 0.003
+  },
+  "near": {
+   "L1": [
+    0.0007234,
+    0.05
+   ]
+  },
+  "equal": {
+   "warnings": 0
+  }
+ },
+ "shadow": {
+  "_about": "shadow test (Hayes & Norman 2003 ApJS 147 197; Jiang et al. 2012 ApJS 199 14): umbra = sum E / sum E_noclump over the geometric umbra behind the clump (cells outside it, D >= 1.5, every sight line of which to the illuminated face crosses the clump core D < 1); lit_err = max |E / E_noclump - 1| where no sight line comes near the clump",
+  "max": {
+   "umbra": 0.02,
+   "lit_err": 0.02
+  },
+  "near": {
+   "umbra": [
+    0.00609,
+    0.05
+   ]
+  },
+  "equal": {
+   "warnings": 0
+  }
  }
 }

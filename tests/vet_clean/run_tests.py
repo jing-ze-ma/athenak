@@ -845,11 +845,11 @@ def t_idort_cylinder(c):
                 F_out=l1(F[o], ex['F'][o]))
 
 
-def t_idort_radshock(c, m):
+def t_idort_radshock(c, m, deck='idort_radshock_m%s.athinput'):
     """Lowrie & Edwards radiative shock started from its semi-analytic profile: rho, v,
     T_gas, T_rad at the end against the profile (no shift), L1 / mean |reference|."""
     ref = os.path.join(HERE, 'ref', 'idort_radshock_m%s.txt' % m)
-    d = c.run('idort_radshock_m%s.athinput' % m, 'run', {'problem/vet_shock_ref': ref})
+    d = c.run(deck % m, 'run', {'problem/vet_shock_ref': ref})
     p = vett.parse_deck_text(open(os.path.join(d, 'in.athinput')).read())
     tu, ar = float(p['problem']['vet_shock_tunit']), float(p['rad_vet']['arad'])
     h, r = vett.last_bin(d, 'hydro_w'), vett.last_bin(d, 'vet')
@@ -879,6 +879,156 @@ def t_idort_thermal_eq2(c):
     total energy against the exact ODE"""
     errT, errE = relax_errors(c.run('idort_thermal_eq2.athinput', 'run'))
     return dict(errT=errT, dEtot=errE)
+
+
+# ---------------------------------------------------------------------------------------
+# classic radiation tests
+
+def warn(d):
+    return vett.warnings(open(os.path.join(d, 'run.log')).read())
+
+
+def x1prof(a, k):
+    """x2-x3 mean profile of dump variable k."""
+    return a[k].mean(axis=(0, 1))
+
+
+def t_diffusion(c):
+    """Gaussian pulse in a static pure scatterer: the variance grows at 2 D t,
+    D = c/(3 rho kappa_s), from tau_cell = 1 (transport, for information) to 1e5
+    (asymptotic preserving); errD = growth/(2 D t) - 1, L1 against the exact Gaussian
+    (diffusion equation), the same pulse isotropic in 2-D (64^2) and a top-hat at
+    tau_cell = 1e4: E must stay within [background, background + amplitude]."""
+    out = {'errD': [], 'L1': [], 'warnings': 0}
+    cases = [('tau1', 1.0, {}), ('tau10', 10.0, {}), ('tau1e3', 1e3, {}),
+             ('tau1e5', 1e5, {}), ('2d', 1e3, {'mesh/nx2': 64, 'meshblock/nx2': 64,
+                                                'mesh/nx1': 64, 'meshblock/nx1': 64,
+                                                'problem/pulse_1d': 'false'}),
+             ('tophat', 1e4, {'problem/vet_test': 'tophat'})]
+    for tag, tc, o in cases:
+        n = o.get('mesh/nx1', 128)
+        D = 1.0/(3.0*tc*n)
+        t = 5e-4/(2.0*D)                    # 2 D t = 5e-4: the variance grows by 40 %
+        d = c.run('rad_diffusion.athinput', tag, dict({
+            'rad_vet/kappa_s': tc*n, 'time/tlim': t, 'time/dt_fixed': t/100}, **o))
+        out['warnings'] += warn(d)
+        x, y, _ = vett.cell_centres(d)
+        E = [m['vet_e'][0] if tag == '2d' else x1prof(m, 'vet_e')
+             for m in (vett.read_bin(vett.bins(d, 'vet')[0]), vett.last_bin(d, 'vet'))]
+        E = [e - 1e-3 for e in E]           # minus the background pulse_bg
+        if tag == 'tophat':
+            out['th_min'], out['th_max'] = float(E[1].min()), float(E[1].max() - 1.0)
+            continue
+        r2, nd = ((x[None, :] - 0.5)**2 + y[:, None]**2, 2) if tag == '2d' else \
+            ((x - 0.5)**2, 1)
+        var = [(e*r2).sum()/e.sum()/nd for e in E]   # per dimension
+        s2 = 0.05**2 + 4.0*D*t
+        ex = (0.05**2/s2)**(0.5*nd)*np.exp(-r2/s2)
+        err = [float((var[1] - var[0])/(2.0*D*t) - 1.0),
+               float(np.abs(E[1] - ex).sum()/ex.sum())]
+        if tag in ('tau1', '2d'):
+            out['errD_' + tag], out['L1_' + tag] = err
+        else:
+            out['errD'].append(err[0])
+            out['L1'].append(err[1])
+    return out
+
+
+def t_radshock(c, m=2):
+    """the Lowrie & Edwards shocks of idort_radshock_m* (same reference) with the production
+    closure (clean_closure default, not eddington): L1 of rho, v, T_gas, T_rad; E > 0"""
+    out = t_idort_radshock(c, m, 'rad_radshock_m%s.athinput')
+    d = os.path.join(c.dir, 'run')
+    out.update(Emin=float(vett.last_bin(d, 'vet')['vet_e'].min()), warnings=warn(d))
+    return out
+
+
+def t_radshock_m5(c):
+    return t_radshock(c, 5)
+
+
+def t_marshak(c):
+    """non-equilibrium Marshak wave (constant c_v): no analytic solution, so robustness +
+    a regression value: E and T_gas positive and bounded by the bath (maximum principle;
+    Emax, Tmax relative to E_b, T_b), E non-increasing into the slab up to round-off
+    (Erise: largest increase / E_b), and the front x_f (T_gas = T_b / 2) at t = 200."""
+    d = c.run('rad_marshak.athinput', 'run')
+    m, h = vett.last_bin(d, 'vet'), vett.last_bin(d, 'hydro_w')
+    p = vett.parse_deck_text(open(os.path.join(d, 'in.athinput')).read())
+    eb = float(p['rad_vet']['implicit_ebath_x1min'])
+    tb = (eb/float(p['rad_vet']['arad']))**0.25
+    E, T = x1prof(m, 'vet_e'), (2.0/3.0)*x1prof(h, 'eint')/x1prof(h, 'dens')
+    x = vett.cell_centres(d)[0]
+    i = int(np.argmax(T < 0.5*tb))
+    xf = x[i - 1] + (x[i] - x[i - 1])*(T[i - 1] - 0.5*tb)/(T[i - 1] - T[i])
+    return dict(Emin=float(m['vet_e'].min()), Tmin=float(T.min()), Emax=float(E.max()/eb),
+                Tmax=float(T.max()/tb), Erise=float(max(np.diff(E).max(), 0.0)/eb),
+                x_front=float(xf), warnings=warn(d))
+
+
+def t_advect_uniform(c):
+    """uniform thick medium moving at 0.01 c, at the coupling's fixed point: the largest
+    relative change of T_gas and E over the run (dumps every 2e-8 s)."""
+    d = c.run('rad_advect_uniform.athinput', 'run')
+    T0, dT, dE = None, 0.0, 0.0
+    for fm, fh in zip(vett.bins(d, 'vet'), vett.bins(d, 'hydro_w')):
+        m, h = vett.read_bin(fm), vett.read_bin(fh)
+        T = h['eint']/h['dens']
+        if T0 is None:
+            T0, E0 = T.mean(), m['vet_e'].mean()
+        dT = max(dT, float(np.abs(T/T0 - 1.0).max()))
+        dE = max(dE, float(np.abs(m['vet_e']/E0 - 1.0).max()))
+    return dict(dT=dT, dE=dE, warnings=warn(d))
+
+
+def t_advect_pulse(c):
+    """advecting radiation pulse (dynamic diffusion): the pulse moving at v against the same
+    pulse at rest, shifted by v t (periodic): L1 = sum |T_v(x + v t) - T_0(x)| /
+    sum |T_0 - T_bg| of the gas temperature at each dump (0.6e-6 s apart)."""
+    a = c.run('rad_advect_pulse.athinput', 'moving')
+    b = c.run('rad_advect_pulse.athinput', 'rest', {'problem/pulse_v': 0.0})
+    p = vett.parse_deck_text(open(os.path.join(a, 'in.athinput')).read())
+    v, Tbg = float(p['problem']['pulse_v']), float(p['problem']['pulse_t0'])
+    x = vett.cell_centres(a)[0]
+    L = float(p['mesh']['x1max']) - float(p['mesh']['x1min'])
+    out = {'L1': [], 'warnings': warn(a) + warn(b)}
+    for fa, fb in list(zip(vett.bins(a, 'hydro_w'), vett.bins(b, 'hydro_w')))[1:]:
+        ha, hb = vett.read_bin(fa), vett.read_bin(fb)
+        Ta, Tb = [x1prof(h, 'eint')/x1prof(h, 'dens')*2.0/3.0 for h in (ha, hb)]
+        Ts = np.interp(x + v*ha['time'], x, Ta, period=L)
+        out['L1'].append(float(np.abs(Ts - Tb).sum()/np.abs(Tb - Tbg).sum()))
+    return out
+
+
+def shadow_cells(x, y, x0=0.5, ax=0.1, ay=0.06, ymax=0.12, n=241):
+    """(umbra, lit) masks: cells outside the clump (D >= 1.5) every straight sight line of
+    which (in the x-y plane) to the illuminated face x = 0, |y0| <= ymax, crosses the clump
+    core D < 1 (umbra); cells no sight line of which comes within D < 2 (lit)."""
+    X, Y = np.meshgrid(x, y)
+    y0 = np.linspace(-ymax, ymax, n)
+    s = np.linspace(0.0, 1.0, 400)
+    dmin = np.full(X.shape + (n,), np.inf)
+    for k in range(n):   # D along the segment (0, y0) -> (x, y)
+        px = X[..., None]*s
+        py = y0[k] + (Y[..., None] - y0[k])*s
+        dmin[..., k] = np.sqrt(((px - x0)/ax)**2 + (py/ay)**2).min(axis=-1)
+    own = np.sqrt(((X - x0)/ax)**2 + (Y/ay)**2)
+    return (dmin < 1.0).all(axis=-1) & (own >= 1.5), (dmin >= 2.0).all(axis=-1)
+
+
+def t_shadow(c):
+    """shadow of an opaque clump against the same run without the clump (shadow_ratio =
+    1) after 3 light-crossing times (steady): umbra = sum E / sum E_noclump over the
+    geometric umbra behind the clump (the radiation left in its shadow); lit_err = max |E / E_noclump - 1|
+    where no sight line to the illuminated face comes near the clump (D >= 2)."""
+    a = c.run('rad_shadow.athinput', 'clump')
+    b = c.run('rad_shadow.athinput', 'noclump', {'problem/shadow_ratio': 1.0})
+    x, y, _ = vett.cell_centres(a)
+    um, lit = shadow_cells(x, y)
+    ea, eb = (vett.last_bin(z, 'vet')['vet_e'][0] for z in (a, b))
+    return dict(umbra=float(ea[um].sum()/eb[um].sum()),
+                lit_err=float(np.abs(ea[lit]/eb[lit] - 1.0).max()),
+                n_umbra=int(um.sum()), n_lit=int(lit.sum()), warnings=warn(a) + warn(b))
 
 
 # ---------------------------------------------------------------------------------------
@@ -914,6 +1064,14 @@ TESTS = [  # name, function, in --quick
     ('idort_radshock_m2', t_idort_radshock_m2, False),
     ('idort_radshock_m5', t_idort_radshock_m5, False),
     ('idort_thermal_eq2', t_idort_thermal_eq2, False),
+    # classic radiation tests
+    ('diffusion', t_diffusion, True),
+    ('radshock', t_radshock, False),
+    ('radshock_m5', t_radshock_m5, False),
+    ('marshak', t_marshak, False),
+    ('advect_uniform', t_advect_uniform, True),
+    ('advect_pulse', t_advect_pulse, False),
+    ('shadow', t_shadow, False),
 ]
 
 
@@ -970,7 +1128,7 @@ def one(a, name, fn):
 def main():
     p = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     p.add_argument('--exe', required=True, help='the athena binary (CPU build)')
-    p.add_argument('--quick', action='store_true', help='the short subset (13 tests)')
+    p.add_argument('--quick', action='store_true', help='the short subset (15 tests)')
     p.add_argument('--jobs', type=int, default=max(1, (os.cpu_count() or 4)//4),
                    help='tests run at the same time')
     p.add_argument('--threads', type=int, default=4, help='OpenMP threads per run')
