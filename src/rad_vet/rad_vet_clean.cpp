@@ -3693,11 +3693,16 @@ void RadiationVet::CleanStagFCone(const int e, const int kd) {
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::CleanStagFwbProject
 //! \brief clean_stag_fwb_line (d = 0), clean_stag_fwb_ring (d = 2): fwb's residual s of
-//! the faces along d (rs, weight rw = w/(1 + tau)) less mu rw, mu = sum V_f s/sum V_f rw
-//! over the whole line through the mesh (radial line, phi ring), added to face slot slot,
-//! so fwb gives no net momentum along a line and no L_z.  Across MeshBlocks: each block's
-//! sums at its position in one mesh-wide array, summed over ranks (exact: one nonzero
-//! per slot), then over positions in order, so mu does not depend on the rank count.
+//! the faces along d (rs, its weight w/(1 + tau) rw, CleanStagFSolve) less mu rw,
+//! mu = sum V_f s/sum V_f rw over the whole line through the mesh (a radial line, a phi
+//! ring), added to face slot slot.  A radial line's faces share their direction, a
+//! ring's their lever arm R sin(theta): the net s V of each line is 0, so fwb gives no
+//! momentum along it and no L_z.  A line across MeshBlocks: each block's sums at its
+//! position along d in one mesh-wide array, summed over the ranks (every slot from one
+//! block, the others 0: exact), then over the positions in order, so mu does not depend
+//! on the rank count (one MeshBlock along d: the block's own sums).  Tile mode: the
+//! sums of each tile along a lateral d, then the tiles in order, so mu does not depend on
+//! the MeshBlocks either
 
 void RadiationVet::CleanStagFwbProject(const int d, const int slot,
                                        const DvceArray4D<Real> &rs,
@@ -3714,8 +3719,9 @@ void RadiationVet::CleanStagFwbProject(const int d, const int slot,
   CleanArgs x = CleanMakeArgs();
   auto fc = x.fc[d];
   auto fwc = cln_fwbc;
+  const int tn = (d > 0 && repro::tile_n > 0) ? repro::tile_n : n, nc = n/tn;
   auto mu = ScratchView<DvceArray4D<Real>>("cln_fwmu" + std::to_string(d), nmb, nb, na,
-                                           2);
+                                           2*nc);
   auto face = KOKKOS_LAMBDA(const int t, const int a, const int b, int &k, int &j,
                             int &i) {
     i = is + ((d == 0) ? t : ((da == 0) ? a : b));
@@ -3724,31 +3730,33 @@ void RadiationVet::CleanStagFwbProject(const int d, const int slot,
   };
   par_for("cln_fwbp", DevExeSpace(), 0, nmb - 1, 0, nb - 1, 0, na - 1,
   KOKKOS_LAMBDA(const int m, const int b, const int a) {
-    Real ss = 0.0, sw = 0.0;
-    for (int t = 0; t < n; ++t) {   // V_f: the face's weight, a block's own faces
-      int k, j, i;
-      face(t, a, b, k, j, i);
-      const Real vf = CleanVol(x, m, k, j, i) + CleanVol(x, m, k-dk, j-dj, i-di);
-      ss += vf*rs(m,k,j,i);
-      sw += vf*rw(m,k,j,i);
+    for (int c = 0; c < nc; ++c) {
+      Real ss = 0.0, sw = 0.0;
+      for (int t = c*tn; t < (c + 1)*tn; ++t) {   // (V_f: the face's weight, own faces)
+        int k, j, i;
+        face(t, a, b, k, j, i);
+        const Real vf = CleanVol(x, m, k, j, i) + CleanVol(x, m, k-dk, j-dj, i-di);
+        ss += vf*rs(m,k,j,i);
+        sw += vf*rw(m,k,j,i);
+      }
+      mu(m,b,a,2*c) = ss;
+      mu(m,b,a,2*c+1) = sw;
     }
-    mu(m,b,a,0) = ss;
-    mu(m,b,a,1) = sw;
   });
   if (nr[d] > 1) {
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), mu);
     const int ga = nr[da]*na, gb = nr[db]*nb;
-    std::vector<Real> g(static_cast<size_t>(nr[d])*gb*ga*2, 0.0);
+    std::vector<Real> g(static_cast<size_t>(nr[d])*nc*gb*ga*2, 0.0);
     auto at = [&](const int m, const int p, const int b, const int a) {
       const LogicalLocation &l = pm->lloc_eachmb[pmy_pack->pmb->mb_gid.h_view(m)];
       const int lx[3] = {l.lx1, l.lx2, l.lx3};
-      return ((static_cast<size_t>(p < 0 ? lx[d] : p)*gb + lx[db]*nb + b)*ga +
+      return ((static_cast<size_t>(p < 0 ? lx[d]*nc - p - 1 : p)*gb + lx[db]*nb + b)*ga +
               lx[da]*na + a)*2;
     };
     for (int m = 0; m < nmb; ++m) {
       for (int b = 0; b < nb; ++b) {
         for (int a = 0; a < na; ++a) {
-          for (int c = 0; c < 2; ++c) g[at(m, -1, b, a) + c] = h(m,b,a,c);
+          for (int c = 0; c < 2*nc; ++c) g[at(m, -1 - c/2, b, a) + c%2] = h(m,b,a,c);
         }
       }
     }
@@ -3759,9 +3767,9 @@ void RadiationVet::CleanStagFwbProject(const int d, const int slot,
     for (int m = 0; m < nmb; ++m) {
       for (int b = 0; b < nb; ++b) {
         for (int a = 0; a < na; ++a) {
-          for (int c = 0; c < 2; ++c) {
-            h(m,b,a,c) = 0.0;
-            for (int p = 0; p < nr[d]; ++p) h(m,b,a,c) += g[at(m, p, b, a) + c];
+          for (int c = 0; c < 2*nc; ++c) {
+            h(m,b,a,c) = 0.0;   // (the line's sums in slots 0, 1: the tiles in order)
+            for (int p = 0; p < nr[d]*nc && c < 2; ++p) h(m,b,a,c) += g[at(m,p,b,a) + c];
           }
         }
       }
@@ -3770,8 +3778,13 @@ void RadiationVet::CleanStagFwbProject(const int d, const int slot,
   }
   par_for("cln_fwbq", DevExeSpace(), 0, nmb - 1, 0, nb - 1, 0, na - 1,
   KOKKOS_LAMBDA(const int m, const int b, const int a) {
-    const Real q = (mu(m,b,a,1) > 0.0) ? mu(m,b,a,0)/mu(m,b,a,1) : 0.0;
-    for (int t = 0; t <= n; ++t) {   // one MeshBlock round a periodic wrap: low face
+    Real ss = 0.0, sw = 0.0;
+    for (int c = 0; c < nc; ++c) {
+      ss += mu(m,b,a,2*c);
+      sw += mu(m,b,a,2*c+1);
+    }
+    const Real q = (sw > 0.0) ? ss/sw : 0.0;
+    for (int t = 0; t <= n; ++t) {   // (one MeshBlock round a periodic wrap: low face)
       int k, j, i, kr, jr, ir;
       face(t, a, b, k, j, i);
       face((wrap && t == n) ? 0 : t, a, b, kr, jr, ir);
