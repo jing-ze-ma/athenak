@@ -1119,15 +1119,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (!why.empty()) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "<rad_m1> (explicit and implicit transport) supports a "
-        << "uniform Cartesian mesh and, for the implicit solve only (stages S1, S2: "
-        << "closure eddington | m1 | minerbo | kershaw), "
-        << "a spherical-polar wedge or (fullsph-1027 S1) the full sphere and (stage "
-           "CS0: closure "
-        << "eddington only) the cubed sphere; this input sets:" << why << "."
-        << std::endl
-        << "The M1 kernels would run with Cartesian uniform-dx arithmetic on it.  See "
-        << "docs/dev/rad_m1_curvilinear_design.md (branch m1-curv-design) for the "
-        << "staged plan that lifts this." << std::endl;
+        << "uniform Cartesian mesh and, for the implicit solve only (closure "
+        << "eddington | m1 | minerbo | kershaw), a spherical-polar wedge or the full "
+        << "sphere and (closure eddington only) the cubed sphere; this input sets:"
+        << why << "." << std::endl
+        << "The M1 kernels would run with Cartesian uniform-dx arithmetic on it."
+        << std::endl;
       std::exit(EXIT_FAILURE);
     }
     sph_geom = sp_;
@@ -1552,7 +1549,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   } else if (sf.compare("ovc") == 0) {
     source_ovc = true;
     std::cout << "### WARNING: <rad_m1>/source_form = ovc truncates the matter coupling "
-      << "to O(v/c); this is the FAILING CONTROL of T4/T4b, not a physical option"
+      << "to O(v/c); a test control only, not a physical option"
       << std::endl;
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -2238,7 +2235,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         vgd_xff_msg = (em == nullptr) || (std::atoi(em) != 0);
       }
       if (vgd_xf && global_variable::my_rank == 0) {
-        std::cout << "<rad_m1> vet_gd_rotate_xfade = true (vgdxf-1112): the closure is "
+        std::cout << "<rad_m1> vet_gd_rotate_xfade = true: the closure is "
                   << "cross-faded from the current to the next ray set over each "
                   << "rotation block (" << ((vgd_xf_m > 0) ? std::to_string(vgd_xf_m) +
                      " + 2 next-set sweeps per block)" : "two sweeps per build)")
@@ -3456,14 +3453,14 @@ void RadiationM1::RotAvgParse(ParameterInput *pin) {
       vra_ema_lc = pin->GetReal("rad_m1","vet_rotate_avg_ema_lc");
     }
     if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> vet_rotate_avg_ema = " << vra_ema_n << " (raycorr-1108): "
+      std::cout << "<rad_m1> vet_rotate_avg_ema = " << vra_ema_n << ": "
                 << "the closure is an exponential moving average over the rotated sets "
                 << "(a = 1/N per block" << ((vra_ema_tau > 0.0) ? ", time window tau = "
                 + std::to_string(vra_ema_tau) : "") << ((vra_ema_lc > 0.0) ?
                 ", window = " + std::to_string(vra_ema_lc) + " x r/c" : "")
                 << "; change test eps " << vra_ema_eps
-                << ")" << (vra_ema_dema ? "; lag-corrected double EMA 2 e1 - e2 "
-                "(raycheap-1109)" : "") << "; vet_rotate_avg is not used"
+                << ")" << (vra_ema_dema ? "; lag-corrected double EMA 2 e1 - e2" : "")
+                << "; vet_rotate_avg is not used"
                 << std::endl;
     }
   }

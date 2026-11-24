@@ -238,7 +238,7 @@ void HsStripBackground(ParameterInput *pin, Mesh *pm) {
   MPI_Allreduce(MPI_IN_PLACE, &rmx, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 #endif
   if (global_variable::my_rank == 0) {
-    std::cout << "strip_bg (stripbg-1102): APPLIED at t = " << pm->time << ", cycle "
+    std::cout << "strip_bg: APPLIED at t = " << pm->time << ", cycle "
               << pm->ncycle << ": tau_cut = " << taucut << ", rho_fac = " << rfac
               << ", rho_max = " << rmax << ", nblend = " << nb << std::endl
               << "  columns " << sums[0] << " (untouched, never tau >= tau_cut: "
@@ -335,7 +335,7 @@ void HsEosReinitFromT(ParameterInput *pin, Mesh *pm) {
     if (global_variable::my_rank == 0) {
       const int c0_ = pin->DoesParameterExist("problem", "eos_reinit_done_cycle") ?
                       pin->GetInteger("problem", "eos_reinit_done_cycle") : -1;
-      std::printf("eos_reinit_from_t (eosreinit-1112): skipped (already applied at "
+      std::printf("eos_reinit_from_t: skipped (already applied at "
                   "cycle %d; problem/eos_reinit_done = true)\n", c0_);
     }
     pin->SetBoolean("problem", "eos_reinit_from_t", false);
@@ -438,7 +438,7 @@ void HsEosReinitFromT(ParameterInput *pin, Mesh *pm) {
   MPI_Allreduce(MPI_IN_PLACE, &smx, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 #endif
   if (global_variable::my_rank == 0) {
-    std::printf("eos_reinit_from_t (eosreinit-1112): APPLIED at t = %.10e, cycle %d "
+    std::printf("eos_reinit_from_t: APPLIED at t = %.10e, cycle %d "
                 "(e from the restart (rho, T) with this run's EOS table; T, rho, "
                 "momenta, M1 E/F kept; e_old from %s)\n", pm->time, pm->ncycle,
                 hei ? "the restart's eint cache" : "the conserved state");

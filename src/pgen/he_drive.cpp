@@ -76,7 +76,7 @@ std::vector<Real> rst_;
 int nx1_ = 0;
 
 void Fatal(const std::string &msg) {
-  std::cout << "### FATAL ERROR in he_drive.cpp (hg262-drive-1113)" << std::endl << msg
+  std::cout << "### FATAL ERROR in he_drive.cpp" << std::endl << msg
             << std::endl;
   std::exit(EXIT_FAILURE);
 }
@@ -551,7 +551,7 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
   if (!restart && global_variable::my_rank == 0) {
     FILE *fp = std::fopen(logfn_, "w");
     if (fp != nullptr) {
-      std::fprintf(fp, "# hg262-drive-1113 ledger: [1]cycle [2]time [3]M_tot [4]E_tot "
+      std::fprintf(fp, "# ledger: [1]cycle [2]time [3]M_tot [4]E_tot "
                    "(IEN + E_rad, active) [5]Mb_in [6]Mb_out [7]Eb_in [8]Eb_out "
                    "[9]E_sponge [10]Erad_in (A_in int F dt) [11]W_grav [12]GM_int "
                    "[13]F_in [14]A_in [15]dPhi(x1f(ie+1)) [16]G dm(x1f(ie+1)) "

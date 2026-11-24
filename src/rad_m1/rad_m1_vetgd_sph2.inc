@@ -115,7 +115,7 @@ void RadiationM1::VetGdThetaInit() {
     }
     for (int jb = 1; jb < c2w; ++jb) {
       if (!(tn_h(m,jb) > tn_h(m,jb-1))) {
-        VgdFatal("accsp-1102: the theta node table is not increasing (block " +
+        VgdFatal("the theta node table is not increasing (block " +
                  std::to_string(m) + ", band row " + std::to_string(jb) +
                  "): the band is deeper than one period/mirror of the mesh");
       }
@@ -140,7 +140,7 @@ void RadiationM1::VetGdThetaInit() {
       dmin = std::min(dmin, d);
       dmax = std::max(dmax, d);
     }
-    std::cout << "<rad_m1> vet_gd (accsp-1102): theta node table ("
+    std::cout << "<rad_m1> vet_gd: theta node table ("
               << (pm->use_grid_stretch_theta ? "STRETCHED theta" : "uniform theta")
               << ", rows " << dmin*180.0/M_PI << " .. " << dmax*180.0/M_PI << " deg)"
               << (vgd_pol ? "; FULL SPHERE: pole slots take the partner (lx2, lx3 + "
@@ -225,7 +225,7 @@ void RadiationM1::VetGdRingInit() {
   Kokkos::realloc(vgd_rbr, std::max<size_t>(per*vgd_rbnit, 1));
   vgd_rbon = true;
   if (me == 0) {
-    std::cout << "<rad_m1> vet_gd (accsp-1102): polar RING buffers: " << nz
+    std::cout << "<rad_m1> vet_gd: polar RING buffers: " << nz
               << " rows per pole (node colatitude < " << tlim*180.0/M_PI << " deg + 1 row, to "
               << node[nz - 1]*180.0/M_PI << " deg), " << vgd_rbnit << " (block, pole) items; "
               << (ni + nc)*sizeof(Real)/1.0e9 << " GB per rank; stencils inside the polar "
@@ -638,7 +638,7 @@ void RadiationM1::VetGdGlobalBandInit() {
     if (vgd_scan_sums.extent(0) == 0) {Kokkos::realloc(vgd_scan_sums, 1);}
     if (me == 0) {
       std::cout << "<rad_m1> vet_gd_band_global: COMPACT exchange (vet_gd_halo_compact = "
-                << vgd_hcomp << ", share-1104): per shell and pass only the kept (cell, "
+                << vgd_hcomp << "): per shell and pass only the kept (cell, "
                 << "direction) values; polar zone rows " << nz + w + 1 << " per pole "
                 << "keep their whole branch" << std::endl;
     }
@@ -660,7 +660,7 @@ void RadiationM1::VetGdGlobalBandInit() {
   Kokkos::deep_copy(vgd_hloc, -1);
   for (int t = 0; t < 8*nmb; ++t) {vgd_hrank[t] = me;}
   if (me == 0) {
-    std::cout << "<rad_m1> vet_gd_band_global (accpolar-1103): band " << w
+    std::cout << "<rad_m1> vet_gd_band_global: band " << w
               << " cells keyed on the global cell (exact copies from any block; rank 0: "
               << "on-rank " << vgd_csnloc << ", sent " << vgd_csnsnd << ", received "
               << vgd_csnrcv << " positions per shell at full depth, partners " << np

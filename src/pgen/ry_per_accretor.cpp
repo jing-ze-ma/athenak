@@ -3234,7 +3234,7 @@ void RyPerTrcHist(Mesh *pm) {
   FILE *fp = std::fopen(trc_file_.c_str(), "a");
   if (fp == nullptr) return;
   if (hdr) {
-    std::fprintf(fp, "# ry_per_accretor tracers (acctrc-1019): s0 stream, s1 boundary "
+    std::fprintf(fp, "# ry_per_accretor tracers: s0 stream, s1 boundary "
                  "inflow; cumulative columns continue across restarts (rst block, "
                  "acctrc-1019c)\n#  [1]=time  [2]=Ms0  [3]=Ms1  [4]=Nz0  [5]=Nz1  "
                  "[6]=Sk0  [7]=Sk1  [8]=Fi0  [9]=Fi1  [10]=Fo0  [11]=Fo1  [12]=Bin  "
@@ -3279,7 +3279,7 @@ void RyPerLzHist(Mesh *pm) {
   FILE *fp = std::fopen(lz_file_.c_str(), "a");
   if (fp == nullptr) return;
   if (hdr) {
-    std::fprintf(fp, "# ry_per_accretor inertial L_z budget (acclz-1020): dJ = dJin - "
+    std::fprintf(fp, "# ry_per_accretor inertial L_z budget: dJ = dJin - "
                  "dJout + Jgrv + Jcor + Jtr + Jrin + Jthw + Jspf + Jm1 + Jres\n#  "
                  "[1]=time  [2]=Jdom  [3]=dJ  [4]=dJin  [5]=dJout  [6]=Jgrv  [7]=Jcor  "
                  "[8]=Jtr  [9]=Jrin  [10]=Jthw  [11]=Jspf  [12]=Jm1  [13]=Jres\n");

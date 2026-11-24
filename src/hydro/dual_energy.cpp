@@ -90,7 +90,7 @@ void DualEnergy::Read(ParameterInput *pin, const std::string &block, const EOS_D
     ivol = iden + 1;
   }
   if (global_variable::my_rank == 0) {
-    std::cout << "<" << blk << "> duale-1112: dual_energy " << on << " (eta " << eta
+    std::cout << "<" << blk << "> dual_energy " << on << " (eta " << eta
               << ", slots " << iden << "," << ivol << ") floor_pay "
               << (pay ? (pcol ? "rad_column" : "rad") : "none")
               << " fofc_retest " << retest << " floor_audit " << report

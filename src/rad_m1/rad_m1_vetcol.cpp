@@ -156,7 +156,7 @@ void RadiationM1::VetColReport() {
                   << std::endl;
       }
       if (vgd_csg && vgd_cscomp) {   // where the list builds go
-        std::cout << "<rad_m1> raycheap-1109 cs list builds (rank 0 s): mask kernel "
+        std::cout << "<rad_m1> cs list builds (rank 0 s): mask kernel "
                   << vgd_cstb_k << ", download+check " << vgd_cstb_d << ", mark exchange "
                   << vgd_cstb_m << ", host lists " << vgd_cstb_h << ", upload "
                   << vgd_cstb_u << "; mask stride " << vgd_csper
@@ -194,14 +194,14 @@ void RadiationM1::VetColReport() {
         }
       }
       if (vgd_hcomp > 0 && vgd_hl_mb > 0) {
-        std::cout << "<rad_m1> vgdspeed-1009 (rank 0): vet_gd halo lists "
+        std::cout << "<rad_m1> (rank 0) vet_gd halo lists "
                   << vgd_hl_nmade << " made, " << vgd_hl_bytes/1048576.0 << " MB of "
                   << vgd_hl_cap/1048576.0 << " (key " << vgd_hl_mb
                   << ", GPU: <= free/2); exchanges by list " << vgd_hl_nuse << ", dense "
                   << vgd_hl_ndense << std::endl;
       }
       if (vgd_hx_on) {
-        std::cout << "<rad_m1> vgdfuse-1010 (rank 0): vet_gd_halo_exact lists made "
+        std::cout << "<rad_m1> (rank 0) vet_gd_halo_exact lists made "
                   << vgd_hx_nmade << ", fallbacks " << vgd_hx_nfall
                   << " (marked reads outside the masks' region " << vgd_hx_nout
                   << "), read ghosts with an unsent source " << vgd_hx_nun
@@ -209,12 +209,12 @@ void RadiationM1::VetColReport() {
                   << ((vgd_hx_vmask > 0.0) ? vgd_hx_vexact/vgd_hx_vmask : 0.0)
                   << std::endl;
       }
-      std::cout << "<rad_m1> vgdrot-1011 (rank 0): exact-list batches " << vgd_hxb_ngroup
+      std::cout << "<rad_m1> (rank 0) exact-list batches " << vgd_hxb_ngroup
                 << " (group " << vgd_hxb_g << ", " << vgd_hxb_t << " s, list reallocs "
                 << vgd_hxb_nrealloc << "); table prefetch " << (vgd_tab_pre ? 1 : 0)
                 << " swapped in " << vgd_tab_nswap << " of the rotations" << std::endl;
       if (vgd_ovl_g > 0 || vgd_fuse_h > 1) {
-        std::cout << "<rad_m1> vgdfuse-1010 (rank 0): vet_gd_overlap=" << vgd_ovl_g
+        std::cout << "<rad_m1> (rank 0) vet_gd_overlap=" << vgd_ovl_g
                   << " split shells " << vgd_ovl_nsplit << " (remote items "
                   << ((vgd_ovl_nall > 0.0) ? vgd_ovl_nrem/vgd_ovl_nall : 0.0)
                   << " of all), unsplit " << vgd_ovl_nfull

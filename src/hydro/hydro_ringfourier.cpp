@@ -138,7 +138,7 @@ void RingAvg::FourierInit(ParameterInput *pin, const std::vector<int> &vjg) {
   Kokkos::deep_copy(tcos, hc);
   Kokkos::deep_copy(tsin, hs);
   if (global_variable::my_rank == 0) {
-    std::cout << "RINGAVG polar_ring_avg_filter = fourier (ringsmooth-1102): " << nring
+    std::cout << "RINGAVG polar_ring_avg_filter = fourier: " << nring
               << " rings, cutoff m_c per row from the pole:";
     for (int r = 0; r < nring/2 + (nring % 2); ++r) std::cout << " " << hmc[r];
     std::cout << " (nphi " << nphi << ", mfac " << mfac << ", thr " << fthr

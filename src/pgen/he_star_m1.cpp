@@ -1553,7 +1553,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           if (!l0.empty() && l0[0] == '#') fprintf(fp, "%s\n", l0.c_str());
         }
       }
-      fprintf(fp, "# icgen-1011 he_ic_rad = sph1d (he_star_m1): E (and with gas = re T, "
+      fprintf(fp, "# he_ic_rad = sph1d (he_star_m1): E (and with gas = re T, "
               "eint; with hse rho) above tau_R %g replaced; gas %s hse %d taua %g dtau "
               "%g dlnr %g ncore %d; R_ph %.10e -> %.10e; resampled from the fine grid\n",
               taub, gasm.c_str(), hse ? 1 : 0, taua, dtau0, dlnr, ncore, rph0, rph1);

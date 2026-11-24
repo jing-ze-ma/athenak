@@ -559,7 +559,7 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     t2_k1rd = (onecol && !rnone && !ffct14 && !clean) ? 0.1 : 0.0;
     if (!pin->DoesParameterExist("rad_m1", "time2_k1_redist")) {
       recipe::Log(std::string("<rad_m1>/time2_k1_redist = ") + (t2_k1rd > 0.0 ? "0.1" :
-                  "0") + (ffct14 ? " (default, defaults-1114: time2_face_fct)" :
+                  "0") + (ffct14 ? " (default: time2_face_fct)" :
                   std::string(" (default, prod-1108") + (onecol ? (rnone ?
                   "; recipe none)" : ")") : "; 0: more than one radial MeshBlock)")));
     }

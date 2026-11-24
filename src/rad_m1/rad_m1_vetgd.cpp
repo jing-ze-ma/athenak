@@ -863,7 +863,7 @@ void RadiationM1::VetGdInit() {
     if (vgd_ovl_g > 0) {bad += " vet_gd_overlap;";}
     if (vgd_fuse_h > 1) {bad += " vet_gd_fuse_shells > 1;";}
     if (vgd_iter > 1) {bad += " vet_gd_iter > 1;";}
-    if (!bad.empty()) {VgdFatal("not available on the cubed sphere (stage S3):" + bad);}
+    if (!bad.empty()) {VgdFatal("not available on the cubed sphere:" + bad);}
     vgd_wint = false;
     vgd_ipc_on = false;
     vgd_hx_on = false;
@@ -874,11 +874,11 @@ void RadiationM1::VetGdInit() {
     // (its sp default when the fuse cannot apply, e.g. MPI without vet_gd_halo_compact):
     // decomposition-dependent.  vet_gd_twin_fuse (lowmem off) is kept
     if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> vet_gd on the CUBED SPHERE (cs-vetgd-1017, stage S3): seam "
+      std::cout << "<rad_m1> vet_gd on the CUBED SPHERE: seam "
                 << "strip + vertex triangle upwind stencil, exact per-shell band copies "
                 << "(the sp halo lists / IPC / overlap keys do not apply); hand-over "
-                << "D_rr" << ((vlat_odm == 2) ? " + D_r,lat in the operator (S4)"
-                              : ((vlat_odm == 1) ? " + D_r,lat lagged (S4)"
+                << "D_rr" << ((vlat_odm == 2) ? " + D_r,lat in the operator"
+                              : ((vlat_odm == 1) ? " + D_r,lat lagged"
                                                  : " only (vet_col_lat_offdiag = none)"))
                 << ", no tangential part" << std::endl;
     }
@@ -896,7 +896,7 @@ void RadiationM1::VetGdInit() {
     if (vgd_ovl_g > 0) {bad += " vet_gd_overlap;";}
     if (vgd_fuse_h > 1) {bad += " vet_gd_fuse_shells > 1;";}
     if (!bad.empty()) {
-      VgdFatal("not available on a stretched theta / the full sphere (accsp-1102):" +
+      VgdFatal("not available on a stretched theta / the full sphere:" +
                bad);
     }
     // G1: with vet_gd_band_global (the full-sphere fresh default) the compact
@@ -905,7 +905,7 @@ void RadiationM1::VetGdInit() {
     // dense halo (its slot keep test is the uniform index formula)
     if (vgd_hcomp > 0 && !vgd_gband) {
       if (global_variable::my_rank == 0) {
-        std::cout << "<rad_m1> vet_gd (accsp-1102): vet_gd_halo_compact = " << vgd_hcomp
+        std::cout << "<rad_m1> vet_gd: vet_gd_halo_compact = " << vgd_hcomp
                   << " -> 0 (the dense per-shell slot halo; the compact keep test is "
                   << "ported only to vet_gd_band_global; speed only)" << std::endl;
       }
@@ -1464,7 +1464,7 @@ void RadiationM1::VetRotInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","vet_rotate_advance")) {
     g_vra_adv = pin->GetBoolean("rad_m1","vet_rotate_advance");
     if (g_vra_adv && global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> vet_rotate_advance = true (rotadv-1102): with vet_rotate_avg"
+      std::cout << "<rad_m1> vet_rotate_advance = true: with vet_rotate_avg"
                 << " the rotated sets do not repeat; the averaged last-K window advances"
                 << " (no effect without vet_rotate_avg)" << std::endl;
     }
@@ -3936,11 +3936,11 @@ bool RadiationM1::VgdNcclOn() {
       MPI_Bcast(&id, sizeof(id), MPI_BYTE, 0, vgd_comm);
       ncclComm_t c;
       if (ncclCommInitRank(&c, nr, id, rk) != ncclSuccess) {
-        VgdFatal("accel-1014 ACC_NCCL: ncclCommInitRank failed");
+        VgdFatal("ACC_NCCL: ncclCommInitRank failed");
       }
       acc_ncomm = static_cast<void *>(c);
       if (global_variable::my_rank == 0) {
-        std::cout << "<rad_m1> accel-1014: vet_gd list halo over NCCL (ACC_NCCL=1)"
+        std::cout << "<rad_m1> vet_gd list halo over NCCL (ACC_NCCL=1)"
                   << std::endl;
       }
     }
@@ -5201,7 +5201,7 @@ void RadiationM1::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
       vgd_hx_stamp = 0;
     }
     if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> vgdrot-1011: vet_gd_halo_exact lists made in groups of " << g
+      std::cout << "<rad_m1> vet_gd_halo_exact lists made in groups of " << g
                 << " shells (pool " << (G*per/1048576.0) << " MB per rank)" << std::endl;
     }
   }
@@ -5870,7 +5870,7 @@ void RadiationM1::VetGdIpcInit(const std::vector<int> &prk, size_t cs, size_t ha
   vgd_ipc_tfs = (std::getenv("VGD_IPC_TFS") != nullptr) &&
                 (std::atoi(std::getenv("VGD_IPC_TFS")) != 0);
   if (me == 0) {
-    std::cout << "<rad_m1> vgdrot-1011 vet_gd_halo_ipc: "
+    std::cout << "<rad_m1> vet_gd_halo_ipc: "
               << (ok ? "ON (node-local GPU IPC, GPU-driven per-shell halo of the exact "
                        "lists, no host wait)"
                      : "not possible (a partner off-node, or IPC failed): MPI path")
@@ -7085,7 +7085,7 @@ void RadiationM1::VetGdSweep() {
         const bool hx2 = vgd_xff_msg && (vgd_raw ? VetGdGbHaloX(i, wsx)
                                                  : VetGdHlXff(i, wsx, xe ? 2 : 0));
         if (xe && !hx2) {
-          VgdFatal("vgdsched-1113 early send: the exchange of a packed shell failed");
+          VgdFatal("early send: the exchange of a packed shell failed");
         }
         if (!hx2 && rga && !vgd_raw) {
           VgdFatal("vet_gd_rotate_xfade_fuse: the band ring needs the merged exchange");
@@ -8638,7 +8638,7 @@ void RadiationM1::DtRetryAfterRestore() {
     // The tables of the restored angle are made again (VgdTabCompute: same numbers).
     if (vgd_alpha >= 0.0 && g_vgd_tab_alpha != vgd_alpha) {
       if (global_variable::my_rank == 0) {
-        std::cout << "<rad_m1> dt_retry (csfix-1023): vet_gd tables back from angle "
+        std::cout << "<rad_m1> dt_retry: vet_gd tables back from angle "
                   << g_vgd_tab_alpha << " to the restored " << vgd_alpha << std::endl;
       }
       VetGdTables(vgd_alpha);

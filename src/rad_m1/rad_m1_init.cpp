@@ -605,7 +605,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               "residual from the full operator reads the halo)");
   }
   if ((mg_x3line || mg_sym || mg_frows) && global_variable::my_rank == 0) {
-    std::cout << "<rad_m1> mgsm-1030 smoother: x3line " << mg_x3line << ", sym " << mg_sym
+    std::cout << "<rad_m1> smoother: x3line " << mg_x3line << ", sym " << mg_sym
               << ", full_rows " << mg_frows << std::endl;
   }
   // implicit_bcg_rho_direct (runs_5p_coarse2; read only when named, default false =
@@ -1193,7 +1193,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> WARN: restart input lacks implicit_pos_floor_solve: "
                 << (pfs_rd ? "true (implicit_pos_floor_solve_rst_default)"
-                           : "false (the S2 -> e_floor raise of the accept is NOT "
+                           : "false (the e_floor raise of the accept is NOT "
                              "charged; name the key, or "
                              "implicit_pos_floor_solve_rst_default = true)") << std::endl;
     }
@@ -1535,7 +1535,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       }
       impl_vimp = false;
       if (global_variable::my_rank == 0) {
-        std::cout << "<rad_m1> doppler_vel = vstar (athpp-vstar-1105): v-terms at the "
+        std::cout << "<rad_m1> doppler_vel = vstar: v-terms at the "
                      "Heun "
                   << "stage velocity before t2inc, implicit_vimp off" << std::endl;
       }
@@ -1557,7 +1557,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       }
       impl_vimp = false;
       if (global_variable::my_rank == 0) {
-        std::cout << "<rad_m1> doppler_face = central (doface-1105): x1 enthalpy flux "
+        std::cout << "<rad_m1> doppler_face = central: x1 enthalpy flux "
                   << "a E = v (1 + chi) E as the face mean 0.5 (a_L E_L + a_R E_R) "
                      "(Athena++ "
                   << "DO near-central face), no donor / plm correction" << std::endl;
@@ -2325,7 +2325,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       if (global_variable::my_rank == 0) {
         std::cout << "<rad_m1> implicit_hr_cmem_implicit = true: the F_c memory part of "
                   << "every face flux implicit upwind (q E'_d), its remainder Zalesak-"
-                  << "limited by the donor E^k (cmemimpl-1112)" << std::endl;
+                  << "limited by the donor E^k" << std::endl;
       }
     }
   }
@@ -2464,8 +2464,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     }
   }
   if (cs_geom && impl_gas_src_cs2 && cs2_shift) {
-    ImplFatal("<rad_m1>/implicit_cs2_shift = true is not ported to the cubed sphere "
-              "(cs-open-1018); use the default false");
+    ImplFatal("<rad_m1>/implicit_cs2_shift = true is not ported to the cubed sphere; "
+              "use the default false");
   }
   if (impl_gas_src_cs2 || impl_rinr_solve) {   // A^old (3), dA (3)
     iw_cs2 = niw;
@@ -2628,7 +2628,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::deep_copy(fmm_lo, 0.0);
     if (global_variable::my_rank == 0) {
       std::cout << "<rad_m1> implicit_face_mmat = true: x1 face flux lam F_H + (1-lam) "
-                << "F_L, lam = Zalesak factor of the explicit face flux (facemmat-1112)"
+                << "F_L, lam = Zalesak factor of the explicit face flux"
                 << std::endl;
     }
   }
@@ -3560,7 +3560,7 @@ void RadiationM1::ImplicitReport() {
               << std::endl;
   }
   if ((impl_cons_final || dbg_cons_ledger) && global_variable::my_rank == 0) {
-    std::cout << "<rad_m1> consfix-1109: implicit_cons_final=" << impl_cons_final
+    std::cout << "<rad_m1> implicit_cons_final=" << impl_cons_final
               << " solves=" << cf_tot[2] << " extra passes after a mode fallback="
               << cf_tot[3];
     if (dbg_cons_ledger) {

@@ -844,7 +844,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
                     "emf_scheme = gs07, named or by fallback)")
                 << ": the vertex dt collapses (~1e-28 at low beta) or the run goes NaN "
                    "by "
-                << "cycle 2 (vertexacc-1103).  Use emf_scheme = uct or uct_hlld without "
+                << "cycle 2.  Use emf_scheme = uct or uct_hlld without "
                 << "fofc, or leave cs_vertex_fill_cc off." << std::endl;
       std::exit(EXIT_FAILURE);
     }

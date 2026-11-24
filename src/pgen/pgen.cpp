@@ -1927,7 +1927,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     pradm1->t2_abe_len = static_cast<int>(abe_hv[0]);
     pradm1->t2_abe_left = static_cast<int>(abe_hv[1]);
     if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> rstabe-1109: time2_auto_be skip run restored (len "
+      std::cout << "<rad_m1> time2_auto_be skip run restored (len "
                 << abe_hv[0] << ", left " << abe_hv[1] << ")" << std::endl;
     }
   }

@@ -119,7 +119,7 @@ void RadiationM1::RavInit(ParameterInput *pin) {
     if (global_variable::my_rank == 0) {
       if (rav_ke_rad) {
         std::cout << "<rad_m1> polar_ring_avg_ke = rad: the gas kinetic-energy spread of "
-                  << "the after-solve group average goes to E (floorheat-1029)"
+                  << "the after-solve group average goes to E"
                   << std::endl;
       } else {
         std::cout << "<rad_m1> polar_ring_avg_ke = gas" << std::endl;

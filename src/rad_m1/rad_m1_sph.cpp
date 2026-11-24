@@ -199,14 +199,12 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     }
     if (!wcs.empty()) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<rad_m1> on the cubed sphere (stages CS0-CS3) supports only "
+        << std::endl << "<rad_m1> on the cubed sphere supports only "
         << "transport = implicit, closure = eddington | vet_col (radial axis), "
         << "implicit_offdiag none, time_scheme = be | hesdirk2, implicit_solver "
         << "= bicgstab, implicit_precond = rbgs_fwd | mg (and the spherical-polar "
         << "list below); this input has:"
-        << wcs << why << std::endl
-        << "See /viper/ptmp2/jinma/rt_design_1003/CS_IMPLICIT_VET.md sect. 4."
-        << std::endl;
+        << wcs << why << std::endl;
       std::exit(EXIT_FAILURE);
     }
   }
@@ -233,7 +231,7 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
   }
   if (!why.empty()) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<rad_m1> on a spherical-polar mesh (stages S1, S2) supports "
+      << std::endl << "<rad_m1> on a spherical-polar mesh supports "
       << "only transport = implicit, closure = eddington | m1 | minerbo | kershaw | "
       << "vet_col, "
       << "implicit_offdiag = auto | none (| lagged for m1/minerbo/kershaw), "
@@ -263,7 +261,7 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     od_now = impl_offdiag;
   }
   if (global_variable::my_rank == 0 && cs_geom) {
-    std::cout << "<rad_m1>: cubed sphere (stage CS2: " << (vet_col ? "vet_col, radial "
+    std::cout << "<rad_m1>: cubed sphere (" << (vet_col ? "vet_col, radial "
               "axis" : "eddington") << "; covariant cell F and gas coupling; skewed "
               << "transverse faces with the lagged cross term, mirror-pair seam faces "
               << "without the resample; implicit with areas/volumes/face distances from "
@@ -276,8 +274,8 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
                                            "zero area] " : "wedge ")
               << (pm->use_grid_stretch_theta ? "[stretched theta] " : "")
               << "("
-              << (sph_q ? "stage S2: chi(f) closure, radial integrating factor, "
-                          "lagged curvature, offdiag " : "stage S1: ")
+              << (sph_q ? "chi(f) closure, radial integrating factor, "
+                          "lagged curvature, offdiag " : "")
               << (sph_q ? ((impl_offdiag == M1_OD_NONE) ? "none; " : "lagged; ") : "")
               << "implicit with areas/volumes/face distances from Coordinates"
               << (pm->use_grid_stretch_r || pm->use_grid_stretch_r_poly ?

@@ -131,7 +131,7 @@ void RadiationM1::VetLatInit() {
   // (CS_VETGD.md stage S3): vet_gd runs on the cubed sphere (its own
   // sweep, rad_m1_vetgd_cs.cpp); the vet_col_lat SC correction itself does not
   if (pm->use_cubed_sphere && !vgd_on) {
-    VlatFatal("the cubed sphere: only through vet_gd (stage S3); the vet_col_lat SC "
+    VlatFatal("the cubed sphere: only through vet_gd; the vet_col_lat SC "
               "correction is wedge-only");
   }
   if (!sph_geom) {
@@ -151,8 +151,8 @@ void RadiationM1::VetLatInit() {
   }
   if (pm->use_polar_boundary && !vgd_sth) {
     VlatFatal(std::string(vgd_on ? "vet_gd" : "vet_col_lat (lateral SC)") +
-              " on the FULL sphere (mesh/use_polar_boundary) is stage S2 (not "
-              "implemented): use closure = vet_col without vet_gd / vet_col_lat");
+              " on the FULL sphere (mesh/use_polar_boundary) is not "
+              "implemented: use closure = vet_col without vet_gd / vet_col_lat");
   }
   // (USER 10-17): the SC upwind interpolation of vet_col_lat / vet_gd is
   // bilinear in (theta, phi) INDEX space, which is exact only for UNIFORM lateral

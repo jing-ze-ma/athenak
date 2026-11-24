@@ -733,7 +733,7 @@ void RadiationM1::VetGdCsInit() {
   // exchange (a rank without partners never exchanges)
   if (global_variable::nranks > 1) {
     if (VgdNcclOn() && me == 0) {
-      std::cout << "<rad_m1> csnccl-1031: vet_gd cs compact exchange over NCCL "
+      std::cout << "<rad_m1> vet_gd cs compact exchange over NCCL "
                 << "(stream-ordered, no host fence per shell)" << std::endl;
     }
   }
@@ -1265,7 +1265,7 @@ void RadiationM1::VetGdCsHaloC(const int pass, const int i) {
   }
 #if M1_VGDCS_NCCL
   if (ncl) {
-    static_assert(sizeof(Real) == sizeof(double), "csnccl-1031: ncclDouble");
+    static_assert(sizeof(Real) == sizeof(double), "ncclDouble");
     ncclComm_t nc = static_cast<ncclComm_t>(acc_ncomm);
     cudaStream_t st = DevExeSpace().cuda_stream();
     Kokkos::Timer tq;
@@ -1281,7 +1281,7 @@ void RadiationM1::VetGdCsHaloC(const int pass, const int i) {
         vgd_nbyte += static_cast<Real>(cs)*sizeof(Real);
       }
     }
-    if (ncclGroupEnd() != ncclSuccess) {VgdCsFatal("csnccl-1031: ncclGroupEnd failed");}
+    if (ncclGroupEnd() != ncclSuccess) {VgdCsFatal("ncclGroupEnd failed");}
     vgd_tmpi += tq.seconds();
   } else {
 #endif
