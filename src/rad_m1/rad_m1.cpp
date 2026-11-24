@@ -191,15 +191,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
-    // (clean_rot_ring_fill0 = false, the fill's sweep of the older sets, is removed: the
-    // zero-offset fill is the only form)
-    if (pin->DoesParameterExist("rad_m1","clean_rot_ring_fill0") &&
-        !pin->GetBoolean("rad_m1","clean_rot_ring_fill0")) {
-      std::cout << "### FATAL ERROR <rad_m1>/clean_rot_ring_fill0 = false (the ring "
-                   "fill's "
-                << "sweep of the older sets) is removed" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     // clean_ring_fields (read only when named; default all): closure = the ring's offsets
     // and Delta carry only the cell moments (CleanRingFields), the face sums are those of
     // the swept sets b, b+1 (as production's ring)
@@ -441,13 +432,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // clean_stag_csvec_radial (true, the only form): the cubed sphere's cell vector exact
     // for a radial field (CleanStagCsVector); false (the old least-squares fit) is gone
     cln_csvr = stag("clean_stag_csvec_radial", true);
-    // (clean_ray_flux_in, the v20 A/B, is gone: the rays' state takes u0 F, the face
-    // momenta's, the only form)
-    if (pin->DoesParameterExist("rad_m1", "clean_ray_flux_in")) {
-      std::cout << "### FATAL ERROR: <rad_m1>/clean_ray_flux_in is gone (the rays' state "
-                << "takes the face momenta's cell flux, the only form)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     if (!cln_csvr) {
       std::cout << "### FATAL ERROR: <rad_m1>/clean_stag_csvec_radial = false (the old "
                 << "cell vector) is gone" << std::endl;
@@ -755,14 +739,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       cln_vimp = false;
     }
     cln_sbimp = stag("clean_stag_sbimp", false) && cln_split;
-    // clean_tol_rel = kappa (default 0.1, 0 = off) and clean_tol_rel_max (1e-4)
-    // (read only when named): the old production's implicit_tol_rel for the strict test,
-    // max(tol_nl, min(kappa r_0, clean_tol_rel_max)), r_0 the first pass's change
-    cln_tolrel = pin->DoesParameterExist("rad_m1","clean_tol_rel") ?
-                 pin->GetReal("rad_m1","clean_tol_rel") : 0.1;
-    if (pin->DoesParameterExist("rad_m1","clean_tol_rel_max")) {
-      cln_tolrmx = pin->GetReal("rad_m1","clean_tol_rel_max");
-    }
     // clean_gas_tfloor (default true): the gas row's T bounded below by the EOS
     // tfloor, and the gas eint written back from that root (E takes the rest)
     cln_gtf = stag("clean_gas_tfloor", true);
@@ -944,16 +920,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_nl_cell = (nn.compare("cell") == 0);}
     // (the exchange root stops at its residual noise, CleanExchangeTemperature)
     cln_trtol = pin->GetOrAddReal("rad_m1","clean_troot_rtol",1.0e-13);
-    // clean_conv_est (read only when named): the Newton/Picard passes also stop once
-    // q/(1-q) times the change of a pass (q < 1/2 its ratio to the change of the pass
-    // before) is below clean_tol_nl
-    if (pin->DoesParameterExist("rad_m1","clean_conv_est")) {
-      cln_conv_est = pin->GetBoolean("rad_m1","clean_conv_est");
-    }
-    // clean_conv_est_f (default false): that stop, in the budget's passes only, with the
-    // F solve's face F too, the change h A_f |dF_f|/(V S) of its cells since the last
-    // pass's (from the second pass; the first takes the de/dv ratio), so that a stop does
-    // not leave the next pass's F move (needs clean_stag_fwork)
+    // clean_conv_est_f (default false): the budget's passes also stop once q/(1-q) times
+    // the change of a pass (q < 1/2 its ratio to the change of the pass before) is below
+    // clean_tol_nl, with the F solve's face F too, the change h A_f |dF_f|/(V S) of its
+    // cells since the last pass's (from the second pass; the first takes the de/dv
+    // ratio), so that a stop does not leave the next pass's F move (needs
+    // clean_stag_fwork)
     cln_cestf = pin->GetOrAddBoolean("rad_m1","clean_conv_est_f",false);
     if (cln_cestf && !cln_fwork) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -2274,12 +2246,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
     }
-    // (read only when named): the polar ring buffers of the full sphere (exact
-    // whole-ring reads in the polar zone; default off: ~3 s/cycle more on the 4-H200
-    // accretor with 8 rows, and the T6a pole test is unchanged by them) and their zone
-    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_pole_ring")) {
-      vgd_rbkey = pin->GetBoolean("rad_m1","vet_gd_pole_ring");
-    }
     // (read only when named, default false = bitwise): the band keyed on the global cell
     // + the cell-window clamp (layout-independent sweep; sph2.inc) prod1103d default
     // (USER 11-03): vet_gd_band_global = true on a FRESH spherical-polar FULL-SPHERE
@@ -2308,9 +2274,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_band_global")) {
       vgd_gband = pin->GetBoolean("rad_m1","vet_gd_band_global");
-    }
-    if (vgd_on && pin->DoesParameterExist("rad_m1","vet_gd_pole_ring_colat")) {
-      vgd_rbcolat = pin->GetReal("rad_m1","vet_gd_pole_ring_colat");
     }
     // prod1104b default (USER 11-04): vet_gd_halo_compact = 2 on a FRESH vet_gd start
     // (recipe::NewDefaults) when not named (bitwise; 29-40 % faster on cs vet_gd runs;

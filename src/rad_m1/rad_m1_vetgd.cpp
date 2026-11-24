@@ -1289,7 +1289,6 @@ void RadiationM1::VetGdInit() {
   }
   if (!vgd_csg) {VetGdHaloInit();}   // cs lists made by VetGdCsInit
   if (vgd_gband || vgd_raw) {VetGdGlobalBandInit();}   // (sph2.inc): after the slots
-  if (vgd_pol) {VetGdRingInit();}   // the polar ring buffers (sph2.inc)
   if (vgd_thmir) {
     // vet_gd_theta_wall = mirror: the theta neighbour across a wall is the
     // block itself (one MeshBlock in theta), so the corner slots of the halo are the
@@ -2535,7 +2534,7 @@ bool RadiationM1::VetGdXffOk() {
     return !(vgd_cscomp && vgd_csxg > 1) && !vgd_gband &&
            (vgd_i_xb.d.extent(0) == vgd_i.d.extent(0));
   }
-  if (vgd_ovl_g > 0 || vgd_fuse_h > 1 || vgd_rbon ||
+  if (vgd_ovl_g > 0 || vgd_fuse_h > 1 ||
       vet_path != 0 || (vgd_gband && !vgd_raw)) {
     return false;
   }
@@ -4845,7 +4844,7 @@ void RadiationM1::VetGdHxBatch(const std::vector<std::array<int, 4>> &jobs) {
   const int n1 = indcs.nx1, is = indcs.is;
   const int n1c = indcs.nx1 + 2*indcs.ng;
   const int lcut = vgd_scut;
-  const bool imir_ = clean && (ibc_x1min == M1_IBC_REFLECT) && !vgd_rbon && lcut == 0;
+  const bool imir_ = clean && (ibc_x1min == M1_IBC_REFLECT) && lcut == 0;
   const int wb = w;
   const int js = wb, je = wb + nx2 - 1, ks = wb, ke = wb + nx3 - 1;
   const int jlo = 0, jhi = je + wb - 1, klo = 0, khi = ke + wb - 1;
@@ -5898,7 +5897,7 @@ void RadiationM1::VetGdSweep() {
   const bool thm = vgd_thmir || (vgd_thvac > 0);
   const bool bfc = vet_bc_face;   // vet_bc_diff = face
   const bool izf = vgd_izf && (ibc_x1min == M1_IBC_REFLECT) && lcut == 0;   // hrsplit
-  const bool imir = clean && (ibc_x1min == M1_IBC_REFLECT) && !vgd_rbon && lcut == 0;
+  const bool imir = clean && (ibc_x1min == M1_IBC_REFLECT) && lcut == 0;
   const bool spl = vet_seg_split;   // vet_seg = split
   const int spe = VetSegMode();
   const int vim = vet_interp;   // vet_interp: 2 corner, 3 auto
@@ -5917,7 +5916,6 @@ void RadiationM1::VetGdSweep() {
   const bool tbh = vgd_tbath && (ibc_x1max == M1_IBC_MARSHAK) && (iebath_x1max != 0.0);
   const Real itop = tbh ? iebath_x1max : 0.0;
   const Real mt0 = pm->mesh_size.x2min, mtl = pm->mesh_size.x2max - mt0;
-  const Real mp0 = pm->mesh_size.x3min, mpl = pm->mesh_size.x3max - mp0;
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
   auto &mbsize = pmy_pack->pmb->mb_size;
@@ -5934,13 +5932,6 @@ void RadiationM1::VetGdSweep() {
   auto hp_ = vgd_hpol;
   auto wsd_ = vgd_wsd;
   const int c2w_ = indcs.nx2 + 2*wb;
-  // the polar ring buffers
-  const bool rbon_ = vgd_rbon;
-  auto lxy_ = vgd_lxy;
-  const int nzr_ = vgd_nzr, nt2_ = vgd_nt2, nx3t_ = std::max(vgd_nx3t, 1);
-  auto rbi_ = vgd_rbi;
-  auto rbc_ = vgd_rbc;
-  auto rbth_ = vgd_rbth;
   // (the fused sweep counts as the two sweeps it replaces; a list-only
   // preparation as none)
   if (!vgd_xff_prep) {vgd_hsweep += vgd_xff_now ? 2 : 1;}
@@ -6139,9 +6130,9 @@ void RadiationM1::VetGdSweep() {
         bdp = VgdClosureToDevice(body, vgd_bbuf0);
       }
     }
-    // no cells path, polar rings or band exit: the shell list launches the
-    // kernel compiled without those branches (bitwise)
-    const bool gfast = !vpa_h && !rbon_ && !bandx;
+    // no cells path or band exit: the shell list launches the kernel compiled
+    // without those branches (bitwise)
+    const bool gfast = !vpa_h && !bandx;
 #if defined(KOKKOS_ENABLE_CUDA)
     using VgdBodygT = decltype(bodyg);
     using VgdBodymgT = decltype(bodymg);
@@ -6595,14 +6586,13 @@ void RadiationM1::VetGdSweep() {
     // from every lateral MeshBlock edge (they read no band) run while the messages
     // travel, then the unpack, then the edge entries: each entry the same code, bitwise
     const bool gbo = vgd_gbo && vgd_raw && vgd_gbc && vgd_hmpi && vgd_nb1 == 1 &&
-                     !(rga && vgd_rg_refill) && !xffs && !ovl && fh <= 1 &&
-                     !vgd_rbon;
+                     !(rga && vgd_rg_refill) && !xffs && !ovl && fh <= 1;
     int gbo_i = -1, gbo_ws = 0;      // the begun exchange (shell, depth)
     if (vgd_gbo && !gbo && !vgd_gbo_said && global_variable::my_rank == 0) {
       std::cout << "<rad_m1> vet_gd_halo_overlap: not taken by this sweep (it needs the "
                 << "sc rays' compact global band over MPI, one x1 level, the shell "
-                << "lists, and no band-ring refill, cross-fade fuse, vet_gd_overlap, "
-                << "fuse_shells or polar rings)" << std::endl;
+                << "lists, and no band-ring refill, cross-fade fuse, vet_gd_overlap or "
+                << "fuse_shells)" << std::endl;
       vgd_gbo_said = true;
     }
     // several MeshBlocks along x1: the levels in the pass's order, each from the boundary
@@ -6778,7 +6768,6 @@ void RadiationM1::VetGdSweep() {
         }
       }
       if (rga) {VetGdRingFlush();}
-      if (vgd_rbon) {VetGdRingGatherI(i);}   // the polar ring rows of shell i
       // the next shell's kernel is stream-ordered behind the unpack: no fence needed
       vgd_thalo += th.seconds();
     }
@@ -7069,7 +7058,6 @@ void RadiationM1::VetGdSource() {
     return;
   }
   VetGdHaloCs(vgd_cs, ilo, ie);
-  if (vgd_rbon) {VetGdRingGatherC(ilo, ie);}
 }
 
 //----------------------------------------------------------------------------------------

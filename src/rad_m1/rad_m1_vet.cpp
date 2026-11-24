@@ -1866,13 +1866,8 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   if (!trans_on) {
     VetFatal("<rad_m1>/closure = vet_sc needs transport = implicit on a MULTI-D mesh");
   }
-  // several MeshBlocks or ranks: the exact banded sweep of VetSweepMB.  vet_mb_force
-  // (DIAGNOSTIC, read only when given) runs it on one MeshBlock too, where it must
-  // reproduce the single-block sweep bit for bit.
-  bool mbpath = (pm->nmb_total != 1 || global_variable::nranks != 1);
-  if (pin->DoesParameterExist("rad_m1", "vet_mb_force")) {
-    mbpath = mbpath || pin->GetBoolean("rad_m1", "vet_mb_force");
-  }
+  // several MeshBlocks or ranks: the exact banded sweep of VetSweepMB
+  const bool mbpath = (pm->nmb_total != 1 || global_variable::nranks != 1);
   // a non-periodic x2 (x3) mesh boundary is a vacuum face of the formal
   // solution (rays entering through it carry I = 0), on the single-MeshBlock sweep; the
   // banded multi-block sweep still needs the periodic wrap
@@ -3281,7 +3276,7 @@ void RadiationM1::VetFree() {
 //! when the sweep crosses an x1 block face (L a multiple of nx1) the upwind plane is
 //! handed to the next block (VetX1Move).  Every value a block reads is the very number
 //! the neighbour computed, and the arithmetic is that of the single-block kernel term
-//! for term: with one MeshBlock (vet_mb_force) the moments are bit-identical to it.
+//! for term: on one MeshBlock the moments are bit-identical to it.
 //! A split along x2/x3 costs no serialisation (all blocks of a layer run together);
 //! along x1 the stack is swept in turn, which the x1 line solve (implicit_partition =
 //! gather) already imposes.

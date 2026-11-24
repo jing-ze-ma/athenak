@@ -585,17 +585,6 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_face_fct_rounds")) {
     t2_ffct_rk = pin->GetInteger("rad_m1", "time2_face_fct_rounds");
   }
-  // (the one-pass donor form was removed: it fails the accuracy gate)
-  if (pin->DoesParameterExist("rad_m1", "time2_face_fct_form") &&
-      pin->GetString("rad_m1", "time2_face_fct_form") != "zalesak") {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "<rad_m1>/time2_face_fct_form: only zalesak (the default) "
-              << "remains; the donor form was removed" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
-  if (pin->DoesParameterExist("rad_m1", "time2_k1_redist_r")) {
-    t2_k1rd_r = pin->GetInteger("rad_m1", "time2_k1_redist_r");
-  }
   if (pin->DoesParameterExist("rad_m1", "time2_k1_pos_after_stiff")) {   // seamE-1106
     t2_k1pos_as = pin->GetBoolean("rad_m1", "time2_k1_pos_after_stiff");
   }
@@ -1076,7 +1065,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
     // seamE-1106 time2_k1_redist = th (> 0, read only when named): where the explicit
     // increment takes the stage-1 old vector below th E, E + a21 dt K1_E < th E, the
     // missing V K1_E, V (th E - E - a21 dt K1_E)/(a21 dt), is taken from the cells of
-    // the same x1 (radial) column at distance d = 1, 2, .. time2_k1_redist_r, the two
+    // the same x1 (radial) column at distance d = 1, 2, .. 16, the two
     // cells at each d in proportion to their room V (E + a21 dt K1_E - th E)/(a21 dt)
     // (> 0 only; donors keep E + a21 dt K1_E >= th E).  The moved quantity is V K1_E, so
     // sum V K1_E is exact, E channel only; what rr cells cannot pay is given back
@@ -1104,7 +1093,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
                                        mbsz.d_view(m).dx3);
       };
       const Real th = t2_k1rd, ca = c1;
-      const int rr = t2_k1rd_r;
+      const int rr = 16;
       Real nb = 0.0, nun = 0.0, mvd = 0.0, mvx = 0.0;
       Kokkos::parallel_reduce("m1_t2_k1rd", Kokkos::MDRangePolicy<Kokkos::Rank<3>>(
           DevExeSpace(), {0, ks, js}, {nmbr + 1, ke + 1, je + 1}),

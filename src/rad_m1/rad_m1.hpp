@@ -1431,7 +1431,7 @@ class RadiationM1 {
   // (so every face of those cells sees none).  Conservative (per face), local.
   Real impl_pred_tcap = 2.0;   // seamE-1106 implicit_predictor_tcap
   Real t2_k1rd = 0.0, t2_k1rd_n = 0.0, t2_k1rd_un = 0.0;   // seamE-1106 time2_k1_redist
-  int t2_k1rd_r = 16, t2_k1rd_calls = 0;
+  int t2_k1rd_calls = 0;
   Real t2_k1rd_mv = 0.0, t2_k1rd_mx = 0.0;
   bool t2_k1pos_as = false;   // seamE-1106 time2_k1_pos_after_stiff
   bool cs_vtx_mono = false;    // DEFAULT = cs geometry (USER 10-29)
@@ -2064,7 +2064,6 @@ class RadiationM1 {
   Real cln_stall_f = 0.99;      // clean_bicg_stall_fac: least residual drop per window
   int cln_maxnl = 50;           // clean_maxnl: Newton iterations
   Real cln_tol_nl = 1.0e-11;    // clean_tol_nl: Newton tolerance (relative dE, dT, dv)
-  Real cln_tolrel = 0.0, cln_tolrmx = 1.0e-4;   // clean_tol_rel, clean_tol_rel_max
   bool cln_gtf = false;         // clean_gas_tfloor: gas T >= tfloor, energy to/from E
   bool cln_wbfct = false;       // clean_wb_fct
   bool cln_wbff = false;        // clean_wb_floor_fail
@@ -2207,7 +2206,6 @@ class RadiationM1 {
   Real cln_nl_escale = 0.0;     // that E scale, clean_nl_efloor max E of the iterate
   int cln_wo_nc = 0;            // the slots of cln_w.o (CleanWoBind)
   int cln_hmax = 16;            // clean_halo_vars: most variables of one ghost exchange
-  bool cln_conv_est = false;    // clean_conv_est: stop on the estimated remaining change
   bool cln_cestf = false;       // clean_conv_est_f: that stop with the F solve's F change
   Real cln_dfp = 0.0;           //   the change of the last velocity update's F solve
   DvceArray5D<Real> cln_fpv;    //   and its F per face (3 directions)
@@ -3319,26 +3317,6 @@ class RadiationM1 {
   std::vector<double> vgd_thn_h;          // host copy, m-major
   DvceArray1D<int> vgd_hpol;              // (8 nmb) pole slot flag
   DvceArray2D<int> vgd_wsd;               // (2, c1) per-shell halo depth: inward, outward
-  // polar RING buffers (rad_m1_vetgd_sph2.inc): the full sphere's polar rows
-  // (node colatitude < vet_gd_band_colat, + 1 row) of EVERY phi block, gathered per shell
-  // (intensities, after the shell's sweep) and per build (ln chi, ln S): an upwind
-  // stencil inside the polar zone reads them at its true phi (no band, no clamp)
-  bool vgd_rbon = false;
-  // vet_gd_pole_ring (read only when named; default off)
-  bool vgd_rbkey = false;
-  // vet_gd_pole_ring_colat (deg; default vet_gd_band_colat)
-  Real vgd_rbcolat = -1.0;
-  int vgd_nzr = 0, vgd_nx3t = 0, vgd_nt2 = 0;
-  // ((i 2 nzr + pq) nx3t + K) n + d ; ((i 2 + c) 2 nzr + pq) nx3t + K
-  DvceArray1D<Real> vgd_rbi, vgd_rbc;
-  // (2, nzr) physical theta of ring row q (north, south)
-  DvceArray2D<Real> vgd_rbth;
-  DvceArray1D<Real> vgd_rbs, vgd_rbr;     // send / receive buffers
-  // (items, 4): local m (-1 remote), pole p, lx3, offset (per unit)
-  DvceArray2D<int> vgd_rbit;
-  std::vector<int> vgd_rbcnt, vgd_rbdsp;  // per rank: count, displacement (units)
-  int vgd_rbnit = 0, vgd_rbnloc = 0, vgd_rbf0 = 0;   // items total, local, first local
-  void VetGdRingInit();
   // <rad_m1>/vet_gd_band_global (read only when named; default false =
   // bitwise; full sphere only, rad_m1_vetgd_sph2.inc): a decomposition-INDEPENDENT band.
   // (1) every band position of every block is filled by an exact copy of its owner's
@@ -3373,8 +3351,6 @@ class RadiationM1 {
   Real vgd_gbdmin = 0.0;
   template <class V>
   bool VetGdGbHaloC(V &a, const int i, const int ws, const int part = 0);
-  void VetGdRingGatherI(const int i);
-  void VetGdRingGatherC(const int i0, const int i1);
   void VetGdThetaInit();                  // the node table and the checks
   double VetGdThetaDmin() const;          // the narrowest lateral spacing for the band
   int VgdPoleSlot(const int o, const int lx2) const;  // 0, 1 north, 2 south

@@ -12,7 +12,7 @@
 //! Needs M1_VGD_BODY_NAME (the lambda's name) and M1_VGD_BODY_MIR defined.
 //! vpa and gx are deduced (generic lambda): a launch passes a bool (the
 //! runtime value; gx true) or std::false_type, which compiles the branches they gate out
-//! of that kernel (gx false: no polar rings, band exit or fused
+//! of that kernel (gx false: no band exit or fused
 //! twin; VetGdSweep launches it only when those are off).  The arithmetic of every path
 //! taken is unchanged.
 
@@ -177,44 +177,6 @@
             int k0 = static_cast<int>(floor(fkg)) - sk_;
             Real uj = fjg - floor(fjg), uk = fkg - floor(fkg);
             bool clp = false;
-            // polar RING (sph2.inc): both stencil rows inside a polar zone ->
-            // the corners are (global phi K, ring code RB0 + 2 (p nzr + q) + across-axis)
-            // read from the gathered ring buffers at their true phi (no band, no clamp)
-            bool rng = false;
-            int rk0 = 0, rk1 = 0, rj0 = 0, rj1 = 0;
-            Real ruk = 0.0;
-            if (gx && rbon_) {
-              const int J0 = lxy_(m,0)*nx2b + (j0 - wb);
-              int zp = -1;
-              if (J0 >= -nzr_ && J0 + 1 <= nzr_ - 1) {
-                zp = 0;
-              } else if (J0 >= nt2_ - nzr_ && J0 + 1 <= nt2_ + nzr_ - 1) {
-                zp = 1;
-              }
-              if (zp >= 0) {
-                rng = true;
-                auto code = [&](const int J) -> int {
-                  int q, sh;
-                  if (zp == 0) {
-                    sh = (J < 0) ? 1 : 0;
-                    q = sh ? (-1 - J) : J;
-                  } else {
-                    sh = (J >= nt2_) ? 1 : 0;
-                    q = sh ? (J - nt2_) : (nt2_ - 1 - J);
-                  }
-                  return VGD_RB0 + 2*(zp*nzr_ + q) + sh;
-                };
-                rj0 = code(J0);
-                rj1 = code(J0 + 1);
-                const Real kg = lxy_(m,1)*nx3b + (fk - wb);
-                const Real kf = floor(kg);
-                ruk = kg - kf;
-                int kq = static_cast<int>(kf) % nx3t_;
-                if (kq < 0) {kq += nx3t_;}
-                rk0 = kq;
-                rk1 = (kq + 1) % nx3t_;
-              }
-            }
             // the full sphere: reads stop at the shell's halo depth
             // (the polar rings' long reads; clamped and counted like any clamp)
             int jlo_ = jlo, jhi_ = jhi, klo_ = klo, khi_ = khi;
@@ -237,47 +199,20 @@
                 jhi_ = j + wu - 1;
               }
             }
-            if (!rng) {
-              if (j0 < jlo_) {j0 = jlo_; uj = 0.0; clp = true;}
-              if (j0 > jhi_) {j0 = jhi_; uj = 1.0; clp = true;}
-              if (k0 < klo_) {k0 = klo_; uk = 0.0; clp = true;}
-              if (k0 > khi_) {k0 = khi_; uk = 1.0; clp = true;}
-            }
+            if (j0 < jlo_) {j0 = jlo_; uj = 0.0; clp = true;}
+            if (j0 > jhi_) {j0 = jhi_; uj = 1.0; clp = true;}
+            if (k0 < klo_) {k0 = klo_; uk = 0.0; clp = true;}
+            if (k0 > khi_) {k0 = khi_; uk = 1.0; clp = true;}
             if (clp) {Kokkos::atomic_add(&cnt_(0), 1.0);}
             int j1 = j0 + 1, k1 = k0 + 1;
-            if (rng) {
-              j0 = rj0; j1 = rj1; k0 = rk0; k1 = rk1; uk = ruk;
-            }
             // the stencil and the field reads of the shared upwind core
             const VgdSt4 st4{k0, k1, j0, j1, uj, uk};
-            // a ring code (jj >= VGD_RB0) reads the ring buffers
-            auto rkp = [&](const int kk, const int jj) -> int {
-              return (kk + ((jj - VGD_RB0) & 1)*(nx3t_/2)) % nx3t_;
-            };
             auto fC = [&](const int c, const int kk, const int jj, const int ii) -> Real {
-              if (gx && jj >= VGD_RB0) {
-                return rbc_(((static_cast<size_t>(ii)*2 + c)*2*nzr_ + ((jj - VGD_RB0) >> 1))
-                            *nx3t_ + rkp(kk,jj));
-              }
               return csx(m,c,kk,jj,ii);
             };
-            auto fIu = [&](const int kk, const int jj) -> Real {
-              if (gx && jj >= VGD_RB0) {
-                return rbi_(((static_cast<size_t>(iu)*2*nzr_ + ((jj - VGD_RB0) >> 1))*nx3t_
-                             + rkp(kk,jj))*n + d);
-              }
-              return rd(kk,jj,iu);
-            };
-            // the branch n . r_hat of a stencil cell (ring: at its true position)
-            auto mrq = [&](const int kk, const int jj) -> Real {
-              if (gx && jj >= VGD_RB0) {
-                const int pq = (jj - VGD_RB0) >> 1;
-                const Real tq = rbth_(pq/nzr_, pq % nzr_);
-                const Real pk = mp0 + (rkp(kk,jj) + 0.5)*(mpl/nx3t_);
-                return nx*sin(tq)*cos(pk) + ny*sin(tq)*sin(pk) + nz*cos(tq);
-              }
-              return mr_(m,kk,jj,d);
-            };
+            auto fIu = [&](const int kk, const int jj) -> Real {return rd(kk,jj,iu);};
+            // the branch n . r_hat of a stencil cell
+            auto mrq = [&](const int kk, const int jj) -> Real {return mr_(m,kk,jj,d);};
             bool bdone = false;
 #if M1_VGD_BODY_MIR
             // vet_gd_theta_wall = vacuum: the upwind point lies beyond a

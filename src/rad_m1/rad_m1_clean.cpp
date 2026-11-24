@@ -1369,10 +1369,9 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
           }
         }
       }
-      // (clean_tol_rel, as the old production's implicit_tol_rel: the strict test stops
-      // at kappa times the first pass's change, at most clean_tol_rel_max)
-      if (cln_tolrel > 0.0 && !cln_bon && inl == 0)
-        trel = fmin(cln_tolrel*dnl, cln_tolrmx);
+      // (as the old production's implicit_tol_rel: the strict test stops at 0.1 times
+      // the first pass's change, at most 1e-4)
+      if (!cln_bon && inl == 0) trel = fmin(0.1*dnl, 1.0e-4);
       tol_nl = fmax(tol_nl, trel);
       if (fbl) {
         de0 = de;
@@ -1393,8 +1392,8 @@ TaskStatus RadiationM1::CleanSolve(Driver *pdriver, int stage) {
         return ((q < 0.5) ? q/(1.0 - q)*df : df) < tol_nl;
       };
       const bool cef = cln_cestf && cln_bon;
-      if ((cln_conv_est || cef) && inl > 0 && est(de, de0) < tol_nl &&
-          est(dv, dv0) < tol_nl && (!cef || estf()) && !(clos1 && inl == 0)) {
+      if (cef && inl > 0 && est(de, de0) < tol_nl && est(dv, dv0) < tol_nl && estf() &&
+          !(clos1 && inl == 0)) {
         converged = true;
         break;
       }
