@@ -1,0 +1,165 @@
+# Advecting radiation pulse (Krumholz, Klein, McKee & Bolstad 2007, ApJ 667, 626; Jiang
+# 2021 ApJS 253 49, sec. 4.4): a Gaussian temperature pulse in radiative equilibrium at
+# uniform total pressure, optically thick (tau_cell = 240), advected at v = 3e7 cm/s
+# (problem/pulse_v; 36 cm = 1.5 widths by tlim) through a periodic box while it diffuses.
+# The suite compares it with the same pulse at rest, shifted by v t (Galilean invariance of
+# the comoving diffusion).
+# cgs. Used by: advect_pulse.
+#
+# The <rad_vet> block starts with the scheme keys that production pins (the values of the
+# production star decks); the rest are this test's physics, grid and solver set-up.
+
+<job>
+basename = ap
+
+<mesh>
+layout_invariant = true
+nghost = 2
+nx1 = 256
+x1min = -256.0
+x1max = 256.0
+ix1_bc = periodic
+ox1_bc = periodic
+nx2 = 4
+x2min = -0.5
+x2max = 0.5
+ix2_bc = periodic
+ox2_bc = periodic
+nx3 = 1
+x3min = -0.5
+x3max = 0.5
+ix3_bc = periodic
+ox3_bc = periodic
+
+<meshblock>
+nx1 = 256
+nx2 = 4
+nx3 = 1
+
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.4
+nlim = -1
+tlim = 1.2e-6
+ndiag = 1000000
+
+<hydro>
+eos = ideal
+reconstruct = plm
+rsolver = hllc
+gamma = 1.666666666666667
+rad_signal_speed = true        # the production star decks' signal speed
+rad_signal_speed_diff = true
+
+<rad_vet>
+# --- production scheme keys ---
+zalesak_active = true
+clean_stag_xdonor = lag
+clean_stag_xsrc = true
+implicit_pos_floor_gas_keep = 1
+implicit_pos_gas_cons = true
+clean_stag_mg_color = mirror
+time2_k1_redist = 0
+time2_tableau = sdirk2
+clean_face_hctau = true
+clean_stag_upwind_central = true
+clean_w_fse_tau = true
+clean_stag_fwb_stage = false
+clean_stag_fwb_t2 = false
+time2_gtime_mom = true
+time2_k1_stiff = 0
+clean_pred_stage = false
+clean_stag_central = true
+clean_stag_kpat = false
+clean_stag_eicarry = true
+clean_gas_secant = max_stage2
+clean_pred_xch = true
+clean_stag_fcone_gas = false
+# --- this test ---
+clean_layout = staggered
+scheme = clean
+clean_cs_lz_abs = 2
+clean_stag_csvec_radial = true
+closure = vet_sc
+time2_vet_col_source = blend
+time_scheme = hesdirk2
+time2_start = be
+vet_rotate_avg = 0
+vet_col_lat_cut_thin = 1.0
+vet_gd_rotate_t0 = 0.0
+vet_gd_rotate_align = true
+vet_source_noesrc = true
+vet_scatter = true
+vet_scatter_form = ma
+vet_scatter_j = relaxed
+implicit_pos_floor_solve = true
+vet_col_lat_taucut = 30.0
+vet_gd_gl_nmu = 10
+vet_gd_gl_nphi = 12
+vet_gd_gl_stagger = true
+vet_gd_rotate_every = 0
+vet_gd_rotate_dt = 0
+vet_col_lat_offdiag = operator
+vet_gd_tangential = false
+vet_gd_wall_interp = true
+vet_gd_halo_compact = 2
+implicit_resid_fatal = 1.0e-2
+implicit_pos_gas = true
+implicit_pos_floor = true
+vet_col_every = 1
+time2_reject = retry
+vet_col_ncore = 8
+vet_col_nsub = 1
+vet_col_nmu = 4
+vet_col_fk_min = 0
+vet_col_reflect_top = 1
+vet_col_surface_face = 1
+vet_col_surface_q = 1
+vet_col_surface_qmin = 0.001
+vet_col_surface_qmax = 1
+vet_col_axis = radial
+time2_enth_be = true
+implicit_tol_rel_max = 1.0e-4
+# --- this test's physics ---
+c_light = 2.99792458e10
+chat_over_c = 1.0
+arad = 4.8032223745536764e-45
+e_floor = 1.0e-30
+opacity = const
+kappa_p = 100.0
+kappa_e = 100.0
+kappa_f = 100.0
+kappa_s = 0.0
+coupling = true
+gas_feedback = true
+transport = implicit
+implicit_cfl = -1.0
+implicit_bc_x1min = periodic
+implicit_bc_x1max = periodic
+vet_x1_periodic = true
+vet_x1_npass = 2
+vet_nmu = 4
+vet_nphi = 8
+
+<problem>
+pgen_name = rad_vet_beam
+vet_test = advect_pulse
+gas_rho = 1.2
+pulse_t0 = 3.5426608899723244e14
+pulse_t1 = 7.0853217799446490e14
+pulse_width = 24.0
+pulse_x0 = 0.0
+pulse_v = 3.0e7
+
+<output1>
+file_type = bin
+bin_double = true
+variable = vet
+dt = 0.3e-6
+
+<output2>
+file_type = bin
+bin_double = true
+variable = hydro_w
+dt = 0.3e-6

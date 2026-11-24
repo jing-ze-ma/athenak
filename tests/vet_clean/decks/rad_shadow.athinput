@@ -1,0 +1,175 @@
+# Shadow test (Hayes & Norman 2003, ApJS 147, 197; Jiang et al. 2012, ApJS 199, 14): a
+# dense elliptical clump (1000 x ambient, Fermi edge, opacity 0.1 (T/T0)^-3.5 (rho/rho0)^2
+# per cm) in a thin ambient gas at T0 = 290 K, illuminated from x1min by a T_r = 1740 K
+# bath (Marshak face; vacuum Marshak faces elsewhere). The gas is a
+# prescribed static background (user source, gas_feedback = false); run for 3 light-crossing
+# times (steady after ~2). cgs, T in kelvin.
+# Used by: shadow.
+#
+# The <rad_vet> block starts with the scheme keys that production pins (the values of the
+# production star decks); the rest are this test's physics, grid and solver set-up.
+
+<job>
+basename = sh
+
+<mesh>
+layout_invariant = true
+nghost = 2
+nx1 = 140
+x1min = 0.0
+x1max = 1.0
+ix1_bc = outflow
+ox1_bc = outflow
+nx2 = 80
+x2min = -0.12
+x2max = 0.12
+ix2_bc = outflow
+ox2_bc = outflow
+nx3 = 1
+x3min = -0.5
+x3max = 0.5
+ix3_bc = periodic
+ox3_bc = periodic
+
+<meshblock>
+nx1 = 140
+nx2 = 80
+nx3 = 1
+
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.4
+nlim = -1
+tlim = 1.0007e-10
+ndiag = 1000000
+
+<hydro>
+eos = ideal
+reconstruct = plm
+rsolver = hllc
+gamma = 1.666666666666667
+rad_signal_speed = true        # the production star decks' signal speed
+rad_signal_speed_diff = true
+
+<rad_vet>
+# --- production scheme keys ---
+zalesak_active = true
+clean_stag_xdonor = lag
+clean_stag_xsrc = true
+implicit_pos_floor_gas_keep = 1
+implicit_pos_gas_cons = true
+clean_stag_mg_color = mirror
+time2_k1_redist = 0
+time2_tableau = sdirk2
+clean_face_hctau = true
+clean_stag_upwind_central = true
+clean_w_fse_tau = true
+clean_stag_fwb_stage = false
+clean_stag_fwb_t2 = false
+time2_gtime_mom = true
+time2_k1_stiff = 0
+clean_pred_stage = false
+clean_stag_central = true
+clean_stag_kpat = false
+clean_stag_eicarry = true
+clean_gas_secant = max_stage2
+clean_pred_xch = true
+clean_stag_fcone_gas = false
+# --- this test ---
+clean_layout = staggered
+scheme = clean
+clean_cs_lz_abs = 2
+clean_stag_csvec_radial = true
+closure = vet_sc
+time2_vet_col_source = blend
+time_scheme = hesdirk2
+time2_start = be
+vet_rotate_avg = 0
+vet_col_lat_cut_thin = 1.0
+vet_gd_rotate_t0 = 0.0
+vet_gd_rotate_align = true
+vet_source_noesrc = true
+vet_scatter = true
+vet_scatter_form = ma
+vet_scatter_j = relaxed
+implicit_pos_floor_solve = true
+vet_col_lat_taucut = 30.0
+vet_gd_gl_nmu = 10
+vet_gd_gl_nphi = 12
+vet_gd_gl_stagger = true
+vet_gd_rotate_every = 0
+vet_gd_rotate_dt = 0
+vet_col_lat_offdiag = operator
+vet_gd_tangential = false
+vet_gd_wall_interp = true
+vet_gd_halo_compact = 2
+implicit_resid_fatal = 1.0e-2
+implicit_pos_gas = true
+implicit_pos_floor = true
+vet_col_every = 1
+time2_reject = retry
+vet_col_ncore = 8
+vet_col_nsub = 1
+vet_col_nmu = 4
+vet_col_fk_min = 0
+vet_col_reflect_top = 1
+vet_col_surface_face = 1
+vet_col_surface_q = 1
+vet_col_surface_qmin = 0.001
+vet_col_surface_qmax = 1
+vet_col_axis = radial
+time2_enth_be = true
+implicit_tol_rel_max = 1.0e-4
+# --- this test's physics ---
+c_light = 2.99792458e10
+chat_over_c = 1.0
+arad = 7.5657e-15
+e_floor = 1.0e-30
+opacity = powerlaw
+kappa_p = 0.1
+kappa_e = 0.1
+kappa_f = 0.1
+kappa_s = 0.0
+rho_ref = 1.0
+t_ref = 290.0
+opac_a = 1.0
+opac_b = -3.5
+coupling = true
+gas_feedback = false
+transport = implicit
+implicit_cfl = 4.0
+implicit_bc_x1min = marshak
+implicit_bc_x1max = marshak
+implicit_ebath_x1min = 6.93499432e-02
+implicit_ebath_x1max = 0.0
+implicit_bc_x2min = marshak
+implicit_bc_x2max = marshak
+vet_nmu = 4
+vet_nphi = 8
+
+<problem>
+pgen_name = rad_vet_beam
+vet_test = shadow
+user_srcs = true
+shadow_rho0 = 1.0
+shadow_ratio = 1.0e3
+shadow_t0 = 290.0
+shadow_tr = 1740.0
+shadow_x0 = 0.5
+shadow_y0 = 0.0
+shadow_ax = 0.1
+shadow_ay = 0.06
+shadow_delta = 10.0
+
+<output1>
+file_type = bin
+bin_double = true
+variable = vet
+dt = 1.0e30
+
+<output2>
+file_type = bin
+bin_double = true
+variable = hydro_w
+dt = 1.0e30
