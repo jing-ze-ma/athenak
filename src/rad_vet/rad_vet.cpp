@@ -1212,6 +1212,12 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     if (pin->DoesParameterExist("rad_vet","floorcap_lz")) {
       fcap_lz = pin->GetBoolean("rad_vet","floorcap_lz");
     }
+    // floorcap_lz_spin (read only when named; needs floorcap_lz, floorcap_mesh_vol): the
+    // cap scales the whole velocity, so |v| <= floorcap_v, and gives the L_z it removes
+    // to the gas at or above floorcap_rho as one rigid rotation (FloorGasCap)
+    if (pin->DoesParameterExist("rad_vet","floorcap_lz_spin")) {
+      fcap_spin = pin->GetBoolean("rad_vet","floorcap_lz_spin");
+    }
     if (pin->DoesParameterExist("rad_vet","floorcap_report")) {
       fcap_report = pin->GetInteger("rad_vet","floorcap_report");
     }
@@ -1223,6 +1229,11 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
                     "key: the old default)");
       }
       fcap_mvol = pin->GetOrAddBoolean("rad_vet","floorcap_mesh_vol",nw);
+    }
+    if (fcap_spin && !(fcap_lz && fcap_mvol)) {
+      std::cout << "### FATAL ERROR: <rad_vet>/floorcap_lz_spin needs floorcap_lz and "
+                << "floorcap_mesh_vol" << std::endl;
+      std::exit(EXIT_FAILURE);
     }
     if (fcap_rho > 0.0 && (!coupling || !(arad > 0.0))) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__

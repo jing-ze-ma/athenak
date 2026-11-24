@@ -365,6 +365,7 @@ class RadiationVet {
   Real fcap_rho = 0.0, fcap_v = 0.0;
   int fcap_report = 0;
   bool fcap_lz = false;     // floorcap_lz: the velocity cap keeps the L_z momentum
+  bool fcap_spin = false;   // floorcap_lz_spin: its L_z X the dense gas's dOmega = X/I
   bool fcap_mvol = false;   // floorcap_mesh_vol: counters by CleanVol and CleanLzArm
   DualArray1D<Real> fcap_cnt;   // removed: 0 n_v, 1 n_t, 2 dKE, 3 dEint, 4 |dp|V, 5 dL_zV
   void FloorGasCap();

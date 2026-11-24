@@ -31,6 +31,27 @@
    "warnings": 0
   }
  },
+ "floorcap_spin": {
+  "_about": "floorcap_lz_spin (floor cells thinner than the IC density, the whole velocity capped, its L_z the rest's rigid rotation): drifts as conservation_lz incl. sp dLz_gr without the ledger; n_v capped cells > 0; restart, forced dt_retry, 1 vs 1 x 2 MeshBlocks (tile) bitwise; nospin_sp_dLz_gr reported only",
+  "max": {
+   "sp_dE": 1e-13,
+   "sp_dM": 1e-13,
+   "sp_dLz": 1e-13,
+   "sp_dLz_gr": 1e-13,
+   "cs_dE": 1e-13,
+   "cs_dM": 1e-13,
+   "cs_dLz": 1e-13
+  },
+  "min": {
+   "n_v": 1
+  },
+  "equal": {
+   "restart_maxdiff": 0.0,
+   "retry_maxdiff": 0.0,
+   "layout_maxdiff": 0.0,
+   "warnings": 0
+  }
+ },
  "restart_sp": {
   "equal": {
    "maxdiff": 0.0
