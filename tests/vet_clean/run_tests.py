@@ -3,6 +3,7 @@
 
 usage: run_tests.py --exe PATH [--quick] [--jobs N] [--threads T] [--only NAME,...]
                     [--workdir DIR] [--mpirun CMD] [--keep] [--record FILE]
+                    [--keys 'block/key=value ...']
 
 Every test writes its runs under WORKDIR/<test>/ and prints one PASS / FAIL line with the
 measured numbers and the criterion.  The reference values and tolerances are in
@@ -36,13 +37,16 @@ class Ctx:
         self.threads = a.threads
         self.quick = a.quick
         self.mpirun = a.mpirun
+        self.keys = dict(kv.split('=', 1) for kv in a.keys.split())
         self.ref = REF.get(name, {})
         shutil.rmtree(self.dir, ignore_errors=True)
         os.makedirs(self.dir)
 
     def run(self, deck, sub, over=None, args=(), restart=None, ranks=1):
         """Run deck (a file in decks/) with block/key overrides in DIR/sub; returns the
-        run directory.  restart = a restart file to continue from instead."""
+        run directory.  restart = a restart file to continue from instead.  The --keys
+        overrides go into every run (the test's own overrides win)."""
+        over = dict(self.keys, **(over or {}))
         d = os.path.join(self.dir, sub)
         os.makedirs(d, exist_ok=True)
         if restart:
@@ -520,6 +524,8 @@ def main():
     p.add_argument('--mpirun', default='mpirun', help='MPI launcher (multi-rank tests)')
     p.add_argument('--keep', action='store_true', help='keep the run directories of passes')
     p.add_argument('--record', default='', help='write the measured values to this JSON')
+    p.add_argument('--keys', default='', help="extra overrides of every run, e.g. "
+                   "'rad_vet/clean_tol=1e-9 hydro/rad_signal_speed_diff=true'")
     a = p.parse_args()
     sel = [t for t in TESTS if (not a.quick or t[2]) and
            (not a.only or t[0] in a.only.split(','))]

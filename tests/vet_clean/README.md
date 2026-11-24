@@ -18,7 +18,9 @@ build (no `-D PROBLEM`) is enough. Every test runs on one MPI rank with OpenMP t
 Options (`run_tests.py --help`): `--jobs N` tests at the same time (default: cores / 4),
 `--threads T` OpenMP threads per run (default 4), `--workdir DIR` (default
 `./vet_clean_runs`), `--keep` (keep the run directories of passed tests; failed tests are
-always kept), `--record FILE` (write every measured number to a JSON file).
+always kept), `--record FILE` (write every measured number to a JSON file), `--keys
+'block/key=value ...'` (extra input keys for every run, e.g. to test a new key on the whole
+suite; a test's own settings win).
 
 Exit status: 0 if all tests pass, 1 otherwise. A test whose run fails (non-zero return code)
 is a FAIL with the path of its `run.log`.
