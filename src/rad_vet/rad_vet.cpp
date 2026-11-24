@@ -525,7 +525,6 @@ RadiationVet::RadiationVet(MeshBlockPack *ppack, ParameterInput *pin) :
     cln_xlag = (xd == "lag");
     cln_xsrc = cln_xd && pin->GetOrAddBoolean("rad_vet","clean_stag_xsrc",nw);
     cln_xsw = cln_xd && stag("clean_stag_xsweep", false);
-    cln_kreal = stag("clean_stag_kreal", false);
     // clean_stag_eicarry (default off): the stage start's gas eint < 0 enters the gas row
     // as is, paid by its implicit exchange, not taken as 0 (CleanOldVector)
     cln_eicry = stag("clean_stag_eicarry", false);

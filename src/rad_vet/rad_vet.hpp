@@ -1801,7 +1801,6 @@ class RadiationVet {
   // clean_stag_xpat (default off): the exchange's removal -r hcke E_k past its share of
   // the row in Patankar form (CleanRightHandSide)
   bool cln_xpat = false;
-  bool cln_kreal = false;   // (S3B kick bound: CLW_KS set in CleanOldVector)
   bool cln_eicry = false;   // clean_stag_eicarry (CleanOldVector)
   bool cln_colf = false;    // (clean_stag_colflux: column moves in the stored Phi)
   int cln_lza = 0;          // clean_cs_lz_abs
@@ -1841,12 +1840,6 @@ class RadiationVet {
   Real cln_stfac = 0.5;   // clean_stall_fac
   bool cln_gpic = false;   // (a stalled solve's passes without the gas Newton slope)
   Real cln_ngnsw = 0.0;   // (solves switched so far)
-  // clean_stag_kreal (staggered, default off): the stage increment's momentum kick D at
-  // the share s whose kinetic-energy work E can pay, the rest deferred into the stage's
-  // implicit momentum change (CleanStagKReal); cln_krel_on: a cell was limited this
-  // stage
-  bool cln_krel_on = false;
-  void CleanStagKReal();
   DvceArray1D<Real> cln_kcnt;   // (xpat rows: the last pass; their sum)
   void CleanStagKEnd();
   int cln_fdg = -1;             // staggered bracket: face slot of its lagged flux DG

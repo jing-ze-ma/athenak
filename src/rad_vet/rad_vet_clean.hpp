@@ -268,17 +268,12 @@ constexpr int CLW_SG = 50;   //   and the gas rows (their scales), the weighted 
 constexpr int CLW_BW = 51;   //   preconditioner input (CleanBiCGStab)
 constexpr int CLW_PW = 52;
 constexpr int CLW_N = 53;
-constexpr int CLW_KF = 53;   // staggered clean_stag_kreal: scratch (2), the limiter r
-constexpr int CLW_KM = 54;   //   (setup); clean_stag_xpat / central: the rows'
-constexpr int CLW_PD = 55;   //   Patankar diagonal
+constexpr int CLW_PD = 55;   // staggered clean_stag_xpat / central: the rows' Patankar
+                             //   diagonal (53, 54 unused)
 constexpr int CLW_NK = 56;   //   (allocated only with clean_stag_xpat)
 constexpr int CLW_XA = 56;   // staggered clean_xt_exact: B less its rest (the row's
 constexpr int CLW_XW = 57;   //   exchange as linearised), the row's work W
 constexpr int CLW_NX = 58;   //   (allocated only with clean_xt_exact)
-constexpr int CLW_KS = 58;   // staggered clean_stag_kreal: the momentum increment's
-                             //   applied share s (CleanOldVector)
-constexpr int CLW_KR = 60;   // staggered clean_stag_kreal: the deferred kick (1 - s) D of
-constexpr int CLW_NR = 63;   //   the stage's gas momentum in the frame of y (3)
 
 //----------------------------------------------------------------------------------------
 //! \struct CleanArgs
