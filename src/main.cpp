@@ -616,6 +616,7 @@ int main(int argc, char *argv[]) {
   // every key a default decided (utils/recipe.hpp), one block (rank 0)
   recipe::GetMode(pinput);   // validates <job>/recipe also when nothing was defaulted
   recipe::PrintLog();
+  pinput->PrintNonDefault();
 
 
 
