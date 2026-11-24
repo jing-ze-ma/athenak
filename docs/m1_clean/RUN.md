@@ -103,3 +103,17 @@ the restart rule, and the keys that must always be named.
 - Energy: see "Checking energy conservation" in [OUTPUTS.md](OUTPUTS.md).
 - `CLEAN WARNING` lines and the end-of-run summary: [OUTPUTS.md](OUTPUTS.md).
 - The test suite: `tests/m1_clean/run_tests.sh --exe <binary> --quick`.
+
+## 5. Why is my run slow? (the time-step report)
+
+```bash
+mpirun -np 4 ./athena -r rst/star.00010.rst -d . time/nlim=<cycle + 100> hydro/dt_report=10
+grep -E "^DTREP|^DTREG" log | tail -20
+```
+
+`<hydro>/dt_report = N` (read only when named, no effect on the state) prints every N
+cycles which limit sets dt: a `DTREP` line with the cell of the global minimum (rank, MeshBlock,
+k j i, r, rho, T, sound and flow speeds, the radiation terms) and, on a spherical-polar mesh,
+`DTREG polar` / `DTREG rest` for the minima near the poles and elsewhere. If the minimum sits
+at the poles or in hot floor gas, change the mesh or the floors there rather than the
+radiation keys. `<mhd>/dt_report` does the same for MHD runs.
