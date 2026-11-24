@@ -206,8 +206,12 @@ Solver internals: `clean_conv` (`budget`), `clean_conv_max` (1e-5), `clean_conv_
 `implicit_predictor`, `implicit_predictor_tcap`, `implicit_resid_fatal`, `time/dt_retry_views`,
 `time/dt_retry_host`, `time/restart_refill_ghosts` (false: restarts are bitwise).
 
-Removed (only false): `clean_stag_kpat`. Not recommended: `time2_k1_redist`,
-`time2_k1_stiff` (keep 0).
+Removed (only false / 0 accepted): `clean_stag_kpat`, `time2_k1_redist` (old restart files
+may store 0.1: name it 0). Not recommended: `time2_k1_stiff` (keep 0).
+
+Removed study and debug keys stop the run with a message when named with another value than
+their old default (`CleanPreflight` in `rad_vet/rad_vet_clean.cpp` lists them); keys of the
+removed solvers that old decks and restart files carry are accepted without effect.
 
 Named in the templates but without effect with them (fixed rays, spherical polar): the
 rotation keys other than `vet_gd_rotate_dt`, the cubed-sphere keys (`clean_cs_lz_tel`,

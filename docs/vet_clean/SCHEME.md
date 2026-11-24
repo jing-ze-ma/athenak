@@ -321,7 +321,7 @@ Paths relative to `src/`.
 | IMEX stages, restart state | `rad_vet/rad_vet_time2.cpp`, `utils/imex_sdirk2.hpp` |
 | task lists | `rad_vet/rad_vet_tasks.cpp`, `driver/driver.cpp` |
 | dt retry checkpoint | `driver/dt_retry.cpp` |
-| layout-invariant sums | `utils/repro_sum.hpp`, `rad_vet/rad_vet_layreduce.hpp` |
+| layout-invariant sums | `utils/repro_sum.hpp`, `rad_vet/rad_vet_clean_solver.cpp` |
 
 ## 4. How to cite
 
