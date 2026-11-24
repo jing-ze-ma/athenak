@@ -2412,7 +2412,7 @@ Real RadiationVet::VetRotBeta(const int64_t blk) const {
 
 //----------------------------------------------------------------------------------------
 //! \fn RadiationVet::X1eRst*
-//! \brief vet_x1_periodic (adaptive): the exit plane the next build starts warm from, to /
+//! \brief vet_x1_periodic (adaptive): the exit plane the next build starts from, to /
 //! from cell-sized restart slabs (kM1X1eRstMagic): ray r of row (k, j) at slab r / n1,
 //! cell i = r % n1
 
