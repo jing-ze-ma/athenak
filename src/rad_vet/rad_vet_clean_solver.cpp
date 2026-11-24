@@ -166,6 +166,16 @@ CleanArgs RadiationVet::CleanMakeArgs() {
       });
     }
     x.tg = cln_tg;
+    if (vgd_wst) {
+      if (cln_sgv.extent_int(0) != nmb) {CleanSeamImage();}
+      x.vol = cln_sgv;
+      x.area[0] = cln_sga0;
+      x.area[1] = cln_sga1;
+      x.dxf[1] = cln_sgd1;
+      x.dxf[2] = cln_sgd2;
+      x.x2v = cln_sgx;
+      x.tg = cln_sgtg;
+    }
   }
   if (x.cub) {
     x.vol = pmy_pack->pcoord->volume;
@@ -202,6 +212,99 @@ CleanArgs RadiationVet::CleanMakeArgs() {
   x.phi = fl.phicc0;
   x.emag = emag0;
   return x;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::CleanSeamImage
+//! \brief vet_gd_theta_seam_sym: the geometry the clean scheme reads, with the ghost rows
+//! of a theta-periodic seam (MeshBlocks at x2min / x2max) taking that of the cells they
+//! hold, their periodic images.  On a theta wedge centred on the equator the image of the
+//! ghost at depth g beyond a wall is the equatorial mirror of the row at depth g inside
+//! it: vol, the x1 / x3 face lengths and areas of that row, the x2 faces mirrored, the
+//! centroid reflected about the wall (as BuildX2vRecon).  The seam face's two sides then
+//! have mirror-paired stencils, as they have across any interior face; without it the
+//! one copy of the face computed on the x2min side sees a ghost nearer the pole than the
+//! cell it holds (a net F_theta that grows with the wedge)
+
+void RadiationVet::CleanSeamImage() {
+  auto *pc = pmy_pack->pcoord;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int js = indcs.js, je = indcs.je, ng = indcs.ng, nmb = pmy_pack->nmb_thispack;
+  if (indcs.nx2 < ng) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "vet_gd_theta_seam_sym needs nx2 >= nghost per MeshBlock" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  auto cp = [](const DvceArray4D<Real> &a, const char *nm) {
+    DvceArray4D<Real> b(std::string(nm), a.extent(0), a.extent(1), a.extent(2),
+                        a.extent(3));
+    Kokkos::deep_copy(b, a);
+    return Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), b);
+  };
+  auto v = cp(pc->volume, "cln_sgv"), a0 = cp(pc->area.x1f, "cln_sga0");
+  auto a1 = cp(pc->area.x2f, "cln_sga1"), d1 = cp(pc->dxface.x2f, "cln_sgd1");
+  auto d2 = cp(pc->dxface.x3f, "cln_sgd2");
+  cln_sgx = DvceArray2D<Real>("cln_sgx", pc->x2v.extent(0), pc->x2v.extent(1));
+  cln_sgtg = DvceArray3D<Real>("cln_sgtg", cln_tg.extent(0), cln_tg.extent(1),
+                               cln_tg.extent(2));
+  Kokkos::deep_copy(cln_sgx, pc->x2v);
+  Kokkos::deep_copy(cln_sgtg, cln_tg);
+  auto x2v = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), cln_sgx);
+  auto tg = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), cln_sgtg);
+  auto x2f = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), pc->xx2f);
+  auto x1v = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), pc->x1v);
+  auto bc = pmy_pack->pmb->mb_bcs.h_view;
+  const BoundaryFlag pf = BoundaryFlag::periodic;
+  for (int m = 0; m < nmb; ++m) {
+    for (int sd = 0; sd < 2; ++sd) {
+      if (bc(m, sd ? BoundaryFace::outer_x2 : BoundaryFace::inner_x2) != pf) {continue;}
+      const int w = sd ? je + 1 : js;   // the seam face
+      for (int g = 0; g < ng; ++g) {
+        const int jg = sd ? je + 1 + g : js - 1 - g, jm = sd ? je - g : js + g;
+        // (cells; the x2 face beyond the ghost, depth g + 1 from the wall)
+        const int fg = sd ? je + 2 + g : js - 1 - g, fm = sd ? je - g : js + 1 + g;
+        x2v(m,jg) = 2.0*x2f(m,w) - x2v(m,jm);
+        tg(m,0,jg) = tg(m,0,jm);   // (tan, sin of the cell and of its outer x2 face)
+        tg(m,2,jg) = tg(m,2,jm);
+        tg(m,1,fg) = tg(m,1,fm);
+        tg(m,3,fg) = tg(m,3,fm);
+        for (int k = 0; k < static_cast<int>(v.extent(1)); ++k) {
+          for (int i = 0; i < static_cast<int>(a0.extent(3)); ++i) {
+            if (i < static_cast<int>(v.extent(3))) {
+              v(m,k,jg,i) = v(m,k,jm,i);
+              a1(m,k,fg,i) = a1(m,k,fm,i);
+              d2(m,k,jg,i) = d2(m,k,jm,i);
+            }
+            a0(m,k,jg,i) = a0(m,k,jm,i);
+          }
+        }
+        for (int i = 0; i < static_cast<int>(v.extent(3)); ++i) {   // (d2: k = nk too)
+          d2(m,d2.extent(1)-1,jg,i) = d2(m,d2.extent(1)-1,jm,i);
+        }
+      }
+      // the centre distances across the seam face and the ghosts' own x2 faces
+      for (int g = 0; g <= ng - 1; ++g) {
+        const int fg = sd ? w + g : w - g;
+        for (int k = 0; k < static_cast<int>(d1.extent(1)); ++k) {
+          for (int i = 0; i < static_cast<int>(d1.extent(3)); ++i) {
+            d1(m,k,fg,i) = x1v(m,i)*(x2v(m,fg) - x2v(m,fg-1));
+          }
+        }
+      }
+    }
+  }
+  auto dv = [](auto &h, DvceArray4D<Real> &d, const char *nm) {
+    d = DvceArray4D<Real>(std::string(nm), h.extent(0), h.extent(1), h.extent(2),
+                          h.extent(3));
+    Kokkos::deep_copy(d, h);
+  };
+  dv(v, cln_sgv, "cln_sgv");
+  dv(a0, cln_sga0, "cln_sga0");
+  dv(a1, cln_sga1, "cln_sga1");
+  dv(d1, cln_sgd1, "cln_sgd1");
+  dv(d2, cln_sgd2, "cln_sgd2");
+  Kokkos::deep_copy(cln_sgx, x2v);
+  Kokkos::deep_copy(cln_sgtg, tg);
 }
 
 //----------------------------------------------------------------------------------------
