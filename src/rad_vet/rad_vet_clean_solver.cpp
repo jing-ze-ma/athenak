@@ -1678,7 +1678,8 @@ void RadiationVet::CleanStagLineSolve(const CleanLevel &lv, const int src, const
   };
 
   if (!std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace> && cln_pcr) {
-    const int nx = l.n[0], n2 = l.n[1], n32 = l.n[2]*l.n[1];
+    // (n2 the lines along x2; t2 the tile's along x3, as the host's Thomas)
+    const int nx = l.n[0], n2 = l.n[1], n32 = l.n[2]*l.n[1], t2 = l.t[2];
     int nround = 0;
     while ((1 << nround) < nx) ++nround;
     // (nx <= kPcrRows team size: rounds in place, new values in registers over a barrier;
@@ -1700,8 +1701,8 @@ void RadiationVet::CleanStagLineSolve(const CleanLevel &lv, const int src, const
         if (lim >= 0) {
           if (pj%n1 > 0 && on(pj-1, pk)) r -= w(m,l.sm[1],k,j,i)*w(m,dst,k,j-1,i);
           if (pj%n1 < n1 - 1 && on(pj+1, pk)) r -= w(m,l.sp[1],k,j,i)*w(m,dst,k,j+1,i);
-          if (pk%n2 > 0 && on(pj, pk-1)) r -= w(m,l.sm[2],k,j,i)*w(m,dst,k-1,j,i);
-          if (pk%n2 < n2 - 1 && on(pj, pk+1)) r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
+          if (pk%t2 > 0 && on(pj, pk-1)) r -= w(m,l.sm[2],k,j,i)*w(m,dst,k-1,j,i);
+          if (pk%t2 < t2 - 1 && on(pj, pk+1)) r -= w(m,l.sp[2],k,j,i)*w(m,dst,k+1,j,i);
         }
         sw(q) = (q > 0) ? w(m,l.sm[0],k,j,i) : 0.0;
         sw(nx + q) = w(m,l.a0,k,j,i);
