@@ -1235,6 +1235,7 @@ class RadiationVet {
   bool cln_wbxl = false;        // clean_wb_exch_local
   Real cln_flrun = 0.0;         // the last write-back's implicit_pos_floor creation
   int cln_flrid = -1;           // its cycle and t2s, 4 ncycle + t2_solve
+  bool cln_wbmc = false;        // clean_wb_mcap
   Real cln_wbffn = 0.0;         // its steps accepted at the last cut
   int cln_wbfdg = 0;            // clean_wb_floor_diag (diagnostic)
   Real cln_raymin = 1.0e-3;     // clean_ray_min: rays describe a cell when J >= this E

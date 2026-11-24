@@ -1559,13 +1559,21 @@ Real CleanMomentumChange(const CleanArgs &x, const int e, const int dir, const i
                     (fs ? x.h*x.fc[dir](m,CLF_N+1,kf,jf,iff) : 0.0)));
     if (tq) tq[side] = tu;
     Real t = wt*tu;
-    // (mcl, Newton passes: cap at the force of a realisable flux |F| <= c E, so a lagged
-    // F does not kick floor gas to ~c; the write-back keeps the conservative term)
+    // (mcl, the Newton passes: the conservative term equals the face's absorption
+    // h chi_f F/c only where the iterate's F satisfies its equation; capped there at the
+    // force of a realisable flux, |F| <= c E, as the production deposit, so that a lagged
+    // F does not kick floor gas to ~c; the write-back keeps the conservative term, with
+    // clean_wb_mcap the capped one, whose work the E row paid)
     if (x.mcl) {
       const Real cap = wt*(1.0/x.fc[dir](m,CLF_TH,kf,jf,iff) - 1.0)/x.c*
                        fmax(fmax(x.w(m,e,kf,jf,iff), x.w(m,e,kf-dk,jf-dj,iff-di)), 0.0);
       const Real tc = fmin(fmax(t, -cap), cap);
-      if (tc != t) Kokkos::atomic_add(&x.mclc(0), 1.0);
+      if (tc != t) {   // (counted; a write-back's also the gas momentum withheld)
+        Kokkos::atomic_add(&x.mclc(0), 1.0);
+        if (x.mclc.extent_int(0) > 1) {
+          Kokkos::atomic_add(&x.mclc(1+dir), (tc - t)*CleanVol(x, m, k, j, i));
+        }
+      }
       t = tc;
     }
     dm -= t;
