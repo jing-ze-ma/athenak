@@ -1,0 +1,23 @@
+# IA12.1 restart of Caltech's IA11 t9l62 from t9l62.00012.rst (t ~4.752e5, cycle ~6450; NOT 00013, which is after the NaN), binary clean-stag2-interim-e 21e176c67.
+# Usage: athena -r t9l62.00012.rst -d <dir> $(grep -v '^#' IA121_t9l62_restart.args | tr '\n' ' ')   (plus Caltech's own output/time keys)
+# Rule rst-stored-keys: a restart takes the rst's stored value of every key it stores, and a key the IA11 rst does not store gets the
+# "restart file without the key" value (often OFF, e.g. clean_stag_fwb_ring), so EVERY IA12 / IA12.1 key is named here.
+# IA12 keys (not in the IA11 rst):
+rad_m1/clean_pred_stage=false
+rad_m1/clean_stag_central=true
+rad_m1/clean_stag_kpat=false
+rad_m1/clean_stag_eicarry=true
+mesh/layout_invariant_mode=tile
+mesh/layout_tile=128
+# IA12.1 keys:
+rad_m1/clean_gas_secant=stage2
+rad_m1/clean_pred_xch=true
+rad_m1/clean_stag_fcone_gas=false
+rad_m1/clean_wb_exch_local=true
+rad_m1/clean_stag_fwb_ring=1
+hydro/floor_pay=rad_column
+hydro/floor_pay_skip=true
+hydro/dfloor_flux_limit=true
+hydro/floor_audit=1
+# diagnosis (COORD 11-23): CLEAN WBFDIAG lines (T9FIX 48abefc00), every 8 cycles
+rad_m1/clean_wb_floor_diag=8
