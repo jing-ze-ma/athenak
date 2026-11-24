@@ -46,3 +46,10 @@ Production m35mms history (300-cycle bins): cycles, s/cyc, its sum/solves t2s2, 
 
 ## Resume
 - m35mms production resumed from the pre-stop rst, mg 2: `2026-11-24 12:52:38 chunk 2 STAR=m35mms BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_ia123rc4v_262affd6f md5=7d7c4a71a07d3dc3878e7dea1403df23 DECK=/resnick/groups/carnegie_poc/jingze/prod_rc4v_1124/decks/IA123_m` EX hydro/dt_report=0.
+
+## Reading
+- **A reproduces the slowdown** (1.31 s/cyc over c6350-6450 alone on the node, 1.28-1.36 per 50 cycles; production bin c5950-6250: 1.25) and A2 repeats it (hst bitwise, 0.04 % in time). SM clock stayed at 1980 MHz, T <= 49 C, no other step on 02-17: so **not** neighbour load, outputs or clocks; it comes from the state. (Production c5050-6250: 1.13-1.25.)
+- **Solver work grew with it:** per stage line, t2s2 its sum 9 -> 64 and solves (passes) 2.0 -> 5.3, t2s3 11 -> 30 / 2.2 -> 4.6, from c~4450 on, when dt first drops below 12.0. The A/B phase has dt 9.1-11.3.
+- **mg 4 (B): -10.5 %** s/cyc against A (1.174 vs 1.311; min window -10.1 %), its sum -30 % (t2s2 66.7 -> 46.5, t2s3 32.1 -> 22.3), passes -3 to -5 %. So mg 4 recovers about a tenth; the growth of the passes stays. A vs B answers differ at solver-tolerance level: dt identical to 6 digits, L_top 6e-5, Etot 9e-11, Lz_tot 5e-7.
+- bsg (your item 5): no drift. 300-cycle bins 0.64-0.87 s/cyc over c0-6900, first 0.696, latest (c6600-6900) 0.662.
+- m35mms production continues with mg 2; the switch is the USER's call.
