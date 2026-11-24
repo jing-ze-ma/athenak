@@ -76,6 +76,17 @@ void CleanDefaults(ParameterInput *pin) {
     pin->GetOrAddReal("time", "cfl_number", 0.3);
     Log("<time>/cfl_number = 0.3 (the default of a fresh clean VET run)");
   }
+  auto add = [&](const char *b, const char *k, const char *v) {
+    if (named(b, k)) return;
+    pin->GetOrAddString(b, k, v);
+    Log(std::string("<") + b + ">/" + k + " = " + v +
+        " (the default of a fresh clean VET run)");
+  };
+  add("time", "evolution", "dynamic");
+  add("mesh", "nghost", "3");
+  if (pin->DoesBlockExist("hydro") && pin->GetString("time", "evolution") == "dynamic") {
+    add("hydro", "rsolver", "hllc");
+  }
 }
 
 void PrintLog() {

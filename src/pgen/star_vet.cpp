@@ -109,6 +109,7 @@
 // <mhd>/fofc likewise (mhd::fofc_pgen_default, mhd.hpp).
 namespace {
 [[maybe_unused]] const bool kFofcPgenDefault = (hydro::fofc_pgen_default = true);
+[[maybe_unused]] const bool kStarPgen = (recipe::star_pgen = true);
 [[maybe_unused]] const bool kMhdFofcPgenDefault = (mhd::fofc_pgen_default = true);
 // this pgen fills the potential and carries rho*Phi (both gravity modes need
 // <hydro>/etotgrav = true): the new etotgrav default applies
