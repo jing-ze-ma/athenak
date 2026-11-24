@@ -38,15 +38,15 @@ DEFAULTS = {
     # background / floor layer rules (hot-star calibrated: they reproduce the AG Car E1 values)
     'background': {
         'rho_floor_rule': 'rel_rhoph', 'rho_floor_rel': 4.0e-6,     # x rho_ph, -> decade
-        'dmax_rel': 2.0,                # he_sponge_dmax = dmax_rel x column floor
+        'dmax_rel': 2.0,                # star_sponge_dmax = dmax_rel x column floor
         'dfloor_rel': 1.0e-4,           # dfloor = dfloor_rel x column floor
-        'sponge_rate_rel': 80.0,        # he_sponge_rate = rel x (g/c_s,iso)_ph -> decade
+        'sponge_rate_rel': 80.0,        # star_sponge_rate = rel x (g/c_s,iso)_ph -> decade
         'sponge_r0_rel': 0.9,           # x x1max
         'tfloor_rel': 0.76,             # tfloor = rel x T_rad(x1max), floored to 100 K
         'wb_rmax_rel': 1.1,             # x R_ph
         'pfloor_rel': 6.0e-8,           # x P_gas(column floor, tfloor) -> decade
         'vceil_rel': 4.3,               # x v_esc(R_ph) -> decade
-        'balance_rmax_rel': 0.8808,     # he_ic_balance_rmax x R_ph (E1 342/388.3 Rsun)
+        'balance_rmax_rel': 0.8808,     # star_ic_balance_rmax x R_ph (E1 342/388.3 Rsun)
     },
     'ramp': {'start_turnovers': 2.0, 'time_turnovers': 10.0},
     # 10-16 seam removal (icstd/seam.py): F_MLT taper tau 30 -> 3 (on for new stars) and the
@@ -57,12 +57,12 @@ DEFAULTS = {
              'tol_cells': 0.1, 'maxit': 8, 'omp': 36, 'timeout': 7200,
              'launcher': ['bash', '-lc', 'module purge >/dev/null 2>&1; '
                           'module load gcc/13 openmpi/5.0; exec "$0" "$@"']},
-    # 10-17 (hg145_mscaf) the code's startup RE zone (he_ic_rad_taua/taub of sph1d):
+    # 10-17 (hg145_mscaf) the code's startup RE zone (star_ic_rad_taua/taub of sph1d):
     # 'deck' = the run deck's (E1: RE above tau 30, blend to 3000; no key written: bitwise);
     # 'hopf' = RE only in the column's photosphere layer: taua = max(2/3, tauj/3), taub = tauj
     # (tau_R of the run kappa from the mesh top); below the startup keeps the column's T (MESA's
     # T(P) in mode mesa) and the scaffold, and its HSE march starts at r_b(taub).  Written to the
-    # seam passes (+ he_nfine 262144 = the deck block) and the deck block; it also allows the
+    # seam passes (+ star_nfine 262144 = the deck block) and the deck block; it also allows the
     # seam with taper off (the scaffold is then the column's own, F_r + F_MLT = L).
     'startup': {'re_zone': 'deck'},
     'eos': {'logd_min': -21.0, 'logd_max': -1.0, 'logt_max': 6.8, 'dlog': 0.02},

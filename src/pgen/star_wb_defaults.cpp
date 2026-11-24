@@ -5,9 +5,9 @@
 //========================================================================================
 //! \file star_wb_defaults.cpp
 //! \brief recipe::PgenEarlyDefaults of the
-//! he_star_vet and ry_per_accretor builds (src/CMakeLists.txt links this file for those
+//! star_vet and ry_per_accretor builds (src/CMakeLists.txt links this file for those
 //! two problems; deep_hot_jupiter_rt has its own, every other pgen the no-op
-//! early_defaults_none.cpp).  The x1 well-balanced reconstruction of every he_star (HG,
+//! early_defaults_none.cpp).  The x1 well-balanced reconstruction of every star_vet (HG,
 //! RSG, R136a1) and accretor production deck, as the dhj G4 default:
 //!   <fluid>/wellbalance_dynamic = true, <fluid>/wb_x1 = true, <fluid>/wb_option =
 //! polytropic on the cubed sphere or the spherical-polar mesh.  Rules as every recipe

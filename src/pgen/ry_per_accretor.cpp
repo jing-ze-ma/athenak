@@ -40,7 +40,7 @@
 //!
 //! ENERGY.  Isothermal only (<hydro>/eos = isothermal; problem/thermo = isothermal).  The
 //! key problem/thermo = adiabatic is RESERVED for the gamma = 5/3 option and is FATAL
-//! today.  Building it: put Phi into phicc0/phi0 with <hydro>/etotgrav (he_star_vet.cpp
+//! today.  Building it: put Phi into phicc0/phi0 with <hydro>/etotgrav (star_vet.cpp
 //! hs_phi fill), keep Coriolis explicit, do NOT add the centrifugal work as an explicit
 //! energy source when the potential carries it (the rot_potential double-count
 //! guard, deep_hot_jupiter_rt.cpp `if (!(rotpot && use_etotgrav))`), and give the user
@@ -1335,7 +1335,7 @@ void RyPerBCEnv(Mesh *pm) {
   const Real tfl = gen_tfl_, tstr = gen_tstr_;
   // <rad_vet> (S3): the inner ghosts walk along the EFFECTIVE potential of the x1 WB pair
   // (Phi_wb + G, the radiation-force reference, phicc_wb), and the radiation ghosts are
-  // filled as he_star_vet's: r_in copy (the implicit solve imposes the flux there), r_out
+  // filled as star_vet's: r_in copy (the implicit solve imposes the flux there), r_out
   // vacuum (dark; Marshak through the implicit face BC)
   const bool rad = rad_;
   const bool strad = strad_;
@@ -2591,7 +2591,7 @@ void RyPerSrcEnv(Mesh *pm, const Real bdt) {
   if (rad) {
     derel = RyPerEsum(pmbp) - erel0;     // per rank, as the flux registers
     // the WORK of the reference radiation force a_ref (force_reference_work = split; the
-    // module pays it from the radiation energy), as he_star_vet's HeStarGravity
+    // module pays it from the radiation energy), as star_vet's StarGravity
     auto *pm1 = pmbp->pradvet;
     if (pm1->fref_wsplit) {
       auto aref = pm1->arad_ref;
@@ -3533,7 +3533,7 @@ Real RadColAt(const std::vector<Real> &y, const Real psi) {
   return (1.0 - w)*y[lo] + w*y[hi];
 }
 
-//! <rad_vet>: the merged opacity table format (he_star_vet's HsReadOpacityTable without
+//! <rad_vet>: the merged opacity table format (star_vet's HsReadOpacityTable without
 //! the low-density extension: below the grid the lookup holds the edge value)
 void RyReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
                         DvceArray1D<Real> &lT, DvceArray1D<Real> &lD, int &nT, int &nD,
@@ -4185,7 +4185,7 @@ void RadIC(ParameterInput *pin, MeshBlockPack *pmbp) {
 
 //----------------------------------------------------------------------------------------
 //! thermo = general: the envelope IC in DISCRETE hydrostatic balance of the x1 WB pair
-//! (the he_star_vet he_ic_balance march, per (m,k) column, host).  T is FIXED at the
+//! (the star_vet star_ic_balance march, per (m,k) column, host).  T is FIXED at the
 //! column's T(psi) (tcol_); the x1 WB background of cell i (WBBackgroundStencil with the
 //! run's wb_option and the cells' fixed T) walked to its faces gives PL_i(d_i) and
 //! PR_i(d_i); the face condition PR_i(d_i) = PL_{i+1}(d_{i+1}) is solved cell by cell

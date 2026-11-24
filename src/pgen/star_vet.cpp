@@ -3,10 +3,10 @@
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
-//! \file he_star_vet.cpp
+//! \file star_vet.cpp
 //! \brief Problem generator for the 4.0 Msun presupernova He star (Woosley 2019) on a
 //! spherical-polar WEDGE with the implicit grey M1 module (<rad_vet>), used with
-//! `cmake -D PROBLEM=he_star_vet`.  Inputs: inputs/stars/star_*.athinput,
+//! `cmake -D PROBLEM=star_vet`.  Inputs: inputs/stars/star_*.athinput,
 //! star3d_*.athinput.
 //!
 //! LEAN by design: a point mass, the well-balanced x1 gravity, the <rad_vet> hookup and
@@ -16,8 +16,8 @@
 //!   * the gas-only tabulated EOS (<hydro>/eos_radiation = false, enforced by the module)
 //!     or an ideal gas (eos = ideal; <units>/mu sets its kelvin scale, which
 //!     <rad_vet>/temp_unit_kelvin must equal; no EOS range check then)
-//!     and the Rosseland + Planck tables (problem/he_opac_table, he_planck_table);
-//!   * the initial column he_ic_file, columns  r rho eint F_r  (cgs, ascending r):
+//!     and the Rosseland + Planck tables (problem/star_opac_table, star_planck_table);
+//!   * the initial column star_ic_file, columns  r rho eint F_r  (cgs, ascending r):
 //!     F_r is the DIFFUSIVE part of the luminosity flux, F_r = L/(4 pi r^2) - F_MLT, so
 //!     the radiation force kappa_R F_r/c that the gas is in balance with is known
 //!     everywhere; E = a T(rho,eint)^4 is set here from the run's own EOS;
@@ -37,17 +37,18 @@
 //!     gas + radiation, the mass through both x1 faces, the interior kinetic sums, the
 //!     mean v_r^2 of the wall cells and the mean Picard passes per implicit solve since
 //!     the previous history output;
-//!   * an optional multi-mode entropy/temperature seed (he_seed_nk, he_seed_rad,
-//!     he_seed_signs, he_seed_kdist).
-//!   * problem/he_seed_band = n2 (default) | old: n2 places the fresh-start seed where
+//!   * an optional multi-mode entropy/temperature seed (star_seed_nk, star_seed_rad,
+//!     star_seed_signs, star_seed_kdist).
+//!   * problem/star_seed_band = n2 (default) | old: n2 places the fresh-start seed where
 //!     the initial column is most unstable (Brunt-Vaisala N^2 < 0, gas + radiation,
 //!     general EOS), real Y_lm with l from pi r/H_p clipped to the grid, amplitude
-//!     he_seed default 1e-3; old = the seed of the keys as named (he_seed default 0),
+//!     star_seed default 1e-3; old = the seed of the keys as named (star_seed default 0),
 //!     bitwise as before.  See HsN2Band().
-//!   * problem/he_gm_column (default off): the gravity of the enclosed
-//!     mass of the initial column instead of the point mass: G m(r) = he_gm + G int 4 pi
-//!     r^2 rho_IC dr from r_in (he_gm = G m(r_in)), a static monopole frozen at t = 0.
-//!   * problem/he_base_heat (default off): a wall inside a convective
+//!   * problem/star_gm_column (default off): the gravity of the enclosed
+//!     mass of the initial column instead of the point mass: G m(r) = star_gm + G int 4
+//!     pi r^2 rho_IC dr from r_in (star_gm = G m(r_in)), a static monopole frozen at t =
+//!     0.
+//!   * problem/star_base_heat (default off): a wall inside a convective
 //!     zone: the scaffold's wall-face convective luminosity is kept as a base heating
 //!     layer while the frozen scaffold is ramped off.
 //!
@@ -95,7 +96,7 @@
 #include "rad_vet/vet_fluid.hpp"
 #include "units/units.hpp"
 #include "pgen/pgen.hpp"
-#include "pgen/he_drive.hpp"
+#include "pgen/star_drive.hpp"
 #include "driver/dt_retry.hpp"
 #include "utils/eint_from_cons.hpp"
 #include "utils/repro_sum.hpp"
@@ -120,78 +121,79 @@ DvceArray1D<Real> hs_rho_, hs_eint_;
 Real hs_rlo_ = 0.0, hs_dr_ = 1.0;
 int hs_nf_ = 0;
 Real hs_gm_ = 0.0, hs_rin_ = 1.0, hs_rint_ = 0.0, hs_fin_ = 0.0;
-// problem/he_gm_column (read only when named, default false = the point
-// mass GM = he_gm, bit for bit): the gravity of the ENCLOSED MASS of the initial column,
-// G m(r) = he_gm + G int_{r_in}^{r} 4 pi r'^2 rho_IC dr' (he_gm = G m(r_in), the mass
-// inside the wall), FROZEN at t = 0 (a static monopole, rebuilt from he_ic_file on every
-// start).  hs_phig_ = Phi(r) = int_{r_in}^{r} G m/r'^2 dr' and hs_gmr_ = G m(r) on the
-// uniform fine grid of the column (hs_rlo_, hs_dr_, hs_nf_).
+// problem/star_gm_column (read only when named, default false = the point
+// mass GM = star_gm, bit for bit): the gravity of the ENCLOSED MASS of the initial
+// column, G m(r) = star_gm + G int_{r_in}^{r} 4 pi r'^2 rho_IC dr' (star_gm = G m(r_in),
+// the mass inside the wall), FROZEN at t = 0 (a static monopole, rebuilt from
+// star_ic_file on every start).  hs_phig_ = Phi(r) = int_{r_in}^{r} G m/r'^2 dr' and
+// hs_gmr_ = G m(r) on the uniform fine grid of the column (hs_rlo_, hs_dr_, hs_nf_).
 bool hs_gmc_ = false;
 DvceArray1D<Real> hs_phig_, hs_gmr_;
-// problem/he_base_heat [cm] (read only when named, default none): the wall
+// problem/star_base_heat [cm] (read only when named, default none): the wall
 // lies inside a CONVECTIVE zone, so the frozen MLT scaffold's wall-face flux F_MLT(r_in)
 // is the convective luminosity entering the domain.  While the scaffold is ramped off
 // (mlt_ramp_start/_time, weight w) that luminosity is kept as a BASE HEATING layer: the
 // deposit is w (-div A F_MLT) + (1 - w) (-div A F_b), F_b(r) = F_MLT(r_in) (r_in/r)^2
-// max(0, 1 - (r - r_in)/he_base_heat) on the x1 faces, so A F_b = L_MLT(r_in) at the
-// wall face and 0 above r_in + he_base_heat.  Frozen closure only.  (Injecting it as M1
+// max(0, 1 - (r - r_in)/star_base_heat) on the x1 faces, so A F_b = L_MLT(r_in) at the
+// wall face and 0 above r_in + star_base_heat.  Frozen closure only.  (Injecting it as M1
 // face flux instead puts a radiation force of ~Gamma_F ~ 100 g on the wall cells.)
 Real hs_bheat_ = 0.0;
 DvceArray1D<Real> hs_fb_;
 Real hs_sp_rate_ = 0.0, hs_sp_r0_ = 0.0, hs_rtop_ = 1.0;
 bool hs_zflux_ = true;
-// problem/he_wb_grav_window (read only when named, default false): the x1
+// problem/star_wb_grav_window (read only when named, default false): the x1
 // WB gravity source honours the fluid's wb_rmax / wb_phimax window -- the cells
 // the reconstruction treats as plain (Hydro::wb_rmax) take the isodensity walk
-// p -/+ rho dPhi_wb instead of the cached hydrostatic walk (see HeStarGravity)
+// p -/+ rho dPhi_wb instead of the cached hydrostatic walk (see StarGravity)
 bool hs_wbwin_ = false;
-// he-wind-bc: problem/he_bc_inner = inflow (hs_binf_) and he_bc_outer = outflow
+// he-wind-bc: problem/star_bc_inner = inflow (hs_binf_) and star_bc_outer = outflow
 // (hs_bout_); defaults wall / noinflow = the he-presn-m1 behaviour
 bool hs_binf_ = false, hs_bout_ = false;
 // the initial column's rho, eint at r_in (scales of the table ghosts)
 Real hs_drv_d0_ = 1.0, hs_drv_e0_ = 1.0;
-// bsg-arm2: problem/he_bc_outer = hse (hs_bhse_): the top ghosts are the HYDROSTATIC
-// continuation of the last active cell (HeStarBC); he_bc_hse_gmax clamps the Eddington
-// factor used there, he_bc_hse_tgrad continues T along the interior's dT/dPhi_eff
-// (polytropic WB walk) instead of holding it (isothermal).  problem/he_sponge_mode =
+// bsg-arm2: problem/star_bc_outer = hse (hs_bhse_): the top ghosts are the HYDROSTATIC
+// continuation of the last active cell (StarBC); star_bc_hse_gmax clamps the Eddington
+// factor used there, star_bc_hse_tgrad continues T along the interior's dT/dPhi_eff
+// (polytropic WB walk) instead of holding it (isothermal).  problem/star_sponge_mode =
 // radial (hs_sp_rad_) makes the top sponge damp v_r only (default all = v).
-// problem/he_sponge_dmax (default 0 = off): the sponge also acts, at its full rate, on
-// every cell with rho < he_sponge_dmax (the floor gas above the photosphere, which can
+// problem/star_sponge_dmax (default 0 = off): the sponge also acts, at its full rate, on
+// every cell with rho < star_sponge_dmax (the floor gas above the photosphere, which can
 // not be hydrostatic and falls freely)
-// problem/he_sponge_form (default lawson on a fresh start, USER 11-21, recorded; a restart
-// file without the key keeps exp, NOTE): exp = u0 *= exp(-bdt rate w)
+// problem/star_sponge_form (default lawson on a fresh start, USER 11-21, recorded; a
+// restart file without the key keeps exp, NOTE): exp = u0 *= exp(-bdt rate w)
 // after each RK stage (1st order in time); lawson = the integrating-factor form of the
 // SSP-RK stages (exact for the decay, 2nd order, weights >= 0): the stage's u^n part
 // decays over c_s dt, the rest over (c_s - c_{s-1}) dt; w and the rho < dmax flag from
 // u^n (u1), the same on every stage
 bool hs_bhse_ = false, hs_bhse_tg_ = false, hs_sp_rad_ = false, hs_sp_law_ = false;
-// problem/he_bc_hse_flux = face (default on a fresh start) | cell: the radial flux in the
-// hse top's Gamma.  face = the transported comoving face flux (f0x1, mean of the top
+// problem/star_bc_hse_flux = face (default on a fresh start) | cell: the radial flux in
+// the hse top's Gamma.  face = the transported comoving face flux (f0x1, mean of the top
 // cell's two x1 faces); cell = the old clipped lab-frame cell F1.  A restart whose
 // embedded input lacks the key keeps cell (no silent change mid-run).
 bool hs_bhse_face_ = true;
 Real hs_bhse_gmax_ = 0.9, hs_sp_dmax_ = 0.0;
-// problem/he_ic_balance: the discretely balanced initial cells (all x1 cells incl. ghosts
-// of the ONE MeshBlock along x1; every block has the same radial grid)
+// problem/star_ic_balance: the discretely balanced initial cells (all x1 cells incl.
+// ghosts of the ONE MeshBlock along x1; every block has the same radial grid)
 bool hs_bal_ = false;
 DvceArray1D<Real> hs_bd_, hs_be_;
-// problem/he_ic_rad_atm_post (HeStarIcPost): the thin atmosphere's first
+// problem/star_ic_rad_atm_post (StarIcPost): the thin atmosphere's first
 // mesh cell above R_ph (x1 index incl. ghosts) and the column's floor density
 bool hs_atp_ = false;
-ParameterInput *hs_pin_ = nullptr;   // the run's input (HeStarIcPost records a_ref)
+ParameterInput *hs_pin_ = nullptr;   // the run's input (StarIcPost records a_ref)
 int hs_atp_ia_ = -1;
 Real hs_atp_dfl_ = 0.0;
 // (Ma, Bildsten & Jiang 2026 setup, all three default off):
-// problem/he_gravity = pointmass (hs_pm_): NO well-balanced pair; the point-mass momentum
-//   source in the Athena++ form rho GM <1/r>_vol/x1v (etotgrav keeps the energy);
-// problem/he_bc_inner = zerocontact (hs_bzc_): every inner ghost holds the UNSCALED
+// problem/star_gravity = pointmass (hs_pm_): NO well-balanced pair; the point-mass
+//   momentum source in the Athena++ form rho GM <1/r>_vol/x1v (etotgrav keeps the
+//   energy);
+// problem/star_bc_inner = zerocontact (hs_bzc_): every inner ghost holds the UNSCALED
 //   initial column (rho, eint), v = 0, except the first ghost layer whose v_r is solved
 //   so that the HLLC contact speed of the code's own PLM states at the wall face is 0;
-// problem/he_bc_outer = copy (hs_bcopy_): the edge cell's rho, eint, v_t copied,
+// problem/star_bc_outer = copy (hs_bcopy_): the edge cell's rho, eint, v_t copied,
 //   v_r copied where it points out and 0 where it points in.
 bool hs_pm_ = false, hs_bzc_ = false, hs_bcopy_ = false;
-// problem/he_bc_outer_r2 (read only when named; default false = bitwise;
-// needs he_bc_outer = copy): bsg_star.cpp Outflow_X1 exactly: edge v_r < 0 -> rho
+// problem/star_bc_outer_r2 (read only when named; default false = bitwise;
+// needs star_bc_outer = copy): bsg_star.cpp Outflow_X1 exactly: edge v_r < 0 -> rho
 // copied, v_r = 0; else (v_r >= 0) ghost rho = previous ghost rho (r_{g-1}/r_g)^2 and v_r
 // copied; P (here eint, ideal gas) and v_t copied in both branches
 bool hs_bcr2_ = false;
@@ -216,7 +218,7 @@ struct HsN2Col {
   std::vector<Real> r, sg, dm, pt, dd, gg, tt, g1;
 };
 HsN2Col hs_n2_;
-// problem/he_esrc_const, he_esrc_rmax (the esrc test, kept when w is re-applied)
+// problem/star_esrc_const, star_esrc_rmax (the esrc test, kept when w is re-applied)
 Real hs_esc_ = 0.0, hs_esrmx_ = 0.0;
 // problem/mlt_closure = adaptive (default frozen): the ADAPTIVE SHELL-MEAN DEFICIT
 // closure.  The applied subgrid flux F_sub (x1 faces) relaxes toward
@@ -262,18 +264,18 @@ DvceArray1D<Real> hs_tgp_, hs_fsrc_;
 DvceArray2D<Real> hs_shs_;
 std::vector<Real> hs_tap_, hs_r2o_;
 char hs_ad_file_[1024] = {0};
-// Picard counters at the previous history output (HeStarHist)
+// Picard counters at the previous history output (StarHist)
 Real hs_pic_n0_ = 0.0, hs_pic_s0_ = 0.0;
 // the open Picard window travels in the pgen restart block as a tagged
 // trailer (tag, solves, passes since the last history output), so the first user.hst row
 // after a restart is the continuous run's
 constexpr char kHsPicTag[8] = {'H', 'S', 'P', 'I', 'C', 'W', '0', '1'};
 Mesh *hs_mesh_ = nullptr;   // the mesh (HsAdaptiveRstWrite: the rad_vet counters)
-// problem/he_ic_equil (HeStarIcEquil; read only when named, default false =
+// problem/star_ic_equil (StarIcEquil; read only when named, default false =
 // nothing): the discrete equilibrium of the initial state on the code's own operators.
 // hs_eq_ on; hs_eq_it_ the hook calls so far; hs_eq_dfl_ the column's floor density;
 // hs_eq_a_ a_ref of the active cells is..ie (the restart trailer kHsDicTag); hs_sfac_ the
-// he_seed factor of every cell, applied after the equilibrium (deferred seed)
+// star_seed factor of every cell, applied after the equilibrium (deferred seed)
 bool hs_eq_ = false, hs_eq_srad_ = false, hs_eq_seed_ = false, hs_eq_last_ = false;
 int hs_eq_it_ = 0, hs_eq_maxit_ = 30;
 Real hs_eq_tol_ = 1.0e-9, hs_eq_dfl_ = 0.0;
@@ -317,7 +319,7 @@ Real HsLinInterp(const DvceArray1D<Real> &a, const Real rlo, const Real dr, cons
   return (1.0 - w)*a(i) + w*a(i+1);
 }
 
-//! (problem/he_ic_profile): a uniform deviate U in [0, 1) that depends only
+//! (problem/star_ic_profile): a uniform deviate U in [0, 1) that depends only
 //! on the GLOBAL cell index (and the key's seed): splitmix64 of the index.  Identical on
 //! every layout, device and site (the per-block srand(gid)/rand() stream of the Athena++
 //! pgen cannot be reproduced; only its statistics are).
@@ -332,15 +334,15 @@ Real HsCellUniform(const std::uint64_t idx, const std::uint64_t seed) {
 
 [[noreturn]] void HsFatal(const std::string &msg, const int line) {
   std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << line << std::endl
-            << "he_star_vet: " << msg << std::endl;
+            << "star_vet: " << msg << std::endl;
   // (_Exit: no static destructors behind live Kokkos views, as VgdFatalAt)
   std::_Exit(EXIT_FAILURE);
 }
 
-//! the problem key `k` (he_ic_profile*), or its deprecated name he_ic_linhao* when only
-//! that one is in the input (older decks and restart files)
+//! the problem key `k` (star_ic_profile*), or its deprecated name star_ic_linhao* when
+//! only that one is in the input (older decks and restart files)
 std::string HsIcKey(ParameterInput *pin, const std::string &k) {
-  const std::string old = "he_ic_linhao" + k.substr(std::strlen("he_ic_profile"));
+  const std::string old = "star_ic_linhao" + k.substr(std::strlen("star_ic_profile"));
   return (!pin->DoesParameterExist("problem", k) &&
           pin->DoesParameterExist("problem", old)) ? old : k;
 }
@@ -349,7 +351,7 @@ std::string HsIcKey(ParameterInput *pin, const std::string &k) {
 void HsOldDefault(ParameterInput *pin, const char *key, const char *v) {
   if (global_variable::restart_run && !pin->DoesParameterExist("problem", key) &&
       global_variable::my_rank == 0) {
-    std::cout << "he_star_vet: NOTE problem/" << key << " = " << v << " (a restart file "
+    std::cout << "star_vet: NOTE problem/" << key << " = " << v << " (a restart file "
               << "without the key: the old default)" << std::endl;
   }
 }
@@ -388,7 +390,7 @@ void HsReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
     HsFatal("opacity table '" + fname + "' has no grid line or the wrong value count",
             __LINE__);
   }
-  // problem/he_opac_logd_min (he-wind-bc, default none): the grid is EXTENDED to lower
+  // problem/star_opac_logd_min (he-wind-bc, default none): the grid is EXTENDED to lower
   // density by nadd columns, log10 kappa continued linearly in log10 rho with the slope
   // of the table's first density interval clamped to [0, 1] (an absorption/scattering
   // opacity per unit mass does not grow as rho falls, and falls at most like rho, the
@@ -409,7 +411,7 @@ void HsReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
       for (int j=0; j<nD; ++j) vn[i*nDn + nadd + j] = vals[i*nD + j];
     }
     if (global_variable::my_rank == 0) {
-      std::cout << "he_star_vet: opacity table '" << fname << "' extended from log10 rho "
+      std::cout << "star_vet: opacity table '" << fname << "' extended from log10 rho "
                 << ld0 << " to " << ld0 - nadd*dld << " (" << nadd << " columns, slope "
                 << "clamped to [0,1] in " << nclip << " of " << nT << " T rows)"
                 << std::endl;
@@ -437,8 +439,8 @@ void HsReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
 }
 
 //----------------------------------------------------------------------------------------
-// (problem/he_ic_rad = sph1d): helpers of the 1-D spherical grey
-// radiative-equilibrium solve of the initial column (see HeStarM1)
+// (problem/star_ic_rad = sph1d): helpers of the 1-D spherical grey
+// radiative-equilibrium solve of the initial column (see StarM1)
 
 // kappa_t = of + os (the total, = kappa_R: the vet_col/vet_gd extinction and the pgen's
 // own ckt) of the module's tables at (d, t) [code units], one device thread per point
@@ -557,15 +559,15 @@ KOKKOS_INLINE_FUNCTION
 Real HsKeCs(const Real m1, const Real m2, const Real m3, const Real d, const Real c) {
   return CsKeMom(m1, m2, m3, c)/d;
 }
-void HeStarGravity(Mesh *pm, const Real bdt);
-void HeStarBC(Mesh *pm);
-void HeStarHist(HistoryData *pdata, Mesh *pm);
+void StarGravity(Mesh *pm, const Real bdt);
+void StarBC(Mesh *pm);
+void StarHist(HistoryData *pdata, Mesh *pm);
 void HsApplyMltW(Mesh *pm, const Real w);
 void HsAdaptiveUpdate(Mesh *pm);
 std::vector<char> HsAdaptiveRstWrite();
-void HeStarFinal(ParameterInput *pin, Mesh *pm);
-void HeStarIcPost(Mesh *pm);
-void HeStarIcEquil(Mesh *pm);
+void StarFinal(ParameterInput *pin, Mesh *pm);
+void StarIcPost(Mesh *pm);
+void StarIcEquil(Mesh *pm);
 void HsRemapLoad(Mesh *pm, const std::string &fn, const std::int64_t off,
                  const int *n);
 void HsAtmPhiEff(const int ia, const int ie, const std::vector<Real> &a,
@@ -591,9 +593,9 @@ void RadVetAmHistory(HistoryData *pdata, Mesh *pm);
 //! \fn void ProblemGenerator::UserProblem()
 //! \brief see the file header.
 
-void HsStripBackground(ParameterInput *pin, Mesh *pm);   // (he_strip_bg.cpp)
-void HsRestartPerturb(ParameterInput *pin, Mesh *pm);    // (he_strip_bg.cpp)
-void HsEosReinitFromT(ParameterInput *pin, Mesh *pm);    // (he_strip_bg.cpp)
+void HsStripBackground(ParameterInput *pin, Mesh *pm);   // (star_strip_bg.cpp)
+void HsRestartPerturb(ParameterInput *pin, Mesh *pm);    // (star_strip_bg.cpp)
+void HsEosReinitFromT(ParameterInput *pin, Mesh *pm);    // (star_strip_bg.cpp)
 
 void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
@@ -630,25 +632,26 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const bool etg = ph->use_etotgrav;
   const bool wbdyn = ph->use_wellbalance_dynamic;
   {
-    const std::string hg = pin->GetOrAddString("problem","he_gravity","wb");
+    const std::string hg = pin->GetOrAddString("problem","star_gravity","wb");
     if (hg != "wb" && hg != "pointmass") {
-      HsFatal("problem/he_gravity must be wb|pointmass", __LINE__);
+      HsFatal("problem/star_gravity must be wb|pointmass", __LINE__);
     }
     hs_pm_ = (hg == "pointmass");
   }
   if (hs_pm_) {
     // plain (not well-balanced) hydro with the full M1 force
     if (wbdyn || !etg) {
-      HsFatal("problem/he_gravity = pointmass needs <hydro>/etotgrav = true and "
+      HsFatal("problem/star_gravity = pointmass needs <hydro>/etotgrav = true and "
               "wellbalance_dynamic = false", __LINE__);
     }
     if (pm1->force_ref != radvet::M1_FREF_NONE) {
-      HsFatal("problem/he_gravity = pointmass needs <rad_vet>/force_reference = none "
+      HsFatal("problem/star_gravity = pointmass needs <rad_vet>/force_reference = none "
               "(no well-balanced pair to carry a reference force)", __LINE__);
     }
-    if (pin->DoesParameterExist("problem","he_gm_column") &&
-        pin->GetBoolean("problem","he_gm_column")) {
-      HsFatal("problem/he_gravity = pointmass does not support he_gm_column", __LINE__);
+    if (pin->DoesParameterExist("problem","star_gm_column") &&
+        pin->GetBoolean("problem","star_gm_column")) {
+      HsFatal("problem/star_gravity = pointmass does not support star_gm_column",
+              __LINE__);
     }
   } else {
     if (!(wbdyn && ph->use_wb_x1 && etg)) {
@@ -665,23 +668,23 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
 
   // ---- parameters
-  hs_gm_ = pin->GetReal("problem","he_gm");
-  hs_gmc_ = pin->DoesParameterExist("problem","he_gm_column") &&
-            pin->GetBoolean("problem","he_gm_column");
-  if (pin->DoesParameterExist("problem","he_base_heat")) {
-    hs_bheat_ = pin->GetReal("problem","he_base_heat");
-    if (!(hs_bheat_ > 0.0)) HsFatal("problem/he_base_heat must be > 0 [cm]", __LINE__);
+  hs_gm_ = pin->GetReal("problem","star_gm");
+  hs_gmc_ = pin->DoesParameterExist("problem","star_gm_column") &&
+            pin->GetBoolean("problem","star_gm_column");
+  if (pin->DoesParameterExist("problem","star_base_heat")) {
+    hs_bheat_ = pin->GetReal("problem","star_base_heat");
+    if (!(hs_bheat_ > 0.0)) HsFatal("problem/star_base_heat must be > 0 [cm]", __LINE__);
   }
   hs_rin_ = pmy_mesh_->mesh_size.x1min;
   const Real rtop = pmy_mesh_->mesh_size.x1max;
   hs_fin_ = pin->GetReal("rad_vet","implicit_flux_x1min");
-  const std::string fn = pin->GetString("problem","he_ic_file");
-  const int nf = pin->GetOrAddInteger("problem","he_nfine",16384);
-  const Real tau_int = pin->GetOrAddReal("problem","he_tau_int",1.0);
-  // he_ic_cols = 5: the file also carries the radiation energy density E (a state that
+  const std::string fn = pin->GetString("problem","star_ic_file");
+  const int nf = pin->GetOrAddInteger("problem","star_nfine",16384);
+  const Real tau_int = pin->GetOrAddReal("problem","star_tau_int",1.0);
+  // star_ic_cols = 5: the file also carries the radiation energy density E (a state that
   // was relaxed by a run); 4 (default): E = a T(rho,eint)^4
-  const int ncols = pin->GetOrAddInteger("problem","he_ic_cols",4);
-  if (ncols != 4 && ncols != 5) HsFatal("problem/he_ic_cols must be 4 or 5", __LINE__);
+  const int ncols = pin->GetOrAddInteger("problem","star_ic_cols",4);
+  if (ncols != 4 && ncols != 5) HsFatal("problem/star_ic_cols must be 4 or 5", __LINE__);
   // problem/mlt_flux_frozen (default false; in 3-D only as the start-up scaffold that is
   // ramped off by problem/mlt_ramp_start/_time while convection grows, or relaxed by
   // problem/mlt_closure = adaptive): the MLT flux of the IC, F_MLT = F_r fmlt/(1 - fmlt)
@@ -692,7 +695,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // Rebuilt from the file on every start (restarts).
   hs_mlt_ = pin->GetOrAddBoolean("problem","mlt_flux_frozen",false);
   if (hs_mlt_ && ncols != 5) {
-    HsFatal("problem/mlt_flux_frozen = true needs he_ic_cols = 5 and the 7-column "
+    HsFatal("problem/mlt_flux_frozen = true needs star_ic_cols = 5 and the 7-column "
             "file of make_ic_he_presn_m1.py mlt", __LINE__);
   }
   // ONE MeshBlock along x1 (the margins below, the history's face picks and the balanced
@@ -711,11 +714,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     rhi_g = hx1f(0,n1m1+1);
     dxlo = hx1f(0,indcs.is+1) - hx1f(0,indcs.is);
     dxhi = hx1f(0,indcs.ie+1) - hx1f(0,indcs.ie);
-    // problem/he_grid_dump (default false): rank 0 writes the code's own radial grid of
+    // problem/star_grid_dump (default false): rank 0 writes the code's own radial grid of
     // block 0, "i x1f(i) x1v(i) x1f(i+1)-x1f(i)" for every cell incl. ghosts (i = 0 is
     // the first ghost; active cells is..ie), to <basename>.x1grid.txt
-    if (pin->DoesParameterExist("problem","he_grid_dump") &&
-        pin->GetBoolean("problem","he_grid_dump") &&
+    if (pin->DoesParameterExist("problem","star_grid_dump") &&
+        pin->GetBoolean("problem","star_grid_dump") &&
         global_variable::my_rank == 0) {
       auto hx1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
       const std::string gf = pin->GetString("job","basename") + ".x1grid.txt";
@@ -738,17 +741,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   std::vector<Real> hr(nf), hd(nf), he(nf), hF(nf), hE(nf, -1.0), hM(nf, 0.0);
   for (int n=0; n<nf; ++n) hr[n] = hs_rlo_ + n*hs_dr_;
 
-  // problem/he_wind_ic (he-wind-bc, default false): above the radius r_c where the
-  // column's density falls below that of a beta-law wind (he_wind_mdot [g/s, full
-  // sphere], he_wind_vinf, he_wind_beta, he_wind_v0 [cm/s], he_wind_r0 [cm]: v = max(v0,
-  // vinf (1 - r0/r)^beta), rho = Mdot/(4 pi r^2 v)), the IC is that wind: F_r = F_c (r_c/
-  // r)^2, E = (F_r/c) (1 + (c E_c/F_c - 1)(r_c/r)^2) (free streaming far out), T_gas =
-  // T_c (E/E_c)^(1/4) (continuous at r_c), v_r = the beta law.  The file then need not
-  // cover the mesh top (it is extrapolated in log up to r_c, which must lie inside it).
-  const bool wic = pin->GetOrAddBoolean("problem","he_wind_ic",false);
+  // problem/star_wind_ic (he-wind-bc, default false): above the radius r_c where the
+  // column's density falls below that of a beta-law wind (star_wind_mdot [g/s, full
+  // sphere], star_wind_vinf, star_wind_beta, star_wind_v0 [cm/s], star_wind_r0 [cm]: v =
+  // max(v0, vinf (1 - r0/r)^beta), rho = Mdot/(4 pi r^2 v)), the IC is that wind: F_r =
+  // F_c (r_c/ r)^2, E = (F_r/c) (1 + (c E_c/F_c - 1)(r_c/r)^2) (free streaming far out),
+  // T_gas = T_c (E/E_c)^(1/4) (continuous at r_c), v_r = the beta law.  The file then
+  // need not cover the mesh top (it is extrapolated in log up to r_c, which must lie
+  // inside it).
+  const bool wic = pin->GetOrAddBoolean("problem","star_wind_ic",false);
   std::vector<Real> hV(nf, 0.0), hdc, hec;
   Real wrc = 0.0;
-  // problem/he_ic_eint_from_t (default false = bitwise the old IC): set the internal
+  // problem/star_ic_eint_from_t (default false = bitwise the old IC): set the internal
   // energy of the column from (rho, T) with the code's OWN EOS, T = the file's column 6
   // [K] (the 7-column make_ic files), instead of taking the file's eint (column 3).  The
   // file's eint was computed by the IC builder with its own interpolant of the EOS (for
@@ -758,8 +762,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // the file is then out of equilibrium with the gas by 4x that.  With this key the
   // code's T equals the column T to round-off (the log-linear resampling aside).
   // Default true on a fresh run whose file carries the T
-  // column (he_ic_cols = 5 and >= 7 columns on its first data line); otherwise (4-column
-  // files, a restart whose file lacks the key) the old default false.  Recorded.
+  // column (star_ic_cols = 5 and >= 7 columns on its first data line); otherwise
+  // (4-column files, a restart whose file lacks the key) the old default false.
+  // Recorded.
   bool eft_def = false;
   if (!global_variable::restart_run && ncols == 5) {
     std::ifstream f0(fn);
@@ -774,18 +779,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       break;
     }
   }
-  const bool eft = pin->GetOrAddBoolean("problem","he_ic_eint_from_t",eft_def);
+  const bool eft = pin->GetOrAddBoolean("problem","star_ic_eint_from_t",eft_def);
   if (eft && ncols != 5) {
-    HsFatal("problem/he_ic_eint_from_t = true needs he_ic_cols = 5 and the 7-column file "
-            "(column 6 = T [K])", __LINE__);
+    HsFatal("problem/star_ic_eint_from_t = true needs star_ic_cols = 5 and the 7-column "
+            "file (column 6 = T [K])", __LINE__);
   }
   bool tcol_read = false;
   std::vector<Real> hTcol(nf, -1.0);   // the file's T column [K] on the fine grid
-  std::vector<Real> hfr_keep, hfM_keep;   // he_ic_rad = sph1d: the file's r, fmlt (dump)
+  std::vector<Real> hfr_keep, hfM_keep;  // star_ic_rad = sph1d: the file's r, fmlt (dump)
   // ---- the column file: r rho eint F_r, ascending r, resampled in log
   {
     std::ifstream f(fn);
-    if (!f.good()) HsFatal("cannot open problem/he_ic_file '" + fn + "'", __LINE__);
+    if (!f.good()) HsFatal("cannot open problem/star_ic_file '" + fn + "'", __LINE__);
     std::vector<Real> fr, fd, fe, fF, fE, fM, fT;
     std::string line;
     while (std::getline(f, line)) {
@@ -796,8 +801,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (ncols == 5 && !(ss >> e)) continue;
       Real tcol = 0.0, fm = 0.0;
       if ((hs_mlt_ || eft) && !(ss >> tcol >> fm)) {
-        HsFatal("problem/mlt_flux_frozen / he_ic_eint_from_t: he_ic_file line without "
-                "columns 6-7 (T, fmlt)", __LINE__);
+        HsFatal("problem/mlt_flux_frozen / star_ic_eint_from_t: star_ic_file line "
+                "without columns 6-7 (T, fmlt)", __LINE__);
       }
       fM.push_back(fm);
       fT.push_back(tcol);
@@ -806,7 +811,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     if (fr.size() < 2 || fr.front() > hr.front() || (!wic && fr.back() < hr.back())) {
       std::ostringstream os;
-      os << "problem/he_ic_file '" << fn << "' must cover r = " << hr.front() << " .. "
+      os << "problem/star_ic_file '" << fn << "' must cover r = " << hr.front() << " .. "
          << hr.back() << " (the mesh plus the ghost margin), it has "
          << (fr.empty() ? 0.0 : fr.front()) << " .. " << (fr.empty() ? 0.0 : fr.back());
       HsFatal(os.str(), __LINE__);
@@ -834,11 +839,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
     if (wic) {
-      const Real mdot = pin->GetReal("problem","he_wind_mdot");
-      const Real vinf = pin->GetReal("problem","he_wind_vinf");
-      const Real wbeta = pin->GetOrAddReal("problem","he_wind_beta",1.0);
-      const Real wv0 = pin->GetOrAddReal("problem","he_wind_v0",1.0e6);
-      const Real wr0 = pin->GetReal("problem","he_wind_r0");
+      const Real mdot = pin->GetReal("problem","star_wind_mdot");
+      const Real vinf = pin->GetReal("problem","star_wind_vinf");
+      const Real wbeta = pin->GetOrAddReal("problem","star_wind_beta",1.0);
+      const Real wv0 = pin->GetOrAddReal("problem","star_wind_v0",1.0e6);
+      const Real wr0 = pin->GetReal("problem","star_wind_r0");
       auto vw = [&](const Real r) {
         const Real v = (r > wr0) ? vinf*pow(1.0 - wr0/r, wbeta) : 0.0;
         return std::max(v, wv0);
@@ -851,8 +856,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
       }
       if (nc < 1 || hr[nc] > fr.back()) {
-        HsFatal("problem/he_wind_ic: the wind density never exceeds the column's inside "
-                "the file's range above he_wind_r0", __LINE__);
+        HsFatal("problem/star_wind_ic: the wind density never exceeds the column's "
+                "inside the file's range above star_wind_r0", __LINE__);
       }
       wrc = hr[nc];
       hdc = hd;   // the column itself (extrapolated), for the balance anchor
@@ -877,7 +882,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         hV[n] = v;
       }
       if (global_variable::my_rank == 0) {
-        std::cout << "he_star_vet: he_wind_ic: Mdot = " << mdot << " g/s, vinf = " << vinf
+        std::cout << "star_vet: star_wind_ic: Mdot = " << mdot << " g/s, vinf = " << vinf
                   << ", beta = " << wbeta << ", r0 = " << wr0 << "; the wind starts at "
                   << "r_c = " << wrc << " (rho " << hd[nc] << ", T [K] "
                   << tc*hs_tk << ", v "
@@ -889,15 +894,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // ---- the Rosseland + Planck tables (one shared grid), handed to the module
   Real tab_lt_lo = 0.0, tab_lt_hi = 0.0, tab_ld_lo = 0.0, tab_ld_hi = 0.0;
   {
-    const std::string rt = pin->GetString("problem","he_opac_table");
-    const std::string pt = pin->GetString("problem","he_planck_table");
+    const std::string rt = pin->GetString("problem","star_opac_table");
+    const std::string pt = pin->GetString("problem","star_planck_table");
     DvceArray2D<Real> krt, kpt;
     DvceArray1D<Real> mlT, mlD, plT, plD;
     int mnT = 0, mnD = 0, pnT = 0, pnD = 0;
     Real a1, a2, a3, a4, b1, b2, b3, b4;
-    // problem/he_opac_logd_min (default none): extend both tables to this log10 rho
-    const Real ldx = pin->DoesParameterExist("problem","he_opac_logd_min") ?
-                     pin->GetReal("problem","he_opac_logd_min") : 1.0e300;
+    // problem/star_opac_logd_min (default none): extend both tables to this log10 rho
+    const Real ldx = pin->DoesParameterExist("problem","star_opac_logd_min") ?
+                     pin->GetReal("problem","star_opac_logd_min") : 1.0e300;
     HsReadOpacityTable(rt, krt, mlT, mlD, mnT, mnD, tab_lt_lo, tab_lt_hi, tab_ld_lo,
                        tab_ld_hi, ldx);
     HsReadOpacityTable(pt, kpt, plT, plD, pnT, pnD, a1, a2, a3, a4, ldx);
@@ -920,37 +925,38 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
 
-  // ---- problem/he_ic_rad (file = the old IC; the default is set below).
-  // sph1d: above the depth tau_R = he_ic_rad_taub (from the mesh top, the run's
+  // ---- problem/star_ic_rad (file = the old IC; the default is set below).
+  // sph1d: above the depth tau_R = star_ic_rad_taub (from the mesh top, the run's
   // own kappa_t), the radiation energy density of the column is replaced by the solution
   // of the 1-D spherical grey transfer problem in radiative equilibrium (S = J = E, the
   // vet_col/vet_gd source in RE, the vet_scatter split included) with the column's own
   // radiative flux F_r: a VET iteration of a p-z formal solution (f = K/J, g_top = H/J)
   // and the radial moment equation (HsSph1dPass).  The file's E above R_ph is an
   // isothermal-atmosphere guess (2.1-2.6x the relaxed E at 1.0-1.2 R_ph for AG Car A).
-  // E = w E_sph1d + (1 - w) E_col, w a smoothstep LINEAR in tau, 1 at he_ic_rad_taua, 0
-  // at he_ic_rad_taub.  he_ic_rad_gas = column (old default): T of the column; re: T^4
+  // E = w E_sph1d + (1 - w) E_col, w a smoothstep LINEAR in tau, 1 at star_ic_rad_taua, 0
+  // at star_ic_rad_taub.  star_ic_rad_gas = column (old default): T of the column; re:
+  // T^4
   // = E at fixed rho (blended with the same w; eint from the code's EOS); re_atm: as re
   // but the floor gas (rho at the column's floor) keeps the column's T, so its a_ref = kt
   // F/c is the file IC's (with re its cold floor gas falls 3x faster and the implicit
-  // solve then takes ~6 instead of ~4 Picard iterations, AG Car A).  he_ic_rad_hse
+  // solve then takes ~6 instead of ~4 Picard iterations, AG Car A).  star_ic_rad_hse
   // (needs gas = re | re_atm): rho re-integrated outward from r_b at fixed T, dP_gas/dr
   // = -rho (g - kt F/c) (the continuum balance of the WB pair, whose a_ref = kt F/c is
   // built below from this column), floored at the column's floor; E solve and HSE
   // iterated together.
   // F_r and the MLT fraction are not changed.  Deterministic (host solve, per-point
   // device opacities) and rebuilt on every start, as the column itself.
-  // he_ic_rad_dump = <file>: rank 0 writes the new column in the IC file format (r rho
-  // eint F_r E T fmlt; usable with he_ic_rad = file; none = no dump).  NOTE-icgen.md.
-  // DEFAULT sph1d (with he_ic_rad_gas = re_atm, he_ic_rad_hse = true) on
-  // a FRESH start of every he_star_vet run where it applies: opacity = table, no
-  // he_wind_ic, he_ic_rad_thin not set.  Elsewhere the default stays file (the old IC),
-  // silently.  A restart whose file lacks the key keeps file (the column is rebuilt on
-  // every start, so this matters for the restart too).  The resolved value is echoed
+  // star_ic_rad_dump = <file>: rank 0 writes the new column in the IC file format (r rho
+  // eint F_r E T fmlt; usable with star_ic_rad = file; none = no dump).  NOTE-icgen.md.
+  // DEFAULT sph1d (with star_ic_rad_gas = re_atm, star_ic_rad_hse = true) on
+  // a FRESH start of every star_vet run where it applies: opacity = table, no
+  // star_wind_ic, star_ic_rad_thin not set.  Elsewhere the default stays file (the old
+  // IC), silently.  A restart whose file lacks the key keeps file (the column is rebuilt
+  // on every start, so this matters for the restart too).  The resolved value is echoed
   // (later restarts keep it); explicit input overrides.  To keep the old IC on a fresh
-  // start name problem/he_ic_rad = file (and rad_vet/ic_rad = none for the old radiation
-  // start).
-  // (he_ic_rad_atm_force = module): the factor phi = a_module/a_continuum of
+  // start name problem/star_ic_rad = file (and rad_vet/ic_rad = none for the old
+  // radiation start).
+  // (star_ic_rad_atm_force = module): the factor phi = a_module/a_continuum of
   // the radiative acceleration of each mesh cell of the thin atmosphere (hatm_c, index
   // = the x1 cell index of block 0 incl. ghosts) and on the fine grid (hatm_f); 1 (and
   // unused) elsewhere / when off
@@ -958,67 +964,69 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   std::vector<Real> hatm_c, hatm_f;
   const bool icrdef = !global_variable::restart_run &&
       (pm1->opacity_type == radvet::M1_OPAC_TABLE) && !wic &&
-      !(pin->DoesParameterExist("problem","he_ic_rad_thin") &&
-        pin->GetBoolean("problem","he_ic_rad_thin"));
-  const std::string icr0 = pin->GetOrAddString("problem","he_ic_rad",
+      !(pin->DoesParameterExist("problem","star_ic_rad_thin") &&
+        pin->GetBoolean("problem","star_ic_rad_thin"));
+  const std::string icr0 = pin->GetOrAddString("problem","star_ic_rad",
                                                icrdef ? "sph1d" : "file");
   if (icr0 != "file") {
     const std::string icr = icr0;
-    if (icr != "sph1d") HsFatal("problem/he_ic_rad must be file | sph1d", __LINE__);
+    if (icr != "sph1d") HsFatal("problem/star_ic_rad must be file | sph1d", __LINE__);
     if (wic) {
-      HsFatal("problem/he_ic_rad = sph1d does not combine with he_wind_ic", __LINE__);
+      HsFatal("problem/star_ic_rad = sph1d does not combine with star_wind_ic", __LINE__);
     }
-    if (pin->DoesParameterExist("problem","he_ic_rad_thin") &&
-        pin->GetBoolean("problem","he_ic_rad_thin")) {
-      HsFatal("problem/he_ic_rad = sph1d replaces he_ic_rad_thin (set one)", __LINE__);
+    if (pin->DoesParameterExist("problem","star_ic_rad_thin") &&
+        pin->GetBoolean("problem","star_ic_rad_thin")) {
+      HsFatal("problem/star_ic_rad = sph1d replaces star_ic_rad_thin (set one)",
+              __LINE__);
     }
     Kokkos::Timer tw0;
-    const Real taua = pin->GetOrAddReal("problem","he_ic_rad_taua",30.0);
-    const Real taub = pin->GetOrAddReal("problem","he_ic_rad_taub",3000.0);
-    const Real dtau0 = pin->GetOrAddReal("problem","he_ic_rad_dtau",0.05);
-    const Real dlnr = pin->GetOrAddReal("problem","he_ic_rad_dlnr",2.0e-3);
-    const int ncore = pin->GetOrAddInteger("problem","he_ic_rad_ncore",64);
+    const Real taua = pin->GetOrAddReal("problem","star_ic_rad_taua",30.0);
+    const Real taub = pin->GetOrAddReal("problem","star_ic_rad_taub",3000.0);
+    const Real dtau0 = pin->GetOrAddReal("problem","star_ic_rad_dtau",0.05);
+    const Real dlnr = pin->GetOrAddReal("problem","star_ic_rad_dlnr",2.0e-3);
+    const int ncore = pin->GetOrAddInteger("problem","star_ic_rad_ncore",64);
     // fresh-start defaults re_atm + hse (the recommended IC, NOTE-icgen);
     // a restart whose file lacks the keys keeps column / false
     const bool icgdef = !global_variable::restart_run;
-    const std::string gasm = pin->GetOrAddString("problem","he_ic_rad_gas",
+    const std::string gasm = pin->GetOrAddString("problem","star_ic_rad_gas",
                                                  icgdef ? "re_atm" : "column");
-    const bool hse = pin->GetOrAddBoolean("problem","he_ic_rad_hse",icgdef);
+    const bool hse = pin->GetOrAddBoolean("problem","star_ic_rad_hse",icgdef);
     constexpr int maxit = 60;
-    const Real tol = pin->GetOrAddReal("problem","he_ic_rad_tol",1.0e-8);
-    const Real htol = pin->GetOrAddReal("problem","he_ic_rad_hse_tol",1.0e-6);
+    const Real tol = pin->GetOrAddReal("problem","star_ic_rad_tol",1.0e-8);
+    const Real htol = pin->GetOrAddReal("problem","star_ic_rad_hse_tol",1.0e-6);
     // HSE outer loop on a near-Eddington column:
-    // (1) Gamma = kt F/(c g) of the HSE march is clamped at he_ic_rad_hse_gmax (as
-    //     he_bc_hse_gmax).  Where Gamma > 1 the fixed-T march makes rho grow outward,
+    // (1) Gamma = kt F/(c g) of the HSE march is clamped at star_ic_rad_hse_gmax (as
+    //     star_bc_hse_gmax).  Where Gamma > 1 the fixed-T march makes rho grow outward,
     //     kappa_t(rho) grows with it and the E-solve <-> HSE loop runs away.  Clamped
     //     cells keep a net outward force (Gamma - gmax) g.
     // (2) At the first rise of the outer residual max |dln rho| the update is damped,
-    //     ln rho <- (1 - w) ln rho + w ln rho_HSE, w = he_ic_rad_hse_damp, from then on.
-    // (3) The outer loop has its own limit he_ic_rad_hse_maxit and warns when it does
-    //     not converge.
+    //     ln rho <- (1 - w) ln rho + w ln rho_HSE, w = star_ic_rad_hse_damp, from then
+    // on. (3) The outer loop has its own limit star_ic_rad_hse_maxit and warns when it
+    //     does not converge.
     // A column with Gamma <= gmax and a monotone residual is not affected.
-    const Real hgmax = pin->GetOrAddReal("problem","he_ic_rad_hse_gmax",0.9);
-    const Real hsdamp = pin->GetOrAddReal("problem","he_ic_rad_hse_damp",0.5);
-    const int hsmaxo = pin->GetOrAddInteger("problem","he_ic_rad_hse_maxit",400);
+    const Real hgmax = pin->GetOrAddReal("problem","star_ic_rad_hse_gmax",0.9);
+    const Real hsdamp = pin->GetOrAddReal("problem","star_ic_rad_hse_damp",0.5);
+    const int hsmaxo = pin->GetOrAddInteger("problem","star_ic_rad_hse_maxit",400);
     if (!(taua > 0.0 && taub > taua && dtau0 > 0.0 && dlnr > 0.0 && ncore >= 4 &&
           tol > 0.0 && htol > 0.0 && hgmax > 0.0 && hgmax < 1.0 &&
           hsdamp > 0.0 && hsdamp <= 1.0 && hsmaxo >= 1)) {
-      HsFatal("problem/he_ic_rad: needs 0 < taua < taub, dtau, dlnr, tol > 0, ncore >= 4,"
-              " 0 < hse_gmax < 1, 0 < hse_damp <= 1, hse_maxit >= 1",
+      HsFatal("problem/star_ic_rad: needs 0 < taua < taub, dtau, dlnr, tol > 0, ncore "
+              ">= 4, 0 < hse_gmax < 1, 0 < hse_damp <= 1, hse_maxit >= 1",
               __LINE__);
     }
     if (gasm != "column" && gasm != "re" && gasm != "re_atm") {
-      HsFatal("problem/he_ic_rad_gas must be column | re | re_atm", __LINE__);
+      HsFatal("problem/star_ic_rad_gas must be column | re | re_atm", __LINE__);
     }
     // re_atm: radiative equilibrium only where rho is above the column's floor (the floor
-    // gas keeps the column's T, hence its a_ref = kt F/c, as with he_ic_rad = file)
+    // gas keeps the column's T, hence its a_ref = kt F/c, as with star_ic_rad = file)
     const bool gre = (gasm == "re" || gasm == "re_atm");
     const bool gatm = (gasm == "re_atm");
     if (hse && !gre) {
-      HsFatal("problem/he_ic_rad_hse = true needs he_ic_rad_gas = re | re_atm", __LINE__);
+      HsFatal("problem/star_ic_rad_hse = true needs star_ic_rad_gas = re | re_atm",
+              __LINE__);
     }
-    // the column as read: T [code] (the file's T with he_ic_eint_from_t, else the code's
-    // T(rho, eint)), E (the file's, else a T^4), rho
+    // the column as read: T [code] (the file's T with star_ic_eint_from_t, else the
+    // code's T(rho, eint)), E (the file's, else a T^4), rho
     std::vector<Real> d0(hd), t0(nf), e0(nf);
     for (int n=0; n<nf; ++n) {
       t0[n] = eft ? hTcol[n]/hs_tk : eos.Temperature(hd[n], he[n]);
@@ -1069,17 +1077,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
     if (tauf[0] < taub && global_variable::my_rank == 0) {
-      std::cout << "he_star_vet: he_ic_rad = sph1d: WARNING the column's bottom tau ("
-                << tauf[0] << ") is below he_ic_rad_taub; r_b = the fine-grid bottom"
+      std::cout << "star_vet: star_ic_rad = sph1d: WARNING the column's bottom tau ("
+                << tauf[0] << ") is below star_ic_rad_taub; r_b = the fine-grid bottom"
                 << std::endl;
     }
     Real dfl = 1.0e300;   // the column's floor: its minimum density at and above r_b
     for (int n=nb; n<nf; ++n) dfl = std::min(dfl, d0[n]);
-    // gravity of the HSE march: the point mass, or (he_gm_column) the static monopole of
-    // the current column, as built below
+    // gravity of the HSE march: the point mass, or (star_gm_column) the static monopole
+    // of the current column, as built below
     Real gcode = 0.0;
     if (hs_gmc_) {
-      if (pmbp->punit == nullptr) HsFatal("problem/he_gm_column needs <units>", __LINE__);
+      if (pmbp->punit == nullptr) HsFatal("problem/star_gm_column needs <units>",
+                                          __LINE__);
       const Real lu = pmbp->punit->length_cgs(), tu = pmbp->punit->time_cgs();
       gcode = units::Units::grav_constant_cgs*pmbp->punit->mass_cgs()*tu*tu/(lu*lu*lu);
     }
@@ -1132,7 +1141,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         Real de = 0.0;
         for (int g=0; g<ngr; ++g) de = std::max(de, std::fabs(eg[g]/ep[g] - 1.0));
         if (!(eg[0] > 0.0) || !std::isfinite(de)) {
-          HsFatal("problem/he_ic_rad = sph1d: the VET iteration failed", __LINE__);
+          HsFatal("problem/star_ic_rad = sph1d: the VET iteration failed", __LINE__);
         }
         if (de < tol) break;
       }
@@ -1225,7 +1234,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       ftau();
       if (dlr < htol) break;
     }
-    // problem/he_ic_rad_atm_force = module | continuum (needs hse and gas =
+    // problem/star_ic_rad_atm_force = module | continuum (needs hse and gas =
     // re_atm; default continuum = bitwise the old IC; recorded).  In the optically thin
     // atmosphere above R_ph the flux is fixed by the luminosity (F0 = L/(4 pi r^2) to
     // 3e-4 after ic_rad, measured) and <rad_vet> gives cell i the force
@@ -1244,36 +1253,36 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // and below that face (fine grid, a_ref, Phi_eff, cells) are bitwise unchanged; the
     // change reaches below R_ph only through <rad_vet>/ic_rad's relaxation (|de/e| <=
     // 5e-4 at 0.99 R_ph, <= 1e-6 below 0.95 R_ph at cycle 0, AG Car A), hence opt-in.
-    // See also he_ic_rad_atm_post (HeStarIcPost).
-    // he_ic_rad_atm_relax w (fresh-start default 0.5; a restart whose file lacks the key
-    // keeps 1 = the old march, bitwise): log phi under-relaxed by w, and every face solve
-    // of the march starts from the node below.  The old guess, the last pass's rho at the
-    // node, is the floor once a node fell to it; the secant then misses the root there,
-    // the node stays on the floor: a one-cell rho cliff with phi ~ 20-60 whose cell
-    // alternates between passes (R136, RSG: not converged in 200 passes, the result
+    // See also star_ic_rad_atm_post (StarIcPost).
+    // star_ic_rad_atm_relax w (fresh-start default 0.5; a restart whose file lacks the
+    // key keeps 1 = the old march, bitwise): log phi under-relaxed by w, and every face
+    // solve of the march starts from the node below.  The old guess, the last pass's rho
+    // at the node, is the floor once a node fell to it; the secant then misses the root
+    // there, the node stays on the floor: a one-cell rho cliff with phi ~ 20-60 whose
+    // cell alternates between passes (R136, RSG: not converged in 200 passes, the result
     // roundoff-dependent, CPU != GPU).  With w < 1, not converged in
-    // he_ic_rad_atm_maxit passes (fresh default 1000) is fatal.
+    // star_ic_rad_atm_maxit passes (fresh default 1000) is fatal.
     {
-      const std::string afm = pin->GetOrAddString("problem","he_ic_rad_atm_force",
+      const std::string afm = pin->GetOrAddString("problem","star_ic_rad_atm_force",
                                                    "continuum");
       if (afm != "module" && afm != "continuum") {
-        HsFatal("problem/he_ic_rad_atm_force must be module | continuum", __LINE__);
+        HsFatal("problem/star_ic_rad_atm_force must be module | continuum", __LINE__);
       }
       if (afm == "module" && !(hse && gatm)) {
-        HsFatal("problem/he_ic_rad_atm_force = module needs he_ic_rad_hse = true and "
-                "he_ic_rad_gas = re_atm", __LINE__);
+        HsFatal("problem/star_ic_rad_atm_force = module needs star_ic_rad_hse = true and "
+                "star_ic_rad_gas = re_atm", __LINE__);
       }
       if (afm == "module") {
         const bool rst = global_variable::restart_run;
-        const int amaxit = pin->GetOrAddInteger("problem","he_ic_rad_atm_maxit",
+        const int amaxit = pin->GetOrAddInteger("problem","star_ic_rad_atm_maxit",
                                                 rst ? 200 : 1000);
-        const Real arel = pin->GetOrAddReal("problem","he_ic_rad_atm_relax",
+        const Real arel = pin->GetOrAddReal("problem","star_ic_rad_atm_relax",
                                             rst ? 1.0 : 0.5);
         if (amaxit < 1 || !(arel > 0.0 && arel <= 1.0)) {
-          HsFatal("problem/he_ic_rad_atm_maxit >= 1 and 0 < he_ic_rad_atm_relax <= 1",
+          HsFatal("problem/star_ic_rad_atm_maxit >= 1 and 0 < star_ic_rad_atm_relax <= 1",
                   __LINE__);
         }
-        const Real atol = pin->GetOrAddReal("problem","he_ic_rad_atm_tol",1.0e-12);
+        const Real atol = pin->GetOrAddReal("problem","star_ic_rad_atm_tol",1.0e-12);
         auto ax1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
                                                         pmbp->pcoord->x1v);
         auto ax1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
@@ -1288,7 +1297,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           }
         }
         if (!(rpa > 0.0) || ia < 1 || ia > aie) {
-          HsFatal("problem/he_ic_rad_atm_force = module: R_ph not inside the mesh",
+          HsFatal("problem/star_ic_rad_atm_force = module: R_ph not inside the mesh",
                   __LINE__);
         }
         const int n0 = static_cast<int>(floor((ax1f(0,ia) - hs_rlo_)/hs_dr_));
@@ -1428,7 +1437,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             pmx = std::max(pmx, hatm_c[i]);
             pmx0 = std::max(pmx0, ph0[i]);
           }
-          std::cout << "he_star_vet: he_ic_rad_atm_force = module: atmosphere from cell "
+          std::cout << "star_vet: star_ic_rad_atm_force = module: atmosphere from cell "
                     << ia << " (lower face " << ax1f(0,ia) << ", R_ph " << rpa << " -> "
                     << frph() << "), " << natm << " cells above the floor, " << ait
                     << " passes (last max |dphi| " << dph << ", march residual " << rmxa
@@ -1444,12 +1453,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           }
           std::cout << rfl << " (" << rfl/rpa << " R_ph)" << std::endl;
           if (!(dph < atol) && arel == 1.0) {
-            std::cout << "he_star_vet: he_ic_rad_atm_force: WARNING not converged in "
+            std::cout << "star_vet: star_ic_rad_atm_force: WARNING not converged in "
                       << amaxit << " iterations" << std::endl;
           }
           for (int i=ia; i<=aie; ++i) {
             if (!(cd[i] > dfl*(1.0 + 1.0e-6))) break;
-            std::cout << "he_star_vet:   atm cell " << i << " r/R_ph " << ax1v(0,i)/rpa
+            std::cout << "star_vet:   atm cell " << i << " r/R_ph " << ax1v(0,i)/rpa
                       << " rho " << cd[i] << " T [K] " << ctt[i]*hs_tk << " phi "
                       << ph0[i] << " -> " << hatm_c[i] << ", Gamma "
                       << ckk[i]*0.5*(cf[i] + cf[i+1])/cl/(hs_gm_/SQR(ax1v(0,i)))
@@ -1458,8 +1467,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
         (void) gpost;
         if (arel < 1.0 && !(dph < atol && rmxa < 1.0e-10)) {
-          HsFatal("problem/he_ic_rad_atm_force = module: the atmosphere march did not "
-                  "converge (he_ic_rad_atm_maxit, he_ic_rad_atm_relax)", __LINE__);
+          HsFatal("problem/star_ic_rad_atm_force = module: the atmosphere march did not "
+                  "converge (star_ic_rad_atm_maxit, star_ic_rad_atm_relax)", __LINE__);
         }
       }
     }
@@ -1493,13 +1502,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           rdm = hr[n];
         }
       }
-      std::cout << "he_star_vet: he_ic_rad = sph1d (gas " << gasm << ", hse "
+      std::cout << "star_vet: star_ic_rad = sph1d (gas " << gasm << ", hse "
                 << (hse ? "on" : "off") << "): r_b = " << hr[nb] << " (tau "
                 << tauf[nb] << "), blend tau " << taua << " .. " << taub << ", "
                 << rg.size() << " solve points + " << ncore << " core rays, " << nit
                 << " VET passes, " << nout << " outer, g_top = H/J " << gtop
                 << ", f_top = K/J " << ftop << ", " << wsec << " s" << std::endl;
-      std::cout << "he_star_vet: he_ic_rad = sph1d: R_ph (tau_R 2/3, run kappa) "
+      std::cout << "star_vet: star_ic_rad = sph1d: R_ph (tau_R 2/3, run kappa) "
                 << rph0 << " -> " << rph1 << "; max |E/E_col - 1| " << emx << " at r = "
                 << rem << ", |T/T_col - 1| " << tmx << " at " << rtm << ", |rho/rho_col"
                 << " - 1| " << dmx << " at " << rdm;
@@ -1512,9 +1521,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << ", damped (" << hsdamp << ") from outer "
                   << ((hsodmp >= 0) ? std::to_string(hsodmp) : std::string("none"));
         if (!(dlr < htol)) {
-          std::cout << std::endl << "he_star_vet: he_ic_rad = sph1d: WARNING the HSE "
-                    << "outer loop did NOT converge in he_ic_rad_hse_maxit = " << hsmaxo
-                    << " (max |dln rho| " << dlr << " > he_ic_rad_hse_tol " << htol
+          std::cout << std::endl << "star_vet: star_ic_rad = sph1d: WARNING the HSE "
+                    << "outer loop did NOT converge in star_ic_rad_hse_maxit = " << hsmaxo
+                    << " (max |dln rho| " << dlr << " > star_ic_rad_hse_tol " << htol
                     << ")";
         }
       }
@@ -1524,18 +1533,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       for (const Real xx : xs) {
         const Real r = xx*rph0;
         if (r < hr[nb] || r > rtop) continue;
-        std::cout << "he_star_vet:   r/R_ph " << xx << ": E/E_col "
+        std::cout << "star_vet:   r/R_ph " << xx << ": E/E_col "
                   << flog(ef, r)/flog(e0, r)
                   << ", T [K] " << flog(tcur, r)*hs_tk << " (/T_col " << flog(tcur, r)/
                   flog(t0, r) << "), rho/rho_col " << flog(hd, r)/flog(d0, r)
                   << ", F/(cE) " << flog(hF, r)/(cl*flog(ef, r)) << std::endl;
       }
     }
-    // he_ic_rad_dump: the new column on the union of the file radii and the solve grid
-    if (pin->DoesParameterExist("problem","he_ic_rad_dump") &&
-        pin->GetString("problem","he_ic_rad_dump") != "none" &&
+    // star_ic_rad_dump: the new column on the union of the file radii and the solve grid
+    if (pin->DoesParameterExist("problem","star_ic_rad_dump") &&
+        pin->GetString("problem","star_ic_rad_dump") != "none" &&
         global_variable::my_rank == 0) {
-      const std::string dfn = pin->GetString("problem","he_ic_rad_dump");
+      const std::string dfn = pin->GetString("problem","star_ic_rad_dump");
       // (the fine grid's span: this mesh plus its ghost margin, ends included)
       std::vector<Real> ru = {hr[0], hr[nf-1]};
       for (const Real r : hfr_keep) if (r > hr[0] && r < hr[nf-1]) ru.push_back(r);
@@ -1545,7 +1554,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       std::vector<Real> tk(nf);
       for (int n=0; n<nf; ++n) tk[n] = tcur[n]*hs_tk;
       FILE *fp = fopen(dfn.c_str(), "w");
-      if (fp == nullptr) HsFatal("cannot write problem/he_ic_rad_dump", __LINE__);
+      if (fp == nullptr) HsFatal("cannot write problem/star_ic_rad_dump", __LINE__);
       {
         std::ifstream f0(fn);
         std::string l0;
@@ -1553,7 +1562,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           if (!l0.empty() && l0[0] == '#') fprintf(fp, "%s\n", l0.c_str());
         }
       }
-      fprintf(fp, "# he_ic_rad = sph1d (he_star_vet): E (and with gas = re T, "
+      fprintf(fp, "# star_ic_rad = sph1d (star_vet): E (and with gas = re T, "
               "eint; with hse rho) above tau_R %g replaced; gas %s hse %d taua %g dtau "
               "%g dlnr %g ncore %d; R_ph %.10e -> %.10e; resampled from the fine grid\n",
               taub, gasm.c_str(), hse ? 1 : 0, taua, dtau0, dlnr, ncore, rph0, rph1);
@@ -1572,15 +1581,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 flog(he, r), flog(hF, r), flog(ef, r), flog(tk, r), fm);
       }
       fclose(fp);
-      std::cout << "he_star_vet: he_ic_rad = sph1d: column written to " << dfn << " ("
+      std::cout << "star_vet: star_ic_rad = sph1d: column written to " << dfn << " ("
                 << ru.size() << " lines)" << std::endl;
     }
   }
 
-  // problem/he_ic_equil (read only when named; default false = nothing): see
-  // HeStarIcEquil.  Its floor density is the column's minimum (the sph1d floor)
-  hs_eq_ = pin->DoesParameterExist("problem","he_ic_equil") &&
-           pin->GetBoolean("problem","he_ic_equil");
+  // problem/star_ic_equil (read only when named; default false = nothing): see
+  // StarIcEquil.  Its floor density is the column's minimum (the sph1d floor)
+  hs_eq_ = pin->DoesParameterExist("problem","star_ic_equil") &&
+           pin->GetBoolean("problem","star_ic_equil");
   if (hs_eq_) {
     hs_eq_dfl_ = 1.0e300;
     for (int n=0; n<nf; ++n) hs_eq_dfl_ = std::min(hs_eq_dfl_, hd[n]);
@@ -1623,7 +1632,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   Kokkos::deep_copy(hT, cT);
   Kokkos::deep_copy(hkt, ckt);
   // diagnostic (output only): the code's T(rho, eint) of the column against the file's T
-  // (column 6), over the mesh's radial range; skipped with he_wind_ic (T replaced there)
+  // (column 6), over the mesh's radial range; skipped with star_wind_ic (T replaced
+  // there)
   if (tcol_read && !wic && global_variable::my_rank == 0) {
     const Real x1a = pmy_mesh_->mesh_size.x1min, x1b = pmy_mesh_->mesh_size.x1max;
     Real tdm = 0.0, rdm = 0.0;
@@ -1635,8 +1645,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         rdm = hr[n];
       }
     }
-    std::cout << "he_star_vet: IC column T(rho,eint)/T_col - 1: max " << tdm << " at r = "
-              << rdm << " (he_ic_eint_from_t = " << (eft ? "true" : "false") << ")"
+    std::cout << "star_vet: IC column T(rho,eint)/T_col - 1: max " << tdm << " at r = "
+              << rdm << " (star_ic_eint_from_t = " << (eft ? "true" : "false") << ")"
               << std::endl;
   }
 
@@ -1674,7 +1684,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     if (bad) HsFatal(os.str(), __LINE__);
     if (global_variable::my_rank == 0) {
-      std::cout << "he_star_vet: column inside the tables: log10 rho " << ldmin << " .. "
+      std::cout << "star_vet: column inside the tables: log10 rho " << ldmin << " .. "
                 << ldmax << ", log10 T " << ltmin << " .. " << ltmax << std::endl;
     }
   }
@@ -1691,7 +1701,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       HsFatal(os.str(), __LINE__);
     }
   }
-  // tau from the top face, r_int (tau = he_tau_int), Phi_eff = Phi - int a_ref dr
+  // tau from the top face, r_int (tau = star_tau_int), Phi_eff = Phi - int a_ref dr
   std::vector<Real> tau(nf, 0.0), aref(nf), cum(nf, 0.0);
   for (int n=0; n<nf; ++n) aref[n] = hkt(n)*hF[n]/cl;
   // the module form in the thin atmosphere (hatm_f = 1 elsewhere: bitwise)
@@ -1710,18 +1720,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       break;
     }
   }
-  // F7 problem/he_ic_rad_thin (default false = bitwise): the initial
+  // F7 problem/star_ic_rad_thin (default false = bitwise): the initial
   // radiation above the photosphere (tau_R < 2/3 from the mesh top, this column) is the
   // uniformly bright sphere's, E = F_r/(c f), f = (1 + mu_c)/2, mu_c = sqrt(1 -
   // (R_ph/r)^2), instead of the column's a T^4; F_r is the column's own (= L/(4 pi r^2)
   // there; printed).  Below R_ph E is blended into the column's: E = w 2F/c + (1 - w)
-  // E_col with w a smoothstep in tau from 1 at 2/3 to 0 at he_ic_rad_thin_taub (default
+  // E_col with w a smoothstep in tau from 1 at 2/3 to 0 at star_ic_rad_thin_taub (default
   // 2), so E is continuous at R_ph (f = 1/2 there).  Gas T, rho, F, a_ref unchanged
   // (the thin gas is decoupled; changing T would break the column's balance).
-  if (pin->GetOrAddBoolean("problem","he_ic_rad_thin",false)) {
-    const Real taub = pin->GetOrAddReal("problem","he_ic_rad_thin_taub",2.0);
+  if (pin->GetOrAddBoolean("problem","star_ic_rad_thin",false)) {
+    const Real taub = pin->GetOrAddReal("problem","star_ic_rad_thin_taub",2.0);
     const Real t23 = 2.0/3.0;
-    if (!(taub > t23)) HsFatal("problem/he_ic_rad_thin_taub must exceed 2/3", __LINE__);
+    if (!(taub > t23)) HsFatal("problem/star_ic_rad_thin_taub must exceed 2/3", __LINE__);
     Real rph = -1.0;
     for (int n=nf-2; n>=0; --n) {
       if (tau[n] >= t23 && tau[n+1] < t23) {
@@ -1729,7 +1739,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         break;
       }
     }
-    if (!(rph > 0.0)) HsFatal("problem/he_ic_rad_thin: tau_R = 2/3 not on the column",
+    if (!(rph > 0.0)) HsFatal("problem/star_ic_rad_thin: tau_R = 2/3 not on the column",
                               __LINE__);
     auto hEc = Kokkos::create_mirror_view(cE);
     Kokkos::deep_copy(hEc, cE);
@@ -1760,7 +1770,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     Kokkos::deep_copy(cE, hEc);
     if (global_variable::my_rank == 0) {
-      std::cout << "he_star_vet: he_ic_rad_thin: R_ph (tau_R = 2/3) = " << rph
+      std::cout << "star_vet: star_ic_rad_thin: R_ph (tau_R = 2/3) = " << rph
                 << ", L = " << lum << ", blend to tau " << taub << ", column points "
                 << nmod << ", max |4 pi r^2 F/L - 1| above R_ph (mesh) = " << fdev
                 << std::endl;
@@ -1774,11 +1784,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real w = x - i;
     cin = (1.0 - w)*cum[i] + w*cum[i+1];
   }
-  // he_gm_column: G m(r) and Phi(r) of the column on the fine grid (trapezoid sums,
+  // star_gm_column: G m(r) and Phi(r) of the column on the fine grid (trapezoid sums,
   // both zero-referenced at r_in like the point-mass Phi = GM (1/r_in - 1/r))
   std::vector<Real> hphig;
   if (hs_gmc_) {
-    if (pmbp->punit == nullptr) HsFatal("problem/he_gm_column needs <units>", __LINE__);
+    if (pmbp->punit == nullptr) HsFatal("problem/star_gm_column needs <units>", __LINE__);
     const Real lu = pmbp->punit->length_cgs(), tu = pmbp->punit->time_cgs();
     const Real gcode = units::Units::grav_constant_cgs*pmbp->punit->mass_cgs()*tu*tu/
                        (lu*lu*lu);
@@ -1808,7 +1818,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Kokkos::deep_copy(hs_phig_, h1);
     Kokkos::deep_copy(hs_gmr_, h2);
     if (global_variable::my_rank == 0) {
-      std::cout << "he_star_vet: he_gm_column: G m(r_in) = " << hs_gm_
+      std::cout << "star_vet: star_gm_column: G m(r_in) = " << hs_gm_
                 << ", G m(r_top) = " << hgm[nf-1] << " (G = " << gcode
                 << " code), static monopole of the initial column" << std::endl;
     }
@@ -1863,7 +1873,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   // ... and the EFFECTIVE one of the x1 well-balanced pair
   const Real rlo = hs_rlo_, dr = hs_dr_;
-  // (he_gravity = pointmass: no WB pair, no reference force; phicc_wb aliases phicc0)
+  // (star_gravity = pointmass: no WB pair, no reference force; phicc_wb aliases phicc0)
   if (!hs_pm_) {
     ph->EnableWBEffectivePotential();
     auto pwc = ph->phicc_wb, pwf = ph->phi_wb_x1f;
@@ -1885,7 +1895,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       aref_d(m,k,j,i) = 0.5*kt*(HsLinInterp(cF, rlo, dr, nf, rl)
                                 + HsLinInterp(cF, rlo, dr, nf, rr))/cl;
     });
-    // (he_ic_rad_atm_force = module): the thin-atmosphere cells take the
+    // (star_ic_rad_atm_force = module): the thin-atmosphere cells take the
     // module's face-mean form, phi times the continuum value (phi = 1 elsewhere)
     if (hatm_on) {
       DvceArray1D<Real> aphi("hs_aphi", n1m1+1);
@@ -1897,13 +1907,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         aref_d(m,k,j,i) *= aphi(i);
       });
     }
-    // HeStarGravity gives the reference work (split); set before SetForceReference,
+    // StarGravity gives the reference work (split); set before SetForceReference,
     // which resolves force_reference_work = auto
     pm1->fref_wsplit_ok = true;
     pm1->SetForceReference(aref_d);
   }
 
-  // ---- DISCRETE hydrostatic balance of the initial cells (problem/he_ic_balance,
+  // ---- DISCRETE hydrostatic balance of the initial cells (problem/star_ic_balance,
   // default false).  The x1 well-balanced scheme is exactly static when, at every
   // interior face, the pressure of the local background of the cell on the left
   // (walked from its centre to the face along Phi_eff, WBBackgroundStencil) equals that
@@ -1914,42 +1924,45 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // radiation) each face condition PR_i(d_i) = PL_{i+1}(d_{i+1}) is one equation for d_i.
   // It is solved from the first outer ghost (anchor: the column) inward to the first
   // active cell, with the code's own EOS and walk (host), so it is exact to round-off.
-  // The inner ghosts are the column scaled to the edge cell, as HeStarBC makes them;
+  // The inner ghosts are the column scaled to the edge cell, as StarBC makes them;
   // their T enters the stencil of the edge cell, which is iterated.  The inner wall face
   // (wall_closed_ix1, mirror state) is then balanced by construction.  E and F_r keep the
   // column's values.  Rebuilt on a restart (the BCs read the balanced ghost profiles).
-  // With he_ic_profile the column is the profile file's (rho, T, F_r incl. the inner
+  // With star_ic_profile the column is the profile file's (rho, T, F_r incl. the inner
   // ghosts); its seed then multiplies the balanced rho (isobaric, in its block below).
-  hs_bal_ = pin->GetOrAddBoolean("problem","he_ic_balance",false);
-  // problem/he_ic_profile (read only when named; default false = this
-  // IC bitwise, no key added to the input; deprecated name he_ic_linhao) replaces the
+  hs_bal_ = pin->GetOrAddBoolean("problem","star_ic_balance",false);
+  // problem/star_ic_profile (read only when named; default false = this
+  // IC bitwise, no key added to the input; deprecated name star_ic_linhao) replaces the
   // initial state by the construction of the BSG reference Athena++ setup bsg_star.cpp
   // (the block at the end of this function).  Its profile is read here:
-  // problem/he_ic_balance re-marches it (also on a restart).
-  const bool hlin = pin->DoesParameterExist("problem",HsIcKey(pin,"he_ic_profile")) &&
-                    pin->GetBoolean("problem",HsIcKey(pin,"he_ic_profile"));
+  // problem/star_ic_balance re-marches it (also on a restart).
+  const bool hlin = pin->DoesParameterExist("problem",HsIcKey(pin,"star_ic_profile")) &&
+                    pin->GetBoolean("problem",HsIcKey(pin,"star_ic_profile"));
   std::string lfn;
   std::vector<Real> pr, pT, pd, pM, pF;
   bool gxi = false;
   Real lrmax = 0.0, ltmax = 0.0, ldmax = 0.0, lgmax = 0.0;
   if (hlin && (hs_bal_ || !restart)) {
-    lfn = pin->GetString("problem",HsIcKey(pin,"he_ic_profile_file"));
+    lfn = pin->GetString("problem",HsIcKey(pin,"star_ic_profile_file"));
     // Athena++ Constants::grav_const_cgs (bsg_star.cpp's grav_rmax: G, the file's M)
-    const Real lG = pin->GetOrAddReal("problem",HsIcKey(pin,"he_ic_profile_gconst"),6.67408e-8);
-    // he_ic_profile_gext = r2 (default, bsg_star.cpp:429 g = g(rmax)
+    const Real lG = pin->GetOrAddReal("problem",HsIcKey(pin,"star_ic_profile_gconst"),
+                                      6.67408e-8);
+    // star_ic_profile_gext = r2 (default, bsg_star.cpp:429 g = g(rmax)
     // (r/rmax)^+2, as coded) | invsq (the run's point mass GM/r^2, hydrostatic; see
     // below)
-    const std::string gxs = pin->GetOrAddString("problem",HsIcKey(pin,"he_ic_profile_gext"),"r2");
+    const std::string gxs = pin->GetOrAddString("problem",
+                                                HsIcKey(pin,"star_ic_profile_gext"),"r2");
     if (gxs != "r2" && gxs != "invsq") {
-      HsFatal("problem/he_ic_profile_gext must be r2 or invsq", __LINE__);
+      HsFatal("problem/star_ic_profile_gext must be r2 or invsq", __LINE__);
     }
     gxi = (gxs == "invsq");
     if (gxi && hs_gmc_) {
-      HsFatal("problem/he_ic_profile_gext = invsq needs the point-mass gravity", __LINE__);
+      HsFatal("problem/star_ic_profile_gext = invsq needs the point-mass gravity",
+              __LINE__);
     }
     {
       std::ifstream f(lfn);
-      if (!f.good()) HsFatal("cannot open problem/he_ic_profile_file '" + lfn + "'",
+      if (!f.good()) HsFatal("cannot open problem/star_ic_profile_file '" + lfn + "'",
                              __LINE__);
       std::string line;
       while (std::getline(f, line)) {
@@ -1961,13 +1974,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         pF.push_back(g);
       }
     }
-    if (pr.size() < 2) HsFatal("problem/he_ic_profile_file: fewer than 2 rows", __LINE__);
+    if (pr.size() < 2) HsFatal("problem/star_ic_profile_file: fewer than 2 rows",
+                               __LINE__);
     lrmax = pr.back(); ltmax = pT.back(); ldmax = pd.back();
     lgmax = lG*pM.back()/(lrmax*lrmax);
   }
   // the profile at x1: r <= rmax rho, T [K], F_r LINEAR in r between the bracketing
   // rows (bsg_star.cpp ProblemGenerator's lleft/lright search, verbatim); r > rmax
-  // the atmosphere (see the he_ic_profile block), F_r = 0
+  // the atmosphere (see the star_ic_profile block), F_r = 0
   auto lprof = [&](const Real x1, Real &rho, Real &tem, Real &flx) {
     const int np = static_cast<int>(pr.size());
     flx = 0.0;
@@ -1975,7 +1989,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       tem = ltmax;
       const Real tc = tem/hs_tk;   // P/rho of this EOS at T(rmax)
       if (gxi) {
-        // he_ic_profile_gext = invsq: the isothermal hydrostatic atmosphere of the
+        // star_ic_profile_gext = invsq: the isothermal hydrostatic atmosphere of the
         // run's own point mass, g = GM/r^2 (= g(rmax) (rmax/r)^2 with g(rmax) =
         // GM/rmax^2): rho = rho(rmax) exp(-(GM/(P/rho)) (1/rmax - 1/r))
         rho = ldmax*std::exp(-(hs_gm_/tc)*(1.0/lrmax - 1.0/x1));
@@ -1997,12 +2011,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           + (x1 - pr[lleft])*(pF[lright] - pF[lleft])/(pr[lright] - pr[lleft]);
   };
   if (hs_bal_ && hs_pm_) {
-    HsFatal("problem/he_ic_balance = true needs the well-balanced pair (he_gravity = wb)",
-            __LINE__);
+    HsFatal("problem/star_ic_balance = true needs the well-balanced pair (star_gravity = "
+            "wb)", __LINE__);
   }
   if (hs_bal_) {
     if (ph->wb_option != WBOption::polytropic) {
-      HsFatal("problem/he_ic_balance = true needs <hydro>/wb_option = polytropic",
+      HsFatal("problem/star_ic_balance = true needs <hydro>/wb_option = polytropic",
               __LINE__);
     }
     const int n1 = n1m1 + 1;
@@ -2022,7 +2036,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     for (int i=0; i<n1; ++i) {
       dc[i] = logint(hd, hx1v(0,i));
       ec[i] = logint(he, hx1v(0,i));
-      if (hlin) {   // he_ic_profile: the profile (rho, T) is the column
+      if (hlin) {   // star_ic_profile: the profile (rho, T) is the column
         Real tl, fl, p, cr, ct, cv;
         lprof(hx1v(0,i), dc[i], tl, fl);
         eos.ThermoAt(dc[i], tl/hs_tk, ec[i], p, cr, ct, cv);
@@ -2085,7 +2099,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       w = (w < 0.0) ? 0.0 : ((w > 1.0) ? 1.0 : w);
       return (1.0 - w)*hF[n] + w*hF[n+1];
     };
-    auto phig = [&](const Real r) {   // he_gm_column: the column's Phi, linear
+    auto phig = [&](const Real r) {   // star_gm_column: the column's Phi, linear
       Real x = (r - hs_rlo_)/hs_dr_;
       int n = static_cast<int>(floor(x));
       n = (n < 0) ? 0 : ((n > nf - 2) ? (nf - 2) : n);
@@ -2097,17 +2111,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (hs_gmc_) return phig(rb) - phig(ra) - a_*(rb - ra);
       return hs_gm_*(1.0/ra - 1.0/rb) - a_*(rb - ra);
     };
-    // he_wind_ic: the march starts below r_c (the wind cells keep their IC)
+    // star_wind_ic: the march starts below r_c (the wind cells keep their IC)
     int ianc = ie;
     if (wic) {
       while (ianc > is && !(hx1v(0,ianc) < wrc)) --ianc;
     }
-    // problem/he_ic_balance_rmax [cm] (default none = the top ghost): the march starts
+    // problem/star_ic_balance_rmax [cm] (default none = the top ghost): the march starts
     // below this radius and the cells above keep the column state.  For a column that
     // ends in a constant density floor (make_ic_mlt_star.py --atm iso): the floor is not
     // hydrostatic, and anchored there the march would rescale the whole column
-    if (pin->DoesParameterExist("problem","he_ic_balance_rmax")) {
-      const Real rbm = pin->GetReal("problem","he_ic_balance_rmax");
+    if (pin->DoesParameterExist("problem","star_ic_balance_rmax")) {
+      const Real rbm = pin->GetReal("problem","star_ic_balance_rmax");
       while (ianc > is && !(hx1v(0,ianc) < rbm)) --ianc;
     }
     // the anchor cell ianc+1 takes the COLUMN's own state for the march (the wind
@@ -2142,13 +2156,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // rho g with the wall cell alone, v2/runs/mG3); the kink dies out within a few cells.
     // Iterated with the balance (a depends on rho); the face x1f(is+NW) keeps its
     // continuum Phi_eff, the cells below are rebuilt downward from it.
-    // problem/he_ic_balance_aref = file (default; read only when named) | dpr (implied by
-    // he_ic_profile): a_ref = -(dPr/dr)/rho of the column (Pr = a T^4/3 at the faces, the
-    // column's rho in the cell), the discrete force of the steady start at the column's
-    // T, in every cell (no module form in the wall cells); Phi_eff rebuilt upward from
-    // the first face with it.  file = kt F_file/c (above)
-    const bool adpr = hlin || (pin->DoesParameterExist("problem","he_ic_balance_aref") &&
-                               pin->GetString("problem","he_ic_balance_aref") == "dpr");
+    // problem/star_ic_balance_aref = file (default; read only when named) | dpr (implied
+    // by star_ic_profile): a_ref = -(dPr/dr)/rho of the column (Pr = a T^4/3 at the
+    // faces, the column's rho in the cell), the discrete force of the steady start at the
+    // column's T, in every cell (no module form in the wall cells); Phi_eff rebuilt
+    // upward from the first face with it.  file = kt F_file/c (above)
+    const bool adpr = hlin ||
+                      (pin->DoesParameterExist("problem","star_ic_balance_aref") &&
+                       pin->GetString("problem","star_ic_balance_aref") == "dpr");
     auto tfc = [&](const Real r) {   // the column's code T at a face
       Real dl, tl, fl;
       if (hlin) {lprof(r, dl, tl, fl); return tl/hs_tk;}
@@ -2272,7 +2287,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           rdm = hx1v(0,i);
         }
       }
-      std::cout << "he_star_vet: he_ic_balance cells: max |T/T_col - 1| = " << tdm
+      std::cout << "star_vet: star_ic_balance cells: max |T/T_col - 1| = " << tdm
                 << " at r = " << rdm << std::endl;
     }
     if (wic && ianc < ie) {   // the anchor cell is a wind cell again
@@ -2290,7 +2305,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Kokkos::deep_copy(hs_bd_, h1);
     Kokkos::deep_copy(hs_be_, h2);
     if (global_variable::my_rank == 0) {
-      std::cout << "he_star_vet: he_ic_balance: max |rho/rho_col - 1| = " << dmax
+      std::cout << "star_vet: star_ic_balance: max |rho/rho_col - 1| = " << dmax
                 << " at r = " << hx1v(0,imax) << ", max face residual |PR/PL - 1| = "
                 << rmax << ", wall cells a_ref (module form), last change " << wchg
                 << "; wall ghost/edge rho " << bd[is-1]/bd[is] << " T " << tc[is-1]/tc[is]
@@ -2299,13 +2314,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
 
   // ---- a RESTART of a run whose fresh start re-balanced the atmosphere
-  // (HeStarIcPost) applies the a_ref it recorded in the input, and the Phi_eff rebuilt
+  // (StarIcPost) applies the a_ref it recorded in the input, and the Phi_eff rebuilt
   // from it above the face x1f(ia), exactly as the fresh start did
-  if (restart && pin->DoesParameterExist("problem","he_ic_rad_atm_na")) {
-    const int ia = pin->GetInteger("problem","he_ic_rad_atm_ia");
-    const int na = pin->GetInteger("problem","he_ic_rad_atm_na");
+  if (restart && pin->DoesParameterExist("problem","star_ic_rad_atm_na")) {
+    const int ia = pin->GetInteger("problem","star_ic_rad_atm_ia");
+    const int na = pin->GetInteger("problem","star_ic_rad_atm_na");
     if (ia < indcs.is + 2 || na < 0 || ia + na - 1 > indcs.ie) {
-      HsFatal("problem/he_ic_rad_atm_ia, _na do not match this radial grid", __LINE__);
+      HsFatal("problem/star_ic_rad_atm_ia, _na do not match this radial grid", __LINE__);
     }
     std::vector<Real> pc0, pf0, p0c, p0f, x1v, x1f, ar0, pc, pf;
     HsAtmRadial(pmbp, pc0, pf0, p0c, p0f, x1v, x1f, ar0);
@@ -2313,13 +2328,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     for (int i=ia; i<=indcs.ie; ++i) a[i - ia] = ar0[i];
     char key[40];
     for (int n=0; n<na; ++n) {
-      snprintf(key, sizeof(key), "he_ic_rad_atm_a%03d", n);
+      snprintf(key, sizeof(key), "star_ic_rad_atm_a%03d", n);
       a[n] = std::strtod(pin->GetString("problem", key).c_str(), nullptr);
     }
     HsAtmPhiEff(ia, indcs.ie, a, pc0, pf0, p0c, p0f, x1v, x1f, pc, pf);
     HsAtmWrite(pmbp, ia, a, pc, pf);
     if (global_variable::my_rank == 0) {
-      std::cout << "he_star_vet: he_ic_rad_atm_a*: a_ref (cells " << ia << " .. "
+      std::cout << "star_vet: star_ic_rad_atm_a*: a_ref (cells " << ia << " .. "
                 << ia + na - 1 << ") and Phi_eff from the fresh start's re-balance"
                 << std::endl;
     }
@@ -2348,10 +2363,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
     Kokkos::deep_copy(hs_fm_, hfm);
-    // he_base_heat: the base-heating flux F_b on the same faces (see hs_bheat_)
+    // star_base_heat: the base-heating flux F_b on the same faces (see hs_bheat_)
     if (hs_bheat_ > 0.0) {
       if (pin->GetOrAddString("problem","mlt_closure","frozen") != "frozen") {
-        HsFatal("problem/he_base_heat needs mlt_closure = frozen", __LINE__);
+        HsFatal("problem/star_base_heat needs mlt_closure = frozen", __LINE__);
       }
       Kokkos::realloc(hs_fb_, nfc);
       auto hfb = Kokkos::create_mirror_view(hs_fb_);
@@ -2364,7 +2379,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
       Kokkos::deep_copy(hs_fb_, hfb);
       if (global_variable::my_rank == 0) {
-        std::cout << "he_star_vet: he_base_heat: F_MLT(r_in) = " << fw << " kept as base "
+        std::cout << "star_vet: star_base_heat: F_MLT(r_in) = " << fw << " kept as base "
                   << "heating over r_in .. r_in + " << hs_bheat_ << " when w(t) < 1"
                   << std::endl;
       }
@@ -2415,18 +2430,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     });
     pm1->esrc_on = true;
     if (global_variable::my_rank == 0) {
-      std::cout << "he_star_vet: mlt_flux_frozen: max F_MLT/F on the faces = " << fmax
+      std::cout << "star_vet: mlt_flux_frozen: max F_MLT/F on the faces = " << fmax
                 << " at r = " << rmx << "; F_MLT at the bottom/top faces = "
                 << hfm(indcs.is) << " / " << hfm(indcs.ie + 1) << std::endl;
     }
   }
 
-  // TEST of <rad_vet>/esrc (default off): a constant source he_esrc_const (erg/cm^3/s) in
-  // the cells with r < he_esrc_rmax, ON TOP of the frozen MLT deposit if that is on
-  const Real esc = pin->GetOrAddReal("problem","he_esrc_const",0.0);
+  // TEST of <rad_vet>/esrc (default off): a constant source star_esrc_const (erg/cm^3/s)
+  // in the cells with r < star_esrc_rmax, ON TOP of the frozen MLT deposit if that is on
+  const Real esc = pin->GetOrAddReal("problem","star_esrc_const",0.0);
   hs_esc_ = esc;
   if (esc != 0.0) {
-    const Real rmx = pin->GetOrAddReal("problem","he_esrc_rmax",hs_rin_);
+    const Real rmx = pin->GetOrAddReal("problem","star_esrc_rmax",hs_rin_);
     hs_esrmx_ = rmx;
     if (!pm1->esrc_on) {
       Kokkos::realloc(pm1->esrc, nmb1+1, n3m1+1, n2m1+1, n1m1+1);
@@ -2454,24 +2469,24 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // so the adaptive state below reads the block as before); the rad_vet counters restart
   // at 0, so the window base is minus the open window's sums
   hs_mesh_ = pmy_mesh_;
-  // problem/he_ic_remap_file (read only when named; absent = nothing,
+  // problem/star_ic_remap_file (read only when named; absent = nothing,
   // bitwise the old code): a FRESH start whose state is a remapped restart of another
   // run (tools: remap_e1w.py).  The file carries the parent's time, its pgen restart
-  // block (Picard window + the he_ic_equil a_ref trailer, applied below exactly as a
+  // block (Picard window + the star_ic_equil a_ref trailer, applied below exactly as a
   // restart applies them) and u0, the M1 u0 and f0x1 of this mesh including ghosts.
   // <time>/start_time must equal the parent's time (bitwise; the generated deck sets it)
   // so that w_mlt(t), the vet_gd rotation clock (physical) and the outputs continue.  No
-  // ic_rad, no he_ic_equil, no seed; everything else is a fresh start (hesdirk2 starts
+  // ic_rad, no star_ic_equil, no seed; everything else is a fresh start (hesdirk2 starts
   // with time2_start, the implicit F0 faces from implicit_f0_init, empty rotavg history).
   const bool hs_rmp = !restart &&
-                      pin->DoesParameterExist("problem","he_ic_remap_file");
+                      pin->DoesParameterExist("problem","star_ic_remap_file");
   std::string hs_rmp_fn;
   std::int64_t hs_rmp_data = 0;   // byte offset of the arrays
   int hs_rmp_n[4] = {0, 0, 0, 0};  // ng, nx1, nx2, nx3
   if (hs_rmp) {
-    hs_rmp_fn = pin->GetString("problem","he_ic_remap_file");
+    hs_rmp_fn = pin->GetString("problem","star_ic_remap_file");
     std::ifstream rf(hs_rmp_fn, std::ios::binary);
-    if (!rf) HsFatal("cannot open problem/he_ic_remap_file " + hs_rmp_fn, __LINE__);
+    if (!rf) HsFatal("cannot open problem/star_ic_remap_file " + hs_rmp_fn, __LINE__);
     char mg[8];
     std::int32_t hi[8];
     double hd[7];
@@ -2482,7 +2497,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     rf.read(reinterpret_cast<char*>(&npg), sizeof(npg));
     if (!rf || std::memcmp(mg, "HSREMAP1", 8) != 0 || hi[0] != 1 || hi[5] != 5 ||
         hi[6] != 4 || npg > (1u << 30)) {
-      HsFatal("problem/he_ic_remap_file: not a version-1 HSREMAP1 file", __LINE__);
+      HsFatal("problem/star_ic_remap_file: not a version-1 HSREMAP1 file", __LINE__);
     }
     auto &ms = pmy_mesh_->mesh_size;
     auto &mi = pmy_mesh_->mesh_indcs;
@@ -2491,28 +2506,29 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (hi[1] != mi.ng || hi[2] != mi.nx1 || hi[3] != mi.nx2 || hi[4] != mi.nx3 ||
         !rel(hd[1], ms.x1min) || !rel(hd[2], ms.x1max) || !rel(hd[3], ms.x2min) ||
         !rel(hd[4], ms.x2max) || !rel(hd[5], ms.x3min) || !rel(hd[6], ms.x3max)) {
-      HsFatal("problem/he_ic_remap_file: its mesh (ng, nx1..3, extents) differs from "
+      HsFatal("problem/star_ic_remap_file: its mesh (ng, nx1..3, extents) differs from "
               "<mesh>", __LINE__);
     }
     if (hd[0] != pmy_mesh_->time) {
       char buf[128];
       snprintf(buf, sizeof(buf), "%.17g", hd[0]);
-      HsFatal(std::string("problem/he_ic_remap_file: set <time>/start_time = ") + buf +
+      HsFatal(std::string("problem/star_ic_remap_file: set <time>/start_time = ") + buf +
               " (the parent's time; the remap deck from remap_e1w.py does)", __LINE__);
     }
     pgen_rststate.resize(npg);
     if (npg > 0) rf.read(pgen_rststate.data(), npg);
-    if (!rf) HsFatal("problem/he_ic_remap_file: truncated pgen block", __LINE__);
+    if (!rf) HsFatal("problem/star_ic_remap_file: truncated pgen block", __LINE__);
     hs_rmp_data = 8 + sizeof(hi) + sizeof(hd) + sizeof(npg) + npg;
     for (int n=0; n<4; ++n) hs_rmp_n[n] = hi[n+1];
     const std::int64_t c1 = hi[2] + 2*hi[1], c2 = hi[3] + 2*hi[1], c3 = hi[4] + 2*hi[1];
     const std::int64_t want = hs_rmp_data + 8*(9*c1*c2*c3 + (c1 + 1)*c2*c3);
     rf.seekg(0, std::ios::end);
     if (static_cast<std::int64_t>(rf.tellg()) != want) {
-      HsFatal("problem/he_ic_remap_file: file size does not match its header", __LINE__);
+      HsFatal("problem/star_ic_remap_file: file size does not match its header",
+              __LINE__);
     }
     if (global_variable::my_rank == 0) {
-      std::cout << "he_star_vet: he_ic_remap_file " << hs_rmp_fn << ": t = " << hd[0]
+      std::cout << "star_vet: star_ic_remap_file " << hs_rmp_fn << ": t = " << hd[0]
                 << ", pgen block " << npg << " bytes (remapped fresh start)" << std::endl;
     }
   }
@@ -2524,14 +2540,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // sigma_max: Caltech's measured RSG E e-fold ~10 d at 0.995 R_ph against THIS code's
   // sigma_max (G m(r) gravity, code cells; 1/6.11 d); their 0.74 was against a fixed-GM
   // sigma_max (1/7.35 d); read only when a ramp key is auto), sigma_max from the IC
-  // column (HsN2Compute).  TODO: code the he_seed amplitude -> v_seed mapping for
+  // column (HsN2Compute).  TODO: code the star_seed amplitude -> v_seed mapping for
   // n_efold.  The
   // mass-weighted median 1/sigma (HsN2Median) is printed for reference.  Computed once
   // and kept in the restart file (kHsRmpTag), which a
-  // restart reuses (never recomputed).  A restart (or he_ic_remap_file start) with auto
+  // restart reuses (never recomputed).  A restart (or star_ic_remap_file start) with auto
   // and no stored numbers keeps NO ramp (an old restart file carries the old binary's
   // explicit default -1 anyway).
-  // the drive's trailer is the LAST one: strip it first (he_drive.cpp)
+  // the drive's trailer is the LAST one: strip it first (star_drive.cpp)
   if (restart || hs_rmp) {hsdrive::RestartStrip(&pgen_rststate);}
   {
     const std::string ms = pin->GetOrAddString("problem","mlt_ramp_start","auto");
@@ -2581,7 +2597,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           if (sa) hs_mrs_ = 0.0;
           if (ta) hs_mrt_ = nef/(sfr*hs_n2_.smax);
           if (global_variable::my_rank == 0) {
-            std::cout << "he_star_vet: mlt_ramp auto rule v2: t_sat = n_efold " << nef
+            std::cout << "star_vet: mlt_ramp auto rule v2: t_sat = n_efold " << nef
                       << " / (sigma_frac " << sfr << " sigma_max) = "
                       << nef/(sfr*hs_n2_.smax) << " s" << std::endl;
           }
@@ -2593,7 +2609,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
       }
       if (global_variable::my_rank == 0) {
-        std::cout << "he_star_vet: mlt_ramp auto (start " << ms << ", time " << mt
+        std::cout << "star_vet: mlt_ramp auto (start " << ms << ", time " << mt
                   << ") from " << how << ": start = " << hs_mrs_ << " s ("
                   << hs_mrs_/86400.0 << " d), time = " << hs_mrt_ << " s ("
                   << hs_mrt_/86400.0 << " d)";
@@ -2610,10 +2626,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
   }
-  // (he_ic_equil): the equilibrium's a_ref of the active cells travels in the
+  // (star_ic_equil): the equilibrium's a_ref of the active cells travels in the
   // pgen restart block as the LAST tagged trailer (a_ref..., Real n, tag); a restart
   // re-applies it with the Phi_eff rebuilt from it above the face x1f(is), exactly as the
-  // fresh start's HeStarIcEquil left them (stripped here, before the Picard trailer)
+  // fresh start's StarIcEquil left them (stripped here, before the Picard trailer)
   if (restart) {
     // the removed fixed-profile inner face's wall-luminosity trailer (the last one) is
     // dropped
@@ -2625,7 +2641,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       blk.resize(blk.size() - nt);
     }
   }
-  // (also from a he_ic_remap_file's copy of the parent's block)
+  // (also from a star_ic_remap_file's copy of the parent's block)
   if (restart || hs_rmp) {
     auto &blk = pgen_rststate;
     const std::size_t nt = sizeof(kHsDicTag) + sizeof(Real);
@@ -2637,8 +2653,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       const int na = static_cast<int>(rn);
       const std::size_t nb = nt + static_cast<std::size_t>(na)*sizeof(Real);
       if (na != indcs.nx1 || blk.size() < nb) {
-        HsFatal("the restart file's he_ic_equil trailer does not match this radial grid",
-                __LINE__);
+        HsFatal("the restart file's star_ic_equil trailer does not match this radial "
+                "grid", __LINE__);
       }
       hs_eq_a_.assign(na, 0.0);
       std::memcpy(hs_eq_a_.data(), blk.data() + blk.size() - nb, na*sizeof(Real));
@@ -2649,12 +2665,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       HsAtmWrite(pmbp, indcs.is, hs_eq_a_, pc, pf);
       if (global_variable::my_rank == 0) {
         std::cout
-            << "he_star_vet: he_ic_equil: a_ref (cells is .. ie) and Phi_eff from the "
+            << "star_vet: star_ic_equil: a_ref (cells is .. ie) and Phi_eff from the "
                   << "fresh start's equilibrium (restart trailer)" << std::endl;
       }
     } else if (hs_eq_) {
-      HsFatal("problem/he_ic_equil = true but the restart file carries no he_ic_equil "
-              "trailer", __LINE__);
+      HsFatal("problem/star_ic_equil = true but the restart file carries no "
+              "star_ic_equil trailer", __LINE__);
     }
   }
   if (restart || hs_rmp) {
@@ -2677,7 +2693,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const bool rmp_ad = hs_rmp && (pin->GetOrAddString("problem","mlt_closure",
                                                        "frozen") != "frozen");
     if (hs_rmp && !blk.empty() && !rmp_ad) {
-      HsFatal("problem/he_ic_remap_file: the parent's pgen block carries state this "
+      HsFatal("problem/star_ic_remap_file: the parent's pgen block carries state this "
               "start cannot take (adaptive MLT?)", __LINE__);
     }
   }
@@ -2772,13 +2788,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     hs_ad_tl_ = pmy_mesh_->time;
     hs_ad_cyc_ = -1;
-    // a he_ic_remap_file start takes F_sub from the file's adaptive state
+    // a star_ic_remap_file start takes F_sub from the file's adaptive state
     // (the parent's), and its update clock restarts at this start's time
     if (restart || hs_rmp) {
       const auto &blk = pgen_rststate;
       if (blk.size() < 2*sizeof(std::int32_t) + sizeof(Real)) {
         if (global_variable::my_rank == 0) {
-          std::cout << "### he_star_vet: this restart file carries no adaptive MLT "
+          std::cout << "### star_vet: this restart file carries no adaptive MLT "
                        "state; "
                     << "F_sub re-seeded with the IC's F_MLT" << std::endl;
         }
@@ -2805,7 +2821,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
       }
       if (hs_mtc_ && hs_tgp_ok_ == 0 && global_variable::my_rank == 0) {
-        std::cout << "he_star_vet: NOTE mlt_src_time = stage: no tgt^{n-1} in the "
+        std::cout << "star_vet: NOTE mlt_src_time = stage: no tgt^{n-1} in the "
                      "restart "
                   << "file, the first update takes tgt^n for both ends" << std::endl;
       }
@@ -2825,7 +2841,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // esrc from F_sub (bitwise the start-up esrc when F_sub = F_MLT and w = 1)
     HsApplyMltW(pmy_mesh_, HsMltW(pmy_mesh_->time));
     if (global_variable::my_rank == 0) {
-      std::cout << "he_star_vet: mlt_closure = " << (hs_adp_ ? "pressure" : "adaptive")
+      std::cout << "star_vet: mlt_closure = " << (hs_adp_ ? "pressure" : "adaptive")
                 << ", relax time " << hs_ad_tau_
                 << " s, every cycle, taper "
                 << pin->GetReal("problem","mlt_closure_taper") << ", update clock "
@@ -2836,40 +2852,40 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real w = HsMltW(pmy_mesh_->time);
     if (w != hs_mw_) HsApplyMltW(pmy_mesh_, w);
     if (global_variable::my_rank == 0) {
-      std::cout << "he_star_vet: mlt ramp start = " << hs_mrs_ << ", time = " << hs_mrt_
+      std::cout << "star_vet: mlt ramp start = " << hs_mrs_ << ", time = " << hs_mrt_
                 << ", w(t = " << pmy_mesh_->time << ") = " << hs_mw_
                 << ", max L_MLT (unscaled) = " << hs_lmx_ << std::endl;
     }
   }
 
   // top sponge (default off) and hooks
-  hs_zflux_ = pin->GetOrAddBoolean("problem","he_wall_zero_flux",true);
+  hs_zflux_ = pin->GetOrAddBoolean("problem","star_wall_zero_flux",true);
   // default true; with the window keys absent it is bitwise the plain branch; recipe
   // none keeps false
   hs_wbwin_ = recipe::GetMode(pin) != recipe::Mode::none;
-  if (pin->DoesParameterExist("problem","he_wb_grav_window")) {
-    hs_wbwin_ = pin->GetBoolean("problem","he_wb_grav_window");
+  if (pin->DoesParameterExist("problem","star_wb_grav_window")) {
+    hs_wbwin_ = pin->GetBoolean("problem","star_wb_grav_window");
   }
   // the inner wall face sees the exact mirror of the interior-side state
   // (hydro_fluxes.cpp, wall_closed_ix1, as deep_hot_jupiter_rt problem/wall_closed): zero
   // mass flux to round-off.  Measured: it does not change the first-cell force
   // (-2.1e-3 rho g at 640 zones, first order in dx, gate 1a), which is not the wall flux.
-  // problem/he_bc_inner (he-wind-bc): wall (default: the closed wall above) | inflow:
+  // problem/star_bc_inner (he-wind-bc): wall (default: the closed wall above) | inflow:
   // the ghosts hold the (balanced) initial column at fixed rho and eint, UNSCALED, with
   // v_r copied from the first active cell (zero gradient), so mass may enter or leave;
-  // no wall-face correction.  problem/he_bc_outer: noinflow (default) | outflow: the
+  // no wall-face correction.  problem/star_bc_outer: noinflow (default) | outflow: the
   // ghosts continue the edge cell as a constant-velocity wind, rho ~ r^-2, the edge's
-  // specific internal energy (the no-inflow face correction of he_wall_zero_flux stays)
+  // specific internal energy (the no-inflow face correction of star_wall_zero_flux stays)
   // | hse (bsg-arm2): the ghosts are the edge cell walked outward in hydrostatic balance
-  // with the effective gravity of the code's own forces (see HeStarBC), T held (or
-  // continued along the interior's dT/dPhi_eff with he_bc_hse_tgrad), v_r copied where
+  // with the effective gravity of the code's own forces (see StarBC), T held (or
+  // continued along the interior's dT/dPhi_eff with star_bc_hse_tgrad), v_r copied where
   // it points out and zero where it points in, v_t copied (box_convection bc_mode_top 4).
   {
-    const std::string bi = pin->GetOrAddString("problem","he_bc_inner","wall");
-    const std::string bo = pin->GetOrAddString("problem","he_bc_outer","noinflow");
+    const std::string bi = pin->GetOrAddString("problem","star_bc_inner","wall");
+    const std::string bo = pin->GetOrAddString("problem","star_bc_outer","noinflow");
     if ((bi != "wall" && bi != "inflow" && bi != "zerocontact") ||
         (bo != "noinflow" && bo != "outflow" && bo != "hse" && bo != "copy")) {
-      HsFatal("problem/he_bc_inner must be wall|inflow|zerocontact, he_bc_outer "
+      HsFatal("problem/star_bc_inner must be wall|inflow|zerocontact, star_bc_outer "
               "noinflow|outflow|hse|copy", __LINE__);
     }
     hs_binf_ = (bi == "inflow");
@@ -2882,10 +2898,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     hs_bout_ = (bo == "outflow");
     hs_bhse_ = (bo == "hse");
     hs_bcopy_ = (bo == "copy");
-    if (pin->DoesParameterExist("problem","he_bc_outer_r2")) {
-      hs_bcr2_ = pin->GetBoolean("problem","he_bc_outer_r2");
+    if (pin->DoesParameterExist("problem","star_bc_outer_r2")) {
+      hs_bcr2_ = pin->GetBoolean("problem","star_bc_outer_r2");
       if (hs_bcr2_ && !hs_bcopy_) {
-        HsFatal("problem/he_bc_outer_r2 = true needs he_bc_outer = copy", __LINE__);
+        HsFatal("problem/star_bc_outer_r2 = true needs star_bc_outer = copy", __LINE__);
       }
     }
     if (hs_bzc_) {
@@ -2895,74 +2911,74 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (phy->use_wellbalance_dynamic || phy->rsolver_method != Hydro_RSolver::hllc ||
           !pmy_mesh_->use_spherical_polar || eos.IsGeneral() || hs_bal_ ||
           indcs.nx1 < 2 || ng < 2) {
-        HsFatal("problem/he_bc_inner = zerocontact needs spherical polar, an ideal gas, "
-                "<hydro>/rsolver = hllc, no well-balanced scheme, "
-                "he_ic_balance = false, nx1 >= 2 and nghost >= 2", __LINE__);
+        HsFatal("problem/star_bc_inner = zerocontact needs spherical polar, an ideal "
+                "gas, <hydro>/rsolver = hllc, no well-balanced scheme, "
+                "star_ic_balance = false, nx1 >= 2 and nghost >= 2", __LINE__);
       }
     }
-    // problem/he_bc_linhao (the ghost-built fixed-profile inner face of the old solver)
+    // problem/star_bc_linhao (the ghost-built fixed-profile inner face of the old solver)
     // is removed
-    if (pin->DoesParameterExist("problem","he_bc_linhao") &&
-        pin->GetBoolean("problem","he_bc_linhao")) {
-      HsFatal("problem/he_bc_linhao was removed with the old solver", __LINE__);
+    if (pin->DoesParameterExist("problem","star_bc_linhao") &&
+        pin->GetBoolean("problem","star_bc_linhao")) {
+      HsFatal("problem/star_bc_linhao was removed with the old solver", __LINE__);
     }
     if (hs_bhse_) {
-      hs_bhse_gmax_ = pin->GetOrAddReal("problem","he_bc_hse_gmax",0.9);
-      hs_bhse_tg_ = pin->GetOrAddBoolean("problem","he_bc_hse_tgrad",false);
+      hs_bhse_gmax_ = pin->GetOrAddReal("problem","star_bc_hse_gmax",0.9);
+      hs_bhse_tg_ = pin->GetOrAddBoolean("problem","star_bc_hse_tgrad",false);
       std::string hf;
-      if (restart && !pin->DoesParameterExist("problem","he_bc_hse_flux")) {
+      if (restart && !pin->DoesParameterExist("problem","star_bc_hse_flux")) {
         hf = "cell";
-        pin->SetString("problem","he_bc_hse_flux",hf);
+        pin->SetString("problem","star_bc_hse_flux",hf);
         if (global_variable::my_rank == 0) {
-          std::cout << "### he_star_vet: restart input has no problem/he_bc_hse_flux; "
-                    << "keeping the old cell-flux Gamma (he_bc_hse_flux = cell)"
+          std::cout << "### star_vet: restart input has no problem/star_bc_hse_flux; "
+                    << "keeping the old cell-flux Gamma (star_bc_hse_flux = cell)"
                     << std::endl;
         }
       } else {
-        hf = pin->GetOrAddString("problem","he_bc_hse_flux","face");
+        hf = pin->GetOrAddString("problem","star_bc_hse_flux","face");
       }
       if (hf != "face" && hf != "cell") {
-        HsFatal("problem/he_bc_hse_flux must be face|cell", __LINE__);
+        HsFatal("problem/star_bc_hse_flux must be face|cell", __LINE__);
       }
       hs_bhse_face_ = (hf == "face");
       if (hs_bhse_face_ && (pmbp->pradvet == nullptr ||
                             pmbp->pradvet->f0x1.extent_int(0) == 0)) {
-        HsFatal("problem/he_bc_hse_flux = face needs the implicit rad_vet transport "
+        HsFatal("problem/star_bc_hse_flux = face needs the implicit rad_vet transport "
                 "(face fluxes f0x1); use cell", __LINE__);
       }
       if (!(hs_bhse_gmax_ >= 0.0 && hs_bhse_gmax_ < 1.0)) {
-        HsFatal("problem/he_bc_hse_gmax must be in [0,1)", __LINE__);
+        HsFatal("problem/star_bc_hse_gmax must be in [0,1)", __LINE__);
       }
     }
   }
-  pmbp->phydro->wall_closed_ix1 = pin->GetOrAddBoolean("problem","he_wall_closed",
+  pmbp->phydro->wall_closed_ix1 = pin->GetOrAddBoolean("problem","star_wall_closed",
                                                        !(hs_binf_ || hs_bzc_));
   if ((hs_binf_ || hs_bzc_) && pmbp->phydro->wall_closed_ix1) {
-    HsFatal("problem/he_bc_inner = inflow|zerocontact needs he_wall_closed = false",
+    HsFatal("problem/star_bc_inner = inflow|zerocontact needs star_wall_closed = false",
             __LINE__);
   }
-  hs_sp_rate_ = pin->GetOrAddReal("problem","he_sponge_rate",0.0);
-  hs_sp_r0_ = pin->GetOrAddReal("problem","he_sponge_r0",hs_rint_);
-  if (pin->DoesParameterExist("problem","he_sponge_mode")) {
-    const std::string sm = pin->GetString("problem","he_sponge_mode");
+  hs_sp_rate_ = pin->GetOrAddReal("problem","star_sponge_rate",0.0);
+  hs_sp_r0_ = pin->GetOrAddReal("problem","star_sponge_r0",hs_rint_);
+  if (pin->DoesParameterExist("problem","star_sponge_mode")) {
+    const std::string sm = pin->GetString("problem","star_sponge_mode");
     if (sm != "all" && sm != "radial") {
-      HsFatal("problem/he_sponge_mode must be all|radial", __LINE__);
+      HsFatal("problem/star_sponge_mode must be all|radial", __LINE__);
     }
     hs_sp_rad_ = (sm == "radial");
   }
-  if (pin->DoesParameterExist("problem","he_sponge_dmax")) {
-    hs_sp_dmax_ = pin->GetReal("problem","he_sponge_dmax");
+  if (pin->DoesParameterExist("problem","star_sponge_dmax")) {
+    hs_sp_dmax_ = pin->GetReal("problem","star_sponge_dmax");
   }
-  {HsOldDefault(pin, "he_sponge_form", "exp");
-  const std::string sf = pin->GetOrAddString("problem","he_sponge_form",
-                                             global_variable::restart_run ? "exp" : "lawson");
+  {HsOldDefault(pin, "star_sponge_form", "exp");
+  const std::string sf = pin->GetOrAddString("problem","star_sponge_form",
+                                  global_variable::restart_run ? "exp" : "lawson");
   if (sf != "exp" && sf != "lawson") {
-    HsFatal("problem/he_sponge_form must be exp|lawson", __LINE__);
+    HsFatal("problem/star_sponge_form must be exp|lawson", __LINE__);
   }
   hs_sp_law_ = (sf == "lawson");}
   hs_rtop_ = rtop;
-  user_srcs_func = HeStarGravity;
-  // fin51-r-fix: the per-cycle state of HeStarGravity joins the <time>/dt_retry
+  user_srcs_func = StarGravity;
+  // fin51-r-fix: the per-cycle state of StarGravity joins the <time>/dt_retry
   // checkpoint (a retried cycle redoes the ramp weight / adaptive closure update exactly
   // as the straight cycle; esrc itself is in the m1 minimal list)
   dtretry::RegisterValue("hs_mw", &hs_mw_);
@@ -2975,8 +2991,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     dtretry::RegisterView("hs_tgp", &hs_tgp_);
     dtretry::RegisterValue("hs_tgp_ok", &hs_tgp_ok_);
   }
-  user_bcs_func = HeStarBC;
-  user_hist_func = HeStarHist;
+  user_bcs_func = StarBC;
+  user_hist_func = StarHist;
   // (read only when named): problem/am_hist = true takes the history to
   // the energy / angular-momentum budget RadVetAmHistory (pgen/tests/rad_vet_tests2.cpp:
   // Eg, Er, gas L, radiation L, am_vector spin, frame L) instead
@@ -2985,90 +3001,91 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     user_hist_func = RadVetAmHistory;
   }
   pgen_rst_write_func = HsAdaptiveRstWrite;   // adaptive state + the Picard window
-  pgen_final_func = HeStarFinal;
-  // problem/he_ic_rad_atm_post (default true with he_ic_rad_atm_force =
+  pgen_final_func = StarFinal;
+  // problem/star_ic_rad_atm_post (default true with star_ic_rad_atm_force =
   // module; a fresh start whose <rad_vet>/ic_rad runs; the x1 WB pair): after the ic_rad
   // passes the thin atmosphere's gas sits at the code's own radiative-equilibrium T
   // (0.2-1.8 % in e/rho above the pgen's sph1d RE T, AG Car A; the same shift happens in
   // the first ~10 cycles with ic_rad = none), which leaves it out of hydrostatic balance
-  // by ~0.5 % g.  HeStarIcPost re-marches rho of the atmosphere cells outward from the
+  // by ~0.5 % g.  StarIcPost re-marches rho of the atmosphere cells outward from the
   // first cell above R_ph in the DISCRETE balance of the x1 WB pair (the face condition
-  // of he_ic_balance, walk of the code's own WBBackgroundStencil along Phi_eff) at the
+  // of star_ic_balance, walk of the code's own WBBackgroundStencil along Phi_eff) at the
   // relaxed T (shell mean; each cell keeps its own T), until rho reaches the floor.
   // a_ref and Phi_eff are NOT changed (restart-exact: a restart rebuilds them from the
   // input); the cells below R_ph are not touched.
   {
-    const bool atp = pin->GetOrAddBoolean("problem","he_ic_rad_atm_post",hatm_on);
+    const bool atp = pin->GetOrAddBoolean("problem","star_ic_rad_atm_post",hatm_on);
     if (atp && !hatm_on) {
-      HsFatal("problem/he_ic_rad_atm_post = true needs he_ic_rad_atm_force = module",
+      HsFatal("problem/star_ic_rad_atm_post = true needs star_ic_rad_atm_force = module",
               __LINE__);
     }
     hs_atp_ = atp && !global_variable::restart_run && wbdyn && !hs_pm_ && !hs_rmp;
-    if (hs_atp_) user_icpost_func = HeStarIcPost;
+    if (hs_atp_) user_icpost_func = StarIcPost;
   }
-  // problem/he_ic_equil (read only when named; default false = nothing, bitwise
+  // problem/star_ic_equil (read only when named; default false = nothing, bitwise
   // the old start): the DISCRETE EQUILIBRIUM of the initial state on the code's own
-  // operators, iterated with <rad_vet>/ic_rad (HeStarIcEquil, called after every ic_rad
+  // operators, iterated with <rad_vet>/ic_rad (StarIcEquil, called after every ic_rad
   // run; Driver::Initialize repeats ic_rad + hook while user_icpost_again).  Each round:
   // (1) ic_rad relaxes E, F and the gas T at fixed rho (the relax steps of
-  //     he_ic_equil_dtfac x dt: the steady state of the transport, the frozen MLT
+  //     star_ic_equil_dtfac x dt: the steady state of the transport, the frozen MLT
   //     scaffold (w = 1) and the gas-radiation exchange, i.e. L_rad + L_MLT = L_in at
   //     every face), then ONE pass with the radiative force on (rad_vet icr_fmeas) gives
   //     the module's own net momentum deposit dm - dt rho a_ref of every cell;
   // (2) the force per volume f = dm/dt + rho a_ref (radiation pressure gradient form,
   //     independent of rho at fixed E) gives a_ref = f/rho; Phi_eff is rebuilt above the
   //     face x1f(is) from these a_ref (HsAtmPhiEff) and rho is re-marched at the relaxed
-  //     T in the discrete balance of the x1 WB pair (the he_ic_balance face condition)
+  //     T in the discrete balance of the x1 WB pair (the star_ic_balance face condition)
   //     OUTWARD from the wall cell (its rho kept) to the floor, a_i = f_i/rho_i solved
   //     with rho_i in each face solve; e from (rho, T).
   // It stops (no update) when both residuals -- the measured module deposit and the WB
-  // face condition, as accelerations / g -- are below he_ic_equil_tol, or after
-  // he_ic_equil_maxit rounds.  The he_seed factor is applied after it (deferred).  a_ref
-  // travels in the restart files (kHsDicTag).  Needs he_ic_balance, ic_rad, the WB pair,
-  // a fresh start; replaces he_ic_rad_atm_post.
+  // face condition, as accelerations / g -- are below star_ic_equil_tol, or after
+  // star_ic_equil_maxit rounds.  The star_seed factor is applied after it (deferred).
+  // a_ref travels in the restart files (kHsDicTag).  Needs star_ic_balance, ic_rad, the
+  // WB pair, a fresh start; replaces star_ic_rad_atm_post.
   if (hs_eq_ && !restart && !hs_rmp) {
     if (!hs_bal_ || hs_pm_ || (pm1->icr_mode == 0 && !pm1->cln_steady) || hs_atp_) {
-      HsFatal("problem/he_ic_equil = true needs he_ic_balance = true, he_gravity = wb, "
-              "<rad_vet>/ic_rad != none (scheme = clean: clean_init = steady) and "
-              "he_ic_rad_atm_post = false", __LINE__);
+      HsFatal("problem/star_ic_equil = true needs star_ic_balance = true, star_gravity = "
+              "wb, <rad_vet>/ic_rad != none (scheme = clean: clean_init = steady) and "
+              "star_ic_rad_atm_post = false", __LINE__);
     }
     // (scheme = clean: each round's relax is CleanSteadyStart, E and the face F at the
     // scheme's own fixed point with the gas T, and its force pass the last steady pass;
     // the x1 shells of the force, its radial component: spherical polar or the cubed
     // sphere)
     if (!(pmy_mesh_->use_spherical_polar || pmy_mesh_->use_cubed_sphere)) {
-      HsFatal("problem/he_ic_equil with scheme = clean needs spherical polar or the "
+      HsFatal("problem/star_ic_equil with scheme = clean needs spherical polar or the "
               "cubed sphere", __LINE__);
     }
-    if (wic) HsFatal("problem/he_ic_equil does not combine with he_wind_ic", __LINE__);
-    hs_eq_maxit_ = pin->GetOrAddInteger("problem","he_ic_equil_maxit",30);
-    // he_ic_equil_last_march (default false = the last round only checks): the round
-    // he_ic_equil_maxit still updates (march at the relaxed T, a_i = f_i/rho_i) and the
+    if (wic) HsFatal("problem/star_ic_equil does not combine with star_wind_ic",
+                     __LINE__);
+    hs_eq_maxit_ = pin->GetOrAddInteger("problem","star_ic_equil_maxit",30);
+    // star_ic_equil_last_march (default false = the last round only checks): the round
+    // star_ic_equil_maxit still updates (march at the relaxed T, a_i = f_i/rho_i) and the
     // equilibrium stops there WITHOUT a further ic_rad relax: E, F, T are the relaxed
     // ones of that round, rho/a_ref/Phi_eff the march's (module deposit and WB faces
     // balanced at fixed E; the face luminosities then differ by the rho change)
-    hs_eq_last_ = pin->GetOrAddBoolean("problem","he_ic_equil_last_march",false);
-    hs_eq_tol_ = pin->GetOrAddReal("problem","he_ic_equil_tol",1.0e-9);
-    const Real eqdt = pin->GetOrAddReal("problem","he_ic_equil_dtfac",1.0e6);
-    const Real eqrt = pin->GetOrAddReal("problem","he_ic_equil_relax_tol",1.0e-12);
+    hs_eq_last_ = pin->GetOrAddBoolean("problem","star_ic_equil_last_march",false);
+    hs_eq_tol_ = pin->GetOrAddReal("problem","star_ic_equil_tol",1.0e-9);
+    const Real eqdt = pin->GetOrAddReal("problem","star_ic_equil_dtfac",1.0e6);
+    const Real eqrt = pin->GetOrAddReal("problem","star_ic_equil_relax_tol",1.0e-12);
     if (hs_eq_maxit_ < 1 || !(hs_eq_tol_ > 0.0) || !(eqdt > 0.0) || !(eqrt > 0.0)) {
-      HsFatal("problem/he_ic_equil_maxit >= 1, _tol, _dtfac, _relax_tol > 0",
+      HsFatal("problem/star_ic_equil_maxit >= 1, _tol, _dtfac, _relax_tol > 0",
               __LINE__);
     }
     pm1->icr_fmeas = true;
     hs_eq_it_ = 0;
-    user_icpost_func = HeStarIcEquil;
+    user_icpost_func = StarIcEquil;
     user_icpost_again = false;
   }
   if (global_variable::my_rank == 0) {
     const int i0 = static_cast<int>((hs_rin_ - hs_rlo_)/hs_dr_);
-    std::cout << "he_star_vet: GM = " << hs_gm_ << ", F_in = " << hs_fin_
+    std::cout << "star_vet: GM = " << hs_gm_ << ", F_in = " << hs_fin_
               << ", tau(r_in) = " << tau[i0] << ", r_int (tau = " << tau_int
               << ") = " << hs_rint_ << ", r_top = " << rtop
               << ", sponge rate = " << hs_sp_rate_ << " above r = " << hs_sp_r0_
               << std::endl;
   }
-  // (he_drive.hpp; every key read only when named, absent = bitwise):
+  // (star_drive.hpp; every key read only when named, absent = bitwise):
   // the inflow table, the live monopole gravity and the boundary ledgers
   {
     hsdrive::SetupArgs da;
@@ -3083,7 +3100,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     da.binf = hs_binf_;
     da.pointmass = hs_pm_;
     da.bc_hse = hs_bhse_;
-    if (pin->DoesParameterExist("problem","he_bc_inner_table")) {
+    if (pin->DoesParameterExist("problem","star_bc_inner_table")) {
       DvceArray1D<Real> c2("hs_drv_c", 2);
       auto crho = hs_rho_, ceint = hs_eint_;
       const Real rlo = hs_rlo_, dr = hs_dr_, rin = hs_rin_;
@@ -3101,7 +3118,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     hsdrive::Setup(pin, pmy_mesh_, restart, da);
     if (hsdrive::On()) {user_cycle_func = hsdrive::Cycle;}
   }
-  // (he_strip_bg.cpp): one-shot restart-time background strip, off unless
+  // (star_strip_bg.cpp): one-shot restart-time background strip, off unless
   // problem/strip_bg_on_restart = true (absent: bitwise)
   if (restart) {
     hsdrive::RestartApply(pmy_mesh_);   // (absent: nothing)
@@ -3126,75 +3143,75 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
 
   // ---- the initial state (active + ghost cells)
-  // problem/he_seed_band = n2 (default) | old.
-  // old = the seed exactly as the keys below name it (he_seed default 0 = no seed).  n2 =
-  // the radial band, the Y_lm l range and (he_seed default 1e-3) the amplitude come from
-  // the convective growth rate of the initial column (HsN2Band); he_seed_rlo/rhi,
-  // _ylm/_lmin/_lmax are then ignored, he_seed_rad/_rng are used as named.  Fresh starts
-  // only (restarts and remaps returned above).
-  const std::string sband = pin->GetOrAddString("problem","he_seed_band","n2");
+  // problem/star_seed_band = n2 (default) | old.
+  // old = the seed exactly as the keys below name it (star_seed default 0 = no seed).  n2
+  // = the radial band, the Y_lm l range and (star_seed default 1e-3) the amplitude come
+  // from the convective growth rate of the initial column (HsN2Band); star_seed_rlo/rhi,
+  // _ylm/_lmin/_lmax are then ignored, star_seed_rad/_rng are used as named.  Fresh
+  // starts only (restarts and remaps returned above).
+  const std::string sband = pin->GetOrAddString("problem","star_seed_band","n2");
   if (sband != "n2" && sband != "old") {
-    HsFatal("he_seed_band must be n2 or old", __LINE__);
+    HsFatal("star_seed_band must be n2 or old", __LINE__);
   }
   const bool sn2 = (sband == "n2");
-  Real seed = pin->GetOrAddReal("problem","he_seed",sn2 ? 1.0e-3 : 0.0);
+  Real seed = pin->GetOrAddReal("problem","star_seed",sn2 ? 1.0e-3 : 0.0);
   if (hlin && seed != 0.0) {
-    HsFatal("problem/he_ic_profile = true replaces the he_seed perturbation by its own "
-            "(set he_seed = 0)", __LINE__);
+    HsFatal("problem/star_ic_profile = true replaces the star_seed perturbation by its "
+            "own (set star_seed = 0)", __LINE__);
   }
-  const Real seedk = pin->GetOrAddReal("problem","he_seed_k",4.0);
-  Real srlo = pin->GetOrAddReal("problem","he_seed_rlo",hs_rin_);
-  Real srhi = pin->GetOrAddReal("problem","he_seed_rhi",hs_rint_);
+  const Real seedk = pin->GetOrAddReal("problem","star_seed_k",4.0);
+  Real srlo = pin->GetOrAddReal("problem","star_seed_rlo",hs_rin_);
+  Real srhi = pin->GetOrAddReal("problem","star_seed_rhi",hs_rint_);
   int n2lmin = 1, n2lmax = 1;
   if (sn2 && seed != 0.0) {
-    const Real n2fr = pin->GetOrAddReal("problem","he_seed_n2_frac",0.3);
-    const int n2nm = pin->GetOrAddInteger("problem","he_seed_n2_nmin",4);
-    const int n2gp = pin->GetOrAddInteger("problem","he_seed_n2_gap",2);
-    const Real n2pw = pin->GetOrAddReal("problem","he_seed_n2_ppw",8.0);
+    const Real n2fr = pin->GetOrAddReal("problem","star_seed_n2_frac",0.3);
+    const int n2nm = pin->GetOrAddInteger("problem","star_seed_n2_nmin",4);
+    const int n2gp = pin->GetOrAddInteger("problem","star_seed_n2_gap",2);
+    const Real n2pw = pin->GetOrAddReal("problem","star_seed_n2_ppw",8.0);
     if (!(n2fr > 0.0 && n2fr < 1.0) || n2nm < 1 || n2gp < 0 || !(n2pw >= 2.0)) {
-      HsFatal("he_seed_n2_frac in (0,1), _nmin >= 1, _gap >= 0, _ppw >= 2", __LINE__);
+      HsFatal("star_seed_n2_frac in (0,1), _nmin >= 1, _gap >= 0, _ppw >= 2", __LINE__);
     }
     if (!HsN2Band(pmbp, eos, ar, hs_tk, hcs, n2fr, n2nm, n2gp, n2pw, 64, srlo, srhi,
                   n2lmin, n2lmax)) {
       seed = 0.0;   // no unstable band: no seed (said in the log)
     }
   }
-  // multi-mode seed (he_seed_nk > 0, default 0 = the single mode above): nk random
+  // multi-mode seed (star_seed_nk > 0, default 0 = the single mode above): nk random
   // lateral modes sin(2 pi (k2 (theta - theta_a)/L_theta + k3 (phi - phi_a)/L_phi) + ph),
-  // integer k2, k3 drawn uniformly in [he_seed_kmin, he_seed_kmax] (periodic in the
+  // integer k2, k3 drawn uniformly in [star_seed_kmin, star_seed_kmax] (periodic in the
   // wedge), amplitudes normalised to sum a_n^2 = 1 (field rms 1/sqrt 2), under the radial
   // envelope sin(pi (r - rlo)/(rhi - rlo)); box_convection's vpert_var = eint recipe.
-  // he_seed_rad = true scales E by (1 + d)^4 with eint by (1 + d): a TEMPERATURE seed at
-  // fixed rho, gas and radiation in equilibrium (a gas-only eint seed in a radiation-
+  // star_seed_rad = true scales E by (1 + d)^4 with eint by (1 + d): a TEMPERATURE seed
+  // at fixed rho, gas and radiation in equilibrium (a gas-only eint seed in a radiation-
   // dominated layer is removed by the stiff exchange in the first step).
-  const int snk = pin->GetOrAddInteger("problem","he_seed_nk",0);
-  const bool srad = pin->GetOrAddBoolean("problem","he_seed_rad",false);
-  const int skmin = pin->GetOrAddInteger("problem","he_seed_kmin",1);
-  const int skmax = pin->GetOrAddInteger("problem","he_seed_kmax",2);
-  const int srng = pin->GetOrAddInteger("problem","he_seed_rng",1234);
-  // he_seed_signs = positive (default, the historical draw: k2, k3 >= 0, so every
+  const int snk = pin->GetOrAddInteger("problem","star_seed_nk",0);
+  const bool srad = pin->GetOrAddBoolean("problem","star_seed_rad",false);
+  const int skmin = pin->GetOrAddInteger("problem","star_seed_kmin",1);
+  const int skmax = pin->GetOrAddInteger("problem","star_seed_kmax",2);
+  const int srng = pin->GetOrAddInteger("problem","star_seed_rng",1234);
+  // star_seed_signs = positive (default, the historical draw: k2, k3 >= 0, so every
   // wavefront tilts the same diagonal way) | random (an independent random sign for k2
-  // and for k3 of each mode).  he_seed_kdist = box (default: k2, k3 independently
+  // and for k3 of each mode).  star_seed_kdist = box (default: k2, k3 independently
   // uniform in [kmin, kmax]) | shell (|k| = sqrt(k2^2 + k3^2) uniform in [kmin, kmax],
   // direction uniform, both rounded to integers, k = 0 rejected; with signs = positive
   // the direction is limited to the first quadrant).  Both extra draws come AFTER the
   // historical per-mode draws (a separate pass on the same RNG stream), so the default
   // keys reproduce the old seed bitwise.
-  const std::string ssign = pin->GetOrAddString("problem","he_seed_signs","positive");
-  const std::string skdist = pin->GetOrAddString("problem","he_seed_kdist","box");
+  const std::string ssign = pin->GetOrAddString("problem","star_seed_signs","positive");
+  const std::string skdist = pin->GetOrAddString("problem","star_seed_kdist","box");
   if (ssign != "positive" && ssign != "random") {
-    HsFatal("he_seed_signs must be positive or random", __LINE__);
+    HsFatal("star_seed_signs must be positive or random", __LINE__);
   }
   if (skdist != "box" && skdist != "shell") {
-    HsFatal("he_seed_kdist must be box or shell", __LINE__);
+    HsFatal("star_seed_kdist must be box or shell", __LINE__);
   }
   const bool srsign = (ssign == "random"), sshell = (skdist == "shell");
   if (snk > 0 && (skmin < 0 || skmax < skmin || !(srhi > srlo))) {
-    HsFatal("need 0 <= he_seed_kmin <= he_seed_kmax and he_seed_rhi > he_seed_rlo",
-            __LINE__);
+    HsFatal("need 0 <= star_seed_kmin <= star_seed_kmax and star_seed_rhi > "
+            "star_seed_rlo", __LINE__);
   }
   if (snk > 0 && sshell && skmax < 1) {
-    HsFatal("he_seed_kdist = shell needs he_seed_kmax >= 1", __LINE__);
+    HsFatal("star_seed_kdist = shell needs star_seed_kmax >= 1", __LINE__);
   }
   DualArray2D<Real> smd("hs_seed_modes", std::max(snk, 1), 4);   // k2, k3, amp, phase
   {
@@ -3232,7 +3249,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
     if (snk > 0 && global_variable::my_rank == 0) {
-      std::cout << "he_star_vet: seed " << snk << " modes, amplitude " << seed
+      std::cout << "star_vet: seed " << snk << " modes, amplitude " << seed
                 << (srad ? " (temperature: eint and E)" : " (eint)") << ", k in ["
                 << skmin << "," << skmax << "], signs " << ssign << ", kdist "
                 << skdist << ", r " << srlo << " .. " << srhi << std::endl;
@@ -3245,26 +3262,26 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   smd.modify_host();
   smd.sync_device();
   auto smd_d = smd.d_view;
-  // problem/he_seed_ylm = true (read
+  // problem/star_seed_ylm = true (read
   // only when named) replaces the lateral modes by a random combination of REAL spherical
   // harmonics Y_lm(theta, phi) in the GLOBAL polar angles of the cell centre (cubed
-  // sphere and spherical polar alike), l in [he_seed_lmin, he_seed_lmax], every m =
-  // -l..l, each coefficient Gaussian (own mt19937 stream seeded by he_seed_rng),
+  // sphere and spherical polar alike), l in [star_seed_lmin, star_seed_lmax], every m =
+  // -l..l, each coefficient Gaussian (own mt19937 stream seeded by star_seed_rng),
   // normalised so the lateral field has rms 1/sqrt 2 over the full sphere (the multi-mode
   // convention), under the same radial envelope.  Smooth at the poles (no taper) and with
   // no preferred azimuthal period: the 90-degree wedge periods of the modes above are
   // exactly 4-fold symmetric in phi, which is the cubed sphere's own panel symmetry.
-  // (he_seed_band = n2 forces Y_lm with its own l range; cap 32 -> 64)
-  const bool sylm = sn2 || (pin->DoesParameterExist("problem","he_seed_ylm") &&
-                            pin->GetBoolean("problem","he_seed_ylm"));
-  // (n2: an explicit he_seed_lmin / he_seed_lmax in the deck overrides the l window)
-  const int slmin = sylm ? pin->GetOrAddInteger("problem","he_seed_lmin",
+  // (star_seed_band = n2 forces Y_lm with its own l range; cap 32 -> 64)
+  const bool sylm = sn2 || (pin->DoesParameterExist("problem","star_seed_ylm") &&
+                            pin->GetBoolean("problem","star_seed_ylm"));
+  // (n2: an explicit star_seed_lmin / star_seed_lmax in the deck overrides the l window)
+  const int slmin = sylm ? pin->GetOrAddInteger("problem","star_seed_lmin",
                                                 sn2 ? n2lmin : 1) : 0;
-  const int slmax = sylm ? pin->GetOrAddInteger("problem","he_seed_lmax",
+  const int slmax = sylm ? pin->GetOrAddInteger("problem","star_seed_lmax",
                                                 sn2 ? n2lmax : 8) : 0;
   if (sylm && (slmin < 1 || slmax < slmin || slmax > 64 || !(srhi > srlo))) {
-    HsFatal("he_seed_ylm needs 1 <= he_seed_lmin <= he_seed_lmax <= 64 and "
-            "he_seed_rhi > he_seed_rlo", __LINE__);
+    HsFatal("star_seed_ylm needs 1 <= star_seed_lmin <= star_seed_lmax <= 64 and "
+            "star_seed_rhi > star_seed_rlo", __LINE__);
   }
   const int nylm = sylm ? (slmax + 1)*(slmax + 1) : 1;
   DualArray1D<Real> sylc("hs_seed_ylm", nylm);   // index l*l + l + m: c_lm N_lm
@@ -3292,7 +3309,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
     if (global_variable::my_rank == 0) {
-      std::cout << "he_star_vet: seed = real spherical harmonics l " << slmin << ".."
+      std::cout << "star_vet: seed = real spherical harmonics l " << slmin << ".."
           << slmax
                 << " (" << (slmax + 1)*(slmax + 1) - slmin*slmin << " terms, all m), "
                 << "amplitude " << seed
@@ -3330,7 +3347,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     for (int n=0; n<nf; ++n) hw(n) = hV[n];
     Kokkos::deep_copy(cwv, hw);
   }
-  // (he_ic_equil): the seed factor is stored and applied after the equilibrium
+  // (star_ic_equil): the seed factor is stored and applied after the equilibrium
   const bool sdef = hs_eq_ && (seed != 0.0);
   hs_eq_seed_ = sdef;
   hs_eq_srad_ = srad;
@@ -3344,7 +3361,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real r = x1v(m,i);
     const Real d = bal ? cbd(i) : HsLogInterp(crho, rlo, dr, nf, r);
     Real e = bal ? cbe(i) : HsLogInterp(ceint, rlo, dr, nf, r);
-    // seed (default off): one smooth lateral mode in eint, wave number he_seed_k
+    // seed (default off): one smooth lateral mode in eint, wave number star_seed_k
     Real er = HsLogInterp(cE, rlo, dr, nf, r);
     if (seed != 0.0 && r >= srlo && r <= srhi) {
       Real fac;
@@ -3436,39 +3453,41 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   if (!hlin) return;
 
-  // ---- problem/he_ic_profile = true.  The initial state of the BSG reference
-  // Athena++ pgen bsg_star.cpp (ProblemGenerator), in cgs (he_ic_profile_file = its
+  // ---- problem/star_ic_profile = true.  The initial state of the BSG reference
+  // Athena++ pgen bsg_star.cpp (ProblemGenerator), in cgs (star_ic_profile_file = its
   // MESA_profile_combined profile: r T rho M kappa F_r per line, cgs, ascending r; that
   // code reads the same table in code units, a pure rescaling):
   //  * r <= rmax (the file's last r): rho, T, F_r LINEAR in r between the bracketing rows
   //    (its lleft/lright search and formula, verbatim);
   //  * r > rmax: T = T(rmax), rho = max(rho_rmax exp(-g (r - rmax)/(P/rho)), dfloor),
-  //    F_r = 0, with g = G M_rmax/rmax^2 (r/rmax)^2 EXACTLY as that code (the factor grows
-  //    outward; the paper's "local gravity" would be (rmax/r)^2: reproduced, not fixed),
-  //    P/rho = this EOS's code temperature T/T_unit (gas pressure only);
+  //    F_r = 0, with g = G M_rmax/rmax^2 (r/rmax)^2 EXACTLY as that code (the factor
+  //    grows outward; the paper's "local gravity" would be (rmax/r)^2: reproduced, not
+  //    fixed), P/rho = this EOS's code temperature T/T_unit (gas pressure only);
   //  * gas energy from the UNPERTURBED rho and T (its IEN = rho T/(gamma - 1)), E = a
   // T^4, F1 = F_r (its two-zone intensities have exactly these moments), F2 = F3 = 0, v =
   // 0; * the perturbation rho *= 1 + amp (U - 0.5) where the unperturbed rho > rho_thr,
-  //    U uniform per cell from HsCellUniform(global cell index) (there: srand(gid), rand()):
-  //    isobaric (P, E unchanged).  The potential energy of etotgrav uses the perturbed
-  // rho. * the comoving x1 face fluxes f0x1 = the profile's F_r at the faces.
+  //    U uniform per cell from HsCellUniform(global cell index) (there: srand(gid),
+  //    rand()): isobaric (P, E unchanged).  The potential energy of etotgrav uses the
+  // perturbed rho. * the comoving x1 face fluxes f0x1 = the profile's F_r at the faces.
   // Fresh starts only (a restart returned above).  The ghost cells are filled the same
   // way and then overwritten by the (unchanged) boundary conditions.
   {
     if (hcs || wic) {
-      HsFatal("problem/he_ic_profile needs the spherical-polar wedge and no he_wind_ic",
-              __LINE__);
+      HsFatal("problem/star_ic_profile needs the spherical-polar wedge and no "
+              "star_wind_ic", __LINE__);
     }
     if (pmbp->punit != nullptr && (std::fabs(pmbp->punit->length_cgs() - 1.0) > 1.0e-12
         || std::fabs(pmbp->punit->density_cgs() - 1.0) > 1.0e-12)) {
-      HsFatal("problem/he_ic_profile needs <units> length_cgs = mass_cgs = 1 (cgs r, rho)",
-              __LINE__);
+      HsFatal("problem/star_ic_profile needs <units> length_cgs = mass_cgs = 1 (cgs r, "
+              "rho)", __LINE__);
     }
-    const Real lamp = pin->GetOrAddReal("problem",HsIcKey(pin,"he_ic_profile_amp"),0.05);
+    const Real lamp = pin->GetOrAddReal("problem",HsIcKey(pin,"star_ic_profile_amp"),
+                                        0.05);
     // the reference threshold rho > 0.01 in ITS code units: rho_thr [cgs] = 0.01
-    // rho_unit (of its input file, not supplied).  No default: the run states its assumption.
-    const Real lthr = pin->GetReal("problem",HsIcKey(pin,"he_ic_profile_rho_thr"));
-    const int lrng = pin->GetOrAddInteger("problem",HsIcKey(pin,"he_ic_profile_rng"),0);
+    // rho_unit (of its input file, not supplied).  No default: the run states its
+    // assumption.
+    const Real lthr = pin->GetReal("problem",HsIcKey(pin,"star_ic_profile_rho_thr"));
+    const int lrng = pin->GetOrAddInteger("problem",HsIcKey(pin,"star_ic_profile_rng"),0);
     const int np = static_cast<int>(pr.size());
     const int nm = nmb1 + 1, nc1 = n1m1 + 1;
     DualArray2D<Real> lD("hs_lin_d", nm, nc1), lE("hs_lin_eg", nm, nc1);
@@ -3512,17 +3531,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const std::int64_t gn2 = pmy_mesh_->mesh_indcs.nx2 + 2*ng;
     const std::uint64_t useed = static_cast<std::uint64_t>(lrng);
     const bool m3 = (indcs.nx3 > 1), m2 = (indcs.nx2 > 1);
-    // problem/he_ic_profile_seed_group = true (read only when named): one
+    // problem/star_ic_profile_seed_group = true (read only when named): one
     // deviate per hydro merge_lat group, so a merged 128^2 shell has the seed of the real
     // coarse cells (same amp and rms) instead of the average of 4 fine deviates.
     DualArray2D<int> lfg("hs_lin_fg", nm, nc1);
     {
       std::vector<Real> mrc;
       std::vector<int> mfs;
-      if (pin->DoesParameterExist("problem",HsIcKey(pin,"he_ic_profile_seed_group")) &&
-          pin->GetBoolean("problem",HsIcKey(pin,"he_ic_profile_seed_group"))) {
+      if (pin->DoesParameterExist("problem",HsIcKey(pin,"star_ic_profile_seed_group")) &&
+          pin->GetBoolean("problem",HsIcKey(pin,"star_ic_profile_seed_group"))) {
         if (!pin->DoesParameterExist("hydro","merge_lat_rc")) {
-          HsFatal("problem/he_ic_profile_seed_group needs hydro/merge_lat_rc", __LINE__);
+          HsFatal("problem/star_ic_profile_seed_group needs hydro/merge_lat_rc",
+                  __LINE__);
         }
         std::istringstream sr(pin->GetString("hydro","merge_lat_rc"));
         std::istringstream sf(pin->GetString("hydro","merge_lat_f"));
@@ -3585,15 +3605,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       for (int n=0; n<np; ++n) {
         if (pd[n] > lthr) nthr = n;
       }
-      std::cout << "he_star_vet: he_ic_profile: " << lfn << " (" << np << " rows, r "
+      std::cout << "star_vet: star_ic_profile: " << lfn << " (" << np << " rows, r "
                 << pr[0] << " .. rmax " << lrmax << "), T(rmax) " << ltmax
                 << " K, rho(rmax) "
                 << ldmax << ", g(rmax) " << lgmax
-                << (gxi ? " (gext invsq: hydrostatic in GM/r^2 above, GM = he_gm)"
+                << (gxi ? " (gext invsq: hydrostatic in GM/r^2 above, GM = star_gm)"
                         : " (x (r/rmax)^2 above, as bsg_star.cpp)")
                 << "; perturbation amp " << lamp << " where rho > " << lthr
                 << " (last profile row above: r " << pr[nthr] << "), rng " << lrng
-                << "; he_seed off" << std::endl;
+                << "; star_seed off" << std::endl;
     }
   }
   return;
@@ -3601,12 +3621,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
 namespace {
 //----------------------------------------------------------------------------------------
-//! \fn void HeStarGravity()
+//! \fn void StarGravity()
 //! \brief the point-mass source with the x1 well-balanced pressure form (etotgrav), the
 //! reference work of the WB kick (force_reference_work = split), the wall/top mass-flux
 //! correction and the optional top sponge.
 
-void HeStarGravity(Mesh *pm, const Real bdt) {
+void StarGravity(Mesh *pm, const Real bdt) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -3687,7 +3707,7 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
     ht[5] = fb[1];
   }
   if (hs_pm_) {
-    // he_gravity = pointmass: the Athena++ point-mass source
+    // star_gravity = pointmass: the Athena++ point-mass source
     // (srcterms PointMass): d(rho v_r) = -dt rho GM coord_src1/x1v, coord_src1 =
     // (r_+^2 - r_-^2)/2 / ((r_+^3 - r_-^3)/3).  The energy needs no source: etotgrav
     // carries rho Phi in the total energy and its flux.
@@ -3701,7 +3721,7 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
       u0(m,IM1,k,j,i) -= bdt*w0(m,IDN,k,j,i)*gmp*src1/x1vg(m,i);
     });
   } else if (hs_wbwin_) {
-  // problem/he_wb_grav_window: outside the fluid's WB window (x1v > wb_rmax > 0 or
+  // problem/star_wb_grav_window: outside the fluid's WB window (x1v > wb_rmax > 0 or
   // phicc_wb > wb_phimax: exactly the cells whose x1
   // reconstruction is plain, hydro_fluxes.cpp / mhd_fluxes.cpp) the cached hydrostatic
   // walk describes no supported atmosphere (H << dr above a star): its face pressures
@@ -3805,20 +3825,20 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
                   ht[2] - ht[1], 0.0, ht[4], ht[5], ht[0], ht[3]);
     }
   }
-  // the RK-exact boundary/sponge ledgers of this stage (he_drive.cpp)
+  // the RK-exact boundary/sponge ledgers of this stage (star_drive.cpp)
   const bool hdrv = hsdrive::On();
   if (hs_sp_rate_ <= 0.0) {
     if (hdrv) {hsdrive::StageLedger(pm, bdt, hs_binf_, hs_zflux_, 0.0);}
     return;
   }
   const Real hdsp0 = hdrv ? htsum() : 0.0;
-  // top sponge: the velocity relaxes to zero at the rate he_sponge_rate*w,
+  // top sponge: the velocity relaxes to zero at the rate star_sponge_rate*w,
   // w = ((r - r0)/(r_top - r0))^2 above r0; the kinetic energy removed leaves the total
   // energy (the heat is not kept, so that the sponge adds no buoyancy).
-  // he_sponge_mode = radial: only v_r (the transverse momenta are untouched)
+  // star_sponge_mode = radial: only v_r (the transverse momenta are untouched)
   auto &x1v = pmbp->pcoord->x1v;
   const Real rate = hs_sp_rate_, r0 = hs_sp_r0_, rt = hs_rtop_, spd = hs_sp_dmax_;
-  // he_sponge_form = lawson: this stage's abscissa c (c_s = gam0_s c_{s-1} + beta_s)
+  // star_sponge_form = lawson: this stage's abscissa c (c_s = gam0_s c_{s-1} + beta_s)
   // from the integrator's weights (found by beta_s dt = bdt): u0 = fa (u0 - g1 u^n) +
   // fb g1 u^n, fa = exp(-ca rate w), fb = exp(-cb rate w)
   const bool law = hs_sp_law_;
@@ -3832,7 +3852,7 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
       c = pm1->fref_hgam0[q]*c + pm1->fref_hbeta[q];
       if (std::abs(bdt - pm1->fref_hbeta[q]*pm->dt) <= 1.0e-12*bdt) s = q;
     }
-    if (s < 0) HsFatal("problem/he_sponge_form = lawson: no rk1/rk2/rk3 stage has this "
+    if (s < 0) HsFatal("problem/star_sponge_form = lawson: no rk1/rk2/rk3 stage has this "
                        "beta dt", __LINE__);
     ca = (c - cp)*pm->dt;
     cb = c*pm->dt;
@@ -3912,7 +3932,7 @@ void HeStarGravity(Mesh *pm, const Real bdt) {
 
 //----------------------------------------------------------------------------------------
 //! \fn Real HsZcAm()
-//! \brief he_bc_inner = zerocontact: the HLLC contact speed S_M at the inner wall face
+//! \brief star_bc_inner = zerocontact: the HLLC contact speed S_M at the inner wall face
 //! for a trial v_r = vg of the first ghost (index is-1), exactly as the x1 sweep forms
 //! it: the plain spherical-polar PLM (Hydro::PLM_nonuniform, Mignone 2014) of the left
 //! state from cells (is-2, is-1, is) and of the right state from (is-1, is, is+1), then
@@ -3945,13 +3965,13 @@ Real HsZcAm(const EOS_Data &eos, const Real vg, const Real v2g, const Real va,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void HeStarBC()
+//! \fn void StarBC()
 //! \brief x1 ghosts carrying the scaled initial profile (rho and eint scaled by the ratio
 //! of the adjacent active cell to its own initial value), the radial velocity mirrored
 //! (wall) or, at the outer edge where it points outward, copied (outflow).  M1 ghosts by
 //! M1FillGhost (the implicit solve imposes its own face BCs).
 
-void HeStarBC(Mesh *pm) {
+void StarBC(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
   const int ng = indcs.ng;
@@ -3974,7 +3994,7 @@ void HeStarBC(Mesh *pm) {
   auto ur = pmbp->pradvet->u0;
   const Real cl = pmbp->pradvet->c_light;
   const Real efl = pmbp->pradvet->e_floor;
-  // he_bc_outer = hse
+  // star_bc_outer = hse
   auto eos = ph->peos->eos_data;
   auto pwc = ph->phicc_wb;
   auto aref = pmbp->pradvet->arad_ref;
@@ -3986,13 +4006,13 @@ void HeStarBC(Mesh *pm) {
   const Real dfl = eos.dfloor;
   const bool bhfc = bhse && hs_bhse_face_;
   auto ff1 = pmbp->pradvet->f0x1;
-  // he_bc_inner = zerocontact, he_bc_outer = copy
+  // star_bc_inner = zerocontact, star_bc_outer = copy
   const bool bzc = hs_bzc_, bcopy = hs_bcopy_;
   const bool bcr2 = hs_bcr2_;
   auto &x1fb = pmbp->pcoord->xx1f;
   const bool hcsb = pm->use_cubed_sphere;   // metric KE (HsKeCs)
   auto hcclb = pmbp->pcoord->cos_cell;
-  // problem/he_bc_inner_table (he_bc_inner = inflow): the table's rho,
+  // problem/star_bc_inner_table (star_bc_inner = inflow): the table's rho,
   // T (code units) and v_r at r_in at the BC time
   const bool itab = hsdrive::InflowOn();
   Real tbd = 0.0, tbt = 0.0, tbv = 0.0;
@@ -4113,7 +4133,7 @@ void HeStarBC(Mesh *pm) {
         Real v1 = (v1e > 0.0) ? v1e : 0.0;
         const Real v2 = uh(m,IM2,k,j,ia)/da;
         const Real v3 = uh(m,IM3,k,j,ia)/da;
-        // he_bc_outer_r2: its branch test is v_r < 0 (v_r = 0 -> outflow)
+        // star_bc_outer_r2: its branch test is v_r < 0 (v_r = 0 -> outflow)
         const bool r2o = bcr2 && !(v1e < 0.0);
         if (bcr2) v1 = r2o ? v1e : 0.0;
         Real dg = da;
@@ -4130,23 +4150,23 @@ void HeStarBC(Mesh *pm) {
         continue;
       }
       if (!lo && bhse) {
-        // THE HYDROSTATIC TOP (he_bc_outer = hse).  Every ghost layer continues the LAST
-        // ACTIVE cell a = ie (box_convection bc_mode_top 4, ported): with the WB pair's
-        // effective potential Phi_eff (gravity minus the reference radiation force
+        // THE HYDROSTATIC TOP (star_bc_outer = hse).  Every ghost layer continues the
+        // LAST ACTIVE cell a = ie (box_convection bc_mode_top 4, ported): with the WB
+        // pair's effective potential Phi_eff (gravity minus the reference radiation force
         // a_ref of the column, what the x1 well-balanced stencil walks along) plus the
         // RESIDUAL radiation force the M1 module applies on top of it,
         //   a_rad = opac_T F_1/(c rho) of cell a  (the code's own force; the reference
         //           a_ref when the opacity is not yet filled, i.e. on the first step),
-        //           F_1 per he_bc_hse_flux: face (default) = 0.5 (f0x1(ie) + f0x1(ie+1)),
-        //           the comoving flux the transport carries and the gas force uses;
-        //           cell = the clipped lab-frame cell F1 (old; noisy, ~0.76 of the face
-        //           flux in the 3-D BSG top where |F| = cE clips)
-        //   Gamma = a_rad/g(r_a) clamped to [0, he_bc_hse_gmax], scaled ~ r^-2,
+        //           F_1 per star_bc_hse_flux: face (default) = 0.5 (f0x1(ie) +
+        //           f0x1(ie+1)), the comoving flux the transport carries and the gas
+        //           force uses; cell = the clipped lab-frame cell F1 (old; noisy, ~0.76
+        //           of the face flux in the 3-D BSG top where |F| = cE clips)
+        //   Gamma = a_rad/g(r_a) clamped to [0, star_bc_hse_gmax], scaled ~ r^-2,
         // the ghost is the cell walked by dPhi = Phi_eff(r_g) - Phi_eff(r_a)
         //   - (Gamma g_a - a_ref(a)) r_a^2 (1/r_a - 1/r_g)
         // with the WB closure (utils/wb_background.hpp WBAdvance): ISOTHERMAL (T_g = T_a,
         // exact for the ideal gas: rho_g = rho_a exp(-dPhi rho_a/p_a)) or, with
-        // he_bc_hse_tgrad, polytropic along the interior's one-sided dT/dPhi_eff.  So
+        // star_bc_hse_tgrad, polytropic along the interior's one-sided dT/dPhi_eff.  So
         // the total effective gravity over the ghosts is g (1 - Gamma), and with
         // a_rad = a_ref the ghost IS the WB background of the edge cell: the top-face
         // Riemann problem then carries no hydrostatic residual (no one-signed mass flux).
@@ -4158,7 +4178,7 @@ void HeStarBC(Mesh *pm) {
         const Real ar0 = aref(m,k,j,ia);
         Real arad = ar0;
         if (haveop && opac(m,radvet::M1_OP_T,k,j,ia) > 0.0) {
-          // face (he_bc_hse_flux): the comoving radial flux the transport carries, the
+          // face (star_bc_hse_flux): the comoving radial flux the transport carries, the
           // mean of the cell's two x1 faces = the unclipped cell F1 minus its lab-frame
           // (v + v.D) E; cell: the clipped lab-frame cell F1 (old)
           const Real f1 = bhfc ? 0.5*(ff1(m,k,j,ia) + ff1(m,k,j,ia+1))
@@ -4261,7 +4281,7 @@ void HeStarBC(Mesh *pm) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void HeStarHist()
+//! \fn void StarHist()
 //! \brief history columns, all plain sums (see the file header).  Etot = gas total energy
 //! (conserved IEN incl. kinetic and the static potential) + radiation energy: with closed
 //! walls its rate is L_in - L_top(lab) (the comoving L_top differs from it by O(v/c)).
@@ -4272,7 +4292,7 @@ void HeStarBC(Mesh *pm) {
 //! fluxes); Lz_tot: the L_z of gas + radiation (CleanLzTotal, incl. the L_z ledger), so
 //! that d M_tot/dt = -M_hflx and d Lz_tot/dt = -Lz_hflx close in the history.
 
-void HeStarHist(HistoryData *pdata, Mesh *pm) {
+void StarHist(HistoryData *pdata, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   // w_mlt, L_MLT (= w max_faces F_MLT r^2 Omega) only with mlt_flux_frozen
   // F4: + P_esrc (power the explicit source puts into E, (chat/c) sum
@@ -4451,7 +4471,7 @@ void HeStarHist(HistoryData *pdata, Mesh *pm) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void HsApplyMltW()
-//! \brief rebuild <rad_vet>/esrc = w (frozen MLT deposit) + the he_esrc_const test
+//! \brief rebuild <rad_vet>/esrc = w (frozen MLT deposit) + the star_esrc_const test
 //! source, with exactly the operations of the start-up kernels (w = 1: bitwise the same
 //! esrc).
 
@@ -4757,7 +4777,7 @@ std::vector<char> HsAdaptiveRstWrite() {
     std::memcpy(out.data() + o, &(kHsPicTag[0]), sizeof(kHsPicTag));
     std::memcpy(out.data() + o + sizeof(kHsPicTag), &(w[0]), sizeof(w));
   };
-  // the he_ic_equil a_ref as the last trailer (only when it ran / was restored)
+  // the star_ic_equil a_ref as the last trailer (only when it ran / was restored)
   auto dic = [&out]() {
     if (hs_eq_a_.empty()) return;
     const std::size_t na = hs_eq_a_.size();
@@ -4806,7 +4826,7 @@ std::vector<char> HsAdaptiveRstWrite() {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void HeStarFinal()
+//! \fn void StarFinal()
 //! \brief release the namespace-scope Views before Kokkos::finalize.
 
 //----------------------------------------------------------------------------------------
@@ -4898,13 +4918,13 @@ void HsAtmWrite(MeshBlockPack *pmbp, const int ia, const std::vector<Real> &a,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void HeStarIcPost
-//! \brief problem/he_ic_rad_atm_post: the thin atmosphere's discrete
+//! \fn void StarIcPost
+//! \brief problem/star_ic_rad_atm_post: the thin atmosphere's discrete
 //! hydrostatic re-balance at the gas T left by <rad_vet>/ic_rad, with a_ref = the
 //! module's own face-mean force at that state (see the enrolment in UserProblem).
 //! Called once, on a fresh start, by Driver::Initialize after IcRadRun.
 
-void HeStarIcPost(Mesh *pm) {
+void StarIcPost(Mesh *pm) {
   if (!hs_atp_) return;
   MeshBlockPack *pmbp = pm->pmb_pack;
   radvet::FluidRef fl = radvet::FluidRef::Get(pmbp);
@@ -4919,7 +4939,7 @@ void HeStarIcPost(Mesh *pm) {
   const int ia = hs_atp_ia_;
   const Real dfl = hs_atp_dfl_, cl = pm1->c_light;
   if (ia < is + 2 || ia > ie) {
-    HsFatal("he_ic_rad_atm_post: the first atmosphere cell is not inside the mesh",
+    HsFatal("star_ic_rad_atm_post: the first atmosphere cell is not inside the mesh",
             __LINE__);
   }
   std::vector<Real> pc0, pf0, p0c, p0f, x1v, x1f, ar0;
@@ -5128,17 +5148,17 @@ void HeStarIcPost(Mesh *pm) {
   // parameter dump past its 40 KB header limit); the cells above keep the pgen's a_ref
   {
     const int na = std::max(ilast - ia + 1, 0);
-    hs_pin_->SetString("problem", "he_ic_rad_atm_ia", std::to_string(ia));
-    hs_pin_->SetString("problem", "he_ic_rad_atm_na", std::to_string(na));
+    hs_pin_->SetString("problem", "star_ic_rad_atm_ia", std::to_string(ia));
+    hs_pin_->SetString("problem", "star_ic_rad_atm_na", std::to_string(na));
     char key[40], buf[40];
     for (int n=0; n<na; ++n) {
-      snprintf(key, sizeof(key), "he_ic_rad_atm_a%03d", n);
+      snprintf(key, sizeof(key), "star_ic_rad_atm_a%03d", n);
       snprintf(buf, sizeof(buf), "%.17g", a[n]);
       hs_pin_->SetString("problem", key, buf);
     }
   }
   if (global_variable::my_rank == 0) {
-    std::cout << "he_star_vet: he_ic_rad_atm_post: cells " << ia << " .. " << ilast
+    std::cout << "star_vet: star_ic_rad_atm_post: cells " << ia << " .. " << ilast
               << " (r " << x1v[ia] << " .. " << x1v[std::max(ilast, ia)] << ") "
               << "re-balanced at the ic_rad gas T, " << npass << " passes (last max "
               << "|da/a| " << chg << ", face residual " << rmx << "): max |rho/rho_ic - "
@@ -5148,14 +5168,14 @@ void HeStarIcPost(Mesh *pm) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void HeStarIcEquil
-//! \brief problem/he_ic_equil: one round of the discrete equilibrium of the
+//! \fn void StarIcEquil
+//! \brief problem/star_ic_equil: one round of the discrete equilibrium of the
 //! initial state (see the enrolment in UserProblem).  Called by Driver::Initialize after
 //! every <rad_vet>/ic_rad run (fresh start); sets user_icpost_again while it wants
 //! another round.  The x1 structure is taken from the shell means (the initial state is l
 //! = 0); each cell keeps its own T and its rho/<rho> ratio.
 
-void HeStarIcEquil(Mesh *pm) {
+void StarIcEquil(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   radvet::FluidRef fl = radvet::FluidRef::Get(pmbp);
   auto *pm1 = pmbp->pradvet;
@@ -5170,7 +5190,7 @@ void HeStarIcEquil(Mesh *pm) {
   // the march's anchor: the WALL cell (its rho kept), marched OUTWARD.  At fixed force
   // per volume f (fixed E) the hydrostatic march is stable only outward: a rho error
   // grows inward relative to rho like (rho_in/rho_out)^(Gamma/(1 - Gamma)) (from the
-  // he_ic_balance anchor at 342 Rsun inward: 1 %/cell in the CZ, then NaN, run d4)
+  // star_ic_balance anchor at 342 Rsun inward: 1 %/cell in the CZ, then NaN, run d4)
   const int ianc = is;
   ++hs_eq_it_;
   std::vector<Real> pc0, pf0, p0c, p0f, x1v, x1f, ar0;
@@ -5181,7 +5201,7 @@ void HeStarIcEquil(Mesh *pm) {
   auto har = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x1f);
   const bool hdm = (pm1->icr_dm.extent_int(0) == nmb);
   if (!hdm || !(pm1->icr_dm_dt > 0.0)) {
-    HsFatal("he_ic_equil: no force pass from <rad_vet>/ic_rad", __LINE__);
+    HsFatal("star_ic_equil: no force pass from <rad_vet>/ic_rad", __LINE__);
   }
   auto hdmv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->icr_dm);
   const Real dtm = pm1->icr_dm_dt;
@@ -5254,7 +5274,7 @@ void HeStarIcEquil(Mesh *pm) {
     fv[i] = dmi/dtm + bd[i]*ar0[i];
     resm[i] = std::fabs(dmi/dtm)/(bd[i]*hs_gm_/SQR(x1v[i]));
   }
-  // ghosts as HeStarBC makes them: inner = the balanced profile scaled to the edge cell,
+  // ghosts as StarBC makes them: inner = the balanced profile scaled to the edge cell,
   // outer = the edge cell (the floor; the march stops below it)
   std::vector<Real> gbd(n1), gbe(n1);
   {
@@ -5339,15 +5359,15 @@ void HeStarIcEquil(Mesh *pm) {
   const bool lastm = !conv && hs_eq_last_ && (hs_eq_it_ >= hs_eq_maxit_);
   const bool done = conv || (hs_eq_it_ >= hs_eq_maxit_);
   if (global_variable::my_rank == 0) {
-    std::printf("he_star_vet: he_ic_equil round %d: module residual max |a_net|/g = %.3e "
+    std::printf("star_vet: star_ic_equil round %d: module residual max |a_net|/g = %.3e "
                 "(r %.5e), WB face residual %.3e (r %.5e), max |L(face)/L_in - 1| = "
                 "%.3e (r %.5e), L_in %.10e, L_top %.10e%s\n", hs_eq_it_, rmm, rrm, rmh,
                 rrh, ldv, rld, lin, lf[ie+1] + lm[ie+1],
                 done ? ((std::max(rmm, rmh) < hs_eq_tol_) ? " CONVERGED" :
-                        (lastm ? " (he_ic_equil_maxit: last round, march then STOP)" :
-                         " (he_ic_equil_maxit: STOP, not converged)")) : "");
+                        (lastm ? " (star_ic_equil_maxit: last round, march then STOP)" :
+                         " (star_ic_equil_maxit: STOP, not converged)")) : "");
     // the profile of this round (appended): i r rho T a_ref f/rho resm resh L/L_in
-    FILE *fp = std::fopen("he_ic_equil.txt", "a");
+    FILE *fp = std::fopen("star_ic_equil.txt", "a");
     if (fp != nullptr) {
       for (int i=is; i<=ie; ++i) {
         std::fprintf(fp, "%d %d %.12e %.12e %.12e %.12e %.12e %.6e %.6e %.12e\n",
@@ -5360,7 +5380,8 @@ void HeStarIcEquil(Mesh *pm) {
   // the end of the equilibrium: the deferred seed, a_ref kept for the restarts (af0 = the
   // a_ref of the cells is..ie now in place), no further ic_rad
   auto finish = [&](const std::vector<Real> &af0) {
-    // the deferred he_seed: eint (and with he_seed_rad E) of every cell times its factor
+    // the deferred star_seed: eint (and with star_seed_rad E) of every cell times its
+    // factor
     if (hs_eq_seed_) {
       auto hsf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), hs_sfac_);
       auto hr = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pm1->u0);
@@ -5387,14 +5408,15 @@ void HeStarIcEquil(Mesh *pm) {
     pm1->icr_fmeas = false;
     pm->pgen->user_icpost_again = false;
     if (global_variable::my_rank == 0) {
-      std::printf("he_star_vet: he_ic_equil: done after %d rounds%s\n", hs_eq_it_,
-                  hs_eq_seed_ ? " (deferred he_seed applied)" : "");
+      std::printf("star_vet: star_ic_equil: done after %d rounds%s\n", hs_eq_it_,
+                  hs_eq_seed_ ? " (deferred star_seed applied)" : "");
     }
   };
-  // not converged in he_ic_equil_maxit rounds is fatal, unless the last round marches
-  // (he_ic_equil_last_march); then that march must converge (below)
+  // not converged in star_ic_equil_maxit rounds is fatal, unless the last round marches
+  // (star_ic_equil_last_march); then that march must converge (below)
   if (done && !conv && !lastm) {
-    HsFatal("problem/he_ic_equil: not converged in he_ic_equil_maxit rounds", __LINE__);
+    HsFatal("problem/star_ic_equil: not converged in star_ic_equil_maxit rounds",
+            __LINE__);
   }
   if (done && !lastm) {
     finish(std::vector<Real>(ar0.begin() + is, ar0.begin() + ie + 1));
@@ -5527,30 +5549,30 @@ void HeStarIcEquil(Mesh *pm) {
   pm->pgen->user_icpost_again = true;
   if (lastm) finish(a);
   if (global_variable::my_rank == 0) {
-    std::printf("he_star_vet: he_ic_equil round %d update: anchor cell %d (r %.5e), "
+    std::printf("star_vet: star_ic_equil round %d update: anchor cell %d (r %.5e), "
                 "cells %d .. %d re-marched, %d passes (last max |da/a| %.3e, face "
                 "residual %.3e), max |drho/rho| %.3e at r %.5e\n", hs_eq_it_, ianc - is,
                 x1v[ianc], 0, ilast - is, npass, chg, rmx, dmx, rdm);
   }
   // (a march stopped below the floor: its cells above keep the column's rho and a_ref)
   if (nstop > 0 && global_variable::my_rank == 0) {
-    std::printf("he_star_vet: WARNING he_ic_equil round %d: the march stopped at cell %d "
+    std::printf("star_vet: WARNING star_ic_equil round %d: the march stopped at cell %d "
                 "(r %.5e) in %d of %d passes, no face solve (last residual %.3e); the "
                 "cells above keep the column\n", hs_eq_it_, istop - is, x1v[istop], nstop,
                 npass, rstop);
   }
   if (lastm && !(chg < 1.0e-12)) {
-    HsFatal("problem/he_ic_equil: the last round's march did not converge", __LINE__);
+    HsFatal("problem/star_ic_equil: the last round's march did not converge", __LINE__);
   }
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void HeStarFinal()
+//! \fn void StarFinal()
 //! \brief release the namespace-scope Views before Kokkos::finalize.
 
 //----------------------------------------------------------------------------------------
 //! \fn void HsRemapLoad()
-//! \brief problem/he_ic_remap_file: hydro u0 (5), M1 u0 (4) and f0x1 of
+//! \brief problem/star_ic_remap_file: hydro u0 (5), M1 u0 (4) and f0x1 of
 //! every MeshBlock of this rank, ghosts included, from the file's global arrays
 //! [nx3+2ng][nx2+2ng][nx1+2ng(+1)] (header checked by the caller; uniform mesh only)
 
@@ -5559,12 +5581,12 @@ void HsRemapLoad(Mesh *pm, const std::string &fn, const std::int64_t off, const 
   auto *pm1 = pmbp->pradvet;
   auto &indcs = pm->mb_indcs;
   const int ng = indcs.ng;
-  if (pm->multilevel) HsFatal("he_ic_remap_file needs a uniform mesh", __LINE__);
+  if (pm->multilevel) HsFatal("star_ic_remap_file needs a uniform mesh", __LINE__);
   const int nout1 = indcs.nx1 + 2*ng, nout2 = indcs.nx2 + 2*ng, nout3 = indcs.nx3 + 2*ng;
   const std::int64_t c1 = n[1] + 2*n[0], c2 = n[2] + 2*n[0], c3 = n[3] + 2*n[0];
   const std::int64_t cc = c1*c2*c3;
   std::ifstream rf(fn, std::ios::binary);
-  if (!rf) HsFatal("cannot open problem/he_ic_remap_file " + fn, __LINE__);
+  if (!rf) HsFatal("cannot open problem/star_ic_remap_file " + fn, __LINE__);
   auto uh = Kokkos::create_mirror_view(pmbp->phydro->u0);
   auto ur = Kokkos::create_mirror_view(pm1->u0);
   const bool hf0 = (pm1->f0x1.extent_int(0) >= pmbp->nmb_thispack);
@@ -5573,7 +5595,7 @@ void HsRemapLoad(Mesh *pm, const std::string &fn, const std::int64_t off, const 
   auto rd = [&](const std::int64_t pos, const int len) {
     rf.seekg(pos);
     rf.read(reinterpret_cast<char*>(row.data()), len*sizeof(double));
-    if (!rf) HsFatal("problem/he_ic_remap_file: read failed", __LINE__);
+    if (!rf) HsFatal("problem/star_ic_remap_file: read failed", __LINE__);
   };
   for (int m=0; m<pmbp->nmb_thispack; ++m) {
     const LogicalLocation &ll = pm->lloc_eachmb[pmbp->gids + m];
@@ -5607,13 +5629,13 @@ void HsRemapLoad(Mesh *pm, const std::string &fn, const std::int64_t off, const 
   Kokkos::deep_copy(pm1->u0, ur);
   if (hf0) Kokkos::deep_copy(pm1->f0x1, uf);
   if (global_variable::my_rank == 0) {
-    std::cout << "he_star_vet: he_ic_remap_file: u0, M1 u0" << (hf0 ? ", f0x1" : "")
+    std::cout << "star_vet: star_ic_remap_file: u0, M1 u0" << (hf0 ? ", f0x1" : "")
               << " loaded (" << pmbp->nmb_thispack << " MeshBlock(s) on rank 0); "
-              << "no ic_rad, no he_ic_equil, no seed" << std::endl;
+              << "no ic_rad, no star_ic_equil, no seed" << std::endl;
   }
 }
 
-void HeStarFinal(ParameterInput *pin, Mesh *pm) {
+void StarFinal(ParameterInput *pin, Mesh *pm) {
   (void) pin; (void) pm;
   hs_rho_ = DvceArray1D<Real>();
   hs_eint_ = DvceArray1D<Real>();
@@ -5636,21 +5658,21 @@ void HeStarFinal(ParameterInput *pin, Mesh *pm) {
 //! \fn void HsN2Compute
 //! \brief the IC column's convective growth rate on the radial cells of the
 //! (single, full-length) x1 MeshBlock column, from the initial column as the IC kernel
-//! lays it down (he_ic_balance cells, else the fine column), once (hs_n2_):
+//! lays it down (star_ic_balance cells, else the fine column), once (hs_n2_):
 //!   T from the code EOS; P = p_gas + a T^4/3; Gamma_1 of gas + radiation from the first
 //!   law, chi_rho = p_g chi_rho,g/P, chi_T = (p_g chi_T,g + 4 p_r)/P, rho T c_v = rho T
 //!   c_v,g + 4 a T^4, Gamma_1 = chi_rho + P chi_T^2/(rho T c_v);  g = G m(r)/r^2 (the
-//!   he_gm_column mass, else he_gm);  N^2 = g (dlnP/dr/Gamma_1 - dln rho/dr) by centred
-//!   differences;  growth rate sigma = sqrt(max(-N^2, 0)), H_p = P/(rho g).
-//! Domain: active cells with r <= r_int (tau = he_tau_int, the code's photosphere).
+//!   star_gm_column mass, else star_gm);  N^2 = g (dlnP/dr/Gamma_1 - dln rho/dr) by
+//!   centred differences;  growth rate sigma = sqrt(max(-N^2, 0)), H_p = P/(rho g).
+//! Domain: active cells with r <= r_int (tau = star_tau_int, the code's photosphere).
 void HsN2Compute(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar) {
   HsN2Col &c2 = hs_n2_;
   if (c2.done) return;
   Mesh *pm = pmbp->pmesh;
   auto &indcs = pm->mb_indcs;
   if (indcs.nx1 != pm->mesh_indcs.nx1) {
-    HsFatal("he_seed_band = n2 / mlt_ramp auto need one MeshBlock across x1 (or "
-            "he_seed_band = old and explicit mlt_ramp_start/_time)", __LINE__);
+    HsFatal("star_seed_band = n2 / mlt_ramp auto need one MeshBlock across x1 (or "
+            "star_seed_band = old and explicit mlt_ramp_start/_time)", __LINE__);
   }
   const int is = indcs.is, ie = indcs.ie;
   auto hx1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
@@ -5750,7 +5772,7 @@ Real HsN2Median(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar) {
 
 //----------------------------------------------------------------------------------------
 //! \fn bool HsN2Band
-//! \brief the radial band and Y_lm l range of the he_seed_band = n2 seed,
+//! \brief the radial band and Y_lm l range of the star_seed_band = n2 seed,
 //! from the growth rates of HsN2Compute.
 //! Band rule: cells with sigma >= frac sigma_max; gaps of <= ngap cells between such
 //! cells are closed; connected runs shorter than nmin cells (isolated IC-column ripples)
@@ -5777,7 +5799,7 @@ bool HsN2Band(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar, const Rea
   const bool root = (global_variable::my_rank == 0);
   if (!(smax > 0.0)) {
     if (root) {
-      std::cout << "he_star_vet: he_seed_band = n2: N^2 >= 0 in every cell below r_int "
+      std::cout << "star_vet: star_seed_band = n2: N^2 >= 0 in every cell below r_int "
                 << "= " << hs_rint_ << ": NO SEED" << std::endl;
     }
     return false;
@@ -5797,7 +5819,7 @@ bool HsN2Band(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar, const Rea
   int bs = -1, be = -1, bp = -1;
   Real bpk = -1.0;
   if (root) {
-    std::cout << "he_star_vet: he_seed_band = n2: sigma_max (all cells below r_int) = "
+    std::cout << "star_vet: star_seed_band = n2: sigma_max (all cells below r_int) = "
               << smax << " /s (1/sigma " << 1.0/smax/86400.0 << " d); runs with sigma >= "
               << frac << " sigma_max (gaps <= " << ngap << " closed):" << std::endl;
   }
@@ -5814,7 +5836,7 @@ bool HsN2Band(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar, const Rea
       std::cout << "  run r/r_int " << r[i]/hs_rint_ << " - " << r[j]/hs_rint_ << " ("
                 << j - i + 1 << " cells), peak 1/sigma " << 1.0/sg[ip]/86400.0
                 << " d at r/r_int " << r[ip]/hs_rint_
-                << (keep ? "" : "  [< he_seed_n2_nmin cells: discarded]") << std::endl;
+                << (keep ? "" : "  [< star_seed_n2_nmin cells: discarded]") << std::endl;
     }
     if (keep && sg[ip] >= bpk) {
       bs = i;
@@ -5825,7 +5847,7 @@ bool HsN2Band(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar, const Rea
   }
   if (bs < 0) {
     if (root) {
-      std::cout << "he_star_vet: he_seed_band = n2: no run of >= " << nmin
+      std::cout << "star_vet: star_seed_band = n2: no run of >= " << nmin
                 << " cells: NO SEED" << std::endl;
     }
     return false;
@@ -5881,7 +5903,7 @@ bool HsN2Band(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar, const Rea
   lmax = std::max(static_cast<int>(lhi), 1);
   lmin = std::max(1, static_cast<int>(std::lround(lmax/4.0)));
   if (root) {
-    std::cout << "he_star_vet: he_seed_band = n2 BAND r " << rlo << " .. " << rhi
+    std::cout << "star_vet: star_seed_band = n2 BAND r " << rlo << " .. " << rhi
               << " (r/r_int " << rlo/hs_rint_ << " - " << rhi/hs_rint_ << ", r_int "
               << hs_rint_ << "), " << be - bs + 1 << " cells " << bs - is << ".."
               << be - is
@@ -5892,7 +5914,7 @@ bool HsN2Band(MeshBlockPack *pmbp, const EOS_Data &eos, const Real ar, const Rea
               << " cells per wavelength, min dx_lat/r " << dang << ") -> l_lo " << lmin
               << ", l_hi " << lmax << std::endl;
     if (clip) {
-      std::cout << "### WARNING he_star_vet: he_seed_band = n2: l_hi clipped to the cap "
+      std::cout << "### WARNING star_vet: star_seed_band = n2: l_hi clipped to the cap "
                 << lcap << std::endl;
     }
   }

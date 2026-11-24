@@ -155,8 +155,9 @@ class ProblemGenerator {
   UserCycleFnPtr user_hydro_flux_func=nullptr;
   // called ONCE on a fresh start, in Driver::Initialize right after the
   // <rad_vet>/ic_rad passes (IcRadRun) and before the boundaries/primitives are rebuilt,
-  // so a pgen can adjust its initial state to the relaxed radiation (he_star_vet:
-  // he_ic_rad_atm_post).  Left null (every other pgen, ic_rad = none) it is never called.
+  // so a pgen can adjust its initial state to the relaxed radiation (star_vet:
+  // star_ic_rad_atm_post).  Left null (every other pgen, ic_rad = none) it is never
+  // called.
   UserCycleFnPtr user_icpost_func=nullptr;
   // while true after user_icpost_func, Driver::Initialize runs the ic_rad
   // passes and the hook again (the hook clears it; default false = once)

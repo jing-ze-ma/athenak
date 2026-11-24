@@ -6,7 +6,7 @@ of the regression tests in `tst/inputs/` (run by `tst/run_test_suite.py`).
 
 | directory | what | build with `-D PROBLEM=` |
 |---|---|---|
-| `stars/` | VET stars: production templates `star_bsg`, `star_m35mms`, `star_t9l62` ([RUN.md](../docs/vet_clean/RUN.md)); small 3-D examples `star3d_sp` (blue supergiant wedge), `star3d_cs` (red supergiant, cubed sphere) with their data ([STARS.md](../docs/vet_clean/STARS.md)) | `he_star_vet` |
+| `stars/` | VET stars: production templates `star_bsg`, `star_m35mms`, `star_t9l62` ([RUN.md](../docs/vet_clean/RUN.md)); small 3-D examples `star3d_sp` (blue supergiant wedge), `star3d_cs` (red supergiant, cubed sphere) with their data ([STARS.md](../docs/vet_clean/STARS.md)) | `star_vet` |
 | | `red_giant_cs`: red giant envelope with the two-stream solver | `red_giant` |
 | `planets/` | hot Jupiters: general EOS (`_rt_eos`), ideal gas (`_rt_ideal_xe`), reference run (`_rt_blowup`); planet keys from literature parameters: `tools/planets/` | `deep_hot_jupiter_rt` |
 | `binaries/` | RY Per mass gainer: absorbing star, resolved envelope | `ry_per_accretor` |

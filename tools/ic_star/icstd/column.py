@@ -5,14 +5,14 @@ the E1 production IC ic_agcar_A_ge_deep70.txt):
   * R_ph (tau_R = 2/3) given, or sqrt(L/(4 pi sigma Teff^4)); T(tau) grey Hopf (Mihalas fit);
   * ABOVE R_ph: isothermal atmosphere at T_ph = T_Hopf(2/3), gravity only, rho_R SHOT so that
     its tau(R_ph) = 2/3, down to the column floor rho_floor, constant floor above to r_col_top;
-    E above R_ph DILUTED: E = (F/c)(1 + (c a T_ph^4/F_ph - 1)(R_ph/r)^2) (he_ic_rad = sph1d
+    E above R_ph DILUTED: E = (F/c)(1 + (c a T_ph^4/F_ph - 1)(R_ph/r)^2) (star_ic_rad = sph1d
     replaces E and re-marches the thin layers in the code: this only seeds it);
   * R_ph inward to tau = tau_j (3): Hopf T(tau) + gas HSE with the radiation force of F;
   * tau_j inward to the column bottom: dP_tot/dr = -rho GM/r^2, dlnT/dlnP_tot = nabla (local MLT,
     alpha_MLT, + MLT++ f1, f2, pp_alpha; = nabla_rad where radiative), F_r = F nabla/nabla_rad,
     F_MLT/F = 1 - nabla/nabla_rad, F = L/(4 pi r^2) (L constant: no sources in the envelope);
-  * GM a point mass (he_gm).
-Output rows: r rho eint F_r(radiative) E T F_MLT/F (he_ic_cols = 5, 7 columns).
+  * GM a point mass (star_gm).
+Output rows: r rho eint F_r(radiative) E T F_MLT/F (star_ic_cols = 5, 7 columns).
 
 Sampling schemes (same equations; they differ only in where the rows sit and the ODE
 tolerances):

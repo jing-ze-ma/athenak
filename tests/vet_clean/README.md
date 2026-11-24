@@ -183,7 +183,7 @@ mkdir run && cd run && OMPI_MCA_hwloc_base_binding_policy=none OMP_NUM_THREADS=4
 ## GPU builds
 
 The same suite runs a GPU binary built WITHOUT `-D PROBLEM` (the built-in problem
-generators; a `he_star_vet` binary cannot run these decks): `--exe build_tests/src/athena
+generators; a `star_vet` binary cannot run these decks): `--exe build_tests/src/athena
 --threads 1 --jobs 1` (on MI300A also `export HSA_XNACK=1`). The bitwise tests compare two
 runs of one binary and must pass on a GPU too. The reference tests (`order_*`, `nlte_*`,
 `thermal_eq`, `wb_*`) must agree with the CPU references within their tolerances; a much

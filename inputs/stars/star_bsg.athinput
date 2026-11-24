@@ -4,7 +4,7 @@
 # Before running: replace TABLES/ in the he_* table / profile / IC file keys by the
 # directory of your copies (the files are not in the repository), and set the run
 # length and outputs.
-# Needs a binary built with -D PROBLEM=he_star_vet (docs/vet_clean/BUILD.md).
+# Needs a binary built with -D PROBLEM=star_vet (docs/vet_clean/BUILD.md).
 # Key meanings: docs/vet_clean/KEYS.md.  Restart rule: docs/vet_clean/RUN.md.
 
 <job>
@@ -274,37 +274,37 @@ clean_stag_fs_line = pcr
 floorcap_mesh_vol = true
 
 <problem>
-he_seed_band = old
-he_seed = 0.0
-he_ic_profile = true
-he_ic_profile_file = TABLES/bsg/linhao_profile_full.txt
-he_ic_profile_amp = 0.05
-he_ic_profile_rho_thr = 6.15245e-7
-he_ic_profile_seed_group = true
-he_ic_profile_rng = 0
-he_ic_profile_gconst = 6.67408e-8
-he_ic_profile_gext = invsq
-he_ic_rad = file
-he_ic_eint_from_t = false
+star_seed_band = old
+star_seed = 0.0
+star_ic_profile = true
+star_ic_profile_file = TABLES/bsg/linhao_profile_full.txt
+star_ic_profile_amp = 0.05
+star_ic_profile_rho_thr = 6.15245e-7
+star_ic_profile_seed_group = true
+star_ic_profile_rng = 0
+star_ic_profile_gconst = 6.67408e-8
+star_ic_profile_gext = invsq
+star_ic_rad = file
+star_ic_eint_from_t = false
 user_srcs = true
 user_hist = true
-he_gm = 2.62502e27
-he_gravity = wb
-he_ic_file = TABLES/bsg/ic_ma2026_f0.txt
-he_opac_table = TABLES/bsg/rosseland_mesakap_gs98_x0.70_z0.008.txt
-he_planck_table = TABLES/bsg/planck_ext2_gs98_x0.70_z0.008.txt
-he_nfine = 262144
-he_tau_int = 1.0
-he_ic_cols = 5
-he_wall_zero_flux = true
-he_ic_balance = false
+star_gm = 2.62502e27
+star_gravity = wb
+star_ic_file = TABLES/bsg/ic_ma2026_f0.txt
+star_opac_table = TABLES/bsg/rosseland_mesakap_gs98_x0.70_z0.008.txt
+star_planck_table = TABLES/bsg/planck_ext2_gs98_x0.70_z0.008.txt
+star_nfine = 262144
+star_tau_int = 1.0
+star_ic_cols = 5
+star_wall_zero_flux = true
+star_ic_balance = false
 mlt_flux_frozen = false
-he_wall_closed = true
+star_wall_closed = true
 mlt_closure = frozen
-he_grid_dump = true
-he_bc_outer = copy
-he_bc_outer_r2 = true
-he_bc_inner = wall
+star_grid_dump = true
+star_bc_outer = copy
+star_bc_outer_r2 = true
+star_bc_inner = wall
 
 <output1>
 file_type = hst

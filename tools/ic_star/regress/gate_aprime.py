@@ -10,14 +10,14 @@ Items (all must PASS; items 3-5 are evaluated on BOTH runs):
  1 RESOLUTION   >= 4.4 cells per atmospheric (density) scale height over 0.95-1.1 R_ph on the deck grid:
                 min over the band of H_rho/dr, H_rho = -dr/dln<rho> of the t = 0 dump (the code's startup
                 atmosphere), cells at the floor plateau (rho < 1.5 x min rho) excluded.
- 2 CONVERGENCE  same floor rule on both runs (column floor = min rho of he_ic_file, startup floor
-                plateau within 1 %, dfloor, he_sponge_dmax identical; the floor sets the top of the
+ 2 CONVERGENCE  same floor rule on both runs (column floor = min rho of star_ic_file, startup floor
+                plateau within 1 %, dfloor, star_sponge_dmax identical; the floor sets the top of the
                 oscillating layer, so the amplitude depends on it); deck vs pair, saturated state t >= TSAT (4 d), band 0.99-1.1 R_ph, both runs >= 8 d:
                 band mean rms <v_r> within 15 %; time-rms <v_r>(r) profile L2 difference <= 10 %
                 (pair profile interpolated to the deck radii, ||p_d - p_p||/||p_p||); dominant period
                 (FFT, median of the 5 top-rms radii) within 10 %.
  3 BOUNDED      no growth (max band |<v_r>| over the last third <= 1.5 x over the middle third) and
-                saturated band mean rms <= c_s,iso(R_ph) (from the deck's he_sponge_rate rule comment
+                saturated band mean rms <= c_s,iso(R_ph) (from the deck's star_sponge_rate rule comment
                 'c_s ...' or --cs-iso).
  4 STAR         interior 0.5-0.9 R_ph max |<v_r>| < 1 km/s and 0.9-0.99 R_ph < 3 km/s (whole run);
                 (0.5-0.9: whole run; 0.9-0.99: saturated state t >= TSAT, as the bsgres-1017
@@ -62,6 +62,8 @@ def deck_of(run, override=None):
 
 
 def deck_key(deck, key):
+    # (he_*: the star keys before their rename to star_*)
+    key = re.sub('^star_', '(?:star|he)_', key)
     for ln in open(deck):
         m = re.match(r'^\s*%s\s*=\s*([^#\s]+)(.*)$' % key, ln)
         if m:
@@ -143,13 +145,13 @@ def load(run, kap, rph_cli, tsat):
 
 def analyse(run, deck, slurm_log, rph_cli, cs_cli, tsat):
     lg = run_log_checks(run, slurm_log)
-    kap = read_table(deck_key(deck, 'he_opac_table')[0])
+    kap = read_table(deck_key(deck, 'star_opac_table')[0])
     rph = rph_cli or (lg['rph_start'][1] if lg['rph_start'] else None)
     if rph is None:
         raise SystemExit('%s: no startup R_ph in run.log; pass --rph' % run)
     cs = cs_cli
     if cs is None:
-        _, com = deck_key(deck, 'he_sponge_rate')
+        _, com = deck_key(deck, 'star_sponge_rate')
         m = re.search(r'c_s ([0-9.eE+-]+)', com)
         cs = float(m.group(1))/1e5 if m else None
     T, r, rf, V, D, E = load(run, kap, rph, tsat)
@@ -210,13 +212,13 @@ def analyse(run, deck, slurm_log, rph_cli, cs_cli, tsat):
         bands['%.2f-%.2f' % (lo, hi)] = float(np.abs(V[:, k]).max()) if k.any() else np.nan
         bands['%.2f-%.2f sat' % (lo, hi)] = float(np.abs(V[sat][:, k]).max()) \
             if k.any() and sat.any() else np.nan
-    # floor rule: deck dfloor / he_sponge_dmax, the IC column's floor (its minimum rho) and the startup plateau
-    icf = deck_key(deck, 'he_ic_file')[0]
+    # floor rule: deck dfloor / star_sponge_dmax, the IC column's floor (its minimum rho) and the startup plateau
+    icf = deck_key(deck, 'star_ic_file')[0]
     try:
         col_floor = float(np.loadtxt(icf, comments='#', usecols=(1,)).min())
     except Exception:                                    # noqa: BLE001
         col_floor = np.nan
-    floor = dict(dfloor=deck_key(deck, 'dfloor')[0], dmax=deck_key(deck, 'he_sponge_dmax')[0],
+    floor = dict(dfloor=deck_key(deck, 'dfloor')[0], dmax=deck_key(deck, 'star_sponge_dmax')[0],
                  col_floor=col_floor, plateau=float(fl))
     return dict(run=run, deck=deck, nx1=len(r), ndump=len(T), t_end=float(T[-1]), rph=rph, floor=floor,
                 cs_iso=cs, x=x, prof=prof, sat_vrms_mean=float(vrms[sat].mean()) if sat.any()

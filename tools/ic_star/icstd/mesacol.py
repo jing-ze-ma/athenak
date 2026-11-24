@@ -5,7 +5,7 @@ When a MESA profile exists the STRUCTURE is MESA's, the microphysics ours:
     nabla_MESA = dlnT/dlnP, as a function of pressure;
   * HSE re-integrated OUTWARD from the column bottom with OUR EOS (rho from
     P - a T^4/3 = P_gas,code(rho, T)) and the code's gravity: G m(r) = G m(r_bot) +
-    G int 4 pi r^2 rho dr (deck: he_gm = G m(x1min) of this column, he_gm_column = true);
+    G int 4 pi r^2 rho dr (deck: star_gm = G m(x1min) of this column, star_gm_column = true);
     start P(r_bot) = P_MESA(r_bot), m(r_bot) = m_MESA(r_bot);
   * stop where T(P) reaches the Hopf tau = tau_j temperature (3 F/(4 sigma)(tau_j + q))^1/4,
     F = L/(4 pi r^2); above: the Hopf layer integrated OUTWARD (gas HSE with the radiation

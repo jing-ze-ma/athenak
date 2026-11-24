@@ -278,7 +278,7 @@ of the code EOS + radiation, G m(r)):
     near-Eddington photosphere);
   - if it disappears, the VET thin-layer coupling drives it.
 - Cheaper partial test with existing keys: halve and double the IC atmosphere scale height
-  (he_ic_rad_taua/taub or the floor) to see whether the period tracks the cut-off (period ~ H/c_s).
+  (star_ic_rad_taua/taub or the floor) to see whether the period tracks the cut-off (period ~ H/c_s).
 
 ### 7c. Cut-off period test: the atmosphere scale height at R_ph changed x0.7 / x1.4
 
@@ -348,16 +348,16 @@ excited at the photosphere and steepens in the falling density.
     extension), mean +0.003.
   - The BSG IC was not regenerated: the Rosseland change is below log rho -14 only.
 
-### 8b. Option A: problem/he_ic_rad_gamma_cap (branch ic-gammacap-1016, commit 843ce3e4, from b16b66db)
+### 8b. Option A: problem/star_ic_rad_gamma_cap (branch ic-gammacap-1016, commit 843ce3e4, from b16b66db)
 
-Implementation: src/pgen/he_star_vet.cpp, about 60 lines in the sph1d block.
+Implementation: src/pgen/star_vet.cpp, about 60 lines in the sph1d block.
 - The key is read only when named.
 - Inside the HSE outer loop, after kt and the march gravity are known, the column's F_r is capped
   at cap c g/kt per fine cell above r_b, and the excess goes into the frozen scaffold:
   F_MLT/F = 1 - F_r/F_tot, with F_tot = F_r0/(1 - F_MLT0/F) of the column, so F_r + F_MLT = L.
 - The cap is re-applied from the column's own F_r each outer iteration (no compounding).
 - The dump writes the capped scaffold.
-- It needs he_ic_rad_hse = true and mlt_flux_frozen = true.
+- It needs star_ic_rad_hse = true and mlt_flux_frozen = true.
 - Binaries: /raven/ptmp/jinma/icstd_1016/bin/athena_he_{cpu,a100}_843ce3e4.
 
 **Key off is bitwise** (b16b66db vs 843ce3e4, 16x16 lateral, seed 0; every .bin and .hst output
@@ -405,7 +405,7 @@ cap 0.9):
 ### 8c. 14p5M gate (a) with the cap (cap 0.3, exact TOPS tables, column = the tool's mode-mesa column after the taper)
 
 Setup: A100 843ce3e4, 16x16 lateral, seed 0, 3 d. Deck hg145_cap2 = the hg145 deck + tool block +
-he_ic_rad_gamma_cap 0.3 + the new tables + implicit_flux_x1min 3.6060e13 (the new tables change
+star_ic_rad_gamma_cap 0.3 + the new tables + implicit_flux_x1min 3.6060e13 (the new tables change
 F_r(8 Rsun) by +4.6 %).
 
 Startup: R_ph 7.961e12 -> 8.094e12 (704) and 8.084e12 (1408): the inflated branch, HSE not
@@ -439,14 +439,14 @@ ana/aprime_*.txt/json, comparisons ana/cmp_*.txt.
   5e-13 Msun/yr; NC 0; dt_min/median 0.36).
 - n256 (P grid) vs a776: FAIL items 1 (0.97) and 2 (period +28.6 %; profile L2 9.7 %).
 
-**(b) Exact low-density TOPS table opac_5b8e2fdfefea** (g480 deck, only he_opac/planck_table changed;
+**(b) Exact low-density TOPS table opac_5b8e2fdfefea** (g480 deck, only star_opac/planck_table changed;
 Planck differs up to 0.14 dex in the floor regime log T 3.9-4.25, log rho < -14): identical to g480 to
 plotting accuracy (band rms 6.037/6.037, profile L2 0.0 %, period 0.938/0.938 d; hst L_top max rel
 diff 1.3e-5, KE 1.1e-4). The opacity table choice does not matter for the BSG atmosphere.
 
 **(a) Column floor 1e-16 / 1e-15 / 1e-14** (IC tool rule rho_floor_rel 4e-7 / 4e-6 / 4e-5, applied after
 the build; the 1e-15 control rebuild reproduces ic_bsg.txt bit for bit; seam fixed points R_ph
-3.58769 / 3.58770 / 3.58780e12; dfloor, pfloor, he_sponge_dmax follow the rules; floor plateau from
+3.58769 / 3.58770 / 3.58780e12; dfloor, pfloor, star_sponge_dmax follow the rules; floor plateau from
 1.0399 / 1.0334 / 1.0275 R_ph; backgrounds clean: sponge active, 0 dfloor cells, top infall -0.07 km/s):
 - period floor-INDEPENDENT: 0.956 / 0.938 / 0.911 d (<= 3 %);
 - star unaffected and identical (interior 0.33 km/s, R_ph, L_top/L_in, NC 0);
@@ -547,8 +547,8 @@ CPU 0-cycle passes on the hg145 deck (passes/):
 ### 9d. The method and its fixed point (tool, no code change)
 Spec `specs/hegiant_14p5M.yaml`:
 - `taper: {enable: false}`, `startup: {re_zone: hopf}`;
-- he_ic_rad_taua 1, he_ic_rad_taub 3;
-- seam on the hg145 deck with he_nfine 262144. The old seam passes ran the deck's 2^20 while
+- star_ic_rad_taua 1, star_ic_rad_taub 3;
+- seam on the hg145 deck with star_nfine 262144. The old seam passes ran the deck's 2^20 while
   the gate decks had 262144.
 
 Run (sbatch small, 381 s): /raven/ptmp/jinma/ic_star_runs/hegiant_14p5M_anchor, IC
@@ -576,7 +576,7 @@ Run (sbatch small, 381 s): /raven/ptmp/jinma/ic_star_runs/hegiant_14p5M_anchor, 
   - BSG (mode mesa, taper + seam on) built with 3c3c3107 and with this branch: IC data and deck
     identical (the seam passes included);
   - only the new diag Gamma_rad line is added.
-  No he_star_vet change, so E1/BSG/HG decks run the same binary.
+  No star_vet change, so E1/BSG/HG decks run the same binary.
 
 ### 9e. Gate (a'): FAIL (regress/gate_aprime.py; runs/hg704, hg1408; 9 d, seed 0, 16x16)
 Deck /raven/ptmp/jinma/hg145_mscaf_1017/decks/hg145_anchor.athinput (md5 915c1d80 = hg145e1 + tool block):
@@ -614,9 +614,9 @@ What happens (scripts/prof.py):
 
 ## 10. 14p5M convective-flux hand-over (10-18, USER option 1; code branch mltp-1017 @ d2239c5e off fin51-r-fix bc5d24c1)
 
-Arms (704, 9 d, seed 0, 16x16, the sect. 9 IC/deck). he_base_heat is removed from the deck for the closures that
+Arms (704, 9 d, seed 0, 16x16, the sect. 9 IC/deck). star_base_heat is removed from the deck for the closures that
 need mlt_closure != frozen (it acts only once the ramp starts, at 14.8 d, i.e. after the run).
-- **(a) scaffold frozen in pressure**: new opt-in `problem/mlt_closure = pressure` (he_star_vet, mltp-1017).
+- **(a) scaffold frozen in pressure**: new opt-in `problem/mlt_closure = pressure` (star_vet, mltp-1017).
   - F_sub = fm_IC(ln P_face) F_tot,IC(face), with P_face the shell-mean P_gas + E/3;
   - relaxed over mlt_relax_time (1500 s), every cycle;
   - the adaptive closure's restart state is reused.
@@ -678,7 +678,7 @@ Single-run (a') items. Columns: startup L_top/L_IC; band 0.99-1.1 saturated rms 
   - tau_R(R_ph of the column) 0.20: the photosphere is now consistent (was 3.1).
   - MESA's own split with this kappa: Gamma_rad 0.955 (was 1.49).
   - F_r(x1min) unchanged.
-- Screen (704, 2 d, A100 mltp-1017 d2239c5e, deck without he_base_heat):
+- Screen (704, 2 d, A100 mltp-1017 d2239c5e, deck without star_base_heat):
 
 | arm | L_top(0) | 0.9-0.99 R_ph max | 0.99-1.1 band max | L_top/L_in after 0.35 d |
 |---|---|---|---|---|

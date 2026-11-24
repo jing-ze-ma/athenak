@@ -1441,7 +1441,7 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     const bool h3 = prm->trans_on && prm->trans_x3 && (fx3.extent_int(0) >= nmb) &&
                     (fx3.extent_int(1) > ke);
     // m1_ex1: clean, the x1 energy flux Phi of the step's last solve (t2pf1 x c/chat;
-    // f0x1 is then the face momentum F, as the he_star_vet hst L_midE)
+    // f0x1 is then the face momentum F, as the star_vet hst L_midE)
     auto pf1 = prm->t2pf1;
     const bool he = prm->t2pf1_ok && (pf1.extent_int(0) >= nmb);
     const Real icc = prm->c_light/prm->chat;

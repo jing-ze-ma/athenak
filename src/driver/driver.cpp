@@ -489,8 +489,8 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
     // the pgen's post-ic_rad hook (null = nothing; pgen.hpp)
     if (pmesh->pgen->user_icpost_func != nullptr) {
       (pmesh->pgen->user_icpost_func)(pmesh);
-      // a pgen that iterates its IC with the radiation (he_star_vet
-      // he_ic_equil) asks for the IC passes again (false = once, as before)
+      // a pgen that iterates its IC with the radiation (star_vet
+      // star_ic_equil) asks for the IC passes again (false = once, as before)
       while (pmesh->pgen->user_icpost_again) {
         pmesh->pmb_pack->pradvet->CleanSteadyStart(this);
         (pmesh->pgen->user_icpost_func)(pmesh);
@@ -1232,7 +1232,7 @@ void Driver::Finalize(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
   if (pdtr_ != nullptr) {pdtr_->Report(pmesh);}
   if (pctr_ != nullptr) {pctr_->Report(pmesh);}
   // the stage-loop copies of the pgen registers hold device Views (a
-  // registered View, e.g. he_star_vet hs_fsub): freed here, before Kokkos::finalize
+  // registered View, e.g. star_vet hs_fsub): freed here, before Kokkos::finalize
   dtretry::PgenStageClear();
   // cycle through output Types and load data / write files
   //  This design allows for asynchronous outputs to implemented in the future.

@@ -27,11 +27,11 @@ of a CUDA build (`rad_vet_vetgd.cpp`) takes about 12 min of nvcc alone.
 | `Athena_ENABLE_MPI` | `ON` | Multi-rank runs. The CPU test suite also runs fine with MPI on. |
 | `Athena_ENABLE_OPENMP` | `ON` on CPU | OpenMP threads inside a rank (the test suite uses 4 per run). |
 | `Athena_VET_VGD_NMAX` | `4096` on CPU, default (432) or `512` on GPU | The largest number of ray directions of the VET closure. The star decks use 126; the test decks use up to 512. |
-| `PROBLEM` | unset (built-in problem generators) or `he_star_vet` | The test suite uses only built-in generators (`rad_vet_beam`). The star decks need `-D PROBLEM=he_star_vet`. |
+| `PROBLEM` | unset (built-in problem generators) or `star_vet` | The test suite uses only built-in generators (`rad_vet_beam`). The star decks need `-D PROBLEM=star_vet`. |
 
 A binary built with `-D PROBLEM=<name>` runs only that problem generator: a
-`he_star_vet` binary cannot run the test decks. Build the test binary without `-D PROBLEM`
-(the GPU blocks below name `he_star_vet`; drop it, in a second build directory, for the
+`star_vet` binary cannot run the test decks. Build the test binary without `-D PROBLEM`
+(the GPU blocks below name `star_vet`; drop it, in a second build directory, for the
 test suite on a GPU).
 
 ## 3. CPU (workstation or cluster)
@@ -52,7 +52,7 @@ Tested on an Intel Xeon IceLake cluster (72 cores per node) with
 `module load gcc/13 openmpi/4.1 cmake/3.30`; the configure step takes 10 s and `make -j 72`
 takes 81 s.
 
-For the star problem generator add `-D PROBLEM=he_star_vet`.
+For the star problem generator add `-D PROBLEM=star_vet`.
 
 ## 4. NVIDIA GPUs (CUDA)
 
@@ -65,7 +65,7 @@ cmake -S . -B build_cuda -D CMAKE_BUILD_TYPE=Release \
   -D Kokkos_ENABLE_CUDA=On -D Kokkos_ARCH_<ARCH>=On \
   -D Kokkos_ENABLE_IMPL_CUDA_MALLOC_ASYNC=OFF \
   -D Athena_ENABLE_MPI=ON -D CMAKE_CXX_FLAGS=-ffp-contract=off \
-  -D Athena_VET_VGD_NMAX=512 -D PROBLEM=he_star_vet
+  -D Athena_VET_VGD_NMAX=512 -D PROBLEM=star_vet
 make -C build_cuda -j 32 athena
 ```
 
@@ -103,7 +103,7 @@ cmake -S . -B build_hip -D CMAKE_BUILD_TYPE=Release -D CMAKE_CXX_COMPILER=$(whic
   -D Kokkos_ENABLE_HIP=On -D Kokkos_ARCH_AMD_GFX942_APU=On \
   -D Kokkos_ENABLE_IMPL_HIP_MALLOC_ASYNC=OFF \
   -D Athena_ENABLE_MPI=ON -D CMAKE_CXX_FLAGS=-ffp-contract=off \
-  -D Athena_VET_VGD_NMAX=512 -D PROBLEM=he_star_vet
+  -D Athena_VET_VGD_NMAX=512 -D PROBLEM=star_vet
 make -C build_hip -j 32 athena
 ```
 

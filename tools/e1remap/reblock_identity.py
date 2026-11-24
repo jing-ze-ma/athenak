@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""reblock_identity.py (fastfloor-1109) RST DECK OUTDIR NAME : identity remap (same grid) of an AthenaK he_star_vet + rad_vet restart into a
-problem/he_ic_remap_file (HSREMAP1) fresh start, so the SAME state can start on any MeshBlock layout.
+"""reblock_identity.py (fastfloor-1109) RST DECK OUTDIR NAME : identity remap (same grid) of an AthenaK star_vet + rad_vet restart into a
+problem/star_ic_remap_file (HSREMAP1) fresh start, so the SAME state can start on any MeshBlock layout.
 Arrays copied verbatim from the restart (u0 hydro incl. rho*Phi, M1 u0, f0x1), lateral ghosts = periodic images,
-x1 ghosts = the restart's.  Writes NAME.remap and NAME.athinput (DECK + start_time + he_ic_remap_file); the
+x1 ghosts = the restart's.  Writes NAME.remap and NAME.athinput (DECK + start_time + star_ic_remap_file); the
 meshblock size is set on the command line of each run.  Uses read_rst/gather of tools/e1remap/remap_e1w.py."""
 import hashlib
 import os
@@ -57,6 +57,6 @@ def setkey(txt, blk, key, val):
 
 
 d = setkey(d, 'time', 'start_time', repr(R['time']))
-d = setkey(d, 'problem', 'he_ic_remap_file', os.path.abspath(fn))
+d = setkey(d, 'problem', 'star_ic_remap_file', os.path.abspath(fn))
 open(os.path.join(outdir, name + '.athinput'), 'w').write(d)
 print('wrote deck', os.path.join(outdir, name + '.athinput'))

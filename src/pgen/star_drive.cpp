@@ -3,10 +3,10 @@
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
-//! \file he_drive.cpp
-//! \brief the driven inner boundary of he_star_vet (see he_drive.hpp
+//! \file star_drive.cpp
+//! \brief the driven inner boundary of star_vet (see star_drive.hpp
 //! for the keys): the inflow table, the live monopole gravity and the RK-exact boundary
-//! ledgers.  State lives in this file; the pgen calls the functions of he_drive.hpp.
+//! ledgers.  State lives in this file; the pgen calls the functions of star_drive.hpp.
 
 #include <cmath>
 #include <cstdio>
@@ -29,7 +29,7 @@
 #include "rad_vet/rad_vet_implicit.hpp"
 #include "utils/repro_sum.hpp"
 #include "utils/time_table.hpp"
-#include "pgen/he_drive.hpp"
+#include "pgen/star_drive.hpp"
 
 namespace hsdrive {
 namespace {
@@ -74,7 +74,7 @@ std::vector<Real> rst_;
 int nx1_ = 0;
 
 void Fatal(const std::string &msg) {
-  std::cout << "### FATAL ERROR in he_drive.cpp" << std::endl << msg
+  std::cout << "### FATAL ERROR in star_drive.cpp" << std::endl << msg
             << std::endl;
   std::exit(EXIT_FAILURE);
 }
@@ -290,7 +290,7 @@ Real Refresh(Mesh *pm, const std::vector<Real> &sh, const bool energy) {
     ref_ = true;
     TakeRef(pm);
     if (global_variable::my_rank == 0) {
-      std::cout << "he_drive: live gravity reference taken at cycle " << pm->ncycle
+      std::cout << "star_drive: live gravity reference taken at cycle " << pm->ncycle
                 << ", t = " << pm->time << " (M_int table " << mref_ << ")" << std::endl;
     }
     return 0.0;
@@ -409,29 +409,29 @@ bool LiveOn() {return live_;}
 
 void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a) {
   a_ = a;
-  const bool hinf = pin->DoesParameterExist("problem","he_bc_inner_table");
-  const bool hlive = pin->DoesParameterExist("problem","he_gm_live") &&
-                     pin->GetBoolean("problem","he_gm_live");
+  const bool hinf = pin->DoesParameterExist("problem","star_bc_inner_table");
+  const bool hlive = pin->DoesParameterExist("problem","star_gm_live") &&
+                     pin->GetBoolean("problem","star_gm_live");
   radvet::RadiationVet *pm1 = pm->pmb_pack->pradvet;
   bool led = hinf || hlive;
-  if (pin->DoesParameterExist("problem","he_drive_ledger")) {
-    led = pin->GetBoolean("problem","he_drive_ledger");
+  if (pin->DoesParameterExist("problem","star_drive_ledger")) {
+    led = pin->GetBoolean("problem","star_drive_ledger");
     if (!led && (hinf || hlive)) {
-      Fatal("problem/he_drive_ledger = false is not allowed with he_bc_inner_table or "
-            "he_gm_live (their state travels with the ledger)");
+      Fatal("problem/star_drive_ledger = false is not allowed with star_bc_inner_table "
+            "or star_gm_live (their state travels with the ledger)");
     }
   }
-  if (pin->DoesParameterExist("problem","he_drive_closure_lin") &&
-      pin->GetString("problem","he_drive_closure_lin") != "const") {
-    Fatal("problem/he_drive_closure_lin = table is removed with the rad_vet inner flux "
+  if (pin->DoesParameterExist("problem","star_drive_closure_lin") &&
+      pin->GetString("problem","star_drive_closure_lin") != "const") {
+    Fatal("problem/star_drive_closure_lin = table is removed with the rad_vet inner flux "
           "table; only const");
   }
   on_ = led;
   pmesh_ = pm;
   if (!on_) {
     if (rst_have_ && global_variable::my_rank == 0) {
-      std::cout << "he_drive: the restart file carries a drive trailer but no drive key "
-                << "is named: ignored" << std::endl;
+      std::cout << "star_drive: the restart file carries a drive trailer but no drive "
+                << "key is named: ignored" << std::endl;
     }
     return;
   }
@@ -440,10 +440,10 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
   if (pm->mesh_indcs.nx1 != indcs.nx1) {
     Fatal("the drive needs ONE MeshBlock along x1 (mesh nx1 = meshblock nx1)");
   }
-  t0_ = pin->GetOrAddReal("problem","he_drive_t0",0.0);
-  every_ = pin->GetOrAddInteger("problem","he_gm_live_every",1);
+  t0_ = pin->GetOrAddReal("problem","star_drive_t0",0.0);
+  every_ = pin->GetOrAddInteger("problem","star_gm_live_every",1);
   if (every_ < 1) {
-    Fatal("problem/he_gm_live_every must be >= 1");
+    Fatal("problem/star_gm_live_every must be >= 1");
   }
   std::snprintf(logfn_, sizeof(logfn_), "%s.hsdrive.txt",
                 pin->GetString("job","basename").c_str());
@@ -471,23 +471,25 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
     Fatal("the drive ledger supports <time>/integrator = rk1 | rk2 | rk3");
   }
   if (hinf) {
-    if (!a.binf) Fatal("problem/he_bc_inner_table needs problem/he_bc_inner = inflow");
-    const std::string fn = pin->GetString("problem","he_bc_inner_table");
+    if (!a.binf) {
+      Fatal("problem/star_bc_inner_table needs problem/star_bc_inner = inflow");
+    }
+    const std::string fn = pin->GetString("problem","star_bc_inner_table");
     const std::string err = itab_.Read(fn, 3);
-    if (!err.empty()) Fatal("problem/he_bc_inner_table: " + err);
+    if (!err.empty()) Fatal("problem/star_bc_inner_table: " + err);
     if (!(a.rho_rin > 0.0 && a.eint_rin > 0.0)) {
-      Fatal("problem/he_bc_inner_table: the initial column at r_in is not positive");
+      Fatal("problem/star_bc_inner_table: the initial column at r_in is not positive");
     }
     inf_ = true;
   }
   if (hlive) {
-    if (a.pointmass) Fatal("problem/he_gm_live needs he_gravity = wb");
-    if (a.bc_hse) Fatal("problem/he_gm_live does not support he_bc_outer = hse");
-    if (!(a.gcode > 0.0)) Fatal("problem/he_gm_live needs <units> (G in code units)");
-    if (pin->DoesParameterExist("problem","he_gm_table")) {
-      const std::string fn = pin->GetString("problem","he_gm_table");
+    if (a.pointmass) Fatal("problem/star_gm_live needs star_gravity = wb");
+    if (a.bc_hse) Fatal("problem/star_gm_live does not support star_bc_outer = hse");
+    if (!(a.gcode > 0.0)) Fatal("problem/star_gm_live needs <units> (G in code units)");
+    if (pin->DoesParameterExist("problem","star_gm_table")) {
+      const std::string fn = pin->GetString("problem","star_gm_table");
       const std::string err = mtab_.Read(fn, 1);
-      if (!err.empty()) Fatal("problem/he_gm_table: " + err);
+      if (!err.empty()) Fatal("problem/star_gm_table: " + err);
       mtab_on_ = true;
     }
     live_ = true;
@@ -521,7 +523,7 @@ void Setup(ParameterInput *pin, Mesh *pm, const bool restart, const SetupArgs &a
   }
   tprev_ = pm->time;
   if (global_variable::my_rank == 0) {
-    std::cout << "he_drive: ledger on (log " << logfn_ << " every cycle), inflow table "
+    std::cout << "star_drive: ledger on (log " << logfn_ << " every cycle), inflow table "
               << (inf_ ? "on" : "off")
               << ", live gravity " << (live_ ? "on" : "off");
     if (live_) {
@@ -637,7 +639,7 @@ void RestartApply(Mesh *pm) {
   }
   if (!live_ && have && ref_ &&
       (dmint_ != 0.0 || ddm_ != std::vector<Real>(nx1_, 0.0))) {
-    Fatal("the restart state carries a live-gravity increment: keep problem/he_gm_live "
+    Fatal("the restart state carries a live-gravity increment: keep problem/star_gm_live "
           "= true on this restart");
   }
   // the straight run's end-of-cycle work after it wrote this restart file (Cycle: the

@@ -38,7 +38,7 @@ Every block below makes two binaries from the same flags:
 
 - `build_tests/src/athena`, with the built-in problem generators: for the test suite
   (`tests/vet_clean`) and the notebooks;
-- `build_star/src/athena`, with `-D PROBLEM=he_star_vet`: for the 3-D star decks. It
+- `build_star/src/athena`, with `-D PROBLEM=star_vet`: for the 3-D star decks. It
   contains no built-in test problems.
 
 `-D CMAKE_CXX_FLAGS=-ffp-contract=off` makes CPU and GPU agree to round-off; keep it.
@@ -54,7 +54,7 @@ OPTS="-D CMAKE_BUILD_TYPE=Release -D CMAKE_CXX_COMPILER=mpicxx
   -D Athena_ENABLE_MPI=ON -D Athena_ENABLE_OPENMP=ON
   -D CMAKE_CXX_FLAGS=-ffp-contract=off -D Athena_VET_VGD_NMAX=4096"
 cmake -S . -B build_tests $OPTS
-cmake -S . -B build_star $OPTS -D PROBLEM=he_star_vet
+cmake -S . -B build_star $OPTS -D PROBLEM=star_vet
 make -C build_tests -j 16 athena
 make -C build_star -j 16 athena
 ```
@@ -73,7 +73,7 @@ OPTS="-D CMAKE_BUILD_TYPE=Release -D CMAKE_CXX_COMPILER=$PWD/kokkos/bin/nvcc_wra
   -D Kokkos_ENABLE_CUDA=On -D Kokkos_ARCH_$ARCH=On -D Kokkos_ENABLE_IMPL_CUDA_MALLOC_ASYNC=OFF
   -D Athena_ENABLE_MPI=ON -D CMAKE_CXX_FLAGS=-ffp-contract=off -D Athena_VET_VGD_NMAX=512"
 cmake -S . -B build_tests $OPTS
-cmake -S . -B build_star $OPTS -D PROBLEM=he_star_vet
+cmake -S . -B build_star $OPTS -D PROBLEM=star_vet
 make -C build_tests -j 32 athena
 make -C build_star -j 32 athena
 ```
@@ -97,7 +97,7 @@ OPTS="-D CMAKE_BUILD_TYPE=Release -D CMAKE_CXX_COMPILER=$PWD/kokkos/bin/nvcc_wra
   -D Kokkos_ENABLE_CUDA=On -D Kokkos_ARCH_$ARCH=On -D Kokkos_ENABLE_IMPL_CUDA_MALLOC_ASYNC=OFF
   -D Athena_ENABLE_MPI=ON -D CMAKE_CXX_FLAGS=-ffp-contract=off -D Athena_VET_VGD_NMAX=512"
 cmake -S . -B build_tests $OPTS
-cmake -S . -B build_star $OPTS -D PROBLEM=he_star_vet
+cmake -S . -B build_star $OPTS -D PROBLEM=star_vet
 make -C build_tests -j 32 athena
 make -C build_star -j 32 athena
 ```
@@ -115,7 +115,7 @@ OPTS="-D CMAKE_BUILD_TYPE=Release -D CMAKE_CXX_COMPILER=$(which hipcc)
   -D Kokkos_ENABLE_HIP=On -D Kokkos_ARCH_$ARCH=On -D Kokkos_ENABLE_IMPL_HIP_MALLOC_ASYNC=OFF
   -D Athena_ENABLE_MPI=ON -D CMAKE_CXX_FLAGS=-ffp-contract=off -D Athena_VET_VGD_NMAX=512"
 cmake -S . -B build_tests $OPTS
-cmake -S . -B build_star $OPTS -D PROBLEM=he_star_vet
+cmake -S . -B build_star $OPTS -D PROBLEM=star_vet
 make -C build_tests -j 32 athena
 make -C build_star -j 32 athena
 ```
