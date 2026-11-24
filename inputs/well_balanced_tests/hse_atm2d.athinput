@@ -1,4 +1,8 @@
-# AthenaXXX input file for hot bubble test
+# Isothermal atmosphere at rest, gravity along -x2: the dynamic well-balanced scheme along
+# x2 (wb_dirs = all).  Build with -D PROBLEM=hse_atm.  The answer is the initial state:
+# 2-KE of the history <= 1e-24 from t = 40 (1e-28 from t = 80; 2e-16 without the scheme).
+# With wb_option = isothermal (the exact closure here) mass and tot-E also stay at their
+# t = 0 values; isentropic first settles by 1e-5 in mass.
 
 <comment>
 problem   = HSE atm
@@ -46,9 +50,11 @@ reconstruct     = plm    # spatial reconstruction method
 rsolver         = hllc   # Riemann-solver to be used
 gamma           = 1.66667         # gamma = C_p/C_v
 etotgrav = true
-#wellbalance = true
-#wellbalance_reconst = true
-wellbalance_local = true
+#wellbalance_static = true
+#wellbalance_static_reconst = true
+wellbalance_dynamic = true
+wb_x1 = true
+wb_dirs = all
 wb_option = isentropic
 
 <problem>
