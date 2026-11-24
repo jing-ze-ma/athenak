@@ -104,3 +104,14 @@ CLEAN WARNING cycle 779 t2s 2: implicit_pos_floor created 1.459516e+42 of E (nei
 CLEAN WARNING cycle 779 t2s 2: stage solve failed, the step is redone with backward Euler (stage fallback 2)
 CLEAN WARNING cycle 779 t2s 2: the implicit_pos_floor creation 1.459516e+42 of the failed attempt is discarded with it
 ```
+
+## s/cyc before / after FOFC (orion 24q; COORD relaunched all 4 with hydro/fofc=true hydro/fofc_retest=true; log.0 = no FOFC, log.1 = FOFC)
+| star | log.0 (no FOFC) | log.1 (FOFC) | change |
+|---|---|---|---|
+| bsg | 0.673 (c50-150), 0.759 (c1050-1300, toward the bad 00002; dt fell to 8.9e-6) | 0.657 (c600-700, first after the restart from 00001), 0.532 (c1900-2150) | early window -2 %; late windows not comparable (log.0 was collapsing) |
+| t9l62 | 2.303 (c50-150), 2.344 (c150-400) | 2.386 (c500-600), 2.412 (c550-800) | +3 % |
+| m35mms | 0.605 (c50-150), 0.757 (c1600-1850) | 0.595 (c1950-2050), 0.682 (c3150-3400) | about -2 % at the start of each log; different phases later |
+| m35zams | 0.340 (c3410-3460) | 0.370 (c3480-3500), 0.366 (c6370-6420) | +8 % |
+
+- From the 50-cycle (m35zams: 10-cycle) elapsed prints; windows as listed. The runs are on different cycles, so this is a rough comparison. dt is unchanged (m35mms 12.0076; t9l62 96.85; m35zams 2.49).
+- Watch re-armed (prod_rc3_1124/prodwatch2.sh, 5 min): it posts every CLEAN WARNING with context (no stop). On FATAL / 'created inf' it posts and COORD asks the USER; only m35mms 'created inf' writes STOP at once (USER pre-approved). Status every 2 h.
