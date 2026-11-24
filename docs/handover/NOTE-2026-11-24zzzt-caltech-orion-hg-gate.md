@@ -16,3 +16,16 @@ ls: cannot access '/resnick/groups/carnegie_poc/jingze/hg_gate_1124/HT/bin/*.bin
 ```
 - dumps absent; only the +6 one counts; they are deleted after this.
 **POST CHECK FAILED: fewer than 4 seam_vet rows**
+
+## H0 / H1 / HT (11-24 14:12)
+- H0: 2026-11-24 14:12:13 rc=134 (srun) ended: Aborted wall=52 s CW 0 FATAL 0 inf 0 DT_RETRY 0 fallback 0; peak GPU memory MiB 140457; last log line: `srun: error: hpc-sm-02-09: task 1: Aborted (core dumped)`
+- H1: 2026-11-24 14:12:16 rc=134 (srun) ended: Aborted wall=55 s CW 0 FATAL 0 inf 0 DT_RETRY 0 fallback 0; peak GPU memory MiB 140869; last log line: `srun: error: hpc-sm-02-03: task 3: Aborted (core dumped)`
+- HT: 2026-11-24 14:12:18 rc=134 (srun) ended: Aborted wall=57 s CW 0 FATAL 0 inf 0 DT_RETRY 0 fallback 0; peak GPU memory MiB 136743; last log line: `srun: error: hpc-sm-01-17: task 3: Aborted (core dumped)`
+| arm | rows | dt min/median(15-51)/max | s/cyc | s per sim s | CW/FATAL/inf/DT_RETRY | fallbacks/BE/retries/lines | SDO lines, K1K2<0 mean share, max ratio, cells >0.1, >1, ef<=0 | L_top/L_in start..end |
+|---|---|---|---|---|---|---|---|---|
+| H0 | 1 | 90.00 / 90.00 / 90.00 | nan | nan | 0 / 0 / 0 / 0 | nan / nan / nan / 0 | 1, 0.3464, 2.366e-02, 0, 0, 0 | 0.9628 .. 0.9628 |
+| H1 | 1 | 90.00 / 90.00 / 90.00 | nan | nan | 0 / 0 / 0 / 0 | nan / nan / nan / 0 | 1, 0.3464, 6.109e-01, 9433, 0, 0 | 0.9628 .. 0.9628 |
+| HT | 1 | 90.00 / 90.00 / 90.00 | nan | nan | 0 / 0 / 0 / 0 | nan / nan / nan / 0 | 1, 0.3478, 3.419e-02, 0, 0, 0 | 0.9632 .. 0.9632 |
+no pair H0 H1
+no pair H0 HT
+**POST CHECK FAILED: no verdict**
