@@ -1,0 +1,49 @@
+<time> dt_retry on: fac 0.5 max 8 ngood 20 grow 1.1 views minimal cap -1
+
+Setup complete, executing task list(s)...
+
+<hydro> floor_audit cycle 6457 [update] cell-c2p 0 e_c<=0 0 kedom 0 sub_tfloor 0 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 0 skip_de 0 skip_dm 0 above_table_top 0
+<hydro> floor_audit cycle 6457 [refresh] cell-c2p 67108864 e_c<=0 0 kedom 9 sub_tfloor 12178 sub_edge 0 dual 0 dual_de 0 dual_sub_tfloor 0 floored 0 (kedom 0) floor_de 0 <r> 0 <r>_de 0 skip(dfloor/vceil) 0 skip_de 0 skip_dm 0 above_table_top 0
+<hydro> floor_audit cycle 6457 pay: paid 0 unpaid 0 given_to_rad 0 cells 0 | fofc_retest: retested 0 unflagged 0
+<time> dt_retry checkpoint: 1434 members, 406 Views (11 copied, 5211.18 MB on rank 0): hyd.u0 744.097 hyd.w0 744.097 hyd.wder 297.639 hyd.wtemp 148.819 m1.f0x1 149.107 m1.f0x2 149.93 m1.f0x3 149.93 m1.t2k1 1190.55 m1.t2pf1 446.458 m1.u0 595.277 m1.opac 595.277
+terminate called after throwing an instance of 'std::runtime_error'
+terminate called after throwing an instance of 'std::runtime_error'
+terminate called after throwing an instance of 'std::runtime_error'
+terminate called after throwing an instance of 'std::runtime_error'
+  what():  Error: Kokkos::deep_copy with no available copy mechanism: from source view ("cons") to destination view ("cons").
+There is no common execution space that can access both source's space
+(Cuda) and destination's space (Host), so source and destination
+must be contiguous and have the same layout.
+
+  what():  Error: Kokkos::deep_copy with no available copy mechanism: from source view ("cons") to destination view ("cons").
+There is no common execution space that can access both source's space
+(Cuda) and destination's space (Host), so source and destination
+must be contiguous and have the same layout.
+
+  what():  Error: Kokkos::deep_copy with no available copy mechanism: from source view ("cons") to destination view ("cons").
+There is no common execution space that can access both source's space
+(Cuda) and destination's space (Host), so source and destination
+must be contiguous and have the same layout.
+
+[hpc-sm-02-11:403323] *** Process received signal ***
+  what():  Error: Kokkos::deep_copy with no available copy mechanism: from source view ("cons") to destination view ("cons").
+There is no common execution space that can access both source's space
+(Cuda) and destination's space (Host), so source and destination
+must be contiguous and have the same layout.
+
+[hpc-sm-02-11:403321] *** Process received signal ***
+[hpc-sm-02-11:403321] Signal: Aborted (6)
+[hpc-sm-02-11:403321] Signal code:  (-6)
+[hpc-sm-02-11:403322] *** Process received signal ***
+[hpc-sm-02-11:403322] Signal: Aborted (6)
+[hpc-sm-02-11:403322] Signal code:  (-6)
+[hpc-sm-02-11:403323] Signal: Aborted (6)
+[hpc-sm-02-11:403323] Signal code:  (-6)
+[hpc-sm-02-11:403324] *** Process received signal ***
+[hpc-sm-02-11:403324] Signal: Aborted (6)
+[hpc-sm-02-11:403324] Signal code:  (-6)
+[hpc-sm-02-11:403321] [ 0] /lib64/libc.so.6(+0x3e730)[0x7fab9343e730]
+[hpc-sm-02-11:403322] [ 0] /lib64/libc.so.6(+0x3e730)[0x7f19d4e3e730]
+[hpc-sm-02-11:403323] [ 0] /lib64/libc.so.6(+0x3e730)[0x7ff74de3e730]
+[hpc-sm-02-11:403324] [ 0] /lib64/libc.so.6(+0x3e730)[0x7fa48963e730]
+[hpc-sm-02-11:403321] [ 1] /lib64/libc.so.6(+0x8ba6c)[0x7fab9348ba6c]

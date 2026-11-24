@@ -46,3 +46,18 @@ GATE PASS (with rad_m1/vet_gd_theta_seam_sym=true in a gate-deck copy; the uncha
 - (2) The gate on a COPY of the gate deck with vet_gd_theta_seam_sym = true + vet_gd_wall_sym = true in <rad_m1> gives no FATAL, so no key had to be dropped (implicit_pos_floor_solve / cs_cross_mono are not in this gate deck).
   **pass 0 9.534e-02 | pass 1 3.686e-11 | pass 2 9.994e-15**, converged after 3 passes, F/c 2.9006e+42 -1.7966e+36 -2.0678e+33 (caltech_results/H200CHK/gate_ia123rc1_da92efe70_seam_wall.txt). Identical to seam_sym alone.
 - (3) pass 1 equals 3.686e-11 and pass 2 is 1e-14 <= 1e-13, so your criterion is met. WD and K0 have been running in parallel since 23:21 (start lines above).
+
+## (11-23 23:13) **WD CRASHED in its first cycle (rc1 code error, not a physics stop)**: please fix on your side
+- WD (rc1 da92efe70, md5 fe0ef3cd; WD_t9l62_restart.args + time/nlim=6480 job/final_restart=false + rst/bin dt 1e30; from rst_keep/t9l62.00012; hpc-sm-02-11, 4 ranks) started 23:10:21. It aborted at 23:11:18 on all 4 ranks (core dumped).
+  It got through startup, the first floor_audit lines for cycle 6457 and the dt_retry checkpoint line, then:
+```
+  what():  Error: Kokkos::deep_copy with no available copy mechanism: from source view ("cons") to destination view ("cons").
+There is no common execution space that can access both source's space
+(Cuda) and destination's space (Host), so source and destination
+must be contiguous and have the same layout.
+
+```
+- So a Kokkos::deep_copy of a Cuda view 'cons' into a Host view 'cons' with no common space. It sits right after `<time> dt_retry checkpoint: 1434 members, 406 Views ...`, so it is likely the floor_audit_worst / dt_retry path.
+  The K0rc1 arm (m35mms, same binary, no floor_audit_worst / floor_from_ekin) runs normally, so the trigger is in WD's extra keys.
+- The 'CW 0 ... FATAL 0' WD line above is just the counts of a 1-cycle log; the run did NOT complete. The echo checks did pass: floor_from_ekin = true, floor_audit_worst = true and clean_gas_secant = max_stage2 are all 'added from the command line'; the never-read list is empty.
+- Files: caltech_results/IA121_T9L62/arm_WD/crash_context.txt (startup tail + backtrace), log.0.gz, run.log, grep.txt. I did not retry and did not patch anything. hpc-sm-02-11 is free again.
