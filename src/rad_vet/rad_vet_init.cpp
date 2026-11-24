@@ -5,9 +5,8 @@
 //========================================================================================
 //! \file rad_vet_init.cpp
 //! \brief set-up of the implicit radiation (<rad_vet>/transport = implicit): the keys the
-//! clean steps read (ImplicitInit), the x1 partition (ImplicitPartitionInit), the
-//! run-end report (ImplicitReport, EventTotals) and the face-flux restart slabs
-//! (FaxRst*).
+//! clean steps read (ImplicitInit), the run-end report (ImplicitReport, EventTotals) and
+//! the face-flux restart slabs (FaxRst*).
 
 #include <algorithm>
 #include <cmath>
@@ -574,7 +573,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   }
 
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  part_nblk = 1;
   trans_on = pmy_pack->pmesh->multi_d;
   trans_x3 = pmy_pack->pmesh->three_d;
   if (!trans_on && global_variable::my_rank == 0) {
@@ -697,7 +695,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
       Kokkos::deep_copy(vcol_q, marshak_q);
     }
   }
-  ImplicitPartitionInit();
 
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_vet>: transport=implicit"
@@ -719,157 +716,6 @@ void RadiationVet::ImplicitInit(ParameterInput *pin) {
   MRInit(pin);         // implicit_mr_every (rad_vet_mr.cpp)
   if (time_scheme == M1_TIME_BE && mr_every <= 1) {
     Kokkos::realloc(u1, u1.extent(0), M1_NVAR, 1, 1, 1);
-  }
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void RadiationVet::ImplicitPartitionInit
-//! \brief milestone 3b, LIMIT 4: build the topology of the x1 stacks and allocate the
-//! gather/scatter and halo buffers.  A "stack" is the set of MeshBlocks that share the
-//! same (x2,x3) footprint, ordered by their x1 logical location; its ROOT is the block
-//! with the lowest one.  Uniform mesh only (the caller has already fatalled on SMR/AMR
-//! and on a non-integer block count along x1), so the stack of a block is found by a
-//! scan of the global LogicalLocation list.
-//!
-//! Nothing is allocated and nothing is communicated when part_nblk == 1: the 3a path is
-//! then bitwise what it was.
-
-void RadiationVet::ImplicitPartitionInit() {
-  part_nroot = 0;
-  part_nx1g = 0;
-  part_nlay = 0;
-  part_nqa = M1_NHALO_A;
-  part_any_mpi = false;
-
-  Mesh *pm = pmy_pack->pmesh;
-  auto &indcs = pm->mb_indcs;
-  int nmb = pmy_pack->nmb_thispack;
-  int g0 = pmy_pack->gids;
-  // the three per-block tables are ALWAYS allocated: ImplicitSolve reads part_pos in
-  // every kernel, and with one MeshBlock per column the defaults (position 0 of a stack
-  // of one) select exactly the 3a branches.
-  Kokkos::realloc(part_pos, nmb);
-  Kokkos::realloc(part_slot, nmb);
-  Kokkos::realloc(part_nbr, 2*nmb);
-  for (int m=0; m<nmb; ++m) {
-    part_pos.h_view(m) = 0;
-    part_slot.h_view(m) = -1;
-    part_nbr.h_view(2*m) = -1;
-    part_nbr.h_view(2*m+1) = -1;
-  }
-  if (part_nblk <= 1) {
-    part_pos.modify_host();
-    part_pos.sync_device();
-    part_slot.modify_host();
-    part_slot.sync_device();
-    part_nbr.modify_host();
-    part_nbr.sync_device();
-    return;
-  }
-  part_nx1g = part_nblk*indcs.nx1;
-  part_nlay = std::min(indcs.ng, 2);
-
-  // (1) for every LOCAL block: its position in the stack, the global ids of the stack
-  // members and of its two x1 neighbours.
-  part_rootgid.assign(nmb, -1);
-  part_rootrank.assign(nmb, -1);
-  part_nbrrank.assign(2*nmb, -1);
-  part_nbrgid.assign(2*nmb, -1);
-  std::vector<int> stack(part_nblk);
-  for (int m=0; m<nmb; ++m) {
-    LogicalLocation &lm = pm->lloc_eachmb[g0+m];
-    for (int p=0; p<part_nblk; ++p) {stack[p] = -1;}
-    for (int g=0; g<pm->nmb_total; ++g) {
-      LogicalLocation &lg = pm->lloc_eachmb[g];
-      if (lg.lx2 == lm.lx2 && lg.lx3 == lm.lx3 && lg.level == lm.level) {
-        if (lg.lx1 >= 0 && lg.lx1 < part_nblk) {stack[lg.lx1] = g;}
-      }
-    }
-    for (int p=0; p<part_nblk; ++p) {
-      if (stack[p] < 0) {
-        ImplFatal("<rad_vet>/implicit_partition = gather: the x1 stack of a MeshBlock is "
-                  "incomplete (a non-uniform mesh?)");
-      }
-    }
-    int pos = static_cast<int>(lm.lx1);
-    part_pos.h_view(m) = pos;
-    part_rootgid[m] = stack[0];
-    part_rootrank[m] = pm->rank_eachmb[stack[0]];
-    if (pos > 0) {
-      part_nbrgid[2*m] = stack[pos-1];
-      part_nbrrank[2*m] = pm->rank_eachmb[stack[pos-1]];
-    }
-    if (pos < part_nblk-1) {
-      part_nbrgid[2*m+1] = stack[pos+1];
-      part_nbrrank[2*m+1] = pm->rank_eachmb[stack[pos+1]];
-    }
-    for (int s=0; s<2; ++s) {
-      int gn = part_nbrgid[2*m+s];
-      bool loc = (gn >= 0) && (part_nbrrank[2*m+s] == global_variable::my_rank);
-      part_nbr.h_view(2*m+s) = loc ? (gn - g0) : -1;
-      if (gn >= 0 && part_nbrrank[2*m+s] != global_variable::my_rank) {
-        part_any_mpi = true;
-      }
-    }
-    if (part_rootrank[m] != global_variable::my_rank) {part_any_mpi = true;}
-  }
-
-  // (2) the local ROOTS and their member lists
-  part_mrank.clear();
-  part_mgid.clear();
-  std::vector<int> rootmb;
-  for (int m=0; m<nmb; ++m) {
-    if (part_pos.h_view(m) != 0) continue;
-    rootmb.push_back(m);
-    LogicalLocation &lm = pm->lloc_eachmb[g0+m];
-    for (int p=0; p<part_nblk; ++p) {
-      int gfound = -1;
-      for (int g=0; g<pm->nmb_total; ++g) {
-        LogicalLocation &lg = pm->lloc_eachmb[g];
-        if (lg.lx2 == lm.lx2 && lg.lx3 == lm.lx3 && lg.level == lm.level && lg.lx1 == p) {
-          gfound = g;
-        }
-      }
-      part_mgid.push_back(gfound);
-      part_mrank.push_back(pm->rank_eachmb[gfound]);
-      if (pm->rank_eachmb[gfound] != global_variable::my_rank) {part_any_mpi = true;}
-    }
-  }
-  part_nroot = static_cast<int>(rootmb.size());
-  for (int m=0; m<nmb; ++m) {
-    int sl = -1;
-    if (part_rootrank[m] == global_variable::my_rank) {
-      for (int s=0; s<part_nroot; ++s) {
-        if (rootmb[s] + g0 == part_rootgid[m]) {sl = s;}
-      }
-    }
-    part_slot.h_view(m) = sl;
-  }
-  part_pos.modify_host();
-  part_pos.sync_device();
-  part_slot.modify_host();
-  part_slot.sync_device();
-  part_nbr.modify_host();
-  part_nbr.sync_device();
-
-  // (3) buffers
-  int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
-  int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
-  Kokkos::realloc(part_sys, std::max(part_nroot,1), 6, ncells3, ncells2, part_nx1g);
-  Kokkos::deep_copy(part_sys, 0.0);
-  int nrow = 4*ncells3*ncells2*indcs.nx1;
-  Kokkos::realloc(part_sbuf, nmb, nrow);
-  Kokkos::realloc(part_rbuf, std::max(part_nroot*part_nblk,1), nrow);
-  Kokkos::realloc(part_sbuf_h, nmb, nrow);
-  Kokkos::realloc(part_rbuf_h, std::max(part_nroot*part_nblk,1), nrow);
-  int nhal = M1_NHALO_A*part_nlay*ncells3*ncells2;
-  Kokkos::realloc(part_hbuf, nmb, 4, nhal);
-  Kokkos::realloc(part_hbuf_h, nmb, 4, nhal);
-
-  if (global_variable::my_rank == 0) {
-    std::cout << "         implicit_partition=gather: " << part_nblk
-              << " MeshBlocks per x1 column, " << part_nx1g << " rows per gathered line, "
-              << part_nlay << " halo layers" << std::endl;
   }
 }
 

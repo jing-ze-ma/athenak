@@ -1356,10 +1356,6 @@ void M1CsTanFaceOp(const VT &tt, const int c0, const G &tg, const int e, const i
   }
 }
 
-// the six LAGGED quantities the x1 halo of the partitioned solve exchanges once per
-// Picard iteration (halo "A"), in the order the pack kernel uses.  The seventh exchange
-// (halo "B") carries M1_IW_EP alone, after the line solve has accepted the new iterate.
-constexpr int M1_NHALO_A = 6;
 //----------------------------------------------------------------------------------------
 //! MILESTONE 3g, the FROZEN-DENSITY EOS CACHE, <rad_vet>/implicit_eos_cache.
 //!

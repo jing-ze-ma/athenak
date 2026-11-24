@@ -935,35 +935,6 @@ class RadiationVet {
   // carries M1_VGD_HRNX components: + C1 = sum w |I - S|/J, eps, J (E units)
   Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> vgd_pin_cnt;
   DvceArray5D<Real> ifw2, ifw3;
-  // the partitioned (gathered) line solve, LIMIT 4.  Every rank that owns a piece of a
-  // column sends its (a,b,c,r) rows to the column's ROOT rank, which runs the identical
-  // serial Thomas sweep and sends the solution back.
-  // MILESTONE 3b, LIMIT 4: every rank that owns a piece of an x1 column sends the
-  // assembled rows (a,b,c,r) of that column to the ROOT block (the one with the lowest
-  // x1 logical location), which runs the IDENTICAL serial Thomas sweep on the whole
-  // column and sends the solution back.  The arithmetic order is literally unchanged, so
-  // 1, 2 and 4 MeshBlocks along x1 agree to the last bit by construction.
-  int part_nblk{};              // MeshBlocks along x1 of one column (1 = no partition)
-  int part_nroot{};             // x1 stacks whose root block is on THIS rank
-  int part_nx1g{};              // part_nblk*nx1, rows of one gathered column
-  int part_nlay{};              // ghost layers the x1 halo of the solve exchanges
-  int part_nqa{};               // quantities of halo A (see ImplicitX1Halo)
-  DualArray1D<int> part_pos;    // (nmb) position of block m in its x1 stack
-  DualArray1D<int> part_slot;   // (nmb) gather slot of m's root, or -1 if it is remote
-  DualArray1D<int> part_nbr;    // (2*nmb) local index of m's x1 neighbours (lo,hi), or -1
-  DvceArray5D<Real> part_sys;   // (nroot,6,nk,nj,nx1g) gathered rows + Thomas scratch
-  DvceArray2D<Real> part_sbuf;  // (nmb, 4*nk*nj*nx1) MPI staging of a member block
-  DvceArray2D<Real> part_rbuf;  // (nroot*nblk, 4*nk*nj*nx1) MPI staging of a root
-  HostArray2D<Real> part_sbuf_h, part_rbuf_h;
-  DvceArray3D<Real> part_hbuf;  // (nmb,4,nq*nlay*nk*nj) x1 halo: send lo/hi, recv lo/hi
-  HostArray3D<Real> part_hbuf_h;
-  std::vector<int> part_mrank;  // (nroot*nblk) rank of each member of a rooted stack
-  std::vector<int> part_mgid;   // (nroot*nblk) global id of each member
-  std::vector<int> part_rootgid;  // (nmb) global id of block m's root
-  std::vector<int> part_rootrank;  // (nmb) rank of block m's root
-  std::vector<int> part_nbrrank;  // (2*nmb) rank of m's x1 neighbours, or -1
-  std::vector<int> part_nbrgid;   // (2*nmb) global id of m's x1 neighbours, or -1
-  bool part_any_mpi{};          // true if any stack or x1 halo crosses a rank
   // <rad_vet>/implicit_gas_src = matched (default: the term-by-term deposit
   // above, bitwise) | conservative: the gas takes minus the radiation's own source of the
   // solve, dm = -(F'_c - F^old_c)/(c chat) - (1/2) sum_faces Z_f, with F_c the STORED
@@ -2106,8 +2077,6 @@ class RadiationVet {
   std::array<uint32_t, 5> CleanHaloKey(const std::vector<CleanGSeg<T>> &sg);
   CleanHaloList::Mask &CleanHaloMask(const std::array<uint32_t, 5> &key);
   Real cln_nsolve = 0.0, cln_nit = 0.0, cln_nfail = 0.0, cln_nneg = 0.0;
-  //! milestone 3b LIMIT 4: build the x1 stack topology of the gathered line solve
-  void ImplicitPartitionInit();
   //! exchange the x1 ghost layers the multi-block solve needs; `eponly` picks the
   //! one-quantity set (E of the new iterate) instead of the six lagged ones
   //! gather the assembled rows onto the roots, run Thomas there, scatter back
