@@ -1135,7 +1135,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   nstage = M1_NSTAGE;
   impl_cfl = -1.0;
-  impl_opac_newton = false;
   impl_halo_ipc = false;
   hi_state = 0;
   hi_seq = 0;
@@ -1154,12 +1153,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   impl_nstep = 0.0;
   impl_itsum = 0.0;
   impl_itmax = 0.0;
-  impl_nfail = 0.0;
   // ---- milestone 3b phase B
   impl_solver = M1_ISOLV_LINE_JACOBI;
-  impl_linsum = 0.0;
-  impl_linmax = 0.0;
-  impl_lin_tol = 1.0e-10;
   trans_on = false;
   trans_x3 = false;
   pbval_th = nullptr;
@@ -1168,23 +1163,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // ---- milestone 3b phase C
   bicg_on = false;
   pbval_kr = nullptr;
-  bcg_nsolve = 0.0;
-  bcg_itsum = 0.0;
-  bcg_itmax = 0.0;
-  bcg_nbreak = 0.0;
-  bcg_nfall = 0.0;
-  bcg_nkeep = 0.0;
-  impl_bcg_maxrst = 2;
-  impl_bcg_keep = false;
   impl_prec_fb = -1;
   bcg_capped = false;
-  bcg_npfb = 0.0;
-  bcg_pfbit = 0.0;
-  bcg_nred = 0.0;
   bcg_r0rel = 0.0;
-  impl_lres_test = true;
-  impl_ew_max = 0.0;
-  impl_lin_cnorm = 0.0;
   ew_fprev = 0.0;
   ew_etaprev = 0.0;
   impl_pred = false;
@@ -1193,15 +1174,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // ---- milestone 3b phase D
   impl_offdiag = M1_OD_LAGGED;
   od_now = M1_OD_LAGGED;
-  od_nfall = 0.0;
-  od_emin = 1.0e300;
   impl_vimp = false;
   vimp_now = false;
   t2_enth_be = false;
-  vimp_nfall = 0.0;
-  flr_ne = 0.0;
-  flr_ng = 0.0;
-  vimp_emin = 1.0e300;
   pbval_vm = nullptr;
   time_scheme = 0;
   t2_ok = false;
@@ -1220,39 +1195,19 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   pred2_dt = 0.0;
   t2_lin_save = 0.0;
   t2_onep_s = -1.0;
-  impl_crelax = 1.0;
-  impl_clag_step = false;
   impl_tlim = M1_TLIM_NONE;
   // ---- milestone 3e: Anderson acceleration of the Picard map
-  impl_accel = M1_IACC_NONE;
-  impl_and_m = 5;
-  impl_and_beta = 1.0;
-  impl_and_start = 1;
   aa_nh = 0;
   aa_head = 0;
   aa_hasp = false;
   aa_fnp = -1.0;
-  aa_nacc = 0.0;
-  aa_nrst = 0.0;
   // ---- milestone 3g: the gas-radiation energy coupling
-  impl_gas_newton = false;
-  impl_eos_cache = false;
-  impl_line_solver = 0;
-  impl_pcr_check = false;
   impl_halo_direct = false;
   halo_direct_on = false;
   impl_stencil = false;
   st_edges = true;
   impl_kfuse = 0;
   impl_prec = 0;
-  pcr_chk_max = 0.0;
-  pcr_chk_n = 0.0;
-  impl_ecnt = 2;
-  newt_nfb = 0.0;
-  gas_ncell = 0.0;
-  ec_nmiss = 0.0;
-  ec_emax = 0.0;
-  ec_tmax = 0.0;
   // ---- end of the 3a hook
   cfl_rad = pin->GetOrAddReal("rad_m1","cfl_rad",0.4);
   e_floor = pin->GetOrAddReal("rad_m1","e_floor",(FLT_MIN));

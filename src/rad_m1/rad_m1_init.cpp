@@ -4,30 +4,19 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_m1_init.cpp
-//! \brief set-up of the implicit radiation (<rad_m1>/transport = implicit): the key
-//! reading and checks (ImplicitInit), the x1 partition (ImplicitPartitionInit), the
-//! on-rank halo copies of the work array (ImplicitHalo*), the run-end report
-//! (ImplicitReport, EventTotals) and the face-flux restart slabs (FaxRst*).
-
-#include <float.h>
+//! \brief set-up of the implicit radiation (<rad_m1>/transport = implicit): the keys the
+//! clean steps read (ImplicitInit), the x1 partition (ImplicitPartitionInit), the ghost
+//! exchanges of the work array (ImplicitHalo*), the run-end report (ImplicitReport,
+//! EventTotals) and the face-flux restart slabs (FaxRst*).
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
-#include <cstdio>
-#include <cstdint>
 #include <cstdlib>
 #include <limits>
 #include <iostream>
-#include <iomanip>
-#include <sstream>
 #include <string>
-#include <tuple>
-#include <type_traits>
-#include <utility>
 #include <vector>
 
-#include "utils/eint_ledger.hpp"
 #include "rad_m1/rad_m1_t2reset.hpp"
 #include "athena.hpp"
 #include "globals.hpp"
@@ -35,22 +24,10 @@
 #include "mesh/mesh.hpp"
 #include "mesh/nghbr_index.hpp"
 #include "coordinates/coordinates.hpp"
-#include "coordinates/cubed_sphere.hpp"
-#include "driver/driver.hpp"
-#include "eos/eos.hpp"
 #include "utils/recipe.hpp"
-#include "utils/repro_sum.hpp"
-#include "rad_m1/rad_m1_layreduce.hpp"
-#include "rad_m1/m1_fluid.hpp"
-#include "hydro/hydro.hpp"
-#include "hydro/hydro_am.hpp"
-#include "reconstruct/plm.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_parfor.hpp"
-#include "rad_m1/rad_m1_closure.hpp"
-#include "rad_m1/rad_m1_opacity.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
-#include "utils/eint_from_cons.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -1302,26 +1279,15 @@ void RadiationM1::TmrMark(int c) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::EventTotals
-//! \brief fixbundle-1009 F4: the solver / limiter totals of this run (or restart) for the
-//! event log, all ranks (collective).  v[0..6] are decided on global reductions and are
-//! the same on every rank; v[7..12] are per-rank device counters, summed here.
-//!   0 BiCGStab breakdowns, 1 line-Jacobi fallbacks, 2 fallbacks that kept the Krylov
-//!   iterate (implicit_bcg_fallback = best), 3 APPLIED gas-Newton fallbacks,
-//!   4 solves switched to the gas root find, 5 od positivity drops, 6 vet_col_lat
-//!   positivity drops, 7 opac-Newton face terms dropped by the guard, 8 E floor raises
-//!   (write-back, cell-solves), 9 energy the floor CREATED (x volume), 10 of which the
-//!   solve undershoot (implicit_pos_floor_solve), 11 ApplyClosureLimits E raises,
-//!   12 ApplyClosureLimits |F| clips (active cells, every stage)
+//! \brief the limiter totals of this run (or restart) for the event log, all ranks
+//! (collective): per-rank device counters, summed here.  0..6 (the old solver's
+//! BiCGStab / Newton / positivity fallbacks) stay 0; 7 opac-Newton face terms dropped,
+//! 8 E floor raises (write-back, cell-solves), 9 energy the floor CREATED (x volume),
+//! 10 of which the solve undershoot, 11 ApplyClosureLimits E raises, 12
+//! ApplyClosureLimits |F| clips (active cells, every stage)
 
 void RadiationM1::EventTotals(Real *v) {
-  v[0] = bcg_nbreak;
-  v[1] = bcg_nfall;
-  v[2] = bcg_nkeep;
-  v[3] = newt_nfb;
-  v[4] = impl_gn_nsw;
-  v[5] = od_nfall;
-  v[6] = vlat_nfall;
-  for (int q = 7; q < 13; ++q) {v[q] = 0.0;}
+  for (int q = 0; q < 13; ++q) {v[q] = 0.0;}
   if (opn_nskip_d.extent_int(0) > 0) {
     auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), opn_nskip_d);
     v[7] = h(0);
@@ -1346,48 +1312,16 @@ void RadiationM1::EventTotals(Real *v) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitReport
-//! \brief one line at the end of the run with the solver statistics
+//! \brief the end-of-run lines of the implicit transport: the timers (implicit_timers),
+//! the multi-rate report and the positivity bookings of the clean steps
 
 void RadiationM1::ImplicitReport() {
   if (transport < M1_TRANSPORT_IMPLICIT_X1) return;
-  if ((impl_lin_tolcap > 0.0 || impl_lin_sktrue > 0.0) &&
-      global_variable::my_rank == 0) {
-    std::cout << "<rad_m1> implicit_lin_tolcap=" << impl_lin_tolcap
-              << " tolcap_last=" << impl_lin_tclast << " capped passes (rank 0)="
-              << impl_tclast_n << " stage=" << impl_lin_tcstage << " skip_true="
-              << impl_lin_sktrue << " skipped checks (rank 0)=" << impl_sktrue_n
-              << std::endl;
-  }
-  if ((impl_cons_final || dbg_cons_ledger) && global_variable::my_rank == 0) {
-    std::cout << "<rad_m1> implicit_cons_final=" << impl_cons_final
-              << " solves=" << cf_tot[2] << " extra passes after a mode fallback="
-              << cf_tot[3];
-    if (dbg_cons_ledger) {
-      std::cout << "; run sum V (c/chat) r=" << cf_tot[0] << " sum |.|=" << cf_tot[1]
-                << (impl_cons_final ? " (applied to E: removed from the leak)"
-                                    : " (NOT applied: the solves' energy error)");
-    }
-    std::cout << std::endl;
-  }
-  if (cs_geom && global_variable::my_rank == 0) {
-    std::cout << "<rad_m1> cubed sphere: seam face averages " << cs_seam_avg_n
-              << (cs_seam_avg_on ? "" : " (disabled by rad_m1/cs_seam_avg)")
-              << ", largest change of an x2 face value (rank 0) " << cs_seam_dmax
-              << " of max|F0|" << std::endl;
-  }
-  // implicit_opac_newton_guard: the dropped (row, face) pairs of all ranks (collective:
-  // every rank reaches this line with the same impl_opac_newton and guard)
-  const bool opgr = impl_opac_newton && (impl_opn_guard > 0.0);
-  if (opgr) {
-    auto hsk = Kokkos::create_mirror_view_and_copy(HostMemSpace(), opn_nskip_d);
-    opn_nskip = hsk(0);
-#if MPI_PARALLEL_ENABLED
-    Real g = 0.0;
-    MPI_Allreduce(&opn_nskip, &g, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-    opn_nskip = g;
-#endif
-  }
-  if (impl_g0_lim > 0.0 || impl_g0_exch || impl_pos_gas || impl_pos_floor) {
+  // the positivity counters and the hydro inversions' floor energy, all ranks
+  // (collective: every rank reaches this line with the same pos keys)
+  const bool pos = impl_pos_gas || impl_pos_floor;
+  Real hfl = pmy_pack->pmesh->ecounter.flr_de_v;
+  if (pos) {
     auto hpc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pos_cnt_d);
     for (int q = 0; q < M1_POS_N; ++q) {pos_cnt[q] = hpc(q);}
 #if MPI_PARALLEL_ENABLED
@@ -1397,429 +1331,34 @@ void RadiationM1::ImplicitReport() {
     Real gd = 0.0;
     MPI_Allreduce(&pos_un_drop, &gd, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
     pos_un_drop = gd;
+    MPI_Allreduce(MPI_IN_PLACE, &hfl, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
-  }
-  // s3c: the hydro inversions' floor energy (EventCounters flr_de_v), all ranks
-  Real hfl = pmy_pack->pmesh->ecounter.flr_de_v;
-#if MPI_PARALLEL_ENABLED
-  MPI_Allreduce(MPI_IN_PLACE, &hfl, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-#endif
-  // the Picard iteration count is MPI_MAX-reduced every step (see ImplicitSolve), so
-  // every rank holds the same three numbers and no reduction is needed here
-  // implicit_am_cs_kecap: the capped am_cs deposits
-  if (impl_am_kecap > 0.0 && amkc_d.extent_int(0) == 4) {
-    auto ha = Kokkos::create_mirror_view_and_copy(HostMemSpace(), amkc_d);
-    Real av[4] = {ha(0), ha(1), ha(2), ha(3)};
-#if MPI_PARALLEL_ENABLED
-    Real ga[4];
-    MPI_Allreduce(av, ga, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-    for (int q = 0; q < 4; ++q) {av[q] = ga[q];}
-#endif
-    if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> implicit_am_cs_kecap=" << impl_am_kecap
-                << ": capped cell-solves=" << av[0] << " kinetic energy not given="
-                << av[1] << " (code units x volume) |L_z| not deposited=" << av[2]
-                << " of all deposits " << av[3] << " (all attempts)" << std::endl;
-    }
-  }
-  // amcsE-1111 implicit_am_cs_energy = rad: who paid the deposits' kinetic energy
-  if (impl_am_en == 1 && amen_d.extent_int(0) == 4) {
-    auto he = Kokkos::create_mirror_view_and_copy(HostMemSpace(), amen_d);
-    Real ev[4] = {he(0), he(1), he(2), he(3)};
-#if MPI_PARALLEL_ENABLED
-    Real ge[4];
-    MPI_Allreduce(ev, ge, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-    for (int q = 0; q < 4; ++q) {ev[q] = ge[q];}
-#endif
-    if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> implicit_am_cs_energy=rad: cell-solves beyond the E share="
-                << ev[0] << " KE paid by E=" << ev[1] << " by e_int=" << ev[2]
-                << " not given=" << ev[3] << " (code units x volume, all attempts)"
-                << std::endl;
-    }
-  }
-  // implicit_am_cs_deposit = patch: the patch / column bookkeeping
-  if (impl_am_dep == 1 && amvp_d.extent_int(0) == 8) {
-    auto hp = Kokkos::create_mirror_view_and_copy(HostMemSpace(), amvp_d);
-    Real pv[8];
-    for (int q = 0; q < 8; ++q) {pv[q] = hp(q);}
-#if MPI_PARALLEL_ENABLED
-    Real gp[8];
-    MPI_Allreduce(pv, gp, 8, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-    for (int q = 0; q < 8; ++q) {pv[q] = gp[q];}
-#endif
-    if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> implicit_am_cs_deposit=patch: sum |del|=" << pv[0]
-                << " capped cell-solves=" << pv[1] << " |L| moved to columns=" << pv[2]
-                << " |L| not deposited=" << pv[3] << " singular patches=" << pv[4]
-                << " column KE paid by E=" << pv[5] << " by e_int=" << pv[6]
-                << " column cells beyond the e_int cap=" << pv[7]
-                << " (code units x volume, all attempts)" << std::endl;
-    }
-  }
-  // implicit_clip_kecap: the capped clip cell-solves
-  if (impl_clip_kecap > 0.0 && clkc_d.extent_int(0) == 3) {
-    auto hc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), clkc_d);
-    Real cv[3] = {hc(0), hc(1), hc(2)};
-#if MPI_PARALLEL_ENABLED
-    Real gc[3];
-    MPI_Allreduce(cv, gc, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-    for (int q = 0; q < 3; ++q) {cv[q] = gc[q];}
-#endif
-    if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> implicit_clip_kecap=" << impl_clip_kecap
-                << ": capped clip cell-solves=" << cv[0] << " kinetic energy not given="
-                << cv[1] << " |dm| not given=" << cv[2] << " (x volume, all attempts)"
-                << std::endl;
-    }
-  }
-  // implicit_wb_vcap: the capped cell-solves and the energy returned to E
-  if (impl_wb_vcap > 0.0 && vcap_cnt_d.extent_int(0) == 4) {
-    auto hv = Kokkos::create_mirror_view_and_copy(HostMemSpace(), vcap_cnt_d);
-    Real vv[3] = {hv(0), hv(1), hv(3)};
-#if MPI_PARALLEL_ENABLED
-    Real gv[3];
-    MPI_Allreduce(vv, gv, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-    vv[0] = gv[0]; vv[1] = gv[1]; vv[2] = gv[2];
-#endif
-    if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> implicit_wb_vcap=" << impl_wb_vcap
-                << (impl_wb_vcap_meas ? " (measure only)" : "")
-                << ": cell-solves beyond it=" << vv[0]
-                << " kinetic energy "
-                << (impl_wb_vcap_meas ? "beyond it=" : "taken from the gas=") << vv[1]
-                << " of which not returned to E (bound E)=" << vv[2]
-                << " (code units x volume, all attempts)" << std::endl;
-    }
-  }
-  if (impl_wb_vkrej > 0.0 && global_variable::my_rank == 0) {
-    std::cout << "<rad_m1> implicit_wb_vkick_reject=" << impl_wb_vkrej
-              << ": stages rejected=" << vkick_nrej
-              << " backward-Euler solves with kicks=" << vkick_nbe << " (cells "
-              << vkick_nbecell << ")";
-    if (impl_wb_vkbr) {
-      std::cout << " of which dt_retry=" << vkick_nberetry
-                << " accepted after the last cut=" << vkick_nbefall;
-    }
-    std::cout << std::endl;
-  }
-  if (impl_fclip_diag && fcd_cnt_d.extent_int(0) == 20) {
-    auto hf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fcd_cnt_d);
-    Real fv[20];
-    for (int q = 0; q < 20; ++q) {fv[q] = hf(q);}
-#if MPI_PARALLEL_ENABLED
-    Real gf[20];
-    MPI_Allreduce(fv, gf, 20, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
-    for (int q = 0; q < 20; ++q) {fv[q] = gf[q];}
-#endif
-    if (global_variable::my_rank == 0) {
-      std::cout << "<rad_m1> FCLIPDIAG in-loop (cs2_clip=rad, unpaired): n=" << fv[0]
-                << " mean(|u|/|q|-1)=" << fv[1]/fmax(fv[0], 1.0)
-                << " face-mean>cE n=" << fv[2]
-                << " of which face-mean<=cE^old n=" << fv[3]
-                << " mean(cE/cE^old)=" << fv[4]/fmax(fv[0], 1.0)
-                << " unpaired |dF|/(c chat) x vol=" << fv[5] << std::endl;
-      std::cout << "<rad_m1> FCLIPDIAG final: n(metric)=" << fv[6]
-                << " mean(|F|/cE-1)=" << fv[7]/fmax(fv[6], 1.0)
-                << " n(plain norm)=" << fv[8] << " made by pos moves=" << fv[9]
-                << " made by cons_final=" << fv[10]
-                << " E lowered by pos moves=" << fv[11]
-                << " removed (|F|-cE)/(c chat) x vol=" << fv[12]
-                << " paired (consrc kick) n=" << fv[13]
-                << " face-mean>cE(pre-move) n=" << fv[14] << " E<E^old/2 n=" << fv[15]
-                << std::endl;
-      std::cout << "<rad_m1> FCLIPDIAG implicit_realisable_coupling rescale: lag (beta.F"
-                << " of E0) cell-passes=" << fv[16] << " mean(|F|/cE-1)="
-                << fv[17]/fmax(fv[16], 1.0) << " | write-back drag cell-solves=" << fv[18]
-                << " mean(|F|/cE-1)=" << fv[19]/fmax(fv[18], 1.0) << std::endl;
-    }
   }
   if (global_variable::my_rank != 0) return;
   if (tmr_c0 > 0) {
-    // implicit_timers: seconds per category, then the counters (see TmrMark)
+    // implicit_timers: seconds per category (see TmrMark)
     std::cout << "<rad_m1> timers from cycle " << tmr_c0 << ": stages=" << tmr_cnt[7]
-              << " solves=" << tmr_cnt[0] << " passes=" << tmr_cnt[1]
-              << " kry_it=" << tmr_cnt[2] << " passes_s1=" << tmr_cnt[3]
-              << " passes_s2=" << tmr_cnt[4] << " it_s1=" << tmr_cnt[5]
-              << " it_s2=" << tmr_cnt[6] << std::endl;
-    const char *nm[12] = {"closure", "opacity", "solve_pre", "tensor", "pred",
+              << std::endl;
+    const char *nm[11] = {"closure", "opacity", "solve_pre", "tensor", "pred",
                           "pass_setup", "krylov", "pass_post", "solve_end", "hyd_c2p",
-                          "m1_bvals", "mg_x3"};
+                          "m1_bvals"};
     std::cout << "<rad_m1> timers(s):";
-    // mg_x3 = the x3 line sweeps (out of krylov) under implicit_timers_mg_x3
-    const int ntm = (mg_x3line && tmr_x3) ? 12 : 11;
-    for (int q = 0; q < ntm; ++q) {std::cout << " " << nm[q] << "=" << tmr_acc[q];}
+    for (int q = 0; q < 11; ++q) {std::cout << " " << nm[q] << "=" << tmr_acc[q];}
     std::cout << std::endl;
   }
   MRReport();
-  Real mean = (impl_nstep > 0.0) ? (impl_itsum/impl_nstep) : 0.0;
-  std::cout << "<rad_m1> implicit transport: solves=" << impl_nstep
-            << " Picard iterations mean=" << mean << " max=" << impl_itmax
-            << " NON-CONVERGED=" << impl_nfail << std::endl;
-  if (impl_opac_lagp) {
-    std::cout << "<rad_m1> implicit_opac_lag=pred passes=" << impl_opac_lagn
-              << ": lagged solves=" << impl_ol_nlag << std::endl;
-  }
-  if (impl_tol_rel > 0.0) {
-    std::cout << "<rad_m1> implicit_tol_rel=" << impl_tol_rel << ": predicted solves "
-              << impl_tolr_n << ", mean tol_eff "
-              << ((impl_tolr_n > 0.0) ? impl_tolr_sum/impl_tolr_n : 0.0) << std::endl;
-  }
-  if (impl_frlog) {
-    // implicit_final_resid_log: the per-run sums of ImplicitFinalResid
-    const Real *S = impl_fr_sum;
-    std::cout << "<rad_m1> implicit_final_resid_log: solves=" << S[0]
-              << " max rc=" << S[14] << " max rT=" << S[15]
-              << " | solves with max rc > tol " << S[1] << ", > 10 tol " << S[2]
-              << ", > 1e-6 " << S[3] << ", > 1e-4 " << S[4] << ", > 1e-2 " << S[5]
-              << " | max rT > tol " << S[6] << ", > 10 tol " << S[7]
-              << " | max(rc,rT) > tol " << S[19] << ", > 10 tol " << S[8]
-              << " | conv_est stops " << S[16] << " (of them > 10 tol " << S[17] << ")"
-              << " | cells > 10 tol " << S[12] << " of " << S[13]
-              << " | no gas row " << S[18]
-              << " | time loop " << S[11] << " s, shadow eval " << S[9]
-              << " s, snapshot " << S[10] << " s" << std::endl;
-  }
-  if (impl_frs_on || impl_ce_guard > 0.0 || impl_ce_nofl) {
-    // the guarded contraction estimate and the residual stop
-    const Real *P = impl_frs_sum;
-    std::cout << "<rad_m1> picstop: implicit_final_resid_stop=" << impl_frs << " (rel "
-              << impl_frs_rel << " x tol_eff) checks=" << P[0] << " failed+continued="
-              << P[1] << " failed-no-pass-left(NC)=" << P[2]
-              << " solves accepted after a failed check=" << P[3]
-              << " passes after a failed check=" << P[4]
-              << " | implicit_conv_est_guard=" << impl_ce_guard << " refused=" << P[5]
-              << " | implicit_conv_est_nofloor=" << (impl_ce_nofl ? 1 : 0)
-              << " refused=" << P[6] << " extra stops=" << P[7]
-              << " | log worst-cell time " << P[8] << " s" << std::endl;
-  }
-  if (impl_gn_sw > 0) {
-    std::cout << "<rad_m1> implicit_gas_newton_switch=" << impl_gn_sw << " (min pass "
-              << impl_gn_sw_min << "): solves switched to the root find=" << impl_gn_nsw
-              << std::endl;
-  }
-  if (impl_res_mask) {
-    std::cout << "<rad_m1> implicit_res mask: rho < " << impl_res_dmin << " or r > "
-              << impl_res_rmax << " (0 = unused) left out of the stopping test; max"
-              << " excluded residual at the last pass=" << impl_res_exmax
-              << ", steps whose excluded residual >= tol=" << impl_res_nex << std::endl;
-  }
-  if (opgr) {
-    std::cout << "<rad_m1> implicit_opac_newton_guard=" << impl_opn_guard
-              << ": Newton face terms dropped (all ranks, all passes)=" << opn_nskip
-              << " per solve=" << ((impl_nstep > 0.0) ? (opn_nskip/impl_nstep) : 0.0)
-              << std::endl;
-  }
-  if (impl_g0_lim > 0.0 || impl_g0_exch || impl_pos_gas || impl_pos_floor) {
-    std::cout << "<rad_m1> m1-positivity: implicit_g0_exchange=" << impl_g0_exch
-              << " implicit_g0_limit=" << impl_g0_lim
-              << " clipped cell-passes=" << pos_cnt[M1_POS_G0]
-              << " | implicit_pos_gas=" << impl_pos_gas << " (frac "
+  if (pos) {
+    std::cout << "<rad_m1> m1-positivity: implicit_pos_gas=" << impl_pos_gas << " (frac "
               << impl_pos_gas_frac << ") cell-solves=" << pos_cnt[M1_POS_GAS]
               << " energy moved rad->gas=" << pos_cnt[M1_POS_GAS_DE]
               << " | E floor raises cell-solves=" << pos_cnt[M1_POS_FLR]
               << " energy from gas=" << pos_cnt[M1_POS_FLR_DE]
               << " energy created=" << pos_cnt[M1_POS_FLR_UN] << " (code units x volume)"
               << " [in discarded attempts, rolled back: " << pos_un_drop << "]"
-              << " of which solve undershoot (pos_floor_solve)=" << pos_cnt[M1_POS_FLRS]
               << " taken from the column's radiation (implicit_pos_floor_cons)="
               << pos_cnt[M1_POS_FLR_MV]
-              << " | |F| > c E scaled back cell-solves=" << pos_cnt[M1_POS_FCLIP]
-              << " sum(|F|/(cE) - 1)=" << pos_cnt[M1_POS_FCLIPM]
               << " | hydro EOS floors energy created=" << hfl << std::endl;
   }
-  if (impl_fmm) {   // (all ranks, all passes)
-    std::cout << "<rad_m1> implicit_face_mmat: checked passes=" << fmm_pass
-              << " limited passes=" << fmm_lpass << " limited cells=" << fmm_cells
-              << " limited x1 faces=" << fmm_faces << " max rounds=" << fmm_rmax
-              << " left (b<=0 after the limit)=" << fmm_left
-              << " realisability-bound faces (|F_H| > c min E)=" << fmm_rfaces
-              << " (rank 0: rounds=" << zl_rounds[1] << " R exchanges=" << zl_halos[1]
-              << " zalesak_halo_skip=" << (zl_hskip ? "on" : "off")
-              << (zl_local > 0 ? " zalesak_local_rounds=" + std::to_string(zl_local)
-                  : std::string(""))
-              << " rowsel=" << (fmm_rowsel ? "on" : "off") << " re-assembled rows="
-              << fmm_selrows << " of " << fmm_selall;
-    if (zl_active) {std::cout << " zalesak_active=on";}
-    if (zl_colsweep) {std::cout << " zalesak_colsweep=on";}
-    if (zl_cap > 0) {
-      std::cout << " zalesak_cap_rounds=" << zl_cap << " capped passes=" << zl_capped;
-    }
-    if (zl_local > 0) {std::cout << " local sub-rounds=" << zl_sub[1];}
-    std::cout << ")" << std::endl;
-  }
-  if (impl_onep > 0) {
-    std::cout << "<rad_m1> implicit_one_pass: period=" << impl_onep
-              << " safety=" << impl_onep_s
-              << " solves accepted after one pass=" << impl_onep_n
-              << " contraction measurements=" << impl_onep_nchk
-              << " last q (be, stage 1, stage 2)=" << onep_qa[0] << " " << onep_qa[1]
-              << " " << onep_qa[2] << std::endl;
-    if (impl_onep_auto) {
-      // the counters are those of this run (from its start or restart); the state is
-      // per kind: on, off, or on as a re-probe not yet confirmed
-      std::cout << "<rad_m1> implicit_one_pass_auto: window=" << impl_onep_awin
-                << " reprobe=" << impl_onep_arep << "; this run: switch-offs="
-                << impl_onep_ndis << " re-probes=" << impl_onep_nprb
-                << " (failed=" << impl_onep_nfpr << " confirmed=" << impl_onep_nren
-                << "); state at end (be, stage 1, stage 2)=";
-      for (int t = 0; t < 3; ++t) {
-        const char *st = (onep_off[t] > 0.5) ? "off"
-                         : ((onep_prb[t] > 0.5) ? "probe" : "on");
-        std::cout << st << ((t < 2) ? "," : "");
-      }
-      std::cout << std::endl;
-    }
-  }
-  if (impl_accel == M1_IACC_ANDERSON) {
-    Real apst = (impl_nstep > 0.0) ? (aa_nacc/impl_nstep) : 0.0;
-    std::cout << "<rad_m1> anderson: m=" << impl_and_m
-              << " beta=" << impl_and_beta
-              << " start=" << impl_and_start
-              << " accelerated passes=" << aa_nacc
-              << " (" << apst << " per solve)"
-              << " history restarts=" << aa_nrst << std::endl;
-  }
-  if (trans_on) {
-    Real lmean = (impl_nstep > 0.0) ? (impl_linsum/impl_nstep) : 0.0;
-    std::cout << "<rad_m1> implicit transverse ("
-              << (bicg_on ? "bicgstab" : "line_jacobi")
-              << "): final 7-point linear "
-              << "residual (max|r|/max|b|) mean=" << lmean << " max=" << impl_linmax
-              << std::endl;
-    // say which test stopped the solves.  The max|r|/max|b| above is
-    // compared with implicit_lin_tol only when implicit_lres_test is on (default off for
-    // the fixed closures: eddington, vet_sc, tau / vet_col); the inner BiCGStab stops on
-    // implicit_lin_cnorm (per-cell |r|/(s E)) when > 0, else on |r|/max|b| < lin_tol,
-    // loosened by the Eisenstat-Walker term when implicit_lin_ew_max > 0
-    std::cout << "<rad_m1>   (diagnostic; Picard test on it: "
-              << (impl_lres_test ? "yes, lin_tol=" : "no; lin_tol=") << impl_lin_tol
-              << "; inner stop: "
-              << ((impl_lin_cnorm > 0.0) ? "cnorm=" : "lin_tol relative to max|b|");
-    if (impl_lin_cnorm > 0.0) {std::cout << impl_lin_cnorm;}
-    if (impl_ew_max > 0.0) {
-      std::cout << ", loosened by Eisenstat-Walker ew_max=" << impl_ew_max;
-    }
-    std::cout << ")" << std::endl;
-  }
-  if (bicg_on) {
-    Real imean = (bcg_nsolve > 0.0) ? (bcg_itsum/bcg_nsolve) : 0.0;
-    Real rper = (bcg_itsum > 0.0) ? (bcg_nred/bcg_itsum) : 0.0;
-    std::cout << "<rad_m1> bicgstab: outer passes=" << impl_itsum
-              << " linear solves=" << bcg_nsolve
-              << " inner iterations mean=" << imean << " max=" << bcg_itmax
-              << " total=" << bcg_itsum << std::endl;
-    std::cout << "<rad_m1> bicgstab: breakdowns=" << bcg_nbreak
-              << " line_jacobi fallbacks=" << bcg_nfall
-              << " global reductions=" << bcg_nred
-              << " (" << rper << " per inner iteration)" << std::endl;
-    if (impl_bcg_keep || impl_bcg_maxrst != 2) {
-      std::cout << "<rad_m1> bicgstab: implicit_bcg_max_restarts=" << impl_bcg_maxrst
-                << " fallback=" << (impl_bcg_keep ? "best" : "line")
-                << ": Krylov iterate kept instead of line-Jacobi=" << bcg_nkeep
-                << std::endl;
-    }
-    if (impl_prec_fb >= 0) {
-      std::cout << "<rad_m1> bicgstab: implicit_precond_fallback="
-                << ((impl_prec_fb == 1) ? "rbgs" : "line")
-                << ": solves capped at lin_maxit and redone=" << bcg_npfb
-                << " their inner iterations=" << bcg_pfbit << std::endl;
-    }
-    if (impl_kdev > 0) {
-      std::cout << "<rad_m1> implicit_krylov_dev: period=" << impl_kdev
-                << " host status reads=" << kdev_nchk << " queued iterations="
-                << kdev_nq << std::endl;
-    }
-  }
-  if (impl_gas_newton || impl_eos_cache) {
-    Real fpc = (gas_ncell > 0.0) ? (newt_nfb/gas_ncell) : 0.0;
-    Real mpc = (gas_ncell > 0.0) ? (ec_nmiss/gas_ncell) : 0.0;
-    std::cout << "<rad_m1> gas coupling: newton="
-              << (impl_gas_newton ? "true" : "false")
-              << " eos_cache=" << (impl_eos_cache ? "true" : "false")
-              << " cell-passes=" << gas_ncell
-              << " newton fallbacks=" << newt_nfb << " (" << fpc << " per cell-pass)"
-              << std::endl;
-    if (impl_eos_cache) {
-      std::cout << "<rad_m1> eos_cache: nt=" << impl_ecnt
-                << " misses=" << ec_nmiss << " (" << mpc << " per cell-pass)"
-                << " max |de|/e vs the table=" << ec_emax
-                << " max |dq|/q of the exchanged energy=" << ec_tmax << std::endl;
-    }
-  }
-  if (impl_pcr_check) {
-    std::cout << "<rad_m1> line solver=" << ((impl_line_solver == 1) ? "pcr" : "thomas")
-              << " pcr_check: calls=" << pcr_chk_n
-              << " max over calls of max|x_pcr - x_thomas|/max|x|=" << pcr_chk_max
-              << " (rank 0)" << std::endl;
-  }
-  if (trans_on) {
-    std::cout << "<rad_m1> offdiag="
-              << ((impl_offdiag == M1_OD_OPERATOR) ? "operator" :
-                  ((impl_offdiag == M1_OD_NONE) ? "none" : "lagged"))
-              << " closure_relax=" << impl_crelax
-              << " closure_lag=" << (impl_clag_step ? "step" : "pass")
-              << " positivity fallbacks=" << od_nfall
-              << " (vet_col_lat " << vlat_nfall << ")"
-              << " min E from the solve=" << od_emin << std::endl;
-  }
-  if (vgd_on && vgd_tan && cs_geom) {
-    std::cout << "<rad_m1> vet_gd_tangential (cubed sphere): Q active in " << cstan_na
-              << " of " << cstan_np << " transverse assemblies (rank 0); positivity "
-              << "fallbacks (vet_col_lat) " << vlat_nfall << std::endl;
-  }
-  if (vlat_posfix_lag) {
-    std::cout << "<rad_m1> vet_col_lat_posfix = lag: triggers moved to the lagged "
-              << "lateral form " << vlat_nlag << ", dropped after a second trigger "
-              << vlat_nfall
-              << std::endl;
-  }
-  if (impl_vimp) {
-    std::cout << "<rad_m1> implicit_vimp positivity fallbacks=" << vimp_nfall
-              << " min E from the solve=" << vimp_emin;
-    if (vimp_kill) {
-      std::cout << " local kills=" << vkill_ev << " cells(rank 0)=" << vkill_nc;
-    }
-    std::cout << std::endl;
-  }
-  if (vimp_lag_local) {
-    std::cout << "<rad_m1> implicit_vimp_lag_local: lag-path triggers with the vimp kick"
-              << " dropped locally (not for the whole solve)=" << vimp_lag_local_n
-              << std::endl;
-  }
-  if (t2_dtr_pl) {
-    std::cout << "<rad_m1> time2_dtr_poslim: BE-type solves with written-back eint <= 0"
-              << " all covered by implicit_pos_gas (no dt_retry cut)=" << t2_dtr_pl_n
-              << std::endl;
-  }
-  if (impl_pos_trans != 0 && pt_cnt.extent_int(0) >= 2) {
-    auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), pt_cnt);
-    std::cout << "<rad_m1> implicit_pos_transport = upwind (rank 0):"
-              << " lagged positive x1 off-diagonals=" << h(1)
-              << " memory-upwinded x1 face passes=" << h(0) << std::endl;
-  }
-  if (impl_cmi && cmi_cnt.extent_int(0) >= 3) {
-    auto h = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), cmi_cnt);
-    std::cout << "<rad_m1> implicit_hr_cmem_implicit (rank 0): cell-passes with an "
-              << "explicit memory outflow=" << h(1) << " limited (lam < 1)=" << h(0)
-              << " min lam=" << h(2) << std::endl;
-  }
-  if (impl_muscl && impl_muscl_pred) {
-    std::cout << "<rad_m1> implicit_hr_recon_pred: dc-phase passes=" << muscl_pred_dc
-              << " plm-phase passes=" << muscl_pred_hi << std::endl;
-  }
-  if (impl_muscl && impl_muscl_bound) {
-    std::cout << "<rad_m1> implicit_hr_pos = bound: cell-axes set to dc=" << muscl_nbound
-              << std::endl;
-  }
-  if (impl_muscl) {
-    std::cout << "<rad_m1> implicit_hr_recon = plm positivity fallbacks=" << muscl_nfall
-              << " min E from the solve=" << muscl_emin << std::endl;
-  }
-  std::cout << "<rad_m1> floor clips (all ranks, every solve incl. BE): solved E <= "
-            << "e_floor cell-solves=" << flr_ne
-            << " written-back gas eint <= 0 cell-solves="
-            << flr_ng << std::endl;
 }
 //----------------------------------------------------------------------------------------
 //! implicit_hr_cmem_rst: fax1..3 to / from cell-sized restart slabs
