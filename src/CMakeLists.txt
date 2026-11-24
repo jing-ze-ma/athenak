@@ -196,10 +196,7 @@ add_executable(
         rad_vet/rad_vet_clean_solver.cpp
         rad_vet/rad_vet_sph.cpp
         rad_vet/rad_vet_time2.cpp
-        rad_vet/rad_vet_opacity.cpp
         rad_vet/rad_vet_vetcol.cpp
-        rad_vet/rad_vet_vetlat.cpp
-        rad_vet/rad_vet_memarena.cpp
         rad_vet/rad_vet_vetgd.cpp
         rad_vet/rad_vet_vetgd_sweep.cpp
         rad_vet/rad_vet_vetgd_cs.cpp

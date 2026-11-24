@@ -10,8 +10,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -24,6 +26,7 @@
 #include "rad_vet/rad_vet.hpp"
 #include "rad_vet/rad_vet_parfor.hpp"
 #include "rad_vet/rad_vet_implicit.hpp"
+#include "rad_vet/rad_vet_clean.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -745,6 +748,147 @@ bool RadiationVet::FaxRstUnpack(DvceArray5D<Real> in, int nmb, int nsl) {
               << "first stage takes the stage-start face F" << std::endl;
   }
   return false;
+}
+
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::MemArenaInit
+//! \brief the arena with vet_gd; allocate iw (zero-filled) as before (iw is NOT in the
+//! arena: some of its channels live across a VetGdBuild, MEMCUT_POISON=iw, job 13107429)
+
+void RadiationVet::MemArenaInit(ParameterInput *pin, const int nmb, const int niw,
+                                const int n3, const int n2, const int n1) {
+  marena_on = vgd_on;
+  Kokkos::realloc(iw, nmb, niw, n3, n2, n1);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool RadiationVet::MemArenaVgd
+//! \brief bind a.d (n Reals, zero-filled by the caller) into the arena (the intensity
+//! arrays one after the other); false: not bound, the caller allocates a.d itself
+
+bool RadiationVet::MemArenaVgd(VgdRag &a, const int64_t n) {
+  if (!marena_on || marena_sealed) return false;
+  const int64_t off = marena_sw;
+  const int64_t need = off + n;
+  MemArenaGrow(need);
+  a.d = DvceArray1D<Real>(marena.data() + off, n);
+  marena_sw = need + ((64 - (need % 64)) % 64);   // 64-Real alignment of the next one
+  return true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::MemArenaGrow
+//! \brief at least need Reals: a new allocation, the old bytes copied in front (the
+//! intensity arrays bound so far keep their contents and offsets), then rebind them;
+//! keep = false (CleanWoBind: all of it dead between a build and its solve): the old
+//! allocation freed first, nothing copied
+
+void RadiationVet::MemArenaGrow(const int64_t need, const bool keep) {
+  const int64_t have = static_cast<int64_t>(marena.extent(0));
+  if (need <= have) return;
+  Kokkos::fence();
+  const Real *o0 = marena.data(), *o1 = marena.data() + have;
+  if (!keep) marena = DvceArray1D<Real>();
+  DvceArray1D<Real> nb("vet_arena", need);
+  if (have > 0 && keep) {
+    Kokkos::deep_copy(Kokkos::subview(nb, std::make_pair(int64_t(0), have)), marena);
+  }
+  VgdRag *bound[2] = {&vgd_i, &vgd_i_xb};
+  for (VgdRag *b : bound) {
+    if (have > 0 && b->d.data() != nullptr && b->d.data() >= o0 && b->d.data() < o1) {
+      b->d = DvceArray1D<Real>(nb.data() + (b->d.data() - o0), b->d.extent(0));
+    }
+  }
+  for (DvceArray5D<Real> *w : {&cln_w.o, &cln_w.s}) {   // (bound by CleanWoBind)
+    if (have > 0 && w->data() != nullptr && w->data() >= o0 && w->data() < o1) {
+      *w = DvceArray5D<Real>(nb.data() + (w->data() - o0), w->extent(0), w->extent(1),
+                             w->extent(2), w->extent(3), w->extent(4));
+    }
+  }
+  marena = nb;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::MemArenaSeal
+//! \brief called by every DtRetry::Save before it copies; the first call after the
+//! intensities exist moves the solve scratch arrays that are dead across a VetGdBuild
+//! (MEMCUT_POISON: ost, fmm_t, odc, d3w, aa_*, job 13105648) into
+//! the arena, over the intensities (contents copied, member rebound), as many as fit;
+//! then no more rebinding
+
+void RadiationVet::MemArenaSeal() {
+  // (a fresh run allocates the intensities inside cycle 1: the move waits for the next
+  // checkpoint; every checkpoint takes the members' handles anew, so a retry after the
+  // move restores the moved Views)
+  if (marena_sealed || !marena_on || marena.data() == nullptr) return;
+  marena_sealed = true;
+  DvceArray5D<Real> *cand[] = {&cln_w.o, &ost, &fmm_t, &odc, &d3w, &aa_xc, &aa_fc,
+                               &aa_xp, &aa_fp};
+  const char *nm[] = {"cln_wo", "ost", "fmm_t", "odc", "d3w", "aa_xc", "aa_fc", "aa_xp",
+                      "aa_fp"};
+  // (clean: the arena grows to the clean scheme's own work vectors where they outgrow
+  // the intensities, whatever vgd_i's layout makes of those)
+  MemArenaGrow(static_cast<int64_t>(cln_w.o.span()));
+  const int64_t have = static_cast<int64_t>(marena.extent(0));
+  int64_t off = 0;
+  std::string moved;
+  Kokkos::fence();
+  for (int q = 0; q < static_cast<int>(sizeof(cand)/sizeof(cand[0])); ++q) {
+    DvceArray5D<Real> &a = *cand[q];
+    const int64_t n = static_cast<int64_t>(a.span());
+    // (clean: its own work vectors only)
+    if (q > 0 || a.data() == nullptr || n == 0 ||
+        !a.span_is_contiguous() || off + n > have || a.data() == marena.data()) {
+      // (cln_w.o already there, CleanWoBind)
+      if (a.data() == marena.data() && n > 0) off += n + ((64 - (n % 64)) % 64);
+      continue;
+    }
+    DvceArray5D<Real> b(marena.data() + off, a.extent(0), a.extent(1), a.extent(2),
+                        a.extent(3), a.extent(4));
+    Kokkos::deep_copy(b, a);
+    a = b;
+    off += n + ((64 - (n % 64)) % 64);
+    moved += std::string(" ") + nm[q];
+  }
+  Kokkos::fence();
+  if (global_variable::my_rank == 0) {
+    std::cout << "<rad_vet> mem_arena: intensities " << marena_sw*sizeof(Real)/1.0e9
+              << " GB in one allocation; solve scratch moved over them (" << off*
+              sizeof(Real)/1.0e9 << " GB on rank 0):" << moved << std::endl;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationVet::CleanWoBind
+//! \brief the staggered layout's own work vectors cln_w.o at the first solve that needs
+//! them: in the arena, over the intensities (dead outside a build), where a build has
+//! made it (MemArenaGrow rebinds them with the intensities), else their own allocation
+//! (moved over the intensities by MemArenaSeal): no second copy before the first
+//! checkpoint.  The shared slots cln_w.s, where CleanInit left them unmade (no build
+//! inside the solve), follow cln_w.o: in the arena after it, or their own allocation
+
+void RadiationVet::CleanWoBind() {
+  auto &id = pmy_pack->pmesh->mb_indcs;
+  const int n1 = id.nx1 + 2*id.ng, n2 = (id.nx2 > 1) ? id.nx2 + 2*id.ng : 1;
+  const int n3 = (id.nx3 > 1) ? id.nx3 + 2*id.ng : 1, nmb = pmy_pack->nmb_thispack;
+  if (cln_w.o.data() == nullptr) {
+    if (marena.data() == nullptr) {
+      Kokkos::realloc(cln_w.o, nmb, cln_wo_nc, n3, n2, n1);
+    } else {
+      MemArenaGrow(static_cast<int64_t>(nmb)*cln_wo_nc*n3*n2*n1, false);
+      cln_w.o = DvceArray5D<Real>(marena.data(), nmb, cln_wo_nc, n3, n2, n1);
+    }
+  }
+  if (cln_w.s.data() != nullptr) return;
+  if (cln_w.o.data() != marena.data()) {
+    Kokkos::realloc(cln_w.s, nmb, CLW_NS, n3, n2, n1);
+    return;
+  }
+  const int64_t no = static_cast<int64_t>(cln_w.o.span());
+  const int64_t off = no + ((64 - (no % 64)) % 64);   // (64-Real alignment)
+  MemArenaGrow(off + static_cast<int64_t>(nmb)*CLW_NS*n3*n2*n1, false);
+  cln_w.s = DvceArray5D<Real>(marena.data() + off, nmb, CLW_NS, n3, n2, n1);
 }
 
 } // namespace radvet
