@@ -1135,9 +1135,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   nstage = M1_NSTAGE;
   impl_cfl = -1.0;
-  impl_tol = 1.0e-8;
-  impl_maxit = 30;
-  impl_opac_update = false;
   impl_opac_newton = false;
   impl_halo_ipc = false;
   hi_state = 0;
@@ -1147,7 +1144,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   hi_sig = nullptr;
   hi_err = nullptr;
   hi_half = 0;
-  impl_allow_multid = false;
   marshak_q = 0.5;
   ibc_x1min = M1_IBC_MARSHAK;
   ibc_x1max = M1_IBC_MARSHAK;
@@ -1171,7 +1167,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   halo_shell = false;
   // ---- milestone 3b phase C
   bicg_on = false;
-  impl_lin_maxit = 200;
   pbval_kr = nullptr;
   bcg_nsolve = 0.0;
   bcg_itsum = 0.0;
@@ -1186,14 +1181,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   bcg_npfb = 0.0;
   bcg_pfbit = 0.0;
   bcg_nred = 0.0;
-  impl_bcg_sync = 0;
-  impl_det = false;
-  impl_plog = 0;
   bcg_r0rel = 0.0;
   impl_lres_test = true;
-  impl_conv_est = false;
   impl_ew_max = 0.0;
-  impl_ew_gam = 0.9;
   impl_lin_cnorm = 0.0;
   ew_fprev = 0.0;
   ew_etaprev = 0.0;
@@ -1208,7 +1198,6 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   impl_vimp = false;
   vimp_now = false;
   t2_enth_be = false;
-  iw_vimp = -1;
   vimp_nfall = 0.0;
   flr_ne = 0.0;
   flr_ng = 0.0;
@@ -1232,16 +1221,13 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   t2_lin_save = 0.0;
   t2_onep_s = -1.0;
   impl_crelax = 1.0;
-  impl_crelax_thin = false;
   impl_clag_step = false;
   impl_tlim = M1_TLIM_NONE;
-  impl_tfmax = 1.0;
   // ---- milestone 3e: Anderson acceleration of the Picard map
   impl_accel = M1_IACC_NONE;
   impl_and_m = 5;
   impl_and_beta = 1.0;
   impl_and_start = 1;
-  aa_nc = 0;
   aa_nh = 0;
   aa_head = 0;
   aa_hasp = false;
@@ -1252,22 +1238,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   impl_gas_newton = false;
   impl_eos_cache = false;
   impl_line_solver = 0;
-  impl_pcr_team = 0;
   impl_pcr_check = false;
   impl_halo_direct = false;
   halo_direct_on = false;
-  impl_odc = false;
   impl_stencil = false;
   st_edges = true;
-  impl_prec_float = false;
   impl_kfuse = 0;
   impl_prec = 0;
   pcr_chk_max = 0.0;
   pcr_chk_n = 0.0;
   impl_ecnt = 2;
-  impl_eccheck = true;
-  iw_gas = -1;
-  impl_nec = 0;
   newt_nfb = 0.0;
   gas_ncell = 0.0;
   ec_nmiss = 0.0;

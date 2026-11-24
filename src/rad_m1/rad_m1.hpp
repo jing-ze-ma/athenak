@@ -643,11 +643,9 @@ class RadiationM1 {
   int transport{};              // M1_TRANSPORT_*
   int nstage{};                 // stages per substep: M1_NSTAGE explicit, 1 implicit
   Real impl_cfl{};              // <rad_m1>/implicit_cfl: dtnew = impl_cfl*dx/c (<=0 off)
-  Real impl_tol{};              // Picard tolerance on max(|dE|/E, |dT|/T)
   // implicit_tol_rel = kappa (default 0 = off): a solve that starts from the
   // step predictor stops at max(implicit_tol, kappa r_0), r_0 = its first change
   Real impl_tol_rel = 0.0;
-  Real impl_tol_rel_max = 1.0e-4;   // implicit_tol_rel_max: cap on tol_eff
   Real impl_tolr_sum = 0.0, impl_tolr_n = 0.0;
   // implicit_final_resid_log (read only when named; default false = off).
   // DIAGNOSTIC: after every converged Picard solve ONE more pass is assembled at the
@@ -685,20 +683,16 @@ class RadiationM1 {
   // refused by the guard [6] by nofloor (the plain q would have stopped) [7] nofloor
   // stops the plain q would have refused [8] logging time (fenced, s)
   Real impl_frs_sum[12] = {};
-  int impl_maxit{};             // maximum Picard iterations per solve
-  bool impl_opac_update{};      // re-evaluate the opacities inside the Picard loop
   bool impl_opac_newton{};      // implicit_opac_newton: d(rho kappa_T)/dT in the x1 rows
   // implicit_opac_newton_guard (m1-opn-guard, default 0.5; <= 0 = off): a face's Newton
   // term is dropped from a row whose diagonal it would take below guard x its value
   // without it; opn_nskip_d counts the dropped (row, face) pairs on the device,
   // opn_nskip the all-rank total (summed at the report)
   Real impl_opn_guard = 0.0;
-  int impl_opn_guard_mode = 2;   // implicit_opac_newton_guard_mode (bits 1 rhs, 2 off)
   // opacity cliffs (both read only when named, 0 = off = bitwise):
   // with s = d ln kappa_T/d ln T of the one-sided Newton difference, a cell with |s| >
   // implicit_opac_newton_slope_off drops its Newton term (ktd = 0, the face stays
   // Picard); implicit_opac_newton_slope_max damps it, ktd x min(1, slope_max/|s|)
-  Real impl_opn_soff = 0.0, impl_opn_smax = 0.0;
   DvceArray1D<Real> opn_nskip_d;
   Real opn_nskip = 0.0;
   // m1-positivity (every key read only when named; absent = off = bitwise the old code):
@@ -721,13 +715,6 @@ class RadiationM1 {
   // helper solves; rank-local, CounterKeep::Restore), not in pos_cnt; all-rank total at
   // the report
   Real pos_un_drop = 0.0;
-  // F3 <rad_m1>/implicit_pos_floor_solve (default false = bitwise): the
-  // T-solve / accept no longer raise the iterate to e_floor (EP = max(S2, e_floor) made
-  // energy that implicit_pos_floor never saw, and the face fluxes rebuilt from the raised
-  // EP no longer matched the solve's): EP = max(S2, 1e-6 e_floor), and the write-back
-  // floor raises E to e_floor with the energy taken from the gas (FLR_DE) or counted
-  // (FLR_UN); what the 1e-6 guard itself raised, (c/ch)(1 + SRCB)(EP - S2), joins it
-  bool impl_pos_floor_s2 = false;
   // <rad_m1>/implicit_cons_final (prod-1112-cand: DEFAULT true; name false
   // for the prod-1111 behaviour, bitwise; not recorded when absent): the write-back takes
   // E^{n+1} = E' + r, r = b - A E' the residual of the
@@ -747,7 +734,6 @@ class RadiationM1 {
   int impl_lin_tcstage = 0;     // implicit_lin_tolcap_stage (2 = not in hesdirk2 stage 1)
   Real impl_lin_sktrue = 0.0;   // implicit_lin_skip_true (0 = off)
   Real impl_sktrue_n = 0.0;     // true-residual checks skipped (rank-local count)
-  bool cf_named = false;        // prod-1112-cand: key named (a named true may fatal)
   // <rad_m1>/dbg_cons_ledger (DIAGNOSTIC, read only when named): r of every
   // solve; rank 0 prints CONSR cycle t2s dt sum(V (c/chat) r) sum(V (c/chat) |r|)
   // sum(V (c/chat) E^{n+1}) applied, and the run totals in the summary
@@ -778,7 +764,6 @@ class RadiationM1 {
   // rejected: its kicks beyond V are only counted and printed (vkick_cnt_d 2, 3).
   // vkick_cnt_d: 0 cells this solve, 1 max |v_new| this solve, 2/3 BE totals
   Real impl_wb_vkrej = 0.0;
-  DvceArray1D<Real> vkick_cnt_d;
   Real vkick_nrej = 0.0, vkick_nbe = 0.0, vkick_nbecell = 0.0;
   // <rad_m1>/implicit_wb_vkick_be_retry (read only when named; needs
   // implicit_wb_vkick_reject and <time>/dt_retry): a backward-Euler solve that kicks a
@@ -791,17 +776,14 @@ class RadiationM1 {
   // this cycle's step failed and is redone (clean: solved strictly)
   bool dtr_redo = false;
   bool impl_wb_vcap_meas = false;
-  int impl_wb_vcap_np = 0;
   DvceArray1D<Real> vcap_cnt_d;
   DvceArray4D<Real> ktd;        // d(rho kappa_T)/dT at the iterate (implicit_opac_newton)
   // implicit_gas_newton_u4: emission-dominated cells take the gas Newton
   // step in u = T^4 (T' = (T^4 + 4 T^3 dT)^(1/4)); implicit_opac_lag = pred: the
   // opacities are evaluated at pass 0 (the predicted T) and frozen for the solve
-  bool impl_gn_u4 = false;
   bool impl_opac_lagp = false;
   int impl_opac_lagn = 1;       // implicit_opac_lag_passes: updates in passes < N
   Real impl_ol_nlag = 0.0;      // solves run with the opacity lag (report)
-  bool impl_allow_multid{};     // run a 2-D/3-D set of INDEPENDENT x1 columns
   Real marshak_q{};             // free-surface condition F_f = c*marshak_q*E
   int ibc_x1min{}, ibc_x1max{}; // M1_IBC_*
   // the transverse (x2, x3) physical faces of the implicit solve,
@@ -845,23 +827,6 @@ class RadiationM1 {
   bool ifx2_on = false;
   DvceArray3D<Real> ifx2_lo, ifx2_hi;
   DvceArray3D<Real> ibadv_x1max;
-  // implicit_ghost_x1min (default false; sp, implicit_bc_x1min = flux): the
-  // inner face flux is NOT imposed but built by the interior face-flux formula across the
-  // face between a fixed ghost (E = implicit_ghost_e_x1min, the IC a T^4 at the first
-  // ghost radius; Ma+2026 sect. 2.2.3 / Athena++ ghost intensities) and the first cell,
-  // implicit in E of the first cell (a heat bath through the diffusion conductance)
-  bool impl_ghx = false;
-  Real impl_ghx_e = 0.0;
-  // col1d A7/A7b (rad_m1/athena_face_diss, default false = bitwise): Athena++'s implicit
-  // DO HLL tau-factor dissipation at EVERY interior x1 face, F_d = s(tau) 0.5 c <mu>_+
-  // (E_L - E_R) (M1LbathDiss mode 3, tau = athena_face_taucell (kT dx_L + kT dx_R)); in
-  // the energy row always; athena_face_diss_force = true also puts it into the stored
-  // face flux (which the momentum deposit and F^n use), false (A7) = energy without a
-  // matching force
-  bool afd_on = false, afd_force = false;
-  Real afd_tc = 4.0, afd_mu1 = 0.5063576644955016;
-  // athena_face_taumin: only faces with min(kT dx) of the two cells >= it
-  Real afd_taumin = 0.0;
   // (implicit_beam_n > 0, vet_sc only): up to 2 collimated beams entering
   // through the x1min face on an x2 patch, carried by one SC ray (2-D: the +-mu3 mirror
   // pair).  ibm_i(m,q,k,j): the entering intensity of beam ray q at column (k,j) (local,
@@ -880,16 +845,6 @@ class RadiationM1 {
   // the cell form under vet_col_surface_q, whose q = H(face)/J(top cell) is built for
   // the cell E.
   bool impl_mface_lin = false;
-  // implicit_face_weight = distance (default on sp) | equal: how the x1 face values of
-  // the transport opacity rho kappa_T, the velocity v1 and G0 are formed from the two
-  // adjacent cells in the x1 face equation, the E rows, the vimp rows and the momentum
-  // deposit.  equal: 0.5 (q_L + q_R).  distance (spherical-polar wedge only; a Cartesian
-  // grid is uniform): linear interpolation to the face from the two cell midpoints,
-  // q_f = (dr_R q_L + dr_L q_R)/(dr_L + dr_R), dr the radial cell widths; identical to
-  // equal (bitwise) where the two widths agree to 1e-12.  Default distance on the wedge,
-  // equal elsewhere; a restart whose input predates the key keeps equal (rad_m1_implicit
-  // .cpp, where it is read).
-  bool impl_face_wdist = false;
   // implicit_bc_advect: a MARSHAK x1 end also carries the advected enthalpy flux
   // A E (outflow: the end cell's E; inflow: the bath).  Default off (bitwise).
   bool impl_bc_advect{};
@@ -897,7 +852,6 @@ class RadiationM1 {
                                 // 0 is the plain free surface
   DvceArray4D<Real> f0x1;       // face-normal comoving flux on x1 faces, (m,k,j,i);
                                 // PERSISTENT state, carried by the restart file
-  DvceArray4D<Real> f0x1n;      // its start-of-step copy (not restarted)
   DvceArray5D<Real> iw;         // per-cell work array of the solve, M1_NIW components
   Real impl_nstep{}, impl_itsum{}, impl_itmax{}, impl_nfail{};  // Picard counters
   // implicit_res_dmin / implicit_res_rmax (read only when named; 0 = off): cells with
@@ -906,24 +860,13 @@ class RadiationM1 {
   // last pass of any step, res_nex = steps whose excluded residual was >= implicit_tol
   // (steps that would not have stopped there with the full norm).
   Real impl_res_dmin = 0.0, impl_res_rmax = 0.0;
-  bool impl_real_couple = false;      // implicit_realisable_coupling (gd_physfix_1005)
-  // implicit_cs_e0_metric (cubed sphere, read only when named, default
-  // false = bitwise): E0 - E of the implicit solve (beta.F, beta^2, beta.P.beta) with the
-  // panel metric of the face-normal components, as the work / deposits / KE take it
-  bool impl_cs_e0m = false;
-  bool impl_cs_cnm = false;      // implicit_cs_closure_metric
-  bool impl_comov_lat = false;   // implicit_comoving_lat
   // implicit_thin_freeze (m1-picard-aa; default 1e-2 on fresh runs, 0 = off): cells with
   // c dt rho kappa_P < this at the start of the solve keep their start-of-step opacities
   // for every pass and take the frozen-opacity gas-T find
-  Real impl_thin_frz = 0.0;
   DvceArray4D<Real> thin_frz;   // 1 = frozen cell of this solve (implicit_thin_freeze)
   // F2 <rad_m1>/implicit_face_opac_n (default false = bitwise): the
   // step-frozen x1 face data of the blend (alpha, tau_f weight) from rho kappa_T at T^n
   // (snapshot ktn, taken before the pass-0 opacity update), not at the predicted T
-  bool impl_face_ktn = false;
-  DvceArray4D<Real> ktn;
-  Real impl_stall_fac = 0.5;    // implicit_stall_fac (implicit_gas_newton_switch test)
   int impl_gn_sw = 0, impl_gn_sw_min = 20;   // implicit_gas_newton_switch (window, min)
   Real impl_gn_nsw = 0.0;       // solves switched off the gas Newton update
   // implicit_resid_fatal (read only when named; 0 = off): stop the run when a Picard
@@ -934,7 +877,6 @@ class RadiationM1 {
   // 1.0 then, 0 = off): stop the run when the largest residual of the EXCLUDED cells at
   // the last pass of a solve exceeds this value or is non-finite (a masked cell that
   // diverges is otherwise invisible to the stopping test and to implicit_resid_fatal)
-  Real impl_res_fatal_masked = 0.0;
   bool impl_res_mask = false;
   Real impl_res_exmax = 0.0, impl_res_nex = 0.0;
   // implicit_timers = N (m1-fast4; default 0 = off): fenced host timers of the M1 stage
@@ -1025,13 +967,6 @@ class RadiationM1 {
   int impl_flux{};              // M1_IFLUX_*: the spatial form of the implicit E-flux
   int impl_recon{};             // M1_IRECON_*: dc, or plm by deferred correction
   int impl_enth{};              // M1_IENTH_*: face value of the enthalpy flux a E
-  Real impl_recon_w{};          // implicit_recon = plm_dc: the weight the deferred
-                                // correction carries.  <= 0 (the default) means the
-                                // automatic 1/(1 + chat dt/dx), which is what keeps the
-                                // deferred-correction fixed-point iteration a contraction
-                                // at every CFL; 1.0 is the pure plm flux, which diverges
-                                // above CFL ~ 1.
-  int impl_part{};              // M1_IPART_*: how a multi-block column is solved
   // implicit_hr_wscale_x1 / _lat (diagnostic, read only when named): the half-range face
   // coefficients AL, HCL, HCR, DG of the x1 / transverse faces times s (0 = central faces
   // there); off = bitwise implicit_hr_fcimp (read only when named, default false): the
@@ -1099,7 +1034,6 @@ class RadiationM1 {
   // m1_gw)
   DvceArray5D<Real> gwd;
   bool impl_hr_cmem = false;   // implicit_hr_cmem: separate F_c memory
-  bool impl_aphll_mem = false;   // implicit_aphll_mem (cmem + restage)
   DvceArray4D<Real> fax1, fax2, fax3;   // the applied face fluxes (cmem)
   // implicit_hr_cmem_implicit (opt-in, read only when named, default false
   // = bitwise; needs implicit_hr_cmem): the explicit memory part M = tw F_c^n of every
@@ -1114,15 +1048,13 @@ class RadiationM1 {
   // -(1-lam) R of the applied flux; cmtr the last TRHS (LRES); cmi_cnt (rank 0):
   // limiter passes, cells with lam < 1 (sum over passes), min lam
   bool impl_cmi = false;
-  int iw_cmi = -1;
-  DvceArray4D<Real> cmm2, cmm3, cmq2, cmq3, cmd2, cmd3, cmtr;
   DvceArray1D<Real> cmi_cnt;
   // implicit_hr_cmem_fainit (opt-in, read only when named, default false):
   // fax* are not in the restart file and start at 0, so the first step after a restart
   // takes F_a^n = 0 as the old applied flux of the gas-momentum budget (physflux fa:
   // Z_f, the drag) -- a spurious F^old - F jump.  With the key, the first solve sets
   // fax* = f0x* (the restart face flux, the flux the gas momentum last saw) once.
-  bool impl_cm_fainit = false, impl_cm_fainit_done = false;
+  bool impl_cm_fainit_done = false;
   // implicit_hr_cmem_rst (opt-in, read only when named, default false): the
   // restart file carries fax* (kM1FaxRstMagic, behind the pgen slabs; each face array
   // as 2 cell-sized slabs: faces 0..n-1, then face n in the first cell plane), so a
@@ -1141,11 +1073,6 @@ class RadiationM1 {
   }
   void FaxRstPack(DvceArray5D<Real> out, int nmb);
   bool FaxRstUnpack(DvceArray5D<Real> in, int nmb, int nsl);
-  // implicit_hr_cmem_gas_fa (opt-in, read only when named): with cmem and the
-  // conservative gas source, Z_f takes the step-start APPLIED flux fax*n as its old face
-  // flux instead of the F_c memory (the cmem feedback warning: off by (1-w)(F_c - F_a))
-  bool impl_cmgfa = false;
-  bool impl_physflux = false;   // F_c = the one momentum flux
   // <rad_m1>/implicit_face_mmat = true (read only when named; default
   // false = bitwise; no threshold): positivity-preserving x1 face flux of the implicit
   // solve.  Each x1 face carries lam in [0,1]; its flux in the row and in the stored
@@ -1161,18 +1088,13 @@ class RadiationM1 {
   // until no cell is newly limited, R halo-exchanged.  b > 0 with the M-matrix row gives
   // E' > 0.  Unlimited faces (lam = 1) take no extra arithmetic (bitwise).
   bool impl_fmm = false;
-  int iw_fmm = -1;   // iw slots: R, R new, b, 4 x dt A/V, 4 x dC (stage 2b)
-  DvceArray4D<Real> fmm_lam, fmm_g;   // x1 faces (m,k,j,i): lam, explicit flux G (chat)
-  DvceArray5D<Real> fmm_lo;        // (m,2,k,j,i) x1 faces: LL, LR (chat units)
   // stage 2 realisability: F_H of the last face rebuild (lab units, before
   // the blend); a face whose |F_H| > c min(E_L, E_R) at the iterate takes lam_r =
   // (c min(E_L,E_R) - |F_L|)/(|F_H| - |F_L|) in [0,1] (0 when |F_L| reaches the bound),
   // and lam = lam_r R_donor
   // opt-in <rad_m1>/implicit_face_mmat_real = true (read only when named; default false):
   // measured 11-12 (FACE_MMAT_1112.md sect. 6) not to remove the clip, so off by default
-  DvceArray4D<Real> fmm_fh;
   Real fmm_rfaces = 0.0;
-  bool impl_fmm_real = false;
   // stage 2b: the transverse (x2, x3; cs seams) faces.  fmm_t (m,8,k,j,i)
   // at the face index: x2 [0] Llo, [1] Lhi (the row's E'-linear coefficients of the face
   // flux, chat units, as M1TransRowCore / m1_impl_tcell build them), [2] G = cr F(E^k) -
@@ -1229,17 +1151,7 @@ class RadiationM1 {
   // opac_newton_guard counter of the skipped rows is added from their first-assembly
   // value (fmm_ns).
   bool fmm_rowsel = true;
-  Kokkos::View<char****, LayoutWrapper, DevMemSpace> fmm_rf, fmm_ns;
   Real fmm_selrows = 0.0, fmm_selall = 0.0;
-  bool impl_pf_fa = false;   // implicit_physflux_mom = fa
-  // <rad_m1>/implicit_physflux_zold = fc (read only when named; needs
-  // physflux_mom = fa; default fa = bitwise): Z_f's old face flux = F_c^n (f0x*n), i.e.
-  // mom = fa without forcing implicit_hr_cmem_gas_fa.  The conservative2 gas share at
-  // an AP-HLL face (om = 1 - al) is then x(Z_f) + (go - F_m' - A^old) icc with A^old =
-  // stored F - mean F_c^n: both old fluxes F_c^n, so the gas no longer pays
-  // mean(F_c^n - fax*n) (the R136 near-vacuum kicks at al = 1); at om = 1 Z_f does not
-  // read the old flux (linear waves unchanged)
-  bool impl_pf_zfc = false;
   // <rad_m1>/implicit_thin_switch (M1_THSW_*, rad_m1_implicit.hpp): a
   // dt-free thin/thick weight frozen per solve (formal-solution |H|/J, its non-locality
   // C1, the E^n Knudsen number); implicit_thin_corr adds the lagged formal-solution flux
@@ -1261,32 +1173,25 @@ class RadiationM1 {
   // faces keep the sp-blend-1008 path).  ifw2/ifw3 hold M1_IFW_AL/HCL/HCR of the x2/x3
   // faces (DG unused); the central part of a transverse face keeps 1 - AL through
   // thx2/thx3.  Off (the default): nothing allocated, every kernel bitwise unchanged.
-  bool impl_flux_all = false;   // the key
-  bool blat_on = false;         // transverse faces carry the berthon/blend coefficients
-  bool bvec_x1 = false;         // Cartesian x1 faces take the multi-D beam vector
   bool impl_beam_fs = false;    // implicit_flux_beam = fs: |f| = |H|/J of vet_sc
   // implicit_flux_beam = halfrange.  Every face flux of the all-faces blend
   // is (1 - w) F_central + w c (r+_L E_L + r-_R E_R), r+- = H+-/J the HALF-RANGE ratios
   // along the face normal (vet_sc / vet_gd rays; otherwise the isotropic + beam model of
   // the lagged closure), w = exp(-(tau_f/tau0)^2) (implicit_blend = tau) or 1 (berthon)
   bool impl_beam_hr = false;
-  bool impl_hr_model = false;   // implicit_hr_model (no ray data: closure model)
   // implicit_hr_face = sf (default with vet_sc): the half-range face ratios
   // from the face mean of the formal-solution half-range fluxes over the DONOR SCALE
   // Jh = max(J, the outgoing face SC fluxes) wherever the cell's own J does not carry
   // the SC flux through its faces (M1HrSf); cell = the hrup-1009 cell ratios (opt-out)
   bool impl_hr_sf = false;
-  int impl_hr_sfgd = 0;   // implicit_hr_face_gd: 1 x1, 3 all faces
   // P2 (opt-in, vet_gd only): implicit_hr_excess = iso gives the part of the
   // lagged E^n that exceeds the formal-solution J of the cell the ISOTROPIC half-range
   // shape (+-1/4) instead of the formal solution's (M1HrExcess); none = off (default)
-  int iw_hsf = -1;              // first iw component of the M1_NIW_HSF block
   double hsf_ncell = 0.0, hsf_nsf = 0.0;   // cell-solves, of which Jh > J (rank 0)
   bool hr_q = false;            // the per-column outer q from h+_1 (vcol_q)
   DvceArray5D<Real> vgd_hr, vgd_hrt;   // (m, 6, k, j, i): r+_r r-_r r+_t r-_t r+_p r-_p
   // with implicit_thin_switch = fs* or an implicit_thin_corr (vgd_thx) vgd_hr
   // carries M1_VGD_HRNX components: + C1 = sum w |I - S|/J, eps, J (E units)
-  bool vgd_thx = false;
   Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> vgd_pin_cnt;
   DvceArray5D<Real> ifw2, ifw3;
   // the partitioned (gathered) line solve, LIMIT 4.  Every rank that owns a piece of a
@@ -1318,43 +1223,12 @@ class RadiationM1 {
   std::vector<int> part_nbrrank;  // (2*nmb) rank of m's x1 neighbours, or -1
   std::vector<int> part_nbrgid;   // (2*nmb) global id of m's x1 neighbours, or -1
   bool part_any_mpi{};          // true if any stack or x1 halo crosses a rank
-  // the imposed-flux boundary hand-off, LIMIT 3.  See ImplicitSolve.
-  bool impl_recon_freeze{};     // implicit_recon_lag = step: evaluate the deferred
-                                // correction once per step, not once per Picard pass
-  // implicit_recon_dgpass (default false): with the face coefficients
-  // frozen for the step (implicit_recon_lag = step) the plm_dc correction is re-made on
-  // every Picard pass from the iterate's E (plm in E only, the frozen face f), instead of
-  // once from E^n (an explicit anti-diffusion that is unstable: pulse amplitude 2.7-3.5)
-  bool impl_recon_dgpass = false;
-  int impl_recon_npass{};       // implicit_recon_npass: FREEZE the plm deferred
-                                // correction (and with it the limiter's choice) after
-                                // this many Picard passes, to break the limit cycle the
-                                // limiter otherwise drives.  <= 0 = never freeze (3a2)
-  Real impl_res_floor{};        // scale of the Picard convergence test: 0 = the pure
-                                // relative change of 3a, x > 0 = |dE|/max(E, x*max(E))
-  bool impl_bmom_half{};        // give a physical boundary face HALF its flux to the one
-                                // interior cell (the cell-averaged share) instead of all
-  // (moving media, NOTE-moveq.md): the radiation momentum of the enthalpy flux
-  //   implicit_rad_inertia  the F0 face equation's dropped -dA/dt: after the solve
-  //                         each face takes -theta_f dA_f (dA = A' - A^n, A = a E),
-  //                         so the deposit dt k F0/c hands the gas -(1-theta) dA/
-  //                         (c chat), plus the dt v_f g0_f/c the face equation
-  //                         removed from the radiation
-  //   implicit_f0_init      cold-start face flux: zero (old) | lab (F0 = F_pgen - A) |
-  //                         auto (lab on faces with A != 0, else zero: static bitwise)
-  //   implicit_nofb_work    gas_feedback = false: E still pays the work v.dm (fixed v)
-  bool impl_rad_inertia = false;
-  int impl_f0_init = 0;          // 0 zero, 1 lab, 2 auto
-  bool impl_f0_init_done = false;
-  bool impl_nofb_work = false;
   // <rad_m1>/implicit_gas_src = matched (default: the term-by-term deposit
   // above, bitwise) | conservative: the gas takes minus the radiation's own source of the
   // solve, dm = -(F'_c - F^old_c)/(c chat) - (1/2) sum_faces Z_f, with F_c the STORED
   // cell flux and Z_f the face's transport (and non-momentum-equation) part, written by
   // the face kernels of the solve (rad_m1_implicit.cpp, NOTE-consrc.md)
   bool impl_gas_src_cons = false;
-  bool impl_gas_src_full = false;      // conservative_full: no drag-only HLL exception
-  DvceArray4D<Real> gcz1, gcz2, gcz3;   // Z_f on the x1 / x2 / x3 faces (as f0x1..3)
   DvceArray5D<Real> csk1, csk2, csinc;  // hesdirk2: slopes / increment of the cell F (3)
   bool csk1_ok = false;                 // csk1 holds the slope that pairs with t2k1
   bool csinc_ok = false;                // csinc was formed for the coming stage solve
@@ -1365,33 +1239,6 @@ class RadiationM1 {
   int CskRstNch() const {
     return (CskRstHdr() && csk1_ok && csk1.extent_int(0) > 0) ? 3 : 0;
   }
-  // implicit_gas_src = conservative2 (NOTE-consfix.md): conservative, plus
-  //  (a) the face equation is the lab-F one, F0' = theta (F0^n - dA_f - ...): dA_c =
-  //      A'_c - A^old_c the whole change of the cell's enthalpy flux (A^old = F^old -
-  //      F0^old face mean), put into F0^n INSIDE the solve (ImplicitCs2Pass), so the E
-  //      rows transport the F0 the faces end on.  The drag then hands the gas (1 - theta)
-  //      of it (thick: all, the radiation inertia; thin: the lab flux is kept);
-  //  (b) implicit_vimp predicts the velocity the conservative write-back gives
-  //      (ImplicitCs2Vimp): the E rows' enthalpy flux and the stored F share one v;
-  //  (c) opt-in, implicit_cs2_shift = true (default false since consfix2): the hydro's
-  //      velocity change since the stored F as F0's EXPLICIT tendency -dA/dt
-  //      (ImplicitCs2Shift at the solve start; the lab F is kept).  Off, it is part of
-  //      the solve's dA (which gives clean order 2 on the T ladders).
-  //  (d) implicit_cs2_hll = drag (default, consfix3): the AP-HLL (thin) part of a face
-  //      has no face equation; there the gas pays only its drag, as matched, not dA.
-  // iw components behind the other blocks: A^old (3), dA (3, exchanged), om_bar (3)
-  bool impl_gas_src_cs2 = false;
-  int iw_cs2 = -1;
-  bool cs2_shift = false;               // implicit_cs2_shift: (c) on (default off)
-  bool cs2_hll_drag = true;             // implicit_cs2_hll = drag (default) | inertia
-  bool cs2_clip_rad = false;            // implicit_cs2_clip = rad (named)
-  // <rad_m1>/implicit_cs2_wbsolve (DEFAULT true, recorded;
-  // false = the old passes, bitwise): the conservative2 write-back under time2_vstage
-  // solves the linear cell relation dm = C - om (F0 mean + (I + D) w(dm) E)/(c chat)
-  // for the kick in closed form
-  // (effective inertia rho + om (I + D) E/(c chat)) instead of the 3 fixed-point passes,
-  // whose gain om (1 + d11) E/(rho c chat) > 1 amplifies every step (1-D radwave P33)
-  bool cs2_wbs = false;
   // <rad_m1>/implicit_cs2_dacap = K (read only when named; 0 = off, bitwise):
   // the gas is charged at most the enthalpy-flux change an enthalpy flux at the cell's
   // speed can make, |dA| <= K 2 |v| max(E^old, E'); a cell beyond it enters the dA split
@@ -1399,26 +1246,9 @@ class RadiationM1 {
   // gas share om_bar all x s, s in iw_cs2 + 9): the rest stays with the radiation (the
   // drag rule).  Catches an A^old = F_stored - F0 mean that is not an enthalpy flux
   // (limiter clip, pgen-held E/F), NOTE /raven/ptmp/jinma/gsdrag_1021
-  Real cs2_cap = 0.0;
-  Real cs2_cap_vmin = 1.0e-4;           // implicit_cs2_dacap_vmin: |w| >= vmin c in cap
-  bool cs2_vimp = true;                 // implicit_cs2_vimp: (b) on
   int cs2_vnp = 0;                      // implicit_cs2_vimp_npass (fresh default 3)
-  int cs2_dbg = 0;                      // implicit_cs2_dbg (diagnostic): 1 no face split,
-                                        // 2 no vimp prediction, 4 no hydro shift,
-                                        // 8 no x1 split, 16 no x2/x3 split
   // time2_enth_be: this (non-stage) solve takes the stage a_f rule
   bool T2EnthBe() const;
-  // <rad_m1>/implicit_rad_inertia_solve (read only when named; default
-  // false = the after-solve split, bitwise): the -theta dA of implicit_rad_inertia
-  // (dA_c = a_c (E'_c - E^ov_c), a frozen for the solve) goes into the face equation
-  // INSIDE the Picard passes (the F0^n shift of ImplicitCs2Pass, Picard-lagged by one
-  // pass; the Picard stop then takes no contraction estimate), so the E rows transport
-  // the F0 the faces end on and the ESDIRK slope of F0 carries it.  The after-solve
-  // split leaves the E update and the stored F0 inconsistent by theta a dE: a first-
-  // order (in dt) splitting error ~ v^2, suppressed in the stiff limit (rswv / NHvk0
-  // floor, NOTE-h2order2).  matched / conservative only (conservative2 has it).
-  bool impl_rinr_solve = false;
-  DvceArray4D<Real> cs2f1, cs2f2, cs2f3;   // the dA face means applied to F0^n (x1..x3)
 
   // ---- MILESTONE 3b phase B: transport = implicit, the TRANSVERSE (x2/x3) couplings.
   // All inert with transport = explicit | implicit_x1.
@@ -1435,7 +1265,6 @@ class RadiationM1 {
   DvceArray4D<Real> f0x2, f0x3;   // face-normal comoving fluxes on the x2 / x3 faces,
                                 // (m,k,j,i).  PERSISTENT state, carried by the restart
                                 // file next to f0x1; allocated only when trans_on.
-  DvceArray4D<Real> f0x2n, f0x3n;  // their start-of-step copies (not restarted)
   DvceArray5D<Real> thw;        // (m,M1_NHALO_T,k,j,i) scratch the transverse halo
                                 // exchanges through the module's ordinary CC boundary
                                 // machinery
@@ -1452,7 +1281,6 @@ class RadiationM1 {
 
   // ---- MILESTONE 3b phase C: implicit_solver = bicgstab.  All null under line_jacobi.
   bool bicg_on{};               // impl_solver == M1_ISOLV_BICGSTAB and trans_on
-  int impl_lin_maxit{};         // <rad_m1>/implicit_lin_maxit, the BiCGStab iteration cap
   DvceArray5D<Real> krw;        // (m,1,k,j,i) scratch: ONE Krylov vector, exchanged with
                                 // the same cell-centred machinery thw uses
   DvceArray5D<Real> krw_c;      // its (unused) coarse buffer
@@ -1468,11 +1296,6 @@ class RadiationM1 {
                                 // a linear solve that stopped at lin_maxit is redone with
   bool bcg_capped{};            // the last BiCGStab stopped at lin_maxit, test unmet
   Real bcg_npfb{}, bcg_pfbit{}; // solves redone with the fallback, their iterations
-  int impl_bcg_sync{};          // <rad_m1>/implicit_bcg_sync: 0 = the original loop
-                                // (5 blocking reductions per its), 1 = fused reductions
-                                // (3, the DEFAULT), 2 = 1 plus alpha kept on the device
-                                // (2 on 1 rank)
-  Kokkos::View<Real, DevMemSpace> bcg_rvd;  // rhat.v on the device (sync level 2)
   // ---- GPU cost of the Krylov iteration (bench/m1_fast_0923).  Every key defaults OFF;
   // off, nothing below is allocated or referenced and the path is bitwise HEAD.
   bool impl_halo_direct{};      // <rad_m1>/implicit_halo_direct: fill the ghost zones of
@@ -1480,18 +1303,11 @@ class RadiationM1 {
   bool halo_direct_on{};        // ...and the mesh allows it (same level, all neighbours
                                 // on this rank on EVERY rank, no seam/pole)
   DualArray2D<int> hd_src;      // (m, 27 directions): local source MeshBlock or -1
-  bool impl_odc{};              // <rad_m1>/implicit_od_cache: the off-diagonal Eddington
-                                // operator from a per-cell cache of sum_e d_e P_de, and
-                                // ONE fused 7-point + off-diagonal kernel (bitwise)
   DvceArray5D<Real> odc;        // (m,3,k,j,i) that cache
   bool impl_stencil{};          // <rad_m1>/implicit_op_stencil: the operator of each
                                 // Picard pass as a 19-point stencil, built once
   DvceArray5D<Real> ost;        // (m,19,k,j,i) that stencil
   bool st_edges{};              // ...and whether any edge coefficient is non-zero
-  bool impl_vfold{};            // <rad_m1>/implicit_vimp_fold (tests_m1/runs_4a_accel):
-                                // the implicit_vimp operator part folded into the stored
-                                // stencil (x2/x3 +-1 into slots 3-6, the +-2 neighbours
-                                // into slots 19-24) instead of M1VimpRow per apply
   int impl_onep{};              // <rad_m1>/implicit_one_pass: check period N (0 = off;
                                 // default 8 for be, see ImplicitInit)
   Real impl_onep_s{};           // <rad_m1>/implicit_one_pass_safety (default 3)
@@ -1510,22 +1326,8 @@ class RadiationM1 {
   Real onep_prb[3]{};           // 1: on as a re-probe, not yet confirmed by an acceptance
   // switch-offs / re-probes / confirmed / failed (counters, this run)
   Real impl_onep_ndis{}, impl_onep_nprb{}, impl_onep_nren{}, impl_onep_nfpr{};
-  bool ew_tight{};              // this pass: no Eisenstat-Walker loosening
   int impl_pord{};              // <rad_m1>/implicit_predictor_order: 1 or 2 (default 2
                                 // for be, see ImplicitInit)
-  bool impl_opteam{};           // <rad_m1>/implicit_op_team_red (m1-fast3): the fused
-                                // stencil + dots as one-cell-per-thread teams of 256
-                                // with a team reduction into opt_part, then a small
-                                // reduction over the teams (round-off vs the fused one)
-  bool impl_opsplit{};          // <rad_m1>/implicit_op_split_red: the stencil apply as a
-                                // plain par_for, then a separate read-only reduction
-                                // kernel (instead of the fused 4-value reduction)
-  bool impl_fastk{};            // <rad_m1>/implicit_fast_kernels: bitwise-exact shortcuts
-  bool impl_odskip{};           // ...its Eddington part: D_ab = 0 off the diagonal, so
-                                // the stencil build and the right-hand side skip the od
-                                // terms
-  bool impl_prec_float{};       // <rad_m1>/implicit_precond_float: the fast path's
-                                // line solves in float
   int impl_kfuse{};             // <rad_m1>/implicit_krylov_fuse: 1 = the preconditioner
                                 // reads/writes the Krylov vectors directly and carries
                                 // the p / s updates (bitwise); 2 = 1 plus the (rhat,v)
@@ -1539,9 +1341,6 @@ class RadiationM1 {
                                 // mg_gc (mg + the global band coarse space)
   // ---- multi-rank Krylov (tests_m1/runs_3w_krylov, rad_m1_krylov.cpp).  Both keys
   // default OFF; off, nothing below is allocated and the path is bitwise the old one.
-  bool impl_kpipe{};            // <rad_m1>/implicit_krylov_pipe: pipelined (Cools-
-                                // Vanroose) BiCGStab, reductions hidden behind the
-                                // preconditioner + operator (needs krylov_fuse = 3)
   Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> kp_h;  // its 2 x 6 reduction slots
   bool impl_halo_mpi{};         // <rad_m1>/implicit_halo_mpi: implicit_halo_direct on
                                 // several ranks: on-rank copy kernel + ONE message per
@@ -1602,92 +1401,33 @@ class RadiationM1 {
   int impl_kdev{};              // <rad_m1>/implicit_krylov_dev: K > 0 = BiCGStab scalars
                                 // and convergence test on the device, host status read
                                 // every K iterations (one rank, halo_direct, stencil)
-  int impl_kdev_halo{};         // <rad_m1>/implicit_krylov_dev_halo: 0 = the operator
-                                // reads ghosts from the neighbour block, 1 = halo kernel
-  int kdev_last[3]{};           // inner iterations of the previous device solve, per
-                                // slot (Picard pass 0, 1, >= 2)
-  int kdev_slot{};              // the slot of this solve (set by ImplicitSolve)
-  int kdev_x1p{};               // -1 = not known, 1 = no x1 neighbour anywhere
   Real kdev_nchk{}, kdev_nq{};  // host status reads, queued iterations (statistics)
-  DvceArray1D<Real> kdv;        // (M1_KD_SIZE) the device scalars
-  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> kdh;  // their host copy
-  // <rad_m1>/implicit_op_check = K (tests_m1/gates; read only when named, default 0 =
-  // off, then nothing below runs): at the first |K| solves, every operator variant of
-  // the configuration applied to the same pseudo-random vector and compared
-  // (rad_m1_opcheck.cpp); K > 0 fatal on a mismatch, K < 0 report only
-  int impl_opchk{}, opchk_n{};
-  Real impl_opchk_tol{};        // <rad_m1>/implicit_op_check_tol (default 1e-12)
-  // implicit_precond = mg (rad_m1_precond.cpp): block-local (x2,x3) semicoarsening
-  int mg_nlev{};                // <rad_m1>/implicit_mg_levels: levels incl. the fine one
-  bool mg_halo{};               // <rad_m1>/implicit_mg_halo: fine residual with the halo
   // (rad_m1_precond.cpp): smoother options of mg / mg_gc / mg_gf, each read
   // only when named, default false = the old map bitwise (nothing below allocated)
   bool mg_x3line = false;       // <rad_m1>/implicit_mg_x3line: after the x1-line sweep of
-                                // every level, a red-black (in i+j) sweep of exact x3
-                                // (phi) line solves, block-local lines
-  bool mg_sym = false;          // <rad_m1>/implicit_mg_sym: every red-black sweep is
-                                // symmetric (red, black, red), x1 and x3 sweeps alike
-  bool mg_frows = false;        // <rad_m1>/implicit_mg_full_rows: smoother / coarse rows
-                                // from the Krylov stencil (off-diagonal Eddington and
-                                // folded vimp parts), other-colour edges in the sweeps,
-                                // the fine residual from the full operator
   // the x3 line factorisation of this pass (rows frozen over the Krylov
   // solve), per level l at offset mgx3o[l]: (q,k,m,j,i), q = 0: g = 1/den, 1: h = a g,
   // 2: c' = c g (Thomas forward d' = g d - h d'_(k-1), back z = d' - c' z_(k+1))
-  int mg_x3halo = 1;            // <rad_m1>/implicit_mg_x3line_halo: 1 (default) = the
-                                // fine x3 sweep and the fine residual share ONE halo of
-                                // z (after the x1 sweep); 2 = a second halo before the
-                                // residual (the cf243ae9 map)
   bool tmr_x3 = false;          // <rad_m1>/implicit_timers_mg_x3 (with implicit_timers):
                                 // fence around the x3 sweeps, category mg_x3
   // implicit_precond = mg_gc (rad_m1_precond.cpp, tests_m1/runs_5p_coarse2): a GLOBAL
   // coarse space of per-x1-layer (x2,x3)-band means in front of mg; used only under it
-  bool gc_on = false;
-  int gc_b2 = 1, gc_b3 = 1;     // <rad_m1>/implicit_gc_bands2 / _bands3
   Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> gc_part;  // (m,lb,q,c,i) band sums
   Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> gc_x;     // (gi*nb + b) x_g
   // implicit_precond = mg_gf (rad_m1_precond.cpp, tests_m1/runs_5t_fast5box): a GLOBAL
   // coarse space of the lowest (x2,x3) Fourier modes of each x1 layer in front of mg
-  bool gf_on = false;
-  int gf_k = 2;                 // <rad_m1>/implicit_gf_modes: |k2|, |k3| <= K
   Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> gf_gh;   // (gi*nm + q) multi-rank
   DvceArray1D<int> gf_okd;          // (q) the mode-q factorisation is usable
-  bool impl_rho_direct = false;  // <rad_m1>/implicit_bcg_rho_direct (krylov_fuse = 3)
-  int impl_dump_cyc{};          // <rad_m1>/implicit_dump_op (debug, rad_m1_precond.cpp)
-  bool impl_dump_done{};
-  // ---- the Picard pass count (bench/m1_picard_0923).  Since bench/m1_defaults_0923
-  // lres_test = false, conv_est = true and lin_ew_max = 1e-2 (not predictor) are the
-  // DEFAULTS for closure = eddington | vet_sc | tau (the OFF settings stay the defaults
-  // for m1 | minerbo | kershaw); the OFF settings reproduce the earlier path bitwise.
-  bool impl_tsolve_opac{};      // <rad_m1>/implicit_tsolve_opac (nc_cure_1002)
-  int impl_tsolve_opac_start{}; // implicit_tsolve_opac_start: first Picard pass
-  int impl_tsolve_opac_mode = 0;      // implicit_tsolve_opac_mode (tsolve_root_fix_1003)
                                      // bit 1 nearest root, bit 2 slope guard, 0 = off
-  Real impl_tsolve_opac_smin = -4.0;  // implicit_tsolve_opac_slope_min (bit 2 threshold)
-  int impl_strace = 0;          // <rad_m1>/implicit_stall_trace (DEBUG, he_estall_1003)
-  int impl_strace_p0 = 40;      // ...from this pass, the worst cell fixed (per rank)
-  int impl_strace_max = 30;     // ...in at most this many solves
-  int impl_ncdump{};            // <rad_m1>/implicit_nc_dump (DEBUG, default 0 = off):
-                                // the local state of each rank's worst cell in the
-                                // last N passes of a solve that hits implicit_maxit
-  int impl_plog{};              // <rad_m1>/implicit_picard_log: print one line per
-                                // Picard pass for the first N solves (rank 0)
   Real bcg_r0rel{};             // max|b - A x0|/max|b| of the last BiCGStab call
-  bool impl_det{};              // <rad_m1>/implicit_det_reduce: fixed-order Krylov sums
-  DvceArray1D<Real> det_part;   // its level-1 partials and result (4*1024 + 4)
   DvceArray1D<Real> lay_part;   // layout_invariant_mode = block: per-MeshBlock
                                 // partials of M1LayReduce (sized on first use)
   Kokkos::View<Real*, Kokkos::HostSpace> lay_part_h;   // ... their host copy
   bool impl_lres_test{};        // <rad_m1>/implicit_lres_test (default false*): require
                                 // the pass-to-pass transverse change lresid < lin_tol
-  bool impl_src_stable = false;  // <rad_m1>/implicit_src_stable (stall_1002)
-  bool impl_conv_est{};         // <rad_m1>/implicit_conv_est (default true*): stop when
-                                // the linear-rate estimate of the REMAINING change is
-                                // below implicit_tol
   Real impl_ew_max{};           // <rad_m1>/implicit_lin_ew_max: Eisenstat-Walker forcing
                                 // of the inner tolerance (0 = off, the fixed lin_tol;
                                 // default 1e-2*, or 0 when implicit_bcg_sync = 0)
-  Real impl_ew_gam{};           // <rad_m1>/implicit_lin_ew_gamma
   Real impl_lin_cnorm{};        // <rad_m1>/implicit_lin_cnorm: inner test on the per-cell
                                 // relative E error max|r_i|/(s_i E_i) (0 = off)
   Real ew_fprev{}, ew_etaprev{}; // max|r0| and eta of the previous pass of this step
@@ -1696,7 +1436,6 @@ class RadiationM1 {
   // implicit_predictor_frozen: the predictor runs wherever the
   // face coefficients of the solve do not read the iterate (sp: vfix; any mesh:
   // halfrange + implicit_thin_switch), not on the sp wedge only
-  bool impl_pred_frz = false;
   bool impl_pred{};             // <rad_m1>/implicit_predictor = step (default step*):
                                 // start the Picard loop from E^n + (dt/dt_prev) dE_prev
                                 // (and T likewise); none = cold start
@@ -1929,7 +1668,6 @@ class RadiationM1 {
   // false on a restart whose file lacks it): the implicit_bc_advect enthalpy flux of a
   // Marshak x1 end face takes the stage's radiative kick dv of its cell, as the interior
   // faces do under vimp
-  bool impl_vimp_bc = false;
   Real t2_start_frac = 1.0;     // time2_start_frac
   Real t2_nprobe = 0.0;         // probe solves taken (counter)
   bool t2_inprobe = false;      // inside the probe solve (ImplicitF0Init moves t2f*)
@@ -1942,20 +1680,6 @@ class RadiationM1 {
   // at the stage-1 solution Y1 for stage 2) | extrap (DIAGNOSTIC: D^n + r (D^n -
   // D^{n-1}), history in memory only, not in the restart)
   int t2_vcmode = 0;
-  // time2_vstage: the gas work in the E row (slot: into iw KZ, implicit_work_fix)
-  // <rad_m1>/implicit_work_fix (default false: bitwise the old code).  true:
-  // (1) when the E rows carried the gas work w^k of the last pass (t2_wk), the write-back
-  // subtracts only work - w^k (w^k from iw slot KZ, ImplicitWorkRow(.., slot = true)), so
-  // its flux limit and the implicit_pos_floor / pos_gas moves act on the stage's real E,
-  // not on E - work (which the later add-back used to complete); the add-back is then
-  // skipped.  The old order floored E - work < 0 in cells where the work of one stage
-  // exceeds E (optically thick, kappa rho c dt >> 1, moving gas), took the deficit from
-  // the gas (or CREATED it) and then added w^k on top: an E pump at those cells (RSG E
-  // cube vertex: E x 25-50, E-floor neighbours, the 581 d runaway: 1.2e45 erg created).
-  // (2) the backward-Euler (non-stage) solves of a hesdirk2 run carry the work in the row
-  // too (their write-back used to subtract the full work after the solve: E - work <<
-  // 0 there, floored).
-  bool impl_wk_fix = true;      // DEFAULT true (USER 10-25)
   // <rad_m1>/cs_vertex_mono (read only when named; default false = bitwise):
   // on the cubed sphere, a MONOTONE (two-point) lateral transport at the 8 cube vertices.
   // The lateral face flux of the implicit M1 there carries three non-monotone pieces that
@@ -1973,14 +1697,10 @@ class RadiationM1 {
   // midpoint quadratic), and D_r,lat is zero in the cells within cs_vertex_mono_n + 1
   // (so every face of those cells sees none).  Conservative (per face), local.
   Real impl_pred_tcap = 2.0;   // seamE-1106 implicit_predictor_tcap
-  Real impl_pred_ecap = 0.0;   // implicit_predictor_ecap (0 = off)
-  bool impl_tstart_old = false;   // implicit_tstart_old
   Real t2_k1rd = 0.0, t2_k1rd_n = 0.0, t2_k1rd_un = 0.0;   // seamE-1106 time2_k1_redist
   int t2_k1rd_r = 16, t2_k1rd_calls = 0;
   Real t2_k1rd_mv = 0.0, t2_k1rd_mx = 0.0;
   bool t2_k1pos_as = false;   // seamE-1106 time2_k1_pos_after_stiff
-  Real cs_cross_mono_k = 0.0;   // seamE-1106 front threshold, 0 = clamp always
-  bool cs_cross_mono = false;   // seamE-1106: one-sided seam cross derivative clamped
   bool cs_vtx_mono = false;    // DEFAULT = cs geometry (USER 10-29)
   int cs_vtx_n = 1;
   // <rad_m1>/implicit_pos_floor_cons (read only when named; default false =
@@ -2091,10 +1811,6 @@ class RadiationM1 {
   Real od_nfall{};              // how often that fallback fired
   Real od_emin{};               // the smallest E the linear solve produced in the run
   Real impl_crelax{};           // <rad_m1>/implicit_closure_relax: the weight w of
-                                // chi^{k+1} = (1-w) chi^k + w chi(f^{k+1}) between Picard
-                                // passes (1 = no relaxation), and the same for n
-  bool impl_crelax_thin{};      // relax only where the cell is optically THIN
-                                // (theta = 1/(1 + c dt rho kappa_t) > 1/2)
   // <rad_m1>/implicit_closure_thin_relax = C (runs_5c_thinstab; 0 = off, nothing is
   // allocated or read): under implicit_closure_lag = step, the (chi, n) a cell starts a
   // step with is relaxed from the one it used in the previous step with a weight
@@ -2122,13 +1838,6 @@ class RadiationM1 {
   DvceArray5D<Real> rss_stage;   // (nmb, nch, k, j, i) read from the restart file
   int rss_stage_mode = -1;       // mode of rss_stage, -1 = nothing staged
   bool impl_clag_step{};        // <rad_m1>/implicit_closure_lag = step: freeze chi and n
-  // <rad_m1>/implicit_lag_restage (read only when named, default false):
-  // the pieces frozen per stage solve under implicit_recon_lag = step and
-  // implicit_closure_lag = step (face coefficients, plm deferred correction, thin
-  // switch, closure, transverse terms) are evaluated once more on Picard pass 1, at the
-  // pass-0 solution (the stage state to O(dt^2)), then frozen again: 2nd order in time
-  // at about one extra pass
-  bool impl_lag_restage = false;
                                 // at the START-of-step state for the whole step, so each
                                 // step is one linear solve plus the T nonlinearity
 
@@ -2136,11 +1845,7 @@ class RadiationM1 {
   // Default `none` = not allocated and not referenced, so every earlier configuration
   // is bitwise unchanged.  See ImplicitTransTheta.
   int impl_tlim{};              // M1_TLIM_*: none | lp
-  Real impl_tfmax{};            // <rad_m1>/implicit_trans_fmax, the reduced-flux cap
   DvceArray4D<Real> thx2, thx3;  // theta_f = 1/(1 + c dt (kt_f + klim_f)) on the x2/x3
-                                // faces, the ONE number every use of the transverse
-                                // theta reads
-  DvceArray4D<Real> klx2, klx3;  // the lagged limiter opacity klim_f itself, which
                                 // follows implicit_closure_lag
 
   // ---- MILESTONE 3g: the GAS-RADIATION energy coupling of the implicit solve.
@@ -2152,36 +1857,9 @@ class RadiationM1 {
   bool impl_eos_cache{};        // <rad_m1>/implicit_eos_cache: serve e(T), c_v from a
                                 // per-cell 1-D Hermite in ln T built once per step
   int impl_ecnt{};              // <rad_m1>/implicit_eos_cache_nt, the half-width of the
-                                // cached window in TABLE temperature cells
-  int impl_eccheck_every{};     // <rad_m1>/implicit_eos_cache_check_every (m1-fast3):
-                                // the check on every N-th cycle only (1 = every step)
-  bool impl_eccheck{};          // <rad_m1>/implicit_eos_cache_check: one TRUE-table
-                                // evaluation per cell at the end of the step, which
-                                // measures the cache error and corrects T'
   // <rad_m1>/implicit_vimp (tests_m1/runs_3v_vimplicit): the gas velocity of the
   // enthalpy flux implicit through the radiative force of the solve (Newton form)
   bool impl_vimp{};             // the switch (default false: nothing below is touched)
-  // <rad_m1>/doppler_vel (read only when named; default stage = the behaviour before,
-  // bitwise).  vstar: the velocity-dependent terms of the implicit solve (the work-array
-  // V, hence the enthalpy coefficient a = v(1+chi), E0 - E, g0 and the wall face) take
-  // the Heun stage state's velocity BEFORE the hesdirk2 old-vector increment t2inc (which
-  // carries the previous radiative slope K1) and without the implicit_vimp kick dv: the
-  // post-hydro, pre-radiation-kick velocity v* that Athena++ GetTgasVel hands its solve.
-  // Forces implicit_vimp = false.  Diagnostic / Athena++ reproduction only (the toy
-  // athpp_toy_1104 shows it makes an O(dt) wall drain).
-  bool dop_vstar = false;
-  // doppler_vel = vstar_n: Athena++'s vl2 value v^n + dt a_hydro with the FULL deficit.
-  // The Heun stage-1 state already is U^n + dt L(U^n); the stage-2 (and BE) state carries
-  // half of it (1/2 (U^n + Y1) + 1/2 dt L(Y1), Y1 kicked), so there V = v^n + 2 (v_stage
-  // - v^n).  Also forces implicit_vimp = false.
-  bool dop_vstar_n = false;
-  // doppler_vel = vstar_nbe: as vstar_n, but the 2 (v_stage - v^n) only in the hesdirk2
-  // stage-2 solve.  A backward-Euler solve (BESTORE/NONE: the first steps, auto_be and
-  // stage fallbacks) sees the whole Heun state v^n + dt a_hydro (Y1 carries no radiative
-  // kick): measured at t = 0, v_stage - v^n = -0.62 km/s = dt grad P_rad/rho, so
-  // vstar_n's doubling gives those solves 2 v* (wall cell lab flux -71 L at BE steps vs
-  // -31 L at stage steps).
-  bool dop_vstar_nbe = false;
   // <rad_m1>/doppler_face = donor | central (read only when named; default donor =
   // bitwise).  central: the x1 enthalpy (Doppler) flux a E, a = v (1 + chi), of the
   // implicit E row is the face MEAN 0.5 (a_L E_L + a_R E_R) of the two cells' fluxes,
@@ -2197,10 +1875,7 @@ class RadiationM1 {
   // (1 + D_f) (E_L dv_L + E_R dv_R)/2: each cell's kick carries its OWN E (same order; a
   // strong kick of 1e-8 floor gas beside a
   // pgen-held 73 kK nozzle cell no longer charges it E_nozzle dv_floor: S2 -16.7 there)
-  bool impl_vimp_ewf = false;
-  Real impl_vimp_jscale{};      // DIAGNOSTIC implicit_vimp_jscale: scale of P (1)
   bool vimp_now{};              // on for this step (the positivity fallback drops it)
-  int iw_vimp{};                // first iw component of the M1_NIW_VIMP block, or -1
   Real vimp_nfall{};            // how often the positivity fallback dropped it
   Real flr_ne{}, flr_ng{};      // cell-solves whose solved E <= e_floor (floored) and
                                 // whose written-back gas eint <= 0 (all ranks)
@@ -2209,14 +1884,10 @@ class RadiationM1 {
   MeshBoundaryValuesCC *pbval_vm;  // ...and its exchange object
   // (cubed sphere only): a 3-component exchange (scalar, face-normal pair)
   // of iw slots c0..c0+2, for the dA / s vectors of the conservative sources
-  DvceArray5D<Real> d3w, d3w_c;
+  DvceArray5D<Real> d3w;
   MeshBoundaryValuesCC *pbval_d3 = nullptr;
   // the implicit_hr_recon limiter ghosts (hr quad map across a seam)
   MeshBoundaryValuesCC *pbval_sg = nullptr;
-  // <rad_m1>/implicit_am_cs (cubed sphere; default = <hydro>/am_transport):
-  // the axial angular-momentum-conservative radiation-gas exchange (rad_m1_implicit.cpp,
-  // after the write-back); amw = the pre-write-back gas momentum and cell F (6)
-  bool impl_am_cs = false;
   // <rad_m1>/implicit_am_cs_kecap = f (read only when named; absent or 0 =
   // off = bitwise): the am_cs deposit of a cell is scaled by s in [0, 1] so that the
   // kinetic energy it gives the gas (taken from e_int, the total energy is untouched)
@@ -2237,14 +1908,7 @@ class RadiationM1 {
   // pays the rest from e_int (up to implicit_am_cs_kecap when named; the momentum is
   // withheld only beyond both).  Counted (amen_d).  rad_m1_implicit.cpp m1_am_cs
   int impl_am_en = 0;
-  Real impl_am_en_frac = 0.5;
   DvceArray1D<Real> amen_d;
-  // amcsE-1111 <rad_m1>/implicit_am_cs_cons_diag = N (read only when named): for the
-  // first N am_cs solves, one AMCS_CONS line with the exchange's L-vector budget, the
-  // energy change of the deposit, E_tot = sum V (e_gas + (c/chat) E) and the L vector
-  // of gas + radiation after the deposit (amcd_d)
-  int impl_am_cons_diag = 0;
-  DvceArray1D<Real> amcd_d;
   // <rad_m1>/implicit_am_cs_deposit = local | patch (read only when named;
   // absent or local = the deposit above, bitwise).  patch: the whole L vector del of a
   // cell (not only del_z) is deposited as the minimum-kinetic-energy rigid-rotation
@@ -2257,30 +1921,6 @@ class RadiationM1 {
   // vector is kept.  Needs <hydro>/am_transport (not am_vector).  amvw: 0-2 the
   // withheld L of a cell, 3 its s; amvp_d counters (rad_m1_implicit.cpp m1_am_cs_*)
   int impl_am_dep = 0;
-  // <rad_m1>/implicit_am_cs_fold = stored | applied (read only when named;
-  // absent or stored = bitwise).  applied: under implicit_hr_cmem (not physflux) the
-  // am_cs old cell F (m1_am_cs_pre) is the SAME vector the conservative write-back uses
-  // as F^old, the face means of the F_c memory + A E^n (rad_m1_impl_wb_kernel.hpp go*),
-  // instead of the stored u0 F + the stage increment.  The memory's redefinition of the
-  // cell F is then not read as a radiation torque error and is not deposited as gas spin.
-  bool impl_am_fold_ap = false;
-  // <rad_m1>/implicit_lz_form = true (read only when named; absent = off =
-  // bitwise; cubed sphere, 3-D, implicit transport, implicit_gas_src = conservative(2)):
-  // exact L_z of gas + radiation by construction (AM_CONSERVING_CS_1112.md sect. 10).
-  // Every lateral face of the face equation takes the extra stress h_f = -W_f (q_L +
-  // q_R), q_c = mu_c / sum_f W_f^2, mu_c = T_c + sum_f a_cf om_f G_f the cell's torque
-  // mismatch between the flux-form face torque (am_cs's T_c) and the cell-mean torque of
-  // the attributed face transport, a_cf = (V/2) (x_c x e_f/sin)_z, W_f = a_L + a_R.  Then
-  // sum_f W_f h_f = -sum_c mu_c and gas + radiation change their L_z by dt sum_c T_c (the
-  // boundary torque) for any E'.  h is lagged (face flux -> TRHS); Z_f books it as a
-  // stress.  implicit_am_cs, if on, only books its diagnostics (no deposit).
-  // implicit_lz_diag = N (read only when named): one LZ_FORM line per pass, first N
-  bool impl_lz = false;
-  int impl_lz_diag = 0;
-  // implicit_lz_mode = full (0, default) | stress (1)
-  int impl_lz_mode = 0;
-  int iw_lz = -1;                       // q_c (1 slot, exchanged)
-  DvceArray1D<Real> lz_d;               // diagnostic sums
   // <rad_m1>/implicit_lzx = true (read only when named; absent = off =
   // bitwise; LZPHYS_1113.md): after every solve's write-back (LzxPost) the realised L_z
   // change of gas + radiation, Lr, is closed by the stress dZ_f = -Omega mu_f sign(W_f),
@@ -2289,9 +1929,6 @@ class RadiationM1 {
   // slopes).  implicit_lzx_weight = impulse (mu = |Z_f| + |W_f| (q_L + q_R), default) |
   // blend | energy | none (diagnostics only); implicit_lzx_diag = N: LZX lines.  Inert
   // on Cartesian meshes and without coupling + gas_feedback.
-  bool impl_lzx = false;
-  int impl_lzx_w = 0, impl_lzx_diag = 0;
-  int iw_lzx = -1;                      // q_c = |t_c| / sum_f W_f^2 (1 slot, exchanged)
   DvceArray1D<Real> amvp_d;
   // <rad_m1>/implicit_clip_kecap = f (read only when named; absent or 0 = off
   // = bitwise): the conservative write-back's F-clip correction (the momentum the
@@ -2403,7 +2040,6 @@ class RadiationM1 {
   // sum(|F|/cE - 1), 18 write-back drag cell-solves, 19 their sum(|F|/cE - 1)
   bool impl_fclip_diag = false;
   DvceArray1D<Real> fcd_cnt_d;
-  int impl_am_cs_diag = 0;   // diagnostic (read only when named): solves to print
   bool am_vec = false;             // + <hydro>/am_vector: the vector form
   DvceArray4D<Real> amk1, amk2, aminc;   // spin slopes (FSAL / stage 1) and increment
   // <rad_m1>/implicit_hr_recon = dc | plm (Fix B, rad_m1_implicit.hpp)
@@ -2419,12 +2055,10 @@ class RadiationM1 {
   // the same limiter as the upwind state, so that the face flux at E = J is exactly
   // w c H_f.  hcpw: per face direction d, 2d = the gate q of the face (M1ThinFace),
   // 2d+1 = the plm part already in DG (rebuilt with the limiter: ImplicitHcPlm)
-  Real impl_muscl_damp = 0.0;   // implicit_hr_damp: beta of the consistent damping
   bool impl_muscl_bound = false;  // implicit_hr_pos = bound: per-face bound test
   Real muscl_nbound = 0.0;       // cell-axes switched to dc by the bound test
   bool impl_muscl_pred = false;    // implicit_hr_recon_pred: dc predictor per step
   Real muscl_pred_dc = 0.0, muscl_pred_hi = 0.0;   // passes of the two phases
-  int iw_muscl = -1;            // first iw component of the M1_NIW_MUSCL block
   Real muscl_nfall = 0.0;       // how often the positivity fallback dropped it
   Real muscl_emin = 1.0e300;    // the smallest E the linear solve produced with it on
   // <rad_m1>/implicit_vimp_kill (read only when named; default false =
@@ -2461,19 +2095,10 @@ class RadiationM1 {
   // implicit_pos_transport_mem (default 1/6) x E^n of the donor take it implicitly
   // upwind (<= 0: off); ptq1 the x1 face q, set on the first Picard pass of a solve
   // and FROZEN for its other passes (0 = unchanged face)
-  Real pt_gam = 1.0/6.0;
-  DvceArray4D<Real> ptq1;
   DvceArray1D<Real> pt_cnt;
   // implicit_face_opac = kirchhoff (opt-in; default arith = bitwise): the iw
   // component holding the x1 face Kirchhoff rho kappa_T (at the face's upper cell), -1
   // off
-  int iw_kir = -1;
-  int impl_kir_ng = 8;          // implicit_face_opac_ng: Gauss points in T
-  bool impl_kir_harm = false;   // implicit_face_opac = harmonic (no table lookups)
-  int iw_gas{};                 // first iw component of the M1_NIW_GAS block (see
-                                // rad_m1_implicit.hpp); < 0 when neither option is on
-  int impl_nec{};               // components of `ecache`
-  DvceArray5D<Real> ecache;     // (m,nec,k,j,i) the frozen-density e(T) cache
   Real newt_nfb{};              // Newton fallbacks to the bracketed root find, whole run
   Real gas_ncell{};             // cell-passes of the gas solve, whole run (the scale the
                                 // two counters above and below are read against)
@@ -2490,8 +2115,6 @@ class RadiationM1 {
                                 // thread per x1 column), 1 = pcr (the DEFAULT: one team
                                 // per column, parallel cyclic reduction in team scratch;
                                 // not used by the gathered stack sweep, part_nblk > 1)
-  int impl_pcr_team{};          // <rad_m1>/implicit_pcr_team: team size of the pcr
-                                // solve on a GPU (0 = next power of 2 >= nx1, max 256)
   bool impl_pcr_check{};        // <rad_m1>/implicit_pcr_check: run BOTH line solvers
                                 // every call and record max|dx|/max|x| (diagnostic)
   Real pcr_chk_max{}, pcr_chk_n{}; // the check's running max and call count
@@ -2500,15 +2123,9 @@ class RadiationM1 {
   int impl_and_start{};         // <rad_m1>/implicit_anderson_start, the first (0-based)
                                 // Picard pass that is accelerated; earlier passes are
                                 // plain Picard and only feed the history
-  int aa_nc{};                  // components of the fixed-point vector: 4 in multi-D
-                                // (E,F1,F2,F3), 2 on an x1-only solve (E,F1)
   DvceArray5D<Real> aa_xc;      // (m,nc,k,j,i) x_k, the SCALED state entering the pass
   DvceArray5D<Real> aa_fc;      // (m,nc,k,j,i) g_k = G(x_k) - x_k, scaled
   DvceArray5D<Real> aa_xp, aa_fp;  // the previous pass' pair, for the differences
-  DvceArray6D<Real> aa_dx;      // (m,q,nc,k,j,i) history of dX_q = x_{q+1} - x_q
-  DvceArray6D<Real> aa_df;      // ...and of dG_q = g_{q+1} - g_q; a RING of impl_and_m
-  DvceArray4D<Real> aa_sc;      // (m,k,j,i) the per-cell scale max(E^n, e_floor), fixed
-                                // over the step, that makes E and F/c commensurate
   int aa_nh{};                  // history columns in use
   int aa_head{};                // ring head (the column the next difference overwrites)
   bool aa_hasp{};               // aa_xp/aa_fp hold a usable previous pass
