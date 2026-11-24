@@ -6824,6 +6824,8 @@ void RadiationM1::CleanWriteBack() {
     Real un = 0.0;
     Kokkos::deep_copy(un, Kokkos::subview(pc_, M1_POS_FLR_UN));
     un = CleanReduce(un - un0, false);
+    cln_flrun = un;
+    cln_flrid = 4*pmy_pack->pmesh->ncycle + t2_solve;
     if (un > 0.0 && global_variable::my_rank == 0) {
       std::printf("CLEAN WARNING cycle %d t2s %d: implicit_pos_floor created %.6e of E "
                   "(neither the gas nor the column covered the raise)\n",

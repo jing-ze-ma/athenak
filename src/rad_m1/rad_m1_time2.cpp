@@ -1452,7 +1452,14 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
     std::printf("CLEAN WARNING cycle %d t2s %d: stage solve failed, the step is redone "
                 "with backward Euler (stage fallback %.0f)\n", pmy_pack->pmesh->ncycle,
                 t2_solve, t2_nfall);
+    if (cln_flrun > 0.0 && cln_flrid == 4*pmy_pack->pmesh->ncycle + t2_solve) {
+      // (the failed attempt's floor creation is not kept)
+      std::printf("CLEAN WARNING cycle %d t2s %d: the implicit_pos_floor creation %.6e of "
+                  "the failed attempt is discarded with it\n", pmy_pack->pmesh->ncycle,
+                  t2_solve, cln_flrun);
+    }
   }
+  cln_flrun = 0.0;
   // m1-h2div (tests_m1/runs_5j_h2div): the predictor increments were stored by the
   // stage solve that just FAILED (the store precedes the admissibility test), and the
   // backward-Euler redo would start its Picard loop from U^n + (dt/(g dt)) x that
