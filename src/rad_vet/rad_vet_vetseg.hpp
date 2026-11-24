@@ -148,22 +148,13 @@ inline const F *VgdClosureToDevice(const F &f, DvceArray1D<char> &buf) {
 }
 
 // the vet_gd_replace surface q (vet_col_surface_q) of the top cell ie of
-// column (m,k,j), one kernel body for sp (VetGdMoments) and cs (VetGdCsMoments): the
-// geometry RH gives the projection a = n_d . r_hat of direction d (VgdRhatSp: the sp
-// cell centre angles; VgdRhatCs: the cs cell's tabulated r_hat), term for term as the
-// former two kernels.  rr = r_v(ie)/r_f(ie + 1)
+// column (m,k,j) (VetGdMoments): the geometry RH gives the projection a = n_d . r_hat
+// of direction d (VgdRhatSp: the sp cell centre angles).  rr = r_v(ie)/r_f(ie + 1)
 struct VgdRhatSp {
   Real st, ct, sp, cp;
   template <typename VD>
   KOKKOS_INLINE_FUNCTION Real A(const VD &dir_, const int d) const {
     return dir_(d,0)*st*cp + dir_(d,1)*st*sp + dir_(d,2)*ct;
-  }
-};
-struct VgdRhatCs {
-  Real rx, ry, rz;
-  template <typename VD>
-  KOKKOS_INLINE_FUNCTION Real A(const VD &dir_, const int d) const {
-    return dir_(d,0)*rx + dir_(d,1)*ry + dir_(d,2)*rz;
   }
 };
 template <typename RH, typename VD, typename VI>

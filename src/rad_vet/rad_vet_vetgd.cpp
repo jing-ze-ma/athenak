@@ -6016,10 +6016,6 @@ void RadiationVet::VetGdMoments() {
   // shell-major thread order; k fastest, the order of the
   // rows in the VgdRag slab of vgd_i (d fastest, then k, then j), so that adjacent
   // threads read adjacent rows (the same per-cell arithmetic: bitwise)
-  // (the cubed sphere's own kernel, D_rr about the cell's r_hat)
-  if (vgd_csg) {
-    VetGdCsMoments(0);
-  } else {
   const bool gph_ = vgd_gband; auto phc_ = vgd_phc; const int gpw_ = vgd_w;
   if (VgdMomLds()) {
     // LDS-staged (see VgdMomLds); the same cells, sums and outputs
@@ -6136,7 +6132,6 @@ void RadiationVet::VetGdMoments() {
     }
   });
   }  // !VgdMomLds
-  }  // !vgd_csg
   if (!repq) {return;}
   // vet_gd_replace with vet_col_surface_q: the outer Marshak q in vet_col's FACE form,
   // q = H(face)/J_f, clamped to [vet_col_surface_qmin, _qmax]: H(face) = H_r of the top
@@ -6147,11 +6142,6 @@ void RadiationVet::VetGdMoments() {
   const Real jca = vcol_jca, jcb = vcol_jcb, jcap = vcol_jcap, q0 = marshak_q;
   auto cx1v = pmy_pack->pcoord->x1v;
   auto cx1f = pmy_pack->pcoord->xx1f;
-  if (vgd_csg) {   // the same q about the cs cell's r_hat
-    VetGdCsMoments(1);
-    return;
-  }
-  const bool gph_ = vgd_gband; auto phc_ = vgd_phc; const int gpw_ = vgd_w;
   par_for("vet_vgd_q", DevExeSpace(), 0, nmb1, ks, ke, js, je,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     const Real th = sth_ ? thn_(m,j+og)

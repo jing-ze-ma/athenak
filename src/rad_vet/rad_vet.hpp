@@ -2479,7 +2479,6 @@ class RadiationVet {
   void VetGdCsInit();
   void VetGdCsSource();
   void VetGdCsSweep();
-  void VetGdCsMoments(const int part);   // 0: D_rr -> LAT0, 1: surface q
   void VetGdCsTab(const std::vector<double> &d);   // into vgd_tabh (walls off, mr)
   template <class V>
   void VetGdCsHalo(V &a, const int nv, const int i0, const int i1, const bool loc,
