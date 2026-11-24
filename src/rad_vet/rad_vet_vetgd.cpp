@@ -1003,11 +1003,12 @@ void RadiationVet::VetGdInit() {
   }
   if (vgd_wst) {
     // vet_gd_theta_seam_sym: the clean scheme's theta seam faces in both frames, with the
-    // equatorial mirror (a theta wedge centred on the equator)
-    if (!vgd_wint || VgdRotOn() ||
+    // equatorial mirror (a theta wedge centred on the equator).  A turn about z keeps the
+    // set's equatorial mirror (the permutation of every turned set); a 3-D one does not
+    if (!vgd_wint || (VgdRotOn() && vgd_rot3) ||
         std::fabs(pm->mesh_size.x2min + pm->mesh_size.x2max - M_PI) > 1.0e-12) {
       VgdFatal("vet_gd_theta_seam_sym needs a theta wedge centred on the equator, "
-               "vet_gd_wall_interp = true and no set rotation");
+               "vet_gd_wall_interp = true and no 3-D set rotation");
     }
     vgd_mirz = dev(img(1.0, 0.0, 1.0, -1.0), "vet_gd_theta_seam_sym");
   }
