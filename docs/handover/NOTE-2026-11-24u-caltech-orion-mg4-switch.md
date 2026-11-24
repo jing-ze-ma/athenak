@@ -17,3 +17,7 @@
 - relaunch: `2026-11-24 01:30:33 chunk 1 rc=0 last: time=5e+05 cycle=4722` + EX: hydro/fofc=true hydro/fofc_retest=true rad_vet/clean_stag_mg_levels=4
 - log echo (log.1): (no mg_levels line yet) | <hydro>: fofc_retest 1
 - bsg 300 cycles on mg4 (11-24 01:32): CW 0, FATAL 0, created inf 0, DT_RETRY 0. **before** 0.6213 s/cyc (c4350-4600), dt 6.063733e+01 -> **after** 0.6254 s/cyc (c4450-4700), dt 5.716051e+01
+
+- **(11-24 01:35) Correction:** the first relaunch of all 4 at 01:30 FAILED (launch_rc3f.sh was not executable: 'Permission denied'). The two 'OK ... 300 cycles' lines above for m35mms / m35zams are false: the watch read the stopped log. All 4 were down from 01:30.
+  bsg (now on hpc-sm-02-16 / 7333035, freeing 7333072 for RSG) and m35mms (02-11) were relaunched at 01:34 with fofc + mg4 (`bash launch_rc3f.sh`); their 300-cycle watches are running again.
+  t9l62 and m35zams stay stopped at their 01:30 rsts (t9l62.00005, hard-linked as .pre-mg4; m35zams final rst) for the 24v layout batch on 02-17 / 01-15. They restart right after it.
