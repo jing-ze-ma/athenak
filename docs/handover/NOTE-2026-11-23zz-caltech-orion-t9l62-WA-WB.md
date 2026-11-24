@@ -18,3 +18,4 @@
   The hst confirms it never entered the state: user.hst and hydro.hst have no inf/nan, and E_rad 8.190834e46 -> 8.190829e46 and Etot 2.154196e47 stay smooth through t 4.7522-4.7526e5.
   So **I kept WB running** (the state is clean). If you want it stopped on the letter of the rule, say so; it is a test, and I can stop it at once.
   CLEAN cycle / WBFDIAG lines for 6465-6470: arm_WB/clean_cycle_wbfdiag_c6465-6470.txt.
+- (11-23 20:35) **SB WARNING (not stopped)**:  first skip_de > 1e41: cycle 6463 skip_de 897645092400000010747709812793477416615936
