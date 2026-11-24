@@ -21,3 +21,8 @@
 - relaunch: `2026-11-24 07:37:23 chunk 4 STAR=bsg BIN=/resnick/groups/carnegie_poc/jingze/wt_orion1121/bin/athena_dflfix_5b6159ad0 md5=9c59917d84f344a7094b5403d432dd5c DECK=/resnick/groups/carnegie_poc/jingze/prod_rc3_1124/decks/tile/IA123_bsg` + EX: time/cfl_number=0.3 hydro/fofc=true hydro/fofc_retest=true rad_vet/clean_stag_mg_levels=4 rad_vet/vet_gd_ls=0
 - echo: 
 - bsg 300 cycles after the switch (11-24 07:42): CW 0, FATAL 0, created inf 0, DT_RETRY 0. **before** 0.6422 s/cyc (c39350-39600), dt 4.981374e+01 -> **after** 0.7788 s/cyc (c39750-40000), dt 1.637392e+02. Last DTREP: binder c40010 dir 1 r 2.4513e+12 rho 1.555e-07 v -9.641e+06 ceff 1.017e+07 (cfl*dt_hyd 164.573)
+- bsg after the switch (24zu returns):
+  - eos_vceil per bsg3d.log row (cycle, count): 39785:0 39845:0 39904:0 39964:0 40025:0 40084:0 . As in H3, the only vceil events are in the first row after the restart (the inherited floor gas); every later row has **0**. With 0 vceil cells there is no r/rho to give for the later rows; the start-up row's cells are not printed per cell (floor_audit_worst is not named in production).
+  - floor_audit [update], latest: `floored 1260008 (kedom 934690) floor_de 1.896762655e+36 <r> 4.703512011e+12`. That is ~4 floored cells / cycle, mean r 4.7e12.
+  - s/cyc 0.779 (vs 0.642 before; FOFC + fix) at **dt 164 vs 50**, i.e. ~2.7x more model time per wall hour. CW 0, FATAL 0, created inf 0, DT_RETRY 0.
+  - H3 stopped (STOP, 07:38); its end-of-run dfl line: `<hydro> dfloor_flux_limit: outflow-limited cell-stages (all attempts)=4.630238e+09, their x1 momentum x vol removed=-2.847802e+32, kinetic energy x vol made heat=9.926168e+39`.
