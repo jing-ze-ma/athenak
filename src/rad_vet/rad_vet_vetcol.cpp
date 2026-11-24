@@ -4,10 +4,9 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_vet_vetcol.cpp
-//! \brief <rad_vet>/closure = vet_col under scheme = clean: the set-up the vet_gd closure
-//! reads (VetColInit: the checks, tau_ten, the outer Marshak q vcol_q, the spherical
-//! Marshak coefficients) and the end-of-run report.  The per-column 1-D formal solution
-//! itself (the old production closure) is not in this build.
+//! \brief Set-up read by the vet_gd closure (VetColInit: checks, tau_ten, outer Marshak
+//! q vcol_q, spherical Marshak coefficients) and the end-of-run cost report; then the
+//! lateral part (vet_col_lat): checks, buffers, LAT-slot reduction and the vet_gd source.
 
 #include <algorithm>
 #include <cmath>
@@ -55,17 +54,13 @@ void RadiationVet::VetColInit() {
   auto &mindcs = pm->mesh_indcs;
   if (!trans_on) {VcolFatal("needs <rad_vet>/transport = implicit on a MULTI-D mesh");}
   if (pm->multilevel) {VcolFatal("SMR/AMR is not supported");}
-  // (the clean closure from vet_gd sets up but never builds the columns)
+  // vet_gd builds no columns: any x1 decomposition
   if (mindcs.nx1 != indcs.nx1 && !vgd_on) {
     VcolFatal("needs ONE MeshBlock along x1 (meshblock/nx1 = mesh/nx1)");
   }
   if (ibc_x1min == M1_IBC_PERIODIC) {VcolFatal("a periodic x1 boundary has no top");}
-  // STAGE CS2 (m1-cs-implicit): the cubed sphere with the RADIAL axis.  x1 is r on every
-  // panel and one block spans the whole column, so the column is the radial line of a
-  // panel cell and the p-ray tables of block 0 serve every block, as on sp.  The tensor
-  // is uniaxial about r_hat; its tangential part (1-f_K)/2 is an isotropic pressure,
-  // which the cs transverse rows read as the scalar D_tt (M1DDiag, CS1).  The flux axis
-  // needs the cell F direction on the skewed panel basis: refused.
+  // cubed sphere: x1 = r on every panel, one block spans the column; the tensor is
+  // uniaxial about r_hat.  The flux axis needs the skewed panel basis: refused.
   if (pm->use_cubed_sphere && vcol_axis_flux) {
     VcolFatal("vet_col_axis = flux is not supported on the cubed sphere");
   }
@@ -74,13 +69,11 @@ void RadiationVet::VetColInit() {
     VcolFatal("vet_col_ncore, vet_col_nsub, vet_col_nmu, vet_col_every must be >= 1");
   }
   vcol_sph = sph_geom;
-  // vet_col_reflect_top: only on sp with a reflecting outer x1 of the M1 solve
+  // vet_col_reflect_top: sp with a reflecting outer x1 only
   vcol_rtop = vcol_rtop && vcol_sph && (ibc_x1max == M1_IBC_REFLECT);
   vcol_sqf = vcol_sqf && vcol_sph && vcol_sq && impl_mface_lin;
   const int ie = indcs.ie;
-  // (the per-column formal solution's quadrature tables went with VetColBuild: under
-  // scheme = clean the closure is vet_gd's, which reads tau_ten, vcol_q and the
-  // spherical Marshak coefficients set here)
+  // vet_gd reads tau_ten, vcol_q and the spherical Marshak coefficients set here
   if (vcol_sph) {
     auto x1v_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
                                                      pmy_pack->pcoord->x1v);
@@ -102,8 +95,8 @@ void RadiationVet::VetColInit() {
                 << "the q is built but unused" << std::endl;
     }
   }
-  // vet_col_lat (rad_vet_vetlat.cpp) and the cubed sphere: M1_TT_NLAT more slots, the
-  // lateral correction D_ab (cs: in the basis r, xi, eta).  Elsewhere 4 slots.
+  // vet_col_lat and the cubed sphere: M1_TT_NLAT more slots for the lateral D_ab
+  // (cs: basis r, xi, eta); elsewhere 4 slots
   Kokkos::realloc(tau_ten, nmb, (vlat_on || pm->use_cubed_sphere) ?
                   (M1_TT_LAT0 + M1_TT_NLAT) : 4, c3, c2, c1);
   Kokkos::deep_copy(tau_ten, 0.0);
@@ -141,7 +134,7 @@ void RadiationVet::VetColReport() {
                 << vgd_prk.size() << "; band-clamped lateral reads (ALL ranks, all "
                 << "sweeps) "
                 << vgd_nclamp_all << std::endl;
-      if (vgd_csg || vgd_gbc) {   // (+ the sp global band)
+      if (vgd_csg || vgd_gbc) {   // cs or sp global band
         std::cout << "<rad_vet> vet_gd " << (vgd_csg ? "cs" : "global")
                   << " band (rank 0): " << ((vgd_cscomp || vgd_gbc) ? "compact" : "dense")
                   << ", intensity values sent "
@@ -207,6 +200,8 @@ void RadiationVet::VetColReport() {
   }
 }
 
+//----------------------------------------------------------------------------------------
+// lateral VET (vet_col_lat) and the vet_gd source
 
 namespace {
 void VlatFatal(const std::string &msg) {
@@ -223,8 +218,7 @@ void VlatFatal(const std::string &msg) {
 
 void RadiationVet::VetLatInit() {
   Mesh *pm = pmy_pack->pmesh;
-  // (CS_VETGD.md stage S3): vet_gd runs on the cubed sphere (its own
-  // sweep, rad_vet_vetgd_cs.cpp); the vet_col_lat SC correction itself does not
+  // the cubed sphere runs vet_gd's own sweep; the vet_col_lat SC correction is wedge-only
   if (pm->use_cubed_sphere && !vgd_on) {
     VlatFatal("the cubed sphere: only through vet_gd; the vet_col_lat SC "
               "correction is wedge-only");
@@ -232,12 +226,8 @@ void RadiationVet::VetLatInit() {
   if (!sph_geom) {
     VlatFatal("needs the spherical-polar wedge (Cartesian: closure = vet_sc)");
   }
-  // S1: rad_vet runs on the full sphere (polar x2 faces) with vet_col only.
-  // The SC reads of vet_col_lat / vet_gd wrap theta periodically at block level, their
-  // band formula has 1/sin(theta_min) and no pole partner map: stage S2 (latitude cap).
-  // vet_gd on the spherical-polar mesh takes a stretched theta and the full
-  // sphere through its node table (rad_vet_vetgd_sph2.inc); vet_col_lat keeps both
-  // refusals
+  // vet_gd takes a stretched theta and the full sphere through its node table;
+  // vet_col_lat refuses both
   if (vgd_on && !pm->use_cubed_sphere) {
     vgd_pol = pm->use_polar_boundary;
     vgd_sth = pm->use_grid_stretch_theta || vgd_pol;
@@ -247,17 +237,10 @@ void RadiationVet::VetLatInit() {
               " on the FULL sphere (mesh/use_polar_boundary) is not "
               "implemented: use closure = vet_col without vet_gd / vet_col_lat");
   }
-  // (USER 10-17): the SC upwind interpolation of vet_col_lat / vet_gd is
-  // bilinear in (theta, phi) INDEX space, which is exact only for UNIFORM lateral
-  // spacing (a radial stretch is fine: the sweep uses the physical radii).  The only
-  // lateral stretch of this code is mesh/use_grid_stretch_theta (rad_vet.cpp refuses it
-  // for every M1 run today; refused here again so lifting that guard cannot silently
-  // re-enable it); the Athena++ keys x2rat / x3rat are not read by AthenaK; and the
-  // built face arrays xx2f / xx3f are checked so that any future lateral map is caught.
-  // on the cubed sphere xx2f / xx3f are the panel coordinates on [-1, 1]
-  // (equiangular: xi = pi/4 x2, coordinates.cpp), uniform by construction, and the cs
-  // sweep's reads are bilinear in each panel's equiangular INDEX space: the same
-  // requirement, so the same check applies unchanged (it cannot fire on a cs mesh).
+  // the SC upwind interpolation is bilinear in lateral INDEX space: exact only for
+  // uniform lateral spacing (radial stretch is fine).  Refuse a theta stretch, the
+  // Athena++ ratio keys, and any non-uniform built xx2f / xx3f (cs panel coordinates
+  // are uniform by construction).
   {
     const std::string who = vgd_on ? "vet_gd" : "vet_col_lat (lateral SC)";
     if (pm->use_grid_stretch_theta && !vgd_sth) {
@@ -316,12 +299,11 @@ void RadiationVet::VetLatInit() {
   pbval_vs = new MeshBoundaryValuesCC(pmy_pack, nullptr, false);
   pbval_vs->InitializeBuffers(2);
   pbval_vs->SetVectorPairs(2, {});
-  // the resampled lateral-VET exchanges follow <mesh>/cs_seam_blockend
-  // as the moments' pbval_u does
+  // follow <mesh>/cs_seam_blockend as pbval_u does
   pbval_vs->cs_blockend_ext_ = pbval_u->cs_blockend_ext_;
   vlat_ready = true;
   if (vgd_on) {VetGdInit(); return;}
-  // without vet_gd no lateral sweep runs (the LAT slots stay 0)
+  // without vet_gd no lateral sweep runs (LAT slots stay 0)
   if (global_variable::my_rank == 0) {
     std::cout << "### NOTE: <rad_vet>/vet_col_lat = true has no effect without vet_gd"
               << std::endl;
@@ -330,8 +312,8 @@ void RadiationVet::VetLatInit() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetLatOdMax
-//! \brief vlat_odmax = max over ranks of |D_rt|, |D_rp| (tau_ten LAT slots 1, 2) over the
-//! active cells: 0 keeps the operator form untouched (vet_col_lat and vet_gd)
+//! \brief vlat_odmax = max over ranks and active cells of the lateral tau_ten slots;
+//! 0 leaves the operator form untouched
 
 void RadiationVet::VetLatOdMax() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -339,15 +321,11 @@ void RadiationVet::VetLatOdMax() {
   const int ks = indcs.ks, ke = indcs.ke;
   const int nmb1 = pmy_pack->nmb_thispack - 1;
   auto tt_ = tau_ten;
-  // + the tangential slots (vet_gd); on the cubed sphere D_r,lat is the Cartesian
-  // vector in LAT1..LAT3, + Q (LAT4, LAT5)
+  // + tangential slots (vet_gd); cs: D_r,lat is Cartesian in LAT1..3, Q in LAT4, LAT5
   const bool c3 = cs_geom;
   const bool tn = vgd_on && vgd_tan && !c3, cst = vgd_on && vgd_tan && c3;
-  // cs_vertex_mono (rad_vet.hpp): D_r,lat (LAT1..3) = 0 in the cells within
-  // cs_vertex_mono_n + 1 of a cube vertex, set after every build and before the ghost
-  // exchange (the callers), so the operator, its stencil, the lagged assembly and the
-  // time2 slot extrapolation all see the same zero, and every face of a cell within
-  // cs_vertex_mono_n (incl. the seam faces' foot values) carries no D_r,lat
+  // cs_vertex_mono: zero D_r,lat (LAT1..3) within cs_vertex_mono_n + 1 of a cube vertex,
+  // before the ghost exchange, so every user of the slots sees the same zero
   if (c3 && cs_vtx_mono) {
     auto cse = cs_seam.d_view;
     const int vr = cs_vtx_n + 1;
@@ -399,7 +377,7 @@ void RadiationVet::VetLatOdMax() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetLatExchange
-//! \brief the ordinary cell-centred ghost exchange of a (m, n, k, j, i) array
+//! \brief cell-centred ghost exchange of a (m, n, k, j, i) array
 
 void RadiationVet::VetLatExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
                                   MeshBoundaryValuesCC *pb) {
@@ -413,8 +391,7 @@ void RadiationVet::VetLatExchange(DvceArray5D<Real> &a, DvceArray5D<Real> &ac,
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetLatCsFinish
-//! \brief after the source kernel of VetLatSweep: the ghosts of vlat_cs, then the
-//! ray cut
+//! \brief ghosts of vlat_cs, then the ray cut (after VetLatSweep's source kernel)
 
 void RadiationVet::VetLatCsFinish() {
   VetLatExchange(vlat_cs, vlat_cs_c, pbval_vs);
@@ -423,8 +400,8 @@ void RadiationVet::VetLatCsFinish() {
 
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationVet::VetLatSweep
-//! \brief the source of a vet_gd build: ln chi, ln S of every active cell (vet_col's
-//! extinction and source), their ghosts and the ray cut (VetLatCsFinish)
+//! \brief source of a vet_gd build: ln chi, ln S of every active cell, their ghosts and
+//! the ray cut
 
 void RadiationVet::VetLatSweep() {
   Mesh *pm = pmy_pack->pmesh;
@@ -440,13 +417,13 @@ void RadiationVet::VetLatSweep() {
   auto &mbsize = pmy_pack->pmb->mb_size;
 
   const bool thermal = fl_on && coupling && !opac_zero;
-  // vet_source_noesrc (F1): the physical E^n = u0 (see VetColBuild)
+  // vet_source_noesrc: the physical E^n = u0
   const bool noes = VsrcNoes();   // rad_vet.hpp
   auto ur_ = u0;
   const int vsf = vscat ? vscat_form : 0;   // vet_scatter
   const Real ar = arad, efl = e_floor;
   const bool srcep = vlat_src_ep;   // vet_gd_rebuild_every: the Picard iterate's E
-  const bool cvx = cln_srccvx;   // clean_source_convex (the relaxed source: removed)
+  const bool cvx = cln_srccvx;   // clean_source_convex: kappa_P capped at chi
   par_for_lb("vet_vlat_src", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real chi = fmax(iw_(m,M1_IW_KT,k,j,i), 1.0e-300);
